@@ -1115,7 +1115,7 @@ function ensureHeadlessCaptureCoordinator(
 	}
 	const outputDir = deriveHeadlessCaptureOutputDir(path.resolve(sourcePath));
 	logger(`[capture] screenshots -> ${outputDir}`);
-	coordinator = new HeadlessCaptureCoordinator(host, outputDir, logger, () => scheduler.nowMs());
+	coordinator = new HeadlessCaptureCoordinator(host, outputDir, () => scheduler.nowMs());
 	setCoordinator(coordinator);
 	return coordinator;
 }
@@ -1154,7 +1154,7 @@ function createPlatform(frameIntervalMs: number): Platform {
 
 async function prepareRuntime(cliOptions: LaunchOptions, romPath: string, debugFlag: boolean): Promise<EngineNamespace> {
 	ensureHostEnvironment();
-	const globals = globalThis as BootGlobals;
+	const globals = globalThis as unknown as BootGlobals;
 	const romDirectory = path.resolve(path.dirname(romPath));
 	const engineRuntimePath = cliOptions.engineRuntimePath
 		? path.resolve(cliOptions.engineRuntimePath)

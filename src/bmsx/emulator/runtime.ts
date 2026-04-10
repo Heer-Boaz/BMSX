@@ -70,6 +70,10 @@ import {
 	DMA_STATUS_ERROR,
 	GEO_CTRL_ABORT,
 	GEO_CTRL_START,
+	HOST_FAULT_FLAG_ACTIVE,
+	HOST_FAULT_FLAG_STARTUP_BLOCKING,
+	HOST_FAULT_STAGE_NONE,
+	HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH,
 	IO_DMA_CTRL,
 	IO_DMA_DST,
 	IO_DMA_LEN,
@@ -106,6 +110,8 @@ import {
 	IO_PAYLOAD_DATA_ADDR,
 	IO_SYS_BOOT_CART,
 	IO_SYS_CART_BOOTREADY,
+	IO_SYS_HOST_FAULT_FLAGS,
+	IO_SYS_HOST_FAULT_STAGE,
 	IO_VDP_PRIMARY_ATLAS_ID,
 	IO_VDP_CMD,
 	IO_VDP_CMD_ARG0,
@@ -1375,6 +1381,7 @@ export class Runtime {
 	public lastCpuFaultSnapshot: CpuFrameSnapshot[] = [];
 	public faultSnapshot: FaultSnapshot = null;
 	public faultOverlayNeedsFlush = false;
+	private hostFaultMessage: string | null = null;
 	public get doesFaultOverlayNeedFlush(): boolean {
 		return this.faultOverlayNeedsFlush;
 	}
@@ -1597,7 +1604,9 @@ export class Runtime {
 			const audioRefreshHandle = $.platform.frames.start(() => {
 				audioRefreshHandle.stop();
 				void $.refresh_audio_assets().catch((error: unknown) => {
-					runtimeIde.handleLuaError(Runtime.instance, error);
+					const runtime = Runtime.instance;
+					runtime.publishStartupHostFault(error);
+					console.error('[Runtime] Deferred startup audio refresh failed:', error);
 				});
 			});
 		});
@@ -1791,6 +1800,32 @@ export class Runtime {
 		this.setCartBootReadyFlag(false);
 	}
 
+	public getHostFaultMessage(): string | null {
+		return this.hostFaultMessage;
+	}
+
+	public publishStartupHostFault(error: unknown): void {
+		const normalized = convertToError(error);
+		const message = normalized.message.length > 0 ? normalized.message : String(error);
+		this.publishHostFault(
+			HOST_FAULT_FLAG_ACTIVE | HOST_FAULT_FLAG_STARTUP_BLOCKING,
+			HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH,
+			message,
+		);
+	}
+
+	private publishHostFault(flags: number, stage: number, message: string): void {
+		this.hostFaultMessage = message;
+		this.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, flags >>> 0);
+		this.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, stage >>> 0);
+	}
+
+	private clearHostFaultChannel(): void {
+		this.hostFaultMessage = null;
+		this.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, 0);
+		this.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_NONE);
+	}
+
 	private activateProgramSource(source: ProgramSource): void {
 		const luaSources = source === 'engine' ? this.engineLuaSources : this.cartLuaSources;
 		const canonicalization = source === 'engine' ? this.engineCanonicalization : this.cartCanonicalization;
@@ -1841,6 +1876,8 @@ export class Runtime {
 		this.resetVdpIngressState();
 		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
+		this.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, 0);
+		this.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_NONE);
 		this.memory.writeValue(IO_IRQ_FLAGS, 0);
 		this.memory.writeValue(IO_IRQ_ACK, 0);
 		this.memory.writeValue(IO_DMA_SRC, 0);
@@ -2000,6 +2037,7 @@ export class Runtime {
 	public async boot(): Promise<void> {
 		const gateToken = this.luaGate.begin({ blocking: true, tag: 'new_game' });
 		try {
+			this.clearHostFaultChannel();
 			runtimeIde.clearActiveDebuggerPause(this);
 			runtimeIde.clearRuntimeFault(this);
 			this.luaInitialized = false;

@@ -47,6 +47,10 @@ import {
 	DMA_STATUS_REJECTED,
 	GEO_CTRL_ABORT,
 	GEO_CTRL_START,
+	HOST_FAULT_FLAG_ACTIVE,
+	HOST_FAULT_FLAG_STARTUP_BLOCKING,
+	HOST_FAULT_STAGE_NONE,
+	HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH,
 	GEO_FAULT_ABORTED_BY_HOST,
 	GEO_FAULT_BAD_RECORD_ALIGNMENT,
 	GEO_FAULT_BAD_RECORD_FLAGS,
@@ -132,6 +136,8 @@ import {
 	IO_IRQ_FLAGS,
 	IO_SYS_BOOT_CART,
 	IO_SYS_CART_BOOTREADY,
+	IO_SYS_HOST_FAULT_FLAGS,
+	IO_SYS_HOST_FAULT_STAGE,
 	IO_VDP_DITHER,
 	IO_VDP_CMD,
 	IO_VDP_CMD_ARG_COUNT,
@@ -1116,6 +1122,16 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'easing', easingTable);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_boot_cart', IO_SYS_BOOT_CART);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cart_bootready', IO_SYS_CART_BOOTREADY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_host_fault_flags', IO_SYS_HOST_FAULT_FLAGS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_host_fault_stage', IO_SYS_HOST_FAULT_STAGE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_host_fault_flag_active', HOST_FAULT_FLAG_ACTIVE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_host_fault_flag_startup_blocking', HOST_FAULT_FLAG_STARTUP_BLOCKING);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_host_fault_stage_none', HOST_FAULT_STAGE_NONE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_host_fault_stage_startup_audio_refresh', HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_host_fault_message', createNativeFunction('sys_host_fault_message', (_args, out) => {
+		const message = runtime.getHostFaultMessage();
+		out.push(message === null ? null : runtime.internString(message));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cart_magic_addr', CART_ROM_MAGIC_ADDR);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cart_magic', CART_ROM_MAGIC);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cart_rom_size', CART_ROM_SIZE);

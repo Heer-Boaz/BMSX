@@ -21,6 +21,7 @@ import { CART_ROM_BASE_HEADER_SIZE, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, 
 import { inflate } from 'pako';
 import { AssetSourceStack, type RawAssetSource } from './asset_source';
 import { decodeRomToc } from './rom_toc';
+import { formatNumberAsHex } from '../utils/byte_hex_string';
 
 const utf8Decoder = new TextDecoder();
 
@@ -47,7 +48,7 @@ function hasCartHeader(buffer: Uint8Array): boolean {
 
 function assertSectionRange(offset: number, length: number, total: number, label: string): void {
 	if (offset + length > total) {
-		throw new Error(`Invalid ROM ${label} range: offset=${offset} len=${length} total=${total}.`);
+		throw new Error(`Invalid ROM ${label} range: offset=${formatNumberAsHex(offset)} len=${formatNumberAsHex(length)} total=${formatNumberAsHex(total)}.`);
 	}
 }
 

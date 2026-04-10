@@ -1,3 +1,5 @@
+import { formatNumberAsHex } from '../utils/byte_hex_string';
+
 export const VERSION = 0xA1;
 const utf8FatalDecoder = new TextDecoder('utf-8', { fatal: true });
 
@@ -510,7 +512,7 @@ export function decodeBinary(buf: Uint8Array, opts: DecodeOptions = {}) {
 	const reader = new BinReader(buf, opts);
 	const version = reader.readVersion();
 	if (version !== VERSION) {
-		throw new Error(`decodeBinary: unknown version 0x${version.toString(16)} (expected 0x${VERSION.toString(16)})`);
+		throw new Error(`decodeBinary: unknown version ${formatNumberAsHex(version)} (expected ${formatNumberAsHex(VERSION)})`);
 	}
 	const propNames = reader.readPropNames();
 	reader.setPropNames(propNames);

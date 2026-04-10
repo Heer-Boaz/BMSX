@@ -355,6 +355,8 @@ Runtime::Runtime(const RuntimeOptions& options)
 	// System flags
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
+	m_memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, valueNumber(0.0));
+	m_memory.writeValue(IO_SYS_HOST_FAULT_STAGE, valueNumber(static_cast<double>(HOST_FAULT_STAGE_NONE)));
 	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(0.0));
 	m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_SRC, valueNumber(0.0));
@@ -651,6 +653,7 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 	m_runtimeFailed = false;
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
+	m_hostFaultMessage.reset();
 	// The globals table alone is not enough to reset the Lua environment here.
 	// CPU::setProgram() rebuilds the slot-backed globals from the cached slot arrays,
 	// so stale values would otherwise get written straight back into the new globals table.
@@ -662,6 +665,8 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 	resetVdpIngressState();
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
+	m_memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, valueNumber(0.0));
+	m_memory.writeValue(IO_SYS_HOST_FAULT_STAGE, valueNumber(static_cast<double>(HOST_FAULT_STAGE_NONE)));
 	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(0.0));
 	m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_SRC, valueNumber(0.0));

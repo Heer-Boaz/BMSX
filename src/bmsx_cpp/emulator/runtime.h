@@ -439,6 +439,7 @@ private:
 	bool m_tickEnabled = true;
 	bool m_cartBootPrepared = false;
 	bool m_rebootRequested = false;
+	std::optional<std::string> m_hostFaultMessage;
 
 	// Frame state
 	FrameState m_frameState;

@@ -104,7 +104,7 @@ function getTocBuffer(rombin: Buffer | Uint8Array, header: CartRomHeader) {
 	const tocOffset = header.tocOffset;
 	const tocLength = header.tocLength;
 	if (tocOffset + tocLength > rombin.byteLength) {
-		console.error(`Invalid TOC offset or length: offset=${tocOffset} (${formatByteSize(tocOffset)}), length=${tocLength} (${formatByteSize(tocLength)})`);
+		console.error(`Invalid TOC offset or length: offset=${formatNumberAsHex(tocOffset)} (${formatByteSize(tocOffset)}), length=${formatNumberAsHex(tocLength)} (${formatByteSize(tocLength)})`);
 		process.exit(1);
 	}
 
@@ -114,10 +114,10 @@ function getTocBuffer(rombin: Buffer | Uint8Array, header: CartRomHeader) {
 		process.exit(1);
 	}
 	if (metaBuf.byteLength !== tocLength) {
-		console.error(`TOC length mismatch: expected ${tocLength} bytes, got ${metaBuf.byteLength} bytes`);
+		console.error(`TOC length mismatch: expected ${formatNumberAsHex(tocLength)} bytes, got ${formatNumberAsHex(metaBuf.byteLength)} bytes`);
 		process.exit(1);
 	}
-	console.log(`TOC buffer loaded: offset=${tocOffset} (${formatByteSize(tocOffset)}), length=${tocLength} (${formatByteSize(tocLength)})`);
+	console.log(`TOC buffer loaded: offset=${formatNumberAsHex(tocOffset)} (${formatByteSize(tocOffset)}), length=${formatNumberAsHex(tocLength)} (${formatByteSize(tocLength)})`);
 	return {
 		metaBuf,
 		metadataOffset: tocOffset,

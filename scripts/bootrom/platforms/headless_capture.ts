@@ -46,7 +46,6 @@ export class HeadlessCaptureCoordinator {
 	constructor(
 		private readonly host: HeadlessGameViewHost,
 		public readonly outputDir: string,
-		private readonly logger: (message: string) => void,
 		private readonly nowMs: () => number,
 	) {
 		this.lastPresentedFrame = host.getPresentedFrameSnapshot();
@@ -66,16 +65,12 @@ export class HeadlessCaptureCoordinator {
 		return !!frame && !this.capturedFrames.has(frame.frameIndex);
 	}
 
-	public captureNow(description: string, source: string): void {
+	public captureNow(_description: string, _source: string): void {
 		if (!this.canCaptureNow()) {
 			return;
 		}
 		const frame = this.lastPresentedFrame!;
-		this.captureFrame(frame, {
-			deadlineMs: this.nowMs(),
-			description,
-			source,
-		});
+		this.captureFrame(frame);
 	}
 
 	public async flushWrites(drainPendingCaptures = false): Promise<void> {
@@ -102,8 +97,8 @@ export class HeadlessCaptureCoordinator {
 		let writeIndex = 0;
 		for (let readIndex = 0; readIndex < this.pending.length; readIndex += 1) {
 			const pending = this.pending[readIndex]!;
-			if (this.shouldCapture(pending, frame)) {
-				this.captureFrame(frame, pending);
+			if (this.shouldCapture(pending)) {
+				this.captureFrame(frame);
 				continue;
 			}
 			this.pending[writeIndex] = pending;
@@ -121,7 +116,7 @@ export class HeadlessCaptureCoordinator {
 		for (let readIndex = 0; readIndex < this.pending.length; readIndex += 1) {
 			const pending = this.pending[readIndex]!;
 			if (this.nowMs() >= pending.deadlineMs) {
-				this.captureFrame(frame, pending);
+				this.captureFrame(frame);
 				continue;
 			}
 			this.pending[writeIndex] = pending;
@@ -134,7 +129,7 @@ export class HeadlessCaptureCoordinator {
 		return this.nowMs() >= capture.deadlineMs;
 	}
 
-	private captureFrame(frame: HeadlessPresentedFrame, capture: PendingHeadlessCapture): void {
+	private captureFrame(frame: HeadlessPresentedFrame): void {
 		if (this.capturedFrames.has(frame.frameIndex)) {
 			return;
 		}

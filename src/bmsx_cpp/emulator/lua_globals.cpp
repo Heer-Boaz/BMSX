@@ -1414,6 +1414,19 @@ void Runtime::setupBuiltins() {
 	setGlobal("easing", valueTable(easingTable));
 	setGlobal("sys_boot_cart", valueNumber(static_cast<double>(IO_SYS_BOOT_CART)));
 	setGlobal("sys_cart_bootready", valueNumber(static_cast<double>(IO_SYS_CART_BOOTREADY)));
+	setGlobal("sys_host_fault_flags", valueNumber(static_cast<double>(IO_SYS_HOST_FAULT_FLAGS)));
+	setGlobal("sys_host_fault_stage", valueNumber(static_cast<double>(IO_SYS_HOST_FAULT_STAGE)));
+	setGlobal("sys_host_fault_flag_active", valueNumber(static_cast<double>(HOST_FAULT_FLAG_ACTIVE)));
+	setGlobal("sys_host_fault_flag_startup_blocking", valueNumber(static_cast<double>(HOST_FAULT_FLAG_STARTUP_BLOCKING)));
+	setGlobal("sys_host_fault_stage_none", valueNumber(static_cast<double>(HOST_FAULT_STAGE_NONE)));
+	setGlobal("sys_host_fault_stage_startup_audio_refresh", valueNumber(static_cast<double>(HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH)));
+	setGlobal("sys_host_fault_message", m_cpu.createNativeFunction("sys_host_fault_message", [this](NativeArgsView, NativeResults& out) {
+		if (!m_hostFaultMessage.has_value()) {
+			out.push_back(valueNil());
+			return;
+		}
+		out.push_back(valueString(m_cpu.internString(*m_hostFaultMessage)));
+	}));
 	setGlobal("sys_cart_magic_addr", valueNumber(static_cast<double>(CART_ROM_MAGIC_ADDR)));
 	setGlobal("sys_cart_magic", valueNumber(static_cast<double>(CART_ROM_MAGIC)));
 	const uint32_t maxAssets = (ASSET_TABLE_SIZE - ASSET_TABLE_HEADER_SIZE) / ASSET_TABLE_ENTRY_SIZE;

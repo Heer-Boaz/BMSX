@@ -1,6 +1,7 @@
 // Centralized low-level WebGL helper & resource creation utilities.
 // Moved out of webgl_backend.ts to keep backend focused on orchestration.
 import { $ } from '../../../core/engine_core';
+import { formatNumberAsHex } from '../../../utils/byte_hex_string';
 import { TextureParams } from '../pipeline_interfaces';
 import { TEXTURE_UNIT_SHADOW_MAP, TEXTURE_UNIT_UPLOAD } from './webgl.constants';
 
@@ -147,7 +148,7 @@ export function glCreateShadowMapTextureAndFramebuffer(
 
 	const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
 	if (status !== gl.FRAMEBUFFER_COMPLETE) {
-		throw new Error(`Shadow FBO incomplete: 0x${status.toString(16)}`);
+		throw new Error(`Shadow FBO incomplete: ${formatNumberAsHex(status)}`);
 	}
 
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);

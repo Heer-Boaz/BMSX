@@ -1,4 +1,4 @@
-import { PieceTreeBuffer } from '../src/bmsx/emulator/ide/piece_tree_buffer';
+import { PieceTreeBuffer } from '../src/bmsx/ide/text/piece_tree_buffer';
 
 type MutablePos = { row: number; column: number };
 
@@ -106,7 +106,7 @@ function verifyBuffer(buf: PieceTreeBuffer, baseline: string, rng: XorShift32, t
 		const offset = rng.nextInt(baseline.length + 1);
 		buf.positionAt(offset, tmpPos);
 		const resolved = buf.offsetAt(tmpPos.row, tmpPos.column);
-		assert(resolved === offset, `offsetAt/positionAt mismatch at offset=${offset}`);
+		assert(resolved === offset, `offsetAt/positionAt mismatch at offset=${formatNumberAsHex(offset)} row=${tmpPos.row} column=${tmpPos.column} (got ${formatNumberAsHex(resolved)})`);
 	}
 
 	if (expectedLineCount > 1) {
@@ -201,5 +201,9 @@ if (args.includes('--bench')) {
 	runBench();
 } else {
 	runSanity();
+}
+
+function formatNumberAsHex(resolved: any) {
+	throw new Error('Function not implemented.');
 }
 

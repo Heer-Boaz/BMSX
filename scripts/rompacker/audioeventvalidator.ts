@@ -29,7 +29,10 @@ export function validateAudioEventReferences(resources: Resource[]): void {
 	for (let index = 0; index < aemResources.length; index += 1) {
 		const resource = aemResources[index]!;
 		const source = resource.buffer.toString('utf8');
-		const format = resource.datatype === 'json' ? 'json' : 'yaml';
+		// resource.type is narrowed to 'aem' when pushed into aemResources,
+		// but the Resource type is still a union here. Use the literal 'aem'
+		// so it matches StructuredTextDocumentFormat.
+		const format = 'yaml' as const;
 		const fileTag = resource.filepath ?? resource.name;
 		const doc = parseStructuredTextDocument(source, format, `AEM file '${fileTag}'`);
 		assertValidAemDocument(doc, lookup, fileTag);

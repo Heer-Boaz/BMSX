@@ -8,6 +8,7 @@
  */
 import { $ } from '../core/engine_core';
 import type { PlatformHIDDevice, PlatformHIDInputReportEvent } from '../platform';
+import { formatNumberAsHex } from '../utils/byte_hex_string';
 
 
 const SONY_VID = 0x054C;
@@ -177,7 +178,7 @@ export class DualSenseHID {
 			// For multiple or zero candidates, prompt the user with appropriate filters
 			const promptFilters = ids ? ids : undefined;
 			if (candidates.length > 1) {
-				console.info(`Multiple HID devices match ${ids ? `VID/PID (${ids.vendorId.toString(16)}:${ids.productId.toString(16)})` : 'accepted Sony devices'}. Prompting user to select.`);
+				console.info(`Multiple HID devices match ${ids ? `VID/PID (${formatNumberAsHex(ids.vendorId)}:${formatNumberAsHex(ids.productId)})` : 'accepted Sony devices'}. Prompting user to select.`);
 			} else {
 				console.info(`No matching HID device found in known devices. Prompting user to select.`);
 			}
@@ -202,12 +203,12 @@ export class DualSenseHID {
 			console.info('Did not find any suitable controller device.');
 			console.info('Known devices:', known.map(d => {
 				const serial = (d as { serialNumber?: string }).serialNumber || 'none';
-				return `${d.productName} (${d.vendorId.toString(16)}:${d.productId.toString(16)}) serial: ${serial}`;
+				return `${d.productName} (${formatNumberAsHex(d.vendorId)}:${formatNumberAsHex(d.productId)}) serial: ${serial}`;
 			}));
 			return; // No device found
 		}
 
-		console.info(`Found Sony HID device: ${this.device.productName} (${this.device.vendorId.toString(16)}:${this.device.productId.toString(16)}) serial: ${(this.device as { serialNumber?: string }).serialNumber || 'none'}`);
+		console.info(`Found Sony HID device: ${this.device.productName} (${formatNumberAsHex(this.device.vendorId)}:${formatNumberAsHex(this.device.productId)}) serial: ${(this.device as { serialNumber?: string }).serialNumber || 'none'}`);
 
 		this.kind = this.detectPadKind(this.device);
 		console.info(`Detected Sony HID device kind: ${this.kind ?? 'unknown'}`);

@@ -36,6 +36,8 @@ import {
 	IO_IRQ_FLAGS,
 	IO_SLOT_COUNT,
 	IO_SYS_CART_BOOTREADY,
+	IO_SYS_HOST_FAULT_FLAGS,
+	IO_SYS_HOST_FAULT_STAGE,
 	IO_VDP_RD_DATA,
 	IO_VDP_RD_STATUS,
 	IO_VDP_STATUS,
@@ -1240,6 +1242,8 @@ export class Memory {
 
 	private isLuaReadOnlyIoAddress(addr: number): boolean {
 		return addr === IO_SYS_CART_BOOTREADY
+			|| addr === IO_SYS_HOST_FAULT_FLAGS
+			|| addr === IO_SYS_HOST_FAULT_STAGE
 			|| addr === IO_IRQ_FLAGS
 			|| addr === IO_DMA_STATUS
 			|| addr === IO_DMA_WRITTEN

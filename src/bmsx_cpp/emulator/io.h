@@ -27,9 +27,11 @@ constexpr int IO_SYS_BASE_INDEX = 0;
 // System flag: should boot cartridge?
 constexpr int IO_SYS_BOOT_CART_INDEX = IO_SYS_BASE_INDEX;
 constexpr int IO_SYS_CART_BOOTREADY_INDEX = IO_SYS_BASE_INDEX + 1;
+constexpr int IO_SYS_HOST_FAULT_FLAGS_INDEX = IO_SYS_BASE_INDEX + 2;
+constexpr int IO_SYS_HOST_FAULT_STAGE_INDEX = IO_SYS_BASE_INDEX + 3;
 
 // Number of system flag slots
-constexpr int IO_SYS_SIZE = 2;
+constexpr int IO_SYS_SIZE = 4;
 constexpr int IO_VDP_BASE_INDEX = IO_SYS_BASE_INDEX + IO_SYS_SIZE;
 constexpr int IO_VDP_DITHER_INDEX = IO_VDP_BASE_INDEX;
 constexpr int IO_VDP_PRIMARY_ATLAS_ID_INDEX = IO_VDP_BASE_INDEX + 1;
@@ -110,6 +112,8 @@ constexpr uint32_t IO_PAYLOAD_BUFFER_BASE = IO_BASE + IO_PAYLOAD_BUFFER_BASE_IND
 constexpr uint32_t IO_SYS_BASE = IO_BASE + IO_SYS_BASE_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_SYS_BOOT_CART = IO_BASE + IO_SYS_BOOT_CART_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_SYS_CART_BOOTREADY = IO_BASE + IO_SYS_CART_BOOTREADY_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_SYS_HOST_FAULT_FLAGS = IO_BASE + IO_SYS_HOST_FAULT_FLAGS_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_SYS_HOST_FAULT_STAGE = IO_BASE + IO_SYS_HOST_FAULT_STAGE_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_VDP_BASE = IO_BASE + IO_VDP_BASE_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_VDP_DITHER = IO_BASE + IO_VDP_DITHER_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_VDP_PRIMARY_ATLAS_ID = IO_BASE + IO_VDP_PRIMARY_ATLAS_ID_INDEX * IO_WORD_SIZE;
@@ -194,6 +198,11 @@ constexpr uint32_t IMG_STATUS_DONE = 1 << 1;
 constexpr uint32_t IMG_STATUS_ERROR = 1 << 2;
 constexpr uint32_t IMG_STATUS_CLIPPED = 1 << 3;
 constexpr uint32_t IMG_STATUS_REJECTED = 1 << 4;
+
+constexpr uint32_t HOST_FAULT_FLAG_ACTIVE = 1u << 0u;
+constexpr uint32_t HOST_FAULT_FLAG_STARTUP_BLOCKING = 1u << 1u;
+constexpr uint32_t HOST_FAULT_STAGE_NONE = 0u;
+constexpr uint32_t HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH = 1u;
 
 constexpr uint32_t GEO_CTRL_START = 1 << 0;
 constexpr uint32_t GEO_CTRL_ABORT = 1 << 1;

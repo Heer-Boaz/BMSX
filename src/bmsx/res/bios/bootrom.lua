@@ -2042,6 +2042,19 @@ local collect_cart_precheck_errors<const> = function(cart_header, cart_manifest)
 		return {}
 	end
 	local errors<const> = collect_cart_manifest_errors(cart_manifest)
+	local host_fault_flags<const> = mem[sys_host_fault_flags]
+	if (host_fault_flags & sys_host_fault_flag_active) ~= 0 and (host_fault_flags & sys_host_fault_flag_startup_blocking) ~= 0 then
+		local host_fault_stage<const> = mem[sys_host_fault_stage]
+		if host_fault_stage == sys_host_fault_stage_startup_audio_refresh then
+			errors[#errors + 1] = 'HOST STARTUP AUDIO REFRESH FAILED'
+		else
+			errors[#errors + 1] = 'HOST STARTUP FAULT'
+		end
+		local host_fault_message<const> = sys_host_fault_message()
+		if host_fault_message ~= nil and #host_fault_message > 0 then
+			errors[#errors + 1] = host_fault_message
+		end
+	end
 	if not bitcast_selftest_ok then
 		errors[#errors + 1] = 'BITCAST BUILTIN SELFTEST FAILED'
 		errors[#errors + 1] = bitcast_selftest_error or 'BITCAST BUILTIN CONTRACT FAILURE'
@@ -2334,7 +2347,7 @@ local build_boot_content_lines<const> = function(info, cart_present, cursor, ela
 		append_blank_line(lines)
 		for idx, entry in ipairs(info.cart_errors) do
 			local text<const> = type(entry) == 'string' and entry or tostring(entry)
-			local prefix<const> = (idx == 1) and '- ' or '  '
+			local prefix<const> = '' -- (idx == 1) and '- ' or '  '
 			local error_lines<const> = wrap_text_lines(text, line_slots, prefix, '  ')
 			for i = 1, #error_lines do
 				lines[#lines + 1] = { text = error_lines[i], color = color_warn }

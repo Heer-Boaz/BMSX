@@ -550,7 +550,7 @@ function flipBoundingBoxVertically(box: RectBounds, height: number): RectBounds 
 	};
 }
 
-function generateFlippedBoundingBox(extractedBoundingBox: RectBounds, imgW: number, imgH: number): BoundingBoxPrecalc {
+function generateFlippedBoundingBox(extractedBoundingBox: RectBounds, imgW: number, imgH: number): CompleteBoundingBoxPrecalc {
 	const originalBoundingBox = extractedBoundingBox;
 	const horizontalFlipped = flipBoundingBoxHorizontally(originalBoundingBox, imgW);
 	const verticalFlipped = flipBoundingBoxVertically(originalBoundingBox, imgH);
@@ -581,15 +581,6 @@ function computePolyBounds(poly: Polygon): RectBounds {
 
 function encodeFix16(value: number): number {
 	return Math.round(value * 65536);
-}
-
-function createCollisionDescriptor(kind: number, dataCount: number, dataOffset: number, boundsOffset: number): Buffer {
-	const descriptor = Buffer.alloc(16);
-	descriptor.writeUInt32LE(kind >>> 0, 0);
-	descriptor.writeUInt32LE(dataCount >>> 0, 4);
-	descriptor.writeUInt32LE(dataOffset >>> 0, 8);
-	descriptor.writeUInt32LE(boundsOffset >>> 0, 12);
-	return descriptor;
 }
 
 function buildCollisionBin(bounds: BoundingBoxPrecalc, hitpolygons: HitPolygonsPrecalc | undefined): Buffer {

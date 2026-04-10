@@ -193,10 +193,10 @@ void OpenGLES2Backend::updateTextureRegion(TextureHandle handle, const u8* data,
 	glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, uploadData);
 	invalidateTextureBindingCache();
 	if (kGLES2VerboseLog) {
-	std::fprintf(stderr,
-					"[BMSX][GLES2] updateTextureRegion id=%u size=%dx%d offset=%d,%d data=%p\n",
-					static_cast<unsigned>(tex->id), width, height, x, y,
-					static_cast<const void*>(data));
+		std::fprintf(stderr,
+						"[BMSX][GLES2] updateTextureRegion id=%u size=%dx%d offset=%d,%d data=%p\n",
+						static_cast<unsigned>(tex->id), width, height, x, y,
+						static_cast<const void*>(data));
 	}
 }
 

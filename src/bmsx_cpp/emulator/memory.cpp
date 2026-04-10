@@ -961,6 +961,8 @@ bool Memory::isRangeWithinRegion(uint32_t addr, size_t length, uint32_t base, ui
 
 bool Memory::isLuaReadOnlyIoAddress(uint32_t addr) const {
 	return addr == IO_SYS_CART_BOOTREADY
+		|| addr == IO_SYS_HOST_FAULT_FLAGS
+		|| addr == IO_SYS_HOST_FAULT_STAGE
 		|| addr == IO_IRQ_FLAGS
 		|| addr == IO_DMA_STATUS
 		|| addr == IO_DMA_WRITTEN

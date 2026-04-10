@@ -1,4 +1,5 @@
 import { buildBinaryPropTable, encodeBinaryWithPropTable } from '../serializer/binencoder';
+import { formatNumberAsHex } from '../utils/byte_hex_string';
 
 export const ROM_METADATA_MAGIC = 0x44544d42; // 'BMTD' little-endian
 export const ROM_METADATA_VERSION = 1;
@@ -74,7 +75,7 @@ export function parseRomMetadataSection(buffer: Uint8Array): { version: number; 
 	const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 	const magic = view.getUint32(0, true);
 	if (magic !== ROM_METADATA_MAGIC) {
-		throw new Error(`parseRomMetadataSection: bad magic 0x${magic.toString(16)}`);
+		throw new Error(`parseRomMetadataSection: bad magic ${formatNumberAsHex(magic)}`);
 	}
 	const version = view.getUint32(4, true);
 	if (version !== ROM_METADATA_VERSION) {
