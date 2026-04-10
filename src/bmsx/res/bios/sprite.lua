@@ -87,6 +87,7 @@ end
 function spriteobject:gfx(id, meta)
 	self.imgid = id
 	self.sprite_component.imgid = id
+	self.sprite_component.image_handle = id ~= nil and assets.img[id].handle or 0
 	if id == nil then
 		return
 	end
@@ -119,7 +120,7 @@ function spriteobject:draw()
 		sys_vdp_cmd_blit,
 		 13,
 		0,
-		assets.img[sc.imgid].handle,
+		sc.image_handle,
 		self.x + offset.x,
 		self.y + offset.y,
 		self.z + offset.z,

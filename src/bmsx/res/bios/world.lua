@@ -33,24 +33,10 @@ local registry<const> = require('registry')
 
 local tickgroup<const> = ecs.tickgroup
 local world_instance
+local world_id_max<const> = 0x7fffffff
 
 local world_class<const> = {}
 world_class.__index = world_class
-
-local tickgroup_names<const> = {}
-for name, value in pairs(tickgroup) do
-	tickgroup_names[value] = name
-end
-
-local phase_order<const> = {
-	tickgroup.input,
-	tickgroup.actioneffect,
-	tickgroup.moderesolution,
-	tickgroup.physics,
-	tickgroup.animation,
-	tickgroup.presentation,
-	tickgroup.eventflush,
-}
 
 local active_component_bucket_types<const> = {
 	'actioneffectcomponent',
@@ -69,7 +55,6 @@ local active_component_bucket_types<const> = {
 	'textcomponent',
 	'tilecollisioncomponent',
 	'timelinecomponent',
-	'transformcomponent',
 }
 
 local active_component_buckets_mt<const> = {
@@ -322,13 +307,6 @@ local add_active_object<const> = function(obj, space)
 	obj._active_object_tick_order_index = tick_index
 end
 
-local add_active_fsm_object<const> = function(obj, space)
-	local objects<const> = space.active_objects_with_fsm_update
-	local index<const> = #objects + 1
-	objects[index] = obj
-	obj._active_fsm_object_index = index
-end
-
 local remove_active_object<const> = function(obj, space)
 	local objects<const> = space.active_objects
 	local index<const> = obj._active_object_index
@@ -352,19 +330,6 @@ local remove_active_object<const> = function(obj, space)
 	tick_bucket[tick_last_index] = nil
 	obj._active_object_tick_order = nil
 	obj._active_object_tick_order_index = nil
-end
-
-local remove_active_fsm_object<const> = function(obj, space)
-	local objects<const> = space.active_objects_with_fsm_update
-	local index<const> = obj._active_fsm_object_index
-	local last_index<const> = #objects
-	if index < last_index then
-		local moved<const> = objects[last_index]
-		objects[index] = moved
-		moved._active_fsm_object_index = index
-	end
-	objects[last_index] = nil
-	obj._active_fsm_object_index = nil
 end
 
 local add_active_component<const> = function(comp, space)
@@ -401,8 +366,6 @@ function world_class.new()
 	self.active_space_id = 'main'
 	self.active_space = nil
 	self.systems = ecs.ecsystemmanager.new()
-	self.current_phase = nil
-	self.paused = false
 	self.gamewidth = display_width()
 	self.gameheight = display_height()
 	-- id counter for unique id generation
@@ -410,6 +373,26 @@ function world_class.new()
 	self:add_space('main')
 	self.active_space = self._spaces.main
 	return self
+end
+
+function world_class:next_id(type_name)
+	local baseid<const> = type_name
+	local uniquenumber = self.idcounter + 1
+	if uniquenumber >= world_id_max then
+		uniquenumber = 1
+	end
+
+	local result = baseid .. '_' .. tostring(uniquenumber)
+	while self._by_id[result] ~= nil or self._subsystems_by_id[result] ~= nil do
+		uniquenumber = uniquenumber + 1
+		if uniquenumber >= world_id_max then
+			uniquenumber = 1
+		end
+		result = baseid .. '_' .. tostring(uniquenumber)
+	end
+
+	self.idcounter = uniquenumber
+	return result
 end
 
 -- world:add_space(space_id)
@@ -423,7 +406,6 @@ function world_class:add_space(space_id)
 		id = space_id,
 		objects = {},
 		active_objects = {},
-		active_objects_with_fsm_update = {},
 		active_objects_by_tick_order = {
 			early = {},
 			normal = {},
@@ -466,14 +448,11 @@ function world_class:set_object_space(obj, space_id)
 	if current_space_id ~= nil then
 		local current_space<const> = self._spaces[current_space_id]
 		if obj.active then
-			if obj._active_fsm_object_index ~= nil then
-				remove_active_fsm_object(obj, current_space)
-			end
-			remove_active_object(obj, current_space)
 			local components<const> = obj.components
 			for i = 1, #components do
 				remove_active_component(components[i], current_space)
 			end
+			remove_active_object(obj, current_space)
 		end
 		current_space.by_id[object_id] = nil
 		remove_space_object(obj, current_space)
@@ -485,9 +464,6 @@ function world_class:set_object_space(obj, space_id)
 	obj.space_id = space_id
 	if obj.active then
 		add_active_object(obj, target_space)
-		if obj.sc.active_frame_work then
-			add_active_fsm_object(obj, target_space)
-		end
 		local components<const> = obj.components
 		for i = 1, #components do
 			add_active_component(components[i], target_space)
@@ -499,9 +475,6 @@ end
 function world_class:activate_object(obj)
 	local space<const> = self._spaces[obj.space_id]
 	add_active_object(obj, space)
-	if obj.sc.active_frame_work then
-		add_active_fsm_object(obj, space)
-	end
 	local components<const> = obj.components
 	for i = 1, #components do
 		add_active_component(components[i], space)
@@ -514,24 +487,7 @@ function world_class:deactivate_object(obj)
 	for i = 1, #components do
 		remove_active_component(components[i], space)
 	end
-	if obj._active_fsm_object_index ~= nil then
-		remove_active_fsm_object(obj, space)
-	end
 	remove_active_object(obj, space)
-end
-
-function world_class:sync_object_fsm_frame_work(obj)
-	local space<const> = self._spaces[obj.space_id]
-	if not obj.active then
-		return
-	end
-	if obj.sc.active_frame_work then
-		if obj._active_fsm_object_index == nil then
-			add_active_fsm_object(obj, space)
-		end
-	elseif obj._active_fsm_object_index ~= nil then
-		remove_active_fsm_object(obj, space)
-	end
 end
 
 function world_class:activate_component(comp)
@@ -787,17 +743,12 @@ function world_class:find_any_by_tag(tag)
 end
 
 function world_class:update()
-	self.current_phase = tickgroup.input
-	self.systems:update_phase(tickgroup.input)
-	self.current_phase = tickgroup.actioneffect
-	self.systems:update_phase(tickgroup.actioneffect)
-	self.current_phase = tickgroup.moderesolution
-	self.systems:update_phase(tickgroup.moderesolution)
-	self.current_phase = tickgroup.physics
-	self.systems:update_phase(tickgroup.physics)
-	self.current_phase = tickgroup.animation
-	self.systems:update_phase(tickgroup.animation)
-	self.current_phase = nil
+	local dt_ms<const> = $.get_frame_delta_ms()
+	self.systems:update_phase(tickgroup.input, dt_ms)
+	self.systems:update_phase(tickgroup.actioneffect, dt_ms)
+	self.systems:update_phase(tickgroup.moderesolution, dt_ms)
+	self.systems:update_phase(tickgroup.physics, dt_ms)
+	self.systems:update_phase(tickgroup.animation, dt_ms)
 
 	local pending_objects<const> = self._pending_object_disposals
 	for i = 1, #pending_objects do
@@ -828,11 +779,9 @@ function world_class:update()
 end
 
 function world_class:draw()
-	self.current_phase = tickgroup.presentation
-	self.systems:update_phase(tickgroup.presentation)
-	self.current_phase = tickgroup.eventflush
-	self.systems:update_phase(tickgroup.eventflush)
-	self.current_phase = nil
+	local dt_ms<const> = $.get_frame_delta_ms()
+	self.systems:update_phase(tickgroup.presentation, dt_ms)
+	self.systems:update_phase(tickgroup.eventflush, dt_ms)
 end
 
 function world_class:clear()

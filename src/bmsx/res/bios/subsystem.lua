@@ -12,58 +12,16 @@ local subsystemtimelines<const> = subsystem_timeline_module.subsystemtimelines
 local subsystem<const> = {}
 subsystem.__index = subsystem
 
-local subsystem_group_lookup<const> = {}
-for _, value in pairs(tickgroup) do
-	subsystem_group_lookup[value] = true
-end
-
-local subsystem_id_max<const> = 0x7fffffff
-
-local generate_subsystem_id<const> = function(type_name)
-	local baseid<const> = type_name or 'subsystem'
-	local uniquenumber = world_instance.idcounter + 1
-	if uniquenumber >= subsystem_id_max then
-		uniquenumber = 1
-	end
-
-	local result = baseid .. '_' .. tostring(uniquenumber)
-	while world_instance._by_id[result] ~= nil or world_instance._subsystems_by_id[result] ~= nil do
-		uniquenumber = uniquenumber + 1
-		if uniquenumber >= subsystem_id_max then
-			uniquenumber = 1
-		end
-		result = baseid .. '_' .. tostring(uniquenumber)
-	end
-
-	world_instance.idcounter = uniquenumber
-	return result
-end
-
-local resolve_update_group<const> = function(owner)
-	local group<const> = owner.update_group
-	if group == nil then
-		return tickgroup.moderesolution
-	end
-	if subsystem_group_lookup[group] then
-		return group
-	end
-	error('[subsystem] invalid update_group "' .. tostring(group) .. '" on subsystem "' .. tostring(owner.id) .. '".')
-end
-
 function subsystem.new(opts)
 	opts = opts or {}
 	local self<const> = setmetatable({}, subsystem)
 	self.type_name = opts.type_name or 'subsystem'
-	self.id = opts.id or generate_subsystem_id(self.type_name)
+	self.id = opts.id or world_instance:next_id(self.type_name)
 	self.active = false
 	self.fsm_dispatch_enabled = false
 	self.visible = true
 	if opts.visible ~= nil then
 		self.visible = opts.visible
-	end
-	self.presentation_enabled = true
-	if opts.presentation_enabled ~= nil then
-		self.presentation_enabled = opts.presentation_enabled
 	end
 	self.player_index = opts.player_index
 	self.tags = opts.tags or {}
@@ -74,9 +32,9 @@ function subsystem.new(opts)
 	self.sc = opts.sc or fsm.statemachinecontroller.new({ target = self, definition = definition, fsm_id = opts.fsm_id })
 	self.timelines = subsystemtimelines.new(self)
 	self.update_group = opts.update_group or tickgroup.moderesolution
-	self.update_priority = opts.update_priority or 0
-	self.animation_priority = opts.animation_priority or self.update_priority
-	self.presentation_priority = opts.presentation_priority or 0
+	self.update_priority = opts.update_priority
+	self.animation_priority = opts.animation_priority
+	self.presentation_priority = opts.presentation_priority
 	return self
 end
 
@@ -194,49 +152,14 @@ function subsystem:advance_timeline(id)
 	return self.timelines:advance(id)
 end
 
-function subsystem:set_update_schedule(group, priority)
-	self.update_group = group or self.update_group
-	if priority ~= nil then
-		self.update_priority = priority
-	end
-	if world_instance:get_subsystem(self.id) == self then
-		world_instance:rebind_subsystem_systems(self)
-	end
-end
-
-function subsystem:set_animation_priority(priority)
-	if priority == nil then
-		return
-	end
-	self.animation_priority = priority
-	if world_instance:get_subsystem(self.id) == self then
-		world_instance:rebind_subsystem_systems(self)
-	end
-end
-
-function subsystem:set_presentation_priority(priority)
-	if priority == nil then
-		return
-	end
-	self.presentation_priority = priority
-	if world_instance:get_subsystem(self.id) == self then
-		world_instance:rebind_subsystem_systems(self)
-	end
-end
-
-function subsystem:set_presentation_enabled(enabled)
-	self.presentation_enabled = enabled
-	if world_instance:get_subsystem(self.id) == self then
-		world_instance:rebind_subsystem_systems(self)
-	end
-end
-
 local subsystemupdatesystem<const> = {}
 subsystemupdatesystem.__index = subsystemupdatesystem
 setmetatable(subsystemupdatesystem, { __index = ecsystem })
 
 function subsystemupdatesystem.new(owner)
-	local self<const> = setmetatable(ecsystem.new(resolve_update_group(owner), owner.update_priority or 0), subsystemupdatesystem)
+	-- Subsystem scheduling lives on the subsystem itself. Keep bind-time system
+	-- creation dumb and direct instead of re-resolving fallback policy here.
+	local self<const> = setmetatable(ecsystem.new(owner.update_group, owner.update_priority), subsystemupdatesystem)
 	self.owner = owner
 	self.__ecs_id = 'subsystem_update:' .. owner.id
 	self.name = 'subsystem_update:' .. owner.id
@@ -258,11 +181,7 @@ subsystemanimationsystem.__index = subsystemanimationsystem
 setmetatable(subsystemanimationsystem, { __index = ecsystem })
 
 function subsystemanimationsystem.new(owner)
-	local priority = owner.animation_priority
-	if priority == nil then
-		priority = owner.update_priority or 0
-	end
-	local self<const> = setmetatable(ecsystem.new(tickgroup.animation, priority), subsystemanimationsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.animation, owner.animation_priority), subsystemanimationsystem)
 	self.owner = owner
 	self.__ecs_id = 'subsystem_animation:' .. owner.id
 	self.name = 'subsystem_animation:' .. owner.id
@@ -284,7 +203,7 @@ subsystempresentationsystem.__index = subsystempresentationsystem
 setmetatable(subsystempresentationsystem, { __index = ecsystem })
 
 function subsystempresentationsystem.new(owner)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, owner.presentation_priority or 0), subsystempresentationsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, owner.presentation_priority), subsystempresentationsystem)
 	self.owner = owner
 	self.__ecs_id = 'subsystem_presentation:' .. owner.id
 	self.name = 'subsystem_presentation:' .. owner.id
@@ -302,10 +221,7 @@ function subsystempresentationsystem:update()
 end
 
 local create_presentation_system<const> = function(owner)
-	if not owner.presentation_enabled then
-		return nil
-	end
-	if owner.draw == subsystem.draw then
+	if owner.draw == nil then
 		return nil
 	end
 	return subsystempresentationsystem.new(owner)

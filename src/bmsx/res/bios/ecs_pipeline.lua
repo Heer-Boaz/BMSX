@@ -52,7 +52,7 @@ function ecspipelineregistry:build(world_instance, nodes)
 		resolved[#resolved + 1] = {
 			ref = n.ref,
 			group = n.group or d.group,
-			priority = create_priority or 0,
+			priority = create_priority,
 			create_priority = create_priority,
 			index = i,
 		}

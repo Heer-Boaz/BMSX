@@ -131,17 +131,12 @@ function worldobject.new(opts)
 	opts = opts or {}
 	local self<const> = setmetatable({}, worldobject)
 	self.type_name = opts.type_name or 'worldobject'
-	self.id = opts.id or self:generate_id()
-	self.x = opts.x or 0
-	self.y = opts.y or 0
-	self.z = opts.z or 0
+	self.id = opts.id or world_instance:next_id(self.type_name)
+	self:set_pos(opts.x, opts.y, opts.z)
 	self.sx = opts.sx or 0
 	self.sy = opts.sy or 0
 	self.sz = opts.sz or 0
-	self.visible = true
-	if opts.visible ~= nil then
-		self.visible = opts.visible
-	end
+	self.visible = opts.visible or true
 	self.active = false
 	self.tick_order = opts.tick_order or 'normal'
 	self.fsm_dispatch_enabled = false
@@ -151,11 +146,12 @@ function worldobject.new(opts)
 	self.component_map = {}
 	self.space_id = opts.space_id
 	self.dispose_flag = false
-	self._active_fsm_object_index = nil
 	self.events = eventemitter.events_of(self)
 	local definition<const> = opts.definition or (opts.fsm_id and fsmlibrary.get(opts.fsm_id))
 	self.sc = opts.sc or fsm.statemachinecontroller.new({ target = self, definition = definition, fsm_id = opts.fsm_id })
 	self.btreecontexts = {}
+	self.btree_ids = {}
+	self.transform_component = nil
 	self._collision_primary_sprite = nil
 	self._collision_primary_collider = nil
 	self._collision_driving_sprites = {}
@@ -163,26 +159,6 @@ function worldobject.new(opts)
 	self.timelines = components.timelinecomponent.new({})
 	self:add_component(self.timelines)
 	return self
-end
-
-function worldobject:generate_id()
-	local baseid<const> = self.type_name
-	local uniquenumber = world_instance.idcounter + 1
-	if uniquenumber >= world_id_max then
-		uniquenumber = 1
-	end
-
-	local result = baseid .. '_' .. tostring(uniquenumber)
-	while world_instance._by_id[result] ~= nil or world_instance._subsystems_by_id[result] ~= nil do
-		uniquenumber = uniquenumber + 1
-		if uniquenumber >= world_id_max then
-			uniquenumber = 1
-		end
-		result = baseid .. '_' .. tostring(uniquenumber)
-	end
-
-	world_instance.idcounter = uniquenumber
-	return result
 end
 
 -- set_pos(x, y, z?): sets world position. Each component falls back to the
@@ -208,12 +184,6 @@ end
 --     end)
 function worldobject:set_space(space_id)
 	return world_instance:set_object_space(self, space_id)
-end
-
-function worldobject:move_by(dx, dy, dz)
-	self.x = self.x + (dx or 0)
-	self.y = self.y + (dy or 0)
-	self.z = self.z + (dz or 0)
 end
 
 -- add_component(comp): attach a component to this object.
@@ -244,6 +214,9 @@ function worldobject:add_component(comp)
 	end
 	if comp.type_name == 'timelinecomponent' then
 		self.timelines = comp
+	end
+	if comp.type_name == 'transformcomponent' then
+		self.transform_component = comp
 	end
 	if comp.type_name == 'actioneffectcomponent' then
 		self.actioneffects = comp
@@ -376,6 +349,9 @@ function worldobject:remove_component_instance(comp)
 	if comp == self.collider then
 		self.collider = nil
 	end
+	if comp == self.transform_component then
+		self.transform_component = nil
+	end
 	if collision_linked_component_types[comp.type_name] then
 		rebuild_collision_sprite_links(self)
 	end
@@ -458,10 +434,6 @@ function worldobject:activate()
 	world_instance:activate_object(self)
 	self:bind()
 	self.sc:start()
-end
-
-function worldobject:sync_fsm_frame_work_active()
-	world_instance:sync_object_fsm_frame_work(self)
 end
 
 -- bind(): override in subclasses to register event subscriptions.
@@ -576,9 +548,8 @@ function worldobject:advance_timeline(id)
 end
 
 function worldobject:add_btree(bt_id)
-	if self.btreecontexts[bt_id] then
-		return
-	end
+	local index<const> = #self.btree_ids + 1
+	self.btree_ids[index] = bt_id
 	local blackboard<const> = behaviourtree.blackboard.new({ id = bt_id })
 	self.btreecontexts[bt_id] = {
 		tree_id = bt_id,
@@ -588,22 +559,8 @@ function worldobject:add_btree(bt_id)
 	}
 end
 
-function worldobject:tick_tree(bt_id)
-	local context<const> = self.btreecontexts[bt_id]
-	if not context then
-		error('behavior tree context "' .. bt_id .. '" does not exist.')
-	end
-	if not context.running then
-		return
-	end
-	context.root:tick(self, context.blackboard)
-end
-
 function worldobject:reset_tree(bt_id)
 	local context<const> = self.btreecontexts[bt_id]
-	if not context then
-		error('behavior tree context "' .. bt_id .. '" does not exist.')
-	end
 	context.blackboard:clear_node_data()
 end
 

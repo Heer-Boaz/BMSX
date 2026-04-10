@@ -42,7 +42,7 @@ inputactioneffectsystem.__index = inputactioneffectsystem
 setmetatable(inputactioneffectsystem, { __index = ecs.ecsystem })
 
 function inputactioneffectsystem.new(priority)
-	local self<const> = setmetatable(ecs.ecsystem.new(ecs.tickgroup.input, priority or 0), inputactioneffectsystem)
+	local self<const> = setmetatable(ecs.ecsystem.new(ecs.tickgroup.input, priority), inputactioneffectsystem)
 	self.compiled_by_id = {}
 	self.inline_compiled = setmetatable({}, { __mode = 'k' })
 	self.validated_inline = setmetatable({}, { __mode = 'k' })

@@ -62,7 +62,6 @@ local ecsystem<const> = ecs.ecsystem
 
 local spritecomponent<const> = 'spritecomponent'
 local timelinecomponent<const> = 'timelinecomponent'
-local transformcomponent<const> = 'transformcomponent'
 local textcomponent<const> = 'textcomponent'
 local meshcomponent<const> = 'meshcomponent'
 local ambientlightcomponent<const> = 'ambientlightcomponent'
@@ -80,19 +79,9 @@ local mesh_render_options<const> = render_scratch_items[1]
 local point_light_position<const> = render_scratch_items[2]
 
 local resolve_text_draw_position<const> = function(obj, offset)
-	local x
-	local y
-	local z
-	local t<const> = obj:get_component(transformcomponent)
-	if t then
-		x = t.position.x + offset.x
-		y = t.position.y + offset.y
-		z = t.position.z + offset.z
-	else
-		x = obj.x + offset.x
-		y = obj.y + offset.y
-		z = obj.z + offset.z
-	end
+	local x<const> = obj.x + offset.x
+	local y<const> = obj.y + offset.y
+	local z<const> = obj.z + offset.z
 	return x, y, z
 end
 
@@ -112,30 +101,21 @@ behaviortreesystem.__index = behaviortreesystem
 setmetatable(behaviortreesystem, { __index = ecsystem })
 
 function behaviortreesystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.input, priority or 0), behaviortreesystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.input, priority), behaviortreesystem)
 	return self
-end
-
-local audioroutersystem<const> = {}
-audioroutersystem.__index = audioroutersystem
-setmetatable(audioroutersystem, { __index = ecsystem })
-
-function audioroutersystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.input, priority or 5), audioroutersystem)
-	self.__ecs_id = 'audioroutersystem'
-	return self
-end
-
-function audioroutersystem:update()
 end
 
 function behaviortreesystem:update()
 	local objects<const> = world_instance.active_space.active_objects
 	for i = 1, #objects do
 		local obj<const> = objects[i]
-		local bts<const> = obj.btreecontexts
-		for id in pairs(bts) do
-			obj:tick_tree(id)
+		local ids<const> = obj.btree_ids
+		local contexts<const> = obj.btreecontexts
+		for j = 1, #ids do
+			local context<const> = contexts[ids[j]]
+			if context.running then
+				context.root:tick(obj, context.blackboard)
+			end
 		end
 	end
 end
@@ -145,7 +125,7 @@ actioneffectruntimesystem.__index = actioneffectruntimesystem
 setmetatable(actioneffectruntimesystem, { __index = ecsystem })
 
 function actioneffectruntimesystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.actioneffect, priority or 32), actioneffectruntimesystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.actioneffect, priority), actioneffectruntimesystem)
 	return self
 end
 
@@ -153,7 +133,12 @@ function actioneffectruntimesystem:update(dt_ms)
 	local components<const> = world_instance.active_space.active_components_by_type[actioneffectcomponent]
 	for i = 1, #components do
 		local component<const> = components[i]
-		component:update(dt_ms)
+		component.time_ms = component.time_ms + dt_ms
+		for id, until_time in pairs(component.cooldown_until) do
+			if component.time_ms >= until_time then
+				component.cooldown_until[id] = nil
+			end
+		end
 	end
 end
 
@@ -162,49 +147,14 @@ statemachinesystem.__index = statemachinesystem
 setmetatable(statemachinesystem, { __index = ecsystem })
 
 function statemachinesystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.moderesolution, priority or 0), statemachinesystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.moderesolution, priority), statemachinesystem)
 	return self
 end
 
 function statemachinesystem:update(dt_ms)
-	local objects<const> = world_instance.active_space.active_objects_with_fsm_update
+	local objects<const> = world_instance.active_space.active_objects
 	for i = 1, #objects do
-		local obj<const> = objects[i]
-		obj.sc:update(dt_ms)
-	end
-end
-
-local objectticksystem<const> = {}
-objectticksystem.__index = objectticksystem
-setmetatable(objectticksystem, { __index = ecsystem })
-
-local object_tick_orders<const> = { 'early', 'normal', 'late' }
-
-function objectticksystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.moderesolution, priority or 10), objectticksystem)
-	return self
-end
-
-local update_object_components<const> = function(objects, dt_ms)
-	for object_index = 1, #objects do
-		local obj<const> = objects[object_index]
-		local components<const> = obj.components
-		for component_index = 1, #components do
-			local comp<const> = components[component_index]
-			if comp.enabled then
-				comp:update(dt_ms)
-			end
-		end
-	end
-end
-
--- Tick-order is resolved when objects enter/leave an active space, not while
--- the frame is already running. That keeps the moderesolution pass on dense
--- per-order arrays instead of rescanning every active object three times.
-function objectticksystem:update(dt_ms)
-	local ordered<const> = world_instance.active_space.active_objects_by_tick_order
-	for order_index = 1, #object_tick_orders do
-		update_object_components(ordered[object_tick_orders[order_index]], dt_ms)
+		objects[i].sc:update(dt_ms)
 	end
 end
 
@@ -212,26 +162,48 @@ local prepositionsystem<const> = {}
 prepositionsystem.__index = prepositionsystem
 setmetatable(prepositionsystem, { __index = ecsystem })
 
-local preprocess_positionupdate_components<const> = function(type_name)
-	local components<const> = world_instance.active_space.active_components_by_type[type_name]
-	for i = 1, #components do
-		local component<const> = components[i]
-		if component.enabled then
-			component:preprocess_update()
-		end
-	end
-end
-
 function prepositionsystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.input, priority or -100), prepositionsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.input, priority), prepositionsystem)
 	return self
 end
 
 function prepositionsystem:update()
-	preprocess_positionupdate_components(positionupdateaxiscomponent)
-	preprocess_positionupdate_components(screenboundarycomponent)
-	preprocess_positionupdate_components(tilecollisioncomponent)
-	preprocess_positionupdate_components(prohibitleavingscreencomponent)
+	-- These components all share the same old-position sync, and none of them
+	-- use per-component custom preprocess logic. Open-code the copy here so the
+	-- frame loop stays a dense data pass instead of paying a tiny method call on
+	-- every component every frame.
+	local position_components<const> = world_instance.active_space.active_components_by_type[positionupdateaxiscomponent]
+	for i = 1, #position_components do
+		local component<const> = position_components[i]
+		local parent<const> = component.parent
+		local old_pos<const> = component.old_pos
+		old_pos.x = parent.x
+		old_pos.y = parent.y
+	end
+	local boundary_components<const> = world_instance.active_space.active_components_by_type[screenboundarycomponent]
+	for i = 1, #boundary_components do
+		local component<const> = boundary_components[i]
+		local parent<const> = component.parent
+		local old_pos<const> = component.old_pos
+		old_pos.x = parent.x
+		old_pos.y = parent.y
+	end
+	local tile_components<const> = world_instance.active_space.active_components_by_type[tilecollisioncomponent]
+	for i = 1, #tile_components do
+		local component<const> = tile_components[i]
+		local parent<const> = component.parent
+		local old_pos<const> = component.old_pos
+		old_pos.x = parent.x
+		old_pos.y = parent.y
+	end
+	local prohibit_components<const> = world_instance.active_space.active_components_by_type[prohibitleavingscreencomponent]
+	for i = 1, #prohibit_components do
+		local component<const> = prohibit_components[i]
+		local parent<const> = component.parent
+		local old_pos<const> = component.old_pos
+		old_pos.x = parent.x
+		old_pos.y = parent.y
+	end
 end
 
 local boundarysystem<const> = {}
@@ -239,14 +211,11 @@ boundarysystem.__index = boundarysystem
 setmetatable(boundarysystem, { __index = ecsystem })
 
 function boundarysystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), boundarysystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority), boundarysystem)
 	return self
 end
 
 local emit_boundary_events<const> = function(obj, component)
-	if not component.enabled then
-		return
-	end
 	local left<const> = component.boundary_left
 	local top<const> = component.boundary_top
 	local right<const> = component.boundary_right
@@ -317,7 +286,7 @@ local emit_tilecollision_event<const> = function(owner, component, suffix, phase
 end
 
 function tilecollisionsystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 45), tilecollisionsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority), tilecollisionsystem)
 	return self
 end
 
@@ -326,94 +295,30 @@ function tilecollisionsystem:update()
 	for i = 1, #components do
 		local component<const> = components[i]
 		local obj<const> = component.parent
-		if component.enabled then
-			local current_payload<const> = component.current_payload
-			local previous_payload<const> = component.previous_payload
-			clear_map(current_payload)
-			local current_key<const> = component.query(component, obj, current_payload)
-			local previous_key<const> = component.previous_collision_key
-			if current_key == nil then
-				if previous_key ~= nil then
-					emit_tilecollision_event(obj, component, 'end', 'end', previous_key, previous_payload)
-					component.previous_collision_key = nil
-				end
-			else
-				if previous_key == nil then
-					emit_tilecollision_event(obj, component, 'begin', 'begin', current_key, current_payload)
-				elseif previous_key ~= current_key then
-					emit_tilecollision_event(obj, component, 'end', 'end', previous_key, previous_payload)
-					emit_tilecollision_event(obj, component, 'begin', 'begin', current_key, current_payload)
-				else
-					emit_tilecollision_event(obj, component, 'stay', 'stay', current_key, current_payload)
-				end
-				component.previous_payload = current_payload
-				component.current_payload = previous_payload
-				component.previous_collision_key = current_key
+		local current_payload<const> = component.current_payload
+		local previous_payload<const> = component.previous_payload
+		clear_map(current_payload)
+		local current_key<const> = component.query(component, obj, current_payload)
+		local previous_key<const> = component.previous_collision_key
+		if current_key == nil then
+			if previous_key ~= nil then
+				emit_tilecollision_event(obj, component, 'end', 'end', previous_key, previous_payload)
+				component.previous_collision_key = nil
 			end
 		else
-			component.previous_collision_key = nil
+			if previous_key == nil then
+				emit_tilecollision_event(obj, component, 'begin', 'begin', current_key, current_payload)
+			elseif previous_key ~= current_key then
+				emit_tilecollision_event(obj, component, 'end', 'end', previous_key, previous_payload)
+				emit_tilecollision_event(obj, component, 'begin', 'begin', current_key, current_payload)
+			else
+				emit_tilecollision_event(obj, component, 'stay', 'stay', current_key, current_payload)
+			end
+			component.previous_payload = current_payload
+			component.current_payload = previous_payload
+			component.previous_collision_key = current_key
 		end
 	end
-end
-
-local physicssyncbeforestepsystem<const> = {}
-physicssyncbeforestepsystem.__index = physicssyncbeforestepsystem
-setmetatable(physicssyncbeforestepsystem, { __index = ecsystem })
-
-function physicssyncbeforestepsystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicssyncbeforestepsystem)
-	return self
-end
-
-function physicssyncbeforestepsystem:update()
-end
-
-local physicsworldstepsystem<const> = {}
-physicsworldstepsystem.__index = physicsworldstepsystem
-setmetatable(physicsworldstepsystem, { __index = ecsystem })
-
-function physicsworldstepsystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicsworldstepsystem)
-	return self
-end
-
-function physicsworldstepsystem:update()
-end
-
-local physicspostsystem<const> = {}
-physicspostsystem.__index = physicspostsystem
-setmetatable(physicspostsystem, { __index = ecsystem })
-
-function physicspostsystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicspostsystem)
-	return self
-end
-
-function physicspostsystem:update()
-end
-
-local physicscollisioneventsystem<const> = {}
-physicscollisioneventsystem.__index = physicscollisioneventsystem
-setmetatable(physicscollisioneventsystem, { __index = ecsystem })
-
-function physicscollisioneventsystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicscollisioneventsystem)
-	return self
-end
-
-function physicscollisioneventsystem:update()
-end
-
-local physicssyncafterworldcollisionsystem<const> = {}
-physicssyncafterworldcollisionsystem.__index = physicssyncafterworldcollisionsystem
-setmetatable(physicssyncafterworldcollisionsystem, { __index = ecsystem })
-
-function physicssyncafterworldcollisionsystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicssyncafterworldcollisionsystem)
-	return self
-end
-
-function physicssyncafterworldcollisionsystem:update()
 end
 
 local overlap2dsystem<const> = {}
@@ -514,7 +419,7 @@ end
 --   broadphase grid, tests exact shapes with collision2d, and fires the three
 --   overlap events described in the file header.
 function overlap2dsystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 42), overlap2dsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority), overlap2dsystem)
 	self.prev_pairs = {}
 	self.next_pairs = {}
 	self.prev_collider_lookup = {}
@@ -686,31 +591,12 @@ function overlap2dsystem:update()
 	end
 end
 
-local transformsystem<const> = {}
-transformsystem.__index = transformsystem
-setmetatable(transformsystem, { __index = ecsystem })
-
-function transformsystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), transformsystem)
-	return self
-end
-
-function transformsystem:update()
-	local components<const> = world_instance.active_space.active_components_by_type[transformcomponent]
-	for i = 1, #components do
-		local component<const> = components[i]
-		if component.enabled then
-			component:post_update()
-		end
-	end
-end
-
 local timelinesystem<const> = {}
 timelinesystem.__index = timelinesystem
 setmetatable(timelinesystem, { __index = ecsystem })
 
 function timelinesystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.animation, priority or 0), timelinesystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.animation, priority), timelinesystem)
 	return self
 end
 
@@ -718,27 +604,8 @@ function timelinesystem:update(dt_ms)
 	local components<const> = world_instance.active_space.active_components_by_type[timelinecomponent]
 	for i = 1, #components do
 		local component<const> = components[i]
-		if component.enabled then
+		if component.active_count ~= 0 then
 			component:tick_active(dt_ms)
-		end
-	end
-end
-
-local meshanimationsystem<const> = {}
-meshanimationsystem.__index = meshanimationsystem
-setmetatable(meshanimationsystem, { __index = ecsystem })
-
-function meshanimationsystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.animation, priority or 0), meshanimationsystem)
-	return self
-end
-
-function meshanimationsystem:update(dt_ms)
-	local components<const> = world_instance.active_space.active_components_by_type[meshcomponent]
-	for i = 1, #components do
-		local component<const> = components[i]
-		if component.enabled then
-			component:update_animation(dt_ms)
 		end
 	end
 end
@@ -748,7 +615,7 @@ textrendersystem.__index = textrendersystem
 setmetatable(textrendersystem, { __index = ecsystem })
 
 function textrendersystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority or 7), textrendersystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority), textrendersystem)
 	return self
 end
 
@@ -760,7 +627,6 @@ function textrendersystem:update()
 		if not tc.enabled then
 			goto continue_text_render
 		end
-		tc:prepare_render()
 		local x<const>, y<const>, z<const> = resolve_text_draw_position(obj, tc.offset)
 		tc:render(x, y, z, resolve_text_lines(tc))
 		::continue_text_render::
@@ -772,7 +638,7 @@ spriterendersystem.__index = spriterendersystem
 setmetatable(spriterendersystem, { __index = ecsystem })
 
 function spriterendersystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority or 8), spriterendersystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority), spriterendersystem)
 	return self
 end
 
@@ -785,19 +651,9 @@ function spriterendersystem:update()
 			goto continue_sprite_render
 		end
 		local offset<const> = sc.offset
-		local x
-		local y
-		local z
-		local t<const> = obj:get_component(transformcomponent)
-		if t then
-			x = t.position.x + offset.x
-			y = t.position.y + offset.y
-			z = t.position.z + offset.z
-		else
-			x = obj.x + offset.x
-			y = obj.y + offset.y
-			z = obj.z + offset.z
-		end
+		local x<const> = obj.x + offset.x
+		local y<const> = obj.y + offset.y
+		local z<const> = obj.z + offset.z
 		local flip_flags = 0
 		if sc.flip.flip_h then
 			flip_flags = flip_flags | 1
@@ -810,7 +666,7 @@ function spriterendersystem:update()
 			sys_vdp_cmd_blit,
 			 13,
 			0,
-			assets.img[sc.imgid].handle,
+			sc.image_handle,
 			x,
 			y,
 			z,
@@ -832,7 +688,7 @@ local resolve_world_position<const> = function(obj, offset)
 	local x
 	local y
 	local z
-	local t<const> = obj:get_component(transformcomponent)
+	local t<const> = obj.transform_component
 	if t then
 		x = t.position.x + offset.x
 		y = t.position.y + offset.y
@@ -850,7 +706,7 @@ lightrendersystem.__index = lightrendersystem
 setmetatable(lightrendersystem, { __index = ecsystem })
 
 function lightrendersystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority or 8.5), lightrendersystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority), lightrendersystem)
 	return self
 end
 
@@ -898,7 +754,7 @@ meshrendersystem.__index = meshrendersystem
 setmetatable(meshrendersystem, { __index = ecsystem })
 
 function meshrendersystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority or 9), meshrendersystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority), meshrendersystem)
 	return self
 end
 
@@ -923,7 +779,7 @@ rendersubmitsystem.__index = rendersubmitsystem
 setmetatable(rendersubmitsystem, { __index = ecsystem })
 
 function rendersubmitsystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority or 10), rendersubmitsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority), rendersubmitsystem)
 	return self
 end
 
@@ -940,40 +796,18 @@ function rendersubmitsystem:update()
 	end
 end
 
-local eventflushsystem<const> = {}
-eventflushsystem.__index = eventflushsystem
-setmetatable(eventflushsystem, { __index = ecsystem })
-
-function eventflushsystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.eventflush, priority or 0), eventflushsystem)
-	return self
-end
-
-function eventflushsystem:update()
-end
-
 return {
 	behaviortreesystem = behaviortreesystem,
-	audioroutersystem = audioroutersystem,
 	actioneffectruntimesystem = actioneffectruntimesystem,
 	statemachinesystem = statemachinesystem,
-	objectticksystem = objectticksystem,
 	prepositionsystem = prepositionsystem,
 	boundarysystem = boundarysystem,
 	tilecollisionsystem = tilecollisionsystem,
-	physicssyncbeforestepsystem = physicssyncbeforestepsystem,
-	physicsworldstepsystem = physicsworldstepsystem,
-	physicspostsystem = physicspostsystem,
-	physicscollisioneventsystem = physicscollisioneventsystem,
-	physicssyncafterworldcollisionsystem = physicssyncafterworldcollisionsystem,
 	overlap2dsystem = overlap2dsystem,
-	transformsystem = transformsystem,
 	timelinesystem = timelinesystem,
-	meshanimationsystem = meshanimationsystem,
 	textrendersystem = textrendersystem,
 	spriterendersystem = spriterendersystem,
 	lightrendersystem = lightrendersystem,
 	meshrendersystem = meshrendersystem,
 	rendersubmitsystem = rendersubmitsystem,
-	eventflushsystem = eventflushsystem,
 }

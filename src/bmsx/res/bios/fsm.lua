@@ -2264,34 +2264,22 @@ function state:refresh_active_frame_work()
 	local definition<const> = self.definition
 	if not definition.has_subtree_frame_work then
 		self.active_frame_work = false
-		if self:is_root() then
-			self.target:sync_fsm_frame_work_active()
-		end
 		return false
 	end
 	local active<const> = definition.has_local_frame_work
 	local current<const> = self.current_state
 	if current ~= nil and current:refresh_active_frame_work() then
 		self.active_frame_work = true
-		if self:is_root() then
-			self.target:sync_fsm_frame_work_active()
-		end
 		return true
 	end
 	local concurrent_states<const> = self.concurrent_states
 	for i = 1, self.concurrent_state_count do
 		if concurrent_states[i]:refresh_active_frame_work() then
 			self.active_frame_work = true
-			if self:is_root() then
-				self.target:sync_fsm_frame_work_active()
-			end
 			return true
 		end
 	end
 	self.active_frame_work = active
-	if self:is_root() then
-		self.target:sync_fsm_frame_work_active()
-	end
 	return active
 end
 

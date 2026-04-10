@@ -124,9 +124,6 @@ function component:toggle_tag(tag)
 	self.tags[tag] = not self.tags[tag]
 end
 
-function component:update(_dt)
-end
-
 function component:draw()
 end
 
@@ -140,6 +137,7 @@ function spritecomponent.new(opts)
 	opts.type_name = 'spritecomponent'
 	local self<const> = setmetatable(component.new(opts), spritecomponent)
 	self.imgid = opts and opts.imgid
+	self.image_handle = self.imgid ~= nil and assets.img[self.imgid].handle or 0
 	self.layer = opts and opts.layer or sys_vdp_layer_world
 	self.flip = { flip_h = false, flip_v = false }
 	self.colorize = opts and opts.colorize or { r = 1, g = 1, b = 1, a = 1 }
@@ -783,12 +781,6 @@ function transformcomponent.new(opts)
 	return self
 end
 
-function transformcomponent:post_update()
-	local p<const> = self.parent
-	self.position.x = p.x
-	self.position.y = p.y
-	self.position.z = p.z
-end
 
 -- textcomponent: lightweight render descriptor
 local textcomponent<const> = {}
@@ -816,8 +808,6 @@ function textcomponent.new(opts)
 	return self
 end
 
-function textcomponent:prepare_render()
-end
 
 function textcomponent:submit_glyph_lines(x, y, z, glyphs, background_enabled, bg_r, bg_g, bg_b, bg_a)
 	local cursor_y = y
@@ -892,8 +882,6 @@ function meshcomponent.new(opts)
 	return self
 end
 
-function meshcomponent:update_animation(_dt)
-end
 
 local ambientlightcomponent<const> = {}
 ambientlightcomponent.__index = ambientlightcomponent
@@ -1153,11 +1141,6 @@ function positionupdateaxiscomponent.new(opts)
 	))
 end
 
-function positionupdateaxiscomponent:preprocess_update()
-	local p<const> = self.parent
-	self.old_pos.x = p.x
-	self.old_pos.y = p.y
-end
 
 local screenboundarycomponent<const> = {}
 screenboundarycomponent.__index = screenboundarycomponent

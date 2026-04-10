@@ -339,6 +339,9 @@ function engine.define_component(definition)
 	if type(definition.class) ~= 'table' then
 		error('define_component: definition.class must be a table for "' .. tostring(definition.def_id) .. '".')
 	end
+	if definition.class.update ~= nil then
+		error('define_component: component "' .. tostring(definition.def_id) .. '" cannot declare update(); move frame work into an ECS system or FSM.')
+	end
 	component_definitions[definition.def_id] = definition
 	ensure_component_type(definition.def_id, definition)
 end

@@ -218,15 +218,6 @@ function actioneffectcomponent.new(opts)
 	return self
 end
 
-function actioneffectcomponent:update(dt_ms)
-	self.time_ms = self.time_ms + dt_ms
-	for id, until_time in pairs(self.cooldown_until) do
-		if self.time_ms >= until_time then
-			self.cooldown_until[id] = nil
-		end
-	end
-end
-
 -- actioneffectcomponent:grant_effect(id): gives the object access to the
 --   named registered effect.  Call when an ability is unlocked or equipped.
 function actioneffectcomponent:grant_effect(id)

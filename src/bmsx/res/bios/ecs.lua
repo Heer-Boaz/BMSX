@@ -61,33 +61,14 @@ function ecsystem.new(group, priority)
 	self.group = group
 	self.priority = priority or 0
 	self.__ecs_id = nil
-	self.runs_while_paused = false
 	return self
-end
-
-function ecsystem:update(_dt_ms)
 end
 
 local ecsystemmanager<const> = {}
 ecsystemmanager.__index = ecsystemmanager
-local empty_stats<const> = {}
 
--- Build phase-local views when the system graph changes, not every frame.
--- That keeps the frame hot path as a straight iteration over the systems that
--- actually belong to the requested phase, instead of rescanning the full
--- system list and re-checking each group's membership over and over.
-local rebuild_system_views<const> = function(self)
-	table.sort(self.systems, function(a, b)
-		if a.group ~= b.group then
-			return a.group < b.group
-		end
-		if a.priority ~= b.priority then
-			return a.priority < b.priority
-		end
-		return false
-	end)
-
-	local phase_systems<const> = {
+local new_phase_buckets<const> = function()
+	return {
 		[tickgroup.input] = {},
 		[tickgroup.actioneffect] = {},
 		[tickgroup.moderesolution] = {},
@@ -96,18 +77,45 @@ local rebuild_system_views<const> = function(self)
 		[tickgroup.presentation] = {},
 		[tickgroup.eventflush] = {},
 	}
-	local paused_systems<const> = {}
+end
+
+-- Build phase-local views when the system graph changes, not every frame.
+-- That keeps the frame hot path as a straight iteration over the systems that
+-- actually belong to the requested phase, instead of rescanning the full
+-- system list and re-checking each group's membership over and over. Keep the
+-- sort stable on registration order so removing or adding one system does not
+-- silently reshuffle equal-priority siblings elsewhere in the phase.
+local rebuild_system_views<const> = function(self)
+	table.sort(self.systems, function(a, b)
+		if a.group ~= b.group then
+			return a.group < b.group
+		end
+		if a.priority ~= b.priority then
+			return a.priority < b.priority
+		end
+		return a.__ecs_reg_index < b.__ecs_reg_index
+	end)
+
+	local phase_systems<const> = new_phase_buckets()
+	local phase_counts<const> = {
+		[tickgroup.input] = 0,
+		[tickgroup.actioneffect] = 0,
+		[tickgroup.moderesolution] = 0,
+		[tickgroup.physics] = 0,
+		[tickgroup.animation] = 0,
+		[tickgroup.presentation] = 0,
+		[tickgroup.eventflush] = 0,
+	}
 	for i = 1, #self.systems do
 		local sys<const> = self.systems[i]
 		local group<const> = sys.group
-		local group_systems<const> = phase_systems[group]
-		group_systems[#group_systems + 1] = sys
-		if sys.runs_while_paused then
-			paused_systems[#paused_systems + 1] = sys
-		end
+		local bucket<const> = phase_systems[group]
+		local bucket_index<const> = phase_counts[group] + 1
+		phase_counts[group] = bucket_index
+		bucket[bucket_index] = sys
 	end
 	self.phase_systems = phase_systems
-	self.paused_systems = paused_systems
+	self.phase_counts = phase_counts
 end
 
 function ecsystemmanager.new()
@@ -117,6 +125,8 @@ function ecsystemmanager.new()
 end
 
 function ecsystemmanager:register(sys)
+	self.registration_serial = self.registration_serial + 1
+	sys.__ecs_reg_index = self.registration_serial
 	self.systems[#self.systems + 1] = sys
 	rebuild_system_views(self)
 end
@@ -133,53 +143,28 @@ end
 
 function ecsystemmanager:clear()
 	self.systems = {}
-	self.phase_systems = {
-		[tickgroup.input] = {},
-		[tickgroup.actioneffect] = {},
-		[tickgroup.moderesolution] = {},
-		[tickgroup.physics] = {},
-		[tickgroup.animation] = {},
-		[tickgroup.presentation] = {},
-		[tickgroup.eventflush] = {},
+	self.registration_serial = 0
+	self.phase_systems = new_phase_buckets()
+	self.phase_counts = {
+		[tickgroup.input] = 0,
+		[tickgroup.actioneffect] = 0,
+		[tickgroup.moderesolution] = 0,
+		[tickgroup.physics] = 0,
+		[tickgroup.animation] = 0,
+		[tickgroup.presentation] = 0,
+		[tickgroup.eventflush] = 0,
 	}
-	self.paused_systems = {}
 end
 
-function ecsystemmanager:update_until(max_group)
-	local dt_ms<const> = $.get_frame_delta_ms()
-	for i = 1, #self.systems do
-		local s<const> = self.systems[i]
-		if s.group <= max_group then
-			s:update(dt_ms)
-		end
-	end
-end
-
-function ecsystemmanager:update_from(min_group)
-	local dt_ms<const> = $.get_frame_delta_ms()
-	for i = 1, #self.systems do
-		local s<const> = self.systems[i]
-		if s.group >= min_group then
-			s:update(dt_ms)
-		end
-	end
-end
-
-function ecsystemmanager:update_phase(group)
-	local dt_ms<const> = $.get_frame_delta_ms()
+function ecsystemmanager:update_phase(group, dt_ms)
 	-- update_phase is a frame hot path. It must walk a prefiltered phase bucket
-	-- instead of filtering self.systems every time, so phase dispatch cost stays
-	-- proportional to useful work rather than total registered systems.
+	-- instead of filtering self.systems every time. Keep the bucket layout flat:
+	-- nested records and cached method arrays added more table traffic than they
+	-- saved on this VM, while one shared frame dt still removes repeated host
+	-- clock calls from every phase dispatch.
 	local systems<const> = self.phase_systems[group]
-	for i = 1, #systems do
+	for i = 1, self.phase_counts[group] do
 		systems[i]:update(dt_ms)
-	end
-end
-
-function ecsystemmanager:run_paused()
-	local dt_ms<const> = $.get_frame_delta_ms()
-	for i = 1, #self.paused_systems do
-		self.paused_systems[i]:update(dt_ms)
 	end
 end
 
