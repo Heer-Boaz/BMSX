@@ -18,7 +18,7 @@ local wrap_text_lines<const> = require('util/wrap_text_lines')
 --
 --      WRONG — manual loop every frame:
 --        function hero:update(dt)
---          for _, enemy in ipairs(world_instance:objects({tag='enemy'})) do
+--          for enemy in objects_by_tag('enemy') do
 --            if collision2d.collides(self.collider, enemy.collider) then ...
 --
 --      RIGHT — reactive subscription:
@@ -75,9 +75,6 @@ local screenboundarycomponent<const> = 'screenboundarycomponent'
 local tilecollisioncomponent<const> = 'tilecollisioncomponent'
 local prohibitleavingscreencomponent<const> = 'prohibitleavingscreencomponent'
 local actioneffectcomponent<const> = 'actioneffectcomponent'
-
--- Shared opts table to avoid per-frame allocation.
-local active_scope<const> = { scope = 'active' }
 local render_scratch_items<const> = scratchrecordbatch.new(2):reserve(2)
 local mesh_render_options<const> = render_scratch_items[1]
 local point_light_position<const> = render_scratch_items[2]
@@ -133,7 +130,9 @@ function audioroutersystem:update()
 end
 
 function behaviortreesystem:update()
-	for obj in world_instance:objects(active_scope) do
+	local objects<const> = world_instance.active_space.active_objects
+	for i = 1, #objects do
+		local obj<const> = objects[i]
 		local bts<const> = obj.btreecontexts
 		for id in pairs(bts) do
 			obj:tick_tree(id)
@@ -151,7 +150,9 @@ function actioneffectruntimesystem.new(priority)
 end
 
 function actioneffectruntimesystem:update(dt_ms)
-	for _, component in world_instance:objects_with_components(actioneffectcomponent, active_scope) do
+	local components<const> = world_instance.active_space.active_components_by_type[actioneffectcomponent]
+	for i = 1, #components do
+		local component<const> = components[i]
 		component:update(dt_ms)
 	end
 end
@@ -166,7 +167,9 @@ function statemachinesystem.new(priority)
 end
 
 function statemachinesystem:update(dt_ms)
-	for obj in world_instance:objects(active_scope) do
+	local objects<const> = world_instance.active_space.active_objects
+	for i = 1, #objects do
+		local obj<const> = objects[i]
 		obj.sc:update(dt_ms)
 	end
 end
@@ -176,37 +179,32 @@ objectticksystem.__index = objectticksystem
 setmetatable(objectticksystem, { __index = ecsystem })
 
 local object_tick_orders<const> = { 'early', 'normal', 'late' }
-local object_tick_order_lookup<const> = { early = true, normal = true, late = true }
-
-local resolve_object_tick_order<const> = function(obj)
-	local order<const> = obj.tick_order
-	if order == nil then
-		return 'normal'
-	end
-	if object_tick_order_lookup[order] then
-		return order
-	end
-	error('[objectticksystem] unknown tick_order "' .. tostring(order) .. '" on "' .. tostring(obj.id) .. '".')
-end
 
 function objectticksystem.new(priority)
 	local self<const> = setmetatable(ecsystem.new(tickgroup.moderesolution, priority or 10), objectticksystem)
 	return self
 end
 
-function objectticksystem:update(dt_ms)
-	for order_index = 1, #object_tick_orders do
-		local tick_order<const> = object_tick_orders[order_index]
-		for obj in world_instance:objects(active_scope) do
-			if resolve_object_tick_order(obj) == tick_order then
-				for i = 1, #obj.components do
-					local comp<const> = obj.components[i]
-					if comp.enabled then
-						comp:update(dt_ms)
-					end
-				end
+local update_object_components<const> = function(objects, dt_ms)
+	for object_index = 1, #objects do
+		local obj<const> = objects[object_index]
+		local components<const> = obj.components
+		for component_index = 1, #components do
+			local comp<const> = components[component_index]
+			if comp.enabled then
+				comp:update(dt_ms)
 			end
 		end
+	end
+end
+
+-- Tick-order is resolved when objects enter/leave an active space, not while
+-- the frame is already running. That keeps the moderesolution pass on dense
+-- per-order arrays instead of rescanning every active object three times.
+function objectticksystem:update(dt_ms)
+	local ordered<const> = world_instance.active_space.active_objects_by_tick_order
+	for order_index = 1, #object_tick_orders do
+		update_object_components(ordered[object_tick_orders[order_index]], dt_ms)
 	end
 end
 
@@ -215,7 +213,9 @@ prepositionsystem.__index = prepositionsystem
 setmetatable(prepositionsystem, { __index = ecsystem })
 
 local preprocess_positionupdate_components<const> = function(type_name)
-	for _, component in world_instance:objects_with_components(type_name, active_scope) do
+	local components<const> = world_instance.active_space.active_components_by_type[type_name]
+	for i = 1, #components do
+		local component<const> = components[i]
 		if component.enabled then
 			component:preprocess_update()
 		end
@@ -286,10 +286,16 @@ local emit_boundary_events<const> = function(obj, component)
 end
 
 function boundarysystem:update()
-	for obj, component in world_instance:objects_with_components(screenboundarycomponent, active_scope) do
+	local screen_boundary_components<const> = world_instance.active_space.active_components_by_type[screenboundarycomponent]
+	for i = 1, #screen_boundary_components do
+		local component<const> = screen_boundary_components[i]
+		local obj<const> = component.parent
 		emit_boundary_events(obj, component)
 	end
-	for obj, component in world_instance:objects_with_components(prohibitleavingscreencomponent, active_scope) do
+	local prohibit_leave_components<const> = world_instance.active_space.active_components_by_type[prohibitleavingscreencomponent]
+	for i = 1, #prohibit_leave_components do
+		local component<const> = prohibit_leave_components[i]
+		local obj<const> = component.parent
 		emit_boundary_events(obj, component)
 	end
 end
@@ -316,7 +322,10 @@ function tilecollisionsystem.new(priority)
 end
 
 function tilecollisionsystem:update()
-	for obj, component in world_instance:objects_with_components(tilecollisioncomponent, active_scope) do
+	local components<const> = world_instance.active_space.active_components_by_type[tilecollisioncomponent]
+	for i = 1, #components do
+		local component<const> = components[i]
+		local obj<const> = component.parent
 		if component.enabled then
 			local current_payload<const> = component.current_payload
 			local previous_payload<const> = component.previous_payload
@@ -539,14 +548,16 @@ function overlap2dsystem:update()
 
 	local event_colliders<const> = self.event_colliders
 	clear_array(event_colliders)
-		for obj, collider in world_instance:objects_with_components(collider2dcomponent, active_scope) do
-			if collider.enabled then
-				collider:prepare_overlap_cache()
-				broadphase:add(collider)
-				collider_lookup[collider.id] = collider
-				event_colliders[#event_colliders + 1] = collider
-			end
+	local colliders<const> = world_instance.active_space.active_components_by_type[collider2dcomponent]
+	for i = 1, #colliders do
+		local collider<const> = colliders[i]
+		if collider.enabled then
+			collider:prepare_overlap_cache()
+			broadphase:add(collider)
+			collider_lookup[collider.id] = collider
+			event_colliders[#event_colliders + 1] = collider
 		end
+	end
 
 	if #event_colliders == 0 then
 		clear_pair_set(prev_pairs, pair_row_pool)
@@ -685,7 +696,9 @@ function transformsystem.new(priority)
 end
 
 function transformsystem:update()
-	for _, component in world_instance:objects_with_components(transformcomponent, active_scope) do
+	local components<const> = world_instance.active_space.active_components_by_type[transformcomponent]
+	for i = 1, #components do
+		local component<const> = components[i]
 		if component.enabled then
 			component:post_update()
 		end
@@ -702,7 +715,9 @@ function timelinesystem.new(priority)
 end
 
 function timelinesystem:update(dt_ms)
-	for _, component in world_instance:objects_with_components(timelinecomponent, active_scope) do
+	local components<const> = world_instance.active_space.active_components_by_type[timelinecomponent]
+	for i = 1, #components do
+		local component<const> = components[i]
 		if component.enabled then
 			component:tick_active(dt_ms)
 		end
@@ -719,7 +734,9 @@ function meshanimationsystem.new(priority)
 end
 
 function meshanimationsystem:update(dt_ms)
-	for _, component in world_instance:objects_with_components(meshcomponent, active_scope) do
+	local components<const> = world_instance.active_space.active_components_by_type[meshcomponent]
+	for i = 1, #components do
+		local component<const> = components[i]
 		if component.enabled then
 			component:update_animation(dt_ms)
 		end
@@ -736,7 +753,10 @@ function textrendersystem.new(priority)
 end
 
 function textrendersystem:update()
-	for obj, tc in world_instance:objects_with_components(textcomponent, active_scope) do
+	local components<const> = world_instance.active_space.active_components_by_type[textcomponent]
+	for i = 1, #components do
+		local tc<const> = components[i]
+		local obj<const> = tc.parent
 		if not tc.enabled then
 			goto continue_text_render
 		end
@@ -757,7 +777,10 @@ function spriterendersystem.new(priority)
 end
 
 function spriterendersystem:update()
-	for obj, sc in world_instance:objects_with_components(spritecomponent, active_scope) do
+	local components<const> = world_instance.active_space.active_components_by_type[spritecomponent]
+	for i = 1, #components do
+		local sc<const> = components[i]
+		local obj<const> = sc.parent
 		if not obj.visible or not sc.enabled then
 			goto continue_sprite_render
 		end
@@ -832,7 +855,10 @@ function lightrendersystem.new(priority)
 end
 
 function lightrendersystem:update()
-	for obj, lc in world_instance:objects_with_components(ambientlightcomponent, active_scope) do
+	local ambient_components<const> = world_instance.active_space.active_components_by_type[ambientlightcomponent]
+	for i = 1, #ambient_components do
+		local lc<const> = ambient_components[i]
+		local obj<const> = lc.parent
 		if not obj.visible or not lc.enabled then
 			goto continue_ambient
 		end
@@ -840,7 +866,10 @@ function lightrendersystem:update()
 		::continue_ambient::
 	end
 
-	for obj, lc in world_instance:objects_with_components(directionallightcomponent, active_scope) do
+	local directional_components<const> = world_instance.active_space.active_components_by_type[directionallightcomponent]
+	for i = 1, #directional_components do
+		local lc<const> = directional_components[i]
+		local obj<const> = lc.parent
 		if not obj.visible or not lc.enabled then
 			goto continue_directional
 		end
@@ -848,7 +877,10 @@ function lightrendersystem:update()
 		::continue_directional::
 	end
 
-	for obj, lc in world_instance:objects_with_components(pointlightcomponent, active_scope) do
+	local point_components<const> = world_instance.active_space.active_components_by_type[pointlightcomponent]
+	for i = 1, #point_components do
+		local lc<const> = point_components[i]
+		local obj<const> = lc.parent
 		if not obj.visible or not lc.enabled then
 			goto continue_point
 		end
@@ -871,7 +903,10 @@ function meshrendersystem.new(priority)
 end
 
 function meshrendersystem:update()
-	for obj, mc in world_instance:objects_with_components(meshcomponent, active_scope) do
+	local components<const> = world_instance.active_space.active_components_by_type[meshcomponent]
+	for i = 1, #components do
+		local mc<const> = components[i]
+		local obj<const> = mc.parent
 		if not obj.visible or not mc.enabled then
 			goto continue_mesh_render
 		end
@@ -893,7 +928,10 @@ function rendersubmitsystem.new(priority)
 end
 
 function rendersubmitsystem:update()
-	for obj, rc in world_instance:objects_with_components(customvisualcomponent, active_scope) do
+	local components<const> = world_instance.active_space.active_components_by_type[customvisualcomponent]
+	for i = 1, #components do
+		local rc<const> = components[i]
+		local obj<const> = rc.parent
 		if not obj.visible or not rc.enabled then
 			goto continue_render_submit
 		end

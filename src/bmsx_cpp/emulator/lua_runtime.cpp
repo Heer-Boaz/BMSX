@@ -149,9 +149,13 @@ void Runtime::runEngineBuiltinPrelude() {
 		"rol8",
 		"swap_remove",
 		"objects_by_type",
+		"all_objects_by_type",
 		"objects_by_tag",
+		"all_objects_by_tag",
 		"find_by_type",
+		"find_any_by_type",
 		"find_by_tag",
+		"find_any_by_tag",
 		"eventemitter",
 	};
 	// Keep this in sync with TS Runtime.LUA_OVERRIDEABLE_GLOBALS.

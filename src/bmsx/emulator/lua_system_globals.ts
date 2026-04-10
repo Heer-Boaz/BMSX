@@ -40,9 +40,13 @@ const ENGINE_LUA_BUILTIN_FUNCTION_NAMES = [
 	'rol8',
 	'swap_remove',
 	'objects_by_type',
+	'all_objects_by_type',
 	'objects_by_tag',
+	'all_objects_by_tag',
 	'find_by_type',
+	'find_any_by_type',
 	'find_by_tag',
+	'find_any_by_tag',
 ] as const;
 
 const ENGINE_LUA_BUILTIN_GLOBAL_NAMES = [

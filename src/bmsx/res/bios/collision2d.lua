@@ -12,7 +12,7 @@
 --
 --    WRONG — manual collision loop in update():
 --      function enemy:update()
---          for obj in world_instance:objects({ scope = 'active' }) do
+--          for obj in world_instance:objects() do
 --              if collision2d.collides(self.collider, obj.collider) then
 --                  self:take_damage()
 --              end
@@ -46,7 +46,6 @@ local collision2d<const> = {}
 local clear_map<const> = require('clear_map')
 local round_to_nearest<const> = require('round_to_nearest')
 local world_instance<const> = require('world').instance
-local active_scope<const> = { scope = 'active' }
 
 local eps_parallel<const> = 1e-12
 local detect_aabb_areas<const> = function(a, b)
@@ -454,7 +453,9 @@ function collision2d.rebuild_index(cell_size)
 		index.cell_size = cell_size
 	end
 	index:clear()
-	for _, collider in world_instance:objects_with_components('collider2dcomponent', active_scope) do
+	local colliders<const> = world_instance.active_space.active_components_by_type.collider2dcomponent
+	for i = 1, #colliders do
+		local collider<const> = colliders[i]
 		if collider.enabled then
 			index:add(collider)
 		end

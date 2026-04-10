@@ -67,7 +67,7 @@ function runAssert(engine, logger) {
 		local function count_leak_objects()
 			local count = 0
 			local ids = {}
-			for obj in world:objects({ scope = 'all' }) do
+			for obj in world:all_objects() do
 				if obj.id ~= nil and obj.id:sub(1, 5) == 'leak.' and not obj.dispose_flag then
 					count = count + 1
 					ids[#ids + 1] = obj.id .. ':' .. tostring(obj.enemy_kind)

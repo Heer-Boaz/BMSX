@@ -94,7 +94,7 @@ function sampleProbe(engine) {
 		local old_y = -1
 		local dispose_flag = false
 
-		for obj in world:objects({ scope = 'all' }) do
+		for obj in world:all_objects() do
 			if obj.id == 'probe.vlok' then
 				local boundary = obj:get_component('screenboundarycomponent')
 				found = true

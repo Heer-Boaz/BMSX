@@ -14,7 +14,6 @@ local assigned_value_edges<const> = { ['hold'] = true, ['press'] = true }
 local action_state_pressed<const> = (1 << 0)
 local action_state_justpressed<const> = (1 << 1)
 local action_state_justreleased<const> = (1 << 2)
-local active_scope<const> = { scope = 'active' }
 
 local asset_programs_validated = false
 
@@ -66,10 +65,10 @@ function inputactioneffectsystem:update()
 end
 
 function inputactioneffectsystem:process_input_intents()
-	for obj, component in world_instance:objects_with_components(inputintentcomponent, active_scope) do
-		if not (obj.active) then
-			goto continue
-		end
+	local components<const> = world_instance.active_space.active_components_by_type[inputintentcomponent]
+	for i = 1, #components do
+		local component<const> = components[i]
+		local obj<const> = component.parent
 		if not component.bindings or #component.bindings == 0 then
 			goto continue
 		end
@@ -82,10 +81,10 @@ function inputactioneffectsystem:process_input_intents()
 end
 
 function inputactioneffectsystem:process_input_action_programs()
-	for obj, component in world_instance:objects_with_components(inputactioneffectcomponent, active_scope) do
-		if not (obj.active) then
-			goto continue
-		end
+	local components<const> = world_instance.active_space.active_components_by_type[inputactioneffectcomponent]
+	for i = 1, #components do
+		local component<const> = components[i]
+		local obj<const> = component.parent
 		local program<const> = self:resolve_compiled_program(component)
 		local program_key<const> = self:resolve_program_key(component, obj)
 

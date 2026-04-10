@@ -29,7 +29,7 @@
 --    RIGHT — register a render system in the presentation group:
 --      local mysystem = ecsystem.new(tickgroup.presentation, priority)
 --      function mysystem:update()
---          for obj in world_instance:objects({ scope = 'active' }) do
+--          for obj in world_instance:objects() do
 --              if obj.components['spritecomponent'] then
 --                  blit(obj.x, obj.y, obj.sprite_id)
 --              end

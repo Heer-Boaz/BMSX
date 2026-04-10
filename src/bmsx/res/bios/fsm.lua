@@ -2234,13 +2234,24 @@ function state:update()
 		return
 	end
 	self._transitions_this_update = 0
-	self:with_critical_section(function()
-		self.in_update = true
-		self:run_substate_machines()
-		self:process_input_events()
-		self:run_current_state()
-		self.in_update = false
-	end)
+	-- update() runs for every active machine every frame, so it stays open-coded.
+	-- Avoiding the higher-order critical-section wrapper here removes a closure
+	-- and an extra call layer from the hottest FSM path while keeping the same
+	-- queue-drain semantics at the end of the update.
+	self.critical_section_counter = self.critical_section_counter + 1
+	self.in_update = true
+	self:run_substate_machines()
+	self:process_input_events()
+	self:run_current_state()
+	self.in_update = false
+	self.critical_section_counter = self.critical_section_counter - 1
+	if self.critical_section_counter == 0 then
+		if not self.is_processing_queue then
+			self:process_transition_queue()
+		end
+	elseif self.critical_section_counter < 0 then
+		error('critical section counter was lower than 0, which is a bug. state: "' .. tostring(self.id) .. '".')
+	end
 end
 
 function state:populate_states()

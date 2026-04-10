@@ -143,6 +143,7 @@ function worldobject.new(opts)
 		self.visible = opts.visible
 	end
 	self.active = false
+	self.tick_order = opts.tick_order or 'normal'
 	self.fsm_dispatch_enabled = false
 	self.player_index = opts.player_index
 	self.tags = opts.tags or {}
@@ -195,7 +196,7 @@ end
 --   Useful for temporarily hiding an object from the active space (e.g. moving
 --   enemies to a 'transition' space during a screen-transition animation and
 --   back to 'main' on exit).  The object stays alive and subscribed; it is
---   simply excluded from scope='active' queries.
+--   simply excluded from the default active world queries.
 --
 --   PATTERN (enemies during shrine transition):
 --     self.events:on('shrine_transition_enter', function()
@@ -237,6 +238,9 @@ function worldobject:add_component(comp)
 	comp:bind()
 	comp:on_attach()
 	registry_instance:register(comp)
+	if self.active then
+		world_instance:activate_component(comp)
+	end
 	if comp.type_name == 'timelinecomponent' then
 		self.timelines = comp
 	end
@@ -360,6 +364,9 @@ function worldobject:remove_component_instance(comp)
 	end
 	comp:on_detach()
 	comp:unbind()
+	if self.active then
+		world_instance:deactivate_component(comp)
+	end
 	registry_instance:deregister(comp, true)
 	comp.parent = nil
 	if comp == self.sprite_component then
@@ -447,6 +454,7 @@ end
 function worldobject:activate()
 	self.active = true
 	self.fsm_dispatch_enabled = true
+	world_instance:activate_object(self)
 	self:bind()
 	self.sc:start()
 end
@@ -471,6 +479,7 @@ end
 function worldobject:deactivate()
 	self.active = false
 	self.fsm_dispatch_enabled = false
+	world_instance:deactivate_object(self)
 end
 
 -- onspawn(pos): called by world:spawn() after position is set from pos.
@@ -484,8 +493,9 @@ end
 -- and emits 'despawn'.  Override for despawn-specific cleanup; always call
 -- the supermethod so that the FSM pause and 'despawn' emission still happen.
 function worldobject:ondespawn()
-	self.active = false
-	self.fsm_dispatch_enabled = false
+	if self.active then
+		self:deactivate()
+	end
 	self.events:emit('despawn')
 end
 
@@ -501,12 +511,19 @@ end
 --   RIGHT:
 --     self:mark_for_disposal()       -- safe, deferred cleanup
 function worldobject:mark_for_disposal()
+	if self.dispose_flag then
+		return
+	end
 	self.dispose_flag = true
 	self:deactivate()
+	world_instance._by_id[self.id] = nil
+	local space<const> = world_instance._spaces[self.space_id]
+	space.by_id[self.id] = nil
+	world_instance._obj_to_space[self.id] = nil
+	world_instance:queue_object_disposal(self)
 end
 
 function worldobject:dispose()
-	self:deactivate()
 	self.sc:dispose()
 	self:remove_all_components()
 	self:unbind()

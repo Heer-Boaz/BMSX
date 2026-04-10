@@ -17,7 +17,7 @@ function elevator_update_system:update()
 	local player<const> = oget('pietolon')
 	player.next_vertical_elevator = false
 	player.next_vertical_elevator_id = nil
-	for elevator in world_instance:objects_by_type('elevator_platform', { scope = 'active' }) do
+	for elevator in world_instance:objects_by_type('elevator_platform') do
 		elevator:update_motion()
 	end
 	player.on_vertical_elevator = player.next_vertical_elevator

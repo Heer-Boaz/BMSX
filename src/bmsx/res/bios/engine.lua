@@ -505,20 +505,36 @@ function engine.get_space()
 	return world_instance.active_space_id
 end
 
-function engine.objects_by_type(type_name, opts)
-	return world_instance:objects_by_type(type_name, opts)
+function engine.objects_by_type(type_name)
+	return world_instance:objects_by_type(type_name)
 end
 
-function engine.objects_by_tag(tag, opts)
-	return world_instance:objects_by_tag(tag, opts)
+function engine.all_objects_by_type(type_name)
+	return world_instance:all_objects_by_type(type_name)
 end
 
-function engine.find_by_type(type_name, opts)
-	return world_instance:find_by_type(type_name, opts)
+function engine.objects_by_tag(tag)
+	return world_instance:objects_by_tag(tag)
 end
 
-function engine.find_by_tag(tag, opts)
-	return world_instance:find_by_tag(tag, opts)
+function engine.all_objects_by_tag(tag)
+	return world_instance:all_objects_by_tag(tag)
+end
+
+function engine.find_by_type(type_name)
+	return world_instance:find_by_type(type_name)
+end
+
+function engine.find_any_by_type(type_name)
+	return world_instance:find_any_by_type(type_name)
+end
+
+function engine.find_by_tag(tag)
+	return world_instance:find_by_tag(tag)
+end
+
+function engine.find_any_by_tag(tag)
+	return world_instance:find_any_by_tag(tag)
 end
 
 function engine.attach_component(object_or_id, component_or_type)

@@ -149,8 +149,13 @@ function subsystem:onderegister()
 end
 
 function subsystem:mark_for_disposal()
+	if self.dispose_flag then
+		return
+	end
 	self.dispose_flag = true
 	self:deactivate()
+	world_instance._subsystems_by_id[self.id] = nil
+	world_instance:queue_subsystem_disposal(self)
 end
 
 function subsystem:dispose()

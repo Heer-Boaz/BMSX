@@ -89,13 +89,13 @@ function sampleProbe(engine, logger, probe) {
 		local vlok_below_bottom = 0
 		local room = object('room')
 
-		for _obj in world:objects({ scope = 'all' }) do
+		for _obj in world:all_objects() do
 			total_objects = total_objects + 1
 		end
 		for _id in pairs(registry) do
 			total_registry = total_registry + 1
 		end
-		for obj in world:objects({ scope = 'all' }) do
+		for obj in world:all_objects() do
 			if obj.enemy_kind ~= nil and not obj.dispose_flag then
 				local key = obj.enemy_kind
 				enemy_counts[key] = (enemy_counts[key] or 0) + 1
