@@ -53,10 +53,14 @@ private:
 	int64_t cyclesUntilWorkUnits(uint32_t targetUnits) const;
 	bool validateXform2Submission(const GeoJob& job);
 	bool validateSat2Submission(const GeoJob& job);
-	bool validateOverlap2dCandidateSubmission(const GeoJob& job);
+	bool validateOverlap2dSubmission(const GeoJob& job);
 	void processXform2Record(GeoJob& job);
 	void processSat2Record(GeoJob& job);
+	void processOverlap2dRecord(GeoJob& job);
 	void processOverlap2dCandidateRecord(GeoJob& job);
+	void processOverlap2dFullPassRecord(GeoJob& job);
+	bool readOverlapInstanceAt(const GeoJob& job, uint32_t instanceIndex, std::array<uint32_t, 5>& out) const;
+	bool processOverlap2dPair(GeoJob& job, uint32_t recordIndex, const std::array<uint32_t, 5>& instanceA, const std::array<uint32_t, 5>& instanceB, uint32_t pairMeta);
 	bool readPieceBounds(uint32_t pieceAddr, int32_t tx, int32_t ty, std::array<int32_t, 4>& out) const;
 	bool computePiecePairContact(uint32_t pieceAAddr, int32_t txA, int32_t tyA, uint32_t pieceBAddr, int32_t txB, int32_t tyB, uint32_t recordIndex);
 	bool loadWorldPoly(uint32_t pieceAddr, int32_t tx, int32_t ty, std::vector<double>& out) const;
@@ -93,6 +97,8 @@ private:
 	std::vector<double> m_overlapWorldPolyB;
 	std::vector<double> m_overlapClip0;
 	std::vector<double> m_overlapClip1;
+	std::array<uint32_t, 5> m_overlapInstanceA = { 0, 0, 0, 0, 0 };
+	std::array<uint32_t, 5> m_overlapInstanceB = { 0, 0, 0, 0, 0 };
 	std::array<int32_t, 4> m_overlapBoundsA = { 0, 0, 0, 0 };
 	std::array<int32_t, 4> m_overlapBoundsB = { 0, 0, 0, 0 };
 	int32_t m_overlapContactNx = 0;

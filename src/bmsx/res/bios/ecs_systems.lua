@@ -325,10 +325,13 @@ local overlap2dsystem<const> = {}
 overlap2dsystem.__index = overlap2dsystem
 setmetatable(overlap2dsystem, { __index = ecsystem })
 
-local clear_pair_set<const> = function(set, row_pool)
+-- Keep overlap history as canonical collider-pair keys. That keeps the frame
+-- loop to one current-pass map fill plus one previous-pass diff, instead of
+-- maintaining row pools, id->collider side maps, and buffered begin/stay/end
+-- lists around the actual overlap work.
+local clear_pair_map<const> = function(set)
 	for key, row in pairs(set) do
 		clear_map(row)
-		row_pool[#row_pool + 1] = row
 		set[key] = nil
 	end
 end
@@ -355,35 +358,16 @@ function overlap2dsystem.new(priority)
 	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority), overlap2dsystem)
 	self.prev_pairs = {}
 	self.next_pairs = {}
-	self.prev_collider_lookup = {}
-	self.next_collider_lookup = {}
 	self.event_colliders = {}
-	self.candidate_colliders = {}
-	self.candidate_seen = {}
-	self.candidate_pairs = scratchrecordbatch.new(64)
-	self.pair_row_pool = {}
-	self.begins = {}
-	self.stays = {}
-	self.ends_a = {}
-	self.ends_b = {}
-	self.grid_cell_size = 64
-	self.broadphase = collision2d.world_index
+	self.overlap_pairs = scratchrecordbatch.new(64)
 	return self
 end
 
 function overlap2dsystem:update()
 	local prev_pairs<const> = self.prev_pairs
 	local new_pairs<const> = self.next_pairs
-	local prev_collider_lookup<const> = self.prev_collider_lookup
-	local collider_lookup<const> = self.next_collider_lookup
-	local pair_row_pool<const> = self.pair_row_pool
-	local candidate_pairs<const> = self.candidate_pairs
-	clear_pair_set(new_pairs, pair_row_pool)
-	clear_map(collider_lookup)
-
-	local broadphase<const> = self.broadphase
-	broadphase.cell_size = self.grid_cell_size
-	broadphase:clear()
+	local overlap_pairs<const> = self.overlap_pairs
+	clear_pair_map(new_pairs)
 
 	local event_colliders<const> = self.event_colliders
 	local colliders<const> = world_instance.active_space.active_components_by_type[collider2dcomponent]
@@ -391,8 +375,6 @@ function overlap2dsystem:update()
 	for i = 1, #colliders do
 		local collider<const> = colliders[i]
 		if collider.enabled then
-			broadphase:add(collider)
-			collider_lookup[collider.id] = collider
 			event_collider_count = event_collider_count + 1
 			event_colliders[event_collider_count] = collider
 		end
@@ -400,126 +382,66 @@ function overlap2dsystem:update()
 	event_colliders[event_collider_count + 1] = nil
 
 	if event_collider_count == 0 then
-		clear_pair_set(prev_pairs, pair_row_pool)
-		clear_map(prev_collider_lookup)
+		clear_pair_map(prev_pairs)
 		return
 	end
 
-	local candidate_pair_count = 0
-	for i = 1, event_collider_count do
-		local collider<const> = event_colliders[i]
-		local candidates<const>, candidate_count<const> = broadphase:query_aabb(collider:get_world_area(), self.candidate_colliders, self.candidate_seen)
-		for j = 1, candidate_count do
-			local other<const> = candidates[j]
-			if other ~= collider then
-				local a_hits_b<const> = (collider.mask & other.layer) ~= 0
-				local b_hits_a<const> = (other.mask & collider.layer) ~= 0
-				if a_hits_b and b_hits_a and not (other.id < collider.id) then
-					candidate_pair_count = candidate_pair_count + 1
-					local pair<const> = candidate_pairs:get(candidate_pair_count)
-					pair.a = collider
-					pair.b = other
-					pair.hit = false
-					pair.geo_pair_index = -1
-				end
-			end
-		end
-	end
-
-	collision2d.batch_collides(candidate_pairs.items, candidate_pair_count)
-
-	local begins<const> = self.begins
-	local stays<const> = self.stays
-	local ends_a<const> = self.ends_a
-	local ends_b<const> = self.ends_b
-	local begin_count = 0
-	local stay_count = 0
-	local end_count = 0
-	for i = 1, candidate_pair_count do
-		local pair<const> = candidate_pairs.items[i]
-		if pair.hit then
-			local a_id<const> = pair.a.id
-			local b_id<const> = pair.b.id
-			local row = new_pairs[a_id]
-			if row == nil then
-				local pooled<const> = pair_row_pool[#pair_row_pool]
-				if pooled == nil then
-					row = {}
-				else
-					row = pooled
-					pair_row_pool[#pair_row_pool] = nil
-				end
-				new_pairs[a_id] = row
-			end
-			row[b_id] = true
-			local prev_row<const> = prev_pairs[pair.a.id]
-			if prev_row ~= nil and prev_row[pair.b.id] then
-				stay_count = stay_count + 1
-				stays[stay_count] = pair
-			else
-				begin_count = begin_count + 1
-				begins[begin_count] = pair
-			end
-		end
-	end
-	begins[begin_count + 1] = nil
-	stays[stay_count + 1] = nil
-	for a_id, row in pairs(prev_pairs) do
-		local new_row<const> = new_pairs[a_id]
-		for b_id in pairs(row) do
-			if not (new_row ~= nil and new_row[b_id]) then
-				end_count = end_count + 1
-				ends_a[end_count] = a_id
-				ends_b[end_count] = b_id
-			end
-		end
-	end
-	ends_a[end_count + 1] = nil
-	ends_b[end_count + 1] = nil
-
-	for i = 1, begin_count do
-		local pair<const> = begins[i]
+	local overlap_pair_count<const> = collision2d.collect_overlaps(event_colliders, event_collider_count, overlap_pairs)
+	for i = 1, overlap_pair_count do
+		local pair<const> = overlap_pairs.items[i]
 		local a<const> = pair.a
 		local b<const> = pair.b
+		local key_a
+		local key_b
+		if a.id < b.id then
+			key_a = a
+			key_b = b
+		else
+			key_a = b
+			key_b = a
+		end
+		local row = new_pairs[key_a]
+		if row == nil then
+			row = {}
+			new_pairs[key_a] = row
+		end
+		row[key_b] = true
+		local prev_row<const> = prev_pairs[key_a]
 		local owner_a<const> = a.parent
 		local owner_b<const> = b.parent
-		if owner_a ~= nil and owner_b ~= nil and owner_a.active and owner_b.active then
-			emit_overlap_event('overlap.begin', 'begin', owner_a, a, owner_b, b, pair.contact)
-			emit_overlap_event('overlap.begin', 'begin', owner_b, b, owner_a, a, pair.contact_other)
-			emit_overlap_event('overlap', 'begin', owner_a, a, owner_b, b, pair.contact)
-			emit_overlap_event('overlap', 'begin', owner_b, b, owner_a, a, pair.contact_other)
+		if prev_row ~= nil and prev_row[key_b] then
+			if owner_a.active and owner_b.active then
+				emit_overlap_event('overlap.stay', 'stay', owner_a, a, owner_b, b, pair.contact)
+				emit_overlap_event('overlap.stay', 'stay', owner_b, b, owner_a, a, pair.contact_other)
+				emit_overlap_event('overlap', 'stay', owner_a, a, owner_b, b, pair.contact)
+				emit_overlap_event('overlap', 'stay', owner_b, b, owner_a, a, pair.contact_other)
+			end
+		else
+			if owner_a.active and owner_b.active then
+				emit_overlap_event('overlap.begin', 'begin', owner_a, a, owner_b, b, pair.contact)
+				emit_overlap_event('overlap.begin', 'begin', owner_b, b, owner_a, a, pair.contact_other)
+				emit_overlap_event('overlap', 'begin', owner_a, a, owner_b, b, pair.contact)
+				emit_overlap_event('overlap', 'begin', owner_b, b, owner_a, a, pair.contact_other)
+			end
 		end
 	end
-	for i = 1, stay_count do
-		local pair<const> = stays[i]
-		local a<const> = pair.a
-		local b<const> = pair.b
-		local owner_a<const> = a.parent
-		local owner_b<const> = b.parent
-		if owner_a ~= nil and owner_b ~= nil and owner_a.active and owner_b.active then
-			emit_overlap_event('overlap.stay', 'stay', owner_a, a, owner_b, b, pair.contact)
-			emit_overlap_event('overlap.stay', 'stay', owner_b, b, owner_a, a, pair.contact_other)
-			emit_overlap_event('overlap', 'stay', owner_a, a, owner_b, b, pair.contact)
-			emit_overlap_event('overlap', 'stay', owner_b, b, owner_a, a, pair.contact_other)
-		end
-	end
-	for i = 1, end_count do
-		local a<const> = collider_lookup[ends_a[i]] or prev_collider_lookup[ends_a[i]]
-		local b<const> = collider_lookup[ends_b[i]] or prev_collider_lookup[ends_b[i]]
-		if a ~= nil and b ~= nil then
-			local owner_a<const> = a.parent
-			local owner_b<const> = b.parent
-			if owner_a ~= nil and owner_b ~= nil and owner_a.active and owner_b.active then
-				emit_overlap_event('overlap.end', 'end', owner_a, a, owner_b, b, nil)
-				emit_overlap_event('overlap.end', 'end', owner_b, b, owner_a, a, nil)
+
+	for a, row in pairs(prev_pairs) do
+		local new_row<const> = new_pairs[a]
+		for b in pairs(row) do
+			if not (new_row ~= nil and new_row[b]) then
+				local owner_a<const> = a.parent
+				local owner_b<const> = b.parent
+				if owner_a.active and owner_b.active then
+					emit_overlap_event('overlap.end', 'end', owner_a, a, owner_b, b, nil)
+					emit_overlap_event('overlap.end', 'end', owner_b, b, owner_a, a, nil)
+				end
 			end
 		end
 	end
 
 	self.prev_pairs = new_pairs
 	self.next_pairs = prev_pairs
-	self.prev_collider_lookup = collider_lookup
-	self.next_collider_lookup = prev_collider_lookup
 	for i = 1, event_collider_count do
 		local collider<const> = event_colliders[i]
 		collider._overlap_cache_valid = false

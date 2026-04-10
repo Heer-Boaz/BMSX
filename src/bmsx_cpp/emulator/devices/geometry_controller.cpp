@@ -24,7 +24,7 @@ constexpr uint32_t SAT2_DESC_WORDS = 4u;
 constexpr uint32_t SAT2_DESC_BYTES = SAT2_DESC_WORDS * 4u;
 constexpr uint32_t SAT2_RESULT_WORDS = 5u;
 constexpr uint32_t SAT2_RESULT_BYTES = SAT2_RESULT_WORDS * 4u;
-constexpr uint32_t OVERLAP2D_INSTANCE_WORDS = 3u;
+constexpr uint32_t OVERLAP2D_INSTANCE_WORDS = 5u;
 constexpr uint32_t OVERLAP2D_INSTANCE_BYTES = OVERLAP2D_INSTANCE_WORDS * 4u;
 constexpr uint32_t OVERLAP2D_PAIR_WORDS = 3u;
 constexpr uint32_t OVERLAP2D_PAIR_BYTES = OVERLAP2D_PAIR_WORDS * 4u;
@@ -191,7 +191,7 @@ void GeometryController::onService(int64_t nowCycles) {
 				processSat2Record(*m_activeJob);
 				break;
 			case IO_CMD_GEO_OVERLAP2D_PASS:
-				processOverlap2dCandidateRecord(*m_activeJob);
+				processOverlap2dRecord(*m_activeJob);
 				break;
 			default:
 				finishRejected(GEO_FAULT_REJECT_BAD_CMD);
@@ -229,7 +229,7 @@ void GeometryController::tryStart(int64_t nowCycles) {
 			}
 			break;
 		case IO_CMD_GEO_OVERLAP2D_PASS:
-			if (!validateOverlap2dCandidateSubmission(job)) {
+			if (!validateOverlap2dSubmission(job)) {
 				return;
 			}
 			break;
@@ -349,17 +349,36 @@ bool GeometryController::validateSat2Submission(const GeoJob& job) {
 	return true;
 }
 
-bool GeometryController::validateOverlap2dCandidateSubmission(const GeoJob& job) {
-	if ((job.param0 & GEO_OVERLAP2D_MODE_MASK) != GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS
-		|| (job.param0 & GEO_OVERLAP2D_BROADPHASE_MASK) != GEO_OVERLAP2D_BROADPHASE_NONE
-		|| (job.param0 & GEO_OVERLAP2D_CONTACT_POLICY_MASK) != GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE
+bool GeometryController::validateOverlap2dSubmission(const GeoJob& job) {
+	const uint32_t mode = job.param0 & GEO_OVERLAP2D_MODE_MASK;
+	if ((job.param0 & GEO_OVERLAP2D_CONTACT_POLICY_MASK) != GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE
 		|| (job.param0 & GEO_OVERLAP2D_OUTPUT_POLICY_MASK) != GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW
 		|| (job.param0 & 0xffff0000u) != 0u) {
 		finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 		return false;
 	}
-	if (job.stride0 != OVERLAP2D_INSTANCE_BYTES || job.stride1 != OVERLAP2D_PAIR_BYTES || job.stride2 == 0u) {
+	if (job.stride0 != OVERLAP2D_INSTANCE_BYTES) {
 		finishRejected(GEO_FAULT_REJECT_BAD_STRIDE);
+		return false;
+	}
+	if (mode == GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS) {
+		if ((job.param0 & GEO_OVERLAP2D_BROADPHASE_MASK) != GEO_OVERLAP2D_BROADPHASE_NONE
+			|| job.stride1 != OVERLAP2D_PAIR_BYTES
+			|| job.stride2 == 0u) {
+			finishRejected(GEO_FAULT_REJECT_BAD_STRIDE);
+			return false;
+		}
+	} else if (mode == GEO_OVERLAP2D_MODE_FULL_PASS) {
+		if ((job.param0 & GEO_OVERLAP2D_BROADPHASE_MASK) != GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB
+			|| job.src1 != 0u
+			|| job.stride1 != 0u
+			|| job.stride2 != 0u
+			|| job.count > 0xffffu) {
+			finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
+			return false;
+		}
+	} else {
+		finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 		return false;
 	}
 	if ((job.src0 & WORD_ALIGN_MASK) != 0u
@@ -380,16 +399,215 @@ bool GeometryController::validateOverlap2dCandidateSubmission(const GeoJob& job)
 	if (job.count == 0u) {
 		return true;
 	}
-	if (!m_memory.isReadableMainMemoryRange(job.src1, OVERLAP2D_PAIR_BYTES)) {
+	if (mode == GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS && !m_memory.isReadableMainMemoryRange(job.src1, OVERLAP2D_PAIR_BYTES)) {
 		finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 		return false;
 	}
-	const uint32_t instanceCount = job.stride2;
+	const uint32_t instanceCount = mode == GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS ? job.stride2 : job.count;
 	const std::optional<uint32_t> lastInstanceAddr = resolveIndexedSpan(job.src0, instanceCount - 1u, job.stride0, OVERLAP2D_INSTANCE_BYTES);
 	if (!lastInstanceAddr.has_value() || !m_memory.isReadableMainMemoryRange(*lastInstanceAddr, OVERLAP2D_INSTANCE_BYTES)) {
 		finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 		return false;
 	}
+	return true;
+}
+
+void GeometryController::processOverlap2dRecord(GeoJob& job) {
+	const uint32_t mode = job.param0 & GEO_OVERLAP2D_MODE_MASK;
+	if (mode == GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS) {
+		processOverlap2dCandidateRecord(job);
+		return;
+	}
+	processOverlap2dFullPassRecord(job);
+}
+
+void GeometryController::processOverlap2dCandidateRecord(GeoJob& job) {
+	const uint32_t recordIndex = job.processed;
+	const std::optional<uint32_t> pairAddr = resolveIndexedSpan(job.src1, recordIndex, job.stride1, OVERLAP2D_PAIR_BYTES);
+	if (!pairAddr.has_value() || !m_memory.isReadableMainMemoryRange(*pairAddr, OVERLAP2D_PAIR_BYTES)) {
+		finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+		return;
+	}
+	const uint32_t instanceAIndex = m_memory.readU32(*pairAddr + 0u);
+	const uint32_t instanceBIndex = m_memory.readU32(*pairAddr + 4u);
+	const uint32_t pairMeta = m_memory.readU32(*pairAddr + 8u);
+	if (instanceAIndex == instanceBIndex) {
+		finishError(GEO_FAULT_BAD_RECORD_FLAGS, recordIndex);
+		return;
+	}
+	const uint32_t instanceCount = job.stride2;
+	if (instanceAIndex >= instanceCount || instanceBIndex >= instanceCount) {
+		finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+		return;
+	}
+	if (!readOverlapInstanceAt(job, instanceAIndex, m_overlapInstanceA)
+		|| !readOverlapInstanceAt(job, instanceBIndex, m_overlapInstanceB)) {
+		finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+		return;
+	}
+	if (!processOverlap2dPair(job, recordIndex, m_overlapInstanceA, m_overlapInstanceB, pairMeta)) {
+		return;
+	}
+	writeOverlap2dSummary(job, 0u);
+	completeRecord(job);
+}
+
+void GeometryController::processOverlap2dFullPassRecord(GeoJob& job) {
+	const uint32_t recordIndex = job.processed;
+	if (!readOverlapInstanceAt(job, recordIndex, m_overlapInstanceA)) {
+		finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+		return;
+	}
+	for (uint32_t instanceBIndex = recordIndex + 1u; instanceBIndex < job.count; instanceBIndex += 1u) {
+		if (!readOverlapInstanceAt(job, instanceBIndex, m_overlapInstanceB)) {
+			finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+			return;
+		}
+		const uint32_t pairMeta = ((recordIndex & 0xffffu) << 16u) | (instanceBIndex & 0xffffu);
+		if (!processOverlap2dPair(job, recordIndex, m_overlapInstanceA, m_overlapInstanceB, pairMeta)) {
+			return;
+		}
+	}
+	writeOverlap2dSummary(job, 0u);
+	completeRecord(job);
+}
+
+bool GeometryController::readOverlapInstanceAt(const GeoJob& job, uint32_t instanceIndex, std::array<uint32_t, 5>& out) const {
+	const std::optional<uint32_t> instanceAddr = resolveIndexedSpan(job.src0, instanceIndex, job.stride0, OVERLAP2D_INSTANCE_BYTES);
+	if (!instanceAddr.has_value() || !m_memory.isReadableMainMemoryRange(*instanceAddr, OVERLAP2D_INSTANCE_BYTES)) {
+		return false;
+	}
+	out[0] = m_memory.readU32(*instanceAddr + 0u);
+	out[1] = m_memory.readU32(*instanceAddr + 4u);
+	out[2] = m_memory.readU32(*instanceAddr + 8u);
+	out[3] = m_memory.readU32(*instanceAddr + 12u);
+	out[4] = m_memory.readU32(*instanceAddr + 16u);
+	return true;
+}
+
+bool GeometryController::processOverlap2dPair(GeoJob& job, uint32_t recordIndex, const std::array<uint32_t, 5>& instanceA, const std::array<uint32_t, 5>& instanceB, uint32_t pairMeta) {
+	const uint32_t shapeAAddr = instanceA[0];
+	const int32_t txA = static_cast<int32_t>(instanceA[1]);
+	const int32_t tyA = static_cast<int32_t>(instanceA[2]);
+	const uint32_t layerA = instanceA[3];
+	const uint32_t maskA = instanceA[4];
+	const uint32_t shapeBAddr = instanceB[0];
+	const int32_t txB = static_cast<int32_t>(instanceB[1]);
+	const int32_t tyB = static_cast<int32_t>(instanceB[2]);
+	const uint32_t layerB = instanceB[3];
+	const uint32_t maskB = instanceB[4];
+	if (!m_memory.isReadableMainMemoryRange(shapeAAddr, OVERLAP2D_DESC_BYTES)
+		|| !m_memory.isReadableMainMemoryRange(shapeBAddr, OVERLAP2D_DESC_BYTES)) {
+		finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+		return false;
+	}
+	if ((maskA & layerB) == 0u || (maskB & layerA) == 0u) {
+		return true;
+	}
+	job.broadphasePairCount += 1u;
+	if (!readPieceBounds(shapeAAddr, txA, tyA, m_overlapBoundsA)
+		|| !readPieceBounds(shapeBAddr, txB, tyB, m_overlapBoundsB)) {
+		finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+		return false;
+	}
+	if (!boundsOverlap(m_overlapBoundsA, m_overlapBoundsB)) {
+		return true;
+	}
+	const uint32_t shapeAKind = m_memory.readU32(shapeAAddr + 0u);
+	const uint32_t shapeACount = m_memory.readU32(shapeAAddr + 4u);
+	const uint32_t shapeADataOffset = m_memory.readU32(shapeAAddr + 8u);
+	const uint32_t shapeBKind = m_memory.readU32(shapeBAddr + 0u);
+	const uint32_t shapeBCount = m_memory.readU32(shapeBAddr + 4u);
+	const uint32_t shapeBDataOffset = m_memory.readU32(shapeBAddr + 8u);
+	const uint32_t shapeAPieceCount = shapeAKind == OVERLAP2D_KIND_COMPOUND ? shapeACount : 1u;
+	const uint32_t shapeBPieceCount = shapeBKind == OVERLAP2D_KIND_COMPOUND ? shapeBCount : 1u;
+	if (shapeAPieceCount == 0u || shapeBPieceCount == 0u
+		|| (shapeAKind == OVERLAP2D_KIND_COMPOUND && (shapeADataOffset & WORD_ALIGN_MASK) != 0u)
+		|| (shapeBKind == OVERLAP2D_KIND_COMPOUND && (shapeBDataOffset & WORD_ALIGN_MASK) != 0u)
+		|| (shapeAKind != OVERLAP2D_KIND_COMPOUND && shapeAKind != GEO_PRIMITIVE_AABB && shapeAKind != GEO_PRIMITIVE_CONVEX_POLY)
+		|| (shapeBKind != OVERLAP2D_KIND_COMPOUND && shapeBKind != GEO_PRIMITIVE_AABB && shapeBKind != GEO_PRIMITIVE_CONVEX_POLY)) {
+		finishError(GEO_FAULT_DESCRIPTOR_KIND, recordIndex);
+		return false;
+	}
+	job.exactPairCount += 1u;
+	bool bestHit = false;
+	double bestDepth = std::numeric_limits<double>::infinity();
+	uint32_t bestPieceA = 0u;
+	uint32_t bestPieceB = 0u;
+	uint32_t bestFeatureMeta = 0u;
+	int32_t bestDepthI32 = 0;
+	int32_t bestNx = 0;
+	int32_t bestNy = 0;
+	int32_t bestPx = 0;
+	int32_t bestPy = 0;
+	for (uint32_t pieceAIndex = 0u; pieceAIndex < shapeAPieceCount; pieceAIndex += 1u) {
+		const std::optional<uint32_t> pieceAAddr = shapeAKind == OVERLAP2D_KIND_COMPOUND
+			? resolveByteOffset(shapeAAddr, shapeADataOffset + pieceAIndex * OVERLAP2D_DESC_BYTES, OVERLAP2D_DESC_BYTES)
+			: std::optional<uint32_t>(shapeAAddr);
+		if (!pieceAAddr.has_value() || !m_memory.isReadableMainMemoryRange(*pieceAAddr, OVERLAP2D_DESC_BYTES)) {
+			finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+			return false;
+		}
+		if (!readPieceBounds(*pieceAAddr, txA, tyA, m_overlapBoundsA)) {
+			finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+			return false;
+		}
+		for (uint32_t pieceBIndex = 0u; pieceBIndex < shapeBPieceCount; pieceBIndex += 1u) {
+			const std::optional<uint32_t> pieceBAddr = shapeBKind == OVERLAP2D_KIND_COMPOUND
+				? resolveByteOffset(shapeBAddr, shapeBDataOffset + pieceBIndex * OVERLAP2D_DESC_BYTES, OVERLAP2D_DESC_BYTES)
+				: std::optional<uint32_t>(shapeBAddr);
+			if (!pieceBAddr.has_value() || !m_memory.isReadableMainMemoryRange(*pieceBAddr, OVERLAP2D_DESC_BYTES)) {
+				finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+				return false;
+			}
+			if (!readPieceBounds(*pieceBAddr, txB, tyB, m_overlapBoundsB)) {
+				finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+				return false;
+			}
+			if (!boundsOverlap(m_overlapBoundsA, m_overlapBoundsB)) {
+				continue;
+			}
+			if (!computePiecePairContact(*pieceAAddr, txA, tyA, *pieceBAddr, txB, tyB, recordIndex)) {
+				if (!m_activeJob.has_value()) {
+					return false;
+				}
+				continue;
+			}
+			if (!bestHit
+				|| m_overlapContactDepth < bestDepth
+				|| (m_overlapContactDepth == bestDepth
+					&& (pieceAIndex < bestPieceA
+						|| (pieceAIndex == bestPieceA
+							&& (pieceBIndex < bestPieceB
+								|| (pieceBIndex == bestPieceB && m_overlapContactFeatureMeta < bestFeatureMeta)))))) {
+				bestHit = true;
+				bestDepth = static_cast<double>(m_overlapContactDepth);
+				bestPieceA = pieceAIndex;
+				bestPieceB = pieceBIndex;
+				bestFeatureMeta = m_overlapContactFeatureMeta;
+				bestDepthI32 = m_overlapContactDepth;
+				bestNx = m_overlapContactNx;
+				bestNy = m_overlapContactNy;
+				bestPx = m_overlapContactPx;
+				bestPy = m_overlapContactPy;
+			}
+		}
+	}
+	if (!bestHit) {
+		return true;
+	}
+	if (job.resultCount >= job.param1) {
+		writeOverlap2dSummary(job, GEO_OVERLAP2D_SUMMARY_FLAG_OVERFLOW);
+		finishError(GEO_FAULT_RESULT_CAPACITY, recordIndex);
+		return false;
+	}
+	const std::optional<uint32_t> resultAddr = resolveIndexedSpan(job.dst0, job.resultCount, OVERLAP2D_RESULT_BYTES, OVERLAP2D_RESULT_BYTES);
+	if (!resultAddr.has_value() || !m_memory.isRamRange(*resultAddr, OVERLAP2D_RESULT_BYTES)) {
+		finishError(GEO_FAULT_DST_RANGE, recordIndex);
+		return false;
+	}
+	writeOverlap2dResult(*resultAddr, bestNx, bestNy, bestDepthI32, bestPx, bestPy, bestPieceA, bestPieceB, bestFeatureMeta, pairMeta);
+	job.resultCount += 1u;
 	return true;
 }
 
@@ -686,137 +904,6 @@ void GeometryController::processSat2Record(GeoJob& job) {
 	completeRecord(job);
 }
 
-void GeometryController::processOverlap2dCandidateRecord(GeoJob& job) {
-	const uint32_t recordIndex = job.processed;
-	const std::optional<uint32_t> pairAddr = resolveIndexedSpan(job.src1, recordIndex, job.stride1, OVERLAP2D_PAIR_BYTES);
-	if (!pairAddr.has_value() || !m_memory.isReadableMainMemoryRange(*pairAddr, OVERLAP2D_PAIR_BYTES)) {
-		finishError(GEO_FAULT_SRC_RANGE, recordIndex);
-		return;
-	}
-	const uint32_t instanceAIndex = m_memory.readU32(*pairAddr + 0u);
-	const uint32_t instanceBIndex = m_memory.readU32(*pairAddr + 4u);
-	const uint32_t pairMeta = m_memory.readU32(*pairAddr + 8u);
-	if (instanceAIndex == instanceBIndex) {
-		finishError(GEO_FAULT_BAD_RECORD_FLAGS, recordIndex);
-		return;
-	}
-	const uint32_t instanceCount = job.stride2;
-	if (instanceAIndex >= instanceCount || instanceBIndex >= instanceCount) {
-		finishError(GEO_FAULT_SRC_RANGE, recordIndex);
-		return;
-	}
-	const std::optional<uint32_t> instanceAAddr = resolveIndexedSpan(job.src0, instanceAIndex, job.stride0, OVERLAP2D_INSTANCE_BYTES);
-	const std::optional<uint32_t> instanceBAddr = resolveIndexedSpan(job.src0, instanceBIndex, job.stride0, OVERLAP2D_INSTANCE_BYTES);
-	if (!instanceAAddr.has_value() || !instanceBAddr.has_value()
-		|| !m_memory.isReadableMainMemoryRange(*instanceAAddr, OVERLAP2D_INSTANCE_BYTES)
-		|| !m_memory.isReadableMainMemoryRange(*instanceBAddr, OVERLAP2D_INSTANCE_BYTES)) {
-		finishError(GEO_FAULT_SRC_RANGE, recordIndex);
-		return;
-	}
-	const uint32_t shapeAAddr = m_memory.readU32(*instanceAAddr + 0u);
-	const int32_t txA = readI32(*instanceAAddr + 4u);
-	const int32_t tyA = readI32(*instanceAAddr + 8u);
-	const uint32_t shapeBAddr = m_memory.readU32(*instanceBAddr + 0u);
-	const int32_t txB = readI32(*instanceBAddr + 4u);
-	const int32_t tyB = readI32(*instanceBAddr + 8u);
-	job.broadphasePairCount += 1u;
-	if (!m_memory.isReadableMainMemoryRange(shapeAAddr, OVERLAP2D_DESC_BYTES)
-		|| !m_memory.isReadableMainMemoryRange(shapeBAddr, OVERLAP2D_DESC_BYTES)) {
-		finishError(GEO_FAULT_SRC_RANGE, recordIndex);
-		return;
-	}
-	const uint32_t shapeAKind = m_memory.readU32(shapeAAddr + 0u);
-	const uint32_t shapeACount = m_memory.readU32(shapeAAddr + 4u);
-	const uint32_t shapeADataOffset = m_memory.readU32(shapeAAddr + 8u);
-	const uint32_t shapeBKind = m_memory.readU32(shapeBAddr + 0u);
-	const uint32_t shapeBCount = m_memory.readU32(shapeBAddr + 4u);
-	const uint32_t shapeBDataOffset = m_memory.readU32(shapeBAddr + 8u);
-	const uint32_t shapeAPieceCount = shapeAKind == OVERLAP2D_KIND_COMPOUND ? shapeACount : 1u;
-	const uint32_t shapeBPieceCount = shapeBKind == OVERLAP2D_KIND_COMPOUND ? shapeBCount : 1u;
-	if (shapeAPieceCount == 0u || shapeBPieceCount == 0u
-		|| (shapeAKind == OVERLAP2D_KIND_COMPOUND && (shapeADataOffset & WORD_ALIGN_MASK) != 0u)
-		|| (shapeBKind == OVERLAP2D_KIND_COMPOUND && (shapeBDataOffset & WORD_ALIGN_MASK) != 0u)
-		|| (shapeAKind != OVERLAP2D_KIND_COMPOUND && shapeAKind != GEO_PRIMITIVE_AABB && shapeAKind != GEO_PRIMITIVE_CONVEX_POLY)
-		|| (shapeBKind != OVERLAP2D_KIND_COMPOUND && shapeBKind != GEO_PRIMITIVE_AABB && shapeBKind != GEO_PRIMITIVE_CONVEX_POLY)) {
-		finishError(GEO_FAULT_DESCRIPTOR_KIND, recordIndex);
-		return;
-	}
-	job.exactPairCount += 1u;
-	bool bestHit = false;
-	double bestDepth = std::numeric_limits<double>::infinity();
-	uint32_t bestPieceA = 0u;
-	uint32_t bestPieceB = 0u;
-	uint32_t bestFeatureMeta = 0u;
-	int32_t bestNx = 0;
-	int32_t bestNy = 0;
-	int32_t bestPx = 0;
-	int32_t bestPy = 0;
-	for (uint32_t pieceAIndex = 0u; pieceAIndex < shapeAPieceCount; pieceAIndex += 1u) {
-		const std::optional<uint32_t> pieceAAddr = shapeAKind == OVERLAP2D_KIND_COMPOUND
-			? resolveByteOffset(shapeAAddr, shapeADataOffset + pieceAIndex * OVERLAP2D_DESC_BYTES, OVERLAP2D_DESC_BYTES)
-			: std::optional<uint32_t>(shapeAAddr);
-		if (!pieceAAddr.has_value() || !m_memory.isReadableMainMemoryRange(*pieceAAddr, OVERLAP2D_DESC_BYTES)) {
-			finishError(GEO_FAULT_SRC_RANGE, recordIndex);
-			return;
-		}
-		if (!readPieceBounds(*pieceAAddr, txA, tyA, m_overlapBoundsA)) {
-			finishError(GEO_FAULT_SRC_RANGE, recordIndex);
-			return;
-		}
-		for (uint32_t pieceBIndex = 0u; pieceBIndex < shapeBPieceCount; pieceBIndex += 1u) {
-			const std::optional<uint32_t> pieceBAddr = shapeBKind == OVERLAP2D_KIND_COMPOUND
-				? resolveByteOffset(shapeBAddr, shapeBDataOffset + pieceBIndex * OVERLAP2D_DESC_BYTES, OVERLAP2D_DESC_BYTES)
-				: std::optional<uint32_t>(shapeBAddr);
-			if (!pieceBAddr.has_value() || !m_memory.isReadableMainMemoryRange(*pieceBAddr, OVERLAP2D_DESC_BYTES)) {
-				finishError(GEO_FAULT_SRC_RANGE, recordIndex);
-				return;
-			}
-			if (!readPieceBounds(*pieceBAddr, txB, tyB, m_overlapBoundsB)) {
-				finishError(GEO_FAULT_SRC_RANGE, recordIndex);
-				return;
-			}
-			if (!boundsOverlap(m_overlapBoundsA, m_overlapBoundsB)) {
-				continue;
-			}
-			if (!computePiecePairContact(*pieceAAddr, txA, tyA, *pieceBAddr, txB, tyB, recordIndex)) {
-				continue;
-			}
-			if (!bestHit
-				|| m_overlapContactDepth < bestDepth
-				|| (m_overlapContactDepth == bestDepth
-					&& (pieceAIndex < bestPieceA
-						|| (pieceAIndex == bestPieceA
-							&& (pieceBIndex < bestPieceB
-								|| (pieceBIndex == bestPieceB && m_overlapContactFeatureMeta < bestFeatureMeta)))))) {
-				bestHit = true;
-				bestDepth = static_cast<double>(m_overlapContactDepth);
-				bestPieceA = pieceAIndex;
-				bestPieceB = pieceBIndex;
-				bestFeatureMeta = m_overlapContactFeatureMeta;
-				bestNx = m_overlapContactNx;
-				bestNy = m_overlapContactNy;
-				bestPx = m_overlapContactPx;
-				bestPy = m_overlapContactPy;
-			}
-		}
-	}
-	if (bestHit) {
-		if (job.resultCount >= job.param1) {
-			writeOverlap2dSummary(job, GEO_OVERLAP2D_SUMMARY_FLAG_OVERFLOW);
-			finishError(GEO_FAULT_RESULT_CAPACITY, recordIndex);
-			return;
-		}
-		const std::optional<uint32_t> resultAddr = resolveIndexedSpan(job.dst0, job.resultCount, OVERLAP2D_RESULT_BYTES, OVERLAP2D_RESULT_BYTES);
-		if (!resultAddr.has_value() || !m_memory.isRamRange(*resultAddr, OVERLAP2D_RESULT_BYTES)) {
-			finishError(GEO_FAULT_DST_RANGE, recordIndex);
-			return;
-		}
-		writeOverlap2dResult(*resultAddr, bestNx, bestNy, bestDepth == std::numeric_limits<double>::infinity() ? 0 : m_overlapContactDepth, bestPx, bestPy, bestPieceA, bestPieceB, bestFeatureMeta, pairMeta);
-		job.resultCount += 1u;
-	}
-	writeOverlap2dSummary(job, 0u);
-	completeRecord(job);
-}
 
 bool GeometryController::readPieceBounds(uint32_t pieceAddr, int32_t tx, int32_t ty, std::array<int32_t, 4>& out) const {
 	const uint32_t boundsOffset = m_memory.readU32(pieceAddr + 12u);
