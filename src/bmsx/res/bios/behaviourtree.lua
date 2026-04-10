@@ -2,9 +2,6 @@
 -- behaviour tree runtime + definition registry
 
 local behaviourtree<const> = {}
-behaviourtree.success = 'success'
-behaviourtree.failure = 'failed'
-behaviourtree.running = 'running'
 
 local blackboard<const> = {}
 blackboard.__index = blackboard
@@ -12,7 +9,7 @@ blackboard.__index = blackboard
 function blackboard.new(opts)
 	local self<const> = setmetatable({}, blackboard)
 	self.id = opts.id
-	self.nodedata = {}
+	self:clear_node_data()
 	return self
 end
 
@@ -25,8 +22,8 @@ btnode.__index = btnode
 
 function btnode.new(id, priority)
 	local self<const> = setmetatable({}, btnode)
-	self.id = id or 'node'
-	self.priority = priority or 0
+	self.id = id
+	self.priority = priority
 	return self
 end
 
@@ -57,11 +54,11 @@ end
 function sequence:tick(target, blackboard)
 	for i = 1, #self.children do
 		local status<const> = self.children[i]:tick(target, blackboard)
-		if status ~= behaviourtree.success then
+		if status ~= 'SUCCESS' then
 			return status
 		end
 	end
-	return behaviourtree.success
+	return 'SUCCESS'
 end
 
 local selector<const> = {}
@@ -77,11 +74,11 @@ end
 function selector:tick(target, blackboard)
 	for i = 1, #self.children do
 		local status<const> = self.children[i]:tick(target, blackboard)
-		if status ~= behaviourtree.failure then
+		if status ~= 'FAILURE' then
 			return status
 		end
 	end
-	return behaviourtree.failure
+	return 'FAILURE'
 end
 
 local parallel<const> = {}
@@ -100,21 +97,21 @@ function parallel:tick(target, blackboard)
 	local success_count = 0
 	for i = 1, #self.children do
 		local status<const> = self.children[i]:tick(target, blackboard)
-		if status == behaviourtree.running then
+		if status == 'RUNNING' then
 			any_running = true
-		elseif status == behaviourtree.success then
+		elseif status == 'SUCCESS' then
 			success_count = success_count + 1
 			if self.success_policy == 'one' then
-				return behaviourtree.success
+				return 'SUCCESS'
 			end
-		elseif status == behaviourtree.failure and self.success_policy == 'all' then
-			return behaviourtree.failure
+		elseif status == 'FAILURE' and self.success_policy == 'all' then
+			return 'FAILURE'
 		end
 	end
 	if self.success_policy == 'all' and success_count == #self.children then
-		return behaviourtree.success
+		return 'SUCCESS'
 	end
-	return any_running and behaviourtree.running or behaviourtree.failure
+	return any_running and 'RUNNING' or 'FAILURE'
 end
 
 local decorator<const> = {}
@@ -149,7 +146,7 @@ function condition:tick(target, blackboard)
 	if self.modifier == 'not' then
 		result = not result
 	end
-	return result and behaviourtree.success or behaviourtree.failure
+	return result and 'SUCCESS' or 'FAILURE'
 end
 
 local compositecondition<const> = {}
@@ -173,7 +170,7 @@ function compositecondition:tick(target, blackboard)
 			combined = combined or result
 		end
 	end
-	return combined and behaviourtree.success or behaviourtree.failure
+	return combined and 'SUCCESS' or 'FAILURE'
 end
 
 local randomselector<const> = {}
@@ -194,7 +191,7 @@ function randomselector:tick(target, blackboard)
 		blackboard.nodedata[self.currentchild_propname] = idx
 	end
 	local status<const> = self.children[idx]:tick(target, blackboard)
-	if status ~= behaviourtree.running then
+	if status ~= 'RUNNING' then
 		blackboard.nodedata[self.currentchild_propname] = nil
 	end
 	return status
@@ -216,12 +213,12 @@ function limit:tick(target, blackboard)
 	local count<const> = blackboard.nodedata[self.count_propname] or 0
 	if count < self.limit then
 		local status<const> = self.child:tick(target, blackboard)
-		if status ~= behaviourtree.running then
+		if status ~= 'RUNNING' then
 			blackboard.nodedata[self.count_propname] = count + 1
 		end
 		return status
 	end
-	return behaviourtree.failure
+	return 'FAILURE'
 end
 
 local priorityselector<const> = {}
@@ -244,11 +241,11 @@ end
 function priorityselector:tick(target, blackboard)
 	for i = 1, #self.children do
 		local status<const> = self.children[i]:tick(target, blackboard)
-		if status ~= behaviourtree.failure then
+		if status ~= 'FAILURE' then
 			return status
 		end
 	end
-	return behaviourtree.failure
+	return 'FAILURE'
 end
 
 local wait<const> = {}
@@ -266,10 +263,10 @@ function wait:tick(_target, blackboard)
 	local elapsed<const> = blackboard.nodedata[self.wait_propname] or 0
 	if elapsed < self.wait_time then
 		blackboard.nodedata[self.wait_propname] = elapsed + 1
-		return behaviourtree.running
+		return 'RUNNING'
 	end
 	blackboard.nodedata[self.wait_propname] = nil
-	return behaviourtree.success
+	return 'SUCCESS'
 end
 
 local action<const> = {}
@@ -300,14 +297,14 @@ function compositeaction:tick(target, blackboard)
 	local outcome
 	for i = 1, #self.actions do
 		local status<const> = self.actions[i]:tick(target, blackboard)
-		if status == behaviourtree.failure then
+		if status == 'FAILURE' then
 			return status
 		end
-		if status == behaviourtree.running then
+		if status == 'RUNNING' then
 			outcome = status
 		end
 	end
-	return outcome or behaviourtree.success
+	return outcome or 'SUCCESS'
 end
 
 local behaviourtreedefinitions<const> = {}

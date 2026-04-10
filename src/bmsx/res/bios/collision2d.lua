@@ -12,15 +12,14 @@ local geo_overlap_summary_bytes<const> = 16
 local geo_overlap_candidate_param0<const> = sys_geo_overlap_mode_candidate_pairs | sys_geo_overlap_broadphase_none | sys_geo_overlap_contact_clipped_feature | sys_geo_overlap_output_stop_on_overflow
 local geo_overlap_full_pass_param0<const> = sys_geo_overlap_mode_full_pass | sys_geo_overlap_broadphase_local_bounds_aabb | sys_geo_overlap_contact_clipped_feature | sys_geo_overlap_output_stop_on_overflow
 local geo_batch_token = 0
-local direct_query_pair<const> = {
-	a = nil,
-	b = nil,
-	hit = false,
-	geo_pair_index = -1,
-	contact = nil,
-	contact_other = nil,
+local direct_query_contact<const> = {
+	normal = { x = 0, y = 0 },
+	depth = 0,
+	point = { x = 0, y = 0 },
+	piece_a = 0,
+	piece_b = 0,
+	feature_meta = 0,
 }
-local direct_query_pairs<const> = { direct_query_pair }
 
 local next_geo_batch_token<const> = function()
 	geo_batch_token = geo_batch_token + 1
@@ -110,130 +109,13 @@ local submit_geo_overlap_full_pass<const> = function(instance_base, result_base,
 	end
 end
 
-function collision2d.batch_collides(pairs, pair_count)
-	if pair_count == 0 then
-		return
-	end
-	local batch_token<const> = next_geo_batch_token()
-	local geo_pair_count = 0
-	local instance_count = 0
-
-	for i = 1, pair_count do
-		local pair<const> = pairs[i]
-		pair.hit = false
-		pair.geo_pair_index = -1
-		local a<const> = pair.a
-		local b<const> = pair.b
-		if a._overlap_geo_shape_ref == nil or b._overlap_geo_shape_ref == nil then
-			error('[collision2d] GEO overlap requires baked collision bin data: ' .. tostring(a.id) .. ' / ' .. tostring(b.id))
-		end
-		if a._geo_overlap_instance_token ~= batch_token then
-			a._geo_overlap_instance_token = batch_token
-			a._geo_overlap_instance_index = instance_count
-			instance_count = instance_count + 1
-		end
-		if b._geo_overlap_instance_token ~= batch_token then
-			b._geo_overlap_instance_token = batch_token
-			b._geo_overlap_instance_index = instance_count
-			instance_count = instance_count + 1
-		end
-		pair.geo_pair_index = geo_pair_count
-		geo_pair_count = geo_pair_count + 1
-	end
-
-	local instance_base<const> = sys_geo_scratch_base
-	local pair_base<const> = instance_base + instance_count * geo_overlap_instance_bytes
-	local result_base<const> = pair_base + geo_pair_count * geo_overlap_pair_bytes
-	local summary_base<const> = result_base + geo_pair_count * geo_overlap_result_bytes
-	local scratch_required<const> = summary_base + geo_overlap_summary_bytes
-	if scratch_required > sys_geo_scratch_base + sys_geo_scratch_size then
-		error('[collision2d] GEO overlap scratch overflow (' .. tostring(scratch_required - sys_geo_scratch_base) .. ' > ' .. tostring(sys_geo_scratch_size) .. ')')
-	end
-
-	for i = 1, pair_count do
-		local pair<const> = pairs[i]
-		local a<const> = pair.a
-		local b<const> = pair.b
-		stage_geo_overlap_instance(a, batch_token, instance_base)
-		stage_geo_overlap_instance(b, batch_token, instance_base)
-		local pair_addr<const> = pair_base + pair.geo_pair_index * geo_overlap_pair_bytes
-		memwrite(
-			pair_addr,
-			a._geo_overlap_instance_index,
-			b._geo_overlap_instance_index,
-			i
-		)
-	end
-
-	submit_geo_overlap_candidate_batch(instance_base, pair_base, result_base, summary_base, instance_count, geo_pair_count)
-
-	local result_count<const> = mem[summary_base + 0]
-	for i = 0, result_count - 1 do
-		local result_addr<const> = result_base + i * geo_overlap_result_bytes
-		local pair_meta<const> = mem[result_addr + 32]
-		if pair_meta < 1 or pair_meta > pair_count then
-			error('[collision2d] GEO overlap returned invalid pair meta ' .. tostring(pair_meta))
-		end
-		local pair<const> = pairs[pair_meta]
-		local contact = pair.contact
-		local contact_other = pair.contact_other
-		if contact == nil then
-			contact = {
-				normal = { x = 0, y = 0 },
-				depth = 0,
-				point = { x = 0, y = 0 },
-				piece_a = 0,
-				piece_b = 0,
-				feature_meta = 0,
-			}
-			contact_other = {
-				normal = { x = 0, y = 0 },
-				depth = 0,
-				point = { x = 0, y = 0 },
-				piece_a = 0,
-				piece_b = 0,
-				feature_meta = 0,
-			}
-			pair.contact = contact
-			pair.contact_other = contact_other
-		end
-		local normal_x<const> = fix16_to_f32(mem[result_addr + 0])
-		local normal_y<const> = fix16_to_f32(mem[result_addr + 4])
-		local depth<const> = fix16_to_f32(mem[result_addr + 8])
-		local point_x<const> = fix16_to_f32(mem[result_addr + 12])
-		local point_y<const> = fix16_to_f32(mem[result_addr + 16])
-		local piece_a<const> = mem[result_addr + 20]
-		local piece_b<const> = mem[result_addr + 24]
-		local feature_meta<const> = mem[result_addr + 28]
-		pair.hit = true
-		contact.normal.x = normal_x
-		contact.normal.y = normal_y
-		contact.depth = depth
-		contact.point.x = point_x
-		contact.point.y = point_y
-		contact.piece_a = piece_a
-		contact.piece_b = piece_b
-		contact.feature_meta = feature_meta
-		contact_other.normal.x = -normal_x
-		contact_other.normal.y = -normal_y
-		contact_other.depth = depth
-		contact_other.point.x = point_x
-		contact_other.point.y = point_y
-		contact_other.piece_a = piece_b
-		contact_other.piece_b = piece_a
-		contact_other.feature_meta = feature_meta
-	end
-end
-
 function collision2d.collect_overlaps(colliders, collider_count, pairs)
-	if collider_count < 2 then
-		return 0
-	end
 	local batch_token<const> = next_geo_batch_token()
 	local instance_base<const> = sys_geo_scratch_base
 
 	for i = 1, collider_count do
 		local collider<const> = colliders[i]
+		collider:get_world_area()
 		if collider._overlap_geo_shape_ref == nil then
 			error('[collision2d] GEO overlap requires baked collision bin data: ' .. tostring(collider.id))
 		end
@@ -322,29 +204,49 @@ function collision2d.collides(a, b)
 	if not a.hittable or not b.hittable then
 		return nil
 	end
-	a:get_world_area()
-	if b ~= a then
-		b:get_world_area()
+	if a == b then
+		error('[collision2d] self overlap query is invalid: ' .. tostring(a.id))
 	end
+	a:get_world_area()
+	b:get_world_area()
 	if a._overlap_geo_shape_ref == nil or b._overlap_geo_shape_ref == nil then
 		error('[collision2d] GEO overlap requires baked collision bin data: ' .. tostring(a.id) .. ' / ' .. tostring(b.id))
 	end
-	local pair<const> = direct_query_pair
-	pair.a = a
-	pair.b = b
-	pair.hit = false
-	pair.geo_pair_index = -1
-	collision2d.batch_collides(direct_query_pairs, 1)
-	if b ~= a then
-		b._overlap_cache_valid = false
-		b._world_polys_cache_valid = false
-	end
+	local batch_token<const> = next_geo_batch_token()
+	local instance_base<const> = sys_geo_scratch_base
+	local pair_base<const> = instance_base + geo_overlap_instance_bytes * 2
+	local result_base<const> = pair_base + geo_overlap_pair_bytes
+	local summary_base<const> = result_base + geo_overlap_result_bytes
+	a._geo_overlap_instance_token = batch_token
+	a._geo_overlap_instance_index = 0
+	b._geo_overlap_instance_token = batch_token
+	b._geo_overlap_instance_index = 1
+	stage_geo_overlap_instance(a, batch_token, instance_base)
+	stage_geo_overlap_instance(b, batch_token, instance_base)
+	memwrite(
+		pair_base,
+		0,
+		1,
+		1
+	)
+	submit_geo_overlap_candidate_batch(instance_base, pair_base, result_base, summary_base, 2, 1)
 	a._overlap_cache_valid = false
 	a._world_polys_cache_valid = false
-	if not pair.hit then
+	b._overlap_cache_valid = false
+	b._world_polys_cache_valid = false
+	if mem[summary_base + 0] == 0 then
 		return nil
 	end
-	return pair.contact
+	local contact<const> = direct_query_contact
+	contact.normal.x = fix16_to_f32(mem[result_base + 0])
+	contact.normal.y = fix16_to_f32(mem[result_base + 4])
+	contact.depth = fix16_to_f32(mem[result_base + 8])
+	contact.point.x = fix16_to_f32(mem[result_base + 12])
+	contact.point.y = fix16_to_f32(mem[result_base + 16])
+	contact.piece_a = mem[result_base + 20]
+	contact.piece_b = mem[result_base + 24]
+	contact.feature_meta = mem[result_base + 28]
+	return contact
 end
 
 return collision2d

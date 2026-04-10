@@ -44,7 +44,6 @@ local default_pipeline_spec<const> = function()
 		{ ref = 'actioneffectruntime' },
 		{ ref = 'objectfsm' },
 		{ ref = 'boundary' },
-		{ ref = 'overlapevents' },
 		{ ref = 'tilecollision' },
 		{ ref = 'timeline' },
 		{ ref = 'textrender' },

@@ -5,9 +5,12 @@ local wrap_text_lines<const> = require('util/wrap_text_lines')
 --
 -- DESIGN PRINCIPLES — collision handling via overlap2dsystem
 --
--- 1. NEVER WRITE CUSTOM COLLISION LOOPS IN CART CODE.
---    overlap2dsystem runs automatically every frame (tickgroup.physics, priority 42).
---    It detects all overlapping collider pairs in the active world space and emits
+-- 1. NEVER WRITE CUSTOM COLLISION LOOPS IN CART CODE WHEN YOU WANT
+--    EVENT-STYLE OVERLAPS.
+--    overlap2dsystem is an opt-in ECS stage. Carts that want automatic
+--    overlap events add it to their pipeline; carts that do not can stick to
+--    targeted collision queries. When enabled, it detects all overlapping
+--    enabled+hittable collider pairs in the active world space and emits
 --    three events on BOTH owner objects' event ports:
 --
 --      overlap.begin  — first frame two colliders touch (phase = 'begin')
@@ -107,7 +110,7 @@ end
 
 function behaviortreesystem:update()
 	local objects<const> = world_instance.active_space.active_objects
-	for i = 1, #objects do
+	for i = #objects, 1, -1 do
 		local obj<const> = objects[i]
 		local ids<const> = obj.btree_ids
 		local contexts<const> = obj.btreecontexts
@@ -153,7 +156,7 @@ end
 
 function statemachinesystem:update(dt_ms)
 	local objects<const> = world_instance.active_space.active_objects
-	for i = 1, #objects do
+	for i = #objects, 1, -1 do
 		objects[i].sc:update(dt_ms)
 	end
 end
@@ -256,13 +259,13 @@ end
 
 function boundarysystem:update()
 	local screen_boundary_components<const> = world_instance.active_space.active_components_by_type[screenboundarycomponent]
-	for i = 1, #screen_boundary_components do
+	for i = #screen_boundary_components, 1, -1 do
 		local component<const> = screen_boundary_components[i]
 		local obj<const> = component.parent
 		emit_boundary_events(obj, component)
 	end
 	local prohibit_leave_components<const> = world_instance.active_space.active_components_by_type[prohibitleavingscreencomponent]
-	for i = 1, #prohibit_leave_components do
+	for i = #prohibit_leave_components, 1, -1 do
 		local component<const> = prohibit_leave_components[i]
 		local obj<const> = component.parent
 		emit_boundary_events(obj, component)
@@ -292,7 +295,7 @@ end
 
 function tilecollisionsystem:update()
 	local components<const> = world_instance.active_space.active_components_by_type[tilecollisioncomponent]
-	for i = 1, #components do
+	for i = #components, 1, -1 do
 		local component<const> = components[i]
 		local obj<const> = component.parent
 		local current_payload<const> = component.current_payload
@@ -374,7 +377,7 @@ function overlap2dsystem:update()
 	local event_collider_count = 0
 	for i = 1, #colliders do
 		local collider<const> = colliders[i]
-		if collider.enabled then
+		if collider.enabled and collider.hittable then
 			event_collider_count = event_collider_count + 1
 			event_colliders[event_collider_count] = collider
 		end
@@ -386,7 +389,7 @@ function overlap2dsystem:update()
 		return
 	end
 
-	local overlap_pair_count<const> = collision2d.collect_overlaps(event_colliders, event_collider_count, overlap_pairs)
+	local overlap_pair_count<const> = event_collider_count > 1 and collision2d.collect_overlaps(event_colliders, event_collider_count, overlap_pairs) or 0
 	for i = 1, overlap_pair_count do
 		local pair<const> = overlap_pairs.items[i]
 		local a<const> = pair.a
@@ -460,7 +463,7 @@ end
 
 function timelinesystem:update(dt_ms)
 	local components<const> = world_instance.active_space.active_components_by_type[timelinecomponent]
-	for i = 1, #components do
+	for i = #components, 1, -1 do
 		local component<const> = components[i]
 		if component.active_count ~= 0 then
 			component:tick_active(dt_ms)
@@ -505,7 +508,9 @@ function spriterendersystem:update()
 	for i = 1, #components do
 		local sc<const> = components[i]
 		local obj<const> = sc.parent
-		if not obj.visible or not sc.enabled then return end
+		if not obj.visible or not sc.enabled then
+			goto continue_sprite_render
+		end
 		local offset<const> = sc.offset
 		local x<const> = obj.x + offset.x
 		local y<const> = obj.y + offset.y
@@ -533,9 +538,10 @@ function spriterendersystem:update()
 			sc.colorize.r,
 			sc.colorize.g,
 			sc.colorize.b,
-			sc.colorize.a,
-			sc.parallax_weight
-		)
+				sc.colorize.a,
+				sc.parallax_weight
+			)
+		::continue_sprite_render::
 	end
 end
 

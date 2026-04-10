@@ -178,10 +178,6 @@ local collider2dcomponent<const> = {}
 collider2dcomponent.__index = collider2dcomponent
 setmetatable(collider2dcomponent, { __index = component })
 
-local get_sprite_offset_xy<const> = function(sprite)
-	return sprite.offset.x, sprite.offset.y
-end
-
 local get_asset_rom_base<const> = function(asset)
 	local payload_id<const> = asset.payload_id
 	if payload_id == 'system' then
@@ -213,9 +209,6 @@ end
 
 local get_driving_sprite_for_collider<const> = function(collider)
 	local owner<const> = collider.parent
-	if owner == nil then
-		return nil
-	end
 	if owner._collision_primary_collider == collider then
 		return owner._collision_primary_sprite
 	end
@@ -285,7 +278,6 @@ local prepare_overlap_cache<const> = function(collider)
 	local shape_offset_y = collider.shape_offset_y
 	local local_area = collider.local_area
 	local local_polys = collider.local_polys
-	local shape_kind
 	local geo_shape_ref = nil
 	local geo_tx
 	local geo_ty
@@ -294,16 +286,8 @@ local prepare_overlap_cache<const> = function(collider)
 		local_area = sprite_area
 		local_polys = sprite_polys
 		geo_shape_ref = sprite_shape_ref
-		shape_offset_x, shape_offset_y = get_sprite_offset_xy(sprite)
-		if local_polys ~= nil and #local_polys > 0 then
-			shape_kind = 'poly'
-		else
-			shape_kind = 'aabb'
-		end
-	elseif local_polys ~= nil and #local_polys > 0 then
-		shape_kind = 'poly'
-	else
-		shape_kind = 'aabb'
+		shape_offset_x = sprite.offset.x
+		shape_offset_y = sprite.offset.y
 	end
 	geo_tx = parent.x + shape_offset_x
 	geo_ty = parent.y + shape_offset_y
@@ -322,18 +306,7 @@ local prepare_overlap_cache<const> = function(collider)
 		area.right = parent.x + shape_offset_x + local_area.right
 		area.bottom = parent.y + shape_offset_y + local_area.bottom
 	end
-	local area_poly<const> = collider._world_area_poly_cache
-	area_poly[1] = area.left
-	area_poly[2] = area.top
-	area_poly[3] = area.right
-	area_poly[4] = area.top
-	area_poly[5] = area.right
-	area_poly[6] = area.bottom
-	area_poly[7] = area.left
-	area_poly[8] = area.bottom
-
 	collider._world_polys_cache_valid = false
-	collider._overlap_shape_kind = shape_kind
 	collider._overlap_geo_shape_ref = geo_shape_ref
 	collider._overlap_geo_tx = geo_tx
 	collider._overlap_geo_ty = geo_ty
@@ -383,11 +356,8 @@ function collider2dcomponent.new(opts)
 		right = 0,
 		bottom = 0,
 	}
-	self._world_area_poly_cache = { 0, 0, 0, 0, 0, 0, 0, 0 }
-	self._world_area_polys_cache = { self._world_area_poly_cache }
 	self._world_polys_cache = {}
 	self._world_polys_cache_valid = false
-	self._overlap_shape_kind = nil
 	self._overlap_cache_valid = false
 	self._overlap_geo_shape_ref = nil
 	self._overlap_geo_tx = 0
@@ -432,33 +402,9 @@ function collider2dcomponent:get_world_area()
 	return self._world_area_cache
 end
 
-function collider2dcomponent:get_world_area_poly()
-	if not self._overlap_cache_valid then
-		prepare_overlap_cache(self)
-	end
-	return self._world_area_poly_cache
-end
-
-function collider2dcomponent:get_world_area_polys()
-	if not self._overlap_cache_valid then
-		prepare_overlap_cache(self)
-	end
-	return self._world_area_polys_cache
-end
-
-function collider2dcomponent:get_shape_kind()
-	if not self._overlap_cache_valid then
-		prepare_overlap_cache(self)
-	end
-	return self._overlap_shape_kind
-end
-
 function collider2dcomponent:get_world_polys()
 	if not self._overlap_cache_valid then
 		prepare_overlap_cache(self)
-	end
-	if self._overlap_shape_kind ~= 'poly' then
-		return nil
 	end
 	if self._world_polys_cache_valid then
 		return self._world_polys_cache

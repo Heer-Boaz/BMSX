@@ -31,7 +31,6 @@ local window_size<const> = function(height, top_margin, line_height, top_padding
 	return math.max(1, math.floor(available_height / line_height))
 end
 
-local boot_delay<const> = 2.0
 local font_width<const> = 6
 local line_height<const> = 8
 local content_top<const> = 32
@@ -2114,10 +2113,6 @@ local scroll_boot_lines<const> = function(lines, window_size, delta)
 	return scroll_top, max_scroll, visible_lines
 end
 
-local elapsed_seconds<const> = function()
-	return os.clock() - boot_start
-end
-
 local center_x<const> = function(text, width)
 	-- center text in given width, but ensure that the result is dividable by font_width
 	return math.floor((width - (string.len(text) * font_width)) / 2 / font_width) * font_width
@@ -2247,11 +2242,7 @@ local compute_boot_progress<const> = function(info, cart_ready, elapsed)
 	if cart_ready then
 		stage_done = stage_done + 1
 	end
-	local stage_progress<const> = stage_done / stage_count
-	local time_progress = elapsed / boot_delay
-	if time_progress < 0 then time_progress = 0 end
-	if time_progress > 1 then time_progress = 1 end
-	return (stage_progress * 0.8) + (time_progress * 0.2)
+	return stage_done / stage_count
 end
 
 local append_wrapped_line<const> = function(lines, value, color, line_slots, first_prefix, next_prefix)
@@ -2365,7 +2356,7 @@ local build_boot_content_lines<const> = function(info, cart_present, cursor, ela
 
 	if cart_present then
 		local cart_ready<const> = cart_boot_ready()
-		if not cart_ready and not boot_requested and elapsed >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
+		if not cart_ready and not boot_requested and sys_atlas_ready and not sys_atlas_failed then
 			if not cart_start_failed_logged then
 				cart_start_failed_logged = true
 				print('[BootRom] Cart start failed: cart_boot_ready=0 while BIOS remained active.')
@@ -2447,7 +2438,7 @@ function update()
 			and cart_boot_ready()
 			and cart_valid
 
-		if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
+		if cart_present_and_ready and not boot_requested and sys_atlas_ready and not sys_atlas_failed then
 			boot_requested = true
 			print('Cart boot requested.')
 			mem[sys_boot_cart] = 1
@@ -2468,7 +2459,7 @@ render_boot_screen = function(scroll_delta)
 	do local c<const> = sys_palette_color(color_header_bg);memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10), sys_vdp_cmd_fill_rect, 10, 0, 0, 0, width, 24, 0, sys_vdp_layer_world, c.r, c.g, c.b, c.a) end
 	local info<const> = build_info()
 	local cart_present<const> = mem[cart_rom_base] == cart_rom_magic
-	local elapsed<const> = elapsed_seconds()
+	local elapsed<const> = os.clock() - boot_start
 	local cursor<const> = (math.floor(elapsed * 2) % 2 == 0) and '█' or ' '
 	local line_slots<const> = line_slots(width, left, font_width)
 	local content_lines<const> = build_boot_content_lines(info, cart_present, cursor, elapsed, line_slots)

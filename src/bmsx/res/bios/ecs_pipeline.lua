@@ -1,7 +1,6 @@
 -- ecs_pipeline.lua
 -- ecs pipeline registry and builder for lua engine
 
-local ecs<const> = require('ecs')
 local registry<const> = require('registry')
 
 local ecspipelineregistry<const> = {}
@@ -10,7 +9,6 @@ ecspipelineregistry.__index = ecspipelineregistry
 function ecspipelineregistry.new()
 	local self<const> = setmetatable({}, ecspipelineregistry)
 	self._descs = {}
-	self._last_diagnostics = nil
 	return self
 end
 
@@ -29,7 +27,6 @@ function ecspipelineregistry:get(id)
 end
 
 function ecspipelineregistry:build(world_instance, nodes)
-	local t0<const> = $.platform.clock.perf_now()
 	local filtered<const> = {}
 	for i = 1, #nodes do
 		local n<const> = nodes[i]
@@ -68,13 +65,6 @@ function ecspipelineregistry:build(world_instance, nodes)
 		return a.index < b.index
 	end)
 
-	local group_orders<const> = {}
-	for i = 1, #resolved do
-		local r<const> = resolved[i]
-		group_orders[r.group] = group_orders[r.group] or {}
-		group_orders[r.group][#group_orders[r.group] + 1] = r.ref
-	end
-
 	local systems<const> = {}
 	for i = 1, #resolved do
 		local r<const> = resolved[i]
@@ -100,25 +90,6 @@ function ecspipelineregistry:build(world_instance, nodes)
 		registry.instance:register(systems[i])
 	end
 	world_instance:rebind_subsystem_systems_all()
-
-	local t1<const> = $.platform.clock.perf_now()
-	local diag<const> = {
-		final_order = (function()
-			local out<const> = {}
-			for i = 1, #resolved do
-				out[i] = resolved[i].ref
-			end
-			return out
-		end)(),
-		group_orders = group_orders,
-		build_ms = t1 - t0,
-	}
-	self._last_diagnostics = diag
-	return diag
-end
-
-function ecspipelineregistry:get_last_diagnostics()
-	return self._last_diagnostics
 end
 
 return {
