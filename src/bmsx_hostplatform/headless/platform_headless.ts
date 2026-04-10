@@ -40,7 +40,7 @@ import {
 } from 'bmsx/platform';
 import { HeadlessGameViewHost } from 'bmsx/render/headless/headless_view';
 
-class HeadlessClock implements Clock {
+class RealtimeHeadlessClock implements Clock {
 	private readonly origin = performance.now();
 	public scheduleOnce(delayMs: number, cb: (t: MonoTime) => void) {
 		let active = true;
@@ -71,7 +71,85 @@ class HeadlessClock implements Clock {
 	}
 }
 
-class HeadlessFrameLoop implements FrameLoop {
+type VirtualTimer = {
+	dueMs: number;
+	cb: (t: MonoTime) => void;
+	active: boolean;
+};
+
+class VirtualHeadlessClock implements Clock {
+	private currentMs = 0;
+	private readonly epochMs = Date.now();
+	private readonly timers: VirtualTimer[] = [];
+
+	public scheduleOnce(delayMs: number, cb: (t: MonoTime) => void) {
+		const timer: VirtualTimer = {
+			dueMs: this.currentMs + delayMs,
+			cb,
+			active: true,
+		};
+		this.timers.push(timer);
+		return {
+			cancel: () => {
+				timer.active = false;
+			},
+			isActive: () => timer.active,
+		};
+	}
+
+	public advance(stepMs: number): void {
+		this.currentMs += stepMs;
+		for (;;) {
+			let dueIndex = -1;
+			let dueMs = Infinity;
+			for (let i = 0; i < this.timers.length; i += 1) {
+				const timer = this.timers[i]!;
+				if (!timer.active || timer.dueMs > this.currentMs) {
+					continue;
+				}
+				if (timer.dueMs < dueMs) {
+					dueMs = timer.dueMs;
+					dueIndex = i;
+				}
+			}
+			if (dueIndex < 0) {
+				break;
+			}
+			const [timer] = this.timers.splice(dueIndex, 1);
+			if (!timer || !timer.active) {
+				continue;
+			}
+			timer.active = false;
+			timer.cb(this.currentMs);
+		}
+		if (this.timers.length > 0) {
+			let writeIndex = 0;
+			for (let readIndex = 0; readIndex < this.timers.length; readIndex += 1) {
+				const timer = this.timers[readIndex]!;
+				if (!timer.active) {
+					continue;
+				}
+				this.timers[writeIndex] = timer;
+				writeIndex += 1;
+			}
+			this.timers.length = writeIndex;
+		}
+	}
+
+	now(): MonoTime {
+		return this.currentMs;
+	}
+
+	perf_now(): MonoTime {
+		return this.currentMs;
+	}
+
+	dateNow(): number {
+		return this.epochMs + Math.round(this.currentMs);
+	}
+}
+
+class RealtimeHeadlessFrameLoop implements FrameLoop {
 	constructor(private readonly clock: Clock, private readonly stepMs: number) { }
 	start(tick: (t: MonoTime) => void): { stop(): void } {
 		let active = true;
@@ -84,6 +162,28 @@ class HeadlessFrameLoop implements FrameLoop {
 				if (!active) return;
 				active = false;
 				clearInterval(handle);
+			},
+		};
+	}
+}
+
+class UnpacedHeadlessFrameLoop implements FrameLoop {
+	constructor(private readonly clock: VirtualHeadlessClock, private readonly stepMs: number) { }
+
+	start(tick: (t: MonoTime) => void): { stop(): void } {
+		let active = true;
+		const pump = (): void => {
+			if (!active) {
+				return;
+			}
+			this.clock.advance(this.stepMs);
+			tick(this.clock.now());
+			setImmediate(pump);
+		};
+		setImmediate(pump);
+		return {
+			stop: () => {
+				active = false;
 			},
 		};
 	}
@@ -292,6 +392,7 @@ class SeededRng implements RngService {
 export interface HeadlessPlatformOptions {
 	frameIntervalMs?: number;
 	rngSeed?: number;
+	unpaced?: boolean;
 }
 
 class NoopWindowEventHub implements WindowEventHub {
@@ -332,8 +433,14 @@ export class HeadlessPlatformServices implements Platform {
 	constructor(options: HeadlessPlatformOptions = {}) {
 		const step = options.frameIntervalMs ?? 20;
 		this.ufpsScaled = Math.round((1000 / step) * HZ_SCALE);
-		this.clock = new HeadlessClock();
-		this.frames = new HeadlessFrameLoop(this.clock, step);
+		if (options.unpaced) {
+			const clock = new VirtualHeadlessClock();
+			this.clock = clock;
+			this.frames = new UnpacedHeadlessFrameLoop(clock, step);
+		} else {
+			this.clock = new RealtimeHeadlessClock();
+			this.frames = new RealtimeHeadlessFrameLoop(this.clock, step);
+		}
 		this.lifecycle = new HeadlessLifecycle();
 		this.input = new HeadlessInputHub();
 		this.storage = new MemoryStorage();

@@ -5020,11 +5020,12 @@ int main(int argc, char** argv) {
 	input_timeline_bind_keyboard_event(core_keyboard_event);
 	input_timeline_configure((input_timeline && input_timeline[0]) ? input_timeline : NULL,
 			(rom_folder && rom_folder[0]) ? rom_folder : NULL, game_path, g_frame_usec);
+	const bool unpaced_timeline = input_timeline_is_active();
 	uint64_t next_frame_ns = monotonic_ns();
 
 	while (!g_should_quit) {
 		uint64_t now_ns = monotonic_ns();
-		if (now_ns < next_frame_ns) {
+		if (!unpaced_timeline && now_ns < next_frame_ns) {
 			const uint64_t sleep_ns = next_frame_ns - now_ns;
 			struct timespec ts;
 			ts.tv_sec = (time_t)(sleep_ns / 1000000000ull);
@@ -5032,7 +5033,7 @@ int main(int argc, char** argv) {
 			nanosleep(&ts, NULL);
 		}
 		now_ns = monotonic_ns();
-		if (!g_menu_active && now_ns > next_frame_ns) {
+		if (!unpaced_timeline && !g_menu_active && now_ns > next_frame_ns) {
 			const uint64_t lag_ns = now_ns - next_frame_ns;
 			if (lag_ns > kFrameScheduleResyncNs) {
 				next_frame_ns = now_ns;
@@ -5078,8 +5079,12 @@ int main(int argc, char** argv) {
 		}
 		g_drop_video = false;
 		now_ns = monotonic_ns();
-		const uint64_t scheduled_next_ns = next_frame_ns + g_frame_ns;
-		next_frame_ns = now_ns > scheduled_next_ns ? now_ns : scheduled_next_ns;
+		if (unpaced_timeline) {
+			next_frame_ns = now_ns;
+		} else {
+			const uint64_t scheduled_next_ns = next_frame_ns + g_frame_ns;
+			next_frame_ns = now_ns > scheduled_next_ns ? now_ns : scheduled_next_ns;
+		}
 	}
 
 	core.retro_unload_game();

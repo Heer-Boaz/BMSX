@@ -41,25 +41,33 @@ export class HeadlessCaptureCoordinator {
 	private readonly frameCaptureCounts = new Map<number, number>();
 	private readonly writeFailures: unknown[] = [];
 	private readonly frameSubscription;
+	private lastPresentedFrame: HeadlessPresentedFrame | null = null;
 
 	constructor(
 		private readonly host: HeadlessGameViewHost,
 		public readonly outputDir: string,
 		private readonly logger: (message: string) => void,
+		private readonly nowMs: () => number,
 	) {
 		this.frameSubscription = host.addPresentedFrameListener(this.handlePresentedFrame);
 	}
 
 	public schedule(capture: ScheduledHeadlessCapture): void {
 		this.pending.push({
-			deadlineMs: Date.now() + capture.dueTimeMs,
+			deadlineMs: this.nowMs() + capture.dueTimeMs,
 			description: capture.description,
 			source: capture.source,
 		});
 	}
 
 	public async flushWrites(drainPendingCaptures = false): Promise<void> {
+		if (drainPendingCaptures && this.pending.length > 0) {
+			this.capturePendingFromLatestFrame();
+		}
 		while ((drainPendingCaptures && this.pending.length > 0) || !this.gate.ready) {
+			if (drainPendingCaptures && this.pending.length > 0) {
+				this.capturePendingFromLatestFrame();
+			}
 			await sleep(1);
 		}
 		if (this.writeFailures.length > 0) {
@@ -72,6 +80,7 @@ export class HeadlessCaptureCoordinator {
 	}
 
 	private handlePresentedFrame = (frame: HeadlessPresentedFrame): void => {
+		this.lastPresentedFrame = frame;
 		let writeIndex = 0;
 		for (let readIndex = 0; readIndex < this.pending.length; readIndex += 1) {
 			const pending = this.pending[readIndex]!;
@@ -85,8 +94,26 @@ export class HeadlessCaptureCoordinator {
 		this.pending.length = writeIndex;
 	};
 
+	private capturePendingFromLatestFrame(): void {
+		const frame = this.lastPresentedFrame;
+		if (!frame) {
+			throw new Error('[headless:capture] Cannot flush pending captures before any frame was presented.');
+		}
+		let writeIndex = 0;
+		for (let readIndex = 0; readIndex < this.pending.length; readIndex += 1) {
+			const pending = this.pending[readIndex]!;
+			if (this.nowMs() >= pending.deadlineMs) {
+				this.captureFrame(frame, pending);
+				continue;
+			}
+			this.pending[writeIndex] = pending;
+			writeIndex += 1;
+		}
+		this.pending.length = writeIndex;
+	}
+
 	private shouldCapture(capture: PendingHeadlessCapture): boolean {
-		return Date.now() >= capture.deadlineMs;
+		return this.nowMs() >= capture.deadlineMs;
 	}
 
 	private captureFrame(frame: HeadlessPresentedFrame, capture: PendingHeadlessCapture): void {

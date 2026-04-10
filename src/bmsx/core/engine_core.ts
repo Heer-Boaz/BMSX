@@ -561,6 +561,9 @@ export class EngineCore {
 	}
 
 	public async refresh_audio_assets(): Promise<void> {
+		if (!this.platform.audio.available) {
+			return;
+		}
 		this.sndmaster.bootstrapRuntimeAudio(DEFAULT_MASTER_VOLUME);
 		const resolver = this.buildModulationResolver();
 		const runtime = Runtime.instance;
@@ -578,6 +581,9 @@ export class EngineCore {
 	}
 
 	public bootstrapStartupAudio(): void {
+		if (!this.platform.audio.available) {
+			return;
+		}
 		this.sndmaster.bootstrapRuntimeAudio(DEFAULT_MASTER_VOLUME);
 	}
 

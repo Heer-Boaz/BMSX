@@ -66,10 +66,20 @@ Run an already-built cart in headless mode:
 npm run headless:game -- pietious
 ```
 
+Run the explicit headless assert route:
+
+```bash
+npm run headless:assert -- pietious
+```
+
 Important:
 
 - `headless:forcebuildallrun` and `headless:game` take the cart folder name
 - headless uses `dist/headless_debug.js`, `dist/engine.debug.js`, and `dist/bmsx-bios.debug.rom`
+- `headless:game` now prefers `src/carts/<cart>/test/<cart>_assert_results.mjs` when present
+- if no auto assert module exists, `headless:game` falls back to `<cart>_demo.json`
+- headless timelines run unpaced, so the full scenario completes as fast as the emulator can simulate it
+- `headless:assert` and `headless:forcebuildallassert` are the explicit assert paths
 
 ## Libretro / Custom Host
 
@@ -106,11 +116,15 @@ Important:
 - the silent SDL path uses the software backend on purpose
 - the libretro core loads `dist/bmsx-bios.rom`, not `dist/bmsx-bios.debug.rom`
 - the ROM argument must be the non-debug cart ROM, for example `./dist/pietious.rom`
+- the custom libretro host falls back to `src/carts/<cart>/test/<cart>_demo.json` when no explicit timeline is provided
+- libretro timelines also run unpaced while the input timeline is active
 
 ## Input Timelines And Screenshots
 
 - headless and the custom libretro host both support input timeline playback
+- you do not need a separate `smoke` timeline
 - timeline JSON files may include `capture: true` markers
+- both runners execute the full chosen timeline; “fast” means they do not pace it to realtime
 - screenshots are written to a `screenshots/` subfolder next to the timeline file
 - when a cart folder name differs from the generated ROM filename, use `--rom-folder <cart-folder>` or an explicit `--input-timeline <file>` when running the custom libretro host manually
 

@@ -1589,6 +1589,9 @@ export class Runtime {
 	private static startEngineWithDeferredStartupAudioRefresh(): void {
 		$.bootstrapStartupAudio();
 		$.start();
+		if (!$.platform.audio.available) {
+			return;
+		}
 		const firstFrameHandle = $.platform.frames.start(() => {
 			firstFrameHandle.stop();
 			const audioRefreshHandle = $.platform.frames.start(() => {

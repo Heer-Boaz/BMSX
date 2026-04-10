@@ -311,6 +311,10 @@ export class SoundMaster {
 		return this.rng;
 	}
 
+	private isRuntimeAudioAvailable(): boolean {
+		return !!this.audio && this.audio.available;
+	}
+
 	public bootstrapRuntimeAudio(startingVolume: number): void {
 		this.audio = $.platform.audio;
 		this.rng = $.platform.rng;
@@ -444,6 +448,9 @@ export class SoundMaster {
 	}
 
 	public invalidateClip(id: asset_id): void {
+		if (!this.isRuntimeAudioAvailable()) {
+			return;
+		}
 		const clip = this.streamClips[id];
 		if (clip) {
 			clip.dispose();
@@ -1005,6 +1012,9 @@ export class SoundMaster {
 	}
 
 	public playWithPolicy(type: AudioType, id: asset_id, request: SoundMasterPlayRequest = {}, policy: AudioPlaybackMode = 'replace', maxVoices = 1): void {
+		if (!this.isRuntimeAudioAvailable()) {
+			return;
+		}
 		const audioMeta = this.getAudioMetaOrThrow(id);
 		const priority = request.priority ?? audioMeta.priority ?? 0;
 		const resolvedRequest: SoundMasterPlayRequest = { ...request, priority };
@@ -1055,6 +1065,9 @@ export class SoundMaster {
 	}
 
 	public playSfx(id: asset_id, options?: AudioPlayOptions): void {
+		if (!this.isRuntimeAudioAvailable()) {
+			return;
+		}
 		const parsed = this.parseAudioOptions(options);
 		const channel = parsed.channel ?? 'sfx';
 		if (channel === 'music') {
@@ -1064,6 +1077,9 @@ export class SoundMaster {
 	}
 
 	public playMusic(id: asset_id, options?: AudioPlayOptions): void {
+		if (!this.isRuntimeAudioAvailable()) {
+			return;
+		}
 		const transition = this.resolveMusicTransition(options, id);
 		if (transition.request) {
 			this.requestMusicTransition(transition.request);
@@ -1100,6 +1116,9 @@ export class SoundMaster {
 	}
 
 	public stop(idOrType?: asset_id | AudioType, which?: AudioStopSelector, idOrVoice?: asset_id | VoiceId): void {
+		if (!this.isRuntimeAudioAvailable()) {
+			return;
+		}
 		if (this.isAudioType(idOrType)) {
 			this.stopByTypeInternal(idOrType, which ?? 'all', idOrVoice);
 			return;
@@ -1165,10 +1184,16 @@ export class SoundMaster {
 	}
 
 	public stopEffect(): void {
+		if (!this.isRuntimeAudioAvailable()) {
+			return;
+		}
 		this.stop('sfx', 'all');
 	}
 
 	public stopMusic(opts?: { fade_ms?: number; }): void {
+		if (!this.isRuntimeAudioAvailable()) {
+			return;
+		}
 		const transitionId = this.beginMusicTransition();
 		const fade_ms = opts?.fade_ms;
 		if (fade_ms !== undefined && fade_ms > 0) {
@@ -1179,10 +1204,16 @@ export class SoundMaster {
 	}
 
 	public stopUI(): void {
+		if (!this.isRuntimeAudioAvailable()) {
+			return;
+		}
 		this.stop('ui', 'all');
 	}
 
 	public pause(type?: AudioType): void {
+		if (!this.isRuntimeAudioAvailable()) {
+			return;
+		}
 		if (!type) {
 			this.suspendAll('pause');
 			return;
@@ -1203,10 +1234,16 @@ export class SoundMaster {
 	}
 
 	public resume(): void {
+		if (!this.isRuntimeAudioAvailable()) {
+			return;
+		}
 		this.resumeAll('pause');
 	}
 
 	public resumeType(type: AudioType): void {
+		if (!this.isRuntimeAudioAvailable()) {
+			return;
+		}
 		const paused = this.drainPausedSnapshots(type);
 		for (let i = 0; i < paused.length; i++) {
 			const snapshot = paused[i];
@@ -1216,6 +1253,9 @@ export class SoundMaster {
 	}
 
 	public suspendAll(tag: string): void {
+		if (!this.isRuntimeAudioAvailable()) {
+			return;
+		}
 		if (this.globalSuspensions.has(tag)) {
 			return;
 		}
@@ -1227,6 +1267,9 @@ export class SoundMaster {
 	}
 
 	public resumeAll(tag: string): void {
+		if (!this.isRuntimeAudioAvailable()) {
+			return;
+		}
 		if (!this.globalSuspensions.delete(tag)) {
 			return;
 		}

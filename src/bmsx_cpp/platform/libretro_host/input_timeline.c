@@ -705,7 +705,7 @@ static bool derive_input_timeline_path(const char* rom_folder, char* out, size_t
 		return false;
 	}
 	int written = snprintf(out, out_size, "src/carts/%s/test/%s_demo.json", rom_folder, rom_folder);
-	return written > 0 && (size_t)written < out_size;
+	return written > 0 && (size_t)written < out_size && access(out, F_OK) == 0;
 }
 
 static bool derive_screenshot_output_dir(const char* timeline_path, char* out, size_t out_size) {
@@ -823,6 +823,10 @@ bool input_timeline_should_capture_frame(uint32_t frame_number) {
 		++g_test_capture_event_next;
 	}
 	return should_capture;
+}
+
+bool input_timeline_is_active(void) {
+	return g_timeline_active;
 }
 
 bool input_timeline_should_auto_quit(uint64_t trailing_frames) {

@@ -587,117 +587,95 @@ export default function schedule({ logger, schedule: scheduleInput, test }) {
 		let lastWaitingLogAt = 0;
 		let gameplayReadyAt = 0;
 		let scenario = { name: 'boot' };
-
-		await new Promise((resolve, reject) => {
-			const timeout = setTimeout(() => {
-				reject(new Error(`[assert] timeout while waiting for scenario=${scenario.name}`));
-			}, TIMEOUT_MS);
-
-			const finish = () => {
-				clearInterval(poll);
-				clearTimeout(timeout);
-				resolve(undefined);
-			};
-
-			const failRun = (error) => {
-				clearInterval(poll);
-				clearTimeout(timeout);
-				reject(error);
-			};
-
-			const poll = setInterval(() => {
-				try {
-					const engine = globalThis.$;
-					if (!engine.initialized) {
-						return;
-					}
-					if (!requestedNewGame) {
-						if (!engine.is_cart_program_active()) {
-							cartActiveAt = 0;
-							return;
-						}
-						if (cartActiveAt === 0) {
-							cartActiveAt = Date.now();
-							logger('[assert] cart active, waiting for settle');
-							return;
-						}
-						if (Date.now() - cartActiveAt < CART_SETTLE_MS) {
-							return;
-						}
-						requestedNewGame = true;
-						logger('[assert] cart active, requesting new_game');
-						engine.request_new_game();
-						return;
-					}
-
-					let state;
-					try {
-						state = getLuaState(engine);
-					}
-					catch (error) {
-						if (!(error instanceof Error) || !error.message.startsWith('Attempted to call a nil value.')) {
-							throw error;
-						}
-						return;
-					}
-					if (!hasGameplayObjects(state)) {
-						gameplayReadyAt = 0;
-						const now = Date.now();
-						if (now - lastWaitingLogAt >= 1000) {
-							lastWaitingLogAt = now;
-							if (state) {
-								logger(`[assert] waiting objects castle=${state.has_castle} room=${state.has_room} player=${state.has_player} elevator=${state.has_elevator}`);
-							} else {
-								logger('[assert] waiting objects state=nil');
-							}
-						}
-						return;
-					}
-					if (gameplayReadyAt === 0) {
-						gameplayReadyAt = Date.now();
-						logger('[assert] gameplay objects ready, waiting for settle');
-						return;
-					}
-					if (Date.now() - gameplayReadyAt < 1000) {
-						return;
-					}
-
-					if (scenario.name === 'boot') {
-						scenario = setupCarryScenario(engine, logger);
-						return;
-					}
-					if (scenario.name === 'carry') {
-						scenario = updateCarryScenario(engine, scenario, logger);
-						return;
-					}
-					if (scenario.name === 'landing') {
-						scenario = updateLandingScenario(engine, scenario, logger);
-						return;
-					}
-					if (scenario.name === 'ceiling') {
-						scenario = updateCeilingScenario(engine, scenario, logger);
-						return;
-					}
-					if (scenario.name === 'stepoff') {
-						scenario = updateStepOffScenario(engine, scenario, logger, scheduleInput);
-						return;
-					}
-					if (scenario.name === 'ladder_sword') {
-						scenario = updateLadderSwordScenario(engine, scenario, logger);
-						return;
-					}
-					if (scenario.name === 'room_switch_input_sync') {
-						scenario = updateRoomSwitchInputSyncScenario(engine, scenario, logger);
-						return;
-					}
-					if (scenario.name === 'done') {
-						finish();
-					}
-				} catch (error) {
-					failRun(error);
+		const startedAt = test.nowMs();
+		for (;;) {
+			if (test.nowMs() - startedAt >= TIMEOUT_MS) {
+				throw new Error(`[assert] timeout while waiting for scenario=${scenario.name}`);
+			}
+			const engine = globalThis.$;
+			if (!engine.initialized) {
+				await test.sleep(POLL_MS);
+				continue;
+			}
+			if (!requestedNewGame) {
+				if (!engine.is_cart_program_active()) {
+					cartActiveAt = 0;
+					await test.sleep(POLL_MS);
+					continue;
 				}
-			}, POLL_MS);
-		});
+				if (cartActiveAt === 0) {
+					cartActiveAt = test.nowMs();
+					logger('[assert] cart active, waiting for settle');
+					await test.sleep(POLL_MS);
+					continue;
+				}
+				if (test.nowMs() - cartActiveAt < CART_SETTLE_MS) {
+					await test.sleep(POLL_MS);
+					continue;
+				}
+				requestedNewGame = true;
+				logger('[assert] cart active, requesting new_game');
+				engine.request_new_game();
+				await test.sleep(POLL_MS);
+				continue;
+			}
+
+			let state;
+			try {
+				state = getLuaState(engine);
+			}
+			catch (error) {
+				if (!(error instanceof Error) || !error.message.startsWith('Attempted to call a nil value.')) {
+					throw error;
+				}
+				await test.sleep(POLL_MS);
+				continue;
+			}
+			if (!hasGameplayObjects(state)) {
+				gameplayReadyAt = 0;
+				const now = test.nowMs();
+				if (now - lastWaitingLogAt >= 1000) {
+					lastWaitingLogAt = now;
+					if (state) {
+						logger(`[assert] waiting objects castle=${state.has_castle} room=${state.has_room} player=${state.has_player} elevator=${state.has_elevator}`);
+					} else {
+						logger('[assert] waiting objects state=nil');
+					}
+				}
+				await test.sleep(POLL_MS);
+				continue;
+			}
+			if (gameplayReadyAt === 0) {
+				gameplayReadyAt = test.nowMs();
+				logger('[assert] gameplay objects ready, waiting for settle');
+				await test.sleep(POLL_MS);
+				continue;
+			}
+			if (test.nowMs() - gameplayReadyAt < 1000) {
+				await test.sleep(POLL_MS);
+				continue;
+			}
+
+			if (scenario.name === 'boot') {
+				scenario = setupCarryScenario(engine, logger);
+			} else if (scenario.name === 'carry') {
+				scenario = updateCarryScenario(engine, scenario, logger);
+			} else if (scenario.name === 'landing') {
+				scenario = updateLandingScenario(engine, scenario, logger);
+			} else if (scenario.name === 'ceiling') {
+				scenario = updateCeilingScenario(engine, scenario, logger);
+			} else if (scenario.name === 'stepoff') {
+				scenario = updateStepOffScenario(engine, scenario, logger, scheduleInput);
+			} else if (scenario.name === 'ladder_sword') {
+				scenario = updateLadderSwordScenario(engine, scenario, logger);
+			} else if (scenario.name === 'room_switch_input_sync') {
+				scenario = updateRoomSwitchInputSyncScenario(engine, scenario, logger);
+			} else if (scenario.name === 'done') {
+				break;
+			}
+
+			await test.sleep(POLL_MS);
+		}
 
 		test.finish('[assert] all elevator assertions passed');
 	});
