@@ -434,6 +434,16 @@ function statedefinition.new(id, def, root, parent)
 			break
 		end
 	end
+	self.has_local_frame_work = self.update ~= nil or #self.input_event_handler_list ~= 0
+	self.has_subtree_frame_work = self.has_local_frame_work
+	if not self.has_subtree_frame_work then
+		for _, child in pairs(self.states) do
+			if child.has_subtree_frame_work then
+				self.has_subtree_frame_work = true
+				break
+			end
+		end
+	end
 	if self.root == self then
 		self._resolved_path_cache = {}
 		self._resolved_path_cache_count = 0
@@ -647,6 +657,10 @@ function state.new(definition, target, parent)
 	self.in_update = false
 	self._transitions_this_update = 0
 	self.paused = false
+	-- active_frame_work tracks whether the currently active subtree can do any
+	-- per-frame FSM work. That lets the hot path skip dormant/event-only
+	-- machines instead of re-entering them every frame.
+	self.active_frame_work = false
 	self.tag_list = definition.tags
 	self.tag_lookup = build_state_tag_lookup(definition.tags)
 	self._applied_state_tags = nil
@@ -833,6 +847,7 @@ end
 function state:start()
 	self:activate_timelines()
 	self:enter_initial_substate_chain()
+	self.root:refresh_active_frame_work()
 end
 
 -- enter_initial_substate_chain: recursively enters the active child tree
@@ -1431,6 +1446,7 @@ function state:transition_to_state(state_id)
 		entered:add_active_subtree_tags()
 		entered:enter_initial_substate_chain()
 	end
+	self.root:refresh_active_frame_work()
 end
 
 function state:push_history(to_push)
@@ -2169,11 +2185,14 @@ function state:update()
 	self.critical_section_counter = self.critical_section_counter + 1
 	self.in_update = true
 	local current<const> = self.current_state
-	if current ~= nil then
+	if current ~= nil and current.active_frame_work then
 		current:update()
-		local concurrent_states<const> = self.concurrent_states
-		for i = 1, self.concurrent_state_count do
-			concurrent_states[i]:update()
+	end
+	local concurrent_states<const> = self.concurrent_states
+	for i = 1, self.concurrent_state_count do
+		local child<const> = concurrent_states[i]
+		if child.active_frame_work then
+			child:update()
 		end
 	end
 
@@ -2239,6 +2258,41 @@ function state:update()
 	elseif self.critical_section_counter < 0 then
 		error('critical section counter was lower than 0, which is a bug. state: "' .. tostring(self.id) .. '".')
 	end
+end
+
+function state:refresh_active_frame_work()
+	local definition<const> = self.definition
+	if not definition.has_subtree_frame_work then
+		self.active_frame_work = false
+		if self:is_root() then
+			self.target:sync_fsm_frame_work_active()
+		end
+		return false
+	end
+	local active<const> = definition.has_local_frame_work
+	local current<const> = self.current_state
+	if current ~= nil and current:refresh_active_frame_work() then
+		self.active_frame_work = true
+		if self:is_root() then
+			self.target:sync_fsm_frame_work_active()
+		end
+		return true
+	end
+	local concurrent_states<const> = self.concurrent_states
+	for i = 1, self.concurrent_state_count do
+		if concurrent_states[i]:refresh_active_frame_work() then
+			self.active_frame_work = true
+			if self:is_root() then
+				self.target:sync_fsm_frame_work_active()
+			end
+			return true
+		end
+	end
+	self.active_frame_work = active
+	if self:is_root() then
+		self.target:sync_fsm_frame_work_active()
+	end
+	return active
 end
 
 function state:populate_states()
@@ -2331,6 +2385,7 @@ function state:reset_submachine(reset_tree)
 		end
 	end
 	if self:is_root() then
+		self:refresh_active_frame_work()
 		self:rebuild_active_subtree_tags()
 		self:sync_target_state_tags()
 	end
@@ -2365,6 +2420,7 @@ function state:dispose()
 	self.concurrent_state_count = 0
 	self.current_id = nil
 	self.current_state = nil
+	self.active_frame_work = false
 	self.transition_queue_paths = {}
 	self.transition_queue_diags = {}
 	self.transition_queue_count = 0
@@ -2500,8 +2556,13 @@ function statemachinecontroller:update()
 		return
 	end
 	local list<const> = self.statemachine_list
+	-- Controllers only tick machines whose active subtree can actually do frame
+	-- work. That keeps event-only and dormant FSMs out of the per-frame loop.
 	for i = 1, self.statemachine_count do
-		list[i]:update()
+		local machine<const> = list[i]
+		if machine.active_frame_work then
+			machine:update()
+		end
 	end
 end
 

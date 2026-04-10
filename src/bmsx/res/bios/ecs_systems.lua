@@ -167,7 +167,7 @@ function statemachinesystem.new(priority)
 end
 
 function statemachinesystem:update(dt_ms)
-	local objects<const> = world_instance.active_space.active_objects
+	local objects<const> = world_instance.active_space.active_objects_with_fsm_update
 	for i = 1, #objects do
 		local obj<const> = objects[i]
 		obj.sc:update(dt_ms)

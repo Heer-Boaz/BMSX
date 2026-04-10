@@ -151,6 +151,7 @@ function worldobject.new(opts)
 	self.component_map = {}
 	self.space_id = opts.space_id
 	self.dispose_flag = false
+	self._active_fsm_object_index = nil
 	self.events = eventemitter.events_of(self)
 	local definition<const> = opts.definition or (opts.fsm_id and fsmlibrary.get(opts.fsm_id))
 	self.sc = opts.sc or fsm.statemachinecontroller.new({ target = self, definition = definition, fsm_id = opts.fsm_id })
@@ -457,6 +458,10 @@ function worldobject:activate()
 	world_instance:activate_object(self)
 	self:bind()
 	self.sc:start()
+end
+
+function worldobject:sync_fsm_frame_work_active()
+	world_instance:sync_object_fsm_frame_work(self)
 end
 
 -- bind(): override in subclasses to register event subscriptions.

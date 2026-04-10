@@ -322,6 +322,13 @@ local add_active_object<const> = function(obj, space)
 	obj._active_object_tick_order_index = tick_index
 end
 
+local add_active_fsm_object<const> = function(obj, space)
+	local objects<const> = space.active_objects_with_fsm_update
+	local index<const> = #objects + 1
+	objects[index] = obj
+	obj._active_fsm_object_index = index
+end
+
 local remove_active_object<const> = function(obj, space)
 	local objects<const> = space.active_objects
 	local index<const> = obj._active_object_index
@@ -345,6 +352,19 @@ local remove_active_object<const> = function(obj, space)
 	tick_bucket[tick_last_index] = nil
 	obj._active_object_tick_order = nil
 	obj._active_object_tick_order_index = nil
+end
+
+local remove_active_fsm_object<const> = function(obj, space)
+	local objects<const> = space.active_objects_with_fsm_update
+	local index<const> = obj._active_fsm_object_index
+	local last_index<const> = #objects
+	if index < last_index then
+		local moved<const> = objects[last_index]
+		objects[index] = moved
+		moved._active_fsm_object_index = index
+	end
+	objects[last_index] = nil
+	obj._active_fsm_object_index = nil
 end
 
 local add_active_component<const> = function(comp, space)
@@ -403,6 +423,7 @@ function world_class:add_space(space_id)
 		id = space_id,
 		objects = {},
 		active_objects = {},
+		active_objects_with_fsm_update = {},
 		active_objects_by_tick_order = {
 			early = {},
 			normal = {},
@@ -445,6 +466,9 @@ function world_class:set_object_space(obj, space_id)
 	if current_space_id ~= nil then
 		local current_space<const> = self._spaces[current_space_id]
 		if obj.active then
+			if obj._active_fsm_object_index ~= nil then
+				remove_active_fsm_object(obj, current_space)
+			end
 			remove_active_object(obj, current_space)
 			local components<const> = obj.components
 			for i = 1, #components do
@@ -461,6 +485,9 @@ function world_class:set_object_space(obj, space_id)
 	obj.space_id = space_id
 	if obj.active then
 		add_active_object(obj, target_space)
+		if obj.sc.active_frame_work then
+			add_active_fsm_object(obj, target_space)
+		end
 		local components<const> = obj.components
 		for i = 1, #components do
 			add_active_component(components[i], target_space)
@@ -472,6 +499,9 @@ end
 function world_class:activate_object(obj)
 	local space<const> = self._spaces[obj.space_id]
 	add_active_object(obj, space)
+	if obj.sc.active_frame_work then
+		add_active_fsm_object(obj, space)
+	end
 	local components<const> = obj.components
 	for i = 1, #components do
 		add_active_component(components[i], space)
@@ -484,7 +514,24 @@ function world_class:deactivate_object(obj)
 	for i = 1, #components do
 		remove_active_component(components[i], space)
 	end
+	if obj._active_fsm_object_index ~= nil then
+		remove_active_fsm_object(obj, space)
+	end
 	remove_active_object(obj, space)
+end
+
+function world_class:sync_object_fsm_frame_work(obj)
+	local space<const> = self._spaces[obj.space_id]
+	if not obj.active then
+		return
+	end
+	if obj.sc.active_frame_work then
+		if obj._active_fsm_object_index == nil then
+			add_active_fsm_object(obj, space)
+		end
+	elseif obj._active_fsm_object_index ~= nil then
+		remove_active_fsm_object(obj, space)
+	end
 end
 
 function world_class:activate_component(comp)
