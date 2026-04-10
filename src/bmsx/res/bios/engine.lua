@@ -502,7 +502,7 @@ function engine.set_space(space_id)
 end
 
 function engine.get_space()
-	return world_instance:get_space()
+	return world_instance.active_space_id
 end
 
 function engine.objects_by_type(type_name, opts)

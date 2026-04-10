@@ -163,32 +163,59 @@ local phase_order<const> = {
 -- 	reset_perf_accumulators(p)
 -- end
 
+local iter_active_objects<const> = function(state, _)
+	local list<const> = state.list
+	local index = state.index + state.step
+	while index ~= state.stop do
+		local obj<const> = list[index]
+		if obj.active then
+			state.index = index
+			return obj
+		end
+		index = index + state.step
+	end
+	return nil
+end
+
 local iter_objects<const> = function(state, _)
 	local list<const> = state.list
 	local scope<const> = state.scope
 	local index = state.index + state.step
-	while true do
+	while index ~= state.stop do
 		local obj<const> = list[index]
-		if not obj then
-			return nil
-		end
 		if state.world:_object_in_scope(obj, scope) then
 			state.index = index
 			return obj
 		end
 		index = index + state.step
 	end
+	return nil
+end
+
+local iter_active_objects_with_components<const> = function(state, _)
+	local bucket<const> = state.bucket
+	local active_space_id<const> = state.active_space_id
+	local next_key, entity = next(bucket, state.reg_key)
+	while next_key do
+		local parent<const> = entity.parent
+		if parent.active and parent.space_id == active_space_id then
+			state.reg_key = next_key
+			return parent, entity
+		end
+		next_key, entity = next(bucket, next_key)
+	end
+	state.reg_key = nil
+	return nil
 end
 
 local iter_objects_with_components<const> = function(state, _)
 	local bucket<const> = state.bucket
-	local by_id<const> = state.by_id
-	local world<const> = state.world
 	local scope<const> = state.scope
+	local world<const> = state.world
 	local next_key, entity = next(bucket, state.reg_key)
 	while next_key do
 		local parent<const> = entity.parent
-		if parent and by_id[parent.id] and world:_object_in_scope(parent, scope) then
+		if world:_object_in_scope(parent, scope) then
 			state.reg_key = next_key
 			return parent, entity
 		end
@@ -202,17 +229,15 @@ local iter_subsystems<const> = function(state, _)
 	local list<const> = state.list
 	local scope<const> = state.scope
 	local index = state.index + state.step
-	while true do
+	while index ~= state.stop do
 		local subsys<const> = list[index]
-		if not subsys then
-			return nil
-		end
 		if state.world:_subsystem_in_scope(subsys, scope) then
 			state.index = index
 			return subsys
 		end
 		index = index + state.step
 	end
+	return nil
 end
 
 function world_class.new()
@@ -271,14 +296,6 @@ function world_class:set_space(space_id)
 	return self.active_space_id
 end
 
-function world_class:get_space()
-	return self.active_space_id
-end
-
-function world_class:list_spaces()
-	return self._space_order
-end
-
 function world_class:set_object_space(obj, space_id)
 	local target_space<const> = self._spaces[space_id]
 	if target_space == nil then
@@ -322,7 +339,7 @@ function world_class:_object_in_scope(obj, scope)
 		if not obj.active then
 			return false
 		end
-		return self._obj_to_space[obj.id] == self.active_space_id
+		return obj.space_id == self.active_space_id
 	end
 	return not obj.dispose_flag
 end
@@ -494,9 +511,18 @@ end
 function world_class:objects(opts)
 	local scope<const> = opts and opts.scope or 'all'
 	local reverse<const> = opts and opts.reverse or false
+	if scope == 'active' then
+		local space<const> = self._spaces[self.active_space_id]
+		local objects<const> = space.objects
+		local step<const> = reverse and -1 or 1
+		local start<const> = reverse and (#objects + 1) or 0
+		local stop<const> = reverse and 0 or (#objects + 1)
+		return iter_active_objects, { list = objects, step = step, index = start, stop = stop }, nil
+	end
 	local step<const> = reverse and -1 or 1
 	local start<const> = reverse and (#self._objects + 1) or 0
-	return iter_objects, { world = self, list = self._objects, scope = scope, step = step, index = start }, nil
+	local stop<const> = reverse and 0 or (#self._objects + 1)
+	return iter_objects, { world = self, list = self._objects, scope = scope, step = step, index = start, stop = stop }, nil
 end
 
 function world_class:subsystems(opts)
@@ -504,7 +530,8 @@ function world_class:subsystems(opts)
 	local reverse<const> = opts and opts.reverse or false
 	local step<const> = reverse and -1 or 1
 	local start<const> = reverse and (#self._subsystems + 1) or 0
-	return iter_subsystems, { world = self, list = self._subsystems, scope = scope, step = step, index = start }, nil
+	local stop<const> = reverse and 0 or (#self._subsystems + 1)
+	return iter_subsystems, { world = self, list = self._subsystems, scope = scope, step = step, index = start, stop = stop }, nil
 end
 
 -- world:objects_with_components(type_name, opts?)
@@ -513,8 +540,14 @@ end
 --   world:objects(). Used by ECS systems; rarely needed in cart code.
 function world_class:objects_with_components(type_name, opts)
 	local scope<const> = opts and opts.scope or 'all'
+	local bucket<const> = registry.instance:get_registered_entities_by_type(type_name)
+	if scope == 'active' then
+		return iter_active_objects_with_components,
+			{ bucket = bucket, active_space_id = self.active_space_id, reg_key = nil },
+				nil
+	end
 	return iter_objects_with_components,
-		{ world = self, bucket = registry.instance:get_registered_entities_by_type(type_name), by_id = self._by_id, scope = scope, reg_key = nil },
+		{ world = self, bucket = bucket, scope = scope, reg_key = nil },
 			nil
 end
 

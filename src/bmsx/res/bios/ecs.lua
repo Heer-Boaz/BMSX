@@ -72,14 +72,7 @@ local ecsystemmanager<const> = {}
 ecsystemmanager.__index = ecsystemmanager
 local empty_stats<const> = {}
 
-function ecsystemmanager.new()
-	local self<const> = setmetatable({}, ecsystemmanager)
-	self.systems = {}
-	return self
-end
-
-function ecsystemmanager:register(sys)
-	self.systems[#self.systems + 1] = sys
+local rebuild_system_views<const> = function(self)
 	table.sort(self.systems, function(a, b)
 		if a.group ~= b.group then
 			return a.group < b.group
@@ -89,6 +82,49 @@ function ecsystemmanager:register(sys)
 		end
 		return false
 	end)
+
+	local phase_systems<const> = {
+		[tickgroup.input] = {},
+		[tickgroup.actioneffect] = {},
+		[tickgroup.moderesolution] = {},
+		[tickgroup.physics] = {},
+		[tickgroup.animation] = {},
+		[tickgroup.presentation] = {},
+		[tickgroup.eventflush] = {},
+	}
+	local paused_systems<const> = {}
+	for i = 1, #self.systems do
+		local sys<const> = self.systems[i]
+		local group<const> = sys.group
+		local group_systems<const> = phase_systems[group]
+		group_systems[#group_systems + 1] = sys
+		if sys.runs_while_paused then
+			paused_systems[#paused_systems + 1] = sys
+		end
+	end
+	self.phase_systems = phase_systems
+	self.paused_systems = paused_systems
+end
+
+function ecsystemmanager.new()
+	local self<const> = setmetatable({}, ecsystemmanager)
+	self.systems = {}
+	self.phase_systems = {
+		[tickgroup.input] = {},
+		[tickgroup.actioneffect] = {},
+		[tickgroup.moderesolution] = {},
+		[tickgroup.physics] = {},
+		[tickgroup.animation] = {},
+		[tickgroup.presentation] = {},
+		[tickgroup.eventflush] = {},
+	}
+	self.paused_systems = {}
+	return self
+end
+
+function ecsystemmanager:register(sys)
+	self.systems[#self.systems + 1] = sys
+	rebuild_system_views(self)
 end
 
 function ecsystemmanager:unregister(sys)
@@ -98,10 +134,21 @@ function ecsystemmanager:unregister(sys)
 			break
 		end
 	end
+	rebuild_system_views(self)
 end
 
 function ecsystemmanager:clear()
 	self.systems = {}
+	self.phase_systems = {
+		[tickgroup.input] = {},
+		[tickgroup.actioneffect] = {},
+		[tickgroup.moderesolution] = {},
+		[tickgroup.physics] = {},
+		[tickgroup.animation] = {},
+		[tickgroup.presentation] = {},
+		[tickgroup.eventflush] = {},
+	}
+	self.paused_systems = {}
 end
 
 function ecsystemmanager:begin_frame()
@@ -142,28 +189,25 @@ end
 
 function ecsystemmanager:update_phase(group)
 	local dt_ms<const> = $.get_frame_delta_ms()
-	for i = 1, #self.systems do
-		local s<const> = self.systems[i]
-		if s.group == group then
-			-- local t0 = $.platform.clock.perf_now()
-			s:update(dt_ms)
-			-- local t1 = $.platform.clock.perf_now()
-			-- self:record_stat(s, t0, t1)
-		end
+	local systems<const> = self.phase_systems[group]
+	for i = 1, #systems do
+		local s<const> = systems[i]
+		-- local t0 = $.platform.clock.perf_now()
+		s:update(dt_ms)
+		-- local t1 = $.platform.clock.perf_now()
+		-- self:record_stat(s, t0, t1)
 	end
 end
 
 function ecsystemmanager:run_paused()
 	self:begin_frame()
 	local dt_ms<const> = $.get_frame_delta_ms()
-	for i = 1, #self.systems do
-		local s<const> = self.systems[i]
-		if s.runs_while_paused then
-			-- local t0 = $.platform.clock.perf_now()
-			s:update(dt_ms)
-			-- local t1 = $.platform.clock.perf_now()
-			-- self:record_stat(s, t0, t1)
-		end
+	for i = 1, #self.paused_systems do
+		local s<const> = self.paused_systems[i]
+		-- local t0 = $.platform.clock.perf_now()
+		s:update(dt_ms)
+		-- local t1 = $.platform.clock.perf_now()
+		-- self:record_stat(s, t0, t1)
 	end
 end
 
