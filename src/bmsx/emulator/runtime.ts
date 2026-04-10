@@ -1596,7 +1596,9 @@ export class Runtime {
 			firstFrameHandle.stop();
 			const audioRefreshHandle = $.platform.frames.start(() => {
 				audioRefreshHandle.stop();
-				void $.refresh_audio_assets();
+				void $.refresh_audio_assets().catch((error: unknown) => {
+					runtimeIde.handleLuaError(Runtime.instance, error);
+				});
 			});
 		});
 	}
