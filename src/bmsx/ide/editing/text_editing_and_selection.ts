@@ -21,7 +21,7 @@ import { currentLine, invalidateLineRange, markTextMutated } from '../core/text_
 import { capturePreMutationSource } from '../core/text_utils';
 import { resetBlink } from '../render/render_caret';
 import * as constants from '../core/constants';
-import { formatLuaDocument } from '../lua/lua_formatter';
+import { formatLuaDocument } from '../language/lua/lua_formatter';
 import { extractErrorMessage } from '../../lua/luavalue';
 import { getTextSnapshot } from '../text/source_text';
 import type { MutableTextPosition, TextBuffer } from '../text/text_buffer';

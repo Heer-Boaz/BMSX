@@ -59,7 +59,7 @@ import * as runtimeIde from './runtime_ide';
 import * as runtimeLuaPipeline from './runtime_lua_pipeline';
 import { registerAudioAssets as registerAudioAssetsFromSource } from './runtime_assets';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../lua/luadebugger';
-import type { ParsedLuaChunk } from '../ide/lua/lua_parse';
+import type { ParsedLuaChunk } from '../ide/language/lua/lua_parse';
 import { ResourceUsageDetector } from './resource_usage_detector';
 import { configureLuaHeapUsage } from './lua_heap_usage';
 import {

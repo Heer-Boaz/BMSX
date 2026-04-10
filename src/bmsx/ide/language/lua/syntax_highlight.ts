@@ -1,11 +1,11 @@
-import type { SemanticAnnotations, SymbolKind } from '../contrib/intellisense/semantic_model';
-import type { HighlightLine } from '../core/types';
-import * as constants from '../core/constants';
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../emulator/lua_builtin_descriptors';
-import { LuaLexer } from '../../lua/syntax/lualexer';
-import { KEYWORDS } from '../../lua/syntax/luatoken';
-import { clamp } from '../../utils/clamp';
-import { ScratchBuffer } from '../../utils/scratchbuffer';
+import type { SemanticAnnotations, SymbolKind } from '../../contrib/intellisense/semantic_model';
+import type { HighlightLine } from '../../core/types';
+import * as constants from '../../core/constants';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../emulator/lua_builtin_descriptors';
+import { LuaLexer } from '../../../lua/syntax/lualexer';
+import { KEYWORDS } from '../../../lua/syntax/luatoken';
+import { clamp } from '../../../utils/clamp';
+import { ScratchBuffer } from '../../../utils/scratchbuffer';
 
 // Lightweight Lua syntax highlighter used by the IDE.
 // Pure functions with no runtime/editor state dependencies beyond provided inputs.

@@ -1,6 +1,6 @@
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../emulator/lua_builtin_descriptors';
 import { Runtime } from '../../../emulator/runtime';
-import { resolveLuaIdentifierChainRoot } from '../../lua/lua_identifier_chain';
+import { resolveLuaIdentifierChainRoot } from '../../language/lua/lua_identifier_chain';
 import type { EditorContextMenuEntry, EditorContextToken } from '../../core/types';
 
 export function buildEditorContextMenuEntries(token: EditorContextToken, editable: boolean): EditorContextMenuEntry[] {

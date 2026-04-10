@@ -1,7 +1,7 @@
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../emulator/types';
 import type { EditorDiagnostic } from '../../core/types';
 import { computeLuaDiagnostics, getApiCompletionData } from '../intellisense/intellisense';
-import { getCachedLuaParse } from '../../lua/lua_analysis_cache';
+import { getCachedLuaParse } from '../../language/lua/lua_analysis_cache';
 import { ide_state, diagnosticsDebounceMs } from '../../core/ide_state';
 import { cacheSemanticParseState } from '../intellisense/semantic_workspace_sync';
 

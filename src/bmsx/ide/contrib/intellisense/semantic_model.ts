@@ -24,8 +24,8 @@ import {
 import type { LuaToken } from '../../../lua/syntax/luatoken';
 import { LuaTokenType } from '../../../lua/syntax/luatoken';
 import type { LuaSymbolEntry } from '../../../emulator/types';
-import type { ParsedLuaChunk } from '../../lua/lua_parse';
-import { getCachedLuaParse } from '../../lua/lua_analysis_cache';
+import type { ParsedLuaChunk } from '../../language/lua/lua_parse';
+import { getCachedLuaParse } from '../../language/lua/lua_analysis_cache';
 import type { CanonicalizationType } from '../../../rompack/rompack';
 
 export type SymbolKind = 'parameter' | 'local' | 'constant' | 'function' | 'global' | 'tableField' | 'module' | 'type' | 'label' | 'keyword';

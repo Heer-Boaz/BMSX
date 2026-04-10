@@ -24,7 +24,7 @@ import {
 	type FunctionSignatureInfo,
 	type LuaSemanticWorkspaceSnapshotInput,
 } from './semantic_model';
-import { getCachedLuaParse } from '../../lua/lua_analysis_cache';
+import { getCachedLuaParse } from '../../language/lua/lua_analysis_cache';
 
 const identityCanonicalizer = (value: string): string => value;
 const RESERVED_MEMORY_MAP_NAMES = ['mem', 'mem8', 'mem16le', 'mem32le', 'memf32le', 'memf64le'] as const;

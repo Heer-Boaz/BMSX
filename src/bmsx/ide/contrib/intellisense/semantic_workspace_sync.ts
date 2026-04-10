@@ -1,5 +1,5 @@
-import type { ParsedLuaChunk } from '../../lua/lua_parse';
-import { getCachedLuaParse } from '../../lua/lua_analysis_cache';
+import type { ParsedLuaChunk } from '../../language/lua/lua_parse';
+import { getCachedLuaParse } from '../../language/lua/lua_analysis_cache';
 import { ide_state } from '../../core/ide_state';
 import { LuaSemanticWorkspace, type FileSemanticData, type LuaSemanticWorkspaceSnapshot } from './semantic_model';
 import { Runtime } from '../../../emulator/runtime';

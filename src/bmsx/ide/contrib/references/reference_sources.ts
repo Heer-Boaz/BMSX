@@ -1,7 +1,7 @@
 import { clamp } from '../../../utils/clamp';
 import type { LuaDefinitionLocation, LuaSymbolEntry, ResourceDescriptor } from '../../../emulator/types';
 import type { CodeTabContext, SearchMatch, SymbolSearchResult } from '../../core/types';
-import { parseLuaIdentifierChain } from '../../lua/lua_identifier_chain';
+import { parseLuaIdentifierChain } from '../../language/lua/lua_identifier_chain';
 import { Runtime } from '../../../emulator/runtime';
 import * as runtimeLuaPipeline from '../../../emulator/runtime_lua_pipeline';
 import { createEditorSemanticFrontend } from '../intellisense/editor_semantic_frontend';
