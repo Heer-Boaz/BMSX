@@ -10,7 +10,7 @@ local wrap_text_lines<const> = require('util/wrap_text_lines')
 --    overlap2dsystem is an opt-in ECS stage. Carts that want automatic
 --    overlap events add it to their pipeline; carts that do not can stick to
 --    targeted collision queries. When enabled, it detects all overlapping
---    enabled+hittable collider pairs in the active world space and emits
+--    active+hittable collider pairs in the active world space and emits
 --    three events on BOTH owner objects' event ports:
 --
 --      overlap.begin  — first frame two colliders touch (phase = 'begin')
@@ -80,24 +80,6 @@ local actioneffectcomponent<const> = 'actioneffectcomponent'
 local render_scratch_items<const> = scratchrecordbatch.new(2):reserve(2)
 local mesh_render_options<const> = render_scratch_items[1]
 local point_light_position<const> = render_scratch_items[2]
-
-local resolve_text_draw_position<const> = function(obj, offset)
-	local x<const> = obj.x + offset.x
-	local y<const> = obj.y + offset.y
-	local z<const> = obj.z + offset.z
-	return x, y, z
-end
-
-local resolve_text_lines<const> = function(tc)
-	local glyphs<const> = tc.text
-	if type(glyphs) == 'string' then
-		if tc.wrap_chars ~= nil and tc.wrap_chars > 0 then
-			return wrap_text_lines(glyphs, tc.wrap_chars)
-		end
-		return { glyphs }
-	end
-	return glyphs
-end
 
 local behaviortreesystem<const> = {}
 behaviortreesystem.__index = behaviortreesystem
@@ -377,7 +359,7 @@ function overlap2dsystem:update()
 	local event_collider_count = 0
 	for i = 1, #colliders do
 		local collider<const> = colliders[i]
-		if collider.enabled and collider.hittable then
+		if collider.hittable then
 			event_collider_count = event_collider_count + 1
 			event_colliders[event_collider_count] = collider
 		end
@@ -485,12 +467,17 @@ function textrendersystem:update()
 	for i = 1, #components do
 		local tc<const> = components[i]
 		local obj<const> = tc.parent
-		if not tc.enabled then
-			goto continue_text_render
+		local offset<const> = tc.offset
+		local glyphs<const> = tc.text
+		local lines = glyphs
+		if type(glyphs) == 'string' then
+			if tc.wrap_chars ~= nil and tc.wrap_chars > 0 then
+				lines = wrap_text_lines(glyphs, tc.wrap_chars)
+			else
+				lines = { glyphs }
+			end
 		end
-		local x<const>, y<const>, z<const> = resolve_text_draw_position(obj, tc.offset)
-		tc:render(x, y, z, resolve_text_lines(tc))
-		::continue_text_render::
+		tc:render(obj.x + offset.x, obj.y + offset.y, obj.z + offset.z, lines)
 	end
 end
 
@@ -508,7 +495,7 @@ function spriterendersystem:update()
 	for i = 1, #components do
 		local sc<const> = components[i]
 		local obj<const> = sc.parent
-		if not obj.visible or not sc.enabled then
+		if not obj.visible then
 			goto continue_sprite_render
 		end
 		local offset<const> = sc.offset
@@ -576,7 +563,7 @@ function lightrendersystem:update()
 	for i = 1, #ambient_components do
 		local lc<const> = ambient_components[i]
 		local obj<const> = lc.parent
-		if obj.visible and lc.enabled then
+		if obj.visible then
 			put_ambient_light(lc.id, lc.color, lc.intensity)
 		end
 	end
@@ -585,7 +572,7 @@ function lightrendersystem:update()
 	for i = 1, #directional_components do
 		local lc<const> = directional_components[i]
 		local obj<const> = lc.parent
-		if obj.visible and lc.enabled then
+		if obj.visible then
 			put_directional_light(lc.id, lc.orientation, lc.color, lc.intensity)
 		end
 	end
@@ -594,7 +581,7 @@ function lightrendersystem:update()
 	for i = 1, #point_components do
 		local lc<const> = point_components[i]
 		local obj<const> = lc.parent
-		if obj.visible and lc.enabled then
+		if obj.visible then
 			local x<const>, y<const>, z<const> = resolve_world_position(obj, lc.offset)
 			point_light_position.x = x
 			point_light_position.y = y
@@ -618,7 +605,7 @@ function meshrendersystem:update()
 	for i = 1, #components do
 		local mc<const> = components[i]
 		local obj<const> = mc.parent
-		if obj.visible and mc.enabled then
+		if obj.visible then
 			mesh_render_options.joint_matrices = mc.joint_matrices
 			mesh_render_options.morph_weights = mc.morph_weights
 			mesh_render_options.receive_shadow = mc.receive_shadow
@@ -641,7 +628,7 @@ function rendersubmitsystem:update()
 	for i = 1, #components do
 		local rc<const> = components[i]
 		local obj<const> = rc.parent
-		if obj.visible and rc.enabled then
+		if obj.visible then
 			rc:flush()
 		end
 	end

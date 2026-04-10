@@ -2,7 +2,7 @@ local seal<const> = {}
 seal.__index = seal
 
 function seal:ctor()
-	self.collider.enabled = false
+	self.collider:set_enabled(false)
 	self:gfx('seal')
 end
 

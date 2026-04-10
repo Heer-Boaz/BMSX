@@ -156,7 +156,7 @@ function draaideur:sync_sprite()
 end
 
 function draaideur:ctor()
-	self.collider.enabled = false
+	self.collider:set_enabled(false)
 	self:sync_sprite()
 end
 

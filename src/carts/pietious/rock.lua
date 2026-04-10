@@ -112,7 +112,7 @@ local define_rock_fsm<const> = function()
 				},
 				entering_state = function(self)
 					self:begin_break()
-					self.collider.enabled = false
+					self.collider:set_enabled(false)
 					self:gfx('stone_broken')
 				end,
 			},

@@ -103,7 +103,7 @@ local room_shrine<const> = {}
 room_shrine.__index = room_shrine
 
 function room_shrine:ctor()
-	self.collider.enabled = false
+	self.collider:set_enabled(false)
 	self:gfx('shrine')
 end
 

@@ -450,7 +450,10 @@ function world_class:set_object_space(obj, space_id)
 		if obj.active then
 			local components<const> = obj.components
 			for i = 1, #components do
-				remove_active_component(components[i], current_space)
+				local comp<const> = components[i]
+				if comp._active_component_index ~= nil then
+					remove_active_component(comp, current_space)
+				end
 			end
 			remove_active_object(obj, current_space)
 		end
@@ -466,7 +469,10 @@ function world_class:set_object_space(obj, space_id)
 		add_active_object(obj, target_space)
 		local components<const> = obj.components
 		for i = 1, #components do
-			add_active_component(components[i], target_space)
+			local comp<const> = components[i]
+			if comp.enabled then
+				add_active_component(comp, target_space)
+			end
 		end
 	end
 	return space_id
@@ -477,7 +483,10 @@ function world_class:activate_object(obj)
 	add_active_object(obj, space)
 	local components<const> = obj.components
 	for i = 1, #components do
-		add_active_component(components[i], space)
+		local comp<const> = components[i]
+		if comp.enabled then
+			add_active_component(comp, space)
+		end
 	end
 end
 
@@ -485,17 +494,24 @@ function world_class:deactivate_object(obj)
 	local space<const> = self._spaces[obj.space_id]
 	local components<const> = obj.components
 	for i = 1, #components do
-		remove_active_component(components[i], space)
+		local comp<const> = components[i]
+		if comp._active_component_index ~= nil then
+			remove_active_component(comp, space)
+		end
 	end
 	remove_active_object(obj, space)
 end
 
 function world_class:activate_component(comp)
-	add_active_component(comp, self._spaces[comp.parent.space_id])
+	if comp.enabled and comp._active_component_index == nil then
+		add_active_component(comp, self._spaces[comp.parent.space_id])
+	end
 end
 
 function world_class:deactivate_component(comp)
-	remove_active_component(comp, self._spaces[comp.parent.space_id])
+	if comp._active_component_index ~= nil then
+		remove_active_component(comp, self._spaces[comp.parent.space_id])
+	end
 end
 
 -- Queue disposal work at mutation time so the frame loop only touches objects

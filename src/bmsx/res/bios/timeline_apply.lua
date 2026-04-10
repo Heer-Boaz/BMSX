@@ -20,8 +20,11 @@ local render_literal<const> = function(value)
 	error('[timeline_apply] unsupported literal type "' .. kind .. '".')
 end
 
-local append_path<const> = function(parts, path)
-	for i = 1, #path do
+local append_path<const> = function(parts, path, stop)
+	if stop == nil then
+		stop = #path
+	end
+	for i = 1, stop do
 		parts[#parts + 1] = '['
 		parts[#parts + 1] = render_literal(path[i])
 		parts[#parts + 1] = ']'
@@ -45,6 +48,30 @@ local append_frame_assignments<const> = function(parts, node, path)
 	end
 end
 
+local frame_contains_enabled<const> = function(node)
+	for key, value in pairs(node) do
+		if key == 'enabled' then
+			return true
+		end
+		if type(value) == 'table' and frame_contains_enabled(value) then
+			return true
+		end
+	end
+	return false
+end
+
+local apply_frame_node<const> = function(target, node)
+	for key, value in pairs(node) do
+		if type(value) == 'table' then
+			apply_frame_node(target[key], value)
+		elseif key == 'enabled' then
+			target:set_enabled(value)
+		else
+			target[key] = value
+		end
+	end
+end
+
 local compile_generated_function<const> = function(source, label)
 	local loader<const>, err<const> = loadstring(source, label)
 	if loader == nil then
@@ -54,6 +81,11 @@ local compile_generated_function<const> = function(source, label)
 end
 
 local compile_frame_apply<const> = function(frame)
+	if frame_contains_enabled(frame) then
+		return function(target)
+			apply_frame_node(target, frame)
+		end
+	end
 	local parts<const> = { 'return function(target)\n' }
 	append_frame_assignments(parts, frame, {})
 	parts[#parts + 1] = 'end'

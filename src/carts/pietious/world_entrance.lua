@@ -66,7 +66,7 @@ function world_entrance:bind()
 end
 
 function world_entrance:ctor()
-	self.collider.enabled = false
+	self.collider:set_enabled(false)
 	self:set_entrance_state('closed')
 	self:define_timeline(timeline.new({
 		id = opening_timeline_id,

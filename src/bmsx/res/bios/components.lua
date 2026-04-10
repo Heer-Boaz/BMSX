@@ -7,6 +7,7 @@ local timeline_dispatch<const> = require('timeline_dispatch')
 local collision_profiles<const> = require('collision_profiles')
 local scratchrecordbatch<const> = require('scratchrecordbatch')
 local font_module<const> = require('font')
+local world_instance<const> = require('world').instance
 local eventemitter<const> = eventemitter.eventemitter
 local timeline<const> = timeline_module.timeline
 
@@ -56,12 +57,25 @@ function component.new(opts)
 	elseif self.parent then
 		self.id = component.generate_id(self)
 	end
-	self.enabled = true
-	if opts.enabled ~= nil then
-		self.enabled = opts.enabled
-	end
+	self.enabled = opts.enabled == nil or opts.enabled
 	self.tags = opts.tags or {}
 	self.unique = opts.unique or false
+	return self
+end
+
+function component:set_enabled(enabled)
+	if self.enabled == enabled then
+		return self
+	end
+	self.enabled = enabled
+	local parent<const> = self.parent
+	if parent ~= nil and parent.active then
+		if enabled then
+			world_instance:activate_component(self)
+		else
+			world_instance:deactivate_component(self)
+		end
+	end
 	return self
 end
 
@@ -136,15 +150,15 @@ function spritecomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'spritecomponent'
 	local self<const> = setmetatable(component.new(opts), spritecomponent)
-	self.imgid = opts and opts.imgid
+	self.imgid = opts.imgid
 	self.image_handle = self.imgid ~= nil and assets.img[self.imgid].handle or 0
-	self.layer = opts and opts.layer or sys_vdp_layer_world
+	self.layer = opts.layer or sys_vdp_layer_world
 	self.flip = { flip_h = false, flip_v = false }
-	self.colorize = opts and opts.colorize or { r = 1, g = 1, b = 1, a = 1 }
-	self.scale = opts and opts.scale or { x = 1, y = 1 }
-	self.offset = opts and opts.offset or { x = 0, y = 0, z = 0 }
-	self.parallax_weight = opts and opts.parallax_weight or 0
-	self.collider_local_id = opts and opts.collider_local_id
+	self.colorize = opts.colorize or { r = 1, g = 1, b = 1, a = 1 }
+	self.scale = opts.scale or { x = 1, y = 1 }
+	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
+	self.parallax_weight = opts.parallax_weight or 0
+	self.collider_local_id = opts.collider_local_id
 	return self
 end
 

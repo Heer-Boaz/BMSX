@@ -5,7 +5,7 @@ elevator.__index = elevator
 
 function elevator:ctor()
 	self:gfx('elevator_platform')
-	self.collider.enabled = true
+	self.collider:set_enabled(true)
 	self.collider.layer = constants.collision.world_layer
 	self.collider.mask = constants.collision.player_layer
 	self.collider.spaceevents = 'current'
@@ -37,7 +37,7 @@ function elevator:update_motion()
 	local player<const> = oget('pietolon')
 	local current_room_number<const> = oget('c').current_room_number
 	self.visible = self.current_room_number == current_room_number
-	self.collider.enabled = self.visible
+	self.collider:set_enabled(self.visible)
 	local previous_y<const> = self.y
 	local was_supported<const> = self.visible
 		and player.on_vertical_elevator
@@ -77,7 +77,7 @@ function elevator:update_motion()
 	end
 
 	self.visible = self.current_room_number == current_room_number
-	self.collider.enabled = self.visible
+	self.collider:set_enabled(self.visible)
 
 	if self.visible then
 		local standing_on_top<const> = player.y == (self.y - constants.player.height)

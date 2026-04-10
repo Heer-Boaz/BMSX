@@ -7,7 +7,7 @@ vlokspawner.__index = vlokspawner
 
 function vlokspawner:ctor()
 	self.visible = false
-	self.collider.enabled = false
+	self.collider:set_enabled(false)
 end
 
 function vlokspawner.bt_tick(self, blackboard)

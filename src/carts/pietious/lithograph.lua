@@ -2,7 +2,7 @@ local lithograph<const> = {}
 lithograph.__index = lithograph
 
 function lithograph:ctor()
-	self.collider.enabled = false
+	self.collider:set_enabled(false)
 	self:gfx('lithograph')
 end
 

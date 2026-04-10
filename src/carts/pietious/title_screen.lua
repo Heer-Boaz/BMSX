@@ -111,7 +111,7 @@ local build_title_start_frames<const> = function()
 end
 
 function title_screen:ctor()
-	self.collider.enabled = false
+	self.collider:set_enabled(false)
 	self:gfx('title_screen')
 	self.z = 350
 	self.sparkle_sprite = components.spritecomponent.new({
@@ -119,7 +119,7 @@ function title_screen:ctor()
 		offset = { x = 0, y = 0, z = 1 },
 	})
 	self:add_component(self.sparkle_sprite)
-	self.sparkle_sprite.enabled = false
+	self.sparkle_sprite:set_enabled(false)
 end
 
 local build_title_root_on<const> = function(show_path)
@@ -166,7 +166,7 @@ local define_title_screen_fsm<const> = function()
 				},
 				input_event_handlers = {
 					['start[jp] || a[jp]'] = function(self)
-						self.sparkle_sprite.enabled = false
+						self.sparkle_sprite:set_enabled(false)
 						self.events:emit('title_start')
 						return '/starting'
 					end,

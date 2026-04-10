@@ -275,8 +275,8 @@ function player:land_from_hit()
 end
 
 function player:update_collision_state()
-	self.collider.enabled = true
-	self.sword_collider.enabled = self:has_tag(state_tags.group.sword)
+	self.collider:set_enabled(true)
+	self.sword_collider:set_enabled(self:has_tag(state_tags.group.sword))
 	self.left_wall_collision_primary = self:collides_at_left_wall_primary_profile(self.x, self.y, false)
 	self.left_wall_collision_secondary = self:collides_at_left_wall_secondary_profile(self.x, self.y, false)
 	self.left_wall_collision = self.left_wall_collision_primary or self.left_wall_collision_secondary
@@ -370,7 +370,7 @@ function player:ctor()
 		spaceevents = 'current',
 	})
 	self.sword_collider:apply_collision_profile('projectile')
-	self.sword_collider.enabled = false
+	self.sword_collider:set_enabled(false)
 	self:add_component(self.sword_collider)
 
 	self.sword_sprite = components.spritecomponent.new({
@@ -380,7 +380,7 @@ function player:ctor()
 		collider_local_id = 'sword',
 	})
 	self:add_component(self.sword_sprite)
-	self.sword_sprite.enabled = false
+	self.sword_sprite:set_enabled(false)
 	self:define_runtime_timelines()
 	self.inventory_items = {}
 	self.secondary_weapon = nil
@@ -448,7 +448,7 @@ function player:apply_presentation_state()
 				imgid = 'pietolon_stairs_up_2'
 			end
 		end
-		self.sword_sprite.enabled = false
+		self.sword_sprite:set_enabled(false)
 		self:gfx(imgid)
 		self.sprite_component.flip.flip_h = self.facing < 0
 		self.sprite_component.offset.y = self.to_enter_cut
@@ -540,7 +540,7 @@ function player:apply_presentation_state()
 
 	self:gfx(imgid)
 	self.sprite_component.flip.flip_h = flip_h
-	self.sword_sprite.enabled = self:has_tag(state_tags.group.sword)
+	self.sword_sprite:set_enabled(self:has_tag(state_tags.group.sword))
 	self.sword_sprite.flip.flip_h = flip_h
 end
 
