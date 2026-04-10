@@ -2562,7 +2562,7 @@ export class Runtime {
 			if (typeof entry.metabuffer_start !== 'number' || typeof entry.metabuffer_end !== 'number') {
 				throw runtimeFault(`audio asset '${entry.resid}' missing metadata offsets.`);
 			}
-			const metaBytes = source.getBytes({
+			const metaBytes = source.getBytesView({
 				...entry,
 				start: entry.metabuffer_start,
 				end: entry.metabuffer_end,
@@ -2570,13 +2570,10 @@ export class Runtime {
 			const payloadId = entry.payload_id ?? 'cart';
 			let sharedPropNames = sharedMetadataByPayloadId.get(payloadId);
 			if (sharedPropNames === undefined) {
-				const header = parseCartHeader(source.getBytes({ ...entry, start: 0, end: CART_ROM_HEADER_SIZE }));
+				const payload = resolveLayerForPayload(this.assetLayerLookup, payloadId).payload;
+				const header = parseCartHeader(payload);
 				if (header.metadataLength > 0) {
-					const metadataSection = source.getBytes({
-						...entry,
-						start: header.metadataOffset,
-						end: header.metadataOffset + header.metadataLength,
-					});
+					const metadataSection = payload.subarray(header.metadataOffset, header.metadataOffset + header.metadataLength);
 					sharedPropNames = parseRomMetadataSection(metadataSection).propNames;
 				} else {
 					sharedPropNames = null;
