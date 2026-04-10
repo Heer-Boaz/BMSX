@@ -37,9 +37,7 @@ import type {
 } from './syntax/lua_ast';
 import { LuaEnvironment } from './luaenvironment';
 import { LuaRuntimeError, LuaSyntaxError } from './luaerrors';
-import { LuaLexer } from './syntax/lualexer';
 import { type CanonicalizationType } from '../rompack/rompack';
-import { LuaParser } from './syntax/luaparser';
 import { createIdentifierCanonicalizer } from './syntax/identifier_canonicalizer';
 import { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue, type LuaCallResult, isLuaCallSignal } from './luavalue';
 import {
@@ -56,6 +54,7 @@ import { $ } from '../core/engine_core';
 import { Runtime } from '../emulator/runtime';
 import { isLuaHandlerFunction } from './luahandler_cache';
 import { LuaInteropAdapter } from '../emulator/lua_js_bridge';
+import { getCachedLuaParse } from '../ide/language/lua/lua_analysis_cache';
 
 type ExecutionFrame = any;
 type StatementsFrame = any;
@@ -332,10 +331,16 @@ export class LuaInterpreter {
 	}
 
 	public compileChunk(source: string, path: string): LuaChunk {
-		const lexer = new LuaLexer(source, path, { canonicalizeIdentifiers: this.identifierCanonicalizationMode });
-		const tokens = lexer.scanTokens();
-		const parser = new LuaParser(tokens, path, source);
-		const chunk = parser.parseChunk();
+		const parseEntry = getCachedLuaParse({
+			path,
+			source,
+			withSyntaxError: true,
+			canonicalization: this.identifierCanonicalizationMode,
+		});
+		if (parseEntry.syntaxError) {
+			throw parseEntry.syntaxError;
+		}
+		const chunk = parseEntry.parsed.chunk!;
 		this.validateReservedIdentifiers(chunk.body);
 		this.pathDefinitions.set(chunk.range.path, chunk.definitions);
 		return chunk;
