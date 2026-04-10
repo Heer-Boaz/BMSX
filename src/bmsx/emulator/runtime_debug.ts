@@ -254,15 +254,15 @@ export function logDebugState(runtime: Runtime): void {
 	}
 	const instruction = describeInstructionAtPc(program, debug.pc, runtime.programMetadata, { formatStyle: 'assembly' });
 	const operandSummary = instruction.operands.map(operand => formatInstructionOperandDebug(operand, debug.registers)).join(' ');
-	console.error(`[Runtime] debug: pc=${instruction.pcText} op=${instruction.opName}${operandSummary.length > 0 ? ` ${operandSummary}` : ''}`);
-	console.error(`[Runtime] debug: instr=${instruction.pcText}: ${instruction.instructionText}`);
+	console.error(`\tpc=${instruction.pcText} op=${instruction.opName}${operandSummary.length > 0 ? ` ${operandSummary}` : ''}`);
+	console.error(`\tinstr=${instruction.pcText}: ${instruction.instructionText}`);
 	if (instruction.sourceRange) {
 		const source = resourceSourceForPath(runtime, instruction.sourceRange.path);
-		console.error(`[Runtime] debug: source=${formatDebugSourceLine(instruction.sourceRange, source)}`);
+		console.error(`\tsource=${formatDebugSourceLine(instruction.sourceRange, source)}`);
 		if (source !== null) {
 			const expressions = collectSourceExpressionDebug(runtime, instruction.sourceRange, source, debug.registers);
 			if (expressions.length > 0) {
-				console.error(`[Runtime] debug: exprs=${expressions.join(' ')}`);
+				console.error(`\texprs=${expressions.join(' ')}`);
 			}
 		}
 	}

@@ -267,7 +267,7 @@ export function applyAssetMemorySnapshot(runtime: Runtime, snapshot: RuntimeStat
 	runtime.vdp.commitViewSnapshot();
 }
 
-export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeState): Promise<void> {
+export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeState, options?: { preserveEngineModules?: boolean }): Promise<void> {
 	runtimeIde.clearActiveDebuggerPause(runtime);
 	if (!state) {
 		runtime.luaRuntimeFailed = false;
@@ -281,7 +281,7 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeState):
 	runtime.luaRuntimeFailed = false;
 	publishOverlayFrame(null);
 	applyAssetMemorySnapshot(runtime, snapshot);
-	resumeLuaProgramState(runtime, snapshot);
+	resumeLuaProgramState(runtime, snapshot, options);
 	runtime.restoreVblankState(snapshot);
 	runtime.resetRenderBuffers();
 	runtime.luaInitialized = true;
@@ -365,13 +365,13 @@ export function reloadLuaProgramState(runtime: Runtime, options: { runInit?: boo
 	const runInit = options.runInit !== false;
 	let binding = $.lua_sources.path2lua[$.lua_sources.entry_path] as any;
 	if (!binding) {
-		console.info('[Runtime] No Lua entry point defined; cannot reload program. Please save the entry point and try again.');
+		console.info('No Lua entry point defined; cannot reload program. Please save the entry point and try again.');
 		return;
 	}
 	runtime._luaPath = binding.source_path;
 	if (!runtime.interpreter) {
 		if (!bootLuaProgram(runtime)) {
-			console.info('[Runtime] Lua boot failed.');
+			console.info('Lua boot failed.');
 			return;
 		}
 	}
@@ -384,7 +384,7 @@ export function reloadLuaProgramState(runtime: Runtime, options: { runInit?: boo
 	runtime.luaInitialized = true;
 }
 
-export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeState): void {
+export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeState, options?: { preserveEngineModules?: boolean }): void {
 	const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
 	const binding = snapshot.luaPath;
 	let source: string;
@@ -396,7 +396,8 @@ export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeState):
 	}
 	runtime._luaPath = binding;
 	try {
-		hotResumeProgramEntry(runtime, { source, path: binding, preserveEngineModules: !runtime.isEngineProgramActive() });
+		const preserveEngineModules = options?.preserveEngineModules ?? !runtime.isEngineProgramActive();
+		hotResumeProgramEntry(runtime, { source, path: binding, preserveEngineModules });
 	}
 	catch (error) {
 		runtimeIde.handleLuaError(runtime, error);
@@ -1284,7 +1285,7 @@ export function bootProgramAsset(runtime: Runtime, options?: { preserveState?: b
 		queueLifecycleHandlers(runtime, { runInit: true, runNewGame: true });
 		return true;
 	} catch (error) {
-		console.info('[Runtime] Program-asset boot failed.');
+		console.info('Program-asset boot failed.');
 		logDebugState(runtime);
 		throw error;
 	}
@@ -1379,7 +1380,7 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 		runtime.luaInitialized = true;
 	}
 	catch (error) {
-			console.info(`[Runtime] Lua boot '${path}' failed.`);
+			console.info(`Lua boot '${path}' failed.`);
 		logDebugState(runtime);
 		runtimeIde.handleLuaError(runtime, error);
 		return false;
@@ -1459,7 +1460,7 @@ export function listLuaSourceRegistries(runtime: Runtime): Array<{ registry: Lua
 	if (runtime.cartLuaSources) {
 		registries.push({ registry: runtime.cartLuaSources, readOnly: false });
 	}
-	registries.push({ registry: runtime.engineLuaSources, readOnly: true });
+	registries.push({ registry: runtime.engineLuaSources, readOnly: false });
 	return registries;
 }
 

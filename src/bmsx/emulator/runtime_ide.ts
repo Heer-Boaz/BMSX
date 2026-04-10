@@ -166,6 +166,19 @@ function isManagedOverlayEditorActive(runtime: Runtime): boolean {
 	return runtime.editor!.isActive;
 }
 
+function resolveEditorSourceWorkspacePath(runtime: Runtime, source: string): string {
+	const cart = runtime.cartLuaSources;
+	if (cart && cart.path2lua[source]) {
+		return resolveWorkspacePath(source, $.cart_project_root_path);
+	}
+	const engine = runtime.engineLuaSources;
+	if (engine && engine.path2lua[source]) {
+		const engineRoot = $.engine_layer.index.projectRootPath || 'src/bmsx';
+		return resolveWorkspacePath(source, engineRoot);
+	}
+	return resolveWorkspacePath(source, $.cart_project_root_path);
+}
+
 export function createPauseCoordinator(): DebugPauseCoordinator {
 	return new DebugPauseCoordinator();
 }
@@ -582,7 +595,6 @@ export function handleLuaError(runtime: Runtime, whatever: unknown): void {
 	if (runtime.handledLuaErrors.has(error)) {
 		return;
 	}
-	logDebugState(runtime);
 	runtime.lastCpuFaultSnapshot = runtime.cpu.snapshotCallStack();
 	runtime.lastLuaCallStack = buildLuaStackFrames(runtime);
 	const message = sanitizeLuaErrorMessage(extractErrorMessage(error));
@@ -611,6 +623,7 @@ export function handleLuaError(runtime: Runtime, whatever: unknown): void {
 		error.stack = stackText;
 	}
 	console.error(stackText);
+	logDebugState(runtime);
 	runtime.terminal.appendError(error);
 	activateTerminalMode(runtime);
 	runtime.handledLuaErrors.add(error);
@@ -682,14 +695,13 @@ export function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unkno
 			}
 		}
 	}
-	const projectRootPath = $.cart_project_root_path;
 	if (luaFrames.length > 0) {
 		for (const frame of luaFrames) {
 			const source = frame.source;
 			if (!source || source.length === 0) {
 				continue;
 			}
-			frame.pathPath = resolveWorkspacePath(source, projectRootPath);
+			frame.pathPath = resolveEditorSourceWorkspacePath(runtime, source);
 		}
 	}
 	let stackText: string = null;

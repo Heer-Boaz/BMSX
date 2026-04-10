@@ -53,7 +53,7 @@ import { LuaFunctionRedirectCache } from './lua_handler_registry';
 import { LuaJsBridge, buildMarshalContext, extendMarshalContext, syncLuaAssetField, toNativeValue, toRuntimeValue } from './lua_js_bridge';
 import { RuntimeStorage } from './storage';
 import type { RuntimeOptions, LuaBuiltinDescriptor, LuaMemberCompletion } from './types';
-import { applyWorkspaceOverridesToCart } from './workspace';
+import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_ENGINE_PROJECT_ROOT_PATH } from './workspace';
 import { buildLuaSources, type LuaSourceRegistry } from './lua_sources';
 import * as runtimeIde from './runtime_ide';
 import * as runtimeLuaPipeline from './runtime_lua_pipeline';
@@ -651,7 +651,7 @@ export class Runtime {
 				const yieldsPerSec = this.debugCycleYields * scale;
 				const yieldPct = (this.debugCycleYields / this.debugCycleRuns) * 100;
 				const avgRemaining = this.debugCycleRemainingAcc / this.debugCycleRuns;
-				console.info(`[BMSX][runtime] runs=${runsPerSec.toFixed(3)} yields=${yieldsPerSec.toFixed(3)} yield%=${yieldPct.toFixed(2)} avgRemaining=${avgRemaining.toFixed(1)} budget=${this.cycleBudgetPerFrame}`);
+				console.info(`runs=${runsPerSec.toFixed(3)} yields=${yieldsPerSec.toFixed(3)} yield%=${yieldPct.toFixed(2)} avgRemaining=${avgRemaining.toFixed(1)} budget=${this.cycleBudgetPerFrame}`);
 				this.debugCycleReportAtMs = now;
 				this.debugCycleRuns = 0;
 				this.debugCycleYields = 0;
@@ -1490,6 +1490,12 @@ export class Runtime {
 				engineAssetSource: engineSource,
 				engineCanonicalization: engineLayer.index.machine.canonicalization,
 			});
+			await applyWorkspaceOverridesToRegistry({
+				registry: engineLuaSources,
+				storage: $.platform.storage,
+				includeServer: true,
+				projectRootPath: engineLayer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH,
+			});
 			await runtime.prepareBootRomStartupState();
 			$.view.default_font = new Font();
 			await runtime.boot();
@@ -1573,6 +1579,12 @@ export class Runtime {
 			engineCanonicalization: engineLayer.index.machine.canonicalization,
 			cartCanonicalization: cartLayer.index.machine.canonicalization,
 		});
+		await applyWorkspaceOverridesToRegistry({
+			registry: engineLuaSources,
+			storage: $.platform.storage,
+			includeServer: true,
+			projectRootPath: engineLayer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH,
+		});
 		await runtime.prepareBootRomStartupState();
 		$.view.default_font = new Font();
 		await runtime.boot();
@@ -1606,7 +1618,7 @@ export class Runtime {
 				void $.refresh_audio_assets().catch((error: unknown) => {
 					const runtime = Runtime.instance;
 					runtime.publishStartupHostFault(error);
-					console.error('[Runtime] Deferred startup audio refresh failed:', error);
+					console.error('Deferred startup audio refresh failed:', error);
 				});
 			});
 		});
@@ -1761,7 +1773,7 @@ export class Runtime {
 		const assetDataBytes = ramBytes - fixedRamBytes;
 		const footprintMiB = (ramBytes / (1024 * 1024)).toFixed(2);
 		console.info(
-			`[Runtime] memory footprint: ram=${ramBytes} bytes (${footprintMiB} MiB) `
+			`memory footprint: ram=${ramBytes} bytes (${footprintMiB} MiB) `
 			+ `(io=${IO_REGION_SIZE}, string_handles=${stringHandleCount}, string_heap=${stringHeapBytes}, `
 			+ `asset_table=${assetTableBytes} (${assetTableInfo.entryCount} entries, ${assetTableInfo.stringBytes} string bytes), `
 			+ `asset_data=${assetDataBytes}, geo_scratch=${DEFAULT_GEO_SCRATCH_SIZE}, vdp_stream=${VDP_STREAM_BUFFER_SIZE}, vram_staging=${stagingBytes}, framebuffer=${frameBufferBytes} (${frameBufferWidth}x${frameBufferHeight}), `
@@ -2094,6 +2106,12 @@ export class Runtime {
 			this.preparedCartProgram = null;
 			this.resetDeferredCartBootPreparation();
 			this.setCartBootReadyFlag(false);
+			await applyWorkspaceOverridesToRegistry({
+				registry: this.engineLuaSources,
+				storage: this.storageService,
+				includeServer: true,
+				projectRootPath: $.engine_layer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH,
+			});
 			await this.prepareBootRomStartupState({ resetRuntime: true, refreshAudio: true });
 			api.cartdata($.lua_sources.namespace);
 			runtimeLuaPipeline.bootActiveProgram(this);
@@ -2687,7 +2705,7 @@ export class Runtime {
 			if (this.cartLuaSources.can_boot_from_source) {
 				this.preparedCartProgram = runtimeLuaPipeline.compileCartLuaProgramForBoot(this);
 				this.setCartBootReadyFlag(true);
-				console.info('[Runtime] Cart boot payload prepared from Lua sources.');
+				console.info('Cart boot payload prepared from Lua sources.');
 				return;
 			}
 			const programEntry = this.cartAssetSource.getEntry(PROGRAM_ASSET_ID);
@@ -2695,7 +2713,7 @@ export class Runtime {
 		} catch (error) {
 			this.preparedCartProgram = null;
 			this.setCartBootReadyFlag(false);
-			console.error('[Runtime] Failed to prepare cart boot payload:', error);
+			console.error('Failed to prepare cart boot payload:', error);
 			throw error;
 		}
 	}
@@ -2719,7 +2737,7 @@ export class Runtime {
 			}
 			this.deferredCartBootPreparationCompleted = true;
 			void this.prepareCartBoot().catch((error: unknown) => {
-				console.error('[Runtime] Failed to prepare cart boot:', error);
+				console.error('Failed to prepare cart boot:', error);
 				this.setCartBootReadyFlag(false);
 			});
 		});
@@ -2860,7 +2878,7 @@ export class Runtime {
 			this.clearWaitForVblank();
 		}
 		this.pendingCartBoot = false;
-		console.info('[Runtime] Switching to cart program after BIOS boot request.');
+		console.info('Switching to cart program after BIOS boot request.');
 		this.activateProgramSource('cart');
 		void runtimeLuaPipeline.reloadProgramAndResetWorld(this);
 	}

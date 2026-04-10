@@ -548,7 +548,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 			}
 			catch (error) {
 				if ($.debug) {
-					console.warn(`[Runtime] Skipping Lua table entry '${String(key)}' during snapshot:`, error);
+					console.warn(`Skipping Lua table entry '${String(key)}' during snapshot:`, error);
 				}
 				continue;
 			}
@@ -557,7 +557,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 				serializedKey = this.serializeLuaSnapshotKey(key, ctx);
 			} catch (error) {
 				if ($.debug) {
-					console.warn(`[Runtime] Skipping Lua table key '${String(key)}' during snapshot:`, error);
+					console.warn(`Skipping Lua table key '${String(key)}' during snapshot:`, error);
 				}
 				continue;
 			}

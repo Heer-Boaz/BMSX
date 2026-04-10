@@ -1,7 +1,7 @@
 import { $ } from '../../../core/engine_core';
 import { ide_state } from '../../core/ide_state';
 import { scheduleRuntimeTask } from '../../core/background_tasks';
-import { applyWorkspaceOverridesToCart } from '../../../emulator/workspace';
+import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_ENGINE_PROJECT_ROOT_PATH } from '../../../emulator/workspace';
 import { Runtime } from '../../../emulator/runtime';
 import * as runtimeLuaPipeline from '../../../emulator/runtime_lua_pipeline';
 import * as runtimeIde from '../../../emulator/runtime_ide';
@@ -28,6 +28,24 @@ export function performEditorAction(action: PendingActionPrompt['action']): bool
 	}
 }
 
+function hasPendingEngineModuleReload(runtime: Runtime): boolean {
+	if (!runtime.cartLuaSources) {
+		return false;
+	}
+	for (const context of ide_state.codeTabContexts.values()) {
+		if (context.mode !== 'lua') {
+			continue;
+		}
+		if (context.saveGeneration <= context.appliedGeneration) {
+			continue;
+		}
+		if (runtime.engineLuaSources.path2lua[context.descriptor.path]) {
+			return true;
+		}
+	}
+	return false;
+}
+
 export function performHotResume(): boolean {
 	const runtime = Runtime.instance;
 	const targetGeneration = ide_state.saveGeneration;
@@ -37,13 +55,26 @@ export function performHotResume(): boolean {
 	console.log('[IDE] Performing hot-resume');
 	scheduleRuntimeTask(async () => {
 		console.log('[IDE] Applying workspace overrides to cart before resume');
-		await applyWorkspaceOverridesToCart({ cart: runtime.cartLuaSources ? runtime.cartLuaSources : $.lua_sources, storage: $.platform.storage, includeServer: true });
+		if (runtime.cartLuaSources) {
+			await applyWorkspaceOverridesToCart({ cart: runtime.cartLuaSources, storage: $.platform.storage, includeServer: true });
+		}
+		console.log('[IDE] Applying workspace overrides to BIOS before resume');
+		const engineChanged = await applyWorkspaceOverridesToRegistry({
+			registry: runtime.engineLuaSources,
+			storage: $.platform.storage,
+			includeServer: true,
+			projectRootPath: $.engine_layer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH,
+		});
+		const preserveEngineModules =
+			!runtime.isEngineProgramActive()
+			&& engineChanged.size === 0
+			&& !hasPendingEngineModuleReload(runtime);
 		console.log('[IDE] Capturing runtime snapshot for resume');
 		const snapshot = runtimeLuaPipeline.captureCurrentState(runtime);
 		console.log('[IDE] Clear execution stop highlights before resume');
 		runtimeIde.clearFaultState(runtime);
 		console.log('[IDE] Resuming from snapshot after hot-resume');
-		await runtimeLuaPipeline.resumeFromSnapshot(runtime, snapshot);
+		await runtimeLuaPipeline.resumeFromSnapshot(runtime, snapshot, { preserveEngineModules });
 		if (shouldUpdateGeneration) {
 			console.log('[IDE] Updating applied generation after resume');
 			ide_state.appliedGeneration = targetGeneration;

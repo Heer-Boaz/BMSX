@@ -15,6 +15,7 @@ export const WORKSPACE_METADATA_DIR = '.bmsx';
 export const WORKSPACE_DIRTY_DIR = 'dirty';
 export const WORKSPACE_STATE_FILE = 'ide-state.json';
 export const WORKSPACE_MARKER_FILE = '~workspace';
+export const DEFAULT_ENGINE_PROJECT_ROOT_PATH = 'src/bmsx';
 
 export type WorkspaceOverrideRecord = { source: string; path: string; cartPath: string; updatedAt?: number };
 type WorkspaceStoragePayload = { contents: string; updatedAt: number };
@@ -25,14 +26,53 @@ function resolveEditableCartLuaSources(): LuaSourceRegistry {
 	return runtime.cartLuaSources ? runtime.cartLuaSources : $.lua_sources;
 }
 
+function resolveEngineProjectRootPath(): string {
+	const engineRoot = $.engine_layer.index.projectRootPath;
+	return engineRoot && engineRoot.length > 0 ? engineRoot : DEFAULT_ENGINE_PROJECT_ROOT_PATH;
+}
+
+function isEngineLuaSourcePath(path: string): boolean {
+	return path === 'res/bios' || path.startsWith('res/bios/');
+}
+
+export function resolveLuaSourceRegistry(path: string): LuaSourceRegistry {
+	const runtime = Runtime.instance;
+	const cart = runtime.cartLuaSources;
+	if (cart && cart.path2lua[path]) {
+		return cart;
+	}
+	const engine = runtime.engineLuaSources;
+	if (engine && engine.path2lua[path]) {
+		return engine;
+	}
+	throw new Error(`Missing Lua source registry for '${path}'.`);
+}
+
+export function resolveLuaSourceProjectRootPath(path: string): string {
+	const runtime = Runtime.instance;
+	const cart = runtime.cartLuaSources;
+	if (cart && cart.path2lua[path]) {
+		return $.cart_project_root_path;
+	}
+	const engine = runtime.engineLuaSources;
+	if (engine && engine.path2lua[path]) {
+		return resolveEngineProjectRootPath();
+	}
+	return $.cart_project_root_path;
+}
+
+export function resolveLuaSourceWorkspacePath(path: string): string {
+	return resolveWorkspacePath(path, resolveLuaSourceProjectRootPath(path));
+}
+
 export async function saveLuaResourceSource(path: string, source: string): Promise<void> {
-	const cart = resolveEditableCartLuaSources();
-	const asset = cart.path2lua[path];
+	const registry = resolveLuaSourceRegistry(path);
+	const asset = registry.path2lua[path];
 	const sourcePath = asset.source_path;
-	await persistWorkspaceSourceFile(sourcePath, source);
+	await persistWorkspaceSourceFile(sourcePath, source, resolveLuaSourceProjectRootPath(sourcePath));
 	asset.src = source;
 	asset.update_timestamp = $.platform.clock.dateNow();
-	cart.path2lua![sourcePath] = asset;
+	registry.path2lua[sourcePath] = asset;
 	runtimeLuaPipeline.markSourceChunkAsDirty(Runtime.instance, sourcePath);
 }
 
@@ -51,14 +91,17 @@ export async function createLuaResource(request: LuaResourceCreationRequest): Pr
 		source_path: path,
 		update_timestamp: $.platform.clock.dateNow(),
 	};
-	const registerAsset = (cart: LuaSourceRegistry): void => {
-		cart.path2lua![asset.source_path] = asset;
-		cart.can_boot_from_source = true;
+	const registerAsset = (registry: LuaSourceRegistry): void => {
+		registry.path2lua[asset.source_path] = asset;
+		registry.can_boot_from_source = true;
 	};
-	registerAsset(resolveEditableCartLuaSources());
+	const registry = isEngineLuaSourcePath(asset.source_path)
+		? Runtime.instance.engineLuaSources
+		: resolveEditableCartLuaSources();
+	registerAsset(registry);
 	runtimeLuaPipeline.invalidateModuleAliases(Runtime.instance);
 	const filesystemPath = asset.source_path;
-	await persistWorkspaceSourceFile(filesystemPath, contents);
+	await persistWorkspaceSourceFile(filesystemPath, contents, isEngineLuaSourcePath(filesystemPath) ? resolveEngineProjectRootPath() : $.cart_project_root_path);
 	runtimeLuaPipeline.markSourceChunkAsDirty(Runtime.instance, asset.source_path);
 	const descriptor: ResourceDescriptor = { path: asset.source_path, type: 'lua' };
 	return descriptor;
@@ -154,29 +197,29 @@ function resolveOverrideUpdatedAt(record: WorkspaceOverrideRecord, fallback: num
 }
 
 export async function persistLuaSourceToFilesystem(path: string, source: string): Promise<void> {
-	await persistWorkspaceSourceFile(path, source);
+	await persistWorkspaceSourceFile(path, source, resolveLuaSourceProjectRootPath(path));
 }
 
-export async function persistWorkspaceSourceFile(path: string, source: string): Promise<void> {
+export async function persistWorkspaceSourceFile(path: string, source: string, projectRootPath?: string): Promise<void> {
 	if (typeof fetch !== 'function') {
-		throw new Error('[Runtime] Fetch API unavailable; cannot persist workspace source.');
+		throw new Error('Fetch API unavailable; cannot persist workspace source.');
 	}
 	let response: HttpResponse;
 	try {
 		response = await fetch(WORKSPACE_FILE_ENDPOINT, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ path: resolveWorkspacePath(path), contents: source }),
+			body: JSON.stringify({ path: resolveWorkspacePath(path, projectRootPath), contents: source }),
 		});
 	} catch (error) {
-		throw new Error(`[Runtime] Failed to reach save endpoint for '${path}': ${extractErrorMessage(error)}`);
+		throw new Error(`Failed to reach save endpoint for '${path}': ${extractErrorMessage(error)}`);
 	}
 	if (!response.ok) {
 		let detail = '';
 		try {
 			detail = await response.text();
 		} catch (textError) {
-			throw new Error(`[Runtime] Save rejected for '${path}' (response body read failed): ${extractErrorMessage(textError)}`);
+			throw new Error(`Save rejected for '${path}' (response body read failed): ${extractErrorMessage(textError)}`);
 		}
 		let finalDetail = response.statusText;
 		if (detail && detail.length > 0) {
@@ -184,7 +227,7 @@ export async function persistWorkspaceSourceFile(path: string, source: string): 
 			try {
 				parsed = JSON.parse(detail);
 			} catch (parseError) {
-				throw new Error(`[Runtime] Save rejected for '${path}' (error payload parse failed): ${extractErrorMessage(parseError)}`);
+				throw new Error(`Save rejected for '${path}' (error payload parse failed): ${extractErrorMessage(parseError)}`);
 			}
 			if (parsed && typeof parsed === 'object' && 'error' in parsed) {
 				const record = parsed as { error?: unknown };
@@ -197,20 +240,20 @@ export async function persistWorkspaceSourceFile(path: string, source: string): 
 				finalDetail = detail;
 			}
 		}
-		throw new Error(`[Runtime] Save rejected for '${path}': ${finalDetail}`);
+		throw new Error(`Save rejected for '${path}': ${finalDetail}`);
 	}
 }
 
 export async function fetchLuaSourceFromFilesystem(path: string): Promise<string> {
-	return loadWorkspaceSourceFile(path);
+	return loadWorkspaceSourceFile(path, resolveLuaSourceProjectRootPath(path));
 }
 
-export async function loadWorkspaceSourceFile(path: string): Promise<string> {
+export async function loadWorkspaceSourceFile(path: string, projectRootPath?: string): Promise<string> {
 	const cached = getWorkspaceCachedSource(path);
 	if (cached !== null) {
 		return cached;
 	}
-	const payload = await fetchWorkspaceFile(resolveWorkspacePath(path));
+	const payload = await fetchWorkspaceFile(resolveWorkspacePath(path, projectRootPath));
 	return payload ? payload.contents : null;
 }
 
@@ -252,13 +295,12 @@ export async function mergeWorkspaceOverrides(
 	return merged;
 }
 
-export async function fetchWorkspaceOverridesPriority(cart: LuaSourceRegistry): Promise<Map<string, WorkspaceOverrideRecord>> {
-	const root = $.cart_project_root_path;
+export async function fetchWorkspaceOverridesPriority(cart: LuaSourceRegistry, root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
 	try {
 		const serverOverrides = await fetchWorkspaceDirtyLuaOverrides(cart, root);
 		return serverOverrides;
 	} catch (error) {
-		console.warn('[Runtime] Failed to load server workspace overrides; falling back to local overrides.', error);
+		console.warn('Failed to load server workspace overrides; falling back to local overrides.', error);
 		return new Map<string, WorkspaceOverrideRecord>();
 	}
 }
@@ -371,30 +413,30 @@ export async function fetchWorkspaceFile(path: string): Promise<{ contents: stri
 	try {
 		response = await fetch(url, { method: 'GET', cache: 'no-store' });
 	} catch {
-		console.info(`[Runtime] Failed to fetch workspace file '${path}'. No server response.`);
+		console.info(`Failed to fetch workspace file '${path}'. No server response.`);
 		return null;
 	}
 	if (response.status === 404) {
 		return null;
 	}
 	if (!response.ok) {
-		console.info(`[Runtime] Workspace file request failed for '${path}' (HTTP ${response.status}).`);
+		console.info(`Workspace file request failed for '${path}' (HTTP ${response.status}).`);
 		return null;
 	}
 	let payload: unknown;
 	try {
 		payload = await response.json();
 	} catch {
-		console.warn(`[Runtime] Failed to parse workspace file response JSON for '${path}'.`);
+		console.warn(`Failed to parse workspace file response JSON for '${path}'.`);
 		return null;
 	}
 	if (!payload || typeof payload !== 'object') {
-		console.warn(`[Runtime] Invalid workspace file response payload for '${path}': ${JSON.stringify(payload)}`);
+		console.warn(`Invalid workspace file response payload for '${path}': ${JSON.stringify(payload)}`);
 		return null;
 	}
 	const record = payload as { contents?: string; updatedAt?: number };
 	if (typeof record.contents !== 'string') {
-		console.warn(`[Runtime] Invalid workspace file response payload for '${path}': ${JSON.stringify(payload)}`);
+		console.warn(`Invalid workspace file response payload for '${path}': ${JSON.stringify(payload)}`);
 		return null;
 	}
 	return { contents: record.contents, updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : undefined };
@@ -455,14 +497,14 @@ function selectWorkspaceWinner(options: {
 
 export async function deleteWorkspaceFile(path: string): Promise<void> {
 	if (typeof fetch !== 'function') {
-		console.warn('[Runtime] Fetch API is not available.');
+		console.warn('Fetch API is not available.');
 		return;
 	}
 	const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(path)}`;
 	try {
 		await fetch(url, { method: 'DELETE' });
 	} catch {
-		console.info('[Runtime] Failed to delete workspace file:', url);
+		console.info('Failed to delete workspace file:', url);
 		return;
 	}
 }
@@ -505,19 +547,19 @@ export function persistWorkspaceOverridesToLocalStorage(storage: StorageService,
 // - Dirty Lua writes are staged locally and, when available, mirrored to the workspace backend.
 // - On boot we gather three sources per asset: local dirty storage, server dirty storage, and the canonical file on
 //   disk (server). We deterministically pick the freshest by timestamp with a priority order of dirty > canonical > ROM.
-// - The winning source is applied to the running cart and written back to storage (both canonical and dirty slots when
+// - The winning source is applied to the running registry and written back to storage (both canonical and dirty slots when
 //   relevant). If the winner is fresher than the server canonical file we push it back to disk to converge the state.
-export async function applyWorkspaceOverridesToCart(params: { cart: LuaSourceRegistry; storage: StorageService; includeServer?: boolean }): Promise<Set<string>> {
-	const { cart, storage } = params;
+export async function applyWorkspaceOverridesToRegistry(params: { registry: LuaSourceRegistry; storage: StorageService; includeServer?: boolean; projectRootPath?: string }): Promise<Set<string>> {
+	const { registry, storage } = params;
 	const includeServer = params.includeServer !== false;
 	const changed = new Set<string>();
-	const root = $.cart_project_root_path;
+	const root = params.projectRootPath ?? $.cart_project_root_path;
 
-	const localOverrides = collectWorkspaceOverrides({ cart, projectRootPath: root, storage });
-	const serverOverrides = includeServer ? await fetchWorkspaceOverridesPriority(cart) : new Map<string, WorkspaceOverrideRecord>();
-	const canonicalOverrides = includeServer ? await fetchWorkspaceCanonicalLua(cart, root) : new Map<string, WorkspaceOverrideRecord>();
+	const localOverrides = collectWorkspaceOverrides({ cart: registry, projectRootPath: root, storage });
+	const serverOverrides = includeServer ? await fetchWorkspaceOverridesPriority(registry, root) : new Map<string, WorkspaceOverrideRecord>();
+	const canonicalOverrides = includeServer ? await fetchWorkspaceCanonicalLua(registry, root) : new Map<string, WorkspaceOverrideRecord>();
 
-	for (const asset of Object.values(cart.path2lua)) {
+	for (const asset of Object.values(registry.path2lua)) {
 		const filePath = asset.source_path;
 		const romTimestamp = asset.update_timestamp ?? 0;
 		const localDirty = localOverrides.get(filePath);
@@ -558,7 +600,7 @@ export async function applyWorkspaceOverridesToCart(params: { cart: LuaSourceReg
 		// workspace merges/overrides are keyed by path via `path2lua[...]`. These two maps are expected to point at
 		// the same `LuaSourceRecord` objects, so we always set both here.
 		const nextSource = winner.record.source;
-		const pathBinding = cart.path2lua[asset.source_path];
+		const pathBinding = registry.path2lua[asset.source_path];
 		if (asset.src !== nextSource || pathBinding.src !== nextSource) {
 			changed.add(filePath);
 		}
@@ -591,6 +633,15 @@ export async function applyWorkspaceOverridesToCart(params: { cart: LuaSourceReg
 		}
 	}
 	return changed;
+}
+
+export async function applyWorkspaceOverridesToCart(params: { cart: LuaSourceRegistry; storage: StorageService; includeServer?: boolean }): Promise<Set<string>> {
+	return await applyWorkspaceOverridesToRegistry({
+		registry: params.cart,
+		storage: params.storage,
+		includeServer: params.includeServer,
+		projectRootPath: $.cart_project_root_path,
+	});
 }
 
 export async function clearWorkspaceArtifacts(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
