@@ -72,6 +72,10 @@ local ecsystemmanager<const> = {}
 ecsystemmanager.__index = ecsystemmanager
 local empty_stats<const> = {}
 
+-- Build phase-local views when the system graph changes, not every frame.
+-- That keeps the frame hot path as a straight iteration over the systems that
+-- actually belong to the requested phase, instead of rescanning the full
+-- system list and re-checking each group's membership over and over.
 local rebuild_system_views<const> = function(self)
 	table.sort(self.systems, function(a, b)
 		if a.group ~= b.group then
@@ -108,17 +112,7 @@ end
 
 function ecsystemmanager.new()
 	local self<const> = setmetatable({}, ecsystemmanager)
-	self.systems = {}
-	self.phase_systems = {
-		[tickgroup.input] = {},
-		[tickgroup.actioneffect] = {},
-		[tickgroup.moderesolution] = {},
-		[tickgroup.physics] = {},
-		[tickgroup.animation] = {},
-		[tickgroup.presentation] = {},
-		[tickgroup.eventflush] = {},
-	}
-	self.paused_systems = {}
+	self:clear()
 	return self
 end
 
@@ -151,25 +145,12 @@ function ecsystemmanager:clear()
 	self.paused_systems = {}
 end
 
-function ecsystemmanager:begin_frame()
-end
-
-function ecsystemmanager:get_stats()
-	return empty_stats
-end
-
-function ecsystemmanager:record_stat(_sys, _t0, _t1)
-end
-
 function ecsystemmanager:update_until(max_group)
 	local dt_ms<const> = $.get_frame_delta_ms()
 	for i = 1, #self.systems do
 		local s<const> = self.systems[i]
 		if s.group <= max_group then
-			-- local t0 = $.platform.clock.perf_now()
 			s:update(dt_ms)
-			-- local t1 = $.platform.clock.perf_now()
-			-- self:record_stat(s, t0, t1)
 		end
 	end
 end
@@ -179,35 +160,26 @@ function ecsystemmanager:update_from(min_group)
 	for i = 1, #self.systems do
 		local s<const> = self.systems[i]
 		if s.group >= min_group then
-			-- local t0 = $.platform.clock.perf_now()
 			s:update(dt_ms)
-			-- local t1 = $.platform.clock.perf_now()
-			-- self:record_stat(s, t0, t1)
 		end
 	end
 end
 
 function ecsystemmanager:update_phase(group)
 	local dt_ms<const> = $.get_frame_delta_ms()
+	-- update_phase is a frame hot path. It must walk a prefiltered phase bucket
+	-- instead of filtering self.systems every time, so phase dispatch cost stays
+	-- proportional to useful work rather than total registered systems.
 	local systems<const> = self.phase_systems[group]
 	for i = 1, #systems do
-		local s<const> = systems[i]
-		-- local t0 = $.platform.clock.perf_now()
-		s:update(dt_ms)
-		-- local t1 = $.platform.clock.perf_now()
-		-- self:record_stat(s, t0, t1)
+		systems[i]:update(dt_ms)
 	end
 end
 
 function ecsystemmanager:run_paused()
-	self:begin_frame()
 	local dt_ms<const> = $.get_frame_delta_ms()
 	for i = 1, #self.paused_systems do
-		local s<const> = self.paused_systems[i]
-		-- local t0 = $.platform.clock.perf_now()
-		s:update(dt_ms)
-		-- local t1 = $.platform.clock.perf_now()
-		-- self:record_stat(s, t0, t1)
+		self.paused_systems[i]:update(dt_ms)
 	end
 end
 
