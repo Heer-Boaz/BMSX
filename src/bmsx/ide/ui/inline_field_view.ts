@@ -205,7 +205,7 @@ export function measureWrappedInlineSegmentDecoration(
 
 	out.caretLocalIndex = cursorOffset - segmentStart;
 	out.caretBaseX = x + measureText(displayText.slice(segmentStart, cursorOffset));
-	out.caretLeft = Math.floor(out.caretBaseX);
+	out.caretLeft = out.caretBaseX;
 	out.caretChar = cursorOffset < displayText.length ? displayText.charAt(cursorOffset) : ' ';
 	out.caretWidth = measureText(out.caretChar);
 	if (out.caretWidth <= 0) {

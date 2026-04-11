@@ -30,9 +30,9 @@ export function drawCompletionPopup(
 	if (!session || !cursorInfo) return null;
 	if (session.filteredItems.length === 0) return null;
 	if (session.trigger !== 'manual') return null;
-	const maxAllowedWidth = Math.floor(bounds.codeRight - bounds.textLeft);
+	const maxAllowedWidth = bounds.codeRight - bounds.textLeft;
 	if (maxAllowedWidth <= 0) return null;
-	const maxAllowedHeight = Math.floor(bounds.codeBottom - bounds.codeTop);
+	const maxAllowedHeight = bounds.codeBottom - bounds.codeTop;
 	if (maxAllowedHeight <= 0) return null;
 	const maxVisibleByHeight = (() => {
 		const available = maxAllowedHeight - constants.COMPLETION_POPUP_PADDING_Y * 2 + constants.COMPLETION_POPUP_ITEM_SPACING;
@@ -66,19 +66,19 @@ export function drawCompletionPopup(
 		}
 	}
 	const minWidth = Math.min(constants.COMPLETION_POPUP_MIN_WIDTH, maxAllowedWidth);
-	let popupWidth = Math.floor(maxLineWidth + constants.COMPLETION_POPUP_PADDING_X * 2);
+	let popupWidth = maxLineWidth + constants.COMPLETION_POPUP_PADDING_X * 2;
 	if (popupWidth < minWidth) {
 		popupWidth = minWidth;
 	}
 	if (popupWidth > maxAllowedWidth) {
 		popupWidth = maxAllowedWidth;
 	}
-	const popupHeight = Math.floor(constants.COMPLETION_POPUP_PADDING_Y * 2 + visibleCount * lineHeight + Math.max(0, visibleCount - 1) * constants.COMPLETION_POPUP_ITEM_SPACING);
-	let popupLeft = Math.floor(cursorInfo.x);
+	const popupHeight = constants.COMPLETION_POPUP_PADDING_Y * 2 + visibleCount * lineHeight + Math.max(0, visibleCount - 1) * constants.COMPLETION_POPUP_ITEM_SPACING;
+	let popupLeft = cursorInfo.x;
 	if (popupLeft + popupWidth > bounds.codeRight) popupLeft = bounds.codeRight - popupWidth;
 	if (popupLeft < bounds.textLeft) popupLeft = bounds.textLeft;
-	let popupTop = Math.floor(cursorInfo.y + cursorInfo.height + 2);
-	if (popupTop + popupHeight > bounds.codeBottom) popupTop = Math.floor(cursorInfo.y - popupHeight - 2);
+	let popupTop = cursorInfo.y + cursorInfo.height + 2;
+	if (popupTop + popupHeight > bounds.codeBottom) popupTop = cursorInfo.y - popupHeight - 2;
 	if (popupTop < bounds.codeTop) {
 		popupTop = bounds.codeTop;
 		if (popupTop + popupHeight > bounds.codeBottom) popupTop = Math.max(bounds.codeTop, bounds.codeBottom - popupHeight);
@@ -143,7 +143,7 @@ export function drawParameterHintOverlay(
 	if (activeParamDescription && activeParamDescription.length > 0) {
 		descriptionLines.push({ text: activeParamDescription, color: constants.COLOR_PARAMETER_HINT_ACTIVE });
 	}
-	const maxAllowedWidth = Math.floor(bounds.codeRight - bounds.textLeft);
+	const maxAllowedWidth = bounds.codeRight - bounds.textLeft;
 	if (maxAllowedWidth <= 0) return;
 	const maxTextWidth = Math.max(0, maxAllowedWidth - constants.PARAMETER_HINT_PADDING_X * 2);
 	if (maxTextWidth <= 0) return;
@@ -186,7 +186,7 @@ export function drawParameterHintOverlay(
 	const lineSpacing = 2;
 	const totalLines = 1 + wrappedDescriptionLines.length;
 	const popupWidth = Math.min(maxAllowedWidth, maxLineWidth + constants.PARAMETER_HINT_PADDING_X * 2);
-	const popupHeight = Math.floor(totalLines * lineHeight + constants.PARAMETER_HINT_PADDING_Y * 2 + Math.max(0, totalLines - 1) * lineSpacing);
+	const popupHeight = totalLines * lineHeight + constants.PARAMETER_HINT_PADDING_Y * 2 + Math.max(0, totalLines - 1) * lineSpacing;
 	let popupLeft = cursorInfo.x;
 	if (popupLeft + popupWidth > bounds.codeRight) popupLeft = bounds.codeRight - popupWidth;
 	if (popupLeft < bounds.textLeft) popupLeft = bounds.textLeft;

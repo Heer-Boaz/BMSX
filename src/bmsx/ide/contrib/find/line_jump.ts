@@ -17,40 +17,40 @@ export function openLineJump(): void {
 	closeResourceSearch(false);
 	closeSearch(false, true);
 	ide_state.renameController.cancel();
-	ide_state.lineJumpVisible = true;
-	ide_state.lineJumpActive = true;
+	ide_state.lineJump.visible = true;
+	ide_state.lineJump.active = true;
 	applyLineJumpFieldText('', true);
 	resetBlink();
 }
 
 export function closeLineJump(clearValue: boolean): void {
-	ide_state.lineJumpActive = false;
-	ide_state.lineJumpVisible = false;
+	ide_state.lineJump.active = false;
+	ide_state.lineJump.visible = false;
 	if (clearValue) {
 		applyLineJumpFieldText('', true);
 	}
-	ide_state.lineJumpField.selectionAnchor = null;
-	ide_state.lineJumpField.pointerSelecting = false;
+	ide_state.lineJump.field.selectionAnchor = null;
+	ide_state.lineJump.field.pointerSelecting = false;
 	resetBlink();
 }
 
 export function focusEditorFromLineJump(): void {
-	if (!ide_state.lineJumpActive && !ide_state.lineJumpVisible) {
+	if (!ide_state.lineJump.active && !ide_state.lineJump.visible) {
 		return;
 	}
-	ide_state.lineJumpActive = false;
-	ide_state.lineJumpVisible = false;
-	ide_state.lineJumpField.selectionAnchor = null;
-	ide_state.lineJumpField.pointerSelecting = false;
+	ide_state.lineJump.active = false;
+	ide_state.lineJump.visible = false;
+	ide_state.lineJump.field.selectionAnchor = null;
+	ide_state.lineJump.field.pointerSelecting = false;
 	resetBlink();
 }
 
 export function applyLineJump(): void {
-	if (ide_state.lineJumpValue.length === 0) {
+	if (ide_state.lineJump.value.length === 0) {
 		ide_state.showMessage('Enter a line number', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
-	const target = Number.parseInt(ide_state.lineJumpValue, 10);
+	const target = Number.parseInt(ide_state.lineJump.value, 10);
 	const lineCount = ide_state.buffer.getLineCount();
 	if (!Number.isFinite(target) || target < 1 || target > lineCount) {
 		ide_state.showMessage(`Line must be between 1 and ${lineCount}`, constants.COLOR_STATUS_WARNING, 1.8);
@@ -66,6 +66,6 @@ export function applyLineJump(): void {
 }
 
 export function applyLineJumpFieldText(value: string, moveCursorToEnd: boolean): void {
-	ide_state.lineJumpValue = value;
-	setFieldText(ide_state.lineJumpField, value, moveCursorToEnd);
+	ide_state.lineJump.value = value;
+	setFieldText(ide_state.lineJump.field, value, moveCursorToEnd);
 }

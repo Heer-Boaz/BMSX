@@ -16,7 +16,7 @@ export function openReferenceSearchPopup(): void {
 	if (context.mode !== 'lua') {
 		return;
 	}
-	if (ide_state.symbolSearchVisible || ide_state.symbolSearchActive) {
+	if (ide_state.symbolSearch.visible || ide_state.symbolSearch.active) {
 		closeSymbolSearch(false);
 	}
 	ide_state.renameController.cancel();
@@ -34,34 +34,34 @@ export function openReferenceSearchPopup(): void {
 	}
 	const { info, initialIndex } = result;
 	ide_state.referenceState.apply(info, initialIndex);
-	ide_state.referenceCatalog = buildReferenceSearchCatalog(info, context);
-	if (ide_state.referenceCatalog.length === 0) {
+	ide_state.symbolSearch.referenceCatalog = buildReferenceSearchCatalog(info, context);
+	if (ide_state.symbolSearch.referenceCatalog.length === 0) {
 		ide_state.showMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
 		return;
 	}
-	ide_state.symbolSearchMode = 'references';
-	ide_state.symbolSearchGlobal = true;
-	ide_state.symbolSearchVisible = true;
-	ide_state.symbolSearchActive = true;
+	ide_state.symbolSearch.mode = 'references';
+	ide_state.symbolSearch.global = true;
+	ide_state.symbolSearch.visible = true;
+	ide_state.symbolSearch.active = true;
 	applySymbolSearchFieldText('', true);
-	ide_state.symbolSearchQuery = '';
+	ide_state.symbolSearch.query = '';
 	updateReferenceSearchMatches();
-	ide_state.symbolSearchHoverIndex = -1;
+	ide_state.symbolSearch.hoverIndex = -1;
 	ensureSymbolSearchSelectionVisible();
 	resetBlink();
 	showReferenceSearchStatusMessage();
 }
 
 export function applyReferenceSearchSelection(index: number): void {
-	if (index < 0 || index >= ide_state.symbolSearchMatches.length) {
+	if (index < 0 || index >= ide_state.symbolSearch.matches.length) {
 		ide_state.showMessage('Symbol not found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
-	const match = ide_state.symbolSearchMatches[index];
+	const match = ide_state.symbolSearch.matches[index];
 	const referenceEntry = match.entry as ReferenceCatalogEntry;
 	const symbol = referenceEntry.symbol as ReferenceSymbolEntry;
-	const entryIndex = ide_state.referenceCatalog.indexOf(referenceEntry);
-	const total = ide_state.referenceCatalog.length;
+	const entryIndex = ide_state.symbolSearch.referenceCatalog.indexOf(referenceEntry);
+	const total = ide_state.symbolSearch.referenceCatalog.length;
 	const expressionLabel = ide_state.referenceState.getExpression() ?? symbol.name;
 	closeSymbolSearch(true);
 	ide_state.referenceState.clear();

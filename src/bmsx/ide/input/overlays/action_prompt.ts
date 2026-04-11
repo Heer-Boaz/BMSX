@@ -1,12 +1,13 @@
 import { ide_state } from '../../core/ide_state';
-import type { PendingActionPrompt, PointerSnapshot } from '../../core/types';
+import type { ActionPromptAction, PointerSnapshot } from '../../core/types';
 import { save } from '../../ui/editor_tabs';
 import { performEditorAction } from '../commands/editor_actions';
 import { consumeIdeKey, isKeyJustPressed } from '../keyboard/key_input';
 import { point_in_rect } from '../../../utils/rect_operations';
 
 export async function handleActionPromptSelection(choice: 'save-continue' | 'continue' | 'cancel'): Promise<void> {
-	if (!ide_state.pendingActionPrompt) {
+	const prompt = ide_state.actionPrompt;
+	if (!prompt) {
 		return;
 	}
 	if (choice === 'cancel') {
@@ -14,17 +15,17 @@ export async function handleActionPromptSelection(choice: 'save-continue' | 'con
 		return;
 	}
 	if (choice === 'save-continue') {
-		const saved = await attemptPromptSave(ide_state.pendingActionPrompt.action);
+		const saved = await attemptPromptSave(prompt.action);
 		if (!saved) {
 			return;
 		}
 	}
-	if (performEditorAction(ide_state.pendingActionPrompt.action)) {
+	if (performEditorAction(prompt.action)) {
 		resetActionPromptState();
 	}
 }
 
-export async function attemptPromptSave(action: PendingActionPrompt['action']): Promise<boolean> {
+export async function attemptPromptSave(action: ActionPromptAction): Promise<boolean> {
 	if (action === 'close') {
 		await save();
 		return ide_state.dirty === false;
@@ -34,7 +35,7 @@ export async function attemptPromptSave(action: PendingActionPrompt['action']): 
 }
 
 export function handleActionPromptInput(): void {
-	if (!ide_state.pendingActionPrompt) {
+	if (!ide_state.actionPrompt) {
 		return;
 	}
 	if (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter')) {
@@ -45,28 +46,25 @@ export function handleActionPromptInput(): void {
 }
 
 export function handleActionPromptPointer(snapshot: PointerSnapshot): void {
-	if (!ide_state.pendingActionPrompt) {
+	const prompt = ide_state.actionPrompt;
+	if (!prompt) {
 		return;
 	}
 	const x = snapshot.viewportX;
 	const y = snapshot.viewportY;
-	const saveBounds = ide_state.actionPromptButtons.saveAndContinue;
-	if (saveBounds && point_in_rect(x, y, saveBounds)) {
+	if (point_in_rect(x, y, prompt.layout.saveAndContinue)) {
 		void handleActionPromptSelection('save-continue');
 		return;
 	}
-	if (point_in_rect(x, y, ide_state.actionPromptButtons.continue)) {
+	if (point_in_rect(x, y, prompt.layout.continue)) {
 		void handleActionPromptSelection('continue');
 		return;
 	}
-	if (point_in_rect(x, y, ide_state.actionPromptButtons.cancel)) {
+	if (point_in_rect(x, y, prompt.layout.cancel)) {
 		void handleActionPromptSelection('cancel');
 	}
 }
 
 export function resetActionPromptState(): void {
-	ide_state.pendingActionPrompt = null;
-	ide_state.actionPromptButtons.saveAndContinue = null;
-	ide_state.actionPromptButtons.continue = { left: 0, top: 0, right: 0, bottom: 0 };
-	ide_state.actionPromptButtons.cancel = { left: 0, top: 0, right: 0, bottom: 0 };
+	ide_state.actionPrompt = null;
 }

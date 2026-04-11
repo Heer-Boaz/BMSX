@@ -13,23 +13,23 @@ export function handleCreateResourceInput(): void {
 		closeCreateResourcePrompt(true);
 		return;
 	}
-	if (!ide_state.createResourceWorking && (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter'))) {
+	if (!ide_state.createResource.working && (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter'))) {
 		consumeIdeKey('Enter');
 		consumeIdeKey('NumpadEnter');
 		void confirmCreateResourcePrompt();
 		return;
 	}
-	if (ide_state.createResourceWorking) {
+	if (ide_state.createResource.working) {
 		return;
 	}
-	const textChanged = applyInlineFieldEditing(ide_state.createResourceField, {
+	const textChanged = applyInlineFieldEditing(ide_state.createResource.field, {
 		allowSpace: true,
 		characterFilter: (value: string): boolean => isValidCreateResourceCharacter(value),
 		maxLength: constants.CREATE_RESOURCE_MAX_PATH_LENGTH,
 	});
 	if (textChanged) {
-		ide_state.createResourceError = null;
+		ide_state.createResource.error = null;
 		resetBlink();
 	}
-	ide_state.createResourcePath = textFromLines(ide_state.createResourceField.lines);
+	ide_state.createResource.path = textFromLines(ide_state.createResource.field.lines);
 }

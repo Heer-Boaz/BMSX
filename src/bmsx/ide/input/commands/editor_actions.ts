@@ -5,13 +5,13 @@ import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAU
 import { Runtime } from '../../../emulator/runtime';
 import * as runtimeLuaPipeline from '../../../emulator/runtime_lua_pipeline';
 import * as runtimeIde from '../../../emulator/runtime_ide';
-import type { PendingActionPrompt } from '../../core/types';
+import type { ActionPromptAction } from '../../core/types';
 import { handleRuntimeTaskError } from '../../ui/editor_runtime';
 import { clearExecutionStopHighlights } from '../../contrib/runtime_error/runtime_error_navigation';
 import * as constants from '../../core/constants';
 import { setEditorCaseInsensitivity } from '../../render/text_renderer';
 
-export function performEditorAction(action: PendingActionPrompt['action']): boolean {
+export function performEditorAction(action: ActionPromptAction): boolean {
 	switch (action) {
 		case 'hot-resume':
 			return performHotResume();

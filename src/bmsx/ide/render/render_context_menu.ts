@@ -65,12 +65,12 @@ export function layoutEditorContextMenu(codeBounds: CodeAreaViewportBounds): voi
 	menuWidth += CONTEXT_MENU_PADDING_X * 2;
 	const menuHeight = rowHeight * menu.entries.length;
 	const left = clamp(
-		Math.floor(menu.anchorX),
+		menu.anchorX,
 		codeBounds.codeLeft,
 		Math.max(codeBounds.codeLeft, codeBounds.codeRight - menuWidth)
 	);
 	const top = clamp(
-		Math.floor(menu.anchorY),
+		menu.anchorY,
 		codeBounds.codeTop,
 		Math.max(codeBounds.codeTop, codeBounds.codeBottom - menuHeight)
 	);

@@ -34,7 +34,7 @@ function decimalDigitCount(value: number): number {
 }
 
 export function getBreakpointLaneWidth(): number {
-	return Math.max(6, Math.floor(ide_state.charAdvance + 2));
+	return Math.max(6, ide_state.charAdvance + 2);
 }
 
 export function updateGutterWidth(): number {
@@ -93,14 +93,14 @@ export function resourceSearchPageSize(): number {
 }
 
 export function resourceSearchWindowCapacity(): number {
-	return ide_state.resourceSearchVisible ? resourceSearchPageSize() : 0;
+	return ide_state.resourceSearch.visible ? resourceSearchPageSize() : 0;
 }
 
 export function resourceSearchVisibleResultCount(): number {
-	if (!ide_state.resourceSearchVisible) {
+	if (!ide_state.resourceSearch.visible) {
 		return 0;
 	}
-	const remaining = Math.max(0, ide_state.resourceSearchMatches.length - ide_state.resourceSearchDisplayOffset);
+	const remaining = Math.max(0, ide_state.resourceSearch.matches.length - ide_state.resourceSearch.displayOffset);
 	const capacity = resourceSearchWindowCapacity();
 	if (capacity <= 0) {
 		return remaining;
@@ -113,27 +113,27 @@ export function isSymbolSearchCompactMode(): boolean {
 }
 
 export function symbolSearchEntryHeight(): number {
-	if (ide_state.symbolSearchMode === 'references') {
+	if (ide_state.symbolSearch.mode === 'references') {
 		return ide_state.lineHeight * 2;
 	}
-	return ide_state.symbolSearchGlobal && isSymbolSearchCompactMode() ? ide_state.lineHeight * 2 : ide_state.lineHeight;
+	return ide_state.symbolSearch.global && isSymbolSearchCompactMode() ? ide_state.lineHeight * 2 : ide_state.lineHeight;
 }
 
 export function symbolSearchPageSize(): number {
-	if (ide_state.symbolSearchMode === 'references') {
+	if (ide_state.symbolSearch.mode === 'references') {
 		return constants.REFERENCE_SEARCH_MAX_RESULTS;
 	}
-	if (!ide_state.symbolSearchGlobal) {
+	if (!ide_state.symbolSearch.global) {
 		return constants.SYMBOL_SEARCH_MAX_RESULTS;
 	}
 	return isSymbolSearchCompactMode() ? constants.SYMBOL_SEARCH_COMPACT_MAX_RESULTS : constants.SYMBOL_SEARCH_MAX_RESULTS;
 }
 
 export function symbolSearchVisibleResultCount(): number {
-	if (!ide_state.symbolSearchVisible) {
+	if (!ide_state.symbolSearch.visible) {
 		return 0;
 	}
-	const remaining = Math.max(0, ide_state.symbolSearchMatches.length - ide_state.symbolSearchDisplayOffset);
+	const remaining = Math.max(0, ide_state.symbolSearch.matches.length - ide_state.symbolSearch.displayOffset);
 	return Math.min(remaining, symbolSearchPageSize());
 }
 
@@ -223,8 +223,8 @@ export function mapScreenPointToViewport(screenX: number, screenY: number): { x:
 	const relativeY = screenY - rect.top;
 	const inside = relativeX >= 0 && relativeX < rect.width && relativeY >= 0 && relativeY < rect.height;
 	return {
-		x: (relativeX / rect.width) * ide_state.viewportWidth,
-		y: (relativeY / rect.height) * ide_state.viewportHeight,
+		x: Math.trunc((relativeX / rect.width) * ide_state.viewportWidth),
+		y: Math.trunc((relativeY / rect.height) * ide_state.viewportHeight),
 		inside,
 		valid: true,
 	};
@@ -363,14 +363,14 @@ export function scrollRows(deltaRows: number): void {
 }
 
 export function getCreateResourceBarHeight(): number {
-	if (!ide_state.createResourceVisible) {
+	if (!ide_state.createResource.visible) {
 		return 0;
 	}
 	return ide_state.lineHeight + constants.CREATE_RESOURCE_BAR_MARGIN_Y * 2;
 }
 
 export function getSearchBarHeight(): number {
-	if (!ide_state.searchVisible) {
+	if (!ide_state.search.visible) {
 		return 0;
 	}
 	const baseHeight = ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
@@ -382,7 +382,7 @@ export function getSearchBarHeight(): number {
 }
 
 export function getResourceSearchBarHeight(): number {
-	if (!ide_state.resourceSearchVisible) {
+	if (!ide_state.resourceSearch.visible) {
 		return 0;
 	}
 	const baseHeight = ide_state.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
@@ -394,7 +394,7 @@ export function getResourceSearchBarHeight(): number {
 }
 
 export function getSymbolSearchBarHeight(): number {
-	if (!ide_state.symbolSearchVisible) {
+	if (!ide_state.symbolSearch.visible) {
 		return 0;
 	}
 	const baseHeight = ide_state.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
@@ -413,7 +413,7 @@ export function getRenameBarHeight(): number {
 }
 
 export function getLineJumpBarHeight(): number {
-	if (!ide_state.lineJumpVisible) {
+	if (!ide_state.lineJump.visible) {
 		return 0;
 	}
 	return ide_state.lineHeight + constants.LINE_JUMP_BAR_MARGIN_Y * 2;

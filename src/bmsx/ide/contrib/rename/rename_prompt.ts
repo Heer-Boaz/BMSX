@@ -18,7 +18,7 @@ export function openRenamePrompt(): void {
 	closeLineJump(false);
 	closeResourceSearch(false);
 	closeSymbolSearch(false);
-	ide_state.createResourceActive = false;
+	ide_state.createResource.active = false;
 	const context = getActiveCodeTabContext();
 	if (context.mode !== 'lua') {
 		return;

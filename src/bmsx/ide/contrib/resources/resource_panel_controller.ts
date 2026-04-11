@@ -714,7 +714,7 @@ export class ResourcePanelController {
 	}
 
 	private computePixelWidth(ratio: number): number {
-		return Math.floor(ide_state.viewportWidth * this.clampRatio(ratio));
+		return Math.trunc(ide_state.viewportWidth * this.clampRatio(ratio));
 	}
 
 	// Expose snapshot for editor sync

@@ -41,7 +41,7 @@ export function handleSearchInput(): void {
 		return;
 	}
 	const hasResults = activeSearchMatchCount() > 0;
-	const previewLocal = ide_state.searchScope === 'local';
+	const previewLocal = ide_state.search.scope === 'local';
 	if (isKeyJustPressed('Enter')) {
 		consumeIdeKey('Enter');
 		if (hasResults) {
@@ -94,12 +94,12 @@ export function handleSearchInput(): void {
 			return;
 		}
 	}
-	const textChanged = applyInlineFieldEditing(ide_state.searchField, {
+	const textChanged = applyInlineFieldEditing(ide_state.search.field, {
 		allowSpace: true,
 		characterFilter: undefined,
 		maxLength: null,
 	});
-	ide_state.searchQuery = textFromLines(ide_state.searchField.lines);
+	ide_state.search.query = textFromLines(ide_state.search.field.lines);
 	if (textChanged) {
 		onSearchQueryChanged();
 	}

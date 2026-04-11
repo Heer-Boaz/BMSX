@@ -88,14 +88,14 @@ function handleResourceSearchWheel(
 	activePointer: typeof ide_state.lastPointerSnapshot,
 	playerInput: ReturnType<typeof $.input.getPlayerInput>
 ): boolean {
-	if (!ide_state.resourceSearchVisible) {
+	if (!ide_state.resourceSearch.visible) {
 		return false;
 	}
 	const bounds = getResourceSearchBarBounds();
 	const pointerInQuickOpen = bounds !== null
 		&& activePointer !== null
 		&& point_in_rect(activePointer.viewportX, activePointer.viewportY, bounds);
-	if (!pointerInQuickOpen && !ide_state.resourceSearchActive) {
+	if (!pointerInQuickOpen && !ide_state.resourceSearch.active) {
 		return false;
 	}
 	moveResourceSearchSelection(direction * steps);

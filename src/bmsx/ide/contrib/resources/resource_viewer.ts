@@ -74,8 +74,8 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 			const meta = image.imgmeta;
 			state.image = {
 				asset_id: descriptor.asset_id,
-				width: Math.floor(meta.width),
-				height: Math.floor(meta.height),
+				width: meta.width,
+				height: meta.height,
 				atlassed: Boolean(meta.atlassed),
 				atlasId: meta.atlasid,
 			};
@@ -190,16 +190,16 @@ export function resourceViewerImageLayout(
 			return null;
 		}
 	}
-	const width = viewer.image.width * scale;
-	const height = viewer.image.height * scale;
-	const left = bounds.codeLeft + paddingX + Math.max(0, Math.floor((availableWidth - width) * 0.5));
+	const width = Math.max(1, Math.trunc(viewer.image.width * scale));
+	const height = Math.max(1, Math.trunc(viewer.image.height * scale));
+	const left = bounds.codeLeft + paddingX + Math.max(0, Math.trunc((availableWidth - width) / 2));
 	const top = bounds.codeTop + 2;
 	return { left, top, width, height, bottom: top + height, scale };
 }
 
 export function resourceViewerTextCapacity(viewer: ResourceViewerState, bounds: ResourceViewerBounds, lineHeight: number): number {
 	const layout = resourceViewerImageLayout(viewer, bounds, lineHeight);
-	const textTop = layout ? Math.floor(layout.bottom + lineHeight) : bounds.codeTop + 2;
+	const textTop = layout ? layout.bottom + lineHeight : bounds.codeTop + 2;
 	if (textTop >= bounds.codeBottom) {
 		return 0;
 	}

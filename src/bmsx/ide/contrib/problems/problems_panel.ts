@@ -418,7 +418,7 @@ export class ProblemsPanelController {
 		return ide_state.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2;
 	}
 
-	public setFixedHeightPx(height: number): void { this.fixedHeightPx = (height && height > 0) ? Math.floor(height) : null; this.cachedLayout = null; }
+	public setFixedHeightPx(height: number): void { this.fixedHeightPx = (height && height > 0) ? Math.trunc(height) : null; this.cachedLayout = null; }
 
 	private estimateVisibleCount(layout: PanelLayout): number {
 		// Estimate how many items fit from current selection based on cached heights

@@ -9,60 +9,60 @@ export function closeSymbolSearch(clearQuery: boolean): void {
 	if (clearQuery) {
 		applySymbolSearchFieldText('', true);
 	}
-	ide_state.symbolSearchActive = false;
-	ide_state.symbolSearchVisible = false;
-	ide_state.symbolSearchGlobal = false;
-	ide_state.symbolSearchMode = 'symbols';
-	ide_state.referenceCatalog = [];
-	ide_state.symbolSearchMatches = [];
-	ide_state.symbolSearchSelectionIndex = -1;
-	ide_state.symbolSearchDisplayOffset = 0;
-	ide_state.symbolSearchHoverIndex = -1;
-	ide_state.symbolSearchField.selectionAnchor = null;
-	ide_state.symbolSearchField.pointerSelecting = false;
+	ide_state.symbolSearch.active = false;
+	ide_state.symbolSearch.visible = false;
+	ide_state.symbolSearch.global = false;
+	ide_state.symbolSearch.mode = 'symbols';
+	ide_state.symbolSearch.referenceCatalog = [];
+	ide_state.symbolSearch.matches = [];
+	ide_state.symbolSearch.selectionIndex = -1;
+	ide_state.symbolSearch.displayOffset = 0;
+	ide_state.symbolSearch.hoverIndex = -1;
+	ide_state.symbolSearch.field.selectionAnchor = null;
+	ide_state.symbolSearch.field.pointerSelecting = false;
 	resetBlink();
 }
 
 export function focusEditorFromSymbolSearch(): void {
-	if (!ide_state.symbolSearchActive && !ide_state.symbolSearchVisible) {
+	if (!ide_state.symbolSearch.active && !ide_state.symbolSearch.visible) {
 		return;
 	}
-	ide_state.symbolSearchActive = false;
-	if (ide_state.symbolSearchQuery.length === 0) {
-		ide_state.symbolSearchVisible = false;
-		ide_state.symbolSearchMatches = [];
-		ide_state.symbolSearchSelectionIndex = -1;
-		ide_state.symbolSearchDisplayOffset = 0;
+	ide_state.symbolSearch.active = false;
+	if (ide_state.symbolSearch.query.length === 0) {
+		ide_state.symbolSearch.visible = false;
+		ide_state.symbolSearch.matches = [];
+		ide_state.symbolSearch.selectionIndex = -1;
+		ide_state.symbolSearch.displayOffset = 0;
 	}
-	ide_state.symbolSearchField.selectionAnchor = null;
-	ide_state.symbolSearchField.pointerSelecting = false;
+	ide_state.symbolSearch.field.selectionAnchor = null;
+	ide_state.symbolSearch.field.pointerSelecting = false;
 	resetBlink();
 }
 
 export function applySymbolSearchFieldText(value: string, moveCursorToEnd: boolean): void {
-	ide_state.symbolSearchQuery = value;
-	setFieldText(ide_state.symbolSearchField, value, moveCursorToEnd);
+	ide_state.symbolSearch.query = value;
+	setFieldText(ide_state.symbolSearch.field, value, moveCursorToEnd);
 }
 
 export function getActiveSymbolSearchMatch(): SymbolSearchResult {
-	if (!ide_state.symbolSearchVisible || ide_state.symbolSearchMatches.length === 0) {
+	if (!ide_state.symbolSearch.visible || ide_state.symbolSearch.matches.length === 0) {
 		return null;
 	}
-	let index = ide_state.symbolSearchHoverIndex;
-	if (index < 0 || index >= ide_state.symbolSearchMatches.length) {
-		index = ide_state.symbolSearchSelectionIndex;
+	let index = ide_state.symbolSearch.hoverIndex;
+	if (index < 0 || index >= ide_state.symbolSearch.matches.length) {
+		index = ide_state.symbolSearch.selectionIndex;
 	}
-	if (index < 0 || index >= ide_state.symbolSearchMatches.length) {
+	if (index < 0 || index >= ide_state.symbolSearch.matches.length) {
 		return null;
 	}
-	return ide_state.symbolSearchMatches[index];
+	return ide_state.symbolSearch.matches[index];
 }
 
 export function ensureSymbolSearchSelectionVisible(): void {
-	ide_state.symbolSearchDisplayOffset = clampQuickInputDisplayOffset(
-		ide_state.symbolSearchSelectionIndex,
-		ide_state.symbolSearchDisplayOffset,
-		ide_state.symbolSearchMatches.length,
+	ide_state.symbolSearch.displayOffset = clampQuickInputDisplayOffset(
+		ide_state.symbolSearch.selectionIndex,
+		ide_state.symbolSearch.displayOffset,
+		ide_state.symbolSearch.matches.length,
 		symbolSearchPageSize()
 	);
 }

@@ -111,7 +111,6 @@ export function renderCodeArea(): void {
 		&& inlineCompletionPreview.column === ide_state.cursorColumn;
 	const useUppercase = ide_state.caseInsensitive;
 	const renderFont = ide_state.font.renderFont();
-	const textLeftFloor = Math.floor(bounds.textLeft);
 	const breakpointLaneWidth = getBreakpointLaneWidth();
 	let cursorEntry: CachedHighlight = null;
 	let cursorInfo: CursorScreenInfo = null;
@@ -193,11 +192,11 @@ export function renderCodeArea(): void {
 			const insertDisplay = ide_state.layout.columnToDisplay(highlight, inlineCompletionPreview.column);
 			if (insertDisplay >= sliceStartDisplay && insertDisplay <= sliceEndDisplay) {
 				const ghost = inlineCompletionPreview.suffix;
-				drawHighlightSlice(renderFont, renderText, highlight.colors, entry.advancePrefix, sliceStartDisplay, insertDisplay, textLeftFloor, rowY, undefined);
+				drawHighlightSlice(renderFont, renderText, highlight.colors, entry.advancePrefix, sliceStartDisplay, insertDisplay, bounds.textLeft, rowY, undefined);
 				const prefixWidth = entry.advancePrefix[insertDisplay] - entry.advancePrefix[sliceStartDisplay];
 				const ghostText = useUppercase ? ghost.toUpperCase() : ghost;
 				if (ghostText.length > 0) {
-					api.blit_text_inline_with_font(ghostText, textLeftFloor + prefixWidth, rowY, undefined, constants.COLOR_COMPLETION_PREVIEW_TEXT, renderFont);
+					api.blit_text_inline_with_font(ghostText, bounds.textLeft + prefixWidth, rowY, undefined, constants.COLOR_COMPLETION_PREVIEW_TEXT, renderFont);
 				}
 				const ghostWidth = ghostText.length > 0 ? ide_state.font.measure(ghostText) : 0;
 				drawHighlightSlice(
@@ -207,15 +206,15 @@ export function renderCodeArea(): void {
 					entry.advancePrefix,
 					insertDisplay,
 					sliceEndDisplay,
-					textLeftFloor + prefixWidth + ghostWidth,
+					bounds.textLeft + prefixWidth + ghostWidth,
 					rowY,
 					undefined
 				);
 			} else {
-				drawHighlightSlice(renderFont, renderText, highlight.colors, entry.advancePrefix, sliceStartDisplay, sliceEndDisplay, textLeftFloor, rowY, undefined);
+				drawHighlightSlice(renderFont, renderText, highlight.colors, entry.advancePrefix, sliceStartDisplay, sliceEndDisplay, bounds.textLeft, rowY, undefined);
 			}
 		} else {
-			drawHighlightSlice(renderFont, renderText, highlight.colors, entry.advancePrefix, sliceStartDisplay, sliceEndDisplay, textLeftFloor, rowY, undefined);
+			drawHighlightSlice(renderFont, renderText, highlight.colors, entry.advancePrefix, sliceStartDisplay, sliceEndDisplay, bounds.textLeft, rowY, undefined);
 		}
 		const rowDiagnostics = getDiagnosticsForRow(lineIndex);
 		for (let i = 0; i < rowDiagnostics.length; i += 1) {
@@ -249,10 +248,10 @@ export function renderCodeArea(): void {
 			}
 			const underlineStartX = bounds.textLeft + advancePrefix[clampedStartDisplay] - advancePrefix[sliceStartDisplay];
 			const underlineEndX = bounds.textLeft + advancePrefix[clampedEndDisplay] - advancePrefix[sliceStartDisplay];
-			let drawLeft = Math.floor(underlineStartX);
-			let drawRight = Math.ceil(underlineEndX);
+			const drawLeft = underlineStartX;
+			let drawRight = underlineEndX;
 			if (drawRight <= drawLeft) {
-				drawRight = drawLeft + Math.max(1, Math.floor(ide_state.charAdvance));
+				drawRight = drawLeft + Math.max(1, ide_state.charAdvance);
 			}
 			if (drawRight <= drawLeft) {
 				continue;
@@ -274,10 +273,10 @@ export function renderCodeArea(): void {
 			if (clampedEndDisplay > clampedStartDisplay) {
 				const underlineStartX = bounds.textLeft + advancePrefix[clampedStartDisplay] - advancePrefix[sliceStartDisplay];
 				const underlineEndX = bounds.textLeft + advancePrefix[clampedEndDisplay] - advancePrefix[sliceStartDisplay];
-				let drawLeft = Math.floor(underlineStartX);
-				let drawRight = Math.ceil(underlineEndX);
+				const drawLeft = underlineStartX;
+				let drawRight = underlineEndX;
 				if (drawRight <= drawLeft) {
-					drawRight = drawLeft + Math.max(1, Math.floor(ide_state.charAdvance));
+					drawRight = drawLeft + Math.max(1, ide_state.charAdvance);
 				}
 				if (drawRight > drawLeft) {
 					const underlineY = Math.min(contentBottom - 1, rowY + ide_state.lineHeight - 1);
@@ -364,7 +363,7 @@ function drawRuntimeErrorOverlayIndicator(
 	api.fill_rect_color(left, top, left + indicatorWidth, bottom, undefined, constants.ERROR_OVERLAY_BACKGROUND);
 	api.fill_rect_color(left, accentTop, left + indicatorWidth, accentTop + accentHeight, undefined, constants.ERROR_OVERLAY_LINE_HOVER);
 	const notchWidth = 6;
-	const notchLeft = left + Math.max(2, Math.floor((indicatorWidth - notchWidth) / 2));
+	const notchLeft = left + Math.max(2, Math.trunc((indicatorWidth - notchWidth) / 2));
 	const notchTop = direction === 'above' ? top - 1 : bottom;
 	api.fill_rect_color(notchLeft, notchTop, notchLeft + notchWidth, notchTop + 1, undefined, constants.ERROR_OVERLAY_TEXT_COLOR);
 	api.blit_rect(left, top, left + indicatorWidth, bottom, undefined, constants.ERROR_OVERLAY_TEXT_COLOR);
@@ -440,13 +439,13 @@ export function drawReferenceHighlightsForRow(api: Api, rowIndex: number, entry:
 }
 
 export function drawSearchHighlightsForRow(api: Api, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
-	if (ide_state.searchScope !== 'local' || ide_state.searchMatches.length === 0 || ide_state.searchQuery.length === 0) {
+	if (ide_state.search.scope !== 'local' || ide_state.search.matches.length === 0 || ide_state.search.query.length === 0) {
 		return;
 	}
 	const highlight = entry.hi;
 	const advancePrefix = entry.advancePrefix;
-	for (let i = 0; i < ide_state.searchMatches.length; i++) {
-		const match = ide_state.searchMatches[i];
+	for (let i = 0; i < ide_state.search.matches.length; i++) {
+		const match = ide_state.search.matches[i];
 		if (match.row !== rowIndex) {
 			continue;
 		}
@@ -459,7 +458,7 @@ export function drawSearchHighlightsForRow(api: Api, rowIndex: number, entry: Ca
 		}
 		const startX = originX + advancePrefix[visibleStart] - advancePrefix[sliceStartDisplay];
 		const endX = originX + advancePrefix[visibleEnd] - advancePrefix[sliceStartDisplay];
-		const overlay = i === ide_state.searchCurrentIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
+		const overlay = i === ide_state.search.currentIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
 		api.fill_rect_color(startX, originY, endX, originY + ide_state.lineHeight, undefined, overlay);
 	}
 }

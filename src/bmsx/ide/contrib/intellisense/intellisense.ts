@@ -570,7 +570,7 @@ export function intellisenseUiReady(): boolean {
 	if (isReadOnlyCodeTab()) {
 		return false;
 	}
-	if (ide_state.searchActive || ide_state.symbolSearchActive || ide_state.lineJumpActive || ide_state.resourceSearchActive || ide_state.createResourceActive) {
+	if (ide_state.search.active || ide_state.symbolSearch.active || ide_state.lineJump.active || ide_state.resourceSearch.active || ide_state.createResource.active) {
 		return false;
 	}
 	return true;

@@ -8,30 +8,30 @@ import { extractErrorMessage } from '../../../lua/luavalue';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt, ensureDirectorySuffix } from './create_resource';
 
 export async function confirmCreateResourcePrompt(): Promise<void> {
-	if (ide_state.createResourceWorking) {
+	if (ide_state.createResource.working) {
 		return;
 	}
 	let resourcePath: string;
 	let directory: string;
 	try {
-		const result = parseCreateResourceRequest(ide_state.createResourcePath);
+		const result = parseCreateResourceRequest(ide_state.createResource.path);
 		resourcePath = result.path;
 		directory = result.directory;
 		applyCreateResourceFieldText(resourcePath, true);
-		ide_state.createResourceError = null;
+		ide_state.createResource.error = null;
 	} catch (error) {
 		const message = extractErrorMessage(error);
-		ide_state.createResourceError = message;
+		ide_state.createResource.error = message;
 		ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
 		resetBlink();
 		return;
 	}
-	ide_state.createResourceWorking = true;
+	ide_state.createResource.working = true;
 	resetBlink();
 	const contents = constants.DEFAULT_NEW_LUA_RESOURCE_CONTENT;
 	try {
 		const descriptor = await createLuaResource({ path: resourcePath, contents });
-		ide_state.lastCreateResourceDirectory = directory;
+		ide_state.createResource.lastDirectory = directory;
 		ide_state.pendingResourceSelectionAssetId = descriptor.asset_id;
 		if (ide_state.resourcePanelVisible) {
 			refreshResourcePanelContents();
@@ -42,10 +42,10 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 	} catch (error) {
 		const message = extractErrorMessage(error);
 		const simplified = message.replace(/^\[Runtime\]\s*/, '');
-		ide_state.createResourceError = simplified;
+		ide_state.createResource.error = simplified;
 		ide_state.showMessage(`Failed to create resource: ${simplified}`, constants.COLOR_STATUS_WARNING, 4.0);
 	} finally {
-		ide_state.createResourceWorking = false;
+		ide_state.createResource.working = false;
 		resetBlink();
 	}
 }

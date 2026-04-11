@@ -25,12 +25,12 @@ export function handleLineJumpInput(): void {
 		return;
 	}
 	const digitFilter = (value: string): boolean => value >= '0' && value <= '9';
-	const textChanged = applyInlineFieldEditing(ide_state.lineJumpField, {
+	const textChanged = applyInlineFieldEditing(ide_state.lineJump.field, {
 		allowSpace: false,
 		characterFilter: digitFilter,
 		maxLength: 6,
 	});
-	ide_state.lineJumpValue = textFromLines(ide_state.lineJumpField.lines);
+	ide_state.lineJump.value = textFromLines(ide_state.lineJump.field.lines);
 	if (textChanged) {
 		return;
 	}

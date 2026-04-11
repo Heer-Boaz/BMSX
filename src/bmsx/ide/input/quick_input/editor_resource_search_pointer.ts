@@ -12,15 +12,15 @@ import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } 
 
 export function handleResourceSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const bounds = getResourceSearchBarBounds();
-	if (!ide_state.resourceSearchVisible || !bounds) {
+	if (!ide_state.resourceSearch.visible || !bounds) {
 		return false;
 	}
 	const insideBar = point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
 	if (!insideBar) {
 		if (justPressed) {
-			ide_state.resourceSearchActive = false;
+			ide_state.resourceSearch.active = false;
 		}
-		ide_state.resourceSearchHoverIndex = -1;
+		ide_state.resourceSearch.hoverIndex = -1;
 		return false;
 	}
 	const fieldBottom = bounds.top + ide_state.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
@@ -29,19 +29,19 @@ export function handleResourceSearchPointer(snapshot: PointerSnapshot, justPress
 			closeLineJump(false);
 			closeSearch(false, true);
 			closeSymbolSearch(false);
-			ide_state.resourceSearchVisible = true;
-			ide_state.resourceSearchActive = true;
+			ide_state.resourceSearch.visible = true;
+			ide_state.resourceSearch.active = true;
 			activateQuickInputField();
 		}
-		processInlineFieldPointer(ide_state.resourceSearchField, quickInputTextLeft('FILE :'), snapshot.viewportX, justPressed, snapshot.primaryPressed);
+		processInlineFieldPointer(ide_state.resourceSearch.field, quickInputTextLeft('FILE :'), snapshot.viewportX, justPressed, snapshot.primaryPressed);
 		finishQuickInputPointer(snapshot);
 		return true;
 	}
 	const hoverIndex = resolveResourceSearchHoverIndex(snapshot.viewportY, fieldBottom);
-	ide_state.resourceSearchHoverIndex = hoverIndex;
+	ide_state.resourceSearch.hoverIndex = hoverIndex;
 	if (hoverIndex >= 0 && justPressed) {
-		if (hoverIndex !== ide_state.resourceSearchSelectionIndex) {
-			ide_state.resourceSearchSelectionIndex = hoverIndex;
+		if (hoverIndex !== ide_state.resourceSearch.selectionIndex) {
+			ide_state.resourceSearch.selectionIndex = hoverIndex;
 			ensureResourceSearchSelectionVisible();
 		}
 		applyResourceSearchSelection(hoverIndex);
@@ -62,5 +62,5 @@ function resolveResourceSearchHoverIndex(pointerY: number, fieldBottom: number):
 	if (indexWithin < 0 || indexWithin >= visibleCount) {
 		return -1;
 	}
-	return ide_state.resourceSearchDisplayOffset + indexWithin;
+	return ide_state.resourceSearch.displayOffset + indexWithin;
 }

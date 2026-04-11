@@ -31,15 +31,15 @@ export function buildReferenceSearchCatalog(info: ReferenceMatchInfo, context: C
 
 export function updateReferenceSearchMatches(): void {
 	const { matches, selectionIndex, displayOffset } = filterReferenceCatalog({
-		catalog: ide_state.referenceCatalog,
-		query: ide_state.symbolSearchQuery,
+		catalog: ide_state.symbolSearch.referenceCatalog,
+		query: ide_state.symbolSearch.query,
 		state: ide_state.referenceState,
 		pageSize: symbolSearchPageSize(),
 	});
-	ide_state.symbolSearchMatches = matches;
-	ide_state.symbolSearchSelectionIndex = selectionIndex;
-	ide_state.symbolSearchDisplayOffset = displayOffset;
-	ide_state.symbolSearchHoverIndex = -1;
+	ide_state.symbolSearch.matches = matches;
+	ide_state.symbolSearch.selectionIndex = selectionIndex;
+	ide_state.symbolSearch.displayOffset = displayOffset;
+	ide_state.symbolSearch.hoverIndex = -1;
 }
 
 export function showReferenceSearchStatusMessage(): void {

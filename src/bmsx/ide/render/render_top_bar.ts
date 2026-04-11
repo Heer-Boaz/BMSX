@@ -74,7 +74,7 @@ function renderOpenMenuDropdown(menuEntries: TopBarMenuEntry[], buttonHeight: nu
 }
 
 function renderMenuDropdown(menu: TopBarMenuEntry, anchor: RectBounds, itemHeight: number): void {
-	const markerSize = Math.max(2, Math.floor(ide_state.lineHeight / 2));
+	const markerSize = Math.max(2, Math.trunc(ide_state.lineHeight / 2));
 	const paddingX = constants.HEADER_BUTTON_PADDING_X;
 	const dropdownWidth = computeDropdownWidth(menu, markerSize, paddingX, anchor.right - anchor.left);
 	const separatorHeight = Math.max(2, constants.HEADER_BUTTON_PADDING_Y + 1);
@@ -92,7 +92,7 @@ function renderMenuDropdown(menu: TopBarMenuEntry, anchor: RectBounds, itemHeigh
 	for (let index = 0; index < menu.items.length; index += 1) {
 		const item = menu.items[index];
 		if (item.type === 'separator') {
-			const separatorTop = currentTop + Math.max(1, Math.floor(separatorHeight / 2));
+			const separatorTop = currentTop + Math.max(1, Math.trunc(separatorHeight / 2));
 			api.fill_rect(dropdownLeft + paddingX, separatorTop, dropdownRight - paddingX, separatorTop + 1, Z_MENU_DROPDOWN, constants.COLOR_HEADER_BUTTON_BORDER);
 			currentTop += separatorHeight;
 			continue;
@@ -113,7 +113,7 @@ function renderMenuDropdown(menu: TopBarMenuEntry, anchor: RectBounds, itemHeigh
 		api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_MENU_DROPDOWN, fillColor);
 		api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_MENU_DROPDOWN, constants.COLOR_HEADER_BUTTON_BORDER);
 		if (item.active) {
-			const markerTop = bounds.top + Math.max(1, Math.floor((itemHeight - markerSize) / 2));
+			const markerTop = bounds.top + Math.max(1, Math.trunc((itemHeight - markerSize) / 2));
 			const markerLeft = bounds.left + paddingX;
 			api.fill_rect(markerLeft, markerTop, markerLeft + markerSize, markerTop + markerSize, Z_MENU_MARKER, constants.COLOR_HEADER_BUTTON_BORDER);
 		}

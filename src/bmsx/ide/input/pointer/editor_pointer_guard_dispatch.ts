@@ -14,7 +14,7 @@ export function handleEditorPointerGuards(snapshot: PointerSnapshot, justPressed
 		clearGotoHoverHighlight();
 		return true;
 	}
-	if (!ide_state.pendingActionPrompt) {
+	if (!ide_state.actionPrompt) {
 		return false;
 	}
 	resetPointerClickTracking();

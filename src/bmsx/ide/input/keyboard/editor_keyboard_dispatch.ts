@@ -22,7 +22,7 @@ export function handleEditorInput(): void {
 	if (handleEditorGlobalBindings()) {
 		return;
 	}
-	if (ide_state.createResourceActive) {
+	if (ide_state.createResource.active) {
 		handleCreateResourceInput();
 		return;
 	}
@@ -33,19 +33,19 @@ export function handleEditorInput(): void {
 		ide_state.renameController.handleInput();
 		return;
 	}
-	if (ide_state.resourceSearchActive) {
+	if (ide_state.resourceSearch.active) {
 		handleResourceSearchInput();
 		return;
 	}
-	if (ide_state.symbolSearchActive) {
+	if (ide_state.symbolSearch.active) {
 		handleSymbolSearchInput();
 		return;
 	}
-	if (ide_state.lineJumpActive) {
+	if (ide_state.lineJump.active) {
 		handleLineJumpInput();
 		return;
 	}
-	if (ide_state.searchActive) {
+	if (ide_state.search.active) {
 		handleSearchInput();
 		return;
 	}

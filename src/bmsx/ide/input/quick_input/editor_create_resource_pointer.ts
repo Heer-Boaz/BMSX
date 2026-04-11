@@ -7,21 +7,21 @@ import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } 
 
 export function handleCreateResourcePointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const bounds = getCreateResourceBarBounds();
-	if (!ide_state.createResourceVisible || !bounds) {
+	if (!ide_state.createResource.visible || !bounds) {
 		return false;
 	}
 	const insideBar = point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
 	if (!insideBar) {
 		if (justPressed) {
-			ide_state.createResourceActive = false;
+			ide_state.createResource.active = false;
 		}
 		return false;
 	}
 	if (justPressed) {
-		ide_state.createResourceActive = true;
+		ide_state.createResource.active = true;
 		activateQuickInputField();
 	}
-	processInlineFieldPointer(ide_state.createResourceField, quickInputTextLeft('NEW FILE:'), snapshot.viewportX, justPressed, snapshot.primaryPressed);
+	processInlineFieldPointer(ide_state.createResource.field, quickInputTextLeft('NEW FILE:'), snapshot.viewportX, justPressed, snapshot.primaryPressed);
 	finishQuickInputPointer(snapshot);
 	return true;
 }

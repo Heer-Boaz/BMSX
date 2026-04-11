@@ -8,40 +8,40 @@ import { focusEditorFromLineJump } from '../find/line_jump';
 import { listResources } from '../../../emulator/workspace';
 
 export function openCreateResourcePrompt(): void {
-	if (ide_state.createResourceWorking) {
+	if (ide_state.createResource.working) {
 		return;
 	}
 	ide_state.resourcePanelFocused = false;
 	ide_state.renameController.cancel();
-	let defaultPath = ide_state.createResourcePath.length === 0
+	let defaultPath = ide_state.createResource.path.length === 0
 		? determineCreateResourceDefaultPath()
-		: ide_state.createResourcePath;
+		: ide_state.createResource.path;
 	if (defaultPath.length > constants.CREATE_RESOURCE_MAX_PATH_LENGTH) {
 		defaultPath = defaultPath.slice(defaultPath.length - constants.CREATE_RESOURCE_MAX_PATH_LENGTH);
 	}
 	applyCreateResourceFieldText(defaultPath, true);
-	ide_state.createResourceVisible = true;
-	ide_state.createResourceActive = true;
-	ide_state.createResourceError = null;
+	ide_state.createResource.visible = true;
+	ide_state.createResource.active = true;
+	ide_state.createResource.error = null;
 	ide_state.cursorVisible = true;
 	resetBlink();
 }
 
 export function closeCreateResourcePrompt(focusEditor: boolean): void {
-	ide_state.createResourceActive = false;
-	ide_state.createResourceVisible = false;
-	ide_state.createResourceWorking = false;
+	ide_state.createResource.active = false;
+	ide_state.createResource.visible = false;
+	ide_state.createResource.working = false;
 	if (focusEditor) {
 		focusEditorFromSearch();
 		focusEditorFromLineJump();
 	}
 	applyCreateResourceFieldText('', true);
-	ide_state.createResourceError = null;
+	ide_state.createResource.error = null;
 	resetBlink();
 }
 
 export function determineCreateResourceDefaultPath(): string {
-	const lastDirectory = ide_state.lastCreateResourceDirectory;
+	const lastDirectory = ide_state.createResource.lastDirectory;
 	if (lastDirectory.length > 0) {
 		return lastDirectory;
 	}
@@ -71,6 +71,6 @@ export function ensureDirectorySuffix(path: string): string {
 }
 
 export function applyCreateResourceFieldText(value: string, moveCursorToEnd: boolean): void {
-	ide_state.createResourcePath = value;
-	setFieldText(ide_state.createResourceField, value, moveCursorToEnd);
+	ide_state.createResource.path = value;
+	setFieldText(ide_state.createResource.field, value, moveCursorToEnd);
 }

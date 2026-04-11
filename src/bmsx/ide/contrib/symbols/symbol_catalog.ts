@@ -26,13 +26,13 @@ export function symbolSourceLabel(entry: LuaSymbolEntry): string | null {
 }
 
 export function refreshSymbolCatalog(force: boolean): void {
-	const scope: 'local' | 'global' = ide_state.symbolSearchGlobal ? 'global' : 'local';
+	const scope: 'local' | 'global' = ide_state.symbolSearch.global ? 'global' : 'local';
 	let path: string = null;
 	if (scope === 'local') {
 		const context = getActiveCodeTabContext();
 		path = context.descriptor.path;
 	}
-	const existing = ide_state.symbolCatalogContext;
+	const existing = ide_state.symbolSearch.catalogContext;
 	const unchanged = existing !== null
 		&& existing.scope === scope
 		&& (scope === 'global' || existing.path === path);
@@ -46,15 +46,15 @@ export function refreshSymbolCatalog(force: boolean): void {
 			: listLuaSymbols(path);
 	} catch (error) {
 		const message = extractErrorMessage(error);
-		ide_state.symbolCatalog = [];
-		ide_state.symbolSearchMatches = [];
-		ide_state.symbolSearchSelectionIndex = -1;
-		ide_state.symbolSearchDisplayOffset = 0;
-		ide_state.symbolSearchHoverIndex = -1;
+		ide_state.symbolSearch.catalog = [];
+		ide_state.symbolSearch.matches = [];
+		ide_state.symbolSearch.selectionIndex = -1;
+		ide_state.symbolSearch.displayOffset = 0;
+		ide_state.symbolSearch.hoverIndex = -1;
 		ide_state.showMessage(`Failed to list symbols: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
-	ide_state.symbolCatalogContext = { scope, path };
+	ide_state.symbolSearch.catalogContext = { scope, path };
 	const deduped: LuaSymbolEntry[] = [];
 	const seen = new Set<string>();
 	for (let index = 0; index < entries.length; index += 1) {
@@ -95,5 +95,5 @@ export function refreshSymbolCatalog(force: boolean): void {
 		}
 		return a.sourceLabel.localeCompare(b.sourceLabel);
 	});
-	ide_state.symbolCatalog = catalogEntries;
+	ide_state.symbolSearch.catalog = catalogEntries;
 }

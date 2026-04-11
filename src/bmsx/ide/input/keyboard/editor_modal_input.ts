@@ -8,7 +8,7 @@ import { resetActionPromptState } from '../overlays/action_prompt';
 import { closeEditorContextMenu } from '../../render/render_context_menu';
 
 export function handleEscapeKey(): boolean {
-	if (ide_state.pendingActionPrompt) {
+	if (ide_state.actionPrompt) {
 		resetActionPromptState();
 		return true;
 	}
@@ -17,23 +17,23 @@ export function handleEscapeKey(): boolean {
 		return true;
 	}
 	const overlay = ide_state.runtimeErrorOverlay;
-	if (ide_state.createResourceVisible) {
+	if (ide_state.createResource.visible) {
 		closeCreateResourcePrompt(true);
 		return true;
 	}
-	if (ide_state.symbolSearchActive || ide_state.symbolSearchVisible) {
+	if (ide_state.symbolSearch.active || ide_state.symbolSearch.visible) {
 		closeSymbolSearch(false);
 		return true;
 	}
-	if (ide_state.resourceSearchActive || ide_state.resourceSearchVisible) {
+	if (ide_state.resourceSearch.active || ide_state.resourceSearch.visible) {
 		closeResourceSearch(false);
 		return true;
 	}
-	if (ide_state.lineJumpActive || ide_state.lineJumpVisible) {
+	if (ide_state.lineJump.active || ide_state.lineJump.visible) {
 		closeLineJump(false);
 		return true;
 	}
-	if (ide_state.searchActive || ide_state.searchVisible) {
+	if (ide_state.search.active || ide_state.search.visible) {
 		closeSearch(false, true);
 		return true;
 	}

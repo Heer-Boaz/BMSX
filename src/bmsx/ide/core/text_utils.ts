@@ -706,7 +706,7 @@ export function markTextMutated(): void {
 	requestSemanticRefresh();
 	ide_state.navigationHistory.forward.length = 0;
 	handlePostEditMutation();
-	if (ide_state.searchQuery.length > 0) startSearchJob();
+	if (ide_state.search.query.length > 0) startSearchJob();
 }
 export function bumpTextVersion(): void {
 	ide_state.textVersion = ide_state.buffer.version;

@@ -52,13 +52,13 @@ export function prepareEditorPointerFrame(snapshot: PointerSnapshot, gotoModifie
 		}
 	}
 	if (!snapshot.primaryPressed) {
-		ide_state.searchField.pointerSelecting = false;
-		ide_state.symbolSearchField.pointerSelecting = false;
-		ide_state.resourceSearchField.pointerSelecting = false;
-		ide_state.lineJumpField.pointerSelecting = false;
-		ide_state.createResourceField.pointerSelecting = false;
-		ide_state.symbolSearchHoverIndex = -1;
-		ide_state.resourceSearchHoverIndex = -1;
+		ide_state.search.field.pointerSelecting = false;
+		ide_state.symbolSearch.field.pointerSelecting = false;
+		ide_state.resourceSearch.field.pointerSelecting = false;
+		ide_state.lineJump.field.pointerSelecting = false;
+		ide_state.createResource.field.pointerSelecting = false;
+		ide_state.symbolSearch.hoverIndex = -1;
+		ide_state.resourceSearch.hoverIndex = -1;
 	}
 	return false;
 }

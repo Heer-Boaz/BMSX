@@ -9,39 +9,39 @@ import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } 
 
 export function handleSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const bounds = getSearchBarBounds();
-	if (!ide_state.searchVisible || !bounds) {
-		ide_state.searchHoverIndex = -1;
+	if (!ide_state.search.visible || !bounds) {
+		ide_state.search.hoverIndex = -1;
 		return false;
 	}
 	const insideBar = point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
 	if (!insideBar) {
 		if (justPressed) {
-			ide_state.searchActive = false;
-			ide_state.searchHoverIndex = -1;
+			ide_state.search.active = false;
+			ide_state.search.hoverIndex = -1;
 		}
 		return false;
 	}
 	const fieldBottom = bounds.top + ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
-	ide_state.searchHoverIndex = -1;
+	ide_state.search.hoverIndex = -1;
 	if (snapshot.viewportY < fieldBottom) {
 		if (justPressed) {
 			closeLineJump(false);
-			ide_state.searchVisible = true;
-			ide_state.searchActive = true;
+			ide_state.search.visible = true;
+			ide_state.search.active = true;
 			activateQuickInputField();
 		}
-		const label = ide_state.searchScope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
-		processInlineFieldPointer(ide_state.searchField, quickInputTextLeft(label), snapshot.viewportX, justPressed, snapshot.primaryPressed);
+		const label = ide_state.search.scope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
+		processInlineFieldPointer(ide_state.search.field, quickInputTextLeft(label), snapshot.viewportX, justPressed, snapshot.primaryPressed);
 		finishQuickInputPointer(snapshot);
 		return true;
 	}
 	const hoverIndex = resolveSearchHoverIndex(snapshot.viewportY, fieldBottom);
-	ide_state.searchHoverIndex = hoverIndex;
+	ide_state.search.hoverIndex = hoverIndex;
 	if (hoverIndex >= 0 && justPressed) {
-		if (hoverIndex !== ide_state.searchCurrentIndex) {
-			ide_state.searchCurrentIndex = hoverIndex;
+		if (hoverIndex !== ide_state.search.currentIndex) {
+			ide_state.search.currentIndex = hoverIndex;
 			ensureSearchSelectionVisible();
-			if (ide_state.searchScope === 'local') {
+			if (ide_state.search.scope === 'local') {
 				applySearchSelection(hoverIndex, { preview: true });
 			}
 		}
@@ -66,5 +66,5 @@ function resolveSearchHoverIndex(pointerY: number, fieldBottom: number): number 
 	if (indexWithin < 0 || indexWithin >= visibleResults) {
 		return -1;
 	}
-	return ide_state.searchDisplayOffset + indexWithin;
+	return ide_state.search.displayOffset + indexWithin;
 }

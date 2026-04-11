@@ -16,12 +16,12 @@ export function openResourceSearch(initialQuery: string = ''): void {
 	closeLineJump(false);
 	closeSymbolSearch(false);
 	ide_state.renameController.cancel();
-	ide_state.resourceSearchVisible = true;
-	ide_state.resourceSearchActive = true;
+	ide_state.resourceSearch.visible = true;
+	ide_state.resourceSearch.active = true;
 	applyResourceSearchFieldText(initialQuery, true);
 	refreshResourceCatalog();
 	updateResourceSearchMatches();
-	ide_state.resourceSearchHoverIndex = -1;
+	ide_state.resourceSearch.hoverIndex = -1;
 	resetBlink();
 }
 
@@ -29,39 +29,39 @@ export function closeResourceSearch(clearQuery: boolean): void {
 	if (clearQuery) {
 		applyResourceSearchFieldText('', true);
 	}
-	ide_state.resourceSearchActive = false;
-	ide_state.resourceSearchVisible = false;
-	ide_state.resourceSearchMatches = [];
-	ide_state.resourceSearchSelectionIndex = -1;
-	ide_state.resourceSearchDisplayOffset = 0;
-	ide_state.resourceSearchHoverIndex = -1;
-	ide_state.resourceSearchField.selectionAnchor = null;
-	ide_state.resourceSearchField.pointerSelecting = false;
+	ide_state.resourceSearch.active = false;
+	ide_state.resourceSearch.visible = false;
+	ide_state.resourceSearch.matches = [];
+	ide_state.resourceSearch.selectionIndex = -1;
+	ide_state.resourceSearch.displayOffset = 0;
+	ide_state.resourceSearch.hoverIndex = -1;
+	ide_state.resourceSearch.field.selectionAnchor = null;
+	ide_state.resourceSearch.field.pointerSelecting = false;
 	resetBlink();
 }
 
 export function focusEditorFromResourceSearch(): void {
-	if (!ide_state.resourceSearchActive && !ide_state.resourceSearchVisible) {
+	if (!ide_state.resourceSearch.active && !ide_state.resourceSearch.visible) {
 		return;
 	}
-	ide_state.resourceSearchActive = false;
-	if (ide_state.resourceSearchQuery.length === 0) {
-		ide_state.resourceSearchVisible = false;
-		ide_state.resourceSearchMatches = [];
-		ide_state.resourceSearchSelectionIndex = -1;
-		ide_state.resourceSearchDisplayOffset = 0;
+	ide_state.resourceSearch.active = false;
+	if (ide_state.resourceSearch.query.length === 0) {
+		ide_state.resourceSearch.visible = false;
+		ide_state.resourceSearch.matches = [];
+		ide_state.resourceSearch.selectionIndex = -1;
+		ide_state.resourceSearch.displayOffset = 0;
 	}
-	ide_state.resourceSearchField.selectionAnchor = null;
-	ide_state.resourceSearchField.pointerSelecting = false;
+	ide_state.resourceSearch.field.selectionAnchor = null;
+	ide_state.resourceSearch.field.pointerSelecting = false;
 	resetBlink();
 }
 
 export function applyResourceSearchSelection(index: number): void {
-	if (index < 0 || index >= ide_state.resourceSearchMatches.length) {
+	if (index < 0 || index >= ide_state.resourceSearch.matches.length) {
 		ide_state.showMessage('Resource not found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
-	const match = ide_state.resourceSearchMatches[index];
+	const match = ide_state.resourceSearch.matches[index];
 	closeResourceSearch(true);
 	scheduleMicrotask(() => {
 		openResourceDescriptor(match.entry.descriptor);
@@ -69,6 +69,6 @@ export function applyResourceSearchSelection(index: number): void {
 }
 
 export function applyResourceSearchFieldText(value: string, moveCursorToEnd: boolean): void {
-	ide_state.resourceSearchQuery = value;
-	setFieldText(ide_state.resourceSearchField, value, moveCursorToEnd);
+	ide_state.resourceSearch.query = value;
+	setFieldText(ide_state.resourceSearch.field, value, moveCursorToEnd);
 }

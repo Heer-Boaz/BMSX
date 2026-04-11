@@ -49,7 +49,7 @@ import { applyCreateResourceFieldText, closeCreateResourcePrompt } from '../cont
 export function tickInput(): void {
 	handleEditorWheelInput();
 	handleTextEditorPointerInput();
-	if (ide_state.pendingActionPrompt) {
+	if (ide_state.actionPrompt) {
 		handleActionPromptInput();
 		return;
 	}
@@ -96,7 +96,7 @@ export function draw(): void {
 	drawProblemsPanel();
 	renderStatusBar();
 	renderTopBarDropdown();
-	if (ide_state.pendingActionPrompt) {
+	if (ide_state.actionPrompt) {
 		drawActionPromptOverlay();
 	}
 }
@@ -122,25 +122,25 @@ export function shutdownRuntimeEditor(): void {
 	ide_state.pointerAuxWasPressed = false;
 	clearGotoHoverHighlight();
 	ide_state.cursorRevealSuspended = false;
-	ide_state.searchActive = false;
-	ide_state.searchVisible = false;
+	ide_state.search.active = false;
+	ide_state.search.visible = false;
 	cancelSearchJob();
 	cancelGlobalSearchJob();
-	ide_state.searchMatches = [];
-	ide_state.globalSearchMatches = [];
-	ide_state.searchDisplayOffset = 0;
-	ide_state.searchHoverIndex = -1;
-	ide_state.searchScope = 'local';
-	ide_state.searchCurrentIndex = -1;
+	ide_state.search.matches = [];
+	ide_state.search.globalMatches = [];
+	ide_state.search.displayOffset = 0;
+	ide_state.search.hoverIndex = -1;
+	ide_state.search.scope = 'local';
+	ide_state.search.currentIndex = -1;
 	applySearchFieldText('', true);
-	ide_state.lineJumpActive = false;
-	ide_state.lineJumpVisible = false;
+	ide_state.lineJump.active = false;
+	ide_state.lineJump.visible = false;
 	applyLineJumpFieldText('', true);
-	ide_state.createResourceActive = false;
-	ide_state.createResourceVisible = false;
+	ide_state.createResource.active = false;
+	ide_state.createResource.visible = false;
 	applyCreateResourceFieldText('', true);
-	ide_state.createResourceError = null;
-	ide_state.createResourceWorking = false;
+	ide_state.createResource.error = null;
+	ide_state.createResource.working = false;
 	resetActionPromptState();
 	hideResourcePanel();
 	activateCodeTab();
@@ -170,22 +170,22 @@ export function activateRuntimeEditor(): void {
 	ide_state.cursorRevealSuspended = false;
 	updateDesiredColumn();
 	ide_state.selectionAnchor = null;
-	ide_state.searchActive = false;
-	ide_state.searchVisible = false;
-	ide_state.lineJumpActive = false;
-	ide_state.lineJumpVisible = false;
-	ide_state.lineJumpValue = '';
+	ide_state.search.active = false;
+	ide_state.search.visible = false;
+	ide_state.lineJump.active = false;
+	ide_state.lineJump.visible = false;
+	ide_state.lineJump.value = '';
 	syncRuntimeErrorOverlayFromContext(getActiveCodeTabContext());
 	resetActionPromptState();
 	cancelSearchJob();
 	cancelGlobalSearchJob();
-	ide_state.globalSearchMatches = [];
-	ide_state.searchDisplayOffset = 0;
-	ide_state.searchHoverIndex = -1;
-	ide_state.searchScope = 'local';
-	if (ide_state.searchQuery.length === 0) {
-		ide_state.searchMatches = [];
-		ide_state.searchCurrentIndex = -1;
+	ide_state.search.globalMatches = [];
+	ide_state.search.displayOffset = 0;
+	ide_state.search.hoverIndex = -1;
+	ide_state.search.scope = 'local';
+	if (ide_state.search.query.length === 0) {
+		ide_state.search.matches = [];
+		ide_state.search.currentIndex = -1;
 	} else {
 		startSearchJob();
 	}
@@ -224,19 +224,19 @@ export function deactivateRuntimeEditor(): void {
 	clearGotoHoverHighlight();
 	ide_state.scrollbarController.cancel();
 	ide_state.cursorRevealSuspended = false;
-	ide_state.searchActive = false;
-	ide_state.searchVisible = false;
-	ide_state.lineJumpActive = false;
-	ide_state.lineJumpVisible = false;
+	ide_state.search.active = false;
+	ide_state.search.visible = false;
+	ide_state.lineJump.active = false;
+	ide_state.lineJump.visible = false;
 	resetActionPromptState();
 	closeCreateResourcePrompt(false);
 	hideResourcePanel();
 	cancelSearchJob();
 	cancelGlobalSearchJob();
-	ide_state.globalSearchMatches = [];
-	ide_state.searchDisplayOffset = 0;
-	ide_state.searchHoverIndex = -1;
-	ide_state.searchScope = 'local';
+	ide_state.search.globalMatches = [];
+	ide_state.search.displayOffset = 0;
+	ide_state.search.hoverIndex = -1;
+	ide_state.search.scope = 'local';
 	clearBackgroundTasks();
 	ide_state.diagnosticsTaskPending = false;
 	ide_state.lastReportedSemanticError = null;

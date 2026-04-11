@@ -24,15 +24,15 @@ export function openSymbolSearch(initialQuery: string = ''): void {
 	closeLineJump(false);
 	closeResourceSearch(false);
 	ide_state.renameController.cancel();
-	ide_state.symbolSearchMode = 'symbols';
-	ide_state.referenceCatalog = [];
-	ide_state.symbolSearchGlobal = false;
-	ide_state.symbolSearchVisible = true;
-	ide_state.symbolSearchActive = true;
+	ide_state.symbolSearch.mode = 'symbols';
+	ide_state.symbolSearch.referenceCatalog = [];
+	ide_state.symbolSearch.global = false;
+	ide_state.symbolSearch.visible = true;
+	ide_state.symbolSearch.active = true;
 	applySymbolSearchFieldText(initialQuery, true);
 	refreshSymbolCatalog(true);
 	updateSymbolSearchMatches();
-	ide_state.symbolSearchHoverIndex = -1;
+	ide_state.symbolSearch.hoverIndex = -1;
 	resetBlink();
 }
 
@@ -45,28 +45,28 @@ export function openGlobalSymbolSearch(initialQuery: string = ''): void {
 	closeLineJump(false);
 	closeResourceSearch(false);
 	ide_state.renameController.cancel();
-	ide_state.symbolSearchMode = 'symbols';
-	ide_state.referenceCatalog = [];
-	ide_state.symbolSearchGlobal = true;
-	ide_state.symbolSearchVisible = true;
-	ide_state.symbolSearchActive = true;
+	ide_state.symbolSearch.mode = 'symbols';
+	ide_state.symbolSearch.referenceCatalog = [];
+	ide_state.symbolSearch.global = true;
+	ide_state.symbolSearch.visible = true;
+	ide_state.symbolSearch.active = true;
 	applySymbolSearchFieldText(initialQuery, true);
 	refreshSymbolCatalog(true);
 	updateSymbolSearchMatches();
-	ide_state.symbolSearchHoverIndex = -1;
+	ide_state.symbolSearch.hoverIndex = -1;
 	resetBlink();
 }
 
 export function applySymbolSearchSelection(index: number): void {
-	if (index < 0 || index >= ide_state.symbolSearchMatches.length) {
+	if (index < 0 || index >= ide_state.symbolSearch.matches.length) {
 		ide_state.showMessage('Symbol not found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
-	if (ide_state.symbolSearchMode === 'references') {
+	if (ide_state.symbolSearch.mode === 'references') {
 		applyReferenceSearchSelection(index);
 		return;
 	}
-	const location = ide_state.symbolSearchMatches[index].entry.symbol.location;
+	const location = ide_state.symbolSearch.matches[index].entry.symbol.location;
 	closeSymbolSearch(true);
 	scheduleMicrotask(() => {
 		navigateToLuaDefinition(location);

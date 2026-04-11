@@ -5,10 +5,10 @@ export { handleSearchInput } from './editor_search_input';
 export { handleLineJumpInput } from './editor_line_jump_input';
 
 export function isInlineFieldFocused(): boolean {
-	return ide_state.searchActive
-		|| ide_state.symbolSearchActive
-		|| ide_state.resourceSearchActive
-		|| ide_state.lineJumpActive
-		|| ide_state.createResourceActive
+	return ide_state.search.active
+		|| ide_state.symbolSearch.active
+		|| ide_state.resourceSearch.active
+		|| ide_state.lineJump.active
+		|| ide_state.createResource.active
 		|| ide_state.renameController.isActive();
 }

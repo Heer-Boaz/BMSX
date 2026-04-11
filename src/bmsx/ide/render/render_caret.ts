@@ -51,12 +51,12 @@ export function getCaretGlyphForDisplay(baseChar: string, baseColor?: number): s
 export function drawCursor(info: CursorScreenInfo, textX: number): void {
 	const cursorX = info.x;
 	const cursorY = info.y;
-	const caretLeft = Math.floor(Math.max(textX, cursorX - 1));
-	const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + info.width));
-	const caretTop = Math.floor(cursorY);
+	const caretLeft = Math.max(textX, cursorX - 1);
+	const caretRight = Math.max(caretLeft + 1, cursorX + info.width);
+	const caretTop = cursorY;
 	const caretBottom = caretTop + info.height;
 	const problemsPanelHasFocus = ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused;
-	const active = !(ide_state.searchActive || ide_state.lineJumpActive || ide_state.resourcePanelFocused || ide_state.createResourceActive || problemsPanelHasFocus);
+	const active = !(ide_state.search.active || ide_state.lineJump.active || ide_state.resourcePanelFocused || ide_state.createResource.active || problemsPanelHasFocus);
 	const caretGlyph = getCaretGlyphForDisplay(info.baseChar, info.baseColor);
 	const caretValue = BmsxColors[constants.CARET_COLOR];
 	if (active) {

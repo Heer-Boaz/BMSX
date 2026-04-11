@@ -7,22 +7,22 @@ import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } 
 
 export function handleLineJumpPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const bounds = getLineJumpBarBounds();
-	if (!ide_state.lineJumpVisible || !bounds) {
+	if (!ide_state.lineJump.visible || !bounds) {
 		return false;
 	}
 	const insideBar = point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
 	if (!insideBar) {
 		if (justPressed) {
-			ide_state.lineJumpActive = false;
+			ide_state.lineJump.active = false;
 		}
 		return false;
 	}
 	if (justPressed) {
 		closeSearch(false, true);
-		ide_state.lineJumpActive = true;
+		ide_state.lineJump.active = true;
 		activateQuickInputField();
 	}
-	processInlineFieldPointer(ide_state.lineJumpField, quickInputTextLeft('LINE #:'), snapshot.viewportX, justPressed, snapshot.primaryPressed);
+	processInlineFieldPointer(ide_state.lineJump.field, quickInputTextLeft('LINE #:'), snapshot.viewportX, justPressed, snapshot.primaryPressed);
 	finishQuickInputPointer(snapshot);
 	return true;
 }

@@ -63,9 +63,9 @@ function showNoMatches(): void {
 }
 
 export function activeSearchMatchCount(): number {
-	return ide_state.searchScope === 'global'
-		? ide_state.globalSearchMatches.length
-		: ide_state.searchMatches.length;
+	return ide_state.search.scope === 'global'
+		? ide_state.search.globalMatches.length
+		: ide_state.search.matches.length;
 }
 
 export function openSearch(useSelection: boolean, scope: 'local' | 'global' = 'local'): void {
@@ -75,24 +75,24 @@ export function openSearch(useSelection: boolean, scope: 'local' | 'global' = 'l
 	closeLineJump(false);
 	ide_state.renameController.cancel();
 
-	ide_state.searchScope = scope;
-	ide_state.searchDisplayOffset = 0;
-	ide_state.searchHoverIndex = -1;
-	ide_state.searchCurrentIndex = -1;
+	ide_state.search.scope = scope;
+	ide_state.search.displayOffset = 0;
+	ide_state.search.hoverIndex = -1;
+	ide_state.search.currentIndex = -1;
 
 	if (scope === 'global') {
 		cancelSearchJob();
-		ide_state.searchMatches = [];
-		ide_state.globalSearchMatches = [];
+		ide_state.search.matches = [];
+		ide_state.search.globalMatches = [];
 	} else {
 		cancelGlobalSearchJob();
-		ide_state.globalSearchMatches = [];
+		ide_state.search.globalMatches = [];
 	}
 
-	ide_state.searchVisible = true;
-	ide_state.searchActive = true;
+	ide_state.search.visible = true;
+	ide_state.search.active = true;
 
-	applySearchFieldText(ide_state.searchQuery, true);
+	applySearchFieldText(ide_state.search.query, true);
 
 	if (useSelection) {
 		const range = getSelectionRange();
@@ -104,39 +104,39 @@ export function openSearch(useSelection: boolean, scope: 'local' | 'global' = 'l
 		}
 	}
 
-	ide_state.searchQuery = textFromLines(ide_state.searchField.lines);
+	ide_state.search.query = textFromLines(ide_state.search.field.lines);
 	onSearchQueryChanged();
 	resetBlink();
 }
 
 export function closeSearch(clearQuery: boolean, forceHide = false): void {
-	ide_state.searchActive = false;
-	ide_state.searchHoverIndex = -1;
-	ide_state.searchDisplayOffset = 0;
+	ide_state.search.active = false;
+	ide_state.search.hoverIndex = -1;
+	ide_state.search.displayOffset = 0;
 
 	if (clearQuery) {
 		applySearchFieldText('', true);
 	}
-	ide_state.searchQuery = textFromLines(ide_state.searchField.lines);
+	ide_state.search.query = textFromLines(ide_state.search.field.lines);
 
-	const hide = forceHide || clearQuery || ide_state.searchQuery.length === 0;
+	const hide = forceHide || clearQuery || ide_state.search.query.length === 0;
 	if (hide) {
-		ide_state.searchVisible = false;
-		ide_state.searchScope = 'local';
-		ide_state.searchMatches = [];
-		ide_state.globalSearchMatches = [];
-		ide_state.searchCurrentIndex = -1;
+		ide_state.search.visible = false;
+		ide_state.search.scope = 'local';
+		ide_state.search.matches = [];
+		ide_state.search.globalMatches = [];
+		ide_state.search.currentIndex = -1;
 		cancelSearchJob();
 		cancelGlobalSearchJob();
 	} else {
-		if (ide_state.searchScope !== 'local') {
-			ide_state.searchScope = 'local';
+		if (ide_state.search.scope !== 'local') {
+			ide_state.search.scope = 'local';
 			cancelGlobalSearchJob();
-			ide_state.globalSearchMatches = [];
+			ide_state.search.globalMatches = [];
 		}
-		ide_state.searchMatches = [];
-		ide_state.searchCurrentIndex = -1;
-		ide_state.searchVisible = true;
+		ide_state.search.matches = [];
+		ide_state.search.currentIndex = -1;
+		ide_state.search.visible = true;
 		onSearchQueryChanged();
 	}
 
@@ -145,15 +145,15 @@ export function closeSearch(clearQuery: boolean, forceHide = false): void {
 }
 
 export function focusEditorFromSearch(): void {
-	ide_state.searchActive = false;
-	ide_state.searchHoverIndex = -1;
-	ide_state.searchField.selectionAnchor = null;
-	ide_state.searchField.pointerSelecting = false;
-	if (ide_state.searchQuery.length === 0) {
-		ide_state.searchVisible = false;
-		ide_state.searchMatches = [];
-		ide_state.globalSearchMatches = [];
-		ide_state.searchCurrentIndex = -1;
+	ide_state.search.active = false;
+	ide_state.search.hoverIndex = -1;
+	ide_state.search.field.selectionAnchor = null;
+	ide_state.search.field.pointerSelecting = false;
+	if (ide_state.search.query.length === 0) {
+		ide_state.search.visible = false;
+		ide_state.search.matches = [];
+		ide_state.search.globalMatches = [];
+		ide_state.search.currentIndex = -1;
 		cancelSearchJob();
 		cancelGlobalSearchJob();
 	}
@@ -161,28 +161,28 @@ export function focusEditorFromSearch(): void {
 }
 
 export function onSearchQueryChanged(): void {
-	if (ide_state.searchScope === 'global') {
+	if (ide_state.search.scope === 'global') {
 		onGlobalSearchQueryChanged();
 		return;
 	}
-	if (ide_state.searchQuery.length === 0) {
+	if (ide_state.search.query.length === 0) {
 		cancelSearchJob();
-		ide_state.searchMatches = [];
-		ide_state.searchCurrentIndex = -1;
+		ide_state.search.matches = [];
+		ide_state.search.currentIndex = -1;
 		ide_state.selectionAnchor = null;
-		ide_state.searchDisplayOffset = 0;
+		ide_state.search.displayOffset = 0;
 		return;
 	}
 	startSearchJob();
 }
 
 export function onGlobalSearchQueryChanged(): void {
-	ide_state.searchDisplayOffset = 0;
-	ide_state.searchHoverIndex = -1;
-	ide_state.searchCurrentIndex = -1;
-	if (ide_state.searchQuery.length === 0) {
+	ide_state.search.displayOffset = 0;
+	ide_state.search.hoverIndex = -1;
+	ide_state.search.currentIndex = -1;
+	if (ide_state.search.query.length === 0) {
 		cancelGlobalSearchJob();
-		ide_state.globalSearchMatches = [];
+		ide_state.search.globalMatches = [];
 		return;
 	}
 	startGlobalSearchJob();
@@ -191,14 +191,14 @@ export function onGlobalSearchQueryChanged(): void {
 export function startSearchJob(): void {
 	cancelSearchJob();
 
-	ide_state.searchDisplayOffset = 0;
-	ide_state.searchHoverIndex = -1;
-	ide_state.searchCurrentIndex = -1;
-	ide_state.searchMatches = [];
+	ide_state.search.displayOffset = 0;
+	ide_state.search.hoverIndex = -1;
+	ide_state.search.currentIndex = -1;
+	ide_state.search.matches = [];
 	ide_state.selectionAnchor = null;
 
 	const job: LocalSearchJob = {
-		query: normalizeQuery(ide_state.searchQuery),
+		query: normalizeQuery(ide_state.search.query),
 		version: ide_state.textVersion,
 		nextRow: 0,
 		matches: [],
@@ -206,14 +206,14 @@ export function startSearchJob(): void {
 		cursorRow: ide_state.cursorRow,
 		cursorColumn: ide_state.cursorColumn,
 	};
-	ide_state.searchJob = job;
+	ide_state.search.job = job;
 	enqueueBackgroundTask(() => runLocalSearchSlice(job));
 }
 
 function runLocalSearchSlice(job: LocalSearchJob): boolean {
-	if (ide_state.searchJob !== job) return false;
-	if (job.query.length === 0 || job.version !== ide_state.textVersion || ide_state.searchQuery.length === 0) {
-		ide_state.searchJob = null;
+	if (ide_state.search.job !== job) return false;
+	if (job.query.length === 0 || job.version !== ide_state.textVersion || ide_state.search.query.length === 0) {
+		ide_state.search.job = null;
 		return false;
 	}
 	let processed = 0;
@@ -247,33 +247,33 @@ function collectLocalMatches(job: LocalSearchJob, row: number): void {
 }
 
 function completeLocalSearchJob(job: LocalSearchJob): void {
-	if (ide_state.searchJob !== job) return;
-	ide_state.searchJob = null;
-	ide_state.searchMatches = job.matches;
+	if (ide_state.search.job !== job) return;
+	ide_state.search.job = null;
+	ide_state.search.matches = job.matches;
 
 	if (job.matches.length === 0) {
-		ide_state.searchCurrentIndex = -1;
+		ide_state.search.currentIndex = -1;
 		ide_state.selectionAnchor = null;
-		ide_state.searchDisplayOffset = 0;
+		ide_state.search.displayOffset = 0;
 		return;
 	}
 
 	const initialIndex = job.firstMatchAfterCursor >= 0 ? job.firstMatchAfterCursor : 0;
-	ide_state.searchCurrentIndex = clamp(initialIndex, 0, job.matches.length - 1);
+	ide_state.search.currentIndex = clamp(initialIndex, 0, job.matches.length - 1);
 	ensureSearchSelectionVisible();
-	if (ide_state.searchActive) {
-		applySearchSelection(ide_state.searchCurrentIndex, { preview: true, keepSearchActive: true });
+	if (ide_state.search.active) {
+		applySearchSelection(ide_state.search.currentIndex, { preview: true, keepSearchActive: true });
 	}
 }
 
 export function cancelSearchJob(): void {
-	ide_state.searchJob = null;
+	ide_state.search.job = null;
 }
 
 function ensureLocalJobCompleted(): void {
-	const job = ide_state.searchJob as LocalSearchJob;
+	const job = ide_state.search.job as LocalSearchJob;
 	if (!job) return;
-	while (ide_state.searchJob === job && runLocalSearchSlice(job)) {
+	while (ide_state.search.job === job && runLocalSearchSlice(job)) {
 		// run synchronously
 	}
 }
@@ -283,7 +283,7 @@ function startGlobalSearchJob(): void {
 
 	const descriptors = listResources().filter(entry => entry.type === 'lua');
 	const job: GlobalSearchJob = {
-		query: normalizeQuery(ide_state.searchQuery),
+		query: normalizeQuery(ide_state.search.query),
 		descriptors,
 		descriptorIndex: 0,
 		currentLines: null,
@@ -291,18 +291,18 @@ function startGlobalSearchJob(): void {
 		matches: [],
 		limitHit: false,
 	};
-	ide_state.globalSearchJob = job;
-	ide_state.globalSearchMatches = [];
-	ide_state.searchCurrentIndex = -1;
-	ide_state.searchDisplayOffset = 0;
-	ide_state.searchHoverIndex = -1;
+	ide_state.search.globalJob = job;
+	ide_state.search.globalMatches = [];
+	ide_state.search.currentIndex = -1;
+	ide_state.search.displayOffset = 0;
+	ide_state.search.hoverIndex = -1;
 	enqueueBackgroundTask(() => runGlobalSearchSlice(job));
 }
 
 function runGlobalSearchSlice(job: GlobalSearchJob): boolean {
-	if (ide_state.globalSearchJob !== job) return false;
+	if (ide_state.search.globalJob !== job) return false;
 	if (job.query.length === 0) {
-		ide_state.globalSearchJob = null;
+		ide_state.search.globalJob = null;
 		return false;
 	}
 
@@ -356,26 +356,26 @@ function runGlobalSearchSlice(job: GlobalSearchJob): boolean {
 }
 
 function completeGlobalSearchJob(job: GlobalSearchJob): void {
-	if (ide_state.globalSearchJob !== job) return;
-	ide_state.globalSearchJob = null;
-	ide_state.globalSearchMatches = job.matches;
+	if (ide_state.search.globalJob !== job) return;
+	ide_state.search.globalJob = null;
+	ide_state.search.globalMatches = job.matches;
 
 	if (job.matches.length === 0) {
-		ide_state.searchCurrentIndex = -1;
-		ide_state.searchDisplayOffset = 0;
+		ide_state.search.currentIndex = -1;
+		ide_state.search.displayOffset = 0;
 		return;
 	}
 
-	ide_state.searchCurrentIndex = clamp(ide_state.searchCurrentIndex, 0, job.matches.length - 1);
+	ide_state.search.currentIndex = clamp(ide_state.search.currentIndex, 0, job.matches.length - 1);
 	ensureSearchSelectionVisible();
 }
 
 export function cancelGlobalSearchJob(): void {
-	ide_state.globalSearchJob = null;
+	ide_state.search.globalJob = null;
 }
 
 function focusLocalMatch(index: number, recordNavigation: boolean): void {
-	const match = ide_state.searchMatches[index];
+	const match = ide_state.search.matches[index];
 	const navigationCheckpoint = recordNavigation ? beginNavigationCapture() : null;
 	setSingleCursorPosition(ide_state, match.row, match.start);
 	setSingleCursorSelectionAnchor(ide_state, match.row, match.end);
@@ -388,7 +388,7 @@ function focusLocalMatch(index: number, recordNavigation: boolean): void {
 }
 
 function focusGlobalMatch(index: number): void {
-	const match = ide_state.globalSearchMatches[index];
+	const match = ide_state.search.globalMatches[index];
 	const navigationCheckpoint = beginNavigationCapture();
 	openLuaCodeTab(match.descriptor);
 	scheduleMicrotask(() => {
@@ -406,7 +406,7 @@ function focusGlobalMatch(index: number): void {
 
 function nextSearchIndex(delta: number, wrap: boolean): number {
 	const total = activeSearchMatchCount();
-	let next = ide_state.searchCurrentIndex;
+	let next = ide_state.search.currentIndex;
 	if (next < 0) {
 		next = delta >= 0 ? 0 : total - 1;
 	} else {
@@ -419,7 +419,7 @@ function nextSearchIndex(delta: number, wrap: boolean): number {
 }
 
 export function stepSearchSelection(delta: number, options?: { wrap?: boolean; preview?: boolean; keepSearchActive?: boolean }): void {
-	if (ide_state.searchScope === 'local') {
+	if (ide_state.search.scope === 'local') {
 		ensureLocalJobCompleted();
 	}
 	const total = activeSearchMatchCount();
@@ -431,7 +431,7 @@ export function stepSearchSelection(delta: number, options?: { wrap?: boolean; p
 	}
 	const wrap = options?.wrap === true;
 	const preview = options?.preview === true;
-	const keepSearchActive = options?.keepSearchActive === true || ide_state.searchActive;
+	const keepSearchActive = options?.keepSearchActive === true || ide_state.search.active;
 	const next = nextSearchIndex(delta, wrap);
 	applySearchSelection(next, { preview, keepSearchActive });
 }
@@ -441,19 +441,19 @@ export function applySearchSelection(index: number, options?: { preview?: boolea
 	if (total === 0) return;
 
 	const targetIndex = clamp(index, 0, total - 1);
-	ide_state.searchCurrentIndex = targetIndex;
+	ide_state.search.currentIndex = targetIndex;
 	ensureSearchSelectionVisible();
 
-	if (ide_state.searchScope === 'local') {
+	if (ide_state.search.scope === 'local') {
 		focusLocalMatch(targetIndex, options?.preview !== true);
 	} else if (!options?.preview) {
 		focusGlobalMatch(targetIndex);
 	}
 
 	if (!options?.preview && !options?.keepSearchActive) {
-		ide_state.searchActive = false;
-		ide_state.searchField.selectionAnchor = null;
-		ide_state.searchField.pointerSelecting = false;
+		ide_state.search.active = false;
+		ide_state.search.field.selectionAnchor = null;
+		ide_state.search.field.pointerSelecting = false;
 	}
 }
 
@@ -466,7 +466,7 @@ export function jumpToPreviousMatch(): void {
 }
 
 export function searchPageSize(): number {
-	if (!ide_state.searchVisible) {
+	if (!ide_state.search.visible) {
 		return constants.SEARCH_MAX_RESULTS;
 	}
 	const baseHeight = ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
@@ -484,34 +484,34 @@ export function searchPageSize(): number {
 export function ensureSearchSelectionVisible(): void {
 	const total = activeSearchMatchCount();
 	if (total === 0) {
-		ide_state.searchDisplayOffset = 0;
+		ide_state.search.displayOffset = 0;
 		return;
 	}
 	const pageSize = searchPageSize();
-	ide_state.searchCurrentIndex = clamp(ide_state.searchCurrentIndex, 0, total - 1);
-	if (ide_state.searchCurrentIndex < ide_state.searchDisplayOffset) {
-		ide_state.searchDisplayOffset = ide_state.searchCurrentIndex;
-	} else if (ide_state.searchCurrentIndex >= ide_state.searchDisplayOffset + pageSize) {
-		ide_state.searchDisplayOffset = ide_state.searchCurrentIndex - pageSize + 1;
+	ide_state.search.currentIndex = clamp(ide_state.search.currentIndex, 0, total - 1);
+	if (ide_state.search.currentIndex < ide_state.search.displayOffset) {
+		ide_state.search.displayOffset = ide_state.search.currentIndex;
+	} else if (ide_state.search.currentIndex >= ide_state.search.displayOffset + pageSize) {
+		ide_state.search.displayOffset = ide_state.search.currentIndex - pageSize + 1;
 	}
 	const maxOffset = Math.max(0, total - pageSize);
-	ide_state.searchDisplayOffset = clamp(ide_state.searchDisplayOffset, 0, maxOffset);
+	ide_state.search.displayOffset = clamp(ide_state.search.displayOffset, 0, maxOffset);
 }
 
 export function computeSearchPageStats(): { total: number; offset: number; visible: number } {
-	const total = ide_state.searchVisible ? activeSearchMatchCount() : 0;
+	const total = ide_state.search.visible ? activeSearchMatchCount() : 0;
 	if (total === 0) {
-		ide_state.searchDisplayOffset = 0;
+		ide_state.search.displayOffset = 0;
 		return { total: 0, offset: 0, visible: 0 };
 	}
 
 	const pageSize = searchPageSize();
 	const maxOffset = Math.max(0, total - 1);
-	ide_state.searchDisplayOffset = clamp(ide_state.searchDisplayOffset, 0, maxOffset);
+	ide_state.search.displayOffset = clamp(ide_state.search.displayOffset, 0, maxOffset);
 
-	const remaining = total - ide_state.searchDisplayOffset;
+	const remaining = total - ide_state.search.displayOffset;
 	const visible = Math.min(pageSize, remaining);
-	return { total, offset: ide_state.searchDisplayOffset, visible };
+	return { total, offset: ide_state.search.displayOffset, visible };
 }
 
 export function getVisibleSearchResultEntries(): Array<{ primary: string; secondary?: string; detail?: string }> {
@@ -524,8 +524,8 @@ export function getVisibleSearchResultEntries(): Array<{ primary: string; second
 }
 
 function buildSearchResultEntry(index: number): { primary: string; secondary?: string; detail?: string } {
-	if (ide_state.searchScope === 'global') {
-		const match = ide_state.globalSearchMatches[index];
+	if (ide_state.search.scope === 'global') {
+		const match = ide_state.search.globalMatches[index];
 		return {
 			primary: match.pathLabel,
 			secondary: match.snippet,
@@ -533,7 +533,7 @@ function buildSearchResultEntry(index: number): { primary: string; secondary?: s
 		};
 	}
 
-	const match = ide_state.searchMatches[index];
+	const match = ide_state.search.matches[index];
 	const lineText = ide_state.buffer.getLineContent(match.row);
 	return {
 		primary: `Line ${match.row + 1}`,
@@ -542,8 +542,8 @@ function buildSearchResultEntry(index: number): { primary: string; secondary?: s
 }
 
 export function applySearchFieldText(value: string, moveCursorToEnd: boolean): void {
-	ide_state.searchQuery = value;
-	setFieldText(ide_state.searchField, value, moveCursorToEnd);
+	ide_state.search.query = value;
+	setFieldText(ide_state.search.field, value, moveCursorToEnd);
 }
 
 export function processInlineFieldPointer(field: TextField, textLeft: number, pointerX: number, justPressed: boolean, pointerPressed: boolean): void {

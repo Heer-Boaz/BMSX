@@ -2,7 +2,7 @@ import type {
 	LuaHoverResult,
 } from '../../emulator/types';
 import type { FontVariant } from '../../render/shared/bmsx_font';
-import type { TextField, ScrollbarKind, MessageState } from './types';
+import type { ScrollbarKind, MessageState } from './types';
 import type { InlineFieldMetrics } from '../ui/inline_text_field';
 import { Scrollbar, ScrollbarController } from '../ui/scrollbar';
 import type { InputController } from '../input/keyboard/editor_text_input';
@@ -23,19 +23,16 @@ import type {
 	CodeTabContext,
 	TopBarButtonId,
 	MenuId,
-	PendingActionPrompt,
+	ActionPromptState,
 	TabDragState,
 	CrtOptionsSnapshot,
 	EditContext,
 	CursorScreenInfo,
-	SymbolCatalogEntry,
-	SymbolSearchResult,
-	ResourceCatalogEntry,
-	ResourceSearchResult,
-	SearchMatch,
-	SearchComputationJob,
-	GlobalSearchMatch,
-	GlobalSearchJob,
+	SearchState,
+	ResourceSearchState,
+	SymbolSearchState,
+	LineJumpState,
+	CreateResourceState,
 	EditorTabDescriptor,
 	ResourceBrowserItem,
 	VisualLineSegment,
@@ -45,7 +42,6 @@ import type { TextBuffer } from '../text/text_buffer';
 import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import type { EditorUndoRecord } from '../text/editor_undo';
 import type { CanonicalizationType, RectBounds } from '../../rompack/rompack';
-import type { ReferenceCatalogEntry } from '../contrib/references/reference_sources';
 import { CodeLayout } from '../ui/code_layout';
 import type { TimerHandle, SubscriptionHandle } from '../../platform/index';
 import type { DebuggerExecutionState } from '../contrib/debugger/ide_debugger';
@@ -189,8 +185,7 @@ export interface IdeState {
 	resourceViewerSpriteId: string;
 	resourceViewerSpriteAsset: string;
 	resourceViewerSpriteScale: number;
-	actionPromptButtons: { saveAndContinue: RectBounds; continue: RectBounds; cancel: RectBounds };
-	pendingActionPrompt: PendingActionPrompt;
+	actionPrompt: ActionPromptState;
 	active: boolean;
 	message: MessageState;
 	showMessage: (text: string, color: number, durationSeconds: number) => void;
@@ -203,11 +198,11 @@ export interface IdeState {
 	pointerPrimaryWasPressed: boolean;
 	pointerSecondaryWasPressed: boolean;
 	pointerAuxWasPressed: boolean;
-	searchField: TextField;
-	symbolSearchField: TextField;
-	resourceSearchField: TextField;
-	lineJumpField: TextField;
-	createResourceField: TextField;
+	search: SearchState;
+	resourceSearch: ResourceSearchState;
+	symbolSearch: SymbolSearchState;
+	lineJump: LineJumpState;
+	createResource: CreateResourceState;
 	inlineFieldMetricsRef: InlineFieldMetrics;
 	scrollbars: Record<ScrollbarKind, Scrollbar>;
 	scrollbarController: ScrollbarController;
@@ -219,48 +214,8 @@ export interface IdeState {
 	tabDragState: TabDragState;
 	crtOptionsSnapshot: CrtOptionsSnapshot;
 	cursorRevealSuspended: boolean;
-	searchActive: boolean;
-	searchVisible: boolean;
-	searchQuery: string;
-	symbolSearchQuery: string;
-	resourceSearchQuery: string;
 	pendingEditContext: EditContext;
 	cursorScreenInfo: CursorScreenInfo;
-	lineJumpActive: boolean;
-	symbolSearchActive: boolean;
-	symbolSearchVisible: boolean;
-	symbolSearchGlobal: boolean;
-	symbolSearchMode: 'symbols' | 'references';
-	resourceSearchActive: boolean;
-	resourceSearchVisible: boolean;
-	lineJumpVisible: boolean;
-	lineJumpValue: string;
-	createResourceActive: boolean;
-	createResourceVisible: boolean;
-	createResourcePath: string;
-	createResourceError: string;
-	createResourceWorking: boolean;
-	lastCreateResourceDirectory: string;
-	symbolCatalog: SymbolCatalogEntry[];
-	referenceCatalog: ReferenceCatalogEntry[];
-	symbolCatalogContext: { scope: 'local' | 'global'; path: string };
-	symbolSearchMatches: SymbolSearchResult[];
-	symbolSearchSelectionIndex: number;
-	symbolSearchDisplayOffset: number;
-	symbolSearchHoverIndex: number;
-	resourceCatalog: ResourceCatalogEntry[];
-	resourceSearchMatches: ResourceSearchResult[];
-	resourceSearchSelectionIndex: number;
-	resourceSearchDisplayOffset: number;
-	resourceSearchHoverIndex: number;
-	searchMatches: SearchMatch[];
-	searchCurrentIndex: number;
-	searchJob: SearchComputationJob;
-	searchDisplayOffset: number;
-	searchHoverIndex: number;
-	searchScope: 'local' | 'global';
-	globalSearchMatches: GlobalSearchMatch[];
-	globalSearchJob: GlobalSearchJob;
 	diagnosticsTaskPending: boolean;
 	lastReportedSemanticError: string;
 	referenceState: ReferenceState;
@@ -406,12 +361,7 @@ export const ide_state: IdeState = {
 	resourceViewerSpriteId: null,
 	resourceViewerSpriteAsset: null,
 	resourceViewerSpriteScale: 1,
-	actionPromptButtons: {
-		saveAndContinue: null,
-		continue: { left: 0, top: 0, right: 0, bottom: 0 },
-		cancel: { left: 0, top: 0, right: 0, bottom: 0 },
-	},
-	pendingActionPrompt: null,
+	actionPrompt: null,
 	active: false,
 	message: undefined!,
 	showMessage: undefined!,
@@ -424,11 +374,61 @@ export const ide_state: IdeState = {
 	pointerPrimaryWasPressed: false,
 	pointerSecondaryWasPressed: false,
 	pointerAuxWasPressed: false,
-	searchField: undefined!,
-	symbolSearchField: undefined!,
-	resourceSearchField: undefined!,
-	lineJumpField: undefined!,
-	createResourceField: undefined!,
+	search: {
+		field: undefined!,
+		active: false,
+		visible: false,
+		query: '',
+		matches: [],
+		currentIndex: -1,
+		job: null,
+		displayOffset: 0,
+		hoverIndex: -1,
+		scope: 'local',
+		globalMatches: [],
+		globalJob: null,
+	},
+	resourceSearch: {
+		field: undefined!,
+		active: false,
+		visible: false,
+		query: '',
+		catalog: [],
+		matches: [],
+		selectionIndex: -1,
+		displayOffset: 0,
+		hoverIndex: -1,
+	},
+	symbolSearch: {
+		field: undefined!,
+		active: false,
+		visible: false,
+		query: '',
+		global: false,
+		mode: 'symbols',
+		catalog: [],
+		referenceCatalog: [],
+		catalogContext: null,
+		matches: [],
+		selectionIndex: -1,
+		displayOffset: 0,
+		hoverIndex: -1,
+	},
+	lineJump: {
+		field: undefined!,
+		active: false,
+		visible: false,
+		value: '',
+	},
+	createResource: {
+		field: undefined!,
+		active: false,
+		visible: false,
+		path: '',
+		error: null,
+		working: false,
+		lastDirectory: '',
+	},
 	inlineFieldMetricsRef: undefined!,
 	scrollbars: undefined!,
 	scrollbarController: undefined!,
@@ -440,48 +440,8 @@ export const ide_state: IdeState = {
 	tabDragState: null,
 	crtOptionsSnapshot: null,
 	cursorRevealSuspended: false,
-	searchActive: false,
-	searchVisible: false,
-	searchQuery: '',
-	symbolSearchQuery: '',
-	resourceSearchQuery: '',
 	pendingEditContext: null,
 	cursorScreenInfo: null,
-	lineJumpActive: false,
-	symbolSearchActive: false,
-	symbolSearchVisible: false,
-	symbolSearchGlobal: false,
-	symbolSearchMode: 'symbols',
-	resourceSearchActive: false,
-	resourceSearchVisible: false,
-	lineJumpVisible: false,
-	lineJumpValue: '',
-	createResourceActive: false,
-	createResourceVisible: false,
-	createResourcePath: '',
-	createResourceError: null,
-	createResourceWorking: false,
-	lastCreateResourceDirectory: '',
-	symbolCatalog: [],
-	referenceCatalog: [],
-	symbolCatalogContext: null,
-	symbolSearchMatches: [],
-	symbolSearchSelectionIndex: -1,
-	symbolSearchDisplayOffset: 0,
-	symbolSearchHoverIndex: -1,
-	resourceCatalog: [],
-	resourceSearchMatches: [],
-	resourceSearchSelectionIndex: -1,
-	resourceSearchDisplayOffset: 0,
-	resourceSearchHoverIndex: -1,
-	searchMatches: [],
-	searchCurrentIndex: -1,
-	searchJob: null,
-	searchDisplayOffset: 0,
-	searchHoverIndex: -1,
-	searchScope: 'local',
-	globalSearchMatches: [],
-	globalSearchJob: null,
 	diagnosticsTaskPending: false,
 	lastReportedSemanticError: null,
 	referenceState: new ReferenceState(),

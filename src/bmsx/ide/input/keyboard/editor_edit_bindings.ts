@@ -12,7 +12,7 @@ import { isInlineFieldFocused } from '../quick_input/editor_quick_input';
 import { runEditorKeyHandlers, type EditorKeyHandler } from './editor_binding_utils';
 
 export function handleSearchNavigationKeybinding(): boolean {
-	if (ide_state.searchQuery.length === 0 || !isKeyJustPressed('F3')) {
+	if (ide_state.search.query.length === 0 || !isKeyJustPressed('F3')) {
 		return false;
 	}
 	consumeIdeKey('F3');
@@ -172,7 +172,7 @@ function handleUnindentBinding(): boolean {
 }
 
 export function handleCodeFormattingKeybinding(): boolean {
-	if (!isCodeTabActive() || ide_state.searchActive || isInlineFieldFocused()) {
+	if (!isCodeTabActive() || ide_state.search.active || isInlineFieldFocused()) {
 		return false;
 	}
 	if (!isAltDown() || !isShiftDown() || isCtrlDown() || isMetaDown() || !isKeyJustPressed('KeyF')) {

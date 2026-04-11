@@ -40,17 +40,17 @@ export function initializeCartEditor(viewport: Viewport): void {
 	ide_state.clockNow = $.platform.clock.now;
 	resetSemanticWorkspace();
 	configureFontVariant(ide_state.fontVariant);
-	ide_state.searchField = createInlineTextField();
-	ide_state.symbolSearchField = createInlineTextField();
-	ide_state.resourceSearchField = createInlineTextField();
-	ide_state.lineJumpField = createInlineTextField();
-	ide_state.createResourceField = createInlineTextField();
+	ide_state.search.field = createInlineTextField();
+	ide_state.symbolSearch.field = createInlineTextField();
+	ide_state.resourceSearch.field = createInlineTextField();
+	ide_state.lineJump.field = createInlineTextField();
+	ide_state.createResource.field = createInlineTextField();
 	initializeWorkspaceStorage($.cart_project_root_path);
-	applySearchFieldText(ide_state.searchQuery, true);
-	applySymbolSearchFieldText(ide_state.symbolSearchQuery, true);
-	applyResourceSearchFieldText(ide_state.resourceSearchQuery, true);
-	applyLineJumpFieldText(ide_state.lineJumpValue, true);
-	applyCreateResourceFieldText(ide_state.createResourcePath, true);
+	applySearchFieldText(ide_state.search.query, true);
+	applySymbolSearchFieldText(ide_state.symbolSearch.query, true);
+	applyResourceSearchFieldText(ide_state.resourceSearch.query, true);
+	applyLineJumpFieldText(ide_state.lineJump.value, true);
+	applyCreateResourceFieldText(ide_state.createResource.path, true);
 	ide_state.scrollbars = {
 		codeVertical: new Scrollbar('codeVertical', 'vertical'),
 		codeHorizontal: new Scrollbar('codeHorizontal', 'horizontal'),

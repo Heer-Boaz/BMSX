@@ -12,6 +12,7 @@ import * as constants from '../core/constants';
 import { BmsxColors } from '../../emulator/vdp';
 import { renderErrorOverlayText } from './render_error_overlay';
 import { drawRectOutlineColor } from './render_caret';
+import { centerDialogBounds } from './dialog_layout';
 
 export function renderResourcePanel(controller: ResourcePanelController): void {
 	if (!controller.visible) {
@@ -64,7 +65,7 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, constants.COLOR_RESOURCE_PANEL_BACKGROUND);
 
 	const contentTop = bounds.top + 2;
-	const scrollStart = Math.floor(controller.scroll);
+	const scrollStart = Math.trunc(controller.scroll);
 	const scrollEnd = Math.min(itemCount, scrollStart + capacity);
 	const highlightIndex = controller.hoverIndex >= 0 ? controller.hoverIndex : controller.selectionIndex;
 	const panelActive = controller.focused;
@@ -88,11 +89,11 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 		const isHighlighted = itemIndex === highlightIndex;
 		if (isHighlighted) {
 			const highlightWidth = measureText(contentText);
-			const caretLeft = Math.floor(contentX);
-			const caretRight = Math.max(caretLeft + 1, Math.floor(contentX + highlightWidth));
+			const caretLeft = contentX;
+			const caretRight = Math.max(caretLeft + 1, contentX + highlightWidth);
 			const visibleLeft = clamp(caretLeft, contentLeft, contentRight);
 			const visibleRight = clamp(caretRight, visibleLeft, contentRight);
-			const caretTop = Math.floor(y);
+			const caretTop = y;
 			const caretBottom = caretTop + controller.lineHeight;
 			if (panelActive) {
 				if (visibleRight > visibleLeft) {
@@ -173,7 +174,7 @@ export function drawResourceViewer(): void {
 	}
 	if (capacity <= 0) {
 		if (viewer.lines.length > 0) {
-			const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, Math.floor(viewer.scroll)))] ?? '';
+			const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, Math.trunc(viewer.scroll)))] ?? '';
 			const fallbackY = Math.min(textTop, bounds.codeBottom - ide_state.lineHeight);
 			drawEditorText(ide_state.font, line, contentLeft, fallbackY, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		} else {
@@ -186,11 +187,12 @@ export function drawResourceViewer(): void {
 	}
 	const maxScroll = Math.max(0, totalLines - capacity);
 	viewer.scroll = clamp(viewer.scroll, 0, maxScroll);
-	const end = Math.min(totalLines, Math.floor(viewer.scroll) + capacity);
+	const start = Math.trunc(viewer.scroll);
+	const end = Math.min(totalLines, start + capacity);
 	if (viewer.lines.length === 0) {
 		drawEditorText(ide_state.font, '<empty>', contentLeft, textTop, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
 	} else {
-		for (let lineIndex = Math.floor(viewer.scroll), drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
+		for (let lineIndex = start, drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
 			const line = viewer.lines[lineIndex] ?? '';
 			const y = textTop + drawIndex * ide_state.lineHeight;
 			if (y >= bounds.codeBottom) {
@@ -235,10 +237,7 @@ export function drawCreateResourceErrorDialog(message: string): void {
 	}
 	const dialogWidth = Math.min(ide_state.viewportWidth - 16, Math.max(180, contentWidth + constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
 	const dialogHeight = Math.min(ide_state.viewportHeight - 16, lines.length * ide_state.lineHeight + constants.ERROR_OVERLAY_PADDING_Y * 2 + 16);
-	const left = Math.max(8, Math.floor((ide_state.viewportWidth - dialogWidth) / 2));
-	const top = Math.max(8, Math.floor((ide_state.viewportHeight - dialogHeight) / 2));
-	const right = left + dialogWidth;
-	const bottom = top + dialogHeight;
+	const { left, top, right, bottom } = centerDialogBounds(dialogWidth, dialogHeight, 8);
 	api.fill_rect(left, top, right, bottom, undefined, constants.COLOR_STATUS_BACKGROUND);
 	api.blit_rect(left, top, right, bottom, undefined, constants.COLOR_CREATE_RESOURCE_ERROR);
 	const dialogPaddingX = constants.ERROR_OVERLAY_PADDING_X + 6;

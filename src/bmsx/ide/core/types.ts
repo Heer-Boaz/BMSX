@@ -319,8 +319,78 @@ export type CodeTabContext = {
 	textVersion: number;
 };
 
-export type PendingActionPrompt = {
-	action: 'hot-resume' | 'reboot' | 'close' | 'theme-toggle';
+export type SearchState = {
+	field: TextField;
+	active: boolean;
+	visible: boolean;
+	query: string;
+	matches: SearchMatch[];
+	currentIndex: number;
+	job: SearchComputationJob;
+	displayOffset: number;
+	hoverIndex: number;
+	scope: 'local' | 'global';
+	globalMatches: GlobalSearchMatch[];
+	globalJob: GlobalSearchJob;
+};
+
+export type ResourceSearchState = {
+	field: TextField;
+	active: boolean;
+	visible: boolean;
+	query: string;
+	catalog: ResourceCatalogEntry[];
+	matches: ResourceSearchResult[];
+	selectionIndex: number;
+	displayOffset: number;
+	hoverIndex: number;
+};
+
+export type SymbolSearchState = {
+	field: TextField;
+	active: boolean;
+	visible: boolean;
+	query: string;
+	global: boolean;
+	mode: 'symbols' | 'references';
+	catalog: SymbolCatalogEntry[];
+	referenceCatalog: import('../contrib/references/reference_sources').ReferenceCatalogEntry[];
+	catalogContext: { scope: 'local' | 'global'; path: string };
+	matches: SymbolSearchResult[];
+	selectionIndex: number;
+	displayOffset: number;
+	hoverIndex: number;
+};
+
+export type LineJumpState = {
+	field: TextField;
+	active: boolean;
+	visible: boolean;
+	value: string;
+};
+
+export type CreateResourceState = {
+	field: TextField;
+	active: boolean;
+	visible: boolean;
+	path: string;
+	error: string;
+	working: boolean;
+	lastDirectory: string;
+};
+
+export type ActionPromptAction = 'hot-resume' | 'reboot' | 'close' | 'theme-toggle';
+
+export type ActionPromptLayout = {
+	bounds: RectBounds;
+	saveAndContinue: RectBounds;
+	continue: RectBounds;
+	cancel: RectBounds;
+};
+
+export type ActionPromptState = {
+	action: ActionPromptAction;
+	layout: ActionPromptLayout;
 };
 
 export type EditorContextTokenKind = 'identifier' | 'keyword' | 'number' | 'string' | 'operator';

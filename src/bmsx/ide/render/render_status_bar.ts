@@ -17,7 +17,7 @@ export function renderStatusBar(): void {
 	const statusBackground = constants.COLOR_STATUS_BACKGROUND;
 	api.fill_rect(0, statusTop, ide_state.viewportWidth, statusBottom, undefined, statusBackground);
 	if (runtimeFaulted) {
-		const accentHeight = Math.max(2, Math.floor(ide_state.lineHeight / 6));
+		const accentHeight = Math.max(2, Math.trunc(ide_state.lineHeight / 6));
 		const accentBottom = Math.min(statusBottom, statusTop + accentHeight);
 		api.fill_rect_color(0, statusTop, ide_state.viewportWidth, accentBottom, undefined, constants.COLOR_STATUS_WARNING);
 	}
@@ -40,7 +40,7 @@ export function renderStatusBar(): void {
 		return;
 	}
 
-	if (ide_state.symbolSearchVisible) {
+	if (ide_state.symbolSearch.visible) {
 		const match = getActiveSymbolSearchMatch();
 		if (!match) return;
 		const symbol = match.entry.symbol;

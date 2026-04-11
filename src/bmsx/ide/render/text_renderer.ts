@@ -40,8 +40,8 @@ export function drawEditorText(font: EditorFont, text: string, originX: number, 
 }
 
 export function drawEditorColoredText(font: EditorFont, text: string, colors: readonly number[], originX: number, originY: number, z: number, fallbackColor: number, options?: DrawEditorTextOptions): void {
-	let cursorX = Math.floor(originX);
-	const cursorY = Math.floor(originY);
+	let cursorX = originX;
+	const cursorY = originY;
 	const renderFont = font.renderFont();
 	const apiWithFont = api;
 	const preserveCase = options?.preserveCase ?? false;

@@ -18,11 +18,11 @@ export function handleResourceSearchInput(): void {
 			moveResourceSearchSelection(-1);
 			return;
 		}
-		if (ide_state.resourceSearchSelectionIndex >= 0) {
-			applyResourceSearchSelection(ide_state.resourceSearchSelectionIndex);
+		if (ide_state.resourceSearch.selectionIndex >= 0) {
+			applyResourceSearchSelection(ide_state.resourceSearch.selectionIndex);
 			return;
 		}
-		const trimmed = ide_state.resourceSearchQuery.trim();
+		const trimmed = ide_state.resourceSearch.query.trim();
 		if (trimmed.length === 0) {
 			closeResourceSearch(true);
 			focusEditorFromResourceSearch();
@@ -59,44 +59,44 @@ export function handleResourceSearchInput(): void {
 	}
 	if (isKeyJustPressed('Home')) {
 		consumeIdeKey('Home');
-		ide_state.resourceSearchSelectionIndex = ide_state.resourceSearchMatches.length > 0 ? 0 : -1;
+		ide_state.resourceSearch.selectionIndex = ide_state.resourceSearch.matches.length > 0 ? 0 : -1;
 		ensureResourceSearchSelectionVisible();
 		return;
 	}
 	if (isKeyJustPressed('End')) {
 		consumeIdeKey('End');
-		ide_state.resourceSearchSelectionIndex = ide_state.resourceSearchMatches.length > 0 ? ide_state.resourceSearchMatches.length - 1 : -1;
+		ide_state.resourceSearch.selectionIndex = ide_state.resourceSearch.matches.length > 0 ? ide_state.resourceSearch.matches.length - 1 : -1;
 		ensureResourceSearchSelectionVisible();
 		return;
 	}
-	const textChanged = applyInlineFieldEditing(ide_state.resourceSearchField, {
+	const textChanged = applyInlineFieldEditing(ide_state.resourceSearch.field, {
 		allowSpace: true,
 		characterFilter: undefined,
 		maxLength: null,
 	});
-	ide_state.resourceSearchQuery = textFromLines(ide_state.resourceSearchField.lines);
+	ide_state.resourceSearch.query = textFromLines(ide_state.resourceSearch.field.lines);
 	if (!textChanged) {
 		return;
 	}
-	if (ide_state.resourceSearchQuery.startsWith('@')) {
-		const query = ide_state.resourceSearchQuery.slice(1).trimStart();
+	if (ide_state.resourceSearch.query.startsWith('@')) {
+		const query = ide_state.resourceSearch.query.slice(1).trimStart();
 		closeResourceSearch(true);
 		openSymbolSearch(query);
 		return;
 	}
-	if (ide_state.resourceSearchQuery.startsWith('#')) {
-		const query = ide_state.resourceSearchQuery.slice(1).trimStart();
+	if (ide_state.resourceSearch.query.startsWith('#')) {
+		const query = ide_state.resourceSearch.query.slice(1).trimStart();
 		closeResourceSearch(true);
 		openGlobalSymbolSearch(query);
 		return;
 	}
-	if (ide_state.resourceSearchQuery.startsWith(':')) {
-		const query = ide_state.resourceSearchQuery.slice(1).trimStart();
+	if (ide_state.resourceSearch.query.startsWith(':')) {
+		const query = ide_state.resourceSearch.query.slice(1).trimStart();
 		closeResourceSearch(true);
 		openLineJump();
 		if (query.length > 0) {
 			applyLineJumpFieldText(query, true);
-			ide_state.lineJumpValue = query;
+			ide_state.lineJump.value = query;
 		}
 		return;
 	}

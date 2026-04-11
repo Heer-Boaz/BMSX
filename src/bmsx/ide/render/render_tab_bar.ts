@@ -199,8 +199,8 @@ export function renderTabBar(): number {
 				} else {
 					ide_state.tabCloseButtonBounds.delete(tab.id);
 					if (entry.dirty && entry.markerWidth > 0) {
-						const markerX = closeBounds.left + Math.floor((entry.closeWidth - entry.markerWidth) / 2);
-						const markerY = bounds.top + Math.floor((bounds.bottom - bounds.top - entry.markerHeight) / 2);
+						const markerX = closeBounds.left + Math.trunc((entry.closeWidth - entry.markerWidth) / 2);
+						const markerY = bounds.top + Math.trunc((bounds.bottom - bounds.top - entry.markerHeight) / 2);
 						const markerRight = markerX + entry.markerWidth - 1;
 						const markerBottom = markerY + entry.markerHeight - 1;
 						api.fill_rect(markerX, markerY, markerRight, markerBottom, undefined, constants.COLOR_TAB_DIRTY_MARKER);
@@ -211,9 +211,9 @@ export function renderTabBar(): number {
 				if (entry.dirty && entry.markerWidth > 0) {
 					const spacing = Math.max(0, constants.TAB_DIRTY_MARKER_SPACING);
 					const markerX = indicatorWidth > 0
-						? indicatorLeft + Math.floor(Math.max(0, (indicatorWidth - entry.markerWidth) / 2))
+						? indicatorLeft + Math.trunc(Math.max(0, (indicatorWidth - entry.markerWidth) / 2))
 						: bounds.right - entry.markerWidth - spacing;
-					const markerY = bounds.top + Math.floor((bounds.bottom - bounds.top - entry.markerHeight) / 2);
+					const markerY = bounds.top + Math.trunc((bounds.bottom - bounds.top - entry.markerHeight) / 2);
 					const markerRight = markerX + entry.markerWidth - 1;
 					const markerBottom = markerY + entry.markerHeight - 1;
 					api.fill_rect(markerX, markerY, markerRight, markerBottom, undefined, constants.COLOR_TAB_DIRTY_MARKER);

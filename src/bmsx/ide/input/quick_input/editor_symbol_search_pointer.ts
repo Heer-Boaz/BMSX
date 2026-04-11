@@ -11,15 +11,15 @@ import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } 
 
 export function handleSymbolSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const bounds = getSymbolSearchBarBounds();
-	if (!ide_state.symbolSearchVisible || !bounds) {
+	if (!ide_state.symbolSearch.visible || !bounds) {
 		return false;
 	}
 	const insideBar = point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
 	if (!insideBar) {
 		if (justPressed) {
-			ide_state.symbolSearchActive = false;
+			ide_state.symbolSearch.active = false;
 		}
-		ide_state.symbolSearchHoverIndex = -1;
+		ide_state.symbolSearch.hoverIndex = -1;
 		return false;
 	}
 	const fieldBottom = bounds.top + ide_state.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
@@ -27,20 +27,20 @@ export function handleSymbolSearchPointer(snapshot: PointerSnapshot, justPressed
 		if (justPressed) {
 			closeLineJump(false);
 			closeSearch(false, true);
-			ide_state.symbolSearchVisible = true;
-			ide_state.symbolSearchActive = true;
+			ide_state.symbolSearch.visible = true;
+			ide_state.symbolSearch.active = true;
 			activateQuickInputField();
 		}
-		const label = ide_state.symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
-		processInlineFieldPointer(ide_state.symbolSearchField, quickInputTextLeft(label), snapshot.viewportX, justPressed, snapshot.primaryPressed);
+		const label = ide_state.symbolSearch.global ? 'SYMBOL #:' : 'SYMBOL @:';
+		processInlineFieldPointer(ide_state.symbolSearch.field, quickInputTextLeft(label), snapshot.viewportX, justPressed, snapshot.primaryPressed);
 		finishQuickInputPointer(snapshot);
 		return true;
 	}
 	const hoverIndex = resolveSymbolSearchHoverIndex(snapshot.viewportY, fieldBottom);
-	ide_state.symbolSearchHoverIndex = hoverIndex;
+	ide_state.symbolSearch.hoverIndex = hoverIndex;
 	if (hoverIndex >= 0 && justPressed) {
-		if (hoverIndex !== ide_state.symbolSearchSelectionIndex) {
-			ide_state.symbolSearchSelectionIndex = hoverIndex;
+		if (hoverIndex !== ide_state.symbolSearch.selectionIndex) {
+			ide_state.symbolSearch.selectionIndex = hoverIndex;
 			ensureSymbolSearchSelectionVisible();
 		}
 		applySymbolSearchSelection(hoverIndex);
@@ -62,5 +62,5 @@ function resolveSymbolSearchHoverIndex(pointerY: number, fieldBottom: number): n
 	if (indexWithin < 0 || indexWithin >= visibleCount) {
 		return -1;
 	}
-	return ide_state.symbolSearchDisplayOffset + indexWithin;
+	return ide_state.symbolSearch.displayOffset + indexWithin;
 }

@@ -16,8 +16,8 @@ export function handleSymbolSearchInput(): void {
 			moveSymbolSearchSelection(-1);
 			return;
 		}
-		if (ide_state.symbolSearchSelectionIndex >= 0) {
-			applySymbolSearchSelection(ide_state.symbolSearchSelectionIndex);
+		if (ide_state.symbolSearch.selectionIndex >= 0) {
+			applySymbolSearchSelection(ide_state.symbolSearch.selectionIndex);
 		} else {
 			ide_state.showMessage('No symbol selected', constants.COLOR_STATUS_WARNING, 1.5);
 		}
@@ -50,22 +50,22 @@ export function handleSymbolSearchInput(): void {
 	}
 	if (isKeyJustPressed('Home')) {
 		consumeIdeKey('Home');
-		ide_state.symbolSearchSelectionIndex = ide_state.symbolSearchMatches.length > 0 ? 0 : -1;
+		ide_state.symbolSearch.selectionIndex = ide_state.symbolSearch.matches.length > 0 ? 0 : -1;
 		ensureSymbolSearchSelectionVisible();
 		return;
 	}
 	if (isKeyJustPressed('End')) {
 		consumeIdeKey('End');
-		ide_state.symbolSearchSelectionIndex = ide_state.symbolSearchMatches.length > 0 ? ide_state.symbolSearchMatches.length - 1 : -1;
+		ide_state.symbolSearch.selectionIndex = ide_state.symbolSearch.matches.length > 0 ? ide_state.symbolSearch.matches.length - 1 : -1;
 		ensureSymbolSearchSelectionVisible();
 		return;
 	}
-	const textChanged = applyInlineFieldEditing(ide_state.symbolSearchField, {
+	const textChanged = applyInlineFieldEditing(ide_state.symbolSearch.field, {
 		allowSpace: true,
 		characterFilter: undefined,
 		maxLength: null,
 	});
-	ide_state.symbolSearchQuery = textFromLines(ide_state.symbolSearchField.lines);
+	ide_state.symbolSearch.query = textFromLines(ide_state.symbolSearch.field.lines);
 	if (textChanged) {
 		updateSymbolSearchMatches();
 	}
