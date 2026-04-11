@@ -190,6 +190,10 @@ private:
 	void setMachineManifest(const MachineManifest& manifest);
 	void configureViewForMachine(const MachineManifest& manifest);
 	bool bootEngineStartupProgram(const MachineManifest& runtimeMachine, const RuntimeAssets& sizingAssets);
+	void recordPresentDebugHostFrame();
+	void recordPresentDebugTickCompletion(bool visualCommitted, bool vdpFrameHeld);
+	void recordPresentDebugPresentation(GameView::PresentationMode mode, bool commitFrame, bool paused);
+	void flushPresentDebugReport(const Runtime* runtime);
 
 	Platform* m_platform = nullptr;
 	std::unique_ptr<GameView> m_view;
@@ -212,6 +216,17 @@ private:
 	u64 m_debugTickHostFrames = 0;
 	u64 m_debugTickUpdates = 0;
 	i64 m_debugLastUpdateCountTotal = 0;
+	bool m_debugPresentReportInitialized = false;
+	std::chrono::steady_clock::time_point m_debugPresentReportAt;
+	u64 m_debugPresentHostFrames = 0;
+	u64 m_debugPresentTickCompleted = 0;
+	u64 m_debugPresentTickCommitted = 0;
+	u64 m_debugPresentTickDeferred = 0;
+	u64 m_debugPresentTickHeld = 0;
+	u64 m_debugPresentPartialPresents = 0;
+	u64 m_debugPresentCommitPresents = 0;
+	u64 m_debugPresentHoldPresents = 0;
+	u64 m_debugPresentPausedPresents = 0;
 	i64 m_cycleCarry = 0;
 	int m_lastGrantedBaseBudget = 0;
 	bool m_presentation_pending = false;

@@ -14,6 +14,7 @@
 #include "../render/shared/render_queues.h"
 #include "../utils/clamp.h"
 #include <cstdio>
+#include <cstdlib>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -337,6 +338,15 @@ i64 hzToScaledHz(f64 hz) {
 	return static_cast<i64>(std::llround(hz * static_cast<f64>(HZ_SCALE)));
 }
 
+bool isPresentRateDebugEnabled() {
+	static int cached = -1;
+	if (cached < 0) {
+		const char* env = std::getenv("BMSX_DEBUG_PRESENTRATE");
+		cached = (env != nullptr && env[0] != '\0' && !(env[0] == '0' && env[1] == '\0')) ? 1 : 0;
+	}
+	return cached != 0;
+}
+
 } // namespace
 
 i64 resolveVblankCycles(i64 cpuHz, i64 refreshHzScaled, i32 renderHeight) {
@@ -524,12 +534,103 @@ void EngineCore::applyRuntimeCycleBudget(Runtime& runtime) {
 	runtime.setCycleBudgetPerFrame(cycleBudget);
 }
 
+void EngineCore::recordPresentDebugHostFrame() {
+	if (!isPresentRateDebugEnabled()) {
+		return;
+	}
+	if (!m_debugPresentReportInitialized) {
+		m_debugPresentReportInitialized = true;
+		m_debugPresentReportAt = std::chrono::steady_clock::now();
+	}
+	m_debugPresentHostFrames += 1;
+}
+
+void EngineCore::recordPresentDebugTickCompletion(bool visualCommitted, bool vdpFrameHeld) {
+	if (!isPresentRateDebugEnabled()) {
+		return;
+	}
+	m_debugPresentTickCompleted += 1;
+	if (visualCommitted) {
+		m_debugPresentTickCommitted += 1;
+	} else {
+		m_debugPresentTickDeferred += 1;
+	}
+	if (vdpFrameHeld) {
+		m_debugPresentTickHeld += 1;
+	}
+}
+
+void EngineCore::recordPresentDebugPresentation(GameView::PresentationMode mode, bool commitFrame, bool paused) {
+	if (!isPresentRateDebugEnabled()) {
+		return;
+	}
+	if (paused) {
+		m_debugPresentPausedPresents += 1;
+		return;
+	}
+	if (mode == GameView::PresentationMode::Partial) {
+		m_debugPresentPartialPresents += 1;
+		return;
+	}
+	if (commitFrame) {
+		m_debugPresentCommitPresents += 1;
+		return;
+	}
+	m_debugPresentHoldPresents += 1;
+}
+
+void EngineCore::flushPresentDebugReport(const Runtime* runtime) {
+	if (!isPresentRateDebugEnabled()) {
+		return;
+	}
+	const auto now = std::chrono::steady_clock::now();
+	if (!m_debugPresentReportInitialized) {
+		m_debugPresentReportInitialized = true;
+		m_debugPresentReportAt = now;
+		return;
+	}
+	const double elapsedMs = to_ms(now - m_debugPresentReportAt);
+	if (elapsedMs < 1000.0) {
+		return;
+	}
+	const double scale = 1000.0 / elapsedMs;
+	const double hostFps = static_cast<double>(m_debugPresentHostFrames) * scale;
+	std::fprintf(
+		stderr,
+		"[BMSX][present] host_frames=%llu host_fps=%.2f ufps=%.2f tick_completed=%llu tick_committed=%llu tick_deferred=%llu tick_held=%llu present_partial=%llu present_commit=%llu present_hold=%llu present_paused=%llu draw_pending=%d active_tick=%d\n",
+		static_cast<unsigned long long>(m_debugPresentHostFrames),
+		hostFps,
+		ufps(),
+		static_cast<unsigned long long>(m_debugPresentTickCompleted),
+		static_cast<unsigned long long>(m_debugPresentTickCommitted),
+		static_cast<unsigned long long>(m_debugPresentTickDeferred),
+		static_cast<unsigned long long>(m_debugPresentTickHeld),
+		static_cast<unsigned long long>(m_debugPresentPartialPresents),
+		static_cast<unsigned long long>(m_debugPresentCommitPresents),
+		static_cast<unsigned long long>(m_debugPresentHoldPresents),
+		static_cast<unsigned long long>(m_debugPresentPausedPresents),
+		runtime && runtime->isDrawPending() ? 1 : 0,
+		runtime && runtime->hasActiveTick() ? 1 : 0
+	);
+	m_debugPresentReportAt = now;
+	m_debugPresentHostFrames = 0;
+	m_debugPresentTickCompleted = 0;
+	m_debugPresentTickCommitted = 0;
+	m_debugPresentTickDeferred = 0;
+	m_debugPresentTickHeld = 0;
+	m_debugPresentPartialPresents = 0;
+	m_debugPresentCommitPresents = 0;
+	m_debugPresentHoldPresents = 0;
+	m_debugPresentPausedPresents = 0;
+}
+
 void EngineCore::tick(f64 deltaTime) {
 	if (m_state != EngineState::Running) {
 		return;
 	}
 
 	const auto tickStart = std::chrono::steady_clock::now();
+	recordPresentDebugHostFrame();
 	// PERF LOGS DISABLED
 	// if (!m_debugTickReportInitialized) {
 	// 	m_debugTickReportInitialized = true;
@@ -607,6 +708,7 @@ void EngineCore::tick(f64 deltaTime) {
 			slicesProcessed += 1;
 			if (runtime.consumeLastTickCompletion(completion)) {
 				m_cycleCarry = 0;
+				recordPresentDebugTickCompletion(completion.visualCommitted, completion.vdpFrameHeld);
 				presentQueued = true;
 				m_presentation_mode = GameView::PresentationMode::Completed;
 				m_commit_presented_frame = completion.visualCommitted;
@@ -686,7 +788,10 @@ void EngineCore::render() {
 	// Render through GameView
 	if (m_view) {
 		const bool pausedPresent = m_state == EngineState::Paused;
-		m_view->configurePresentation(pausedPresent ? GameView::PresentationMode::Completed : m_presentation_mode, pausedPresent ? false : m_commit_presented_frame);
+		const GameView::PresentationMode presentMode = pausedPresent ? GameView::PresentationMode::Completed : m_presentation_mode;
+		const bool commitFrame = pausedPresent ? false : m_commit_presented_frame;
+		m_view->configurePresentation(presentMode, commitFrame);
+		recordPresentDebugPresentation(presentMode, commitFrame, pausedPresent);
 		if (!pausedPresent && m_presentation_mode == GameView::PresentationMode::Completed && m_commit_presented_frame) {
 			RenderQueues::prepareCompletedRenderQueues();
 		} else if (pausedPresent || m_presentation_mode == GameView::PresentationMode::Completed) {
@@ -739,6 +844,7 @@ void EngineCore::render() {
 	m_presentation_pending = false;
 	m_commit_presented_frame = false;
 	m_last_render_timing.totalMs = to_ms(std::chrono::steady_clock::now() - renderStart);
+	flushPresentDebugReport(Runtime::hasInstance() ? &Runtime::instance() : nullptr);
 }
 
 void EngineCore::refreshRenderAssets() {

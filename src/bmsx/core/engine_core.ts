@@ -289,6 +289,16 @@ export class EngineCore {
 	 */
 	public deltatime: number = 0;
 	private cycleCarry: number = 0;
+	private debugPresentReportAtMs: number = 0;
+	private debugPresentHostFrames: number = 0;
+	private debugPresentTickCompleted: number = 0;
+	private debugPresentTickCommitted: number = 0;
+	private debugPresentTickDeferred: number = 0;
+	private debugPresentTickHeld: number = 0;
+	private debugPresentPartialPresents: number = 0;
+	private debugPresentCommitPresents: number = 0;
+	private debugPresentHoldPresents: number = 0;
+	private debugPresentPausedPresents: number = 0;
 
 	public get timestep_ms(): number { return this.update_interval_ms; } // ms per update = 1000 / fps
 
@@ -794,6 +804,88 @@ export class EngineCore {
 		runtimeIde.tickTerminalMode(runtime);
 	}
 
+	private isPresentRateDebugEnabled(): boolean {
+		return Boolean((globalThis as any).__bmsx_debug_presentrate);
+	}
+
+	private recordPresentDebugHostFrame(currentTime: number): void {
+		if (!this.isPresentRateDebugEnabled()) {
+			return;
+		}
+		if (this.debugPresentReportAtMs === 0) {
+			this.debugPresentReportAtMs = currentTime;
+		}
+		this.debugPresentHostFrames += 1;
+	}
+
+	private recordPresentDebugTickCompletion(visualCommitted: boolean, vdpFrameHeld: boolean): void {
+		if (!this.isPresentRateDebugEnabled()) {
+			return;
+		}
+		this.debugPresentTickCompleted += 1;
+		if (visualCommitted) {
+			this.debugPresentTickCommitted += 1;
+		} else {
+			this.debugPresentTickDeferred += 1;
+		}
+		if (vdpFrameHeld) {
+			this.debugPresentTickHeld += 1;
+		}
+	}
+
+	private recordPresentDebugPresentation(mode: 'partial' | 'completed', commitFrame: boolean, paused: boolean): void {
+		if (!this.isPresentRateDebugEnabled()) {
+			return;
+		}
+		if (paused) {
+			this.debugPresentPausedPresents += 1;
+			return;
+		}
+		if (mode === 'partial') {
+			this.debugPresentPartialPresents += 1;
+			return;
+		}
+		if (commitFrame) {
+			this.debugPresentCommitPresents += 1;
+			return;
+		}
+		this.debugPresentHoldPresents += 1;
+	}
+
+	private flushPresentDebugReport(currentTime: number, runtime: Runtime): void {
+		if (!this.isPresentRateDebugEnabled()) {
+			return;
+		}
+		if (this.debugPresentReportAtMs === 0) {
+			this.debugPresentReportAtMs = currentTime;
+			return;
+		}
+		const elapsedMs = currentTime - this.debugPresentReportAtMs;
+		if (elapsedMs < 1000) {
+			return;
+		}
+		const scale = 1000 / elapsedMs;
+		const hostFps = this.debugPresentHostFrames * scale;
+		console.warn(
+			`[BMSX][present] host_frames=${this.debugPresentHostFrames} host_fps=${hostFps.toFixed(2)} ufps=${this.ufps.toFixed(2)} `
+			+ `tick_completed=${this.debugPresentTickCompleted} tick_committed=${this.debugPresentTickCommitted} `
+			+ `tick_deferred=${this.debugPresentTickDeferred} tick_held=${this.debugPresentTickHeld} `
+			+ `present_partial=${this.debugPresentPartialPresents} present_commit=${this.debugPresentCommitPresents} `
+			+ `present_hold=${this.debugPresentHoldPresents} present_paused=${this.debugPresentPausedPresents} `
+			+ `draw_pending=${runtime.isDrawPending ? 1 : 0} active_tick=${runtime.hasActiveTick() ? 1 : 0}`
+		);
+		this.debugPresentReportAtMs = currentTime;
+		this.debugPresentHostFrames = 0;
+		this.debugPresentTickCompleted = 0;
+		this.debugPresentTickCommitted = 0;
+		this.debugPresentTickDeferred = 0;
+		this.debugPresentTickHeld = 0;
+		this.debugPresentPartialPresents = 0;
+		this.debugPresentCommitPresents = 0;
+		this.debugPresentHoldPresents = 0;
+		this.debugPresentPausedPresents = 0;
+	}
+
 	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: 'partial' | 'completed', commitFrame = mode === 'completed'): void {
 		this.deltatime = hostDeltaMs;
 		const overlayActive = runtimeIde.isOverlayActive(runtime);
@@ -804,7 +896,9 @@ export class EngineCore {
 		runtimeIde.tickIDEDraw(runtime);
 		runtimeIde.tickTerminalModeDraw(runtime);
 		this.wasupdated = true;
-		this.view.configurePresentation(mode, commitFrame && !overlayActive);
+		const effectiveCommitFrame = commitFrame && !overlayActive;
+		this.view.configurePresentation(mode, effectiveCommitFrame);
+		this.recordPresentDebugPresentation(mode, effectiveCommitFrame, this._paused);
 		if (overlayActive) {
 			prepareOverlayRenderQueues();
 		} else if (mode === 'completed' && commitFrame) {
@@ -834,6 +928,7 @@ export class EngineCore {
 		try {
 			Input.instance.pollInput();
 			const runtime = Runtime.instance;
+			this.recordPresentDebugHostFrame(currentTime);
 			runtimeIde.tickIdeInput(runtime);
 			runtimeIde.tickTerminalInput(runtime);
 			hostDeltaMs = Math.min(currentTime - this.last_update, MAX_FRAME_DELTA);
@@ -897,6 +992,7 @@ export class EngineCore {
 					const completion = runtime.consumeLastTickCompletion();
 					slicesProcessed += 1;
 						if (completion) {
+							this.recordPresentDebugTickCompletion(completion.visualCommitted, completion.vdpFrameHeld);
 							// A completed tick reached its frame boundary; leftover budget after
 							// an IRQ frame wait belongs to that frame and must not spill into the next one.
 							this.cycleCarry = 0;
@@ -941,6 +1037,7 @@ export class EngineCore {
 				}
 			}
 		}
+		this.flushPresentDebugReport(currentTime, Runtime.instance);
 	}
 
 	/**
