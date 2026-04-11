@@ -1,4 +1,4 @@
-import { $, calcCyclesPerFrameScaled, resolveVblankCycles } from '../core/engine_core';
+import { $, calcCyclesPerFrameScaled, renderGate, resolveVblankCycles, runGate } from '../core/engine_core';
 import { taskGate } from '../core/taskgate';
 import { Input } from '../input/input';
 import type { InputMap } from '../input/inputtypes';
@@ -2746,6 +2746,9 @@ export class Runtime {
 
 	public async buildAssetMemory(params?: { source?: RawAssetSource; mode?: 'full' | 'cart' }): Promise<void> {
 		const token = this.assetMemoryGate.begin({ blocking: true, category: 'asset', tag: 'asset_memory' });
+		// Freeze runtime ticks and presentation while asset handles, VRAM slots, and textures are rebuilt.
+		const renderToken = renderGate.begin({ blocking: true, category: 'asset', tag: 'asset_memory' });
+		const runToken = runGate.begin({ blocking: true, category: 'asset', tag: 'asset_memory' });
 		try {
 			const mode = params?.mode ?? 'full';
 			const assetSource = params?.source ?? $.asset_source;
@@ -2764,6 +2767,8 @@ export class Runtime {
 			this.applyAssetHandlesToActiveLayers();
 			this.memory.markAllAssetsDirty();
 		} finally {
+			runGate.end(runToken);
+			renderGate.end(renderToken);
 			this.assetMemoryGate.end(token);
 		}
 	}
