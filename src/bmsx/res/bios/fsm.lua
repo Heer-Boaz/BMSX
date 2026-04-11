@@ -2267,20 +2267,19 @@ function state:refresh_active_frame_work()
 		return false
 	end
 	local active<const> = definition.has_local_frame_work
+	local subtree_active = active
 	local current<const> = self.current_state
 	if current ~= nil and current:refresh_active_frame_work() then
-		self.active_frame_work = true
-		return true
+		subtree_active = true
 	end
 	local concurrent_states<const> = self.concurrent_states
 	for i = 1, self.concurrent_state_count do
 		if concurrent_states[i]:refresh_active_frame_work() then
-			self.active_frame_work = true
-			return true
+			subtree_active = true
 		end
 	end
-	self.active_frame_work = active
-	return active
+	self.active_frame_work = subtree_active
+	return subtree_active
 end
 
 function state:populate_states()
