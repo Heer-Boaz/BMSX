@@ -2059,11 +2059,13 @@ export class CPU {
 	}
 
 	public haltUntilIrq(): void {
+		this.haltedUntilVblank = false;
 		this.haltedUntilIrq = true;
 		this.yieldRequested = false;
 	}
 
 	public haltUntilVblank(): void {
+		this.haltedUntilIrq = false;
 		this.haltedUntilVblank = true;
 		this.yieldRequested = false;
 	}

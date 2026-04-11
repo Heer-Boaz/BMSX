@@ -1017,6 +1017,7 @@ void Runtime::resetVblankState() {
 	m_lastCompletedVblankSequence = 0;
 	m_irqSignalSequence = 0;
 	resetHaltIrqWait();
+	resetHaltVblankWait();
 	m_vdpStatus = 0;
 	m_memory.writeValue(IO_VDP_STATUS, valueNumber(static_cast<double>(m_vdpStatus)));
 	if (m_vblankStartCycle == 0) {
@@ -1095,7 +1096,7 @@ void Runtime::enterVblank() {
 	commitFrameOnVblankEdge();
 	setVblankStatus(true);
 	signalIrq(IRQ_VBLANK);
-	if (m_frameActive && m_cpu.isHaltedUntilIrq() && m_pendingCall == PendingCall::Entry && m_cpu.getFrameDepth() == 1) {
+	if (m_frameActive && (m_cpu.isHaltedUntilIrq() || m_cpu.isHaltedUntilVblank()) && m_pendingCall == PendingCall::Entry && m_cpu.getFrameDepth() == 1) {
 		completeTickIfPending(m_frameState, m_vblankSequence);
 		m_clearBackQueuesAfterIrqWake = true;
 	}
@@ -1132,12 +1133,18 @@ void Runtime::completeTickIfPending(FrameState& frameState, uint64_t vblankSeque
 void Runtime::clearHaltUntilIrq() {
 	m_cpu.clearHaltUntilIrq();
 	resetHaltIrqWait();
+	resetHaltVblankWait();
 	m_clearBackQueuesAfterIrqWake = false;
 }
 
 void Runtime::resetHaltIrqWait() {
 	m_haltIrqWaitArmed = false;
 	m_haltIrqSignalSequence = 0;
+}
+
+void Runtime::resetHaltVblankWait() {
+	m_haltVblankWaitArmed = false;
+	m_haltVblankWaitSequence = 0;
 }
 
 bool Runtime::runHaltedUntilIrq(FrameState& frameState) {
@@ -1159,6 +1166,37 @@ bool Runtime::runHaltedUntilIrq(FrameState& frameState) {
 		if (m_irqSignalSequence != m_haltIrqSignalSequence) {
 			m_cpu.clearHaltUntilIrq();
 			resetHaltIrqWait();
+			return frameState.tickCompleted;
+		}
+		if (frameState.cycleBudgetRemaining > 0) {
+			const i64 cyclesToTarget = nextTimerDeadline() - m_schedulerNowCycles;
+			if (cyclesToTarget <= 0) {
+				runDueTimers();
+				continue;
+			}
+			const int idleCycles = static_cast<int>(std::min<i64>(frameState.cycleBudgetRemaining, cyclesToTarget));
+			frameState.cycleBudgetRemaining -= idleCycles;
+			advanceTime(idleCycles);
+			continue;
+		}
+		return true;
+	}
+}
+
+bool Runtime::runHaltedUntilVblank(FrameState& frameState) {
+	runDueTimers();
+	if (!m_cpu.isHaltedUntilVblank()) {
+		resetHaltVblankWait();
+		return false;
+	}
+	if (!m_haltVblankWaitArmed) {
+		m_haltVblankWaitSequence = m_vblankSequence;
+		m_haltVblankWaitArmed = true;
+	}
+	while (true) {
+		if (m_vblankSequence != m_haltVblankWaitSequence) {
+			m_cpu.clearHaltUntilIrq();
+			resetHaltVblankWait();
 			return frameState.tickCompleted;
 		}
 		if (frameState.cycleBudgetRemaining > 0) {
@@ -1253,7 +1291,7 @@ RunResult Runtime::runWithBudget() {
 			m_frameState.activeCpuUsedCycles += consumed;
 			advanceTime(consumed);
 		}
-		if (m_cpu.isHaltedUntilIrq() || result == RunResult::Halted) {
+		if (m_cpu.isHaltedUntilIrq() || m_cpu.isHaltedUntilVblank() || result == RunResult::Halted) {
 			break;
 		}
 		if (consumed <= 0) {
@@ -1854,7 +1892,8 @@ void Runtime::releaseValueScratch(std::vector<Value>&& values) {
 void Runtime::executeUpdateCallback() {
 	try {
 		while (true) {
-			if (m_cpu.isHaltedUntilIrq() && runHaltedUntilIrq(m_frameState)) {
+			if ((m_cpu.isHaltedUntilIrq() && runHaltedUntilIrq(m_frameState))
+				|| (m_cpu.isHaltedUntilVblank() && runHaltedUntilVblank(m_frameState))) {
 				return;
 			}
 			if (m_clearBackQueuesAfterIrqWake) {
@@ -1867,6 +1906,12 @@ void Runtime::executeUpdateCallback() {
 			RunResult result = runWithBudget();
 			if (m_cpu.isHaltedUntilIrq()) {
 				if (runHaltedUntilIrq(m_frameState)) {
+					return;
+				}
+				continue;
+			}
+			if (m_cpu.isHaltedUntilVblank()) {
+				if (runHaltedUntilVblank(m_frameState)) {
 					return;
 				}
 				continue;

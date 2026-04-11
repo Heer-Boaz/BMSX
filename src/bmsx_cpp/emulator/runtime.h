@@ -368,8 +368,10 @@ private:
 	void commitFrameOnVblankEdge();
 	void completeTickIfPending(FrameState& frameState, uint64_t vblankSequence);
 	bool runHaltedUntilIrq(FrameState& frameState);
+	bool runHaltedUntilVblank(FrameState& frameState);
 	void clearHaltUntilIrq();
 	void resetHaltIrqWait();
+	void resetHaltVblankWait();
 	void acknowledgeIrq(uint32_t mask);
 	void signalIrq(uint32_t mask);
 	RunResult runWithBudget();
@@ -516,6 +518,8 @@ private:
 	bool m_haltIrqWaitArmed = false;
 	uint64_t m_vblankSequence = 0;
 	uint64_t m_lastCompletedVblankSequence = 0;
+	bool m_haltVblankWaitArmed = false;
+	uint64_t m_haltVblankWaitSequence = 0;
 	bool m_clearBackQueuesAfterIrqWake = false;
 	bool m_vblankActive = false;
 	u32 m_vdpStatus = 0;
