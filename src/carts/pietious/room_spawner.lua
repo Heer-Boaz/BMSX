@@ -162,7 +162,7 @@ local spawn_enemies<const> = function(room)
 end
 
 function room_spawner.spawn_all_for_room(room)
-	for obj in objects_by_tag('rs') do
+	for obj in all_objects_by_tag('rs') do
 		if obj.rs_room_number ~= room.room_number then
 			obj:mark_for_disposal()
 		end
@@ -178,7 +178,7 @@ end
 
 function room_spawner.despawn_previous()
 	local i = 0
-	for obj in objects_by_tag("rs") do
+	for obj in all_objects_by_tag('rs') do
 		obj:mark_for_disposal()
 		i = i + 1
 	end
