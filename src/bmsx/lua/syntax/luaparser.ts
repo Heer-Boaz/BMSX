@@ -25,6 +25,7 @@ import type {
 	LuaFunctionDeclarationStatement,
 	LuaFunctionExpression,
 	LuaFunctionName,
+	LuaHaltUntilIrqStatement,
 	LuaIdentifierExpression,
 	LuaIfClause,
 	LuaIfStatement,
@@ -188,6 +189,8 @@ export class LuaParser {
 				return this.parseForStatement();
 			case LuaTokenType.Do:
 				return this.parseDoStatement();
+			case LuaTokenType.HaltUntilIrq:
+				return this.parseHaltUntilIrqStatement();
 			case LuaTokenType.Goto:
 				return this.parseGotoStatement();
 			default:
@@ -235,6 +238,21 @@ export class LuaParser {
 			kind: LuaSyntaxKind.GotoStatement,
 			range: this.rangeFromTokenAndToken(gotoToken, nameToken),
 			label: nameToken.lexeme,
+		};
+	}
+
+	private parseHaltUntilIrqStatement(): LuaHaltUntilIrqStatement {
+		const haltToken = this.advance();
+		if (this.match(LuaTokenType.Semicolon)) {
+			// Semicolon is optional and ignored.
+		}
+		return {
+			kind: LuaSyntaxKind.HaltUntilIrqStatement,
+			range: {
+				path: this.path,
+				start: this.positionFromToken(haltToken),
+				end: this.positionFromToken(this.previous()),
+			},
 		};
 	}
 
@@ -1369,6 +1387,8 @@ export class LuaParser {
 					visitBlock(doStatement.block, doStatement.block.range);
 					break;
 				}
+				case LuaSyntaxKind.HaltUntilIrqStatement:
+					break;
 			case LuaSyntaxKind.ForNumericStatement: {
 				const forNumeric = statement as LuaForNumericStatement;
 				pushDefinition([forNumeric.variable.name], forNumeric.variable.range, forNumeric.block.range, 'variable');

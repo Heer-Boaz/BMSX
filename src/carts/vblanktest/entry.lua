@@ -1,18 +1,18 @@
-local target = 50
+local target<const> = 50
 local vblank_count = 0
 local fail_reason = nil
 local done = false
 
-local cycles_per_frame = sys_max_cycles_per_frame
+local cycles_per_frame<const> = sys_max_cycles_per_frame
 local vblank_cycles = 0
 local full_frame_vblank = false
 
 local resolve_vblank_cycles<const> = function()
-	local render_height = cart_manifest.machine.render_size.height
+	local render_height<const> = cart_manifest.machine.render_size.height
 	if type(render_height) ~= 'number' or render_height <= 0 then
 		return nil
 	end
-	local active_display = math.floor(cycles_per_frame / (render_height + 1)) * render_height
+	local active_display<const> = math.floor(cycles_per_frame / (render_height + 1)) * render_height
 	return cycles_per_frame - active_display
 end
 
@@ -32,7 +32,7 @@ end
 local wait_for_vblank_clear<const> = function()
 	local remaining = cycles_per_frame
 	while remaining > 0 do
-		local status = mem[sys_vdp_status]
+		local status<const> = mem[sys_vdp_status]
 		if (status & sys_vdp_status_vblank) == 0 then
 			return true
 		end
@@ -45,11 +45,11 @@ local wait_for_vblank_set<const> = function()
 	local remaining = cycles_per_frame
 	local saw_irq = false
 	while remaining > 0 do
-		local status = mem[sys_vdp_status]
+		local status<const> = mem[sys_vdp_status]
 		if (status & sys_vdp_status_vblank) ~= 0 then
 			return true
 		end
-		local flags = mem[sys_irq_flags]
+		local flags<const> = mem[sys_irq_flags]
 		if (flags & irq_vblank) ~= 0 then
 			saw_irq = true
 		end
@@ -67,7 +67,7 @@ on_irq(function(flags)
 	if (flags & irq_vblank) ~= 0 then
 		vblank_count = vblank_count + 1
 
-		local status = mem[sys_vdp_status]
+		local status<const> = mem[sys_vdp_status]
 		if (status & sys_vdp_status_vblank) == 0 then
 			fail("irq_vblank seen but VDP_STATUS_VBLANK not set")
 		end
@@ -95,12 +95,12 @@ function update()
 	end
 
 	if full_frame_vblank then
-		local status = mem[sys_vdp_status]
+		local status<const> = mem[sys_vdp_status]
 		if (status & sys_vdp_status_vblank) == 0 then
 			fail("VDP_STATUS_VBLANK not set for full-frame VBLANK")
 		end
 	else
-		local status = mem[sys_vdp_status]
+		local status<const> = mem[sys_vdp_status]
 		if (status & sys_vdp_status_vblank) ~= 0 then
 			if not wait_for_vblank_clear() then
 				fail("VDP_STATUS_VBLANK never cleared")

@@ -220,7 +220,6 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'error':
 		case 'math.modf':
 		case 'math.randomseed':
-		case 'wait_vblank':
 		case 'os.time':
 			return NATIVE_COST_TIER2;
 		case 'string.find':
@@ -1518,6 +1517,7 @@ export class CPU {
 	private metadata: ProgramMetadata | null = null;
 	private readonly stringPool: StringPool;
 	private indexKey: StringValue = null;
+	private haltedUntilIrq = false;
 	private yieldRequested = false;
 	private readonly frames: CallFrame[] = [];
 	private readonly openUpvalues: OpenUpvalueSlot[] = [];
@@ -2013,6 +2013,7 @@ export class CPU {
 		this.frames.length = 0;
 		this.openUpvalues.length = 0;
 		this.stackTop = 0;
+		this.haltedUntilIrq = false;
 		this.yieldRequested = false;
 		const closure: Closure = { protoIndex: entryProtoIndex, upvalues: [] };
 		addTrackedLuaHeapBytes(16);
@@ -2027,6 +2028,7 @@ export class CPU {
 			throw new Error('Attempted to call a non-function value.');
 		}
 		this.lastReturnValues.length = 0;
+		this.haltedUntilIrq = false;
 		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, returnCount, false, this.program.protos[closure.protoIndex].entryPC);
 	}
@@ -2039,6 +2041,7 @@ export class CPU {
 			throw new Error('Attempted to call a non-function value.');
 		}
 		this.lastReturnValues.length = 0;
+		this.haltedUntilIrq = false;
 		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, 0, true, this.program.protos[closure.protoIndex].entryPC);
 	}
@@ -2049,6 +2052,20 @@ export class CPU {
 
 	public clearYieldRequest(): void {
 		this.yieldRequested = false;
+	}
+
+	public haltUntilIrq(): void {
+		this.haltedUntilIrq = true;
+		this.yieldRequested = false;
+	}
+
+	public clearHaltUntilIrq(): void {
+		this.haltedUntilIrq = false;
+		this.yieldRequested = false;
+	}
+
+	public isHaltedUntilIrq(): boolean {
+		return this.haltedUntilIrq;
 	}
 
 	public swapExternalReturnSink(sink: Value[] | null): Value[] | null {
@@ -2085,6 +2102,9 @@ export class CPU {
 		const decodedRkC = this.decodedRkC!;
 		const decodedWords = this.decodedWords!;
 		while (frames.length > targetDepth) {
+			if (this.haltedUntilIrq) {
+				return RunResult.Halted;
+			}
 			if (this.yieldRequested) {
 				this.yieldRequested = false;
 				return RunResult.Yielded;
@@ -2134,6 +2154,9 @@ export class CPU {
 	}
 
 	public step(): void {
+		if (this.haltedUntilIrq) {
+			return;
+		}
 		const frame = this.frames[this.frames.length - 1];
 		let pc = frame.pc;
 		let wordIndex = pc / INSTRUCTION_BYTES;
@@ -2441,6 +2464,9 @@ export class CPU {
 					this.setRegisterFast(frame, registers, a, this.loadTableFieldIndexCached(wordIndex, base, key));
 					return;
 				}
+				case OpCode.HALT:
+					this.haltUntilIrq();
+					return;
 				case OpCode.GETT: {
 					this.setRegisterFast(frame, registers, a, this.loadTableIndex(registers.get(b), this.readRK(frame, rkC)));
 					return;

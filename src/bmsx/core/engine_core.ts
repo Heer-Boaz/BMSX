@@ -716,7 +716,7 @@ export class EngineCore {
 			if (runtime) {
 				runtime.abandonFrameState();
 				runtime.drawFrameState = null;
-				runtime.clearWaitForVblank();
+				runtime.clearHaltUntilIrq();
 				runtime.resetVblankState();
 				runtime.overlayRenderer.abandonFrame();
 			}
@@ -898,7 +898,7 @@ export class EngineCore {
 					slicesProcessed += 1;
 						if (completion) {
 							// A completed tick reached its frame boundary; leftover budget after
-							// wait_vblank belongs to that frame and must not spill into the next one.
+							// an IRQ frame wait belongs to that frame and must not spill into the next one.
 							this.cycleCarry = 0;
 							runCompletedPresentation(completion.visualCommitted);
 						// Present the completed frame now; any catch-up continuation resumes on the next host frame.

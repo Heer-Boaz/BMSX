@@ -1314,6 +1314,7 @@ export class GeometryController {
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_REJECTED);
 		this.memory.writeValue(IO_GEO_PROCESSED, 0);
 		this.memory.writeValue(IO_GEO_FAULT, packFault(code, GEO_RECORD_INDEX_NONE));
+		this.raiseIrq(IRQ_GEO_ERROR);
 	}
 
 	private resolveIndexedSpan(base: number, index: number, stride: number, byteLength: number): number | null {

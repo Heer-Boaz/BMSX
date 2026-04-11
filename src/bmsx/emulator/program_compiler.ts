@@ -13,6 +13,7 @@ import {
 	type LuaForGenericStatement,
 	type LuaFunctionDeclarationStatement,
 	type LuaFunctionExpression,
+	type LuaHaltUntilIrqStatement,
 	type LuaIdentifierExpression,
 	type LuaIfStatement,
 	type LuaIndexExpression,
@@ -1695,6 +1696,9 @@ class FunctionBuilder {
 					}
 					this.popScope();
 					return;
+				case LuaSyntaxKind.HaltUntilIrqStatement:
+					this.compileHaltUntilIrq(statement as LuaHaltUntilIrqStatement);
+					return;
 				case LuaSyntaxKind.BreakStatement:
 					this.compileBreak();
 					return;
@@ -1843,6 +1847,10 @@ class FunctionBuilder {
 			}
 		}
 		this.tempTop = Math.max(this.tempTop, tempsBase);
+	}
+
+	private compileHaltUntilIrq(_statement: LuaHaltUntilIrqStatement): void {
+		this.emitABC(OpCode.HALT, 0, 0, 0);
 	}
 
 	private compileAssignment(statement: LuaAssignmentStatement): void {

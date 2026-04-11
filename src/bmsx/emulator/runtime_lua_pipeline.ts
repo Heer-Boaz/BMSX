@@ -91,7 +91,7 @@ const LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
 const ENGINE_BUILTIN_PRELUDE_PATH = '__engine_builtin_prelude__';
 const getRealtimeOptLevel = (runtime: Runtime): 0 | 1 | 2 | 3 =>
 	runtime.realtimeCompileOptLevel;
-const REQUIRED_ENGINE_SYSTEM_HELPERS: ReadonlyArray<string> = ['wait_vblank', 'clock_now'];
+const REQUIRED_ENGINE_SYSTEM_HELPERS: ReadonlyArray<string> = ['clock_now'];
 
 function runtimeFault(message: string): Error {
 	return new Error(`Runtime fault: ${message}`);
@@ -186,8 +186,6 @@ export function captureCurrentState(runtime: Runtime): RuntimeState {
 		skyboxFaceIds,
 		vdpDitherType,
 		cyclesIntoFrame: vblankState.cyclesIntoFrame,
-		vblankPendingClear: vblankState.vblankPendingClear,
-		vblankClearOnIrqEnd: vblankState.vblankClearOnIrqEnd,
 	};
 	if (stateSnapshot) {
 		if (stateSnapshot.globals) {
@@ -630,7 +628,7 @@ export function resetRuntimeState(runtime: Runtime): void {
 export function resetFrameState(runtime: Runtime): void {
 	runtime.currentFrameState = null;
 	runtime.drawFrameState = null;
-	runtime.clearWaitForVblank();
+	runtime.clearHaltUntilIrq();
 	runtime.pendingCarryBudget = 0;
 	runtime.lastTickCompleted = false;
 	runtime.lastTickBudgetGranted = 0;
@@ -1404,7 +1402,6 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, options?: { r
 		runtime.luaChunkEnvironmentsByPath.clear();
 		runtime.luaGenericChunksExecuted.clear();
 
-		runtime.activateCartProgramAssets();
 		const reloadPlan = buildRuntimeAssetReloadPlan(runtime);
 		await runtime.buildAssetMemory({ mode: reloadPlan.mode });
 		if (reloadPlan.sealSystemAssets) {
@@ -1413,6 +1410,7 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, options?: { r
 		await $.resetRuntime(reloadPlan.resetFreshWorldOptions);
 		await $.refresh_audio_assets();
 		try {
+			runtime.activateCartProgramAssets();
 			resetRuntimeState(runtime);
 			if (shouldBootLuaProgramFromSources(runtime)) {
 				if (runtime.preparedCartProgram) {

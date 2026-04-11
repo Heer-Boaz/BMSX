@@ -322,7 +322,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	, m_cpu(m_memory, &m_stringHandles)
 	, m_dmaController(
 			m_memory,
-			[this](uint32_t mask) { raiseIrqFlags(mask); },
+			[this](uint32_t mask) { signalIrq(mask); },
 			[this](uint32_t src, size_t byteLength) { sealVdpDmaTransfer(src, byteLength); },
 			[this]() { return currentSchedulerNowCycles(); },
 			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceDma, deadlineCycles); },
@@ -330,14 +330,14 @@ Runtime::Runtime(const RuntimeOptions& options)
 		)
 	, m_geometryController(
 			m_memory,
-			[this](uint32_t mask) { raiseIrqFlags(mask); },
+			[this](uint32_t mask) { signalIrq(mask); },
 			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceGeo, deadlineCycles); },
 			[this]() { cancelDeviceService(DeviceServiceGeo); }
 		)
 	, m_imgDecController(
 			m_memory,
 			m_dmaController,
-			[this](uint32_t mask) { raiseIrqFlags(mask); },
+			[this](uint32_t mask) { signalIrq(mask); },
 			[this]() { return currentSchedulerNowCycles(); },
 			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceImg, deadlineCycles); },
 			[this]() { cancelDeviceService(DeviceServiceImg); }
@@ -789,7 +789,7 @@ void Runtime::resetSchedulerState() {
 	m_activeSliceBudgetCycles = 0;
 	m_activeSliceTargetCycle = 0;
 	m_vblankEnterTimerGeneration = 0;
-	m_frameEndTimerGeneration = 0;
+	m_vblankEndTimerGeneration = 0;
 	m_deviceServiceTimerGeneration.fill(0);
 }
 
@@ -871,10 +871,10 @@ void Runtime::removeTopTimer() {
 
 bool Runtime::isTimerCurrent(uint8_t kind, uint8_t payload, uint32_t generation) const {
 	switch (kind) {
-		case TimerKindVblankEnter:
+		case TimerKindVblankBegin:
 			return generation == m_vblankEnterTimerGeneration;
-		case TimerKindFrameEnd:
-			return generation == m_frameEndTimerGeneration;
+		case TimerKindVblankEnd:
+			return generation == m_vblankEndTimerGeneration;
 		case TimerKindDeviceService:
 			return generation == m_deviceServiceTimerGeneration[payload];
 		default:
@@ -915,11 +915,11 @@ void Runtime::runDueTimers() {
 
 void Runtime::dispatchTimer(uint8_t kind, uint8_t payload) {
 	switch (kind) {
-		case TimerKindVblankEnter:
-			handleVblankEnterTimer();
+		case TimerKindVblankBegin:
+			handleVblankBeginTimer();
 			return;
-		case TimerKindFrameEnd:
-			handleFrameEndTimer();
+		case TimerKindVblankEnd:
+			handleVblankEndTimer();
 			return;
 		case TimerKindDeviceService:
 			runDeviceService(payload);
@@ -929,45 +929,42 @@ void Runtime::dispatchTimer(uint8_t kind, uint8_t payload) {
 	}
 }
 
-void Runtime::scheduleVblankEnterTimer(i64 deadlineCycles) {
+void Runtime::scheduleVblankBeginTimer(i64 deadlineCycles) {
 	const uint32_t generation = nextTimerGeneration(m_vblankEnterTimerGeneration);
 	m_vblankEnterTimerGeneration = generation;
-	pushTimer(deadlineCycles, TimerKindVblankEnter, 0u, generation);
+	pushTimer(deadlineCycles, TimerKindVblankBegin, 0u, generation);
 	requestYieldForEarlierDeadline(deadlineCycles);
 }
 
-void Runtime::scheduleFrameEndTimer(i64 deadlineCycles) {
-	const uint32_t generation = nextTimerGeneration(m_frameEndTimerGeneration);
-	m_frameEndTimerGeneration = generation;
-	pushTimer(deadlineCycles, TimerKindFrameEnd, 0u, generation);
+void Runtime::scheduleVblankEndTimer(i64 deadlineCycles) {
+	const uint32_t generation = nextTimerGeneration(m_vblankEndTimerGeneration);
+	m_vblankEndTimerGeneration = generation;
+	pushTimer(deadlineCycles, TimerKindVblankEnd, 0u, generation);
 	requestYieldForEarlierDeadline(deadlineCycles);
 }
 
 void Runtime::scheduleCurrentFrameTimers() {
-	scheduleFrameEndTimer(m_frameStartCycle + m_cycleBudgetPerFrame);
+	scheduleVblankEndTimer(m_frameStartCycle + m_cycleBudgetPerFrame);
 	if (m_vblankStartCycle > 0 && getCyclesIntoFrame() < m_vblankStartCycle) {
-		scheduleVblankEnterTimer(m_frameStartCycle + m_vblankStartCycle);
+		scheduleVblankBeginTimer(m_frameStartCycle + m_vblankStartCycle);
 	}
 }
 
-void Runtime::handleVblankEnterTimer() {
+void Runtime::handleVblankBeginTimer() {
 	if (!m_vblankActive) {
 		enterVblank();
 	}
 }
 
-void Runtime::handleFrameEndTimer() {
-	if (m_vblankStartCycle == 0) {
-		m_frameStartCycle = m_schedulerNowCycles;
-		scheduleCurrentFrameTimers();
-		enterVblank();
-		return;
-	}
+void Runtime::handleVblankEndTimer() {
 	if (m_vblankActive) {
-		m_vblankPendingClear = true;
+		leaveVblank();
 	}
 	m_frameStartCycle = m_schedulerNowCycles;
 	scheduleCurrentFrameTimers();
+	if (m_vblankStartCycle == 0) {
+		enterVblank();
+	}
 }
 
 void Runtime::scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles) {
@@ -1016,10 +1013,10 @@ void Runtime::runDeviceService(uint8_t deviceKind) {
 void Runtime::resetVblankState() {
 	resetSchedulerState();
 	m_vblankActive = false;
-	m_vblankPendingClear = false;
-	m_vblankClearOnIrqEnd = false;
 	m_vblankSequence = 0;
 	m_lastCompletedVblankSequence = 0;
+	m_irqSignalSequence = 0;
+	resetHaltIrqWait();
 	m_vdpStatus = 0;
 	m_memory.writeValue(IO_VDP_STATUS, valueNumber(static_cast<double>(m_vdpStatus)));
 	if (m_vblankStartCycle == 0) {
@@ -1097,7 +1094,15 @@ void Runtime::enterVblank() {
 	m_vblankSequence += 1;
 	commitFrameOnVblankEdge();
 	setVblankStatus(true);
-	raiseIrqFlags(IRQ_VBLANK);
+	signalIrq(IRQ_VBLANK);
+	if (m_frameActive && m_cpu.isHaltedUntilIrq() && m_pendingCall == PendingCall::Entry && m_cpu.getFrameDepth() == 1) {
+		completeTickIfPending(m_frameState, m_vblankSequence);
+		m_clearBackQueuesAfterIrqWake = true;
+	}
+}
+
+void Runtime::leaveVblank() {
+	setVblankStatus(false);
 }
 
 void Runtime::commitFrameOnVblankEdge() {
@@ -1105,16 +1110,6 @@ void Runtime::commitFrameOnVblankEdge() {
 	m_vdp.presentReadyFrameOnVblankEdge();
 	m_vdp.commitViewSnapshot(*EngineCore::instance().view());
 	refreshVdpSubmitBusyStatus();
-	if (!m_frameActive) {
-		return;
-	}
-	if (!m_waitingForVblank) {
-		return;
-	}
-	if (m_waitForVblankTargetSequence != 0 && m_vblankSequence < m_waitForVblankTargetSequence) {
-		return;
-	}
-	completeTickIfPending(m_frameState, m_vblankSequence);
 }
 
 void Runtime::completeTickIfPending(FrameState& frameState, uint64_t vblankSequence) {
@@ -1124,13 +1119,8 @@ void Runtime::completeTickIfPending(FrameState& frameState, uint64_t vblankSeque
 	frameState.tickCompleted = true;
 	m_lastCompletedVblankSequence = vblankSequence;
 	m_lastTickBudgetGranted = frameState.cycleBudgetGranted;
-	if (frameState.cpuStatsFrozen) {
-		m_lastTickCpuBudgetGranted = frameState.cpuStatsGrantedCycles;
-		m_lastTickCpuUsedCycles = frameState.cpuStatsUsedCycles;
-	} else {
-		m_lastTickCpuBudgetGranted = frameState.cycleBudgetGranted;
-		m_lastTickCpuUsedCycles = frameState.cycleBudgetGranted - frameState.cycleBudgetRemaining;
-	}
+	m_lastTickCpuBudgetGranted = frameState.cycleBudgetGranted;
+	m_lastTickCpuUsedCycles = frameState.activeCpuUsedCycles;
 	m_lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
 	m_lastTickVisualFrameCommitted = m_vdp.lastFrameCommitted();
 	m_lastTickVdpFrameCost = m_vdp.lastFrameCost();
@@ -1139,67 +1129,86 @@ void Runtime::completeTickIfPending(FrameState& frameState, uint64_t vblankSeque
 	m_lastTickSequence += 1;
 }
 
-void Runtime::reconcileCycleBudgetAfterSignal(FrameState& frameState) {
-	const int remaining = m_cpu.instructionBudgetRemaining;
-	const int consumed = frameState.cycleBudgetRemaining - remaining;
-	if (consumed < 0) {
-		throw runtimeFault("negative cycle reconciliation.");
-	}
-	frameState.cycleBudgetRemaining = remaining;
-	if (consumed > 0) {
-		advanceTime(consumed);
-	}
+void Runtime::clearHaltUntilIrq() {
+	m_cpu.clearHaltUntilIrq();
+	resetHaltIrqWait();
+	m_clearBackQueuesAfterIrqWake = false;
 }
 
-void Runtime::freezeTickCpuStats(FrameState& frameState) {
-	if (frameState.cpuStatsFrozen) {
-		return;
-	}
-	frameState.cpuStatsFrozen = true;
-	frameState.cpuStatsGrantedCycles = frameState.cycleBudgetGranted;
-	frameState.cpuStatsUsedCycles = frameState.cycleBudgetGranted - frameState.cycleBudgetRemaining;
+void Runtime::resetHaltIrqWait() {
+	m_haltIrqWaitArmed = false;
+	m_haltIrqSignalSequence = 0;
 }
 
-void Runtime::requestWaitForVblank() {
-	processIrqAck();
-	const bool resumeOnCurrentEdge =
-		m_vblankActive
-		&& !m_vblankPendingClear
-		&& m_vblankSequence > 0
-		&& m_lastCompletedVblankSequence != m_vblankSequence;
-	m_waitingForVblank = true;
-	const uint64_t nextVblankSequence = m_vblankSequence + 1;
-	m_waitForVblankTargetSequence = resumeOnCurrentEdge ? m_vblankSequence : nextVblankSequence;
-	if (resumeOnCurrentEdge) {
-		if (!m_frameActive) {
-			throw runtimeFault("wait_vblank resumed without an active frame state.");
+bool Runtime::runHaltedUntilIrq(FrameState& frameState) {
+	runDueTimers();
+	if (!m_cpu.isHaltedUntilIrq()) {
+		resetHaltIrqWait();
+		return false;
+	}
+	if (!m_haltIrqWaitArmed) {
+		const uint32_t pendingFlags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
+		if (pendingFlags != 0u) {
+			m_cpu.clearHaltUntilIrq();
+			return frameState.tickCompleted;
 		}
-		reconcileCycleBudgetAfterSignal(m_frameState);
-		freezeTickCpuStats(m_frameState);
-		completeTickIfPending(m_frameState, m_vblankSequence);
+		m_haltIrqSignalSequence = m_irqSignalSequence;
+		m_haltIrqWaitArmed = true;
 	}
-	m_cpu.requestYield();
+	while (true) {
+		if (m_irqSignalSequence != m_haltIrqSignalSequence) {
+			m_cpu.clearHaltUntilIrq();
+			resetHaltIrqWait();
+			return frameState.tickCompleted;
+		}
+		if (frameState.cycleBudgetRemaining > 0) {
+			const i64 cyclesToTarget = nextTimerDeadline() - m_schedulerNowCycles;
+			if (cyclesToTarget <= 0) {
+				runDueTimers();
+				continue;
+			}
+			const int idleCycles = static_cast<int>(std::min<i64>(frameState.cycleBudgetRemaining, cyclesToTarget));
+			frameState.cycleBudgetRemaining -= idleCycles;
+			advanceTime(idleCycles);
+			continue;
+		}
+		return true;
+	}
 }
 
-void Runtime::raiseIrqFlags(uint32_t mask) {
+void Runtime::signalIrq(uint32_t mask) {
 	const uint32_t current = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
-	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(current | mask)));
+	const uint32_t next = current | mask;
+	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(next)));
+	if (next != current) {
+		m_irqSignalSequence += 1;
+	}
 }
 
-void Runtime::processIrqAck() {
-	const uint32_t ack = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_ACK)));
+void Runtime::acknowledgeIrq(uint32_t mask) {
+	const uint32_t ack = mask;
 	if (ack == 0u) {
+		m_handlingIrqAckWrite = true;
+		try {
+			m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
+		} catch (...) {
+			m_handlingIrqAckWrite = false;
+			throw;
+		}
+		m_handlingIrqAckWrite = false;
 		return;
 	}
 	uint32_t flags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
 	flags &= ~ack;
 	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(flags)));
-	m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
-	if ((ack & IRQ_VBLANK) != 0u && m_vblankPendingClear) {
-		setVblankStatus(false);
-		m_vblankPendingClear = false;
-		m_vblankClearOnIrqEnd = false;
+	m_handlingIrqAckWrite = true;
+	try {
+		m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
+	} catch (...) {
+		m_handlingIrqAckWrite = false;
+		throw;
 	}
+	m_handlingIrqAckWrite = false;
 }
 
 void Runtime::raiseEngineIrq(uint32_t mask) {
@@ -1211,7 +1220,7 @@ void Runtime::raiseEngineIrq(uint32_t mask) {
 	if (unsupported != 0u) {
 		throw runtimeFault("unsupported engine IRQ mask " + std::to_string(unsupported) + ".");
 	}
-	raiseIrqFlags(mask);
+	signalIrq(mask);
 }
 
 RunResult Runtime::runWithBudget() {
@@ -1241,9 +1250,10 @@ RunResult Runtime::runWithBudget() {
 		const int consumed = sliceBudget - sliceRemaining;
 		if (consumed > 0) {
 			remaining -= consumed;
+			m_frameState.activeCpuUsedCycles += consumed;
 			advanceTime(consumed);
 		}
-		if (m_waitingForVblank || result == RunResult::Halted) {
+		if (m_cpu.isHaltedUntilIrq() || result == RunResult::Halted) {
 			break;
 		}
 		if (consumed <= 0) {
@@ -1394,7 +1404,11 @@ void Runtime::tickTerminalModeDraw() {
 }
 
 void Runtime::onIoWrite(uint32_t addr, Value value) {
-	if (m_handlingVdpCommandWrite || !valueIsNumber(value)) {
+	if ((m_handlingVdpCommandWrite || m_handlingIrqAckWrite) || !valueIsNumber(value)) {
+		return;
+	}
+	if (addr == IO_IRQ_ACK) {
+		acknowledgeIrq(static_cast<uint32_t>(asNumber(value)));
 		return;
 	}
 	if (addr == IO_DMA_CTRL) {
@@ -1479,10 +1493,7 @@ void Runtime::requestProgramReload() {
 void Runtime::resetFrameState() {
 	m_frameActive = false;
 	m_frameState = FrameState{};
-	m_cpu.clearYieldRequest();
-	m_waitingForVblank = false;
-	m_waitForVblankTargetSequence = 0;
-	m_clearBackQueuesAfterWaitResume = false;
+	clearHaltUntilIrq();
 	m_pendingCarryBudget = 0;
 	m_lastTickBudgetGranted = 0;
 	m_lastTickCpuBudgetGranted = 0;
@@ -1513,8 +1524,6 @@ RuntimeState Runtime::captureCurrentState() const {
 	state.skyboxFaceIds = m_vdp.skyboxFaceIds();
 	state.vdpDitherType = m_vdp.getDitherType();
 	state.cyclesIntoFrame = getCyclesIntoFrame();
-	state.vblankPendingClear = m_vblankPendingClear;
-	state.vblankClearOnIrqEnd = m_vblankClearOnIrqEnd;
 	return state;
 }
 
@@ -1523,16 +1532,15 @@ void Runtime::applyState(const RuntimeState& state) {
 	m_memory.loadIoSlots(state.ioMemory);
 	m_geometryController.normalizeAfterStateRestore();
 	m_vdp.syncRegisters();
+	clearHaltUntilIrq();
 	resetSchedulerState();
 	m_schedulerNowCycles = state.cyclesIntoFrame;
 	m_frameStartCycle = 0;
 	m_vdpStatus = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_STATUS)));
 	m_vdpStatus &= ~VDP_STATUS_VBLANK;
 	m_vblankActive = false;
-	m_vblankPendingClear = state.vblankPendingClear;
-	m_vblankClearOnIrqEnd = state.vblankClearOnIrqEnd;
+	m_irqSignalSequence = 0;
 	const bool vblankActive = (m_vblankStartCycle == 0)
-		|| m_vblankPendingClear
 		|| (getCyclesIntoFrame() >= m_vblankStartCycle);
 	setVblankStatus(vblankActive);
 	scheduleCurrentFrameTimers();
@@ -1845,69 +1853,34 @@ void Runtime::releaseValueScratch(std::vector<Value>&& values) {
 
 void Runtime::executeUpdateCallback() {
 	try {
-		if (m_waitingForVblank) {
-			runDueTimers();
-			processIrqAck();
-			if (m_waitForVblankTargetSequence == 0) {
-				m_cpu.clearYieldRequest();
-				m_waitingForVblank = false;
-				m_clearBackQueuesAfterWaitResume = false;
-			} else {
-				if (m_vblankPendingClear && m_vblankActive && m_vblankSequence < m_waitForVblankTargetSequence) {
-					setVblankStatus(false);
-					m_vblankPendingClear = false;
-					m_vblankClearOnIrqEnd = false;
-				}
-				if (m_vblankSequence < m_waitForVblankTargetSequence) {
-					if (m_frameState.cycleBudgetRemaining > 0) {
-						const i64 cyclesToTarget = nextTimerDeadline() - m_schedulerNowCycles;
-						const int idleCycles = static_cast<int>(std::min<i64>(m_frameState.cycleBudgetRemaining, cyclesToTarget));
-						m_frameState.cycleBudgetRemaining -= idleCycles;
-						advanceTime(idleCycles);
-						runDueTimers();
-						processIrqAck();
-					}
-					if (m_vblankSequence < m_waitForVblankTargetSequence) {
-						return;
-					}
-				}
-				m_cpu.clearYieldRequest();
-				m_waitingForVblank = false;
-				m_waitForVblankTargetSequence = 0;
-				// Clear queues on the next runnable slice after the completed frame was presented.
-				m_clearBackQueuesAfterWaitResume = true;
-				if (m_frameState.tickCompleted) {
+		while (true) {
+			if (m_cpu.isHaltedUntilIrq() && runHaltedUntilIrq(m_frameState)) {
+				return;
+			}
+			if (m_clearBackQueuesAfterIrqWake) {
+				RenderQueues::clearBackQueues();
+				m_clearBackQueuesAfterIrqWake = false;
+			}
+			if (!hasEntryContinuation()) {
+				return;
+			}
+			RunResult result = runWithBudget();
+			if (m_cpu.isHaltedUntilIrq()) {
+				if (runHaltedUntilIrq(m_frameState)) {
 					return;
 				}
+				continue;
 			}
-		}
-		if (m_clearBackQueuesAfterWaitResume) {
-			RenderQueues::clearBackQueues();
-			m_clearBackQueuesAfterWaitResume = false;
-		}
-		processIrqAck();
-		if (!hasEntryContinuation()) {
+			if (result == RunResult::Halted) {
+				m_pendingCall = PendingCall::None;
+			}
 			return;
-		}
-		RunResult result = runWithBudget();
-		if (m_waitingForVblank) {
-			reconcileCycleBudgetAfterSignal(m_frameState);
-			freezeTickCpuStats(m_frameState);
-			processIrqAck();
-			return;
-		}
-		processIrqAck();
-		if (result == RunResult::Halted) {
-			m_pendingCall = PendingCall::None;
 		}
 	} catch (const std::exception& e) {
 		std::cerr << "Runtime fault: " << e.what() << std::endl;
 		logDebugState();
 		logLuaCallStack();
-		m_cpu.clearYieldRequest();
-		m_waitingForVblank = false;
-		m_waitForVblankTargetSequence = 0;
-		m_clearBackQueuesAfterWaitResume = false;
+		clearHaltUntilIrq();
 		m_pendingCall = PendingCall::None;
 		m_frameActive = false;
 		m_runtimeFailed = true;

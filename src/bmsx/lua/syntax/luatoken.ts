@@ -50,6 +50,7 @@ export const enum LuaTokenType {
 	For,
 	Function,
 	Goto,
+	HaltUntilIrq,
 	If,
 	In,
 	Local,
@@ -99,6 +100,8 @@ export function resolveKeyword(identifier: string): LuaTokenType {
 			return LuaTokenType.Function;
 		case 'goto':
 			return LuaTokenType.Goto;
+		case 'halt_until_irq':
+			return LuaTokenType.HaltUntilIrq;
 		case 'if':
 			return LuaTokenType.If;
 		case 'in':
@@ -138,6 +141,7 @@ export const KEYWORDS = new Set([
 	'for',
 	'function',
 	'goto',
+	'halt_until_irq',
 	'if',
 	'in',
 	'local',

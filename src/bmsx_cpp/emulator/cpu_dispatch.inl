@@ -122,6 +122,11 @@ DISPATCH_LABEL(SELF) {
 	DISPATCH_CONTINUE();
 }
 
+DISPATCH_LABEL(HALT) {
+	haltUntilIrq();
+	DISPATCH_CONTINUE();
+}
+
 DISPATCH_LABEL(GETT) {
 	const Value& tableValue = REG(b);
 	const Value& key = readRK(FRAME, rkC);

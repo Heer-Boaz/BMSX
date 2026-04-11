@@ -80,6 +80,7 @@ const char* opCodeName(OpCode op) {
 		case OpCode::GETFIELD: return "GETFIELD";
 		case OpCode::SETFIELD: return "SETFIELD";
 		case OpCode::SELF: return "SELF";
+		case OpCode::HALT: return "HALT";
 		case OpCode::GETT: return "GETT";
 		case OpCode::SETT: return "SETT";
 		case OpCode::NEWT: return "NEWT";
@@ -414,6 +415,8 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "STORE_MEM r" + std::to_string(decoded.a) + ", " + formatRKOperand(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB);
 		case OpCode::STORE_MEM_WORDS:
 			return "STORE_MEM_WORDS r" + std::to_string(decoded.a) + ", " + formatRKOperand(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB) + ", " + std::to_string(decoded.c);
+		case OpCode::HALT:
+			return "HALT";
 		case OpCode::WIDE:
 			break;
 	}
@@ -527,6 +530,8 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 			return {registerOperand("src", decoded.a), rkOperand("addr", program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB)};
 		case OpCode::STORE_MEM_WORDS:
 			return {registerOperand("src_base", decoded.a), rkOperand("addr", program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB), plainOperand("count", std::to_string(decoded.c))};
+		case OpCode::HALT:
+			return {};
 		case OpCode::WIDE:
 			break;
 	}

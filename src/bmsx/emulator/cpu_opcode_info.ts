@@ -62,6 +62,7 @@ export const enum OpCode {
 	GETFIELD,
 	SETFIELD,
 	SELF,
+	HALT,
 }
 
 export const OPCODE_COUNT = 64;
@@ -130,6 +131,7 @@ export const OPCODE = {
 	GETFIELD: OpCode.GETFIELD,
 	SETFIELD: OpCode.SETFIELD,
 	SELF: OpCode.SELF,
+	HALT: OpCode.HALT,
 } as const;
 
 export const OPCODE_NAMES: ReadonlyArray<string> = [
@@ -196,7 +198,7 @@ export const OPCODE_NAMES: ReadonlyArray<string> = [
 	'GETFIELD',
 	'SETFIELD',
 	'SELF',
-	'OP_63',
+	'HALT',
 ];
 
 export const BASE_CYCLES = new Uint8Array([
@@ -243,6 +245,7 @@ export const OPCODE_CATEGORY: ReadonlyArray<string> = (() => {
 	for (const op of [OpCode.CALL, OpCode.RET]) {
 		categories[op] = 'call/return';
 	}
+	categories[OpCode.HALT] = 'sleep/halt';
 	for (const op of [OpCode.LOAD_MEM, OpCode.STORE_MEM, OpCode.STORE_MEM_WORDS]) {
 		categories[op] = 'memory I/O';
 	}

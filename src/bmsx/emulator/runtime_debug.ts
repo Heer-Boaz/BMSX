@@ -6,32 +6,10 @@ import type { LuaSourceRecord } from './lua_sources';
 import type { Runtime } from './runtime';
 import { getWorkspaceCachedSource } from './workspace_cache';
 import { isStringValue, stringValueToString } from './string_pool';
+import { KEYWORDS } from '../lua/syntax/luatoken';
 
 const DEBUG_EXPR_PATTERN = /\b[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*\b/g;
 const MAX_DEBUG_EXPRESSIONS = 8;
-const LUA_KEYWORDS = new Set([
-	'and',
-	'break',
-	'do',
-	'else',
-	'elseif',
-	'end',
-	'false',
-	'for',
-	'function',
-	'if',
-	'in',
-	'local',
-	'nil',
-	'not',
-	'or',
-	'repeat',
-	'return',
-	'then',
-	'true',
-	'until',
-	'while',
-]);
 
 function comparePosition(line: number, column: number, otherLine: number, otherColumn: number): number {
 	if (line < otherLine) {
@@ -86,7 +64,7 @@ function extractExpressionCandidates(range: SourceRange, sourceText: string): st
 	const result: string[] = [];
 	for (let index = 0; index < matches.length; index += 1) {
 		const expression = matches[index];
-		if (LUA_KEYWORDS.has(expression)) {
+		if (KEYWORDS.has(expression)) {
 			continue;
 		}
 		if (seen.has(expression)) {

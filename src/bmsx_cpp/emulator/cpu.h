@@ -789,6 +789,7 @@ enum class OpCode : uint8_t {
 	GETFIELD,
 	SETFIELD,
 	SELF,
+	HALT,
 };
 
 enum class MemoryAccessKind : uint8_t {
@@ -997,6 +998,9 @@ public:
 	NativeResults* swapExternalReturnSink(NativeResults* sink);
 	void requestYield();
 	void clearYieldRequest();
+	void haltUntilIrq();
+	void clearHaltUntilIrq();
+	bool isHaltedUntilIrq() const { return m_haltedUntilIrq; }
 	RunResult run(int instructionBudget);
 	RunResult runUntilDepth(int targetDepth, int instructionBudget);
 	void unwindToDepth(int targetDepth);
@@ -1070,6 +1074,7 @@ private:
 	ProgramMetadata* m_metadata = nullptr;
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
 	std::vector<OpenUpvalueSlot> m_openUpvalues;
+	bool m_haltedUntilIrq = false;
 	bool m_yieldRequested = false;
 	Memory& m_memory;
 	StringPool m_stringPool;

@@ -27,6 +27,7 @@ const std::unordered_set<std::string> LUA_KEYWORDS = {
 	"false",
 	"for",
 	"function",
+	"halt_until_irq",
 	"if",
 	"in",
 	"local",

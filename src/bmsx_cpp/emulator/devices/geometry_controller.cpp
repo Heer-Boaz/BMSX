@@ -1212,6 +1212,7 @@ void GeometryController::finishRejected(uint32_t code) {
 	writeRegister(IO_GEO_STATUS, GEO_STATUS_REJECTED);
 	writeRegister(IO_GEO_PROCESSED, 0u);
 	writeRegister(IO_GEO_FAULT, packFault(code, GEO_RECORD_INDEX_NONE));
+	m_raiseIrq(IRQ_GEO_ERROR);
 }
 
 std::optional<uint32_t> GeometryController::resolveIndexedSpan(uint32_t base, uint32_t index, uint32_t stride, uint32_t byteLength) const {

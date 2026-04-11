@@ -128,8 +128,6 @@ export type RuntimeState = {
 	skyboxFaceIds?: SkyboxImageIds | null;
 	vdpDitherType?: number;
 	cyclesIntoFrame: number;
-	vblankPendingClear: boolean;
-	vblankClearOnIrqEnd: boolean;
 };
 
 export type LuaMarshalContext = {

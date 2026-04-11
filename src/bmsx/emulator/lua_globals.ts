@@ -81,10 +81,6 @@ import {
 	GEO_SAT_META_SHAPE_SHIFT,
 	GEO_SAT_META_SHAPE_SRC,
 	GEO_SHAPE_CONVEX_POLY,
-	GEO_STATUS_BUSY,
-	GEO_STATUS_DONE,
-	GEO_STATUS_ERROR,
-	GEO_STATUS_REJECTED,
 	IMG_CTRL_START,
 	IMG_STATUS_BUSY,
 	IMG_STATUS_CLIPPED,
@@ -121,7 +117,6 @@ import {
 	IO_GEO_SRC0,
 	IO_GEO_SRC1,
 	IO_GEO_SRC2,
-	IO_GEO_STATUS,
 	IO_GEO_STRIDE0,
 	IO_GEO_STRIDE1,
 	IO_GEO_STRIDE2,
@@ -1192,7 +1187,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_count', IO_GEO_COUNT);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd', IO_GEO_CMD);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_ctrl', IO_GEO_CTRL);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_status', IO_GEO_STATUS);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_param0', IO_GEO_PARAM0);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_param1', IO_GEO_PARAM1);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_stride0', IO_GEO_STRIDE0);
@@ -1304,10 +1298,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'dma_status_rejected', DMA_STATUS_REJECTED);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_ctrl_start', GEO_CTRL_START);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_ctrl_abort', GEO_CTRL_ABORT);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_status_busy', GEO_STATUS_BUSY);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_status_done', GEO_STATUS_DONE);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_status_error', GEO_STATUS_ERROR);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_status_rejected', GEO_STATUS_REJECTED);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd_xform2_batch', IO_CMD_GEO_XFORM2_BATCH);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd_sat2_batch', IO_CMD_GEO_SAT2_BATCH);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd_overlap2d_pass', IO_CMD_GEO_OVERLAP2D_PASS);
@@ -1368,9 +1358,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		bitcastView.setUint32(0, lo, true);
 		bitcastView.setUint32(4, hi, true);
 		out.push(bitcastView.getFloat64(0, true));
-	}));
-	runtimeLuaPipeline.registerGlobal(runtime, 'wait_vblank', createNativeFunction('wait_vblank', (_args, _out) => {
-		runtime.requestWaitForVblank();
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'clock_now', createNativeFunction('clock_now', (_args, out) => {
 		out.push($.platform.clock.now());

@@ -1487,7 +1487,6 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_geo_count", valueNumber(static_cast<double>(IO_GEO_COUNT)));
 	setGlobal("sys_geo_cmd", valueNumber(static_cast<double>(IO_GEO_CMD)));
 	setGlobal("sys_geo_ctrl", valueNumber(static_cast<double>(IO_GEO_CTRL)));
-	setGlobal("sys_geo_status", valueNumber(static_cast<double>(IO_GEO_STATUS)));
 	setGlobal("sys_geo_param0", valueNumber(static_cast<double>(IO_GEO_PARAM0)));
 	setGlobal("sys_geo_param1", valueNumber(static_cast<double>(IO_GEO_PARAM1)));
 	setGlobal("sys_geo_stride0", valueNumber(static_cast<double>(IO_GEO_STRIDE0)));
@@ -1546,10 +1545,6 @@ void Runtime::setupBuiltins() {
 	setGlobal("dma_status_rejected", valueNumber(static_cast<double>(DMA_STATUS_REJECTED)));
 	setGlobal("sys_geo_ctrl_start", valueNumber(static_cast<double>(GEO_CTRL_START)));
 	setGlobal("sys_geo_ctrl_abort", valueNumber(static_cast<double>(GEO_CTRL_ABORT)));
-	setGlobal("sys_geo_status_busy", valueNumber(static_cast<double>(GEO_STATUS_BUSY)));
-	setGlobal("sys_geo_status_done", valueNumber(static_cast<double>(GEO_STATUS_DONE)));
-	setGlobal("sys_geo_status_error", valueNumber(static_cast<double>(GEO_STATUS_ERROR)));
-	setGlobal("sys_geo_status_rejected", valueNumber(static_cast<double>(GEO_STATUS_REJECTED)));
 	setGlobal("sys_geo_cmd_xform2_batch", valueNumber(static_cast<double>(IO_CMD_GEO_XFORM2_BATCH)));
 	setGlobal("sys_geo_cmd_sat2_batch", valueNumber(static_cast<double>(IO_CMD_GEO_SAT2_BATCH)));
 	setGlobal("sys_geo_cmd_xform3_batch", valueNumber(static_cast<double>(IO_CMD_GEO_XFORM3_BATCH)));
@@ -1605,11 +1600,6 @@ void Runtime::setupBuiltins() {
 		out.push_back(valueNumber(value));
 	});
 
-	registerNativeFunction("wait_vblank", [this](NativeArgsView args, NativeResults& out) {
-		(void)args;
-		(void)out;
-		requestWaitForVblank();
-	});
 	registerNativeFunction("clock_now", [](NativeArgsView args, NativeResults& out) {
 		(void)args;
 		out.push_back(valueNumber(EngineCore::instance().clock()->now()));

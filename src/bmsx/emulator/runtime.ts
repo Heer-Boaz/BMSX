@@ -207,9 +207,7 @@ type FrameState = {
 	cycleBudgetRemaining: number;
 	cycleBudgetGranted: number;
 	cycleCarryGranted: number;
-	cpuStatsFrozen: boolean;
-	cpuStatsUsedCycles: number;
-	cpuStatsGrantedCycles: number;
+	activeCpuUsedCycles: number;
 };
 
 type EditorViewOptionsSnapshot = {
@@ -220,8 +218,8 @@ type ProgramSource = 'engine' | 'cart';
 type RuntimeAssetCollectionKey = 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents';
 type RuntimeLayerLookup = Partial<Record<CartridgeLayerId, RuntimeAssetLayer>>;
 
-const TIMER_KIND_VBLANK_ENTER = 1;
-const TIMER_KIND_FRAME_END = 2;
+const TIMER_KIND_VBLANK_BEGIN = 1;
+const TIMER_KIND_VBLANK_END = 2;
 const TIMER_KIND_DEVICE_SERVICE = 3;
 const DEVICE_SERVICE_GEO = 1;
 const DEVICE_SERVICE_DMA = 2;
@@ -627,9 +625,10 @@ export class Runtime {
 			const consumed = sliceBudget - sliceRemaining;
 			if (consumed > 0) {
 				remaining -= consumed;
+				state.activeCpuUsedCycles += consumed;
 				this.advanceTime(consumed);
 			}
-			if (this.waitingForVblank || result === RunResult.Halted) {
+			if (this.cpu.isHaltedUntilIrq() || result === RunResult.Halted) {
 				break;
 			}
 			if (consumed <= 0) {
@@ -703,7 +702,7 @@ export class Runtime {
 		this.activeSliceBudgetCycles = 0;
 		this.activeSliceTargetCycle = 0;
 		this.vblankEnterTimerGeneration = 0;
-		this.frameEndTimerGeneration = 0;
+		this.vblankEndTimerGeneration = 0;
 		this.deviceServiceTimerGeneration.fill(0);
 	}
 
@@ -785,10 +784,10 @@ export class Runtime {
 
 	private isTimerCurrent(kind: number, payload: number, generation: number): boolean {
 		switch (kind) {
-			case TIMER_KIND_VBLANK_ENTER:
+			case TIMER_KIND_VBLANK_BEGIN:
 				return generation === this.vblankEnterTimerGeneration;
-			case TIMER_KIND_FRAME_END:
-				return generation === this.frameEndTimerGeneration;
+			case TIMER_KIND_VBLANK_END:
+				return generation === this.vblankEndTimerGeneration;
 			case TIMER_KIND_DEVICE_SERVICE:
 				return generation === this.deviceServiceTimerGeneration[payload];
 			default:
@@ -829,11 +828,11 @@ export class Runtime {
 
 	private dispatchTimer(kind: number, payload: number): void {
 		switch (kind) {
-			case TIMER_KIND_VBLANK_ENTER:
-				this.handleVblankEnterTimer();
+			case TIMER_KIND_VBLANK_BEGIN:
+				this.handleVblankBeginTimer();
 				return;
-			case TIMER_KIND_FRAME_END:
-				this.handleFrameEndTimer();
+			case TIMER_KIND_VBLANK_END:
+				this.handleVblankEndTimer();
 				return;
 			case TIMER_KIND_DEVICE_SERVICE:
 				this.runDeviceService(payload);
@@ -843,45 +842,42 @@ export class Runtime {
 		}
 	}
 
-	private scheduleVblankEnterTimer(deadlineCycles: number): void {
+	private scheduleVblankBeginTimer(deadlineCycles: number): void {
 		const generation = this.nextTimerGeneration(this.vblankEnterTimerGeneration);
 		this.vblankEnterTimerGeneration = generation;
-		this.pushTimer(deadlineCycles, TIMER_KIND_VBLANK_ENTER, 0, generation);
+		this.pushTimer(deadlineCycles, TIMER_KIND_VBLANK_BEGIN, 0, generation);
 		this.requestYieldForEarlierDeadline(deadlineCycles);
 	}
 
-	private scheduleFrameEndTimer(deadlineCycles: number): void {
-		const generation = this.nextTimerGeneration(this.frameEndTimerGeneration);
-		this.frameEndTimerGeneration = generation;
-		this.pushTimer(deadlineCycles, TIMER_KIND_FRAME_END, 0, generation);
+	private scheduleVblankEndTimer(deadlineCycles: number): void {
+		const generation = this.nextTimerGeneration(this.vblankEndTimerGeneration);
+		this.vblankEndTimerGeneration = generation;
+		this.pushTimer(deadlineCycles, TIMER_KIND_VBLANK_END, 0, generation);
 		this.requestYieldForEarlierDeadline(deadlineCycles);
 	}
 
 	private scheduleCurrentFrameTimers(): void {
-		this.scheduleFrameEndTimer(this.frameStartCycle + this.cycleBudgetPerFrame);
+		this.scheduleVblankEndTimer(this.frameStartCycle + this.cycleBudgetPerFrame);
 		if (this.vblankStartCycle > 0 && this.getCyclesIntoFrame() < this.vblankStartCycle) {
-			this.scheduleVblankEnterTimer(this.frameStartCycle + this.vblankStartCycle);
+			this.scheduleVblankBeginTimer(this.frameStartCycle + this.vblankStartCycle);
 		}
 	}
 
-	private handleVblankEnterTimer(): void {
+	private handleVblankBeginTimer(): void {
 		if (!this.vblankActive) {
 			this.enterVblank();
 		}
 	}
 
-	private handleFrameEndTimer(): void {
-		if (this.vblankStartCycle === 0) {
-			this.frameStartCycle = this.schedulerNowCycles;
-			this.scheduleCurrentFrameTimers();
-			this.enterVblank();
-			return;
-		}
+	private handleVblankEndTimer(): void {
 		if (this.vblankActive) {
-			this.vblankPendingClear = true;
+			this.leaveVblank();
 		}
 		this.frameStartCycle = this.schedulerNowCycles;
 		this.scheduleCurrentFrameTimers();
+		if (this.vblankStartCycle === 0) {
+			this.enterVblank();
+		}
 	}
 
 	private scheduleDeviceService(deviceKind: number, deadlineCycles: number): void {
@@ -1052,10 +1048,10 @@ export class Runtime {
 	public resetVblankState(): void {
 		this.resetSchedulerState();
 		this.vblankActive = false;
-		this.vblankPendingClear = false;
-		this.vblankClearOnIrqEnd = false;
 		this.vblankSequence = 0;
 		this.lastCompletedVblankSequence = 0;
+		this.irqSignalSequence = 0;
+		this.resetHaltIrqWait();
 		this.vdpStatus = 0;
 		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
 		if (this.vblankStartCycle === 0) {
@@ -1145,41 +1141,27 @@ export class Runtime {
 		this.vblankSequence += 1;
 		this.commitFrameOnVblankEdge();
 		this.setVblankStatus(true);
-		this.raiseIrqFlags(IRQ_VBLANK);
-	}
-
-	public requestWaitForVblank(): void {
-		this.processIrqAck();
-		this.waitingForVblank = true;
-		const resumeOnCurrentEdge =
-			this.vblankActive
-			&& !this.vblankPendingClear
-			&& this.vblankSequence > 0
-			&& this.lastCompletedVblankSequence !== this.vblankSequence;
-		const nextVblankSequence = this.vblankSequence + 1;
-		// Only reuse the current VBLANK edge when this tick has not already completed
-		// on that same edge. Otherwise fast carts can "re-wait" the current VBLANK and
-		// effectively skip the next frame boundary.
-		this.waitForVblankTargetSequence = resumeOnCurrentEdge
-			? this.vblankSequence
-			: nextVblankSequence;
-		if (resumeOnCurrentEdge) {
-			const frameState = this.currentFrameState;
-			if (frameState === null) {
-				throw runtimeFault('wait_vblank resumed without an active frame state.');
-			}
-			this.reconcileCycleBudgetAfterSignal(frameState);
-			this.freezeTickCpuStats(frameState);
+		this.signalIrq(IRQ_VBLANK);
+		const frameState = this.currentFrameState;
+		if (frameState !== null && this.isFrameBoundaryHalt()) {
 			this.completeTickIfPending(frameState, this.vblankSequence);
+			this.clearBackQueuesAfterIrqWake = true;
 		}
-		this.cpu.requestYield();
 	}
 
-	public clearWaitForVblank(): void {
-		this.cpu.clearYieldRequest();
-		this.waitingForVblank = false;
-		this.waitForVblankTargetSequence = 0;
-		this.clearBackQueuesAfterWaitResume = false;
+	private leaveVblank(): void {
+		this.setVblankStatus(false);
+	}
+
+	public clearHaltUntilIrq(): void {
+		this.cpu.clearHaltUntilIrq();
+		this.resetHaltIrqWait();
+		this.clearBackQueuesAfterIrqWake = false;
+	}
+
+	private resetHaltIrqWait(): void {
+		this.haltIrqWaitArmed = false;
+		this.haltIrqSignalSequence = 0;
 	}
 
 	private commitFrameOnVblankEdge(): void {
@@ -1187,17 +1169,6 @@ export class Runtime {
 		this.vdp.presentReadyFrameOnVblankEdge();
 		this.vdp.commitViewSnapshot();
 		this.refreshVdpSubmitBusyStatus();
-		const frameState = this.currentFrameState;
-		if (frameState === null) {
-			return;
-		}
-		if (!this.waitingForVblank) {
-			return;
-		}
-		if (this.waitForVblankTargetSequence !== 0 && this.vblankSequence < this.waitForVblankTargetSequence) {
-			return;
-		}
-		this.completeTickIfPending(frameState, this.vblankSequence);
 	}
 
 	private completeTickIfPending(frameState: FrameState, vblankSequence: number): void {
@@ -1206,14 +1177,8 @@ export class Runtime {
 		}
 		frameState.tickCompleted = true;
 		this.lastTickBudgetGranted = frameState.cycleBudgetGranted;
-		if (frameState.cpuStatsFrozen) {
-			this.lastTickCpuBudgetGranted = frameState.cpuStatsGrantedCycles;
-			this.lastTickCpuUsedCycles = frameState.cpuStatsUsedCycles;
-		}
-		else {
-			this.lastTickCpuBudgetGranted = frameState.cycleBudgetGranted;
-			this.lastTickCpuUsedCycles = frameState.cycleBudgetGranted - frameState.cycleBudgetRemaining;
-		}
+		this.lastTickCpuBudgetGranted = frameState.cycleBudgetGranted;
+		this.lastTickCpuUsedCycles = frameState.activeCpuUsedCycles;
 		this.lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
 		this.lastTickVisualFrameCommitted = this.vdp.lastFrameCommitted;
 		this.lastTickVdpFrameCost = this.vdp.lastFrameCost;
@@ -1223,7 +1188,7 @@ export class Runtime {
 		this.lastCompletedVblankSequence = vblankSequence;
 		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
 		if (debugTickRate) {
-			const cyclesUsed = frameState.cycleBudgetGranted - frameState.cycleBudgetRemaining;
+			const cyclesUsed = frameState.activeCpuUsedCycles;
 			const yieldsThisFrame = this.debugCycleYieldsTotal - this.debugTickYieldsBefore;
 			this.debugFrameCount += 1;
 			this.debugFrameCyclesUsedAcc += cyclesUsed;
@@ -1253,24 +1218,21 @@ export class Runtime {
 		}
 	}
 
-	public captureVblankState(): { cyclesIntoFrame: number; vblankPendingClear: boolean; vblankClearOnIrqEnd: boolean } {
+	public captureVblankState(): { cyclesIntoFrame: number } {
 		return {
 			cyclesIntoFrame: this.getCyclesIntoFrame(),
-			vblankPendingClear: this.vblankPendingClear,
-			vblankClearOnIrqEnd: this.vblankClearOnIrqEnd,
 		};
 	}
 
-	public restoreVblankState(state: { cyclesIntoFrame: number; vblankPendingClear: boolean; vblankClearOnIrqEnd: boolean }): void {
+	public restoreVblankState(state: { cyclesIntoFrame: number }): void {
+		this.clearHaltUntilIrq();
 		this.resetSchedulerState();
 		this.schedulerNowCycles = state.cyclesIntoFrame;
 		this.frameStartCycle = 0;
-		this.vblankPendingClear = state.vblankPendingClear;
-		this.vblankClearOnIrqEnd = state.vblankClearOnIrqEnd;
 		this.vblankSequence = 0;
 		this.lastCompletedVblankSequence = 0;
+		this.irqSignalSequence = 0;
 		const vblankActive = (this.vblankStartCycle === 0)
-			|| this.vblankPendingClear
 			|| (this.getCyclesIntoFrame() >= this.vblankStartCycle);
 		this.setVblankStatus(vblankActive);
 		this.scheduleCurrentFrameTimers();
@@ -1281,22 +1243,22 @@ export class Runtime {
 	public frameDeltaMs = 0;
 	public currentFrameState: FrameState = null;
 	public drawFrameState: FrameState = null;
-	private waitingForVblank = false;
-	private waitForVblankTargetSequence = 0;
-	private clearBackQueuesAfterWaitResume = false;
+	private clearBackQueuesAfterIrqWake = false;
+	private handlingIrqAckWrite = false;
 	private handlingVdpCommandWrite = false;
 	private readonly vdpFifoWordScratch = new Uint8Array(4);
 	private vdpFifoWordByteCount = 0;
 	private readonly vdpFifoStreamWords = new Uint32Array(VDP_STREAM_CAPACITY_WORDS);
 	private vdpFifoStreamWordCount = 0;
+	private irqSignalSequence = 0;
+	private haltIrqSignalSequence = 0;
+	private haltIrqWaitArmed = false;
 	private vblankSequence = 0;
 	private lastCompletedVblankSequence = 0;
 	public cycleBudgetPerFrame: number;
 	private vblankCycles = 0;
 	private vblankStartCycle = 0;
 	private vblankActive = false;
-	private vblankPendingClear = false;
-	private vblankClearOnIrqEnd = false;
 	private vdpStatus = 0;
 	private vdpWorkUnitsPerSec = 0;
 	private geoWorkUnitsPerSec = 0;
@@ -1316,7 +1278,7 @@ export class Runtime {
 	private readonly timerGenerations: number[] = [];
 	private timerCount = 0;
 	private vblankEnterTimerGeneration = 0;
-	private frameEndTimerGeneration = 0;
+	private vblankEndTimerGeneration = 0;
 	private readonly deviceServiceTimerGeneration = new Uint32Array(DEVICE_SERVICE_KIND_COUNT);
 	public lastTickSequence: number = 0;
 	public lastTickBudgetGranted: number = 0;
@@ -1932,7 +1894,7 @@ export class Runtime {
 		this.memory.setIoWriteHandler(this as IoWriteHandler);
 		this.dmaController = new DmaController(
 			this.memory,
-			(mask) => this.raiseIrqFlags(mask),
+			(mask) => this.signalIrq(mask),
 			(src, byteLength) => this.sealVdpDmaTransfer(src, byteLength),
 			() => this.currentSchedulerNowCycles(),
 			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_DMA, deadlineCycles),
@@ -1941,14 +1903,14 @@ export class Runtime {
 		this.imgDecController = new ImgDecController(
 			this.memory,
 			this.dmaController,
-			(mask) => this.raiseIrqFlags(mask),
+			(mask) => this.signalIrq(mask),
 			() => this.currentSchedulerNowCycles(),
 			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_IMG, deadlineCycles),
 			() => this.cancelDeviceService(DEVICE_SERVICE_IMG),
 		);
 		this.geometryController = new GeometryController(
 			this.memory,
-			(mask) => this.raiseIrqFlags(mask),
+			(mask) => this.signalIrq(mask),
 			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_GEO, deadlineCycles),
 			() => this.cancelDeviceService(DEVICE_SERVICE_GEO),
 		);
@@ -2031,7 +1993,7 @@ export class Runtime {
 		this.pendingCall = null;
 		this.luaRuntimeFailed = false;
 		this.luaInitialized = false;
-		this.clearWaitForVblank();
+		this.clearHaltUntilIrq();
 	}
 
 	public get activeIdeFontVariant(): FontVariant {
@@ -2077,12 +2039,12 @@ export class Runtime {
 	}
 
 	private async prepareBootRomStartupState(options?: { resetRuntime?: boolean; refreshAudio?: boolean }): Promise<void> {
-		this.activateEngineProgramAssets();
 		if (options?.resetRuntime) {
 			await $.resetRuntime();
 		}
 		await this.buildAssetMemory({ source: this.engineAssetSource, mode: 'full' });
 		this.memory.sealEngineAssets();
+		this.activateEngineProgramAssets();
 		if (options?.refreshAudio) {
 			await $.refresh_audio_assets();
 		}
@@ -2140,9 +2102,7 @@ export class Runtime {
 			cycleBudgetRemaining: budget,
 			cycleBudgetGranted: budget,
 			cycleCarryGranted: carryBudget,
-			cpuStatsFrozen: false,
-			cpuStatsUsedCycles: 0,
-			cpuStatsGrantedCycles: 0,
+			activeCpuUsedCycles: 0,
 		};
 		this.vdp.beginFrame();
 		this.currentFrameState = state;
@@ -2219,32 +2179,46 @@ export class Runtime {
 		if (unsupported !== 0) {
 			throw runtimeFault(`unsupported engine IRQ mask 0x${unsupported.toString(16)}.`);
 		}
-		this.raiseIrqFlags(normalized);
+		this.signalIrq(normalized);
 	}
 
-	private processIrqAck(): void {
-		const ack = (this.memory.readValue(IO_IRQ_ACK) as number) >>> 0;
+	private acknowledgeIrq(mask: number): void {
+		const ack = mask >>> 0;
 		if (ack === 0) {
+			this.handlingIrqAckWrite = true;
+			try {
+				this.memory.writeValue(IO_IRQ_ACK, 0);
+			} finally {
+				this.handlingIrqAckWrite = false;
+			}
 			return;
 		}
 		let flags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
 		flags &= ~ack;
 		this.memory.writeValue(IO_IRQ_FLAGS, flags >>> 0);
-		this.memory.writeValue(IO_IRQ_ACK, 0);
-		if ((ack & IRQ_VBLANK) !== 0 && this.vblankPendingClear) {
-			this.setVblankStatus(false);
-			this.vblankPendingClear = false;
-			this.vblankClearOnIrqEnd = false;
+		this.handlingIrqAckWrite = true;
+		try {
+			this.memory.writeValue(IO_IRQ_ACK, 0);
+		} finally {
+			this.handlingIrqAckWrite = false;
 		}
 	}
 
-	private raiseIrqFlags(mask: number): void {
+	private signalIrq(mask: number): void {
 		const current = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
-		this.memory.writeValue(IO_IRQ_FLAGS, (current | mask) >>> 0);
+		const next = (current | mask) >>> 0;
+		this.memory.writeValue(IO_IRQ_FLAGS, next);
+		if (next !== current) {
+			this.irqSignalSequence += 1;
+		}
 	}
 
 	public onIoWrite(addr: number, value: Value): void {
-		if (this.handlingVdpCommandWrite || typeof value !== 'number') {
+		if ((this.handlingVdpCommandWrite || this.handlingIrqAckWrite) || typeof value !== 'number') {
+			return;
+		}
+		if (addr === IO_IRQ_ACK) {
+			this.acknowledgeIrq(value >>> 0);
 			return;
 		}
 		if (addr === IO_DMA_CTRL) {
@@ -2332,92 +2306,75 @@ export class Runtime {
 			return;
 		}
 		try {
-			if (this.waitingForVblank && this.runWaitForVblank(state)) {
+			while (true) {
+				if (this.cpu.isHaltedUntilIrq() && this.runHaltedUntilIrq(state)) {
+					return;
+				}
+				if (this.clearBackQueuesAfterIrqWake) {
+					clearBackQueues();
+					this.clearBackQueuesAfterIrqWake = false;
+				}
+				if (this.pendingCall !== 'entry') {
+					return;
+				}
+				const result = this.runWithBudget(state);
+				if (this.cpu.isHaltedUntilIrq()) {
+					if (this.runHaltedUntilIrq(state)) {
+						return;
+					}
+					continue;
+				}
+				if (result === RunResult.Halted) {
+					this.pendingCall = null;
+				}
 				return;
 			}
-			if (this.clearBackQueuesAfterWaitResume) {
-				clearBackQueues();
-				this.clearBackQueuesAfterWaitResume = false;
-			}
-			this.processIrqAck();
-			if (this.pendingCall !== 'entry') {
-				return;
-			}
-			const result = this.runWithBudget(state);
-			if (this.waitingForVblank) {
-				this.reconcileCycleBudgetAfterSignal(state);
-				this.freezeTickCpuStats(state);
-				this.processIrqAck();
-				return;
-			}
-			this.processIrqAck();
-			if (result === RunResult.Halted) {
-				this.pendingCall = null;
-			}
-			} catch (error) {
+		} catch (error) {
 			state.luaFaulted = true;
-			this.clearWaitForVblank();
+			this.clearHaltUntilIrq();
 			this.pendingCall = null;
 			runtimeIde.handleLuaError(this, error);
 		}
 	}
 
-	private reconcileCycleBudgetAfterSignal(state: FrameState): void {
-		const remaining = this.cpu.instructionBudgetRemaining;
-		const consumed = state.cycleBudgetRemaining - remaining;
-		if (consumed < 0) {
-			throw runtimeFault(`negative cycle reconciliation (${consumed}).`);
-		}
-		state.cycleBudgetRemaining = remaining;
-		if (consumed > 0) {
-			this.advanceTime(consumed);
-		}
+	private isFrameBoundaryHalt(): boolean {
+		return this.cpu.isHaltedUntilIrq() && this.pendingCall === 'entry' && this.cpu.getFrameDepth() === 1;
 	}
 
-	private freezeTickCpuStats(state: FrameState): void {
-		if (state.cpuStatsFrozen) {
-			return;
-		}
-		state.cpuStatsFrozen = true;
-		state.cpuStatsGrantedCycles = state.cycleBudgetGranted;
-		state.cpuStatsUsedCycles = state.cycleBudgetGranted - state.cycleBudgetRemaining;
-	}
-
-	private runWaitForVblank(state: FrameState): boolean {
-		this.processIrqAck();
+	private runHaltedUntilIrq(state: FrameState): boolean {
 		this.runDueTimers();
-		const targetSequence = this.waitForVblankTargetSequence;
-		if (targetSequence === 0) {
-			this.clearWaitForVblank();
+		if (!this.cpu.isHaltedUntilIrq()) {
+			this.resetHaltIrqWait();
 			return false;
 		}
-		if (this.vblankPendingClear && this.vblankActive && this.vblankSequence < targetSequence) {
-			this.setVblankStatus(false);
-			this.vblankPendingClear = false;
-			this.vblankClearOnIrqEnd = false;
+		if (!this.haltIrqWaitArmed) {
+			const pendingFlags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
+			if (pendingFlags !== 0) {
+				this.cpu.clearHaltUntilIrq();
+				return state.tickCompleted;
+			}
+			this.haltIrqSignalSequence = this.irqSignalSequence;
+			this.haltIrqWaitArmed = true;
 		}
-		if (this.vblankSequence < targetSequence) {
+		while (true) {
+			if (this.irqSignalSequence !== this.haltIrqSignalSequence) {
+				this.cpu.clearHaltUntilIrq();
+				this.resetHaltIrqWait();
+				return state.tickCompleted;
+			}
 			if (state.cycleBudgetRemaining > 0) {
 				const cyclesToTarget = this.nextTimerDeadline() - this.schedulerNowCycles;
 				if (cyclesToTarget <= 0) {
 					this.runDueTimers();
-					this.processIrqAck();
+					continue;
 				}
-				else {
 				const idleCycles = cyclesToTarget < state.cycleBudgetRemaining ? cyclesToTarget : state.cycleBudgetRemaining;
 				state.cycleBudgetRemaining -= idleCycles;
 				this.advanceTime(idleCycles);
-				this.processIrqAck();
-				}
+				continue;
 			}
-			if (this.vblankSequence < targetSequence) {
-				return true;
-			}
+			return true;
 		}
-		this.clearWaitForVblank();
-		// Clear queues on the next runnable slice after the completed frame was presented.
-		this.clearBackQueuesAfterWaitResume = true;
-		return state.tickCompleted;
 	}
 
 	public drawIde(): void {
@@ -2880,7 +2837,7 @@ export class Runtime {
 				runtimeLuaPipeline.resetFrameState(this);
 			}
 			this.pendingCall = null;
-			this.clearWaitForVblank();
+			this.clearHaltUntilIrq();
 		}
 		this.pendingCartBoot = false;
 		console.info('Switching to cart program after BIOS boot request.');

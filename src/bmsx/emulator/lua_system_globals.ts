@@ -68,7 +68,6 @@ export const ENGINE_SYSTEM_HELPER_NAMES = [
 	'resolve_rom_asset_range',
 	'u32_to_i32',
 	'fix16_to_f32',
-	'wait_vblank',
 	'clock_now',
 ] as const;
 
@@ -83,7 +82,6 @@ const ENGINE_SYSTEM_GEO_GLOBAL_NAMES = [
 	'sys_geo_count',
 	'sys_geo_cmd',
 	'sys_geo_ctrl',
-	'sys_geo_status',
 	'sys_geo_param0',
 	'sys_geo_param1',
 	'sys_geo_stride0',
@@ -95,10 +93,6 @@ const ENGINE_SYSTEM_GEO_GLOBAL_NAMES = [
 	'irq_geo_error',
 	'sys_geo_ctrl_start',
 	'sys_geo_ctrl_abort',
-	'sys_geo_status_busy',
-	'sys_geo_status_done',
-	'sys_geo_status_error',
-	'sys_geo_status_rejected',
 	'sys_geo_cmd_xform2_batch',
 	'sys_geo_cmd_sat2_batch',
 	'sys_geo_cmd_overlap2d_pass',

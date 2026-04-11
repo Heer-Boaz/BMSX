@@ -47,9 +47,7 @@ struct FrameState {
 	int cycleBudgetRemaining = 0;
 	int cycleBudgetGranted = 0;
 	int cycleCarryGranted = 0;
-	bool cpuStatsFrozen = false;
-	int cpuStatsUsedCycles = 0;
-	int cpuStatsGrantedCycles = 0;
+	int activeCpuUsedCycles = 0;
 };
 
 struct TickCompletion {
@@ -97,8 +95,6 @@ struct RuntimeState {
 	std::optional<SkyboxImageIds> skyboxFaceIds;
 	i32 vdpDitherType = 0;
 	int cyclesIntoFrame = 0;
-	bool vblankPendingClear = false;
-	bool vblankClearOnIrqEnd = false;
 };
 
 /**
@@ -323,8 +319,8 @@ private:
 		Entry,
 	};
 	enum TimerKind : uint8_t {
-		TimerKindVblankEnter = 1,
-		TimerKindFrameEnd = 2,
+		TimerKindVblankBegin = 1,
+		TimerKindVblankEnd = 2,
 		TimerKindDeviceService = 3,
 	};
 	enum DeviceServiceKind : uint8_t {
@@ -356,11 +352,11 @@ private:
 	i64 nextTimerDeadline();
 	void runDueTimers();
 	void dispatchTimer(uint8_t kind, uint8_t payload);
-	void scheduleVblankEnterTimer(i64 deadlineCycles);
-	void scheduleFrameEndTimer(i64 deadlineCycles);
+	void scheduleVblankBeginTimer(i64 deadlineCycles);
+	void scheduleVblankEndTimer(i64 deadlineCycles);
 	void scheduleCurrentFrameTimers();
-	void handleVblankEnterTimer();
-	void handleFrameEndTimer();
+	void handleVblankBeginTimer();
+	void handleVblankEndTimer();
 	void scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles);
 	void cancelDeviceService(uint8_t deviceKind);
 	void requestYieldForEarlierDeadline(i64 deadlineCycles);
@@ -368,13 +364,14 @@ private:
 	void resetVblankState();
 	void setVblankStatus(bool active);
 	void enterVblank();
+	void leaveVblank();
 	void commitFrameOnVblankEdge();
 	void completeTickIfPending(FrameState& frameState, uint64_t vblankSequence);
-	void reconcileCycleBudgetAfterSignal(FrameState& frameState);
-	void freezeTickCpuStats(FrameState& frameState);
-	void requestWaitForVblank();
-	void processIrqAck();
-	void raiseIrqFlags(uint32_t mask);
+	bool runHaltedUntilIrq(FrameState& frameState);
+	void clearHaltUntilIrq();
+	void resetHaltIrqWait();
+	void acknowledgeIrq(uint32_t mask);
+	void signalIrq(uint32_t mask);
 	RunResult runWithBudget();
 	void queueLifecycleHandlers(bool runInit, bool runNewGame);
 	Value requireModule(const std::string& moduleName);
@@ -506,21 +503,21 @@ private:
 	std::vector<uint32_t> m_timerGenerations;
 	size_t m_timerCount = 0;
 	uint32_t m_vblankEnterTimerGeneration = 0;
-	uint32_t m_frameEndTimerGeneration = 0;
+	uint32_t m_vblankEndTimerGeneration = 0;
 	std::array<uint32_t, static_cast<size_t>(DeviceServiceKindCount)> m_deviceServiceTimerGeneration{};
-	bool m_waitingForVblank = false;
+	bool m_handlingIrqAckWrite = false;
 	bool m_handlingVdpCommandWrite = false;
 	std::array<u8, 4> m_vdpFifoWordScratch{{0, 0, 0, 0}};
 	int m_vdpFifoWordByteCount = 0;
 	std::array<u32, VDP_STREAM_CAPACITY_WORDS> m_vdpFifoStreamWords{};
 	u32 m_vdpFifoStreamWordCount = 0;
+	uint64_t m_irqSignalSequence = 0;
+	uint64_t m_haltIrqSignalSequence = 0;
+	bool m_haltIrqWaitArmed = false;
 	uint64_t m_vblankSequence = 0;
 	uint64_t m_lastCompletedVblankSequence = 0;
-	uint64_t m_waitForVblankTargetSequence = 0;
-	bool m_clearBackQueuesAfterWaitResume = false;
+	bool m_clearBackQueuesAfterIrqWake = false;
 	bool m_vblankActive = false;
-	bool m_vblankPendingClear = false;
-	bool m_vblankClearOnIrqEnd = false;
 	u32 m_vdpStatus = 0;
 };
 

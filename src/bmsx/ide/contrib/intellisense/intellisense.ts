@@ -889,7 +889,8 @@ function isIdentifierChainSeparator(value: number): boolean {
 }
 
 function isKeywordTokenType(type: LuaTokenType): boolean {
-	return type >= LuaTokenType.And && type <= LuaTokenType.While;
+	return (type >= LuaTokenType.And && type <= LuaTokenType.While)
+		|| type === LuaTokenType.HaltUntilIrq;
 }
 
 function resolveContextMenuTokenKind(type: LuaTokenType): EditorContextToken['kind'] {

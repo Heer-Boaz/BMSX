@@ -273,16 +273,6 @@ local clear_precheck_cache<const> = function()
 end
 clear_precheck_cache()
 
-local refresh_atlas_load_state<const> = function()
-	local status<const> = mem[sys_img_status]
-	if (status & img_status_done) ~= 0 then
-		sys_atlas_ready = true
-	end
-	if (status & img_status_error) ~= 0 then
-		sys_atlas_failed = true
-	end
-end
-
 local build_precheck_key<const> = function(header)
 	return tostring(header.header_size)
 		.. ':' .. tostring(header.manifest_off)
@@ -2405,7 +2395,6 @@ function init()
 		new_game()
 	end)
 	vdp_load_sys_atlas()
-	refresh_atlas_load_state()
 	selftest_bitcast_builtins()
 end
 
@@ -2413,7 +2402,6 @@ function new_game()
 end
 
 function update()
-	refresh_atlas_load_state()
 	boot_screen_visible = true
 	local scroll_delta<const> = action_triggered('down[rp]') and 1 or (action_triggered('up[rp]') and -1 or 0)
 	render_boot_screen(scroll_delta)
@@ -2447,7 +2435,6 @@ function update()
 end
 
 render_boot_screen = function(scroll_delta)
-	refresh_atlas_load_state()
 	local width<const> = display_width()
 	local height<const> = display_height()
 	local left<const> = 8

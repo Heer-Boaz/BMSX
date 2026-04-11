@@ -264,7 +264,6 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "math.randomseed"
 		|| name == "consume_action"
 		|| name == "dset"
-		|| name == "wait_vblank"
 		|| name == "set_cpu_freq_hz"
 		|| name == "pointer_screen_position"
 		|| name == "pointer_delta"
@@ -374,6 +373,7 @@ static constexpr std::array<uint8_t, 64> makeBaseCycles() {
 	setCycle(table, OpCode::GETFIELD, 1);
 	setCycle(table, OpCode::SETFIELD, 2);
 	setCycle(table, OpCode::SELF, 1);
+	setCycle(table, OpCode::HALT, 1);
 
 	return table;
 }
@@ -1357,6 +1357,7 @@ void CPU::start(int entryProtoIndex, NativeArgsView args) {
 	m_openUpvalues.clear();
 	m_stack.clear();
 	m_stackTop = 0;
+	m_haltedUntilIrq = false;
 	m_yieldRequested = false;
 	auto* closure = createRootClosure(entryProtoIndex);
 	pushFrame(closure, args.data(), args.size(), 0, 0, false, m_program->protos[entryProtoIndex].entryPC);
@@ -1372,6 +1373,7 @@ void CPU::call(Closure* closure, NativeArgsView args, int returnCount) {
 		throw BMSX_RUNTIME_ERROR("Attempted to call a nil value.");
 	}
 	lastReturnValues.clear();
+	m_haltedUntilIrq = false;
 	m_yieldRequested = false;
 	pushFrame(closure, args.data(), args.size(), 0, returnCount, false, m_program->protos[closure->protoIndex].entryPC);
 }
@@ -1385,6 +1387,7 @@ void CPU::callExternal(Closure* closure, NativeArgsView args) {
 		throw BMSX_RUNTIME_ERROR("Attempted to call a nil value.");
 	}
 	lastReturnValues.clear();
+	m_haltedUntilIrq = false;
 	m_yieldRequested = false;
 	pushFrame(closure, args.data(), args.size(), 0, 0, true, m_program->protos[closure->protoIndex].entryPC);
 }
@@ -1400,6 +1403,16 @@ void CPU::requestYield() {
 }
 
 void CPU::clearYieldRequest() {
+	m_yieldRequested = false;
+}
+
+void CPU::haltUntilIrq() {
+	m_haltedUntilIrq = true;
+	m_yieldRequested = false;
+}
+
+void CPU::clearHaltUntilIrq() {
+	m_haltedUntilIrq = false;
 	m_yieldRequested = false;
 }
 
@@ -1422,7 +1435,7 @@ RunResult CPU::run(int instructionBudget) {
 #if BMSX_USE_COMPUTED_GOTO
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
-	static void* const kDispatchTargets[64] = {
+	static void* const kDispatchTargets[65] = {
 #define OP(name) &&dispatch_##name,
 #include "cpu_opcode_list.inl"
 #undef OP
@@ -1433,6 +1446,9 @@ RunResult CPU::run(int instructionBudget) {
 	runHousekeeping();
 dispatch_loop_check:
 	if (frames.empty()) {
+		return RunResult::Halted;
+	}
+	if (m_haltedUntilIrq) {
 		return RunResult::Halted;
 	}
 	if (m_yieldRequested) {
@@ -1559,7 +1575,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
 #if BMSX_USE_COMPUTED_GOTO
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
-	static void* const kDispatchTargets[64] = {
+	static void* const kDispatchTargets[65] = {
 #define OP(name) &&dispatch_##name,
 #include "cpu_opcode_list.inl"
 #undef OP
@@ -1570,6 +1586,9 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
 	runHousekeeping();
 dispatch_loop_check:
 	if (static_cast<int>(frames.size()) <= targetDepth) {
+		return RunResult::Halted;
+	}
+	if (m_haltedUntilIrq) {
 		return RunResult::Halted;
 	}
 	if (m_yieldRequested) {
@@ -1710,6 +1729,7 @@ void CPU::tickHotLoopHousekeeping() {
 
 void CPU::step() {
 	if (m_frames.empty()) return;
+	if (m_haltedUntilIrq) return;
 	runHousekeeping();
 	CallFrame& frame = *m_frames.back();
 	int pc = frame.pc;

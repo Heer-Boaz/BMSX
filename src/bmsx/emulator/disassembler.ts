@@ -131,6 +131,7 @@ const getOpName = (op: OpCode): string => {
 		case OpCode.GETFIELD: return 'GETFIELD';
 		case OpCode.SETFIELD: return 'SETFIELD';
 		case OpCode.SELF: return 'SELF';
+		case OpCode.HALT: return 'HALT';
 		case OpCode.GETT: return 'GETT';
 		case OpCode.SETT: return 'SETT';
 		case OpCode.NEWT: return 'NEWT';
@@ -601,6 +602,8 @@ const buildInstructionOperands = (
 			return [registerOperand('a', 'src', a), rkOperand('b', 'addr', program, b, decoded.rkBitsB, options)];
 		case OpCode.STORE_MEM_WORDS:
 			return [registerOperand('a', 'src_base', a), rkOperand('b', 'addr', program, b, decoded.rkBitsB, options), plainOperand('c', 'count', c.toString())];
+		case OpCode.HALT:
+			return [];
 		case OpCode.WIDE:
 			throw new Error(`[Disassembler] Unexpected WIDE opcode at pc ${pc}.`);
 		default:
@@ -776,6 +779,8 @@ const formatInstruction = (
 			return `STORE_MEM r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}`;
 		case OpCode.STORE_MEM_WORDS:
 			return `STORE_MEM_WORDS r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${c}`;
+		case OpCode.HALT:
+			return 'HALT';
 		case OpCode.WIDE:
 			throw new Error(`[Disassembler] Unexpected WIDE opcode at pc ${pc}.`);
 		default:
