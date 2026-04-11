@@ -362,9 +362,6 @@ function worldobject:remove_all_components()
 	end
 end
 
-function worldobject:iterate_components()
-	return ipairs(self.components)
-end
 
 -- has_tag(tag): returns true if this object currently carries the given tag.
 -- Tags are plain-string keys set on self.tags.  The FSM also manages tags
