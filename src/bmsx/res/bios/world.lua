@@ -337,6 +337,7 @@ local add_active_component<const> = function(comp, space)
 	local index<const> = #bucket + 1
 	bucket[index] = comp
 	comp._active_component_index = index
+	comp._active_component_space_id = space.id
 end
 
 local remove_active_component<const> = function(comp, space)
@@ -350,6 +351,7 @@ local remove_active_component<const> = function(comp, space)
 	end
 	bucket[last_index] = nil
 	comp._active_component_index = nil
+	comp._active_component_space_id = nil
 end
 
 function world_class.new()
@@ -363,9 +365,11 @@ function world_class.new()
 	self._obj_to_space = {}
 	self._pending_object_disposals = {}
 	self._pending_subsystem_disposals = {}
+	self._pending_active_components = {}
 	self.active_space_id = 'main'
 	self.active_space = nil
 	self.systems = ecs.ecsystemmanager.new()
+	self.current_phase = nil
 	self.gamewidth = display_width()
 	self.gameheight = display_height()
 	-- id counter for unique id generation
@@ -450,10 +454,7 @@ function world_class:set_object_space(obj, space_id)
 		if obj.active then
 			local components<const> = obj.components
 			for i = 1, #components do
-				local comp<const> = components[i]
-				if comp._active_component_index ~= nil then
-					remove_active_component(comp, current_space)
-				end
+				self:deactivate_component(components[i])
 			end
 			remove_active_object(obj, current_space)
 		end
@@ -469,10 +470,7 @@ function world_class:set_object_space(obj, space_id)
 		add_active_object(obj, target_space)
 		local components<const> = obj.components
 		for i = 1, #components do
-			local comp<const> = components[i]
-			if comp.enabled then
-				add_active_component(comp, target_space)
-			end
+			self:activate_component(components[i])
 		end
 	end
 	return space_id
@@ -483,10 +481,7 @@ function world_class:activate_object(obj)
 	add_active_object(obj, space)
 	local components<const> = obj.components
 	for i = 1, #components do
-		local comp<const> = components[i]
-		if comp.enabled then
-			add_active_component(comp, space)
-		end
+		self:activate_component(components[i])
 	end
 end
 
@@ -494,23 +489,60 @@ function world_class:deactivate_object(obj)
 	local space<const> = self._spaces[obj.space_id]
 	local components<const> = obj.components
 	for i = 1, #components do
-		local comp<const> = components[i]
-		if comp._active_component_index ~= nil then
-			remove_active_component(comp, space)
-		end
+		self:deactivate_component(components[i])
 	end
 	remove_active_object(obj, space)
 end
 
+local queue_active_component<const> = function(world, comp)
+	if comp._active_component_pending then
+		return
+	end
+	local pending<const> = world._pending_active_components
+	pending[#pending + 1] = comp
+	comp._active_component_pending = true
+end
+
+local reconcile_active_component<const> = function(world, comp)
+	local parent<const> = comp.parent
+	local target_space_id = nil
+	if comp.enabled and parent.active and registry.instance:has(comp.id) then
+		target_space_id = parent.space_id
+	end
+	local active_space_id<const> = comp._active_component_space_id
+	if active_space_id ~= target_space_id then
+		if active_space_id ~= nil then
+			remove_active_component(comp, world._spaces[active_space_id])
+		end
+		if target_space_id ~= nil then
+			add_active_component(comp, world._spaces[target_space_id])
+		end
+	end
+end
+
 function world_class:activate_component(comp)
-	if comp.enabled and comp._active_component_index == nil then
-		add_active_component(comp, self._spaces[comp.parent.space_id])
+	if self.current_phase ~= nil then
+		queue_active_component(self, comp)
+	else
+		reconcile_active_component(self, comp)
 	end
 end
 
 function world_class:deactivate_component(comp)
-	if comp._active_component_index ~= nil then
-		remove_active_component(comp, self._spaces[comp.parent.space_id])
+	if self.current_phase ~= nil then
+		queue_active_component(self, comp)
+	else
+		reconcile_active_component(self, comp)
+	end
+end
+
+function world_class:flush_active_components()
+	local pending<const> = self._pending_active_components
+	for i = 1, #pending do
+		local comp<const> = pending[i]
+		comp._active_component_pending = nil
+		reconcile_active_component(self, comp)
+		pending[i] = nil
 	end
 end
 
@@ -758,13 +790,23 @@ function world_class:find_any_by_tag(tag)
 	return nil
 end
 
+local run_phase<const> = function(self, group, dt_ms)
+	local systems<const> = self.systems.phase_systems[group]
+	self.current_phase = group
+	for i = 1, self.systems.phase_counts[group] do
+		systems[i]:update(dt_ms)
+		self:flush_active_components()
+	end
+	self.current_phase = nil
+end
+
 function world_class:update()
 	local dt_ms<const> = $.get_frame_delta_ms()
-	self.systems:update_phase(tickgroup.input, dt_ms)
-	self.systems:update_phase(tickgroup.actioneffect, dt_ms)
-	self.systems:update_phase(tickgroup.moderesolution, dt_ms)
-	self.systems:update_phase(tickgroup.physics, dt_ms)
-	self.systems:update_phase(tickgroup.animation, dt_ms)
+	run_phase(self, tickgroup.input, dt_ms)
+	run_phase(self, tickgroup.actioneffect, dt_ms)
+	run_phase(self, tickgroup.moderesolution, dt_ms)
+	run_phase(self, tickgroup.physics, dt_ms)
+	run_phase(self, tickgroup.animation, dt_ms)
 
 	local pending_objects<const> = self._pending_object_disposals
 	for i = 1, #pending_objects do
@@ -796,8 +838,8 @@ end
 
 function world_class:draw()
 	local dt_ms<const> = $.get_frame_delta_ms()
-	self.systems:update_phase(tickgroup.presentation, dt_ms)
-	self.systems:update_phase(tickgroup.eventflush, dt_ms)
+	run_phase(self, tickgroup.presentation, dt_ms)
+	run_phase(self, tickgroup.eventflush, dt_ms)
 end
 
 function world_class:clear()
@@ -822,6 +864,8 @@ function world_class:clear()
 	self._spaces = {}
 	self._space_order = {}
 	self._obj_to_space = {}
+	self._pending_active_components = {}
+	self.current_phase = nil
 	registry.instance:clear()
 	self:add_space('main')
 	self.active_space_id = 'main'

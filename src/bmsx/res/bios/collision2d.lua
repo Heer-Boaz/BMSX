@@ -2,7 +2,6 @@
 -- GEO overlap orchestration for direct pair queries + ECS overlap passes
 
 local collision2d<const> = {}
-local round_to_nearest<const> = require('round_to_nearest')
 
 local geo_fix16_scale<const> = 65536
 local geo_overlap_instance_bytes<const> = 20
@@ -11,6 +10,7 @@ local geo_overlap_result_bytes<const> = 36
 local geo_overlap_summary_bytes<const> = 16
 local geo_overlap_candidate_param0<const> = sys_geo_overlap_mode_candidate_pairs | sys_geo_overlap_broadphase_none | sys_geo_overlap_contact_clipped_feature | sys_geo_overlap_output_stop_on_overflow
 local geo_overlap_full_pass_param0<const> = sys_geo_overlap_mode_full_pass | sys_geo_overlap_broadphase_local_bounds_aabb | sys_geo_overlap_contact_clipped_feature | sys_geo_overlap_output_stop_on_overflow
+local geo_irq_mask<const> = irq_geo_done | irq_geo_error
 local geo_batch_token = 0
 local direct_query_contact<const> = {
 	normal = { x = 0, y = 0 },
@@ -37,12 +37,30 @@ local stage_geo_overlap_instance<const> = function(collider, batch_token, instan
 	memwrite(
 		instance_addr,
 		collider._overlap_geo_shape_ref,
-		round_to_nearest(collider._overlap_geo_tx * geo_fix16_scale),
-		round_to_nearest(collider._overlap_geo_ty * geo_fix16_scale),
+		collider._overlap_geo_tx * geo_fix16_scale, -- No round-to-nearest here, since the GEO engine will apply sub-pixel correction based on the shape's center of mass, which can lead to more accurate results if the shape is consistently positioned relative to the pixel grid. At least: that's how it should be.
+		collider._overlap_geo_ty * geo_fix16_scale, -- No round-to-nearest here, since the GEO engine will apply sub-pixel correction based on the shape's center of mass, which can lead to more accurate results if the shape is consistently positioned relative to the pixel grid. At least: that's how it should be.
 		collider.layer,
 		collider.mask
 	)
 	collider._geo_overlap_stage_token = batch_token
+end
+
+local wait_for_geo_completion<const> = function(label)
+	while true do
+		halt_until_irq
+		local flags<const> = mem[sys_irq_flags]
+		local geo_flags<const> = flags & geo_irq_mask
+		if geo_flags ~= 0 then
+			mem[sys_irq_ack] = geo_flags
+			if (geo_flags & irq_geo_error) ~= 0 then
+				error('[collision2d] GEO ' .. label .. ' failed (fault=' .. tostring(mem[sys_geo_fault]) .. ')')
+			end
+			return
+		end
+		if flags ~= 0 then
+			irq(flags)
+		end
+	end
 end
 
 local submit_geo_overlap_candidate_batch<const> = function(instance_base, pair_base, result_base, summary_base, instance_count, pair_count)
@@ -68,13 +86,7 @@ local submit_geo_overlap_candidate_batch<const> = function(instance_base, pair_b
 		sys_geo_cmd_overlap2d_pass,
 		sys_geo_ctrl_start
 	)
-	local current_status = mem[sys_geo_status]
-	while (current_status & sys_geo_status_busy) ~= 0 do
-		current_status = mem[sys_geo_status]
-	end
-	if (current_status & sys_geo_status_rejected) ~= 0 or (current_status & sys_geo_status_error) ~= 0 or (current_status & sys_geo_status_done) == 0 then
-		error('[collision2d] GEO overlap batch failed (status=' .. tostring(current_status) .. ', fault=' .. tostring(mem[sys_geo_fault]) .. ')')
-	end
+	wait_for_geo_completion('overlap batch')
 end
 
 local submit_geo_overlap_full_pass<const> = function(instance_base, result_base, summary_base, instance_count, result_capacity)
@@ -100,13 +112,7 @@ local submit_geo_overlap_full_pass<const> = function(instance_base, result_base,
 		sys_geo_cmd_overlap2d_pass,
 		sys_geo_ctrl_start
 	)
-	local current_status = mem[sys_geo_status]
-	while (current_status & sys_geo_status_busy) ~= 0 do
-		current_status = mem[sys_geo_status]
-	end
-	if (current_status & sys_geo_status_rejected) ~= 0 or (current_status & sys_geo_status_error) ~= 0 or (current_status & sys_geo_status_done) == 0 then
-		error('[collision2d] GEO overlap full pass failed (status=' .. tostring(current_status) .. ', fault=' .. tostring(mem[sys_geo_fault]) .. ')')
-	end
+	wait_for_geo_completion('overlap full pass')
 end
 
 function collision2d.collect_overlaps(colliders, collider_count, pairs)

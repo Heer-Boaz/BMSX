@@ -150,8 +150,6 @@ function spritecomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'spritecomponent'
 	local self<const> = setmetatable(component.new(opts), spritecomponent)
-	self.imgid = opts.imgid
-	self.image_handle = self.imgid ~= nil and assets.img[self.imgid].handle or 0
 	self.layer = opts.layer or sys_vdp_layer_world
 	self.flip = { flip_h = false, flip_v = false }
 	self.colorize = opts.colorize or { r = 1, g = 1, b = 1, a = 1 }
@@ -159,7 +157,13 @@ function spritecomponent.new(opts)
 	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
 	self.parallax_weight = opts.parallax_weight or 0
 	self.collider_local_id = opts.collider_local_id
+	self:set_imgid(opts.imgid)
 	return self
+end
+
+function spritecomponent:set_imgid(imgid)
+	self.imgid = imgid
+	self.image_handle = imgid ~= nil and assets.img[imgid].handle or 0
 end
 
 -- collider2dcomponent: holds hit areas / polys

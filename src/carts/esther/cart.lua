@@ -8,6 +8,7 @@ local service_irqs<const> = function()
 	if flags ~= 0 then
 		irq(flags)
 	end
+	return flags
 end
 
 function init()
@@ -46,8 +47,11 @@ function new_game()
 end
 
 	while true do
-		wait_vblank()
-		service_irqs()
+		local flags
+		repeat
+			halt_until_irq
+			flags = service_irqs()
+		until (flags & irq_vblank) ~= 0
 		vdp_stream_cursor = sys_vdp_stream_base
 		update(2)
 		do

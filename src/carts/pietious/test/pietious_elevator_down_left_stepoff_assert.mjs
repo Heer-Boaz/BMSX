@@ -135,7 +135,7 @@ function getRuntimeState(engine) {
 			walking_left = player.sc:matches_state_path('player:/walking_left'),
 			uncontrolled_fall = player.sc:matches_state_path('player:/uncontrolled_fall'),
 			controlled_fall = player.sc:matches_state_path('player:/controlled_fall'),
-			overlap = collision2d.collides(player.collider, elevator.collider),
+			overlap = collision2d.collides(player.collider, elevator.collider) ~= nil,
 			on_vertical_elevator = player.on_vertical_elevator,
 		}
 	`);

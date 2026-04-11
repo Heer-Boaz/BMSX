@@ -31,12 +31,25 @@ local append_path<const> = function(parts, path, stop)
 	end
 end
 
+local append_imgid_assignment<const> = function(parts, path, value)
+	local literal<const> = render_literal(value)
+	parts[#parts + 1] = 'do local _target = target'
+	append_path(parts, path, #path - 1)
+	parts[#parts + 1] = '\nlocal _value = '
+	parts[#parts + 1] = literal
+	parts[#parts + 1] = '\nif _target.gfx ~= nil then\n_target:gfx(_value)\nelseif _target.set_imgid ~= nil then\n_target:set_imgid(_value)\nelse\n_target['
+	parts[#parts + 1] = render_literal(path[#path])
+	parts[#parts + 1] = '] = _value\nend\nend\n'
+end
+
 local append_frame_assignments<const> = function(parts, node, path)
 	for key, value in pairs(node) do
 		local path_index<const> = #path + 1
 		path[path_index] = key
 		if type(value) == 'table' then
 			append_frame_assignments(parts, value, path)
+		elseif key == 'imgid' then
+			append_imgid_assignment(parts, path, value)
 		else
 			parts[#parts + 1] = 'target'
 			append_path(parts, path)
@@ -60,12 +73,26 @@ local frame_contains_enabled<const> = function(node)
 	return false
 end
 
+local apply_imgid<const> = function(target, value)
+	if target.gfx ~= nil then
+		target:gfx(value)
+		return
+	end
+	if target.set_imgid ~= nil then
+		target:set_imgid(value)
+		return
+	end
+	target.imgid = value
+end
+
 local apply_frame_node<const> = function(target, node)
 	for key, value in pairs(node) do
 		if type(value) == 'table' then
 			apply_frame_node(target[key], value)
 		elseif key == 'enabled' then
 			target:set_enabled(value)
+		elseif key == 'imgid' then
+			apply_imgid(target, value)
 		else
 			target[key] = value
 		end

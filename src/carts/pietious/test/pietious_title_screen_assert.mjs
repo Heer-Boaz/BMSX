@@ -89,6 +89,10 @@ function getTitleState(engine) {
 			end
 		end
 		local sparkle_sprite = title:get_component_by_local_id('spritecomponent', 'sparkle')
+		local sparkle_expected_handle = 0
+		if sparkle_sprite.imgid ~= nil then
+			sparkle_expected_handle = assets.img[sparkle_sprite.imgid].handle
+		end
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -113,6 +117,8 @@ function getTitleState(engine) {
 			sparkle_phase = sparkle_phase,
 			sparkle_visible = sparkle_sprite.enabled,
 			sparkle_sprite_id = sparkle_sprite.imgid,
+			sparkle_image_handle = sparkle_sprite.image_handle,
+			sparkle_expected_handle = sparkle_expected_handle,
 			sparkle_x = sparkle_sprite.offset.x,
 			sparkle_y = sparkle_sprite.offset.y,
 			room_number = castle.current_room_number,
@@ -230,6 +236,7 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 			}
 			if (state.sparkle_visible) {
 				sparkleSeen = true;
+				assert(state.sparkle_image_handle === state.sparkle_expected_handle, `title sparkle handle=${state.sparkle_image_handle} expected=${state.sparkle_expected_handle} sprite=${state.sparkle_sprite_id}`);
 				if (/^tsf[4-7]$/.test(state.sparkle_sprite_id) || state.sparkle_sprite_id === 'tsf_pair' || state.sparkle_sprite_id === 'tsf_burst_single') {
 					sparkleFramesSeen.add(state.sparkle_sprite_id);
 				}

@@ -40,15 +40,47 @@ function evalLua(engine, source) {
 }
 
 function getLuaState(engine) {
-	const [state] = evalLua(engine, `
-		local collision2d = require('collision2d')
-		local constants = require('constants')
+	const [
+		hasCastle,
+		hasRoom,
+		hasPlayer,
+		hasElevator,
+		roomNumber,
+		playerX,
+		playerY,
+		playerBottom,
+		elevatorX,
+		elevatorY,
+		elevatorBottom,
+		elevatorRoom,
+		playerQuiet,
+		playerUncontrolledFall,
+		playerControlledFall,
+		playerJumping,
+		playerStoppedJump,
+		playerWalkingRight,
+		playerWalkingLeft,
+		playerGrounded,
+		playerRightHeld,
+		playerLeftHeld,
+		playerLastDx,
+		playerLastDy,
+		playerFacing,
+		playerOnVerticalElevator,
+		playerJumpingFromElevator,
+		playerOverlapElevator,
+		elevatorCharacterOver,
+		elevatorStandingOnTop,
+		expectedFloorY,
+	] = evalLua(engine, `
 		local castle = oget('c')
 		local room = oget('room')
 		local player = oget('pietolon')
 		local elevator = oget('e.p1')
+		local constants = require('constants')
 		local expected_floor_y = -1
 		local standing_on_top = false
+		local player_overlap_elevator = false
 		if player ~= nil then
 			for test_y = player.y, constants.room.height - player.height do
 				if player:collides_at_support_profile(player.x, test_y, false) then
@@ -70,41 +102,78 @@ function getLuaState(engine) {
 				or (right_foot_x >= elevator.x and right_foot_x < (elevator.x + constants.room.tile_size4))
 			standing_on_top = player.y == (elevator.y - player.height) and feet_over_platform_top
 		end
-		return {
-			has_castle = castle ~= nil,
-			has_room = room ~= nil,
-			has_player = player ~= nil,
-			has_elevator = elevator ~= nil,
-			room_number = castle and castle.current_room_number or -1,
-			player_x = player and player.x or -1,
-			player_y = player and player.y or -1,
-			player_bottom = player and (player.y + player.height) or -1,
-			elevator_x = elevator and elevator.x or -1,
-			elevator_y = elevator and elevator.y or -1,
-			elevator_bottom = elevator and (elevator.y + 16) or -1,
-			elevator_room = elevator and elevator.current_room_number or -1,
-			player_quiet = player and player:has_tag('v.q') or false,
-			player_uncontrolled_fall = player and player:has_tag('v.uf') or false,
-			player_controlled_fall = player and player:has_tag('v.cf') or false,
-			player_jumping = player and player:has_tag('v.j') or false,
-			player_stopped_jump = player and player:has_tag('v.sj') or false,
-			player_walking_right = player and player:has_tag('v.wr') or false,
-			player_walking_left = player and player:has_tag('v.wl') or false,
-			player_grounded = player and player.grounded or false,
-			player_right_held = player and player.right_held or false,
-			player_left_held = player and player.left_held or false,
-			player_last_dx = player and player.last_dx or 0,
-			player_last_dy = player and player.last_dy or 0,
-			player_facing = player and player.facing or 0,
-			player_on_vertical_elevator = player and player.on_vertical_elevator or false,
-			player_jumping_from_elevator = player and player.jumping_from_elevator or false,
-			player_overlap_elevator = player and elevator and collision2d.collides(player.collider, elevator.collider) or false,
-			elevator_character_over = standing_on_top,
-			elevator_standing_on_top = standing_on_top,
-			expected_floor_y = expected_floor_y,
-		}
+		if player ~= nil and elevator ~= nil then
+			player_overlap_elevator =
+				player.x < (elevator.x + constants.room.tile_size4)
+				and (player.x + player.width) > elevator.x
+				and player.y < (elevator.y + constants.room.tile_size2)
+				and (player.y + player.height) > elevator.y
+		end
+		return castle ~= nil,
+			room ~= nil,
+			player ~= nil,
+			elevator ~= nil,
+			castle and castle.current_room_number or -1,
+			player and player.x or -1,
+			player and player.y or -1,
+			player and (player.y + player.height) or -1,
+			elevator and elevator.x or -1,
+			elevator and elevator.y or -1,
+			elevator and (elevator.y + 16) or -1,
+			elevator and elevator.current_room_number or -1,
+			player and player:has_tag('v.q') or false,
+			player and player:has_tag('v.uf') or false,
+			player and player:has_tag('v.cf') or false,
+			player and player:has_tag('v.j') or false,
+			player and player:has_tag('v.sj') or false,
+			player and player:has_tag('v.wr') or false,
+			player and player:has_tag('v.wl') or false,
+			player and player.grounded or false,
+			player and player.right_held or false,
+			player and player.left_held or false,
+			player and player.last_dx or 0,
+			player and player.last_dy or 0,
+			player and player.facing or 0,
+			player and player.on_vertical_elevator or false,
+			player and player.jumping_from_elevator or false,
+			player_overlap_elevator,
+			standing_on_top,
+			standing_on_top,
+			expected_floor_y
 	`);
-	return state;
+	return {
+		has_castle: hasCastle,
+		has_room: hasRoom,
+		has_player: hasPlayer,
+		has_elevator: hasElevator,
+		room_number: roomNumber,
+		player_x: playerX,
+		player_y: playerY,
+		player_bottom: playerBottom,
+		elevator_x: elevatorX,
+		elevator_y: elevatorY,
+		elevator_bottom: elevatorBottom,
+		elevator_room: elevatorRoom,
+		player_quiet: playerQuiet,
+		player_uncontrolled_fall: playerUncontrolledFall,
+		player_controlled_fall: playerControlledFall,
+		player_jumping: playerJumping,
+		player_stopped_jump: playerStoppedJump,
+		player_walking_right: playerWalkingRight,
+		player_walking_left: playerWalkingLeft,
+		player_grounded: playerGrounded,
+		player_right_held: playerRightHeld,
+		player_left_held: playerLeftHeld,
+		player_last_dx: playerLastDx,
+		player_last_dy: playerLastDy,
+		player_facing: playerFacing,
+		player_on_vertical_elevator: playerOnVerticalElevator,
+		player_jumping_from_elevator: playerJumpingFromElevator,
+		player_overlap_elevator: playerOverlapElevator,
+		elevator_character_over: elevatorCharacterOver,
+		elevator_standing_on_top: elevatorStandingOnTop,
+		expected_floor_y: expectedFloorY,
+	};
 }
 
 function hasGameplayObjects(state) {

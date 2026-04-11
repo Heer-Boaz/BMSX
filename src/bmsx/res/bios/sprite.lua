@@ -86,8 +86,7 @@ end
 --   Must be called AFTER the object is spawned and has a collider2dcomponent.
 function spriteobject:gfx(id, meta)
 	self.imgid = id
-	self.sprite_component.imgid = id
-	self.sprite_component.image_handle = id ~= nil and assets.img[id].handle or 0
+	self.sprite_component:set_imgid(id)
 	if id == nil then
 		return
 	end
