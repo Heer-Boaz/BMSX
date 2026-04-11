@@ -342,7 +342,6 @@ function worldobject:remove_component_instance(comp)
 		world_instance:deactivate_component(comp)
 	end
 	registry_instance:deregister(comp, true)
-	comp.parent = nil
 	if comp == self.sprite_component then
 		self.sprite_component = nil
 	end

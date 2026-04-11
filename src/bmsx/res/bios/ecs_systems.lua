@@ -376,6 +376,8 @@ function overlap2dsystem:update()
 		local pair<const> = overlap_pairs.items[i]
 		local a<const> = pair.a
 		local b<const> = pair.b
+		local owner_a<const> = a.parent
+		local owner_b<const> = b.parent
 		local key_a
 		local key_b
 		if a.id < b.id then
@@ -392,8 +394,6 @@ function overlap2dsystem:update()
 		end
 		row[key_b] = true
 		local prev_row<const> = prev_pairs[key_a]
-		local owner_a<const> = a.parent
-		local owner_b<const> = b.parent
 		if prev_row ~= nil and prev_row[key_b] then
 			if owner_a.active and owner_b.active then
 				emit_overlap_event('overlap.stay', 'stay', owner_a, a, owner_b, b, pair.contact)
@@ -510,24 +510,24 @@ function spriterendersystem:update()
 			flip_flags = flip_flags | 2
 		end
 		memwrite(
-			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
-			sys_vdp_cmd_blit,
-			 13,
-			0,
-			sc.image_handle,
-			x,
-			y,
-			z,
-			sc.layer,
-			sc.scale.x,
-			sc.scale.y,
-			flip_flags,
-			sc.colorize.r,
-			sc.colorize.g,
-			sc.colorize.b,
-				sc.colorize.a,
-				sc.parallax_weight
-			)
+		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
+		sys_vdp_cmd_blit,
+		13,
+		0,
+		sc.image_handle,
+		x,
+		y,
+		z,
+		sc.layer,
+		sc.scale.x,
+		sc.scale.y,
+		flip_flags,
+		sc.colorize.r,
+		sc.colorize.g,
+		sc.colorize.b,
+		sc.colorize.a,
+		sc.parallax_weight
+		)
 		::continue_sprite_render::
 	end
 end
