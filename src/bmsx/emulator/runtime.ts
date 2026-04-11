@@ -628,9 +628,9 @@ export class Runtime {
 				state.activeCpuUsedCycles += consumed;
 				this.advanceTime(consumed);
 			}
-			if (this.cpu.isHaltedUntilIrq() || result === RunResult.Halted) {
-				break;
-			}
+				if (this.cpu.isHaltedUntilIrq() || this.cpu.isHaltedUntilVblank() || result === RunResult.Halted) {
+					break;
+				}
 			if (consumed <= 0) {
 				throw runtimeFault('CPU yielded without consuming cycles.');
 			}
@@ -1052,6 +1052,7 @@ export class Runtime {
 		this.lastCompletedVblankSequence = 0;
 		this.irqSignalSequence = 0;
 		this.resetHaltIrqWait();
+		this.resetHaltVblankWait();
 		this.vdpStatus = 0;
 		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
 		if (this.vblankStartCycle === 0) {
@@ -1156,12 +1157,18 @@ export class Runtime {
 	public clearHaltUntilIrq(): void {
 		this.cpu.clearHaltUntilIrq();
 		this.resetHaltIrqWait();
+		this.resetHaltVblankWait();
 		this.clearBackQueuesAfterIrqWake = false;
 	}
 
 	private resetHaltIrqWait(): void {
 		this.haltIrqWaitArmed = false;
 		this.haltIrqSignalSequence = 0;
+	}
+
+	private resetHaltVblankWait(): void {
+		this.haltVblankWaitArmed = false;
+		this.haltVblankWaitSequence = 0;
 	}
 
 	private commitFrameOnVblankEdge(): void {
@@ -1253,6 +1260,8 @@ export class Runtime {
 	private irqSignalSequence = 0;
 	private haltIrqSignalSequence = 0;
 	private haltIrqWaitArmed = false;
+	private haltVblankWaitSequence = 0;
+	private haltVblankWaitArmed = false;
 	private vblankSequence = 0;
 	private lastCompletedVblankSequence = 0;
 	public cycleBudgetPerFrame: number;
@@ -2307,7 +2316,8 @@ export class Runtime {
 		}
 		try {
 			while (true) {
-				if (this.cpu.isHaltedUntilIrq() && this.runHaltedUntilIrq(state)) {
+				if ((this.cpu.isHaltedUntilIrq() && this.runHaltedUntilIrq(state))
+					|| (this.cpu.isHaltedUntilVblank() && this.runHaltedUntilVblank(state))) {
 					return;
 				}
 				if (this.clearBackQueuesAfterIrqWake) {
@@ -2320,6 +2330,12 @@ export class Runtime {
 				const result = this.runWithBudget(state);
 				if (this.cpu.isHaltedUntilIrq()) {
 					if (this.runHaltedUntilIrq(state)) {
+						return;
+					}
+					continue;
+				}
+				if (this.cpu.isHaltedUntilVblank()) {
+					if (this.runHaltedUntilVblank(state)) {
 						return;
 					}
 					continue;
@@ -2338,7 +2354,7 @@ export class Runtime {
 	}
 
 	private isFrameBoundaryHalt(): boolean {
-		return this.cpu.isHaltedUntilIrq() && this.pendingCall === 'entry' && this.cpu.getFrameDepth() === 1;
+		return this.cpu.getFrameDepth() === 1 && this.pendingCall === 'entry' && (this.cpu.isHaltedUntilIrq() || this.cpu.isHaltedUntilVblank());
 	}
 
 	private runHaltedUntilIrq(state: FrameState): boolean {
@@ -2360,6 +2376,37 @@ export class Runtime {
 			if (this.irqSignalSequence !== this.haltIrqSignalSequence) {
 				this.cpu.clearHaltUntilIrq();
 				this.resetHaltIrqWait();
+				return state.tickCompleted;
+			}
+			if (state.cycleBudgetRemaining > 0) {
+				const cyclesToTarget = this.nextTimerDeadline() - this.schedulerNowCycles;
+				if (cyclesToTarget <= 0) {
+					this.runDueTimers();
+					continue;
+				}
+				const idleCycles = cyclesToTarget < state.cycleBudgetRemaining ? cyclesToTarget : state.cycleBudgetRemaining;
+				state.cycleBudgetRemaining -= idleCycles;
+				this.advanceTime(idleCycles);
+				continue;
+			}
+			return true;
+		}
+	}
+
+	private runHaltedUntilVblank(state: FrameState): boolean {
+		this.runDueTimers();
+		if (!this.cpu.isHaltedUntilVblank()) {
+			this.resetHaltVblankWait();
+			return false;
+		}
+		if (!this.haltVblankWaitArmed) {
+			this.haltVblankWaitSequence = this.vblankSequence;
+			this.haltVblankWaitArmed = true;
+		}
+		while (true) {
+			if (this.vblankSequence !== this.haltVblankWaitSequence) {
+				this.cpu.clearHaltUntilIrq();
+				this.resetHaltVblankWait();
 				return state.tickCompleted;
 			}
 			if (state.cycleBudgetRemaining > 0) {

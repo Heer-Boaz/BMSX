@@ -123,7 +123,11 @@ DISPATCH_LABEL(SELF) {
 }
 
 DISPATCH_LABEL(HALT) {
-	haltUntilIrq();
+	if (c != 0) {
+		haltUntilVblank();
+	} else {
+		haltUntilIrq();
+	}
 	DISPATCH_CONTINUE();
 }
 

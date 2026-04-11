@@ -603,7 +603,7 @@ const buildInstructionOperands = (
 		case OpCode.STORE_MEM_WORDS:
 			return [registerOperand('a', 'src_base', a), rkOperand('b', 'addr', program, b, decoded.rkBitsB, options), plainOperand('c', 'count', c.toString())];
 		case OpCode.HALT:
-			return [];
+			return [plainOperand('mode', 'mode', b ? 'vblank' : 'irq')];
 		case OpCode.WIDE:
 			throw new Error(`[Disassembler] Unexpected WIDE opcode at pc ${pc}.`);
 		default:
@@ -780,7 +780,7 @@ const formatInstruction = (
 		case OpCode.STORE_MEM_WORDS:
 			return `STORE_MEM_WORDS r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${c}`;
 		case OpCode.HALT:
-			return 'HALT';
+			return b ? 'HALT_UNTIL_VBLANK' : 'HALT_UNTIL_IRQ';
 		case OpCode.WIDE:
 			throw new Error(`[Disassembler] Unexpected WIDE opcode at pc ${pc}.`);
 		default:
