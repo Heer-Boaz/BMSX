@@ -790,7 +790,6 @@ enum class OpCode : uint8_t {
 	SETFIELD,
 	SELF,
 	HALT,
-	HALT_UNTIL_VBLANK = HALT,
 };
 
 enum class MemoryAccessKind : uint8_t {
@@ -1000,10 +999,8 @@ public:
 	void requestYield();
 	void clearYieldRequest();
 	void haltUntilIrq();
-	void haltUntilVblank();
 	void clearHaltUntilIrq();
 	bool isHaltedUntilIrq() const { return m_haltedUntilIrq; }
-	bool isHaltedUntilVblank() const { return m_haltedUntilVblank; }
 	RunResult run(int instructionBudget);
 	RunResult runUntilDepth(int targetDepth, int instructionBudget);
 	void unwindToDepth(int targetDepth);
@@ -1078,7 +1075,6 @@ private:
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
 	std::vector<OpenUpvalueSlot> m_openUpvalues;
 	bool m_haltedUntilIrq = false;
-	bool m_haltedUntilVblank = false;
 	bool m_yieldRequested = false;
 	Memory& m_memory;
 	StringPool m_stringPool;

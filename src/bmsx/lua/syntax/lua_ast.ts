@@ -29,7 +29,6 @@ export const enum LuaSyntaxKind {
 	ForGenericStatement,
 	DoStatement,
 	HaltUntilIrqStatement,
-	HaltUntilVblankStatement,
 	CallStatement,
 	GotoStatement,
 	LabelStatement,
@@ -83,7 +82,6 @@ export type LuaStatement =
 	| LuaForGenericStatement
 	| LuaDoStatement
 	| LuaHaltUntilIrqStatement
-	| LuaHaltUntilVblankStatement
 	| LuaGotoStatement
 	| LuaLabelStatement
 	| LuaCallStatement;
@@ -211,10 +209,6 @@ export type LuaDoStatement = LuaNode & {
 
 export type LuaHaltUntilIrqStatement = LuaNode & {
 	readonly kind: LuaSyntaxKind.HaltUntilIrqStatement;
-};
-
-export type LuaHaltUntilVblankStatement = LuaNode & {
-	readonly kind: LuaSyntaxKind.HaltUntilVblankStatement;
 };
 
 export type LuaCallStatement = LuaNode & {

@@ -174,8 +174,11 @@ function init()
 end
 
 while true do
-	halt_until_vblank
-	dispatch_irqs()
+	local flags
+	repeat
+		halt_until_irq
+		flags = dispatch_irqs()
+	until (flags & irq_vblank) ~= 0
 	vdp_stream_cursor = sys_vdp_stream_base
 	update()
 	do

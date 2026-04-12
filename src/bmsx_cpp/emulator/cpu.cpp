@@ -1407,20 +1407,12 @@ void CPU::clearYieldRequest() {
 }
 
 void CPU::haltUntilIrq() {
-	m_haltedUntilVblank = false;
 	m_haltedUntilIrq = true;
-	m_yieldRequested = false;
-}
-
-void CPU::haltUntilVblank() {
-	m_haltedUntilIrq = false;
-	m_haltedUntilVblank = true;
 	m_yieldRequested = false;
 }
 
 void CPU::clearHaltUntilIrq() {
 	m_haltedUntilIrq = false;
-	m_haltedUntilVblank = false;
 	m_yieldRequested = false;
 }
 
@@ -1456,7 +1448,7 @@ dispatch_loop_check:
 	if (frames.empty()) {
 		return RunResult::Halted;
 	}
-	if (m_haltedUntilIrq || m_haltedUntilVblank) {
+	if (m_haltedUntilIrq) {
 		return RunResult::Halted;
 	}
 	if (m_yieldRequested) {
@@ -1596,7 +1588,7 @@ dispatch_loop_check:
 	if (static_cast<int>(frames.size()) <= targetDepth) {
 		return RunResult::Halted;
 	}
-	if (m_haltedUntilIrq || m_haltedUntilVblank) {
+	if (m_haltedUntilIrq) {
 		return RunResult::Halted;
 	}
 	if (m_yieldRequested) {
@@ -1737,7 +1729,7 @@ void CPU::tickHotLoopHousekeeping() {
 
 void CPU::step() {
 	if (m_frames.empty()) return;
-	if (m_haltedUntilIrq || m_haltedUntilVblank) return;
+	if (m_haltedUntilIrq) return;
 	runHousekeeping();
 	CallFrame& frame = *m_frames.back();
 	int pc = frame.pc;

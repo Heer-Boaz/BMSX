@@ -1518,7 +1518,6 @@ export class CPU {
 	private readonly stringPool: StringPool;
 	private indexKey: StringValue = null;
 	private haltedUntilIrq = false;
-	private haltedUntilVblank = false;
 	private yieldRequested = false;
 	private readonly frames: CallFrame[] = [];
 	private readonly openUpvalues: OpenUpvalueSlot[] = [];
@@ -2015,7 +2014,6 @@ export class CPU {
 		this.openUpvalues.length = 0;
 		this.stackTop = 0;
 		this.haltedUntilIrq = false;
-		this.haltedUntilVblank = false;
 		this.yieldRequested = false;
 		const closure: Closure = { protoIndex: entryProtoIndex, upvalues: [] };
 		addTrackedLuaHeapBytes(16);
@@ -2031,7 +2029,6 @@ export class CPU {
 		}
 		this.lastReturnValues.length = 0;
 		this.haltedUntilIrq = false;
-		this.haltedUntilVblank = false;
 		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, returnCount, false, this.program.protos[closure.protoIndex].entryPC);
 	}
@@ -2045,7 +2042,6 @@ export class CPU {
 		}
 		this.lastReturnValues.length = 0;
 		this.haltedUntilIrq = false;
-		this.haltedUntilVblank = false;
 		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, 0, true, this.program.protos[closure.protoIndex].entryPC);
 	}
@@ -2059,29 +2055,17 @@ export class CPU {
 	}
 
 	public haltUntilIrq(): void {
-		this.haltedUntilVblank = false;
 		this.haltedUntilIrq = true;
-		this.yieldRequested = false;
-	}
-
-	public haltUntilVblank(): void {
-		this.haltedUntilIrq = false;
-		this.haltedUntilVblank = true;
 		this.yieldRequested = false;
 	}
 
 	public clearHaltUntilIrq(): void {
 		this.haltedUntilIrq = false;
-		this.haltedUntilVblank = false;
 		this.yieldRequested = false;
 	}
 
 	public isHaltedUntilIrq(): boolean {
 		return this.haltedUntilIrq;
-	}
-
-	public isHaltedUntilVblank(): boolean {
-		return this.haltedUntilVblank;
 	}
 
 	public swapExternalReturnSink(sink: Value[] | null): Value[] | null {
@@ -2118,7 +2102,7 @@ export class CPU {
 		const decodedRkC = this.decodedRkC!;
 		const decodedWords = this.decodedWords!;
 		while (frames.length > targetDepth) {
-			if (this.haltedUntilIrq || this.haltedUntilVblank) {
+			if (this.haltedUntilIrq) {
 				return RunResult.Halted;
 			}
 			if (this.yieldRequested) {
@@ -2170,7 +2154,7 @@ export class CPU {
 	}
 
 	public step(): void {
-		if (this.haltedUntilIrq || this.haltedUntilVblank) {
+		if (this.haltedUntilIrq) {
 			return;
 		}
 		const frame = this.frames[this.frames.length - 1];
@@ -2481,11 +2465,7 @@ export class CPU {
 					return;
 				}
 		case OpCode.HALT:
-			if (b === 0) {
-				this.haltUntilIrq();
-			} else {
-				this.haltUntilVblank();
-			}
+			this.haltUntilIrq();
 			return;
 				case OpCode.GETT: {
 					this.setRegisterFast(frame, registers, a, this.loadTableIndex(registers.get(b), this.readRK(frame, rkC)));

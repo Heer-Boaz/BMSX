@@ -63,7 +63,6 @@ export const enum OpCode {
 	SETFIELD,
 	SELF,
 	HALT,
-	HALT_UNTIL_VBLANK = HALT,
 }
 
 export const OPCODE_COUNT = 64;
@@ -133,7 +132,6 @@ export const OPCODE = {
 	SETFIELD: OpCode.SETFIELD,
 	SELF: OpCode.SELF,
 	HALT: OpCode.HALT,
-	HALT_UNTIL_VBLANK: OpCode.HALT_UNTIL_VBLANK,
 } as const;
 
 export const OPCODE_NAMES: ReadonlyArray<string> = [

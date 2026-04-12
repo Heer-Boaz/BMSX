@@ -14,7 +14,6 @@ import {
 	type LuaFunctionDeclarationStatement,
 	type LuaFunctionExpression,
 	type LuaHaltUntilIrqStatement,
-	type LuaHaltUntilVblankStatement,
 	type LuaIdentifierExpression,
 	type LuaIfStatement,
 	type LuaIndexExpression,
@@ -1700,9 +1699,6 @@ class FunctionBuilder {
 				case LuaSyntaxKind.HaltUntilIrqStatement:
 					this.compileHaltUntilIrq(statement as LuaHaltUntilIrqStatement);
 					return;
-				case LuaSyntaxKind.HaltUntilVblankStatement:
-					this.compileHaltUntilVblank(statement as LuaHaltUntilVblankStatement);
-					return;
 				case LuaSyntaxKind.BreakStatement:
 					this.compileBreak();
 					return;
@@ -1855,10 +1851,6 @@ class FunctionBuilder {
 
 	private compileHaltUntilIrq(_statement: LuaHaltUntilIrqStatement): void {
 		this.emitABC(OpCode.HALT, 0, 0, 0);
-	}
-
-	private compileHaltUntilVblank(_statement: LuaHaltUntilVblankStatement): void {
-		this.emitABC(OpCode.HALT_UNTIL_VBLANK, 0, 1, 0);
 	}
 
 	private compileAssignment(statement: LuaAssignmentStatement): void {
