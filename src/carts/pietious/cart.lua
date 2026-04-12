@@ -108,14 +108,10 @@ local create_world<const> = function(director_boot_mode)
 	inst('director', { id = 'd', boot_mode = director_boot_mode, })
 end
 
-local start_title_screen<const> = function()
-	create_world('title_screen')
-end
-
 local new_game<const> = function()
 	if pending_title_boot_epoch == init_epoch then
 		pending_title_boot_epoch = init_epoch - 1
-		start_title_screen()
+		create_world('title_screen')
 		return
 	end
 	create_world('room')
