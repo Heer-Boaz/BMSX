@@ -310,7 +310,8 @@ void Runtime::destroy() {
 }
 
 Runtime::Runtime(const RuntimeOptions& options)
-	: m_memory()
+	: timing(options.ufpsScaled)
+	, m_memory()
 	, m_vdp(
 			m_memory,
 			[this]() { return currentSchedulerNowCycles(); },
@@ -388,7 +389,6 @@ Runtime::Runtime(const RuntimeOptions& options)
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
 	m_dmaController.reset();
-	m_geometryController.reset();
 	m_imgDecController.reset();
 	m_vdp.attachImgDecController(m_imgDecController);
 	m_memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
@@ -647,17 +647,15 @@ void Runtime::boot(const ProgramAsset& asset, ProgramMetadata* metadata) {
 	boot(asset.program.get(), metadata, asset.entryProtoIndex);
 }
 
-void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex) {
+void Runtime::resetRuntimeForProgramReload() {
 	resetFrameState();
 	m_runtimeFailed = false;
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
+	m_cartBootPrepared = false;
+	setCartBootReadyFlag(false);
 	m_hostFaultMessage.reset();
-	// The globals table alone is not enough to reset the Lua environment here.
-	// CPU::setProgram() rebuilds the slot-backed globals from the cached slot arrays,
-	// so stale values would otherwise get written straight back into the new globals table.
-	// That specifically resurrected the previous bootrom/cart `update` closure across cart boot,
-	// and the runtime later called a dead closure whose captured upvalues pointed at freed state.
+	m_moduleCache.clear();
 	m_cpu.clearGlobalSlots();
 	m_cpu.globals->clear();
 	m_memory.clearIoSlots();
@@ -682,13 +680,18 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
 	m_dmaController.reset();
+	m_geometryController.reset();
 	m_imgDecController.reset();
 	m_memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
 	m_memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
 	m_vdp.initializeRegisters();
 	m_memory.writeValue(IO_VDP_STATUS, valueNumber(0.0));
-	resetVblankState();
+	resetHardwareState();
 	m_randomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
+}
+
+void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex) {
+	resetRuntimeForProgramReload();
 	setupBuiltins();
 	m_api->registerAllFunctions();
 	enforceLuaHeapBudget();
@@ -1277,7 +1280,7 @@ void Runtime::beginFrameState(bool advanceInputFrame) {
 	m_frameState.cycleBudgetRemaining = m_cycleBudgetPerFrame;
 	m_frameState.cycleBudgetGranted = m_cycleBudgetPerFrame;
 	m_frameState.cycleCarryGranted = 0;
-	m_frameDeltaMs = static_cast<f64>(EngineCore::instance().deltaTime()) * 1000.0;
+	m_frameDeltaMs = timing.frameDurationMs;
 	if (advanceInputFrame) {
 		Input::instance().beginFrame();
 	}
@@ -1634,8 +1637,8 @@ void Runtime::setCpuHz(i64 hz) {
 
 void Runtime::applyActiveMachineTiming(i64 cpuHz) {
 	const MachineManifest& manifest = EngineCore::instance().machineManifest();
-	const int cycleBudget = calcCyclesPerFrame(cpuHz, EngineCore::instance().ufpsScaled());
-	const i64 vblankCycles = resolveVblankCycles(cpuHz, EngineCore::instance().ufpsScaled(), manifest.viewportHeight);
+	const int cycleBudget = calcCyclesPerFrame(cpuHz, timing.ufpsScaled);
+	const i64 vblankCycles = resolveVblankCycles(cpuHz, timing.ufpsScaled, manifest.viewportHeight);
 	setCpuHz(cpuHz);
 	setCycleBudgetPerFrame(cycleBudget);
 	setVblankCycles(static_cast<int>(vblankCycles));

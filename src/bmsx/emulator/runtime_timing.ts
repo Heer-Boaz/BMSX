@@ -49,30 +49,18 @@ export function resolveUfpsScaled(value: number | undefined): number {
 
 export class RuntimeTimingState {
 	public ufpsScaled = 0;
-	public targetFps = 0;
+	public ufps = 0;
 	public frameDurationMs = 0;
 
 	constructor(ufpsScaled: number) {
 		this.applyUfpsScaled(ufpsScaled);
 	}
 
-	public get ufps(): number {
-		return this.targetFps;
-	}
-
 	public applyUfpsScaled(ufpsScaled: number): void {
 		this.ufpsScaled = resolveUfpsScaled(ufpsScaled);
-		this.targetFps = this.ufpsScaled / HZ_SCALE;
-		this.frameDurationMs = 1000 / this.targetFps;
+		this.ufps = this.ufpsScaled / HZ_SCALE;
+		this.frameDurationMs = 1000 / this.ufps;
 		$.platform.audio.setFrameTimeSec(HZ_SCALE / this.ufpsScaled);
-		$.sndmaster.setMixerFps(this.targetFps);
-	}
-
-	public resolveCycleBudget(cpuHz: number): number {
-		return calcCyclesPerFrameScaled(cpuHz, this.ufpsScaled);
-	}
-
-	public resolveVblankCycles(cpuHz: number, renderHeight: number): number {
-		return resolveVblankCycles(cpuHz, this.ufpsScaled, renderHeight);
+		$.sndmaster.setMixerFps(this.ufps);
 	}
 }

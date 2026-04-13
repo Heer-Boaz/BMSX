@@ -972,9 +972,9 @@ export class Runtime {
 	}
 	public applyActiveMachineTiming(cpuHz: number): void {
 		const perfSpecs = getMachinePerfSpecs($.machine_manifest);
-		const cycleBudgetPerFrame = this.timing.resolveCycleBudget(cpuHz);
+		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, this.timing.ufpsScaled);
 		const renderSize = Runtime.resolveRenderSize($.machine_manifest);
-		const vblankCycles = this.timing.resolveVblankCycles(cpuHz, renderSize.height);
+		const vblankCycles = resolveVblankCycles(cpuHz, this.timing.ufpsScaled, renderSize.height);
 		this.setCpuHz(cpuHz);
 		this.setCycleBudgetPerFrame(cycleBudgetPerFrame);
 		this.setVblankCycles(vblankCycles);
@@ -2020,7 +2020,7 @@ export class Runtime {
 			throw runtimeFault('attempted to begin a new frame while another frame is active.');
 		}
 		clearHardwareLighting();
-		this.frameDeltaMs = $.deltatime;
+		this.frameDeltaMs = this.timing.frameDurationMs;
 		if (advanceInputFrame) {
 			Input.instance.beginFrame();
 		}

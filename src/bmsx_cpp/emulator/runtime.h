@@ -5,6 +5,7 @@
 #include "devices/geometry_controller.h"
 #include "devices/imgdec_controller.h"
 #include "io.h"
+#include "runtime_timing.h"
 #include "memory.h"
 #include "runtime_frame_loop.h"
 #include "runtime_machine_scheduler.h"
@@ -67,6 +68,7 @@ struct RuntimeOptions {
 	int playerIndex = 0;
 	Viewport viewport{0, 0};
 	CanonicalizationType canonicalization = CanonicalizationType::None;
+	i64 ufpsScaled = DEFAULT_UFPS_SCALED;
 	i64 cpuHz = 0;
 	int cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
 	int vblankCycles = 0;
@@ -284,6 +286,7 @@ public:
 	void setGeoWorkUnitsPerSec(int workUnitsPerSec);
 	void resetHardwareState();
 	void resetRenderBuffers();
+	void resetRuntimeForProgramReload();
 	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
 	void setCycleBudgetPerFrame(int budget);
 	bool hasActiveTick() const;
@@ -307,6 +310,7 @@ public:
 	void buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, AssetBuildMode mode = AssetBuildMode::Full);
 	void restoreVramSlotTextures();
 	void captureVramTextureSnapshots();
+	RuntimeTimingState timing;
 	RuntimeMachineSchedulerState machineScheduler;
 	RuntimeFrameLoopState frameLoop;
 

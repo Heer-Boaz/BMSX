@@ -49,7 +49,7 @@ import { CanonicalizationType, getMachinePerfSpecs } from '../rompack/rompack';
 import type { RawAssetSource } from '../rompack/asset_source';
 import { Table, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from './cpu';
 import { StringValue, isStringValue, stringValueToString } from './string_pool';
-import type { Runtime } from './runtime';
+import { Runtime } from './runtime';
 import { getSourceForChunk } from '../ide/core/text_utils';
 
 const LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([

@@ -309,7 +309,7 @@ bool tryResolveUfpsScaled(const MachineManifest& manifest, i64& outUfpsScaled) {
 		return false;
 	}
 	const i64 ufpsScaled = *manifest.ufpsScaled;
-	if (ufpsScaled <= 0) {
+	if (ufpsScaled <= HZ_SCALE) {
 		return false;
 	}
 	outUfpsScaled = ufpsScaled;
@@ -321,47 +321,13 @@ i64 resolveUfpsScaled(const MachineManifest& manifest) {
 		throw std::runtime_error("[EngineCore] machine.ufps is required.");
 	}
 	const i64 ufpsScaled = *manifest.ufpsScaled;
-	if (ufpsScaled <= 0) {
-		throw std::runtime_error("[EngineCore] machine.ufps must be a positive integer.");
+	if (ufpsScaled <= HZ_SCALE) {
+		throw std::runtime_error("[EngineCore] machine.ufps must be greater than 1 Hz.");
 	}
 	return ufpsScaled;
 }
 
-i64 hzToScaledHz(f64 hz) {
-	return static_cast<i64>(std::llround(hz * static_cast<f64>(HZ_SCALE)));
-}
-
 } // namespace
-
-i64 resolveVblankCycles(i64 cpuHz, i64 refreshHzScaled, i32 renderHeight) {
-	if (cpuHz <= 0) {
-		throw std::runtime_error("[EngineCore] cpuFreqHz must be a positive integer.");
-	}
-	if (refreshHzScaled <= 0) {
-		throw std::runtime_error("[EngineCore] ufpsScaled must be a positive integer.");
-	}
-	if (renderHeight <= 0) {
-		throw std::runtime_error("[EngineCore] renderHeight must be a positive integer.");
-	}
-	const i64 cycleBudgetPerFrame = calcCyclesPerFrame(cpuHz, refreshHzScaled);
-	const i64 activeScanlines = cycleBudgetPerFrame / static_cast<i64>(renderHeight + 1);
-	const i64 activeDisplayCycles = activeScanlines * static_cast<i64>(renderHeight);
-	const i64 vblankCycles = cycleBudgetPerFrame - activeDisplayCycles;
-	if (vblankCycles > cycleBudgetPerFrame) {
-		throw std::runtime_error("[EngineCore] vblank_cycles must be less than or equal to cycles_per_frame.");
-	}
-	if (vblankCycles <= 0) {
-		throw std::runtime_error("[EngineCore] vblank_cycles must be greater than 0.");
-	}
-	return vblankCycles;
-}
-
-int calcCyclesPerFrame(i64 cpuHz, i64 refreshHzScaled) {
-	const i64 wholeCycles = (cpuHz / refreshHzScaled) * HZ_SCALE;
-	const i64 remainderCycles = ((cpuHz % refreshHzScaled) * HZ_SCALE) / refreshHzScaled;
-	const i64 cyclesPerFrame = wholeCycles + remainderCycles;
-	return static_cast<int>(cyclesPerFrame);
-}
 
 EngineCore* EngineCore::s_instance = nullptr;
 
@@ -506,23 +472,6 @@ void EngineCore::stop() {
 	}
 }
 
-void EngineCore::setUfps(f64 ufps) {
-	setUfpsScaled(hzToScaledHz(ufps));
-}
-
-void EngineCore::setUfpsScaled(i64 ufpsScaled) {
-	if (ufpsScaled <= HZ_SCALE) {
-		throw std::runtime_error("[EngineCore] ufps must be greater than 1.");
-	}
-	m_ufps_scaled = ufpsScaled;
-	m_update_interval_ms = (1000.0 * static_cast<f64>(HZ_SCALE)) / static_cast<f64>(m_ufps_scaled);
-}
-
-void EngineCore::applyRuntimeCycleBudget(Runtime& runtime) {
-	const int cycleBudget = calcCyclesPerFrame(runtime.cpuHz(), m_ufps_scaled);
-	runtime.setCycleBudgetPerFrame(cycleBudget);
-}
-
 void EngineCore::refreshRenderAssets() {
 	if (m_texture_manager) {
 		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
@@ -611,8 +560,6 @@ bool EngineCore::loadEngineAssetsInternal(const u8* data, size_t size) {
 	m_machine_manifest = &m_engine_assets.machine;
 	m_default_font = std::make_unique<Font>(m_engine_assets);
 	m_view->default_font = m_default_font.get();
-	const i64 ufpsScaled = resolveUfpsScaled(m_engine_assets.machine);
-	setUfpsScaled(ufpsScaled);
 	return true;
 }
 
@@ -684,7 +631,6 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 	activateEngineAssets();
 	setMachineManifest(runtimeMachine);
 	const i64 ufpsScaled = resolveUfpsScaled(runtimeMachine);
-	setUfpsScaled(ufpsScaled);
 	applyManifestMemorySpecs(runtimeMachine, m_engine_assets.machine, sizingAssets, m_engine_assets);
 	configureViewForMachine(runtimeMachine);
 
@@ -694,8 +640,8 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(runtimeMachine);
 	const int vdpWorkUnitsPerSec = static_cast<int>(resolveVdpWorkUnitsPerSec(runtimeMachine));
 	const int geoWorkUnitsPerSec = static_cast<int>(resolveGeoWorkUnitsPerSec(runtimeMachine));
-	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
-	const i64 vblankCycles = resolveVblankCycles(cpuHz, m_ufps_scaled, runtimeMachine.viewportHeight);
+	const int cycleBudget = calcCyclesPerFrame(cpuHz, ufpsScaled);
+	const i64 vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, runtimeMachine.viewportHeight);
 
 	if (!Runtime::hasInstance()) {
 		RuntimeOptions options;
@@ -703,6 +649,7 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 		options.viewport.x = runtimeMachine.viewportWidth;
 		options.viewport.y = runtimeMachine.viewportHeight;
 		options.canonicalization = m_engine_assets.machine.canonicalization;
+		options.ufpsScaled = ufpsScaled;
 		options.cpuHz = cpuHz;
 		options.cycleBudgetPerFrame = cycleBudget;
 		options.vblankCycles = static_cast<int>(vblankCycles);
@@ -712,6 +659,7 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 	}
 
 	Runtime& runtime = Runtime::instance();
+	runtime.timing.applyUfpsScaled(ufpsScaled);
 	runtime.setCpuHz(cpuHz);
 	runtime.setCycleBudgetPerFrame(cycleBudget);
 	runtime.setVblankCycles(static_cast<int>(vblankCycles));
@@ -780,10 +728,10 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 	m_loaded_cart_has_program = m_cart_assets.programAsset && m_cart_assets.programAsset->program;
 
 	const MachineManifest& cartMachine = m_cart_assets.machine;
-	const i64 ufpsScaled = resolveUfpsScaled(cartMachine);
-	setUfpsScaled(ufpsScaled);
+	const i64 cartUfpsScaled = resolveUfpsScaled(cartMachine);
 	i64 cpuHz = 0;
 	const bool cartCpuValid = tryResolveCpuHz(cartMachine, cpuHz);
+	i64 runtimeUfpsScaled = cartUfpsScaled;
 	if (!cartCpuValid) {
 		i64 engineUfpsScaled = 0;
 		i64 engineCpuHz = 0;
@@ -794,11 +742,11 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 		}
 		std::cerr << "[EngineCore] Cart manifest machine.specs.cpu.cpu_freq_hz is required; booting BIOS only." << std::endl;
 		cpuHz = engineCpuHz;
-		setUfpsScaled(engineUfpsScaled);
+		runtimeUfpsScaled = engineUfpsScaled;
 	}
-	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
+	const int cycleBudget = calcCyclesPerFrame(cpuHz, runtimeUfpsScaled);
 	const MachineManifest& transferMachine = cartCpuValid ? cartMachine : m_engine_assets.machine;
-	const i64 vblankCycles = resolveVblankCycles(cpuHz, m_ufps_scaled, transferMachine.viewportHeight);
+	const i64 vblankCycles = resolveVblankCycles(cpuHz, runtimeUfpsScaled, transferMachine.viewportHeight);
 	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(transferMachine);
 	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(transferMachine);
 	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(transferMachine);
@@ -830,6 +778,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 				options.viewport.x = assets().machine.viewportWidth;
 				options.viewport.y = assets().machine.viewportHeight;
 				options.canonicalization = assets().machine.canonicalization;
+				options.ufpsScaled = runtimeUfpsScaled;
 				options.cpuHz = cpuHz;
 				options.cycleBudgetPerFrame = cycleBudget;
 				options.vblankCycles = static_cast<int>(vblankCycles);
@@ -838,6 +787,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 				Runtime::createInstance(options);
 			}
 			Runtime& runtime = Runtime::instance();
+			runtime.timing.applyUfpsScaled(runtimeUfpsScaled);
 			runtime.setCpuHz(cpuHz);
 			runtime.setCycleBudgetPerFrame(cycleBudget);
 			runtime.setVblankCycles(static_cast<int>(vblankCycles));
@@ -853,6 +803,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 				options.viewport.x = assets().machine.viewportWidth;
 				options.viewport.y = assets().machine.viewportHeight;
 				options.canonicalization = assets().machine.canonicalization;
+				options.ufpsScaled = runtimeUfpsScaled;
 				options.cpuHz = cpuHz;
 				options.cycleBudgetPerFrame = cycleBudget;
 				options.vblankCycles = static_cast<int>(vblankCycles);
@@ -861,6 +812,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 				Runtime::createInstance(options);
 			}
 			Runtime& runtime = Runtime::instance();
+			runtime.timing.applyUfpsScaled(runtimeUfpsScaled);
 			runtime.setCpuHz(cpuHz);
 			runtime.setCycleBudgetPerFrame(cycleBudget);
 			runtime.setVblankCycles(static_cast<int>(vblankCycles));
@@ -904,11 +856,10 @@ bool EngineCore::bootLoadedCart() {
 	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(assets().machine);
 	const int vdpWorkUnitsPerSec = static_cast<int>(resolveVdpWorkUnitsPerSec(assets().machine));
 	const int geoWorkUnitsPerSec = static_cast<int>(resolveGeoWorkUnitsPerSec(assets().machine));
-	setUfpsScaled(ufpsScaled);
 	applyManifestMemorySpecs(assets().machine, m_engine_assets.machine, assets(), m_engine_assets);
 	configureViewForMachine(assets().machine);
-	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
-	const i64 vblankCycles = resolveVblankCycles(cpuHz, m_ufps_scaled, assets().machine.viewportHeight);
+	const int cycleBudget = calcCyclesPerFrame(cpuHz, ufpsScaled);
+	const i64 vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, assets().machine.viewportHeight);
 
 	if (!Runtime::hasInstance()) {
 		RuntimeOptions options;
@@ -916,6 +867,7 @@ bool EngineCore::bootLoadedCart() {
 		options.viewport.x = assets().machine.viewportWidth;
 		options.viewport.y = assets().machine.viewportHeight;
 		options.canonicalization = assets().machine.canonicalization;
+		options.ufpsScaled = ufpsScaled;
 		options.cpuHz = cpuHz;
 		options.cycleBudgetPerFrame = cycleBudget;
 		options.vblankCycles = static_cast<int>(vblankCycles);
@@ -925,12 +877,14 @@ bool EngineCore::bootLoadedCart() {
 	}
 
 	Runtime& runtime = Runtime::instance();
+	runtime.timing.applyUfpsScaled(ufpsScaled);
 	runtime.setCpuHz(cpuHz);
 	runtime.setCycleBudgetPerFrame(cycleBudget);
 	runtime.setVblankCycles(static_cast<int>(vblankCycles));
 	runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, vdpWorkUnitsPerSec, geoWorkUnitsPerSec);
 	runtime.refreshMemoryMap();
 	runtime.buildAssetMemory(assets(), false, Runtime::AssetBuildMode::Cart);
+	runtime.resetRuntimeForProgramReload();
 	refreshAudioAssets();
 	bootRuntimeFromProgram();
 	return true;
@@ -1077,9 +1031,8 @@ void EngineCore::bootRuntimeFromProgram() {
 	const int vdpWorkUnitsPerSec = static_cast<int>(resolveVdpWorkUnitsPerSec(activeAssets.machine));
 	const int geoWorkUnitsPerSec = static_cast<int>(resolveGeoWorkUnitsPerSec(activeAssets.machine));
 	const i64 ufpsScaled = resolveUfpsScaled(activeAssets.machine);
-	setUfpsScaled(ufpsScaled);
-	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
-	const i64 vblankCycles = resolveVblankCycles(cpuHz, m_ufps_scaled, activeAssets.machine.viewportHeight);
+	const int cycleBudget = calcCyclesPerFrame(cpuHz, ufpsScaled);
+	const i64 vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, activeAssets.machine.viewportHeight);
 
 	// Create Runtime instance if it doesn't exist
 	if (!Runtime::hasInstance()) {
@@ -1088,6 +1041,7 @@ void EngineCore::bootRuntimeFromProgram() {
 		options.viewport.x = activeAssets.machine.viewportWidth;
 		options.viewport.y = activeAssets.machine.viewportHeight;
 		options.canonicalization = activeAssets.machine.canonicalization;
+		options.ufpsScaled = ufpsScaled;
 		options.cpuHz = cpuHz;
 		options.cycleBudgetPerFrame = cycleBudget;
 		options.vblankCycles = static_cast<int>(vblankCycles);
@@ -1098,6 +1052,7 @@ void EngineCore::bootRuntimeFromProgram() {
 
 	// Boot the runtime with the pre-compiled program
 	Runtime& runtime = Runtime::instance();
+	runtime.timing.applyUfpsScaled(ufpsScaled);
 	runtime.setCpuHz(cpuHz);
 	runtime.setCycleBudgetPerFrame(cycleBudget);
 	runtime.setVblankCycles(static_cast<int>(vblankCycles));

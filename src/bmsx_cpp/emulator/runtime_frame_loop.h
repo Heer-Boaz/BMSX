@@ -29,9 +29,8 @@ private:
 	void recordHostFrame();
 	void recordTickCompletion(bool visualCommitted, bool vdpFrameHeld);
 	void recordPresentation(GameView::PresentationMode mode, bool commitFrame, bool paused);
-	void flushDebugReport(const class EngineCore& engine, const Runtime* runtime);
+	void flushDebugReport(const Runtime* runtime);
 	void render(class EngineCore& engine);
-	f64 frameDurationMs(const Runtime& runtime) const;
 
 	bool m_pendingPresentation = false;
 	GameView::PresentationMode m_presentationMode = GameView::PresentationMode::Completed;

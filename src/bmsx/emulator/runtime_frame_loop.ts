@@ -133,10 +133,6 @@ export class RuntimeFrameLoopState {
 		runtime.scheduleDeferredCartBootPreparation();
 	}
 
-	private getFrameDurationMs(runtime: Runtime): number {
-		return runtime.timing.frameDurationMs;
-	}
-
 	public clearPresentation(): void {
 		this.pendingPresentation = false;
 		this.presentationMode = 'completed';
@@ -258,7 +254,7 @@ export class RuntimeFrameLoopState {
 				this.runOverlay(runtime);
 			} else {
 				const previousTickSequence = runtime.lastTickSequence;
-				$.deltatime = this.getFrameDurationMs(runtime);
+				$.deltatime = runtime.timing.frameDurationMs;
 				runtime.machineScheduler.run(runtime, hostDeltaMs);
 				if (runtime.executionOverlayActive) {
 					runtime.machineScheduler.clearQueuedTime();

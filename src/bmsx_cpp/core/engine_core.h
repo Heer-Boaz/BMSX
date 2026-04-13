@@ -21,13 +21,6 @@
 
 namespace bmsx {
 
-constexpr i64 HZ_SCALE = 1'000'000;
-constexpr i64 DEFAULT_UFPS = 50;
-constexpr i64 DEFAULT_UFPS_SCALED = DEFAULT_UFPS * HZ_SCALE;
-
-int calcCyclesPerFrame(i64 cpuHz, i64 refreshHzScaled);
-i64 resolveVblankCycles(i64 cpuHz, i64 refreshHzScaled, i32 renderHeight);
-
 class BFont;
 class TextureManager;
 class Runtime;
@@ -125,12 +118,8 @@ public:
 	f64 deltaTime() const { return m_delta_time; }
 	u64 frameCount() const { return m_frame_count; }
 	f64 fps() const { return m_fps; }
-	f64 ufps() const { return static_cast<f64>(m_ufps_scaled) / static_cast<f64>(HZ_SCALE); }
-	i64 ufpsScaled() const { return m_ufps_scaled; }
 	const TickTiming& lastTickTiming() const { return m_last_tick_timing; }
 	const RenderTiming& lastRenderTiming() const { return m_last_render_timing; }
-	void setUfps(f64 ufps);
-	void setUfpsScaled(i64 ufpsScaled);
 
 	void refreshRenderAssets();
 	void log(LogLevel level, const char* fmt, ...);
@@ -178,7 +167,6 @@ public:
 	static EngineCore* instancePtr();
 
 private:
-	void applyRuntimeCycleBudget(Runtime& runtime);
 	void renderTestPattern();  // Visual test when no ROM loaded
 	void bootRuntimeFromProgram();  // Boot runtime with pre-compiled program from ROM
 	void refreshAudioAssets();
@@ -201,9 +189,7 @@ private:
 	f64 m_total_time = 0.0;
 	f64 m_delta_time = 0.0;
 	u64 m_frame_count = 0;
-	f64 m_fps = DEFAULT_UFPS;
-	i64 m_ufps_scaled = DEFAULT_UFPS_SCALED;
-	f64 m_update_interval_ms = 1000.0 / static_cast<f64>(DEFAULT_UFPS);
+	f64 m_fps = 50.0;
 	bool m_debugTickReportInitialized = false;
 	std::chrono::steady_clock::time_point m_debugTickReportAt;
 	u64 m_debugTickHostFrames = 0;

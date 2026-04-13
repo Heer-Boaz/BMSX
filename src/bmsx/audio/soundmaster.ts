@@ -323,7 +323,7 @@ export class SoundMaster {
 		if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
 			throw new Error('[SoundMaster] Audio sample rate must be a positive finite value.');
 		}
-		this.setMixerFps(Runtime.instance.timing.targetFps);
+		this.setMixerFps(Runtime.instance.timing.ufps);
 		this.volume = clamp01(startingVolume);
 	}
 

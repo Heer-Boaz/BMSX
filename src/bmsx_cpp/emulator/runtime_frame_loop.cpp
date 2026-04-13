@@ -69,7 +69,7 @@ void RuntimeFrameLoopState::recordPresentation(GameView::PresentationMode mode, 
 	m_debugPresentHoldPresents += 1;
 }
 
-void RuntimeFrameLoopState::flushDebugReport(const EngineCore& engine, const Runtime* runtime) {
+void RuntimeFrameLoopState::flushDebugReport(const Runtime* runtime) {
 	if (!isPresentRateDebugEnabled()) {
 		return;
 	}
@@ -90,7 +90,7 @@ void RuntimeFrameLoopState::flushDebugReport(const EngineCore& engine, const Run
 		"[BMSX] host_frames=%llu host_fps=%.2f ufps=%.2f tick_completed=%llu tick_committed=%llu tick_deferred=%llu tick_held=%llu present_partial=%llu present_commit=%llu present_hold=%llu present_paused=%llu draw_pending=%d active_tick=%d\n",
 		static_cast<unsigned long long>(m_debugPresentHostFrames),
 		hostFps,
-		engine.ufps(),
+		runtime ? runtime->timing.ufps : DEFAULT_UFPS,
 		static_cast<unsigned long long>(m_debugPresentTickCompleted),
 		static_cast<unsigned long long>(m_debugPresentTickCommitted),
 		static_cast<unsigned long long>(m_debugPresentTickDeferred),
@@ -238,11 +238,7 @@ void RuntimeFrameLoopState::render(EngineCore& engine) {
 	}
 
 	engine.m_last_render_timing.totalMs = to_ms(std::chrono::steady_clock::now() - renderStart);
-	flushDebugReport(engine, runtime);
-}
-
-f64 RuntimeFrameLoopState::frameDurationMs(const Runtime& runtime) const {
-	return (static_cast<f64>(runtime.m_cycleBudgetPerFrame) * 1000.0) / static_cast<f64>(runtime.m_cpuHz);
+	flushDebugReport(runtime);
 }
 
 void RuntimeFrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platformPaused, bool skipRender) {
@@ -283,9 +279,7 @@ void RuntimeFrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool p
 		engine.m_last_tick_timing.runtimeTerminalInputMs = to_ms(terminalInputEnd - terminalInputStart);
 
 		const i64 previousTickSequence = runtime.m_lastTickSequence;
-		const double fixedDeltaSeconds = frameDurationMs(runtime) / 1000.0;
 		auto updateStart = std::chrono::steady_clock::now();
-		engine.m_delta_time = fixedDeltaSeconds;
 		runtime.machineScheduler.run(runtime, hostDeltaMs);
 		if (runtime.m_lastTickSequence != previousTickSequence) {
 			markPresentation(GameView::PresentationMode::Completed, runtime.m_lastTickVisualFrameCommitted);
