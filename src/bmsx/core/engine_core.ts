@@ -942,10 +942,10 @@ export class EngineCore {
 			}
 
 			const maxAccumulated = this.timestep_ms * MAX_SUBSTEPS;
-				this.accumulated_time = clamp(this.accumulated_time + hostDeltaMs, 0, maxAccumulated);
-				this.wasupdated = false;
-				let presentQueued = false;
-				let slicesConsumed = 0;
+			this.accumulated_time = clamp(this.accumulated_time + hostDeltaMs, 0, maxAccumulated);
+			this.wasupdated = false;
+			let presentQueued = false;
+			let slicesConsumed = 0;
 			const baseBudget = this.computeCycleBudget(runtime);
 			const runPartialPresentation = () => {
 				presentQueued = true;
@@ -968,58 +968,58 @@ export class EngineCore {
 				// justpressed appear to require extremely precise timing under slowdown.
 				// The invariant is:
 				// one input beginFrame() per newly-started simframe, never per host frame.
-					if (slicesAvailable > 0 && !runtime.hasActiveTick()) {
-						Input.instance.beginFrame();
-					}
-					for (; slicesConsumed < slicesAvailable;) {
-						if (!runGate.ready || this.paused) {
-							this.accumulated_time = 0;
-							break;
-						}
-						const tickActive = runtime.hasActiveTick();
-						const carryBudget = tickActive ? 0 : this.cycleCarry;
-						if (carryBudget !== 0) {
-							this.cycleCarry = 0;
-						}
-						runtime.grantCycleBudget(baseBudget, carryBudget);
-						if (tickActive) {
-							runtime.tickUpdate();
-						} else {
-							this.deltatime = this.timestep_ms;
-							this.update(this.timestep_ms);
-						}
-						const completion = runtime.consumeLastTickCompletion();
-						if (completion) {
-							slicesConsumed += 1;
-							this.recordPresentDebugTickCompletion(completion.visualCommitted, completion.vdpFrameHeld);
-							// A completed tick reached its frame boundary; leftover budget after
-							// an IRQ frame wait belongs to that frame and must not spill into the next one.
-							this.cycleCarry = 0;
-							runCompletedPresentation(completion.visualCommitted);
-							// Present the completed frame now; any catch-up continuation resumes on the next host frame.
-							break;
-						}
-						if (runtimeIde.isOverlayActive(runtime)) {
-							if (!runtime.hasActiveTick()) {
-								slicesConsumed += 1;
-							}
-							this.runOverlayModeUpdate(runtime);
-							runCompletedPresentation();
-							break;
-						}
-						if (runtime.hasActiveTick()) {
-							// The same simulation tick is still waiting on runtime-owned work
-							// such as VBLANK/IRQ/present readiness. Do not charge another
-							// fixed-step slice until that tick actually completes.
-							break;
-						}
-						slicesConsumed += 1;
-					}
-					if (slicesConsumed > 0) {
-						const consumed = slicesConsumed * this.timestep_ms;
-						this.accumulated_time = clamp(this.accumulated_time - consumed, 0, maxAccumulated);
-					}
+				if (slicesAvailable > 0 && !runtime.hasActiveTick()) {
+					Input.instance.beginFrame();
 				}
+				for (; slicesConsumed < slicesAvailable;) {
+					if (!runGate.ready || this.paused) {
+						this.accumulated_time = 0;
+						break;
+					}
+					const tickActive = runtime.hasActiveTick();
+					const carryBudget = tickActive ? 0 : this.cycleCarry;
+					if (carryBudget !== 0) {
+						this.cycleCarry = 0;
+					}
+					runtime.grantCycleBudget(baseBudget, carryBudget);
+					if (tickActive) {
+						runtime.tickUpdate();
+					} else {
+						this.deltatime = this.timestep_ms;
+						this.update(this.timestep_ms);
+					}
+					const completion = runtime.consumeLastTickCompletion();
+					if (completion) {
+						slicesConsumed += 1;
+						this.recordPresentDebugTickCompletion(completion.visualCommitted, completion.vdpFrameHeld);
+						// A completed tick reached its frame boundary; leftover budget after
+						// an IRQ frame wait belongs to that frame and must not spill into the next one.
+						this.cycleCarry = 0;
+						runCompletedPresentation(completion.visualCommitted);
+						// Present the completed frame now; any catch-up continuation resumes on the next host frame.
+						break;
+					}
+					if (runtimeIde.isOverlayActive(runtime)) {
+						if (!runtime.hasActiveTick()) {
+							slicesConsumed += 1;
+						}
+						this.runOverlayModeUpdate(runtime);
+						runCompletedPresentation();
+						break;
+					}
+					if (runtime.hasActiveTick()) {
+						// The same simulation tick is still waiting on runtime-owned work
+						// such as VBLANK/IRQ/present readiness. Do not charge another
+						// fixed-step slice until that tick actually completes.
+						break;
+					}
+					slicesConsumed += 1;
+				}
+				if (slicesConsumed > 0) {
+					const consumed = slicesConsumed * this.timestep_ms;
+					this.accumulated_time = clamp(this.accumulated_time - consumed, 0, maxAccumulated);
+				}
+			}
 			if (!presentQueued && runtime.isDrawPending) {
 				runPartialPresentation();
 			}
