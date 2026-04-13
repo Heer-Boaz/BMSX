@@ -299,6 +299,7 @@ local add_active_object<const> = function(obj, space)
 	local index<const> = #objects + 1
 	objects[index] = obj
 	obj._active_object_index = index
+	obj._active_object_space_id = space.id
 	local tick_order<const> = obj.tick_order
 	local tick_bucket<const> = space.active_objects_by_tick_order[tick_order]
 	local tick_index<const> = #tick_bucket + 1
@@ -318,6 +319,7 @@ local remove_active_object<const> = function(obj, space)
 	end
 	objects[last_index] = nil
 	obj._active_object_index = nil
+	obj._active_object_space_id = nil
 	local tick_order<const> = obj._active_object_tick_order
 	local tick_bucket<const> = space.active_objects_by_tick_order[tick_order]
 	local tick_index<const> = obj._active_object_tick_order_index
@@ -365,6 +367,7 @@ function world_class.new()
 	self._obj_to_space = {}
 	self._pending_object_disposals = {}
 	self._pending_subsystem_disposals = {}
+	self._pending_active_objects = {}
 	self._pending_active_components = {}
 	self.active_space_id = 'main'
 	self.active_space = nil
@@ -452,11 +455,7 @@ function world_class:set_object_space(obj, space_id)
 	if current_space_id ~= nil then
 		local current_space<const> = self._spaces[current_space_id]
 		if obj.active then
-			local components<const> = obj.components
-			for i = 1, #components do
-				self:deactivate_component(components[i])
-			end
-			remove_active_object(obj, current_space)
+			self:deactivate_object(obj)
 		end
 		current_space.by_id[object_id] = nil
 		remove_space_object(obj, current_space)
@@ -467,31 +466,61 @@ function world_class:set_object_space(obj, space_id)
 	self._obj_to_space[object_id] = space_id
 	obj.space_id = space_id
 	if obj.active then
-		add_active_object(obj, target_space)
-		local components<const> = obj.components
-		for i = 1, #components do
-			self:activate_component(components[i])
-		end
+		self:activate_object(obj)
 	end
 	return space_id
 end
 
+local queue_active_object<const> = function(world, obj)
+	if obj._active_object_pending then
+		return
+	end
+	local pending<const> = world._pending_active_objects
+	pending[#pending + 1] = obj
+	obj._active_object_pending = true
+end
+
+-- Keep active_objects stable for the whole ECS phase. Structural mutations
+-- are deferred to the phase boundary so gameplay systems can iterate the dense
+-- active list directly instead of relying on reverse-loop/remove workarounds.
+local reconcile_active_object<const> = function(world, obj)
+	local target_space_id = nil
+	if obj.active and world._by_id[obj.id] == obj then
+		target_space_id = obj.space_id
+	end
+	local active_space_id<const> = obj._active_object_space_id
+	if active_space_id ~= target_space_id then
+		if active_space_id ~= nil then
+			remove_active_object(obj, world._spaces[active_space_id])
+		end
+		if target_space_id ~= nil then
+			add_active_object(obj, world._spaces[target_space_id])
+		end
+	end
+end
+
 function world_class:activate_object(obj)
-	local space<const> = self._spaces[obj.space_id]
-	add_active_object(obj, space)
 	local components<const> = obj.components
 	for i = 1, #components do
 		self:activate_component(components[i])
 	end
+	if self.current_phase ~= nil then
+		queue_active_object(self, obj)
+	else
+		reconcile_active_object(self, obj)
+	end
 end
 
 function world_class:deactivate_object(obj)
-	local space<const> = self._spaces[obj.space_id]
 	local components<const> = obj.components
 	for i = 1, #components do
 		self:deactivate_component(components[i])
 	end
-	remove_active_object(obj, space)
+	if self.current_phase ~= nil then
+		queue_active_object(self, obj)
+	else
+		reconcile_active_object(self, obj)
+	end
 end
 
 local queue_active_component<const> = function(world, comp)
@@ -542,6 +571,16 @@ function world_class:flush_active_components()
 		local comp<const> = pending[i]
 		comp._active_component_pending = nil
 		reconcile_active_component(self, comp)
+		pending[i] = nil
+	end
+end
+
+function world_class:flush_active_objects()
+	local pending<const> = self._pending_active_objects
+	for i = 1, #pending do
+		local obj<const> = pending[i]
+		obj._active_object_pending = nil
+		reconcile_active_object(self, obj)
 		pending[i] = nil
 	end
 end
@@ -794,6 +833,7 @@ local run_phase<const> = function(self, group, dt_ms)
 	self.current_phase = group
 	self.systems:update_phase(group, dt_ms)
 	self.current_phase = nil
+	self:flush_active_objects()
 	self:flush_active_components()
 end
 

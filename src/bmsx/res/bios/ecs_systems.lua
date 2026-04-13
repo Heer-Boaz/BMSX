@@ -92,7 +92,7 @@ end
 
 function behaviortreesystem:update()
 	local objects<const> = world_instance.active_space.active_objects
-	for i = #objects, 1, -1 do
+	for i = 1, #objects do
 		local obj<const> = objects[i]
 		local ids<const> = obj.btree_ids
 		local contexts<const> = obj.btreecontexts
@@ -138,7 +138,7 @@ end
 
 function statemachinesystem:update(dt_ms)
 	local objects<const> = world_instance.active_space.active_objects
-	for i = #objects, 1, -1 do
+	for i = 1, #objects do
 		objects[i].sc:update(dt_ms)
 	end
 end
