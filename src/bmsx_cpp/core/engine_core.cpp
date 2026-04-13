@@ -670,6 +670,7 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 	runtime.buildAssetMemory(m_engine_assets, true);
 	runtime.memory().sealEngineAssets();
 	refreshAudioAssets(m_engine_assets);
+	runtime.resetRuntimeForProgramReload();
 	runtime.boot(*m_engine_assets.programAsset, m_engine_assets.programSymbols.get());
 	runtime.resetCartBootState();
 	return true;
@@ -1060,6 +1061,7 @@ void EngineCore::bootRuntimeFromProgram() {
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Cart);
 	runtime.setCanonicalization(activeAssets.machine.canonicalization);
+	runtime.resetRuntimeForProgramReload();
 	if (m_engine_assets_loaded && m_engine_assets.programAsset && m_engine_assets.programAsset->program) {
 		auto linked = linkProgramAssets(
 			*m_engine_assets.programAsset,

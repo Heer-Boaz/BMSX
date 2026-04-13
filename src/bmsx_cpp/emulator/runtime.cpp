@@ -691,7 +691,6 @@ void Runtime::resetRuntimeForProgramReload() {
 }
 
 void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex) {
-	resetRuntimeForProgramReload();
 	setupBuiltins();
 	m_api->registerAllFunctions();
 	enforceLuaHeapBudget();
