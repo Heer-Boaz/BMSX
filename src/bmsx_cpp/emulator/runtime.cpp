@@ -431,6 +431,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 			return static_cast<size_t>(m_resourceUsageDetector->baseRamUsedBytes());
 		},
 	});
+	initializeCachedIdentifiers();
 
 }
 
@@ -653,6 +654,7 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
 	m_cartBootPrepared = false;
+	m_pendingCartBoot = false;
 	setCartBootReadyFlag(false);
 	m_hostFaultMessage.reset();
 	m_moduleCache.clear();
@@ -734,16 +736,33 @@ bool Runtime::pollSystemBootRequest() {
 	}
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	machineScheduler.clearQueuedTime();
+	m_pendingCartBoot = true;
+	return true;
+}
+
+bool Runtime::processPendingCartBoot() {
+	if (!m_pendingCartBoot) {
+		return false;
+	}
+	if (m_frameActive) {
+		resetFrameState();
+	}
+	if (hasEntryContinuation()) {
+		m_pendingCall = PendingCall::None;
+		clearHaltUntilIrq();
+	}
+	machineScheduler.clearQueuedTime();
+	m_pendingCartBoot = false;
 	try {
 		if (!EngineCore::instance().bootLoadedCart()) {
 			setCartBootReadyFlag(false);
 			EngineCore::instance().log(LogLevel::Error,
-				"Runtime fault: cart boot request failed while leaving system boot screen active.\n");
+				"Runtime fault: deferred cart boot request failed while leaving system boot screen active.\n");
 		}
 	} catch (const std::exception& error) {
 		setCartBootReadyFlag(false);
 		EngineCore::instance().log(LogLevel::Error,
-			"Runtime fault: cart boot request failed while leaving system boot screen active: %s\n",
+			"Runtime fault: deferred cart boot request failed while leaving system boot screen active: %s\n",
 			error.what());
 	}
 	return true;
@@ -1134,11 +1153,35 @@ void Runtime::resetHaltIrqWait() {
 	m_haltIrqSignalSequence = 0;
 }
 
+bool Runtime::tryCompleteTickOnActiveVblank(FrameState& frameState) {
+	if (!(m_cpu.getFrameDepth() == 1 && m_pendingCall == PendingCall::Entry && m_cpu.isHaltedUntilIrq())) {
+		return false;
+	}
+	if (!m_vblankActive || m_vblankSequence == 0) {
+		return false;
+	}
+	const uint32_t pendingFlags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
+	if ((pendingFlags & IRQ_VBLANK) == 0u) {
+		return false;
+	}
+	if (m_lastCompletedVblankSequence == m_vblankSequence) {
+		return false;
+	}
+	completeTickIfPending(frameState, m_vblankSequence);
+	m_clearBackQueuesAfterIrqWake = true;
+	m_cpu.clearHaltUntilIrq();
+	resetHaltIrqWait();
+	return true;
+}
+
 bool Runtime::runHaltedUntilIrq(FrameState& frameState) {
 	runDueTimers();
 	if (!m_cpu.isHaltedUntilIrq()) {
 		resetHaltIrqWait();
 		return false;
+	}
+	if (tryCompleteTickOnActiveVblank(frameState)) {
+		return true;
 	}
 	if (!m_haltIrqWaitArmed) {
 		const uint32_t pendingFlags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
@@ -1164,6 +1207,9 @@ bool Runtime::runHaltedUntilIrq(FrameState& frameState) {
 			const int idleCycles = static_cast<int>(std::min<i64>(frameState.cycleBudgetRemaining, cyclesToTarget));
 			frameState.cycleBudgetRemaining -= idleCycles;
 			advanceTime(idleCycles);
+			if (tryCompleteTickOnActiveVblank(frameState)) {
+				return true;
+			}
 			continue;
 		}
 		return true;
@@ -1284,29 +1330,21 @@ void Runtime::beginFrameState(bool advanceInputFrame) {
 		Input::instance().beginFrame();
 	}
 	m_vdp.beginFrame();
-	auto* gameTable = asTable(m_cpu.getGlobalByKey(canonicalizeIdentifier("game")));
-	auto* viewportTable = asTable(gameTable->get(canonicalizeIdentifier("viewportsize")));
+	auto* gameTable = asTable(m_cpu.getGlobalByKey(m_gameKey));
+	auto* viewportTable = asTable(gameTable->get(m_viewportsizeKey));
 	auto viewSize = EngineCore::instance().view()->viewportSize;
-	viewportTable->set(canonicalizeIdentifier("x"), valueNumber(static_cast<double>(viewSize.x)));
-	viewportTable->set(canonicalizeIdentifier("y"), valueNumber(static_cast<double>(viewSize.y)));
-	auto* viewTable = asTable(gameTable->get(canonicalizeIdentifier("view")));
+	viewportTable->set(m_viewXKey, valueNumber(static_cast<double>(viewSize.x)));
+	viewportTable->set(m_viewYKey, valueNumber(static_cast<double>(viewSize.y)));
+	auto* viewTable = asTable(gameTable->get(m_viewKey));
 	auto* view = EngineCore::instance().view();
-	const Value viewCrtKey = canonicalizeIdentifier("crt_postprocessing_enabled");
-	const Value viewNoiseKey = canonicalizeIdentifier("enable_noise");
-	const Value viewColorBleedKey = canonicalizeIdentifier("enable_colorbleed");
-	const Value viewScanlinesKey = canonicalizeIdentifier("enable_scanlines");
-	const Value viewBlurKey = canonicalizeIdentifier("enable_blur");
-	const Value viewGlowKey = canonicalizeIdentifier("enable_glow");
-	const Value viewFringingKey = canonicalizeIdentifier("enable_fringing");
-	const Value viewApertureKey = canonicalizeIdentifier("enable_aperture");
-	viewTable->set(viewCrtKey, valueBool(view->crt_postprocessing_enabled));
-	viewTable->set(viewNoiseKey, valueBool(view->applyNoise));
-	viewTable->set(viewColorBleedKey, valueBool(view->applyColorBleed));
-	viewTable->set(viewScanlinesKey, valueBool(view->applyScanlines));
-	viewTable->set(viewBlurKey, valueBool(view->applyBlur));
-	viewTable->set(viewGlowKey, valueBool(view->applyGlow));
-	viewTable->set(viewFringingKey, valueBool(view->applyFringing));
-	viewTable->set(viewApertureKey, valueBool(view->applyAperture));
+	viewTable->set(m_viewCrtPostprocessingEnabledKey, valueBool(view->crt_postprocessing_enabled));
+	viewTable->set(m_viewNoiseKey, valueBool(view->applyNoise));
+	viewTable->set(m_viewColorBleedKey, valueBool(view->applyColorBleed));
+	viewTable->set(m_viewScanlinesKey, valueBool(view->applyScanlines));
+	viewTable->set(m_viewBlurKey, valueBool(view->applyBlur));
+	viewTable->set(m_viewGlowKey, valueBool(view->applyGlow));
+	viewTable->set(m_viewFringingKey, valueBool(view->applyFringing));
+	viewTable->set(m_viewApertureKey, valueBool(view->applyAperture));
 }
 
 void Runtime::finalizeUpdateSlice() {
@@ -1334,6 +1372,9 @@ bool Runtime::tickUpdate() {
 	if (pollSystemBootRequest()) {
 		return true;
 	}
+	if (processPendingCartBoot()) {
+		return true;
+	}
 
 	FrameState* const previousState = m_frameActive ? &m_frameState : nullptr;
 	const int previousRemaining = previousState != nullptr ? previousState->cycleBudgetRemaining : -1;
@@ -1356,31 +1397,23 @@ bool Runtime::tickUpdate() {
 	}
 
 	if (startedFrame) {
-		auto* gameTable = asTable(m_cpu.getGlobalByKey(canonicalizeIdentifier("game")));
-		auto* viewTable = asTable(gameTable->get(canonicalizeIdentifier("view")));
+		auto* gameTable = asTable(m_cpu.getGlobalByKey(m_gameKey));
+		auto* viewTable = asTable(gameTable->get(m_viewKey));
 		auto* view = EngineCore::instance().view();
-		const Value viewCrtKey = canonicalizeIdentifier("crt_postprocessing_enabled");
-		const Value viewNoiseKey = canonicalizeIdentifier("enable_noise");
-		const Value viewColorBleedKey = canonicalizeIdentifier("enable_colorbleed");
-		const Value viewScanlinesKey = canonicalizeIdentifier("enable_scanlines");
-		const Value viewBlurKey = canonicalizeIdentifier("enable_blur");
-		const Value viewGlowKey = canonicalizeIdentifier("enable_glow");
-		const Value viewFringingKey = canonicalizeIdentifier("enable_fringing");
-		const Value viewApertureKey = canonicalizeIdentifier("enable_aperture");
 		auto readViewBool = [](Value value, const char* field) -> bool {
 			if (!valueIsBool(value)) {
 				throw BMSX_RUNTIME_ERROR(std::string("game.view.") + field + " must be boolean.");
 			}
 			return valueToBool(value);
 		};
-		view->crt_postprocessing_enabled = readViewBool(viewTable->get(viewCrtKey), "crt_postprocessing_enabled");
-		view->applyNoise = readViewBool(viewTable->get(viewNoiseKey), "enable_noise");
-		view->applyColorBleed = readViewBool(viewTable->get(viewColorBleedKey), "enable_colorbleed");
-		view->applyScanlines = readViewBool(viewTable->get(viewScanlinesKey), "enable_scanlines");
-		view->applyBlur = readViewBool(viewTable->get(viewBlurKey), "enable_blur");
-		view->applyGlow = readViewBool(viewTable->get(viewGlowKey), "enable_glow");
-		view->applyFringing = readViewBool(viewTable->get(viewFringingKey), "enable_fringing");
-		view->applyAperture = readViewBool(viewTable->get(viewApertureKey), "enable_aperture");
+		view->crt_postprocessing_enabled = readViewBool(viewTable->get(m_viewCrtPostprocessingEnabledKey), "crt_postprocessing_enabled");
+		view->applyNoise = readViewBool(viewTable->get(m_viewNoiseKey), "enable_noise");
+		view->applyColorBleed = readViewBool(viewTable->get(m_viewColorBleedKey), "enable_colorbleed");
+		view->applyScanlines = readViewBool(viewTable->get(m_viewScanlinesKey), "enable_scanlines");
+		view->applyBlur = readViewBool(viewTable->get(m_viewBlurKey), "enable_blur");
+		view->applyGlow = readViewBool(viewTable->get(m_viewGlowKey), "enable_glow");
+		view->applyFringing = readViewBool(viewTable->get(m_viewFringingKey), "enable_fringing");
+		view->applyAperture = readViewBool(viewTable->get(m_viewApertureKey), "enable_aperture");
 		m_debugUpdateCountTotal += 1;
 	}
 
@@ -1398,10 +1431,6 @@ bool Runtime::tickUpdate() {
 		return true;
 	}
 	return m_lastTickSequence != previousSequence;
-}
-
-void Runtime::tickDraw() {
-	// Runtime rendering is update-driven; draw phase is intentionally unused.
 }
 
 void Runtime::tickIdeInput() {
@@ -1532,6 +1561,7 @@ void Runtime::resetFrameState() {
 
 void Runtime::resetCartBootState() {
 	m_cartBootPrepared = false;
+	m_pendingCartBoot = false;
 	setCartBootReadyFlag(false);
 }
 
@@ -1623,6 +1653,22 @@ void Runtime::setGlobal(std::string_view name, const Value& value) {
 void Runtime::registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost) {
 	auto nativeFn = m_cpu.createNativeFunction(name, std::move(fn), cost);
 	m_cpu.setGlobalByKey(canonicalizeIdentifier(name), nativeFn);
+}
+
+void Runtime::initializeCachedIdentifiers() {
+	m_gameKey = canonicalizeIdentifier("game");
+	m_viewportsizeKey = canonicalizeIdentifier("viewportsize");
+	m_viewXKey = canonicalizeIdentifier("x");
+	m_viewYKey = canonicalizeIdentifier("y");
+	m_viewKey = canonicalizeIdentifier("view");
+	m_viewCrtPostprocessingEnabledKey = canonicalizeIdentifier("crt_postprocessing_enabled");
+	m_viewNoiseKey = canonicalizeIdentifier("enable_noise");
+	m_viewColorBleedKey = canonicalizeIdentifier("enable_colorbleed");
+	m_viewScanlinesKey = canonicalizeIdentifier("enable_scanlines");
+	m_viewBlurKey = canonicalizeIdentifier("enable_blur");
+	m_viewGlowKey = canonicalizeIdentifier("enable_glow");
+	m_viewFringingKey = canonicalizeIdentifier("enable_fringing");
+	m_viewApertureKey = canonicalizeIdentifier("enable_aperture");
 }
 
 void Runtime::setCanonicalization(CanonicalizationType canonicalization) {

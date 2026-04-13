@@ -1133,6 +1133,27 @@ export class Runtime {
 		this.haltIrqSignalSequence = 0;
 	}
 
+	private tryCompleteTickOnActiveVblank(state: FrameState): boolean {
+		if (!this.isFrameBoundaryHalt()) {
+			return false;
+		}
+		if (!this.vblankActive || this.vblankSequence === 0) {
+			return false;
+		}
+		const pendingFlags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
+		if ((pendingFlags & IRQ_VBLANK) === 0) {
+			return false;
+		}
+		if (this.lastCompletedVblankSequence === this.vblankSequence) {
+			return false;
+		}
+		this.completeTickIfPending(state, this.vblankSequence);
+		this.clearBackQueuesAfterIrqWake = true;
+		this.cpu.clearHaltUntilIrq();
+		this.resetHaltIrqWait();
+		return true;
+	}
+
 	private commitFrameOnVblankEdge(): void {
 		this.vdp.syncRegisters();
 		this.vdp.presentReadyFrameOnVblankEdge();
@@ -2101,10 +2122,6 @@ export class Runtime {
 		}
 	}
 
-	public tickDraw(): void {
-		// Runtime rendering is update-driven; draw phase is intentionally unused.
-	}
-
 	private finalizeUpdateSlice(frameState: FrameState): void {
 		this.currentFrameState = frameState;
 		if (this.activeTickCompleted || !this.hasEntryContinuation()) {
@@ -2289,6 +2306,9 @@ export class Runtime {
 			this.resetHaltIrqWait();
 			return false;
 		}
+		if (this.tryCompleteTickOnActiveVblank(state)) {
+			return true;
+		}
 		if (!this.haltIrqWaitArmed) {
 			const pendingFlags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
 			if (pendingFlags !== 0) {
@@ -2313,18 +2333,13 @@ export class Runtime {
 				const idleCycles = cyclesToTarget < state.cycleBudgetRemaining ? cyclesToTarget : state.cycleBudgetRemaining;
 				state.cycleBudgetRemaining -= idleCycles;
 				this.advanceTime(idleCycles);
+				if (this.tryCompleteTickOnActiveVblank(state)) {
+					return true;
+				}
 				continue;
 			}
 			return true;
 		}
-	}
-
-	public drawIde(): void {
-		runtimeIde.drawIde(this);
-	}
-
-	public drawTerminal(): void {
-		runtimeIde.drawTerminal(this);
 	}
 
 	// Clear reference to allow next frame to begin
@@ -2341,20 +2356,12 @@ export class Runtime {
 		return this.memory.getAssetEntryByHandle(handle);
 	}
 
-	public getAssetEntry(id: string): AssetEntry {
-		return this.getAssetEntryByHandle(this.resolveAssetHandle(id));
-	}
-
 	public getImageMetaByHandle(handle: number): ImgMeta {
 		const meta = this.imageMetaByHandle.get(handle);
 		if (!meta) {
 			throw runtimeFault(`image metadata missing for handle ${handle}.`);
 		}
 		return meta;
-	}
-
-	public getImageMeta(id: string): ImgMeta {
-		return this.getImageMetaByHandle(this.resolveAssetHandle(id));
 	}
 
 	public getImageAssetByEntry(entry: RomAsset): RomImgAsset {
@@ -2450,18 +2457,6 @@ export class Runtime {
 			assets.push(this.getImageAssetByEntry(entry));
 		}
 		return assets;
-	}
-
-	public getAudioMetaByHandle(handle: number): AudioMeta {
-		const meta = this.audioMetaByHandle.get(handle);
-		if (!meta) {
-			throw runtimeFault(`audio metadata missing for handle ${handle}.`);
-		}
-		return meta;
-	}
-
-	public getAudioMeta(id: string): AudioMeta {
-		return this.getAudioMetaByHandle(this.resolveAssetHandle(id));
 	}
 
 	public buildAudioResourcesForSoundMaster(): id2res {
@@ -2562,10 +2557,6 @@ export class Runtime {
 
 	public setSkyboxImages(ids: SkyboxImageIds): void {
 		this.vdp.setSkyboxImages(ids);
-	}
-
-	public setVdpDitherType(value: number): void {
-		this.vdp.ditherType = value;
 	}
 
 	public disableCrtPostprocessingForEditor(): void {
@@ -2808,12 +2799,8 @@ export class Runtime {
 
 	public createApiRuntimeError(message: string): LuaRuntimeError {
 		this.luaInterpreter.markFaultEnvironment();
-		const debug = this.cpu.getDebugState();
-		const range = this.cpu.getDebugRange(debug.pc);
-		const path = range ? range.path : (this._luaPath ?? 'lua');
-		const line = range ? range.start.line : 0;
-		const column = range ? range.start.column : 0;
-		return new LuaRuntimeError(message, path, line, column);
+		const range = this.cpu.getDebugRange(this.cpu.getDebugState().pc);
+		return range ? new LuaRuntimeError(message, range.path, range.start.line, range.start.column) : new LuaRuntimeError(message, (this._luaPath ?? 'lua'), 0, 0);
 	}
 
 	public canonicalizeIdentifier(name: string): string {

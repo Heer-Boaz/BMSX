@@ -601,12 +601,12 @@
 			}
 		},
 		{
-			"label": "LIBRETRO RUN: Custom Host (SDL)",
+			"label": "LIBRETRO RUN: Custom Host (headless)",
 			"type": "shell",
 			"command": "npm",
 			"args": [
 				"run",
-				"run:libretro-host:wsl:sdl",
+				"run:libretro-host:wsl:headless",
 				"--",
 				"./dist/${input:romtobuild}.rom"
 			],

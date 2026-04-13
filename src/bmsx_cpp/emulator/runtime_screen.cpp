@@ -149,10 +149,6 @@ bool RuntimeScreenState::consumePresentation(Runtime& runtime, RuntimePresentati
 	}
 	outPresentation.mode = m_presentationMode;
 	outPresentation.commitFrame = m_presentationCommitFrame;
-	auto runtimeDrawStart = std::chrono::steady_clock::now();
-	runtime.tickDraw();
-	auto runtimeDrawEnd = std::chrono::steady_clock::now();
-	outPresentation.runtimeDrawMs = to_ms(runtimeDrawEnd - runtimeDrawStart);
 
 	auto ideDrawStart = std::chrono::steady_clock::now();
 	runtime.tickIDEDraw();

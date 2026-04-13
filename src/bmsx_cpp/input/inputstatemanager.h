@@ -63,6 +63,7 @@ public:
 	std::optional<i32> getLatestUnconsumedPressId(const std::string& button) const;
 	std::optional<i32> getLatestUnconsumedReleaseId(const std::string& button) const;
 	bool hasTrackedButton(const std::string& button) const;
+	i64 currentFrame() const { return m_currentFrame; }
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// State management

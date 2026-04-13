@@ -48,7 +48,7 @@ type ResolvedOptions = {
 	pcBias: number;
 };
 
-type OperandField = 'a' | 'b' | 'c' | 'bx' | 'sbx';
+type OperandField = 'a' | 'b' | 'c' | 'bx' | 'sbx' | 'mode';
 
 export type InstructionOperandDebugInfo = {
 	field: OperandField;

@@ -302,7 +302,7 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 	
 	// Evaluate guard and repeat
 	result.guardedjustpressed = evaluateActionGuard(action, result);
-	auto repeat = evaluateActionRepeat(action, result);
+	auto repeat = evaluateActionRepeat(action, result, m_stateManager.currentFrame());
 	result.repeatpressed = repeat.triggered;
 	result.repeatcount = repeat.count;
 
@@ -370,28 +370,25 @@ bool PlayerInput::checkActionTriggered(const std::string& actionDef) {
  * ============================================================================ */
 
 ButtonState PlayerInput::getButtonState(const std::string& button, InputSource source) {
-	auto* handler = m_handlers[sourceIndex(source)];
-	if (handler) {
-		return handler->getButtonState(button);
-	}
-	if (source == InputSource::Pointer && m_stateManager.hasTrackedButton(button)) {
-		return m_stateManager.getButtonState(button);
-	}
-	return ButtonState{};
+	return getSimButtonState(button, source);
 }
 
 ActionState PlayerInput::getButtonRepeatState(const std::string& button, InputSource source) {
-	auto state = getButtonState(button, source);
+	auto* handler = m_handlers[sourceIndex(source)];
+	ButtonState state = handler ? handler->getButtonState(button) : ButtonState{};
+	if (!handler && source == InputSource::Pointer && m_stateManager.hasTrackedButton(button)) {
+		state = m_stateManager.getButtonState(button);
+	}
 	std::string repeatKey = std::to_string(static_cast<int>(source)) + ":" + button;
 	ActionState actionState(repeatKey, state);
-	auto repeat = evaluateActionRepeat(repeatKey, actionState);
+	auto repeat = evaluateActionRepeat(repeatKey, actionState, m_frameCounter);
 	actionState.repeatcount = repeat.count;
 	actionState.repeatpressed = repeat.triggered;
 	return actionState;
 }
 
 ButtonState PlayerInput::getKeyState(const std::string& key, KeyModifier modifiers) {
-	auto state = getButtonState(key, InputSource::Keyboard);
+	auto state = getSimButtonState(key, InputSource::Keyboard);
 	
 	// If no modifiers required, return as is
 	if (modifiers == KeyModifier::None) return state;
@@ -652,11 +649,12 @@ bool PlayerInput::evaluateActionGuard(const std::string& action, const ActionSta
 	return accepted;
 }
 
-PlayerInput::RepeatResult PlayerInput::evaluateActionRepeat(const std::string& action, 
-																const ActionState& state) {
+PlayerInput::RepeatResult PlayerInput::evaluateActionRepeat(const std::string& action,
+																const ActionState& state,
+																i64 frameId) {
 	auto& repeat = ensureRepeatState(action);
 	
-	if (repeat.lastFrameEvaluated == m_frameCounter) {
+	if (repeat.lastFrameEvaluated == frameId) {
 		return {repeat.lastResult, repeat.repeatCount};
 	}
 	
@@ -700,7 +698,7 @@ PlayerInput::RepeatResult PlayerInput::evaluateActionRepeat(const std::string& a
 		}
 	}
 	
-	repeat.lastFrameEvaluated = m_frameCounter;
+	repeat.lastFrameEvaluated = frameId;
 	repeat.lastResult = result;
 	
 	return {result, repeat.repeatCount};

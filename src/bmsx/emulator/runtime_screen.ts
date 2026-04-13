@@ -101,7 +101,6 @@ export class RuntimeScreenState {
 		if (runtime.executionOverlayActive) {
 			clearBackQueues();
 		}
-		runtime.tickDraw();
 		runtimeIde.tickIDEDraw(runtime);
 		runtimeIde.tickTerminalModeDraw(runtime);
 		if (runtime.executionOverlayActive) {

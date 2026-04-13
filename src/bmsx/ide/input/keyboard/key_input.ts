@@ -1,8 +1,8 @@
 import { $ } from '../../../core/engine_core';
 
 export function isKeyJustPressed(code: string): boolean {
-	const player = $.input.getPlayerInput(1);
-	return player.getButtonState(code, 'keyboard').justpressed === true;
+	const keyboard = $.input.getPlayerInput(1).inputHandlers.keyboard;
+	return keyboard?.getButtonState(code).justpressed === true;
 }
 
 export function shouldRepeatKeyFromPlayer(code: string): boolean {

@@ -107,12 +107,12 @@ npm run build:libretro-host-wsl:debug
 Run the custom libretro host:
 
 ```bash
-npm run run:libretro-host:wsl:sdl -- ./dist/pietious.rom
+npm run run:libretro-host:wsl:headless -- ./dist/pietious.rom
 ```
 
 Important:
 
-- `run:libretro-host:wsl:sdl` now runs silently by default with `SDL_VIDEODRIVER=dummy` and `SDL_AUDIODRIVER=dummy`
+- `run:libretro-host:wsl:headless` now runs silently by default with `SDL_VIDEODRIVER=dummy` and `SDL_AUDIODRIVER=dummy`
 - the silent SDL path uses the software backend on purpose
 - the libretro core loads `dist/bmsx-bios.rom`, not `dist/bmsx-bios.debug.rom`
 - the ROM argument must be the non-debug cart ROM, for example `./dist/pietious.rom`

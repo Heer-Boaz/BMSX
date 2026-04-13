@@ -9,14 +9,14 @@
    npm run build:bios -- --force
    npm run build:game -- <gameromname> --force
    npm run build:platform:libretro-wsl -- <gameromname>
-   npm run run:libretro-host:wsl:sdl -- ./dist/<gameromname>.rom
+   npm run run:libretro-host:wsl:headless -- ./dist/<gameromname>.rom
    ```
    Example:
    ```bash
    npm run build:bios -- --force
    npm run build:game -- pietous --force
    npm run build:platform:libretro-wsl
-   npm run run:libretro-host:wsl:sdl -- ./dist/pietous.rom
+   npm run run:libretro-host:wsl:headless -- ./dist/pietous.rom
    ```
 * To force-rebuild the headless platform, BIOS, and a game rom before running, use:
    ```bash

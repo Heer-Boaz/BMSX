@@ -403,7 +403,7 @@ export class PlayerInput {
 		};
 
 		const guarded = this.evaluateActionGuard(action, result);
-		const repeat = this.evaluateActionRepeat(action, result);
+		const repeat = this.evaluateActionRepeat(action, result, this._stateManager.frame);
 		result.guardedjustpressed = guarded;
 		result.repeatpressed = repeat.triggered;
 		result.repeatcount = repeat.count;
@@ -563,14 +563,7 @@ export class PlayerInput {
 	 * @returns The state of the button.
 	 */
 	public getButtonState(button: ButtonId, source: InputSource): ButtonState {
-		const handler = this.inputHandlers[source];
-		if (handler) {
-			return handler.getButtonState(button);
-		}
-		if (source === 'pointer' && this._stateManager.hasTrackedButton(button)) {
-			return this._stateManager.getButtonState(button);
-		}
-		return makeButtonState();
+		return this.getSimButtonState(button, source);
 	}
 
 	public get pollFrame(): number {
@@ -606,17 +599,21 @@ export class PlayerInput {
 
 	/** Returns repeat/edge info for a raw button using the built-in repeat cadence. */
 	public getButtonRepeatState(button: ButtonId, source: InputSource): ButtonState {
-		const state = this.getButtonState(button, source);
+		const handler = this.inputHandlers[source];
+		const state = handler?.getButtonState(button)
+			?? (source === 'pointer' && this._stateManager.hasTrackedButton(button)
+				? this._stateManager.getButtonState(button)
+				: makeButtonState());
 		const repeatKey = `${source}:${button}`;
 		const actionState = makeActionState(repeatKey, state);
-		const repeat = this.evaluateActionRepeat(repeatKey, actionState);
+		const repeat = this.evaluateActionRepeat(repeatKey, actionState, this.frameCounter);
 		actionState.repeatcount = repeat.count;
 		actionState.repeatpressed = repeat.triggered;
 		return actionState;
 	}
 
 	public getKeyState(key: ButtonId, modifiers: KeyModifier): ButtonState {
-		const state = this.getButtonState(key, 'keyboard');
+		const state = this.getSimButtonState(key, 'keyboard');
 		// If no modifiers are required, return the state as is
 		if (modifiers === KeyModifier.none) return state;
 
@@ -757,9 +754,7 @@ export class PlayerInput {
 			}
 		}
 
-		const previousAcceptedAt = existing?.lastAcceptedAtMs
-			? existing.lastAcceptedAtMs
-			: null;
+		const previousAcceptedAt = existing?.lastAcceptedAtMs ?? null;
 		let accepted = true;
 		if (previousAcceptedAt !== null) {
 			const delta = timestamp - previousAcceptedAt;
@@ -786,8 +781,8 @@ export class PlayerInput {
 		return this.guardWindowMs;
 	}
 
-	public resolveStateTimestamp(state: ButtonState): number {
-		return  state.pressedAtMs ?? state.timestamp ?? this.lastPollTimestampMs ?? $.platform.clock.now();
+	private resolveStateTimestamp(state: ButtonState): number {
+		return state.pressedAtMs ?? state.timestamp ?? this.lastPollTimestampMs ?? $.platform.clock.now();
 	}
 
 	private resolveActionTimestamp(state: ActionState): number {
@@ -803,9 +798,9 @@ export class PlayerInput {
 		return $.platform.clock.now();
 	}
 
-	private evaluateActionRepeat(action: string, state: ActionState): { triggered: boolean; count: number } {
+	private evaluateActionRepeat(action: string, state: ActionState, frameId: number): { triggered: boolean; count: number } {
 		const repeat = this.ensureRepeatState(action);
-		if (repeat.lastFrameEvaluated === this.frameCounter) {
+		if (repeat.lastFrameEvaluated === frameId) {
 			return { triggered: repeat.lastResult, count: repeat.repeatCount };
 		}
 
@@ -850,7 +845,7 @@ export class PlayerInput {
 			}
 		}
 
-		repeat.lastFrameEvaluated = this.frameCounter;
+		repeat.lastFrameEvaluated = frameId;
 		repeat.lastResult = result;
 		return { triggered: result, count: repeat.repeatCount };
 	}

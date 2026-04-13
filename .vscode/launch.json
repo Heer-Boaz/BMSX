@@ -182,7 +182,7 @@
 				"run",
 				"run:libretro-host:wsl:sdl",
 				"--",
-				"./dist/${input:romtobuild}.rom"
+				"./dist/${input:romtobuild}.rom",
 			],
 			"cwd": "${workspaceFolder}",
 			"console": "integratedTerminal"
@@ -197,7 +197,7 @@
 				"run",
 				"run:libretro-host:wsl:fb",
 				"--",
-				"./dist/${input:romtobuild}.rom"
+				"./dist/${input:romtobuild}.rom",
 			],
 			"cwd": "${workspaceFolder}",
 			"console": "integratedTerminal"

@@ -103,10 +103,10 @@ public:
 	
 	// Get button state from specific source
 	ButtonState getButtonState(const std::string& button, InputSource source);
-	
+
 	// Get button state with repeat handling
 	ActionState getButtonRepeatState(const std::string& button, InputSource source);
-	
+
 	// Get key state with modifier requirements
 	ButtonState getKeyState(const std::string& key, KeyModifier modifiers);
 	
@@ -230,7 +230,7 @@ private:
 		bool triggered = false;
 		i32 count = 0;
 	};
-	RepeatResult evaluateActionRepeat(const std::string& action, const ActionState& state);
+	RepeatResult evaluateActionRepeat(const std::string& action, const ActionState& state, i64 frameId);
 	
 	// Normalize guard window
 	f64 normalizeGuardWindow(std::optional<f64> windowOverride);

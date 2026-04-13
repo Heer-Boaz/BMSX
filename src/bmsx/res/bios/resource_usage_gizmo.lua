@@ -1,6 +1,17 @@
 local scratchrecordbatch<const> = require('scratchrecordbatch')
 
 local gizmo<const> = {}
+local label_w<const> = 28
+local bar_w<const> = 54
+local bar_h<const> = 5
+local x<const> = 8
+local bar_x<const> = x + label_w
+local y<const> = 8
+local z<const> = 9000
+local panel_w<const> = 112
+local panel_h<const> = 42
+local row_h<const> = 10
+local font_id<const> = get_default_font().id
 
 local colors<const> = {
 	panel = sys_palette_color(1),
@@ -22,10 +33,6 @@ local usage_percent<const> = function(used, total)
 end
 
 local draw_usage_bar<const> = function(label, used, total, x, y, z, font_id, fill_color_override)
-	local label_w<const> = 28
-	local bar_w<const> = 54
-	local bar_h<const> = 5
-	local bar_x<const> = x + label_w
 	local ratio<const> = clamp_int(used / total, 0, 1)
 	local fill_w<const> = math.floor(bar_w * ratio)
 	local pct<const> = usage_percent(used, total)
@@ -51,7 +58,6 @@ local draw_usage_bar<const> = function(label, used, total, x, y, z, font_id, fil
 	end
 
 	if pct_len > 0 then
-		-- print(pct_text)
 		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17), sys_vdp_cmd_glyph_run, 17, 0, pct_text, bar_x + bar_w + 1, text_y, text_z, font_id, 0, 0x7fffffff, sys_vdp_layer_ide, pct_color.r, pct_color.g, pct_color.b, pct_color.a, 0, 0, 0, 0, 0)
 	end
 end
@@ -61,13 +67,6 @@ function gizmo.draw()
 		return
 	end
 
-	local x<const> = 8
-	local y<const> = 8
-	local z<const> = 9000
-	local panel_w<const> = 112
-	local panel_h<const> = 42
-	local row_h<const> = 10
-	local font_id<const> = get_default_font().id
 	local vdp_work_last<const> = sys_vdp_work_units_last()
 	local vdp_budget<const> = math.max(1, math.floor(((sys_vdp_work_units_per_sec() * 1000000) / machine_manifest.ufps) + 0.5))
 	local vdp_held<const> = sys_vdp_frame_held() ~= 0

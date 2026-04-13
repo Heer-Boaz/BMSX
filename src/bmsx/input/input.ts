@@ -150,6 +150,10 @@ export class InputStateManager {
 		this.inputBuffer = [];
 	}
 
+	public get frame(): number {
+		return this.currentFrame;
+	}
+
 	/** Prepare per-button edge flags for a new frame. */
 	beginFrame(currentTime: number): void {
 		this.currentFrame += 1;
@@ -1057,7 +1061,7 @@ export class Input implements RegisterablePersistent {
 
 		const allowGlobalHotkeys = $.running || !$.paused;
 		if (allowGlobalHotkeys) {
-			const fullscreenToggle = player.getButtonState('F11', 'keyboard');
+			const fullscreenToggle = keyboardHandler.getButtonState('F11');
 			if (fullscreenToggle?.justpressed) {
 				if ($.view.fullscreen) {
 					$.view.ToWindowed();
