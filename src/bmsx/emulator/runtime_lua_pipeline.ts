@@ -628,6 +628,7 @@ export function resetFrameState(runtime: Runtime): void {
 	runtime.clearHaltUntilIrq();
 	runtime.machineScheduler.reset(runtime);
 	runtime.frameLoop.reset();
+	runtime.screen.reset();
 	runtime.lastTickCompleted = false;
 	runtime.lastTickBudgetGranted = 0;
 	runtime.lastTickCpuBudgetGranted = 0;

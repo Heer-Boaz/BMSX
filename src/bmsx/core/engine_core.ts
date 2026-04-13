@@ -613,7 +613,7 @@ export class EngineCore {
 			const runtime = Runtime.instance;
 			if (runtime) {
 				runtime.machineScheduler.clearQueuedTime();
-				runtime.frameLoop.clearPresentation();
+				runtime.screen.clearPresentation();
 				runtime.abandonFrameState();
 				runtime.drawFrameState = null;
 				runtime.clearHaltUntilIrq();

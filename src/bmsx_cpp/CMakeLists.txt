@@ -147,6 +147,7 @@ add_library(bmsx_core STATIC
 	emulator/runtime.cpp
 	emulator/runtime_frame_loop.cpp
 	emulator/runtime_machine_scheduler.cpp
+	emulator/runtime_screen.cpp
 	emulator/runtime_timing.cpp
 	emulator/runtime_debug.cpp
 	emulator/memory.cpp

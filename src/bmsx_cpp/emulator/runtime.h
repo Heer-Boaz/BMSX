@@ -5,6 +5,7 @@
 #include "devices/geometry_controller.h"
 #include "devices/imgdec_controller.h"
 #include "io.h"
+#include "runtime_screen.h"
 #include "runtime_timing.h"
 #include "memory.h"
 #include "runtime_frame_loop.h"
@@ -310,6 +311,7 @@ public:
 	void buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, AssetBuildMode mode = AssetBuildMode::Full);
 	void restoreVramSlotTextures();
 	void captureVramTextureSnapshots();
+	RuntimeScreenState screen;
 	RuntimeTimingState timing;
 	RuntimeMachineSchedulerState machineScheduler;
 	RuntimeFrameLoopState frameLoop;

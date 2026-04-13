@@ -452,7 +452,7 @@ void EngineCore::pause() {
 	if (m_state == EngineState::Running) {
 		m_state = EngineState::Paused;
 		if (Runtime::hasInstance()) {
-			Runtime::instance().frameLoop.clearPresentation();
+			Runtime::instance().screen.clearPresentation();
 		}
 	}
 }

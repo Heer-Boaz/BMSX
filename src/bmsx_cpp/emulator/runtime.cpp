@@ -1519,7 +1519,7 @@ void Runtime::resetFrameState() {
 	m_frameState = FrameState{};
 	clearHaltUntilIrq();
 	machineScheduler.reset(*this);
-	frameLoop.reset();
+	screen.reset();
 	m_lastTickBudgetGranted = 0;
 	m_lastTickCpuBudgetGranted = 0;
 	m_lastTickCpuUsedCycles = 0;
@@ -1559,7 +1559,7 @@ void Runtime::applyState(const RuntimeState& state) {
 	m_vdp.syncRegisters();
 	clearHaltUntilIrq();
 	machineScheduler.reset(*this);
-	frameLoop.reset();
+	screen.reset();
 	resetSchedulerState();
 	m_schedulerNowCycles = state.cyclesIntoFrame;
 	m_frameStartCycle = 0;

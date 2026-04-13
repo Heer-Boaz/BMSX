@@ -68,6 +68,7 @@ import { ResourceUsageDetector } from './resource_usage_detector';
 import { configureLuaHeapUsage } from './lua_heap_usage';
 import { RuntimeFrameLoopState } from './runtime_frame_loop';
 import { RuntimeMachineSchedulerState } from './runtime_machine_scheduler';
+import { RuntimeScreenState } from './runtime_screen';
 import { RuntimeTimingState, calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from './runtime_timing';
 import {
 	DMA_CTRL_START,
@@ -1158,6 +1159,7 @@ export class Runtime {
 		this.clearHaltUntilIrq();
 		this.machineScheduler.reset(this);
 		this.frameLoop.reset();
+		this.screen.reset();
 		this.resetSchedulerState();
 		this.schedulerNowCycles = state.cyclesIntoFrame;
 		this.frameStartCycle = 0;
@@ -1225,6 +1227,7 @@ export class Runtime {
 	private activeTickCompleted = false;
 	public readonly machineScheduler = new RuntimeMachineSchedulerState();
 	public readonly frameLoop = new RuntimeFrameLoopState();
+	public readonly screen = new RuntimeScreenState();
 	private debugCycleReportAtMs: number = 0;
 	private debugCycleRuns: number = 0;
 	private debugCycleYields: number = 0;

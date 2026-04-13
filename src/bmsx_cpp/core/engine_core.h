@@ -46,6 +46,7 @@ enum class EngineState {
 class EngineCore {
 public:
 	friend class RuntimeFrameLoopState;
+	friend class RuntimeScreenState;
 
 	struct TickTiming {
 		f64 totalMs = 0.0;
