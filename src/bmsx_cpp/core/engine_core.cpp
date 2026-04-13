@@ -675,7 +675,7 @@ void EngineCore::tick(f64 deltaTime) {
 		m_last_tick_timing.runtimeTerminalInputMs = to_ms(terminalInputEnd - terminalInputStart);
 
 		m_accumulated_time = clamp(m_accumulated_time + hostDeltaMs, 0.0, m_update_interval_ms * MAX_SUBSTEPS);
-		int slicesProcessed = 0;
+		int slicesConsumed = 0;
 		bool presentQueued = false;
 		const double fixedDeltaSeconds = m_update_interval_ms / 1000.0;
 		auto updateStart = std::chrono::steady_clock::now();
@@ -693,7 +693,7 @@ void EngineCore::tick(f64 deltaTime) {
 		if (slicesAvailable > 0 && !runtime.hasActiveTick()) {
 			Input::instance().beginFrame();
 		}
-		for (; slicesProcessed < slicesAvailable;) {
+		for (; slicesConsumed < slicesAvailable;) {
 			const bool tickActive = runtime.hasActiveTick();
 			const int carryBudget = tickActive ? 0 : (m_cycleCarry > 0 ? static_cast<int>(m_cycleCarry) : 0);
 			if (carryBudget != 0) {
@@ -705,8 +705,8 @@ void EngineCore::tick(f64 deltaTime) {
 			runtime.tickUpdate();
 			runtime.tickDraw();
 			TickCompletion completion;
-			slicesProcessed += 1;
 			if (runtime.consumeLastTickCompletion(completion)) {
+				slicesConsumed += 1;
 				m_cycleCarry = 0;
 				recordPresentDebugTickCompletion(completion.visualCommitted, completion.vdpFrameHeld);
 				presentQueued = true;
@@ -715,9 +715,16 @@ void EngineCore::tick(f64 deltaTime) {
 				// Keep the completed frame stable for this host present; continue next frame on the next host tick.
 				break;
 			}
+			if (runtime.hasActiveTick()) {
+				// The same simulation tick is still waiting on runtime-owned work
+				// such as VBLANK/IRQ/present readiness. Do not charge another
+				// fixed-step slice until that tick actually completes.
+				break;
+			}
+			slicesConsumed += 1;
 		}
-		if (slicesProcessed > 0) {
-			m_accumulated_time = std::max(m_accumulated_time - static_cast<double>(slicesProcessed) * m_update_interval_ms, 0.0);
+		if (slicesConsumed > 0) {
+			m_accumulated_time = std::max(m_accumulated_time - static_cast<double>(slicesConsumed) * m_update_interval_ms, 0.0);
 		}
 		if (!presentQueued && runtime.isDrawPending()) {
 			m_presentation_mode = GameView::PresentationMode::Partial;
