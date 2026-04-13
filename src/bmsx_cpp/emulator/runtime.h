@@ -151,7 +151,7 @@ public:
 	/**
 	 * Tick the runtime update phase (called by BmsxCartUpdateSystem).
 	 */
-	void tickUpdate(f64 frameMs);
+	bool tickUpdate(f64 frameMs);
 
 	/**
 	 * Tick the runtime draw phase (called by BmsxCartDrawSystem).

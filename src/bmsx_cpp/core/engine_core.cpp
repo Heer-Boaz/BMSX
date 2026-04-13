@@ -683,13 +683,16 @@ void EngineCore::tick(f64 deltaTime) {
 		runtime.queueHostTime(hostDeltaMs, m_update_interval_ms, MAX_SUBSTEPS);
 		while (runtime.canRunScheduledUpdate(m_update_interval_ms)) {
 			m_delta_time = fixedDeltaSeconds;
-			runtime.tickUpdate(m_update_interval_ms);
+			const bool progressed = runtime.tickUpdate(m_update_interval_ms);
 			runtime.tickDraw();
 			TickCompletion completion;
 			if (runtime.consumeLastTickCompletion(completion)) {
 				recordPresentDebugTickCompletion(completion.visualCommitted, completion.vdpFrameHeld);
 				latestCompletion = completion;
 				haveCompletion = true;
+			}
+			if (runtime.hasActiveTick() && !progressed) {
+				break;
 			}
 		}
 		if (haveCompletion) {

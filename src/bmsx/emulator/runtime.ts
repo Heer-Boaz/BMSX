@@ -2152,27 +2152,43 @@ export class Runtime {
 		return state;
 	}
 
-	public tickUpdate(frameMs: number = 0): void {
+	public tickUpdate(frameMs: number = 0): boolean {
 		if (!this.tickEnabled) {
-			return;
+			return false;
 		}
 		this.processPendingCartBoot();
 		if (runtimeIde.isOverlayActive(this)) {
 			if (this.currentFrameState !== null) {
 				this.abandonFrameState();
+				return true;
 			}
-			return;
+			return false;
 		}
+		const previousState = this.currentFrameState;
+		const previousRemaining = previousState?.cycleBudgetRemaining ?? -1;
+		const previousPending = this.hasEntryContinuation();
+		const previousSequence = this.lastTickSequence;
 		if (this.currentFrameState === null) {
 			if (frameMs <= 0 || !this.startScheduledFrame(frameMs)) {
-				return;
+				return false;
 			}
 		} else if (this.currentFrameState.cycleBudgetRemaining <= 0) {
 			if (frameMs <= 0 || !this.refillFrameBudget(this.currentFrameState, frameMs)) {
-				return;
+				return false;
 			}
 		}
 		this.runActiveFrameState(this.currentFrameState);
+		const nextState = this.currentFrameState;
+		if (nextState !== previousState) {
+			return true;
+		}
+		if (nextState !== null && nextState.cycleBudgetRemaining !== previousRemaining) {
+			return true;
+		}
+		if (this.hasEntryContinuation() !== previousPending) {
+			return true;
+		}
+		return this.lastTickSequence !== previousSequence;
 	}
 
 	private runActiveFrameState(state: FrameState): void {

@@ -767,10 +767,11 @@ export class EngineCore {
 	 * @param deltaTime - The time elapsed since the last update.
 	 * @returns void
 	 */
-	public update(deltaTime: number): void {
+	public update(deltaTime: number): boolean {
+		let progressed = false;
 		try {
 			this.deltatime = deltaTime;
-			Runtime.instance.tickUpdate(deltaTime);
+			progressed = Runtime.instance.tickUpdate(deltaTime);
 		} catch (error) {
 			const runtime = Runtime.instance;
 			try {
@@ -785,6 +786,7 @@ export class EngineCore {
 			$.paused = true;
 		}
 		$._turnCounter++;
+		return progressed;
 	}
 
 	private runOverlayModeUpdate(runtime: Runtime): void {
@@ -949,7 +951,7 @@ export class EngineCore {
 						runtime.clearQueuedHostTime();
 						break;
 					}
-					this.update(this.timestep_ms);
+					const progressed = this.update(this.timestep_ms);
 					const completion = runtime.consumeLastTickCompletion();
 					if (completion) {
 						this.recordPresentDebugTickCompletion(completion.visualCommitted, completion.vdpFrameHeld);
@@ -959,6 +961,9 @@ export class EngineCore {
 						runtime.clearQueuedHostTime();
 						this.runOverlayModeUpdate(runtime);
 						runCompletedPresentation();
+						break;
+					}
+					if (runtime.hasActiveTick() && !progressed) {
 						break;
 					}
 				}

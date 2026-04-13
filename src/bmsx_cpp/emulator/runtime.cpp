@@ -1355,32 +1355,36 @@ void Runtime::finalizeUpdateSlice() {
 	m_activeTickCompleted = false;
 }
 
-void Runtime::tickUpdate(f64 frameMs) {
+bool Runtime::tickUpdate(f64 frameMs) {
 	if (m_rebootRequested) {
 		m_rebootRequested = false;
 		clearQueuedHostTime();
 		if (!EngineCore::instance().rebootLoadedRom()) {
 			EngineCore::instance().log(LogLevel::Error, "Runtime fault: reboot to bootrom failed.\n");
 		}
-		return;
+		return true;
 	}
 	if (!m_luaInitialized || !m_tickEnabled || m_runtimeFailed) {
-		return;
+		return false;
 	}
 
 	prepareCartBootIfNeeded();
 	if (pollSystemBootRequest()) {
-		return;
+		return true;
 	}
 
+	FrameState* const previousState = m_frameActive ? &m_frameState : nullptr;
+	const int previousRemaining = previousState != nullptr ? previousState->cycleBudgetRemaining : -1;
+	const bool previousPending = hasEntryContinuation();
+	const i64 previousSequence = m_lastTickSequence;
 	bool startedFrame = false;
 	if (m_frameActive) {
 		if (m_frameState.cycleBudgetRemaining <= 0 && !refillFrameBudget(frameMs)) {
-			return;
+			return false;
 		}
 	} else {
 		if (frameMs <= 0.0 || !startScheduledFrame(frameMs)) {
-			return;
+			return false;
 		}
 		startedFrame = true;
 	}
@@ -1421,6 +1425,17 @@ void Runtime::tickUpdate(f64 frameMs) {
 	m_frameState.updateExecuted = !hasEntryContinuation();
 	flushAssetEdits();
 	finalizeUpdateSlice();
+	FrameState* const nextState = m_frameActive ? &m_frameState : nullptr;
+	if (nextState != previousState) {
+		return true;
+	}
+	if (nextState != nullptr && nextState->cycleBudgetRemaining != previousRemaining) {
+		return true;
+	}
+	if (hasEntryContinuation() != previousPending) {
+		return true;
+	}
+	return m_lastTickSequence != previousSequence;
 }
 
 void Runtime::tickDraw() {
