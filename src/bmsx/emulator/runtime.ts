@@ -1165,10 +1165,26 @@ export class Runtime {
 		if (this.lastCompletedVblankSequence === vblankSequence) {
 			return;
 		}
-		Input.instance.beginFrame();
 		this.activeTickCompleted = true;
 		this.machineScheduler.enqueueTickCompletion(this, frameState);
 		this.lastCompletedVblankSequence = vblankSequence;
+	}
+
+	public beginGuestUpdatePhase(): void {
+		if (this.currentFrameState === null) {
+			throw runtimeFault('begin_update_phase requires an active frame state.');
+		}
+		if (this.guestUpdatePhaseDepth === 0) {
+			Input.instance.beginFrame();
+		}
+		this.guestUpdatePhaseDepth += 1;
+	}
+
+	public endGuestUpdatePhase(): void {
+		if (this.guestUpdatePhaseDepth <= 0) {
+			throw runtimeFault('end_update_phase called without a matching begin_update_phase.');
+		}
+		this.guestUpdatePhaseDepth -= 1;
 	}
 
 	public captureVblankState(): { cyclesIntoFrame: number } {
@@ -1182,6 +1198,7 @@ export class Runtime {
 		this.machineScheduler.reset(this);
 		this.frameLoop.reset();
 		this.screen.reset();
+		this.guestUpdatePhaseDepth = 0;
 		this.resetSchedulerState();
 		this.schedulerNowCycles = state.cyclesIntoFrame;
 		this.frameStartCycle = 0;
@@ -1212,6 +1229,7 @@ export class Runtime {
 	private haltIrqWaitArmed = false;
 	private vblankSequence = 0;
 	private lastCompletedVblankSequence = 0;
+	private guestUpdatePhaseDepth = 0;
 	public cycleBudgetPerFrame: number;
 	private vblankCycles = 0;
 	private vblankStartCycle = 0;
@@ -1948,6 +1966,7 @@ export class Runtime {
 		this.pendingCall = null;
 		this.luaRuntimeFailed = false;
 		this.luaInitialized = false;
+		this.guestUpdatePhaseDepth = 0;
 		this.clearHaltUntilIrq();
 	}
 
@@ -2344,6 +2363,7 @@ export class Runtime {
 	public abandonFrameState(): void {
 		this.currentFrameState = null;
 		this.activeTickCompleted = false;
+		this.guestUpdatePhaseDepth = 0;
 	}
 
 	public resolveAssetHandle(id: string): number {

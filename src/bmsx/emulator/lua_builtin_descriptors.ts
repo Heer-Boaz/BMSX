@@ -154,6 +154,8 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'wrap_text_lines', params: ['text', 'max_chars', 'first_prefix?', 'next_prefix?'], signature: 'wrap_text_lines(text, max_chars [, first_prefix [, next_prefix]])', description: 'Wraps UTF-8 text on word boundaries when possible and hard-wraps long words while preserving code points.' },
 	{ name: 'u32_to_f32', params: ['value'], signature: 'u32_to_f32(value)', description: 'Reinterprets a 32-bit unsigned integer bit pattern as a float32.' },
 	{ name: 'u64_to_f64', params: ['high', 'low'], signature: 'u64_to_f64(high, low)', description: 'Reinterprets a pair of 32-bit unsigned integers as a float64 bit pattern.' },
+	{ name: 'begin_update_phase', params: [], signature: 'begin_update_phase()', description: 'Begins one explicit guest update phase and rotates the simulation input snapshot.' },
+	{ name: 'end_update_phase', params: [], signature: 'end_update_phase()', description: 'Ends the current explicit guest update phase.' },
 	{ name: 'os.clock', params: [], signature: 'os.clock()' },
 	{ name: 'os.date', params: ['format?', 'time?'], signature: 'os.date([format [, time]])' },
 	{ name: 'os.difftime', params: ['t2', 't1?'], signature: 'os.difftime(t2 [, t1])' },

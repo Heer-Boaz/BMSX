@@ -68,6 +68,8 @@ export const ENGINE_SYSTEM_HELPER_NAMES = [
 	'resolve_rom_asset_range',
 	'u32_to_i32',
 	'fix16_to_f32',
+	'begin_update_phase',
+	'end_update_phase',
 	'clock_now',
 ] as const;
 

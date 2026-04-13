@@ -92,7 +92,7 @@ const LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
 const ENGINE_BUILTIN_PRELUDE_PATH = '__engine_builtin_prelude__';
 const getRealtimeOptLevel = (runtime: Runtime): 0 | 1 | 2 | 3 =>
 	runtime.realtimeCompileOptLevel;
-const REQUIRED_ENGINE_SYSTEM_HELPERS: ReadonlyArray<string> = ['clock_now'];
+const REQUIRED_ENGINE_SYSTEM_HELPERS: ReadonlyArray<string> = ['begin_update_phase', 'end_update_phase', 'clock_now'];
 
 function runtimeFault(message: string): Error {
 	return new Error(`Runtime fault: ${message}`);

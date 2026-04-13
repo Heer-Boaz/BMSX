@@ -59,6 +59,7 @@ end
 			halt_until_irq
 			flags = service_irqs()
 		until (flags & irq_vblank) ~= 0
+		begin_update_phase()
 		vdp_stream_cursor = sys_vdp_stream_base
 		update()
 		do
@@ -70,4 +71,5 @@ end
 				mem[sys_dma_ctrl] = dma_ctrl_start
 			end
 		end
+		end_update_phase()
 	end

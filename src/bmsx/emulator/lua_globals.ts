@@ -1359,6 +1359,12 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		bitcastView.setUint32(4, hi, true);
 		out.push(bitcastView.getFloat64(0, true));
 	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'begin_update_phase', createNativeFunction('begin_update_phase', (_args, _out) => {
+		runtime.beginGuestUpdatePhase();
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'end_update_phase', createNativeFunction('end_update_phase', (_args, _out) => {
+		runtime.endGuestUpdatePhase();
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'clock_now', createNativeFunction('clock_now', (_args, out) => {
 		out.push($.platform.clock.now());
 	}));

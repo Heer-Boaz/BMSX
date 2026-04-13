@@ -1136,10 +1136,26 @@ void Runtime::completeTickIfPending(FrameState& frameState, uint64_t vblankSeque
 	if (m_lastCompletedVblankSequence == vblankSequence) {
 		return;
 	}
-	Input::instance().beginFrame();
 	m_activeTickCompleted = true;
 	m_lastCompletedVblankSequence = vblankSequence;
 	machineScheduler.enqueueTickCompletion(*this, frameState);
+}
+
+void Runtime::beginGuestUpdatePhase() {
+	if (!m_frameActive) {
+		throw runtimeFault("begin_update_phase requires an active frame state.");
+	}
+	if (m_guestUpdatePhaseDepth == 0) {
+		Input::instance().beginFrame();
+	}
+	m_guestUpdatePhaseDepth += 1;
+}
+
+void Runtime::endGuestUpdatePhase() {
+	if (m_guestUpdatePhaseDepth <= 0) {
+		throw runtimeFault("end_update_phase called without a matching begin_update_phase.");
+	}
+	m_guestUpdatePhaseDepth -= 1;
 }
 
 void Runtime::clearHaltUntilIrq() {
@@ -1548,6 +1564,7 @@ void Runtime::requestProgramReload() {
 void Runtime::resetFrameState() {
 	m_frameActive = false;
 	m_activeTickCompleted = false;
+	m_guestUpdatePhaseDepth = 0;
 	m_frameState = FrameState{};
 	clearHaltUntilIrq();
 	machineScheduler.reset(*this);
@@ -1591,6 +1608,7 @@ void Runtime::applyState(const RuntimeState& state) {
 	m_geometryController.normalizeAfterStateRestore();
 	m_vdp.syncRegisters();
 	clearHaltUntilIrq();
+	m_guestUpdatePhaseDepth = 0;
 	machineScheduler.reset(*this);
 	screen.reset();
 	resetSchedulerState();
@@ -1913,6 +1931,7 @@ void Runtime::executeUpdateCallback() {
 		logDebugState();
 		logLuaCallStack();
 		clearHaltUntilIrq();
+		m_guestUpdatePhaseDepth = 0;
 		m_pendingCall = PendingCall::None;
 		m_frameActive = false;
 		m_runtimeFailed = true;

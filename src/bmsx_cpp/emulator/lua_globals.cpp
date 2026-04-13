@@ -1604,6 +1604,16 @@ void Runtime::setupBuiltins() {
 		(void)args;
 		out.push_back(valueNumber(EngineCore::instance().clock()->now()));
 	});
+	registerNativeFunction("begin_update_phase", [this](NativeArgsView args, NativeResults& out) {
+		(void)args;
+		(void)out;
+		beginGuestUpdatePhase();
+	});
+	registerNativeFunction("end_update_phase", [this](NativeArgsView args, NativeResults& out) {
+		(void)args;
+		(void)out;
+		endGuestUpdatePhase();
+	});
 	registerNativeFunction("sys_cpu_cycles_used", [this](NativeArgsView args, NativeResults& out) {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(cpuUsedCyclesLastTick())));

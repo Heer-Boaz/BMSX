@@ -286,6 +286,8 @@ public:
 	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
 	void setCycleBudgetPerFrame(int budget);
 	bool hasActiveTick() const;
+	void beginGuestUpdatePhase();
+	void endGuestUpdatePhase();
 	i64 lastTickSequence() const { return m_lastTickSequence; }
 	int lastTickBudgetRemaining() const { return m_lastTickBudgetRemaining; }
 	int lastTickBudgetGranted() const { return m_lastTickSequence == 0 ? m_cycleBudgetPerFrame : m_lastTickBudgetGranted; }
@@ -513,6 +515,7 @@ private:
 	bool m_clearBackQueuesAfterIrqWake = false;
 	bool m_vblankActive = false;
 	u32 m_vdpStatus = 0;
+	i32 m_guestUpdatePhaseDepth = 0;
 };
 
 } // namespace bmsx
