@@ -145,6 +145,8 @@ add_library(bmsx_core STATIC
 	emulator/lua_runtime.cpp
 	emulator/resource_usage_detector.cpp
 	emulator/runtime.cpp
+	emulator/runtime_frame_loop.cpp
+	emulator/runtime_machine_scheduler.cpp
 	emulator/runtime_debug.cpp
 	emulator/memory.cpp
 	emulator/memory_map.cpp

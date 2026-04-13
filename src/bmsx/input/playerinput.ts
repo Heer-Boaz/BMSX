@@ -4,6 +4,7 @@ import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonSta
 import { KeyboardInput } from './keyboardinput';
 import { ContextStack, MappingContext } from './context';
 import { $ } from '../core/engine_core';
+import { Runtime } from '../emulator/runtime';
 import { clamp } from '../utils/clamp';
 import { deep_clone } from '../utils/deep_clone';
 
@@ -785,6 +786,10 @@ export class PlayerInput {
 		return this.guardWindowMs;
 	}
 
+	public resolveStateTimestamp(state: ButtonState): number {
+		return  state.pressedAtMs ?? state.timestamp ?? this.lastPollTimestampMs ?? $.platform.clock.now();
+	}
+
 	private resolveActionTimestamp(state: ActionState): number {
 		if (state.timestamp) {
 			return state.timestamp;
@@ -808,8 +813,8 @@ export class PlayerInput {
 		const pressed = state.pressed === true;
 		const justpressed = state.justpressed === true;
 		const now = this.lastPollTimestampMs ?? $.platform.clock.now();
-		const startMs = state.pressedAtMs ?? state.timestamp ?? now;
-		const frameMs = $.timestep_ms;
+		const startMs = this.resolveStateTimestamp(state);
+		const frameMs = Runtime.instance.timing.frameDurationMs;
 		const initialDelayMs = INITIAL_REPEAT_DELAY_FRAMES * frameMs;
 		const repeatIntervalMs = REPEAT_INTERVAL_FRAMES * frameMs;
 

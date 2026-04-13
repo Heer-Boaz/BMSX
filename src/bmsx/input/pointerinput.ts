@@ -41,7 +41,7 @@ export class PointerInput implements InputHandler {
 			const state = this.buttonStates[key];
 			if (!state) continue;
 			if (state.pressed) {
-				const pressedAt = state.pressedAtMs ?? state.timestamp ?? now;
+				const pressedAt = state.pressedAtMs ?? state.timestamp ?? now; // TODO: USE resolveStateTimestamp
 				state.presstime = Math.max(0, now - pressedAt);
 				state.justpressed = false;
 			} else {

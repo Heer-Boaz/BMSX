@@ -10,7 +10,6 @@
 #include "../input/input.h"
 #include "../render/shared/render_queues.h"
 #include "../render/texturemanager.h"
-#include "../utils/clamp.h"
 #include <array>
 #include <algorithm>
 #include <chrono>
@@ -732,7 +731,7 @@ bool Runtime::pollSystemBootRequest() {
 		return false;
 	}
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
-	clearQueuedHostTime();
+	machineScheduler.clearQueuedTime();
 	try {
 		if (!EngineCore::instance().bootLoadedCart()) {
 			setCartBootReadyFlag(false);
@@ -1119,15 +1118,7 @@ void Runtime::completeTickIfPending(FrameState& frameState, uint64_t vblankSeque
 	}
 	m_activeTickCompleted = true;
 	m_lastCompletedVblankSequence = vblankSequence;
-	m_lastTickBudgetGranted = frameState.cycleBudgetGranted;
-	m_lastTickCpuBudgetGranted = frameState.cycleBudgetGranted;
-	m_lastTickCpuUsedCycles = frameState.activeCpuUsedCycles;
-	m_lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
-	m_lastTickVisualFrameCommitted = m_vdp.lastFrameCommitted();
-	m_lastTickVdpFrameCost = m_vdp.lastFrameCost();
-	m_lastTickVdpFrameHeld = m_vdp.lastFrameHeld();
-	m_lastTickCompleted = true;
-	m_lastTickSequence += 1;
+	machineScheduler.enqueueTickCompletion(*this, frameState);
 }
 
 void Runtime::clearHaltUntilIrq() {
@@ -1278,23 +1269,6 @@ void Runtime::queueLifecycleHandlers(bool runInit, bool runNewGame) {
 	}
 }
 
-bool Runtime::consumeQueuedHostFrame(f64 frameMs) {
-	if (frameMs <= 0.0 || m_queuedHostTimeMs < frameMs) {
-		return false;
-	}
-	m_queuedHostTimeMs -= frameMs;
-	return true;
-}
-
-bool Runtime::refillFrameBudget(f64 frameMs) {
-	if (!consumeQueuedHostFrame(frameMs)) {
-		return false;
-	}
-	m_frameState.cycleBudgetRemaining += m_cycleBudgetPerFrame;
-	m_frameState.cycleBudgetGranted += m_cycleBudgetPerFrame;
-	return true;
-}
-
 void Runtime::beginFrameState(bool advanceInputFrame) {
 	m_frameActive = true;
 	m_lastTickCompleted = false;
@@ -1333,20 +1307,6 @@ void Runtime::beginFrameState(bool advanceInputFrame) {
 	viewTable->set(viewApertureKey, valueBool(view->applyAperture));
 }
 
-bool Runtime::startScheduledFrame(f64 frameMs) {
-	if (!consumeQueuedHostFrame(frameMs)) {
-		return false;
-	}
-	const auto frameNow = std::chrono::steady_clock::now();
-	if (!m_debugFrameReportInitialized) {
-		m_debugFrameReportInitialized = true;
-		m_debugFrameReportAt = frameNow;
-	}
-	m_debugTickYieldsBefore = m_debugRunYieldsTotal;
-	beginFrameState(true);
-	return true;
-}
-
 void Runtime::finalizeUpdateSlice() {
 	if (hasEntryContinuation() && !m_activeTickCompleted) {
 		return;
@@ -1355,10 +1315,10 @@ void Runtime::finalizeUpdateSlice() {
 	m_activeTickCompleted = false;
 }
 
-bool Runtime::tickUpdate(f64 frameMs) {
+bool Runtime::tickUpdate() {
 	if (m_rebootRequested) {
 		m_rebootRequested = false;
-		clearQueuedHostTime();
+		machineScheduler.clearQueuedTime();
 		if (!EngineCore::instance().rebootLoadedRom()) {
 			EngineCore::instance().log(LogLevel::Error, "Runtime fault: reboot to bootrom failed.\n");
 		}
@@ -1379,11 +1339,11 @@ bool Runtime::tickUpdate(f64 frameMs) {
 	const i64 previousSequence = m_lastTickSequence;
 	bool startedFrame = false;
 	if (m_frameActive) {
-		if (m_frameState.cycleBudgetRemaining <= 0 && !refillFrameBudget(frameMs)) {
+		if (m_frameState.cycleBudgetRemaining <= 0 && !machineScheduler.refillFrameBudget(*this, m_frameState)) {
 			return false;
 		}
 	} else {
-		if (frameMs <= 0.0 || !startScheduledFrame(frameMs)) {
+		if (!machineScheduler.startScheduledFrame(*this)) {
 			return false;
 		}
 		startedFrame = true;
@@ -1556,7 +1516,8 @@ void Runtime::resetFrameState() {
 	m_activeTickCompleted = false;
 	m_frameState = FrameState{};
 	clearHaltUntilIrq();
-	clearQueuedHostTime();
+	machineScheduler.reset(*this);
+	frameLoop.reset();
 	m_lastTickBudgetGranted = 0;
 	m_lastTickCpuBudgetGranted = 0;
 	m_lastTickCpuUsedCycles = 0;
@@ -1595,7 +1556,8 @@ void Runtime::applyState(const RuntimeState& state) {
 	m_geometryController.normalizeAfterStateRestore();
 	m_vdp.syncRegisters();
 	clearHaltUntilIrq();
-	clearQueuedHostTime();
+	machineScheduler.reset(*this);
+	frameLoop.reset();
 	resetSchedulerState();
 	m_schedulerNowCycles = state.cyclesIntoFrame;
 	m_frameStartCycle = 0;
@@ -1748,24 +1710,6 @@ void Runtime::setCycleBudgetPerFrame(int budget) {
 	}
 }
 
-void Runtime::queueHostTime(f64 deltaMs, f64 frameMs, int maxSteps) {
-	m_queuedHostTimeMs = clamp(m_queuedHostTimeMs + deltaMs, 0.0, frameMs * static_cast<f64>(maxSteps));
-}
-
-void Runtime::clearQueuedHostTime() {
-	m_queuedHostTimeMs = 0.0;
-}
-
-bool Runtime::canRunScheduledUpdate(f64 frameMs) const {
-	if (!m_luaInitialized || !m_tickEnabled || m_runtimeFailed) {
-		return false;
-	}
-	if (m_frameActive && m_frameState.cycleBudgetRemaining > 0) {
-		return true;
-	}
-	return m_queuedHostTimeMs >= frameMs;
-}
-
 bool Runtime::hasActiveTick() const {
 	return m_frameActive && m_luaInitialized && m_tickEnabled && !m_runtimeFailed;
 }
@@ -1776,22 +1720,6 @@ uint32_t Runtime::trackedRamUsedBytes() const {
 
 uint32_t Runtime::trackedVramUsedBytes() const {
 	return m_resourceUsageDetector->vramUsedBytes();
-}
-
-bool Runtime::consumeLastTickCompletion(TickCompletion& outCompletion) {
-	if (!m_lastTickCompleted) {
-		return false;
-	}
-	if (m_lastTickSequence == m_lastTickConsumedSequence) {
-		return false;
-	}
-	m_lastTickConsumedSequence = m_lastTickSequence;
-	outCompletion.sequence = m_lastTickSequence;
-	outCompletion.remaining = m_lastTickBudgetRemaining;
-	outCompletion.visualCommitted = m_lastTickVisualFrameCommitted;
-	outCompletion.vdpFrameCost = m_lastTickVdpFrameCost;
-	outCompletion.vdpFrameHeld = m_lastTickVdpFrameHeld;
-	return true;
 }
 
 bool Runtime::isDrawPending() const {

@@ -1,4 +1,5 @@
 import { $ } from '../../core/engine_core';
+import { Runtime } from '../../emulator/runtime';
 import type {
 	VdpBlitterBlitCommand as BlitterBlitCommand,
 	VdpBlitterClearCommand as BlitterClearCommand,
@@ -219,7 +220,7 @@ function bindPassState(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, pas
 	updateAndBindFrameUniforms(backend, {
 		offscreen: { x: host.width, y: host.height },
 		logical: { x: host.width, y: host.height },
-		time: $.last_update / 1000,
+		time: Runtime.instance.frameLoop.currentTimeMs / 1000,
 		delta: $.deltatime_seconds,
 	});
 	gl.uniform1f(state.uScale, 1);

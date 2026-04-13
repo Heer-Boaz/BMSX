@@ -1,6 +1,7 @@
 import { $ } from '../core/engine_core';
 import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, VoiceEndedEvent, AudioFilterParams, RngService, SubscriptionHandle, createSubscriptionHandle } from '../platform';
 import { asset_id, AudioMeta, AudioType, AudioTypes, CartridgeLayerId, id2res, RomAsset } from '../rompack/rompack';
+import { Runtime } from '../emulator/runtime';
 import { clamp01 } from '../utils/clamp';
 
 export type VoiceId = number;
@@ -322,7 +323,7 @@ export class SoundMaster {
 		if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
 			throw new Error('[SoundMaster] Audio sample rate must be a positive finite value.');
 		}
-		this.setMixerFps($.target_fps);
+		this.setMixerFps(Runtime.instance.timing.targetFps);
 		this.volume = clamp01(startingVolume);
 	}
 

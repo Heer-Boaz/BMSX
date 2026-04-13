@@ -1,4 +1,4 @@
-import { $, calcCyclesPerFrameScaled, resolveVblankCycles } from '../core/engine_core';
+import { $ } from '../core/engine_core';
 import type { LuaChunk } from '../lua/syntax/lua_ast';
 import { LuaInterpreter } from '../lua/luaruntime';
 import type { LuaValue } from '../lua/luavalue';
@@ -17,6 +17,7 @@ import type { LuaSourceRecord, LuaSourceRegistry } from './lua_sources';
 import { logDebugState } from './runtime_debug';
 import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from './lua_heap_usage';
 import * as runtimeIde from './runtime_ide';
+import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from './runtime_timing';
 import {
 	buildModuleAliasMap,
 	buildModuleAliasesFromPaths,
@@ -119,13 +120,9 @@ function resolveCpuHz(value: number | undefined): number {
 	return resolvePositiveSafeInteger(value, 'machine.specs.cpu.cpu_freq_hz');
 }
 
-function resolveUfpsScaled(value: number | undefined): number {
-	return resolvePositiveSafeInteger(value, 'machine.ufps');
-}
-
 function applyUfpsScaled(ufps: number): number {
 	const ufpsScaled = resolveUfpsScaled(ufps);
-	$.setUfpsScaled(ufpsScaled);
+	Runtime.instance.timing.applyUfpsScaled(ufpsScaled);
 	return ufpsScaled;
 }
 
@@ -629,7 +626,8 @@ export function resetFrameState(runtime: Runtime): void {
 	runtime.abandonFrameState();
 	runtime.drawFrameState = null;
 	runtime.clearHaltUntilIrq();
-	runtime.clearQueuedHostTime();
+	runtime.machineScheduler.reset(runtime);
+	runtime.frameLoop.reset();
 	runtime.lastTickCompleted = false;
 	runtime.lastTickBudgetGranted = 0;
 	runtime.lastTickCpuBudgetGranted = 0;
@@ -1378,7 +1376,7 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 		runtime.luaInitialized = true;
 	}
 	catch (error) {
-			console.info(`Lua boot '${path}' failed.`);
+		console.info(`Lua boot '${path}' failed.`);
 		logDebugState(runtime);
 		runtimeIde.handleLuaError(runtime, error);
 		return false;
@@ -1422,19 +1420,19 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, options?: { r
 			} else {
 				bootProgramAsset(runtime, { preserveState: true, runInit: options?.runInit });
 			}
+			const machine = resolveRuntimeMachineForPlan(runtime, reloadPlan);
+			const perfSpecs = getMachinePerfSpecs(machine);
+			applyUfpsScaled(perfSpecs.ufps);
+			const cpuHz = resolveCpuHz(perfSpecs.cpu_freq_hz);
+			runtime.setCpuHz(cpuHz);
+			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, runtime.timing.ufpsScaled);
+			runtime.setCycleBudgetPerFrame(cycleBudgetPerFrame);
+			const renderHeight = resolveRenderHeight(machine.render_size.height);
+			runtime.setVblankCycles(resolveVblankCycles(cpuHz, runtime.timing.ufpsScaled, renderHeight));
+			runtime.setTransferRatesFromManifest(perfSpecs);
 		} catch (error) {
 			runtimeIde.handleLuaError(runtime, error);
 		}
-		const machine = resolveRuntimeMachineForPlan(runtime, reloadPlan);
-		const perfSpecs = getMachinePerfSpecs(machine);
-		applyUfpsScaled(perfSpecs.ufps);
-		const cpuHz = resolveCpuHz(perfSpecs.cpu_freq_hz);
-		runtime.setCpuHz(cpuHz);
-		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
-		runtime.setCycleBudgetPerFrame(cycleBudgetPerFrame);
-		const renderHeight = resolveRenderHeight(machine.render_size.height);
-		runtime.setVblankCycles(resolveVblankCycles(cpuHz, $.ufps_scaled, renderHeight));
-		runtime.setTransferRatesFromManifest(perfSpecs);
 	}
 	finally {
 		runtime.luaGate.end(gateToken);

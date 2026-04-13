@@ -193,7 +193,7 @@ export function initializeIdeFeatures(runtime: Runtime, options: RuntimeOptions)
 	flushLuaWarnings(runtime);
 	registerRuntimeShortcuts(runtime);
 	setDebuggerBreakpoints(runtime, ide_state.breakpoints);
-	updateOverlayAudioSuspension(runtime);
+	updateGamePipelineExts(runtime);
 }
 
 export function applyCanonicalization(canonicalization: boolean): void {
@@ -207,6 +207,7 @@ export function setActiveIdeFontVariant(runtime: Runtime, variant: Runtime['acti
 }
 
 export function updateGamePipelineExts(runtime: Runtime): void {
+	runtime.executionOverlayActive = runtime.terminal.isActive || isManagedOverlayEditorActive(runtime);
 	updateOverlayAudioSuspension(runtime);
 }
 
@@ -247,7 +248,7 @@ export function deactivateTerminalMode(runtime: Runtime): void {
 }
 
 export function isOverlayActive(runtime: Runtime): boolean {
-	return runtime.terminal.isActive || isManagedOverlayEditorActive(runtime);
+	return runtime.executionOverlayActive;
 }
 
 export function toggleEditor(runtime: Runtime): void {

@@ -43,7 +43,7 @@ export class GamepadInput implements InputHandler {
 			const state = this.buttonStates[key];
 			if (!state) continue;
 			if (state.pressed) {
-				const pressedAt = state.pressedAtMs ?? state.timestamp ?? now;
+				const pressedAt = state.pressedAtMs ?? state.timestamp ?? now; // TODO: USE resolveStateTimestamp
 				state.presstime = Math.max(0, now - pressedAt);
 				if (prevPollTime > 0 && state.justpressed && state.timestamp <= prevPollTime) {
 					state.justpressed = false;

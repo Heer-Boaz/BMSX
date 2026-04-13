@@ -1,4 +1,4 @@
-import { $, calcCyclesPerFrameScaled, renderGate, resolveVblankCycles, runGate } from '../core/engine_core';
+import { $, renderGate, runGate } from '../core/engine_core';
 import { taskGate } from '../core/taskgate';
 import { Input } from '../input/input';
 import type { InputMap } from '../input/inputtypes';
@@ -38,11 +38,14 @@ import { Api } from './firmware_api';
 import { CPU, Table, type Closure, type Value, type Program, type ProgramMetadata, RunResult, type NativeFunction, type NativeObject } from './cpu';
 import { StringPool, StringValue } from './string_pool';
 import { StringHandleTable } from './string_memory';
-import { clamp } from '../utils/clamp';
 import type { TerminalMode } from './terminal/ui/terminal_mode';
 import { OverlayRenderer } from './overlay_renderer';
 import { Font, type FontVariant } from '../render/shared/bmsx_font';
-import { beginMeshQueue, beginParticleQueue, clearBackQueues } from '../render/shared/render_queues';
+import {
+	beginMeshQueue,
+	beginParticleQueue,
+	clearBackQueues,
+} from '../render/shared/render_queues';
 import { clearHardwareCamera } from '../render/shared/hardware_camera';
 import { clearHardwareLighting } from '../render/shared/hardware_lighting';
 import type { CartEditor } from '../ide/cart_editor';
@@ -63,6 +66,9 @@ import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../lua/lu
 import type { ParsedLuaChunk } from '../ide/language/lua/lua_parse';
 import { ResourceUsageDetector } from './resource_usage_detector';
 import { configureLuaHeapUsage } from './lua_heap_usage';
+import { RuntimeFrameLoopState } from './runtime_frame_loop';
+import { RuntimeMachineSchedulerState } from './runtime_machine_scheduler';
+import { RuntimeTimingState, calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from './runtime_timing';
 import {
 	DMA_CTRL_START,
 	DMA_STATUS_BUSY,
@@ -318,20 +324,10 @@ export class Runtime {
 		return Runtime.resolvePositiveSafeInteger(value, 'machine.specs.geo.work_units_per_sec');
 	}
 
-	private static resolveUfpsScaled(value: number | undefined): number {
-		return Runtime.resolvePositiveSafeInteger(value, 'machine.ufps');
-	}
-
 	private static resolveRenderSize(machine: { render_size: { width: number; height: number; } }): Viewport {
 		const width = Runtime.resolvePositiveSafeInteger(machine.render_size.width, 'machine.render_size.width');
 		const height = Runtime.resolvePositiveSafeInteger(machine.render_size.height, 'machine.render_size.height');
 		return { width, height };
-	}
-
-	private static applyUfpsScaled(ufps: number): number {
-		const ufpsScaled = Runtime.resolveUfpsScaled(ufps);
-		$.setUfpsScaled(ufpsScaled);
-		return ufpsScaled;
 	}
 
 	public setCycleBudgetPerFrame(value: number): void {
@@ -559,80 +555,11 @@ export class Runtime {
 		return this.currentFrameState !== null;
 	}
 
-	public queueHostTime(deltaMs: number, frameMs: number, maxSteps: number): void {
-		this.queuedHostTimeMs = clamp(this.queuedHostTimeMs + deltaMs, 0, frameMs * maxSteps);
-	}
-
-	public clearQueuedHostTime(): void {
-		this.queuedHostTimeMs = 0;
-	}
-
-	public canRunScheduledUpdate(frameMs: number): boolean {
-		if (!this.luaInitialized || !this.tickEnabled || this.luaRuntimeFailed) {
-			return false;
-		}
-		const state = this.currentFrameState;
-		if (state !== null && state.cycleBudgetRemaining > 0) {
-			return true;
-		}
-		return this.queuedHostTimeMs >= frameMs;
-	}
-
-	public consumeLastTickCompletion(): { sequence: number; remaining: number; visualCommitted: boolean; vdpFrameCost: number; vdpFrameHeld: boolean; } | null {
-		if (!this.lastTickCompleted) {
-			return null;
-		}
-		if (this.lastTickSequence === this.lastTickConsumedSequence) {
-			return null;
-		}
-		this.lastTickConsumedSequence = this.lastTickSequence;
-		return {
-			sequence: this.lastTickSequence,
-			remaining: this.lastTickBudgetRemaining,
-			visualCommitted: this.lastTickVisualFrameCommitted,
-			vdpFrameCost: this.lastTickVdpFrameCost,
-			vdpFrameHeld: this.lastTickVdpFrameHeld,
-		};
-	}
-
-	private consumeQueuedHostFrame(frameMs: number): boolean {
-		if (this.queuedHostTimeMs < frameMs) {
-			return false;
-		}
-		this.queuedHostTimeMs -= frameMs;
-		return true;
-	}
-
-	private refillFrameBudget(frameState: FrameState, frameMs: number): boolean {
-		if (!this.consumeQueuedHostFrame(frameMs)) {
-			return false;
-		}
-		frameState.cycleBudgetRemaining += this.cycleBudgetPerFrame;
-		frameState.cycleBudgetGranted += this.cycleBudgetPerFrame;
-		return true;
-	}
-
-	private startScheduledFrame(frameMs: number): boolean {
-		if (!this.consumeQueuedHostFrame(frameMs)) {
-			return false;
-		}
-		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
-		if (debugTickRate) {
-			if (this.debugFrameReportAtMs === 0) {
-				this.debugFrameReportAtMs = performance.now();
-			}
-			this.debugTickYieldsBefore = this.debugCycleYieldsTotal;
-		}
-		this.lastTickCompleted = false;
-		this.beginFrameState(true);
-		return true;
-	}
-
 	public runWithBudget(state: FrameState): RunResult {
 		const debugCycle = Boolean((globalThis as any).__bmsx_debug_tickrate);
 		if (debugCycle) {
 			if (this.debugCycleReportAtMs === 0) {
-				this.debugCycleReportAtMs = performance.now();
+				this.debugCycleReportAtMs = $.platform.clock.now();
 			}
 			this.debugCycleRuns += 1;
 			this.debugCycleRunsTotal += 1;
@@ -681,7 +608,7 @@ export class Runtime {
 				this.debugCycleYieldsTotal += 1;
 			}
 			this.debugCycleRemainingAcc += remaining;
-			const now = performance.now();
+			const now = $.platform.clock.now();
 			const elapsedMs = now - this.debugCycleReportAtMs;
 			if (elapsedMs >= 1000) {
 				const scale = 1000 / elapsedMs;
@@ -975,6 +902,8 @@ export class Runtime {
 	public editor: CartEditor | null = null;
 	public readonly overlayRenderer = new OverlayRenderer();
 	public terminal!: TerminalMode;
+	public readonly timing: RuntimeTimingState;
+	public executionOverlayActive = false;
 	private _overlayResolutionMode: 'offscreen' | 'viewport'; // Set in constructor
 	public readonly debuggerController = new LuaDebuggerController();
 	public pauseCoordinator = runtimeIde.createPauseCoordinator();
@@ -1043,9 +972,9 @@ export class Runtime {
 	}
 	public applyActiveMachineTiming(cpuHz: number): void {
 		const perfSpecs = getMachinePerfSpecs($.machine_manifest);
-		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
+		const cycleBudgetPerFrame = this.timing.resolveCycleBudget(cpuHz);
 		const renderSize = Runtime.resolveRenderSize($.machine_manifest);
-		const vblankCycles = resolveVblankCycles(cpuHz, $.ufps_scaled, renderSize.height);
+		const vblankCycles = this.timing.resolveVblankCycles(cpuHz, renderSize.height);
 		this.setCpuHz(cpuHz);
 		this.setCycleBudgetPerFrame(cycleBudgetPerFrame);
 		this.setVblankCycles(vblankCycles);
@@ -1215,46 +1144,8 @@ export class Runtime {
 			return;
 		}
 		this.activeTickCompleted = true;
-		this.lastTickBudgetGranted = frameState.cycleBudgetGranted;
-		this.lastTickCpuBudgetGranted = frameState.cycleBudgetGranted;
-		this.lastTickCpuUsedCycles = frameState.activeCpuUsedCycles;
-		this.lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
-		this.lastTickVisualFrameCommitted = this.vdp.lastFrameCommitted;
-		this.lastTickVdpFrameCost = this.vdp.lastFrameCost;
-		this.lastTickVdpFrameHeld = this.vdp.lastFrameHeld;
-		this.lastTickCompleted = true;
-		this.lastTickSequence += 1;
+		this.machineScheduler.enqueueTickCompletion(this, frameState);
 		this.lastCompletedVblankSequence = vblankSequence;
-		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
-		if (debugTickRate) {
-			const cyclesUsed = frameState.activeCpuUsedCycles;
-			const yieldsThisFrame = this.debugCycleYieldsTotal - this.debugTickYieldsBefore;
-			this.debugFrameCount += 1;
-			this.debugFrameCyclesUsedAcc += cyclesUsed;
-			this.debugFrameRemainingAcc += frameState.cycleBudgetRemaining;
-			this.debugFrameYieldsAcc += yieldsThisFrame;
-			this.debugFrameGrantedAcc += frameState.cycleBudgetGranted;
-			this.debugFrameCarryAcc += frameState.cycleCarryGranted;
-			const now = performance.now();
-			const elapsedMs = now - this.debugFrameReportAtMs;
-			if (elapsedMs >= 1000) {
-				const scale = 1000 / elapsedMs;
-				const cyclesPerSec = this.debugFrameCyclesUsedAcc * scale;
-				const cyclesPerFrame = this.debugFrameCyclesUsedAcc / this.debugFrameCount;
-				const remainingPerFrame = this.debugFrameRemainingAcc / this.debugFrameCount;
-				const yieldsPerFrame = this.debugFrameYieldsAcc / this.debugFrameCount;
-				const grantedPerFrame = this.debugFrameGrantedAcc / this.debugFrameCount;
-				const carryPerFrame = this.debugFrameCarryAcc / this.debugFrameCount;
-				console.info(`[BMSX][runtime-frame] cycles/sec=${cyclesPerSec.toFixed(1)} cycles/frame=${cyclesPerFrame.toFixed(1)} remaining/frame=${remainingPerFrame.toFixed(1)} yields/frame=${yieldsPerFrame.toFixed(2)} budget=${this.cycleBudgetPerFrame} granted=${grantedPerFrame.toFixed(1)} carry=${carryPerFrame.toFixed(1)}`);
-				this.debugFrameReportAtMs = now;
-				this.debugFrameCount = 0;
-				this.debugFrameCyclesUsedAcc = 0;
-				this.debugFrameRemainingAcc = 0;
-				this.debugFrameYieldsAcc = 0;
-				this.debugFrameGrantedAcc = 0;
-				this.debugFrameCarryAcc = 0;
-			}
-		}
 	}
 
 	public captureVblankState(): { cyclesIntoFrame: number } {
@@ -1265,7 +1156,8 @@ export class Runtime {
 
 	public restoreVblankState(state: { cyclesIntoFrame: number }): void {
 		this.clearHaltUntilIrq();
-		this.clearQueuedHostTime();
+		this.machineScheduler.reset(this);
+		this.frameLoop.reset();
 		this.resetSchedulerState();
 		this.schedulerNowCycles = state.cyclesIntoFrame;
 		this.frameStartCycle = 0;
@@ -1331,21 +1223,14 @@ export class Runtime {
 	public lastTickVdpFrameHeld: boolean = false;
 	public lastTickCompleted: boolean = false;
 	private activeTickCompleted = false;
-	private queuedHostTimeMs = 0;
+	public readonly machineScheduler = new RuntimeMachineSchedulerState();
+	public readonly frameLoop = new RuntimeFrameLoopState();
 	private debugCycleReportAtMs: number = 0;
 	private debugCycleRuns: number = 0;
 	private debugCycleYields: number = 0;
 	private debugCycleRemainingAcc: number = 0;
 	private debugCycleRunsTotal: number = 0;
-	private debugCycleYieldsTotal: number = 0;
-	private debugFrameReportAtMs: number = 0;
-	private debugFrameCount: number = 0;
-	private debugFrameCyclesUsedAcc: number = 0;
-	private debugFrameRemainingAcc: number = 0;
-	private debugFrameYieldsAcc: number = 0;
-	private debugFrameGrantedAcc: number = 0;
-	private debugFrameCarryAcc: number = 0;
-	private debugTickYieldsBefore: number = 0;
+	public debugCycleYieldsTotal: number = 0;
 	public pendingLuaWarnings: string[] = [];
 	public lastTickConsumedSequence: number = 0;
 	public readonly moduleAliases: Map<string, string> = new Map();
@@ -1466,11 +1351,11 @@ export class Runtime {
 			});
 			configureMemoryMap(engineMemorySpecs);
 			const enginePerfSpecs = getMachinePerfSpecs(engineLayer.index.machine);
-			Runtime.applyUfpsScaled(enginePerfSpecs.ufps);
+			const ufpsScaled = resolveUfpsScaled(enginePerfSpecs.ufps);
 			const cpuHz = Runtime.resolveCpuHz(enginePerfSpecs.cpu_freq_hz);
-			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
+			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
 			const engineRenderSize = Runtime.resolveRenderSize(engineLayer.index.machine);
-			const vblankCycles = resolveVblankCycles(cpuHz, $.ufps_scaled, engineRenderSize.height);
+			const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, engineRenderSize.height);
 			const memory = new Memory({
 				engineRom: new Uint8Array(engineLayer.payload),
 				cartRom: new Uint8Array(CART_ROM_HEADER_SIZE),
@@ -1480,6 +1365,7 @@ export class Runtime {
 				canonicalization: engineLayer.index.machine.canonicalization,
 				viewport: engineRenderSize,
 				memory,
+				ufpsScaled,
 				cpuHz,
 				cycleBudgetPerFrame,
 				vblankCycles,
@@ -1549,11 +1435,11 @@ export class Runtime {
 		});
 		configureMemoryMap(memoryLimits);
 		const cartPerfSpecs = getMachinePerfSpecs(cartLayer.index.machine);
-		Runtime.applyUfpsScaled(cartPerfSpecs.ufps);
+		const ufpsScaled = resolveUfpsScaled(cartPerfSpecs.ufps);
 		const cpuHz = Runtime.resolveCpuHz(cartPerfSpecs.cpu_freq_hz);
-		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
+		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
 		const cartRenderSize = Runtime.resolveRenderSize(cartLayer.index.machine);
-		const vblankCycles = resolveVblankCycles(cpuHz, $.ufps_scaled, cartRenderSize.height);
+		const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, cartRenderSize.height);
 		const memory = new Memory({
 			engineRom: new Uint8Array(engineLayer.payload),
 			cartRom: new Uint8Array(cartLayer.payload),
@@ -1564,6 +1450,7 @@ export class Runtime {
 			canonicalization: engineLayer.index.machine.canonicalization,
 			viewport: cartRenderSize,
 			memory,
+			ufpsScaled,
 			cpuHz,
 			cycleBudgetPerFrame,
 			vblankCycles,
@@ -1866,6 +1753,7 @@ export class Runtime {
 
 	private constructor(options: RuntimeOptions) {
 		Runtime._instance = this;
+		this.timing = new RuntimeTimingState(options.ufpsScaled);
 		const initialVdpWorkUnits = options.vdpWorkUnitsPerSec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC;
 		const initialGeoWorkUnits = options.geoWorkUnitsPerSec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC;
 		this.cycleBudgetPerFrame = options.cycleBudgetPerFrame;
@@ -2152,7 +2040,7 @@ export class Runtime {
 		return state;
 	}
 
-	public tickUpdate(frameMs: number = 0): boolean {
+	public tickUpdate(): boolean {
 		if (!this.tickEnabled) {
 			return false;
 		}
@@ -2169,11 +2057,11 @@ export class Runtime {
 		const previousPending = this.hasEntryContinuation();
 		const previousSequence = this.lastTickSequence;
 		if (this.currentFrameState === null) {
-			if (frameMs <= 0 || !this.startScheduledFrame(frameMs)) {
+			if (!this.machineScheduler.startScheduledFrame(this)) {
 				return false;
 			}
 		} else if (this.currentFrameState.cycleBudgetRemaining <= 0) {
-			if (frameMs <= 0 || !this.refillFrameBudget(this.currentFrameState, frameMs)) {
+			if (!this.machineScheduler.refillFrameBudget(this, this.currentFrameState)) {
 				return false;
 			}
 		}
@@ -2856,7 +2744,7 @@ export class Runtime {
 	public activateCartProgramAssets(): void {
 		$.set_assets((this.overlayAssetLayer ?? this.cartAssetLayer).assets);
 		const perfSpecs = getMachinePerfSpecs($.machine_manifest);
-		Runtime.applyUfpsScaled(perfSpecs.ufps);
+		this.timing.applyUfpsScaled(resolveUfpsScaled(perfSpecs.ufps));
 		const cpuHz = Runtime.resolveCpuHz(perfSpecs.cpu_freq_hz);
 		this.applyActiveMachineTiming(cpuHz);
 		this.setTransferRatesFromManifest(perfSpecs);
@@ -2870,7 +2758,7 @@ export class Runtime {
 			return;
 		}
 		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
-		this.clearQueuedHostTime();
+		this.machineScheduler.clearQueuedTime();
 		this.requestCartBoot();
 	}
 
@@ -2892,7 +2780,7 @@ export class Runtime {
 			this.pendingCall = null;
 			this.clearHaltUntilIrq();
 		}
-		this.clearQueuedHostTime();
+		this.machineScheduler.clearQueuedTime();
 		this.pendingCartBoot = false;
 		console.info('Switching to cart program after BIOS boot request.');
 		this.activateProgramSource('cart');

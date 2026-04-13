@@ -791,13 +791,10 @@ function world_class:find_any_by_tag(tag)
 end
 
 local run_phase<const> = function(self, group, dt_ms)
-	local systems<const> = self.systems.phase_systems[group]
 	self.current_phase = group
-	for i = 1, self.systems.phase_counts[group] do
-		systems[i]:update(dt_ms)
-		self:flush_active_components()
-	end
+	self.systems:update_phase(group, dt_ms)
 	self.current_phase = nil
+	self:flush_active_components()
 end
 
 function world_class:update()

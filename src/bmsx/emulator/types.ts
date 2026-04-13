@@ -108,6 +108,7 @@ export type RuntimeOptions = {
 	canonicalization?: CanonicalizationType;
 	viewport: Viewport;
 	memory: Memory;
+	ufpsScaled: number;
 	cpuHz: number;
 	cycleBudgetPerFrame: number;
 	vblankCycles: number;

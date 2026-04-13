@@ -87,11 +87,6 @@ export interface Platform {
 	input: InputHub;
 	storage: StorageService;
 	microtasks: MicrotaskQueue;
-	/**
-	 * Runtime tick rate expressed in scaled Hz (micro-Hz).
-	 * The scale factor is {@link HZ_SCALE}.
-	 */
-	ufpsScaled: number;
 	requestShutdown(): void;
 	clipboard: ClipboardService;
 	hid: HIDService;

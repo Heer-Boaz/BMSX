@@ -17,11 +17,10 @@ import type { LuaSourceRegistry } from '../emulator/lua_sources';
 import { GateGroup, taskGate } from './taskgate';
 import { Runtime } from '../emulator/runtime';
 import { IRQ_NEWGAME } from '../emulator/io';
-import * as runtimeIde from '../emulator/runtime_ide';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 import { InputSource, KeyModifier } from '../input/playerinput';
 import { shallowcopy } from '../utils/shallowcopy';
-import { clearAllQueues, clearBackQueues, prepareCompletedRenderQueues, prepareHeldRenderQueues, prepareOverlayRenderQueues, preparePartialRenderQueues } from '../render/shared/render_queues';
+import { clearAllQueues } from '../render/shared/render_queues';
 import { clearOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { Table } from '../emulator/cpu';
 import { type StringValue } from '../emulator/string_pool';
@@ -46,48 +45,9 @@ export interface EngineStartupOptions {
 	viewHost?: GameViewHost;
 }
 
-const MAX_FRAME_DELTA = 250;  // ms
-const MAX_SUBSTEPS = 5;
 const DEFAULT_MASTER_VOLUME = 1;
 
 export const HZ_SCALE = PLATFORM_HZ_SCALE;
-
-export function calcCyclesPerFrameScaled(cpuHz: number, refreshHzScaled: number): number {
-	if (!Number.isSafeInteger(cpuHz) || cpuHz <= 0) {
-		throw new Error('[EngineCore] cpuHz must be a positive safe integer.');
-	}
-	if (!Number.isSafeInteger(refreshHzScaled) || refreshHzScaled <= 0) {
-		throw new Error('[EngineCore] refreshHzScaled must be a positive safe integer.');
-	}
-	const numerator = cpuHz * HZ_SCALE;
-	if (!Number.isSafeInteger(numerator) || numerator <= 0) {
-		throw new Error('[EngineCore] cpuHz scaled numerator must be a positive safe integer.');
-	}
-	return Math.floor(numerator / refreshHzScaled);
-}
-
-export function resolveVblankCycles(cpuFreqHz: number, ufpsScaled: number, renderHeight: number): number {
-	if (!Number.isSafeInteger(cpuFreqHz) || cpuFreqHz <= 0) {
-		throw new Error('[EngineCore] cpuFreqHz must be a positive safe integer.');
-	}
-	if (!Number.isSafeInteger(ufpsScaled) || ufpsScaled <= 0) {
-		throw new Error('[EngineCore] ufpsScaled must be a positive safe integer.');
-	}
-	if (!Number.isSafeInteger(renderHeight) || renderHeight <= 0) {
-		throw new Error('[EngineCore] renderHeight must be a positive safe integer.');
-	}
-	const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuFreqHz, ufpsScaled);
-	const activeScanlines = Math.floor(cycleBudgetPerFrame / (renderHeight + 1));
-	const activeDisplayCycles = activeScanlines * renderHeight;
-	const vblankCycles = cycleBudgetPerFrame - activeDisplayCycles;
-	if (vblankCycles > cycleBudgetPerFrame) {
-		throw new Error('[EngineCore] vblank_cycles must be less than or equal to cycles_per_frame.');
-	}
-	if (vblankCycles <= 0) {
-		throw new Error('[EngineCore] vblank_cycles must be greater than 0.');
-	}
-	return vblankCycles;
-}
 
 // Gate to block the game update/run loop (used when loading/hydrating game state)
 export const runGate: GateGroup = taskGate.group('run:main');
@@ -273,56 +233,11 @@ export class EngineCore {
 	 */
 	public get debug(): boolean { return this._debug; }
 	/**
-	 * The target frames per second for the game.
-	 */
-	public target_fps: number = 0;
-	public ufps_scaled: number = 0;
-	public get ufps(): number { return this.ufps_scaled / HZ_SCALE; }
-	private update_interval_ms!: number; // ms per update = 1000 / fps
-	/**
-	 * The timestamp of the last update.
-	 */
-	public last_update: number = 0;
-	/**
 	 * The time difference between the current frame and the previous frame.
 	 */
 	public deltatime: number = 0;
-	private debugPresentReportAtMs: number = 0;
-	private debugPresentHostFrames: number = 0;
-	private debugPresentTickCompleted: number = 0;
-	private debugPresentTickCommitted: number = 0;
-	private debugPresentTickDeferred: number = 0;
-	private debugPresentTickHeld: number = 0;
-	private debugPresentPartialPresents: number = 0;
-	private debugPresentCommitPresents: number = 0;
-	private debugPresentHoldPresents: number = 0;
-	private debugPresentPausedPresents: number = 0;
-
-	public get timestep_ms(): number { return this.update_interval_ms; } // ms per update = 1000 / fps
 
 	public get deltatime_seconds(): number { return this.deltatime / 1000; }
-
-	public setUfpsScaled(ufpsScaled: number): void {
-		if (!Number.isSafeInteger(ufpsScaled) || ufpsScaled <= HZ_SCALE) {
-			throw new Error('[EngineCore] ufps scaled must be a safe integer greater than 1 Hz.');
-		}
-		this.ufps_scaled = ufpsScaled;
-		this.target_fps = ufpsScaled / HZ_SCALE;
-		this._platform.ufpsScaled = ufpsScaled;
-		this._platform.audio.setFrameTimeSec(HZ_SCALE / this.ufps_scaled);
-		this.sndmaster.setMixerFps(this.target_fps);
-		if (this.initialized) {
-			this.recomputeTimingCaches();
-		}
-	}
-
-	public setUfps(ufps: number): void {
-		if (!Number.isFinite(ufps) || ufps <= 0) {
-			throw new Error('[EngineCore] ufps must be a positive number.');
-		}
-		const ufpsScaled = Math.round(ufps * HZ_SCALE);
-		this.setUfpsScaled(ufpsScaled);
-	}
 
 	private _assets: RuntimeAssets = null;
 	private _system_assets: RuntimeAssets = null;
@@ -334,10 +249,6 @@ export class EngineCore {
 	private _workspace_overlay: Uint8Array = null;
 	private _cart_project_root_path: string = null;
 
-	/**
-	 * The timestamp of the last game tick.
-	 */
-	last_gametick_time!: number;
 	/**
 	 * The turn counter for the game.
 	 */
@@ -391,12 +302,6 @@ export class EngineCore {
 		this._debuggerControlsVisible = false;
 		$.view.showResumeOverlay();
 	}
-
-	/**
-	 * Indicates whether the game was updated.
-	 * This property is used to track if any changes were made to the game before rendering a new frame.
-	 */
-	wasupdated!: boolean;
 
 	/**
 	 * Indicates whether the game should run a single frame and then pause for debugging purposes.
@@ -526,10 +431,6 @@ export class EngineCore {
 		this.initialized = false;
 	}
 
-	private recomputeTimingCaches(): void {
-		this.update_interval_ms = 1000 / this.target_fps;
-	}
-
 	private buildModulationResolver(): ModulationPresetResolver {
 		return {
 			resolve: (key: asset_id) => {
@@ -628,10 +529,6 @@ export class EngineCore {
 		setMicrotaskQueue(platform.microtasks);
 		this.running = false;
 		this._paused = false;
-		this.wasupdated = true;
-		this.setUfpsScaled(engineLayer.index.machine.ufps);
-		this.recomputeTimingCaches();
-
 		this._debug = debug ?? this._debug;
 		$debug = this._debug;
 
@@ -715,7 +612,8 @@ export class EngineCore {
 
 			const runtime = Runtime.instance;
 			if (runtime) {
-				runtime.clearQueuedHostTime();
+				runtime.machineScheduler.clearQueuedTime();
+				runtime.frameLoop.clearPresentation();
 				runtime.abandonFrameState();
 				runtime.drawFrameState = null;
 				runtime.clearHaltUntilIrq();
@@ -730,7 +628,6 @@ export class EngineCore {
 			}
 		}
 		finally {
-			this.wasupdated = true;
 			renderGate.end(gateToken);
 			runGate.end(runToken);
 		}
@@ -754,251 +651,14 @@ export class EngineCore {
 		}
 		const platform = this.platform;
 		const now = platform.clock.now();
-		this.last_update = now;
-		this.last_gametick_time = now;
 		this._turnCounter = 0;
-		Runtime.instance.clearQueuedHostTime();
-		this.frameLoopHandle = platform.frames.start(this.run);
+		const runtime = Runtime.instance;
+		runtime.frameLoop.currentTimeMs = now;
+		runtime.machineScheduler.clearQueuedTime();
+		this.frameLoopHandle = platform.frames.start((currentTime: number) => {
+			runtime.frameLoop.runHostFrame(runtime, currentTime, runGate.ready);
+		});
 		this.running = true;
-	}
-
-	/**
-	 * Updates the game state with the given delta time.
-	 * @param deltaTime - The time elapsed since the last update.
-	 * @returns void
-	 */
-	public update(deltaTime: number): boolean {
-		let progressed = false;
-		try {
-			this.deltatime = deltaTime;
-			progressed = Runtime.instance.tickUpdate(deltaTime);
-		} catch (error) {
-			const runtime = Runtime.instance;
-			try {
-				runtimeIde.handleLuaError(runtime, error);
-				runtime.abandonFrameState();
-			} catch (secondaryError) {
-				console.error(`Error while handling surfaced runtime error: ${secondaryError?.message ?? '<unknown error>'}`);
-			}
-		}
-		if ($.debug_runSingleFrameAndPause) {
-			$.debug_runSingleFrameAndPause = false;
-			$.paused = true;
-		}
-		$._turnCounter++;
-		return progressed;
-	}
-
-	private runOverlayModeUpdate(runtime: Runtime): void {
-		runtimeIde.tickIDE(runtime);
-		runtimeIde.tickTerminalMode(runtime);
-	}
-
-	private isPresentRateDebugEnabled(): boolean {
-		return Boolean((globalThis as any).__bmsx_debug_presentrate);
-	}
-
-	private recordPresentDebugHostFrame(currentTime: number): void {
-		if (!this.isPresentRateDebugEnabled()) {
-			return;
-		}
-		if (this.debugPresentReportAtMs === 0) {
-			this.debugPresentReportAtMs = currentTime;
-		}
-		this.debugPresentHostFrames += 1;
-	}
-
-	private recordPresentDebugTickCompletion(visualCommitted: boolean, vdpFrameHeld: boolean): void {
-		if (!this.isPresentRateDebugEnabled()) {
-			return;
-		}
-		this.debugPresentTickCompleted += 1;
-		if (visualCommitted) {
-			this.debugPresentTickCommitted += 1;
-		} else {
-			this.debugPresentTickDeferred += 1;
-		}
-		if (vdpFrameHeld) {
-			this.debugPresentTickHeld += 1;
-		}
-	}
-
-	private recordPresentDebugPresentation(mode: 'partial' | 'completed', commitFrame: boolean, paused: boolean): void {
-		if (!this.isPresentRateDebugEnabled()) {
-			return;
-		}
-		if (paused) {
-			this.debugPresentPausedPresents += 1;
-			return;
-		}
-		if (mode === 'partial') {
-			this.debugPresentPartialPresents += 1;
-			return;
-		}
-		if (commitFrame) {
-			this.debugPresentCommitPresents += 1;
-			return;
-		}
-		this.debugPresentHoldPresents += 1;
-	}
-
-	private flushPresentDebugReport(currentTime: number, runtime: Runtime): void {
-		if (!this.isPresentRateDebugEnabled()) {
-			return;
-		}
-		if (this.debugPresentReportAtMs === 0) {
-			this.debugPresentReportAtMs = currentTime;
-			return;
-		}
-		const elapsedMs = currentTime - this.debugPresentReportAtMs;
-		if (elapsedMs < 1000) {
-			return;
-		}
-		const scale = 1000 / elapsedMs;
-		const hostFps = this.debugPresentHostFrames * scale;
-		console.warn(
-			`[BMSX][present] host_frames=${this.debugPresentHostFrames} host_fps=${hostFps.toFixed(2)} ufps=${this.ufps.toFixed(2)} `
-			+ `tick_completed=${this.debugPresentTickCompleted} tick_committed=${this.debugPresentTickCommitted} `
-			+ `tick_deferred=${this.debugPresentTickDeferred} tick_held=${this.debugPresentTickHeld} `
-			+ `present_partial=${this.debugPresentPartialPresents} present_commit=${this.debugPresentCommitPresents} `
-			+ `present_hold=${this.debugPresentHoldPresents} present_paused=${this.debugPresentPausedPresents} `
-			+ `draw_pending=${runtime.isDrawPending ? 1 : 0} active_tick=${runtime.hasActiveTick() ? 1 : 0}`
-		);
-		this.debugPresentReportAtMs = currentTime;
-		this.debugPresentHostFrames = 0;
-		this.debugPresentTickCompleted = 0;
-		this.debugPresentTickCommitted = 0;
-		this.debugPresentTickDeferred = 0;
-		this.debugPresentTickHeld = 0;
-		this.debugPresentPartialPresents = 0;
-		this.debugPresentCommitPresents = 0;
-		this.debugPresentHoldPresents = 0;
-		this.debugPresentPausedPresents = 0;
-	}
-
-	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: 'partial' | 'completed', commitFrame = mode === 'completed'): void {
-		this.deltatime = hostDeltaMs;
-		const overlayActive = runtimeIde.isOverlayActive(runtime);
-		if (overlayActive) {
-			clearBackQueues();
-		}
-		runtime.tickDraw();
-		runtimeIde.tickIDEDraw(runtime);
-		runtimeIde.tickTerminalModeDraw(runtime);
-		this.wasupdated = true;
-		const effectiveCommitFrame = commitFrame && !overlayActive;
-		this.view.configurePresentation(mode, effectiveCommitFrame);
-		this.recordPresentDebugPresentation(mode, effectiveCommitFrame, this._paused);
-		if (overlayActive) {
-			prepareOverlayRenderQueues();
-		} else if (mode === 'completed' && commitFrame) {
-			prepareCompletedRenderQueues();
-		} else if (mode === 'completed') {
-			prepareHeldRenderQueues();
-		} else {
-			preparePartialRenderQueues();
-		}
-		// Keep audio refills tied to host presentation, not only completed sim frames.
-		// Partial presents happen exactly when an unfinished tick spans host frames, and
-		// skipping the refill there makes the browser worklet hit underruns under load.
-		this.sndmaster.finishFrame();
-		this.view.drawgame();
-		runtime.scheduleDeferredCartBootPreparation();
-	}
-
-	/**
-	 * Runs the game loop and updates the game state.
-	 * @param currentTime - The current time in milliseconds`
-	 * @returns void
-	 */
-	private run = (currentTime: number): void => {
-		if (!this.running) return;
-		let hostDeltaMs = 0;
-
-		try {
-			Input.instance.pollInput();
-			const runtime = Runtime.instance;
-			this.recordPresentDebugHostFrame(currentTime);
-			runtimeIde.tickIdeInput(runtime);
-			runtimeIde.tickTerminalInput(runtime);
-			hostDeltaMs = Math.min(currentTime - this.last_update, MAX_FRAME_DELTA);
-			this.last_update = currentTime;
-
-			if (this._paused) {
-				runtime.clearQueuedHostTime();
-				this.runOverlayModeUpdate(runtime);
-				this.presentFrame(runtime, hostDeltaMs, 'completed');
-				return;
-			}
-
-			this.wasupdated = false;
-			let presentQueued = false;
-			let latestCompletion: ReturnType<Runtime['consumeLastTickCompletion']> = null;
-			const runPartialPresentation = () => {
-				presentQueued = true;
-				this.presentFrame(runtime, hostDeltaMs, 'partial');
-			};
-			const runCompletedPresentation = (commitFrame = true) => {
-				presentQueued = true;
-				this.presentFrame(runtime, hostDeltaMs, 'completed', commitFrame);
-			};
-			if (!runGate.ready || this.paused) {
-				runtime.clearQueuedHostTime();
-			} else {
-				runtime.queueHostTime(hostDeltaMs, this.timestep_ms, MAX_SUBSTEPS);
-				while (runtime.canRunScheduledUpdate(this.timestep_ms)) {
-					if (!runGate.ready || this.paused) {
-						runtime.clearQueuedHostTime();
-						break;
-					}
-					const progressed = this.update(this.timestep_ms);
-					const completion = runtime.consumeLastTickCompletion();
-					if (completion) {
-						this.recordPresentDebugTickCompletion(completion.visualCommitted, completion.vdpFrameHeld);
-						latestCompletion = completion;
-					}
-					if (runtimeIde.isOverlayActive(runtime)) {
-						runtime.clearQueuedHostTime();
-						this.runOverlayModeUpdate(runtime);
-						runCompletedPresentation();
-						break;
-					}
-					if (runtime.hasActiveTick() && !progressed) {
-						break;
-					}
-				}
-			}
-			if (!presentQueued && latestCompletion) {
-				runCompletedPresentation(latestCompletion.visualCommitted);
-			}
-			if (!presentQueued && runtime.isDrawPending) {
-				runPartialPresentation();
-			}
-			if (!presentQueued && runtimeIde.isOverlayActive(runtime)) {
-				runtime.clearQueuedHostTime();
-				this.runOverlayModeUpdate(runtime);
-				runCompletedPresentation();
-			}
-		} catch (error) {
-			// Surface engine/runtime errors to the in-game terminal when active
-			const runtime = Runtime.instance;
-			if (runtime) {
-				try {
-					runtimeIde.handleLuaError(runtime, error);
-					runtime.abandonFrameState();
-					if (runtimeIde.isOverlayActive(runtime)) {
-						this.runOverlayModeUpdate(runtime);
-						this.presentFrame(runtime, hostDeltaMs, 'completed');
-					}
-				} catch { /* ignore secondary failures, but log them */
-					console.error(`Error while handling surfaced game error in runtime: ${error}`);
-					// Abort the remainder of this update to keep state coherent this frame.
-					runtime.abandonFrameState(); // ensure we abandon the frame state to prevent freezing
-					this.wasupdated = true; // Force a redraw to show the error state and prevent freezing the game
-				}
-			}
-		}
-		this.flushPresentDebugReport(currentTime, Runtime.instance);
 	}
 
 	/**

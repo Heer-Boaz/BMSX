@@ -52,6 +52,8 @@ enum class EngineState {
 
 class EngineCore {
 public:
+	friend class RuntimeFrameLoopState;
+
 	struct TickTiming {
 		f64 totalMs = 0.0;
 		f64 inputMs = 0.0;
@@ -80,10 +82,6 @@ public:
 	// Lifecycle
 	bool initialize(Platform* platform);
 	void shutdown();
-
-	// Main loop
-	void tick(f64 deltaTime);
-	void render();
 
 	// State control
 	void start();
@@ -190,10 +188,6 @@ private:
 	void setMachineManifest(const MachineManifest& manifest);
 	void configureViewForMachine(const MachineManifest& manifest);
 	bool bootEngineStartupProgram(const MachineManifest& runtimeMachine, const RuntimeAssets& sizingAssets);
-	void recordPresentDebugHostFrame();
-	void recordPresentDebugTickCompletion(bool visualCommitted, bool vdpFrameHeld);
-	void recordPresentDebugPresentation(GameView::PresentationMode mode, bool commitFrame, bool paused);
-	void flushPresentDebugReport(const Runtime* runtime);
 
 	Platform* m_platform = nullptr;
 	std::unique_ptr<GameView> m_view;
@@ -215,21 +209,6 @@ private:
 	u64 m_debugTickHostFrames = 0;
 	u64 m_debugTickUpdates = 0;
 	i64 m_debugLastUpdateCountTotal = 0;
-	bool m_debugPresentReportInitialized = false;
-	std::chrono::steady_clock::time_point m_debugPresentReportAt;
-	u64 m_debugPresentHostFrames = 0;
-	u64 m_debugPresentTickCompleted = 0;
-	u64 m_debugPresentTickCommitted = 0;
-	u64 m_debugPresentTickDeferred = 0;
-	u64 m_debugPresentTickHeld = 0;
-	u64 m_debugPresentPartialPresents = 0;
-	u64 m_debugPresentCommitPresents = 0;
-	u64 m_debugPresentHoldPresents = 0;
-	u64 m_debugPresentPausedPresents = 0;
-	bool m_presentation_pending = false;
-	GameView::PresentationMode m_presentation_mode = GameView::PresentationMode::Completed;
-	bool m_commit_presented_frame = false;
-
 	bool m_rom_loaded = false;
 	bool m_loaded_cart_has_program = false;
 	bool m_engine_assets_loaded = false;

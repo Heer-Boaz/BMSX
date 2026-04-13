@@ -544,7 +544,7 @@ function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passSta
 	updateAndBindFrameUniforms(backend, {
 		offscreen: { x: passState.width, y: passState.height },
 		logical: { x: passState.overlayWidth, y: passState.overlayHeight },
-		time: $.last_update / 1000,
+		time: Runtime.instance.frameLoop.currentTimeMs / 1000,
 		delta: $.deltatime_seconds,
 	});
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);

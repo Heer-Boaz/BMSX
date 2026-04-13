@@ -588,11 +588,6 @@ void LibretroPlatform::runFrame() {
 		m_engine->start();
 	}
 
-	// Update game logic
-#if ENABLE_PERFORMANCE_LOGS
-	// PERF LOGS DISABLED
-	// const auto tickStart = std::chrono::steady_clock::now();
-#endif
 	if (m_platform_paused) {
 		// Keep input state in sync while paused to avoid desynced press ids on resume.
 		Input::instance().pollInput();
@@ -600,27 +595,11 @@ void LibretroPlatform::runFrame() {
 		// Ensure host input is polled so events are queued into the input hub
 		// before the engine tick consumes them.
 		pollInput();
-		m_engine->tick(dt);
 	}
-#if ENABLE_PERFORMANCE_LOGS
-	// PERF LOGS DISABLED
-	// const auto tickEnd = std::chrono::steady_clock::now();
-#endif
 
-	// Render
 	bool skipRender = m_frameskip_enabled && m_frameskip_next;
 	m_frameskip_next = false;
-#if ENABLE_PERFORMANCE_LOGS
-	// PERF LOGS DISABLED
-	// const auto renderStart = std::chrono::steady_clock::now();
-#endif
-	if (!skipRender) {
-		m_engine->render();
-	}
-#if ENABLE_PERFORMANCE_LOGS
-	// PERF LOGS DISABLED
-	// const auto renderEnd = std::chrono::steady_clock::now();
-#endif
+	Runtime::instance().frameLoop.runHostFrame(Runtime::instance(), dt, m_platform_paused, skipRender);
 
 	// Collect audio
 #if ENABLE_PERFORMANCE_LOGS

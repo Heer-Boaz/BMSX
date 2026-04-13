@@ -6,7 +6,10 @@
 #include "devices/imgdec_controller.h"
 #include "io.h"
 #include "memory.h"
+#include "runtime_frame_loop.h"
+#include "runtime_machine_scheduler.h"
 #include "vdp.h"
+#include "../render/gameview.h"
 #include "../render/shared/render_types.h"
 #include "../core/types.h"
 #include <array>
@@ -47,14 +50,6 @@ struct FrameState {
 	int cycleBudgetGranted = 0;
 	int cycleCarryGranted = 0;
 	int activeCpuUsedCycles = 0;
-};
-
-struct TickCompletion {
-	i64 sequence = 0;
-	int remaining = 0;
-	bool visualCommitted = true;
-	int vdpFrameCost = 0;
-	bool vdpFrameHeld = false;
 };
 
 /**
@@ -108,6 +103,9 @@ struct RuntimeState {
  */
 class Runtime : public Memory::IoWriteHandler {
 public:
+	friend class RuntimeFrameLoopState;
+	friend class RuntimeMachineSchedulerState;
+
 	enum class ProgramSource {
 		Engine,
 		Cart,
@@ -151,7 +149,7 @@ public:
 	/**
 	 * Tick the runtime update phase (called by BmsxCartUpdateSystem).
 	 */
-	bool tickUpdate(f64 frameMs);
+	bool tickUpdate();
 
 	/**
 	 * Tick the runtime draw phase (called by BmsxCartDrawSystem).
@@ -288,9 +286,6 @@ public:
 	void resetRenderBuffers();
 	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
 	void setCycleBudgetPerFrame(int budget);
-	void queueHostTime(f64 deltaMs, f64 frameMs, int maxSteps);
-	void clearQueuedHostTime();
-	bool canRunScheduledUpdate(f64 frameMs) const;
 	bool hasActiveTick() const;
 	i64 lastTickSequence() const { return m_lastTickSequence; }
 	int lastTickBudgetRemaining() const { return m_lastTickBudgetRemaining; }
@@ -306,13 +301,14 @@ public:
 	uint32_t trackedVramUsedBytes() const;
 	uint32_t trackedVramTotalBytes() const { return m_vdp.trackedTotalVramBytes(); }
 	bool didLastTickComplete() const { return m_lastTickCompleted; }
-	bool consumeLastTickCompletion(TickCompletion& outCompletion);
 	bool isDrawPending() const;
 	Value canonicalizeIdentifier(std::string_view value);
 	void refreshMemoryMap();
 	void buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, AssetBuildMode mode = AssetBuildMode::Full);
 	void restoreVramSlotTextures();
 	void captureVramTextureSnapshots();
+	RuntimeMachineSchedulerState machineScheduler;
+	RuntimeFrameLoopState frameLoop;
 
 private:
 	enum class PendingCall {
@@ -369,10 +365,7 @@ private:
 	void commitFrameOnVblankEdge();
 	void completeTickIfPending(FrameState& frameState, uint64_t vblankSequence);
 	bool runHaltedUntilIrq(FrameState& frameState);
-	bool consumeQueuedHostFrame(f64 frameMs);
-	bool refillFrameBudget(f64 frameMs);
 	void beginFrameState(bool advanceInputFrame);
-	bool startScheduledFrame(f64 frameMs);
 	void finalizeUpdateSlice();
 	void clearHaltUntilIrq();
 	void resetHaltIrqWait();
@@ -467,15 +460,6 @@ private:
 	double m_debugRunRemainingAcc = 0.0;
 	i64 m_debugRunCountTotal = 0;
 	i64 m_debugRunYieldsTotal = 0;
-	bool m_debugFrameReportInitialized = false;
-	std::chrono::steady_clock::time_point m_debugFrameReportAt;
-	i64 m_debugFrameCount = 0;
-	double m_debugFrameCyclesUsedAcc = 0.0;
-	double m_debugFrameRemainingAcc = 0.0;
-	double m_debugFrameYieldsAcc = 0.0;
-	double m_debugFrameGrantedAcc = 0.0;
-	double m_debugFrameCarryAcc = 0.0;
-	i64 m_debugTickYieldsBefore = 0;
 	i64 m_debugUpdateCountTotal = 0;
 	i64 m_lastTickSequence = 0;
 	int m_lastTickBudgetGranted = 0;
@@ -488,7 +472,6 @@ private:
 	bool m_lastTickCompleted = false;
 	bool m_activeTickCompleted = false;
 	i64 m_lastTickConsumedSequence = 0;
-	f64 m_queuedHostTimeMs = 0.0;
 	i64 m_cpuHz = 0;
 	i64 m_imgDecBytesPerSec = 0;
 	i64 m_dmaBytesPerSecIso = 0;
