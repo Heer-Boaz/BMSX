@@ -7,7 +7,8 @@ export function isKeyJustPressed(code: string): boolean {
 
 export function shouldRepeatKeyFromPlayer(code: string): boolean {
 	const player = $.input.getPlayerInput(1);
-	return player.getButtonRepeatState(code, 'keyboard').repeatpressed;
+	const state = player.getButtonRepeatState(code, 'keyboard');
+	return state.justpressed === true || state.repeatpressed === true;
 }
 
 export function consumeIdeKey(code: string): void {

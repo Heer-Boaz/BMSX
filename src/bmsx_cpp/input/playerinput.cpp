@@ -695,7 +695,6 @@ PlayerInput::RepeatResult PlayerInput::evaluateActionRepeat(const std::string& a
 		repeat.repeatCount = 0;
 		repeat.pressStartFrame = frameId;
 		repeat.lastRepeatFrame = frameId;
-		result = true;
 	} else if (!pressed) {
 		repeat.active = false;
 		repeat.repeatCount = 0;
@@ -758,7 +757,6 @@ PlayerInput::RepeatResult PlayerInput::evaluateRawActionRepeat(const std::string
 		repeat.repeatCount = 0;
 		repeat.pressStartMs = startMs;
 		repeat.lastRepeatAtMs = startMs;
-		result = true;
 	} else if (!pressed) {
 		repeat.active = false;
 		repeat.repeatCount = 0;

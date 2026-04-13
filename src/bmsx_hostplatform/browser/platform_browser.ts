@@ -646,12 +646,12 @@ class BrowserInputHub implements InputHub {
 			event.stopImmediatePropagation();
 			event.returnValue = false;
 		}
-		const now = this.clock.now();
-		let pressId = this.activeKeyPressIds.get(event.code);
-		if (!pressId) {
-			pressId = this.nextPressId++;
-			this.activeKeyPressIds.set(event.code, pressId);
+		if (this.activeKeyPressIds.has(event.code)) {
+			return;
 		}
+		const now = this.clock.now();
+		const pressId = this.nextPressId++;
+		this.activeKeyPressIds.set(event.code, pressId);
 		this.post({ type: 'button', deviceId: 'keyboard:0', code: event.code, down: true, value: 1, timestamp: now, pressId });
 	};
 
