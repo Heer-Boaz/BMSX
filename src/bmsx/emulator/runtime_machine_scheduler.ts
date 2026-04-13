@@ -201,7 +201,7 @@ export class RuntimeMachineSchedulerState {
 			this.debugTickYieldsBefore = runtime.debugCycleYieldsTotal;
 		}
 		runtime.lastTickCompleted = false;
-		runtime.beginFrameState(true);
+		runtime.beginFrameState();
 		return true;
 	}
 }

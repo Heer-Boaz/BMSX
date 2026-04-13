@@ -31,10 +31,10 @@ function evalLua(engine, source) {
 
 function getGameplayState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local elevator = object('e.p1')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local elevator = oget('e.p1')
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -52,10 +52,10 @@ function hasGameplayObjects(state) {
 function setupScenario(engine, logger) {
 	const [state] = evalLua(engine, `
 		local constants = require('constants')
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local elevator = object('e.p1')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local elevator = oget('e.p1')
 		local start = elevator.path[1]
 		local probe_x = nil
 		local probe_y = start.y - player.height
@@ -115,8 +115,8 @@ function getRuntimeState(engine) {
 	const [state] = evalLua(engine, `
 		local constants = require('constants')
 		local collision2d = require('collision2d')
-		local player = object('pietolon')
-		local elevator = object('e.p1')
+		local player = oget('pietolon')
+		local elevator = oget('e.p1')
 		local left_foot_x = player.x + constants.room.tile_half
 		local mid_foot_x = player.x + (player.width / 2)
 		local right_foot_x = (player.x + player.width) - constants.room.tile_half

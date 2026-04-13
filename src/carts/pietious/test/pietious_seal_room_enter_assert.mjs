@@ -18,10 +18,10 @@ function evalLua(engine, source) {
 
 function getGameplayState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local director = object('d')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local director = oget('d')
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -38,10 +38,10 @@ function hasGameplayObjects(state) {
 
 function getScenarioState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local director = object('d')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local director = oget('d')
 		local director_state = 'other'
 		if director.sc:matches_state_path('director:/room_switch_wait') then
 			director_state = 'room_switch_wait'
@@ -66,9 +66,9 @@ function getScenarioState(engine) {
 
 function setupScenario(engine, logger) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 
 		room:load_room(109)
 		castle.current_room_number = 109

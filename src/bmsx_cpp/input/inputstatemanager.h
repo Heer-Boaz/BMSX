@@ -42,6 +42,10 @@ public:
 	
 	// Add an input event to the buffer
 	void addInputEvent(InputEvent evt);
+
+	void recordAxis1Sample(const std::string& button, f32 value, f64 timestamp);
+	void recordAxis2Sample(const std::string& button, f32 x, f32 y, f64 timestamp);
+	void latchButtonState(const std::string& button, const ButtonState& rawState, f64 currentTimeMs);
 	
 	// Mark an event as consumed
 	void consumeBufferedEvent(const std::string& identifier, std::optional<i32> pressId);
@@ -96,6 +100,7 @@ private:
 	
 	// Current button states
 	std::unordered_map<std::string, ButtonState> m_buttonStates;
+	std::unordered_map<std::string, ButtonState> m_pendingFrameStates;
 
 	// Latest buffered press/release edge per button
 	std::unordered_map<std::string, BufferedEdgeRecord> m_bufferedPressEdges;

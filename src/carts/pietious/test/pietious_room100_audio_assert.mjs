@@ -18,11 +18,11 @@ function evalLua(engine, source) {
 
 function getGameplayState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local director = object('d')
-		local transition = object('transition')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local director = oget('d')
+		local transition = oget('transition')
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -45,10 +45,10 @@ function hasGameplayObjects(state) {
 
 function getScenarioState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local director = object('d')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local director = oget('d')
 		local director_state = 'other'
 		if director.sc:matches_state_path('director:/room_switch_wait') then
 			director_state = 'room_switch_wait'
@@ -114,9 +114,9 @@ function installAudioTrace(engine) {
 function setupScenario(engine, logger) {
 	installAudioTrace(engine);
 	evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 		local room_spawner = require('room_spawner')
 
 		room:load_room(109)
@@ -163,7 +163,7 @@ function setupScenario(engine, logger) {
 
 function startRoomSwitch(engine, logger) {
 	evalLua(engine, `
-		local player = object('pietolon')
+		local player = oget('pietolon')
 		player:try_switch_room('down')
 	`);
 	logger('[assert] room100 switch started');

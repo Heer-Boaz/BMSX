@@ -7,9 +7,9 @@ const GAMEPLAY_OBJECTS = {
 
 function setupProbeState(test, logger) {
 	test.evalLua(`
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 
 		room:load_room(castle.current_room_number)
 		_probe_pairs_delete_values = {
@@ -59,8 +59,8 @@ function readPairsDeleteState(test) {
 function emitSwordHit(test) {
 	const [state] = test.evalLua(`
 		local constants = require('constants')
-		local player = object('pietolon')
-		local enemy = object('probe.cross')
+		local player = oget('pietolon')
+		local enemy = oget('probe.cross')
 		local events = {}
 
 		enemy.events:on({

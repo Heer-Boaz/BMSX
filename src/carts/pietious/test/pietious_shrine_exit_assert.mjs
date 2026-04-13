@@ -19,10 +19,10 @@ function evalLua(engine, source) {
 
 function getGameplayState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local director = object('d')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local director = oget('d')
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -39,9 +39,9 @@ function hasGameplayObjects(state) {
 
 function getScenarioState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local player = object('pietolon')
-		local director = object('d')
+		local castle = oget('c')
+		local player = oget('pietolon')
+		local director = oget('d')
 		local director_state = 'other'
 		if director.sc:matches_state_path('director:/shrine/overlay') then
 			director_state = 'overlay'
@@ -72,9 +72,9 @@ function getScenarioState(engine) {
 function setupScenario(engine, logger) {
 	const [state] = evalLua(engine, `
 		local castle_map = require('castle_map')
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 		local shrine = castle_map.room_templates[${SHRINE_ROOM_NUMBER}].shrines[1]
 
 		if shrine == nil then
@@ -121,7 +121,7 @@ function setupScenario(engine, logger) {
 
 function requestShrineExit(engine, logger) {
 	evalLua(engine, `
-		object('d').sc:transition_to('director:/shrine/exiting')
+		oget('d').sc:transition_to('director:/shrine/exiting')
 	`);
 	logger('[assert] shrine exit requested');
 }

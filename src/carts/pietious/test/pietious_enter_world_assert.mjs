@@ -18,11 +18,11 @@ function evalLua(engine, source) {
 
 function getGameplayState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local director = object('d')
-		local transition = object('transition')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local director = oget('d')
+		local transition = oget('transition')
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -45,11 +45,11 @@ function hasGameplayObjects(state) {
 
 function getScenarioState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local director = object('d')
-		local transition = object('transition')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local director = oget('d')
+		local transition = oget('transition')
 		local prewait_timeline = director:get_timeline('director.banner.prewait')
 		local world_banner_timeline = director:get_timeline('director.banner.world')
 		local prewait_head = nil
@@ -91,10 +91,10 @@ function setupScenario(engine, logger) {
 	const [state] = evalLua(engine, `
 		local castle_map = require('castle_map')
 		local constants = require('constants')
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local director = object('d')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local director = oget('d')
 		local spec = castle_map.world_transitions.world_1
 		local template = castle_map.room_templates[spec.castle_room_number]
 		local entrance = nil

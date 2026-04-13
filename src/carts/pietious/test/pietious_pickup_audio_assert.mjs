@@ -19,9 +19,9 @@ function evalLua(engine, source) {
 
 function getGameplayState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -37,12 +37,12 @@ function hasGameplayObjects(state) {
 
 function getScenarioState(engine) {
 	const [state] = evalLua(engine, `
-		local player = object('pietolon')
+		local player = oget('pietolon')
 		return {
 			healing_count = player._test_event_counts and player._test_event_counts.healing or 0,
 			pickupitem_count = player._test_event_counts and player._test_event_counts.pickupitem or 0,
-			healing_pickup_exists = object('test.heal') ~= nil,
-			world_item_exists = object('test.worlditem') ~= nil,
+			healing_pickup_exists = oget('test.heal') ~= nil,
+			world_item_exists = oget('test.worlditem') ~= nil,
 			health = player.health,
 			weapon_level = player.weapon_level,
 		}
@@ -56,7 +56,7 @@ function getScenarioState(engine) {
 function setupScenario(engine, logger) {
 	evalLua(engine, `
 		local constants = require('constants')
-		local player = object('pietolon')
+		local player = oget('pietolon')
 		player:clear_input_state()
 		player:zero_motion()
 		player:reset_fall_substate_sequence()
@@ -97,7 +97,7 @@ function setupScenario(engine, logger) {
 
 function spawnWorldItem(engine, logger) {
 	evalLua(engine, `
-		local player = object('pietolon')
+		local player = oget('pietolon')
 		inst('world_item', {
 			id = 'test.worlditem',
 			item_id = 'test.worlditem',

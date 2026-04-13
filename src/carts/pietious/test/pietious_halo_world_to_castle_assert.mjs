@@ -31,11 +31,11 @@ function evalLua(engine, source) {
 
 function getGameplayState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local director = object('d')
-		local transition = object('transition')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local director = oget('d')
+		local transition = oget('transition')
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -58,11 +58,11 @@ function hasGameplayObjects(state) {
 
 function getScenarioState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local director = object('d')
-		local transition = object('transition')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local director = oget('d')
+		local transition = oget('transition')
 		local castle_banner_timeline = director:get_timeline('director.banner.castle')
 		local castle_banner_head = nil
 		if castle_banner_timeline ~= nil then
@@ -96,9 +96,9 @@ function setupScenario(engine, logger, scheduleInput, frameIntervalMs) {
 	const [state] = evalLua(engine, `
 		local castle_map = require('castle_map')
 		local constants = require('constants')
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 		local transition = castle_map.world_transitions_by_number[1]
 
 		room:load_room(transition.world_room_number)
@@ -127,7 +127,7 @@ function setupScenario(engine, logger, scheduleInput, frameIntervalMs) {
 			castle._test_room_enter_count = 0
 			castle._test_trace = {}
 			local function push_trace(label)
-				local director = object('d')
+				local director = oget('d')
 				local director_state = 'other'
 				if director.sc:matches_state_path('director:/item_screen/halo') then
 					director_state = 'item.halo'

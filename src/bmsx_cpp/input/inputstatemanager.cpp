@@ -5,6 +5,7 @@
  */
 
 #include "inputstatemanager.h"
+#include <cmath>
 
 namespace bmsx {
 
@@ -22,10 +23,16 @@ void InputStateManager::beginFrame(f64 currentTimeMs) {
 	m_currentTimeMs = currentTimeMs;
 	m_currentFrame += 1;
 	
-	// Reset edge flags for all buttons (parity with TS)
 	for (auto& [id, state] : m_buttonStates) {
+		(void)id;
 		state.justpressed = false;
 		state.justreleased = false;
+		if (state.pressed) {
+			const f64 pressedAt = state.pressedAtMs.value_or(state.timestamp.value_or(currentTimeMs));
+			state.presstime = std::max(0.0, currentTimeMs - pressedAt);
+		} else {
+			state.presstime = std::nullopt;
+		}
 	}
 }
 
@@ -57,24 +64,7 @@ void InputStateManager::addInputEvent(InputEvent evt) {
 	};
 	const InputEvent& event = bufferedEvent.event;
 	const std::string& id = event.identifier;
-	
-	// Update corresponding button state
-	auto& state = m_buttonStates[id];
-	
 	if (event.eventType == InputEvent::Type::Press) {
-		if (state.pressed) {
-			state.timestamp = event.timestamp;
-			return;
-		}
-		state.pressed = true;
-		state.justpressed = true;
-		state.justreleased = false;
-		state.waspressed = true;
-		state.timestamp = event.timestamp;
-		state.pressedAtMs = event.timestamp;
-		state.pressId = event.pressId.has_value() ? event.pressId : state.pressId;
-		state.value = 1.0f;
-		state.consumed = event.consumed;
 		if (event.pressId.has_value()) {
 			m_bufferedPressEdges[id] = BufferedEdgeRecord{
 				.edgeId = event.pressId.value(),
@@ -83,16 +73,6 @@ void InputStateManager::addInputEvent(InputEvent evt) {
 			};
 		}
 	} else {
-		state.pressed = false;
-		state.justpressed = false;
-		state.justreleased = true;
-		state.wasreleased = true;
-		state.timestamp = event.timestamp;
-		state.releasedAtMs = event.timestamp;
-		state.presstime.reset();
-		state.pressId = event.pressId.has_value() ? event.pressId : state.pressId;
-		state.value = 0.0f;
-		state.consumed = event.consumed;
 		if (event.pressId.has_value()) {
 			m_bufferedReleaseEdges[id] = BufferedEdgeRecord{
 				.edgeId = event.pressId.value(),
@@ -103,6 +83,109 @@ void InputStateManager::addInputEvent(InputEvent evt) {
 	}
 
 	m_inputBuffer.push_back(std::move(bufferedEvent));
+}
+
+void InputStateManager::recordAxis1Sample(const std::string& button, f32 value, f64 timestamp) {
+	auto& state = m_pendingFrameStates[button];
+	if (button == "pointer_wheel") {
+		const f32 accumulated = state.value + value;
+		state.value = accumulated;
+		state.pressed = accumulated != 0.0f;
+		state.justpressed = accumulated != 0.0f;
+		state.timestamp = timestamp;
+		if (!state.pressedAtMs.has_value()) {
+			state.pressedAtMs = timestamp;
+		}
+		state.consumed = false;
+		return;
+	}
+	const f32 magnitude = std::abs(value);
+	state.value = value;
+	state.pressed = magnitude > 0.0f;
+	state.justpressed = state.justpressed || state.pressed;
+	state.timestamp = timestamp;
+	if (state.pressed && !state.pressedAtMs.has_value()) {
+		state.pressedAtMs = timestamp;
+	}
+	state.consumed = false;
+}
+
+void InputStateManager::recordAxis2Sample(const std::string& button, f32 x, f32 y, f64 timestamp) {
+	auto& state = m_pendingFrameStates[button];
+	if (button == "pointer_delta") {
+		const Vec2 previous = state.value2d.value_or(Vec2(0.0f, 0.0f));
+		const f32 nextX = previous.x + x;
+		const f32 nextY = previous.y + y;
+		state.value2d = Vec2(nextX, nextY);
+		state.value = std::hypot(nextX, nextY);
+		state.pressed = state.value > 0.0f;
+		state.justpressed = state.justpressed || state.pressed;
+		state.timestamp = timestamp;
+		if (!state.pressedAtMs.has_value()) {
+			state.pressedAtMs = timestamp;
+		}
+		state.consumed = false;
+		return;
+	}
+	state.value2d = Vec2(x, y);
+	state.value = std::hypot(x, y);
+	state.timestamp = timestamp;
+	if (button == "pointer_position") {
+		state.consumed = false;
+		return;
+	}
+	state.pressed = state.value > 0.0f;
+	state.justpressed = state.justpressed || state.pressed;
+	if (state.pressed && !state.pressedAtMs.has_value()) {
+		state.pressedAtMs = timestamp;
+	}
+	state.consumed = false;
+}
+
+void InputStateManager::latchButtonState(const std::string& button, const ButtonState& rawState, f64 currentTimeMs) {
+	auto& state = m_buttonStates[button];
+	auto pendingIt = m_pendingFrameStates.find(button);
+	ButtonState* pending = pendingIt != m_pendingFrameStates.end() ? &pendingIt->second : nullptr;
+	const auto bufferedPress = getBufferedEdgeRecord(m_bufferedPressEdges, button, 1);
+	const auto bufferedRelease = getBufferedEdgeRecord(m_bufferedReleaseEdges, button, 1);
+	const bool previousPressed = state.pressed;
+	const bool nextPressed = pending && pending->pressed ? true : rawState.pressed;
+	const f64 nextTimestamp = pending && pending->timestamp.has_value()
+		? pending->timestamp.value()
+		: rawState.timestamp.value_or(state.timestamp.value_or(currentTimeMs));
+	const std::optional<i32> nextPressId = rawState.pressId.has_value()
+		? rawState.pressId
+		: (state.pressId.has_value() ? state.pressId : (pending && pending->pressId.has_value() ? pending->pressId : std::nullopt));
+	const std::optional<f64> nextPressedAtMs = nextPressed
+		? std::optional<f64>(rawState.pressedAtMs.value_or(pending && pending->pressedAtMs.has_value()
+			? pending->pressedAtMs.value()
+			: state.pressedAtMs.value_or(nextTimestamp)))
+		: std::nullopt;
+	const std::optional<f64> nextReleasedAtMs = nextPressed
+		? std::nullopt
+		: (rawState.releasedAtMs.has_value()
+			? rawState.releasedAtMs
+			: (state.releasedAtMs.has_value() ? state.releasedAtMs : (bufferedRelease.has_value() ? std::optional<f64>(nextTimestamp) : std::nullopt)));
+	state.pressed = nextPressed;
+	state.justpressed = bufferedPress.has_value() || (pending && pending->justpressed && !previousPressed);
+	state.justreleased = bufferedRelease.has_value() || (pending && pending->justreleased && previousPressed);
+	state.consumed = nextPressed ? state.consumed : false;
+	state.timestamp = nextTimestamp;
+	state.pressedAtMs = nextPressedAtMs;
+	state.releasedAtMs = nextReleasedAtMs;
+	state.pressId = nextPressId;
+	state.value = pending ? pending->value : rawState.value;
+	if (!pending) {
+		state.value2d = rawState.value2d;
+	} else {
+		state.value2d = pending->value2d.has_value() ? pending->value2d : rawState.value2d;
+	}
+	state.presstime = nextPressed
+		? std::optional<f64>(std::max(0.0, currentTimeMs - nextPressedAtMs.value_or(nextTimestamp)))
+		: std::nullopt;
+	if (pendingIt != m_pendingFrameStates.end()) {
+		m_pendingFrameStates.erase(pendingIt);
+	}
 }
 
 void InputStateManager::consumeBufferedEvent(const std::string& identifier, std::optional<i32> pressId) {
@@ -135,16 +218,15 @@ void InputStateManager::consumeBufferedEvent(const std::string& identifier, std:
  * ============================================================================ */
 
 ButtonState InputStateManager::getButtonState(const std::string& button, std::optional<i32> windowFrames) const {
+	ButtonState state;
 	auto it = m_buttonStates.find(button);
-	if (it == m_buttonStates.end()) {
-		return ButtonState{};
+	if (it != m_buttonStates.end()) {
+		state = it->second;
 	}
 	
-	ButtonState state = it->second;
-	
 	const i32 effectiveWindow = windowFrames.value_or(BUFFER_FRAME_RETENTION);
-	state.justpressed = getBufferedEdgeRecord(m_bufferedPressEdges, button, 1).has_value();
-	state.justreleased = getBufferedEdgeRecord(m_bufferedReleaseEdges, button, 1).has_value();
+	state.justpressed = state.justpressed || getBufferedEdgeRecord(m_bufferedPressEdges, button, 1).has_value();
+	state.justreleased = state.justreleased || getBufferedEdgeRecord(m_bufferedReleaseEdges, button, 1).has_value();
 	state.waspressed = state.pressed || wasPressedInWindow(button, effectiveWindow);
 	state.wasreleased = state.justreleased || wasReleasedInWindow(button, effectiveWindow);
 	for (const auto& bufferedEvent : m_inputBuffer) {
@@ -215,11 +297,13 @@ void InputStateManager::resetEdgeState() {
 	m_inputBuffer.clear();
 	m_bufferedPressEdges.clear();
 	m_bufferedReleaseEdges.clear();
+	m_pendingFrameStates.clear();
 	m_currentFrame = 0;
 }
 
 void InputStateManager::clear() {
 	m_buttonStates.clear();
+	m_pendingFrameStates.clear();
 	m_inputBuffer.clear();
 	m_bufferedPressEdges.clear();
 	m_bufferedReleaseEdges.clear();

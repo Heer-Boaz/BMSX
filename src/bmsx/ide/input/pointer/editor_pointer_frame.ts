@@ -8,10 +8,10 @@ import type { PointerSnapshot } from '../../core/types';
 
 export function readEditorPointerSnapshot(): PointerSnapshot {
 	const playerInput = $.input.getPlayerInput(1);
-	const primaryAction = playerInput.getActionState('pointer_primary');
-	const primaryPressed = primaryAction.pressed === true && primaryAction.consumed !== true;
-	const positionAction = playerInput.getActionState('pointer_position');
-	const coords = positionAction.value2d;
+	const primaryState = playerInput.getRawButtonState('pointer_primary', 'pointer');
+	const primaryPressed = primaryState.pressed === true && primaryState.consumed !== true;
+	const positionState = playerInput.getRawButtonState('pointer_position', 'pointer');
+	const coords = positionState.value2d;
 	if (!coords) {
 		return {
 			viewportX: 0,

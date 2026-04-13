@@ -54,7 +54,7 @@ export function handleTabBarMiddleClick(snapshot: PointerSnapshot, playerInput: 
 		}
 		if (point_in_rect(x, y, bounds)) {
 			closeTab(tab.id);
-			playerInput.consumeAction('pointer_aux');
+			playerInput.consumeRawButton('pointer_aux', 'pointer');
 			consumeChromePointerPress(snapshot);
 			return true;
 		}

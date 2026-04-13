@@ -12,7 +12,6 @@ export function shouldRepeatKeyFromPlayer(code: string): boolean {
 
 export function consumeIdeKey(code: string): void {
 	$.consume_button(1, code, 'keyboard');
-	$.input.getPlayerInput(1).stateManager.consumeBufferedEvent(code);
 }
 
 export function isCtrlDown(): boolean {

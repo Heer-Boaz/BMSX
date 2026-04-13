@@ -18,11 +18,11 @@ function evalLua(engine, source) {
 
 function getGameplayState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local director = object('d')
-		local transition = object('transition')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local director = oget('d')
+		local transition = oget('transition')
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -45,11 +45,11 @@ function hasGameplayObjects(state) {
 
 function getScenarioState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local director = object('d')
-		local transition = object('transition')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local director = oget('d')
+		local transition = oget('transition')
 		local castle_banner_timeline = director:get_timeline('director.banner.castle')
 		local director_state = 'other'
 		local castle_banner_head = nil
@@ -93,9 +93,9 @@ function getScenarioState(engine) {
 function setupScenario(engine, logger) {
 	const [state] = evalLua(engine, `
 		local castle_map = require('castle_map')
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 		local spec = castle_map.world_transitions.world_1
 		local template = castle_map.room_templates[spec.castle_room_number]
 		local entrance = nil
@@ -151,7 +151,7 @@ function setupScenario(engine, logger) {
 
 function startWorldLeave(engine, logger) {
 	evalLua(engine, `
-		local player = object('pietolon')
+		local player = oget('pietolon')
 		player:try_switch_room('right')
 	`);
 	logger('[assert] world-leave started');

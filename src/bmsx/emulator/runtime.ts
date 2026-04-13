@@ -1133,11 +1133,11 @@ export class Runtime {
 		this.haltIrqSignalSequence = 0;
 	}
 
-	private tryCompleteTickOnActiveVblank(state: FrameState): boolean {
+	private tryCompleteTickOnPendingVblankIrq(state: FrameState): boolean {
 		if (!this.isFrameBoundaryHalt()) {
 			return false;
 		}
-		if (!this.vblankActive || this.vblankSequence === 0) {
+		if (this.vblankSequence === 0) {
 			return false;
 		}
 		const pendingFlags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
@@ -1165,6 +1165,7 @@ export class Runtime {
 		if (this.lastCompletedVblankSequence === vblankSequence) {
 			return;
 		}
+		Input.instance.beginFrame();
 		this.activeTickCompleted = true;
 		this.machineScheduler.enqueueTickCompletion(this, frameState);
 		this.lastCompletedVblankSequence = vblankSequence;
@@ -2039,15 +2040,12 @@ export class Runtime {
 
 	// Frame state is owned by the runtime: it is created per-frame, kept intact for debugger inspection on faults,
 	// and only cleared via finalize/abandon during explicit reboot/reset flows.
-	public beginFrameState(advanceInputFrame: boolean = false): FrameState {
+	public beginFrameState(): FrameState {
 		if (this.currentFrameState) {
 			throw runtimeFault('attempted to begin a new frame while another frame is active.');
 		}
 		clearHardwareLighting();
 		this.frameDeltaMs = this.timing.frameDurationMs;
-		if (advanceInputFrame) {
-			Input.instance.beginFrame();
-		}
 		const budget = this.cycleBudgetPerFrame;
 		const state: FrameState = {
 			haltGame: this.debuggerPaused,
@@ -2306,7 +2304,7 @@ export class Runtime {
 			this.resetHaltIrqWait();
 			return false;
 		}
-		if (this.tryCompleteTickOnActiveVblank(state)) {
+		if (this.tryCompleteTickOnPendingVblankIrq(state)) {
 			return true;
 		}
 		if (!this.haltIrqWaitArmed) {
@@ -2333,7 +2331,7 @@ export class Runtime {
 				const idleCycles = cyclesToTarget < state.cycleBudgetRemaining ? cyclesToTarget : state.cycleBudgetRemaining;
 				state.cycleBudgetRemaining -= idleCycles;
 				this.advanceTime(idleCycles);
-				if (this.tryCompleteTickOnActiveVblank(state)) {
+				if (this.tryCompleteTickOnPendingVblankIrq(state)) {
 					return true;
 				}
 				continue;

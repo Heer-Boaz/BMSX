@@ -31,9 +31,9 @@ function evalLua(engine, source) {
 
 function getGameplayState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -50,9 +50,9 @@ function hasGameplayObjects(state) {
 function setupScenario(engine) {
 	const [state] = evalLua(engine, `
 		local constants = require('constants')
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 		local probe = nil
 
 		castle.current_room_number = 8
@@ -105,7 +105,7 @@ function setupScenario(engine) {
 
 function getRuntimeState(engine) {
 	const [state] = evalLua(engine, `
-		local player = object('pietolon')
+		local player = oget('pietolon')
 		return {
 			x = player.x,
 			last_dx = player.last_dx,

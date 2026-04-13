@@ -18,10 +18,10 @@ function evalLua(engine, source) {
 
 function getGameplayState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local elevator = object('e.p1')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local elevator = oget('e.p1')
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -40,9 +40,9 @@ function runAssert(engine, logger) {
 	const [state] = evalLua(engine, `
 		local constants = require('constants')
 		local castle_map = require('castle_map')
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 		local room_numbers = {}
 		local source_room_number = -1
 

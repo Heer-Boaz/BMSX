@@ -34,13 +34,13 @@ function evalLua(engine, source) {
 function getTitleState(engine) {
 	const [state] = evalLua(engine, `
 		local constants = require('constants')
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local director = object('d')
-		local transition = object('transition')
-		local title = object('title_screen')
-		local ui = object('ui')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local director = oget('d')
+		local transition = oget('transition')
+		local title = oget('title_screen')
+		local ui = oget('ui')
 		local director_state = 'other'
 		if director.sc:matches_state_path('director:/title_screen') then
 			director_state = 'title_screen'

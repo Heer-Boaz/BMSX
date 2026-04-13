@@ -138,6 +138,7 @@ export class InputStateManager {
 	private readonly buttonStates = new Map<ButtonId, ButtonState>();
 	private readonly bufferedPressEdges = new Map<ButtonId, BufferedEdgeRecord>();
 	private readonly bufferedReleaseEdges = new Map<ButtonId, BufferedEdgeRecord>();
+	private readonly pendingFrameStates = new Map<ButtonId, ButtonState>();
 	private currentFrame = 0;
 
 	/**
@@ -190,42 +191,105 @@ export class InputStateManager {
 			...event,
 			frame: this.currentFrame + 1,
 		};
-		let state = this.buttonStates.get(bufferedEvent.identifier);
-		if (!state) {
-			state = makeButtonState();
-			this.buttonStates.set(bufferedEvent.identifier, state);
-		}
 		if (bufferedEvent.eventType === 'press') {
-			if (state.pressed === true) {
-				// Ignore duplicate press edge, but track latest timestamp for bookkeeping.
-				state.timestamp = bufferedEvent.timestamp;
-				return;
-			}
 			this.inputBuffer.push(bufferedEvent);
-			state.pressed = true;
-			state.justpressed = true;
-			state.justreleased = false;
-			state.pressedAtMs = bufferedEvent.timestamp;
-			state.presstime = 0;
-			state.timestamp = bufferedEvent.timestamp;
-			state.releasedAtMs = state.releasedAtMs;
-			state.pressId = bufferedEvent.pressId ?? state.pressId;
-			state.value = state.value ?? 1;
-			state.consumed = bufferedEvent.consumed ?? false;
 			this.bufferEdge(this.bufferedPressEdges, bufferedEvent);
 		} else {
 			this.inputBuffer.push(bufferedEvent);
-			state.pressed = false;
-			state.justpressed = false;
-			state.justreleased = true;
-			state.presstime = null;
-			state.timestamp = bufferedEvent.timestamp;
-			state.releasedAtMs = bufferedEvent.timestamp;
-			state.pressId = bufferedEvent.pressId ?? state.pressId;
-			state.value = 0;
-			state.consumed = bufferedEvent.consumed ?? false;
 			this.bufferEdge(this.bufferedReleaseEdges, bufferedEvent);
 		}
+	}
+
+	recordAxis1Sample(identifier: ButtonId, value: number, timestamp: number): void {
+		const state = this.pendingFrameStates.get(identifier) ?? makeButtonState();
+		if (identifier === 'pointer_wheel') {
+			const accumulated = (state.value ?? 0) + value;
+			state.value = accumulated;
+			state.pressed = accumulated !== 0;
+			state.justpressed = accumulated !== 0;
+			state.timestamp = timestamp;
+			state.pressedAtMs = state.pressedAtMs ?? timestamp;
+			state.consumed = false;
+		} else {
+			const magnitude = Math.abs(value);
+			state.value = value;
+			state.pressed = magnitude > 0;
+			state.justpressed = state.justpressed || magnitude > 0;
+			state.timestamp = timestamp;
+			if (magnitude > 0) {
+				state.pressedAtMs = state.pressedAtMs ?? timestamp;
+			}
+			state.consumed = false;
+		}
+		this.pendingFrameStates.set(identifier, state);
+	}
+
+	recordAxis2Sample(identifier: ButtonId, x: number, y: number, timestamp: number): void {
+		const state = this.pendingFrameStates.get(identifier) ?? makeButtonState();
+		if (identifier === 'pointer_delta') {
+			const prev = state.value2d ?? [0, 0];
+			const nextX = prev[0] + x;
+			const nextY = prev[1] + y;
+			state.value2d = [nextX, nextY];
+			state.value = Math.hypot(nextX, nextY);
+			state.pressed = state.value > 0;
+			state.justpressed = state.justpressed || state.pressed;
+			state.timestamp = timestamp;
+			state.pressedAtMs = state.pressedAtMs ?? timestamp;
+			state.consumed = false;
+		} else if (identifier === 'pointer_position') {
+			state.value2d = [x, y];
+			state.value = Math.hypot(x, y);
+			state.timestamp = timestamp;
+			state.consumed = false;
+		} else {
+			state.value2d = [x, y];
+			state.value = Math.hypot(x, y);
+			state.pressed = state.value > 0;
+			state.justpressed = state.justpressed || state.pressed;
+			state.timestamp = timestamp;
+			if (state.pressed) {
+				state.pressedAtMs = state.pressedAtMs ?? timestamp;
+			}
+			state.consumed = false;
+		}
+		this.pendingFrameStates.set(identifier, state);
+	}
+
+	latchButtonState(identifier: ButtonId, rawState: ButtonState, currentTime: number): void {
+		let state = this.buttonStates.get(identifier);
+		if (!state) {
+			state = makeButtonState();
+			this.buttonStates.set(identifier, state);
+		}
+		const pending = this.pendingFrameStates.get(identifier);
+		const bufferedPress = this.getBufferedEdgeRecord(this.bufferedPressEdges, identifier, 1);
+		const bufferedRelease = this.getBufferedEdgeRecord(this.bufferedReleaseEdges, identifier, 1);
+		const previousPressed = state.pressed === true;
+		const nextPressed = pending?.pressed ?? rawState.pressed ?? false;
+		const nextTimestamp = pending?.timestamp ?? rawState.timestamp ?? state.timestamp ?? currentTime;
+		const nextPressId = rawState.pressId ?? state.pressId ?? pending?.pressId ?? null;
+		const nextPressedAtMs = nextPressed
+			? (rawState.pressedAtMs ?? pending?.pressedAtMs ?? state.pressedAtMs ?? nextTimestamp)
+			: null;
+		const nextReleasedAtMs = nextPressed
+			? null
+			: (rawState.releasedAtMs ?? state.releasedAtMs ?? (bufferedRelease ? nextTimestamp : null));
+		const nextConsumed = nextPressed ? state.consumed === true : false;
+		state.pressed = nextPressed;
+		state.justpressed = bufferedPress != null || pending?.justpressed === true && !previousPressed;
+		state.justreleased = bufferedRelease != null || pending?.justreleased === true && previousPressed;
+		state.consumed = nextConsumed;
+		state.timestamp = nextTimestamp;
+		state.pressedAtMs = nextPressedAtMs;
+		state.releasedAtMs = nextReleasedAtMs;
+		state.pressId = nextPressId;
+		state.value = pending?.value ?? rawState.value ?? (nextPressed ? 1 : 0);
+		state.value2d = pending?.value2d ?? rawState.value2d ?? null;
+		state.presstime = nextPressed
+			? Math.max(0, currentTime - (nextPressedAtMs ?? nextTimestamp))
+			: null;
+		this.pendingFrameStates.delete(identifier);
 	}
 
 	/**
@@ -241,10 +305,9 @@ export class InputStateManager {
 			: this.bufferframeDuration;
 		const currentTime = $.platform.clock.now();
 		const baseState = this.buttonStates.get(identifier);
-
 		const pressed = baseState?.pressed ?? false;
-		const justpressed = this.getBufferedEdgeRecord(this.bufferedPressEdges, identifier, 1) != null;
-		const justreleased = this.getBufferedEdgeRecord(this.bufferedReleaseEdges, identifier, 1) != null;
+		const justpressed = baseState?.justpressed === true || this.getBufferedEdgeRecord(this.bufferedPressEdges, identifier, 1) != null;
+		const justreleased = baseState?.justreleased === true || this.getBufferedEdgeRecord(this.bufferedReleaseEdges, identifier, 1) != null;
 		let presstime = baseState?.presstime ?? (pressed && baseState?.pressedAtMs != null ? Math.max(0, currentTime - baseState.pressedAtMs) : null);
 		let consumed = baseState?.consumed ?? false;
 		const pressedAtMs = baseState?.pressedAtMs;
@@ -425,6 +488,7 @@ export class InputStateManager {
 		this.inputBuffer = [];
 		this.bufferedPressEdges.clear();
 		this.bufferedReleaseEdges.clear();
+		this.pendingFrameStates.clear();
 		this.currentFrame = 0;
 	}
 }
@@ -528,6 +592,7 @@ export class Input implements RegisterablePersistent {
 
 	private debugHotkeysEnabled = false;
 	public debugHotkeysPaused = false;
+	private gameplayCaptureEnabled = true;
 	private readonly additionalCaptureKeys: Set<string> = new Set();
 	private readonly globalShortcuts = new GlobalShortcutRegistry();
 
@@ -774,6 +839,22 @@ export class Input implements RegisterablePersistent {
 		this.attachToPlatformInput();
 	}
 
+	public setGameplayCaptureEnabled(enabled: boolean): void {
+		if (this.gameplayCaptureEnabled === enabled) {
+			return;
+		}
+		this.gameplayCaptureEnabled = enabled;
+		if (!enabled) {
+			for (let i = 0; i < this.playerInputs.length; i++) {
+				const player = this.playerInputs[i];
+				if (!player) {
+					continue;
+				}
+				player.clearEdgeState();
+			}
+		}
+	}
+
 	public handleInputEvent(evt: InputEvt): void {
 		if (evt.type === 'connect') {
 			this.onDeviceConnected(evt.device);
@@ -850,8 +931,8 @@ export class Input implements RegisterablePersistent {
 			const handler = binding.handler as GamepadInput;
 			handler.ingestButton(evt.code, evt.down, evt.value, evt.timestamp, evt.pressId);
 		}
-		if (binding.assignedPlayer !== null) {
-			this.enqueueButtonEvent(binding.assignedPlayer, evt.code, evt.down ? 'press' : 'release', evt.timestamp, evt.pressId);
+		if (this.gameplayCaptureEnabled && binding.assignedPlayer !== null) {
+			this.enqueueButtonEvent(binding.assignedPlayer, binding.source, evt.code, evt.down ? 'press' : 'release', evt.timestamp, evt.pressId);
 		}
 	}
 
@@ -859,6 +940,9 @@ export class Input implements RegisterablePersistent {
 		if (binding.source === 'pointer') {
 			const handler = binding.handler as PointerInput;
 			handler.ingestAxis1(evt.code, evt.x, evt.timestamp);
+			if (this.gameplayCaptureEnabled && binding.assignedPlayer !== null) {
+				this.getPlayerInput(binding.assignedPlayer).recordAxis1Input('pointer', evt.code, evt.x, evt.timestamp);
+			}
 		}
 	}
 
@@ -866,17 +950,26 @@ export class Input implements RegisterablePersistent {
 		if (binding.source === 'pointer') {
 			const handler = binding.handler as PointerInput;
 			handler.ingestAxis2(evt.code, evt.x, evt.y, evt.timestamp);
+			if (this.gameplayCaptureEnabled && binding.assignedPlayer !== null) {
+				const player = this.getPlayerInput(binding.assignedPlayer);
+				player.recordAxis2Input('pointer', evt.code, evt.x, evt.y, evt.timestamp);
+				const delta = handler.getButtonState('pointer_delta').value2d ?? [0, 0];
+				player.recordAxis2Input('pointer', 'pointer_delta', delta[0], delta[1], evt.timestamp);
+			}
 			return;
 		}
 		if (binding.source === 'gamepad') {
 			const handler = binding.handler as GamepadInput;
 			handler.ingestAxis2(evt.code, evt.x, evt.y, evt.timestamp);
+			if (this.gameplayCaptureEnabled && binding.assignedPlayer !== null) {
+				this.getPlayerInput(binding.assignedPlayer).recordAxis2Input('gamepad', evt.code, evt.x, evt.y, evt.timestamp);
+			}
 		}
 	}
 
-	private enqueueButtonEvent(playerIndex: number, code: string, type: 'press' | 'release', timestamp: number, pressId: number): void {
+	private enqueueButtonEvent(playerIndex: number, source: InputSource, code: string, type: 'press' | 'release', timestamp: number, pressId: number): void {
 		const player = this.getPlayerInput(playerIndex);
-		player.stateManager.addInputEvent({ eventType: type, identifier: code, timestamp, consumed: false, pressId });
+		player.recordButtonEvent(source, code, { eventType: type, identifier: code, timestamp, consumed: false, pressId });
 	}
 
 	private onDeviceConnected(device: InputDevice): void {
@@ -972,11 +1065,11 @@ export class Input implements RegisterablePersistent {
 	}
 
 	public beginFrame(currentTime: number = $.platform.clock.now()): void {
-		// Input edge state is intentionally advanced explicitly by EngineCore, not here.
+		// Input edge state is intentionally advanced explicitly by the runtime only when a
+		// new cart-visible simulation frame boundary is reached.
 		// beginFrame() clears justpressed/justreleased for the current simulation frame.
-		// That means EngineCore must call this exactly once when a new runtime tick starts.
-		// Calling it from poll/update paths, idle host frames, or host frames that merely
-		// continue an unfinished runtime tick will silently destroy buffered jp/jr edges.
+		// Calling it from poll/update paths, idle host frames, or budget refills inside the
+		// same unfinished gameplay frame will silently destroy buffered jp/jr edges.
 		this.playerInputs.forEach(player => {
 			if (!player) return;
 			player.beginFrame(currentTime);

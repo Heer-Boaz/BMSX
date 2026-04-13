@@ -707,7 +707,7 @@ Value Api::get_player_input_handle(int playerIndex) {
 		const size_t offset = args.size() >= 3 ? 1 : 0;
 		const std::string& button = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset)));
 		const std::string& source = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset + 1)));
-		Input::instance().getPlayerInput(playerIndex)->consumeButton(button, parseInputSource(source));
+		Input::instance().getPlayerInput(playerIndex)->consumeRawButton(button, parseInputSource(source));
 		(void)out;
 	});
 	const Value getModifiersStateKey = exactString("getModifiersState");

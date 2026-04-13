@@ -103,7 +103,7 @@ bool RuntimeMachineSchedulerState::startScheduledFrame(Runtime& runtime) {
 	if (!consumeQueuedFrame(runtime)) {
 		return false;
 	}
-	runtime.beginFrameState(true);
+	runtime.beginFrameState();
 	return true;
 }
 

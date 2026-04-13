@@ -18,9 +18,9 @@ function evalLua(engine, source) {
 
 function getGameplayState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -37,9 +37,9 @@ function hasGameplayObjects(state) {
 function setupScenario(engine, logger) {
 	const [state] = evalLua(engine, `
 		local constants = require('constants')
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 
 		local function reset_player(x, y)
 			player:clear_input_state()
@@ -145,7 +145,7 @@ function setupScenario(engine, logger) {
 
 function teleportPlayer(engine, x, y) {
 	evalLua(engine, `
-		local player = object('pietolon')
+		local player = oget('pietolon')
 		player.x = ${x}
 		player.y = ${y}
 		player:update_collision_state()
@@ -155,7 +155,7 @@ function teleportPlayer(engine, x, y) {
 
 function getScenarioState(engine) {
 	const [state] = evalLua(engine, `
-		local player = object('pietolon')
+		local player = oget('pietolon')
 		return {
 			water_state = player.water_state,
 			transition_count = player._test_water_transition_count,

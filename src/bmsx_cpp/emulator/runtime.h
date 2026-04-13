@@ -365,9 +365,9 @@ private:
 	void leaveVblank();
 	void commitFrameOnVblankEdge();
 	void completeTickIfPending(FrameState& frameState, uint64_t vblankSequence);
-	bool tryCompleteTickOnActiveVblank(FrameState& frameState);
+	bool tryCompleteTickOnPendingVblankIrq(FrameState& frameState);
 	bool runHaltedUntilIrq(FrameState& frameState);
-	void beginFrameState(bool advanceInputFrame);
+	void beginFrameState();
 	void finalizeUpdateSlice();
 	void clearHaltUntilIrq();
 	void resetHaltIrqWait();
@@ -380,7 +380,6 @@ private:
 	std::string translateLuaPatternEscape(char token, bool inClass) const;
 	std::string valueToString(const Value& value) const;
 	double nextRandom();
-	void initializeCachedIdentifiers();
 	std::string formatLuaString(const std::string& templateStr, NativeArgsView args, size_t argStart) const;
 	void logDebugState() const;
 	void logLuaCallStack() const;
@@ -450,19 +449,6 @@ private:
 	// Cached function references
 	Value m_pairsIterator = valueNil();
 	Value m_ipairsIterator = valueNil();
-	Value m_gameKey = valueNil();
-	Value m_viewportsizeKey = valueNil();
-	Value m_viewXKey = valueNil();
-	Value m_viewYKey = valueNil();
-	Value m_viewKey = valueNil();
-	Value m_viewCrtPostprocessingEnabledKey = valueNil();
-	Value m_viewNoiseKey = valueNil();
-	Value m_viewColorBleedKey = valueNil();
-	Value m_viewScanlinesKey = valueNil();
-	Value m_viewBlurKey = valueNil();
-	Value m_viewGlowKey = valueNil();
-	Value m_viewFringingKey = valueNil();
-	Value m_viewApertureKey = valueNil();
 	PendingCall m_pendingCall = PendingCall::None;
 	uint32_t m_randomSeedValue = 0;
 

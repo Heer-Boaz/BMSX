@@ -15,6 +15,7 @@
 #include "context.h"
 #include <memory>
 #include <array>
+#include <unordered_set>
 
 namespace bmsx {
 
@@ -104,6 +105,8 @@ public:
 	// Get button state from specific source
 	ButtonState getButtonState(const std::string& button, InputSource source);
 
+	ButtonState getRawButtonState(const std::string& button, InputSource source);
+
 	// Get button state with repeat handling
 	ActionState getButtonRepeatState(const std::string& button, InputSource source);
 
@@ -140,6 +143,7 @@ public:
 	
 	// Consume a button
 	void consumeButton(const std::string& button, InputSource source);
+	void consumeRawButton(const std::string& button, InputSource source);
 	
 	// Consume multiple actions
 	template<typename... Args>
@@ -153,6 +157,10 @@ public:
 	
 	// Advance per-simulation-frame edge state
 	void beginFrame(f64 currentTimeMs);
+
+	void recordButtonEvent(InputSource source, const std::string& button, InputEvent evt);
+	void recordAxis1Input(InputSource source, const std::string& button, f32 value, f64 timestamp);
+	void recordAxis2Input(InputSource source, const std::string& button, f32 x, f32 y, f64 timestamp);
 
 	// Poll all input sources
 	void pollInput(f64 currentTimeMs);
@@ -174,10 +182,6 @@ public:
 	void clearEdgeState();
 	
 	// ─────────────────────────────────────────────────────────────────────────
-	// State manager access
-	// ─────────────────────────────────────────────────────────────────────────
-	InputStateManager& stateManager() { return m_stateManager; }
-	
 private:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Data members
@@ -194,23 +198,21 @@ private:
 	// Context stack for layered mappings
 	ContextStack m_contexts;
 	
-	// State manager for edge detection
-	InputStateManager m_stateManager;
+	// Per-source state managers for simulation-frame input
+	std::array<InputStateManager, INPUT_SOURCE_COUNT> m_stateManagers;
+	std::array<std::unordered_set<std::string>, INPUT_SOURCE_COUNT> m_trackedButtons;
 	
 	// Guard records for debouncing
 	std::unordered_map<std::string, ActionGuardRecord> m_actionGuardRecords;
 
-	// Repeat records for repeat pulse
-	std::unordered_map<std::string, ActionRepeatRecord> m_actionRepeatRecords;
+	std::unordered_map<std::string, SimActionRepeatRecord> m_simActionRepeatRecords;
+	std::unordered_map<std::string, RawActionRepeatRecord> m_rawActionRepeatRecords;
 	
 	// Host poll frame counter
 	i64 m_frameCounter = 0;
 	
 	// Last poll timestamp
 	std::optional<f64> m_lastPollTimestampMs;
-	
-	// Current guard window (adaptive to frame rate)
-	f64 m_guardWindowMs = ACTION_GUARD_MIN_MS;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Helpers
@@ -220,6 +222,13 @@ private:
 	static constexpr size_t sourceIndex(InputSource source) {
 		return static_cast<size_t>(source);
 	}
+
+	InputStateManager& stateManager(InputSource source) { return m_stateManagers[sourceIndex(source)]; }
+	const InputStateManager& stateManager(InputSource source) const { return m_stateManagers[sourceIndex(source)]; }
+	i64 simFrame() const { return m_stateManagers[sourceIndex(InputSource::Keyboard)].currentFrame(); }
+	void trackButton(InputSource source, const std::string& button);
+	void trackInputMapBindings(const InputMap& map);
+	void consumeGameplayButton(const std::string& button, InputSource source);
 	
 	// Evaluate action guard (debouncing)
 	bool evaluateActionGuard(const std::string& action, const ActionState& state, 
@@ -231,17 +240,16 @@ private:
 		i32 count = 0;
 	};
 	RepeatResult evaluateActionRepeat(const std::string& action, const ActionState& state, i64 frameId);
+	RepeatResult evaluateRawActionRepeat(const std::string& action, const ButtonState& state, i64 frameId);
 	
 	// Normalize guard window
-	f64 normalizeGuardWindow(std::optional<f64> windowOverride);
-	
-	// Resolve action timestamp
-	f64 resolveActionTimestamp(const ActionState& state);
+	i64 normalizeGuardWindow(std::optional<f64> windowOverride);
 
 	ButtonState getSimButtonState(const std::string& button, InputSource source, std::optional<i32> windowFrames = std::nullopt);
 	
 	// Ensure repeat state exists
-	ActionRepeatRecord& ensureRepeatState(const std::string& action);
+	SimActionRepeatRecord& ensureSimRepeatState(const std::string& action);
+	RawActionRepeatRecord& ensureRawRepeatState(const std::string& action);
 	
 	// Get bindings for action from input map + contexts
 	template<InputSource Source>

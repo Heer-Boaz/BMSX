@@ -408,7 +408,7 @@ export class EngineCore {
 	}
 
 	public consume_button(playerIndex: number, buttonCode: string, source: InputSource) {
-		this.input.getPlayerInput(playerIndex).consumeButton(buttonCode, source);
+		this.input.getPlayerInput(playerIndex).consumeRawButton(buttonCode, source);
 	}
 
 	public apply_vibration_effect(playerIndex: number, effectParams: VibrationParams): void {

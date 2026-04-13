@@ -10,13 +10,13 @@ export function computeEditorPointerButtonMask(
 	playerInput: ReturnType<typeof $.input.getPlayerInput>,
 	primaryPressed: boolean
 ): number {
-	const secondaryAction = playerInput.getActionState('pointer_secondary');
-	const secondaryPressed = secondaryAction.pressed === true && secondaryAction.consumed !== true;
-	const secondaryJustPressed = secondaryAction.justpressed === true && secondaryAction.consumed !== true
+	const secondaryState = playerInput.getRawButtonState('pointer_secondary', 'pointer');
+	const secondaryPressed = secondaryState.pressed === true && secondaryState.consumed !== true;
+	const secondaryJustPressed = secondaryState.justpressed === true && secondaryState.consumed !== true
 		|| (secondaryPressed && !ide_state.pointerSecondaryWasPressed);
-	const auxAction = playerInput.getActionState('pointer_aux');
-	const auxPressed = auxAction.pressed === true && auxAction.consumed !== true;
-	const auxJustPressed = auxAction.justpressed === true && auxAction.consumed !== true
+	const auxState = playerInput.getRawButtonState('pointer_aux', 'pointer');
+	const auxPressed = auxState.pressed === true && auxState.consumed !== true;
+	const auxJustPressed = auxState.justpressed === true && auxState.consumed !== true
 		|| (auxPressed && !ide_state.pointerAuxWasPressed);
 	ide_state.pointerSecondaryWasPressed = secondaryPressed;
 	ide_state.pointerAuxWasPressed = auxPressed;

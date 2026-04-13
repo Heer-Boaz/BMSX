@@ -18,9 +18,9 @@ function evalLua(engine, source) {
 
 function getGameplayState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -37,9 +37,9 @@ function hasGameplayObjects(state) {
 function runAssert(engine, logger) {
 	const [state] = evalLua(engine, `
 		local constants = require('constants')
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 		local transition_trace = {}
 
 		player.events:on({

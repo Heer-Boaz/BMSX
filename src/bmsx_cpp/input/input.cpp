@@ -360,10 +360,9 @@ void Input::pollInput() {
 }
 
 void Input::beginFrame() {
-	// Called by EngineCore exactly when a new runtime tick starts.
-	// Do not call this from pollInput(), idle host frames, or host frames that merely
-	// continue an unfinished runtime tick: beginFrame() advances the simulation-side
-	// input window and will destroy buffered jp/jr edges if no new simframe actually began.
+	// Called exactly when the runtime reaches a new cart-visible simulation frame boundary.
+	// Do not call this from host polls, idle host frames, or budget refills inside the same
+	// unfinished gameplay frame.
 	for (auto& player : m_playerInputs) {
 		if (player) {
 			player->beginFrame(m_currentTimeMs);
@@ -380,11 +379,11 @@ void Input::handleKeyboardEvent(const std::string& deviceId, const std::string& 
 	auto* handler = static_cast<KeyboardInput*>(binding->handler);
 	i32 pressId = assignPressId(deviceId, keyCode, down);
 	if (down) {
-		handler->keydown(keyCode, pressId, m_currentTimeMs);
+	handler->keydown(keyCode, pressId, m_currentTimeMs);
 	} else {
 		handler->keyup(keyCode, pressId, m_currentTimeMs);
 	}
-	enqueueButtonEvent(binding->assignedPlayer.value(), keyCode,
+	enqueueButtonEvent(binding->assignedPlayer.value(), InputSource::Keyboard, keyCode,
 						down ? InputEvent::Type::Press : InputEvent::Type::Release,
 						m_currentTimeMs, pressId);
 }
@@ -395,7 +394,7 @@ void Input::handleGamepadButtonEvent(const std::string& deviceId, const std::str
 	auto* handler = static_cast<GamepadInput*>(binding->handler);
 	i32 pressId = assignPressId(deviceId, button, down);
 	handler->ingestButton(button, down, value, m_currentTimeMs, pressId);
-	enqueueButtonEvent(binding->assignedPlayer.value(), button,
+	enqueueButtonEvent(binding->assignedPlayer.value(), InputSource::Gamepad, button,
 						down ? InputEvent::Type::Press : InputEvent::Type::Release,
 						m_currentTimeMs, pressId);
 }
@@ -405,6 +404,9 @@ void Input::handleGamepadAxisEvent(const std::string& deviceId, const std::strin
 	auto* binding = getDeviceBinding(deviceId);
 	auto* handler = static_cast<GamepadInput*>(binding->handler);
 	handler->ingestAxis2(axis, x, y, m_currentTimeMs);
+	if (binding->assignedPlayer.has_value()) {
+		getPlayerInput(binding->assignedPlayer.value())->recordAxis2Input(InputSource::Gamepad, axis, x, y, m_currentTimeMs);
+	}
 }
 
 void Input::handlePointerButtonEvent(const std::string& deviceId, const std::string& button, bool down) {
@@ -412,7 +414,7 @@ void Input::handlePointerButtonEvent(const std::string& deviceId, const std::str
 	auto* handler = static_cast<PointerInput*>(binding->handler);
 	i32 pressId = assignPressId(deviceId, button, down);
 	handler->ingestButton(button, down, down ? 1.0f : 0.0f, m_currentTimeMs, pressId);
-	enqueueButtonEvent(binding->assignedPlayer.value(), button,
+	enqueueButtonEvent(binding->assignedPlayer.value(), InputSource::Pointer, button,
 						down ? InputEvent::Type::Press : InputEvent::Type::Release,
 						m_currentTimeMs, pressId);
 }
@@ -421,19 +423,29 @@ void Input::handlePointerMoveEvent(const std::string& deviceId, f32 x, f32 y) {
 	auto* binding = getDeviceBinding(deviceId);
 	auto* handler = static_cast<PointerInput*>(binding->handler);
 	handler->ingestAxis2("pointer_position", x, y, m_currentTimeMs);
+	if (binding->assignedPlayer.has_value()) {
+		auto* player = getPlayerInput(binding->assignedPlayer.value());
+		player->recordAxis2Input(InputSource::Pointer, "pointer_position", x, y, m_currentTimeMs);
+		const ButtonState delta = handler->getButtonState("pointer_delta");
+		const Vec2 value = delta.value2d.value_or(Vec2(0.0f, 0.0f));
+		player->recordAxis2Input(InputSource::Pointer, "pointer_delta", value.x, value.y, m_currentTimeMs);
+	}
 }
 
 void Input::handlePointerWheelEvent(const std::string& deviceId, f32 value) {
 	auto* binding = getDeviceBinding(deviceId);
 	auto* handler = static_cast<PointerInput*>(binding->handler);
 	handler->ingestAxis1("pointer_wheel", value, m_currentTimeMs);
+	if (binding->assignedPlayer.has_value()) {
+		getPlayerInput(binding->assignedPlayer.value())->recordAxis1Input(InputSource::Pointer, "pointer_wheel", value, m_currentTimeMs);
+	}
 }
 
 /* ============================================================================
  * Helpers
  * ============================================================================ */
 
-void Input::enqueueButtonEvent(i32 playerIndex, const std::string& code,
+void Input::enqueueButtonEvent(i32 playerIndex, InputSource source, const std::string& code,
 								InputEvent::Type type, f64 timestamp,
 								std::optional<i32> pressId) {
 	auto* player = getPlayerInput(playerIndex);
@@ -444,7 +456,7 @@ void Input::enqueueButtonEvent(i32 playerIndex, const std::string& code,
 	evt.timestamp = timestamp;
 	evt.consumed = false;
 	evt.pressId = pressId;
-	player->stateManager().addInputEvent(evt);
+	player->recordButtonEvent(source, code, std::move(evt));
 }
 
 i32 Input::assignPressId(const std::string& deviceId, const std::string& code, bool down) {

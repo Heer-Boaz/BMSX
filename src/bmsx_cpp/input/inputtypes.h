@@ -295,10 +295,10 @@ struct InputEvent {
  * ============================================================================ */
 
 struct ActionGuardRecord {
-	f64 lastAcceptedAtMs = 0.0;
-	f64 lastObservedTimestamp = 0.0;
+	i64 lastAcceptedFrame = -1;
+	i64 lastObservedFrame = -1;
 	bool lastResultAccepted = false;
-	f64 lastWindowMs = 0.0;
+	i64 lastWindowFrames = 0;
 	std::optional<i32> lastPressId;
 };
 
@@ -306,7 +306,16 @@ struct ActionGuardRecord {
  * Action repeat record (for repeat pulse)
  * ============================================================================ */
 
-struct ActionRepeatRecord {
+struct SimActionRepeatRecord {
+	bool active = false;
+	i32 repeatCount = 0;
+	i64 pressStartFrame = -1;
+	i64 lastFrameEvaluated = -1;
+	bool lastResult = false;
+	i64 lastRepeatFrame = -1;
+};
+
+struct RawActionRepeatRecord {
 	bool active = false;
 	i32 repeatCount = 0;
 	f64 pressStartMs = -1.0;

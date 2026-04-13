@@ -12,9 +12,9 @@ function evalLua(engine, source) {
 
 function getGameplayState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -31,9 +31,9 @@ function hasGameplayObjects(state) {
 function setupProbe(engine, logger) {
 	globalThis.__bmsx_debug_tickrate = true;
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 		local constants = require('constants')
 		local room_spawner = require('room_spawner')
 		local template = require('castle_map').room_templates[6]
@@ -87,7 +87,7 @@ function sampleProbe(engine, logger, probe) {
 		local vlok_min_y = 999999
 		local vlok_max_y = -999999
 		local vlok_below_bottom = 0
-		local room = object('room')
+		local room = oget('room')
 
 		for _obj in world:all_objects() do
 			total_objects = total_objects + 1

@@ -18,9 +18,9 @@ function evalLua(engine, source) {
 
 function getGameplayState(engine) {
 	const [state] = evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -38,9 +38,9 @@ function setupProbe(engine, logger) {
 	const [state] = evalLua(engine, `
 		local constants = require('constants')
 		local room_spawner = require('room_spawner')
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 
 		__probe_screen_leave_count = 0
 

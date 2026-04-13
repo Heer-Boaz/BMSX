@@ -207,7 +207,9 @@ export function setActiveIdeFontVariant(runtime: Runtime, variant: Runtime['acti
 }
 
 export function updateGamePipelineExts(runtime: Runtime): void {
-	runtime.executionOverlayActive = runtime.terminal.isActive || isManagedOverlayEditorActive(runtime);
+	const overlayActive = runtime.terminal.isActive || isManagedOverlayEditorActive(runtime);
+	runtime.executionOverlayActive = overlayActive;
+	Input.instance.setGameplayCaptureEnabled(!overlayActive);
 	updateOverlayAudioSuspension(runtime);
 }
 

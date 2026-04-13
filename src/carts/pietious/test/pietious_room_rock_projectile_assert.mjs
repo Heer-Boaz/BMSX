@@ -9,9 +9,9 @@ function prepareScene(test, logger) {
 	const [state] = test.evalLua(`
 		local constants = require('constants')
 		local room_spawner = require('room_spawner')
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 
 		castle.current_room_number = 2
 		room:load_room(2)
@@ -31,7 +31,7 @@ function prepareScene(test, logger) {
 		player.stairs_landing_sound_pending = false
 		player.events:emit('landed_to_quiet')
 
-		local rock = object('rock_002_01')
+		local rock = oget('rock_002_01')
 		_probe_room_rock_damage_events = 0
 		rock.events:on({
 			event = 'damage.resolved',
@@ -61,8 +61,8 @@ function prepareScene(test, logger) {
 
 function readScene(test) {
 	const [state] = test.evalLua(`
-		local rock = object('rock_002_01')
-		local projectile = object('probe.room.projectile')
+		local rock = oget('rock_002_01')
+		local projectile = oget('probe.room.projectile')
 		return {
 			rock_exists = rock ~= nil,
 			rock_health = rock and rock.health or -1,

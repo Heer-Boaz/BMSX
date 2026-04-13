@@ -1,6 +1,6 @@
 import { ActionDefinitionEvaluator } from './actionparser';
 import { Input, InputStateManager, makeActionState, makeButtonState } from './input';
-import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonState, GamepadBinding, GamepadInputMapping, InputHandler, InputMap, KeyboardBinding, KeyboardInputMapping, PointerBinding, PointerInputMapping, VibrationParams } from './inputtypes';
+import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonState, GamepadBinding, GamepadInputMapping, InputEvent, InputHandler, InputMap, KeyboardBinding, KeyboardInputMapping, PointerBinding, PointerInputMapping, VibrationParams } from './inputtypes';
 import { KeyboardInput } from './keyboardinput';
 import { ContextStack, MappingContext } from './context';
 import { $ } from '../core/engine_core';
@@ -14,14 +14,23 @@ const INITIAL_REPEAT_DELAY_FRAMES = 15;
 const REPEAT_INTERVAL_FRAMES = 4;
 
 type ActionGuardRecord = {
-	lastAcceptedAtMs: number;
-	lastObservedTimestamp: number;
+	lastAcceptedFrame: number;
+	lastObservedFrame: number;
 	lastResultAccepted: boolean;
-	lastWindowMs: number;
+	lastWindowFrames: number;
 	lastPressId: number;
 };
 
-type ActionRepeatRecord = {
+type SimActionRepeatRecord = {
+	active: boolean;
+	repeatCount: number;
+	pressStartFrame: number;
+	lastFrameEvaluated: number;
+	lastResult: boolean;
+	lastRepeatFrame: number;
+};
+
+type RawActionRepeatRecord = {
 	active: boolean;
 	repeatCount: number;
 	pressStartMs: number;
@@ -58,8 +67,17 @@ export class PlayerInput {
 		pointer: null,
 	};
 
-	/** Manages buffered input events and button state aggregation. */
-	private _stateManager: InputStateManager;
+	/** Manages per-source buffered input events and simulation-frame state aggregation. */
+	private readonly _stateManagers: { [source in InputSource]: InputStateManager } = {
+		keyboard: new InputStateManager(),
+		gamepad: new InputStateManager(),
+		pointer: new InputStateManager(),
+	};
+	private readonly trackedButtons: { [source in InputSource]: Set<ButtonId> } = {
+		keyboard: new Set(),
+		gamepad: new Set(),
+		pointer: new Set(),
+	};
 
 	/** Context stack for layered action maps */
 	private contexts: ContextStack = new ContextStack();
@@ -68,9 +86,9 @@ export class PlayerInput {
 	private pendingRebind: { action: string; source: InputSource; mode: 'append' | 'replace' } = null;
 
 	private readonly actionGuardRecords: Map<string, ActionGuardRecord> = new Map();
-	private readonly actionRepeatRecords: Map<string, ActionRepeatRecord> = new Map();
+	private readonly simActionRepeatRecords: Map<string, SimActionRepeatRecord> = new Map();
+	private readonly rawActionRepeatRecords: Map<string, RawActionRepeatRecord> = new Map();
 	private lastPollTimestampMs: number = null;
-	private guardWindowMs: number = ACTION_GUARD_MIN_MS;
 	private frameCounter = 0;
 
 	/**
@@ -138,10 +156,6 @@ export class PlayerInput {
 		return actions.filter(action => this.checkActionTriggered(action.def)).map(action => action.id);
 	}
 
-	public get stateManager(): InputStateManager {
-		return this._stateManager;
-	}
-
 	/**
 	 * Sets the input map for a specific player.
 	 * @param inputMap - The input map to set.
@@ -154,6 +168,7 @@ export class PlayerInput {
 		inputMap.gamepad = inputMap.gamepad ?? this.inputMap?.gamepad ?? deep_clone(Input.DEFAULT_INPUT_MAPPING.gamepad);
 		inputMap.pointer = inputMap.pointer ?? this.inputMap?.pointer ?? deep_clone(Input.DEFAULT_INPUT_MAPPING.pointer);
 		this.inputMap = inputMap;
+		this.trackInputMapBindings(inputMap);
 
 		// Mirror into a base context for layered merging semantics
 		const base = new MappingContext('base', 0, true, inputMap.keyboard, inputMap.gamepad, inputMap.pointer);
@@ -163,8 +178,36 @@ export class PlayerInput {
 		this.contexts.push(base);
 	}
 
+	private getStateManager(source: InputSource): InputStateManager {
+		return this._stateManagers[source];
+	}
+
+	private trackButton(source: InputSource, button: ButtonId): void {
+		this.trackedButtons[source].add(button);
+	}
+
+	private trackBindings(source: InputSource, bindings: Array<ButtonId | { id: ButtonId }>): void {
+		for (let i = 0; i < bindings.length; i += 1) {
+			const binding = bindings[i];
+			this.trackButton(source, typeof binding === 'string' ? binding : binding.id);
+		}
+	}
+
+	private trackInputMapBindings(inputMap: InputMap): void {
+		for (const action of Object.keys(inputMap.keyboard ?? {})) {
+			this.trackBindings('keyboard', inputMap.keyboard[action]);
+		}
+		for (const action of Object.keys(inputMap.gamepad ?? {})) {
+			this.trackBindings('gamepad', inputMap.gamepad[action]);
+		}
+		for (const action of Object.keys(inputMap.pointer ?? {})) {
+			this.trackBindings('pointer', inputMap.pointer[action]);
+		}
+	}
+
 	/** Add a higher-priority mapping context */
 	public pushContext(id: string, keyboard: KeyboardInputMapping, gamepad: GamepadInputMapping, pointer: PointerInputMapping, priority = 100, enabled = true): void {
+		this.trackInputMapBindings({ keyboard: keyboard ?? {}, gamepad: gamepad ?? {}, pointer: pointer ?? {} });
 		this.contexts.push(new MappingContext(id, priority, enabled, keyboard ?? {}, gamepad ?? {}, pointer ?? {}));
 	}
 
@@ -243,7 +286,11 @@ export class PlayerInput {
 		// Treat bindings as an OR: anyPressed drives `pressed`, while `all*` flags stay true only when every binding matches.
 		// Track the freshest pressId so guardedjustpressed can distinguish a fresh edge even when multiple buttons map to one action.
 		// More complex OR-of-AND expressions should use ActionDefinitionEvaluator (ActionParser); getActionState is the raw per-binding reader.
-		const getStates = (keys_or_buttons: ButtonId[], getStateFunc: (key: ButtonId, framewindow?: number) => ButtonState): Agg => {
+		const getStates = (
+			keys_or_buttons: ButtonId[],
+			getStateFunc: (key: ButtonId, framewindow?: number) => ButtonState,
+			stateManager: InputStateManager
+		): Agg => {
 			let allPressed = true;
 			let allJustPressed = true;
 			let anyJustPressed = false;
@@ -285,7 +332,7 @@ export class PlayerInput {
 					if (state?.pressId != null && (state.justpressed || lastPressId === null || (state.timestamp != null && recentestTimestamp != null && state.timestamp >= recentestTimestamp))) {
 						lastPressId = state.pressId;
 					}
-					const bufferedPress = this._stateManager.getLatestUnconsumedPressId(key);
+					const bufferedPress = stateManager.getLatestUnconsumedPressId(key);
 					if (bufferedPress != null && (bufferPressId == null || bufferedPress > bufferPressId)) {
 						bufferPressId = bufferedPress;
 					}
@@ -312,15 +359,18 @@ export class PlayerInput {
 
 		const keyboardState = getStates(
 			keyboardKeys,
-			(key: ButtonId, framewindow?: number) => this.getSimButtonState(key, 'keyboard', framewindow)
+			(key: ButtonId, framewindow?: number) => this.getSimButtonState(key, 'keyboard', framewindow),
+			this.getStateManager('keyboard')
 		);
 		const gamepadState = getStates(
 			gamepadButtons,
-			(button: ButtonId, framewindow?: number) => this.getSimButtonState(button, 'gamepad', framewindow)
+			(button: ButtonId, framewindow?: number) => this.getSimButtonState(button, 'gamepad', framewindow),
+			this.getStateManager('gamepad')
 		);
 		const pointerState = getStates(
 			pointerButtons,
-			(button: ButtonId, framewindow?: number) => this.getSimButtonState(button, 'pointer', framewindow)
+			(button: ButtonId, framewindow?: number) => this.getSimButtonState(button, 'pointer', framewindow),
+			this.getStateManager('pointer')
 		);
 		const deviceStates = [keyboardState, gamepadState, pointerState];
 		const pressed = deviceStates.some(state => state.anyPressed);
@@ -403,7 +453,7 @@ export class PlayerInput {
 		};
 
 		const guarded = this.evaluateActionGuard(action, result);
-		const repeat = this.evaluateActionRepeat(action, result, this._stateManager.frame);
+		const repeat = this.evaluateActionRepeat(action, result, this.simFrame);
 		result.guardedjustpressed = guarded;
 		result.repeatpressed = repeat.triggered;
 		result.repeatcount = repeat.count;
@@ -488,7 +538,7 @@ export class PlayerInput {
 					const key = typeof binding === 'string' ? binding : binding.id;
 					const buttonState = this.getButtonState(key, 'keyboard');
 					if (buttonState.pressed && !buttonState.consumed) {
-						this.consumeButton(key, 'keyboard');
+						this.consumeGameplayButton(key, 'keyboard');
 					}
 				}
 			} else if (source === 'gamepad') {
@@ -497,7 +547,7 @@ export class PlayerInput {
 					const key = typeof binding === 'string' ? binding : binding.id;
 					const buttonState = this.getButtonState(key, 'gamepad');
 					if (buttonState?.pressed && !buttonState.consumed) {
-						this.consumeButton(key, 'gamepad');
+						this.consumeGameplayButton(key, 'gamepad');
 					}
 				}
 			} else if (source === 'pointer') {
@@ -506,7 +556,7 @@ export class PlayerInput {
 					const key = typeof binding === 'string' ? binding : binding.id;
 					const buttonState = this.getButtonState(key, 'pointer');
 					if (buttonState?.pressed && !buttonState.consumed) {
-						this.consumeButton(key, 'pointer');
+						this.consumeGameplayButton(key, 'pointer');
 					}
 				}
 			}
@@ -516,9 +566,16 @@ export class PlayerInput {
 	public consumeButton(button: ButtonId, source: InputSource): void {
 		const handler = this.inputHandlers[source];
 		if (!handler) return;
-		const state = this.getButtonState(button, source);
 		handler.consumeButton(button);
-		this._stateManager.consumeBufferedEvent(button, state?.pressId);
+	}
+
+	public consumeRawButton(button: ButtonId, source: InputSource): void {
+		this.inputHandlers[source]?.consumeButton(button);
+	}
+
+	private consumeGameplayButton(button: ButtonId, source: InputSource): void {
+		const state = this.getButtonState(button, source);
+		this.getStateManager(source).consumeBufferedEvent(button, state?.pressId);
 	}
 
 	public consumeActions(...actions: (ActionState | string)[]): void {
@@ -566,47 +623,24 @@ export class PlayerInput {
 		return this.getSimButtonState(button, source);
 	}
 
+	public getRawButtonState(button: ButtonId, source: InputSource): ButtonState {
+		return this.inputHandlers[source]?.getButtonState(button) ?? makeButtonState();
+	}
+
 	public get pollFrame(): number {
 		return this.frameCounter;
 	}
 
 	private getSimButtonState(button: ButtonId, source: InputSource, framewindow: number = null): ButtonState {
-		const handler = this.inputHandlers[source];
-		const rawState = handler?.getButtonState(button) ?? makeButtonState();
-		if (!this._stateManager.hasTrackedButton(button)) {
-			return rawState;
-		}
-		const bufferedState = this._stateManager.getButtonState(button, framewindow);
-		if (!handler) {
-			return bufferedState;
-		}
-		return makeButtonState({
-			pressed: rawState.pressed,
-			justpressed: bufferedState.justpressed,
-			justreleased: bufferedState.justreleased,
-			waspressed: bufferedState.waspressed,
-			wasreleased: bufferedState.wasreleased,
-			consumed: rawState.consumed || bufferedState.consumed,
-			presstime: rawState.presstime ?? bufferedState.presstime,
-			timestamp: rawState.timestamp ?? bufferedState.timestamp,
-			pressedAtMs: rawState.pressedAtMs ?? bufferedState.pressedAtMs,
-			releasedAtMs: rawState.releasedAtMs ?? bufferedState.releasedAtMs,
-			pressId: rawState.pressId ?? bufferedState.pressId,
-			value: rawState.value,
-			value2d: rawState.value2d ?? bufferedState.value2d,
-		});
+		return this.getStateManager(source).getButtonState(button, framewindow);
 	}
 
 	/** Returns repeat/edge info for a raw button using the built-in repeat cadence. */
 	public getButtonRepeatState(button: ButtonId, source: InputSource): ButtonState {
-		const handler = this.inputHandlers[source];
-		const state = handler?.getButtonState(button)
-			?? (source === 'pointer' && this._stateManager.hasTrackedButton(button)
-				? this._stateManager.getButtonState(button)
-				: makeButtonState());
+		const state = this.getRawButtonState(button, source);
 		const repeatKey = `${source}:${button}`;
 		const actionState = makeActionState(repeatKey, state);
-		const repeat = this.evaluateActionRepeat(repeatKey, actionState, this.frameCounter);
+		const repeat = this.evaluateRawActionRepeat(repeatKey, actionState, this.frameCounter);
 		actionState.repeatcount = repeat.count;
 		actionState.repeatpressed = repeat.triggered;
 		return actionState;
@@ -659,11 +693,6 @@ export class PlayerInput {
 	 */
 	pollInput(currentTime: number): void {
 		this.frameCounter += 1;
-		if (this.lastPollTimestampMs > 0) {
-			const delta = currentTime - this.lastPollTimestampMs;
-			// Guard window follows the observed poll cadence so justpressed remains reliable even if frame timing shifts.
-			this.guardWindowMs = clamp(delta, ACTION_GUARD_MIN_MS, ACTION_GUARD_MAX_MS);
-		}
 		this.lastPollTimestampMs = currentTime;
 		for (const source of INPUT_SOURCES) {
 			const handler = this.inputHandlers[source];
@@ -673,8 +702,30 @@ export class PlayerInput {
 		this.processPendingRebind();
 	}
 
+	public recordButtonEvent(source: InputSource, button: ButtonId, event: InputEvent): void {
+		this.trackButton(source, button);
+		this.getStateManager(source).addInputEvent(event);
+	}
+
+	public recordAxis1Input(source: InputSource, button: ButtonId, value: number, timestamp: number): void {
+		this.trackButton(source, button);
+		this.getStateManager(source).recordAxis1Sample(button, value, timestamp);
+	}
+
+	public recordAxis2Input(source: InputSource, button: ButtonId, x: number, y: number, timestamp: number): void {
+		this.trackButton(source, button);
+		this.getStateManager(source).recordAxis2Sample(button, x, y, timestamp);
+	}
+
 	public beginFrame(currentTime: number): void {
-		this._stateManager.beginFrame(currentTime);
+		for (const source of INPUT_SOURCES) {
+			const stateManager = this.getStateManager(source);
+			stateManager.beginFrame(currentTime);
+			const handler = this.inputHandlers[source];
+			for (const button of this.trackedButtons[source]) {
+				stateManager.latchButtonState(button, handler?.getButtonState(button) ?? makeButtonState(), currentTime);
+			}
+		}
 	}
 
 	private processPendingRebind(): void {
@@ -698,6 +749,7 @@ export class PlayerInput {
 		if (capturedKb === null && capturedGp === null) return;
 		if (capturedKb !== null) {
 			const id = capturedKb;
+			this.trackButton('keyboard', id);
 			const arr = this.inputMap.keyboard[action] ?? [];
 			const exists = arr.some(b => (typeof b === 'string' ? b : b.id) === id);
 			const base = mode === 'replace'
@@ -715,6 +767,7 @@ export class PlayerInput {
 		}
 		if (capturedGp !== null) {
 			const id = capturedGp;
+			this.trackButton('gamepad', id);
 			const arr = this.inputMap.gamepad[action] ?? [];
 			const exists = arr.some(b => (typeof b === 'string' ? b : b.id) === id);
 			const base = mode === 'replace'
@@ -738,68 +791,98 @@ export class PlayerInput {
 			return false;
 		}
 
-		// Guard is per-action and per-pressId: if the same press has already been accepted this frame,
-		// let it through so multi-binding combos don't suppress fresh edges. Use this for one-shots; raw justpressed stays unguarded.
-		const timestamp = this.resolveActionTimestamp(state);
-		const guardMs = this.normalizeGuardWindow(windowOverride);
+		const frameId = this.simFrame;
+		const guardFrames = this.normalizeGuardWindow(windowOverride);
 		const existing = this.actionGuardRecords.get(action);
-		// If the same pressId already passed the guard this frame, don't re-block duplicates from multi-binding combos.
 		const pressId = state.pressId;
 		if (existing) {
 			if (existing.lastPressId !== null && pressId !== null && existing.lastPressId === pressId) {
 				return existing.lastResultAccepted;
 			}
-			if (existing.lastObservedTimestamp === timestamp && existing.lastWindowMs === guardMs) {
+			if (existing.lastObservedFrame === frameId && existing.lastWindowFrames === guardFrames) {
 				return existing.lastResultAccepted;
 			}
 		}
 
-		const previousAcceptedAt = existing?.lastAcceptedAtMs ?? null;
+		const previousAcceptedFrame = existing?.lastAcceptedFrame ?? null;
 		let accepted = true;
-		if (previousAcceptedAt !== null) {
-			const delta = timestamp - previousAcceptedAt;
-			if (Number.isFinite(delta) && delta <= guardMs) {
+		if (previousAcceptedFrame !== null) {
+			const delta = frameId - previousAcceptedFrame;
+			if (delta <= guardFrames) {
 				accepted = false;
 			}
 		}
 
 		const nextRecord: ActionGuardRecord = {
-			lastAcceptedAtMs: accepted ? timestamp : (previousAcceptedAt ?? timestamp),
-			lastObservedTimestamp: timestamp,
+			lastAcceptedFrame: accepted ? frameId : (previousAcceptedFrame ?? frameId),
+			lastObservedFrame: frameId,
 			lastResultAccepted: accepted,
-			lastWindowMs: guardMs,
+			lastWindowFrames: guardFrames,
 			lastPressId: pressId,
 		};
 		this.actionGuardRecords.set(action, nextRecord);
 		return accepted;
 	}
 
+	private get simFrame(): number {
+		return this.getStateManager('keyboard').frame;
+	}
+
 	private normalizeGuardWindow(windowOverride?: number): number {
-		if (windowOverride >= 0) {
-			return clamp(windowOverride, ACTION_GUARD_MIN_MS, ACTION_GUARD_MAX_MS);
-		}
-		return this.guardWindowMs;
-	}
-
-	private resolveStateTimestamp(state: ButtonState): number {
-		return state.pressedAtMs ?? state.timestamp ?? this.lastPollTimestampMs ?? $.platform.clock.now();
-	}
-
-	private resolveActionTimestamp(state: ActionState): number {
-		if (state.timestamp) {
-			return state.timestamp;
-		}
-		if (state.pressedAtMs) {
-			return state.pressedAtMs;
-		}
-		if (this.lastPollTimestampMs !== null) {
-			return this.lastPollTimestampMs;
-		}
-		return $.platform.clock.now();
+		const guardMs = windowOverride >= 0
+			? clamp(windowOverride, ACTION_GUARD_MIN_MS, ACTION_GUARD_MAX_MS)
+			: ACTION_GUARD_MIN_MS;
+		return Math.max(1, Math.ceil(guardMs / Runtime.instance.timing.frameDurationMs));
 	}
 
 	private evaluateActionRepeat(action: string, state: ActionState, frameId: number): { triggered: boolean; count: number } {
-		const repeat = this.ensureRepeatState(action);
+		const repeat = this.ensureSimRepeatState(action);
+		if (repeat.lastFrameEvaluated === frameId) {
+			return { triggered: repeat.lastResult, count: repeat.repeatCount };
+		}
+
+		let result = false;
+		const pressed = state.pressed === true;
+		const justpressed = state.justpressed === true;
+
+		if (justpressed) {
+			repeat.active = true;
+			repeat.repeatCount = 0;
+			repeat.pressStartFrame = frameId;
+			repeat.lastRepeatFrame = frameId;
+			result = true;
+		} else if (!pressed) {
+			repeat.active = false;
+			repeat.repeatCount = 0;
+			repeat.pressStartFrame = -1;
+			repeat.lastRepeatFrame = -1;
+		} else {
+			if (!repeat.active) {
+				repeat.active = true;
+				repeat.repeatCount = 0;
+				repeat.pressStartFrame = frameId;
+				repeat.lastRepeatFrame = frameId;
+			}
+			if (repeat.pressStartFrame < 0) {
+				repeat.pressStartFrame = frameId;
+			}
+			const nextFrame = repeat.repeatCount === 0
+				? repeat.pressStartFrame + INITIAL_REPEAT_DELAY_FRAMES
+				: repeat.lastRepeatFrame + REPEAT_INTERVAL_FRAMES;
+			if (frameId >= nextFrame) {
+				repeat.repeatCount += 1;
+				repeat.lastRepeatFrame = nextFrame;
+				result = true;
+			}
+		}
+
+		repeat.lastFrameEvaluated = frameId;
+		repeat.lastResult = result;
+		return { triggered: result, count: repeat.repeatCount };
+	}
+
+	private evaluateRawActionRepeat(action: string, state: ButtonState, frameId: number): { triggered: boolean; count: number } {
+		const repeat = this.ensureRawRepeatState(action);
 		if (repeat.lastFrameEvaluated === frameId) {
 			return { triggered: repeat.lastResult, count: repeat.repeatCount };
 		}
@@ -808,13 +891,12 @@ export class PlayerInput {
 		const pressed = state.pressed === true;
 		const justpressed = state.justpressed === true;
 		const now = this.lastPollTimestampMs ?? $.platform.clock.now();
-		const startMs = this.resolveStateTimestamp(state);
+		const startMs = state.pressedAtMs ?? state.timestamp ?? now;
 		const frameMs = Runtime.instance.timing.frameDurationMs;
 		const initialDelayMs = INITIAL_REPEAT_DELAY_FRAMES * frameMs;
 		const repeatIntervalMs = REPEAT_INTERVAL_FRAMES * frameMs;
 
 		if (justpressed) {
-			// repeatpressed fires on the initial press and on subsequent repeat pulses.
 			repeat.active = true;
 			repeat.repeatCount = 0;
 			repeat.pressStartMs = startMs;
@@ -850,8 +932,24 @@ export class PlayerInput {
 		return { triggered: result, count: repeat.repeatCount };
 	}
 
-	private ensureRepeatState(action: string): ActionRepeatRecord {
-		let entry = this.actionRepeatRecords.get(action);
+	private ensureSimRepeatState(action: string): SimActionRepeatRecord {
+		let entry = this.simActionRepeatRecords.get(action);
+		if (!entry) {
+			entry = {
+				active: false,
+				repeatCount: 0,
+				pressStartFrame: -1,
+				lastFrameEvaluated: -1,
+				lastResult: false,
+				lastRepeatFrame: -1,
+			};
+			this.simActionRepeatRecords.set(action, entry);
+		}
+		return entry;
+	}
+
+	private ensureRawRepeatState(action: string): RawActionRepeatRecord {
+		let entry = this.rawActionRepeatRecords.get(action);
 		if (!entry) {
 			entry = {
 				active: false,
@@ -861,28 +959,33 @@ export class PlayerInput {
 				lastResult: false,
 				lastRepeatAtMs: -1,
 			};
-			this.actionRepeatRecords.set(action, entry);
+			this.rawActionRepeatRecords.set(action, entry);
 		}
 		return entry;
 	}
 
 	/** Updates aggregated button states and cleans up stale events. */
 	update(currentTime: number): void {
-		this._stateManager.update(currentTime);
+		for (const source of INPUT_SOURCES) {
+			this.getStateManager(source).update(currentTime);
+		}
 	}
 
 	/**
 	 * Initializes the input system.
 	 */
 	public constructor(public playerIndex: number) {
-		this._stateManager = new InputStateManager();
 		this.inputHandlers['gamepad'] = null;
 		this.reset();
 	}
 
 	/** Clears cached transition state so edge detectors don't fire spuriously. */
 	public clearEdgeState(): void {
-		this._stateManager.resetEdgeState();
+		for (const source of INPUT_SOURCES) {
+			this.getStateManager(source).resetEdgeState();
+		}
+		this.actionGuardRecords.clear();
+		this.simActionRepeatRecords.clear();
 	}
 
 	/**
@@ -894,10 +997,8 @@ export class PlayerInput {
 		for (const source of INPUT_SOURCES) {
 			this.inputHandlers[source]?.reset(except);
 		}
-		this.actionGuardRecords.clear();
-		this.actionRepeatRecords.clear();
+		this.rawActionRepeatRecords.clear();
 		this.lastPollTimestampMs = null;
-		this.guardWindowMs = ACTION_GUARD_MIN_MS;
 		this.frameCounter = 0;
 	}
 }
