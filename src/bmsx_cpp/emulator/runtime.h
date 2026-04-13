@@ -43,7 +43,6 @@ struct FrameState {
 	bool haltGame = false;
 	bool updateExecuted = false;
 	bool luaFaulted = false;
-	bool tickCompleted = false;
 	int cycleBudgetRemaining = 0;
 	int cycleBudgetGranted = 0;
 	int cycleCarryGranted = 0;
@@ -152,7 +151,7 @@ public:
 	/**
 	 * Tick the runtime update phase (called by BmsxCartUpdateSystem).
 	 */
-	void tickUpdate();
+	void tickUpdate(f64 frameMs);
 
 	/**
 	 * Tick the runtime draw phase (called by BmsxCartDrawSystem).
@@ -289,7 +288,9 @@ public:
 	void resetRenderBuffers();
 	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
 	void setCycleBudgetPerFrame(int budget);
-	void grantCycleBudget(int baseBudget, int carryBudget);
+	void queueHostTime(f64 deltaMs, f64 frameMs, int maxSteps);
+	void clearQueuedHostTime();
+	bool canRunScheduledUpdate(f64 frameMs) const;
 	bool hasActiveTick() const;
 	i64 lastTickSequence() const { return m_lastTickSequence; }
 	int lastTickBudgetRemaining() const { return m_lastTickBudgetRemaining; }
@@ -368,6 +369,11 @@ private:
 	void commitFrameOnVblankEdge();
 	void completeTickIfPending(FrameState& frameState, uint64_t vblankSequence);
 	bool runHaltedUntilIrq(FrameState& frameState);
+	bool consumeQueuedHostFrame(f64 frameMs);
+	bool refillFrameBudget(f64 frameMs);
+	void beginFrameState(bool advanceInputFrame);
+	bool startScheduledFrame(f64 frameMs);
+	void finalizeUpdateSlice();
 	void clearHaltUntilIrq();
 	void resetHaltIrqWait();
 	void acknowledgeIrq(uint32_t mask);
@@ -480,8 +486,9 @@ private:
 	int m_lastTickVdpFrameCost = 0;
 	bool m_lastTickVdpFrameHeld = false;
 	bool m_lastTickCompleted = false;
+	bool m_activeTickCompleted = false;
 	i64 m_lastTickConsumedSequence = 0;
-	int m_pendingCarryBudget = 0;
+	f64 m_queuedHostTimeMs = 0.0;
 	i64 m_cpuHz = 0;
 	i64 m_imgDecBytesPerSec = 0;
 	i64 m_dmaBytesPerSecIso = 0;

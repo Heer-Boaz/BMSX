@@ -210,7 +210,6 @@ private:
 	f64 m_fps = DEFAULT_UFPS;
 	i64 m_ufps_scaled = DEFAULT_UFPS_SCALED;
 	f64 m_update_interval_ms = 1000.0 / static_cast<f64>(DEFAULT_UFPS);
-	f64 m_accumulated_time = 0.0;
 	bool m_debugTickReportInitialized = false;
 	std::chrono::steady_clock::time_point m_debugTickReportAt;
 	u64 m_debugTickHostFrames = 0;
@@ -227,8 +226,6 @@ private:
 	u64 m_debugPresentCommitPresents = 0;
 	u64 m_debugPresentHoldPresents = 0;
 	u64 m_debugPresentPausedPresents = 0;
-	i64 m_cycleCarry = 0;
-	int m_lastGrantedBaseBudget = 0;
 	bool m_presentation_pending = false;
 	GameView::PresentationMode m_presentation_mode = GameView::PresentationMode::Completed;
 	bool m_commit_presented_frame = false;

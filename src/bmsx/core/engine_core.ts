@@ -21,7 +21,6 @@ import * as runtimeIde from '../emulator/runtime_ide';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 import { InputSource, KeyModifier } from '../input/playerinput';
 import { shallowcopy } from '../utils/shallowcopy';
-import { clamp } from '../utils/clamp';
 import { clearAllQueues, clearBackQueues, prepareCompletedRenderQueues, prepareHeldRenderQueues, prepareOverlayRenderQueues, preparePartialRenderQueues } from '../render/shared/render_queues';
 import { clearOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { Table } from '../emulator/cpu';
@@ -288,7 +287,6 @@ export class EngineCore {
 	 * The time difference between the current frame and the previous frame.
 	 */
 	public deltatime: number = 0;
-	private cycleCarry: number = 0;
 	private debugPresentReportAtMs: number = 0;
 	private debugPresentHostFrames: number = 0;
 	private debugPresentTickCompleted: number = 0;
@@ -335,11 +333,6 @@ export class EngineCore {
 	private _engine_layer: RuntimeAssetLayer = null;
 	private _workspace_overlay: Uint8Array = null;
 	private _cart_project_root_path: string = null;
-
-	/**
-	 * The accumulated time in milliseconds.
-	 */
-	public accumulated_time: number = 0;
 
 	/**
 	 * The timestamp of the last game tick.
@@ -716,14 +709,13 @@ export class EngineCore {
 		const runToken = runGate.begin({ blocking: true, tag: 'runtime-reset' });
 		try {
 			this.sndmaster.resetPlaybackState();
-			this.accumulated_time = 0;
-			this.cycleCarry = 0;
 			this.debug_runSingleFrameAndPause = false;
 			clearAllQueues();
 			clearOverlayFrame();
 
 			const runtime = Runtime.instance;
 			if (runtime) {
+				runtime.clearQueuedHostTime();
 				runtime.abandonFrameState();
 				runtime.drawFrameState = null;
 				runtime.clearHaltUntilIrq();
@@ -765,7 +757,7 @@ export class EngineCore {
 		this.last_update = now;
 		this.last_gametick_time = now;
 		this._turnCounter = 0;
-		this.cycleCarry = 0;
+		Runtime.instance.clearQueuedHostTime();
 		this.frameLoopHandle = platform.frames.start(this.run);
 		this.running = true;
 	}
@@ -778,7 +770,7 @@ export class EngineCore {
 	public update(deltaTime: number): void {
 		try {
 			this.deltatime = deltaTime;
-			Runtime.instance.tickUpdate();
+			Runtime.instance.tickUpdate(deltaTime);
 		} catch (error) {
 			const runtime = Runtime.instance;
 			try {
@@ -793,10 +785,6 @@ export class EngineCore {
 			$.paused = true;
 		}
 		$._turnCounter++;
-	}
-
-	private computeCycleBudget(runtime: Runtime): number {
-		return calcCyclesPerFrameScaled(runtime.cpuHz, this.ufps_scaled);
 	}
 
 	private runOverlayModeUpdate(runtime: Runtime): void {
@@ -935,18 +923,15 @@ export class EngineCore {
 			this.last_update = currentTime;
 
 			if (this._paused) {
-				this.accumulated_time = 0;
+				runtime.clearQueuedHostTime();
 				this.runOverlayModeUpdate(runtime);
 				this.presentFrame(runtime, hostDeltaMs, 'completed');
 				return;
 			}
 
-			const maxAccumulated = this.timestep_ms * MAX_SUBSTEPS;
-			this.accumulated_time = clamp(this.accumulated_time + hostDeltaMs, 0, maxAccumulated);
 			this.wasupdated = false;
 			let presentQueued = false;
-			let slicesConsumed = 0;
-			const baseBudget = this.computeCycleBudget(runtime);
+			let latestCompletion: ReturnType<Runtime['consumeLastTickCompletion']> = null;
 			const runPartialPresentation = () => {
 				presentQueued = true;
 				this.presentFrame(runtime, hostDeltaMs, 'partial');
@@ -956,74 +941,36 @@ export class EngineCore {
 				this.presentFrame(runtime, hostDeltaMs, 'completed', commitFrame);
 			};
 			if (!runGate.ready || this.paused) {
-				this.accumulated_time = 0;
+				runtime.clearQueuedHostTime();
 			} else {
-				const slicesAvailable = Math.min(Math.floor(this.accumulated_time / this.timestep_ms), MAX_SUBSTEPS);
-				// Advance input edge state only when a brand-new runtime tick starts.
-				// Do not read "slicesAvailable > 0" as "safe to move the input frame":
-				// during heavy slowdown the runtime can be resuming the same unfinished
-				// simframe across multiple host frames, and hasActiveTick() stays true.
-				// If beginFrame() runs on those continuation host frames, InputStateManager
-				// clears jp/jr before gameplay gets the next simulation slice, which makes
-				// justpressed appear to require extremely precise timing under slowdown.
-				// The invariant is:
-				// one input beginFrame() per newly-started simframe, never per host frame.
-				if (slicesAvailable > 0 && !runtime.hasActiveTick()) {
-					Input.instance.beginFrame();
-				}
-				for (; slicesConsumed < slicesAvailable;) {
+				runtime.queueHostTime(hostDeltaMs, this.timestep_ms, MAX_SUBSTEPS);
+				while (runtime.canRunScheduledUpdate(this.timestep_ms)) {
 					if (!runGate.ready || this.paused) {
-						this.accumulated_time = 0;
+						runtime.clearQueuedHostTime();
 						break;
 					}
-					const tickActive = runtime.hasActiveTick();
-					const carryBudget = tickActive ? 0 : this.cycleCarry;
-					if (carryBudget !== 0) {
-						this.cycleCarry = 0;
-					}
-					runtime.grantCycleBudget(baseBudget, carryBudget);
-					if (tickActive) {
-						runtime.tickUpdate();
-					} else {
-						this.deltatime = this.timestep_ms;
-						this.update(this.timestep_ms);
-					}
+					this.update(this.timestep_ms);
 					const completion = runtime.consumeLastTickCompletion();
 					if (completion) {
-						slicesConsumed += 1;
 						this.recordPresentDebugTickCompletion(completion.visualCommitted, completion.vdpFrameHeld);
-						// A completed tick reached its frame boundary; leftover budget after
-						// an IRQ frame wait belongs to that frame and must not spill into the next one.
-						this.cycleCarry = 0;
-						runCompletedPresentation(completion.visualCommitted);
-						// Present the completed frame now; any catch-up continuation resumes on the next host frame.
-						break;
+						latestCompletion = completion;
 					}
 					if (runtimeIde.isOverlayActive(runtime)) {
-						if (!runtime.hasActiveTick()) {
-							slicesConsumed += 1;
-						}
+						runtime.clearQueuedHostTime();
 						this.runOverlayModeUpdate(runtime);
 						runCompletedPresentation();
 						break;
 					}
-					if (runtime.hasActiveTick()) {
-						// The same simulation tick is still waiting on runtime-owned work
-						// such as VBLANK/IRQ/present readiness. Do not charge another
-						// fixed-step slice until that tick actually completes.
-						break;
-					}
-					slicesConsumed += 1;
 				}
-				if (slicesConsumed > 0) {
-					const consumed = slicesConsumed * this.timestep_ms;
-					this.accumulated_time = clamp(this.accumulated_time - consumed, 0, maxAccumulated);
-				}
+			}
+			if (!presentQueued && latestCompletion) {
+				runCompletedPresentation(latestCompletion.visualCommitted);
 			}
 			if (!presentQueued && runtime.isDrawPending) {
 				runPartialPresentation();
 			}
 			if (!presentQueued && runtimeIde.isOverlayActive(runtime)) {
+				runtime.clearQueuedHostTime();
 				this.runOverlayModeUpdate(runtime);
 				runCompletedPresentation();
 			}

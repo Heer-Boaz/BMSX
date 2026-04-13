@@ -732,6 +732,7 @@ bool Runtime::pollSystemBootRequest() {
 		return false;
 	}
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
+	clearQueuedHostTime();
 	try {
 		if (!EngineCore::instance().bootLoadedCart()) {
 			setCartBootReadyFlag(false);
@@ -1116,7 +1117,7 @@ void Runtime::completeTickIfPending(FrameState& frameState, uint64_t vblankSeque
 	if (m_lastCompletedVblankSequence == vblankSequence) {
 		return;
 	}
-	frameState.tickCompleted = true;
+	m_activeTickCompleted = true;
 	m_lastCompletedVblankSequence = vblankSequence;
 	m_lastTickBudgetGranted = frameState.cycleBudgetGranted;
 	m_lastTickCpuBudgetGranted = frameState.cycleBudgetGranted;
@@ -1150,7 +1151,7 @@ bool Runtime::runHaltedUntilIrq(FrameState& frameState) {
 		const uint32_t pendingFlags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
 		if (pendingFlags != 0u) {
 			m_cpu.clearHaltUntilIrq();
-			return frameState.tickCompleted;
+			return m_activeTickCompleted;
 		}
 		m_haltIrqSignalSequence = m_irqSignalSequence;
 		m_haltIrqWaitArmed = true;
@@ -1159,7 +1160,7 @@ bool Runtime::runHaltedUntilIrq(FrameState& frameState) {
 		if (m_irqSignalSequence != m_haltIrqSignalSequence) {
 			m_cpu.clearHaltUntilIrq();
 			resetHaltIrqWait();
-			return frameState.tickCompleted;
+			return m_activeTickCompleted;
 		}
 		if (frameState.cycleBudgetRemaining > 0) {
 			const i64 cyclesToTarget = nextTimerDeadline() - m_schedulerNowCycles;
@@ -1277,57 +1278,35 @@ void Runtime::queueLifecycleHandlers(bool runInit, bool runNewGame) {
 	}
 }
 
-void Runtime::tickUpdate() {
-	if (m_rebootRequested) {
-		m_rebootRequested = false;
-		if (!EngineCore::instance().rebootLoadedRom()) {
-			EngineCore::instance().log(LogLevel::Error, "Runtime fault: reboot to bootrom failed.\n");
-		}
-		return;
+bool Runtime::consumeQueuedHostFrame(f64 frameMs) {
+	if (frameMs <= 0.0 || m_queuedHostTimeMs < frameMs) {
+		return false;
 	}
-	if (!m_luaInitialized || !m_tickEnabled || m_runtimeFailed) {
-		return;
+	m_queuedHostTimeMs -= frameMs;
+	return true;
+}
+
+bool Runtime::refillFrameBudget(f64 frameMs) {
+	if (!consumeQueuedHostFrame(frameMs)) {
+		return false;
 	}
+	m_frameState.cycleBudgetRemaining += m_cycleBudgetPerFrame;
+	m_frameState.cycleBudgetGranted += m_cycleBudgetPerFrame;
+	return true;
+}
 
-	prepareCartBootIfNeeded();
-	if (pollSystemBootRequest()) {
-		return;
-	}
-
-	const auto finalizeUpdateSlice = [this]() {
-		if (hasEntryContinuation() && !m_frameState.tickCompleted) {
-			return;
-		}
-		m_frameActive = false;
-	};
-
-	if (m_frameActive) {
-		if (hasEntryContinuation()) {
-			executeUpdateCallback();
-			flushAssetEdits();
-			m_frameState.updateExecuted = !hasEntryContinuation();
-		}
-		finalizeUpdateSlice();
-		return;
-	}
-
-	const auto frameNow = std::chrono::steady_clock::now();
-	if (!m_debugFrameReportInitialized) {
-		m_debugFrameReportInitialized = true;
-		m_debugFrameReportAt = frameNow;
-	}
-	m_debugTickYieldsBefore = m_debugRunYieldsTotal;
-
+void Runtime::beginFrameState(bool advanceInputFrame) {
 	m_frameActive = true;
 	m_lastTickCompleted = false;
-
-	const int carryBudget = m_pendingCarryBudget;
-	m_pendingCarryBudget = 0;
+	m_activeTickCompleted = false;
 	m_frameState = FrameState{};
-	m_frameState.cycleBudgetRemaining = m_cycleBudgetPerFrame + carryBudget;
-	m_frameState.cycleBudgetGranted = m_cycleBudgetPerFrame + carryBudget;
-	m_frameState.cycleCarryGranted = carryBudget;
+	m_frameState.cycleBudgetRemaining = m_cycleBudgetPerFrame;
+	m_frameState.cycleBudgetGranted = m_cycleBudgetPerFrame;
+	m_frameState.cycleCarryGranted = 0;
 	m_frameDeltaMs = static_cast<f64>(EngineCore::instance().deltaTime()) * 1000.0;
+	if (advanceInputFrame) {
+		Input::instance().beginFrame();
+	}
 	m_vdp.beginFrame();
 	auto* gameTable = asTable(m_cpu.getGlobalByKey(canonicalizeIdentifier("game")));
 	auto* viewportTable = asTable(gameTable->get(canonicalizeIdentifier("viewportsize")));
@@ -1352,26 +1331,93 @@ void Runtime::tickUpdate() {
 	viewTable->set(viewGlowKey, valueBool(view->applyGlow));
 	viewTable->set(viewFringingKey, valueBool(view->applyFringing));
 	viewTable->set(viewApertureKey, valueBool(view->applyAperture));
+}
 
-	// Call _update if present
-	executeUpdateCallback();
+bool Runtime::startScheduledFrame(f64 frameMs) {
+	if (!consumeQueuedHostFrame(frameMs)) {
+		return false;
+	}
+	const auto frameNow = std::chrono::steady_clock::now();
+	if (!m_debugFrameReportInitialized) {
+		m_debugFrameReportInitialized = true;
+		m_debugFrameReportAt = frameNow;
+	}
+	m_debugTickYieldsBefore = m_debugRunYieldsTotal;
+	beginFrameState(true);
+	return true;
+}
 
-	auto readViewBool = [](Value value, const char* field) -> bool {
-		if (!valueIsBool(value)) {
-			throw BMSX_RUNTIME_ERROR(std::string("game.view.") + field + " must be boolean.");
+void Runtime::finalizeUpdateSlice() {
+	if (hasEntryContinuation() && !m_activeTickCompleted) {
+		return;
+	}
+	m_frameActive = false;
+	m_activeTickCompleted = false;
+}
+
+void Runtime::tickUpdate(f64 frameMs) {
+	if (m_rebootRequested) {
+		m_rebootRequested = false;
+		clearQueuedHostTime();
+		if (!EngineCore::instance().rebootLoadedRom()) {
+			EngineCore::instance().log(LogLevel::Error, "Runtime fault: reboot to bootrom failed.\n");
 		}
-		return valueToBool(value);
-	};
-	view->crt_postprocessing_enabled = readViewBool(viewTable->get(viewCrtKey), "crt_postprocessing_enabled");
-	view->applyNoise = readViewBool(viewTable->get(viewNoiseKey), "enable_noise");
-	view->applyColorBleed = readViewBool(viewTable->get(viewColorBleedKey), "enable_colorbleed");
-	view->applyScanlines = readViewBool(viewTable->get(viewScanlinesKey), "enable_scanlines");
-	view->applyBlur = readViewBool(viewTable->get(viewBlurKey), "enable_blur");
-	view->applyGlow = readViewBool(viewTable->get(viewGlowKey), "enable_glow");
-	view->applyFringing = readViewBool(viewTable->get(viewFringingKey), "enable_fringing");
-	view->applyAperture = readViewBool(viewTable->get(viewApertureKey), "enable_aperture");
+		return;
+	}
+	if (!m_luaInitialized || !m_tickEnabled || m_runtimeFailed) {
+		return;
+	}
 
-	m_debugUpdateCountTotal += 1;
+	prepareCartBootIfNeeded();
+	if (pollSystemBootRequest()) {
+		return;
+	}
+
+	bool startedFrame = false;
+	if (m_frameActive) {
+		if (m_frameState.cycleBudgetRemaining <= 0 && !refillFrameBudget(frameMs)) {
+			return;
+		}
+	} else {
+		if (frameMs <= 0.0 || !startScheduledFrame(frameMs)) {
+			return;
+		}
+		startedFrame = true;
+	}
+
+	if (hasEntryContinuation()) {
+		executeUpdateCallback();
+	}
+
+	if (startedFrame) {
+		auto* gameTable = asTable(m_cpu.getGlobalByKey(canonicalizeIdentifier("game")));
+		auto* viewTable = asTable(gameTable->get(canonicalizeIdentifier("view")));
+		auto* view = EngineCore::instance().view();
+		const Value viewCrtKey = canonicalizeIdentifier("crt_postprocessing_enabled");
+		const Value viewNoiseKey = canonicalizeIdentifier("enable_noise");
+		const Value viewColorBleedKey = canonicalizeIdentifier("enable_colorbleed");
+		const Value viewScanlinesKey = canonicalizeIdentifier("enable_scanlines");
+		const Value viewBlurKey = canonicalizeIdentifier("enable_blur");
+		const Value viewGlowKey = canonicalizeIdentifier("enable_glow");
+		const Value viewFringingKey = canonicalizeIdentifier("enable_fringing");
+		const Value viewApertureKey = canonicalizeIdentifier("enable_aperture");
+		auto readViewBool = [](Value value, const char* field) -> bool {
+			if (!valueIsBool(value)) {
+				throw BMSX_RUNTIME_ERROR(std::string("game.view.") + field + " must be boolean.");
+			}
+			return valueToBool(value);
+		};
+		view->crt_postprocessing_enabled = readViewBool(viewTable->get(viewCrtKey), "crt_postprocessing_enabled");
+		view->applyNoise = readViewBool(viewTable->get(viewNoiseKey), "enable_noise");
+		view->applyColorBleed = readViewBool(viewTable->get(viewColorBleedKey), "enable_colorbleed");
+		view->applyScanlines = readViewBool(viewTable->get(viewScanlinesKey), "enable_scanlines");
+		view->applyBlur = readViewBool(viewTable->get(viewBlurKey), "enable_blur");
+		view->applyGlow = readViewBool(viewTable->get(viewGlowKey), "enable_glow");
+		view->applyFringing = readViewBool(viewTable->get(viewFringingKey), "enable_fringing");
+		view->applyAperture = readViewBool(viewTable->get(viewApertureKey), "enable_aperture");
+		m_debugUpdateCountTotal += 1;
+	}
+
 	m_frameState.updateExecuted = !hasEntryContinuation();
 	flushAssetEdits();
 	finalizeUpdateSlice();
@@ -1492,9 +1538,10 @@ void Runtime::requestProgramReload() {
 
 void Runtime::resetFrameState() {
 	m_frameActive = false;
+	m_activeTickCompleted = false;
 	m_frameState = FrameState{};
 	clearHaltUntilIrq();
-	m_pendingCarryBudget = 0;
+	clearQueuedHostTime();
 	m_lastTickBudgetGranted = 0;
 	m_lastTickCpuBudgetGranted = 0;
 	m_lastTickCpuUsedCycles = 0;
@@ -1533,12 +1580,14 @@ void Runtime::applyState(const RuntimeState& state) {
 	m_geometryController.normalizeAfterStateRestore();
 	m_vdp.syncRegisters();
 	clearHaltUntilIrq();
+	clearQueuedHostTime();
 	resetSchedulerState();
 	m_schedulerNowCycles = state.cyclesIntoFrame;
 	m_frameStartCycle = 0;
 	m_vdpStatus = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_STATUS)));
 	m_vdpStatus &= ~VDP_STATUS_VBLANK;
 	m_vblankActive = false;
+	m_activeTickCompleted = false;
 	m_irqSignalSequence = 0;
 	const bool vblankActive = (m_vblankStartCycle == 0)
 		|| (getCyclesIntoFrame() >= m_vblankStartCycle);
@@ -1684,17 +1733,22 @@ void Runtime::setCycleBudgetPerFrame(int budget) {
 	}
 }
 
-void Runtime::grantCycleBudget(int baseBudget, int carryBudget) {
-	setCycleBudgetPerFrame(baseBudget);
-	const int totalBudget = baseBudget + carryBudget;
-	if (hasActiveTick()) {
-		m_frameState.cycleBudgetRemaining += totalBudget;
-		m_frameState.cycleBudgetGranted += totalBudget;
-		return;
+void Runtime::queueHostTime(f64 deltaMs, f64 frameMs, int maxSteps) {
+	m_queuedHostTimeMs = clamp(m_queuedHostTimeMs + deltaMs, 0.0, frameMs * static_cast<f64>(maxSteps));
+}
+
+void Runtime::clearQueuedHostTime() {
+	m_queuedHostTimeMs = 0.0;
+}
+
+bool Runtime::canRunScheduledUpdate(f64 frameMs) const {
+	if (!m_luaInitialized || !m_tickEnabled || m_runtimeFailed) {
+		return false;
 	}
-	if (carryBudget != 0) {
-		m_pendingCarryBudget = carryBudget;
+	if (m_frameActive && m_frameState.cycleBudgetRemaining > 0) {
+		return true;
 	}
+	return m_queuedHostTimeMs >= frameMs;
 }
 
 bool Runtime::hasActiveTick() const {

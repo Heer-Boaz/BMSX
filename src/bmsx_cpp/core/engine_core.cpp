@@ -12,7 +12,6 @@
 #include "../rompack/rompack.h"
 #include "../emulator/memory_map.h"
 #include "../render/shared/render_queues.h"
-#include "../utils/clamp.h"
 #include <cstdio>
 #include <cstdlib>
 #include <chrono>
@@ -492,8 +491,9 @@ void EngineCore::shutdown() {
 void EngineCore::start() {
 	if (m_state == EngineState::Initialized || m_state == EngineState::Stopped) {
 		m_state = EngineState::Running;
-		m_cycleCarry = 0;
-		m_lastGrantedBaseBudget = 0;
+		if (Runtime::hasInstance()) {
+			Runtime::instance().clearQueuedHostTime();
+		}
 	}
 }
 
@@ -506,8 +506,9 @@ void EngineCore::pause() {
 void EngineCore::resume() {
 	if (m_state == EngineState::Paused) {
 		m_state = EngineState::Running;
-		m_cycleCarry = 0;
-		m_lastGrantedBaseBudget = 0;
+		if (Runtime::hasInstance()) {
+			Runtime::instance().clearQueuedHostTime();
+		}
 	}
 }
 
@@ -674,57 +675,27 @@ void EngineCore::tick(f64 deltaTime) {
 		auto terminalInputEnd = std::chrono::steady_clock::now();
 		m_last_tick_timing.runtimeTerminalInputMs = to_ms(terminalInputEnd - terminalInputStart);
 
-		m_accumulated_time = clamp(m_accumulated_time + hostDeltaMs, 0.0, m_update_interval_ms * MAX_SUBSTEPS);
-		int slicesConsumed = 0;
 		bool presentQueued = false;
+		bool haveCompletion = false;
+		TickCompletion latestCompletion;
 		const double fixedDeltaSeconds = m_update_interval_ms / 1000.0;
 		auto updateStart = std::chrono::steady_clock::now();
-		const int baseBudget = calcCyclesPerFrame(runtime.cpuHz(), m_ufps_scaled);
-		const int slicesAvailable = std::min(static_cast<int>(m_accumulated_time / m_update_interval_ms), MAX_SUBSTEPS);
-		// Advance input edge state only when a brand-new runtime tick starts.
-		// Do not treat "slicesAvailable > 0" as permission to move the input frame:
-		// during heavy slowdown the runtime can be resuming the same unfinished
-		// simframe across multiple host frames, and hasActiveTick() stays true.
-		// If beginFrame() runs on those continuation host frames, InputStateManager
-		// clears jp/jr before gameplay gets the next simulation slice, which makes
-		// justpressed appear to require extremely precise timing under slowdown.
-		// The invariant is:
-		// one input beginFrame() per newly-started simframe, never per host frame.
-		if (slicesAvailable > 0 && !runtime.hasActiveTick()) {
-			Input::instance().beginFrame();
-		}
-		for (; slicesConsumed < slicesAvailable;) {
-			const bool tickActive = runtime.hasActiveTick();
-			const int carryBudget = tickActive ? 0 : (m_cycleCarry > 0 ? static_cast<int>(m_cycleCarry) : 0);
-			if (carryBudget != 0) {
-				m_cycleCarry = 0;
-			}
-			runtime.grantCycleBudget(baseBudget, carryBudget);
-			m_lastGrantedBaseBudget = baseBudget;
+		runtime.queueHostTime(hostDeltaMs, m_update_interval_ms, MAX_SUBSTEPS);
+		while (runtime.canRunScheduledUpdate(m_update_interval_ms)) {
 			m_delta_time = fixedDeltaSeconds;
-			runtime.tickUpdate();
+			runtime.tickUpdate(m_update_interval_ms);
 			runtime.tickDraw();
 			TickCompletion completion;
 			if (runtime.consumeLastTickCompletion(completion)) {
-				slicesConsumed += 1;
-				m_cycleCarry = 0;
 				recordPresentDebugTickCompletion(completion.visualCommitted, completion.vdpFrameHeld);
-				presentQueued = true;
-				m_presentation_mode = GameView::PresentationMode::Completed;
-				m_commit_presented_frame = completion.visualCommitted;
-				// Keep the completed frame stable for this host present; continue next frame on the next host tick.
-				break;
+				latestCompletion = completion;
+				haveCompletion = true;
 			}
-			if (runtime.hasActiveTick()) {
-				// The same simulation tick is still waiting on runtime-owned work
-				// such as VBLANK/IRQ/present readiness. Do not charge another
-				// fixed-step slice until that tick actually completes.
-				break;
-			}
-			slicesConsumed += 1;
 		}
-		if (slicesConsumed > 0) {
-			m_accumulated_time = std::max(m_accumulated_time - static_cast<double>(slicesConsumed) * m_update_interval_ms, 0.0);
+		if (haveCompletion) {
+			presentQueued = true;
+			m_presentation_mode = GameView::PresentationMode::Completed;
+			m_commit_presented_frame = latestCompletion.visualCommitted;
 		}
 		if (!presentQueued && runtime.isDrawPending()) {
 			m_presentation_mode = GameView::PresentationMode::Partial;

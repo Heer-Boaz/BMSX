@@ -626,10 +626,10 @@ export function resetRuntimeState(runtime: Runtime): void {
 }
 
 export function resetFrameState(runtime: Runtime): void {
-	runtime.currentFrameState = null;
+	runtime.abandonFrameState();
 	runtime.drawFrameState = null;
 	runtime.clearHaltUntilIrq();
-	runtime.pendingCarryBudget = 0;
+	runtime.clearQueuedHostTime();
 	runtime.lastTickCompleted = false;
 	runtime.lastTickBudgetGranted = 0;
 	runtime.lastTickCpuBudgetGranted = 0;

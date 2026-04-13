@@ -38,6 +38,7 @@ import { Api } from './firmware_api';
 import { CPU, Table, type Closure, type Value, type Program, type ProgramMetadata, RunResult, type NativeFunction, type NativeObject } from './cpu';
 import { StringPool, StringValue } from './string_pool';
 import { StringHandleTable } from './string_memory';
+import { clamp } from '../utils/clamp';
 import type { TerminalMode } from './terminal/ui/terminal_mode';
 import { OverlayRenderer } from './overlay_renderer';
 import { Font, type FontVariant } from '../render/shared/bmsx_font';
@@ -203,7 +204,6 @@ type FrameState = {
 	haltGame: boolean;
 	updateExecuted: boolean;
 	luaFaulted: boolean;
-	tickCompleted: boolean;
 	cycleBudgetRemaining: number;
 	cycleBudgetGranted: number;
 	cycleCarryGranted: number;
@@ -559,6 +559,25 @@ export class Runtime {
 		return this.currentFrameState !== null;
 	}
 
+	public queueHostTime(deltaMs: number, frameMs: number, maxSteps: number): void {
+		this.queuedHostTimeMs = clamp(this.queuedHostTimeMs + deltaMs, 0, frameMs * maxSteps);
+	}
+
+	public clearQueuedHostTime(): void {
+		this.queuedHostTimeMs = 0;
+	}
+
+	public canRunScheduledUpdate(frameMs: number): boolean {
+		if (!this.luaInitialized || !this.tickEnabled || this.luaRuntimeFailed) {
+			return false;
+		}
+		const state = this.currentFrameState;
+		if (state !== null && state.cycleBudgetRemaining > 0) {
+			return true;
+		}
+		return this.queuedHostTimeMs >= frameMs;
+	}
+
 	public consumeLastTickCompletion(): { sequence: number; remaining: number; visualCommitted: boolean; vdpFrameCost: number; vdpFrameHeld: boolean; } | null {
 		if (!this.lastTickCompleted) {
 			return null;
@@ -576,17 +595,37 @@ export class Runtime {
 		};
 	}
 
-	public grantCycleBudget(baseBudget: number, carryBudget: number): void {
-		this.setCycleBudgetPerFrame(baseBudget);
-		const totalBudget = baseBudget + carryBudget;
-		if (this.currentFrameState !== null) {
-			this.currentFrameState.cycleBudgetRemaining += totalBudget;
-			this.currentFrameState.cycleBudgetGranted += totalBudget;
-			return;
+	private consumeQueuedHostFrame(frameMs: number): boolean {
+		if (this.queuedHostTimeMs < frameMs) {
+			return false;
 		}
-		if (carryBudget !== 0) {
-			this.pendingCarryBudget = carryBudget;
+		this.queuedHostTimeMs -= frameMs;
+		return true;
+	}
+
+	private refillFrameBudget(frameState: FrameState, frameMs: number): boolean {
+		if (!this.consumeQueuedHostFrame(frameMs)) {
+			return false;
 		}
+		frameState.cycleBudgetRemaining += this.cycleBudgetPerFrame;
+		frameState.cycleBudgetGranted += this.cycleBudgetPerFrame;
+		return true;
+	}
+
+	private startScheduledFrame(frameMs: number): boolean {
+		if (!this.consumeQueuedHostFrame(frameMs)) {
+			return false;
+		}
+		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
+		if (debugTickRate) {
+			if (this.debugFrameReportAtMs === 0) {
+				this.debugFrameReportAtMs = performance.now();
+			}
+			this.debugTickYieldsBefore = this.debugCycleYieldsTotal;
+		}
+		this.lastTickCompleted = false;
+		this.beginFrameState(true);
+		return true;
 	}
 
 	public runWithBudget(state: FrameState): RunResult {
@@ -1175,7 +1214,7 @@ export class Runtime {
 		if (this.lastCompletedVblankSequence === vblankSequence) {
 			return;
 		}
-		frameState.tickCompleted = true;
+		this.activeTickCompleted = true;
 		this.lastTickBudgetGranted = frameState.cycleBudgetGranted;
 		this.lastTickCpuBudgetGranted = frameState.cycleBudgetGranted;
 		this.lastTickCpuUsedCycles = frameState.activeCpuUsedCycles;
@@ -1226,11 +1265,13 @@ export class Runtime {
 
 	public restoreVblankState(state: { cyclesIntoFrame: number }): void {
 		this.clearHaltUntilIrq();
+		this.clearQueuedHostTime();
 		this.resetSchedulerState();
 		this.schedulerNowCycles = state.cyclesIntoFrame;
 		this.frameStartCycle = 0;
 		this.vblankSequence = 0;
 		this.lastCompletedVblankSequence = 0;
+		this.activeTickCompleted = false;
 		this.irqSignalSequence = 0;
 		const vblankActive = (this.vblankStartCycle === 0)
 			|| (this.getCyclesIntoFrame() >= this.vblankStartCycle);
@@ -1289,6 +1330,8 @@ export class Runtime {
 	public lastTickVdpFrameCost: number = 0;
 	public lastTickVdpFrameHeld: boolean = false;
 	public lastTickCompleted: boolean = false;
+	private activeTickCompleted = false;
+	private queuedHostTimeMs = 0;
 	private debugCycleReportAtMs: number = 0;
 	private debugCycleRuns: number = 0;
 	private debugCycleYields: number = 0;
@@ -1304,7 +1347,6 @@ export class Runtime {
 	private debugFrameCarryAcc: number = 0;
 	private debugTickYieldsBefore: number = 0;
 	public pendingLuaWarnings: string[] = [];
-	public pendingCarryBudget: number = 0;
 	public lastTickConsumedSequence: number = 0;
 	public readonly moduleAliases: Map<string, string> = new Map();
 	public readonly luaChunkEnvironmentsByPath: Map<string, LuaEnvironment> = new Map();
@@ -2085,31 +2127,32 @@ export class Runtime {
 
 	// Frame state is owned by the runtime: it is created per-frame, kept intact for debugger inspection on faults,
 	// and only cleared via finalize/abandon during explicit reboot/reset flows.
-	public beginFrameState(): FrameState {
+	public beginFrameState(advanceInputFrame: boolean = false): FrameState {
 		if (this.currentFrameState) {
 			throw runtimeFault('attempted to begin a new frame while another frame is active.');
 		}
 		clearHardwareLighting();
 		this.frameDeltaMs = $.deltatime;
-		const carryBudget = this.pendingCarryBudget;
-		this.pendingCarryBudget = 0;
-		const budget = this.cycleBudgetPerFrame + carryBudget;
+		if (advanceInputFrame) {
+			Input.instance.beginFrame();
+		}
+		const budget = this.cycleBudgetPerFrame;
 		const state: FrameState = {
 			haltGame: this.debuggerPaused,
 			updateExecuted: false,
 			luaFaulted: this.luaRuntimeFailed,
-			tickCompleted: false,
 			cycleBudgetRemaining: budget,
 			cycleBudgetGranted: budget,
-			cycleCarryGranted: carryBudget,
+			cycleCarryGranted: 0,
 			activeCpuUsedCycles: 0,
 		};
 		this.vdp.beginFrame();
+		this.activeTickCompleted = false;
 		this.currentFrameState = state;
 		return state;
 	}
 
-	public tickUpdate(): void {
+	public tickUpdate(frameMs: number = 0): void {
 		if (!this.tickEnabled) {
 			return;
 		}
@@ -2120,38 +2163,26 @@ export class Runtime {
 			}
 			return;
 		}
-		if (this.currentFrameState !== null) {
-			if (this.isUpdatePhasePending()) {
-				this.runUpdatePhase(this.currentFrameState);
-				this.vdp.flushAssetEdits();
-				this.currentFrameState.updateExecuted = !this.isUpdatePhasePending();
+		if (this.currentFrameState === null) {
+			if (frameMs <= 0 || !this.startScheduledFrame(frameMs)) {
+				return;
 			}
-			this.finalizeUpdateSlice(this.currentFrameState);
-			return;
+		} else if (this.currentFrameState.cycleBudgetRemaining <= 0) {
+			if (frameMs <= 0 || !this.refillFrameBudget(this.currentFrameState, frameMs)) {
+				return;
+			}
 		}
-		this.runCartUpdateTick();
+		this.runActiveFrameState(this.currentFrameState);
 	}
 
-	public tickDraw(): void {
-		// Runtime rendering is update-driven; draw phase is intentionally unused.
-	}
-
-	private runCartUpdateTick(): void {
+	private runActiveFrameState(state: FrameState): void {
 		let fault: unknown = null;
-		let state: FrameState = null;
-		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
-		if (debugTickRate) {
-			if (this.debugFrameReportAtMs === 0) {
-				this.debugFrameReportAtMs = performance.now();
-			}
-			this.debugTickYieldsBefore = this.debugCycleYieldsTotal;
-		}
 		try {
-			state = this.beginFrameState();
-			this.lastTickCompleted = false;
-			this.runUpdatePhase(state);
-			this.vdp.flushAssetEdits();
-			state.updateExecuted = !this.isUpdatePhasePending();
+			if (this.isUpdatePhasePending()) {
+				this.runUpdatePhase(state);
+				this.vdp.flushAssetEdits();
+				state.updateExecuted = !this.isUpdatePhasePending();
+			}
 			this.finalizeUpdateSlice(state);
 		} catch (error) {
 			fault = error;
@@ -2163,9 +2194,13 @@ export class Runtime {
 		}
 	}
 
+	public tickDraw(): void {
+		// Runtime rendering is update-driven; draw phase is intentionally unused.
+	}
+
 	private finalizeUpdateSlice(frameState: FrameState): void {
 		this.currentFrameState = frameState;
-		if (frameState.tickCompleted || !this.hasEntryContinuation()) {
+		if (this.activeTickCompleted || !this.hasEntryContinuation()) {
 			this.abandonFrameState();
 		}
 	}
@@ -2351,7 +2386,7 @@ export class Runtime {
 			const pendingFlags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
 			if (pendingFlags !== 0) {
 				this.cpu.clearHaltUntilIrq();
-				return state.tickCompleted;
+				return this.activeTickCompleted;
 			}
 			this.haltIrqSignalSequence = this.irqSignalSequence;
 			this.haltIrqWaitArmed = true;
@@ -2360,7 +2395,7 @@ export class Runtime {
 			if (this.irqSignalSequence !== this.haltIrqSignalSequence) {
 				this.cpu.clearHaltUntilIrq();
 				this.resetHaltIrqWait();
-				return state.tickCompleted;
+				return this.activeTickCompleted;
 			}
 			if (state.cycleBudgetRemaining > 0) {
 				const cyclesToTarget = this.nextTimerDeadline() - this.schedulerNowCycles;
@@ -2388,6 +2423,7 @@ export class Runtime {
 	// Clear reference to allow next frame to begin
 	public abandonFrameState(): void {
 		this.currentFrameState = null;
+		this.activeTickCompleted = false;
 	}
 
 	public resolveAssetHandle(id: string): number {
@@ -2818,6 +2854,7 @@ export class Runtime {
 			return;
 		}
 		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
+		this.clearQueuedHostTime();
 		this.requestCartBoot();
 	}
 
@@ -2839,6 +2876,7 @@ export class Runtime {
 			this.pendingCall = null;
 			this.clearHaltUntilIrq();
 		}
+		this.clearQueuedHostTime();
 		this.pendingCartBoot = false;
 		console.info('Switching to cart program after BIOS boot request.');
 		this.activateProgramSource('cart');
