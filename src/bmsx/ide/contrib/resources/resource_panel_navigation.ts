@@ -7,14 +7,14 @@ export function resourcePanelIndexAtRelativeY(scroll: number, relativeY: number,
 }
 
 export function clampResourcePanelSelectionIndex(index: number, itemCount: number): number {
-	return clamp(Math.trunc(index), -1, Math.max(-1, itemCount - 1));
+	return clamp(index, -1, Math.max(-1, itemCount - 1));
 }
 
 export function moveResourcePanelSelectionIndex(selectionIndex: number, itemCount: number, delta: number): number {
 	let next: number;
 	if (delta === Number.NEGATIVE_INFINITY) next = 0;
 	else if (delta === Number.POSITIVE_INFINITY) next = itemCount - 1;
-	else next = (selectionIndex >= 0 ? selectionIndex : 0) + Math.trunc(delta);
+	else next = (selectionIndex >= 0 ? selectionIndex : 0) + delta;
 	return clamp(next, 0, itemCount - 1);
 }
 

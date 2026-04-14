@@ -14,25 +14,17 @@ import { setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { updateDesiredColumn, ensureCursorVisible } from '../../ui/caret';
 import { resetBlink } from '../../render/render_caret';
 
-export type RenameCommitPayload = {
-	matches: readonly SearchMatch[];
-	newName: string;
-	activeIndex: number;
-	originalName: string;
-	info: ReferenceMatchInfo;
-};
-
-export type RenameCommitResult = {
-	updatedMatches: number;
-};
-
 export type RenameLineEdit = {
 	row: number;
 	text: string;
 };
 
-export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
-	const { matches, newName, activeIndex, info } = payload;
+export function commitRename(
+	matches: readonly SearchMatch[],
+	newName: string,
+	activeIndex: number,
+	info: ReferenceMatchInfo,
+): number {
 	const activeContext = getActiveCodeTabContext();
 	const activePath = activeContext.descriptor.path;
 	const workspace = getOrCreateSemanticWorkspace();
@@ -98,7 +90,7 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 			markDiagnosticsDirtyForChunk(bucket.path);
 		}
 	}
-	return { updatedMatches: updatedTotal };
+	return updatedTotal;
 }
 
 export function planRenameLineEdits(lines: readonly string[], matches: readonly SearchMatch[], newName: string): RenameLineEdit[] {

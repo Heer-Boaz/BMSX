@@ -4,7 +4,6 @@ import { Scrollbar } from '../../ui/scrollbar';
 import { renderResourcePanel } from '../../render/render_resource_panel';
 import type { ResourceBrowserItem } from '../../core/types';
 import type { RectBounds } from '../../../rompack/rompack';
-import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../input/keyboard/key_input';
 import { ide_state } from '../../core/ide_state';
 import { measureText } from '../../core/text_utils';
 import type { CallHierarchyView } from '../call_hierarchy/call_hierarchy_view';
@@ -27,18 +26,17 @@ import {
 	moveResourcePanelSelectionIndex,
 	resourcePanelIndexAtRelativeY,
 	scrollResourcePanelHorizontalOffset,
-	toggleSelectedCallHierarchyExpansion,
 } from './resource_panel_navigation';
 import {
-	getResourcePanelAtlasWarningMessage,
-	openResourcePanelCallHierarchyLocation,
-	tryOpenResourcePanelDescriptorItem,
+	activateSelectedCallHierarchyItem,
+	openSelectedResourcePanelCallHierarchyLocation,
+	openSelectedResourcePanelItem,
 } from './resource_panel_open_actions';
-import { focusEditorFromResourcePanel } from '../../ui/editor_tabs';
 import {
 	refreshResourcePanelCallHierarchyState,
 	refreshResourcePanelResourceState,
 } from './resource_panel_refresh';
+import { handleResourcePanelKeyboardInput } from './resource_panel_keyboard';
 
 export interface ResourcePanelScrollbars {
 	resourceVertical: Scrollbar;
@@ -46,6 +44,7 @@ export interface ResourcePanelScrollbars {
 }
 
 export class ResourcePanelController {
+	private static readonly EMPTY_ITEMS: ResourceBrowserItem[] = [];
 	public visible = false;
 	public focused = false;
 	private widthRatio: number;
@@ -55,7 +54,7 @@ export class ResourcePanelController {
 	private charAdvance: number;
 
 	// Browser state
-	public items: ResourceBrowserItem[] = [];
+	public items: ResourceBrowserItem[] = ResourcePanelController.EMPTY_ITEMS;
 	public scroll = 0;
 	public hscroll = 0;
 	public selectionIndex = -1;
@@ -155,102 +154,7 @@ export class ResourcePanelController {
 
 	// === Keyboard ===
 	handleKeyboard(): void {
-		const ctrlDown = isCtrlDown();
-		const metaDown = isMetaDown();
-		const shiftDown = isShiftDown();
-		if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyR')) {
-			consumeIdeKey('KeyR');
-			// Resolution is editor concern; let host surface a message
-			ide_state.showMessage('Resolution toggle not handled by panel controller.', constants.COLOR_STATUS_TEXT, 1.2);
-			return;
-		}
-		if ((ctrlDown || metaDown) && isKeyJustPressed('KeyB')) {
-			consumeIdeKey('KeyB');
-			this.togglePanel();
-			return;
-		}
-		if (isKeyJustPressed('Escape')) {
-			consumeIdeKey('Escape');
-			this.hide();
-			return;
-		}
-		if (isKeyJustPressed('Tab')) {
-			consumeIdeKey('Tab');
-			this.focused = false;
-			focusEditorFromResourcePanel();
-			return;
-		}
-
-		if (this.mode !== 'resources') {
-			if (isKeyJustPressed('ArrowLeft')) {
-				consumeIdeKey('ArrowLeft');
-				this.collapseTreeNode();
-				return;
-			}
-			if (isKeyJustPressed('ArrowRight')) {
-				consumeIdeKey('ArrowRight');
-				this.expandTreeNode();
-				return;
-			}
-		} else {
-			const horizontalStep = this.charAdvance * 4;
-			if (isKeyJustPressed('ArrowLeft')) {
-				consumeIdeKey('ArrowLeft');
-				this.scrollHorizontal(-horizontalStep);
-				this.ensureSelectionVisible();
-				return;
-			}
-			if (isKeyJustPressed('ArrowRight')) {
-				consumeIdeKey('ArrowRight');
-				this.scrollHorizontal(horizontalStep);
-				this.ensureSelectionVisible();
-				return;
-			}
-		}
-		if (isKeyJustPressed('Enter')) {
-			consumeIdeKey('Enter');
-			if (this.mode === 'call_hierarchy') {
-				this.openSelectedCallHierarchyLocation();
-			} else {
-				this.openSelected();
-			}
-			return;
-		}
-		if (this.mode !== 'resources' && isKeyJustPressed('Space')) {
-			consumeIdeKey('Space');
-			this.openSelected();
-			return;
-		}
-		if (isKeyJustPressed('ArrowUp')) {
-			consumeIdeKey('ArrowUp');
-			this.moveSelection(-1);
-			return;
-		}
-		if (isKeyJustPressed('ArrowDown')) {
-			consumeIdeKey('ArrowDown');
-			this.moveSelection(1);
-			return;
-		}
-		if (isKeyJustPressed('PageUp')) {
-			consumeIdeKey('PageUp');
-			this.moveSelection(-this.lineCapacity());
-			return;
-		}
-		if (isKeyJustPressed('PageDown')) {
-			consumeIdeKey('PageDown');
-			this.moveSelection(this.lineCapacity());
-			return;
-		}
-		if (isKeyJustPressed('Home')) {
-			consumeIdeKey('Home');
-			this.moveSelection(Number.NEGATIVE_INFINITY);
-			return;
-		}
-		if (isKeyJustPressed('End')) {
-			consumeIdeKey('End');
-			this.moveSelection(Number.POSITIVE_INFINITY);
-			return;
-		}
+		handleResourcePanelKeyboardInput(this);
 	}
 
 	// === Public helpers used by editor pointer logic ===
@@ -315,29 +219,21 @@ export class ResourcePanelController {
 
 	openSelected(): void {
 		if (this.mode === 'call_hierarchy') {
-			this.openSelectedCallHierarchy();
+			this.activateSelectedCallHierarchy();
 			return;
 		}
-		const item = this.items[this.selectionIndex];
-		if (tryOpenResourcePanelDescriptorItem(item)) {
-			return;
-		}
-		if (item?.descriptor?.type === 'atlas') {
-			const warning = getResourcePanelAtlasWarningMessage();
-			ide_state.showMessage(warning.text, warning.color, warning.duration);
-			focusEditorFromResourcePanel();
-		}
+		openSelectedResourcePanelItem(this.items, this.selectionIndex);
 	}
 
 	openSelectedCallHierarchyLocation(): void {
 		if (this.mode !== 'call_hierarchy') {
 			return;
 		}
-		const item = this.items[this.selectionIndex];
-		if (!item) {
-			return;
-		}
-		openResourcePanelCallHierarchyLocation(item);
+		openSelectedResourcePanelCallHierarchyLocation(this.items, this.selectionIndex);
+	}
+
+	getHorizontalScrollStep(): number {
+		return this.charAdvance * 4;
 	}
 
 	setRatioFromViewportX(viewportX: number, viewportWidth: number): boolean {
@@ -357,7 +253,7 @@ export class ResourcePanelController {
 
 	// === Internals ===
 	private resetState(): void {
-		this.items = [];
+		this.items = ResourcePanelController.EMPTY_ITEMS;
 		this.scroll = 0;
 		this.selectionIndex = -1;
 		this.hoverIndex = -1;
@@ -417,24 +313,7 @@ export class ResourcePanelController {
 		this.clampHScroll();
 	}
 
-	private openSelectedCallHierarchy(): void {
-		const toggledNodeId = toggleSelectedCallHierarchyExpansion(
-			this.items,
-			this.selectionIndex,
-			this.callHierarchyExpandedNodeIds,
-		);
-		if (toggledNodeId) {
-			this.refreshCallHierarchyContents();
-			const index = findResourcePanelIndexByCallHierarchyNodeId(this.items, toggledNodeId);
-			if (index >= 0) {
-				this.selectionIndex = index;
-			}
-			return;
-		}
-		openResourcePanelCallHierarchyLocation(this.items[this.selectionIndex]);
-	}
-
-	private moveSelection(delta: number): void {
+	public moveSelectionBy(delta: number): void {
 		const next = moveResourcePanelSelectionIndex(this.selectionIndex, this.items.length, delta);
 		if (next === this.selectionIndex) return;
 		this.selectionIndex = next;
@@ -442,7 +321,7 @@ export class ResourcePanelController {
 		this.ensureSelectionVisible();
 	}
 
-	private scrollHorizontal(amount: number): void {
+	public scrollHorizontalBy(amount: number): void {
 		const maxScroll = this.computeMaxHScroll();
 		const next = scrollResourcePanelHorizontalOffset(this.hscroll, amount, maxScroll);
 		if (next === this.hscroll) return;
@@ -488,7 +367,7 @@ export class ResourcePanelController {
 	// Public refresh trigger
 	public refresh(): void { this.refreshContents(); }
 
-	private expandTreeNode(): void {
+	public expandSelectedCallHierarchyNode(): void {
 		const expandedNodeId = expandSelectedCallHierarchyNode(
 			this.items,
 			this.selectionIndex,
@@ -496,11 +375,10 @@ export class ResourcePanelController {
 		);
 		if (!expandedNodeId) return;
 		this.refreshContents();
-		const index = findResourcePanelIndexByCallHierarchyNodeId(this.items, expandedNodeId);
-		if (index >= 0) this.selectionIndex = index;
+		this.restoreCallHierarchySelection(expandedNodeId);
 	}
 
-	private collapseTreeNode(): void {
+	public collapseSelectedCallHierarchyNode(): void {
 		const collapsedNodeId = collapseSelectedCallHierarchyNode(
 			this.items,
 			this.selectionIndex,
@@ -508,7 +386,24 @@ export class ResourcePanelController {
 		);
 		if (!collapsedNodeId) return;
 		this.refreshContents();
-		const index = findResourcePanelIndexByCallHierarchyNodeId(this.items, collapsedNodeId);
+		this.restoreCallHierarchySelection(collapsedNodeId);
+	}
+
+	private activateSelectedCallHierarchy(): void {
+		const toggledNodeId = activateSelectedCallHierarchyItem(
+			this.items,
+			this.selectionIndex,
+			this.callHierarchyExpandedNodeIds,
+		);
+		if (!toggledNodeId) {
+			return;
+		}
+		this.refreshCallHierarchyContents();
+		this.restoreCallHierarchySelection(toggledNodeId);
+	}
+
+	private restoreCallHierarchySelection(nodeId: string): void {
+		const index = findResourcePanelIndexByCallHierarchyNodeId(this.items, nodeId);
 		if (index >= 0) this.selectionIndex = index;
 	}
 }

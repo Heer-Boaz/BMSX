@@ -2,26 +2,27 @@ import { resolveReferenceLookup, type ReferenceLookupOptions } from '../referenc
 import { type ReferenceMatchInfo } from '../references/reference_state';
 import type { InlineInputOptions, TextField, SearchMatch } from '../../core/types';
 import { applyInlineFieldEditing, createInlineTextField, setFieldText } from '../../ui/inline_text_field';
-import { isCtrlDown, isKeyJustPressed as isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
 import * as constants from '../../core/constants';
-import { consumeIdeKey } from '../../input/keyboard/key_input';
 import { clamp } from '../../../utils/clamp';
 import { LuaLexer } from '../../../lua/syntax/lualexer';
 import { focusEditorFromRename } from './rename_prompt';
 import { textFromLines } from '../../text/source_text';
 import { ide_state } from '../../core/ide_state';
-import { redo, undo } from '../../editing/undo_controller';
 import { setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
-import { commitRename, type RenameCommitPayload } from './rename_operations';
+import { commitRename } from './rename_operations';
+import { handleRenameControllerInput } from './rename_input';
+import { validateRenameIdentifier } from './rename_validation';
 
 export type RenameStartOptions = ReferenceLookupOptions & {
 };
+
+const EMPTY_RENAME_MATCHES: SearchMatch[] = [];
 
 export class RenameController {
 	private readonly field: TextField = createInlineTextField();
 	private active = false;
 	private visible = false;
-	private matches: SearchMatch[] = [];
+	private matches: SearchMatch[] = EMPTY_RENAME_MATCHES;
 	private info: ReferenceMatchInfo = null;
 	private originalName = '';
 	private activeIndex = -1;
@@ -74,58 +75,14 @@ export class RenameController {
 		if (!this.active) {
 			return;
 		}
-		ide_state.referenceState.clear();
-		this.active = false;
-		this.visible = false;
-		this.matches = [];
-		this.info = null;
-		this.originalName = '';
-		this.activeIndex = -1;
-		this.expressionLabel = null;
-		focusEditorFromRename();
+		this.close();
 	}
 
 	public handleInput(): void {
 		if (!this.active) {
 			return;
 		}
-		const ctrlDown = isCtrlDown();
-		const metaDown = isMetaDown();
-		const shiftDown = isShiftDown();
-
-		if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyZ')) {
-			consumeIdeKey('KeyZ');
-			if (shiftDown) {
-				redo();
-			} else {
-				undo();
-			}
-			return;
-		}
-		if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyY')) {
-			consumeIdeKey('KeyY');
-			redo();
-			return;
-		}
-		if (isKeyJustPressed('Escape')) {
-			consumeIdeKey('Escape');
-			this.cancel();
-			return;
-		}
-		const enterPressed = isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter');
-		if (enterPressed) {
-			if (isKeyJustPressed('Enter')) {
-				consumeIdeKey('Enter');
-			} else {
-				consumeIdeKey('NumpadEnter');
-			}
-			this.commit();
-			return;
-		}
-		const changed = applyInlineFieldEditing(this.field, this.inlineInputOptions);
-		if (!changed) {
-			return;
-		}
+		handleRenameControllerInput(this);
 	}
 
 	public getField(): TextField {
@@ -156,47 +113,32 @@ export class RenameController {
 		return this.activeIndex;
 	}
 
-	private commit(): void {
+	public commit(): void {
 		if (!this.active || !this.info) {
 			return;
 		}
 		const nextName = textFromLines(this.field.lines).trim();
-		if (nextName.length === 0) {
-			ide_state.showMessage('Identifier cannot be empty', constants.COLOR_STATUS_WARNING, 1.6);
-			return;
-		}
-		if (!LuaLexer.isIdentifierStart(nextName.charAt(0))) {
-			ide_state.showMessage('Identifier must start with a letter or underscore', constants.COLOR_STATUS_WARNING, 1.8);
-			return;
-		}
-		for (let index = 1; index < nextName.length; index += 1) {
-			if (!LuaLexer.isIdentifierPart(nextName.charAt(index))) {
+		switch (validateRenameIdentifier(nextName, this.originalName)) {
+			case 'empty':
+				ide_state.showMessage('Identifier cannot be empty', constants.COLOR_STATUS_WARNING, 1.6);
+				return;
+			case 'invalid_start':
+				ide_state.showMessage('Identifier must start with a letter or underscore', constants.COLOR_STATUS_WARNING, 1.8);
+				return;
+			case 'invalid_characters':
 				ide_state.showMessage('Identifier contains invalid characters', constants.COLOR_STATUS_WARNING, 1.8);
 				return;
-			}
+			case 'unchanged':
+				this.close();
+				return;
 		}
-		if (nextName === this.originalName) {
-			this.cancel();
-			return;
-		}
-		const payload: RenameCommitPayload = {
-			matches: this.matches,
-			newName: nextName,
-			activeIndex: this.activeIndex,
-			originalName: this.originalName,
-			info: this.info,
-		};
-		const result = commitRename(payload);
-		ide_state.showMessage(`Renamed ${result.updatedMatches} reference${result.updatedMatches === 1 ? '' : 's'} to ${nextName}`, constants.COLOR_STATUS_SUCCESS, 1.6);
-		ide_state.referenceState.clear();
-		this.active = false;
-		this.visible = false;
-		this.matches = [];
-		this.info = null;
-		this.originalName = '';
-		this.activeIndex = -1;
-		this.expressionLabel = null;
-		focusEditorFromRename();
+		const updatedMatches = commitRename(this.matches, nextName, this.activeIndex, this.info);
+		ide_state.showMessage(`Renamed ${updatedMatches} reference${updatedMatches === 1 ? '' : 's'} to ${nextName}`, constants.COLOR_STATUS_SUCCESS, 1.6);
+		this.close();
+	}
+
+	public applyFieldEditing(): void {
+		applyInlineFieldEditing(this.field, this.inlineInputOptions);
 	}
 
 	private resetInlineField(value: string): void {
@@ -206,6 +148,18 @@ export class RenameController {
 		this.field.pointerSelecting = false;
 		this.field.lastPointerClickTimeMs = 0;
 		this.field.lastPointerClickColumn = -1;
+	}
+
+	private close(): void {
+		ide_state.referenceState.clear();
+		this.active = false;
+		this.visible = false;
+		this.matches = EMPTY_RENAME_MATCHES;
+		this.info = null;
+		this.originalName = '';
+		this.activeIndex = -1;
+		this.expressionLabel = null;
+		focusEditorFromRename();
 	}
 }
 
