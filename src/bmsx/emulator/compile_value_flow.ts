@@ -30,10 +30,14 @@ import { walkLuaExpressionTree } from '../lua/syntax/lua_ast_traversal';
 import type { LuaSemanticFrontendFile } from '../ide/contrib/intellisense/lua_semantic_frontend';
 import {
 	getBoundIdentifierReference,
-	getFunctionDeclarationBoundReferences,
 	getIdentifierSymbolHandle,
 	getReferenceSymbolHandle,
 } from './lua_bound_reference';
+import {
+	classifyAssignmentTargetPreparation,
+	classifyFunctionDeclarationTarget,
+	resolveFunctionDeclarationLexicalHandle,
+} from './lua_target_semantics';
 
 // ---------------------------------------------------------------------------
 //  Types
@@ -79,12 +83,20 @@ const FALSE_VALUE_FACT: CompileValueFact = { kind: 'boolean', truthiness: 'falsy
 const NUMBER_VALUE_FACT: CompileValueFact = { kind: 'number', truthiness: 'truthy' };
 const STRING_VALUE_FACT: CompileValueFact = { kind: 'string', truthiness: 'truthy' };
 const STRING_REF_VALUE_FACT: CompileValueFact = { kind: 'string_ref', truthiness: 'truthy' };
-// Functions are modeled as a distinct compile-time fact category only insofar as
-// they are always truthy and never prove string_ref.
+// Functions are currently represented as generic truthy facts; this is enough
+// for short-circuit reasoning without adding a runtime-visible value category.
 const FUNCTION_VALUE_FACT: CompileValueFact = UNKNOWN_TRUTHY_VALUE_FACT;
 
 function unreachableFlowValue(value: never, label: string): never {
 	throw new Error(`[ValueKindFlowAnalyzer] Unhandled ${label}: ${String(value)}`);
+}
+
+function unreachableExpression(expression: never): never {
+	throw new Error(`[ValueKindFlowAnalyzer] Unhandled expression kind: ${String((expression as LuaExpression).kind)}`);
+}
+
+function unreachableStatement(statement: never): never {
+	throw new Error(`[ValueKindFlowAnalyzer] Unhandled statement kind: ${String((statement as LuaStatement).kind)}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -331,7 +343,7 @@ function evaluateExpressionFact(
 			return { fact: UNKNOWN_VALUE_FACT, state: currentState };
 		}
 		default:
-			return { fact: unreachableFlowValue(expression, 'expression kind'), state };
+			unreachableExpression(expression);
 	}
 }
 
@@ -361,10 +373,7 @@ function resolveFunctionDeclarationHandle(
 	statement: LuaFunctionDeclarationStatement,
 	semantics: LuaSemanticFrontendFile,
 ): string | undefined {
-	const { finalReference } = getFunctionDeclarationBoundReferences(semantics, statement);
-	if (finalReference === null) return undefined;
-	const handle = getReferenceSymbolHandle(finalReference);
-	return handle === null ? undefined : handle;
+	return resolveFunctionDeclarationLexicalHandle(semantics, statement);
 }
 
 // ---------------------------------------------------------------------------
@@ -466,7 +475,7 @@ function collectNestedClosureWritesFromStatement(
 		case LuaSyntaxKind.LabelStatement:
 			return;
 		default:
-			unreachableFlowValue(statement, 'statement kind');
+			unreachableStatement(statement);
 	}
 }
 
@@ -602,7 +611,7 @@ function collectLexicalWritesInStatement(
 		case LuaSyntaxKind.LabelStatement:
 			return;
 		default:
-			unreachableFlowValue(statement, 'statement kind');
+			unreachableStatement(statement);
 	}
 }
 
@@ -808,7 +817,7 @@ export class ValueKindFlowAnalyzer {
 			case LuaSyntaxKind.LabelStatement:
 				return;
 			default:
-				unreachableFlowValue(statement, 'statement kind');
+				unreachableStatement(statement);
 		}
 	}
 
@@ -833,42 +842,33 @@ export class ValueKindFlowAnalyzer {
 	}
 
 	private analyzeFunctionDeclaration(statement: LuaFunctionDeclarationStatement): void {
-		const handle = resolveFunctionDeclarationHandle(statement, this.semantics);
-		if (handle === undefined || !this.state.has(handle)) {
+		const target = classifyFunctionDeclarationTarget(this.semantics, statement);
+		if (target.kind !== 'simple') {
 			return;
 		}
-		this.state.set(handle, FUNCTION_VALUE_FACT);
-	}
-
-	private isMemoryAssignmentTarget(expression: LuaAssignableExpression): boolean {
-		if (expression.kind !== LuaSyntaxKind.IndexExpression) {
-			return false;
+		const handle = resolveFunctionDeclarationHandle(statement, this.semantics);
+		if (handle !== undefined) {
+			this.state.set(handle, FUNCTION_VALUE_FACT);
 		}
-		const base = expression.base;
-		if (base.kind !== LuaSyntaxKind.IdentifierExpression) {
-			return false;
-		}
-		const reference = getBoundIdentifierReference(this.semantics, base);
-		return reference.kind === 'memory_map';
 	}
 
 	private analyzeAssignmentTargetPreparation(expression: LuaAssignableExpression): void {
-		switch (expression.kind) {
-			case LuaSyntaxKind.IdentifierExpression:
+		const target = classifyAssignmentTargetPreparation(this.semantics, expression);
+		switch (target.kind) {
+			case 'identifier':
 				return;
-			case LuaSyntaxKind.MemberExpression:
-				this.evalExprFact(expression.base);
+			case 'member':
+				this.evalExprFact(target.base);
 				return;
-			case LuaSyntaxKind.IndexExpression:
-				if (this.isMemoryAssignmentTarget(expression)) {
-					this.evalExprFact(expression.index);
-					return;
-				}
-				this.evalExprFact(expression.base);
-				this.evalExprFact(expression.index);
+			case 'memory':
+				this.evalExprFact(target.index);
+				return;
+			case 'index':
+				this.evalExprFact(target.base);
+				this.evalExprFact(target.index);
 				return;
 			default:
-				unreachableFlowValue(expression, 'assignment target kind');
+				unreachableFlowValue(target.kind, 'assignment target preparation');
 		}
 	}
 

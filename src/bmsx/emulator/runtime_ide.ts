@@ -13,7 +13,7 @@ import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { clamp_fallback } from '../utils/clamp';
 import * as constants from '../ide/core/constants';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../ide/core/constants';
-import { ide_state } from '../ide/core/ide_state';
+import { editorDebuggerState } from '../ide/contrib/debugger/editor_debugger_state';
 import { showEditorWarningBanner } from '../ide/core/editor_feedback_state';
 import type { RuntimeErrorDetails } from '../ide/core/types';
 import { setEditorCaseInsensitivity } from '../ide/render/text_renderer';
@@ -193,7 +193,7 @@ export function initializeIdeFeatures(runtime: Runtime, options: RuntimeOptions)
 	seedDefaultLuaBuiltins();
 	flushLuaWarnings(runtime);
 	registerRuntimeShortcuts(runtime);
-	setDebuggerBreakpoints(runtime, ide_state.breakpoints);
+	setDebuggerBreakpoints(runtime, editorDebuggerState.breakpoints);
 	updateGamePipelineExts(runtime);
 }
 
@@ -390,8 +390,8 @@ export function setDebuggerBreakpoints(runtime: Runtime, breakpoints: Map<string
 
 export function setDebuggerPaused(runtime: Runtime, paused: boolean): void {
 	runtime.debuggerPaused = paused;
-	ide_state.debuggerControls.executionState = paused ? 'paused' : 'inactive';
-	ide_state.debuggerControls.sessionMetrics = runtime.debuggerMetrics;
+	editorDebuggerState.controls.executionState = paused ? 'paused' : 'inactive';
+	editorDebuggerState.controls.sessionMetrics = runtime.debuggerMetrics;
 	if (!paused) {
 		clearExecutionStopHighlights();
 	}

@@ -49,9 +49,12 @@ import { Decl } from '../ide/contrib/intellisense/semantic_model';
 import {
 	IMPLICIT_SELF_SYMBOL_HANDLE,
 	getBoundIdentifierReference as getResolvedIdentifierReference,
-	getFunctionDeclarationBoundReferences,
 	getReferenceSymbolHandle as getResolvedReferenceSymbolHandle,
 } from './lua_bound_reference';
+import {
+	classifyAssignmentTargetPreparation,
+	classifyFunctionDeclarationTarget,
+} from './lua_target_semantics';
 
 export type CompiledProgram = {
 	program: Program;
@@ -1873,8 +1876,9 @@ class FunctionBuilder {
 	private compileAssignmentTargets(expressions: ReadonlyArray<LuaExpression>): AssignmentTarget[] {
 		const targets: AssignmentTarget[] = [];
 		for (let i = 0; i < expressions.length; i += 1) {
-			const expr = expressions[i];
-			if (expr.kind === LuaSyntaxKind.IdentifierExpression) {
+			const expr = expressions[i] as LuaAssignableExpression;
+			const targetPreparation = classifyAssignmentTargetPreparation(this.semantics, expr);
+			if (targetPreparation.kind === 'identifier') {
 				const identifier = expr as LuaIdentifierExpression;
 				const reference = this.getIdentifierWriteReference(identifier);
 				const symbolHandle = this.getReferenceSymbolHandle(reference);
@@ -1909,28 +1913,29 @@ class FunctionBuilder {
 				targets.push({ kind: 'global', slot: access.slot, system: access.system });
 				continue;
 			}
-			if (expr.kind === LuaSyntaxKind.MemberExpression) {
+			if (targetPreparation.kind === 'member') {
+				const member = expr as LuaMemberExpression;
 				const baseReg = this.allocTemp();
-				this.compileExpressionInto(expr.base, baseReg, 1);
-				const keyConst = this.program.constIndexString(this.canonicalizeName(expr.identifier));
+				this.compileExpressionInto(targetPreparation.base, baseReg, 1);
+				const keyConst = this.program.constIndexString(this.canonicalizeName(member.identifier));
 				targets.push({ kind: 'table', tableReg: baseReg, keyConst });
 				continue;
 			}
-			if (expr.kind === LuaSyntaxKind.IndexExpression) {
+			if (targetPreparation.kind === 'memory' || targetPreparation.kind === 'index') {
 				const memoryTarget = this.tryCompileMemoryTarget(expr as LuaIndexExpression);
 				if (memoryTarget !== null) {
 					targets.push(memoryTarget);
 					continue;
 				}
 				const baseReg = this.allocTemp();
-				this.compileExpressionInto(expr.base, baseReg, 1);
-				const keyConst = this.tryGetConstIndex(expr.index);
+				this.compileExpressionInto(targetPreparation.base, baseReg, 1);
+				const keyConst = this.tryGetConstIndex(targetPreparation.index);
 				if (keyConst !== undefined) {
 					targets.push({ kind: 'table', tableReg: baseReg, keyConst });
 					continue;
 				}
 				const keyReg = this.allocTemp();
-				this.compileExpressionInto(expr.index, keyReg, 1);
+				this.compileExpressionInto(targetPreparation.index, keyReg, 1);
 				targets.push({ kind: 'table', tableReg: baseReg, keyReg });
 				continue;
 			}
@@ -2301,7 +2306,7 @@ class FunctionBuilder {
 		const fnExpr = statement.functionExpression as LuaFunctionExpression;
 		const methodName = statement.name.methodName !== null ? this.canonicalizeName(statement.name.methodName) : null;
 		const identifiers = (statement.name.identifiers as string[]).map(name => this.canonicalizeName(name));
-		const { baseReference, finalReference } = getFunctionDeclarationBoundReferences(this.semantics, statement);
+		const target = classifyFunctionDeclarationTarget(this.semantics, statement);
 		const hint = buildDeclarationHint(identifiers, methodName);
 		const protoId = this.createChildProtoId(hint);
 		const protoIndex = compileFunctionExpression(this.program, fnExpr, this, methodName && methodName.length > 0, protoId, this.moduleId, this.semantics, this.frontend);
@@ -2310,19 +2315,19 @@ class FunctionBuilder {
 		if (identifiers.length === 0) {
 			throw new Error('Function declaration missing name.');
 		}
-		if (identifiers.length === 1 && !methodName) {
-			if (!finalReference) {
+		if (target.kind === 'simple') {
+			if (!target.finalReference) {
 				throw new Error(`[Compiler] Missing bound function target for '${identifiers[0]}'.`);
 			}
-			this.emitReferenceStore(finalReference, closureReg);
+			this.emitReferenceStore(target.finalReference, closureReg);
 			return;
 		}
 
 		const baseReg = this.allocTemp();
-		if (!baseReference) {
+		if (!target.baseReference) {
 			throw new Error(`[Compiler] Missing bound function base for '${identifiers[0]}'.`);
 		}
-		this.emitReferenceLoad(baseReference, baseReg);
+		this.emitReferenceLoad(target.baseReference, baseReg);
 
 		const pathEnd = methodName ? identifiers.length : identifiers.length - 1;
 		for (let i = 1; i < pathEnd; i += 1) {
@@ -2524,28 +2529,21 @@ class FunctionBuilder {
 		return name === 'memwrite';
 	}
 
-	private tryGetMemoryAccessKind(expression: LuaExpression): MemoryAccessKind | null {
-		if (expression.kind !== LuaSyntaxKind.IdentifierExpression) {
-			return null;
-		}
-		const reference = this.getIdentifierReference(expression as LuaIdentifierExpression);
-		if (reference.kind !== 'memory_map') {
-			return null;
-		}
-		return this.getMemoryAccessKindForCanonicalName(this.getReferenceCanonicalName(reference));
-	}
-
 	private tryCompileMemoryTarget(expression: LuaIndexExpression): Extract<AssignmentTarget, { kind: 'memory' }> | null {
-		const accessKind = this.tryGetMemoryAccessKind(expression.base);
-		if (accessKind === null) {
+		const target = classifyAssignmentTargetPreparation(this.semantics, expression);
+		if (target.kind !== 'memory') {
 			return null;
 		}
-		const addrConst = this.tryGetNumericConstIndex(expression.index);
+		const accessKind = this.getMemoryAccessKindForCanonicalName(this.getReferenceCanonicalName(target.baseReference));
+		if (accessKind === null) {
+			throw new Error(`[Compiler] Unsupported memory access target '${this.getReferenceCanonicalName(target.baseReference)}'.`);
+		}
+		const addrConst = this.tryGetNumericConstIndex(target.index);
 		if (addrConst !== undefined) {
 			return { kind: 'memory', accessKind, addrConst };
 		}
 		const addrReg = this.allocTemp();
-		this.compileExpressionInto(expression.index, addrReg, 1);
+		this.compileExpressionInto(target.index, addrReg, 1);
 		return { kind: 'memory', accessKind, addrReg };
 	}
 
