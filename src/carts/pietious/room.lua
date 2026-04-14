@@ -233,8 +233,8 @@ local build_screen_rows<const> = function(map_rows, draaideuren, tile_size, orig
 
 	for i = 1, #draaideuren do
 		local draaideur<const> = draaideuren[i]
-		local tx<const> = math.modf((draaideur.x - origin_x) / tile_size) + 1
-		local ty<const> = math.modf((draaideur.y - origin_y) / tile_size) + 1
+		local tx<const> = ((draaideur.x - origin_x) // tile_size) + 1
+		local ty<const> = ((draaideur.y - origin_y) // tile_size) + 1
 		for row = ty, ty + 2 do
 			local line<const> = screen_rows[row]
 			screen_rows[row] = line:sub(1, tx - 1) .. '.' .. line:sub(tx + 1)
@@ -397,8 +397,8 @@ local build_logic_rows<const> = function(room_state)
 	for i = 1, #room_state.rocks do
 		local rock<const> = room_state.rocks[i]
 		if not destroyed_rock_ids[rock.id] then
-			local tx0<const> = math.modf((rock.x - room_state.tile_origin_x) / room_state.tile_size) + 1
-			local ty0<const> = math.modf((rock.y - room_state.tile_origin_y) / room_state.tile_size) + 1
+			local tx0<const> = ((rock.x - room_state.tile_origin_x) // room_state.tile_size) + 1
+			local ty0<const> = ((rock.y - room_state.tile_origin_y) // room_state.tile_size) + 1
 			for dy = 1, rock_tile_height do
 				local ty<const> = ty0 + dy - 1
 				local row = logic_rows[ty]
@@ -699,8 +699,8 @@ function room_object:apply_progression_command(command)
 end
 
 function room_object:world_to_tile(world_x, world_y)
-	local tx<const> = math.modf((world_x - self.tile_origin_x) / self.tile_size) + 1
-	local ty<const> = math.modf((world_y - self.tile_origin_y) / self.tile_size) + 1
+	local tx<const> = ((world_x - self.tile_origin_x) // self.tile_size) + 1
+	local ty<const> = ((world_y - self.tile_origin_y) // self.tile_size) + 1
 	return tx, ty
 end
 
@@ -830,8 +830,8 @@ function room_object:is_active_draaideur_at_tile(tx, ty)
 	local draaideuren<const> = self.draaideuren
 	for i = 1, #draaideuren do
 		local door_def<const> = draaideuren[i]
-		local door_tx<const> = math.modf((door_def.x - self.tile_origin_x) / self.tile_size) + 1
-		local door_ty<const> = math.modf((door_def.y - self.tile_origin_y) / self.tile_size) + 1
+		local door_tx<const> = ((door_def.x - self.tile_origin_x) // self.tile_size) + 1
+		local door_ty<const> = ((door_def.y - self.tile_origin_y) // self.tile_size) + 1
 		if tx == door_tx and ty >= door_ty and ty <= door_ty + 2 then
 			local draaideur<const> = oget(door_def.id)
 			if draaideur ~= nil and draaideur.state >= 0 then

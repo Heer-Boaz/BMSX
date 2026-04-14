@@ -6892,9 +6892,9 @@ end
 
 function player:code_b8994e()
 	local banana = self.ram_player_currentbananacountlo & 0xFFFF
-	local hundreds = math.floor(banana / 100)
+	local hundreds = banana // 100
 	local rem = banana % 100
-	local tens = math.floor(rem / 10)
+	local tens = rem // 10
 	local ones = rem % 10
 	self.ram_player_bananacounthundredsdigit = hundreds & 0x00FF
 	self.ram_player_bananacounttensdigit = tens & 0x00FF
@@ -9022,7 +9022,7 @@ function player:integrate_and_collide()
 	
 	-- x integration
 	local want_subx = self.pos_subx + to_signed_16(self.ram_xspeedlo)
-	local want_x = math.floor(want_subx / sp)
+	local want_x = want_subx // sp
 	local step_x = want_x - self.ram_xposlo
 	local collided_x, collided_x_solid = self:move_horizontal_pixels(step_x)
 	if not collided_x then
@@ -9032,7 +9032,7 @@ function player:integrate_and_collide()
 	-- y integration
 	self.grounded = false
 	local want_suby = self.pos_suby - to_signed_16(self.ram_yspeedlo)
-	local want_y = math.floor(want_suby / sp)
+	local want_y = want_suby // sp
 	local step_y = want_y - self.ram_yposlo
 	local collided_y, grounded, collided_y_solid = self:move_vertical_pixels(step_y)
 	if not collided_y then

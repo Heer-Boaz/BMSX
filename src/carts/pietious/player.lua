@@ -619,7 +619,7 @@ function player:start_hit_invulnerability_sequence()
 end
 
 function player:get_hit_direction_from_source(source_x)
-	local center_x<const> = self.x + math.modf(self.width / 2)
+	local center_x<const> = self.x + (self.width // 2)
 	if source_x < center_x then
 		return 1
 	end
@@ -971,7 +971,7 @@ function player:get_walk_dx()
 	end
 	if self.inventory_items['schoentjes'] then
 		self.walk_speed_accum = self.walk_speed_accum + constants.physics.walk_dx_schoentjes_num
-		local walk_dx<const> = math.modf(self.walk_speed_accum / constants.physics.walk_dx_schoentjes_den)
+		local walk_dx<const> = self.walk_speed_accum // constants.physics.walk_dx_schoentjes_den
 		self.walk_speed_accum = self.walk_speed_accum - (walk_dx * constants.physics.walk_dx_schoentjes_den)
 		return walk_dx
 	end
@@ -1408,7 +1408,7 @@ function player:start_stairs(direction, stair, event_name)
 	self.x = stair.x
 	if direction > 0 then
 		local feet_y<const> = self.y + self.height
-		self.y = ((math.modf(feet_y / constants.room.tile_size) * constants.room.tile_size) + constants.room.tile_size) - self.height
+		self.y = (((feet_y // constants.room.tile_size) * constants.room.tile_size) + constants.room.tile_size) - self.height
 	end
 	self.stairs_direction = direction
 	self.stairs_anim_distance = 0
@@ -1599,7 +1599,7 @@ end
 
 function player:snap_feet_y_to_floor_grid()
 	local feet_y<const> = self.y + self.height
-	self.y = (math.modf(feet_y / constants.room.tile_size) * constants.room.tile_size) - self.height
+	self.y = ((feet_y // constants.room.tile_size) * constants.room.tile_size) - self.height
 end
 
 function player:apply_side_probe_horizontal_move(dx)
@@ -1654,12 +1654,12 @@ end
 function player:snap_x_to_current_wall_grid()
 	local msx_x = self.x + constants.room.tile_size
 	if self.right_wall_collision then
-		msx_x = math.modf(msx_x / constants.room.tile_size) * constants.room.tile_size
+		msx_x = (msx_x // constants.room.tile_size) * constants.room.tile_size
 		self.x = msx_x - constants.room.tile_size
 		return
 	end
 	if self.left_wall_collision then
-		self.x = math.modf((self.x + constants.room.tile_size - 1) / constants.room.tile_size) * constants.room.tile_size
+		self.x = ((self.x + constants.room.tile_size - 1) // constants.room.tile_size) * constants.room.tile_size
 		if self.left_wall_collision_primary and (self.x % constants.room.tile_size) == 0 and self:collides_at_left_wall_primary_profile(self.x, self.y, false) then
 			self.x = self.x + constants.room.tile_size
 		end
@@ -2089,7 +2089,7 @@ function player:update_slowdoorpass()
 		self.last_dy = 0
 		self.previous_x_collision = collided_x
 		self.previous_y_collision = false
-		if (math.modf(self.slow_doorpass_substate / 4) % 2) == 0 then
+		if ((self.slow_doorpass_substate // 4) % 2) == 0 then
 			self.walk_frame = 1
 		else
 			self.walk_frame = 0

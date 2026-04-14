@@ -128,8 +128,8 @@ function enemy_base.on_overlap(self, event)
 	if contact_kind == 'body' and self.dangerous then
 		player.events:emit('enemy.contact_damage', {
 			amount = self.damage,
-			source_x = self.x + math.modf(self.sx / 2),
-			source_y = self.y + math.modf(self.sy / 2),
+			source_x = self.x + (self.sx // 2),
+			source_y = self.y + (self.sy // 2),
 			reason = self.enemy_kind,
 			enemy_id = self.id,
 			contact_kind = contact_kind,

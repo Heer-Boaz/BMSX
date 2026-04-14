@@ -12,7 +12,7 @@ local resolve_vblank_cycles<const> = function()
 	if type(render_height) ~= 'number' or render_height <= 0 then
 		return nil
 	end
-	local active_display<const> = math.modf(cycles_per_frame / (render_height + 1)) * render_height
+	local active_display<const> = (cycles_per_frame // (render_height + 1)) * render_height
 	return cycles_per_frame - active_display
 end
 

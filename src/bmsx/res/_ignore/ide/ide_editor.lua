@@ -206,7 +206,7 @@ local function refresh_view_metrics()
 
 	for _ = 1, 3 do
 		local available_height = math.max(0, (view_metrics.code_bottom - view_metrics.code_top) - (horizontal_visible and constants.scrollbar_width or 0))
-		row_capacity = math.max(1, math.floor(available_height / state.line_height))
+		row_capacity = math.max(1, available_height // state.line_height)
 		vertical_visible = visual_count > row_capacity
 		local available_width = math.max(
 			0,
@@ -215,7 +215,7 @@ local function refresh_view_metrics()
 			- gutter_offset
 			- constants.code_area_right_margin
 		)
-		column_capacity = math.max(1, math.floor(available_width / advance))
+		column_capacity = math.max(1, available_width // advance)
 		if wrap_enabled then
 			horizontal_visible = false
 		else
@@ -356,7 +356,7 @@ local function ensure_cursor_visible()
 
 	local cursor_visual_index = state.layout:position_to_visual_index(state.buffer, state.cursor_row, state.cursor_column)
 	local max_scroll_row = math.max(0, metrics.visual_count - metrics.row_capacity)
-	local vertical_margin = math.min(3, math.max(0, math.floor(metrics.row_capacity / 6)))
+	local vertical_margin = math.min(3, math.max(0, metrics.row_capacity // 6))
 	local top_guard = state.scroll_row + vertical_margin
 	local bottom_guard = state.scroll_row + metrics.row_capacity - 1 - vertical_margin
 
@@ -380,7 +380,7 @@ local function ensure_cursor_visible()
 	local doc_max_scroll_column = math.max(0, compute_max_line_length() - metrics.column_capacity)
 	local line_max_scroll_column = math.max(0, line_length - metrics.column_capacity)
 	local max_scroll_column = math.min(doc_max_scroll_column, line_max_scroll_column)
-	local horizontal_margin = math.min(4, math.max(0, math.floor(metrics.column_capacity / 6)))
+	local horizontal_margin = math.min(4, math.max(0, metrics.column_capacity // 6))
 	local left_guard = state.scroll_column + horizontal_margin
 	local right_guard = state.scroll_column + metrics.column_capacity - 1 - horizontal_margin
 
@@ -1146,7 +1146,7 @@ local function consume_key(player_input, code)
 end
 
 local function truncate_for_width(text, pixel_width)
-	local max_chars = math.max(0, math.floor(pixel_width / math.max(1, state.char_advance)))
+	local max_chars = math.max(0, pixel_width // math.max(1, state.char_advance))
 	if #text <= max_chars then
 		return text
 	end
@@ -1203,7 +1203,7 @@ local function resolve_pointer_position(pointer_x, pointer_y, metrics)
 	if metrics.visual_count == 0 then
 		return 0, 0, 0
 	end
-	local row_offset = clamp(math.floor((pointer_y - metrics.code_top) / state.line_height), 0, math.max(0, metrics.row_capacity - 1))
+	local row_offset = clamp((pointer_y - metrics.code_top) // state.line_height, 0, math.max(0, metrics.row_capacity - 1))
 	local visual_index = clamp(state.scroll_row + row_offset, 0, math.max(0, metrics.visual_count - 1))
 	local segment = state.layout:visual_index_to_segment(visual_index)
 	if not segment then
@@ -1304,7 +1304,7 @@ local function handle_pointer_wheel(metrics)
 		return
 	end
 	local direction = wheel.value > 0 and 1 or -1
-	local steps = math.max(1, math.floor(math.abs(wheel.value)))
+	local steps = math.max(1, math.abs(wheel.value) // 1)
 	local max_scroll_row = math.max(0, metrics.visual_count - metrics.row_capacity)
 	state.scroll_row = clamp(state.scroll_row + direction * steps, 0, max_scroll_row)
 	break_undo_sequence()
@@ -1508,7 +1508,7 @@ local function draw_code_area()
 	end
 
 	local cursor_visual_index = state.layout:position_to_visual_index(state.buffer, state.cursor_row, state.cursor_column)
-	local text_left_floor = math.floor(metrics.text_left)
+	local text_left_floor = metrics.text_left // 1
 	local slice_width = metrics.column_capacity + 2
 	for index = 0, metrics.row_capacity - 1 do
 		local visual_index = state.scroll_row + index
@@ -1524,7 +1524,7 @@ local function draw_code_area()
 			if segment.start_column == 0 and metrics.gutter_right > metrics.gutter_left then
 				local line_number = tostring(line_index + 1)
 				local number_x = metrics.gutter_right - state.gutter_padding - (#line_number * state.char_advance)
-				blit_text_inline_with_font(line_number, math.floor(number_x), row_y, 0, constants.color_text_dim, state.font)
+				blit_text_inline_with_font(line_number, number_x // 1, row_y, 0, constants.color_text_dim, state.font)
 			end
 			local entry = state.layout:get_cached_highlight(state.buffer, line_index)
 			local highlight = entry.hi
@@ -1550,7 +1550,7 @@ local function draw_code_area()
 				local cursor_display = state.layout:column_to_display(highlight, state.cursor_column)
 				if cursor_display >= slice_start_display and cursor_display <= slice_end_display then
 					local cursor_x = metrics.text_left + (entry.advance_prefix[cursor_display] - entry.advance_prefix[slice_start_display])
-					fill_rect(math.floor(cursor_x), row_y, math.floor(cursor_x) + 1, row_y + state.line_height, 0, constants.color_syntax.keyword)
+					fill_rect(cursor_x // 1, row_y, (cursor_x // 1) + 1, row_y + state.line_height, 0, constants.color_syntax.keyword)
 				end
 			end
 		end
@@ -1564,12 +1564,12 @@ local function draw_code_area()
 		fill_rect(track_left, track_top, track_right, track_bottom, 0, constants.color_scrollbar_track)
 		local track_height = math.max(1, track_bottom - track_top)
 		local max_scroll = math.max(0, metrics.visual_count - metrics.row_capacity)
-		local thumb_height = math.floor(track_height * (metrics.row_capacity / math.max(1, metrics.visual_count)))
+		local thumb_height = (track_height * (metrics.row_capacity / math.max(1, metrics.visual_count))) // 1
 		thumb_height = math.max(constants.scrollbar_min_thumb_height, thumb_height)
 		local thumb_top
 		if max_scroll > 0 then
 			local range = track_height - thumb_height
-			thumb_top = track_top + math.floor(range * (state.scroll_row / max_scroll))
+			thumb_top = track_top + ((range * (state.scroll_row / max_scroll)) // 1)
 		else
 			thumb_top = track_top
 		end
@@ -1584,12 +1584,12 @@ local function draw_code_area()
 		fill_rect(track_left, track_top, track_right, track_bottom, 0, constants.color_scrollbar_track)
 		local track_width = math.max(1, track_right - track_left)
 		local max_scroll = math.max(0, compute_max_line_length() - metrics.column_capacity)
-		local thumb_width = math.floor(track_width * (metrics.column_capacity / math.max(1, compute_max_line_length())))
+		local thumb_width = (track_width * (metrics.column_capacity / math.max(1, compute_max_line_length()))) // 1
 		thumb_width = math.max(constants.scrollbar_min_thumb_height, thumb_width)
 		local thumb_left
 		if max_scroll > 0 then
 			local range = track_width - thumb_width
-			thumb_left = track_left + math.floor(range * (state.scroll_column / max_scroll))
+			thumb_left = track_left + ((range * (state.scroll_column / max_scroll)) // 1)
 		else
 			thumb_left = track_left
 		end
@@ -1600,8 +1600,8 @@ end
 local function draw_header()
 	local width = display_width()
 	fill_rect(0, 0, width, state.header_height, 0, constants.color_top_bar)
-	local left = truncate_for_width("Lua IDE", math.floor(width * 0.25))
-	local right = truncate_for_width(state.active_path, math.floor(width * 0.7))
+	local left = truncate_for_width("Lua IDE", (width * 0.25) // 1)
+	local right = truncate_for_width(state.active_path, (width * 0.7) // 1)
 	blit_text_inline_with_font(left, 4, 2, 0, constants.color_syntax.builtin, state.font)
 	blit_text_inline_with_font(right, math.max(4, width - 4 - (#right * state.char_advance)), 2, 0, constants.color_syntax.code_text, state.font)
 end

@@ -225,13 +225,13 @@ function code_layout:rebuild_visual_lines(buffer, word_wrap_enabled, wrap_width,
 	if needs_full then
 		self:rebuild_all_visual_lines(buffer, word_wrap_enabled, wrap_width)
 		self.last_hot_row_range = { start = 0, ["end"] = line_count - 1 }
-		self.last_hot_guard_rows = math.max(8, math.floor(visible_row_estimate / 2))
+		self.last_hot_guard_rows = math.max(8, visible_row_estimate // 2)
 		return
 	end
 	local hot_rows = self:compute_hot_row_window(line_count, scroll_row, visible_row_estimate)
 	self:rebuild_row_range(buffer, word_wrap_enabled, wrap_width, hot_rows.start, hot_rows["end"])
 	self.last_hot_row_range = hot_rows
-	self.last_hot_guard_rows = math.max(8, math.floor(visible_row_estimate / 2))
+	self.last_hot_guard_rows = math.max(8, visible_row_estimate // 2)
 end
 
 function code_layout:rebuild_all_visual_lines(buffer, word_wrap_enabled, wrap_width)
@@ -263,7 +263,7 @@ function code_layout:rebuild_all_visual_lines(buffer, word_wrap_enabled, wrap_wi
 	local effective_wrap = word_wrap_enabled and wrap_width or math.huge
 	local approx_wrap_columns = (not word_wrap_enabled or wrap_width == math.huge)
 		and math.huge
-		or math.max(1, math.floor(wrap_width / math.max(1, self.average_char_advance)))
+		or math.max(1, wrap_width // math.max(1, self.average_char_advance))
 	for row = 0, line_count - 1 do
 		row_index_lookup[row] = visual_count
 		local entry = self:get_cached_highlight(buffer, row)
@@ -334,7 +334,7 @@ function code_layout:rebuild_row_range(buffer, word_wrap_enabled, wrap_width, st
 	local effective_wrap = word_wrap_enabled and wrap_width or math.huge
 	local approx_wrap_columns = (not word_wrap_enabled or wrap_width == math.huge)
 		and math.huge
-		or math.max(1, math.floor(wrap_width / math.max(1, self.average_char_advance)))
+		or math.max(1, wrap_width // math.max(1, self.average_char_advance))
 	for row = start_row, end_row do
 		local start_index = self.row_to_first_visual_line[row]
 		local old_count = self.row_visual_line_counts[row] or 0

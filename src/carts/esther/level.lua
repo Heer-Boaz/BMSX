@@ -30,7 +30,7 @@ local find_top_solid_y<const> = function(solids, sample_x)
 end
 
 local build_dummy_asm_collision<const> = function(level_data)
-	local columns = math.floor((level_data.world_width + 31) / 32) + 1
+	local columns = ((level_data.world_width + 31) // 32) + 1
 	local rows = 16
 	local d3_words = {}
 

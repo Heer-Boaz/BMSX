@@ -614,7 +614,7 @@ end
 
 function fighter:draw_hit_freeze()
 	if self.hit_freeze > 0 then
-		fill_rect_color(math.floor(self.x), math.floor(self.y - 4), math.floor(self.x + self.width), math.floor(self.y - 2), constants.z.hud, constants.palette.hurt)
+		fill_rect_color(self.x // 1, (self.y - 4) // 1, (self.x + self.width) // 1, (self.y - 2) // 1, constants.z.hud, constants.palette.hurt)
 	end
 end
 
@@ -631,10 +631,10 @@ function fighter:draw_fighter()
 		color = constants.palette.hurt
 	end
 
-	local x1 = math.floor(self.x)
-	local y1 = math.floor(self.y)
-	local x2 = math.floor(self.x + self.width)
-	local y2 = math.floor(self.y + self.height)
+	local x1 = self.x // 1
+	local y1 = self.y // 1
+	local x2 = (self.x + self.width) // 1
+	local y2 = (self.y + self.height) // 1
 	fill_rect_color(x1, y1, x2, y2, constants.z.fighter, color)
 
 	if self.state == state.punch_normal or self.state == state.kick or self.state == state.jump_kick or self.state == state.uppercut_normal or self.state == state.cyclone_kick or self.state == state.uppercut_sudden then

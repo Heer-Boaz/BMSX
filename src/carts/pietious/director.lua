@@ -292,7 +292,7 @@ local define_director_fsm<const> = function()
 	-- identical timeline behaviour.
 	local on_daemon_frame<const> = function(self, _state, event)
 		local frame_value<const> = event.frame_value
-		local intro_state<const> = math.modf(frame_value / 2) + 97
+		local intro_state<const> = (frame_value // 2) + 97
 		if (frame_value % 2) == 0 and intro_state > 96 and intro_state < 160 and (intro_state % 8) < 4 then
 			self:spawn_daemon_cloud()
 		end

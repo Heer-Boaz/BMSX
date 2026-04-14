@@ -145,7 +145,7 @@ function director:update_camera(player)
 		self.camera_x = self.camera_x + clamp(delta, -cam.follow_step_px, cam.follow_step_px)
 	end
 
-	self.camera_x = math.floor(self.camera_x)
+	self.camera_x = self.camera_x // 1
 	self.camera_target_x = target_x
 	self.camera_delta_x = target_x - self.camera_x
 end
@@ -280,7 +280,7 @@ function director:update_barrels(player)
 					end
 
 					local want_subx = barrel.pos_subx + barrel.x_speed_subpx
-					local want_x = math.floor(want_subx / sp)
+					local want_x = want_subx // sp
 					local step_x = want_x - barrel.x
 				local hit_x = self:move_barrel_horizontal_pixels(barrel, step_x)
 				if not hit_x then
@@ -289,7 +289,7 @@ function director:update_barrels(player)
 
 					if not barrel.grounded then
 						local want_suby = barrel.pos_suby - barrel.y_speed_subpx
-						local want_y = math.floor(want_suby / sp)
+						local want_y = want_suby // sp
 						local step_y = want_y - barrel.y
 						local hit_y, grounded = self:move_barrel_vertical_pixels(barrel, step_y)
 						barrel.grounded = grounded
@@ -403,7 +403,7 @@ function director:draw_parallax_layer(blocks, factor, color, z)
 	local view_w = display_width()
 	for i = 1, #blocks do
 		local block = blocks[i]
-		local left = math.floor(block.x - cam)
+		local left = (block.x - cam) // 1
 		local right = left + block.w
 		if right > 0 and left < view_w then
 			fill_rect_color(left, block.y, right, block.y + block.h, z, color)
@@ -415,7 +415,7 @@ function director:draw_trunks()
 	local view_w = display_width()
 	for i = 1, #self.level.trunks do
 		local trunk = self.level.trunks[i]
-		local left = math.floor(trunk.x - (self.camera_x * 0.62))
+		local left = (trunk.x - (self.camera_x * 0.62)) // 1
 		local right = left + trunk.w
 		if right > 0 and left < view_w then
 			fill_rect_color(left, trunk.y, right, trunk.y + trunk.h, 56, constants.palette.trunk)
@@ -428,7 +428,7 @@ function director:draw_level_solids()
 	local view_w = display_width()
 	for i = 1, #solids do
 		local solid = solids[i]
-		local left = math.floor(solid.x - self.camera_x)
+		local left = (solid.x - self.camera_x) // 1
 		local right = left + solid.w
 		if right > 0 and left < view_w then
 			fill_rect_color(left, solid.y, right, solid.y + solid.h, 80, constants.palette.ground)
@@ -441,7 +441,7 @@ end
 
 function director:draw_goal()
 	local goal = self.level.goal
-	local left = math.floor(goal.x - self.camera_x)
+	local left = (goal.x - self.camera_x) // 1
 	local right = left + goal.w
 	local view_w = display_width()
 	if right <= 0 or left >= view_w then
@@ -459,7 +459,7 @@ end
 
 function director:draw_barrel(barrel, z_base)
 	local view_w = display_width()
-	local left = math.floor(barrel.x - self.camera_x)
+	local left = (barrel.x - self.camera_x) // 1
 	local right = left + barrel.w
 	if right <= 0 or left >= view_w then
 		return
@@ -500,7 +500,7 @@ function director:draw_stomp_target(target, z_base)
 		return
 	end
 	local view_w = display_width()
-	local left = math.floor(target.x - self.camera_x)
+	local left = (target.x - self.camera_x) // 1
 	local right = left + target.w
 	if right <= 0 or left >= view_w then
 		return
@@ -551,12 +551,12 @@ function director:draw_player(player, draw_shadow)
 
 	local fw = frame_meta.width * sx
 	local fh = frame_meta.height * sy
-	local draw_x = math.floor(px + ((player.width - fw) * 0.5))
-	local draw_y = math.floor(player.y + player.height - fh)
+	local draw_x = (px + ((player.width - fw) * 0.5)) // 1
+	local draw_y = (player.y + player.height - fh) // 1
 
 	if draw_shadow and player.grounded then
-		local shadow_w = math.floor(fw * 0.82)
-		local shadow_x = math.floor(px + ((player.width - shadow_w) * 0.5))
+		local shadow_w = (fw * 0.82) // 1
+		local shadow_x = (px + ((player.width - shadow_w) * 0.5)) // 1
 		local shadow_y = player.y + player.height + 2
 		fill_rect_color(shadow_x, shadow_y, shadow_x + shadow_w, shadow_y + 4, 119, constants.palette.player_shadow)
 	end

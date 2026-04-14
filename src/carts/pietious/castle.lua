@@ -494,7 +494,7 @@ function castle:apply_seal_timeline_frame(frame)
 	if frame >= 32 then
 		if frame < 64 then
 			local progress<const> = frame - 32
-			room_dissolve_step = math.modf((progress * constants.flow.seal_room_dissolve_steps) / 32) + 1
+			room_dissolve_step = ((progress * constants.flow.seal_room_dissolve_steps) // 32) + 1
 		else
 			room_dissolve_step = constants.flow.seal_room_dissolve_steps
 		end
@@ -504,7 +504,7 @@ function castle:apply_seal_timeline_frame(frame)
 		if progress > 31 then
 			progress = 31
 		end
-		seal_dissolve_step = math.modf((progress * constants.flow.seal_sprite_dissolve_steps) / 32) + 1
+		seal_dissolve_step = ((progress * constants.flow.seal_sprite_dissolve_steps) // 32) + 1
 	end
 	if room_dissolve_step > constants.flow.seal_room_dissolve_steps then
 		room_dissolve_step = constants.flow.seal_room_dissolve_steps

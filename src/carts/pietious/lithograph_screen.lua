@@ -58,7 +58,7 @@ function lithograph_screen:draw_screen()
 					17,
 					0,
 					line,
-					math.modf((screen_width - font.measure_line_width(font, line)) / 2),
+					(screen_width - font.measure_line_width(font, line)) // 2,
 					base_y + ((i - 1) * font.line_height),
 					341,
 					font.id,
