@@ -44,29 +44,36 @@ function transition:draw_transition_overlay()
 	local lines<const> = self.banner_lines
 	if #lines > 0 then
 		local font<const> = self.banner_font
-		memwrite(
-			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
-			sys_vdp_cmd_glyph_run,
-			17,
-			0,
-			table.concat(lines, '\n'),
-			0,
-			constants.room.tile_origin_y + (constants.room.tile_size * 9),
-			341,
-			font.id,
-			0,
-			0x7fffffff,
-			sys_vdp_layer_ui,
-			1,
-			1,
-			1,
-			1,
-			0,
-			0,
-			0,
-			0,
-			0
-		)
+		local base_y<const> = constants.room.tile_origin_y + (constants.room.tile_size * 9)
+		local screen_width<const> = display_width()
+		for i = 1, #lines do
+			local line<const> = lines[i]
+			if string.len(line) > 0 then
+				memwrite(
+					vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
+					sys_vdp_cmd_glyph_run,
+					17,
+					0,
+					line,
+					math.floor((screen_width - font.measure_line_width(font, line)) / 2),
+					base_y + ((i - 1) * font.line_height),
+					341,
+					font.id,
+					0,
+					0x7fffffff,
+					sys_vdp_layer_ui,
+					1,
+					1,
+					1,
+					1,
+					0,
+					0,
+					0,
+					0,
+					0
+				)
+			end
+		end
 	end
 end
 
