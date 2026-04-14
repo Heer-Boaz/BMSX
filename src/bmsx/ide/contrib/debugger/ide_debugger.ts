@@ -180,43 +180,36 @@ export function serializeBreakpoints(): SerializedBreakpointMap {
 		if (lines.size === 0) {
 			continue;
 		}
-		const sorted = Array.from(lines).sort((a, b) => a - b);
+		const sorted = new Array<number>(lines.size);
+		let index = 0;
+		for (const line of lines) {
+			sorted[index] = line;
+			index += 1;
+		}
+		sorted.sort((a, b) => a - b);
 		payload[path] = sorted;
 	}
 	return payload;
 }
 
-export function restoreBreakpointsFromPayload(payload: SerializedBreakpointMap): void {
+export function restoreBreakpointsFromPayload(payload: SerializedBreakpointMap | null): void {
 	ide_state.breakpoints.clear();
-	if (payload) {
-		for (const [path, lineEntries] of Object.entries(payload)) {
-			if (!Array.isArray(lineEntries) || lineEntries.length === 0) {
-				continue;
-			}
-			const pathKey = path;
-			const bucket = new Set<number>();
-			for (const entry of lineEntries) {
-				if (entry !== null) {
-					bucket.add(entry);
-				}
-			}
-			if (bucket.size > 0) {
-				ide_state.breakpoints.set(pathKey, bucket);
-			}
+	if (payload === null) {
+		syncRuntimeBreakpoints();
+		return;
+	}
+	for (const path in payload) {
+		const lineEntries = payload[path];
+		if (lineEntries.length === 0) {
+			continue;
 		}
+		ide_state.breakpoints.set(path, new Set(lineEntries));
 	}
 	syncRuntimeBreakpoints();
 }
 
 export function syncRuntimeBreakpoints(): void {
-	const serialized = new Map<string, Set<number>>();
-	for (const [path, lines] of ide_state.breakpoints) {
-		if (lines.size === 0) {
-			continue;
-		}
-		serialized.set(path, new Set(lines));
-	}
-	runtimeIde.setDebuggerBreakpoints(Runtime.instance, serialized);
+	runtimeIde.setDebuggerBreakpoints(Runtime.instance, ide_state.breakpoints);
 }
 
 export function getActiveBreakpointPath(): string {
