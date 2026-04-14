@@ -22,6 +22,7 @@ import { scheduleMicrotask } from '../../../platform/index';
 import { textFromLines } from '../../text/source_text';
 import { applyInlineFieldPointer, setFieldText } from '../../ui/inline_text_field';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
+import { editorDocumentState } from '../../editing/editor_document_state';
 
 const LOCAL_ROWS_PER_SLICE = 256;
 const GLOBAL_ROWS_PER_SLICE = 128;
@@ -100,8 +101,8 @@ export function openSearch(useSelection: boolean, scope: 'local' | 'global' = 'l
 		const selected = getSelectionText();
 		if (range && selected.length > 0 && selected.indexOf('\n') === -1) {
 			applySearchFieldText(selected, true);
-			ide_state.cursorRow = range.start.row;
-			ide_state.cursorColumn = range.start.column;
+			editorDocumentState.cursorRow = range.start.row;
+			editorDocumentState.cursorColumn = range.start.column;
 		}
 	}
 
@@ -141,7 +142,7 @@ export function closeSearch(clearQuery: boolean, forceHide = false): void {
 		onSearchQueryChanged();
 	}
 
-	ide_state.selectionAnchor = null;
+	editorDocumentState.selectionAnchor = null;
 	resetBlink();
 }
 
@@ -170,7 +171,7 @@ export function onSearchQueryChanged(): void {
 		cancelSearchJob();
 		ide_state.search.matches = [];
 		ide_state.search.currentIndex = -1;
-		ide_state.selectionAnchor = null;
+		editorDocumentState.selectionAnchor = null;
 		ide_state.search.displayOffset = 0;
 		return;
 	}
@@ -196,16 +197,16 @@ export function startSearchJob(): void {
 	ide_state.search.hoverIndex = -1;
 	ide_state.search.currentIndex = -1;
 	ide_state.search.matches = [];
-	ide_state.selectionAnchor = null;
+	editorDocumentState.selectionAnchor = null;
 
 	const job: LocalSearchJob = {
 		query: normalizeQuery(ide_state.search.query),
-		version: ide_state.textVersion,
+		version: editorDocumentState.textVersion,
 		nextRow: 0,
 		matches: [],
 		firstMatchAfterCursor: -1,
-		cursorRow: ide_state.cursorRow,
-		cursorColumn: ide_state.cursorColumn,
+		cursorRow: editorDocumentState.cursorRow,
+		cursorColumn: editorDocumentState.cursorColumn,
 	};
 	ide_state.search.job = job;
 	enqueueBackgroundTask(() => runLocalSearchSlice(job));
@@ -213,12 +214,12 @@ export function startSearchJob(): void {
 
 function runLocalSearchSlice(job: LocalSearchJob): boolean {
 	if (ide_state.search.job !== job) return false;
-	if (job.query.length === 0 || job.version !== ide_state.textVersion || ide_state.search.query.length === 0) {
+	if (job.query.length === 0 || job.version !== editorDocumentState.textVersion || ide_state.search.query.length === 0) {
 		ide_state.search.job = null;
 		return false;
 	}
 	let processed = 0;
-	const lineCount = ide_state.buffer.getLineCount();
+	const lineCount = editorDocumentState.buffer.getLineCount();
 	while (job.nextRow < lineCount && processed < LOCAL_ROWS_PER_SLICE) {
 		const row = job.nextRow;
 		job.nextRow += 1;
@@ -233,7 +234,7 @@ function runLocalSearchSlice(job: LocalSearchJob): boolean {
 }
 
 function collectLocalMatches(job: LocalSearchJob, row: number): void {
-	const line = ide_state.buffer.getLineContent(row);
+	const line = editorDocumentState.buffer.getLineContent(row);
 	if (line.length === 0) return;
 	forEachMatchInLine(line, job.query, (start, end) => {
 		const match: SearchMatch = { row, start, end };
@@ -254,7 +255,7 @@ function completeLocalSearchJob(job: LocalSearchJob): void {
 
 	if (job.matches.length === 0) {
 		ide_state.search.currentIndex = -1;
-		ide_state.selectionAnchor = null;
+		editorDocumentState.selectionAnchor = null;
 		ide_state.search.displayOffset = 0;
 		return;
 	}
@@ -378,8 +379,8 @@ export function cancelGlobalSearchJob(): void {
 function focusLocalMatch(index: number, recordNavigation: boolean): void {
 	const match = ide_state.search.matches[index];
 	const navigationCheckpoint = recordNavigation ? beginNavigationCapture() : null;
-	setSingleCursorPosition(ide_state, match.row, match.start);
-	setSingleCursorSelectionAnchor(ide_state, match.row, match.end);
+	setSingleCursorPosition(editorDocumentState, match.row, match.start);
+	setSingleCursorSelectionAnchor(editorDocumentState, match.row, match.end);
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -393,12 +394,12 @@ function focusGlobalMatch(index: number): void {
 	const navigationCheckpoint = beginNavigationCapture();
 	openLuaCodeTab(match.descriptor);
 	scheduleMicrotask(() => {
-		const row = clamp(match.row, 0, ide_state.buffer.getLineCount() - 1);
-		const line = ide_state.buffer.getLineContent(row);
+		const row = clamp(match.row, 0, editorDocumentState.buffer.getLineCount() - 1);
+		const line = editorDocumentState.buffer.getLineContent(row);
 		const startColumn = clamp(match.start, 0, line.length);
 		const endColumn = clamp(match.end, 0, line.length);
-		setSingleCursorPosition(ide_state, row, startColumn);
-		setSingleCursorSelectionAnchor(ide_state, row, endColumn);
+		setSingleCursorPosition(editorDocumentState, row, startColumn);
+		setSingleCursorSelectionAnchor(editorDocumentState, row, endColumn);
 		ensureCursorVisible();
 		resetBlink();
 		completeNavigation(navigationCheckpoint);
@@ -535,7 +536,7 @@ function buildSearchResultEntry(index: number): { primary: string; secondary?: s
 	}
 
 	const match = ide_state.search.matches[index];
-	const lineText = ide_state.buffer.getLineContent(match.row);
+	const lineText = editorDocumentState.buffer.getLineContent(match.row);
 	return {
 		primary: `Line ${match.row + 1}`,
 		secondary: buildSnippet(lineText, match.start, match.end),

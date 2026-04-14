@@ -9,6 +9,7 @@ import { resetBlink } from '../../render/render_caret';
 import { revealCursor } from '../../ui/caret';
 import { closeSymbolSearch } from '../symbols/symbol_search_shared';
 import { editorCaretState } from '../../ui/caret_state';
+import { editorDocumentState } from '../../editing/editor_document_state';
 
 export function openRenamePrompt(): void {
 	if (!isEditableCodeTab()) {
@@ -25,10 +26,10 @@ export function openRenamePrompt(): void {
 		return;
 	}
 	const started = ide_state.renameController.begin({
-		buffer: ide_state.buffer,
-		textVersion: ide_state.textVersion,
-		cursorRow: ide_state.cursorRow,
-		cursorColumn: ide_state.cursorColumn,
+		buffer: editorDocumentState.buffer,
+		textVersion: editorDocumentState.textVersion,
+		cursorRow: editorDocumentState.cursorRow,
+		cursorColumn: editorDocumentState.cursorColumn,
 		extractExpression: (row, column) => extractHoverExpression(row, column),
 		path: context.descriptor.path,
 	});

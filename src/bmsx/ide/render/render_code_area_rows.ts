@@ -10,6 +10,7 @@ import { drawReferenceHighlightsForRow, drawSearchHighlightsForRow } from './ren
 import { computeCursorScreenInfo, drawCodeRowText } from './render_code_area_cursor';
 import { drawDiagnosticUnderlinesForRow, drawGotoUnderlineForRow } from './render_code_area_underlines';
 import { drawCodeAreaRowChrome } from './render_code_area_gutter';
+import { editorDocumentState } from '../editing/editor_document_state';
 
 type ActiveGotoHighlight = {
 	row: number;
@@ -61,11 +62,11 @@ export function drawCodeAreaRows(
 			continue;
 		}
 		const lineIndex = segment.row;
-		const entry = ide_state.layout.getCachedHighlight(ide_state.buffer, lineIndex);
+		const entry = ide_state.layout.getCachedHighlight(editorDocumentState.buffer, lineIndex);
 		const isPrimaryVisualSegment = segment.startColumn === 0;
 		const hasBreakpointForRow = breakpointsForChunk?.has(lineIndex + 1) ?? false;
 		const isExecutionStopRow = runtimeErrorState.executionStopRow !== null && lineIndex === runtimeErrorState.executionStopRow;
-		const isCursorLine = lineIndex === ide_state.cursorRow;
+		const isCursorLine = lineIndex === editorDocumentState.cursorRow;
 		drawCodeAreaRowChrome(
 			renderFont,
 			gutterLeft,
@@ -89,7 +90,7 @@ export function drawCodeAreaRows(
 		const columnToDisplay = highlight.columnToDisplay;
 		const maxColumn = ide_state.wordWrapEnabled
 			? segment.endColumn
-			: (ide_state.buffer.getLineEndOffset(lineIndex) - ide_state.buffer.getLineStartOffset(lineIndex));
+			: (editorDocumentState.buffer.getLineEndOffset(lineIndex) - editorDocumentState.buffer.getLineStartOffset(lineIndex));
 		const columnCount = ide_state.wordWrapEnabled ? Math.max(0, maxColumn - columnStart) : sliceWidth;
 		const clampedStartColumn = Math.min(columnStart, columnToDisplay.length - 1);
 		const clampedEndColumn = Math.min(columnStart + columnCount, columnToDisplay.length - 1);

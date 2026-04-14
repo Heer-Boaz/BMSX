@@ -24,6 +24,7 @@ import { setActiveRuntimeErrorOverlay, setExecutionStopHighlight } from '../cont
 import { editorPointerState } from '../input/pointer/editor_pointer_state';
 import { editorCaretState } from '../ui/caret_state';
 import { runtimeErrorState } from '../contrib/runtime_error/runtime_error_state';
+import { editorDocumentState } from '../editing/editor_document_state';
 
 export interface ErrorOverlayBounds {
 	left: number;
@@ -185,7 +186,7 @@ export function resolveRuntimeErrorOverlayAnchor(
 	if (!segment) {
 		return null;
 	}
-	const entry = ide_state.layout.getCachedHighlight(ide_state.buffer, segment.row);
+	const entry = ide_state.layout.getCachedHighlight(editorDocumentState.buffer, segment.row);
 	const highlight = entry.hi;
 	let columnStart = ide_state.wordWrapEnabled ? segment.startColumn : ide_state.scrollColumn;
 	if (ide_state.wordWrapEnabled && (columnStart < segment.startColumn || columnStart > segment.endColumn)) {
@@ -550,21 +551,21 @@ export function showRuntimeError(
 	const normalizedLine = Number.isFinite(line) ? line : null;
 	const normalizedColumn = Number.isFinite(column) ? column : null;
 	const processedLine = normalizedLine;
-	const buffer = ide_state.buffer;
+	const buffer = editorDocumentState.buffer;
 	const targetRow = normalizedLine !== null
 		? ide_state.layout.clampBufferRow(buffer, normalizedLine - 1)
-		: ide_state.layout.clampBufferRow(buffer, ide_state.cursorRow);
+		: ide_state.layout.clampBufferRow(buffer, editorDocumentState.cursorRow);
 	const processedColumn = normalizedColumn !== null ? normalizedColumn - 1 : null;
 	const currentLine = buffer.getLineContent(targetRow);
-	let targetColumn = ide_state.cursorColumn;
+	let targetColumn = editorDocumentState.cursorColumn;
 	if (processedColumn !== null) {
 		targetColumn = ide_state.layout.clampLineLength(currentLine.length, processedColumn);
 	} else {
 		targetColumn = ide_state.layout.clampLineLength(currentLine.length, targetColumn);
 	}
-	ide_state.cursorRow = targetRow;
-	ide_state.cursorColumn = targetColumn;
-	ide_state.selectionAnchor = null;
+	editorDocumentState.cursorRow = targetRow;
+	editorDocumentState.cursorColumn = targetColumn;
+	editorDocumentState.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = false;
 	ide_state.scrollbarController.cancel();

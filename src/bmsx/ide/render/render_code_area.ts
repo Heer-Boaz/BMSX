@@ -10,6 +10,7 @@ import { ensureVisualLines, getVisualLineCount } from '../core/text_utils';
 import { drawCodeAreaBackground } from './render_code_area_gutter';
 import { finalizeCodeAreaRender } from './render_code_area_tail';
 import { drawCodeAreaRows } from './render_code_area_rows';
+import { editorDocumentState } from '../editing/editor_document_state';
 
 export function renderCodeArea(): void {
 	ensureVisualLines();
@@ -61,15 +62,15 @@ export function renderCodeArea(): void {
 
 	const activeGotoHighlight = intellisenseUiState.gotoHoverHighlight;
 	const gotoVisualIndex = activeGotoHighlight
-		? ide_state.layout.positionToVisualIndex(ide_state.buffer, activeGotoHighlight.row, activeGotoHighlight.startColumn)
+		? ide_state.layout.positionToVisualIndex(editorDocumentState.buffer, activeGotoHighlight.row, activeGotoHighlight.startColumn)
 		: null;
 	const activePath = getActiveCodeTabContext().descriptor.path;
 	const breakpointsForChunk = getBreakpointsForChunk(activePath);
-	const cursorVisualIndex = ide_state.layout.positionToVisualIndex(ide_state.buffer, ide_state.cursorRow, ide_state.cursorColumn);
+	const cursorVisualIndex = ide_state.layout.positionToVisualIndex(editorDocumentState.buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	const inlineCompletionPreview = ide_state.completion.getInlineCompletionPreview();
 	const shouldRenderInlinePreview = inlineCompletionPreview !== null
-		&& inlineCompletionPreview.row === ide_state.cursorRow
-		&& inlineCompletionPreview.column === ide_state.cursorColumn;
+		&& inlineCompletionPreview.row === editorDocumentState.cursorRow
+		&& inlineCompletionPreview.column === editorDocumentState.cursorColumn;
 	const useUppercase = ide_state.caseInsensitive;
 	const renderFont = ide_state.font.renderFont();
 	const breakpointLaneWidth = getBreakpointLaneWidth();

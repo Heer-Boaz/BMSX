@@ -12,6 +12,7 @@ import { ensureCursorVisible } from '../ui/caret';
 import { requestSemanticRefresh } from '../contrib/intellisense/intellisense';
 import type { EditorSnapshot, Position } from '../core/types';
 import { editorCaretState } from '../ui/caret_state';
+import { editorDocumentState } from './editor_document_state';
 
 export function prepareUndo(key: string, allowMerge: boolean): void {
 	if (ide_state.activeContextReadOnly) {
@@ -20,18 +21,18 @@ export function prepareUndo(key: string, allowMerge: boolean): void {
 	capturePreMutationSource();
 	const now = $.platform.clock.now();
 	const shouldMerge = allowMerge
-		&& ide_state.lastHistoryKey === key
-		&& now - ide_state.lastHistoryTimestamp <= constants.UNDO_COALESCE_INTERVAL_MS;
+		&& editorDocumentState.lastHistoryKey === key
+		&& now - editorDocumentState.lastHistoryTimestamp <= constants.UNDO_COALESCE_INTERVAL_MS;
 	if (shouldMerge) {
-		ide_state.lastHistoryTimestamp = now;
+		editorDocumentState.lastHistoryTimestamp = now;
 		return;
 	}
 
 	const record = new EditorUndoRecord();
-	const anchor = ide_state.selectionAnchor;
+	const anchor = editorDocumentState.selectionAnchor;
 	record.setBeforeState(
-		ide_state.cursorRow,
-		ide_state.cursorColumn,
+		editorDocumentState.cursorRow,
+		editorDocumentState.cursorColumn,
 		ide_state.scrollRow,
 		ide_state.scrollColumn,
 		anchor ? anchor.row : 0,
@@ -39,8 +40,8 @@ export function prepareUndo(key: string, allowMerge: boolean): void {
 		anchor !== null,
 	);
 	record.setAfterState(
-		ide_state.cursorRow,
-		ide_state.cursorColumn,
+		editorDocumentState.cursorRow,
+		editorDocumentState.cursorColumn,
 		ide_state.scrollRow,
 		ide_state.scrollColumn,
 		anchor ? anchor.row : 0,
@@ -49,25 +50,25 @@ export function prepareUndo(key: string, allowMerge: boolean): void {
 	);
 
 	const buffer = activePieceBuffer();
-	if (ide_state.undoStack.length >= constants.UNDO_HISTORY_LIMIT) {
-		const dropped = ide_state.undoStack.shift();
+	if (editorDocumentState.undoStack.length >= constants.UNDO_HISTORY_LIMIT) {
+		const dropped = editorDocumentState.undoStack.shift();
 		if (dropped) {
 			releaseUndoRecord(buffer, dropped);
 		}
 	}
-	ide_state.undoStack.push(record);
+	editorDocumentState.undoStack.push(record);
 
 	clearRedoStack(buffer);
-	ide_state.lastHistoryTimestamp = now;
+	editorDocumentState.lastHistoryTimestamp = now;
 	if (allowMerge) {
-		ide_state.lastHistoryKey = key;
+		editorDocumentState.lastHistoryKey = key;
 	} else {
-		ide_state.lastHistoryKey = null;
+		editorDocumentState.lastHistoryKey = null;
 	}
 }
 
 function activePieceBuffer(): PieceTreeBuffer {
-	return ide_state.buffer as PieceTreeBuffer;
+	return editorDocumentState.buffer as PieceTreeBuffer;
 }
 
 function releaseUndoRecord(buffer: PieceTreeBuffer, record: EditorUndoRecord): void {
@@ -86,7 +87,7 @@ function releaseUndoRecord(buffer: PieceTreeBuffer, record: EditorUndoRecord): v
 }
 
 function clearRedoStack(buffer: PieceTreeBuffer): void {
-	const redoStack = ide_state.redoStack;
+	const redoStack = editorDocumentState.redoStack;
 	for (let index = 0; index < redoStack.length; index += 1) {
 		releaseUndoRecord(buffer, redoStack[index]);
 	}
@@ -99,7 +100,7 @@ export function applyUndoableReplace(offset: number, deleteLength: number, inser
 	if (deleteLength === 0 && insertText.length === 0) {
 		return;
 	}
-	const record = ide_state.undoStack[ide_state.undoStack.length - 1];
+	const record = editorDocumentState.undoStack[editorDocumentState.undoStack.length - 1];
 	const buffer = activePieceBuffer();
 	const op = new TextUndoOp();
 	buffer.positionAt(offset, tmpEditStartPosition);
@@ -125,10 +126,10 @@ export function undo(): void {
 		notifyReadOnlyEdit();
 		return;
 	}
-	if (ide_state.undoStack.length === 0) {
+	if (editorDocumentState.undoStack.length === 0) {
 		return;
 	}
-	const record = ide_state.undoStack.pop();
+	const record = editorDocumentState.undoStack.pop();
 	const buffer = activePieceBuffer();
 	const ops = record.ops;
 	for (let index = ops.length - 1; index >= 0; index -= 1) {
@@ -153,22 +154,22 @@ export function undo(): void {
 	}
 	invalidateLuaCommentContextFromRow(buffer, 0);
 
-	if (ide_state.redoStack.length >= constants.UNDO_HISTORY_LIMIT) {
-		const dropped = ide_state.redoStack.shift();
+	if (editorDocumentState.redoStack.length >= constants.UNDO_HISTORY_LIMIT) {
+		const dropped = editorDocumentState.redoStack.shift();
 		if (dropped) {
 			releaseUndoRecord(buffer, dropped);
 		}
 	}
-	ide_state.redoStack.push(record);
+	editorDocumentState.redoStack.push(record);
 
-	ide_state.cursorRow = record.beforeCursorRow;
-	ide_state.cursorColumn = record.beforeCursorColumn;
+	editorDocumentState.cursorRow = record.beforeCursorRow;
+	editorDocumentState.cursorColumn = record.beforeCursorColumn;
 	ide_state.scrollRow = record.beforeScrollRow;
 	ide_state.scrollColumn = record.beforeScrollColumn;
-	ide_state.selectionAnchor = record.beforeHasSelectionAnchor
+	editorDocumentState.selectionAnchor = record.beforeHasSelectionAnchor
 		? { row: record.beforeSelectionAnchorRow, column: record.beforeSelectionAnchorColumn }
 		: null;
-	ide_state.textVersion = ide_state.buffer.version;
+	editorDocumentState.textVersion = editorDocumentState.buffer.version;
 	ide_state.maxLineLengthDirty = true;
 	ide_state.layout.markVisualLinesDirty();
 	ide_state.layout.invalidateHighlightsFromRow(0);
@@ -178,13 +179,13 @@ export function undo(): void {
 	ensureCursorVisible();
 	requestSemanticRefresh();
 
-	ide_state.dirty = ide_state.undoStack.length !== ide_state.savePointDepth;
+	editorDocumentState.dirty = editorDocumentState.undoStack.length !== editorDocumentState.savePointDepth;
 	updateActiveContextDirtyFlag();
-	ide_state.saveGeneration = ide_state.saveGeneration + 1;
+	editorDocumentState.saveGeneration = editorDocumentState.saveGeneration + 1;
 	const context = getActiveCodeTabContext();
 	if (context) {
-		context.saveGeneration = ide_state.saveGeneration;
-		context.textVersion = ide_state.textVersion;
+		context.saveGeneration = editorDocumentState.saveGeneration;
+		context.textVersion = editorDocumentState.textVersion;
 	}
 	breakUndoSequence();
 }
@@ -194,10 +195,10 @@ export function redo(): void {
 		notifyReadOnlyEdit();
 		return;
 	}
-	if (ide_state.redoStack.length === 0) {
+	if (editorDocumentState.redoStack.length === 0) {
 		return;
 	}
-	const record = ide_state.redoStack.pop();
+	const record = editorDocumentState.redoStack.pop();
 	const buffer = activePieceBuffer();
 	const ops = record.ops;
 	for (let index = 0; index < ops.length; index += 1) {
@@ -222,22 +223,22 @@ export function redo(): void {
 	}
 	invalidateLuaCommentContextFromRow(buffer, 0);
 
-	if (ide_state.undoStack.length >= constants.UNDO_HISTORY_LIMIT) {
-		const dropped = ide_state.undoStack.shift();
+	if (editorDocumentState.undoStack.length >= constants.UNDO_HISTORY_LIMIT) {
+		const dropped = editorDocumentState.undoStack.shift();
 		if (dropped) {
 			releaseUndoRecord(buffer, dropped);
 		}
 	}
-	ide_state.undoStack.push(record);
+	editorDocumentState.undoStack.push(record);
 
-	ide_state.cursorRow = record.afterCursorRow;
-	ide_state.cursorColumn = record.afterCursorColumn;
+	editorDocumentState.cursorRow = record.afterCursorRow;
+	editorDocumentState.cursorColumn = record.afterCursorColumn;
 	ide_state.scrollRow = record.afterScrollRow;
 	ide_state.scrollColumn = record.afterScrollColumn;
-	ide_state.selectionAnchor = record.afterHasSelectionAnchor
+	editorDocumentState.selectionAnchor = record.afterHasSelectionAnchor
 		? { row: record.afterSelectionAnchorRow, column: record.afterSelectionAnchorColumn }
 		: null;
-	ide_state.textVersion = ide_state.buffer.version;
+	editorDocumentState.textVersion = editorDocumentState.buffer.version;
 	ide_state.maxLineLengthDirty = true;
 	ide_state.layout.markVisualLinesDirty();
 	ide_state.layout.invalidateHighlightsFromRow(0);
@@ -247,31 +248,31 @@ export function redo(): void {
 	ensureCursorVisible();
 	requestSemanticRefresh();
 
-	ide_state.dirty = ide_state.undoStack.length !== ide_state.savePointDepth;
+	editorDocumentState.dirty = editorDocumentState.undoStack.length !== editorDocumentState.savePointDepth;
 	updateActiveContextDirtyFlag();
-	ide_state.saveGeneration = ide_state.saveGeneration + 1;
+	editorDocumentState.saveGeneration = editorDocumentState.saveGeneration + 1;
 	const context = getActiveCodeTabContext();
 	if (context) {
-		context.saveGeneration = ide_state.saveGeneration;
-		context.textVersion = ide_state.textVersion;
+		context.saveGeneration = editorDocumentState.saveGeneration;
+		context.textVersion = editorDocumentState.textVersion;
 	}
 	breakUndoSequence();
 }
 
 export function breakUndoSequence(): void {
-	ide_state.lastHistoryKey = null;
-	ide_state.lastHistoryTimestamp = 0;
+	editorDocumentState.lastHistoryKey = null;
+	editorDocumentState.lastHistoryTimestamp = 0;
 }
 
 export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {
-	ide_state.lastContentEditAtMs = ide_state.clockNow();
+	editorDocumentState.lastContentEditAtMs = ide_state.clockNow();
 	ide_state.pendingEditContext = { kind, text };
 }
 
 export function applySourceToDocument(source: string): void {
-	ide_state.buffer.replace(0, ide_state.buffer.length, source);
-	invalidateLuaCommentContextFromRow(ide_state.buffer, 0);
-	ide_state.textVersion = ide_state.buffer.version;
+	editorDocumentState.buffer.replace(0, editorDocumentState.buffer.length, source);
+	invalidateLuaCommentContextFromRow(editorDocumentState.buffer, 0);
+	editorDocumentState.textVersion = editorDocumentState.buffer.version;
 	ide_state.maxLineLengthDirty = true;
 	ide_state.layout.invalidateHighlightsFromRow(0);
 	ide_state.layout.markVisualLinesDirty();
@@ -279,17 +280,17 @@ export function applySourceToDocument(source: string): void {
 
 export function captureSnapshot(): EditorSnapshot {
 	let selectionCopy: Position = null;
-	const anchor = ide_state.selectionAnchor;
+	const anchor = editorDocumentState.selectionAnchor;
 	if (anchor) {
 		selectionCopy = { row: anchor.row, column: anchor.column };
 	}
 	return {
-		cursorRow: ide_state.cursorRow,
-		cursorColumn: ide_state.cursorColumn,
+		cursorRow: editorDocumentState.cursorRow,
+		cursorColumn: editorDocumentState.cursorColumn,
 		scrollRow: ide_state.scrollRow,
 		scrollColumn: ide_state.scrollColumn,
 		selectionAnchor: selectionCopy,
-		textVersion: ide_state.textVersion,
+		textVersion: editorDocumentState.textVersion,
 	};
 }
 
@@ -301,12 +302,12 @@ export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnaps
 	ide_state.maxLineLengthDirty = true;
 	ide_state.layout.markVisualLinesDirty();
 	ide_state.layout.invalidateHighlightsFromRow(0);
-	ide_state.cursorRow = snapshot.cursorRow;
-	ide_state.cursorColumn = snapshot.cursorColumn;
+	editorDocumentState.cursorRow = snapshot.cursorRow;
+	editorDocumentState.cursorColumn = snapshot.cursorColumn;
 	ide_state.scrollRow = snapshot.scrollRow;
 	ide_state.scrollColumn = snapshot.scrollColumn;
-	ide_state.selectionAnchor = snapshot.selectionAnchor;
-	ide_state.textVersion = ide_state.buffer.version;
+	editorDocumentState.selectionAnchor = snapshot.selectionAnchor;
+	editorDocumentState.textVersion = editorDocumentState.buffer.version;
 	updateDesiredColumn();
 	resetBlink();
 	editorCaretState.cursorRevealSuspended = false;

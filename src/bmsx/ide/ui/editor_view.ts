@@ -17,6 +17,7 @@ import { getBuiltinIdentifiersSnapshot, requestSemanticRefresh } from '../contri
 import { findResourcePanelIndexByAssetId } from '../contrib/resources/resource_panel_items';
 import { ensureCursorVisible, updateDesiredColumn } from './caret';
 import { splitText } from '../text/source_text';
+import { editorDocumentState } from '../editing/editor_document_state';
 import {
 	ensureVisualLines,
 	getVisualLineCount,
@@ -43,7 +44,7 @@ export function getBreakpointLaneWidth(): number {
 }
 
 export function updateGutterWidth(): number {
-	const lineCount = ide_state.buffer.getLineCount();
+	const lineCount = editorDocumentState.buffer.getLineCount();
 	const digitCount = Math.max(2, decimalDigitCount(lineCount));
 	ide_state.gutterWidth = getBreakpointLaneWidth() + 4 + digitCount * ide_state.font.advance('0');
 	return ide_state.gutterWidth;
@@ -55,9 +56,9 @@ export function maximumLineLength(): number {
 	}
 	let maxLength = 0;
 	let maxRow = 0;
-	const lineCount = ide_state.buffer.getLineCount();
+	const lineCount = editorDocumentState.buffer.getLineCount();
 	for (let i = 0; i < lineCount; i += 1) {
-		const length = ide_state.buffer.getLineEndOffset(i) - ide_state.buffer.getLineStartOffset(i);
+		const length = editorDocumentState.buffer.getLineEndOffset(i) - editorDocumentState.buffer.getLineStartOffset(i);
 		if (length > maxLength) {
 			maxLength = length;
 			maxRow = i;
@@ -269,7 +270,7 @@ export function resolvePointerRow(viewportY: number): number {
 	const segment = visualIndexToSegment(visualIndex);
 	if (!segment) {
 		editorPointerState.lastPointerRowResolution = null;
-		return ide_state.layout.clampBufferRow(ide_state.buffer, visualIndex);
+		return ide_state.layout.clampBufferRow(editorDocumentState.buffer, visualIndex);
 	}
 	editorPointerState.lastPointerRowResolution = { visualIndex, segment };
 	return segment.row;
@@ -277,7 +278,7 @@ export function resolvePointerRow(viewportY: number): number {
 
 export function resolvePointerColumn(row: number, viewportX: number): number {
 	const bounds = getCodeAreaBounds();
-	const entry = ide_state.layout.getCachedHighlight(ide_state.buffer, row);
+	const entry = ide_state.layout.getCachedHighlight(editorDocumentState.buffer, row);
 	const line = entry.src;
 	if (line.length === 0) {
 		return 0;
@@ -495,24 +496,24 @@ export function toggleWordWrap(): void {
 	const previousWrap = ide_state.wordWrapEnabled;
 	const previousTopIndex = ide_state.layout.clampVisualIndex(getVisualLineCount(), ide_state.scrollRow);
 	const previousTopSegment = visualIndexToSegment(previousTopIndex);
-	const anchorRow = previousTopSegment ? previousTopSegment.row : ide_state.cursorRow;
+	const anchorRow = previousTopSegment ? previousTopSegment.row : editorDocumentState.cursorRow;
 	const anchorColumnForWrap = previousTopSegment ? previousTopSegment.startColumn : 0;
 	const anchorColumnForUnwrap = previousTopSegment
 		? (previousWrap ? previousTopSegment.startColumn : ide_state.scrollColumn)
 		: ide_state.scrollColumn;
-	const previousCursorRow = ide_state.cursorRow;
-	const previousCursorColumn = ide_state.cursorColumn;
-	const previousDesiredColumn = ide_state.desiredColumn;
+	const previousCursorRow = editorDocumentState.cursorRow;
+	const previousCursorColumn = editorDocumentState.cursorColumn;
+	const previousDesiredColumn = editorDocumentState.desiredColumn;
 
 	ide_state.wordWrapEnabled = !previousWrap;
 	editorCaretState.cursorRevealSuspended = false;
 	ide_state.layout.markVisualLinesDirty();
 	ensureVisualLines();
 
-	ide_state.cursorRow = ide_state.layout.clampBufferRow(ide_state.buffer, previousCursorRow);
-	const currentLine = ide_state.buffer.getLineContent(ide_state.cursorRow);
-	ide_state.cursorColumn = ide_state.layout.clampLineLength(currentLine.length, previousCursorColumn);
-	ide_state.desiredColumn = previousDesiredColumn;
+	editorDocumentState.cursorRow = ide_state.layout.clampBufferRow(editorDocumentState.buffer, previousCursorRow);
+	const currentLine = editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
+	editorDocumentState.cursorColumn = ide_state.layout.clampLineLength(currentLine.length, previousCursorColumn);
+	editorDocumentState.desiredColumn = previousDesiredColumn;
 
 	if (ide_state.wordWrapEnabled) {
 		ide_state.scrollColumn = 0;

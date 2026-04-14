@@ -7,6 +7,7 @@ import { focusEditorFromLineJump } from '../contrib/find/line_jump';
 import { resetBlink } from '../render/render_caret';
 import { focusEditorFromResourceSearch } from '../contrib/resources/resource_search';
 import { focusEditorFromSymbolSearch } from '../contrib/symbols/symbol_search_shared';
+import { editorDocumentState } from '../editing/editor_document_state';
 
 export function focusPrimaryEditorSurface(): void {
 	clearReferenceHighlights();
@@ -20,7 +21,7 @@ export function focusPrimaryEditorSurface(): void {
 
 export function focusEditorAtPosition(row: number, column: number): void {
 	focusPrimaryEditorSurface();
-	setSingleCursorSelectionAnchor(ide_state, row, column);
+	setSingleCursorSelectionAnchor(editorDocumentState, row, column);
 	setCursorPosition(row, column);
 	resetBlink();
 }

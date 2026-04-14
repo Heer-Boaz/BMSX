@@ -10,6 +10,7 @@ import { handleRuntimeTaskError } from '../../ui/editor_runtime';
 import { clearExecutionStopHighlights } from '../../contrib/runtime_error/runtime_error_navigation';
 import * as constants from '../../core/constants';
 import { setEditorCaseInsensitivity } from '../../render/text_renderer';
+import { editorDocumentState } from '../../editing/editor_document_state';
 
 export function performEditorAction(action: ActionPromptAction): boolean {
 	switch (action) {
@@ -48,7 +49,7 @@ function hasPendingEngineModuleReload(runtime: Runtime): boolean {
 
 export function performHotResume(): boolean {
 	const runtime = Runtime.instance;
-	const targetGeneration = ide_state.saveGeneration;
+	const targetGeneration = editorDocumentState.saveGeneration;
 	const shouldUpdateGeneration = hasPendingRuntimeReload();
 	clearExecutionStopHighlights();
 	runtimeIde.deactivateEditor(Runtime.instance);
@@ -77,7 +78,7 @@ export function performHotResume(): boolean {
 		await runtimeLuaPipeline.resumeFromSnapshot(runtime, snapshot, { preserveEngineModules });
 		if (shouldUpdateGeneration) {
 			console.log('[IDE] Updating applied generation after resume');
-			ide_state.appliedGeneration = targetGeneration;
+			editorDocumentState.appliedGeneration = targetGeneration;
 		}
 		$.paused = false;
 	}, (error) => {
@@ -89,13 +90,13 @@ export function performHotResume(): boolean {
 
 export function performReboot(): boolean {
 	const runtime = Runtime.instance;
-	const targetGeneration = ide_state.saveGeneration;
+	const targetGeneration = editorDocumentState.saveGeneration;
 	clearExecutionStopHighlights();
 	runtimeIde.deactivateEditor(Runtime.instance);
 	scheduleRuntimeTask(async () => {
 		console.info('[IDE] Performing cold reboot through bootrom');
 		await runtime.rebootToBootRom();
-		ide_state.appliedGeneration = targetGeneration;
+		editorDocumentState.appliedGeneration = targetGeneration;
 		$.paused = false;
 	}, (error) => {
 		handleRuntimeTaskError(error, 'Failed to reboot game');
@@ -104,7 +105,7 @@ export function performReboot(): boolean {
 }
 
 export function hasPendingRuntimeReload(): boolean {
-	return ide_state.saveGeneration > ide_state.appliedGeneration;
+	return editorDocumentState.saveGeneration > editorDocumentState.appliedGeneration;
 }
 
 function toggleThemeMode(): void {

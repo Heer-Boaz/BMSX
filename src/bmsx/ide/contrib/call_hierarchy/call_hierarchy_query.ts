@@ -1,9 +1,9 @@
 import { listResources } from '../../../emulator/workspace';
-import { ide_state } from '../../core/ide_state';
 import { getActiveCodeTabContext } from '../../ui/editor_tabs';
 import { buildEditorSemanticSnapshot, createEditorSemanticFrontend } from '../intellisense/editor_semantic_frontend';
 import { extractHoverExpression } from '../intellisense/intellisense';
 import { buildIncomingCallHierarchyView, type CallHierarchyView } from './call_hierarchy_view';
+import { editorDocumentState } from '../../editing/editor_document_state';
 
 export type CallHierarchyQueryResult =
 	| { kind: 'success'; view: CallHierarchyView; }
@@ -16,7 +16,7 @@ export function resolveCallHierarchyViewAt(row: number, column: number): CallHie
 		return { kind: 'missing_definition' };
 	}
 	const path = context.descriptor.path;
-	const snapshot = buildEditorSemanticSnapshot(path, ide_state.buffer, ide_state.textVersion);
+	const snapshot = buildEditorSemanticSnapshot(path, editorDocumentState.buffer, editorDocumentState.textVersion);
 	const frontend = createEditorSemanticFrontend(snapshot);
 	const resolution = frontend.findReferencesByPosition(path, row + 1, column + 1);
 	const expression = extractHoverExpression(row, column)?.expression;

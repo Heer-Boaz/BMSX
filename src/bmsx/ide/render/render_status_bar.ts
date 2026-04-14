@@ -10,6 +10,7 @@ import { measureText, truncateTextToWidth } from '../core/text_utils';
 import { Runtime } from '../../emulator/runtime';
 import { api } from '../ui/view/overlay_api';
 import { workspaceState } from '../core/workspace_storage';
+import { editorDocumentState } from '../editing/editor_document_state';
 
 export function renderStatusBar(): void {
 	const runtime = Runtime.instance;
@@ -128,5 +129,5 @@ export function buildStatusLeftInfo(): string {
 		// When Problems panel is visible but not focused or no selection, don't render default editor position
 		return '';
 	}
-	return `LINE ${ide_state.cursorRow + 1}/${ide_state.buffer.getLineCount()} COL ${ide_state.cursorColumn + 1}`;
+	return `LINE ${editorDocumentState.cursorRow + 1}/${editorDocumentState.buffer.getLineCount()} COL ${editorDocumentState.cursorColumn + 1}`;
 }

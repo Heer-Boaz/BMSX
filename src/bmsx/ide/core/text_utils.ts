@@ -19,6 +19,7 @@ import * as runtimeLuaPipeline from '../../emulator/runtime_lua_pipeline';
 import { buildDirtyFilePath } from './workspace_storage';
 import { getWorkspaceCachedSource } from '../../emulator/workspace_cache';
 import { editorFeedbackState } from './editor_feedback_state';
+import { editorDocumentState } from '../editing/editor_document_state';
 
 export function expandTabs(source: string): string {
 	if (source.indexOf('\t') === -1) return source;
@@ -537,7 +538,7 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 		return null;
 	}
 	let selectionStartColumn = lineIndex === start.row ? start.column : 0;
-	const lineLength = ide_state.buffer.getLineEndOffset(lineIndex) - ide_state.buffer.getLineStartOffset(lineIndex);
+	const lineLength = editorDocumentState.buffer.getLineEndOffset(lineIndex) - editorDocumentState.buffer.getLineStartOffset(lineIndex);
 	let selectionEndColumn = lineIndex === end.row ? end.column : lineLength;
 	if (lineIndex === end.row && end.column === 0 && end.row > start.row) {
 		selectionEndColumn = 0;
@@ -560,10 +561,10 @@ export function ensureVisualLines(): void {
 	const path = activeContext.descriptor.path;
 	const estimatedVisibleRowCount = Math.max(1, ide_state.cachedVisibleRowCount);
 	ide_state.scrollRow = ide_state.layout.ensureVisualLines({
-		buffer: ide_state.buffer,
+		buffer: editorDocumentState.buffer,
 		wordWrapEnabled: ide_state.wordWrapEnabled,
 		scrollRow: ide_state.scrollRow,
-		documentVersion: ide_state.textVersion,
+		documentVersion: editorDocumentState.textVersion,
 		path,
 		computeWrapWidth: () => computeWrapWidth(),
 		estimatedVisibleRowCount,
@@ -596,7 +597,7 @@ export function positionToVisualIndex(row: number, column: number): number {
 	if (override) {
 		return override.visualIndex;
 	}
-	return ide_state.layout.positionToVisualIndex(ide_state.buffer, row, column);
+	return ide_state.layout.positionToVisualIndex(editorDocumentState.buffer, row, column);
 }
 export function computeRuntimeErrorOverlayMaxWidth(): number {
 	const resourceWidth = ide_state.resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
@@ -677,28 +678,28 @@ export function capturePreMutationSource(): void {
 	if (!ide_state.caseInsensitive) {
 		return;
 	}
-	if (ide_state.preMutationSource === null) {
-		ide_state.preMutationSource = getTextSnapshot(ide_state.buffer);
+	if (editorDocumentState.preMutationSource === null) {
+		editorDocumentState.preMutationSource = getTextSnapshot(editorDocumentState.buffer);
 	}
 }
 
 export function markTextMutated(): void {
-	const record = ide_state.undoStack[ide_state.undoStack.length - 1];
-	const anchor = ide_state.selectionAnchor;
+	const record = editorDocumentState.undoStack[editorDocumentState.undoStack.length - 1];
+	const anchor = editorDocumentState.selectionAnchor;
 	record.setAfterState(
-		ide_state.cursorRow,
-		ide_state.cursorColumn,
+		editorDocumentState.cursorRow,
+		editorDocumentState.cursorColumn,
 		ide_state.scrollRow,
 		ide_state.scrollColumn,
 		anchor ? anchor.row : 0,
 		anchor ? anchor.column : 0,
 		anchor !== null,
 	);
-	ide_state.saveGeneration = ide_state.saveGeneration + 1;
-	ide_state.dirty = ide_state.undoStack.length !== ide_state.savePointDepth;
+	editorDocumentState.saveGeneration = editorDocumentState.saveGeneration + 1;
+	editorDocumentState.dirty = editorDocumentState.undoStack.length !== editorDocumentState.savePointDepth;
 	const context = getActiveCodeTabContext();
 	if (context) {
-		context.saveGeneration = ide_state.saveGeneration;
+		context.saveGeneration = editorDocumentState.saveGeneration;
 	}
 	ide_state.maxLineLengthDirty = true;
 	markDiagnosticsDirty(getActiveCodeTabContext().id);
@@ -712,7 +713,7 @@ export function markTextMutated(): void {
 	if (ide_state.search.query.length > 0) startSearchJob();
 }
 export function bumpTextVersion(): void {
-	ide_state.textVersion = ide_state.buffer.version;
+	editorDocumentState.textVersion = editorDocumentState.buffer.version;
 }
 
 export function getSourceForChunk(path: string): string {
@@ -720,7 +721,7 @@ export function getSourceForChunk(path: string): string {
 	const context = findCodeTabContext(path);
 	if (context) {
 		if (context.id === ide_state.activeCodeTabContextId) {
-			return getTextSnapshot(ide_state.buffer);
+			return getTextSnapshot(editorDocumentState.buffer);
 		}
 		return getTextSnapshot(context.buffer);
 	}
@@ -735,8 +736,8 @@ export function getSourceForChunk(path: string): string {
 export function invalidateLineRange(startRow: number, endRow: number): void {
 	let from = Math.min(startRow, endRow);
 	let to = Math.max(startRow, endRow);
-	from = ide_state.layout.clampBufferRow(ide_state.buffer, from);
-	to = ide_state.layout.clampBufferRow(ide_state.buffer, to);
+	from = ide_state.layout.clampBufferRow(editorDocumentState.buffer, from);
+	to = ide_state.layout.clampBufferRow(editorDocumentState.buffer, to);
 	for (let row = from; row <= to; row += 1) {
 		ide_state.layout.invalidateLine(row);
 	}
@@ -745,7 +746,7 @@ export function invalidateLineRange(startRow: number, endRow: number): void {
 export function getLineRangeForMovement(): { startRow: number; endRow: number } {
 	const range = TextEditing.getSelectionRange();
 	if (!range) {
-		return { startRow: ide_state.cursorRow, endRow: ide_state.cursorRow };
+		return { startRow: editorDocumentState.cursorRow, endRow: editorDocumentState.cursorRow };
 	}
 	let endRow = range.end.row;
 	if (range.end.column === 0 && endRow > range.start.row) {
@@ -755,8 +756,8 @@ export function getLineRangeForMovement(): { startRow: number; endRow: number } 
 }
 
 export function currentLine(): string {
-	if (ide_state.cursorRow < 0 || ide_state.cursorRow >= ide_state.buffer.getLineCount()) {
+	if (editorDocumentState.cursorRow < 0 || editorDocumentState.cursorRow >= editorDocumentState.buffer.getLineCount()) {
 		return '';
 	}
-	return ide_state.buffer.getLineContent(ide_state.cursorRow);
+	return editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
 }

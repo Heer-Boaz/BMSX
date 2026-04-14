@@ -6,6 +6,7 @@ import { markTextMutated } from '../core/text_utils';
 import { resetBlink } from '../render/render_caret';
 import { revealCursor, updateDesiredColumn } from '../ui/caret';
 import * as TextEditing from './text_editing_and_selection';
+import { editorDocumentState } from './editor_document_state';
 
 export function toggleLineComments(): void {
 	if (!isEditableCodeTab()) {
@@ -18,7 +19,7 @@ export function toggleLineComments(): void {
 	}
 	let allCommented = true;
 	for (let row = range.startRow; row <= range.endRow; row++) {
-		const line = ide_state.buffer.getLineContent(row);
+		const line = editorDocumentState.buffer.getLineContent(row);
 		const commentIndex = firstNonWhitespaceIndex(line);
 		if (commentIndex >= line.length) {
 			allCommented = false;
@@ -48,7 +49,7 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 	prepareUndo('comment-lines', false);
 	let changed = false;
 	for (let row = target.startRow; row <= target.endRow; row++) {
-		const originalLine = ide_state.buffer.getLineContent(row);
+		const originalLine = editorDocumentState.buffer.getLineContent(row);
 		const insertIndex = firstNonWhitespaceIndex(originalLine);
 		const hasContent = insertIndex < originalLine.length;
 		let insertion = '--';
@@ -58,7 +59,7 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 				insertion = '-- ';
 			}
 		}
-		applyUndoableReplace(ide_state.buffer.offsetAt(row, insertIndex), 0, insertion);
+		applyUndoableReplace(editorDocumentState.buffer.offsetAt(row, insertIndex), 0, insertion);
 		ide_state.layout.invalidateLine(row);
 		shiftPositionsForInsertion(row, insertIndex, insertion.length);
 		changed = true;
@@ -66,10 +67,10 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 	if (!changed) {
 		return;
 	}
-	ide_state.cursorRow = ide_state.layout.clampBufferRow(ide_state.buffer, ide_state.cursorRow);
-	const cursorLine = ide_state.buffer.getLineContent(ide_state.cursorRow);
-	ide_state.cursorColumn = ide_state.layout.clampLineLength(cursorLine.length, ide_state.cursorColumn);
-	ide_state.selectionAnchor = TextEditing.clampSelectionPosition(ide_state.selectionAnchor);
+	editorDocumentState.cursorRow = ide_state.layout.clampBufferRow(editorDocumentState.buffer, editorDocumentState.cursorRow);
+	const cursorLine = editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
+	editorDocumentState.cursorColumn = ide_state.layout.clampLineLength(cursorLine.length, editorDocumentState.cursorColumn);
+	editorDocumentState.selectionAnchor = TextEditing.clampSelectionPosition(editorDocumentState.selectionAnchor);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -88,7 +89,7 @@ export function removeLineComments(range?: { startRow: number; endRow: number })
 	prepareUndo('uncomment-lines', false);
 	let changed = false;
 	for (let row = target.startRow; row <= target.endRow; row++) {
-		const originalLine = ide_state.buffer.getLineContent(row);
+		const originalLine = editorDocumentState.buffer.getLineContent(row);
 		const commentIndex = firstNonWhitespaceIndex(originalLine);
 		if (commentIndex >= originalLine.length) {
 			continue;
@@ -103,7 +104,7 @@ export function removeLineComments(range?: { startRow: number; endRow: number })
 				removal = 3;
 			}
 		}
-		applyUndoableReplace(ide_state.buffer.offsetAt(row, commentIndex), removal, '');
+		applyUndoableReplace(editorDocumentState.buffer.offsetAt(row, commentIndex), removal, '');
 		ide_state.layout.invalidateLine(row);
 		shiftPositionsForRemoval(row, commentIndex, removal);
 		changed = true;
@@ -111,10 +112,10 @@ export function removeLineComments(range?: { startRow: number; endRow: number })
 	if (!changed) {
 		return;
 	}
-	ide_state.cursorRow = ide_state.layout.clampBufferRow(ide_state.buffer, ide_state.cursorRow);
-	const cursorLine = ide_state.buffer.getLineContent(ide_state.cursorRow);
-	ide_state.cursorColumn = ide_state.layout.clampLineLength(cursorLine.length, ide_state.cursorColumn);
-	ide_state.selectionAnchor = TextEditing.clampSelectionPosition(ide_state.selectionAnchor);
+	editorDocumentState.cursorRow = ide_state.layout.clampBufferRow(editorDocumentState.buffer, editorDocumentState.cursorRow);
+	const cursorLine = editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
+	editorDocumentState.cursorColumn = ide_state.layout.clampLineLength(cursorLine.length, editorDocumentState.cursorColumn);
+	editorDocumentState.selectionAnchor = TextEditing.clampSelectionPosition(editorDocumentState.selectionAnchor);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -135,11 +136,11 @@ export function shiftPositionsForInsertion(row: number, column: number, length: 
 	if (length <= 0) {
 		return;
 	}
-	if (ide_state.cursorRow === row && ide_state.cursorColumn >= column) {
-		ide_state.cursorColumn += length;
+	if (editorDocumentState.cursorRow === row && editorDocumentState.cursorColumn >= column) {
+		editorDocumentState.cursorColumn += length;
 	}
-	if (ide_state.selectionAnchor && ide_state.selectionAnchor.row === row && ide_state.selectionAnchor.column >= column) {
-		ide_state.selectionAnchor.column += length;
+	if (editorDocumentState.selectionAnchor && editorDocumentState.selectionAnchor.row === row && editorDocumentState.selectionAnchor.column >= column) {
+		editorDocumentState.selectionAnchor.column += length;
 	}
 }
 
@@ -147,18 +148,18 @@ export function shiftPositionsForRemoval(row: number, column: number, length: nu
 	if (length <= 0) {
 		return;
 	}
-	if (ide_state.cursorRow === row && ide_state.cursorColumn > column) {
-		if (ide_state.cursorColumn <= column + length) {
-			ide_state.cursorColumn = column;
+	if (editorDocumentState.cursorRow === row && editorDocumentState.cursorColumn > column) {
+		if (editorDocumentState.cursorColumn <= column + length) {
+			editorDocumentState.cursorColumn = column;
 		} else {
-			ide_state.cursorColumn -= length;
+			editorDocumentState.cursorColumn -= length;
 		}
 	}
-	if (ide_state.selectionAnchor && ide_state.selectionAnchor.row === row && ide_state.selectionAnchor.column > column) {
-		if (ide_state.selectionAnchor.column <= column + length) {
-			ide_state.selectionAnchor.column = column;
+	if (editorDocumentState.selectionAnchor && editorDocumentState.selectionAnchor.row === row && editorDocumentState.selectionAnchor.column > column) {
+		if (editorDocumentState.selectionAnchor.column <= column + length) {
+			editorDocumentState.selectionAnchor.column = column;
 		} else {
-			ide_state.selectionAnchor.column -= length;
+			editorDocumentState.selectionAnchor.column -= length;
 		}
 	}
 }

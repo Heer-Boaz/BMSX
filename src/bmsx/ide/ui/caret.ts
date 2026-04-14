@@ -8,6 +8,7 @@ import { findWordLeft, findWordRight, hasSelection, collapseSelectionTo, clearSe
 import { ensureSingleCursorSelectionAnchor } from '../editing/cursor_state';
 import type { VisualLineSegment } from '../core/types';
 import { revealCursor, resolveViewportCapacity, setCursorFromVisualIndex, updateDesiredColumn } from './caret_view';
+import { editorDocumentState } from '../editing/editor_document_state';
 
 export type VisualCursorOverride = {
 	row: number;
@@ -84,11 +85,11 @@ export function findFirstNonWhitespace(line: string, startColumn: number, endCol
  */
 export function setCursorPosition(row: number, column: number): void {
 	caretNavigation.clear();
-	const buffer = ide_state.buffer;
+	const buffer = editorDocumentState.buffer;
 	const targetRow = ide_state.layout.clampBufferRow(buffer, row);
 	const targetColumn = ide_state.layout.clampBufferColumn(buffer, targetRow, column);
-	ide_state.cursorRow = targetRow;
-	ide_state.cursorColumn = targetColumn;
+	editorDocumentState.cursorRow = targetRow;
+	editorDocumentState.cursorColumn = targetColumn;
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -105,10 +106,10 @@ export function moveCursorVertical(delta: number): void {
 	if (visualCount === 0) {
 		return;
 	}
-	const currentIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
+	const currentIndex = positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	const targetIndex = ide_state.layout.clampVisualIndex(visualCount, currentIndex + delta);
-	const desired = ide_state.desiredColumn;
-	const desiredDisplay = ide_state.desiredDisplayOffset;
+	const desired = editorDocumentState.desiredColumn;
+	const desiredDisplay = editorDocumentState.desiredDisplayOffset;
 	setCursorFromVisualIndex(targetIndex, desired, desiredDisplay);
 	resetBlink();
 	revealCursor();
@@ -128,60 +129,60 @@ export function moveCursorHorizontal(delta: number): void {
 	if (visualCount === 0) {
 		return;
 	}
-	const visualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
+	const visualIndex = positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	const segment = visualIndexToSegment(visualIndex);
 	if (!segment) {
 		return;
 	}
-	const buffer = ide_state.buffer;
+	const buffer = editorDocumentState.buffer;
 	const line = buffer.getLineContent(segment.row);
 	if (delta < 0) {
 		// Move left
-		if (ide_state.cursorColumn > segment.startColumn) {
-			ide_state.cursorColumn -= 1;
+		if (editorDocumentState.cursorColumn > segment.startColumn) {
+			editorDocumentState.cursorColumn -= 1;
 		} else {
 			let moved = false;
 				if (ide_state.wordWrapEnabled && visualIndex > 0) {
 					const prevSegment = visualIndexToSegment(visualIndex - 1);
 					if (prevSegment && prevSegment.row === segment.row) {
-						ide_state.cursorRow = prevSegment.row;
+						editorDocumentState.cursorRow = prevSegment.row;
 						const prevLine = buffer.getLineContent(prevSegment.row);
 						const prevEnd = Math.max(prevSegment.endColumn, prevSegment.startColumn);
 						const hasMoreBefore = prevEnd > prevSegment.startColumn;
 						const targetColumn = hasMoreBefore && prevEnd < prevLine.length
 						? Math.max(prevSegment.startColumn, prevEnd - 1)
 						: Math.min(prevEnd, prevLine.length);
-					ide_state.cursorColumn = ide_state.layout.clampLineLength(prevLine.length, targetColumn);
+					editorDocumentState.cursorColumn = ide_state.layout.clampLineLength(prevLine.length, targetColumn);
 					moved = true;
 				}
 			}
 			if (!moved && segment.row > 0) {
-				ide_state.cursorRow = segment.row - 1;
-				ide_state.cursorColumn = buffer.getLineEndOffset(ide_state.cursorRow) - buffer.getLineStartOffset(ide_state.cursorRow);
+				editorDocumentState.cursorRow = segment.row - 1;
+				editorDocumentState.cursorColumn = buffer.getLineEndOffset(editorDocumentState.cursorRow) - buffer.getLineStartOffset(editorDocumentState.cursorRow);
 			}
 		}
 	} else {
 		// Move right
-		if (ide_state.cursorColumn < segment.endColumn && ide_state.cursorColumn < line.length) {
-			ide_state.cursorColumn += 1;
+		if (editorDocumentState.cursorColumn < segment.endColumn && editorDocumentState.cursorColumn < line.length) {
+			editorDocumentState.cursorColumn += 1;
 		} else {
 			let moved = false;
 			if (ide_state.wordWrapEnabled && visualIndex < visualCount - 1) {
 				const nextSegment = visualIndexToSegment(visualIndex + 1);
 				if (nextSegment && nextSegment.row === segment.row) {
-					ide_state.cursorRow = nextSegment.row;
-					ide_state.cursorColumn = nextSegment.startColumn;
+					editorDocumentState.cursorRow = nextSegment.row;
+					editorDocumentState.cursorColumn = nextSegment.startColumn;
 					moved = true;
 				}
 			}
 			if (!moved && segment.row < buffer.getLineCount() - 1) {
-				ide_state.cursorRow = segment.row + 1;
-				ide_state.cursorColumn = 0;
+				editorDocumentState.cursorRow = segment.row + 1;
+				editorDocumentState.cursorColumn = 0;
 			}
 		}
 	}
-	const cursorLength = buffer.getLineEndOffset(ide_state.cursorRow) - buffer.getLineStartOffset(ide_state.cursorRow);
-	ide_state.cursorColumn = ide_state.layout.clampLineLength(cursorLength, ide_state.cursorColumn);
+	const cursorLength = buffer.getLineEndOffset(editorDocumentState.cursorRow) - buffer.getLineStartOffset(editorDocumentState.cursorRow);
+	editorDocumentState.cursorColumn = ide_state.layout.clampLineLength(cursorLength, editorDocumentState.cursorColumn);
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -193,9 +194,9 @@ export function moveCursorHorizontal(delta: number): void {
  */
 export function moveWordLeft(): void {
 	caretNavigation.clear();
-	const destination = findWordLeft(ide_state.cursorRow, ide_state.cursorColumn);
-	ide_state.cursorRow = destination.row;
-	ide_state.cursorColumn = destination.column;
+	const destination = findWordLeft(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+	editorDocumentState.cursorRow = destination.row;
+	editorDocumentState.cursorColumn = destination.column;
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -207,9 +208,9 @@ export function moveWordLeft(): void {
  */
 export function moveWordRight(): void {
 	caretNavigation.clear();
-	const destination = findWordRight(ide_state.cursorRow, ide_state.cursorColumn);
-	ide_state.cursorRow = destination.row;
-	ide_state.cursorColumn = destination.column;
+	const destination = findWordRight(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+	editorDocumentState.cursorRow = destination.row;
+	editorDocumentState.cursorColumn = destination.column;
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -223,7 +224,7 @@ export function moveCursorLeft(): void {
 	const select = isShiftDown();
 	const byWord = isCtrlDown();
 	if (select) {
-		ensureSingleCursorSelectionAnchor(ide_state, ide_state.cursorRow, ide_state.cursorColumn);
+		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	} else if (hasSelection()) {
 		collapseSelectionTo('start');
 		breakUndoSequence();
@@ -249,7 +250,7 @@ export function moveCursorRight(): void {
 	const byWord = isCtrlDown();
 
 	if (select) {
-		ensureSingleCursorSelectionAnchor(ide_state, ide_state.cursorRow, ide_state.cursorColumn);
+		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	} else if (hasSelection()) {
 		collapseSelectionTo('end');
 		breakUndoSequence();
@@ -273,7 +274,7 @@ export function moveCursorRight(): void {
 export function moveCursorUp(): void {
 	const select = isShiftDown();
 	if (select) {
-		ensureSingleCursorSelectionAnchor(ide_state, ide_state.cursorRow, ide_state.cursorColumn);
+		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	} else if (hasSelection()) {
 		collapseSelectionTo('start');
 		breakUndoSequence();
@@ -293,7 +294,7 @@ export function moveCursorUp(): void {
 export function moveCursorDown(): void {
 	const select = isShiftDown();
 	if (select) {
-		ensureSingleCursorSelectionAnchor(ide_state, ide_state.cursorRow, ide_state.cursorColumn);
+		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	} else if (hasSelection()) {
 		collapseSelectionTo('end');
 		breakUndoSequence();
@@ -311,30 +312,30 @@ export function moveCursorDown(): void {
  * Move cursor to start of line or document
  */
 export function moveCursorHome(): void {
-	const previousOverride = caretNavigation.lookup(ide_state.cursorRow, ide_state.cursorColumn);
+	const previousOverride = caretNavigation.lookup(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	caretNavigation.clear();
-	const buffer = ide_state.buffer;
+	const buffer = editorDocumentState.buffer;
 	const select = isShiftDown();
 	if (select) {
-		ensureSingleCursorSelectionAnchor(ide_state, ide_state.cursorRow, ide_state.cursorColumn);
+		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	} else {
 		clearSelection();
 	}
 	const ctrlDown = isCtrlDown();
 	if (ctrlDown) {
-		ide_state.cursorRow = 0;
-		ide_state.cursorColumn = 0;
+		editorDocumentState.cursorRow = 0;
+		editorDocumentState.cursorColumn = 0;
 	} else {
 		ensureVisualLines();
-		const visualIndex = previousOverride?.visualIndex ?? positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
+		const visualIndex = previousOverride?.visualIndex ?? positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 		const segment = visualIndexToSegment(visualIndex);
 		if (segment) {
-			ide_state.cursorRow = segment.row;
+			editorDocumentState.cursorRow = segment.row;
 			const line = buffer.getLineContent(segment.row);
-			ide_state.cursorColumn = resolveIndentAwareHome(line, segment, ide_state.cursorColumn);
-			caretNavigation.capture(segment.row, ide_state.cursorColumn, visualIndex, segment.startColumn);
+			editorDocumentState.cursorColumn = resolveIndentAwareHome(line, segment, editorDocumentState.cursorColumn);
+			caretNavigation.capture(segment.row, editorDocumentState.cursorColumn, visualIndex, segment.startColumn);
 		} else {
-			ide_state.cursorColumn = 0;
+			editorDocumentState.cursorColumn = 0;
 		}
 	}
 	updateDesiredColumn();
@@ -347,31 +348,31 @@ export function moveCursorHome(): void {
  * Move cursor to end of line or document
  */
 export function moveCursorEnd(): void {
-	const previousOverride = caretNavigation.lookup(ide_state.cursorRow, ide_state.cursorColumn);
+	const previousOverride = caretNavigation.lookup(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	caretNavigation.clear();
-	const buffer = ide_state.buffer;
+	const buffer = editorDocumentState.buffer;
 	const select = isShiftDown();
 	if (select) {
-		ensureSingleCursorSelectionAnchor(ide_state, ide_state.cursorRow, ide_state.cursorColumn);
+		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	} else {
 		clearSelection();
 	}
 	const ctrlDown = isCtrlDown();
 	if (ctrlDown) {
 		const lastRow = buffer.getLineCount() - 1;
-		ide_state.cursorRow = lastRow;
-		ide_state.cursorColumn = buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow);
+		editorDocumentState.cursorRow = lastRow;
+		editorDocumentState.cursorColumn = buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow);
 	} else {
 		ensureVisualLines();
-		const visualIndex = previousOverride?.visualIndex ?? positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
+		const visualIndex = previousOverride?.visualIndex ?? positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 		const segment = visualIndexToSegment(visualIndex);
 		if (segment) {
-			ide_state.cursorRow = segment.row;
+			editorDocumentState.cursorRow = segment.row;
 			const line = buffer.getLineContent(segment.row);
-			ide_state.cursorColumn = resolveSegmentEnd(line, segment);
-			caretNavigation.capture(segment.row, ide_state.cursorColumn, visualIndex, segment.startColumn);
+			editorDocumentState.cursorColumn = resolveSegmentEnd(line, segment);
+			caretNavigation.capture(segment.row, editorDocumentState.cursorColumn, visualIndex, segment.startColumn);
 		} else {
-			ide_state.cursorColumn = currentLine().length;
+			editorDocumentState.cursorColumn = currentLine().length;
 		}
 	}
 	updateDesiredColumn();
@@ -386,15 +387,15 @@ export function moveCursorEnd(): void {
 export function pageUp(): void {
 	const select = isShiftDown();
 	if (select) {
-		ensureSingleCursorSelectionAnchor(ide_state, ide_state.cursorRow, ide_state.cursorColumn);
+		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	} else {
 		clearSelection();
 	}
 	const { rows } = resolveViewportCapacity();
 	const visualCount = getVisualLineCount();
-	const currentVisual = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
+	const currentVisual = positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	const targetVisual = ide_state.layout.clampVisualScroll(currentVisual - rows, visualCount, rows);
-	setCursorFromVisualIndex(targetVisual, ide_state.desiredColumn, ide_state.desiredDisplayOffset);
+	setCursorFromVisualIndex(targetVisual, editorDocumentState.desiredColumn, editorDocumentState.desiredDisplayOffset);
 	resetBlink();
 	breakUndoSequence();
 	revealCursor();
@@ -406,15 +407,15 @@ export function pageUp(): void {
 export function pageDown(): void {
 	const select = isShiftDown();
 	if (select) {
-		ensureSingleCursorSelectionAnchor(ide_state, ide_state.cursorRow, ide_state.cursorColumn);
+		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	} else {
 		clearSelection();
 	}
 	const { rows } = resolveViewportCapacity();
 	const visualCount = getVisualLineCount();
-	const currentVisual = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
+	const currentVisual = positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	const targetVisual = ide_state.layout.clampVisualIndex(visualCount, currentVisual + rows);
-	setCursorFromVisualIndex(targetVisual, ide_state.desiredColumn, ide_state.desiredDisplayOffset);
+	setCursorFromVisualIndex(targetVisual, editorDocumentState.desiredColumn, editorDocumentState.desiredDisplayOffset);
 	resetBlink();
 	breakUndoSequence();
 	revealCursor();

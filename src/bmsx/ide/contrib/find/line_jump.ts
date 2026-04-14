@@ -11,6 +11,7 @@ import { breakUndoSequence } from '../../editing/undo_controller';
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import { closeSymbolSearch } from '../symbols/symbol_search_shared';
 import { closeResourceSearch } from '../resources/resource_search';
+import { editorDocumentState } from '../../editing/editor_document_state';
 
 export function openLineJump(): void {
 	clearReferenceHighlights();
@@ -52,7 +53,7 @@ export function applyLineJump(): void {
 		return;
 	}
 	const target = Number.parseInt(ide_state.lineJump.value, 10);
-	const lineCount = ide_state.buffer.getLineCount();
+	const lineCount = editorDocumentState.buffer.getLineCount();
 	if (!Number.isFinite(target) || target < 1 || target > lineCount) {
 		showEditorMessage(`Line must be between 1 and ${lineCount}`, constants.COLOR_STATUS_WARNING, 1.8);
 		return;

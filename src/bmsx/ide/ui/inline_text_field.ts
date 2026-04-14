@@ -1,7 +1,6 @@
 import { $ } from '../../core/engine_core';
 import { CHARACTER_CODES, CHARACTER_MAP } from '../core/character_map';
 import * as constants from '../core/constants';
-import { ide_state } from '../core/ide_state';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../input/keyboard/key_input';
 import type { InlineInputOptions, Position, TextField } from '../core/types';
 import { clamp } from '../../utils/clamp';
@@ -9,6 +8,7 @@ import { LuaLexer } from '../../lua/syntax/lualexer';
 import { splitText, textFromLines } from '../text/source_text';
 import { advanceToggleBlink } from './caret_blink';
 import { editorCaretState } from './caret_state';
+import { editorDocumentState } from '../editing/editor_document_state';
 import {
 	clearSingleCursorSelection,
 	moveSingleCursor,
@@ -76,7 +76,7 @@ export function setSelectionAnchorPosition(field: TextField, row: number, column
 }
 
 const writeInlineFieldClipboard = (payload: string): void => {
-	ide_state.customClipboard = payload;
+	editorDocumentState.customClipboard = payload;
 	try {
 		void $.platform.clipboard.writeText(payload);
 	} catch {
@@ -460,7 +460,7 @@ export function applyInlineFieldEditing(
 	}
 
 	if (useCtrl && isKeyJustPressed('KeyV')) {
-		const clipboard = ide_state.customClipboard;
+		const clipboard = editorDocumentState.customClipboard;
 		if (clipboard.length > 0) {
 			let insertion = clipboard;
 			if (characterFilter) {

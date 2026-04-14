@@ -5,6 +5,7 @@ import * as constants from '../core/constants';
 import { ide_state } from '../core/ide_state';
 import { api } from '../ui/view/overlay_api';
 import { drawHighlightSlice } from './render_code_area_highlights';
+import { editorDocumentState } from '../editing/editor_document_state';
 
 type InlineCompletionPreview = {
 	row: number;
@@ -57,7 +58,7 @@ export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number
 	const highlight = entry.hi;
 	const columnToDisplay = highlight.columnToDisplay;
 	const clampedColumn = columnToDisplay.length > 0
-		? clamp(ide_state.cursorColumn, 0, columnToDisplay.length - 1)
+		? clamp(editorDocumentState.cursorColumn, 0, columnToDisplay.length - 1)
 		: 0;
 	const cursorDisplayIndex = columnToDisplay.length > 0 ? columnToDisplay[clampedColumn] : 0;
 	const limitedDisplayIndex = Math.max(sliceStartDisplay, cursorDisplayIndex);
@@ -75,12 +76,12 @@ export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number
 			cursorWidth = widthValue > 0 ? widthValue : ide_state.charAdvance;
 		}
 	}
-	if (ide_state.buffer.getLineContent(ide_state.cursorRow).charAt(ide_state.cursorColumn) === '\t') {
+	if (editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow).charAt(editorDocumentState.cursorColumn) === '\t') {
 		cursorWidth = ide_state.spaceAdvance * constants.TAB_SPACES;
 	}
 	return {
-		row: ide_state.cursorRow,
-		column: ide_state.cursorColumn,
+		row: editorDocumentState.cursorRow,
+		column: editorDocumentState.cursorColumn,
 		x: cursorX,
 		y: rowTop,
 		width: cursorWidth,

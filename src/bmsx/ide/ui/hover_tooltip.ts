@@ -8,6 +8,7 @@ import { ensureVisualLines, measureText, positionToVisualIndex, visibleColumnCou
 import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from './editor_view';
 import { point_in_rect } from '../../utils/rect_operations';
 import { intellisenseUiState } from '../contrib/intellisense/intellisense_ui_state';
+import { editorDocumentState } from '../editing/editor_document_state';
 
 export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: number): void {
 	const tooltip = intellisenseUiState.hoverTooltip;
@@ -33,7 +34,7 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 		tooltip.bubbleBounds = null;
 		return;
 	}
-	const entry = ide_state.layout.getCachedHighlight(ide_state.buffer, segment.row);
+	const entry = ide_state.layout.getCachedHighlight(editorDocumentState.buffer, segment.row);
 	const highlight = entry.hi;
 	let columnStart = ide_state.wordWrapEnabled ? segment.startColumn : ide_state.scrollColumn;
 	if (ide_state.wordWrapEnabled) {

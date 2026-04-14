@@ -1,5 +1,6 @@
 import { ide_state } from '../core/ide_state';
 import { showEditorMessage,showEditorWarningBanner } from '../core/editor_feedback_state';
+import { editorDocumentState, restoreDocumentStateFromContext, storeDocumentStateInContext } from '../editing/editor_document_state';
 import { editorChromeState } from './editor_chrome_state';
 import { editorDiagnosticsState } from '../contrib/problems/diagnostics_state';
 import type {
@@ -132,7 +133,7 @@ function setCodeTabDiagnosticsState(context: CodeTabContext): void {
 		const cachedVersion = cached?.version ?? -1;
 		const cachedChunk = cached?.path;
 		const path = resolvePath(context.descriptor);
-		if (!cached || cachedVersion !== ide_state.textVersion || cachedChunk !== path) {
+		if (!cached || cachedVersion !== editorDocumentState.textVersion || cachedChunk !== path) {
 			markDiagnosticsDirty(context.id);
 		}
 		return;
@@ -142,8 +143,8 @@ function setCodeTabDiagnosticsState(context: CodeTabContext): void {
 		contextId: context.id,
 		path: context.descriptor.path,
 		diagnostics: [],
-		version: ide_state.textVersion,
-		source: getTextSnapshot(ide_state.buffer),
+		version: editorDocumentState.textVersion,
+		source: getTextSnapshot(editorDocumentState.buffer),
 	});
 }
 
@@ -180,21 +181,9 @@ export function getActiveCodeTabContext(): CodeTabContext {
 
 export function storeActiveCodeTabContext(): void {
 	const context = getActiveCodeTabContext();
-	context.buffer = ide_state.buffer;
-	context.cursorRow = ide_state.cursorRow;
-	context.cursorColumn = ide_state.cursorColumn;
+	storeDocumentStateInContext(context);
 	context.scrollRow = ide_state.scrollRow;
 	context.scrollColumn = ide_state.scrollColumn;
-	context.selectionAnchor = ide_state.selectionAnchor;
-	context.textVersion = ide_state.textVersion;
-	context.saveGeneration = ide_state.saveGeneration;
-	context.appliedGeneration = ide_state.appliedGeneration;
-	context.undoStack = ide_state.undoStack;
-	context.redoStack = ide_state.redoStack;
-	context.lastHistoryKey = ide_state.lastHistoryKey;
-	context.lastHistoryTimestamp = ide_state.lastHistoryTimestamp;
-	context.savePointDepth = ide_state.savePointDepth;
-	context.dirty = ide_state.dirty;
 	context.runtimeErrorOverlay = runtimeErrorState.activeOverlay;
 	context.executionStopRow = runtimeErrorState.executionStopRow;
 	setTabDirty(context.id, context.dirty);
@@ -205,19 +194,9 @@ export function activateCodeEditorTab(tabId: string): void {
 	const context = ide_state.codeTabContexts.get(tabId)!;
 	ide_state.activeCodeTabContextId = tabId;
 	ide_state.activeContextReadOnly = context.readOnly === true;
-	ide_state.undoStack = context.undoStack;
-	ide_state.redoStack = context.redoStack;
-	ide_state.lastHistoryKey = context.lastHistoryKey;
-	ide_state.lastHistoryTimestamp = context.lastHistoryTimestamp;
-	ide_state.savePointDepth = context.savePointDepth;
-	ide_state.buffer = context.buffer;
-	ide_state.cursorRow = context.cursorRow;
-	ide_state.cursorColumn = context.cursorColumn;
+	restoreDocumentStateFromContext(context);
 	ide_state.scrollRow = context.scrollRow;
 	ide_state.scrollColumn = context.scrollColumn;
-	ide_state.selectionAnchor = context.selectionAnchor;
-	ide_state.textVersion = ide_state.buffer.version;
-	context.textVersion = ide_state.textVersion;
 
 	ide_state.maxLineLengthDirty = true;
 	ide_state.layout.setCodeTabMode(context.mode);
@@ -225,11 +204,7 @@ export function activateCodeEditorTab(tabId: string): void {
 	ide_state.layout.invalidateAllHighlights();
 	setCodeTabDiagnosticsState(context);
 
-	ide_state.dirty = ide_state.undoStack.length !== ide_state.savePointDepth;
-	ide_state.saveGeneration = context.saveGeneration;
-	ide_state.appliedGeneration = context.appliedGeneration;
-	ide_state.lastSavedSource = context.lastSavedSource;
-	context.dirty = ide_state.dirty;
+	context.dirty = editorDocumentState.dirty;
 	setTabDirty(context.id, context.dirty);
 	syncRuntimeErrorOverlayFromContext(context);
 	requestSemanticRefresh(context);
@@ -261,7 +236,7 @@ export function setTabDirty(tabId: string, dirty: boolean): void {
 
 export function updateActiveContextDirtyFlag(): void {
 	const context = getActiveCodeTabContext();
-	context.dirty = ide_state.dirty;
+	context.dirty = editorDocumentState.dirty;
 	setTabDirty(context.id, context.dirty);
 }
 
@@ -626,23 +601,23 @@ export function closeActiveTab(): void {
 }
 
 export function resetEditorContent(): void {
-	ide_state.buffer = new PieceTreeBuffer('');
+	editorDocumentState.buffer = new PieceTreeBuffer('');
 	ide_state.layout.markVisualLinesDirty();
 	markAllDiagnosticsDirty();
-	ide_state.cursorRow = 0;
-	ide_state.cursorColumn = 0;
+	editorDocumentState.cursorRow = 0;
+	editorDocumentState.cursorColumn = 0;
 	ide_state.scrollRow = 0;
 	ide_state.scrollColumn = 0;
-	ide_state.selectionAnchor = null;
-	ide_state.lastSavedSource = '';
-	ide_state.undoStack = [];
-	ide_state.redoStack = [];
-	ide_state.lastHistoryKey = null;
-	ide_state.lastHistoryTimestamp = 0;
-	ide_state.savePointDepth = 0;
+	editorDocumentState.selectionAnchor = null;
+	editorDocumentState.lastSavedSource = '';
+	editorDocumentState.undoStack = [];
+	editorDocumentState.redoStack = [];
+	editorDocumentState.lastHistoryKey = null;
+	editorDocumentState.lastHistoryTimestamp = 0;
+	editorDocumentState.savePointDepth = 0;
 	ide_state.layout.invalidateAllHighlights();
 	bumpTextVersion();
-	ide_state.dirty = false;
+	editorDocumentState.dirty = false;
 	updateActiveContextDirtyFlag();
 	syncRuntimeErrorOverlayFromContext(null);
 	updateDesiredColumn();
@@ -653,9 +628,9 @@ export function resetEditorContent(): void {
 
 export async function save(): Promise<void> {
 	const context = getActiveCodeTabContext();
-	const source = getTextSnapshot(ide_state.buffer);
+	const source = getTextSnapshot(editorDocumentState.buffer);
 	const targetPath = context.descriptor.path;
-	const previousAppliedGeneration = ide_state.appliedGeneration;
+	const previousAppliedGeneration = editorDocumentState.appliedGeneration;
 	try {
 		if (context.mode === 'lua') {
 			await saveLuaResourceSource(targetPath, source);
@@ -663,30 +638,30 @@ export async function save(): Promise<void> {
 			await saveAemResourceSource(targetPath, source);
 		}
 		setWorkspaceCachedSources([targetPath, buildDirtyFilePath(targetPath)], source);
-		ide_state.dirty = false;
-		ide_state.savePointDepth = ide_state.undoStack.length;
-		context.savePointDepth = ide_state.savePointDepth;
+		editorDocumentState.dirty = false;
+		editorDocumentState.savePointDepth = editorDocumentState.undoStack.length;
+		context.savePointDepth = editorDocumentState.savePointDepth;
 		breakUndoSequence();
-		ide_state.saveGeneration = ide_state.saveGeneration + 1;
+		editorDocumentState.saveGeneration = editorDocumentState.saveGeneration + 1;
 		context.lastSavedSource = source;
-		context.saveGeneration = ide_state.saveGeneration;
-		ide_state.lastSavedSource = source;
+		context.saveGeneration = editorDocumentState.saveGeneration;
+		editorDocumentState.lastSavedSource = source;
 		updateActiveContextDirtyFlag();
 		if (context.mode === 'lua') {
-			context.appliedGeneration = ide_state.appliedGeneration;
+			context.appliedGeneration = editorDocumentState.appliedGeneration;
 			setContextRuntimeSyncState(context, 'restart_pending', null);
 			showEditorMessage(`${context.title} saved (restart pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
 			return;
 		}
 		try {
 			applyAemSourceToRuntime(context.descriptor, source);
-			ide_state.appliedGeneration = ide_state.saveGeneration;
-			context.appliedGeneration = ide_state.appliedGeneration;
+			editorDocumentState.appliedGeneration = editorDocumentState.saveGeneration;
+			context.appliedGeneration = editorDocumentState.appliedGeneration;
 			setContextRuntimeSyncState(context, 'synced', null);
 			showEditorMessage(`${context.title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
 		} catch (applyError) {
 			const applyMessage = extractErrorMessage(applyError);
-			ide_state.appliedGeneration = previousAppliedGeneration;
+			editorDocumentState.appliedGeneration = previousAppliedGeneration;
 			context.appliedGeneration = previousAppliedGeneration;
 			setContextRuntimeSyncState(context, 'diverged', applyMessage);
 			showEditorMessage(`${context.title} saved, but runtime apply failed`, constants.COLOR_STATUS_WARNING, 4.0);
@@ -702,14 +677,14 @@ export async function save(): Promise<void> {
 }
 
 export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {
-	ide_state.lastContentEditAtMs = ide_state.clockNow();
+	editorDocumentState.lastContentEditAtMs = ide_state.clockNow();
 	ide_state.pendingEditContext = { kind, text };
 }
 
 export function applySourceToDocument(source: string): void {
-	ide_state.buffer.replace(0, ide_state.buffer.length, source);
-	invalidateLuaCommentContextFromRow(ide_state.buffer, 0);
-	ide_state.textVersion = ide_state.buffer.version;
+	editorDocumentState.buffer.replace(0, editorDocumentState.buffer.length, source);
+	invalidateLuaCommentContextFromRow(editorDocumentState.buffer, 0);
+	editorDocumentState.textVersion = editorDocumentState.buffer.version;
 	ide_state.maxLineLengthDirty = true;
 	ide_state.layout.invalidateHighlightsFromRow(0);
 	ide_state.layout.markVisualLinesDirty();

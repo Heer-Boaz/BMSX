@@ -10,6 +10,7 @@ import * as constants from '../../core/constants';
 import { editorPointerState } from '../../input/pointer/editor_pointer_state';
 import { editorCaretState } from '../../ui/caret_state';
 import { runtimeErrorState } from './runtime_error_state';
+import { editorDocumentState } from '../../editing/editor_document_state';
 
 type RuntimeErrorOverlayTarget = { context: CodeTabContext; overlay: RuntimeErrorOverlay };
 
@@ -58,7 +59,7 @@ export function focusRuntimeErrorOverlay(): boolean {
 	overlay.layout = null;
 	setActiveRuntimeErrorOverlay(overlay);
 	setExecutionStopHighlight(overlay.row);
-	ide_state.selectionAnchor = null;
+	editorDocumentState.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = false;
 	editorCaretState.cursorRevealSuspended = false;
@@ -101,7 +102,7 @@ export function setExecutionStopHighlight(row: number): void {
 	}
 	let nextRow = row;
 	if (nextRow !== null) {
-		nextRow = ide_state.layout.clampBufferRow(ide_state.buffer, nextRow);
+		nextRow = ide_state.layout.clampBufferRow(editorDocumentState.buffer, nextRow);
 	}
 	context.executionStopRow = nextRow;
 	runtimeErrorState.executionStopRow = nextRow;

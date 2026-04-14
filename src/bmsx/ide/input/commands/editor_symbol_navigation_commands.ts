@@ -1,7 +1,7 @@
-import { ide_state } from '../../core/ide_state';
 import { tryGotoDefinitionAt } from '../../contrib/intellisense/intellisense';
 import type { EditorCommandId } from './editor_commands';
 import { executeEditorCallHierarchyAt } from '../../contrib/call_hierarchy/call_hierarchy';
+import { editorDocumentState } from '../../editing/editor_document_state';
 
 export type EditorSymbolNavigationCommandId =
 	| 'goToDefinition'
@@ -15,10 +15,10 @@ export function isEditorSymbolNavigationCommand(command: EditorCommandId): comma
 export function executeEditorSymbolNavigationCommand(command: EditorSymbolNavigationCommandId): void {
 	switch (command) {
 		case 'goToDefinition':
-			executeEditorGoToDefinitionAt(ide_state.cursorRow, ide_state.cursorColumn);
+			executeEditorGoToDefinitionAt(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 			return;
 		case 'callHierarchy':
-			executeEditorCallHierarchyAt(ide_state.cursorRow, ide_state.cursorColumn);
+			executeEditorCallHierarchyAt(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 			return;
 	}
 }

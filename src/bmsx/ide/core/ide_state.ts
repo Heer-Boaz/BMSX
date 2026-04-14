@@ -10,7 +10,6 @@ import type { CompletionController } from '../contrib/suggest/completion_control
 import { ReferenceState } from '../contrib/references/reference_state';
 import { CHARACTER_CODES } from './character_map';
 import type {
-	Position,
 	CodeTabContext,
 	CrtOptionsSnapshot,
 	EditContext,
@@ -21,9 +20,6 @@ import type {
 	CreateResourceState,
 	EditorTabDescriptor,
 } from './types';
-import type { TextBuffer } from '../text/text_buffer';
-import { PieceTreeBuffer } from '../text/piece_tree_buffer';
-import type { EditorUndoRecord } from '../text/editor_undo';
 import type { CanonicalizationType } from '../../rompack/rompack';
 import { CodeLayout } from '../ui/code_layout';
 import type { DebuggerExecutionState } from '../contrib/debugger/ide_debugger';
@@ -92,24 +88,10 @@ export interface IdeState {
 	initialized: boolean;
 	playerIndex: number;
 	themeVariant: string;
-	buffer: TextBuffer;
-	cursorRow: number;
-	cursorColumn: number;
 	caseInsensitive: boolean;
 	canonicalization: CanonicalizationType;
-	preMutationSource: string;
 	scrollRow: number;
 	scrollColumn: number;
-	dirty: boolean;
-	desiredColumn: number;
-	desiredDisplayOffset: number;
-	selectionAnchor: Position;
-	selectionAnchorScratch: Position;
-	undoStack: EditorUndoRecord[];
-	redoStack: EditorUndoRecord[];
-	lastHistoryKey: string;
-	lastHistoryTimestamp: number;
-	savePointDepth: number;
 	fontVariant: FontVariant;
 	builtinIdentifierCache: BuiltinIdentifierCache | null;
 	viewportWidth: number;
@@ -147,11 +129,6 @@ export interface IdeState {
 	pendingEditContext: EditContext;
 	lastReportedSemanticError: string;
 	referenceState: ReferenceState;
-	textVersion: number;
-	lastContentEditAtMs: number;
-	saveGeneration: number;
-	appliedGeneration: number;
-	lastSavedSource: string;
 	tabs: EditorTabDescriptor[];
 	activeTabId: string;
 	pendingResourceSelectionAssetId: string;
@@ -168,31 +145,16 @@ export interface IdeState {
 	dimCrtInEditor: boolean;
 	wordWrapEnabled: boolean;
 	completion: CompletionController;
-	customClipboard: string;
 }
 
 export const ide_state: IdeState = {
 	initialized: false,
 	playerIndex: 0,
 	themeVariant: getActiveIdeThemeVariant(),
-	buffer: new PieceTreeBuffer(''),
-	cursorRow: 0,
-	cursorColumn: 0,
 	caseInsensitive: true,
 	canonicalization: 'lower',
-	preMutationSource: null,
 	scrollRow: 0,
 	scrollColumn: 0,
-	dirty: false,
-	desiredColumn: 0,
-	desiredDisplayOffset: 0,
-	selectionAnchor: null,
-	selectionAnchorScratch: { row: 0, column: 0 },
-	undoStack: [],
-	redoStack: [],
-	lastHistoryKey: null,
-	lastHistoryTimestamp: 0,
-	savePointDepth: 0,
 	fontVariant: undefined!,
 	builtinIdentifierCache: null,
 	viewportWidth: 0,
@@ -283,11 +245,6 @@ export const ide_state: IdeState = {
 	pendingEditContext: null,
 	lastReportedSemanticError: null,
 	referenceState: new ReferenceState(),
-	textVersion: 0,
-	lastContentEditAtMs: null,
-	saveGeneration: 0,
-	appliedGeneration: 0,
-	lastSavedSource: '',
 	tabs: [],
 	activeTabId: null,
 	pendingResourceSelectionAssetId: null,
@@ -304,7 +261,6 @@ export const ide_state: IdeState = {
 	dimCrtInEditor: true,
 	wordWrapEnabled: true,
 	completion: undefined!,
-	customClipboard: null,
 };
 
 export const caretNavigation = new CaretNavigationState();

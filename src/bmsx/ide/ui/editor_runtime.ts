@@ -16,6 +16,7 @@ import { renderCodeArea } from '../render/render_code_area';
 import { renderStatusBar } from '../render/render_status_bar';
 import { drawResourcePanel, drawResourceViewer } from '../render/render_resource_panel';
 import { drawActionPromptOverlay } from '../render/render_prompt';
+import { editorDocumentState } from '../editing/editor_document_state';
 import {
 	renderCreateResourceBar,
 	renderLineJumpBar,
@@ -177,7 +178,7 @@ export function activateRuntimeEditor(): void {
 	editorPointerState.pointerPrimaryWasPressed = false;
 	editorCaretState.cursorRevealSuspended = false;
 	updateDesiredColumn();
-	ide_state.selectionAnchor = null;
+	editorDocumentState.selectionAnchor = null;
 	ide_state.search.active = false;
 	ide_state.search.visible = false;
 	ide_state.lineJump.active = false;
@@ -225,7 +226,7 @@ export function deactivateRuntimeEditor(): void {
 	}
 	ide_state.completion.closeSession();
 	ide_state.input.applyOverrides(false, captureKeys);
-	ide_state.selectionAnchor = null;
+	editorDocumentState.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = false;
 	editorPointerState.pointerAuxWasPressed = false;

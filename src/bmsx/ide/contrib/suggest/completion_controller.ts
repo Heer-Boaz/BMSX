@@ -1,4 +1,5 @@
 import { clamp } from '../../../utils/clamp';
+import { editorDocumentState } from '../../editing/editor_document_state';
 import {
 	getApiCompletionData,
 	getKeywordCompletions,
@@ -71,11 +72,11 @@ export class CompletionController {
 	}
 
 	protected getBuffer() {
-		return ide_state.buffer;
+		return editorDocumentState.buffer;
 	}
 
 	protected getTextVersion(): number {
-		return ide_state.textVersion;
+		return editorDocumentState.textVersion;
 	}
 
 	protected getActivePath(): string {
@@ -105,16 +106,16 @@ export class CompletionController {
 	protected clampBufferPosition(row: number, column: number): { row: number; column: number } {
 		this.clampPositionScratch.row = row;
 		this.clampPositionScratch.column = column;
-		return ide_state.layout.clampBufferPosition(ide_state.buffer, this.clampPositionScratch);
+		return ide_state.layout.clampBufferPosition(editorDocumentState.buffer, this.clampPositionScratch);
 	}
 
 	protected clearSelectionAnchor(): void {
-		clearSingleCursorSelection(ide_state);
+		clearSingleCursorSelection(editorDocumentState);
 	}
 
 	protected getCursorPosition(): { row: number; column: number } {
-		this.cursorPositionScratch.row = ide_state.cursorRow;
-		this.cursorPositionScratch.column = ide_state.cursorColumn;
+		this.cursorPositionScratch.row = editorDocumentState.cursorRow;
+		this.cursorPositionScratch.column = editorDocumentState.cursorColumn;
 		return this.cursorPositionScratch;
 	}
 
@@ -123,11 +124,11 @@ export class CompletionController {
 		const rowCount = buffer.getLineCount();
 		const clampedRow = clamp(row, 0, Math.max(0, rowCount - 1));
 		const line = buffer.getLineContent(clampedRow);
-		setSingleCursorPosition(ide_state, clampedRow, clamp(column, 0, line.length));
+		setSingleCursorPosition(editorDocumentState, clampedRow, clamp(column, 0, line.length));
 	}
 
 	protected setSelectionAnchor(row: number, column: number): void {
-		setSingleCursorSelectionAnchor(ide_state, row, column);
+		setSingleCursorSelectionAnchor(editorDocumentState, row, column);
 	}
 
 	private setLastCursorPosition(row: number, column: number): void {

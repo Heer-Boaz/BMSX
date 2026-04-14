@@ -4,6 +4,7 @@ import { getActiveCodeTabContext, setActiveTab, isCodeTabActive, activateCodeTab
 import { setCursorPosition, ensureCursorVisible } from '../ui/caret';
 import * as TextEditing from '../editing/text_editing_and_selection';
 import { editorCaretState } from '../ui/caret_state';
+import { editorDocumentState } from '../editing/editor_document_state';
 
 export type NavigationHistoryEntry = {
 	contextId: string;
@@ -100,10 +101,10 @@ export function createNavigationEntry(): NavigationHistoryEntry {
 		return null;
 	}
 	const path = context.descriptor.path;
-	const maxRowIndex = Math.max(0, ide_state.buffer.getLineCount() - 1);
-	const row = clamp(ide_state.cursorRow, 0, maxRowIndex);
-	const lineLen = ide_state.buffer.getLineEndOffset(row) - ide_state.buffer.getLineStartOffset(row);
-	const column = clamp(ide_state.cursorColumn, 0, lineLen);
+	const maxRowIndex = Math.max(0, editorDocumentState.buffer.getLineCount() - 1);
+	const row = clamp(editorDocumentState.cursorRow, 0, maxRowIndex);
+	const lineLen = editorDocumentState.buffer.getLineEndOffset(row) - editorDocumentState.buffer.getLineStartOffset(row);
+	const column = clamp(editorDocumentState.cursorColumn, 0, lineLen);
 	return {
 		contextId: context.id,
 		path,
@@ -138,9 +139,9 @@ export function applyNavigationEntry(entry: NavigationHistoryEntry): void {
 	if (!isCodeTabActive()) {
 		return;
 	}
-	const maxRowIndex = Math.max(0, ide_state.buffer.getLineCount() - 1);
+	const maxRowIndex = Math.max(0, editorDocumentState.buffer.getLineCount() - 1);
 	const targetRow = clamp(entry.row, 0, maxRowIndex);
-	const line = ide_state.buffer.getLineContent(targetRow);
+	const line = editorDocumentState.buffer.getLineContent(targetRow);
 	const targetColumn = clamp(entry.column, 0, line.length);
 	setCursorPosition(targetRow, targetColumn);
 	TextEditing.clearSelection();

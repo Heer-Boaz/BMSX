@@ -6,6 +6,7 @@ import { getActiveCodeTabContext } from '../../ui/editor_tabs';
 import { resetBlink } from '../../render/render_caret';
 import { applySymbolSearchFieldText, closeSymbolSearch, ensureSymbolSearchSelectionVisible } from '../symbols/symbol_search_shared';
 import { resolveReferenceLookup } from './reference_lookup';
+import { editorDocumentState } from '../../editing/editor_document_state';
 import {
 	type ReferenceCatalogEntry,
 	type ReferenceSymbolEntry,
@@ -22,10 +23,10 @@ export function openReferenceSearchPopup(): void {
 	}
 	ide_state.renameController.cancel();
 	const result = resolveReferenceLookup({
-		buffer: ide_state.buffer,
-		textVersion: ide_state.textVersion,
-		cursorRow: ide_state.cursorRow,
-		cursorColumn: ide_state.cursorColumn,
+		buffer: editorDocumentState.buffer,
+		textVersion: editorDocumentState.textVersion,
+		cursorRow: editorDocumentState.cursorRow,
+		cursorColumn: editorDocumentState.cursorColumn,
 		extractExpression: (row, column) => extractHoverExpression(row, column),
 		path: context.descriptor.path,
 	});

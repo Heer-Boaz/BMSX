@@ -16,6 +16,7 @@ import { resetSemanticWorkspace } from '../contrib/intellisense/semantic_workspa
 import { assertMonospace } from '../core/text_utils';
 import * as constants from '../core/constants';
 import type { Viewport } from '../../rompack/rompack';
+import { editorDocumentState } from '../editing/editor_document_state';
 import {
 	applyViewportSize,
 	configureFontVariant,
@@ -36,7 +37,7 @@ export function initializeCartEditor(viewport: Viewport): void {
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
 	ide_state.canonicalization = Runtime.instance.cartCanonicalization;
 	ide_state.caseInsensitive = ide_state.canonicalization !== 'none';
-	ide_state.preMutationSource = null;
+	editorDocumentState.preMutationSource = null;
 	applyViewportSize(viewport);
 	ide_state.clockNow = $.platform.clock.now;
 	resetSemanticWorkspace();
@@ -77,9 +78,9 @@ export function initializeCartEditor(viewport: Viewport): void {
 	ide_state.cachedVisibleColumnCount = 1;
 	initializeTabs(createEntryTabContext());
 	resetResourcePanelState();
-	ide_state.desiredColumn = ide_state.cursorColumn;
+	editorDocumentState.desiredColumn = editorDocumentState.cursorColumn;
 	assertMonospace();
-	ide_state.lastSavedSource = '';
+	editorDocumentState.lastSavedSource = '';
 	initializeNavigationState();
 	ide_state.initialized = true;
 }

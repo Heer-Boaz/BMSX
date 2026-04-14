@@ -43,6 +43,7 @@ import { Pool } from '../../../utils/pool';
 import { $ } from '../../../core/engine_core';
 import { KEYWORDS, LuaTokenType, type LuaToken } from '../../../lua/syntax/luatoken';
 import { getTextSnapshot, splitText } from '../../text/source_text';
+import { editorDocumentState } from '../../editing/editor_document_state';
 export const PREVIEW_MAX_ENTRIES = 12;
 export const PREVIEW_MAX_DEPTH = 2;
 
@@ -584,7 +585,7 @@ export function shouldAutoTriggerCompletions(): boolean {
 	if (!intellisenseUiReady()) {
 		return false;
 	}
-	const lastEditAt = ide_state.lastContentEditAtMs;
+	const lastEditAt = editorDocumentState.lastContentEditAtMs;
 	if (lastEditAt === null) {
 		return false;
 	}
@@ -704,7 +705,7 @@ export function requestSemanticRefresh(context?: CodeTabContext): void {
 		return;
 	}
 	const path = activeContext.descriptor.path;
-	ide_state.layout.requestSemanticUpdate(ide_state.buffer, ide_state.textVersion, path);
+	ide_state.layout.requestSemanticUpdate(editorDocumentState.buffer, editorDocumentState.textVersion, path);
 }
 export function resolveSemanticDefinitionLocation(
 	context: CodeTabContext,
@@ -725,7 +726,7 @@ export function resolveSemanticDefinitionLocation(
 }
 
 function getProjectSemanticFrontendForEditorBuffer(context: CodeTabContext): ReturnType<typeof buildLuaSemanticFrontend> {
-	return buildEditorSemanticFrontend(context.descriptor.path, ide_state.buffer, ide_state.textVersion);
+	return buildEditorSemanticFrontend(context.descriptor.path, editorDocumentState.buffer, editorDocumentState.textVersion);
 }
 
 export function findDefinitionAtPosition(
@@ -762,12 +763,12 @@ export function findDefinitionAtPosition(
 }
 
 export function extractHoverExpression(row: number, column: number): { expression: string; startColumn: number; endColumn: number; } {
-	if (row < 0 || row >= ide_state.buffer.getLineCount()) {
+	if (row < 0 || row >= editorDocumentState.buffer.getLineCount()) {
 		return null;
 	}
-	const line = ide_state.buffer.getLineContent(row);
+	const line = editorDocumentState.buffer.getLineContent(row);
 	const safeColumn = clamp(column, 0, line.length);
-	if (isLuaCommentContext(ide_state.buffer, row, safeColumn)) {
+	if (isLuaCommentContext(editorDocumentState.buffer, row, safeColumn)) {
 		return null;
 	}
 	if (line.length === 0) {
@@ -775,7 +776,7 @@ export function extractHoverExpression(row: number, column: number): { expressio
 	}
 	const context = getActiveCodeTabContext();
 	const path = context.descriptor.path;
-	const source = getTextSnapshot(ide_state.buffer);
+	const source = getTextSnapshot(editorDocumentState.buffer);
 	const tokenMatch = findContextMenuTokenMatch(row, safeColumn, path, source);
 	if (tokenMatch && tokenMatch.token.type === LuaTokenType.String) {
 		return null;
@@ -925,7 +926,7 @@ function findContextMenuTokenMatch(row: number, column: number, path: string, so
 	const tokens = getCachedLuaParse({
 		path,
 		source,
-		version: ide_state.textVersion,
+		version: editorDocumentState.textVersion,
 		canonicalization: ide_state.caseInsensitive ? ide_state.canonicalization : 'none',
 	}).parsed.tokens;
 	const targetLine = row + 1;
@@ -1013,15 +1014,15 @@ function buildContextMenuToken(
 }
 
 export function resolveContextMenuToken(row: number, column: number): EditorContextToken {
-	if (row < 0 || row >= ide_state.buffer.getLineCount()) {
+	if (row < 0 || row >= editorDocumentState.buffer.getLineCount()) {
 		return null;
 	}
-	const line = ide_state.buffer.getLineContent(row);
+	const line = editorDocumentState.buffer.getLineContent(row);
 	if (line.length === 0) {
 		return null;
 	}
 	const safeColumn = clamp(column, 0, line.length);
-	if (isLuaCommentContext(ide_state.buffer, row, safeColumn)) {
+	if (isLuaCommentContext(editorDocumentState.buffer, row, safeColumn)) {
 		return null;
 	}
 	const expression = extractHoverExpression(row, safeColumn);
@@ -1042,7 +1043,7 @@ export function resolveContextMenuToken(row: number, column: number): EditorCont
 	}
 	const context = getActiveCodeTabContext();
 	const path = context.descriptor.path;
-	const source = getTextSnapshot(ide_state.buffer);
+	const source = getTextSnapshot(editorDocumentState.buffer);
 	const match = findContextMenuTokenMatch(row, safeColumn, path, source);
 	if (!match) {
 		return null;
@@ -1465,12 +1466,12 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 	if (preferredChunk && usageRow !== null && usageColumn !== null) {
 		const activeContext = getActiveCodeTabContext();
 		if (activeContext.descriptor.path === preferredChunk) {
-			const source = getTextSnapshot(ide_state.buffer);
+			const source = getTextSnapshot(editorDocumentState.buffer);
 			prepareSemanticWorkspaceForEditorBuffer({
 				path: preferredChunk,
 				source,
 				lines: splitText(source),
-				version: ide_state.textVersion,
+				version: editorDocumentState.textVersion,
 			});
 		} else {
 			primeSemanticWorkspaceProjectSources(getSemanticWorkspace());
@@ -2663,13 +2664,13 @@ export function safeInspectLuaExpression(request: LuaHoverRequest): LuaHoverResu
 }
 
 export function applyDefinitionSelection(range: LuaDefinitionLocation['range']): void {
-	const lastRowIndex = Math.max(0, ide_state.buffer.getLineCount() - 1);
+	const lastRowIndex = Math.max(0, editorDocumentState.buffer.getLineCount() - 1);
 	const startRow = clamp(range.startLine - 1, 0, lastRowIndex);
-	const startLine = ide_state.buffer.getLineContent(startRow);
+	const startLine = editorDocumentState.buffer.getLineContent(startRow);
 	const startColumn = clamp(range.startColumn - 1, 0, startLine.length);
-	ide_state.cursorRow = startRow;
-	ide_state.cursorColumn = startColumn;
-	ide_state.selectionAnchor = null;
+	editorDocumentState.cursorRow = startRow;
+	editorDocumentState.cursorColumn = startColumn;
+	editorDocumentState.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = false;
 	editorPointerState.pointerAuxWasPressed = false;
@@ -2689,9 +2690,9 @@ export function findFunctionDefinitionRowInActiveFile(functionName: string): num
 		new RegExp(`^\\s*local\\s+function\\s+${escaped}\\b`),
 		new RegExp(`\\b${escaped}\\s*=\\s*function\\b`),
 	];
-	const lineCount = ide_state.buffer.getLineCount();
+	const lineCount = editorDocumentState.buffer.getLineCount();
 	for (let row = 0; row < lineCount; row += 1) {
-		const line = ide_state.buffer.getLineContent(row);
+		const line = editorDocumentState.buffer.getLineContent(row);
 		for (let index = 0; index < patterns.length; index += 1) {
 			if (patterns[index].test(line)) {
 				return row;

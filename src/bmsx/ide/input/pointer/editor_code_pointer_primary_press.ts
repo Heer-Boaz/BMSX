@@ -1,5 +1,4 @@
 import { $ } from '../../../core/engine_core';
-import { ide_state } from '../../core/ide_state';
 import { setCursorPosition } from '../../ui/caret';
 import { setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { focusPrimaryEditorSurface } from '../../ui/editor_focus';
@@ -9,6 +8,7 @@ import type { PointerSnapshot } from '../../core/types';
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import * as constants from '../../core/constants';
 import { editorPointerState, resetPointerClickTracking } from './editor_pointer_state';
+import { editorDocumentState } from '../../editing/editor_document_state';
 
 export function handleCodeAreaPrimaryPressPointer(
 	snapshot: PointerSnapshot,
@@ -33,7 +33,7 @@ export function handleCodeAreaPrimaryPressPointer(
 		editorPointerState.pointerSelecting = false;
 		return false;
 	}
-	setSingleCursorSelectionAnchor(ide_state, targetRow, targetColumn);
+	setSingleCursorSelectionAnchor(editorDocumentState, targetRow, targetColumn);
 	setCursorPosition(targetRow, targetColumn);
 	editorPointerState.pointerSelecting = true;
 	return false;

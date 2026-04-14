@@ -1,10 +1,10 @@
-import { ide_state } from '../../core/ide_state';
 import type { ActionPromptAction, PointerSnapshot } from '../../core/types';
 import { save } from '../../ui/editor_tabs';
 import { performEditorAction } from '../commands/editor_actions';
 import { consumeIdeKey, isKeyJustPressed } from '../keyboard/key_input';
 import { point_in_rect } from '../../../utils/rect_operations';
 import { actionPromptState } from './action_prompt_state';
+import { editorDocumentState } from '../../editing/editor_document_state';
 
 export async function handleActionPromptSelection(choice: 'save-continue' | 'continue' | 'cancel'): Promise<void> {
 	const prompt = actionPromptState.prompt;
@@ -29,10 +29,10 @@ export async function handleActionPromptSelection(choice: 'save-continue' | 'con
 export async function attemptPromptSave(action: ActionPromptAction): Promise<boolean> {
 	if (action === 'close') {
 		await save();
-		return ide_state.dirty === false;
+		return editorDocumentState.dirty === false;
 	}
 	await save();
-	return ide_state.dirty === false;
+	return editorDocumentState.dirty === false;
 }
 
 export function handleActionPromptInput(): void {

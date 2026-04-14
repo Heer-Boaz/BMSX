@@ -15,6 +15,7 @@ import type { ModuleAliasEntry } from '../intellisense/semantic_model';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { editorCaretState } from '../../ui/caret_state';
 import { diagnosticsDebounceMs, editorDiagnosticsState, EMPTY_DIAGNOSTICS } from './diagnostics_state';
+import { editorDocumentState } from '../../editing/editor_document_state';
 
 const diagnosticsMinIntervalMs = 600;
 let diagnosticsTimer: TimerHandle | null = null;
@@ -171,12 +172,12 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			continue;
 		}
 		if (context.mode !== 'lua') {
-			const source = contextId === activeId ? getTextSnapshot(ide_state.buffer) : getTextSnapshot(context.buffer);
+			const source = contextId === activeId ? getTextSnapshot(editorDocumentState.buffer) : getTextSnapshot(context.buffer);
 			editorDiagnosticsState.diagnosticsCache.set(context.id, {
 				contextId: context.id,
 				path: context.descriptor.path,
 				diagnostics: [],
-				version: contextId === activeId ? ide_state.buffer.version : context.buffer.version,
+				version: contextId === activeId ? editorDocumentState.buffer.version : context.buffer.version,
 				source,
 			});
 			editorDiagnosticsState.dirtyDiagnosticContexts.delete(contextId);
@@ -185,7 +186,7 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 		const path = context.descriptor.path;
 		const isActive = activeId && contextId === activeId;
 		const cached = editorDiagnosticsState.diagnosticsCache.get(contextId);
-		const buffer = isActive ? ide_state.buffer : context.buffer;
+		const buffer = isActive ? editorDocumentState.buffer : context.buffer;
 		const version = buffer.version;
 		if (cached && cached.path === path && cached.version === version) {
 			editorDiagnosticsState.dirtyDiagnosticContexts.delete(contextId);
@@ -291,13 +292,13 @@ export function markDiagnosticsDirtyForChunk(path: string): void {
 export function getActiveSemanticDefinitions(): readonly LuaDefinitionInfo[] {
 	const context = getActiveCodeTabContext();
 	const path = context.descriptor.path;
-	return ide_state.layout.getSemanticDefinitions(ide_state.buffer, ide_state.textVersion, path);
+	return ide_state.layout.getSemanticDefinitions(editorDocumentState.buffer, editorDocumentState.textVersion, path);
 }
 
 export function getLuaModuleAliases(path: string): Map<string, ModuleAliasEntry> {
 	const activeContext = getActiveCodeTabContext();
 	const targetChunk = path || activeContext.descriptor.path;
-	ide_state.layout.getSemanticDefinitions(ide_state.buffer, ide_state.textVersion, targetChunk);
+	ide_state.layout.getSemanticDefinitions(editorDocumentState.buffer, editorDocumentState.textVersion, targetChunk);
 	const data = getOrCreateSemanticWorkspace().getSnapshot().getFileData(targetChunk);
 	if (!data || data.moduleAliases.length === 0) {
 		return new Map();
@@ -344,8 +345,8 @@ export function gotoDiagnostic(diagnostic: EditorDiagnostic): void {
 	if (!isCodeTabActive()) {
 		return;
 	}
-	const targetRow = clamp(diagnostic.row, 0, Math.max(0, ide_state.buffer.getLineCount() - 1));
-	const line = ide_state.buffer.getLineContent(targetRow);
+	const targetRow = clamp(diagnostic.row, 0, Math.max(0, editorDocumentState.buffer.getLineCount() - 1));
+	const line = editorDocumentState.buffer.getLineContent(targetRow);
 	const targetColumn = clamp(diagnostic.startColumn, 0, line.length);
 	setCursorPosition(targetRow, targetColumn);
 	TextEditing.clearSelection();

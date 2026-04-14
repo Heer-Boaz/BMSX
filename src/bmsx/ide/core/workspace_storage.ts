@@ -10,6 +10,7 @@ import { taskGate } from '../../core/taskgate';
 import { Runtime } from '../../emulator/runtime';
 import * as runtimeLuaPipeline from '../../emulator/runtime_lua_pipeline';
 import * as runtimeIde from '../../emulator/runtime_ide';
+import { editorDocumentState } from '../editing/editor_document_state';
 import {
 	WORKSPACE_FILE_ENDPOINT,
 	WORKSPACE_MARKER_FILE,
@@ -402,8 +403,8 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 			setTabDirty(context.id, false);
 			if (ide_state.activeCodeTabContextId === context.id && ide_state.activeTabId === context.id) {
 				restoreSnapshot(buildSnapshotFromBuffer(context, entry), { preserveScroll: true });
-				ide_state.savePointDepth = context.savePointDepth;
-				ide_state.dirty = false;
+				editorDocumentState.savePointDepth = context.savePointDepth;
+				editorDocumentState.dirty = false;
 				updateActiveContextDirtyFlag();
 			}
 			continue;
@@ -415,8 +416,8 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 		setTabDirty(context.id, true);
 		if (ide_state.activeCodeTabContextId === context.id && ide_state.activeTabId === context.id) {
 			restoreSnapshot(buildSnapshotFromBuffer(context, entry), { preserveScroll: true });
-			ide_state.savePointDepth = context.savePointDepth;
-			ide_state.dirty = true;
+			editorDocumentState.savePointDepth = context.savePointDepth;
+			editorDocumentState.dirty = true;
 			updateActiveContextDirtyFlag();
 		}
 	}
@@ -431,11 +432,11 @@ function applySourceToContext(context: CodeTabContext, source: string, metadata?
 	context.lastHistoryTimestamp = 0;
 	context.savePointDepth = 0;
 	if (ide_state.activeCodeTabContextId === context.id && ide_state.activeTabId === context.id) {
-		ide_state.undoStack.length = 0;
-		ide_state.redoStack.length = 0;
-		ide_state.lastHistoryKey = null;
-		ide_state.lastHistoryTimestamp = 0;
-		ide_state.savePointDepth = 0;
+		editorDocumentState.undoStack.length = 0;
+		editorDocumentState.redoStack.length = 0;
+		editorDocumentState.lastHistoryKey = null;
+		editorDocumentState.lastHistoryTimestamp = 0;
+		editorDocumentState.savePointDepth = 0;
 	}
 	const snapshot = buildSnapshotFromBuffer(context, metadata);
 	context.cursorRow = snapshot.cursorRow;
@@ -592,7 +593,7 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 
 export function captureContextText(context: CodeTabContext): string {
 	if (context.id === ide_state.activeCodeTabContextId) {
-		return getTextSnapshot(ide_state.buffer);
+		return getTextSnapshot(editorDocumentState.buffer);
 	}
 	return getTextSnapshot(context.buffer);
 }
@@ -600,12 +601,12 @@ export function captureContextText(context: CodeTabContext): string {
 function captureContextSnapshotMetadata(context: CodeTabContext): SnapshotMetadata {
 	if (context.id === ide_state.activeCodeTabContextId) {
 		return {
-			cursorRow: ide_state.cursorRow,
-			cursorColumn: ide_state.cursorColumn,
+			cursorRow: editorDocumentState.cursorRow,
+			cursorColumn: editorDocumentState.cursorColumn,
 			scrollRow: ide_state.scrollRow,
 			scrollColumn: ide_state.scrollColumn,
-			selectionAnchor: ide_state.selectionAnchor ? { row: ide_state.selectionAnchor.row, column: ide_state.selectionAnchor.column } : null,
-			textVersion: ide_state.textVersion,
+			selectionAnchor: editorDocumentState.selectionAnchor ? { row: editorDocumentState.selectionAnchor.row, column: editorDocumentState.selectionAnchor.column } : null,
+			textVersion: editorDocumentState.textVersion,
 		};
 	}
 	return {
@@ -709,19 +710,19 @@ export function loadCleanSrc(path: string) {
 export function clearWorkspaceDirtyBuffers(): void {
 	clearWorkspaceCachedSources();
 	workspaceState.autosaveSignature = null;
-	ide_state.saveGeneration = ide_state.appliedGeneration;
-	ide_state.dirty = false;
-	ide_state.undoStack.length = 0;
-	ide_state.redoStack.length = 0;
-	ide_state.lastHistoryKey = null;
-	ide_state.lastHistoryTimestamp = 0;
-	ide_state.savePointDepth = 0;
+	editorDocumentState.saveGeneration = editorDocumentState.appliedGeneration;
+	editorDocumentState.dirty = false;
+	editorDocumentState.undoStack.length = 0;
+	editorDocumentState.redoStack.length = 0;
+	editorDocumentState.lastHistoryKey = null;
+	editorDocumentState.lastHistoryTimestamp = 0;
+	editorDocumentState.savePointDepth = 0;
 	for (const context of ide_state.codeTabContexts.values()) {
 		const source = loadCleanSrc(context.descriptor.path);
 		applySourceToContext(context, source);
 		context.dirty = false;
-		context.saveGeneration = ide_state.saveGeneration;
-		context.appliedGeneration = ide_state.appliedGeneration;
+		context.saveGeneration = editorDocumentState.saveGeneration;
+		context.appliedGeneration = editorDocumentState.appliedGeneration;
 		context.lastSavedSource = source;
 		context.undoStack.length = 0;
 		context.redoStack.length = 0;
@@ -777,12 +778,12 @@ export async function runWorkspaceAutosaveTick(): Promise<void> {
 
 export function clearWorkspaceSessionState(): void {
 	stopWorkspaceAutosaveLoop();
-	ide_state.undoStack.length = 0;
-	ide_state.redoStack.length = 0;
-	ide_state.lastHistoryKey = null;
-	ide_state.lastHistoryTimestamp = 0;
-	ide_state.savePointDepth = 0;
-	ide_state.dirty = false;
+	editorDocumentState.undoStack.length = 0;
+	editorDocumentState.redoStack.length = 0;
+	editorDocumentState.lastHistoryKey = null;
+	editorDocumentState.lastHistoryTimestamp = 0;
+	editorDocumentState.savePointDepth = 0;
+	editorDocumentState.dirty = false;
 	for (const context of ide_state.codeTabContexts.values()) {
 		context.undoStack.length = 0;
 		context.redoStack.length = 0;

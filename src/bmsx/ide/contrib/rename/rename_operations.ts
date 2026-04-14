@@ -14,6 +14,7 @@ import { setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { updateDesiredColumn, ensureCursorVisible } from '../../ui/caret';
 import { resetBlink } from '../../render/render_caret';
 import { editorCaretState } from '../../ui/caret_state';
+import { editorDocumentState } from '../../editing/editor_document_state';
 
 export type RenameLineEdit = {
 	row: number;
@@ -65,8 +66,8 @@ export function commitRename(
 		recordEditContext('replace', newName);
 		for (let index = sortedMatches.length - 1; index >= 0; index -= 1) {
 			const match = sortedMatches[index];
-			const startOffset = ide_state.buffer.offsetAt(match.row, match.start);
-			const endOffset = ide_state.buffer.offsetAt(match.row, match.end);
+			const startOffset = editorDocumentState.buffer.offsetAt(match.row, match.start);
+			const endOffset = editorDocumentState.buffer.offsetAt(match.row, match.end);
 			applyUndoableReplace(startOffset, endOffset - startOffset, newName);
 			ide_state.layout.invalidateLine(match.row);
 		}
@@ -74,9 +75,9 @@ export function commitRename(
 
 		const clampedIndex = clamp(activeIndex, 0, sortedMatches.length - 1);
 		const focused = sortedMatches[clampedIndex];
-		ide_state.cursorRow = focused.row;
-		ide_state.cursorColumn = focused.start;
-		setSingleCursorSelectionAnchor(ide_state, focused.row, focused.start + newName.length);
+		editorDocumentState.cursorRow = focused.row;
+		editorDocumentState.cursorColumn = focused.start;
+		setSingleCursorSelectionAnchor(editorDocumentState, focused.row, focused.start + newName.length);
 		updateDesiredColumn();
 		resetBlink();
 		editorCaretState.cursorRevealSuspended = false;

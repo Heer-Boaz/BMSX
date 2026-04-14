@@ -1,4 +1,5 @@
 import { ide_state } from '../core/ide_state';
+import { editorDocumentState } from '../editing/editor_document_state';
 
 export const MENU_IDS = ['file', 'run', 'view', 'debug'] as const;
 export type MenuId = typeof MENU_IDS[number];
@@ -44,7 +45,7 @@ export function buildTopBarMenuEntries(): TopBarMenuEntry[] {
 			id: 'file',
 			label: 'FILE',
 			items: [
-				{ type: 'command', command: 'save', label: 'Save', active: false, disabled: !ide_state.dirty },
+				{ type: 'command', command: 'save', label: 'Save', active: false, disabled: !editorDocumentState.dirty },
 				{
 					type: 'command',
 					command: 'resources',
@@ -92,7 +93,7 @@ export function buildTopBarMenuEntries(): TopBarMenuEntry[] {
 
 export function isTopBarCommandEnabled(command: TopBarButtonId): boolean {
 	if (command === 'save') {
-		return ide_state.dirty;
+		return editorDocumentState.dirty;
 	}
 	if (command === 'filter') {
 		return ide_state.resourcePanel.isVisible() && ide_state.resourcePanel.getMode() === 'resources';

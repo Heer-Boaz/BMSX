@@ -1,7 +1,7 @@
-import { ide_state } from '../../core/ide_state';
 import { activateCodeTab, save } from '../../ui/editor_tabs';
 import { performEditorAction } from './editor_actions';
 import type { EditorCommandId } from './editor_commands';
+import { editorDocumentState } from '../../editing/editor_document_state';
 
 export type EditorWorkspaceCommandId =
 	| 'hot-resume'
@@ -19,7 +19,7 @@ export function isEditorWorkspaceCommand(command: EditorCommandId): command is E
 export function executeEditorWorkspaceCommand(command: EditorWorkspaceCommandId): void {
 	switch (command) {
 		case 'save':
-			if (ide_state.dirty) {
+			if (editorDocumentState.dirty) {
 				void save();
 			}
 			return;

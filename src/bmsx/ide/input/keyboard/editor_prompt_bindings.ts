@@ -7,6 +7,7 @@ import { executeEditorCommand } from '../commands/editor_commands';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 import { isInlineFieldFocused } from '../quick_input/editor_quick_input';
 import { runEditorKeyHandlers, type EditorKeyHandler } from './editor_binding_utils';
+import { editorDocumentState } from '../../editing/editor_document_state';
 
 function handleCreateResourceBinding(): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || !isKeyJustPressed('KeyN')) {
@@ -71,9 +72,9 @@ function handleSelectAllBinding(): boolean {
 		return false;
 	}
 	consumeIdeKey('KeyA');
-	const lastRowIndex = Math.max(0, ide_state.buffer.getLineCount() - 1);
-	const lastColumn = ide_state.buffer.getLineEndOffset(lastRowIndex) - ide_state.buffer.getLineStartOffset(lastRowIndex);
-	selectAllSingleCursor(ide_state, lastRowIndex, lastColumn);
+	const lastRowIndex = Math.max(0, editorDocumentState.buffer.getLineCount() - 1);
+	const lastColumn = editorDocumentState.buffer.getLineEndOffset(lastRowIndex) - editorDocumentState.buffer.getLineStartOffset(lastRowIndex);
+	selectAllSingleCursor(editorDocumentState, lastRowIndex, lastColumn);
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();

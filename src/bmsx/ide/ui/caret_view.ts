@@ -5,6 +5,7 @@ import { caretNavigation, ide_state } from '../core/ide_state';
 import { editorFeedbackState } from '../core/editor_feedback_state';
 import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../core/text_utils';
 import { editorCaretState } from './caret_state';
+import { editorDocumentState } from '../editing/editor_document_state';
 
 export function revealCursor(): void {
 	editorCaretState.cursorRevealSuspended = false;
@@ -54,7 +55,7 @@ export function resolveViewportCapacity(): { rows: number; columns: number } {
 export function centerCursorVertically(): void {
 	const { rows } = resolveViewportCapacity();
 	const totalVisual = getVisualLineCount();
-	const cursorVisualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
+	const cursorVisualIndex = positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	if (rows <= 1) {
 		ide_state.scrollRow = ide_state.layout.clampVisualScroll(cursorVisualIndex, totalVisual, rows);
 		return;
@@ -64,13 +65,13 @@ export function centerCursorVertically(): void {
 }
 
 export function ensureCursorVisible(): void {
-	ide_state.cursorRow = ide_state.layout.clampBufferRow(ide_state.buffer, ide_state.cursorRow);
-	const clampedLine = ide_state.buffer.getLineContent(ide_state.cursorRow);
-	ide_state.cursorColumn = ide_state.layout.clampLineLength(clampedLine.length, ide_state.cursorColumn);
+	editorDocumentState.cursorRow = ide_state.layout.clampBufferRow(editorDocumentState.buffer, editorDocumentState.cursorRow);
+	const clampedLine = editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
+	editorDocumentState.cursorColumn = ide_state.layout.clampLineLength(clampedLine.length, editorDocumentState.cursorColumn);
 
 	const { rows, columns } = resolveViewportCapacity();
 	const totalVisual = getVisualLineCount();
-	const cursorVisualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
+	const cursorVisualIndex = positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	const maxScrollRow = Math.max(0, totalVisual - rows);
 	const verticalMargin = Math.min(3, Math.max(0, Math.floor(rows / 6)));
 	const topGuard = ide_state.scrollRow + verticalMargin;
@@ -97,10 +98,10 @@ export function ensureCursorVisible(): void {
 	const leftGuard = ide_state.scrollColumn + horizontalMargin;
 	const rightGuard = ide_state.scrollColumn + columns - 1 - horizontalMargin;
 
-	if (ide_state.cursorColumn < leftGuard) {
-		ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(ide_state.cursorColumn - horizontalMargin, maxScrollColumn);
-	} else if (ide_state.cursorColumn > rightGuard) {
-		ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(ide_state.cursorColumn - columns + 1 + horizontalMargin, maxScrollColumn);
+	if (editorDocumentState.cursorColumn < leftGuard) {
+		ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(editorDocumentState.cursorColumn - horizontalMargin, maxScrollColumn);
+	} else if (editorDocumentState.cursorColumn > rightGuard) {
+		ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(editorDocumentState.cursorColumn - columns + 1 + horizontalMargin, maxScrollColumn);
 	} else {
 		ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(ide_state.scrollColumn, maxScrollColumn);
 	}
@@ -111,8 +112,8 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	caretNavigation.clear();
 	const visualLines = ide_state.layout.getVisualLines();
 	if (visualLines.length === 0) {
-		ide_state.cursorRow = 0;
-		ide_state.cursorColumn = 0;
+		editorDocumentState.cursorRow = 0;
+		editorDocumentState.cursorColumn = 0;
 		updateDesiredColumn();
 		return;
 	}
@@ -121,14 +122,14 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	if (!segment) {
 		return;
 	}
-	const entry = ide_state.layout.getCachedHighlight(ide_state.buffer, segment.row);
+	const entry = ide_state.layout.getCachedHighlight(editorDocumentState.buffer, segment.row);
 	const highlight = entry.hi;
-	const line = ide_state.buffer.getLineContent(segment.row);
+	const line = editorDocumentState.buffer.getLineContent(segment.row);
 	const segmentStart = ide_state.layout.clampSegmentStart(line.length, segment.startColumn);
 	const segmentEnd = ide_state.layout.clampSegmentEnd(line.length, segmentStart, segment.endColumn);
 	const hasDesiredHint = desiredColumnHint !== undefined;
 	const hasOffsetHint = desiredOffsetHint !== undefined;
-	let targetColumn = hasDesiredHint ? desiredColumnHint! : ide_state.cursorColumn;
+	let targetColumn = hasDesiredHint ? desiredColumnHint! : editorDocumentState.cursorColumn;
 	if (ide_state.wordWrapEnabled) {
 		const segmentDisplayStart = ide_state.layout.columnToDisplay(highlight, segmentStart);
 		const segmentDisplayEnd = ide_state.layout.columnToDisplay(highlight, segmentEnd);
@@ -149,53 +150,53 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	} else {
 		targetColumn = ide_state.layout.clampLineLength(line.length, targetColumn);
 	}
-	ide_state.cursorRow = segment.row;
-	ide_state.cursorColumn = ide_state.layout.clampLineLength(line.length, targetColumn);
-	const cursorDisplay = ide_state.layout.columnToDisplay(highlight, ide_state.cursorColumn);
+	editorDocumentState.cursorRow = segment.row;
+	editorDocumentState.cursorColumn = ide_state.layout.clampLineLength(line.length, targetColumn);
+	const cursorDisplay = ide_state.layout.columnToDisplay(highlight, editorDocumentState.cursorColumn);
 	if (ide_state.wordWrapEnabled) {
 		const hasNextSegmentSameRow = (clampedIndex + 1 < visualLines.length)
 			&& visualLines[clampedIndex + 1].row === segment.row;
-		if (ide_state.cursorColumn < segmentStart) {
-			ide_state.cursorColumn = segmentStart;
+		if (editorDocumentState.cursorColumn < segmentStart) {
+			editorDocumentState.cursorColumn = segmentStart;
 		}
-		if (segmentEnd >= segmentStart && ide_state.cursorColumn > segmentEnd) {
-			ide_state.cursorColumn = segmentEnd;
+		if (segmentEnd >= segmentStart && editorDocumentState.cursorColumn > segmentEnd) {
+			editorDocumentState.cursorColumn = segmentEnd;
 		}
-		if (hasNextSegmentSameRow && ide_state.cursorColumn >= segmentEnd) {
-			ide_state.cursorColumn = Math.max(segmentStart, segmentEnd - 1);
+		if (hasNextSegmentSameRow && editorDocumentState.cursorColumn >= segmentEnd) {
+			editorDocumentState.cursorColumn = Math.max(segmentStart, segmentEnd - 1);
 		}
 		const segmentDisplayStart = ide_state.layout.columnToDisplay(highlight, segmentStart);
-		ide_state.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
+		editorDocumentState.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
 	} else {
-		ide_state.desiredDisplayOffset = cursorDisplay;
+		editorDocumentState.desiredDisplayOffset = cursorDisplay;
 	}
 	if (hasDesiredHint) {
-		ide_state.desiredColumn = Math.max(0, desiredColumnHint!);
+		editorDocumentState.desiredColumn = Math.max(0, desiredColumnHint!);
 	} else {
-		ide_state.desiredColumn = ide_state.cursorColumn;
+		editorDocumentState.desiredColumn = editorDocumentState.cursorColumn;
 	}
-	if (ide_state.desiredDisplayOffset < 0) {
-		ide_state.desiredDisplayOffset = 0;
+	if (editorDocumentState.desiredDisplayOffset < 0) {
+		editorDocumentState.desiredDisplayOffset = 0;
 	}
 }
 
 export function updateDesiredColumn(): void {
-	ide_state.desiredColumn = ide_state.cursorColumn;
-	ide_state.desiredDisplayOffset = 0;
-	if (ide_state.cursorRow < 0 || ide_state.cursorRow >= ide_state.buffer.getLineCount()) {
+	editorDocumentState.desiredColumn = editorDocumentState.cursorColumn;
+	editorDocumentState.desiredDisplayOffset = 0;
+	if (editorDocumentState.cursorRow < 0 || editorDocumentState.cursorRow >= editorDocumentState.buffer.getLineCount()) {
 		return;
 	}
-	const entry = ide_state.layout.getCachedHighlight(ide_state.buffer, ide_state.cursorRow);
+	const entry = ide_state.layout.getCachedHighlight(editorDocumentState.buffer, editorDocumentState.cursorRow);
 	const highlight = entry.hi;
-	const cursorDisplay = ide_state.layout.columnToDisplay(highlight, ide_state.cursorColumn);
+	const cursorDisplay = ide_state.layout.columnToDisplay(highlight, editorDocumentState.cursorColumn);
 	let segmentStartColumn = 0;
 	if (ide_state.wordWrapEnabled) {
 		ensureVisualLines();
-		const override = caretNavigation.lookup(ide_state.cursorRow, ide_state.cursorColumn);
+		const override = caretNavigation.lookup(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 		if (override) {
 			segmentStartColumn = override.segmentStartColumn;
 		} else {
-			const visualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
+			const visualIndex = positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 			const segment = visualIndexToSegment(visualIndex);
 			if (segment) {
 				segmentStartColumn = segment.startColumn;
@@ -203,8 +204,8 @@ export function updateDesiredColumn(): void {
 		}
 	}
 	const segmentDisplayStart = ide_state.layout.columnToDisplay(highlight, segmentStartColumn);
-	ide_state.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
-	if (ide_state.desiredDisplayOffset < 0) {
-		ide_state.desiredDisplayOffset = 0;
+	editorDocumentState.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
+	if (editorDocumentState.desiredDisplayOffset < 0) {
+		editorDocumentState.desiredDisplayOffset = 0;
 	}
 }
