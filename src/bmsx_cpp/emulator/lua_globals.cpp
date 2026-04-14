@@ -1551,6 +1551,12 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_geo_cmd_project3_batch", valueNumber(static_cast<double>(IO_CMD_GEO_PROJECT3_BATCH)));
 	setGlobal("sys_geo_index_none", valueNumber(static_cast<double>(GEO_INDEX_NONE)));
 	setGlobal("sys_geo_shape_convex_poly", valueNumber(static_cast<double>(GEO_SHAPE_CONVEX_POLY)));
+	setGlobal("sys_geo_overlap_mode_candidate_pairs", valueNumber(static_cast<double>(GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS)));
+	setGlobal("sys_geo_overlap_mode_full_pass", valueNumber(static_cast<double>(GEO_OVERLAP2D_MODE_FULL_PASS)));
+	setGlobal("sys_geo_overlap_broadphase_none", valueNumber(static_cast<double>(GEO_OVERLAP2D_BROADPHASE_NONE)));
+	setGlobal("sys_geo_overlap_broadphase_local_bounds_aabb", valueNumber(static_cast<double>(GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB)));
+	setGlobal("sys_geo_overlap_contact_clipped_feature", valueNumber(static_cast<double>(GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE)));
+	setGlobal("sys_geo_overlap_output_stop_on_overflow", valueNumber(static_cast<double>(GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW)));
 	setGlobal("sys_geo_sat_meta_axis_mask", valueNumber(static_cast<double>(GEO_SAT_META_AXIS_MASK)));
 	setGlobal("sys_geo_sat_meta_shape_shift", valueNumber(static_cast<double>(GEO_SAT_META_SHAPE_SHIFT)));
 	setGlobal("sys_geo_sat_meta_shape_src", valueNumber(static_cast<double>(GEO_SAT_META_SHAPE_SRC)));

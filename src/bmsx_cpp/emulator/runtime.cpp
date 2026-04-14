@@ -692,20 +692,24 @@ void Runtime::resetRuntimeForProgramReload() {
 }
 
 void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex) {
-	setupBuiltins();
-	m_api->registerAllFunctions();
-	enforceLuaHeapBudget();
-	m_program = program;
-	m_programMetadata = metadata;
-	m_cpu.setProgram(program, metadata);
-	runEngineBuiltinPrelude();
-	enforceLuaHeapBudget();
+	try {
+		setupBuiltins();
+		m_api->registerAllFunctions();
+		enforceLuaHeapBudget();
+		m_program = program;
+		m_programMetadata = metadata;
+		m_cpu.setProgram(program, metadata);
+		runEngineBuiltinPrelude();
+		enforceLuaHeapBudget();
 
-	m_cpu.start(entryProtoIndex);
-	enforceLuaHeapBudget();
-	m_pendingCall = PendingCall::Entry;
-	queueLifecycleHandlers(true, true);
-	m_luaInitialized = true;
+		m_cpu.start(entryProtoIndex);
+		enforceLuaHeapBudget();
+		m_pendingCall = PendingCall::Entry;
+		queueLifecycleHandlers(true, true);
+		m_luaInitialized = true;
+	} catch (const std::exception& e) {
+		handleLuaError(e.what());
+	}
 }
 
 void Runtime::setCartBootReadyFlag(bool value) {
@@ -1927,14 +1931,7 @@ void Runtime::executeUpdateCallback() {
 			return;
 		}
 	} catch (const std::exception& e) {
-		std::cerr << "Runtime fault: " << e.what() << std::endl;
-		logDebugState();
-		logLuaCallStack();
-		clearHaltUntilIrq();
-		m_guestUpdatePhaseDepth = 0;
-		m_pendingCall = PendingCall::None;
-		m_frameActive = false;
-		m_runtimeFailed = true;
+		handleLuaError(e.what());
 	}
 }
 

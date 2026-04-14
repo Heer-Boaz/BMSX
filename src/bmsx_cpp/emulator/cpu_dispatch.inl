@@ -147,89 +147,89 @@ DISPATCH_LABEL(NEWT) {
 }
 
 DISPATCH_LABEL(ADD) {
-	double left = asNumber(readRK(FRAME, rkB));
-	double right = asNumber(readRK(FRAME, rkC));
+	double left = requireRKNumber(FRAME, rkB);
+	double right = requireRKNumber(FRAME, rkC);
 	SET_REGISTER_FAST(a, valueNumber(left + right));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(SUB) {
-	double left = asNumber(readRK(FRAME, rkB));
-	double right = asNumber(readRK(FRAME, rkC));
+	double left = requireRKNumber(FRAME, rkB);
+	double right = requireRKNumber(FRAME, rkC);
 	SET_REGISTER_FAST(a, valueNumber(left - right));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(MUL) {
-	double left = asNumber(readRK(FRAME, rkB));
-	double right = asNumber(readRK(FRAME, rkC));
+	double left = requireRKNumber(FRAME, rkB);
+	double right = requireRKNumber(FRAME, rkC);
 	SET_REGISTER_FAST(a, valueNumber(left * right));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(DIV) {
-	double left = asNumber(readRK(FRAME, rkB));
-	double right = asNumber(readRK(FRAME, rkC));
+	double left = requireRKNumber(FRAME, rkB);
+	double right = requireRKNumber(FRAME, rkC);
 	SET_REGISTER_FAST(a, valueNumber(left / right));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(MOD) {
-	double left = asNumber(readRK(FRAME, rkB));
-	double right = asNumber(readRK(FRAME, rkC));
+	double left = requireRKNumber(FRAME, rkB);
+	double right = requireRKNumber(FRAME, rkC);
 	SET_REGISTER_FAST(a, valueNumber(std::fmod(left, right)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(FLOORDIV) {
-	double left = asNumber(readRK(FRAME, rkB));
-	double right = asNumber(readRK(FRAME, rkC));
+	double left = requireRKNumber(FRAME, rkB);
+	double right = requireRKNumber(FRAME, rkC);
 	SET_REGISTER_FAST(a, valueNumber(std::floor(left / right)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(POW) {
-	double left = asNumber(readRK(FRAME, rkB));
-	double right = asNumber(readRK(FRAME, rkC));
+	double left = requireRKNumber(FRAME, rkB);
+	double right = requireRKNumber(FRAME, rkC);
 	SET_REGISTER_FAST(a, valueNumber(std::pow(left, right)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(BAND) {
-	const uint32_t left = toU32(asNumber(readRK(FRAME, rkB)));
-	const uint32_t right = toU32(asNumber(readRK(FRAME, rkC)));
+	const uint32_t left = toU32(requireRKNumber(FRAME, rkB));
+	const uint32_t right = toU32(requireRKNumber(FRAME, rkC));
 	const int32_t result = static_cast<int32_t>(left & right);
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(result)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(BOR) {
-	const uint32_t left = toU32(asNumber(readRK(FRAME, rkB)));
-	const uint32_t right = toU32(asNumber(readRK(FRAME, rkC)));
+	const uint32_t left = toU32(requireRKNumber(FRAME, rkB));
+	const uint32_t right = toU32(requireRKNumber(FRAME, rkC));
 	const int32_t result = static_cast<int32_t>(left | right);
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(result)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(BXOR) {
-	const uint32_t left = toU32(asNumber(readRK(FRAME, rkB)));
-	const uint32_t right = toU32(asNumber(readRK(FRAME, rkC)));
+	const uint32_t left = toU32(requireRKNumber(FRAME, rkB));
+	const uint32_t right = toU32(requireRKNumber(FRAME, rkC));
 	const int32_t result = static_cast<int32_t>(left ^ right);
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(result)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(SHL) {
-	const uint32_t left = toU32(asNumber(readRK(FRAME, rkB)));
-	const uint32_t right = toU32(asNumber(readRK(FRAME, rkC))) & 31u;
+	const uint32_t left = toU32(requireRKNumber(FRAME, rkB));
+	const uint32_t right = toU32(requireRKNumber(FRAME, rkC)) & 31u;
 	const uint32_t result = left << right;
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(static_cast<int32_t>(result))));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(SHR) {
-	const int32_t left = toI32(asNumber(readRK(FRAME, rkB)));
-	const uint32_t right = toU32(asNumber(readRK(FRAME, rkC))) & 31u;
+	const int32_t left = toI32(requireRKNumber(FRAME, rkB));
+	const uint32_t right = toU32(requireRKNumber(FRAME, rkC)) & 31u;
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(left >> right)));
 	DISPATCH_CONTINUE();
 }
@@ -253,7 +253,7 @@ DISPATCH_LABEL(CONCATN) {
 }
 
 DISPATCH_LABEL(UNM) {
-	double val = asNumber(REG(b));
+	double val = requireRegisterNumber(FRAME, b);
 	SET_REGISTER_FAST(a, valueNumber(-val));
 	DISPATCH_CONTINUE();
 }
@@ -314,7 +314,7 @@ DISPATCH_LABEL(LEN) {
 }
 
 DISPATCH_LABEL(BNOT) {
-	const uint32_t val = toU32(asNumber(REG(b)));
+	const uint32_t val = toU32(requireRegisterNumber(FRAME, b));
 	const int32_t result = static_cast<int32_t>(~val);
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(result)));
 	DISPATCH_CONTINUE();
@@ -569,19 +569,19 @@ DISPATCH_LABEL(RET) {
 }
 
 DISPATCH_LABEL(LOAD_MEM) {
-	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
+	const uint32_t addr = static_cast<uint32_t>(requireRKNumber(FRAME, rkB));
 	SET_REGISTER_FAST(a, readMappedMemoryValue(addr, static_cast<MemoryAccessKind>(c)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(STORE_MEM) {
-	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
+	const uint32_t addr = static_cast<uint32_t>(requireRKNumber(FRAME, rkB));
 	writeMappedMemoryValue(addr, static_cast<MemoryAccessKind>(c), REG(a));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(STORE_MEM_WORDS) {
-	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
+	const uint32_t addr = static_cast<uint32_t>(requireRKNumber(FRAME, rkB));
 	CYCLES_ADD(ceilDiv4(c));
 	writeMappedWordSequence(FRAME, addr, a, c);
 	DISPATCH_CONTINUE();

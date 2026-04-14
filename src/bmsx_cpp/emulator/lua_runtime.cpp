@@ -85,6 +85,16 @@ void Runtime::logLuaCallStack() const {
 		return;
 	}
 	auto stack = m_cpu.getCallStack();
+	if (stack.empty()) {
+		auto range = m_cpu.getDebugRange(m_cpu.lastPc);
+		if (range.has_value()) {
+			std::cout << "  at <current> (" << range->path << ":" << range->startLine << ":" << range->startColumn << ")"
+						<< std::endl;
+		} else {
+			std::cout << "  at <current> (pc=" << m_cpu.lastPc << ")" << std::endl;
+		}
+		return;
+	}
 	for (const auto& [protoIndex, pc] : stack) {
 		const std::string& protoId = metadata->protoIds[protoIndex];
 		auto range = m_cpu.getDebugRange(pc);
@@ -99,8 +109,13 @@ void Runtime::logLuaCallStack() const {
 
 void Runtime::handleLuaError(const std::string& message) {
 	std::cout << "[Runtime] Error: " << message << std::endl;
+	m_hostFaultMessage = message;
 	logDebugState();
 	logLuaCallStack();
+	clearHaltUntilIrq();
+	m_guestUpdatePhaseDepth = 0;
+	m_pendingCall = PendingCall::None;
+	m_frameActive = false;
 	m_runtimeFailed = true;
 }
 

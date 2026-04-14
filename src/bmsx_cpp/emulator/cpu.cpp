@@ -21,8 +21,6 @@
 namespace bmsx {
 
 namespace {
-int g_vdpPacketWriteLogRemaining = 0;
-
 static inline uint32_t readInstructionWord(const std::vector<uint8_t>& code, int pc) {
 	size_t offset = static_cast<size_t>(pc) * INSTRUCTION_BYTES;
 	return (static_cast<uint32_t>(code[offset]) << 24)
@@ -2131,18 +2129,6 @@ void CPU::writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase
 		uint32_t argWords = 0;
 		uint32_t payloadWords = 0;
 		if (tryGetVdpPacketPrefixWordCounts(frame.registers, valueBase, cmd, argWords, payloadWords)) {
-			if (g_vdpPacketWriteLogRemaining > 0) {
-				g_vdpPacketWriteLogRemaining -= 1;
-				std::fprintf(
-					stderr,
-					"[VDP][WRITE] addr=%u cmd=%u argWords=%u payloadWords=%u valueCount=%d\n",
-					addr,
-					cmd,
-					argWords,
-					payloadWords,
-					valueCount
-				);
-			}
 			const int packetWordCount = 3 + static_cast<int>(argWords) + static_cast<int>(payloadWords);
 			if (valueCount > packetWordCount) {
 				throw BMSX_RUNTIME_ERROR("[VDP] Packet prefix overflow (" + std::to_string(valueCount) + " > " + std::to_string(packetWordCount) + ").");
@@ -2171,6 +2157,26 @@ void CPU::writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase
 		writeMappedMemoryValue(writeAddr, MemoryAccessKind::Word, frame.registers[static_cast<size_t>(valueBase + offset)]);
 		writeAddr += 4;
 	}
+}
+
+double CPU::requireRegisterNumber(CallFrame& frame, int index) const {
+	const Value value = frame.registers[static_cast<size_t>(index)];
+	if (!valueIsNumber(value)) {
+		throw BMSX_RUNTIME_ERROR("Register " + std::to_string(index) + " expected a number, got " + valueTypeName(value) + ".");
+	}
+	return asNumber(value);
+}
+
+double CPU::requireRKNumber(CallFrame& frame, int rk) const {
+	if (rk < 0) {
+		const int index = -1 - rk;
+		const Value value = m_program->constPool[static_cast<size_t>(index)];
+		if (!valueIsNumber(value)) {
+			throw BMSX_RUNTIME_ERROR("RK constant " + std::to_string(index) + " expected a number, got " + valueTypeName(value) + ".");
+		}
+		return asNumber(value);
+	}
+	return requireRegisterNumber(frame, rk);
 }
 
 const Value& CPU::readRK(CallFrame& frame, int rk) {

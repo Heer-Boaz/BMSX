@@ -1047,6 +1047,8 @@ private:
 	Value readMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind) const;
 	void writeMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind, const Value& value);
 	void writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase, int valueCount);
+	double requireRegisterNumber(CallFrame& frame, int index) const;
+	double requireRKNumber(CallFrame& frame, int rk) const;
 	const Value& readRK(CallFrame& frame, int rk);
 	Value resolveTableIndex(Table* table, const Value& key);
 	Value resolveTableIntegerIndex(Table* table, int index);
