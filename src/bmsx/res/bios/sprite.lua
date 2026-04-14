@@ -49,7 +49,7 @@ spriteobject.primary_collider_id = 'primary'
 local apply_image_metadata<const> = function(self, id)
 	local asset<const> = assets.img[id]
 	if asset == nil then
-		error('[spriteobject] Image asset "' .. tostring(id) .. '" not found.')
+		error('Image asset "' .. tostring(id) .. '" not found.')
 	end
 	local meta<const> = asset.imgmeta
 	self.sx = meta.width

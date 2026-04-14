@@ -368,7 +368,7 @@ end
 
 function textobject:set_dimensions(rect)
 	self.dimensions = rect
-	self.maximum_characters_per_line = math.floor((rect.right - rect.left) / self.char_width)
+	self.maximum_characters_per_line = math.modf((rect.right - rect.left) / self.char_width)
 	self.text_offset.y = rect.top - self.y
 	self:recenter_text_block()
 end

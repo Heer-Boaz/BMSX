@@ -123,7 +123,7 @@ local clamp_marker_frame<const> = function(at, length)
 		return clamp_int(at.frame, 0, length - 1)
 	end
 	local normalized<const> = clamp_int(at.u or 0, 0, 1)
-	return clamp_int(math.floor(normalized * (length - 1)), 0, length - 1)
+	return clamp_int(math.modf(normalized * (length - 1)), 0, length - 1)
 end
 
 local compile_timeline_markers<const> = function(def, length)

@@ -24,11 +24,11 @@ local scroll_window<const> = function(lines, top, window_size)
 	return visible_lines, max_scroll, #visible_lines
 end
 local line_slots<const> = function(width, left_margin, char_width)
-	return math.floor((width - left_margin) / char_width)
+	return math.modf((width - left_margin) / char_width)
 end
 local window_size<const> = function(height, top_margin, line_height, top_padding, bottom_padding)
 	local available_height<const> = height - top_margin - top_padding - bottom_padding
-	return math.max(1, math.floor(available_height / line_height))
+	return math.max(1, math.modf(available_height / line_height))
 end
 
 local font_width<const> = 6
@@ -151,8 +151,8 @@ local format_cpu_mhz_from_hz<const> = function(value)
 	if hz == nil then
 		return '--'
 	end
-	local mhz_int<const> = math.floor(hz / 1000000)
-	local mhz_frac<const> = math.floor((hz % 1000000) / 1000)
+	local mhz_int<const> = math.modf(hz / 1000000)
+	local mhz_frac<const> = math.modf((hz % 1000000) / 1000)
 	return string.format('%d.%03d', mhz_int, mhz_frac)
 end
 
@@ -2105,7 +2105,7 @@ end
 
 local center_x<const> = function(text, width)
 	-- center text in given width, but ensure that the result is dividable by font_width
-	return math.floor((width - (string.len(text) * font_width)) / 2 / font_width) * font_width
+	return math.modf((width - (string.len(text) * font_width)) / 2 / font_width) * font_width
 end
 
 local format_bytes<const> = function(value)
@@ -2212,7 +2212,7 @@ end
 
 local build_progress_bar<const> = function(progress, width)
 	local clamped<const> = clamp_int(progress, 0, 1)
-	local filled<const> = clamp_int(math.floor(width * clamped + 0.5), 0, width)
+	local filled<const> = clamp_int(math.modf(width * clamped + 0.5), 0, width)
 	return '[' .. string.rep('#', filled) .. string.rep('-', width - filled) .. ']'
 end
 
@@ -2447,7 +2447,7 @@ render_boot_screen = function(scroll_delta)
 	local info<const> = build_info()
 	local cart_present<const> = mem[cart_rom_base] == cart_rom_magic
 	local elapsed<const> = os.clock() - boot_start
-	local cursor<const> = (math.floor(elapsed * 2) % 2 == 0) and '█' or ' '
+	local cursor<const> = ((elapsed * 2) % 2 == 0) and '█' or ' '
 	local line_slots<const> = line_slots(width, left, font_width)
 	local content_lines<const> = build_boot_content_lines(info, cart_present, cursor, elapsed, line_slots)
 	local window_size<const> = window_size(display_height(), top, line_height, 1, 1)

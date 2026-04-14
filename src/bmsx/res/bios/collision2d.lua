@@ -53,7 +53,11 @@ local wait_for_geo_completion<const> = function(label)
 		if geo_flags ~= 0 then
 			mem[sys_irq_ack] = geo_flags
 			if (geo_flags & irq_geo_error) ~= 0 then
-				error('[collision2d] GEO ' .. label .. ' failed (fault=' .. tostring(mem[sys_geo_fault]) .. ')')
+				local fault<const> = mem[sys_geo_fault]
+				local fault_u<const> = fault < 0 and (fault + 0x100000000) or fault
+				local fault_code<const> = (fault_u >> 16) & 0xffff
+				local fault_index<const> = fault_u & 0xffff
+				error(string.format('GEO %s failed (fault=%08Xh hex=%08Xh code=%04Xh index=%08Xh)', label, fault_u, fault_u, fault_code, fault_index))
 			end
 			return
 		end
@@ -123,19 +127,19 @@ function collision2d.collect_overlaps(colliders, collider_count, pairs)
 		local collider<const> = colliders[i]
 		collider:get_world_area()
 		if collider._overlap_geo_shape_ref == nil then
-			error('[collision2d] GEO overlap requires baked collision bin data: ' .. tostring(collider.id))
+			error('GEO overlap requires baked collision bin data: ' .. tostring(collider.id))
 		end
 		collider._geo_overlap_instance_token = batch_token
 		collider._geo_overlap_instance_index = i - 1
 		stage_geo_overlap_instance(collider, batch_token, instance_base)
 	end
 
-	local max_pair_count<const> = math.floor((collider_count * (collider_count - 1)) / 2)
+	local max_pair_count<const> = math.modf((collider_count * (collider_count - 1)) / 2)
 	local scratch_for_results<const> = sys_geo_scratch_size - collider_count * geo_overlap_instance_bytes - geo_overlap_summary_bytes
 	if scratch_for_results < geo_overlap_result_bytes then
-		error('[collision2d] GEO overlap scratch overflow (instances=' .. tostring(collider_count) .. ')')
+		error('GEO overlap scratch overflow (instances=' .. tostring(collider_count) .. ')')
 	end
-	local result_capacity<const> = math.min(max_pair_count, math.floor(scratch_for_results / geo_overlap_result_bytes))
+	local result_capacity<const> = math.min(max_pair_count, math.modf(scratch_for_results / geo_overlap_result_bytes))
 	local result_base<const> = instance_base + collider_count * geo_overlap_instance_bytes
 	local summary_base<const> = result_base + result_capacity * geo_overlap_result_bytes
 	submit_geo_overlap_full_pass(instance_base, result_base, summary_base, collider_count, result_capacity)
@@ -144,10 +148,10 @@ function collision2d.collect_overlaps(colliders, collider_count, pairs)
 	for i = 0, result_count - 1 do
 		local result_addr<const> = result_base + i * geo_overlap_result_bytes
 		local pair_meta<const> = mem[result_addr + 32]
-		local instance_a_index<const> = math.floor(pair_meta / 0x10000)
-		local instance_b_index<const> = pair_meta % 0x10000
+		local instance_a_index<const> = (pair_meta >> 16) & 0xffff
+		local instance_b_index<const> = pair_meta & 0xffff
 		if instance_a_index < 0 or instance_a_index >= collider_count or instance_b_index <= instance_a_index or instance_b_index >= collider_count then
-			error('[collision2d] GEO overlap returned invalid pair meta ' .. tostring(pair_meta))
+			error('GEO overlap returned invalid pair meta ' .. tostring(pair_meta))
 		end
 		local pair<const> = pairs:get(i + 1)
 		local a<const> = colliders[instance_a_index + 1]
@@ -211,12 +215,12 @@ function collision2d.collides(a, b)
 		return nil
 	end
 	if a == b then
-		error('[collision2d] self overlap query is invalid: ' .. tostring(a.id))
+		error('self overlap query is invalid: ' .. tostring(a.id))
 	end
 	a:get_world_area()
 	b:get_world_area()
 	if a._overlap_geo_shape_ref == nil or b._overlap_geo_shape_ref == nil then
-		error('[collision2d] GEO overlap requires baked collision bin data: ' .. tostring(a.id) .. ' / ' .. tostring(b.id))
+		error('GEO overlap requires baked collision bin data: ' .. tostring(a.id) .. ' / ' .. tostring(b.id))
 	end
 	local batch_token<const> = next_geo_batch_token()
 	local instance_base<const> = sys_geo_scratch_base
