@@ -27,7 +27,7 @@ import {
 	type LuaWhileStatement,
 } from '../lua/syntax/lua_ast';
 import { walkLuaExpressionTree } from '../lua/syntax/lua_ast_traversal';
-import type { LuaSemanticFrontendFile } from '../ide/contrib/intellisense/lua_semantic_frontend';
+import type { LuaBoundReference, LuaSemanticFrontendFile } from '../ide/contrib/intellisense/lua_semantic_frontend';
 import {
 	getBoundIdentifierReference,
 	getIdentifierSymbolHandle,
@@ -89,14 +89,6 @@ const FUNCTION_VALUE_FACT: CompileValueFact = UNKNOWN_TRUTHY_VALUE_FACT;
 
 function unreachableFlowValue(value: never, label: string): never {
 	throw new Error(`[ValueKindFlowAnalyzer] Unhandled ${label}: ${String(value)}`);
-}
-
-function unreachableExpression(expression: never): never {
-	throw new Error(`[ValueKindFlowAnalyzer] Unhandled expression kind: ${String((expression as LuaExpression).kind)}`);
-}
-
-function unreachableStatement(statement: never): never {
-	throw new Error(`[ValueKindFlowAnalyzer] Unhandled statement kind: ${String((statement as LuaStatement).kind)}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -231,7 +223,8 @@ function evaluateExpressionFact(
 	semantics: LuaSemanticFrontendFile,
 	closureWrittenSymbols: ReadonlySet<string>,
 ): ExpressionEvaluation {
-	switch (expression.kind) {
+	const kind = expression.kind;
+	switch (kind) {
 		case LuaSyntaxKind.StringRefLiteralExpression:
 			return { fact: STRING_REF_VALUE_FACT, state };
 		case LuaSyntaxKind.StringLiteralExpression:
@@ -343,7 +336,7 @@ function evaluateExpressionFact(
 			return { fact: UNKNOWN_VALUE_FACT, state: currentState };
 		}
 		default:
-			unreachableExpression(expression);
+			return { fact: unreachableFlowValue(kind, 'expression kind'), state };
 	}
 }
 
@@ -395,7 +388,8 @@ function collectNestedClosureWritesFromStatement(
 	semantics: LuaSemanticFrontendFile,
 	out: Set<string>,
 ): void {
-	switch (statement.kind) {
+	const kind = statement.kind;
+	switch (kind) {
 		case LuaSyntaxKind.LocalAssignmentStatement: {
 			const local = statement as LuaLocalAssignmentStatement;
 			for (let index = 0; index < local.values.length; index += 1) {
@@ -475,7 +469,7 @@ function collectNestedClosureWritesFromStatement(
 		case LuaSyntaxKind.LabelStatement:
 			return;
 		default:
-			unreachableStatement(statement);
+			unreachableFlowValue(kind, 'statement kind');
 	}
 }
 
@@ -508,7 +502,8 @@ function collectLexicalWritesInStatement(
 	semantics: LuaSemanticFrontendFile,
 	out: Set<string>,
 ): void {
-	switch (statement.kind) {
+	const kind = statement.kind;
+	switch (kind) {
 		case LuaSyntaxKind.LocalAssignmentStatement: {
 			const local = statement as LuaLocalAssignmentStatement;
 			for (let index = 0; index < local.names.length; index += 1) {
@@ -611,7 +606,7 @@ function collectLexicalWritesInStatement(
 		case LuaSyntaxKind.LabelStatement:
 			return;
 		default:
-			unreachableStatement(statement);
+			unreachableFlowValue(kind, 'statement kind');
 	}
 }
 
@@ -772,7 +767,8 @@ export class ValueKindFlowAnalyzer {
 	// -----------------------------------------------------------------------
 
 	private analyzeStatement(statement: LuaStatement): void {
-		switch (statement.kind) {
+		const kind = statement.kind;
+		switch (kind) {
 			case LuaSyntaxKind.LocalAssignmentStatement:
 				this.analyzeLocalAssignment(statement as LuaLocalAssignmentStatement);
 				return;
@@ -817,7 +813,7 @@ export class ValueKindFlowAnalyzer {
 			case LuaSyntaxKind.LabelStatement:
 				return;
 			default:
-				unreachableStatement(statement);
+				unreachableFlowValue(kind, 'statement kind');
 		}
 	}
 
@@ -843,12 +839,21 @@ export class ValueKindFlowAnalyzer {
 
 	private analyzeFunctionDeclaration(statement: LuaFunctionDeclarationStatement): void {
 		const target = classifyFunctionDeclarationTarget(this.semantics, statement);
-		if (target.kind !== 'simple') {
+		if (target.kind === 'path') {
+			this.observeReferenceLoad(target.baseLoad);
 			return;
 		}
-		const handle = resolveFunctionDeclarationHandle(statement, this.semantics);
-		if (handle !== undefined) {
-			this.state.set(handle, FUNCTION_VALUE_FACT);
+		if (target.lexicalHandle === undefined) return;
+		this.state.set(target.lexicalHandle, FUNCTION_VALUE_FACT);
+	}
+
+	private observeReferenceLoad(reference: LuaBoundReference | null): void {
+		if (reference === null) {
+			return;
+		}
+		const handle = getReferenceSymbolHandle(reference);
+		if (handle !== null) {
+			this.state.get(handle);
 		}
 	}
 

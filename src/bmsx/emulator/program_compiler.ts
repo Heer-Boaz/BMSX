@@ -2328,15 +2328,13 @@ class FunctionBuilder {
 			throw new Error(`[Compiler] Missing bound function base for '${identifiers[0]}'.`);
 		}
 		this.emitReferenceLoad(target.baseReference, baseReg);
-
-		const pathEnd = methodName ? identifiers.length : identifiers.length - 1;
-		for (let i = 1; i < pathEnd; i += 1) {
-			const key = this.program.constIndexString(identifiers[i]);
+		for (let i = 0; i < target.intermediateKeys.length; i += 1) {
+			const key = this.program.constIndexString(this.canonicalizeName(target.intermediateKeys[i]));
 			const nextReg = this.allocTemp();
 			this.emitTableGetConst(nextReg, baseReg, key);
 			this.emitABC(OpCode.MOV, baseReg, nextReg, 0);
 		}
-		const keyName = methodName && methodName.length > 0 ? methodName : identifiers[identifiers.length - 1];
+		const keyName = this.canonicalizeName(target.finalKey);
 		const keyConst = this.program.constIndexString(keyName);
 		this.emitTableSetConst(baseReg, keyConst, closureReg);
 	}
@@ -2534,17 +2532,13 @@ class FunctionBuilder {
 		if (target.kind !== 'memory') {
 			return null;
 		}
-		const accessKind = this.getMemoryAccessKindForCanonicalName(this.getReferenceCanonicalName(target.baseReference));
-		if (accessKind === null) {
-			throw new Error(`[Compiler] Unsupported memory access target '${this.getReferenceCanonicalName(target.baseReference)}'.`);
-		}
 		const addrConst = this.tryGetNumericConstIndex(target.index);
 		if (addrConst !== undefined) {
-			return { kind: 'memory', accessKind, addrConst };
+			return { kind: 'memory', accessKind: target.accessKind, addrConst };
 		}
 		const addrReg = this.allocTemp();
 		this.compileExpressionInto(target.index, addrReg, 1);
-		return { kind: 'memory', accessKind, addrReg };
+		return { kind: 'memory', accessKind: target.accessKind, addrReg };
 	}
 
 	private emitMemoryLoad(target: number, accessKind: MemoryAccessKind, addrConst: number | undefined, addrReg: number | undefined): void {

@@ -13,7 +13,7 @@ import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { clamp_fallback } from '../utils/clamp';
 import * as constants from '../ide/core/constants';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../ide/core/constants';
-import { editorDebuggerState } from '../ide/contrib/debugger/editor_debugger_state';
+import { editorDebuggerState } from '../ide/workbench/contrib/debugger/editor_debugger_state';
 import { showEditorWarningBanner } from '../ide/core/editor_feedback_state';
 import type { RuntimeErrorDetails } from '../ide/core/types';
 import { setEditorCaseInsensitivity } from '../ide/render/text_renderer';
