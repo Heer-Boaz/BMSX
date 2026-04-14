@@ -11,12 +11,12 @@ import {
 } from '../lua/luavalue';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { clamp_fallback } from '../utils/clamp';
-import * as constants from '../ide/core/constants';
-import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../ide/core/constants';
-import { editorDebuggerState } from '../ide/workbench/contrib/debugger/editor_debugger_state';
-import { showEditorWarningBanner } from '../ide/core/editor_feedback_state';
-import type { RuntimeErrorDetails } from '../ide/core/types';
-import { setEditorCaseInsensitivity } from '../ide/render/text_renderer';
+import * as constants from '../ide/common/constants';
+import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../ide/common/constants';
+import { editorDebuggerState } from '../ide/workbench/contrib/debugger/debugger_state';
+import { showEditorWarningBanner } from '../ide/workbench/common/feedback_state';
+import type { RuntimeErrorDetails } from '../ide/common/types';
+import { setEditorCaseInsensitivity } from '../ide/editor/render/text_renderer';
 import { buildLuaStackFrames } from './lua_globals';
 import { seedDefaultLuaBuiltins } from './lua_builtins';
 import {
@@ -25,16 +25,16 @@ import {
 	convertLuaCallFrames,
 	parseJsStackFrames,
 	sanitizeLuaErrorMessage,
-} from '../ide/contrib/runtime_error/runtime_error_util';
+} from '../ide/editor/contrib/runtime_error/runtime_error_util';
 import { logDebugState } from './runtime_debug';
 import { TerminalMode } from './terminal/ui/terminal_mode';
 import type { Runtime } from './runtime';
 import type { RuntimeOptions } from './types';
 import { resolveWorkspacePath } from './workspace_path';
 import { shallowcopy } from '../utils/shallowcopy';
-import { api as overlay_api } from '../ide/ui/view/overlay_api';
+import { api as overlay_api } from '../ide/editor/ui/view/overlay_api';
 import { createCartEditor } from '../ide/cart_editor';
-import { clearExecutionStopHighlights, setExecutionStopHighlight } from '../ide/contrib/runtime_error/runtime_error_navigation';
+import { clearExecutionStopHighlights, setExecutionStopHighlight } from '../ide/editor/contrib/runtime_error/runtime_error_navigation';
 
 class DebugPauseCoordinator {
 	private suspension: LuaDebuggerPauseSignal = null;

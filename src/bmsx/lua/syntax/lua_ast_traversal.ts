@@ -11,10 +11,6 @@ import {
 	type LuaUnaryExpression,
 } from './lua_ast';
 
-function unreachableExpression(expression: never): never {
-	throw new Error(`[LuaAstTraversal] Unhandled expression kind: ${String((expression as LuaExpression).kind)}`);
-}
-
 function unreachableTableFieldKind(value: never): never {
 	throw new Error(`[LuaAstTraversal] Unhandled table field kind: ${String(value)}`);
 }
@@ -35,7 +31,8 @@ export function visitLuaExpressionChildren(
 	expression: LuaExpression,
 	visit: (expression: LuaExpression) => void,
 ): void {
-	switch (expression.kind) {
+	const kind = expression.kind;
+	switch (kind) {
 		case LuaSyntaxKind.BinaryExpression: {
 			const binary = expression as LuaBinaryExpression;
 			visit(binary.left);
@@ -91,6 +88,6 @@ export function visitLuaExpressionChildren(
 		case LuaSyntaxKind.IdentifierExpression:
 			return;
 		default:
-			unreachableExpression(expression);
+			throw new Error(`[LuaAstTraversal] Unhandled expression kind: ${String(kind)}`);
 	}
 }
