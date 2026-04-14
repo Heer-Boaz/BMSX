@@ -1,11 +1,17 @@
-import type { LuaIdentifierExpression } from '../lua/syntax/lua_ast';
+import type { LuaFunctionDeclarationStatement, LuaIdentifierExpression } from '../lua/syntax/lua_ast';
 import type { LuaBoundReference, LuaSemanticFrontendFile } from '../ide/contrib/intellisense/lua_semantic_frontend';
 
 export const IMPLICIT_SELF_SYMBOL_HANDLE = '$implicit:self';
 
+export type FunctionDeclarationBoundReferences = {
+	readonly baseReference: LuaBoundReference | null;
+	readonly finalReference: LuaBoundReference | null;
+};
+
 export function getBoundIdentifierReference(
 	semantics: LuaSemanticFrontendFile,
 	expression: LuaIdentifierExpression,
+	fallbackIsWrite = false,
 ): LuaBoundReference {
 	const reference = semantics.getReference(expression.range);
 	if (reference) {
@@ -25,11 +31,22 @@ export function getBoundIdentifierReference(
 			range: expression.range,
 			target: decl.id,
 			lexicalTarget: decl.isGlobal ? null : decl.id,
-			isWrite: true,
+			isWrite: fallbackIsWrite,
 			referenceKind: 'identifier',
 		},
 		decl,
 		isImplicitGlobal: false,
+	};
+}
+
+export function getFunctionDeclarationBoundReferences(
+	semantics: LuaSemanticFrontendFile,
+	statement: LuaFunctionDeclarationStatement,
+): FunctionDeclarationBoundReferences {
+	const headerEnd = statement.functionExpression.body.range.start;
+	return {
+		baseReference: semantics.findFirstReferenceByStartRange(statement.range.start, headerEnd),
+		finalReference: semantics.findLastReferenceByStartRange(statement.range.start, headerEnd),
 	};
 }
 

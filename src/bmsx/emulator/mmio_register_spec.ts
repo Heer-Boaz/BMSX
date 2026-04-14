@@ -12,10 +12,35 @@ export const MMIO_REGISTER_SPECS: ReadonlyArray<MmioRegisterSpec> = [
 	// { name: 'sys_input_action_query', address: IO_INPUT_ACTION_QUERY, writeRequirement: 'string_ref' },
 ];
 
-export const MMIO_REGISTER_SPEC_BY_ADDRESS: ReadonlyMap<number, MmioRegisterSpec> = new Map(
+const mmioRegisterSpecByAddress = new Map(
 	MMIO_REGISTER_SPECS.map((spec) => [spec.address, spec]),
 );
 
-export const MMIO_REGISTER_SPEC_BY_NAME: ReadonlyMap<string, MmioRegisterSpec> = new Map(
+const mmioRegisterSpecByName = new Map(
 	MMIO_REGISTER_SPECS.map((spec) => [spec.name, spec]),
 );
+
+export const MMIO_REGISTER_SPEC_BY_ADDRESS: ReadonlyMap<number, MmioRegisterSpec> = mmioRegisterSpecByAddress;
+
+export const MMIO_REGISTER_SPEC_BY_NAME: ReadonlyMap<string, MmioRegisterSpec> = mmioRegisterSpecByName;
+
+export function withTemporaryMmioRegisterSpec<T>(spec: MmioRegisterSpec, run: () => T): T {
+	const previousByAddress = mmioRegisterSpecByAddress.get(spec.address);
+	const previousByName = mmioRegisterSpecByName.get(spec.name);
+	mmioRegisterSpecByAddress.set(spec.address, spec);
+	mmioRegisterSpecByName.set(spec.name, spec);
+	try {
+		return run();
+	} finally {
+		if (previousByAddress === undefined) {
+			mmioRegisterSpecByAddress.delete(spec.address);
+		} else {
+			mmioRegisterSpecByAddress.set(spec.address, previousByAddress);
+		}
+		if (previousByName === undefined) {
+			mmioRegisterSpecByName.delete(spec.name);
+		} else {
+			mmioRegisterSpecByName.set(spec.name, previousByName);
+		}
+	}
+}

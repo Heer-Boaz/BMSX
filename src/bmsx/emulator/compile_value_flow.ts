@@ -4,6 +4,7 @@ import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
 	LuaUnaryOperator,
+	type LuaAssignableExpression,
 	type LuaAssignmentStatement,
 	type LuaBinaryExpression,
 	type LuaBlock,
@@ -29,6 +30,7 @@ import { walkLuaExpressionTree } from '../lua/syntax/lua_ast_traversal';
 import type { LuaSemanticFrontendFile } from '../ide/contrib/intellisense/lua_semantic_frontend';
 import {
 	getBoundIdentifierReference,
+	getFunctionDeclarationBoundReferences,
 	getIdentifierSymbolHandle,
 	getReferenceSymbolHandle,
 } from './lua_bound_reference';
@@ -77,7 +79,13 @@ const FALSE_VALUE_FACT: CompileValueFact = { kind: 'boolean', truthiness: 'falsy
 const NUMBER_VALUE_FACT: CompileValueFact = { kind: 'number', truthiness: 'truthy' };
 const STRING_VALUE_FACT: CompileValueFact = { kind: 'string', truthiness: 'truthy' };
 const STRING_REF_VALUE_FACT: CompileValueFact = { kind: 'string_ref', truthiness: 'truthy' };
-const EMPTY_CLOSURE_WRITES = new Set<string>();
+// Functions are modeled as a distinct compile-time fact category only insofar as
+// they are always truthy and never prove string_ref.
+const FUNCTION_VALUE_FACT: CompileValueFact = UNKNOWN_TRUTHY_VALUE_FACT;
+
+function unreachableFlowValue(value: never, label: string): never {
+	throw new Error(`[ValueKindFlowAnalyzer] Unhandled ${label}: ${String(value)}`);
+}
 
 // ---------------------------------------------------------------------------
 //  State helpers
@@ -109,6 +117,8 @@ function selectValueFact(kind: CompileValueKind, truthiness: CompileTruthiness):
 			if (truthiness === 'truthy') return UNKNOWN_TRUTHY_VALUE_FACT;
 			if (truthiness === 'falsy') return UNKNOWN_FALSY_VALUE_FACT;
 			return UNKNOWN_VALUE_FACT;
+		default:
+			return unreachableFlowValue(kind, 'compile value kind');
 	}
 }
 
@@ -179,6 +189,8 @@ function evaluateBinaryOperatorFact(operator: LuaBinaryOperator): CompileValueFa
 		case LuaBinaryOperator.GreaterEqual:
 			return BOOLEAN_VALUE_FACT;
 		case LuaBinaryOperator.Concat:
+			// Concatenation materializes a normal runtime string; string_ref proofs do
+			// not survive '..'.
 			return STRING_VALUE_FACT;
 		case LuaBinaryOperator.BitwiseOr:
 		case LuaBinaryOperator.BitwiseXor:
@@ -196,6 +208,8 @@ function evaluateBinaryOperatorFact(operator: LuaBinaryOperator): CompileValueFa
 		case LuaBinaryOperator.And:
 		case LuaBinaryOperator.Or:
 			return UNKNOWN_VALUE_FACT;
+		default:
+			return unreachableFlowValue(operator, 'binary operator');
 	}
 }
 
@@ -220,16 +234,15 @@ function evaluateExpressionFact(
 		case LuaSyntaxKind.NilLiteralExpression:
 			return { fact: NIL_VALUE_FACT, state };
 		case LuaSyntaxKind.FunctionExpression:
+			return { fact: FUNCTION_VALUE_FACT, state };
 		case LuaSyntaxKind.TableConstructorExpression: {
 			let currentState = state;
-			if (expression.kind === LuaSyntaxKind.TableConstructorExpression) {
-				for (let index = 0; index < expression.fields.length; index += 1) {
-					const field = expression.fields[index];
-					if (field.kind === LuaTableFieldKind.ExpressionKey) {
-						currentState = evaluateExpressionFact(field.key, currentState, semantics, closureWrittenSymbols).state;
-					}
-					currentState = evaluateExpressionFact(field.value, currentState, semantics, closureWrittenSymbols).state;
+			for (let index = 0; index < expression.fields.length; index += 1) {
+				const field = expression.fields[index];
+				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+					currentState = evaluateExpressionFact(field.key, currentState, semantics, closureWrittenSymbols).state;
 				}
+				currentState = evaluateExpressionFact(field.value, currentState, semantics, closureWrittenSymbols).state;
 			}
 			return {
 				fact: UNKNOWN_TRUTHY_VALUE_FACT,
@@ -269,8 +282,9 @@ function evaluateExpressionFact(
 				case LuaUnaryOperator.Negate:
 				case LuaUnaryOperator.BitwiseNot:
 					return { fact: NUMBER_VALUE_FACT, state: operand.state };
+				default:
+					return { fact: unreachableFlowValue(unary.operator, 'unary operator'), state: operand.state };
 			}
-			return { fact: UNKNOWN_VALUE_FACT, state: operand.state };
 		}
 		case LuaSyntaxKind.BinaryExpression: {
 			const binary = expression as LuaBinaryExpression;
@@ -316,15 +330,9 @@ function evaluateExpressionFact(
 			degradeClosureWrittenSymbolsInState(currentState, closureWrittenSymbols);
 			return { fact: UNKNOWN_VALUE_FACT, state: currentState };
 		}
+		default:
+			return { fact: unreachableFlowValue(expression, 'expression kind'), state };
 	}
-}
-
-export function evaluateExpressionValueKind(
-	expression: LuaExpression,
-	state: SymbolFlowState,
-	semantics: LuaSemanticFrontendFile,
-): CompileValueKind {
-	return evaluateExpressionFact(expression, cloneState(state), semantics, EMPTY_CLOSURE_WRITES).fact.kind;
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +354,16 @@ function resolveReferenceHandle(
 ): string | undefined {
 	const reference = getBoundIdentifierReference(semantics, identifier);
 	const handle = getReferenceSymbolHandle(reference);
+	return handle === null ? undefined : handle;
+}
+
+function resolveFunctionDeclarationHandle(
+	statement: LuaFunctionDeclarationStatement,
+	semantics: LuaSemanticFrontendFile,
+): string | undefined {
+	const { finalReference } = getFunctionDeclarationBoundReferences(semantics, statement);
+	if (finalReference === null) return undefined;
+	const handle = getReferenceSymbolHandle(finalReference);
 	return handle === null ? undefined : handle;
 }
 
@@ -442,8 +460,13 @@ function collectNestedClosureWritesFromStatement(
 		case LuaSyntaxKind.CallStatement:
 			collectNestedClosureWritesFromExpression((statement as LuaCallStatement).expression, semantics, out);
 			return;
-		default:
+		case LuaSyntaxKind.BreakStatement:
+		case LuaSyntaxKind.HaltUntilIrqStatement:
+		case LuaSyntaxKind.GotoStatement:
+		case LuaSyntaxKind.LabelStatement:
 			return;
+		default:
+			unreachableFlowValue(statement, 'statement kind');
 	}
 }
 
@@ -510,9 +533,13 @@ function collectLexicalWritesInStatement(
 			collectLexicalWritesInFunctionBody(localFunction.functionExpression.body.body, semantics, out);
 			return;
 		}
-		case LuaSyntaxKind.FunctionDeclarationStatement:
-			collectLexicalWritesInFunctionBody((statement as LuaFunctionDeclarationStatement).functionExpression.body.body, semantics, out);
+		case LuaSyntaxKind.FunctionDeclarationStatement: {
+			const declaration = statement as LuaFunctionDeclarationStatement;
+			const handle = resolveFunctionDeclarationHandle(declaration, semantics);
+			if (handle !== undefined) out.add(handle);
+			collectLexicalWritesInFunctionBody(declaration.functionExpression.body.body, semantics, out);
 			return;
+		}
 		case LuaSyntaxKind.ReturnStatement: {
 			const returnStatement = statement as LuaReturnStatement;
 			for (let index = 0; index < returnStatement.expressions.length; index += 1) {
@@ -569,8 +596,13 @@ function collectLexicalWritesInStatement(
 		case LuaSyntaxKind.CallStatement:
 			collectNestedClosureWritesFromExpression((statement as LuaCallStatement).expression, semantics, out);
 			return;
-		default:
+		case LuaSyntaxKind.BreakStatement:
+		case LuaSyntaxKind.HaltUntilIrqStatement:
+		case LuaSyntaxKind.GotoStatement:
+		case LuaSyntaxKind.LabelStatement:
 			return;
+		default:
+			unreachableFlowValue(statement, 'statement kind');
 	}
 }
 
@@ -670,6 +702,10 @@ export class ValueKindFlowAnalyzer {
 		return result.fact;
 	}
 
+	evaluateExpressionValueKind(expression: LuaExpression, state: SymbolFlowState): CompileValueKind {
+		return evaluateExpressionFact(expression, cloneState(state), this.semantics, this.closureWrittenSymbols).fact.kind;
+	}
+
 	private evalExpressionList(expressions: ReadonlyArray<LuaExpression>): CompileValueFact[] {
 		const facts = new Array<CompileValueFact>(expressions.length);
 		for (let index = 0; index < expressions.length; index += 1) {
@@ -735,6 +771,7 @@ export class ValueKindFlowAnalyzer {
 				this.analyzeLocalFunction(statement as LuaLocalFunctionStatement);
 				return;
 			case LuaSyntaxKind.FunctionDeclarationStatement:
+				this.analyzeFunctionDeclaration(statement as LuaFunctionDeclarationStatement);
 				return;
 			case LuaSyntaxKind.AssignmentStatement:
 				this.analyzeAssignment(statement as LuaAssignmentStatement);
@@ -765,8 +802,13 @@ export class ValueKindFlowAnalyzer {
 			case LuaSyntaxKind.CallStatement:
 				this.evalExprFact((statement as LuaCallStatement).expression);
 				return;
-			default:
+			case LuaSyntaxKind.BreakStatement:
+			case LuaSyntaxKind.HaltUntilIrqStatement:
+			case LuaSyntaxKind.GotoStatement:
+			case LuaSyntaxKind.LabelStatement:
 				return;
+			default:
+				unreachableFlowValue(statement, 'statement kind');
 		}
 	}
 
@@ -787,12 +829,52 @@ export class ValueKindFlowAnalyzer {
 		const handle = this.resolveDeclarationHandle(statement.name);
 		if (handle === undefined) return;
 		this.recordDeclaredHandle(handle);
-		this.state.set(handle, UNKNOWN_TRUTHY_VALUE_FACT);
+		this.state.set(handle, FUNCTION_VALUE_FACT);
+	}
+
+	private analyzeFunctionDeclaration(statement: LuaFunctionDeclarationStatement): void {
+		const handle = resolveFunctionDeclarationHandle(statement, this.semantics);
+		if (handle === undefined || !this.state.has(handle)) {
+			return;
+		}
+		this.state.set(handle, FUNCTION_VALUE_FACT);
+	}
+
+	private isMemoryAssignmentTarget(expression: LuaAssignableExpression): boolean {
+		if (expression.kind !== LuaSyntaxKind.IndexExpression) {
+			return false;
+		}
+		const base = expression.base;
+		if (base.kind !== LuaSyntaxKind.IdentifierExpression) {
+			return false;
+		}
+		const reference = getBoundIdentifierReference(this.semantics, base);
+		return reference.kind === 'memory_map';
+	}
+
+	private analyzeAssignmentTargetPreparation(expression: LuaAssignableExpression): void {
+		switch (expression.kind) {
+			case LuaSyntaxKind.IdentifierExpression:
+				return;
+			case LuaSyntaxKind.MemberExpression:
+				this.evalExprFact(expression.base);
+				return;
+			case LuaSyntaxKind.IndexExpression:
+				if (this.isMemoryAssignmentTarget(expression)) {
+					this.evalExprFact(expression.index);
+					return;
+				}
+				this.evalExprFact(expression.base);
+				this.evalExprFact(expression.index);
+				return;
+			default:
+				unreachableFlowValue(expression, 'assignment target kind');
+		}
 	}
 
 	private analyzeAssignment(statement: LuaAssignmentStatement): void {
 		for (let index = 0; index < statement.left.length; index += 1) {
-			this.evalExprFact(statement.left[index]);
+			this.analyzeAssignmentTargetPreparation(statement.left[index]);
 		}
 		const facts = this.evalExpressionList(statement.right);
 		if (statement.operator !== LuaAssignmentOperator.Assign) {

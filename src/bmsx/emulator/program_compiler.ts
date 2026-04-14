@@ -42,13 +42,14 @@ import type { CanonicalizationType } from '../rompack/rompack';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from './instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from '../ide/contrib/intellisense/lua_semantic_frontend';
 import { MMIO_REGISTER_SPEC_BY_ADDRESS, MMIO_REGISTER_SPEC_BY_NAME, type MmioWriteRequirement } from './mmio_register_spec';
-import { ValueKindFlowAnalyzer, evaluateExpressionValueKind, type SymbolFlowState } from './compile_value_flow';
+import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compile_value_flow';
 import { ENGINE_SYSTEM_GLOBAL_NAME_SET } from './lua_system_globals';
 import { LuaSyntaxError } from '../lua/luaerrors';
 import { Decl } from '../ide/contrib/intellisense/semantic_model';
 import {
 	IMPLICIT_SELF_SYMBOL_HANDLE,
 	getBoundIdentifierReference as getResolvedIdentifierReference,
+	getFunctionDeclarationBoundReferences,
 	getReferenceSymbolHandle as getResolvedReferenceSymbolHandle,
 } from './lua_bound_reference';
 
@@ -994,6 +995,10 @@ class FunctionBuilder {
 		return getResolvedIdentifierReference(this.semantics, expression);
 	}
 
+	private getIdentifierWriteReference(expression: LuaIdentifierExpression): LuaBoundReference {
+		return getResolvedIdentifierReference(this.semantics, expression, true);
+	}
+
 	private getReferenceSymbolHandle(reference: LuaBoundReference): string | null {
 		return getResolvedReferenceSymbolHandle(reference);
 	}
@@ -1871,7 +1876,7 @@ class FunctionBuilder {
 			const expr = expressions[i];
 			if (expr.kind === LuaSyntaxKind.IdentifierExpression) {
 				const identifier = expr as LuaIdentifierExpression;
-				const reference = this.getIdentifierReference(identifier);
+				const reference = this.getIdentifierWriteReference(identifier);
 				const symbolHandle = this.getReferenceSymbolHandle(reference);
 				const name = this.getReferenceCanonicalName(reference);
 				const localBinding = symbolHandle ? this.resolveLocalBinding(symbolHandle) : null;
@@ -2296,9 +2301,7 @@ class FunctionBuilder {
 		const fnExpr = statement.functionExpression as LuaFunctionExpression;
 		const methodName = statement.name.methodName !== null ? this.canonicalizeName(statement.name.methodName) : null;
 		const identifiers = (statement.name.identifiers as string[]).map(name => this.canonicalizeName(name));
-		const headerEnd = statement.functionExpression.body.range.start;
-		const baseReference = this.semantics.findFirstReferenceByStartRange(statement.range.start, headerEnd);
-		const finalReference = this.semantics.findLastReferenceByStartRange(statement.range.start, headerEnd);
+		const { baseReference, finalReference } = getFunctionDeclarationBoundReferences(this.semantics, statement);
 		const hint = buildDeclarationHint(identifiers, methodName);
 		const protoId = this.createChildProtoId(hint);
 		const protoIndex = compileFunctionExpression(this.program, fnExpr, this, methodName && methodName.length > 0, protoId, this.moduleId, this.semantics, this.frontend);
@@ -2610,7 +2613,7 @@ class FunctionBuilder {
 	private validateMemoryStore(addressExpression: LuaExpression, valueExpression: LuaExpression): void {
 		const requirement = this.resolveMemoryStoreRequirement(addressExpression);
 		if (requirement === 'any') return;
-		const valueKind = evaluateExpressionValueKind(valueExpression, this.currentFlowState, this.semantics);
+		const valueKind = this.flowAnalysis!.evaluateExpressionValueKind(valueExpression, this.currentFlowState);
 		if (valueKind === 'string_ref') return;
 		const registerName = this.resolveMemoryStoreRegisterName(addressExpression);
 		const target = registerName ? `Register '${registerName}'` : 'This memory-mapped register';
