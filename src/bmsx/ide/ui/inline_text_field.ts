@@ -8,6 +8,7 @@ import { clamp } from '../../utils/clamp';
 import { LuaLexer } from '../../lua/syntax/lualexer';
 import { splitText, textFromLines } from '../text/source_text';
 import { advanceToggleBlink } from './caret_blink';
+import { editorCaretState } from './caret_state';
 import {
 	clearSingleCursorSelection,
 	moveSingleCursor,
@@ -625,5 +626,5 @@ export function applyInlineFieldPointer(field: TextField, options: InlineFieldPo
 	return POINTER_NO_BLINK_RESET;
 }
 export function updateBlink(deltaSeconds: number): void {
-	advanceToggleBlink(ide_state, deltaSeconds, constants.CURSOR_BLINK_INTERVAL);
+	advanceToggleBlink(editorCaretState, deltaSeconds, constants.CURSOR_BLINK_INTERVAL);
 }

@@ -11,6 +11,7 @@ import { moveResourceSearchSelection } from '../../contrib/resources/resource_se
 import { isShiftDown } from '../keyboard/key_input';
 import { scrollResourceBrowserHorizontal, scrollResourceViewer } from '../keyboard/resource_viewer_input';
 import { editorPointerState } from './editor_pointer_state';
+import { editorCaretState } from '../../ui/caret_state';
 
 export function handleEditorWheelInput(): void {
 	const playerInput = $.input.getPlayerInput(1);
@@ -56,7 +57,7 @@ export function handleEditorWheelInput(): void {
 		}
 	}
 	scrollRows(direction * steps);
-	ide_state.cursorRevealSuspended = true;
+	editorCaretState.cursorRevealSuspended = true;
 	playerInput.consumeRawButton('pointer_wheel', 'pointer');
 }
 

@@ -5,6 +5,7 @@ import { api } from '../ui/view/overlay_api';
 import { computeSelectionSlice, visualIndexToSegment } from '../core/text_utils';
 import * as constants from '../core/constants';
 import { ide_state } from '../core/ide_state';
+import { runtimeErrorState } from '../contrib/runtime_error/runtime_error_state';
 import { drawReferenceHighlightsForRow, drawSearchHighlightsForRow } from './render_code_area_highlights';
 import { computeCursorScreenInfo, drawCodeRowText } from './render_code_area_cursor';
 import { drawDiagnosticUnderlinesForRow, drawGotoUnderlineForRow } from './render_code_area_underlines';
@@ -63,7 +64,7 @@ export function drawCodeAreaRows(
 		const entry = ide_state.layout.getCachedHighlight(ide_state.buffer, lineIndex);
 		const isPrimaryVisualSegment = segment.startColumn === 0;
 		const hasBreakpointForRow = breakpointsForChunk?.has(lineIndex + 1) ?? false;
-		const isExecutionStopRow = ide_state.executionStopRow !== null && lineIndex === ide_state.executionStopRow;
+		const isExecutionStopRow = runtimeErrorState.executionStopRow !== null && lineIndex === runtimeErrorState.executionStopRow;
 		const isCursorLine = lineIndex === ide_state.cursorRow;
 		drawCodeAreaRowChrome(
 			renderFont,

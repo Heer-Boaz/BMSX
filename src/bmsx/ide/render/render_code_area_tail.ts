@@ -9,6 +9,7 @@ import { api } from '../ui/view/overlay_api';
 import { drawCompletionPopup, drawParameterHintOverlay, type CompletionRenderBounds } from './render_completion';
 import { drawCursor } from './render_caret';
 import type { RectBounds } from '../../rompack/rompack';
+import { editorCaretState } from '../ui/caret_state';
 
 const verticalTrackScratch: RectBounds = {
 	left: 0,
@@ -92,11 +93,11 @@ export function finalizeCodeAreaRender(
 	}
 	drawHoverTooltip(bounds.codeTop, contentBottom, bounds.textLeft);
 
-	if (ide_state.cursorVisible && cursorInfo) {
+	if (editorCaretState.cursorVisible && cursorInfo) {
 		drawCursor(cursorInfo, bounds.textLeft);
 	}
-	ide_state.completion.popupBounds = drawCompletionPopup(ide_state.completion.session, ide_state.cursorScreenInfo, ide_state.lineHeight, bounds);
-	drawParameterHintOverlay(ide_state.completion.hint, ide_state.cursorScreenInfo, ide_state.lineHeight, bounds);
+	ide_state.completion.popupBounds = drawCompletionPopup(ide_state.completion.session, cursorInfo, ide_state.lineHeight, bounds);
+	drawParameterHintOverlay(ide_state.completion.hint, cursorInfo, ide_state.lineHeight, bounds);
 	if (ide_state.codeVerticalScrollbarVisible) {
 		ide_state.scrollbars.codeVertical.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}

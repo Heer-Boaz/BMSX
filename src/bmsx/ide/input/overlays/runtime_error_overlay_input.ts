@@ -1,9 +1,9 @@
-import { ide_state } from '../../core/ide_state';
 import { writeClipboard } from '../../editing/text_editing_and_selection';
 import { buildRuntimeErrorOverlayCopyText } from '../../contrib/runtime_error/runtime_error_overlay';
 import type { PointerSnapshot } from '../../core/types';
 import { collapseRuntimeErrorOverlay, handleRuntimeErrorOverlayPointerClick } from './runtime_error_overlay_pointer_actions';
 import { editorPointerState, resetPointerClickTracking } from '../pointer/editor_pointer_state';
+import { runtimeErrorState } from '../../contrib/runtime_error/runtime_error_state';
 import {
 	RUNTIME_ERROR_OVERLAY_POINTER_BODY,
 	RUNTIME_ERROR_OVERLAY_POINTER_COPY_BUTTON,
@@ -17,7 +17,7 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 	if (pointerHit === RUNTIME_ERROR_OVERLAY_POINTER_NONE) {
 		return false;
 	}
-	const overlay = ide_state.runtimeErrorOverlay;
+	const overlay = runtimeErrorState.activeOverlay;
 	if (pointerHit === RUNTIME_ERROR_OVERLAY_POINTER_OUTSIDE) {
 		if (justPressed && overlay.expanded) {
 			collapseRuntimeErrorOverlay(overlay);

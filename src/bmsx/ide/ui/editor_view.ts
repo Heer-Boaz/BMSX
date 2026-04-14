@@ -10,6 +10,7 @@ import { markDiagnosticsDirty } from '../contrib/problems/diagnostics';
 import { computeSearchPageStats } from '../contrib/find/editor_search';
 import { ide_state } from '../core/ide_state';
 import { editorPointerState } from '../input/pointer/editor_pointer_state';
+import { editorCaretState } from './caret_state';
 import { getBuiltinIdentifiersSnapshot, requestSemanticRefresh } from '../contrib/intellisense/intellisense';
 import { findResourcePanelIndexByAssetId } from '../contrib/resources/resource_panel_items';
 import { ensureCursorVisible, updateDesiredColumn } from './caret';
@@ -207,7 +208,7 @@ export function updateViewport(viewport: Viewport): void {
 		}
 	}
 	ide_state.layout.markVisualLinesDirty();
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
 	rewrapRuntimeErrorOverlays();
 }
@@ -480,7 +481,7 @@ export function configureFontVariant(variant: FontVariant): void {
 export function setFontVariant(variant: FontVariant): void {
 	configureFontVariant(variant);
 	ensureVisualLines();
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
 	rewrapRuntimeErrorOverlays();
 	requestSemanticRefresh();
@@ -502,7 +503,7 @@ export function toggleWordWrap(): void {
 	const previousDesiredColumn = ide_state.desiredColumn;
 
 	ide_state.wordWrapEnabled = !previousWrap;
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	ide_state.layout.markVisualLinesDirty();
 	ensureVisualLines();
 

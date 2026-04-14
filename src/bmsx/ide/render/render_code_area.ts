@@ -93,6 +93,5 @@ export function renderCodeArea(): void {
 		breakpointLaneWidth,
 	);
 
-	ide_state.cursorScreenInfo = cursorInfo;
 	finalizeCodeAreaRender(bounds, contentBottom, trackRight, visualCount, rowCapacity, columnCapacity, wrapEnabled, cursorInfo);
 }

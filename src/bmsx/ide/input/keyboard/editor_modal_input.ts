@@ -6,6 +6,7 @@ import { closeLineJump } from '../../contrib/find/line_jump';
 import { closeSymbolSearch } from '../../contrib/symbols/symbol_search_shared';
 import { resetActionPromptState } from '../overlays/action_prompt';
 import { closeEditorContextMenu } from '../../render/render_context_menu';
+import { runtimeErrorState } from '../../contrib/runtime_error/runtime_error_state';
 
 export function handleEscapeKey(): boolean {
 	if (ide_state.actionPrompt) {
@@ -16,7 +17,7 @@ export function handleEscapeKey(): boolean {
 		closeEditorContextMenu();
 		return true;
 	}
-	const overlay = ide_state.runtimeErrorOverlay;
+	const overlay = runtimeErrorState.activeOverlay;
 	if (ide_state.createResource.visible) {
 		closeCreateResourcePrompt(true);
 		return true;

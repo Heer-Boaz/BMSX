@@ -4,9 +4,9 @@ import type {
 	RuntimeErrorOverlayLineDescriptor
 } from '../../core/types';
 import type { StackTraceFrame } from '../../../lua/luavalue';
-import { ide_state } from '../../core/ide_state';
 import { collectRuntimeStackFrames, formatRuntimeStackFrame } from './runtime_error_util';
 import { setActiveRuntimeErrorOverlay } from './runtime_error_navigation';
+import { runtimeErrorState } from './runtime_error_state';
 
 export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails): RuntimeErrorDetails {
 	if (!details) {
@@ -115,7 +115,7 @@ export function buildRuntimeErrorOverlayCopyText(overlay: RuntimeErrorOverlay): 
 }
 
 export function updateRuntimeErrorOverlay(deltaSeconds: number): void {
-	const overlay = ide_state.runtimeErrorOverlay;
+	const overlay = runtimeErrorState.activeOverlay;
 	if (!overlay) {
 		return;
 	}

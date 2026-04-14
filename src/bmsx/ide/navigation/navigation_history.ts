@@ -3,6 +3,7 @@ import { ide_state, NAVIGATION_HISTORY_LIMIT } from '../core/ide_state';
 import { getActiveCodeTabContext, setActiveTab, isCodeTabActive, activateCodeTab, focusChunkSource } from '../ui/editor_tabs';
 import { setCursorPosition, ensureCursorVisible } from '../ui/caret';
 import * as TextEditing from '../editing/text_editing_and_selection';
+import { editorCaretState } from '../ui/caret_state';
 
 export type NavigationHistoryEntry = {
 	contextId: string;
@@ -143,7 +144,7 @@ export function applyNavigationEntry(entry: NavigationHistoryEntry): void {
 	const targetColumn = clamp(entry.column, 0, line.length);
 	setCursorPosition(targetRow, targetColumn);
 	TextEditing.clearSelection();
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
 }
 

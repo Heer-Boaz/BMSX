@@ -1,8 +1,8 @@
 import { point_in_rect } from '../../../utils/rect_operations';
 import * as constants from '../../core/constants';
-import { ide_state } from '../../core/ide_state';
 import { computeRuntimeErrorOverlayMaxWidth } from '../../core/text_utils';
 import type { PointerSnapshot, RuntimeErrorOverlay } from '../../core/types';
+import { runtimeErrorState } from '../../contrib/runtime_error/runtime_error_state';
 import {
 	computeRuntimeErrorOverlayGeometry,
 	computeRuntimeErrorOverlayLayout,
@@ -21,7 +21,7 @@ export function updateRuntimeErrorOverlayPointerHover(
 	codeRight: number,
 	textLeft: number
 ): number {
-	const overlay = ide_state.runtimeErrorOverlay;
+	const overlay = runtimeErrorState.activeOverlay;
 	if (!overlay || overlay.hidden) {
 		return RUNTIME_ERROR_OVERLAY_POINTER_NONE;
 	}

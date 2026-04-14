@@ -8,6 +8,7 @@ import { notifyReadOnlyEdit } from '../../ui/editor_view';
 import { resetBlink } from '../../render/render_caret';
 import { revealCursor } from '../../ui/caret';
 import { closeSymbolSearch } from '../symbols/symbol_search_shared';
+import { editorCaretState } from '../../ui/caret_state';
 
 export function openRenamePrompt(): void {
 	if (!isEditableCodeTab()) {
@@ -32,14 +33,14 @@ export function openRenamePrompt(): void {
 		path: context.descriptor.path,
 	});
 	if (started) {
-		ide_state.cursorVisible = true;
+		editorCaretState.cursorVisible = true;
 		resetBlink();
 	}
 }
 
 export function focusEditorFromRename(): void {
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	resetBlink();
 	revealCursor();
-	ide_state.cursorVisible = true;
+	editorCaretState.cursorVisible = true;
 }

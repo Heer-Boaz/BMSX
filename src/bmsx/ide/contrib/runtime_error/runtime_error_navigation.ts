@@ -7,6 +7,8 @@ import { resetBlink } from '../../render/render_caret';
 import { showRuntimeErrorInChunk } from '../../render/render_error_overlay';
 import * as constants from '../../core/constants';
 import { editorPointerState } from '../../input/pointer/editor_pointer_state';
+import { editorCaretState } from '../../ui/caret_state';
+import { runtimeErrorState } from './runtime_error_state';
 
 type RuntimeErrorOverlayTarget = { context: CodeTabContext; overlay: RuntimeErrorOverlay };
 
@@ -58,7 +60,7 @@ export function focusRuntimeErrorOverlay(): boolean {
 	ide_state.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = false;
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	ide_state.scrollbarController.cancel();
 	setCursorPosition(overlay.row, overlay.column);
 	centerCursorVertically();
@@ -72,7 +74,7 @@ export function clearRuntimeErrorOverlay(): void {
 }
 
 export function clearAllRuntimeErrorOverlays(): void {
-	ide_state.runtimeErrorOverlay = null;
+	runtimeErrorState.activeOverlay = null;
 	for (const context of ide_state.codeTabContexts.values()) {
 		context.runtimeErrorOverlay = null;
 	}
@@ -83,7 +85,7 @@ export function setActiveRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void
 	if (overlay && overlay.hidden === undefined) {
 		overlay.hidden = false;
 	}
-	ide_state.runtimeErrorOverlay = overlay;
+	runtimeErrorState.activeOverlay = overlay;
 	const context = getActiveCodeTabContext();
 	if (context) {
 		context.runtimeErrorOverlay = overlay;
@@ -93,7 +95,7 @@ export function setActiveRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void
 export function setExecutionStopHighlight(row: number): void {
 	const context = getActiveCodeTabContext();
 	if (!context) {
-		ide_state.executionStopRow = null;
+		runtimeErrorState.executionStopRow = null;
 		return;
 	}
 	let nextRow = row;
@@ -101,19 +103,19 @@ export function setExecutionStopHighlight(row: number): void {
 		nextRow = ide_state.layout.clampBufferRow(ide_state.buffer, nextRow);
 	}
 	context.executionStopRow = nextRow;
-	ide_state.executionStopRow = nextRow;
+	runtimeErrorState.executionStopRow = nextRow;
 }
 
 export function clearExecutionStopHighlights(): void {
-	ide_state.executionStopRow = null;
+	runtimeErrorState.executionStopRow = null;
 	for (const context of ide_state.codeTabContexts.values()) {
 		context.executionStopRow = null;
 	}
 }
 
 export function syncRuntimeErrorOverlayFromContext(context: CodeTabContext): void {
-	ide_state.runtimeErrorOverlay = context ? context.runtimeErrorOverlay : null;
-	ide_state.executionStopRow = context ? context.executionStopRow : null;
+	runtimeErrorState.activeOverlay = context ? context.runtimeErrorOverlay : null;
+	runtimeErrorState.executionStopRow = context ? context.executionStopRow : null;
 }
 
 export function tryShowLuaErrorOverlay(error: unknown): boolean {

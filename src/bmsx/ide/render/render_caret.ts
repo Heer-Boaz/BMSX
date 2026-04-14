@@ -8,6 +8,7 @@ import { getCursorOffset } from '../ui/inline_text_field';
 import { api } from '../ui/view/overlay_api';
 import { textFromLines } from '../text/source_text';
 import { resetBlinkState } from '../ui/caret_blink';
+import { editorCaretState } from '../ui/caret_state';
 
 export function drawInlineCaret(
 	api: Api,
@@ -21,7 +22,7 @@ export function drawInlineCaret(
 	caretColor: { r: number; g: number; b: number; a: number; } | number = constants.CARET_COLOR,
 	baseTextColor: number = constants.COLOR_STATUS_TEXT
 ): void {
-	if (!ide_state.cursorVisible) return;
+	if (!editorCaretState.cursorVisible) return;
 	const text = textFromLines(field.lines);
 	const cursorIndex = getCursorOffset(field);
 	const rawGlyph = cursorIndex < text.length ? text.charAt(cursorIndex) : ' ';
@@ -68,7 +69,7 @@ export function drawCursor(info: CursorScreenInfo, textX: number): void {
 }
 
 export function resetBlink(): void {
-	resetBlinkState(ide_state);
+	resetBlinkState(editorCaretState);
 }
 
 export function drawRectOutlineColor(left: number, top: number, right: number, bottom: number, z: number, color: { r: number; g: number; b: number; a: number; } | number): void {

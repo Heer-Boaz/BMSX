@@ -6,6 +6,7 @@ import { getActiveCodeTabContext, findCodeTabContext, updateActiveContextDirtyFl
 import { caretNavigation, ide_state } from './ide_state';
 import { clearForwardNavigationHistory } from '../navigation/navigation_history';
 import { rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/runtime_error_overlay';
+import { runtimeErrorState } from '../contrib/runtime_error/runtime_error_state';
 import * as TextEditing from '../editing/text_editing_and_selection';
 import { handlePostEditMutation } from '../editing/text_editing_and_selection';
 import type { HighlightLine, RuntimeErrorOverlay, VisualLineSegment } from './types';
@@ -649,9 +650,9 @@ function rewrapRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void {
 
 export function rewrapRuntimeErrorOverlays(): void {
 	const visited = new Set<RuntimeErrorOverlay>();
-	if (ide_state.runtimeErrorOverlay) {
-		visited.add(ide_state.runtimeErrorOverlay);
-		rewrapRuntimeErrorOverlay(ide_state.runtimeErrorOverlay);
+	if (runtimeErrorState.activeOverlay) {
+		visited.add(runtimeErrorState.activeOverlay);
+		rewrapRuntimeErrorOverlay(runtimeErrorState.activeOverlay);
 	}
 	for (const context of ide_state.codeTabContexts.values()) {
 		const overlay = context.runtimeErrorOverlay;

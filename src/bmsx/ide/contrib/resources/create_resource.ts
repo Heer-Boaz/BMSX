@@ -6,6 +6,7 @@ import { resetBlink } from '../../render/render_caret';
 import { focusEditorFromSearch } from '../find/editor_search';
 import { focusEditorFromLineJump } from '../find/line_jump';
 import { listResources } from '../../../emulator/workspace';
+import { editorCaretState } from '../../ui/caret_state';
 
 export function openCreateResourcePrompt(): void {
 	if (ide_state.createResource.working) {
@@ -23,7 +24,7 @@ export function openCreateResourcePrompt(): void {
 	ide_state.createResource.visible = true;
 	ide_state.createResource.active = true;
 	ide_state.createResource.error = null;
-	ide_state.cursorVisible = true;
+	editorCaretState.cursorVisible = true;
 	resetBlink();
 }
 

@@ -7,6 +7,7 @@ import { ensureVisualLines, getVisualLineCount } from '../core/text_utils';
 import { ide_state } from '../core/ide_state';
 import { api } from './view/overlay_api';
 import { getActiveResourceViewer, setResourceViewerScroll } from '../contrib/resources/resource_viewer';
+import { editorCaretState } from './caret_state';
 
 export class Scrollbar {
 	public readonly orientation: 'vertical' | 'horizontal';
@@ -231,7 +232,7 @@ export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void 
 		case 'codeVertical': {
 			ensureVisualLines();
 			ide_state.scrollRow = ide_state.layout.clampVisualScroll(Math.round(scroll), getVisualLineCount(), Math.max(1, ide_state.cachedVisibleRowCount));
-			ide_state.cursorRevealSuspended = true;
+			editorCaretState.cursorRevealSuspended = true;
 			break;
 		}
 		case 'codeHorizontal': {
@@ -240,7 +241,7 @@ export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void 
 				break;
 			}
 			ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(Math.round(scroll), computeMaximumScrollColumn());
-			ide_state.cursorRevealSuspended = true;
+			editorCaretState.cursorRevealSuspended = true;
 			break;
 		}
 		case 'resourceVertical': {

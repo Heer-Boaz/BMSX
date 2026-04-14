@@ -47,6 +47,7 @@ import { resetActionPromptState } from '../input/overlays/action_prompt';
 import { applyLineJumpFieldText } from '../contrib/find/line_jump';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt } from '../contrib/resources/create_resource';
 import { editorPointerState } from '../input/pointer/editor_pointer_state';
+import { editorCaretState } from './caret_state';
 
 export function tickInput(): void {
 	handleEditorWheelInput();
@@ -123,7 +124,7 @@ export function shutdownRuntimeEditor(): void {
 	editorPointerState.pointerPrimaryWasPressed = false;
 	editorPointerState.pointerAuxWasPressed = false;
 	clearGotoHoverHighlight();
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	ide_state.search.active = false;
 	ide_state.search.visible = false;
 	cancelSearchJob();
@@ -164,12 +165,12 @@ export function activateRuntimeEditor(): void {
 		activateCodeTab();
 	}
 	bumpTextVersion();
-	ide_state.cursorVisible = true;
-	ide_state.blinkTimer = 0;
+	editorCaretState.cursorVisible = true;
+	editorCaretState.blinkTimer = 0;
 	ide_state.active = true;
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = false;
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	updateDesiredColumn();
 	ide_state.selectionAnchor = null;
 	ide_state.search.active = false;
@@ -225,7 +226,7 @@ export function deactivateRuntimeEditor(): void {
 	editorPointerState.tabDragState = null;
 	clearGotoHoverHighlight();
 	ide_state.scrollbarController.cancel();
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	ide_state.search.active = false;
 	ide_state.search.visible = false;
 	ide_state.lineJump.active = false;

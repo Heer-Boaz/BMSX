@@ -3,9 +3,10 @@ import * as constants from '../core/constants';
 import { getCodeAreaBounds, maximumLineLength } from './editor_view';
 import { caretNavigation, ide_state } from '../core/ide_state';
 import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../core/text_utils';
+import { editorCaretState } from './caret_state';
 
 export function revealCursor(): void {
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
 }
 

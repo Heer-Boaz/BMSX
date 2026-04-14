@@ -22,6 +22,7 @@ import { ScratchBatchPooled } from '../../../utils/scratchbatch';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { focusChunkSource } from '../../ui/editor_tabs';
 import { ensureCursorVisible, updateDesiredColumn } from '../../ui/caret';
+import { editorCaretState } from '../../ui/caret_state';
 import { resetBlink } from '../../render/render_caret';
 import { tryShowLuaErrorOverlay } from '../runtime_error/runtime_error_navigation';
 import { resolvePointerColumn, resolvePointerRow } from '../../ui/editor_view';
@@ -1187,7 +1188,7 @@ export function navigateToLuaDefinition(definition: LuaDefinitionLocation): void
 		activateCodeTab();
 	}
 	applyDefinitionSelection(definition.range);
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	clearHoverTooltip();
 	clearGotoHoverHighlight();
 	completeNavigation(navigationCheckpoint);
@@ -2672,7 +2673,7 @@ export function applyDefinitionSelection(range: LuaDefinitionLocation['range']):
 	editorPointerState.pointerAuxWasPressed = false;
 	updateDesiredColumn();
 	resetBlink();
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
 }
 

@@ -16,7 +16,6 @@ import { CHARACTER_CODES } from './character_map';
 import type {
 	Position,
 	CodeHoverTooltip,
-	RuntimeErrorOverlay,
 	EditorDiagnostic,
 	DiagnosticsCacheEntry,
 	CodeTabContext,
@@ -25,7 +24,6 @@ import type {
 	ActionPromptState,
 	CrtOptionsSnapshot,
 	EditContext,
-	CursorScreenInfo,
 	SearchState,
 	ResourceSearchState,
 	SymbolSearchState,
@@ -145,8 +143,6 @@ export interface IdeState {
 	tabBarRowCount: number;
 	baseBottomMargin: number;
 	deferredMessageDuration: number;
-	runtimeErrorOverlay: RuntimeErrorOverlay;
-	executionStopRow: number;
 	clockNow: () => number;
 	problemsPanel: ProblemsPanelController;
 	problemsPanelResizing: boolean;
@@ -178,8 +174,6 @@ export interface IdeState {
 	showMessage: (text: string, color: number, durationSeconds: number) => void;
 	updateMessage: (deltaSeconds: number) => void;
 	showWarningBanner: (text: string, durationSeconds?: number) => void;
-	blinkTimer: number;
-	cursorVisible: boolean;
 	warnNonMonospace: boolean;
 	search: SearchState;
 	resourceSearch: ResourceSearchState;
@@ -191,9 +185,7 @@ export interface IdeState {
 	scrollbarController: ScrollbarController;
 	input: InputController;
 	crtOptionsSnapshot: CrtOptionsSnapshot;
-	cursorRevealSuspended: boolean;
 	pendingEditContext: EditContext;
-	cursorScreenInfo: CursorScreenInfo;
 	diagnosticsTaskPending: boolean;
 	lastReportedSemanticError: string;
 	referenceState: ReferenceState;
@@ -262,8 +254,6 @@ export const ide_state: IdeState = {
 	tabBarRowCount: 1,
 	baseBottomMargin: 0,
 	deferredMessageDuration: null,
-	runtimeErrorOverlay: null,
-	executionStopRow: null,
 	clockNow: undefined!,
 	problemsPanel: undefined!,
 	problemsPanelResizing: false,
@@ -324,8 +314,6 @@ export const ide_state: IdeState = {
 	showMessage: undefined!,
 	updateMessage: undefined!,
 	showWarningBanner: undefined!,
-	blinkTimer: 0,
-	cursorVisible: true,
 	warnNonMonospace: false,
 	search: {
 		field: undefined!,
@@ -387,9 +375,7 @@ export const ide_state: IdeState = {
 	scrollbarController: undefined!,
 	input: undefined!,
 	crtOptionsSnapshot: null,
-	cursorRevealSuspended: false,
 	pendingEditContext: null,
-	cursorScreenInfo: null,
 	diagnosticsTaskPending: false,
 	lastReportedSemanticError: null,
 	referenceState: new ReferenceState(),

@@ -4,10 +4,11 @@ import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intell
 import { resetBlink } from '../../render/render_caret';
 import { measureText } from '../../core/text_utils';
 import { editorPointerState } from '../pointer/editor_pointer_state';
+import { editorCaretState } from '../../ui/caret_state';
 
 export function activateQuickInputField(): void {
 	ide_state.resourcePanel.setFocused(false);
-	ide_state.cursorVisible = true;
+	editorCaretState.cursorVisible = true;
 	resetBlink();
 }
 

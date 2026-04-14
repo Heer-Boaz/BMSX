@@ -13,6 +13,7 @@ import { getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace
 import type { LuaDefinitionInfo } from '../../../lua/syntax/lua_ast';
 import type { ModuleAliasEntry } from '../intellisense/semantic_model';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
+import { editorCaretState } from '../../ui/caret_state';
 
 const diagnosticsMinIntervalMs = 600;
 let diagnosticsTimer: TimerHandle | null = null;
@@ -347,7 +348,7 @@ export function gotoDiagnostic(diagnostic: EditorDiagnostic): void {
 	const targetColumn = clamp(diagnostic.startColumn, 0, line.length);
 	setCursorPosition(targetRow, targetColumn);
 	TextEditing.clearSelection();
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
 	completeNavigation(navigationCheckpoint);
 }

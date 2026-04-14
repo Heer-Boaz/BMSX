@@ -11,6 +11,7 @@ import { resetBlink } from '../render/render_caret';
 import { ensureCursorVisible } from '../ui/caret';
 import { requestSemanticRefresh } from '../contrib/intellisense/intellisense';
 import type { EditorSnapshot, Position } from '../core/types';
+import { editorCaretState } from '../ui/caret_state';
 
 export function prepareUndo(key: string, allowMerge: boolean): void {
 	if (ide_state.activeContextReadOnly) {
@@ -171,7 +172,7 @@ export function undo(): void {
 	ide_state.maxLineLengthDirty = true;
 	ide_state.layout.markVisualLinesDirty();
 	ide_state.layout.invalidateHighlightsFromRow(0);
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	updateDesiredColumn();
 	resetBlink();
 	ensureCursorVisible();
@@ -240,7 +241,7 @@ export function redo(): void {
 	ide_state.maxLineLengthDirty = true;
 	ide_state.layout.markVisualLinesDirty();
 	ide_state.layout.invalidateHighlightsFromRow(0);
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	updateDesiredColumn();
 	resetBlink();
 	ensureCursorVisible();
@@ -308,7 +309,7 @@ export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnaps
 	ide_state.textVersion = ide_state.buffer.version;
 	updateDesiredColumn();
 	resetBlink();
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	if (options?.preserveScroll !== true) {
 		ensureCursorVisible();
 	}

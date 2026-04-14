@@ -21,6 +21,8 @@ import { activate } from '../cart_editor';
 import { focusChunkSource } from '../ui/editor_tabs';
 import { setActiveRuntimeErrorOverlay, setExecutionStopHighlight } from '../contrib/runtime_error/runtime_error_navigation';
 import { editorPointerState } from '../input/pointer/editor_pointer_state';
+import { editorCaretState } from '../ui/caret_state';
+import { runtimeErrorState } from '../contrib/runtime_error/runtime_error_state';
 
 export interface ErrorOverlayBounds {
 	left: number;
@@ -216,7 +218,7 @@ export function resolveRuntimeErrorOverlayAnchor(
 }
 
 export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, textLeft: number): RuntimeErrorOverlayRenderResult {
-	const overlay = ide_state.runtimeErrorOverlay;
+	const overlay = runtimeErrorState.activeOverlay;
 	if (!overlay || overlay.hidden) {
 		return 'absent';
 	}
@@ -565,7 +567,7 @@ export function showRuntimeError(
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = false;
 	ide_state.scrollbarController.cancel();
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	centerCursorVertically();
 	updateDesiredColumn();
 	revealCursor();

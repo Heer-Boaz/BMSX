@@ -38,6 +38,8 @@ import { closeResourceSearch } from '../contrib/resources/resource_search';
 import { findResourceDescriptorForChunk } from '../contrib/resources/resource_lookup';
 import { applyAemSourceToRuntime, listAemResourceDescriptors, loadAemResourceSource, saveAemResourceSource } from '../language/aem/aem_editor';
 import { editorPointerState, resetPointerClickTracking } from '../input/pointer/editor_pointer_state';
+import { runtimeErrorState } from '../contrib/runtime_error/runtime_error_state';
+import { editorCaretState } from './caret_state';
 
 function resolvePath(descriptor: ResourceDescriptor): string {
 	return descriptor.path;
@@ -145,7 +147,7 @@ function setCodeTabDiagnosticsState(context: CodeTabContext): void {
 function activateResourceViewerTab(tab: EditorTabDescriptor): void {
 	closeSearch(false, true);
 	closeLineJump(false);
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	tab.dirty = false;
 	if (!tab.resource) {
 		return;
@@ -190,8 +192,8 @@ export function storeActiveCodeTabContext(): void {
 	context.lastHistoryTimestamp = ide_state.lastHistoryTimestamp;
 	context.savePointDepth = ide_state.savePointDepth;
 	context.dirty = ide_state.dirty;
-	context.runtimeErrorOverlay = ide_state.runtimeErrorOverlay;
-	context.executionStopRow = ide_state.executionStopRow;
+	context.runtimeErrorOverlay = runtimeErrorState.activeOverlay;
+	context.executionStopRow = runtimeErrorState.executionStopRow;
 	setTabDirty(context.id, context.dirty);
 	setTabRuntimeSyncState(context.id, context.runtimeSyncState, context.runtimeSyncMessage);
 }
@@ -299,7 +301,8 @@ export function setActiveTab(tabId: string): void {
 		if (tab.kind === 'resource_view') {
 			ide_state.activeContextReadOnly = false;
 			activateResourceViewerTab(tab);
-			ide_state.runtimeErrorOverlay = null;
+			runtimeErrorState.activeOverlay = null;
+			runtimeErrorState.executionStopRow = null;
 		}
 		return;
 	}
@@ -307,7 +310,8 @@ export function setActiveTab(tabId: string): void {
 	if (tab.kind === 'resource_view') {
 		ide_state.activeContextReadOnly = false;
 		activateResourceViewerTab(tab);
-		ide_state.runtimeErrorOverlay = null;
+		runtimeErrorState.activeOverlay = null;
+		runtimeErrorState.executionStopRow = null;
 		return;
 	}
 	if (tab.kind === 'code_editor') {

@@ -13,6 +13,7 @@ import { prepareUndo, applyUndoableReplace, recordEditContext } from '../../edit
 import { setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { updateDesiredColumn, ensureCursorVisible } from '../../ui/caret';
 import { resetBlink } from '../../render/render_caret';
+import { editorCaretState } from '../../ui/caret_state';
 
 export type RenameLineEdit = {
 	row: number;
@@ -78,7 +79,7 @@ export function commitRename(
 		setSingleCursorSelectionAnchor(ide_state, focused.row, focused.start + newName.length);
 		updateDesiredColumn();
 		resetBlink();
-		ide_state.cursorRevealSuspended = false;
+		editorCaretState.cursorRevealSuspended = false;
 		ensureCursorVisible();
 		updatedTotal += sortedMatches.length;
 	}

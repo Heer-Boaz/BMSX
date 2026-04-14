@@ -12,6 +12,7 @@ import { extractErrorMessage, type LuaDebuggerPauseSignal, type StackTraceFrame 
 import * as constants from '../../core/constants';
 import { findFunctionDefinitionRowInActiveFile } from '../intellisense/intellisense';
 import { clearExecutionStopHighlights, setExecutionStopHighlight, clearRuntimeErrorOverlay } from '../runtime_error/runtime_error_navigation';
+import { editorCaretState } from '../../ui/caret_state';
 
 type DebuggerResumeCommand = 'continue' | 'step_over' | 'step_into' | 'step_out' | 'ignore_exception' | 'step_out_exception';
 
@@ -349,7 +350,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 	editorPointerState.pointerSelecting = false;
 	resetPointerClickTracking();
 	setCursorPosition(targetRow, targetColumn);
-	ide_state.cursorRevealSuspended = false;
+	editorCaretState.cursorRevealSuspended = false;
 	centerCursorVertically();
 	ensureCursorVisible();
 }
