@@ -1,7 +1,7 @@
 import type { EditorDiagnostic, PointerSnapshot } from '../../../common/types';
 import type { RectBounds } from '../../../../rompack/rompack';
 import * as constants from '../../../common/constants';
-import { markAllDiagnosticsDirty } from './diagnostics';
+import { markAllDiagnosticsDirty } from '../../../editor/contrib/diagnostics/diagnostics';
 import { resetBlink } from '../../../editor/render/render_caret';
 import {
 	clampProblemsPanelScrollIndex,

@@ -5,7 +5,7 @@ import { editorFeedbackState } from '../../workbench/common/feedback_state';
 import { getBreakpointsForChunk } from '../../workbench/contrib/debugger/ide_debugger';
 import { intellisenseUiState } from '../contrib/intellisense/intellisense_ui_state';
 import { getActiveCodeTabContext } from '../../workbench/ui/tabs';
-import { ensureVisualLines, getVisualLineCount } from '../../common/text_utils';
+import { ensureVisualLines, getVisualLineCount } from '../common/text_layout';
 import { drawCodeAreaBackground } from './render_code_area_gutter';
 import { finalizeCodeAreaRender } from './render_code_area_tail';
 import { drawCodeAreaRows } from './render_code_area_rows';

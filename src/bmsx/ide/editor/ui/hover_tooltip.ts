@@ -3,7 +3,7 @@ import { api } from './view/overlay_api';
 import * as constants from '../../common/constants';
 import { drawEditorText } from '../render/text_renderer';
 import type { CodeHoverTooltip, PointerSnapshot } from '../../common/types';
-import { ensureVisualLines, measureText, positionToVisualIndex, visibleColumnCount, visibleRowCount, visualIndexToSegment } from '../../common/text_utils';
+import { ensureVisualLines, measureText, positionToVisualIndex, visibleColumnCount, visibleRowCount, visualIndexToSegment } from '../common/text_layout';
 import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from './editor_view';
 import { point_in_rect } from '../../../utils/rect_operations';
 import { intellisenseUiState } from '../contrib/intellisense/intellisense_ui_state';

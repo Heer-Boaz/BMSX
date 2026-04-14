@@ -1,11 +1,11 @@
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../emulator/types';
 import type { EditorDiagnostic } from '../../../common/types';
-import { computeLuaDiagnostics, getApiCompletionData } from '../../../editor/contrib/intellisense/intellisense';
+import { computeLuaDiagnostics, getApiCompletionData } from '../intellisense/intellisense';
 import { getCachedLuaParse } from '../../../language/lua/lua_analysis_cache';
-import { editorRuntimeState } from '../../../editor/common/editor_runtime_state';
+import { editorRuntimeState } from '../../common/editor_runtime_state';
 import { diagnosticsDebounceMs, editorDiagnosticsState } from './diagnostics_state';
-import { cacheSemanticParseState } from '../../../editor/contrib/intellisense/semantic_workspace_sync';
-import { editorSessionState } from '../../../editor/ui/editor_session_state';
+import { cacheSemanticParseState } from '../intellisense/semantic_workspace_sync';
+import { editorSessionState } from '../../ui/editor_session_state';
 
 export type DiagnosticContextInput = {
 	id: string;

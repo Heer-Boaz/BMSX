@@ -1,6 +1,6 @@
 import { applyScrollbarScroll } from '../../ui/scrollbar';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
-import { bottomMargin } from '../../ui/editor_view';
+import { bottomMargin } from '../../../workbench/common/layout';
 import type { PointerSnapshot } from '../../../common/types';
 import { editorPointerState } from './editor_pointer_state';
 import { editorViewState } from '../../ui/editor_view_state';

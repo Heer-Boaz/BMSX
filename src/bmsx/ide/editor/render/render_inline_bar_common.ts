@@ -4,7 +4,7 @@ import { measureInlineFieldDecoration } from '../ui/inline_field_view';
 import { api } from '../ui/view/overlay_api';
 import { drawEditorText } from './text_renderer';
 import { drawInlineCaret } from './render_caret';
-import { measureText } from '../../common/text_utils';
+import { measureText } from '../common/text_layout';
 import { textFromLines } from '../text/source_text';
 import { editorViewState } from '../ui/editor_view_state';
 

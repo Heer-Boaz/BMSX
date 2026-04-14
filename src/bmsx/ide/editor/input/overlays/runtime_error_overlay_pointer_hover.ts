@@ -1,6 +1,6 @@
 import { point_in_rect } from '../../../../utils/rect_operations';
 import * as constants from '../../../common/constants';
-import { computeRuntimeErrorOverlayMaxWidth } from '../../../common/text_utils';
+import { computeRuntimeErrorOverlayMaxWidth } from '../../common/text_layout';
 import type { PointerSnapshot, RuntimeErrorOverlay } from '../../../common/types';
 import { runtimeErrorState } from '../../contrib/runtime_error/runtime_error_state';
 import {

@@ -17,7 +17,7 @@ import {
 } from './editor/ui/editor_view';
 import { Viewport } from '../rompack/rompack';
 import { clearRuntimeErrorOverlay, clearAllRuntimeErrorOverlays } from './editor/contrib/runtime_error/runtime_error_navigation';
-import { getSourceForChunk } from './common/text_utils';
+import { getSourceForChunk } from './editor/common/text_runtime';
 
 export { activate, deactivate, draw, shutdown, tickInput, update };
 

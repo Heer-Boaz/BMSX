@@ -1,7 +1,7 @@
 import * as constants from '../../common/constants';
 import type { RectBounds } from '../../../rompack/rompack';
 import { editorChromeState } from '../ui/chrome_state';
-import { measureText } from '../../common/text_utils';
+import { measureText } from '../../editor/common/text_layout';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { api } from '../../editor/ui/view/overlay_api';
 import { buildTopBarMenuEntries, MENU_COMMANDS, MENU_IDS, TopBarMenuEntry } from '../ui/top_bar_menu';

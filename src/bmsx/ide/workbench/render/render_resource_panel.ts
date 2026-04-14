@@ -7,7 +7,7 @@ import { getActiveResourceViewer, resourceViewerImageLayout, resourceViewerTextC
 import { resourcePanel } from '../contrib/resources/resource_panel_controller';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { api } from '../../editor/ui/view/overlay_api';
-import { measureText, wrapOverlayLine } from '../../common/text_utils';
+import { measureText, wrapOverlayLine } from '../../editor/common/text_layout';
 import * as constants from '../../common/constants';
 import { BmsxColors } from '../../../emulator/vdp';
 import { renderErrorOverlayText } from '../../editor/render/render_error_overlay';

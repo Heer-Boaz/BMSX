@@ -1,6 +1,6 @@
 import { breakUndoSequence } from '../editing/undo_controller';
-import { currentLine } from '../../common/text_utils';
-import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../../common/text_utils';
+import { currentLine } from '../common/text_layout';
+import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../common/text_layout';
 import { isShiftDown, isCtrlDown } from '../input/keyboard/key_input';
 import { resetBlink } from '../render/render_caret';
 import { findWordLeft, findWordRight, hasSelection, collapseSelectionTo, clearSelection } from '../editing/text_editing_and_selection';

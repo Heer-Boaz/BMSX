@@ -2,7 +2,8 @@ import { $ } from '../../../../core/engine_core';
 import type { RectBounds } from '../../../../rompack/rompack';
 import { clamp } from '../../../../utils/clamp';
 import * as constants from '../../../common/constants';
-import { bottomMargin, codeViewportTop } from '../../../editor/ui/editor_view';
+import { codeViewportTop } from '../../../editor/ui/editor_view';
+import { bottomMargin } from '../../common/layout';
 import { editorViewState } from '../../../editor/ui/editor_view_state';
 
 export function defaultResourcePanelRatio(): number {

@@ -21,7 +21,7 @@ import {
 	symbolSearchEntryHeight,
 	symbolSearchVisibleResultCount,
 } from '../ui/editor_view';
-import { measureText } from '../../common/text_utils';
+import { measureText } from '../common/text_layout';
 import { renderInlineBarField, renderInlineBarFrame } from './render_inline_bar_common';
 import { problemsPanel } from '../../workbench/contrib/problems/problems_panel';
 import { renameController } from '../contrib/rename/rename_controller';

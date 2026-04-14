@@ -6,21 +6,19 @@ import type { Viewport } from '../../../rompack/rompack';
 import type { ResourceDescriptor } from '../../common/types';
 import * as constants from '../../common/constants';
 import { CodeLayout } from './code_layout';
-import { markDiagnosticsDirty } from '../../workbench/contrib/problems/diagnostics';
+import { markDiagnosticsDirty } from '../contrib/diagnostics/diagnostics';
 import { computeSearchPageStats } from '../contrib/find/editor_search';
-import { showEditorMessage,editorFeedbackState } from '../../workbench/common/feedback_state';
+import { showEditorMessage } from '../../workbench/common/feedback_state';
 import { editorChromeState } from '../../workbench/ui/chrome_state';
 import { editorPointerState } from '../input/pointer/editor_pointer_state';
 import { editorCaretState } from './caret_state';
 import { getBuiltinIdentifiersSnapshot, requestSemanticRefresh } from '../contrib/intellisense/intellisense';
 import { findResourcePanelIndexByAssetId } from '../../workbench/contrib/resources/resource_panel_items';
 import { ensureCursorVisible, updateDesiredColumn } from './caret';
-import { splitText } from '../text/source_text';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorSessionState } from './editor_session_state';
 import { editorViewState } from './editor_view_state';
 import { editorFeatureState } from '../common/editor_feature_state';
-import { problemsPanel } from '../../workbench/contrib/problems/problems_panel';
 import { resourcePanel } from '../../workbench/contrib/resources/resource_panel_controller';
 import { renameController } from '../contrib/rename/rename_controller';
 import { editorRuntimeState } from '../common/editor_runtime_state';
@@ -32,8 +30,8 @@ import {
 	visibleColumnCount,
 	visibleRowCount,
 	visualIndexToSegment,
-	wrapOverlayLine,
-} from '../../common/text_utils';
+} from '../common/text_layout';
+import { bottomMargin, getTabBarTotalHeight, topMargin } from '../../workbench/common/layout';
 
 function decimalDigitCount(value: number): number {
 	let digits = 1;
@@ -147,56 +145,6 @@ export function symbolSearchVisibleResultCount(): number {
 	}
 	const remaining = Math.max(0, editorFeatureState.symbolSearch.matches.length - editorFeatureState.symbolSearch.displayOffset);
 	return Math.min(remaining, symbolSearchPageSize());
-}
-
-export function getTabBarTotalHeight(): number {
-	return editorViewState.tabBarHeight * Math.max(1, editorViewState.tabBarRowCount);
-}
-
-export function topMargin(): number {
-	return editorViewState.headerHeight + getTabBarTotalHeight() + 2;
-}
-
-export function getStatusMessageLines(): string[] {
-	if (!editorFeedbackState.message.visible) {
-		return [];
-	}
-	const rawLines = splitText(editorFeedbackState.message.text);
-	const maxWidth = Math.max(editorViewState.viewportWidth - 8, editorViewState.charAdvance);
-	const wrappedLines: string[] = [];
-	for (let i = 0; i < rawLines.length; i += 1) {
-		const wrapped = wrapOverlayLine(rawLines[i], maxWidth);
-		for (let j = 0; j < wrapped.length; j += 1) {
-			wrappedLines.push(wrapped[j]);
-		}
-	}
-	return wrappedLines.length > 0 ? wrappedLines : [''];
-}
-
-export function statusAreaHeight(): number {
-	if (!editorFeedbackState.message.visible) {
-		return editorViewState.baseBottomMargin;
-	}
-	return editorViewState.baseBottomMargin + Math.max(1, getStatusMessageLines().length) * editorViewState.lineHeight + 4;
-}
-
-export function getVisibleProblemsPanelHeight(): number {
-	if (!problemsPanel.isVisible) {
-		return 0;
-	}
-	const planned = problemsPanel.visibleHeight;
-	if (planned <= 0) {
-		return 0;
-	}
-	const maxAvailable = Math.max(0, editorViewState.viewportHeight - statusAreaHeight() - (editorViewState.headerHeight + getTabBarTotalHeight()));
-	if (maxAvailable <= 0) {
-		return 0;
-	}
-	return Math.min(planned, maxAvailable);
-}
-
-export function bottomMargin(): number {
-	return statusAreaHeight() + getVisibleProblemsPanelHeight();
 }
 
 export function applyViewportSize(viewport: Viewport): void {

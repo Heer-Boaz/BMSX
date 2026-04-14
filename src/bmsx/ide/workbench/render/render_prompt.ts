@@ -2,7 +2,7 @@ import type { RectBounds } from '../../../rompack/rompack';
 import { api } from '../../editor/ui/view/overlay_api';
 import * as constants from '../../common/constants';
 import { drawEditorText } from '../../editor/render/text_renderer';
-import { measureText } from '../../common/text_utils';
+import { measureText } from '../../editor/common/text_layout';
 import type { ActionPromptAction, ActionPromptLayout } from '../../common/types';
 import { centerDialogBounds } from '../../editor/render/dialog_layout';
 import { actionPromptState } from '../../editor/input/overlays/action_prompt_state';

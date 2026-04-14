@@ -5,7 +5,7 @@ import type { RectBounds } from '../../../rompack/rompack';
 import { TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../../common/constants';
 import { ScratchBuffer } from '../../../utils/scratchbuffer';
 import { editorChromeState } from '../ui/chrome_state';
-import { measureText } from '../../common/text_utils';
+import { measureText } from '../../editor/common/text_layout';
 import { editorPointerState } from '../../editor/input/pointer/editor_pointer_state';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { editorSessionState } from '../../editor/ui/editor_session_state';

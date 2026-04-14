@@ -5,7 +5,7 @@ import { renderResourcePanel } from '../../render/render_resource_panel';
 import type { ResourceBrowserItem } from '../../../common/types';
 import type { RectBounds } from '../../../../rompack/rompack';
 import { showEditorMessage } from '../../common/feedback_state';
-import { measureText } from '../../../common/text_utils';
+import { measureText } from '../../../editor/common/text_layout';
 import type { CallHierarchyView } from '../../../editor/contrib/call_hierarchy/call_hierarchy_view';
 import { editorViewState } from '../../../editor/ui/editor_view_state';
 import {

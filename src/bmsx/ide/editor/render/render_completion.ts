@@ -1,7 +1,8 @@
 import { clamp } from '../../../utils/clamp';
 import { api } from '../ui/view/overlay_api';
 import * as constants from '../../common/constants';
-import { measureText, wrapTextDynamic } from '../../common/text_utils';
+import { wrapTextDynamic } from '../../common/text_utils';
+import { measureText } from '../common/text_layout';
 import type { CompletionSession, CursorScreenInfo, ParameterHintState } from '../../common/types';
 import { drawEditorText } from './text_renderer';
 import { editorViewState } from '../ui/editor_view_state';

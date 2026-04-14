@@ -2,7 +2,7 @@ import { resourcePanel } from '../../../workbench/contrib/resources/resource_pan
 import type { PointerSnapshot } from '../../../common/types';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { resetBlink } from '../../render/render_caret';
-import { measureText } from '../../../common/text_utils';
+import { measureText } from '../../common/text_layout';
 import { editorPointerState } from '../pointer/editor_pointer_state';
 import { editorCaretState } from '../../ui/caret_state';
 

@@ -1,7 +1,7 @@
 import { isEditableCodeTab } from '../../workbench/ui/tabs';
 import { notifyReadOnlyEdit } from '../ui/editor_view';
 import { prepareUndo, applyUndoableReplace } from './undo_controller';
-import { markTextMutated } from '../../common/text_utils';
+import { markTextMutated } from '../common/text_runtime';
 import { resetBlink } from '../render/render_caret';
 import { revealCursor, updateDesiredColumn } from '../ui/caret';
 import * as TextEditing from './text_editing_and_selection';

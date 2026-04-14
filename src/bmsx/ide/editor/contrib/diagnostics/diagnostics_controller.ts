@@ -1,24 +1,20 @@
 import { clamp } from '../../../../utils/clamp';
 import type { TimerHandle } from '../../../../platform/platform';
 import { computeAggregatedEditorDiagnostics, markDiagnosticsDirty, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
-import { editorRuntimeState } from '../../../editor/common/editor_runtime_state';
+import { editorRuntimeState } from '../../common/editor_runtime_state';
 import type { EditorDiagnostic, CodeTabContext } from '../../../common/types';
-import { listLuaSymbols, listGlobalLuaSymbols, listLuaBuiltinFunctions } from '../../../editor/contrib/intellisense/intellisense';
-import { getTextSnapshot, splitText } from '../../../editor/text/source_text';
+import { listLuaSymbols, listGlobalLuaSymbols, listLuaBuiltinFunctions } from '../intellisense/intellisense';
+import { getTextSnapshot, splitText } from '../../text/source_text';
 import { enqueueBackgroundTask, scheduleIdeOnce } from '../../../common/background_tasks';
-import { getActiveCodeTabContext, findCodeTabContext, setActiveTab, isCodeTabActive, activateCodeTab } from '../../ui/tabs';
-import { setCursorPosition, ensureCursorVisible } from '../../../editor/ui/caret';
-import * as TextEditing from '../../../editor/editing/text_editing_and_selection';
-import { getOrCreateSemanticWorkspace } from '../../../editor/contrib/intellisense/semantic_workspace_sync';
+import { getActiveCodeTabContext, findCodeTabContext } from '../../../workbench/ui/tabs';
+import { getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace_sync';
 import type { LuaDefinitionInfo } from '../../../../lua/syntax/lua_ast';
-import type { ModuleAliasEntry } from '../../../editor/contrib/intellisense/semantic_model';
-import { beginNavigationCapture, completeNavigation } from '../../../editor/navigation/navigation_history';
-import { editorCaretState } from '../../../editor/ui/caret_state';
+import type { ModuleAliasEntry } from '../intellisense/semantic_model';
 import { diagnosticsDebounceMs, editorDiagnosticsState, EMPTY_DIAGNOSTICS } from './diagnostics_state';
-import { editorDocumentState } from '../../../editor/editing/editor_document_state';
-import { editorSessionState } from '../../../editor/ui/editor_session_state';
-import { editorViewState } from '../../../editor/ui/editor_view_state';
-import { problemsPanel } from './problems_panel';
+import { editorDocumentState } from '../../editing/editor_document_state';
+import { editorSessionState } from '../../ui/editor_session_state';
+import { editorViewState } from '../../ui/editor_view_state';
+import { problemsPanel } from '../../../workbench/contrib/problems/problems_panel';
 
 const diagnosticsMinIntervalMs = 600;
 let diagnosticsTimer: TimerHandle | null = null;
@@ -334,26 +330,4 @@ export function findContextByChunk(path: string): CodeTabContext {
 export function getDiagnosticsForRow(row: number): readonly EditorDiagnostic[] {
 	const bucket = editorDiagnosticsState.diagnosticsByRow.get(row);
 	return bucket ?? EMPTY_DIAGNOSTICS;
-}
-
-export function gotoDiagnostic(diagnostic: EditorDiagnostic): void {
-	const navigationCheckpoint = beginNavigationCapture();
-	// Switch to the originating tab if provided
-	if (diagnostic.contextId && diagnostic.contextId.length > 0 && diagnostic.contextId !== editorSessionState.activeCodeTabContextId) {
-		setActiveTab(diagnostic.contextId);
-	}
-	if (!isCodeTabActive()) {
-		activateCodeTab();
-	}
-	if (!isCodeTabActive()) {
-		return;
-	}
-	const targetRow = clamp(diagnostic.row, 0, Math.max(0, editorDocumentState.buffer.getLineCount() - 1));
-	const line = editorDocumentState.buffer.getLineContent(targetRow);
-	const targetColumn = clamp(diagnostic.startColumn, 0, line.length);
-	setCursorPosition(targetRow, targetColumn);
-	TextEditing.clearSelection();
-	editorCaretState.cursorRevealSuspended = false;
-	ensureCursorVisible();
-	completeNavigation(navigationCheckpoint);
 }

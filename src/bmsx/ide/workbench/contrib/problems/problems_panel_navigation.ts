@@ -1,5 +1,5 @@
 import { clamp } from '../../../../utils/clamp';
-import { gotoDiagnostic } from './diagnostics_controller';
+import { gotoDiagnostic } from '../../../editor/contrib/diagnostics/diagnostic_navigation';
 import { estimateProblemsPanelVisibleCount } from './problems_panel_layout';
 import type { ProblemsPanelController } from './problems_panel';
 

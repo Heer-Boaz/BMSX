@@ -7,7 +7,7 @@ import { activateCodeTab, getActiveCodeTabContext, isResourceViewActive, setActi
 import { cancelGlobalSearchJob, startSearchJob } from '../contrib/find/editor_search';
 import { editorRuntimeState } from '../common/editor_runtime_state';
 import { editorFeedbackState, setEditorFeedbackActive, showEditorMessage, updateEditorMessage } from '../../workbench/common/feedback_state';
-import { bumpTextVersion } from '../../common/text_utils';
+import { bumpTextVersion } from '../common/text_runtime';
 import { ensureCursorVisible } from './caret';
 import { drawProblemsPanel } from '../../workbench/contrib/problems/problems_panel';
 import { renderTopBar, renderTopBarDropdown } from '../../workbench/render/render_top_bar';
@@ -46,8 +46,8 @@ import {
 	cancelSearchJob,
 } from '../contrib/find/editor_search';
 import { clearExecutionStopHighlights, syncRuntimeErrorOverlayFromContext } from '../contrib/runtime_error/runtime_error_navigation';
-import { processDiagnosticsQueue } from '../../workbench/contrib/problems/diagnostics_controller';
-import { editorDiagnosticsState } from '../../workbench/contrib/problems/diagnostics_state';
+import { processDiagnosticsQueue } from '../contrib/diagnostics/diagnostics_controller';
+import { editorDiagnosticsState } from '../contrib/diagnostics/diagnostics_state';
 import { updateDesiredColumn } from './caret';
 import { resetActionPromptState } from '../input/overlays/action_prompt';
 import { actionPromptState } from '../input/overlays/action_prompt_state';

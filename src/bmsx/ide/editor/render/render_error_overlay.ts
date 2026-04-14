@@ -1,9 +1,9 @@
 import type { OverlayApi as Api } from '../ui/view/overlay_api';
 import type { EditorFont } from '../ui/view/editor_font';
 import { drawEditorText } from './text_renderer';
-import { bottomMargin } from '../ui/editor_view';
+import { bottomMargin } from '../../workbench/common/layout';
 import { showEditorMessage } from '../../workbench/common/feedback_state';
-import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, wrapOverlayLine } from '../../common/text_utils';
+import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, wrapOverlayLine } from '../common/text_layout';
 import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../../common/types';
 import type { StackTraceFrame } from '../../../lua/luavalue';
 import type { RectBounds } from '../../../rompack/rompack';

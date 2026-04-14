@@ -36,7 +36,7 @@ import { prepareUndo } from '../../editing/undo_controller';
 import { updateDesiredColumn, revealCursor } from '../../ui/caret';
 import { resetBlink } from '../../render/render_caret';
 import { ModuleAliasEntry } from '../intellisense/semantic_model';
-import { getActiveSemanticDefinitions, getLuaModuleAliases } from '../../../workbench/contrib/problems/diagnostics_controller';
+import { getActiveSemanticDefinitions, getLuaModuleAliases } from '../diagnostics/diagnostics_controller';
 import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 
 type LocalCompletionCacheEntry = {

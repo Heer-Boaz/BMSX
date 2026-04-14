@@ -6,8 +6,8 @@ import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } 
 import { findResourceDescriptorForChunk } from '../../../workbench/contrib/resources/resource_lookup';
 import { getTextSnapshot, splitText } from '../../text/source_text';
 import { syncSemanticWorkspacePath, getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace_sync';
-import { markTextMutated } from '../../../common/text_utils';
-import { markDiagnosticsDirtyForChunk } from '../../../workbench/contrib/problems/diagnostics_controller';
+import { markTextMutated } from '../../common/text_runtime';
+import { markDiagnosticsDirtyForChunk } from '../diagnostics/diagnostics_controller';
 import { prepareUndo, applyUndoableReplace, recordEditContext } from '../../editing/undo_controller';
 import { setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { updateDesiredColumn, ensureCursorVisible } from '../../ui/caret';

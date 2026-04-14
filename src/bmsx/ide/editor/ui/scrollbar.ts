@@ -3,7 +3,7 @@ import { SCROLLBAR_MIN_THUMB_HEIGHT } from '../../common/constants';
 import type { ScrollbarKind } from '../../common/types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { computeMaximumScrollColumn, getCodeAreaBounds } from './editor_view';
-import { ensureVisualLines, getVisualLineCount } from '../../common/text_utils';
+import { ensureVisualLines, getVisualLineCount } from '../common/text_layout';
 import { resourcePanel } from '../../workbench/contrib/resources/resource_panel_controller';
 import { api } from './view/overlay_api';
 import { getActiveResourceViewer, setResourceViewerScroll } from '../../workbench/contrib/resources/resource_viewer';

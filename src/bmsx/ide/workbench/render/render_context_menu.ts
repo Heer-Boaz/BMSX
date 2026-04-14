@@ -3,7 +3,7 @@ import { point_in_rect } from '../../../utils/rect_operations';
 import { api } from '../../editor/ui/view/overlay_api';
 import * as constants from '../../common/constants';
 import { drawEditorText } from '../../editor/render/text_renderer';
-import { measureText } from '../../common/text_utils';
+import { measureText } from '../../editor/common/text_layout';
 import type { EditorContextMenuEntry, EditorContextToken } from '../../common/types';
 import { editorContextMenuState, resetEditorContextMenuState } from '../contrib/context_menu/context_menu_state';
 import { editorViewState } from '../../editor/ui/editor_view_state';

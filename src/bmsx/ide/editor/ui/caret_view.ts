@@ -3,7 +3,7 @@ import * as constants from '../../common/constants';
 import { getCodeAreaBounds, maximumLineLength } from './editor_view';
 import { caretNavigation } from './caret';
 import { editorFeedbackState } from '../../workbench/common/feedback_state';
-import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../../common/text_utils';
+import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../common/text_layout';
 import { editorCaretState } from './caret_state';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorViewState } from './editor_view_state';

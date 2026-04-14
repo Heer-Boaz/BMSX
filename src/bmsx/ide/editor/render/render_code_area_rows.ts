@@ -2,7 +2,7 @@ import type { CursorScreenInfo } from '../../common/types';
 import type { Font } from '../../../render/shared/bmsx_font';
 import { drawEditorText } from './text_renderer';
 import { api } from '../ui/view/overlay_api';
-import { computeSelectionSlice, visualIndexToSegment } from '../../common/text_utils';
+import { computeSelectionSlice, visualIndexToSegment } from '../common/text_layout';
 import * as constants from '../../common/constants';
 import { runtimeErrorState } from '../contrib/runtime_error/runtime_error_state';
 import { drawReferenceHighlightsForRow, drawSearchHighlightsForRow } from './render_code_area_highlights';

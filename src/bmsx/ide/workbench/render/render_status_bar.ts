@@ -1,11 +1,11 @@
 import * as constants from '../../common/constants';
 import { getActiveSymbolSearchMatch } from '../../editor/contrib/symbols/symbol_search_shared';
-import { statusAreaHeight, getStatusMessageLines } from '../../editor/ui/editor_view';
+import { statusAreaHeight, getStatusMessageLines } from '../common/layout';
 import { getActiveCodeTabContext, isCodeTabActive, isResourceViewActive } from '../ui/tabs';
 import { editorFeedbackState } from '../common/feedback_state';
 import { getActiveResourceViewer } from '../contrib/resources/resource_viewer';
 import { drawEditorText } from '../../editor/render/text_renderer';
-import { measureText, truncateTextToWidth } from '../../common/text_utils';
+import { measureText, truncateTextToWidth } from '../../editor/common/text_layout';
 import { Runtime } from '../../../emulator/runtime';
 import { api } from '../../editor/ui/view/overlay_api';
 import { workspaceState } from '../common/workspace_storage';

@@ -1,6 +1,7 @@
 import type { EditorDiagnostic } from '../../../common/types';
 import type { RectBounds } from '../../../../rompack/rompack';
-import { measureText, truncateTextToWidth, wrapTextDynamic as wrapMessageLinesGeneric } from '../../../common/text_utils';
+import { wrapTextDynamic as wrapMessageLinesGeneric } from '../../../common/text_utils';
+import { measureText, truncateTextToWidth } from '../../../editor/common/text_layout';
 import * as constants from '../../../common/constants';
 import { api } from '../../../editor/ui/view/overlay_api';
 import { drawEditorText } from '../../../editor/render/text_renderer';

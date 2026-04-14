@@ -3,7 +3,7 @@ import { point_in_rect } from '../../../../utils/rect_operations';
 import { editorChromeState } from '../../ui/chrome_state';
 import type { PointerSnapshot } from '../../../common/types';
 import { beginTabDrag, closeTab, endTabDrag, setActiveTab } from '../../ui/tabs';
-import { getTabBarTotalHeight } from '../../../editor/ui/editor_view';
+import { getTabBarTotalHeight } from '../../common/layout';
 import { consumeChromePointerPress } from '../../../editor/input/pointer/editor_chrome_pointer_press';
 import { editorPointerState } from '../../../editor/input/pointer/editor_pointer_state';
 import { editorSessionState } from '../../../editor/ui/editor_session_state';

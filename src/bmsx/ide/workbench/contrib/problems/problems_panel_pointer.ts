@@ -2,7 +2,7 @@ import type { PointerSnapshot } from '../../../common/types';
 import type { RectBounds } from '../../../../rompack/rompack';
 import { clamp } from '../../../../utils/clamp';
 import * as constants from '../../../common/constants';
-import { gotoDiagnostic } from './diagnostics_controller';
+import { gotoDiagnostic } from '../../../editor/contrib/diagnostics/diagnostic_navigation';
 import { computeProblemsPanelItemHeight, computeProblemsPanelLayout } from './problems_panel_layout';
 import type { ProblemsPanelController } from './problems_panel';
 import { editorViewState } from '../../../editor/ui/editor_view_state';

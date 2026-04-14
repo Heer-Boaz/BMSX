@@ -1,8 +1,9 @@
 import type { EditorDiagnostic } from '../../../common/types';
 import type { RectBounds } from '../../../../rompack/rompack';
-import { measureText, wrapTextDynamic as wrapMessageLinesGeneric } from '../../../common/text_utils';
+import { wrapTextDynamic as wrapMessageLinesGeneric } from '../../../common/text_utils';
+import { measureText } from '../../../editor/common/text_layout';
 import { clamp } from '../../../../utils/clamp';
-import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight } from '../../../editor/ui/editor_view';
+import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight } from '../../common/layout';
 import * as constants from '../../../common/constants';
 import { problemsPanel } from './problems_panel';
 import { editorViewState } from '../../../editor/ui/editor_view_state';
