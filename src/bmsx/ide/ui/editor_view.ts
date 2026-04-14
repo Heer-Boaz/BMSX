@@ -18,6 +18,7 @@ import { findResourcePanelIndexByAssetId } from '../contrib/resources/resource_p
 import { ensureCursorVisible, updateDesiredColumn } from './caret';
 import { splitText } from '../text/source_text';
 import { editorDocumentState } from '../editing/editor_document_state';
+import { editorSessionState } from './editor_session_state';
 import {
 	ensureVisualLines,
 	getVisualLineCount,
@@ -470,7 +471,7 @@ export function configureFontVariant(variant: FontVariant): void {
 		clockNow: ide_state.clockNow,
 		getBuiltinIdentifiers: () => getBuiltinIdentifiersSnapshot(),
 	});
-	const activeContext = ide_state.activeCodeTabContextId ? ide_state.codeTabContexts.get(ide_state.activeCodeTabContextId) : null;
+	const activeContext = editorSessionState.activeCodeTabContextId ? editorSessionState.codeTabContexts.get(editorSessionState.activeCodeTabContextId) : null;
 	if (activeContext) {
 		ide_state.layout.setCodeTabMode(activeContext.mode);
 	}
@@ -488,7 +489,7 @@ export function setFontVariant(variant: FontVariant): void {
 	ensureCursorVisible();
 	rewrapRuntimeErrorOverlays();
 	requestSemanticRefresh();
-	markDiagnosticsDirty(ide_state.activeCodeTabContextId);
+	markDiagnosticsDirty(editorSessionState.activeCodeTabContextId);
 }
 
 export function toggleWordWrap(): void {
@@ -539,7 +540,7 @@ export function hideResourcePanel(): void {
 }
 
 export function resetResourcePanelState(): void {
-	ide_state.pendingResourceSelectionAssetId = null;
+	editorSessionState.pendingResourceSelectionAssetId = null;
 	editorChromeState.resourcePanelResizing = false;
 }
 
@@ -551,23 +552,23 @@ export function selectResourceInPanel(descriptor: ResourceDescriptor): void {
 	if (!descriptor.asset_id || descriptor.asset_id.length === 0) {
 		return;
 	}
-	ide_state.pendingResourceSelectionAssetId = descriptor.asset_id;
+	editorSessionState.pendingResourceSelectionAssetId = descriptor.asset_id;
 	if (ide_state.resourcePanel.isVisible()) {
 		applyPendingResourceSelection();
 	}
 }
 
 export function applyPendingResourceSelection(): void {
-	if (!ide_state.resourcePanel.isVisible() || !ide_state.pendingResourceSelectionAssetId) {
+	if (!ide_state.resourcePanel.isVisible() || !editorSessionState.pendingResourceSelectionAssetId) {
 		return;
 	}
-	const index = findResourcePanelIndexByAssetId(ide_state.resourcePanel.items, ide_state.pendingResourceSelectionAssetId);
+	const index = findResourcePanelIndexByAssetId(ide_state.resourcePanel.items, editorSessionState.pendingResourceSelectionAssetId);
 	if (index === -1) {
 		return;
 	}
 	ide_state.resourcePanel.setSelectionIndex(index);
 	ide_state.resourcePanel.ensureSelectionVisible();
-	ide_state.pendingResourceSelectionAssetId = null;
+	editorSessionState.pendingResourceSelectionAssetId = null;
 }
 
 export function getResourcePanelWidth(): number {

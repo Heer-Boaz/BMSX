@@ -5,9 +5,9 @@ import * as runtimeLuaPipeline from '../../../emulator/runtime_lua_pipeline';
 import type { ResourceDescriptor } from '../../../emulator/types';
 import * as constants from '../../core/constants';
 import { computeResourceTabTitle, setActiveTab } from '../../ui/editor_tabs';
-import { ide_state } from '../../core/ide_state';
 import { splitText } from '../../text/source_text';
 import type { EditorTabId, ResourceViewerState } from '../../core/types';
+import { editorSessionState } from '../../ui/editor_session_state';
 
 export type ResourceViewerBounds = {
 	codeTop: number;
@@ -17,9 +17,9 @@ export type ResourceViewerBounds = {
 };
 
 export function getActiveResourceViewer(): ResourceViewerState {
-	for (let index = 0; index < ide_state.tabs.length; index += 1) {
-		const tab = ide_state.tabs[index];
-		if (tab.id !== ide_state.activeTabId) {
+	for (let index = 0; index < editorSessionState.tabs.length; index += 1) {
+		const tab = editorSessionState.tabs[index];
+		if (tab.id !== editorSessionState.activeTabId) {
 			continue;
 		}
 		return tab.kind === 'resource_view' ? tab.resource : null;
@@ -153,8 +153,8 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 export function openResourceViewerTab(descriptor: ResourceDescriptor): void {
 	const tabId: EditorTabId = `resource:${descriptor.path}`;
 	let tab = null;
-	for (let index = 0; index < ide_state.tabs.length; index += 1) {
-		const candidate = ide_state.tabs[index];
+	for (let index = 0; index < editorSessionState.tabs.length; index += 1) {
+		const candidate = editorSessionState.tabs[index];
 		if (candidate.id === tabId) {
 			tab = candidate;
 			break;
@@ -176,7 +176,7 @@ export function openResourceViewerTab(descriptor: ResourceDescriptor): void {
 		dirty: false,
 		resource: state,
 	};
-	ide_state.tabs.push(tab);
+	editorSessionState.tabs.push(tab);
 	setActiveTab(tabId);
 }
 

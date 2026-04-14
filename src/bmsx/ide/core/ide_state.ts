@@ -10,7 +10,6 @@ import type { CompletionController } from '../contrib/suggest/completion_control
 import { ReferenceState } from '../contrib/references/reference_state';
 import { CHARACTER_CODES } from './character_map';
 import type {
-	CodeTabContext,
 	CrtOptionsSnapshot,
 	EditContext,
 	SearchState,
@@ -18,7 +17,6 @@ import type {
 	SymbolSearchState,
 	LineJumpState,
 	CreateResourceState,
-	EditorTabDescriptor,
 } from './types';
 import type { CanonicalizationType } from '../../rompack/rompack';
 import { CodeLayout } from '../ui/code_layout';
@@ -107,11 +105,8 @@ export interface IdeState {
 	baseBottomMargin: number;
 	clockNow: () => number;
 	problemsPanel: ProblemsPanelController;
-	codeTabContexts: Map<string, CodeTabContext>;
-	activeCodeTabContextId: string;
 	debuggerControls: DebuggerControlsState;
 	breakpoints: Map<string, Set<number>>;
-	activeContextReadOnly: boolean;
 	resourceViewerSpriteId: string;
 	resourceViewerSpriteAsset: string;
 	resourceViewerSpriteScale: number;
@@ -129,9 +124,6 @@ export interface IdeState {
 	pendingEditContext: EditContext;
 	lastReportedSemanticError: string;
 	referenceState: ReferenceState;
-	tabs: EditorTabDescriptor[];
-	activeTabId: string;
-	pendingResourceSelectionAssetId: string;
 	resourcePanel: ResourcePanelController;
 	renameController: RenameController;
 	layout: CodeLayout;
@@ -170,14 +162,11 @@ export const ide_state: IdeState = {
 	baseBottomMargin: 0,
 	clockNow: undefined!,
 	problemsPanel: undefined!,
-	codeTabContexts: new Map<string, CodeTabContext>(),
-	activeCodeTabContextId: null,
 	debuggerControls: {
 		executionState: 'inactive',
 		sessionMetrics: null,
 	},
 	breakpoints: new Map<string, Set<number>>(),
-	activeContextReadOnly: false,
 	resourceViewerSpriteId: null,
 	resourceViewerSpriteAsset: null,
 	resourceViewerSpriteScale: 1,
@@ -245,9 +234,6 @@ export const ide_state: IdeState = {
 	pendingEditContext: null,
 	lastReportedSemanticError: null,
 	referenceState: new ReferenceState(),
-	tabs: [],
-	activeTabId: null,
-	pendingResourceSelectionAssetId: null,
 	resourcePanel: undefined!,
 	renameController: undefined!,
 	layout: undefined!,

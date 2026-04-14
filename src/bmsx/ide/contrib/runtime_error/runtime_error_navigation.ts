@@ -11,6 +11,7 @@ import { editorPointerState } from '../../input/pointer/editor_pointer_state';
 import { editorCaretState } from '../../ui/caret_state';
 import { runtimeErrorState } from './runtime_error_state';
 import { editorDocumentState } from '../../editing/editor_document_state';
+import { editorSessionState } from '../../ui/editor_session_state';
 
 type RuntimeErrorOverlayTarget = { context: CodeTabContext; overlay: RuntimeErrorOverlay };
 
@@ -19,7 +20,7 @@ function resolveRuntimeErrorOverlayTarget(): RuntimeErrorOverlayTarget {
 	if (activeContext && activeContext.runtimeErrorOverlay) {
 		return { context: activeContext, overlay: activeContext.runtimeErrorOverlay };
 	}
-	for (const context of ide_state.codeTabContexts.values()) {
+	for (const context of editorSessionState.codeTabContexts.values()) {
 		if (context.runtimeErrorOverlay) {
 			return { context, overlay: context.runtimeErrorOverlay };
 		}
@@ -31,7 +32,7 @@ function ensureActiveContext(target: CodeTabContext): void {
 	if (!target) {
 		return;
 	}
-	if (ide_state.activeTabId !== target.id) {
+	if (editorSessionState.activeTabId !== target.id) {
 		setActiveTab(target.id);
 		return;
 	}
@@ -77,7 +78,7 @@ export function clearRuntimeErrorOverlay(): void {
 
 export function clearAllRuntimeErrorOverlays(): void {
 	runtimeErrorState.activeOverlay = null;
-	for (const context of ide_state.codeTabContexts.values()) {
+	for (const context of editorSessionState.codeTabContexts.values()) {
 		context.runtimeErrorOverlay = null;
 	}
 	clearExecutionStopHighlights();
@@ -110,7 +111,7 @@ export function setExecutionStopHighlight(row: number): void {
 
 export function clearExecutionStopHighlights(): void {
 	runtimeErrorState.executionStopRow = null;
-	for (const context of ide_state.codeTabContexts.values()) {
+	for (const context of editorSessionState.codeTabContexts.values()) {
 		context.executionStopRow = null;
 	}
 }

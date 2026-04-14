@@ -13,9 +13,10 @@ import { requestSemanticRefresh } from '../contrib/intellisense/intellisense';
 import type { EditorSnapshot, Position } from '../core/types';
 import { editorCaretState } from '../ui/caret_state';
 import { editorDocumentState } from './editor_document_state';
+import { editorSessionState } from '../ui/editor_session_state';
 
 export function prepareUndo(key: string, allowMerge: boolean): void {
-	if (ide_state.activeContextReadOnly) {
+	if (editorSessionState.activeContextReadOnly) {
 		return;
 	}
 	capturePreMutationSource();
@@ -122,7 +123,7 @@ export function applyUndoableReplace(offset: number, deleteLength: number, inser
 }
 
 export function undo(): void {
-	if (ide_state.activeContextReadOnly) {
+	if (editorSessionState.activeContextReadOnly) {
 		notifyReadOnlyEdit();
 		return;
 	}
@@ -191,7 +192,7 @@ export function undo(): void {
 }
 
 export function redo(): void {
-	if (ide_state.activeContextReadOnly) {
+	if (editorSessionState.activeContextReadOnly) {
 		notifyReadOnlyEdit();
 		return;
 	}

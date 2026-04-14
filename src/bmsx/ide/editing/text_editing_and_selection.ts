@@ -29,6 +29,7 @@ import type { MutableTextPosition, TextBuffer } from '../text/text_buffer';
 import { prepareUndo, applyUndoableReplace } from './undo_controller';
 import { formatAemDocument } from '../language/aem/aem_editor';
 import { editorDocumentState } from './editor_document_state';
+import { editorSessionState } from '../ui/editor_session_state';
 import {
 	clearSingleCursorSelection,
 	collapseSingleCursorSelection,
@@ -48,7 +49,7 @@ function bufferCharAtOffset(buffer: TextBuffer, offset: number): string {
 }
 
 function editorAllowsMutation(): boolean {
-	return ide_state.activeContextReadOnly !== true;
+	return editorSessionState.activeContextReadOnly !== true;
 }
 
 // ============================================================================

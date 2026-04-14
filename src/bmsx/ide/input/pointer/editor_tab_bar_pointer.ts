@@ -7,6 +7,7 @@ import { beginTabDrag, closeTab, endTabDrag, setActiveTab } from '../../ui/edito
 import { getTabBarTotalHeight } from '../../ui/editor_view';
 import { consumeChromePointerPress } from './editor_chrome_pointer_press';
 import { editorPointerState } from './editor_pointer_state';
+import { editorSessionState } from '../../ui/editor_session_state';
 
 export function handleTabBarPointer(snapshot: PointerSnapshot): boolean {
 	const tabTop = ide_state.headerHeight;
@@ -16,8 +17,8 @@ export function handleTabBarPointer(snapshot: PointerSnapshot): boolean {
 		return false;
 	}
 	const x = snapshot.viewportX;
-	for (let index = 0; index < ide_state.tabs.length; index += 1) {
-		const tab = ide_state.tabs[index];
+	for (let index = 0; index < editorSessionState.tabs.length; index += 1) {
+		const tab = editorSessionState.tabs[index];
 		const closeBounds = editorChromeState.tabCloseButtonBounds.get(tab.id);
 		if (closeBounds && point_in_rect(x, y, closeBounds)) {
 			endTabDrag();
@@ -45,8 +46,8 @@ export function handleTabBarMiddleClick(snapshot: PointerSnapshot, playerInput: 
 		return false;
 	}
 	const x = snapshot.viewportX;
-	for (let index = 0; index < ide_state.tabs.length; index += 1) {
-		const tab = ide_state.tabs[index];
+	for (let index = 0; index < editorSessionState.tabs.length; index += 1) {
+		const tab = editorSessionState.tabs[index];
 		if (!tab.closable) {
 			continue;
 		}

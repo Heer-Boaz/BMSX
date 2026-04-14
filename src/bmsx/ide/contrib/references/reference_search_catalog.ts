@@ -6,6 +6,7 @@ import type { CodeTabContext } from '../../core/types';
 import { symbolSearchPageSize } from '../../ui/editor_view';
 import { getTextSnapshot, splitText } from '../../text/source_text';
 import { editorDocumentState } from '../../editing/editor_document_state';
+import { editorSessionState } from '../../ui/editor_session_state';
 import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
 	filterReferenceCatalog,
@@ -20,7 +21,7 @@ export function buildReferenceSearchCatalog(info: ReferenceMatchInfo, context: C
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: context,
 		activeLines,
-		codeTabContexts: ide_state.codeTabContexts.values(),
+		codeTabContexts: editorSessionState.codeTabContexts.values(),
 	};
 	return buildProjectReferenceCatalog({
 		workspace: getOrCreateSemanticWorkspace(),

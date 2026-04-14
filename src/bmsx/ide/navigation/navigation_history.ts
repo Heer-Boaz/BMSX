@@ -1,10 +1,11 @@
 import { clamp } from '../../utils/clamp';
-import { ide_state, NAVIGATION_HISTORY_LIMIT } from '../core/ide_state';
+import { NAVIGATION_HISTORY_LIMIT } from '../core/ide_state';
 import { getActiveCodeTabContext, setActiveTab, isCodeTabActive, activateCodeTab, focusChunkSource } from '../ui/editor_tabs';
 import { setCursorPosition, ensureCursorVisible } from '../ui/caret';
 import * as TextEditing from '../editing/text_editing_and_selection';
 import { editorCaretState } from '../ui/caret_state';
 import { editorDocumentState } from '../editing/editor_document_state';
+import { editorSessionState } from '../ui/editor_session_state';
 
 export type NavigationHistoryEntry = {
 	contextId: string;
@@ -124,7 +125,7 @@ export function withNavigationCaptureSuspended<T>(operation: () => T): T {
 }
 
 export function applyNavigationEntry(entry: NavigationHistoryEntry): void {
-	const existingContext = ide_state.codeTabContexts.get(entry.contextId);
+	const existingContext = editorSessionState.codeTabContexts.get(entry.contextId);
 	if (existingContext) {
 		setActiveTab(entry.contextId);
 	} else {

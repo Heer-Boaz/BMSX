@@ -20,6 +20,7 @@ import { buildDirtyFilePath } from './workspace_storage';
 import { getWorkspaceCachedSource } from '../../emulator/workspace_cache';
 import { editorFeedbackState } from './editor_feedback_state';
 import { editorDocumentState } from '../editing/editor_document_state';
+import { editorSessionState } from '../ui/editor_session_state';
 
 export function expandTabs(source: string): string {
 	if (source.indexOf('\t') === -1) return source;
@@ -656,7 +657,7 @@ export function rewrapRuntimeErrorOverlays(): void {
 		visited.add(runtimeErrorState.activeOverlay);
 		rewrapRuntimeErrorOverlay(runtimeErrorState.activeOverlay);
 	}
-	for (const context of ide_state.codeTabContexts.values()) {
+	for (const context of editorSessionState.codeTabContexts.values()) {
 		const overlay = context.runtimeErrorOverlay;
 		if (overlay && !visited.has(overlay)) {
 			visited.add(overlay);
@@ -720,7 +721,7 @@ export function getSourceForChunk(path: string): string {
 	const asset = runtimeLuaPipeline.resolveLuaSourceRecord(Runtime.instance, path);
 	const context = findCodeTabContext(path);
 	if (context) {
-		if (context.id === ide_state.activeCodeTabContextId) {
+		if (context.id === editorSessionState.activeCodeTabContextId) {
 			return getTextSnapshot(editorDocumentState.buffer);
 		}
 		return getTextSnapshot(context.buffer);

@@ -5,6 +5,7 @@ import { getCachedLuaParse } from '../../language/lua/lua_analysis_cache';
 import { ide_state } from '../../core/ide_state';
 import { diagnosticsDebounceMs, editorDiagnosticsState } from './diagnostics_state';
 import { cacheSemanticParseState } from '../intellisense/semantic_workspace_sync';
+import { editorSessionState } from '../../ui/editor_session_state';
 
 export type DiagnosticContextInput = {
 	id: string;
@@ -82,7 +83,7 @@ export function markDiagnosticsDirty(contextId: string): void {
 }
 
 export function markAllDiagnosticsDirty(): void {
-	const contexts = ide_state.codeTabContexts;
+	const contexts = editorSessionState.codeTabContexts;
 	if (contexts.size === 0) {
 		return;
 	}

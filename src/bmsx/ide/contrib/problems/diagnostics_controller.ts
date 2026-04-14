@@ -16,6 +16,7 @@ import { beginNavigationCapture, completeNavigation } from '../../navigation/nav
 import { editorCaretState } from '../../ui/caret_state';
 import { diagnosticsDebounceMs, editorDiagnosticsState, EMPTY_DIAGNOSTICS } from './diagnostics_state';
 import { editorDocumentState } from '../../editing/editor_document_state';
+import { editorSessionState } from '../../ui/editor_session_state';
 
 const diagnosticsMinIntervalMs = 600;
 let diagnosticsTimer: TimerHandle | null = null;
@@ -46,7 +47,7 @@ export function processDiagnosticsQueue(now: number): void {
 	if (!editorDiagnosticsState.diagnosticsDirty) {
 		return;
 	}
-	const activeId = ide_state.activeCodeTabContextId;
+	const activeId = editorSessionState.activeCodeTabContextId;
 	if (activeId && !editorDiagnosticsState.dirtyDiagnosticContexts.has(activeId)) {
 		return;
 	}
@@ -91,7 +92,7 @@ export function executeDiagnosticsComputation(): void {
 		cancelDiagnosticsTimer();
 		return;
 	}
-	const activeId = ide_state.activeCodeTabContextId;
+	const activeId = editorSessionState.activeCodeTabContextId;
 	if (activeId && !editorDiagnosticsState.dirtyDiagnosticContexts.has(activeId)) {
 		editorDiagnosticsState.diagnosticsDueAtMs = null;
 		cancelDiagnosticsTimer();
@@ -150,7 +151,7 @@ export function enqueueDiagnosticsJob(contextIds: readonly string[]): void {
 }
 
 export function collectDiagnosticsBatch(): string[] {
-	const activeId = ide_state.activeCodeTabContextId;
+	const activeId = editorSessionState.activeCodeTabContextId;
 	if (activeId && editorDiagnosticsState.dirtyDiagnosticContexts.has(activeId)) {
 		return [activeId];
 	}
@@ -161,11 +162,11 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 	if (contextIds.length === 0) {
 		return;
 	}
-	const activeId = ide_state.activeCodeTabContextId;
+	const activeId = editorSessionState.activeCodeTabContextId;
 	const inputs: DiagnosticContextInput[] = [];
 	for (let index = 0; index < contextIds.length; index += 1) {
 		const contextId = contextIds[index];
-		const context = ide_state.codeTabContexts.get(contextId);
+		const context = editorSessionState.codeTabContexts.get(contextId);
 		if (!context) {
 			editorDiagnosticsState.diagnosticsCache.delete(contextId);
 			editorDiagnosticsState.dirtyDiagnosticContexts.delete(contextId);
@@ -239,7 +240,7 @@ export function createDiagnosticProviders(): DiagnosticProviders {
 
 export function updateDiagnosticsAggregates(): void {
 	const aggregate: EditorDiagnostic[] = [];
-	for (const context of ide_state.codeTabContexts.values()) {
+	for (const context of editorSessionState.codeTabContexts.values()) {
 		const entry = editorDiagnosticsState.diagnosticsCache.get(context.id);
 		if (entry) {
 			for (let index = 0; index < entry.diagnostics.length; index += 1) {
@@ -248,7 +249,7 @@ export function updateDiagnosticsAggregates(): void {
 		}
 	}
 	for (const [contextId, entry] of editorDiagnosticsState.diagnosticsCache) {
-		if (ide_state.codeTabContexts.has(contextId)) {
+		if (editorSessionState.codeTabContexts.has(contextId)) {
 			continue;
 		}
 		for (let index = 0; index < entry.diagnostics.length; index += 1) {
@@ -262,7 +263,7 @@ export function updateDiagnosticsAggregates(): void {
 
 export function refreshActiveDiagnostics(): void {
 	editorDiagnosticsState.diagnosticsByRow.clear();
-	const activeId = ide_state.activeCodeTabContextId;
+	const activeId = editorSessionState.activeCodeTabContextId;
 	if (!activeId) {
 		return;
 	}
@@ -316,7 +317,7 @@ export function findContextByChunk(path: string): CodeTabContext {
 	if (byChunk) {
 		return byChunk;
 	}
-	for (const context of ide_state.codeTabContexts.values()) {
+	for (const context of editorSessionState.codeTabContexts.values()) {
 		const descriptor = context.descriptor;
 		if (descriptor) {
 			continue;
@@ -336,7 +337,7 @@ export function getDiagnosticsForRow(row: number): readonly EditorDiagnostic[] {
 export function gotoDiagnostic(diagnostic: EditorDiagnostic): void {
 	const navigationCheckpoint = beginNavigationCapture();
 	// Switch to the originating tab if provided
-	if (diagnostic.contextId && diagnostic.contextId.length > 0 && diagnostic.contextId !== ide_state.activeCodeTabContextId) {
+	if (diagnostic.contextId && diagnostic.contextId.length > 0 && diagnostic.contextId !== editorSessionState.activeCodeTabContextId) {
 		setActiveTab(diagnostic.contextId);
 	}
 	if (!isCodeTabActive()) {

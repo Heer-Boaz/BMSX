@@ -3,6 +3,7 @@ import { showEditorMessage,showEditorWarningBanner } from '../core/editor_feedba
 import { editorDocumentState, restoreDocumentStateFromContext, storeDocumentStateInContext } from '../editing/editor_document_state';
 import { editorChromeState } from './editor_chrome_state';
 import { editorDiagnosticsState } from '../contrib/problems/diagnostics_state';
+import { editorSessionState } from './editor_session_state';
 import type {
 	CodeTabContext,
 	CodeTabMode,
@@ -60,7 +61,7 @@ function buildCodeTabId(descriptor: ResourceDescriptor): EditorTabId {
 }
 
 function setTabRuntimeSyncState(tabId: string, runtimeSyncState: EditorRuntimeSyncState, runtimeSyncMessage: string): void {
-	const tab = ide_state.tabs.find(candidate => candidate.id === tabId);
+	const tab = editorSessionState.tabs.find(candidate => candidate.id === tabId);
 	if (!tab) {
 		return;
 	}
@@ -107,7 +108,7 @@ function createCodeTabContext(descriptor: ResourceDescriptor, initialSource: str
 }
 
 function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescriptor {
-	let tab = ide_state.tabs.find(candidate => candidate.id === context.id);
+	let tab = editorSessionState.tabs.find(candidate => candidate.id === context.id);
 	if (!tab) {
 		tab = {
 			id: context.id,
@@ -116,7 +117,7 @@ function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescriptor {
 			closable: true,
 			dirty: false,
 		};
-		ide_state.tabs.push(tab);
+		editorSessionState.tabs.push(tab);
 	}
 	tab.kind = 'code_editor';
 	tab.title = context.title;
@@ -176,7 +177,7 @@ function createAemCodeTabContext(descriptor: ResourceDescriptor, source: string)
 }
 
 export function getActiveCodeTabContext(): CodeTabContext {
-	return ide_state.codeTabContexts.get(ide_state.activeCodeTabContextId)!;
+	return editorSessionState.codeTabContexts.get(editorSessionState.activeCodeTabContextId)!;
 }
 
 export function storeActiveCodeTabContext(): void {
@@ -191,9 +192,9 @@ export function storeActiveCodeTabContext(): void {
 }
 
 export function activateCodeEditorTab(tabId: string): void {
-	const context = ide_state.codeTabContexts.get(tabId)!;
-	ide_state.activeCodeTabContextId = tabId;
-	ide_state.activeContextReadOnly = context.readOnly === true;
+	const context = editorSessionState.codeTabContexts.get(tabId)!;
+	editorSessionState.activeCodeTabContextId = tabId;
+	editorSessionState.activeContextReadOnly = context.readOnly === true;
 	restoreDocumentStateFromContext(context);
 	ide_state.scrollRow = context.scrollRow;
 	ide_state.scrollColumn = context.scrollColumn;
@@ -216,21 +217,21 @@ export function activateCodeEditorTab(tabId: string): void {
 }
 
 export function initializeTabs(initialContext: CodeTabContext = null): void {
-	ide_state.tabs = [];
+	editorSessionState.tabs = [];
 	editorPointerState.tabHoverId = null;
 	editorPointerState.tabDragState = null;
 	editorChromeState.tabButtonBounds.clear();
 	editorChromeState.tabCloseButtonBounds.clear();
 	const context = initialContext ?? createEntryTabContext();
-	ide_state.codeTabContexts.set(context.id, context);
+	editorSessionState.codeTabContexts.set(context.id, context);
 	upsertCodeEditorTab(context);
-	ide_state.activeTabId = context.id;
-	ide_state.activeCodeTabContextId = context.id;
+	editorSessionState.activeTabId = context.id;
+	editorSessionState.activeCodeTabContextId = context.id;
 	activateCodeEditorTab(context.id);
 }
 
 export function setTabDirty(tabId: string, dirty: boolean): void {
-	const tab = ide_state.tabs.find(candidate => candidate.id === tabId)!;
+	const tab = editorSessionState.tabs.find(candidate => candidate.id === tabId)!;
 	tab.dirty = dirty;
 }
 
@@ -241,7 +242,7 @@ export function updateActiveContextDirtyFlag(): void {
 }
 
 export function getActiveTabKind(): EditorTabKind {
-	const active = ide_state.tabs.find(tab => tab.id === ide_state.activeTabId)!;
+	const active = editorSessionState.tabs.find(tab => tab.id === editorSessionState.activeTabId)!;
 	return active.kind;
 }
 
@@ -254,11 +255,11 @@ export function isActiveLuaCodeTab(): boolean {
 }
 
 export function isReadOnlyCodeTab(): boolean {
-	return isCodeTabActive() && ide_state.activeContextReadOnly === true;
+	return isCodeTabActive() && editorSessionState.activeContextReadOnly === true;
 }
 
 export function isEditableCodeTab(): boolean {
-	return isCodeTabActive() && ide_state.activeContextReadOnly !== true;
+	return isCodeTabActive() && editorSessionState.activeContextReadOnly !== true;
 }
 
 export function isResourceViewActive(): boolean {
@@ -266,8 +267,8 @@ export function isResourceViewActive(): boolean {
 }
 
 export function setActiveTab(tabId: string): void {
-	const tab = ide_state.tabs.find(candidate => candidate.id === tabId)!;
-	const isSameTab = ide_state.activeTabId === tabId;
+	const tab = editorSessionState.tabs.find(candidate => candidate.id === tabId)!;
+	const isSameTab = editorSessionState.activeTabId === tabId;
 	const navigationCheckpoint = !isSameTab && tab.kind === 'code_editor'
 		? beginNavigationCapture()
 		: null;
@@ -277,16 +278,16 @@ export function setActiveTab(tabId: string): void {
 	}
 	if (isSameTab) {
 		if (tab.kind === 'resource_view') {
-			ide_state.activeContextReadOnly = false;
+			editorSessionState.activeContextReadOnly = false;
 			activateResourceViewerTab(tab);
 			runtimeErrorState.activeOverlay = null;
 			runtimeErrorState.executionStopRow = null;
 		}
 		return;
 	}
-	ide_state.activeTabId = tabId;
+	editorSessionState.activeTabId = tabId;
 	if (tab.kind === 'resource_view') {
-		ide_state.activeContextReadOnly = false;
+		editorSessionState.activeContextReadOnly = false;
 		activateResourceViewerTab(tab);
 		runtimeErrorState.activeOverlay = null;
 		runtimeErrorState.executionStopRow = null;
@@ -302,18 +303,18 @@ export function setActiveTab(tabId: string): void {
 }
 
 export function activateCodeTab(): void {
-	const codeTab = ide_state.tabs.find(candidate => candidate.kind === 'code_editor')!;
+	const codeTab = editorSessionState.tabs.find(candidate => candidate.kind === 'code_editor')!;
 	setActiveTab(codeTab.id);
 }
 
 export function openLuaCodeTab(descriptor: ResourceDescriptor): void {
 	const navigationCheckpoint = beginNavigationCapture();
 	const tabId = buildCodeTabId(descriptor);
-	if (!ide_state.codeTabContexts.has(tabId)) {
+	if (!editorSessionState.codeTabContexts.has(tabId)) {
 		const context = createLuaCodeTabContext(descriptor);
-		ide_state.codeTabContexts.set(tabId, context);
+		editorSessionState.codeTabContexts.set(tabId, context);
 	}
-	const context = ide_state.codeTabContexts.get(tabId)!;
+	const context = editorSessionState.codeTabContexts.get(tabId)!;
 	context.descriptor = descriptor;
 	context.readOnly = descriptor.readOnly === true;
 	context.mode = 'lua';
@@ -327,14 +328,14 @@ export async function openAemCodeTab(descriptor: ResourceDescriptor): Promise<vo
 	const navigationCheckpoint = beginNavigationCapture();
 	const tabId = buildCodeTabId(descriptor);
 	try {
-		let context = ide_state.codeTabContexts.get(tabId);
+		let context = editorSessionState.codeTabContexts.get(tabId);
 		if (!context) {
 			const source = await loadAemResourceSource(descriptor.path);
 			if (source === null) {
 				throw new Error(`AEM resource '${descriptor.path}' is unavailable.`);
 			}
 			context = createAemCodeTabContext(descriptor, source);
-			ide_state.codeTabContexts.set(tabId, context);
+			editorSessionState.codeTabContexts.set(tabId, context);
 		}
 		context.descriptor = descriptor;
 		context.readOnly = descriptor.readOnly === true;
@@ -363,43 +364,43 @@ export async function openCodeTabForDescriptor(descriptor: ResourceDescriptor): 
 }
 
 export function closeTab(tabId: string): void {
-	const index = ide_state.tabs.findIndex(tab => tab.id === tabId);
-	const tab = ide_state.tabs[index];
+	const index = editorSessionState.tabs.findIndex(tab => tab.id === tabId);
+	const tab = editorSessionState.tabs[index];
 	if (!tab.closable) {
 		return;
 	}
 	if (editorPointerState.tabDragState && editorPointerState.tabDragState.tabId === tabId) {
 		endTabDrag();
 	}
-	const isActive = ide_state.activeTabId === tabId;
-	if (isActive && ide_state.tabs.length > 1) {
-		const fallback = ide_state.tabs[index - 1] ?? ide_state.tabs[index + 1];
+	const isActive = editorSessionState.activeTabId === tabId;
+	if (isActive && editorSessionState.tabs.length > 1) {
+		const fallback = editorSessionState.tabs[index - 1] ?? editorSessionState.tabs[index + 1];
 		setActiveTab(fallback.id);
 	} else if (isActive && tab.kind === 'code_editor') {
 		storeActiveCodeTabContext();
 	}
-	ide_state.tabs.splice(index, 1);
+	editorSessionState.tabs.splice(index, 1);
 	if (tab.kind === 'code_editor') {
 		editorDiagnosticsState.dirtyDiagnosticContexts.delete(tab.id);
 		editorDiagnosticsState.diagnosticsCache.delete(tab.id);
 	}
-	if (ide_state.tabs.length === 0) {
+	if (editorSessionState.tabs.length === 0) {
 		initializeTabs();
 	}
 }
 
 export function cycleTab(direction: number): void {
-	if (ide_state.tabs.length <= 1 || direction === 0) {
+	if (editorSessionState.tabs.length <= 1 || direction === 0) {
 		return;
 	}
-	const count = ide_state.tabs.length;
-	const currentIndex = ide_state.tabs.findIndex(tab => tab.id === ide_state.activeTabId);
+	const count = editorSessionState.tabs.length;
+	const currentIndex = editorSessionState.tabs.findIndex(tab => tab.id === editorSessionState.activeTabId);
 	let nextIndex = currentIndex + direction;
 	nextIndex = ((nextIndex % count) + count) % count;
 	if (nextIndex === currentIndex) {
 		return;
 	}
-	const target = ide_state.tabs[nextIndex];
+	const target = editorSessionState.tabs[nextIndex];
 	setActiveTab(target.id);
 }
 
@@ -416,8 +417,8 @@ export function measureTabWidth(tab: EditorTabDescriptor): number {
 
 export function computeTabLayout(): Array<{ id: string; left: number; right: number; width: number; center: number; rowIndex: number }> {
 	const layout: Array<{ id: string; left: number; right: number; width: number; center: number; rowIndex: number }> = [];
-	for (let index = 0; index < ide_state.tabs.length; index += 1) {
-		const tab = ide_state.tabs[index];
+	for (let index = 0; index < editorSessionState.tabs.length; index += 1) {
+		const tab = editorSessionState.tabs[index];
 		const bounds = editorChromeState.tabButtonBounds.get(tab.id) ;
 		if (bounds) {
 			const left = bounds.left;
@@ -451,7 +452,7 @@ export function computeTabLayout(): Array<{ id: string; left: number; right: num
 }
 
 export function beginTabDrag(tabId: string, pointerX: number): void {
-	if (ide_state.tabs.length <= 1) {
+	if (editorSessionState.tabs.length <= 1) {
 		editorPointerState.tabDragState = null;
 		return;
 	}
@@ -502,11 +503,11 @@ export function updateTabDrag(pointerX: number, pointerY: number): void {
 	if (desiredIndex === currentIndex) {
 		return;
 	}
-	const tabIndex = ide_state.tabs.findIndex(entry => entry.id === state.tabId);
-	const removed = ide_state.tabs.splice(tabIndex, 1);
+	const tabIndex = editorSessionState.tabs.findIndex(entry => entry.id === state.tabId);
+	const removed = editorSessionState.tabs.splice(tabIndex, 1);
 	const tab = removed[0];
-	const targetIndex = clamp(desiredIndex, 0, ide_state.tabs.length);
-	ide_state.tabs.splice(targetIndex, 0, tab);
+	const targetIndex = clamp(desiredIndex, 0, editorSessionState.tabs.length);
+	editorSessionState.tabs.splice(targetIndex, 0, tab);
 }
 
 export function endTabDrag(): void {
@@ -514,7 +515,7 @@ export function endTabDrag(): void {
 }
 
 export function findCodeTabContext(path: string): CodeTabContext {
-	for (const context of ide_state.codeTabContexts.values()) {
+	for (const context of editorSessionState.codeTabContexts.values()) {
 		const descriptor = context.descriptor;
 		if (descriptor.path === path) {
 			return context;
@@ -594,10 +595,10 @@ export function focusEditorFromResourcePanel(): void {
 }
 
 export function closeActiveTab(): void {
-	if (!ide_state.activeTabId) {
+	if (!editorSessionState.activeTabId) {
 		return;
 	}
-	closeTab(ide_state.activeTabId);
+	closeTab(editorSessionState.activeTabId);
 }
 
 export function resetEditorContent(): void {

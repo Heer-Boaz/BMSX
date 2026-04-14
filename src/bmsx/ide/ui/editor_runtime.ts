@@ -17,6 +17,7 @@ import { renderStatusBar } from '../render/render_status_bar';
 import { drawResourcePanel, drawResourceViewer } from '../render/render_resource_panel';
 import { drawActionPromptOverlay } from '../render/render_prompt';
 import { editorDocumentState } from '../editing/editor_document_state';
+import { editorSessionState } from './editor_session_state';
 import {
 	renderCreateResourceBar,
 	renderLineJumpBar,
@@ -159,10 +160,10 @@ export function activateRuntimeEditor(): void {
 		return;
 	}
 	ide_state.input.applyOverrides(true, captureKeys);
-	if (ide_state.activeCodeTabContextId) {
-		const existingTab = ide_state.tabs.find(candidate => candidate.id === ide_state.activeCodeTabContextId);
+	if (editorSessionState.activeCodeTabContextId) {
+		const existingTab = editorSessionState.tabs.find(candidate => candidate.id === editorSessionState.activeCodeTabContextId);
 		if (existingTab) {
-			setActiveTab(ide_state.activeCodeTabContextId);
+			setActiveTab(editorSessionState.activeCodeTabContextId);
 		} else {
 			activateCodeTab();
 		}
