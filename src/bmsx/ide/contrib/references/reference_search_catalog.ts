@@ -18,7 +18,7 @@ export function buildReferenceSearchCatalog(info: ReferenceMatchInfo, context: C
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: context,
 		activeLines,
-		codeTabContexts: Array.from(ide_state.codeTabContexts.values()),
+		codeTabContexts: ide_state.codeTabContexts.values(),
 	};
 	return buildProjectReferenceCatalog({
 		workspace: getOrCreateSemanticWorkspace(),

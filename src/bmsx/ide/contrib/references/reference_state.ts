@@ -8,14 +8,16 @@ export type ReferenceMatchInfo = {
 	documentVersion: number;
 };
 
+const EMPTY_REFERENCE_MATCHES: SearchMatch[] = [];
+
 export class ReferenceState {
-	private matches: SearchMatch[] = [];
+	private matches: SearchMatch[] = EMPTY_REFERENCE_MATCHES;
 	private activeIndex = -1;
 	private expression: string = null;
 	private definitionKey: string = null;
 
 	public clear(): void {
-		this.matches = [];
+		this.matches = EMPTY_REFERENCE_MATCHES;
 		this.activeIndex = -1;
 		this.expression = null;
 		this.definitionKey = null;

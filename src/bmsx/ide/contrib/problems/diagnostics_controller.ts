@@ -18,6 +18,17 @@ const diagnosticsMinIntervalMs = 600;
 let diagnosticsTimer: TimerHandle | null = null;
 let diagnosticsScheduledForMs = 0;
 let lastDiagnosticsRunMs = 0;
+const DIAGNOSTIC_PROVIDERS: DiagnosticProviders = {
+	listLocalSymbols: (path) => {
+		return listLuaSymbols(path);
+	},
+	listGlobalSymbols: () => {
+		return listGlobalLuaSymbols();
+	},
+	listBuiltins: () => {
+		return listLuaBuiltinFunctions();
+	},
+};
 
 function cancelDiagnosticsTimer(): void {
 	if (diagnosticsTimer) {
@@ -118,9 +129,8 @@ export function enqueueDiagnosticsJob(contextIds: readonly string[]): void {
 		return;
 	}
 	ide_state.diagnosticsTaskPending = true;
-	const batch = [...contextIds];
 	enqueueBackgroundTask(() => {
-		runDiagnosticsForContexts(batch);
+		runDiagnosticsForContexts(contextIds);
 		ide_state.diagnosticsTaskPending = false;
 		lastDiagnosticsRunMs = ide_state.clockNow();
 		if (ide_state.dirtyDiagnosticContexts.size === 0) {
@@ -148,11 +158,8 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 	if (contextIds.length === 0) {
 		return;
 	}
-	const providers = createDiagnosticProviders();
 	const activeId = ide_state.activeCodeTabContextId;
 	const inputs: DiagnosticContextInput[] = [];
-	const inputLookup = new Map<string, DiagnosticContextInput>();
-	const metadata: Array<{ id: string; path: string }> = [];
 	for (let index = 0; index < contextIds.length; index += 1) {
 		const contextId = contextIds[index];
 		const context = ide_state.codeTabContexts.get(contextId);
@@ -191,14 +198,12 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			version,
 		};
 		inputs.push(input);
-		inputLookup.set(context.id, input);
-		metadata.push({ id: context.id, path });
 	}
 	if (inputs.length === 0) {
 		updateDiagnosticsAggregates();
 		return;
 	}
-	const diagnostics = computeAggregatedEditorDiagnostics(inputs, providers);
+	const diagnostics = computeAggregatedEditorDiagnostics(inputs, DIAGNOSTIC_PROVIDERS);
 	const byContext = new Map<string, EditorDiagnostic[]>();
 	for (let index = 0; index < diagnostics.length; index += 1) {
 		const diag = diagnostics[index];
@@ -210,34 +215,23 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 		}
 		bucket.push(diag);
 	}
-	for (let index = 0; index < metadata.length; index += 1) {
-		const meta = metadata[index];
-		const diagList = byContext.get(meta.id) ?? [];
-		const input = inputLookup.get(meta.id)!;
-		ide_state.diagnosticsCache.set(meta.id, {
-			contextId: meta.id,
-			path: meta.path,
+	for (let index = 0; index < inputs.length; index += 1) {
+		const input = inputs[index];
+		const diagList = byContext.get(input.id) ?? [];
+		ide_state.diagnosticsCache.set(input.id, {
+			contextId: input.id,
+			path: input.path,
 			diagnostics: diagList,
 			version: input.version,
 			source: input.source,
 		});
-		ide_state.dirtyDiagnosticContexts.delete(meta.id);
+		ide_state.dirtyDiagnosticContexts.delete(input.id);
 	}
 	updateDiagnosticsAggregates();
 }
 
 export function createDiagnosticProviders(): DiagnosticProviders {
-	return {
-		listLocalSymbols: (path) => {
-			return listLuaSymbols(path);
-		},
-		listGlobalSymbols: () => {
-			return listGlobalLuaSymbols();
-		},
-		listBuiltins: () => {
-			return listLuaBuiltinFunctions();
-		},
-	};
+	return DIAGNOSTIC_PROVIDERS;
 }
 
 export function updateDiagnosticsAggregates(): void {
@@ -324,12 +318,8 @@ export function findContextByChunk(path: string): CodeTabContext {
 		if (descriptor) {
 			continue;
 		}
-		const aliases: string[] = ['__entry__'];
-		for (let index = 0; index < aliases.length; index += 1) {
-			const alias = aliases[index];
-			if (alias === path) {
-				return context;
-			}
+		if (path === '__entry__') {
+			return context;
 		}
 	}
 	return null;

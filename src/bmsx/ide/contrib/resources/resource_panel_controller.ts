@@ -262,55 +262,36 @@ export class ResourcePanelController {
 	}
 
 	private refreshContents(): void {
-		if (this.mode === 'call_hierarchy') {
-			this.refreshCallHierarchyContents();
-			return;
-		}
 		const bounds = this.getBounds();
 		if (!bounds) {
 			return;
 		}
 		this.hoverIndex = -1;
+		if (this.mode === 'call_hierarchy') {
+			const previousNodeId = this.selectionIndex >= 0 && this.selectionIndex < this.items.length
+				? this.items[this.selectionIndex].callHierarchyNodeId
+				: null;
+			this.applyRefreshResult(refreshResourcePanelCallHierarchyState({
+				view: this.callHierarchyView,
+				expandedNodeIds: this.callHierarchyExpandedNodeIds,
+				bounds,
+				lineHeight: this.lineHeight,
+				previousNodeId,
+				previousScroll: this.scroll,
+			}));
+			return;
+		}
 		const previousDescriptor = (this.selectionIndex >= 0 && this.selectionIndex < this.items.length)
 			? this.items[this.selectionIndex].descriptor
 			: null;
-		const refreshed = refreshResourcePanelResourceState({
+		this.applyRefreshResult(refreshResourcePanelResourceState({
 			filterMode: this.filterMode,
 			bounds,
 			lineHeight: this.lineHeight,
 			previousDescriptor,
 			previousIndex: this.selectionIndex,
 			previousScroll: this.scroll,
-		});
-		this.items = refreshed.items;
-		this.maxLineWidth = refreshed.maxLineWidth;
-		this.selectionIndex = refreshed.selectionIndex;
-		this.scroll = refreshed.scroll;
-		this.clampHScroll();
-	}
-
-	private refreshCallHierarchyContents(): void {
-		const bounds = this.getBounds();
-		if (!bounds) {
-			return;
-		}
-		this.hoverIndex = -1;
-		const previousNodeId = this.selectionIndex >= 0 && this.selectionIndex < this.items.length
-			? this.items[this.selectionIndex].callHierarchyNodeId
-			: null;
-		const refreshed = refreshResourcePanelCallHierarchyState({
-			view: this.callHierarchyView,
-			expandedNodeIds: this.callHierarchyExpandedNodeIds,
-			bounds,
-			lineHeight: this.lineHeight,
-			previousNodeId,
-			previousScroll: this.scroll,
-		});
-		this.items = refreshed.items;
-		this.maxLineWidth = refreshed.maxLineWidth;
-		this.selectionIndex = refreshed.selectionIndex;
-		this.scroll = refreshed.scroll;
-		this.clampHScroll();
+		}));
 	}
 
 	public moveSelectionBy(delta: number): void {
@@ -398,12 +379,25 @@ export class ResourcePanelController {
 		if (!toggledNodeId) {
 			return;
 		}
-		this.refreshCallHierarchyContents();
+		this.refreshContents();
 		this.restoreCallHierarchySelection(toggledNodeId);
 	}
 
 	private restoreCallHierarchySelection(nodeId: string): void {
 		const index = findResourcePanelIndexByCallHierarchyNodeId(this.items, nodeId);
 		if (index >= 0) this.selectionIndex = index;
+	}
+
+	private applyRefreshResult(refreshed: {
+		items: ResourceBrowserItem[];
+		maxLineWidth: number;
+		selectionIndex: number;
+		scroll: number;
+	}): void {
+		this.items = refreshed.items;
+		this.maxLineWidth = refreshed.maxLineWidth;
+		this.selectionIndex = refreshed.selectionIndex;
+		this.scroll = refreshed.scroll;
+		this.clampHScroll();
 	}
 }

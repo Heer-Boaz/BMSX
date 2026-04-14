@@ -206,9 +206,7 @@ function prepareProjectSemanticFrontend(
 	const inputs: SemanticWorkspacePathInput[] = [];
 	registerProjectFile(inputs, metadata, currentPath, currentLines);
 
-	const contexts = Array.from(environment.codeTabContexts);
-	for (let index = 0; index < contexts.length; index += 1) {
-		const context = contexts[index];
+	for (const context of environment.codeTabContexts) {
 		const path = context.descriptor.path;
 		if (metadata.has(path)) {
 			continue;
