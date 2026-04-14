@@ -1,5 +1,6 @@
 #include "runtime_frame_loop.h"
 #include "../core/engine_core.h"
+#include "../input/input.h"
 #include "runtime.h"
 #include <algorithm>
 
@@ -36,6 +37,11 @@ void RuntimeFrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool p
 		if (hostDeltaSeconds > 0.0) {
 			engine.m_fps = 1.0 / hostDeltaSeconds;
 		}
+
+		const auto inputStart = std::chrono::steady_clock::now();
+		Input::instance().pollInput();
+		const auto inputEnd = std::chrono::steady_clock::now();
+		engine.m_last_tick_timing.inputMs = to_ms(inputEnd - inputStart);
 
 		runtime.screen.clearPresentation();
 		if (!platformPaused) {

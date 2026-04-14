@@ -588,14 +588,9 @@ void LibretroPlatform::runFrame() {
 		m_engine->start();
 	}
 
-	if (m_platform_paused) {
-		// Keep input state in sync while paused to avoid desynced press ids on resume.
-		Input::instance().pollInput();
-	} else {
-		// Ensure host input is polled so events are queued into the input hub
-		// before the engine tick consumes them.
-		pollInput();
-	}
+	// Poll the platform hub before the runtime frame loop consumes and latches
+	// input for this host frame.
+	pollInput();
 
 	bool skipRender = m_frameskip_enabled && m_frameskip_next;
 	m_frameskip_next = false;
