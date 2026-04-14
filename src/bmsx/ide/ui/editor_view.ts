@@ -9,6 +9,7 @@ import { CodeLayout } from './code_layout';
 import { markDiagnosticsDirty } from '../contrib/problems/diagnostics';
 import { computeSearchPageStats } from '../contrib/find/editor_search';
 import { ide_state } from '../core/ide_state';
+import { editorChromeState } from './editor_chrome_state';
 import { editorPointerState } from '../input/pointer/editor_pointer_state';
 import { editorCaretState } from './caret_state';
 import { getBuiltinIdentifiersSnapshot, requestSemanticRefresh } from '../contrib/intellisense/intellisense';
@@ -531,13 +532,13 @@ export function notifyReadOnlyEdit(): void {
 
 export function hideResourcePanel(): void {
 	ide_state.resourcePanel.hide();
-	ide_state.resourcePanelResizing = false;
+	editorChromeState.resourcePanelResizing = false;
 	resetResourcePanelState();
 }
 
 export function resetResourcePanelState(): void {
 	ide_state.pendingResourceSelectionAssetId = null;
-	ide_state.resourcePanelResizing = false;
+	editorChromeState.resourcePanelResizing = false;
 }
 
 export function refreshResourcePanelContents(): void {

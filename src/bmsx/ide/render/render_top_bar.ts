@@ -1,6 +1,7 @@
 import * as constants from '../core/constants';
 import type { RectBounds } from '../../rompack/rompack';
 import { ide_state } from '../core/ide_state';
+import { editorChromeState } from '../ui/editor_chrome_state';
 import { measureText } from '../core/text_utils';
 import { drawEditorText } from './text_renderer';
 import { api } from '../ui/view/overlay_api';
@@ -41,13 +42,13 @@ function renderMenuRow(menuEntries: TopBarMenuEntry[]): number {
 		const buttonWidth = textWidth + constants.HEADER_BUTTON_PADDING_X * 2;
 		const right = buttonX + buttonWidth;
 		if (right > availableRight) {
-			ide_state.menuEntryBounds[entry.id] = { left: 0, top: 0, right: 0, bottom: 0 };
+			editorChromeState.menuEntryBounds[entry.id] = { left: 0, top: 0, right: 0, bottom: 0 };
 			continue;
 		}
 		const bottom = buttonTop + buttonHeight;
 		const bounds: RectBounds = { left: buttonX, top: buttonTop, right, bottom };
-		ide_state.menuEntryBounds[entry.id] = bounds;
-		const isOpen = ide_state.openMenuId === entry.id;
+		editorChromeState.menuEntryBounds[entry.id] = bounds;
+		const isOpen = editorChromeState.openMenuId === entry.id;
 		const fillColor = isOpen ? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND : constants.COLOR_HEADER_BUTTON_BACKGROUND;
 		const textColor = isOpen ? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT : constants.COLOR_HEADER_BUTTON_TEXT;
 		api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_MENU_BUTTON, fillColor);
@@ -55,19 +56,19 @@ function renderMenuRow(menuEntries: TopBarMenuEntry[]): number {
 		drawEditorText(ide_state.font, entry.label, bounds.left + constants.HEADER_BUTTON_PADDING_X, bounds.top + constants.HEADER_BUTTON_PADDING_Y, Z_MENU_BUTTON_TEXT, textColor);
 		buttonX = right + constants.HEADER_BUTTON_SPACING;
 	}
-	ide_state.menuDropdownBounds = null;
+	editorChromeState.menuDropdownBounds = null;
 	return buttonHeight;
 }
 
 function renderOpenMenuDropdown(menuEntries: TopBarMenuEntry[], buttonHeight: number): void {
-	const openMenu = menuEntries.find((entry) => entry.id === ide_state.openMenuId);
+	const openMenu = menuEntries.find((entry) => entry.id === editorChromeState.openMenuId);
 	if (!openMenu) {
-		ide_state.menuDropdownBounds = null;
+		editorChromeState.menuDropdownBounds = null;
 		return;
 	}
-	const anchor = ide_state.menuEntryBounds[openMenu.id];
+	const anchor = editorChromeState.menuEntryBounds[openMenu.id];
 	if (anchor.right === 0 && anchor.bottom === 0) {
-		ide_state.menuDropdownBounds = null;
+		editorChromeState.menuDropdownBounds = null;
 		return;
 	}
 	renderMenuDropdown(openMenu, anchor, buttonHeight);
@@ -103,7 +104,7 @@ function renderMenuDropdown(menu: TopBarMenuEntry, anchor: RectBounds, itemHeigh
 			right: dropdownRight,
 			bottom: currentTop + itemHeight,
 		};
-		ide_state.topBarButtonBounds[item.command] = bounds;
+		editorChromeState.topBarButtonBounds[item.command] = bounds;
 		const fillColor = item.active
 			? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND
 			: (item.disabled ? constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND : constants.COLOR_HEADER_BUTTON_BACKGROUND);
@@ -122,7 +123,7 @@ function renderMenuDropdown(menu: TopBarMenuEntry, anchor: RectBounds, itemHeigh
 		drawEditorText(ide_state.font, item.label, textX, textY, Z_MENU_DROPDOWN_TEXT, textColor);
 		currentTop = bounds.bottom;
 	}
-	ide_state.menuDropdownBounds = { left: dropdownLeft, top: dropdownTop, right: dropdownRight, bottom: dropdownTop + totalHeight };
+	editorChromeState.menuDropdownBounds = { left: dropdownLeft, top: dropdownTop, right: dropdownRight, bottom: dropdownTop + totalHeight };
 }
 
 function computeDropdownWidth(menu: TopBarMenuEntry, markerSize: number, paddingX: number, anchorWidth: number): number {
@@ -153,11 +154,11 @@ function computeDropdownHeight(menu: TopBarMenuEntry, itemHeight: number, separa
 function clearMenuBounds(): void {
 	for (let i = 0; i < MENU_IDS.length; i += 1) {
 		const id = MENU_IDS[i];
-		ide_state.menuEntryBounds[id] = { left: 0, top: 0, right: 0, bottom: 0 };
+		editorChromeState.menuEntryBounds[id] = { left: 0, top: 0, right: 0, bottom: 0 };
 	}
 	for (let i = 0; i < MENU_COMMANDS.length; i += 1) {
 		const command = MENU_COMMANDS[i];
-		ide_state.topBarButtonBounds[command] = { left: 0, top: 0, right: 0, bottom: 0 };
+		editorChromeState.topBarButtonBounds[command] = { left: 0, top: 0, right: 0, bottom: 0 };
 	}
-	ide_state.menuDropdownBounds = null;
+	editorChromeState.menuDropdownBounds = null;
 }

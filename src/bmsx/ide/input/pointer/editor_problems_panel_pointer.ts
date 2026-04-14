@@ -1,12 +1,13 @@
 import { point_in_rect } from '../../../utils/rect_operations';
 import { ide_state } from '../../core/ide_state';
+import { editorChromeState } from '../../ui/editor_chrome_state';
 import type { PointerSnapshot } from '../../core/types';
 import { getProblemsPanelBounds, isPointerOverProblemsPanelDivider, setProblemsPanelHeightFromViewportY } from '../../contrib/problems/problems_panel';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { editorPointerState, resetPointerClickTracking } from './editor_pointer_state';
 
 export function handleProblemsPanelResizePointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
-	if (ide_state.problemsPanelResizing) {
+	if (editorChromeState.problemsPanelResizing) {
 		updateProblemsPanelResize(snapshot);
 		return true;
 	}
@@ -16,7 +17,7 @@ export function handleProblemsPanelResizePointer(snapshot: PointerSnapshot, just
 	if (!ide_state.problemsPanel.isVisible || !isPointerOverProblemsPanelDivider(snapshot.viewportX, snapshot.viewportY)) {
 		return false;
 	}
-	ide_state.problemsPanelResizing = true;
+	editorChromeState.problemsPanelResizing = true;
 	editorPointerState.pointerSelecting = false;
 	resetPointerClickTracking();
 	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
@@ -49,7 +50,7 @@ export function handleProblemsPanelPointer(snapshot: PointerSnapshot, justPresse
 
 function updateProblemsPanelResize(snapshot: PointerSnapshot): void {
 	if (!snapshot.valid || !snapshot.primaryPressed) {
-		ide_state.problemsPanelResizing = false;
+		editorChromeState.problemsPanelResizing = false;
 		editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearGotoHoverHighlight();
 		return;

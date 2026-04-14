@@ -1,12 +1,13 @@
 import { ide_state } from '../../core/ide_state';
 import type { PointerSnapshot } from '../../core/types';
 import { clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
+import { editorChromeState } from '../../ui/editor_chrome_state';
 import { getResourcePanelWidth, hideResourcePanel } from '../../ui/editor_view';
 import * as constants from '../../core/constants';
 import { editorPointerState, resetPointerClickTracking } from './editor_pointer_state';
 
 export function handleResourcePanelResizePointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
-	if (ide_state.resourcePanelResizing) {
+	if (editorChromeState.resourcePanelResizing) {
 		updateResourcePanelResize(snapshot);
 		return true;
 	}
@@ -17,7 +18,7 @@ export function handleResourcePanelResizePointer(snapshot: PointerSnapshot, just
 		return false;
 	}
 	if (getResourcePanelWidth() > 0) {
-		ide_state.resourcePanelResizing = true;
+		editorChromeState.resourcePanelResizing = true;
 		ide_state.resourcePanel.setFocused(true);
 		editorPointerState.pointerSelecting = false;
 		resetPointerClickTracking();
@@ -29,7 +30,7 @@ export function handleResourcePanelResizePointer(snapshot: PointerSnapshot, just
 
 function updateResourcePanelResize(snapshot: PointerSnapshot): void {
 	if (!snapshot.valid || !snapshot.primaryPressed) {
-		ide_state.resourcePanelResizing = false;
+		editorChromeState.resourcePanelResizing = false;
 		editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearGotoHoverHighlight();
 		return;

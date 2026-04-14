@@ -13,8 +13,6 @@ import { CHARACTER_CODES } from './character_map';
 import type {
 	Position,
 	CodeTabContext,
-	TopBarButtonId,
-	MenuId,
 	CrtOptionsSnapshot,
 	EditContext,
 	SearchState,
@@ -27,7 +25,7 @@ import type {
 import type { TextBuffer } from '../text/text_buffer';
 import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import type { EditorUndoRecord } from '../text/editor_undo';
-import type { CanonicalizationType, RectBounds } from '../../rompack/rompack';
+import type { CanonicalizationType } from '../../rompack/rompack';
 import { CodeLayout } from '../ui/code_layout';
 import type { DebuggerExecutionState } from '../contrib/debugger/ide_debugger';
 import type { LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
@@ -129,17 +127,10 @@ export interface IdeState {
 	deferredMessageDuration: number;
 	clockNow: () => number;
 	problemsPanel: ProblemsPanelController;
-	problemsPanelResizing: boolean;
 	codeTabContexts: Map<string, CodeTabContext>;
 	activeCodeTabContextId: string;
-	topBarButtonBounds: Record<TopBarButtonId, RectBounds>;
-	menuEntryBounds: Record<MenuId, RectBounds>;
-	menuDropdownBounds: RectBounds;
-	openMenuId: MenuId;
 	debuggerControls: DebuggerControlsState;
 	breakpoints: Map<string, Set<number>>;
-	tabButtonBounds: Map<string, RectBounds>;
-	tabCloseButtonBounds: Map<string, RectBounds>;
 	activeContextReadOnly: boolean;
 	resourceViewerSpriteId: string;
 	resourceViewerSpriteAsset: string;
@@ -171,7 +162,6 @@ export interface IdeState {
 	tabs: EditorTabDescriptor[];
 	activeTabId: string;
 	pendingResourceSelectionAssetId: string;
-	resourcePanelResizing: boolean;
 	resourcePanel: ResourcePanelController;
 	renameController: RenameController;
 	layout: CodeLayout;
@@ -226,37 +216,13 @@ export const ide_state: IdeState = {
 	deferredMessageDuration: null,
 	clockNow: undefined!,
 	problemsPanel: undefined!,
-	problemsPanelResizing: false,
 	codeTabContexts: new Map<string, CodeTabContext>(),
 	activeCodeTabContextId: null,
-	topBarButtonBounds: {
-		"hot-resume": { left: 0, top: 0, right: 0, bottom: 0 },
-		reboot: { left: 0, top: 0, right: 0, bottom: 0 },
-		save: { left: 0, top: 0, right: 0, bottom: 0 },
-		resources: { left: 0, top: 0, right: 0, bottom: 0 },
-		problems: { left: 0, top: 0, right: 0, bottom: 0 },
-		filter: { left: 0, top: 0, right: 0, bottom: 0 },
-		wrap: { left: 0, top: 0, right: 0, bottom: 0 },
-		debugContinue: { left: 0, top: 0, right: 0, bottom: 0 },
-		debugStepOver: { left: 0, top: 0, right: 0, bottom: 0 },
-		debugStepInto: { left: 0, top: 0, right: 0, bottom: 0 },
-		debugStepOut: { left: 0, top: 0, right: 0, bottom: 0 },
-	},
-	menuEntryBounds: {
-		file: { left: 0, top: 0, right: 0, bottom: 0 },
-		run: { left: 0, top: 0, right: 0, bottom: 0 },
-		view: { left: 0, top: 0, right: 0, bottom: 0 },
-		debug: { left: 0, top: 0, right: 0, bottom: 0 },
-	},
-	menuDropdownBounds: null,
-	openMenuId: null,
 	debuggerControls: {
 		executionState: 'inactive',
 		sessionMetrics: null,
 	},
 	breakpoints: new Map<string, Set<number>>(),
-	tabButtonBounds: new Map<string, RectBounds>(),
-	tabCloseButtonBounds: new Map<string, RectBounds>(),
 	activeContextReadOnly: false,
 	resourceViewerSpriteId: null,
 	resourceViewerSpriteAsset: null,
@@ -338,7 +304,6 @@ export const ide_state: IdeState = {
 	tabs: [],
 	activeTabId: null,
 	pendingResourceSelectionAssetId: null,
-	resourcePanelResizing: false,
 	resourcePanel: undefined!,
 	renameController: undefined!,
 	layout: undefined!,

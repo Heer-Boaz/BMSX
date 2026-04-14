@@ -5,6 +5,7 @@ import type { RectBounds } from '../../rompack/rompack';
 import { TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../core/constants';
 import { ScratchBuffer } from '../../utils/scratchbuffer';
 import { ide_state } from '../core/ide_state';
+import { editorChromeState } from '../ui/editor_chrome_state';
 import { measureText } from '../core/text_utils';
 import { editorPointerState } from '../input/pointer/editor_pointer_state';
 import { drawEditorText } from './text_renderer';
@@ -54,8 +55,8 @@ export function renderTabBar(): number {
 	closeBoundsScratch.clear();
 	costsScratch.clear();
 	nextBreakScratch.clear();
-	ide_state.tabButtonBounds.clear();
-	ide_state.tabCloseButtonBounds.clear();
+	editorChromeState.tabButtonBounds.clear();
+	editorChromeState.tabCloseButtonBounds.clear();
 
 	const rowHeight = Math.max(1, ide_state.tabBarHeight);
 	const closeButtonWidth = measureText(constants.TAB_CLOSE_BUTTON_SYMBOL);
@@ -169,7 +170,7 @@ export function renderTabBar(): number {
 			bounds.top = boundsTop;
 			bounds.right = right;
 			bounds.bottom = boundsBottom;
-			ide_state.tabButtonBounds.set(tab.id, bounds);
+			editorChromeState.tabButtonBounds.set(tab.id, bounds);
 
 			const active = ide_state.activeTabId === tab.id;
 			const fillColor = active ? constants.COLOR_TAB_ACTIVE_BACKGROUND : constants.COLOR_TAB_INACTIVE_BACKGROUND;
@@ -193,12 +194,12 @@ export function renderTabBar(): number {
 				closeBounds.right = bounds.right;
 				closeBounds.bottom = bounds.bottom;
 				if (hovered) {
-					ide_state.tabCloseButtonBounds.set(tab.id, closeBounds);
+					editorChromeState.tabCloseButtonBounds.set(tab.id, closeBounds);
 					const closeX = closeBounds.left + constants.TAB_CLOSE_BUTTON_PADDING_X;
 					const closeY = closeBounds.top + constants.TAB_CLOSE_BUTTON_PADDING_Y;
 					drawEditorText(ide_state.font, constants.TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, undefined, textColor);
 				} else {
-					ide_state.tabCloseButtonBounds.delete(tab.id);
+					editorChromeState.tabCloseButtonBounds.delete(tab.id);
 					if (entry.dirty && entry.markerWidth > 0) {
 						const markerX = closeBounds.left + Math.trunc((entry.closeWidth - entry.markerWidth) / 2);
 						const markerY = bounds.top + Math.trunc((bounds.bottom - bounds.top - entry.markerHeight) / 2);
@@ -208,7 +209,7 @@ export function renderTabBar(): number {
 					}
 				}
 			} else {
-				ide_state.tabCloseButtonBounds.delete(tab.id);
+				editorChromeState.tabCloseButtonBounds.delete(tab.id);
 				if (entry.dirty && entry.markerWidth > 0) {
 					const spacing = Math.max(0, constants.TAB_DIRTY_MARKER_SPACING);
 					const markerX = indicatorWidth > 0

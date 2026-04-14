@@ -1,4 +1,5 @@
 import { ide_state } from '../core/ide_state';
+import { editorChromeState } from './editor_chrome_state';
 import { editorDiagnosticsState } from '../contrib/problems/diagnostics_state';
 import type {
 	CodeTabContext,
@@ -242,8 +243,8 @@ export function initializeTabs(initialContext: CodeTabContext = null): void {
 	ide_state.tabs = [];
 	editorPointerState.tabHoverId = null;
 	editorPointerState.tabDragState = null;
-	ide_state.tabButtonBounds.clear();
-	ide_state.tabCloseButtonBounds.clear();
+	editorChromeState.tabButtonBounds.clear();
+	editorChromeState.tabCloseButtonBounds.clear();
 	const context = initialContext ?? createEntryTabContext();
 	ide_state.codeTabContexts.set(context.id, context);
 	upsertCodeEditorTab(context);
@@ -441,7 +442,7 @@ export function computeTabLayout(): Array<{ id: string; left: number; right: num
 	const layout: Array<{ id: string; left: number; right: number; width: number; center: number; rowIndex: number }> = [];
 	for (let index = 0; index < ide_state.tabs.length; index += 1) {
 		const tab = ide_state.tabs[index];
-		const bounds = ide_state.tabButtonBounds.get(tab.id) ;
+		const bounds = editorChromeState.tabButtonBounds.get(tab.id) ;
 		if (bounds) {
 			const left = bounds.left;
 			const right = bounds.right;
@@ -478,7 +479,7 @@ export function beginTabDrag(tabId: string, pointerX: number): void {
 		editorPointerState.tabDragState = null;
 		return;
 	}
-	const bounds = ide_state.tabButtonBounds.get(tabId) ;
+	const bounds = editorChromeState.tabButtonBounds.get(tabId) ;
 	const pointerOffset = bounds ? pointerX - bounds.left : 0;
 	editorPointerState.tabDragState = {
 		tabId,

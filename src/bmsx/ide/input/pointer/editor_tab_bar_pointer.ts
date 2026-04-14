@@ -1,6 +1,7 @@
 import { $ } from '../../../core/engine_core';
 import { point_in_rect } from '../../../utils/rect_operations';
 import { ide_state } from '../../core/ide_state';
+import { editorChromeState } from '../../ui/editor_chrome_state';
 import type { PointerSnapshot } from '../../core/types';
 import { beginTabDrag, closeTab, endTabDrag, setActiveTab } from '../../ui/editor_tabs';
 import { getTabBarTotalHeight } from '../../ui/editor_view';
@@ -17,7 +18,7 @@ export function handleTabBarPointer(snapshot: PointerSnapshot): boolean {
 	const x = snapshot.viewportX;
 	for (let index = 0; index < ide_state.tabs.length; index += 1) {
 		const tab = ide_state.tabs[index];
-		const closeBounds = ide_state.tabCloseButtonBounds.get(tab.id);
+		const closeBounds = editorChromeState.tabCloseButtonBounds.get(tab.id);
 		if (closeBounds && point_in_rect(x, y, closeBounds)) {
 			endTabDrag();
 			closeTab(tab.id);
@@ -25,7 +26,7 @@ export function handleTabBarPointer(snapshot: PointerSnapshot): boolean {
 			consumeChromePointerPress(snapshot);
 			return true;
 		}
-		const tabBounds = ide_state.tabButtonBounds.get(tab.id);
+		const tabBounds = editorChromeState.tabButtonBounds.get(tab.id);
 		if (tabBounds && point_in_rect(x, y, tabBounds)) {
 			beginTabDrag(tab.id, x);
 			setActiveTab(tab.id);
@@ -49,7 +50,7 @@ export function handleTabBarMiddleClick(snapshot: PointerSnapshot, playerInput: 
 		if (!tab.closable) {
 			continue;
 		}
-		const bounds = ide_state.tabButtonBounds.get(tab.id);
+		const bounds = editorChromeState.tabButtonBounds.get(tab.id);
 		if (!bounds) {
 			continue;
 		}
@@ -77,7 +78,7 @@ export function updateTabHoverState(snapshot: PointerSnapshot): void {
 	}
 	const x = snapshot.viewportX;
 	let hovered: string = null;
-	for (const [tabId, bounds] of ide_state.tabButtonBounds) {
+	for (const [tabId, bounds] of editorChromeState.tabButtonBounds) {
 		if (point_in_rect(x, y, bounds)) {
 			hovered = tabId;
 			break;
