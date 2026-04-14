@@ -132,7 +132,7 @@ function worldobject.new(opts)
 	local self<const> = setmetatable({}, worldobject)
 	self.type_name = opts.type_name or 'worldobject'
 	self.id = opts.id or world_instance:next_id(self.type_name)
-	self:set_pos(opts.x, opts.y, opts.z)
+	self:set_pos(opts.x or 0, opts.y or 0, opts.z or 0)
 	self.sx = opts.sx or 0
 	self.sy = opts.sy or 0
 	self.sz = opts.sz or 0
