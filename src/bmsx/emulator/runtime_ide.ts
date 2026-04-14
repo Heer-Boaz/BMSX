@@ -379,7 +379,7 @@ export function flushLuaWarnings(runtime: Runtime): void {
 	const messages = runtime.pendingLuaWarnings;
 	runtime.pendingLuaWarnings = [];
 	for (const warning of messages) {
-		ide_state.showWarningBanner(warning, 6.0);
+		showEditorWarningBanner(warning, 6.0);
 	}
 }
 

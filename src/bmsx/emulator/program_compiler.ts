@@ -42,6 +42,7 @@ import type { CanonicalizationType } from '../rompack/rompack';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from './instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from '../ide/contrib/intellisense/lua_semantic_frontend';
 import { MMIO_REGISTER_SPEC_BY_ADDRESS, MMIO_REGISTER_SPEC_BY_NAME, type MmioWriteRequirement } from './mmio_register_spec';
+import { ValueKindFlowAnalyzer, evaluateExpressionValueKind, type SymbolFlowState } from './compile_value_flow';
 import { ENGINE_SYSTEM_GLOBAL_NAME_SET } from './lua_system_globals';
 import { LuaSyntaxError } from '../lua/luaerrors';
 import { Decl } from '../ide/contrib/intellisense/semantic_model';
@@ -104,7 +105,6 @@ type LocalBinding = {
 	hasConstValue: boolean;
 	constClosureProtoIndex: number | null;
 	moduleBinding: ModuleBinding | null;
-	compileValueKind: CompileValueKind;
 };
 
 type ModuleBinding = {
@@ -163,14 +163,6 @@ const MAX_SPECIALIZED_TABLE_OPERAND = MAX_EXT_REGISTER_BC;
 
 const isSmallSignedImmediate = (value: number): boolean =>
 	Number.isInteger(value) && value >= MIN_SIGNED_BX && value <= MAX_SIGNED_BX;
-
-type CompileValueKind =
-	| 'unknown'
-	| 'nil'
-	| 'boolean'
-	| 'number'
-	| 'string'
-	| 'string_ref';
 
 class ProgramBuilder {
 	public readonly constPool: Value[];
@@ -526,6 +518,8 @@ class FunctionBuilder {
 	private tempTop = 0;
 	private maxStack = 0;
 	private localFunctionCounters = new Map<string, number>();
+	private flowAnalysis: ValueKindFlowAnalyzer | null = null;
+	private currentFlowState: SymbolFlowState = new Map();
 
 	constructor(
 		program: ProgramBuilder,
@@ -551,6 +545,7 @@ class FunctionBuilder {
 	}
 
 	public compileChunk(chunk: LuaChunk): void {
+		this.flowAnalysis = new ValueKindFlowAnalyzer(chunk.body, this.semantics, this.frontend);
 		this.pushScope(chunk.range);
 		for (let i = 0; i < chunk.body.length; i += 1) {
 			this.compileStatement(chunk.body[i]);
@@ -562,6 +557,7 @@ class FunctionBuilder {
 	}
 
 	public compileFunctionExpression(expression: LuaFunctionExpression, implicitSelf: boolean): void {
+		this.flowAnalysis = new ValueKindFlowAnalyzer(expression.body.body, this.semantics, this.frontend);
 		this.pushScope(expression.body.range);
 		if (implicitSelf) {
 			this.declareImplicitSelf(expression.range, expression.range);
@@ -870,7 +866,6 @@ class FunctionBuilder {
 		hasConstValue = false,
 		constClosureProtoIndex: number | null = null,
 		moduleBinding: ModuleBinding | null = null,
-		compileValueKind: CompileValueKind = 'unknown',
 	): number {
 		const canonicalName = this.canonicalizeName(name);
 		if (this.getMemoryAccessKindForCanonicalName(canonicalName) !== null) {
@@ -896,7 +891,6 @@ class FunctionBuilder {
 			hasConstValue,
 			constClosureProtoIndex,
 			moduleBinding,
-			compileValueKind,
 		};
 		this.localBindings.set(symbolHandle, binding);
 		const scope = this.scopeStack[this.scopeStack.length - 1];
@@ -919,12 +913,11 @@ class FunctionBuilder {
 		hasConstValue = false,
 		constClosureProtoIndex: number | null = null,
 		moduleBinding: ModuleBinding | null = null,
-		compileValueKind: CompileValueKind = 'unknown',
 	): number {
 		const kind = decl.kind === 'constant'
 			? 'const'
 			: (decl.kind === 'parameter' ? 'parameter' : 'local');
-		return this.declareLocal(decl.id, decl.name, definitionRange, scopeRange, kind, constValue, hasConstValue, constClosureProtoIndex, moduleBinding, compileValueKind);
+		return this.declareLocal(decl.id, decl.name, definitionRange, scopeRange, kind, constValue, hasConstValue, constClosureProtoIndex, moduleBinding);
 	}
 
 	private declareImplicitSelf(definitionRange: LuaSourceRange, scopeRange?: LuaSourceRange): number {
@@ -1678,6 +1671,9 @@ class FunctionBuilder {
 	}
 
 	private compileStatement(statement: LuaStatement): void {
+		if (this.flowAnalysis) {
+			this.currentFlowState = this.flowAnalysis.getFlowStateAt(statement);
+		}
 		this.withRange(statement.range, () => {
 			switch (statement.kind) {
 				case LuaSyntaxKind.LocalAssignmentStatement:
@@ -1761,14 +1757,10 @@ class FunctionBuilder {
 		const initializerValues: Array<Value | undefined> = new Array(names.length);
 		const initializerClosureProtoIndices: Array<number | undefined> = new Array(names.length);
 		const initializerModuleBindings: Array<ModuleBinding | undefined> = new Array(names.length);
-		const initializerValueKinds: Array<CompileValueKind> = new Array(names.length).fill('unknown');
 		if (values.length > 0) {
 			const lastIndex = values.length - 1;
 			for (let i = 0; i < lastIndex; i += 1) {
 				const expr = values[i];
-				if (i < names.length) {
-					initializerValueKinds[i] = this.classifyExpressionValueKind(expr);
-				}
 				if (i < names.length && attributes[i] === 'const') {
 					const moduleBinding = this.tryResolveStaticModuleBinding(expr, true);
 					if (moduleBinding !== null) {
@@ -1800,9 +1792,6 @@ class FunctionBuilder {
 			const lastExpr = values[lastIndex];
 			const remaining = names.length - lastIndex;
 			const wantsMulti = remaining > 1 && this.isMultiReturnExpression(lastExpr);
-			if (lastIndex < names.length && !wantsMulti) {
-				initializerValueKinds[lastIndex] = this.classifyExpressionValueKind(lastExpr);
-			}
 			if (lastIndex < names.length && attributes[lastIndex] === 'const' && !wantsMulti) {
 				const moduleBinding = this.tryResolveStaticModuleBinding(lastExpr, true);
 				if (moduleBinding !== null) {
@@ -1860,7 +1849,6 @@ class FunctionBuilder {
 				initializerValue !== undefined && attribute === 'const',
 				initializerClosureProtoIndex,
 				initializerModuleBinding,
-				initializerValueKinds[i],
 			);
 			if (initializerValue !== undefined) {
 				this.emitLoadConst(target, initializerValue);
@@ -2594,61 +2582,29 @@ class FunctionBuilder {
 		this.emitABC(OpCode.STORE_MEM, valueReg, addrOperand, accessKind, addrConst !== undefined ? RK_B : 0);
 	}
 
-	private classifyExpressionValueKind(expression: LuaExpression): CompileValueKind {
-		switch (expression.kind) {
-			case LuaSyntaxKind.StringRefLiteralExpression:
-				return 'string_ref';
-			case LuaSyntaxKind.StringLiteralExpression:
-				return 'string';
-			case LuaSyntaxKind.NumericLiteralExpression:
-				return 'number';
-			case LuaSyntaxKind.BooleanLiteralExpression:
-				return 'boolean';
-			case LuaSyntaxKind.NilLiteralExpression:
-				return 'nil';
-			case LuaSyntaxKind.IdentifierExpression: {
-				const reference = this.getIdentifierReference(expression as LuaIdentifierExpression);
+	private tryResolveConstantMemoryAddress(addressExpression: LuaExpression): number | undefined {
+		const constValue = this.evaluateCompileTimeExpression(addressExpression);
+		if (typeof constValue === 'number') return constValue;
+		if (addressExpression.kind === LuaSyntaxKind.IdentifierExpression) {
+			const reference = this.getIdentifierReference(addressExpression as LuaIdentifierExpression);
+			if (reference.kind === 'lexical') {
 				const symbolHandle = this.getReferenceSymbolHandle(reference);
-				if (symbolHandle === null) {
-					return 'unknown';
+				if (symbolHandle !== null) {
+					const binding = this.resolveVisibleBinding(symbolHandle);
+					if (binding !== null && binding.hasConstValue && typeof binding.constValue === 'number') {
+						return binding.constValue;
+					}
 				}
-				const binding = this.resolveVisibleBinding(symbolHandle);
-				if (binding === null) {
-					return 'unknown';
-				}
-				if (binding.compileValueKind === 'unknown') {
-					return 'unknown';
-				}
-				if (binding.kind === 'const') {
-					return binding.compileValueKind;
-				}
-				if (binding.kind === 'local' && !this.isLocalReassigned(binding.symbolHandle)) {
-					return binding.compileValueKind;
-				}
-				return 'unknown';
-			}
-			default:
-				return 'unknown';
-		}
-	}
-
-	private isLocalReassigned(symbolHandle: string): boolean {
-		const refs = this.frontend.getReferences(symbolHandle);
-		for (let i = 0; i < refs.length; i += 1) {
-			if (refs[i].isWrite) {
-				return true;
 			}
 		}
-		return false;
+		return undefined;
 	}
 
 	private resolveMemoryStoreRequirement(addressExpression: LuaExpression): MmioWriteRequirement {
-		const constValue = this.evaluateCompileTimeExpression(addressExpression);
-		if (typeof constValue === 'number') {
-			const spec = MMIO_REGISTER_SPEC_BY_ADDRESS.get(constValue);
-			if (spec) {
-				return spec.writeRequirement;
-			}
+		const address = this.tryResolveConstantMemoryAddress(addressExpression);
+		if (address !== undefined) {
+			const spec = MMIO_REGISTER_SPEC_BY_ADDRESS.get(address);
+			if (spec) return spec.writeRequirement;
 			return 'any';
 		}
 		if (addressExpression.kind === LuaSyntaxKind.IdentifierExpression) {
@@ -2656,26 +2612,22 @@ class FunctionBuilder {
 			if (reference.kind === 'global') {
 				const name = this.getReferenceCanonicalName(reference);
 				const spec = MMIO_REGISTER_SPEC_BY_NAME.get(name);
-				if (spec) {
-					return spec.writeRequirement;
-				}
+				if (spec) return spec.writeRequirement;
 			}
 		}
 		return 'any';
 	}
 
 	private resolveMemoryStoreRegisterName(addressExpression: LuaExpression): string | undefined {
-		const constValue = this.evaluateCompileTimeExpression(addressExpression);
-		if (typeof constValue === 'number') {
-			return MMIO_REGISTER_SPEC_BY_ADDRESS.get(constValue)?.name;
+		const address = this.tryResolveConstantMemoryAddress(addressExpression);
+		if (address !== undefined) {
+			return MMIO_REGISTER_SPEC_BY_ADDRESS.get(address)?.name;
 		}
 		if (addressExpression.kind === LuaSyntaxKind.IdentifierExpression) {
 			const reference = this.getIdentifierReference(addressExpression as LuaIdentifierExpression);
 			if (reference.kind === 'global') {
 				const name = this.getReferenceCanonicalName(reference);
-				if (MMIO_REGISTER_SPEC_BY_NAME.has(name)) {
-					return name;
-				}
+				if (MMIO_REGISTER_SPEC_BY_NAME.has(name)) return name;
 			}
 		}
 		return undefined;
@@ -2683,17 +2635,13 @@ class FunctionBuilder {
 
 	private validateMemoryStore(addressExpression: LuaExpression, valueExpression: LuaExpression): void {
 		const requirement = this.resolveMemoryStoreRequirement(addressExpression);
-		if (requirement === 'any') {
-			return;
-		}
-		const valueKind = this.classifyExpressionValueKind(valueExpression);
-		if (valueKind === 'string_ref') {
-			return;
-		}
+		if (requirement === 'any') return;
+		const valueKind = evaluateExpressionValueKind(valueExpression, this.currentFlowState, this.semantics);
+		if (valueKind === 'string_ref') return;
 		const registerName = this.resolveMemoryStoreRegisterName(addressExpression);
 		const target = registerName ? `Register '${registerName}'` : 'This memory-mapped register';
 		throw new LuaSyntaxError(
-			`${target} requires a string_ref value (&'...'). Got: ${valueKind}.`,
+			`${target} requires a string_ref value (&'...'). The expression at this point is not proven to be string_ref (got: ${valueKind}).`,
 			valueExpression.range.path,
 			valueExpression.range.start.line,
 			valueExpression.range.start.column,
