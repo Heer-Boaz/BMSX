@@ -109,13 +109,13 @@ export function shutdownRuntimeEditor(): void {
 		Runtime.instance.restoreCrtPostprocessingFromEditor();
 	}
 	ide_state.active = false;
-	if (ide_state.workspaceAutosaveEnabled) {
+	if (ide_state.workspace.autosaveEnabled) {
 		stopWorkspaceAutosaveLoop();
 		void runWorkspaceAutosaveTick();
 	}
-	ide_state.workspaceAutosaveEnabled = false;
+	ide_state.workspace.autosaveEnabled = false;
 	clearWorkspaceCachedSources();
-	ide_state.workspaceAutosaveSignature = null;
+	ide_state.workspace.autosaveSignature = null;
 	initializeWorkspaceStorage(null);
 	ide_state.pointerSelecting = false;
 	ide_state.pointerPrimaryWasPressed = false;

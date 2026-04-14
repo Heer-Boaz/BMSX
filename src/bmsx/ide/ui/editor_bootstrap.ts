@@ -79,6 +79,6 @@ export function initializeCartEditor(viewport: Viewport): void {
 	ide_state.desiredColumn = ide_state.cursorColumn;
 	assertMonospace();
 	ide_state.lastSavedSource = '';
-	ide_state.navigationHistory.current = createNavigationEntry();
+	ide_state.navigation.current = createNavigationEntry();
 	ide_state.initialized = true;
 }

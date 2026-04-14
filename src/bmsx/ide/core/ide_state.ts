@@ -241,20 +241,22 @@ export interface IdeState {
 	wordWrapEnabled: boolean;
 	lastPointerRowResolution: { visualIndex: number; segment: VisualLineSegment };
 	completion: CompletionController;
-	navigationHistory: {
+	navigation: {
 		back: NavigationHistoryEntry[];
 		forward: NavigationHistoryEntry[];
 		current: NavigationHistoryEntry;
+		captureSuspended: boolean;
 	};
-	navigationCaptureSuspended: boolean;
 	customClipboard: string;
-	workspaceAutosaveEnabled: boolean;
-	workspaceAutosaveSignature: string;
-	workspaceAutosaveHandle: TimerHandle | { cancel(): void };
-	workspaceAutosaveRunning: boolean;
-	workspaceAutosaveQueued: boolean;
-	disposeWorkspaceExitListener: SubscriptionHandle;
-	serverWorkspaceConnected: boolean;
+	workspace: {
+		autosaveEnabled: boolean;
+		autosaveSignature: string;
+		autosaveHandle: TimerHandle | { cancel(): void };
+		autosaveRunning: boolean;
+		autosaveQueued: boolean;
+		disposeExitListener: SubscriptionHandle;
+		serverConnected: boolean;
+	};
 }
 
 export const ide_state: IdeState = {
@@ -461,20 +463,22 @@ export const ide_state: IdeState = {
 	wordWrapEnabled: true,
 	lastPointerRowResolution: null,
 	completion: undefined!,
-	navigationHistory: {
+	navigation: {
 		back: [] as NavigationHistoryEntry[],
 		forward: [] as NavigationHistoryEntry[],
 		current: null as NavigationHistoryEntry,
+		captureSuspended: false,
 	},
-	navigationCaptureSuspended: false,
 	customClipboard: null,
-	workspaceAutosaveEnabled: false,
-	workspaceAutosaveSignature: null,
-	workspaceAutosaveHandle: null,
-	workspaceAutosaveRunning: false,
-	workspaceAutosaveQueued: false,
-	disposeWorkspaceExitListener: null,
-	serverWorkspaceConnected: false,
+	workspace: {
+		autosaveEnabled: false,
+		autosaveSignature: null,
+		autosaveHandle: null,
+		autosaveRunning: false,
+		autosaveQueued: false,
+		disposeExitListener: null,
+		serverConnected: false,
+	},
 };
 
 // Initialize message controller

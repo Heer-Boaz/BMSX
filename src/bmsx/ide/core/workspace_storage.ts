@@ -88,7 +88,7 @@ function resetWorkspaceBackends(): void {
 	serverBackendAvailable = false;
 	serverBackendFailureNotified = false;
 	serverRetryHandle?.cancel();
-	ide_state.serverWorkspaceConnected = false;
+	ide_state.workspace.serverConnected = false;
 }
 
 export async function configureWorkspaceStorage(projectRootPath: string): Promise<void> {
@@ -130,7 +130,7 @@ export async function configureWorkspaceStorage(projectRootPath: string): Promis
 		serverBackend = null;
 		serverBackendAvailable = false;
 		serverBackendFailureNotified = true;
-		ide_state.serverWorkspaceConnected = false;
+		ide_state.workspace.serverConnected = false;
 		console.warn('[WorkspaceStorage] Remote workspace unavailable; persisting locally only.', error);
 	}
 }
@@ -235,8 +235,8 @@ async function safeReadText(response: Response): Promise<string> {
 
 function attachWorkspaceExitHandler(): void {
 	detachWorkspaceExitHandler();
-	ide_state.disposeWorkspaceExitListener = $.platform.lifecycle.onWillExit(() => {
-		if (!ide_state.workspaceAutosaveEnabled) {
+	ide_state.workspace.disposeExitListener = $.platform.lifecycle.onWillExit(() => {
+		if (!ide_state.workspace.autosaveEnabled) {
 			return;
 		}
 		void runWorkspaceAutosaveTick();
@@ -244,39 +244,39 @@ function attachWorkspaceExitHandler(): void {
 }
 
 function detachWorkspaceExitHandler(): void {
-	if (ide_state.disposeWorkspaceExitListener) {
+	if (ide_state.workspace.disposeExitListener) {
 		try {
-			ide_state.disposeWorkspaceExitListener.unsubscribe();
+			ide_state.workspace.disposeExitListener.unsubscribe();
 		} catch {
 			// ignore
 		}
-		ide_state.disposeWorkspaceExitListener = null;
+		ide_state.workspace.disposeExitListener = null;
 	}
 }
 
 export function initializeWorkspaceStorage(projectRootPath: string): void {
 	stopWorkspaceAutosaveLoop();
-	ide_state.workspaceAutosaveSignature = null;
+	ide_state.workspace.autosaveSignature = null;
 	clearWorkspaceCachedSources();
 	if (!projectRootPath || projectRootPath.length === 0) {
-		ide_state.workspaceAutosaveEnabled = false;
+		ide_state.workspace.autosaveEnabled = false;
 		storagePaths = null;
 		resetWorkspaceBackends();
 		detachWorkspaceExitHandler();
-		ide_state.serverWorkspaceConnected = false;
+		ide_state.workspace.serverConnected = false;
 		return;
 	}
-	ide_state.workspaceAutosaveEnabled = true;
+	ide_state.workspace.autosaveEnabled = true;
 	attachWorkspaceExitHandler();
 	const token = workspaceRestoreGate.begin({ blocking: true, tag: 'workspace_restore' });
 	(async () => {
 		try {
 			await configureWorkspaceStorage(projectRootPath);
 			await restoreWorkspaceSessionFromDisk();
-			ide_state.serverWorkspaceConnected = serverBackendAvailable;
+			ide_state.workspace.serverConnected = serverBackendAvailable;
 		} catch (error) {
 			console.warn('[CartEditor] Workspace persistence disabled:', error);
-			ide_state.workspaceAutosaveEnabled = false;
+			ide_state.workspace.autosaveEnabled = false;
 			storagePaths = null;
 			resetWorkspaceBackends();
 			detachWorkspaceExitHandler();
@@ -284,12 +284,12 @@ export function initializeWorkspaceStorage(projectRootPath: string): void {
 		} finally {
 			workspaceRestoreGate.end(token);
 		}
-		if (ide_state.workspaceAutosaveEnabled) {
+		if (ide_state.workspace.autosaveEnabled) {
 			scheduleWorkspaceAutosaveLoop();
 			// console.info('Workspace autosave loop started.')
 		}
-		if (ide_state.workspaceAutosaveQueued) {
-			ide_state.workspaceAutosaveQueued = false;
+		if (ide_state.workspace.autosaveQueued) {
+			ide_state.workspace.autosaveQueued = false;
 			void runWorkspaceAutosaveTick();
 			// console.info('Workspace autosave triggered.')
 		}
@@ -300,26 +300,26 @@ export function initializeWorkspaceStorage(projectRootPath: string): void {
 }
 
 export function scheduleWorkspaceAutosaveLoop(): void {
-	if (!ide_state.workspaceAutosaveEnabled || ide_state.workspaceAutosaveHandle) {
+	if (!ide_state.workspace.autosaveEnabled || ide_state.workspace.autosaveHandle) {
 		return;
 	}
-	ide_state.workspaceAutosaveHandle = scheduleIdeOnce(WORKSPACE_AUTOSAVE_INTERVAL_MS, () => {
-		ide_state.workspaceAutosaveHandle = null;
+	ide_state.workspace.autosaveHandle = scheduleIdeOnce(WORKSPACE_AUTOSAVE_INTERVAL_MS, () => {
+		ide_state.workspace.autosaveHandle = null;
 		void runWorkspaceAutosaveTick();
 		scheduleWorkspaceAutosaveLoop();
 	});
 }
 
 export function stopWorkspaceAutosaveLoop(): void {
-	if (!ide_state.workspaceAutosaveHandle) {
+	if (!ide_state.workspace.autosaveHandle) {
 		return;
 	}
 	try {
-		ide_state.workspaceAutosaveHandle.cancel();
+		ide_state.workspace.autosaveHandle.cancel();
 	} catch {
 		// ignore cancellation errors
 	}
-	ide_state.workspaceAutosaveHandle = null;
+	ide_state.workspace.autosaveHandle = null;
 }
 
 export async function restoreWorkspaceSessionFromDisk(): Promise<void> {
@@ -339,7 +339,7 @@ export async function restoreWorkspaceSessionFromDisk(): Promise<void> {
 	}
 	const signature = buildWorkspaceAutosaveSignature(payload);
 	await applyWorkspaceAutosavePayload(payload);
-	ide_state.workspaceAutosaveSignature = signature;
+	ide_state.workspace.autosaveSignature = signature;
 }
 
 export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePayload): Promise<void> {
@@ -463,7 +463,7 @@ function handleServerBackendFailure(error: unknown): void {
 	serverBackendAvailable = false;
 	serverBackend = null;
 	serverRetryHandle?.cancel();
-	ide_state.serverWorkspaceConnected = false;
+	ide_state.workspace.serverConnected = false;
 	if (!serverBackendFailureNotified) {
 		serverBackendFailureNotified = true;
 		console.warn('[WorkspaceStorage] Remote workspace became unavailable; persisting locally only.', error);
@@ -608,7 +608,7 @@ function captureContextSnapshotMetadata(context: CodeTabContext): SnapshotMetada
 }
 
 export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextEntry>): WorkspaceAutosavePayload {
-	if (!ide_state.workspaceAutosaveEnabled) {
+	if (!ide_state.workspace.autosaveEnabled) {
 		return null;
 	}
 	const dirtyFiles: PersistedDirtyEntry[] = [];
@@ -697,7 +697,7 @@ export function loadCleanSrc(path: string) {
 
 export function clearWorkspaceDirtyBuffers(): void {
 	clearWorkspaceCachedSources();
-	ide_state.workspaceAutosaveSignature = null;
+	ide_state.workspace.autosaveSignature = null;
 	ide_state.saveGeneration = ide_state.appliedGeneration;
 	ide_state.dirty = false;
 	ide_state.undoStack.length = 0;
@@ -727,38 +727,38 @@ export function clearWorkspaceDirtyBuffers(): void {
 }
 
 export async function runWorkspaceAutosaveTick(): Promise<void> {
-	if (!ide_state.workspaceAutosaveEnabled) {
+	if (!ide_state.workspace.autosaveEnabled) {
 		return;
 	}
 	if (!serverBackendAvailable && !serverRetryScheduled) {
 		scheduleServerBackendRetry();
 	}
 	if (!workspaceRestoreGate.ready) {
-		ide_state.workspaceAutosaveQueued = true;
+		ide_state.workspace.autosaveQueued = true;
 		return;
 	}
-	if (ide_state.workspaceAutosaveRunning) {
-		ide_state.workspaceAutosaveQueued = true;
+	if (ide_state.workspace.autosaveRunning) {
+		ide_state.workspace.autosaveQueued = true;
 		return;
 	}
-	ide_state.workspaceAutosaveRunning = true;
+	ide_state.workspace.autosaveRunning = true;
 	try {
 		const dirtyEntries = collectDirtyContextEntries();
 		const payload = buildWorkspaceAutosavePayload(dirtyEntries);
 		if (payload) {
 			const signature = buildWorkspaceAutosaveSignature(payload);
-			if (signature !== ide_state.workspaceAutosaveSignature) {
+			if (signature !== ide_state.workspace.autosaveSignature) {
 				await writeWorkspaceStateFile(JSON.stringify(payload));
-				ide_state.workspaceAutosaveSignature = signature;
+				ide_state.workspace.autosaveSignature = signature;
 			}
 		}
 		await persistDirtyContextEntries(dirtyEntries);
 	} catch (error) {
 		console.warn('[CartEditor] Workspace autosave failed:', error);
 	} finally {
-		ide_state.workspaceAutosaveRunning = false;
-		if (ide_state.workspaceAutosaveQueued) {
-			ide_state.workspaceAutosaveQueued = false;
+		ide_state.workspace.autosaveRunning = false;
+		if (ide_state.workspace.autosaveQueued) {
+			ide_state.workspace.autosaveQueued = false;
 			await runWorkspaceAutosaveTick();
 		}
 	}
@@ -781,13 +781,13 @@ export function clearWorkspaceSessionState(): void {
 		context.dirty = false;
 		setTabDirty(context.id, false);
 	}
-	ide_state.navigationHistory.back = [];
-	ide_state.navigationHistory.forward = [];
-	ide_state.navigationHistory.current = null;
+	ide_state.navigation.back = [];
+	ide_state.navigation.forward = [];
+	ide_state.navigation.current = null;
 	ide_state.breakpoints.clear();
-	ide_state.workspaceAutosaveSignature = null;
-	ide_state.workspaceAutosaveQueued = false;
-	ide_state.workspaceAutosaveRunning = false;
+	ide_state.workspace.autosaveSignature = null;
+	ide_state.workspace.autosaveQueued = false;
+	ide_state.workspace.autosaveRunning = false;
 }
 
 function scheduleServerBackendRetry(): void {
@@ -811,7 +811,7 @@ async function tryReconnectServerBackend(): Promise<void> {
 		serverBackend = backend;
 		serverBackendAvailable = true;
 		serverBackendFailureNotified = false;
-		ide_state.serverWorkspaceConnected = true;
+		ide_state.workspace.serverConnected = true;
 		serverRetryHandle?.cancel();
 	} catch {
 		scheduleServerBackendRetry();

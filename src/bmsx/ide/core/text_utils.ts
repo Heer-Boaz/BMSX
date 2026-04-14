@@ -704,7 +704,7 @@ export function markTextMutated(): void {
 	updateActiveContextDirtyFlag();
 	ide_state.layout.ensureVisualLinesDirty();
 	requestSemanticRefresh();
-	ide_state.navigationHistory.forward.length = 0;
+	ide_state.navigation.forward.length = 0;
 	handlePostEditMutation();
 	if (ide_state.search.query.length > 0) startSearchJob();
 }
