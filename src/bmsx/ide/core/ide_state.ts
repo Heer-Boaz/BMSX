@@ -1,7 +1,3 @@
-import type { FontVariant } from '../../render/shared/bmsx_font';
-import type { ScrollbarKind } from './types';
-import type { InlineFieldMetrics } from '../ui/inline_text_field';
-import { Scrollbar, ScrollbarController } from '../ui/scrollbar';
 import type { InputController } from '../input/keyboard/editor_text_input';
 import type { ProblemsPanelController } from '../contrib/problems/problems_panel';
 import { ResourcePanelController } from '../contrib/resources/resource_panel_controller';
@@ -19,12 +15,10 @@ import type {
 	CreateResourceState,
 } from './types';
 import type { CanonicalizationType } from '../../rompack/rompack';
-import { CodeLayout } from '../ui/code_layout';
 import type { DebuggerExecutionState } from '../contrib/debugger/ide_debugger';
 import type { LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_KEY, ESCAPE_KEY, getActiveIdeThemeVariant } from './constants';
 import { CaretNavigationState } from '../ui/caret';
-import { EditorFont } from '../ui/view/editor_font';
 
 type BuiltinIdentifierCache = {
 	epoch: number;
@@ -88,21 +82,7 @@ export interface IdeState {
 	themeVariant: string;
 	caseInsensitive: boolean;
 	canonicalization: CanonicalizationType;
-	scrollRow: number;
-	scrollColumn: number;
-	fontVariant: FontVariant;
 	builtinIdentifierCache: BuiltinIdentifierCache | null;
-	viewportWidth: number;
-	viewportHeight: number;
-	font: EditorFont;
-	lineHeight: number;
-	charAdvance: number;
-	spaceAdvance: number;
-	gutterWidth: number;
-	headerHeight: number;
-	tabBarHeight: number;
-	tabBarRowCount: number;
-	baseBottomMargin: number;
 	clockNow: () => number;
 	problemsPanel: ProblemsPanelController;
 	debuggerControls: DebuggerControlsState;
@@ -116,9 +96,6 @@ export interface IdeState {
 	symbolSearch: SymbolSearchState;
 	lineJump: LineJumpState;
 	createResource: CreateResourceState;
-	inlineFieldMetricsRef: InlineFieldMetrics;
-	scrollbars: Record<ScrollbarKind, Scrollbar>;
-	scrollbarController: ScrollbarController;
 	input: InputController;
 	crtOptionsSnapshot: CrtOptionsSnapshot;
 	pendingEditContext: EditContext;
@@ -126,16 +103,6 @@ export interface IdeState {
 	referenceState: ReferenceState;
 	resourcePanel: ResourcePanelController;
 	renameController: RenameController;
-	layout: CodeLayout;
-	codeVerticalScrollbarVisible: boolean;
-	codeHorizontalScrollbarVisible: boolean;
-	maxLineLength: number;
-	maxLineLengthRow: number;
-	maxLineLengthDirty: boolean;
-	cachedVisibleRowCount: number;
-	cachedVisibleColumnCount: number;
-	dimCrtInEditor: boolean;
-	wordWrapEnabled: boolean;
 	completion: CompletionController;
 }
 
@@ -145,21 +112,7 @@ export const ide_state: IdeState = {
 	themeVariant: getActiveIdeThemeVariant(),
 	caseInsensitive: true,
 	canonicalization: 'lower',
-	scrollRow: 0,
-	scrollColumn: 0,
-	fontVariant: undefined!,
 	builtinIdentifierCache: null,
-	viewportWidth: 0,
-	viewportHeight: 0,
-	font: undefined!,
-	lineHeight: 0,
-	charAdvance: 0,
-	spaceAdvance: 0,
-	gutterWidth: 0,
-	headerHeight: 0,
-	tabBarHeight: 0,
-	tabBarRowCount: 1,
-	baseBottomMargin: 0,
 	clockNow: undefined!,
 	problemsPanel: undefined!,
 	debuggerControls: {
@@ -226,9 +179,6 @@ export const ide_state: IdeState = {
 		working: false,
 		lastDirectory: '',
 	},
-	inlineFieldMetricsRef: undefined!,
-	scrollbars: undefined!,
-	scrollbarController: undefined!,
 	input: undefined!,
 	crtOptionsSnapshot: null,
 	pendingEditContext: null,
@@ -236,16 +186,6 @@ export const ide_state: IdeState = {
 	referenceState: new ReferenceState(),
 	resourcePanel: undefined!,
 	renameController: undefined!,
-	layout: undefined!,
-	codeVerticalScrollbarVisible: false,
-	codeHorizontalScrollbarVisible: false,
-	maxLineLength: 0,
-	maxLineLengthRow: 0,
-	maxLineLengthDirty: true,
-	cachedVisibleRowCount: 1,
-	cachedVisibleColumnCount: 1,
-	dimCrtInEditor: true,
-	wordWrapEnabled: true,
 	completion: undefined!,
 };
 

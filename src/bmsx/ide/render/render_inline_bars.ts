@@ -4,6 +4,7 @@ import { api } from '../ui/view/overlay_api';
 import { drawEditorText } from './text_renderer';
 import { drawCreateResourceErrorDialog } from './render_resource_panel';
 import { activeSearchMatchCount, getVisibleSearchResultEntries } from '../contrib/find/editor_search';
+import { editorViewState } from '../ui/editor_view_state';
 import {
 	getCreateResourceBarBounds,
 	getLineJumpBarBounds,
@@ -49,17 +50,17 @@ type InlineSymbolSearchResult = {
 
 const drawSearchResultRow = (entry: InlineSearchResultEntry, rowTop: number): void => {
 	const paddingX = constants.QUICK_OPEN_RESULT_PADDING_X;
-	const secondaryY = rowTop + ide_state.lineHeight;
+	const secondaryY = rowTop + editorViewState.lineHeight;
 	if (entry.primary) {
-		drawEditorText(ide_state.font, entry.primary, paddingX, rowTop, undefined, constants.COLOR_SEARCH_TEXT);
+		drawEditorText(editorViewState.font, entry.primary, paddingX, rowTop, undefined, constants.COLOR_SEARCH_TEXT);
 	}
 	if (entry.detail) {
 		const detailWidth = measureText(entry.detail);
-		const detailX = ide_state.viewportWidth - detailWidth - paddingX;
-		drawEditorText(ide_state.font, entry.detail, detailX, rowTop, undefined, constants.COLOR_SEARCH_SECONDARY_TEXT);
+		const detailX = editorViewState.viewportWidth - detailWidth - paddingX;
+		drawEditorText(editorViewState.font, entry.detail, detailX, rowTop, undefined, constants.COLOR_SEARCH_SECONDARY_TEXT);
 	}
 	if (entry.secondary) {
-		drawEditorText(ide_state.font, entry.secondary, paddingX, secondaryY, undefined, constants.COLOR_SEARCH_SECONDARY_TEXT);
+		drawEditorText(editorViewState.font, entry.secondary, paddingX, secondaryY, undefined, constants.COLOR_SEARCH_SECONDARY_TEXT);
 	}
 };
 
@@ -68,19 +69,19 @@ const drawResourceSearchResultRow = (match: InlineResourceSearchResult, rowTop: 
 	const kindText = match.entry.typeLabel;
 	const detail = match.entry.assetLabel ?? '';
 	if (kindText.length > 0) {
-		drawEditorText(ide_state.font, kindText, textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
-		textX += measureText(kindText) + ide_state.spaceAdvance;
+		drawEditorText(editorViewState.font, kindText, textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
+		textX += measureText(kindText) + editorViewState.spaceAdvance;
 	}
-	drawEditorText(ide_state.font, match.entry.displayPath, textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_TEXT);
+	drawEditorText(editorViewState.font, match.entry.displayPath, textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_TEXT);
 	if (isResourceSearchCompactMode()) {
-		const secondaryY = rowTop + ide_state.lineHeight;
+		const secondaryY = rowTop + editorViewState.lineHeight;
 		if (detail.length > 0) {
-			drawEditorText(ide_state.font, detail, constants.QUICK_OPEN_RESULT_PADDING_X, secondaryY, undefined, constants.COLOR_QUICK_OPEN_KIND);
+			drawEditorText(editorViewState.font, detail, constants.QUICK_OPEN_RESULT_PADDING_X, secondaryY, undefined, constants.COLOR_QUICK_OPEN_KIND);
 		}
 	} else if (detail.length > 0) {
 		const detailWidth = measureText(detail);
-		const detailX = ide_state.viewportWidth - detailWidth - constants.QUICK_OPEN_RESULT_PADDING_X;
-		drawEditorText(ide_state.font, detail, detailX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
+		const detailX = editorViewState.viewportWidth - detailWidth - constants.QUICK_OPEN_RESULT_PADDING_X;
+		drawEditorText(editorViewState.font, detail, detailX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
 	}
 };
 
@@ -99,26 +100,26 @@ const drawSymbolSearchResultRow = (match: InlineSymbolSearchResult, rowTop: numb
 		: `:${lineValue}`;
 	const lineWidth = measureText(lineText);
 	if (kindText.length > 0) {
-		drawEditorText(ide_state.font, kindText, textX, rowTop, undefined, constants.COLOR_SYMBOL_SEARCH_KIND);
-		textX += measureText(kindText) + ide_state.spaceAdvance;
+		drawEditorText(editorViewState.font, kindText, textX, rowTop, undefined, constants.COLOR_SYMBOL_SEARCH_KIND);
+		textX += measureText(kindText) + editorViewState.spaceAdvance;
 	}
-	drawEditorText(ide_state.font, match.entry.displayName, textX, rowTop, undefined, constants.COLOR_SYMBOL_SEARCH_TEXT);
+	drawEditorText(editorViewState.font, match.entry.displayName, textX, rowTop, undefined, constants.COLOR_SYMBOL_SEARCH_TEXT);
 	if (compactMode) {
-		const secondaryY = rowTop + ide_state.lineHeight;
-		const lineX = ide_state.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-		drawEditorText(ide_state.font, lineText, lineX, secondaryY, undefined, constants.COLOR_SYMBOL_SEARCH_TEXT);
+		const secondaryY = rowTop + editorViewState.lineHeight;
+		const lineX = editorViewState.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
+		drawEditorText(editorViewState.font, lineText, lineX, secondaryY, undefined, constants.COLOR_SYMBOL_SEARCH_TEXT);
 		const sourceLabel = match.entry.sourceLabel ?? '';
 		if (sourceLabel) {
-			drawEditorText(ide_state.font, sourceLabel, constants.SYMBOL_SEARCH_RESULT_PADDING_X, secondaryY, undefined, constants.COLOR_SYMBOL_SEARCH_KIND);
+			drawEditorText(editorViewState.font, sourceLabel, constants.SYMBOL_SEARCH_RESULT_PADDING_X, secondaryY, undefined, constants.COLOR_SYMBOL_SEARCH_KIND);
 		}
 	} else {
-		const lineX = ide_state.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-		drawEditorText(ide_state.font, lineText, lineX, rowTop, undefined, constants.COLOR_SYMBOL_SEARCH_TEXT);
+		const lineX = editorViewState.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
+		drawEditorText(editorViewState.font, lineText, lineX, rowTop, undefined, constants.COLOR_SYMBOL_SEARCH_TEXT);
 		const sourceLabel = match.entry.sourceLabel ?? '';
 		if (sourceLabel) {
 			const sourceWidth = measureText(sourceLabel);
-			const sourceX = Math.max(textX, lineX - ide_state.spaceAdvance - sourceWidth);
-			drawEditorText(ide_state.font, sourceLabel, sourceX, rowTop, undefined, constants.COLOR_SYMBOL_SEARCH_KIND);
+			const sourceX = Math.max(textX, lineX - editorViewState.spaceAdvance - sourceWidth);
+			drawEditorText(editorViewState.font, sourceLabel, sourceX, rowTop, undefined, constants.COLOR_SYMBOL_SEARCH_KIND);
 		}
 	}
 };
@@ -139,15 +140,15 @@ export function renderCreateResourceBar(): void {
 		constants.COLOR_CREATE_RESOURCE_TEXT,
 		'ENTER LUA PATH',
 		constants.COLOR_CREATE_RESOURCE_PLACEHOLDER,
-		ide_state.spaceAdvance,
+		editorViewState.spaceAdvance,
 	);
 
 	// Status or error overlay on the right
 	if (ide_state.createResource.working) {
 		const status = 'CREATING...';
 		const statusWidth = measureText(status);
-		const statusX = Math.max(fieldState.textX + fieldState.displayWidth + ide_state.spaceAdvance, bounds.right - statusWidth - 4);
-		drawEditorText(ide_state.font, status, statusX, bounds.top + constants.CREATE_RESOURCE_BAR_MARGIN_Y, undefined, constants.COLOR_CREATE_RESOURCE_TEXT);
+		const statusX = Math.max(fieldState.textX + fieldState.displayWidth + editorViewState.spaceAdvance, bounds.right - statusWidth - 4);
+		drawEditorText(editorViewState.font, status, statusX, bounds.top + constants.CREATE_RESOURCE_BAR_MARGIN_Y, undefined, constants.COLOR_CREATE_RESOURCE_TEXT);
 	} else if (ide_state.createResource.error && ide_state.createResource.error.length > 0) {
 		drawCreateResourceErrorDialog(ide_state.createResource.error);
 	}
@@ -170,7 +171,7 @@ export function renderSearchBar(): void {
 		constants.COLOR_SEARCH_TEXT,
 		'TYPE TO SEARCH',
 		constants.COLOR_SEARCH_PLACEHOLDER,
-		ide_state.charAdvance,
+		editorViewState.charAdvance,
 	);
 
 	const infoX = bounds.right - 4;
@@ -182,19 +183,19 @@ export function renderSearchBar(): void {
 	if (searchWorking) {
 		const workingText = 'SEARCHING...';
 		const workingWidth = measureText(workingText);
-		drawEditorText(ide_state.font, workingText, infoX - workingWidth, labelY, undefined, constants.COLOR_SEARCH_TEXT);
+		drawEditorText(editorViewState.font, workingText, infoX - workingWidth, labelY, undefined, constants.COLOR_SEARCH_TEXT);
 	} else if (total > 0 || (ide_state.search.query && ide_state.search.query.length > 0)) {
 		const infoText = total === 0 ? '0/0' : `${(current >= 0 ? current + 1 : 0)}/${total}`;
 		const infoColor = total === 0 ? constants.COLOR_STATUS_WARNING : constants.COLOR_SEARCH_TEXT;
 		const infoWidth = measureText(infoText);
-		drawEditorText(ide_state.font, infoText, infoX - infoWidth, labelY, undefined, infoColor);
+		drawEditorText(editorViewState.font, infoText, infoX - infoWidth, labelY, undefined, infoColor);
 	}
 
 	const visible = searchVisibleResultCount();
 	if (visible <= 0) {
 		return;
 	}
-	const baseHeight = ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+	const baseHeight = editorViewState.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
 	const separatorTop = bounds.top + baseHeight;
 	api.fill_rect(bounds.left, separatorTop, bounds.right, separatorTop + constants.SEARCH_RESULT_SPACING, undefined, constants.COLOR_SEARCH_OUTLINE);
 	const resultsTop = separatorTop + constants.SEARCH_RESULT_SPACING;
@@ -218,12 +219,12 @@ export function renderResourceSearchBar(): void {
 		constants.COLOR_QUICK_OPEN_TEXT,
 		'TYPE TO FILTER (@/# PREFIX)',
 		constants.COLOR_QUICK_OPEN_PLACEHOLDER,
-		ide_state.charAdvance,
+		editorViewState.charAdvance,
 	);
 
 	const visible = resourceSearchVisibleResultCount();
 	if (visible <= 0) return;
-	const baseHeight = ide_state.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
+	const baseHeight = editorViewState.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
 	const separatorTop = bounds.top + baseHeight;
 	api.fill_rect(bounds.left, separatorTop, bounds.right, separatorTop + constants.QUICK_OPEN_RESULT_SPACING, undefined, constants.COLOR_QUICK_OPEN_OUTLINE);
 	const resultsTop = separatorTop + constants.QUICK_OPEN_RESULT_SPACING;
@@ -249,14 +250,14 @@ export function renderSymbolSearchBar(): void {
 		constants.COLOR_SYMBOL_SEARCH_TEXT,
 		placeholder,
 		constants.COLOR_SYMBOL_SEARCH_PLACEHOLDER,
-		ide_state.charAdvance,
+		editorViewState.charAdvance,
 	);
 
 	const visible = symbolSearchVisibleResultCount();
 	if (visible <= 0) {
 		return;
 	}
-	const baseHeight = ide_state.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
+	const baseHeight = editorViewState.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
 	const separatorTop = bounds.top + baseHeight;
 	api.fill_rect(bounds.left, separatorTop, bounds.right, separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING, undefined, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
 	const resultsTop = separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING;
@@ -317,7 +318,7 @@ export function renderRenameBar(): void {
 		constants.COLOR_SEARCH_TEXT,
 		'TYPE NEW NAME',
 		constants.COLOR_SEARCH_PLACEHOLDER,
-		ide_state.charAdvance,
+		editorViewState.charAdvance,
 	);
 
 	const matchCount = ide_state.renameController.getMatchCount() ?? 0;
@@ -332,8 +333,8 @@ export function renderRenameBar(): void {
 	}
 	if (status.length > 0) {
 		const statusWidth = measureText(status);
-		const statusX = Math.max(fieldState.textX + fieldState.displayWidth + ide_state.spaceAdvance, bounds.right - statusWidth - 4);
-		drawEditorText(ide_state.font, status, statusX, labelY, undefined, constants.COLOR_SEARCH_TEXT);
+		const statusX = Math.max(fieldState.textX + fieldState.displayWidth + editorViewState.spaceAdvance, bounds.right - statusWidth - 4);
+		drawEditorText(editorViewState.font, status, statusX, labelY, undefined, constants.COLOR_SEARCH_TEXT);
 	}
 }
 
@@ -352,6 +353,6 @@ export function renderLineJumpBar(): void {
 		constants.COLOR_LINE_JUMP_TEXT,
 		'ENTER LINE NUMBER',
 		constants.COLOR_LINE_JUMP_PLACEHOLDER,
-		ide_state.charAdvance,
+		editorViewState.charAdvance,
 	);
 }

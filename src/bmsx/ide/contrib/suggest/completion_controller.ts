@@ -1,5 +1,6 @@
 import { clamp } from '../../../utils/clamp';
 import { editorDocumentState } from '../../editing/editor_document_state';
+import { editorViewState } from '../../ui/editor_view_state';
 import {
 	getApiCompletionData,
 	getKeywordCompletions,
@@ -28,7 +29,7 @@ import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isS
 import { isLuaCommentContext } from '../../core/text_utils';
 import { point_in_rect } from '../../../utils/rect_operations';
 import { LuaLexer } from '../../../lua/syntax/lualexer';
-import { assignRowColumn, ide_state } from '../../core/ide_state';
+import { assignRowColumn } from '../../core/ide_state';
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import { getActiveCodeTabContext, isActiveLuaCodeTab } from '../../ui/editor_tabs';
 import { prepareUndo } from '../../editing/undo_controller';
@@ -106,7 +107,7 @@ export class CompletionController {
 	protected clampBufferPosition(row: number, column: number): { row: number; column: number } {
 		this.clampPositionScratch.row = row;
 		this.clampPositionScratch.column = column;
-		return ide_state.layout.clampBufferPosition(editorDocumentState.buffer, this.clampPositionScratch);
+		return editorViewState.layout.clampBufferPosition(editorDocumentState.buffer, this.clampPositionScratch);
 	}
 
 	protected clearSelectionAnchor(): void {

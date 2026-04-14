@@ -5,6 +5,7 @@ import { clamp } from '../../../utils/clamp';
 import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight } from '../../ui/editor_view';
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
+import { editorViewState } from '../../ui/editor_view_state';
 
 export type PanelLayout = {
 	headerTop: number;
@@ -30,7 +31,7 @@ function renderSeverityLabel(severity: 'none' | 'error' | 'warning'): string {
 }
 
 export function problemsPanelHeaderHeight(): number {
-	return ide_state.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2;
+	return editorViewState.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2;
 }
 
 function targetVisibleRows(diagnosticCount: number): number {
@@ -49,7 +50,7 @@ export function computeProblemsPanelVisibleHeight(diagnosticCount: number, fixed
 	if (fixedHeightPx && fixedHeightPx > headerHeight + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2) {
 		return fixedHeightPx;
 	}
-	const contentHeight = Math.max(ide_state.lineHeight, targetVisibleRows(diagnosticCount) * ide_state.lineHeight);
+	const contentHeight = Math.max(editorViewState.lineHeight, targetVisibleRows(diagnosticCount) * editorViewState.lineHeight);
 	return headerHeight + contentHeight + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2;
 }
 
@@ -74,7 +75,7 @@ export function computeProblemsPanelItemHeight(diagnostic: EditorDiagnostic, ava
 	const firstLineWidth = Math.max(0, availableWidth - severityWidth);
 	const message = diagnostic.message.length > 0 ? diagnostic.message : '(no details)';
 	const lines = wrapMessageLinesGeneric(message, firstLineWidth, availableWidth, (text) => measureText(text), constants.PROBLEMS_PANEL_MAX_WRAP_LINES);
-	return Math.max(ide_state.lineHeight, lines.length * ide_state.lineHeight);
+	return Math.max(editorViewState.lineHeight, lines.length * editorViewState.lineHeight);
 }
 
 export function estimateProblemsPanelVisibleCount(
@@ -162,14 +163,14 @@ export function getProblemsPanelBounds(): RectBounds | null {
 		return null;
 	}
 	const statusHeight = statusAreaHeight();
-	const bottom = ide_state.viewportHeight - statusHeight;
+	const bottom = editorViewState.viewportHeight - statusHeight;
 	const top = bottom - panelHeight;
 	if (bottom <= top) {
 		return null;
 	}
 	panelBoundsScratch.left = 0;
 	panelBoundsScratch.top = top;
-	panelBoundsScratch.right = ide_state.viewportWidth;
+	panelBoundsScratch.right = editorViewState.viewportWidth;
 	panelBoundsScratch.bottom = bottom;
 	return panelBoundsScratch;
 }
@@ -185,11 +186,11 @@ export function isPointerOverProblemsPanelDivider(x: number, y: number): boolean
 
 export function setProblemsPanelHeightFromViewportY(viewportY: number): void {
 	const statusHeight = statusAreaHeight();
-	const bottom = ide_state.viewportHeight - statusHeight;
-	const minTop = ide_state.headerHeight + getTabBarTotalHeight() + 1;
+	const bottom = editorViewState.viewportHeight - statusHeight;
+	const minTop = editorViewState.headerHeight + getTabBarTotalHeight() + 1;
 	const minHeight = problemsPanelHeaderHeight()
 		+ constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2
-		+ Math.max(1, constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS) * ide_state.lineHeight;
+		+ Math.max(1, constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS) * editorViewState.lineHeight;
 	const maxTop = Math.max(minTop, bottom - minHeight);
 	const top = clamp(viewportY, minTop, maxTop);
 	const height = clamp(bottom - top, minHeight, Math.max(minHeight, bottom - minTop));

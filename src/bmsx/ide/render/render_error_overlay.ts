@@ -25,6 +25,7 @@ import { editorPointerState } from '../input/pointer/editor_pointer_state';
 import { editorCaretState } from '../ui/caret_state';
 import { runtimeErrorState } from '../contrib/runtime_error/runtime_error_state';
 import { editorDocumentState } from '../editing/editor_document_state';
+import { editorViewState } from '../ui/editor_view_state';
 
 export interface ErrorOverlayBounds {
 	left: number;
@@ -160,11 +161,11 @@ export function computeRuntimeErrorOverlayGeometry(codeRight: number, textLeft: 
 	const contentRight = Math.max(
 		textLeft,
 		codeRight
-		- (ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
+		- (editorViewState.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
 		- constants.CODE_AREA_RIGHT_MARGIN
 	);
-	const codeBottom = ide_state.viewportHeight - bottomMargin();
-	const availableBottom = ide_state.codeHorizontalScrollbarVisible
+	const codeBottom = editorViewState.viewportHeight - bottomMargin();
+	const availableBottom = editorViewState.codeHorizontalScrollbarVisible
 		? codeBottom - constants.SCROLLBAR_WIDTH
 		: codeBottom;
 	return { contentRight, availableBottom };
@@ -177,8 +178,8 @@ export function resolveRuntimeErrorOverlayAnchor(
 	availableBottom: number): RuntimeErrorOverlayAnchor {
 	ensureVisualLines();
 	const visualIndex = positionToVisualIndex(overlay.row, overlay.column);
-	const visibleRows = Math.max(1, Math.floor((availableBottom - codeTop) / ide_state.lineHeight));
-	const relativeRow = visualIndex - ide_state.scrollRow;
+	const visibleRows = Math.max(1, Math.floor((availableBottom - codeTop) / editorViewState.lineHeight));
+	const relativeRow = visualIndex - editorViewState.scrollRow;
 	if (relativeRow < 0 || relativeRow >= visibleRows) {
 		return null;
 	}
@@ -186,35 +187,35 @@ export function resolveRuntimeErrorOverlayAnchor(
 	if (!segment) {
 		return null;
 	}
-	const entry = ide_state.layout.getCachedHighlight(editorDocumentState.buffer, segment.row);
+	const entry = editorViewState.layout.getCachedHighlight(editorDocumentState.buffer, segment.row);
 	const highlight = entry.hi;
-	let columnStart = ide_state.wordWrapEnabled ? segment.startColumn : ide_state.scrollColumn;
-	if (ide_state.wordWrapEnabled && (columnStart < segment.startColumn || columnStart > segment.endColumn)) {
+	let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : editorViewState.scrollColumn;
+	if (editorViewState.wordWrapEnabled && (columnStart < segment.startColumn || columnStart > segment.endColumn)) {
 		columnStart = segment.startColumn;
 	}
 	let columnCount: number;
-	if (ide_state.wordWrapEnabled) {
+	if (editorViewState.wordWrapEnabled) {
 		columnCount = Math.max(0, segment.endColumn - columnStart);
 	} else {
 		const availableWidth = Math.max(0, contentRight - textLeft);
-		const visibleColumns = Math.max(1, Math.floor(availableWidth / ide_state.charAdvance));
+		const visibleColumns = Math.max(1, Math.floor(availableWidth / editorViewState.charAdvance));
 		columnCount = visibleColumns + 4;
 	}
-	const slice = ide_state.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
+	const slice = editorViewState.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
 	const sliceStartDisplay = slice.startDisplay;
-	const sliceEndLimit = ide_state.wordWrapEnabled ? ide_state.layout.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
-	const sliceEndDisplay = ide_state.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
-	const anchorDisplay = ide_state.layout.columnToDisplay(highlight, overlay.column);
+	const sliceEndLimit = editorViewState.wordWrapEnabled ? editorViewState.layout.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
+	const sliceEndDisplay = editorViewState.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
+	const anchorDisplay = editorViewState.layout.columnToDisplay(highlight, overlay.column);
 	const clampedAnchorDisplay = anchorDisplay < sliceStartDisplay
 		? sliceStartDisplay
 		: (anchorDisplay > sliceEndDisplay ? sliceEndDisplay : anchorDisplay);
 	const advancePrefix = entry.advancePrefix;
 	const anchorX = textLeft + advancePrefix[clampedAnchorDisplay] - advancePrefix[sliceStartDisplay];
-	const rowTop = codeTop + relativeRow * ide_state.lineHeight;
+	const rowTop = codeTop + relativeRow * editorViewState.lineHeight;
 	return {
 		anchorX,
 		rowTop,
-		lineHeight: ide_state.lineHeight,
+		lineHeight: editorViewState.lineHeight,
 		availableBottom,
 	};
 }
@@ -226,8 +227,8 @@ export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, te
 	}
 	ensureVisualLines();
 	const visualIndex = positionToVisualIndex(overlay.row, overlay.column);
-	const visibleRows = Math.max(1, ide_state.cachedVisibleRowCount);
-	const visibleStart = ide_state.scrollRow;
+	const visibleRows = Math.max(1, editorViewState.cachedVisibleRowCount);
+	const visibleStart = editorViewState.scrollRow;
 	const visibleEnd = visibleStart + visibleRows - 1;
 	if (visualIndex < visibleStart) {
 		overlay.layout = null;
@@ -279,7 +280,7 @@ export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, te
 		highlightColor: constants.ERROR_OVERLAY_LINE_HOVER,
 		highlightLines: highlightLines.length > 0 ? highlightLines : null,
 	};
-	renderRuntimeErrorOverlayBubble(ide_state.font, overlay, layout, anchor.lineHeight, drawOptions);
+	renderRuntimeErrorOverlayBubble(editorViewState.font, overlay, layout, anchor.lineHeight, drawOptions);
 	return 'rendered';
 }
 
@@ -335,7 +336,7 @@ export function computeRuntimeErrorOverlayLayout(
 	const buttonSize = Math.max(anchor.lineHeight, COPY_ICON_HEIGHT + 2);
 	const reserveWidth = buttonSize + COPY_BUTTON_GAP;
 	const maxLineWidthLimit = Math.max(
-		ide_state.charAdvance,
+		editorViewState.charAdvance,
 		Math.min(
 			maxTextWidth,
 			(codeRight - textLeft) - constants.ERROR_OVERLAY_CONNECTOR_OFFSET - paddingX * 2
@@ -553,22 +554,22 @@ export function showRuntimeError(
 	const processedLine = normalizedLine;
 	const buffer = editorDocumentState.buffer;
 	const targetRow = normalizedLine !== null
-		? ide_state.layout.clampBufferRow(buffer, normalizedLine - 1)
-		: ide_state.layout.clampBufferRow(buffer, editorDocumentState.cursorRow);
+		? editorViewState.layout.clampBufferRow(buffer, normalizedLine - 1)
+		: editorViewState.layout.clampBufferRow(buffer, editorDocumentState.cursorRow);
 	const processedColumn = normalizedColumn !== null ? normalizedColumn - 1 : null;
 	const currentLine = buffer.getLineContent(targetRow);
 	let targetColumn = editorDocumentState.cursorColumn;
 	if (processedColumn !== null) {
-		targetColumn = ide_state.layout.clampLineLength(currentLine.length, processedColumn);
+		targetColumn = editorViewState.layout.clampLineLength(currentLine.length, processedColumn);
 	} else {
-		targetColumn = ide_state.layout.clampLineLength(currentLine.length, targetColumn);
+		targetColumn = editorViewState.layout.clampLineLength(currentLine.length, targetColumn);
 	}
 	editorDocumentState.cursorRow = targetRow;
 	editorDocumentState.cursorColumn = targetColumn;
 	editorDocumentState.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = false;
-	ide_state.scrollbarController.cancel();
+	editorViewState.scrollbarController.cancel();
 	editorCaretState.cursorRevealSuspended = false;
 	centerCursorVertically();
 	updateDesiredColumn();

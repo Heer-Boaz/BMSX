@@ -6,6 +6,7 @@ import { getSearchBarBounds, searchResultEntryHeight, searchVisibleResultCount }
 import { ide_state } from '../../core/ide_state';
 import type { PointerSnapshot } from '../../core/types';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from './editor_quick_input_pointer_common';
+import { editorViewState } from '../../ui/editor_view_state';
 
 export function handleSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const bounds = getSearchBarBounds();
@@ -21,7 +22,7 @@ export function handleSearchPointer(snapshot: PointerSnapshot, justPressed: bool
 		}
 		return false;
 	}
-	const fieldBottom = bounds.top + ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+	const fieldBottom = bounds.top + editorViewState.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
 	ide_state.search.hoverIndex = -1;
 	if (snapshot.viewportY < fieldBottom) {
 		if (justPressed) {

@@ -19,6 +19,7 @@ import { ensureCursorVisible, updateDesiredColumn } from './caret';
 import { splitText } from '../text/source_text';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorSessionState } from './editor_session_state';
+import { editorViewState } from './editor_view_state';
 import {
 	ensureVisualLines,
 	getVisualLineCount,
@@ -41,19 +42,19 @@ function decimalDigitCount(value: number): number {
 }
 
 export function getBreakpointLaneWidth(): number {
-	return Math.max(6, ide_state.charAdvance + 2);
+	return Math.max(6, editorViewState.charAdvance + 2);
 }
 
 export function updateGutterWidth(): number {
 	const lineCount = editorDocumentState.buffer.getLineCount();
 	const digitCount = Math.max(2, decimalDigitCount(lineCount));
-	ide_state.gutterWidth = getBreakpointLaneWidth() + 4 + digitCount * ide_state.font.advance('0');
-	return ide_state.gutterWidth;
+	editorViewState.gutterWidth = getBreakpointLaneWidth() + 4 + digitCount * editorViewState.font.advance('0');
+	return editorViewState.gutterWidth;
 }
 
 export function maximumLineLength(): number {
-	if (!ide_state.maxLineLengthDirty) {
-		return ide_state.maxLineLength;
+	if (!editorViewState.maxLineLengthDirty) {
+		return editorViewState.maxLineLength;
 	}
 	let maxLength = 0;
 	let maxRow = 0;
@@ -65,9 +66,9 @@ export function maximumLineLength(): number {
 			maxRow = i;
 		}
 	}
-	ide_state.maxLineLength = maxLength;
-	ide_state.maxLineLengthRow = maxRow;
-	ide_state.maxLineLengthDirty = false;
+	editorViewState.maxLineLength = maxLength;
+	editorViewState.maxLineLengthRow = maxRow;
+	editorViewState.maxLineLengthDirty = false;
 	return maxLength;
 }
 
@@ -84,15 +85,15 @@ export function searchVisibleResultCount(): number {
 }
 
 export function searchResultEntryHeight(): number {
-	return ide_state.lineHeight * 2;
+	return editorViewState.lineHeight * 2;
 }
 
 export function isResourceSearchCompactMode(): boolean {
-	return ide_state.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
+	return editorViewState.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
 }
 
 export function resourceSearchEntryHeight(): number {
-	return isResourceSearchCompactMode() ? ide_state.lineHeight * 2 : ide_state.lineHeight;
+	return isResourceSearchCompactMode() ? editorViewState.lineHeight * 2 : editorViewState.lineHeight;
 }
 
 export function resourceSearchPageSize(): number {
@@ -116,14 +117,14 @@ export function resourceSearchVisibleResultCount(): number {
 }
 
 export function isSymbolSearchCompactMode(): boolean {
-	return ide_state.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
+	return editorViewState.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
 }
 
 export function symbolSearchEntryHeight(): number {
 	if (ide_state.symbolSearch.mode === 'references') {
-		return ide_state.lineHeight * 2;
+		return editorViewState.lineHeight * 2;
 	}
-	return ide_state.symbolSearch.global && isSymbolSearchCompactMode() ? ide_state.lineHeight * 2 : ide_state.lineHeight;
+	return ide_state.symbolSearch.global && isSymbolSearchCompactMode() ? editorViewState.lineHeight * 2 : editorViewState.lineHeight;
 }
 
 export function symbolSearchPageSize(): number {
@@ -145,11 +146,11 @@ export function symbolSearchVisibleResultCount(): number {
 }
 
 export function getTabBarTotalHeight(): number {
-	return ide_state.tabBarHeight * Math.max(1, ide_state.tabBarRowCount);
+	return editorViewState.tabBarHeight * Math.max(1, editorViewState.tabBarRowCount);
 }
 
 export function topMargin(): number {
-	return ide_state.headerHeight + getTabBarTotalHeight() + 2;
+	return editorViewState.headerHeight + getTabBarTotalHeight() + 2;
 }
 
 export function getStatusMessageLines(): string[] {
@@ -157,7 +158,7 @@ export function getStatusMessageLines(): string[] {
 		return [];
 	}
 	const rawLines = splitText(editorFeedbackState.message.text);
-	const maxWidth = Math.max(ide_state.viewportWidth - 8, ide_state.charAdvance);
+	const maxWidth = Math.max(editorViewState.viewportWidth - 8, editorViewState.charAdvance);
 	const wrappedLines: string[] = [];
 	for (let i = 0; i < rawLines.length; i += 1) {
 		const wrapped = wrapOverlayLine(rawLines[i], maxWidth);
@@ -170,9 +171,9 @@ export function getStatusMessageLines(): string[] {
 
 export function statusAreaHeight(): number {
 	if (!editorFeedbackState.message.visible) {
-		return ide_state.baseBottomMargin;
+		return editorViewState.baseBottomMargin;
 	}
-	return ide_state.baseBottomMargin + Math.max(1, getStatusMessageLines().length) * ide_state.lineHeight + 4;
+	return editorViewState.baseBottomMargin + Math.max(1, getStatusMessageLines().length) * editorViewState.lineHeight + 4;
 }
 
 export function getVisibleProblemsPanelHeight(): number {
@@ -183,7 +184,7 @@ export function getVisibleProblemsPanelHeight(): number {
 	if (planned <= 0) {
 		return 0;
 	}
-	const maxAvailable = Math.max(0, ide_state.viewportHeight - statusAreaHeight() - (ide_state.headerHeight + getTabBarTotalHeight()));
+	const maxAvailable = Math.max(0, editorViewState.viewportHeight - statusAreaHeight() - (editorViewState.headerHeight + getTabBarTotalHeight()));
 	if (maxAvailable <= 0) {
 		return 0;
 	}
@@ -195,8 +196,8 @@ export function bottomMargin(): number {
 }
 
 export function applyViewportSize(viewport: Viewport): void {
-	ide_state.viewportWidth = viewport.width;
-	ide_state.viewportHeight = viewport.height;
+	editorViewState.viewportWidth = viewport.width;
+	editorViewState.viewportHeight = viewport.height;
 	editorPointerState.lastPointerRowResolution = null;
 }
 
@@ -211,7 +212,7 @@ export function updateViewport(viewport: Viewport): void {
 			ide_state.resourcePanel.ensureSelectionVisible();
 		}
 	}
-	ide_state.layout.markVisualLinesDirty();
+	editorViewState.layout.markVisualLinesDirty();
 	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
 	rewrapRuntimeErrorOverlays();
@@ -230,8 +231,8 @@ export function mapScreenPointToViewport(screenX: number, screenY: number): { x:
 	const relativeY = screenY - rect.top;
 	const inside = relativeX >= 0 && relativeX < rect.width && relativeY >= 0 && relativeY < rect.height;
 	return {
-		x: Math.trunc((relativeX / rect.width) * ide_state.viewportWidth),
-		y: Math.trunc((relativeY / rect.height) * ide_state.viewportHeight),
+		x: Math.trunc((relativeX / rect.width) * editorViewState.viewportWidth),
+		y: Math.trunc((relativeY / rect.height) * editorViewState.viewportHeight),
 		inside,
 		valid: true,
 	};
@@ -253,9 +254,9 @@ export function getCodeAreaBounds(): { codeTop: number; codeBottom: number; code
 	const gutterRight = gutterLeft + updateGutterWidth();
 	return {
 		codeTop: codeViewportTop(),
-		codeBottom: ide_state.viewportHeight - bottomMargin(),
+		codeBottom: editorViewState.viewportHeight - bottomMargin(),
 		codeLeft,
-		codeRight: ide_state.viewportWidth,
+		codeRight: editorViewState.viewportWidth,
 		gutterLeft,
 		gutterRight,
 		textLeft: gutterRight + 2,
@@ -265,13 +266,13 @@ export function getCodeAreaBounds(): { codeTop: number; codeBottom: number; code
 export function resolvePointerRow(viewportY: number): number {
 	ensureVisualLines();
 	const relativeY = viewportY - getCodeAreaBounds().codeTop;
-	let visualIndex = ide_state.scrollRow + Math.floor(relativeY / ide_state.lineHeight);
+	let visualIndex = editorViewState.scrollRow + Math.floor(relativeY / editorViewState.lineHeight);
 	const visualCount = getVisualLineCount();
-	visualIndex = ide_state.layout.clampVisualIndex(Math.max(1, visualCount), visualIndex);
+	visualIndex = editorViewState.layout.clampVisualIndex(Math.max(1, visualCount), visualIndex);
 	const segment = visualIndexToSegment(visualIndex);
 	if (!segment) {
 		editorPointerState.lastPointerRowResolution = null;
-		return ide_state.layout.clampBufferRow(editorDocumentState.buffer, visualIndex);
+		return editorViewState.layout.clampBufferRow(editorDocumentState.buffer, visualIndex);
 	}
 	editorPointerState.lastPointerRowResolution = { visualIndex, segment };
 	return segment.row;
@@ -279,23 +280,23 @@ export function resolvePointerRow(viewportY: number): number {
 
 export function resolvePointerColumn(row: number, viewportX: number): number {
 	const bounds = getCodeAreaBounds();
-	const entry = ide_state.layout.getCachedHighlight(editorDocumentState.buffer, row);
+	const entry = editorViewState.layout.getCachedHighlight(editorDocumentState.buffer, row);
 	const line = entry.src;
 	if (line.length === 0) {
 		return 0;
 	}
 	const highlight = entry.hi;
-	let segmentStartColumn = ide_state.layout.clampLineLength(line.length, ide_state.scrollColumn);
+	let segmentStartColumn = editorViewState.layout.clampLineLength(line.length, editorViewState.scrollColumn);
 	let segmentEndColumn = line.length;
 	const resolvedSegment = editorPointerState.lastPointerRowResolution?.segment;
-	if (ide_state.wordWrapEnabled && resolvedSegment && resolvedSegment.row === row) {
+	if (editorViewState.wordWrapEnabled && resolvedSegment && resolvedSegment.row === row) {
 		segmentStartColumn = resolvedSegment.startColumn;
 		segmentEndColumn = resolvedSegment.endColumn;
 	}
-	const segmentStart = ide_state.layout.clampSegmentStart(line.length, segmentStartColumn);
-	const segmentEnd = ide_state.layout.clampSegmentEnd(line.length, segmentStart, segmentEndColumn);
+	const segmentStart = editorViewState.layout.clampSegmentStart(line.length, segmentStartColumn);
+	const segmentEnd = editorViewState.layout.clampSegmentEnd(line.length, segmentStart, segmentEndColumn);
 	const effectiveStartColumn = segmentStart;
-	const startDisplay = ide_state.layout.columnToDisplay(highlight, effectiveStartColumn);
+	const startDisplay = editorViewState.layout.columnToDisplay(highlight, effectiveStartColumn);
 	const offset = viewportX - bounds.textLeft;
 	if (offset <= 0) {
 		return effectiveStartColumn;
@@ -307,7 +308,7 @@ export function resolvePointerColumn(row: number, viewportX: number): number {
 		displayIndex = startDisplay;
 	}
 	if (displayIndex >= highlight.text.length) {
-		return ide_state.wordWrapEnabled ? segmentEnd : line.length;
+		return editorViewState.wordWrapEnabled ? segmentEnd : line.length;
 	}
 	const midpoint = entry.advancePrefix[displayIndex] + (entry.advancePrefix[displayIndex + 1] - entry.advancePrefix[displayIndex]) * 0.5;
 	let column = entry.displayToColumn[displayIndex];
@@ -317,14 +318,14 @@ export function resolvePointerColumn(row: number, viewportX: number): number {
 	if (target >= midpoint) {
 		column += 1;
 	}
-	if (ide_state.wordWrapEnabled) {
-		column = ide_state.layout.clampLineLength(line.length, column);
-		column = ide_state.layout.clampSegmentEnd(line.length, segmentStart, column);
+	if (editorViewState.wordWrapEnabled) {
+		column = editorViewState.layout.clampLineLength(line.length, column);
+		column = editorViewState.layout.clampSegmentEnd(line.length, segmentStart, column);
 	}
 	if (column < segmentStart) {
 		column = segmentStart;
 	}
-	return ide_state.layout.clampLineLength(line.length, column);
+	return editorViewState.layout.clampLineLength(line.length, column);
 }
 
 export function handlePointerAutoScroll(viewportX: number, viewportY: number): void {
@@ -340,18 +341,18 @@ export function handlePointerAutoScroll(viewportX: number, viewportY: number): v
 		rowDelta = 1;
 	}
 	const rows = visibleRowCount();
-	ide_state.scrollRow = ide_state.layout.clampVisualScroll(ide_state.scrollRow + rowDelta, getVisualLineCount(), rows);
+	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollRow + rowDelta, getVisualLineCount(), rows);
 	const maxScrollColumn = computeMaximumScrollColumn();
-	if (viewportX >= bounds.gutterLeft && !ide_state.wordWrapEnabled) {
+	if (viewportX >= bounds.gutterLeft && !editorViewState.wordWrapEnabled) {
 		if (viewportX < bounds.textLeft) {
-			ide_state.scrollColumn -= 1;
+			editorViewState.scrollColumn -= 1;
 		} else if (viewportX >= bounds.codeRight) {
-			ide_state.scrollColumn += 1;
+			editorViewState.scrollColumn += 1;
 		}
-		ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(ide_state.scrollColumn, maxScrollColumn);
+		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(editorViewState.scrollColumn, maxScrollColumn);
 	}
-	if (ide_state.wordWrapEnabled) {
-		ide_state.scrollColumn = 0;
+	if (editorViewState.wordWrapEnabled) {
+		editorViewState.scrollColumn = 0;
 	}
 }
 
@@ -360,21 +361,21 @@ export function scrollRows(deltaRows: number): void {
 		return;
 	}
 	ensureVisualLines();
-	ide_state.scrollRow = ide_state.layout.clampVisualScroll(ide_state.scrollRow + deltaRows, getVisualLineCount(), visibleRowCount());
+	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollRow + deltaRows, getVisualLineCount(), visibleRowCount());
 }
 
 export function getCreateResourceBarHeight(): number {
 	if (!ide_state.createResource.visible) {
 		return 0;
 	}
-	return ide_state.lineHeight + constants.CREATE_RESOURCE_BAR_MARGIN_Y * 2;
+	return editorViewState.lineHeight + constants.CREATE_RESOURCE_BAR_MARGIN_Y * 2;
 }
 
 export function getSearchBarHeight(): number {
 	if (!ide_state.search.visible) {
 		return 0;
 	}
-	const baseHeight = ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+	const baseHeight = editorViewState.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
 	const visible = searchVisibleResultCount();
 	if (visible <= 0) {
 		return baseHeight;
@@ -386,7 +387,7 @@ export function getResourceSearchBarHeight(): number {
 	if (!ide_state.resourceSearch.visible) {
 		return 0;
 	}
-	const baseHeight = ide_state.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
+	const baseHeight = editorViewState.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
 	const visible = resourceSearchVisibleResultCount();
 	if (visible <= 0) {
 		return baseHeight;
@@ -398,7 +399,7 @@ export function getSymbolSearchBarHeight(): number {
 	if (!ide_state.symbolSearch.visible) {
 		return 0;
 	}
-	const baseHeight = ide_state.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
+	const baseHeight = editorViewState.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
 	const visible = symbolSearchVisibleResultCount();
 	if (visible <= 0) {
 		return baseHeight;
@@ -410,14 +411,14 @@ export function getRenameBarHeight(): number {
 	if (!ide_state.renameController?.isVisible()) {
 		return 0;
 	}
-	return ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+	return editorViewState.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
 }
 
 export function getLineJumpBarHeight(): number {
 	if (!ide_state.lineJump.visible) {
 		return 0;
 	}
-	return ide_state.lineHeight + constants.LINE_JUMP_BAR_MARGIN_Y * 2;
+	return editorViewState.lineHeight + constants.LINE_JUMP_BAR_MARGIN_Y * 2;
 }
 
 type BarBounds = { top: number; bottom: number; left: number; right: number };
@@ -436,11 +437,11 @@ function computeBarBounds(barIndex: number): BarBounds {
 	if (height <= 0) {
 		return null;
 	}
-	let top = ide_state.headerHeight + getTabBarTotalHeight();
+	let top = editorViewState.headerHeight + getTabBarTotalHeight();
 	for (let i = 0; i < barIndex; i++) {
 		top += barHeightGetters[i]();
 	}
-	return { top, bottom: top + height, left: 0, right: ide_state.viewportWidth };
+	return { top, bottom: top + height, left: 0, right: editorViewState.viewportWidth };
 }
 
 export function getCreateResourceBarBounds(): BarBounds { return computeBarBounds(0); }
@@ -451,21 +452,21 @@ export function getRenameBarBounds(): BarBounds { return computeBarBounds(4); }
 export function getLineJumpBarBounds(): BarBounds { return computeBarBounds(5); }
 
 export function configureFontVariant(variant: FontVariant): void {
-	ide_state.fontVariant = variant;
-	ide_state.font = new EditorFont(variant);
-	ide_state.lineHeight = ide_state.font.lineHeight;
-	ide_state.charAdvance = ide_state.font.advance('M');
-	ide_state.spaceAdvance = ide_state.font.advance(' ');
-	ide_state.inlineFieldMetricsRef = {
-		advanceChar: (ch: string) => ide_state.font.advance(ch),
-		spaceAdvance: ide_state.spaceAdvance,
+	editorViewState.fontVariant = variant;
+	editorViewState.font = new EditorFont(variant);
+	editorViewState.lineHeight = editorViewState.font.lineHeight;
+	editorViewState.charAdvance = editorViewState.font.advance('M');
+	editorViewState.spaceAdvance = editorViewState.font.advance(' ');
+	editorViewState.inlineFieldMetricsRef = {
+		advanceChar: (ch: string) => editorViewState.font.advance(ch),
+		spaceAdvance: editorViewState.spaceAdvance,
 		tabSpaces: constants.TAB_SPACES,
 	};
 	updateGutterWidth();
-	ide_state.headerHeight = ide_state.lineHeight + 4;
-	ide_state.tabBarHeight = ide_state.lineHeight + 3;
-	ide_state.baseBottomMargin = ide_state.lineHeight + 6;
-	ide_state.layout = new CodeLayout(ide_state.font, {
+	editorViewState.headerHeight = editorViewState.lineHeight + 4;
+	editorViewState.tabBarHeight = editorViewState.lineHeight + 3;
+	editorViewState.baseBottomMargin = editorViewState.lineHeight + 6;
+	editorViewState.layout = new CodeLayout(editorViewState.font, {
 		maxHighlightCache: 512,
 		semanticDebounceMs: 200,
 		clockNow: ide_state.clockNow,
@@ -473,13 +474,13 @@ export function configureFontVariant(variant: FontVariant): void {
 	});
 	const activeContext = editorSessionState.activeCodeTabContextId ? editorSessionState.codeTabContexts.get(editorSessionState.activeCodeTabContextId) : null;
 	if (activeContext) {
-		ide_state.layout.setCodeTabMode(activeContext.mode);
+		editorViewState.layout.setCodeTabMode(activeContext.mode);
 	}
 	if (ide_state.resourcePanel) {
-		ide_state.resourcePanel.setFontMetrics(ide_state.lineHeight, ide_state.charAdvance);
+		ide_state.resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
 	}
-	ide_state.layout.invalidateAllHighlights();
-	ide_state.layout.markVisualLinesDirty();
+	editorViewState.layout.invalidateAllHighlights();
+	editorViewState.layout.markVisualLinesDirty();
 }
 
 export function setFontVariant(variant: FontVariant): void {
@@ -494,39 +495,39 @@ export function setFontVariant(variant: FontVariant): void {
 
 export function toggleWordWrap(): void {
 	ensureVisualLines();
-	const previousWrap = ide_state.wordWrapEnabled;
-	const previousTopIndex = ide_state.layout.clampVisualIndex(getVisualLineCount(), ide_state.scrollRow);
+	const previousWrap = editorViewState.wordWrapEnabled;
+	const previousTopIndex = editorViewState.layout.clampVisualIndex(getVisualLineCount(), editorViewState.scrollRow);
 	const previousTopSegment = visualIndexToSegment(previousTopIndex);
 	const anchorRow = previousTopSegment ? previousTopSegment.row : editorDocumentState.cursorRow;
 	const anchorColumnForWrap = previousTopSegment ? previousTopSegment.startColumn : 0;
 	const anchorColumnForUnwrap = previousTopSegment
-		? (previousWrap ? previousTopSegment.startColumn : ide_state.scrollColumn)
-		: ide_state.scrollColumn;
+		? (previousWrap ? previousTopSegment.startColumn : editorViewState.scrollColumn)
+		: editorViewState.scrollColumn;
 	const previousCursorRow = editorDocumentState.cursorRow;
 	const previousCursorColumn = editorDocumentState.cursorColumn;
 	const previousDesiredColumn = editorDocumentState.desiredColumn;
 
-	ide_state.wordWrapEnabled = !previousWrap;
+	editorViewState.wordWrapEnabled = !previousWrap;
 	editorCaretState.cursorRevealSuspended = false;
-	ide_state.layout.markVisualLinesDirty();
+	editorViewState.layout.markVisualLinesDirty();
 	ensureVisualLines();
 
-	editorDocumentState.cursorRow = ide_state.layout.clampBufferRow(editorDocumentState.buffer, previousCursorRow);
+	editorDocumentState.cursorRow = editorViewState.layout.clampBufferRow(editorDocumentState.buffer, previousCursorRow);
 	const currentLine = editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
-	editorDocumentState.cursorColumn = ide_state.layout.clampLineLength(currentLine.length, previousCursorColumn);
+	editorDocumentState.cursorColumn = editorViewState.layout.clampLineLength(currentLine.length, previousCursorColumn);
 	editorDocumentState.desiredColumn = previousDesiredColumn;
 
-	if (ide_state.wordWrapEnabled) {
-		ide_state.scrollColumn = 0;
-		ide_state.scrollRow = ide_state.layout.clampVisualScroll(positionToVisualIndex(anchorRow, anchorColumnForWrap), getVisualLineCount(), visibleRowCount());
+	if (editorViewState.wordWrapEnabled) {
+		editorViewState.scrollColumn = 0;
+		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(positionToVisualIndex(anchorRow, anchorColumnForWrap), getVisualLineCount(), visibleRowCount());
 	} else {
-		ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(anchorColumnForUnwrap, computeMaximumScrollColumn());
-		ide_state.scrollRow = ide_state.layout.clampVisualScroll(positionToVisualIndex(anchorRow, ide_state.scrollColumn), getVisualLineCount(), visibleRowCount());
+		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(anchorColumnForUnwrap, computeMaximumScrollColumn());
+		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(positionToVisualIndex(anchorRow, editorViewState.scrollColumn), getVisualLineCount(), visibleRowCount());
 	}
 	editorPointerState.lastPointerRowResolution = null;
 	ensureCursorVisible();
 	updateDesiredColumn();
-	showEditorMessage(ide_state.wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled', constants.COLOR_STATUS_TEXT, 2.5);
+	showEditorMessage(editorViewState.wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled', constants.COLOR_STATUS_TEXT, 2.5);
 }
 
 export function notifyReadOnlyEdit(): void {

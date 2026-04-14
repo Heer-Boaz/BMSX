@@ -1,7 +1,6 @@
 import { centerCursorVertically, setCursorPosition } from '../../ui/caret';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { activateCodeTab, getActiveCodeTabContext, setActiveTab } from '../../ui/editor_tabs';
-import { ide_state } from '../../core/ide_state';
 import { showEditorMessage } from '../../core/editor_feedback_state';
 import type { CodeTabContext, RuntimeErrorOverlay } from '../../core/types';
 import { resetBlink } from '../../render/render_caret';
@@ -12,6 +11,7 @@ import { editorCaretState } from '../../ui/caret_state';
 import { runtimeErrorState } from './runtime_error_state';
 import { editorDocumentState } from '../../editing/editor_document_state';
 import { editorSessionState } from '../../ui/editor_session_state';
+import { editorViewState } from '../../ui/editor_view_state';
 
 type RuntimeErrorOverlayTarget = { context: CodeTabContext; overlay: RuntimeErrorOverlay };
 
@@ -64,7 +64,7 @@ export function focusRuntimeErrorOverlay(): boolean {
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = false;
 	editorCaretState.cursorRevealSuspended = false;
-	ide_state.scrollbarController.cancel();
+	editorViewState.scrollbarController.cancel();
 	setCursorPosition(overlay.row, overlay.column);
 	centerCursorVertically();
 	resetBlink();
@@ -103,7 +103,7 @@ export function setExecutionStopHighlight(row: number): void {
 	}
 	let nextRow = row;
 	if (nextRow !== null) {
-		nextRow = ide_state.layout.clampBufferRow(editorDocumentState.buffer, nextRow);
+		nextRow = editorViewState.layout.clampBufferRow(editorDocumentState.buffer, nextRow);
 	}
 	context.executionStopRow = nextRow;
 	runtimeErrorState.executionStopRow = nextRow;

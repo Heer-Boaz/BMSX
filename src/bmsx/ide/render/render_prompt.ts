@@ -1,12 +1,12 @@
 import type { RectBounds } from '../../rompack/rompack';
 import { api } from '../ui/view/overlay_api';
 import * as constants from '../core/constants';
-import { ide_state } from '../core/ide_state';
 import { drawEditorText } from './text_renderer';
 import { measureText } from '../core/text_utils';
 import type { ActionPromptAction, ActionPromptLayout } from '../core/types';
 import { centerDialogBounds } from './dialog_layout';
 import { actionPromptState } from '../input/overlays/action_prompt_state';
+import { editorViewState } from '../ui/editor_view_state';
 
 const HOT_RESUME_MESSAGE_LINES = [
 	'UNSAVED CHANGES DETECTED.',
@@ -69,8 +69,8 @@ function measureActionPromptLayout(messageLines: readonly string[], primaryLabel
 	const buttonRowWidth = primaryWidth + secondaryWidth + cancelWidth + buttonSpacing * 2;
 	const paddingX = 12;
 	const paddingY = 12;
-	const buttonHeight = ide_state.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
-	const messageSpacing = ide_state.lineHeight + 2;
+	const buttonHeight = editorViewState.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
+	const messageSpacing = editorViewState.lineHeight + 2;
 	const dialogWidth = Math.max(maxMessageWidth + paddingX * 2, buttonRowWidth + paddingX * 2);
 	const dialogHeight = paddingY * 2 + messageLines.length * messageSpacing + 6 + buttonHeight;
 	const bounds = centerDialogBounds(dialogWidth, dialogHeight, 4);
@@ -97,7 +97,7 @@ export function drawActionPromptOverlay(): void {
 	if (!prompt) {
 		return;
 	}
-	api.fill_rect_color(0, 0, ide_state.viewportWidth, ide_state.viewportHeight, undefined, constants.ACTION_OVERLAY_COLOR);
+	api.fill_rect_color(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, undefined, constants.ACTION_OVERLAY_COLOR);
 	const promptText = getActionPromptText(prompt.action);
 	const { messageLines, primaryLabel, secondaryLabel } = promptText;
 	const layout = measureActionPromptLayout(messageLines, primaryLabel, secondaryLabel);
@@ -108,23 +108,23 @@ export function drawActionPromptOverlay(): void {
 
 	const paddingX = 12;
 	const paddingY = 12;
-	const buttonY = layout.bounds.bottom - paddingY - (ide_state.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2);
+	const buttonY = layout.bounds.bottom - paddingY - (editorViewState.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2);
 	let textY = layout.bounds.top + paddingY;
 	const textX = layout.bounds.left + paddingX;
 	for (let i = 0; i < messageLines.length; i++) {
-		drawEditorText(ide_state.font, messageLines[i], textX, textY, undefined, constants.ACTION_DIALOG_TEXT_COLOR);
-		textY += ide_state.lineHeight + 2;
+		drawEditorText(editorViewState.font, messageLines[i], textX, textY, undefined, constants.ACTION_DIALOG_TEXT_COLOR);
+		textY += editorViewState.lineHeight + 2;
 	}
 
 	api.fill_rect(layout.saveAndContinue.left, layout.saveAndContinue.top, layout.saveAndContinue.right, layout.saveAndContinue.bottom, undefined, constants.ACTION_BUTTON_BACKGROUND);
 	api.blit_rect(layout.saveAndContinue.left, layout.saveAndContinue.top, layout.saveAndContinue.right, layout.saveAndContinue.bottom, undefined, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(ide_state.font, primaryLabel, layout.saveAndContinue.left + constants.HEADER_BUTTON_PADDING_X, buttonY + constants.HEADER_BUTTON_PADDING_Y, undefined, constants.ACTION_BUTTON_TEXT);
+	drawEditorText(editorViewState.font, primaryLabel, layout.saveAndContinue.left + constants.HEADER_BUTTON_PADDING_X, buttonY + constants.HEADER_BUTTON_PADDING_Y, undefined, constants.ACTION_BUTTON_TEXT);
 
 	api.fill_rect(layout.continue.left, layout.continue.top, layout.continue.right, layout.continue.bottom, undefined, constants.ACTION_BUTTON_BACKGROUND);
 	api.blit_rect(layout.continue.left, layout.continue.top, layout.continue.right, layout.continue.bottom, undefined, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(ide_state.font, secondaryLabel, layout.continue.left + constants.HEADER_BUTTON_PADDING_X, buttonY + constants.HEADER_BUTTON_PADDING_Y, undefined, constants.ACTION_BUTTON_TEXT);
+	drawEditorText(editorViewState.font, secondaryLabel, layout.continue.left + constants.HEADER_BUTTON_PADDING_X, buttonY + constants.HEADER_BUTTON_PADDING_Y, undefined, constants.ACTION_BUTTON_TEXT);
 
 	api.fill_rect(layout.cancel.left, layout.cancel.top, layout.cancel.right, layout.cancel.bottom, undefined, constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND);
 	api.blit_rect(layout.cancel.left, layout.cancel.top, layout.cancel.right, layout.cancel.bottom, undefined, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(ide_state.font, 'CANCEL', layout.cancel.left + constants.HEADER_BUTTON_PADDING_X, buttonY + constants.HEADER_BUTTON_PADDING_Y, undefined, constants.COLOR_HEADER_BUTTON_TEXT);
+	drawEditorText(editorViewState.font, 'CANCEL', layout.cancel.left + constants.HEADER_BUTTON_PADDING_X, buttonY + constants.HEADER_BUTTON_PADDING_Y, undefined, constants.COLOR_HEADER_BUTTON_TEXT);
 }

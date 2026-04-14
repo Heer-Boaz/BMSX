@@ -30,6 +30,7 @@ import { prepareUndo, applyUndoableReplace } from './undo_controller';
 import { formatAemDocument } from '../language/aem/aem_editor';
 import { editorDocumentState } from './editor_document_state';
 import { editorSessionState } from '../ui/editor_session_state';
+import { editorViewState } from '../ui/editor_view_state';
 import {
 	clearSingleCursorSelection,
 	collapseSingleCursorSelection,
@@ -158,7 +159,7 @@ export function clampSelectionPosition(position: Position): Position {
 	if (!position) {
 		return null;
 	}
-	return ide_state.layout.clampBufferPosition(editorDocumentState.buffer, position);
+	return editorViewState.layout.clampBufferPosition(editorDocumentState.buffer, position);
 }
 
 // ============================================================================
@@ -272,7 +273,7 @@ export function replaceSelectionWith(text: string): void {
 
 	recordEditContext(text.length === 0 ? 'delete' : 'replace', text);
 	invalidateLineRange(start.row, tmpPosition.row);
-	ide_state.layout.invalidateHighlightsFromRow(start.row);
+	editorViewState.layout.invalidateHighlightsFromRow(start.row);
 	editorDocumentState.selectionAnchor = null;
 	markTextMutated();
 	resetBlink();
@@ -338,7 +339,7 @@ export function insertLineBreak(): void {
 	editorDocumentState.cursorColumn = tmpPosition.column;
 
 	invalidateLineRange(sourceRow, tmpPosition.row);
-	ide_state.layout.invalidateHighlightsFromRow(sourceRow);
+	editorViewState.layout.invalidateHighlightsFromRow(sourceRow);
 	recordEditContext('insert', '\n');
 	markTextMutated();
 	resetBlink();
@@ -402,7 +403,7 @@ export function insertClipboardText(text: string): void {
 	editorDocumentState.cursorColumn = tmpPosition.column;
 
 	invalidateLineRange(startRow, tmpPosition.row);
-	ide_state.layout.invalidateHighlightsFromRow(startRow);
+	editorViewState.layout.invalidateHighlightsFromRow(startRow);
 	recordEditContext('insert', text);
 	markTextMutated();
 	resetBlink();
@@ -439,7 +440,7 @@ export function backspace(): void {
 	editorDocumentState.cursorRow = tmpPosition.row;
 	editorDocumentState.cursorColumn = tmpPosition.column;
 	invalidateLineRange(tmpPosition.row, tmpPosition.row + 1);
-	ide_state.layout.invalidateHighlightsFromRow(tmpPosition.row);
+	editorViewState.layout.invalidateHighlightsFromRow(tmpPosition.row);
 	recordEditContext('delete', removed);
 	markTextMutated();
 	resetBlink();
@@ -471,7 +472,7 @@ export function deleteForward(): void {
 	editorDocumentState.cursorRow = tmpPosition.row;
 	editorDocumentState.cursorColumn = tmpPosition.column;
 	invalidateLineRange(tmpPosition.row, tmpPosition.row + 1);
-	ide_state.layout.invalidateHighlightsFromRow(tmpPosition.row);
+	editorViewState.layout.invalidateHighlightsFromRow(tmpPosition.row);
 	recordEditContext('delete', removed);
 	markTextMutated();
 	resetBlink();
@@ -508,7 +509,7 @@ export function deleteWordBackward(): void {
 	editorDocumentState.cursorRow = tmpPosition.row;
 	editorDocumentState.cursorColumn = tmpPosition.column;
 	invalidateLineRange(tmpPosition.row, tmpPosition.row + 1);
-	ide_state.layout.invalidateHighlightsFromRow(tmpPosition.row);
+	editorViewState.layout.invalidateHighlightsFromRow(tmpPosition.row);
 	recordEditContext('delete', removed);
 	markTextMutated();
 	resetBlink();
@@ -545,7 +546,7 @@ export function deleteWordForward(): void {
 	editorDocumentState.cursorRow = tmpPosition.row;
 	editorDocumentState.cursorColumn = tmpPosition.column;
 	invalidateLineRange(tmpPosition.row, tmpPosition.row + 1);
-	ide_state.layout.invalidateHighlightsFromRow(tmpPosition.row);
+	editorViewState.layout.invalidateHighlightsFromRow(tmpPosition.row);
 	recordEditContext('delete', removed);
 	markTextMutated();
 	resetBlink();
@@ -610,11 +611,11 @@ export function deleteActiveLines(): void {
 
 	prepareUndo('delete-active-lines', false);
 	applyUndoableReplace(startOffset, deleteLength, '');
-	editorDocumentState.cursorRow = ide_state.layout.clampBufferRow(editorDocumentState.buffer, deletionStartRow);
+	editorDocumentState.cursorRow = editorViewState.layout.clampBufferRow(editorDocumentState.buffer, deletionStartRow);
 	editorDocumentState.cursorColumn = 0;
 	editorDocumentState.selectionAnchor = null;
-	ide_state.layout.invalidateLine(editorDocumentState.cursorRow);
-	ide_state.layout.invalidateHighlightsFromRow(deletionStartRow);
+	editorViewState.layout.invalidateLine(editorDocumentState.cursorRow);
+	editorViewState.layout.invalidateHighlightsFromRow(deletionStartRow);
 	recordEditContext('delete', recordText);
 	markTextMutated();
 	resetBlink();
@@ -691,16 +692,16 @@ export function moveSelectionLines(delta: number): void {
 	prepareUndo('move-lines', false);
 	applyUndoableReplace(regionStartOffset, regionEndOffset - regionStartOffset, replacementText);
 	invalidateLineRange(regionStartRow, regionEndRow);
-	ide_state.layout.invalidateHighlightsFromRow(regionStartRow);
+	editorViewState.layout.invalidateHighlightsFromRow(regionStartRow);
 	editorDocumentState.cursorRow += delta;
 	const anchor = editorDocumentState.selectionAnchor;
 	if (anchor) {
 		anchor.row += delta;
 	}
-	const cursorRow = ide_state.layout.clampBufferRow(editorDocumentState.buffer, editorDocumentState.cursorRow);
+	const cursorRow = editorViewState.layout.clampBufferRow(editorDocumentState.buffer, editorDocumentState.cursorRow);
 	editorDocumentState.cursorRow = cursorRow;
 	const cursorLine = editorDocumentState.buffer.getLineContent(cursorRow);
-	editorDocumentState.cursorColumn = ide_state.layout.clampLineLength(cursorLine.length, editorDocumentState.cursorColumn);
+	editorDocumentState.cursorColumn = editorViewState.layout.clampLineLength(cursorLine.length, editorDocumentState.cursorColumn);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -739,7 +740,7 @@ export function copySelectionLines(delta: number): void {
 	prepareUndo('copy-lines', false);
 	applyUndoableReplace(insertionOffset, 0, insertionText);
 	invalidateLineRange(insertionStart, insertionStart + blockLines.length - 1);
-	ide_state.layout.invalidateHighlightsFromRow(insertionStart);
+	editorViewState.layout.invalidateHighlightsFromRow(insertionStart);
 
 	const anchor = editorDocumentState.selectionAnchor;
 	if (anchor && (anchor.row !== editorDocumentState.cursorRow || anchor.column !== editorDocumentState.cursorColumn)) {
@@ -747,11 +748,11 @@ export function copySelectionLines(delta: number): void {
 		anchor.row += rowOffset;
 		editorDocumentState.cursorRow = cursorRow;
 		editorDocumentState.cursorRow = cursorRow;
-		editorDocumentState.cursorColumn = ide_state.layout.clampBufferColumn(buffer, cursorRow, editorDocumentState.cursorColumn);
+		editorDocumentState.cursorColumn = editorViewState.layout.clampBufferColumn(buffer, cursorRow, editorDocumentState.cursorColumn);
 	} else {
-		const targetRow = ide_state.layout.clampBufferRow(buffer, editorDocumentState.cursorRow + rowOffset);
+		const targetRow = editorViewState.layout.clampBufferRow(buffer, editorDocumentState.cursorRow + rowOffset);
 		editorDocumentState.cursorRow = targetRow;
-		editorDocumentState.cursorColumn = ide_state.layout.clampBufferColumn(buffer, targetRow, editorDocumentState.cursorColumn);
+		editorDocumentState.cursorColumn = editorViewState.layout.clampBufferColumn(buffer, targetRow, editorDocumentState.cursorColumn);
 		editorDocumentState.selectionAnchor = null;
 	}
 	recordEditContext('insert', blockLines.join('\n'));
@@ -780,7 +781,7 @@ export function indentSelectionOrLine(): void {
 		const offset = buffer.getLineStartOffset(row);
 		applyUndoableReplace(offset, 0, '\t');
 		editorDocumentState.cursorColumn += 1;
-		ide_state.layout.invalidateLine(editorDocumentState.cursorRow);
+		editorViewState.layout.invalidateLine(editorDocumentState.cursorRow);
 		recordEditContext('insert', '\t');
 		markTextMutated();
 		resetBlink();
@@ -791,7 +792,7 @@ export function indentSelectionOrLine(): void {
 	for (let row = range.end.row; row >= range.start.row; row -= 1) {
 		const offset = buffer.getLineStartOffset(row);
 		applyUndoableReplace(offset, 0, '\t');
-		ide_state.layout.invalidateLine(row);
+		editorViewState.layout.invalidateLine(row);
 	}
 	const anchor = editorDocumentState.selectionAnchor;
 	if (anchor) {
@@ -828,7 +829,7 @@ export function unindentSelectionOrLine(): void {
 		const offset = buffer.getLineStartOffset(row);
 		applyUndoableReplace(offset, 1, '');
 		editorDocumentState.cursorColumn = Math.max(0, editorDocumentState.cursorColumn - 1);
-		ide_state.layout.invalidateLine(editorDocumentState.cursorRow);
+		editorViewState.layout.invalidateLine(editorDocumentState.cursorRow);
 		recordEditContext('delete', first);
 		markTextMutated();
 		resetBlink();
@@ -847,7 +848,7 @@ export function unindentSelectionOrLine(): void {
 		}
 		const offset = buffer.getLineStartOffset(row);
 		applyUndoableReplace(offset, 1, '');
-		ide_state.layout.invalidateLine(row);
+		editorViewState.layout.invalidateLine(row);
 	}
 	const anchor = editorDocumentState.selectionAnchor;
 	if (anchor) {
@@ -932,12 +933,12 @@ export async function cutLineToClipboard(): Promise<void> {
 		applyUndoableReplace(deleteStart, deleteLength, '');
 	}
 
-	editorDocumentState.cursorRow = ide_state.layout.clampBufferRow(buffer, editorDocumentState.cursorRow);
-	editorDocumentState.cursorColumn = ide_state.layout.clampBufferColumn(buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+	editorDocumentState.cursorRow = editorViewState.layout.clampBufferRow(buffer, editorDocumentState.cursorRow);
+	editorDocumentState.cursorColumn = editorViewState.layout.clampBufferColumn(buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 
 	const removedRow = row;
-	ide_state.layout.invalidateHighlightsFromRow(Math.min(removedRow, buffer.getLineCount() - 1));
-	ide_state.layout.invalidateLine(editorDocumentState.cursorRow);
+	editorViewState.layout.invalidateHighlightsFromRow(Math.min(removedRow, buffer.getLineCount() - 1));
+	editorViewState.layout.invalidateLine(editorDocumentState.cursorRow);
 	editorDocumentState.selectionAnchor = null;
 	markTextMutated();
 	resetBlink();
@@ -1002,7 +1003,7 @@ export function applyDocumentFormatting(): void {
 		prepareUndo('format-document', false);
 		recordEditContext('replace', formatted);
 		applyUndoableReplace(0, buffer.length, formatted);
-		const restoredOffset = ide_state.layout.clampBufferOffset(buffer, cursorOffset);
+		const restoredOffset = editorViewState.layout.clampBufferOffset(buffer, cursorOffset);
 		buffer.positionAt(restoredOffset, tmpPosition);
 		editorDocumentState.cursorRow = tmpPosition.row;
 		editorDocumentState.cursorColumn = tmpPosition.column;

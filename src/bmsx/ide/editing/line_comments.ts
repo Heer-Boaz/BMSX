@@ -1,4 +1,3 @@
-import { ide_state } from '../core/ide_state';
 import { isEditableCodeTab } from '../ui/editor_tabs';
 import { notifyReadOnlyEdit } from '../ui/editor_view';
 import { prepareUndo, applyUndoableReplace } from './undo_controller';
@@ -7,6 +6,7 @@ import { resetBlink } from '../render/render_caret';
 import { revealCursor, updateDesiredColumn } from '../ui/caret';
 import * as TextEditing from './text_editing_and_selection';
 import { editorDocumentState } from './editor_document_state';
+import { editorViewState } from '../ui/editor_view_state';
 
 export function toggleLineComments(): void {
 	if (!isEditableCodeTab()) {
@@ -60,16 +60,16 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 			}
 		}
 		applyUndoableReplace(editorDocumentState.buffer.offsetAt(row, insertIndex), 0, insertion);
-		ide_state.layout.invalidateLine(row);
+		editorViewState.layout.invalidateLine(row);
 		shiftPositionsForInsertion(row, insertIndex, insertion.length);
 		changed = true;
 	}
 	if (!changed) {
 		return;
 	}
-	editorDocumentState.cursorRow = ide_state.layout.clampBufferRow(editorDocumentState.buffer, editorDocumentState.cursorRow);
+	editorDocumentState.cursorRow = editorViewState.layout.clampBufferRow(editorDocumentState.buffer, editorDocumentState.cursorRow);
 	const cursorLine = editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
-	editorDocumentState.cursorColumn = ide_state.layout.clampLineLength(cursorLine.length, editorDocumentState.cursorColumn);
+	editorDocumentState.cursorColumn = editorViewState.layout.clampLineLength(cursorLine.length, editorDocumentState.cursorColumn);
 	editorDocumentState.selectionAnchor = TextEditing.clampSelectionPosition(editorDocumentState.selectionAnchor);
 	markTextMutated();
 	resetBlink();
@@ -105,16 +105,16 @@ export function removeLineComments(range?: { startRow: number; endRow: number })
 			}
 		}
 		applyUndoableReplace(editorDocumentState.buffer.offsetAt(row, commentIndex), removal, '');
-		ide_state.layout.invalidateLine(row);
+		editorViewState.layout.invalidateLine(row);
 		shiftPositionsForRemoval(row, commentIndex, removal);
 		changed = true;
 	}
 	if (!changed) {
 		return;
 	}
-	editorDocumentState.cursorRow = ide_state.layout.clampBufferRow(editorDocumentState.buffer, editorDocumentState.cursorRow);
+	editorDocumentState.cursorRow = editorViewState.layout.clampBufferRow(editorDocumentState.buffer, editorDocumentState.cursorRow);
 	const cursorLine = editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
-	editorDocumentState.cursorColumn = ide_state.layout.clampLineLength(cursorLine.length, editorDocumentState.cursorColumn);
+	editorDocumentState.cursorColumn = editorViewState.layout.clampLineLength(cursorLine.length, editorDocumentState.cursorColumn);
 	editorDocumentState.selectionAnchor = TextEditing.clampSelectionPosition(editorDocumentState.selectionAnchor);
 	markTextMutated();
 	resetBlink();

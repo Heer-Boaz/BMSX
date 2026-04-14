@@ -1,7 +1,6 @@
 import { clamp } from '../../utils/clamp';
 import { api } from './view/overlay_api';
 import * as constants from '../core/constants';
-import { ide_state } from '../core/ide_state';
 import { drawEditorText } from '../render/text_renderer';
 import type { CodeHoverTooltip, PointerSnapshot } from '../core/types';
 import { ensureVisualLines, measureText, positionToVisualIndex, visibleColumnCount, visibleRowCount, visualIndexToSegment } from '../core/text_utils';
@@ -9,6 +8,7 @@ import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from './ed
 import { point_in_rect } from '../../utils/rect_operations';
 import { intellisenseUiState } from '../contrib/intellisense/intellisense_ui_state';
 import { editorDocumentState } from '../editing/editor_document_state';
+import { editorViewState } from './editor_view_state';
 
 export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: number): void {
 	const tooltip = intellisenseUiState.hoverTooltip;
@@ -23,34 +23,34 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	const visibleRows = visibleRowCount();
 	ensureVisualLines();
 	const visualIndex = positionToVisualIndex(tooltip.row, tooltip.startColumn);
-	const relativeRow = visualIndex - ide_state.scrollRow;
+	const relativeRow = visualIndex - editorViewState.scrollRow;
 	if (relativeRow < 0 || relativeRow >= visibleRows) {
 		tooltip.bubbleBounds = null;
 		return;
 	}
-	const rowTop = codeTop + relativeRow * ide_state.lineHeight;
+	const rowTop = codeTop + relativeRow * editorViewState.lineHeight;
 	const segment = visualIndexToSegment(visualIndex);
 	if (!segment) {
 		tooltip.bubbleBounds = null;
 		return;
 	}
-	const entry = ide_state.layout.getCachedHighlight(editorDocumentState.buffer, segment.row);
+	const entry = editorViewState.layout.getCachedHighlight(editorDocumentState.buffer, segment.row);
 	const highlight = entry.hi;
-	let columnStart = ide_state.wordWrapEnabled ? segment.startColumn : ide_state.scrollColumn;
-	if (ide_state.wordWrapEnabled) {
+	let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : editorViewState.scrollColumn;
+	if (editorViewState.wordWrapEnabled) {
 		if (columnStart < segment.startColumn || columnStart > segment.endColumn) {
 			columnStart = segment.startColumn;
 		}
 	}
-	const columnCount = ide_state.wordWrapEnabled
+	const columnCount = editorViewState.wordWrapEnabled
 		? Math.max(0, segment.endColumn - columnStart)
 		: visibleColumnCount() + 8;
-	const slice = ide_state.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
+	const slice = editorViewState.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
 	const sliceStartDisplay = slice.startDisplay;
-	const sliceEndLimit = ide_state.wordWrapEnabled ? ide_state.layout.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
-	const sliceEndDisplay = ide_state.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
-	const startDisplay = ide_state.layout.columnToDisplay(highlight, tooltip.startColumn);
-	const endDisplay = ide_state.layout.columnToDisplay(highlight, tooltip.endColumn);
+	const sliceEndLimit = editorViewState.wordWrapEnabled ? editorViewState.layout.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
+	const sliceEndDisplay = editorViewState.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
+	const startDisplay = editorViewState.layout.columnToDisplay(highlight, tooltip.startColumn);
+	const endDisplay = editorViewState.layout.columnToDisplay(highlight, tooltip.endColumn);
 	const clampedStartDisplay = clamp(startDisplay, sliceStartDisplay, sliceEndDisplay);
 	const clampedEndDisplay = clamp(endDisplay, clampedStartDisplay, sliceEndDisplay);
 	const advancePrefix = entry.advancePrefix;
@@ -70,14 +70,14 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 		}
 	}
 	const bubbleWidth = maxLineWidth + constants.HOVER_TOOLTIP_PADDING_X * 2;
-	const bubbleHeight = visibleLines.length * ide_state.lineHeight + constants.HOVER_TOOLTIP_PADDING_Y * 2;
-	const viewportRight = ide_state.viewportWidth - 1;
-	let bubbleLeft = expressionEndX + ide_state.spaceAdvance;
+	const bubbleHeight = visibleLines.length * editorViewState.lineHeight + constants.HOVER_TOOLTIP_PADDING_Y * 2;
+	const viewportRight = editorViewState.viewportWidth - 1;
+	let bubbleLeft = expressionEndX + editorViewState.spaceAdvance;
 	if (bubbleLeft + bubbleWidth > viewportRight) {
 		bubbleLeft = viewportRight - bubbleWidth;
 	}
 	if (bubbleLeft <= expressionEndX) {
-		const leftCandidate = expressionStartX - bubbleWidth - ide_state.spaceAdvance;
+		const leftCandidate = expressionStartX - bubbleWidth - editorViewState.spaceAdvance;
 		if (leftCandidate >= textLeft) {
 			bubbleLeft = leftCandidate;
 		} else {
@@ -94,8 +94,8 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	api.fill_rect_color(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, undefined, constants.HOVER_TOOLTIP_BACKGROUND);
 	api.blit_rect(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, undefined, constants.HOVER_TOOLTIP_BORDER);
 	for (let i = 0; i < visibleLines.length; i += 1) {
-		const lineY = bubbleTop + constants.HOVER_TOOLTIP_PADDING_Y + i * ide_state.lineHeight;
-		drawEditorText(ide_state.font, visibleLines[i], bubbleLeft + constants.HOVER_TOOLTIP_PADDING_X, lineY, undefined, constants.COLOR_STATUS_TEXT);
+		const lineY = bubbleTop + constants.HOVER_TOOLTIP_PADDING_Y + i * editorViewState.lineHeight;
+		drawEditorText(editorViewState.font, visibleLines[i], bubbleLeft + constants.HOVER_TOOLTIP_PADDING_X, lineY, undefined, constants.COLOR_STATUS_TEXT);
 	}
 	tooltip.bubbleBounds = { left: bubbleLeft, top: bubbleTop, right: bubbleLeft + bubbleWidth, bottom: bubbleTop + bubbleHeight };
 }

@@ -3,6 +3,7 @@ import { ide_state } from '../../core/ide_state';
 import type { PointerSnapshot } from '../../core/types';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { editorPointerState, resetPointerClickTracking } from './editor_pointer_state';
+import { editorViewState } from '../../ui/editor_view_state';
 
 export function handleResourcePanelPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const panelBounds = ide_state.resourcePanel.getBounds();
@@ -21,7 +22,7 @@ export function handleResourcePanelPointer(snapshot: PointerSnapshot, justPresse
 	ide_state.resourcePanel.setFocused(true);
 	resetPointerClickTracking();
 	clearHoverTooltip();
-	const margin = Math.max(4, ide_state.lineHeight);
+	const margin = Math.max(4, editorViewState.lineHeight);
 	if (snapshot.viewportY < panelBounds.top + margin) {
 		ide_state.resourcePanel.scrollBy(-1);
 	} else if (snapshot.viewportY >= panelBounds.bottom - margin) {

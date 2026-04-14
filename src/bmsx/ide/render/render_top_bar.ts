@@ -1,11 +1,11 @@
 import * as constants from '../core/constants';
 import type { RectBounds } from '../../rompack/rompack';
-import { ide_state } from '../core/ide_state';
 import { editorChromeState } from '../ui/editor_chrome_state';
 import { measureText } from '../core/text_utils';
 import { drawEditorText } from './text_renderer';
 import { api } from '../ui/view/overlay_api';
 import { buildTopBarMenuEntries, MENU_COMMANDS, MENU_IDS, TopBarMenuEntry } from '../ui/editor_top_bar_menu';
+import { editorViewState } from '../ui/editor_view_state';
 
 const Z_TOP_BAR_BACKGROUND = 10;
 const Z_MENU_BUTTON = 14;
@@ -18,8 +18,8 @@ const Z_MENU_MARKER = Z_MENU_DROPDOWN_BASE + 2;
 
 export function renderTopBar(): void {
 	clearMenuBounds();
-	const primaryBarHeight = ide_state.headerHeight;
-	api.fill_rect(0, 0, ide_state.viewportWidth, primaryBarHeight, Z_TOP_BAR_BACKGROUND, constants.COLOR_TOP_BAR);
+	const primaryBarHeight = editorViewState.headerHeight;
+	api.fill_rect(0, 0, editorViewState.viewportWidth, primaryBarHeight, Z_TOP_BAR_BACKGROUND, constants.COLOR_TOP_BAR);
 
 	const menuEntries = buildTopBarMenuEntries();
 	renderMenuRow(menuEntries);
@@ -27,15 +27,15 @@ export function renderTopBar(): void {
 
 export function renderTopBarDropdown(): void {
 	const menuEntries = buildTopBarMenuEntries();
-	const menuButtonHeight = ide_state.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
+	const menuButtonHeight = editorViewState.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
 	renderOpenMenuDropdown(menuEntries, menuButtonHeight);
 }
 
 function renderMenuRow(menuEntries: TopBarMenuEntry[]): number {
 	const buttonTop = 1;
-	const buttonHeight = ide_state.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
+	const buttonHeight = editorViewState.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
 	let buttonX = 4;
-	const availableRight = ide_state.viewportWidth - 4;
+	const availableRight = editorViewState.viewportWidth - 4;
 	for (let i = 0; i < menuEntries.length; i += 1) {
 		const entry = menuEntries[i];
 		const textWidth = measureText(entry.label);
@@ -53,7 +53,7 @@ function renderMenuRow(menuEntries: TopBarMenuEntry[]): number {
 		const textColor = isOpen ? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT : constants.COLOR_HEADER_BUTTON_TEXT;
 		api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_MENU_BUTTON, fillColor);
 		api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_MENU_BUTTON, constants.COLOR_HEADER_BUTTON_BORDER);
-		drawEditorText(ide_state.font, entry.label, bounds.left + constants.HEADER_BUTTON_PADDING_X, bounds.top + constants.HEADER_BUTTON_PADDING_Y, Z_MENU_BUTTON_TEXT, textColor);
+		drawEditorText(editorViewState.font, entry.label, bounds.left + constants.HEADER_BUTTON_PADDING_X, bounds.top + constants.HEADER_BUTTON_PADDING_Y, Z_MENU_BUTTON_TEXT, textColor);
 		buttonX = right + constants.HEADER_BUTTON_SPACING;
 	}
 	editorChromeState.menuDropdownBounds = null;
@@ -75,12 +75,12 @@ function renderOpenMenuDropdown(menuEntries: TopBarMenuEntry[], buttonHeight: nu
 }
 
 function renderMenuDropdown(menu: TopBarMenuEntry, anchor: RectBounds, itemHeight: number): void {
-	const markerSize = Math.max(2, Math.trunc(ide_state.lineHeight / 2));
+	const markerSize = Math.max(2, Math.trunc(editorViewState.lineHeight / 2));
 	const paddingX = constants.HEADER_BUTTON_PADDING_X;
 	const dropdownWidth = computeDropdownWidth(menu, markerSize, paddingX, anchor.right - anchor.left);
 	const separatorHeight = Math.max(2, constants.HEADER_BUTTON_PADDING_Y + 1);
 	const dropdownLeft = anchor.left;
-	const dropdownTop = ide_state.headerHeight;
+	const dropdownTop = editorViewState.headerHeight;
 	const dropdownRight = dropdownLeft + dropdownWidth;
 	const totalHeight = computeDropdownHeight(menu, itemHeight, separatorHeight);
 	const shadowOffset = 2;
@@ -120,7 +120,7 @@ function renderMenuDropdown(menu: TopBarMenuEntry, anchor: RectBounds, itemHeigh
 		}
 		const textX = bounds.left + paddingX * 2 + markerSize;
 		const textY = bounds.top + constants.HEADER_BUTTON_PADDING_Y;
-		drawEditorText(ide_state.font, item.label, textX, textY, Z_MENU_DROPDOWN_TEXT, textColor);
+		drawEditorText(editorViewState.font, item.label, textX, textY, Z_MENU_DROPDOWN_TEXT, textColor);
 		currentTop = bounds.bottom;
 	}
 	editorChromeState.menuDropdownBounds = { left: dropdownLeft, top: dropdownTop, right: dropdownRight, bottom: dropdownTop + totalHeight };

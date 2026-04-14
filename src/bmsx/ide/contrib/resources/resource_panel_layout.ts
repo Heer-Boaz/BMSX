@@ -2,8 +2,8 @@ import { $ } from '../../../core/engine_core';
 import type { RectBounds } from '../../../rompack/rompack';
 import { clamp } from '../../../utils/clamp';
 import * as constants from '../../core/constants';
-import { ide_state } from '../../core/ide_state';
 import { bottomMargin, codeViewportTop } from '../../ui/editor_view';
+import { editorViewState } from '../../ui/editor_view_state';
 
 export function defaultResourcePanelRatio(): number {
 	const metrics = $.platform.gameviewHost.getCapability('viewport-metrics').getViewportMetrics();
@@ -23,7 +23,7 @@ export function clampResourcePanelRatio(ratio: number): number {
 }
 
 export function computeResourcePanelPixelWidth(ratio: number): number {
-	return Math.trunc(ide_state.viewportWidth * ratio);
+	return Math.trunc(editorViewState.viewportWidth * ratio);
 }
 
 function resourcePanelMaxRatio(): number {
@@ -39,7 +39,7 @@ export function writeResourcePanelBounds(out: RectBounds, widthRatio: number): b
 		return false;
 	}
 	const top = codeViewportTop();
-	const bottom = ide_state.viewportHeight - bottomMargin();
+	const bottom = editorViewState.viewportHeight - bottomMargin();
 	if (bottom <= top) {
 		return false;
 	}

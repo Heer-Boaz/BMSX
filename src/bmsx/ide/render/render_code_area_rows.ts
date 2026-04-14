@@ -4,13 +4,13 @@ import { drawEditorText } from './text_renderer';
 import { api } from '../ui/view/overlay_api';
 import { computeSelectionSlice, visualIndexToSegment } from '../core/text_utils';
 import * as constants from '../core/constants';
-import { ide_state } from '../core/ide_state';
 import { runtimeErrorState } from '../contrib/runtime_error/runtime_error_state';
 import { drawReferenceHighlightsForRow, drawSearchHighlightsForRow } from './render_code_area_highlights';
 import { computeCursorScreenInfo, drawCodeRowText } from './render_code_area_cursor';
 import { drawDiagnosticUnderlinesForRow, drawGotoUnderlineForRow } from './render_code_area_underlines';
 import { drawCodeAreaRowChrome } from './render_code_area_gutter';
 import { editorDocumentState } from '../editing/editor_document_state';
+import { editorViewState } from '../ui/editor_view_state';
 
 type ActiveGotoHighlight = {
 	row: number;
@@ -47,22 +47,22 @@ export function drawCodeAreaRows(
 ): CursorScreenInfo {
 	let cursorInfo: CursorScreenInfo = null;
 	for (let i = 0; i < rowCapacity; i += 1) {
-		const visualIndex = ide_state.scrollRow + i;
-		const rowY = codeTop + i * ide_state.lineHeight;
+		const visualIndex = editorViewState.scrollRow + i;
+		const rowY = codeTop + i * editorViewState.lineHeight;
 		if (rowY >= contentBottom) {
 			break;
 		}
 		if (visualIndex >= visualCount) {
-			drawEditorText(ide_state.font, '~', textLeft, rowY, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM);
+			drawEditorText(editorViewState.font, '~', textLeft, rowY, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM);
 			continue;
 		}
 		const segment = visualIndexToSegment(visualIndex);
 		if (!segment) {
-			drawEditorText(ide_state.font, '~', textLeft, rowY, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM);
+			drawEditorText(editorViewState.font, '~', textLeft, rowY, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM);
 			continue;
 		}
 		const lineIndex = segment.row;
-		const entry = ide_state.layout.getCachedHighlight(editorDocumentState.buffer, lineIndex);
+		const entry = editorViewState.layout.getCachedHighlight(editorDocumentState.buffer, lineIndex);
 		const isPrimaryVisualSegment = segment.startColumn === 0;
 		const hasBreakpointForRow = breakpointsForChunk?.has(lineIndex + 1) ?? false;
 		const isExecutionStopRow = runtimeErrorState.executionStopRow !== null && lineIndex === runtimeErrorState.executionStopRow;
@@ -83,15 +83,15 @@ export function drawCodeAreaRows(
 		const highlight = entry.hi;
 		const renderText = useUppercase ? highlight.upperText : highlight.text;
 		const advancePrefix = entry.advancePrefix;
-		let columnStart = ide_state.wordWrapEnabled ? segment.startColumn : ide_state.scrollColumn;
-		if (ide_state.wordWrapEnabled && (columnStart < segment.startColumn || columnStart > segment.endColumn)) {
+		let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : editorViewState.scrollColumn;
+		if (editorViewState.wordWrapEnabled && (columnStart < segment.startColumn || columnStart > segment.endColumn)) {
 			columnStart = segment.startColumn;
 		}
 		const columnToDisplay = highlight.columnToDisplay;
-		const maxColumn = ide_state.wordWrapEnabled
+		const maxColumn = editorViewState.wordWrapEnabled
 			? segment.endColumn
 			: (editorDocumentState.buffer.getLineEndOffset(lineIndex) - editorDocumentState.buffer.getLineStartOffset(lineIndex));
-		const columnCount = ide_state.wordWrapEnabled ? Math.max(0, maxColumn - columnStart) : sliceWidth;
+		const columnCount = editorViewState.wordWrapEnabled ? Math.max(0, maxColumn - columnStart) : sliceWidth;
 		const clampedStartColumn = Math.min(columnStart, columnToDisplay.length - 1);
 		const clampedEndColumn = Math.min(columnStart + columnCount, columnToDisplay.length - 1);
 		const sliceStartDisplay = columnToDisplay[clampedStartColumn];
@@ -105,7 +105,7 @@ export function drawCodeAreaRows(
 			const drawLeft = selectionStartX < textLeft ? textLeft : selectionStartX;
 			const drawRight = selectionEndX > contentRight ? contentRight : selectionEndX;
 			if (drawRight > drawLeft) {
-				api.fill_rect_color(drawLeft, rowY, drawRight, rowY + ide_state.lineHeight, undefined, constants.SELECTION_OVERLAY);
+				api.fill_rect_color(drawLeft, rowY, drawRight, rowY + editorViewState.lineHeight, undefined, constants.SELECTION_OVERLAY);
 			}
 		}
 		drawCodeRowText(

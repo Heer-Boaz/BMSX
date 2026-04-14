@@ -8,6 +8,7 @@ import { ide_state } from '../core/ide_state';
 import { api } from './view/overlay_api';
 import { getActiveResourceViewer, setResourceViewerScroll } from '../contrib/resources/resource_viewer';
 import { editorCaretState } from './caret_state';
+import { editorViewState } from './editor_view_state';
 
 export class Scrollbar {
 	public readonly orientation: 'vertical' | 'horizontal';
@@ -231,16 +232,16 @@ export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void 
 	switch (kind) {
 		case 'codeVertical': {
 			ensureVisualLines();
-			ide_state.scrollRow = ide_state.layout.clampVisualScroll(Math.round(scroll), getVisualLineCount(), Math.max(1, ide_state.cachedVisibleRowCount));
+			editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(Math.round(scroll), getVisualLineCount(), Math.max(1, editorViewState.cachedVisibleRowCount));
 			editorCaretState.cursorRevealSuspended = true;
 			break;
 		}
 		case 'codeHorizontal': {
-			if (ide_state.wordWrapEnabled) {
-				ide_state.scrollColumn = 0;
+			if (editorViewState.wordWrapEnabled) {
+				editorViewState.scrollColumn = 0;
 				break;
 			}
-			ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(Math.round(scroll), computeMaximumScrollColumn());
+			editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(Math.round(scroll), computeMaximumScrollColumn());
 			editorCaretState.cursorRevealSuspended = true;
 			break;
 		}
@@ -259,7 +260,7 @@ export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void 
 			if (!viewer) {
 				break;
 			}
-			setResourceViewerScroll(viewer, getCodeAreaBounds(), ide_state.lineHeight, scroll);
+			setResourceViewerScroll(viewer, getCodeAreaBounds(), editorViewState.lineHeight, scroll);
 			break;
 		}
 	}

@@ -1,6 +1,5 @@
 import { $ } from '../../../core/engine_core';
 import { point_in_rect } from '../../../utils/rect_operations';
-import { ide_state } from '../../core/ide_state';
 import { editorChromeState } from '../../ui/editor_chrome_state';
 import type { PointerSnapshot } from '../../core/types';
 import { beginTabDrag, closeTab, endTabDrag, setActiveTab } from '../../ui/editor_tabs';
@@ -8,9 +7,10 @@ import { getTabBarTotalHeight } from '../../ui/editor_view';
 import { consumeChromePointerPress } from './editor_chrome_pointer_press';
 import { editorPointerState } from './editor_pointer_state';
 import { editorSessionState } from '../../ui/editor_session_state';
+import { editorViewState } from '../../ui/editor_view_state';
 
 export function handleTabBarPointer(snapshot: PointerSnapshot): boolean {
-	const tabTop = ide_state.headerHeight;
+	const tabTop = editorViewState.headerHeight;
 	const tabBottom = tabTop + getTabBarTotalHeight();
 	const y = snapshot.viewportY;
 	if (y < tabTop || y >= tabBottom) {
@@ -39,7 +39,7 @@ export function handleTabBarPointer(snapshot: PointerSnapshot): boolean {
 }
 
 export function handleTabBarMiddleClick(snapshot: PointerSnapshot, playerInput: ReturnType<typeof $.input.getPlayerInput>): boolean {
-	const tabTop = ide_state.headerHeight;
+	const tabTop = editorViewState.headerHeight;
 	const tabBottom = tabTop + getTabBarTotalHeight();
 	const y = snapshot.viewportY;
 	if (y < tabTop || y >= tabBottom) {
@@ -70,7 +70,7 @@ export function updateTabHoverState(snapshot: PointerSnapshot): void {
 		editorPointerState.tabHoverId = null;
 		return;
 	}
-	const tabTop = ide_state.headerHeight;
+	const tabTop = editorViewState.headerHeight;
 	const tabBottom = tabTop + getTabBarTotalHeight();
 	const y = snapshot.viewportY;
 	if (y < tabTop || y >= tabBottom) {

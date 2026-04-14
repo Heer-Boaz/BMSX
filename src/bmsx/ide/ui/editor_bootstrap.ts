@@ -17,6 +17,7 @@ import { assertMonospace } from '../core/text_utils';
 import * as constants from '../core/constants';
 import type { Viewport } from '../../rompack/rompack';
 import { editorDocumentState } from '../editing/editor_document_state';
+import { editorViewState } from './editor_view_state';
 import {
 	applyViewportSize,
 	configureFontVariant,
@@ -32,7 +33,7 @@ import { applySymbolSearchFieldText } from '../contrib/symbols/symbol_search_sha
 export function initializeCartEditor(viewport: Viewport): void {
 	initializeDebuggerUiState();
 	const runtime = Runtime.instance;
-	ide_state.fontVariant = runtime.activeIdeFontVariant;
+	editorViewState.fontVariant = runtime.activeIdeFontVariant;
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
 	ide_state.canonicalization = Runtime.instance.cartCanonicalization;
@@ -41,7 +42,7 @@ export function initializeCartEditor(viewport: Viewport): void {
 	applyViewportSize(viewport);
 	ide_state.clockNow = $.platform.clock.now;
 	resetSemanticWorkspace();
-	configureFontVariant(ide_state.fontVariant);
+	configureFontVariant(editorViewState.fontVariant);
 	ide_state.search.field = createInlineTextField();
 	ide_state.symbolSearch.field = createInlineTextField();
 	ide_state.resourceSearch.field = createInlineTextField();
@@ -53,17 +54,17 @@ export function initializeCartEditor(viewport: Viewport): void {
 	applyResourceSearchFieldText(ide_state.resourceSearch.query, true);
 	applyLineJumpFieldText(ide_state.lineJump.value, true);
 	applyCreateResourceFieldText(ide_state.createResource.path, true);
-	ide_state.scrollbars = {
+	editorViewState.scrollbars = {
 		codeVertical: new Scrollbar('codeVertical', 'vertical'),
 		codeHorizontal: new Scrollbar('codeHorizontal', 'horizontal'),
 		resourceVertical: new Scrollbar('resourceVertical', 'vertical'),
 		resourceHorizontal: new Scrollbar('resourceHorizontal', 'horizontal'),
 		viewerVertical: new Scrollbar('viewerVertical', 'vertical'),
 	};
-	ide_state.scrollbarController = new ScrollbarController(ide_state.scrollbars);
+	editorViewState.scrollbarController = new ScrollbarController(editorViewState.scrollbars);
 	ide_state.resourcePanel = new ResourcePanelController({
-		resourceVertical: ide_state.scrollbars.resourceVertical,
-		resourceHorizontal: ide_state.scrollbars.resourceHorizontal,
+		resourceVertical: editorViewState.scrollbars.resourceVertical,
+		resourceHorizontal: editorViewState.scrollbars.resourceHorizontal,
 	});
 	ide_state.completion = new CompletionController();
 	ide_state.completion.closeSession();
@@ -72,10 +73,10 @@ export function initializeCartEditor(viewport: Viewport): void {
 	ide_state.problemsPanel = new ProblemsPanelController();
 	ide_state.problemsPanel.setDiagnostics(editorDiagnosticsState.diagnostics);
 	ide_state.renameController = renameController;
-	ide_state.codeVerticalScrollbarVisible = false;
-	ide_state.codeHorizontalScrollbarVisible = false;
-	ide_state.cachedVisibleRowCount = 1;
-	ide_state.cachedVisibleColumnCount = 1;
+	editorViewState.codeVerticalScrollbarVisible = false;
+	editorViewState.codeHorizontalScrollbarVisible = false;
+	editorViewState.cachedVisibleRowCount = 1;
+	editorViewState.cachedVisibleColumnCount = 1;
 	initializeTabs(createEntryTabContext());
 	resetResourcePanelState();
 	editorDocumentState.desiredColumn = editorDocumentState.cursorColumn;

@@ -1,5 +1,6 @@
 import { ide_state } from '../core/ide_state';
 import { editorDocumentState } from '../editing/editor_document_state';
+import { editorViewState } from './editor_view_state';
 
 export const MENU_IDS = ['file', 'run', 'view', 'debug'] as const;
 export type MenuId = typeof MENU_IDS[number];
@@ -68,7 +69,7 @@ export function buildTopBarMenuEntries(): TopBarMenuEntry[] {
 			label: 'VIEW',
 			items: [
 				{ type: 'command', command: 'problems', label: 'Problems Panel', active: problemsActive, disabled: false },
-				{ type: 'command', command: 'wrap', label: 'Word Wrap', active: ide_state.wordWrapEnabled, disabled: false },
+				{ type: 'command', command: 'wrap', label: 'Word Wrap', active: editorViewState.wordWrapEnabled, disabled: false },
 				{
 					type: 'command',
 					command: 'filter',

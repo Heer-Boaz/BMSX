@@ -14,6 +14,7 @@ import { renderErrorOverlayText } from './render_error_overlay';
 import { drawRectOutlineColor } from './render_caret';
 import { centerDialogBounds } from './dialog_layout';
 import { resourcePanelLineCapacity } from '../contrib/resources/resource_panel_layout';
+import { editorViewState } from '../ui/editor_view_state';
 
 const resourcePanelVerticalTrack: RectBounds = { left: 0, top: 0, right: 0, bottom: 0 };
 const resourcePanelHorizontalTrack: RectBounds = { left: 0, top: 0, right: 0, bottom: 0 };
@@ -85,7 +86,7 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 		const contentText = item.line.slice(item.contentStartColumn);
 		const indentX = contentLeft - scrollX;
 		if (indentText.length > 0) {
-			drawEditorText(ide_state.font, indentText, indentX, y, undefined, constants.COLOR_RESOURCE_PANEL_TEXT);
+			drawEditorText(editorViewState.font, indentText, indentX, y, undefined, constants.COLOR_RESOURCE_PANEL_TEXT);
 		}
 		const indentWidth = measureText(indentText);
 		const contentX = indentX + indentWidth;
@@ -103,14 +104,14 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 					api.fill_rect_color(visibleLeft, caretTop, visibleRight, caretBottom, undefined, highlightColor);
 				}
 				if (contentText.length > 0) {
-					drawEditorText(ide_state.font, contentText, contentX, y, undefined, constants.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT);
+					drawEditorText(editorViewState.font, contentText, contentX, y, undefined, constants.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT);
 				}
 			} else if (visibleRight > visibleLeft) {
 				drawRectOutlineColor(visibleLeft, caretTop, visibleRight, caretBottom, undefined, highlightColor);
 			}
 		}
 		if (!isHighlighted || contentText.length === 0 || !panelActive) {
-			drawEditorText(ide_state.font, contentText, contentX, y, undefined, constants.COLOR_RESOURCE_PANEL_TEXT);
+			drawEditorText(editorViewState.font, contentText, contentX, y, undefined, constants.COLOR_RESOURCE_PANEL_TEXT);
 		}
 	}
 
@@ -133,9 +134,9 @@ export function drawResourceViewer(): void {
 	resourceViewerClampScroll(viewer);
 	const bounds = getCodeAreaBounds();
 	const contentLeft = bounds.codeLeft + constants.RESOURCE_PANEL_PADDING_X;
-	const capacity = resourceViewerTextCapacity(viewer, bounds, ide_state.lineHeight);
+	const capacity = resourceViewerTextCapacity(viewer, bounds, editorViewState.lineHeight);
 	const totalLines = viewer.lines.length;
-	const verticalScrollbar = ide_state.scrollbars.viewerVertical;
+	const verticalScrollbar = editorViewState.scrollbars.viewerVertical;
 	const verticalTrack = resourceViewerVerticalTrack;
 	verticalTrack.left = bounds.codeRight - constants.SCROLLBAR_WIDTH;
 	verticalTrack.top = bounds.codeTop;
@@ -143,26 +144,26 @@ export function drawResourceViewer(): void {
 	verticalTrack.bottom = bounds.codeBottom;
 	verticalScrollbar.layout(verticalTrack, totalLines, Math.max(1, capacity), viewer.scroll);
 	const verticalVisible = verticalScrollbar.isVisible();
-	setResourceViewerScroll(viewer, bounds, ide_state.lineHeight, verticalScrollbar.getScroll());
+	setResourceViewerScroll(viewer, bounds, editorViewState.lineHeight, verticalScrollbar.getScroll());
 
 	api.fill_rect(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, undefined, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
 
 	const contentTop = bounds.codeTop + 2;
-	const layout = resourceViewerImageLayout(viewer, bounds, ide_state.lineHeight);
+	const layout = resourceViewerImageLayout(viewer, bounds, editorViewState.lineHeight);
 	let textTop = contentTop;
 	if (layout && viewer.image) {
 		// ensureResourceViewerSprite(viewer.image.asset_id, { left: layout.left, top: layout.top, scale: layout.scale });
-		textTop = layout.bottom + ide_state.lineHeight;
+		textTop = layout.bottom + editorViewState.lineHeight;
 	} else {
 		// hideResourceViewerSprite();
 	}
 	if (capacity <= 0) {
 		if (viewer.lines.length > 0) {
 			const line = viewer.lines[Math.min(viewer.lines.length - 1, viewer.scroll)] ?? '';
-			const fallbackY = Math.min(textTop, bounds.codeBottom - ide_state.lineHeight);
-			drawEditorText(ide_state.font, line, contentLeft, fallbackY, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			const fallbackY = Math.min(textTop, bounds.codeBottom - editorViewState.lineHeight);
+			drawEditorText(editorViewState.font, line, contentLeft, fallbackY, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		} else {
-			drawEditorText(ide_state.font, '<empty>', contentLeft, textTop, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			drawEditorText(editorViewState.font, '<empty>', contentLeft, textTop, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		}
 		if (verticalVisible) {
 			verticalScrollbar.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
@@ -172,15 +173,15 @@ export function drawResourceViewer(): void {
 	const start = viewer.scroll;
 	const end = Math.min(totalLines, start + capacity);
 	if (viewer.lines.length === 0) {
-		drawEditorText(ide_state.font, '<empty>', contentLeft, textTop, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
+		drawEditorText(editorViewState.font, '<empty>', contentLeft, textTop, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
 	} else {
 		for (let lineIndex = start, drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
 			const line = viewer.lines[lineIndex] ?? '';
-			const y = textTop + drawIndex * ide_state.lineHeight;
+			const y = textTop + drawIndex * editorViewState.lineHeight;
 			if (y >= bounds.codeBottom) {
 				break;
 			}
-			drawEditorText(ide_state.font, line, contentLeft, y, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			drawEditorText(editorViewState.font, line, contentLeft, y, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		}
 	}
 	if (verticalVisible) {
@@ -192,8 +193,8 @@ export function drawResourcePanel(): void {
 }
 
 export function drawCreateResourceErrorDialog(message: string): void {
-	const maxDialogWidth = Math.min(ide_state.viewportWidth - 16, 360);
-	const wrapWidth = Math.max(ide_state.charAdvance, maxDialogWidth - (constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
+	const maxDialogWidth = Math.min(editorViewState.viewportWidth - 16, 360);
+	const wrapWidth = Math.max(editorViewState.charAdvance, maxDialogWidth - (constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
 	const segments = message.split(/\r?\n/);
 	const lines: string[] = [];
 	for (let i = 0; i < segments.length; i += 1) {
@@ -210,19 +211,19 @@ export function drawCreateResourceErrorDialog(message: string): void {
 	for (let i = 0; i < lines.length; i += 1) {
 		contentWidth = Math.max(contentWidth, measureText(lines[i]));
 	}
-	const dialogWidth = Math.min(ide_state.viewportWidth - 16, Math.max(180, contentWidth + constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
-	const dialogHeight = Math.min(ide_state.viewportHeight - 16, lines.length * ide_state.lineHeight + constants.ERROR_OVERLAY_PADDING_Y * 2 + 16);
+	const dialogWidth = Math.min(editorViewState.viewportWidth - 16, Math.max(180, contentWidth + constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
+	const dialogHeight = Math.min(editorViewState.viewportHeight - 16, lines.length * editorViewState.lineHeight + constants.ERROR_OVERLAY_PADDING_Y * 2 + 16);
 	const { left, top, right, bottom } = centerDialogBounds(dialogWidth, dialogHeight, 8);
 	api.fill_rect(left, top, right, bottom, undefined, constants.COLOR_STATUS_BACKGROUND);
 	api.blit_rect(left, top, right, bottom, undefined, constants.COLOR_CREATE_RESOURCE_ERROR);
 	const dialogPaddingX = constants.ERROR_OVERLAY_PADDING_X + 6;
 	const dialogPaddingY = constants.ERROR_OVERLAY_PADDING_Y + 6;
 	renderErrorOverlayText(
-		ide_state.font,
+		editorViewState.font,
 		lines,
 		left + dialogPaddingX,
 		top + dialogPaddingY,
-		ide_state.lineHeight,
+		editorViewState.lineHeight,
 		constants.COLOR_STATUS_TEXT
 	);
 }

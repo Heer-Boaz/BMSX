@@ -9,6 +9,7 @@ import { api } from '../ui/view/overlay_api';
 import { textFromLines } from '../text/source_text';
 import { resetBlinkState } from '../ui/caret_blink';
 import { editorCaretState } from '../ui/caret_state';
+import { editorViewState } from '../ui/editor_view_state';
 
 export function drawInlineCaret(
 	api: Api,
@@ -33,7 +34,7 @@ export function drawInlineCaret(
 	const inverseColorIndex = invertColorIndex(caretColorIndex);
 	if (active) {
 		api.fill_rect_color(left, top, right, bottom, undefined, caretValue);
-		drawEditorText(ide_state.font, caretGlyph, cursorX, top, undefined, inverseColorIndex, { preserveCase: true });
+		drawEditorText(editorViewState.font, caretGlyph, cursorX, top, undefined, inverseColorIndex, { preserveCase: true });
 		return;
 	}
 	drawRectOutlineColor(left, top, right, bottom, undefined, caretValue);
@@ -62,7 +63,7 @@ export function drawCursor(info: CursorScreenInfo, textX: number): void {
 	const caretValue = BmsxColors[constants.CARET_COLOR];
 	if (active) {
 		api.fill_rect_color(caretLeft, caretTop, caretRight, caretBottom, undefined, caretValue);
-		drawEditorText(ide_state.font, caretGlyph, cursorX, caretTop, undefined, 1, { preserveCase: true });
+		drawEditorText(editorViewState.font, caretGlyph, cursorX, caretTop, undefined, 1, { preserveCase: true });
 		return;
 	}
 	drawRectOutlineColor(caretLeft, caretTop, caretRight, caretBottom, undefined, caretValue);

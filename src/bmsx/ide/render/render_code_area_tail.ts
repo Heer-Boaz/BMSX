@@ -10,6 +10,7 @@ import { drawCompletionPopup, drawParameterHintOverlay, type CompletionRenderBou
 import { drawCursor } from './render_caret';
 import type { RectBounds } from '../../rompack/rompack';
 import { editorCaretState } from '../ui/caret_state';
+import { editorViewState } from '../ui/editor_view_state';
 
 const verticalTrackScratch: RectBounds = {
 	left: 0,
@@ -35,7 +36,7 @@ function drawRuntimeErrorOverlayIndicator(
 	const indicatorWidth = 16;
 	const indicatorHeight = 5;
 	const margin = 4;
-	const scrollbarOffset = ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0;
+	const scrollbarOffset = editorViewState.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0;
 	const rightEdge = codeRight - scrollbarOffset - constants.CODE_AREA_RIGHT_MARGIN;
 	const left = Math.max(textLeft, rightEdge - indicatorWidth);
 	const top = direction === 'above'
@@ -69,9 +70,9 @@ export function finalizeCodeAreaRender(
 	verticalTrackScratch.right = verticalTrackLeft + constants.SCROLLBAR_WIDTH;
 	verticalTrackScratch.bottom = contentBottom;
 
-	ide_state.scrollbars.codeVertical.layout(verticalTrackScratch, visualCount, rowCapacity, ide_state.scrollRow);
-	ide_state.scrollRow = ide_state.layout.clampVisualScroll(ide_state.scrollbars.codeVertical.getScroll(), visualCount, rowCapacity);
-	ide_state.codeVerticalScrollbarVisible = ide_state.scrollbars.codeVertical.isVisible();
+	editorViewState.scrollbars.codeVertical.layout(verticalTrackScratch, visualCount, rowCapacity, editorViewState.scrollRow);
+	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollbars.codeVertical.getScroll(), visualCount, rowCapacity);
+	editorViewState.codeVerticalScrollbarVisible = editorViewState.scrollbars.codeVertical.isVisible();
 
 	if (!wrapEnabled) {
 		horizontalTrackScratch.left = bounds.codeLeft;
@@ -79,12 +80,12 @@ export function finalizeCodeAreaRender(
 		horizontalTrackScratch.right = trackRight;
 		horizontalTrackScratch.bottom = contentBottom + constants.SCROLLBAR_WIDTH;
 		const maxColumns = columnCapacity + computeMaximumScrollColumn();
-		ide_state.scrollbars.codeHorizontal.layout(horizontalTrackScratch, maxColumns, columnCapacity, ide_state.scrollColumn);
-		ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(ide_state.scrollbars.codeHorizontal.getScroll(), computeMaximumScrollColumn());
-		ide_state.codeHorizontalScrollbarVisible = ide_state.scrollbars.codeHorizontal.isVisible();
+		editorViewState.scrollbars.codeHorizontal.layout(horizontalTrackScratch, maxColumns, columnCapacity, editorViewState.scrollColumn);
+		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(editorViewState.scrollbars.codeHorizontal.getScroll(), computeMaximumScrollColumn());
+		editorViewState.codeHorizontalScrollbarVisible = editorViewState.scrollbars.codeHorizontal.isVisible();
 	} else {
-		ide_state.scrollColumn = 0;
-		ide_state.codeHorizontalScrollbarVisible = false;
+		editorViewState.scrollColumn = 0;
+		editorViewState.codeHorizontalScrollbarVisible = false;
 	}
 
 	const runtimeOverlayState: RuntimeErrorOverlayRenderResult = renderRuntimeErrorOverlay(bounds.codeTop, bounds.codeRight, bounds.textLeft);
@@ -96,13 +97,13 @@ export function finalizeCodeAreaRender(
 	if (editorCaretState.cursorVisible && cursorInfo) {
 		drawCursor(cursorInfo, bounds.textLeft);
 	}
-	ide_state.completion.popupBounds = drawCompletionPopup(ide_state.completion.session, cursorInfo, ide_state.lineHeight, bounds);
-	drawParameterHintOverlay(ide_state.completion.hint, cursorInfo, ide_state.lineHeight, bounds);
-	if (ide_state.codeVerticalScrollbarVisible) {
-		ide_state.scrollbars.codeVertical.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
+	ide_state.completion.popupBounds = drawCompletionPopup(ide_state.completion.session, cursorInfo, editorViewState.lineHeight, bounds);
+	drawParameterHintOverlay(ide_state.completion.hint, cursorInfo, editorViewState.lineHeight, bounds);
+	if (editorViewState.codeVerticalScrollbarVisible) {
+		editorViewState.scrollbars.codeVertical.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
-	if (ide_state.codeHorizontalScrollbarVisible) {
-		ide_state.scrollbars.codeHorizontal.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
+	if (editorViewState.codeHorizontalScrollbarVisible) {
+		editorViewState.scrollbars.codeHorizontal.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
 	renderEditorContextMenu(bounds);
 }

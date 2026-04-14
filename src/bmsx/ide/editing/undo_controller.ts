@@ -14,6 +14,7 @@ import type { EditorSnapshot, Position } from '../core/types';
 import { editorCaretState } from '../ui/caret_state';
 import { editorDocumentState } from './editor_document_state';
 import { editorSessionState } from '../ui/editor_session_state';
+import { editorViewState } from '../ui/editor_view_state';
 
 export function prepareUndo(key: string, allowMerge: boolean): void {
 	if (editorSessionState.activeContextReadOnly) {
@@ -34,8 +35,8 @@ export function prepareUndo(key: string, allowMerge: boolean): void {
 	record.setBeforeState(
 		editorDocumentState.cursorRow,
 		editorDocumentState.cursorColumn,
-		ide_state.scrollRow,
-		ide_state.scrollColumn,
+		editorViewState.scrollRow,
+		editorViewState.scrollColumn,
 		anchor ? anchor.row : 0,
 		anchor ? anchor.column : 0,
 		anchor !== null,
@@ -43,8 +44,8 @@ export function prepareUndo(key: string, allowMerge: boolean): void {
 	record.setAfterState(
 		editorDocumentState.cursorRow,
 		editorDocumentState.cursorColumn,
-		ide_state.scrollRow,
-		ide_state.scrollColumn,
+		editorViewState.scrollRow,
+		editorViewState.scrollColumn,
 		anchor ? anchor.row : 0,
 		anchor ? anchor.column : 0,
 		anchor !== null,
@@ -165,15 +166,15 @@ export function undo(): void {
 
 	editorDocumentState.cursorRow = record.beforeCursorRow;
 	editorDocumentState.cursorColumn = record.beforeCursorColumn;
-	ide_state.scrollRow = record.beforeScrollRow;
-	ide_state.scrollColumn = record.beforeScrollColumn;
+	editorViewState.scrollRow = record.beforeScrollRow;
+	editorViewState.scrollColumn = record.beforeScrollColumn;
 	editorDocumentState.selectionAnchor = record.beforeHasSelectionAnchor
 		? { row: record.beforeSelectionAnchorRow, column: record.beforeSelectionAnchorColumn }
 		: null;
 	editorDocumentState.textVersion = editorDocumentState.buffer.version;
-	ide_state.maxLineLengthDirty = true;
-	ide_state.layout.markVisualLinesDirty();
-	ide_state.layout.invalidateHighlightsFromRow(0);
+	editorViewState.maxLineLengthDirty = true;
+	editorViewState.layout.markVisualLinesDirty();
+	editorViewState.layout.invalidateHighlightsFromRow(0);
 	editorCaretState.cursorRevealSuspended = false;
 	updateDesiredColumn();
 	resetBlink();
@@ -234,15 +235,15 @@ export function redo(): void {
 
 	editorDocumentState.cursorRow = record.afterCursorRow;
 	editorDocumentState.cursorColumn = record.afterCursorColumn;
-	ide_state.scrollRow = record.afterScrollRow;
-	ide_state.scrollColumn = record.afterScrollColumn;
+	editorViewState.scrollRow = record.afterScrollRow;
+	editorViewState.scrollColumn = record.afterScrollColumn;
 	editorDocumentState.selectionAnchor = record.afterHasSelectionAnchor
 		? { row: record.afterSelectionAnchorRow, column: record.afterSelectionAnchorColumn }
 		: null;
 	editorDocumentState.textVersion = editorDocumentState.buffer.version;
-	ide_state.maxLineLengthDirty = true;
-	ide_state.layout.markVisualLinesDirty();
-	ide_state.layout.invalidateHighlightsFromRow(0);
+	editorViewState.maxLineLengthDirty = true;
+	editorViewState.layout.markVisualLinesDirty();
+	editorViewState.layout.invalidateHighlightsFromRow(0);
 	editorCaretState.cursorRevealSuspended = false;
 	updateDesiredColumn();
 	resetBlink();
@@ -274,9 +275,9 @@ export function applySourceToDocument(source: string): void {
 	editorDocumentState.buffer.replace(0, editorDocumentState.buffer.length, source);
 	invalidateLuaCommentContextFromRow(editorDocumentState.buffer, 0);
 	editorDocumentState.textVersion = editorDocumentState.buffer.version;
-	ide_state.maxLineLengthDirty = true;
-	ide_state.layout.invalidateHighlightsFromRow(0);
-	ide_state.layout.markVisualLinesDirty();
+	editorViewState.maxLineLengthDirty = true;
+	editorViewState.layout.invalidateHighlightsFromRow(0);
+	editorViewState.layout.markVisualLinesDirty();
 }
 
 export function captureSnapshot(): EditorSnapshot {
@@ -288,8 +289,8 @@ export function captureSnapshot(): EditorSnapshot {
 	return {
 		cursorRow: editorDocumentState.cursorRow,
 		cursorColumn: editorDocumentState.cursorColumn,
-		scrollRow: ide_state.scrollRow,
-		scrollColumn: ide_state.scrollColumn,
+		scrollRow: editorViewState.scrollRow,
+		scrollColumn: editorViewState.scrollColumn,
 		selectionAnchor: selectionCopy,
 		textVersion: editorDocumentState.textVersion,
 	};
@@ -300,13 +301,13 @@ export type RestoreSnapshotOptions = {
 };
 
 export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnapshotOptions): void {
-	ide_state.maxLineLengthDirty = true;
-	ide_state.layout.markVisualLinesDirty();
-	ide_state.layout.invalidateHighlightsFromRow(0);
+	editorViewState.maxLineLengthDirty = true;
+	editorViewState.layout.markVisualLinesDirty();
+	editorViewState.layout.invalidateHighlightsFromRow(0);
 	editorDocumentState.cursorRow = snapshot.cursorRow;
 	editorDocumentState.cursorColumn = snapshot.cursorColumn;
-	ide_state.scrollRow = snapshot.scrollRow;
-	ide_state.scrollColumn = snapshot.scrollColumn;
+	editorViewState.scrollRow = snapshot.scrollRow;
+	editorViewState.scrollColumn = snapshot.scrollColumn;
 	editorDocumentState.selectionAnchor = snapshot.selectionAnchor;
 	editorDocumentState.textVersion = editorDocumentState.buffer.version;
 	updateDesiredColumn();

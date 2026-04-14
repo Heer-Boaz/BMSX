@@ -2,10 +2,10 @@ import type { PointerSnapshot } from '../../core/types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { clamp } from '../../../utils/clamp';
 import * as constants from '../../core/constants';
-import { ide_state } from '../../core/ide_state';
 import { gotoDiagnostic } from './diagnostics_controller';
 import { computeProblemsPanelItemHeight, computeProblemsPanelLayout } from './problems_panel_layout';
 import type { ProblemsPanelController } from './problems_panel';
+import { editorViewState } from '../../ui/editor_view_state';
 
 export function handleProblemsPanelPointerInput(
 	controller: ProblemsPanelController,
@@ -89,7 +89,7 @@ export function handleProblemsPanelWheelInput(
 	const diagnostics = controller.getDiagnostics();
 	const panelWidth = controller.resolvePanelWidth();
 	let advance = 0;
-	let pixels = Math.max(1, steps) * ide_state.lineHeight;
+	let pixels = Math.max(1, steps) * editorViewState.lineHeight;
 	let diagnosticIndex = controller.getScrollIndex();
 	if (direction > 0) {
 		while (diagnosticIndex < diagnostics.length - 1 && pixels > 0) {

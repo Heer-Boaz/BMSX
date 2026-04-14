@@ -3,8 +3,8 @@ import { api } from '../ui/view/overlay_api';
 import * as constants from '../core/constants';
 import { measureText, wrapTextDynamic } from '../core/text_utils';
 import type { CompletionSession, CursorScreenInfo, ParameterHintState } from '../core/types';
-import { ide_state } from '../core/ide_state';
 import { drawEditorText } from './text_renderer';
+import { editorViewState } from '../ui/editor_view_state';
 
 export type CompletionRenderBounds = {
 	codeTop: number;
@@ -25,7 +25,7 @@ type CompletionTextMeasure = (text: string) => number;
 type CompletionTextDraw = (text: string, x: number, y: number, color: number) => void;
 
 function drawCompletionText(text: string, x: number, y: number, color: number): void {
-	drawEditorText(ide_state.font, text, x, y, undefined, color);
+	drawEditorText(editorViewState.font, text, x, y, undefined, color);
 }
 
 function drawCompletionPopupCore(

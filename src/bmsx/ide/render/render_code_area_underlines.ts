@@ -1,9 +1,9 @@
 import type { CachedHighlight } from '../core/types';
 import { clamp } from '../../utils/clamp';
 import * as constants from '../core/constants';
-import { ide_state } from '../core/ide_state';
 import { api } from '../ui/view/overlay_api';
 import { getDiagnosticsForRow } from '../contrib/problems/diagnostics_controller';
+import { editorViewState } from '../ui/editor_view_state';
 
 type GotoHighlight = {
 	row: number;
@@ -21,12 +21,12 @@ function drawUnderline(entry: CachedHighlight, textLeft: number, rowY: number, c
 	const drawLeft = textLeft + advancePrefix[clampedStartDisplay] - advancePrefix[sliceStartDisplay];
 	let drawRight = textLeft + advancePrefix[clampedEndDisplay] - advancePrefix[sliceStartDisplay];
 	if (drawRight <= drawLeft) {
-		drawRight = drawLeft + Math.max(1, ide_state.charAdvance);
+		drawRight = drawLeft + Math.max(1, editorViewState.charAdvance);
 		if (drawRight <= drawLeft) {
 			return;
 		}
 	}
-	const underlineY = Math.min(contentBottom - 1, rowY + ide_state.lineHeight - 1);
+	const underlineY = Math.min(contentBottom - 1, rowY + editorViewState.lineHeight - 1);
 	if (underlineY < rowY || underlineY >= contentBottom) {
 		return;
 	}
@@ -78,8 +78,8 @@ export function drawDiagnosticUnderlinesForRow(
 			contentBottom,
 			sliceStartDisplay,
 			sliceEndDisplay,
-			ide_state.layout.columnToDisplay(highlight, diagStartColumn),
-			ide_state.layout.columnToDisplay(highlight, diagEndColumn),
+			editorViewState.layout.columnToDisplay(highlight, diagStartColumn),
+			editorViewState.layout.columnToDisplay(highlight, diagEndColumn),
 			underlineColor,
 		);
 	}
@@ -108,8 +108,8 @@ export function drawGotoUnderlineForRow(
 		contentBottom,
 		sliceStartDisplay,
 		sliceEndDisplay,
-		ide_state.layout.columnToDisplay(highlight, activeGotoHighlight.startColumn),
-		ide_state.layout.columnToDisplay(highlight, activeGotoHighlight.endColumn),
+		editorViewState.layout.columnToDisplay(highlight, activeGotoHighlight.startColumn),
+		editorViewState.layout.columnToDisplay(highlight, activeGotoHighlight.endColumn),
 		constants.COLOR_GOTO_UNDERLINE,
 	);
 }

@@ -44,6 +44,7 @@ import { $ } from '../../../core/engine_core';
 import { KEYWORDS, LuaTokenType, type LuaToken } from '../../../lua/syntax/luatoken';
 import { getTextSnapshot, splitText } from '../../text/source_text';
 import { editorDocumentState } from '../../editing/editor_document_state';
+import { editorViewState } from '../../ui/editor_view_state';
 export const PREVIEW_MAX_ENTRIES = 12;
 export const PREVIEW_MAX_DEPTH = 2;
 
@@ -536,8 +537,8 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 
 function wrapHoverLines(lines: string[]): string[] {
 	const wrapWidth = Math.max(
-		ide_state.spaceAdvance,
-		ide_state.viewportWidth - constants.HOVER_TOOLTIP_PADDING_X * 2 - ide_state.spaceAdvance * 2
+		editorViewState.spaceAdvance,
+		editorViewState.viewportWidth - constants.HOVER_TOOLTIP_PADDING_X * 2 - editorViewState.spaceAdvance * 2
 	);
 	const wrapped: string[] = [];
 	for (let i = 0; i < lines.length; i += 1) {
@@ -705,7 +706,7 @@ export function requestSemanticRefresh(context?: CodeTabContext): void {
 		return;
 	}
 	const path = activeContext.descriptor.path;
-	ide_state.layout.requestSemanticUpdate(editorDocumentState.buffer, editorDocumentState.textVersion, path);
+	editorViewState.layout.requestSemanticUpdate(editorDocumentState.buffer, editorDocumentState.textVersion, path);
 }
 export function resolveSemanticDefinitionLocation(
 	context: CodeTabContext,

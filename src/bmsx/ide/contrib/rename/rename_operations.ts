@@ -6,7 +6,6 @@ import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } 
 import { findResourceDescriptorForChunk } from '../resources/resource_lookup';
 import { getTextSnapshot, splitText } from '../../text/source_text';
 import { syncSemanticWorkspacePath, getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace_sync';
-import { ide_state } from '../../core/ide_state';
 import { markTextMutated } from '../../core/text_utils';
 import { markDiagnosticsDirtyForChunk } from '../problems/diagnostics_controller';
 import { prepareUndo, applyUndoableReplace, recordEditContext } from '../../editing/undo_controller';
@@ -16,6 +15,7 @@ import { resetBlink } from '../../render/render_caret';
 import { editorCaretState } from '../../ui/caret_state';
 import { editorDocumentState } from '../../editing/editor_document_state';
 import { editorSessionState } from '../../ui/editor_session_state';
+import { editorViewState } from '../../ui/editor_view_state';
 
 export type RenameLineEdit = {
 	row: number;
@@ -70,7 +70,7 @@ export function commitRename(
 			const startOffset = editorDocumentState.buffer.offsetAt(match.row, match.start);
 			const endOffset = editorDocumentState.buffer.offsetAt(match.row, match.end);
 			applyUndoableReplace(startOffset, endOffset - startOffset, newName);
-			ide_state.layout.invalidateLine(match.row);
+			editorViewState.layout.invalidateLine(match.row);
 		}
 		markTextMutated();
 

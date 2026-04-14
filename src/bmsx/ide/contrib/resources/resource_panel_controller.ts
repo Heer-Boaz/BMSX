@@ -4,10 +4,10 @@ import { Scrollbar } from '../../ui/scrollbar';
 import { renderResourcePanel } from '../../render/render_resource_panel';
 import type { ResourceBrowserItem } from '../../core/types';
 import type { RectBounds } from '../../../rompack/rompack';
-import { ide_state } from '../../core/ide_state';
 import { showEditorMessage } from '../../core/editor_feedback_state';
 import { measureText } from '../../core/text_utils';
 import type { CallHierarchyView } from '../call_hierarchy/call_hierarchy_view';
+import { editorViewState } from '../../ui/editor_view_state';
 import {
 	findResourcePanelIndexByCallHierarchyNodeId,
 	type ResourcePanelFilterMode,
@@ -70,8 +70,8 @@ export class ResourcePanelController {
 	public readonly resourceHorizontal: Scrollbar;
 
 	constructor(scrollbars?: ResourcePanelScrollbars) {
-		this.lineHeight = ide_state.lineHeight;
-		this.charAdvance = ide_state.charAdvance;
+		this.lineHeight = editorViewState.lineHeight;
+		this.charAdvance = editorViewState.charAdvance;
 		if (scrollbars) {
 			this.resourceVertical = scrollbars.resourceVertical;
 			this.resourceHorizontal = scrollbars.resourceHorizontal;

@@ -5,6 +5,7 @@ import { editorChromeState } from '../../ui/editor_chrome_state';
 import { getResourcePanelWidth, hideResourcePanel } from '../../ui/editor_view';
 import * as constants from '../../core/constants';
 import { editorPointerState, resetPointerClickTracking } from './editor_pointer_state';
+import { editorViewState } from '../../ui/editor_view_state';
 
 export function handleResourcePanelResizePointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	if (editorChromeState.resourcePanelResizing) {
@@ -35,11 +36,11 @@ function updateResourcePanelResize(snapshot: PointerSnapshot): void {
 		clearGotoHoverHighlight();
 		return;
 	}
-	const ok = ide_state.resourcePanel.setRatioFromViewportX(snapshot.viewportX, ide_state.viewportWidth);
+	const ok = ide_state.resourcePanel.setRatioFromViewportX(snapshot.viewportX, editorViewState.viewportWidth);
 	if (!ok) {
 		hideResourcePanel();
 	} else {
-		ide_state.layout.markVisualLinesDirty();
+		editorViewState.layout.markVisualLinesDirty();
 	}
 	ide_state.resourcePanel.setFocused(true);
 	editorPointerState.pointerSelecting = false;

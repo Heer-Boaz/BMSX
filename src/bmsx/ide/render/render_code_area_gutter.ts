@@ -1,7 +1,7 @@
 import type { Font } from '../../render/shared/bmsx_font';
 import * as constants from '../core/constants';
-import { ide_state } from '../core/ide_state';
 import { api } from '../ui/view/overlay_api';
+import { editorViewState } from '../ui/editor_view_state';
 
 export function drawCodeAreaBackground(
 	codeLeft: number,
@@ -32,15 +32,15 @@ export function drawCodeAreaRowChrome(
 	breakpointLaneWidth: number,
 ): void {
 	if (isExecutionStopRow) {
-		api.fill_rect_color(gutterLeft, rowY, gutterRight, rowY + ide_state.lineHeight, undefined, constants.EXECUTION_STOP_OVERLAY);
-		api.fill_rect_color(gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, undefined, constants.EXECUTION_STOP_OVERLAY);
+		api.fill_rect_color(gutterLeft, rowY, gutterRight, rowY + editorViewState.lineHeight, undefined, constants.EXECUTION_STOP_OVERLAY);
+		api.fill_rect_color(gutterRight, rowY, contentRight, rowY + editorViewState.lineHeight, undefined, constants.EXECUTION_STOP_OVERLAY);
 	} else if (isCursorLine) {
-		api.fill_rect_color(gutterLeft, rowY, gutterRight, rowY + ide_state.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
-		api.fill_rect_color(gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
+		api.fill_rect_color(gutterLeft, rowY, gutterRight, rowY + editorViewState.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
+		api.fill_rect_color(gutterRight, rowY, contentRight, rowY + editorViewState.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
 	}
 	if (gutterRight > gutterLeft && isPrimaryVisualSegment) {
 		const lineNumberText = `${lineIndex + 1}`;
-		const lineNumberX = gutterRight - 1 - ide_state.font.measure(lineNumberText);
+		const lineNumberX = gutterRight - 1 - editorViewState.font.measure(lineNumberText);
 		const lineNumberColor = isExecutionStopRow || isCursorLine
 			? constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT
 			: constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
@@ -50,7 +50,7 @@ export function drawCodeAreaRowChrome(
 		const markerLeft = gutterLeft + 1;
 		const markerRight = gutterLeft + breakpointLaneWidth - 1;
 		const markerTop = rowY + 1;
-		const markerBottom = rowY + ide_state.lineHeight - 1;
+		const markerBottom = rowY + editorViewState.lineHeight - 1;
 		api.fill_rect_color(markerLeft, markerTop, markerRight, markerBottom, undefined, constants.COLOR_BREAKPOINT_BORDER);
 		api.fill_rect_color(markerLeft + 1, markerTop + 1, markerRight - 1, markerBottom - 1, undefined, constants.COLOR_BREAKPOINT_FILL);
 	}

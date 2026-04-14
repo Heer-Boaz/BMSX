@@ -2,10 +2,10 @@ import type { CachedHighlight, CursorScreenInfo } from '../core/types';
 import type { Font } from '../../render/shared/bmsx_font';
 import { clamp } from '../../utils/clamp';
 import * as constants from '../core/constants';
-import { ide_state } from '../core/ide_state';
 import { api } from '../ui/view/overlay_api';
 import { drawHighlightSlice } from './render_code_area_highlights';
 import { editorDocumentState } from '../editing/editor_document_state';
+import { editorViewState } from '../ui/editor_view_state';
 
 type InlineCompletionPreview = {
 	row: number;
@@ -27,7 +27,7 @@ export function drawCodeRowText(
 ): void {
 	const highlight = entry.hi;
 	if (showInlinePreview) {
-		const insertDisplay = ide_state.layout.columnToDisplay(highlight, inlineCompletionPreview.column);
+		const insertDisplay = editorViewState.layout.columnToDisplay(highlight, inlineCompletionPreview.column);
 		if (insertDisplay >= sliceStartDisplay && insertDisplay <= sliceEndDisplay) {
 			const ghost = inlineCompletionPreview.suffix;
 			drawHighlightSlice(renderFont, renderText, highlight.colors, entry.advancePrefix, sliceStartDisplay, insertDisplay, textLeft, rowY, undefined);
@@ -36,7 +36,7 @@ export function drawCodeRowText(
 			if (ghostText.length > 0) {
 				api.blit_text_inline_with_font(ghostText, textLeft + prefixWidth, rowY, undefined, constants.COLOR_COMPLETION_PREVIEW_TEXT, renderFont);
 			}
-			const ghostWidth = ghostText.length > 0 ? ide_state.font.measure(ghostText) : 0;
+			const ghostWidth = ghostText.length > 0 ? editorViewState.font.measure(ghostText) : 0;
 			drawHighlightSlice(
 				renderFont,
 				renderText,
@@ -64,7 +64,7 @@ export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number
 	const limitedDisplayIndex = Math.max(sliceStartDisplay, cursorDisplayIndex);
 	const advancePrefix = entry.advancePrefix;
 	const cursorX = textLeft + advancePrefix[limitedDisplayIndex] - advancePrefix[sliceStartDisplay];
-	let cursorWidth = ide_state.charAdvance;
+	let cursorWidth = editorViewState.charAdvance;
 	let baseChar = ' ';
 	let baseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
 	if (cursorDisplayIndex < highlight.text.length) {
@@ -73,11 +73,11 @@ export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number
 		const widthIndex = cursorDisplayIndex + 1;
 		if (widthIndex < entry.advancePrefix.length) {
 			const widthValue = entry.advancePrefix[widthIndex] - entry.advancePrefix[cursorDisplayIndex];
-			cursorWidth = widthValue > 0 ? widthValue : ide_state.charAdvance;
+			cursorWidth = widthValue > 0 ? widthValue : editorViewState.charAdvance;
 		}
 	}
 	if (editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow).charAt(editorDocumentState.cursorColumn) === '\t') {
-		cursorWidth = ide_state.spaceAdvance * constants.TAB_SPACES;
+		cursorWidth = editorViewState.spaceAdvance * constants.TAB_SPACES;
 	}
 	return {
 		row: editorDocumentState.cursorRow,
@@ -85,7 +85,7 @@ export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number
 		x: cursorX,
 		y: rowTop,
 		width: cursorWidth,
-		height: ide_state.lineHeight,
+		height: editorViewState.lineHeight,
 		baseChar,
 		baseColor,
 	};

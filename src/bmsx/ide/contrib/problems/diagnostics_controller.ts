@@ -17,6 +17,7 @@ import { editorCaretState } from '../../ui/caret_state';
 import { diagnosticsDebounceMs, editorDiagnosticsState, EMPTY_DIAGNOSTICS } from './diagnostics_state';
 import { editorDocumentState } from '../../editing/editor_document_state';
 import { editorSessionState } from '../../ui/editor_session_state';
+import { editorViewState } from '../../ui/editor_view_state';
 
 const diagnosticsMinIntervalMs = 600;
 let diagnosticsTimer: TimerHandle | null = null;
@@ -293,13 +294,13 @@ export function markDiagnosticsDirtyForChunk(path: string): void {
 export function getActiveSemanticDefinitions(): readonly LuaDefinitionInfo[] {
 	const context = getActiveCodeTabContext();
 	const path = context.descriptor.path;
-	return ide_state.layout.getSemanticDefinitions(editorDocumentState.buffer, editorDocumentState.textVersion, path);
+	return editorViewState.layout.getSemanticDefinitions(editorDocumentState.buffer, editorDocumentState.textVersion, path);
 }
 
 export function getLuaModuleAliases(path: string): Map<string, ModuleAliasEntry> {
 	const activeContext = getActiveCodeTabContext();
 	const targetChunk = path || activeContext.descriptor.path;
-	ide_state.layout.getSemanticDefinitions(editorDocumentState.buffer, editorDocumentState.textVersion, targetChunk);
+	editorViewState.layout.getSemanticDefinitions(editorDocumentState.buffer, editorDocumentState.textVersion, targetChunk);
 	const data = getOrCreateSemanticWorkspace().getSnapshot().getFileData(targetChunk);
 	if (!data || data.moduleAliases.length === 0) {
 		return new Map();

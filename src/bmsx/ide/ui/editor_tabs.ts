@@ -4,6 +4,7 @@ import { editorDocumentState, restoreDocumentStateFromContext, storeDocumentStat
 import { editorChromeState } from './editor_chrome_state';
 import { editorDiagnosticsState } from '../contrib/problems/diagnostics_state';
 import { editorSessionState } from './editor_session_state';
+import { editorViewState } from './editor_view_state';
 import type {
 	CodeTabContext,
 	CodeTabMode,
@@ -157,7 +158,7 @@ function activateResourceViewerTab(tab: EditorTabDescriptor): void {
 	if (!tab.resource) {
 		return;
 	}
-	clampResourceViewerScroll(tab.resource, getCodeAreaBounds(), ide_state.lineHeight);
+	clampResourceViewerScroll(tab.resource, getCodeAreaBounds(), editorViewState.lineHeight);
 }
 
 export function createEntryTabContext(): CodeTabContext {
@@ -183,8 +184,8 @@ export function getActiveCodeTabContext(): CodeTabContext {
 export function storeActiveCodeTabContext(): void {
 	const context = getActiveCodeTabContext();
 	storeDocumentStateInContext(context);
-	context.scrollRow = ide_state.scrollRow;
-	context.scrollColumn = ide_state.scrollColumn;
+	context.scrollRow = editorViewState.scrollRow;
+	context.scrollColumn = editorViewState.scrollColumn;
 	context.runtimeErrorOverlay = runtimeErrorState.activeOverlay;
 	context.executionStopRow = runtimeErrorState.executionStopRow;
 	setTabDirty(context.id, context.dirty);
@@ -196,13 +197,13 @@ export function activateCodeEditorTab(tabId: string): void {
 	editorSessionState.activeCodeTabContextId = tabId;
 	editorSessionState.activeContextReadOnly = context.readOnly === true;
 	restoreDocumentStateFromContext(context);
-	ide_state.scrollRow = context.scrollRow;
-	ide_state.scrollColumn = context.scrollColumn;
+	editorViewState.scrollRow = context.scrollRow;
+	editorViewState.scrollColumn = context.scrollColumn;
 
-	ide_state.maxLineLengthDirty = true;
-	ide_state.layout.setCodeTabMode(context.mode);
-	ide_state.layout.markVisualLinesDirty();
-	ide_state.layout.invalidateAllHighlights();
+	editorViewState.maxLineLengthDirty = true;
+	editorViewState.layout.setCodeTabMode(context.mode);
+	editorViewState.layout.markVisualLinesDirty();
+	editorViewState.layout.invalidateAllHighlights();
 	setCodeTabDiagnosticsState(context);
 
 	context.dirty = editorDocumentState.dirty;
@@ -424,7 +425,7 @@ export function computeTabLayout(): Array<{ id: string; left: number; right: num
 			const left = bounds.left;
 			const right = bounds.right;
 			const width = Math.max(0, right - left);
-			const rowIndex = Math.max(0, Math.floor((bounds.top - ide_state.headerHeight) / ide_state.tabBarHeight));
+			const rowIndex = Math.max(0, Math.floor((bounds.top - editorViewState.headerHeight) / editorViewState.tabBarHeight));
 			layout.push({
 				id: tab.id,
 				left,
@@ -482,12 +483,12 @@ export function updateTabDrag(pointerX: number, pointerY: number): void {
 	const pointerLeft = pointerX - state.pointerOffset;
 	const pointerCenter = pointerLeft + Math.max(dragged.width, 1) * 0.5;
 	const totalTabHeight = getTabBarTotalHeight();
-	const withinTabBar = pointerY >= ide_state.headerHeight && pointerY < ide_state.headerHeight + totalTabHeight;
-	const maxRowIndex = Math.max(0, ide_state.tabBarRowCount - 1);
+	const withinTabBar = pointerY >= editorViewState.headerHeight && pointerY < editorViewState.headerHeight + totalTabHeight;
+	const maxRowIndex = Math.max(0, editorViewState.tabBarRowCount - 1);
 	const pointerRow = withinTabBar
-		? clamp(Math.floor((pointerY - ide_state.headerHeight) / ide_state.tabBarHeight), 0, maxRowIndex)
+		? clamp(Math.floor((pointerY - editorViewState.headerHeight) / editorViewState.tabBarHeight), 0, maxRowIndex)
 		: dragged.rowIndex;
-	const rowStride = ide_state.viewportWidth + constants.TAB_BUTTON_SPACING * 4;
+	const rowStride = editorViewState.viewportWidth + constants.TAB_BUTTON_SPACING * 4;
 	const pointerValue = pointerRow * rowStride + pointerCenter;
 	let desiredIndex = currentIndex;
 	for (let i = 0; i < layout.length; i += 1) {
@@ -603,12 +604,12 @@ export function closeActiveTab(): void {
 
 export function resetEditorContent(): void {
 	editorDocumentState.buffer = new PieceTreeBuffer('');
-	ide_state.layout.markVisualLinesDirty();
+	editorViewState.layout.markVisualLinesDirty();
 	markAllDiagnosticsDirty();
 	editorDocumentState.cursorRow = 0;
 	editorDocumentState.cursorColumn = 0;
-	ide_state.scrollRow = 0;
-	ide_state.scrollColumn = 0;
+	editorViewState.scrollRow = 0;
+	editorViewState.scrollColumn = 0;
 	editorDocumentState.selectionAnchor = null;
 	editorDocumentState.lastSavedSource = '';
 	editorDocumentState.undoStack = [];
@@ -616,7 +617,7 @@ export function resetEditorContent(): void {
 	editorDocumentState.lastHistoryKey = null;
 	editorDocumentState.lastHistoryTimestamp = 0;
 	editorDocumentState.savePointDepth = 0;
-	ide_state.layout.invalidateAllHighlights();
+	editorViewState.layout.invalidateAllHighlights();
 	bumpTextVersion();
 	editorDocumentState.dirty = false;
 	updateActiveContextDirtyFlag();
@@ -686,7 +687,7 @@ export function applySourceToDocument(source: string): void {
 	editorDocumentState.buffer.replace(0, editorDocumentState.buffer.length, source);
 	invalidateLuaCommentContextFromRow(editorDocumentState.buffer, 0);
 	editorDocumentState.textVersion = editorDocumentState.buffer.version;
-	ide_state.maxLineLengthDirty = true;
-	ide_state.layout.invalidateHighlightsFromRow(0);
-	ide_state.layout.markVisualLinesDirty();
+	editorViewState.maxLineLengthDirty = true;
+	editorViewState.layout.invalidateHighlightsFromRow(0);
+	editorViewState.layout.markVisualLinesDirty();
 }

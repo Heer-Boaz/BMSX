@@ -11,18 +11,19 @@ import { Runtime } from '../../emulator/runtime';
 import { api } from '../ui/view/overlay_api';
 import { workspaceState } from '../core/workspace_storage';
 import { editorDocumentState } from '../editing/editor_document_state';
+import { editorViewState } from '../ui/editor_view_state';
 
 export function renderStatusBar(): void {
 	const runtime = Runtime.instance;
 	const runtimeFaulted = runtime ? runtime.hasRuntimeFailed : false;
-	const statusTop = ide_state.viewportHeight - statusAreaHeight();
-	const statusBottom = ide_state.viewportHeight;
+	const statusTop = editorViewState.viewportHeight - statusAreaHeight();
+	const statusBottom = editorViewState.viewportHeight;
 	const statusBackground = constants.COLOR_STATUS_BACKGROUND;
-	api.fill_rect(0, statusTop, ide_state.viewportWidth, statusBottom, undefined, statusBackground);
+	api.fill_rect(0, statusTop, editorViewState.viewportWidth, statusBottom, undefined, statusBackground);
 	if (runtimeFaulted) {
-		const accentHeight = Math.max(2, Math.trunc(ide_state.lineHeight / 6));
+		const accentHeight = Math.max(2, Math.trunc(editorViewState.lineHeight / 6));
 		const accentBottom = Math.min(statusBottom, statusTop + accentHeight);
-		api.fill_rect_color(0, statusTop, ide_state.viewportWidth, accentBottom, undefined, constants.COLOR_STATUS_WARNING);
+		api.fill_rect_color(0, statusTop, editorViewState.viewportWidth, accentBottom, undefined, constants.COLOR_STATUS_WARNING);
 	}
 	const statusTextColor = runtimeFaulted ? constants.COLOR_STATUS_ALERT : constants.COLOR_STATUS_TEXT;
 
@@ -31,15 +32,15 @@ export function renderStatusBar(): void {
 		let textY = statusTop + 2;
 		const textX = 4;
 		for (let i = 0; i < lines.length; i += 1) {
-			drawEditorText(ide_state.font, lines[i], textX, textY, undefined, constants.COLOR_STATUS_ALERT);
-			textY += ide_state.lineHeight;
+			drawEditorText(editorViewState.font, lines[i], textX, textY, undefined, constants.COLOR_STATUS_ALERT);
+			textY += editorViewState.lineHeight;
 		}
 		return;
 	}
 	const statusLeftInfo = buildStatusLeftInfo();
 	// When Problems panel owns the status (focused), show its info and stop
 	if (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused && statusLeftInfo && statusLeftInfo.length > 0) {
-		drawEditorText(ide_state.font, statusLeftInfo, 4, statusTop + 2, undefined, statusTextColor);
+		drawEditorText(editorViewState.font, statusLeftInfo, 4, statusTop + 2, undefined, statusTextColor);
 		return;
 	}
 
@@ -55,8 +56,8 @@ export function renderStatusBar(): void {
 		const range = location.range;
 		const positionSuffix = range ? `:${range.startLine}:${range.startColumn}` : '';
 		const fullText = `${displayPath}${positionSuffix}`;
-		const pathText = truncateTextToWidth(fullText, Math.max(0, ide_state.viewportWidth - 8));
-		drawEditorText(ide_state.font, pathText, 4, statusTop + 2, undefined, statusTextColor);
+		const pathText = truncateTextToWidth(fullText, Math.max(0, editorViewState.viewportWidth - 8));
+		drawEditorText(editorViewState.font, pathText, 4, statusTop + 2, undefined, statusTextColor);
 		return;
 	}
 
@@ -64,15 +65,15 @@ export function renderStatusBar(): void {
 		if (ide_state.resourcePanel.getMode() === 'call_hierarchy') {
 			const info = 'CALL HIERARCHY';
 			const hint = 'ENTER toggle/open • LEFT/RIGHT collapse/expand';
-			drawEditorText(ide_state.font, info, 4, statusTop + 2, undefined, statusTextColor);
-			drawEditorText(ide_state.font, hint, ide_state.viewportWidth - measureText(hint) - 4, statusTop + 2, undefined, statusTextColor);
+			drawEditorText(editorViewState.font, info, 4, statusTop + 2, undefined, statusTextColor);
+			drawEditorText(editorViewState.font, hint, editorViewState.viewportWidth - measureText(hint) - 4, statusTop + 2, undefined, statusTextColor);
 			return;
 		}
 		const filterLabel = ide_state.resourcePanel.getFilterMode() === 'lua_only' ? 'LUA' : 'ALL';
 		const fileInfo = `FILES ${ide_state.resourcePanel.getFilterMode()} (${filterLabel})`;
 		const hint = 'CTRL+SHIFT+L TOGGLE FILTER';
-		drawEditorText(ide_state.font, fileInfo, 4, statusTop + 2, undefined, statusTextColor);
-		drawEditorText(ide_state.font, hint, ide_state.viewportWidth - measureText(hint) - 4, statusTop + 2, undefined, statusTextColor);
+		drawEditorText(editorViewState.font, fileInfo, 4, statusTop + 2, undefined, statusTextColor);
+		drawEditorText(editorViewState.font, hint, editorViewState.viewportWidth - measureText(hint) - 4, statusTop + 2, undefined, statusTextColor);
 		return;
 	}
 
@@ -80,9 +81,9 @@ export function renderStatusBar(): void {
 		const viewer = getActiveResourceViewer();
 		const info = viewer ? `${viewer.descriptor.type.toUpperCase()} ${viewer.descriptor.asset_id}` : 'RESOURCE';
 		const detail = viewer ? viewer.descriptor.path : '';
-		drawEditorText(ide_state.font, info, 4, statusTop + 2, undefined, statusTextColor);
+		drawEditorText(editorViewState.font, info, 4, statusTop + 2, undefined, statusTextColor);
 		if (detail.length > 0) {
-			drawEditorText(ide_state.font, detail, ide_state.viewportWidth - measureText(detail) - 4, statusTop + 2, undefined, statusTextColor);
+			drawEditorText(editorViewState.font, detail, editorViewState.viewportWidth - measureText(detail) - 4, statusTop + 2, undefined, statusTextColor);
 		}
 		return;
 	}
@@ -92,10 +93,10 @@ export function renderStatusBar(): void {
 	const leftX = 0;
 	const glyphSize = measureText('•');
 	const indicatorColor = workspaceState.serverConnected ? constants.COLOR_SERVER_STATUS_CONNECTED : constants.COLOR_SERVER_STATUS_DISCONNECTED;
-	drawEditorText(ide_state.font, '•', leftX, statusTop + 2, undefined, indicatorColor);
+	drawEditorText(editorViewState.font, '•', leftX, statusTop + 2, undefined, indicatorColor);
 	let textX = leftX + glyphSize;
 	if (statusLeftInfo && statusLeftInfo.length > 0) {
-		drawEditorText(ide_state.font, statusLeftInfo, textX, statusTop + 2, undefined, statusTextColor);
+		drawEditorText(editorViewState.font, statusLeftInfo, textX, statusTop + 2, undefined, statusTextColor);
 	}
 	if (isCodeTabActive()) {
 		const context = getActiveCodeTabContext();
@@ -108,10 +109,10 @@ export function renderStatusBar(): void {
 			detail = 'RESTART PENDING';
 		}
 		if (detail.length > 0) {
-			drawEditorText(ide_state.font, detail, ide_state.viewportWidth - measureText(detail) - 4, statusTop + 2, undefined, detailColor);
+			drawEditorText(editorViewState.font, detail, editorViewState.viewportWidth - measureText(detail) - 4, statusTop + 2, undefined, detailColor);
 		}
 	}
-	// drawEditorText(api, ide_state.font, filenameInfo, ide_state.viewportWidth - measureText(filenameInfo) - 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
+	// drawEditorText(api, editorViewState.font, filenameInfo, editorViewState.viewportWidth - measureText(filenameInfo) - 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
 }
 
 export function buildStatusLeftInfo(): string {

@@ -21,6 +21,7 @@ import { getWorkspaceCachedSource } from '../../emulator/workspace_cache';
 import { editorFeedbackState } from './editor_feedback_state';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorSessionState } from '../ui/editor_session_state';
+import { editorViewState } from '../ui/editor_view_state';
 
 export function expandTabs(source: string): string {
 	if (source.indexOf('\t') === -1) return source;
@@ -111,9 +112,9 @@ export function measureText(text: string): number {
 	let width = 0;
 	for (let i = 0; i < text.length; i++) {
 		const ch = text.charAt(i);
-		if (ch === '\t') { width += ide_state.spaceAdvance * constants.TAB_SPACES; continue; }
+		if (ch === '\t') { width += editorViewState.spaceAdvance * constants.TAB_SPACES; continue; }
 		if (ch === '\n') continue;
-		width += ide_state.font.advance(ch);
+		width += editorViewState.font.advance(ch);
 	}
 	return width;
 }
@@ -512,9 +513,9 @@ function truncateWithMeasure(text: string, maxWidth: number, measure: (t: string
 
 export function assertMonospace(): void {
 	const sample = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-*/%<>=#(){}[]:,.;\'"`~!@^&|\\?_ ';
-	const reference = ide_state.font.advance('M');
+	const reference = editorViewState.font.advance('M');
 	for (let i = 0; i < sample.length; i++) {
-		const candidate = ide_state.font.advance(sample.charAt(i));
+		const candidate = editorViewState.font.advance(sample.charAt(i));
 		if (candidate !== reference) {
 			editorFeedbackState.warnNonMonospace = true;
 			break;
@@ -523,11 +524,11 @@ export function assertMonospace(): void {
 }
 
 export function visibleRowCount(): number {
-	return ide_state.cachedVisibleRowCount > 0 ? ide_state.cachedVisibleRowCount : 1;
+	return editorViewState.cachedVisibleRowCount > 0 ? editorViewState.cachedVisibleRowCount : 1;
 }
 
 export function visibleColumnCount(): number {
-	return ide_state.cachedVisibleColumnCount > 0 ? ide_state.cachedVisibleColumnCount : 1;
+	return editorViewState.cachedVisibleColumnCount > 0 ? editorViewState.cachedVisibleColumnCount : 1;
 }
 export function computeSelectionSlice(lineIndex: number, highlight: HighlightLine, sliceStart: number, sliceEnd: number): { startDisplay: number; endDisplay: number; } {
 	const range = TextEditing.getSelectionRange();
@@ -547,8 +548,8 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 	if (selectionStartColumn === selectionEndColumn) {
 		return null;
 	}
-	const startDisplay = ide_state.layout.columnToDisplay(highlight, selectionStartColumn);
-	const endDisplay = ide_state.layout.columnToDisplay(highlight, selectionEndColumn);
+	const startDisplay = editorViewState.layout.columnToDisplay(highlight, selectionStartColumn);
+	const endDisplay = editorViewState.layout.columnToDisplay(highlight, selectionEndColumn);
 	const visibleStart = Math.max(sliceStart, startDisplay);
 	const visibleEnd = Math.min(sliceEnd, endDisplay);
 	if (visibleEnd <= visibleStart) {
@@ -560,36 +561,36 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 export function ensureVisualLines(): void {
 	const activeContext = getActiveCodeTabContext();
 	const path = activeContext.descriptor.path;
-	const estimatedVisibleRowCount = Math.max(1, ide_state.cachedVisibleRowCount);
-	ide_state.scrollRow = ide_state.layout.ensureVisualLines({
+	const estimatedVisibleRowCount = Math.max(1, editorViewState.cachedVisibleRowCount);
+	editorViewState.scrollRow = editorViewState.layout.ensureVisualLines({
 		buffer: editorDocumentState.buffer,
-		wordWrapEnabled: ide_state.wordWrapEnabled,
-		scrollRow: ide_state.scrollRow,
+		wordWrapEnabled: editorViewState.wordWrapEnabled,
+		scrollRow: editorViewState.scrollRow,
 		documentVersion: editorDocumentState.textVersion,
 		path,
 		computeWrapWidth: () => computeWrapWidth(),
 		estimatedVisibleRowCount,
 	});
-	const visualLineCount = ide_state.layout.getVisualLineCount();
-	ide_state.scrollRow = ide_state.layout.clampVisualScroll(ide_state.scrollRow, visualLineCount, estimatedVisibleRowCount);
+	const visualLineCount = editorViewState.layout.getVisualLineCount();
+	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollRow, visualLineCount, estimatedVisibleRowCount);
 }
 
 export function computeWrapWidth(): number {
 	const resourceWidth = ide_state.resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
 	const gutterSpace = updateGutterWidth() + 2;
 	const verticalScrollbarSpace = 0;
-	const available = ide_state.viewportWidth - resourceWidth - gutterSpace - verticalScrollbarSpace;
-	return Math.max(ide_state.charAdvance, available - 2);
+	const available = editorViewState.viewportWidth - resourceWidth - gutterSpace - verticalScrollbarSpace;
+	return Math.max(editorViewState.charAdvance, available - 2);
 }
 
 export function getVisualLineCount(): number {
 	ensureVisualLines();
-	return ide_state.layout.getVisualLineCount();
+	return editorViewState.layout.getVisualLineCount();
 }
 
 export function visualIndexToSegment(index: number): VisualLineSegment {
 	ensureVisualLines();
-	return ide_state.layout.visualIndexToSegment(index);
+	return editorViewState.layout.visualIndexToSegment(index);
 }
 
 export function positionToVisualIndex(row: number, column: number): number {
@@ -598,16 +599,16 @@ export function positionToVisualIndex(row: number, column: number): number {
 	if (override) {
 		return override.visualIndex;
 	}
-	return ide_state.layout.positionToVisualIndex(editorDocumentState.buffer, row, column);
+	return editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, row, column);
 }
 export function computeRuntimeErrorOverlayMaxWidth(): number {
 	const resourceWidth = ide_state.resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
 	const gutterSpace = updateGutterWidth() + 2;
-	const scrollbarSpace = ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0;
+	const scrollbarSpace = editorViewState.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0;
 	const rightMargin = constants.CODE_AREA_RIGHT_MARGIN;
 	const connectorOffset = ERROR_OVERLAY_CONNECTOR_OFFSET + ERROR_OVERLAY_PADDING_X * 2;
-	const available = ide_state.viewportWidth - resourceWidth - gutterSpace - scrollbarSpace - rightMargin - connectorOffset;
-	return Math.max(ide_state.charAdvance, available);
+	const available = editorViewState.viewportWidth - resourceWidth - gutterSpace - scrollbarSpace - rightMargin - connectorOffset;
+	return Math.max(editorViewState.charAdvance, available);
 }
 
 export function wrapOverlayLine(line: string, maxWidth: number): string[] {
@@ -690,8 +691,8 @@ export function markTextMutated(): void {
 	record.setAfterState(
 		editorDocumentState.cursorRow,
 		editorDocumentState.cursorColumn,
-		ide_state.scrollRow,
-		ide_state.scrollColumn,
+		editorViewState.scrollRow,
+		editorViewState.scrollColumn,
 		anchor ? anchor.row : 0,
 		anchor ? anchor.column : 0,
 		anchor !== null,
@@ -702,12 +703,12 @@ export function markTextMutated(): void {
 	if (context) {
 		context.saveGeneration = editorDocumentState.saveGeneration;
 	}
-	ide_state.maxLineLengthDirty = true;
+	editorViewState.maxLineLengthDirty = true;
 	markDiagnosticsDirty(getActiveCodeTabContext().id);
 	bumpTextVersion();
 	clearReferenceHighlights();
 	updateActiveContextDirtyFlag();
-	ide_state.layout.ensureVisualLinesDirty();
+	editorViewState.layout.ensureVisualLinesDirty();
 	requestSemanticRefresh();
 	clearForwardNavigationHistory();
 	handlePostEditMutation();
@@ -737,10 +738,10 @@ export function getSourceForChunk(path: string): string {
 export function invalidateLineRange(startRow: number, endRow: number): void {
 	let from = Math.min(startRow, endRow);
 	let to = Math.max(startRow, endRow);
-	from = ide_state.layout.clampBufferRow(editorDocumentState.buffer, from);
-	to = ide_state.layout.clampBufferRow(editorDocumentState.buffer, to);
+	from = editorViewState.layout.clampBufferRow(editorDocumentState.buffer, from);
+	to = editorViewState.layout.clampBufferRow(editorDocumentState.buffer, to);
 	for (let row = from; row <= to; row += 1) {
-		ide_state.layout.invalidateLine(row);
+		editorViewState.layout.invalidateLine(row);
 	}
 }
 

@@ -4,6 +4,7 @@ import type { Font } from '../../render/shared/bmsx_font';
 import * as constants from '../core/constants';
 import { ide_state } from '../core/ide_state';
 import { api } from '../ui/view/overlay_api';
+import { editorViewState } from '../ui/editor_view_state';
 
 export function drawHighlightSlice(
 	renderFont: Font,
@@ -46,8 +47,8 @@ export function drawReferenceHighlightsForRow(api: Api, rowIndex: number, entry:
 		if (match.row !== rowIndex) {
 			continue;
 		}
-		const startDisplay = ide_state.layout.columnToDisplay(highlight, match.start);
-		const endDisplay = ide_state.layout.columnToDisplay(highlight, match.end);
+		const startDisplay = editorViewState.layout.columnToDisplay(highlight, match.start);
+		const endDisplay = editorViewState.layout.columnToDisplay(highlight, match.end);
 		const visibleStart = Math.max(sliceStartDisplay, startDisplay);
 		const visibleEnd = Math.min(sliceEndDisplay, endDisplay);
 		if (visibleEnd <= visibleStart) {
@@ -56,7 +57,7 @@ export function drawReferenceHighlightsForRow(api: Api, rowIndex: number, entry:
 		const startX = originX + advancePrefix[visibleStart] - advancePrefix[sliceStartDisplay];
 		const endX = originX + advancePrefix[visibleEnd] - advancePrefix[sliceStartDisplay];
 		const overlay = i === activeIndex ? constants.REFERENCES_MATCH_ACTIVE_OVERLAY : constants.REFERENCES_MATCH_OVERLAY;
-		api.fill_rect_color(startX, originY, endX, originY + ide_state.lineHeight, undefined, overlay);
+		api.fill_rect_color(startX, originY, endX, originY + editorViewState.lineHeight, undefined, overlay);
 	}
 }
 
@@ -71,8 +72,8 @@ export function drawSearchHighlightsForRow(api: Api, rowIndex: number, entry: Ca
 		if (match.row !== rowIndex) {
 			continue;
 		}
-		const startDisplay = ide_state.layout.columnToDisplay(highlight, match.start);
-		const endDisplay = ide_state.layout.columnToDisplay(highlight, match.end);
+		const startDisplay = editorViewState.layout.columnToDisplay(highlight, match.start);
+		const endDisplay = editorViewState.layout.columnToDisplay(highlight, match.end);
 		const visibleStart = Math.max(sliceStartDisplay, startDisplay);
 		const visibleEnd = Math.min(sliceEndDisplay, endDisplay);
 		if (visibleEnd <= visibleStart) {
@@ -81,6 +82,6 @@ export function drawSearchHighlightsForRow(api: Api, rowIndex: number, entry: Ca
 		const startX = originX + advancePrefix[visibleStart] - advancePrefix[sliceStartDisplay];
 		const endX = originX + advancePrefix[visibleEnd] - advancePrefix[sliceStartDisplay];
 		const overlay = i === ide_state.search.currentIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
-		api.fill_rect_color(startX, originY, endX, originY + ide_state.lineHeight, undefined, overlay);
+		api.fill_rect_color(startX, originY, endX, originY + editorViewState.lineHeight, undefined, overlay);
 	}
 }

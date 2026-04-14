@@ -23,6 +23,7 @@ import { textFromLines } from '../../text/source_text';
 import { applyInlineFieldPointer, setFieldText } from '../../ui/inline_text_field';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { editorDocumentState } from '../../editing/editor_document_state';
+import { editorViewState } from '../../ui/editor_view_state';
 
 const LOCAL_ROWS_PER_SLICE = 256;
 const GLOBAL_ROWS_PER_SLICE = 128;
@@ -471,12 +472,12 @@ export function searchPageSize(): number {
 	if (!ide_state.search.visible) {
 		return constants.SEARCH_MAX_RESULTS;
 	}
-	const baseHeight = ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
-	const rowHeight = ide_state.lineHeight * 2;
-	const reservedHeight = ide_state.lineHeight * 6;
-	const available = ide_state.viewportHeight
-		- ide_state.headerHeight
-		- ide_state.tabBarHeight * ide_state.tabBarRowCount
+	const baseHeight = editorViewState.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+	const rowHeight = editorViewState.lineHeight * 2;
+	const reservedHeight = editorViewState.lineHeight * 6;
+	const available = editorViewState.viewportHeight
+		- editorViewState.headerHeight
+		- editorViewState.tabBarHeight * editorViewState.tabBarRowCount
 		- baseHeight
 		- reservedHeight;
 	const fit = Math.floor(available / rowHeight);
@@ -550,7 +551,7 @@ export function applySearchFieldText(value: string, moveCursorToEnd: boolean): v
 
 export function processInlineFieldPointer(field: TextField, textLeft: number, pointerX: number, justPressed: boolean, pointerPressed: boolean): void {
 	const result = applyInlineFieldPointer(field, {
-		metrics: ide_state.inlineFieldMetricsRef,
+		metrics: editorViewState.inlineFieldMetricsRef,
 		textLeft,
 		pointerX,
 		justPressed,

@@ -11,23 +11,24 @@ import { drawCodeAreaBackground } from './render_code_area_gutter';
 import { finalizeCodeAreaRender } from './render_code_area_tail';
 import { drawCodeAreaRows } from './render_code_area_rows';
 import { editorDocumentState } from '../editing/editor_document_state';
+import { editorViewState } from '../ui/editor_view_state';
 
 export function renderCodeArea(): void {
 	ensureVisualLines();
 	const bounds = getCodeAreaBounds();
 	const gutterOffset = bounds.textLeft - bounds.codeLeft;
-	const advance = editorFeedbackState.warnNonMonospace ? ide_state.spaceAdvance : ide_state.charAdvance;
-	const wrapEnabled = ide_state.wordWrapEnabled;
+	const advance = editorFeedbackState.warnNonMonospace ? editorViewState.spaceAdvance : editorViewState.charAdvance;
+	const wrapEnabled = editorViewState.wordWrapEnabled;
 
-	let horizontalVisible = !wrapEnabled && ide_state.codeHorizontalScrollbarVisible;
-	let verticalVisible = ide_state.codeVerticalScrollbarVisible;
+	let horizontalVisible = !wrapEnabled && editorViewState.codeHorizontalScrollbarVisible;
+	let verticalVisible = editorViewState.codeVerticalScrollbarVisible;
 	let rowCapacity = 1;
 	let columnCapacity = 1;
 	const visualCount = getVisualLineCount();
 
 	for (let i = 0; i < 3; i += 1) {
 		const availableHeight = Math.max(0, (bounds.codeBottom - bounds.codeTop) - (horizontalVisible ? constants.SCROLLBAR_WIDTH : 0));
-		rowCapacity = Math.max(1, Math.floor(availableHeight / ide_state.lineHeight));
+		rowCapacity = Math.max(1, Math.floor(availableHeight / editorViewState.lineHeight));
 		verticalVisible = visualCount > rowCapacity;
 		const availableWidth = Math.max(
 			0,
@@ -44,35 +45,35 @@ export function renderCodeArea(): void {
 		}
 	}
 
-	ide_state.codeVerticalScrollbarVisible = verticalVisible;
-	ide_state.codeHorizontalScrollbarVisible = !wrapEnabled && horizontalVisible;
-	ide_state.cachedVisibleRowCount = rowCapacity;
-	ide_state.cachedVisibleColumnCount = columnCapacity;
+	editorViewState.codeVerticalScrollbarVisible = verticalVisible;
+	editorViewState.codeHorizontalScrollbarVisible = !wrapEnabled && horizontalVisible;
+	editorViewState.cachedVisibleRowCount = rowCapacity;
+	editorViewState.cachedVisibleColumnCount = columnCapacity;
 
 	const contentRight = Math.max(
 		bounds.textLeft,
 		bounds.codeRight
-		- (ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
+		- (editorViewState.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
 		- constants.CODE_AREA_RIGHT_MARGIN
 	);
-	const contentBottom = bounds.codeBottom - (ide_state.codeHorizontalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
-	const trackRight = bounds.codeRight - (ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
+	const contentBottom = bounds.codeBottom - (editorViewState.codeHorizontalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
+	const trackRight = bounds.codeRight - (editorViewState.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
 
 	drawCodeAreaBackground(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, bounds.gutterLeft, bounds.gutterRight, contentBottom);
 
 	const activeGotoHighlight = intellisenseUiState.gotoHoverHighlight;
 	const gotoVisualIndex = activeGotoHighlight
-		? ide_state.layout.positionToVisualIndex(editorDocumentState.buffer, activeGotoHighlight.row, activeGotoHighlight.startColumn)
+		? editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, activeGotoHighlight.row, activeGotoHighlight.startColumn)
 		: null;
 	const activePath = getActiveCodeTabContext().descriptor.path;
 	const breakpointsForChunk = getBreakpointsForChunk(activePath);
-	const cursorVisualIndex = ide_state.layout.positionToVisualIndex(editorDocumentState.buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+	const cursorVisualIndex = editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	const inlineCompletionPreview = ide_state.completion.getInlineCompletionPreview();
 	const shouldRenderInlinePreview = inlineCompletionPreview !== null
 		&& inlineCompletionPreview.row === editorDocumentState.cursorRow
 		&& inlineCompletionPreview.column === editorDocumentState.cursorColumn;
 	const useUppercase = ide_state.caseInsensitive;
-	const renderFont = ide_state.font.renderFont();
+	const renderFont = editorViewState.font.renderFont();
 	const breakpointLaneWidth = getBreakpointLaneWidth();
 	const sliceWidth = columnCapacity + 2;
 	const cursorInfo: CursorScreenInfo = drawCodeAreaRows(

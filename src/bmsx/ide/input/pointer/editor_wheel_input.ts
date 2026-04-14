@@ -13,6 +13,7 @@ import { scrollResourceBrowserHorizontal, scrollResourceViewer } from '../keyboa
 import { editorPointerState } from './editor_pointer_state';
 import { editorCaretState } from '../../ui/caret_state';
 import { intellisenseUiState } from '../../contrib/intellisense/intellisense_ui_state';
+import { editorViewState } from '../../ui/editor_view_state';
 
 export function handleEditorWheelInput(): void {
 	const playerInput = $.input.getPlayerInput(1);
@@ -122,7 +123,7 @@ function handleResourcePanelWheel(
 		return false;
 	}
 	if (isShiftDown()) {
-		const horizontalPixels = direction * steps * ide_state.charAdvance * 4;
+		const horizontalPixels = direction * steps * editorViewState.charAdvance * 4;
 		scrollResourceBrowserHorizontal(horizontalPixels);
 		ide_state.resourcePanel.ensureSelectionVisible();
 	} else {

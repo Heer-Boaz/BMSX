@@ -2,10 +2,10 @@ import type { EditorDiagnostic } from '../../core/types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { measureText, truncateTextToWidth, wrapTextDynamic as wrapMessageLinesGeneric } from '../../core/text_utils';
 import * as constants from '../../core/constants';
-import { ide_state } from '../../core/ide_state';
 import { api } from '../../ui/view/overlay_api';
 import { drawEditorText } from '../../render/text_renderer';
 import type { PanelLayout } from './problems_panel_layout';
+import { editorViewState } from '../../ui/editor_view_state';
 
 function renderSeverityLabel(severity: 'none' | 'error' | 'warning'): string {
 	switch (severity) {
@@ -42,7 +42,7 @@ export function drawProblemsPanelSurface(
 	const headerLabel = `PROBLEMS (${diagnostics.length})`;
 	const headerX = bounds.left + constants.PROBLEMS_PANEL_HEADER_PADDING_X;
 	const headerY = layout.headerTop + constants.PROBLEMS_PANEL_HEADER_PADDING_Y;
-	drawEditorText(ide_state.font, headerLabel, headerX, headerY, undefined, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT);
+	drawEditorText(editorViewState.font, headerLabel, headerX, headerY, undefined, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT);
 
 	const contentLeft = bounds.left + constants.PROBLEMS_PANEL_CONTENT_PADDING_X;
 	const contentRight = bounds.right - constants.PROBLEMS_PANEL_CONTENT_PADDING_X;
@@ -50,7 +50,7 @@ export function drawProblemsPanelSurface(
 
 	if (diagnostics.length === 0) {
 		const truncated = truncateTextToWidth('No problems detected.', availableWidth);
-		drawEditorText(ide_state.font, truncated, contentLeft, layout.contentTop, undefined, constants.COLOR_PROBLEMS_PANEL_TEXT);
+		drawEditorText(editorViewState.font, truncated, contentLeft, layout.contentTop, undefined, constants.COLOR_PROBLEMS_PANEL_TEXT);
 		return availableWidth;
 	}
 
@@ -64,7 +64,7 @@ export function drawProblemsPanelSurface(
 		const firstLineMessageWidth = Math.max(0, availableWidth - severityWidth);
 		const message = diagnostic.message.length > 0 ? diagnostic.message : '(no details)';
 		const wrapped = wrapMessageLinesGeneric(message, firstLineMessageWidth, availableWidth, (text) => measureText(text), constants.PROBLEMS_PANEL_MAX_WRAP_LINES);
-		const rowHeight = Math.max(ide_state.lineHeight, wrapped.length * ide_state.lineHeight);
+		const rowHeight = Math.max(editorViewState.lineHeight, wrapped.length * editorViewState.lineHeight);
 		const rowBottom = rowTop + rowHeight;
 		const isSelected = diagnosticIndex === selectionIndex;
 		const isHovered = diagnosticIndex === hoverIndex;
@@ -80,7 +80,7 @@ export function drawProblemsPanelSurface(
 		let textCursorX = contentLeft;
 		if (severityLabel) {
 			const color = isHovered && !isSelected ? constants.COLOR_PROBLEMS_PANEL_HOVER_TEXT : severityColor(diagnostic.severity);
-			drawEditorText(ide_state.font, severityLabel, textCursorX, rowTop, undefined, color);
+			drawEditorText(editorViewState.font, severityLabel, textCursorX, rowTop, undefined, color);
 			textCursorX += severityWidth;
 		}
 
@@ -89,8 +89,8 @@ export function drawProblemsPanelSurface(
 			: (isHovered ? constants.COLOR_PROBLEMS_PANEL_HOVER_TEXT : constants.COLOR_PROBLEMS_PANEL_TEXT);
 		for (let lineIndex = 0; lineIndex < wrapped.length; lineIndex += 1) {
 			const x = lineIndex === 0 ? textCursorX : contentLeft;
-			const y = rowTop + lineIndex * ide_state.lineHeight;
-			drawEditorText(ide_state.font, wrapped[lineIndex], x, y, undefined, messageColor);
+			const y = rowTop + lineIndex * editorViewState.lineHeight;
+			drawEditorText(editorViewState.font, wrapped[lineIndex], x, y, undefined, messageColor);
 		}
 
 		cursorY = rowBottom;

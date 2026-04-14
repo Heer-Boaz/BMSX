@@ -3,6 +3,7 @@ import { ide_state } from '../../core/ide_state';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './key_input';
 import { clampResourceViewerScroll, getActiveResourceViewer, resourceViewerTextCapacity, setResourceViewerScroll } from '../../contrib/resources/resource_viewer';
 import type { ResourceViewerState } from '../../core/types';
+import { editorViewState } from '../../ui/editor_view_state';
 
 export function handleResourceViewerInput(): void {
 	const viewer = getActiveResourceViewer();
@@ -21,13 +22,13 @@ export function handleResourceViewerInput(): void {
 	}
 	if (shouldRepeatKeyFromPlayer('PageUp')) {
 		consumeIdeKey('PageUp');
-		const capacity = resourceViewerTextCapacity(viewer, getCodeAreaBounds(), ide_state.lineHeight);
+		const capacity = resourceViewerTextCapacity(viewer, getCodeAreaBounds(), editorViewState.lineHeight);
 		scrollResourceViewer(-Math.max(1, capacity));
 		return;
 	}
 	if (shouldRepeatKeyFromPlayer('PageDown')) {
 		consumeIdeKey('PageDown');
-		const capacity = resourceViewerTextCapacity(viewer, getCodeAreaBounds(), ide_state.lineHeight);
+		const capacity = resourceViewerTextCapacity(viewer, getCodeAreaBounds(), editorViewState.lineHeight);
 		scrollResourceViewer(Math.max(1, capacity));
 		return;
 	}
@@ -45,9 +46,9 @@ export function scrollResourceViewer(amount: number): void {
 	if (!viewer) {
 		return;
 	}
-	setResourceViewerScroll(viewer, getCodeAreaBounds(), ide_state.lineHeight, viewer.scroll + amount);
+	setResourceViewerScroll(viewer, getCodeAreaBounds(), editorViewState.lineHeight, viewer.scroll + amount);
 }
 
 export function resourceViewerClampScroll(viewer: ResourceViewerState): void {
-	clampResourceViewerScroll(viewer, getCodeAreaBounds(), ide_state.lineHeight);
+	clampResourceViewerScroll(viewer, getCodeAreaBounds(), editorViewState.lineHeight);
 }

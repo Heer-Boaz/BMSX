@@ -8,6 +8,7 @@ import { closeLineJump } from '../../contrib/find/line_jump';
 import { applySymbolSearchSelection } from '../../contrib/symbols/symbol_search';
 import { ensureSymbolSearchSelectionVisible } from '../../contrib/symbols/symbol_search_shared';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from './editor_quick_input_pointer_common';
+import { editorViewState } from '../../ui/editor_view_state';
 
 export function handleSymbolSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const bounds = getSymbolSearchBarBounds();
@@ -22,7 +23,7 @@ export function handleSymbolSearchPointer(snapshot: PointerSnapshot, justPressed
 		ide_state.symbolSearch.hoverIndex = -1;
 		return false;
 	}
-	const fieldBottom = bounds.top + ide_state.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
+	const fieldBottom = bounds.top + editorViewState.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
 	if (snapshot.viewportY < fieldBottom) {
 		if (justPressed) {
 			closeLineJump(false);

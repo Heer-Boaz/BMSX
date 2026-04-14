@@ -12,6 +12,7 @@ import * as constants from '../../core/constants';
 import { setEditorCaseInsensitivity } from '../../render/text_renderer';
 import { editorDocumentState } from '../../editing/editor_document_state';
 import { editorSessionState } from '../../ui/editor_session_state';
+import { editorViewState } from '../../ui/editor_view_state';
 
 export function performEditorAction(action: ActionPromptAction): boolean {
 	switch (action) {
@@ -125,5 +126,5 @@ function toggleThemeMode(): void {
 	constants.setIdeThemeVariant(nextVariant);
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
 	setEditorCaseInsensitivity(ide_state.caseInsensitive);
-	ide_state.layout.invalidateAllHighlights();
+	editorViewState.layout.invalidateAllHighlights();
 }

@@ -9,6 +9,7 @@ import { ensureResourceSearchSelectionVisible } from '../../contrib/resources/re
 import { closeLineJump } from '../../contrib/find/line_jump';
 import { closeSymbolSearch } from '../../contrib/symbols/symbol_search_shared';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from './editor_quick_input_pointer_common';
+import { editorViewState } from '../../ui/editor_view_state';
 
 export function handleResourceSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const bounds = getResourceSearchBarBounds();
@@ -23,7 +24,7 @@ export function handleResourceSearchPointer(snapshot: PointerSnapshot, justPress
 		ide_state.resourceSearch.hoverIndex = -1;
 		return false;
 	}
-	const fieldBottom = bounds.top + ide_state.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
+	const fieldBottom = bounds.top + editorViewState.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
 	if (snapshot.viewportY < fieldBottom) {
 		if (justPressed) {
 			closeLineJump(false);

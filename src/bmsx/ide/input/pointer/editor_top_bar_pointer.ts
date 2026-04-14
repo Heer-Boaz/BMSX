@@ -1,16 +1,16 @@
 import { point_in_rect } from '../../../utils/rect_operations';
 import { isTopBarCommandEnabled, MENU_COMMANDS, MENU_IDS, type MenuId, type TopBarButtonId } from '../../ui/editor_top_bar_menu';
-import { ide_state } from '../../core/ide_state';
 import { editorChromeState } from '../../ui/editor_chrome_state';
 import type { PointerSnapshot } from '../../core/types';
 import { executeTopBarCommand } from '../commands/editor_commands';
 import { consumeChromePointerPress } from './editor_chrome_pointer_press';
+import { editorViewState } from '../../ui/editor_view_state';
 
 export function handleTopBarPointer(snapshot: PointerSnapshot): boolean {
 	const x = snapshot.viewportX;
 	const y = snapshot.viewportY;
 	const menuOpen = editorChromeState.openMenuId !== null;
-	const inHeader = y >= 0 && y < ide_state.headerHeight;
+	const inHeader = y >= 0 && y < editorViewState.headerHeight;
 	const inDropdown = menuOpen && point_in_rect(x, y, editorChromeState.menuDropdownBounds);
 	if (!inHeader && !inDropdown) {
 		if (menuOpen) {

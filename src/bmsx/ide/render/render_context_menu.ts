@@ -2,11 +2,11 @@ import { clamp } from '../../utils/clamp';
 import { point_in_rect } from '../../utils/rect_operations';
 import { api } from '../ui/view/overlay_api';
 import * as constants from '../core/constants';
-import { ide_state } from '../core/ide_state';
 import { drawEditorText } from './text_renderer';
 import { measureText } from '../core/text_utils';
 import type { EditorContextMenuEntry, EditorContextToken } from '../core/types';
 import { editorContextMenuState, resetEditorContextMenuState } from '../contrib/context_menu/editor_context_menu_state';
+import { editorViewState } from '../ui/editor_view_state';
 
 export type CodeAreaViewportBounds = {
 	codeLeft: number;
@@ -49,7 +49,7 @@ export function layoutEditorContextMenu(codeBounds: CodeAreaViewportBounds): voi
 		closeEditorContextMenu();
 		return;
 	}
-	const rowHeight = ide_state.lineHeight + CONTEXT_MENU_PADDING_Y * 2;
+	const rowHeight = editorViewState.lineHeight + CONTEXT_MENU_PADDING_Y * 2;
 	let menuWidth = 0;
 	for (let index = 0; index < menu.entries.length; index += 1) {
 		const width = measureText(menu.entries[index].label);
@@ -156,7 +156,7 @@ export function renderEditorContextMenu(codeBounds: CodeAreaViewportBounds): voi
 			? (hovered ? constants.COLOR_COMPLETION_HIGHLIGHT_TEXT : constants.COLOR_COMPLETION_TEXT)
 			: constants.COLOR_COMPLETION_DETAIL;
 		drawEditorText(
-			ide_state.font,
+			editorViewState.font,
 			entry.label,
 			itemBounds.left + CONTEXT_MENU_PADDING_X,
 			itemBounds.top + CONTEXT_MENU_PADDING_Y,

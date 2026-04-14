@@ -18,6 +18,7 @@ import { drawResourcePanel, drawResourceViewer } from '../render/render_resource
 import { drawActionPromptOverlay } from '../render/render_prompt';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorSessionState } from './editor_session_state';
+import { editorViewState } from './editor_view_state';
 import {
 	renderCreateResourceBar,
 	renderLineJumpBar,
@@ -69,7 +70,7 @@ export function update(deltaSeconds: number): void {
 	updateEditorMessage(deltaSeconds);
 	updateRuntimeErrorOverlay(deltaSeconds);
 	ide_state.completion.processPending(deltaSeconds);
-	const semanticError = ide_state.layout.getLastSemanticError();
+	const semanticError = editorViewState.layout.getLastSemanticError();
 	if (semanticError && semanticError !== ide_state.lastReportedSemanticError) {
 		showEditorMessage(semanticError, constants.COLOR_STATUS_ERROR, 2.0);
 		ide_state.lastReportedSemanticError = semanticError;
@@ -82,13 +83,13 @@ export function update(deltaSeconds: number): void {
 }
 
 export function draw(): void {
-	ide_state.codeVerticalScrollbarVisible = false;
-	ide_state.codeHorizontalScrollbarVisible = false;
-	api.fill_rect_color(0, 0, ide_state.viewportWidth, ide_state.viewportHeight, undefined, constants.COLOR_FRAME);
+	editorViewState.codeVerticalScrollbarVisible = false;
+	editorViewState.codeHorizontalScrollbarVisible = false;
+	api.fill_rect_color(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, undefined, constants.COLOR_FRAME);
 
 	renderTopBar();
 
-	ide_state.tabBarRowCount = renderTabBar();
+	editorViewState.tabBarRowCount = renderTabBar();
 	drawResourcePanel();
 	if (isResourceViewActive()) {
 		drawResourceViewer();
@@ -113,7 +114,7 @@ export function shutdownRuntimeEditor(): void {
 	clearExecutionStopHighlights();
 	storeActiveCodeTabContext();
 	ide_state.input.applyOverrides(false, captureKeys);
-	if (ide_state.dimCrtInEditor) {
+	if (editorViewState.dimCrtInEditor) {
 		Runtime.instance.restoreCrtPostprocessingFromEditor();
 	}
 	ide_state.active = false;
@@ -204,7 +205,7 @@ export function activateRuntimeEditor(): void {
 		editorFeedbackState.message.timer = editorFeedbackState.deferredMessageDuration;
 	}
 	editorFeedbackState.deferredMessageDuration = null;
-	if (ide_state.dimCrtInEditor) {
+	if (editorViewState.dimCrtInEditor) {
 		Runtime.instance.disableCrtPostprocessingForEditor();
 	}
 	if (Runtime.instance.hasRuntimeFailed) {
@@ -222,7 +223,7 @@ export function deactivateRuntimeEditor(): void {
 	storeActiveCodeTabContext();
 	ide_state.active = false;
 	setEditorFeedbackActive(false);
-	if (ide_state.dimCrtInEditor) {
+	if (editorViewState.dimCrtInEditor) {
 		Runtime.instance.restoreCrtPostprocessingFromEditor();
 	}
 	ide_state.completion.closeSession();
@@ -233,7 +234,7 @@ export function deactivateRuntimeEditor(): void {
 	editorPointerState.pointerAuxWasPressed = false;
 	editorPointerState.tabDragState = null;
 	clearGotoHoverHighlight();
-	ide_state.scrollbarController.cancel();
+	editorViewState.scrollbarController.cancel();
 	editorCaretState.cursorRevealSuspended = false;
 	ide_state.search.active = false;
 	ide_state.search.visible = false;

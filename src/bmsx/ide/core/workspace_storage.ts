@@ -12,6 +12,7 @@ import * as runtimeLuaPipeline from '../../emulator/runtime_lua_pipeline';
 import * as runtimeIde from '../../emulator/runtime_ide';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorSessionState } from '../ui/editor_session_state';
+import { editorViewState } from '../ui/editor_view_state';
 import {
 	WORKSPACE_FILE_ENDPOINT,
 	WORKSPACE_MARKER_FILE,
@@ -604,8 +605,8 @@ function captureContextSnapshotMetadata(context: CodeTabContext): SnapshotMetada
 		return {
 			cursorRow: editorDocumentState.cursorRow,
 			cursorColumn: editorDocumentState.cursorColumn,
-			scrollRow: ide_state.scrollRow,
-			scrollColumn: ide_state.scrollColumn,
+			scrollRow: editorViewState.scrollRow,
+			scrollColumn: editorViewState.scrollColumn,
 			selectionAnchor: editorDocumentState.selectionAnchor ? { row: editorDocumentState.selectionAnchor.row, column: editorDocumentState.selectionAnchor.column } : null,
 			textVersion: editorDocumentState.textVersion,
 		};
@@ -642,7 +643,7 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 		savedAt: $.platform.clock.dateNow(),
 		dirtyFiles,
 		breakpoints: serializeBreakpoints(),
-		fontVariant: ide_state.fontVariant,
+		fontVariant: editorViewState.fontVariant,
 		overlayResolutionMode: runtime ? runtime.overlayResolutionMode : undefined,
 	};
 }

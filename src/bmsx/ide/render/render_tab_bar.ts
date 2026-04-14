@@ -4,12 +4,12 @@ import type { EditorTabDescriptor } from '../core/types';
 import type { RectBounds } from '../../rompack/rompack';
 import { TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../core/constants';
 import { ScratchBuffer } from '../../utils/scratchbuffer';
-import { ide_state } from '../core/ide_state';
 import { editorChromeState } from '../ui/editor_chrome_state';
 import { measureText } from '../core/text_utils';
 import { editorPointerState } from '../input/pointer/editor_pointer_state';
 import { drawEditorText } from './text_renderer';
 import { editorSessionState } from '../ui/editor_session_state';
+import { editorViewState } from '../ui/editor_view_state';
 
 type TabMetrics = {
 	tab: EditorTabDescriptor;
@@ -59,7 +59,7 @@ export function renderTabBar(): number {
 	editorChromeState.tabButtonBounds.clear();
 	editorChromeState.tabCloseButtonBounds.clear();
 
-	const rowHeight = Math.max(1, ide_state.tabBarHeight);
+	const rowHeight = Math.max(1, editorViewState.tabBarHeight);
 	const closeButtonWidth = measureText(constants.TAB_CLOSE_BUTTON_SYMBOL);
 	const markerWidth = constants.TAB_DIRTY_MARKER_METRICS.width;
 	const markerHeight = constants.TAB_DIRTY_MARKER_METRICS.height;
@@ -68,10 +68,10 @@ export function renderTabBar(): number {
 	const tabCount = tabs.length;
 	const rowHeightTotal = rowHeight;
 	if (tabCount === 0) {
-		const barTop = ide_state.headerHeight;
+		const barTop = editorViewState.headerHeight;
 		const barBottom = barTop + rowHeightTotal;
-		api.fill_rect(0, barTop, ide_state.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
-		api.fill_rect(0, Math.max(barTop, barBottom - 1), ide_state.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BORDER);
+		api.fill_rect(0, barTop, editorViewState.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
+		api.fill_rect(0, Math.max(barTop, barBottom - 1), editorViewState.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BORDER);
 		return 1;
 	}
 
@@ -106,7 +106,7 @@ export function renderTabBar(): number {
 
 	const n = tabCount;
 	const spacing = constants.TAB_BUTTON_SPACING;
-	const maxWidth = Math.max(TAB_DIRTY_LEFT_MARGIN + TAB_DIRTY_RIGHT_MARGIN + 1, ide_state.viewportWidth - TAB_DIRTY_RIGHT_MARGIN);
+	const maxWidth = Math.max(TAB_DIRTY_LEFT_MARGIN + TAB_DIRTY_RIGHT_MARGIN + 1, editorViewState.viewportWidth - TAB_DIRTY_RIGHT_MARGIN);
 	const costs = costsScratch;
 	const nextBreak = nextBreakScratch;
 	costs.set(n, 0);
@@ -146,12 +146,12 @@ export function renderTabBar(): number {
 	}
 
 	const totalRows = Math.max(costs.peek(0) ?? 0, 1);
-	const barTop = ide_state.headerHeight;
+	const barTop = editorViewState.headerHeight;
 	const totalHeight = totalRows * rowHeightTotal;
 	const barBottom = barTop + totalHeight;
 
-	api.fill_rect(0, barTop, ide_state.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
-	api.fill_rect(0, Math.max(barTop, barBottom - 1), ide_state.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BORDER);
+	api.fill_rect(0, barTop, editorViewState.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
+	api.fill_rect(0, Math.max(barTop, barBottom - 1), editorViewState.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BORDER);
 
 	let rowStart = 0;
 	let rowIndex = 0;
@@ -182,7 +182,7 @@ export function renderTabBar(): number {
 
 			const textX = bounds.left + constants.TAB_BUTTON_PADDING_X;
 			const textY = bounds.top + constants.TAB_BUTTON_PADDING_Y;
-			drawEditorText(ide_state.font, tab.title, textX, textY, undefined, textColor);
+			drawEditorText(editorViewState.font, tab.title, textX, textY, undefined, textColor);
 
 			const indicatorLeft = bounds.right - entry.indicatorWidth;
 			const indicatorWidth = entry.indicatorWidth;
@@ -198,7 +198,7 @@ export function renderTabBar(): number {
 					editorChromeState.tabCloseButtonBounds.set(tab.id, closeBounds);
 					const closeX = closeBounds.left + constants.TAB_CLOSE_BUTTON_PADDING_X;
 					const closeY = closeBounds.top + constants.TAB_CLOSE_BUTTON_PADDING_Y;
-					drawEditorText(ide_state.font, constants.TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, undefined, textColor);
+					drawEditorText(editorViewState.font, constants.TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, undefined, textColor);
 				} else {
 					editorChromeState.tabCloseButtonBounds.delete(tab.id);
 					if (entry.dirty && entry.markerWidth > 0) {
