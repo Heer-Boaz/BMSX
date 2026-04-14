@@ -34,3 +34,5 @@ export class InputController {
 		}
 	}
 }
+
+export const editorInput = new InputController();

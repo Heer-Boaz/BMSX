@@ -1,5 +1,5 @@
 import * as constants from '../../core/constants';
-import { ide_state } from '../../core/ide_state';
+import { renameController } from '../rename/rename_controller';
 import { showEditorMessage } from '../../core/editor_feedback_state';
 import { clearReferenceHighlights } from '../intellisense/intellisense';
 import { closeSearch } from './editor_search';
@@ -12,47 +12,48 @@ import * as TextEditing from '../../editing/text_editing_and_selection';
 import { closeSymbolSearch } from '../symbols/symbol_search_shared';
 import { closeResourceSearch } from '../resources/resource_search';
 import { editorDocumentState } from '../../editing/editor_document_state';
+import { editorFeatureState } from '../../core/editor_feature_state';
 
 export function openLineJump(): void {
 	clearReferenceHighlights();
 	closeSymbolSearch(false);
 	closeResourceSearch(false);
 	closeSearch(false, true);
-	ide_state.renameController.cancel();
-	ide_state.lineJump.visible = true;
-	ide_state.lineJump.active = true;
+	renameController.cancel();
+	editorFeatureState.lineJump.visible = true;
+	editorFeatureState.lineJump.active = true;
 	applyLineJumpFieldText('', true);
 	resetBlink();
 }
 
 export function closeLineJump(clearValue: boolean): void {
-	ide_state.lineJump.active = false;
-	ide_state.lineJump.visible = false;
+	editorFeatureState.lineJump.active = false;
+	editorFeatureState.lineJump.visible = false;
 	if (clearValue) {
 		applyLineJumpFieldText('', true);
 	}
-	ide_state.lineJump.field.selectionAnchor = null;
-	ide_state.lineJump.field.pointerSelecting = false;
+	editorFeatureState.lineJump.field.selectionAnchor = null;
+	editorFeatureState.lineJump.field.pointerSelecting = false;
 	resetBlink();
 }
 
 export function focusEditorFromLineJump(): void {
-	if (!ide_state.lineJump.active && !ide_state.lineJump.visible) {
+	if (!editorFeatureState.lineJump.active && !editorFeatureState.lineJump.visible) {
 		return;
 	}
-	ide_state.lineJump.active = false;
-	ide_state.lineJump.visible = false;
-	ide_state.lineJump.field.selectionAnchor = null;
-	ide_state.lineJump.field.pointerSelecting = false;
+	editorFeatureState.lineJump.active = false;
+	editorFeatureState.lineJump.visible = false;
+	editorFeatureState.lineJump.field.selectionAnchor = null;
+	editorFeatureState.lineJump.field.pointerSelecting = false;
 	resetBlink();
 }
 
 export function applyLineJump(): void {
-	if (ide_state.lineJump.value.length === 0) {
+	if (editorFeatureState.lineJump.value.length === 0) {
 		showEditorMessage('Enter a line number', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
-	const target = Number.parseInt(ide_state.lineJump.value, 10);
+	const target = Number.parseInt(editorFeatureState.lineJump.value, 10);
 	const lineCount = editorDocumentState.buffer.getLineCount();
 	if (!Number.isFinite(target) || target < 1 || target > lineCount) {
 		showEditorMessage(`Line must be between 1 and ${lineCount}`, constants.COLOR_STATUS_WARNING, 1.8);
@@ -68,6 +69,6 @@ export function applyLineJump(): void {
 }
 
 export function applyLineJumpFieldText(value: string, moveCursorToEnd: boolean): void {
-	ide_state.lineJump.value = value;
-	setFieldText(ide_state.lineJump.field, value, moveCursorToEnd);
+	editorFeatureState.lineJump.value = value;
+	setFieldText(editorFeatureState.lineJump.field, value, moveCursorToEnd);
 }

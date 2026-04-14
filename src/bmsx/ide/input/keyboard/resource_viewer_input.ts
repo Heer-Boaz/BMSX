@@ -1,5 +1,5 @@
 import { getCodeAreaBounds } from '../../ui/editor_view';
-import { ide_state } from '../../core/ide_state';
+import { resourcePanel } from '../../contrib/resources/resource_panel_controller';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './key_input';
 import { clampResourceViewerScroll, getActiveResourceViewer, resourceViewerTextCapacity, setResourceViewerScroll } from '../../contrib/resources/resource_viewer';
 import type { ResourceViewerState } from '../../core/types';
@@ -35,10 +35,10 @@ export function handleResourceViewerInput(): void {
 }
 
 export function scrollResourceBrowserHorizontal(delta: number): void {
-	if (!ide_state.resourcePanel.isVisible()) {
+	if (!resourcePanel.isVisible()) {
 		return;
 	}
-	ide_state.resourcePanel.setHScroll(ide_state.resourcePanel.hscroll + delta);
+	resourcePanel.setHScroll(resourcePanel.hscroll + delta);
 }
 
 export function scrollResourceViewer(amount: number): void {

@@ -1,4 +1,3 @@
-import { ide_state } from '../../core/ide_state';
 import { advanceQuickInputSelection } from '../../navigation/quick_input_navigation';
 import { updateReferenceSearchMatches } from '../references/reference_search_catalog';
 import { resetBlink } from '../../render/render_caret';
@@ -6,30 +5,31 @@ import { symbolPriority } from '../intellisense/semantic_model';
 import { refreshSymbolCatalog } from './symbol_catalog';
 import type { SymbolSearchResult } from '../../core/types';
 import { ensureSymbolSearchSelectionVisible } from './symbol_search_shared';
+import { editorFeatureState } from '../../core/editor_feature_state';
 
 export function updateSymbolSearchMatches(): void {
-	if (ide_state.symbolSearch.mode === 'references') {
+	if (editorFeatureState.symbolSearch.mode === 'references') {
 		updateReferenceSearchMatches();
 		return;
 	}
 	refreshSymbolCatalog(false);
-	ide_state.symbolSearch.matches = [];
-	ide_state.symbolSearch.selectionIndex = -1;
-	ide_state.symbolSearch.displayOffset = 0;
-	ide_state.symbolSearch.hoverIndex = -1;
-	if (ide_state.symbolSearch.catalog.length === 0) {
+	editorFeatureState.symbolSearch.matches = [];
+	editorFeatureState.symbolSearch.selectionIndex = -1;
+	editorFeatureState.symbolSearch.displayOffset = 0;
+	editorFeatureState.symbolSearch.hoverIndex = -1;
+	if (editorFeatureState.symbolSearch.catalog.length === 0) {
 		return;
 	}
-	const query = ide_state.symbolSearch.query.trim().toLowerCase();
+	const query = editorFeatureState.symbolSearch.query.trim().toLowerCase();
 	if (query.length === 0) {
-		ide_state.symbolSearch.matches = ide_state.symbolSearch.catalog.map(entry => ({ entry, matchIndex: 0 }));
-		if (ide_state.symbolSearch.matches.length > 0) {
-			ide_state.symbolSearch.selectionIndex = 0;
+		editorFeatureState.symbolSearch.matches = editorFeatureState.symbolSearch.catalog.map(entry => ({ entry, matchIndex: 0 }));
+		if (editorFeatureState.symbolSearch.matches.length > 0) {
+			editorFeatureState.symbolSearch.selectionIndex = 0;
 		}
 		return;
 	}
 	const matches: SymbolSearchResult[] = [];
-	for (const entry of ide_state.symbolSearch.catalog) {
+	for (const entry of editorFeatureState.symbolSearch.catalog) {
 		const idx = entry.searchKey.indexOf(query);
 		if (idx === -1) {
 			continue;
@@ -37,7 +37,7 @@ export function updateSymbolSearchMatches(): void {
 		matches.push({ entry, matchIndex: idx });
 	}
 	if (matches.length === 0) {
-		ide_state.symbolSearch.matches = [];
+		editorFeatureState.symbolSearch.matches = [];
 		return;
 	}
 	matches.sort((a, b) => {
@@ -57,21 +57,21 @@ export function updateSymbolSearchMatches(): void {
 		}
 		return a.entry.displayName.localeCompare(b.entry.displayName);
 	});
-	ide_state.symbolSearch.matches = matches;
-	ide_state.symbolSearch.selectionIndex = 0;
-	ide_state.symbolSearch.displayOffset = 0;
+	editorFeatureState.symbolSearch.matches = matches;
+	editorFeatureState.symbolSearch.selectionIndex = 0;
+	editorFeatureState.symbolSearch.displayOffset = 0;
 }
 
 export function moveSymbolSearchSelection(delta: number): void {
 	const next = advanceQuickInputSelection(
-		ide_state.symbolSearch.selectionIndex,
-		ide_state.symbolSearch.matches.length,
+		editorFeatureState.symbolSearch.selectionIndex,
+		editorFeatureState.symbolSearch.matches.length,
 		delta
 	);
-	if (next === ide_state.symbolSearch.selectionIndex) {
+	if (next === editorFeatureState.symbolSearch.selectionIndex) {
 		return;
 	}
-	ide_state.symbolSearch.selectionIndex = next;
+	editorFeatureState.symbolSearch.selectionIndex = next;
 	ensureSymbolSearchSelectionVisible();
 	resetBlink();
 }

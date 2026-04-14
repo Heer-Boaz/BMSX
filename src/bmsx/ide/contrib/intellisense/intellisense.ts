@@ -30,7 +30,7 @@ import { resolvePointerColumn, resolvePointerRow } from '../../ui/editor_view';
 import * as constants from '../../core/constants';
 import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isActiveLuaCodeTab, isReadOnlyCodeTab, setActiveTab } from '../../ui/editor_tabs';
 import { buildEditorSemanticFrontend } from './editor_semantic_frontend';
-import { ide_state } from '../../core/ide_state';
+import { editorRuntimeState } from '../../core/editor_runtime_state';
 import { showEditorMessage } from '../../core/editor_feedback_state';
 import { editorPointerState } from '../../input/pointer/editor_pointer_state';
 import { parseLuaIdentifierChain as parseLuaIdentifierChainShared } from '../../language/lua/lua_identifier_chain';
@@ -45,6 +45,7 @@ import { KEYWORDS, LuaTokenType, type LuaToken } from '../../../lua/syntax/luato
 import { getTextSnapshot, splitText } from '../../text/source_text';
 import { editorDocumentState } from '../../editing/editor_document_state';
 import { editorViewState } from '../../ui/editor_view_state';
+import { editorFeatureState } from '../../core/editor_feature_state';
 export const PREVIEW_MAX_ENTRIES = 12;
 export const PREVIEW_MAX_DEPTH = 2;
 
@@ -103,7 +104,7 @@ const RESERVED_MEMORY_MAP_NAMES = ['mem', 'mem8', 'mem16le', 'mem32le', 'memf32l
 const globalSymbolsCache: { version: number; entries: LuaSymbolEntry[] } = { version: -1, entries: [] };
 
 function getActiveCanonicalizer(): (value: string) => string {
-	return ide_state.caseInsensitive ? createIdentifierCanonicalizer(ide_state.canonicalization) : identityCanonicalizer;
+	return editorRuntimeState.caseInsensitive ? createIdentifierCanonicalizer(editorRuntimeState.canonicalization) : identityCanonicalizer;
 }
 
 function hasStaticLuaBuiltinName(name: string): boolean {
@@ -149,7 +150,7 @@ export function collectLuaModuleAliases(options: LuaScopedSymbolOptions): Map<st
 	const parsed = getCachedLuaParse({
 		path: options.path,
 		source: options.source,
-		canonicalization: ide_state.caseInsensitive ? ide_state.canonicalization : 'none',
+		canonicalization: editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none',
 	}).parsed;
 	const aliases = new Map<string, ModuleAliasEntry>();
 	const entries = collectModuleAliasEntriesFromChunk(parsed.chunk);
@@ -499,7 +500,7 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 		version: options.version,
 		parsed: options.parsed,
 		withSyntaxError: true,
-		canonicalization: ide_state.caseInsensitive ? ide_state.canonicalization : 'none',
+		canonicalization: editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none',
 	});
 	const syntaxError = parseEntry.syntaxError;
 	if (syntaxError) {
@@ -576,7 +577,7 @@ export function intellisenseUiReady(): boolean {
 	if (isReadOnlyCodeTab()) {
 		return false;
 	}
-	if (ide_state.search.active || ide_state.symbolSearch.active || ide_state.lineJump.active || ide_state.resourceSearch.active || ide_state.createResource.active) {
+	if (editorFeatureState.search.active || editorFeatureState.symbolSearch.active || editorFeatureState.lineJump.active || editorFeatureState.resourceSearch.active || editorFeatureState.createResource.active) {
 		return false;
 	}
 	return true;
@@ -590,7 +591,7 @@ export function shouldAutoTriggerCompletions(): boolean {
 	if (lastEditAt === null) {
 		return false;
 	}
-	const now = ide_state.clockNow();
+	const now = editorRuntimeState.clockNow();
 	return now - lastEditAt <= constants.COMPLETION_TYPING_GRACE_MS;
 } export function updateHoverTooltip(snapshot: PointerSnapshot): void {
 	if (!isActiveLuaCodeTab()) {
@@ -928,7 +929,7 @@ function findContextMenuTokenMatch(row: number, column: number, path: string, so
 		path,
 		source,
 		version: editorDocumentState.textVersion,
-		canonicalization: ide_state.caseInsensitive ? ide_state.canonicalization : 'none',
+		canonicalization: editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none',
 	}).parsed.tokens;
 	const targetLine = row + 1;
 	let adjacent: ContextMenuTokenMatch = null;
@@ -1133,7 +1134,7 @@ export function clearGotoHoverHighlight(): void {
 }
 
 export function clearReferenceHighlights(): void {
-	ide_state.referenceState.clear();
+	editorFeatureState.referenceState.clear();
 }
 
 export function tryGotoDefinitionAt(row: number, column: number): boolean {
@@ -1501,7 +1502,7 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 				if (!source) {
 					continue;
 				}
-				model = buildLuaSemanticModel(source, path.path, undefined, undefined, ide_state.caseInsensitive ? ide_state.canonicalization : 'none');
+				model = buildLuaSemanticModel(source, path.path, undefined, undefined, editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none');
 				models.set(path.path, model);
 			}
 			const semanticDefinition = model.lookupIdentifier(usageRow, usageColumn, chain);
@@ -1657,7 +1658,7 @@ export function buildSemanticModelForChunk(path: string): LuaSemanticModel {
 		lines: cachedMatch?.lines,
 		withSyntaxError: false,
 		parsed: cachedMatch?.parsed,
-		canonicalization: ide_state.caseInsensitive ? ide_state.canonicalization : 'none',
+		canonicalization: editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none',
 	});
 	const baseLines = parseEntry.lines;
 	const parsed = parseEntry.parsed;
@@ -2612,8 +2613,8 @@ function formatLuaValuePreview(value: LuaValue, depth = 0, visited: Set<unknown>
 let builtinIdentifierEpoch = 0;
 
 export function getBuiltinIdentifiersSnapshot(): { epoch: number; ids: ReadonlySet<string> } {
-	const cached = ide_state.builtinIdentifierCache;
-	if (cached && cached.caseInsensitive === ide_state.caseInsensitive && cached.canonicalization === ide_state.canonicalization) {
+	const cached = editorRuntimeState.builtinIdentifierCache;
+	if (cached && cached.caseInsensitive === editorRuntimeState.caseInsensitive && cached.canonicalization === editorRuntimeState.canonicalization) {
 		return cached;
 	}
 	const descriptors = listLuaBuiltinFunctions();
@@ -2622,8 +2623,8 @@ export function getBuiltinIdentifiersSnapshot(): { epoch: number; ids: ReadonlyS
 		names.push(descriptors[index].name);
 	}
 	names.sort((a, b) => a.localeCompare(b));
-	const canonicalize = ide_state.caseInsensitive
-		? (ide_state.canonicalization === 'upper'
+	const canonicalize = editorRuntimeState.caseInsensitive
+		? (editorRuntimeState.canonicalization === 'upper'
 			? (value: string) => value.toUpperCase()
 			: (value: string) => value.toLowerCase())
 		: (value: string) => value;
@@ -2638,10 +2639,10 @@ export function getBuiltinIdentifiersSnapshot(): { epoch: number; ids: ReadonlyS
 	const entry = {
 		epoch: builtinIdentifierEpoch,
 		ids,
-		canonicalization: ide_state.canonicalization,
-		caseInsensitive: ide_state.caseInsensitive,
+		canonicalization: editorRuntimeState.canonicalization,
+		caseInsensitive: editorRuntimeState.caseInsensitive,
 	};
-	ide_state.builtinIdentifierCache = entry;
+	editorRuntimeState.builtinIdentifierCache = entry;
 	return entry;
 }
 

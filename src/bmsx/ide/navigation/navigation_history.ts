@@ -1,11 +1,12 @@
 import { clamp } from '../../utils/clamp';
-import { NAVIGATION_HISTORY_LIMIT } from '../core/ide_state';
 import { getActiveCodeTabContext, setActiveTab, isCodeTabActive, activateCodeTab, focusChunkSource } from '../ui/editor_tabs';
 import { setCursorPosition, ensureCursorVisible } from '../ui/caret';
 import * as TextEditing from '../editing/text_editing_and_selection';
 import { editorCaretState } from '../ui/caret_state';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorSessionState } from '../ui/editor_session_state';
+
+const NAVIGATION_HISTORY_LIMIT = 64;
 
 export type NavigationHistoryEntry = {
 	contextId: string;

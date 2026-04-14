@@ -1,7 +1,6 @@
 import { breakUndoSequence } from '../editing/undo_controller';
 import { currentLine } from '../core/text_utils';
 import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../core/text_utils';
-import { caretNavigation, ide_state } from '../core/ide_state';
 import { isShiftDown, isCtrlDown } from '../input/keyboard/key_input';
 import { resetBlink } from '../render/render_caret';
 import { findWordLeft, findWordRight, hasSelection, collapseSelectionTo, clearSelection } from '../editing/text_editing_and_selection';
@@ -10,6 +9,7 @@ import type { VisualLineSegment } from '../core/types';
 import { revealCursor, resolveViewportCapacity, setCursorFromVisualIndex, updateDesiredColumn } from './caret_view';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorViewState } from './editor_view_state';
+import { editorFeatureState } from '../core/editor_feature_state';
 
 export type VisualCursorOverride = {
 	row: number;
@@ -48,6 +48,8 @@ export class CaretNavigationState {
 		};
 	}
 }
+
+export const caretNavigation = new CaretNavigationState();
 
 export function resolveIndentAwareHome(line: string, segment: VisualLineSegment, currentColumn: number): number {
 	const lineLength = line.length;
@@ -94,7 +96,7 @@ export function setCursorPosition(row: number, column: number): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	ide_state.completion.onCursorMoved();
+	editorFeatureState.completion.onCursorMoved();
 }
 
 /**
@@ -114,7 +116,7 @@ export function moveCursorVertical(delta: number): void {
 	setCursorFromVisualIndex(targetIndex, desired, desiredDisplay);
 	resetBlink();
 	revealCursor();
-	ide_state.completion.onCursorMoved();
+	editorFeatureState.completion.onCursorMoved();
 }
 
 /**
@@ -187,7 +189,7 @@ export function moveCursorHorizontal(delta: number): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	ide_state.completion.onCursorMoved();
+	editorFeatureState.completion.onCursorMoved();
 }
 
 /**
@@ -201,7 +203,7 @@ export function moveWordLeft(): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	ide_state.completion.onCursorMoved();
+	editorFeatureState.completion.onCursorMoved();
 }
 
 /**
@@ -215,7 +217,7 @@ export function moveWordRight(): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	ide_state.completion.onCursorMoved();
+	editorFeatureState.completion.onCursorMoved();
 }
 
 /**

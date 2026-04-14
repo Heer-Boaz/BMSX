@@ -1,5 +1,4 @@
 import * as constants from '../../core/constants';
-import { ide_state } from '../../core/ide_state';
 import { showEditorMessage } from '../../core/editor_feedback_state';
 import { applyInlineFieldEditing } from '../../ui/inline_text_field';
 import { applySymbolSearchSelection } from '../../contrib/symbols/symbol_search';
@@ -8,6 +7,7 @@ import { closeSymbolSearch, ensureSymbolSearchSelectionVisible } from '../../con
 import { textFromLines } from '../../text/source_text';
 import { consumeIdeKey, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../keyboard/key_input';
 import { symbolSearchPageSize } from '../../ui/editor_view';
+import { editorFeatureState } from '../../core/editor_feature_state';
 
 export function handleSymbolSearchInput(): void {
 	const shiftDown = isShiftDown();
@@ -17,8 +17,8 @@ export function handleSymbolSearchInput(): void {
 			moveSymbolSearchSelection(-1);
 			return;
 		}
-		if (ide_state.symbolSearch.selectionIndex >= 0) {
-			applySymbolSearchSelection(ide_state.symbolSearch.selectionIndex);
+		if (editorFeatureState.symbolSearch.selectionIndex >= 0) {
+			applySymbolSearchSelection(editorFeatureState.symbolSearch.selectionIndex);
 		} else {
 			showEditorMessage('No symbol selected', constants.COLOR_STATUS_WARNING, 1.5);
 		}
@@ -51,22 +51,22 @@ export function handleSymbolSearchInput(): void {
 	}
 	if (isKeyJustPressed('Home')) {
 		consumeIdeKey('Home');
-		ide_state.symbolSearch.selectionIndex = ide_state.symbolSearch.matches.length > 0 ? 0 : -1;
+		editorFeatureState.symbolSearch.selectionIndex = editorFeatureState.symbolSearch.matches.length > 0 ? 0 : -1;
 		ensureSymbolSearchSelectionVisible();
 		return;
 	}
 	if (isKeyJustPressed('End')) {
 		consumeIdeKey('End');
-		ide_state.symbolSearch.selectionIndex = ide_state.symbolSearch.matches.length > 0 ? ide_state.symbolSearch.matches.length - 1 : -1;
+		editorFeatureState.symbolSearch.selectionIndex = editorFeatureState.symbolSearch.matches.length > 0 ? editorFeatureState.symbolSearch.matches.length - 1 : -1;
 		ensureSymbolSearchSelectionVisible();
 		return;
 	}
-	const textChanged = applyInlineFieldEditing(ide_state.symbolSearch.field, {
+	const textChanged = applyInlineFieldEditing(editorFeatureState.symbolSearch.field, {
 		allowSpace: true,
 		characterFilter: undefined,
 		maxLength: null,
 	});
-	ide_state.symbolSearch.query = textFromLines(ide_state.symbolSearch.field.lines);
+	editorFeatureState.symbolSearch.query = textFromLines(editorFeatureState.symbolSearch.field.lines);
 	if (textChanged) {
 		updateSymbolSearchMatches();
 	}

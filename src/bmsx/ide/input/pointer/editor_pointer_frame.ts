@@ -1,5 +1,4 @@
 import { $ } from '../../../core/engine_core';
-import { ide_state } from '../../core/ide_state';
 import { applyScrollbarScroll } from '../../ui/scrollbar';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { mapScreenPointToViewport } from '../../ui/editor_view';
@@ -7,6 +6,7 @@ import { updateTabHoverState } from './editor_tab_bar_pointer';
 import type { PointerSnapshot } from '../../core/types';
 import { editorPointerState } from './editor_pointer_state';
 import { editorViewState } from '../../ui/editor_view_state';
+import { editorFeatureState } from '../../core/editor_feature_state';
 
 export function readEditorPointerSnapshot(): PointerSnapshot {
 	const playerInput = $.input.getPlayerInput(1);
@@ -54,13 +54,13 @@ export function prepareEditorPointerFrame(snapshot: PointerSnapshot, gotoModifie
 		}
 	}
 	if (!snapshot.primaryPressed) {
-		ide_state.search.field.pointerSelecting = false;
-		ide_state.symbolSearch.field.pointerSelecting = false;
-		ide_state.resourceSearch.field.pointerSelecting = false;
-		ide_state.lineJump.field.pointerSelecting = false;
-		ide_state.createResource.field.pointerSelecting = false;
-		ide_state.symbolSearch.hoverIndex = -1;
-		ide_state.resourceSearch.hoverIndex = -1;
+		editorFeatureState.search.field.pointerSelecting = false;
+		editorFeatureState.symbolSearch.field.pointerSelecting = false;
+		editorFeatureState.resourceSearch.field.pointerSelecting = false;
+		editorFeatureState.lineJump.field.pointerSelecting = false;
+		editorFeatureState.createResource.field.pointerSelecting = false;
+		editorFeatureState.symbolSearch.hoverIndex = -1;
+		editorFeatureState.resourceSearch.hoverIndex = -1;
 	}
 	return false;
 }

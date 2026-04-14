@@ -1,4 +1,4 @@
-import { ide_state } from '../../core/ide_state';
+import { renameController } from './rename_controller';
 import { extractHoverExpression } from '../intellisense/intellisense';
 import { closeSearch } from '../find/editor_search';
 import { getActiveCodeTabContext, isEditableCodeTab } from '../../ui/editor_tabs';
@@ -10,6 +10,7 @@ import { revealCursor } from '../../ui/caret';
 import { closeSymbolSearch } from '../symbols/symbol_search_shared';
 import { editorCaretState } from '../../ui/caret_state';
 import { editorDocumentState } from '../../editing/editor_document_state';
+import { editorFeatureState } from '../../core/editor_feature_state';
 
 export function openRenamePrompt(): void {
 	if (!isEditableCodeTab()) {
@@ -20,12 +21,12 @@ export function openRenamePrompt(): void {
 	closeLineJump(false);
 	closeResourceSearch(false);
 	closeSymbolSearch(false);
-	ide_state.createResource.active = false;
+	editorFeatureState.createResource.active = false;
 	const context = getActiveCodeTabContext();
 	if (context.mode !== 'lua') {
 		return;
 	}
-	const started = ide_state.renameController.begin({
+	const started = renameController.begin({
 		buffer: editorDocumentState.buffer,
 		textVersion: editorDocumentState.textVersion,
 		cursorRow: editorDocumentState.cursorRow,

@@ -1,7 +1,7 @@
 import { clamp } from '../../utils/clamp';
 import * as constants from '../core/constants';
 import { getCodeAreaBounds, maximumLineLength } from './editor_view';
-import { caretNavigation } from '../core/ide_state';
+import { caretNavigation } from './caret';
 import { editorFeedbackState } from '../core/editor_feedback_state';
 import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../core/text_utils';
 import { editorCaretState } from './caret_state';

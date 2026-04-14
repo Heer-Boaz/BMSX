@@ -1,6 +1,5 @@
 import { $ } from '../../core/engine_core';
 import type { ResourceDescriptor } from './types';
-import { ide_state, WORKSPACE_AUTOSAVE_INTERVAL_MS } from './ide_state';
 import type { CodeTabContext, Position, EditorSnapshot } from './types';
 import { clamp_safe } from '../../utils/clamp';
 import type { StorageService, TimerHandle } from '../../platform/platform';
@@ -32,6 +31,9 @@ import { getTextSnapshot } from '../text/source_text';
 import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../../emulator/workspace_cache';
 import { restoreSnapshot } from '../editing/undo_controller';
 import { resetNavigationHistoryState } from '../navigation/navigation_history';
+import { editorDebuggerState } from '../contrib/debugger/editor_debugger_state';
+
+const WORKSPACE_AUTOSAVE_INTERVAL_MS = 2500;
 
 export type WorkspaceStoragePaths = {
 	projectRootPath: string;
@@ -796,7 +798,7 @@ export function clearWorkspaceSessionState(): void {
 		setTabDirty(context.id, false);
 	}
 	resetNavigationHistoryState();
-	ide_state.breakpoints.clear();
+	editorDebuggerState.breakpoints.clear();
 	workspaceState.autosaveSignature = null;
 	workspaceState.autosaveQueued = false;
 	workspaceState.autosaveRunning = false;

@@ -1,10 +1,10 @@
-import { ide_state } from '../../core/ide_state';
 import { activeSearchMatchCount, applySearchSelection, jumpToNextMatch, jumpToPreviousMatch, onSearchQueryChanged, openSearch, searchPageSize, stepSearchSelection } from '../../contrib/find/editor_search';
 import { applyInlineFieldEditing } from '../../ui/inline_text_field';
 import { textFromLines } from '../../text/source_text';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../keyboard/key_input';
 import { redo, undo } from '../../editing/undo_controller';
 import { save } from '../../ui/editor_tabs';
+import { editorFeatureState } from '../../core/editor_feature_state';
 
 export function handleSearchInput(): void {
 	const shiftDown = isShiftDown();
@@ -41,7 +41,7 @@ export function handleSearchInput(): void {
 		return;
 	}
 	const hasResults = activeSearchMatchCount() > 0;
-	const previewLocal = ide_state.search.scope === 'local';
+	const previewLocal = editorFeatureState.search.scope === 'local';
 	if (isKeyJustPressed('Enter')) {
 		consumeIdeKey('Enter');
 		if (hasResults) {
@@ -94,12 +94,12 @@ export function handleSearchInput(): void {
 			return;
 		}
 	}
-	const textChanged = applyInlineFieldEditing(ide_state.search.field, {
+	const textChanged = applyInlineFieldEditing(editorFeatureState.search.field, {
 		allowSpace: true,
 		characterFilter: undefined,
 		maxLength: null,
 	});
-	ide_state.search.query = textFromLines(ide_state.search.field.lines);
+	editorFeatureState.search.query = textFromLines(editorFeatureState.search.field.lines);
 	if (textChanged) {
 		onSearchQueryChanged();
 	}

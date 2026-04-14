@@ -1,7 +1,8 @@
 import { $ } from '../../../core/engine_core';
 import { point_in_rect } from '../../../utils/rect_operations';
 import * as constants from '../../core/constants';
-import { ide_state } from '../../core/ide_state';
+import { problemsPanel } from '../../contrib/problems/problems_panel';
+import { resourcePanel } from '../../contrib/resources/resource_panel_controller';
 import type { PointerSnapshot } from '../../core/types';
 import { isCodeTabActive, isResourceViewActive } from '../../ui/editor_tabs';
 import { getProblemsPanelBounds } from '../../contrib/problems/problems_panel';
@@ -14,6 +15,7 @@ import { editorPointerState } from './editor_pointer_state';
 import { editorCaretState } from '../../ui/caret_state';
 import { intellisenseUiState } from '../../contrib/intellisense/intellisense_ui_state';
 import { editorViewState } from '../../ui/editor_view_state';
+import { editorFeatureState } from '../../core/editor_feature_state';
 
 export function handleEditorWheelInput(): void {
 	const playerInput = $.input.getPlayerInput(1);
@@ -42,7 +44,7 @@ export function handleEditorWheelInput(): void {
 	if (handleProblemsPanelWheel(direction, steps, activePointer, playerInput)) {
 		return;
 	}
-	if (ide_state.completion.handlePointerWheel(direction, steps, activePointer !== null ? { x: activePointer.viewportX, y: activePointer.viewportY } : null)) {
+	if (editorFeatureState.completion.handlePointerWheel(direction, steps, activePointer !== null ? { x: activePointer.viewportX, y: activePointer.viewportY } : null)) {
 		playerInput.consumeRawButton('pointer_wheel', 'pointer');
 		return;
 	}
@@ -93,14 +95,14 @@ function handleResourceSearchWheel(
 	activePointer: PointerSnapshot,
 	playerInput: ReturnType<typeof $.input.getPlayerInput>
 ): boolean {
-	if (!ide_state.resourceSearch.visible) {
+	if (!editorFeatureState.resourceSearch.visible) {
 		return false;
 	}
 	const bounds = getResourceSearchBarBounds();
 	const pointerInQuickOpen = bounds !== null
 		&& activePointer !== null
 		&& point_in_rect(activePointer.viewportX, activePointer.viewportY, bounds);
-	if (!pointerInQuickOpen && !ide_state.resourceSearch.active) {
+	if (!pointerInQuickOpen && !editorFeatureState.resourceSearch.active) {
 		return false;
 	}
 	moveResourceSearchSelection(direction * steps);
@@ -114,8 +116,8 @@ function handleResourcePanelWheel(
 	activePointer: PointerSnapshot,
 	playerInput: ReturnType<typeof $.input.getPlayerInput>
 ): boolean {
-	const panelBounds = ide_state.resourcePanel.getBounds();
-	const pointerInPanel = ide_state.resourcePanel.isVisible()
+	const panelBounds = resourcePanel.getBounds();
+	const pointerInPanel = resourcePanel.isVisible()
 		&& panelBounds !== null
 		&& activePointer !== null
 		&& point_in_rect(activePointer.viewportX, activePointer.viewportY, panelBounds);
@@ -125,7 +127,7 @@ function handleResourcePanelWheel(
 	if (isShiftDown()) {
 		const horizontalPixels = direction * steps * editorViewState.charAdvance * 4;
 		scrollResourceBrowserHorizontal(horizontalPixels);
-		ide_state.resourcePanel.ensureSelectionVisible();
+		resourcePanel.ensureSelectionVisible();
 	} else {
 		scrollResourceBrowser(direction * steps);
 	}
@@ -139,7 +141,7 @@ function handleProblemsPanelWheel(
 	activePointer: PointerSnapshot,
 	playerInput: ReturnType<typeof $.input.getPlayerInput>
 ): boolean {
-	if (!ide_state.problemsPanel.isVisible) {
+	if (!problemsPanel.isVisible) {
 		return false;
 	}
 	const bounds = getProblemsPanelBounds();
@@ -148,18 +150,18 @@ function handleProblemsPanelWheel(
 	}
 	let allowScroll = false;
 	if (activePointer === null) {
-		allowScroll = ide_state.problemsPanel.isFocused;
+		allowScroll = problemsPanel.isFocused;
 	} else if (point_in_rect(activePointer.viewportX, activePointer.viewportY, bounds)) {
 		allowScroll = true;
 	}
-	if (ide_state.problemsPanel.isFocused) {
+	if (problemsPanel.isFocused) {
 		for (let i = 0; i < steps; i += 1) {
-			void ide_state.problemsPanel.handleKeyboardCommand(direction > 0 ? 'down' : 'up');
+			void problemsPanel.handleKeyboardCommand(direction > 0 ? 'down' : 'up');
 		}
 		playerInput.consumeRawButton('pointer_wheel', 'pointer');
 		return true;
 	}
-	if (!allowScroll || !ide_state.problemsPanel.handlePointerWheel(direction, steps)) {
+	if (!allowScroll || !problemsPanel.handlePointerWheel(direction, steps)) {
 		return false;
 	}
 	playerInput.consumeRawButton('pointer_wheel', 'pointer');

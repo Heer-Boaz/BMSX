@@ -1,5 +1,5 @@
 import { $ } from '../../../core/engine_core';
-import { ide_state } from '../../core/ide_state';
+import { editorRuntimeState } from '../../core/editor_runtime_state';
 import { scheduleRuntimeTask } from '../../core/background_tasks';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_ENGINE_PROJECT_ROOT_PATH } from '../../../emulator/workspace';
 import { Runtime } from '../../../emulator/runtime';
@@ -124,7 +124,7 @@ function toggleThemeMode(): void {
 			throw new Error(`[IDE] Unknown theme variant: ${currentVariant}`);
 	}
 	constants.setIdeThemeVariant(nextVariant);
-	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
-	setEditorCaseInsensitivity(ide_state.caseInsensitive);
+	editorRuntimeState.themeVariant = constants.getActiveIdeThemeVariant();
+	setEditorCaseInsensitivity(editorRuntimeState.caseInsensitive);
 	editorViewState.layout.invalidateAllHighlights();
 }

@@ -2,7 +2,7 @@ import { $ } from '../../core/engine_core';
 import { EditorUndoRecord, TextUndoOp } from '../text/editor_undo';
 import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import * as constants from '../core/constants';
-import { ide_state } from '../core/ide_state';
+import { editorRuntimeState } from '../core/editor_runtime_state';
 import { capturePreMutationSource, invalidateLuaCommentContextFromRow } from '../core/text_utils';
 import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../ui/editor_tabs';
 import { notifyReadOnlyEdit } from '../ui/editor_view';
@@ -267,8 +267,8 @@ export function breakUndoSequence(): void {
 }
 
 export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {
-	editorDocumentState.lastContentEditAtMs = ide_state.clockNow();
-	ide_state.pendingEditContext = { kind, text };
+	editorDocumentState.lastContentEditAtMs = editorRuntimeState.clockNow();
+	editorRuntimeState.pendingEditContext = { kind, text };
 }
 
 export function applySourceToDocument(source: string): void {

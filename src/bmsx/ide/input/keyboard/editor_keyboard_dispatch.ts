@@ -1,10 +1,14 @@
-import { ide_state } from '../../core/ide_state';
+import { editorInput } from './editor_text_input';
 import { isResourceViewActive } from '../../ui/editor_tabs';
 import { handleCreateResourceInput } from '../quick_input/editor_create_resource_input';
 import { handleLineJumpInput, handleResourceSearchInput, handleSearchInput, handleSymbolSearchInput } from '../quick_input/editor_quick_input';
 import { handleResourceViewerInput } from './resource_viewer_input';
 import { handleEditorGlobalBindings } from './editor_global_bindings';
 import { handleEditorPromptBindings } from './editor_prompt_bindings';
+import { editorFeatureState } from '../../core/editor_feature_state';
+import { renameController } from '../../contrib/rename/rename_controller';
+import { resourcePanel } from '../../contrib/resources/resource_panel_controller';
+import { problemsPanel } from '../../contrib/problems/problems_panel';
 import {
 	handleCodeFormattingKeybinding,
 	handleEditorClipboardAndCommandBindings,
@@ -22,30 +26,30 @@ export function handleEditorInput(): void {
 	if (handleEditorGlobalBindings()) {
 		return;
 	}
-	if (ide_state.createResource.active) {
+	if (editorFeatureState.createResource.active) {
 		handleCreateResourceInput();
 		return;
 	}
 	if (handleEditorPromptBindings()) {
 		return;
 	}
-	if (ide_state.renameController.isActive()) {
-		ide_state.renameController.handleInput();
+	if (renameController.isActive()) {
+		renameController.handleInput();
 		return;
 	}
-	if (ide_state.resourceSearch.active) {
+	if (editorFeatureState.resourceSearch.active) {
 		handleResourceSearchInput();
 		return;
 	}
-	if (ide_state.symbolSearch.active) {
+	if (editorFeatureState.symbolSearch.active) {
 		handleSymbolSearchInput();
 		return;
 	}
-	if (ide_state.lineJump.active) {
+	if (editorFeatureState.lineJump.active) {
 		handleLineJumpInput();
 		return;
 	}
-	if (ide_state.search.active) {
+	if (editorFeatureState.search.active) {
 		handleSearchInput();
 		return;
 	}
@@ -58,27 +62,27 @@ export function handleEditorInput(): void {
 	if (handleEditorClipboardAndCommandBindings()) {
 		return;
 	}
-	if (ide_state.completion.handleKeybindings()) {
+	if (editorFeatureState.completion.handleKeybindings()) {
 		return;
 	}
 	if (handleCodeFormattingKeybinding()) {
 		return;
 	}
-	ide_state.input.handleEditorInput();
+	editorInput.handleEditorInput();
 }
 
 function handleFocusedResourcePanelInput(): boolean {
-	if (!ide_state.resourcePanel.isVisible() || !ide_state.resourcePanel.isFocused()) {
+	if (!resourcePanel.isVisible() || !resourcePanel.isFocused()) {
 		return false;
 	}
-	ide_state.resourcePanel.handleKeyboard();
+	resourcePanel.handleKeyboard();
 	return true;
 }
 
 function handleFocusedProblemsPanelInput(): boolean {
-	if (!ide_state.problemsPanel.isVisible || !ide_state.problemsPanel.isFocused) {
+	if (!problemsPanel.isVisible || !problemsPanel.isFocused) {
 		return false;
 	}
-	ide_state.problemsPanel.handleKeyboard();
+	problemsPanel.handleKeyboard();
 	return true;
 }

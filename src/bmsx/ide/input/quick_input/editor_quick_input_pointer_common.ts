@@ -1,4 +1,4 @@
-import { ide_state } from '../../core/ide_state';
+import { resourcePanel } from '../../contrib/resources/resource_panel_controller';
 import type { PointerSnapshot } from '../../core/types';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { resetBlink } from '../../render/render_caret';
@@ -7,7 +7,7 @@ import { editorPointerState } from '../pointer/editor_pointer_state';
 import { editorCaretState } from '../../ui/caret_state';
 
 export function activateQuickInputField(): void {
-	ide_state.resourcePanel.setFocused(false);
+	resourcePanel.setFocused(false);
 	editorCaretState.cursorVisible = true;
 	resetBlink();
 }

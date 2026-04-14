@@ -1,5 +1,5 @@
 import * as constants from '../../core/constants';
-import { ide_state } from '../../core/ide_state';
+import { renameController } from '../rename/rename_controller';
 import { showEditorMessage } from '../../core/editor_feedback_state';
 import { extractHoverExpression, navigateToLuaDefinition } from '../intellisense/intellisense';
 import { getActiveCodeTabContext } from '../../ui/editor_tabs';
@@ -7,6 +7,7 @@ import { resetBlink } from '../../render/render_caret';
 import { applySymbolSearchFieldText, closeSymbolSearch, ensureSymbolSearchSelectionVisible } from '../symbols/symbol_search_shared';
 import { resolveReferenceLookup } from './reference_lookup';
 import { editorDocumentState } from '../../editing/editor_document_state';
+import { editorFeatureState } from '../../core/editor_feature_state';
 import {
 	type ReferenceCatalogEntry,
 	type ReferenceSymbolEntry,
@@ -18,10 +19,10 @@ export function openReferenceSearchPopup(): void {
 	if (context.mode !== 'lua') {
 		return;
 	}
-	if (ide_state.symbolSearch.visible || ide_state.symbolSearch.active) {
+	if (editorFeatureState.symbolSearch.visible || editorFeatureState.symbolSearch.active) {
 		closeSymbolSearch(false);
 	}
-	ide_state.renameController.cancel();
+	renameController.cancel();
 	const result = resolveReferenceLookup({
 		buffer: editorDocumentState.buffer,
 		textVersion: editorDocumentState.textVersion,
@@ -35,38 +36,38 @@ export function openReferenceSearchPopup(): void {
 		return;
 	}
 	const { info, initialIndex } = result;
-	ide_state.referenceState.apply(info, initialIndex);
-	ide_state.symbolSearch.referenceCatalog = buildReferenceSearchCatalog(info, context);
-	if (ide_state.symbolSearch.referenceCatalog.length === 0) {
+	editorFeatureState.referenceState.apply(info, initialIndex);
+	editorFeatureState.symbolSearch.referenceCatalog = buildReferenceSearchCatalog(info, context);
+	if (editorFeatureState.symbolSearch.referenceCatalog.length === 0) {
 		showEditorMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
 		return;
 	}
-	ide_state.symbolSearch.mode = 'references';
-	ide_state.symbolSearch.global = true;
-	ide_state.symbolSearch.visible = true;
-	ide_state.symbolSearch.active = true;
+	editorFeatureState.symbolSearch.mode = 'references';
+	editorFeatureState.symbolSearch.global = true;
+	editorFeatureState.symbolSearch.visible = true;
+	editorFeatureState.symbolSearch.active = true;
 	applySymbolSearchFieldText('', true);
-	ide_state.symbolSearch.query = '';
+	editorFeatureState.symbolSearch.query = '';
 	updateReferenceSearchMatches();
-	ide_state.symbolSearch.hoverIndex = -1;
+	editorFeatureState.symbolSearch.hoverIndex = -1;
 	ensureSymbolSearchSelectionVisible();
 	resetBlink();
 	showReferenceSearchStatusMessage();
 }
 
 export function applyReferenceSearchSelection(index: number): void {
-	if (index < 0 || index >= ide_state.symbolSearch.matches.length) {
+	if (index < 0 || index >= editorFeatureState.symbolSearch.matches.length) {
 		showEditorMessage('Symbol not found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
-	const match = ide_state.symbolSearch.matches[index];
+	const match = editorFeatureState.symbolSearch.matches[index];
 	const referenceEntry = match.entry as ReferenceCatalogEntry;
 	const symbol = referenceEntry.symbol as ReferenceSymbolEntry;
-	const entryIndex = ide_state.symbolSearch.referenceCatalog.indexOf(referenceEntry);
-	const total = ide_state.symbolSearch.referenceCatalog.length;
-	const expressionLabel = ide_state.referenceState.getExpression() ?? symbol.name;
+	const entryIndex = editorFeatureState.symbolSearch.referenceCatalog.indexOf(referenceEntry);
+	const total = editorFeatureState.symbolSearch.referenceCatalog.length;
+	const expressionLabel = editorFeatureState.referenceState.getExpression() ?? symbol.name;
 	closeSymbolSearch(true);
-	ide_state.referenceState.clear();
+	editorFeatureState.referenceState.clear();
 	navigateToLuaDefinition(symbol.location);
 	if (entryIndex >= 0 && total > 0) {
 		showEditorMessage(`Reference ${entryIndex + 1}/${total} for ${expressionLabel}`, constants.COLOR_STATUS_SUCCESS, 1.6);

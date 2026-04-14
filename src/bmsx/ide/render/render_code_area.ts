@@ -1,7 +1,6 @@
 import type { CursorScreenInfo } from '../core/types';
 import { getBreakpointLaneWidth, getCodeAreaBounds, maximumLineLength } from '../ui/editor_view';
 import * as constants from '../core/constants';
-import { ide_state } from '../core/ide_state';
 import { editorFeedbackState } from '../core/editor_feedback_state';
 import { getBreakpointsForChunk } from '../contrib/debugger/ide_debugger';
 import { intellisenseUiState } from '../contrib/intellisense/intellisense_ui_state';
@@ -12,6 +11,8 @@ import { finalizeCodeAreaRender } from './render_code_area_tail';
 import { drawCodeAreaRows } from './render_code_area_rows';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorViewState } from '../ui/editor_view_state';
+import { editorFeatureState } from '../core/editor_feature_state';
+import { editorRuntimeState } from '../core/editor_runtime_state';
 
 export function renderCodeArea(): void {
 	ensureVisualLines();
@@ -68,11 +69,11 @@ export function renderCodeArea(): void {
 	const activePath = getActiveCodeTabContext().descriptor.path;
 	const breakpointsForChunk = getBreakpointsForChunk(activePath);
 	const cursorVisualIndex = editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
-	const inlineCompletionPreview = ide_state.completion.getInlineCompletionPreview();
+	const inlineCompletionPreview = editorFeatureState.completion.getInlineCompletionPreview();
 	const shouldRenderInlinePreview = inlineCompletionPreview !== null
 		&& inlineCompletionPreview.row === editorDocumentState.cursorRow
 		&& inlineCompletionPreview.column === editorDocumentState.cursorColumn;
-	const useUppercase = ide_state.caseInsensitive;
+	const useUppercase = editorRuntimeState.caseInsensitive;
 	const renderFont = editorViewState.font.renderFont();
 	const breakpointLaneWidth = getBreakpointLaneWidth();
 	const sliceWidth = columnCapacity + 2;

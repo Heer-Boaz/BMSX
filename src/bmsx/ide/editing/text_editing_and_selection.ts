@@ -12,7 +12,7 @@
  */
 
 import { $ } from '../../core/engine_core';
-import { ide_state } from '../core/ide_state';
+import { editorRuntimeState } from '../core/editor_runtime_state';
 import { showEditorMessage } from '../core/editor_feedback_state';
 import type { EditContext, Position } from '../core/types';
 import { getActiveCodeTabContext, recordEditContext } from '../ui/editor_tabs';
@@ -31,6 +31,7 @@ import { formatAemDocument } from '../language/aem/aem_editor';
 import { editorDocumentState } from './editor_document_state';
 import { editorSessionState } from '../ui/editor_session_state';
 import { editorViewState } from '../ui/editor_view_state';
+import { editorFeatureState } from '../core/editor_feature_state';
 import {
 	clearSingleCursorSelection,
 	collapseSingleCursorSelection,
@@ -1020,9 +1021,9 @@ export function applyDocumentFormatting(): void {
 	}
 }
 export function handlePostEditMutation(): void {
-	const editContext = ide_state.pendingEditContext;
-	ide_state.pendingEditContext = null;
-	ide_state.completion.updateAfterEdit(editContext);
+	const editContext = editorRuntimeState.pendingEditContext;
+	editorRuntimeState.pendingEditContext = null;
+	editorFeatureState.completion.updateAfterEdit(editContext);
 }
 export function computeEditContextFromSources(previous: string, next: string): EditContext {
 	if (previous === next) {

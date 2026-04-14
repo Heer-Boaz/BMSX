@@ -2,7 +2,7 @@ import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../emulator/typ
 import type { EditorDiagnostic } from '../../core/types';
 import { computeLuaDiagnostics, getApiCompletionData } from '../intellisense/intellisense';
 import { getCachedLuaParse } from '../../language/lua/lua_analysis_cache';
-import { ide_state } from '../../core/ide_state';
+import { editorRuntimeState } from '../../core/editor_runtime_state';
 import { diagnosticsDebounceMs, editorDiagnosticsState } from './diagnostics_state';
 import { cacheSemanticParseState } from '../intellisense/semantic_workspace_sync';
 import { editorSessionState } from '../../ui/editor_session_state';
@@ -40,7 +40,7 @@ export function computeAggregatedEditorDiagnostics(
 			source,
 			lines: ctx.lines,
 			version: ctx.version,
-			canonicalization: ide_state.caseInsensitive ? ide_state.canonicalization : 'none',
+			canonicalization: editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none',
 		});
 		const baseLines = parseEntry.lines;
 		const parsed = parseEntry.parsed;
@@ -79,7 +79,7 @@ export function computeAggregatedEditorDiagnostics(
 export function markDiagnosticsDirty(contextId: string): void {
 	editorDiagnosticsState.diagnosticsDirty = true;
 	editorDiagnosticsState.dirtyDiagnosticContexts.add(contextId);
-	editorDiagnosticsState.diagnosticsDueAtMs = ide_state.clockNow() + diagnosticsDebounceMs;
+	editorDiagnosticsState.diagnosticsDueAtMs = editorRuntimeState.clockNow() + diagnosticsDebounceMs;
 }
 
 export function markAllDiagnosticsDirty(): void {
@@ -91,5 +91,5 @@ export function markAllDiagnosticsDirty(): void {
 	for (const contextId of contexts.keys()) {
 		editorDiagnosticsState.dirtyDiagnosticContexts.add(contextId);
 	}
-	editorDiagnosticsState.diagnosticsDueAtMs = ide_state.clockNow() + diagnosticsDebounceMs;
+	editorDiagnosticsState.diagnosticsDueAtMs = editorRuntimeState.clockNow() + diagnosticsDebounceMs;
 }

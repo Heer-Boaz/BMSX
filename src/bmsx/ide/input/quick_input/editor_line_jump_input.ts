@@ -1,8 +1,8 @@
-import { ide_state } from '../../core/ide_state';
 import { applyInlineFieldEditing } from '../../ui/inline_text_field';
 import { applyLineJump, closeLineJump, openLineJump } from '../../contrib/find/line_jump';
 import { textFromLines } from '../../text/source_text';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../keyboard/key_input';
+import { editorFeatureState } from '../../core/editor_feature_state';
 
 export function handleLineJumpInput(): void {
 	const shiftDown = isShiftDown();
@@ -25,12 +25,12 @@ export function handleLineJumpInput(): void {
 		return;
 	}
 	const digitFilter = (value: string): boolean => value >= '0' && value <= '9';
-	const textChanged = applyInlineFieldEditing(ide_state.lineJump.field, {
+	const textChanged = applyInlineFieldEditing(editorFeatureState.lineJump.field, {
 		allowSpace: false,
 		characterFilter: digitFilter,
 		maxLength: 6,
 	});
-	ide_state.lineJump.value = textFromLines(ide_state.lineJump.field.lines);
+	editorFeatureState.lineJump.value = textFromLines(editorFeatureState.lineJump.field.lines);
 	if (textChanged) {
 		return;
 	}

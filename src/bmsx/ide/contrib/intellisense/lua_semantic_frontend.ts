@@ -81,11 +81,11 @@ export type LuaSemanticFrontendFile = {
 	findFirstReferenceByStartRange(
 		start: LuaSourceRange['start'],
 		endExclusive: LuaSourceRange['start'],
-	): LuaBoundReference;
+	): LuaBoundReference | null;
 	findLastReferenceByStartRange(
 		start: LuaSourceRange['start'],
 		endExclusive: LuaSourceRange['start'],
-	): LuaBoundReference;
+	): LuaBoundReference | null;
 };
 
 export type LuaSemanticFrontend = {

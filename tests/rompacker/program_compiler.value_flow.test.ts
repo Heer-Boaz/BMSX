@@ -5,8 +5,7 @@ import { LuaLexer } from '../../src/bmsx/lua/syntax/lualexer';
 import { LuaParser } from '../../src/bmsx/lua/syntax/luaparser';
 import { compileLuaChunkToProgram } from '../../src/bmsx/emulator/program_compiler';
 import {
-	MMIO_REGISTER_SPEC_BY_ADDRESS,
-	MMIO_REGISTER_SPEC_BY_NAME,
+	withTemporaryMmioRegisterSpec,
 	type MmioRegisterSpec,
 } from '../../src/bmsx/emulator/mmio_register_spec';
 
@@ -21,31 +20,12 @@ function compileSource(source: string, path: string = 'value_flow.lua') {
 }
 
 function withStringRefRegister<T>(address: number, name: string, run: () => T): T {
-	const byAddress = MMIO_REGISTER_SPEC_BY_ADDRESS as Map<number, MmioRegisterSpec>;
-	const byName = MMIO_REGISTER_SPEC_BY_NAME as Map<string, MmioRegisterSpec>;
-	const previousByAddress = byAddress.get(address);
-	const previousByName = byName.get(name);
 	const spec: MmioRegisterSpec = {
 		name,
 		address,
 		writeRequirement: 'string_ref',
 	};
-	byAddress.set(address, spec);
-	byName.set(name, spec);
-	try {
-		return run();
-	} finally {
-		if (previousByAddress === undefined) {
-			byAddress.delete(address);
-		} else {
-			byAddress.set(address, previousByAddress);
-		}
-		if (previousByName === undefined) {
-			byName.delete(name);
-		} else {
-			byName.set(name, previousByName);
-		}
-	}
+	return withTemporaryMmioRegisterSpec(spec, run);
 }
 
 test('ProgramCompiler proves Lua and/or short-circuit expressions as string_ref when truthiness is known', () => {
@@ -192,6 +172,224 @@ test('ProgramCompiler iterates loop flow analysis to a real fixpoint instead of 
 		].join('\n');
 		assert.throws(
 			() => compileSource(source, 'loop_fixpoint.lua'),
+			/requires a string_ref value/,
+		);
+	});
+});
+
+test('ProgramCompiler matches assignment target-preparation order before RHS evaluation', () => {
+	withStringRefRegister(0x5107, 'sys_test_flow_assignment_order', () => {
+		const source = [
+			'local function write()',
+			'\tlocal reg<const> = 20743',
+			"\tlocal q = &'a'",
+			'\tlocal t = {}',
+			'\tlocal bump<const> = function()',
+			"\t\tq = 'x'",
+			"\t\treturn 'slot'",
+			'\tend',
+			'\tq, t[bump()] = q, 0',
+			'\tmem[reg] = q',
+			'end',
+			'return write',
+		].join('\n');
+		assert.throws(
+			() => compileSource(source, 'assignment_order.lua'),
+			/requires a string_ref value/,
+		);
+	});
+});
+
+test('ProgramCompiler matches memory-target preparation order before RHS evaluation', () => {
+	withStringRefRegister(0x5108, 'sys_test_flow_memory_assignment_order', () => {
+		const source = [
+			'local function write()',
+			'\tlocal reg<const> = 20744',
+			"\tlocal q = &'a'",
+			'\tlocal bump<const> = function()',
+			"\t\tq = 'x'",
+			'\t\treturn reg',
+			'\tend',
+			'\tmem[bump()], q = 0, q',
+			'\tmem[reg] = q',
+			'end',
+			'return write',
+		].join('\n');
+		assert.throws(
+			() => compileSource(source, 'memory_assignment_order.lua'),
+			/requires a string_ref value/,
+		);
+	});
+});
+
+test('ProgramCompiler treats function declarations as writing the declaration target', () => {
+	withStringRefRegister(0x5109, 'sys_test_flow_function_target', () => {
+		const source = [
+			'local function write()',
+			'\tlocal reg<const> = 20745',
+			"\tlocal q = &'a'",
+			'\tfunction q()',
+			'\t\treturn 0',
+			'\tend',
+			'\tmem[reg] = q',
+			'end',
+			'return write',
+		].join('\n');
+		assert.throws(
+			() => compileSource(source, 'function_target.lua'),
+			/requires a string_ref value/,
+		);
+	});
+});
+
+test('ProgramCompiler treats simple function declarations as truthy function writes even when the target was not already tracked', () => {
+	withStringRefRegister(0x510a, 'sys_test_flow_function_param_target', () => {
+		const source = [
+			'local function write(p)',
+			'\tlocal reg<const> = 20746',
+			'\tfunction p()',
+			'\t\treturn 0',
+			'\tend',
+			"\tmem[reg] = p and &'a' or 1",
+			'end',
+			'return write',
+		].join('\n');
+		const compiled = compileSource(source, 'function_param_target.lua');
+		assert.ok(compiled.program.code.length > 0);
+	});
+});
+
+test('ProgramCompiler tracks nested closure writes introduced through function declarations', () => {
+	withStringRefRegister(0x510b, 'sys_test_flow_function_decl_closure', () => {
+		const source = [
+			'local function write()',
+			'\tlocal reg<const> = 20747',
+			"\tlocal q = &'a'",
+			'\tlocal trigger = false',
+			'\tfunction trigger()',
+			'\t\tlocal inner<const> = function()',
+			"\t\t\tq = 'x'",
+			'\t\tend',
+			'\t\tinner()',
+			'\t\treturn 0',
+			'\tend',
+			'\ttrigger()',
+			'\tmem[reg] = q',
+			'end',
+			'return write',
+		].join('\n');
+		assert.throws(
+			() => compileSource(source, 'function_decl_closure.lua'),
+			/requires a string_ref value/,
+		);
+	});
+});
+
+test('ProgramCompiler does not treat dotted function declarations as rewriting the base lexical symbol', () => {
+	withStringRefRegister(0x510c, 'sys_test_flow_function_decl_dotted', () => {
+		const source = [
+			'local function write(holder)',
+			'\tlocal reg<const> = 20748',
+			'\tfunction holder.build()',
+			'\t\treturn 0',
+			'\tend',
+			"\tmem[reg] = holder and &'a' or 1",
+			'end',
+			'return write',
+		].join('\n');
+		assert.throws(
+			() => compileSource(source, 'function_decl_dotted.lua'),
+			/requires a string_ref value/,
+		);
+	});
+});
+
+test('ProgramCompiler does not treat method function declarations as rewriting the base lexical symbol', () => {
+	withStringRefRegister(0x510d, 'sys_test_flow_function_decl_method', () => {
+		const source = [
+			'local function write(holder)',
+			'\tlocal reg<const> = 20749',
+			'\tfunction holder:build()',
+			'\t\treturn 0',
+			'\tend',
+			"\tmem[reg] = holder and &'a' or 1",
+			'end',
+			'return write',
+		].join('\n');
+		assert.throws(
+			() => compileSource(source, 'function_decl_method.lua'),
+			/requires a string_ref value/,
+		);
+	});
+});
+
+test('ProgramCompiler keeps while-loop exit flow conservative when the condition call mutates tracked locals', () => {
+	withStringRefRegister(0x510e, 'sys_test_flow_while_condition', () => {
+		const source = [
+			'local function write()',
+			'\tlocal reg<const> = 20750',
+			"\tlocal q = &'a'",
+			'\tlocal keepGoing = true',
+			'\tlocal tick<const> = function()',
+			'\t\tif keepGoing then',
+			'\t\t\tkeepGoing = false',
+			"\t\t\tq = 'x'",
+			'\t\t\treturn true',
+			'\t\tend',
+			'\t\treturn false',
+			'\tend',
+			'\twhile tick() do',
+			'\tend',
+			'\tmem[reg] = q',
+			'end',
+			'return write',
+		].join('\n');
+		assert.throws(
+			() => compileSource(source, 'while_condition.lua'),
+			/requires a string_ref value/,
+		);
+	});
+});
+
+test('ProgramCompiler keeps repeat-until exit flow conservative when the condition call mutates tracked locals', () => {
+	withStringRefRegister(0x510f, 'sys_test_flow_repeat_condition', () => {
+		const source = [
+			'local function write()',
+			'\tlocal reg<const> = 20751',
+			"\tlocal q = &'a'",
+			'\tlocal done = false',
+			'\tlocal tick<const> = function()',
+			'\t\tif done then',
+			'\t\t\treturn true',
+			'\t\tend',
+			'\t\tdone = true',
+			"\t\tq = 'x'",
+			'\t\treturn false',
+			'\tend',
+			'\trepeat',
+			'\tuntil tick()',
+			'\tmem[reg] = q',
+			'end',
+			'return write',
+		].join('\n');
+		assert.throws(
+			() => compileSource(source, 'repeat_condition.lua'),
+			/requires a string_ref value/,
+		);
+	});
+});
+
+test('ProgramCompiler treats concat as plain string instead of preserving string_ref', () => {
+	withStringRefRegister(0x5110, 'sys_test_flow_concat_plain_string', () => {
+		const source = [
+			'local function write()',
+			'\tlocal reg<const> = 20752',
+			"\tmem[reg] = &'a' .. &'b'",
+			'end',
+			'return write',
+		].join('\n');
+		assert.throws(
+			() => compileSource(source, 'concat_plain_string.lua'),
 			/requires a string_ref value/,
 		);
 	});

@@ -1,4 +1,3 @@
-import { ide_state } from '../../core/ide_state';
 import type { PointerSnapshot } from '../../core/types';
 import { clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { editorChromeState } from '../../ui/editor_chrome_state';
@@ -6,6 +5,7 @@ import { getResourcePanelWidth, hideResourcePanel } from '../../ui/editor_view';
 import * as constants from '../../core/constants';
 import { editorPointerState, resetPointerClickTracking } from './editor_pointer_state';
 import { editorViewState } from '../../ui/editor_view_state';
+import { resourcePanel } from '../../contrib/resources/resource_panel_controller';
 
 export function handleResourcePanelResizePointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	if (editorChromeState.resourcePanelResizing) {
@@ -15,12 +15,12 @@ export function handleResourcePanelResizePointer(snapshot: PointerSnapshot, just
 	if (!justPressed) {
 		return false;
 	}
-	if (!ide_state.resourcePanel.isVisible() || !isPointerOverResourcePanelDivider(snapshot.viewportX, snapshot.viewportY)) {
+	if (!resourcePanel.isVisible() || !isPointerOverResourcePanelDivider(snapshot.viewportX, snapshot.viewportY)) {
 		return false;
 	}
 	if (getResourcePanelWidth() > 0) {
 		editorChromeState.resourcePanelResizing = true;
-		ide_state.resourcePanel.setFocused(true);
+		resourcePanel.setFocused(true);
 		editorPointerState.pointerSelecting = false;
 		resetPointerClickTracking();
 		editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
@@ -36,13 +36,13 @@ function updateResourcePanelResize(snapshot: PointerSnapshot): void {
 		clearGotoHoverHighlight();
 		return;
 	}
-	const ok = ide_state.resourcePanel.setRatioFromViewportX(snapshot.viewportX, editorViewState.viewportWidth);
+	const ok = resourcePanel.setRatioFromViewportX(snapshot.viewportX, editorViewState.viewportWidth);
 	if (!ok) {
 		hideResourcePanel();
 	} else {
 		editorViewState.layout.markVisualLinesDirty();
 	}
-	ide_state.resourcePanel.setFocused(true);
+	resourcePanel.setFocused(true);
 	editorPointerState.pointerSelecting = false;
 	resetPointerClickTracking();
 	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
@@ -50,10 +50,10 @@ function updateResourcePanelResize(snapshot: PointerSnapshot): void {
 }
 
 function isPointerOverResourcePanelDivider(x: number, y: number): boolean {
-	if (!ide_state.resourcePanel.isVisible()) {
+	if (!resourcePanel.isVisible()) {
 		return false;
 	}
-	const bounds = ide_state.resourcePanel.getBounds();
+	const bounds = resourcePanel.getBounds();
 	if (!bounds) {
 		return false;
 	}

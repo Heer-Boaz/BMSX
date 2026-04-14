@@ -1,4 +1,4 @@
-import { ide_state } from '../../core/ide_state';
+import { editorRuntimeState } from '../../core/editor_runtime_state';
 import { showEditorMessage } from '../../core/editor_feedback_state';
 import * as constants from '../../core/constants';
 import { clamp, clamp_wrap } from '../../../utils/clamp';
@@ -24,6 +24,8 @@ import { applyInlineFieldPointer, setFieldText } from '../../ui/inline_text_fiel
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { editorDocumentState } from '../../editing/editor_document_state';
 import { editorViewState } from '../../ui/editor_view_state';
+import { editorFeatureState } from '../../core/editor_feature_state';
+import { renameController } from '../rename/rename_controller';
 
 const LOCAL_ROWS_PER_SLICE = 256;
 const GLOBAL_ROWS_PER_SLICE = 128;
@@ -31,12 +33,12 @@ const GLOBAL_ROWS_PER_SLICE = 128;
 type LocalSearchJob = SearchComputationJob & { version: number };
 
 function normalizeQuery(raw: string): string {
-	return ide_state.caseInsensitive ? raw.toLowerCase() : raw;
+	return editorRuntimeState.caseInsensitive ? raw.toLowerCase() : raw;
 }
 
 function forEachMatchInLine(line: string, query: string, cb: (start: number, end: number) => void): void {
 	if (query.length === 0) return;
-	const haystack = ide_state.caseInsensitive ? line.toLowerCase() : line;
+	const haystack = editorRuntimeState.caseInsensitive ? line.toLowerCase() : line;
 	let from = 0;
 	const needleLength = query.length;
 	while (from <= haystack.length - needleLength) {
@@ -66,9 +68,9 @@ function showNoMatches(): void {
 }
 
 export function activeSearchMatchCount(): number {
-	return ide_state.search.scope === 'global'
-		? ide_state.search.globalMatches.length
-		: ide_state.search.matches.length;
+	return editorFeatureState.search.scope === 'global'
+		? editorFeatureState.search.globalMatches.length
+		: editorFeatureState.search.matches.length;
 }
 
 export function openSearch(useSelection: boolean, scope: 'local' | 'global' = 'local'): void {
@@ -76,26 +78,26 @@ export function openSearch(useSelection: boolean, scope: 'local' | 'global' = 'l
 	closeSymbolSearch(false);
 	closeResourceSearch(false);
 	closeLineJump(false);
-	ide_state.renameController.cancel();
+	renameController.cancel();
 
-	ide_state.search.scope = scope;
-	ide_state.search.displayOffset = 0;
-	ide_state.search.hoverIndex = -1;
-	ide_state.search.currentIndex = -1;
+	editorFeatureState.search.scope = scope;
+	editorFeatureState.search.displayOffset = 0;
+	editorFeatureState.search.hoverIndex = -1;
+	editorFeatureState.search.currentIndex = -1;
 
 	if (scope === 'global') {
 		cancelSearchJob();
-		ide_state.search.matches = [];
-		ide_state.search.globalMatches = [];
+		editorFeatureState.search.matches = [];
+		editorFeatureState.search.globalMatches = [];
 	} else {
 		cancelGlobalSearchJob();
-		ide_state.search.globalMatches = [];
+		editorFeatureState.search.globalMatches = [];
 	}
 
-	ide_state.search.visible = true;
-	ide_state.search.active = true;
+	editorFeatureState.search.visible = true;
+	editorFeatureState.search.active = true;
 
-	applySearchFieldText(ide_state.search.query, true);
+	applySearchFieldText(editorFeatureState.search.query, true);
 
 	if (useSelection) {
 		const range = getSelectionRange();
@@ -107,39 +109,39 @@ export function openSearch(useSelection: boolean, scope: 'local' | 'global' = 'l
 		}
 	}
 
-	ide_state.search.query = textFromLines(ide_state.search.field.lines);
+	editorFeatureState.search.query = textFromLines(editorFeatureState.search.field.lines);
 	onSearchQueryChanged();
 	resetBlink();
 }
 
 export function closeSearch(clearQuery: boolean, forceHide = false): void {
-	ide_state.search.active = false;
-	ide_state.search.hoverIndex = -1;
-	ide_state.search.displayOffset = 0;
+	editorFeatureState.search.active = false;
+	editorFeatureState.search.hoverIndex = -1;
+	editorFeatureState.search.displayOffset = 0;
 
 	if (clearQuery) {
 		applySearchFieldText('', true);
 	}
-	ide_state.search.query = textFromLines(ide_state.search.field.lines);
+	editorFeatureState.search.query = textFromLines(editorFeatureState.search.field.lines);
 
-	const hide = forceHide || clearQuery || ide_state.search.query.length === 0;
+	const hide = forceHide || clearQuery || editorFeatureState.search.query.length === 0;
 	if (hide) {
-		ide_state.search.visible = false;
-		ide_state.search.scope = 'local';
-		ide_state.search.matches = [];
-		ide_state.search.globalMatches = [];
-		ide_state.search.currentIndex = -1;
+		editorFeatureState.search.visible = false;
+		editorFeatureState.search.scope = 'local';
+		editorFeatureState.search.matches = [];
+		editorFeatureState.search.globalMatches = [];
+		editorFeatureState.search.currentIndex = -1;
 		cancelSearchJob();
 		cancelGlobalSearchJob();
 	} else {
-		if (ide_state.search.scope !== 'local') {
-			ide_state.search.scope = 'local';
+		if (editorFeatureState.search.scope !== 'local') {
+			editorFeatureState.search.scope = 'local';
 			cancelGlobalSearchJob();
-			ide_state.search.globalMatches = [];
+			editorFeatureState.search.globalMatches = [];
 		}
-		ide_state.search.matches = [];
-		ide_state.search.currentIndex = -1;
-		ide_state.search.visible = true;
+		editorFeatureState.search.matches = [];
+		editorFeatureState.search.currentIndex = -1;
+		editorFeatureState.search.visible = true;
 		onSearchQueryChanged();
 	}
 
@@ -148,15 +150,15 @@ export function closeSearch(clearQuery: boolean, forceHide = false): void {
 }
 
 export function focusEditorFromSearch(): void {
-	ide_state.search.active = false;
-	ide_state.search.hoverIndex = -1;
-	ide_state.search.field.selectionAnchor = null;
-	ide_state.search.field.pointerSelecting = false;
-	if (ide_state.search.query.length === 0) {
-		ide_state.search.visible = false;
-		ide_state.search.matches = [];
-		ide_state.search.globalMatches = [];
-		ide_state.search.currentIndex = -1;
+	editorFeatureState.search.active = false;
+	editorFeatureState.search.hoverIndex = -1;
+	editorFeatureState.search.field.selectionAnchor = null;
+	editorFeatureState.search.field.pointerSelecting = false;
+	if (editorFeatureState.search.query.length === 0) {
+		editorFeatureState.search.visible = false;
+		editorFeatureState.search.matches = [];
+		editorFeatureState.search.globalMatches = [];
+		editorFeatureState.search.currentIndex = -1;
 		cancelSearchJob();
 		cancelGlobalSearchJob();
 	}
@@ -164,28 +166,28 @@ export function focusEditorFromSearch(): void {
 }
 
 export function onSearchQueryChanged(): void {
-	if (ide_state.search.scope === 'global') {
+	if (editorFeatureState.search.scope === 'global') {
 		onGlobalSearchQueryChanged();
 		return;
 	}
-	if (ide_state.search.query.length === 0) {
+	if (editorFeatureState.search.query.length === 0) {
 		cancelSearchJob();
-		ide_state.search.matches = [];
-		ide_state.search.currentIndex = -1;
+		editorFeatureState.search.matches = [];
+		editorFeatureState.search.currentIndex = -1;
 		editorDocumentState.selectionAnchor = null;
-		ide_state.search.displayOffset = 0;
+		editorFeatureState.search.displayOffset = 0;
 		return;
 	}
 	startSearchJob();
 }
 
 export function onGlobalSearchQueryChanged(): void {
-	ide_state.search.displayOffset = 0;
-	ide_state.search.hoverIndex = -1;
-	ide_state.search.currentIndex = -1;
-	if (ide_state.search.query.length === 0) {
+	editorFeatureState.search.displayOffset = 0;
+	editorFeatureState.search.hoverIndex = -1;
+	editorFeatureState.search.currentIndex = -1;
+	if (editorFeatureState.search.query.length === 0) {
 		cancelGlobalSearchJob();
-		ide_state.search.globalMatches = [];
+		editorFeatureState.search.globalMatches = [];
 		return;
 	}
 	startGlobalSearchJob();
@@ -194,14 +196,14 @@ export function onGlobalSearchQueryChanged(): void {
 export function startSearchJob(): void {
 	cancelSearchJob();
 
-	ide_state.search.displayOffset = 0;
-	ide_state.search.hoverIndex = -1;
-	ide_state.search.currentIndex = -1;
-	ide_state.search.matches = [];
+	editorFeatureState.search.displayOffset = 0;
+	editorFeatureState.search.hoverIndex = -1;
+	editorFeatureState.search.currentIndex = -1;
+	editorFeatureState.search.matches = [];
 	editorDocumentState.selectionAnchor = null;
 
 	const job: LocalSearchJob = {
-		query: normalizeQuery(ide_state.search.query),
+		query: normalizeQuery(editorFeatureState.search.query),
 		version: editorDocumentState.textVersion,
 		nextRow: 0,
 		matches: [],
@@ -209,14 +211,14 @@ export function startSearchJob(): void {
 		cursorRow: editorDocumentState.cursorRow,
 		cursorColumn: editorDocumentState.cursorColumn,
 	};
-	ide_state.search.job = job;
+	editorFeatureState.search.job = job;
 	enqueueBackgroundTask(() => runLocalSearchSlice(job));
 }
 
 function runLocalSearchSlice(job: LocalSearchJob): boolean {
-	if (ide_state.search.job !== job) return false;
-	if (job.query.length === 0 || job.version !== editorDocumentState.textVersion || ide_state.search.query.length === 0) {
-		ide_state.search.job = null;
+	if (editorFeatureState.search.job !== job) return false;
+	if (job.query.length === 0 || job.version !== editorDocumentState.textVersion || editorFeatureState.search.query.length === 0) {
+		editorFeatureState.search.job = null;
 		return false;
 	}
 	let processed = 0;
@@ -250,33 +252,33 @@ function collectLocalMatches(job: LocalSearchJob, row: number): void {
 }
 
 function completeLocalSearchJob(job: LocalSearchJob): void {
-	if (ide_state.search.job !== job) return;
-	ide_state.search.job = null;
-	ide_state.search.matches = job.matches;
+	if (editorFeatureState.search.job !== job) return;
+	editorFeatureState.search.job = null;
+	editorFeatureState.search.matches = job.matches;
 
 	if (job.matches.length === 0) {
-		ide_state.search.currentIndex = -1;
+		editorFeatureState.search.currentIndex = -1;
 		editorDocumentState.selectionAnchor = null;
-		ide_state.search.displayOffset = 0;
+		editorFeatureState.search.displayOffset = 0;
 		return;
 	}
 
 	const initialIndex = job.firstMatchAfterCursor >= 0 ? job.firstMatchAfterCursor : 0;
-	ide_state.search.currentIndex = clamp(initialIndex, 0, job.matches.length - 1);
+	editorFeatureState.search.currentIndex = clamp(initialIndex, 0, job.matches.length - 1);
 	ensureSearchSelectionVisible();
-	if (ide_state.search.active) {
-		applySearchSelection(ide_state.search.currentIndex, { preview: true, keepSearchActive: true });
+	if (editorFeatureState.search.active) {
+		applySearchSelection(editorFeatureState.search.currentIndex, { preview: true, keepSearchActive: true });
 	}
 }
 
 export function cancelSearchJob(): void {
-	ide_state.search.job = null;
+	editorFeatureState.search.job = null;
 }
 
 function ensureLocalJobCompleted(): void {
-	const job = ide_state.search.job as LocalSearchJob;
+	const job = editorFeatureState.search.job as LocalSearchJob;
 	if (!job) return;
-	while (ide_state.search.job === job && runLocalSearchSlice(job)) {
+	while (editorFeatureState.search.job === job && runLocalSearchSlice(job)) {
 		// run synchronously
 	}
 }
@@ -286,7 +288,7 @@ function startGlobalSearchJob(): void {
 
 	const descriptors = listResources().filter(entry => entry.type === 'lua');
 	const job: GlobalSearchJob = {
-		query: normalizeQuery(ide_state.search.query),
+		query: normalizeQuery(editorFeatureState.search.query),
 		descriptors,
 		descriptorIndex: 0,
 		currentLines: null,
@@ -294,18 +296,18 @@ function startGlobalSearchJob(): void {
 		matches: [],
 		limitHit: false,
 	};
-	ide_state.search.globalJob = job;
-	ide_state.search.globalMatches = [];
-	ide_state.search.currentIndex = -1;
-	ide_state.search.displayOffset = 0;
-	ide_state.search.hoverIndex = -1;
+	editorFeatureState.search.globalJob = job;
+	editorFeatureState.search.globalMatches = [];
+	editorFeatureState.search.currentIndex = -1;
+	editorFeatureState.search.displayOffset = 0;
+	editorFeatureState.search.hoverIndex = -1;
 	enqueueBackgroundTask(() => runGlobalSearchSlice(job));
 }
 
 function runGlobalSearchSlice(job: GlobalSearchJob): boolean {
-	if (ide_state.search.globalJob !== job) return false;
+	if (editorFeatureState.search.globalJob !== job) return false;
 	if (job.query.length === 0) {
-		ide_state.search.globalJob = null;
+		editorFeatureState.search.globalJob = null;
 		return false;
 	}
 
@@ -359,26 +361,26 @@ function runGlobalSearchSlice(job: GlobalSearchJob): boolean {
 }
 
 function completeGlobalSearchJob(job: GlobalSearchJob): void {
-	if (ide_state.search.globalJob !== job) return;
-	ide_state.search.globalJob = null;
-	ide_state.search.globalMatches = job.matches;
+	if (editorFeatureState.search.globalJob !== job) return;
+	editorFeatureState.search.globalJob = null;
+	editorFeatureState.search.globalMatches = job.matches;
 
 	if (job.matches.length === 0) {
-		ide_state.search.currentIndex = -1;
-		ide_state.search.displayOffset = 0;
+		editorFeatureState.search.currentIndex = -1;
+		editorFeatureState.search.displayOffset = 0;
 		return;
 	}
 
-	ide_state.search.currentIndex = clamp(ide_state.search.currentIndex, 0, job.matches.length - 1);
+	editorFeatureState.search.currentIndex = clamp(editorFeatureState.search.currentIndex, 0, job.matches.length - 1);
 	ensureSearchSelectionVisible();
 }
 
 export function cancelGlobalSearchJob(): void {
-	ide_state.search.globalJob = null;
+	editorFeatureState.search.globalJob = null;
 }
 
 function focusLocalMatch(index: number, recordNavigation: boolean): void {
-	const match = ide_state.search.matches[index];
+	const match = editorFeatureState.search.matches[index];
 	const navigationCheckpoint = recordNavigation ? beginNavigationCapture() : null;
 	setSingleCursorPosition(editorDocumentState, match.row, match.start);
 	setSingleCursorSelectionAnchor(editorDocumentState, match.row, match.end);
@@ -391,7 +393,7 @@ function focusLocalMatch(index: number, recordNavigation: boolean): void {
 }
 
 function focusGlobalMatch(index: number): void {
-	const match = ide_state.search.globalMatches[index];
+	const match = editorFeatureState.search.globalMatches[index];
 	const navigationCheckpoint = beginNavigationCapture();
 	openLuaCodeTab(match.descriptor);
 	scheduleMicrotask(() => {
@@ -409,7 +411,7 @@ function focusGlobalMatch(index: number): void {
 
 function nextSearchIndex(delta: number, wrap: boolean): number {
 	const total = activeSearchMatchCount();
-	let next = ide_state.search.currentIndex;
+	let next = editorFeatureState.search.currentIndex;
 	if (next < 0) {
 		next = delta >= 0 ? 0 : total - 1;
 	} else {
@@ -422,7 +424,7 @@ function nextSearchIndex(delta: number, wrap: boolean): number {
 }
 
 export function stepSearchSelection(delta: number, options?: { wrap?: boolean; preview?: boolean; keepSearchActive?: boolean }): void {
-	if (ide_state.search.scope === 'local') {
+	if (editorFeatureState.search.scope === 'local') {
 		ensureLocalJobCompleted();
 	}
 	const total = activeSearchMatchCount();
@@ -434,7 +436,7 @@ export function stepSearchSelection(delta: number, options?: { wrap?: boolean; p
 	}
 	const wrap = options?.wrap === true;
 	const preview = options?.preview === true;
-	const keepSearchActive = options?.keepSearchActive === true || ide_state.search.active;
+	const keepSearchActive = options?.keepSearchActive === true || editorFeatureState.search.active;
 	const next = nextSearchIndex(delta, wrap);
 	applySearchSelection(next, { preview, keepSearchActive });
 }
@@ -444,19 +446,19 @@ export function applySearchSelection(index: number, options?: { preview?: boolea
 	if (total === 0) return;
 
 	const targetIndex = clamp(index, 0, total - 1);
-	ide_state.search.currentIndex = targetIndex;
+	editorFeatureState.search.currentIndex = targetIndex;
 	ensureSearchSelectionVisible();
 
-	if (ide_state.search.scope === 'local') {
+	if (editorFeatureState.search.scope === 'local') {
 		focusLocalMatch(targetIndex, options?.preview !== true);
 	} else if (!options?.preview) {
 		focusGlobalMatch(targetIndex);
 	}
 
 	if (!options?.preview && !options?.keepSearchActive) {
-		ide_state.search.active = false;
-		ide_state.search.field.selectionAnchor = null;
-		ide_state.search.field.pointerSelecting = false;
+		editorFeatureState.search.active = false;
+		editorFeatureState.search.field.selectionAnchor = null;
+		editorFeatureState.search.field.pointerSelecting = false;
 	}
 }
 
@@ -469,7 +471,7 @@ export function jumpToPreviousMatch(): void {
 }
 
 export function searchPageSize(): number {
-	if (!ide_state.search.visible) {
+	if (!editorFeatureState.search.visible) {
 		return constants.SEARCH_MAX_RESULTS;
 	}
 	const baseHeight = editorViewState.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
@@ -487,34 +489,34 @@ export function searchPageSize(): number {
 export function ensureSearchSelectionVisible(): void {
 	const total = activeSearchMatchCount();
 	if (total === 0) {
-		ide_state.search.displayOffset = 0;
+		editorFeatureState.search.displayOffset = 0;
 		return;
 	}
 	const pageSize = searchPageSize();
-	ide_state.search.currentIndex = clamp(ide_state.search.currentIndex, 0, total - 1);
-	if (ide_state.search.currentIndex < ide_state.search.displayOffset) {
-		ide_state.search.displayOffset = ide_state.search.currentIndex;
-	} else if (ide_state.search.currentIndex >= ide_state.search.displayOffset + pageSize) {
-		ide_state.search.displayOffset = ide_state.search.currentIndex - pageSize + 1;
+	editorFeatureState.search.currentIndex = clamp(editorFeatureState.search.currentIndex, 0, total - 1);
+	if (editorFeatureState.search.currentIndex < editorFeatureState.search.displayOffset) {
+		editorFeatureState.search.displayOffset = editorFeatureState.search.currentIndex;
+	} else if (editorFeatureState.search.currentIndex >= editorFeatureState.search.displayOffset + pageSize) {
+		editorFeatureState.search.displayOffset = editorFeatureState.search.currentIndex - pageSize + 1;
 	}
 	const maxOffset = Math.max(0, total - pageSize);
-	ide_state.search.displayOffset = clamp(ide_state.search.displayOffset, 0, maxOffset);
+	editorFeatureState.search.displayOffset = clamp(editorFeatureState.search.displayOffset, 0, maxOffset);
 }
 
 export function computeSearchPageStats(): { total: number; offset: number; visible: number } {
-	const total = ide_state.search.visible ? activeSearchMatchCount() : 0;
+	const total = editorFeatureState.search.visible ? activeSearchMatchCount() : 0;
 	if (total === 0) {
-		ide_state.search.displayOffset = 0;
+		editorFeatureState.search.displayOffset = 0;
 		return { total: 0, offset: 0, visible: 0 };
 	}
 
 	const pageSize = searchPageSize();
 	const maxOffset = Math.max(0, total - 1);
-	ide_state.search.displayOffset = clamp(ide_state.search.displayOffset, 0, maxOffset);
+	editorFeatureState.search.displayOffset = clamp(editorFeatureState.search.displayOffset, 0, maxOffset);
 
-	const remaining = total - ide_state.search.displayOffset;
+	const remaining = total - editorFeatureState.search.displayOffset;
 	const visible = Math.min(pageSize, remaining);
-	return { total, offset: ide_state.search.displayOffset, visible };
+	return { total, offset: editorFeatureState.search.displayOffset, visible };
 }
 
 export function getVisibleSearchResultEntries(): Array<{ primary: string; secondary?: string; detail?: string }> {
@@ -527,8 +529,8 @@ export function getVisibleSearchResultEntries(): Array<{ primary: string; second
 }
 
 function buildSearchResultEntry(index: number): { primary: string; secondary?: string; detail?: string } {
-	if (ide_state.search.scope === 'global') {
-		const match = ide_state.search.globalMatches[index];
+	if (editorFeatureState.search.scope === 'global') {
+		const match = editorFeatureState.search.globalMatches[index];
 		return {
 			primary: match.pathLabel,
 			secondary: match.snippet,
@@ -536,7 +538,7 @@ function buildSearchResultEntry(index: number): { primary: string; secondary?: s
 		};
 	}
 
-	const match = ide_state.search.matches[index];
+	const match = editorFeatureState.search.matches[index];
 	const lineText = editorDocumentState.buffer.getLineContent(match.row);
 	return {
 		primary: `Line ${match.row + 1}`,
@@ -545,8 +547,8 @@ function buildSearchResultEntry(index: number): { primary: string; secondary?: s
 }
 
 export function applySearchFieldText(value: string, moveCursorToEnd: boolean): void {
-	ide_state.search.query = value;
-	setFieldText(ide_state.search.field, value, moveCursorToEnd);
+	editorFeatureState.search.query = value;
+	setFieldText(editorFeatureState.search.field, value, moveCursorToEnd);
 }
 
 export function processInlineFieldPointer(field: TextField, textLeft: number, pointerX: number, justPressed: boolean, pointerPressed: boolean): void {

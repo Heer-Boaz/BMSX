@@ -1,23 +1,20 @@
 import { $ } from '../../core/engine_core';
 import { CompletionController } from '../contrib/suggest/completion_controller';
-import { ProblemsPanelController } from '../contrib/problems/problems_panel';
 import { createEntryTabContext, initializeTabs } from './editor_tabs';
 import { createInlineTextField } from './inline_text_field';
 import { Scrollbar, ScrollbarController } from './scrollbar';
-import { ResourcePanelController } from '../contrib/resources/resource_panel_controller';
-import { InputController } from '../input/keyboard/editor_text_input';
-import { ide_state } from '../core/ide_state';
+import { initializeResourcePanel } from '../contrib/resources/resource_panel_controller';
 import { editorDiagnosticsState } from '../contrib/problems/diagnostics_state';
 import { initializeDebuggerUiState } from '../contrib/debugger/ide_debugger';
 import { initializeWorkspaceStorage } from '../core/workspace_storage';
 import { Runtime } from '../../emulator/runtime';
-import { renameController } from '../contrib/rename/rename_controller';
 import { resetSemanticWorkspace } from '../contrib/intellisense/semantic_workspace_sync';
 import { assertMonospace } from '../core/text_utils';
 import * as constants from '../core/constants';
 import type { Viewport } from '../../rompack/rompack';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorViewState } from './editor_view_state';
+import { editorFeatureState } from '../core/editor_feature_state';
 import {
 	applyViewportSize,
 	configureFontVariant,
@@ -29,31 +26,33 @@ import { applyCreateResourceFieldText } from '../contrib/resources/create_resour
 import { applySearchFieldText } from '../contrib/find/editor_search';
 import { initializeNavigationState } from '../navigation/navigation_history';
 import { applySymbolSearchFieldText } from '../contrib/symbols/symbol_search_shared';
+import { editorRuntimeState } from '../core/editor_runtime_state';
+import { problemsPanel } from '../contrib/problems/problems_panel';
 
 export function initializeCartEditor(viewport: Viewport): void {
 	initializeDebuggerUiState();
 	const runtime = Runtime.instance;
 	editorViewState.fontVariant = runtime.activeIdeFontVariant;
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
-	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
-	ide_state.canonicalization = Runtime.instance.cartCanonicalization;
-	ide_state.caseInsensitive = ide_state.canonicalization !== 'none';
+	editorRuntimeState.themeVariant = constants.getActiveIdeThemeVariant();
+	editorRuntimeState.canonicalization = Runtime.instance.cartCanonicalization;
+	editorRuntimeState.caseInsensitive = editorRuntimeState.canonicalization !== 'none';
 	editorDocumentState.preMutationSource = null;
 	applyViewportSize(viewport);
-	ide_state.clockNow = $.platform.clock.now;
+	editorRuntimeState.clockNow = $.platform.clock.now;
 	resetSemanticWorkspace();
 	configureFontVariant(editorViewState.fontVariant);
-	ide_state.search.field = createInlineTextField();
-	ide_state.symbolSearch.field = createInlineTextField();
-	ide_state.resourceSearch.field = createInlineTextField();
-	ide_state.lineJump.field = createInlineTextField();
-	ide_state.createResource.field = createInlineTextField();
+	editorFeatureState.search.field = createInlineTextField();
+	editorFeatureState.symbolSearch.field = createInlineTextField();
+	editorFeatureState.resourceSearch.field = createInlineTextField();
+	editorFeatureState.lineJump.field = createInlineTextField();
+	editorFeatureState.createResource.field = createInlineTextField();
 	initializeWorkspaceStorage($.cart_project_root_path);
-	applySearchFieldText(ide_state.search.query, true);
-	applySymbolSearchFieldText(ide_state.symbolSearch.query, true);
-	applyResourceSearchFieldText(ide_state.resourceSearch.query, true);
-	applyLineJumpFieldText(ide_state.lineJump.value, true);
-	applyCreateResourceFieldText(ide_state.createResource.path, true);
+	applySearchFieldText(editorFeatureState.search.query, true);
+	applySymbolSearchFieldText(editorFeatureState.symbolSearch.query, true);
+	applyResourceSearchFieldText(editorFeatureState.resourceSearch.query, true);
+	applyLineJumpFieldText(editorFeatureState.lineJump.value, true);
+	applyCreateResourceFieldText(editorFeatureState.createResource.path, true);
 	editorViewState.scrollbars = {
 		codeVertical: new Scrollbar('codeVertical', 'vertical'),
 		codeHorizontal: new Scrollbar('codeHorizontal', 'horizontal'),
@@ -62,17 +61,14 @@ export function initializeCartEditor(viewport: Viewport): void {
 		viewerVertical: new Scrollbar('viewerVertical', 'vertical'),
 	};
 	editorViewState.scrollbarController = new ScrollbarController(editorViewState.scrollbars);
-	ide_state.resourcePanel = new ResourcePanelController({
+	initializeResourcePanel({
 		resourceVertical: editorViewState.scrollbars.resourceVertical,
 		resourceHorizontal: editorViewState.scrollbars.resourceHorizontal,
 	});
-	ide_state.completion = new CompletionController();
-	ide_state.completion.closeSession();
-	ide_state.completion.enterCommitsCompletion = false;
-	ide_state.input = new InputController();
-	ide_state.problemsPanel = new ProblemsPanelController();
-	ide_state.problemsPanel.setDiagnostics(editorDiagnosticsState.diagnostics);
-	ide_state.renameController = renameController;
+	editorFeatureState.completion = new CompletionController();
+	editorFeatureState.completion.closeSession();
+	editorFeatureState.completion.enterCommitsCompletion = false;
+	problemsPanel.setDiagnostics(editorDiagnosticsState.diagnostics);
 	editorViewState.codeVerticalScrollbarVisible = false;
 	editorViewState.codeHorizontalScrollbarVisible = false;
 	editorViewState.cachedVisibleRowCount = 1;
@@ -83,5 +79,5 @@ export function initializeCartEditor(viewport: Viewport): void {
 	assertMonospace();
 	editorDocumentState.lastSavedSource = '';
 	initializeNavigationState();
-	ide_state.initialized = true;
+	editorRuntimeState.initialized = true;
 }

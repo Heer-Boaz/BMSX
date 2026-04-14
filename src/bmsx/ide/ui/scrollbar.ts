@@ -4,7 +4,7 @@ import type { ScrollbarKind } from '../core/types';
 import type { RectBounds } from '../../rompack/rompack';
 import { computeMaximumScrollColumn, getCodeAreaBounds } from './editor_view';
 import { ensureVisualLines, getVisualLineCount } from '../core/text_utils';
-import { ide_state } from '../core/ide_state';
+import { resourcePanel } from '../contrib/resources/resource_panel_controller';
 import { api } from './view/overlay_api';
 import { getActiveResourceViewer, setResourceViewerScroll } from '../contrib/resources/resource_viewer';
 import { editorCaretState } from './caret_state';
@@ -246,13 +246,13 @@ export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void 
 			break;
 		}
 		case 'resourceVertical': {
-			ide_state.resourcePanel.setScroll(scroll);
-			ide_state.resourcePanel.setFocused(true);
+			resourcePanel.setScroll(scroll);
+			resourcePanel.setFocused(true);
 			break;
 		}
 		case 'resourceHorizontal': {
-			ide_state.resourcePanel.setHScroll(scroll);
-			ide_state.resourcePanel.setFocused(true);
+			resourcePanel.setHScroll(scroll);
+			resourcePanel.setFocused(true);
 			break;
 		}
 		case 'viewerVertical': {

@@ -4,13 +4,13 @@ import { computeMaximumScrollColumn } from '../ui/editor_view';
 import { renderRuntimeErrorOverlay, type RuntimeErrorOverlayRenderResult } from './render_error_overlay';
 import { renderEditorContextMenu, type CodeAreaViewportBounds } from './render_context_menu';
 import * as constants from '../core/constants';
-import { ide_state } from '../core/ide_state';
 import { api } from '../ui/view/overlay_api';
 import { drawCompletionPopup, drawParameterHintOverlay, type CompletionRenderBounds } from './render_completion';
 import { drawCursor } from './render_caret';
 import type { RectBounds } from '../../rompack/rompack';
 import { editorCaretState } from '../ui/caret_state';
 import { editorViewState } from '../ui/editor_view_state';
+import { editorFeatureState } from '../core/editor_feature_state';
 
 const verticalTrackScratch: RectBounds = {
 	left: 0,
@@ -97,8 +97,8 @@ export function finalizeCodeAreaRender(
 	if (editorCaretState.cursorVisible && cursorInfo) {
 		drawCursor(cursorInfo, bounds.textLeft);
 	}
-	ide_state.completion.popupBounds = drawCompletionPopup(ide_state.completion.session, cursorInfo, editorViewState.lineHeight, bounds);
-	drawParameterHintOverlay(ide_state.completion.hint, cursorInfo, editorViewState.lineHeight, bounds);
+	editorFeatureState.completion.popupBounds = drawCompletionPopup(editorFeatureState.completion.session, cursorInfo, editorViewState.lineHeight, bounds);
+	drawParameterHintOverlay(editorFeatureState.completion.hint, cursorInfo, editorViewState.lineHeight, bounds);
 	if (editorViewState.codeVerticalScrollbarVisible) {
 		editorViewState.scrollbars.codeVertical.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}

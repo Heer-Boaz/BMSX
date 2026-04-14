@@ -1,4 +1,6 @@
-import { ide_state } from '../core/ide_state';
+import { resourcePanel } from '../contrib/resources/resource_panel_controller';
+import { problemsPanel } from '../contrib/problems/problems_panel';
+import { editorDebuggerState } from '../contrib/debugger/editor_debugger_state';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorViewState } from './editor_view_state';
 
@@ -34,12 +36,12 @@ export type TopBarMenuEntry = {
 };
 
 export function buildTopBarMenuEntries(): TopBarMenuEntry[] {
-	const resourcePanelActive = ide_state.resourcePanel.isVisible();
-	const resourcePanelMode = ide_state.resourcePanel.getMode();
+	const resourcePanelActive = resourcePanel.isVisible();
+	const resourcePanelMode = resourcePanel.getMode();
 	const resourceFilesMode = resourcePanelMode === 'resources';
-	const filterMode = ide_state.resourcePanel.getFilterMode();
-	const debuggerPaused = ide_state.debuggerControls.executionState === 'paused';
-	const problemsActive = ide_state.problemsPanel.isVisible;
+	const filterMode = resourcePanel.getFilterMode();
+	const debuggerPaused = editorDebuggerState.controls.executionState === 'paused';
+	const problemsActive = problemsPanel.isVisible;
 	const filterActive = filterMode === 'lua_only';
 	return [
 		{
@@ -97,10 +99,10 @@ export function isTopBarCommandEnabled(command: TopBarButtonId): boolean {
 		return editorDocumentState.dirty;
 	}
 	if (command === 'filter') {
-		return ide_state.resourcePanel.isVisible() && ide_state.resourcePanel.getMode() === 'resources';
+		return resourcePanel.isVisible() && resourcePanel.getMode() === 'resources';
 	}
 	if (command === 'debugContinue' || command === 'debugStepOver' || command === 'debugStepInto' || command === 'debugStepOut') {
-		return ide_state.debuggerControls.executionState === 'paused';
+		return editorDebuggerState.controls.executionState === 'paused';
 	}
 	return true;
 }

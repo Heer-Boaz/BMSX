@@ -8,7 +8,6 @@ import * as constants from '../core/constants';
 import { CodeLayout } from './code_layout';
 import { markDiagnosticsDirty } from '../contrib/problems/diagnostics';
 import { computeSearchPageStats } from '../contrib/find/editor_search';
-import { ide_state } from '../core/ide_state';
 import { showEditorMessage,editorFeedbackState } from '../core/editor_feedback_state';
 import { editorChromeState } from './editor_chrome_state';
 import { editorPointerState } from '../input/pointer/editor_pointer_state';
@@ -20,6 +19,11 @@ import { splitText } from '../text/source_text';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorSessionState } from './editor_session_state';
 import { editorViewState } from './editor_view_state';
+import { editorFeatureState } from '../core/editor_feature_state';
+import { problemsPanel } from '../contrib/problems/problems_panel';
+import { resourcePanel } from '../contrib/resources/resource_panel_controller';
+import { renameController } from '../contrib/rename/rename_controller';
+import { editorRuntimeState } from '../core/editor_runtime_state';
 import {
 	ensureVisualLines,
 	getVisualLineCount,
@@ -101,14 +105,14 @@ export function resourceSearchPageSize(): number {
 }
 
 export function resourceSearchWindowCapacity(): number {
-	return ide_state.resourceSearch.visible ? resourceSearchPageSize() : 0;
+	return editorFeatureState.resourceSearch.visible ? resourceSearchPageSize() : 0;
 }
 
 export function resourceSearchVisibleResultCount(): number {
-	if (!ide_state.resourceSearch.visible) {
+	if (!editorFeatureState.resourceSearch.visible) {
 		return 0;
 	}
-	const remaining = Math.max(0, ide_state.resourceSearch.matches.length - ide_state.resourceSearch.displayOffset);
+	const remaining = Math.max(0, editorFeatureState.resourceSearch.matches.length - editorFeatureState.resourceSearch.displayOffset);
 	const capacity = resourceSearchWindowCapacity();
 	if (capacity <= 0) {
 		return remaining;
@@ -121,27 +125,27 @@ export function isSymbolSearchCompactMode(): boolean {
 }
 
 export function symbolSearchEntryHeight(): number {
-	if (ide_state.symbolSearch.mode === 'references') {
+	if (editorFeatureState.symbolSearch.mode === 'references') {
 		return editorViewState.lineHeight * 2;
 	}
-	return ide_state.symbolSearch.global && isSymbolSearchCompactMode() ? editorViewState.lineHeight * 2 : editorViewState.lineHeight;
+	return editorFeatureState.symbolSearch.global && isSymbolSearchCompactMode() ? editorViewState.lineHeight * 2 : editorViewState.lineHeight;
 }
 
 export function symbolSearchPageSize(): number {
-	if (ide_state.symbolSearch.mode === 'references') {
+	if (editorFeatureState.symbolSearch.mode === 'references') {
 		return constants.REFERENCE_SEARCH_MAX_RESULTS;
 	}
-	if (!ide_state.symbolSearch.global) {
+	if (!editorFeatureState.symbolSearch.global) {
 		return constants.SYMBOL_SEARCH_MAX_RESULTS;
 	}
 	return isSymbolSearchCompactMode() ? constants.SYMBOL_SEARCH_COMPACT_MAX_RESULTS : constants.SYMBOL_SEARCH_MAX_RESULTS;
 }
 
 export function symbolSearchVisibleResultCount(): number {
-	if (!ide_state.symbolSearch.visible) {
+	if (!editorFeatureState.symbolSearch.visible) {
 		return 0;
 	}
-	const remaining = Math.max(0, ide_state.symbolSearch.matches.length - ide_state.symbolSearch.displayOffset);
+	const remaining = Math.max(0, editorFeatureState.symbolSearch.matches.length - editorFeatureState.symbolSearch.displayOffset);
 	return Math.min(remaining, symbolSearchPageSize());
 }
 
@@ -177,10 +181,10 @@ export function statusAreaHeight(): number {
 }
 
 export function getVisibleProblemsPanelHeight(): number {
-	if (!ide_state.problemsPanel?.isVisible) {
+	if (!problemsPanel.isVisible) {
 		return 0;
 	}
-	const planned = ide_state.problemsPanel.visibleHeight;
+	const planned = problemsPanel.visibleHeight;
 	if (planned <= 0) {
 		return 0;
 	}
@@ -203,13 +207,13 @@ export function applyViewportSize(viewport: Viewport): void {
 
 export function updateViewport(viewport: Viewport): void {
 	applyViewportSize(viewport);
-	if (ide_state.resourcePanel.visible) {
-		const bounds = ide_state.resourcePanel.getBounds();
+	if (resourcePanel.visible) {
+		const bounds = resourcePanel.getBounds();
 		if (!bounds) {
 			hideResourcePanel();
 		} else {
-			ide_state.resourcePanel.clampHScroll();
-			ide_state.resourcePanel.ensureSelectionVisible();
+			resourcePanel.clampHScroll();
+			resourcePanel.ensureSelectionVisible();
 		}
 	}
 	editorViewState.layout.markVisualLinesDirty();
@@ -249,7 +253,7 @@ export function codeViewportTop(): number {
 }
 
 export function getCodeAreaBounds(): { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; gutterLeft: number; gutterRight: number; textLeft: number } {
-	const codeLeft = ide_state.resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
+	const codeLeft = resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
 	const gutterLeft = codeLeft;
 	const gutterRight = gutterLeft + updateGutterWidth();
 	return {
@@ -365,14 +369,14 @@ export function scrollRows(deltaRows: number): void {
 }
 
 export function getCreateResourceBarHeight(): number {
-	if (!ide_state.createResource.visible) {
+	if (!editorFeatureState.createResource.visible) {
 		return 0;
 	}
 	return editorViewState.lineHeight + constants.CREATE_RESOURCE_BAR_MARGIN_Y * 2;
 }
 
 export function getSearchBarHeight(): number {
-	if (!ide_state.search.visible) {
+	if (!editorFeatureState.search.visible) {
 		return 0;
 	}
 	const baseHeight = editorViewState.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
@@ -384,7 +388,7 @@ export function getSearchBarHeight(): number {
 }
 
 export function getResourceSearchBarHeight(): number {
-	if (!ide_state.resourceSearch.visible) {
+	if (!editorFeatureState.resourceSearch.visible) {
 		return 0;
 	}
 	const baseHeight = editorViewState.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
@@ -396,7 +400,7 @@ export function getResourceSearchBarHeight(): number {
 }
 
 export function getSymbolSearchBarHeight(): number {
-	if (!ide_state.symbolSearch.visible) {
+	if (!editorFeatureState.symbolSearch.visible) {
 		return 0;
 	}
 	const baseHeight = editorViewState.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
@@ -408,14 +412,14 @@ export function getSymbolSearchBarHeight(): number {
 }
 
 export function getRenameBarHeight(): number {
-	if (!ide_state.renameController?.isVisible()) {
+	if (!renameController.isVisible()) {
 		return 0;
 	}
 	return editorViewState.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
 }
 
 export function getLineJumpBarHeight(): number {
-	if (!ide_state.lineJump.visible) {
+	if (!editorFeatureState.lineJump.visible) {
 		return 0;
 	}
 	return editorViewState.lineHeight + constants.LINE_JUMP_BAR_MARGIN_Y * 2;
@@ -469,15 +473,15 @@ export function configureFontVariant(variant: FontVariant): void {
 	editorViewState.layout = new CodeLayout(editorViewState.font, {
 		maxHighlightCache: 512,
 		semanticDebounceMs: 200,
-		clockNow: ide_state.clockNow,
+		clockNow: editorRuntimeState.clockNow,
 		getBuiltinIdentifiers: () => getBuiltinIdentifiersSnapshot(),
 	});
 	const activeContext = editorSessionState.activeCodeTabContextId ? editorSessionState.codeTabContexts.get(editorSessionState.activeCodeTabContextId) : null;
 	if (activeContext) {
 		editorViewState.layout.setCodeTabMode(activeContext.mode);
 	}
-	if (ide_state.resourcePanel) {
-		ide_state.resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
+	if (resourcePanel) {
+		resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
 	}
 	editorViewState.layout.invalidateAllHighlights();
 	editorViewState.layout.markVisualLinesDirty();
@@ -535,7 +539,7 @@ export function notifyReadOnlyEdit(): void {
 }
 
 export function hideResourcePanel(): void {
-	ide_state.resourcePanel.hide();
+	resourcePanel.hide();
 	editorChromeState.resourcePanelResizing = false;
 	resetResourcePanelState();
 }
@@ -546,7 +550,7 @@ export function resetResourcePanelState(): void {
 }
 
 export function refreshResourcePanelContents(): void {
-	ide_state.resourcePanel.refresh();
+	resourcePanel.refresh();
 }
 
 export function selectResourceInPanel(descriptor: ResourceDescriptor): void {
@@ -554,29 +558,29 @@ export function selectResourceInPanel(descriptor: ResourceDescriptor): void {
 		return;
 	}
 	editorSessionState.pendingResourceSelectionAssetId = descriptor.asset_id;
-	if (ide_state.resourcePanel.isVisible()) {
+	if (resourcePanel.isVisible()) {
 		applyPendingResourceSelection();
 	}
 }
 
 export function applyPendingResourceSelection(): void {
-	if (!ide_state.resourcePanel.isVisible() || !editorSessionState.pendingResourceSelectionAssetId) {
+	if (!resourcePanel.isVisible() || !editorSessionState.pendingResourceSelectionAssetId) {
 		return;
 	}
-	const index = findResourcePanelIndexByAssetId(ide_state.resourcePanel.items, editorSessionState.pendingResourceSelectionAssetId);
+	const index = findResourcePanelIndexByAssetId(resourcePanel.items, editorSessionState.pendingResourceSelectionAssetId);
 	if (index === -1) {
 		return;
 	}
-	ide_state.resourcePanel.setSelectionIndex(index);
-	ide_state.resourcePanel.ensureSelectionVisible();
+	resourcePanel.setSelectionIndex(index);
+	resourcePanel.ensureSelectionVisible();
 	editorSessionState.pendingResourceSelectionAssetId = null;
 }
 
 export function getResourcePanelWidth(): number {
-	if (!ide_state.resourcePanel.isVisible()) {
+	if (!resourcePanel.isVisible()) {
 		return 0;
 	}
-	const bounds = ide_state.resourcePanel.getBounds();
+	const bounds = resourcePanel.getBounds();
 	if (!bounds) {
 		return 0;
 	}
@@ -584,8 +588,8 @@ export function getResourcePanelWidth(): number {
 }
 
 export function scrollResourceBrowser(amount: number): void {
-	if (!ide_state.resourcePanel.isVisible()) {
+	if (!resourcePanel.isVisible()) {
 		return;
 	}
-	ide_state.resourcePanel.scrollBy(amount);
+	resourcePanel.scrollBy(amount);
 }

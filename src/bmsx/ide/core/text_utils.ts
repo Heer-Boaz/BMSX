@@ -3,7 +3,7 @@ import * as constants from './constants';
 import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from './constants';
 import { startSearchJob } from '../contrib/find/editor_search';
 import { getActiveCodeTabContext, findCodeTabContext, updateActiveContextDirtyFlag } from '../ui/editor_tabs';
-import { caretNavigation, ide_state } from './ide_state';
+import { caretNavigation } from '../ui/caret';
 import { clearForwardNavigationHistory } from '../navigation/navigation_history';
 import { rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/runtime_error_overlay';
 import { runtimeErrorState } from '../contrib/runtime_error/runtime_error_state';
@@ -22,6 +22,9 @@ import { editorFeedbackState } from './editor_feedback_state';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorSessionState } from '../ui/editor_session_state';
 import { editorViewState } from '../ui/editor_view_state';
+import { editorFeatureState } from './editor_feature_state';
+import { resourcePanel } from '../contrib/resources/resource_panel_controller';
+import { editorRuntimeState } from './editor_runtime_state';
 
 export function expandTabs(source: string): string {
 	if (source.indexOf('\t') === -1) return source;
@@ -576,7 +579,7 @@ export function ensureVisualLines(): void {
 }
 
 export function computeWrapWidth(): number {
-	const resourceWidth = ide_state.resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
+	const resourceWidth = resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
 	const gutterSpace = updateGutterWidth() + 2;
 	const verticalScrollbarSpace = 0;
 	const available = editorViewState.viewportWidth - resourceWidth - gutterSpace - verticalScrollbarSpace;
@@ -602,7 +605,7 @@ export function positionToVisualIndex(row: number, column: number): number {
 	return editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, row, column);
 }
 export function computeRuntimeErrorOverlayMaxWidth(): number {
-	const resourceWidth = ide_state.resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
+	const resourceWidth = resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
 	const gutterSpace = updateGutterWidth() + 2;
 	const scrollbarSpace = editorViewState.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0;
 	const rightMargin = constants.CODE_AREA_RIGHT_MARGIN;
@@ -667,17 +670,17 @@ export function rewrapRuntimeErrorOverlays(): void {
 	}
 }
 export function normalizeCaseOutsideStrings(text: string): string {
-	if (!ide_state.caseInsensitive || ide_state.canonicalization === 'none') {
+	if (!editorRuntimeState.caseInsensitive || editorRuntimeState.canonicalization === 'none') {
 		return text;
 	}
-	const transform = ide_state.canonicalization === 'upper'
+	const transform = editorRuntimeState.canonicalization === 'upper'
 		? (ch: string) => ch.toUpperCase()
 		: (ch: string) => ch.toLowerCase();
 	return applyCaseOutsideStrings(text, transform);
 }
 
 export function capturePreMutationSource(): void {
-	if (!ide_state.caseInsensitive) {
+	if (!editorRuntimeState.caseInsensitive) {
 		return;
 	}
 	if (editorDocumentState.preMutationSource === null) {
@@ -712,7 +715,7 @@ export function markTextMutated(): void {
 	requestSemanticRefresh();
 	clearForwardNavigationHistory();
 	handlePostEditMutation();
-	if (ide_state.search.query.length > 0) startSearchJob();
+	if (editorFeatureState.search.query.length > 0) startSearchJob();
 }
 export function bumpTextVersion(): void {
 	editorDocumentState.textVersion = editorDocumentState.buffer.version;

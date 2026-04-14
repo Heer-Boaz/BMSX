@@ -1,5 +1,4 @@
 import * as constants from '../../core/constants';
-import { ide_state } from '../../core/ide_state';
 import { showEditorMessage } from '../../core/editor_feedback_state';
 import type { ReferenceMatchInfo } from './reference_state';
 import type { CodeTabContext } from '../../core/types';
@@ -7,6 +6,7 @@ import { symbolSearchPageSize } from '../../ui/editor_view';
 import { getTextSnapshot, splitText } from '../../text/source_text';
 import { editorDocumentState } from '../../editing/editor_document_state';
 import { editorSessionState } from '../../ui/editor_session_state';
+import { editorFeatureState } from '../../core/editor_feature_state';
 import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
 	filterReferenceCatalog,
@@ -34,23 +34,23 @@ export function buildReferenceSearchCatalog(info: ReferenceMatchInfo, context: C
 
 export function updateReferenceSearchMatches(): void {
 	const { matches, selectionIndex, displayOffset } = filterReferenceCatalog({
-		catalog: ide_state.symbolSearch.referenceCatalog,
-		query: ide_state.symbolSearch.query,
-		state: ide_state.referenceState,
+		catalog: editorFeatureState.symbolSearch.referenceCatalog,
+		query: editorFeatureState.symbolSearch.query,
+		state: editorFeatureState.referenceState,
 		pageSize: symbolSearchPageSize(),
 	});
-	ide_state.symbolSearch.matches = matches;
-	ide_state.symbolSearch.selectionIndex = selectionIndex;
-	ide_state.symbolSearch.displayOffset = displayOffset;
-	ide_state.symbolSearch.hoverIndex = -1;
+	editorFeatureState.symbolSearch.matches = matches;
+	editorFeatureState.symbolSearch.selectionIndex = selectionIndex;
+	editorFeatureState.symbolSearch.displayOffset = displayOffset;
+	editorFeatureState.symbolSearch.hoverIndex = -1;
 }
 
 export function showReferenceSearchStatusMessage(): void {
-	const matches = ide_state.referenceState.getMatches();
-	const activeIndex = ide_state.referenceState.getActiveIndex();
+	const matches = editorFeatureState.referenceState.getMatches();
+	const activeIndex = editorFeatureState.referenceState.getActiveIndex();
 	if (matches.length === 0 || activeIndex < 0) {
 		return;
 	}
-	const label = ide_state.referenceState.getExpression() ?? '';
+	const label = editorFeatureState.referenceState.getExpression() ?? '';
 	showEditorMessage(`Reference ${activeIndex + 1}/${matches.length} for ${label}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 }

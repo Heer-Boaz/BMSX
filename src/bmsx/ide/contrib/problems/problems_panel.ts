@@ -1,7 +1,6 @@
 import type { EditorDiagnostic, PointerSnapshot } from '../../core/types';
 import type { RectBounds } from '../../../rompack/rompack';
 import * as constants from '../../core/constants';
-import { ide_state } from '../../core/ide_state';
 import { markAllDiagnosticsDirty } from './diagnostics';
 import { resetBlink } from '../../render/render_caret';
 import {
@@ -173,16 +172,18 @@ export class ProblemsPanelController {
 	}
 }
 
+export const problemsPanel = new ProblemsPanelController();
+
 export function drawProblemsPanel() {
 	const bounds = getProblemsPanelBounds();
 	if (!bounds) {
 		return null;
 	}
-	ide_state.problemsPanel.draw(bounds);
+	problemsPanel.draw(bounds);
 	return bounds;
 }
 export function toggleProblemsPanel(): void {
-	if (ide_state.problemsPanel.isVisible) {
+	if (problemsPanel.isVisible) {
 		hideProblemsPanel();
 		return;
 	}
@@ -190,13 +191,13 @@ export function toggleProblemsPanel(): void {
 }
 
 export function showProblemsPanel(): void {
-	ide_state.problemsPanel.show();
+	problemsPanel.show();
 	markAllDiagnosticsDirty();
-	// ide_state.problemsPanel.setFocused(true);
+	// problemsPanel.setFocused(true);
 }
 
 export function hideProblemsPanel(): void {
-	ide_state.problemsPanel.hide();
-	ide_state.problemsPanel.setFocused(false);
+	problemsPanel.hide();
+	problemsPanel.setFocused(false);
 	resetBlink();
 }

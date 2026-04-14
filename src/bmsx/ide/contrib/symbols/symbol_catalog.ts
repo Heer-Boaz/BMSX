@@ -2,11 +2,11 @@ import type { LuaSymbolEntry } from '../../../emulator/types';
 import * as constants from '../../core/constants';
 import { computeSourceLabel } from '../references/reference_sources';
 import { getActiveCodeTabContext } from '../../ui/editor_tabs';
-import { ide_state } from '../../core/ide_state';
 import { showEditorMessage } from '../../core/editor_feedback_state';
 import { listGlobalLuaSymbols, listLuaSymbols } from '../intellisense/intellisense';
 import { symbolKindLabel } from '../intellisense/semantic_model';
 import { extractErrorMessage } from '../../../lua/luavalue';
+import { editorFeatureState } from '../../core/editor_feature_state';
 
 export function symbolCatalogDedupKey(entry: LuaSymbolEntry): string {
 	const { location, kind, name } = entry;
@@ -27,13 +27,13 @@ export function symbolSourceLabel(entry: LuaSymbolEntry): string | null {
 }
 
 export function refreshSymbolCatalog(force: boolean): void {
-	const scope: 'local' | 'global' = ide_state.symbolSearch.global ? 'global' : 'local';
+	const scope: 'local' | 'global' = editorFeatureState.symbolSearch.global ? 'global' : 'local';
 	let path: string = null;
 	if (scope === 'local') {
 		const context = getActiveCodeTabContext();
 		path = context.descriptor.path;
 	}
-	const existing = ide_state.symbolSearch.catalogContext;
+	const existing = editorFeatureState.symbolSearch.catalogContext;
 	const unchanged = existing !== null
 		&& existing.scope === scope
 		&& (scope === 'global' || existing.path === path);
@@ -47,15 +47,15 @@ export function refreshSymbolCatalog(force: boolean): void {
 			: listLuaSymbols(path);
 	} catch (error) {
 		const message = extractErrorMessage(error);
-		ide_state.symbolSearch.catalog = [];
-		ide_state.symbolSearch.matches = [];
-		ide_state.symbolSearch.selectionIndex = -1;
-		ide_state.symbolSearch.displayOffset = 0;
-		ide_state.symbolSearch.hoverIndex = -1;
+		editorFeatureState.symbolSearch.catalog = [];
+		editorFeatureState.symbolSearch.matches = [];
+		editorFeatureState.symbolSearch.selectionIndex = -1;
+		editorFeatureState.symbolSearch.displayOffset = 0;
+		editorFeatureState.symbolSearch.hoverIndex = -1;
 		showEditorMessage(`Failed to list symbols: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
-	ide_state.symbolSearch.catalogContext = { scope, path };
+	editorFeatureState.symbolSearch.catalogContext = { scope, path };
 	const deduped: LuaSymbolEntry[] = [];
 	const seen = new Set<string>();
 	for (let index = 0; index < entries.length; index += 1) {
@@ -96,5 +96,5 @@ export function refreshSymbolCatalog(force: boolean): void {
 		}
 		return a.sourceLabel.localeCompare(b.sourceLabel);
 	});
-	ide_state.symbolSearch.catalog = catalogEntries;
+	editorFeatureState.symbolSearch.catalog = catalogEntries;
 }

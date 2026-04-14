@@ -29,7 +29,7 @@ import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isS
 import { isLuaCommentContext } from '../../core/text_utils';
 import { point_in_rect } from '../../../utils/rect_operations';
 import { LuaLexer } from '../../../lua/syntax/lualexer';
-import { assignRowColumn } from '../../core/ide_state';
+import { assignRowColumn } from '../../core/state_utils';
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import { getActiveCodeTabContext, isActiveLuaCodeTab } from '../../ui/editor_tabs';
 import { prepareUndo } from '../../editing/undo_controller';

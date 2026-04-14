@@ -1,4 +1,4 @@
-import { ide_state } from './core/ide_state';
+import { editorRuntimeState } from './core/editor_runtime_state';
 import { clearWorkspaceDirtyBuffers } from './core/workspace_storage';
 
 import { renderFaultOverlay, renderRuntimeFaultOverlay, showRuntimeError, showRuntimeErrorInChunk } from './render/render_error_overlay';
@@ -44,7 +44,7 @@ export type CartEditor = {
 
 const editorRuntimeApi: CartEditor = {
 	blocksRuntimePipeline: true,
-	get isActive(): boolean { return ide_state.active; },
+	get isActive(): boolean { return editorRuntimeState.active; },
 	activate,
 	deactivate,
 	tickInput,

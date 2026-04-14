@@ -3,46 +3,46 @@ import * as constants from '../../core/constants';
 import { applySearchSelection, ensureSearchSelectionVisible, processInlineFieldPointer } from '../../contrib/find/editor_search';
 import { closeLineJump } from '../../contrib/find/line_jump';
 import { getSearchBarBounds, searchResultEntryHeight, searchVisibleResultCount } from '../../ui/editor_view';
-import { ide_state } from '../../core/ide_state';
 import type { PointerSnapshot } from '../../core/types';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from './editor_quick_input_pointer_common';
 import { editorViewState } from '../../ui/editor_view_state';
+import { editorFeatureState } from '../../core/editor_feature_state';
 
 export function handleSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const bounds = getSearchBarBounds();
-	if (!ide_state.search.visible || !bounds) {
-		ide_state.search.hoverIndex = -1;
+	if (!editorFeatureState.search.visible || !bounds) {
+		editorFeatureState.search.hoverIndex = -1;
 		return false;
 	}
 	const insideBar = point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
 	if (!insideBar) {
 		if (justPressed) {
-			ide_state.search.active = false;
-			ide_state.search.hoverIndex = -1;
+			editorFeatureState.search.active = false;
+			editorFeatureState.search.hoverIndex = -1;
 		}
 		return false;
 	}
 	const fieldBottom = bounds.top + editorViewState.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
-	ide_state.search.hoverIndex = -1;
+	editorFeatureState.search.hoverIndex = -1;
 	if (snapshot.viewportY < fieldBottom) {
 		if (justPressed) {
 			closeLineJump(false);
-			ide_state.search.visible = true;
-			ide_state.search.active = true;
+			editorFeatureState.search.visible = true;
+			editorFeatureState.search.active = true;
 			activateQuickInputField();
 		}
-		const label = ide_state.search.scope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
-		processInlineFieldPointer(ide_state.search.field, quickInputTextLeft(label), snapshot.viewportX, justPressed, snapshot.primaryPressed);
+		const label = editorFeatureState.search.scope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
+		processInlineFieldPointer(editorFeatureState.search.field, quickInputTextLeft(label), snapshot.viewportX, justPressed, snapshot.primaryPressed);
 		finishQuickInputPointer(snapshot);
 		return true;
 	}
 	const hoverIndex = resolveSearchHoverIndex(snapshot.viewportY, fieldBottom);
-	ide_state.search.hoverIndex = hoverIndex;
+	editorFeatureState.search.hoverIndex = hoverIndex;
 	if (hoverIndex >= 0 && justPressed) {
-		if (hoverIndex !== ide_state.search.currentIndex) {
-			ide_state.search.currentIndex = hoverIndex;
+		if (hoverIndex !== editorFeatureState.search.currentIndex) {
+			editorFeatureState.search.currentIndex = hoverIndex;
 			ensureSearchSelectionVisible();
-			if (ide_state.search.scope === 'local') {
+			if (editorFeatureState.search.scope === 'local') {
 				applySearchSelection(hoverIndex, { preview: true });
 			}
 		}
@@ -67,5 +67,5 @@ function resolveSearchHoverIndex(pointerY: number, fieldBottom: number): number 
 	if (indexWithin < 0 || indexWithin >= visibleResults) {
 		return -1;
 	}
-	return ide_state.search.displayOffset + indexWithin;
+	return editorFeatureState.search.displayOffset + indexWithin;
 }

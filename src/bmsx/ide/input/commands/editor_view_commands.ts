@@ -1,4 +1,4 @@
-import { ide_state } from '../../core/ide_state';
+import { resourcePanel } from '../../contrib/resources/resource_panel_controller';
 import { toggleProblemsPanel } from '../../contrib/problems/problems_panel';
 import { toggleWordWrap } from '../../ui/editor_view';
 import type { EditorCommandId } from './editor_commands';
@@ -19,13 +19,13 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 export function executeEditorViewCommand(command: EditorViewCommandId): void {
 	switch (command) {
 		case 'resources':
-			ide_state.resourcePanel.togglePanel();
+			resourcePanel.togglePanel();
 			return;
 		case 'problems':
 			toggleProblemsPanel();
 			return;
 		case 'filter':
-			ide_state.resourcePanel.toggleFilterMode();
+			resourcePanel.toggleFilterMode();
 			return;
 		case 'wrap':
 			toggleWordWrap();

@@ -1,7 +1,6 @@
 import { BmsxColors, resolvePaletteIndex, invertColorIndex } from '../../emulator/vdp';
 import type { OverlayApi as Api } from '../ui/view/overlay_api';
 import * as constants from '../core/constants';
-import { ide_state } from '../core/ide_state';
 import { drawEditorText } from './text_renderer';
 import type { CursorScreenInfo, TextField } from '../core/types';
 import { getCursorOffset } from '../ui/inline_text_field';
@@ -10,6 +9,10 @@ import { textFromLines } from '../text/source_text';
 import { resetBlinkState } from '../ui/caret_blink';
 import { editorCaretState } from '../ui/caret_state';
 import { editorViewState } from '../ui/editor_view_state';
+import { editorFeatureState } from '../core/editor_feature_state';
+import { editorRuntimeState } from '../core/editor_runtime_state';
+import { problemsPanel } from '../contrib/problems/problems_panel';
+import { resourcePanel } from '../contrib/resources/resource_panel_controller';
 
 export function drawInlineCaret(
 	api: Api,
@@ -41,7 +44,7 @@ export function drawInlineCaret(
 }
 
 export function getCaretGlyphForDisplay(baseChar: string, baseColor?: number): string {
-	if (!ide_state.caseInsensitive) {
+	if (!editorRuntimeState.caseInsensitive) {
 		return baseChar;
 	}
 	if (baseColor === constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING) {
@@ -57,8 +60,8 @@ export function drawCursor(info: CursorScreenInfo, textX: number): void {
 	const caretRight = Math.max(caretLeft + 1, cursorX + info.width);
 	const caretTop = cursorY;
 	const caretBottom = caretTop + info.height;
-	const problemsPanelHasFocus = ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused;
-	const active = !(ide_state.search.active || ide_state.lineJump.active || ide_state.resourcePanel.isFocused() || ide_state.createResource.active || problemsPanelHasFocus);
+	const problemsPanelHasFocus = problemsPanel.isVisible && problemsPanel.isFocused;
+	const active = !(editorFeatureState.search.active || editorFeatureState.lineJump.active || resourcePanel.isFocused() || editorFeatureState.createResource.active || problemsPanelHasFocus);
 	const caretGlyph = getCaretGlyphForDisplay(info.baseChar, info.baseColor);
 	const caretValue = BmsxColors[constants.CARET_COLOR];
 	if (active) {

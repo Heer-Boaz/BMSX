@@ -148,7 +148,7 @@ export type LuaLocalFunctionStatement = LuaNode & {
 
 export type LuaFunctionName = {
 	readonly identifiers: ReadonlyArray<string>;
-	readonly methodName: string;
+	readonly methodName: string | null;
 };
 
 export type LuaFunctionDeclarationStatement = LuaNode & {
@@ -353,7 +353,7 @@ export type LuaCallExpression = LuaNode & {
 	readonly kind: LuaSyntaxKind.CallExpression;
 	readonly callee: LuaExpression;
 	readonly arguments: ReadonlyArray<LuaExpression>;
-	readonly methodName: string;
+	readonly methodName: string | null;
 };
 
 export type LuaMemberExpression = LuaNode & {

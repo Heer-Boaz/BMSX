@@ -1,4 +1,3 @@
-import { ide_state } from '../../core/ide_state';
 import { jumpToNextMatch, jumpToPreviousMatch } from '../../contrib/find/editor_search';
 import { isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab, closeActiveTab } from '../../ui/editor_tabs';
 import { notifyReadOnlyEdit } from '../../ui/editor_view';
@@ -10,9 +9,10 @@ import { executeEditorCommand } from '../commands/editor_commands';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './key_input';
 import { isInlineFieldFocused } from '../quick_input/editor_quick_input';
 import { runEditorKeyHandlers, type EditorKeyHandler } from './editor_binding_utils';
+import { editorFeatureState } from '../../core/editor_feature_state';
 
 export function handleSearchNavigationKeybinding(): boolean {
-	if (ide_state.search.query.length === 0 || !isKeyJustPressed('F3')) {
+	if (editorFeatureState.search.query.length === 0 || !isKeyJustPressed('F3')) {
 		return false;
 	}
 	consumeIdeKey('F3');
@@ -172,7 +172,7 @@ function handleUnindentBinding(): boolean {
 }
 
 export function handleCodeFormattingKeybinding(): boolean {
-	if (!isCodeTabActive() || ide_state.search.active || isInlineFieldFocused()) {
+	if (!isCodeTabActive() || editorFeatureState.search.active || isInlineFieldFocused()) {
 		return false;
 	}
 	if (!isAltDown() || !isShiftDown() || isCtrlDown() || isMetaDown() || !isKeyJustPressed('KeyF')) {

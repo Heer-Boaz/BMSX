@@ -1,5 +1,4 @@
 import { closeSearch } from '../../contrib/find/editor_search';
-import { ide_state } from '../../core/ide_state';
 import { editorFeedbackState } from '../../core/editor_feedback_state';
 import { closeCreateResourcePrompt } from '../../contrib/resources/create_resource';
 import { closeResourceSearch } from '../../contrib/resources/resource_search';
@@ -10,6 +9,7 @@ import { actionPromptState } from '../overlays/action_prompt_state';
 import { closeEditorContextMenu } from '../../render/render_context_menu';
 import { editorContextMenuState } from '../../contrib/context_menu/editor_context_menu_state';
 import { runtimeErrorState } from '../../contrib/runtime_error/runtime_error_state';
+import { editorFeatureState } from '../../core/editor_feature_state';
 
 export function handleEscapeKey(): boolean {
 	if (actionPromptState.prompt) {
@@ -21,23 +21,23 @@ export function handleEscapeKey(): boolean {
 		return true;
 	}
 	const overlay = runtimeErrorState.activeOverlay;
-	if (ide_state.createResource.visible) {
+	if (editorFeatureState.createResource.visible) {
 		closeCreateResourcePrompt(true);
 		return true;
 	}
-	if (ide_state.symbolSearch.active || ide_state.symbolSearch.visible) {
+	if (editorFeatureState.symbolSearch.active || editorFeatureState.symbolSearch.visible) {
 		closeSymbolSearch(false);
 		return true;
 	}
-	if (ide_state.resourceSearch.active || ide_state.resourceSearch.visible) {
+	if (editorFeatureState.resourceSearch.active || editorFeatureState.resourceSearch.visible) {
 		closeResourceSearch(false);
 		return true;
 	}
-	if (ide_state.lineJump.active || ide_state.lineJump.visible) {
+	if (editorFeatureState.lineJump.active || editorFeatureState.lineJump.visible) {
 		closeLineJump(false);
 		return true;
 	}
-	if (ide_state.search.active || ide_state.search.visible) {
+	if (editorFeatureState.search.active || editorFeatureState.search.visible) {
 		closeSearch(false, true);
 		return true;
 	}

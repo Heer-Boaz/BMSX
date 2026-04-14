@@ -1,5 +1,5 @@
 import * as constants from '../../core/constants';
-import { ide_state } from '../../core/ide_state';
+import { resourcePanel } from './resource_panel_controller';
 import { showEditorMessage } from '../../core/editor_feedback_state';
 import { resetBlink } from '../../render/render_caret';
 import { refreshResourcePanelContents } from '../../ui/editor_view';
@@ -8,34 +8,35 @@ import { createLuaResource } from '../../../emulator/workspace';
 import { extractErrorMessage } from '../../../lua/luavalue';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt, ensureDirectorySuffix } from './create_resource';
 import { editorSessionState } from '../../ui/editor_session_state';
+import { editorFeatureState } from '../../core/editor_feature_state';
 
 export async function confirmCreateResourcePrompt(): Promise<void> {
-	if (ide_state.createResource.working) {
+	if (editorFeatureState.createResource.working) {
 		return;
 	}
 	let resourcePath: string;
 	let directory: string;
 	try {
-		const result = parseCreateResourceRequest(ide_state.createResource.path);
+		const result = parseCreateResourceRequest(editorFeatureState.createResource.path);
 		resourcePath = result.path;
 		directory = result.directory;
 		applyCreateResourceFieldText(resourcePath, true);
-		ide_state.createResource.error = null;
+		editorFeatureState.createResource.error = null;
 	} catch (error) {
 		const message = extractErrorMessage(error);
-		ide_state.createResource.error = message;
+		editorFeatureState.createResource.error = message;
 		showEditorMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
 		resetBlink();
 		return;
 	}
-	ide_state.createResource.working = true;
+	editorFeatureState.createResource.working = true;
 	resetBlink();
 	const contents = constants.DEFAULT_NEW_LUA_RESOURCE_CONTENT;
 	try {
 		const descriptor = await createLuaResource({ path: resourcePath, contents });
-		ide_state.createResource.lastDirectory = directory;
+		editorFeatureState.createResource.lastDirectory = directory;
 		editorSessionState.pendingResourceSelectionAssetId = descriptor.asset_id;
-		if (ide_state.resourcePanel.isVisible()) {
+		if (resourcePanel.isVisible()) {
 			refreshResourcePanelContents();
 		}
 		openLuaCodeTab(descriptor);
@@ -44,10 +45,10 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 	} catch (error) {
 		const message = extractErrorMessage(error);
 		const simplified = message.replace(/^\[Runtime\]\s*/, '');
-		ide_state.createResource.error = simplified;
+		editorFeatureState.createResource.error = simplified;
 		showEditorMessage(`Failed to create resource: ${simplified}`, constants.COLOR_STATUS_WARNING, 4.0);
 	} finally {
-		ide_state.createResource.working = false;
+		editorFeatureState.createResource.working = false;
 		resetBlink();
 	}
 }

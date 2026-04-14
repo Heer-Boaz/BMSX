@@ -11,6 +11,14 @@ import {
 	type LuaUnaryExpression,
 } from './lua_ast';
 
+function unreachableExpression(expression: never): never {
+	throw new Error(`[LuaAstTraversal] Unhandled expression kind: ${String((expression as LuaExpression).kind)}`);
+}
+
+function unreachableTableFieldKind(value: never): never {
+	throw new Error(`[LuaAstTraversal] Unhandled table field kind: ${String(value)}`);
+}
+
 export function walkLuaExpressionTree(
 	expression: LuaExpression,
 	visit: (expression: LuaExpression) => void | false,
@@ -67,6 +75,8 @@ export function visitLuaExpressionChildren(
 						visit(field.key);
 						visit(field.value);
 						break;
+					default:
+						unreachableTableFieldKind(field.kind);
 				}
 			}
 			return;
@@ -80,5 +90,7 @@ export function visitLuaExpressionChildren(
 		case LuaSyntaxKind.VarargExpression:
 		case LuaSyntaxKind.IdentifierExpression:
 			return;
+		default:
+			unreachableExpression(expression);
 	}
 }

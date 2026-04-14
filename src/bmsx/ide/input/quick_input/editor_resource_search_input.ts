@@ -1,5 +1,4 @@
 import * as constants from '../../core/constants';
-import { ide_state } from '../../core/ide_state';
 import { showEditorMessage } from '../../core/editor_feedback_state';
 import { applyInlineFieldEditing } from '../../ui/inline_text_field';
 import { applyResourceSearchSelection, closeResourceSearch, focusEditorFromResourceSearch } from '../../contrib/resources/resource_search';
@@ -9,6 +8,7 @@ import { consumeIdeKey, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer
 import { resourceSearchWindowCapacity } from '../../ui/editor_view';
 import { ensureResourceSearchSelectionVisible, moveResourceSearchSelection, updateResourceSearchMatches } from '../../contrib/resources/resource_search_catalog';
 import { openGlobalSymbolSearch, openSymbolSearch } from '../../contrib/symbols/symbol_search';
+import { editorFeatureState } from '../../core/editor_feature_state';
 
 export function handleResourceSearchInput(): void {
 	const shiftDown = isShiftDown();
@@ -19,11 +19,11 @@ export function handleResourceSearchInput(): void {
 			moveResourceSearchSelection(-1);
 			return;
 		}
-		if (ide_state.resourceSearch.selectionIndex >= 0) {
-			applyResourceSearchSelection(ide_state.resourceSearch.selectionIndex);
+		if (editorFeatureState.resourceSearch.selectionIndex >= 0) {
+			applyResourceSearchSelection(editorFeatureState.resourceSearch.selectionIndex);
 			return;
 		}
-		const trimmed = ide_state.resourceSearch.query.trim();
+		const trimmed = editorFeatureState.resourceSearch.query.trim();
 		if (trimmed.length === 0) {
 			closeResourceSearch(true);
 			focusEditorFromResourceSearch();
@@ -60,44 +60,44 @@ export function handleResourceSearchInput(): void {
 	}
 	if (isKeyJustPressed('Home')) {
 		consumeIdeKey('Home');
-		ide_state.resourceSearch.selectionIndex = ide_state.resourceSearch.matches.length > 0 ? 0 : -1;
+		editorFeatureState.resourceSearch.selectionIndex = editorFeatureState.resourceSearch.matches.length > 0 ? 0 : -1;
 		ensureResourceSearchSelectionVisible();
 		return;
 	}
 	if (isKeyJustPressed('End')) {
 		consumeIdeKey('End');
-		ide_state.resourceSearch.selectionIndex = ide_state.resourceSearch.matches.length > 0 ? ide_state.resourceSearch.matches.length - 1 : -1;
+		editorFeatureState.resourceSearch.selectionIndex = editorFeatureState.resourceSearch.matches.length > 0 ? editorFeatureState.resourceSearch.matches.length - 1 : -1;
 		ensureResourceSearchSelectionVisible();
 		return;
 	}
-	const textChanged = applyInlineFieldEditing(ide_state.resourceSearch.field, {
+	const textChanged = applyInlineFieldEditing(editorFeatureState.resourceSearch.field, {
 		allowSpace: true,
 		characterFilter: undefined,
 		maxLength: null,
 	});
-	ide_state.resourceSearch.query = textFromLines(ide_state.resourceSearch.field.lines);
+	editorFeatureState.resourceSearch.query = textFromLines(editorFeatureState.resourceSearch.field.lines);
 	if (!textChanged) {
 		return;
 	}
-	if (ide_state.resourceSearch.query.startsWith('@')) {
-		const query = ide_state.resourceSearch.query.slice(1).trimStart();
+	if (editorFeatureState.resourceSearch.query.startsWith('@')) {
+		const query = editorFeatureState.resourceSearch.query.slice(1).trimStart();
 		closeResourceSearch(true);
 		openSymbolSearch(query);
 		return;
 	}
-	if (ide_state.resourceSearch.query.startsWith('#')) {
-		const query = ide_state.resourceSearch.query.slice(1).trimStart();
+	if (editorFeatureState.resourceSearch.query.startsWith('#')) {
+		const query = editorFeatureState.resourceSearch.query.slice(1).trimStart();
 		closeResourceSearch(true);
 		openGlobalSymbolSearch(query);
 		return;
 	}
-	if (ide_state.resourceSearch.query.startsWith(':')) {
-		const query = ide_state.resourceSearch.query.slice(1).trimStart();
+	if (editorFeatureState.resourceSearch.query.startsWith(':')) {
+		const query = editorFeatureState.resourceSearch.query.slice(1).trimStart();
 		closeResourceSearch(true);
 		openLineJump();
 		if (query.length > 0) {
 			applyLineJumpFieldText(query, true);
-			ide_state.lineJump.value = query;
+			editorFeatureState.lineJump.value = query;
 		}
 		return;
 	}

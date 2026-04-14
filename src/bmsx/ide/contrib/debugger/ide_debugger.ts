@@ -1,7 +1,8 @@
 import { Runtime } from '../../../emulator/runtime';
 import * as runtimeIde from '../../../emulator/runtime_ide';
 import { type LuaDebuggerSessionMetrics } from '../../../lua/luadebugger';
-import { ide_state } from '../../core/ide_state';
+import { editorRuntimeState } from '../../core/editor_runtime_state';
+import { editorDebuggerState } from './editor_debugger_state';
 import { showEditorMessage } from '../../core/editor_feedback_state';
 import { focusChunkSource, getActiveCodeTabContext } from '../../ui/editor_tabs';
 import { clamp, clamp_fallback } from '../../../utils/clamp';
@@ -121,30 +122,30 @@ export function initializeDebuggerUiState(): void {
 function handleDebuggerLifecycleEvent(event: DebuggerLifecycleEvent): void {
 	if (event.type === 'continued') {
 		updateExecutionState('running');
-		ide_state.debuggerControls.sessionMetrics = null;
+		editorDebuggerState.controls.sessionMetrics = null;
 		return;
 	}
 	if (event.type === 'paused') {
-		ide_state.debuggerControls.sessionMetrics = event.metrics;
+		editorDebuggerState.controls.sessionMetrics = event.metrics;
 		updateExecutionState('paused');
 		return;
 	}
 	updateExecutionState('paused');
 }
 function updateExecutionState(state: DebuggerExecutionState): void {
-	if (ide_state.debuggerControls.executionState === state) {
+	if (editorDebuggerState.controls.executionState === state) {
 		return;
 	}
-	ide_state.debuggerControls.executionState = state;
+	editorDebuggerState.controls.executionState = state;
 }
 export type SerializedBreakpointMap = Record<string, number[]>;
 
 export type BreakpointToggleResult = 'added' | 'removed' | 'unchanged';
 function ensureBucket(pathKey: string): Set<number> {
-	let bucket = ide_state.breakpoints.get(pathKey);
+	let bucket = editorDebuggerState.breakpoints.get(pathKey);
 	if (!bucket) {
 		bucket = new Set<number>();
-		ide_state.breakpoints.set(pathKey, bucket);
+		editorDebuggerState.breakpoints.set(pathKey, bucket);
 	}
 	return bucket;
 }
@@ -153,7 +154,7 @@ export function getBreakpointsForChunk(path: string): ReadonlySet<number> {
 	if (!path) {
 		return null;
 	}
-	const bucket = ide_state.breakpoints.get(path);
+	const bucket = editorDebuggerState.breakpoints.get(path);
 	return bucket;
 }
 
@@ -166,7 +167,7 @@ export function toggleBreakpoint(path: string, line: number): BreakpointToggleRe
 	if (bucket.has(line)) {
 		bucket.delete(line);
 		if (bucket.size === 0) {
-			ide_state.breakpoints.delete(pathKey); // Clean up empty bucket
+			editorDebuggerState.breakpoints.delete(pathKey);
 		}
 
 		syncRuntimeBreakpoints();
@@ -179,7 +180,7 @@ export function toggleBreakpoint(path: string, line: number): BreakpointToggleRe
 
 export function serializeBreakpoints(): SerializedBreakpointMap {
 	const payload: SerializedBreakpointMap = {};
-	for (const [path, lines] of ide_state.breakpoints) {
+	for (const [path, lines] of editorDebuggerState.breakpoints) {
 		if (lines.size === 0) {
 			continue;
 		}
@@ -196,7 +197,7 @@ export function serializeBreakpoints(): SerializedBreakpointMap {
 }
 
 export function restoreBreakpointsFromPayload(payload: SerializedBreakpointMap | null): void {
-	ide_state.breakpoints.clear();
+	editorDebuggerState.breakpoints.clear();
 	if (payload === null) {
 		syncRuntimeBreakpoints();
 		return;
@@ -206,13 +207,13 @@ export function restoreBreakpointsFromPayload(payload: SerializedBreakpointMap |
 		if (lineEntries.length === 0) {
 			continue;
 		}
-		ide_state.breakpoints.set(path, new Set(lineEntries));
+		editorDebuggerState.breakpoints.set(path, new Set(lineEntries));
 	}
 	syncRuntimeBreakpoints();
 }
 
 export function syncRuntimeBreakpoints(): void {
-	runtimeIde.setDebuggerBreakpoints(Runtime.instance, ide_state.breakpoints);
+	runtimeIde.setDebuggerBreakpoints(Runtime.instance, editorDebuggerState.breakpoints);
 }
 
 export function getActiveBreakpointPath(): string {
@@ -245,7 +246,7 @@ const MESSAGE_BY_REASON: Record<DebuggerPauseDisplayPayload['reason'], string> =
 };
 
 export function showDebuggerPauseOverlay(payload: DebuggerPauseDisplayPayload, metrics: LuaDebuggerSessionMetrics): void {
-	if (!ide_state.active) {
+	if (!editorRuntimeState.active) {
 		return;
 	}
 	const normalizedChunk = payload.path;
@@ -270,7 +271,7 @@ export function clearDebuggerPauseOverlay(): void {
 }
 
 export function prepareDebuggerStepOverlay(): void {
-	if (!ide_state.active) {
+	if (!editorRuntimeState.active) {
 		return;
 	}
 	clearRuntimeErrorOverlay();

@@ -2,7 +2,6 @@ import * as constants from '../core/constants';
 import { getActiveSymbolSearchMatch } from '../contrib/symbols/symbol_search_shared';
 import { statusAreaHeight, getStatusMessageLines } from '../ui/editor_view';
 import { getActiveCodeTabContext, isCodeTabActive, isResourceViewActive } from '../ui/editor_tabs';
-import { ide_state } from '../core/ide_state';
 import { editorFeedbackState } from '../core/editor_feedback_state';
 import { getActiveResourceViewer } from '../contrib/resources/resource_viewer';
 import { drawEditorText } from './text_renderer';
@@ -12,6 +11,9 @@ import { api } from '../ui/view/overlay_api';
 import { workspaceState } from '../core/workspace_storage';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorViewState } from '../ui/editor_view_state';
+import { editorFeatureState } from '../core/editor_feature_state';
+import { problemsPanel } from '../contrib/problems/problems_panel';
+import { resourcePanel } from '../contrib/resources/resource_panel_controller';
 
 export function renderStatusBar(): void {
 	const runtime = Runtime.instance;
@@ -39,12 +41,12 @@ export function renderStatusBar(): void {
 	}
 	const statusLeftInfo = buildStatusLeftInfo();
 	// When Problems panel owns the status (focused), show its info and stop
-	if (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused && statusLeftInfo && statusLeftInfo.length > 0) {
+	if (problemsPanel.isVisible && problemsPanel.isFocused && statusLeftInfo && statusLeftInfo.length > 0) {
 		drawEditorText(editorViewState.font, statusLeftInfo, 4, statusTop + 2, undefined, statusTextColor);
 		return;
 	}
 
-	if (ide_state.symbolSearch.visible) {
+	if (editorFeatureState.symbolSearch.visible) {
 		const match = getActiveSymbolSearchMatch();
 		if (!match) return;
 		const symbol = match.entry.symbol;
@@ -61,16 +63,16 @@ export function renderStatusBar(): void {
 		return;
 	}
 
-	if (ide_state.resourcePanel.isVisible()) {
-		if (ide_state.resourcePanel.getMode() === 'call_hierarchy') {
+	if (resourcePanel.isVisible()) {
+		if (resourcePanel.getMode() === 'call_hierarchy') {
 			const info = 'CALL HIERARCHY';
 			const hint = 'ENTER toggle/open • LEFT/RIGHT collapse/expand';
 			drawEditorText(editorViewState.font, info, 4, statusTop + 2, undefined, statusTextColor);
 			drawEditorText(editorViewState.font, hint, editorViewState.viewportWidth - measureText(hint) - 4, statusTop + 2, undefined, statusTextColor);
 			return;
 		}
-		const filterLabel = ide_state.resourcePanel.getFilterMode() === 'lua_only' ? 'LUA' : 'ALL';
-		const fileInfo = `FILES ${ide_state.resourcePanel.getFilterMode()} (${filterLabel})`;
+		const filterLabel = resourcePanel.getFilterMode() === 'lua_only' ? 'LUA' : 'ALL';
+		const fileInfo = `FILES ${resourcePanel.getFilterMode()} (${filterLabel})`;
 		const hint = 'CTRL+SHIFT+L TOGGLE FILTER';
 		drawEditorText(editorViewState.font, fileInfo, 4, statusTop + 2, undefined, statusTextColor);
 		drawEditorText(editorViewState.font, hint, editorViewState.viewportWidth - measureText(hint) - 4, statusTop + 2, undefined, statusTextColor);
@@ -116,9 +118,9 @@ export function renderStatusBar(): void {
 }
 
 export function buildStatusLeftInfo(): string {
-	if (ide_state.problemsPanel.isVisible) {
-		if (ide_state.problemsPanel.isFocused) {
-			const sel = ide_state.problemsPanel.selectedDiagnostic;
+	if (problemsPanel.isVisible) {
+		if (problemsPanel.isFocused) {
+			const sel = problemsPanel.selectedDiagnostic;
 			if (sel) {
 				const file = sel.sourceLabel ?? (sel.path ?? '');
 				const parts: string[] = [];

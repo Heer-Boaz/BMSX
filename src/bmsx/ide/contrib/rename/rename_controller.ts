@@ -7,12 +7,12 @@ import { clamp } from '../../../utils/clamp';
 import { LuaLexer } from '../../../lua/syntax/lualexer';
 import { focusEditorFromRename } from './rename_prompt';
 import { textFromLines } from '../../text/source_text';
-import { ide_state } from '../../core/ide_state';
 import { showEditorMessage } from '../../core/editor_feedback_state';
 import { setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { commitRename } from './rename_operations';
 import { handleRenameControllerInput } from './rename_input';
 import { validateRenameIdentifier } from './rename_validation';
+import { editorFeatureState } from '../../core/editor_feature_state';
 
 export type RenameStartOptions = ReferenceLookupOptions & {
 };
@@ -60,7 +60,7 @@ export class RenameController {
 			showEditorMessage('Unable to determine identifier name', constants.COLOR_STATUS_WARNING, 1.6);
 			return false;
 		}
-		ide_state.referenceState.apply(info, initialIndex);
+		editorFeatureState.referenceState.apply(info, initialIndex);
 		this.matches = info.matches;
 		this.info = info;
 		this.originalName = currentName;
@@ -152,7 +152,7 @@ export class RenameController {
 	}
 
 	private close(): void {
-		ide_state.referenceState.clear();
+		editorFeatureState.referenceState.clear();
 		this.active = false;
 		this.visible = false;
 		this.matches = EMPTY_RENAME_MATCHES;

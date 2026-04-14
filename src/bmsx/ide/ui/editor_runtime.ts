@@ -5,7 +5,7 @@ import { api } from './view/overlay_api';
 import * as constants from '../core/constants';
 import { activateCodeTab, getActiveCodeTabContext, isResourceViewActive, setActiveTab, storeActiveCodeTabContext } from './editor_tabs';
 import { cancelGlobalSearchJob, startSearchJob } from '../contrib/find/editor_search';
-import { ide_state, captureKeys } from '../core/ide_state';
+import { editorRuntimeState } from '../core/editor_runtime_state';
 import { editorFeedbackState, setEditorFeedbackActive, showEditorMessage, updateEditorMessage } from '../core/editor_feedback_state';
 import { bumpTextVersion } from '../core/text_utils';
 import { ensureCursorVisible } from './caret';
@@ -19,6 +19,7 @@ import { drawActionPromptOverlay } from '../render/render_prompt';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorSessionState } from './editor_session_state';
 import { editorViewState } from './editor_view_state';
+import { editorFeatureState } from '../core/editor_feature_state';
 import {
 	renderCreateResourceBar,
 	renderLineJumpBar,
@@ -54,6 +55,8 @@ import { applyLineJumpFieldText } from '../contrib/find/line_jump';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt } from '../contrib/resources/create_resource';
 import { editorPointerState } from '../input/pointer/editor_pointer_state';
 import { editorCaretState } from './caret_state';
+import { captureKeys } from '../input/keyboard/editor_capture_keys';
+import { editorInput } from '../input/keyboard/editor_text_input';
 
 export function tickInput(): void {
 	handleEditorWheelInput();
@@ -69,16 +72,16 @@ export function update(deltaSeconds: number): void {
 	updateBlink(deltaSeconds);
 	updateEditorMessage(deltaSeconds);
 	updateRuntimeErrorOverlay(deltaSeconds);
-	ide_state.completion.processPending(deltaSeconds);
+	editorFeatureState.completion.processPending(deltaSeconds);
 	const semanticError = editorViewState.layout.getLastSemanticError();
-	if (semanticError && semanticError !== ide_state.lastReportedSemanticError) {
+	if (semanticError && semanticError !== editorRuntimeState.lastReportedSemanticError) {
 		showEditorMessage(semanticError, constants.COLOR_STATUS_ERROR, 2.0);
-		ide_state.lastReportedSemanticError = semanticError;
-	} else if (!semanticError && ide_state.lastReportedSemanticError !== null) {
-		ide_state.lastReportedSemanticError = null;
+		editorRuntimeState.lastReportedSemanticError = semanticError;
+	} else if (!semanticError && editorRuntimeState.lastReportedSemanticError !== null) {
+		editorRuntimeState.lastReportedSemanticError = null;
 	}
 	if (editorDiagnosticsState.diagnosticsDirty) {
-		processDiagnosticsQueue(ide_state.clockNow());
+		processDiagnosticsQueue(editorRuntimeState.clockNow());
 	}
 }
 
@@ -113,11 +116,11 @@ export function draw(): void {
 export function shutdownRuntimeEditor(): void {
 	clearExecutionStopHighlights();
 	storeActiveCodeTabContext();
-	ide_state.input.applyOverrides(false, captureKeys);
+	editorInput.applyOverrides(false, captureKeys);
 	if (editorViewState.dimCrtInEditor) {
 		Runtime.instance.restoreCrtPostprocessingFromEditor();
 	}
-	ide_state.active = false;
+	editorRuntimeState.active = false;
 	setEditorFeedbackActive(false);
 	if (workspaceState.autosaveEnabled) {
 		stopWorkspaceAutosaveLoop();
@@ -132,25 +135,25 @@ export function shutdownRuntimeEditor(): void {
 	editorPointerState.pointerAuxWasPressed = false;
 	clearGotoHoverHighlight();
 	editorCaretState.cursorRevealSuspended = false;
-	ide_state.search.active = false;
-	ide_state.search.visible = false;
+	editorFeatureState.search.active = false;
+	editorFeatureState.search.visible = false;
 	cancelSearchJob();
 	cancelGlobalSearchJob();
-	ide_state.search.matches = [];
-	ide_state.search.globalMatches = [];
-	ide_state.search.displayOffset = 0;
-	ide_state.search.hoverIndex = -1;
-	ide_state.search.scope = 'local';
-	ide_state.search.currentIndex = -1;
+	editorFeatureState.search.matches = [];
+	editorFeatureState.search.globalMatches = [];
+	editorFeatureState.search.displayOffset = 0;
+	editorFeatureState.search.hoverIndex = -1;
+	editorFeatureState.search.scope = 'local';
+	editorFeatureState.search.currentIndex = -1;
 	applySearchFieldText('', true);
-	ide_state.lineJump.active = false;
-	ide_state.lineJump.visible = false;
+	editorFeatureState.lineJump.active = false;
+	editorFeatureState.lineJump.visible = false;
 	applyLineJumpFieldText('', true);
-	ide_state.createResource.active = false;
-	ide_state.createResource.visible = false;
+	editorFeatureState.createResource.active = false;
+	editorFeatureState.createResource.visible = false;
 	applyCreateResourceFieldText('', true);
-	ide_state.createResource.error = null;
-	ide_state.createResource.working = false;
+	editorFeatureState.createResource.error = null;
+	editorFeatureState.createResource.working = false;
 	resetActionPromptState();
 	hideResourcePanel();
 	activateCodeTab();
@@ -160,7 +163,7 @@ export function activateRuntimeEditor(): void {
 	if (!Runtime.instance.hasProgramSymbols) {
 		return;
 	}
-	ide_state.input.applyOverrides(true, captureKeys);
+	editorInput.applyOverrides(true, captureKeys);
 	if (editorSessionState.activeCodeTabContextId) {
 		const existingTab = editorSessionState.tabs.find(candidate => candidate.id === editorSessionState.activeCodeTabContextId);
 		if (existingTab) {
@@ -174,29 +177,29 @@ export function activateRuntimeEditor(): void {
 	bumpTextVersion();
 	editorCaretState.cursorVisible = true;
 	editorCaretState.blinkTimer = 0;
-	ide_state.active = true;
+	editorRuntimeState.active = true;
 	setEditorFeedbackActive(true);
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = false;
 	editorCaretState.cursorRevealSuspended = false;
 	updateDesiredColumn();
 	editorDocumentState.selectionAnchor = null;
-	ide_state.search.active = false;
-	ide_state.search.visible = false;
-	ide_state.lineJump.active = false;
-	ide_state.lineJump.visible = false;
-	ide_state.lineJump.value = '';
+	editorFeatureState.search.active = false;
+	editorFeatureState.search.visible = false;
+	editorFeatureState.lineJump.active = false;
+	editorFeatureState.lineJump.visible = false;
+	editorFeatureState.lineJump.value = '';
 	syncRuntimeErrorOverlayFromContext(getActiveCodeTabContext());
 	resetActionPromptState();
 	cancelSearchJob();
 	cancelGlobalSearchJob();
-	ide_state.search.globalMatches = [];
-	ide_state.search.displayOffset = 0;
-	ide_state.search.hoverIndex = -1;
-	ide_state.search.scope = 'local';
-	if (ide_state.search.query.length === 0) {
-		ide_state.search.matches = [];
-		ide_state.search.currentIndex = -1;
+	editorFeatureState.search.globalMatches = [];
+	editorFeatureState.search.displayOffset = 0;
+	editorFeatureState.search.hoverIndex = -1;
+	editorFeatureState.search.scope = 'local';
+	if (editorFeatureState.search.query.length === 0) {
+		editorFeatureState.search.matches = [];
+		editorFeatureState.search.currentIndex = -1;
 	} else {
 		startSearchJob();
 	}
@@ -221,13 +224,13 @@ export function activateRuntimeEditor(): void {
 
 export function deactivateRuntimeEditor(): void {
 	storeActiveCodeTabContext();
-	ide_state.active = false;
+	editorRuntimeState.active = false;
 	setEditorFeedbackActive(false);
 	if (editorViewState.dimCrtInEditor) {
 		Runtime.instance.restoreCrtPostprocessingFromEditor();
 	}
-	ide_state.completion.closeSession();
-	ide_state.input.applyOverrides(false, captureKeys);
+	editorFeatureState.completion.closeSession();
+	editorInput.applyOverrides(false, captureKeys);
 	editorDocumentState.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = false;
@@ -236,22 +239,22 @@ export function deactivateRuntimeEditor(): void {
 	clearGotoHoverHighlight();
 	editorViewState.scrollbarController.cancel();
 	editorCaretState.cursorRevealSuspended = false;
-	ide_state.search.active = false;
-	ide_state.search.visible = false;
-	ide_state.lineJump.active = false;
-	ide_state.lineJump.visible = false;
+	editorFeatureState.search.active = false;
+	editorFeatureState.search.visible = false;
+	editorFeatureState.lineJump.active = false;
+	editorFeatureState.lineJump.visible = false;
 	resetActionPromptState();
 	closeCreateResourcePrompt(false);
 	hideResourcePanel();
 	cancelSearchJob();
 	cancelGlobalSearchJob();
-	ide_state.search.globalMatches = [];
-	ide_state.search.displayOffset = 0;
-	ide_state.search.hoverIndex = -1;
-	ide_state.search.scope = 'local';
+	editorFeatureState.search.globalMatches = [];
+	editorFeatureState.search.displayOffset = 0;
+	editorFeatureState.search.hoverIndex = -1;
+	editorFeatureState.search.scope = 'local';
 	clearBackgroundTasks();
 	editorDiagnosticsState.diagnosticsTaskPending = false;
-	ide_state.lastReportedSemanticError = null;
+	editorRuntimeState.lastReportedSemanticError = null;
 }
 
 export function handleRuntimeTaskError(error: unknown, fallbackMessage: string): void {

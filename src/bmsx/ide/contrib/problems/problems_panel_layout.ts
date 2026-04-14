@@ -4,7 +4,7 @@ import { measureText, wrapTextDynamic as wrapMessageLinesGeneric } from '../../c
 import { clamp } from '../../../utils/clamp';
 import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight } from '../../ui/editor_view';
 import * as constants from '../../core/constants';
-import { ide_state } from '../../core/ide_state';
+import { problemsPanel } from './problems_panel';
 import { editorViewState } from '../../ui/editor_view_state';
 
 export type PanelLayout = {
@@ -194,5 +194,5 @@ export function setProblemsPanelHeightFromViewportY(viewportY: number): void {
 	const maxTop = Math.max(minTop, bottom - minHeight);
 	const top = clamp(viewportY, minTop, maxTop);
 	const height = clamp(bottom - top, minHeight, Math.max(minHeight, bottom - minTop));
-	ide_state.problemsPanel.setFixedHeightPx(height);
+	problemsPanel.setFixedHeightPx(height);
 }

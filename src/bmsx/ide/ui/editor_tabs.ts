@@ -1,4 +1,4 @@
-import { ide_state } from '../core/ide_state';
+import { editorRuntimeState } from '../core/editor_runtime_state';
 import { showEditorMessage,showEditorWarningBanner } from '../core/editor_feedback_state';
 import { editorDocumentState, restoreDocumentStateFromContext, storeDocumentStateInContext } from '../editing/editor_document_state';
 import { editorChromeState } from './editor_chrome_state';
@@ -38,6 +38,7 @@ import { listResources, saveLuaResourceSource } from '../../emulator/workspace';
 import { buildDirtyFilePath } from '../core/workspace_storage';
 import { setWorkspaceCachedSources } from '../../emulator/workspace_cache';
 import { breakUndoSequence } from '../editing/undo_controller';
+import { resourcePanel } from '../contrib/resources/resource_panel_controller';
 import { tryShowLuaErrorOverlay } from '../contrib/runtime_error/runtime_error_navigation';
 import { extractErrorMessage } from '../../lua/luavalue';
 import { closeResourceSearch } from '../contrib/resources/resource_search';
@@ -534,7 +535,7 @@ export function computeResourceTabTitle(descriptor: ResourceDescriptor): string 
 }
 
 export function focusChunkSource(path: string): void {
-	if (!ide_state.active) {
+	if (!editorRuntimeState.active) {
 		runtimeIde.activateEditor(Runtime.instance);
 	}
 	closeSymbolSearch(true);
@@ -584,14 +585,14 @@ export function openResourceDescriptor(descriptor: ResourceDescriptor): void {
 }
 
 export function isActive(): boolean {
-	return ide_state.active;
+	return editorRuntimeState.active;
 }
 
 export function focusEditorFromResourcePanel(): void {
-	if (!ide_state.resourcePanel.isFocused()) {
+	if (!resourcePanel.isFocused()) {
 		return;
 	}
-	ide_state.resourcePanel.setFocused(false);
+	resourcePanel.setFocused(false);
 	resetBlink();
 }
 
@@ -679,8 +680,8 @@ export async function save(): Promise<void> {
 }
 
 export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {
-	editorDocumentState.lastContentEditAtMs = ide_state.clockNow();
-	ide_state.pendingEditContext = { kind, text };
+	editorDocumentState.lastContentEditAtMs = editorRuntimeState.clockNow();
+	editorRuntimeState.pendingEditContext = { kind, text };
 }
 
 export function applySourceToDocument(source: string): void {

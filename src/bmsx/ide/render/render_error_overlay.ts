@@ -2,7 +2,6 @@ import type { OverlayApi as Api } from '../ui/view/overlay_api';
 import type { EditorFont } from '../ui/view/editor_font';
 import { drawEditorText } from './text_renderer';
 import { bottomMargin } from '../ui/editor_view';
-import { ide_state } from '../core/ide_state';
 import { showEditorMessage } from '../core/editor_feedback_state';
 import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, wrapOverlayLine } from '../core/text_utils';
 import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../core/types';
@@ -18,6 +17,7 @@ import { resetBlink } from './render_caret';
 import { formatRuntimeErrorLocation } from '../contrib/runtime_error/runtime_error_util';
 import { splitText } from '../text/source_text';
 import { BmsxColors } from '../../emulator/vdp';
+import { editorRuntimeState } from '../core/editor_runtime_state';
 import { activate } from '../cart_editor';
 import { focusChunkSource } from '../ui/editor_tabs';
 import { setActiveRuntimeErrorOverlay, setExecutionStopHighlight } from '../contrib/runtime_error/runtime_error_navigation';
@@ -515,7 +515,7 @@ export function renderRuntimeFaultOverlay(options: {
 	force?: boolean;
 }): boolean {
 	const { snapshot } = options;
-	if (!ide_state.initialized) return false;
+	if (!editorRuntimeState.initialized) return false;
 	if (!options.force && (!options.luaRuntimeFailed || !options.needsFlush)) return false;
 	if (!snapshot) return false;
 	showRuntimeErrorInChunk(
@@ -546,7 +546,7 @@ export function showRuntimeError(
 	details?: RuntimeErrorDetails,
 	path?: string
 ): void {
-	if (!ide_state.active) {
+	if (!editorRuntimeState.active) {
 		activate();
 	}
 	const normalizedLine = Number.isFinite(line) ? line : null;

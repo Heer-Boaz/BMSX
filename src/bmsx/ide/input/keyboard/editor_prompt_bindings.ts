@@ -1,4 +1,4 @@
-import { ide_state } from '../../core/ide_state';
+import { resourcePanel } from '../../contrib/resources/resource_panel_controller';
 import { cycleTab, isCodeTabActive } from '../../ui/editor_tabs';
 import { selectAllSingleCursor } from '../../editing/cursor_state';
 import { revealCursor, updateDesiredColumn } from '../../ui/caret';
@@ -68,7 +68,7 @@ function handleRenameBinding(): boolean {
 }
 
 function handleSelectAllBinding(): boolean {
-	if (!(isCtrlDown() || isMetaDown()) || isInlineFieldFocused() || ide_state.resourcePanel.isFocused() || !isCodeTabActive() || !isKeyJustPressed('KeyA')) {
+	if (!(isCtrlDown() || isMetaDown()) || isInlineFieldFocused() || resourcePanel.isFocused() || !isCodeTabActive() || !isKeyJustPressed('KeyA')) {
 		return false;
 	}
 	consumeIdeKey('KeyA');

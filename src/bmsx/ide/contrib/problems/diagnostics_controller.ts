@@ -1,7 +1,7 @@
 import { clamp } from '../../../utils/clamp';
 import type { TimerHandle } from '../../../platform/platform';
 import { computeAggregatedEditorDiagnostics, markDiagnosticsDirty, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
-import { ide_state } from '../../core/ide_state';
+import { editorRuntimeState } from '../../core/editor_runtime_state';
 import type { EditorDiagnostic, CodeTabContext } from '../../core/types';
 import { listLuaSymbols, listGlobalLuaSymbols, listLuaBuiltinFunctions } from '../intellisense/intellisense';
 import { getTextSnapshot, splitText } from '../../text/source_text';
@@ -18,6 +18,7 @@ import { diagnosticsDebounceMs, editorDiagnosticsState, EMPTY_DIAGNOSTICS } from
 import { editorDocumentState } from '../../editing/editor_document_state';
 import { editorSessionState } from '../../ui/editor_session_state';
 import { editorViewState } from '../../ui/editor_view_state';
+import { problemsPanel } from './problems_panel';
 
 const diagnosticsMinIntervalMs = 600;
 let diagnosticsTimer: TimerHandle | null = null;
@@ -68,7 +69,7 @@ export function processDiagnosticsQueue(now: number): void {
 }
 
 export function scheduleDiagnosticsComputation(): void {
-	const now = ide_state.clockNow();
+	const now = editorRuntimeState.clockNow();
 	const dueAt = editorDiagnosticsState.diagnosticsDueAtMs ?? now + diagnosticsDebounceMs;
 	const spacedDueAt = Math.max(dueAt, lastDiagnosticsRunMs + diagnosticsMinIntervalMs);
 	editorDiagnosticsState.diagnosticsDueAtMs = spacedDueAt;
@@ -109,7 +110,7 @@ export function executeDiagnosticsComputation(): void {
 		scheduleDiagnosticsComputation();
 		return;
 	}
-	const now = ide_state.clockNow();
+	const now = editorRuntimeState.clockNow();
 	if (editorDiagnosticsState.diagnosticsDueAtMs === null) {
 		editorDiagnosticsState.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
 		scheduleDiagnosticsComputation();
@@ -137,13 +138,13 @@ export function enqueueDiagnosticsJob(contextIds: readonly string[]): void {
 	enqueueBackgroundTask(() => {
 		runDiagnosticsForContexts(contextIds);
 		editorDiagnosticsState.diagnosticsTaskPending = false;
-		lastDiagnosticsRunMs = ide_state.clockNow();
+		lastDiagnosticsRunMs = editorRuntimeState.clockNow();
 		if (editorDiagnosticsState.dirtyDiagnosticContexts.size === 0) {
 			editorDiagnosticsState.diagnosticsDirty = false;
 			editorDiagnosticsState.diagnosticsDueAtMs = null;
 			cancelDiagnosticsTimer();
 		} else {
-			const now = ide_state.clockNow();
+			const now = editorRuntimeState.clockNow();
 			editorDiagnosticsState.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
 			processDiagnosticsQueue(now);
 		}
@@ -259,7 +260,7 @@ export function updateDiagnosticsAggregates(): void {
 	}
 	editorDiagnosticsState.diagnostics = aggregate;
 	refreshActiveDiagnostics();
-	ide_state.problemsPanel.setDiagnostics(editorDiagnosticsState.diagnostics);
+	problemsPanel.setDiagnostics(editorDiagnosticsState.diagnostics);
 }
 
 export function refreshActiveDiagnostics(): void {

@@ -3,8 +3,8 @@ import type { ResourcePanelController } from '../contrib/resources/resource_pane
 import { clamp } from '../../utils/clamp';
 import { getCodeAreaBounds } from '../ui/editor_view';
 import { resourceViewerClampScroll } from '../input/keyboard/resource_viewer_input';
-import { ide_state } from '../core/ide_state';
 import { getActiveResourceViewer, resourceViewerImageLayout, resourceViewerTextCapacity, setResourceViewerScroll } from '../contrib/resources/resource_viewer';
+import { resourcePanel } from '../contrib/resources/resource_panel_controller';
 import { drawEditorText } from './text_renderer';
 import { api } from '../ui/view/overlay_api';
 import { measureText, wrapOverlayLine } from '../core/text_utils';
@@ -189,7 +189,7 @@ export function drawResourceViewer(): void {
 	}
 }
 export function drawResourcePanel(): void {
-	ide_state.resourcePanel.draw();
+	resourcePanel.draw();
 }
 
 export function drawCreateResourceErrorDialog(message: string): void {

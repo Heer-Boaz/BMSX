@@ -402,3 +402,9 @@ export class ResourcePanelController {
 		this.clampHScroll();
 	}
 }
+
+export let resourcePanel: ResourcePanelController = null;
+
+export function initializeResourcePanel(scrollbars: ResourcePanelScrollbars): void {
+	resourcePanel = new ResourcePanelController(scrollbars);
+}

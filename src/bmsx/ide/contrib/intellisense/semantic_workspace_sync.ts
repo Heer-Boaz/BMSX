@@ -1,6 +1,6 @@
 import type { ParsedLuaChunk } from '../../language/lua/lua_parse';
 import { getCachedLuaParse } from '../../language/lua/lua_analysis_cache';
-import { ide_state } from '../../core/ide_state';
+import { editorRuntimeState } from '../../core/editor_runtime_state';
 import { LuaSemanticWorkspace, type FileSemanticData, type LuaSemanticWorkspaceSnapshot } from './semantic_model';
 import { Runtime } from '../../../emulator/runtime';
 import * as runtimeLuaPipeline from '../../../emulator/runtime_lua_pipeline';
@@ -65,11 +65,11 @@ export function syncSemanticWorkspacePath(input: SemanticWorkspacePathInput, wor
 		version: input.version,
 		withSyntaxError: false,
 		parsed: input.parsed,
-		canonicalization: ide_state.caseInsensitive ? ide_state.canonicalization : 'none',
+		canonicalization: editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none',
 	});
 	const existing = workspace.getFileData(input.path);
 	if (!existing || existing.source !== parseEntry.source) {
-		workspace.updateFile(input.path, parseEntry.source, parseEntry.lines, parseEntry.parsed, input.version, ide_state.caseInsensitive ? ide_state.canonicalization : 'none');
+		workspace.updateFile(input.path, parseEntry.source, parseEntry.lines, parseEntry.parsed, input.version, editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none');
 	}
 	const data = workspace.getFileData(input.path);
 	cacheSemanticAnalysis(input.path, parseEntry.source, data, parseEntry.parsed);
@@ -103,7 +103,7 @@ export function primeSemanticWorkspaceProjectSources(workspace: LuaSemanticWorks
 			}
 			const lines = cacheEntry?.lines ?? splitText(source);
 			const parsed = cacheEntry?.parsed;
-			workspace.updateFile(path, source, lines, parsed, undefined, ide_state.caseInsensitive ? ide_state.canonicalization : 'none');
+			workspace.updateFile(path, source, lines, parsed, undefined, editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none');
 			const data = workspace.getFileData(path);
 			cacheSemanticAnalysis(path, source, data, parsed);
 		}

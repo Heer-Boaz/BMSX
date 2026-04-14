@@ -1,10 +1,10 @@
 import { point_in_rect } from '../../../utils/rect_operations';
-import { ide_state } from '../../core/ide_state';
 import { editorChromeState } from '../../ui/editor_chrome_state';
 import type { PointerSnapshot } from '../../core/types';
 import { getProblemsPanelBounds, isPointerOverProblemsPanelDivider, setProblemsPanelHeightFromViewportY } from '../../contrib/problems/problems_panel';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { editorPointerState, resetPointerClickTracking } from './editor_pointer_state';
+import { problemsPanel } from '../../contrib/problems/problems_panel';
 
 export function handleProblemsPanelResizePointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	if (editorChromeState.problemsPanelResizing) {
@@ -14,7 +14,7 @@ export function handleProblemsPanelResizePointer(snapshot: PointerSnapshot, just
 	if (!justPressed) {
 		return false;
 	}
-	if (!ide_state.problemsPanel.isVisible || !isPointerOverProblemsPanelDivider(snapshot.viewportX, snapshot.viewportY)) {
+	if (!problemsPanel.isVisible || !isPointerOverProblemsPanelDivider(snapshot.viewportX, snapshot.viewportY)) {
 		return false;
 	}
 	editorChromeState.problemsPanelResizing = true;
@@ -27,17 +27,17 @@ export function handleProblemsPanelResizePointer(snapshot: PointerSnapshot, just
 
 export function handleProblemsPanelPointer(snapshot: PointerSnapshot, justPressed: boolean, justReleased: boolean): boolean {
 	const problemsBounds = getProblemsPanelBounds();
-	if (!ide_state.problemsPanel.isVisible || !problemsBounds) {
+	if (!problemsPanel.isVisible || !problemsBounds) {
 		return false;
 	}
 	const insideProblems = point_in_rect(snapshot.viewportX, snapshot.viewportY, problemsBounds);
 	if (!insideProblems) {
 		if (justPressed) {
-			ide_state.problemsPanel.setFocused(false);
+			problemsPanel.setFocused(false);
 		}
 		return false;
 	}
-	if (!ide_state.problemsPanel.handlePointer(snapshot, justPressed, justReleased, problemsBounds)) {
+	if (!problemsPanel.handlePointer(snapshot, justPressed, justReleased, problemsBounds)) {
 		return false;
 	}
 	editorPointerState.pointerSelecting = false;
