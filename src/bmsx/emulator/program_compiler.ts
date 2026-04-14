@@ -46,6 +46,11 @@ import { ValueKindFlowAnalyzer, evaluateExpressionValueKind, type SymbolFlowStat
 import { ENGINE_SYSTEM_GLOBAL_NAME_SET } from './lua_system_globals';
 import { LuaSyntaxError } from '../lua/luaerrors';
 import { Decl } from '../ide/contrib/intellisense/semantic_model';
+import {
+	IMPLICIT_SELF_SYMBOL_HANDLE,
+	getBoundIdentifierReference as getResolvedIdentifierReference,
+	getReferenceSymbolHandle as getResolvedReferenceSymbolHandle,
+} from './lua_bound_reference';
 
 export type CompiledProgram = {
 	program: Program;
@@ -128,8 +133,6 @@ type ModuleCompileContext = {
 	moduleAliasMap: Map<string, string>;
 	modulesByPath: Map<string, ModuleCompileInfo>;
 };
-
-const IMPLICIT_SELF_SYMBOL_HANDLE = '$implicit:self';
 
 type AssignmentTarget =
 	| { kind: 'local'; reg: number }
@@ -545,7 +548,7 @@ class FunctionBuilder {
 	}
 
 	public compileChunk(chunk: LuaChunk): void {
-		this.flowAnalysis = new ValueKindFlowAnalyzer(chunk.body, this.semantics, this.frontend);
+		this.flowAnalysis = new ValueKindFlowAnalyzer(chunk.body, this.semantics);
 		this.pushScope(chunk.range);
 		for (let i = 0; i < chunk.body.length; i += 1) {
 			this.compileStatement(chunk.body[i]);
@@ -557,7 +560,7 @@ class FunctionBuilder {
 	}
 
 	public compileFunctionExpression(expression: LuaFunctionExpression, implicitSelf: boolean): void {
-		this.flowAnalysis = new ValueKindFlowAnalyzer(expression.body.body, this.semantics, this.frontend);
+		this.flowAnalysis = new ValueKindFlowAnalyzer(expression.body.body, this.semantics);
 		this.pushScope(expression.body.range);
 		if (implicitSelf) {
 			this.declareImplicitSelf(expression.range, expression.range);
@@ -988,40 +991,11 @@ class FunctionBuilder {
 	}
 
 	private getIdentifierReference(expression: LuaIdentifierExpression): LuaBoundReference {
-		const reference = this.semantics.getReference(expression.range);
-		if (reference) {
-			return reference;
-		}
-		const decl = this.semantics.getDeclaration(expression.range);
-		if (!decl) {
-			throw new Error(`[Compiler] Missing bound reference for identifier '${expression.name}'.`);
-		}
-		return {
-			kind: decl.isGlobal ? 'global' : 'lexical',
-			ref: {
-				file: decl.file,
-				name: decl.name,
-				namePath: decl.namePath,
-				symbolKey: decl.symbolKey,
-				range: expression.range,
-				target: decl.id,
-				lexicalTarget: decl.isGlobal ? null : decl.id,
-				isWrite: true,
-				referenceKind: 'identifier',
-			},
-			decl,
-			isImplicitGlobal: false,
-		};
+		return getResolvedIdentifierReference(this.semantics, expression);
 	}
 
 	private getReferenceSymbolHandle(reference: LuaBoundReference): string | null {
-		if (reference.kind === 'lexical' && reference.decl) {
-			return reference.decl.id;
-		}
-		if (reference.kind === 'unresolved' && reference.ref.name === 'self') {
-			return IMPLICIT_SELF_SYMBOL_HANDLE;
-		}
-		return null;
+		return getResolvedReferenceSymbolHandle(reference);
 	}
 
 	private getReferenceCanonicalName(reference: LuaBoundReference): string {

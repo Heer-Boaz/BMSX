@@ -2,25 +2,36 @@ import {
 	LuaAssignmentOperator,
 	LuaBinaryOperator,
 	LuaSyntaxKind,
+	LuaTableFieldKind,
+	LuaUnaryOperator,
 	type LuaAssignmentStatement,
 	type LuaBinaryExpression,
 	type LuaBlock,
 	type LuaCallExpression,
+	type LuaCallStatement,
 	type LuaDoStatement,
 	type LuaExpression,
 	type LuaForGenericStatement,
 	type LuaForNumericStatement,
+	type LuaFunctionDeclarationStatement,
 	type LuaFunctionExpression,
 	type LuaIdentifierExpression,
 	type LuaIfStatement,
+	type LuaIndexExpression,
 	type LuaLocalAssignmentStatement,
 	type LuaLocalFunctionStatement,
 	type LuaRepeatStatement,
-	type LuaSourceRange,
+	type LuaReturnStatement,
 	type LuaStatement,
 	type LuaWhileStatement,
 } from '../lua/syntax/lua_ast';
-import type { LuaSemanticFrontend, LuaSemanticFrontendFile } from '../ide/contrib/intellisense/lua_semantic_frontend';
+import { walkLuaExpressionTree } from '../lua/syntax/lua_ast_traversal';
+import type { LuaSemanticFrontendFile } from '../ide/contrib/intellisense/lua_semantic_frontend';
+import {
+	getBoundIdentifierReference,
+	getIdentifierSymbolHandle,
+	getReferenceSymbolHandle,
+} from './lua_bound_reference';
 
 // ---------------------------------------------------------------------------
 //  Types
@@ -34,13 +45,39 @@ export type CompileValueKind =
 	| 'string'
 	| 'string_ref';
 
-/**
- * Immutable snapshot of the proven compile-time value kind for each tracked
- * symbol at a specific program point.  Keyed by semantic symbol-handle.
- */
-export type SymbolFlowState = ReadonlyMap<string, CompileValueKind>;
+type CompileTruthiness = 'truthy' | 'falsy' | 'unknown';
 
-type MutableFlowState = Map<string, CompileValueKind>;
+type CompileValueFact = {
+	readonly kind: CompileValueKind;
+	readonly truthiness: CompileTruthiness;
+};
+
+/**
+ * Membership means: "tracked lexical symbol that is currently in scope at this
+ * program point." Block-local declarations are removed when their scope ends,
+ * so state merges can safely intersect by symbol handle without leaking
+ * branch-local symbols outward.
+ */
+export type SymbolFlowState = ReadonlyMap<string, CompileValueFact>;
+
+type MutableFlowState = Map<string, CompileValueFact>;
+
+type ExpressionEvaluation = {
+	fact: CompileValueFact;
+	state: MutableFlowState;
+};
+
+const UNKNOWN_VALUE_FACT: CompileValueFact = { kind: 'unknown', truthiness: 'unknown' };
+const UNKNOWN_TRUTHY_VALUE_FACT: CompileValueFact = { kind: 'unknown', truthiness: 'truthy' };
+const UNKNOWN_FALSY_VALUE_FACT: CompileValueFact = { kind: 'unknown', truthiness: 'falsy' };
+const NIL_VALUE_FACT: CompileValueFact = { kind: 'nil', truthiness: 'falsy' };
+const BOOLEAN_VALUE_FACT: CompileValueFact = { kind: 'boolean', truthiness: 'unknown' };
+const TRUE_VALUE_FACT: CompileValueFact = { kind: 'boolean', truthiness: 'truthy' };
+const FALSE_VALUE_FACT: CompileValueFact = { kind: 'boolean', truthiness: 'falsy' };
+const NUMBER_VALUE_FACT: CompileValueFact = { kind: 'number', truthiness: 'truthy' };
+const STRING_VALUE_FACT: CompileValueFact = { kind: 'string', truthiness: 'truthy' };
+const STRING_REF_VALUE_FACT: CompileValueFact = { kind: 'string_ref', truthiness: 'truthy' };
+const EMPTY_CLOSURE_WRITES = new Set<string>();
 
 // ---------------------------------------------------------------------------
 //  State helpers
@@ -54,17 +91,46 @@ function freezeState(state: MutableFlowState): SymbolFlowState {
 	return state as SymbolFlowState;
 }
 
-/**
- * Merge two flow states.  Only symbols present in *both* states survive.
- * If both agree on the kind the kind is kept; otherwise the result is
- * `'unknown'`.
- */
+function selectValueFact(kind: CompileValueKind, truthiness: CompileTruthiness): CompileValueFact {
+	switch (kind) {
+		case 'nil':
+			return NIL_VALUE_FACT;
+		case 'boolean':
+			if (truthiness === 'truthy') return TRUE_VALUE_FACT;
+			if (truthiness === 'falsy') return FALSE_VALUE_FACT;
+			return BOOLEAN_VALUE_FACT;
+		case 'number':
+			return NUMBER_VALUE_FACT;
+		case 'string':
+			return STRING_VALUE_FACT;
+		case 'string_ref':
+			return STRING_REF_VALUE_FACT;
+		case 'unknown':
+			if (truthiness === 'truthy') return UNKNOWN_TRUTHY_VALUE_FACT;
+			if (truthiness === 'falsy') return UNKNOWN_FALSY_VALUE_FACT;
+			return UNKNOWN_VALUE_FACT;
+	}
+}
+
+function mergeValueFacts(a: CompileValueFact, b: CompileValueFact): CompileValueFact {
+	if (a === b) return a;
+	const kind = a.kind === b.kind ? a.kind : 'unknown';
+	const truthiness = a.truthiness === b.truthiness ? a.truthiness : 'unknown';
+	return selectValueFact(kind, truthiness);
+}
+
+function valueFactsEqual(a: CompileValueFact | undefined, b: CompileValueFact | undefined): boolean {
+	if (a === b) return true;
+	if (!a || !b) return false;
+	return a.kind === b.kind && a.truthiness === b.truthiness;
+}
+
 function mergeStates(a: SymbolFlowState, b: SymbolFlowState): MutableFlowState {
 	const result: MutableFlowState = new Map();
-	for (const [handle, kindA] of a) {
-		const kindB = b.get(handle);
-		if (kindB === undefined) continue;
-		result.set(handle, kindA === kindB ? kindA : 'unknown');
+	for (const [handle, factA] of a) {
+		const factB = b.get(handle);
+		if (factB === undefined) continue;
+		result.set(handle, mergeValueFacts(factA, factB));
 	}
 	return result;
 }
@@ -72,250 +138,449 @@ function mergeStates(a: SymbolFlowState, b: SymbolFlowState): MutableFlowState {
 function mergeMultipleStates(states: ReadonlyArray<SymbolFlowState>): MutableFlowState {
 	if (states.length === 0) return new Map();
 	let merged = cloneState(states[0]);
-	for (let i = 1; i < states.length; i += 1) {
-		merged = mergeStates(merged, states[i]);
+	for (let index = 1; index < states.length; index += 1) {
+		merged = mergeStates(merged, states[index]);
 	}
 	return merged;
 }
 
 function statesEqual(a: SymbolFlowState, b: SymbolFlowState): boolean {
 	if (a.size !== b.size) return false;
-	for (const [handle, kind] of a) {
-		if (b.get(handle) !== kind) return false;
+	for (const [handle, fact] of a) {
+		if (!valueFactsEqual(fact, b.get(handle))) return false;
 	}
 	return true;
 }
 
+function setUnknown(state: MutableFlowState, handle: string): void {
+	if (state.has(handle)) {
+		state.set(handle, UNKNOWN_VALUE_FACT);
+	}
+}
+
+function degradeClosureWrittenSymbolsInState(state: MutableFlowState, closureWrittenSymbols: ReadonlySet<string>): void {
+	if (closureWrittenSymbols.size === 0) return;
+	for (const handle of closureWrittenSymbols) {
+		setUnknown(state, handle);
+	}
+}
+
 // ---------------------------------------------------------------------------
-//  Expression-kind evaluator  (state-aware, recursive)
+//  Expression facts (state-aware, short-circuit-aware)
 // ---------------------------------------------------------------------------
+
+function evaluateBinaryOperatorFact(operator: LuaBinaryOperator): CompileValueFact {
+	switch (operator) {
+		case LuaBinaryOperator.Equal:
+		case LuaBinaryOperator.NotEqual:
+		case LuaBinaryOperator.LessThan:
+		case LuaBinaryOperator.LessEqual:
+		case LuaBinaryOperator.GreaterThan:
+		case LuaBinaryOperator.GreaterEqual:
+			return BOOLEAN_VALUE_FACT;
+		case LuaBinaryOperator.Concat:
+			return STRING_VALUE_FACT;
+		case LuaBinaryOperator.BitwiseOr:
+		case LuaBinaryOperator.BitwiseXor:
+		case LuaBinaryOperator.BitwiseAnd:
+		case LuaBinaryOperator.ShiftLeft:
+		case LuaBinaryOperator.ShiftRight:
+		case LuaBinaryOperator.Add:
+		case LuaBinaryOperator.Subtract:
+		case LuaBinaryOperator.Multiply:
+		case LuaBinaryOperator.Divide:
+		case LuaBinaryOperator.FloorDivide:
+		case LuaBinaryOperator.Modulus:
+		case LuaBinaryOperator.Exponent:
+			return NUMBER_VALUE_FACT;
+		case LuaBinaryOperator.And:
+		case LuaBinaryOperator.Or:
+			return UNKNOWN_VALUE_FACT;
+	}
+}
+
+function evaluateExpressionFact(
+	expression: LuaExpression,
+	state: MutableFlowState,
+	semantics: LuaSemanticFrontendFile,
+	closureWrittenSymbols: ReadonlySet<string>,
+): ExpressionEvaluation {
+	switch (expression.kind) {
+		case LuaSyntaxKind.StringRefLiteralExpression:
+			return { fact: STRING_REF_VALUE_FACT, state };
+		case LuaSyntaxKind.StringLiteralExpression:
+			return { fact: STRING_VALUE_FACT, state };
+		case LuaSyntaxKind.NumericLiteralExpression:
+			return { fact: NUMBER_VALUE_FACT, state };
+		case LuaSyntaxKind.BooleanLiteralExpression:
+			return {
+				fact: expression.value ? TRUE_VALUE_FACT : FALSE_VALUE_FACT,
+				state,
+			};
+		case LuaSyntaxKind.NilLiteralExpression:
+			return { fact: NIL_VALUE_FACT, state };
+		case LuaSyntaxKind.FunctionExpression:
+		case LuaSyntaxKind.TableConstructorExpression: {
+			let currentState = state;
+			if (expression.kind === LuaSyntaxKind.TableConstructorExpression) {
+				for (let index = 0; index < expression.fields.length; index += 1) {
+					const field = expression.fields[index];
+					if (field.kind === LuaTableFieldKind.ExpressionKey) {
+						currentState = evaluateExpressionFact(field.key, currentState, semantics, closureWrittenSymbols).state;
+					}
+					currentState = evaluateExpressionFact(field.value, currentState, semantics, closureWrittenSymbols).state;
+				}
+			}
+			return {
+				fact: UNKNOWN_TRUTHY_VALUE_FACT,
+				state: currentState,
+			};
+		}
+		case LuaSyntaxKind.VarargExpression:
+			return { fact: UNKNOWN_VALUE_FACT, state };
+		case LuaSyntaxKind.IdentifierExpression: {
+			const handle = getIdentifierSymbolHandle(semantics, expression as LuaIdentifierExpression);
+			if (handle === null) return { fact: UNKNOWN_VALUE_FACT, state };
+			return { fact: state.get(handle) ?? UNKNOWN_VALUE_FACT, state };
+		}
+		case LuaSyntaxKind.MemberExpression: {
+			const base = evaluateExpressionFact(expression.base, state, semantics, closureWrittenSymbols);
+			return { fact: UNKNOWN_VALUE_FACT, state: base.state };
+		}
+		case LuaSyntaxKind.IndexExpression: {
+			const indexExpression = expression as LuaIndexExpression;
+			const base = evaluateExpressionFact(indexExpression.base, state, semantics, closureWrittenSymbols);
+			const index = evaluateExpressionFact(indexExpression.index, base.state, semantics, closureWrittenSymbols);
+			return { fact: UNKNOWN_VALUE_FACT, state: index.state };
+		}
+		case LuaSyntaxKind.UnaryExpression: {
+			const unary = expression;
+			const operand = evaluateExpressionFact(unary.operand, state, semantics, closureWrittenSymbols);
+			switch (unary.operator) {
+				case LuaUnaryOperator.Not:
+					if (operand.fact.truthiness === 'truthy') {
+						return { fact: FALSE_VALUE_FACT, state: operand.state };
+					}
+					if (operand.fact.truthiness === 'falsy') {
+						return { fact: TRUE_VALUE_FACT, state: operand.state };
+					}
+					return { fact: BOOLEAN_VALUE_FACT, state: operand.state };
+				case LuaUnaryOperator.Length:
+				case LuaUnaryOperator.Negate:
+				case LuaUnaryOperator.BitwiseNot:
+					return { fact: NUMBER_VALUE_FACT, state: operand.state };
+			}
+			return { fact: UNKNOWN_VALUE_FACT, state: operand.state };
+		}
+		case LuaSyntaxKind.BinaryExpression: {
+			const binary = expression as LuaBinaryExpression;
+			const left = evaluateExpressionFact(binary.left, state, semantics, closureWrittenSymbols);
+			if (binary.operator === LuaBinaryOperator.And) {
+				if (left.fact.truthiness === 'truthy') {
+					return evaluateExpressionFact(binary.right, left.state, semantics, closureWrittenSymbols);
+				}
+				if (left.fact.truthiness === 'falsy') {
+					return left;
+				}
+				const right = evaluateExpressionFact(binary.right, cloneState(left.state), semantics, closureWrittenSymbols);
+				return {
+					fact: mergeValueFacts(left.fact, right.fact),
+					state: mergeStates(left.state, right.state),
+				};
+			}
+			if (binary.operator === LuaBinaryOperator.Or) {
+				if (left.fact.truthiness === 'truthy') {
+					return left;
+				}
+				if (left.fact.truthiness === 'falsy') {
+					return evaluateExpressionFact(binary.right, left.state, semantics, closureWrittenSymbols);
+				}
+				const right = evaluateExpressionFact(binary.right, cloneState(left.state), semantics, closureWrittenSymbols);
+				return {
+					fact: mergeValueFacts(left.fact, right.fact),
+					state: mergeStates(left.state, right.state),
+				};
+			}
+			const right = evaluateExpressionFact(binary.right, left.state, semantics, closureWrittenSymbols);
+			return {
+				fact: evaluateBinaryOperatorFact(binary.operator),
+				state: right.state,
+			};
+		}
+		case LuaSyntaxKind.CallExpression: {
+			const call = expression as LuaCallExpression;
+			let currentState = evaluateExpressionFact(call.callee, state, semantics, closureWrittenSymbols).state;
+			for (let index = 0; index < call.arguments.length; index += 1) {
+				currentState = evaluateExpressionFact(call.arguments[index], currentState, semantics, closureWrittenSymbols).state;
+			}
+			degradeClosureWrittenSymbolsInState(currentState, closureWrittenSymbols);
+			return { fact: UNKNOWN_VALUE_FACT, state: currentState };
+		}
+	}
+}
 
 export function evaluateExpressionValueKind(
 	expression: LuaExpression,
 	state: SymbolFlowState,
 	semantics: LuaSemanticFrontendFile,
 ): CompileValueKind {
-	switch (expression.kind) {
-		case LuaSyntaxKind.StringRefLiteralExpression:
-			return 'string_ref';
-		case LuaSyntaxKind.StringLiteralExpression:
-			return 'string';
-		case LuaSyntaxKind.NumericLiteralExpression:
-			return 'number';
-		case LuaSyntaxKind.BooleanLiteralExpression:
-			return 'boolean';
-		case LuaSyntaxKind.NilLiteralExpression:
-			return 'nil';
-		case LuaSyntaxKind.IdentifierExpression: {
-			const handle = resolveIdentifierHandle(expression as LuaIdentifierExpression, semantics);
-			if (handle === undefined) return 'unknown';
-			return state.get(handle) ?? 'unknown';
-		}
-		case LuaSyntaxKind.BinaryExpression: {
-			const binary = expression as LuaBinaryExpression;
-			if (binary.operator === LuaBinaryOperator.And || binary.operator === LuaBinaryOperator.Or) {
-				const leftKind = evaluateExpressionValueKind(binary.left, state, semantics);
-				const rightKind = evaluateExpressionValueKind(binary.right, state, semantics);
-				return leftKind === rightKind ? leftKind : 'unknown';
-			}
-			return 'unknown';
-		}
-		default:
-			return 'unknown';
-	}
+	return evaluateExpressionFact(expression, cloneState(state), semantics, EMPTY_CLOSURE_WRITES).fact.kind;
 }
 
 // ---------------------------------------------------------------------------
-//  Identifier → symbol-handle resolution
+//  Lexical symbol resolution
 // ---------------------------------------------------------------------------
 
-function resolveIdentifierHandle(
-	expression: LuaIdentifierExpression,
+function resolveDeclarationHandle(
+	identifier: LuaIdentifierExpression,
 	semantics: LuaSemanticFrontendFile,
 ): string | undefined {
-	const ref = semantics.getReference(expression.range);
-	if (ref) {
-		if (ref.kind !== 'lexical') return undefined;
-		return ref.decl.id;
-	}
-	const decl = semantics.getDeclaration(expression.range);
+	const decl = semantics.getDeclaration(identifier.range);
 	if (decl && !decl.isGlobal) return decl.id;
 	return undefined;
+}
+
+function resolveReferenceHandle(
+	identifier: LuaIdentifierExpression,
+	semantics: LuaSemanticFrontendFile,
+): string | undefined {
+	const reference = getBoundIdentifierReference(semantics, identifier);
+	const handle = getReferenceSymbolHandle(reference);
+	return handle === null ? undefined : handle;
 }
 
 // ---------------------------------------------------------------------------
 //  Closure-written symbol detection
 // ---------------------------------------------------------------------------
 
-/**
- * Returns the set of symbol-handles that are written from inside a nested
- * `FunctionExpression` body within the given statement list.  These are the
- * locals whose value could be mutated by an arbitrary function call.
- */
-function computeClosureWrittenSymbols(
-	body: ReadonlyArray<LuaStatement>,
-	semantics: LuaSemanticFrontendFile,
-	frontend: LuaSemanticFrontend,
-): Set<string> {
-	const nestedBodyRanges: LuaSourceRange[] = [];
-	collectNestedFunctionBodyRanges(body, nestedBodyRanges);
-	if (nestedBodyRanges.length === 0) return new Set();
-
-	const result = new Set<string>();
-	const visitedSymbols = new Set<string>();
-
-	// Walk the direct body to collect all locally-declared symbol handles.
-	collectDeclaredSymbols(body, semantics, visitedSymbols);
-
-	for (const handle of visitedSymbols) {
-		const refs = frontend.getReferences(handle);
-		for (let i = 0; i < refs.length; i += 1) {
-			const ref = refs[i];
-			if (!ref.isWrite) continue;
-			if (isRangeInsideAny(ref.range, nestedBodyRanges)) {
-				result.add(handle);
-				break;
-			}
-		}
-	}
-	return result;
-}
-
-function collectDeclaredSymbols(
+function collectNestedClosureWritesFromStatementList(
 	body: ReadonlyArray<LuaStatement>,
 	semantics: LuaSemanticFrontendFile,
 	out: Set<string>,
 ): void {
-	for (let i = 0; i < body.length; i += 1) {
-		const stmt = body[i];
-		switch (stmt.kind) {
-			case LuaSyntaxKind.LocalAssignmentStatement: {
-				const local = stmt as LuaLocalAssignmentStatement;
-				for (let j = 0; j < local.names.length; j += 1) {
-					const decl = semantics.getDeclaration(local.names[j].range);
-					if (decl && !decl.isGlobal) out.add(decl.id);
-				}
-				break;
-			}
-			case LuaSyntaxKind.LocalFunctionStatement: {
-				const fn = stmt as LuaLocalFunctionStatement;
-				const decl = semantics.getDeclaration(fn.name.range);
-				if (decl && !decl.isGlobal) out.add(decl.id);
-				break;
-			}
-			case LuaSyntaxKind.IfStatement:
-				for (const clause of (stmt as LuaIfStatement).clauses) {
-					collectDeclaredSymbols(clause.block.body, semantics, out);
-				}
-				break;
-			case LuaSyntaxKind.WhileStatement:
-				collectDeclaredSymbols((stmt as LuaWhileStatement).block.body, semantics, out);
-				break;
-			case LuaSyntaxKind.RepeatStatement:
-				collectDeclaredSymbols((stmt as LuaRepeatStatement).block.body, semantics, out);
-				break;
-			case LuaSyntaxKind.ForNumericStatement:
-				collectDeclaredSymbols((stmt as LuaForNumericStatement).block.body, semantics, out);
-				break;
-			case LuaSyntaxKind.ForGenericStatement:
-				collectDeclaredSymbols((stmt as LuaForGenericStatement).block.body, semantics, out);
-				break;
-			case LuaSyntaxKind.DoStatement:
-				collectDeclaredSymbols((stmt as LuaDoStatement).block.body, semantics, out);
-				break;
-		}
+	for (let index = 0; index < body.length; index += 1) {
+		collectNestedClosureWritesFromStatement(body[index], semantics, out);
 	}
 }
 
-function collectNestedFunctionBodyRanges(
-	body: ReadonlyArray<LuaStatement>,
-	out: LuaSourceRange[],
+function collectNestedClosureWritesFromStatement(
+	statement: LuaStatement,
+	semantics: LuaSemanticFrontendFile,
+	out: Set<string>,
 ): void {
-	for (let i = 0; i < body.length; i += 1) {
-		collectNestedFunctionBodyRangesFromStatement(body[i], out);
-	}
-}
-
-function collectNestedFunctionBodyRangesFromStatement(
-	stmt: LuaStatement,
-	out: LuaSourceRange[],
-): void {
-	switch (stmt.kind) {
+	switch (statement.kind) {
 		case LuaSyntaxKind.LocalAssignmentStatement: {
-			const local = stmt as LuaLocalAssignmentStatement;
-			for (let i = 0; i < local.values.length; i += 1) {
-				collectNestedFunctionBodyRangesFromExpression(local.values[i], out);
+			const local = statement as LuaLocalAssignmentStatement;
+			for (let index = 0; index < local.values.length; index += 1) {
+				collectNestedClosureWritesFromExpression(local.values[index], semantics, out);
 			}
-			break;
+			return;
 		}
 		case LuaSyntaxKind.AssignmentStatement: {
-			const assign = stmt as LuaAssignmentStatement;
-			for (let i = 0; i < assign.right.length; i += 1) {
-				collectNestedFunctionBodyRangesFromExpression(assign.right[i], out);
+			const assignment = statement as LuaAssignmentStatement;
+			for (let index = 0; index < assignment.left.length; index += 1) {
+				collectNestedClosureWritesFromExpression(assignment.left[index], semantics, out);
 			}
-			break;
+			for (let index = 0; index < assignment.right.length; index += 1) {
+				collectNestedClosureWritesFromExpression(assignment.right[index], semantics, out);
+			}
+			return;
 		}
-		case LuaSyntaxKind.LocalFunctionStatement: {
-			const fn = (stmt as LuaLocalFunctionStatement).functionExpression;
-			out.push(fn.body.range);
-			break;
+		case LuaSyntaxKind.LocalFunctionStatement:
+			collectLexicalWritesInFunctionBody((statement as LuaLocalFunctionStatement).functionExpression.body.body, semantics, out);
+			return;
+		case LuaSyntaxKind.FunctionDeclarationStatement:
+			collectLexicalWritesInFunctionBody((statement as LuaFunctionDeclarationStatement).functionExpression.body.body, semantics, out);
+			return;
+		case LuaSyntaxKind.ReturnStatement: {
+			const returnStatement = statement as LuaReturnStatement;
+			for (let index = 0; index < returnStatement.expressions.length; index += 1) {
+				collectNestedClosureWritesFromExpression(returnStatement.expressions[index], semantics, out);
+			}
+			return;
 		}
 		case LuaSyntaxKind.IfStatement:
-			for (const clause of (stmt as LuaIfStatement).clauses) {
-				collectNestedFunctionBodyRanges(clause.block.body, out);
+			for (const clause of (statement as LuaIfStatement).clauses) {
+				const condition = clause.condition as LuaExpression | null;
+				if (condition) {
+					collectNestedClosureWritesFromExpression(condition, semantics, out);
+				}
+				collectNestedClosureWritesFromStatementList(clause.block.body, semantics, out);
 			}
-			break;
-		case LuaSyntaxKind.WhileStatement:
-			collectNestedFunctionBodyRanges((stmt as LuaWhileStatement).block.body, out);
-			break;
-		case LuaSyntaxKind.RepeatStatement:
-			collectNestedFunctionBodyRanges((stmt as LuaRepeatStatement).block.body, out);
-			break;
-		case LuaSyntaxKind.ForNumericStatement:
-			collectNestedFunctionBodyRanges((stmt as LuaForNumericStatement).block.body, out);
-			break;
-		case LuaSyntaxKind.ForGenericStatement:
-			collectNestedFunctionBodyRanges((stmt as LuaForGenericStatement).block.body, out);
-			break;
-		case LuaSyntaxKind.DoStatement:
-			collectNestedFunctionBodyRanges((stmt as LuaDoStatement).block.body, out);
-			break;
-		default:
-			break;
-	}
-}
-
-function collectNestedFunctionBodyRangesFromExpression(
-	expr: LuaExpression,
-	out: LuaSourceRange[],
-): void {
-	if (expr.kind === LuaSyntaxKind.FunctionExpression) {
-		out.push((expr as LuaFunctionExpression).body.range);
-		return;
-	}
-	if (expr.kind === LuaSyntaxKind.CallExpression) {
-		const call = expr as LuaCallExpression;
-		collectNestedFunctionBodyRangesFromExpression(call.callee, out);
-		for (let i = 0; i < call.arguments.length; i += 1) {
-			collectNestedFunctionBodyRangesFromExpression(call.arguments[i], out);
+			return;
+		case LuaSyntaxKind.WhileStatement: {
+			const whileStatement = statement as LuaWhileStatement;
+			collectNestedClosureWritesFromExpression(whileStatement.condition, semantics, out);
+			collectNestedClosureWritesFromStatementList(whileStatement.block.body, semantics, out);
+			return;
 		}
+		case LuaSyntaxKind.RepeatStatement: {
+			const repeatStatement = statement as LuaRepeatStatement;
+			collectNestedClosureWritesFromStatementList(repeatStatement.block.body, semantics, out);
+			collectNestedClosureWritesFromExpression(repeatStatement.condition, semantics, out);
+			return;
+		}
+		case LuaSyntaxKind.ForNumericStatement: {
+			const forNumeric = statement as LuaForNumericStatement;
+			collectNestedClosureWritesFromExpression(forNumeric.start, semantics, out);
+			collectNestedClosureWritesFromExpression(forNumeric.limit, semantics, out);
+			collectNestedClosureWritesFromExpression(forNumeric.step, semantics, out);
+			collectNestedClosureWritesFromStatementList(forNumeric.block.body, semantics, out);
+			return;
+		}
+		case LuaSyntaxKind.ForGenericStatement: {
+			const forGeneric = statement as LuaForGenericStatement;
+			for (let index = 0; index < forGeneric.iterators.length; index += 1) {
+				collectNestedClosureWritesFromExpression(forGeneric.iterators[index], semantics, out);
+			}
+			collectNestedClosureWritesFromStatementList(forGeneric.block.body, semantics, out);
+			return;
+		}
+		case LuaSyntaxKind.DoStatement:
+			collectNestedClosureWritesFromStatementList((statement as LuaDoStatement).block.body, semantics, out);
+			return;
+		case LuaSyntaxKind.CallStatement:
+			collectNestedClosureWritesFromExpression((statement as LuaCallStatement).expression, semantics, out);
+			return;
+		default:
+			return;
 	}
 }
 
-function isRangeInsideAny(range: LuaSourceRange, containers: ReadonlyArray<LuaSourceRange>): boolean {
-	for (let i = 0; i < containers.length; i += 1) {
-		if (isRangeInside(range, containers[i])) return true;
-	}
-	return false;
+function collectNestedClosureWritesFromExpression(
+	expression: LuaExpression,
+	semantics: LuaSemanticFrontendFile,
+	out: Set<string>,
+): void {
+	walkLuaExpressionTree(expression, (candidate) => {
+		if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+			return;
+		}
+		collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+		return false;
+	});
 }
 
-function isRangeInside(inner: LuaSourceRange, outer: LuaSourceRange): boolean {
-	if (inner.path !== outer.path) return false;
-	if (inner.start.line < outer.start.line) return false;
-	if (inner.start.line === outer.start.line && inner.start.column < outer.start.column) return false;
-	if (inner.end.line > outer.end.line) return false;
-	if (inner.end.line === outer.end.line && inner.end.column > outer.end.column) return false;
-	return true;
+function collectLexicalWritesInFunctionBody(
+	body: ReadonlyArray<LuaStatement>,
+	semantics: LuaSemanticFrontendFile,
+	out: Set<string>,
+): void {
+	for (let index = 0; index < body.length; index += 1) {
+		collectLexicalWritesInStatement(body[index], semantics, out);
+	}
+}
+
+function collectLexicalWritesInStatement(
+	statement: LuaStatement,
+	semantics: LuaSemanticFrontendFile,
+	out: Set<string>,
+): void {
+	switch (statement.kind) {
+		case LuaSyntaxKind.LocalAssignmentStatement: {
+			const local = statement as LuaLocalAssignmentStatement;
+			for (let index = 0; index < local.names.length; index += 1) {
+				const handle = resolveDeclarationHandle(local.names[index], semantics);
+				if (handle !== undefined) out.add(handle);
+			}
+			for (let index = 0; index < local.values.length; index += 1) {
+				collectNestedClosureWritesFromExpression(local.values[index], semantics, out);
+			}
+			return;
+		}
+		case LuaSyntaxKind.AssignmentStatement: {
+			const assignment = statement as LuaAssignmentStatement;
+			for (let index = 0; index < assignment.left.length; index += 1) {
+				const target = assignment.left[index];
+				if (target.kind === LuaSyntaxKind.IdentifierExpression) {
+					const handle = resolveReferenceHandle(target as LuaIdentifierExpression, semantics);
+					if (handle !== undefined) out.add(handle);
+				}
+				collectNestedClosureWritesFromExpression(target, semantics, out);
+			}
+			for (let index = 0; index < assignment.right.length; index += 1) {
+				collectNestedClosureWritesFromExpression(assignment.right[index], semantics, out);
+			}
+			return;
+		}
+		case LuaSyntaxKind.LocalFunctionStatement: {
+			const localFunction = statement as LuaLocalFunctionStatement;
+			const handle = resolveDeclarationHandle(localFunction.name, semantics);
+			if (handle !== undefined) out.add(handle);
+			collectLexicalWritesInFunctionBody(localFunction.functionExpression.body.body, semantics, out);
+			return;
+		}
+		case LuaSyntaxKind.FunctionDeclarationStatement:
+			collectLexicalWritesInFunctionBody((statement as LuaFunctionDeclarationStatement).functionExpression.body.body, semantics, out);
+			return;
+		case LuaSyntaxKind.ReturnStatement: {
+			const returnStatement = statement as LuaReturnStatement;
+			for (let index = 0; index < returnStatement.expressions.length; index += 1) {
+				collectNestedClosureWritesFromExpression(returnStatement.expressions[index], semantics, out);
+			}
+			return;
+		}
+		case LuaSyntaxKind.IfStatement:
+			for (const clause of (statement as LuaIfStatement).clauses) {
+				const condition = clause.condition as LuaExpression | null;
+				if (condition) {
+					collectNestedClosureWritesFromExpression(condition, semantics, out);
+				}
+				collectLexicalWritesInFunctionBody(clause.block.body, semantics, out);
+			}
+			return;
+		case LuaSyntaxKind.WhileStatement: {
+			const whileStatement = statement as LuaWhileStatement;
+			collectNestedClosureWritesFromExpression(whileStatement.condition, semantics, out);
+			collectLexicalWritesInFunctionBody(whileStatement.block.body, semantics, out);
+			return;
+		}
+		case LuaSyntaxKind.RepeatStatement: {
+			const repeatStatement = statement as LuaRepeatStatement;
+			collectLexicalWritesInFunctionBody(repeatStatement.block.body, semantics, out);
+			collectNestedClosureWritesFromExpression(repeatStatement.condition, semantics, out);
+			return;
+		}
+		case LuaSyntaxKind.ForNumericStatement: {
+			const forNumeric = statement as LuaForNumericStatement;
+			const handle = resolveDeclarationHandle(forNumeric.variable, semantics);
+			if (handle !== undefined) out.add(handle);
+			collectNestedClosureWritesFromExpression(forNumeric.start, semantics, out);
+			collectNestedClosureWritesFromExpression(forNumeric.limit, semantics, out);
+			collectNestedClosureWritesFromExpression(forNumeric.step, semantics, out);
+			collectLexicalWritesInFunctionBody(forNumeric.block.body, semantics, out);
+			return;
+		}
+		case LuaSyntaxKind.ForGenericStatement: {
+			const forGeneric = statement as LuaForGenericStatement;
+			for (let index = 0; index < forGeneric.variables.length; index += 1) {
+				const handle = resolveDeclarationHandle(forGeneric.variables[index], semantics);
+				if (handle !== undefined) out.add(handle);
+			}
+			for (let index = 0; index < forGeneric.iterators.length; index += 1) {
+				collectNestedClosureWritesFromExpression(forGeneric.iterators[index], semantics, out);
+			}
+			collectLexicalWritesInFunctionBody(forGeneric.block.body, semantics, out);
+			return;
+		}
+		case LuaSyntaxKind.DoStatement:
+			collectLexicalWritesInFunctionBody((statement as LuaDoStatement).block.body, semantics, out);
+			return;
+		case LuaSyntaxKind.CallStatement:
+			collectNestedClosureWritesFromExpression((statement as LuaCallStatement).expression, semantics, out);
+			return;
+		default:
+			return;
+	}
+}
+
+function computeClosureWrittenSymbols(
+	body: ReadonlyArray<LuaStatement>,
+	semantics: LuaSemanticFrontendFile,
+): Set<string> {
+	const result = new Set<string>();
+	collectNestedClosureWritesFromStatementList(body, semantics, result);
+	return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -327,25 +592,25 @@ function isMultiReturnExpression(expression: LuaExpression): boolean {
 		|| expression.kind === LuaSyntaxKind.VarargExpression;
 }
 
+const LOOP_FIXPOINT_SAFETY_LIMIT = 1024;
+
 // ---------------------------------------------------------------------------
 //  Flow analyzer
 // ---------------------------------------------------------------------------
-
-const MAX_FIXPOINT_ITERATIONS = 4;
 
 export class ValueKindFlowAnalyzer {
 	private readonly semantics: LuaSemanticFrontendFile;
 	private readonly closureWrittenSymbols: Set<string>;
 	private readonly stateAtStatement = new Map<LuaStatement, SymbolFlowState>();
+	private readonly scopeHandles: string[][] = [[]];
 	private state: MutableFlowState = new Map();
 
 	constructor(
 		body: ReadonlyArray<LuaStatement>,
 		semantics: LuaSemanticFrontendFile,
-		frontend: LuaSemanticFrontend,
 	) {
 		this.semantics = semantics;
-		this.closureWrittenSymbols = computeClosureWrittenSymbols(body, semantics, frontend);
+		this.closureWrittenSymbols = computeClosureWrittenSymbols(body, semantics);
 		this.analyzeStatementList(body);
 	}
 
@@ -358,252 +623,335 @@ export class ValueKindFlowAnalyzer {
 	// -----------------------------------------------------------------------
 
 	private analyzeStatementList(statements: ReadonlyArray<LuaStatement>): void {
-		for (let i = 0; i < statements.length; i += 1) {
-			this.stateAtStatement.set(statements[i], freezeState(cloneState(this.state)));
-			this.analyzeStatement(statements[i]);
+		for (let index = 0; index < statements.length; index += 1) {
+			this.stateAtStatement.set(statements[index], freezeState(cloneState(this.state)));
+			this.analyzeStatement(statements[index]);
 		}
+	}
+
+	private snapshotState(): SymbolFlowState {
+		return freezeState(cloneState(this.state));
+	}
+
+	private pushLexicalScope(): void {
+		this.scopeHandles.push([]);
+	}
+
+	private popLexicalScope(): void {
+		const handles = this.scopeHandles.pop()!;
+		for (let index = handles.length - 1; index >= 0; index -= 1) {
+			this.state.delete(handles[index]);
+		}
+	}
+
+	private withLexicalScope<T>(run: () => T): T {
+		this.pushLexicalScope();
+		try {
+			return run();
+		} finally {
+			this.popLexicalScope();
+		}
+	}
+
+	private recordDeclaredHandle(handle: string): void {
+		this.scopeHandles[this.scopeHandles.length - 1].push(handle);
+	}
+
+	private analyzeBlockWithScope(block: LuaBlock): SymbolFlowState {
+		this.pushLexicalScope();
+		this.analyzeStatementList(block.body);
+		this.popLexicalScope();
+		return this.snapshotState();
+	}
+
+	private evalExprFact(expression: LuaExpression): CompileValueFact {
+		const result = evaluateExpressionFact(expression, this.state, this.semantics, this.closureWrittenSymbols);
+		this.state = result.state;
+		return result.fact;
+	}
+
+	private evalExpressionList(expressions: ReadonlyArray<LuaExpression>): CompileValueFact[] {
+		const facts = new Array<CompileValueFact>(expressions.length);
+		for (let index = 0; index < expressions.length; index += 1) {
+			facts[index] = this.evalExprFact(expressions[index]);
+		}
+		return facts;
+	}
+
+	private resolveAssignedFact(
+		targetIndex: number,
+		targetCount: number,
+		expressions: ReadonlyArray<LuaExpression>,
+		facts: ReadonlyArray<CompileValueFact>,
+	): CompileValueFact {
+		if (expressions.length === 0) {
+			return NIL_VALUE_FACT;
+		}
+		const lastIndex = expressions.length - 1;
+		if (targetIndex < lastIndex) {
+			return facts[targetIndex];
+		}
+		if (targetIndex === lastIndex) {
+			const remaining = targetCount - lastIndex;
+			if (remaining > 1 && isMultiReturnExpression(expressions[lastIndex])) {
+				return UNKNOWN_VALUE_FACT;
+			}
+			return facts[lastIndex];
+		}
+		if (isMultiReturnExpression(expressions[lastIndex])) {
+			return UNKNOWN_VALUE_FACT;
+		}
+		return NIL_VALUE_FACT;
+	}
+
+	private analyzeLoopEntryFixpoint(
+		baseEntryState: SymbolFlowState,
+		transfer: () => SymbolFlowState,
+		locationLabel: string,
+	): SymbolFlowState {
+		let entryState = baseEntryState;
+		for (let iteration = 0; iteration < LOOP_FIXPOINT_SAFETY_LIMIT; iteration += 1) {
+			this.state = cloneState(entryState);
+			const bodyExit = transfer();
+			const nextEntry = freezeState(mergeStates(baseEntryState, bodyExit));
+			if (statesEqual(nextEntry, entryState)) {
+				return nextEntry;
+			}
+			entryState = nextEntry;
+		}
+		throw new Error(`[ValueKindFlowAnalyzer] Loop fixpoint did not converge for ${locationLabel}.`);
 	}
 
 	// -----------------------------------------------------------------------
 	//  Individual statement analysis
 	// -----------------------------------------------------------------------
 
-	private analyzeStatement(stmt: LuaStatement): void {
-		switch (stmt.kind) {
+	private analyzeStatement(statement: LuaStatement): void {
+		switch (statement.kind) {
 			case LuaSyntaxKind.LocalAssignmentStatement:
-				this.analyzeLocalAssignment(stmt as LuaLocalAssignmentStatement);
+				this.analyzeLocalAssignment(statement as LuaLocalAssignmentStatement);
+				return;
+			case LuaSyntaxKind.LocalFunctionStatement:
+				this.analyzeLocalFunction(statement as LuaLocalFunctionStatement);
+				return;
+			case LuaSyntaxKind.FunctionDeclarationStatement:
 				return;
 			case LuaSyntaxKind.AssignmentStatement:
-				this.analyzeAssignment(stmt as LuaAssignmentStatement);
+				this.analyzeAssignment(statement as LuaAssignmentStatement);
+				return;
+			case LuaSyntaxKind.ReturnStatement:
+				this.evalExpressionList((statement as LuaReturnStatement).expressions);
 				return;
 			case LuaSyntaxKind.IfStatement:
-				this.analyzeIf(stmt as LuaIfStatement);
+				this.analyzeIf(statement as LuaIfStatement);
 				return;
 			case LuaSyntaxKind.WhileStatement:
-				this.analyzeWhile(stmt as LuaWhileStatement);
+				this.analyzeWhile(statement as LuaWhileStatement);
 				return;
 			case LuaSyntaxKind.RepeatStatement:
-				this.analyzeRepeat(stmt as LuaRepeatStatement);
+				this.analyzeRepeat(statement as LuaRepeatStatement);
 				return;
 			case LuaSyntaxKind.ForNumericStatement:
-				this.analyzeForNumeric(stmt as LuaForNumericStatement);
+				this.analyzeForNumeric(statement as LuaForNumericStatement);
 				return;
 			case LuaSyntaxKind.ForGenericStatement:
-				this.analyzeForGeneric(stmt as LuaForGenericStatement);
+				this.analyzeForGeneric(statement as LuaForGenericStatement);
 				return;
 			case LuaSyntaxKind.DoStatement:
-				this.analyzeStatementList((stmt as LuaDoStatement).block.body);
+				this.withLexicalScope(() => {
+					this.analyzeStatementList((statement as LuaDoStatement).block.body);
+				});
 				return;
 			case LuaSyntaxKind.CallStatement:
-				this.degradeClosureWrittenSymbols();
+				this.evalExprFact((statement as LuaCallStatement).expression);
 				return;
 			default:
 				return;
 		}
 	}
 
-	// -----------------------------------------------------------------------
-	//  Local declarations
-	// -----------------------------------------------------------------------
-
-	private analyzeLocalAssignment(stmt: LuaLocalAssignmentStatement): void {
-		const names = stmt.names;
-		const values = stmt.values;
-		const lastIndex = values.length - 1;
-
-		for (let i = 0; i < names.length; i += 1) {
-			const handle = this.resolveDeclarationHandle(names[i]);
+	private analyzeLocalAssignment(statement: LuaLocalAssignmentStatement): void {
+		const facts = this.evalExpressionList(statement.values);
+		for (let index = 0; index < statement.names.length; index += 1) {
+			const handle = this.resolveDeclarationHandle(statement.names[index]);
 			if (handle === undefined) continue;
-
-			let kind: CompileValueKind;
-			if (values.length === 0) {
-				kind = 'nil';
-			} else if (i < lastIndex) {
-				kind = this.evalExprKind(values[i]);
-			} else if (i === lastIndex) {
-				const remaining = names.length - lastIndex;
-				if (remaining > 1 && isMultiReturnExpression(values[lastIndex])) {
-					kind = 'unknown';
-				} else {
-					kind = this.evalExprKind(values[lastIndex]);
-				}
-			} else if (i > lastIndex && isMultiReturnExpression(values[lastIndex])) {
-				kind = 'unknown';
-			} else {
-				kind = 'nil';
-			}
-			this.state.set(handle, kind);
+			this.recordDeclaredHandle(handle);
+			this.state.set(
+				handle,
+				this.resolveAssignedFact(index, statement.names.length, statement.values, facts),
+			);
 		}
 	}
 
-	// -----------------------------------------------------------------------
-	//  Assignments
-	// -----------------------------------------------------------------------
+	private analyzeLocalFunction(statement: LuaLocalFunctionStatement): void {
+		const handle = this.resolveDeclarationHandle(statement.name);
+		if (handle === undefined) return;
+		this.recordDeclaredHandle(handle);
+		this.state.set(handle, UNKNOWN_TRUTHY_VALUE_FACT);
+	}
 
-	private analyzeAssignment(stmt: LuaAssignmentStatement): void {
-		if (stmt.operator !== LuaAssignmentOperator.Assign) {
-			for (let i = 0; i < stmt.left.length; i += 1) {
-				this.degradeLocalTarget(stmt.left[i]);
+	private analyzeAssignment(statement: LuaAssignmentStatement): void {
+		for (let index = 0; index < statement.left.length; index += 1) {
+			this.evalExprFact(statement.left[index]);
+		}
+		const facts = this.evalExpressionList(statement.right);
+		if (statement.operator !== LuaAssignmentOperator.Assign) {
+			for (let index = 0; index < statement.left.length; index += 1) {
+				this.degradeLocalTarget(statement.left[index]);
 			}
 			return;
 		}
-		const lastIndex = stmt.right.length - 1;
-		for (let i = 0; i < stmt.left.length; i += 1) {
-			const target = stmt.left[i];
+		for (let index = 0; index < statement.left.length; index += 1) {
+			const target = statement.left[index];
 			if (target.kind !== LuaSyntaxKind.IdentifierExpression) continue;
 			const handle = this.resolveReferenceHandle(target as LuaIdentifierExpression);
 			if (handle === undefined || !this.state.has(handle)) continue;
+			this.state.set(
+				handle,
+				this.resolveAssignedFact(index, statement.left.length, statement.right, facts),
+			);
+		}
+	}
 
-			let kind: CompileValueKind;
-			if (stmt.right.length === 0) {
-				kind = 'nil';
-			} else if (i < lastIndex) {
-				kind = this.evalExprKind(stmt.right[i]);
-			} else if (i === lastIndex) {
-				const remaining = stmt.left.length - lastIndex;
-				if (remaining > 1 && isMultiReturnExpression(stmt.right[lastIndex])) {
-					kind = 'unknown';
-				} else {
-					kind = this.evalExprKind(stmt.right[lastIndex]);
+	private analyzeIf(statement: LuaIfStatement): void {
+		const exitStates: SymbolFlowState[] = [];
+		let fallthroughStates: SymbolFlowState[] = [this.snapshotState()];
+
+		for (let clauseIndex = 0; clauseIndex < statement.clauses.length; clauseIndex += 1) {
+			const clause = statement.clauses[clauseIndex];
+			const condition = clause.condition as LuaExpression | null;
+			const nextFallthroughStates: SymbolFlowState[] = [];
+
+			for (let stateIndex = 0; stateIndex < fallthroughStates.length; stateIndex += 1) {
+				this.state = cloneState(fallthroughStates[stateIndex]);
+				if (condition === null) {
+					exitStates.push(this.analyzeBlockWithScope(clause.block));
+					continue;
 				}
-			} else if (i > lastIndex && isMultiReturnExpression(stmt.right[lastIndex])) {
-				kind = 'unknown';
-			} else {
-				kind = 'nil';
+
+				const conditionFact = this.evalExprFact(condition);
+				const postConditionState = this.snapshotState();
+
+				if (conditionFact.truthiness !== 'falsy') {
+					this.state = cloneState(postConditionState);
+					exitStates.push(this.analyzeBlockWithScope(clause.block));
+				}
+				if (conditionFact.truthiness !== 'truthy') {
+					nextFallthroughStates.push(postConditionState);
+				}
 			}
-			this.state.set(handle, kind);
-		}
-	}
 
-	private degradeLocalTarget(expr: LuaExpression): void {
-		if (expr.kind !== LuaSyntaxKind.IdentifierExpression) return;
-		const handle = this.resolveReferenceHandle(expr as LuaIdentifierExpression);
-		if (handle !== undefined && this.state.has(handle)) {
-			this.state.set(handle, 'unknown');
-		}
-	}
-
-	// -----------------------------------------------------------------------
-	//  Control flow: if / elseif / else
-	// -----------------------------------------------------------------------
-
-	private analyzeIf(stmt: LuaIfStatement): void {
-		const preIfState = freezeState(cloneState(this.state));
-		const branchExitStates: SymbolFlowState[] = [];
-		let hasElse = false;
-
-		for (let i = 0; i < stmt.clauses.length; i += 1) {
-			const clause = stmt.clauses[i];
-			this.state = cloneState(preIfState);
-			this.analyzeStatementList(clause.block.body);
-			branchExitStates.push(freezeState(cloneState(this.state)));
-			if (!clause.condition) {
-				hasElse = true;
+			if (condition === null) {
+				fallthroughStates = [];
+				break;
+			}
+			fallthroughStates = nextFallthroughStates;
+			if (fallthroughStates.length === 0) {
+				break;
 			}
 		}
 
-		if (!hasElse) {
-			branchExitStates.push(preIfState);
+		for (let index = 0; index < fallthroughStates.length; index += 1) {
+			exitStates.push(fallthroughStates[index]);
 		}
-
-		this.state = mergeMultipleStates(branchExitStates);
+		this.state = mergeMultipleStates(exitStates);
 	}
 
-	// -----------------------------------------------------------------------
-	//  Control flow: while
-	// -----------------------------------------------------------------------
-
-	private analyzeWhile(stmt: LuaWhileStatement): void {
-		this.analyzeLoopBody(stmt.block);
-	}
-
-	// -----------------------------------------------------------------------
-	//  Control flow: repeat..until
-	// -----------------------------------------------------------------------
-
-	private analyzeRepeat(stmt: LuaRepeatStatement): void {
-		this.analyzeLoopBody(stmt.block);
-	}
-
-	// -----------------------------------------------------------------------
-	//  Control flow: for (numeric)
-	// -----------------------------------------------------------------------
-
-	private analyzeForNumeric(stmt: LuaForNumericStatement): void {
-		const handle = this.resolveDeclarationHandle(stmt.variable);
-		if (handle !== undefined) {
-			this.state.set(handle, 'number');
-		}
-		this.analyzeLoopBody(stmt.block);
-	}
-
-	// -----------------------------------------------------------------------
-	//  Control flow: for (generic)
-	// -----------------------------------------------------------------------
-
-	private analyzeForGeneric(stmt: LuaForGenericStatement): void {
-		for (let i = 0; i < stmt.variables.length; i += 1) {
-			const handle = this.resolveDeclarationHandle(stmt.variables[i]);
-			if (handle !== undefined) {
-				this.state.set(handle, 'unknown');
-			}
-		}
-		this.analyzeLoopBody(stmt.block);
-	}
-
-	// -----------------------------------------------------------------------
-	//  Loop fixpoint
-	// -----------------------------------------------------------------------
-
-	private analyzeLoopBody(block: LuaBlock): void {
-		const preLoopState = freezeState(cloneState(this.state));
-
-		for (let iteration = 0; iteration < MAX_FIXPOINT_ITERATIONS; iteration += 1) {
-			const entrySnapshot = freezeState(cloneState(this.state));
-			this.analyzeStatementList(block.body);
-			const bodyExit = freezeState(cloneState(this.state));
-			const merged = mergeStates(preLoopState, bodyExit);
-
-			if (statesEqual(merged, entrySnapshot)) {
-				this.state = merged;
+	private analyzeWhile(statement: LuaWhileStatement): void {
+		const baseEntryState = this.snapshotState();
+		let entryState = baseEntryState;
+		for (let iteration = 0; iteration < LOOP_FIXPOINT_SAFETY_LIMIT; iteration += 1) {
+			this.state = cloneState(entryState);
+			const conditionFact = this.evalExprFact(statement.condition);
+			const conditionState = this.snapshotState();
+			if (conditionFact.truthiness === 'falsy') {
+				this.state = cloneState(conditionState);
 				return;
 			}
-			this.state = merged;
-		}
-	}
-
-	// -----------------------------------------------------------------------
-	//  Closure-written degradation after call statements
-	// -----------------------------------------------------------------------
-
-	private degradeClosureWrittenSymbols(): void {
-		if (this.closureWrittenSymbols.size === 0) return;
-		for (const handle of this.closureWrittenSymbols) {
-			if (this.state.has(handle)) {
-				this.state.set(handle, 'unknown');
+			const bodyExit = this.analyzeBlockWithScope(statement.block);
+			const nextEntry = freezeState(mergeStates(baseEntryState, bodyExit));
+			if (statesEqual(nextEntry, entryState)) {
+				this.state = cloneState(conditionState);
+				return;
 			}
+			entryState = nextEntry;
+		}
+		throw new Error(`[ValueKindFlowAnalyzer] Loop fixpoint did not converge for while at ${statement.range.path}:${statement.range.start.line}.`);
+	}
+
+	private analyzeRepeat(statement: LuaRepeatStatement): void {
+		const baseEntryState = this.snapshotState();
+		let entryState = baseEntryState;
+		for (let iteration = 0; iteration < LOOP_FIXPOINT_SAFETY_LIMIT; iteration += 1) {
+			this.state = cloneState(entryState);
+			const bodyExit = this.analyzeBlockWithScope(statement.block);
+			this.state = cloneState(bodyExit);
+			const conditionFact = this.evalExprFact(statement.condition);
+			const conditionState = this.snapshotState();
+			if (conditionFact.truthiness === 'truthy') {
+				this.state = cloneState(conditionState);
+				return;
+			}
+			const nextEntry = freezeState(mergeStates(baseEntryState, conditionState));
+			if (statesEqual(nextEntry, entryState)) {
+				this.state = cloneState(conditionState);
+				return;
+			}
+			entryState = nextEntry;
+		}
+		throw new Error(`[ValueKindFlowAnalyzer] Loop fixpoint did not converge for repeat at ${statement.range.path}:${statement.range.start.line}.`);
+	}
+
+	private analyzeForNumeric(statement: LuaForNumericStatement): void {
+		this.evalExprFact(statement.start);
+		this.evalExprFact(statement.limit);
+		this.evalExprFact(statement.step);
+		this.withLexicalScope(() => {
+			const handle = this.resolveDeclarationHandle(statement.variable);
+			if (handle !== undefined) {
+				this.recordDeclaredHandle(handle);
+				this.state.set(handle, NUMBER_VALUE_FACT);
+			}
+			const stableEntry = this.analyzeLoopEntryFixpoint(
+				this.snapshotState(),
+				() => this.analyzeBlockWithScope(statement.block),
+				`numeric-for ${statement.range.path}:${statement.range.start.line}`,
+			);
+			this.state = cloneState(stableEntry);
+		});
+	}
+
+	private analyzeForGeneric(statement: LuaForGenericStatement): void {
+		this.evalExpressionList(statement.iterators);
+		this.withLexicalScope(() => {
+			for (let index = 0; index < statement.variables.length; index += 1) {
+				const handle = this.resolveDeclarationHandle(statement.variables[index]);
+				if (handle === undefined) continue;
+				this.recordDeclaredHandle(handle);
+				this.state.set(handle, UNKNOWN_VALUE_FACT);
+			}
+			const stableEntry = this.analyzeLoopEntryFixpoint(
+				this.snapshotState(),
+				() => this.analyzeBlockWithScope(statement.block),
+				`generic-for ${statement.range.path}:${statement.range.start.line}`,
+			);
+			this.state = cloneState(stableEntry);
+		});
+	}
+
+	private degradeLocalTarget(expression: LuaExpression): void {
+		if (expression.kind !== LuaSyntaxKind.IdentifierExpression) return;
+		const handle = this.resolveReferenceHandle(expression as LuaIdentifierExpression);
+		if (handle !== undefined) {
+			setUnknown(this.state, handle);
 		}
 	}
-
-	// -----------------------------------------------------------------------
-	//  Expression evaluation (delegates to module-level evaluator)
-	// -----------------------------------------------------------------------
-
-	private evalExprKind(expression: LuaExpression): CompileValueKind {
-		return evaluateExpressionValueKind(expression, this.state, this.semantics);
-	}
-
-	// -----------------------------------------------------------------------
-	//  Symbol resolution helpers
-	// -----------------------------------------------------------------------
 
 	private resolveDeclarationHandle(identifier: LuaIdentifierExpression): string | undefined {
-		const decl = this.semantics.getDeclaration(identifier.range);
-		if (decl && !decl.isGlobal) return decl.id;
-		return undefined;
+		return resolveDeclarationHandle(identifier, this.semantics);
 	}
 
 	private resolveReferenceHandle(identifier: LuaIdentifierExpression): string | undefined {
-		return resolveIdentifierHandle(identifier, this.semantics);
+		return resolveReferenceHandle(identifier, this.semantics);
 	}
 }
