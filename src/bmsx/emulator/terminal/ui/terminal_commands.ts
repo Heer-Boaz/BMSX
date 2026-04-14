@@ -2,13 +2,13 @@ import { $ } from '../../../core/engine_core';
 import { Runtime } from '../../runtime';
 import * as runtimeIde from '../../runtime_ide';
 import { getTrackedLuaHeapBytes } from '../../lua_heap_usage';
-import { clearWorkspaceSessionState } from '../../../ide/core/workspace_storage';
+import { clearWorkspaceSessionState } from '../../../ide/workbench/common/workspace_storage';
 import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from '../../workspace';
-import { collectRuntimeStackFrames, formatRuntimeErrorLocation, formatRuntimeStackFrame } from '../../../ide/contrib/runtime_error/runtime_error_util';
+import { collectRuntimeStackFrames, formatRuntimeErrorLocation, formatRuntimeStackFrame } from '../../../ide/editor/contrib/runtime_error/runtime_error_util';
 import type { LuaSourceRecord } from '../../lua_sources';
 import { RAM_SIZE } from '../../memory_map';
 import { formatByteSize, lenAndHash } from '../../../utils/byte_hex_string';
-import { editorSessionState } from '../../../ide/ui/editor_session_state';
+import { editorSessionState } from '../../../ide/editor/ui/editor_session_state';
 
 type PathEntryKind = 'rom' | 'saved' | 'dirty' | 'saved_dirty' | 'unsaved';
 

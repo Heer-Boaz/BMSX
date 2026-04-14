@@ -1,10 +1,10 @@
 import type { color } from '../../../render/shared/render_types';
 import { BmsxColors } from '../../vdp';
-import { EditorFont } from '../../../ide/ui/view/editor_font';
+import { EditorFont } from '../../../ide/editor/ui/view/editor_font';
 import type { FontVariant } from '../../../render/shared/bmsx_font';
-import { invalidateLuaCommentContextFromRow, applyCaseOutsideStrings } from '../../../ide/core/text_utils';
-import { drawEditorText } from '../../../ide/render/text_renderer';
-import { drawCompletionPopupWithRenderer, drawParameterHintOverlayWithRenderer } from '../../../ide/render/render_completion';
+import { invalidateLuaCommentContextFromRow, applyCaseOutsideStrings } from '../../../ide/common/text_utils';
+import { drawEditorText } from '../../../ide/editor/render/text_renderer';
+import { drawCompletionPopupWithRenderer, drawParameterHintOverlayWithRenderer } from '../../../ide/editor/render/render_completion';
 import {
 	createInlineTextField,
 	applyInlineFieldEditing,
@@ -17,20 +17,20 @@ import {
 	setCursorFromOffset,
 	selectionAnchorOffset,
 	setSelectionAnchorPosition,
-} from '../../../ide/ui/inline_text_field';
-import type { InlineInputOptions, TextField, CursorScreenInfo, EditContext } from '../../../ide/core/types';
-import * as constants from '../../../ide/core/constants';
+} from '../../../ide/editor/ui/inline_text_field';
+import type { InlineInputOptions, TextField, CursorScreenInfo, EditContext } from '../../../ide/common/types';
+import * as constants from '../../../ide/common/constants';
 import { OverlayRenderer } from '../../overlay_renderer';
 import {
 	isKeyJustPressed as isKeyJustPressed,
 	isCtrlDown,
 	isMetaDown,
 	isAltDown
-} from '../../../ide/input/keyboard/key_input';
-import { resolveSnapshotExpression, describeLuaValueForInspector } from '../../../ide/contrib/intellisense/intellisense';
-import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../../../ide/input/keyboard/key_input';
-import { CompletionController } from '../../../ide/contrib/suggest/completion_controller';
-import type { ModuleAliasEntry } from '../../../ide/contrib/intellisense/semantic_model';
+} from '../../../ide/editor/input/keyboard/key_input';
+import { resolveSnapshotExpression, describeLuaValueForInspector } from '../../../ide/editor/contrib/intellisense/intellisense';
+import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../../../ide/editor/input/keyboard/key_input';
+import { CompletionController } from '../../../ide/editor/contrib/suggest/completion_controller';
+import type { ModuleAliasEntry } from '../../../ide/editor/contrib/intellisense/semantic_model';
 import type { Viewport } from '../../../rompack/rompack';
 import { Runtime } from '../../runtime';
 import * as runtimeLuaPipeline from '../../runtime_lua_pipeline';
@@ -45,12 +45,12 @@ import {
 import { drawTerminalGridPanel } from './terminal_completion_panels_renderer';
 import { TerminalSuggestController } from './terminal_suggest_controller';
 import { TerminalSuggestModel } from '../common/terminal_suggest_model';
-import type { MutableTextPosition, TextBuffer } from '../../../ide/text/text_buffer';
+import type { MutableTextPosition, TextBuffer } from '../../../ide/editor/text/text_buffer';
 import { clamp } from '../../../utils/clamp';
-import { textFromLines } from '../../../ide/text/source_text';
-import { COLOR_COMPLETION_PREVIEW_TEXT, TAB_SPACES } from '../../../ide/core/constants';
-import { advancePhaseBlink, resetBlinkState } from '../../../ide/ui/caret_blink';
-import { measureWrappedInlineSegmentDecoration, resolveInlineFieldSelectionState } from '../../../ide/ui/inline_field_view';
+import { textFromLines } from '../../../ide/editor/text/source_text';
+import { COLOR_COMPLETION_PREVIEW_TEXT, TAB_SPACES } from '../../../ide/common/constants';
+import { advancePhaseBlink, resetBlinkState } from '../../../ide/editor/ui/caret_blink';
+import { measureWrappedInlineSegmentDecoration, resolveInlineFieldSelectionState } from '../../../ide/editor/ui/inline_field_view';
 
 type TerminalOutputKind =
 	| 'prompt'
