@@ -8,8 +8,6 @@ import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } 
 import { ide_state } from '../../core/ide_state';
 import { measureText } from '../../core/text_utils';
 import type { CallHierarchyView } from '../call_hierarchy/call_hierarchy_view';
-import { focusEditorFromResourcePanel, openResourceDescriptor, focusChunkSource } from '../../ui/editor_tabs';
-import { applyDefinitionSelection } from '../intellisense/intellisense';
 import {
 	buildCallHierarchyPanelItems,
 	buildResourcePanelItems,
@@ -25,6 +23,22 @@ import {
 	resourcePanelLineCapacity,
 	defaultResourcePanelRatio,
 } from './resource_panel_layout';
+import {
+	clampResourcePanelSelectionIndex,
+	collapseSelectedCallHierarchyNode,
+	ensureResourcePanelSelectionScroll,
+	expandSelectedCallHierarchyNode,
+	moveResourcePanelSelectionIndex,
+	resourcePanelIndexAtRelativeY,
+	scrollResourcePanelHorizontalOffset,
+	toggleSelectedCallHierarchyExpansion,
+} from './resource_panel_navigation';
+import {
+	getResourcePanelAtlasWarningMessage,
+	openResourcePanelCallHierarchyLocation,
+	tryOpenResourcePanelDescriptorItem,
+} from './resource_panel_open_actions';
+import { focusEditorFromResourcePanel } from '../../ui/editor_tabs';
 
 export interface ResourcePanelScrollbars {
 	resourceVertical: Scrollbar;
@@ -249,13 +263,11 @@ export class ResourcePanelController {
 		const contentTop = bounds.top + 2;
 		const relativeY = y - contentTop;
 		if (relativeY < 0) return -1;
-		const index = this.scroll + Math.floor(relativeY / this.lineHeight);
-		if (index < 0 || index >= this.items.length) return -1;
-		return index;
+		return resourcePanelIndexAtRelativeY(this.scroll, relativeY, this.lineHeight, this.items.length);
 	}
 
 	setSelectionIndex(index: number): void {
-		const next = clamp(Math.trunc(index), -1, Math.max(-1, this.items.length - 1));
+		const next = clampResourcePanelSelectionIndex(index, this.items.length);
 		if (next === this.selectionIndex) return;
 		this.selectionIndex = next;
 		this.hoverIndex = -1;
@@ -303,7 +315,19 @@ export class ResourcePanelController {
 	}
 
 	openSelected(): void {
-		this.openSelectedInternal();
+		if (this.mode === 'call_hierarchy') {
+			this.openSelectedCallHierarchy();
+			return;
+		}
+		const item = this.items[this.selectionIndex];
+		if (tryOpenResourcePanelDescriptorItem(item)) {
+			return;
+		}
+		if (item?.descriptor?.type === 'atlas') {
+			const warning = getResourcePanelAtlasWarningMessage();
+			ide_state.showMessage(warning.text, warning.color, warning.duration);
+			focusEditorFromResourcePanel();
+		}
 	}
 
 	openSelectedCallHierarchyLocation(): void {
@@ -314,7 +338,7 @@ export class ResourcePanelController {
 		if (!item) {
 			return;
 		}
-		this.openCallHierarchyItemLocation(item);
+		openResourcePanelCallHierarchyLocation(item);
 	}
 
 	setRatioFromViewportX(viewportX: number, viewportWidth: number): boolean {
@@ -411,60 +435,25 @@ export class ResourcePanelController {
 		this.clampHScroll();
 	}
 
-	private openSelectedInternal(): void {
-		if (this.mode === 'call_hierarchy') {
-			this.openSelectedCallHierarchy();
-			return;
-		}
-		const item = this.items[this.selectionIndex];
-		if (!item.descriptor) return;
-		const d = item.descriptor;
-		if (d.type === 'atlas') {
-			ide_state.showMessage('Atlas resources cannot be previewed in the IDE.', constants.COLOR_STATUS_WARNING, 3.2);
-			focusEditorFromResourcePanel();
-			return;
-		}
-		openResourceDescriptor(d);
-		focusEditorFromResourcePanel();
-	}
-
 	private openSelectedCallHierarchy(): void {
-		const item = this.items[this.selectionIndex];
-		if (!item) {
-			return;
-		}
-		if (item.callHierarchyExpandable && item.callHierarchyNodeId) {
-			if (this.callHierarchyExpandedNodeIds.has(item.callHierarchyNodeId)) {
-				this.callHierarchyExpandedNodeIds.delete(item.callHierarchyNodeId);
-			} else {
-				this.callHierarchyExpandedNodeIds.add(item.callHierarchyNodeId);
-			}
+		const toggledNodeId = toggleSelectedCallHierarchyExpansion(
+			this.items,
+			this.selectionIndex,
+			this.callHierarchyExpandedNodeIds,
+		);
+		if (toggledNodeId) {
 			this.refreshCallHierarchyContents();
-			const index = findResourcePanelIndexByCallHierarchyNodeId(this.items, item.callHierarchyNodeId);
+			const index = findResourcePanelIndexByCallHierarchyNodeId(this.items, toggledNodeId);
 			if (index >= 0) {
 				this.selectionIndex = index;
 			}
 			return;
 		}
-		this.openCallHierarchyItemLocation(item);
-	}
-
-	private openCallHierarchyItemLocation(item: ResourceBrowserItem): void {
-		if (!item.location) {
-			return;
-		}
-		focusChunkSource(item.location.path);
-		applyDefinitionSelection(item.location.range);
-		focusEditorFromResourcePanel();
+		openResourcePanelCallHierarchyLocation(this.items[this.selectionIndex]);
 	}
 
 	private moveSelection(delta: number): void {
-		const count = this.items.length;
-		let next: number;
-		if (delta === Number.NEGATIVE_INFINITY) next = 0;
-		else if (delta === Number.POSITIVE_INFINITY) next = count - 1;
-		else next = (this.selectionIndex >= 0 ? this.selectionIndex : 0) + Math.trunc(delta);
-		next = clamp(next, 0, count - 1);
+		const next = moveResourcePanelSelectionIndex(this.selectionIndex, this.items.length, delta);
 		if (next === this.selectionIndex) return;
 		this.selectionIndex = next;
 		this.hoverIndex = -1;
@@ -473,22 +462,15 @@ export class ResourcePanelController {
 
 	private scrollHorizontal(amount: number): void {
 		const maxScroll = this.computeMaxHScroll();
-		if (maxScroll <= 0) { this.hscroll = 0; return; }
-		const next = clamp(this.hscroll + amount, 0, maxScroll);
+		const next = scrollResourcePanelHorizontalOffset(this.hscroll, amount, maxScroll);
 		if (next === this.hscroll) return;
 		this.hscroll = next;
 		this.clampHScroll();
 	}
 
 	public ensureSelectionVisible(): void {
-		const index = this.selectionIndex;
 		const capacity = this.lineCapacity();
-		const maxScroll = Math.max(0, this.items.length - capacity);
-		if (index < this.scroll) { this.scroll = index; this.clampHScroll(); return; }
-		const overflow = index - (this.scroll + capacity - 1);
-		if (overflow > 0) {
-			this.scroll = Math.min(this.scroll + overflow, maxScroll);
-		}
+		this.scroll = ensureResourcePanelSelectionScroll(this.selectionIndex, this.scroll, capacity, this.items.length);
 		this.clampHScroll();
 	}
 
@@ -525,22 +507,26 @@ export class ResourcePanelController {
 	public refresh(): void { this.refreshContents(); }
 
 	private expandTreeNode(): void {
-		const item = this.items[this.selectionIndex];
-		if (!item?.callHierarchyExpandable || !item.callHierarchyNodeId) return;
-		if (this.callHierarchyExpandedNodeIds.has(item.callHierarchyNodeId)) return;
-		this.callHierarchyExpandedNodeIds.add(item.callHierarchyNodeId);
+		const expandedNodeId = expandSelectedCallHierarchyNode(
+			this.items,
+			this.selectionIndex,
+			this.callHierarchyExpandedNodeIds,
+		);
+		if (!expandedNodeId) return;
 		this.refreshContents();
-		const index = findResourcePanelIndexByCallHierarchyNodeId(this.items, item.callHierarchyNodeId);
+		const index = findResourcePanelIndexByCallHierarchyNodeId(this.items, expandedNodeId);
 		if (index >= 0) this.selectionIndex = index;
 	}
 
 	private collapseTreeNode(): void {
-		const item = this.items[this.selectionIndex];
-		if (!item?.callHierarchyExpandable || !item.callHierarchyNodeId) return;
-		if (!this.callHierarchyExpandedNodeIds.has(item.callHierarchyNodeId)) return;
-		this.callHierarchyExpandedNodeIds.delete(item.callHierarchyNodeId);
+		const collapsedNodeId = collapseSelectedCallHierarchyNode(
+			this.items,
+			this.selectionIndex,
+			this.callHierarchyExpandedNodeIds,
+		);
+		if (!collapsedNodeId) return;
 		this.refreshContents();
-		const index = findResourcePanelIndexByCallHierarchyNodeId(this.items, item.callHierarchyNodeId);
+		const index = findResourcePanelIndexByCallHierarchyNodeId(this.items, collapsedNodeId);
 		if (index >= 0) this.selectionIndex = index;
 	}
 }

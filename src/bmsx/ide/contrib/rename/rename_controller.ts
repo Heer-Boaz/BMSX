@@ -26,6 +26,11 @@ export class RenameController {
 	private originalName = '';
 	private activeIndex = -1;
 	private expressionLabel: string = null;
+	private readonly inlineInputOptions: InlineInputOptions = {
+		allowSpace: false,
+		characterFilter: (value: string): boolean => this.identifierFilter(value),
+		maxLength: null,
+	};
 	private readonly identifierFilter = (value: string): boolean => {
 		if (value.length === 0) {
 			return false;
@@ -54,7 +59,7 @@ export class RenameController {
 			return false;
 		}
 		ide_state.referenceState.apply(info, initialIndex);
-		this.matches = info.matches.slice();
+		this.matches = info.matches;
 		this.info = info;
 		this.originalName = currentName;
 		this.activeIndex = initialIndex;
@@ -117,12 +122,7 @@ export class RenameController {
 			this.commit();
 			return;
 		}
-		const options: InlineInputOptions = {
-			allowSpace: false,
-			characterFilter: this.identifierFilter,
-			maxLength: null,
-		};
-		const changed = applyInlineFieldEditing(this.field, options);
+		const changed = applyInlineFieldEditing(this.field, this.inlineInputOptions);
 		if (!changed) {
 			return;
 		}
