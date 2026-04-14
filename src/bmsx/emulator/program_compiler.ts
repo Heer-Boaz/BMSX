@@ -25,6 +25,7 @@ import {
 	type LuaStatement,
 	type LuaBooleanLiteralExpression,
 	type LuaStringLiteralExpression,
+	type LuaStringRefLiteralExpression,
 	type LuaReturnStatement,
 	type LuaUnaryExpression,
 	type LuaSourceRange,
@@ -1486,6 +1487,8 @@ class FunctionBuilder {
 				return (expression as LuaNumericLiteralExpression).value;
 			case LuaSyntaxKind.StringLiteralExpression:
 				return this.program.internString((expression as LuaStringLiteralExpression).value);
+			case LuaSyntaxKind.StringRefLiteralExpression:
+				return this.program.internString((expression as LuaStringRefLiteralExpression).value);
 			case LuaSyntaxKind.BooleanLiteralExpression:
 				return (expression as LuaBooleanLiteralExpression).value;
 			case LuaSyntaxKind.NilLiteralExpression:
@@ -2343,6 +2346,9 @@ class FunctionBuilder {
 					this.emitLoadConst(target, expression.value);
 					return;
 				case LuaSyntaxKind.StringLiteralExpression:
+					this.emitLoadConst(target, this.program.internString(expression.value));
+					return;
+				case LuaSyntaxKind.StringRefLiteralExpression:
 					this.emitLoadConst(target, this.program.internString(expression.value));
 					return;
 				case LuaSyntaxKind.BooleanLiteralExpression:

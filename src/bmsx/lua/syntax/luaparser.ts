@@ -43,6 +43,7 @@ import type {
 	LuaSourceRange,
 	LuaStatement,
 	LuaStringLiteralExpression,
+	LuaStringRefLiteralExpression,
 	LuaLocalAttribute,
 	LuaTableArrayField,
 	LuaTableConstructorExpression,
@@ -801,6 +802,11 @@ export class LuaParser {
 	}
 
 	private parseUnaryExpression(): LuaExpression {
+		if (this.check(LuaTokenType.Ampersand) && this.peekType(1) === LuaTokenType.String) {
+			const ampersandToken = this.advance();
+			const stringToken = this.advance();
+			return this.createStringRefLiteralExpression(ampersandToken, stringToken);
+		}
 		if (this.match(LuaTokenType.Not)) {
 			const operatorToken = this.previous();
 			const operand = this.parseUnaryExpression();
@@ -1460,6 +1466,17 @@ export class LuaParser {
 			kind: LuaSyntaxKind.StringLiteralExpression,
 			range: this.rangeFromTokenAndToken(token, token),
 			value: token.literal,
+		};
+	}
+
+	private createStringRefLiteralExpression(ampersandToken: LuaToken, stringToken: LuaToken): LuaStringRefLiteralExpression {
+		if (typeof stringToken.literal !== 'string') {
+			throw this.error(stringToken, 'Expected string literal after "&".');
+		}
+		return {
+			kind: LuaSyntaxKind.StringRefLiteralExpression,
+			range: this.rangeFromTokenAndToken(ampersandToken, stringToken),
+			value: stringToken.literal,
 		};
 	}
 

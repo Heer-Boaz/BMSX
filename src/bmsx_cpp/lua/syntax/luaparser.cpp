@@ -87,6 +87,15 @@ LuaExpression LuaParser::parseExpression() {
 }
 
 LuaExpression LuaParser::parseUnaryExpression() {
+	if (check(LuaTokenType::Ampersand) && m_index + 1 < m_tokens.size() && m_tokens[m_index + 1].type == LuaTokenType::String) {
+		const LuaToken& ampersandToken = advance();
+		const LuaToken& stringToken = advance();
+		LuaExpression expression;
+		expression.kind = LuaSyntaxKind::StringRefLiteralExpression;
+		expression.stringValue = std::get<std::string>(stringToken.literal);
+		expression.range = rangeFromTokenAndToken(ampersandToken, stringToken);
+		return expression;
+	}
 	if (match(LuaTokenType::Minus)) {
 		const LuaToken& operatorToken = m_tokens[m_index - 1];
 		LuaExpression operand = parseUnaryExpression();

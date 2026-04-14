@@ -169,7 +169,7 @@ LoadSubsetPathStep compilePathStep(Runtime& runtime, const std::string& chunkNam
 			.key = valueNumber(expression.numberValue),
 		};
 	}
-	if (expression.kind == LuaSyntaxKind::StringLiteralExpression) {
+	if (expression.kind == LuaSyntaxKind::StringLiteralExpression || expression.kind == LuaSyntaxKind::StringRefLiteralExpression) {
 		return {
 			.kind = LoadSubsetPathStep::Kind::Field,
 			.fieldKey = runtime.cpu().internString(expression.stringValue),
@@ -231,6 +231,7 @@ Value compileLiteralExpr(Runtime& runtime, const std::string& chunkName, const L
 		case LuaSyntaxKind::NumericLiteralExpression:
 			return valueNumber(expression.numberValue);
 		case LuaSyntaxKind::StringLiteralExpression:
+		case LuaSyntaxKind::StringRefLiteralExpression:
 			return valueString(runtime.cpu().internString(expression.stringValue));
 		default:
 			fail(chunkName, "unsupported literal expression", &expression.range);
@@ -248,6 +249,7 @@ LoadSubsetValueExpr compileValueExpr(
 		|| expression.kind == LuaSyntaxKind::BooleanLiteralExpression
 		|| expression.kind == LuaSyntaxKind::NumericLiteralExpression
 		|| expression.kind == LuaSyntaxKind::StringLiteralExpression
+		|| expression.kind == LuaSyntaxKind::StringRefLiteralExpression
 		|| expression.kind == LuaSyntaxKind::UnaryExpression
 	) {
 		return {
