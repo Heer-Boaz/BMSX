@@ -1,4 +1,5 @@
 import { ide_state } from '../core/ide_state';
+import { editorDiagnosticsState } from '../contrib/problems/diagnostics_state';
 import type {
 	CodeTabContext,
 	CodeTabMode,
@@ -125,7 +126,7 @@ function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescriptor {
 
 function setCodeTabDiagnosticsState(context: CodeTabContext): void {
 	if (context.mode === 'lua') {
-		const cached = ide_state.diagnosticsCache.get(context.id);
+		const cached = editorDiagnosticsState.diagnosticsCache.get(context.id);
 		const cachedVersion = cached?.version ?? -1;
 		const cachedChunk = cached?.path;
 		const path = resolvePath(context.descriptor);
@@ -134,8 +135,8 @@ function setCodeTabDiagnosticsState(context: CodeTabContext): void {
 		}
 		return;
 	}
-	ide_state.dirtyDiagnosticContexts.delete(context.id);
-	ide_state.diagnosticsCache.set(context.id, {
+	editorDiagnosticsState.dirtyDiagnosticContexts.delete(context.id);
+	editorDiagnosticsState.diagnosticsCache.set(context.id, {
 		contextId: context.id,
 		path: context.descriptor.path,
 		diagnostics: [],
@@ -402,8 +403,8 @@ export function closeTab(tabId: string): void {
 	}
 	ide_state.tabs.splice(index, 1);
 	if (tab.kind === 'code_editor') {
-		ide_state.dirtyDiagnosticContexts.delete(tab.id);
-		ide_state.diagnosticsCache.delete(tab.id);
+		editorDiagnosticsState.dirtyDiagnosticContexts.delete(tab.id);
+		editorDiagnosticsState.diagnosticsCache.delete(tab.id);
 	}
 	if (ide_state.tabs.length === 0) {
 		initializeTabs();

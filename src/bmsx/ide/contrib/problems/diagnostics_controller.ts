@@ -1,7 +1,7 @@
 import { clamp } from '../../../utils/clamp';
 import type { TimerHandle } from '../../../platform/platform';
 import { computeAggregatedEditorDiagnostics, markDiagnosticsDirty, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
-import { ide_state, diagnosticsDebounceMs, EMPTY_DIAGNOSTICS } from '../../core/ide_state';
+import { ide_state } from '../../core/ide_state';
 import type { EditorDiagnostic, CodeTabContext } from '../../core/types';
 import { listLuaSymbols, listGlobalLuaSymbols, listLuaBuiltinFunctions } from '../intellisense/intellisense';
 import { getTextSnapshot, splitText } from '../../text/source_text';
@@ -14,6 +14,7 @@ import type { LuaDefinitionInfo } from '../../../lua/syntax/lua_ast';
 import type { ModuleAliasEntry } from '../intellisense/semantic_model';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { editorCaretState } from '../../ui/caret_state';
+import { diagnosticsDebounceMs, editorDiagnosticsState, EMPTY_DIAGNOSTICS } from './diagnostics_state';
 
 const diagnosticsMinIntervalMs = 600;
 let diagnosticsTimer: TimerHandle | null = null;
@@ -37,88 +38,88 @@ function cancelDiagnosticsTimer(): void {
 		diagnosticsTimer = null;
 	}
 	diagnosticsScheduledForMs = 0;
-	ide_state.diagnosticsComputationScheduled = false;
+	editorDiagnosticsState.diagnosticsComputationScheduled = false;
 }
 
 export function processDiagnosticsQueue(now: number): void {
-	if (!ide_state.diagnosticsDirty) {
+	if (!editorDiagnosticsState.diagnosticsDirty) {
 		return;
 	}
 	const activeId = ide_state.activeCodeTabContextId;
-	if (activeId && !ide_state.dirtyDiagnosticContexts.has(activeId)) {
+	if (activeId && !editorDiagnosticsState.dirtyDiagnosticContexts.has(activeId)) {
 		return;
 	}
-	if (ide_state.dirtyDiagnosticContexts.size === 0) {
-		ide_state.diagnosticsDirty = false;
-		ide_state.diagnosticsDueAtMs = null;
+	if (editorDiagnosticsState.dirtyDiagnosticContexts.size === 0) {
+		editorDiagnosticsState.diagnosticsDirty = false;
+		editorDiagnosticsState.diagnosticsDueAtMs = null;
 		cancelDiagnosticsTimer();
 		return;
 	}
-	if (ide_state.diagnosticsTaskPending) {
+	if (editorDiagnosticsState.diagnosticsTaskPending) {
 		return;
 	}
-	if (ide_state.diagnosticsDueAtMs === null) {
-		ide_state.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
+	if (editorDiagnosticsState.diagnosticsDueAtMs === null) {
+		editorDiagnosticsState.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
 	}
 	scheduleDiagnosticsComputation();
 }
 
 export function scheduleDiagnosticsComputation(): void {
 	const now = ide_state.clockNow();
-	const dueAt = ide_state.diagnosticsDueAtMs ?? now + diagnosticsDebounceMs;
+	const dueAt = editorDiagnosticsState.diagnosticsDueAtMs ?? now + diagnosticsDebounceMs;
 	const spacedDueAt = Math.max(dueAt, lastDiagnosticsRunMs + diagnosticsMinIntervalMs);
-	ide_state.diagnosticsDueAtMs = spacedDueAt;
+	editorDiagnosticsState.diagnosticsDueAtMs = spacedDueAt;
 	if (diagnosticsTimer && diagnosticsTimer.isActive() && diagnosticsScheduledForMs >= spacedDueAt) {
 		return;
 	}
 	cancelDiagnosticsTimer();
 	const delay = clamp(spacedDueAt - now, 0, diagnosticsMinIntervalMs + diagnosticsDebounceMs);
 	diagnosticsScheduledForMs = spacedDueAt;
-	ide_state.diagnosticsComputationScheduled = true;
+	editorDiagnosticsState.diagnosticsComputationScheduled = true;
 	diagnosticsTimer = scheduleIdeOnce(delay, () => {
 		diagnosticsTimer = null;
 		diagnosticsScheduledForMs = 0;
-		ide_state.diagnosticsComputationScheduled = false;
+		editorDiagnosticsState.diagnosticsComputationScheduled = false;
 		executeDiagnosticsComputation();
 	});
 }
 
 export function executeDiagnosticsComputation(): void {
-	if (!ide_state.diagnosticsDirty) {
-		ide_state.diagnosticsDueAtMs = null;
+	if (!editorDiagnosticsState.diagnosticsDirty) {
+		editorDiagnosticsState.diagnosticsDueAtMs = null;
 		cancelDiagnosticsTimer();
 		return;
 	}
 	const activeId = ide_state.activeCodeTabContextId;
-	if (activeId && !ide_state.dirtyDiagnosticContexts.has(activeId)) {
-		ide_state.diagnosticsDueAtMs = null;
+	if (activeId && !editorDiagnosticsState.dirtyDiagnosticContexts.has(activeId)) {
+		editorDiagnosticsState.diagnosticsDueAtMs = null;
 		cancelDiagnosticsTimer();
 		return;
 	}
-	if (ide_state.dirtyDiagnosticContexts.size === 0) {
-		ide_state.diagnosticsDirty = false;
-		ide_state.diagnosticsDueAtMs = null;
+	if (editorDiagnosticsState.dirtyDiagnosticContexts.size === 0) {
+		editorDiagnosticsState.diagnosticsDirty = false;
+		editorDiagnosticsState.diagnosticsDueAtMs = null;
 		cancelDiagnosticsTimer();
 		return;
 	}
-	if (ide_state.diagnosticsTaskPending) {
+	if (editorDiagnosticsState.diagnosticsTaskPending) {
 		scheduleDiagnosticsComputation();
 		return;
 	}
 	const now = ide_state.clockNow();
-	if (ide_state.diagnosticsDueAtMs === null) {
-		ide_state.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
+	if (editorDiagnosticsState.diagnosticsDueAtMs === null) {
+		editorDiagnosticsState.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
 		scheduleDiagnosticsComputation();
 		return;
 	}
-	if (now < ide_state.diagnosticsDueAtMs) {
+	if (now < editorDiagnosticsState.diagnosticsDueAtMs) {
 		scheduleDiagnosticsComputation();
 		return;
 	}
 	const batch = collectDiagnosticsBatch();
 	if (batch.length === 0) {
-		ide_state.diagnosticsDirty = false;
-		ide_state.diagnosticsDueAtMs = null;
+		editorDiagnosticsState.diagnosticsDirty = false;
+		editorDiagnosticsState.diagnosticsDueAtMs = null;
 		cancelDiagnosticsTimer();
 		return;
 	}
@@ -129,18 +130,18 @@ export function enqueueDiagnosticsJob(contextIds: readonly string[]): void {
 	if (contextIds.length === 0) {
 		return;
 	}
-	ide_state.diagnosticsTaskPending = true;
+	editorDiagnosticsState.diagnosticsTaskPending = true;
 	enqueueBackgroundTask(() => {
 		runDiagnosticsForContexts(contextIds);
-		ide_state.diagnosticsTaskPending = false;
+		editorDiagnosticsState.diagnosticsTaskPending = false;
 		lastDiagnosticsRunMs = ide_state.clockNow();
-		if (ide_state.dirtyDiagnosticContexts.size === 0) {
-			ide_state.diagnosticsDirty = false;
-			ide_state.diagnosticsDueAtMs = null;
+		if (editorDiagnosticsState.dirtyDiagnosticContexts.size === 0) {
+			editorDiagnosticsState.diagnosticsDirty = false;
+			editorDiagnosticsState.diagnosticsDueAtMs = null;
 			cancelDiagnosticsTimer();
 		} else {
 			const now = ide_state.clockNow();
-			ide_state.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
+			editorDiagnosticsState.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
 			processDiagnosticsQueue(now);
 		}
 		return false;
@@ -149,7 +150,7 @@ export function enqueueDiagnosticsJob(contextIds: readonly string[]): void {
 
 export function collectDiagnosticsBatch(): string[] {
 	const activeId = ide_state.activeCodeTabContextId;
-	if (activeId && ide_state.dirtyDiagnosticContexts.has(activeId)) {
+	if (activeId && editorDiagnosticsState.dirtyDiagnosticContexts.has(activeId)) {
 		return [activeId];
 	}
 	return [];
@@ -165,29 +166,29 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 		const contextId = contextIds[index];
 		const context = ide_state.codeTabContexts.get(contextId);
 		if (!context) {
-			ide_state.diagnosticsCache.delete(contextId);
-			ide_state.dirtyDiagnosticContexts.delete(contextId);
+			editorDiagnosticsState.diagnosticsCache.delete(contextId);
+			editorDiagnosticsState.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
 		if (context.mode !== 'lua') {
 			const source = contextId === activeId ? getTextSnapshot(ide_state.buffer) : getTextSnapshot(context.buffer);
-			ide_state.diagnosticsCache.set(context.id, {
+			editorDiagnosticsState.diagnosticsCache.set(context.id, {
 				contextId: context.id,
 				path: context.descriptor.path,
 				diagnostics: [],
 				version: contextId === activeId ? ide_state.buffer.version : context.buffer.version,
 				source,
 			});
-			ide_state.dirtyDiagnosticContexts.delete(contextId);
+			editorDiagnosticsState.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
 		const path = context.descriptor.path;
 		const isActive = activeId && contextId === activeId;
-		const cached = ide_state.diagnosticsCache.get(contextId);
+		const cached = editorDiagnosticsState.diagnosticsCache.get(contextId);
 		const buffer = isActive ? ide_state.buffer : context.buffer;
 		const version = buffer.version;
 		if (cached && cached.path === path && cached.version === version) {
-			ide_state.dirtyDiagnosticContexts.delete(contextId);
+			editorDiagnosticsState.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
 		const source = getTextSnapshot(buffer);
@@ -219,14 +220,14 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 	for (let index = 0; index < inputs.length; index += 1) {
 		const input = inputs[index];
 		const diagList = byContext.get(input.id) ?? [];
-		ide_state.diagnosticsCache.set(input.id, {
+		editorDiagnosticsState.diagnosticsCache.set(input.id, {
 			contextId: input.id,
 			path: input.path,
 			diagnostics: diagList,
 			version: input.version,
 			source: input.source,
 		});
-		ide_state.dirtyDiagnosticContexts.delete(input.id);
+		editorDiagnosticsState.dirtyDiagnosticContexts.delete(input.id);
 	}
 	updateDiagnosticsAggregates();
 }
@@ -238,14 +239,14 @@ export function createDiagnosticProviders(): DiagnosticProviders {
 export function updateDiagnosticsAggregates(): void {
 	const aggregate: EditorDiagnostic[] = [];
 	for (const context of ide_state.codeTabContexts.values()) {
-		const entry = ide_state.diagnosticsCache.get(context.id);
+		const entry = editorDiagnosticsState.diagnosticsCache.get(context.id);
 		if (entry) {
 			for (let index = 0; index < entry.diagnostics.length; index += 1) {
 				aggregate.push(entry.diagnostics[index]);
 			}
 		}
 	}
-	for (const [contextId, entry] of ide_state.diagnosticsCache) {
+	for (const [contextId, entry] of editorDiagnosticsState.diagnosticsCache) {
 		if (ide_state.codeTabContexts.has(contextId)) {
 			continue;
 		}
@@ -253,27 +254,27 @@ export function updateDiagnosticsAggregates(): void {
 			aggregate.push(entry.diagnostics[index]);
 		}
 	}
-	ide_state.diagnostics = aggregate;
+	editorDiagnosticsState.diagnostics = aggregate;
 	refreshActiveDiagnostics();
-	ide_state.problemsPanel.setDiagnostics(ide_state.diagnostics);
+	ide_state.problemsPanel.setDiagnostics(editorDiagnosticsState.diagnostics);
 }
 
 export function refreshActiveDiagnostics(): void {
-	ide_state.diagnosticsByRow.clear();
+	editorDiagnosticsState.diagnosticsByRow.clear();
 	const activeId = ide_state.activeCodeTabContextId;
 	if (!activeId) {
 		return;
 	}
-	const entry = ide_state.diagnosticsCache.get(activeId);
+	const entry = editorDiagnosticsState.diagnosticsCache.get(activeId);
 	if (!entry) {
 		return;
 	}
 	for (let index = 0; index < entry.diagnostics.length; index += 1) {
 		const diag = entry.diagnostics[index];
-		let bucket = ide_state.diagnosticsByRow.get(diag.row);
+		let bucket = editorDiagnosticsState.diagnosticsByRow.get(diag.row);
 		if (!bucket) {
 			bucket = [];
-			ide_state.diagnosticsByRow.set(diag.row, bucket);
+			editorDiagnosticsState.diagnosticsByRow.set(diag.row, bucket);
 		}
 		bucket.push(diag);
 	}
@@ -327,7 +328,7 @@ export function findContextByChunk(path: string): CodeTabContext {
 }
 
 export function getDiagnosticsForRow(row: number): readonly EditorDiagnostic[] {
-	const bucket = ide_state.diagnosticsByRow.get(row);
+	const bucket = editorDiagnosticsState.diagnosticsByRow.get(row);
 	return bucket ?? EMPTY_DIAGNOSTICS;
 }
 

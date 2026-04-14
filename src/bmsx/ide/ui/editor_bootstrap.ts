@@ -7,6 +7,7 @@ import { Scrollbar, ScrollbarController } from './scrollbar';
 import { ResourcePanelController } from '../contrib/resources/resource_panel_controller';
 import { InputController } from '../input/keyboard/editor_text_input';
 import { ide_state } from '../core/ide_state';
+import { editorDiagnosticsState } from '../contrib/problems/diagnostics_state';
 import { initializeDebuggerUiState } from '../contrib/debugger/ide_debugger';
 import { initializeWorkspaceStorage } from '../core/workspace_storage';
 import { Runtime } from '../../emulator/runtime';
@@ -68,7 +69,7 @@ export function initializeCartEditor(viewport: Viewport): void {
 	ide_state.completion.enterCommitsCompletion = false;
 	ide_state.input = new InputController();
 	ide_state.problemsPanel = new ProblemsPanelController();
-	ide_state.problemsPanel.setDiagnostics(ide_state.diagnostics);
+	ide_state.problemsPanel.setDiagnostics(editorDiagnosticsState.diagnostics);
 	ide_state.renameController = renameController;
 	ide_state.codeVerticalScrollbarVisible = false;
 	ide_state.codeHorizontalScrollbarVisible = false;

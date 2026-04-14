@@ -42,6 +42,7 @@ import {
 } from '../contrib/find/editor_search';
 import { clearExecutionStopHighlights, syncRuntimeErrorOverlayFromContext } from '../contrib/runtime_error/runtime_error_navigation';
 import { processDiagnosticsQueue } from '../contrib/problems/diagnostics_controller';
+import { editorDiagnosticsState } from '../contrib/problems/diagnostics_state';
 import { updateDesiredColumn } from './caret';
 import { resetActionPromptState } from '../input/overlays/action_prompt';
 import { actionPromptState } from '../input/overlays/action_prompt_state';
@@ -72,7 +73,7 @@ export function update(deltaSeconds: number): void {
 	} else if (!semanticError && ide_state.lastReportedSemanticError !== null) {
 		ide_state.lastReportedSemanticError = null;
 	}
-	if (ide_state.diagnosticsDirty) {
+	if (editorDiagnosticsState.diagnosticsDirty) {
 		processDiagnosticsQueue(ide_state.clockNow());
 	}
 }
@@ -242,7 +243,7 @@ export function deactivateRuntimeEditor(): void {
 	ide_state.search.hoverIndex = -1;
 	ide_state.search.scope = 'local';
 	clearBackgroundTasks();
-	ide_state.diagnosticsTaskPending = false;
+	editorDiagnosticsState.diagnosticsTaskPending = false;
 	ide_state.lastReportedSemanticError = null;
 }
 

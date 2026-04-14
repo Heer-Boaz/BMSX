@@ -2,7 +2,8 @@ import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../emulator/typ
 import type { EditorDiagnostic } from '../../core/types';
 import { computeLuaDiagnostics, getApiCompletionData } from '../intellisense/intellisense';
 import { getCachedLuaParse } from '../../language/lua/lua_analysis_cache';
-import { ide_state, diagnosticsDebounceMs } from '../../core/ide_state';
+import { ide_state } from '../../core/ide_state';
+import { diagnosticsDebounceMs, editorDiagnosticsState } from './diagnostics_state';
 import { cacheSemanticParseState } from '../intellisense/semantic_workspace_sync';
 
 export type DiagnosticContextInput = {
@@ -75,9 +76,9 @@ export function computeAggregatedEditorDiagnostics(
 }
 
 export function markDiagnosticsDirty(contextId: string): void {
-	ide_state.diagnosticsDirty = true;
-	ide_state.dirtyDiagnosticContexts.add(contextId);
-	ide_state.diagnosticsDueAtMs = ide_state.clockNow() + diagnosticsDebounceMs;
+	editorDiagnosticsState.diagnosticsDirty = true;
+	editorDiagnosticsState.dirtyDiagnosticContexts.add(contextId);
+	editorDiagnosticsState.diagnosticsDueAtMs = ide_state.clockNow() + diagnosticsDebounceMs;
 }
 
 export function markAllDiagnosticsDirty(): void {
@@ -85,9 +86,9 @@ export function markAllDiagnosticsDirty(): void {
 	if (contexts.size === 0) {
 		return;
 	}
-	ide_state.diagnosticsDirty = true;
+	editorDiagnosticsState.diagnosticsDirty = true;
 	for (const contextId of contexts.keys()) {
-		ide_state.dirtyDiagnosticContexts.add(contextId);
+		editorDiagnosticsState.dirtyDiagnosticContexts.add(contextId);
 	}
-	ide_state.diagnosticsDueAtMs = ide_state.clockNow() + diagnosticsDebounceMs;
+	editorDiagnosticsState.diagnosticsDueAtMs = ide_state.clockNow() + diagnosticsDebounceMs;
 }

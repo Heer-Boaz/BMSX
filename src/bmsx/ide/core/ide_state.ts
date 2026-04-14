@@ -12,8 +12,6 @@ import { ReferenceState } from '../contrib/references/reference_state';
 import { CHARACTER_CODES } from './character_map';
 import type {
 	Position,
-	EditorDiagnostic,
-	DiagnosticsCacheEntry,
 	CodeTabContext,
 	TopBarButtonId,
 	MenuId,
@@ -84,11 +82,7 @@ export const captureKeys: string[] = [...new Set([
 	...CHARACTER_CODES,
 ])];
 
-export const EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
-
 export const NAVIGATION_HISTORY_LIMIT = 64;
-
-export const diagnosticsDebounceMs = 200;
 
 export const WORKSPACE_AUTOSAVE_INTERVAL_MS = 2500;
 
@@ -136,13 +130,6 @@ export interface IdeState {
 	clockNow: () => number;
 	problemsPanel: ProblemsPanelController;
 	problemsPanelResizing: boolean;
-	diagnostics: EditorDiagnostic[];
-	diagnosticsByRow: Map<number, EditorDiagnostic[]>;
-	diagnosticsDirty: boolean;
-	diagnosticsCache: Map<string, DiagnosticsCacheEntry>;
-	dirtyDiagnosticContexts: Set<string>;
-	diagnosticsDueAtMs: number;
-	diagnosticsComputationScheduled: boolean;
 	codeTabContexts: Map<string, CodeTabContext>;
 	activeCodeTabContextId: string;
 	topBarButtonBounds: Record<TopBarButtonId, RectBounds>;
@@ -174,7 +161,6 @@ export interface IdeState {
 	input: InputController;
 	crtOptionsSnapshot: CrtOptionsSnapshot;
 	pendingEditContext: EditContext;
-	diagnosticsTaskPending: boolean;
 	lastReportedSemanticError: string;
 	referenceState: ReferenceState;
 	textVersion: number;
@@ -241,13 +227,6 @@ export const ide_state: IdeState = {
 	clockNow: undefined!,
 	problemsPanel: undefined!,
 	problemsPanelResizing: false,
-	diagnostics: [],
-	diagnosticsByRow: new Map<number, EditorDiagnostic[]>(),
-	diagnosticsDirty: true,
-	diagnosticsCache: new Map<string, DiagnosticsCacheEntry>(),
-	dirtyDiagnosticContexts: new Set<string>(),
-	diagnosticsDueAtMs: null,
-	diagnosticsComputationScheduled: false,
 	codeTabContexts: new Map<string, CodeTabContext>(),
 	activeCodeTabContextId: null,
 	topBarButtonBounds: {
@@ -349,7 +328,6 @@ export const ide_state: IdeState = {
 	input: undefined!,
 	crtOptionsSnapshot: null,
 	pendingEditContext: null,
-	diagnosticsTaskPending: false,
 	lastReportedSemanticError: null,
 	referenceState: new ReferenceState(),
 	textVersion: 0,
