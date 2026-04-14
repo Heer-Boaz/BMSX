@@ -567,8 +567,8 @@ function stage_subsystem:draw()
 end
 
 function stage_subsystem:is_solid_pixel(screen_x, screen_y)
-	local map_x = math.floor((screen_x + self.total_scroll_px) / self.tile_size) + 1
-	local map_y = math.floor(screen_y / self.tile_size) + 1
+	local map_x = math.modf((screen_x + self.total_scroll_px) / self.tile_size) + 1
+	local map_y = math.modf(screen_y / self.tile_size) + 1
 
 	map_x = clamp_int(map_x, 1, self.tape_length_tiles)
 	map_y = clamp_int(map_y, 1, self.tile_rows)

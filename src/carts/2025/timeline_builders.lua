@@ -2,9 +2,9 @@ local builders<const> = {}
 local globals<const> = require('globals')
 local round<const> = function(x)
 	if x >= 0 then
-		return math.floor(x + 0.5)
+		return math.modf(x + 0.5)
 	end
-	return -math.floor((-x) + 0.5)
+	return -math.modf((-x) + 0.5)
 end
 
 local shake_hash<const> = function(seed)
@@ -49,9 +49,6 @@ local flash_mix<const> = function(frame_index, flash_frame)
 	local u<const> = (frame_index - flash_frame) / (globals.transition_flash_frames - 1)
 	return (1 - u) * globals.transition_flash_mix
 end
-
-builders.round = round
-builders.shake_signed = shake_signed
 
 function builders.build_all_out_shake(total_frames)
 	local ramp_in_frames<const> = 10
@@ -106,7 +103,7 @@ function builders.build_all_out_shake(total_frames)
 		dx = dx + (shake_signed(3000 + frame_index * 97 + 3) * micro_jitter_amp_x)
 		dy = dy + (shake_signed(4000 + frame_index * 89 + 9) * micro_jitter_amp_y)
 
-		local segment_index<const> = math.floor(frame_index / hit_segment_len)
+		local segment_index<const> = math.modf(frame_index / hit_segment_len)
 		local segment_start<const> = segment_index * hit_segment_len
 		local accent_at<const> = segment_start + (shake_hash(segment_index * 73 + 11) % hit_window)
 		if frame_index >= accent_at and frame_index < (accent_at + hit_len) then

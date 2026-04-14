@@ -980,8 +980,8 @@ function combat.define_fsm()
 			portrait.visible = true
 			portrait.z = 750
 			portrait.sprite_component.scale = { x = 1, y = 1 }
-			local target_x<const> = math.floor(display_width() * 0.08)
-			local target_y<const> = math.floor(display_height() - portrait.sy)
+			local target_x<const> = math.modf(display_width() * 0.08)
+			local target_y<const> = math.modf(display_height() - portrait.sy)
 			self:play_timeline(combat_all_out_prompt_timeline_id, {
 				rewind = true,
 				snap_to_start = true,

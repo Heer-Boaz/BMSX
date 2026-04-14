@@ -165,12 +165,12 @@ end
 
 function player:get_laser_visual_x(x, weapon)
 	local tile_width<const> = weapon.tile_width
-	return math.floor(x / tile_width) * tile_width
+	return math.modf(x / tile_width) * tile_width
 end
 
 function player:get_laser_visual_y(y, weapon)
 	local visual_step<const> = weapon.tile_width * 0.5
-	return math.floor(y / visual_step) * visual_step
+	return math.modf(y / visual_step) * visual_step
 end
 
 function player:draw_lasers()
@@ -498,7 +498,7 @@ function player:spawn_uplaser(vessel_id)
 	else
 		length_units = constants.weapons.uplaser.level1_length_units
 	end
-	local aligned_x<const> = math.floor((vessel_x + constants.weapons.uplaser.spawn_offset_x) / constants.weapons.uplaser.tile_width)
+	local aligned_x<const> = math.modf((vessel_x + constants.weapons.uplaser.spawn_offset_x) / constants.weapons.uplaser.tile_width)
 		* constants.weapons.uplaser.tile_width
 	local initial_width<const> = length_units * constants.weapons.uplaser.length_unit_px
 	local uplaser<const> = {
@@ -729,7 +729,7 @@ function player:update_uplasers()
 				end
 				uplaser.length_units = uplaser.length_units + growth_units
 				self:refresh_uplaser_dimensions(uplaser)
-				uplaser.x = math.floor((uplaser.center_x - (uplaser.width * 0.5)) / constants.weapons.uplaser.tile_width)
+				uplaser.x = math.modf((uplaser.center_x - (uplaser.width * 0.5)) / constants.weapons.uplaser.tile_width)
 					* constants.weapons.uplaser.tile_width
 			end
 		end

@@ -55,7 +55,7 @@ function transition:draw_transition_overlay()
 					17,
 					0,
 					line,
-					math.floor((screen_width - font.measure_line_width(font, line)) / 2),
+					math.modf((screen_width - font.measure_line_width(font, line)) / 2),
 					base_y + ((i - 1) * font.line_height),
 					341,
 					font.id,
