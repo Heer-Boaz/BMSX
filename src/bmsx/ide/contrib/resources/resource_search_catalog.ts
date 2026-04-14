@@ -1,5 +1,6 @@
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
+import { showEditorMessage } from '../../core/editor_feedback_state';
 import { listResourcesStrict } from '../../ui/editor_tabs';
 import { clampQuickInputDisplayOffset, advanceQuickInputSelection } from '../../navigation/quick_input_navigation';
 import { resetBlink } from '../../render/render_caret';
@@ -49,7 +50,7 @@ export function refreshResourceCatalog(): void {
 		ide_state.resourceSearch.selectionIndex = -1;
 		ide_state.resourceSearch.displayOffset = 0;
 		ide_state.resourceSearch.hoverIndex = -1;
-		ide_state.showMessage(`Failed to list resources: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
+		showEditorMessage(`Failed to list resources: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 	}
 }
 

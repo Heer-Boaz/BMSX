@@ -2,6 +2,7 @@ import { Runtime } from '../../../emulator/runtime';
 import * as runtimeIde from '../../../emulator/runtime_ide';
 import { type LuaDebuggerSessionMetrics } from '../../../lua/luadebugger';
 import { ide_state } from '../../core/ide_state';
+import { showEditorMessage } from '../../core/editor_feedback_state';
 import { focusChunkSource, getActiveCodeTabContext } from '../../ui/editor_tabs';
 import { clamp, clamp_fallback } from '../../../utils/clamp';
 import { centerCursorVertically, ensureCursorVisible, setCursorPosition, updateDesiredColumn } from '../../ui/caret';
@@ -224,7 +225,7 @@ export function toggleBreakpointForEditorRow(row: number = ide_state.cursorRow):
 	}
 	const path = getActiveBreakpointPath();
 	if (!path) {
-		ide_state.showMessage('No active path available for breakpoints.', constants.COLOR_STATUS_WARNING, 1.6);
+		showEditorMessage('No active path available for breakpoints.', constants.COLOR_STATUS_WARNING, 1.6);
 		return false;
 	}
 	const lineNumber = row + 1;
@@ -233,7 +234,7 @@ export function toggleBreakpointForEditorRow(row: number = ide_state.cursorRow):
 		return false;
 	}
 	const verb = result === 'added' ? 'set' : 'cleared';
-	ide_state.showMessage(`Breakpoint ${verb} at ${path}:${lineNumber}`, constants.COLOR_STATUS_TEXT, 1.4);
+	showEditorMessage(`Breakpoint ${verb} at ${path}:${lineNumber}`, constants.COLOR_STATUS_TEXT, 1.4);
 	return true;
 }
 const MESSAGE_BY_REASON: Record<DebuggerPauseDisplayPayload['reason'], string> = {
@@ -259,7 +260,7 @@ export function showDebuggerPauseOverlay(payload: DebuggerPauseDisplayPayload, m
 	const baseMessage = MESSAGE_BY_REASON[payload.reason] ?? 'Debugger paused';
 	const metricsText = formatDebuggerMetrics(metrics);
 	const message = metricsText ? `${baseMessage} — ${metricsText}` : baseMessage;
-	ide_state.showMessage(message, constants.COLOR_STATUS_WARNING, 3.0);
+	showEditorMessage(message, constants.COLOR_STATUS_WARNING, 3.0);
 }
 
 export function clearDebuggerPauseOverlay(): void {
@@ -272,7 +273,7 @@ export function prepareDebuggerStepOverlay(): void {
 		return;
 	}
 	clearRuntimeErrorOverlay();
-	ide_state.showMessage('Debugger stepping…', constants.COLOR_STATUS_WARNING, 2.0);
+	showEditorMessage('Debugger stepping…', constants.COLOR_STATUS_WARNING, 2.0);
 }
 
 function updateDebuggerCaret(row: number, column: number): void {
@@ -308,7 +309,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 	}
 	const source = frame.source ?? '';
 	if (source.length === 0) {
-		ide_state.showMessage('Runtime frame is missing a path reference.', constants.COLOR_STATUS_ERROR, 1.6);
+		showEditorMessage('Runtime frame is missing a path reference.', constants.COLOR_STATUS_ERROR, 1.6);
 		return;
 	}
 	const normalizedChunk = source;
@@ -316,12 +317,12 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 		focusChunkSource(normalizedChunk);
 	} catch (error) {
 		const message = extractErrorMessage(error);
-		ide_state.showMessage(`Failed to open runtime path: ${message}`, constants.COLOR_STATUS_ERROR, 1.6);
+		showEditorMessage(`Failed to open runtime path: ${message}`, constants.COLOR_STATUS_ERROR, 1.6);
 		return;
 	}
 	const activeContext = getActiveCodeTabContext();
 	if (!activeContext) {
-		ide_state.showMessage('Unable to activate editor context for runtime frame.', constants.COLOR_STATUS_ERROR, 1.6);
+		showEditorMessage('Unable to activate editor context for runtime frame.', constants.COLOR_STATUS_ERROR, 1.6);
 		return;
 	}
 	const lastRowIndex = Math.max(0, ide_state.buffer.getLineCount() - 1);

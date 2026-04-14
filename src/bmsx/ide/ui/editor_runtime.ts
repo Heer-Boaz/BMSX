@@ -6,6 +6,7 @@ import * as constants from '../core/constants';
 import { activateCodeTab, getActiveCodeTabContext, isResourceViewActive, setActiveTab, storeActiveCodeTabContext } from './editor_tabs';
 import { cancelGlobalSearchJob, startSearchJob } from '../contrib/find/editor_search';
 import { ide_state, captureKeys } from '../core/ide_state';
+import { editorFeedbackState, setEditorFeedbackActive, showEditorMessage, updateEditorMessage } from '../core/editor_feedback_state';
 import { bumpTextVersion } from '../core/text_utils';
 import { ensureCursorVisible } from './caret';
 import { drawProblemsPanel } from '../contrib/problems/problems_panel';
@@ -63,12 +64,12 @@ export function tickInput(): void {
 
 export function update(deltaSeconds: number): void {
 	updateBlink(deltaSeconds);
-	ide_state.updateMessage(deltaSeconds);
+	updateEditorMessage(deltaSeconds);
 	updateRuntimeErrorOverlay(deltaSeconds);
 	ide_state.completion.processPending(deltaSeconds);
 	const semanticError = ide_state.layout.getLastSemanticError();
 	if (semanticError && semanticError !== ide_state.lastReportedSemanticError) {
-		ide_state.showMessage(semanticError, constants.COLOR_STATUS_ERROR, 2.0);
+		showEditorMessage(semanticError, constants.COLOR_STATUS_ERROR, 2.0);
 		ide_state.lastReportedSemanticError = semanticError;
 	} else if (!semanticError && ide_state.lastReportedSemanticError !== null) {
 		ide_state.lastReportedSemanticError = null;
@@ -114,6 +115,7 @@ export function shutdownRuntimeEditor(): void {
 		Runtime.instance.restoreCrtPostprocessingFromEditor();
 	}
 	ide_state.active = false;
+	setEditorFeedbackActive(false);
 	if (workspaceState.autosaveEnabled) {
 		stopWorkspaceAutosaveLoop();
 		void runWorkspaceAutosaveTick();
@@ -170,6 +172,7 @@ export function activateRuntimeEditor(): void {
 	editorCaretState.cursorVisible = true;
 	editorCaretState.blinkTimer = 0;
 	ide_state.active = true;
+	setEditorFeedbackActive(true);
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = false;
 	editorCaretState.cursorRevealSuspended = false;
@@ -195,10 +198,10 @@ export function activateRuntimeEditor(): void {
 		startSearchJob();
 	}
 	ensureCursorVisible();
-	if (ide_state.message.visible && !Number.isFinite(ide_state.message.timer) && ide_state.deferredMessageDuration !== null) {
-		ide_state.message.timer = ide_state.deferredMessageDuration;
+	if (editorFeedbackState.message.visible && !Number.isFinite(editorFeedbackState.message.timer) && editorFeedbackState.deferredMessageDuration !== null) {
+		editorFeedbackState.message.timer = editorFeedbackState.deferredMessageDuration;
 	}
-	ide_state.deferredMessageDuration = null;
+	editorFeedbackState.deferredMessageDuration = null;
 	if (ide_state.dimCrtInEditor) {
 		Runtime.instance.disableCrtPostprocessingForEditor();
 	}
@@ -216,6 +219,7 @@ export function activateRuntimeEditor(): void {
 export function deactivateRuntimeEditor(): void {
 	storeActiveCodeTabContext();
 	ide_state.active = false;
+	setEditorFeedbackActive(false);
 	if (ide_state.dimCrtInEditor) {
 		Runtime.instance.restoreCrtPostprocessingFromEditor();
 	}
@@ -253,5 +257,5 @@ export function handleRuntimeTaskError(error: unknown, fallbackMessage: string):
 	runtimeIde.activateEditor(Runtime.instance);
 	const message = `${fallbackMessage}: ${errormsg}`;
 	Runtime.instance.terminal.appendStderr(message);
-	ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 2.0);
+	showEditorMessage(message, constants.COLOR_STATUS_ERROR, 2.0);
 }

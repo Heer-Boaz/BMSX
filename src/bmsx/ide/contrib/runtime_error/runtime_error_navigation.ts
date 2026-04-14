@@ -2,6 +2,7 @@ import { centerCursorVertically, setCursorPosition } from '../../ui/caret';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { activateCodeTab, getActiveCodeTabContext, setActiveTab } from '../../ui/editor_tabs';
 import { ide_state } from '../../core/ide_state';
+import { showEditorMessage } from '../../core/editor_feedback_state';
 import type { CodeTabContext, RuntimeErrorOverlay } from '../../core/types';
 import { resetBlink } from '../../render/render_caret';
 import { showRuntimeErrorInChunk } from '../../render/render_error_overlay';
@@ -135,7 +136,7 @@ export function tryShowLuaErrorOverlay(error: unknown): boolean {
 	const hasColumn = rawColumn !== null && rawColumn > 0;
 	if (!hasLine && !hasColumn) {
 		if (messageText) {
-			ide_state.showMessage(messageText, constants.COLOR_STATUS_ERROR, 4.0);
+			showEditorMessage(messageText, constants.COLOR_STATUS_ERROR, 4.0);
 			return true;
 		}
 		return false;

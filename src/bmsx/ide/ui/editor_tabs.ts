@@ -1,4 +1,5 @@
 import { ide_state } from '../core/ide_state';
+import { showEditorMessage,showEditorWarningBanner } from '../core/editor_feedback_state';
 import { editorChromeState } from './editor_chrome_state';
 import { editorDiagnosticsState } from '../contrib/problems/diagnostics_state';
 import type {
@@ -370,7 +371,7 @@ export async function openAemCodeTab(descriptor: ResourceDescriptor): Promise<vo
 	} catch (error) {
 		completeNavigation(navigationCheckpoint);
 		const message = extractErrorMessage(error);
-		ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
+		showEditorMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
 	}
 }
 
@@ -593,7 +594,7 @@ export function listResourcesStrict(): ResourceDescriptor[] {
 export function openResourceDescriptor(descriptor: ResourceDescriptor): void {
 	selectResourceInPanel(descriptor);
 	if (descriptor.type === 'atlas') {
-		ide_state.showMessage('Atlas resources cannot be previewed in the IDE.', constants.COLOR_STATUS_WARNING, 3.2);
+		showEditorMessage('Atlas resources cannot be previewed in the IDE.', constants.COLOR_STATUS_WARNING, 3.2);
 		focusEditorFromResourcePanel();
 		return;
 	}
@@ -674,7 +675,7 @@ export async function save(): Promise<void> {
 		if (context.mode === 'lua') {
 			context.appliedGeneration = ide_state.appliedGeneration;
 			setContextRuntimeSyncState(context, 'restart_pending', null);
-			ide_state.showMessage(`${context.title} saved (restart pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
+			showEditorMessage(`${context.title} saved (restart pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
 			return;
 		}
 		try {
@@ -682,21 +683,21 @@ export async function save(): Promise<void> {
 			ide_state.appliedGeneration = ide_state.saveGeneration;
 			context.appliedGeneration = ide_state.appliedGeneration;
 			setContextRuntimeSyncState(context, 'synced', null);
-			ide_state.showMessage(`${context.title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
+			showEditorMessage(`${context.title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
 		} catch (applyError) {
 			const applyMessage = extractErrorMessage(applyError);
 			ide_state.appliedGeneration = previousAppliedGeneration;
 			context.appliedGeneration = previousAppliedGeneration;
 			setContextRuntimeSyncState(context, 'diverged', applyMessage);
-			ide_state.showMessage(`${context.title} saved, but runtime apply failed`, constants.COLOR_STATUS_WARNING, 4.0);
-			ide_state.showWarningBanner(`Saved, but runtime apply failed: ${applyMessage}`, 5.0);
+			showEditorMessage(`${context.title} saved, but runtime apply failed`, constants.COLOR_STATUS_WARNING, 4.0);
+			showEditorWarningBanner(`Saved, but runtime apply failed: ${applyMessage}`, 5.0);
 		}
 	} catch (error) {
 		if (context.mode === 'lua' && tryShowLuaErrorOverlay(error)) {
 			return;
 		}
 		const message = extractErrorMessage(error);
-		ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
+		showEditorMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
 	}
 }
 

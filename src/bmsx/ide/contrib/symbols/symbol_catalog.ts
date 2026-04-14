@@ -3,6 +3,7 @@ import * as constants from '../../core/constants';
 import { computeSourceLabel } from '../references/reference_sources';
 import { getActiveCodeTabContext } from '../../ui/editor_tabs';
 import { ide_state } from '../../core/ide_state';
+import { showEditorMessage } from '../../core/editor_feedback_state';
 import { listGlobalLuaSymbols, listLuaSymbols } from '../intellisense/intellisense';
 import { symbolKindLabel } from '../intellisense/semantic_model';
 import { extractErrorMessage } from '../../../lua/luavalue';
@@ -51,7 +52,7 @@ export function refreshSymbolCatalog(force: boolean): void {
 		ide_state.symbolSearch.selectionIndex = -1;
 		ide_state.symbolSearch.displayOffset = 0;
 		ide_state.symbolSearch.hoverIndex = -1;
-		ide_state.showMessage(`Failed to list symbols: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
+		showEditorMessage(`Failed to list symbols: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
 	ide_state.symbolSearch.catalogContext = { scope, path };

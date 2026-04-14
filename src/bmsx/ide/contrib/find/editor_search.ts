@@ -1,4 +1,5 @@
 import { ide_state } from '../../core/ide_state';
+import { showEditorMessage } from '../../core/editor_feedback_state';
 import * as constants from '../../core/constants';
 import { clamp, clamp_wrap } from '../../../utils/clamp';
 import { getSelectionRange, getSelectionText } from '../../editing/text_editing_and_selection';
@@ -59,7 +60,7 @@ function descriptorLabel(descriptor: ResourceDescriptor): string {
 }
 
 function showNoMatches(): void {
-	ide_state.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
+	showEditorMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
 }
 
 export function activeSearchMatchCount(): number {

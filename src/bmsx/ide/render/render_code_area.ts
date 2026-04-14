@@ -2,6 +2,7 @@ import type { CursorScreenInfo } from '../core/types';
 import { getBreakpointLaneWidth, getCodeAreaBounds, maximumLineLength } from '../ui/editor_view';
 import * as constants from '../core/constants';
 import { ide_state } from '../core/ide_state';
+import { editorFeedbackState } from '../core/editor_feedback_state';
 import { getBreakpointsForChunk } from '../contrib/debugger/ide_debugger';
 import { intellisenseUiState } from '../contrib/intellisense/intellisense_ui_state';
 import { getActiveCodeTabContext } from '../ui/editor_tabs';
@@ -14,7 +15,7 @@ export function renderCodeArea(): void {
 	ensureVisualLines();
 	const bounds = getCodeAreaBounds();
 	const gutterOffset = bounds.textLeft - bounds.codeLeft;
-	const advance = ide_state.warnNonMonospace ? ide_state.spaceAdvance : ide_state.charAdvance;
+	const advance = editorFeedbackState.warnNonMonospace ? ide_state.spaceAdvance : ide_state.charAdvance;
 	const wrapEnabled = ide_state.wordWrapEnabled;
 
 	let horizontalVisible = !wrapEnabled && ide_state.codeHorizontalScrollbarVisible;

@@ -1,5 +1,6 @@
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
+import { showEditorMessage } from '../../core/editor_feedback_state';
 import { applyInlineFieldEditing } from '../../ui/inline_text_field';
 import { applyResourceSearchSelection, closeResourceSearch, focusEditorFromResourceSearch } from '../../contrib/resources/resource_search';
 import { applyLineJumpFieldText, openLineJump } from '../../contrib/find/line_jump';
@@ -27,7 +28,7 @@ export function handleResourceSearchInput(): void {
 			closeResourceSearch(true);
 			focusEditorFromResourceSearch();
 		} else {
-			ide_state.showMessage('No resource selected', constants.COLOR_STATUS_WARNING, 1.5);
+			showEditorMessage('No resource selected', constants.COLOR_STATUS_WARNING, 1.5);
 		}
 		return;
 	}

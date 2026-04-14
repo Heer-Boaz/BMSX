@@ -2,6 +2,7 @@ import { clamp } from '../../utils/clamp';
 import * as constants from '../core/constants';
 import { getCodeAreaBounds, maximumLineLength } from './editor_view';
 import { caretNavigation, ide_state } from '../core/ide_state';
+import { editorFeedbackState } from '../core/editor_feedback_state';
 import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../core/text_utils';
 import { editorCaretState } from './caret_state';
 
@@ -15,7 +16,7 @@ export function resolveViewportCapacity(): { rows: number; columns: number } {
 	const bounds = getCodeAreaBounds();
 	const gutterOffset = bounds.textLeft - bounds.codeLeft;
 	const wrapEnabled = ide_state.wordWrapEnabled;
-	const advance = ide_state.warnNonMonospace ? ide_state.spaceAdvance : ide_state.charAdvance;
+	const advance = editorFeedbackState.warnNonMonospace ? ide_state.spaceAdvance : ide_state.charAdvance;
 	const visualCount = getVisualLineCount();
 
 	let horizontalVisible = !wrapEnabled && ide_state.codeHorizontalScrollbarVisible;

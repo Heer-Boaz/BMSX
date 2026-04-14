@@ -1,5 +1,6 @@
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
+import { showEditorMessage } from '../../core/editor_feedback_state';
 import { clearReferenceHighlights } from '../intellisense/intellisense';
 import { closeSearch } from './editor_search';
 import { resetBlink } from '../../render/render_caret';
@@ -47,13 +48,13 @@ export function focusEditorFromLineJump(): void {
 
 export function applyLineJump(): void {
 	if (ide_state.lineJump.value.length === 0) {
-		ide_state.showMessage('Enter a line number', constants.COLOR_STATUS_WARNING, 1.5);
+		showEditorMessage('Enter a line number', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	const target = Number.parseInt(ide_state.lineJump.value, 10);
 	const lineCount = ide_state.buffer.getLineCount();
 	if (!Number.isFinite(target) || target < 1 || target > lineCount) {
-		ide_state.showMessage(`Line must be between 1 and ${lineCount}`, constants.COLOR_STATUS_WARNING, 1.8);
+		showEditorMessage(`Line must be between 1 and ${lineCount}`, constants.COLOR_STATUS_WARNING, 1.8);
 		return;
 	}
 	const navigationCheckpoint = beginNavigationCapture();
@@ -61,7 +62,7 @@ export function applyLineJump(): void {
 	TextEditing.clearSelection();
 	breakUndoSequence();
 	closeLineJump(true);
-	ide_state.showMessage(`Jumped to line ${target}`, constants.COLOR_STATUS_SUCCESS, 1.5);
+	showEditorMessage(`Jumped to line ${target}`, constants.COLOR_STATUS_SUCCESS, 1.5);
 	completeNavigation(navigationCheckpoint);
 }
 

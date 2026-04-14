@@ -13,6 +13,7 @@
 
 import { $ } from '../../core/engine_core';
 import { ide_state } from '../core/ide_state';
+import { showEditorMessage } from '../core/editor_feedback_state';
 import type { EditContext, Position } from '../core/types';
 import { getActiveCodeTabContext, recordEditContext } from '../ui/editor_tabs';
 import { revealCursor, updateDesiredColumn } from '../ui/caret';
@@ -869,7 +870,7 @@ export function unindentSelectionOrLine(): void {
 export async function copySelectionToClipboard(): Promise<void> {
 	const text = getSelectionText();
 	if (text === null) {
-		ide_state.showMessage('Nothing selected to copy', constants.COLOR_STATUS_WARNING, 1.5);
+		showEditorMessage('Nothing selected to copy', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	await writeClipboard(text, 'Copied selection to clipboard');
@@ -882,7 +883,7 @@ export async function copySelectionToClipboard(): Promise<void> {
 export async function cutSelectionToClipboard(): Promise<void> {
 	const text = getSelectionText();
 	if (text === null) {
-		ide_state.showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
+		showEditorMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	if (!editorAllowsMutation()) {
@@ -948,17 +949,17 @@ export async function cutLineToClipboard(): Promise<void> {
 export function pasteFromClipboard(): void {
 	const text = ide_state.customClipboard;
 	if (text === null || text.length === 0) {
-		ide_state.showMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
+		showEditorMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	if (!editorAllowsMutation()) {
-		ide_state.showMessage('Tab is read-only', constants.COLOR_STATUS_WARNING, 1.5);
+		showEditorMessage('Tab is read-only', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	prepareUndo('paste', false);
 	deleteSelectionIfPresent();
 	insertClipboardText(text);
-	ide_state.showMessage('Pasted from editor clipboard', constants.COLOR_STATUS_SUCCESS, 1.5);
+	showEditorMessage('Pasted from editor clipboard', constants.COLOR_STATUS_SUCCESS, 1.5);
 }
 
 /**
@@ -971,15 +972,15 @@ export async function writeClipboard(text: string, successMessage: string): Prom
 	const clipboard = $.platform.clipboard;
 	if (!clipboard.isSupported()) {
 		const message = successMessage + ' (Editor clipboard only)';
-		ide_state.showMessage(message, constants.COLOR_STATUS_SUCCESS, 1.5);
+		showEditorMessage(message, constants.COLOR_STATUS_SUCCESS, 1.5);
 		return;
 	}
 	try {
 		await clipboard.writeText(text);
-		ide_state.showMessage(successMessage, constants.COLOR_STATUS_SUCCESS, 1.5);
+		showEditorMessage(successMessage, constants.COLOR_STATUS_SUCCESS, 1.5);
 	}
 	catch (error) {
-		ide_state.showMessage('System clipboard write failed. Editor clipboard updated.', constants.COLOR_STATUS_WARNING, 3.5);
+		showEditorMessage('System clipboard write failed. Editor clipboard updated.', constants.COLOR_STATUS_WARNING, 3.5);
 	}
 }
 
@@ -992,7 +993,7 @@ export function applyDocumentFormatting(): void {
 			? formatLuaDocument(originalSource)
 			: formatAemDocument(originalSource, context.descriptor.path);
 		if (formatted === originalSource) {
-			ide_state.showMessage('Document already formatted', constants.COLOR_STATUS_TEXT, 1.5);
+			showEditorMessage('Document already formatted', constants.COLOR_STATUS_TEXT, 1.5);
 			return;
 		}
 		const cursorOffset = buffer.offsetAt(ide_state.cursorRow, ide_state.cursorColumn);
@@ -1009,10 +1010,10 @@ export function applyDocumentFormatting(): void {
 		revealCursor();
 		markDiagnosticsDirty(getActiveCodeTabContext().id);
 		markTextMutated();
-		ide_state.showMessage('Document formatted', constants.COLOR_STATUS_SUCCESS, 1.6);
+		showEditorMessage('Document formatted', constants.COLOR_STATUS_SUCCESS, 1.6);
 	} catch (error) {
 		const message = extractErrorMessage(error);
-		ide_state.showMessage(`Formatting failed: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
+		showEditorMessage(`Formatting failed: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
 	}
 }
 export function handlePostEditMutation(): void {

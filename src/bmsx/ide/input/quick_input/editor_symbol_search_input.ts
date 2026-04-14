@@ -1,5 +1,6 @@
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
+import { showEditorMessage } from '../../core/editor_feedback_state';
 import { applyInlineFieldEditing } from '../../ui/inline_text_field';
 import { applySymbolSearchSelection } from '../../contrib/symbols/symbol_search';
 import { moveSymbolSearchSelection, updateSymbolSearchMatches } from '../../contrib/symbols/symbol_search_catalog';
@@ -19,7 +20,7 @@ export function handleSymbolSearchInput(): void {
 		if (ide_state.symbolSearch.selectionIndex >= 0) {
 			applySymbolSearchSelection(ide_state.symbolSearch.selectionIndex);
 		} else {
-			ide_state.showMessage('No symbol selected', constants.COLOR_STATUS_WARNING, 1.5);
+			showEditorMessage('No symbol selected', constants.COLOR_STATUS_WARNING, 1.5);
 		}
 		return;
 	}

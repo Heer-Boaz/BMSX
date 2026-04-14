@@ -1,6 +1,6 @@
 import type { ResourceBrowserItem } from '../../core/types';
 import * as constants from '../../core/constants';
-import { ide_state } from '../../core/ide_state';
+import { showEditorMessage } from '../../core/editor_feedback_state';
 import { focusEditorFromResourcePanel, openResourceDescriptor, focusChunkSource } from '../../ui/editor_tabs';
 import { applyDefinitionSelection } from '../intellisense/intellisense';
 import { toggleSelectedCallHierarchyExpansion } from './resource_panel_navigation';
@@ -55,5 +55,5 @@ export function activateSelectedCallHierarchyItem(
 }
 
 export function showResourcePanelAtlasWarning(): void {
-	ide_state.showMessage('Atlas resources cannot be previewed in the IDE.', constants.COLOR_STATUS_WARNING, 3.2);
+	showEditorMessage('Atlas resources cannot be previewed in the IDE.', constants.COLOR_STATUS_WARNING, 3.2);
 }

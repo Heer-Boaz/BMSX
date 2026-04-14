@@ -1,6 +1,7 @@
 import { scheduleMicrotask } from '../../../platform/platform';
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
+import { showEditorMessage } from '../../core/editor_feedback_state';
 import { clearReferenceHighlights } from '../intellisense/intellisense';
 import { closeSearch } from '../find/editor_search';
 import { openResourceDescriptor } from '../../ui/editor_tabs';
@@ -58,7 +59,7 @@ export function focusEditorFromResourceSearch(): void {
 
 export function applyResourceSearchSelection(index: number): void {
 	if (index < 0 || index >= ide_state.resourceSearch.matches.length) {
-		ide_state.showMessage('Resource not found', constants.COLOR_STATUS_WARNING, 1.5);
+		showEditorMessage('Resource not found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	const match = ide_state.resourceSearch.matches[index];

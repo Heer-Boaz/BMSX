@@ -31,6 +31,7 @@ import * as constants from '../../core/constants';
 import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isActiveLuaCodeTab, isReadOnlyCodeTab, setActiveTab } from '../../ui/editor_tabs';
 import { buildEditorSemanticFrontend } from './editor_semantic_frontend';
 import { ide_state } from '../../core/ide_state';
+import { showEditorMessage } from '../../core/editor_feedback_state';
 import { editorPointerState } from '../../input/pointer/editor_pointer_state';
 import { parseLuaIdentifierChain as parseLuaIdentifierChainShared } from '../../language/lua/lua_identifier_chain';
 import { buildLuaSemanticModel, collectModuleAliasEntriesFromChunk, Decl, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData, type ModuleAliasEntry } from './semantic_model';
@@ -1145,7 +1146,7 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 	}
 	const token = extractHoverExpression(row, column);
 	if (!token) {
-		ide_state.showMessage('Definition not found', constants.COLOR_STATUS_WARNING, 1.6);
+		showEditorMessage('Definition not found', constants.COLOR_STATUS_WARNING, 1.6);
 		return false;
 	}
 	const path = context.descriptor.path;
@@ -1160,7 +1161,7 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 	}
 	if (!definition) {
 		if (!intellisenseUiState.inspectorRequestFailed) {
-			ide_state.showMessage(`Definition not found for ${token.expression}`, constants.COLOR_STATUS_WARNING, 1.8);
+			showEditorMessage(`Definition not found for ${token.expression}`, constants.COLOR_STATUS_WARNING, 1.8);
 		}
 		return false;
 	}
@@ -1180,7 +1181,7 @@ export function navigateToLuaDefinition(definition: LuaDefinitionLocation): void
 		}
 	} catch (error) {
 		const message = extractErrorMessage(error);
-		ide_state.showMessage(`Failed to open definition: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
+		showEditorMessage(`Failed to open definition: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
 		return;
 	}
 	if (targetContextId) {
@@ -1193,7 +1194,7 @@ export function navigateToLuaDefinition(definition: LuaDefinitionLocation): void
 	clearHoverTooltip();
 	clearGotoHoverHighlight();
 	completeNavigation(navigationCheckpoint);
-	ide_state.showMessage('Jumped to definition', constants.COLOR_STATUS_SUCCESS, 1.6);
+	showEditorMessage('Jumped to definition', constants.COLOR_STATUS_SUCCESS, 1.6);
 }
 
 export function inspectLuaExpression(request: LuaHoverRequest): LuaHoverResult {
@@ -2655,7 +2656,7 @@ export function safeInspectLuaExpression(request: LuaHoverRequest): LuaHoverResu
 		const handled = tryShowLuaErrorOverlay(error);
 		if (!handled) {
 			const message = extractErrorMessage(error);
-			ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 3.2);
+			showEditorMessage(message, constants.COLOR_STATUS_ERROR, 3.2);
 		}
 		return null;
 	}

@@ -1,5 +1,6 @@
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
+import { showEditorMessage } from '../../core/editor_feedback_state';
 import type { ReferenceMatchInfo } from './reference_state';
 import type { CodeTabContext } from '../../core/types';
 import { symbolSearchPageSize } from '../../ui/editor_view';
@@ -49,5 +50,5 @@ export function showReferenceSearchStatusMessage(): void {
 		return;
 	}
 	const label = ide_state.referenceState.getExpression() ?? '';
-	ide_state.showMessage(`Reference ${activeIndex + 1}/${matches.length} for ${label}`, constants.COLOR_STATUS_SUCCESS, 1.6);
+	showEditorMessage(`Reference ${activeIndex + 1}/${matches.length} for ${label}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 }

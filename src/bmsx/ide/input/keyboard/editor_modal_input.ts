@@ -1,5 +1,6 @@
 import { closeSearch } from '../../contrib/find/editor_search';
 import { ide_state } from '../../core/ide_state';
+import { editorFeedbackState } from '../../core/editor_feedback_state';
 import { closeCreateResourcePrompt } from '../../contrib/resources/create_resource';
 import { closeResourceSearch } from '../../contrib/resources/resource_search';
 import { closeLineJump } from '../../contrib/find/line_jump';
@@ -46,7 +47,7 @@ export function handleEscapeKey(): boolean {
 		overlay.hoverLine = -1;
 		overlay.copyButtonHovered = false;
 		overlay.layout = null;
-		ide_state.message.visible = false;
+		editorFeedbackState.message.visible = false;
 		return true;
 	}
 	return false;

@@ -1,5 +1,6 @@
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
+import { showEditorMessage } from '../../core/editor_feedback_state';
 import { resetBlink } from '../../render/render_caret';
 import { refreshResourcePanelContents } from '../../ui/editor_view';
 import { openLuaCodeTab } from '../../ui/editor_tabs';
@@ -22,7 +23,7 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 	} catch (error) {
 		const message = extractErrorMessage(error);
 		ide_state.createResource.error = message;
-		ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
+		showEditorMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
 		resetBlink();
 		return;
 	}
@@ -37,13 +38,13 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 			refreshResourcePanelContents();
 		}
 		openLuaCodeTab(descriptor);
-		ide_state.showMessage(`Created ${descriptor.path} (asset ${descriptor.asset_id})`, constants.COLOR_STATUS_SUCCESS, 2.5);
+		showEditorMessage(`Created ${descriptor.path} (asset ${descriptor.asset_id})`, constants.COLOR_STATUS_SUCCESS, 2.5);
 		closeCreateResourcePrompt(false);
 	} catch (error) {
 		const message = extractErrorMessage(error);
 		const simplified = message.replace(/^\[Runtime\]\s*/, '');
 		ide_state.createResource.error = simplified;
-		ide_state.showMessage(`Failed to create resource: ${simplified}`, constants.COLOR_STATUS_WARNING, 4.0);
+		showEditorMessage(`Failed to create resource: ${simplified}`, constants.COLOR_STATUS_WARNING, 4.0);
 	} finally {
 		ide_state.createResource.working = false;
 		resetBlink();

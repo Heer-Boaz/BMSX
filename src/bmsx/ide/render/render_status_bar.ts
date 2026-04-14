@@ -3,6 +3,7 @@ import { getActiveSymbolSearchMatch } from '../contrib/symbols/symbol_search_sha
 import { statusAreaHeight, getStatusMessageLines } from '../ui/editor_view';
 import { getActiveCodeTabContext, isCodeTabActive, isResourceViewActive } from '../ui/editor_tabs';
 import { ide_state } from '../core/ide_state';
+import { editorFeedbackState } from '../core/editor_feedback_state';
 import { getActiveResourceViewer } from '../contrib/resources/resource_viewer';
 import { drawEditorText } from './text_renderer';
 import { measureText, truncateTextToWidth } from '../core/text_utils';
@@ -24,7 +25,7 @@ export function renderStatusBar(): void {
 	}
 	const statusTextColor = runtimeFaulted ? constants.COLOR_STATUS_ALERT : constants.COLOR_STATUS_TEXT;
 
-	if (ide_state.message.visible) {
+	if (editorFeedbackState.message.visible) {
 		const lines = getStatusMessageLines();
 		let textY = statusTop + 2;
 		const textX = 4;

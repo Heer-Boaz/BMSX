@@ -1,5 +1,5 @@
 import type { FontVariant } from '../../render/shared/bmsx_font';
-import type { ScrollbarKind, MessageState } from './types';
+import type { ScrollbarKind } from './types';
 import type { InlineFieldMetrics } from '../ui/inline_text_field';
 import { Scrollbar, ScrollbarController } from '../ui/scrollbar';
 import type { InputController } from '../input/keyboard/editor_text_input';
@@ -7,7 +7,6 @@ import type { ProblemsPanelController } from '../contrib/problems/problems_panel
 import { ResourcePanelController } from '../contrib/resources/resource_panel_controller';
 import type { RenameController } from '../contrib/rename/rename_controller';
 import type { CompletionController } from '../contrib/suggest/completion_controller';
-import { createMessageController } from '../ui/message_controller';
 import { ReferenceState } from '../contrib/references/reference_state';
 import { CHARACTER_CODES } from './character_map';
 import type {
@@ -124,7 +123,6 @@ export interface IdeState {
 	tabBarHeight: number;
 	tabBarRowCount: number;
 	baseBottomMargin: number;
-	deferredMessageDuration: number;
 	clockNow: () => number;
 	problemsPanel: ProblemsPanelController;
 	codeTabContexts: Map<string, CodeTabContext>;
@@ -136,11 +134,6 @@ export interface IdeState {
 	resourceViewerSpriteAsset: string;
 	resourceViewerSpriteScale: number;
 	active: boolean;
-	message: MessageState;
-	showMessage: (text: string, color: number, durationSeconds: number) => void;
-	updateMessage: (deltaSeconds: number) => void;
-	showWarningBanner: (text: string, durationSeconds?: number) => void;
-	warnNonMonospace: boolean;
 	search: SearchState;
 	resourceSearch: ResourceSearchState;
 	symbolSearch: SymbolSearchState;
@@ -213,7 +206,6 @@ export const ide_state: IdeState = {
 	tabBarHeight: 0,
 	tabBarRowCount: 1,
 	baseBottomMargin: 0,
-	deferredMessageDuration: null,
 	clockNow: undefined!,
 	problemsPanel: undefined!,
 	codeTabContexts: new Map<string, CodeTabContext>(),
@@ -228,11 +220,6 @@ export const ide_state: IdeState = {
 	resourceViewerSpriteAsset: null,
 	resourceViewerSpriteScale: 1,
 	active: false,
-	message: undefined!,
-	showMessage: undefined!,
-	updateMessage: undefined!,
-	showWarningBanner: undefined!,
-	warnNonMonospace: false,
 	search: {
 		field: undefined!,
 		active: false,
@@ -320,12 +307,4 @@ export const ide_state: IdeState = {
 	customClipboard: null,
 };
 
-// Initialize message controller
-const messageController = createMessageController();
-
 export const caretNavigation = new CaretNavigationState();
-
-ide_state.message = messageController.message;
-ide_state.showMessage = messageController.showMessage;
-ide_state.updateMessage = messageController.updateMessage;
-ide_state.showWarningBanner = messageController.showWarningBanner;

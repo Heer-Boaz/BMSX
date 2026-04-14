@@ -1,5 +1,5 @@
 import * as constants from '../../core/constants';
-import { ide_state } from '../../core/ide_state';
+import { showEditorMessage } from '../../core/editor_feedback_state';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../input/keyboard/key_input';
 import { focusEditorFromResourcePanel } from '../../ui/editor_tabs';
 import type { ResourcePanelController } from './resource_panel_controller';
@@ -10,7 +10,7 @@ export function handleResourcePanelKeyboardInput(controller: ResourcePanelContro
 	const shiftDown = isShiftDown();
 	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyR')) {
 		consumeIdeKey('KeyR');
-		ide_state.showMessage('Resolution toggle not handled by panel controller.', constants.COLOR_STATUS_TEXT, 1.2);
+		showEditorMessage('Resolution toggle not handled by panel controller.', constants.COLOR_STATUS_TEXT, 1.2);
 		return;
 	}
 	if ((ctrlDown || metaDown) && isKeyJustPressed('KeyB')) {

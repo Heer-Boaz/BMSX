@@ -8,6 +8,7 @@ import { LuaLexer } from '../../../lua/syntax/lualexer';
 import { focusEditorFromRename } from './rename_prompt';
 import { textFromLines } from '../../text/source_text';
 import { ide_state } from '../../core/ide_state';
+import { showEditorMessage } from '../../core/editor_feedback_state';
 import { setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { commitRename } from './rename_operations';
 import { handleRenameControllerInput } from './rename_input';
@@ -44,19 +45,19 @@ export class RenameController {
 	public begin(options: RenameStartOptions): boolean {
 		const lookup = resolveReferenceLookup(options);
 		if (lookup.kind === 'error') {
-			ide_state.showMessage(lookup.message, constants.COLOR_STATUS_WARNING, lookup.duration);
+			showEditorMessage(lookup.message, constants.COLOR_STATUS_WARNING, lookup.duration);
 			return false;
 		}
 		const { info, initialIndex } = lookup;
 		if (info.matches.length === 0) {
-			ide_state.showMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
+			showEditorMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
 			return false;
 		}
 		const firstMatch = info.matches[clamp(initialIndex, 0, info.matches.length - 1)];
 		const activeLine = options.buffer.getLineContent(firstMatch.row);
 		const currentName = activeLine.slice(firstMatch.start, firstMatch.end);
 		if (currentName.length === 0) {
-			ide_state.showMessage('Unable to determine identifier name', constants.COLOR_STATUS_WARNING, 1.6);
+			showEditorMessage('Unable to determine identifier name', constants.COLOR_STATUS_WARNING, 1.6);
 			return false;
 		}
 		ide_state.referenceState.apply(info, initialIndex);
@@ -120,20 +121,20 @@ export class RenameController {
 		const nextName = textFromLines(this.field.lines).trim();
 		switch (validateRenameIdentifier(nextName, this.originalName)) {
 			case 'empty':
-				ide_state.showMessage('Identifier cannot be empty', constants.COLOR_STATUS_WARNING, 1.6);
+				showEditorMessage('Identifier cannot be empty', constants.COLOR_STATUS_WARNING, 1.6);
 				return;
 			case 'invalid_start':
-				ide_state.showMessage('Identifier must start with a letter or underscore', constants.COLOR_STATUS_WARNING, 1.8);
+				showEditorMessage('Identifier must start with a letter or underscore', constants.COLOR_STATUS_WARNING, 1.8);
 				return;
 			case 'invalid_characters':
-				ide_state.showMessage('Identifier contains invalid characters', constants.COLOR_STATUS_WARNING, 1.8);
+				showEditorMessage('Identifier contains invalid characters', constants.COLOR_STATUS_WARNING, 1.8);
 				return;
 			case 'unchanged':
 				this.close();
 				return;
 		}
 		const updatedMatches = commitRename(this.matches, nextName, this.activeIndex, this.info);
-		ide_state.showMessage(`Renamed ${updatedMatches} reference${updatedMatches === 1 ? '' : 's'} to ${nextName}`, constants.COLOR_STATUS_SUCCESS, 1.6);
+		showEditorMessage(`Renamed ${updatedMatches} reference${updatedMatches === 1 ? '' : 's'} to ${nextName}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 		this.close();
 	}
 

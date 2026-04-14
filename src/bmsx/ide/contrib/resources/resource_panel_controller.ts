@@ -5,6 +5,7 @@ import { renderResourcePanel } from '../../render/render_resource_panel';
 import type { ResourceBrowserItem } from '../../core/types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { ide_state } from '../../core/ide_state';
+import { showEditorMessage } from '../../core/editor_feedback_state';
 import { measureText } from '../../core/text_utils';
 import type { CallHierarchyView } from '../call_hierarchy/call_hierarchy_view';
 import {
@@ -99,7 +100,7 @@ export class ResourcePanelController {
 		const desiredRatio = this.widthRatio;
 		const clamped = clampResourcePanelRatio(desiredRatio);
 		if (!writeResourcePanelBounds(this.bounds, clamped)) {
-			ide_state.showMessage('Viewport too small for resource panel.', constants.COLOR_STATUS_WARNING, 3.0);
+			showEditorMessage('Viewport too small for resource panel.', constants.COLOR_STATUS_WARNING, 3.0);
 			return;
 		}
 		this.widthRatio = clamped;
@@ -113,7 +114,7 @@ export class ResourcePanelController {
 		const desiredRatio = this.widthRatio;
 		const clamped = clampResourcePanelRatio(desiredRatio);
 		if (!writeResourcePanelBounds(this.bounds, clamped)) {
-			ide_state.showMessage('Viewport too small for call hierarchy panel.', constants.COLOR_STATUS_WARNING, 3.0);
+			showEditorMessage('Viewport too small for call hierarchy panel.', constants.COLOR_STATUS_WARNING, 3.0);
 			return;
 		}
 		this.widthRatio = clamped;
@@ -137,13 +138,13 @@ export class ResourcePanelController {
 
 	toggleFilterMode(): void {
 		if (this.mode !== 'resources') {
-			ide_state.showMessage('Filter is unavailable in call hierarchy view.', constants.COLOR_STATUS_WARNING, 2.4);
+			showEditorMessage('Filter is unavailable in call hierarchy view.', constants.COLOR_STATUS_WARNING, 2.4);
 			return;
 		}
 		this.filterMode = this.filterMode === 'lua_only' ? 'all' : 'lua_only';
 		if (this.visible) this.refreshContents();
 		const modeLabel = this.filterMode === 'lua_only' ? 'Lua resources' : 'all resources';
-		ide_state.showMessage(`Files panel: showing ${modeLabel}`, constants.COLOR_STATUS_TEXT, 2.5);
+		showEditorMessage(`Files panel: showing ${modeLabel}`, constants.COLOR_STATUS_TEXT, 2.5);
 	}
 
 	// === Rendering ===

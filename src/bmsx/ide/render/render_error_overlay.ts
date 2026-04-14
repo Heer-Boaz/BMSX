@@ -3,6 +3,7 @@ import type { EditorFont } from '../ui/view/editor_font';
 import { drawEditorText } from './text_renderer';
 import { bottomMargin } from '../ui/editor_view';
 import { ide_state } from '../core/ide_state';
+import { showEditorMessage } from '../core/editor_feedback_state';
 import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, wrapOverlayLine } from '../core/text_utils';
 import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../core/types';
 import type { StackTraceFrame } from '../../lua/luavalue';
@@ -599,5 +600,5 @@ export function showRuntimeError(
 	setActiveRuntimeErrorOverlay(overlay);
 	setExecutionStopHighlight(processedLine !== null ? targetRow : null);
 	const statusLine = overlay.lines.length > 0 ? overlay.lines[0] : 'Runtime error';
-	ide_state.showMessage(statusLine, constants.COLOR_STATUS_ERROR, 2.0);
+	showEditorMessage(statusLine, constants.COLOR_STATUS_ERROR, 2.0);
 }

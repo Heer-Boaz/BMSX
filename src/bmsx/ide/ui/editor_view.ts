@@ -9,6 +9,7 @@ import { CodeLayout } from './code_layout';
 import { markDiagnosticsDirty } from '../contrib/problems/diagnostics';
 import { computeSearchPageStats } from '../contrib/find/editor_search';
 import { ide_state } from '../core/ide_state';
+import { showEditorMessage,editorFeedbackState } from '../core/editor_feedback_state';
 import { editorChromeState } from './editor_chrome_state';
 import { editorPointerState } from '../input/pointer/editor_pointer_state';
 import { editorCaretState } from './caret_state';
@@ -150,10 +151,10 @@ export function topMargin(): number {
 }
 
 export function getStatusMessageLines(): string[] {
-	if (!ide_state.message.visible) {
+	if (!editorFeedbackState.message.visible) {
 		return [];
 	}
-	const rawLines = splitText(ide_state.message.text);
+	const rawLines = splitText(editorFeedbackState.message.text);
 	const maxWidth = Math.max(ide_state.viewportWidth - 8, ide_state.charAdvance);
 	const wrappedLines: string[] = [];
 	for (let i = 0; i < rawLines.length; i += 1) {
@@ -166,7 +167,7 @@ export function getStatusMessageLines(): string[] {
 }
 
 export function statusAreaHeight(): number {
-	if (!ide_state.message.visible) {
+	if (!editorFeedbackState.message.visible) {
 		return ide_state.baseBottomMargin;
 	}
 	return ide_state.baseBottomMargin + Math.max(1, getStatusMessageLines().length) * ide_state.lineHeight + 4;
@@ -523,11 +524,11 @@ export function toggleWordWrap(): void {
 	editorPointerState.lastPointerRowResolution = null;
 	ensureCursorVisible();
 	updateDesiredColumn();
-	ide_state.showMessage(ide_state.wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled', constants.COLOR_STATUS_TEXT, 2.5);
+	showEditorMessage(ide_state.wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled', constants.COLOR_STATUS_TEXT, 2.5);
 }
 
 export function notifyReadOnlyEdit(): void {
-	ide_state.showMessage('Tab is read-only', constants.COLOR_STATUS_WARNING, 1.5);
+	showEditorMessage('Tab is read-only', constants.COLOR_STATUS_WARNING, 1.5);
 }
 
 export function hideResourcePanel(): void {

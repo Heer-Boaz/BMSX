@@ -1,6 +1,7 @@
 import { scheduleMicrotask } from '../../../platform/platform';
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
+import { showEditorMessage } from '../../core/editor_feedback_state';
 import { clearReferenceHighlights, navigateToLuaDefinition } from '../intellisense/intellisense';
 import { closeSearch } from '../find/editor_search';
 import { getActiveCodeTabContext } from '../../ui/editor_tabs';
@@ -59,7 +60,7 @@ export function openGlobalSymbolSearch(initialQuery: string = ''): void {
 
 export function applySymbolSearchSelection(index: number): void {
 	if (index < 0 || index >= ide_state.symbolSearch.matches.length) {
-		ide_state.showMessage('Symbol not found', constants.COLOR_STATUS_WARNING, 1.5);
+		showEditorMessage('Symbol not found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	if (ide_state.symbolSearch.mode === 'references') {

@@ -18,6 +18,7 @@ import { Runtime } from '../../emulator/runtime';
 import * as runtimeLuaPipeline from '../../emulator/runtime_lua_pipeline';
 import { buildDirtyFilePath } from './workspace_storage';
 import { getWorkspaceCachedSource } from '../../emulator/workspace_cache';
+import { editorFeedbackState } from './editor_feedback_state';
 
 export function expandTabs(source: string): string {
 	if (source.indexOf('\t') === -1) return source;
@@ -513,7 +514,7 @@ export function assertMonospace(): void {
 	for (let i = 0; i < sample.length; i++) {
 		const candidate = ide_state.font.advance(sample.charAt(i));
 		if (candidate !== reference) {
-			ide_state.warnNonMonospace = true;
+			editorFeedbackState.warnNonMonospace = true;
 			break;
 		}
 	}
