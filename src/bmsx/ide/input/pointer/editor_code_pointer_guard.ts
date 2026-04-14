@@ -1,6 +1,6 @@
-import { ide_state } from '../../core/ide_state';
 import { processRuntimeErrorOverlayPointer } from '../overlays/runtime_error_overlay_input';
 import type { PointerSnapshot } from '../../core/types';
+import { editorPointerState } from './editor_pointer_state';
 
 export function handleCodeAreaPointerGuards(
 	snapshot: PointerSnapshot,
@@ -12,6 +12,6 @@ export function handleCodeAreaPointerGuards(
 	if (!processRuntimeErrorOverlayPointer(snapshot, justPressed, codeTop, codeRight, textLeft)) {
 		return false;
 	}
-	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	return true;
 }

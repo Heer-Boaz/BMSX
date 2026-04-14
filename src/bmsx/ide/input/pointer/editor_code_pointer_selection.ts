@@ -4,9 +4,10 @@ import { ensureSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { handlePointerAutoScroll, resolvePointerColumn, resolvePointerRow } from '../../ui/editor_view';
 import type { PointerSnapshot } from '../../core/types';
+import { editorPointerState } from './editor_pointer_state';
 
 export function handleCodeAreaSelectionPointer(snapshot: PointerSnapshot): void {
-	if (!ide_state.pointerSelecting || !snapshot.primaryPressed) {
+	if (!editorPointerState.pointerSelecting || !snapshot.primaryPressed) {
 		return;
 	}
 	clearGotoHoverHighlight();

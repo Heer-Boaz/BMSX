@@ -2,6 +2,7 @@ import { $ } from '../../../core/engine_core';
 import { point_in_rect } from '../../../utils/rect_operations';
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
+import type { PointerSnapshot } from '../../core/types';
 import { isCodeTabActive, isResourceViewActive } from '../../ui/editor_tabs';
 import { getProblemsPanelBounds } from '../../contrib/problems/problems_panel';
 import { isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll } from '../../ui/hover_tooltip';
@@ -9,6 +10,7 @@ import { getCodeAreaBounds, getResourceSearchBarBounds, scrollResourceBrowser, s
 import { moveResourceSearchSelection } from '../../contrib/resources/resource_search_catalog';
 import { isShiftDown } from '../keyboard/key_input';
 import { scrollResourceBrowserHorizontal, scrollResourceViewer } from '../keyboard/resource_viewer_input';
+import { editorPointerState } from './editor_pointer_state';
 
 export function handleEditorWheelInput(): void {
 	const playerInput = $.input.getPlayerInput(1);
@@ -23,7 +25,7 @@ export function handleEditorWheelInput(): void {
 	const magnitude = Math.abs(delta);
 	const steps = ~~(magnitude / constants.WHEEL_SCROLL_STEP);
 	const direction = delta > 0 ? 1 : -1;
-	const pointer = ide_state.lastPointerSnapshot;
+	const pointer = editorPointerState.lastPointerSnapshot;
 	const activePointer = pointer !== null && pointer.valid && pointer.insideViewport ? pointer : null;
 	if (handleHoverTooltipWheel(direction, steps, activePointer, playerInput)) {
 		return;
@@ -61,7 +63,7 @@ export function handleEditorWheelInput(): void {
 function handleHoverTooltipWheel(
 	direction: number,
 	steps: number,
-	activePointer: typeof ide_state.lastPointerSnapshot,
+	activePointer: PointerSnapshot,
 	playerInput: ReturnType<typeof $.input.getPlayerInput>
 ): boolean {
 	if (!ide_state.hoverTooltip) {
@@ -85,7 +87,7 @@ function handleHoverTooltipWheel(
 function handleResourceSearchWheel(
 	direction: number,
 	steps: number,
-	activePointer: typeof ide_state.lastPointerSnapshot,
+	activePointer: PointerSnapshot,
 	playerInput: ReturnType<typeof $.input.getPlayerInput>
 ): boolean {
 	if (!ide_state.resourceSearch.visible) {
@@ -106,7 +108,7 @@ function handleResourceSearchWheel(
 function handleResourcePanelWheel(
 	direction: number,
 	steps: number,
-	activePointer: typeof ide_state.lastPointerSnapshot,
+	activePointer: PointerSnapshot,
 	playerInput: ReturnType<typeof $.input.getPlayerInput>
 ): boolean {
 	const panelBounds = ide_state.resourcePanel.getBounds();
@@ -131,7 +133,7 @@ function handleResourcePanelWheel(
 function handleProblemsPanelWheel(
 	direction: number,
 	steps: number,
-	activePointer: typeof ide_state.lastPointerSnapshot,
+	activePointer: PointerSnapshot,
 	playerInput: ReturnType<typeof $.input.getPlayerInput>
 ): boolean {
 	if (!ide_state.problemsPanel.isVisible) {

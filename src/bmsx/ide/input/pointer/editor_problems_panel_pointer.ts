@@ -3,7 +3,7 @@ import { ide_state } from '../../core/ide_state';
 import type { PointerSnapshot } from '../../core/types';
 import { getProblemsPanelBounds, isPointerOverProblemsPanelDivider, setProblemsPanelHeightFromViewportY } from '../../contrib/problems/problems_panel';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
-import { resetPointerClickTracking } from '../../ui/editor_view';
+import { editorPointerState, resetPointerClickTracking } from './editor_pointer_state';
 
 export function handleProblemsPanelResizePointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	if (ide_state.problemsPanelResizing) {
@@ -17,9 +17,9 @@ export function handleProblemsPanelResizePointer(snapshot: PointerSnapshot, just
 		return false;
 	}
 	ide_state.problemsPanelResizing = true;
-	ide_state.pointerSelecting = false;
+	editorPointerState.pointerSelecting = false;
 	resetPointerClickTracking();
-	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	clearGotoHoverHighlight();
 	return true;
 }
@@ -39,8 +39,8 @@ export function handleProblemsPanelPointer(snapshot: PointerSnapshot, justPresse
 	if (!ide_state.problemsPanel.handlePointer(snapshot, justPressed, justReleased, problemsBounds)) {
 		return false;
 	}
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+	editorPointerState.pointerSelecting = false;
+	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	resetPointerClickTracking();
 	clearHoverTooltip();
 	clearGotoHoverHighlight();
@@ -50,13 +50,13 @@ export function handleProblemsPanelPointer(snapshot: PointerSnapshot, justPresse
 function updateProblemsPanelResize(snapshot: PointerSnapshot): void {
 	if (!snapshot.valid || !snapshot.primaryPressed) {
 		ide_state.problemsPanelResizing = false;
-		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+		editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearGotoHoverHighlight();
 		return;
 	}
 	setProblemsPanelHeightFromViewportY(snapshot.viewportY);
-	ide_state.pointerSelecting = false;
+	editorPointerState.pointerSelecting = false;
 	resetPointerClickTracking();
-	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	clearGotoHoverHighlight();
 }

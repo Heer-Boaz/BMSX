@@ -6,6 +6,7 @@ import { TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../core/constants
 import { ScratchBuffer } from '../../utils/scratchbuffer';
 import { ide_state } from '../core/ide_state';
 import { measureText } from '../core/text_utils';
+import { editorPointerState } from '../input/pointer/editor_pointer_state';
 import { drawEditorText } from './text_renderer';
 
 type TabMetrics = {
@@ -183,7 +184,7 @@ export function renderTabBar(): number {
 
 			const indicatorLeft = bounds.right - entry.indicatorWidth;
 			const indicatorWidth = entry.indicatorWidth;
-			const hovered = tab.id === ide_state.tabHoverId;
+			const hovered = tab.id === editorPointerState.tabHoverId;
 
 			if (entry.closable) {
 				const closeBounds = closeBoundsScratch.get(i);

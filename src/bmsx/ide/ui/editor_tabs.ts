@@ -16,7 +16,7 @@ import { refreshActiveDiagnostics } from '../contrib/problems/diagnostics_contro
 import { beginNavigationCapture, completeNavigation } from '../navigation/navigation_history';
 import { closeLineJump } from '../contrib/find/line_jump';
 import { closeSymbolSearch } from '../contrib/symbols/symbol_search_shared';
-import { getCodeAreaBounds, hideResourcePanel, getTabBarTotalHeight, resetPointerClickTracking, selectResourceInPanel } from './editor_view';
+import { getCodeAreaBounds, hideResourcePanel, getTabBarTotalHeight, selectResourceInPanel } from './editor_view';
 import { markDiagnosticsDirty, markAllDiagnosticsDirty } from '../contrib/problems/diagnostics';
 import { closeSearch } from '../contrib/find/editor_search';
 import { clampResourceViewerScroll, openResourceViewerTab } from '../contrib/resources/resource_viewer';
@@ -37,6 +37,7 @@ import { extractErrorMessage } from '../../lua/luavalue';
 import { closeResourceSearch } from '../contrib/resources/resource_search';
 import { findResourceDescriptorForChunk } from '../contrib/resources/resource_lookup';
 import { applyAemSourceToRuntime, listAemResourceDescriptors, loadAemResourceSource, saveAemResourceSource } from '../language/aem/aem_editor';
+import { editorPointerState, resetPointerClickTracking } from '../input/pointer/editor_pointer_state';
 
 function resolvePath(descriptor: ResourceDescriptor): string {
 	return descriptor.path;
@@ -229,15 +230,15 @@ export function activateCodeEditorTab(tabId: string): void {
 	requestSemanticRefresh(context);
 	updateDesiredColumn();
 	resetBlink();
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = false;
+	editorPointerState.pointerSelecting = false;
+	editorPointerState.pointerPrimaryWasPressed = false;
 	refreshActiveDiagnostics();
 }
 
 export function initializeTabs(initialContext: CodeTabContext = null): void {
 	ide_state.tabs = [];
-	ide_state.tabHoverId = null;
-	ide_state.tabDragState = null;
+	editorPointerState.tabHoverId = null;
+	editorPointerState.tabDragState = null;
 	ide_state.tabButtonBounds.clear();
 	ide_state.tabCloseButtonBounds.clear();
 	const context = initialContext ?? createEntryTabContext();
@@ -385,7 +386,7 @@ export function closeTab(tabId: string): void {
 	if (!tab.closable) {
 		return;
 	}
-	if (ide_state.tabDragState && ide_state.tabDragState.tabId === tabId) {
+	if (editorPointerState.tabDragState && editorPointerState.tabDragState.tabId === tabId) {
 		endTabDrag();
 	}
 	const isActive = ide_state.activeTabId === tabId;
@@ -469,12 +470,12 @@ export function computeTabLayout(): Array<{ id: string; left: number; right: num
 
 export function beginTabDrag(tabId: string, pointerX: number): void {
 	if (ide_state.tabs.length <= 1) {
-		ide_state.tabDragState = null;
+		editorPointerState.tabDragState = null;
 		return;
 	}
 	const bounds = ide_state.tabButtonBounds.get(tabId) ;
 	const pointerOffset = bounds ? pointerX - bounds.left : 0;
-	ide_state.tabDragState = {
+	editorPointerState.tabDragState = {
 		tabId,
 		pointerOffset,
 		startX: pointerX,
@@ -483,7 +484,7 @@ export function beginTabDrag(tabId: string, pointerX: number): void {
 }
 
 export function updateTabDrag(pointerX: number, pointerY: number): void {
-	const state = ide_state.tabDragState!;
+	const state = editorPointerState.tabDragState!;
 	const distance = Math.abs(pointerX - state.startX);
 	if (!state.hasDragged && distance < constants.TAB_DRAG_ACTIVATION_THRESHOLD) {
 		return;
@@ -527,7 +528,7 @@ export function updateTabDrag(pointerX: number, pointerY: number): void {
 }
 
 export function endTabDrag(): void {
-	ide_state.tabDragState = null;
+	editorPointerState.tabDragState = null;
 }
 
 export function findCodeTabContext(path: string): CodeTabContext {

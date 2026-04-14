@@ -24,7 +24,7 @@ import { applyResourceSearchFieldText } from '../contrib/resources/resource_sear
 import { applyLineJumpFieldText } from '../contrib/find/line_jump';
 import { applyCreateResourceFieldText } from '../contrib/resources/create_resource';
 import { applySearchFieldText } from '../contrib/find/editor_search';
-import { createNavigationEntry } from '../navigation/navigation_history';
+import { initializeNavigationState } from '../navigation/navigation_history';
 import { applySymbolSearchFieldText } from '../contrib/symbols/symbol_search_shared';
 
 export function initializeCartEditor(viewport: Viewport): void {
@@ -79,6 +79,6 @@ export function initializeCartEditor(viewport: Viewport): void {
 	ide_state.desiredColumn = ide_state.cursorColumn;
 	assertMonospace();
 	ide_state.lastSavedSource = '';
-	ide_state.navigation.current = createNavigationEntry();
+	initializeNavigationState();
 	ide_state.initialized = true;
 }

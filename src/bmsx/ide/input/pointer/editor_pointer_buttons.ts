@@ -1,5 +1,5 @@
 import { $ } from '../../../core/engine_core';
-import { ide_state } from '../../core/ide_state';
+import { editorPointerState } from './editor_pointer_state';
 
 export const POINTER_PRIMARY_JUST_PRESSED = 1;
 export const POINTER_PRIMARY_JUST_RELEASED = 2;
@@ -13,18 +13,18 @@ export function computeEditorPointerButtonMask(
 	const secondaryState = playerInput.getRawButtonState('pointer_secondary', 'pointer');
 	const secondaryPressed = secondaryState.pressed === true && secondaryState.consumed !== true;
 	const secondaryJustPressed = secondaryState.justpressed === true && secondaryState.consumed !== true
-		|| (secondaryPressed && !ide_state.pointerSecondaryWasPressed);
+		|| (secondaryPressed && !editorPointerState.pointerSecondaryWasPressed);
 	const auxState = playerInput.getRawButtonState('pointer_aux', 'pointer');
 	const auxPressed = auxState.pressed === true && auxState.consumed !== true;
 	const auxJustPressed = auxState.justpressed === true && auxState.consumed !== true
-		|| (auxPressed && !ide_state.pointerAuxWasPressed);
-	ide_state.pointerSecondaryWasPressed = secondaryPressed;
-	ide_state.pointerAuxWasPressed = auxPressed;
-	const primaryWasPressed = ide_state.pointerPrimaryWasPressed;
+		|| (auxPressed && !editorPointerState.pointerAuxWasPressed);
+	editorPointerState.pointerSecondaryWasPressed = secondaryPressed;
+	editorPointerState.pointerAuxWasPressed = auxPressed;
+	const primaryWasPressed = editorPointerState.pointerPrimaryWasPressed;
 	const primaryJustPressed = primaryPressed && !primaryWasPressed;
 	const primaryJustReleased = !primaryPressed && primaryWasPressed;
-	if (primaryJustReleased || (!primaryPressed && ide_state.pointerSelecting)) {
-		ide_state.pointerSelecting = false;
+	if (primaryJustReleased || (!primaryPressed && editorPointerState.pointerSelecting)) {
+		editorPointerState.pointerSelecting = false;
 	}
 	return (primaryJustPressed ? POINTER_PRIMARY_JUST_PRESSED : 0)
 		| (primaryJustReleased ? POINTER_PRIMARY_JUST_RELEASED : 0)

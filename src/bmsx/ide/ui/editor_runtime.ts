@@ -30,6 +30,7 @@ import { handleTextEditorPointerInput } from '../input/pointer/editor_pointer_di
 import { handleEditorWheelInput } from '../input/pointer/editor_wheel_input';
 import { updateBlink } from './inline_text_field';
 import { stopWorkspaceAutosaveLoop, runWorkspaceAutosaveTick, initializeWorkspaceStorage } from '../core/workspace_storage';
+import { workspaceState } from '../core/workspace_storage';
 import { clearWorkspaceCachedSources } from '../../emulator/workspace_cache';
 import { clearBackgroundTasks } from '../core/background_tasks';
 import { clearGotoHoverHighlight } from '../contrib/intellisense/intellisense';
@@ -45,6 +46,7 @@ import { updateDesiredColumn } from './caret';
 import { resetActionPromptState } from '../input/overlays/action_prompt';
 import { applyLineJumpFieldText } from '../contrib/find/line_jump';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt } from '../contrib/resources/create_resource';
+import { editorPointerState } from '../input/pointer/editor_pointer_state';
 
 export function tickInput(): void {
 	handleEditorWheelInput();
@@ -109,17 +111,17 @@ export function shutdownRuntimeEditor(): void {
 		Runtime.instance.restoreCrtPostprocessingFromEditor();
 	}
 	ide_state.active = false;
-	if (ide_state.workspace.autosaveEnabled) {
+	if (workspaceState.autosaveEnabled) {
 		stopWorkspaceAutosaveLoop();
 		void runWorkspaceAutosaveTick();
 	}
-	ide_state.workspace.autosaveEnabled = false;
+	workspaceState.autosaveEnabled = false;
 	clearWorkspaceCachedSources();
-	ide_state.workspace.autosaveSignature = null;
+	workspaceState.autosaveSignature = null;
 	initializeWorkspaceStorage(null);
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = false;
-	ide_state.pointerAuxWasPressed = false;
+	editorPointerState.pointerSelecting = false;
+	editorPointerState.pointerPrimaryWasPressed = false;
+	editorPointerState.pointerAuxWasPressed = false;
 	clearGotoHoverHighlight();
 	ide_state.cursorRevealSuspended = false;
 	ide_state.search.active = false;
@@ -165,8 +167,8 @@ export function activateRuntimeEditor(): void {
 	ide_state.cursorVisible = true;
 	ide_state.blinkTimer = 0;
 	ide_state.active = true;
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = false;
+	editorPointerState.pointerSelecting = false;
+	editorPointerState.pointerPrimaryWasPressed = false;
 	ide_state.cursorRevealSuspended = false;
 	updateDesiredColumn();
 	ide_state.selectionAnchor = null;
@@ -217,10 +219,10 @@ export function deactivateRuntimeEditor(): void {
 	ide_state.completion.closeSession();
 	ide_state.input.applyOverrides(false, captureKeys);
 	ide_state.selectionAnchor = null;
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = false;
-	ide_state.pointerAuxWasPressed = false;
-	ide_state.tabDragState = null;
+	editorPointerState.pointerSelecting = false;
+	editorPointerState.pointerPrimaryWasPressed = false;
+	editorPointerState.pointerAuxWasPressed = false;
+	editorPointerState.tabDragState = null;
 	clearGotoHoverHighlight();
 	ide_state.scrollbarController.cancel();
 	ide_state.cursorRevealSuspended = false;

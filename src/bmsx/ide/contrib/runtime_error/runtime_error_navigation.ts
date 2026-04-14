@@ -6,6 +6,7 @@ import type { CodeTabContext, RuntimeErrorOverlay } from '../../core/types';
 import { resetBlink } from '../../render/render_caret';
 import { showRuntimeErrorInChunk } from '../../render/render_error_overlay';
 import * as constants from '../../core/constants';
+import { editorPointerState } from '../../input/pointer/editor_pointer_state';
 
 type RuntimeErrorOverlayTarget = { context: CodeTabContext; overlay: RuntimeErrorOverlay };
 
@@ -55,8 +56,8 @@ export function focusRuntimeErrorOverlay(): boolean {
 	setActiveRuntimeErrorOverlay(overlay);
 	setExecutionStopHighlight(overlay.row);
 	ide_state.selectionAnchor = null;
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = false;
+	editorPointerState.pointerSelecting = false;
+	editorPointerState.pointerPrimaryWasPressed = false;
 	ide_state.cursorRevealSuspended = false;
 	ide_state.scrollbarController.cancel();
 	setCursorPosition(overlay.row, overlay.column);

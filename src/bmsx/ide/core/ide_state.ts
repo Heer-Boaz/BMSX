@@ -16,7 +16,6 @@ import { CHARACTER_CODES } from './character_map';
 import type {
 	Position,
 	CodeHoverTooltip,
-	PointerSnapshot,
 	RuntimeErrorOverlay,
 	EditorDiagnostic,
 	DiagnosticsCacheEntry,
@@ -24,7 +23,6 @@ import type {
 	TopBarButtonId,
 	MenuId,
 	ActionPromptState,
-	TabDragState,
 	CrtOptionsSnapshot,
 	EditContext,
 	CursorScreenInfo,
@@ -34,7 +32,6 @@ import type {
 	LineJumpState,
 	CreateResourceState,
 	EditorTabDescriptor,
-	VisualLineSegment,
 	EditorContextMenuState,
 } from './types';
 import type { TextBuffer } from '../text/text_buffer';
@@ -42,7 +39,6 @@ import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import type { EditorUndoRecord } from '../text/editor_undo';
 import type { CanonicalizationType, RectBounds } from '../../rompack/rompack';
 import { CodeLayout } from '../ui/code_layout';
-import type { TimerHandle, SubscriptionHandle } from '../../platform/index';
 import type { DebuggerExecutionState } from '../contrib/debugger/ide_debugger';
 import type { LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_KEY, ESCAPE_KEY, getActiveIdeThemeVariant } from './constants';
@@ -54,13 +50,6 @@ type BuiltinIdentifierCache = {
 	ids: ReadonlySet<string>;
 	canonicalization: CanonicalizationType;
 	caseInsensitive: boolean;
-};
-
-export type NavigationHistoryEntry = {
-	contextId: string;
-	path: string;
-	row: number;
-	column: number;
 };
 
 export function assignRowColumn<T extends { row: number; column: number }>(
@@ -141,7 +130,6 @@ export interface IdeState {
 	fontVariant: FontVariant;
 	builtinIdentifierCache: BuiltinIdentifierCache | null;
 	hoverTooltip: CodeHoverTooltip;
-	lastPointerSnapshot: PointerSnapshot;
 	lastInspectorResult: LuaHoverResult;
 	inspectorRequestFailed: boolean;
 	gotoHoverHighlight: { row: number; startColumn: number; endColumn: number; expression: string };
@@ -193,10 +181,6 @@ export interface IdeState {
 	blinkTimer: number;
 	cursorVisible: boolean;
 	warnNonMonospace: boolean;
-	pointerSelecting: boolean;
-	pointerPrimaryWasPressed: boolean;
-	pointerSecondaryWasPressed: boolean;
-	pointerAuxWasPressed: boolean;
 	search: SearchState;
 	resourceSearch: ResourceSearchState;
 	symbolSearch: SymbolSearchState;
@@ -206,11 +190,6 @@ export interface IdeState {
 	scrollbars: Record<ScrollbarKind, Scrollbar>;
 	scrollbarController: ScrollbarController;
 	input: InputController;
-	lastPointerClickTimeMs: number;
-	lastPointerClickRow: number;
-	lastPointerClickColumn: number;
-	tabHoverId: string;
-	tabDragState: TabDragState;
 	crtOptionsSnapshot: CrtOptionsSnapshot;
 	cursorRevealSuspended: boolean;
 	pendingEditContext: EditContext;
@@ -239,24 +218,8 @@ export interface IdeState {
 	cachedVisibleColumnCount: number;
 	dimCrtInEditor: boolean;
 	wordWrapEnabled: boolean;
-	lastPointerRowResolution: { visualIndex: number; segment: VisualLineSegment };
 	completion: CompletionController;
-	navigation: {
-		back: NavigationHistoryEntry[];
-		forward: NavigationHistoryEntry[];
-		current: NavigationHistoryEntry;
-		captureSuspended: boolean;
-	};
 	customClipboard: string;
-	workspace: {
-		autosaveEnabled: boolean;
-		autosaveSignature: string;
-		autosaveHandle: TimerHandle | { cancel(): void };
-		autosaveRunning: boolean;
-		autosaveQueued: boolean;
-		disposeExitListener: SubscriptionHandle;
-		serverConnected: boolean;
-	};
 }
 
 export const ide_state: IdeState = {
@@ -284,7 +247,6 @@ export const ide_state: IdeState = {
 	fontVariant: undefined!,
 	builtinIdentifierCache: null,
 	hoverTooltip: null,
-	lastPointerSnapshot: null,
 	lastInspectorResult: null,
 	inspectorRequestFailed: false,
 	gotoHoverHighlight: null,
@@ -365,10 +327,6 @@ export const ide_state: IdeState = {
 	blinkTimer: 0,
 	cursorVisible: true,
 	warnNonMonospace: false,
-	pointerSelecting: false,
-	pointerPrimaryWasPressed: false,
-	pointerSecondaryWasPressed: false,
-	pointerAuxWasPressed: false,
 	search: {
 		field: undefined!,
 		active: false,
@@ -428,11 +386,6 @@ export const ide_state: IdeState = {
 	scrollbars: undefined!,
 	scrollbarController: undefined!,
 	input: undefined!,
-	lastPointerClickTimeMs: 0,
-	lastPointerClickRow: -1,
-	lastPointerClickColumn: -1,
-	tabHoverId: null,
-	tabDragState: null,
 	crtOptionsSnapshot: null,
 	cursorRevealSuspended: false,
 	pendingEditContext: null,
@@ -461,24 +414,8 @@ export const ide_state: IdeState = {
 	cachedVisibleColumnCount: 1,
 	dimCrtInEditor: true,
 	wordWrapEnabled: true,
-	lastPointerRowResolution: null,
 	completion: undefined!,
-	navigation: {
-		back: [] as NavigationHistoryEntry[],
-		forward: [] as NavigationHistoryEntry[],
-		current: null as NavigationHistoryEntry,
-		captureSuspended: false,
-	},
 	customClipboard: null,
-	workspace: {
-		autosaveEnabled: false,
-		autosaveSignature: null,
-		autosaveHandle: null,
-		autosaveRunning: false,
-		autosaveQueued: false,
-		disposeExitListener: null,
-		serverConnected: false,
-	},
 };
 
 // Initialize message controller

@@ -1,5 +1,4 @@
 import { $ } from '../../../core/engine_core';
-import { ide_state } from '../../core/ide_state';
 import type { CodeTabContext, PointerSnapshot } from '../../core/types';
 import { getCodeAreaBounds } from '../../ui/editor_view';
 import { handleCodeAreaPointerGuards } from './editor_code_pointer_guard';
@@ -7,6 +6,7 @@ import { handleCodeAreaPrimaryPressPointer } from './editor_code_pointer_primary
 import { handleCodeAreaGutterPointer, handleCodeAreaSecondaryPointer } from './editor_code_pointer_secondary_actions';
 import { updateCodeAreaPointerFeedback } from './editor_code_pointer_feedback';
 import { handleCodeAreaSelectionPointer } from './editor_code_pointer_selection';
+import { editorPointerState } from './editor_pointer_state';
 
 export function handleCodeAreaPointerInput(
 	snapshot: PointerSnapshot,
@@ -37,6 +37,6 @@ export function handleCodeAreaPointerInput(
 		return;
 	}
 	handleCodeAreaSelectionPointer(snapshot);
-	updateCodeAreaPointerFeedback(snapshot, insideCodeArea, gotoModifierActive, ide_state.pointerSelecting, activeContext);
-	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+	updateCodeAreaPointerFeedback(snapshot, insideCodeArea, gotoModifierActive, editorPointerState.pointerSelecting, activeContext);
+	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 }

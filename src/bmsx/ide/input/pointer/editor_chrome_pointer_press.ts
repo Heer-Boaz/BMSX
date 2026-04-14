@@ -1,11 +1,10 @@
-import { ide_state } from '../../core/ide_state';
 import { clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
-import { resetPointerClickTracking } from '../../ui/editor_view';
 import type { PointerSnapshot } from '../../core/types';
+import { editorPointerState, resetPointerClickTracking } from './editor_pointer_state';
 
 export function consumeChromePointerPress(snapshot: PointerSnapshot): void {
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+	editorPointerState.pointerSelecting = false;
+	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	resetPointerClickTracking();
 	clearGotoHoverHighlight();
 }

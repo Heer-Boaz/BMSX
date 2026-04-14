@@ -1,46 +1,78 @@
 import { clamp } from '../../utils/clamp';
-import { ide_state, type NavigationHistoryEntry, NAVIGATION_HISTORY_LIMIT } from '../core/ide_state';
+import { ide_state, NAVIGATION_HISTORY_LIMIT } from '../core/ide_state';
 import { getActiveCodeTabContext, setActiveTab, isCodeTabActive, activateCodeTab, focusChunkSource } from '../ui/editor_tabs';
 import { setCursorPosition, ensureCursorVisible } from '../ui/caret';
 import * as TextEditing from '../editing/text_editing_and_selection';
 
+export type NavigationHistoryEntry = {
+	contextId: string;
+	path: string;
+	row: number;
+	column: number;
+};
+
+export const navigationState = {
+	back: [] as NavigationHistoryEntry[],
+	forward: [] as NavigationHistoryEntry[],
+	current: null as NavigationHistoryEntry,
+	captureSuspended: false,
+};
+
+export function initializeNavigationState(): void {
+	navigationState.back.length = 0;
+	navigationState.forward.length = 0;
+	navigationState.current = createNavigationEntry();
+	navigationState.captureSuspended = false;
+}
+
+export function clearForwardNavigationHistory(): void {
+	navigationState.forward.length = 0;
+}
+
+export function resetNavigationHistoryState(): void {
+	navigationState.back.length = 0;
+	navigationState.forward.length = 0;
+	navigationState.current = null;
+	navigationState.captureSuspended = false;
+}
+
 export function beginNavigationCapture(): NavigationHistoryEntry {
-	if (ide_state.navigation.captureSuspended) {
+	if (navigationState.captureSuspended) {
 		return null;
 	}
-	if (!ide_state.navigation.current) {
-		ide_state.navigation.current = createNavigationEntry();
+	if (!navigationState.current) {
+		navigationState.current = createNavigationEntry();
 	}
 	const current = createNavigationEntry();
 	if (current) {
-		ide_state.navigation.current = current;
+		navigationState.current = current;
 		return { ...current };
 	}
 	return null;
 }
 
 export function completeNavigation(previous: NavigationHistoryEntry): void {
-	if (ide_state.navigation.captureSuspended) {
+	if (navigationState.captureSuspended) {
 		return;
 	}
 	const next = createNavigationEntry();
-	const backStack = ide_state.navigation.back;
+	const backStack = navigationState.back;
 	if (previous && next && !areNavigationEntriesEqual(previous, next)) {
 		const lastBack = backStack[backStack.length - 1];
 		if (!lastBack || !areNavigationEntriesEqual(lastBack, previous)) {
 			pushNavigationEntry(backStack, previous);
 		}
-		ide_state.navigation.forward.length = 0;
+		navigationState.forward.length = 0;
 	} else if (previous && !next) {
 		const lastBack = backStack[backStack.length - 1];
 		if (!lastBack || !areNavigationEntriesEqual(lastBack, previous)) {
 			pushNavigationEntry(backStack, previous);
 		}
-		ide_state.navigation.forward.length = 0;
+		navigationState.forward.length = 0;
 	} else if (previous === null && next) {
-		ide_state.navigation.forward.length = 0;
+		navigationState.forward.length = 0;
 	}
-	ide_state.navigation.current = next;
+	navigationState.current = next;
 }
 
 export function pushNavigationEntry(stack: NavigationHistoryEntry[], entry: NavigationHistoryEntry): void {
@@ -80,12 +112,12 @@ export function createNavigationEntry(): NavigationHistoryEntry {
 }
 
 export function withNavigationCaptureSuspended<T>(operation: () => T): T {
-	const previous = ide_state.navigation.captureSuspended;
-	ide_state.navigation.captureSuspended = true;
+	const previous = navigationState.captureSuspended;
+	navigationState.captureSuspended = true;
 	try {
 		return operation();
 	} finally {
-		ide_state.navigation.captureSuspended = previous;
+		navigationState.captureSuspended = previous;
 	}
 }
 
@@ -116,39 +148,39 @@ export function applyNavigationEntry(entry: NavigationHistoryEntry): void {
 }
 
 export function goBackwardInNavigationHistory(): void {
-	if (ide_state.navigation.back.length === 0) {
+	if (navigationState.back.length === 0) {
 		return;
 	}
-	const currentEntry = ide_state.navigation.current ?? createNavigationEntry();
+	const currentEntry = navigationState.current ?? createNavigationEntry();
 	if (currentEntry) {
-		const forwardStack = ide_state.navigation.forward;
+		const forwardStack = navigationState.forward;
 		const lastForward = forwardStack[forwardStack.length - 1];
 		if (!lastForward || !areNavigationEntriesEqual(lastForward, currentEntry)) {
 			pushNavigationEntry(forwardStack, currentEntry);
 		}
 	}
-	const target = ide_state.navigation.back.pop()!;
+	const target = navigationState.back.pop()!;
 	withNavigationCaptureSuspended(() => {
 		applyNavigationEntry(target);
 	});
-	ide_state.navigation.current = createNavigationEntry() ?? target;
+	navigationState.current = createNavigationEntry() ?? target;
 }
 
 export function goForwardInNavigationHistory(): void {
-	if (ide_state.navigation.forward.length === 0) {
+	if (navigationState.forward.length === 0) {
 		return;
 	}
-	const currentEntry = ide_state.navigation.current ?? createNavigationEntry();
+	const currentEntry = navigationState.current ?? createNavigationEntry();
 	if (currentEntry) {
-		const backStack = ide_state.navigation.back;
+		const backStack = navigationState.back;
 		const lastBack = backStack[backStack.length - 1];
 		if (!lastBack || !areNavigationEntriesEqual(lastBack, currentEntry)) {
 			pushNavigationEntry(backStack, currentEntry);
 		}
 	}
-	const target = ide_state.navigation.forward.pop()!;
+	const target = navigationState.forward.pop()!;
 	withNavigationCaptureSuspended(() => {
 		applyNavigationEntry(target);
 	});
-	ide_state.navigation.current = createNavigationEntry() ?? target;
+	navigationState.current = createNavigationEntry() ?? target;
 }

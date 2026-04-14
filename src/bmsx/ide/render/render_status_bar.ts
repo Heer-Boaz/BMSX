@@ -8,6 +8,7 @@ import { drawEditorText } from './text_renderer';
 import { measureText, truncateTextToWidth } from '../core/text_utils';
 import { Runtime } from '../../emulator/runtime';
 import { api } from '../ui/view/overlay_api';
+import { workspaceState } from '../core/workspace_storage';
 
 export function renderStatusBar(): void {
 	const runtime = Runtime.instance;
@@ -88,7 +89,7 @@ export function renderStatusBar(): void {
 	// const filenameInfo = `${ide_state.metadata.title || 'UNTITLED'}.lua`;
 	const leftX = 0;
 	const glyphSize = measureText('•');
-	const indicatorColor = ide_state.workspace.serverConnected ? constants.COLOR_SERVER_STATUS_CONNECTED : constants.COLOR_SERVER_STATUS_DISCONNECTED;
+	const indicatorColor = workspaceState.serverConnected ? constants.COLOR_SERVER_STATUS_CONNECTED : constants.COLOR_SERVER_STATUS_DISCONNECTED;
 	drawEditorText(ide_state.font, '•', leftX, statusTop + 2, undefined, indicatorColor);
 	let textX = leftX + glyphSize;
 	if (statusLeftInfo && statusLeftInfo.length > 0) {

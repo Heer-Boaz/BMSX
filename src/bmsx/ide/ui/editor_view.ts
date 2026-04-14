@@ -9,6 +9,7 @@ import { CodeLayout } from './code_layout';
 import { markDiagnosticsDirty } from '../contrib/problems/diagnostics';
 import { computeSearchPageStats } from '../contrib/find/editor_search';
 import { ide_state } from '../core/ide_state';
+import { editorPointerState } from '../input/pointer/editor_pointer_state';
 import { getBuiltinIdentifiersSnapshot, requestSemanticRefresh } from '../contrib/intellisense/intellisense';
 import { findResourcePanelIndexByAssetId } from '../contrib/resources/resource_panel_items';
 import { ensureCursorVisible, updateDesiredColumn } from './caret';
@@ -191,7 +192,7 @@ export function bottomMargin(): number {
 export function applyViewportSize(viewport: Viewport): void {
 	ide_state.viewportWidth = viewport.width;
 	ide_state.viewportHeight = viewport.height;
-	ide_state.lastPointerRowResolution = null;
+	editorPointerState.lastPointerRowResolution = null;
 }
 
 export function updateViewport(viewport: Viewport): void {
@@ -264,10 +265,10 @@ export function resolvePointerRow(viewportY: number): number {
 	visualIndex = ide_state.layout.clampVisualIndex(Math.max(1, visualCount), visualIndex);
 	const segment = visualIndexToSegment(visualIndex);
 	if (!segment) {
-		ide_state.lastPointerRowResolution = null;
+		editorPointerState.lastPointerRowResolution = null;
 		return ide_state.layout.clampBufferRow(ide_state.buffer, visualIndex);
 	}
-	ide_state.lastPointerRowResolution = { visualIndex, segment };
+	editorPointerState.lastPointerRowResolution = { visualIndex, segment };
 	return segment.row;
 }
 
@@ -281,7 +282,7 @@ export function resolvePointerColumn(row: number, viewportX: number): number {
 	const highlight = entry.hi;
 	let segmentStartColumn = ide_state.layout.clampLineLength(line.length, ide_state.scrollColumn);
 	let segmentEndColumn = line.length;
-	const resolvedSegment = ide_state.lastPointerRowResolution?.segment;
+	const resolvedSegment = editorPointerState.lastPointerRowResolution?.segment;
 	if (ide_state.wordWrapEnabled && resolvedSegment && resolvedSegment.row === row) {
 		segmentStartColumn = resolvedSegment.startColumn;
 		segmentEndColumn = resolvedSegment.endColumn;
@@ -322,7 +323,7 @@ export function resolvePointerColumn(row: number, viewportX: number): number {
 }
 
 export function handlePointerAutoScroll(viewportX: number, viewportY: number): void {
-	if (!ide_state.pointerSelecting) {
+	if (!editorPointerState.pointerSelecting) {
 		return;
 	}
 	const bounds = getCodeAreaBounds();
@@ -347,12 +348,6 @@ export function handlePointerAutoScroll(viewportX: number, viewportY: number): v
 	if (ide_state.wordWrapEnabled) {
 		ide_state.scrollColumn = 0;
 	}
-}
-
-export function resetPointerClickTracking(): void {
-	ide_state.lastPointerClickTimeMs = 0;
-	ide_state.lastPointerClickRow = -1;
-	ide_state.lastPointerClickColumn = -1;
 }
 
 export function scrollRows(deltaRows: number): void {
@@ -523,7 +518,7 @@ export function toggleWordWrap(): void {
 		ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(anchorColumnForUnwrap, computeMaximumScrollColumn());
 		ide_state.scrollRow = ide_state.layout.clampVisualScroll(positionToVisualIndex(anchorRow, ide_state.scrollColumn), getVisualLineCount(), visibleRowCount());
 	}
-	ide_state.lastPointerRowResolution = null;
+	editorPointerState.lastPointerRowResolution = null;
 	ensureCursorVisible();
 	updateDesiredColumn();
 	ide_state.showMessage(ide_state.wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled', constants.COLOR_STATUS_TEXT, 2.5);

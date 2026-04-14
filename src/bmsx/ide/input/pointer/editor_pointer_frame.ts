@@ -5,6 +5,7 @@ import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intell
 import { mapScreenPointToViewport } from '../../ui/editor_view';
 import { updateTabHoverState } from './editor_tab_bar_pointer';
 import type { PointerSnapshot } from '../../core/types';
+import { editorPointerState } from './editor_pointer_state';
 
 export function readEditorPointerSnapshot(): PointerSnapshot {
 	const playerInput = $.input.getPlayerInput(1);
@@ -36,18 +37,18 @@ export function prepareEditorPointerFrame(snapshot: PointerSnapshot, gotoModifie
 		clearGotoHoverHighlight();
 	}
 	updateTabHoverState(snapshot);
-	ide_state.lastPointerSnapshot = snapshot.valid ? snapshot : null;
+	editorPointerState.lastPointerSnapshot = snapshot.valid ? snapshot : null;
 	if (!snapshot.valid) {
 		ide_state.scrollbarController.cancel();
-		ide_state.lastPointerRowResolution = null;
+		editorPointerState.lastPointerRowResolution = null;
 		clearGotoHoverHighlight();
 	} else if (ide_state.scrollbarController.hasActiveDrag() && !snapshot.primaryPressed) {
 		ide_state.scrollbarController.cancel();
 	} else if (ide_state.scrollbarController.hasActiveDrag() && snapshot.primaryPressed) {
 		if (ide_state.scrollbarController.update(snapshot.viewportX, snapshot.viewportY, snapshot.primaryPressed, (kind, scroll) => applyScrollbarScroll(kind, scroll))) {
-			ide_state.pointerSelecting = false;
+			editorPointerState.pointerSelecting = false;
 			clearHoverTooltip();
-			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			return true;
 		}
 	}

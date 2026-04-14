@@ -2,7 +2,7 @@ import { point_in_rect } from '../../../utils/rect_operations';
 import { ide_state } from '../../core/ide_state';
 import type { PointerSnapshot } from '../../core/types';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
-import { resetPointerClickTracking } from '../../ui/editor_view';
+import { editorPointerState, resetPointerClickTracking } from './editor_pointer_state';
 
 export function handleResourcePanelPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const panelBounds = ide_state.resourcePanel.getBounds();
@@ -40,8 +40,8 @@ export function handleResourcePanelPointer(snapshot: PointerSnapshot, justPresse
 	if (!snapshot.primaryPressed && hoverIndex === -1) {
 		ide_state.resourcePanel.setHoverIndex(-1);
 	}
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+	editorPointerState.pointerSelecting = false;
+	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	clearGotoHoverHighlight();
 	return true;
 }

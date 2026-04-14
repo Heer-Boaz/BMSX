@@ -1,15 +1,15 @@
 import { ide_state } from '../../core/ide_state';
 import { isResourceViewActive } from '../../ui/editor_tabs';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
-import { resetPointerClickTracking } from '../../ui/editor_view';
 import type { PointerSnapshot } from '../../core/types';
 import { handleActionPromptPointer } from '../overlays/action_prompt';
+import { editorPointerState, resetPointerClickTracking } from './editor_pointer_state';
 
 export function handleEditorPointerGuards(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	if (isResourceViewActive()) {
 		resetPointerClickTracking();
-		ide_state.pointerSelecting = false;
-		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+		editorPointerState.pointerSelecting = false;
+		editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearHoverTooltip();
 		clearGotoHoverHighlight();
 		return true;
@@ -21,8 +21,8 @@ export function handleEditorPointerGuards(snapshot: PointerSnapshot, justPressed
 	if (justPressed) {
 		handleActionPromptPointer(snapshot);
 	}
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+	editorPointerState.pointerSelecting = false;
+	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	clearHoverTooltip();
 	clearGotoHoverHighlight();
 	return true;

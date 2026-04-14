@@ -1,9 +1,9 @@
 import { $ } from '../../../core/engine_core';
-import { ide_state } from '../../core/ide_state';
 import { toggleBreakpointForEditorRow } from '../../contrib/debugger/ide_debugger';
-import { resetPointerClickTracking, resolvePointerRow } from '../../ui/editor_view';
+import { resolvePointerRow } from '../../ui/editor_view';
 import { openEditorContextMenuFromPointer } from './editor_context_menu_input';
 import type { PointerSnapshot } from '../../core/types';
+import { editorPointerState, resetPointerClickTracking } from './editor_pointer_state';
 
 export function handleCodeAreaSecondaryPointer(
 	snapshot: PointerSnapshot,
@@ -15,8 +15,8 @@ export function handleCodeAreaSecondaryPointer(
 	if (!pointerSecondaryJustPressed || !insideCodeArea || inGutter || !openEditorContextMenuFromPointer(snapshot, playerInput)) {
 		return false;
 	}
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+	editorPointerState.pointerSelecting = false;
+	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	resetPointerClickTracking();
 	return true;
 }
@@ -29,8 +29,8 @@ export function handleCodeAreaGutterPointer(snapshot: PointerSnapshot, justPress
 	if (!toggleBreakpointForEditorRow(targetRow)) {
 		return false;
 	}
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+	editorPointerState.pointerSelecting = false;
+	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	resetPointerClickTracking();
 	return true;
 }

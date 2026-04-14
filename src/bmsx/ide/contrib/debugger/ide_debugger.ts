@@ -5,7 +5,7 @@ import { ide_state } from '../../core/ide_state';
 import { focusChunkSource, getActiveCodeTabContext } from '../../ui/editor_tabs';
 import { clamp, clamp_fallback } from '../../../utils/clamp';
 import { centerCursorVertically, ensureCursorVisible, setCursorPosition, updateDesiredColumn } from '../../ui/caret';
-import { resetPointerClickTracking } from '../../ui/editor_view';
+import { resetPointerClickTracking, editorPointerState } from '../../input/pointer/editor_pointer_state';
 import { resetBlink } from '../../render/render_caret';
 import type { LuaCallFrame } from '../../../lua/luaruntime';
 import { extractErrorMessage, type LuaDebuggerPauseSignal, type StackTraceFrame } from '../../../lua/luavalue';
@@ -346,7 +346,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 		}
 	}
 	ide_state.selectionAnchor = null;
-	ide_state.pointerSelecting = false;
+	editorPointerState.pointerSelecting = false;
 	resetPointerClickTracking();
 	setCursorPosition(targetRow, targetColumn);
 	ide_state.cursorRevealSuspended = false;

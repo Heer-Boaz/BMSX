@@ -1,5 +1,4 @@
 import { $ } from '../../../core/engine_core';
-import { ide_state } from '../../core/ide_state';
 import { getActiveCodeTabContext } from '../../ui/editor_tabs';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { handleEditorContextMenuPointer } from './editor_context_menu_input';
@@ -11,6 +10,7 @@ import { handleEditorPanelPointer } from './editor_panel_pointer';
 import { handleEditorChromePointerDispatch } from './editor_pointer_chrome_dispatch';
 import { prepareEditorPointerFrame, readEditorPointerSnapshot } from './editor_pointer_frame';
 import { handleEditorPointerGuards } from './editor_pointer_guard_dispatch';
+import { editorPointerState } from './editor_pointer_state';
 
 export function handleTextEditorPointerInput(): void {
 	const ctrlDown = isCtrlDown();
@@ -28,7 +28,7 @@ export function handleTextEditorPointerInput(): void {
 	const pointerSecondaryJustPressed = (buttonMask & POINTER_SECONDARY_JUST_PRESSED) !== 0;
 	const pointerAuxJustPressed = (buttonMask & POINTER_AUX_JUST_PRESSED) !== 0;
 	if (handleEditorContextMenuPointer(snapshot, justPressed, pointerSecondaryJustPressed, playerInput)) {
-		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+		editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearHoverTooltip();
 		clearGotoHoverHighlight();
 		return;

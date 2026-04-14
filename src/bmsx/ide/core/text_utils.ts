@@ -4,6 +4,7 @@ import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from './const
 import { startSearchJob } from '../contrib/find/editor_search';
 import { getActiveCodeTabContext, findCodeTabContext, updateActiveContextDirtyFlag } from '../ui/editor_tabs';
 import { caretNavigation, ide_state } from './ide_state';
+import { clearForwardNavigationHistory } from '../navigation/navigation_history';
 import { rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/runtime_error_overlay';
 import * as TextEditing from '../editing/text_editing_and_selection';
 import { handlePostEditMutation } from '../editing/text_editing_and_selection';
@@ -704,7 +705,7 @@ export function markTextMutated(): void {
 	updateActiveContextDirtyFlag();
 	ide_state.layout.ensureVisualLinesDirty();
 	requestSemanticRefresh();
-	ide_state.navigation.forward.length = 0;
+	clearForwardNavigationHistory();
 	handlePostEditMutation();
 	if (ide_state.search.query.length > 0) startSearchJob();
 }

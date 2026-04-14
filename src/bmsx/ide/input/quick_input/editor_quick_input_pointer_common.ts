@@ -3,6 +3,7 @@ import type { PointerSnapshot } from '../../core/types';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { resetBlink } from '../../render/render_caret';
 import { measureText } from '../../core/text_utils';
+import { editorPointerState } from '../pointer/editor_pointer_state';
 
 export function activateQuickInputField(): void {
 	ide_state.resourcePanel.setFocused(false);
@@ -11,8 +12,8 @@ export function activateQuickInputField(): void {
 }
 
 export function finishQuickInputPointer(snapshot: PointerSnapshot): void {
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+	editorPointerState.pointerSelecting = false;
+	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	clearHoverTooltip();
 	clearGotoHoverHighlight();
 }
