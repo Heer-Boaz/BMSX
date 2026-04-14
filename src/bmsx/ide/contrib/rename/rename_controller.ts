@@ -84,7 +84,9 @@ export class RenameController {
 		if (!this.active) {
 			return;
 		}
-		const { ctrlDown, metaDown, shiftDown } = { ctrlDown: isCtrlDown(), metaDown: isMetaDown(), shiftDown: isShiftDown() };
+		const ctrlDown = isCtrlDown();
+		const metaDown = isMetaDown();
+		const shiftDown = isShiftDown();
 
 		if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyZ')) {
 			consumeIdeKey('KeyZ');

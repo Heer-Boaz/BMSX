@@ -21,7 +21,7 @@ import {
 import {
 	clampResourcePanelRatio,
 	computeResourcePanelMaxHScroll,
-	getResourcePanelBounds,
+	writeResourcePanelBounds,
 	resourcePanelLineCapacity,
 	defaultResourcePanelRatio,
 } from './resource_panel_layout';
@@ -50,6 +50,7 @@ export class ResourcePanelController {
 	private pendingSelectionAssetId: string = null;
 	private callHierarchyView: CallHierarchyView = null;
 	private readonly callHierarchyExpandedNodeIds = new Set<string>();
+	private readonly bounds: RectBounds = { left: 0, top: 0, right: 0, bottom: 0 };
 
 	// Scrollbars for the panel
 	public readonly resourceVertical: Scrollbar;
@@ -85,7 +86,7 @@ export class ResourcePanelController {
 	show(): void {
 		const desiredRatio = this.widthRatio;
 		const clamped = clampResourcePanelRatio(desiredRatio);
-		if (!getResourcePanelBounds(true, clamped)) {
+		if (!writeResourcePanelBounds(this.bounds, clamped)) {
 			ide_state.showMessage('Viewport too small for resource panel.', constants.COLOR_STATUS_WARNING, 3.0);
 			return;
 		}
@@ -99,7 +100,7 @@ export class ResourcePanelController {
 	showCallHierarchy(view: CallHierarchyView): void {
 		const desiredRatio = this.widthRatio;
 		const clamped = clampResourcePanelRatio(desiredRatio);
-		if (!getResourcePanelBounds(true, clamped)) {
+		if (!writeResourcePanelBounds(this.bounds, clamped)) {
 			ide_state.showMessage('Viewport too small for call hierarchy panel.', constants.COLOR_STATUS_WARNING, 3.0);
 			return;
 		}
@@ -141,7 +142,9 @@ export class ResourcePanelController {
 
 	// === Keyboard ===
 	handleKeyboard(): void {
-		const { ctrlDown, metaDown, shiftDown } = { ctrlDown: isCtrlDown(), metaDown: isMetaDown(), shiftDown: isShiftDown() };
+		const ctrlDown = isCtrlDown();
+		const metaDown = isMetaDown();
+		const shiftDown = isShiftDown();
 		if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyR')) {
 			consumeIdeKey('KeyR');
 			// Resolution is editor concern; let host surface a message
@@ -283,19 +286,18 @@ export class ResourcePanelController {
 	setScroll(scroll: number): void {
 		const capacity = this.lineCapacity();
 		const maxScroll = Math.max(0, this.items.length - capacity);
-		this.scroll = clamp(scroll, 0, maxScroll);
+		this.scroll = clamp(Math.round(scroll), 0, maxScroll);
 	}
 
 	setHScroll(scroll: number): void {
 		const maxScroll = this.computeMaxHScroll();
-		this.hscroll = clamp(scroll, 0, maxScroll);
-		this.clampHScroll();
+		this.hscroll = clamp(Math.round(scroll), 0, maxScroll);
 	}
 
 	scrollBy(amount: number): void {
 		const capacity = this.lineCapacity();
 		const maxScroll = Math.max(0, this.items.length - capacity);
-		this.scroll = clamp(this.scroll + Math.trunc(amount), 0, maxScroll);
+		this.scroll = clamp(this.scroll + Math.round(amount), 0, maxScroll);
 		this.ensureSelectionVisible();
 		this.clampHScroll();
 	}
@@ -318,7 +320,7 @@ export class ResourcePanelController {
 	setRatioFromViewportX(viewportX: number, viewportWidth: number): boolean {
 		const requestedRatio = viewportX / viewportWidth;
 		const clampedRatio = clampResourcePanelRatio(requestedRatio);
-		if (!getResourcePanelBounds(true, clampedRatio)) {
+		if (!writeResourcePanelBounds(this.bounds, clampedRatio)) {
 			this.hide();
 			return false;
 		}
@@ -347,13 +349,13 @@ export class ResourcePanelController {
 			return;
 		}
 		this.hoverIndex = -1;
-		const previous = {
-			descriptor: (this.selectionIndex >= 0 && this.selectionIndex < this.items.length) ? this.items[this.selectionIndex].descriptor : null,
-			index: this.selectionIndex,
-			scroll: this.scroll,
-		} as const;
+		const previousDescriptor = (this.selectionIndex >= 0 && this.selectionIndex < this.items.length)
+			? this.items[this.selectionIndex].descriptor
+			: null;
+		const previousIndex = this.selectionIndex;
+		const previousScroll = this.scroll;
 		this.replaceItems(buildResourcePanelItems(this.filterMode));
-		const targetAssetId = this.pendingSelectionAssetId ?? (previous.descriptor ? previous.descriptor.asset_id : null);
+		const targetAssetId = this.pendingSelectionAssetId ?? (previousDescriptor ? previousDescriptor.asset_id : null);
 		let selectionIndex = -1;
 		if (targetAssetId) {
 			const resolved = findResourcePanelIndexByAssetId(this.items, targetAssetId);
@@ -362,12 +364,12 @@ export class ResourcePanelController {
 				if (this.pendingSelectionAssetId === targetAssetId) this.pendingSelectionAssetId = null;
 			}
 		}
-		if (selectionIndex === -1 && previous.index >= 0 && previous.index < this.items.length) selectionIndex = previous.index;
+		if (selectionIndex === -1 && previousIndex >= 0 && previousIndex < this.items.length) selectionIndex = previousIndex;
 		if (selectionIndex === -1 && this.items.length > 0) selectionIndex = 0;
 		this.selectionIndex = selectionIndex;
 		const capacity = this.lineCapacity();
 		const maxScroll = Math.max(0, this.items.length - capacity);
-		this.scroll = clamp(previous.scroll, 0, maxScroll);
+		this.scroll = clamp(previousScroll, 0, maxScroll);
 		this.ensureSelectionVisible();
 		this.applyPendingSelection();
 	}
@@ -499,8 +501,10 @@ export class ResourcePanelController {
 	}
 
 	public getBounds(): RectBounds {
-		this.widthRatio = clampResourcePanelRatio(this.widthRatio);
-		return getResourcePanelBounds(this.visible, this.widthRatio);
+		if (!this.visible) {
+			return null;
+		}
+		return writeResourcePanelBounds(this.bounds, this.widthRatio) ? this.bounds : null;
 	}
 
 	public computeMaxHScroll(): number {
@@ -515,35 +519,6 @@ export class ResourcePanelController {
 		const maxScroll = this.computeMaxHScroll();
 		const current = this.hscroll;
 		this.hscroll = clamp(current, 0, maxScroll);
-	}
-
-	// Expose snapshot for editor sync
-	public getStateForRender(): {
-		visible: boolean;
-		bounds: RectBounds;
-		items: ResourceBrowserItem[];
-		scroll: number;
-		hscroll: number;
-		focused: boolean;
-		selectionIndex: number;
-		hoverIndex: number;
-		maxLineWidth: number;
-		resourceVertical: Scrollbar;
-		resourceHorizontal: Scrollbar;
-	} {
-		return {
-			visible: this.visible,
-			bounds: this.getBounds(),
-			items: this.items,
-			scroll: this.scroll,
-			hscroll: this.hscroll,
-			focused: this.focused,
-			selectionIndex: this.selectionIndex,
-			hoverIndex: this.hoverIndex,
-			maxLineWidth: this.maxLineWidth,
-			resourceVertical: this.resourceVertical,
-			resourceHorizontal: this.resourceHorizontal,
-		};
 	}
 
 	// Public refresh trigger

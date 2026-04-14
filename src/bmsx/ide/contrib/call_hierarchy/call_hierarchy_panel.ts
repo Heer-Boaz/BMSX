@@ -5,5 +5,4 @@ import { closeSymbolSearch } from '../symbols/symbol_search_shared';
 export function showCallHierarchyView(view: CallHierarchyView): void {
 	closeSymbolSearch(false);
 	ide_state.resourcePanel.showCallHierarchy(view);
-	ide_state.resourceBrowserSelectionIndex = ide_state.resourcePanel.selectionIndex;
 }

@@ -17,11 +17,14 @@ export type ResourceViewerBounds = {
 };
 
 export function getActiveResourceViewer(): ResourceViewerState {
-	const tab = ide_state.tabs.find(candidate => candidate.id === ide_state.activeTabId);
-	if (!tab || tab.kind !== 'resource_view' || !tab.resource) {
-		return null;
+	for (let index = 0; index < ide_state.tabs.length; index += 1) {
+		const tab = ide_state.tabs[index];
+		if (tab.id !== ide_state.activeTabId) {
+			continue;
+		}
+		return tab.kind === 'resource_view' ? tab.resource : null;
 	}
-	return tab.resource;
+	return null;
 }
 
 export function buildResourceViewerState(descriptor: ResourceDescriptor): ResourceViewerState {
@@ -46,7 +49,8 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 			const path = descriptor.path ?? descriptor.asset_id;
 			const source = runtimeLuaPipeline.resourceSourceForChunk(Runtime.instance, path);
 			if (typeof source === 'string') {
-				appendResourceViewerLines(lines, ['-- Lua Source --', '']);
+				appendResourceViewerLine(lines, '-- Lua Source --');
+				lines.push('');
 				appendResourceViewerLines(lines, source.split(/\r?\n/));
 			} else {
 				error = `Lua source '${descriptor.asset_id}' unavailable.`;
@@ -56,7 +60,8 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 		case 'data': {
 			const dataEntry = assets.data?.[descriptor.asset_id];
 			if (dataEntry !== undefined) {
-				appendResourceViewerLines(lines, ['-- Data --', '']);
+				appendResourceViewerLine(lines, '-- Data --');
+				lines.push('');
 				appendResourceViewerLines(lines, safeJsonStringify(dataEntry).split(/\r?\n/));
 			} else {
 				error = `Data asset '${descriptor.asset_id}' not found.`;
@@ -79,17 +84,18 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 				atlassed: Boolean(meta.atlassed),
 				atlasId: meta.atlasid,
 			};
-			appendResourceViewerLines(lines, ['-- Image Metadata --']);
-			appendResourceViewerLines(lines, [`Dimensions: ${meta.width}x${meta.height}`]);
-			appendResourceViewerLines(lines, [`Atlassed: ${meta.atlassed ? 'yes' : 'no'}`]);
+			appendResourceViewerLine(lines, '-- Image Metadata --');
+			appendResourceViewerLine(lines, `Dimensions: ${meta.width}x${meta.height}`);
+			appendResourceViewerLine(lines, `Atlassed: ${meta.atlassed ? 'yes' : 'no'}`);
 			if (meta.atlasid !== undefined) {
-				appendResourceViewerLines(lines, [`Atlas ID: ${meta.atlasid}`]);
+				appendResourceViewerLine(lines, `Atlas ID: ${meta.atlasid}`);
 			}
-			for (const [key, value] of Object.entries(meta)) {
+			const metadata = meta as unknown as Record<string, unknown>;
+			for (const key in metadata) {
 				if (key === 'width' || key === 'height' || key === 'atlassed' || key === 'atlasid') {
 					continue;
 				}
-				appendResourceViewerLines(lines, [`${key}: ${describeMetadataValue(value)}`]);
+				appendResourceViewerLine(lines, `${key}: ${describeMetadataValue(metadata[key])}`);
 			}
 			break;
 		}
@@ -99,13 +105,14 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 				error = `Audio asset '${descriptor.asset_id}' not found.`;
 				break;
 			}
-			appendResourceViewerLines(lines, ['-- Audio Metadata --']);
+			appendResourceViewerLine(lines, '-- Audio Metadata --');
 			const bufferSize = (audio.buffer as { byteLength?: number })?.byteLength;
 			if (typeof bufferSize === 'number') {
-				appendResourceViewerLines(lines, [`Buffer Size: ${bufferSize} bytes`]);
+				appendResourceViewerLine(lines, `Buffer Size: ${bufferSize} bytes`);
 			}
-			for (const [key, value] of Object.entries(audio.audiometa ?? {})) {
-				appendResourceViewerLines(lines, [`${key}: ${describeMetadataValue(value)}`]);
+			const audioMetadata = (audio.audiometa ?? {}) as Record<string, unknown>;
+			for (const key in audioMetadata) {
+				appendResourceViewerLine(lines, `${key}: ${describeMetadataValue(audioMetadata[key])}`);
 			}
 			break;
 		}
@@ -115,7 +122,8 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 				error = `Model asset '${descriptor.asset_id}' not found.`;
 				break;
 			}
-			appendResourceViewerLines(lines, ['-- Model Metadata --', `Keys: ${Object.keys(model).join(', ')}`]);
+			appendResourceViewerLine(lines, '-- Model Metadata --');
+			appendResourceViewerLine(lines, `Keys: ${Object.keys(model).join(', ')}`);
 			break;
 		}
 		case 'aem': {
@@ -124,12 +132,13 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 				error = `Audio event map '${descriptor.asset_id}' not found.`;
 				break;
 			}
-			appendResourceViewerLines(lines, ['-- Audio Events --', '']);
+			appendResourceViewerLine(lines, '-- Audio Events --');
+			lines.push('');
 			appendResourceViewerLines(lines, safeJsonStringify(events).split(/\r?\n/));
 			break;
 		}
 		default: {
-			appendResourceViewerLines(lines, ['<no preview available for this asset type>']);
+			appendResourceViewerLine(lines, '<no preview available for this asset type>');
 			break;
 		}
 	}
@@ -143,7 +152,14 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 
 export function openResourceViewerTab(descriptor: ResourceDescriptor): void {
 	const tabId: EditorTabId = `resource:${descriptor.path}`;
-	let tab = ide_state.tabs.find(candidate => candidate.id === tabId);
+	let tab = null;
+	for (let index = 0; index < ide_state.tabs.length; index += 1) {
+		const candidate = ide_state.tabs[index];
+		if (candidate.id === tabId) {
+			tab = candidate;
+			break;
+		}
+	}
 	const state = buildResourceViewerState(descriptor);
 	if (tab) {
 		tab.title = state.title;
@@ -183,13 +199,7 @@ export function resourceViewerImageLayout(
 	}
 	const reservedTextHeight = Math.min(totalHeight * 0.45, lineHeight * clamp(viewer.lines.length + (viewer.error ? 1 : 0), 3, 8));
 	const maxImageHeight = Math.max(lineHeight * 2, totalHeight - reservedTextHeight);
-	let scale = Math.min(availableWidth / viewer.image.width, maxImageHeight / viewer.image.height);
-	if (!Number.isFinite(scale) || scale <= 0) {
-		scale = Math.min(availableWidth / viewer.image.width, totalHeight / viewer.image.height);
-		if (!Number.isFinite(scale) || scale <= 0) {
-			return null;
-		}
-	}
+	const scale = Math.min(availableWidth / viewer.image.width, maxImageHeight / viewer.image.height);
 	const width = Math.max(1, Math.trunc(viewer.image.width * scale));
 	const height = Math.max(1, Math.trunc(viewer.image.height * scale));
 	const left = bounds.codeLeft + paddingX + Math.max(0, Math.trunc((availableWidth - width) / 2));
@@ -207,27 +217,29 @@ export function resourceViewerTextCapacity(viewer: ResourceViewerState, bounds: 
 }
 
 export function clampResourceViewerScroll(viewer: ResourceViewerState, bounds: ResourceViewerBounds, lineHeight: number): void {
+	setResourceViewerScroll(viewer, bounds, lineHeight, viewer.scroll);
+}
+
+export function setResourceViewerScroll(viewer: ResourceViewerState, bounds: ResourceViewerBounds, lineHeight: number, scroll: number): void {
 	const capacity = resourceViewerTextCapacity(viewer, bounds, lineHeight);
 	if (capacity <= 0) {
 		viewer.scroll = 0;
 		return;
 	}
 	const maxScroll = Math.max(0, viewer.lines.length - capacity);
-	if (!Number.isFinite(viewer.scroll) || viewer.scroll < 0) {
-		viewer.scroll = 0;
-		return;
-	}
-	if (viewer.scroll > maxScroll) {
-		viewer.scroll = maxScroll;
+	viewer.scroll = clamp(Math.round(scroll), 0, maxScroll);
+}
+
+function appendResourceViewerLine(target: string[], entry: string): void {
+	const parts = splitText(entry);
+	for (let index = 0; index < parts.length; index += 1) {
+		target.push(parts[index]);
 	}
 }
 
 function appendResourceViewerLines(target: string[], additions: Iterable<string>): void {
 	for (const entry of additions) {
-		const parts = splitText(entry);
-		for (let index = 0; index < parts.length; index += 1) {
-			target.push(parts[index]);
-		}
+		appendResourceViewerLine(target, entry);
 	}
 }
 

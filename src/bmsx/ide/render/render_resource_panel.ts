@@ -4,7 +4,7 @@ import { clamp } from '../../utils/clamp';
 import { getCodeAreaBounds } from '../ui/editor_view';
 import { resourceViewerClampScroll } from '../input/keyboard/resource_viewer_input';
 import { ide_state } from '../core/ide_state';
-import { getActiveResourceViewer, resourceViewerImageLayout, resourceViewerTextCapacity } from '../contrib/resources/resource_viewer';
+import { getActiveResourceViewer, resourceViewerImageLayout, resourceViewerTextCapacity, setResourceViewerScroll } from '../contrib/resources/resource_viewer';
 import { drawEditorText } from './text_renderer';
 import { api } from '../ui/view/overlay_api';
 import { measureText, wrapOverlayLine } from '../core/text_utils';
@@ -14,6 +14,10 @@ import { renderErrorOverlayText } from './render_error_overlay';
 import { drawRectOutlineColor } from './render_caret';
 import { centerDialogBounds } from './dialog_layout';
 import { resourcePanelLineCapacity } from '../contrib/resources/resource_panel_layout';
+
+const resourcePanelVerticalTrack: RectBounds = { left: 0, top: 0, right: 0, bottom: 0 };
+const resourcePanelHorizontalTrack: RectBounds = { left: 0, top: 0, right: 0, bottom: 0 };
+const resourceViewerVerticalTrack: RectBounds = { left: 0, top: 0, right: 0, bottom: 0 };
 
 export function renderResourcePanel(controller: ResourcePanelController): void {
 	if (!controller.visible) {
@@ -29,28 +33,26 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 	const itemCount = controller.items.length;
 
 	const maxVerticalScroll = Math.max(0, itemCount - capacity);
-	controller.scroll = clamp(controller.scroll, 0, maxVerticalScroll);
+	controller.scroll = clamp(Math.round(controller.scroll), 0, maxVerticalScroll);
 	controller.clampHScroll();
 
-	const verticalTrack: RectBounds = {
-		left: dividerLeft - constants.SCROLLBAR_WIDTH,
-		top: bounds.top,
-		right: dividerLeft,
-		bottom: bounds.bottom,
-	};
+	const verticalTrack = resourcePanelVerticalTrack;
+	verticalTrack.left = dividerLeft - constants.SCROLLBAR_WIDTH;
+	verticalTrack.top = bounds.top;
+	verticalTrack.right = dividerLeft;
+	verticalTrack.bottom = bounds.bottom;
 	const verticalScrollbar = controller.resourceVertical;
 	verticalScrollbar.layout(verticalTrack, itemCount, capacity, controller.scroll);
-	controller.scroll = verticalScrollbar.getScroll();
+	controller.scroll = Math.round(verticalScrollbar.getScroll());
 	const verticalVisible = verticalScrollbar.isVisible();
 	const contentRight = verticalVisible ? verticalTrack.left : bounds.right;
 
 	const availableWidth = Math.max(0, contentRight - contentLeft);
-	const horizontalTrack: RectBounds = {
-		left: contentLeft,
-		top: bounds.bottom - constants.SCROLLBAR_WIDTH,
-		right: contentRight,
-		bottom: bounds.bottom,
-	};
+	const horizontalTrack = resourcePanelHorizontalTrack;
+	horizontalTrack.left = contentLeft;
+	horizontalTrack.top = bounds.bottom - constants.SCROLLBAR_WIDTH;
+	horizontalTrack.right = contentRight;
+	horizontalTrack.bottom = bounds.bottom;
 	const horizontalScrollbar = controller.resourceHorizontal;
 	horizontalScrollbar.layout(
 		horizontalTrack,
@@ -61,12 +63,12 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 	const horizontalVisible = horizontalScrollbar.isVisible();
 	const effectiveBottom = horizontalVisible ? horizontalTrack.top : bounds.bottom;
 
-	controller.hscroll = horizontalScrollbar.getScroll();
+	controller.hscroll = Math.round(horizontalScrollbar.getScroll());
 
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, constants.COLOR_RESOURCE_PANEL_BACKGROUND);
 
 	const contentTop = bounds.top + 2;
-	const scrollStart = Math.trunc(controller.scroll);
+	const scrollStart = controller.scroll;
 	const scrollEnd = Math.min(itemCount, scrollStart + capacity);
 	const highlightIndex = controller.hoverIndex >= 0 ? controller.hoverIndex : controller.selectionIndex;
 	const panelActive = controller.focused;
@@ -134,15 +136,14 @@ export function drawResourceViewer(): void {
 	const capacity = resourceViewerTextCapacity(viewer, bounds, ide_state.lineHeight);
 	const totalLines = viewer.lines.length;
 	const verticalScrollbar = ide_state.scrollbars.viewerVertical;
-	const verticalTrack: RectBounds = {
-		left: bounds.codeRight - constants.SCROLLBAR_WIDTH,
-		top: bounds.codeTop,
-		right: bounds.codeRight,
-		bottom: bounds.codeBottom,
-	};
+	const verticalTrack = resourceViewerVerticalTrack;
+	verticalTrack.left = bounds.codeRight - constants.SCROLLBAR_WIDTH;
+	verticalTrack.top = bounds.codeTop;
+	verticalTrack.right = bounds.codeRight;
+	verticalTrack.bottom = bounds.codeBottom;
 	verticalScrollbar.layout(verticalTrack, totalLines, Math.max(1, capacity), viewer.scroll);
 	const verticalVisible = verticalScrollbar.isVisible();
-	viewer.scroll = clamp(verticalScrollbar.getScroll(), 0, Math.max(0, totalLines - capacity));
+	setResourceViewerScroll(viewer, bounds, ide_state.lineHeight, verticalScrollbar.getScroll());
 
 	api.fill_rect(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, undefined, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
 
@@ -157,7 +158,7 @@ export function drawResourceViewer(): void {
 	}
 	if (capacity <= 0) {
 		if (viewer.lines.length > 0) {
-			const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, Math.trunc(viewer.scroll)))] ?? '';
+			const line = viewer.lines[Math.min(viewer.lines.length - 1, viewer.scroll)] ?? '';
 			const fallbackY = Math.min(textTop, bounds.codeBottom - ide_state.lineHeight);
 			drawEditorText(ide_state.font, line, contentLeft, fallbackY, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		} else {
@@ -168,9 +169,7 @@ export function drawResourceViewer(): void {
 		}
 		return;
 	}
-	const maxScroll = Math.max(0, totalLines - capacity);
-	viewer.scroll = clamp(viewer.scroll, 0, maxScroll);
-	const start = Math.trunc(viewer.scroll);
+	const start = viewer.scroll;
 	const end = Math.min(totalLines, start + capacity);
 	if (viewer.lines.length === 0) {
 		drawEditorText(ide_state.font, '<empty>', contentLeft, textTop, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
@@ -189,11 +188,7 @@ export function drawResourceViewer(): void {
 	}
 }
 export function drawResourcePanel(): void {
-	// Delegate full drawing to controller and then mirror back minimal state used elsewhere
 	ide_state.resourcePanel.draw();
-	const s = ide_state.resourcePanel.getStateForRender();
-	ide_state.resourceBrowserItems = s.items;
-	ide_state.resourceBrowserSelectionIndex = s.selectionIndex;
 }
 
 export function drawCreateResourceErrorDialog(message: string): void {

@@ -1,8 +1,7 @@
-import { clamp } from '../../../utils/clamp';
 import { getCodeAreaBounds } from '../../ui/editor_view';
 import { ide_state } from '../../core/ide_state';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './key_input';
-import { clampResourceViewerScroll, getActiveResourceViewer, resourceViewerTextCapacity } from '../../contrib/resources/resource_viewer';
+import { clampResourceViewerScroll, getActiveResourceViewer, resourceViewerTextCapacity, setResourceViewerScroll } from '../../contrib/resources/resource_viewer';
 import type { ResourceViewerState } from '../../core/types';
 
 export function handleResourceViewerInput(): void {
@@ -38,8 +37,7 @@ export function scrollResourceBrowserHorizontal(delta: number): void {
 	if (!ide_state.resourcePanel.isVisible()) {
 		return;
 	}
-	const state = ide_state.resourcePanel.getStateForRender();
-	ide_state.resourcePanel.setHScroll(state.hscroll + delta);
+	ide_state.resourcePanel.setHScroll(ide_state.resourcePanel.hscroll + delta);
 }
 
 export function scrollResourceViewer(amount: number): void {
@@ -47,14 +45,7 @@ export function scrollResourceViewer(amount: number): void {
 	if (!viewer) {
 		return;
 	}
-	const capacity = resourceViewerTextCapacity(viewer, getCodeAreaBounds(), ide_state.lineHeight);
-	if (capacity <= 0) {
-		viewer.scroll = 0;
-		return;
-	}
-	const maxScroll = Math.max(0, viewer.lines.length - capacity);
-	viewer.scroll = clamp(viewer.scroll + amount, 0, maxScroll);
-	resourceViewerClampScroll(viewer);
+	setResourceViewerScroll(viewer, getCodeAreaBounds(), ide_state.lineHeight, viewer.scroll + amount);
 }
 
 export function resourceViewerClampScroll(viewer: ResourceViewerState): void {

@@ -6,7 +6,7 @@ import { computeMaximumScrollColumn, getCodeAreaBounds } from './editor_view';
 import { ensureVisualLines, getVisualLineCount } from '../core/text_utils';
 import { ide_state } from '../core/ide_state';
 import { api } from './view/overlay_api';
-import { getActiveResourceViewer, resourceViewerTextCapacity } from '../contrib/resources/resource_viewer';
+import { getActiveResourceViewer, setResourceViewerScroll } from '../contrib/resources/resource_viewer';
 
 export class Scrollbar {
 	public readonly orientation: 'vertical' | 'horizontal';
@@ -258,8 +258,7 @@ export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void 
 			if (!viewer) {
 				break;
 			}
-			const capacity = resourceViewerTextCapacity(viewer, getCodeAreaBounds(), ide_state.lineHeight);
-			viewer.scroll = ide_state.layout.clampHorizontalScroll(scroll, Math.max(0, viewer.lines.length - capacity));
+			setResourceViewerScroll(viewer, getCodeAreaBounds(), ide_state.lineHeight, scroll);
 			break;
 		}
 	}

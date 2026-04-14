@@ -79,7 +79,14 @@ function collectResourcePanelDescriptors(): ResourceDescriptor[] {
 			continue;
 		}
 		const assetId = asset.resid;
-		if (augmented.some(entry => entry.asset_id === assetId)) {
+		let alreadyPresent = false;
+		for (let index = 0; index < augmented.length; index += 1) {
+			if (augmented[index].asset_id === assetId) {
+				alreadyPresent = true;
+				break;
+			}
+		}
+		if (alreadyPresent) {
 			continue;
 		}
 		augmented.push({ path: `atlas/${assetId}`, type: 'atlas', asset_id: assetId });

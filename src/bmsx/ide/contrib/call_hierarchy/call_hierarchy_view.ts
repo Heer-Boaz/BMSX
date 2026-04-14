@@ -38,6 +38,10 @@ export function buildIncomingCallHierarchyView(options: {
 		return null;
 	}
 	const rootLocation = toDefinitionLocation(rootDecl.range);
+	const children = new Array<CallHierarchyViewNode>(nodes.length);
+	for (let index = 0; index < nodes.length; index += 1) {
+		children[index] = convertCallHierarchyNode(nodes[index]);
+	}
 	return {
 		title: `Call Hierarchy: ${options.rootExpression}`,
 		root: {
@@ -45,31 +49,37 @@ export function buildIncomingCallHierarchyView(options: {
 			kind: 'root',
 			label: `${options.rootExpression} (${buildLocationLabel(rootLocation)})`,
 			location: rootLocation,
-			children: nodes.map(convertCallHierarchyNode),
+			children,
 		},
 	};
 }
 
 function convertCallHierarchyNode(node: LuaIncomingCallHierarchyNode): CallHierarchyViewNode {
-	const children: CallHierarchyViewNode[] = [];
-	for (let index = 0; index < node.calls.length; index += 1) {
+	const callCount = node.calls.length;
+	const nestedCount = node.children.length;
+	const children = new Array<CallHierarchyViewNode>(callCount + nestedCount);
+	let childIndex = 0;
+	for (let index = 0; index < callCount; index += 1) {
 		const call = node.calls[index];
-		children.push({
+		children[childIndex] = {
 			id: buildCallNodeId(call),
 			kind: 'call',
 			label: `${call.name} (${computeSourceLabel(call.file)}:${call.range.start.line})`,
 			location: toDefinitionLocation(call.range),
 			children: [],
-		});
+		};
+		childIndex += 1;
 	}
-	for (let index = 0; index < node.children.length; index += 1) {
-		children.push(convertCallHierarchyNode(node.children[index]));
+	for (let index = 0; index < nestedCount; index += 1) {
+		children[childIndex] = convertCallHierarchyNode(node.children[index]);
+		childIndex += 1;
 	}
+	const callerLocation = toDefinitionLocation(node.caller.range);
 	return {
 		id: node.caller.key,
 		kind: 'caller',
-		label: `${node.caller.label} (${buildLocationLabel(toDefinitionLocation(node.caller.range))})`,
-		location: toDefinitionLocation(node.caller.range),
+		label: `${node.caller.label} (${buildLocationLabel(callerLocation)})`,
+		location: callerLocation,
 		children,
 	};
 }

@@ -10,6 +10,7 @@ import { markDiagnosticsDirty } from '../contrib/problems/diagnostics';
 import { computeSearchPageStats } from '../contrib/find/editor_search';
 import { ide_state } from '../core/ide_state';
 import { getBuiltinIdentifiersSnapshot, requestSemanticRefresh } from '../contrib/intellisense/intellisense';
+import { findResourcePanelIndexByAssetId } from '../contrib/resources/resource_panel_items';
 import { ensureCursorVisible, updateDesiredColumn } from './caret';
 import { splitText } from '../text/source_text';
 import {
@@ -539,17 +540,12 @@ export function hideResourcePanel(): void {
 }
 
 export function resetResourcePanelState(): void {
-	ide_state.resourceBrowserItems = [];
-	ide_state.resourceBrowserSelectionIndex = -1;
 	ide_state.pendingResourceSelectionAssetId = null;
 	ide_state.resourcePanelResizing = false;
 }
 
 export function refreshResourcePanelContents(): void {
 	ide_state.resourcePanel.refresh();
-	const state = ide_state.resourcePanel.getStateForRender();
-	ide_state.resourceBrowserItems = state.items;
-	ide_state.resourceBrowserSelectionIndex = state.selectionIndex;
 }
 
 export function selectResourceInPanel(descriptor: ResourceDescriptor): void {
@@ -566,22 +562,13 @@ export function applyPendingResourceSelection(): void {
 	if (!ide_state.resourcePanel.isVisible() || !ide_state.pendingResourceSelectionAssetId) {
 		return;
 	}
-	const index = findResourcePanelIndexByasset_id(ide_state.pendingResourceSelectionAssetId);
+	const index = findResourcePanelIndexByAssetId(ide_state.resourcePanel.items, ide_state.pendingResourceSelectionAssetId);
 	if (index === -1) {
 		return;
 	}
-	ide_state.resourceBrowserSelectionIndex = index;
+	ide_state.resourcePanel.setSelectionIndex(index);
 	ide_state.resourcePanel.ensureSelectionVisible();
 	ide_state.pendingResourceSelectionAssetId = null;
-}
-
-export function findResourcePanelIndexByasset_id(asset_id: string): number {
-	for (let i = 0; i < ide_state.resourceBrowserItems.length; i += 1) {
-		if (ide_state.resourceBrowserItems[i].descriptor?.asset_id === asset_id) {
-			return i;
-		}
-	}
-	return -1;
 }
 
 export function getResourcePanelWidth(): number {

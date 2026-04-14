@@ -10,7 +10,7 @@ export function defaultResourcePanelRatio(): number {
 	const relative = Math.min(1, metrics.windowInner.width / metrics.screen.width);
 	const responsiveness = 1 - relative;
 	const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;
-	const maxRatio = Math.max(minRatio, Math.min(constants.RESOURCE_PANEL_MAX_RATIO, 1 - constants.RESOURCE_PANEL_MIN_EDITOR_RATIO));
+	const maxRatio = resourcePanelMaxRatio();
 	const ratio = constants.RESOURCE_PANEL_DEFAULT_RATIO
 		+ responsiveness * (constants.RESOURCE_PANEL_MAX_RATIO - constants.RESOURCE_PANEL_DEFAULT_RATIO) * 0.6;
 	return clamp(ratio, minRatio, maxRatio);
@@ -18,31 +18,36 @@ export function defaultResourcePanelRatio(): number {
 
 export function clampResourcePanelRatio(ratio: number): number {
 	const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;
-	const maxRatio = Math.max(
-		minRatio,
-		Math.min(constants.RESOURCE_PANEL_MAX_RATIO, 1 - constants.RESOURCE_PANEL_MIN_EDITOR_RATIO),
-	);
+	const maxRatio = resourcePanelMaxRatio();
 	return clamp(ratio, minRatio, maxRatio);
 }
 
 export function computeResourcePanelPixelWidth(ratio: number): number {
-	return Math.trunc(ide_state.viewportWidth * clampResourcePanelRatio(ratio));
+	return Math.trunc(ide_state.viewportWidth * ratio);
 }
 
-export function getResourcePanelBounds(visible: boolean, widthRatio: number): RectBounds {
-	if (!visible) {
-		return null;
-	}
+function resourcePanelMaxRatio(): number {
+	return Math.max(
+		constants.RESOURCE_PANEL_MIN_RATIO,
+		Math.min(constants.RESOURCE_PANEL_MAX_RATIO, 1 - constants.RESOURCE_PANEL_MIN_EDITOR_RATIO),
+	);
+}
+
+export function writeResourcePanelBounds(out: RectBounds, widthRatio: number): boolean {
 	const width = computeResourcePanelPixelWidth(widthRatio);
 	if (width <= 0) {
-		return null;
+		return false;
 	}
 	const top = codeViewportTop();
 	const bottom = ide_state.viewportHeight - bottomMargin();
 	if (bottom <= top) {
-		return null;
+		return false;
 	}
-	return { left: 0, top, right: width, bottom };
+	out.left = 0;
+	out.top = top;
+	out.right = width;
+	out.bottom = bottom;
+	return true;
 }
 
 export function resourcePanelLineCapacity(bounds: RectBounds, itemCount: number, maxLineWidth: number, lineHeight: number): number {

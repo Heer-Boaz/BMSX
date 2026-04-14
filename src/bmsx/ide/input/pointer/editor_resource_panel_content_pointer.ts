@@ -30,7 +30,7 @@ export function handleResourcePanelPointer(snapshot: PointerSnapshot, justPresse
 	const hoverIndex = ide_state.resourcePanel.indexAtPosition(snapshot.viewportX, snapshot.viewportY);
 	ide_state.resourcePanel.setHoverIndex(hoverIndex);
 	if (hoverIndex >= 0) {
-		if (hoverIndex !== ide_state.resourceBrowserSelectionIndex) {
+		if (hoverIndex !== ide_state.resourcePanel.selectionIndex) {
 			ide_state.resourcePanel.setSelectionIndex(hoverIndex);
 		}
 		if (justPressed) {
@@ -43,7 +43,6 @@ export function handleResourcePanelPointer(snapshot: PointerSnapshot, justPresse
 	ide_state.pointerSelecting = false;
 	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	clearGotoHoverHighlight();
-	ide_state.resourceBrowserSelectionIndex = ide_state.resourcePanel.selectionIndex;
 	return true;
 }
 

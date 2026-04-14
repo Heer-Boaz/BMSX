@@ -34,7 +34,6 @@ import type {
 	LineJumpState,
 	CreateResourceState,
 	EditorTabDescriptor,
-	ResourceBrowserItem,
 	VisualLineSegment,
 	EditorContextMenuState,
 } from './types';
@@ -226,10 +225,7 @@ export interface IdeState {
 	lastSavedSource: string;
 	tabs: EditorTabDescriptor[];
 	activeTabId: string;
-	resourceBrowserItems: ResourceBrowserItem[];
-	resourceBrowserSelectionIndex: number;
 	pendingResourceSelectionAssetId: string;
-	resourcePanelWidthRatio: number;
 	resourcePanelResizing: boolean;
 	resourcePanel: ResourcePanelController;
 	renameController: RenameController;
@@ -449,10 +445,7 @@ export const ide_state: IdeState = {
 	lastSavedSource: '',
 	tabs: [],
 	activeTabId: null,
-	resourceBrowserItems: [],
-	resourceBrowserSelectionIndex: -1,
 	pendingResourceSelectionAssetId: null,
-	resourcePanelWidthRatio: null,
 	resourcePanelResizing: false,
 	resourcePanel: undefined!,
 	renameController: undefined!,
