@@ -4856,6 +4856,7 @@ int main(int argc, char** argv) {
 	const char* save_dir = "";
 	const char* rom_folder = "";
 	const char* input_timeline = "";
+	bool use_input_timeline = false;
 	const char* backend = "software";
 	const char* video_backend = "fb";
 
@@ -4900,6 +4901,7 @@ int main(int argc, char** argv) {
 		}
 		if (strcmp(argv[i], "--input-timeline") == 0) {
 			if (i + 1 >= argc) usage(argv[0]);
+			use_input_timeline = true;
 			input_timeline = argv[++i];
 			continue;
 		}
@@ -5018,8 +5020,10 @@ int main(int argc, char** argv) {
 	core.bmsx_set_frame_time_usec((retro_usec_t)g_frame_usec);
 	g_frame_ns = frame_time_ns_from_scaled(ufps_scaled);
 	input_timeline_bind_keyboard_event(core_keyboard_event);
-	input_timeline_configure((input_timeline && input_timeline[0]) ? input_timeline : NULL,
-			(rom_folder && rom_folder[0]) ? rom_folder : NULL, game_path, g_frame_usec);
+	if (use_input_timeline) {
+		input_timeline_configure((input_timeline && input_timeline[0]) ? input_timeline : NULL,
+				(rom_folder && rom_folder[0]) ? rom_folder : NULL, game_path, g_frame_usec);
+	}
 	const bool unpaced_timeline = input_timeline_is_active();
 	uint64_t next_frame_ns = monotonic_ns();
 

@@ -73,7 +73,7 @@
 		"serve:dist": "node scripts/serve-dist.mjs --dir dist --host 0.0.0.0 --port 8080",
 		"serve:dist:wsl": "bash scripts/serve-dist-wsl.sh --port 8080 --dir dist",
 		"run:retroarch": "bash run-retroarch.sh",
-		"run:libretro-host:wsl:headless": "env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./build-libretro-host/bmsx_libretro_host --core ./dist/bmsx_libretro.so --video sdl --backend software",
+		"run:libretro-host:wsl:headless": "env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./build-libretro-host/bmsx_libretro_host --core ./dist/bmsx_libretro.so --video sdl --backend software --input-timeline",
 		"run:libretro-host:wsl:sdl": "./build-libretro-host/bmsx_libretro_host --core ./dist/bmsx_libretro.so --video sdl --backend gles2",
 		"run:libretro-host:wsl:fb": "./build-libretro-host/bmsx_libretro_host --core ./dist/bmsx_libretro.so --video fb --backend software",
 		"clean:dist": "node scripts/clean-dist.mjs",
