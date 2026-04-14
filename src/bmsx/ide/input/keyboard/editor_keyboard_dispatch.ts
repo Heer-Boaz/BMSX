@@ -68,12 +68,10 @@ export function handleEditorInput(): void {
 }
 
 function handleFocusedResourcePanelInput(): boolean {
-	if (!ide_state.resourcePanelVisible || !ide_state.resourcePanelFocused) {
+	if (!ide_state.resourcePanel.isVisible() || !ide_state.resourcePanel.isFocused()) {
 		return false;
 	}
 	ide_state.resourcePanel.handleKeyboard();
-	const state = ide_state.resourcePanel.getStateForRender();
-	ide_state.resourcePanelFocused = state.focused;
 	return true;
 }
 

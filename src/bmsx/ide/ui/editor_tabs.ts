@@ -603,10 +603,10 @@ export function isActive(): boolean {
 }
 
 export function focusEditorFromResourcePanel(): void {
-	if (!ide_state.resourcePanelFocused) {
+	if (!ide_state.resourcePanel.isFocused()) {
 		return;
 	}
-	ide_state.resourcePanelFocused = false;
+	ide_state.resourcePanel.setFocused(false);
 	resetBlink();
 }
 

@@ -12,12 +12,12 @@ export function handleResourcePanelResizePointer(snapshot: PointerSnapshot, just
 	if (!justPressed) {
 		return false;
 	}
-	if (!ide_state.resourcePanelVisible || !isPointerOverResourcePanelDivider(snapshot.viewportX, snapshot.viewportY)) {
+	if (!ide_state.resourcePanel.isVisible() || !isPointerOverResourcePanelDivider(snapshot.viewportX, snapshot.viewportY)) {
 		return false;
 	}
 	if (getResourcePanelWidth() > 0) {
 		ide_state.resourcePanelResizing = true;
-		ide_state.resourcePanelFocused = true;
+		ide_state.resourcePanel.setFocused(true);
 		ide_state.pointerSelecting = false;
 		resetPointerClickTracking();
 		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
@@ -39,7 +39,7 @@ function updateResourcePanelResize(snapshot: PointerSnapshot): void {
 	} else {
 		ide_state.layout.markVisualLinesDirty();
 	}
-	ide_state.resourcePanelFocused = true;
+	ide_state.resourcePanel.setFocused(true);
 	ide_state.pointerSelecting = false;
 	resetPointerClickTracking();
 	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
@@ -47,7 +47,7 @@ function updateResourcePanelResize(snapshot: PointerSnapshot): void {
 }
 
 function isPointerOverResourcePanelDivider(x: number, y: number): boolean {
-	if (!ide_state.resourcePanelVisible) {
+	if (!ide_state.resourcePanel.isVisible()) {
 		return false;
 	}
 	const bounds = ide_state.resourcePanel.getBounds();

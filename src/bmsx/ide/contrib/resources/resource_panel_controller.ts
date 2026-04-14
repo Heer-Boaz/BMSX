@@ -1,19 +1,30 @@
-import { $ } from '../../../core/engine_core';
 import * as constants from '../../core/constants';
 import { clamp } from '../../../utils/clamp';
 import { Scrollbar } from '../../ui/scrollbar';
 import { renderResourcePanel } from '../../render/render_resource_panel';
 import type { ResourceBrowserItem } from '../../core/types';
 import type { RectBounds } from '../../../rompack/rompack';
-import type { ResourceDescriptor } from '../../../emulator/types';
-import { Runtime } from '../../../emulator/runtime';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../input/keyboard/key_input';
 import { ide_state } from '../../core/ide_state';
-import { bottomMargin, codeViewportTop } from '../../ui/editor_view';
 import { measureText } from '../../core/text_utils';
-import type { CallHierarchyView, CallHierarchyViewNode } from '../call_hierarchy/call_hierarchy_view';
-import { focusEditorFromResourcePanel, listResourcesStrict, openResourceDescriptor, focusChunkSource } from '../../ui/editor_tabs';
+import type { CallHierarchyView } from '../call_hierarchy/call_hierarchy_view';
+import { focusEditorFromResourcePanel, openResourceDescriptor, focusChunkSource } from '../../ui/editor_tabs';
 import { applyDefinitionSelection } from '../intellisense/intellisense';
+import {
+	buildCallHierarchyPanelItems,
+	buildResourcePanelItems,
+	computeResourcePanelMaxLineWidth,
+	findResourcePanelIndexByAssetId,
+	findResourcePanelIndexByCallHierarchyNodeId,
+	type ResourcePanelFilterMode,
+} from './resource_panel_items';
+import {
+	clampResourcePanelRatio,
+	computeResourcePanelMaxHScroll,
+	getResourcePanelBounds,
+	resourcePanelLineCapacity,
+	defaultResourcePanelRatio,
+} from './resource_panel_layout';
 
 export interface ResourcePanelScrollbars {
 	resourceVertical: Scrollbar;
@@ -24,7 +35,7 @@ export class ResourcePanelController {
 	public visible = false;
 	public focused = false;
 	private widthRatio: number;
-	private filterMode: 'lua_only' | 'all' = 'lua_only';
+	private filterMode: ResourcePanelFilterMode = 'lua_only';
 	private mode: 'resources' | 'call_hierarchy' = 'resources';
 	public lineHeight: number;
 	private charAdvance: number;
@@ -54,7 +65,7 @@ export class ResourcePanelController {
 			this.resourceVertical = new Scrollbar('resourceVertical', 'vertical');
 			this.resourceHorizontal = new Scrollbar('resourceHorizontal', 'horizontal');
 		}
-		this.widthRatio = this.defaultRatio();
+		this.widthRatio = defaultResourcePanelRatio();
 	}
 
 	public setFontMetrics(lineHeight: number, charAdvance: number): void {
@@ -73,11 +84,8 @@ export class ResourcePanelController {
 
 	show(): void {
 		const desiredRatio = this.widthRatio;
-		const clamped = this.clampRatio(desiredRatio);
-		const widthPx = this.computePixelWidth(clamped);
-		const top = codeViewportTop();
-		const bottom = ide_state.viewportHeight - bottomMargin();
-		if (clamped <= 0 || widthPx <= 0 || bottom <= top) {
+		const clamped = clampResourcePanelRatio(desiredRatio);
+		if (!getResourcePanelBounds(true, clamped)) {
 			ide_state.showMessage('Viewport too small for resource panel.', constants.COLOR_STATUS_WARNING, 3.0);
 			return;
 		}
@@ -90,11 +98,8 @@ export class ResourcePanelController {
 
 	showCallHierarchy(view: CallHierarchyView): void {
 		const desiredRatio = this.widthRatio;
-		const clamped = this.clampRatio(desiredRatio);
-		const widthPx = this.computePixelWidth(clamped);
-		const top = codeViewportTop();
-		const bottom = ide_state.viewportHeight - bottomMargin();
-		if (clamped <= 0 || widthPx <= 0 || bottom <= top) {
+		const clamped = clampResourcePanelRatio(desiredRatio);
+		if (!getResourcePanelBounds(true, clamped)) {
 			ide_state.showMessage('Viewport too small for call hierarchy panel.', constants.COLOR_STATUS_WARNING, 3.0);
 			return;
 		}
@@ -312,11 +317,8 @@ export class ResourcePanelController {
 
 	setRatioFromViewportX(viewportX: number, viewportWidth: number): boolean {
 		const requestedRatio = viewportX / viewportWidth;
-		const clampedRatio = this.clampRatio(requestedRatio);
-		const pixelWidth = this.computePixelWidth(clampedRatio);
-		const top = codeViewportTop();
-		const bottom = ide_state.viewportHeight - bottomMargin();
-		if (pixelWidth <= 0 || bottom <= top) {
+		const clampedRatio = clampResourcePanelRatio(requestedRatio);
+		if (!getResourcePanelBounds(true, clampedRatio)) {
 			this.hide();
 			return false;
 		}
@@ -350,27 +352,11 @@ export class ResourcePanelController {
 			index: this.selectionIndex,
 			scroll: this.scroll,
 		} as const;
-		const descriptors = listResourcesStrict();
-		// Augment with atlas entries (moved from editor)
-		const augmented = descriptors.slice();
-		for (const asset of Runtime.instance.listImageAssets()) {
-			if (asset.type !== 'atlas') continue;
-			const key = asset.resid;
-			if (augmented.some(entry => entry.asset_id === key)) continue;
-			augmented.push({ path: `atlas/${key}`, type: 'atlas', asset_id: key });
-		}
-		const filtered: ResourceDescriptor[] = [];
-		for (let i = 0; i < augmented.length; i++) {
-			const d = augmented[i];
-			if (this.matchesFilter(d)) filtered.push(d);
-		}
-		// count omitted
-		this.items = this.buildItems(filtered);
-		this.updateMetrics();
+		this.replaceItems(buildResourcePanelItems(this.filterMode));
 		const targetAssetId = this.pendingSelectionAssetId ?? (previous.descriptor ? previous.descriptor.asset_id : null);
 		let selectionIndex = -1;
 		if (targetAssetId) {
-			const resolved = this.findIndexByAssetId(targetAssetId);
+			const resolved = findResourcePanelIndexByAssetId(this.items, targetAssetId);
 			if (resolved !== -1) {
 				selectionIndex = resolved;
 				if (this.pendingSelectionAssetId === targetAssetId) this.pendingSelectionAssetId = null;
@@ -379,7 +365,6 @@ export class ResourcePanelController {
 		if (selectionIndex === -1 && previous.index >= 0 && previous.index < this.items.length) selectionIndex = previous.index;
 		if (selectionIndex === -1 && this.items.length > 0) selectionIndex = 0;
 		this.selectionIndex = selectionIndex;
-		this.updateMetrics();
 		const capacity = this.lineCapacity();
 		const maxScroll = Math.max(0, this.items.length - capacity);
 		this.scroll = clamp(previous.scroll, 0, maxScroll);
@@ -393,11 +378,10 @@ export class ResourcePanelController {
 			? this.items[this.selectionIndex].callHierarchyNodeId
 			: null;
 		const previousScroll = this.scroll;
-		this.items = this.buildCallHierarchyItems();
-		this.updateMetrics();
+		this.replaceItems(buildCallHierarchyPanelItems(this.callHierarchyView, this.callHierarchyExpandedNodeIds));
 		let selectionIndex = -1;
 		if (previousNodeId) {
-			selectionIndex = this.findIndexByCallHierarchyNodeId(previousNodeId);
+			selectionIndex = findResourcePanelIndexByCallHierarchyNodeId(this.items, previousNodeId);
 		}
 		if (selectionIndex === -1 && this.items.length > 0) {
 			selectionIndex = 0;
@@ -409,147 +393,20 @@ export class ResourcePanelController {
 		this.ensureSelectionVisible();
 	}
 
-	private buildCallHierarchyItems(): ResourceBrowserItem[] {
-		const view = this.callHierarchyView;
-		if (!view) {
-			return [{
-				line: '<no call hierarchy>',
-				contentStartColumn: 0,
-				descriptor: null,
-			}];
-		}
-		const items: ResourceBrowserItem[] = [];
-		const indentUnit = '  ';
-		const appendNode = (node: CallHierarchyViewNode, depth: number): void => {
-			const expandable = node.children.length > 0;
-			const expanded = expandable && this.callHierarchyExpandedNodeIds.has(node.id);
-			const marker = expandable ? (expanded ? '- ' : '+ ') : '  ';
-			const indent = indentUnit.repeat(depth);
-			const line = `${indent}${marker}${node.label}`;
-			items.push({
-				line,
-				contentStartColumn: indent.length + marker.length,
-				descriptor: null,
-				location: node.location,
-				callHierarchyNodeId: node.id,
-				callHierarchyNodeKind: node.kind,
-				callHierarchyExpandable: expandable,
-				callHierarchyExpanded: expanded,
-			});
-			if (!expandable || !expanded) {
-				return;
-			}
-			for (let index = 0; index < node.children.length; index += 1) {
-				appendNode(node.children[index], depth + 1);
-			}
-		};
-		appendNode(view.root, 0);
-		return items;
-	}
-
-	private matchesFilter(descriptor: ResourceDescriptor): boolean {
-		if (this.filterMode !== 'lua_only') return true;
-		return descriptor.type === 'lua';
-	}
-
-	private buildItems(entries: ResourceDescriptor[]): ResourceBrowserItem[] {
-		const items: ResourceBrowserItem[] = [];
-		if (entries.length === 0) {
-			const placeholder = this.filterMode === 'lua_only' ? '<no lua resources>' : '<no resources>';
-			items.push({ line: placeholder, contentStartColumn: 0, descriptor: null });
-			return items;
-		}
-		type Dir = { name: string; children: Map<string, Dir>; files: { name: string; descriptor: ResourceDescriptor }[] };
-		const root: Dir = { name: '.', children: new Map(), files: [] };
-		for (const entry of entries) {
-			const rawPath = entry.path;
-			const parts = rawPath.split('/').filter(part => part.length > 0 && part !== '.');
-			if (parts.length === 0) {
-				root.files.push({ name: rawPath, descriptor: entry });
-				continue;
-			}
-			let current = root;
-			for (let i = 0; i < parts.length; i++) {
-				const part = parts[i];
-				const isLeaf = i === parts.length - 1;
-				if (isLeaf) current.files.push({ name: part, descriptor: entry });
-				else {
-					let child = current.children.get(part);
-					if (!child) { child = { name: part, children: new Map(), files: [] }; current.children.set(part, child); }
-					current = child;
-				}
-			}
-		}
-		items.push({ line: './', contentStartColumn: 0, descriptor: null });
-		const indentUnit = '  ';
-		const compactDirectory = (directory: Dir): { label: string; terminal: Dir } => {
-			const segments: string[] = [directory.name];
-			let cursor = directory;
-			while (cursor.files.length === 0 && cursor.children.size === 1) {
-				const iterator = cursor.children.values().next();
-				const next = iterator.value as Dir;
-				segments.push(next.name);
-				cursor = next;
-			}
-			return { label: segments.join('/'), terminal: cursor };
-		};
-		const traverse = (directory: Dir, depth: number) => {
-			const childDirs = Array.from(directory.children.values()).sort((a, b) => a.name.localeCompare(b.name));
-			const files = directory.files.slice().sort((a, b) => a.name.localeCompare(b.name));
-			for (const dir of childDirs) {
-				const { label, terminal } = compactDirectory(dir);
-				const indent = indentUnit.repeat(depth);
-				const line = `${indent}${label}/`;
-				items.push({ line, contentStartColumn: indent.length, descriptor: null });
-				traverse(terminal, depth + 1);
-			}
-			for (const file of files) {
-				const indent = indentUnit.repeat(depth);
-				const line = `${indent}${file.name}`;
-				items.push({ line, contentStartColumn: indent.length, descriptor: file.descriptor });
-			}
-		};
-		traverse(root, 0);
-		return items;
-	}
-
-	private updateMetrics(): void {
-		let maxWidth = 0;
-		for (const item of this.items) {
-			const indent = item.line.slice(0, item.contentStartColumn);
-			const content = item.line.slice(item.contentStartColumn);
-			const width = measureText(indent) + measureText(content);
-			if (width > maxWidth) maxWidth = width;
-		}
-		this.maxLineWidth = maxWidth;
-		this.clampHScroll();
-	}
-
-	private findIndexByAssetId(asset_id: string): number {
-		for (let i = 0; i < this.items.length; i++) {
-			const descriptor = this.items[i].descriptor;
-			if (descriptor && descriptor.asset_id === asset_id) return i;
-		}
-		return -1;
-	}
-
-	private findIndexByCallHierarchyNodeId(nodeId: string): number {
-		for (let index = 0; index < this.items.length; index += 1) {
-			if (this.items[index].callHierarchyNodeId === nodeId) {
-				return index;
-			}
-		}
-		return -1;
-	}
-
 	private applyPendingSelection(): void {
 		const asset_id = this.pendingSelectionAssetId;
 		if (!asset_id) return;
-		const index = this.findIndexByAssetId(asset_id);
+		const index = findResourcePanelIndexByAssetId(this.items, asset_id);
 		if (index === -1) return;
 		this.selectionIndex = index;
 		this.ensureSelectionVisible();
 		this.pendingSelectionAssetId = null;
+	}
+
+	private replaceItems(items: ResourceBrowserItem[]): void {
+		this.items = items;
+		this.maxLineWidth = computeResourcePanelMaxLineWidth(items);
+		this.clampHScroll();
 	}
 
 	private openSelectedInternal(): void {
@@ -581,7 +438,7 @@ export class ResourcePanelController {
 				this.callHierarchyExpandedNodeIds.add(item.callHierarchyNodeId);
 			}
 			this.refreshCallHierarchyContents();
-			const index = this.findIndexByCallHierarchyNodeId(item.callHierarchyNodeId);
+			const index = findResourcePanelIndexByCallHierarchyNodeId(this.items, item.callHierarchyNodeId);
 			if (index >= 0) {
 				this.selectionIndex = index;
 			}
@@ -638,39 +495,12 @@ export class ResourcePanelController {
 		if (!bounds) {
 			return 1;
 		}
-		const overlayTop = bounds.top;
-		const overlayBottom = bounds.bottom;
-		let contentHeight = Math.max(0, overlayBottom - overlayTop);
-		let initialCapacity = Math.max(1, Math.floor(contentHeight / this.lineHeight));
-		const needsVerticalScrollbar = this.items.length > initialCapacity;
-		const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
-		const dividerLeft = bounds.right - 1;
-		const availableRight = needsVerticalScrollbar ? dividerLeft - constants.SCROLLBAR_WIDTH : dividerLeft;
-		const availableWidth = Math.max(0, availableRight - contentLeft);
-		const needsHorizontalScrollbar = this.maxLineWidth > availableWidth;
-		if (needsHorizontalScrollbar) {
-			contentHeight = Math.max(0, contentHeight - constants.SCROLLBAR_WIDTH);
-			initialCapacity = Math.max(1, Math.floor(contentHeight / this.lineHeight));
-		}
-		return initialCapacity;
+		return resourcePanelLineCapacity(bounds, this.items.length, this.maxLineWidth, this.lineHeight);
 	}
 
 	public getBounds(): RectBounds {
-		if (!this.visible) return null;
-		const width = this.getWidth();
-		if (width <= 0) return null;
-		const top = codeViewportTop();
-		const bottom = ide_state.viewportHeight - bottomMargin();
-		if (bottom <= top) return null;
-		return { left: 0, top, right: width, bottom };
-	}
-
-	private getWidth(): number {
-		const ratio = this.clampRatio(this.widthRatio);
-		const width = this.computePixelWidth(ratio);
-		if (width <= 0) return 0;
-		this.widthRatio = ratio;
-		return width;
+		this.widthRatio = clampResourcePanelRatio(this.widthRatio);
+		return getResourcePanelBounds(this.visible, this.widthRatio);
 	}
 
 	public computeMaxHScroll(): number {
@@ -678,43 +508,13 @@ export class ResourcePanelController {
 		if (!bounds) {
 			return 0;
 		}
-		const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
-		const capacity = this.lineCapacity();
-		const needsScrollbar = this.items.length > capacity;
-		const availableRight = needsScrollbar ? bounds.right - 1 - constants.SCROLLBAR_WIDTH : bounds.right - 1;
-		const availableWidth = Math.max(0, availableRight - contentLeft);
-		const maxScroll = this.maxLineWidth - availableWidth;
-		return maxScroll > 0 ? maxScroll : 0;
+		return computeResourcePanelMaxHScroll(bounds, this.items.length, this.maxLineWidth, this.lineHeight);
 	}
 
 	public clampHScroll(): void {
 		const maxScroll = this.computeMaxHScroll();
 		const current = this.hscroll;
 		this.hscroll = clamp(current, 0, maxScroll);
-	}
-
-	private defaultRatio(): number {
-		const metrics = $.platform.gameviewHost.getCapability('viewport-metrics').getViewportMetrics();
-		const relative = Math.min(1, metrics.windowInner.width / metrics.screen.width);
-		const responsiveness = 1 - relative;
-		const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;
-		const maxRatio = Math.max(minRatio, Math.min(constants.RESOURCE_PANEL_MAX_RATIO, 1 - constants.RESOURCE_PANEL_MIN_EDITOR_RATIO));
-		const ratio = constants.RESOURCE_PANEL_DEFAULT_RATIO
-			+ responsiveness * (constants.RESOURCE_PANEL_MAX_RATIO - constants.RESOURCE_PANEL_DEFAULT_RATIO) * 0.6;
-		return clamp(ratio, minRatio, maxRatio);
-	}
-
-	private clampRatio(ratio: number): number {
-		const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;
-		const maxRatio = Math.max(
-			minRatio,
-			Math.min(constants.RESOURCE_PANEL_MAX_RATIO, 1 - constants.RESOURCE_PANEL_MIN_EDITOR_RATIO),
-		);
-		return clamp(ratio, minRatio, maxRatio);
-	}
-
-	private computePixelWidth(ratio: number): number {
-		return Math.trunc(ide_state.viewportWidth * this.clampRatio(ratio));
 	}
 
 	// Expose snapshot for editor sync
@@ -755,7 +555,7 @@ export class ResourcePanelController {
 		if (this.callHierarchyExpandedNodeIds.has(item.callHierarchyNodeId)) return;
 		this.callHierarchyExpandedNodeIds.add(item.callHierarchyNodeId);
 		this.refreshContents();
-		const index = this.findIndexByCallHierarchyNodeId(item.callHierarchyNodeId);
+		const index = findResourcePanelIndexByCallHierarchyNodeId(this.items, item.callHierarchyNodeId);
 		if (index >= 0) this.selectionIndex = index;
 	}
 
@@ -765,7 +565,7 @@ export class ResourcePanelController {
 		if (!this.callHierarchyExpandedNodeIds.has(item.callHierarchyNodeId)) return;
 		this.callHierarchyExpandedNodeIds.delete(item.callHierarchyNodeId);
 		this.refreshContents();
-		const index = this.findIndexByCallHierarchyNodeId(item.callHierarchyNodeId);
+		const index = findResourcePanelIndexByCallHierarchyNodeId(this.items, item.callHierarchyNodeId);
 		if (index >= 0) this.selectionIndex = index;
 	}
 }

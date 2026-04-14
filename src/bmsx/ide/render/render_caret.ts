@@ -56,7 +56,7 @@ export function drawCursor(info: CursorScreenInfo, textX: number): void {
 	const caretTop = cursorY;
 	const caretBottom = caretTop + info.height;
 	const problemsPanelHasFocus = ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused;
-	const active = !(ide_state.search.active || ide_state.lineJump.active || ide_state.resourcePanelFocused || ide_state.createResource.active || problemsPanelHasFocus);
+	const active = !(ide_state.search.active || ide_state.lineJump.active || ide_state.resourcePanel.isFocused() || ide_state.createResource.active || problemsPanelHasFocus);
 	const caretGlyph = getCaretGlyphForDisplay(info.baseChar, info.baseColor);
 	const caretValue = BmsxColors[constants.CARET_COLOR];
 	if (active) {

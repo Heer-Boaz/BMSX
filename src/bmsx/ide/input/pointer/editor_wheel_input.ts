@@ -110,7 +110,7 @@ function handleResourcePanelWheel(
 	playerInput: ReturnType<typeof $.input.getPlayerInput>
 ): boolean {
 	const panelBounds = ide_state.resourcePanel.getBounds();
-	const pointerInPanel = ide_state.resourcePanelVisible
+	const pointerInPanel = ide_state.resourcePanel.isVisible()
 		&& panelBounds !== null
 		&& activePointer !== null
 		&& point_in_rect(activePointer.viewportX, activePointer.viewportY, panelBounds);

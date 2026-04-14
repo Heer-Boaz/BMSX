@@ -246,15 +246,11 @@ export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void 
 		case 'resourceVertical': {
 			ide_state.resourcePanel.setScroll(scroll);
 			ide_state.resourcePanel.setFocused(true);
-			const s = ide_state.resourcePanel.getStateForRender();
-			ide_state.resourcePanelFocused = s.focused;
 			break;
 		}
 		case 'resourceHorizontal': {
 			ide_state.resourcePanel.setHScroll(scroll);
 			ide_state.resourcePanel.setFocused(true);
-			const s = ide_state.resourcePanel.getStateForRender();
-			ide_state.resourcePanelFocused = s.focused;
 			break;
 		}
 		case 'viewerVertical': {

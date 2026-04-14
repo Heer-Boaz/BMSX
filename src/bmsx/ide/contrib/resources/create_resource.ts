@@ -11,7 +11,7 @@ export function openCreateResourcePrompt(): void {
 	if (ide_state.createResource.working) {
 		return;
 	}
-	ide_state.resourcePanelFocused = false;
+	ide_state.resourcePanel.setFocused(false);
 	ide_state.renameController.cancel();
 	let defaultPath = ide_state.createResource.path.length === 0
 		? determineCreateResourceDefaultPath()

@@ -57,7 +57,7 @@ export function renderStatusBar(): void {
 		return;
 	}
 
-	if (ide_state.resourcePanelVisible) {
+	if (ide_state.resourcePanel.isVisible()) {
 		if (ide_state.resourcePanel.getMode() === 'call_hierarchy') {
 			const info = 'CALL HIERARCHY';
 			const hint = 'ENTER toggle/open • LEFT/RIGHT collapse/expand';

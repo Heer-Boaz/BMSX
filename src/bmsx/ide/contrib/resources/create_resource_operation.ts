@@ -33,7 +33,7 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 		const descriptor = await createLuaResource({ path: resourcePath, contents });
 		ide_state.createResource.lastDirectory = directory;
 		ide_state.pendingResourceSelectionAssetId = descriptor.asset_id;
-		if (ide_state.resourcePanelVisible) {
+		if (ide_state.resourcePanel.isVisible()) {
 			refreshResourcePanelContents();
 		}
 		openLuaCodeTab(descriptor);

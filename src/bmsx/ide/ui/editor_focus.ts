@@ -10,7 +10,7 @@ import { focusEditorFromSymbolSearch } from '../contrib/symbols/symbol_search_sh
 
 export function focusPrimaryEditorSurface(): void {
 	clearReferenceHighlights();
-	ide_state.resourcePanelFocused = false;
+	ide_state.resourcePanel.setFocused(false);
 	focusEditorFromLineJump();
 	focusEditorFromSearch();
 	focusEditorFromResourceSearch();

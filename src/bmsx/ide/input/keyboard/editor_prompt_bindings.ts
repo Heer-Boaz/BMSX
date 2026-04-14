@@ -67,7 +67,7 @@ function handleRenameBinding(): boolean {
 }
 
 function handleSelectAllBinding(): boolean {
-	if (!(isCtrlDown() || isMetaDown()) || isInlineFieldFocused() || ide_state.resourcePanelFocused || !isCodeTabActive() || !isKeyJustPressed('KeyA')) {
+	if (!(isCtrlDown() || isMetaDown()) || isInlineFieldFocused() || ide_state.resourcePanel.isFocused() || !isCodeTabActive() || !isKeyJustPressed('KeyA')) {
 		return false;
 	}
 	consumeIdeKey('KeyA');

@@ -35,7 +35,7 @@ export function handleResourceViewerInput(): void {
 }
 
 export function scrollResourceBrowserHorizontal(delta: number): void {
-	if (!ide_state.resourcePanelVisible) {
+	if (!ide_state.resourcePanel.isVisible()) {
 		return;
 	}
 	const state = ide_state.resourcePanel.getStateForRender();

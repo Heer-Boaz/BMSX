@@ -6,14 +6,14 @@ import { resetPointerClickTracking } from '../../ui/editor_view';
 
 export function handleResourcePanelPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const panelBounds = ide_state.resourcePanel.getBounds();
-	const pointerInPanel = ide_state.resourcePanelVisible
+	const pointerInPanel = ide_state.resourcePanel.isVisible()
 		&& panelBounds !== null
 		&& point_in_rect(snapshot.viewportX, snapshot.viewportY, panelBounds);
 	if (!pointerInPanel) {
 		if (justPressed) {
 			ide_state.resourcePanel.setFocused(false);
 		}
-		if (ide_state.resourcePanelVisible && !snapshot.primaryPressed) {
+		if (ide_state.resourcePanel.isVisible() && !snapshot.primaryPressed) {
 			ide_state.resourcePanel.setHoverIndex(-1);
 		}
 		return false;
@@ -43,9 +43,7 @@ export function handleResourcePanelPointer(snapshot: PointerSnapshot, justPresse
 	ide_state.pointerSelecting = false;
 	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	clearGotoHoverHighlight();
-	const state = ide_state.resourcePanel.getStateForRender();
-	ide_state.resourcePanelFocused = state.focused;
-	ide_state.resourceBrowserSelectionIndex = state.selectionIndex;
+	ide_state.resourceBrowserSelectionIndex = ide_state.resourcePanel.selectionIndex;
 	return true;
 }
 

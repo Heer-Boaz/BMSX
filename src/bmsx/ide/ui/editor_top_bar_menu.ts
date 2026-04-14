@@ -32,7 +32,7 @@ export type TopBarMenuEntry = {
 };
 
 export function buildTopBarMenuEntries(): TopBarMenuEntry[] {
-	const resourcePanelActive = ide_state.resourcePanelVisible;
+	const resourcePanelActive = ide_state.resourcePanel.isVisible();
 	const resourcePanelMode = ide_state.resourcePanel.getMode();
 	const resourceFilesMode = resourcePanelMode === 'resources';
 	const filterMode = ide_state.resourcePanel.getFilterMode();
@@ -95,7 +95,7 @@ export function isTopBarCommandEnabled(command: TopBarButtonId): boolean {
 		return ide_state.dirty;
 	}
 	if (command === 'filter') {
-		return ide_state.resourcePanelVisible && ide_state.resourcePanel.getMode() === 'resources';
+		return ide_state.resourcePanel.isVisible() && ide_state.resourcePanel.getMode() === 'resources';
 	}
 	if (command === 'debugContinue' || command === 'debugStepOver' || command === 'debugStepInto' || command === 'debugStepOut') {
 		return ide_state.debuggerControls.executionState === 'paused';

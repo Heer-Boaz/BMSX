@@ -570,7 +570,7 @@ export function ensureVisualLines(): void {
 }
 
 export function computeWrapWidth(): number {
-	const resourceWidth = ide_state.resourcePanelVisible ? getResourcePanelWidth() : 0;
+	const resourceWidth = ide_state.resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
 	const gutterSpace = updateGutterWidth() + 2;
 	const verticalScrollbarSpace = 0;
 	const available = ide_state.viewportWidth - resourceWidth - gutterSpace - verticalScrollbarSpace;
@@ -596,7 +596,7 @@ export function positionToVisualIndex(row: number, column: number): number {
 	return ide_state.layout.positionToVisualIndex(ide_state.buffer, row, column);
 }
 export function computeRuntimeErrorOverlayMaxWidth(): number {
-	const resourceWidth = ide_state.resourcePanelVisible ? getResourcePanelWidth() : 0;
+	const resourceWidth = ide_state.resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
 	const gutterSpace = updateGutterWidth() + 2;
 	const scrollbarSpace = ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0;
 	const rightMargin = constants.CODE_AREA_RIGHT_MARGIN;

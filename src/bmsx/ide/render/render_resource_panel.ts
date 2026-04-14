@@ -13,6 +13,7 @@ import { BmsxColors } from '../../emulator/vdp';
 import { renderErrorOverlayText } from './render_error_overlay';
 import { drawRectOutlineColor } from './render_caret';
 import { centerDialogBounds } from './dialog_layout';
+import { resourcePanelLineCapacity } from '../contrib/resources/resource_panel_layout';
 
 export function renderResourcePanel(controller: ResourcePanelController): void {
 	if (!controller.visible) {
@@ -24,7 +25,7 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 	}
 	const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
 	const dividerLeft = bounds.right - 1;
-	const capacity = resourcePanelLineCapacity(controller, bounds);
+	const capacity = resourcePanelLineCapacity(bounds, controller.items.length, controller.maxLineWidth, controller.lineHeight);
 	const itemCount = controller.items.length;
 
 	const maxVerticalScroll = Math.max(0, itemCount - capacity);
@@ -122,24 +123,6 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 	}
 }
 
-function resourcePanelLineCapacity(controller: ResourcePanelController, bounds: RectBounds): number {
-	const overlayTop = bounds.top;
-	const overlayBottom = bounds.bottom;
-	let contentHeight = Math.max(0, overlayBottom - overlayTop);
-	let initialCapacity = Math.max(1, Math.floor(contentHeight / controller.lineHeight));
-	const needsVerticalScrollbar = controller.items.length > initialCapacity;
-	const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
-	const dividerLeft = bounds.right - 1;
-	const availableRight = needsVerticalScrollbar ? dividerLeft - constants.SCROLLBAR_WIDTH : dividerLeft;
-	const availableWidth = Math.max(0, availableRight - contentLeft);
-	const needsHorizontalScrollbar = controller.maxLineWidth > availableWidth;
-	if (needsHorizontalScrollbar) {
-		contentHeight = Math.max(0, contentHeight - constants.SCROLLBAR_WIDTH);
-		initialCapacity = Math.max(1, Math.floor(contentHeight / controller.lineHeight));
-	}
-	return initialCapacity;
-}
-
 export function drawResourceViewer(): void {
 	const viewer = getActiveResourceViewer();
 	if (!viewer) {
@@ -209,11 +192,8 @@ export function drawResourcePanel(): void {
 	// Delegate full drawing to controller and then mirror back minimal state used elsewhere
 	ide_state.resourcePanel.draw();
 	const s = ide_state.resourcePanel.getStateForRender();
-	ide_state.resourcePanelVisible = s.visible;
 	ide_state.resourceBrowserItems = s.items;
-	ide_state.resourcePanelFocused = s.focused;
 	ide_state.resourceBrowserSelectionIndex = s.selectionIndex;
-	ide_state.resourcePanelResourceCount = s.items.length;
 }
 
 export function drawCreateResourceErrorDialog(message: string): void {

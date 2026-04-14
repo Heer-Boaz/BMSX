@@ -241,7 +241,7 @@ export function codeViewportTop(): number {
 }
 
 export function getCodeAreaBounds(): { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; gutterLeft: number; gutterRight: number; textLeft: number } {
-	const codeLeft = ide_state.resourcePanelVisible ? getResourcePanelWidth() : 0;
+	const codeLeft = ide_state.resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
 	const gutterLeft = codeLeft;
 	const gutterRight = gutterLeft + updateGutterWidth();
 	return {
@@ -534,7 +534,6 @@ export function notifyReadOnlyEdit(): void {
 
 export function hideResourcePanel(): void {
 	ide_state.resourcePanel.hide();
-	ide_state.resourcePanelFocused = false;
 	ide_state.resourcePanelResizing = false;
 	resetResourcePanelState();
 }
@@ -549,7 +548,6 @@ export function resetResourcePanelState(): void {
 export function refreshResourcePanelContents(): void {
 	ide_state.resourcePanel.refresh();
 	const state = ide_state.resourcePanel.getStateForRender();
-	ide_state.resourcePanelResourceCount = state.items.length;
 	ide_state.resourceBrowserItems = state.items;
 	ide_state.resourceBrowserSelectionIndex = state.selectionIndex;
 }
@@ -559,13 +557,13 @@ export function selectResourceInPanel(descriptor: ResourceDescriptor): void {
 		return;
 	}
 	ide_state.pendingResourceSelectionAssetId = descriptor.asset_id;
-	if (ide_state.resourcePanelVisible) {
+	if (ide_state.resourcePanel.isVisible()) {
 		applyPendingResourceSelection();
 	}
 }
 
 export function applyPendingResourceSelection(): void {
-	if (!ide_state.resourcePanelVisible || !ide_state.pendingResourceSelectionAssetId) {
+	if (!ide_state.resourcePanel.isVisible() || !ide_state.pendingResourceSelectionAssetId) {
 		return;
 	}
 	const index = findResourcePanelIndexByasset_id(ide_state.pendingResourceSelectionAssetId);
@@ -587,7 +585,7 @@ export function findResourcePanelIndexByasset_id(asset_id: string): number {
 }
 
 export function getResourcePanelWidth(): number {
-	if (!ide_state.resourcePanelVisible) {
+	if (!ide_state.resourcePanel.isVisible()) {
 		return 0;
 	}
 	const bounds = ide_state.resourcePanel.getBounds();
@@ -598,7 +596,7 @@ export function getResourcePanelWidth(): number {
 }
 
 export function scrollResourceBrowser(amount: number): void {
-	if (!ide_state.resourcePanelVisible) {
+	if (!ide_state.resourcePanel.isVisible()) {
 		return;
 	}
 	ide_state.resourcePanel.scrollBy(amount);

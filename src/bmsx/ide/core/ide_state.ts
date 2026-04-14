@@ -228,9 +228,6 @@ export interface IdeState {
 	activeTabId: string;
 	resourceBrowserItems: ResourceBrowserItem[];
 	resourceBrowserSelectionIndex: number;
-	resourcePanelVisible: boolean;
-	resourcePanelFocused: boolean;
-	resourcePanelResourceCount: number;
 	pendingResourceSelectionAssetId: string;
 	resourcePanelWidthRatio: number;
 	resourcePanelResizing: boolean;
@@ -454,9 +451,6 @@ export const ide_state: IdeState = {
 	activeTabId: null,
 	resourceBrowserItems: [],
 	resourceBrowserSelectionIndex: -1,
-	resourcePanelVisible: false,
-	resourcePanelFocused: false,
-	resourcePanelResourceCount: 0,
 	pendingResourceSelectionAssetId: null,
 	resourcePanelWidthRatio: null,
 	resourcePanelResizing: false,

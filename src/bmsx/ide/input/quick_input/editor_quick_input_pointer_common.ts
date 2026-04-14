@@ -5,7 +5,7 @@ import { resetBlink } from '../../render/render_caret';
 import { measureText } from '../../core/text_utils';
 
 export function activateQuickInputField(): void {
-	ide_state.resourcePanelFocused = false;
+	ide_state.resourcePanel.setFocused(false);
 	ide_state.cursorVisible = true;
 	resetBlink();
 }

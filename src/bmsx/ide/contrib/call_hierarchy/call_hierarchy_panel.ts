@@ -5,8 +5,5 @@ import { closeSymbolSearch } from '../symbols/symbol_search_shared';
 export function showCallHierarchyView(view: CallHierarchyView): void {
 	closeSymbolSearch(false);
 	ide_state.resourcePanel.showCallHierarchy(view);
-	const panelState = ide_state.resourcePanel.getStateForRender();
-	ide_state.resourcePanelFocused = panelState.focused;
-	ide_state.resourceBrowserSelectionIndex = panelState.selectionIndex;
-	ide_state.resourcePanelVisible = panelState.visible;
+	ide_state.resourceBrowserSelectionIndex = ide_state.resourcePanel.selectionIndex;
 }
