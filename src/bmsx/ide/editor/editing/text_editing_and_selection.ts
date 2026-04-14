@@ -15,9 +15,10 @@ import { $ } from '../../../core/engine_core';
 import { editorRuntimeState } from '../common/editor_runtime_state';
 import { showEditorMessage } from '../../workbench/common/feedback_state';
 import type { EditContext, Position } from '../../common/types';
-import { getActiveCodeTabContext, recordEditContext } from '../../workbench/ui/tabs';
+import { getActiveCodeTabContext } from '../../workbench/ui/code_tabs';
 import { revealCursor, updateDesiredColumn } from '../ui/caret';
 import { markDiagnosticsDirty } from '../contrib/diagnostics/diagnostics';
+import { completionController } from '../contrib/suggest/completion_controller';
 import { currentLine } from '../common/text_layout';
 import { invalidateLineRange, markTextMutated } from '../common/text_runtime';
 import { capturePreMutationSource } from '../common/text_runtime';
@@ -27,12 +28,11 @@ import { formatLuaDocument } from '../../language/lua/lua_formatter';
 import { extractErrorMessage } from '../../../lua/luavalue';
 import { getTextSnapshot } from '../text/source_text';
 import type { MutableTextPosition, TextBuffer } from '../text/text_buffer';
-import { prepareUndo, applyUndoableReplace } from './undo_controller';
+import { prepareUndo, applyUndoableReplace, recordEditContext } from './undo_controller';
 import { formatAemDocument } from '../../language/aem/aem_editor';
 import { editorDocumentState } from './editor_document_state';
 import { editorSessionState } from '../ui/editor_session_state';
 import { editorViewState } from '../ui/editor_view_state';
-import { editorFeatureState } from '../common/editor_feature_state';
 import {
 	clearSingleCursorSelection,
 	collapseSingleCursorSelection,
@@ -1024,7 +1024,7 @@ export function applyDocumentFormatting(): void {
 export function handlePostEditMutation(): void {
 	const editContext = editorRuntimeState.pendingEditContext;
 	editorRuntimeState.pendingEditContext = null;
-	editorFeatureState.completion.updateAfterEdit(editContext);
+	completionController.updateAfterEdit(editContext);
 }
 export function computeEditContextFromSources(previous: string, next: string): EditContext {
 	if (previous === next) {

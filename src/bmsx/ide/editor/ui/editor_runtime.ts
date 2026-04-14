@@ -3,7 +3,8 @@ import * as runtimeIde from '../../../emulator/runtime_ide';
 import { $ } from '../../../core/engine_core';
 import { api } from './view/overlay_api';
 import * as constants from '../../common/constants';
-import { activateCodeTab, getActiveCodeTabContext, isResourceViewActive, setActiveTab, storeActiveCodeTabContext } from '../../workbench/ui/tabs';
+import { activateCodeTab, isResourceViewActive, setActiveTab } from '../../workbench/ui/tabs';
+import { getActiveCodeTabContext, storeActiveCodeTabContext } from '../../workbench/ui/code_tabs';
 import { cancelGlobalSearchJob, startSearchJob } from '../contrib/find/editor_search';
 import { editorRuntimeState } from '../common/editor_runtime_state';
 import { editorFeedbackState, setEditorFeedbackActive, showEditorMessage, updateEditorMessage } from '../../workbench/common/feedback_state';
@@ -18,7 +19,6 @@ import { drawResourcePanel, drawResourceViewer } from '../../workbench/render/re
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorSessionState } from './editor_session_state';
 import { editorViewState } from './editor_view_state';
-import { editorFeatureState } from '../common/editor_feature_state';
 import { editorSearchState, lineJumpState } from '../contrib/find/find_widget_state';
 import { renderInlineWidgets } from '../contrib/quick_input/inline_widget';
 import { renderRuntimeFaultOverlay } from '../render/render_error_overlay';
@@ -49,6 +49,7 @@ import { editorPointerState } from '../input/pointer/editor_pointer_state';
 import { editorCaretState } from './caret_state';
 import { captureKeys } from '../input/keyboard/editor_capture_keys';
 import { editorInput } from '../input/keyboard/editor_text_input';
+import { completionController } from '../contrib/suggest/completion_controller';
 
 export function tickInput(): void {
 	handleEditorWheelInput();
@@ -64,7 +65,7 @@ export function update(deltaSeconds: number): void {
 	updateBlink(deltaSeconds);
 	updateEditorMessage(deltaSeconds);
 	updateRuntimeErrorOverlay(deltaSeconds);
-	editorFeatureState.completion.processPending(deltaSeconds);
+	completionController.processPending(deltaSeconds);
 	const semanticError = editorViewState.layout.getLastSemanticError();
 	if (semanticError && semanticError !== editorRuntimeState.lastReportedSemanticError) {
 		showEditorMessage(semanticError, constants.COLOR_STATUS_ERROR, 2.0);
@@ -216,7 +217,7 @@ export function deactivateRuntimeEditor(): void {
 	if (editorViewState.dimCrtInEditor) {
 		Runtime.instance.restoreCrtPostprocessingFromEditor();
 	}
-	editorFeatureState.completion.closeSession();
+	completionController.closeSession();
 	editorInput.applyOverrides(false, captureKeys);
 	editorDocumentState.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;

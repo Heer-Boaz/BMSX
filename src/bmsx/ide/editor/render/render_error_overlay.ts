@@ -19,7 +19,7 @@ import { splitText } from '../text/source_text';
 import { BmsxColors } from '../../../emulator/vdp';
 import { editorRuntimeState } from '../common/editor_runtime_state';
 import { activate } from '../../cart_editor';
-import { focusChunkSource } from '../../workbench/ui/tabs';
+import { focusChunkSource } from '../../workbench/contrib/resources/resource_navigation';
 import { setActiveRuntimeErrorOverlay, setExecutionStopHighlight } from '../contrib/runtime_error/runtime_error_navigation';
 import { editorPointerState } from '../input/pointer/editor_pointer_state';
 import { editorCaretState } from '../ui/caret_state';

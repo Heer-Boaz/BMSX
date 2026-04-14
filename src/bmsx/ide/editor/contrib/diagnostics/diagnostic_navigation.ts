@@ -1,7 +1,8 @@
 import { clamp } from '../../../../utils/clamp';
 import type { EditorDiagnostic } from '../../../common/types';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
-import { activateCodeTab, isCodeTabActive, setActiveTab } from '../../../workbench/ui/tabs';
+import { activateCodeTab, setActiveTab } from '../../../workbench/ui/tabs';
+import { isCodeTabActive } from '../../../workbench/ui/code_tabs';
 import { setCursorPosition, ensureCursorVisible } from '../../ui/caret';
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import { editorCaretState } from '../../ui/caret_state';

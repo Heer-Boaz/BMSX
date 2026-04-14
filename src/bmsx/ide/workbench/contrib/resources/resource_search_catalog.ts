@@ -1,6 +1,6 @@
 import * as constants from '../../../common/constants';
 import { showEditorMessage } from '../../common/feedback_state';
-import { listResourcesStrict } from '../../ui/tabs';
+import { listResourcesStrict } from './resource_catalog';
 import { clampQuickInputDisplayOffset, advanceQuickInputSelection } from '../../../editor/navigation/quick_input_navigation';
 import { resetBlink } from '../../../editor/render/render_caret';
 import { resourceSearchWindowCapacity } from '../../../editor/ui/editor_view';

@@ -4,15 +4,15 @@ import * as constants from '../../common/constants';
 import { editorFeedbackState } from '../../workbench/common/feedback_state';
 import { getBreakpointsForChunk } from '../../workbench/contrib/debugger/ide_debugger';
 import { intellisenseUiState } from '../contrib/intellisense/intellisense_ui_state';
-import { getActiveCodeTabContext } from '../../workbench/ui/tabs';
+import { getActiveCodeTabContext } from '../../workbench/ui/code_tabs';
 import { ensureVisualLines, getVisualLineCount } from '../common/text_layout';
 import { drawCodeAreaBackground } from './render_code_area_gutter';
 import { finalizeCodeAreaRender } from './render_code_area_tail';
 import { drawCodeAreaRows } from './render_code_area_rows';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorViewState } from '../ui/editor_view_state';
-import { editorFeatureState } from '../common/editor_feature_state';
 import { editorRuntimeState } from '../common/editor_runtime_state';
+import { completionController } from '../contrib/suggest/completion_controller';
 
 export function renderCodeArea(): void {
 	ensureVisualLines();
@@ -69,7 +69,7 @@ export function renderCodeArea(): void {
 	const activePath = getActiveCodeTabContext().descriptor.path;
 	const breakpointsForChunk = getBreakpointsForChunk(activePath);
 	const cursorVisualIndex = editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
-	const inlineCompletionPreview = editorFeatureState.completion.getInlineCompletionPreview();
+	const inlineCompletionPreview = completionController.getInlineCompletionPreview();
 	const shouldRenderInlinePreview = inlineCompletionPreview !== null
 		&& inlineCompletionPreview.row === editorDocumentState.cursorRow
 		&& inlineCompletionPreview.column === editorDocumentState.cursorColumn;

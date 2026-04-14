@@ -1,4 +1,4 @@
-import { endTabDrag, updateTabDrag } from '../../ui/tabs';
+import { endTabDrag, updateTabDrag } from '../../ui/tab_drag';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../../editor/contrib/intellisense/intellisense';
 import type { PointerSnapshot } from '../../../common/types';
 import { editorPointerState } from '../../../editor/input/pointer/editor_pointer_state';

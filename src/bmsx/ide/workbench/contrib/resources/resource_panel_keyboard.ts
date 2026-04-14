@@ -1,7 +1,7 @@
 import * as constants from '../../../common/constants';
 import { showEditorMessage } from '../../common/feedback_state';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../editor/input/keyboard/key_input';
-import { focusEditorFromResourcePanel } from '../../ui/tabs';
+import { focusEditorFromResourcePanel } from './resource_navigation';
 import type { ResourcePanelController } from './resource_panel_controller';
 
 export function handleResourcePanelKeyboardInput(controller: ResourcePanelController): void {

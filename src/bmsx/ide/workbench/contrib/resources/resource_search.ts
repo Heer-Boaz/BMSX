@@ -4,7 +4,7 @@ import { renameController } from '../../../editor/contrib/rename/rename_controll
 import { showEditorMessage } from '../../common/feedback_state';
 import { clearReferenceHighlights } from '../../../editor/contrib/intellisense/intellisense';
 import { closeSearch } from '../../../editor/contrib/find/editor_search';
-import { openResourceDescriptor } from '../../ui/tabs';
+import { openResourceDescriptor } from './resource_navigation';
 import { resetBlink } from '../../../editor/render/render_caret';
 import { setFieldText } from '../../../editor/ui/inline_text_field';
 import { closeSymbolSearch } from '../../../editor/contrib/symbols/symbol_search_shared';

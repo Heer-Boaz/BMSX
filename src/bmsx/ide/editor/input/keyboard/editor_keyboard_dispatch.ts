@@ -3,10 +3,10 @@ import { isResourceViewActive } from '../../../workbench/ui/tabs';
 import { handleResourceViewerInput } from '../../../workbench/input/keyboard/resource_viewer_input';
 import { handleEditorGlobalBindings } from './editor_global_bindings';
 import { handleEditorPromptBindings } from '../../../workbench/input/keyboard/prompt_bindings';
-import { editorFeatureState } from '../../common/editor_feature_state';
 import { handleInlineWidgetInput } from '../../contrib/quick_input/inline_widget';
 import { resourcePanel } from '../../../workbench/contrib/resources/resource_panel_controller';
 import { problemsPanel } from '../../../workbench/contrib/problems/problems_panel';
+import { completionController } from '../../contrib/suggest/completion_controller';
 import {
 	handleCodeFormattingKeybinding,
 	handleEditorClipboardAndCommandBindings,
@@ -39,7 +39,7 @@ export function handleEditorInput(): void {
 	if (handleEditorClipboardAndCommandBindings()) {
 		return;
 	}
-	if (editorFeatureState.completion.handleKeybindings()) {
+	if (completionController.handleKeybindings()) {
 		return;
 	}
 	if (handleCodeFormattingKeybinding()) {

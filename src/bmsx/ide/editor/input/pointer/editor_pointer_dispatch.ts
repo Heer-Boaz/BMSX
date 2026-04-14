@@ -1,5 +1,5 @@
 import { $ } from '../../../../core/engine_core';
-import { getActiveCodeTabContext } from '../../../workbench/ui/tabs';
+import { getActiveCodeTabContext } from '../../../workbench/ui/code_tabs';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { handleEditorContextMenuPointer } from '../../../workbench/input/pointer/context_menu_input';
 import { isCtrlDown, isMetaDown } from '../keyboard/key_input';

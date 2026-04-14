@@ -4,8 +4,9 @@ import type { Font } from '../../../render/shared/bmsx_font';
 import * as constants from '../../common/constants';
 import { api } from '../ui/view/overlay_api';
 import { editorViewState } from '../ui/editor_view_state';
-import { editorFeatureState } from '../common/editor_feature_state';
 import { editorSearchState } from '../contrib/find/find_widget_state';
+import { referenceState } from '../contrib/references/reference_state';
+import { renameController } from '../contrib/rename/rename_controller';
 
 export function drawHighlightSlice(
 	renderFont: Font,
@@ -36,11 +37,15 @@ export function drawHighlightSlice(
 }
 
 export function drawReferenceHighlightsForRow(api: Api, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
-	const matches = editorFeatureState.referenceState.getMatches();
+	const matches = renameController.isActive()
+		? renameController.getHighlightMatches()
+		: referenceState.getMatches();
 	if (matches.length === 0) {
 		return;
 	}
-	const activeIndex = editorFeatureState.referenceState.getActiveIndex();
+	const activeIndex = renameController.isActive()
+		? renameController.getActiveIndex()
+		: referenceState.getActiveIndex();
 	const highlight = entry.hi;
 	const advancePrefix = entry.advancePrefix;
 	for (let i = 0; i < matches.length; i += 1) {

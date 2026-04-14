@@ -20,7 +20,7 @@ import { isStringValue, stringValueToString } from '../../../../emulator/string_
 import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverRequest, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaMemberCompletionRequest, LuaSymbolEntry, LuaSymbolKind } from '../../../../emulator/types';
 import { ScratchBatchPooled } from '../../../../utils/scratchbatch';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
-import { focusChunkSource } from '../../../workbench/ui/tabs';
+import { focusChunkSource } from '../../../workbench/contrib/resources/resource_navigation';
 import { ensureCursorVisible, updateDesiredColumn } from '../../ui/caret';
 import { editorCaretState } from '../../ui/caret_state';
 import { intellisenseUiState } from './intellisense_ui_state';
@@ -28,7 +28,8 @@ import { resetBlink } from '../../render/render_caret';
 import { tryShowLuaErrorOverlay } from '../runtime_error/runtime_error_navigation';
 import { resolvePointerColumn, resolvePointerRow } from '../../ui/editor_view';
 import * as constants from '../../../common/constants';
-import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isActiveLuaCodeTab, isReadOnlyCodeTab, setActiveTab } from '../../../workbench/ui/tabs';
+import { activateCodeTab, setActiveTab } from '../../../workbench/ui/tabs';
+import { findCodeTabContext, getActiveCodeTabContext, isActiveLuaCodeTab, isReadOnlyCodeTab } from '../../../workbench/ui/code_tabs';
 import { buildEditorSemanticFrontend } from './editor_semantic_frontend';
 import { editorRuntimeState } from '../../common/editor_runtime_state';
 import { showEditorMessage } from '../../../workbench/common/feedback_state';
@@ -49,7 +50,7 @@ import { KEYWORDS, LuaTokenType, type LuaToken } from '../../../../lua/syntax/lu
 import { getTextSnapshot, splitText } from '../../text/source_text';
 import { editorDocumentState } from '../../editing/editor_document_state';
 import { editorViewState } from '../../ui/editor_view_state';
-import { editorFeatureState } from '../../common/editor_feature_state';
+import { referenceState } from '../references/reference_state';
 export const PREVIEW_MAX_ENTRIES = 12;
 export const PREVIEW_MAX_DEPTH = 2;
 
@@ -1138,7 +1139,7 @@ export function clearGotoHoverHighlight(): void {
 }
 
 export function clearReferenceHighlights(): void {
-	editorFeatureState.referenceState.clear();
+	referenceState.clear();
 }
 
 export function tryGotoDefinitionAt(row: number, column: number): boolean {

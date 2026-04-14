@@ -59,3 +59,5 @@ export class ReferenceState {
 		this.activeIndex = clamp(index, 0, this.matches.length - 1);
 	}
 }
+
+export const referenceState = new ReferenceState();

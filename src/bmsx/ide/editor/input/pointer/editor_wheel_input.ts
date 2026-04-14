@@ -4,7 +4,8 @@ import * as constants from '../../../common/constants';
 import { problemsPanel } from '../../../workbench/contrib/problems/problems_panel';
 import { resourcePanel } from '../../../workbench/contrib/resources/resource_panel_controller';
 import type { PointerSnapshot } from '../../../common/types';
-import { isCodeTabActive, isResourceViewActive } from '../../../workbench/ui/tabs';
+import { isResourceViewActive } from '../../../workbench/ui/tabs';
+import { isCodeTabActive } from '../../../workbench/ui/code_tabs';
 import { getProblemsPanelBounds } from '../../../workbench/contrib/problems/problems_panel';
 import { isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll } from '../../ui/hover_tooltip';
 import { getCodeAreaBounds, getResourceSearchBarBounds, scrollResourceBrowser, scrollRows } from '../../ui/editor_view';
@@ -15,8 +16,8 @@ import { editorPointerState } from './editor_pointer_state';
 import { editorCaretState } from '../../ui/caret_state';
 import { intellisenseUiState } from '../../contrib/intellisense/intellisense_ui_state';
 import { editorViewState } from '../../ui/editor_view_state';
-import { editorFeatureState } from '../../common/editor_feature_state';
 import { resourceSearchState } from '../../../workbench/contrib/resources/resource_widget_state';
+import { completionController } from '../../contrib/suggest/completion_controller';
 
 export function handleEditorWheelInput(): void {
 	const playerInput = $.input.getPlayerInput(1);
@@ -45,7 +46,7 @@ export function handleEditorWheelInput(): void {
 	if (handleProblemsPanelWheel(direction, steps, activePointer, playerInput)) {
 		return;
 	}
-	if (editorFeatureState.completion.handlePointerWheel(direction, steps, activePointer !== null ? { x: activePointer.viewportX, y: activePointer.viewportY } : null)) {
+	if (completionController.handlePointerWheel(direction, steps, activePointer !== null ? { x: activePointer.viewportX, y: activePointer.viewportY } : null)) {
 		playerInput.consumeRawButton('pointer_wheel', 'pointer');
 		return;
 	}

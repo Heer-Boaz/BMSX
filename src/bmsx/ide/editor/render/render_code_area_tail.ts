@@ -11,7 +11,7 @@ import { drawCursor } from './render_caret';
 import type { RectBounds } from '../../../rompack/rompack';
 import { editorCaretState } from '../ui/caret_state';
 import { editorViewState } from '../ui/editor_view_state';
-import { editorFeatureState } from '../common/editor_feature_state';
+import { completionController } from '../contrib/suggest/completion_controller';
 
 const verticalTrackScratch: RectBounds = {
 	left: 0,
@@ -98,8 +98,8 @@ export function finalizeCodeAreaRender(
 	if (editorCaretState.cursorVisible && cursorInfo) {
 		drawCursor(cursorInfo, bounds.textLeft);
 	}
-	editorFeatureState.completion.popupBounds = drawCompletionPopup(editorFeatureState.completion.session, cursorInfo, editorViewState.lineHeight, bounds);
-	drawParameterHintOverlay(editorFeatureState.completion.hint, cursorInfo, editorViewState.lineHeight, bounds);
+	completionController.popupBounds = drawCompletionPopup(completionController.session, cursorInfo, editorViewState.lineHeight, bounds);
+	drawParameterHintOverlay(completionController.hint, cursorInfo, editorViewState.lineHeight, bounds);
 	if (editorViewState.codeVerticalScrollbarVisible) {
 		editorViewState.scrollbars.codeVertical.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}

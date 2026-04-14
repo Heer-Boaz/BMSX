@@ -2,13 +2,13 @@ import * as constants from '../../../common/constants';
 import { renameController } from '../rename/rename_controller';
 import { showEditorMessage } from '../../../workbench/common/feedback_state';
 import { extractHoverExpression, navigateToLuaDefinition } from '../intellisense/intellisense';
-import { getActiveCodeTabContext } from '../../../workbench/ui/tabs';
+import { getActiveCodeTabContext } from '../../../workbench/ui/code_tabs';
 import { resetBlink } from '../../render/render_caret';
 import { applySymbolSearchFieldText, closeSymbolSearch, ensureSymbolSearchSelectionVisible } from '../symbols/symbol_search_shared';
 import { resolveReferenceLookup } from './reference_lookup';
 import { editorDocumentState } from '../../editing/editor_document_state';
-import { editorFeatureState } from '../../common/editor_feature_state';
 import { symbolSearchState } from '../symbols/symbol_search_state';
+import { referenceState } from './reference_state';
 import {
 	type ReferenceCatalogEntry,
 	type ReferenceSymbolEntry,
@@ -37,7 +37,7 @@ export function openReferenceSearchPopup(): void {
 		return;
 	}
 	const { info, initialIndex } = result;
-	editorFeatureState.referenceState.apply(info, initialIndex);
+	referenceState.apply(info, initialIndex);
 	symbolSearchState.referenceCatalog = buildReferenceSearchCatalog(info, context);
 	if (symbolSearchState.referenceCatalog.length === 0) {
 		showEditorMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
@@ -66,9 +66,9 @@ export function applyReferenceSearchSelection(index: number): void {
 	const symbol = referenceEntry.symbol as ReferenceSymbolEntry;
 	const entryIndex = symbolSearchState.referenceCatalog.indexOf(referenceEntry);
 	const total = symbolSearchState.referenceCatalog.length;
-	const expressionLabel = editorFeatureState.referenceState.getExpression() ?? symbol.name;
+	const expressionLabel = referenceState.getExpression() ?? symbol.name;
 	closeSymbolSearch(true);
-	editorFeatureState.referenceState.clear();
+	referenceState.clear();
 	navigateToLuaDefinition(symbol.location);
 	if (entryIndex >= 0 && total > 0) {
 		showEditorMessage(`Reference ${entryIndex + 1}/${total} for ${expressionLabel}`, constants.COLOR_STATUS_SUCCESS, 1.6);

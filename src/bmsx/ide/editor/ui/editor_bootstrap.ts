@@ -1,6 +1,7 @@
 import { $ } from '../../../core/engine_core';
-import { CompletionController } from '../contrib/suggest/completion_controller';
-import { createEntryTabContext, initializeTabs } from '../../workbench/ui/tabs';
+import { completionController } from '../contrib/suggest/completion_controller';
+import { initializeTabs } from '../../workbench/ui/tabs';
+import { createEntryTabContext } from '../../workbench/ui/code_tabs';
 import { createInlineTextField } from './inline_text_field';
 import { Scrollbar, ScrollbarController } from './scrollbar';
 import { initializeResourcePanel } from '../../workbench/contrib/resources/resource_panel_controller';
@@ -14,7 +15,6 @@ import * as constants from '../../common/constants';
 import type { Viewport } from '../../../rompack/rompack';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorViewState } from './editor_view_state';
-import { editorFeatureState } from '../common/editor_feature_state';
 import { editorSearchState, lineJumpState } from '../contrib/find/find_widget_state';
 import { symbolSearchState } from '../contrib/symbols/symbol_search_state';
 import {
@@ -68,9 +68,8 @@ export function initializeCartEditor(viewport: Viewport): void {
 		resourceVertical: editorViewState.scrollbars.resourceVertical,
 		resourceHorizontal: editorViewState.scrollbars.resourceHorizontal,
 	});
-	editorFeatureState.completion = new CompletionController();
-	editorFeatureState.completion.closeSession();
-	editorFeatureState.completion.enterCommitsCompletion = false;
+	completionController.closeSession();
+	completionController.enterCommitsCompletion = false;
 	problemsPanel.setDiagnostics(editorDiagnosticsState.diagnostics);
 	editorViewState.codeVerticalScrollbarVisible = false;
 	editorViewState.codeHorizontalScrollbarVisible = false;

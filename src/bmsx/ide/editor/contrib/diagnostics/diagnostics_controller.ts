@@ -6,7 +6,7 @@ import type { EditorDiagnostic, CodeTabContext } from '../../../common/types';
 import { listLuaSymbols, listGlobalLuaSymbols, listLuaBuiltinFunctions } from '../intellisense/intellisense';
 import { getTextSnapshot, splitText } from '../../text/source_text';
 import { enqueueBackgroundTask, scheduleIdeOnce } from '../../../common/background_tasks';
-import { getActiveCodeTabContext, findCodeTabContext } from '../../../workbench/ui/tabs';
+import { getActiveCodeTabContext, findCodeTabContext } from '../../../workbench/ui/code_tabs';
 import { getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace_sync';
 import type { LuaDefinitionInfo } from '../../../../lua/syntax/lua_ast';
 import type { ModuleAliasEntry } from '../intellisense/semantic_model';

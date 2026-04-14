@@ -31,7 +31,7 @@ import { point_in_rect } from '../../../../utils/rect_operations';
 import { LuaLexer } from '../../../../lua/syntax/lualexer';
 import { assignRowColumn } from '../../../common/state_utils';
 import * as TextEditing from '../../editing/text_editing_and_selection';
-import { getActiveCodeTabContext, isActiveLuaCodeTab } from '../../../workbench/ui/tabs';
+import { getActiveCodeTabContext, isActiveLuaCodeTab } from '../../../workbench/ui/code_tabs';
 import { prepareUndo } from '../../editing/undo_controller';
 import { updateDesiredColumn, revealCursor } from '../../ui/caret';
 import { resetBlink } from '../../render/render_caret';
@@ -1462,3 +1462,5 @@ export class CompletionController {
 		return null;
 	}
 }
+
+export const completionController = new CompletionController();

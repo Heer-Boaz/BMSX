@@ -12,7 +12,6 @@ import { setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { commitRename } from './rename_operations';
 import { handleRenameControllerInput } from './rename_input';
 import { validateRenameIdentifier } from './rename_validation';
-import { editorFeatureState } from '../../common/editor_feature_state';
 
 export type RenameStartOptions = ReferenceLookupOptions & {
 };
@@ -60,7 +59,6 @@ export class RenameController {
 			showEditorMessage('Unable to determine identifier name', constants.COLOR_STATUS_WARNING, 1.6);
 			return false;
 		}
-		editorFeatureState.referenceState.apply(info, initialIndex);
 		this.matches = info.matches;
 		this.info = info;
 		this.originalName = currentName;
@@ -114,6 +112,10 @@ export class RenameController {
 		return this.activeIndex;
 	}
 
+	public getHighlightMatches(): readonly SearchMatch[] {
+		return this.matches;
+	}
+
 	public commit(): void {
 		if (!this.active || !this.info) {
 			return;
@@ -152,7 +154,6 @@ export class RenameController {
 	}
 
 	private close(): void {
-		editorFeatureState.referenceState.clear();
 		this.active = false;
 		this.visible = false;
 		this.matches = EMPTY_RENAME_MATCHES;

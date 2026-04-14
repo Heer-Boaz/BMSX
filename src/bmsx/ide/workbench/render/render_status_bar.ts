@@ -1,7 +1,8 @@
 import * as constants from '../../common/constants';
 import { getActiveSymbolSearchMatch } from '../../editor/contrib/symbols/symbol_search_shared';
 import { statusAreaHeight, getStatusMessageLines } from '../common/layout';
-import { getActiveCodeTabContext, isCodeTabActive, isResourceViewActive } from '../ui/tabs';
+import { isResourceViewActive } from '../ui/tabs';
+import { getActiveCodeTabContext, isCodeTabActive } from '../ui/code_tabs';
 import { editorFeedbackState } from '../common/feedback_state';
 import { getActiveResourceViewer } from '../contrib/resources/resource_viewer';
 import { drawEditorText } from '../../editor/render/text_renderer';

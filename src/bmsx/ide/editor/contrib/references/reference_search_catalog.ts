@@ -6,8 +6,8 @@ import { symbolSearchPageSize } from '../../ui/editor_view';
 import { getTextSnapshot, splitText } from '../../text/source_text';
 import { editorDocumentState } from '../../editing/editor_document_state';
 import { editorSessionState } from '../../ui/editor_session_state';
-import { editorFeatureState } from '../../common/editor_feature_state';
 import { symbolSearchState } from '../symbols/symbol_search_state';
+import { referenceState } from './reference_state';
 import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
 	filterReferenceCatalog,
@@ -37,7 +37,7 @@ export function updateReferenceSearchMatches(): void {
 	const { matches, selectionIndex, displayOffset } = filterReferenceCatalog({
 		catalog: symbolSearchState.referenceCatalog,
 		query: symbolSearchState.query,
-		state: editorFeatureState.referenceState,
+		state: referenceState,
 		pageSize: symbolSearchPageSize(),
 	});
 	symbolSearchState.matches = matches;
@@ -47,11 +47,11 @@ export function updateReferenceSearchMatches(): void {
 }
 
 export function showReferenceSearchStatusMessage(): void {
-	const matches = editorFeatureState.referenceState.getMatches();
-	const activeIndex = editorFeatureState.referenceState.getActiveIndex();
+	const matches = referenceState.getMatches();
+	const activeIndex = referenceState.getActiveIndex();
 	if (matches.length === 0 || activeIndex < 0) {
 		return;
 	}
-	const label = editorFeatureState.referenceState.getExpression() ?? '';
+	const label = referenceState.getExpression() ?? '';
 	showEditorMessage(`Reference ${activeIndex + 1}/${matches.length} for ${label}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 }

@@ -5,7 +5,7 @@ import * as constants from '../../common/constants';
 import { editorRuntimeState } from '../common/editor_runtime_state';
 import { invalidateLuaCommentContextFromRow } from '../../common/text_utils';
 import { capturePreMutationSource } from '../common/text_runtime';
-import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../../workbench/ui/tabs';
+import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../../workbench/ui/code_tabs';
 import { notifyReadOnlyEdit } from '../ui/editor_view';
 import { updateDesiredColumn } from '../ui/caret';
 import { resetBlink } from '../render/render_caret';

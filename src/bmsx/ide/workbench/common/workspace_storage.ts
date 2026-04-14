@@ -25,7 +25,8 @@ import {
 	WORKSPACE_DIRTY_DIR,
 } from '../../../emulator/workspace';
 import { setFontVariant } from '../../editor/ui/editor_view';
-import { findCodeTabContext, initializeTabs, openCodeTabForDescriptor, setTabDirty, updateActiveContextDirtyFlag } from '../ui/tabs';
+import { initializeTabs } from '../ui/tabs';
+import { findCodeTabContext, openCodeTabForDescriptor, setTabDirty, updateActiveContextDirtyFlag } from '../ui/code_tabs';
 import { type FontVariant } from '../../../render/shared/bmsx_font';
 import { getTextSnapshot } from '../../editor/text/source_text';
 import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../../../emulator/workspace_cache';

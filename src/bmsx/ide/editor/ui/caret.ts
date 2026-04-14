@@ -9,7 +9,7 @@ import type { VisualLineSegment } from '../../common/types';
 import { revealCursor, resolveViewportCapacity, setCursorFromVisualIndex, updateDesiredColumn } from './caret_view';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorViewState } from './editor_view_state';
-import { editorFeatureState } from '../common/editor_feature_state';
+import { completionController } from '../contrib/suggest/completion_controller';
 
 export type VisualCursorOverride = {
 	row: number;
@@ -96,7 +96,7 @@ export function setCursorPosition(row: number, column: number): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	editorFeatureState.completion.onCursorMoved();
+	completionController.onCursorMoved();
 }
 
 /**
@@ -116,7 +116,7 @@ export function moveCursorVertical(delta: number): void {
 	setCursorFromVisualIndex(targetIndex, desired, desiredDisplay);
 	resetBlink();
 	revealCursor();
-	editorFeatureState.completion.onCursorMoved();
+	completionController.onCursorMoved();
 }
 
 /**
@@ -189,7 +189,7 @@ export function moveCursorHorizontal(delta: number): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	editorFeatureState.completion.onCursorMoved();
+	completionController.onCursorMoved();
 }
 
 /**
@@ -203,7 +203,7 @@ export function moveWordLeft(): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	editorFeatureState.completion.onCursorMoved();
+	completionController.onCursorMoved();
 }
 
 /**
@@ -217,7 +217,7 @@ export function moveWordRight(): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	editorFeatureState.completion.onCursorMoved();
+	completionController.onCursorMoved();
 }
 
 /**

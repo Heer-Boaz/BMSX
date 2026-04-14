@@ -3,7 +3,7 @@ import { applyInlineFieldEditing } from '../../ui/inline_text_field';
 import { textFromLines } from '../../text/source_text';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../keyboard/key_input';
 import { redo, undo } from '../../editing/undo_controller';
-import { save } from '../../../workbench/ui/tabs';
+import { save } from '../../../workbench/ui/code_tabs';
 import { editorSearchState } from '../../contrib/find/find_widget_state';
 
 export function handleSearchInput(): void {

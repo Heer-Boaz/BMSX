@@ -1,6 +1,7 @@
 import { centerCursorVertically, setCursorPosition } from '../../ui/caret';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
-import { activateCodeTab, getActiveCodeTabContext, setActiveTab } from '../../../workbench/ui/tabs';
+import { activateCodeTab, setActiveTab } from '../../../workbench/ui/tabs';
+import { getActiveCodeTabContext } from '../../../workbench/ui/code_tabs';
 import { showEditorMessage } from '../../../workbench/common/feedback_state';
 import type { CodeTabContext, RuntimeErrorOverlay } from '../../../common/types';
 import { resetBlink } from '../../render/render_caret';

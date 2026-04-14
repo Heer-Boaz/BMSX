@@ -1,4 +1,4 @@
-import { isEditableCodeTab } from '../../ui/tabs';
+import { isEditableCodeTab } from '../../ui/code_tabs';
 import { resolveContextMenuToken } from '../../../editor/contrib/intellisense/intellisense';
 import { buildEditorContextMenuEntries } from '../../contrib/context_menu/context_menu_entries';
 import { editorContextMenuState } from '../../contrib/context_menu/context_menu_state';

@@ -1,4 +1,4 @@
-import { isEditableCodeTab } from '../../workbench/ui/tabs';
+import { isEditableCodeTab } from '../../workbench/ui/code_tabs';
 import { notifyReadOnlyEdit } from '../ui/editor_view';
 import { prepareUndo, applyUndoableReplace } from './undo_controller';
 import { markTextMutated } from '../common/text_runtime';

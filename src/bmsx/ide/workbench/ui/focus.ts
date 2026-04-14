@@ -8,7 +8,7 @@ import { resetBlink } from '../../editor/render/render_caret';
 import { focusEditorFromResourceSearch } from '../contrib/resources/resource_search';
 import { focusEditorFromSymbolSearch } from '../../editor/contrib/symbols/symbol_search_shared';
 import { editorDocumentState } from '../../editor/editing/editor_document_state';
-import { editorFeatureState } from '../../editor/common/editor_feature_state';
+import { completionController } from '../../editor/contrib/suggest/completion_controller';
 
 export function focusPrimaryEditorSurface(): void {
 	clearReferenceHighlights();
@@ -17,7 +17,7 @@ export function focusPrimaryEditorSurface(): void {
 	focusEditorFromSearch();
 	focusEditorFromResourceSearch();
 	focusEditorFromSymbolSearch();
-	editorFeatureState.completion.closeSession();
+	completionController.closeSession();
 }
 
 export function focusEditorAtPosition(row: number, column: number): void {

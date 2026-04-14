@@ -2,7 +2,7 @@ import type { ResourceDescriptor } from '../../../../emulator/types';
 import { Runtime } from '../../../../emulator/runtime';
 import { measureText } from '../../../editor/common/text_layout';
 import type { ResourceBrowserItem } from '../../../common/types';
-import { listResourcesStrict } from '../../ui/tabs';
+import { listResourcesStrict } from './resource_catalog';
 import type { CallHierarchyView, CallHierarchyViewNode } from '../../../editor/contrib/call_hierarchy/call_hierarchy_view';
 
 export type ResourcePanelFilterMode = 'lua_only' | 'all';
