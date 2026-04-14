@@ -1,23 +1,21 @@
 import type { EditorDiagnostic, PointerSnapshot } from '../../core/types';
 import type { RectBounds } from '../../../rompack/rompack';
-import { clamp } from '../../../utils/clamp';
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
 import { markAllDiagnosticsDirty } from './diagnostics';
 import { resetBlink } from '../../render/render_caret';
-import { gotoDiagnostic } from './diagnostics_controller';
 import {
 	clampProblemsPanelScrollIndex,
 	computeProblemsPanelLayout,
 	computeProblemsPanelVisibleHeight,
 	ensureProblemsPanelSelectionWithinView,
-	estimateProblemsPanelVisibleCount,
 	findProblemsPanelPreferredSelection,
 	type PanelLayout,
 	getProblemsPanelBounds,
 } from './problems_panel_layout';
 import { drawProblemsPanelSurface } from './problems_panel_render';
 import { handleProblemsPanelKeyboardInput } from './problems_panel_keyboard';
+import { handleProblemsPanelNavigationCommand, type ProblemsPanelCommand } from './problems_panel_navigation';
 import { handleProblemsPanelPointerInput, handleProblemsPanelWheelInput } from './problems_panel_pointer';
 
 export {
@@ -157,80 +155,8 @@ export class ProblemsPanelController {
 		handleProblemsPanelKeyboardInput(this);
 	}
 
-	public handleKeyboardCommand(command: 'up' | 'down' | 'page-up' | 'page-down' | 'home' | 'end' | 'activate'): boolean {
-		if (!this.visible || !this.focused) {
-			return false;
-		}
-		const layout = this.cachedLayout;
-		if (!layout) {
-			return false;
-		}
-		switch (command) {
-			case 'activate':
-				if (this.selectionIndex >= 0 && this.selectionIndex < this.diagnostics.length) {
-					gotoDiagnostic(this.diagnostics[this.selectionIndex]);
-					return true;
-				}
-				return false;
-			case 'home':
-				if (this.diagnostics.length === 0) {
-					return false;
-				}
-				if (this.selectionIndex === 0) {
-					return false;
-				}
-				this.selectionIndex = 0;
-				this.revealSelection(layout, this.resolvePanelWidth());
-				return true;
-			case 'end':
-				if (this.diagnostics.length === 0) {
-					return false;
-				}
-				const lastIndex = this.diagnostics.length - 1;
-				if (this.selectionIndex === lastIndex) {
-					return false;
-				}
-				this.selectionIndex = lastIndex;
-				this.revealSelection(layout, this.resolvePanelWidth());
-				return true;
-			case 'page-up':
-			case 'page-down': {
-				if (this.diagnostics.length === 0) {
-					return false;
-				}
-				// Approximate page step by filling the panel height
-				const step = Math.max(1, estimateProblemsPanelVisibleCount(this.diagnostics, this.scrollIndex, layout, this.resolvePanelWidth()));
-				const delta = command === 'page-up' ? -step : step;
-				const nextIndex = clamp(
-					this.selectionIndex === -1 ? (delta > 0 ? 0 : this.diagnostics.length - 1) : this.selectionIndex + delta,
-					0,
-					this.diagnostics.length - 1,
-				);
-				if (nextIndex === this.selectionIndex) {
-					return false;
-				}
-				this.selectionIndex = nextIndex;
-				this.revealSelection(layout, this.resolvePanelWidth());
-				return true;
-			}
-			case 'up':
-			case 'down': {
-				if (this.diagnostics.length === 0) {
-					return false;
-				}
-				const delta = command === 'up' ? -1 : 1;
-				const baseIndex = this.selectionIndex === -1 ? (delta > 0 ? -1 : this.diagnostics.length) : this.selectionIndex;
-				const nextIndex = clamp(baseIndex + delta, 0, this.diagnostics.length - 1);
-				if (nextIndex === this.selectionIndex) {
-					return false;
-				}
-				this.selectionIndex = nextIndex;
-				this.revealSelection(layout, this.resolvePanelWidth());
-				return true;
-			}
-			default:
-				return false;
-		}
+	public handleKeyboardCommand(command: ProblemsPanelCommand): boolean {
+		return handleProblemsPanelNavigationCommand(this, command);
 	}
 
 	public setFixedHeightPx(height: number): void { this.fixedHeightPx = height > 0 ? height : null; this.cachedLayout = null; }

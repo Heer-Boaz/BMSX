@@ -1,31 +1,32 @@
 import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
 import type { ProblemsPanelController } from './problems_panel';
+import { handleProblemsPanelNavigationCommand } from './problems_panel_navigation';
 
 export function handleProblemsPanelKeyboardInput(controller: ProblemsPanelController): void {
 	if (shouldRepeatKeyFromPlayer('ArrowUp')) {
 		consumeIdeKey('ArrowUp');
-		controller.handleKeyboardCommand('up');
+		handleProblemsPanelNavigationCommand(controller, 'up');
 	} else if (shouldRepeatKeyFromPlayer('ArrowDown')) {
 		consumeIdeKey('ArrowDown');
-		controller.handleKeyboardCommand('down');
+		handleProblemsPanelNavigationCommand(controller, 'down');
 	} else if (shouldRepeatKeyFromPlayer('PageUp')) {
 		consumeIdeKey('PageUp');
-		controller.handleKeyboardCommand('page-up');
+		handleProblemsPanelNavigationCommand(controller, 'page-up');
 	} else if (shouldRepeatKeyFromPlayer('PageDown')) {
 		consumeIdeKey('PageDown');
-		controller.handleKeyboardCommand('page-down');
+		handleProblemsPanelNavigationCommand(controller, 'page-down');
 	} else if (shouldRepeatKeyFromPlayer('Home')) {
 		consumeIdeKey('Home');
-		controller.handleKeyboardCommand('home');
+		handleProblemsPanelNavigationCommand(controller, 'home');
 	} else if (shouldRepeatKeyFromPlayer('End')) {
 		consumeIdeKey('End');
-		controller.handleKeyboardCommand('end');
+		handleProblemsPanelNavigationCommand(controller, 'end');
 	} else if (isKeyJustPressed('Enter')) {
 		consumeIdeKey('Enter');
-		controller.handleKeyboardCommand('activate');
+		handleProblemsPanelNavigationCommand(controller, 'activate');
 	} else if (isKeyJustPressed('NumpadEnter')) {
 		consumeIdeKey('NumpadEnter');
-		controller.handleKeyboardCommand('activate');
+		handleProblemsPanelNavigationCommand(controller, 'activate');
 	}
 	if (shouldRepeatKeyFromPlayer('ArrowLeft')) {
 		consumeIdeKey('ArrowLeft');

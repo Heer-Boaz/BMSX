@@ -1,8 +1,10 @@
 import { clamp } from '../../utils/clamp';
 import { api } from '../ui/view/overlay_api';
 import * as constants from '../core/constants';
-import { wrapTextDynamic } from '../core/text_utils';
+import { measureText, wrapTextDynamic } from '../core/text_utils';
 import type { CompletionSession, CursorScreenInfo, ParameterHintState } from '../core/types';
+import { ide_state } from '../core/ide_state';
+import { drawEditorText } from './text_renderer';
 
 export type CompletionRenderBounds = {
 	codeTop: number;
@@ -19,13 +21,20 @@ export type CompletionPopupBounds = {
 	bottom: number;
 };
 
-export function drawCompletionPopup(
+type CompletionTextMeasure = (text: string) => number;
+type CompletionTextDraw = (text: string, x: number, y: number, color: number) => void;
+
+function drawCompletionText(text: string, x: number, y: number, color: number): void {
+	drawEditorText(ide_state.font, text, x, y, undefined, color);
+}
+
+function drawCompletionPopupCore(
 	session: CompletionSession | null,
 	cursorInfo: CursorScreenInfo | null,
 	lineHeight: number,
 	bounds: CompletionRenderBounds,
-	measure: (text: string) => number,
-	draw: (text: string, x: number, y: number, color: number) => void,
+	measure: CompletionTextMeasure,
+	draw: CompletionTextDraw,
 ): CompletionPopupBounds | null {
 	if (!session || !cursorInfo) return null;
 	if (session.filteredItems.length === 0) return null;
@@ -107,13 +116,33 @@ export function drawCompletionPopup(
 	return popupBounds;
 }
 
-export function drawParameterHintOverlay(
+export function drawCompletionPopup(
+	session: CompletionSession | null,
+	cursorInfo: CursorScreenInfo | null,
+	lineHeight: number,
+	bounds: CompletionRenderBounds,
+): CompletionPopupBounds | null {
+	return drawCompletionPopupCore(session, cursorInfo, lineHeight, bounds, measureText, drawCompletionText);
+}
+
+export function drawCompletionPopupWithRenderer(
+	session: CompletionSession | null,
+	cursorInfo: CursorScreenInfo | null,
+	lineHeight: number,
+	bounds: CompletionRenderBounds,
+	measure: CompletionTextMeasure,
+	draw: CompletionTextDraw,
+): CompletionPopupBounds | null {
+	return drawCompletionPopupCore(session, cursorInfo, lineHeight, bounds, measure, draw);
+}
+
+function drawParameterHintOverlayCore(
 	hint: ParameterHintState | null,
 	cursorInfo: CursorScreenInfo | null,
 	lineHeight: number,
 	bounds: CompletionRenderBounds,
-	measure: (text: string) => number,
-	draw: (text: string, x: number, y: number, color: number) => void,
+	measure: CompletionTextMeasure,
+	draw: CompletionTextDraw,
 ): void {
 	if (!hint || !cursorInfo) return;
 	const params = hint.params;
@@ -212,4 +241,24 @@ export function drawParameterHintOverlay(
 		currentY += lineHeight + lineSpacing;
 		draw(line.text, popupLeft + constants.PARAMETER_HINT_PADDING_X, currentY, line.color);
 	}
+}
+
+export function drawParameterHintOverlay(
+	hint: ParameterHintState | null,
+	cursorInfo: CursorScreenInfo | null,
+	lineHeight: number,
+	bounds: CompletionRenderBounds,
+): void {
+	drawParameterHintOverlayCore(hint, cursorInfo, lineHeight, bounds, measureText, drawCompletionText);
+}
+
+export function drawParameterHintOverlayWithRenderer(
+	hint: ParameterHintState | null,
+	cursorInfo: CursorScreenInfo | null,
+	lineHeight: number,
+	bounds: CompletionRenderBounds,
+	measure: CompletionTextMeasure,
+	draw: CompletionTextDraw,
+): void {
+	drawParameterHintOverlayCore(hint, cursorInfo, lineHeight, bounds, measure, draw);
 }

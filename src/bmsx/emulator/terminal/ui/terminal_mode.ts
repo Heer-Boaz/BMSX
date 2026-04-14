@@ -4,7 +4,7 @@ import { EditorFont } from '../../../ide/ui/view/editor_font';
 import type { FontVariant } from '../../../render/shared/bmsx_font';
 import { invalidateLuaCommentContextFromRow, applyCaseOutsideStrings } from '../../../ide/core/text_utils';
 import { drawEditorText } from '../../../ide/render/text_renderer';
-import { drawCompletionPopup, drawParameterHintOverlay } from '../../../ide/render/render_completion';
+import { drawCompletionPopupWithRenderer, drawParameterHintOverlayWithRenderer } from '../../../ide/render/render_completion';
 import {
 	createInlineTextField,
 	applyInlineFieldEditing,
@@ -1169,8 +1169,8 @@ export class TerminalMode {
 		const draw = (text: string, x: number, y: number, color: number): void => {
 			drawEditorText(this.font, this.toRenderedGlyphText(text, uppercaseDisplay), x, y, undefined, color);
 		};
-		this.completion.popupBounds = drawCompletionPopup(this.completion.session, this.cursorScreenInfo, this.font.lineHeight, bounds, measure, draw);
-		drawParameterHintOverlay(this.completion.hint, this.cursorScreenInfo, this.font.lineHeight, bounds, measure, draw);
+		this.completion.popupBounds = drawCompletionPopupWithRenderer(this.completion.session, this.cursorScreenInfo, this.font.lineHeight, bounds, measure, draw);
+		drawParameterHintOverlayWithRenderer(this.completion.hint, this.cursorScreenInfo, this.font.lineHeight, bounds, measure, draw);
 	}
 
 	// New helper: wraps display text with a smaller first-line width (after prompt) and full width for following lines.
