@@ -513,7 +513,7 @@ export class LuaParser {
 		const startExpression = this.parseExpression();
 		this.consume(LuaTokenType.Comma, 'Expected "," after start expression in numeric for loop.');
 		const limitExpression = this.parseExpression();
-		let stepExpression: LuaExpression = null;
+		let stepExpression: LuaExpression | null = null;
 		if (this.match(LuaTokenType.Comma)) {
 			stepExpression = this.parseExpression();
 		}

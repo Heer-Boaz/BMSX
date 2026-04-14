@@ -177,11 +177,28 @@ test('ProgramCompiler iterates loop flow analysis to a real fixpoint instead of 
 	});
 });
 
-test('ProgramCompiler matches assignment target-preparation order before RHS evaluation', () => {
-	withStringRefRegister(0x5107, 'sys_test_flow_assignment_order', () => {
+test('ProgramCompiler handles numeric for-loops without an explicit step expression', () => {
+	withStringRefRegister(0x5107, 'sys_test_flow_numeric_for_default_step', () => {
 		const source = [
 			'local function write()',
 			'\tlocal reg<const> = 20743',
+			"\tlocal q = &'a'",
+			'\tfor i = 1, 3 do',
+			'\tend',
+			'\tmem[reg] = q',
+			'end',
+			'return write',
+		].join('\n');
+		const compiled = compileSource(source, 'numeric_for_default_step.lua');
+		assert.ok(compiled.program.code.length > 0);
+	});
+});
+
+test('ProgramCompiler matches assignment target-preparation order before RHS evaluation', () => {
+	withStringRefRegister(0x5108, 'sys_test_flow_assignment_order', () => {
+		const source = [
+			'local function write()',
+			'\tlocal reg<const> = 20744',
 			"\tlocal q = &'a'",
 			'\tlocal t = {}',
 			'\tlocal bump<const> = function()',
@@ -201,10 +218,10 @@ test('ProgramCompiler matches assignment target-preparation order before RHS eva
 });
 
 test('ProgramCompiler matches memory-target preparation order before RHS evaluation', () => {
-	withStringRefRegister(0x5108, 'sys_test_flow_memory_assignment_order', () => {
+	withStringRefRegister(0x5109, 'sys_test_flow_memory_assignment_order', () => {
 		const source = [
 			'local function write()',
-			'\tlocal reg<const> = 20744',
+			'\tlocal reg<const> = 20745',
 			"\tlocal q = &'a'",
 			'\tlocal bump<const> = function()',
 			"\t\tq = 'x'",
@@ -223,10 +240,10 @@ test('ProgramCompiler matches memory-target preparation order before RHS evaluat
 });
 
 test('ProgramCompiler treats function declarations as writing the declaration target', () => {
-	withStringRefRegister(0x5109, 'sys_test_flow_function_target', () => {
+	withStringRefRegister(0x510a, 'sys_test_flow_function_target', () => {
 		const source = [
 			'local function write()',
-			'\tlocal reg<const> = 20745',
+			'\tlocal reg<const> = 20746',
 			"\tlocal q = &'a'",
 			'\tfunction q()',
 			'\t\treturn 0',
@@ -243,10 +260,10 @@ test('ProgramCompiler treats function declarations as writing the declaration ta
 });
 
 test('ProgramCompiler treats simple function declarations as truthy function writes even when the target was not already tracked', () => {
-	withStringRefRegister(0x510a, 'sys_test_flow_function_param_target', () => {
+	withStringRefRegister(0x510b, 'sys_test_flow_function_param_target', () => {
 		const source = [
 			'local function write(p)',
-			'\tlocal reg<const> = 20746',
+			'\tlocal reg<const> = 20747',
 			'\tfunction p()',
 			'\t\treturn 0',
 			'\tend',
@@ -260,10 +277,10 @@ test('ProgramCompiler treats simple function declarations as truthy function wri
 });
 
 test('ProgramCompiler tracks nested closure writes introduced through function declarations', () => {
-	withStringRefRegister(0x510b, 'sys_test_flow_function_decl_closure', () => {
+	withStringRefRegister(0x510c, 'sys_test_flow_function_decl_closure', () => {
 		const source = [
 			'local function write()',
-			'\tlocal reg<const> = 20747',
+			'\tlocal reg<const> = 20748',
 			"\tlocal q = &'a'",
 			'\tlocal trigger = false',
 			'\tfunction trigger()',
@@ -286,10 +303,10 @@ test('ProgramCompiler tracks nested closure writes introduced through function d
 });
 
 test('ProgramCompiler does not treat dotted function declarations as rewriting the base lexical symbol', () => {
-	withStringRefRegister(0x510c, 'sys_test_flow_function_decl_dotted', () => {
+	withStringRefRegister(0x510d, 'sys_test_flow_function_decl_dotted', () => {
 		const source = [
 			'local function write(holder)',
-			'\tlocal reg<const> = 20748',
+			'\tlocal reg<const> = 20749',
 			'\tfunction holder.build()',
 			'\t\treturn 0',
 			'\tend',
@@ -305,10 +322,10 @@ test('ProgramCompiler does not treat dotted function declarations as rewriting t
 });
 
 test('ProgramCompiler does not treat method function declarations as rewriting the base lexical symbol', () => {
-	withStringRefRegister(0x510d, 'sys_test_flow_function_decl_method', () => {
+	withStringRefRegister(0x510e, 'sys_test_flow_function_decl_method', () => {
 		const source = [
 			'local function write(holder)',
-			'\tlocal reg<const> = 20749',
+			'\tlocal reg<const> = 20750',
 			'\tfunction holder:build()',
 			'\t\treturn 0',
 			'\tend',
@@ -324,10 +341,10 @@ test('ProgramCompiler does not treat method function declarations as rewriting t
 });
 
 test('ProgramCompiler tracks nested closure writes in dotted function declaration bodies', () => {
-	withStringRefRegister(0x510e, 'sys_test_flow_function_decl_dotted_closure', () => {
+	withStringRefRegister(0x510f, 'sys_test_flow_function_decl_dotted_closure', () => {
 		const source = [
 			'local function write()',
-			'\tlocal reg<const> = 20750',
+			'\tlocal reg<const> = 20751',
 			"\tlocal q = &'a'",
 			'\tlocal holder = {}',
 			'\tfunction holder.build()',
@@ -350,10 +367,10 @@ test('ProgramCompiler tracks nested closure writes in dotted function declaratio
 });
 
 test('ProgramCompiler keeps while-loop exit flow conservative when the condition call mutates tracked locals', () => {
-	withStringRefRegister(0x510f, 'sys_test_flow_while_condition', () => {
+	withStringRefRegister(0x5110, 'sys_test_flow_while_condition', () => {
 		const source = [
 			'local function write()',
-			'\tlocal reg<const> = 20751',
+			'\tlocal reg<const> = 20752',
 			"\tlocal q = &'a'",
 			'\tlocal keepGoing = true',
 			'\tlocal tick<const> = function()',
@@ -378,10 +395,10 @@ test('ProgramCompiler keeps while-loop exit flow conservative when the condition
 });
 
 test('ProgramCompiler keeps repeat-until exit flow conservative when the condition call mutates tracked locals', () => {
-	withStringRefRegister(0x5110, 'sys_test_flow_repeat_condition', () => {
+	withStringRefRegister(0x5111, 'sys_test_flow_repeat_condition', () => {
 		const source = [
 			'local function write()',
-			'\tlocal reg<const> = 20752',
+			'\tlocal reg<const> = 20753',
 			"\tlocal q = &'a'",
 			'\tlocal done = false',
 			'\tlocal tick<const> = function()',
@@ -406,10 +423,10 @@ test('ProgramCompiler keeps repeat-until exit flow conservative when the conditi
 });
 
 test('ProgramCompiler treats concat as plain string instead of preserving string_ref', () => {
-	withStringRefRegister(0x5111, 'sys_test_flow_concat_plain_string', () => {
+	withStringRefRegister(0x5112, 'sys_test_flow_concat_plain_string', () => {
 		const source = [
 			'local function write()',
-			'\tlocal reg<const> = 20753',
+			'\tlocal reg<const> = 20754',
 			"\tmem[reg] = &'a' .. &'b'",
 			'end',
 			'return write',

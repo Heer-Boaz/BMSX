@@ -167,7 +167,7 @@ export type LuaBreakStatement = LuaNode & {
 };
 
 export type LuaIfClause = {
-	readonly condition: LuaExpression;
+	readonly condition: LuaExpression | null;
 	readonly block: LuaBlock;
 };
 
@@ -193,7 +193,7 @@ export type LuaForNumericStatement = LuaNode & {
 	readonly variable: LuaIdentifierExpression;
 	readonly start: LuaExpression;
 	readonly limit: LuaExpression;
-	readonly step: LuaExpression;
+	readonly step: LuaExpression | null;
 	readonly block: LuaBlock;
 };
 

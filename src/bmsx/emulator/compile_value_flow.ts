@@ -437,7 +437,9 @@ function collectNestedClosureWritesFromStatement(
 			const forNumeric = statement as LuaForNumericStatement;
 			collectNestedClosureWritesFromExpression(forNumeric.start, semantics, out);
 			collectNestedClosureWritesFromExpression(forNumeric.limit, semantics, out);
-			collectNestedClosureWritesFromExpression(forNumeric.step, semantics, out);
+			if (forNumeric.step !== null) {
+				collectNestedClosureWritesFromExpression(forNumeric.step, semantics, out);
+			}
 			collectNestedClosureWritesFromStatementList(forNumeric.block.body, semantics, out);
 			return;
 		}
@@ -572,7 +574,9 @@ function collectLexicalWritesInStatement(
 			if (handle !== undefined) out.add(handle);
 			collectNestedClosureWritesFromExpression(forNumeric.start, semantics, out);
 			collectNestedClosureWritesFromExpression(forNumeric.limit, semantics, out);
-			collectNestedClosureWritesFromExpression(forNumeric.step, semantics, out);
+			if (forNumeric.step !== null) {
+				collectNestedClosureWritesFromExpression(forNumeric.step, semantics, out);
+			}
 			collectLexicalWritesInFunctionBody(forNumeric.block.body, semantics, out);
 			return;
 		}
@@ -978,7 +982,9 @@ export class ValueKindFlowAnalyzer {
 	private analyzeForNumeric(statement: LuaForNumericStatement): void {
 		this.evalExprFact(statement.start);
 		this.evalExprFact(statement.limit);
-		this.evalExprFact(statement.step);
+		if (statement.step !== null) {
+			this.evalExprFact(statement.step);
+		}
 		this.withLexicalScope(() => {
 			const handle = this.resolveDeclarationHandle(statement.variable);
 			if (handle !== undefined) {
