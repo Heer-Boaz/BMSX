@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <cmath>
 #include <functional>
 #include <iterator>
 #include <memory>
@@ -314,6 +315,17 @@ inline bool isTruthy(Value v) {
 
 inline double asNumber(Value v) {
 	return valueToNumber(v);
+}
+
+inline uint32_t toU32(double value) {
+	const double truncated = std::trunc(value);
+	const double mod = std::fmod(truncated, 4294967296.0);
+	const double normalized = mod < 0.0 ? (mod + 4294967296.0) : mod;
+	return static_cast<uint32_t>(normalized);
+}
+
+inline int32_t toI32(double value) {
+	return static_cast<int32_t>(toU32(value));
 }
 
 inline StringId asStringId(Value v) {

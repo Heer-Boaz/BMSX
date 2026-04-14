@@ -1101,7 +1101,7 @@ void Runtime::syncVdpSubmitAttemptStatusFromDma(uint32_t dst) {
 	if (dst != IO_VDP_FIFO) {
 		return;
 	}
-	const uint32_t dmaStatus = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_DMA_STATUS)));
+	const uint32_t dmaStatus = toU32(asNumber(m_memory.readValue(IO_DMA_STATUS)));
 	if ((dmaStatus & DMA_STATUS_REJECTED) != 0u) {
 		noteRejectedVdpSubmitAttempt();
 		return;
@@ -1140,7 +1140,11 @@ void Runtime::completeTickIfPending(FrameState& frameState, uint64_t vblankSeque
 	if (m_lastCompletedVblankSequence == vblankSequence) {
 		return;
 	}
+	if (!m_tickBoundaryArmed) {
+		return;
+	}
 	m_activeTickCompleted = true;
+	m_tickBoundaryArmed = false;
 	m_lastCompletedVblankSequence = vblankSequence;
 	machineScheduler.enqueueTickCompletion(*this, frameState);
 }
@@ -1160,6 +1164,9 @@ void Runtime::endGuestUpdatePhase() {
 		throw runtimeFault("end_update_phase called without a matching begin_update_phase.");
 	}
 	m_guestUpdatePhaseDepth -= 1;
+	if (m_guestUpdatePhaseDepth == 0) {
+		m_tickBoundaryArmed = true;
+	}
 }
 
 void Runtime::clearHaltUntilIrq() {
@@ -1180,7 +1187,7 @@ bool Runtime::tryCompleteTickOnPendingVblankIrq(FrameState& frameState) {
 	if (m_vblankSequence == 0) {
 		return false;
 	}
-	const uint32_t pendingFlags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
+	const uint32_t pendingFlags = toU32(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
 	if ((pendingFlags & IRQ_VBLANK) == 0u) {
 		return false;
 	}
@@ -1204,7 +1211,7 @@ bool Runtime::runHaltedUntilIrq(FrameState& frameState) {
 		return true;
 	}
 	if (!m_haltIrqWaitArmed) {
-		const uint32_t pendingFlags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
+		const uint32_t pendingFlags = toU32(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
 		if (pendingFlags != 0u) {
 			m_cpu.clearHaltUntilIrq();
 			return m_activeTickCompleted;
@@ -1237,7 +1244,7 @@ bool Runtime::runHaltedUntilIrq(FrameState& frameState) {
 }
 
 void Runtime::signalIrq(uint32_t mask) {
-	const uint32_t current = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
+	const uint32_t current = toU32(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
 	const uint32_t next = current | mask;
 	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(next)));
 	if (next != current) {
@@ -1258,7 +1265,7 @@ void Runtime::acknowledgeIrq(uint32_t mask) {
 		m_handlingIrqAckWrite = false;
 		return;
 	}
-	uint32_t flags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
+	uint32_t flags = toU32(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
 	flags &= ~ack;
 	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(flags)));
 	m_handlingIrqAckWrite = true;
@@ -1341,6 +1348,7 @@ void Runtime::beginFrameState() {
 	m_frameActive = true;
 	m_lastTickCompleted = false;
 	m_activeTickCompleted = false;
+	m_tickBoundaryArmed = false;
 	m_frameState = FrameState{};
 	m_frameState.cycleBudgetRemaining = m_cycleBudgetPerFrame;
 	m_frameState.cycleBudgetGranted = m_cycleBudgetPerFrame;
@@ -1440,7 +1448,7 @@ bool Runtime::tickUpdate() {
 		m_debugUpdateCountTotal += 1;
 	}
 
-	m_frameState.updateExecuted = !hasEntryContinuation();
+	m_frameState.updateExecuted = m_tickBoundaryArmed;
 	flushAssetEdits();
 	finalizeUpdateSlice();
 	FrameState* const nextState = m_frameActive ? &m_frameState : nullptr;
@@ -1483,14 +1491,14 @@ void Runtime::onIoWrite(uint32_t addr, Value value) {
 		return;
 	}
 	if (addr == IO_IRQ_ACK) {
-		acknowledgeIrq(static_cast<uint32_t>(asNumber(value)));
+		acknowledgeIrq(toU32(asNumber(value)));
 		return;
 	}
 	if (addr == IO_DMA_CTRL) {
-		if ((static_cast<uint32_t>(asNumber(value)) & DMA_CTRL_START) != 0u) {
-			const uint32_t dst = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_DMA_DST)));
+		if ((toU32(asNumber(value)) & DMA_CTRL_START) != 0u) {
+			const uint32_t dst = toU32(asNumber(m_memory.readValue(IO_DMA_DST)));
 			if (dst == IO_VDP_FIFO && hasBlockedVdpSubmitPath()) {
-				m_memory.writeValue(IO_DMA_CTRL, valueNumber(static_cast<double>(static_cast<uint32_t>(asNumber(value)) & ~DMA_CTRL_START)));
+				m_memory.writeValue(IO_DMA_CTRL, valueNumber(static_cast<double>(toU32(asNumber(value)) & ~DMA_CTRL_START)));
 				m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
 				m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>(DMA_STATUS_REJECTED)));
 				noteRejectedVdpSubmitAttempt();
@@ -1502,13 +1510,13 @@ void Runtime::onIoWrite(uint32_t addr, Value value) {
 		return;
 	}
 	if (addr == IO_GEO_CTRL) {
-		if ((static_cast<uint32_t>(asNumber(value)) & (GEO_CTRL_START | GEO_CTRL_ABORT)) != 0u) {
+		if ((toU32(asNumber(value)) & (GEO_CTRL_START | GEO_CTRL_ABORT)) != 0u) {
 			m_geometryController.onCtrlWrite(currentSchedulerNowCycles());
 		}
 		return;
 	}
 	if (addr == IO_IMG_CTRL) {
-		if ((static_cast<uint32_t>(asNumber(value)) & IMG_CTRL_START) != 0u) {
+		if ((toU32(asNumber(value)) & IMG_CTRL_START) != 0u) {
 			m_imgDecController.onCtrlWrite(currentSchedulerNowCycles());
 		}
 		return;
@@ -1519,11 +1527,11 @@ void Runtime::onIoWrite(uint32_t addr, Value value) {
 			return;
 		}
 		noteAcceptedVdpSubmitAttempt();
-		pushVdpFifoWord(static_cast<uint32_t>(asNumber(value)));
+		pushVdpFifoWord(toU32(asNumber(value)));
 		return;
 	}
 	if (addr == IO_VDP_FIFO_CTRL) {
-		if ((static_cast<uint32_t>(asNumber(value)) & VDP_FIFO_CTRL_SEAL) == 0u) {
+		if ((toU32(asNumber(value)) & VDP_FIFO_CTRL_SEAL) == 0u) {
 			return;
 		}
 		if (m_dmaController.hasPendingVdpSubmit()) {
@@ -1548,7 +1556,7 @@ void Runtime::onIoWrite(uint32_t addr, Value value) {
 		noteAcceptedVdpSubmitAttempt();
 		m_handlingVdpCommandWrite = true;
 		try {
-			consumeDirectVdpCommand(static_cast<uint32_t>(asNumber(value)));
+			consumeDirectVdpCommand(toU32(asNumber(value)));
 		} catch (...) {
 			m_handlingVdpCommandWrite = false;
 			throw;
@@ -1569,6 +1577,7 @@ void Runtime::resetFrameState() {
 	m_frameActive = false;
 	m_activeTickCompleted = false;
 	m_guestUpdatePhaseDepth = 0;
+	m_tickBoundaryArmed = false;
 	m_frameState = FrameState{};
 	clearHaltUntilIrq();
 	machineScheduler.reset(*this);
@@ -1603,6 +1612,7 @@ RuntimeState Runtime::captureCurrentState() const {
 	state.skyboxFaceIds = m_vdp.skyboxFaceIds();
 	state.vdpDitherType = m_vdp.getDitherType();
 	state.cyclesIntoFrame = getCyclesIntoFrame();
+	state.tickBoundaryArmed = m_tickBoundaryArmed;
 	return state;
 }
 
@@ -1613,12 +1623,13 @@ void Runtime::applyState(const RuntimeState& state) {
 	m_vdp.syncRegisters();
 	clearHaltUntilIrq();
 	m_guestUpdatePhaseDepth = 0;
+	m_tickBoundaryArmed = state.tickBoundaryArmed;
 	machineScheduler.reset(*this);
 	screen.reset();
 	resetSchedulerState();
 	m_schedulerNowCycles = state.cyclesIntoFrame;
 	m_frameStartCycle = 0;
-	m_vdpStatus = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_STATUS)));
+	m_vdpStatus = toU32(asNumber(m_memory.readValue(IO_VDP_STATUS)));
 	m_vdpStatus &= ~VDP_STATUS_VBLANK;
 	m_vblankActive = false;
 	m_activeTickCompleted = false;

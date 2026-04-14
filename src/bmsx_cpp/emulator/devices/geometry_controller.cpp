@@ -1,7 +1,6 @@
 #include "geometry_controller.h"
 
 #include "../io.h"
-
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -1232,7 +1231,7 @@ std::optional<uint32_t> GeometryController::resolveIndexedSpan(uint32_t base, ui
 }
 
 uint32_t GeometryController::readRegister(uint32_t addr) const {
-	return static_cast<uint32_t>(asNumber(m_memory.readValue(addr)));
+	return toU32(asNumber(m_memory.readValue(addr)));
 }
 
 void GeometryController::writeRegister(uint32_t addr, uint32_t value) {

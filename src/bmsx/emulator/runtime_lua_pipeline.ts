@@ -183,6 +183,7 @@ export function captureCurrentState(runtime: Runtime): RuntimeState {
 		skyboxFaceIds,
 		vdpDitherType,
 		cyclesIntoFrame: vblankState.cyclesIntoFrame,
+		tickBoundaryArmed: vblankState.tickBoundaryArmed,
 	};
 	if (stateSnapshot) {
 		if (stateSnapshot.globals) {

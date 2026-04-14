@@ -55,12 +55,14 @@ constexpr uint32_t ACTION_STATE_FLAG_REPEATPRESSED = 1u << 10u;
 
 struct LuaPcallError final : std::exception {
 	const Value value;
+	const std::string message;
 
 	explicit LuaPcallError(Value value)
-		: value(value) {}
+		: value(value)
+		, message(valueToString(value, Runtime::instance().cpu().stringPool())) {}
 
 	const char* what() const noexcept override {
-		return "Lua error value";
+		return message.c_str();
 	}
 };
 
@@ -1547,6 +1549,7 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_geo_ctrl_abort", valueNumber(static_cast<double>(GEO_CTRL_ABORT)));
 	setGlobal("sys_geo_cmd_xform2_batch", valueNumber(static_cast<double>(IO_CMD_GEO_XFORM2_BATCH)));
 	setGlobal("sys_geo_cmd_sat2_batch", valueNumber(static_cast<double>(IO_CMD_GEO_SAT2_BATCH)));
+	setGlobal("sys_geo_cmd_overlap2d_pass", valueNumber(static_cast<double>(IO_CMD_GEO_OVERLAP2D_PASS)));
 	setGlobal("sys_geo_cmd_xform3_batch", valueNumber(static_cast<double>(IO_CMD_GEO_XFORM3_BATCH)));
 	setGlobal("sys_geo_cmd_project3_batch", valueNumber(static_cast<double>(IO_CMD_GEO_PROJECT3_BATCH)));
 	setGlobal("sys_geo_index_none", valueNumber(static_cast<double>(GEO_INDEX_NONE)));
@@ -1583,23 +1586,23 @@ void Runtime::setupBuiltins() {
 	setGlobal("img_status_rejected", valueNumber(static_cast<double>(IMG_STATUS_REJECTED)));
 
 	registerNativeFunction("u32_to_f32", [](NativeArgsView args, NativeResults& out) {
-		const uint32_t bits = static_cast<uint32_t>(asNumber(args.at(0)));
+		const uint32_t bits = toU32(asNumber(args.at(0)));
 		float value = 0.0f;
 		std::memcpy(&value, &bits, sizeof(value));
 		out.push_back(valueNumber(static_cast<double>(value)));
 	});
 	registerNativeFunction("u32_to_i32", [](NativeArgsView args, NativeResults& out) {
-		const int32_t value = static_cast<int32_t>(static_cast<uint32_t>(asNumber(args.at(0))));
+		const int32_t value = toI32(asNumber(args.at(0)));
 		out.push_back(valueNumber(static_cast<double>(value)));
 	});
 	registerNativeFunction("fix16_to_f32", [](NativeArgsView args, NativeResults& out) {
-		const int32_t value = static_cast<int32_t>(static_cast<uint32_t>(asNumber(args.at(0))));
+		const int32_t value = toI32(asNumber(args.at(0)));
 		out.push_back(valueNumber(static_cast<double>(value) / 65536.0));
 	});
 
 	registerNativeFunction("u64_to_f64", [](NativeArgsView args, NativeResults& out) {
-		const uint64_t hi = static_cast<uint64_t>(static_cast<uint32_t>(asNumber(args.at(0))));
-		const uint64_t lo = static_cast<uint64_t>(static_cast<uint32_t>(asNumber(args.at(1))));
+		const uint64_t hi = static_cast<uint64_t>(toU32(asNumber(args.at(0))));
+		const uint64_t lo = static_cast<uint64_t>(toU32(asNumber(args.at(1))));
 		const uint64_t bits = (hi << 32) | lo;
 		double value = 0.0;
 		std::memcpy(&value, &bits, sizeof(value));
@@ -3556,6 +3559,12 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 		}
 		if (info.textureEnd) {
 			table->set(key("texture_end"), valueNumber(static_cast<double>(*info.textureEnd)));
+		}
+		if (info.collisionBinStart) {
+			table->set(key("collision_bin_start"), valueNumber(static_cast<double>(*info.collisionBinStart)));
+		}
+		if (info.collisionBinEnd) {
+			table->set(key("collision_bin_end"), valueNumber(static_cast<double>(*info.collisionBinEnd)));
 		}
 		if (info.sourcePath) {
 			table->set(key("source_path"), str(*info.sourcePath));

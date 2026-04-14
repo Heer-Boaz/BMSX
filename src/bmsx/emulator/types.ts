@@ -129,6 +129,7 @@ export type RuntimeState = {
 	skyboxFaceIds?: SkyboxImageIds | null;
 	vdpDitherType?: number;
 	cyclesIntoFrame: number;
+	tickBoundaryArmed?: boolean;
 };
 
 export type LuaMarshalContext = {

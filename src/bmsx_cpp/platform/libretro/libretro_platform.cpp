@@ -39,6 +39,27 @@ constexpr size_t kAudioRequestAheadFrames = 256;
 constexpr size_t kAudioTargetMinFrames = 384;
 constexpr size_t kAudioTargetMaxFrames = 4096;
 
+class LibretroVoice final : public Voice {
+public:
+	void play() override { m_playing = true; }
+	void stop() override { m_playing = false; }
+	void pause() override { m_playing = false; }
+	void resume() override { m_playing = true; }
+	bool isPlaying() override { return m_playing; }
+	void setVolume(f32 vol) override { m_volume = vol; }
+	void setPitch(f32 pitch) override { m_pitch = pitch; }
+	void setLoop(bool loop) override { m_loop = loop; }
+	SubscriptionHandle onEnded(std::function<void()> handler) override {
+		return SubscriptionHandle::create(std::move(handler));
+	}
+
+private:
+	bool m_playing = false;
+	bool m_loop = false;
+	f32 m_volume = 1.0f;
+	f32 m_pitch = 1.0f;
+};
+
 std::string buildEngineAssetsPath(const std::string& directory) {
 	if (directory.empty()) {
 		return {};
@@ -858,7 +879,7 @@ void LibretroInputHub::poll() {
 
 	// Poll all players
 	for (unsigned player = 0; player < InputState::MAX_PLAYERS; player++) {
-		const std::string deviceId = "gamepad:" + std::to_string(player);
+		const std::string deviceId = "gamepad:" + std::to_string(player); // TODO: UGLY STRING CONCATENATION IN POLL LOOP, FIX
 		uint16_t buttons = 0;
 
 		// Poll digital buttons
@@ -933,7 +954,7 @@ void LibretroInputHub::poll() {
 		}
 	}
 
-	const char* pointerDeviceId = "pointer:0";
+	const char* pointerDeviceId = "pointer:0"; // TODO: UGLY STRING INSTANTIATION IN POLL LOOP, FIX
 	auto emitPointerEvent = [this](const InputEvt& evt) {
 		m_event_queue.push_back(evt);
 		for (const auto& handler : m_handlers) {
@@ -1031,7 +1052,7 @@ void LibretroInputHub::postKeyboardEvent(std::string_view code, bool down) {
 	}
 	InputEvt evt;
 	evt.type = down ? InputEvtType::KeyDown : InputEvtType::KeyUp;
-	evt.deviceId = "keyboard:0";
+	evt.deviceId = "keyboard:0"; // TODO: UGLY STRING INSTANTIATION IN POST KEYBOARD EVENT, FIX
 	evt.code = std::move(key);
 	m_event_queue.push_back(evt);
 	for (const auto& handler : m_handlers) {
@@ -1052,7 +1073,7 @@ void LibretroInputHub::clearKeyboardState() {
 	for (const std::string& code : pressedCodes) {
 		InputEvt evt;
 		evt.type = InputEvtType::KeyUp;
-		evt.deviceId = "keyboard:0";
+		evt.deviceId = "keyboard:0"; // TODO: UGLY STRING INSTANTIATION IN CLEAR KEYBOARD STATE, FIX
 		evt.code = code;
 		m_event_queue.push_back(evt);
 		for (const auto& handler : m_handlers) {
@@ -1176,13 +1197,20 @@ void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
 }
 
 Voice* LibretroAudioService::createVoice() {
-	// TODO: Create and return a voice for audio playback
-	return nullptr;
+	auto voice = std::make_unique<LibretroVoice>();
+	Voice* raw = voice.get();
+	m_voices.push_back(std::move(voice));
+	return raw;
 }
 
 void LibretroAudioService::destroyVoice(Voice* voice) {
-	// TODO: Destroy voice
-	(void)voice;
+	const auto it = std::find_if(m_voices.begin(), m_voices.end(), [voice](const std::unique_ptr<Voice>& owned) {
+		return owned.get() == voice;
+	});
+	if (it == m_voices.end()) {
+		throw BMSX_RUNTIME_ERROR("Attempted to destroy an unknown libretro voice.");
+	}
+	m_voices.erase(it);
 }
 
 /* ============================================================================
@@ -1205,7 +1233,7 @@ void LibretroFrameLoop::tick(std::function<void()> callback) {
 	}
 	if (m_running && m_callback) {
 		// TODO: Pass proper timestamps
-		m_callback(0.0, 1.0 / 60.0);
+		m_callback(0.0, 1.0 / 50.0);
 	}
 }
 

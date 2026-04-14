@@ -34,17 +34,6 @@ static inline int signExtend(uint32_t value, int bits) {
 	return static_cast<int>(value << shift) >> shift;
 }
 
-static inline uint32_t toU32(double value) {
-	const double truncated = std::trunc(value);
-	const double mod = std::fmod(truncated, 4294967296.0);
-	const double normalized = mod < 0.0 ? (mod + 4294967296.0) : mod;
-	return static_cast<uint32_t>(normalized);
-}
-
-static inline int32_t toI32(double value) {
-	return static_cast<int32_t>(toU32(value));
-}
-
 static inline size_t nextPowerOfTwo(size_t value) {
 	if (value == 0) {
 		return 0;
@@ -98,7 +87,7 @@ static inline bool isVdpPacketSequenceWrite(uint32_t baseAddr, int wordCount) {
 
 static inline uint32_t encodeVdpPacketU32Word(Value value, const char* label) {
 	if (valueIsNumber(value)) {
-		return static_cast<uint32_t>(asNumber(value));
+		return toU32(asNumber(value));
 	}
 	if (valueIsString(value)) {
 		return asStringId(value);
@@ -2093,19 +2082,19 @@ void CPU::writeMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind, con
 			if (!valueIsNumber(value)) {
 				throw std::runtime_error("[Memory] mem8[addr] expects a number.");
 			}
-			m_memory.writeMappedU8(addr, static_cast<u8>(static_cast<uint32_t>(asNumber(value))));
+			m_memory.writeMappedU8(addr, static_cast<u8>(toU32(asNumber(value))));
 			return;
 		case MemoryAccessKind::U16LE:
 			if (!valueIsNumber(value)) {
 				throw std::runtime_error("[Memory] mem16le[addr] expects a number.");
 			}
-			m_memory.writeMappedU16LE(addr, static_cast<uint32_t>(asNumber(value)));
+			m_memory.writeMappedU16LE(addr, toU32(asNumber(value)));
 			return;
 		case MemoryAccessKind::U32LE:
 			if (!valueIsNumber(value)) {
 				throw std::runtime_error("[Memory] mem32le[addr] expects a number.");
 			}
-			m_memory.writeMappedU32LE(addr, static_cast<uint32_t>(asNumber(value)));
+			m_memory.writeMappedU32LE(addr, toU32(asNumber(value)));
 			return;
 		case MemoryAccessKind::F32LE:
 			if (!valueIsNumber(value)) {

@@ -133,7 +133,7 @@ void ImgDecController::reset() {
 }
 
 void ImgDecController::onCtrlWrite(int64_t nowCycles) {
-	const uint32_t ctrlValue = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IMG_CTRL)));
+	const uint32_t ctrlValue = toU32(asNumber(m_memory.readValue(IO_IMG_CTRL)));
 	const uint32_t ctrl = ctrlValue;
 	if ((ctrl & IMG_CTRL_START) == 0u) {
 		return;
@@ -144,10 +144,10 @@ void ImgDecController::onCtrlWrite(int64_t nowCycles) {
 		m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
 		return;
 	}
-	const uint32_t src = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IMG_SRC)));
-	const uint32_t len = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IMG_LEN)));
-	const uint32_t dst = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IMG_DST)));
-	const uint32_t cap = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IMG_CAP)));
+	const uint32_t src = toU32(asNumber(m_memory.readValue(IO_IMG_SRC)));
+	const uint32_t len = toU32(asNumber(m_memory.readValue(IO_IMG_LEN)));
+	const uint32_t dst = toU32(asNumber(m_memory.readValue(IO_IMG_DST)));
+	const uint32_t cap = toU32(asNumber(m_memory.readValue(IO_IMG_CAP)));
 	m_memory.writeValue(IO_IMG_CTRL, valueNumber(static_cast<double>(ctrl & ~IMG_CTRL_START)));
 	std::vector<uint8_t> buffer(len);
 	try {

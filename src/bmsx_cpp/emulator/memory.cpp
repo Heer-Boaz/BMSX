@@ -709,7 +709,7 @@ void Memory::writeValue(uint32_t addr, Value value) {
 	if (!valueIsNumber(value)) {
 		throw std::runtime_error("Bus fault: non-numeric store @ " + formatNumberAsHex(addr, 8) + ".");
 	}
-	writeU32(addr, static_cast<uint32_t>(asNumber(value)));
+	writeU32(addr, toU32(asNumber(value)));
 }
 
 void Memory::writeIoValue(uint32_t addr, Value value) {
@@ -727,7 +727,7 @@ void Memory::writeMappedValue(uint32_t addr, Value value) {
 		if (!valueIsNumber(value)) {
 			throw std::runtime_error("VRAM write fault @ " + formatNumberAsHex(addr, 8) + ": non-numeric value.");
 		}
-		writeMappedU32LE(addr, static_cast<uint32_t>(asNumber(value)));
+		writeMappedU32LE(addr, toU32(asNumber(value)));
 		return;
 	}
 	writeValue(addr, value);
@@ -750,7 +750,7 @@ u8 Memory::readMappedU8(uint32_t addr) const {
 		if (!valueIsNumber(value)) {
 			throw std::runtime_error("I/O read fault @ " + formatNumberAsHex(addr, 8) + ": non-numeric register.");
 		}
-		return static_cast<u8>(static_cast<uint32_t>(asNumber(value)) & 0xffu);
+		return static_cast<u8>(toU32(asNumber(value)) & 0xffu);
 	}
 	if (isIoRegionRange(addr, 1)) {
 		throw std::runtime_error("I/O read fault @ " + formatNumberAsHex(addr, 8) + ": unaligned.");

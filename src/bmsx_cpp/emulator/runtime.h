@@ -92,6 +92,7 @@ struct RuntimeState {
 	std::optional<SkyboxImageIds> skyboxFaceIds;
 	i32 vdpDitherType = 0;
 	int cyclesIntoFrame = 0;
+	bool tickBoundaryArmed = false;
 };
 
 /**
@@ -516,6 +517,7 @@ private:
 	bool m_vblankActive = false;
 	u32 m_vdpStatus = 0;
 	i32 m_guestUpdatePhaseDepth = 0;
+	bool m_tickBoundaryArmed = false;
 };
 
 } // namespace bmsx

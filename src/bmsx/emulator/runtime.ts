@@ -1165,7 +1165,11 @@ export class Runtime {
 		if (this.lastCompletedVblankSequence === vblankSequence) {
 			return;
 		}
+		if (!this.tickBoundaryArmed) {
+			return;
+		}
 		this.activeTickCompleted = true;
+		this.tickBoundaryArmed = false;
 		this.machineScheduler.enqueueTickCompletion(this, frameState);
 		this.lastCompletedVblankSequence = vblankSequence;
 	}
@@ -1185,20 +1189,25 @@ export class Runtime {
 			throw runtimeFault('end_update_phase called without a matching begin_update_phase.');
 		}
 		this.guestUpdatePhaseDepth -= 1;
+		if (this.guestUpdatePhaseDepth === 0) {
+			this.tickBoundaryArmed = true;
+		}
 	}
 
-	public captureVblankState(): { cyclesIntoFrame: number } {
+	public captureVblankState(): { cyclesIntoFrame: number; tickBoundaryArmed: boolean } {
 		return {
 			cyclesIntoFrame: this.getCyclesIntoFrame(),
+			tickBoundaryArmed: this.tickBoundaryArmed,
 		};
 	}
 
-	public restoreVblankState(state: { cyclesIntoFrame: number }): void {
+	public restoreVblankState(state: { cyclesIntoFrame: number; tickBoundaryArmed?: boolean }): void {
 		this.clearHaltUntilIrq();
 		this.machineScheduler.reset(this);
 		this.frameLoop.reset();
 		this.screen.reset();
 		this.guestUpdatePhaseDepth = 0;
+		this.tickBoundaryArmed = state.tickBoundaryArmed === true;
 		this.resetSchedulerState();
 		this.schedulerNowCycles = state.cyclesIntoFrame;
 		this.frameStartCycle = 0;
@@ -1230,6 +1239,7 @@ export class Runtime {
 	private vblankSequence = 0;
 	private lastCompletedVblankSequence = 0;
 	private guestUpdatePhaseDepth = 0;
+	private tickBoundaryArmed = false;
 	public cycleBudgetPerFrame: number;
 	private vblankCycles = 0;
 	private vblankStartCycle = 0;
@@ -1967,6 +1977,7 @@ export class Runtime {
 		this.luaRuntimeFailed = false;
 		this.luaInitialized = false;
 		this.guestUpdatePhaseDepth = 0;
+		this.tickBoundaryArmed = false;
 		this.clearHaltUntilIrq();
 	}
 
@@ -2077,6 +2088,7 @@ export class Runtime {
 		};
 		this.vdp.beginFrame();
 		this.activeTickCompleted = false;
+		this.tickBoundaryArmed = false;
 		this.currentFrameState = state;
 		return state;
 	}
@@ -2126,7 +2138,7 @@ export class Runtime {
 			if (this.isUpdatePhasePending()) {
 				this.runUpdatePhase(state);
 				this.vdp.flushAssetEdits();
-				state.updateExecuted = !this.isUpdatePhasePending();
+				state.updateExecuted = this.tickBoundaryArmed;
 			}
 			this.finalizeUpdateSlice(state);
 		} catch (error) {
@@ -2364,6 +2376,7 @@ export class Runtime {
 		this.currentFrameState = null;
 		this.activeTickCompleted = false;
 		this.guestUpdatePhaseDepth = 0;
+		this.tickBoundaryArmed = false;
 	}
 
 	public resolveAssetHandle(id: string): number {
