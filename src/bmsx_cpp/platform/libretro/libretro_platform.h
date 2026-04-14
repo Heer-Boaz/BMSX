@@ -13,6 +13,7 @@
 #include "../../platform.h"
 #include "../../core/engine_core.h"
 #include "../../render/backend/backend.h"
+#include <chrono>
 #include <vector>
 #include <array>
 #include <memory>
@@ -256,6 +257,9 @@ private:
 	bool m_has_pending_viewport = false;
 	Vec2 m_pending_viewport;
 	double m_frame_time_sec = 1.0 / 50.0;
+	bool m_has_frame_time_callback = false;
+	bool m_has_wall_frame_timestamp = false;
+	std::chrono::steady_clock::time_point m_last_wall_frame_at{};
 	BackendType m_backend_type = BackendType::Software;
 	retro_hw_get_current_framebuffer_t m_hw_get_current_framebuffer = nullptr;
 	bool m_crt_postprocessing_enabled = false;

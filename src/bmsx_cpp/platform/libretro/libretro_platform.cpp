@@ -280,6 +280,7 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 	}
 
 	m_frame_time_sec = 1.0 / info.timing.fps;
+	m_has_wall_frame_timestamp = false;
 	m_framebuffer.resize(info.geometry.base_width, info.geometry.base_height);
 	log(RETRO_LOG_INFO, "[BMSX] AV Info set: %ux%u @ %.2fHz, Sample Rate: %.2fHz\n",
 		info.geometry.base_width,
@@ -365,6 +366,7 @@ void LibretroPlatform::setFrameTimeUsec(retro_usec_t usec) {
 	}
 	const double nextFrameTimeSec = static_cast<double>(usec) / 1000000.0;
 	m_frame_time_sec = nextFrameTimeSec;
+	m_has_frame_time_callback = true;
 }
 
 void LibretroPlatform::setControllerDevice(unsigned port, unsigned device) {
@@ -570,6 +572,7 @@ void LibretroPlatform::reset() {
 	m_engine->stop();
 	static_cast<LibretroAudioService*>(m_audio_service.get())->resetQueue();
 	m_audio_buffer.clear();
+	m_has_wall_frame_timestamp = false;
 
 	if (m_engine && m_engine->romLoaded()) {
 		if (!m_engine->rebootLoadedRom()) {
@@ -595,8 +598,23 @@ void LibretroPlatform::runFrame() {
 	// Clear audio buffer
 	m_audio_buffer.clear();
 
-
-	const f64 dt = m_frame_time_sec;
+	const auto wallFrameAt = std::chrono::steady_clock::now();
+	f64 dt = m_frame_time_sec;
+	if (!m_has_frame_time_callback) {
+		if (m_has_wall_frame_timestamp) {
+			dt = std::chrono::duration<f64>(wallFrameAt - m_last_wall_frame_at).count();
+		}
+		m_last_wall_frame_at = wallFrameAt;
+		m_has_wall_frame_timestamp = true;
+	} else {
+		m_last_wall_frame_at = wallFrameAt;
+		m_has_wall_frame_timestamp = true;
+	}
+	if (dt <= 0.0) {
+		dt = m_frame_time_sec;
+	} else if (dt > 0.25) {
+		dt = 0.25;
+	}
 
 	// Advance clock
 	if (auto* clock = dynamic_cast<LibretroClock*>(m_clock.get())) {
@@ -686,6 +704,7 @@ void LibretroPlatform::setPlatformPaused(bool paused) {
 		return;
 	}
 	m_platform_paused = paused;
+	m_has_wall_frame_timestamp = false;
 	if (!m_engine) {
 		return;
 	}

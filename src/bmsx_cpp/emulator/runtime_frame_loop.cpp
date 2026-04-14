@@ -57,6 +57,7 @@ void RuntimeFrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool p
 
 			const i64 previousTickSequence = runtime.lastTickSequence();
 			auto updateStart = std::chrono::steady_clock::now();
+			engine.m_delta_time = runtime.timing.frameDurationMs / 1000.0;
 			runtime.machineScheduler.run(runtime, hostDeltaMs);
 			runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 			auto updateEnd = std::chrono::steady_clock::now();
@@ -72,6 +73,7 @@ void RuntimeFrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool p
 			auto terminalEnd = std::chrono::steady_clock::now();
 			engine.m_last_tick_timing.runtimeTerminalMs = to_ms(terminalEnd - terminalStart);
 		}
+		engine.m_delta_time = hostDeltaSeconds;
 
 		if (engine.m_platform && engine.m_platform->microtaskQueue()) {
 			const auto microtaskStart = std::chrono::steady_clock::now();

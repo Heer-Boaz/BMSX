@@ -5026,6 +5026,7 @@ int main(int argc, char** argv) {
 	}
 	const bool unpaced_timeline = input_timeline_is_active();
 	uint64_t next_frame_ns = monotonic_ns();
+	uint64_t last_core_frame_ns = 0;
 
 	while (!g_should_quit) {
 		uint64_t now_ns = monotonic_ns();
@@ -5042,9 +5043,6 @@ int main(int argc, char** argv) {
 			if (lag_ns > kFrameScheduleResyncNs) {
 				next_frame_ns = now_ns;
 			}
-		}
-		if (g_has_frame_time_cb) {
-			g_frame_time_cb.callback((retro_usec_t)g_frame_usec);
 		}
 		if (g_menu_active) {
 			input_poll_cb();
@@ -5072,6 +5070,17 @@ int main(int argc, char** argv) {
 #endif
 			}
 		} else {
+			if (g_has_frame_time_cb) {
+				retro_usec_t frame_time_usec = (retro_usec_t)g_frame_usec;
+				if (!unpaced_timeline && last_core_frame_ns != 0) {
+					const uint64_t elapsed_ns = now_ns - last_core_frame_ns;
+					if (elapsed_ns > 0) {
+						frame_time_usec = (retro_usec_t)(elapsed_ns / 1000ull);
+					}
+				}
+				g_frame_time_cb.callback(frame_time_usec);
+			}
+			last_core_frame_ns = now_ns;
 			if (core_cart_program_active()) {
 				input_timeline_tick_frame();
 			}

@@ -44,7 +44,7 @@ constexpr u8 IMPLICIT_FRAME_CLEAR_RGBA[4] = {0u, 0u, 0u, 255u};
 #if BMSX_ENABLE_GLES2
 constexpr float VDP_GLES2_PRIMARY_ATLAS_ID = 0.0f;
 constexpr float VDP_GLES2_SECONDARY_ATLAS_ID = 1.0f;
-constexpr float VDP_GLES2_ENGINE_ATLAS_ID = 254.0f;
+constexpr float VDP_GLES2_ENGINE_ATLAS_ID = 2.0f;
 
 struct VdpGles2Vertex {
 	f32 x = 0.0f;
@@ -208,10 +208,10 @@ void main() {
 	vec4 texColor;
 	if (v_atlas_id < 0.5) {
 		texColor = texture2D(u_texture0, v_texcoord);
-	} else if (v_atlas_id > 253.5) {
-		texColor = texture2D(u_texture2, v_texcoord);
-	} else {
+	} else if (v_atlas_id < 1.5) {
 		texColor = texture2D(u_texture1, v_texcoord);
+	} else {
+		texColor = texture2D(u_texture2, v_texcoord);
 	}
 	gl_FragColor = texColor * v_color;
 }
