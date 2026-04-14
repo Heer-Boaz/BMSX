@@ -41,6 +41,7 @@ import { StringPool, StringValue, isStringValue } from './string_pool';
 import type { CanonicalizationType } from '../rompack/rompack';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from './instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from '../ide/contrib/intellisense/lua_semantic_frontend';
+import { MMIO_REGISTER_SPEC_BY_ADDRESS, MMIO_REGISTER_SPEC_BY_NAME, type MmioWriteRequirement } from './mmio_register_spec';
 import { ENGINE_SYSTEM_GLOBAL_NAME_SET } from './lua_system_globals';
 import { LuaSyntaxError } from '../lua/luaerrors';
 import { Decl } from '../ide/contrib/intellisense/semantic_model';
@@ -103,6 +104,7 @@ type LocalBinding = {
 	hasConstValue: boolean;
 	constClosureProtoIndex: number | null;
 	moduleBinding: ModuleBinding | null;
+	compileValueKind: CompileValueKind;
 };
 
 type ModuleBinding = {
@@ -161,6 +163,14 @@ const MAX_SPECIALIZED_TABLE_OPERAND = MAX_EXT_REGISTER_BC;
 
 const isSmallSignedImmediate = (value: number): boolean =>
 	Number.isInteger(value) && value >= MIN_SIGNED_BX && value <= MAX_SIGNED_BX;
+
+type CompileValueKind =
+	| 'unknown'
+	| 'nil'
+	| 'boolean'
+	| 'number'
+	| 'string'
+	| 'string_ref';
 
 class ProgramBuilder {
 	public readonly constPool: Value[];
@@ -491,6 +501,7 @@ class FunctionBuilder {
 	private readonly program: ProgramBuilder;
 	private readonly parent: FunctionBuilder | null;
 	private readonly semantics: LuaSemanticFrontendFile;
+	private readonly frontend: LuaSemanticFrontend;
 	private readonly moduleId: string;
 	private readonly protoId: string;
 	private readonly moduleCompileContext: ModuleCompileContext | null;
@@ -523,6 +534,7 @@ class FunctionBuilder {
 			moduleId: string;
 			protoId: string;
 			semantics: LuaSemanticFrontendFile;
+			frontend: LuaSemanticFrontend;
 			moduleCompileContext?: ModuleCompileContext | null;
 			moduleCompileInfo?: ModuleCompileInfo | null;
 		},
@@ -530,6 +542,7 @@ class FunctionBuilder {
 		this.program = program;
 		this.parent = parent;
 		this.semantics = params.semantics;
+		this.frontend = params.frontend;
 		this.moduleId = params.moduleId;
 		this.protoId = params.protoId;
 		this.moduleCompileContext = params.moduleCompileContext ?? parent?.moduleCompileContext ?? null;
@@ -857,6 +870,7 @@ class FunctionBuilder {
 		hasConstValue = false,
 		constClosureProtoIndex: number | null = null,
 		moduleBinding: ModuleBinding | null = null,
+		compileValueKind: CompileValueKind = 'unknown',
 	): number {
 		const canonicalName = this.canonicalizeName(name);
 		if (this.getMemoryAccessKindForCanonicalName(canonicalName) !== null) {
@@ -882,6 +896,7 @@ class FunctionBuilder {
 			hasConstValue,
 			constClosureProtoIndex,
 			moduleBinding,
+			compileValueKind,
 		};
 		this.localBindings.set(symbolHandle, binding);
 		const scope = this.scopeStack[this.scopeStack.length - 1];
@@ -904,11 +919,12 @@ class FunctionBuilder {
 		hasConstValue = false,
 		constClosureProtoIndex: number | null = null,
 		moduleBinding: ModuleBinding | null = null,
+		compileValueKind: CompileValueKind = 'unknown',
 	): number {
 		const kind = decl.kind === 'constant'
 			? 'const'
 			: (decl.kind === 'parameter' ? 'parameter' : 'local');
-		return this.declareLocal(decl.id, decl.name, definitionRange, scopeRange, kind, constValue, hasConstValue, constClosureProtoIndex, moduleBinding);
+		return this.declareLocal(decl.id, decl.name, definitionRange, scopeRange, kind, constValue, hasConstValue, constClosureProtoIndex, moduleBinding, compileValueKind);
 	}
 
 	private declareImplicitSelf(definitionRange: LuaSourceRange, scopeRange?: LuaSourceRange): number {
@@ -1466,7 +1482,7 @@ class FunctionBuilder {
 		this.withRange(expression.range, () => {
 			if (expression.kind === LuaSyntaxKind.FunctionExpression) {
 				const protoId = this.createChildProtoId(protoIdHint ?? buildAnonymousHint(expression.range));
-				closureProtoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, this.moduleId, this.semantics);
+				closureProtoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, this.moduleId, this.semantics, this.frontend);
 				this.emitABx(OpCode.CLOSURE, target, closureProtoIndex);
 				return;
 			}
@@ -1745,10 +1761,14 @@ class FunctionBuilder {
 		const initializerValues: Array<Value | undefined> = new Array(names.length);
 		const initializerClosureProtoIndices: Array<number | undefined> = new Array(names.length);
 		const initializerModuleBindings: Array<ModuleBinding | undefined> = new Array(names.length);
+		const initializerValueKinds: Array<CompileValueKind> = new Array(names.length).fill('unknown');
 		if (values.length > 0) {
 			const lastIndex = values.length - 1;
 			for (let i = 0; i < lastIndex; i += 1) {
 				const expr = values[i];
+				if (i < names.length) {
+					initializerValueKinds[i] = this.classifyExpressionValueKind(expr);
+				}
 				if (i < names.length && attributes[i] === 'const') {
 					const moduleBinding = this.tryResolveStaticModuleBinding(expr, true);
 					if (moduleBinding !== null) {
@@ -1780,6 +1800,9 @@ class FunctionBuilder {
 			const lastExpr = values[lastIndex];
 			const remaining = names.length - lastIndex;
 			const wantsMulti = remaining > 1 && this.isMultiReturnExpression(lastExpr);
+			if (lastIndex < names.length && !wantsMulti) {
+				initializerValueKinds[lastIndex] = this.classifyExpressionValueKind(lastExpr);
+			}
 			if (lastIndex < names.length && attributes[lastIndex] === 'const' && !wantsMulti) {
 				const moduleBinding = this.tryResolveStaticModuleBinding(lastExpr, true);
 				if (moduleBinding !== null) {
@@ -1837,6 +1860,7 @@ class FunctionBuilder {
 				initializerValue !== undefined && attribute === 'const',
 				initializerClosureProtoIndex,
 				initializerModuleBinding,
+				initializerValueKinds[i],
 			);
 			if (initializerValue !== undefined) {
 				this.emitLoadConst(target, initializerValue);
@@ -1858,6 +1882,14 @@ class FunctionBuilder {
 
 	private compileAssignment(statement: LuaAssignmentStatement): void {
 		const targets = this.compileAssignmentTargets(statement.left);
+		if (statement.operator === LuaAssignmentOperator.Assign) {
+			for (let i = 0; i < targets.length; i += 1) {
+				if (targets[i].kind === 'memory' && i < statement.right.length) {
+					const lhsExpr = statement.left[i] as LuaIndexExpression;
+					this.validateMemoryStore(lhsExpr.index, statement.right[i]);
+				}
+			}
+		}
 		const targetPaths = statement.left.map((expr) => extractAssignmentPath(expr as LuaAssignableExpression));
 		const values = this.compileAssignmentValues(statement.right, targets.length, targetPaths);
 		for (let i = 0; i < targets.length; i += 1) {
@@ -1926,7 +1958,7 @@ class FunctionBuilder {
 				const baseReg = this.allocTemp();
 				this.compileExpressionInto(expr.base, baseReg, 1);
 				const keyConst = this.tryGetConstIndex(expr.index);
-				if (keyConst !== null) {
+				if (keyConst !== undefined) {
 					targets.push({ kind: 'table', tableReg: baseReg, keyConst });
 					continue;
 				}
@@ -2294,7 +2326,7 @@ class FunctionBuilder {
 		const reg = this.declareLocalFromDecl(decl, statement.name.range);
 		const hint = this.createLocalFunctionHint(name);
 		const protoId = this.createChildProtoId(hint);
-		const protoIndex = compileFunctionExpression(this.program, statement.functionExpression, this, false, protoId, this.moduleId, this.semantics);
+		const protoIndex = compileFunctionExpression(this.program, statement.functionExpression, this, false, protoId, this.moduleId, this.semantics, this.frontend);
 		this.emitABx(OpCode.CLOSURE, reg, protoIndex);
 	}
 
@@ -2307,7 +2339,7 @@ class FunctionBuilder {
 		const finalReference = this.semantics.findLastReferenceByStartRange(statement.range.start, headerEnd);
 		const hint = buildDeclarationHint(identifiers, methodName);
 		const protoId = this.createChildProtoId(hint);
-		const protoIndex = compileFunctionExpression(this.program, fnExpr, this, methodName && methodName.length > 0, protoId, this.moduleId, this.semantics);
+		const protoIndex = compileFunctionExpression(this.program, fnExpr, this, methodName && methodName.length > 0, protoId, this.moduleId, this.semantics, this.frontend);
 		const closureReg = this.allocTemp();
 		this.emitABx(OpCode.CLOSURE, closureReg, protoIndex);
 		if (identifiers.length === 0) {
@@ -2383,7 +2415,7 @@ class FunctionBuilder {
 					return;
 				case LuaSyntaxKind.FunctionExpression: {
 					const protoId = this.createChildProtoId(protoIdHint ?? buildAnonymousHint(expression.range));
-					const protoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, this.moduleId, this.semantics);
+					const protoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, this.moduleId, this.semantics, this.frontend);
 					this.emitABx(OpCode.CLOSURE, target, protoIndex);
 					return;
 				}
@@ -2425,7 +2457,7 @@ class FunctionBuilder {
 		const baseReg = this.allocTemp();
 		this.compileExpressionInto(expression.base, baseReg, 1);
 		const keyConst = this.tryGetConstIndex(expression.index);
-		if (keyConst !== null) {
+		if (keyConst !== undefined) {
 			this.emitTableGetConst(target, baseReg, keyConst);
 			return;
 		}
@@ -2472,7 +2504,7 @@ class FunctionBuilder {
 				continue;
 			}
 			const keyConst = this.tryGetConstIndex(field.key);
-			if (keyConst !== null) {
+			if (keyConst !== undefined) {
 				const valueReg = this.allocTemp();
 				this.compileExpressionInto(field.value, valueReg, 1);
 				this.emitTableSetConst(target, keyConst, valueReg);
@@ -2488,18 +2520,18 @@ class FunctionBuilder {
 		}
 	}
 
-	private tryGetConstIndex(expression: LuaExpression): number | null {
+	private tryGetConstIndex(expression: LuaExpression): number | undefined {
 		const constValue = this.evaluateCompileTimeExpression(expression);
 		if (constValue === undefined) {
-			return null;
+			return undefined;
 		}
 		return this.program.constIndex(constValue);
 	}
 
-	private tryGetNumericConstIndex(expression: LuaExpression): number | null {
+	private tryGetNumericConstIndex(expression: LuaExpression): number | undefined {
 		const constValue = this.evaluateCompileTimeExpression(expression);
 		if (typeof constValue !== 'number') {
-			return null;
+			return undefined;
 		}
 		return this.program.constIndex(constValue);
 	}
@@ -2544,7 +2576,7 @@ class FunctionBuilder {
 			return null;
 		}
 		const addrConst = this.tryGetNumericConstIndex(expression.index);
-		if (addrConst !== null) {
+		if (addrConst !== undefined) {
 			return { kind: 'memory', accessKind, addrConst };
 		}
 		const addrReg = this.allocTemp();
@@ -2560,6 +2592,112 @@ class FunctionBuilder {
 	private emitMemoryStore(accessKind: MemoryAccessKind, addrConst: number | undefined, addrReg: number | undefined, valueReg: number): void {
 		const addrOperand = addrConst !== undefined ? this.encodeConstOperand(addrConst) : addrReg;
 		this.emitABC(OpCode.STORE_MEM, valueReg, addrOperand, accessKind, addrConst !== undefined ? RK_B : 0);
+	}
+
+	private classifyExpressionValueKind(expression: LuaExpression): CompileValueKind {
+		switch (expression.kind) {
+			case LuaSyntaxKind.StringRefLiteralExpression:
+				return 'string_ref';
+			case LuaSyntaxKind.StringLiteralExpression:
+				return 'string';
+			case LuaSyntaxKind.NumericLiteralExpression:
+				return 'number';
+			case LuaSyntaxKind.BooleanLiteralExpression:
+				return 'boolean';
+			case LuaSyntaxKind.NilLiteralExpression:
+				return 'nil';
+			case LuaSyntaxKind.IdentifierExpression: {
+				const reference = this.getIdentifierReference(expression as LuaIdentifierExpression);
+				const symbolHandle = this.getReferenceSymbolHandle(reference);
+				if (symbolHandle === null) {
+					return 'unknown';
+				}
+				const binding = this.resolveVisibleBinding(symbolHandle);
+				if (binding === null) {
+					return 'unknown';
+				}
+				if (binding.compileValueKind === 'unknown') {
+					return 'unknown';
+				}
+				if (binding.kind === 'const') {
+					return binding.compileValueKind;
+				}
+				if (binding.kind === 'local' && !this.isLocalReassigned(binding.symbolHandle)) {
+					return binding.compileValueKind;
+				}
+				return 'unknown';
+			}
+			default:
+				return 'unknown';
+		}
+	}
+
+	private isLocalReassigned(symbolHandle: string): boolean {
+		const refs = this.frontend.getReferences(symbolHandle);
+		for (let i = 0; i < refs.length; i += 1) {
+			if (refs[i].isWrite) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private resolveMemoryStoreRequirement(addressExpression: LuaExpression): MmioWriteRequirement {
+		const constValue = this.evaluateCompileTimeExpression(addressExpression);
+		if (typeof constValue === 'number') {
+			const spec = MMIO_REGISTER_SPEC_BY_ADDRESS.get(constValue);
+			if (spec) {
+				return spec.writeRequirement;
+			}
+			return 'any';
+		}
+		if (addressExpression.kind === LuaSyntaxKind.IdentifierExpression) {
+			const reference = this.getIdentifierReference(addressExpression as LuaIdentifierExpression);
+			if (reference.kind === 'global') {
+				const name = this.getReferenceCanonicalName(reference);
+				const spec = MMIO_REGISTER_SPEC_BY_NAME.get(name);
+				if (spec) {
+					return spec.writeRequirement;
+				}
+			}
+		}
+		return 'any';
+	}
+
+	private resolveMemoryStoreRegisterName(addressExpression: LuaExpression): string | undefined {
+		const constValue = this.evaluateCompileTimeExpression(addressExpression);
+		if (typeof constValue === 'number') {
+			return MMIO_REGISTER_SPEC_BY_ADDRESS.get(constValue)?.name;
+		}
+		if (addressExpression.kind === LuaSyntaxKind.IdentifierExpression) {
+			const reference = this.getIdentifierReference(addressExpression as LuaIdentifierExpression);
+			if (reference.kind === 'global') {
+				const name = this.getReferenceCanonicalName(reference);
+				if (MMIO_REGISTER_SPEC_BY_NAME.has(name)) {
+					return name;
+				}
+			}
+		}
+		return undefined;
+	}
+
+	private validateMemoryStore(addressExpression: LuaExpression, valueExpression: LuaExpression): void {
+		const requirement = this.resolveMemoryStoreRequirement(addressExpression);
+		if (requirement === 'any') {
+			return;
+		}
+		const valueKind = this.classifyExpressionValueKind(valueExpression);
+		if (valueKind === 'string_ref') {
+			return;
+		}
+		const registerName = this.resolveMemoryStoreRegisterName(addressExpression);
+		const target = registerName ? `Register '${registerName}'` : 'This memory-mapped register';
+		throw new LuaSyntaxError(
+			`${target} requires a string_ref value (&'...'). Got: ${valueKind}.`,
+			valueExpression.range.path,
+			valueExpression.range.start.line,
+			valueExpression.range.start.column,
+		);
 	}
 
 	private emitMemoryWordStoreSequence(valueBase: number, valueCount: number, addrConst: number | undefined, addrReg: number | undefined): void {
@@ -2588,9 +2726,12 @@ class FunctionBuilder {
 			throw new Error('[Compiler] memwrite expects a base address and at least one word.');
 		}
 		const addrExpression = expression.arguments[0];
+		for (let index = 1; index < expression.arguments.length; index += 1) {
+			this.validateMemoryStore(addrExpression, expression.arguments[index]);
+		}
 		const addrConst = this.tryGetNumericConstIndex(addrExpression);
 		let addrReg: number | undefined;
-		if (addrConst === null) {
+		if (addrConst === undefined) {
 			addrReg = this.allocTemp();
 			this.compileExpressionInto(addrExpression, addrReg, 1);
 		}
@@ -2599,7 +2740,7 @@ class FunctionBuilder {
 		for (let index = 0; index < valueCount; index += 1) {
 			this.compileExpressionInto(expression.arguments[index + 1], valueBase + index, 1);
 		}
-		this.emitMemoryWordStoreSequence(valueBase, valueCount, addrConst ?? undefined, addrReg);
+		this.emitMemoryWordStoreSequence(valueBase, valueCount, addrConst, addrReg);
 		if (resultCount > 0) {
 			this.emitLoadNil(target, resultCount);
 		}
@@ -2607,7 +2748,7 @@ class FunctionBuilder {
 
 	private compileRKOperand(expression: LuaExpression): number {
 		const constIndex = this.tryGetConstIndex(expression);
-		if (constIndex !== null) {
+		if (constIndex !== undefined) {
 			return this.encodeConstOperand(constIndex);
 		}
 		const reg = this.allocTemp();
@@ -3323,8 +3464,9 @@ function compileFunctionExpression(
 	protoId: string,
 	moduleId: string,
 	semantics: LuaSemanticFrontendFile,
+	frontend: LuaSemanticFrontend,
 ): number {
-	const builder = new FunctionBuilder(program, parent, { moduleId, protoId, semantics });
+	const builder = new FunctionBuilder(program, parent, { moduleId, protoId, semantics, frontend });
 	builder.compileFunctionExpression(expression, implicitSelf);
 	const code = builder.getCode();
 	const ranges = builder.getRanges();
@@ -3414,6 +3556,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		moduleId,
 		protoId: entryProtoId,
 		semantics: frontend.getFile(chunk.range.path),
+		frontend,
 		moduleCompileContext,
 	});
 	try {
@@ -3446,6 +3589,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 			moduleId: module.path,
 			protoId: moduleProtoId,
 			semantics: frontend.getFile(module.path),
+			frontend,
 			moduleCompileContext,
 			moduleCompileInfo: moduleCompileContext.modulesByPath.get(module.path) ?? null,
 		});
@@ -3497,6 +3641,7 @@ export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata
 		moduleId,
 		protoId: entryProtoId,
 		semantics: frontend.getFile(chunk.range.path),
+		frontend,
 	});
 	try {
 		entryBuilder.compileChunk(chunk);
