@@ -23,6 +23,7 @@ import { beginNavigationCapture, completeNavigation } from '../../navigation/nav
 import { focusChunkSource } from '../../ui/editor_tabs';
 import { ensureCursorVisible, updateDesiredColumn } from '../../ui/caret';
 import { editorCaretState } from '../../ui/caret_state';
+import { intellisenseUiState } from './intellisense_ui_state';
 import { resetBlink } from '../../render/render_caret';
 import { tryShowLuaErrorOverlay } from '../runtime_error/runtime_error_navigation';
 import { resolvePointerColumn, resolvePointerRow } from '../../ui/editor_view';
@@ -609,8 +610,8 @@ export function shouldAutoTriggerCompletions(): boolean {
 		column: token.startColumn + 1,
 	};
 	const inspection = safeInspectLuaExpression(request);
-	const previousInspection = ide_state.lastInspectorResult;
-	ide_state.lastInspectorResult = inspection;
+	const previousInspection = intellisenseUiState.lastInspectorResult;
+	intellisenseUiState.lastInspectorResult = inspection;
 	if (!inspection) {
 		clearHoverTooltip();
 		return;
@@ -620,7 +621,7 @@ export function shouldAutoTriggerCompletions(): boolean {
 		return;
 	}
 	const contentLines = buildHoverContentLines(inspection);
-	const existing = ide_state.hoverTooltip;
+	const existing = intellisenseUiState.hoverTooltip;
 	if (existing && existing.expression === inspection.expression && existing.path === path) {
 		existing.contentLines = contentLines;
 		existing.valueType = inspection.valueType;
@@ -641,7 +642,7 @@ export function shouldAutoTriggerCompletions(): boolean {
 		}
 		return;
 	}
-	ide_state.hoverTooltip = {
+	intellisenseUiState.hoverTooltip = {
 		expression: inspection.expression,
 		contentLines,
 		valueType: inspection.valueType,
@@ -658,8 +659,8 @@ export function shouldAutoTriggerCompletions(): boolean {
 }
 
 export function clearHoverTooltip(): void {
-	ide_state.hoverTooltip = null;
-	ide_state.lastInspectorResult = null;
+	intellisenseUiState.hoverTooltip = null;
+	intellisenseUiState.lastInspectorResult = null;
 }
 
 export function buildMemberCompletionItems(request: LuaMemberCompletionRequest): LuaCompletionItem[] {
@@ -1094,7 +1095,7 @@ export function refreshGotoHoverHighlight(row: number, column: number, context: 
 	const highlightStart = token ? token.startColumn : column;
 	const highlightEnd = token ? token.endColumn : column;
 	const highlightExpression = token ? token.expression : '';
-	const existing = ide_state.gotoHoverHighlight;
+	const existing = intellisenseUiState.gotoHoverHighlight;
 	if (existing
 		&& existing.row === row
 		&& column >= existing.startColumn
@@ -1116,7 +1117,7 @@ export function refreshGotoHoverHighlight(row: number, column: number, context: 
 		clearGotoHoverHighlight();
 		return;
 	}
-	ide_state.gotoHoverHighlight = {
+	intellisenseUiState.gotoHoverHighlight = {
 		row,
 		startColumn: highlightStart,
 		endColumn: highlightEnd,
@@ -1125,7 +1126,7 @@ export function refreshGotoHoverHighlight(row: number, column: number, context: 
 }
 
 export function clearGotoHoverHighlight(): void {
-	ide_state.gotoHoverHighlight = null;
+	intellisenseUiState.gotoHoverHighlight = null;
 }
 
 export function clearReferenceHighlights(): void {
@@ -1158,7 +1159,7 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 		definition = inspection?.definition;
 	}
 	if (!definition) {
-		if (!ide_state.inspectorRequestFailed) {
+		if (!intellisenseUiState.inspectorRequestFailed) {
 			ide_state.showMessage(`Definition not found for ${token.expression}`, constants.COLOR_STATUS_WARNING, 1.8);
 		}
 		return false;
@@ -2646,11 +2647,11 @@ export function getBuiltinIdentifierSet(): ReadonlySet<string> {
 }
 
 export function safeInspectLuaExpression(request: LuaHoverRequest): LuaHoverResult {
-	ide_state.inspectorRequestFailed = false;
+	intellisenseUiState.inspectorRequestFailed = false;
 	try {
 		return inspectLuaExpression(request);
 	} catch (error) {
-		ide_state.inspectorRequestFailed = true;
+		intellisenseUiState.inspectorRequestFailed = true;
 		const handled = tryShowLuaErrorOverlay(error);
 		if (!handled) {
 			const message = extractErrorMessage(error);

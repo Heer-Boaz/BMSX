@@ -12,6 +12,7 @@ import { isShiftDown } from '../keyboard/key_input';
 import { scrollResourceBrowserHorizontal, scrollResourceViewer } from '../keyboard/resource_viewer_input';
 import { editorPointerState } from './editor_pointer_state';
 import { editorCaretState } from '../../ui/caret_state';
+import { intellisenseUiState } from '../../contrib/intellisense/intellisense_ui_state';
 
 export function handleEditorWheelInput(): void {
 	const playerInput = $.input.getPlayerInput(1);
@@ -67,10 +68,10 @@ function handleHoverTooltipWheel(
 	activePointer: PointerSnapshot,
 	playerInput: ReturnType<typeof $.input.getPlayerInput>
 ): boolean {
-	if (!ide_state.hoverTooltip) {
+	if (!intellisenseUiState.hoverTooltip) {
 		return false;
 	}
-	const tooltip = ide_state.hoverTooltip;
+	const tooltip = intellisenseUiState.hoverTooltip;
 	const pointerInTooltip = activePointer !== null && isPointInHoverTooltip(activePointer.viewportX, activePointer.viewportY);
 	const pointerInTarget = activePointer !== null && pointerHitsHoverTarget(activePointer, tooltip);
 	const allowTooltipScroll = pointerInTooltip || pointerInTarget || activePointer === null;

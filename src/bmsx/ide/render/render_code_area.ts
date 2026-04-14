@@ -3,6 +3,7 @@ import { getBreakpointLaneWidth, getCodeAreaBounds, maximumLineLength } from '..
 import * as constants from '../core/constants';
 import { ide_state } from '../core/ide_state';
 import { getBreakpointsForChunk } from '../contrib/debugger/ide_debugger';
+import { intellisenseUiState } from '../contrib/intellisense/intellisense_ui_state';
 import { getActiveCodeTabContext } from '../ui/editor_tabs';
 import { ensureVisualLines, getVisualLineCount } from '../core/text_utils';
 import { drawCodeAreaBackground } from './render_code_area_gutter';
@@ -57,7 +58,7 @@ export function renderCodeArea(): void {
 
 	drawCodeAreaBackground(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, bounds.gutterLeft, bounds.gutterRight, contentBottom);
 
-	const activeGotoHighlight = ide_state.gotoHoverHighlight;
+	const activeGotoHighlight = intellisenseUiState.gotoHoverHighlight;
 	const gotoVisualIndex = activeGotoHighlight
 		? ide_state.layout.positionToVisualIndex(ide_state.buffer, activeGotoHighlight.row, activeGotoHighlight.startColumn)
 		: null;

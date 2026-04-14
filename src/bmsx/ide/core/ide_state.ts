@@ -1,6 +1,3 @@
-import type {
-	LuaHoverResult,
-} from '../../emulator/types';
 import type { FontVariant } from '../../render/shared/bmsx_font';
 import type { ScrollbarKind, MessageState } from './types';
 import type { InlineFieldMetrics } from '../ui/inline_text_field';
@@ -15,7 +12,6 @@ import { ReferenceState } from '../contrib/references/reference_state';
 import { CHARACTER_CODES } from './character_map';
 import type {
 	Position,
-	CodeHoverTooltip,
 	EditorDiagnostic,
 	DiagnosticsCacheEntry,
 	CodeTabContext,
@@ -127,10 +123,6 @@ export interface IdeState {
 	savePointDepth: number;
 	fontVariant: FontVariant;
 	builtinIdentifierCache: BuiltinIdentifierCache | null;
-	hoverTooltip: CodeHoverTooltip;
-	lastInspectorResult: LuaHoverResult;
-	inspectorRequestFailed: boolean;
-	gotoHoverHighlight: { row: number; startColumn: number; endColumn: number; expression: string };
 	viewportWidth: number;
 	viewportHeight: number;
 	font: EditorFont;
@@ -238,10 +230,6 @@ export const ide_state: IdeState = {
 	savePointDepth: 0,
 	fontVariant: undefined!,
 	builtinIdentifierCache: null,
-	hoverTooltip: null,
-	lastInspectorResult: null,
-	inspectorRequestFailed: false,
-	gotoHoverHighlight: null,
 	viewportWidth: 0,
 	viewportHeight: 0,
 	font: undefined!,
