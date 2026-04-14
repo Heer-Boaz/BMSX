@@ -4,7 +4,7 @@ import { LuaInterpreter } from '../lua/luaruntime';
 import type { LuaValue } from '../lua/luavalue';
 import { convertToError, isLuaFunctionValue, isLuaTable, setLuaTableCaseInsensitiveKeys } from '../lua/luavalue';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
-import { clearNativeMemberCompletionCache } from '../ide/contrib/intellisense/intellisense';
+import { clearNativeMemberCompletionCache } from '../ide/editor/contrib/intellisense/intellisense';
 import { ENGINE_LUA_BUILTIN_FUNCTIONS, ENGINE_LUA_BUILTIN_GLOBALS } from './lua_builtin_descriptors';
 import { seedLuaGlobals } from './lua_globals';
 import { ENGINE_SYSTEM_HELPER_NAMES } from './lua_system_globals';
@@ -50,7 +50,7 @@ import type { RawAssetSource } from '../rompack/asset_source';
 import { Table, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from './cpu';
 import { StringValue, isStringValue, stringValueToString } from './string_pool';
 import { Runtime } from './runtime';
-import { getSourceForChunk } from '../ide/core/text_utils';
+import { getSourceForChunk } from '../ide/common/text_utils';
 
 const LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
 	'print',

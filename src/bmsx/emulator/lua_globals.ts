@@ -177,7 +177,7 @@ import {
 	toRuntimeValue,
 	wrapNativeResult,
 } from './lua_js_bridge';
-import { buildLuaFrameRawLabel } from '../ide/contrib/runtime_error/runtime_error_util';
+import { buildLuaFrameRawLabel } from '../ide/editor/contrib/runtime_error/runtime_error_util';
 import { isStringValue, stringValueToString } from './string_pool';
 
 import type { StringValue } from './string_pool';

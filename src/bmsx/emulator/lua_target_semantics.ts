@@ -4,8 +4,8 @@ import {
 	type LuaExpression,
 	type LuaFunctionDeclarationStatement,
 } from '../lua/syntax/lua_ast';
-import type { LuaBoundReference, LuaSemanticFrontendFile } from '../ide/contrib/intellisense/lua_semantic_frontend';
-import { MemoryAccessKind } from './cpu';
+import type { LuaBoundReference, LuaSemanticFrontendFile } from '../ide/editor/contrib/intellisense/lua_semantic_frontend';
+import { getMemoryAccessKindForName, MemoryAccessKind } from './memory_access_kind';
 import {
 	getBoundIdentifierReference,
 	getFunctionDeclarationBoundReferences,
@@ -29,32 +29,8 @@ export type AssignmentTargetPreparation =
 		readonly kind: 'memory';
 		readonly baseReference: LuaBoundReference;
 		readonly accessKind: MemoryAccessKind;
-		readonly memoryName: string;
 		readonly index: LuaExpression;
 	};
-
-function normalizeMemoryTargetName(name: string): string {
-	return name.toLowerCase();
-}
-
-function resolveMemoryAccessKind(name: string): MemoryAccessKind | null {
-	switch (normalizeMemoryTargetName(name)) {
-		case 'mem':
-			return MemoryAccessKind.Word;
-		case 'mem8':
-			return MemoryAccessKind.U8;
-		case 'mem16le':
-			return MemoryAccessKind.U16LE;
-		case 'mem32le':
-			return MemoryAccessKind.U32LE;
-		case 'memf32le':
-			return MemoryAccessKind.F32LE;
-		case 'memf64le':
-			return MemoryAccessKind.F64LE;
-		default:
-			return null;
-	}
-}
 
 export function classifyAssignmentTargetPreparation(
 	semantics: LuaSemanticFrontendFile,
@@ -72,16 +48,14 @@ export function classifyAssignmentTargetPreparation(
 			if (expression.base.kind === LuaSyntaxKind.IdentifierExpression) {
 				const baseReference = getBoundIdentifierReference(semantics, expression.base);
 				if (baseReference.kind === 'memory_map') {
-					const memoryName = normalizeMemoryTargetName(baseReference.ref.name);
-					const accessKind = resolveMemoryAccessKind(memoryName);
+					const accessKind = getMemoryAccessKindForName(baseReference.ref.name);
 					if (accessKind === null) {
-						throw new Error(`[LuaTargetSemantics] Unsupported memory access target '${memoryName}'.`);
+						throw new Error(`[LuaTargetSemantics] Unsupported memory access target '${baseReference.ref.name}'.`);
 					}
 					return {
 						kind: 'memory',
 						baseReference,
 						accessKind,
-						memoryName,
 						index: expression.index,
 					};
 				}
@@ -104,10 +78,9 @@ export type FunctionDeclarationTarget =
 	}
 	| {
 		readonly kind: 'path';
-		readonly baseLoad: LuaBoundReference | null;
+		readonly baseReference: LuaBoundReference | null;
 		readonly intermediateKeys: ReadonlyArray<string>;
 		readonly finalKey: string;
-		readonly baseReference: LuaBoundReference | null;
 	};
 
 export function classifyFunctionDeclarationTarget(
@@ -136,20 +109,8 @@ export function classifyFunctionDeclarationTarget(
 		: identifiers.slice(1);
 	return {
 		kind: 'path',
-		baseLoad: baseReference,
+		baseReference,
 		intermediateKeys,
 		finalKey,
-		baseReference,
 	};
-}
-
-export function resolveFunctionDeclarationLexicalHandle(
-	semantics: LuaSemanticFrontendFile,
-	statement: LuaFunctionDeclarationStatement,
-): string | undefined {
-	const target = classifyFunctionDeclarationTarget(semantics, statement);
-	if (target.kind !== 'simple') {
-		return undefined;
-	}
-	return target.lexicalHandle;
 }

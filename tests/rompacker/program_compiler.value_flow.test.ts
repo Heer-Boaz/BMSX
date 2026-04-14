@@ -323,11 +323,37 @@ test('ProgramCompiler does not treat method function declarations as rewriting t
 	});
 });
 
-test('ProgramCompiler keeps while-loop exit flow conservative when the condition call mutates tracked locals', () => {
-	withStringRefRegister(0x510e, 'sys_test_flow_while_condition', () => {
+test('ProgramCompiler tracks nested closure writes in dotted function declaration bodies', () => {
+	withStringRefRegister(0x510e, 'sys_test_flow_function_decl_dotted_closure', () => {
 		const source = [
 			'local function write()',
 			'\tlocal reg<const> = 20750',
+			"\tlocal q = &'a'",
+			'\tlocal holder = {}',
+			'\tfunction holder.build()',
+			'\t\tlocal inner<const> = function()',
+			"\t\t\tq = 'x'",
+			'\t\tend',
+			'\t\tinner()',
+			'\t\treturn 0',
+			'\tend',
+			'\tholder.build()',
+			'\tmem[reg] = q',
+			'end',
+			'return write',
+		].join('\n');
+		assert.throws(
+			() => compileSource(source, 'function_decl_dotted_closure.lua'),
+			/requires a string_ref value/,
+		);
+	});
+});
+
+test('ProgramCompiler keeps while-loop exit flow conservative when the condition call mutates tracked locals', () => {
+	withStringRefRegister(0x510f, 'sys_test_flow_while_condition', () => {
+		const source = [
+			'local function write()',
+			'\tlocal reg<const> = 20751',
 			"\tlocal q = &'a'",
 			'\tlocal keepGoing = true',
 			'\tlocal tick<const> = function()',
@@ -352,10 +378,10 @@ test('ProgramCompiler keeps while-loop exit flow conservative when the condition
 });
 
 test('ProgramCompiler keeps repeat-until exit flow conservative when the condition call mutates tracked locals', () => {
-	withStringRefRegister(0x510f, 'sys_test_flow_repeat_condition', () => {
+	withStringRefRegister(0x5110, 'sys_test_flow_repeat_condition', () => {
 		const source = [
 			'local function write()',
-			'\tlocal reg<const> = 20751',
+			'\tlocal reg<const> = 20752',
 			"\tlocal q = &'a'",
 			'\tlocal done = false',
 			'\tlocal tick<const> = function()',
@@ -380,10 +406,10 @@ test('ProgramCompiler keeps repeat-until exit flow conservative when the conditi
 });
 
 test('ProgramCompiler treats concat as plain string instead of preserving string_ref', () => {
-	withStringRefRegister(0x5110, 'sys_test_flow_concat_plain_string', () => {
+	withStringRefRegister(0x5111, 'sys_test_flow_concat_plain_string', () => {
 		const source = [
 			'local function write()',
-			'\tlocal reg<const> = 20752',
+			'\tlocal reg<const> = 20753',
 			"\tmem[reg] = &'a' .. &'b'",
 			'end',
 			'return write',

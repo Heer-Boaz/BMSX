@@ -6,6 +6,7 @@ import { formatNumber } from './number_format';
 import { BASE_CYCLES, OpCode } from './cpu_opcode_info';
 import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions, type CpuProfilerSnapshot } from './cpu_profiler';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord } from './instruction_format';
+import { MemoryAccessKind } from './memory_access_kind';
 import { findVdpPacketSchema, getVdpPacketArgKind, VdpPacketWordKind } from './vdp_packet_schema';
 import {
 	VDP_STREAM_BUFFER_BASE,
@@ -453,15 +454,6 @@ export type Closure = {
 	protoIndex: number;
 	upvalues: Upvalue[];
 };
-
-export const enum MemoryAccessKind {
-	Word,
-	U8,
-	U16LE,
-	U32LE,
-	F32LE,
-	F64LE,
-}
 
 export const enum RunResult {
 	Halted,

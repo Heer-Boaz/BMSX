@@ -34,18 +34,18 @@ import {
 	type LuaGotoStatement,
 } from '../lua/syntax/lua_ast';
 import { createIdentifierCanonicalizer } from '../lua/syntax/identifier_canonicalizer';
-import { MemoryAccessKind, OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from './cpu';
+import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from './cpu';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './program_optimizer';
 import { buildModuleAliasesFromPaths, type ProgramConstReloc } from './program_asset';
 import { StringPool, StringValue, isStringValue } from './string_pool';
 import type { CanonicalizationType } from '../rompack/rompack';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from './instruction_format';
-import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from '../ide/contrib/intellisense/lua_semantic_frontend';
+import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from '../ide/editor/contrib/intellisense/lua_semantic_frontend';
 import { MMIO_REGISTER_SPEC_BY_ADDRESS, MMIO_REGISTER_SPEC_BY_NAME, type MmioWriteRequirement } from './mmio_register_spec';
 import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compile_value_flow';
 import { ENGINE_SYSTEM_GLOBAL_NAME_SET } from './lua_system_globals';
 import { LuaSyntaxError } from '../lua/luaerrors';
-import { Decl } from '../ide/contrib/intellisense/semantic_model';
+import { Decl } from '../ide/editor/contrib/intellisense/semantic_model';
 import {
 	IMPLICIT_SELF_SYMBOL_HANDLE,
 	getBoundIdentifierReference as getResolvedIdentifierReference,
@@ -55,6 +55,7 @@ import {
 	classifyAssignmentTargetPreparation,
 	classifyFunctionDeclarationTarget,
 } from './lua_target_semantics';
+import { getMemoryAccessKindForName, MemoryAccessKind } from './memory_access_kind';
 
 export type CompiledProgram = {
 	program: Program;
@@ -875,7 +876,7 @@ class FunctionBuilder {
 		moduleBinding: ModuleBinding | null = null,
 	): number {
 		const canonicalName = this.canonicalizeName(name);
-		if (this.getMemoryAccessKindForCanonicalName(canonicalName) !== null) {
+		if (getMemoryAccessKindForName(canonicalName) !== null) {
 			throw new Error(`[Compiler] '${canonicalName}' is a reserved memory map name and cannot be used as a local or parameter.`);
 		}
 		if (this.isReservedIntrinsicName(canonicalName)) {
@@ -2502,25 +2503,6 @@ class FunctionBuilder {
 			return undefined;
 		}
 		return this.program.constIndex(constValue);
-	}
-
-	private getMemoryAccessKindForCanonicalName(name: string): MemoryAccessKind | null {
-		switch (name) {
-			case 'mem':
-				return MemoryAccessKind.Word;
-			case 'mem8':
-				return MemoryAccessKind.U8;
-			case 'mem16le':
-				return MemoryAccessKind.U16LE;
-			case 'mem32le':
-				return MemoryAccessKind.U32LE;
-			case 'memf32le':
-				return MemoryAccessKind.F32LE;
-			case 'memf64le':
-				return MemoryAccessKind.F64LE;
-			default:
-				return null;
-		}
 	}
 
 	private isReservedIntrinsicName(name: string): boolean {

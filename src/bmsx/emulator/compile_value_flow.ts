@@ -27,7 +27,7 @@ import {
 	type LuaWhileStatement,
 } from '../lua/syntax/lua_ast';
 import { walkLuaExpressionTree } from '../lua/syntax/lua_ast_traversal';
-import type { LuaBoundReference, LuaSemanticFrontendFile } from '../ide/contrib/intellisense/lua_semantic_frontend';
+import type { LuaSemanticFrontendFile } from '../ide/editor/contrib/intellisense/lua_semantic_frontend';
 import {
 	getBoundIdentifierReference,
 	getIdentifierSymbolHandle,
@@ -36,7 +36,6 @@ import {
 import {
 	classifyAssignmentTargetPreparation,
 	classifyFunctionDeclarationTarget,
-	resolveFunctionDeclarationLexicalHandle,
 } from './lua_target_semantics';
 
 // ---------------------------------------------------------------------------
@@ -362,13 +361,6 @@ function resolveReferenceHandle(
 	return handle === null ? undefined : handle;
 }
 
-function resolveFunctionDeclarationHandle(
-	statement: LuaFunctionDeclarationStatement,
-	semantics: LuaSemanticFrontendFile,
-): string | undefined {
-	return resolveFunctionDeclarationLexicalHandle(semantics, statement);
-}
-
 // ---------------------------------------------------------------------------
 //  Closure-written symbol detection
 // ---------------------------------------------------------------------------
@@ -539,8 +531,10 @@ function collectLexicalWritesInStatement(
 		}
 		case LuaSyntaxKind.FunctionDeclarationStatement: {
 			const declaration = statement as LuaFunctionDeclarationStatement;
-			const handle = resolveFunctionDeclarationHandle(declaration, semantics);
-			if (handle !== undefined) out.add(handle);
+			const target = classifyFunctionDeclarationTarget(semantics, declaration);
+			if (target.kind === 'simple' && target.lexicalHandle !== undefined) {
+				out.add(target.lexicalHandle);
+			}
 			collectLexicalWritesInFunctionBody(declaration.functionExpression.body.body, semantics, out);
 			return;
 		}
@@ -840,21 +834,13 @@ export class ValueKindFlowAnalyzer {
 	private analyzeFunctionDeclaration(statement: LuaFunctionDeclarationStatement): void {
 		const target = classifyFunctionDeclarationTarget(this.semantics, statement);
 		if (target.kind === 'path') {
-			this.observeReferenceLoad(target.baseLoad);
+			// Function declaration headers are identifier chains only; path targets
+			// perform pure symbol/table lookup and do not change tracked lexical
+			// facts. Only the simple identifier form rewrites a lexical slot.
 			return;
 		}
 		if (target.lexicalHandle === undefined) return;
 		this.state.set(target.lexicalHandle, FUNCTION_VALUE_FACT);
-	}
-
-	private observeReferenceLoad(reference: LuaBoundReference | null): void {
-		if (reference === null) {
-			return;
-		}
-		const handle = getReferenceSymbolHandle(reference);
-		if (handle !== null) {
-			this.state.get(handle);
-		}
 	}
 
 	private analyzeAssignmentTargetPreparation(expression: LuaAssignableExpression): void {
