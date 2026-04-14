@@ -1,6 +1,6 @@
-import type { SemanticAnnotations, SymbolKind } from '../../contrib/intellisense/semantic_model';
-import type { HighlightLine } from '../../core/types';
-import * as constants from '../../core/constants';
+import type { SemanticAnnotations, SymbolKind } from '../../editor/contrib/intellisense/semantic_model';
+import type { HighlightLine } from '../../common/types';
+import * as constants from '../../common/constants';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../emulator/lua_builtin_descriptors';
 import { LuaLexer } from '../../../lua/syntax/lualexer';
 import { KEYWORDS } from '../../../lua/syntax/luatoken';

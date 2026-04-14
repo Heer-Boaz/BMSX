@@ -4,7 +4,7 @@ import { LuaLexer } from '../../../lua/syntax/lualexer';
 import { LuaParser } from '../../../lua/syntax/luaparser';
 import type { LuaToken } from '../../../lua/syntax/luatoken';
 import type { CanonicalizationType } from '../../../rompack/rompack';
-import { splitText } from '../../text/source_text';
+import { splitText } from '../../editor/text/source_text';
 
 export type ParsedLuaChunk = {
 	chunk: LuaChunk | null;
