@@ -137,17 +137,17 @@ export class CrossFileRenameManager {
 	public constructor() {}
 
 	public applyRenameToChunk(path: string, ranges: readonly LuaSourceRange[], newName: string, activePath: string): number {
-		const context = this.ensureCodeTabContextForChunk(path);
 		if (path === activePath) {
 			return 0;
 		}
+		const context = this.ensureCodeTabContextForChunk(path);
 		if (context.readOnly === true) {
 			return 0;
 		}
 		const lines = this.getContextLinesForRename(context);
-		const matches: SearchMatch[] = [];
+		const matches = new Array<SearchMatch>(ranges.length);
 		for (let index = 0; index < ranges.length; index += 1) {
-			matches.push(convertRangeToSearchMatch(ranges[index]));
+			matches[index] = convertRangeToSearchMatch(ranges[index]);
 		}
 		if (matches.length === 0) {
 			return 0;
@@ -209,11 +209,14 @@ export class CrossFileRenameManager {
 	}
 
 	private markContextTabDirty(contextId: string, dirty: boolean): void {
-		const tab = ide_state.tabs.find(candidate => candidate.id === contextId);
-		if (!tab) {
+		for (let index = 0; index < ide_state.tabs.length; index += 1) {
+			const tab = ide_state.tabs[index];
+			if (tab.id !== contextId) {
+				continue;
+			}
+			tab.dirty = dirty;
 			return;
 		}
-		tab.dirty = dirty;
 	}
 }
 

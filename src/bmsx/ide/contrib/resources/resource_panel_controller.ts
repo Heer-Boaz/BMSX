@@ -9,10 +9,6 @@ import { ide_state } from '../../core/ide_state';
 import { measureText } from '../../core/text_utils';
 import type { CallHierarchyView } from '../call_hierarchy/call_hierarchy_view';
 import {
-	buildCallHierarchyPanelItems,
-	buildResourcePanelItems,
-	computeResourcePanelMaxLineWidth,
-	findResourcePanelIndexByAssetId,
 	findResourcePanelIndexByCallHierarchyNodeId,
 	type ResourcePanelFilterMode,
 } from './resource_panel_items';
@@ -39,6 +35,10 @@ import {
 	tryOpenResourcePanelDescriptorItem,
 } from './resource_panel_open_actions';
 import { focusEditorFromResourcePanel } from '../../ui/editor_tabs';
+import {
+	refreshResourcePanelCallHierarchyState,
+	refreshResourcePanelResourceState,
+} from './resource_panel_refresh';
 
 export interface ResourcePanelScrollbars {
 	resourceVertical: Scrollbar;
@@ -61,7 +61,6 @@ export class ResourcePanelController {
 	public selectionIndex = -1;
 	public hoverIndex = -1;
 	public maxLineWidth = 0;
-	private pendingSelectionAssetId: string = null;
 	private callHierarchyView: CallHierarchyView = null;
 	private readonly callHierarchyExpandedNodeIds = new Set<string>();
 	private readonly bounds: RectBounds = { left: 0, top: 0, right: 0, bottom: 0 };
@@ -364,7 +363,6 @@ export class ResourcePanelController {
 		this.hoverIndex = -1;
 		this.hscroll = 0;
 		this.maxLineWidth = 0;
-		this.pendingSelectionAssetId = null;
 	}
 
 	private refreshContents(): void {
@@ -372,66 +370,50 @@ export class ResourcePanelController {
 			this.refreshCallHierarchyContents();
 			return;
 		}
+		const bounds = this.getBounds();
+		if (!bounds) {
+			return;
+		}
 		this.hoverIndex = -1;
 		const previousDescriptor = (this.selectionIndex >= 0 && this.selectionIndex < this.items.length)
 			? this.items[this.selectionIndex].descriptor
 			: null;
-		const previousIndex = this.selectionIndex;
-		const previousScroll = this.scroll;
-		this.replaceItems(buildResourcePanelItems(this.filterMode));
-		const targetAssetId = this.pendingSelectionAssetId ?? (previousDescriptor ? previousDescriptor.asset_id : null);
-		let selectionIndex = -1;
-		if (targetAssetId) {
-			const resolved = findResourcePanelIndexByAssetId(this.items, targetAssetId);
-			if (resolved !== -1) {
-				selectionIndex = resolved;
-				if (this.pendingSelectionAssetId === targetAssetId) this.pendingSelectionAssetId = null;
-			}
-		}
-		if (selectionIndex === -1 && previousIndex >= 0 && previousIndex < this.items.length) selectionIndex = previousIndex;
-		if (selectionIndex === -1 && this.items.length > 0) selectionIndex = 0;
-		this.selectionIndex = selectionIndex;
-		const capacity = this.lineCapacity();
-		const maxScroll = Math.max(0, this.items.length - capacity);
-		this.scroll = clamp(previousScroll, 0, maxScroll);
-		this.ensureSelectionVisible();
-		this.applyPendingSelection();
+		const refreshed = refreshResourcePanelResourceState({
+			filterMode: this.filterMode,
+			bounds,
+			lineHeight: this.lineHeight,
+			previousDescriptor,
+			previousIndex: this.selectionIndex,
+			previousScroll: this.scroll,
+		});
+		this.items = refreshed.items;
+		this.maxLineWidth = refreshed.maxLineWidth;
+		this.selectionIndex = refreshed.selectionIndex;
+		this.scroll = refreshed.scroll;
+		this.clampHScroll();
 	}
 
 	private refreshCallHierarchyContents(): void {
+		const bounds = this.getBounds();
+		if (!bounds) {
+			return;
+		}
 		this.hoverIndex = -1;
 		const previousNodeId = this.selectionIndex >= 0 && this.selectionIndex < this.items.length
 			? this.items[this.selectionIndex].callHierarchyNodeId
 			: null;
-		const previousScroll = this.scroll;
-		this.replaceItems(buildCallHierarchyPanelItems(this.callHierarchyView, this.callHierarchyExpandedNodeIds));
-		let selectionIndex = -1;
-		if (previousNodeId) {
-			selectionIndex = findResourcePanelIndexByCallHierarchyNodeId(this.items, previousNodeId);
-		}
-		if (selectionIndex === -1 && this.items.length > 0) {
-			selectionIndex = 0;
-		}
-		this.selectionIndex = selectionIndex;
-		const capacity = this.lineCapacity();
-		const maxScroll = Math.max(0, this.items.length - capacity);
-		this.scroll = clamp(previousScroll, 0, maxScroll);
-		this.ensureSelectionVisible();
-	}
-
-	private applyPendingSelection(): void {
-		const asset_id = this.pendingSelectionAssetId;
-		if (!asset_id) return;
-		const index = findResourcePanelIndexByAssetId(this.items, asset_id);
-		if (index === -1) return;
-		this.selectionIndex = index;
-		this.ensureSelectionVisible();
-		this.pendingSelectionAssetId = null;
-	}
-
-	private replaceItems(items: ResourceBrowserItem[]): void {
-		this.items = items;
-		this.maxLineWidth = computeResourcePanelMaxLineWidth(items);
+		const refreshed = refreshResourcePanelCallHierarchyState({
+			view: this.callHierarchyView,
+			expandedNodeIds: this.callHierarchyExpandedNodeIds,
+			bounds,
+			lineHeight: this.lineHeight,
+			previousNodeId,
+			previousScroll: this.scroll,
+		});
+		this.items = refreshed.items;
+		this.maxLineWidth = refreshed.maxLineWidth;
+		this.selectionIndex = refreshed.selectionIndex;
+		this.scroll = refreshed.scroll;
 		this.clampHScroll();
 	}
 

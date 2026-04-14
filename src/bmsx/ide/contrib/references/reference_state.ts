@@ -38,7 +38,7 @@ export class ReferenceState {
 	}
 
 	public apply(info: ReferenceMatchInfo, activeIndex: number): void {
-		this.matches = info.matches.slice();
+		this.matches = info.matches;
 		if (this.matches.length === 0) {
 			this.activeIndex = -1;
 		} else {
