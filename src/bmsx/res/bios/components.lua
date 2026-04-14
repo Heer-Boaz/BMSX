@@ -697,6 +697,9 @@ function textcomponent.new(opts)
 	return self
 end
 
+function textcomponent:prepare_render()
+end
+
 
 function textcomponent:submit_glyph_lines(x, y, z, glyphs, background_enabled, bg_r, bg_g, bg_b, bg_a)
 	local cursor_y = y

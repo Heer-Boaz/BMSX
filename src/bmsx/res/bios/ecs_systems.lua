@@ -466,6 +466,7 @@ function textrendersystem:update()
 	local components<const> = world_instance.active_space.active_components_by_type[textcomponent]
 	for i = 1, #components do
 		local tc<const> = components[i]
+		tc:prepare_render()
 		local obj<const> = tc.parent
 		local offset<const> = tc.offset
 		local glyphs<const> = tc.text
