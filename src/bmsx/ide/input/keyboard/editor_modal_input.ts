@@ -5,15 +5,17 @@ import { closeResourceSearch } from '../../contrib/resources/resource_search';
 import { closeLineJump } from '../../contrib/find/line_jump';
 import { closeSymbolSearch } from '../../contrib/symbols/symbol_search_shared';
 import { resetActionPromptState } from '../overlays/action_prompt';
+import { actionPromptState } from '../overlays/action_prompt_state';
 import { closeEditorContextMenu } from '../../render/render_context_menu';
+import { editorContextMenuState } from '../../contrib/context_menu/editor_context_menu_state';
 import { runtimeErrorState } from '../../contrib/runtime_error/runtime_error_state';
 
 export function handleEscapeKey(): boolean {
-	if (ide_state.actionPrompt) {
+	if (actionPromptState.prompt) {
 		resetActionPromptState();
 		return true;
 	}
-	if (ide_state.contextMenu.visible) {
+	if (editorContextMenuState.visible) {
 		closeEditorContextMenu();
 		return true;
 	}

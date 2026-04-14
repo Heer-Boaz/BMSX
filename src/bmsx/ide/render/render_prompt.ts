@@ -6,6 +6,7 @@ import { drawEditorText } from './text_renderer';
 import { measureText } from '../core/text_utils';
 import type { ActionPromptAction, ActionPromptLayout } from '../core/types';
 import { centerDialogBounds } from './dialog_layout';
+import { actionPromptState } from '../input/overlays/action_prompt_state';
 
 const HOT_RESUME_MESSAGE_LINES = [
 	'UNSAVED CHANGES DETECTED.',
@@ -92,7 +93,7 @@ function measureActionPromptLayout(messageLines: readonly string[], primaryLabel
 }
 
 export function drawActionPromptOverlay(): void {
-	const prompt = ide_state.actionPrompt;
+	const prompt = actionPromptState.prompt;
 	if (!prompt) {
 		return;
 	}

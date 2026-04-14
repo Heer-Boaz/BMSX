@@ -4,9 +4,10 @@ import { save } from '../../ui/editor_tabs';
 import { performEditorAction } from '../commands/editor_actions';
 import { consumeIdeKey, isKeyJustPressed } from '../keyboard/key_input';
 import { point_in_rect } from '../../../utils/rect_operations';
+import { actionPromptState } from './action_prompt_state';
 
 export async function handleActionPromptSelection(choice: 'save-continue' | 'continue' | 'cancel'): Promise<void> {
-	const prompt = ide_state.actionPrompt;
+	const prompt = actionPromptState.prompt;
 	if (!prompt) {
 		return;
 	}
@@ -35,7 +36,7 @@ export async function attemptPromptSave(action: ActionPromptAction): Promise<boo
 }
 
 export function handleActionPromptInput(): void {
-	if (!ide_state.actionPrompt) {
+	if (!actionPromptState.prompt) {
 		return;
 	}
 	if (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter')) {
@@ -46,7 +47,7 @@ export function handleActionPromptInput(): void {
 }
 
 export function handleActionPromptPointer(snapshot: PointerSnapshot): void {
-	const prompt = ide_state.actionPrompt;
+	const prompt = actionPromptState.prompt;
 	if (!prompt) {
 		return;
 	}
@@ -66,5 +67,5 @@ export function handleActionPromptPointer(snapshot: PointerSnapshot): void {
 }
 
 export function resetActionPromptState(): void {
-	ide_state.actionPrompt = null;
+	actionPromptState.prompt = null;
 }

@@ -418,7 +418,7 @@ export type EditorContextMenuState = {
 	anchorX: number;
 	anchorY: number;
 	token: EditorContextToken | null;
-	entries: EditorContextMenuEntry[];
+	entries: readonly EditorContextMenuEntry[];
 	hoverIndex: number;
 	bounds: RectBounds | null;
 	itemBounds: RectBounds[];

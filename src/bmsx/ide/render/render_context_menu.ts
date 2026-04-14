@@ -6,6 +6,7 @@ import { ide_state } from '../core/ide_state';
 import { drawEditorText } from './text_renderer';
 import { measureText } from '../core/text_utils';
 import type { EditorContextMenuEntry, EditorContextToken } from '../core/types';
+import { editorContextMenuState, resetEditorContextMenuState } from '../contrib/context_menu/editor_context_menu_state';
 
 export type CodeAreaViewportBounds = {
 	codeLeft: number;
@@ -28,28 +29,22 @@ export function openEditorContextMenu(
 	entries: readonly EditorContextMenuEntry[],
 	codeBounds: CodeAreaViewportBounds
 ): void {
-	const menu = ide_state.contextMenu;
+	const menu = editorContextMenuState;
 	menu.visible = true;
 	menu.anchorX = anchorX;
 	menu.anchorY = anchorY;
 	menu.token = token;
-	menu.entries = entries.slice();
+	menu.entries = entries;
 	menu.hoverIndex = -1;
 	layoutEditorContextMenu(codeBounds);
 }
 
 export function closeEditorContextMenu(): void {
-	const menu = ide_state.contextMenu;
-	menu.visible = false;
-	menu.token = null;
-	menu.entries = [];
-	menu.hoverIndex = -1;
-	menu.bounds = null;
-	menu.itemBounds = [];
+	resetEditorContextMenuState();
 }
 
 export function layoutEditorContextMenu(codeBounds: CodeAreaViewportBounds): void {
-	const menu = ide_state.contextMenu;
+	const menu = editorContextMenuState;
 	if (!menu.visible || menu.entries.length === 0) {
 		closeEditorContextMenu();
 		return;
@@ -90,7 +85,7 @@ export function layoutEditorContextMenu(codeBounds: CodeAreaViewportBounds): voi
 }
 
 export function findEditorContextMenuEntryAt(x: number, y: number): number {
-	const menu = ide_state.contextMenu;
+	const menu = editorContextMenuState;
 	const bounds = menu.bounds;
 	if (!menu.visible || !bounds || !point_in_rect(x, y, bounds)) {
 		return -1;
@@ -105,12 +100,12 @@ export function findEditorContextMenuEntryAt(x: number, y: number): number {
 
 export function updateEditorContextMenuHover(x: number, y: number): number {
 	const index = findEditorContextMenuEntryAt(x, y);
-	ide_state.contextMenu.hoverIndex = index;
+	editorContextMenuState.hoverIndex = index;
 	return index;
 }
 
 export function renderEditorContextMenu(codeBounds: CodeAreaViewportBounds): void {
-	const menu = ide_state.contextMenu;
+	const menu = editorContextMenuState;
 	if (!menu.visible) {
 		return;
 	}

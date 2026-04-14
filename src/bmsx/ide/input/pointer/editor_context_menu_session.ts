@@ -1,7 +1,7 @@
-import { ide_state } from '../../core/ide_state';
 import { isEditableCodeTab } from '../../ui/editor_tabs';
 import { resolveContextMenuToken } from '../../contrib/intellisense/intellisense';
 import { buildEditorContextMenuEntries } from '../../contrib/context_menu/editor_context_menu_entries';
+import { editorContextMenuState } from '../../contrib/context_menu/editor_context_menu_state';
 import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from '../../ui/editor_view';
 import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from '../../render/render_context_menu';
 import { executeEditorContextMenuAction } from '../../contrib/context_menu/editor_context_menu_actions';
@@ -13,7 +13,7 @@ export const CONTEXT_MENU_POINTER_CONSUME_PRIMARY = 2;
 export const CONTEXT_MENU_POINTER_CONSUME_SECONDARY = 3;
 
 export function handleEditorContextMenuPointerSession(snapshot: PointerSnapshot, justPressed: boolean, secondaryJustPressed: boolean): number {
-	const menu = ide_state.contextMenu;
+	const menu = editorContextMenuState;
 	if (!menu.visible) {
 		return CONTEXT_MENU_POINTER_IGNORED;
 	}

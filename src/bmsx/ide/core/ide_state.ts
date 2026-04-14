@@ -17,7 +17,6 @@ import type {
 	CodeTabContext,
 	TopBarButtonId,
 	MenuId,
-	ActionPromptState,
 	CrtOptionsSnapshot,
 	EditContext,
 	SearchState,
@@ -26,7 +25,6 @@ import type {
 	LineJumpState,
 	CreateResourceState,
 	EditorTabDescriptor,
-	EditorContextMenuState,
 } from './types';
 import type { TextBuffer } from '../text/text_buffer';
 import { PieceTreeBuffer } from '../text/piece_tree_buffer';
@@ -151,7 +149,6 @@ export interface IdeState {
 	menuEntryBounds: Record<MenuId, RectBounds>;
 	menuDropdownBounds: RectBounds;
 	openMenuId: MenuId;
-	contextMenu: EditorContextMenuState;
 	debuggerControls: DebuggerControlsState;
 	breakpoints: Map<string, Set<number>>;
 	tabButtonBounds: Map<string, RectBounds>;
@@ -160,7 +157,6 @@ export interface IdeState {
 	resourceViewerSpriteId: string;
 	resourceViewerSpriteAsset: string;
 	resourceViewerSpriteScale: number;
-	actionPrompt: ActionPromptState;
 	active: boolean;
 	message: MessageState;
 	showMessage: (text: string, color: number, durationSeconds: number) => void;
@@ -275,16 +271,6 @@ export const ide_state: IdeState = {
 	},
 	menuDropdownBounds: null,
 	openMenuId: null,
-	contextMenu: {
-		visible: false,
-		anchorX: 0,
-		anchorY: 0,
-		token: null,
-		entries: [],
-		hoverIndex: -1,
-		bounds: null,
-		itemBounds: [],
-	},
 	debuggerControls: {
 		executionState: 'inactive',
 		sessionMetrics: null,
@@ -296,7 +282,6 @@ export const ide_state: IdeState = {
 	resourceViewerSpriteId: null,
 	resourceViewerSpriteAsset: null,
 	resourceViewerSpriteScale: 1,
-	actionPrompt: null,
 	active: false,
 	message: undefined!,
 	showMessage: undefined!,

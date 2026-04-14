@@ -44,6 +44,7 @@ import { clearExecutionStopHighlights, syncRuntimeErrorOverlayFromContext } from
 import { processDiagnosticsQueue } from '../contrib/problems/diagnostics_controller';
 import { updateDesiredColumn } from './caret';
 import { resetActionPromptState } from '../input/overlays/action_prompt';
+import { actionPromptState } from '../input/overlays/action_prompt_state';
 import { applyLineJumpFieldText } from '../contrib/find/line_jump';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt } from '../contrib/resources/create_resource';
 import { editorPointerState } from '../input/pointer/editor_pointer_state';
@@ -52,7 +53,7 @@ import { editorCaretState } from './caret_state';
 export function tickInput(): void {
 	handleEditorWheelInput();
 	handleTextEditorPointerInput();
-	if (ide_state.actionPrompt) {
+	if (actionPromptState.prompt) {
 		handleActionPromptInput();
 		return;
 	}
@@ -99,7 +100,7 @@ export function draw(): void {
 	drawProblemsPanel();
 	renderStatusBar();
 	renderTopBarDropdown();
-	if (ide_state.actionPrompt) {
+	if (actionPromptState.prompt) {
 		drawActionPromptOverlay();
 	}
 }
