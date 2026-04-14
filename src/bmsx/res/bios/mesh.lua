@@ -40,7 +40,7 @@ function mesh.new(opts)
 end
 
 function mesh:vertex_count()
-	return math.modf(#self.positions / 3)
+	return #self.positions // 3
 end
 
 function mesh:has_texcoords()

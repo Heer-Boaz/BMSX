@@ -53,7 +53,7 @@ local pick_uniform_index<const> = function(count, avoid_index)
 	if count <= 1 then
 		return 1
 	end
-	local idx = math.floor(math.random() * count) + 1
+	local idx = math.random(count)
 	if avoid_index and idx == avoid_index then
 		idx = (idx % count) + 1
 	end

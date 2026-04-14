@@ -134,12 +134,13 @@ function collision2d.collect_overlaps(colliders, collider_count, pairs)
 		stage_geo_overlap_instance(collider, batch_token, instance_base)
 	end
 
-	local max_pair_count<const> = math.modf((collider_count * (collider_count - 1)) / 2)
+	local max_pair_count<const> = (collider_count * (collider_count - 1)) // 2
 	local scratch_for_results<const> = sys_geo_scratch_size - collider_count * geo_overlap_instance_bytes - geo_overlap_summary_bytes
 	if scratch_for_results < geo_overlap_result_bytes then
 		error('GEO overlap scratch overflow (instances=' .. tostring(collider_count) .. ')')
 	end
-	local result_capacity<const> = math.min(max_pair_count, math.modf(scratch_for_results / geo_overlap_result_bytes))
+	local scratch_result_capacity<const> = scratch_for_results // geo_overlap_result_bytes
+	local result_capacity<const> = math.min(max_pair_count, scratch_result_capacity)
 	local result_base<const> = instance_base + collider_count * geo_overlap_instance_bytes
 	local summary_base<const> = result_base + result_capacity * geo_overlap_result_bytes
 	submit_geo_overlap_full_pass(instance_base, result_base, summary_base, collider_count, result_capacity)

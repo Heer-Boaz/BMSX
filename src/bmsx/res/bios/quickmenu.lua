@@ -229,8 +229,8 @@ function menu.draw()
 	if menu_w > w - 10 then menu_w = w - 10 end
 	if menu_h > h - 10 then menu_h = h - 10 end
 	local box_y<const> = title_h + title_gap
-	local x = math.modf((w - menu_w) / 2)
-	local y = math.modf((h - box_h) / 2) - box_y
+	local x = (w - menu_w) // 2
+	local y = ((h - box_h) // 2) - box_y
 	if x < 0 then x = 0 end
 	if y < 0 then y = 0 end
 	local z<const> = 10000
@@ -254,8 +254,8 @@ function menu.draw()
 	local font_id<const> = font.id
 	local text_z<const> = z + 1
 	local title_len<const> = string.len(title)
-	local title_x<const> = x + math.modf((menu_w - (title_len * font_w)) / 2)
-	local title_y<const> = y + math.modf((title_h - font_h) / 2)
+	local title_x<const> = x + ((menu_w - (title_len * font_w)) // 2)
+	local title_y<const> = y + ((title_h - font_h) // 2)
 	if title_len > 0 then
 		memwrite(
 			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
@@ -310,7 +310,7 @@ function menu.draw()
 		end
 		local text_color<const> = i == state.selected and colors.text or colors.text_dim
 		local text_x<const> = x + padding
-		local text_y<const> = row_y + math.modf((line_h - font_h) / 2)
+		local text_y<const> = row_y + ((line_h - font_h) // 2)
 		local line_len<const> = string.len(line)
 		if line_len > 0 then
 			memwrite(

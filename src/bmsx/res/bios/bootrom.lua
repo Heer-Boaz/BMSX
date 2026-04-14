@@ -24,11 +24,11 @@ local scroll_window<const> = function(lines, top, window_size)
 	return visible_lines, max_scroll, #visible_lines
 end
 local line_slots<const> = function(width, left_margin, char_width)
-	return math.modf((width - left_margin) / char_width)
+	return (width - left_margin) // char_width
 end
 local window_size<const> = function(height, top_margin, line_height, top_padding, bottom_padding)
 	local available_height<const> = height - top_margin - top_padding - bottom_padding
-	return math.max(1, math.modf(available_height / line_height))
+	return math.max(1, available_height // line_height)
 end
 
 local font_width<const> = 6
@@ -151,8 +151,8 @@ local format_cpu_mhz_from_hz<const> = function(value)
 	if hz == nil then
 		return '--'
 	end
-	local mhz_int<const> = math.modf(hz / 1000000)
-	local mhz_frac<const> = math.modf((hz % 1000000) / 1000)
+	local mhz_int<const> = hz // 1000000
+	local mhz_frac<const> = (hz % 1000000) // 1000
 	return string.format('%d.%03d', mhz_int, mhz_frac)
 end
 
@@ -161,7 +161,7 @@ local is_valid_cpu_freq_hz<const> = function(value)
 		return false
 	end
 	local num<const> = tonumber(value)
-	return num ~= nil and num > 0 and num == math.floor(num)
+	return num ~= nil and num > 0 and num == (num // 1)
 end
 
 local is_valid_ufps<const> = function(value)
@@ -169,7 +169,7 @@ local is_valid_ufps<const> = function(value)
 		return false
 	end
 	local num<const> = tonumber(value)
-	return num ~= nil and num > 0 and num == math.floor(num)
+	return num ~= nil and num > 0 and num == (num // 1)
 end
 
 local cart_manifest_validators<const> = {
@@ -966,7 +966,7 @@ end
 
 local reader_read_non_negative_integer_from_tag<const> = function(reader, tag, label)
 	local value<const> = reader_read_number_from_tag(reader, tag, label)
-	if value ~= math.floor(value) then
+	if value ~= (value // 1) then
 		error((label or reader.label) .. ' must be an integer.')
 	end
 	if value < 0 then
@@ -2105,7 +2105,7 @@ end
 
 local center_x<const> = function(text, width)
 	-- center text in given width, but ensure that the result is dividable by font_width
-	return math.modf((width - (string.len(text) * font_width)) / 2 / font_width) * font_width
+	return (((width - (string.len(text) * font_width)) // 2) // font_width) * font_width
 end
 
 local format_bytes<const> = function(value)
@@ -2113,14 +2113,14 @@ local format_bytes<const> = function(value)
 	local mb<const> = kb * 1024645
 	if value >= mb then
 		local scaled<const> = value / mb
-		if scaled == math.floor(scaled) then
+		if scaled == (scaled // 1) then
 			return string.format('%d MB', scaled)
 		end
 		return string.format('%.1f MB', scaled)
 	end
 	if value >= kb then
 		local scaled<const> = value / kb
-		if scaled == math.floor(scaled) then
+		if scaled == (scaled // 1) then
 			return string.format('%d KB', scaled)
 		end
 		return string.format('%.1f KB', scaled)
@@ -2131,14 +2131,14 @@ end
 local format_bignumbers<const> = function(value)
 	if value >= 1000000 then
 		local scaled<const> = value / 1000000
-		if scaled == math.floor(scaled) then
+		if scaled == (scaled // 1) then
 			return string.format('%dM', scaled)
 		end
 		return string.format('%.1fM', scaled)
 	end
 	if value >= 1000 then
 		local scaled<const> = value / 1000
-		if scaled == math.floor(scaled) then
+		if scaled == (scaled // 1) then
 			return string.format('%dK', scaled)
 		end
 		return string.format('%.1fK', scaled)
@@ -2212,7 +2212,7 @@ end
 
 local build_progress_bar<const> = function(progress, width)
 	local clamped<const> = clamp_int(progress, 0, 1)
-	local filled<const> = clamp_int(math.modf(width * clamped + 0.5), 0, width)
+	local filled<const> = clamp_int((width * clamped + 0.5) // 1, 0, width)
 	return '[' .. string.rep('#', filled) .. string.rep('-', width - filled) .. ']'
 end
 

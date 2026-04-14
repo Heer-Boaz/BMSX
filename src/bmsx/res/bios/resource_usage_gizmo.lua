@@ -29,12 +29,12 @@ local usage_color<const> = function(ratio)
 end
 
 local usage_percent<const> = function(used, total)
-	return math.modf(((used * 100) / total) + 0.5)
+	return (((used * 100) / total) + 0.5) // 1
 end
 
 local draw_usage_bar<const> = function(label, used, total, x, y, z, font_id, fill_color_override)
 	local ratio<const> = clamp_int(used / total, 0, 1)
-	local fill_w<const> = math.modf(bar_w * ratio)
+	local fill_w<const> = (bar_w * ratio) // 1
 	local pct<const> = usage_percent(used, total)
 	local text_y<const> = y + 1
 	local text_z<const> = z + 2
@@ -68,7 +68,7 @@ function gizmo.draw()
 	end
 
 	local vdp_work_last<const> = sys_vdp_work_units_last()
-	local vdp_budget<const> = math.max(1, math.modf(((sys_vdp_work_units_per_sec() * 1000000) / machine_manifest.ufps) + 0.5))
+	local vdp_budget<const> = math.max(1, (((sys_vdp_work_units_per_sec() * 1000000) / machine_manifest.ufps) + 0.5) // 1)
 	local vdp_held<const> = sys_vdp_frame_held() ~= 0
 	local vdp_fill_color
 
