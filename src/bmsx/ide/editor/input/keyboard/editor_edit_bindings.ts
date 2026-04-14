@@ -7,12 +7,12 @@ import { applyDocumentFormatting, copySelectionToClipboard, cutLineToClipboard, 
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import { executeEditorCommand } from '../commands/editor_commands';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './key_input';
-import { isInlineFieldFocused } from '../quick_input/editor_quick_input';
+import { isInlineWidgetFocused } from '../../contrib/quick_input/inline_widget';
 import { runEditorKeyHandlers, type EditorKeyHandler } from './editor_binding_utils';
-import { editorFeatureState } from '../../common/editor_feature_state';
+import { editorSearchState } from '../../contrib/find/find_widget_state';
 
 export function handleSearchNavigationKeybinding(): boolean {
-	if (editorFeatureState.search.query.length === 0 || !isKeyJustPressed('F3')) {
+	if (editorSearchState.query.length === 0 || !isKeyJustPressed('F3')) {
 		return false;
 	}
 	consumeIdeKey('F3');
@@ -172,7 +172,7 @@ function handleUnindentBinding(): boolean {
 }
 
 export function handleCodeFormattingKeybinding(): boolean {
-	if (!isCodeTabActive() || editorFeatureState.search.active || isInlineFieldFocused()) {
+	if (!isCodeTabActive() || editorSearchState.active || isInlineWidgetFocused()) {
 		return false;
 	}
 	if (!isAltDown() || !isShiftDown() || isCtrlDown() || isMetaDown() || !isKeyJustPressed('KeyF')) {

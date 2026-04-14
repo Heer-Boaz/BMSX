@@ -10,7 +10,7 @@ import { revealCursor } from '../../ui/caret';
 import { closeSymbolSearch } from '../symbols/symbol_search_shared';
 import { editorCaretState } from '../../ui/caret_state';
 import { editorDocumentState } from '../../editing/editor_document_state';
-import { editorFeatureState } from '../../common/editor_feature_state';
+import { createResourceState } from '../../../workbench/contrib/resources/resource_widget_state';
 
 export function openRenamePrompt(): void {
 	if (!isEditableCodeTab()) {
@@ -21,7 +21,7 @@ export function openRenamePrompt(): void {
 	closeLineJump(false);
 	closeResourceSearch(false);
 	closeSymbolSearch(false);
-	editorFeatureState.createResource.active = false;
+	createResourceState.active = false;
 	const context = getActiveCodeTabContext();
 	if (context.mode !== 'lua') {
 		return;

@@ -8,7 +8,8 @@ import { consumeIdeKey, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer
 import { resourceSearchWindowCapacity } from '../../ui/editor_view';
 import { ensureResourceSearchSelectionVisible, moveResourceSearchSelection, updateResourceSearchMatches } from '../../../workbench/contrib/resources/resource_search_catalog';
 import { openGlobalSymbolSearch, openSymbolSearch } from '../../contrib/symbols/symbol_search';
-import { editorFeatureState } from '../../common/editor_feature_state';
+import { lineJumpState } from '../../contrib/find/find_widget_state';
+import { resourceSearchState } from '../../../workbench/contrib/resources/resource_widget_state';
 
 export function handleResourceSearchInput(): void {
 	const shiftDown = isShiftDown();
@@ -19,11 +20,11 @@ export function handleResourceSearchInput(): void {
 			moveResourceSearchSelection(-1);
 			return;
 		}
-		if (editorFeatureState.resourceSearch.selectionIndex >= 0) {
-			applyResourceSearchSelection(editorFeatureState.resourceSearch.selectionIndex);
+		if (resourceSearchState.selectionIndex >= 0) {
+			applyResourceSearchSelection(resourceSearchState.selectionIndex);
 			return;
 		}
-		const trimmed = editorFeatureState.resourceSearch.query.trim();
+		const trimmed = resourceSearchState.query.trim();
 		if (trimmed.length === 0) {
 			closeResourceSearch(true);
 			focusEditorFromResourceSearch();
@@ -60,44 +61,44 @@ export function handleResourceSearchInput(): void {
 	}
 	if (isKeyJustPressed('Home')) {
 		consumeIdeKey('Home');
-		editorFeatureState.resourceSearch.selectionIndex = editorFeatureState.resourceSearch.matches.length > 0 ? 0 : -1;
+		resourceSearchState.selectionIndex = resourceSearchState.matches.length > 0 ? 0 : -1;
 		ensureResourceSearchSelectionVisible();
 		return;
 	}
 	if (isKeyJustPressed('End')) {
 		consumeIdeKey('End');
-		editorFeatureState.resourceSearch.selectionIndex = editorFeatureState.resourceSearch.matches.length > 0 ? editorFeatureState.resourceSearch.matches.length - 1 : -1;
+		resourceSearchState.selectionIndex = resourceSearchState.matches.length > 0 ? resourceSearchState.matches.length - 1 : -1;
 		ensureResourceSearchSelectionVisible();
 		return;
 	}
-	const textChanged = applyInlineFieldEditing(editorFeatureState.resourceSearch.field, {
+	const textChanged = applyInlineFieldEditing(resourceSearchState.field, {
 		allowSpace: true,
 		characterFilter: undefined,
 		maxLength: null,
 	});
-	editorFeatureState.resourceSearch.query = textFromLines(editorFeatureState.resourceSearch.field.lines);
+	resourceSearchState.query = textFromLines(resourceSearchState.field.lines);
 	if (!textChanged) {
 		return;
 	}
-	if (editorFeatureState.resourceSearch.query.startsWith('@')) {
-		const query = editorFeatureState.resourceSearch.query.slice(1).trimStart();
+	if (resourceSearchState.query.startsWith('@')) {
+		const query = resourceSearchState.query.slice(1).trimStart();
 		closeResourceSearch(true);
 		openSymbolSearch(query);
 		return;
 	}
-	if (editorFeatureState.resourceSearch.query.startsWith('#')) {
-		const query = editorFeatureState.resourceSearch.query.slice(1).trimStart();
+	if (resourceSearchState.query.startsWith('#')) {
+		const query = resourceSearchState.query.slice(1).trimStart();
 		closeResourceSearch(true);
 		openGlobalSymbolSearch(query);
 		return;
 	}
-	if (editorFeatureState.resourceSearch.query.startsWith(':')) {
-		const query = editorFeatureState.resourceSearch.query.slice(1).trimStart();
+	if (resourceSearchState.query.startsWith(':')) {
+		const query = resourceSearchState.query.slice(1).trimStart();
 		closeResourceSearch(true);
 		openLineJump();
 		if (query.length > 0) {
 			applyLineJumpFieldText(query, true);
-			editorFeatureState.lineJump.value = query;
+			lineJumpState.value = query;
 		}
 		return;
 	}

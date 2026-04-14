@@ -7,44 +7,44 @@ import { focusEditorFromSearch } from '../../../editor/contrib/find/editor_searc
 import { focusEditorFromLineJump } from '../../../editor/contrib/find/line_jump';
 import { listResources } from '../../../../emulator/workspace';
 import { editorCaretState } from '../../../editor/ui/caret_state';
-import { editorFeatureState } from '../../../editor/common/editor_feature_state';
 import { renameController } from '../../../editor/contrib/rename/rename_controller';
+import { createResourceState } from './resource_widget_state';
 
 export function openCreateResourcePrompt(): void {
-	if (editorFeatureState.createResource.working) {
+	if (createResourceState.working) {
 		return;
 	}
 	resourcePanel.setFocused(false);
 	renameController.cancel();
-	let defaultPath = editorFeatureState.createResource.path.length === 0
+	let defaultPath = createResourceState.path.length === 0
 		? determineCreateResourceDefaultPath()
-		: editorFeatureState.createResource.path;
+		: createResourceState.path;
 	if (defaultPath.length > constants.CREATE_RESOURCE_MAX_PATH_LENGTH) {
 		defaultPath = defaultPath.slice(defaultPath.length - constants.CREATE_RESOURCE_MAX_PATH_LENGTH);
 	}
 	applyCreateResourceFieldText(defaultPath, true);
-	editorFeatureState.createResource.visible = true;
-	editorFeatureState.createResource.active = true;
-	editorFeatureState.createResource.error = null;
+	createResourceState.visible = true;
+	createResourceState.active = true;
+	createResourceState.error = null;
 	editorCaretState.cursorVisible = true;
 	resetBlink();
 }
 
 export function closeCreateResourcePrompt(focusEditor: boolean): void {
-	editorFeatureState.createResource.active = false;
-	editorFeatureState.createResource.visible = false;
-	editorFeatureState.createResource.working = false;
+	createResourceState.active = false;
+	createResourceState.visible = false;
+	createResourceState.working = false;
 	if (focusEditor) {
 		focusEditorFromSearch();
 		focusEditorFromLineJump();
 	}
 	applyCreateResourceFieldText('', true);
-	editorFeatureState.createResource.error = null;
+	createResourceState.error = null;
 	resetBlink();
 }
 
 export function determineCreateResourceDefaultPath(): string {
-	const lastDirectory = editorFeatureState.createResource.lastDirectory;
+	const lastDirectory = createResourceState.lastDirectory;
 	if (lastDirectory.length > 0) {
 		return lastDirectory;
 	}
@@ -74,6 +74,6 @@ export function ensureDirectorySuffix(path: string): string {
 }
 
 export function applyCreateResourceFieldText(value: string, moveCursorToEnd: boolean): void {
-	editorFeatureState.createResource.path = value;
-	setFieldText(editorFeatureState.createResource.field, value, moveCursorToEnd);
+	createResourceState.path = value;
+	setFieldText(createResourceState.field, value, moveCursorToEnd);
 }

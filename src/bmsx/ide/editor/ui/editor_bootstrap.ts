@@ -15,6 +15,8 @@ import type { Viewport } from '../../../rompack/rompack';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorViewState } from './editor_view_state';
 import { editorFeatureState } from '../common/editor_feature_state';
+import { editorSearchState, lineJumpState } from '../contrib/find/find_widget_state';
+import { symbolSearchState } from '../contrib/symbols/symbol_search_state';
 import {
 	applyViewportSize,
 	configureFontVariant,
@@ -28,6 +30,7 @@ import { initializeNavigationState } from '../navigation/navigation_history';
 import { applySymbolSearchFieldText } from '../contrib/symbols/symbol_search_shared';
 import { editorRuntimeState } from '../common/editor_runtime_state';
 import { problemsPanel } from '../../workbench/contrib/problems/problems_panel';
+import { createResourceState, resourceSearchState } from '../../workbench/contrib/resources/resource_widget_state';
 
 export function initializeCartEditor(viewport: Viewport): void {
 	initializeDebuggerUiState();
@@ -42,17 +45,17 @@ export function initializeCartEditor(viewport: Viewport): void {
 	editorRuntimeState.clockNow = $.platform.clock.now;
 	resetSemanticWorkspace();
 	configureFontVariant(editorViewState.fontVariant);
-	editorFeatureState.search.field = createInlineTextField();
-	editorFeatureState.symbolSearch.field = createInlineTextField();
-	editorFeatureState.resourceSearch.field = createInlineTextField();
-	editorFeatureState.lineJump.field = createInlineTextField();
-	editorFeatureState.createResource.field = createInlineTextField();
+	editorSearchState.field = createInlineTextField();
+	symbolSearchState.field = createInlineTextField();
+	resourceSearchState.field = createInlineTextField();
+	lineJumpState.field = createInlineTextField();
+	createResourceState.field = createInlineTextField();
 	initializeWorkspaceStorage($.cart_project_root_path);
-	applySearchFieldText(editorFeatureState.search.query, true);
-	applySymbolSearchFieldText(editorFeatureState.symbolSearch.query, true);
-	applyResourceSearchFieldText(editorFeatureState.resourceSearch.query, true);
-	applyLineJumpFieldText(editorFeatureState.lineJump.value, true);
-	applyCreateResourceFieldText(editorFeatureState.createResource.path, true);
+	applySearchFieldText(editorSearchState.query, true);
+	applySymbolSearchFieldText(symbolSearchState.query, true);
+	applyResourceSearchFieldText(resourceSearchState.query, true);
+	applyLineJumpFieldText(lineJumpState.value, true);
+	applyCreateResourceFieldText(createResourceState.path, true);
 	editorViewState.scrollbars = {
 		codeVertical: new Scrollbar('codeVertical', 'vertical'),
 		codeHorizontal: new Scrollbar('codeHorizontal', 'horizontal'),

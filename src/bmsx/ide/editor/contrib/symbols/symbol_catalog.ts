@@ -6,7 +6,7 @@ import { showEditorMessage } from '../../../workbench/common/feedback_state';
 import { listGlobalLuaSymbols, listLuaSymbols } from '../intellisense/intellisense';
 import { symbolKindLabel } from '../intellisense/semantic_model';
 import { extractErrorMessage } from '../../../../lua/luavalue';
-import { editorFeatureState } from '../../common/editor_feature_state';
+import { symbolSearchState } from './symbol_search_state';
 
 export function symbolCatalogDedupKey(entry: LuaSymbolEntry): string {
 	const { location, kind, name } = entry;
@@ -27,13 +27,13 @@ export function symbolSourceLabel(entry: LuaSymbolEntry): string | null {
 }
 
 export function refreshSymbolCatalog(force: boolean): void {
-	const scope: 'local' | 'global' = editorFeatureState.symbolSearch.global ? 'global' : 'local';
+	const scope: 'local' | 'global' = symbolSearchState.global ? 'global' : 'local';
 	let path: string = null;
 	if (scope === 'local') {
 		const context = getActiveCodeTabContext();
 		path = context.descriptor.path;
 	}
-	const existing = editorFeatureState.symbolSearch.catalogContext;
+	const existing = symbolSearchState.catalogContext;
 	const unchanged = existing !== null
 		&& existing.scope === scope
 		&& (scope === 'global' || existing.path === path);
@@ -47,15 +47,15 @@ export function refreshSymbolCatalog(force: boolean): void {
 			: listLuaSymbols(path);
 	} catch (error) {
 		const message = extractErrorMessage(error);
-		editorFeatureState.symbolSearch.catalog = [];
-		editorFeatureState.symbolSearch.matches = [];
-		editorFeatureState.symbolSearch.selectionIndex = -1;
-		editorFeatureState.symbolSearch.displayOffset = 0;
-		editorFeatureState.symbolSearch.hoverIndex = -1;
+		symbolSearchState.catalog = [];
+		symbolSearchState.matches = [];
+		symbolSearchState.selectionIndex = -1;
+		symbolSearchState.displayOffset = 0;
+		symbolSearchState.hoverIndex = -1;
 		showEditorMessage(`Failed to list symbols: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
-	editorFeatureState.symbolSearch.catalogContext = { scope, path };
+	symbolSearchState.catalogContext = { scope, path };
 	const deduped: LuaSymbolEntry[] = [];
 	const seen = new Set<string>();
 	for (let index = 0; index < entries.length; index += 1) {
@@ -96,5 +96,5 @@ export function refreshSymbolCatalog(force: boolean): void {
 		}
 		return a.sourceLabel.localeCompare(b.sourceLabel);
 	});
-	editorFeatureState.symbolSearch.catalog = catalogEntries;
+	symbolSearchState.catalog = catalogEntries;
 }

@@ -8,33 +8,33 @@ import { createLuaResource } from '../../../../emulator/workspace';
 import { extractErrorMessage } from '../../../../lua/luavalue';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt, ensureDirectorySuffix } from './create_resource';
 import { editorSessionState } from '../../../editor/ui/editor_session_state';
-import { editorFeatureState } from '../../../editor/common/editor_feature_state';
+import { createResourceState } from './resource_widget_state';
 
 export async function confirmCreateResourcePrompt(): Promise<void> {
-	if (editorFeatureState.createResource.working) {
+	if (createResourceState.working) {
 		return;
 	}
 	let resourcePath: string;
 	let directory: string;
 	try {
-		const result = parseCreateResourceRequest(editorFeatureState.createResource.path);
+		const result = parseCreateResourceRequest(createResourceState.path);
 		resourcePath = result.path;
 		directory = result.directory;
 		applyCreateResourceFieldText(resourcePath, true);
-		editorFeatureState.createResource.error = null;
+		createResourceState.error = null;
 	} catch (error) {
 		const message = extractErrorMessage(error);
-		editorFeatureState.createResource.error = message;
+		createResourceState.error = message;
 		showEditorMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
 		resetBlink();
 		return;
 	}
-	editorFeatureState.createResource.working = true;
+	createResourceState.working = true;
 	resetBlink();
 	const contents = constants.DEFAULT_NEW_LUA_RESOURCE_CONTENT;
 	try {
 		const descriptor = await createLuaResource({ path: resourcePath, contents });
-		editorFeatureState.createResource.lastDirectory = directory;
+		createResourceState.lastDirectory = directory;
 		editorSessionState.pendingResourceSelectionAssetId = descriptor.asset_id;
 		if (resourcePanel.isVisible()) {
 			refreshResourcePanelContents();
@@ -45,10 +45,10 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 	} catch (error) {
 		const message = extractErrorMessage(error);
 		const simplified = message.replace(/^\[Runtime\]\s*/, '');
-		editorFeatureState.createResource.error = simplified;
+		createResourceState.error = simplified;
 		showEditorMessage(`Failed to create resource: ${simplified}`, constants.COLOR_STATUS_WARNING, 4.0);
 	} finally {
-		editorFeatureState.createResource.working = false;
+		createResourceState.working = false;
 		resetBlink();
 	}
 }

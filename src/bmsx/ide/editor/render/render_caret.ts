@@ -9,10 +9,11 @@ import { textFromLines } from '../text/source_text';
 import { resetBlinkState } from '../ui/caret_blink';
 import { editorCaretState } from '../ui/caret_state';
 import { editorViewState } from '../ui/editor_view_state';
-import { editorFeatureState } from '../common/editor_feature_state';
 import { editorRuntimeState } from '../common/editor_runtime_state';
 import { problemsPanel } from '../../workbench/contrib/problems/problems_panel';
 import { resourcePanel } from '../../workbench/contrib/resources/resource_panel_controller';
+import { editorSearchState, lineJumpState } from '../contrib/find/find_widget_state';
+import { createResourceState } from '../../workbench/contrib/resources/resource_widget_state';
 
 export function drawInlineCaret(
 	api: Api,
@@ -61,7 +62,7 @@ export function drawCursor(info: CursorScreenInfo, textX: number): void {
 	const caretTop = cursorY;
 	const caretBottom = caretTop + info.height;
 	const problemsPanelHasFocus = problemsPanel.isVisible && problemsPanel.isFocused;
-	const active = !(editorFeatureState.search.active || editorFeatureState.lineJump.active || resourcePanel.isFocused() || editorFeatureState.createResource.active || problemsPanelHasFocus);
+	const active = !(editorSearchState.active || lineJumpState.active || resourcePanel.isFocused() || createResourceState.active || problemsPanelHasFocus);
 	const caretGlyph = getCaretGlyphForDisplay(info.baseChar, info.baseColor);
 	const caretValue = BmsxColors[constants.CARET_COLOR];
 	if (active) {

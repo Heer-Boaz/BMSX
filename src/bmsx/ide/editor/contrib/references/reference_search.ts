@@ -8,6 +8,7 @@ import { applySymbolSearchFieldText, closeSymbolSearch, ensureSymbolSearchSelect
 import { resolveReferenceLookup } from './reference_lookup';
 import { editorDocumentState } from '../../editing/editor_document_state';
 import { editorFeatureState } from '../../common/editor_feature_state';
+import { symbolSearchState } from '../symbols/symbol_search_state';
 import {
 	type ReferenceCatalogEntry,
 	type ReferenceSymbolEntry,
@@ -19,7 +20,7 @@ export function openReferenceSearchPopup(): void {
 	if (context.mode !== 'lua') {
 		return;
 	}
-	if (editorFeatureState.symbolSearch.visible || editorFeatureState.symbolSearch.active) {
+	if (symbolSearchState.visible || symbolSearchState.active) {
 		closeSymbolSearch(false);
 	}
 	renameController.cancel();
@@ -37,34 +38,34 @@ export function openReferenceSearchPopup(): void {
 	}
 	const { info, initialIndex } = result;
 	editorFeatureState.referenceState.apply(info, initialIndex);
-	editorFeatureState.symbolSearch.referenceCatalog = buildReferenceSearchCatalog(info, context);
-	if (editorFeatureState.symbolSearch.referenceCatalog.length === 0) {
+	symbolSearchState.referenceCatalog = buildReferenceSearchCatalog(info, context);
+	if (symbolSearchState.referenceCatalog.length === 0) {
 		showEditorMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
 		return;
 	}
-	editorFeatureState.symbolSearch.mode = 'references';
-	editorFeatureState.symbolSearch.global = true;
-	editorFeatureState.symbolSearch.visible = true;
-	editorFeatureState.symbolSearch.active = true;
+	symbolSearchState.mode = 'references';
+	symbolSearchState.global = true;
+	symbolSearchState.visible = true;
+	symbolSearchState.active = true;
 	applySymbolSearchFieldText('', true);
-	editorFeatureState.symbolSearch.query = '';
+	symbolSearchState.query = '';
 	updateReferenceSearchMatches();
-	editorFeatureState.symbolSearch.hoverIndex = -1;
+	symbolSearchState.hoverIndex = -1;
 	ensureSymbolSearchSelectionVisible();
 	resetBlink();
 	showReferenceSearchStatusMessage();
 }
 
 export function applyReferenceSearchSelection(index: number): void {
-	if (index < 0 || index >= editorFeatureState.symbolSearch.matches.length) {
+	if (index < 0 || index >= symbolSearchState.matches.length) {
 		showEditorMessage('Symbol not found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
-	const match = editorFeatureState.symbolSearch.matches[index];
+	const match = symbolSearchState.matches[index];
 	const referenceEntry = match.entry as ReferenceCatalogEntry;
 	const symbol = referenceEntry.symbol as ReferenceSymbolEntry;
-	const entryIndex = editorFeatureState.symbolSearch.referenceCatalog.indexOf(referenceEntry);
-	const total = editorFeatureState.symbolSearch.referenceCatalog.length;
+	const entryIndex = symbolSearchState.referenceCatalog.indexOf(referenceEntry);
+	const total = symbolSearchState.referenceCatalog.length;
 	const expressionLabel = editorFeatureState.referenceState.getExpression() ?? symbol.name;
 	closeSymbolSearch(true);
 	editorFeatureState.referenceState.clear();

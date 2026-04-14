@@ -3,7 +3,7 @@ import { resolveContextMenuToken } from '../../../editor/contrib/intellisense/in
 import { buildEditorContextMenuEntries } from '../../contrib/context_menu/context_menu_entries';
 import { editorContextMenuState } from '../../contrib/context_menu/context_menu_state';
 import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from '../../../editor/ui/editor_view';
-import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from '../../render/render_context_menu';
+import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from '../../contrib/context_menu/context_menu_widget';
 import { executeEditorContextMenuAction } from '../../contrib/context_menu/context_menu_actions';
 import type { PointerSnapshot } from '../../../common/types';
 

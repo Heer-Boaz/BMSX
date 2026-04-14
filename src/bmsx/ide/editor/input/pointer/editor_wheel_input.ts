@@ -16,6 +16,7 @@ import { editorCaretState } from '../../ui/caret_state';
 import { intellisenseUiState } from '../../contrib/intellisense/intellisense_ui_state';
 import { editorViewState } from '../../ui/editor_view_state';
 import { editorFeatureState } from '../../common/editor_feature_state';
+import { resourceSearchState } from '../../../workbench/contrib/resources/resource_widget_state';
 
 export function handleEditorWheelInput(): void {
 	const playerInput = $.input.getPlayerInput(1);
@@ -95,14 +96,14 @@ function handleResourceSearchWheel(
 	activePointer: PointerSnapshot,
 	playerInput: ReturnType<typeof $.input.getPlayerInput>
 ): boolean {
-	if (!editorFeatureState.resourceSearch.visible) {
+	if (!resourceSearchState.visible) {
 		return false;
 	}
 	const bounds = getResourceSearchBarBounds();
 	const pointerInQuickOpen = bounds !== null
 		&& activePointer !== null
 		&& point_in_rect(activePointer.viewportX, activePointer.viewportY, bounds);
-	if (!pointerInQuickOpen && !editorFeatureState.resourceSearch.active) {
+	if (!pointerInQuickOpen && !resourceSearchState.active) {
 		return false;
 	}
 	moveResourceSearchSelection(direction * steps);

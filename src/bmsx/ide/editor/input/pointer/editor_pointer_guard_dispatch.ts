@@ -1,8 +1,7 @@
 import { isResourceViewActive } from '../../../workbench/ui/tabs';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import type { PointerSnapshot } from '../../../common/types';
-import { handleActionPromptPointer } from '../overlays/action_prompt';
-import { actionPromptState } from '../overlays/action_prompt_state';
+import { handleBlockingWorkbenchModalPointer, hasBlockingWorkbenchModal } from '../../../workbench/contrib/modal/blocking_modal';
 import { editorPointerState, resetPointerClickTracking } from './editor_pointer_state';
 
 export function handleEditorPointerGuards(snapshot: PointerSnapshot, justPressed: boolean): boolean {
@@ -14,12 +13,12 @@ export function handleEditorPointerGuards(snapshot: PointerSnapshot, justPressed
 		clearGotoHoverHighlight();
 		return true;
 	}
-	if (!actionPromptState.prompt) {
+	if (!hasBlockingWorkbenchModal()) {
 		return false;
 	}
 	resetPointerClickTracking();
 	if (justPressed) {
-		handleActionPromptPointer(snapshot);
+		handleBlockingWorkbenchModalPointer(snapshot);
 	}
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;

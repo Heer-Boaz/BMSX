@@ -390,7 +390,7 @@ export type ActionPromptLayout = {
 
 export type ActionPromptState = {
 	action: ActionPromptAction;
-	layout: ActionPromptLayout;
+	layout: ActionPromptLayout | null;
 };
 
 export type EditorContextTokenKind = 'identifier' | 'keyword' | 'number' | 'string' | 'operator';

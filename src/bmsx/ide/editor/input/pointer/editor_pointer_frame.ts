@@ -6,7 +6,9 @@ import { updateTabHoverState } from '../../../workbench/input/pointer/tab_bar_po
 import type { PointerSnapshot } from '../../../common/types';
 import { editorPointerState } from './editor_pointer_state';
 import { editorViewState } from '../../ui/editor_view_state';
-import { editorFeatureState } from '../../common/editor_feature_state';
+import { editorSearchState, lineJumpState } from '../../contrib/find/find_widget_state';
+import { symbolSearchState } from '../../contrib/symbols/symbol_search_state';
+import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/resource_widget_state';
 
 export function readEditorPointerSnapshot(): PointerSnapshot {
 	const playerInput = $.input.getPlayerInput(1);
@@ -54,13 +56,13 @@ export function prepareEditorPointerFrame(snapshot: PointerSnapshot, gotoModifie
 		}
 	}
 	if (!snapshot.primaryPressed) {
-		editorFeatureState.search.field.pointerSelecting = false;
-		editorFeatureState.symbolSearch.field.pointerSelecting = false;
-		editorFeatureState.resourceSearch.field.pointerSelecting = false;
-		editorFeatureState.lineJump.field.pointerSelecting = false;
-		editorFeatureState.createResource.field.pointerSelecting = false;
-		editorFeatureState.symbolSearch.hoverIndex = -1;
-		editorFeatureState.resourceSearch.hoverIndex = -1;
+		editorSearchState.field.pointerSelecting = false;
+		symbolSearchState.field.pointerSelecting = false;
+		resourceSearchState.field.pointerSelecting = false;
+		lineJumpState.field.pointerSelecting = false;
+		createResourceState.field.pointerSelecting = false;
+		symbolSearchState.hoverIndex = -1;
+		resourceSearchState.hoverIndex = -1;
 	}
 	return false;
 }

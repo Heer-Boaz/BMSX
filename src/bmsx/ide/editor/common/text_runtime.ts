@@ -11,9 +11,9 @@ import { buildDirtyFilePath } from '../../workbench/common/workspace_storage';
 import { getWorkspaceCachedSource } from '../../../emulator/workspace_cache';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorViewState } from '../ui/editor_view_state';
-import { editorFeatureState } from './editor_feature_state';
 import { editorRuntimeState } from './editor_runtime_state';
 import { applyCaseOutsideStrings } from '../../common/text_utils';
+import { editorSearchState } from '../contrib/find/find_widget_state';
 
 export function normalizeCaseOutsideStrings(text: string): string {
 	if (!editorRuntimeState.caseInsensitive || editorRuntimeState.canonicalization === 'none') {
@@ -65,7 +65,7 @@ export function markTextMutated(): void {
 	requestSemanticRefresh();
 	clearForwardNavigationHistory();
 	handlePostEditMutation();
-	if (editorFeatureState.search.query.length > 0) startSearchJob();
+	if (editorSearchState.query.length > 0) startSearchJob();
 }
 
 export function getSourceForChunk(path: string): string {

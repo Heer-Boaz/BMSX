@@ -5,7 +5,7 @@ import { clampQuickInputDisplayOffset, advanceQuickInputSelection } from '../../
 import { resetBlink } from '../../../editor/render/render_caret';
 import { resourceSearchWindowCapacity } from '../../../editor/ui/editor_view';
 import { $ } from '../../../../core/engine_core';
-import { editorFeatureState } from '../../../editor/common/editor_feature_state';
+import { resourceSearchState } from './resource_widget_state';
 
 export function refreshResourceCatalog(): void {
 	try {
@@ -25,7 +25,7 @@ export function refreshResourceCatalog(): void {
 			}
 			augmented.push({ path: `atlas/${key}`, type: 'atlas', asset_id: key });
 		}
-		editorFeatureState.resourceSearch.catalog = augmented.map((descriptor) => {
+		resourceSearchState.catalog = augmented.map((descriptor) => {
 			const displayPathSource = descriptor.path.length > 0 ? descriptor.path : (descriptor.asset_id ?? '');
 			const displayPath = displayPathSource.length > 0 ? displayPathSource : '<unnamed>';
 			const typeLabel = descriptor.type ? descriptor.type.toUpperCase() : '';
@@ -42,33 +42,33 @@ export function refreshResourceCatalog(): void {
 				assetLabel,
 			};
 		});
-		editorFeatureState.resourceSearch.catalog.sort((a, b) => a.displayPath.localeCompare(b.displayPath));
+		resourceSearchState.catalog.sort((a, b) => a.displayPath.localeCompare(b.displayPath));
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		editorFeatureState.resourceSearch.catalog = [];
-		editorFeatureState.resourceSearch.matches = [];
-		editorFeatureState.resourceSearch.selectionIndex = -1;
-		editorFeatureState.resourceSearch.displayOffset = 0;
-		editorFeatureState.resourceSearch.hoverIndex = -1;
+		resourceSearchState.catalog = [];
+		resourceSearchState.matches = [];
+		resourceSearchState.selectionIndex = -1;
+		resourceSearchState.displayOffset = 0;
+		resourceSearchState.hoverIndex = -1;
 		showEditorMessage(`Failed to list resources: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 	}
 }
 
 export function updateResourceSearchMatches(): void {
-	editorFeatureState.resourceSearch.matches = [];
-	editorFeatureState.resourceSearch.selectionIndex = -1;
-	editorFeatureState.resourceSearch.displayOffset = 0;
-	editorFeatureState.resourceSearch.hoverIndex = -1;
-	if (editorFeatureState.resourceSearch.catalog.length === 0) {
+	resourceSearchState.matches = [];
+	resourceSearchState.selectionIndex = -1;
+	resourceSearchState.displayOffset = 0;
+	resourceSearchState.hoverIndex = -1;
+	if (resourceSearchState.catalog.length === 0) {
 		return;
 	}
-	const query = editorFeatureState.resourceSearch.query.trim().toLowerCase();
+	const query = resourceSearchState.query.trim().toLowerCase();
 	if (query.length === 0) {
-		editorFeatureState.resourceSearch.matches = editorFeatureState.resourceSearch.catalog.map(entry => ({ entry, matchIndex: 0 }));
+		resourceSearchState.matches = resourceSearchState.catalog.map(entry => ({ entry, matchIndex: 0 }));
 		return;
 	}
 	const tokens = query.split(/\s+/).filter(token => token.length > 0);
-	const matches = editorFeatureState.resourceSearch.catalog
+	const matches = resourceSearchState.catalog
 		.filter((entry) => {
 			for (const token of tokens) {
 				if (entry.searchKey.indexOf(token) === -1) {
@@ -99,29 +99,29 @@ export function updateResourceSearchMatches(): void {
 		}
 		return a.entry.displayPath.localeCompare(b.entry.displayPath);
 	});
-	editorFeatureState.resourceSearch.matches = matches;
-	editorFeatureState.resourceSearch.selectionIndex = 0;
+	resourceSearchState.matches = matches;
+	resourceSearchState.selectionIndex = 0;
 }
 
 export function ensureResourceSearchSelectionVisible(): void {
-	editorFeatureState.resourceSearch.displayOffset = clampQuickInputDisplayOffset(
-		editorFeatureState.resourceSearch.selectionIndex,
-		editorFeatureState.resourceSearch.displayOffset,
-		editorFeatureState.resourceSearch.matches.length,
+	resourceSearchState.displayOffset = clampQuickInputDisplayOffset(
+		resourceSearchState.selectionIndex,
+		resourceSearchState.displayOffset,
+		resourceSearchState.matches.length,
 		Math.max(1, resourceSearchWindowCapacity())
 	);
 }
 
 export function moveResourceSearchSelection(delta: number): void {
 	const next = advanceQuickInputSelection(
-		editorFeatureState.resourceSearch.selectionIndex,
-		editorFeatureState.resourceSearch.matches.length,
+		resourceSearchState.selectionIndex,
+		resourceSearchState.matches.length,
 		delta
 	);
-	if (next === editorFeatureState.resourceSearch.selectionIndex) {
+	if (next === resourceSearchState.selectionIndex) {
 		return;
 	}
-	editorFeatureState.resourceSearch.selectionIndex = next;
+	resourceSearchState.selectionIndex = next;
 	ensureResourceSearchSelectionVisible();
 	resetBlink();
 }

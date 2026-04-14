@@ -3,26 +3,26 @@ import { closeSearch, processInlineFieldPointer } from '../../contrib/find/edito
 import { getLineJumpBarBounds } from '../../ui/editor_view';
 import type { PointerSnapshot } from '../../../common/types';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from './editor_quick_input_pointer_common';
-import { editorFeatureState } from '../../common/editor_feature_state';
+import { lineJumpState } from '../../contrib/find/find_widget_state';
 
 export function handleLineJumpPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const bounds = getLineJumpBarBounds();
-	if (!editorFeatureState.lineJump.visible || !bounds) {
+	if (!lineJumpState.visible || !bounds) {
 		return false;
 	}
 	const insideBar = point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
 	if (!insideBar) {
 		if (justPressed) {
-			editorFeatureState.lineJump.active = false;
+			lineJumpState.active = false;
 		}
 		return false;
 	}
 	if (justPressed) {
 		closeSearch(false, true);
-		editorFeatureState.lineJump.active = true;
+		lineJumpState.active = true;
 		activateQuickInputField();
 	}
-	processInlineFieldPointer(editorFeatureState.lineJump.field, quickInputTextLeft('LINE #:'), snapshot.viewportX, justPressed, snapshot.primaryPressed);
+	processInlineFieldPointer(lineJumpState.field, quickInputTextLeft('LINE #:'), snapshot.viewportX, justPressed, snapshot.primaryPressed);
 	finishQuickInputPointer(snapshot);
 	return true;
 }

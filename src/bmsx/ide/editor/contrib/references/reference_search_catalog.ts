@@ -7,6 +7,7 @@ import { getTextSnapshot, splitText } from '../../text/source_text';
 import { editorDocumentState } from '../../editing/editor_document_state';
 import { editorSessionState } from '../../ui/editor_session_state';
 import { editorFeatureState } from '../../common/editor_feature_state';
+import { symbolSearchState } from '../symbols/symbol_search_state';
 import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
 	filterReferenceCatalog,
@@ -34,15 +35,15 @@ export function buildReferenceSearchCatalog(info: ReferenceMatchInfo, context: C
 
 export function updateReferenceSearchMatches(): void {
 	const { matches, selectionIndex, displayOffset } = filterReferenceCatalog({
-		catalog: editorFeatureState.symbolSearch.referenceCatalog,
-		query: editorFeatureState.symbolSearch.query,
+		catalog: symbolSearchState.referenceCatalog,
+		query: symbolSearchState.query,
 		state: editorFeatureState.referenceState,
 		pageSize: symbolSearchPageSize(),
 	});
-	editorFeatureState.symbolSearch.matches = matches;
-	editorFeatureState.symbolSearch.selectionIndex = selectionIndex;
-	editorFeatureState.symbolSearch.displayOffset = displayOffset;
-	editorFeatureState.symbolSearch.hoverIndex = -1;
+	symbolSearchState.matches = matches;
+	symbolSearchState.selectionIndex = selectionIndex;
+	symbolSearchState.displayOffset = displayOffset;
+	symbolSearchState.hoverIndex = -1;
 }
 
 export function showReferenceSearchStatusMessage(): void {

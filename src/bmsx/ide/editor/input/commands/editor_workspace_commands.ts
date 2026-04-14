@@ -1,4 +1,5 @@
 import { activateCodeTab, save } from '../../../workbench/ui/tabs';
+import { showActionPrompt } from '../../../workbench/contrib/modal/action_prompt';
 import { performEditorAction } from './editor_actions';
 import type { EditorCommandId } from './editor_commands';
 import { editorDocumentState } from '../../editing/editor_document_state';
@@ -23,9 +24,16 @@ export function executeEditorWorkspaceCommand(command: EditorWorkspaceCommandId)
 				void save();
 			}
 			return;
-		case 'theme-toggle':
 		case 'hot-resume':
 		case 'reboot':
+			activateCodeTab();
+			if (editorDocumentState.dirty) {
+				showActionPrompt(command);
+				return;
+			}
+			performEditorAction(command);
+			return;
+		case 'theme-toggle':
 			activateCodeTab();
 			performEditorAction(command);
 			return;

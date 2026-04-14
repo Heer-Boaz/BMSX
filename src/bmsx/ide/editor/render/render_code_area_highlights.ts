@@ -5,6 +5,7 @@ import * as constants from '../../common/constants';
 import { api } from '../ui/view/overlay_api';
 import { editorViewState } from '../ui/editor_view_state';
 import { editorFeatureState } from '../common/editor_feature_state';
+import { editorSearchState } from '../contrib/find/find_widget_state';
 
 export function drawHighlightSlice(
 	renderFont: Font,
@@ -62,13 +63,13 @@ export function drawReferenceHighlightsForRow(api: Api, rowIndex: number, entry:
 }
 
 export function drawSearchHighlightsForRow(api: Api, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
-	if (editorFeatureState.search.scope !== 'local' || editorFeatureState.search.matches.length === 0 || editorFeatureState.search.query.length === 0) {
+	if (editorSearchState.scope !== 'local' || editorSearchState.matches.length === 0 || editorSearchState.query.length === 0) {
 		return;
 	}
 	const highlight = entry.hi;
 	const advancePrefix = entry.advancePrefix;
-	for (let i = 0; i < editorFeatureState.search.matches.length; i += 1) {
-		const match = editorFeatureState.search.matches[i];
+	for (let i = 0; i < editorSearchState.matches.length; i += 1) {
+		const match = editorSearchState.matches[i];
 		if (match.row !== rowIndex) {
 			continue;
 		}
@@ -81,7 +82,7 @@ export function drawSearchHighlightsForRow(api: Api, rowIndex: number, entry: Ca
 		}
 		const startX = originX + advancePrefix[visibleStart] - advancePrefix[sliceStartDisplay];
 		const endX = originX + advancePrefix[visibleEnd] - advancePrefix[sliceStartDisplay];
-		const overlay = i === editorFeatureState.search.currentIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
+		const overlay = i === editorSearchState.currentIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
 		api.fill_rect_color(startX, originY, endX, originY + editorViewState.lineHeight, undefined, overlay);
 	}
 }

@@ -4,7 +4,7 @@ import { drawEditorText } from './text_renderer';
 import { drawCreateResourceErrorDialog } from '../../workbench/render/render_resource_panel';
 import { activeSearchMatchCount, getVisibleSearchResultEntries } from '../contrib/find/editor_search';
 import { editorViewState } from '../ui/editor_view_state';
-import { editorFeatureState } from '../common/editor_feature_state';
+import { editorSearchState, lineJumpState } from '../contrib/find/find_widget_state';
 import {
 	getCreateResourceBarBounds,
 	getLineJumpBarBounds,
@@ -25,6 +25,8 @@ import { measureText } from '../common/text_layout';
 import { renderInlineBarField, renderInlineBarFrame } from './render_inline_bar_common';
 import { problemsPanel } from '../../workbench/contrib/problems/problems_panel';
 import { renameController } from '../contrib/rename/rename_controller';
+import { symbolSearchState } from '../contrib/symbols/symbol_search_state';
+import { createResourceState, resourceSearchState } from '../../workbench/contrib/resources/resource_widget_state';
 
 type InlineSearchResultEntry = {
 	primary: string;
@@ -88,10 +90,10 @@ const drawResourceSearchResultRow = (match: InlineResourceSearchResult, rowTop: 
 };
 
 const drawSymbolSearchResultRow = (match: InlineSymbolSearchResult, rowTop: number): void => {
-	const mode = editorFeatureState.symbolSearch.mode ?? 'symbols';
+	const mode = symbolSearchState.mode ?? 'symbols';
 	const compactMode = mode === 'references'
 		? true
-		: (editorFeatureState.symbolSearch.global && isSymbolSearchCompactMode());
+		: (symbolSearchState.global && isSymbolSearchCompactMode());
 	let textX = constants.SYMBOL_SEARCH_RESULT_PADDING_X;
 	const kindText = match.entry.kindLabel;
 	const symbol = match.entry.symbol as { __referenceColumn?: number };
@@ -133,12 +135,12 @@ export function renderCreateResourceBar(): void {
 
 	const blockActiveCarets = problemsPanel.isVisible && problemsPanel.isFocused;
 	const fieldState = renderInlineBarField(
-		editorFeatureState.createResource.field,
+		createResourceState.field,
 		'NEW FILE:',
 		4,
 		bounds.top + constants.CREATE_RESOURCE_BAR_MARGIN_Y,
-		editorFeatureState.createResource.active && !blockActiveCarets,
-		editorFeatureState.createResource.active,
+		createResourceState.active && !blockActiveCarets,
+		createResourceState.active,
 		constants.COLOR_CREATE_RESOURCE_TEXT,
 		'ENTER LUA PATH',
 		constants.COLOR_CREATE_RESOURCE_PLACEHOLDER,
@@ -146,13 +148,13 @@ export function renderCreateResourceBar(): void {
 	);
 
 	// Status or error overlay on the right
-	if (editorFeatureState.createResource.working) {
+	if (createResourceState.working) {
 		const status = 'CREATING...';
 		const statusWidth = measureText(status);
 		const statusX = Math.max(fieldState.textX + fieldState.displayWidth + editorViewState.spaceAdvance, bounds.right - statusWidth - 4);
 		drawEditorText(editorViewState.font, status, statusX, bounds.top + constants.CREATE_RESOURCE_BAR_MARGIN_Y, undefined, constants.COLOR_CREATE_RESOURCE_TEXT);
-	} else if (editorFeatureState.createResource.error && editorFeatureState.createResource.error.length > 0) {
-		drawCreateResourceErrorDialog(editorFeatureState.createResource.error);
+	} else if (createResourceState.error && createResourceState.error.length > 0) {
+		drawCreateResourceErrorDialog(createResourceState.error);
 	}
 }
 
@@ -161,11 +163,11 @@ export function renderSearchBar(): void {
 	if (!bounds) return;
 	renderInlineBarFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_SEARCH_BACKGROUND, constants.COLOR_SEARCH_OUTLINE);
 	const blockActiveCarets = problemsPanel.isVisible && problemsPanel.isFocused;
-	const active = !!editorFeatureState.search.active && !blockActiveCarets;
+	const active = !!editorSearchState.active && !blockActiveCarets;
 	const labelY = bounds.top + constants.SEARCH_BAR_MARGIN_Y;
 	renderInlineBarField(
-		editorFeatureState.search.field,
-		editorFeatureState.search.scope === 'global' ? 'SEARCH ALL:' : 'SEARCH:',
+		editorSearchState.field,
+		editorSearchState.scope === 'global' ? 'SEARCH ALL:' : 'SEARCH:',
 		4,
 		labelY,
 		active,
@@ -178,15 +180,15 @@ export function renderSearchBar(): void {
 
 	const infoX = bounds.right - 4;
 	const total = activeSearchMatchCount();
-	const current = editorFeatureState.search.currentIndex ?? -1;
-	const searchWorking = editorFeatureState.search.scope === 'global'
-		? editorFeatureState.search.globalJob !== null
-		: editorFeatureState.search.job !== null;
+	const current = editorSearchState.currentIndex ?? -1;
+	const searchWorking = editorSearchState.scope === 'global'
+		? editorSearchState.globalJob !== null
+		: editorSearchState.job !== null;
 	if (searchWorking) {
 		const workingText = 'SEARCHING...';
 		const workingWidth = measureText(workingText);
 		drawEditorText(editorViewState.font, workingText, infoX - workingWidth, labelY, undefined, constants.COLOR_SEARCH_TEXT);
-	} else if (total > 0 || (editorFeatureState.search.query && editorFeatureState.search.query.length > 0)) {
+	} else if (total > 0 || (editorSearchState.query && editorSearchState.query.length > 0)) {
 		const infoText = total === 0 ? '0/0' : `${(current >= 0 ? current + 1 : 0)}/${total}`;
 		const infoColor = total === 0 ? constants.COLOR_STATUS_WARNING : constants.COLOR_SEARCH_TEXT;
 		const infoWidth = measureText(infoText);
@@ -203,16 +205,16 @@ export function renderSearchBar(): void {
 	const resultsTop = separatorTop + constants.SEARCH_RESULT_SPACING;
 	const rowHeight = searchResultEntryHeight();
 
-	renderResultList(getVisibleSearchResultEntries(), visible, editorFeatureState.search.displayOffset ?? 0, editorFeatureState.search.displayOffset ?? 0, rowHeight, resultsTop, bounds.right, editorFeatureState.search.currentIndex ?? -1, editorFeatureState.search.hoverIndex ?? -1, drawSearchResultRow);
+	renderResultList(getVisibleSearchResultEntries(), visible, editorSearchState.displayOffset ?? 0, editorSearchState.displayOffset ?? 0, rowHeight, resultsTop, bounds.right, editorSearchState.currentIndex ?? -1, editorSearchState.hoverIndex ?? -1, drawSearchResultRow);
 }
 
 export function renderResourceSearchBar(): void {
 	const bounds = getResourceSearchBarBounds();
 	if (!bounds) return;
 	renderInlineBarFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_QUICK_OPEN_BACKGROUND, constants.COLOR_QUICK_OPEN_OUTLINE);
-	const active = !!editorFeatureState.resourceSearch.active && !problemsPanel.isVisible && !problemsPanel.isFocused;
+	const active = !!resourceSearchState.active && !problemsPanel.isVisible && !problemsPanel.isFocused;
 	renderInlineBarField(
-		editorFeatureState.resourceSearch.field,
+		resourceSearchState.field,
 		'FILE :',
 		4,
 		bounds.top + constants.QUICK_OPEN_BAR_MARGIN_Y,
@@ -232,19 +234,19 @@ export function renderResourceSearchBar(): void {
 	const resultsTop = separatorTop + constants.QUICK_OPEN_RESULT_SPACING;
 	const rowHeight = resourceSearchEntryHeight();
 
-	renderResultList(editorFeatureState.resourceSearch.matches, visible, editorFeatureState.resourceSearch.displayOffset ?? 0, 0, rowHeight, resultsTop, bounds.right, editorFeatureState.resourceSearch.selectionIndex ?? -1, editorFeatureState.resourceSearch.hoverIndex ?? -1, drawResourceSearchResultRow);
+	renderResultList(resourceSearchState.matches, visible, resourceSearchState.displayOffset ?? 0, 0, rowHeight, resultsTop, bounds.right, resourceSearchState.selectionIndex ?? -1, resourceSearchState.hoverIndex ?? -1, drawResourceSearchResultRow);
 }
 
 export function renderSymbolSearchBar(): void {
 	const bounds = getSymbolSearchBarBounds();
 	if (!bounds) return;
 	renderInlineBarFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_SYMBOL_SEARCH_BACKGROUND, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
-	const mode = editorFeatureState.symbolSearch.mode ?? 'symbols';
-	const active = !!editorFeatureState.symbolSearch.active;
+	const mode = symbolSearchState.mode ?? 'symbols';
+	const active = !!symbolSearchState.active;
 	const placeholder = mode === 'references' ? 'FILTER REFERENCES' : 'TYPE TO FILTER';
 	renderInlineBarField(
-		editorFeatureState.symbolSearch.field,
-		mode === 'references' ? 'REFS :' : editorFeatureState.symbolSearch.global ? 'SYMBOL #:' : 'SYMBOL @:',
+		symbolSearchState.field,
+		mode === 'references' ? 'REFS :' : symbolSearchState.global ? 'SYMBOL #:' : 'SYMBOL @:',
 		4,
 		bounds.top + constants.SYMBOL_SEARCH_BAR_MARGIN_Y,
 		active,
@@ -264,7 +266,7 @@ export function renderSymbolSearchBar(): void {
 	api.fill_rect(bounds.left, separatorTop, bounds.right, separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING, undefined, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
 	const resultsTop = separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING;
 	const entryHeight = symbolSearchEntryHeight();
-	renderResultList(editorFeatureState.symbolSearch.matches, visible, editorFeatureState.symbolSearch.displayOffset ?? 0, 0, entryHeight, resultsTop, bounds.right, editorFeatureState.symbolSearch.selectionIndex ?? -1, editorFeatureState.symbolSearch.hoverIndex ?? -1, drawSymbolSearchResultRow);
+	renderResultList(symbolSearchState.matches, visible, symbolSearchState.displayOffset ?? 0, 0, entryHeight, resultsTop, bounds.right, symbolSearchState.selectionIndex ?? -1, symbolSearchState.hoverIndex ?? -1, drawSymbolSearchResultRow);
 }
 
 function renderResultList<T>(
@@ -344,9 +346,9 @@ export function renderLineJumpBar(): void {
 	const bounds = getLineJumpBarBounds();
 	if (!bounds) return;
 	renderInlineBarFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_LINE_JUMP_BACKGROUND, constants.COLOR_LINE_JUMP_OUTLINE);
-	const active = !!editorFeatureState.lineJump.active;
+	const active = !!lineJumpState.active;
 	renderInlineBarField(
-		editorFeatureState.lineJump.field,
+		lineJumpState.field,
 		'LINE #:',
 		4,
 		bounds.top + constants.LINE_JUMP_BAR_MARGIN_Y,

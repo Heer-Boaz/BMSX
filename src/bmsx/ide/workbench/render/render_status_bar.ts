@@ -11,9 +11,9 @@ import { api } from '../../editor/ui/view/overlay_api';
 import { workspaceState } from '../common/workspace_storage';
 import { editorDocumentState } from '../../editor/editing/editor_document_state';
 import { editorViewState } from '../../editor/ui/editor_view_state';
-import { editorFeatureState } from '../../editor/common/editor_feature_state';
 import { problemsPanel } from '../contrib/problems/problems_panel';
 import { resourcePanel } from '../contrib/resources/resource_panel_controller';
+import { symbolSearchState } from '../../editor/contrib/symbols/symbol_search_state';
 
 export function renderStatusBar(): void {
 	const runtime = Runtime.instance;
@@ -46,7 +46,7 @@ export function renderStatusBar(): void {
 		return;
 	}
 
-	if (editorFeatureState.symbolSearch.visible) {
+	if (symbolSearchState.visible) {
 		const match = getActiveSymbolSearchMatch();
 		if (!match) return;
 		const symbol = match.entry.symbol;

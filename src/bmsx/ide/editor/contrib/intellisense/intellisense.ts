@@ -33,6 +33,9 @@ import { buildEditorSemanticFrontend } from './editor_semantic_frontend';
 import { editorRuntimeState } from '../../common/editor_runtime_state';
 import { showEditorMessage } from '../../../workbench/common/feedback_state';
 import { editorPointerState } from '../../input/pointer/editor_pointer_state';
+import { editorSearchState, lineJumpState } from '../find/find_widget_state';
+import { symbolSearchState } from '../symbols/symbol_search_state';
+import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/resource_widget_state';
 import { parseLuaIdentifierChain as parseLuaIdentifierChainShared } from '../../../language/lua/lua_identifier_chain';
 import { buildLuaSemanticModel, collectModuleAliasEntriesFromChunk, Decl, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData, type ModuleAliasEntry } from './semantic_model';
 import { cacheSemanticWorkspaceAnalysis, getOrCreateSemanticWorkspace, prepareSemanticWorkspaceForEditorBuffer, primeSemanticWorkspaceProjectSources, syncSemanticWorkspacePath } from './semantic_workspace_sync';
@@ -578,7 +581,7 @@ export function intellisenseUiReady(): boolean {
 	if (isReadOnlyCodeTab()) {
 		return false;
 	}
-	if (editorFeatureState.search.active || editorFeatureState.symbolSearch.active || editorFeatureState.lineJump.active || editorFeatureState.resourceSearch.active || editorFeatureState.createResource.active) {
+	if (editorSearchState.active || symbolSearchState.active || lineJumpState.active || resourceSearchState.active || createResourceState.active) {
 		return false;
 	}
 	return true;

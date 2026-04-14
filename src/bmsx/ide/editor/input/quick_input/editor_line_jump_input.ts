@@ -2,7 +2,7 @@ import { applyInlineFieldEditing } from '../../ui/inline_text_field';
 import { applyLineJump, closeLineJump, openLineJump } from '../../contrib/find/line_jump';
 import { textFromLines } from '../../text/source_text';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../keyboard/key_input';
-import { editorFeatureState } from '../../common/editor_feature_state';
+import { lineJumpState } from '../../contrib/find/find_widget_state';
 
 export function handleLineJumpInput(): void {
 	const shiftDown = isShiftDown();
@@ -25,12 +25,12 @@ export function handleLineJumpInput(): void {
 		return;
 	}
 	const digitFilter = (value: string): boolean => value >= '0' && value <= '9';
-	const textChanged = applyInlineFieldEditing(editorFeatureState.lineJump.field, {
+	const textChanged = applyInlineFieldEditing(lineJumpState.field, {
 		allowSpace: false,
 		characterFilter: digitFilter,
 		maxLength: 6,
 	});
-	editorFeatureState.lineJump.value = textFromLines(editorFeatureState.lineJump.field.lines);
+	lineJumpState.value = textFromLines(lineJumpState.field.lines);
 	if (textChanged) {
 		return;
 	}

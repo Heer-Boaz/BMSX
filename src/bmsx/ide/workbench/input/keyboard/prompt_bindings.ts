@@ -5,7 +5,7 @@ import { revealCursor, updateDesiredColumn } from '../../../editor/ui/caret';
 import { resetBlink } from '../../../editor/render/render_caret';
 import { executeEditorCommand } from '../../../editor/input/commands/editor_commands';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../editor/input/keyboard/key_input';
-import { isInlineFieldFocused } from '../../../editor/input/quick_input/editor_quick_input';
+import { isInlineWidgetFocused } from '../../../editor/contrib/quick_input/inline_widget';
 import { runEditorKeyHandlers, type EditorKeyHandler } from '../../../editor/input/keyboard/editor_binding_utils';
 import { editorDocumentState } from '../../../editor/editing/editor_document_state';
 
@@ -46,7 +46,7 @@ function handleCycleTabBinding(): boolean {
 }
 
 function handleDefinitionAndReferenceBinding(): boolean {
-	if (isInlineFieldFocused() || !isKeyJustPressed('F12')) {
+	if (isInlineWidgetFocused() || !isKeyJustPressed('F12')) {
 		return false;
 	}
 	consumeIdeKey('F12');
@@ -59,7 +59,7 @@ function handleDefinitionAndReferenceBinding(): boolean {
 }
 
 function handleRenameBinding(): boolean {
-	if (isInlineFieldFocused() || !isCodeTabActive() || !isKeyJustPressed('F2')) {
+	if (isInlineWidgetFocused() || !isCodeTabActive() || !isKeyJustPressed('F2')) {
 		return false;
 	}
 	consumeIdeKey('F2');
@@ -68,7 +68,7 @@ function handleRenameBinding(): boolean {
 }
 
 function handleSelectAllBinding(): boolean {
-	if (!(isCtrlDown() || isMetaDown()) || isInlineFieldFocused() || resourcePanel.isFocused() || !isCodeTabActive() || !isKeyJustPressed('KeyA')) {
+	if (!(isCtrlDown() || isMetaDown()) || isInlineWidgetFocused() || resourcePanel.isFocused() || !isCodeTabActive() || !isKeyJustPressed('KeyA')) {
 		return false;
 	}
 	consumeIdeKey('KeyA');

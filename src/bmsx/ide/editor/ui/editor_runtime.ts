@@ -15,22 +15,15 @@ import { renderTabBar } from '../../workbench/render/render_tab_bar';
 import { renderCodeArea } from '../render/render_code_area';
 import { renderStatusBar } from '../../workbench/render/render_status_bar';
 import { drawResourcePanel, drawResourceViewer } from '../../workbench/render/render_resource_panel';
-import { drawActionPromptOverlay } from '../../workbench/render/render_prompt';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorSessionState } from './editor_session_state';
 import { editorViewState } from './editor_view_state';
 import { editorFeatureState } from '../common/editor_feature_state';
-import {
-	renderCreateResourceBar,
-	renderLineJumpBar,
-	renderRenameBar,
-	renderSearchBar,
-	renderSymbolSearchBar,
-	renderResourceSearchBar,
-} from '../render/render_inline_bars';
+import { editorSearchState, lineJumpState } from '../contrib/find/find_widget_state';
+import { renderInlineWidgets } from '../contrib/quick_input/inline_widget';
 import { renderRuntimeFaultOverlay } from '../render/render_error_overlay';
 import { handleEditorInput } from '../input/keyboard/editor_keyboard_dispatch';
-import { handleActionPromptInput } from '../input/overlays/action_prompt';
+import { closeBlockingWorkbenchModal, drawBlockingWorkbenchModal, handleBlockingWorkbenchModalInput, hasBlockingWorkbenchModal } from '../../workbench/contrib/modal/blocking_modal';
 import { handleTextEditorPointerInput } from '../input/pointer/editor_pointer_dispatch';
 import { handleEditorWheelInput } from '../input/pointer/editor_wheel_input';
 import { updateBlink } from './inline_text_field';
@@ -49,10 +42,9 @@ import { clearExecutionStopHighlights, syncRuntimeErrorOverlayFromContext } from
 import { processDiagnosticsQueue } from '../contrib/diagnostics/diagnostics_controller';
 import { editorDiagnosticsState } from '../contrib/diagnostics/diagnostics_state';
 import { updateDesiredColumn } from './caret';
-import { resetActionPromptState } from '../input/overlays/action_prompt';
-import { actionPromptState } from '../input/overlays/action_prompt_state';
 import { applyLineJumpFieldText } from '../contrib/find/line_jump';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt } from '../../workbench/contrib/resources/create_resource';
+import { createResourceState } from '../../workbench/contrib/resources/resource_widget_state';
 import { editorPointerState } from '../input/pointer/editor_pointer_state';
 import { editorCaretState } from './caret_state';
 import { captureKeys } from '../input/keyboard/editor_capture_keys';
@@ -61,8 +53,8 @@ import { editorInput } from '../input/keyboard/editor_text_input';
 export function tickInput(): void {
 	handleEditorWheelInput();
 	handleTextEditorPointerInput();
-	if (actionPromptState.prompt) {
-		handleActionPromptInput();
+	if (hasBlockingWorkbenchModal()) {
+		handleBlockingWorkbenchModalInput();
 		return;
 	}
 	handleEditorInput();
@@ -97,19 +89,14 @@ export function draw(): void {
 	if (isResourceViewActive()) {
 		drawResourceViewer();
 	} else {
-		renderCreateResourceBar();
-		renderSearchBar();
-		renderResourceSearchBar();
-		renderSymbolSearchBar();
-		renderRenameBar();
-		renderLineJumpBar();
+		renderInlineWidgets();
 		renderCodeArea();
 	}
 	drawProblemsPanel();
 	renderStatusBar();
 	renderTopBarDropdown();
-	if (actionPromptState.prompt) {
-		drawActionPromptOverlay();
+	if (hasBlockingWorkbenchModal()) {
+		drawBlockingWorkbenchModal();
 	}
 }
 
@@ -135,26 +122,26 @@ export function shutdownRuntimeEditor(): void {
 	editorPointerState.pointerAuxWasPressed = false;
 	clearGotoHoverHighlight();
 	editorCaretState.cursorRevealSuspended = false;
-	editorFeatureState.search.active = false;
-	editorFeatureState.search.visible = false;
+	editorSearchState.active = false;
+	editorSearchState.visible = false;
 	cancelSearchJob();
 	cancelGlobalSearchJob();
-	editorFeatureState.search.matches = [];
-	editorFeatureState.search.globalMatches = [];
-	editorFeatureState.search.displayOffset = 0;
-	editorFeatureState.search.hoverIndex = -1;
-	editorFeatureState.search.scope = 'local';
-	editorFeatureState.search.currentIndex = -1;
+	editorSearchState.matches = [];
+	editorSearchState.globalMatches = [];
+	editorSearchState.displayOffset = 0;
+	editorSearchState.hoverIndex = -1;
+	editorSearchState.scope = 'local';
+	editorSearchState.currentIndex = -1;
 	applySearchFieldText('', true);
-	editorFeatureState.lineJump.active = false;
-	editorFeatureState.lineJump.visible = false;
+	lineJumpState.active = false;
+	lineJumpState.visible = false;
 	applyLineJumpFieldText('', true);
-	editorFeatureState.createResource.active = false;
-	editorFeatureState.createResource.visible = false;
+	createResourceState.active = false;
+	createResourceState.visible = false;
 	applyCreateResourceFieldText('', true);
-	editorFeatureState.createResource.error = null;
-	editorFeatureState.createResource.working = false;
-	resetActionPromptState();
+	createResourceState.error = null;
+	createResourceState.working = false;
+	closeBlockingWorkbenchModal();
 	hideResourcePanel();
 	activateCodeTab();
 }
@@ -184,22 +171,22 @@ export function activateRuntimeEditor(): void {
 	editorCaretState.cursorRevealSuspended = false;
 	updateDesiredColumn();
 	editorDocumentState.selectionAnchor = null;
-	editorFeatureState.search.active = false;
-	editorFeatureState.search.visible = false;
-	editorFeatureState.lineJump.active = false;
-	editorFeatureState.lineJump.visible = false;
-	editorFeatureState.lineJump.value = '';
+	editorSearchState.active = false;
+	editorSearchState.visible = false;
+	lineJumpState.active = false;
+	lineJumpState.visible = false;
+	lineJumpState.value = '';
 	syncRuntimeErrorOverlayFromContext(getActiveCodeTabContext());
-	resetActionPromptState();
+	closeBlockingWorkbenchModal();
 	cancelSearchJob();
 	cancelGlobalSearchJob();
-	editorFeatureState.search.globalMatches = [];
-	editorFeatureState.search.displayOffset = 0;
-	editorFeatureState.search.hoverIndex = -1;
-	editorFeatureState.search.scope = 'local';
-	if (editorFeatureState.search.query.length === 0) {
-		editorFeatureState.search.matches = [];
-		editorFeatureState.search.currentIndex = -1;
+	editorSearchState.globalMatches = [];
+	editorSearchState.displayOffset = 0;
+	editorSearchState.hoverIndex = -1;
+	editorSearchState.scope = 'local';
+	if (editorSearchState.query.length === 0) {
+		editorSearchState.matches = [];
+		editorSearchState.currentIndex = -1;
 	} else {
 		startSearchJob();
 	}
@@ -239,19 +226,19 @@ export function deactivateRuntimeEditor(): void {
 	clearGotoHoverHighlight();
 	editorViewState.scrollbarController.cancel();
 	editorCaretState.cursorRevealSuspended = false;
-	editorFeatureState.search.active = false;
-	editorFeatureState.search.visible = false;
-	editorFeatureState.lineJump.active = false;
-	editorFeatureState.lineJump.visible = false;
-	resetActionPromptState();
+	editorSearchState.active = false;
+	editorSearchState.visible = false;
+	lineJumpState.active = false;
+	lineJumpState.visible = false;
+	closeBlockingWorkbenchModal();
 	closeCreateResourcePrompt(false);
 	hideResourcePanel();
 	cancelSearchJob();
 	cancelGlobalSearchJob();
-	editorFeatureState.search.globalMatches = [];
-	editorFeatureState.search.displayOffset = 0;
-	editorFeatureState.search.hoverIndex = -1;
-	editorFeatureState.search.scope = 'local';
+	editorSearchState.globalMatches = [];
+	editorSearchState.displayOffset = 0;
+	editorSearchState.hoverIndex = -1;
+	editorSearchState.scope = 'local';
 	clearBackgroundTasks();
 	editorDiagnosticsState.diagnosticsTaskPending = false;
 	editorRuntimeState.lastReportedSemanticError = null;

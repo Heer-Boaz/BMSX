@@ -10,7 +10,7 @@ import { setFieldText } from '../../../editor/ui/inline_text_field';
 import { closeSymbolSearch } from '../../../editor/contrib/symbols/symbol_search_shared';
 import { closeLineJump } from '../../../editor/contrib/find/line_jump';
 import { refreshResourceCatalog, updateResourceSearchMatches } from './resource_search_catalog';
-import { editorFeatureState } from '../../../editor/common/editor_feature_state';
+import { resourceSearchState } from './resource_widget_state';
 
 export function openResourceSearch(initialQuery: string = ''): void {
 	clearReferenceHighlights();
@@ -18,12 +18,12 @@ export function openResourceSearch(initialQuery: string = ''): void {
 	closeLineJump(false);
 	closeSymbolSearch(false);
 	renameController.cancel();
-	editorFeatureState.resourceSearch.visible = true;
-	editorFeatureState.resourceSearch.active = true;
+	resourceSearchState.visible = true;
+	resourceSearchState.active = true;
 	applyResourceSearchFieldText(initialQuery, true);
 	refreshResourceCatalog();
 	updateResourceSearchMatches();
-	editorFeatureState.resourceSearch.hoverIndex = -1;
+	resourceSearchState.hoverIndex = -1;
 	resetBlink();
 }
 
@@ -31,39 +31,39 @@ export function closeResourceSearch(clearQuery: boolean): void {
 	if (clearQuery) {
 		applyResourceSearchFieldText('', true);
 	}
-	editorFeatureState.resourceSearch.active = false;
-	editorFeatureState.resourceSearch.visible = false;
-	editorFeatureState.resourceSearch.matches = [];
-	editorFeatureState.resourceSearch.selectionIndex = -1;
-	editorFeatureState.resourceSearch.displayOffset = 0;
-	editorFeatureState.resourceSearch.hoverIndex = -1;
-	editorFeatureState.resourceSearch.field.selectionAnchor = null;
-	editorFeatureState.resourceSearch.field.pointerSelecting = false;
+	resourceSearchState.active = false;
+	resourceSearchState.visible = false;
+	resourceSearchState.matches = [];
+	resourceSearchState.selectionIndex = -1;
+	resourceSearchState.displayOffset = 0;
+	resourceSearchState.hoverIndex = -1;
+	resourceSearchState.field.selectionAnchor = null;
+	resourceSearchState.field.pointerSelecting = false;
 	resetBlink();
 }
 
 export function focusEditorFromResourceSearch(): void {
-	if (!editorFeatureState.resourceSearch.active && !editorFeatureState.resourceSearch.visible) {
+	if (!resourceSearchState.active && !resourceSearchState.visible) {
 		return;
 	}
-	editorFeatureState.resourceSearch.active = false;
-	if (editorFeatureState.resourceSearch.query.length === 0) {
-		editorFeatureState.resourceSearch.visible = false;
-		editorFeatureState.resourceSearch.matches = [];
-		editorFeatureState.resourceSearch.selectionIndex = -1;
-		editorFeatureState.resourceSearch.displayOffset = 0;
+	resourceSearchState.active = false;
+	if (resourceSearchState.query.length === 0) {
+		resourceSearchState.visible = false;
+		resourceSearchState.matches = [];
+		resourceSearchState.selectionIndex = -1;
+		resourceSearchState.displayOffset = 0;
 	}
-	editorFeatureState.resourceSearch.field.selectionAnchor = null;
-	editorFeatureState.resourceSearch.field.pointerSelecting = false;
+	resourceSearchState.field.selectionAnchor = null;
+	resourceSearchState.field.pointerSelecting = false;
 	resetBlink();
 }
 
 export function applyResourceSearchSelection(index: number): void {
-	if (index < 0 || index >= editorFeatureState.resourceSearch.matches.length) {
+	if (index < 0 || index >= resourceSearchState.matches.length) {
 		showEditorMessage('Resource not found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
-	const match = editorFeatureState.resourceSearch.matches[index];
+	const match = resourceSearchState.matches[index];
 	closeResourceSearch(true);
 	scheduleMicrotask(() => {
 		openResourceDescriptor(match.entry.descriptor);
@@ -71,6 +71,6 @@ export function applyResourceSearchSelection(index: number): void {
 }
 
 export function applyResourceSearchFieldText(value: string, moveCursorToEnd: boolean): void {
-	editorFeatureState.resourceSearch.query = value;
-	setFieldText(editorFeatureState.resourceSearch.field, value, moveCursorToEnd);
+	resourceSearchState.query = value;
+	setFieldText(resourceSearchState.field, value, moveCursorToEnd);
 }

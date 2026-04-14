@@ -1,19 +1,20 @@
 import { closeSearch } from '../../contrib/find/editor_search';
 import { editorFeedbackState } from '../../../workbench/common/feedback_state';
+import { closeBlockingWorkbenchModal, hasBlockingWorkbenchModal } from '../../../workbench/contrib/modal/blocking_modal';
 import { closeCreateResourcePrompt } from '../../../workbench/contrib/resources/create_resource';
 import { closeResourceSearch } from '../../../workbench/contrib/resources/resource_search';
 import { closeLineJump } from '../../contrib/find/line_jump';
 import { closeSymbolSearch } from '../../contrib/symbols/symbol_search_shared';
-import { resetActionPromptState } from '../overlays/action_prompt';
-import { actionPromptState } from '../overlays/action_prompt_state';
-import { closeEditorContextMenu } from '../../../workbench/render/render_context_menu';
+import { closeEditorContextMenu } from '../../../workbench/contrib/context_menu/context_menu_widget';
 import { editorContextMenuState } from '../../../workbench/contrib/context_menu/context_menu_state';
 import { runtimeErrorState } from '../../contrib/runtime_error/runtime_error_state';
-import { editorFeatureState } from '../../common/editor_feature_state';
+import { editorSearchState, lineJumpState } from '../../contrib/find/find_widget_state';
+import { symbolSearchState } from '../../contrib/symbols/symbol_search_state';
+import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/resource_widget_state';
 
 export function handleEscapeKey(): boolean {
-	if (actionPromptState.prompt) {
-		resetActionPromptState();
+	if (hasBlockingWorkbenchModal()) {
+		closeBlockingWorkbenchModal();
 		return true;
 	}
 	if (editorContextMenuState.visible) {
@@ -21,23 +22,23 @@ export function handleEscapeKey(): boolean {
 		return true;
 	}
 	const overlay = runtimeErrorState.activeOverlay;
-	if (editorFeatureState.createResource.visible) {
+	if (createResourceState.visible) {
 		closeCreateResourcePrompt(true);
 		return true;
 	}
-	if (editorFeatureState.symbolSearch.active || editorFeatureState.symbolSearch.visible) {
+	if (symbolSearchState.active || symbolSearchState.visible) {
 		closeSymbolSearch(false);
 		return true;
 	}
-	if (editorFeatureState.resourceSearch.active || editorFeatureState.resourceSearch.visible) {
+	if (resourceSearchState.active || resourceSearchState.visible) {
 		closeResourceSearch(false);
 		return true;
 	}
-	if (editorFeatureState.lineJump.active || editorFeatureState.lineJump.visible) {
+	if (lineJumpState.active || lineJumpState.visible) {
 		closeLineJump(false);
 		return true;
 	}
-	if (editorFeatureState.search.active || editorFeatureState.search.visible) {
+	if (editorSearchState.active || editorSearchState.visible) {
 		closeSearch(false, true);
 		return true;
 	}

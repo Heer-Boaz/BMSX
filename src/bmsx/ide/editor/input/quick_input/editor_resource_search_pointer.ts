@@ -9,19 +9,19 @@ import { closeLineJump } from '../../contrib/find/line_jump';
 import { closeSymbolSearch } from '../../contrib/symbols/symbol_search_shared';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from './editor_quick_input_pointer_common';
 import { editorViewState } from '../../ui/editor_view_state';
-import { editorFeatureState } from '../../common/editor_feature_state';
+import { resourceSearchState } from '../../../workbench/contrib/resources/resource_widget_state';
 
 export function handleResourceSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const bounds = getResourceSearchBarBounds();
-	if (!editorFeatureState.resourceSearch.visible || !bounds) {
+	if (!resourceSearchState.visible || !bounds) {
 		return false;
 	}
 	const insideBar = point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
 	if (!insideBar) {
 		if (justPressed) {
-			editorFeatureState.resourceSearch.active = false;
+			resourceSearchState.active = false;
 		}
-		editorFeatureState.resourceSearch.hoverIndex = -1;
+		resourceSearchState.hoverIndex = -1;
 		return false;
 	}
 	const fieldBottom = bounds.top + editorViewState.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
@@ -30,19 +30,19 @@ export function handleResourceSearchPointer(snapshot: PointerSnapshot, justPress
 			closeLineJump(false);
 			closeSearch(false, true);
 			closeSymbolSearch(false);
-			editorFeatureState.resourceSearch.visible = true;
-			editorFeatureState.resourceSearch.active = true;
+			resourceSearchState.visible = true;
+			resourceSearchState.active = true;
 			activateQuickInputField();
 		}
-		processInlineFieldPointer(editorFeatureState.resourceSearch.field, quickInputTextLeft('FILE :'), snapshot.viewportX, justPressed, snapshot.primaryPressed);
+		processInlineFieldPointer(resourceSearchState.field, quickInputTextLeft('FILE :'), snapshot.viewportX, justPressed, snapshot.primaryPressed);
 		finishQuickInputPointer(snapshot);
 		return true;
 	}
 	const hoverIndex = resolveResourceSearchHoverIndex(snapshot.viewportY, fieldBottom);
-	editorFeatureState.resourceSearch.hoverIndex = hoverIndex;
+	resourceSearchState.hoverIndex = hoverIndex;
 	if (hoverIndex >= 0 && justPressed) {
-		if (hoverIndex !== editorFeatureState.resourceSearch.selectionIndex) {
-			editorFeatureState.resourceSearch.selectionIndex = hoverIndex;
+		if (hoverIndex !== resourceSearchState.selectionIndex) {
+			resourceSearchState.selectionIndex = hoverIndex;
 			ensureResourceSearchSelectionVisible();
 		}
 		applyResourceSearchSelection(hoverIndex);
@@ -63,5 +63,5 @@ function resolveResourceSearchHoverIndex(pointerY: number, fieldBottom: number):
 	if (indexWithin < 0 || indexWithin >= visibleCount) {
 		return -1;
 	}
-	return editorFeatureState.resourceSearch.displayOffset + indexWithin;
+	return resourceSearchState.displayOffset + indexWithin;
 }

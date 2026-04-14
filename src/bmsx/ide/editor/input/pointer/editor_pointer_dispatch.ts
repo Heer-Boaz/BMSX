@@ -4,13 +4,13 @@ import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intell
 import { handleEditorContextMenuPointer } from '../../../workbench/input/pointer/context_menu_input';
 import { isCtrlDown, isMetaDown } from '../keyboard/key_input';
 import { computeEditorPointerButtonMask, POINTER_AUX_JUST_PRESSED, POINTER_PRIMARY_JUST_PRESSED, POINTER_PRIMARY_JUST_RELEASED, POINTER_SECONDARY_JUST_PRESSED } from './editor_pointer_buttons';
-import { handleQuickInputPointer } from '../quick_input/editor_quick_input_pointer';
 import { handleCodeAreaPointerInput } from './editor_code_pointer';
 import { handleEditorPanelPointer } from './editor_panel_pointer';
 import { handleEditorChromePointerDispatch } from './editor_pointer_chrome_dispatch';
 import { prepareEditorPointerFrame, readEditorPointerSnapshot } from './editor_pointer_frame';
 import { handleEditorPointerGuards } from './editor_pointer_guard_dispatch';
 import { editorPointerState } from './editor_pointer_state';
+import { handleInlineWidgetPointer } from '../../contrib/quick_input/inline_widget';
 
 export function handleTextEditorPointerInput(): void {
 	const ctrlDown = isCtrlDown();
@@ -42,7 +42,7 @@ export function handleTextEditorPointerInput(): void {
 	if (handleEditorPointerGuards(snapshot, justPressed)) {
 		return;
 	}
-	if (handleQuickInputPointer(snapshot, justPressed)) {
+	if (handleInlineWidgetPointer(snapshot, justPressed)) {
 		return;
 	}
 	handleCodeAreaPointerInput(snapshot, justPressed, gotoModifierActive, activeContext, pointerSecondaryJustPressed, playerInput);

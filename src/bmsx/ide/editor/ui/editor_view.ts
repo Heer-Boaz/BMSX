@@ -18,7 +18,8 @@ import { ensureCursorVisible, updateDesiredColumn } from './caret';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorSessionState } from './editor_session_state';
 import { editorViewState } from './editor_view_state';
-import { editorFeatureState } from '../common/editor_feature_state';
+import { editorSearchState, lineJumpState } from '../contrib/find/find_widget_state';
+import { symbolSearchState } from '../contrib/symbols/symbol_search_state';
 import { resourcePanel } from '../../workbench/contrib/resources/resource_panel_controller';
 import { renameController } from '../contrib/rename/rename_controller';
 import { editorRuntimeState } from '../common/editor_runtime_state';
@@ -32,6 +33,7 @@ import {
 	visualIndexToSegment,
 } from '../common/text_layout';
 import { bottomMargin, getTabBarTotalHeight, topMargin } from '../../workbench/common/layout';
+import { createResourceState, resourceSearchState } from '../../workbench/contrib/resources/resource_widget_state';
 
 function decimalDigitCount(value: number): number {
 	let digits = 1;
@@ -103,14 +105,14 @@ export function resourceSearchPageSize(): number {
 }
 
 export function resourceSearchWindowCapacity(): number {
-	return editorFeatureState.resourceSearch.visible ? resourceSearchPageSize() : 0;
+	return resourceSearchState.visible ? resourceSearchPageSize() : 0;
 }
 
 export function resourceSearchVisibleResultCount(): number {
-	if (!editorFeatureState.resourceSearch.visible) {
+	if (!resourceSearchState.visible) {
 		return 0;
 	}
-	const remaining = Math.max(0, editorFeatureState.resourceSearch.matches.length - editorFeatureState.resourceSearch.displayOffset);
+	const remaining = Math.max(0, resourceSearchState.matches.length - resourceSearchState.displayOffset);
 	const capacity = resourceSearchWindowCapacity();
 	if (capacity <= 0) {
 		return remaining;
@@ -123,27 +125,27 @@ export function isSymbolSearchCompactMode(): boolean {
 }
 
 export function symbolSearchEntryHeight(): number {
-	if (editorFeatureState.symbolSearch.mode === 'references') {
+	if (symbolSearchState.mode === 'references') {
 		return editorViewState.lineHeight * 2;
 	}
-	return editorFeatureState.symbolSearch.global && isSymbolSearchCompactMode() ? editorViewState.lineHeight * 2 : editorViewState.lineHeight;
+	return symbolSearchState.global && isSymbolSearchCompactMode() ? editorViewState.lineHeight * 2 : editorViewState.lineHeight;
 }
 
 export function symbolSearchPageSize(): number {
-	if (editorFeatureState.symbolSearch.mode === 'references') {
+	if (symbolSearchState.mode === 'references') {
 		return constants.REFERENCE_SEARCH_MAX_RESULTS;
 	}
-	if (!editorFeatureState.symbolSearch.global) {
+	if (!symbolSearchState.global) {
 		return constants.SYMBOL_SEARCH_MAX_RESULTS;
 	}
 	return isSymbolSearchCompactMode() ? constants.SYMBOL_SEARCH_COMPACT_MAX_RESULTS : constants.SYMBOL_SEARCH_MAX_RESULTS;
 }
 
 export function symbolSearchVisibleResultCount(): number {
-	if (!editorFeatureState.symbolSearch.visible) {
+	if (!symbolSearchState.visible) {
 		return 0;
 	}
-	const remaining = Math.max(0, editorFeatureState.symbolSearch.matches.length - editorFeatureState.symbolSearch.displayOffset);
+	const remaining = Math.max(0, symbolSearchState.matches.length - symbolSearchState.displayOffset);
 	return Math.min(remaining, symbolSearchPageSize());
 }
 
@@ -317,14 +319,14 @@ export function scrollRows(deltaRows: number): void {
 }
 
 export function getCreateResourceBarHeight(): number {
-	if (!editorFeatureState.createResource.visible) {
+	if (!createResourceState.visible) {
 		return 0;
 	}
 	return editorViewState.lineHeight + constants.CREATE_RESOURCE_BAR_MARGIN_Y * 2;
 }
 
 export function getSearchBarHeight(): number {
-	if (!editorFeatureState.search.visible) {
+	if (!editorSearchState.visible) {
 		return 0;
 	}
 	const baseHeight = editorViewState.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
@@ -336,7 +338,7 @@ export function getSearchBarHeight(): number {
 }
 
 export function getResourceSearchBarHeight(): number {
-	if (!editorFeatureState.resourceSearch.visible) {
+	if (!resourceSearchState.visible) {
 		return 0;
 	}
 	const baseHeight = editorViewState.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
@@ -348,7 +350,7 @@ export function getResourceSearchBarHeight(): number {
 }
 
 export function getSymbolSearchBarHeight(): number {
-	if (!editorFeatureState.symbolSearch.visible) {
+	if (!symbolSearchState.visible) {
 		return 0;
 	}
 	const baseHeight = editorViewState.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
@@ -367,7 +369,7 @@ export function getRenameBarHeight(): number {
 }
 
 export function getLineJumpBarHeight(): number {
-	if (!editorFeatureState.lineJump.visible) {
+	if (!lineJumpState.visible) {
 		return 0;
 	}
 	return editorViewState.lineHeight + constants.LINE_JUMP_BAR_MARGIN_Y * 2;

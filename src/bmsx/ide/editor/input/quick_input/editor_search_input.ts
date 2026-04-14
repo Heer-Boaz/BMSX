@@ -4,7 +4,7 @@ import { textFromLines } from '../../text/source_text';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../keyboard/key_input';
 import { redo, undo } from '../../editing/undo_controller';
 import { save } from '../../../workbench/ui/tabs';
-import { editorFeatureState } from '../../common/editor_feature_state';
+import { editorSearchState } from '../../contrib/find/find_widget_state';
 
 export function handleSearchInput(): void {
 	const shiftDown = isShiftDown();
@@ -41,7 +41,7 @@ export function handleSearchInput(): void {
 		return;
 	}
 	const hasResults = activeSearchMatchCount() > 0;
-	const previewLocal = editorFeatureState.search.scope === 'local';
+	const previewLocal = editorSearchState.scope === 'local';
 	if (isKeyJustPressed('Enter')) {
 		consumeIdeKey('Enter');
 		if (hasResults) {
@@ -94,12 +94,12 @@ export function handleSearchInput(): void {
 			return;
 		}
 	}
-	const textChanged = applyInlineFieldEditing(editorFeatureState.search.field, {
+	const textChanged = applyInlineFieldEditing(editorSearchState.field, {
 		allowSpace: true,
 		characterFilter: undefined,
 		maxLength: null,
 	});
-	editorFeatureState.search.query = textFromLines(editorFeatureState.search.field.lines);
+	editorSearchState.query = textFromLines(editorSearchState.field.lines);
 	if (textChanged) {
 		onSearchQueryChanged();
 	}

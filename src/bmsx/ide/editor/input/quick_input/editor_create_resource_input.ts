@@ -5,7 +5,7 @@ import { textFromLines } from '../../text/source_text';
 import { closeCreateResourcePrompt } from '../../../workbench/contrib/resources/create_resource';
 import { confirmCreateResourcePrompt, isValidCreateResourceCharacter } from '../../../workbench/contrib/resources/create_resource_operation';
 import { consumeIdeKey, isKeyJustPressed } from '../keyboard/key_input';
-import { editorFeatureState } from '../../common/editor_feature_state';
+import { createResourceState } from '../../../workbench/contrib/resources/resource_widget_state';
 
 export function handleCreateResourceInput(): void {
 	if (isKeyJustPressed('Escape')) {
@@ -13,23 +13,23 @@ export function handleCreateResourceInput(): void {
 		closeCreateResourcePrompt(true);
 		return;
 	}
-	if (!editorFeatureState.createResource.working && (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter'))) {
+	if (!createResourceState.working && (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter'))) {
 		consumeIdeKey('Enter');
 		consumeIdeKey('NumpadEnter');
 		void confirmCreateResourcePrompt();
 		return;
 	}
-	if (editorFeatureState.createResource.working) {
+	if (createResourceState.working) {
 		return;
 	}
-	const textChanged = applyInlineFieldEditing(editorFeatureState.createResource.field, {
+	const textChanged = applyInlineFieldEditing(createResourceState.field, {
 		allowSpace: true,
 		characterFilter: (value: string): boolean => isValidCreateResourceCharacter(value),
 		maxLength: constants.CREATE_RESOURCE_MAX_PATH_LENGTH,
 	});
 	if (textChanged) {
-		editorFeatureState.createResource.error = null;
+		createResourceState.error = null;
 		resetBlink();
 	}
-	editorFeatureState.createResource.path = textFromLines(editorFeatureState.createResource.field.lines);
+	createResourceState.path = textFromLines(createResourceState.field.lines);
 }
