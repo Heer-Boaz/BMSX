@@ -95,6 +95,7 @@ struct PresentGLES2State {
 	GLint uniform_resolution = -1;
 	GLint uniform_scale = -1;
 	GLint uniform_texture = -1;
+	GLint uniform_output_srgb = -1;
 	GLuint vbo_pos = 0;
 	GLuint vbo_uv = 0;
 	i32 width = -1;
@@ -127,10 +128,23 @@ const char* kPresentFragmentShader = R"(
 precision highp float;
 
 uniform sampler2D u_texture;
+uniform bool u_output_srgb;
 varying vec2 v_texcoord;
 
+vec3 linear_to_srgb(vec3 c) {
+	c = max(c, vec3(0.0));
+	bvec3 cutoff = lessThanEqual(c, vec3(0.0031308));
+	vec3 lo = c * 12.92;
+	vec3 hi = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
+	return mix(hi, lo, vec3(cutoff));
+}
+
 void main() {
-	gl_FragColor = texture2D(u_texture, v_texcoord);
+	vec4 color = texture2D(u_texture, v_texcoord);
+	if (u_output_srgb) {
+		color.rgb = linear_to_srgb(color.rgb);
+	}
+	gl_FragColor = color;
 }
 )";
 
@@ -692,12 +706,14 @@ void initPresentGLES2(OpenGLES2Backend* backend) {
 	g_present.uniform_resolution = glGetUniformLocation(g_present.program, "u_resolution");
 	g_present.uniform_scale = glGetUniformLocation(g_present.program, "u_scale");
 	g_present.uniform_texture = glGetUniformLocation(g_present.program, "u_texture");
+	g_present.uniform_output_srgb = glGetUniformLocation(g_present.program, "u_output_srgb");
 
 	glGenBuffers(1, &g_present.vbo_pos);
 	glGenBuffers(1, &g_present.vbo_uv);
 
 	glUseProgram(g_present.program);
 	glUniform1i(g_present.uniform_texture, kTexUnitPostProcess);
+	glUniform1i(g_present.uniform_output_srgb, 0);
 }
 
 void initDeviceQuantizeGLES2(OpenGLES2Backend* backend) {
@@ -789,9 +805,10 @@ void shutdownGLES2(OpenGLES2Backend* backend) {
 	g_present = PresentGLES2State{};
 }
 
-static void renderPresentQuadGLES2(OpenGLES2Backend* backend, i32 width, i32 height, TextureHandle colorTex, bool bindBackbuffer, bool flipTexY) {
+static void renderPresentQuadGLES2(OpenGLES2Backend* backend, i32 width, i32 height, TextureHandle colorTex, bool bindBackbuffer, bool flipTexY, bool outputSrgb) {
 	glUseProgram(g_present.program);
 	glUniform1i(g_present.uniform_texture, kTexUnitPostProcess);
+	glUniform1i(g_present.uniform_output_srgb, outputSrgb ? 1 : 0);
 
 	if (g_present.width != width || g_present.height != height || g_present.flipTexY != flipTexY) {
 		g_present.width = width;
@@ -848,12 +865,12 @@ static void renderPresentQuadGLES2(OpenGLES2Backend* backend, i32 width, i32 hei
 
 void renderPresentGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipelineState& state) {
 	(void)context;
-	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, true, true);
+	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, true, true, true);
 }
 
 void renderPresentToCurrentTargetGLES2(OpenGLES2Backend* backend, GameView* context, const Framebuffer2DPipelineState& state) {
 	(void)context;
-	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, false, false);
+	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, false, false, false);
 }
 
 void renderDeviceQuantizeGLES2(OpenGLES2Backend* backend, GameView* context, const DeviceQuantizePipelineState& state) {
