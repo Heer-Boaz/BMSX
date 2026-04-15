@@ -9,7 +9,7 @@ import { drawEditorText } from '../../editor/render/text_renderer';
 import { measureText, truncateTextToWidth } from '../../editor/common/text_layout';
 import { Runtime } from '../../../emulator/runtime';
 import { api } from '../../editor/ui/view/overlay_api';
-import { workspaceState } from '../common/workspace_storage';
+import { workspaceState } from '../common/workspace_state';
 import { editorDocumentState } from '../../editor/editing/editor_document_state';
 import { editorViewState } from '../../editor/ui/editor_view_state';
 import { problemsPanel } from '../contrib/problems/problems_panel';

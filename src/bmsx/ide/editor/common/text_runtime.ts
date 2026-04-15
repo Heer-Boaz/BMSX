@@ -7,7 +7,7 @@ import { requestSemanticRefresh, clearReferenceHighlights } from '../contrib/int
 import { getTextSnapshot } from '../text/source_text';
 import * as runtimeLuaPipeline from '../../../emulator/runtime_lua_pipeline';
 import { Runtime } from '../../../emulator/runtime';
-import { buildDirtyFilePath } from '../../workbench/common/workspace_storage';
+import { buildDirtyFilePath } from '../../workbench/common/workspace_io';
 import { getWorkspaceCachedSource } from '../../../emulator/workspace_cache';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorViewState } from '../ui/editor_view_state';

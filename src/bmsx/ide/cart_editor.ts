@@ -1,5 +1,5 @@
 import { editorRuntimeState } from './editor/common/editor_runtime_state';
-import { clearWorkspaceDirtyBuffers } from './workbench/common/workspace_storage';
+import { clearWorkspaceDirtyBuffers } from './workbench/common/workspace_autosave';
 
 import { renderFaultOverlay, renderRuntimeFaultOverlay, showRuntimeError, showRuntimeErrorInChunk } from './editor/render/render_error_overlay';
 import {

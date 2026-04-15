@@ -28,7 +28,7 @@ import { handleTextEditorPointerInput } from '../input/pointer/editor_pointer_di
 import { handleEditorWheelInput } from '../input/pointer/editor_wheel_input';
 import { updateBlink } from './inline_text_field';
 import { stopWorkspaceAutosaveLoop, runWorkspaceAutosaveTick, initializeWorkspaceStorage } from '../../workbench/common/workspace_storage';
-import { workspaceState } from '../../workbench/common/workspace_storage';
+import { workspaceState } from '../../workbench/common/workspace_state';
 import { clearWorkspaceCachedSources } from '../../../emulator/workspace_cache';
 import { clearBackgroundTasks } from '../../common/background_tasks';
 import { clearGotoHoverHighlight } from '../contrib/intellisense/intellisense';

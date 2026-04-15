@@ -23,7 +23,7 @@ import * as runtimeLuaPipeline from '../../../emulator/runtime_lua_pipeline';
 import { getTextSnapshot } from '../../editor/text/source_text';
 import { PieceTreeBuffer } from '../../editor/text/piece_tree_buffer';
 import { listResources, saveLuaResourceSource } from '../../../emulator/workspace';
-import { buildDirtyFilePath } from '../common/workspace_storage';
+import { buildDirtyFilePath } from '../common/workspace_io';
 import { setWorkspaceCachedSources } from '../../../emulator/workspace_cache';
 import { breakUndoSequence } from '../../editor/editing/undo_controller';
 import { applyAemSourceToRuntime, saveAemResourceSource } from '../../language/aem/aem_editor';
