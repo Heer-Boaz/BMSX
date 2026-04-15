@@ -132,11 +132,32 @@ const ENGINE_SYSTEM_GEO_GLOBAL_NAMES = [
 	'sys_geo_fault_reject_bad_register_combo',
 ] as const;
 
+const ENGINE_SYSTEM_INPUT_GLOBAL_NAMES = [
+	'sys_inp_player',
+	'sys_inp_action',
+	'sys_inp_bind',
+	'sys_inp_ctrl',
+	'sys_inp_query',
+	'sys_inp_status',
+	'sys_inp_value',
+	'sys_inp_consume',
+	'inp_ctrl_commit',
+	'inp_ctrl_latch',
+	'inp_ctrl_reset',
+	'inp_pressed',
+	'inp_justpressed',
+	'inp_justreleased',
+	'inp_consumed',
+	'inp_guardedjustpressed',
+	'inp_repeatpressed',
+] as const;
+
 export const ENGINE_SYSTEM_GLOBAL_NAMES: ReadonlyArray<string> = [
 	...ENGINE_SYSTEM_HELPER_NAMES,
 	...ENGINE_LUA_BUILTIN_FUNCTION_NAMES,
 	...ENGINE_LUA_BUILTIN_GLOBAL_NAMES,
 	...ENGINE_SYSTEM_GEO_GLOBAL_NAMES,
+	...ENGINE_SYSTEM_INPUT_GLOBAL_NAMES,
 ];
 
 export const ENGINE_SYSTEM_GLOBAL_NAME_SET: ReadonlySet<string> = new Set(ENGINE_SYSTEM_GLOBAL_NAMES);

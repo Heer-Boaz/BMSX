@@ -87,6 +87,9 @@ import {
 	IMG_STATUS_DONE,
 	IMG_STATUS_ERROR,
 	IMG_STATUS_REJECTED,
+	INP_CTRL_COMMIT,
+	INP_CTRL_LATCH,
+	INP_CTRL_RESET,
 	IO_ARG_STRIDE,
 	IO_CMD_VDP_BLIT,
 	IO_CMD_VDP_CLEAR,
@@ -127,6 +130,14 @@ import {
 	IO_IMG_SRC,
 	IO_IMG_STATUS,
 	IO_IMG_WRITTEN,
+	IO_INP_ACTION,
+	IO_INP_BIND,
+	IO_INP_CONSUME,
+	IO_INP_CTRL,
+	IO_INP_PLAYER,
+	IO_INP_QUERY,
+	IO_INP_STATUS,
+	IO_INP_VALUE,
 	IO_IRQ_ACK,
 	IO_IRQ_FLAGS,
 	IO_SYS_BOOT_CART,
@@ -185,6 +196,13 @@ import type { LuaMarshalContext } from './types';
 import type { Runtime } from './runtime';
 import * as runtimeLuaPipeline from './runtime_lua_pipeline';
 import { compileLoadChunk } from './lua_load_compiler';
+
+const ACTION_STATE_FLAG_PRESSED = 1 << 0;
+const ACTION_STATE_FLAG_JUSTPRESSED = 1 << 1;
+const ACTION_STATE_FLAG_JUSTRELEASED = 1 << 2;
+const ACTION_STATE_FLAG_CONSUMED = 1 << 5;
+const ACTION_STATE_FLAG_GUARDEDJUSTPRESSED = 1 << 9;
+const ACTION_STATE_FLAG_REPEATPRESSED = 1 << 10;
 
 export function valueToString(value: Value): string {
 	if (value === null) {
@@ -1201,6 +1219,23 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_img_ctrl', IO_IMG_CTRL);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_img_status', IO_IMG_STATUS);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_img_written', IO_IMG_WRITTEN);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_inp_player', IO_INP_PLAYER);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_inp_action', IO_INP_ACTION);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_inp_bind', IO_INP_BIND);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_inp_ctrl', IO_INP_CTRL);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_inp_query', IO_INP_QUERY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_inp_status', IO_INP_STATUS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_inp_value', IO_INP_VALUE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_inp_consume', IO_INP_CONSUME);
+	runtimeLuaPipeline.registerGlobal(runtime, 'inp_ctrl_commit', INP_CTRL_COMMIT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'inp_ctrl_latch', INP_CTRL_LATCH);
+	runtimeLuaPipeline.registerGlobal(runtime, 'inp_ctrl_reset', INP_CTRL_RESET);
+	runtimeLuaPipeline.registerGlobal(runtime, 'inp_pressed', ACTION_STATE_FLAG_PRESSED);
+	runtimeLuaPipeline.registerGlobal(runtime, 'inp_justpressed', ACTION_STATE_FLAG_JUSTPRESSED);
+	runtimeLuaPipeline.registerGlobal(runtime, 'inp_justreleased', ACTION_STATE_FLAG_JUSTRELEASED);
+	runtimeLuaPipeline.registerGlobal(runtime, 'inp_consumed', ACTION_STATE_FLAG_CONSUMED);
+	runtimeLuaPipeline.registerGlobal(runtime, 'inp_guardedjustpressed', ACTION_STATE_FLAG_GUARDEDJUSTPRESSED);
+	runtimeLuaPipeline.registerGlobal(runtime, 'inp_repeatpressed', ACTION_STATE_FLAG_REPEATPRESSED);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_system_base', SYSTEM_ROM_BASE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_cart_base', CART_ROM_BASE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_overlay_base', OVERLAY_ROM_BASE);

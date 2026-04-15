@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import { LuaLexer } from '../../src/bmsx/lua/syntax/lualexer';
 import { LuaParser } from '../../src/bmsx/lua/syntax/luaparser';
+import { IO_INP_QUERY } from '../../src/bmsx/emulator/io';
 import { compileLuaChunkToProgram } from '../../src/bmsx/emulator/program_compiler';
 import {
 	withTemporaryMmioRegisterSpec,
@@ -27,6 +28,45 @@ function withStringRefRegister<T>(address: number, name: string, run: () => T): 
 	};
 	return withTemporaryMmioRegisterSpec(spec, run);
 }
+
+test('ProgramCompiler accepts string_ref writes to sys_inp_query', () => {
+	const source = [
+		`local reg<const> = ${IO_INP_QUERY}`,
+		"local q<const> = &'left[p]'",
+		'mem[reg] = q',
+	].join('\n');
+	const compiled = compileSource(source, 'sys_inp_query_ok.lua');
+	assert.ok(compiled.program.code.length > 0);
+});
+
+test('ProgramCompiler rejects plain string writes to sys_inp_query', () => {
+	const source = [
+		`local reg<const> = ${IO_INP_QUERY}`,
+		"mem[reg] = 'left[p]'",
+	].join('\n');
+	assert.throws(
+		() => compileSource(source, 'sys_inp_query_plain_string.lua'),
+		/requires a string_ref value/,
+	);
+});
+
+test('ProgramCompiler rejects degraded aliases written to sys_inp_query', () => {
+	const source = [
+		'local function write(flag)',
+		`\tlocal reg<const> = ${IO_INP_QUERY}`,
+		"\tlocal q = &'left[p]'",
+		'\tif flag then',
+		"\t\tq = 'right[p]'",
+		'\tend',
+		'\tmem[reg] = q',
+		'end',
+		'return write',
+	].join('\n');
+	assert.throws(
+		() => compileSource(source, 'sys_inp_query_degraded_alias.lua'),
+		/requires a string_ref value/,
+	);
+});
 
 test('ProgramCompiler proves Lua and/or short-circuit expressions as string_ref when truthiness is known', () => {
 	withStringRefRegister(0x5100, 'sys_test_flow_and_or_ok', () => {

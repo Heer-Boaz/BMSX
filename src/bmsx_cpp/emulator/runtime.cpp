@@ -342,6 +342,11 @@ Runtime::Runtime(const RuntimeOptions& options)
 			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceImg, deadlineCycles); },
 			[this]() { cancelDeviceService(DeviceServiceImg); }
 		)
+	, m_inputController(
+			m_memory,
+			Input::instance(),
+			m_cpu.stringPool()
+		)
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)
 	, m_cpuHz(options.cpuHz)
@@ -390,6 +395,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
 	m_dmaController.reset();
 	m_imgDecController.reset();
+	m_inputController.reset();
 	m_vdp.attachImgDecController(m_imgDecController);
 	m_memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
 	m_memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
@@ -1487,7 +1493,25 @@ void Runtime::tickTerminalModeDraw() {
 }
 
 void Runtime::onIoWrite(uint32_t addr, Value value) {
-	if ((m_handlingVdpCommandWrite || m_handlingIrqAckWrite) || !valueIsNumber(value)) {
+	if (m_handlingVdpCommandWrite || m_handlingIrqAckWrite) {
+		return;
+	}
+	if (addr == IO_INP_ACTION || addr == IO_INP_BIND) {
+		return;
+	}
+	if (addr == IO_INP_QUERY) {
+		m_inputController.onQueryWrite();
+		return;
+	}
+	if (addr == IO_INP_CONSUME) {
+		m_inputController.onConsumeWrite();
+		return;
+	}
+	if (addr == IO_INP_CTRL) {
+		m_inputController.onCtrlWrite();
+		return;
+	}
+	if (!valueIsNumber(value)) {
 		return;
 	}
 	if (addr == IO_IRQ_ACK) {
@@ -1729,6 +1753,7 @@ void Runtime::resetHardwareState() {
 	m_dmaController.reset();
 	m_geometryController.reset();
 	m_imgDecController.reset();
+	m_inputController.reset();
 	resetVblankState();
 	resetRenderBuffers();
 }

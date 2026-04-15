@@ -643,7 +643,9 @@ export function resetHardwareState(runtime: Runtime): void {
 	runtime.memory.writeValue(IO_IRQ_FLAGS, 0);
 	runtime.memory.writeValue(IO_IRQ_ACK, 0);
 	runtime.dmaController.reset();
+	runtime.geometryController.reset();
 	runtime.imgDecController.reset();
+	runtime.inputController.reset();
 	runtime.resetVblankState();
 	runtime.resetRenderBuffers();
 }

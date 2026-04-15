@@ -1503,6 +1503,14 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_img_ctrl", valueNumber(static_cast<double>(IO_IMG_CTRL)));
 	setGlobal("sys_img_status", valueNumber(static_cast<double>(IO_IMG_STATUS)));
 	setGlobal("sys_img_written", valueNumber(static_cast<double>(IO_IMG_WRITTEN)));
+	setGlobal("sys_inp_player", valueNumber(static_cast<double>(IO_INP_PLAYER)));
+	setGlobal("sys_inp_action", valueNumber(static_cast<double>(IO_INP_ACTION)));
+	setGlobal("sys_inp_bind", valueNumber(static_cast<double>(IO_INP_BIND)));
+	setGlobal("sys_inp_ctrl", valueNumber(static_cast<double>(IO_INP_CTRL)));
+	setGlobal("sys_inp_query", valueNumber(static_cast<double>(IO_INP_QUERY)));
+	setGlobal("sys_inp_status", valueNumber(static_cast<double>(IO_INP_STATUS)));
+	setGlobal("sys_inp_value", valueNumber(static_cast<double>(IO_INP_VALUE)));
+	setGlobal("sys_inp_consume", valueNumber(static_cast<double>(IO_INP_CONSUME)));
 	setGlobal("sys_rom_system_base", valueNumber(static_cast<double>(SYSTEM_ROM_BASE)));
 	setGlobal("sys_rom_cart_base", valueNumber(static_cast<double>(CART_ROM_BASE)));
 	setGlobal("sys_rom_overlay_base", valueNumber(static_cast<double>(OVERLAY_ROM_BASE)));
@@ -1584,6 +1592,15 @@ void Runtime::setupBuiltins() {
 	setGlobal("img_status_error", valueNumber(static_cast<double>(IMG_STATUS_ERROR)));
 	setGlobal("img_status_clipped", valueNumber(static_cast<double>(IMG_STATUS_CLIPPED)));
 	setGlobal("img_status_rejected", valueNumber(static_cast<double>(IMG_STATUS_REJECTED)));
+	setGlobal("inp_ctrl_commit", valueNumber(static_cast<double>(INP_CTRL_COMMIT)));
+	setGlobal("inp_ctrl_latch", valueNumber(static_cast<double>(INP_CTRL_LATCH)));
+	setGlobal("inp_ctrl_reset", valueNumber(static_cast<double>(INP_CTRL_RESET)));
+	setGlobal("inp_pressed", valueNumber(static_cast<double>(ACTION_STATE_FLAG_PRESSED)));
+	setGlobal("inp_justpressed", valueNumber(static_cast<double>(ACTION_STATE_FLAG_JUSTPRESSED)));
+	setGlobal("inp_justreleased", valueNumber(static_cast<double>(ACTION_STATE_FLAG_JUSTRELEASED)));
+	setGlobal("inp_consumed", valueNumber(static_cast<double>(ACTION_STATE_FLAG_CONSUMED)));
+	setGlobal("inp_guardedjustpressed", valueNumber(static_cast<double>(ACTION_STATE_FLAG_GUARDEDJUSTPRESSED)));
+	setGlobal("inp_repeatpressed", valueNumber(static_cast<double>(ACTION_STATE_FLAG_REPEATPRESSED)));
 
 	registerNativeFunction("u32_to_f32", [](NativeArgsView args, NativeResults& out) {
 		const uint32_t bits = toU32(asNumber(args.at(0)));

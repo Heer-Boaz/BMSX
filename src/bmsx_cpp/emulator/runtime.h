@@ -4,6 +4,7 @@
 #include "devices/dma_controller.h"
 #include "devices/geometry_controller.h"
 #include "devices/imgdec_controller.h"
+#include "devices/input_controller.h"
 #include "io.h"
 #include "runtime_screen.h"
 #include "runtime_timing.h"
@@ -424,6 +425,7 @@ private:
 	DmaController m_dmaController;
 	GeometryController m_geometryController;
 	ImgDecController m_imgDecController;
+	InputController m_inputController;
 	Program* m_program = nullptr;
 	ProgramMetadata* m_programMetadata = nullptr;
 

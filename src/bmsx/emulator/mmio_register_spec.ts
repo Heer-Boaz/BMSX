@@ -1,3 +1,5 @@
+import { IO_INP_ACTION, IO_INP_BIND, IO_INP_CONSUME, IO_INP_QUERY } from './io';
+
 export type MmioWriteRequirement = 'any' | 'string_ref';
 
 export type MmioRegisterSpec = {
@@ -7,9 +9,10 @@ export type MmioRegisterSpec = {
 };
 
 export const MMIO_REGISTER_SPECS: ReadonlyArray<MmioRegisterSpec> = [
-	// Input Controller registers will be added here when the device is implemented.
-	// Example:
-	// { name: 'sys_input_action_query', address: IO_INPUT_ACTION_QUERY, writeRequirement: 'string_ref' },
+	{ name: 'sys_inp_action', address: IO_INP_ACTION, writeRequirement: 'string_ref' },
+	{ name: 'sys_inp_bind', address: IO_INP_BIND, writeRequirement: 'string_ref' },
+	{ name: 'sys_inp_query', address: IO_INP_QUERY, writeRequirement: 'string_ref' },
+	{ name: 'sys_inp_consume', address: IO_INP_CONSUME, writeRequirement: 'string_ref' },
 ];
 
 const mmioRegisterSpecByAddress = new Map(

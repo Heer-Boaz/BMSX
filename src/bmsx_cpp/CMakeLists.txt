@@ -137,6 +137,7 @@ add_library(bmsx_core STATIC
 	emulator/devices/dma_controller.cpp
 	emulator/devices/geometry_controller.cpp
 	emulator/devices/imgdec_controller.cpp
+	emulator/devices/input_controller.cpp
 	emulator/firmware_api.cpp
 	emulator/disassembler.cpp
 	emulator/lua_load_compiler.cpp

@@ -111,6 +111,11 @@ import {
 	IO_IMG_SRC,
 	IO_IMG_STATUS,
 	IO_IMG_WRITTEN,
+	IO_INP_ACTION,
+	IO_INP_BIND,
+	IO_INP_CONSUME,
+	IO_INP_CTRL,
+	IO_INP_QUERY,
 	IMG_CTRL_START,
 	IO_IRQ_ACK,
 	IO_IRQ_FLAGS,
@@ -146,6 +151,7 @@ import { Memory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntr
 import { DmaController } from './devices/dma_controller';
 import { GeometryController } from './devices/geometry_controller';
 import { ImgDecController } from './devices/imgdec_controller';
+import { InputController } from './devices/input_controller';
 import {
 	CART_ROM_BASE,
 	DEFAULT_GEO_SCRATCH_SIZE,
@@ -1349,6 +1355,7 @@ export class Runtime {
 	public readonly dmaController: DmaController;
 	public readonly geometryController: GeometryController;
 	public readonly imgDecController: ImgDecController;
+	public readonly inputController: InputController;
 	private engineCanonicalization: CanonicalizationType = null;
 	public cartCanonicalization: CanonicalizationType = null;
 	public preparedCartProgram: {
@@ -1897,6 +1904,8 @@ export class Runtime {
 			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_GEO, deadlineCycles),
 			() => this.cancelDeviceService(DEVICE_SERVICE_GEO),
 		);
+		this.inputController = new InputController(this.memory, Input.instance);
+		this.inputController.reset();
 		this.cpu = new CPU(this.memory, this.runtimeStringPool);
 		this.resourceUsageDetector = new ResourceUsageDetector(
 			this.memory,
@@ -2202,7 +2211,25 @@ export class Runtime {
 	}
 
 	public onIoWrite(addr: number, value: Value): void {
-		if ((this.handlingVdpCommandWrite || this.handlingIrqAckWrite) || typeof value !== 'number') {
+		if (this.handlingVdpCommandWrite || this.handlingIrqAckWrite) {
+			return;
+		}
+		if (addr === IO_INP_ACTION || addr === IO_INP_BIND) {
+			return;
+		}
+		if (addr === IO_INP_QUERY) {
+			this.inputController.onQueryWrite();
+			return;
+		}
+		if (addr === IO_INP_CONSUME) {
+			this.inputController.onConsumeWrite();
+			return;
+		}
+		if (addr === IO_INP_CTRL) {
+			this.inputController.onCtrlWrite();
+			return;
+		}
+		if (typeof value !== 'number') {
 			return;
 		}
 		if (addr === IO_IRQ_ACK) {
