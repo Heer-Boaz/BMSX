@@ -373,8 +373,12 @@ void OpenGLES2Backend::endFrame() {
 	glUseProgram(0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	for (int unit = 0; unit <= 3; ++unit) {
+		glActiveTexture(GL_TEXTURE0 + unit);
+		glBindTexture(GL_TEXTURE_2D, 0);
+	}
 	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, 0);
+	invalidateTextureBindingCache();
 	if constexpr (kGLES2FinishFrame) {
 	glFinish();
 	}

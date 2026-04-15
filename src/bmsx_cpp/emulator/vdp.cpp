@@ -8,6 +8,7 @@
 #endif
 #include "../render/shared/render_queues.h"
 #include "../render/texturemanager.h"
+#include "../vendor/stb_image.h"
 #include "devices/imgdec_controller.h"
 #include <algorithm>
 #include <chrono>
@@ -886,6 +887,67 @@ void VdpGles2Blitter::shutdown() {
 #endif
 
 namespace {
+
+EngineCore::RomView resolvePayloadRomView(const RomAssetInfo& romInfo) {
+	if (!romInfo.payloadId.has_value()) {
+		throw vdpFault("image asset missing payload id.");
+	}
+	const std::string& payloadId = *romInfo.payloadId;
+	if (payloadId == "system") {
+		return EngineCore::instance().engineRomView();
+	}
+	if (payloadId == "cart") {
+		return EngineCore::instance().cartRomView();
+	}
+	throw vdpFault("unsupported image payload id '" + payloadId + "'.");
+}
+
+void ensureDecodedPixels(ImgAsset& asset) {
+	if (!asset.pixels.empty()) {
+		return;
+	}
+	if (!asset.rom.start.has_value() || !asset.rom.end.has_value()) {
+		throw vdpFault("image asset '" + asset.id + "' missing ROM byte range.");
+	}
+	const EngineCore::RomView romView = resolvePayloadRomView(asset.rom);
+	const size_t start = static_cast<size_t>(*asset.rom.start);
+	const size_t end = static_cast<size_t>(*asset.rom.end);
+	if (end <= start || end > romView.size) {
+		throw vdpFault("image asset '" + asset.id + "' ROM byte range is invalid.");
+	}
+	int width = 0;
+	int height = 0;
+	int comp = 0;
+	unsigned char* decoded = stbi_load_from_memory(
+		romView.data + start,
+		static_cast<int>(end - start),
+		&width,
+		&height,
+		&comp,
+		4
+	);
+	if (!decoded) {
+		throw vdpFault("image asset '" + asset.id + "' decode failed.");
+	}
+	if (width != asset.meta.width || height != asset.meta.height) {
+		stbi_image_free(decoded);
+		throw vdpFault(
+			"image asset '" + asset.id + "' decoded dimensions "
+			+ std::to_string(width)
+			+ "x"
+			+ std::to_string(height)
+			+ " do not match metadata "
+			+ std::to_string(asset.meta.width)
+			+ "x"
+			+ std::to_string(asset.meta.height)
+			+ "."
+		);
+	}
+	const size_t pixelBytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
+	asset.pixels.resize(pixelBytes);
+	std::memcpy(asset.pixels.data(), decoded, pixelBytes);
+	stbi_image_free(decoded);
+}
 
 struct OctaveSpec {
 	uint32_t shift;
@@ -2704,7 +2766,8 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 
 	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
 	RuntimeAssets& systemAssets = EngineCore::instance().systemAssets();
-	const ImgAsset* engineAtlasAsset = systemAssets.getImg(engineAtlasName);
+	ImgAsset* engineAtlasAsset = systemAssets.getImg(engineAtlasName);
+	ensureDecodedPixels(*engineAtlasAsset);
 
 	for (auto& entry : systemAssets.img) {
 		auto& imgAsset = entry.second;
@@ -3149,6 +3212,10 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& t
 	if (isEngineAtlas) {
 		auto& engineSlot = m_vramSlots.back();
 		ImgAsset* engineAsset = EngineCore::instance().systemAssets().getImg(generateAtlasName(ENGINE_ATLAS_INDEX));
+		const size_t expectedBytes = static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u;
+		if (engineAsset->pixels.size() != expectedBytes) {
+			throw vdpFault("engine atlas pixel buffer size mismatch.");
+		}
 		engineSlot.cpuReadback.assign(engineAsset->pixels.begin(), engineAsset->pixels.end());
 		if (handle) {
 			TextureParams params;
@@ -3399,6 +3466,7 @@ void VDP::restoreVramSlotTexture(const Memory::AssetEntry& entry, const std::str
 	}
 	if (isEngineAtlas) {
 		ImgAsset* engineAsset = EngineCore::instance().systemAssets().getImg(generateAtlasName(ENGINE_ATLAS_INDEX));
+		ensureDecodedPixels(*engineAsset);
 		slot.cpuReadback.assign(engineAsset->pixels.begin(), engineAsset->pixels.end());
 		texmanager->updateTexture(
 			handle,

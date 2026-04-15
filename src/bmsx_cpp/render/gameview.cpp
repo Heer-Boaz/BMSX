@@ -178,6 +178,7 @@ void GameView::loadEngineAtlasTexture() {
 
 void GameView::beginFrame() {
 	if (!m_backend) return;
+	m_activeTexUnit = -1;
 	m_backend->beginFrame();
 }
 
@@ -245,12 +246,10 @@ void GameView::setActiveTexUnit(i32 unit) {
 
 void GameView::bind2DTex(TextureHandle tex) {
 	if (backendType() != BackendType::OpenGLES2) return;
-	if (m_activeTexture2D == tex) return;
 #if !BMSX_ENABLE_GLES2
 	throw BMSX_RUNTIME_ERROR("[GameView] OpenGLES2 backend disabled at compile time.");
 #else
 	static_cast<OpenGLES2Backend*>(m_backend.get())->bindTexture2D(tex);
-	m_activeTexture2D = tex;
 #endif
 }
 
@@ -259,8 +258,7 @@ void GameView::bindCubemapTex(TextureHandle tex) {
 #if !BMSX_ENABLE_GLES2
 	throw BMSX_RUNTIME_ERROR("[GameView] OpenGLES2 backend disabled at compile time.");
 #else
-	if (m_activeCubemap == tex) return;
-	m_activeCubemap = tex;
+	(void)tex;
 #endif
 }
 

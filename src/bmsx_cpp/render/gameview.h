@@ -254,8 +254,6 @@ private:
 	std::unique_ptr<RenderGraphRuntime> m_renderGraph;
 
 	i32 m_activeTexUnit = -1;
-	TextureHandle m_activeTexture2D = nullptr;
-	TextureHandle m_activeCubemap = nullptr;
 
 	// CRT post-processing scratch buffer
 	std::vector<u32> m_crtScratchBuffer;
