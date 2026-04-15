@@ -2,12 +2,11 @@
 #include "runtime.h"
 #include "../utils/clamp.h"
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace bmsx {
 namespace {
-constexpr int MAX_QUEUED_FRAMES = 5;
-
 inline std::runtime_error runtimeFault(const std::string& message) {
 	return std::runtime_error(std::string("Runtime fault: ") + message);
 }
@@ -17,7 +16,7 @@ void RuntimeMachineSchedulerState::queueHostCycles(const Runtime& runtime, f64 d
 	const f64 totalCycles = m_queuedCycleRemainder + (deltaMs * static_cast<f64>(runtime.m_cpuHz) / 1000.0);
 	const i64 wholeCycles = static_cast<i64>(std::floor(totalCycles));
 	m_queuedCycleRemainder = totalCycles - static_cast<f64>(wholeCycles);
-	m_queuedCycleBudget = clamp(m_queuedCycleBudget + wholeCycles, static_cast<i64>(0), static_cast<i64>(runtime.m_cycleBudgetPerFrame) * static_cast<i64>(MAX_QUEUED_FRAMES));
+	m_queuedCycleBudget = clamp(m_queuedCycleBudget + wholeCycles, static_cast<i64>(0), std::numeric_limits<i64>::max());
 }
 
 bool RuntimeMachineSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
