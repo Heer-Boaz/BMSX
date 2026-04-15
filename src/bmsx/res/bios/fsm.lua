@@ -2208,7 +2208,9 @@ function state:update()
 			local entry<const> = handlers[i]
 			local pattern<const> = entry.pattern
 			local handler<const> = entry.handler
-			if action_triggered(pattern, player_index) then
+			mem[sys_inp_player] = player_index
+			mem[sys_inp_query] = pattern
+			if mem[sys_inp_status] ~= 0 then
 				local handled
 				if trace_transitions then
 					handled = self:run_with_transition_context(

@@ -146,42 +146,53 @@ local entry_cycle<const> = function(entry, dir)
 end
 
 function menu.update()
-	if action_triggered('select[jp] && start[jp]') then
+	local previous_inp_player<const> = mem[sys_inp_player]
+	mem[sys_inp_player] = 1
+	mem[sys_inp_query] = &'select[jp] && start[jp]'
+	if mem[sys_inp_status] ~= 0 then
 		consume_action('select')
 		consume_action('start')
 		toggle_menu()
 	end
 	if not state.open then
+		mem[sys_inp_player] = previous_inp_player
 		return
 	end
 
-	if action_triggered('b[jp]') then
+	mem[sys_inp_query] = &'b[jp]'
+	if mem[sys_inp_status] ~= 0 then
 		consume_action('b')
 		toggle_menu()
 	end
 
-	if action_triggered('up[rp]') then
+	mem[sys_inp_query] = &'up[rp]'
+	if mem[sys_inp_status] ~= 0 then
 		state.selected = state.selected - 1
 		-- if state.selected < 1 then state.selected = #entries end
 		if state.selected < 1 then state.selected = 1 end
 	end
-	if action_triggered('down[rp]') then
+	mem[sys_inp_query] = &'down[rp]'
+	if mem[sys_inp_status] ~= 0 then
 		state.selected = state.selected + 1
 		-- if state.selected > #entries then state.selected = 1 end
 		if state.selected > #entries then state.selected = #entries end
 	end
-	if action_triggered('left[jp]') then
+	mem[sys_inp_query] = &'left[jp]'
+	if mem[sys_inp_status] ~= 0 then
 		entry_cycle(entries[state.selected], -1)
 	end
-	if action_triggered('right[jp]') then
+	mem[sys_inp_query] = &'right[jp]'
+	if mem[sys_inp_status] ~= 0 then
 		entry_cycle(entries[state.selected], 1)
 	end
-	if action_triggered('a[jp]') then
+	mem[sys_inp_query] = &'a[jp]'
+	if mem[sys_inp_status] ~= 0 then
 		consume_action('a')
 		if entries[state.selected].kind == 'action' then
 			entries[state.selected].action()
 		end	
 	end
+	mem[sys_inp_player] = previous_inp_player
 end
 
 function menu.draw()

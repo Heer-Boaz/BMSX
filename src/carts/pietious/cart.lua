@@ -109,6 +109,7 @@ local create_world<const> = function(director_boot_mode)
 end
 
 local new_game<const> = function()
+	mem[sys_inp_player] = 1
 	if pending_title_boot_epoch == init_epoch then
 		pending_title_boot_epoch = init_epoch - 1
 		create_world('title_screen')
@@ -119,6 +120,7 @@ end
 
 function init()
 	mem[sys_vdp_dither] = 0
+	mem[sys_inp_player] = 1
 	on_irq(irq_reinit, function()
 		init()
 	end)
@@ -184,6 +186,7 @@ while true do
 		flags = dispatch_irqs()
 	until (flags & irq_vblank) ~= 0
 	begin_update_phase()
+	mem[sys_inp_ctrl] = inp_ctrl_latch
 	vdp_stream_cursor = sys_vdp_stream_base
 	update()
 	do

@@ -13,6 +13,7 @@ end
 
 function init()
 	mem[sys_vdp_dither] = 0
+	mem[sys_inp_player] = 1
 	on_irq(irq_reinit, function()
 		init()
 	end)
@@ -30,6 +31,7 @@ function init()
 end
 
 function new_game()
+	mem[sys_inp_player] = 1
 	reset()
 	inst_subsystem(stage_module.stage_def_id, {
 		id = stage_module.stage_instance_id,
@@ -52,6 +54,7 @@ end
 			flags = service_irqs()
 		until (flags & irq_vblank) ~= 0
 		begin_update_phase()
+		mem[sys_inp_ctrl] = inp_ctrl_latch
 		vdp_stream_cursor = sys_vdp_stream_base
 		update()
 		do

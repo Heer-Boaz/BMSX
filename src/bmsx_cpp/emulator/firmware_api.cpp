@@ -954,15 +954,6 @@ m_runtime.registerNativeFunction("create_font", [this](NativeArgsView args, Nati
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("action_triggered", [this, asText](NativeArgsView args, NativeResults& out) {
-	const std::string& action = asText(args.at(0));
-	std::optional<int> playerIndex;
-	if (args.size() > 1 && !isNil(args[1])) {
-		playerIndex = static_cast<int>(std::floor(asNumber(args.at(1))));
-	}
-	out.push_back(valueBool(action_triggered(action, playerIndex)));
-});
-
 m_runtime.registerNativeFunction("consume_action", [this, asText](NativeArgsView args, NativeResults& out) {
 	(void)out;
 	std::optional<int> playerIndex;
@@ -1181,11 +1172,6 @@ void Api::put_mesh(const MeshRenderSubmission& submission) {
 
 void Api::put_particle(const ParticleRenderSubmission& submission) {
 	EngineCore::instance().view()->renderer.submit.particle(submission);
-}
-
-bool Api::action_triggered(const std::string& actionDefinition, std::optional<int> playerIndex) const {
-	int index = playerIndex.has_value() ? playerIndex.value() : 1;
-	return EngineCore::instance().action_triggered(index, actionDefinition);
 }
 
 void Api::consume_action(const std::string& action, std::optional<int> playerIndex) {

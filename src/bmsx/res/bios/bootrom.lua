@@ -2403,7 +2403,15 @@ end
 
 function update()
 	boot_screen_visible = true
-	local scroll_delta<const> = action_triggered('down[rp]') and 1 or (action_triggered('up[rp]') and -1 or 0)
+	mem[sys_inp_player] = 1
+	mem[sys_inp_query] = &'down[rp]'
+	local scroll_delta = mem[sys_inp_status] ~= 0 and 1 or 0
+	if scroll_delta == 0 then
+		mem[sys_inp_query] = &'up[rp]'
+		if mem[sys_inp_status] ~= 0 then
+			scroll_delta = -1
+		end
+	end
 	render_boot_screen(scroll_delta)
 	if not boot_screen_presented then
 		boot_screen_presented = true
@@ -2515,7 +2523,9 @@ while true do
 		halt_until_irq
 		flags = service_irqs()
 	until (flags & irq_vblank) ~= 0
+	mem[sys_inp_player] = 1
 	begin_update_phase()
+	mem[sys_inp_ctrl] = inp_ctrl_latch
 	vdp_stream_cursor = sys_vdp_stream_base
 	update()
 	do local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base

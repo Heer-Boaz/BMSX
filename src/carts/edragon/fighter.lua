@@ -90,12 +90,17 @@ function fighter:sample_player_input()
 	local was_jump_held = self.jump_held
 	local was_attack_a = self.attack_a_pressed
 	local was_attack_b = self.attack_b_pressed
-	self.left_held = action_triggered(constants.controls.left)
-	self.right_held = action_triggered(constants.controls.right)
-	self.jump_held = action_triggered(constants.controls.jump)
+	mem[sys_inp_query] = constants.controls.left
+	self.left_held = mem[sys_inp_status] ~= 0
+	mem[sys_inp_query] = constants.controls.right
+	self.right_held = mem[sys_inp_status] ~= 0
+	mem[sys_inp_query] = constants.controls.jump
+	self.jump_held = mem[sys_inp_status] ~= 0
 	self.jump_pressed = self.jump_held and not was_jump_held
-	self.attack_a_pressed = action_triggered(constants.controls.punch)
-	self.attack_b_pressed = action_triggered(constants.controls.kick)
+	mem[sys_inp_query] = constants.controls.punch
+	self.attack_a_pressed = mem[sys_inp_status] ~= 0
+	mem[sys_inp_query] = constants.controls.kick
+	self.attack_b_pressed = mem[sys_inp_status] ~= 0
 	self.attack_a_pressed = self.attack_a_pressed and not was_attack_a
 	self.attack_b_pressed = self.attack_b_pressed and not was_attack_b
 	self.attack_pressed = self.attack_a_pressed or self.attack_b_pressed

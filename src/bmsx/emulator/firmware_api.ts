@@ -345,10 +345,6 @@ export class Api {
 		});
 	}
 
-	public action_triggered(actiondefinition: string, player?: number): boolean {
-		return $.action_triggered(player === undefined ? 1 : player, actiondefinition)
-	}
-
 	public consume_action(actionToConsume: string, player?: number): void {
 		$.consume_action(player === undefined ? 1 : player, actionToConsume);
 	}

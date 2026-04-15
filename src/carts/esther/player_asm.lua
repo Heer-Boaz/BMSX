@@ -9103,10 +9103,15 @@ end
 function player:fill_dkc1_input_ram_from_actions()
 	local player_index = self.player_index
 
-	local left_held = action_triggered('left[p]', player_index)
-	local right_held = action_triggered('right[p]', player_index)
-	local up_held = action_triggered('up[p]', player_index)
-	local down_held = action_triggered('down[p]', player_index)
+	mem[sys_inp_player] = player_index
+	mem[sys_inp_query] = &'left[p]'
+	local left_held = mem[sys_inp_status] ~= 0
+	mem[sys_inp_query] = &'right[p]'
+	local right_held = mem[sys_inp_status] ~= 0
+	mem[sys_inp_query] = &'up[p]'
+	local up_held = mem[sys_inp_status] ~= 0
+	mem[sys_inp_query] = &'down[p]'
+	local down_held = mem[sys_inp_status] ~= 0
 
 	local held = 0
 	if left_held then
@@ -9121,28 +9126,36 @@ function player:fill_dkc1_input_ram_from_actions()
 	if down_held then
 		held = held | joypad_dpadd
 	end
-	if action_triggered('b[p]', player_index) then
+	mem[sys_inp_query] = &'b[p]'
+	if mem[sys_inp_status] ~= 0 then
 		held = held | joypad_b
 	end
-	if action_triggered('a[p]', player_index) then
+	mem[sys_inp_query] = &'a[p]'
+	if mem[sys_inp_status] ~= 0 then
 		held = held | joypad_a
 	end
-	if action_triggered('y[p]', player_index) then
+	mem[sys_inp_query] = &'y[p]'
+	if mem[sys_inp_status] ~= 0 then
 		held = held | joypad_y
 	end
-	if action_triggered('x[p]', player_index) then
+	mem[sys_inp_query] = &'x[p]'
+	if mem[sys_inp_status] ~= 0 then
 		held = held | joypad_x
 	end
-	if action_triggered('start[p]', player_index) then
+	mem[sys_inp_query] = &'start[p]'
+	if mem[sys_inp_status] ~= 0 then
 		held = held | joypad_start
 	end
-	if action_triggered('select[p]', player_index) then
+	mem[sys_inp_query] = &'select[p]'
+	if mem[sys_inp_status] ~= 0 then
 		held = held | joypad_select
 	end
-	if action_triggered('lb[p]', player_index) then
+	mem[sys_inp_query] = &'lb[p]'
+	if mem[sys_inp_status] ~= 0 then
 		held = held | joypad_l
 	end
-	if action_triggered('rb[p]', player_index) then
+	mem[sys_inp_query] = &'rb[p]'
+	if mem[sys_inp_status] ~= 0 then
 		held = held | joypad_r
 	end
 

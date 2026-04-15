@@ -208,12 +208,18 @@ function player:clear_input_state()
 end
 
 function player:sync_input_state_from_runtime()
-	self.left_held = action_triggered('left[p]')
-	self.right_held = action_triggered('right[p]')
-	self.down_held = action_triggered('down[p]')
-	self.attack_held = action_triggered('x[p]')
-	local up_primary_held<const> = action_triggered('up[p]')
-	local up_alt_held<const> = action_triggered('a[p]')
+	mem[sys_inp_query] = &'left[p]'
+	self.left_held = mem[sys_inp_status] ~= 0
+	mem[sys_inp_query] = &'right[p]'
+	self.right_held = mem[sys_inp_status] ~= 0
+	mem[sys_inp_query] = &'down[p]'
+	self.down_held = mem[sys_inp_status] ~= 0
+	mem[sys_inp_query] = &'x[p]'
+	self.attack_held = mem[sys_inp_status] ~= 0
+	mem[sys_inp_query] = &'up[p]'
+	local up_primary_held<const> = mem[sys_inp_status] ~= 0
+	mem[sys_inp_query] = &'a[p]'
+	local up_alt_held<const> = mem[sys_inp_status] ~= 0
 	local up_sources = 0
 	if up_primary_held then
 		up_sources = up_sources + 1
@@ -935,7 +941,8 @@ function player:try_open_world_entrance_with_key()
 end
 
 function player:try_start_world_or_shrine_interaction_from_down()
-	if not action_triggered('down[jp]') then
+	mem[sys_inp_query] = &'down[jp]'
+	if mem[sys_inp_status] == 0 then
 		return false
 	end
 
@@ -1786,7 +1793,8 @@ function player:advance_walk_animation(distance_px)
 end
 
 function player:runcheck_quiet_controls()
-	if action_triggered('up[jp] || a[jp]') then
+	mem[sys_inp_query] = &'up[jp] || a[jp]'
+	if mem[sys_inp_status] ~= 0 then
 		local stair<const> = self:pick_entry_stairs(-1)
 		if stair ~= nil then
 			self:start_stairs(-1, stair, 'stairs_up')
@@ -1796,7 +1804,8 @@ function player:runcheck_quiet_controls()
 	if self:try_start_world_or_shrine_interaction_from_down() then
 		return
 	end
-	if action_triggered('down[jp]') then
+	mem[sys_inp_query] = &'down[jp]'
+	if mem[sys_inp_status] ~= 0 then
 		local stair<const> = self:pick_entry_stairs(1)
 		if stair ~= nil then
 			self:start_stairs(1, stair, 'stairs_down')
@@ -1804,7 +1813,8 @@ function player:runcheck_quiet_controls()
 		end
 	end
 
-	if action_triggered('up[jp] || a[jp]') then
+	mem[sys_inp_query] = &'up[jp] || a[jp]'
+	if mem[sys_inp_status] ~= 0 then
 		local inertia
 		if self.left_held and not self.right_held then
 			inertia = -1
@@ -1842,7 +1852,8 @@ function player:runcheck_walking_right_controls()
 		self.walk_state = 0
 	end
 
-	if action_triggered('up[jp] || a[jp]') then
+	mem[sys_inp_query] = &'up[jp] || a[jp]'
+	if mem[sys_inp_status] ~= 0 then
 		local stair<const> = self:pick_entry_stairs(-1)
 		if stair ~= nil then
 			self:start_stairs(-1, stair, 'stairs_up')
@@ -1855,7 +1866,8 @@ function player:runcheck_walking_right_controls()
 	if self:try_start_world_or_shrine_interaction_from_down() then
 		return
 	end
-	if action_triggered('down[jp]') then
+	mem[sys_inp_query] = &'down[jp]'
+	if mem[sys_inp_status] ~= 0 then
 		local stair<const> = self:pick_entry_stairs(1)
 		if stair ~= nil then
 			self:start_stairs(1, stair, 'stairs_down')
@@ -1883,7 +1895,8 @@ function player:runcheck_walking_left_controls()
 		self.walk_state = 1
 	end
 
-	if action_triggered('up[jp] || a[jp]') then
+	mem[sys_inp_query] = &'up[jp] || a[jp]'
+	if mem[sys_inp_status] ~= 0 then
 		local stair<const> = self:pick_entry_stairs(-1)
 		if stair ~= nil then
 			self:start_stairs(-1, stair, 'stairs_up')
@@ -1896,7 +1909,8 @@ function player:runcheck_walking_left_controls()
 	if self:try_start_world_or_shrine_interaction_from_down() then
 		return
 	end
-	if action_triggered('down[jp]') then
+	mem[sys_inp_query] = &'down[jp]'
+	if mem[sys_inp_status] ~= 0 then
 		local stair<const> = self:pick_entry_stairs(1)
 		if stair ~= nil then
 			self:start_stairs(1, stair, 'stairs_down')

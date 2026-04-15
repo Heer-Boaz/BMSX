@@ -103,7 +103,6 @@ function resolveApiNativeCost(name: string): NativeFnCost {
 		case 'put_ambient_light':
 		case 'put_directional_light':
 		case 'put_point_light':
-		case 'action_triggered':
 		case 'resolveFontId':
 		case 'dget':
 		case 'sfx':

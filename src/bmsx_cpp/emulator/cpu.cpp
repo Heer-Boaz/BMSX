@@ -209,7 +209,6 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "mousebtn"
 		|| name == "mousebtnp"
 		|| name == "mousebtnr"
-		|| name == "action_triggered"
 		|| name == "stat"
 		|| name == "dget"
 		|| name == "get_player_input"

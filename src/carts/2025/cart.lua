@@ -258,6 +258,7 @@ end
 
 function init()
 	mem[sys_vdp_dither] = 2
+	mem[sys_inp_player] = 1
 	on_irq(irq_reinit, function()
 		init()
 	end)
@@ -274,6 +275,7 @@ function init()
 end
 
 function new_game()
+	mem[sys_inp_player] = 1
 	local w<const> = display_width()
 	local h<const> = display_height()
 	local line_height<const> = 16
@@ -369,15 +371,16 @@ local service_irqs<const> = function()
 	return flags
 end
 
-	while true do
-		local flags
-		repeat
-			halt_until_irq
-			flags = service_irqs()
-		until (flags & irq_vblank) ~= 0
-		begin_update_phase()
-		vdp_stream_cursor = sys_vdp_stream_base
-		update()
+while true do
+	local flags
+	repeat
+		halt_until_irq
+		flags = service_irqs()
+	until (flags & irq_vblank) ~= 0
+	begin_update_phase()
+	mem[sys_inp_ctrl] = inp_ctrl_latch
+	vdp_stream_cursor = sys_vdp_stream_base
+	update()
 		do
 			local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
 			if used_bytes ~= 0 then

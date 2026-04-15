@@ -13,6 +13,7 @@ end
 
 function init()
 	mem[sys_vdp_dither] = 0
+	mem[sys_inp_player] = 1
 	on_irq(irq_reinit, function()
 		init()
 	end)
@@ -28,6 +29,7 @@ function init()
 end
 
 function new_game()
+	mem[sys_inp_player] = 1
 	reset()
 	local level = level_module.create_level(constants.dkc.default_level_context)
 	local spawn = level.spawn
@@ -53,6 +55,7 @@ end
 			flags = service_irqs()
 		until (flags & irq_vblank) ~= 0
 		begin_update_phase()
+		mem[sys_inp_ctrl] = inp_ctrl_latch
 		vdp_stream_cursor = sys_vdp_stream_base
 		update(2)
 		do

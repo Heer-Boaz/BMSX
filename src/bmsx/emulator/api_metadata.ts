@@ -192,15 +192,6 @@ export const API_METHOD_METADATA = {
 		returnType: 'Font',
 		returnDescription: 'Native font handle for direct glyph-submission code.',
 	},
-	action_triggered: {
-		description: 'Checks whether an input action definition is triggered for a given player.',
-		parameters: [
-			{ name: 'actiondefinition', description: 'Action definition string (e.g. "jump[p]" or "pointer_primary[jr]").' },
-			{ name: 'player', optional: true, description: 'Player index (1-based).' },
-		],
-		returnType: 'boolean',
-		returnDescription: 'True when the action definition evaluates to triggered.',
-	},
 	consume_action: {
 		description: 'Consumes an input action definition for a given player.',
 		parameters: [

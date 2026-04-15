@@ -399,7 +399,9 @@ function inputactioneffectsystem:parse_pattern(pattern)
 		return predicate
 	end
 	predicate = function(env)
-		return action_triggered(pattern, env.player_index)
+		mem[sys_inp_player] = env.player_index
+		mem[sys_inp_query] = pattern
+		return mem[sys_inp_status] ~= 0
 	end
 	self.pattern_cache[pattern] = predicate
 	if self.pattern_cache_max and (function()

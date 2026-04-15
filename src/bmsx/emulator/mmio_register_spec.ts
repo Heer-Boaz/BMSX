@@ -9,10 +9,10 @@ export type MmioRegisterSpec = {
 };
 
 export const MMIO_REGISTER_SPECS: ReadonlyArray<MmioRegisterSpec> = [
-	{ name: 'sys_inp_action', address: IO_INP_ACTION, writeRequirement: 'string_ref' },
-	{ name: 'sys_inp_bind', address: IO_INP_BIND, writeRequirement: 'string_ref' },
-	{ name: 'sys_inp_query', address: IO_INP_QUERY, writeRequirement: 'string_ref' },
-	{ name: 'sys_inp_consume', address: IO_INP_CONSUME, writeRequirement: 'string_ref' },
+	{ name: 'sys_inp_action', address: IO_INP_ACTION, writeRequirement: 'any' },
+	{ name: 'sys_inp_bind', address: IO_INP_BIND, writeRequirement: 'any' },
+	{ name: 'sys_inp_query', address: IO_INP_QUERY, writeRequirement: 'any' },
+	{ name: 'sys_inp_consume', address: IO_INP_CONSUME, writeRequirement: 'any' },
 ];
 
 const mmioRegisterSpecByAddress = new Map(
