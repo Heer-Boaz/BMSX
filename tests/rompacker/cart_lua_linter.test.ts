@@ -177,3 +177,40 @@ test('cart lua linter explains direct guard alternative for or-nil fallback patt
 		},
 	);
 });
+
+test('cart lua linter rejects locals that shadow outer require aliases', async () => {
+	await withLuaLintFixture(
+		'cart_lua_linter_shadowed_require_alias',
+		[
+			"local font<const> = require('font')",
+			'local overlay<const> = {}',
+			'function overlay:draw()',
+			'\tlocal font<const> = self.text_font',
+			'\treturn font.id',
+			'end',
+		].join('\n'),
+		async root => {
+			await assert.rejects(
+				lintCartLuaSources({ roots: [root], profile: 'cart' }),
+				/Local "font" shadows outer module alias from require\('font'\)/,
+			);
+		},
+	);
+});
+
+test('cart lua linter allows renamed local handles next to require aliases', async () => {
+	await withLuaLintFixture(
+		'cart_lua_linter_shadowed_require_alias_allowed',
+		[
+			"local font<const> = require('font')",
+			'local overlay<const> = {}',
+			'function overlay:draw()',
+			'\tlocal text_font<const> = self.text_font',
+			'\treturn font.measure_line_width(text_font, "abc")',
+			'end',
+		].join('\n'),
+		async root => {
+			await lintCartLuaSources({ roots: [root], profile: 'cart' });
+		},
+	);
+});

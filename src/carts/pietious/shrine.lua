@@ -13,7 +13,7 @@
 -- self-clear when the mode returns to 'room'.
 
 local constants<const> = require('constants')
-local font<const> = require('font')
+local font_module<const> = require('font')
 
 local shrine<const> = {}
 shrine.__index = shrine
@@ -45,7 +45,7 @@ function shrine:bind()
 end
 
 function shrine:ctor()
-	self.text_font = font.get('pietious')
+	self.text_font = font_module.get('pietious')
 	self.lines = {}
 	self:bind_visual()
 end
@@ -72,7 +72,7 @@ function shrine:render()
 	)
 	local lines<const> = self.lines
 	for i = 1, #lines do
-		local font<const> = self.text_font
+		local text_font<const> = self.text_font
 		memwrite(
 			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
 			sys_vdp_cmd_glyph_run,
@@ -82,7 +82,7 @@ function shrine:render()
 			constants.shrine.text_x,
 			constants.shrine.text_y + ((i - 1) * constants.room.tile_size),
 			341,
-			font.id,
+			text_font.id,
 			0,
 			0x7fffffff,
 			sys_vdp_layer_ui,

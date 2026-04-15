@@ -45,6 +45,7 @@ type LuaLintIssueRule =
 	'explicit_truthy_comparison_pattern' |
 	'string_or_chain_comparison_pattern' |
 	'cross_file_local_global_constant_pattern' |
+	'shadowed_require_alias_pattern' |
 	'unused_init_value_pattern' |
 	'getter_setter_pattern' |
 	'single_line_method_pattern' |
@@ -193,6 +194,21 @@ type ConstantCopyContext = {
 	readonly scopeStack: ConstantCopyScope[];
 };
 
+type ShadowedRequireAliasBinding = {
+	readonly declaration: LuaIdentifierExpression;
+	readonly requiredModulePath: string | null;
+};
+
+type ShadowedRequireAliasScope = {
+	readonly names: string[];
+};
+
+type ShadowedRequireAliasContext = {
+	readonly issues: LuaLintIssue[];
+	readonly bindingStacksByName: Map<string, ShadowedRequireAliasBinding[]>;
+	readonly scopeStack: ShadowedRequireAliasScope[];
+};
+
 type DuplicateInitializerBinding = {
 	readonly declaration: LuaIdentifierExpression;
 	initializerSignature: string;
@@ -332,6 +348,7 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'explicit_truthy_comparison_pattern',
 	'string_or_chain_comparison_pattern',
 	'cross_file_local_global_constant_pattern',
+	'shadowed_require_alias_pattern',
 	'unused_init_value_pattern',
 	'getter_setter_pattern',
 	'single_line_method_pattern',
@@ -841,6 +858,230 @@ function createConstantCopyContext(issues: LuaLintIssue[]): ConstantCopyContext 
 		bindingStacksByName: new Map<string, ConstantCopyBinding[]>(),
 		scopeStack: [],
 	};
+}
+
+function createShadowedRequireAliasContext(issues: LuaLintIssue[]): ShadowedRequireAliasContext {
+	return {
+		issues,
+		bindingStacksByName: new Map<string, ShadowedRequireAliasBinding[]>(),
+		scopeStack: [],
+	};
+}
+
+function enterShadowedRequireAliasScope(context: ShadowedRequireAliasContext): void {
+	context.scopeStack.push({ names: [] });
+}
+
+function leaveShadowedRequireAliasScope(context: ShadowedRequireAliasContext): void {
+	const scope = context.scopeStack.pop();
+	if (!scope) {
+		return;
+	}
+	for (let index = scope.names.length - 1; index >= 0; index -= 1) {
+		const name = scope.names[index];
+		const stack = context.bindingStacksByName.get(name);
+		if (!stack || stack.length === 0) {
+			continue;
+		}
+		stack.pop();
+		if (stack.length === 0) {
+			context.bindingStacksByName.delete(name);
+		}
+	}
+}
+
+function declareShadowedRequireAliasBinding(
+	context: ShadowedRequireAliasContext,
+	declaration: LuaIdentifierExpression,
+	requiredModulePath: string | null,
+): void {
+	const name = declaration.name;
+	if (name !== '_') {
+		const stack = context.bindingStacksByName.get(name);
+		if (stack) {
+			for (let index = stack.length - 1; index >= 0; index -= 1) {
+				const outer = stack[index];
+				if (outer.requiredModulePath !== null) {
+					pushIssue(
+						context.issues,
+						'shadowed_require_alias_pattern',
+						declaration,
+						`Local "${name}" shadows outer module alias from require('${outer.requiredModulePath}'). Rename the local; do not shadow imported module aliases.`,
+					);
+					break;
+				}
+			}
+		}
+	}
+	const scope = context.scopeStack[context.scopeStack.length - 1];
+	scope.names.push(name);
+	let stack = context.bindingStacksByName.get(name);
+	if (!stack) {
+		stack = [];
+		context.bindingStacksByName.set(name, stack);
+	}
+	stack.push({
+		declaration,
+		requiredModulePath,
+	});
+}
+
+function lintShadowedRequireAliasExpression(expression: LuaExpression | null, context: ShadowedRequireAliasContext): void {
+	if (!expression) {
+		return;
+	}
+	switch (expression.kind) {
+		case LuaSyntaxKind.CallExpression:
+			lintShadowedRequireAliasExpression(expression.callee, context);
+			for (const argument of expression.arguments) {
+				lintShadowedRequireAliasExpression(argument, context);
+			}
+			return;
+		case LuaSyntaxKind.MemberExpression:
+			lintShadowedRequireAliasExpression(expression.base, context);
+			return;
+		case LuaSyntaxKind.IndexExpression:
+			lintShadowedRequireAliasExpression(expression.base, context);
+			lintShadowedRequireAliasExpression(expression.index, context);
+			return;
+		case LuaSyntaxKind.BinaryExpression:
+			lintShadowedRequireAliasExpression(expression.left, context);
+			lintShadowedRequireAliasExpression(expression.right, context);
+			return;
+		case LuaSyntaxKind.UnaryExpression:
+			lintShadowedRequireAliasExpression(expression.operand, context);
+			return;
+		case LuaSyntaxKind.TableConstructorExpression:
+			for (const field of expression.fields) {
+				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+					lintShadowedRequireAliasExpression(field.key, context);
+				}
+				lintShadowedRequireAliasExpression(field.value, context);
+			}
+			return;
+		case LuaSyntaxKind.FunctionExpression:
+			enterShadowedRequireAliasScope(context);
+			for (const parameter of expression.parameters) {
+				declareShadowedRequireAliasBinding(context, parameter, null);
+			}
+			lintShadowedRequireAliasStatements(expression.body.body, context);
+			leaveShadowedRequireAliasScope(context);
+			return;
+		default:
+			return;
+	}
+}
+
+function lintShadowedRequireAliasStatements(
+	statements: ReadonlyArray<LuaStatement>,
+	context: ShadowedRequireAliasContext,
+): void {
+	for (const statement of statements) {
+		switch (statement.kind) {
+			case LuaSyntaxKind.LocalAssignmentStatement: {
+				const valueCount = Math.min(statement.names.length, statement.values.length);
+				for (let index = 0; index < statement.names.length; index += 1) {
+					const requiredModulePath = index < valueCount ? getRequiredModulePath(statement.values[index]) ?? null : null;
+					declareShadowedRequireAliasBinding(context, statement.names[index], requiredModulePath);
+				}
+				for (const value of statement.values) {
+					lintShadowedRequireAliasExpression(value, context);
+				}
+				break;
+			}
+			case LuaSyntaxKind.LocalFunctionStatement: {
+				const localFunction = statement as LuaLocalFunctionStatement;
+				declareShadowedRequireAliasBinding(context, localFunction.name, null);
+				enterShadowedRequireAliasScope(context);
+				for (const parameter of localFunction.functionExpression.parameters) {
+					declareShadowedRequireAliasBinding(context, parameter, null);
+				}
+				lintShadowedRequireAliasStatements(localFunction.functionExpression.body.body, context);
+				leaveShadowedRequireAliasScope(context);
+				break;
+			}
+			case LuaSyntaxKind.FunctionDeclarationStatement:
+				enterShadowedRequireAliasScope(context);
+				for (const parameter of statement.functionExpression.parameters) {
+					declareShadowedRequireAliasBinding(context, parameter, null);
+				}
+				lintShadowedRequireAliasStatements(statement.functionExpression.body.body, context);
+				leaveShadowedRequireAliasScope(context);
+				break;
+			case LuaSyntaxKind.AssignmentStatement:
+				for (const left of statement.left) {
+					lintShadowedRequireAliasExpression(left, context);
+				}
+				for (const right of statement.right) {
+					lintShadowedRequireAliasExpression(right, context);
+				}
+				break;
+			case LuaSyntaxKind.ReturnStatement:
+				for (const expression of statement.expressions) {
+					lintShadowedRequireAliasExpression(expression, context);
+				}
+				break;
+			case LuaSyntaxKind.IfStatement:
+				for (const clause of statement.clauses) {
+					if (clause.condition) {
+						lintShadowedRequireAliasExpression(clause.condition, context);
+					}
+					enterShadowedRequireAliasScope(context);
+					lintShadowedRequireAliasStatements(clause.block.body, context);
+					leaveShadowedRequireAliasScope(context);
+				}
+				break;
+			case LuaSyntaxKind.WhileStatement:
+				lintShadowedRequireAliasExpression(statement.condition, context);
+				enterShadowedRequireAliasScope(context);
+				lintShadowedRequireAliasStatements(statement.block.body, context);
+				leaveShadowedRequireAliasScope(context);
+				break;
+			case LuaSyntaxKind.RepeatStatement:
+				enterShadowedRequireAliasScope(context);
+				lintShadowedRequireAliasStatements(statement.block.body, context);
+				lintShadowedRequireAliasExpression(statement.condition, context);
+				leaveShadowedRequireAliasScope(context);
+				break;
+			case LuaSyntaxKind.ForNumericStatement:
+				lintShadowedRequireAliasExpression(statement.start, context);
+				lintShadowedRequireAliasExpression(statement.limit, context);
+				lintShadowedRequireAliasExpression(statement.step, context);
+				enterShadowedRequireAliasScope(context);
+				declareShadowedRequireAliasBinding(context, statement.variable, null);
+				lintShadowedRequireAliasStatements(statement.block.body, context);
+				leaveShadowedRequireAliasScope(context);
+				break;
+			case LuaSyntaxKind.ForGenericStatement:
+				for (const iterator of statement.iterators) {
+					lintShadowedRequireAliasExpression(iterator, context);
+				}
+				enterShadowedRequireAliasScope(context);
+				for (const variable of statement.variables) {
+					declareShadowedRequireAliasBinding(context, variable, null);
+				}
+				lintShadowedRequireAliasStatements(statement.block.body, context);
+				leaveShadowedRequireAliasScope(context);
+				break;
+			case LuaSyntaxKind.DoStatement:
+				enterShadowedRequireAliasScope(context);
+				lintShadowedRequireAliasStatements(statement.block.body, context);
+				leaveShadowedRequireAliasScope(context);
+				break;
+			case LuaSyntaxKind.CallStatement:
+				lintShadowedRequireAliasExpression(statement.expression, context);
+				break;
+			default:
+				break;
+		}
+	}
+}
+
+function lintShadowedRequireAliasPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+	const context = createShadowedRequireAliasContext(issues);
+	enterShadowedRequireAliasScope(context);
+	lintShadowedRequireAliasStatements(statements, context);
+	leaveShadowedRequireAliasScope(context);
 }
 
 function enterConstantCopyScope(context: ConstantCopyContext): void {
@@ -7987,6 +8228,7 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 			lintFsmEnteringStateVisualSetupPattern(chunk.body, issues);
 			lintConstLocalPattern(chunk.body, issues);
 			lintConstantCopyPattern(chunk.body, issues);
+			lintShadowedRequireAliasPattern(chunk.body, issues);
 			lintStatements(chunk.body, issues);
 			lintSingleUseHasTagPattern(chunk.body, issues);
 			lintSingleUseLocalPattern(chunk.body, issues);
