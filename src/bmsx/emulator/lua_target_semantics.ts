@@ -65,8 +65,8 @@ export function classifyAssignmentTargetPreparation(
 				base: expression.base,
 				index: expression.index,
 			};
-		default:
-			throw new Error(`[LuaTargetSemantics] Unsupported assignment target kind: ${String(expression.kind)}`);
+		// default:
+			// throw new Error(`[LuaTargetSemantics] Unsupported assignment target kind: ${String(expression.kind)}`);
 	}
 }
 

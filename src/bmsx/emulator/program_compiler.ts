@@ -1922,7 +1922,27 @@ class FunctionBuilder {
 				targets.push({ kind: 'table', tableReg: baseReg, keyConst });
 				continue;
 			}
-			if (targetPreparation.kind === 'memory' || targetPreparation.kind === 'index') {
+			if (targetPreparation.kind === 'memory') {
+				const memoryTarget = this.tryCompileMemoryTarget(expr as LuaIndexExpression);
+				if (memoryTarget !== null) {
+					targets.push(memoryTarget);
+					continue;
+				}
+				// Defensive fallback: if we couldn't compile as a memory target,
+				// treat the bound reference as a table base and proceed.
+				const baseRegMem = this.allocTemp();
+				this.emitReferenceLoad(targetPreparation.baseReference, baseRegMem);
+				const keyConstMem = this.tryGetConstIndex(targetPreparation.index);
+				if (keyConstMem !== undefined) {
+					targets.push({ kind: 'table', tableReg: baseRegMem, keyConst: keyConstMem });
+					continue;
+				}
+				const keyRegMem = this.allocTemp();
+				this.compileExpressionInto(targetPreparation.index, keyRegMem, 1);
+				targets.push({ kind: 'table', tableReg: baseRegMem, keyReg: keyRegMem });
+				continue;
+			}
+			if (targetPreparation.kind === 'index') {
 				const memoryTarget = this.tryCompileMemoryTarget(expr as LuaIndexExpression);
 				if (memoryTarget !== null) {
 					targets.push(memoryTarget);

@@ -16,8 +16,6 @@ type BudgetFrameState = {
 };
 
 const TICK_COMPLETION_QUEUE_CAPACITY = 16;
-const MAX_QUEUED_FRAMES = 5;
-
 function createTickCompletionQueue(): TickCompletion[] {
 	const queue = new Array<TickCompletion>(TICK_COMPLETION_QUEUE_CAPACITY);
 	for (let index = 0; index < TICK_COMPLETION_QUEUE_CAPACITY; index += 1) {
@@ -52,7 +50,7 @@ export class RuntimeMachineSchedulerState {
 		const totalCycles = this.queuedCycleRemainder + (deltaMs * runtime.cpuHz / 1000);
 		const wholeCycles = Math.floor(totalCycles);
 		this.queuedCycleRemainder = totalCycles - wholeCycles;
-		this.queuedCycleBudget = clamp(this.queuedCycleBudget + wholeCycles, 0, runtime.cycleBudgetPerFrame * MAX_QUEUED_FRAMES);
+		this.queuedCycleBudget = clamp(this.queuedCycleBudget + wholeCycles, 0, Number.MAX_SAFE_INTEGER);
 	}
 
 	private canRunScheduledUpdate(runtime: Runtime): boolean {
