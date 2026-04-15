@@ -2,7 +2,7 @@
 
 ## Goal
 
-Implement a new **Input Controller chip** — a memory-mapped I/O device on the BMSX fantasy console that allows cart Lua code to query input actions via `mem[]` MMIO writes using the new `&'...'` string_ref syntax. This replaces the current `action_triggered(...)` native function call with a hardware-style MMIO interface where the cart writes an action query string (as a `string_ref`) into an IO register, and reads back the packed result flags from another IO register.
+Implement a new **Input Controller chip** — a memory-mapped I/O device on the BMSX fantasy console that allows cart Lua code to query input actions via `mem[]` MMIO writes using the new `&'...'` string_ref syntax. This replaces the current `action_triggered(...)` native function call with a hardware-style MMIO interface where the cart writes an action expression string (as a `string_ref`) into an IO register, and reads back the boolean result from another IO register.
 
 ---
 
@@ -16,7 +16,7 @@ BMSX is a fantasy console with a custom Lua VM. The architecture mirrors retro h
 - **Device pattern**: Each device is a class with `reset()`, `onCtrlWrite()`, and `onService()` methods. Devices are instantiated in `runtime.ts` with references to `Memory`, IRQ callbacks, and scheduling callbacks. See `src/bmsx/emulator/devices/*.ts` for examples.
 - **String refs**: The `&'...'` syntax creates a `StringRefLiteralExpression` in the AST, which the compiler interns as a `StringValue` via `program.internString()`. At runtime this is a `StringValue` object (with `.id` and `.text`). When written to an IO slot, the `StringValue` is stored directly (not as a number).
 - **Compile-time enforcement**: `mmio_register_spec.ts` defines `MMIO_REGISTER_SPECS` with `writeRequirement: 'string_ref'`. The compiler's `validateMemoryStore()` uses flow-sensitive analysis (`compile_value_flow.ts`) to verify that any value written to such an address is provably a `string_ref` at compile time. The spec array is currently empty (placeholder comment says "Input Controller registers will be added here").
-- **Existing input API**: Cart code currently calls `action_triggered('left[p]')` — a native function that calls `PlayerInput.checkActionTriggered(actionDef)`. This evaluates action parser expressions like `'up[jp] || a[jp]'` via `ActionDefinitionEvaluator`. The result is a boolean. A lower-level `get_action_state(action, player, window?)` returns packed flags as a number.
+- **Existing input API**: Cart code currently calls `action_triggered('left[p]')` — a native function that calls `PlayerInput.checkActionTriggered(actionDef)`. This evaluates action parser expressions like `'up[jp] || a[jp]'` via `ActionDefinitionEvaluator`. The result is a boolean. A lower-level `get_action_state(action, player, window?)` returns packed flags as a number. The MMIO chip mirrors the `action_triggered()` path — same expression language, same `checkActionTriggered()` dispatch.
 
 ---
 
@@ -24,13 +24,16 @@ BMSX is a fantasy console with a custom Lua VM. The architecture mirrors retro h
 
 ### Concept
 
-The Input Controller is a fantasy hardware chip that the cart interacts with purely via MMIO:
+The Input Controller is a thin MMIO facade over the existing `PlayerInput` / `ContextStack` / `InputStateManager` infrastructure. The cart interacts with it purely via MMIO:
 
-1. **Write** an action query string_ref to the query register: `mem[sys_inp_query] = &'left[p]'`
-2. **Read** the result from the status register: `local flags = mem[sys_inp_status]`
-3. Optionally write the player index first: `mem[sys_inp_player] = 2`
+1. **Register** action bindings during init: `mem[sys_inp_action] = &'dash'`, `mem[sys_inp_bind] = &'lb,left'`, `mem[sys_inp_ctrl] = inp_ctrl_commit`
+2. **Query** a plain action name: `mem[sys_inp_query] = &'left'`
+3. **Read** the packed result flags: `local flags = mem[sys_inp_status]`
+4. Optionally set the player index: `mem[sys_inp_player] = 2`
 
-This gives the cart a hardware-feel API while using string_ref for type-safe action names. The compiler statically verifies that only `string_ref` values (not plain strings or numbers) can be written to the query register.
+The query register accepts **action expressions** — the same expression language used by `action_triggered()`. This includes simple queries like `&'left[p]'` (is left pressed?), `&'jump[jp]'` (was jump just pressed?), and complex boolean expressions like `&'up[jp] || a[jp]'`. The chip dispatches to `PlayerInput.checkActionTriggered(expr)` — the same code path as `action_triggered()` — and writes the boolean result (1 = triggered, 0 = not) to the status register. Root-level actions require a modifier (`[p]`, `[jp]`, `[jr]`, etc.) — this is enforced by the parser's `enforceRootModifiers()`, same rule as `action_triggered()`.
+
+The compiler statically verifies that only `string_ref` values (not plain strings or numbers) can be written to the query, action, bind, and consume registers.
 
 ### IO Register Layout
 
@@ -42,10 +45,10 @@ Add the following IO registers to `io.ts`, immediately after the last existing d
 | `IO_INP_ACTION_INDEX` | `sys_inp_action` | base+1 | Write | `string_ref` | Set the action name for the next define/commit. **MMIO write requirement: `string_ref`**. |
 | `IO_INP_BIND_INDEX` | `sys_inp_bind` | base+2 | Write | `string_ref` | Set button bindings for the current action (comma-separated button names, e.g. `&'lb,left'` for a chord). **MMIO write requirement: `string_ref`**. |
 | `IO_INP_CTRL_INDEX` | `sys_inp_ctrl` | base+3 | Write | number | Control/command register. Writing triggers a chip command (see Control Commands below). |
-| `IO_INP_QUERY_INDEX` | `sys_inp_query` | base+4 | Write | `string_ref` | Action query expression. Writing triggers evaluation against latched state. **MMIO write requirement: `string_ref`**. |
-| `IO_INP_STATUS_INDEX` | `sys_inp_status` | base+5 | Read | number | Packed action state flags (same bit layout as `packActionStateFlags`). |
+| `IO_INP_QUERY_INDEX` | `sys_inp_query` | base+4 | Write | `string_ref` | Action expression (e.g. `&'left[p]'`, `&'up[jp] \|\| a[jp]'`). Writing triggers `checkActionTriggered()` evaluation against the current player. Root-level actions require a modifier (`[p]`, `[jp]`, `[jr]`, etc.). **MMIO write requirement: `string_ref`**. |
+| `IO_INP_STATUS_INDEX` | `sys_inp_status` | base+5 | Read | number | Query result: 1 (triggered) or 0 (not triggered). |
 | `IO_INP_VALUE_INDEX` | `sys_inp_value` | base+6 | Read | number | Analog value (float in [-1,1] or [0,1]) for analog queries. |
-| `IO_INP_CONSUME_INDEX` | `sys_inp_consume` | base+7 | Write | `string_ref` | Write an action name string_ref to consume that action. **MMIO write requirement: `string_ref`**. |
+| `IO_INP_CONSUME_INDEX` | `sys_inp_consume` | base+7 | Write | `string_ref` | Plain action name string_ref. Writing triggers `consumeAction()` for that action on the current player. **MMIO write requirement: `string_ref`**. |
 
 Total size: `IO_INP_SIZE = 8`
 
@@ -55,9 +58,9 @@ These are numeric constants written to `sys_inp_ctrl` to trigger chip operations
 
 | Constant | Name | Value | Description |
 |---|---|---|---|
-| `INP_CTRL_COMMIT` | `inp_ctrl_commit` | `1` | Commit the current action definition. Reads action name from `sys_inp_action` and bindings from `sys_inp_bind`, then registers the mapping on the current player's input map. Multiple commits build up the full action map. |
-| `INP_CTRL_LATCH` | `inp_ctrl_latch` | `2` | **Latch (sample) all input state.** Must be called once per frame before any query reads. This snapshots the current button/axis state so that all queries within the same frame see a consistent view. Without latching, queries read stale or inconsistent state. |
-| `INP_CTRL_RESET` | `inp_ctrl_reset` | `3` | Reset all action definitions to empty (clear the current player's input map). |
+| `INP_CTRL_COMMIT` | `inp_ctrl_commit` | `1` | Commit the current action definition. Reads action name from `sys_inp_action` and bindings from `sys_inp_bind`, then registers the mapping into the chip's **persistent context** for the current player. The first commit creates and pushes a `MappingContext` (id `'inp_chip'`) onto the player's `ContextStack`; subsequent commits update that same context with additional actions. |
+| `INP_CTRL_LATCH` | `inp_ctrl_latch` | `2` | **Acknowledge/mark the current frame's input snapshot.** The engine already calls `Input.beginFrame()` at the start of each guest update phase (in `runtime.beginGuestUpdatePhase()`), which runs `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()` for all tracked buttons. The `inp_ctrl_latch` command hooks into this **existing** frame-sampling path — it does NOT invent a new latch mechanism or call `beginFrame()` again. It may serve as a cart-side discipline marker (chip refuses queries unless latched this frame) or as a no-op that documents intent. |
+| `INP_CTRL_RESET` | `inp_ctrl_reset` | `3` | Pop the chip's `'inp_chip'` context from the current player's `ContextStack` and clear all accumulated action definitions. |
 
 ### Action Map Registration (INIT phase)
 
@@ -94,29 +97,34 @@ mem[sys_inp_player] = 1  -- switch back
 
 **Binding format**: The `sys_inp_bind` register accepts a **comma-separated** list of button names as a single `string_ref`. Multiple names form a **chord** (all must be pressed simultaneously). The button names match the standard engine button vocabulary: `a`, `b`, `x`, `y`, `lb`, `rb`, `lt`, `rt`, `up`, `down`, `left`, `right`, `start`, `select`, `ls`, `rs`, `lx`, `ly`, `rx`, `ry`, etc. These map to both keyboard and gamepad bindings using the engine's default keyboard→button mapping (e.g. `a` → `KeyX` on keyboard, `a` on gamepad).
 
-**Implementation**: On `inp_ctrl_commit`, the InputController reads the `StringValue` from `sys_inp_action` (action name) and `sys_inp_bind` (comma-separated bindings), splits the bindings string by `,`, and calls `PlayerInput.pushContext()` or modifies the input map to register the action. The exact mechanism: build a `KeyboardInputMapping` / `GamepadInputMapping` entry and apply it to the player's input system.
+**Implementation**: On `inp_ctrl_commit`, the InputController reads the `StringValue` from `sys_inp_action` (action name) and `sys_inp_bind` (comma-separated bindings), splits the bindings string by `,`, and accumulates the result into a chip-owned `KeyboardInputMapping` / `GamepadInputMapping`. The chip manages a **single persistent `MappingContext`** per player (id `'inp_chip'`, layered on top of the base context via `ContextStack`). On the first commit for a player, it creates and pushes the context via `PlayerInput.pushContext('inp_chip', kb, gp, {})`. On subsequent commits, it pops the old context, updates the mapping tables, and pushes a new one — or mutates the existing context's keyboard/gamepad fields directly if `ContextStack` permits that. Reset pops the context via `PlayerInput.popContext('inp_chip')`. Latch does NOT touch the context.
 
 ### Input Latch (per-frame)
 
-The input latch is the synchronization point between the host platform's raw input state and the cart's queries. **The cart must latch once per frame before reading any query results**:
+The engine already has a complete frame-sampling pipeline:
+
+1. `runtime.beginGuestUpdatePhase()` calls `Input.instance.beginFrame()`
+2. `Input.beginFrame()` iterates all players, calling `playerInput.beginFrame(currentTime)`
+3. `PlayerInput.beginFrame()` iterates all input sources (keyboard, gamepad, pointer), calling `stateManager.beginFrame(currentTime)` (which clears `justpressed`/`justreleased` edge flags) and then `stateManager.latchButtonState(button, handler.getButtonState(button), currentTime)` for every tracked button
+
+This already snapshots a consistent per-frame `ButtonState` for all tracked buttons before any cart Lua code runs. The `getActionState()` path reads from these latched states.
+
+The `inp_ctrl_latch` command **hooks into this existing snapshot semantics**. It does NOT invent a new sampling mechanism, does NOT call `beginFrame()` again (which would double-increment the frame counter and corrupt edge detection), and does NOT mutate any mapping contexts. Its role is one of:
+
+- **Discipline marker**: The chip tracks a `latchedThisFrame` flag per player. `inp_ctrl_latch` sets it; queries check it and fault if the cart forgot to latch. At frame boundaries the flag resets. This enforces "latch before query" hygiene.
+- **Explicit re-sample**: If a future design needs mid-frame re-sampling (e.g. for split-phase updates), `inp_ctrl_latch` could call `playerInput.beginFrame(currentTime)` again — but only if the `InputStateManager` is made reentrant-safe. For now, the engine's single `beginFrame()` per guest update phase is sufficient.
+
+Cart code still writes `mem[sys_inp_ctrl] = inp_ctrl_latch` at the top of the update loop, documenting the frame boundary:
 
 ```lua
--- At the start of each frame's update:
-mem[sys_inp_ctrl] = inp_ctrl_latch
+-- MAIN LOOP:
+mem[sys_inp_ctrl] = inp_ctrl_latch  -- acknowledge frame snapshot
 
--- Now queries return consistent, frame-stable results:
-mem[sys_inp_query] = &'dash[jp]'
-if mem[sys_inp_status] & inp_justpressed ~= 0 then
-    do_dash()
-end
-
-mem[sys_inp_query] = &'slash[jp]'
-if mem[sys_inp_status] & inp_justpressed ~= 0 then
-    do_slash()
+mem[sys_inp_query] = &'left[p]'
+if mem[sys_inp_status] ~= 0 then
+    move_left()
 end
 ```
-
-**Why latch?** Without an explicit latch, queries could see inconsistent state if the host updates input mid-frame. The latch snapshots the current `ButtonState` for all tracked buttons, and all subsequent queries within that frame evaluate against that snapshot. This mirrors real hardware (e.g. NES controller shift register latch), and ensures deterministic behavior for replays/netplay.
 
 ### Cart Usage Examples
 
@@ -137,48 +145,48 @@ mem[sys_inp_bind] = &'a'
 mem[sys_inp_ctrl] = inp_ctrl_commit
 
 ------------------------------------------------------------
--- MAIN LOOP: Latch, then query
+-- MAIN LOOP: Latch, then query action expressions
 ------------------------------------------------------------
--- Latch input state for this frame (MUST be first)
+-- Acknowledge frame snapshot (MUST be first)
 mem[sys_inp_ctrl] = inp_ctrl_latch
 
--- Simple digital check
+-- Simple digital check: is 'left' pressed?
 mem[sys_inp_query] = &'left[p]'
-if mem[sys_inp_status] & inp_pressed ~= 0 then
+if mem[sys_inp_status] ~= 0 then
     move_left()
 end
 
--- Just-pressed check
+-- Just-pressed check: was 'jump' just pressed this frame?
 mem[sys_inp_query] = &'jump[jp]'
-if mem[sys_inp_status] & inp_justpressed ~= 0 then
+if mem[sys_inp_status] ~= 0 then
     jump()
 end
 
--- Compound expression (OR)
+-- OR-logic: a single expression handles the combination
 mem[sys_inp_query] = &'up[jp] || jump[jp]'
-if mem[sys_inp_status] & inp_justpressed ~= 0 then
+if mem[sys_inp_status] ~= 0 then
     jump()
 end
 
--- Custom action (defined during INIT)
+-- Custom action (defined during INIT) with modifier
 mem[sys_inp_query] = &'dash[jp]'
-if mem[sys_inp_status] & inp_justpressed ~= 0 then
+if mem[sys_inp_status] ~= 0 then
     do_dash()
 end
 
 -- Multiplayer: set player, then query
 mem[sys_inp_player] = 2
-mem[sys_inp_ctrl] = inp_ctrl_latch   -- latch player 2's state
+mem[sys_inp_ctrl] = inp_ctrl_latch
 mem[sys_inp_query] = &'left[p]'
 local p2_flags<const> = mem[sys_inp_status]
 mem[sys_inp_player] = 1              -- switch back
 
--- Analog value
+-- Analog value (query the axis action, read value register)
 mem[sys_inp_query] = &'lx[p]'
 local analog_x<const> = mem[sys_inp_value]
 
--- Consume an action after handling it
-mem[sys_inp_consume] = &'jump[jp]'
+-- Consume an action after handling it (plain action name — no modifier)
+mem[sys_inp_consume] = &'jump'
 
 -- Flow analysis allows local variables too:
 local q<const> = &'left[p]'
@@ -301,17 +309,18 @@ import {
     IO_INP_QUERY, IO_INP_STATUS, IO_INP_VALUE, IO_INP_CONSUME,
     INP_CTRL_COMMIT, INP_CTRL_LATCH, INP_CTRL_RESET,
 } from '../io';
-import type { Input } from '../../input/input';
+import { Input } from '../../input/input';
 import type { KeyboardInputMapping, GamepadInputMapping } from '../../input/inputtypes';
 
 export class InputController {
     private readonly memory: Memory;
     private readonly input: Input;
 
-    // Pending action definitions (accumulated via COMMIT commands)
-    // Maps action name → array of binding strings (each binding is a button name)
-    private pendingKeyboard: KeyboardInputMapping = {};
-    private pendingGamepad: GamepadInputMapping = {};
+    // Accumulated action definitions per player (chip-owned persistent context).
+    // Maps action name → array of binding IDs.
+    private chipKeyboard: KeyboardInputMapping = {};
+    private chipGamepad: GamepadInputMapping = {};
+    private contextPushed = false;  // Whether 'inp_chip' context is on the stack
 
     constructor(memory: Memory, input: Input) {
         this.memory = memory;
@@ -320,11 +329,16 @@ export class InputController {
     }
 
     public reset(): void {
+        if (this.contextPushed) {
+            const playerIndex = this.memory.readValue(IO_INP_PLAYER) as number;
+            this.input.getPlayerInput(playerIndex).popContext('inp_chip');
+            this.contextPushed = false;
+        }
         this.memory.writeValue(IO_INP_PLAYER, 1);
         this.memory.writeValue(IO_INP_STATUS, 0);
         this.memory.writeValue(IO_INP_VALUE, 0);
-        this.pendingKeyboard = {};
-        this.pendingGamepad = {};
+        this.chipKeyboard = {};
+        this.chipGamepad = {};
     }
 
     public onCtrlWrite(): void {
@@ -338,75 +352,94 @@ export class InputController {
 
     /**
      * COMMIT: reads action name from sys_inp_action and bindings from sys_inp_bind,
-     * parses the comma-separated binding string, and accumulates the mapping.
+     * parses the comma-separated binding string, accumulates into chip-owned maps,
+     * and pushes/replaces the persistent 'inp_chip' context on the player's ContextStack.
      */
     private commitAction(): void {
         const actionName = (this.memory.readValue(IO_INP_ACTION) as StringValue).text;
         const bindStr = (this.memory.readValue(IO_INP_BIND) as StringValue).text;
         const bindings = bindStr.split(',');  // e.g. 'lb,left' → ['lb', 'left']
 
-        // Register into both keyboard and gamepad maps.
-        // The button names (a, b, x, lb, left, etc.) are the abstract action vocabulary —
-        // the engine's default keyboard mapping translates them to DOM key codes.
-        // For keyboard: resolve each button name to its default keyboard key(s).
+        // For keyboard: resolve each abstract button name to its default keyboard key(s)
+        // using Input.DEFAULT_KEYBOARD_INPUT_MAPPING (e.g. 'a' → 'KeyX', 'lb' → 'ShiftLeft').
         // For gamepad: use button names directly (they ARE gamepad button IDs).
-        this.pendingGamepad[actionName] = bindings;
-        this.pendingKeyboard[actionName] = bindings.map(b => Input.resolveKeyboardKey(b));
+        this.chipGamepad[actionName] = bindings;
+        this.chipKeyboard[actionName] = bindings.map(
+            b => Input.DEFAULT_KEYBOARD_INPUT_MAPPING[b]?.[0] ?? b
+        );
+
+        // Manage the persistent context: pop old, push updated
+        const playerIndex = this.memory.readValue(IO_INP_PLAYER) as number;
+        const playerInput = this.input.getPlayerInput(playerIndex);
+        if (this.contextPushed) {
+            playerInput.popContext('inp_chip');
+        }
+        playerInput.pushContext('inp_chip', this.chipKeyboard, this.chipGamepad, {});
+        this.contextPushed = true;
     }
 
     /**
-     * LATCH: apply all pending action definitions to the player's input system,
-     * then snapshot the current input state for stable per-frame reads.
+     * LATCH: hooks into the existing frame-sampling path.
+     * The engine already calls Input.beginFrame() → PlayerInput.beginFrame() →
+     * InputStateManager.beginFrame() + latchButtonState() at the start of each
+     * guest update phase. This command does NOT re-sample or mutate contexts.
+     *
+     * If desired, implement as a discipline marker: set a latchedThisFrame flag
+     * that queries check, and reset it at frame boundaries.
      */
     private latchInput(): void {
-        const playerIndex = this.memory.readValue(IO_INP_PLAYER) as number;
-        const playerInput = this.input.getPlayerInput(playerIndex);
-
-        // If there are pending action definitions, push them as a mapping context
-        if (Object.keys(this.pendingKeyboard).length > 0) {
-            playerInput.pushContext('inp_chip', this.pendingKeyboard, this.pendingGamepad, {});
-            // Don't clear — definitions persist until inp_ctrl_reset
-        }
-
-        // Latch/snapshot the input state
-        // (The exact latch mechanism depends on how PlayerInput exposes frame-snapshotting.
-        //  This may involve calling playerInput.latchFrame() or similar.)
-        playerInput.latchFrame();
+        // Acknowledge frame snapshot for the current player.
+        // The actual button state sampling is already done by the engine's
+        // beginGuestUpdatePhase() → Input.beginFrame() path.
+        // No new latch mechanism needed — hook into existing semantics.
     }
 
-    /** RESET: clear all action definitions for the current player */
+    /** RESET: pop the chip's context and clear all accumulated action definitions */
     private resetActions(): void {
-        const playerIndex = this.memory.readValue(IO_INP_PLAYER) as number;
-        this.input.getPlayerInput(playerIndex).popContext('inp_chip');
-        this.pendingKeyboard = {};
-        this.pendingGamepad = {};
+        if (this.contextPushed) {
+            const playerIndex = this.memory.readValue(IO_INP_PLAYER) as number;
+            this.input.getPlayerInput(playerIndex).popContext('inp_chip');
+            this.contextPushed = false;
+        }
+        this.chipKeyboard = {};
+        this.chipGamepad = {};
     }
 
+    /**
+     * QUERY: dispatches to PlayerInput.checkActionTriggered(expr) — the same
+     * expression evaluator used by action_triggered(). Accepts both simple queries
+     * like 'left[p]' and complex expressions like 'up[jp] || a[jp]'.
+     * Writes the boolean result (1/0) to the status register.
+     */
     public onQueryWrite(): void {
-        const queryValue = this.memory.readValue(IO_INP_QUERY);
-        const actionDef = (queryValue as StringValue).text;
+        const expr = (this.memory.readValue(IO_INP_QUERY) as StringValue).text;
         const playerIndex = this.memory.readValue(IO_INP_PLAYER) as number;
         const playerInput = this.input.getPlayerInput(playerIndex);
-        const state = playerInput.getActionState(actionDef);
-        this.memory.writeValue(IO_INP_STATUS, packActionStateFlags(state));
-        this.memory.writeValue(IO_INP_VALUE, state.value ?? 0);
+        const triggered = playerInput.checkActionTriggered(expr);
+        this.memory.writeValue(IO_INP_STATUS, triggered ? 1 : 0);
     }
 
+    /**
+     * CONSUME: dispatches to PlayerInput.consumeAction(actionName).
+     * Accepts plain action names (no modifiers/expressions) — consumeAction()
+     * marks all pressed+unconsumed bindings for that action as consumed.
+     */
     public onConsumeWrite(): void {
-        const consumeValue = this.memory.readValue(IO_INP_CONSUME);
-        const action = (consumeValue as StringValue).text;
+        const actionName = (this.memory.readValue(IO_INP_CONSUME) as StringValue).text;
         const playerIndex = this.memory.readValue(IO_INP_PLAYER) as number;
-        this.input.getPlayerInput(playerIndex).consumeAction(action);
+        this.input.getPlayerInput(playerIndex).consumeAction(actionName);
     }
 }
 ```
 
 **Key implementation notes**:
-- **Binding resolution**: The `commitAction()` method needs to map abstract button names (like `'a'`, `'lb'`, `'left'`) to keyboard key codes. The `Input` class likely has a default mapping table for this (e.g. `a` → `['KeyX']`). Add an `Input.resolveKeyboardKey(buttonName)` static method if one doesn't exist, or reuse the existing default mapping from `Input.DEFAULT_INPUT_MAPPING`.
-- **Context stacking**: Uses `PlayerInput.pushContext()` to layer the MMIO-defined actions on top of the base input map. This respects the existing input context priority system.
-- **Latch mechanism**: `PlayerInput.latchFrame()` is a **new method** that needs to be added. It should snapshot the current `ButtonState` for all tracked buttons. Subsequent `getActionState()` calls within the same frame read from the snapshot. Alternatively, if the engine already samples input once per frame in a fixed update tick, the latch simply marks the starting point for reads.
+- **Persistent chip context**: The InputController owns a SINGLE `MappingContext` per player (id `'inp_chip'`) that accumulates action definitions across multiple `inp_ctrl_commit` calls. It uses `pushContext()` / `popContext()` for lifecycle management. Commit manages the context; latch does NOT.
+- **Binding resolution**: Uses `Input.DEFAULT_KEYBOARD_INPUT_MAPPING` directly (e.g. `Input.DEFAULT_KEYBOARD_INPUT_MAPPING['a']` → `['KeyX']`). No new `resolveKeyboardKey()` method needed — the mapping table already exists as a frozen object on `Input`. For gamepad, the abstract names ARE the button IDs (identity mapping via `Input.DEFAULT_GAMEPAD_INPUT_MAPPING`).
+- **Query semantics**: `onQueryWrite()` calls `checkActionTriggered(expr)` — the same expression evaluator used by `action_triggered()`. It parses the expression via `ActionDefinitionEvaluator` (which uses cached ASTs from `InputActionParser`), calls `getActionState()` internally for each referenced action, and evaluates the boolean expression (including modifiers like `[p]`, `[jp]`, `[jr]` and operators `||`, `&&`, `!`). The status register holds 1 (triggered) or 0 (not triggered). The cart puts the "which flag to check" logic into the expression string itself (e.g. `'left[jp]'` for just-pressed, `'left[p]'` for pressed). Root-level actions require a modifier — enforced by the parser's `enforceRootModifiers()`.
+- **Consume semantics**: `onConsumeWrite()` calls `consumeAction(actionName)` — an existing method that iterates all sources, finds pressed+unconsumed bindings for the action, and marks them consumed. Takes a plain action name (no modifiers, no expressions).
+- **Latch mechanism**: No new `latchFrame()` method is needed. The engine's existing `beginGuestUpdatePhase()` → `Input.beginFrame()` → `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()` path already snapshots all tracked buttons per frame before cart code runs. The chip's `inp_ctrl_latch` hooks into this existing semantics — it may set a discipline flag, but it does NOT re-sample.
 
-**Note**: `packActionStateFlags` should use the same flag bit layout as `engine_core.ts`. Extract/share the constants (`ACTION_STATE_FLAG_PRESSED = 1 << 0`, etc.) so both the `engine_core` and the `InputController` use the same definitions. Consider moving them to a shared location like `src/bmsx/input/action_state_flags.ts`.
+**Note**: The `InputController` does not use `packActionStateFlags` — the status register is a simple boolean (1/0) since modifier semantics are embedded in the expression string. The `ACTION_STATE_FLAG_*` constants remain useful for the existing `get_action_state()` Lua native function.
 
 ### Step 5: Runtime IO Write Dispatch (`src/bmsx/emulator/runtime.ts`)
 
@@ -464,8 +497,8 @@ Add descriptors for the new system constants so they appear in IDE autocomplete:
 { name: 'sys_inp_action', description: 'Input Controller: write a string_ref action name for define/commit.' },
 { name: 'sys_inp_bind', description: 'Input Controller: write string_ref button bindings (comma-separated) for current action.' },
 { name: 'sys_inp_ctrl', description: 'Input Controller: write a control command (inp_ctrl_commit, inp_ctrl_latch, inp_ctrl_reset).' },
-{ name: 'sys_inp_query', description: 'Input Controller: write a string_ref action query to evaluate.' },
-{ name: 'sys_inp_status', description: 'Input Controller: read packed action state flags after a query.' },
+{ name: 'sys_inp_query', description: 'Input Controller: write a string_ref action expression to evaluate (e.g. left[p], up[jp] || a[jp]).' },
+{ name: 'sys_inp_status', description: 'Input Controller: read query result (1 = triggered, 0 = not triggered).' },
 { name: 'sys_inp_value', description: 'Input Controller: read analog value after a query.' },
 { name: 'sys_inp_consume', description: 'Input Controller: write a string_ref action name to consume it.' },
 
@@ -477,7 +510,7 @@ Add descriptors for the new system constants so they appear in IDE autocomplete:
 
 ### Step 8: Action State Flag Constants for Lua
 
-Expose the flag constants as Lua globals so cart code can test them without magic numbers:
+The `ACTION_STATE_FLAG_*` constants from `engine_core.ts` are still useful as Lua globals for the existing `get_action_state()` native function. The MMIO chip itself does not use them (its status register is boolean 1/0, since modifier semantics live in the expression string), but they should still be exposed:
 
 ```ts
 runtimeLuaPipeline.registerGlobal(runtime, 'inp_pressed', ACTION_STATE_FLAG_PRESSED);         // 1 << 0
@@ -491,7 +524,7 @@ runtimeLuaPipeline.registerGlobal(runtime, 'inp_repeatpressed', ACTION_STATE_FLA
 Cart usage becomes readable:
 ```lua
 mem[sys_inp_query] = &'a[jp]'
-if mem[sys_inp_status] & inp_justpressed ~= 0 then
+if mem[sys_inp_status] ~= 0 then
     jump()
 end
 ```
@@ -506,28 +539,27 @@ end
 | `src/bmsx/emulator/mmio_register_spec.ts` | Add string_ref write requirements for action, bind, query, and consume registers |
 | `src/bmsx/emulator/lua_globals.ts` | Register IO address constants + control command constants + flag constants as Lua globals |
 | `src/bmsx/emulator/lua_builtin_descriptors.ts` | Add descriptor entries for all new sys_inp_*, inp_ctrl_*, and inp_* constants |
-| `src/bmsx/emulator/devices/input_controller.ts` | **New file**: InputController device class with action map registration, latch, query, consume |
+| `src/bmsx/emulator/devices/input_controller.ts` | **New file**: InputController device class — thin MMIO facade over PlayerInput / ContextStack, uses `checkActionTriggered()` for expression queries |
 | `src/bmsx/emulator/runtime.ts` | Instantiate InputController, dispatch IO writes in onIoWrite (including string_ref writes), fix non-numeric guard |
-| `src/bmsx/input/playerinput.ts` | Add `latchFrame()` method for snapshotting per-frame input state |
-| `src/bmsx/input/input.ts` | Add `resolveKeyboardKey(buttonName)` if not already present (maps abstract button names to keyboard codes) |
-| `src/bmsx/core/engine_core.ts` | Extract `packActionStateFlags` constants to shared location |
 | `src/bmsx_cpp/emulator/io.h` (or equivalent) | C++ IO constants + control command constants |
-| `src/bmsx_cpp/emulator/devices/input_controller.cpp/.h` | **New files**: C++ InputController with same register/latch/query semantics |
+| `src/bmsx_cpp/emulator/devices/input_controller.cpp/.h` | **New files**: C++ InputController with same register/query/consume semantics |
 | `src/bmsx_cpp/emulator/runtime.cpp` (or equivalent) | C++ runtime dispatch |
-| `src/bmsx_cpp/input/playerinput.cpp/.h` | C++ `latchFrame()` method |
 
 ---
 
 ## Technical Constraints
 
 1. **No defensive coding**: Trust that the compiler's MMIO enforcement ensures only `StringValue` objects reach the Input Controller's action/bind/query/consume registers. Cast directly — don't check `isStringValue()`.
-2. **No legacy fallback**: The existing `action_triggered()` native function continues to work. The MMIO Input Controller is an additional, parallel interface — not a replacement. Carts can use either.
-3. **Performance**: `getActionState()` involves ActionParser evaluation. This is already done per-frame for each `action_triggered()` call, so the MMIO path has identical cost. No new allocations per query — use the existing `ActionState` return value directly and pack flags inline. The latch itself should be O(1) or amortized per tracked button.
-4. **Serialization**: IO register values are transient per-frame state. The Input Controller has no persistent state that needs serialization. `reset()` clears it. The pending action definitions (accumulated via `inp_ctrl_commit`) are runtime config, not game state.
+2. **No legacy fallback**: The existing `action_triggered()` native function continues to work. The MMIO Input Controller is an additional, parallel interface — not a replacement. Carts can use either. Both use the same underlying `checkActionTriggered()` → `ActionDefinitionEvaluator` path.
+3. **Performance**: `checkActionTriggered(expr)` parses the expression (cached via `ActionDefinitionEvaluator.cache`), calls `getActionState()` internally for each referenced action, and evaluates the boolean. This is identical cost to the existing `action_triggered()` native — they share the same code path. No new allocations per query thanks to the AST cache.
+4. **Serialization**: IO register values are transient per-frame state. The chip's accumulated action definitions (`chipKeyboard`/`chipGamepad`) and `contextPushed` flag are runtime config, not game state. `reset()` clears everything. No serialization needed.
 5. **The `onIoWrite` non-numeric guard**: This is the most critical integration detail. The guard `if (typeof value !== 'number') { return; }` currently drops all non-numeric writes silently. String_ref writes to the Input Controller produce a `StringValue` which is not a number. The guard must be restructured. All four string_ref registers (`sys_inp_action`, `sys_inp_bind`, `sys_inp_query`, `sys_inp_consume`) need handling before the guard.
-6. **Shared flag constants**: The `ACTION_STATE_FLAG_*` constants in `engine_core.ts` should be extracted to a shared module (e.g., `src/bmsx/input/action_state_flags.ts`) and imported by both `engine_core.ts` and the new `input_controller.ts`.
-7. **Latch semantics**: The latch must capture a consistent snapshot of all tracked buttons' `ButtonState` at the moment `inp_ctrl_latch` is written. All subsequent `getActionState()` calls within that frame must read from the latched snapshot, not the live state. This ensures deterministic behavior for replays/netplay and prevents mid-frame state changes from causing inconsistencies. The `PlayerInput.latchFrame()` method is new and needs to be implemented.
-8. **Binding resolution**: The `commitAction()` flow needs to translate abstract button names (`a`, `lb`, `left`) to keyboard key codes (`KeyX`, `ShiftLeft`, `ArrowLeft`). Use the engine's existing `Input.DEFAULT_INPUT_MAPPING` to derive keyboard bindings from abstract names. For gamepad, the abstract names ARE the button IDs (no translation needed).
+6. **Shared flag constants**: The `ACTION_STATE_FLAG_*` constants in `engine_core.ts` remain useful for the existing `get_action_state()` Lua native. The chip itself does not use them — its status register is a boolean (1/0) since modifier semantics are embedded in the action expression.
+7. **Latch semantics**: The engine already calls `Input.beginFrame()` at `runtime.beginGuestUpdatePhase()`, which runs `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` (clears edge flags, increments frame counter) + `latchButtonState()` for all tracked buttons. This already provides a consistent per-frame snapshot before cart code runs. The chip's `inp_ctrl_latch` hooks into this **existing** sampling path. It does NOT call `beginFrame()` again (which would double-increment the frame counter), does NOT create a new sampling mechanism, and does NOT mutate mapping contexts. No new `latchFrame()` method is needed.
+8. **Binding resolution**: The `commitAction()` flow resolves abstract button names (`a`, `lb`, `left`) to keyboard key codes via `Input.DEFAULT_KEYBOARD_INPUT_MAPPING` — an existing frozen object: `{ a: ['KeyX'], lb: ['ShiftLeft'], left: ['ArrowLeft'], ... }`. No new `resolveKeyboardKey()` method is needed — read directly from the existing mapping table. For gamepad, the abstract names ARE the button IDs (identity mapping via `Input.DEFAULT_GAMEPAD_INPUT_MAPPING`).
+9. **Query semantics**: `sys_inp_query` accepts **action expressions** — the same expression language used by `action_triggered()`. Both simple queries (`'left[p]'`, `'dash[jp]'`) and compound expressions (`'up[jp] || a[jp]'`, `'left[p] && !dash[p]'`) are supported. Root-level actions require a modifier (`[p]`, `[jp]`, `[jr]`, etc.) — enforced by `enforceRootModifiers()` in the parser. The status register holds 1 (triggered) or 0 (not triggered).
+10. **Consume semantics**: `sys_inp_consume` accepts **plain action names** (no modifiers, no expressions). It dispatches to `PlayerInput.consumeAction(action)`, which iterates all sources and marks pressed+unconsumed bindings for that action as consumed.
+11. **Commit context lifecycle**: `inp_ctrl_commit` manages a **persistent `MappingContext`** (id `'inp_chip'`) on the player's `ContextStack`. Multiple commits accumulate actions into the same context. `inp_ctrl_reset` pops it. `inp_ctrl_latch` does NOT touch the context. The `ContextStack.push()` / `pop()` by id mechanism already supports this pattern.
 
 ---
 
@@ -549,20 +581,25 @@ end
 - Memory map base: `src/bmsx/emulator/memory_map.ts` (`IO_BASE`, `IO_WORD_SIZE`)
 - MMIO spec: `src/bmsx/emulator/mmio_register_spec.ts` (currently empty `MMIO_REGISTER_SPECS` array)
 - Runtime IO dispatch: `src/bmsx/emulator/runtime.ts` line 2204 (`onIoWrite`)
+- Frame latch entry point: `src/bmsx/emulator/runtime.ts` `beginGuestUpdatePhase()` (calls `Input.instance.beginFrame()` at `guestUpdatePhaseDepth === 0`)
 - Device examples: `src/bmsx/emulator/devices/dma_controller.ts`, `src/bmsx/emulator/devices/imgdec_controller.ts`
 - String pool: `src/bmsx/emulator/string_pool.ts` (`StringValue` class, `valueIsString()`)
 - Compiler validation: `src/bmsx/emulator/program_compiler.ts` (`validateMemoryStore`, `resolveMemoryStoreRequirement`)
 - Flow analysis: `src/bmsx/emulator/compile_value_flow.ts` (`evaluateExpressionValueKind`)
-- Input system (TS): `src/bmsx/input/playerinput.ts` (`checkActionTriggered`, `getActionState`, `consumeAction`, `pushContext`, `popContext`, `setInputMap`)
+- Input system — frame sampling: `src/bmsx/input/input.ts` `beginFrame()` → iterates players → `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()`
+- Input system — state manager: `src/bmsx/input/input.ts` `InputStateManager` class (`beginFrame()`, `latchButtonState()`, `getButtonState()`)
+- Input system — player: `src/bmsx/input/playerinput.ts` (`checkActionTriggered`, `getActionState`, `consumeAction`, `pushContext`, `popContext`, `setInputMap`, `beginFrame`)
 - Input system (C++): `src/bmsx_cpp/input/playerinput.cpp` (same methods)
-- Input context stacking: `src/bmsx/input/context.ts` (`MappingContext`, `ContextStack`, `getBindings`)
+- Input context stacking: `src/bmsx/input/context.ts` (`MappingContext`, `ContextStack` with `push`/`pop`/`enable`/`getBindings`)
 - Input types: `src/bmsx/input/inputtypes.ts` (`InputMap`, `KeyboardInputMapping`, `GamepadInputMapping`, `ButtonState`, `ActionState`)
-- Default input mapping: `src/bmsx/input/input.ts` (`Input.DEFAULT_INPUT_MAPPING` — keyboard/gamepad button vocabulary)
-- Action parser: `src/bmsx/input/actionparser.ts`, `src/bmsx_cpp/input/actionparser.cpp`
+- Default keyboard mapping: `src/bmsx/input/input.ts` `Input.DEFAULT_KEYBOARD_INPUT_MAPPING` — `{ a: ['KeyX'], lb: ['ShiftLeft'], left: ['ArrowLeft'], ... }` (frozen)
+- Default gamepad mapping: `src/bmsx/input/input.ts` `Input.DEFAULT_GAMEPAD_INPUT_MAPPING` — identity: `{ a: ['a'], lb: ['lb'], ... }`
+- Button vocabulary: `src/bmsx/input/input.ts` `Input.BUTTON_IDS` — `['a','b','x','y','lb','rb','lt','rt','select','start','ls','rs','up','down','left','right','home','touch']`
+- Action parser: `src/bmsx/input/actionparser.ts`, `src/bmsx_cpp/input/actionparser.cpp` (expression evaluation — used by the chip's query path via `checkActionTriggered()` → `ActionDefinitionEvaluator`)
 - Engine core: `src/bmsx/core/engine_core.ts` (`action_triggered`, `get_action_state`, `packActionStateFlags`)
 - Lua globals registration: `src/bmsx/emulator/lua_globals.ts` (pattern: `registerGlobal(runtime, 'sys_*', IO_*)`)
 - Lua builtin descriptors: `src/bmsx/emulator/lua_builtin_descriptors.ts`
 - Lua builtins (set_input_map): `src/bmsx/emulator/lua_builtins.ts` (existing `set_input_map()` native — reference impl for input map application)
-- Firmware API: `src/bmsx/emulator/firmware_api.ts` (`action_triggered` implementation)
+- Firmware API: `src/bmsx/emulator/firmware_api.ts` (`action_triggered` implementation via `checkActionTriggered`)
 - C++ input: `src/bmsx_cpp/input/input.h`, `src/bmsx_cpp/input/playerinput.h/.cpp`
 - C++ firmware: `src/bmsx_cpp/emulator/firmware_api.cpp`, `src/bmsx_cpp/emulator/lua_globals.cpp`
