@@ -4,16 +4,15 @@ import {
 	type LuaExpression,
 	type LuaBinaryExpression,
 	type LuaCallExpression,
-	type LuaFunctionExpression,
 	type LuaIndexExpression,
 	type LuaMemberExpression,
 	type LuaTableConstructorExpression,
 	type LuaUnaryExpression,
 } from './lua_ast';
 
-function unreachableTableFieldKind(value: never): never {
-	throw new Error(`[LuaAstTraversal] Unhandled table field kind: ${String(value)}`);
-}
+// function unreachableTableFieldKind(value: never): never {
+// 	throw new Error(`[LuaAstTraversal] Unhandled table field kind: ${String(value)}`);
+// }
 
 export function walkLuaExpressionTree(
 	expression: LuaExpression,
@@ -72,8 +71,8 @@ export function visitLuaExpressionChildren(
 						visit(field.key);
 						visit(field.value);
 						break;
-					default:
-						unreachableTableFieldKind(field.kind);
+					// default:
+					// 	unreachableTableFieldKind(field.kind);
 				}
 			}
 			return;
