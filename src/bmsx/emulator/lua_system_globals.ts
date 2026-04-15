@@ -68,8 +68,6 @@ export const ENGINE_SYSTEM_HELPER_NAMES = [
 	'resolve_rom_asset_range',
 	'u32_to_i32',
 	'fix16_to_f32',
-	'begin_update_phase',
-	'end_update_phase',
 	'clock_now',
 ] as const;
 
@@ -142,7 +140,7 @@ const ENGINE_SYSTEM_INPUT_GLOBAL_NAMES = [
 	'sys_inp_value',
 	'sys_inp_consume',
 	'inp_ctrl_commit',
-	'inp_ctrl_latch',
+	'inp_ctrl_arm',
 	'inp_ctrl_reset',
 	'inp_pressed',
 	'inp_justpressed',

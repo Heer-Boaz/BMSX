@@ -88,7 +88,7 @@ import {
 	IMG_STATUS_ERROR,
 	IMG_STATUS_REJECTED,
 	INP_CTRL_COMMIT,
-	INP_CTRL_LATCH,
+	INP_CTRL_ARM,
 	INP_CTRL_RESET,
 	IO_ARG_STRIDE,
 	IO_CMD_VDP_BLIT,
@@ -1228,7 +1228,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_inp_value', IO_INP_VALUE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_inp_consume', IO_INP_CONSUME);
 	runtimeLuaPipeline.registerGlobal(runtime, 'inp_ctrl_commit', INP_CTRL_COMMIT);
-	runtimeLuaPipeline.registerGlobal(runtime, 'inp_ctrl_latch', INP_CTRL_LATCH);
+	runtimeLuaPipeline.registerGlobal(runtime, 'inp_ctrl_arm', INP_CTRL_ARM);
 	runtimeLuaPipeline.registerGlobal(runtime, 'inp_ctrl_reset', INP_CTRL_RESET);
 	runtimeLuaPipeline.registerGlobal(runtime, 'inp_pressed', ACTION_STATE_FLAG_PRESSED);
 	runtimeLuaPipeline.registerGlobal(runtime, 'inp_justpressed', ACTION_STATE_FLAG_JUSTPRESSED);
@@ -1393,12 +1393,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		bitcastView.setUint32(0, lo, true);
 		bitcastView.setUint32(4, hi, true);
 		out.push(bitcastView.getFloat64(0, true));
-	}));
-	runtimeLuaPipeline.registerGlobal(runtime, 'begin_update_phase', createNativeFunction('begin_update_phase', (_args, _out) => {
-		runtime.beginGuestUpdatePhase();
-	}));
-	runtimeLuaPipeline.registerGlobal(runtime, 'end_update_phase', createNativeFunction('end_update_phase', (_args, _out) => {
-		runtime.endGuestUpdatePhase();
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'clock_now', createNativeFunction('clock_now', (_args, out) => {
 		out.push($.platform.clock.now());

@@ -255,7 +255,7 @@ export const GEO_FAULT_REJECT_MISALIGNED_REGS = 0x8005;
 export const GEO_FAULT_REJECT_BAD_REGISTER_COMBO = 0x8006;
 
 export const INP_CTRL_COMMIT = 1;
-export const INP_CTRL_LATCH = 2;
+export const INP_CTRL_ARM = 2;
 export const INP_CTRL_RESET = 3;
 
 export const VDP_ATLAS_ID_NONE = 0xffffffff >>> 0;

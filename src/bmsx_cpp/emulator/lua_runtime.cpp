@@ -113,7 +113,7 @@ void Runtime::handleLuaError(const std::string& message) {
 	logDebugState();
 	logLuaCallStack();
 	clearHaltUntilIrq();
-	m_guestUpdatePhaseDepth = 0;
+	m_inputSampleArmed = false;
 	m_pendingCall = PendingCall::None;
 	m_frameActive = false;
 	m_runtimeFailed = true;

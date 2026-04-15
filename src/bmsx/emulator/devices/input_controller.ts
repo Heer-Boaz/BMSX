@@ -1,8 +1,8 @@
 import { Input } from '../../input/input';
-import type { GamepadBinding, GamepadInputMapping, KeyboardBinding, KeyboardInputMapping } from '../../input/inputtypes';
+import type { BGamepadButton, GamepadBinding, GamepadInputMapping, KeyboardBinding, KeyboardInputMapping } from '../../input/inputtypes';
 import {
 	INP_CTRL_COMMIT,
-	INP_CTRL_LATCH,
+	INP_CTRL_ARM,
 	INP_CTRL_RESET,
 	IO_INP_ACTION,
 	IO_INP_BIND,
@@ -22,7 +22,6 @@ type PlayerChipState = {
 	keyboard: KeyboardInputMapping;
 	gamepad: GamepadInputMapping;
 	contextPushed: boolean;
-	latchedFrame: number;
 };
 
 export class InputController {
@@ -32,7 +31,6 @@ export class InputController {
 			keyboard: {},
 			gamepad: {},
 			contextPushed: false,
-			latchedFrame: 0,
 		}),
 	);
 
@@ -50,7 +48,6 @@ export class InputController {
 			state.keyboard = {};
 			state.gamepad = {};
 			state.contextPushed = false;
-			state.latchedFrame = 0;
 		}
 		this.memory.writeValue(IO_INP_PLAYER, 1);
 		this.memory.writeValue(IO_INP_STATUS, 0);
@@ -62,8 +59,7 @@ export class InputController {
 			case INP_CTRL_COMMIT:
 				this.commitAction();
 				return;
-			case INP_CTRL_LATCH:
-				this.latchInput();
+			case INP_CTRL_ARM:
 				return;
 			case INP_CTRL_RESET:
 				this.resetActions();
@@ -110,12 +106,6 @@ export class InputController {
 		state.contextPushed = true;
 	}
 
-	private latchInput(): void {
-		const playerIndex = this.memory.readValue(IO_INP_PLAYER) as number;
-		const playerInput = this.input.getPlayerInput(playerIndex);
-		this.playerStates[playerIndex - 1]!.latchedFrame = playerInput.pollFrame;
-	}
-
 	private resetActions(): void {
 		const playerIndex = this.memory.readValue(IO_INP_PLAYER) as number;
 		const state = this.playerStates[playerIndex - 1]!;
@@ -125,7 +115,6 @@ export class InputController {
 		state.keyboard = {};
 		state.gamepad = {};
 		state.contextPushed = false;
-		state.latchedFrame = 0;
 		this.memory.writeValue(IO_INP_STATUS, 0);
 		this.memory.writeValue(IO_INP_VALUE, 0);
 	}
@@ -136,14 +125,14 @@ export class InputController {
 			if (index !== bindingsText.length && bindingsText.charCodeAt(index) !== 44) {
 				continue;
 			}
-			const binding = bindingsText.slice(bindingStart, index);
+			const binding = bindingsText.slice(bindingStart, index) as BGamepadButton;
 			const defaultKeyboardBindings = Input.DEFAULT_INPUT_MAPPING.keyboard[binding];
 			if (defaultKeyboardBindings) {
 				for (let bindingIndex = 0; bindingIndex < defaultKeyboardBindings.length; bindingIndex += 1) {
 					keyboardBindings.push(defaultKeyboardBindings[bindingIndex]!);
 				}
 			}
-			gamepadBindings.push({ id: binding as never });
+			gamepadBindings.push({ id: binding });
 			bindingStart = index + 1;
 		}
 	}

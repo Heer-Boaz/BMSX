@@ -147,8 +147,6 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "sys_vdp_work_units_per_sec"
 		|| name == "sys_vdp_work_units_last"
 		|| name == "sys_vdp_frame_held"
-		|| name == "begin_update_phase"
-		|| name == "end_update_phase"
 		|| name == "clock_now"
 		|| name == "display_width"
 		|| name == "display_height"

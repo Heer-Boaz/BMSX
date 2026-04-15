@@ -21,7 +21,6 @@ private:
 		KeyboardInputMapping keyboard;
 		GamepadInputMapping gamepad;
 		bool contextPushed = false;
-		i64 latchedFrame = 0;
 	};
 
 	Memory& m_memory;
@@ -34,7 +33,6 @@ private:
 	const PlayerChipState& playerState(i32 playerIndex) const;
 	i32 currentPlayerIndex() const;
 	void commitAction();
-	void latchInput();
 	void resetActions();
 	void appendBindings(const std::string& bindingsText, std::vector<KeyboardBinding>& keyboardBindings, std::vector<GamepadBinding>& gamepadBindings) const;
 };

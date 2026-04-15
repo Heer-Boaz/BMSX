@@ -59,7 +59,7 @@ These are numeric constants written to `sys_inp_ctrl` to trigger chip operations
 | Constant | Name | Value | Description |
 |---|---|---|---|
 | `INP_CTRL_COMMIT` | `inp_ctrl_commit` | `1` | Commit the current action definition. Reads action name from `sys_inp_action` and bindings from `sys_inp_bind`, then registers the mapping into the chip's **persistent context** for the current player. The first commit creates and pushes a `MappingContext` (id `'inp_chip'`) onto the player's `ContextStack`; subsequent commits update that same context with additional actions. |
-| `INP_CTRL_LATCH` | `inp_ctrl_latch` | `2` | **Acknowledge/mark the current frame's input snapshot.** The engine already calls `Input.beginFrame()` at the start of each guest update phase (in `runtime.beginGuestUpdatePhase()`), which runs `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()` for all tracked buttons. The `inp_ctrl_latch` command hooks into this **existing** frame-sampling path — it does NOT invent a new latch mechanism or call `beginFrame()` again. It may serve as a cart-side discipline marker (chip refuses queries unless latched this frame) or as a no-op that documents intent. |
+| `INP_CTRL_ARM` | `inp_ctrl_arm` | `2` | **Acknowledge/mark the current frame's input snapshot.** The engine already calls `Input.beginFrame()` at the start of each guest update phase (in `runtime.beginGuestUpdatePhase()`), which runs `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()` for all tracked buttons. The `inp_ctrl_arm` command hooks into this **existing** frame-sampling path — it does NOT invent a new latch mechanism or call `beginFrame()` again. It may serve as a cart-side discipline marker (chip refuses queries unless latched this frame) or as a no-op that documents intent. |
 | `INP_CTRL_RESET` | `inp_ctrl_reset` | `3` | Pop the chip's `'inp_chip'` context from the current player's `ContextStack` and clear all accumulated action definitions. |
 
 ### Action Map Registration (INIT phase)
@@ -109,16 +109,16 @@ The engine already has a complete frame-sampling pipeline:
 
 This already snapshots a consistent per-frame `ButtonState` for all tracked buttons before any cart Lua code runs. The `getActionState()` path reads from these latched states.
 
-The `inp_ctrl_latch` command **hooks into this existing snapshot semantics**. It does NOT invent a new sampling mechanism, does NOT call `beginFrame()` again (which would double-increment the frame counter and corrupt edge detection), and does NOT mutate any mapping contexts. Its role is one of:
+The `inp_ctrl_arm` command **hooks into this existing snapshot semantics**. It does NOT invent a new sampling mechanism, does NOT call `beginFrame()` again (which would double-increment the frame counter and corrupt edge detection), and does NOT mutate any mapping contexts. Its role is one of:
 
-- **Discipline marker**: The chip tracks a `latchedThisFrame` flag per player. `inp_ctrl_latch` sets it; queries check it and fault if the cart forgot to latch. At frame boundaries the flag resets. This enforces "latch before query" hygiene.
-- **Explicit re-sample**: If a future design needs mid-frame re-sampling (e.g. for split-phase updates), `inp_ctrl_latch` could call `playerInput.beginFrame(currentTime)` again — but only if the `InputStateManager` is made reentrant-safe. For now, the engine's single `beginFrame()` per guest update phase is sufficient.
+- **Discipline marker**: The chip tracks a `latchedThisFrame` flag per player. `inp_ctrl_arm` sets it; queries check it and fault if the cart forgot to latch. At frame boundaries the flag resets. This enforces "latch before query" hygiene.
+- **Explicit re-sample**: If a future design needs mid-frame re-sampling (e.g. for split-phase updates), `inp_ctrl_arm` could call `playerInput.beginFrame(currentTime)` again — but only if the `InputStateManager` is made reentrant-safe. For now, the engine's single `beginFrame()` per guest update phase is sufficient.
 
-Cart code still writes `mem[sys_inp_ctrl] = inp_ctrl_latch` at the top of the update loop, documenting the frame boundary:
+Cart code still writes `mem[sys_inp_ctrl] = inp_ctrl_arm` at the top of the update loop, documenting the frame boundary:
 
 ```lua
 -- MAIN LOOP:
-mem[sys_inp_ctrl] = inp_ctrl_latch  -- acknowledge frame snapshot
+mem[sys_inp_ctrl] = inp_ctrl_arm  -- acknowledge frame snapshot
 
 mem[sys_inp_query] = &'left[p]'
 if mem[sys_inp_status] ~= 0 then
@@ -148,7 +148,7 @@ mem[sys_inp_ctrl] = inp_ctrl_commit
 -- MAIN LOOP: Latch, then query action expressions
 ------------------------------------------------------------
 -- Acknowledge frame snapshot (MUST be first)
-mem[sys_inp_ctrl] = inp_ctrl_latch
+mem[sys_inp_ctrl] = inp_ctrl_arm
 
 -- Simple digital check: is 'left' pressed?
 mem[sys_inp_query] = &'left[p]'
@@ -176,7 +176,7 @@ end
 
 -- Multiplayer: set player, then query
 mem[sys_inp_player] = 2
-mem[sys_inp_ctrl] = inp_ctrl_latch
+mem[sys_inp_ctrl] = inp_ctrl_arm
 mem[sys_inp_query] = &'left[p]'
 local p2_flags<const> = mem[sys_inp_status]
 mem[sys_inp_player] = 1              -- switch back
@@ -253,7 +253,7 @@ Also add control command constants (these are value constants, not addresses):
 ```ts
 // Input Controller control commands (written to IO_INP_CTRL)
 export const INP_CTRL_COMMIT = 1;  // Commit current action definition
-export const INP_CTRL_LATCH = 2;   // Latch (sample) input state for this frame
+export const INP_CTRL_ARM = 2;   // Latch (sample) input state for this frame
 export const INP_CTRL_RESET = 3;   // Reset all action definitions
 ```
 
@@ -291,7 +291,7 @@ runtimeLuaPipeline.registerGlobal(runtime, 'sys_inp_consume', IO_INP_CONSUME);
 
 // Input Controller control commands
 runtimeLuaPipeline.registerGlobal(runtime, 'inp_ctrl_commit', INP_CTRL_COMMIT);
-runtimeLuaPipeline.registerGlobal(runtime, 'inp_ctrl_latch', INP_CTRL_LATCH);
+runtimeLuaPipeline.registerGlobal(runtime, 'inp_ctrl_arm', INP_CTRL_ARM);
 runtimeLuaPipeline.registerGlobal(runtime, 'inp_ctrl_reset', INP_CTRL_RESET);
 ```
 
@@ -307,7 +307,7 @@ import { StringValue } from '../string_pool';
 import {
     IO_INP_PLAYER, IO_INP_ACTION, IO_INP_BIND, IO_INP_CTRL,
     IO_INP_QUERY, IO_INP_STATUS, IO_INP_VALUE, IO_INP_CONSUME,
-    INP_CTRL_COMMIT, INP_CTRL_LATCH, INP_CTRL_RESET,
+    INP_CTRL_COMMIT, INP_CTRL_ARM, INP_CTRL_RESET,
 } from '../io';
 import { Input } from '../../input/input';
 import type { KeyboardInputMapping, GamepadInputMapping } from '../../input/inputtypes';
@@ -345,7 +345,7 @@ export class InputController {
         const cmd = this.memory.readValue(IO_INP_CTRL) as number;
         switch (cmd) {
             case INP_CTRL_COMMIT: this.commitAction(); break;
-            case INP_CTRL_LATCH: this.latchInput(); break;
+            case INP_CTRL_ARM: this.latchInput(); break;
             case INP_CTRL_RESET: this.resetActions(); break;
         }
     }
@@ -437,7 +437,7 @@ export class InputController {
 - **Binding resolution**: Uses `Input.DEFAULT_KEYBOARD_INPUT_MAPPING` directly (e.g. `Input.DEFAULT_KEYBOARD_INPUT_MAPPING['a']` → `['KeyX']`). No new `resolveKeyboardKey()` method needed — the mapping table already exists as a frozen object on `Input`. For gamepad, the abstract names ARE the button IDs (identity mapping via `Input.DEFAULT_GAMEPAD_INPUT_MAPPING`).
 - **Query semantics**: `onQueryWrite()` calls `checkActionTriggered(expr)` — the same expression evaluator used by `action_triggered()`. It parses the expression via `ActionDefinitionEvaluator` (which uses cached ASTs from `InputActionParser`), calls `getActionState()` internally for each referenced action, and evaluates the boolean expression (including modifiers like `[p]`, `[jp]`, `[jr]` and operators `||`, `&&`, `!`). The status register holds 1 (triggered) or 0 (not triggered). The cart puts the "which flag to check" logic into the expression string itself (e.g. `'left[jp]'` for just-pressed, `'left[p]'` for pressed). Root-level actions require a modifier — enforced by the parser's `enforceRootModifiers()`.
 - **Consume semantics**: `onConsumeWrite()` calls `consumeAction(actionName)` — an existing method that iterates all sources, finds pressed+unconsumed bindings for the action, and marks them consumed. Takes a plain action name (no modifiers, no expressions).
-- **Latch mechanism**: No new `latchFrame()` method is needed. The engine's existing `beginGuestUpdatePhase()` → `Input.beginFrame()` → `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()` path already snapshots all tracked buttons per frame before cart code runs. The chip's `inp_ctrl_latch` hooks into this existing semantics — it may set a discipline flag, but it does NOT re-sample.
+- **Latch mechanism**: No new `latchFrame()` method is needed. The engine's existing `beginGuestUpdatePhase()` → `Input.beginFrame()` → `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()` path already snapshots all tracked buttons per frame before cart code runs. The chip's `inp_ctrl_arm` hooks into this existing semantics — it may set a discipline flag, but it does NOT re-sample.
 
 **Note**: The `InputController` does not use `packActionStateFlags` — the status register is a simple boolean (1/0) since modifier semantics are embedded in the expression string. The `ACTION_STATE_FLAG_*` constants remain useful for the existing `get_action_state()` Lua native function.
 
@@ -496,7 +496,7 @@ Add descriptors for the new system constants so they appear in IDE autocomplete:
 { name: 'sys_inp_player', description: 'Input Controller: player index register (1-based).' },
 { name: 'sys_inp_action', description: 'Input Controller: write a string_ref action name for define/commit.' },
 { name: 'sys_inp_bind', description: 'Input Controller: write string_ref button bindings (comma-separated) for current action.' },
-{ name: 'sys_inp_ctrl', description: 'Input Controller: write a control command (inp_ctrl_commit, inp_ctrl_latch, inp_ctrl_reset).' },
+{ name: 'sys_inp_ctrl', description: 'Input Controller: write a control command (inp_ctrl_commit, inp_ctrl_arm, inp_ctrl_reset).' },
 { name: 'sys_inp_query', description: 'Input Controller: write a string_ref action expression to evaluate (e.g. left[p], up[jp] || a[jp]).' },
 { name: 'sys_inp_status', description: 'Input Controller: read query result (1 = triggered, 0 = not triggered).' },
 { name: 'sys_inp_value', description: 'Input Controller: read analog value after a query.' },
@@ -504,7 +504,7 @@ Add descriptors for the new system constants so they appear in IDE autocomplete:
 
 // Control command constants:
 { name: 'inp_ctrl_commit', description: 'Input Controller command: commit the current action definition (reads sys_inp_action + sys_inp_bind).' },
-{ name: 'inp_ctrl_latch', description: 'Input Controller command: latch (sample) input state for this frame.' },
+{ name: 'inp_ctrl_arm', description: 'Input Controller command: latch (sample) input state for this frame.' },
 { name: 'inp_ctrl_reset', description: 'Input Controller command: reset all action definitions to empty.' },
 ```
 
@@ -555,11 +555,11 @@ end
 4. **Serialization**: IO register values are transient per-frame state. The chip's accumulated action definitions (`chipKeyboard`/`chipGamepad`) and `contextPushed` flag are runtime config, not game state. `reset()` clears everything. No serialization needed.
 5. **The `onIoWrite` non-numeric guard**: This is the most critical integration detail. The guard `if (typeof value !== 'number') { return; }` currently drops all non-numeric writes silently. String_ref writes to the Input Controller produce a `StringValue` which is not a number. The guard must be restructured. All four string_ref registers (`sys_inp_action`, `sys_inp_bind`, `sys_inp_query`, `sys_inp_consume`) need handling before the guard.
 6. **Shared flag constants**: The `ACTION_STATE_FLAG_*` constants in `engine_core.ts` remain useful for the existing `get_action_state()` Lua native. The chip itself does not use them — its status register is a boolean (1/0) since modifier semantics are embedded in the action expression.
-7. **Latch semantics**: The engine already calls `Input.beginFrame()` at `runtime.beginGuestUpdatePhase()`, which runs `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` (clears edge flags, increments frame counter) + `latchButtonState()` for all tracked buttons. This already provides a consistent per-frame snapshot before cart code runs. The chip's `inp_ctrl_latch` hooks into this **existing** sampling path. It does NOT call `beginFrame()` again (which would double-increment the frame counter), does NOT create a new sampling mechanism, and does NOT mutate mapping contexts. No new `latchFrame()` method is needed.
+7. **Latch semantics**: The engine already calls `Input.beginFrame()` at `runtime.beginGuestUpdatePhase()`, which runs `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` (clears edge flags, increments frame counter) + `latchButtonState()` for all tracked buttons. This already provides a consistent per-frame snapshot before cart code runs. The chip's `inp_ctrl_arm` hooks into this **existing** sampling path. It does NOT call `beginFrame()` again (which would double-increment the frame counter), does NOT create a new sampling mechanism, and does NOT mutate mapping contexts. No new `latchFrame()` method is needed.
 8. **Binding resolution**: The `commitAction()` flow resolves abstract button names (`a`, `lb`, `left`) to keyboard key codes via `Input.DEFAULT_KEYBOARD_INPUT_MAPPING` — an existing frozen object: `{ a: ['KeyX'], lb: ['ShiftLeft'], left: ['ArrowLeft'], ... }`. No new `resolveKeyboardKey()` method is needed — read directly from the existing mapping table. For gamepad, the abstract names ARE the button IDs (identity mapping via `Input.DEFAULT_GAMEPAD_INPUT_MAPPING`).
 9. **Query semantics**: `sys_inp_query` accepts **action expressions** — the same expression language used by `action_triggered()`. Both simple queries (`'left[p]'`, `'dash[jp]'`) and compound expressions (`'up[jp] || a[jp]'`, `'left[p] && !dash[p]'`) are supported. Root-level actions require a modifier (`[p]`, `[jp]`, `[jr]`, etc.) — enforced by `enforceRootModifiers()` in the parser. The status register holds 1 (triggered) or 0 (not triggered).
 10. **Consume semantics**: `sys_inp_consume` accepts **plain action names** (no modifiers, no expressions). It dispatches to `PlayerInput.consumeAction(action)`, which iterates all sources and marks pressed+unconsumed bindings for that action as consumed.
-11. **Commit context lifecycle**: `inp_ctrl_commit` manages a **persistent `MappingContext`** (id `'inp_chip'`) on the player's `ContextStack`. Multiple commits accumulate actions into the same context. `inp_ctrl_reset` pops it. `inp_ctrl_latch` does NOT touch the context. The `ContextStack.push()` / `pop()` by id mechanism already supports this pattern.
+11. **Commit context lifecycle**: `inp_ctrl_commit` manages a **persistent `MappingContext`** (id `'inp_chip'`) on the player's `ContextStack`. Multiple commits accumulate actions into the same context. `inp_ctrl_reset` pops it. `inp_ctrl_arm` does NOT touch the context. The `ContextStack.push()` / `pop()` by id mechanism already supports this pattern.
 
 ---
 

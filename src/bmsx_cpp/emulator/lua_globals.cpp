@@ -1593,7 +1593,7 @@ void Runtime::setupBuiltins() {
 	setGlobal("img_status_clipped", valueNumber(static_cast<double>(IMG_STATUS_CLIPPED)));
 	setGlobal("img_status_rejected", valueNumber(static_cast<double>(IMG_STATUS_REJECTED)));
 	setGlobal("inp_ctrl_commit", valueNumber(static_cast<double>(INP_CTRL_COMMIT)));
-	setGlobal("inp_ctrl_latch", valueNumber(static_cast<double>(INP_CTRL_LATCH)));
+	setGlobal("inp_ctrl_arm", valueNumber(static_cast<double>(INP_CTRL_ARM)));
 	setGlobal("inp_ctrl_reset", valueNumber(static_cast<double>(INP_CTRL_RESET)));
 	setGlobal("inp_pressed", valueNumber(static_cast<double>(ACTION_STATE_FLAG_PRESSED)));
 	setGlobal("inp_justpressed", valueNumber(static_cast<double>(ACTION_STATE_FLAG_JUSTPRESSED)));
@@ -1629,16 +1629,6 @@ void Runtime::setupBuiltins() {
 	registerNativeFunction("clock_now", [](NativeArgsView args, NativeResults& out) {
 		(void)args;
 		out.push_back(valueNumber(EngineCore::instance().clock()->now()));
-	});
-	registerNativeFunction("begin_update_phase", [this](NativeArgsView args, NativeResults& out) {
-		(void)args;
-		(void)out;
-		beginGuestUpdatePhase();
-	});
-	registerNativeFunction("end_update_phase", [this](NativeArgsView args, NativeResults& out) {
-		(void)args;
-		(void)out;
-		endGuestUpdatePhase();
 	});
 	registerNativeFunction("sys_cpu_cycles_used", [this](NativeArgsView args, NativeResults& out) {
 		(void)args;

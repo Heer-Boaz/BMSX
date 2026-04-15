@@ -279,7 +279,7 @@ constexpr uint32_t GEO_FAULT_REJECT_MISALIGNED_REGS = 0x8005u;
 constexpr uint32_t GEO_FAULT_REJECT_BAD_REGISTER_COMBO = 0x8006u;
 
 constexpr uint32_t INP_CTRL_COMMIT = 1u;
-constexpr uint32_t INP_CTRL_LATCH = 2u;
+constexpr uint32_t INP_CTRL_ARM = 2u;
 constexpr uint32_t INP_CTRL_RESET = 3u;
 
 constexpr uint32_t VDP_ATLAS_ID_NONE = 0xffffffffu;

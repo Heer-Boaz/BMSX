@@ -23,7 +23,6 @@ void InputController::reset() {
 		state.keyboard.clear();
 		state.gamepad.clear();
 		state.contextPushed = false;
-		state.latchedFrame = 0;
 	}
 	m_memory.writeValue(IO_INP_PLAYER, valueNumber(1.0));
 	m_memory.writeValue(IO_INP_STATUS, valueNumber(0.0));
@@ -35,8 +34,7 @@ void InputController::onCtrlWrite() {
 		case INP_CTRL_COMMIT:
 			commitAction();
 			return;
-		case INP_CTRL_LATCH:
-			latchInput();
+		case INP_CTRL_ARM:
 			return;
 		case INP_CTRL_RESET:
 			resetActions();
@@ -99,11 +97,6 @@ void InputController::commitAction() {
 	state.contextPushed = true;
 }
 
-void InputController::latchInput() {
-	const i32 playerIndex = currentPlayerIndex();
-	playerState(playerIndex).latchedFrame = m_input.getPlayerInput(playerIndex)->pollFrame();
-}
-
 void InputController::resetActions() {
 	const i32 playerIndex = currentPlayerIndex();
 	PlayerChipState& state = playerState(playerIndex);
@@ -113,7 +106,6 @@ void InputController::resetActions() {
 	state.keyboard.clear();
 	state.gamepad.clear();
 	state.contextPushed = false;
-	state.latchedFrame = 0;
 	m_memory.writeValue(IO_INP_STATUS, valueNumber(0.0));
 	m_memory.writeValue(IO_INP_VALUE, valueNumber(0.0));
 }

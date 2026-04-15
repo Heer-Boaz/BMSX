@@ -1045,6 +1045,7 @@ void Runtime::resetVblankState() {
 	m_vblankActive = false;
 	m_vblankSequence = 0;
 	m_lastCompletedVblankSequence = 0;
+	m_inputSampleArmed = false;
 	m_irqSignalSequence = 0;
 	resetHaltIrqWait();
 	m_vdpStatus = 0;
@@ -1123,6 +1124,10 @@ void Runtime::syncVdpSubmitAttemptStatusFromDma(uint32_t dst) {
 void Runtime::enterVblank() {
 	m_vblankSequence += 1;
 	commitFrameOnVblankEdge();
+	if (m_inputSampleArmed) {
+		Input::instance().beginFrame();
+		m_inputSampleArmed = false;
+	}
 	setVblankStatus(true);
 	signalIrq(IRQ_VBLANK);
 	if (m_frameActive && m_cpu.isHaltedUntilIrq() && m_pendingCall == PendingCall::Entry && m_cpu.getFrameDepth() == 1) {
@@ -1146,33 +1151,9 @@ void Runtime::completeTickIfPending(FrameState& frameState, uint64_t vblankSeque
 	if (m_lastCompletedVblankSequence == vblankSequence) {
 		return;
 	}
-	if (!m_tickBoundaryArmed) {
-		return;
-	}
 	m_activeTickCompleted = true;
-	m_tickBoundaryArmed = false;
 	m_lastCompletedVblankSequence = vblankSequence;
 	machineScheduler.enqueueTickCompletion(*this, frameState);
-}
-
-void Runtime::beginGuestUpdatePhase() {
-	if (!m_frameActive) {
-		throw runtimeFault("begin_update_phase requires an active frame state.");
-	}
-	if (m_guestUpdatePhaseDepth == 0) {
-		Input::instance().beginFrame();
-	}
-	m_guestUpdatePhaseDepth += 1;
-}
-
-void Runtime::endGuestUpdatePhase() {
-	if (m_guestUpdatePhaseDepth <= 0) {
-		throw runtimeFault("end_update_phase called without a matching begin_update_phase.");
-	}
-	m_guestUpdatePhaseDepth -= 1;
-	if (m_guestUpdatePhaseDepth == 0) {
-		m_tickBoundaryArmed = true;
-	}
 }
 
 void Runtime::clearHaltUntilIrq() {
@@ -1354,7 +1335,6 @@ void Runtime::beginFrameState() {
 	m_frameActive = true;
 	m_lastTickCompleted = false;
 	m_activeTickCompleted = false;
-	m_tickBoundaryArmed = false;
 	m_frameState = FrameState{};
 	m_frameState.cycleBudgetRemaining = m_cycleBudgetPerFrame;
 	m_frameState.cycleBudgetGranted = m_cycleBudgetPerFrame;
@@ -1454,7 +1434,7 @@ bool Runtime::tickUpdate() {
 		m_debugUpdateCountTotal += 1;
 	}
 
-	m_frameState.updateExecuted = m_tickBoundaryArmed;
+	m_frameState.updateExecuted = !hasEntryContinuation();
 	flushAssetEdits();
 	finalizeUpdateSlice();
 	FrameState* const nextState = m_frameActive ? &m_frameState : nullptr;
@@ -1508,6 +1488,9 @@ void Runtime::onIoWrite(uint32_t addr, Value value) {
 		return;
 	}
 	if (addr == IO_INP_CTRL) {
+		if (valueIsNumber(value) && toU32(asNumber(value)) == INP_CTRL_ARM) {
+			m_inputSampleArmed = true;
+		}
 		m_inputController.onCtrlWrite();
 		return;
 	}
@@ -1600,8 +1583,7 @@ void Runtime::requestProgramReload() {
 void Runtime::resetFrameState() {
 	m_frameActive = false;
 	m_activeTickCompleted = false;
-	m_guestUpdatePhaseDepth = 0;
-	m_tickBoundaryArmed = false;
+	m_inputSampleArmed = false;
 	m_frameState = FrameState{};
 	clearHaltUntilIrq();
 	machineScheduler.reset(*this);
@@ -1636,7 +1618,7 @@ RuntimeState Runtime::captureCurrentState() const {
 	state.skyboxFaceIds = m_vdp.skyboxFaceIds();
 	state.vdpDitherType = m_vdp.getDitherType();
 	state.cyclesIntoFrame = getCyclesIntoFrame();
-	state.tickBoundaryArmed = m_tickBoundaryArmed;
+	state.inputSampleArmed = m_inputSampleArmed;
 	return state;
 }
 
@@ -1646,8 +1628,7 @@ void Runtime::applyState(const RuntimeState& state) {
 	m_geometryController.normalizeAfterStateRestore();
 	m_vdp.syncRegisters();
 	clearHaltUntilIrq();
-	m_guestUpdatePhaseDepth = 0;
-	m_tickBoundaryArmed = state.tickBoundaryArmed;
+	m_inputSampleArmed = state.inputSampleArmed;
 	machineScheduler.reset(*this);
 	screen.reset();
 	resetSchedulerState();

@@ -147,8 +147,6 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'sys_vdp_work_units_per_sec':
 		case 'sys_vdp_work_units_last':
 		case 'sys_vdp_frame_held':
-		case 'begin_update_phase':
-		case 'end_update_phase':
 		case 'clock_now':
 			return NATIVE_COST_TIER0;
 		case 'math.abs':
