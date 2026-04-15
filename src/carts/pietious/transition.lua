@@ -16,7 +16,7 @@
 -- its mask timeline without showing any text.
 
 local constants<const> = require('constants')
-local font<const> = require('font')
+local font_module<const> = require('font')
 
 local transition<const> = {}
 transition.__index = transition
@@ -43,7 +43,7 @@ function transition:draw_transition_overlay()
 	end
 	local lines<const> = self.banner_lines
 	if #lines > 0 then
-		local font<const> = self.banner_font
+		local banner_font<const> = self.banner_font
 		local base_y<const> = constants.room.tile_origin_y + (constants.room.tile_size * 9)
 		local screen_width<const> = display_width()
 		for i = 1, #lines do
@@ -55,10 +55,10 @@ function transition:draw_transition_overlay()
 					17,
 					0,
 					line,
-					(screen_width - font.measure_line_width(font, line)) // 2,
-					base_y + ((i - 1) * font.line_height),
+					(screen_width - font_module.measure_line_width(banner_font, line)) // 2,
+					base_y + ((i - 1) * banner_font.line_height),
 					341,
-					font.id,
+					banner_font.id,
 					0,
 					0x7fffffff,
 					sys_vdp_layer_ui,
@@ -78,7 +78,7 @@ function transition:draw_transition_overlay()
 end
 
 function transition:ctor()
-	self.banner_font = font.get('pietious')
+	self.banner_font = font_module.get('pietious')
 	self.banner_lines = {}
 	self:bind_visual()
 	self:define_timeline(timeline.new({

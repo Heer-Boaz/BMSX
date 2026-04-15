@@ -10,7 +10,7 @@
 -- the object already has an FSM.
 
 local constants<const> = require('constants')
-local font<const> = require('font')
+local font_module<const> = require('font')
 
 local lithograph_screen<const> = {}
 lithograph_screen.__index = lithograph_screen
@@ -46,7 +46,7 @@ function lithograph_screen:draw_screen()
 	)
 	local lines<const> = self.lines
 	if #lines > 0 then
-		local font<const> = self.text_font
+		local text_font<const> = self.text_font
 		local base_y<const> = constants.room.tile_origin_y + (constants.room.tile_size * 6)
 		local screen_width<const> = display_width()
 		for i = 1, #lines do
@@ -58,10 +58,10 @@ function lithograph_screen:draw_screen()
 					17,
 					0,
 					line,
-					(screen_width - font.measure_line_width(font, line)) // 2,
-					base_y + ((i - 1) * font.line_height),
+					(screen_width - font_module.measure_line_width(text_font, line)) // 2,
+					base_y + ((i - 1) * text_font.line_height),
 					341,
-					font.id,
+					text_font.id,
 					0,
 					0x7fffffff,
 					sys_vdp_layer_ui,
@@ -81,7 +81,7 @@ function lithograph_screen:draw_screen()
 end
 
 function lithograph_screen:ctor()
-	self.text_font = font.get('pietious')
+	self.text_font = font_module.get('pietious')
 	self.lines = {}
 	self:bind_visual()
 end
