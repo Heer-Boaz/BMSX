@@ -943,16 +943,16 @@ m_runtime.registerNativeFunction("put_particle", [this, key](NativeArgsView args
 	(void)out;
 });
 
-	m_runtime.registerNativeFunction("get_default_font", [this](NativeArgsView args, NativeResults& out) {
-		(void)args;
-		out.push_back(build_font_descriptor(m_font.get()));
-	});
+m_runtime.registerNativeFunction("get_default_font", [this](NativeArgsView args, NativeResults& out) {
+	(void)args;
+	out.push_back(build_font_descriptor(m_font.get()));
+});
 
-	m_runtime.registerNativeFunction("create_font", [this](NativeArgsView args, NativeResults& out) {
-		BFont* font = create_font(args.at(0));
-		out.push_back(build_font_descriptor(font));
-		(void)out;
-	});
+m_runtime.registerNativeFunction("create_font", [this](NativeArgsView args, NativeResults& out) {
+	BFont* font = create_font(args.at(0));
+	out.push_back(build_font_descriptor(font));
+	(void)out;
+});
 
 m_runtime.registerNativeFunction("action_triggered", [this, asText](NativeArgsView args, NativeResults& out) {
 	const std::string& action = asText(args.at(0));
