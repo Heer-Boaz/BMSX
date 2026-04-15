@@ -46,8 +46,6 @@ public:
 	void put_mesh(const MeshRenderSubmission& submission);
 	void put_particle(const ParticleRenderSubmission& submission);
 
-	void consume_action(const std::string& action, std::optional<int> playerIndex);
-
 	void cartdata(const std::string& ns);
 	void dset(int index, double value);
 	double dget(int index) const;

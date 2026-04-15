@@ -264,7 +264,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'sys_inp_query', params: [], signature: 'sys_inp_query', description: 'Input Controller query register; write an action expression such as left[p] or jump[jp].' },
 	{ name: 'sys_inp_status', params: [], signature: 'sys_inp_status', description: 'Input Controller query result register; 1 when the last query was triggered, else 0.' },
 	{ name: 'sys_inp_value', params: [], signature: 'sys_inp_value', description: 'Input Controller analog value register for simple single-action queries.' },
-	{ name: 'sys_inp_consume', params: [], signature: 'sys_inp_consume', description: 'Input Controller consume register; write an action name string to consume it.' },
+	{ name: 'sys_inp_consume', params: [], signature: 'sys_inp_consume', description: 'Input Controller consume register; write an action name or comma-separated action names string to consume them in order.' },
 	{ name: 'sys_rom_system_base', params: [], signature: 'sys_rom_system_base', description: 'System ROM base address.' },
 	{ name: 'sys_rom_cart_base', params: [], signature: 'sys_rom_cart_base', description: 'Cart ROM base address.' },
 	{ name: 'sys_rom_overlay_base', params: [], signature: 'sys_rom_overlay_base', description: 'Overlay ROM base address.' },

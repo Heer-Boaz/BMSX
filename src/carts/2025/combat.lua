@@ -198,7 +198,7 @@ end
 function combat_director:skip_typing()
 	if oget(globals.text_main_id):is_typing() then
 		oget(globals.text_main_id):reveal_text()
-		consume_action('b')
+		mem[sys_inp_consume] = &'b'
 		return true
 	end
 	return false

@@ -54,8 +54,16 @@ void InputController::onQueryWrite() {
 }
 
 void InputController::onConsumeWrite() {
-	const std::string& actionName = m_strings.toString(asStringId(m_memory.readValue(IO_INP_CONSUME)));
-	m_input.getPlayerInput(currentPlayerIndex())->consumeAction(actionName);
+	const std::string& actionNames = m_strings.toString(asStringId(m_memory.readValue(IO_INP_CONSUME)));
+	PlayerInput* const playerInput = m_input.getPlayerInput(currentPlayerIndex());
+	size_t start = 0;
+	for (size_t index = 0; index <= actionNames.size(); index += 1) {
+		if (index != actionNames.size() && actionNames[index] != ',') {
+			continue;
+		}
+		playerInput->consumeAction(actionNames.substr(start, index - start));
+		start = index + 1;
+	}
 }
 
 InputController::PlayerChipState& InputController::playerState(i32 playerIndex) {

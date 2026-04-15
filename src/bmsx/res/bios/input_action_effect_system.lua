@@ -150,7 +150,8 @@ function inputactioneffectsystem:run_intent_assignments(owner, player_index, bin
 			local resolved_value<const> = should_clear and nil or (assignment.value == nil and assigned_value_edges[edge] or assignment.value)
 		self:assign_owner_path(owner, path, resolved_value, should_clear)
 		if (assignment.consume) then
-			consume_action(player_index, binding.action)
+			mem[sys_inp_player] = player_index
+			mem[sys_inp_consume] = binding.action
 		end
 	end
 end

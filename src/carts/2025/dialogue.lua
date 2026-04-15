@@ -23,7 +23,7 @@ function dialogue.register_methods(director)
 			if oget(globals.text_main_id):is_typing() then
 				oget(globals.text_main_id):reveal_text()
 				self:update_dialogue_prompt()
-				consume_action('b')
+				mem[sys_inp_consume] = &'b'
 			return true
 		end
 		return false

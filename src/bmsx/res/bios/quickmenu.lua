@@ -150,8 +150,7 @@ function menu.update()
 	mem[sys_inp_player] = 1
 	mem[sys_inp_query] = &'select[jp] && start[jp]'
 	if mem[sys_inp_status] ~= 0 then
-		consume_action('select')
-		consume_action('start')
+		mem[sys_inp_consume] = &'select,start'
 		toggle_menu()
 	end
 	if not state.open then
@@ -161,7 +160,7 @@ function menu.update()
 
 	mem[sys_inp_query] = &'b[jp]'
 	if mem[sys_inp_status] ~= 0 then
-		consume_action('b')
+		mem[sys_inp_consume] = &'b'
 		toggle_menu()
 	end
 
@@ -187,7 +186,7 @@ function menu.update()
 	end
 	mem[sys_inp_query] = &'a[jp]'
 	if mem[sys_inp_status] ~= 0 then
-		consume_action('a')
+		mem[sys_inp_consume] = &'a'
 		if entries[state.selected].kind == 'action' then
 			entries[state.selected].action()
 		end	

@@ -192,14 +192,6 @@ export const API_METHOD_METADATA = {
 		returnType: 'Font',
 		returnDescription: 'Native font handle for direct glyph-submission code.',
 	},
-	consume_action: {
-		description: 'Consumes an input action definition for a given player.',
-		parameters: [
-			{ name: 'actiondefinition', description: 'Action string (e.g. "jump" or "a").' },
-			{ name: 'player', optional: true, description: 'Player index (1-based).' },
-		],
-		returnType: 'void',
-	},
 	cartdata: {
 		description: 'Sets the persistent storage namespace for this cart (used by dget/dset).',
 		parameters: [

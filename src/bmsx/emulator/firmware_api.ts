@@ -345,10 +345,6 @@ export class Api {
 		});
 	}
 
-	public consume_action(actionToConsume: string, player?: number): void {
-		$.consume_action(player === undefined ? 1 : player, actionToConsume);
-	}
-
 	public cartdata(namespace: string): void {
 		this.storage.setNamespace(namespace);
 	}

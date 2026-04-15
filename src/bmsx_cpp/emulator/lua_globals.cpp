@@ -3888,19 +3888,6 @@ auto clockPerfNowFn = m_cpu.createNativeFunction("platform.clock.perf_now", [](N
 		out.push_back(packActionStateFlags(state));
 	});
 
-auto consumeActionFn = m_cpu.createNativeFunction("game.consume_action", [this](NativeArgsView args, NativeResults& out) {
-	int playerIndex = 1;
-	std::string action;
-	if (args.size() == 1) {
-		action = m_cpu.stringPool().toString(asStringId(args.at(0)));
-		} else {
-			playerIndex = static_cast<int>(std::floor(asNumber(args.at(0))));
-		action = m_cpu.stringPool().toString(asStringId(args.at(1)));
-	}
-	Input::instance().getPlayerInput(playerIndex)->consumeAction(action);
-	(void)out;
-});
-
 auto emitFn = m_cpu.createNativeFunction("game.emit", [](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	(void)out;
@@ -3911,14 +3898,13 @@ auto getFrameDeltaMsFn = m_cpu.createNativeFunction("game.get_frame_delta_ms", [
 	out.push_back(valueNumber(frameDeltaMs()));
 });
 
-	auto* gameTable = m_cpu.createTable(0, 11);
+	auto* gameTable = m_cpu.createTable(0, 10);
 	gameTable->set(key("platform"), valueTable(platformTable));
 	gameTable->set(key("viewportsize"), valueTable(viewportTable));
 	gameTable->set(key("view"), valueTable(viewTable));
 	gameTable->set(key("emit"), emitFn);
 	gameTable->set(key("get_frame_delta_ms"), getFrameDeltaMsFn);
 	gameTable->set(key("get_action_state"), getActionStateFn);
-	gameTable->set(key("consume_action"), consumeActionFn);
 	setGlobal("game", valueTable(gameTable));
 	setGlobal("$", valueTable(gameTable));
 

@@ -954,66 +954,6 @@ m_runtime.registerNativeFunction("create_font", [this](NativeArgsView args, Nati
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("consume_action", [this, asText](NativeArgsView args, NativeResults& out) {
-	(void)out;
-	std::optional<int> playerIndex;
-	Value actionVal;
-	if (args.size() == 1) {
-		actionVal = args.at(0);
-	} else {
-		if (!isNil(args[0])) {
-			playerIndex = static_cast<int>(std::floor(asNumber(args.at(0))));
-		}
-		actionVal = args.size() > 1 ? args.at(1) : valueNil();
-	}
-	if (isNil(actionVal)) {
-		return;
-	}
-	std::string action;
-	if (valueIsString(actionVal)) {
-		action = asText(actionVal);
-	} else if (valueIsTable(actionVal)) {
-		auto* tbl = asTable(actionVal);
-		Value def = tbl->get(m_keys.definition);
-		if (!isNil(def) && valueIsString(def)) {
-			action = asText(def);
-		} else {
-			Value act = tbl->get(m_keys.action);
-			if (!isNil(act) && valueIsString(act)) {
-				action = asText(act);
-			} else {
-				Value name = tbl->get(m_keys.name);
-				if (!isNil(name) && valueIsString(name)) {
-					action = asText(name);
-				} else {
-					throw BMSX_RUNTIME_ERROR("consume_action expects an action string or ActionState");
-				}
-			}
-		}
-	} else if (valueIsNativeObject(actionVal)) {
-		auto* obj = asNativeObject(actionVal);
-		Value def = obj->get(valueNumber(1.0));
-		if (!isNil(def) && valueIsString(def)) {
-			action = asText(def);
-		} else {
-			Value def2 = obj->get(m_keys.definition);
-			if (!isNil(def2) && valueIsString(def2)) {
-				action = asText(def2);
-			} else {
-				Value act = obj->get(m_keys.action);
-				if (!isNil(act) && valueIsString(act)) {
-					action = asText(act);
-				} else {
-					throw BMSX_RUNTIME_ERROR("consume_action expects an action string or ActionState");
-				}
-			}
-		}
-	} else {
-		throw BMSX_RUNTIME_ERROR("consume_action expects an action string or ActionState");
-	}
-	consume_action(action, playerIndex);
-});
-
 m_runtime.registerNativeFunction("cartdata", [this, asText](NativeArgsView args, NativeResults& out) {
 	const std::string& ns = asText(args.at(0));
 	cartdata(ns);
@@ -1172,11 +1112,6 @@ void Api::put_mesh(const MeshRenderSubmission& submission) {
 
 void Api::put_particle(const ParticleRenderSubmission& submission) {
 	EngineCore::instance().view()->renderer.submit.particle(submission);
-}
-
-void Api::consume_action(const std::string& action, std::optional<int> playerIndex) {
-	int index = playerIndex.has_value() ? playerIndex.value() : 1;
-	EngineCore::instance().consume_action(index, action);
 }
 
 void Api::cartdata(const std::string& ns) {

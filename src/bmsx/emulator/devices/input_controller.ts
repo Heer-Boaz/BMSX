@@ -80,8 +80,16 @@ export class InputController {
 	}
 
 	public onConsumeWrite(): void {
-		const actionName = (this.memory.readValue(IO_INP_CONSUME) as StringValue).text;
-		this.input.getPlayerInput(this.memory.readValue(IO_INP_PLAYER) as number).consumeAction(actionName);
+		const actionNames = (this.memory.readValue(IO_INP_CONSUME) as StringValue).text;
+		const playerInput = this.input.getPlayerInput(this.memory.readValue(IO_INP_PLAYER) as number);
+		let actionStart = 0;
+		for (let index = 0; index <= actionNames.length; index += 1) {
+			if (index !== actionNames.length && actionNames.charCodeAt(index) !== 44) {
+				continue;
+			}
+			playerInput.consumeAction(actionNames.slice(actionStart, index));
+			actionStart = index + 1;
+		}
 	}
 
 	private commitAction(): void {

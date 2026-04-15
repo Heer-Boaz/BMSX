@@ -39,7 +39,8 @@ local compile_effect<const> = function(effect, slot, analysis)
 		end
 		return function(env)
 			for i = 1, #actions do
-				consume_action(env.player_index, actions[i])
+				mem[sys_inp_player] = env.player_index
+				mem[sys_inp_consume] = actions[i]
 			end
 		end
 	end

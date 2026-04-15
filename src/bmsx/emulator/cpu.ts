@@ -116,7 +116,6 @@ function resolveApiNativeCost(name: string): NativeFnCost {
 		case 'pointer_viewport_position':
 		case 'mousepos':
 		case 'mousewheel':
-		case 'consume_action':
 		case 'set_cpu_freq_hz':
 		case 'dset':
 		case 'set_master_volume':
