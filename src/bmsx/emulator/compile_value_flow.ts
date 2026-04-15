@@ -862,8 +862,8 @@ export class ValueKindFlowAnalyzer {
 				this.evalExprFact(target.base);
 				this.evalExprFact(target.index);
 				return;
-			default:
-				unreachableFlowValue(target.kind, 'assignment target preparation');
+			// default:
+				// unreachableFlowValue(target.kind, 'assignment target preparation');
 		}
 	}
 
