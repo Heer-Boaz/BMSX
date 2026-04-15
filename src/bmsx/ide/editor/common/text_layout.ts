@@ -1,5 +1,5 @@
 import { getResourcePanelWidth, updateGutterWidth } from '../ui/editor_view';
-import { getActiveCodeTabContext } from '../../workbench/ui/code_tabs';
+import { getActiveCodeTabContext } from '../../workbench/ui/code_tab_contexts';
 import { rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/runtime_error_overlay';
 import { runtimeErrorState } from '../contrib/runtime_error/runtime_error_state';
 import * as TextEditing from '../editing/text_editing_and_selection';

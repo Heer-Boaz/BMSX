@@ -2,7 +2,7 @@ import * as constants from '../../../common/constants';
 import { renameController } from '../rename/rename_controller';
 import { showEditorMessage } from '../../../workbench/common/feedback_state';
 import { extractHoverExpression, navigateToLuaDefinition } from '../intellisense/intellisense';
-import { getActiveCodeTabContext } from '../../../workbench/ui/code_tabs';
+import { getActiveCodeTabContext } from '../../../workbench/ui/code_tab_contexts';
 import { resetBlink } from '../../render/render_caret';
 import { applySymbolSearchFieldText, closeSymbolSearch, ensureSymbolSearchSelectionVisible } from '../symbols/symbol_search_shared';
 import { resolveReferenceLookup } from './reference_lookup';

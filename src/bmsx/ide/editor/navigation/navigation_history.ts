@@ -1,7 +1,7 @@
 import { clamp } from '../../../utils/clamp';
 import { setActiveTab, activateCodeTab } from '../../workbench/ui/tabs';
 import { focusChunkSource } from '../../workbench/contrib/resources/resource_navigation';
-import { getActiveCodeTabContext, isCodeTabActive } from '../../workbench/ui/code_tabs';
+import { getActiveCodeTabContext, isCodeTabActive } from '../../workbench/ui/code_tab_contexts';
 import { setCursorPosition, ensureCursorVisible } from '../ui/caret';
 import * as TextEditing from '../editing/text_editing_and_selection';
 import { editorCaretState } from '../ui/caret_state';

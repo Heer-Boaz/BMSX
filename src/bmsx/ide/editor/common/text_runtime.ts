@@ -1,5 +1,5 @@
 import { startSearchJob } from '../contrib/find/editor_search';
-import { getActiveCodeTabContext, findCodeTabContext, updateActiveContextDirtyFlag } from '../../workbench/ui/code_tabs';
+import { findCodeTabContext, getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../../workbench/ui/code_tab_contexts';
 import { clearForwardNavigationHistory } from '../navigation/navigation_history';
 import { handlePostEditMutation, getSelectionRange } from '../editing/text_editing_and_selection';
 import { markDiagnosticsDirty } from '../contrib/diagnostics/diagnostics';

@@ -1,6 +1,6 @@
 import { resourcePanel } from '../../contrib/resources/resource_panel_controller';
 import { cycleTab } from '../../ui/tabs';
-import { isCodeTabActive } from '../../ui/code_tabs';
+import { isCodeTabActive } from '../../ui/code_tab_contexts';
 import { selectAllSingleCursor } from '../../../editor/editing/cursor_state';
 import { revealCursor, updateDesiredColumn } from '../../../editor/ui/caret';
 import { resetBlink } from '../../../editor/render/render_caret';

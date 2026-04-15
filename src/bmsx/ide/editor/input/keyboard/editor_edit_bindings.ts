@@ -1,6 +1,6 @@
 import { jumpToNextMatch, jumpToPreviousMatch } from '../../contrib/find/editor_search';
 import { closeActiveTab } from '../../../workbench/ui/tabs';
-import { isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab } from '../../../workbench/ui/code_tabs';
+import { isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab } from '../../../workbench/ui/code_tab_contexts';
 import { notifyReadOnlyEdit } from '../../ui/editor_view';
 import { toggleLineComments } from '../../editing/line_comments';
 import { redo, undo } from '../../editing/undo_controller';

@@ -1,7 +1,7 @@
 import type { LuaSymbolEntry } from '../../../../emulator/types';
 import * as constants from '../../../common/constants';
 import { computeSourceLabel } from '../references/reference_sources';
-import { getActiveCodeTabContext } from '../../../workbench/ui/code_tabs';
+import { getActiveCodeTabContext } from '../../../workbench/ui/code_tab_contexts';
 import { showEditorMessage } from '../../../workbench/common/feedback_state';
 import { listGlobalLuaSymbols, listLuaSymbols } from '../intellisense/intellisense';
 import { symbolKindLabel } from '../intellisense/semantic_model';

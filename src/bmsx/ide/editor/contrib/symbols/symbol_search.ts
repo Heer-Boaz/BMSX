@@ -4,7 +4,7 @@ import { renameController } from '../rename/rename_controller';
 import { showEditorMessage } from '../../../workbench/common/feedback_state';
 import { clearReferenceHighlights, navigateToLuaDefinition } from '../intellisense/intellisense';
 import { closeSearch } from '../find/editor_search';
-import { getActiveCodeTabContext } from '../../../workbench/ui/code_tabs';
+import { getActiveCodeTabContext } from '../../../workbench/ui/code_tab_contexts';
 import { resetBlink } from '../../render/render_caret';
 import { refreshSymbolCatalog } from './symbol_catalog';
 import { closeResourceSearch } from '../../../workbench/contrib/resources/resource_search';

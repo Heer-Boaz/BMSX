@@ -8,7 +8,7 @@ import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspace
 import { restoreSnapshot } from '../../editor/editing/undo_controller';
 import { resetNavigationHistoryState } from '../../editor/navigation/navigation_history';
 import { editorDebuggerState } from '../contrib/debugger/debugger_state';
-import { findCodeTabContext, setTabDirty, updateActiveContextDirtyFlag } from '../ui/code_tabs';
+import { findCodeTabContext, setTabDirty, updateActiveContextDirtyFlag } from '../ui/code_tab_contexts';
 import { serializeBreakpoints } from '../contrib/debugger/ide_debugger';
 import { buildDirtyFilePath, deleteDirtyBuffer, getWorkspaceDirtyDirSegment, hasWorkspaceStorage, writeDirtyBuffer } from './workspace_io';
 import { workspaceState } from './workspace_state';

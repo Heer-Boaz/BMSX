@@ -5,7 +5,7 @@ import { editorRuntimeState } from '../../../editor/common/editor_runtime_state'
 import { editorDebuggerState } from './debugger_state';
 import { showEditorMessage } from '../../common/feedback_state';
 import { focusChunkSource } from '../resources/resource_navigation';
-import { getActiveCodeTabContext } from '../../ui/code_tabs';
+import { getActiveCodeTabContext } from '../../ui/code_tab_contexts';
 import { clamp, clamp_fallback } from '../../../../utils/clamp';
 import { centerCursorVertically, ensureCursorVisible, setCursorPosition, updateDesiredColumn } from '../../../editor/ui/caret';
 import { resetPointerClickTracking, editorPointerState } from '../../../editor/input/pointer/editor_pointer_state';

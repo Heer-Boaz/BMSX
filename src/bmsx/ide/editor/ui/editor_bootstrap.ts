@@ -1,7 +1,7 @@
 import { $ } from '../../../core/engine_core';
 import { completionController } from '../contrib/suggest/completion_controller';
 import { initializeTabs } from '../../workbench/ui/tabs';
-import { createEntryTabContext } from '../../workbench/ui/code_tabs';
+import { createEntryTabContext } from '../../workbench/ui/code_tab_contexts';
 import { createInlineTextField } from './inline_text_field';
 import { Scrollbar, ScrollbarController } from './scrollbar';
 import { initializeResourcePanel } from '../../workbench/contrib/resources/resource_panel_controller';

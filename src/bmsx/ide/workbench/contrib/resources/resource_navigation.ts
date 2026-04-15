@@ -13,7 +13,7 @@ import { closeResourceSearch } from './resource_search';
 import { findResourceDescriptorForChunk } from './resource_lookup';
 import { openResourceViewerTab } from './resource_viewer';
 import { resourcePanel } from './resource_panel_controller';
-import { openCodeTabForDescriptor } from '../../ui/code_tabs';
+import { openCodeTabForDescriptor } from '../../ui/code_tab_io';
 
 export function focusEditorFromResourcePanel(): void {
 	if (!resourcePanel.isFocused()) {

@@ -29,7 +29,7 @@ import { tryShowLuaErrorOverlay } from '../runtime_error/runtime_error_navigatio
 import { resolvePointerColumn, resolvePointerRow } from '../../ui/editor_view';
 import * as constants from '../../../common/constants';
 import { activateCodeTab, setActiveTab } from '../../../workbench/ui/tabs';
-import { findCodeTabContext, getActiveCodeTabContext, isActiveLuaCodeTab, isReadOnlyCodeTab } from '../../../workbench/ui/code_tabs';
+import { findCodeTabContext, getActiveCodeTabContext, isActiveLuaCodeTab, isReadOnlyCodeTab } from '../../../workbench/ui/code_tab_contexts';
 import { buildEditorSemanticFrontend } from './editor_semantic_frontend';
 import { editorRuntimeState } from '../../common/editor_runtime_state';
 import { showEditorMessage } from '../../../workbench/common/feedback_state';

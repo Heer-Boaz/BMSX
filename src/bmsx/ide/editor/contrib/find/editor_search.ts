@@ -11,7 +11,7 @@ import { enqueueBackgroundTask } from '../../../common/background_tasks';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { updateDesiredColumn } from '../../ui/caret';
 import { listResources } from '../../../../emulator/workspace';
-import { openLuaCodeTab } from '../../../workbench/ui/code_tabs';
+import { openLuaCodeTab } from '../../../workbench/ui/code_tab_io';
 import { closeResourceSearch } from '../../../workbench/contrib/resources/resource_search';
 import { closeLineJump } from './line_jump';
 import { closeSymbolSearch } from '../symbols/symbol_search_shared';

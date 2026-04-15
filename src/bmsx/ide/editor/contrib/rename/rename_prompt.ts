@@ -1,7 +1,7 @@
 import { renameController } from './rename_controller';
 import { extractHoverExpression } from '../intellisense/intellisense';
 import { closeSearch } from '../find/editor_search';
-import { getActiveCodeTabContext, isEditableCodeTab } from '../../../workbench/ui/code_tabs';
+import { getActiveCodeTabContext, isEditableCodeTab } from '../../../workbench/ui/code_tab_contexts';
 import { closeResourceSearch } from '../../../workbench/contrib/resources/resource_search';
 import { closeLineJump } from '../find/line_jump';
 import { notifyReadOnlyEdit } from '../../ui/editor_view';

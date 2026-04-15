@@ -8,7 +8,7 @@ import { centerDialogBounds } from '../../../editor/render/dialog_layout';
 import { api } from '../../../editor/ui/view/overlay_api';
 import { editorViewState } from '../../../editor/ui/editor_view_state';
 import type { ActionPromptAction, ActionPromptLayout, ActionPromptState, PointerSnapshot } from '../../../common/types';
-import { save } from '../../ui/code_tabs';
+import { save } from '../../ui/code_tab_io';
 import { editorDocumentState } from '../../../editor/editing/editor_document_state';
 
 type ActionPromptUiState = {

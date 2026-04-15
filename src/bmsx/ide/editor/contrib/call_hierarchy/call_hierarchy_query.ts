@@ -1,5 +1,5 @@
 import { listResources } from '../../../../emulator/workspace';
-import { getActiveCodeTabContext } from '../../../workbench/ui/code_tabs';
+import { getActiveCodeTabContext } from '../../../workbench/ui/code_tab_contexts';
 import { buildEditorSemanticSnapshot, createEditorSemanticFrontend } from '../intellisense/editor_semantic_frontend';
 import { extractHoverExpression } from '../intellisense/intellisense';
 import { buildIncomingCallHierarchyView, type CallHierarchyView } from './call_hierarchy_view';

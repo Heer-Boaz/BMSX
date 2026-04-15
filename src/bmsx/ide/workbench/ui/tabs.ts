@@ -14,11 +14,10 @@ import { editorPointerState } from '../../editor/input/pointer/editor_pointer_st
 import { runtimeErrorState } from '../../editor/contrib/runtime_error/runtime_error_state';
 import { editorCaretState } from '../../editor/ui/caret_state';
 import {
-	activateCodeEditorTab,
 	createEntryTabContext,
-	storeActiveCodeTabContext,
 	upsertCodeEditorTab,
-} from './code_tabs';
+} from './code_tab_contexts';
+import { activateCodeEditorTab, storeActiveCodeTabContext } from './code_tab_activation';
 import { endTabDrag } from './tab_drag';
 
 function activateResourceViewerTab(tab: EditorTabDescriptor): void {

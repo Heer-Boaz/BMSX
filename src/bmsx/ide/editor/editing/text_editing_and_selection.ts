@@ -15,7 +15,7 @@ import { $ } from '../../../core/engine_core';
 import { editorRuntimeState } from '../common/editor_runtime_state';
 import { showEditorMessage } from '../../workbench/common/feedback_state';
 import type { EditContext, Position } from '../../common/types';
-import { getActiveCodeTabContext } from '../../workbench/ui/code_tabs';
+import { getActiveCodeTabContext } from '../../workbench/ui/code_tab_contexts';
 import { revealCursor, updateDesiredColumn } from '../ui/caret';
 import { markDiagnosticsDirty } from '../contrib/diagnostics/diagnostics';
 import { completionController } from '../contrib/suggest/completion_controller';

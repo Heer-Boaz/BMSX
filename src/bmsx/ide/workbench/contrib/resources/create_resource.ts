@@ -1,7 +1,7 @@
 import * as constants from '../../../common/constants';
 import { resourcePanel } from './resource_panel_controller';
 import { setFieldText } from '../../../editor/ui/inline_text_field';
-import { getActiveCodeTabContext } from '../../ui/code_tabs';
+import { getActiveCodeTabContext } from '../../ui/code_tab_contexts';
 import { resetBlink } from '../../../editor/render/render_caret';
 import { focusEditorFromSearch } from '../../../editor/contrib/find/editor_search';
 import { focusEditorFromLineJump } from '../../../editor/contrib/find/line_jump';

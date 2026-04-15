@@ -1,5 +1,5 @@
 import { activateCodeTab } from '../../../workbench/ui/tabs';
-import { save } from '../../../workbench/ui/code_tabs';
+import { save } from '../../../workbench/ui/code_tab_io';
 import { showActionPrompt } from '../../../workbench/contrib/modal/action_prompt';
 import { performEditorAction } from './editor_actions';
 import type { EditorCommandId } from './editor_commands';

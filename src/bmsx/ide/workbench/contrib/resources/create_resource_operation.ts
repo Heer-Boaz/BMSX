@@ -3,7 +3,7 @@ import { resourcePanel } from './resource_panel_controller';
 import { showEditorMessage } from '../../common/feedback_state';
 import { resetBlink } from '../../../editor/render/render_caret';
 import { refreshResourcePanelContents } from '../../../editor/ui/editor_view';
-import { openLuaCodeTab } from '../../ui/code_tabs';
+import { openLuaCodeTab } from '../../ui/code_tab_io';
 import { createLuaResource } from '../../../../emulator/workspace';
 import { extractErrorMessage } from '../../../../lua/luavalue';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt, ensureDirectorySuffix } from './create_resource';

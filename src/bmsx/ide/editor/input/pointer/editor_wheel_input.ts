@@ -5,7 +5,7 @@ import { problemsPanel } from '../../../workbench/contrib/problems/problems_pane
 import { resourcePanel } from '../../../workbench/contrib/resources/resource_panel_controller';
 import type { PointerSnapshot } from '../../../common/types';
 import { isResourceViewActive } from '../../../workbench/ui/tabs';
-import { isCodeTabActive } from '../../../workbench/ui/code_tabs';
+import { isCodeTabActive } from '../../../workbench/ui/code_tab_contexts';
 import { getProblemsPanelBounds } from '../../../workbench/contrib/problems/problems_panel';
 import { isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll } from '../../ui/hover_tooltip';
 import { getCodeAreaBounds, getResourceSearchBarBounds, scrollResourceBrowser, scrollRows } from '../../ui/editor_view';
