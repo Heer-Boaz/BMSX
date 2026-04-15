@@ -1,10 +1,11 @@
 import { clamp_safe } from '../../../utils/clamp';
 import type { CodeTabContext, EditorSnapshot, Position } from '../../common/types';
 import { editorDocumentState } from '../../editor/editing/editor_document_state';
-import { editorSessionState } from '../../editor/ui/editor_session_state';
 import { editorViewState } from '../../editor/ui/editor_view_state';
 import { getTextSnapshot } from '../../editor/text/source_text';
 import type { SnapshotMetadata } from './workspace_types';
+import { getActiveCodeTabContextId } from '../ui/code_tab_contexts';
+import { getActiveTabId } from '../ui/tabs';
 
 export function applySourceToContext(context: CodeTabContext, source: string, metadata?: SnapshotMetadata): void {
 	context.buffer.replace(0, context.buffer.length, source);
@@ -14,7 +15,7 @@ export function applySourceToContext(context: CodeTabContext, source: string, me
 	context.lastHistoryKey = null;
 	context.lastHistoryTimestamp = 0;
 	context.savePointDepth = 0;
-	if (editorSessionState.activeCodeTabContextId === context.id && editorSessionState.activeTabId === context.id) {
+	if (getActiveCodeTabContextId() === context.id && getActiveTabId() === context.id) {
 		editorDocumentState.undoStack.length = 0;
 		editorDocumentState.redoStack.length = 0;
 		editorDocumentState.lastHistoryKey = null;
@@ -54,14 +55,14 @@ export function buildSnapshotFromBuffer(context: CodeTabContext, metadata?: Snap
 }
 
 export function captureContextText(context: CodeTabContext): string {
-	if (context.id === editorSessionState.activeCodeTabContextId) {
+	if (context.id === getActiveCodeTabContextId()) {
 		return getTextSnapshot(editorDocumentState.buffer);
 	}
 	return getTextSnapshot(context.buffer);
 }
 
 export function captureContextSnapshotMetadata(context: CodeTabContext): SnapshotMetadata {
-	if (context.id === editorSessionState.activeCodeTabContextId) {
+	if (context.id === getActiveCodeTabContextId()) {
 		return {
 			cursorRow: editorDocumentState.cursorRow,
 			cursorColumn: editorDocumentState.cursorColumn,

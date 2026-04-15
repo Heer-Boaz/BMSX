@@ -6,7 +6,8 @@ import { computeMaximumScrollColumn, getCodeAreaBounds } from './editor_view';
 import { ensureVisualLines, getVisualLineCount } from '../common/text_layout';
 import { resourcePanel } from '../../workbench/contrib/resources/resource_panel_controller';
 import { api } from './view/overlay_api';
-import { getActiveResourceViewer, setResourceViewerScroll } from '../../workbench/contrib/resources/resource_viewer';
+import { setResourceViewerScroll } from '../../workbench/contrib/resources/resource_viewer';
+import { getActiveResourceViewer } from '../../workbench/contrib/resources/resource_view_tabs';
 import { editorCaretState } from './caret_state';
 import { editorViewState } from './editor_view_state';
 

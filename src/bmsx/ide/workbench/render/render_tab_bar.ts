@@ -8,8 +8,8 @@ import { editorChromeState } from '../ui/chrome_state';
 import { measureText } from '../../editor/common/text_layout';
 import { editorPointerState } from '../../editor/input/pointer/editor_pointer_state';
 import { drawEditorText } from '../../editor/render/text_renderer';
-import { editorSessionState } from '../../editor/ui/editor_session_state';
 import { editorViewState } from '../../editor/ui/editor_view_state';
+import { tabSessionState } from '../ui/tab_session_state';
 
 type TabMetrics = {
 	tab: EditorTabDescriptor;
@@ -64,7 +64,7 @@ export function renderTabBar(): number {
 	const markerWidth = constants.TAB_DIRTY_MARKER_METRICS.width;
 	const markerHeight = constants.TAB_DIRTY_MARKER_METRICS.height;
 
-	const tabs = editorSessionState.tabs;
+	const tabs = tabSessionState.tabs;
 	const tabCount = tabs.length;
 	const rowHeightTotal = rowHeight;
 	if (tabCount === 0) {
@@ -173,7 +173,7 @@ export function renderTabBar(): number {
 			bounds.bottom = boundsBottom;
 			editorChromeState.tabButtonBounds.set(tab.id, bounds);
 
-			const active = editorSessionState.activeTabId === tab.id;
+			const active = tabSessionState.activeTabId === tab.id;
 			const fillColor = active ? constants.COLOR_TAB_ACTIVE_BACKGROUND : constants.COLOR_TAB_INACTIVE_BACKGROUND;
 			const textColor = active ? constants.COLOR_TAB_ACTIVE_TEXT : constants.COLOR_TAB_INACTIVE_TEXT;
 

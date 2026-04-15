@@ -1,7 +1,7 @@
 import { centerCursorVertically, setCursorPosition } from '../../ui/caret';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
-import { activateCodeTab, setActiveTab } from '../../../workbench/ui/tabs';
-import { getActiveCodeTabContext } from '../../../workbench/ui/code_tab_contexts';
+import { activateCodeTab, isTabActive, setActiveTab } from '../../../workbench/ui/tabs';
+import { getActiveCodeTabContext, getCodeTabContexts } from '../../../workbench/ui/code_tab_contexts';
 import { showEditorMessage } from '../../../workbench/common/feedback_state';
 import type { CodeTabContext, RuntimeErrorOverlay } from '../../../common/types';
 import { resetBlink } from '../../render/render_caret';
@@ -11,7 +11,6 @@ import { editorPointerState } from '../../input/pointer/editor_pointer_state';
 import { editorCaretState } from '../../ui/caret_state';
 import { runtimeErrorState } from './runtime_error_state';
 import { editorDocumentState } from '../../editing/editor_document_state';
-import { editorSessionState } from '../../ui/editor_session_state';
 import { editorViewState } from '../../ui/editor_view_state';
 
 type RuntimeErrorOverlayTarget = { context: CodeTabContext; overlay: RuntimeErrorOverlay };
@@ -21,7 +20,7 @@ function resolveRuntimeErrorOverlayTarget(): RuntimeErrorOverlayTarget {
 	if (activeContext && activeContext.runtimeErrorOverlay) {
 		return { context: activeContext, overlay: activeContext.runtimeErrorOverlay };
 	}
-	for (const context of editorSessionState.codeTabContexts.values()) {
+	for (const context of getCodeTabContexts()) {
 		if (context.runtimeErrorOverlay) {
 			return { context, overlay: context.runtimeErrorOverlay };
 		}
@@ -33,7 +32,7 @@ function ensureActiveContext(target: CodeTabContext): void {
 	if (!target) {
 		return;
 	}
-	if (editorSessionState.activeTabId !== target.id) {
+	if (!isTabActive(target.id)) {
 		setActiveTab(target.id);
 		return;
 	}
@@ -79,7 +78,7 @@ export function clearRuntimeErrorOverlay(): void {
 
 export function clearAllRuntimeErrorOverlays(): void {
 	runtimeErrorState.activeOverlay = null;
-	for (const context of editorSessionState.codeTabContexts.values()) {
+	for (const context of getCodeTabContexts()) {
 		context.runtimeErrorOverlay = null;
 	}
 	clearExecutionStopHighlights();
@@ -112,7 +111,7 @@ export function setExecutionStopHighlight(row: number): void {
 
 export function clearExecutionStopHighlights(): void {
 	runtimeErrorState.executionStopRow = null;
-	for (const context of editorSessionState.codeTabContexts.values()) {
+	for (const context of getCodeTabContexts()) {
 		context.executionStopRow = null;
 	}
 }

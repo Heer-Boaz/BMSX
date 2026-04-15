@@ -6,13 +6,19 @@ import type { EditorDiagnostic, CodeTabContext } from '../../../common/types';
 import { listLuaSymbols, listGlobalLuaSymbols, listLuaBuiltinFunctions } from '../intellisense/intellisense';
 import { getTextSnapshot, splitText } from '../../text/source_text';
 import { enqueueBackgroundTask, scheduleIdeOnce } from '../../../common/background_tasks';
-import { findCodeTabContext, getActiveCodeTabContext } from '../../../workbench/ui/code_tab_contexts';
+import {
+	findCodeTabContext,
+	getActiveCodeTabContext,
+	getActiveCodeTabContextId,
+	getCodeTabContextById,
+	getCodeTabContexts,
+	hasCodeTabContext,
+} from '../../../workbench/ui/code_tab_contexts';
 import { getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace_sync';
 import type { LuaDefinitionInfo } from '../../../../lua/syntax/lua_ast';
 import type { ModuleAliasEntry } from '../intellisense/semantic_model';
 import { diagnosticsDebounceMs, editorDiagnosticsState, EMPTY_DIAGNOSTICS } from './diagnostics_state';
 import { editorDocumentState } from '../../editing/editor_document_state';
-import { editorSessionState } from '../../ui/editor_session_state';
 import { editorViewState } from '../../ui/editor_view_state';
 import { problemsPanel } from '../../../workbench/contrib/problems/problems_panel';
 
@@ -45,7 +51,7 @@ export function processDiagnosticsQueue(now: number): void {
 	if (!editorDiagnosticsState.diagnosticsDirty) {
 		return;
 	}
-	const activeId = editorSessionState.activeCodeTabContextId;
+	const activeId = getActiveCodeTabContextId();
 	if (activeId && !editorDiagnosticsState.dirtyDiagnosticContexts.has(activeId)) {
 		return;
 	}
@@ -90,7 +96,7 @@ export function executeDiagnosticsComputation(): void {
 		cancelDiagnosticsTimer();
 		return;
 	}
-	const activeId = editorSessionState.activeCodeTabContextId;
+	const activeId = getActiveCodeTabContextId();
 	if (activeId && !editorDiagnosticsState.dirtyDiagnosticContexts.has(activeId)) {
 		editorDiagnosticsState.diagnosticsDueAtMs = null;
 		cancelDiagnosticsTimer();
@@ -149,7 +155,7 @@ export function enqueueDiagnosticsJob(contextIds: readonly string[]): void {
 }
 
 export function collectDiagnosticsBatch(): string[] {
-	const activeId = editorSessionState.activeCodeTabContextId;
+	const activeId = getActiveCodeTabContextId();
 	if (activeId && editorDiagnosticsState.dirtyDiagnosticContexts.has(activeId)) {
 		return [activeId];
 	}
@@ -160,11 +166,11 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 	if (contextIds.length === 0) {
 		return;
 	}
-	const activeId = editorSessionState.activeCodeTabContextId;
+	const activeId = getActiveCodeTabContextId();
 	const inputs: DiagnosticContextInput[] = [];
 	for (let index = 0; index < contextIds.length; index += 1) {
 		const contextId = contextIds[index];
-		const context = editorSessionState.codeTabContexts.get(contextId);
+		const context = getCodeTabContextById(contextId);
 		if (!context) {
 			editorDiagnosticsState.diagnosticsCache.delete(contextId);
 			editorDiagnosticsState.dirtyDiagnosticContexts.delete(contextId);
@@ -238,7 +244,7 @@ export function createDiagnosticProviders(): DiagnosticProviders {
 
 export function updateDiagnosticsAggregates(): void {
 	const aggregate: EditorDiagnostic[] = [];
-	for (const context of editorSessionState.codeTabContexts.values()) {
+	for (const context of getCodeTabContexts()) {
 		const entry = editorDiagnosticsState.diagnosticsCache.get(context.id);
 		if (entry) {
 			for (let index = 0; index < entry.diagnostics.length; index += 1) {
@@ -247,7 +253,7 @@ export function updateDiagnosticsAggregates(): void {
 		}
 	}
 	for (const [contextId, entry] of editorDiagnosticsState.diagnosticsCache) {
-		if (editorSessionState.codeTabContexts.has(contextId)) {
+		if (hasCodeTabContext(contextId)) {
 			continue;
 		}
 		for (let index = 0; index < entry.diagnostics.length; index += 1) {
@@ -261,7 +267,7 @@ export function updateDiagnosticsAggregates(): void {
 
 export function refreshActiveDiagnostics(): void {
 	editorDiagnosticsState.diagnosticsByRow.clear();
-	const activeId = editorSessionState.activeCodeTabContextId;
+	const activeId = getActiveCodeTabContextId();
 	if (!activeId) {
 		return;
 	}
@@ -315,7 +321,7 @@ export function findContextByChunk(path: string): CodeTabContext {
 	if (byChunk) {
 		return byChunk;
 	}
-	for (const context of editorSessionState.codeTabContexts.values()) {
+	for (const context of getCodeTabContexts()) {
 		const descriptor = context.descriptor;
 		if (descriptor) {
 			continue;

@@ -11,7 +11,7 @@ import { resetBlink } from '../../../editor/render/render_caret';
 import { selectResourceInPanel } from '../../../editor/ui/editor_view';
 import { closeResourceSearch } from './resource_search';
 import { findResourceDescriptorForChunk } from './resource_lookup';
-import { openResourceViewerTab } from './resource_viewer';
+import { openResourceViewerTab } from './resource_view_tabs';
 import { resourcePanel } from './resource_panel_controller';
 import { openCodeTabForDescriptor } from '../../ui/code_tab_io';
 

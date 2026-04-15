@@ -14,11 +14,11 @@ import { requestSemanticRefresh } from '../contrib/intellisense/intellisense';
 import type { EditorSnapshot, Position } from '../../common/types';
 import { editorCaretState } from '../ui/caret_state';
 import { editorDocumentState } from './editor_document_state';
-import { editorSessionState } from '../ui/editor_session_state';
+import { isActiveCodeTabReadOnly } from '../../workbench/ui/code_tab_contexts';
 import { editorViewState } from '../ui/editor_view_state';
 
 export function prepareUndo(key: string, allowMerge: boolean): void {
-	if (editorSessionState.activeContextReadOnly) {
+	if (isActiveCodeTabReadOnly()) {
 		return;
 	}
 	capturePreMutationSource();
@@ -125,7 +125,7 @@ export function applyUndoableReplace(offset: number, deleteLength: number, inser
 }
 
 export function undo(): void {
-	if (editorSessionState.activeContextReadOnly) {
+	if (isActiveCodeTabReadOnly()) {
 		notifyReadOnlyEdit();
 		return;
 	}
@@ -194,7 +194,7 @@ export function undo(): void {
 }
 
 export function redo(): void {
-	if (editorSessionState.activeContextReadOnly) {
+	if (isActiveCodeTabReadOnly()) {
 		notifyReadOnlyEdit();
 		return;
 	}

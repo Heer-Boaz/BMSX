@@ -5,8 +5,8 @@ import { editorChromeState } from './chrome_state';
 import { getTabBarTotalHeight } from '../common/layout';
 import { measureText } from '../../editor/common/text_layout';
 import { editorPointerState, resetPointerClickTracking } from '../../editor/input/pointer/editor_pointer_state';
-import { editorSessionState } from '../../editor/ui/editor_session_state';
 import { editorViewState } from '../../editor/ui/editor_view_state';
+import { tabSessionState } from './tab_session_state';
 
 export type TabLayoutEntry = {
 	id: string;
@@ -30,8 +30,8 @@ export function measureTabWidth(tab: EditorTabDescriptor): number {
 
 export function computeTabLayout(): TabLayoutEntry[] {
 	const layout: TabLayoutEntry[] = [];
-	for (let index = 0; index < editorSessionState.tabs.length; index += 1) {
-		const tab = editorSessionState.tabs[index];
+	for (let index = 0; index < tabSessionState.tabs.length; index += 1) {
+		const tab = tabSessionState.tabs[index];
 		const bounds = editorChromeState.tabButtonBounds.get(tab.id);
 		if (bounds) {
 			const left = bounds.left;
@@ -65,7 +65,7 @@ export function computeTabLayout(): TabLayoutEntry[] {
 }
 
 export function beginTabDrag(tabId: string, pointerX: number): void {
-	if (editorSessionState.tabs.length <= 1) {
+	if (tabSessionState.tabs.length <= 1) {
 		editorPointerState.tabDragState = null;
 		return;
 	}
@@ -116,11 +116,11 @@ export function updateTabDrag(pointerX: number, pointerY: number): void {
 	if (desiredIndex === currentIndex) {
 		return;
 	}
-	const tabIndex = editorSessionState.tabs.findIndex(entry => entry.id === state.tabId);
-	const removed = editorSessionState.tabs.splice(tabIndex, 1);
+	const tabIndex = tabSessionState.tabs.findIndex(entry => entry.id === state.tabId);
+	const removed = tabSessionState.tabs.splice(tabIndex, 1);
 	const tab = removed[0];
-	const targetIndex = clamp(desiredIndex, 0, editorSessionState.tabs.length);
-	editorSessionState.tabs.splice(targetIndex, 0, tab);
+	const targetIndex = clamp(desiredIndex, 0, tabSessionState.tabs.length);
+	tabSessionState.tabs.splice(targetIndex, 0, tab);
 }
 
 export function endTabDrag(): void {

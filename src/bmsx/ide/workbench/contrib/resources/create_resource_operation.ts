@@ -7,7 +7,6 @@ import { openLuaCodeTab } from '../../ui/code_tab_io';
 import { createLuaResource } from '../../../../emulator/workspace';
 import { extractErrorMessage } from '../../../../lua/luavalue';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt, ensureDirectorySuffix } from './create_resource';
-import { editorSessionState } from '../../../editor/ui/editor_session_state';
 import { createResourceState } from './resource_widget_state';
 
 export async function confirmCreateResourcePrompt(): Promise<void> {
@@ -35,7 +34,7 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 	try {
 		const descriptor = await createLuaResource({ path: resourcePath, contents });
 		createResourceState.lastDirectory = directory;
-		editorSessionState.pendingResourceSelectionAssetId = descriptor.asset_id;
+		resourcePanel.queuePendingSelection(descriptor.asset_id);
 		if (resourcePanel.isVisible()) {
 			refreshResourcePanelContents();
 		}

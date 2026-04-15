@@ -14,7 +14,7 @@ import { updateDesiredColumn, ensureCursorVisible } from '../../ui/caret';
 import { resetBlink } from '../../render/render_caret';
 import { editorCaretState } from '../../ui/caret_state';
 import { editorDocumentState } from '../../editing/editor_document_state';
-import { editorSessionState } from '../../ui/editor_session_state';
+import { registerCodeTabContext, setTabDirty } from '../../../workbench/ui/code_tab_contexts';
 import { editorViewState } from '../../ui/editor_view_state';
 
 export type RenameLineEdit = {
@@ -197,21 +197,14 @@ export class CrossFileRenameManager {
 		let context = findCodeTabContext(descriptor.path);
 		if (!context) {
 			context = createLuaCodeTabContext(descriptor);
-			editorSessionState.codeTabContexts.set(context.id, context);
+			registerCodeTabContext(context);
 			this.markContextTabDirty(context.id, context.dirty);
 		}
 		return context;
 	}
 
 	private markContextTabDirty(contextId: string, dirty: boolean): void {
-		for (let index = 0; index < editorSessionState.tabs.length; index += 1) {
-			const tab = editorSessionState.tabs[index];
-			if (tab.id !== contextId) {
-				continue;
-			}
-			tab.dirty = dirty;
-			return;
-		}
+		setTabDirty(contextId, dirty);
 	}
 }
 

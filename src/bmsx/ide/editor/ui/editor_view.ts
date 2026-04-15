@@ -13,14 +13,13 @@ import { editorChromeState } from '../../workbench/ui/chrome_state';
 import { editorPointerState } from '../input/pointer/editor_pointer_state';
 import { editorCaretState } from './caret_state';
 import { getBuiltinIdentifiersSnapshot, requestSemanticRefresh } from '../contrib/intellisense/intellisense';
-import { findResourcePanelIndexByAssetId } from '../../workbench/contrib/resources/resource_panel_items';
 import { ensureCursorVisible, updateDesiredColumn } from './caret';
 import { editorDocumentState } from '../editing/editor_document_state';
-import { editorSessionState } from './editor_session_state';
 import { editorViewState } from './editor_view_state';
 import { editorSearchState, lineJumpState } from '../contrib/find/find_widget_state';
 import { symbolSearchState } from '../contrib/symbols/symbol_search_state';
 import { resourcePanel } from '../../workbench/contrib/resources/resource_panel_controller';
+import { getActiveCodeTabContext, getActiveCodeTabContextId } from '../../workbench/ui/code_tab_contexts';
 import { renameController } from '../contrib/rename/rename_controller';
 import { editorRuntimeState } from '../common/editor_runtime_state';
 import {
@@ -426,7 +425,7 @@ export function configureFontVariant(variant: FontVariant): void {
 		clockNow: editorRuntimeState.clockNow,
 		getBuiltinIdentifiers: () => getBuiltinIdentifiersSnapshot(),
 	});
-	const activeContext = editorSessionState.activeCodeTabContextId ? editorSessionState.codeTabContexts.get(editorSessionState.activeCodeTabContextId) : null;
+	const activeContext = getActiveCodeTabContext();
 	if (activeContext) {
 		editorViewState.layout.setCodeTabMode(activeContext.mode);
 	}
@@ -444,7 +443,7 @@ export function setFontVariant(variant: FontVariant): void {
 	ensureCursorVisible();
 	rewrapRuntimeErrorOverlays();
 	requestSemanticRefresh();
-	markDiagnosticsDirty(editorSessionState.activeCodeTabContextId);
+	markDiagnosticsDirty(getActiveCodeTabContextId());
 }
 
 export function toggleWordWrap(): void {
@@ -495,7 +494,7 @@ export function hideResourcePanel(): void {
 }
 
 export function resetResourcePanelState(): void {
-	editorSessionState.pendingResourceSelectionAssetId = null;
+	resourcePanel.queuePendingSelection(null);
 	editorChromeState.resourcePanelResizing = false;
 }
 
@@ -507,23 +506,14 @@ export function selectResourceInPanel(descriptor: ResourceDescriptor): void {
 	if (!descriptor.asset_id || descriptor.asset_id.length === 0) {
 		return;
 	}
-	editorSessionState.pendingResourceSelectionAssetId = descriptor.asset_id;
+	resourcePanel.queuePendingSelection(descriptor.asset_id);
 	if (resourcePanel.isVisible()) {
-		applyPendingResourceSelection();
+		resourcePanel.applyPendingSelection();
 	}
 }
 
 export function applyPendingResourceSelection(): void {
-	if (!resourcePanel.isVisible() || !editorSessionState.pendingResourceSelectionAssetId) {
-		return;
-	}
-	const index = findResourcePanelIndexByAssetId(resourcePanel.items, editorSessionState.pendingResourceSelectionAssetId);
-	if (index === -1) {
-		return;
-	}
-	resourcePanel.setSelectionIndex(index);
-	resourcePanel.ensureSelectionVisible();
-	editorSessionState.pendingResourceSelectionAssetId = null;
+	resourcePanel.applyPendingSelection();
 }
 
 export function getResourcePanelWidth(): number {

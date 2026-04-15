@@ -2,13 +2,19 @@ import { $ } from '../../../core/engine_core';
 import { Runtime } from '../../../emulator/runtime';
 import * as runtimeLuaPipeline from '../../../emulator/runtime_lua_pipeline';
 import { editorDocumentState } from '../../editor/editing/editor_document_state';
-import { editorSessionState } from '../../editor/ui/editor_session_state';
 import { editorViewState } from '../../editor/ui/editor_view_state';
 import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../../../emulator/workspace_cache';
 import { restoreSnapshot } from '../../editor/editing/undo_controller';
 import { resetNavigationHistoryState } from '../../editor/navigation/navigation_history';
 import { editorDebuggerState } from '../contrib/debugger/debugger_state';
-import { findCodeTabContext, setTabDirty, updateActiveContextDirtyFlag } from '../ui/code_tab_contexts';
+import {
+	findCodeTabContext,
+	getActiveCodeTabContextId,
+	getCodeTabContexts,
+	setTabDirty,
+	updateActiveContextDirtyFlag,
+} from '../ui/code_tab_contexts';
+import { getActiveTabId } from '../ui/tabs';
 import { serializeBreakpoints } from '../contrib/debugger/ide_debugger';
 import { buildDirtyFilePath, deleteDirtyBuffer, getWorkspaceDirtyDirSegment, hasWorkspaceStorage, writeDirtyBuffer } from './workspace_io';
 import { workspaceState } from './workspace_state';
@@ -20,7 +26,7 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 		return new Map();
 	}
 	const entries = new Map<string, DirtyContextEntry>();
-	for (const context of editorSessionState.codeTabContexts.values()) {
+	for (const context of getCodeTabContexts()) {
 		if (!context.dirty) {
 			continue;
 		}
@@ -146,7 +152,7 @@ export function clearWorkspaceDirtyBuffers(): void {
 	editorDocumentState.lastHistoryKey = null;
 	editorDocumentState.lastHistoryTimestamp = 0;
 	editorDocumentState.savePointDepth = 0;
-	for (const context of editorSessionState.codeTabContexts.values()) {
+	for (const context of getCodeTabContexts()) {
 		const source = loadCleanSrc(context.descriptor.path);
 		applySourceToContext(context, source);
 		context.dirty = false;
@@ -159,7 +165,7 @@ export function clearWorkspaceDirtyBuffers(): void {
 		context.lastHistoryTimestamp = 0;
 		context.savePointDepth = 0;
 		setTabDirty(context.id, false);
-		if (editorSessionState.activeCodeTabContextId === context.id && editorSessionState.activeTabId === context.id) {
+		if (getActiveCodeTabContextId() === context.id && getActiveTabId() === context.id) {
 			restoreSnapshot(buildSnapshotFromBuffer(context), { preserveScroll: false });
 			updateActiveContextDirtyFlag();
 		}
@@ -174,7 +180,7 @@ export function clearWorkspaceSessionStateData(): void {
 	editorDocumentState.lastHistoryTimestamp = 0;
 	editorDocumentState.savePointDepth = 0;
 	editorDocumentState.dirty = false;
-	for (const context of editorSessionState.codeTabContexts.values()) {
+	for (const context of getCodeTabContexts()) {
 		context.undoStack.length = 0;
 		context.redoStack.length = 0;
 		context.lastHistoryKey = null;

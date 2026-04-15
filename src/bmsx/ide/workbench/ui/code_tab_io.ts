@@ -1,6 +1,5 @@
 import { showEditorMessage, showEditorWarningBanner } from '../common/feedback_state';
 import { editorDocumentState } from '../../editor/editing/editor_document_state';
-import { editorSessionState } from '../../editor/ui/editor_session_state';
 import type { CodeTabContext, CodeTabMode, ResourceDescriptor } from '../../common/types';
 import * as constants from '../../common/constants';
 import { beginNavigationCapture, completeNavigation } from '../../editor/navigation/navigation_history';
@@ -23,6 +22,7 @@ import {
 	updateActiveContextDirtyFlag,
 	upsertCodeEditorTab,
 } from './code_tab_contexts';
+import { codeTabSessionState } from './code_tab_session_state';
 
 function applyCodeTabDescriptor(context: CodeTabContext, descriptor: ResourceDescriptor, mode: CodeTabMode): void {
 	context.descriptor = descriptor;
@@ -34,10 +34,10 @@ function applyCodeTabDescriptor(context: CodeTabContext, descriptor: ResourceDes
 export function openLuaCodeTab(descriptor: ResourceDescriptor): void {
 	const navigationCheckpoint = beginNavigationCapture();
 	const tabId = buildCodeTabId(descriptor);
-	if (!editorSessionState.codeTabContexts.has(tabId)) {
-		editorSessionState.codeTabContexts.set(tabId, createLuaCodeTabContext(descriptor));
+	if (!codeTabSessionState.contexts.has(tabId)) {
+		codeTabSessionState.contexts.set(tabId, createLuaCodeTabContext(descriptor));
 	}
-	const context = editorSessionState.codeTabContexts.get(tabId)!;
+	const context = codeTabSessionState.contexts.get(tabId)!;
 	applyCodeTabDescriptor(context, descriptor, 'lua');
 	upsertCodeEditorTab(context);
 	setActiveTab(tabId);
@@ -48,14 +48,14 @@ export async function openAemCodeTab(descriptor: ResourceDescriptor): Promise<vo
 	const navigationCheckpoint = beginNavigationCapture();
 	const tabId = buildCodeTabId(descriptor);
 	try {
-		let context = editorSessionState.codeTabContexts.get(tabId);
+		let context = codeTabSessionState.contexts.get(tabId);
 		if (!context) {
 			const source = await loadAemResourceSource(descriptor.path);
 			if (source === null) {
 				throw new Error(`AEM resource '${descriptor.path}' is unavailable.`);
 			}
 			context = createAemCodeTabContext(descriptor, source);
-			editorSessionState.codeTabContexts.set(tabId, context);
+			codeTabSessionState.contexts.set(tabId, context);
 		}
 		applyCodeTabDescriptor(context, descriptor, 'aem');
 		upsertCodeEditorTab(context);

@@ -2,16 +2,15 @@ import { clamp } from '../../../../utils/clamp';
 import type { EditorDiagnostic } from '../../../common/types';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { activateCodeTab, setActiveTab } from '../../../workbench/ui/tabs';
-import { isCodeTabActive } from '../../../workbench/ui/code_tab_contexts';
+import { getActiveCodeTabContextId, isCodeTabActive } from '../../../workbench/ui/code_tab_contexts';
 import { setCursorPosition, ensureCursorVisible } from '../../ui/caret';
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import { editorCaretState } from '../../ui/caret_state';
 import { editorDocumentState } from '../../editing/editor_document_state';
-import { editorSessionState } from '../../ui/editor_session_state';
 
 export function gotoDiagnostic(diagnostic: EditorDiagnostic): void {
 	const navigationCheckpoint = beginNavigationCapture();
-	if (diagnostic.contextId && diagnostic.contextId.length > 0 && diagnostic.contextId !== editorSessionState.activeCodeTabContextId) {
+	if (diagnostic.contextId && diagnostic.contextId.length > 0 && diagnostic.contextId !== getActiveCodeTabContextId()) {
 		setActiveTab(diagnostic.contextId);
 	}
 	if (!isCodeTabActive()) {

@@ -1,7 +1,8 @@
 import { getCodeAreaBounds } from '../../../editor/ui/editor_view';
 import { resourcePanel } from '../../contrib/resources/resource_panel_controller';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../../../editor/input/keyboard/key_input';
-import { clampResourceViewerScroll, getActiveResourceViewer, resourceViewerTextCapacity, setResourceViewerScroll } from '../../contrib/resources/resource_viewer';
+import { clampResourceViewerScroll, resourceViewerTextCapacity, setResourceViewerScroll } from '../../contrib/resources/resource_viewer';
+import { getActiveResourceViewer } from '../../contrib/resources/resource_view_tabs';
 import type { ResourceViewerState } from '../../../common/types';
 import { editorViewState } from '../../../editor/ui/editor_view_state';
 

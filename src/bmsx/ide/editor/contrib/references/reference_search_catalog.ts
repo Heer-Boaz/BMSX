@@ -5,7 +5,7 @@ import type { CodeTabContext } from '../../../common/types';
 import { symbolSearchPageSize } from '../../ui/editor_view';
 import { getTextSnapshot, splitText } from '../../text/source_text';
 import { editorDocumentState } from '../../editing/editor_document_state';
-import { editorSessionState } from '../../ui/editor_session_state';
+import { getCodeTabContexts } from '../../../workbench/ui/code_tab_contexts';
 import { symbolSearchState } from '../symbols/symbol_search_state';
 import { referenceState } from './reference_state';
 import {
@@ -22,7 +22,7 @@ export function buildReferenceSearchCatalog(info: ReferenceMatchInfo, context: C
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: context,
 		activeLines,
-		codeTabContexts: editorSessionState.codeTabContexts.values(),
+		codeTabContexts: getCodeTabContexts(),
 	};
 	return buildProjectReferenceCatalog({
 		workspace: getOrCreateSemanticWorkspace(),

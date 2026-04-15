@@ -5,7 +5,7 @@ import { runtimeErrorState } from '../contrib/runtime_error/runtime_error_state'
 import * as TextEditing from '../editing/text_editing_and_selection';
 import type { HighlightLine, RuntimeErrorOverlay, VisualLineSegment } from '../../common/types';
 import { splitText } from '../text/source_text';
-import { editorSessionState } from '../ui/editor_session_state';
+import { getCodeTabContexts } from '../../workbench/ui/code_tab_contexts';
 import { editorViewState } from '../ui/editor_view_state';
 import { resourcePanel } from '../../workbench/contrib/resources/resource_panel_controller';
 import { editorDocumentState } from '../editing/editor_document_state';
@@ -195,7 +195,7 @@ export function rewrapRuntimeErrorOverlays(): void {
 		visited.add(runtimeErrorState.activeOverlay);
 		rewrapRuntimeErrorOverlay(runtimeErrorState.activeOverlay);
 	}
-	for (const context of editorSessionState.codeTabContexts.values()) {
+	for (const context of getCodeTabContexts()) {
 		const overlay = context.runtimeErrorOverlay;
 		if (overlay && !visited.has(overlay)) {
 			visited.add(overlay);

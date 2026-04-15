@@ -4,7 +4,7 @@ import { statusAreaHeight, getStatusMessageLines } from '../common/layout';
 import { isResourceViewActive } from '../ui/tabs';
 import { getActiveCodeTabContext, isCodeTabActive } from '../ui/code_tab_contexts';
 import { editorFeedbackState } from '../common/feedback_state';
-import { getActiveResourceViewer } from '../contrib/resources/resource_viewer';
+import { getActiveResourceViewer } from '../contrib/resources/resource_view_tabs';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { measureText, truncateTextToWidth } from '../../editor/common/text_layout';
 import { Runtime } from '../../../emulator/runtime';

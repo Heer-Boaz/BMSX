@@ -1,5 +1,4 @@
 import { editorDocumentState } from '../../editor/editing/editor_document_state';
-import { editorSessionState } from '../../editor/ui/editor_session_state';
 import type {
 	CodeTabContext,
 	CodeTabMode,
@@ -12,6 +11,8 @@ import * as runtimeLuaPipeline from '../../../emulator/runtime_lua_pipeline';
 import { PieceTreeBuffer } from '../../editor/text/piece_tree_buffer';
 import { listResources } from '../../../emulator/workspace';
 import { computeResourceTabTitle } from './tab_titles';
+import { codeTabSessionState } from './code_tab_session_state';
+import { tabSessionState } from './tab_session_state';
 
 function resolveLuaSource(descriptor: ResourceDescriptor): string {
 	const runtime = Runtime.instance;
@@ -55,7 +56,7 @@ export function buildCodeTabId(descriptor: ResourceDescriptor): string {
 }
 
 export function setTabRuntimeSyncState(tabId: string, runtimeSyncState: EditorRuntimeSyncState, runtimeSyncMessage: string): void {
-	const tab = editorSessionState.tabs.find(candidate => candidate.id === tabId)!;
+	const tab = tabSessionState.tabs.find(candidate => candidate.id === tabId)!;
 	tab.runtimeSyncState = runtimeSyncState;
 	tab.runtimeSyncMessage = runtimeSyncMessage;
 }
@@ -67,7 +68,7 @@ export function setContextRuntimeSyncState(context: CodeTabContext, runtimeSyncS
 }
 
 export function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescriptor {
-	let tab = editorSessionState.tabs.find(candidate => candidate.id === context.id);
+	let tab = tabSessionState.tabs.find(candidate => candidate.id === context.id);
 	if (!tab) {
 		tab = {
 			id: context.id,
@@ -76,7 +77,7 @@ export function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescripto
 			closable: true,
 			dirty: false,
 		};
-		editorSessionState.tabs.push(tab);
+		tabSessionState.tabs.push(tab);
 	}
 	tab.kind = 'code_editor';
 	tab.title = context.title;
@@ -104,11 +105,39 @@ export function createAemCodeTabContext(descriptor: ResourceDescriptor, source: 
 }
 
 export function getActiveCodeTabContext(): CodeTabContext {
-	return editorSessionState.codeTabContexts.get(editorSessionState.activeCodeTabContextId)!;
+	return codeTabSessionState.contexts.get(codeTabSessionState.activeContextId)!;
+}
+
+export function getActiveCodeTabContextId(): string {
+	return codeTabSessionState.activeContextId;
+}
+
+export function isActiveCodeTabReadOnly(): boolean {
+	return codeTabSessionState.activeContextReadOnly;
+}
+
+export function getCodeTabContextById(contextId: string): CodeTabContext {
+	return codeTabSessionState.contexts.get(contextId);
+}
+
+export function hasCodeTabContext(contextId: string): boolean {
+	return codeTabSessionState.contexts.has(contextId);
+}
+
+export function getCodeTabContexts(): Iterable<CodeTabContext> {
+	return codeTabSessionState.contexts.values();
+}
+
+export function registerCodeTabContext(context: CodeTabContext): void {
+	codeTabSessionState.contexts.set(context.id, context);
+}
+
+export function clearCodeTabContexts(): void {
+	codeTabSessionState.contexts.clear();
 }
 
 export function setTabDirty(tabId: string, dirty: boolean): void {
-	const tab = editorSessionState.tabs.find(candidate => candidate.id === tabId)!;
+	const tab = tabSessionState.tabs.find(candidate => candidate.id === tabId)!;
 	tab.dirty = dirty;
 }
 
@@ -119,7 +148,7 @@ export function updateActiveContextDirtyFlag(): void {
 }
 
 export function isCodeTabActive(): boolean {
-	const active = editorSessionState.tabs.find(tab => tab.id === editorSessionState.activeTabId)!;
+	const active = tabSessionState.tabs.find(tab => tab.id === tabSessionState.activeTabId)!;
 	return active.kind === 'code_editor';
 }
 
@@ -128,15 +157,15 @@ export function isActiveLuaCodeTab(): boolean {
 }
 
 export function isReadOnlyCodeTab(): boolean {
-	return isCodeTabActive() && editorSessionState.activeContextReadOnly === true;
+	return isCodeTabActive() && codeTabSessionState.activeContextReadOnly === true;
 }
 
 export function isEditableCodeTab(): boolean {
-	return isCodeTabActive() && editorSessionState.activeContextReadOnly !== true;
+	return isCodeTabActive() && codeTabSessionState.activeContextReadOnly !== true;
 }
 
 export function findCodeTabContext(path: string): CodeTabContext {
-	for (const context of editorSessionState.codeTabContexts.values()) {
+	for (const context of codeTabSessionState.contexts.values()) {
 		if (context.descriptor.path === path) {
 			return context;
 		}

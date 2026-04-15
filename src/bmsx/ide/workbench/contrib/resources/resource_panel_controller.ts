@@ -9,6 +9,7 @@ import { measureText } from '../../../editor/common/text_layout';
 import type { CallHierarchyView } from '../../../editor/contrib/call_hierarchy/call_hierarchy_view';
 import { editorViewState } from '../../../editor/ui/editor_view_state';
 import {
+	findResourcePanelIndexByAssetId,
 	findResourcePanelIndexByCallHierarchyNodeId,
 	type ResourcePanelFilterMode,
 } from './resource_panel_items';
@@ -62,6 +63,7 @@ export class ResourcePanelController {
 	public hoverIndex = -1;
 	public maxLineWidth = 0;
 	private callHierarchyView: CallHierarchyView = null;
+	private pendingSelectionAssetId: string = null;
 	private readonly callHierarchyExpandedNodeIds = new Set<string>();
 	private readonly bounds: RectBounds = { left: 0, top: 0, right: 0, bottom: 0 };
 
@@ -260,6 +262,7 @@ export class ResourcePanelController {
 		this.hoverIndex = -1;
 		this.hscroll = 0;
 		this.maxLineWidth = 0;
+		this.pendingSelectionAssetId = null;
 	}
 
 	private refreshContents(): void {
@@ -282,17 +285,38 @@ export class ResourcePanelController {
 			}));
 			return;
 		}
-		const previousDescriptor = (this.selectionIndex >= 0 && this.selectionIndex < this.items.length)
-			? this.items[this.selectionIndex].descriptor
-			: null;
+		const previousDescriptor = this.pendingSelectionAssetId
+			? null
+			: (this.selectionIndex >= 0 && this.selectionIndex < this.items.length)
+				? this.items[this.selectionIndex].descriptor
+				: null;
 		this.applyRefreshResult(refreshResourcePanelResourceState({
 			filterMode: this.filterMode,
 			bounds,
 			lineHeight: this.lineHeight,
 			previousDescriptor,
+			targetAssetId: this.pendingSelectionAssetId,
 			previousIndex: this.selectionIndex,
 			previousScroll: this.scroll,
 		}));
+		this.pendingSelectionAssetId = null;
+	}
+
+	queuePendingSelection(assetId: string): void {
+		this.pendingSelectionAssetId = assetId;
+	}
+
+	applyPendingSelection(): void {
+		if (!this.visible || !this.pendingSelectionAssetId) {
+			return;
+		}
+		const index = findResourcePanelIndexByAssetId(this.items, this.pendingSelectionAssetId);
+		if (index === -1) {
+			return;
+		}
+		this.selectionIndex = index;
+		this.ensureSelectionVisible();
+		this.pendingSelectionAssetId = null;
 	}
 
 	public moveSelectionBy(delta: number): void {

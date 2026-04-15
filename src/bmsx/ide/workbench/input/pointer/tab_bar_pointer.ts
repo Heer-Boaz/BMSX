@@ -7,8 +7,8 @@ import { beginTabDrag, endTabDrag } from '../../ui/tab_drag';
 import { getTabBarTotalHeight } from '../../common/layout';
 import { consumeChromePointerPress } from '../../../editor/input/pointer/editor_chrome_pointer_press';
 import { editorPointerState } from '../../../editor/input/pointer/editor_pointer_state';
-import { editorSessionState } from '../../../editor/ui/editor_session_state';
 import { editorViewState } from '../../../editor/ui/editor_view_state';
+import { tabSessionState } from '../../ui/tab_session_state';
 
 export function handleTabBarPointer(snapshot: PointerSnapshot): boolean {
 	const tabTop = editorViewState.headerHeight;
@@ -18,8 +18,8 @@ export function handleTabBarPointer(snapshot: PointerSnapshot): boolean {
 		return false;
 	}
 	const x = snapshot.viewportX;
-	for (let index = 0; index < editorSessionState.tabs.length; index += 1) {
-		const tab = editorSessionState.tabs[index];
+	for (let index = 0; index < tabSessionState.tabs.length; index += 1) {
+		const tab = tabSessionState.tabs[index];
 		const closeBounds = editorChromeState.tabCloseButtonBounds.get(tab.id);
 		if (closeBounds && point_in_rect(x, y, closeBounds)) {
 			endTabDrag();
@@ -47,8 +47,8 @@ export function handleTabBarMiddleClick(snapshot: PointerSnapshot, playerInput: 
 		return false;
 	}
 	const x = snapshot.viewportX;
-	for (let index = 0; index < editorSessionState.tabs.length; index += 1) {
-		const tab = editorSessionState.tabs[index];
+	for (let index = 0; index < tabSessionState.tabs.length; index += 1) {
+		const tab = tabSessionState.tabs[index];
 		if (!tab.closable) {
 			continue;
 		}

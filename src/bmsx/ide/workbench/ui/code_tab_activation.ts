@@ -1,6 +1,5 @@
 import { editorDocumentState, restoreDocumentStateFromContext, storeDocumentStateInContext } from '../../editor/editing/editor_document_state';
 import { editorDiagnosticsState } from '../../editor/contrib/diagnostics/diagnostics_state';
-import { editorSessionState } from '../../editor/ui/editor_session_state';
 import { editorViewState } from '../../editor/ui/editor_view_state';
 import { syncRuntimeErrorOverlayFromContext } from '../../editor/contrib/runtime_error/runtime_error_navigation';
 import { updateDesiredColumn } from '../../editor/ui/caret';
@@ -16,6 +15,7 @@ import {
 	setTabDirty,
 	setTabRuntimeSyncState,
 } from './code_tab_contexts';
+import { codeTabSessionState } from './code_tab_session_state';
 
 function setCodeTabDiagnosticsState(): void {
 	const context = getActiveCodeTabContext();
@@ -51,9 +51,9 @@ export function storeActiveCodeTabContext(): void {
 }
 
 export function activateCodeEditorTab(tabId: string): void {
-	editorSessionState.activeCodeTabContextId = tabId;
+	codeTabSessionState.activeContextId = tabId;
 	const context = getActiveCodeTabContext();
-	editorSessionState.activeContextReadOnly = context.readOnly === true;
+	codeTabSessionState.activeContextReadOnly = context.readOnly === true;
 	restoreDocumentStateFromContext(context);
 	editorViewState.scrollRow = context.scrollRow;
 	editorViewState.scrollColumn = context.scrollColumn;

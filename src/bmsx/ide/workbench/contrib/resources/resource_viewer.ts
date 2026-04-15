@@ -4,11 +4,9 @@ import { Runtime } from '../../../../emulator/runtime';
 import * as runtimeLuaPipeline from '../../../../emulator/runtime_lua_pipeline';
 import type { ResourceDescriptor } from '../../../../emulator/types';
 import * as constants from '../../../common/constants';
-import { setActiveTab } from '../../ui/tabs';
 import { computeResourceTabTitle } from '../../ui/tab_titles';
 import { splitText } from '../../../editor/text/source_text';
-import type { EditorTabId, ResourceViewerState } from '../../../common/types';
-import { editorSessionState } from '../../../editor/ui/editor_session_state';
+import type { ResourceViewerState } from '../../../common/types';
 
 export type ResourceViewerBounds = {
 	codeTop: number;
@@ -16,17 +14,6 @@ export type ResourceViewerBounds = {
 	codeLeft: number;
 	codeRight: number;
 };
-
-export function getActiveResourceViewer(): ResourceViewerState {
-	for (let index = 0; index < editorSessionState.tabs.length; index += 1) {
-		const tab = editorSessionState.tabs[index];
-		if (tab.id !== editorSessionState.activeTabId) {
-			continue;
-		}
-		return tab.kind === 'resource_view' ? tab.resource : null;
-	}
-	return null;
-}
 
 export function buildResourceViewerState(descriptor: ResourceDescriptor): ResourceViewerState {
 	const title = computeResourceTabTitle(descriptor);
@@ -149,36 +136,6 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 	}
 	state.error = error;
 	return state;
-}
-
-export function openResourceViewerTab(descriptor: ResourceDescriptor): void {
-	const tabId: EditorTabId = `resource:${descriptor.path}`;
-	let tab = null;
-	for (let index = 0; index < editorSessionState.tabs.length; index += 1) {
-		const candidate = editorSessionState.tabs[index];
-		if (candidate.id === tabId) {
-			tab = candidate;
-			break;
-		}
-	}
-	const state = buildResourceViewerState(descriptor);
-	if (tab) {
-		tab.title = state.title;
-		tab.resource = state;
-		tab.dirty = false;
-		setActiveTab(tabId);
-		return;
-	}
-	tab = {
-		id: tabId,
-		kind: 'resource_view',
-		title: state.title,
-		closable: true,
-		dirty: false,
-		resource: state,
-	};
-	editorSessionState.tabs.push(tab);
-	setActiveTab(tabId);
 }
 
 export function resourceViewerImageLayout(

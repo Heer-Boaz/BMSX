@@ -3,7 +3,8 @@ import type { ResourcePanelController } from '../contrib/resources/resource_pane
 import { clamp } from '../../../utils/clamp';
 import { getCodeAreaBounds } from '../../editor/ui/editor_view';
 import { resourceViewerClampScroll } from '../input/keyboard/resource_viewer_input';
-import { getActiveResourceViewer, resourceViewerImageLayout, resourceViewerTextCapacity, setResourceViewerScroll } from '../contrib/resources/resource_viewer';
+import { resourceViewerImageLayout, resourceViewerTextCapacity, setResourceViewerScroll } from '../contrib/resources/resource_viewer';
+import { getActiveResourceViewer } from '../contrib/resources/resource_view_tabs';
 import { resourcePanel } from '../contrib/resources/resource_panel_controller';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { api } from '../../editor/ui/view/overlay_api';

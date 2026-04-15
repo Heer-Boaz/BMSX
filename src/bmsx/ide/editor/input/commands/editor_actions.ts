@@ -11,7 +11,7 @@ import { clearExecutionStopHighlights } from '../../contrib/runtime_error/runtim
 import * as constants from '../../../common/constants';
 import { setEditorCaseInsensitivity } from '../../render/text_renderer';
 import { editorDocumentState } from '../../editing/editor_document_state';
-import { editorSessionState } from '../../ui/editor_session_state';
+import { getCodeTabContexts } from '../../../workbench/ui/code_tab_contexts';
 import { editorViewState } from '../../ui/editor_view_state';
 
 export function performEditorAction(action: ActionPromptAction): boolean {
@@ -35,7 +35,7 @@ function hasPendingEngineModuleReload(runtime: Runtime): boolean {
 	if (!runtime.cartLuaSources) {
 		return false;
 	}
-	for (const context of editorSessionState.codeTabContexts.values()) {
+	for (const context of getCodeTabContexts()) {
 		if (context.mode !== 'lua') {
 			continue;
 		}

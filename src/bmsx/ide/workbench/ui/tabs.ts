@@ -1,7 +1,6 @@
 import { editorRuntimeState } from '../../editor/common/editor_runtime_state';
 import { editorChromeState } from './chrome_state';
 import { editorDiagnosticsState } from '../../editor/contrib/diagnostics/diagnostics_state';
-import { editorSessionState } from '../../editor/ui/editor_session_state';
 import { editorViewState } from '../../editor/ui/editor_view_state';
 import type { CodeTabContext, EditorTabDescriptor, EditorTabKind } from '../../common/types';
 import { beginNavigationCapture, completeNavigation } from '../../editor/navigation/navigation_history';
@@ -19,6 +18,8 @@ import {
 } from './code_tab_contexts';
 import { activateCodeEditorTab, storeActiveCodeTabContext } from './code_tab_activation';
 import { endTabDrag } from './tab_drag';
+import { codeTabSessionState } from './code_tab_session_state';
+import { tabSessionState } from './tab_session_state';
 
 function activateResourceViewerTab(tab: EditorTabDescriptor): void {
 	closeSearch(false, true);
@@ -32,21 +33,21 @@ function activateResourceViewerTab(tab: EditorTabDescriptor): void {
 }
 
 export function initializeTabs(initialContext: CodeTabContext = null): void {
-	editorSessionState.tabs = [];
+	tabSessionState.tabs = [];
 	editorPointerState.tabHoverId = null;
 	editorPointerState.tabDragState = null;
 	editorChromeState.tabButtonBounds.clear();
 	editorChromeState.tabCloseButtonBounds.clear();
 	const context = initialContext ?? createEntryTabContext();
-	editorSessionState.codeTabContexts.set(context.id, context);
+	codeTabSessionState.contexts.set(context.id, context);
 	upsertCodeEditorTab(context);
-	editorSessionState.activeTabId = context.id;
-	editorSessionState.activeCodeTabContextId = context.id;
+	tabSessionState.activeTabId = context.id;
+	codeTabSessionState.activeContextId = context.id;
 	activateCodeEditorTab(context.id);
 }
 
 function getActiveTabKind(): EditorTabKind {
-	const active = editorSessionState.tabs.find(tab => tab.id === editorSessionState.activeTabId)!;
+	const active = tabSessionState.tabs.find(tab => tab.id === tabSessionState.activeTabId)!;
 	return active.kind;
 }
 
@@ -55,8 +56,8 @@ export function isResourceViewActive(): boolean {
 }
 
 export function setActiveTab(tabId: string): void {
-	const tab = editorSessionState.tabs.find(candidate => candidate.id === tabId)!;
-	const isSameTab = editorSessionState.activeTabId === tabId;
+	const tab = tabSessionState.tabs.find(candidate => candidate.id === tabId)!;
+	const isSameTab = tabSessionState.activeTabId === tabId;
 	const navigationCheckpoint = !isSameTab && tab.kind === 'code_editor'
 		? beginNavigationCapture()
 		: null;
@@ -66,16 +67,16 @@ export function setActiveTab(tabId: string): void {
 	}
 	if (isSameTab) {
 		if (tab.kind === 'resource_view') {
-			editorSessionState.activeContextReadOnly = false;
+			codeTabSessionState.activeContextReadOnly = false;
 			activateResourceViewerTab(tab);
 			runtimeErrorState.activeOverlay = null;
 			runtimeErrorState.executionStopRow = null;
 		}
 		return;
 	}
-	editorSessionState.activeTabId = tabId;
+	tabSessionState.activeTabId = tabId;
 	if (tab.kind === 'resource_view') {
-		editorSessionState.activeContextReadOnly = false;
+		codeTabSessionState.activeContextReadOnly = false;
 		activateResourceViewerTab(tab);
 		runtimeErrorState.activeOverlay = null;
 		runtimeErrorState.executionStopRow = null;
@@ -89,48 +90,64 @@ export function setActiveTab(tabId: string): void {
 }
 
 export function activateCodeTab(): void {
-	const codeTab = editorSessionState.tabs.find(candidate => candidate.kind === 'code_editor')!;
+	const codeTab = tabSessionState.tabs.find(candidate => candidate.kind === 'code_editor')!;
 	setActiveTab(codeTab.id);
 }
 
+export function getTabs(): readonly EditorTabDescriptor[] {
+	return tabSessionState.tabs;
+}
+
+export function getActiveTabId(): string {
+	return tabSessionState.activeTabId;
+}
+
+export function findTabById(tabId: string): EditorTabDescriptor | undefined {
+	return tabSessionState.tabs.find(candidate => candidate.id === tabId);
+}
+
+export function isTabActive(tabId: string): boolean {
+	return tabSessionState.activeTabId === tabId;
+}
+
 export function closeTab(tabId: string): void {
-	const index = editorSessionState.tabs.findIndex(tab => tab.id === tabId);
-	const tab = editorSessionState.tabs[index];
+	const index = tabSessionState.tabs.findIndex(tab => tab.id === tabId);
+	const tab = tabSessionState.tabs[index];
 	if (!tab.closable) {
 		return;
 	}
 	if (editorPointerState.tabDragState && editorPointerState.tabDragState.tabId === tabId) {
 		endTabDrag();
 	}
-	const isActive = editorSessionState.activeTabId === tabId;
-	if (isActive && editorSessionState.tabs.length > 1) {
-		const fallback = editorSessionState.tabs[index - 1] ?? editorSessionState.tabs[index + 1];
+	const isActive = tabSessionState.activeTabId === tabId;
+	if (isActive && tabSessionState.tabs.length > 1) {
+		const fallback = tabSessionState.tabs[index - 1] ?? tabSessionState.tabs[index + 1];
 		setActiveTab(fallback.id);
 	} else if (isActive && tab.kind === 'code_editor') {
 		storeActiveCodeTabContext();
 	}
-	editorSessionState.tabs.splice(index, 1);
+	tabSessionState.tabs.splice(index, 1);
 	if (tab.kind === 'code_editor') {
 		editorDiagnosticsState.dirtyDiagnosticContexts.delete(tab.id);
 		editorDiagnosticsState.diagnosticsCache.delete(tab.id);
 	}
-	if (editorSessionState.tabs.length === 0) {
+	if (tabSessionState.tabs.length === 0) {
 		initializeTabs();
 	}
 }
 
 export function cycleTab(direction: number): void {
-	if (editorSessionState.tabs.length <= 1 || direction === 0) {
+	if (tabSessionState.tabs.length <= 1 || direction === 0) {
 		return;
 	}
-	const count = editorSessionState.tabs.length;
-	const currentIndex = editorSessionState.tabs.findIndex(tab => tab.id === editorSessionState.activeTabId);
+	const count = tabSessionState.tabs.length;
+	const currentIndex = tabSessionState.tabs.findIndex(tab => tab.id === tabSessionState.activeTabId);
 	let nextIndex = currentIndex + direction;
 	nextIndex = ((nextIndex % count) + count) % count;
 	if (nextIndex === currentIndex) {
 		return;
 	}
-	const target = editorSessionState.tabs[nextIndex];
+	const target = tabSessionState.tabs[nextIndex];
 	setActiveTab(target.id);
 }
 
@@ -139,8 +156,8 @@ export function isActive(): boolean {
 }
 
 export function closeActiveTab(): void {
-	if (!editorSessionState.activeTabId) {
+	if (!tabSessionState.activeTabId) {
 		return;
 	}
-	closeTab(editorSessionState.activeTabId);
+	closeTab(tabSessionState.activeTabId);
 }

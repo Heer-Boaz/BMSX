@@ -3,12 +3,19 @@ import { restoreBreakpointsFromPayload } from '../contrib/debugger/ide_debugger'
 import { Runtime } from '../../../emulator/runtime';
 import * as runtimeIde from '../../../emulator/runtime_ide';
 import { editorDocumentState } from '../../editor/editing/editor_document_state';
-import { editorSessionState } from '../../editor/ui/editor_session_state';
 import { fetchWorkspaceFile } from '../../../emulator/workspace';
 import { setFontVariant } from '../../editor/ui/editor_view';
 import { initializeTabs } from '../ui/tabs';
-import { findCodeTabContext, setTabDirty, updateActiveContextDirtyFlag } from '../ui/code_tab_contexts';
+import {
+	clearCodeTabContexts,
+	findCodeTabContext,
+	getActiveCodeTabContextId,
+	getCodeTabContextById,
+	setTabDirty,
+	updateActiveContextDirtyFlag,
+} from '../ui/code_tab_contexts';
 import { openCodeTabForDescriptor } from '../ui/code_tab_io';
+import { getActiveTabId } from '../ui/tabs';
 import { deleteWorkspaceCachedSources, setWorkspaceCachedSources } from '../../../emulator/workspace_cache';
 import { restoreSnapshot } from '../../editor/editing/undo_controller';
 import { readDirtyBuffer, readWorkspaceStateFile, deleteDirtyBuffer } from './workspace_io';
@@ -36,7 +43,7 @@ export async function restoreWorkspaceSessionFromDisk(): Promise<string> {
 }
 
 export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePayload): Promise<void> {
-	editorSessionState.codeTabContexts.clear();
+	clearCodeTabContexts();
 	initializeTabs();
 	const runtime = Runtime.instance;
 	if (payload.fontVariant) {
@@ -58,7 +65,7 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 			asset_id: entry.descriptor.asset_id,
 			readOnly: entry.descriptor.readOnly,
 		};
-		let context = editorSessionState.codeTabContexts.get(entry.contextId);
+		let context = getCodeTabContextById(entry.contextId);
 		if (!context) {
 			context = findCodeTabContext(descriptor.path);
 		}
@@ -82,7 +89,7 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 			context.dirty = false;
 			context.savePointDepth = context.undoStack.length;
 			setTabDirty(context.id, false);
-			if (editorSessionState.activeCodeTabContextId === context.id && editorSessionState.activeTabId === context.id) {
+			if (getActiveCodeTabContextId() === context.id && getActiveTabId() === context.id) {
 				restoreSnapshot(buildSnapshotFromBuffer(context, entry), { preserveScroll: true });
 				editorDocumentState.savePointDepth = context.savePointDepth;
 				editorDocumentState.dirty = false;
@@ -95,7 +102,7 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 		context.dirty = true;
 		context.savePointDepth = -1;
 		setTabDirty(context.id, true);
-		if (editorSessionState.activeCodeTabContextId === context.id && editorSessionState.activeTabId === context.id) {
+		if (getActiveCodeTabContextId() === context.id && getActiveTabId() === context.id) {
 			restoreSnapshot(buildSnapshotFromBuffer(context, entry), { preserveScroll: true });
 			editorDocumentState.savePointDepth = context.savePointDepth;
 			editorDocumentState.dirty = true;

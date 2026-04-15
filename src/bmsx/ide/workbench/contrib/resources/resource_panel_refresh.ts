@@ -25,13 +25,14 @@ export function refreshResourcePanelResourceState(options: {
 	bounds: RectBounds;
 	lineHeight: number;
 	previousDescriptor: ResourceDescriptor;
+	targetAssetId: string;
 	previousIndex: number;
 	previousScroll: number;
 }): ResourcePanelRefreshResult {
 	const items = buildResourcePanelItems(options.filterMode);
 	const maxLineWidth = computeResourcePanelMaxLineWidth(items);
 	const capacity = resourcePanelLineCapacity(options.bounds, items.length, maxLineWidth, options.lineHeight);
-	const targetAssetId = options.previousDescriptor?.asset_id ?? null;
+	const targetAssetId = options.targetAssetId ?? options.previousDescriptor?.asset_id ?? null;
 	let selectionIndex = targetAssetId ? findResourcePanelIndexByAssetId(items, targetAssetId) : -1;
 	if (selectionIndex === -1 && options.previousIndex >= 0 && options.previousIndex < items.length) {
 		selectionIndex = options.previousIndex;

@@ -8,7 +8,7 @@ import { collectRuntimeStackFrames, formatRuntimeErrorLocation, formatRuntimeSta
 import type { LuaSourceRecord } from '../../lua_sources';
 import { RAM_SIZE } from '../../memory_map';
 import { formatByteSize, lenAndHash } from '../../../utils/byte_hex_string';
-import { editorSessionState } from '../../../ide/editor/ui/editor_session_state';
+import { getCodeTabContexts } from '../../../ide/workbench/ui/code_tab_contexts';
 
 type PathEntryKind = 'rom' | 'saved' | 'dirty' | 'saved_dirty' | 'unsaved';
 
@@ -524,7 +524,7 @@ export class TerminalCommandDispatcher {
 
 	private collectUnsavedPaths(root: string): Set<string> {
 		const unsaved = new Set<string>();
-		for (const context of editorSessionState.codeTabContexts.values()) {
+		for (const context of getCodeTabContexts()) {
 			if (!context.descriptor || !context.dirty) {
 				continue;
 			}

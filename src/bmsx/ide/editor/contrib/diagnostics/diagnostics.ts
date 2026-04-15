@@ -5,7 +5,7 @@ import { getCachedLuaParse } from '../../../language/lua/lua_analysis_cache';
 import { editorRuntimeState } from '../../common/editor_runtime_state';
 import { diagnosticsDebounceMs, editorDiagnosticsState } from './diagnostics_state';
 import { cacheSemanticParseState } from '../intellisense/semantic_workspace_sync';
-import { editorSessionState } from '../../ui/editor_session_state';
+import { getCodeTabContexts } from '../../../workbench/ui/code_tab_contexts';
 
 export type DiagnosticContextInput = {
 	id: string;
@@ -83,12 +83,16 @@ export function markDiagnosticsDirty(contextId: string): void {
 }
 
 export function markAllDiagnosticsDirty(): void {
-	const contexts = editorSessionState.codeTabContexts;
-	if (contexts.size === 0) {
+	const contextIds: string[] = [];
+	for (const context of getCodeTabContexts()) {
+		contextIds.push(context.id);
+	}
+	if (contextIds.length === 0) {
 		return;
 	}
 	editorDiagnosticsState.diagnosticsDirty = true;
-	for (const contextId of contexts.keys()) {
+	for (let index = 0; index < contextIds.length; index += 1) {
+		const contextId = contextIds[index];
 		editorDiagnosticsState.dirtyDiagnosticContexts.add(contextId);
 	}
 	editorDiagnosticsState.diagnosticsDueAtMs = editorRuntimeState.clockNow() + diagnosticsDebounceMs;

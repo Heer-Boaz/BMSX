@@ -3,8 +3,8 @@ import * as runtimeIde from '../../../emulator/runtime_ide';
 import { $ } from '../../../core/engine_core';
 import { api } from './view/overlay_api';
 import * as constants from '../../common/constants';
-import { activateCodeTab, isResourceViewActive, setActiveTab } from '../../workbench/ui/tabs';
-import { getActiveCodeTabContext } from '../../workbench/ui/code_tab_contexts';
+import { activateCodeTab, findTabById, isResourceViewActive, setActiveTab } from '../../workbench/ui/tabs';
+import { getActiveCodeTabContext, getActiveCodeTabContextId } from '../../workbench/ui/code_tab_contexts';
 import { storeActiveCodeTabContext } from '../../workbench/ui/code_tab_activation';
 import { cancelGlobalSearchJob, startSearchJob } from '../contrib/find/editor_search';
 import { editorRuntimeState } from '../common/editor_runtime_state';
@@ -18,7 +18,6 @@ import { renderCodeArea } from '../render/render_code_area';
 import { renderStatusBar } from '../../workbench/render/render_status_bar';
 import { drawResourcePanel, drawResourceViewer } from '../../workbench/render/render_resource_panel';
 import { editorDocumentState } from '../editing/editor_document_state';
-import { editorSessionState } from './editor_session_state';
 import { editorViewState } from './editor_view_state';
 import { editorSearchState, lineJumpState } from '../contrib/find/find_widget_state';
 import { renderInlineWidgets } from '../contrib/quick_input/inline_widget';
@@ -153,10 +152,11 @@ export function activateRuntimeEditor(): void {
 		return;
 	}
 	editorInput.applyOverrides(true, captureKeys);
-	if (editorSessionState.activeCodeTabContextId) {
-		const existingTab = editorSessionState.tabs.find(candidate => candidate.id === editorSessionState.activeCodeTabContextId);
+	const activeContextId = getActiveCodeTabContextId();
+	if (activeContextId) {
+		const existingTab = findTabById(activeContextId);
 		if (existingTab) {
-			setActiveTab(editorSessionState.activeCodeTabContextId);
+			setActiveTab(activeContextId);
 		} else {
 			activateCodeTab();
 		}
