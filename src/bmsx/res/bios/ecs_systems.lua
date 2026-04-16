@@ -339,12 +339,30 @@ local emit_overlap_event<const> = function(event_name, phase, owner, self_col, o
 	})
 end
 
+local emit_overlap_end_events<const> = function(prev_pairs, new_pairs)
+	local has_new_pairs<const> = new_pairs ~= nil
+	for a, row in pairs(prev_pairs) do
+		for b in pairs(row) do
+			if not (has_new_pairs and new_pairs[a] ~= nil and new_pairs[a][b]) then
+				local owner_a<const> = a.parent
+				local owner_b<const> = b.parent
+				if owner_a.active and owner_b.active then
+					emit_overlap_event('overlap.end', 'end', owner_a, a, owner_b, b, nil)
+					emit_overlap_event('overlap.end', 'end', owner_b, b, owner_a, a, nil)
+				end
+			end
+		end
+	end
+end
+
 function overlap2dsystem.new(priority)
 	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority), overlap2dsystem)
 	self.prev_pairs = {}
 	self.next_pairs = {}
 	self.event_colliders = {}
 	self.overlap_pairs = scratchrecordbatch.new(64)
+	self.event_collider_count = 0
+	collision2d.reset_overlap_pipeline()
 	return self
 end
 
@@ -357,6 +375,7 @@ function overlap2dsystem:update()
 	local event_colliders<const> = self.event_colliders
 	local colliders<const> = world_instance.active_space.active_components_by_type[collider2dcomponent]
 	local event_collider_count = 0
+	local previous_event_collider_count<const> = self.event_collider_count
 	for i = 1, #colliders do
 		local collider<const> = colliders[i]
 		if collider.hittable then
@@ -364,14 +383,31 @@ function overlap2dsystem:update()
 			event_colliders[event_collider_count] = collider
 		end
 	end
-	event_colliders[event_collider_count + 1] = nil
+	for i = event_collider_count + 1, previous_event_collider_count do
+		event_colliders[i] = nil
+	end
+	self.event_collider_count = event_collider_count
 
-	if event_collider_count == 0 then
+	if event_collider_count <= 1 then
+		collision2d.invalidate_overlap_pass()
+		emit_overlap_end_events(prev_pairs, nil)
 		clear_pair_map(prev_pairs)
 		return
 	end
 
-	local overlap_pair_count<const> = event_collider_count > 1 and collision2d.collect_overlaps(event_colliders, event_collider_count, overlap_pairs) or 0
+	local overlap_pair_count<const> = collision2d.consume_overlap_pass(overlap_pairs)
+	local submitted<const> = collision2d.submit_overlap_pass(event_colliders, event_collider_count)
+	if submitted then
+		for i = 1, event_collider_count do
+			local collider<const> = event_colliders[i]
+			collider._overlap_cache_valid = false
+			collider._world_polys_cache_valid = false
+		end
+	end
+	if overlap_pair_count == nil then
+		return
+	end
+
 	for i = 1, overlap_pair_count do
 		local pair<const> = overlap_pairs.items[i]
 		local a<const> = pair.a
@@ -411,27 +447,10 @@ function overlap2dsystem:update()
 		end
 	end
 
-	for a, row in pairs(prev_pairs) do
-		local new_row<const> = new_pairs[a]
-		for b in pairs(row) do
-			if not (new_row ~= nil and new_row[b]) then
-				local owner_a<const> = a.parent
-				local owner_b<const> = b.parent
-				if owner_a.active and owner_b.active then
-					emit_overlap_event('overlap.end', 'end', owner_a, a, owner_b, b, nil)
-					emit_overlap_event('overlap.end', 'end', owner_b, b, owner_a, a, nil)
-				end
-			end
-		end
-	end
+	emit_overlap_end_events(prev_pairs, new_pairs)
 
 	self.prev_pairs = new_pairs
 	self.next_pairs = prev_pairs
-	for i = 1, event_collider_count do
-		local collider<const> = event_colliders[i]
-		collider._overlap_cache_valid = false
-		collider._world_polys_cache_valid = false
-	end
 end
 
 local timelinesystem<const> = {}

@@ -47,6 +47,10 @@ import {
 	DMA_STATUS_REJECTED,
 	GEO_CTRL_ABORT,
 	GEO_CTRL_START,
+	GEO_STATUS_BUSY,
+	GEO_STATUS_DONE,
+	GEO_STATUS_ERROR,
+	GEO_STATUS_REJECTED,
 	HOST_FAULT_FLAG_ACTIVE,
 	HOST_FAULT_FLAG_STARTUP_BLOCKING,
 	HOST_FAULT_STAGE_NONE,
@@ -120,6 +124,7 @@ import {
 	IO_GEO_SRC0,
 	IO_GEO_SRC1,
 	IO_GEO_SRC2,
+	IO_GEO_STATUS,
 	IO_GEO_STRIDE0,
 	IO_GEO_STRIDE1,
 	IO_GEO_STRIDE2,
@@ -1205,6 +1210,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_count', IO_GEO_COUNT);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd', IO_GEO_CMD);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_ctrl', IO_GEO_CTRL);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_status', IO_GEO_STATUS);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_param0', IO_GEO_PARAM0);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_param1', IO_GEO_PARAM1);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_stride0', IO_GEO_STRIDE0);
@@ -1333,6 +1339,10 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'dma_status_rejected', DMA_STATUS_REJECTED);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_ctrl_start', GEO_CTRL_START);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_ctrl_abort', GEO_CTRL_ABORT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'geo_status_busy', GEO_STATUS_BUSY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'geo_status_done', GEO_STATUS_DONE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'geo_status_error', GEO_STATUS_ERROR);
+	runtimeLuaPipeline.registerGlobal(runtime, 'geo_status_rejected', GEO_STATUS_REJECTED);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd_xform2_batch', IO_CMD_GEO_XFORM2_BATCH);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd_sat2_batch', IO_CMD_GEO_SAT2_BATCH);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd_overlap2d_pass', IO_CMD_GEO_OVERLAP2D_PASS);
