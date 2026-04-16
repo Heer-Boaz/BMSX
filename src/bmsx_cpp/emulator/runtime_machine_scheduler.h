@@ -30,12 +30,12 @@ public:
 	void run(Runtime& runtime, f64 hostDeltaMs);
 
 private:
-	void queueHostCycles(const Runtime& runtime, f64 deltaMs);
+	void accumulateHostTime(const Runtime& runtime, f64 deltaMs);
 	bool canRunScheduledUpdate(const Runtime& runtime) const;
-	bool consumeQueuedFrame(const Runtime& runtime);
+	bool hasScheduledFrame(const Runtime& runtime) const;
+	bool consumeScheduledFrame(const Runtime& runtime);
 
-	i64 m_queuedCycleBudget = 0;
-	f64 m_queuedCycleRemainder = 0.0;
+	f64 m_accumulatedHostTimeMs = 0.0;
 	std::array<TickCompletion, TICK_COMPLETION_QUEUE_CAPACITY> m_tickCompletionQueue{};
 	size_t m_tickCompletionReadIndex = 0;
 	size_t m_tickCompletionWriteIndex = 0;

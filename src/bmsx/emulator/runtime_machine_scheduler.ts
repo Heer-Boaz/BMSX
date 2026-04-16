@@ -16,6 +16,8 @@ type BudgetFrameState = {
 };
 
 const TICK_COMPLETION_QUEUE_CAPACITY = 16;
+const MAX_CATCH_UP_FRAMES = 5;
+const FRAME_SLICE_EPSILON_MS = 0.000001;
 function createTickCompletionQueue(): TickCompletion[] {
 	const queue = new Array<TickCompletion>(TICK_COMPLETION_QUEUE_CAPACITY);
 	for (let index = 0; index < TICK_COMPLETION_QUEUE_CAPACITY; index += 1) {
@@ -31,8 +33,7 @@ function createTickCompletionQueue(): TickCompletion[] {
 }
 
 export class RuntimeMachineSchedulerState {
-	private queuedCycleBudget = 0;
-	private queuedCycleRemainder = 0;
+	private accumulatedHostTimeMs = 0;
 	private readonly tickCompletionQueue = createTickCompletionQueue();
 	private tickCompletionReadIndex = 0;
 	private tickCompletionWriteIndex = 0;
@@ -46,11 +47,13 @@ export class RuntimeMachineSchedulerState {
 	private debugFrameCarryAcc = 0;
 	private debugTickYieldsBefore = 0;
 
-	private queueHostCycles(runtime: Runtime, deltaMs: number): void {
-		const totalCycles = this.queuedCycleRemainder + (deltaMs * runtime.cpuHz / 1000);
-		const wholeCycles = Math.floor(totalCycles);
-		this.queuedCycleRemainder = totalCycles - wholeCycles;
-		this.queuedCycleBudget = clamp(this.queuedCycleBudget + wholeCycles, 0, Number.MAX_SAFE_INTEGER);
+	private accumulateHostTime(runtime: Runtime, deltaMs: number): void {
+		const maxAccumulatedMs = runtime.timing.frameDurationMs * MAX_CATCH_UP_FRAMES;
+		this.accumulatedHostTimeMs = clamp(this.accumulatedHostTimeMs + deltaMs, 0, maxAccumulatedMs);
+	}
+
+	private hasScheduledFrame(runtime: Runtime): boolean {
+		return this.accumulatedHostTimeMs + FRAME_SLICE_EPSILON_MS >= runtime.timing.frameDurationMs;
 	}
 
 	private canRunScheduledUpdate(runtime: Runtime): boolean {
@@ -61,20 +64,19 @@ export class RuntimeMachineSchedulerState {
 		if (state !== null && state.cycleBudgetRemaining > 0) {
 			return true;
 		}
-		return this.queuedCycleBudget >= runtime.cycleBudgetPerFrame;
+		return this.hasScheduledFrame(runtime);
 	}
 
-	private consumeQueuedFrame(runtime: Runtime): boolean {
-		if (this.queuedCycleBudget < runtime.cycleBudgetPerFrame) {
+	private consumeScheduledFrame(runtime: Runtime): boolean {
+		if (!this.hasScheduledFrame(runtime)) {
 			return false;
 		}
-		this.queuedCycleBudget -= runtime.cycleBudgetPerFrame;
+		this.accumulatedHostTimeMs = Math.max(this.accumulatedHostTimeMs - runtime.timing.frameDurationMs, 0);
 		return true;
 	}
 
 	public clearQueuedTime(): void {
-		this.queuedCycleBudget = 0;
-		this.queuedCycleRemainder = 0;
+		this.accumulatedHostTimeMs = 0;
 	}
 
 	public clearTickCompletionQueue(runtime: Runtime): void {
@@ -90,7 +92,7 @@ export class RuntimeMachineSchedulerState {
 	}
 
 	public run(runtime: Runtime, hostDeltaMs: number): void {
-		this.queueHostCycles(runtime, hostDeltaMs);
+		this.accumulateHostTime(runtime, hostDeltaMs);
 		while (this.canRunScheduledUpdate(runtime)) {
 			const progressed = runtime.tickUpdate();
 			if (runtime.executionOverlayActive) {
@@ -179,7 +181,7 @@ export class RuntimeMachineSchedulerState {
 	}
 
 	public refillFrameBudget(runtime: Runtime, frameState: BudgetFrameState): boolean {
-		if (!this.consumeQueuedFrame(runtime)) {
+		if (!this.consumeScheduledFrame(runtime)) {
 			return false;
 		}
 		frameState.cycleBudgetRemaining += runtime.cycleBudgetPerFrame;
@@ -188,7 +190,7 @@ export class RuntimeMachineSchedulerState {
 	}
 
 	public startScheduledFrame(runtime: Runtime): boolean {
-		if (!this.consumeQueuedFrame(runtime)) {
+		if (!this.consumeScheduledFrame(runtime)) {
 			return false;
 		}
 		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);

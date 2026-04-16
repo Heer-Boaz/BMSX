@@ -1,22 +1,26 @@
 #include "runtime_machine_scheduler.h"
 #include "runtime.h"
 #include "../utils/clamp.h"
-#include <cmath>
-#include <limits>
+#include <algorithm>
 #include <stdexcept>
 
 namespace bmsx {
 namespace {
+constexpr int MAX_CATCH_UP_FRAMES = 5;
+constexpr double FRAME_SLICE_EPSILON_MS = 0.000001;
+
 inline std::runtime_error runtimeFault(const std::string& message) {
 	return std::runtime_error(std::string("Runtime fault: ") + message);
 }
 }
 
-void RuntimeMachineSchedulerState::queueHostCycles(const Runtime& runtime, f64 deltaMs) {
-	const f64 totalCycles = m_queuedCycleRemainder + (deltaMs * static_cast<f64>(runtime.m_cpuHz) / 1000.0);
-	const i64 wholeCycles = static_cast<i64>(std::floor(totalCycles));
-	m_queuedCycleRemainder = totalCycles - static_cast<f64>(wholeCycles);
-	m_queuedCycleBudget = clamp(m_queuedCycleBudget + wholeCycles, static_cast<i64>(0), std::numeric_limits<i64>::max());
+void RuntimeMachineSchedulerState::accumulateHostTime(const Runtime& runtime, f64 deltaMs) {
+	const f64 maxAccumulatedMs = runtime.timing.frameDurationMs * static_cast<f64>(MAX_CATCH_UP_FRAMES);
+	m_accumulatedHostTimeMs = clamp(m_accumulatedHostTimeMs + deltaMs, 0.0, maxAccumulatedMs);
+}
+
+bool RuntimeMachineSchedulerState::hasScheduledFrame(const Runtime& runtime) const {
+	return m_accumulatedHostTimeMs + FRAME_SLICE_EPSILON_MS >= runtime.timing.frameDurationMs;
 }
 
 bool RuntimeMachineSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
@@ -26,20 +30,19 @@ bool RuntimeMachineSchedulerState::canRunScheduledUpdate(const Runtime& runtime)
 	if (runtime.m_frameActive && runtime.m_frameState.cycleBudgetRemaining > 0) {
 		return true;
 	}
-	return m_queuedCycleBudget >= runtime.m_cycleBudgetPerFrame;
+	return hasScheduledFrame(runtime);
 }
 
-bool RuntimeMachineSchedulerState::consumeQueuedFrame(const Runtime& runtime) {
-	if (m_queuedCycleBudget < runtime.m_cycleBudgetPerFrame) {
+bool RuntimeMachineSchedulerState::consumeScheduledFrame(const Runtime& runtime) {
+	if (!hasScheduledFrame(runtime)) {
 		return false;
 	}
-	m_queuedCycleBudget -= runtime.m_cycleBudgetPerFrame;
+	m_accumulatedHostTimeMs = std::max(m_accumulatedHostTimeMs - runtime.timing.frameDurationMs, 0.0);
 	return true;
 }
 
 void RuntimeMachineSchedulerState::clearQueuedTime() {
-	m_queuedCycleBudget = 0;
-	m_queuedCycleRemainder = 0.0;
+	m_accumulatedHostTimeMs = 0.0;
 }
 
 void RuntimeMachineSchedulerState::clearTickCompletionQueue(Runtime& runtime) {
@@ -90,7 +93,7 @@ bool RuntimeMachineSchedulerState::consumeTickCompletion(Runtime& runtime, TickC
 }
 
 bool RuntimeMachineSchedulerState::refillFrameBudget(Runtime& runtime, FrameState& frameState) {
-	if (!consumeQueuedFrame(runtime)) {
+	if (!consumeScheduledFrame(runtime)) {
 		return false;
 	}
 	frameState.cycleBudgetRemaining += runtime.m_cycleBudgetPerFrame;
@@ -99,7 +102,7 @@ bool RuntimeMachineSchedulerState::refillFrameBudget(Runtime& runtime, FrameStat
 }
 
 bool RuntimeMachineSchedulerState::startScheduledFrame(Runtime& runtime) {
-	if (!consumeQueuedFrame(runtime)) {
+	if (!consumeScheduledFrame(runtime)) {
 		return false;
 	}
 	runtime.beginFrameState();
@@ -107,7 +110,7 @@ bool RuntimeMachineSchedulerState::startScheduledFrame(Runtime& runtime) {
 }
 
 void RuntimeMachineSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
-	queueHostCycles(runtime, hostDeltaMs);
+	accumulateHostTime(runtime, hostDeltaMs);
 	while (canRunScheduledUpdate(runtime)) {
 		const bool progressed = runtime.tickUpdate();
 		if (runtime.hasActiveTick() && !progressed) {
