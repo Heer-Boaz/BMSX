@@ -1,4 +1,4 @@
-import { point_in_rect } from '../../../../utils/rect_operations';
+import { point_in_rect } from '../../../../common/rect_operations';
 import * as constants from '../../../common/constants';
 import { closeSearch, processInlineFieldPointer } from '../../contrib/find/editor_search';
 import { getSymbolSearchBarBounds, symbolSearchEntryHeight, symbolSearchVisibleResultCount } from '../../ui/editor_view';

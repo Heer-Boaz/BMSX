@@ -6,7 +6,7 @@
 #include <stdexcept>
 
 // stb_image for buffer decoding
-#include "../vendor/stb_image.h"
+#include "vendor/stb_image.h"
 
 namespace bmsx {
 namespace {

@@ -1,4 +1,4 @@
-import { clamp } from '../../../../utils/clamp';
+import { clamp } from '../../../../common/clamp';
 import type { SearchMatch } from '../../../common/types';
 
 export type ReferenceMatchInfo = {

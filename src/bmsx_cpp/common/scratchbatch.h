@@ -10,7 +10,7 @@
 #ifndef BMSX_SCRATCHBATCH_H
 #define BMSX_SCRATCHBATCH_H
 
-#include "../core/types.h"
+#include "core/types.h"
 #include <vector>
 #include <algorithm>
 #include <functional>

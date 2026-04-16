@@ -29,7 +29,7 @@ function registerStubModule(resolvedPath: string, exports: Record<string, unknow
 	};
 }
 
-const gameserializerPath = require.resolve('../../src/bmsx/serializer/gameserializer.ts');
+const gameserializerPath = require.resolve('../../src/bmsx/common/serializer/gameserializer.ts');
 registerStubModule(gameserializerPath, (() => {
 	class SerializerStub {
 		public static onSaves: Record<string, ((...args: any[]) => any)[]> = {};

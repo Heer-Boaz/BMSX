@@ -3,7 +3,7 @@ import * as constants from '../../common/constants';
 import type { EditorTabDescriptor } from '../../common/types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../../common/constants';
-import { ScratchBuffer } from '../../../utils/scratchbuffer';
+import { ScratchBuffer } from '../../../common/scratchbuffer';
 import { editorChromeState } from '../ui/chrome_state';
 import { measureText } from '../../editor/common/text_layout';
 import { editorPointerState } from '../../editor/input/pointer/editor_pointer_state';

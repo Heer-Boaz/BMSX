@@ -2,7 +2,7 @@
 // Handles 3D mesh rendering, instancing, morph targets, skinning, fog, and lighting UBO management.
 import { $ } from '../../core/engine_core';
 import type { Mesh } from './mesh';
-import { Float32ArrayPool } from '../../utils/pool';
+import { Float32ArrayPool } from '../../common/pool';
 import type { vec3arr } from '../../rompack/rompack';
 import { Identifier } from '../../rompack/rompack';
 import meshFS from '../3d/shaders/3d.frag.glsl';
@@ -17,7 +17,7 @@ import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { MeshRenderSubmission } from '../shared/render_types';
 import type { DirectionalLight, PointLight } from './light';
 import { M4, V3, float32ToFloat16, isMatrixMirrored, sphereInFrustumPacked, transformBoundingSphereCenter, transformedBoundingSphereRadius, translationDistanceSquared } from './math3d';
-import { arrays_equal } from '../../utils/arrays_equal';
+import { arrays_equal } from '../../common/arrays_equal';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
 import {
 	beginMeshQueue,
@@ -25,7 +25,7 @@ import {
 	meshQueueBackSize,
 } from '../shared/render_queues';
 import { resolveActiveCamera3D } from '../shared/hardware_camera';
-import { clamp } from '../../utils/clamp';
+import { clamp } from '../../common/clamp';
 
 const BYTES_PER_FLOAT = 4;
 const COLUMN_BYTES = 4 * BYTES_PER_FLOAT; // 4 floats per kolom = 16 bytes

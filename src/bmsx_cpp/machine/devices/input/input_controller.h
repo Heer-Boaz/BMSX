@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../memory.h"
-#include "../../input/input.h"
+#include "machine/memory/memory.h"
+#include "input/input.h"
 #include <array>
 #include <string>
 

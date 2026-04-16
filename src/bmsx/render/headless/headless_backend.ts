@@ -1,4 +1,4 @@
-import { clamp } from '../../utils/clamp';
+import { clamp } from '../../common/clamp';
 import type { color_arr, TextureSource } from '../../rompack/rompack';
 import type {
 	GPUBackend,

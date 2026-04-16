@@ -1,4 +1,4 @@
-import { clamp } from '../../../utils/clamp';
+import { clamp } from '../../../common/clamp';
 import { SCROLLBAR_MIN_THUMB_HEIGHT } from '../../common/constants';
 import type { ScrollbarKind } from '../../common/types';
 import type { RectBounds } from '../../../rompack/rompack';

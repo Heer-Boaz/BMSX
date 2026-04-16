@@ -1,7 +1,7 @@
-#include "lua_load_compiler.h"
-#include "runtime.h"
-#include "../lua/syntax/lualexer.h"
-#include "../lua/syntax/luaparser.h"
+#include "machine/program/lua_load_compiler.h"
+#include "machine/runtime/runtime.h"
+#include "lua/syntax/lualexer.h"
+#include "lua/syntax/luaparser.h"
 #include <cmath>
 #include <limits>
 #include <unordered_map>

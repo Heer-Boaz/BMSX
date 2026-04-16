@@ -1,4 +1,4 @@
-import { clamp } from '../../../../utils/clamp';
+import { clamp } from '../../../../common/clamp';
 import type { RectBounds } from '../../../../rompack/rompack';
 import type { ResourceBrowserItem, ResourceDescriptor } from '../../../common/types';
 import type { CallHierarchyView } from '../../../editor/contrib/call_hierarchy/call_hierarchy_view';

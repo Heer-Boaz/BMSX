@@ -1,5 +1,5 @@
 import { $ } from '../../../../core/engine_core';
-import { clamp } from '../../../../utils/clamp';
+import { clamp } from '../../../../common/clamp';
 import { Runtime } from '../../../../machine/runtime/runtime';
 import * as runtimeLuaPipeline from '../../../runtime/runtime_lua_pipeline';
 import type { ResourceDescriptor } from '../../../../machine/runtime/types';

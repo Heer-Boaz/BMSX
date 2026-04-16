@@ -1,6 +1,6 @@
-#include "geometry_controller.h"
+#include "machine/devices/geometry/geometry_controller.h"
 
-#include "../io.h"
+#include "machine/bus/io.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>

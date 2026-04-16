@@ -1,4 +1,4 @@
-import { point_in_rect } from '../../../../utils/rect_operations';
+import { point_in_rect } from '../../../../common/rect_operations';
 import { closeSearch, processInlineFieldPointer } from '../../contrib/find/editor_search';
 import { getLineJumpBarBounds } from '../../ui/editor_view';
 import type { PointerSnapshot } from '../../../common/types';

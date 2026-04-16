@@ -11,10 +11,10 @@
 #endif
 #include "backend/renderpasslib.h"
 #include "graph/rendergraph.h"
-#include "../core/engine_core.h"
-#include "../rompack/rompack.h"
+#include "core/engine_core.h"
+#include "rompack/rompack.h"
 #include "texturemanager.h"
-#include "../utils/clamp.h"
+#include "common/clamp.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>

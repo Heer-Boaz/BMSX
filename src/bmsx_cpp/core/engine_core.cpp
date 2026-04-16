@@ -4,14 +4,14 @@
 
 #include "engine_core.h"
 #include "system_machine.h"
-#include "../input/input.h"
-#include "../render/texturemanager.h"
-#include "../emulator/runtime.h"
-#include "../emulator/program_linker.h"
-#include "../emulator/font.h"
-#include "../rompack/rompack.h"
-#include "../emulator/memory_map.h"
-#include "../render/shared/render_queues.h"
+#include "input/input.h"
+#include "render/texturemanager.h"
+#include "../machine/runtime/runtime.h"
+#include "../machine/program/program_linker.h"
+#include "../machine/firmware/font.h"
+#include "rompack/rompack.h"
+#include "../machine/memory/memory_map.h"
+#include "render/shared/render_queues.h"
 #include <cstdio>
 #include <cstdlib>
 #include <chrono>

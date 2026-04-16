@@ -3,7 +3,7 @@ import { CHARACTER_CODES, CHARACTER_MAP } from '../../common/character_map';
 import * as constants from '../../common/constants';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../input/keyboard/key_input';
 import type { InlineInputOptions, Position, TextField } from '../../common/types';
-import { clamp } from '../../../utils/clamp';
+import { clamp } from '../../../common/clamp';
 import { LuaLexer } from '../../../lua/syntax/lualexer';
 import { splitText, textFromLines } from '../text/source_text';
 import { advanceToggleBlink } from './caret_blink';

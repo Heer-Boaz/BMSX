@@ -1,4 +1,4 @@
-import { clamp } from '../../../utils/clamp';
+import { clamp } from '../../../common/clamp';
 import { api } from '../ui/view/overlay_api';
 import * as constants from '../../common/constants';
 import { wrapTextDynamic } from '../../common/text_utils';

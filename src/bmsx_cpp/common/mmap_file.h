@@ -9,7 +9,7 @@
 #ifndef BMSX_MMAP_FILE_H
 #define BMSX_MMAP_FILE_H
 
-#include "types.h"
+#include "core/types.h"
 #include <string>
 #include <cstddef>
 

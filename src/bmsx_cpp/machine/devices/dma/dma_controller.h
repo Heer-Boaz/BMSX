@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../memory.h"
+#include "machine/memory/memory.h"
 
 #include <cstdint>
 #include <deque>

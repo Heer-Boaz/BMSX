@@ -1,4 +1,4 @@
-import { clamp } from '../../../utils/clamp';
+import { clamp } from '../../../common/clamp';
 import type { CompletionContext, LuaCompletionItem } from '../../common/types';
 import type { SymbolEntry } from '../../../machine/runtime/types';
 import {

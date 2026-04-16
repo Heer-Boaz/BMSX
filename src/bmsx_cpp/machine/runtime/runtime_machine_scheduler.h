@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../core/types.h"
+#include "core/types.h"
 #include <array>
 
 namespace bmsx {

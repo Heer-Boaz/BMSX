@@ -58,10 +58,10 @@ bmsx_cpp/
 │   ├── rompack.cpp
 │   ├── runtime_assets.h        # RuntimeAssets (img, audio, model, data)
 │   └── runtime_assets.cpp
-├── serializer/
-│   ├── binencoder.h
-│   └── binencoder.cpp
-├── utils/
+├── common/
+│   ├── serializer/
+│   │   ├── binencoder.h
+│   │   └── binencoder.cpp
 │   ├── clamp.h
 │   ├── feature_queue.h
 │   ├── mem_snapshot.h
@@ -69,23 +69,22 @@ bmsx_cpp/
 │   ├── mmap_file.h
 │   ├── mmap_file.cpp
 │   └── scratchbatch.h
-├── emulator/
-│   ├── cpu.h                    # Lua bytecode CPU
-│   ├── cpu.cpp
-│   ├── runtime.h             # Runtime lifecycle + builtins
-│   ├── runtime.cpp
-│   ├── firmware_api.h        # Lua firmware API bindings
-│   ├── firmware_api.cpp
-│   ├── io.h                  # I/O map
-│   ├── memory.h              # Memory
-│   ├── memory.cpp
-│   ├── vdp.h                    # VDP + render integration
-│   ├── vdp.cpp
-│   └── devices/
-│       ├── dma_controller.h
-│       ├── dma_controller.cpp
-│       ├── imgdec_controller.h
-│       └── imgdec_controller.cpp
+├── machine/
+│   ├── bus/
+│   │   └── io.h                 # Memory-mapped I/O register map
+│   ├── common/
+│   │   └── number_format.h
+│   ├── cpu/                     # Lua bytecode CPU + disassembler
+│   ├── devices/
+│   │   ├── dma/
+│   │   ├── geometry/
+│   │   ├── imgdec/
+│   │   ├── input/
+│   │   └── vdp/                 # VDP + packet schema + render budget
+│   ├── firmware/                # Runtime firmware API and Lua globals
+│   ├── memory/                  # RAM, memory map, strings and Lua heap accounting
+│   ├── program/                 # Program loading, linking and load compilation
+│   └── runtime/                 # Runtime lifecycle, timing, frame loop and debug
 └── platform/
     └── libretro/
         ├── libretro.h          # Libretro API header

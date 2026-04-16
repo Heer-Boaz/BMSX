@@ -4,7 +4,7 @@
 
 #include "glyphs.h"
 #include "../gameview.h"
-#include "../../core/font.h"
+#include "core/font.h"
 #include <cctype>
 #include <stdexcept>
 

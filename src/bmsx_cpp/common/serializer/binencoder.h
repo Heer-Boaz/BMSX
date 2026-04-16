@@ -8,7 +8,7 @@
 #ifndef BMSX_BINENCODER_H
 #define BMSX_BINENCODER_H
 
-#include "../core/types.h"
+#include "core/types.h"
 #include <memory>
 #include <string>
 #include <vector>

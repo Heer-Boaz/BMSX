@@ -1,12 +1,12 @@
-#include "imgdec_controller.h"
+#include "machine/devices/imgdec/imgdec_controller.h"
 
-#include "dma_controller.h"
-#include "../memory_map.h"
-#include "../io.h"
-#include "../memory.h"
-#include "../../core/engine_core.h"
-#include "../../rompack/rompack.h"
-#include "../../vendor/stb_image.h"
+#include "machine/devices/dma/dma_controller.h"
+#include "machine/memory/memory_map.h"
+#include "machine/bus/io.h"
+#include "machine/memory/memory.h"
+#include "core/engine_core.h"
+#include "rompack/rompack.h"
+#include "vendor/stb_image.h"
 
 #include <algorithm>
 #include <cstring>

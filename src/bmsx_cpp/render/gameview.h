@@ -11,7 +11,7 @@
 #include "backend/backend.h"
 #include "shared/render_types.h"
 #include "shared/render_queues.h"
-#include "../core/registry.h"
+#include "core/registry.h"
 #include "../subscription.h"
 #include <memory>
 #include <unordered_map>

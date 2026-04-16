@@ -1,5 +1,5 @@
 import { $ } from '../../../core/engine_core';
-import { lower_bound } from '../../../utils/lower_bound';
+import { lower_bound } from '../../../common/lower_bound';
 import { EditorFont } from './view/editor_font';
 import type { FontVariant } from '../../../render/shared/bmsx_font';
 import type { Viewport } from '../../../rompack/rompack';

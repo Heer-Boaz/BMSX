@@ -1,4 +1,4 @@
-import { clamp } from '../../../../utils/clamp';
+import { clamp } from '../../../../common/clamp';
 import type { TimerHandle } from '../../../../platform/platform';
 import { computeAggregatedEditorDiagnostics, markDiagnosticsDirty, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
 import { editorRuntimeState } from '../../common/editor_runtime_state';

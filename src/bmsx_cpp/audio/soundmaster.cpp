@@ -3,9 +3,9 @@
  */
 
 #include "soundmaster.h"
-#include "../core/engine_core.h"
-#include "../emulator/cpu.h"
-#include "../emulator/runtime.h"
+#include "core/engine_core.h"
+#include "../machine/cpu/cpu.h"
+#include "../machine/runtime/runtime.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>

@@ -1,6 +1,6 @@
-#include "runtime_machine_scheduler.h"
-#include "runtime.h"
-#include "../utils/clamp.h"
+#include "machine/runtime/runtime_machine_scheduler.h"
+#include "machine/runtime/runtime.h"
+#include "common/clamp.h"
 #include <algorithm>
 #include <stdexcept>
 

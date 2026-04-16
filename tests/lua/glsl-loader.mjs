@@ -5,7 +5,7 @@ export class Api {
 	emit_gameplay(_eventName, _emitterId, _payload) {}
 }
 `],
-	['src/bmsx/serializer/gameserializer.ts', `
+	['src/bmsx/common/serializer/gameserializer.ts', `
 export class Serializer {
 	static onSaves = Object.create(null);
 	static excludedProperties = Object.create(null);

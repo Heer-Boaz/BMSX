@@ -1,4 +1,4 @@
-import { clamp } from '../../../../utils/clamp';
+import { clamp } from '../../../../common/clamp';
 import type { EditorDiagnostic } from '../../../common/types';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { activateCodeTab, setActiveTab } from '../../../workbench/ui/tabs';

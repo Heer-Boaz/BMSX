@@ -7,7 +7,7 @@ import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, pos
 import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../../common/types';
 import type { StackTraceFrame } from '../../../lua/luavalue';
 import type { RectBounds } from '../../../rompack/rompack';
-import { point_in_rect } from '../../../utils/rect_operations';
+import { point_in_rect } from '../../../common/rect_operations';
 import { Runtime } from '../../../machine/runtime/runtime';
 import { api } from '../ui/view/overlay_api';
 import { centerCursorVertically, revealCursor, updateDesiredColumn } from '../ui/caret';

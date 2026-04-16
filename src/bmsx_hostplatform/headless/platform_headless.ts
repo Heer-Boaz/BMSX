@@ -1,4 +1,4 @@
-import { new_vec2 } from 'bmsx/utils/vector_operations';
+import { new_vec2 } from 'bmsx/common/vector_operations';
 import {
 	AudioClipHandle,
 	AudioFilterParams,

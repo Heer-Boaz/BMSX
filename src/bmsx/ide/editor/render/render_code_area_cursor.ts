@@ -1,6 +1,6 @@
 import type { CachedHighlight, CursorScreenInfo } from '../../common/types';
 import type { Font } from '../../../render/shared/bmsx_font';
-import { clamp } from '../../../utils/clamp';
+import { clamp } from '../../../common/clamp';
 import * as constants from '../../common/constants';
 import { api } from '../ui/view/overlay_api';
 import { drawHighlightSlice } from './render_code_area_highlights';

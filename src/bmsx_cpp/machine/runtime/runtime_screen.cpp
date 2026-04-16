@@ -1,7 +1,7 @@
-#include "runtime_screen.h"
-#include "../core/engine_core.h"
-#include "runtime.h"
-#include "../render/shared/render_queues.h"
+#include "machine/runtime/runtime_screen.h"
+#include "core/engine_core.h"
+#include "machine/runtime/runtime.h"
+#include "render/shared/render_queues.h"
 #include <cstdio>
 #include <cstdlib>
 

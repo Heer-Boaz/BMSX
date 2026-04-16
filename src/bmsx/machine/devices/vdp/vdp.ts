@@ -1,7 +1,7 @@
 import { $ } from '../../../core/engine_core';
 import { taskGate } from '../../../core/taskgate';
 import { Runtime } from '../../runtime/runtime';
-import { decodePngToRgba } from '../../../utils/image_decode';
+import { decodePngToRgba } from '../../../common/image_decode';
 import { SKYBOX_FACE_KEYS, type Layer2D, type SkyboxImageIds, type color } from '../../../render/shared/render_types';
 import type { RomAsset, RomImgAsset } from '../../../rompack/rompack';
 import {

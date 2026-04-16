@@ -4,8 +4,8 @@ import * as constants from '../../common/constants';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../machine/firmware/lua_builtin_descriptors';
 import { LuaLexer } from '../../../lua/syntax/lualexer';
 import { KEYWORDS } from '../../../lua/syntax/luatoken';
-import { clamp } from '../../../utils/clamp';
-import { ScratchBuffer } from '../../../utils/scratchbuffer';
+import { clamp } from '../../../common/clamp';
+import { ScratchBuffer } from '../../../common/scratchbuffer';
 
 // Lightweight Lua syntax highlighter used by the IDE.
 // Pure functions with no runtime/editor state dependencies beyond provided inputs.

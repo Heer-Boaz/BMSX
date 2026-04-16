@@ -7,7 +7,7 @@
 #ifndef BMSX_ROMPACK_H
 #define BMSX_ROMPACK_H
 
-#include "../core/types.h"
+#include "core/types.h"
 #include <string>
 
 namespace bmsx {

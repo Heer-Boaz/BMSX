@@ -28,7 +28,7 @@ const { finished } = require('stream/promises');
 // Import encodeBinary from the public API surface
 // Use direct path to avoid pulling entire engine via public alias during Node execution
 // @ts-ignore
-const { encodeBinary, decodeBinary } = require('../../src/bmsx/serializer/binencoder');
+const { encodeBinary, decodeBinary } = require('../../src/bmsx/common/serializer/binencoder');
 // @ts-ignore
 const { buildRomMetadataSection } = require('../../src/bmsx/rompack/rom_metadata');
 // @ts-ignore

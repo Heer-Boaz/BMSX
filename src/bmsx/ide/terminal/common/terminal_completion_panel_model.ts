@@ -1,4 +1,4 @@
-import { clamp } from '../../../utils/clamp';
+import { clamp } from '../../../common/clamp';
 
 export type TerminalPanelGridLayout = {
 	columns: number;

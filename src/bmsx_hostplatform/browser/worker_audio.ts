@@ -1,4 +1,4 @@
-import { clamp01 } from 'bmsx/utils/clamp';
+import { clamp01 } from 'bmsx/common/clamp';
 import {
 	AudioService,
 	AudioClipHandle,

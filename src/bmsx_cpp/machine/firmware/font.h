@@ -1,13 +1,13 @@
 /*
  * font.h - font variants
  *
- * Mirrors TypeScript emulator/font.ts.
+ * Mirrors TypeScript machine/firmware/font.ts.
  */
 
-#ifndef BMSX_EMULATOR_FONT_H
-#define BMSX_EMULATOR_FONT_H
+#ifndef BMSX_MACHINE_FONT_H
+#define BMSX_MACHINE_FONT_H
 
-#include "../core/font.h"
+#include "core/font.h"
 
 namespace bmsx {
 
@@ -25,4 +25,4 @@ public:
 
 } // namespace bmsx
 
-#endif // BMSX_EMULATOR_FONT_H
+#endif // BMSX_MACHINE_FONT_H

@@ -1,6 +1,6 @@
 import { $ } from '../../core/engine_core';
 import { extractErrorMessage, type StackTraceFrame } from '../../lua/luavalue';
-import { clamp01 } from '../../utils/clamp';
+import { clamp01 } from '../../common/clamp';
 import {
 	createNativeFunction,
 	isNativeFunction,

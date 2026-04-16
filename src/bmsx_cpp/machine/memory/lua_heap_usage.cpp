@@ -1,5 +1,5 @@
-#include "lua_heap_usage.h"
-#include "memory_map.h"
+#include "machine/memory/lua_heap_usage.h"
+#include "machine/memory/memory_map.h"
 #include <stdexcept>
 #include <string>
 

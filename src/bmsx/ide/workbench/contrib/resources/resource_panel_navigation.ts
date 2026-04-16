@@ -1,4 +1,4 @@
-import { clamp } from '../../../../utils/clamp';
+import { clamp } from '../../../../common/clamp';
 import type { ResourceBrowserItem } from '../../../common/types';
 
 export function resourcePanelIndexAtRelativeY(scroll: number, relativeY: number, lineHeight: number, itemCount: number): number {

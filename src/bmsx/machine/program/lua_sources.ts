@@ -1,6 +1,6 @@
 import type { RawAssetSource } from '../../rompack/asset_source';
 import type { CartridgeIndex, CartridgeLayerId, RomLuaAsset } from '../../rompack/rompack';
-import { decodeuint8arr } from '../../serializer/binencoder';
+import { decodeuint8arr } from '../../common/serializer/binencoder';
 import { PROGRAM_ASSET_ID } from './program_asset';
 
 export type LuaSourceRecord = RomLuaAsset & { base_src: string };

@@ -19,8 +19,8 @@
 
 #include "libretro.h"
 #include "libretro_platform.h"
-#include "../../core/taskgate.h"
-#include "../../emulator/runtime.h"
+#include "core/taskgate.h"
+#include "../../machine/runtime/runtime.h"
 
 // Core info
 static constexpr const char* CORE_NAME = "BMSX";

@@ -1,4 +1,4 @@
-import { decodeBinary, encodeBinary, requireObject, requireObjectKey } from '../../serializer/binencoder';
+import { decodeBinary, encodeBinary, requireObject, requireObjectKey } from '../../common/serializer/binencoder';
 import type { Program, ProgramMetadata, Proto, Value } from '../cpu/cpu';
 import { StringPool, isStringValue, stringValueToString } from '../memory/string_pool';
 

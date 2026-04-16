@@ -3,7 +3,7 @@ import { applyCaseOutsideStrings, expandTabs as expandTabsExternal } from '../..
 import * as constants from '../../common/constants';
 import { api } from '../ui/view/overlay_api';
 import { splitText } from '../text/source_text';
-import { ScratchBuffer } from '../../../utils/scratchbuffer';
+import { ScratchBuffer } from '../../../common/scratchbuffer';
 
 let CASE_INSENSITIVE_EDITOR = true;
 

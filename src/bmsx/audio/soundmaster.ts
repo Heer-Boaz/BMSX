@@ -2,7 +2,7 @@ import { $ } from '../core/engine_core';
 import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, VoiceEndedEvent, AudioFilterParams, RngService, SubscriptionHandle, createSubscriptionHandle } from '../platform';
 import { asset_id, AudioMeta, AudioType, AudioTypes, CartridgeLayerId, id2res, RomAsset } from '../rompack/rompack';
 import { Runtime } from '../machine/runtime/runtime';
-import { clamp01 } from '../utils/clamp';
+import { clamp01 } from '../common/clamp';
 
 export type VoiceId = number;
 type ModulationInput = RandomModulationParams | ModulationParams;

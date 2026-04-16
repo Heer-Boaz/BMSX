@@ -1,5 +1,5 @@
-#include "disassembler.h"
-#include "number_format.h"
+#include "machine/cpu/disassembler.h"
+#include "machine/common/number_format.h"
 
 #include <algorithm>
 #include <cctype>

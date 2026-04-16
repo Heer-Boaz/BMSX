@@ -1,4 +1,4 @@
-import { clamp_safe } from '../../../utils/clamp';
+import { clamp_safe } from '../../../common/clamp';
 import type { CodeTabContext, EditorSnapshot, Position } from '../../common/types';
 import { editorDocumentState } from '../../editor/editing/editor_document_state';
 import { editorViewState } from '../../editor/ui/editor_view_state';

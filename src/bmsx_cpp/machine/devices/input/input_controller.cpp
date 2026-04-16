@@ -1,4 +1,4 @@
-#include "input_controller.h"
+#include "machine/devices/input/input_controller.h"
 
 namespace bmsx {
 namespace {

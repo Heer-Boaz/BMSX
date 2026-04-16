@@ -1,5 +1,5 @@
-import { clamp } from '../../../../utils/clamp';
-import { point_in_rect } from '../../../../utils/rect_operations';
+import { clamp } from '../../../../common/clamp';
+import { point_in_rect } from '../../../../common/rect_operations';
 import { measureText } from '../../../editor/common/text_layout';
 import { editorViewState } from '../../../editor/ui/editor_view_state';
 import type { EditorContextMenuEntry, EditorContextToken } from '../../../common/types';

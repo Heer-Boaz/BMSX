@@ -3,9 +3,9 @@
  */
 
 #include "runtime_assets.h"
-#include "../serializer/binencoder.h"
-#include "../emulator/program_loader.h"
-#include "../utils/mem_snapshot.h"
+#include "common/serializer/binencoder.h"
+#include "../machine/program/program_loader.h"
+#include "common/mem_snapshot.h"
 #include <cstring>
 #include <stdexcept>
 #if BMSX_ENABLE_ZLIB

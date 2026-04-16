@@ -44,8 +44,8 @@ import {
 } from '../bus/io';
 import { enforceLuaHeapBudget } from './lua_heap_usage';
 import { hashAssetId, tokenKey } from '../../rompack/asset_tokens';
-import { ScratchBatch } from '../../utils/scratchbatch';
-import { formatNumberAsHex } from '../../utils/byte_hex_string';
+import { ScratchBatch } from '../../common/scratchbatch';
+import { formatNumberAsHex } from '../../common/byte_hex_string';
 
 export type AssetType = 'image' | 'audio';
 

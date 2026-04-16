@@ -3,18 +3,18 @@
  */
 
 #include "libretro_platform.h"
-#include "../../core/types.h"
-#include "../../input/input.h"
-#include "../../input/gamepadinput.h"
-#include "../../input/keyboardinput.h"
-#include "../../input/pointerinput.h"
-#include "../../render/backend/renderpasslib.h"
-#include "../../render/texturemanager.h"
-#include "../../utils/mem_snapshot.h"
-#include "../../emulator/runtime.h"
+#include "core/types.h"
+#include "input/input.h"
+#include "input/gamepadinput.h"
+#include "input/keyboardinput.h"
+#include "input/pointerinput.h"
+#include "render/backend/renderpasslib.h"
+#include "render/texturemanager.h"
+#include "common/mem_snapshot.h"
+#include "../../machine/runtime/runtime.h"
 #if BMSX_ENABLE_GLES2
-#include "../../render/backend/gles2_backend.h"
-#include "../../render/post/crt_pipeline_gles2.h"
+#include "render/backend/gles2_backend.h"
+#include "render/post/crt_pipeline_gles2.h"
 #endif
 #include <chrono>
 #include <cstring>

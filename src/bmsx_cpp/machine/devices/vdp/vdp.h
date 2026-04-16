@@ -1,11 +1,11 @@
 #pragma once
 
-#include "cpu.h"
-#include "io.h"
-#include "memory.h"
-#include "vdp_render_budget.h"
-#include "../rompack/rompack.h"
-#include "../render/shared/render_types.h"
+#include "machine/cpu/cpu.h"
+#include "machine/bus/io.h"
+#include "machine/memory/memory.h"
+#include "machine/devices/vdp/vdp_render_budget.h"
+#include "rompack/rompack.h"
+#include "render/shared/render_types.h"
 #include <array>
 #include <functional>
 #include <optional>

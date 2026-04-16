@@ -1,5 +1,5 @@
 import type { CachedHighlight } from '../../common/types';
-import { clamp } from '../../../utils/clamp';
+import { clamp } from '../../../common/clamp';
 import * as constants from '../../common/constants';
 import { api } from '../ui/view/overlay_api';
 import { getDiagnosticsForRow } from '../contrib/diagnostics/diagnostics_controller';

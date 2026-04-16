@@ -12,10 +12,10 @@
 
 #include "types.h"
 #include "registry.h"
-#include "../rompack/runtime_assets.h"
+#include "rompack/runtime_assets.h"
 #include "../platform.h"
-#include "../render/gameview.h"
-#include "../audio/soundmaster.h"
+#include "render/gameview.h"
+#include "audio/soundmaster.h"
 #include <chrono>
 #include <memory>
 

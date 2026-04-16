@@ -1,5 +1,5 @@
-#include "resource_usage_detector.h"
-#include "lua_heap_usage.h"
+#include "machine/runtime/resource_usage_detector.h"
+#include "machine/memory/lua_heap_usage.h"
 
 namespace bmsx {
 

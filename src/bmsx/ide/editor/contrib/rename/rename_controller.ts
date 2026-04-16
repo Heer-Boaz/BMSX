@@ -3,7 +3,7 @@ import { type ReferenceMatchInfo } from '../references/reference_state';
 import type { InlineInputOptions, TextField, SearchMatch } from '../../../common/types';
 import { applyInlineFieldEditing, createInlineTextField, setFieldText } from '../../ui/inline_text_field';
 import * as constants from '../../../common/constants';
-import { clamp } from '../../../../utils/clamp';
+import { clamp } from '../../../../common/clamp';
 import { LuaLexer } from '../../../../lua/syntax/lualexer';
 import { focusEditorFromRename } from './rename_prompt';
 import { textFromLines } from '../../text/source_text';

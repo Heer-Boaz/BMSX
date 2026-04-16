@@ -1,4 +1,4 @@
-import { Float32ArrayPool } from '../../utils/pool';
+import { Float32ArrayPool } from '../../common/pool';
 import type { AmbientLight } from '../3d/light';
 import * as MeshPipeline from '../3d/mesh_pipeline';
 import {

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../core/taskgate.h"
-#include "../memory.h"
+#include "core/taskgate.h"
+#include "machine/memory/memory.h"
 #include <cstdint>
 #include <exception>
 #include <deque>

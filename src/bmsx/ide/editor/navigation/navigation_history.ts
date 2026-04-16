@@ -1,4 +1,4 @@
-import { clamp } from '../../../utils/clamp';
+import { clamp } from '../../../common/clamp';
 import { setActiveTab, activateCodeTab } from '../../workbench/ui/tabs';
 import { focusChunkSource } from '../../workbench/contrib/resources/resource_navigation';
 import { getActiveCodeTabContext, getCodeTabContextById, isCodeTabActive } from '../../workbench/ui/code_tab_contexts';

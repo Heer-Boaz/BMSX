@@ -1,7 +1,7 @@
-#include "dma_controller.h"
+#include "machine/devices/dma/dma_controller.h"
 
-#include "../io.h"
-#include "../memory_map.h"
+#include "machine/bus/io.h"
+#include "machine/memory/memory_map.h"
 
 #include <algorithm>
 #include <limits>

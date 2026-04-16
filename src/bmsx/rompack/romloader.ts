@@ -15,13 +15,13 @@ import type {
 	color_arr,
 	CartRomHeader,
 } from './rompack';
-import { decodeBinary, decodeBinaryWithPropTable, toF32, typedArrayFromBytes } from '../serializer/binencoder';
+import { decodeBinary, decodeBinaryWithPropTable, toF32, typedArrayFromBytes } from '../common/serializer/binencoder';
 import { parseRomMetadataSection } from './rom_metadata';
 import { CART_ROM_BASE_HEADER_SIZE, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_ROM_PROGRAM_HEADER_SIZE } from './rompack';
 import { inflate } from 'pako';
 import { AssetSourceStack, type RawAssetSource } from './asset_source';
 import { decodeRomToc } from './rom_toc';
-import { formatNumberAsHex } from '../utils/byte_hex_string';
+import { formatNumberAsHex } from '../common/byte_hex_string';
 
 const utf8Decoder = new TextDecoder();
 

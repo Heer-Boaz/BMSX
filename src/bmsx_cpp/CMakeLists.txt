@@ -98,13 +98,13 @@ add_library(bmsx_core STATIC
 	core/system_machine.cpp
 	core/registry.cpp
 	rompack/runtime_assets.cpp
-	serializer/binencoder.cpp
+	common/serializer/binencoder.cpp
 	rompack/rompack.cpp
 	core/font.cpp
 	core/taskgate.cpp
-	utils/byte_hex_string.cpp
-	utils/mem_snapshot.cpp
-	utils/scratchbuffer.cpp
+	common/byte_hex_string.cpp
+	common/mem_snapshot.cpp
+	common/scratchbuffer.cpp
 
 	# Audio systems
 	audio/biquad_filter.cpp
@@ -129,34 +129,34 @@ add_library(bmsx_core STATIC
 	render/graph/rendergraph.cpp
 	render/shared/glyphs.cpp
 
-	# Emulator runtime (Lua bytecode interpreter)
-	emulator/cpu.cpp
-	emulator/font.cpp
+	# Machine runtime (Lua bytecode interpreter)
+	machine/cpu/cpu.cpp
+	machine/firmware/font.cpp
 	lua/syntax/lualexer.cpp
 	lua/syntax/luaparser.cpp
-	emulator/devices/dma_controller.cpp
-	emulator/devices/geometry_controller.cpp
-	emulator/devices/imgdec_controller.cpp
-	emulator/devices/input_controller.cpp
-	emulator/firmware_api.cpp
-	emulator/disassembler.cpp
-	emulator/lua_load_compiler.cpp
-	emulator/lua_globals.cpp
-	emulator/lua_heap_usage.cpp
-	emulator/lua_runtime.cpp
-	emulator/resource_usage_detector.cpp
-	emulator/runtime.cpp
-	emulator/runtime_frame_loop.cpp
-	emulator/runtime_machine_scheduler.cpp
-	emulator/runtime_screen.cpp
-	emulator/runtime_timing.cpp
-	emulator/runtime_debug.cpp
-	emulator/memory.cpp
-	emulator/memory_map.cpp
-	emulator/vdp.cpp
-	emulator/string_memory.cpp
-	emulator/program_loader.cpp
-	emulator/program_linker.cpp
+	machine/devices/dma/dma_controller.cpp
+	machine/devices/geometry/geometry_controller.cpp
+	machine/devices/imgdec/imgdec_controller.cpp
+	machine/devices/input/input_controller.cpp
+	machine/firmware/firmware_api.cpp
+	machine/cpu/disassembler.cpp
+	machine/program/lua_load_compiler.cpp
+	machine/firmware/lua_globals.cpp
+	machine/memory/lua_heap_usage.cpp
+	machine/firmware/lua_runtime.cpp
+	machine/runtime/resource_usage_detector.cpp
+	machine/runtime/runtime.cpp
+	machine/runtime/runtime_frame_loop.cpp
+	machine/runtime/runtime_machine_scheduler.cpp
+	machine/runtime/runtime_screen.cpp
+	machine/runtime/runtime_timing.cpp
+	machine/runtime/runtime_debug.cpp
+	machine/memory/memory.cpp
+	machine/memory/memory_map.cpp
+	machine/devices/vdp/vdp.cpp
+	machine/memory/string_memory.cpp
+	machine/program/program_loader.cpp
+	machine/program/program_linker.cpp
 )
 
 # stb is plain C; compile it as C to avoid libstdc++'s legacy C wrappers (e.g. <math.h>)

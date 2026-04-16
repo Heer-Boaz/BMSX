@@ -1,4 +1,4 @@
-import { formatNumberAsHex } from '../utils/byte_hex_string';
+import { formatNumberAsHex } from '../byte_hex_string';
 
 export const VERSION = 0xA1;
 const utf8FatalDecoder = new TextDecoder('utf-8', { fatal: true });

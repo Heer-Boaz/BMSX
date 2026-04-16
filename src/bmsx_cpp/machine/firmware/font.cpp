@@ -2,7 +2,7 @@
  * font.cpp - font variants
  */
 
-#include "font.h"
+#include "machine/firmware/font.h"
 
 namespace bmsx {
 namespace {

@@ -1,7 +1,7 @@
 import { BFont } from './shared/bitmap_font';
 import { $ } from '../core/engine_core';
-import { multiply_vec2 } from '../utils/vector_operations';
-import { shallowcopy } from '../utils/shallowcopy';
+import { multiply_vec2 } from '../common/vector_operations';
+import { shallowcopy } from '../common/shallowcopy';
 import type { vec2 } from '../rompack/rompack';
 import * as render_queues from './shared/render_queues';
 import type { AtmosphereParams, BackendContext, GPUBackend, PresentationMode, RenderContext, RenderSubmission, RenderSubmitQueue, TextureHandle } from './backend/pipeline_interfaces';

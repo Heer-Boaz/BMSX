@@ -6,7 +6,7 @@
 
 #include "keyboardinput.h"
 #include "input.h"
-#include "../core/engine_core.h"
+#include "core/engine_core.h"
 #include <algorithm>
 
 namespace bmsx {

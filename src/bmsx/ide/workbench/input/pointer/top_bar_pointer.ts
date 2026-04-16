@@ -1,4 +1,4 @@
-import { point_in_rect } from '../../../../utils/rect_operations';
+import { point_in_rect } from '../../../../common/rect_operations';
 import { isTopBarCommandEnabled, MENU_COMMANDS, MENU_IDS, type MenuId, type TopBarButtonId } from '../../ui/top_bar_menu';
 import { editorChromeState } from '../../ui/chrome_state';
 import type { PointerSnapshot } from '../../../common/types';

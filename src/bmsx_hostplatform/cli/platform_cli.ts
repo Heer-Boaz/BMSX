@@ -27,7 +27,7 @@ import {
 } from 'bmsx/platform';
 import { HeadlessPlatformServices, HeadlessPlatformOptions } from '../headless/platform_headless';
 import { HeadlessGameViewHost, type HeadlessPresentedFrameBuffer } from 'bmsx/render/headless/headless_view';
-import { new_vec2 } from 'bmsx/utils/vector_operations';
+import { new_vec2 } from 'bmsx/common/vector_operations';
 import { type vec2 } from 'bmsx/rompack/rompack';
 
 interface TerminalDimensions {

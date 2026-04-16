@@ -32,7 +32,7 @@ import {
 import { AssetSourceStack, type RawAssetSource } from '../../rompack/asset_source';
 import { buildRuntimeAssetLayer, parseCartHeader, type RuntimeAssetLayer } from '../../rompack/romloader';
 import { parseRomMetadataSection } from '../../rompack/rom_metadata';
-import { decodeBinary, decodeBinaryWithPropTable } from '../../serializer/binencoder';
+import { decodeBinary, decodeBinaryWithPropTable } from '../../common/serializer/binencoder';
 import { createIdentifierCanonicalizer } from '../../lua/syntax/identifier_canonicalizer';
 import { Api } from '../firmware/firmware_api';
 import { CPU, Table, type Closure, type Value, type Program, type ProgramMetadata, RunResult, type NativeFunction, type NativeObject } from '../cpu/cpu';

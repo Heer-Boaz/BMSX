@@ -1,7 +1,7 @@
-#include "runtime_frame_loop.h"
-#include "../core/engine_core.h"
-#include "../input/input.h"
-#include "runtime.h"
+#include "machine/runtime/runtime_frame_loop.h"
+#include "core/engine_core.h"
+#include "input/input.h"
+#include "machine/runtime/runtime.h"
 #include <algorithm>
 
 namespace bmsx {

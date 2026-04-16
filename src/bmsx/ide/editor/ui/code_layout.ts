@@ -1,6 +1,6 @@
 import type { TimerHandle } from '../../../platform/platform';
-import { clamp } from '../../../utils/clamp';
-import { ScratchBuffer } from '../../../utils/scratchbuffer';
+import { clamp } from '../../../common/clamp';
+import { ScratchBuffer } from '../../../common/scratchbuffer';
 import { highlightTextLine as highlightTextLineExternal } from '../../language/lua/syntax_highlight';
 import { highlightAemTextLine } from '../../language/aem/aem_syntax_highlight';
 import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type TokenAnnotation } from '../contrib/intellisense/semantic_model';

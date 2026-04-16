@@ -1,15 +1,15 @@
-#include "vdp.h"
-#include "memory_map.h"
-#include "../rompack/runtime_assets.h"
-#include "../core/engine_core.h"
-#include "../core/font.h"
+#include "machine/devices/vdp/vdp.h"
+#include "machine/memory/memory_map.h"
+#include "rompack/runtime_assets.h"
+#include "core/engine_core.h"
+#include "core/font.h"
 #if BMSX_ENABLE_GLES2
-#include "../render/backend/gles2_backend.h"
+#include "render/backend/gles2_backend.h"
 #endif
-#include "../render/shared/render_queues.h"
-#include "../render/texturemanager.h"
-#include "../vendor/stb_image.h"
-#include "devices/imgdec_controller.h"
+#include "render/shared/render_queues.h"
+#include "render/texturemanager.h"
+#include "vendor/stb_image.h"
+#include "machine/devices/imgdec/imgdec_controller.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>

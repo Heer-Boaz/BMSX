@@ -1,7 +1,7 @@
 import { editorRuntimeState } from '../../common/editor_runtime_state';
 import { showEditorMessage } from '../../../workbench/common/feedback_state';
 import * as constants from '../../../common/constants';
-import { clamp, clamp_wrap } from '../../../../utils/clamp';
+import { clamp, clamp_wrap } from '../../../../common/clamp';
 import { getSelectionRange, getSelectionText } from '../../editing/text_editing_and_selection';
 import type { GlobalSearchJob, GlobalSearchMatch, SearchComputationJob, SearchMatch, TextField } from '../../../common/types';
 import type { ResourceDescriptor } from '../../../../machine/runtime/types';

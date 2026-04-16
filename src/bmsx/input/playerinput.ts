@@ -5,8 +5,8 @@ import { KeyboardInput } from './keyboardinput';
 import { ContextStack, MappingContext } from './context';
 import { $ } from '../core/engine_core';
 import { Runtime } from '../machine/runtime/runtime';
-import { clamp } from '../utils/clamp';
-import { deep_clone } from '../utils/deep_clone';
+import { clamp } from '../common/clamp';
+import { deep_clone } from '../common/deep_clone';
 
 const ACTION_GUARD_MIN_MS = 24;
 const ACTION_GUARD_MAX_MS = 120;

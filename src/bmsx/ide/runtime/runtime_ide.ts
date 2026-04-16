@@ -10,7 +10,7 @@ import {
 	type StackTraceFrame,
 } from '../../lua/luavalue';
 import { publishOverlayFrame } from '../../render/editor/editor_overlay_queue';
-import { clamp_fallback } from '../../utils/clamp';
+import { clamp_fallback } from '../../common/clamp';
 import * as constants from '../common/constants';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../common/constants';
 import { editorDebuggerState } from '../workbench/contrib/debugger/debugger_state';
@@ -31,7 +31,7 @@ import { TerminalMode } from '../terminal/ui/terminal_mode';
 import type { Runtime } from '../../machine/runtime/runtime';
 import type { RuntimeOptions } from '../../machine/runtime/types';
 import { resolveWorkspacePath } from '../workspace/workspace_path';
-import { shallowcopy } from '../../utils/shallowcopy';
+import { shallowcopy } from '../../common/shallowcopy';
 import { api as overlay_api } from '../editor/ui/view/overlay_api';
 import { createCartEditor } from '../cart_editor';
 import { clearExecutionStopHighlights, setExecutionStopHighlight } from '../editor/contrib/runtime_error/runtime_error_navigation';

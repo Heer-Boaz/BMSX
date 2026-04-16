@@ -5,7 +5,7 @@ import { RenderPassLibrary } from '../backend/renderpasslib';
 import type { color } from '../shared/render_types';
 import { M4 } from './math3d';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
-import { clamp } from '../../utils/clamp';;
+import { clamp } from '../../common/clamp';;
 import { resolveActiveCamera3D } from '../shared/hardware_camera';
 
 let vao: WebGLVertexArrayObject = null;

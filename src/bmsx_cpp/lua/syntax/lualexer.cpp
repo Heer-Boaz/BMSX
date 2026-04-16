@@ -1,5 +1,5 @@
 #include "lualexer.h"
-#include "../../core/types.h"
+#include "core/types.h"
 #include <cmath>
 #include <cstdlib>
 

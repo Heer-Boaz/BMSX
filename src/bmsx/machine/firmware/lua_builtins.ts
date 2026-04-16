@@ -5,7 +5,7 @@ import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../../lua/luaerrors';
 import { LuaInterpreter, LuaNativeFunction } from '../../lua/luaruntime';
 import { extractErrorMessage, isLuaCallSignal, LuaFunctionValue, LuaNativeValue, type LuaCallResult } from '../../lua/luavalue';
 import { isLuaTable, LuaTable, LuaValue } from '../../lua/luavalue';
-import { arrayify } from '../../utils/arrayify';
+import { arrayify } from '../../common/arrayify';
 import { API_METHOD_METADATA } from './api_metadata';
 import {
 	DEFAULT_LUA_BUILTIN_FUNCTIONS,

@@ -1,5 +1,5 @@
-import { buildBinaryPropTable, encodeBinaryWithPropTable } from '../serializer/binencoder';
-import { formatNumberAsHex } from '../utils/byte_hex_string';
+import { buildBinaryPropTable, encodeBinaryWithPropTable } from '../common/serializer/binencoder';
+import { formatNumberAsHex } from '../common/byte_hex_string';
 
 export const ROM_METADATA_MAGIC = 0x44544d42; // 'BMTD' little-endian
 export const ROM_METADATA_VERSION = 1;

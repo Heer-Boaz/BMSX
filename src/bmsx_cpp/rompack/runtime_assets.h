@@ -15,9 +15,9 @@
 #ifndef BMSX_RUNTIME_ASSETS_H
 #define BMSX_RUNTIME_ASSETS_H
 
-#include "../core/types.h"
-#include "../serializer/binencoder.h"
-#include "../emulator/program_loader.h"
+#include "core/types.h"
+#include "common/serializer/binencoder.h"
+#include "../machine/program/program_loader.h"
 #include <string>
 #include <unordered_map>
 #include <vector>

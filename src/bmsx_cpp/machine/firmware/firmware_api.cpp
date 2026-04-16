@@ -1,8 +1,8 @@
-#include "firmware_api.h"
+#include "machine/firmware/firmware_api.h"
 
-#include "../core/engine_core.h"
-#include "../input/input.h"
-#include "runtime.h"
+#include "core/engine_core.h"
+#include "input/input.h"
+#include "machine/runtime/runtime.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>

@@ -1,6 +1,6 @@
 import { PNG } from 'pngjs';
 import type { GLTFModel, ImgMeta, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
-import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
+import { decodeBinary } from '../../src/bmsx/common/serializer/binencoder';
 import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../../src/bmsx/rompack/romloader';
 import { decodeProgramSymbolsAsset, PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/machine/program/program_asset';
 import { generateAtlasName } from '../rompacker/atlasbuilder';

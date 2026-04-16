@@ -1,5 +1,5 @@
 import { $ } from '../../core/engine_core';
-import { clamp } from '../../utils/clamp';
+import { clamp } from '../../common/clamp';
 import type { Runtime } from './runtime';
 
 export type TickCompletion = {

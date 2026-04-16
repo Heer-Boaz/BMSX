@@ -19,7 +19,7 @@ import { Runtime } from '../machine/runtime/runtime';
 import { IRQ_NEWGAME } from '../machine/bus/io';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 import { InputSource, KeyModifier } from '../input/playerinput';
-import { shallowcopy } from '../utils/shallowcopy';
+import { shallowcopy } from '../common/shallowcopy';
 import { clearAllQueues } from '../render/shared/render_queues';
 import { clearOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { Table } from '../machine/cpu/cpu';

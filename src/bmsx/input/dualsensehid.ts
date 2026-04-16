@@ -8,7 +8,7 @@
  */
 import { $ } from '../core/engine_core';
 import type { PlatformHIDDevice, PlatformHIDInputReportEvent } from '../platform';
-import { formatNumberAsHex } from '../utils/byte_hex_string';
+import { formatNumberAsHex } from '../common/byte_hex_string';
 
 
 const SONY_VID = 0x054C;

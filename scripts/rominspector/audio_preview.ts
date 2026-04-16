@@ -1,5 +1,5 @@
-import { clamp } from '../../src/bmsx/utils/clamp';
-import { decodeWavToPcm } from '../../src/bmsx/utils/wav';
+import { clamp } from '../../src/bmsx/common/clamp';
+import { decodeWavToPcm } from '../../src/bmsx/common/wav';
 import { parseAudioInfo } from '../../src/bmsx/machine/runtime/runtime_assets';
 
 export type AudioPreviewPcm = {

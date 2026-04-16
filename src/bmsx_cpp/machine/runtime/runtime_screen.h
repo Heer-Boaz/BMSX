@@ -1,8 +1,8 @@
 #pragma once
 
-#include "runtime_machine_scheduler.h"
-#include "../core/types.h"
-#include "../render/gameview.h"
+#include "machine/runtime/runtime_machine_scheduler.h"
+#include "core/types.h"
+#include "render/gameview.h"
 #include <chrono>
 
 namespace bmsx {

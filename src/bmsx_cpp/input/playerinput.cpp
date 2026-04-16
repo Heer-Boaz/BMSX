@@ -6,9 +6,9 @@
 
 #include "playerinput.h"
 #include "actionparser.h"
-#include "../core/engine_core.h"
-#include "../emulator/runtime.h"
-#include "../utils/clamp.h"
+#include "core/engine_core.h"
+#include "../machine/runtime/runtime.h"
+#include "common/clamp.h"
 #include <algorithm>
 #include <cmath>
 

@@ -1,4 +1,4 @@
-import { point_in_rect } from '../../../../utils/rect_operations';
+import { point_in_rect } from '../../../../common/rect_operations';
 import * as constants from '../../../common/constants';
 import { applySearchSelection, ensureSearchSelectionVisible, processInlineFieldPointer } from '../../contrib/find/editor_search';
 import { closeLineJump } from '../../contrib/find/line_jump';

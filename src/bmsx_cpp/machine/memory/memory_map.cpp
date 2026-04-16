@@ -1,6 +1,6 @@
-#include "memory_map.h"
+#include "machine/memory/memory_map.h"
 
-#include "../rompack/rompack.h"
+#include "rompack/rompack.h"
 #include <stdexcept>
 
 namespace bmsx {

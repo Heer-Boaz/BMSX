@@ -1,5 +1,5 @@
 import * as constants from '../../../common/constants';
-import { clamp } from '../../../../utils/clamp';
+import { clamp } from '../../../../common/clamp';
 import { Scrollbar } from '../../../editor/ui/scrollbar';
 import { renderResourcePanel } from '../../render/render_resource_panel';
 import type { ResourceBrowserItem } from '../../../common/types';

@@ -1,5 +1,5 @@
 import { Oriented, vec3 } from '../../rompack/rompack';
-import { clamp } from '../../utils/clamp';
+import { clamp } from '../../common/clamp';
 import { extractFrustumPlanesInto, M4, Mat4Float32, Q, quat, sphereInFrustumPacked, V3 } from './math3d';
 
 // +-------------------------------------------------------------------------------------------------------------------------------------------------------------+

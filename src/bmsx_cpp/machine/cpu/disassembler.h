@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cpu.h"
+#include "machine/cpu/cpu.h"
 #include <optional>
 #include <string>
 #include <vector>

@@ -1,6 +1,6 @@
-#include "string_memory.h"
-#include "lua_heap_usage.h"
-#include "memory.h"
+#include "machine/memory/string_memory.h"
+#include "machine/memory/lua_heap_usage.h"
+#include "machine/memory/memory.h"
 
 #include <stdexcept>
 

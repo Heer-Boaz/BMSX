@@ -7,7 +7,7 @@ import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceSt
 import { collectRuntimeStackFrames, formatRuntimeErrorLocation, formatRuntimeStackFrame } from '../../editor/contrib/runtime_error/runtime_error_util';
 import type { LuaSourceRecord } from '../../../machine/program/lua_sources';
 import { RAM_SIZE } from '../../../machine/memory/memory_map';
-import { formatByteSize, lenAndHash } from '../../../utils/byte_hex_string';
+import { formatByteSize, lenAndHash } from '../../../common/byte_hex_string';
 import { getCodeTabContexts } from '../../workbench/ui/code_tab_contexts';
 
 type PathEntryKind = 'rom' | 'saved' | 'dirty' | 'saved_dirty' | 'unsaved';

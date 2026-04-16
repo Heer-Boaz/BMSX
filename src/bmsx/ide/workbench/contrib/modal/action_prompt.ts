@@ -1,4 +1,4 @@
-import { point_in_rect } from '../../../../utils/rect_operations';
+import { point_in_rect } from '../../../../common/rect_operations';
 import * as constants from '../../../common/constants';
 import { measureText } from '../../../editor/common/text_layout';
 import { drawEditorText } from '../../../editor/render/text_renderer';

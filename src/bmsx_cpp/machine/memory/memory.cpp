@@ -1,6 +1,6 @@
-#include "memory.h"
-#include "lua_heap_usage.h"
-#include "../utils/byte_hex_string.h"
+#include "machine/memory/memory.h"
+#include "machine/memory/lua_heap_usage.h"
+#include "common/byte_hex_string.h"
 
 #include <algorithm>
 #include <cstring>

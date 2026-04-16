@@ -4,9 +4,9 @@
 
 #pragma once
 
-#include "../rompack/runtime_assets.h"
+#include "rompack/runtime_assets.h"
 #include "biquad_filter.h"
-#include "../core/registry.h"
+#include "core/registry.h"
 #include "../subscription.h"
 #include <array>
 #include <functional>

@@ -1,6 +1,6 @@
 import type { PointerSnapshot } from '../../../common/types';
 import type { RectBounds } from '../../../../rompack/rompack';
-import { clamp } from '../../../../utils/clamp';
+import { clamp } from '../../../../common/clamp';
 import * as constants from '../../../common/constants';
 import { gotoDiagnostic } from '../../../editor/contrib/diagnostics/diagnostic_navigation';
 import { computeProblemsPanelItemHeight, computeProblemsPanelLayout } from './problems_panel_layout';

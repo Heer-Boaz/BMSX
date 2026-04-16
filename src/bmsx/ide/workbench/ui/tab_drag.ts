@@ -1,6 +1,6 @@
 import * as constants from '../../common/constants';
 import type { EditorTabDescriptor } from '../../common/types';
-import { clamp } from '../../../utils/clamp';
+import { clamp } from '../../../common/clamp';
 import { editorChromeState } from './chrome_state';
 import { getTabBarTotalHeight } from '../common/layout';
 import { measureText } from '../../editor/common/text_layout';

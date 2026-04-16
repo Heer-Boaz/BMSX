@@ -46,7 +46,7 @@ import { drawTerminalGridPanel } from './terminal_completion_panels_renderer';
 import { TerminalSuggestController } from './terminal_suggest_controller';
 import { TerminalSuggestModel } from '../common/terminal_suggest_model';
 import type { MutableTextPosition, TextBuffer } from '../../editor/text/text_buffer';
-import { clamp } from '../../../utils/clamp';
+import { clamp } from '../../../common/clamp';
 import { textFromLines } from '../../editor/text/source_text';
 import { COLOR_COMPLETION_PREVIEW_TEXT, TAB_SPACES } from '../../common/constants';
 import { advancePhaseBlink, resetBlinkState } from '../../editor/ui/caret_blink';

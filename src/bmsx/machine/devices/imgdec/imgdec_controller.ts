@@ -1,5 +1,5 @@
 import { taskGate } from '../../../core/taskgate';
-import { decodePngToRgba } from '../../../utils/image_decode';
+import { decodePngToRgba } from '../../../common/image_decode';
 import {
 	IMG_CTRL_START,
 	IMG_STATUS_BUSY,
@@ -25,7 +25,7 @@ import {
 import { ATLAS_PRIMARY_SLOT_ID, ATLAS_SECONDARY_SLOT_ID, ENGINE_ATLAS_INDEX, generateAtlasName } from '../../../rompack/rompack';
 import type { AssetEntry, ImageWritePlan } from '../../memory/memory';
 import { Memory } from '../../memory/memory';
-import type { DecodedImage } from '../../../utils/image_decode';
+import type { DecodedImage } from '../../../common/image_decode';
 import { DmaController } from '../dma/dma_controller';
 
 type ImgDecJob = {

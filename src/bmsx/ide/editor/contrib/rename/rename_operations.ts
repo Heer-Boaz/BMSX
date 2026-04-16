@@ -1,7 +1,7 @@
 import type { CodeTabContext, SearchMatch } from '../../../common/types';
 import type { ReferenceMatchInfo } from '../references/reference_state';
 import type { LuaSourceRange } from '../../../../lua/syntax/lua_ast';
-import { clamp } from '../../../../utils/clamp';
+import { clamp } from '../../../../common/clamp';
 import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } from '../../../workbench/ui/code_tab_contexts';
 import { findResourceDescriptorForChunk } from '../../../workbench/contrib/resources/resource_lookup';
 import { getTextSnapshot, splitText } from '../../text/source_text';

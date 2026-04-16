@@ -7,7 +7,7 @@
 #ifndef BMSX_INPUTTYPES_H
 #define BMSX_INPUTTYPES_H
 
-#include "../core/types.h"
+#include "core/types.h"
 #include <string>
 #include <unordered_map>
 #include <vector>

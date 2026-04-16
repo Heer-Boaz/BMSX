@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string_view>
 
-#include "memory_map.h"
+#include "machine/memory/memory_map.h"
 
 namespace bmsx {
 

@@ -1,4 +1,4 @@
-import { point_in_rect } from '../../../../utils/rect_operations';
+import { point_in_rect } from '../../../../common/rect_operations';
 import type { PointerSnapshot } from '../../../common/types';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../../editor/contrib/intellisense/intellisense';
 import { editorPointerState, resetPointerClickTracking } from '../../../editor/input/pointer/editor_pointer_state';

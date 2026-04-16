@@ -10,9 +10,9 @@
 #include "../post/crt_pipeline_gles2.h"
 #endif
 #include "../graph/rendergraph.h"
-#include "../../core/engine_core.h"
-#include "../../emulator/runtime.h"
-#include "../../rompack/rompack.h"
+#include "core/engine_core.h"
+#include "../../machine/runtime/runtime.h"
+#include "rompack/rompack.h"
 #include <algorithm>
 #include <stdexcept>
 

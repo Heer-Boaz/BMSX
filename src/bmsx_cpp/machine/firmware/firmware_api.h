@@ -1,10 +1,10 @@
 #pragma once
 
-#include "cpu.h"
-#include "font.h"
-#include "../input/inputtypes.h"
-#include "../core/types.h"
-#include "../render/shared/render_types.h"
+#include "machine/cpu/cpu.h"
+#include "machine/firmware/font.h"
+#include "input/inputtypes.h"
+#include "core/types.h"
+#include "render/shared/render_types.h"
 #include <array>
 #include <memory>
 #include <optional>

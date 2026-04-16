@@ -1,8 +1,8 @@
-#include "cpu.h"
-#include "lua_heap_usage.h"
-#include "memory.h"
-#include "number_format.h"
-#include "vdp_packet_schema.h"
+#include "machine/cpu/cpu.h"
+#include "machine/memory/lua_heap_usage.h"
+#include "machine/memory/memory.h"
+#include "machine/common/number_format.h"
+#include "machine/devices/vdp/vdp_packet_schema.h"
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -1421,7 +1421,7 @@ RunResult CPU::run(int instructionBudget) {
 #pragma GCC diagnostic ignored "-Wpedantic"
 	static void* const kDispatchTargets[65] = {
 #define OP(name) &&dispatch_##name,
-#include "cpu_opcode_list.inl"
+#include "machine/cpu/cpu_opcode_list.inl"
 #undef OP
 		&&dispatch_INVALID
 	};
@@ -1487,7 +1487,7 @@ dispatch_loop_check:
 #else
 	switch (static_cast<OpCode>(decoded->op)) {
 #define DISPATCH_LABEL(name) case OpCode::name:
-#include "cpu_dispatch.inl"
+#include "machine/cpu/cpu_dispatch.inl"
 #undef DISPATCH_LABEL
 		default:
 			throw BMSX_RUNTIME_ERROR("Unknown opcode.");
@@ -1526,7 +1526,7 @@ dispatch_continue:
 #define TABLE_CACHE_INDEX() (wordIndex)
 #define DISPATCH_LABEL(name) dispatch_##name:
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
-#include "cpu_dispatch.inl"
+#include "machine/cpu/cpu_dispatch.inl"
 dispatch_INVALID:
 	throw BMSX_RUNTIME_ERROR("Unknown opcode.");
 #undef DISPATCH_CONTINUE
@@ -1561,7 +1561,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
 #pragma GCC diagnostic ignored "-Wpedantic"
 	static void* const kDispatchTargets[65] = {
 #define OP(name) &&dispatch_##name,
-#include "cpu_opcode_list.inl"
+#include "machine/cpu/cpu_opcode_list.inl"
 #undef OP
 		&&dispatch_INVALID
 	};
@@ -1627,7 +1627,7 @@ dispatch_loop_check:
 #else
 	switch (static_cast<OpCode>(decoded->op)) {
 #define DISPATCH_LABEL(name) case OpCode::name:
-#include "cpu_dispatch.inl"
+#include "machine/cpu/cpu_dispatch.inl"
 #undef DISPATCH_LABEL
 		default:
 			throw BMSX_RUNTIME_ERROR("Unknown opcode.");
@@ -1666,7 +1666,7 @@ dispatch_continue:
 #define TABLE_CACHE_INDEX() (wordIndex)
 #define DISPATCH_LABEL(name) dispatch_##name:
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
-#include "cpu_dispatch.inl"
+#include "machine/cpu/cpu_dispatch.inl"
 dispatch_INVALID:
 	throw BMSX_RUNTIME_ERROR("Unknown opcode.");
 #undef DISPATCH_CONTINUE
@@ -1816,7 +1816,7 @@ void CPU::executeInstruction(CallFrame& frame, const DecodedInstruction& decoded
 #define DISPATCH_LABEL(name) case OpCode::name:
 #define DISPATCH_CONTINUE() do { return; } while (0)
 	switch (static_cast<OpCode>(decoded.op)) {
-#include "cpu_dispatch.inl"
+#include "machine/cpu/cpu_dispatch.inl"
 		default:
 			throw BMSX_RUNTIME_ERROR("Unknown opcode.");
 	}

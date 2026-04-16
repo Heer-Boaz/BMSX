@@ -1,4 +1,4 @@
-import { clamp } from '../../../../utils/clamp';
+import { clamp } from '../../../../common/clamp';
 import { editorDocumentState } from '../../editing/editor_document_state';
 import { editorViewState } from '../../ui/editor_view_state';
 import {
@@ -27,7 +27,7 @@ import type { LuaBuiltinDescriptor, LuaDefinitionRange, LuaSymbolEntry } from '.
 import * as constants from '../../../common/constants';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
 import { isLuaCommentContext } from '../../../common/text_utils';
-import { point_in_rect } from '../../../../utils/rect_operations';
+import { point_in_rect } from '../../../../common/rect_operations';
 import { LuaLexer } from '../../../../lua/syntax/lualexer';
 import { assignRowColumn } from '../../../common/state_utils';
 import * as TextEditing from '../../editing/text_editing_and_selection';

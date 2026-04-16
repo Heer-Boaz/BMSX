@@ -7,11 +7,11 @@
 
 #include "render_queues.h"
 #include "glyphs.h"
-#include "../../rompack/runtime_assets.h"
-#include "../../core/engine_core.h"
-#include "../../core/font.h"
-#include "../../emulator/runtime.h"
-#include "../../utils/clamp.h"
+#include "rompack/runtime_assets.h"
+#include "core/engine_core.h"
+#include "core/font.h"
+#include "../../machine/runtime/runtime.h"
+#include "common/clamp.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>

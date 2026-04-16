@@ -1,4 +1,4 @@
-import { clamp } from '../../../utils/clamp';
+import { clamp } from '../../../common/clamp';
 import * as constants from '../../common/constants';
 import { getCodeAreaBounds, maximumLineLength } from './editor_view';
 import { caretNavigation } from './caret';

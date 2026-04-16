@@ -1,4 +1,4 @@
-import { clamp } from '../../../../utils/clamp';
+import { clamp } from '../../../../common/clamp';
 import type { LuaDefinitionLocation, LuaSymbolEntry, ResourceDescriptor } from '../../../../machine/runtime/types';
 import type { CodeTabContext, SearchMatch, SymbolSearchResult } from '../../../common/types';
 import { parseLuaIdentifierChain } from '../../../language/lua/lua_identifier_chain';

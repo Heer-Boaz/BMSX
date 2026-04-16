@@ -1,6 +1,6 @@
 import { $ } from '../../../../core/engine_core';
 import type { RectBounds } from '../../../../rompack/rompack';
-import { clamp } from '../../../../utils/clamp';
+import { clamp } from '../../../../common/clamp';
 import * as constants from '../../../common/constants';
 import { codeViewportTop } from '../../../editor/ui/editor_view';
 import { bottomMargin } from '../../common/layout';

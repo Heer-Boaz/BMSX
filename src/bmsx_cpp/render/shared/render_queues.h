@@ -8,7 +8,7 @@
 #ifndef BMSX_RENDER_QUEUES_H
 #define BMSX_RENDER_QUEUES_H
 
-#include "../../utils/feature_queue.h"
+#include "common/feature_queue.h"
 #include "render_types.h"
 #include <functional>
 

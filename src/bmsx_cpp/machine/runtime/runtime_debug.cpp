@@ -1,7 +1,7 @@
-#include "runtime.h"
+#include "machine/runtime/runtime.h"
 
-#include "disassembler.h"
-#include "../core/engine_core.h"
+#include "machine/cpu/disassembler.h"
+#include "core/engine_core.h"
 
 #include <cctype>
 #include <iostream>

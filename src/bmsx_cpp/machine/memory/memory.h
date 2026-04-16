@@ -6,10 +6,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "cpu.h"
-#include "memory_map.h"
-#include "io.h"
-#include "../core/types.h"
+#include "machine/cpu/cpu.h"
+#include "machine/memory/memory_map.h"
+#include "machine/bus/io.h"
+#include "core/types.h"
 
 namespace bmsx {
 
