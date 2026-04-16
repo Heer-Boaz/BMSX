@@ -28,6 +28,42 @@ The TypeScript runtime is the browser/headless/CLI host for the console. The C++
 - headless/CLI use debug artifacts
 - libretro/custom-host runs require non-debug BIOS and non-debug cart ROMs
 
+## Runtime Timing
+
+BMSX derives VBLANK length automatically from `machine.ufps`, CPU frequency, and visible render height. It does not use a cart manifest `vblank_cycles` override.
+
+The runtime assumes 50 Hz class machines are PAL-like 313-scanline frames and faster refresh rates are NTSC-like 262-scanline frames. This replaces the old `renderHeight + 1` derivation, which made Pietious at 5 MHz/50 Hz/192 visible lines get only 544 VBLANK cycles. The scanline model gives 38659 VBLANK cycles for that same case.
+
+Keep `machine.ufps` as the display refresh rate, normally 50 or 60 Hz. Implement 25/30 Hz MSX/Konami-style game cadence in cart code by waiting for two VBLANK IRQs per game tick, not by lowering `machine.ufps`.
+
+The runtime uses a simplified CRT scanline model:
+
+- `machine.ufps <= 55 Hz` is PAL-like and uses 313 total scanlines.
+- `machine.ufps > 55 Hz` is NTSC-like and uses 262 total scanlines.
+- `machine.ufps` remains the display refresh rate, normally 50 or 60 Hz.
+- A 25 or 30 Hz game loop is implemented by cart code waiting for two VBLANK IRQs per game tick.
+
+The VBLANK calculation is:
+
+```text
+cyclesPerFrame = cpuHz / refreshHz
+visibleCycles = floor(cyclesPerFrame * renderHeight / totalScanlines)
+vblankCycles = cyclesPerFrame - visibleCycles
+```
+
+The scanline model produces:
+
+```text
+cyclesPerFrame = 100000
+totalScanlines = 313
+visibleCycles = floor(100000 * 192 / 313) = 61341
+vblankCycles = 38659
+```
+
+This keeps the machine refresh at 50/60 Hz while giving carts enough VBLANK budget to use explicit MSX/Konami-style loops: arm input before waiting for VBLANK, update/draw according to the cart cadence, and submit VDP work inside the VBLANK window.
+
+The BIOS exposes `update_world()` and `draw_world()` as separate cart-facing phases. Carts own the hardware cadence: arm input before the VBLANK that samples it, run `update_world()` during visible-frame CPU time, reset the VDP stream and call `draw_world()` in the next VBLANK, then DMA-submit the stream. There is no cart-facing `update()` wrapper.
+
 ## Common Commands
 
 Build BIOS debug artifacts:

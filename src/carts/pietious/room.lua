@@ -530,15 +530,15 @@ rebuild them.
 
 The VDP packet memory is different:
 
-	- every frame, the cart resets vdp_stream_cursor back to sys_vdp_stream_base
-	- draw code then claims packet space again in the same frame order
+	- every game tick, the cart resets vdp_stream_cursor back to sys_vdp_stream_base
+	- draw code then claims packet space again in the same tick order
 	- the stream is therefore a transient submission buffer, not a stable object
 	  store owned by this room
 
 However, resetting the cursor does NOT zero the underlying RAM. That gives us a
 useful optimization:
 
-	1. claim the same amount of stream space every frame
+	1. claim the same amount of stream space every game tick
 	2. remember the previously claimed packet_base
 	3. if the new claim returns the same packet_base and our cached tile data is
 	   still valid, do not rewrite the packet payload

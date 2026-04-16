@@ -4,8 +4,8 @@
 -- NOTE FOR CART AUTHORS:
 -- Do not `require('engine')` from cart code and do not call `engine.*`.
 -- Carts must use cart-facing globals/helpers (`oget`, `rget`, `inst`,
--- `update`, `reset`, `add_space`, `set_space`, `get_space`, `define_fsm`, `define_effect`,
--- etc.) that are injected by the runtime.
+-- `update_world`, `draw_world`, `reset`, `add_space`, `set_space`, `get_space`,
+-- `define_fsm`, `define_effect`, etc.) that are injected by the runtime.
 -- Keep cart identifier strings compact. Redundant long prefixes in tags/events/effects/
 -- timeline IDs are forbidden when short local IDs are sufficient (string memory + compare
 -- cost is part of the console budget).
@@ -553,7 +553,7 @@ function engine.attach_component(object_or_id, component_or_type)
 	error('attach_component expects a component instance or type name')
 end
 
-function engine.update()
+function engine.update_world()
 	-- if ide_editor.is_enabled() then
 	-- 	ide_editor.update()
 	-- 	if ide_editor.is_open() then
@@ -565,6 +565,9 @@ function engine.update()
 	if not quickmenu.is_open() then
 		world_instance:update()
 	end
+end
+
+function engine.draw_world()
 	world_instance:draw()
 	if not quickmenu.is_open() then
 		resource_usage_gizmo.draw()

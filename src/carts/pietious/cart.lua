@@ -175,24 +175,32 @@ function init()
 	pending_title_boot_epoch = init_epoch
 end
 
+-- Pietious owns the hardware cadence explicitly. Input is armed before the
+-- VBLANK that samples it, game logic runs during the following visible frame,
+-- rendering/DMA happens in the next VBLANK, and the extra wait keeps the game
+-- tick at half the display refresh rate.
+mem[sys_inp_ctrl] = inp_ctrl_arm
+local flags
+repeat
+	halt_until_irq
+	flags = dispatch_irqs()
+until (flags & irq_vblank) ~= 0
+
 while true do
-	local flags
-	mem[sys_inp_ctrl] = inp_ctrl_arm
+	update_world()
+
 	repeat
 		halt_until_irq
 		flags = dispatch_irqs()
 	until (flags & irq_vblank) ~= 0
 	vdp_stream_cursor = sys_vdp_stream_base
-	update()
-	do
-		local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
-		if used_bytes ~= 0 then
-			mem[sys_dma_src] = sys_vdp_stream_base
-			mem[sys_dma_dst] = sys_vdp_fifo
-			mem[sys_dma_len] = used_bytes
-			mem[sys_dma_ctrl] = dma_ctrl_start
-		end
-	end
+	draw_world()
+	mem[sys_dma_src] = sys_vdp_stream_base
+	mem[sys_dma_dst] = sys_vdp_fifo
+	mem[sys_dma_len] = vdp_stream_cursor - sys_vdp_stream_base
+	mem[sys_dma_ctrl] = dma_ctrl_start
+
+	mem[sys_inp_ctrl] = inp_ctrl_arm
 	repeat
 		halt_until_irq
 		flags = dispatch_irqs()

@@ -134,7 +134,8 @@ void Runtime::runEngineBuiltinPrelude() {
 		"set_space",
 		"get_space",
 		"attach_component",
-		"update",
+		"update_world",
+		"draw_world",
 		"reset",
 		"configure_ecs",
 		"apply_default_pipeline",
@@ -173,24 +174,9 @@ void Runtime::runEngineBuiltinPrelude() {
 		"find_any_by_tag",
 		"eventemitter",
 	};
-	// Keep this in sync with TS Runtime.LUA_OVERRIDEABLE_GLOBALS.
-	static const std::array overrideableEngineBuiltins = {
-		"update",
-	};
-	const auto isOverrideableBuiltin = [](const char* builtinName) {
-		for (const char* overrideableName : overrideableEngineBuiltins) {
-			if (std::string_view(overrideableName) == builtinName) {
-				return true;
-			}
-		}
-		return false;
-	};
 	auto* engineModule = asTable(requireModule("bios/engine"));
 	for (const char* name : engineBuiltins) {
 		Value key = canonicalizeIdentifier(name);
-		if (isOverrideableBuiltin(name) && !isNil(m_cpu.getGlobalByKey(key))) {
-			continue;
-		}
 		m_cpu.setGlobalByKey(key, engineModule->get(key));
 	}
 	std::cout << "[Runtime] prelude: engine builtins bound" << std::endl;

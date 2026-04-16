@@ -2401,7 +2401,7 @@ end
 function new_game()
 end
 
-function update()
+local update_boot_screen<const> = function()
 	boot_screen_visible = true
 	mem[sys_inp_player] = 1
 	mem[sys_inp_query] = &'down[rp]'
@@ -2526,7 +2526,7 @@ while true do
 	until (flags & irq_vblank) ~= 0
 	mem[sys_inp_player] = 1
 	vdp_stream_cursor = sys_vdp_stream_base
-	update()
+	update_boot_screen()
 	do local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
 		if used_bytes ~= 0 then
 			mem[sys_dma_src] = sys_vdp_stream_base
