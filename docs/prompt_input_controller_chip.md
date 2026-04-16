@@ -1,8 +1,10 @@
-# Implementation Prompt: Input Controller Chip (MMIO Action Query via `string_ref`)
+# Design Note: Input Controller Chip (MMIO Action Query via `string_ref`)
 
 ## Goal
 
 Implement a new **Input Controller chip** — a memory-mapped I/O device on the BMSX fantasy console that allows cart Lua code to query input actions via `mem[]` MMIO writes using the new `&'...'` string_ref syntax. This replaces the current `action_triggered(...)` native function call with a hardware-style MMIO interface where the cart writes an action expression string (as a `string_ref`) into an IO register, and reads back the boolean result from another IO register.
+
+BMSX is a fantasy console with real console discipline: cart-visible behavior should route through the machine memory map and device controllers, not through host/runtime shortcuts.
 
 ---
 
@@ -13,7 +15,7 @@ BMSX is a fantasy console with a custom Lua VM. The architecture mirrors retro h
 - **Memory-mapped I/O**: Cart code writes to special addresses via `mem[addr] = value`. The compiler lowers this to `STORE_MEM` opcodes. The runtime dispatches IO writes to device controllers.
 - **IO slots**: `memory.ts` stores IO values in `ioSlots[]`. IO writes call `ioWriteHandler.onIoWrite(addr, value)`. IO slots can hold non-numeric values (including `StringValue` objects) — unlike RAM which only accepts numbers.
 - **Runtime dispatch**: `runtime.ts` has an `onIoWrite(addr, value)` method that checks the address and dispatches to the appropriate device controller (DMA, IMGDEC, GEO, etc.).
-- **Device pattern**: Each device is a class with `reset()`, `onCtrlWrite()`, and `onService()` methods. Devices are instantiated in `runtime.ts` with references to `Memory`, IRQ callbacks, and scheduling callbacks. See `src/bmsx/emulator/devices/*.ts` for examples.
+- **Device pattern**: Each device is a class with `reset()`, `onCtrlWrite()`, and `onService()` methods. Devices are instantiated in `runtime.ts` with references to `Memory`, IRQ callbacks, and scheduling callbacks. See `src/bmsx/machine/devices/*.ts` for examples.
 - **String refs**: The `&'...'` syntax creates a `StringRefLiteralExpression` in the AST, which the compiler interns as a `StringValue` via `program.internString()`. At runtime this is a `StringValue` object (with `.id` and `.text`). When written to an IO slot, the `StringValue` is stored directly (not as a number).
 - **Compile-time enforcement**: `mmio_register_spec.ts` defines `MMIO_REGISTER_SPECS` with `writeRequirement: 'string_ref'`. The compiler's `validateMemoryStore()` uses flow-sensitive analysis (`compile_value_flow.ts`) to verify that any value written to such an address is provably a `string_ref` at compile time. The spec array is currently empty (placeholder comment says "Input Controller registers will be added here").
 - **Existing input API**: Cart code currently calls `action_triggered('left[p]')` — a native function that calls `PlayerInput.checkActionTriggered(actionDef)`. This evaluates action parser expressions like `'up[jp] || a[jp]'` via `ActionDefinitionEvaluator`. The result is a boolean. A lower-level `get_action_state(action, player, window?)` returns packed flags as a number. The MMIO chip mirrors the `action_triggered()` path — same expression language, same `checkActionTriggered()` dispatch.
@@ -24,7 +26,7 @@ BMSX is a fantasy console with a custom Lua VM. The architecture mirrors retro h
 
 ### Concept
 
-The Input Controller is a thin MMIO facade over the existing `PlayerInput` / `ContextStack` / `InputStateManager` infrastructure. The cart interacts with it purely via MMIO:
+The Input Controller is an MMIO device over the existing `PlayerInput` / `ContextStack` / `InputStateManager` infrastructure. The cart interacts with it purely via MMIO:
 
 1. **Register** action bindings during init: `mem[sys_inp_action] = &'dash'`, `mem[sys_inp_bind] = &'lb,left'`, `mem[sys_inp_ctrl] = inp_ctrl_commit`
 2. **Query** a plain action name: `mem[sys_inp_query] = &'left'`
@@ -213,7 +215,7 @@ mem[sys_inp_query] = q  -- compile error
 
 ## Implementation Plan
 
-### Step 1: IO Register Constants (`src/bmsx/emulator/io.ts`)
+### Step 1: IO Register Constants (`src/bmsx/machine/bus/io.ts`)
 
 Insert the Input Controller register block. The base index follows the last existing device. Currently the last device block ends at `IO_PAYLOAD_WRITE_PTR_INDEX`. Insert the Input Controller block *before* the payload region:
 
@@ -257,7 +259,7 @@ export const INP_CTRL_ARM = 2;   // Latch (sample) input state for this frame
 export const INP_CTRL_RESET = 3;   // Reset all action definitions
 ```
 
-### Step 2: MMIO Register Specs (`src/bmsx/emulator/mmio_register_spec.ts`)
+### Step 2: MMIO Register Specs (`src/bmsx/machine/bus/mmio_register_spec.ts`)
 
 Add the string_ref-enforced registers to `MMIO_REGISTER_SPECS`:
 
@@ -274,7 +276,7 @@ export const MMIO_REGISTER_SPECS: ReadonlyArray<MmioRegisterSpec> = [
 
 This makes the compiler enforce `&'...'` syntax for writes to the action, bind, query, and consume registers.
 
-### Step 3: Lua Global Constants (`src/bmsx/emulator/lua_globals.ts`)
+### Step 3: Lua Global Constants (`src/bmsx/machine/firmware/lua_globals.ts`)
 
 Register the IO address constants and control command constants as Lua globals:
 
@@ -297,7 +299,7 @@ runtimeLuaPipeline.registerGlobal(runtime, 'inp_ctrl_reset', INP_CTRL_RESET);
 
 Also add matching entries to `lua_builtin_descriptors.ts` under the system constants section.
 
-### Step 4: Input Controller Device (`src/bmsx/emulator/devices/input_controller.ts`)
+### Step 4: Input Controller Device (`src/bmsx/machine/devices/input/input_controller.ts`)
 
 Create a new device class following the existing device pattern (see `dma_controller.ts`, `imgdec_controller.ts`):
 
@@ -441,7 +443,7 @@ export class InputController {
 
 **Note**: The `InputController` does not use `packActionStateFlags` — the status register is a simple boolean (1/0) since modifier semantics are embedded in the expression string. The `ACTION_STATE_FLAG_*` constants remain useful for the existing `get_action_state()` Lua native function.
 
-### Step 5: Runtime IO Write Dispatch (`src/bmsx/emulator/runtime.ts`)
+### Step 5: Runtime IO Write Dispatch (`src/bmsx/machine/runtime/runtime.ts`)
 
 In `onIoWrite()`, add handling for the Input Controller registers. Note: the current `onIoWrite` early-returns if `typeof value !== 'number'` — this must be adjusted because the Input Controller accepts `StringValue` writes:
 
@@ -482,12 +484,12 @@ And call `this.inputController.reset()` in the runtime's reset path.
 
 The C++ (libretro) runtime needs matching implementation:
 
-1. **IO constants** in the C++ equivalent of `io.ts` (likely `src/bmsx_cpp/emulator/io.h` or similar)
-2. **Input Controller device class** in `src/bmsx_cpp/emulator/devices/input_controller.cpp/.h`
+1. **IO constants** in `src/bmsx_cpp/machine/bus/io.h`
+2. **Input Controller device class** in `src/bmsx_cpp/machine/devices/input/input_controller.cpp/.h`
 3. **Runtime dispatch** in the C++ runtime's IO write handler, same structure as TS
 4. **String handling**: In C++, the IO slot will contain a string handle ID (not a `StringValue` object). The device reads the handle, resolves it via the string pool to get the text, then evaluates the action query. The C++ `PlayerInput::getActionState()` and `PlayerInput::consumeAction()` already exist.
 
-### Step 7: Lua Builtin Descriptors (`src/bmsx/emulator/lua_builtin_descriptors.ts`)
+### Step 7: Lua Builtin Descriptors (`src/bmsx/machine/firmware/lua_builtin_descriptors.ts`)
 
 Add descriptors for the new system constants so they appear in IDE autocomplete:
 
@@ -535,15 +537,15 @@ end
 
 | File | Action |
 |---|---|
-| `src/bmsx/emulator/io.ts` | Add IO_INP_* index and address constants + INP_CTRL_* command constants |
-| `src/bmsx/emulator/mmio_register_spec.ts` | Add string_ref write requirements for action, bind, query, and consume registers |
-| `src/bmsx/emulator/lua_globals.ts` | Register IO address constants + control command constants + flag constants as Lua globals |
-| `src/bmsx/emulator/lua_builtin_descriptors.ts` | Add descriptor entries for all new sys_inp_*, inp_ctrl_*, and inp_* constants |
-| `src/bmsx/emulator/devices/input_controller.ts` | **New file**: InputController device class — thin MMIO facade over PlayerInput / ContextStack, uses `checkActionTriggered()` for expression queries |
-| `src/bmsx/emulator/runtime.ts` | Instantiate InputController, dispatch IO writes in onIoWrite (including string_ref writes), fix non-numeric guard |
-| `src/bmsx_cpp/emulator/io.h` (or equivalent) | C++ IO constants + control command constants |
-| `src/bmsx_cpp/emulator/devices/input_controller.cpp/.h` | **New files**: C++ InputController with same register/query/consume semantics |
-| `src/bmsx_cpp/emulator/runtime.cpp` (or equivalent) | C++ runtime dispatch |
+| `src/bmsx/machine/bus/io.ts` | Add IO_INP_* index and address constants + INP_CTRL_* command constants |
+| `src/bmsx/machine/bus/mmio_register_spec.ts` | Add string_ref write requirements for action, bind, query, and consume registers |
+| `src/bmsx/machine/firmware/lua_globals.ts` | Register IO address constants + control command constants + flag constants as Lua globals |
+| `src/bmsx/machine/firmware/lua_builtin_descriptors.ts` | Add descriptor entries for all new sys_inp_*, inp_ctrl_*, and inp_* constants |
+| `src/bmsx/machine/devices/input/input_controller.ts` | **New file**: InputController MMIO device over PlayerInput / ContextStack, uses `checkActionTriggered()` for expression queries |
+| `src/bmsx/machine/runtime/runtime.ts` | Instantiate InputController, dispatch IO writes in onIoWrite (including string_ref writes), fix non-numeric guard |
+| `src/bmsx_cpp/machine/bus/io.h` | C++ IO constants + control command constants |
+| `src/bmsx_cpp/machine/devices/input/input_controller.cpp/.h` | **New files**: C++ InputController with same register/query/consume semantics |
+| `src/bmsx_cpp/machine/runtime/runtime.cpp` | C++ runtime dispatch |
 
 ---
 
@@ -577,15 +579,15 @@ end
 
 ## Existing Code References (exact paths)
 
-- IO register layout: `src/bmsx/emulator/io.ts` (all `IO_*_INDEX` / `IO_*` constants)
-- Memory map base: `src/bmsx/emulator/memory_map.ts` (`IO_BASE`, `IO_WORD_SIZE`)
-- MMIO spec: `src/bmsx/emulator/mmio_register_spec.ts` (currently empty `MMIO_REGISTER_SPECS` array)
-- Runtime IO dispatch: `src/bmsx/emulator/runtime.ts` line 2204 (`onIoWrite`)
-- Frame latch entry point: `src/bmsx/emulator/runtime.ts` `beginGuestUpdatePhase()` (calls `Input.instance.beginFrame()` at `guestUpdatePhaseDepth === 0`)
-- Device examples: `src/bmsx/emulator/devices/dma_controller.ts`, `src/bmsx/emulator/devices/imgdec_controller.ts`
-- String pool: `src/bmsx/emulator/string_pool.ts` (`StringValue` class, `valueIsString()`)
-- Compiler validation: `src/bmsx/emulator/program_compiler.ts` (`validateMemoryStore`, `resolveMemoryStoreRequirement`)
-- Flow analysis: `src/bmsx/emulator/compile_value_flow.ts` (`evaluateExpressionValueKind`)
+- IO register layout: `src/bmsx/machine/bus/io.ts` (all `IO_*_INDEX` / `IO_*` constants)
+- Memory map base: `src/bmsx/machine/memory/memory_map.ts` (`IO_BASE`, `IO_WORD_SIZE`)
+- MMIO spec: `src/bmsx/machine/bus/mmio_register_spec.ts`
+- Runtime IO dispatch: `src/bmsx/machine/runtime/runtime.ts` (`onIoWrite`)
+- Frame latch entry point: `src/bmsx/machine/runtime/runtime.ts` `beginGuestUpdatePhase()` (calls `Input.instance.beginFrame()` at `guestUpdatePhaseDepth === 0`)
+- Device examples: `src/bmsx/machine/devices/dma/dma_controller.ts`, `src/bmsx/machine/devices/imgdec/imgdec_controller.ts`
+- String pool: `src/bmsx/machine/memory/string_pool.ts` (`StringValue` class, `valueIsString()`)
+- Compiler validation: `src/bmsx/machine/program/program_compiler.ts` (`validateMemoryStore`, `resolveMemoryStoreRequirement`)
+- Flow analysis: `src/bmsx/machine/program/compile_value_flow.ts` (`evaluateExpressionValueKind`)
 - Input system — frame sampling: `src/bmsx/input/input.ts` `beginFrame()` → iterates players → `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()`
 - Input system — state manager: `src/bmsx/input/input.ts` `InputStateManager` class (`beginFrame()`, `latchButtonState()`, `getButtonState()`)
 - Input system — player: `src/bmsx/input/playerinput.ts` (`checkActionTriggered`, `getActionState`, `consumeAction`, `pushContext`, `popContext`, `setInputMap`, `beginFrame`)
@@ -597,9 +599,9 @@ end
 - Button vocabulary: `src/bmsx/input/input.ts` `Input.BUTTON_IDS` — `['a','b','x','y','lb','rb','lt','rt','select','start','ls','rs','up','down','left','right','home','touch']`
 - Action parser: `src/bmsx/input/actionparser.ts`, `src/bmsx_cpp/input/actionparser.cpp` (expression evaluation — used by the chip's query path via `checkActionTriggered()` → `ActionDefinitionEvaluator`)
 - Engine core: `src/bmsx/core/engine_core.ts` (`action_triggered`, `get_action_state`, `packActionStateFlags`)
-- Lua globals registration: `src/bmsx/emulator/lua_globals.ts` (pattern: `registerGlobal(runtime, 'sys_*', IO_*)`)
-- Lua builtin descriptors: `src/bmsx/emulator/lua_builtin_descriptors.ts`
-- Lua builtins (set_input_map): `src/bmsx/emulator/lua_builtins.ts` (existing `set_input_map()` native — reference impl for input map application)
-- Firmware API: `src/bmsx/emulator/firmware_api.ts` (`action_triggered` implementation via `checkActionTriggered`)
+- Lua globals registration: `src/bmsx/machine/firmware/lua_globals.ts` (pattern: `registerGlobal(runtime, 'sys_*', IO_*)`)
+- Lua builtin descriptors: `src/bmsx/machine/firmware/lua_builtin_descriptors.ts`
+- Lua builtins (set_input_map): `src/bmsx/machine/firmware/lua_builtins.ts` (existing `set_input_map()` native — reference impl for input map application)
+- Firmware API: `src/bmsx/machine/firmware/firmware_api.ts` (`action_triggered` implementation via `checkActionTriggered`)
 - C++ input: `src/bmsx_cpp/input/input.h`, `src/bmsx_cpp/input/playerinput.h/.cpp`
-- C++ firmware: `src/bmsx_cpp/emulator/firmware_api.cpp`, `src/bmsx_cpp/emulator/lua_globals.cpp`
+- C++ firmware: `src/bmsx_cpp/machine/firmware/firmware_api.cpp`, `src/bmsx_cpp/machine/firmware/lua_globals.cpp`

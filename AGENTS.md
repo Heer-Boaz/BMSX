@@ -1,3 +1,4 @@
+* Architecture identity: BMSX is a fantasy console with real console discipline. Cart-visible hardware belongs behind memory maps, MMIO registers, and machine devices; host/platform shortcuts must not become the hardware contract.
 * Ensure that you have the latest version of Node.js installed (preferably v22 or later).
 * Install the necessary dependencies by running:
    ```bash
@@ -31,7 +32,7 @@
    ```
    This command runs a prebuilt rompack in headless mode (without a graphical interface). If you need a guaranteed fresh build first, use `headless:forcebuildallrun`.
    > Important: The given <romname> must match the name of a directory under `./src/` that contains a `res` subdirectory with the resources for that rompack (game). For example, for the `testrom`, the resources should be located in `./src/testrom/res`. However, the result romfile will be named based on the rommanifest.json file inside the `res` directory!! For example, if the `rommanifest.json` file specifies the name as `yiear`, the resulting romfile will be named `yiear.rom` (or `yiear.debug.rom`) even if the directory is named `ella2023`!
-   Also, if you updated the C++-version (libretro-version) of the fantasy console/engine, you should build the libretro core by running:
+   Also, if you updated the C++-version (libretro-version) of the fantasy console runtime, you should build the libretro core by running:
    ```bash
    npm run build:platform:libretro-wsl
    ```
@@ -223,9 +224,9 @@
 * No Facade/Host/Provider/Service-patterns. They suck.
 * Use `TaskGate` and `AssetBarrier` for async operations instead of rolling your own solutions.
 * Don't worry about indentation styles. I will take care of formatting the code using Prettier before committing.
-* `clamp` is a utility function available that you can find in the folder `/src/bmsx/util/`; use it instead of writing your own!
-* Look at other utility functions available in `/src/bmsx/util/` before writing your own utility functions!
-* Scratch buffers are available in `/src/bmsx/util/scratchbuffer.ts`; use them for temporary data storage instead of allocating new arrays or buffers.
+* `clamp` is a utility function available that you can find in the folder `/src/bmsx/common/`; use it instead of writing your own!
+* Look at other utility functions available in `/src/bmsx/common/` before writing your own utility functions!
+* Scratch buffers are available in `/src/bmsx/common/scratchbuffer.ts`; use them for temporary data storage instead of allocating new arrays or buffers.
 * Don't use `require` in non-script code (e.g. `rombuilder.ts` and `rominspector.ts` can have `require`, but core engine files or game source files cannot).
 * In cart code, `engine` is forbidden. Do not call `engine.*` (for example: `engine.object(id)`). Use the cart-facing globals/helpers instead (such as `object(...)`, `service(...)`, `inst(...)`, `update(...)`, `reset(...)`, `add_space(...)`, `set_space(...)`, `get_space(...)`, etc.).
 * In cart code, avoid wasteful long identifier strings. Redundant prefixes in tags/events/effect IDs/timeline IDs (for example full cart/object namespaces repeated on every value) are forbidden when shorter local identifiers work. Treat string memory and string-compare CPU cost as a hard budget.
@@ -233,4 +234,4 @@
 * Ensure that registry persistent objects are not serialized.
 * When introducing new features, consider how they can be serialized and deserialized as part of the game state. Also consider that many objects/properties should be *excluded* from serialization.
 * **Performance**:
-  - Consider the performance implications of generated code, especially in critical areas of the application, noting that the engine is supposed to perform well on lower-end hardware such as iPhone 10/11/12.
+  - Consider the performance implications of generated code, especially in critical areas of the application, noting that the runtime is supposed to perform well on lower-end hardware such as iPhone 10/11/12.

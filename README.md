@@ -1,8 +1,12 @@
 # BMSX
 
-BMSX is a fantasy console focused on Lua carts.
+BMSX is a fantasy console with real console discipline.
 
-The TypeScript runtime is the browser/headless/CLI host for the console. The C++ runtime is the libretro/custom-host runtime.
+It is fictional hardware, but the architecture is treated like a real machine: carts run against CPU, RAM/ROM, MMIO registers, and device controllers. Host code exists to present audio, video, input, files, and platform entrypoints; it should not become the cart-facing hardware contract.
+
+The TypeScript implementation is the canonical browser/headless/CLI machine runtime and host stack. The C++ implementation mirrors the machine structure for libretro/custom hosts.
+
+See `docs/architecture.md` for the machine/host boundary rules.
 
 ## Setup
 
@@ -11,9 +15,14 @@ The TypeScript runtime is the browser/headless/CLI host for the console. The C++
 
 ## Project Layout
 
-- `src/bmsx`: shared TypeScript runtime, BIOS resources, tooling hooks
+- `src/bmsx/machine`: CPU, memory, MMIO bus, device controllers, firmware, program loader, and runtime lifecycle
+- `src/bmsx/core`: shared runtime coordination and system bootstrap
+- `src/bmsx/common`: low-level shared helpers
+- `src/bmsx/audio`: host-side audio playback/output code, not the machine audio device
+- `src/bmsx/ide`: editor, terminal, workbench, and IDE runtime tooling
+- `src/bmsx/res`: BIOS/system ROM resources
 - `src/bmsx_hostplatform`: browser/headless/CLI host platform code
-- `src/bmsx_cpp`: C++ runtime for libretro/custom hosts
+- `src/bmsx_cpp`: C++ machine/runtime implementation for libretro/custom hosts
 - `src/carts`: Lua carts and cart-local resources
 - `scripts/rompacker`: BIOS/cart/platform builders
 - `scripts/bootrom`: browser and Node boot entrypoints
@@ -21,12 +30,30 @@ The TypeScript runtime is the browser/headless/CLI host for the console. The C++
 
 ## Build Model
 
-- BIOS / engine assets live in `src/bmsx/res`
+- BIOS/system assets live in `src/bmsx/res`
 - carts live in `src/carts/<cart-folder>`
 - cart resources live in `src/carts/<cart-folder>/res`
 - `build:game` takes the cart folder name, not the ROM manifest name
 - headless/CLI use debug artifacts
 - libretro/custom-host runs require non-debug BIOS and non-debug cart ROMs
+
+## Architecture Doctrine
+
+BMSX can be playful at the product level, but the machine layer is not an engine-service grab bag. New cart-visible hardware should be represented as memory-mapped devices under `machine/devices`, with register addresses in `machine/bus/io`.
+
+Preferred direction for cart-visible features:
+
+```text
+cart Lua -> BIOS/firmware or cart library -> MMIO/RAM -> machine device -> host output
+```
+
+Avoid this for new hardware-facing behavior:
+
+```text
+cart Lua -> native host/runtime shortcut
+```
+
+The host may accelerate implementation details, but it must not own the semantics of console hardware. Existing build artifact names still use `engine` in a few places; treat that as historical naming unless referring to concrete files such as `engine.debug.js`.
 
 ## Runtime Timing
 
@@ -169,4 +196,4 @@ Important:
 - `build:game` means “build a Lua cart ROM”
 - cart folder resolution is `src/carts/<name>`
 - old TypeScript full-game projects were removed instead of being kept as compatibility fallbacks
-- the last complete branch that still contains the old TypeScript full game engine lives at `archive/ts-full-engine`
+- the last complete branch that still contains the old TypeScript full-game runtime lives at `archive/ts-full-engine`

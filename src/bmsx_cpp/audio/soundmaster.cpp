@@ -1,5 +1,7 @@
 /*
- * soundmaster.cpp - Audio playback and mixing
+ * soundmaster.cpp - Host-side audio playback and mixing
+ *
+ * This is the output/mixer side of audio, not the console audio device.
  */
 
 #include "soundmaster.h"

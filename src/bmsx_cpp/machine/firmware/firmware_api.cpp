@@ -972,6 +972,8 @@ m_runtime.registerNativeFunction("dget", [this](NativeArgsView args, NativeResul
 	out.push_back(valueNumber(dget(index)));
 });
 
+// Current audio entrypoints still bridge to host playback. The target
+// architecture is APU MMIO, with BIOS/cart libraries writing registers.
 m_runtime.registerNativeFunction("sfx", [this, asText](NativeArgsView args, NativeResults& out) {
 	const std::string& id = asText(args.at(0));
 	Value optionsValue = args.size() > 1 ? args.at(1) : valueNil();

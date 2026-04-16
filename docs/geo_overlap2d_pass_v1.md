@@ -1,5 +1,8 @@
 # GEO `overlap2d_pass` v1
 
+BMSX is a fantasy console with real console discipline: this document treats
+`GEO` as hardware behind MMIO registers, not as a helper API.
+
 ## Status
 
 This document is the normative v1 hardware spec for `GEO overlap2d_pass`.

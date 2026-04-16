@@ -78,6 +78,9 @@ type AudioRouterOptions = {
 };
 export type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | AudioRouterOptions;
 
+// Host-side audio playback/output and browser latency handling. This class is
+// not the console audio device; cart-visible audio should be owned by a
+// machine-side MMIO controller when the APU boundary is introduced.
 export type AudioBytesResolver = (id: asset_id) => Uint8Array;
 
 type RomAudioResource = RomAsset & {

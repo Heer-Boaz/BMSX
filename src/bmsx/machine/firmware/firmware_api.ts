@@ -453,6 +453,8 @@ export class Api {
 		return this.storage.getValue(index);
 	}
 
+	// Current audio entrypoints still bridge to host playback. The target
+	// architecture is APU MMIO, with BIOS/cart libraries writing registers.
 	public sfx(id: string, options?: AudioPlayOptions): void {
 		$.sndmaster.playSfx(id, options);
 	}

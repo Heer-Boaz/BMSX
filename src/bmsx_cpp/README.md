@@ -1,6 +1,8 @@
-# BMSX C++ Implementation
+# BMSX C++ Console Runtime
 
-This directory contains the C++ implementation of the BMSX game engine, designed to run as a libretro core for RetroArch and other libretro-compatible frontends.
+This directory contains the C++ implementation of the BMSX console runtime, designed to run as a libretro core for RetroArch and other libretro-compatible frontends.
+
+BMSX is a fantasy console with real console discipline. The C++ tree mirrors the TypeScript machine layout where possible: cart-visible behavior belongs in the machine, memory map, and device controllers; host/platform code presents the result to libretro or custom frontends.
 
 ## Directory Structure
 
@@ -17,7 +19,7 @@ bmsx_cpp/
 │   ├── types.cpp
 │   ├── registry.h              # Global object registry (mirrors TS Registry)
 │   ├── registry.cpp
-│   ├── engine_core.h           # EngineCore with global $ accessor
+│   ├── engine_core.h           # System bootstrap and runtime ownership
 │   ├── engine_core.cpp
 │   ├── font.h                  # Font rendering helpers
 │   ├── font.cpp
@@ -93,13 +95,13 @@ bmsx_cpp/
         └── libretro_platform.cpp
 ```
 
-## Architecture (Runtime-first)
+## Architecture (Machine-first)
 
-The C++ runtime focuses on the Lua bytecode interpreter and render/input subsystems.
+The C++ runtime focuses on mirroring the console machine boundary from the TypeScript implementation.
 
-- `EngineCore` drives `Runtime` update/draw directly each frame.
-- Rendering happens through `GameView` + render queues.
-- Input is polled through the `Input` singleton.
+- `machine/` owns CPU, memory, MMIO registers, device controllers, firmware, program loading, timing, and runtime state.
+- `render/`, `audio/`, `input/`, and `platform/` adapt machine state to the host.
+- `audio/SoundMaster` is host-side playback/mixing. It is not the final machine APU contract; cart-visible audio should move toward a machine-side MMIO device.
 
 ## Building
 

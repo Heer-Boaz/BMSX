@@ -1,5 +1,8 @@
 /*
- * soundmaster.h - Audio playback and mixing (C++ counterpart to SoundMaster)
+ * soundmaster.h - Host-side audio playback and mixing.
+ *
+ * This is not the console audio device. Cart-visible audio should be owned by
+ * a machine-side MMIO controller when the APU boundary is introduced.
  */
 
 #pragma once

@@ -1,5 +1,7 @@
 import { load as loadYaml } from 'js-yaml';
 
+// Authoring-time AEM schema and validation. AEM may describe audio behavior,
+// but it is not the machine audio device or a host-side shortcut around MMIO.
 export type StructuredTextDocumentFormat = 'yaml' | 'json';
 
 type AudioAction = {
