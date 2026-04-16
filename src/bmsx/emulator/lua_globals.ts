@@ -1394,9 +1394,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'u32_to_i32', createNativeFunction('u32_to_i32', (args, out) => {
 		out.push(((args[0] as number) >>> 0) | 0);
 	}));
-	runtimeLuaPipeline.registerGlobal(runtime, 'fix16_to_f32', createNativeFunction('fix16_to_f32', (args, out) => {
-		out.push((((args[0] as number) >>> 0) | 0) / 65536);
-	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'u64_to_f64', createNativeFunction('u64_to_f64', (args, out) => {
 		const hi = (args[0] as number) >>> 0;
 		const lo = (args[1] as number) >>> 0;

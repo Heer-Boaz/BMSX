@@ -63,8 +63,8 @@ const { createHash } = require('crypto');
 
 type ProgressNote = (message: string) => void;
 const ADPCM_NO_LOOP = 0xffffffff;
-const GEO_COLLISION_BIN_MAGIC = 0x31443247; // "G2D1" little-endian
-const GEO_COLLISION_BIN_VERSION = 1;
+const GEO_COLLISION_BIN_MAGIC = 0x32443247; // "G2D2" little-endian
+const GEO_COLLISION_BIN_VERSION = 2;
 const GEO_COLLISION_SHAPE_KIND_AABB = 1;
 const GEO_COLLISION_SHAPE_KIND_CONVEX_POLY = 3;
 const GEO_COLLISION_SHAPE_KIND_COMPOUND = 4;
@@ -579,10 +579,6 @@ function computePolyBounds(poly: Polygon): RectBounds {
 	return { left, top, right, bottom };
 }
 
-function encodeFix16(value: number): number {
-	return Math.round(value * 65536);
-}
-
 function buildCollisionBin(bounds: BoundingBoxPrecalc, hitpolygons: HitPolygonsPrecalc | undefined): Buffer {
 	const parts: Buffer[] = [];
 	let offset = GEO_COLLISION_VARIANT_HEADER_WORDS * 4;
@@ -596,17 +592,17 @@ function buildCollisionBin(bounds: BoundingBoxPrecalc, hitpolygons: HitPolygonsP
 
 	const pushBounds = (rect: RectBounds): number => {
 		const buffer = Buffer.alloc(16);
-		buffer.writeInt32LE(encodeFix16(rect.left), 0);
-		buffer.writeInt32LE(encodeFix16(rect.top), 4);
-		buffer.writeInt32LE(encodeFix16(rect.right), 8);
-		buffer.writeInt32LE(encodeFix16(rect.bottom), 12);
+		buffer.writeFloatLE(rect.left, 0);
+		buffer.writeFloatLE(rect.top, 4);
+		buffer.writeFloatLE(rect.right, 8);
+		buffer.writeFloatLE(rect.bottom, 12);
 		return pushBuffer(buffer);
 	};
 
 	const pushPolygon = (poly: Polygon): number => {
 		const buffer = Buffer.alloc(poly.length * 4);
 		for (let index = 0; index < poly.length; index += 1) {
-			buffer.writeInt32LE(encodeFix16(poly[index]), index * 4);
+			buffer.writeFloatLE(poly[index], index * 4);
 		}
 		return pushBuffer(buffer);
 	};

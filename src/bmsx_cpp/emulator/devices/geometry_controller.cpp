@@ -3,6 +3,7 @@
 #include "../io.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <utility>
 
@@ -55,6 +56,19 @@ inline int64_t saturatingAdd64(int64_t lhs, int64_t rhs) {
 		return std::numeric_limits<int64_t>::min();
 	}
 	return lhs + rhs;
+}
+
+inline float f32BitsToNumber(uint32_t bits) {
+	float value = 0.0f;
+	std::memcpy(&value, &bits, sizeof(value));
+	return value;
+}
+
+inline uint32_t numberToF32Bits(double value) {
+	const float narrowed = static_cast<float>(value);
+	uint32_t bits = 0u;
+	std::memcpy(&bits, &narrowed, sizeof(bits));
+	return bits;
 }
 
 } // namespace
@@ -486,13 +500,13 @@ bool GeometryController::readOverlapInstanceAt(const GeoJob& job, uint32_t insta
 
 bool GeometryController::processOverlap2dPair(GeoJob& job, uint32_t recordIndex, const std::array<uint32_t, 5>& instanceA, const std::array<uint32_t, 5>& instanceB, uint32_t pairMeta) {
 	const uint32_t shapeAAddr = instanceA[0];
-	const int32_t txA = static_cast<int32_t>(instanceA[1]);
-	const int32_t tyA = static_cast<int32_t>(instanceA[2]);
+	const double txA = static_cast<double>(f32BitsToNumber(instanceA[1]));
+	const double tyA = static_cast<double>(f32BitsToNumber(instanceA[2]));
 	const uint32_t layerA = instanceA[3];
 	const uint32_t maskA = instanceA[4];
 	const uint32_t shapeBAddr = instanceB[0];
-	const int32_t txB = static_cast<int32_t>(instanceB[1]);
-	const int32_t tyB = static_cast<int32_t>(instanceB[2]);
+	const double txB = static_cast<double>(f32BitsToNumber(instanceB[1]));
+	const double tyB = static_cast<double>(f32BitsToNumber(instanceB[2]));
 	const uint32_t layerB = instanceB[3];
 	const uint32_t maskB = instanceB[4];
 	if (!m_memory.isReadableMainMemoryRange(shapeAAddr, OVERLAP2D_DESC_BYTES)
@@ -534,11 +548,10 @@ bool GeometryController::processOverlap2dPair(GeoJob& job, uint32_t recordIndex,
 	uint32_t bestPieceA = 0u;
 	uint32_t bestPieceB = 0u;
 	uint32_t bestFeatureMeta = 0u;
-	int32_t bestDepthI32 = 0;
-	int32_t bestNx = 0;
-	int32_t bestNy = 0;
-	int32_t bestPx = 0;
-	int32_t bestPy = 0;
+	double bestNx = 0.0;
+	double bestNy = 0.0;
+	double bestPx = 0.0;
+	double bestPy = 0.0;
 	for (uint32_t pieceAIndex = 0u; pieceAIndex < shapeAPieceCount; pieceAIndex += 1u) {
 		const std::optional<uint32_t> pieceAAddr = shapeAKind == OVERLAP2D_KIND_COMPOUND
 			? resolveByteOffset(shapeAAddr, shapeADataOffset + pieceAIndex * OVERLAP2D_DESC_BYTES, OVERLAP2D_DESC_BYTES)
@@ -584,7 +597,6 @@ bool GeometryController::processOverlap2dPair(GeoJob& job, uint32_t recordIndex,
 				bestPieceA = pieceAIndex;
 				bestPieceB = pieceBIndex;
 				bestFeatureMeta = m_overlapContactFeatureMeta;
-				bestDepthI32 = m_overlapContactDepth;
 				bestNx = m_overlapContactNx;
 				bestNy = m_overlapContactNy;
 				bestPx = m_overlapContactPx;
@@ -605,7 +617,7 @@ bool GeometryController::processOverlap2dPair(GeoJob& job, uint32_t recordIndex,
 		finishError(GEO_FAULT_DST_RANGE, recordIndex);
 		return false;
 	}
-	writeOverlap2dResult(*resultAddr, bestNx, bestNy, bestDepthI32, bestPx, bestPy, bestPieceA, bestPieceB, bestFeatureMeta, pairMeta);
+	writeOverlap2dResult(*resultAddr, bestNx, bestNy, bestDepth, bestPx, bestPy, bestPieceA, bestPieceB, bestFeatureMeta, pairMeta);
 	job.resultCount += 1u;
 	return true;
 }
@@ -904,26 +916,26 @@ void GeometryController::processSat2Record(GeoJob& job) {
 }
 
 
-bool GeometryController::readPieceBounds(uint32_t pieceAddr, int32_t tx, int32_t ty, std::array<int32_t, 4>& out) const {
+bool GeometryController::readPieceBounds(uint32_t pieceAddr, double tx, double ty, std::array<double, 4>& out) const {
 	const uint32_t boundsOffset = m_memory.readU32(pieceAddr + 12u);
 	const std::optional<uint32_t> boundsAddr = resolveByteOffset(pieceAddr, boundsOffset, OVERLAP2D_BOUNDS_BYTES);
 	if (!boundsAddr.has_value() || !m_memory.isReadableMainMemoryRange(*boundsAddr, OVERLAP2D_BOUNDS_BYTES)) {
 		return false;
 	}
-	out[0] = readI32(*boundsAddr + 0u) + tx;
-	out[1] = readI32(*boundsAddr + 4u) + ty;
-	out[2] = readI32(*boundsAddr + 8u) + tx;
-	out[3] = readI32(*boundsAddr + 12u) + ty;
+	out[0] = static_cast<double>(readF32(*boundsAddr + 0u)) + tx;
+	out[1] = static_cast<double>(readF32(*boundsAddr + 4u)) + ty;
+	out[2] = static_cast<double>(readF32(*boundsAddr + 8u)) + tx;
+	out[3] = static_cast<double>(readF32(*boundsAddr + 12u)) + ty;
 	return true;
 }
 
 bool GeometryController::computePiecePairContact(
 	uint32_t pieceAAddr,
-	int32_t txA,
-	int32_t tyA,
+	double txA,
+	double tyA,
 	uint32_t pieceBAddr,
-	int32_t txB,
-	int32_t tyB,
+	double txB,
+	double tyB,
 	uint32_t recordIndex
 ) {
 	const uint32_t primitiveA = m_memory.readU32(pieceAAddr + 0u);
@@ -941,7 +953,7 @@ bool GeometryController::computePiecePairContact(
 	return computePolyPairContact(m_overlapWorldPolyA, m_overlapWorldPolyB);
 }
 
-bool GeometryController::loadWorldPoly(uint32_t pieceAddr, int32_t tx, int32_t ty, std::vector<double>& out) const {
+bool GeometryController::loadWorldPoly(uint32_t pieceAddr, double tx, double ty, std::vector<double>& out) const {
 	const uint32_t primitive = m_memory.readU32(pieceAddr + 0u);
 	const uint32_t dataCount = m_memory.readU32(pieceAddr + 4u);
 	const uint32_t dataOffset = m_memory.readU32(pieceAddr + 8u);
@@ -955,10 +967,10 @@ bool GeometryController::loadWorldPoly(uint32_t pieceAddr, int32_t tx, int32_t t
 		if (dataCount != 4u || !m_memory.isReadableMainMemoryRange(*dataAddr, 16u)) {
 			return false;
 		}
-		const int32_t left = readI32(*dataAddr + 0u);
-		const int32_t top = readI32(*dataAddr + 4u);
-		const int32_t right = readI32(*dataAddr + 8u);
-		const int32_t bottom = readI32(*dataAddr + 12u);
+		const double left = static_cast<double>(readF32(*dataAddr + 0u));
+		const double top = static_cast<double>(readF32(*dataAddr + 4u));
+		const double right = static_cast<double>(readF32(*dataAddr + 8u));
+		const double bottom = static_cast<double>(readF32(*dataAddr + 12u));
 		pushWorldVertex(out, tx, ty, left, top);
 		pushWorldVertex(out, tx, ty, right, top);
 		pushWorldVertex(out, tx, ty, right, bottom);
@@ -970,17 +982,17 @@ bool GeometryController::loadWorldPoly(uint32_t pieceAddr, int32_t tx, int32_t t
 	}
 	for (uint32_t vertexIndex = 0u; vertexIndex < dataCount; vertexIndex += 1u) {
 		const uint32_t vertexAddr = *dataAddr + vertexIndex * XFORM2_VERTEX_BYTES;
-		pushWorldVertex(out, tx, ty, readI32(vertexAddr + 0u), readI32(vertexAddr + 4u));
+		pushWorldVertex(out, tx, ty, readF32(vertexAddr + 0u), readF32(vertexAddr + 4u));
 	}
 	return true;
 }
 
-void GeometryController::pushWorldVertex(std::vector<double>& out, int32_t tx, int32_t ty, int32_t localX, int32_t localY) {
-	out.push_back(static_cast<double>(localX + tx) / FIX16_SCALE);
-	out.push_back(static_cast<double>(localY + ty) / FIX16_SCALE);
+void GeometryController::pushWorldVertex(std::vector<double>& out, double tx, double ty, double localX, double localY) {
+	out.push_back(localX + tx);
+	out.push_back(localY + ty);
 }
 
-bool GeometryController::boundsOverlap(const std::array<int32_t, 4>& a, const std::array<int32_t, 4>& b) {
+bool GeometryController::boundsOverlap(const std::array<double, 4>& a, const std::array<double, 4>& b) {
 	return !(a[0] > b[2] || a[2] < b[0] || a[1] > b[3] || a[3] < b[1]);
 }
 
@@ -1040,11 +1052,11 @@ bool GeometryController::computePolyPairContact(const std::vector<double>& polyA
 		pointX = centroid.first;
 		pointY = centroid.second;
 	}
-	m_overlapContactNx = roundToI32Clamped(bestAxisX * FIX16_SCALE);
-	m_overlapContactNy = roundToI32Clamped(bestAxisY * FIX16_SCALE);
-	m_overlapContactDepth = roundToI32Clamped(bestOverlap * FIX16_SCALE);
-	m_overlapContactPx = roundToI32Clamped(pointX * FIX16_SCALE);
-	m_overlapContactPy = roundToI32Clamped(pointY * FIX16_SCALE);
+	m_overlapContactNx = bestAxisX;
+	m_overlapContactNy = bestAxisY;
+	m_overlapContactDepth = bestOverlap;
+	m_overlapContactPx = pointX;
+	m_overlapContactPy = pointY;
 	m_overlapContactFeatureMeta = bestEdgeIndex;
 	return true;
 }
@@ -1135,21 +1147,21 @@ void GeometryController::writeOverlap2dSummary(const GeoJob& job, uint32_t flags
 
 void GeometryController::writeOverlap2dResult(
 	uint32_t addr,
-	int32_t nx,
-	int32_t ny,
-	int32_t depth,
-	int32_t px,
-	int32_t py,
+	double nx,
+	double ny,
+	double depth,
+	double px,
+	double py,
 	uint32_t pieceA,
 	uint32_t pieceB,
 	uint32_t featureMeta,
 	uint32_t pairMeta
 ) {
-	m_memory.writeU32(addr + 0u, static_cast<uint32_t>(nx));
-	m_memory.writeU32(addr + 4u, static_cast<uint32_t>(ny));
-	m_memory.writeU32(addr + 8u, static_cast<uint32_t>(depth));
-	m_memory.writeU32(addr + 12u, static_cast<uint32_t>(px));
-	m_memory.writeU32(addr + 16u, static_cast<uint32_t>(py));
+	m_memory.writeU32(addr + 0u, numberToF32Bits(nx));
+	m_memory.writeU32(addr + 4u, numberToF32Bits(ny));
+	m_memory.writeU32(addr + 8u, numberToF32Bits(depth));
+	m_memory.writeU32(addr + 12u, numberToF32Bits(px));
+	m_memory.writeU32(addr + 16u, numberToF32Bits(py));
 	m_memory.writeU32(addr + 20u, pieceA);
 	m_memory.writeU32(addr + 24u, pieceB);
 	m_memory.writeU32(addr + 28u, featureMeta);
@@ -1170,6 +1182,10 @@ std::optional<uint32_t> GeometryController::resolveByteOffset(uint32_t base, uin
 
 int32_t GeometryController::readI32(uint32_t addr) const {
 	return static_cast<int32_t>(m_memory.readU32(addr));
+}
+
+float GeometryController::readF32(uint32_t addr) const {
+	return f32BitsToNumber(m_memory.readU32(addr));
 }
 
 void GeometryController::completeRecord(GeoJob& job) {

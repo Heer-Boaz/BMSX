@@ -3,7 +3,6 @@
 
 local collision2d<const> = {}
 
-local geo_fix16_scale<const> = 65536
 local geo_overlap_instance_bytes<const> = 20
 local geo_overlap_pair_bytes<const> = 12
 local geo_overlap_result_bytes<const> = 36
@@ -96,14 +95,11 @@ local stage_geo_overlap_instance<const> = function(collider, batch_token, instan
 		return
 	end
 	local instance_addr<const> = instance_base + collider._geo_overlap_instance_index * geo_overlap_instance_bytes
-	memwrite(
-		instance_addr,
-		collider._overlap_geo_shape_ref,
-		collider._overlap_geo_tx * geo_fix16_scale,
-		collider._overlap_geo_ty * geo_fix16_scale,
-		collider.layer,
-		collider.mask
-	)
+	mem[instance_addr + 0] = collider._overlap_geo_shape_ref
+	memf32le[instance_addr + 4] = collider._overlap_geo_tx
+	memf32le[instance_addr + 8] = collider._overlap_geo_ty
+	mem[instance_addr + 12] = collider.layer
+	mem[instance_addr + 16] = collider.mask
 	collider._geo_overlap_stage_token = batch_token
 end
 
@@ -187,11 +183,11 @@ local decode_overlap_results<const> = function(colliders, collider_count, result
 		pair.hit = true
 		pair.geo_pair_index = -1
 		local contact<const>, contact_other<const> = ensure_pair_contacts(pair)
-		local normal_x<const> = fix16_to_f32(mem[result_addr + 0])
-		local normal_y<const> = fix16_to_f32(mem[result_addr + 4])
-		local depth<const> = fix16_to_f32(mem[result_addr + 8])
-		local point_x<const> = fix16_to_f32(mem[result_addr + 12])
-		local point_y<const> = fix16_to_f32(mem[result_addr + 16])
+		local normal_x<const> = memf32le[result_addr + 0]
+		local normal_y<const> = memf32le[result_addr + 4]
+		local depth<const> = memf32le[result_addr + 8]
+		local point_x<const> = memf32le[result_addr + 12]
+		local point_y<const> = memf32le[result_addr + 16]
 		local piece_a<const> = mem[result_addr + 20]
 		local piece_b<const> = mem[result_addr + 24]
 		local feature_meta<const> = mem[result_addr + 28]
@@ -401,11 +397,11 @@ function collision2d.collides(a, b)
 		return nil
 	end
 	local contact<const> = direct_query_contact
-	contact.normal.x = fix16_to_f32(mem[geo_direct_result_base + 0])
-	contact.normal.y = fix16_to_f32(mem[geo_direct_result_base + 4])
-	contact.depth = fix16_to_f32(mem[geo_direct_result_base + 8])
-	contact.point.x = fix16_to_f32(mem[geo_direct_result_base + 12])
-	contact.point.y = fix16_to_f32(mem[geo_direct_result_base + 16])
+	contact.normal.x = memf32le[geo_direct_result_base + 0]
+	contact.normal.y = memf32le[geo_direct_result_base + 4]
+	contact.depth = memf32le[geo_direct_result_base + 8]
+	contact.point.x = memf32le[geo_direct_result_base + 12]
+	contact.point.y = memf32le[geo_direct_result_base + 16]
 	contact.piece_a = mem[geo_direct_result_base + 20]
 	contact.piece_b = mem[geo_direct_result_base + 24]
 	contact.feature_meta = mem[geo_direct_result_base + 28]

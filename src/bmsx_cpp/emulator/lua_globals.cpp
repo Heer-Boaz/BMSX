@@ -1617,10 +1617,6 @@ void Runtime::setupBuiltins() {
 		const int32_t value = toI32(asNumber(args.at(0)));
 		out.push_back(valueNumber(static_cast<double>(value)));
 	});
-	registerNativeFunction("fix16_to_f32", [](NativeArgsView args, NativeResults& out) {
-		const int32_t value = toI32(asNumber(args.at(0)));
-		out.push_back(valueNumber(static_cast<double>(value) / 65536.0));
-	});
 
 	registerNativeFunction("u64_to_f64", [](NativeArgsView args, NativeResults& out) {
 		const uint64_t hi = static_cast<uint64_t>(toU32(asNumber(args.at(0))));

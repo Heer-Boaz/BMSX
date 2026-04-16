@@ -61,6 +61,14 @@ import {
 	IRQ_GEO_ERROR,
 } from '../io';
 import { Memory } from '../memory';
+import {
+	FIX16_SCALE,
+	f32BitsToNumber,
+	numberToF32Bits,
+	saturateRoundedI32,
+	toSignedWord,
+	transformFixed16,
+} from '../common/numeric';
 
 type GeoJob = {
 	cmd: number;
@@ -89,13 +97,6 @@ const XFORM2_VERTEX_BYTES = 8;
 const XFORM2_MATRIX_WORDS = 6;
 const XFORM2_MATRIX_BYTES = XFORM2_MATRIX_WORDS * 4;
 const XFORM2_AABB_BYTES = 16;
-const FIX16_SHIFT = 16n;
-const FIX16_ONE = 1n << FIX16_SHIFT;
-const FIX16_SCALE = 65536;
-const I32_MIN = -0x8000_0000n;
-const I32_MAX = 0x7fff_ffffn;
-const I32_MIN_NUMBER = -0x8000_0000;
-const I32_MAX_NUMBER = 0x7fff_ffff;
 const SAT2_PAIR_WORDS = 5;
 const SAT2_PAIR_BYTES = SAT2_PAIR_WORDS * 4;
 const SAT2_DESC_WORDS = 4;
@@ -122,39 +123,6 @@ function packSat2Meta(axisIndex: number, shapeSelector: number): number {
 	return (((shapeSelector & 0xffff) << GEO_SAT_META_SHAPE_SHIFT) | (axisIndex & 0xffff)) >>> 0;
 }
 
-function toSignedWord(value: number): number {
-	return value | 0;
-}
-
-function saturateI32(value: bigint): number {
-	if (value < I32_MIN) {
-		return -0x8000_0000;
-	}
-	if (value > I32_MAX) {
-		return 0x7fff_ffff;
-	}
-	return Number(value);
-}
-
-function saturateRoundedI32(value: number): number {
-	if (!Number.isFinite(value)) {
-		throw new Error('expected finite value');
-	}
-	const rounded = Math.round(value);
-	if (rounded <= I32_MIN_NUMBER) {
-		return I32_MIN_NUMBER;
-	}
-	if (rounded >= I32_MAX_NUMBER) {
-		return I32_MAX_NUMBER;
-	}
-	return rounded | 0;
-}
-
-function transformFixed16(m0: number, m1: number, tx: number, x: number, y: number): number {
-	const accum = (BigInt(m0) * BigInt(x)) + (BigInt(m1) * BigInt(y)) + (BigInt(tx) * FIX16_ONE);
-	return saturateI32(accum >> FIX16_SHIFT);
-}
-
 export class GeometryController {
 	private activeJob: GeoJob | null = null;
 	private cpuHz: bigint = 1n;
@@ -167,8 +135,8 @@ export class GeometryController {
 	private readonly overlapClip1: number[] = [];
 	private readonly overlapInstanceA = new Uint32Array(OVERLAP2D_INSTANCE_WORDS);
 	private readonly overlapInstanceB = new Uint32Array(OVERLAP2D_INSTANCE_WORDS);
-	private readonly overlapBoundsA = new Int32Array(4);
-	private readonly overlapBoundsB = new Int32Array(4);
+	private readonly overlapBoundsA = new Float64Array(4);
+	private readonly overlapBoundsB = new Float64Array(4);
 	private overlapContactNx = 0;
 	private overlapContactNy = 0;
 	private overlapContactDepth = 0;
@@ -601,13 +569,13 @@ export class GeometryController {
 
 	private processOverlap2dPair(job: GeoJob, recordIndex: number, instanceA: Uint32Array, instanceB: Uint32Array, pairMeta: number): boolean {
 		const shapeAAddr = instanceA[0];
-		const txA = toSignedWord(instanceA[1]);
-		const tyA = toSignedWord(instanceA[2]);
+		const txA = f32BitsToNumber(instanceA[1]);
+		const tyA = f32BitsToNumber(instanceA[2]);
 		const layerA = instanceA[3];
 		const maskA = instanceA[4];
 		const shapeBAddr = instanceB[0];
-		const txB = toSignedWord(instanceB[1]);
-		const tyB = toSignedWord(instanceB[2]);
+		const txB = f32BitsToNumber(instanceB[1]);
+		const tyB = f32BitsToNumber(instanceB[2]);
 		const layerB = instanceB[3];
 		const maskB = instanceB[4];
 		if (!this.memory.isReadableMainMemoryRange(shapeAAddr, OVERLAP2D_DESC_BYTES)
@@ -1017,16 +985,16 @@ export class GeometryController {
 	}
 
 
-	private readPieceBounds(pieceAddr: number, tx: number, ty: number, out: Int32Array): boolean {
+	private readPieceBounds(pieceAddr: number, tx: number, ty: number, out: Float64Array): boolean {
 		const boundsOffset = this.memory.readU32(pieceAddr + 12);
 		const boundsAddr = this.resolveByteOffset(pieceAddr, boundsOffset, OVERLAP2D_BOUNDS_BYTES);
 		if (boundsAddr === null || !this.memory.isReadableMainMemoryRange(boundsAddr, OVERLAP2D_BOUNDS_BYTES)) {
 			return false;
 		}
-		out[0] = this.readI32(boundsAddr + 0) + tx;
-		out[1] = this.readI32(boundsAddr + 4) + ty;
-		out[2] = this.readI32(boundsAddr + 8) + tx;
-		out[3] = this.readI32(boundsAddr + 12) + ty;
+		out[0] = this.readF32(boundsAddr + 0) + tx;
+		out[1] = this.readF32(boundsAddr + 4) + ty;
+		out[2] = this.readF32(boundsAddr + 8) + tx;
+		out[3] = this.readF32(boundsAddr + 12) + ty;
 		return true;
 	}
 
@@ -1067,10 +1035,10 @@ export class GeometryController {
 			if (dataCount !== 4 || !this.memory.isReadableMainMemoryRange(dataAddr, 16)) {
 				return false;
 			}
-			const left = this.readI32(dataAddr + 0);
-			const top = this.readI32(dataAddr + 4);
-			const right = this.readI32(dataAddr + 8);
-			const bottom = this.readI32(dataAddr + 12);
+			const left = this.readF32(dataAddr + 0);
+			const top = this.readF32(dataAddr + 4);
+			const right = this.readF32(dataAddr + 8);
+			const bottom = this.readF32(dataAddr + 12);
 			this.pushWorldVertex(out, tx, ty, left, top);
 			this.pushWorldVertex(out, tx, ty, right, top);
 			this.pushWorldVertex(out, tx, ty, right, bottom);
@@ -1082,17 +1050,17 @@ export class GeometryController {
 		}
 		for (let vertexIndex = 0; vertexIndex < dataCount; vertexIndex += 1) {
 			const vertexAddr = dataAddr + vertexIndex * XFORM2_VERTEX_BYTES;
-			this.pushWorldVertex(out, tx, ty, this.readI32(vertexAddr + 0), this.readI32(vertexAddr + 4));
+			this.pushWorldVertex(out, tx, ty, this.readF32(vertexAddr + 0), this.readF32(vertexAddr + 4));
 		}
 		return true;
 	}
 
 	private pushWorldVertex(out: number[], tx: number, ty: number, localX: number, localY: number): void {
-		out.push((localX + tx) / FIX16_SCALE);
-		out.push((localY + ty) / FIX16_SCALE);
+		out.push(localX + tx);
+		out.push(localY + ty);
 	}
 
-	private boundsOverlap(a: Int32Array, b: Int32Array): boolean {
+	private boundsOverlap(a: Float64Array, b: Float64Array): boolean {
 		return !(a[0] > b[2] || a[2] < b[0] || a[1] > b[3] || a[3] < b[1]);
 	}
 
@@ -1153,11 +1121,11 @@ export class GeometryController {
 			pointX = centroid.x;
 			pointY = centroid.y;
 		}
-		this.overlapContactNx = saturateRoundedI32(bestAxisX * FIX16_SCALE);
-		this.overlapContactNy = saturateRoundedI32(bestAxisY * FIX16_SCALE);
-		this.overlapContactDepth = saturateRoundedI32(bestOverlap * FIX16_SCALE);
-		this.overlapContactPx = saturateRoundedI32(pointX * FIX16_SCALE);
-		this.overlapContactPy = saturateRoundedI32(pointY * FIX16_SCALE);
+		this.overlapContactNx = bestAxisX;
+		this.overlapContactNy = bestAxisY;
+		this.overlapContactDepth = bestOverlap;
+		this.overlapContactPx = pointX;
+		this.overlapContactPy = pointY;
 		this.overlapContactFeatureMeta = bestEdgeIndex >>> 0;
 		return true;
 	}
@@ -1247,11 +1215,11 @@ export class GeometryController {
 	}
 
 	private writeOverlap2dResult(addr: number, nx: number, ny: number, depth: number, px: number, py: number, pieceA: number, pieceB: number, featureMeta: number, pairMeta: number): void {
-		this.memory.writeU32(addr + 0, nx >>> 0);
-		this.memory.writeU32(addr + 4, ny >>> 0);
-		this.memory.writeU32(addr + 8, depth >>> 0);
-		this.memory.writeU32(addr + 12, px >>> 0);
-		this.memory.writeU32(addr + 16, py >>> 0);
+		this.memory.writeU32(addr + 0, numberToF32Bits(nx));
+		this.memory.writeU32(addr + 4, numberToF32Bits(ny));
+		this.memory.writeU32(addr + 8, numberToF32Bits(depth));
+		this.memory.writeU32(addr + 12, numberToF32Bits(px));
+		this.memory.writeU32(addr + 16, numberToF32Bits(py));
 		this.memory.writeU32(addr + 20, pieceA >>> 0);
 		this.memory.writeU32(addr + 24, pieceB >>> 0);
 		this.memory.writeU32(addr + 28, featureMeta >>> 0);
@@ -1273,8 +1241,8 @@ export class GeometryController {
 		return addr >>> 0;
 	}
 
-	private readI32(addr: number): number {
-		return this.memory.readU32(addr) | 0;
+	private readF32(addr: number): number {
+		return f32BitsToNumber(this.memory.readU32(addr));
 	}
 
 	private completeRecord(job: GeoJob): void {
