@@ -48,14 +48,21 @@ function new_game()
 end
 
 	mem[sys_inp_ctrl] = inp_ctrl_arm
+	local flags
+	repeat
+		halt_until_irq
+		flags = service_irqs()
+	until (flags & irq_vblank) ~= 0
+
 	while true do
-		local flags
+		update_world()
+		mem[sys_inp_ctrl] = inp_ctrl_arm
 		repeat
 			halt_until_irq
 			flags = service_irqs()
 		until (flags & irq_vblank) ~= 0
 		vdp_stream_cursor = sys_vdp_stream_base
-		update()
+		draw_world()
 		do
 			local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
 			if used_bytes ~= 0 then
@@ -65,5 +72,4 @@ end
 				mem[sys_dma_ctrl] = dma_ctrl_start
 			end
 		end
-		mem[sys_inp_ctrl] = inp_ctrl_arm
 	end

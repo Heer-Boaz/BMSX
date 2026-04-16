@@ -69,7 +69,8 @@ import { configureLuaHeapUsage } from './lua_heap_usage';
 import { RuntimeFrameLoopState } from './runtime_frame_loop';
 import { RuntimeMachineSchedulerState } from './runtime_machine_scheduler';
 import { RuntimeScreenState } from './runtime_screen';
-import { RuntimeTimingState, calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from './runtime_timing';
+import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from './runtime_timing';
+import { RuntimeTimingState } from './runtime_timing_state';
 import {
 	DMA_CTRL_START,
 	DMA_STATUS_BUSY,
@@ -295,7 +296,6 @@ function resolveRuntimeLayerAssetById<T>(lookup: RuntimeLayerLookup, source: Raw
 
 export class Runtime {
 	private static readonly ENGINE_IRQ_MASK = (IRQ_REINIT | IRQ_NEWGAME) >>> 0;
-	private static readonly LUA_OVERRIDEABLE_GLOBALS: ReadonlyArray<string> = ['update'];
 	private static _instance: Runtime = null;
 
 	public static createInstance(options: RuntimeOptions): Runtime {
@@ -1952,11 +1952,7 @@ export class Runtime {
 	}
 
 	public getReservedLuaIdentifiers(): ReadonlySet<string> {
-		const reserved = new Set<string>(this.apiFunctionNames);
-		for (let index = 0; index < Runtime.LUA_OVERRIDEABLE_GLOBALS.length; index += 1) {
-			reserved.delete(this.canonicalizeIdentifier(Runtime.LUA_OVERRIDEABLE_GLOBALS[index]));
-		}
-		return reserved;
+		return new Set<string>(this.apiFunctionNames);
 	}
 
 	public assignInterpreter(interpreter: LuaInterpreter): void {

@@ -372,22 +372,28 @@ local service_irqs<const> = function()
 end
 
 mem[sys_inp_ctrl] = inp_ctrl_arm
+local flags
+repeat
+	halt_until_irq
+	flags = service_irqs()
+until (flags & irq_vblank) ~= 0
+
 while true do
-	local flags
+	update_world()
+	mem[sys_inp_ctrl] = inp_ctrl_arm
 	repeat
 		halt_until_irq
 		flags = service_irqs()
 	until (flags & irq_vblank) ~= 0
 	vdp_stream_cursor = sys_vdp_stream_base
-	update()
-		do
-			local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
-			if used_bytes ~= 0 then
-				mem[sys_dma_src] = sys_vdp_stream_base
-				mem[sys_dma_dst] = sys_vdp_fifo
-				mem[sys_dma_len] = used_bytes
-				mem[sys_dma_ctrl] = dma_ctrl_start
-			end
+	draw_world()
+	do
+		local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
+		if used_bytes ~= 0 then
+			mem[sys_dma_src] = sys_vdp_stream_base
+			mem[sys_dma_dst] = sys_vdp_fifo
+			mem[sys_dma_len] = used_bytes
+			mem[sys_dma_ctrl] = dma_ctrl_start
 		end
-	mem[sys_inp_ctrl] = inp_ctrl_arm
 	end
+end

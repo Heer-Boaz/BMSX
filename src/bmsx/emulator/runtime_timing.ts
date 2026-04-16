@@ -1,5 +1,8 @@
-import { $ } from '../core/engine_core';
 import { HZ_SCALE } from '../platform/platform';
+
+const PAL_TOTAL_SCANLINES = 313;
+const NTSC_TOTAL_SCANLINES = 262;
+const PAL_NTSC_REFRESH_CUTOFF_SCALED = 55 * HZ_SCALE;
 
 export function calcCyclesPerFrameScaled(cpuHz: number, refreshHzScaled: number): number {
 	if (!Number.isSafeInteger(cpuHz) || cpuHz <= 0) {
@@ -17,6 +20,13 @@ export function calcCyclesPerFrameScaled(cpuHz: number, refreshHzScaled: number)
 	return cyclesPerFrame;
 }
 
+export function resolveTotalScanlines(refreshHzScaled: number): number {
+	if (!Number.isSafeInteger(refreshHzScaled) || refreshHzScaled <= 0) {
+		throw new Error('[RuntimeTiming] refreshHzScaled must be a positive safe integer.');
+	}
+	return refreshHzScaled <= PAL_NTSC_REFRESH_CUTOFF_SCALED ? PAL_TOTAL_SCANLINES : NTSC_TOTAL_SCANLINES;
+}
+
 export function resolveVblankCycles(cpuFreqHz: number, ufpsScaled: number, renderHeight: number): number {
 	if (!Number.isSafeInteger(cpuFreqHz) || cpuFreqHz <= 0) {
 		throw new Error('[RuntimeTiming] cpuFreqHz must be a positive safe integer.');
@@ -28,8 +38,19 @@ export function resolveVblankCycles(cpuFreqHz: number, ufpsScaled: number, rende
 		throw new Error('[RuntimeTiming] renderHeight must be a positive safe integer.');
 	}
 	const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuFreqHz, ufpsScaled);
-	const activeScanlines = Math.floor(cycleBudgetPerFrame / (renderHeight + 1));
-	const activeDisplayCycles = activeScanlines * renderHeight;
+	const totalScanlines = resolveTotalScanlines(ufpsScaled);
+	if (renderHeight >= totalScanlines) {
+		throw new Error('[RuntimeTiming] renderHeight must be smaller than total scanlines.');
+	}
+	// BMSX derives VBLANK from a simplified CRT scanline model instead of a manifest override.
+	// 50 Hz class machines are treated as PAL-like 313-line frames, and faster refresh rates as
+	// NTSC-like 262-line frames. This came from checking that the old renderHeight + 1 formula gave
+	// Pietious at 5 MHz/50 Hz only 544 VBLANK cycles, effectively a one-scanline frame edge. The
+	// scanline ratio gives floor(100000 * 192 / 313) visible cycles and 38659 VBLANK cycles, which
+	// keeps the cart refresh at 50/60 Hz while allowing MSX/Konami-style 25/30 Hz game ticks in cart code.
+	const visibleWhole = Math.floor(cycleBudgetPerFrame / totalScanlines) * renderHeight;
+	const visibleRemainder = Math.floor(((cycleBudgetPerFrame % totalScanlines) * renderHeight) / totalScanlines);
+	const activeDisplayCycles = visibleWhole + visibleRemainder;
 	const vblankCycles = cycleBudgetPerFrame - activeDisplayCycles;
 	if (!Number.isSafeInteger(vblankCycles) || vblankCycles < 0 || vblankCycles > cycleBudgetPerFrame) {
 		throw new Error('[RuntimeTiming] invalid vblank cycle configuration.');
@@ -45,22 +66,4 @@ export function resolveUfpsScaled(value: number | undefined): number {
 		throw new Error('[RuntimeTiming] machine.ufps must be a safe integer greater than 1 Hz.');
 	}
 	return value;
-}
-
-export class RuntimeTimingState {
-	public ufpsScaled = 0;
-	public ufps = 0;
-	public frameDurationMs = 0;
-
-	constructor(ufpsScaled: number) {
-		this.applyUfpsScaled(ufpsScaled);
-	}
-
-	public applyUfpsScaled(ufpsScaled: number): void {
-		this.ufpsScaled = resolveUfpsScaled(ufpsScaled);
-		this.ufps = this.ufpsScaled / HZ_SCALE;
-		this.frameDurationMs = 1000 / this.ufps;
-		$.platform.audio.setFrameTimeSec(HZ_SCALE / this.ufpsScaled);
-		$.sndmaster.setMixerFps(this.ufps);
-	}
 }
