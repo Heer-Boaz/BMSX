@@ -51,9 +51,9 @@ import {
 } from './luavalue';
 import { LuaDebuggerController, type LuaDebuggerPauseReason } from './luadebugger';
 import { $ } from '../core/engine_core';
-import { Runtime } from '../emulator/runtime';
+import { Runtime } from '../machine/runtime/runtime';
 import { isLuaHandlerFunction } from './luahandler_cache';
-import { LuaInteropAdapter } from '../emulator/lua_js_bridge';
+import { LuaInteropAdapter } from '../machine/firmware/lua_js_bridge';
 import { getCachedLuaParse } from '../ide/language/lua/lua_analysis_cache';
 
 type ExecutionFrame = any;

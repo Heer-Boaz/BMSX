@@ -228,7 +228,7 @@ function parseOptions(args: string[]): ParsedOptions {
 
 	const rom_name = getParamOrEnv(args, '-romname', 'ROM_NAME', '', KNOWN_FLAGS);
 	const title = getParamOrEnv(args, '-title', 'TITLE', rom_name, KNOWN_FLAGS);
-	const defaultBootloaderPath = './src/bmsx/emulator/default_cart';
+	const defaultBootloaderPath = './src/bmsx/machine/firmware/default_cart';
 	let bootloader_path = getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', defaultBootloaderPath, KNOWN_FLAGS);
 	const respathOverride = getOptionalParam(args, '-respath', 'RES_PATH');
 	let respath = mode === 'bios' ? './src/bmsx/res' : '';
@@ -257,7 +257,7 @@ function parseOptions(args: string[]): ParsedOptions {
 			throw new Error('Rompack mode requires -romname <cart-folder> or -respath <cart-respath>.');
 		}
 		if (seenFlags.has('-bootloaderpath')) {
-			throw new Error('Rompack mode no longer supports -bootloaderpath. Carts always boot through src/bmsx/emulator/default_cart.');
+			throw new Error('Rompack mode no longer supports -bootloaderpath. Carts always boot through src/bmsx/machine/firmware/default_cart.');
 		}
 		const resolvedCart = resolveCartResPath(rom_name, respathOverride);
 		bootloader_path = normalizePathKey(defaultBootloaderPath);

@@ -1,10 +1,10 @@
 import { $ } from '../../../../core/engine_core';
 import { editorRuntimeState } from '../../common/editor_runtime_state';
 import { scheduleRuntimeTask } from '../../../common/background_tasks';
-import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_ENGINE_PROJECT_ROOT_PATH } from '../../../../emulator/workspace';
-import { Runtime } from '../../../../emulator/runtime';
-import * as runtimeLuaPipeline from '../../../../emulator/runtime_lua_pipeline';
-import * as runtimeIde from '../../../../emulator/runtime_ide';
+import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_ENGINE_PROJECT_ROOT_PATH } from '../../../workspace/workspace';
+import { Runtime } from '../../../../machine/runtime/runtime';
+import * as runtimeLuaPipeline from '../../../runtime/runtime_lua_pipeline';
+import * as runtimeIde from '../../../runtime/runtime_ide';
 import type { ActionPromptAction } from '../../../common/types';
 import { handleRuntimeTaskError } from '../../ui/editor_runtime';
 import { clearExecutionStopHighlights } from '../../contrib/runtime_error/runtime_error_navigation';

@@ -1,4 +1,4 @@
-import { Runtime } from '../../../../emulator/runtime';
+import { Runtime } from '../../../../machine/runtime/runtime';
 import { createLuaSemanticFrontendFromSnapshot } from './semantic_workspace';
 import type { LuaSemanticWorkspaceSnapshot } from './semantic_model';
 import { prepareSemanticWorkspaceForEditorBuffer } from './semantic_workspace_sync';

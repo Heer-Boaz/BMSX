@@ -3,12 +3,12 @@ import { test } from 'node:test';
 
 import { LuaLexer } from '../../src/bmsx/lua/syntax/lualexer';
 import { LuaParser } from '../../src/bmsx/lua/syntax/luaparser';
-import { IO_INP_QUERY } from '../../src/bmsx/emulator/io';
-import { compileLuaChunkToProgram } from '../../src/bmsx/emulator/program_compiler';
+import { IO_INP_QUERY } from '../../src/bmsx/machine/bus/io';
+import { compileLuaChunkToProgram } from '../../src/bmsx/machine/program/program_compiler';
 import {
 	withTemporaryMmioRegisterSpec,
 	type MmioRegisterSpec,
-} from '../../src/bmsx/emulator/mmio_register_spec';
+} from '../../src/bmsx/machine/bus/mmio_register_spec';
 
 function parseChunk(source: string, path: string = 'value_flow.lua') {
 	const lexer = new LuaLexer(source, path);

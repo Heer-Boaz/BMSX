@@ -36,7 +36,7 @@ const { LuaLexer } = require('../../src/bmsx/lua/syntax/lualexer');
 // @ts-ignore
 const { LuaParser } = require('../../src/bmsx/lua/syntax/luaparser');
 // @ts-ignore
-const { compileLuaChunkToProgram, isLuaCompileError } = require('../../src/bmsx/emulator/program_compiler');
+const { compileLuaChunkToProgram, isLuaCompileError } = require('../../src/bmsx/machine/program/program_compiler');
 // @ts-ignore
 const {
 	PROGRAM_ASSET_ID,
@@ -46,7 +46,7 @@ const {
 	encodeProgram,
 	encodeProgramAsset,
 	encodeProgramSymbolsAsset,
-} = require('../../src/bmsx/emulator/program_asset');
+} = require('../../src/bmsx/machine/program/program_asset');
 // @ts-ignore
 // @ts-ignore
 const pako = require('pako');
@@ -138,7 +138,7 @@ export function normalizeWorkspacePath(input: string): string {
 
 const CART_ROOT_SEGMENT = 'src/carts/';
 const ENGINE_RES_SEGMENT = 'src/bmsx/res';
-const DEFAULT_CART_BOOTLOADER_SEGMENT = 'src/bmsx/emulator/default_cart';
+const DEFAULT_CART_BOOTLOADER_SEGMENT = 'src/bmsx/machine/firmware/default_cart';
 
 function isCartPath(path?: string): boolean {
 	if (!path || path.length === 0) return false;
@@ -268,7 +268,7 @@ export async function buildEngineRuntime(options: { debug: boolean }): Promise<v
 
 	const buildRuntime = async (outfile: string, buildDebug: boolean): Promise<void> => {
 		await build({
-			entryPoints: ['./src/bmsx/emulator/engine_entry.ts'],
+			entryPoints: ['./src/bmsx/machine/runtime/engine_entry.ts'],
 			bundle: true,
 			platform: 'browser',
 			format: 'iife',

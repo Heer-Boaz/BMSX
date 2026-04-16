@@ -1,4 +1,4 @@
-import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../emulator/types';
+import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../machine/runtime/types';
 import type { EditorDiagnostic } from '../../../common/types';
 import { computeLuaDiagnostics, getApiCompletionData } from '../intellisense/intellisense';
 import { getCachedLuaParse } from '../../../language/lua/lua_analysis_cache';

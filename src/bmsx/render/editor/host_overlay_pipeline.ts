@@ -14,7 +14,7 @@ import {
 	TEXTURE_UNIT_ATLAS_SECONDARY,
 } from '../backend/webgl/webgl.constants';
 import { $ } from '../../core/engine_core';
-import { Runtime } from '../../emulator/runtime';
+import { Runtime } from '../../machine/runtime/runtime';
 import { TAB_SPACES } from '../shared/bitmap_font';
 import type { GlyphRenderSubmission, color } from '../shared/render_types';
 import {

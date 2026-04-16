@@ -1,7 +1,7 @@
 import { $ } from '../../../core/engine_core';
 import { scheduleIdeOnce } from '../../common/background_tasks';
 import { taskGate } from '../../../core/taskgate';
-import { clearWorkspaceCachedSources } from '../../../emulator/workspace_cache';
+import { clearWorkspaceCachedSources } from '../../workspace/workspace_cache';
 import { workspaceState } from './workspace_state';
 import { clearWorkspaceStorageConfiguration, configureWorkspaceStorage, isWorkspaceServerAvailable, scheduleWorkspaceServerRetry, writeWorkspaceStateFile } from './workspace_io';
 import { restoreWorkspaceSessionFromDisk } from './workspace_restore';

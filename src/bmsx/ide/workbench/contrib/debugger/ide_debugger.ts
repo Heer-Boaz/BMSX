@@ -1,5 +1,5 @@
-import { Runtime } from '../../../../emulator/runtime';
-import * as runtimeIde from '../../../../emulator/runtime_ide';
+import { Runtime } from '../../../../machine/runtime/runtime';
+import * as runtimeIde from '../../../runtime/runtime_ide';
 import { type LuaDebuggerSessionMetrics } from '../../../../lua/luadebugger';
 import { editorRuntimeState } from '../../../editor/common/editor_runtime_state';
 import { editorDebuggerState } from './debugger_state';

@@ -5,7 +5,7 @@ import type {
 	VdpBlitterHost,
 	VdpBlitterSource,
 	VdpFrameBufferColor,
-} from '../../emulator/vdp';
+} from '../../machine/devices/vdp/vdp';
 import type { Layer2D } from '../shared/render_types';
 import { HeadlessGPUBackend } from '../headless/headless_backend';
 

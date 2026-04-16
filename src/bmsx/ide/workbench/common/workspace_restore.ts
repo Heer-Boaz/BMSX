@@ -1,9 +1,9 @@
 import type { ResourceDescriptor } from '../../common/types';
 import { restoreBreakpointsFromPayload } from '../contrib/debugger/ide_debugger';
-import { Runtime } from '../../../emulator/runtime';
-import * as runtimeIde from '../../../emulator/runtime_ide';
+import { Runtime } from '../../../machine/runtime/runtime';
+import * as runtimeIde from '../../runtime/runtime_ide';
 import { editorDocumentState } from '../../editor/editing/editor_document_state';
-import { fetchWorkspaceFile } from '../../../emulator/workspace';
+import { fetchWorkspaceFile } from '../../workspace/workspace';
 import { setFontVariant } from '../../editor/ui/editor_view';
 import { initializeTabs } from '../ui/tabs';
 import {
@@ -16,7 +16,7 @@ import {
 } from '../ui/code_tab_contexts';
 import { openCodeTabForDescriptor } from '../ui/code_tab_io';
 import { getActiveTabId } from '../ui/tabs';
-import { deleteWorkspaceCachedSources, setWorkspaceCachedSources } from '../../../emulator/workspace_cache';
+import { deleteWorkspaceCachedSources, setWorkspaceCachedSources } from '../../workspace/workspace_cache';
 import { restoreSnapshot } from '../../editor/editing/undo_controller';
 import { readDirtyBuffer, readWorkspaceStateFile, deleteDirtyBuffer } from './workspace_io';
 import { applySourceToContext, buildSnapshotFromBuffer } from './workspace_context_snapshot';

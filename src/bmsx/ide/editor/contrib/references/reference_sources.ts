@@ -1,15 +1,15 @@
 import { clamp } from '../../../../utils/clamp';
-import type { LuaDefinitionLocation, LuaSymbolEntry, ResourceDescriptor } from '../../../../emulator/types';
+import type { LuaDefinitionLocation, LuaSymbolEntry, ResourceDescriptor } from '../../../../machine/runtime/types';
 import type { CodeTabContext, SearchMatch, SymbolSearchResult } from '../../../common/types';
 import { parseLuaIdentifierChain } from '../../../language/lua/lua_identifier_chain';
-import { Runtime } from '../../../../emulator/runtime';
-import * as runtimeLuaPipeline from '../../../../emulator/runtime_lua_pipeline';
+import { Runtime } from '../../../../machine/runtime/runtime';
+import * as runtimeLuaPipeline from '../../../runtime/runtime_lua_pipeline';
 import { createEditorSemanticFrontend } from '../intellisense/editor_semantic_frontend';
 import { LuaSemanticWorkspace } from '../intellisense/semantic_workspace';
 import { syncSemanticWorkspacePaths, type SemanticWorkspacePathInput } from '../intellisense/semantic_workspace_sync';
 import { ReferenceState, type ReferenceMatchInfo } from './reference_state';
 import { getTextSnapshot, splitText } from '../../text/source_text';
-import { listResources } from '../../../../emulator/workspace';
+import { listResources } from '../../../workspace/workspace';
 import type { Decl, LuaSemanticWorkspaceSnapshot } from '../intellisense/semantic_model';
 
 export type ProjectReferenceEnvironment = {

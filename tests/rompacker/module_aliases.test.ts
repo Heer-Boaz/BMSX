@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { buildModuleAliasMap, buildModuleAliasesFromPaths } from '../../src/bmsx/emulator/program_asset';
+import { buildModuleAliasMap, buildModuleAliasesFromPaths } from '../../src/bmsx/machine/program/program_asset';
 
 test('bios util modules resolve through util aliases', () => {
 	const aliasMap = buildModuleAliasMap(buildModuleAliasesFromPaths([

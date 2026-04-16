@@ -1,5 +1,5 @@
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../../emulator/lua_builtin_descriptors';
-import { Runtime } from '../../../../emulator/runtime';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../../machine/firmware/lua_builtin_descriptors';
+import { Runtime } from '../../../../machine/runtime/runtime';
 import { resolveLuaIdentifierChainRoot } from '../../../language/lua/lua_identifier_chain';
 import type { EditorContextMenuEntry, EditorContextToken } from '../../../common/types';
 

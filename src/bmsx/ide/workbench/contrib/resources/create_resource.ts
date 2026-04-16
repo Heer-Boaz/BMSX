@@ -5,7 +5,7 @@ import { getActiveCodeTabContext } from '../../ui/code_tab_contexts';
 import { resetBlink } from '../../../editor/render/render_caret';
 import { focusEditorFromSearch } from '../../../editor/contrib/find/editor_search';
 import { focusEditorFromLineJump } from '../../../editor/contrib/find/line_jump';
-import { listResources } from '../../../../emulator/workspace';
+import { listResources } from '../../../workspace/workspace';
 import { editorCaretState } from '../../../editor/ui/caret_state';
 import { renameController } from '../../../editor/contrib/rename/rename_controller';
 import { createResourceState } from './resource_widget_state';

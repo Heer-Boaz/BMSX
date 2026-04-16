@@ -1,4 +1,4 @@
-import type { LuaHoverResult } from '../../../../emulator/types';
+import type { LuaHoverResult } from '../../../../machine/runtime/types';
 import type { CodeHoverTooltip } from '../../../common/types';
 
 type GotoHoverHighlight = {

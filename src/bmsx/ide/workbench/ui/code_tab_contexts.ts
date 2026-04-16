@@ -6,10 +6,10 @@ import type {
 	EditorTabDescriptor,
 	ResourceDescriptor,
 } from '../../common/types';
-import { Runtime } from '../../../emulator/runtime';
-import * as runtimeLuaPipeline from '../../../emulator/runtime_lua_pipeline';
+import { Runtime } from '../../../machine/runtime/runtime';
+import * as runtimeLuaPipeline from '../../runtime/runtime_lua_pipeline';
 import { PieceTreeBuffer } from '../../editor/text/piece_tree_buffer';
-import { listResources } from '../../../emulator/workspace';
+import { listResources } from '../../workspace/workspace';
 import { computeResourceTabTitle } from './tab_titles';
 import { codeTabSessionState } from './code_tab_session_state';
 import { tabSessionState } from './tab_session_state';

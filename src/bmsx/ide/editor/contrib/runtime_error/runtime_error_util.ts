@@ -2,7 +2,7 @@ import { LuaCallFrame } from '../../../../lua/luaruntime';
 import { StackTraceFrame } from '../../../../lua/luavalue';
 import { splitText } from '../../text/source_text';
 import { RuntimeErrorDetails } from '../../../common/types';
-import { createMinimalSourceMapConsumer, InlineSourceMap, MinimalSourceMapConsumer, originalPositionFor } from '../../../../emulator/sourcemap_minimal';
+import { createMinimalSourceMapConsumer, InlineSourceMap, MinimalSourceMapConsumer, originalPositionFor } from '../../../../machine/program/sourcemap_minimal';
 
 type InlineSourceMapRegistry = Map<string, InlineSourceMap>;
 

@@ -1,6 +1,6 @@
 import { LuaSyntaxKind, type LuaCallExpression, type LuaChunk, type LuaIdentifierExpression, type LuaSourceRange, type LuaStringLiteralExpression } from '../../../../lua/syntax/lua_ast';
 import { LuaTokenType } from '../../../../lua/syntax/luatoken';
-import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../emulator/types';
+import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../machine/runtime/types';
 import type { ParsedLuaChunk } from '../../../language/lua/lua_parse';
 import {
 	buildLuaSemanticWorkspaceSnapshot,
@@ -10,7 +10,7 @@ import {
 	type Ref,
 	type SymbolID,
 } from './semantic_model';
-import { buildModuleAliasesFromPaths } from '../../../../emulator/program_asset';
+import { buildModuleAliasesFromPaths } from '../../../../machine/program/program_asset';
 import {
 	computeLuaDiagnosticsFromAnalysis,
 	getDefaultLuaBuiltinDescriptors,

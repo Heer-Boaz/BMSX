@@ -4,7 +4,7 @@ import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonSta
 import { KeyboardInput } from './keyboardinput';
 import { ContextStack, MappingContext } from './context';
 import { $ } from '../core/engine_core';
-import { Runtime } from '../emulator/runtime';
+import { Runtime } from '../machine/runtime/runtime';
 import { clamp } from '../utils/clamp';
 import { deep_clone } from '../utils/deep_clone';
 

@@ -1,6 +1,6 @@
-import type { ResourceDescriptor } from '../../../../emulator/types';
-import { Runtime } from '../../../../emulator/runtime';
-import * as runtimeLuaPipeline from '../../../../emulator/runtime_lua_pipeline';
+import type { ResourceDescriptor } from '../../../../machine/runtime/types';
+import { Runtime } from '../../../../machine/runtime/runtime';
+import * as runtimeLuaPipeline from '../../../runtime/runtime_lua_pipeline';
 
 export function findResourceDescriptorForChunk(path: string): ResourceDescriptor | null {
 	const runtime = Runtime.instance;

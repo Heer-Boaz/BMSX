@@ -1,13 +1,13 @@
 import type { RomAsset, CartRomHeader } from '../../src/bmsx/rompack/rompack';
-import { disassembleProgram } from '../../src/bmsx/emulator/disassembler';
-import type { Program, ProgramMetadata } from '../../src/bmsx/emulator/cpu';
+import { disassembleProgram } from '../../src/bmsx/machine/cpu/disassembler';
+import type { Program, ProgramMetadata } from '../../src/bmsx/machine/cpu/cpu';
 import {
 	decodeProgramAsset,
 	decodeProgramSymbolsAsset,
 	inflateProgram,
 	PROGRAM_ASSET_ID,
 	PROGRAM_SYMBOLS_ASSET_ID,
-} from '../../src/bmsx/emulator/program_asset';
+} from '../../src/bmsx/machine/program/program_asset';
 
 export const ROM_MANIFEST_ASSET_ID = '__rom_manifest__';
 export const ROM_MANIFEST_SOURCE_PATH = 'manifest.rommanifest';

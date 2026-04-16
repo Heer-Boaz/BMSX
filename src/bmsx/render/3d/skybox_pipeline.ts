@@ -1,5 +1,5 @@
 import { $ } from '../../core/engine_core';
-import { Runtime } from '../../emulator/runtime';
+import { Runtime } from '../../machine/runtime/runtime';
 import skyboxFS from '../3d/shaders/skybox.frag.glsl';
 import skyboxVS from '../3d/shaders/skybox.vert.glsl';
 import type { RenderContext } from '../backend/pipeline_interfaces';

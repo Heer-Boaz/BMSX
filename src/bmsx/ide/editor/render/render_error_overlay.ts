@@ -8,7 +8,7 @@ import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../../common/type
 import type { StackTraceFrame } from '../../../lua/luavalue';
 import type { RectBounds } from '../../../rompack/rompack';
 import { point_in_rect } from '../../../utils/rect_operations';
-import { Runtime } from '../../../emulator/runtime';
+import { Runtime } from '../../../machine/runtime/runtime';
 import { api } from '../ui/view/overlay_api';
 import { centerCursorVertically, revealCursor, updateDesiredColumn } from '../ui/caret';
 import * as constants from '../../common/constants';
@@ -16,7 +16,7 @@ import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../con
 import { resetBlink } from './render_caret';
 import { formatRuntimeErrorLocation } from '../contrib/runtime_error/runtime_error_util';
 import { splitText } from '../text/source_text';
-import { BmsxColors } from '../../../emulator/vdp';
+import { BmsxColors } from '../../../machine/devices/vdp/vdp';
 import { editorRuntimeState } from '../common/editor_runtime_state';
 import { activate } from '../../cart_editor';
 import { focusChunkSource } from '../../workbench/contrib/resources/resource_navigation';

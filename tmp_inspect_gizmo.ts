@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import { parseCartHeader, loadAssetList } from './src/bmsx/rompack/romloader';
-import { decodeProgramAsset, decodeProgramSymbolsAsset, inflateProgram, PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID } from './src/bmsx/emulator/program_asset';
+import { decodeProgramAsset, decodeProgramSymbolsAsset, inflateProgram, PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID } from './src/bmsx/machine/program/program_asset';
 
 (async () => {
   const path = 'dist/2025.debug.rom';

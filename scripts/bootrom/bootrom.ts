@@ -6,7 +6,7 @@ import { createAudioContext, startAudioOnIos } from './bootaudio';
 const HAS_DOM_ENVIRONMENT = typeof document !== 'undefined' && document !== null;
 const initialStartingGamepadIndex: number = null;
 type BMSX = {
-	startCart: typeof import('../../src/bmsx/emulator/start_cart').startCart;
+	startCart: typeof import('../../src/bmsx/machine/runtime/start_cart').startCart;
 };
 
 declare global {

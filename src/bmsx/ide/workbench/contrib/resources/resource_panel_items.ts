@@ -1,5 +1,5 @@
-import type { ResourceDescriptor } from '../../../../emulator/types';
-import { Runtime } from '../../../../emulator/runtime';
+import type { ResourceDescriptor } from '../../../../machine/runtime/types';
+import { Runtime } from '../../../../machine/runtime/runtime';
 import { measureText } from '../../../editor/common/text_layout';
 import type { ResourceBrowserItem } from '../../../common/types';
 import { listResourcesStrict } from './resource_catalog';

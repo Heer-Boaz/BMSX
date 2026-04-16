@@ -1,5 +1,5 @@
-import type { ResourceDescriptor } from '../../../../emulator/types';
-import { listResources } from '../../../../emulator/workspace';
+import type { ResourceDescriptor } from '../../../../machine/runtime/types';
+import { listResources } from '../../../workspace/workspace';
 import { listAemResourceDescriptors } from '../../../language/aem/aem_editor';
 
 export function listResourcesStrict(): ResourceDescriptor[] {

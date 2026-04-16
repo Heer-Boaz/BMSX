@@ -1,4 +1,4 @@
-import type { LuaSymbolEntry } from '../../../../emulator/types';
+import type { LuaSymbolEntry } from '../../../../machine/runtime/types';
 import * as constants from '../../../common/constants';
 import { computeSourceLabel } from '../references/reference_sources';
 import { getActiveCodeTabContext } from '../../../workbench/ui/code_tab_contexts';

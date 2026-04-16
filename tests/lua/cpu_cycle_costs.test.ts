@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { createNativeFunction } from '../../src/bmsx/emulator/cpu';
+import { createNativeFunction } from '../../src/bmsx/machine/cpu/cpu';
 
 test('native cost resolution uses flat tiers by function category', () => {
 	assert.deepEqual(createNativeFunction('sys_cpu_cycles_used', () => {}).cost, { base: 0, perArg: 0, perRet: 0 });

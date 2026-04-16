@@ -11,7 +11,7 @@ import {
 	buildWorkspaceStateFilePath,
 	buildWorkspaceStorageKey,
 	joinWorkspacePaths,
-} from '../../../emulator/workspace';
+} from '../../workspace/workspace';
 import { workspaceState } from './workspace_state';
 import type { WorkspaceStoragePaths } from './workspace_types';
 

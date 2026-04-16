@@ -14,9 +14,9 @@ import type { MeshRenderSubmission, ParticleRenderSubmission } from '../shared/r
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
 import { resolveActiveCamera3D } from '../shared/hardware_camera';
 import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
-import { VRAM_ATLAS_SLOT_SIZE, VRAM_SYSTEM_ATLAS_SLOT_SIZE } from '../../emulator/memory_map';
+import { VRAM_ATLAS_SLOT_SIZE, VRAM_SYSTEM_ATLAS_SLOT_SIZE } from '../../machine/memory/memory_map';
 import type { Mesh } from '../3d/mesh';
-import { Runtime } from '../../emulator/runtime';
+import { Runtime } from '../../machine/runtime/runtime';
 import type { HeadlessPresentHost } from './headless_view';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {

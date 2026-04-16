@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { loadRomAssetList } from './src/bmsx/rompack/romloader';
-import { decodeProgramAsset, PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID, inflateProgram } from './src/bmsx/emulator/program_asset';
+import { decodeProgramAsset, PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID, inflateProgram } from './src/bmsx/machine/program/program_asset';
 
 async function main() {
   const rom = new Uint8Array(readFileSync('dist/bmsx-bios.debug.rom'));

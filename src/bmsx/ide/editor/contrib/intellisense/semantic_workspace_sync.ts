@@ -2,8 +2,8 @@ import type { ParsedLuaChunk } from '../../../language/lua/lua_parse';
 import { getCachedLuaParse } from '../../../language/lua/lua_analysis_cache';
 import { editorRuntimeState } from '../../common/editor_runtime_state';
 import { LuaSemanticWorkspace, type FileSemanticData, type LuaSemanticWorkspaceSnapshot } from './semantic_model';
-import { Runtime } from '../../../../emulator/runtime';
-import * as runtimeLuaPipeline from '../../../../emulator/runtime_lua_pipeline';
+import { Runtime } from '../../../../machine/runtime/runtime';
+import * as runtimeLuaPipeline from '../../../runtime/runtime_lua_pipeline';
 import { splitText } from '../../text/source_text';
 
 export type SemanticWorkspacePathInput = {

@@ -1,5 +1,5 @@
 import { buildLuaSemanticFrontend, type LuaSemanticFrontend } from './lua_semantic_frontend';
-import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../emulator/types';
+import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../machine/runtime/types';
 import type { LuaSemanticWorkspaceSnapshot } from './semantic_model';
 
 export { LuaSemanticWorkspace } from './semantic_model';

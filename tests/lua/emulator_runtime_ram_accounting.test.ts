@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CPU, Table, createNativeFunction, createNativeObject } from '../../src/bmsx/emulator/cpu';
-import { Memory } from '../../src/bmsx/emulator/memory';
+import { CPU, Table, createNativeFunction, createNativeObject } from '../../src/bmsx/machine/cpu/cpu';
+import { Memory } from '../../src/bmsx/machine/memory/memory';
 
 test('tracked heap bytes include rooted tables and native arrays', () => {
 	const memory = new Memory({ engineRom: new Uint8Array(0) });

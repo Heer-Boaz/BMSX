@@ -1,5 +1,5 @@
 const STUB_MODULES = new Map([
-	['src/bmsx/emulator/api.ts', `
+	['src/bmsx/machine/api.ts', `
 export class Api {
 	emit(_eventName, _payload, _emitterId) {}
 	emit_gameplay(_eventName, _emitterId, _payload) {}

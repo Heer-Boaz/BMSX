@@ -6,8 +6,8 @@ import {
 	PROGRAM_ASSET_ID,
 	PROGRAM_SYMBOLS_ASSET_ID,
 	inflateProgram,
-} from './src/bmsx/emulator/program_asset';
-import { disassembleProto } from './src/bmsx/emulator/disassembler';
+} from './src/bmsx/machine/program/program_asset';
+import { disassembleProto } from './src/bmsx/machine/cpu/disassembler';
 
 (async () => {
 	const rom = new Uint8Array(readFileSync('dist/bmsx-bios.debug.rom'));

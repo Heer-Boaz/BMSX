@@ -14,9 +14,9 @@ import {
 	type LuaStringLiteralExpression,
 } from '../../../../lua/syntax/lua_ast';
 import type { CanonicalizationType } from '../../../../rompack/rompack';
-import { API_METHOD_METADATA } from '../../../../emulator/api_metadata';
-import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../../../../emulator/lua_builtin_descriptors';
-import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../emulator/types';
+import { API_METHOD_METADATA } from '../../../../machine/firmware/api_metadata';
+import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../../../../machine/firmware/lua_builtin_descriptors';
+import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../machine/runtime/types';
 import {
 	buildLuaSemanticWorkspaceSnapshot,
 	type Decl,

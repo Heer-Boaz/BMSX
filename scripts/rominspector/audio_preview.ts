@@ -1,6 +1,6 @@
 import { clamp } from '../../src/bmsx/utils/clamp';
 import { decodeWavToPcm } from '../../src/bmsx/utils/wav';
-import { parseAudioInfo } from '../../src/bmsx/emulator/runtime_assets';
+import { parseAudioInfo } from '../../src/bmsx/machine/runtime/runtime_assets';
 
 export type AudioPreviewPcm = {
 	samples: Int16Array;

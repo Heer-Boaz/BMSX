@@ -10,7 +10,7 @@ import { drawEditorText } from '../../editor/render/text_renderer';
 import { api } from '../../editor/ui/view/overlay_api';
 import { measureText, wrapOverlayLine } from '../../editor/common/text_layout';
 import * as constants from '../../common/constants';
-import { BmsxColors } from '../../../emulator/vdp';
+import { BmsxColors } from '../../../machine/devices/vdp/vdp';
 import { renderErrorOverlayText } from '../../editor/render/render_error_overlay';
 import { drawRectOutlineColor } from '../../editor/render/render_caret';
 import { centerDialogBounds } from '../../editor/render/dialog_layout';

@@ -1,4 +1,4 @@
-import type { ResourceDescriptor } from '../../../../emulator/types';
+import type { ResourceDescriptor } from '../../../../machine/runtime/types';
 import type { EditorTabId, ResourceViewerState } from '../../../common/types';
 import { setActiveTab } from '../../ui/tabs';
 import { tabSessionState } from '../../ui/tab_session_state';

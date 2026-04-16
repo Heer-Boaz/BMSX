@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { CodeTabContext, SearchMatch } from '../../src/bmsx/emulator/ide/types';
-import type { ResourceDescriptor } from '../../src/bmsx/emulator/types';
-import { createLuaSemanticFrontendFromSnapshot, LuaSemanticWorkspace } from '../../src/bmsx/emulator/ide/semantic_workspace';
-import { CrossFileRenameManager, convertRangeToSearchMatch, type CrossFileRenameDependencies } from '../../src/bmsx/emulator/ide/rename_controller';
+import type { CodeTabContext, SearchMatch } from '../../src/bmsx/ide/types';
+import type { ResourceDescriptor } from '../../src/bmsx/machine/runtime/types';
+import { createLuaSemanticFrontendFromSnapshot, LuaSemanticWorkspace } from '../../src/bmsx/ide/semantic_workspace';
+import { CrossFileRenameManager, convertRangeToSearchMatch, type CrossFileRenameDependencies } from '../../src/bmsx/ide/rename_controller';
 
 function normalizeSource(source: string): string[] {
 	return source.replace(/\r\n/g, '\n').split('\n');

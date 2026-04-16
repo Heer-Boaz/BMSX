@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 test('initializeLuaInterpreterFromSnapshot hot-resume path keeps integrations live', () => {
-	const src = readFileSync('src/bmsx/emulator/runtime_lua_pipeline.ts', 'utf8');
+	const src = readFileSync('src/bmsx/ide/runtime/runtime_lua_pipeline.ts', 'utf8');
 	const start = src.indexOf('export function initializeLuaInterpreterFromSnapshot');
 	assert.ok(start > -1, 'initializeLuaInterpreterFromSnapshot not found');
 	const nextExport = src.indexOf('\nexport function ', start + 1);
@@ -13,7 +13,7 @@ test('initializeLuaInterpreterFromSnapshot hot-resume path keeps integrations li
 });
 
 test('reloadLuaProgramState applies hot-resume without reinitialising interpreter', () => {
-	const src = readFileSync('src/bmsx/emulator/runtime_lua_pipeline.ts', 'utf8');
+	const src = readFileSync('src/bmsx/ide/runtime/runtime_lua_pipeline.ts', 'utf8');
 	const start = src.indexOf('export function reloadLuaProgramState');
 	assert.ok(start > -1, 'reloadLuaProgramState not found');
 	const nextExport = src.indexOf('\nexport function ', start + 1);
@@ -23,7 +23,7 @@ test('reloadLuaProgramState applies hot-resume without reinitialising interprete
 });
 
 test('hotResumeProgramEntry keeps interpreter resident', () => {
-	const src = readFileSync('src/bmsx/emulator/runtime_lua_pipeline.ts', 'utf8');
+	const src = readFileSync('src/bmsx/ide/runtime/runtime_lua_pipeline.ts', 'utf8');
 	const start = src.indexOf('export function hotResumeProgramEntry');
 	assert.ok(start > -1, 'hotResumeProgramEntry not found');
 	const nextExport = src.indexOf('\nexport function ', start + 1);

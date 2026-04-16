@@ -1,8 +1,8 @@
 import { $ } from '../../../../core/engine_core';
 import { clamp } from '../../../../utils/clamp';
-import { Runtime } from '../../../../emulator/runtime';
-import * as runtimeLuaPipeline from '../../../../emulator/runtime_lua_pipeline';
-import type { ResourceDescriptor } from '../../../../emulator/types';
+import { Runtime } from '../../../../machine/runtime/runtime';
+import * as runtimeLuaPipeline from '../../../runtime/runtime_lua_pipeline';
+import type { ResourceDescriptor } from '../../../../machine/runtime/types';
 import * as constants from '../../../common/constants';
 import { computeResourceTabTitle } from '../../ui/tab_titles';
 import { splitText } from '../../../editor/text/source_text';

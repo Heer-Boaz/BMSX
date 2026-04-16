@@ -1,8 +1,8 @@
 import { editorRuntimeState } from '../../../editor/common/editor_runtime_state';
 import { showEditorMessage } from '../../common/feedback_state';
 import * as constants from '../../../common/constants';
-import { Runtime } from '../../../../emulator/runtime';
-import * as runtimeIde from '../../../../emulator/runtime_ide';
+import { Runtime } from '../../../../machine/runtime/runtime';
+import * as runtimeIde from '../../../runtime/runtime_ide';
 import type { ResourceDescriptor } from '../../../common/types';
 import { closeLineJump } from '../../../editor/contrib/find/line_jump';
 import { closeSymbolSearch } from '../../../editor/contrib/symbols/symbol_search_shared';

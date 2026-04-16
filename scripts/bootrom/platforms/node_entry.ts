@@ -33,7 +33,7 @@ interface BootGlobals {
 }
 
 type EngineNamespace = {
-	startCart: typeof import('../../../src/bmsx/emulator/start_cart').startCart;
+	startCart: typeof import('../../../src/bmsx/machine/runtime/start_cart').startCart;
 	setCpuProfilerEnabled(enabled: boolean): void;
 	formatCpuProfilerReport(): string;
 };

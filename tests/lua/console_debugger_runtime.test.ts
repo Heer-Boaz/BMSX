@@ -8,9 +8,9 @@ import { createLuaInterpreter, isLuaDebuggerPauseSignal } from '../../src/bmsx/l
 import { LuaDebuggerController } from '../../src/bmsx/lua/luadebugger';
 import { LuaRuntimeError } from '../../src/bmsx/lua/errors';
 import type { LuaFunctionValue } from '../../src/bmsx/lua/value';
-import { emitDebuggerLifecycleEvent } from '../../src/bmsx/emulator/debugger_lifecycle';
-import { getDebuggerCommandExecutor, issueDebuggerCommand } from '../../src/bmsx/emulator/ide/debugger_controls';
-import { setDebuggerRuntimeAccessor } from '../../src/bmsx/emulator/runtime_accessors';
+import { emitDebuggerLifecycleEvent } from '../../src/bmsx/machine/debugger_lifecycle';
+import { getDebuggerCommandExecutor, issueDebuggerCommand } from '../../src/bmsx/ide/debugger_controls';
+import { setDebuggerRuntimeAccessor } from '../../src/bmsx/machine/runtime_accessors';
 
 function resetDebuggerLifecycle(): void {
 	emitDebuggerLifecycleEvent({ type: 'continued', mode: 'continue' });

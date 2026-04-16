@@ -1,5 +1,5 @@
 import { $ } from '../../core/engine_core';
-import { Runtime } from '../../emulator/runtime';
+import { Runtime } from '../../machine/runtime/runtime';
 import type {
 	VdpBlitterBlitCommand as BlitterBlitCommand,
 	VdpBlitterClearCommand as BlitterClearCommand,
@@ -12,7 +12,7 @@ import type {
 	VdpBlitterHost as VdpWebGLBlitterHost,
 	VdpBlitterTileRunCommand as BlitterTileRunCommand,
 	VdpFrameBufferColor as FrameBufferColor,
-} from '../../emulator/vdp';
+} from '../../machine/devices/vdp/vdp';
 import type { PassEncoder, RenderPassInstanceHandle } from '../backend/pipeline_interfaces';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../backend/frame_uniforms';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';

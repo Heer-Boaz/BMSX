@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { CPU, OpCode, RunResult, type Program, type ProgramMetadata, type Proto } from '../../src/bmsx/emulator/cpu';
-import { collectCpuProfilerHotPcs } from '../../src/bmsx/emulator/cpu_profiler';
-import { writeInstruction, INSTRUCTION_BYTES } from '../../src/bmsx/emulator/instruction_format';
-import { Memory } from '../../src/bmsx/emulator/memory';
+import { CPU, OpCode, RunResult, type Program, type ProgramMetadata, type Proto } from '../../src/bmsx/machine/cpu/cpu';
+import { collectCpuProfilerHotPcs } from '../../src/bmsx/machine/cpu/cpu_profiler';
+import { writeInstruction, INSTRUCTION_BYTES } from '../../src/bmsx/machine/cpu/instruction_format';
+import { Memory } from '../../src/bmsx/machine/memory/memory';
 
 function makeProto(codeLen: number): Proto {
 	return {

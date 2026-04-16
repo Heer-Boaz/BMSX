@@ -8,7 +8,7 @@ import { initializeResourcePanel } from '../../workbench/contrib/resources/resou
 import { editorDiagnosticsState } from '../contrib/diagnostics/diagnostics_state';
 import { initializeDebuggerUiState } from '../../workbench/contrib/debugger/ide_debugger';
 import { initializeWorkspaceStorage } from '../../workbench/common/workspace_storage';
-import { Runtime } from '../../../emulator/runtime';
+import { Runtime } from '../../../machine/runtime/runtime';
 import { resetSemanticWorkspace } from '../contrib/intellisense/semantic_workspace_sync';
 import { assertMonospace } from '../common/text_layout';
 import * as constants from '../../common/constants';

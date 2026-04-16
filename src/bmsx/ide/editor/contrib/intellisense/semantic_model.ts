@@ -23,7 +23,7 @@ import {
 } from '../../../../lua/syntax/lua_ast';
 import type { LuaToken } from '../../../../lua/syntax/luatoken';
 import { LuaTokenType } from '../../../../lua/syntax/luatoken';
-import type { LuaSymbolEntry } from '../../../../emulator/types';
+import type { LuaSymbolEntry } from '../../../../machine/runtime/types';
 import type { ParsedLuaChunk } from '../../../language/lua/lua_parse';
 import { getCachedLuaParse } from '../../../language/lua/lua_analysis_cache';
 import type { CanonicalizationType } from '../../../../rompack/rompack';

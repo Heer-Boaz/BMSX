@@ -4,7 +4,7 @@ import { showEditorMessage } from '../../common/feedback_state';
 import { resetBlink } from '../../../editor/render/render_caret';
 import { refreshResourcePanelContents } from '../../../editor/ui/editor_view';
 import { openLuaCodeTab } from '../../ui/code_tab_io';
-import { createLuaResource } from '../../../../emulator/workspace';
+import { createLuaResource } from '../../../workspace/workspace';
 import { extractErrorMessage } from '../../../../lua/luavalue';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt, ensureDirectorySuffix } from './create_resource';
 import { createResourceState } from './resource_widget_state';

@@ -1,4 +1,4 @@
-import type { VdpBlitterExecutor } from '../../emulator/vdp';
+import type { VdpBlitterExecutor } from '../../machine/devices/vdp/vdp';
 import type { GPUBackend } from '../backend/pipeline_interfaces';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { HeadlessGPUBackend } from '../headless/headless_backend';

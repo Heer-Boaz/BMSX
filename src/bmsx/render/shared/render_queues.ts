@@ -12,7 +12,7 @@ import type {
 	RectRenderSubmission,
 	RenderLayer,
 } from './render_types';
-import { Runtime } from '../../emulator/runtime';
+import { Runtime } from '../../machine/runtime/runtime';
 import { clamp } from '../../utils/clamp';
 import { BFont } from './bitmap_font';
 import { setSpriteParallaxRigValues } from '../2d/sprite_parallax_rig';

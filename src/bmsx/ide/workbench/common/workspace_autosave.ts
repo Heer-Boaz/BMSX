@@ -1,9 +1,9 @@
 import { $ } from '../../../core/engine_core';
-import { Runtime } from '../../../emulator/runtime';
-import * as runtimeLuaPipeline from '../../../emulator/runtime_lua_pipeline';
+import { Runtime } from '../../../machine/runtime/runtime';
+import * as runtimeLuaPipeline from '../../runtime/runtime_lua_pipeline';
 import { editorDocumentState } from '../../editor/editing/editor_document_state';
 import { editorViewState } from '../../editor/ui/editor_view_state';
-import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../../../emulator/workspace_cache';
+import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../../workspace/workspace_cache';
 import { restoreSnapshot } from '../../editor/editing/undo_controller';
 import { resetNavigationHistoryState } from '../../editor/navigation/navigation_history';
 import { editorDebuggerState } from '../contrib/debugger/debugger_state';

@@ -1,4 +1,4 @@
-import { BmsxColors, resolvePaletteIndex, invertColorIndex } from '../../../emulator/vdp';
+import { BmsxColors, resolvePaletteIndex, invertColorIndex } from '../../../machine/devices/vdp/vdp';
 import type { OverlayApi as Api } from '../ui/view/overlay_api';
 import * as constants from '../../common/constants';
 import { drawEditorText } from './text_renderer';

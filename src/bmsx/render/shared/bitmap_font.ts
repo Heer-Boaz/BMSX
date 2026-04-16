@@ -1,5 +1,5 @@
 import { $ } from '../../core/engine_core';
-import { Runtime } from '../../emulator/runtime';
+import { Runtime } from '../../machine/runtime/runtime';
 
 export type GlyphMap = Record<string, string>;
 

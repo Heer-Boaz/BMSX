@@ -7,7 +7,7 @@ import { editorFeedbackState } from '../common/feedback_state';
 import { getActiveResourceViewer } from '../contrib/resources/resource_view_tabs';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { measureText, truncateTextToWidth } from '../../editor/common/text_layout';
-import { Runtime } from '../../../emulator/runtime';
+import { Runtime } from '../../../machine/runtime/runtime';
 import { api } from '../../editor/ui/view/overlay_api';
 import { workspaceState } from '../common/workspace_state';
 import { editorDocumentState } from '../../editor/editing/editor_document_state';

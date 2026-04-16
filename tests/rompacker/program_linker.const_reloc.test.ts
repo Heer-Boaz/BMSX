@@ -3,13 +3,13 @@ import { test } from 'node:test';
 
 import { LuaLexer } from '../../src/bmsx/lua/syntax/lualexer';
 import { LuaParser } from '../../src/bmsx/lua/syntax/luaparser';
-import { CPU, OpCode, RunResult, Table, createNativeFunction, type Proto } from '../../src/bmsx/emulator/cpu';
-import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction } from '../../src/bmsx/emulator/instruction_format';
-import { appendLuaChunkToProgram, compileLuaChunkToProgram } from '../../src/bmsx/emulator/program_compiler';
-import type { ProgramAsset, ProgramConstReloc } from '../../src/bmsx/emulator/program_asset';
-import { linkProgramAssets } from '../../src/bmsx/emulator/program_linker';
-import { Memory } from '../../src/bmsx/emulator/memory';
-import { isStringValue, stringValueToString } from '../../src/bmsx/emulator/string_pool';
+import { CPU, OpCode, RunResult, Table, createNativeFunction, type Proto } from '../../src/bmsx/machine/cpu/cpu';
+import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction } from '../../src/bmsx/machine/cpu/instruction_format';
+import { appendLuaChunkToProgram, compileLuaChunkToProgram } from '../../src/bmsx/machine/program/program_compiler';
+import type { ProgramAsset, ProgramConstReloc } from '../../src/bmsx/machine/program/program_asset';
+import { linkProgramAssets } from '../../src/bmsx/machine/program/program_linker';
+import { Memory } from '../../src/bmsx/machine/memory/memory';
+import { isStringValue, stringValueToString } from '../../src/bmsx/machine/memory/string_pool';
 
 type EncodedWord = {
 	op: OpCode;

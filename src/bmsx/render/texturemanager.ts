@@ -144,7 +144,7 @@
 // if (v_atlas_id > 253.5) {
 //     texColor = texture2D(u_texture3, v_texcoord);  // engine atlas at 254
 // }
-// Uniform binding ([vdp.cpp](src/bmsx_cpp/emulator/vdp.cpp#L343, L353)):
+// Uniform binding ([vdp.cpp](src/bmsx_cpp/machine/vdp.cpp#L343, L353)):
 
 // state.uniformTexture3 = glGetUniformLocation(state.program, "u_texture3");
 // // ...

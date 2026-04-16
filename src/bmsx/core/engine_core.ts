@@ -13,17 +13,17 @@ import { asset_id, getMachineMaxVoices, RuntimeAssets, type CartManifest, type M
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { buildSystemRuntimeAssetLayer, normalizeCartridgeBlob, parseCartridgeIndex, type RuntimeAssetLayer } from '../rompack/romloader';
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system_machine';
-import type { LuaSourceRegistry } from '../emulator/lua_sources';
+import type { LuaSourceRegistry } from '../machine/program/lua_sources';
 import { GateGroup, taskGate } from './taskgate';
-import { Runtime } from '../emulator/runtime';
-import { IRQ_NEWGAME } from '../emulator/io';
+import { Runtime } from '../machine/runtime/runtime';
+import { IRQ_NEWGAME } from '../machine/bus/io';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 import { InputSource, KeyModifier } from '../input/playerinput';
 import { shallowcopy } from '../utils/shallowcopy';
 import { clearAllQueues } from '../render/shared/render_queues';
 import { clearOverlayFrame } from '../render/editor/editor_overlay_queue';
-import { Table } from '../emulator/cpu';
-import { type StringValue } from '../emulator/string_pool';
+import { Table } from '../machine/cpu/cpu';
+import { type StringValue } from '../machine/memory/string_pool';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined

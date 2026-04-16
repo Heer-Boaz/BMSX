@@ -23,7 +23,7 @@ import {
 	LuaCompletionKind,
 	ParameterHintState,
 } from '../../../common/types';
-import type { LuaBuiltinDescriptor, LuaDefinitionRange, LuaSymbolEntry } from '../../../../emulator/types';
+import type { LuaBuiltinDescriptor, LuaDefinitionRange, LuaSymbolEntry } from '../../../../machine/runtime/types';
 import * as constants from '../../../common/constants';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
 import { isLuaCommentContext } from '../../../common/text_utils';

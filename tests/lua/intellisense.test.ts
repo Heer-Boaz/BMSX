@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { createRequire, register } from 'node:module';
 import { test } from 'node:test';
 
-import type { CodeTabContext } from '../../src/bmsx/emulator/ide/types';
-import type { ProjectReferenceEnvironment } from '../../src/bmsx/emulator/ide/reference_sources';
-import type { ResourceDescriptor } from '../../src/bmsx/emulator/types';
-import type { CodeLayout } from '../../src/bmsx/emulator/ide/code_layout';
-import { normalizeEndingsAndSplitLines } from 'bmsx/emulator/ide/text_utils';
+import type { CodeTabContext } from '../../src/bmsx/ide/types';
+import type { ProjectReferenceEnvironment } from '../../src/bmsx/ide/reference_sources';
+import type { ResourceDescriptor } from '../../src/bmsx/machine/runtime/types';
+import type { CodeLayout } from '../../src/bmsx/ide/code_layout';
+import { normalizeEndingsAndSplitLines } from 'bmsx/ide/text_utils';
 
 register('./glsl-loader.mjs', import.meta.url);
 
@@ -54,7 +54,7 @@ registerStubModule(gameserializerPath, (() => {
 	};
 })());
 
-const consoleApiPath = require.resolve('../../src/bmsx/emulator/api.ts');
+const consoleApiPath = require.resolve('../../src/bmsx/machine/api.ts');
 const consoleApiExports = {
 	Api: class {
 		public emit(eventName: string, payload?: unknown, emitterId?: unknown): void {
@@ -79,12 +79,12 @@ registerEmptyModule('../../src/bmsx/render/2d/shaders/2d.vert.glsl');
 registerEmptyModule('../../src/bmsx/render/3d/shaders/particle.frag.glsl');
 registerEmptyModule('../../src/bmsx/render/3d/shaders/particle.vert.glsl');
 
-const intellisenseModulePromise = import('../../src/bmsx/emulator/ide/intellisense');
-const luaStaticDiagnosticsModulePromise = import('../../src/bmsx/emulator/lua_static_diagnostics');
-const semanticModelModulePromise = import('../../src/bmsx/emulator/ide/semantic_model');
-const referenceSourcesModulePromise = import('../../src/bmsx/emulator/ide/reference_sources');
-const workspaceModulePromise = import('../../src/bmsx/emulator/ide/semantic_workspace');
-const referenceNavigationModulePromise = import('../../src/bmsx/emulator/ide/reference_navigation');
+const intellisenseModulePromise = import('../../src/bmsx/ide/intellisense');
+const luaStaticDiagnosticsModulePromise = import('../../src/bmsx/machine/lua_static_diagnostics');
+const semanticModelModulePromise = import('../../src/bmsx/ide/semantic_model');
+const referenceSourcesModulePromise = import('../../src/bmsx/ide/reference_sources');
+const workspaceModulePromise = import('../../src/bmsx/ide/semantic_workspace');
+const referenceNavigationModulePromise = import('../../src/bmsx/ide/reference_navigation');
 
 function luaRangeToSearchMatch(range: { start: { line: number; column: number }; end: { line: number; column: number } }, lines: readonly string[]): { row: number; start: number; end: number } {
 	const rowIndex = range.start.line - 1;

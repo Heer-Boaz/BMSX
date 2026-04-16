@@ -5,10 +5,10 @@ import { handlePostEditMutation, getSelectionRange } from '../editing/text_editi
 import { markDiagnosticsDirty } from '../contrib/diagnostics/diagnostics';
 import { requestSemanticRefresh, clearReferenceHighlights } from '../contrib/intellisense/intellisense';
 import { getTextSnapshot } from '../text/source_text';
-import * as runtimeLuaPipeline from '../../../emulator/runtime_lua_pipeline';
-import { Runtime } from '../../../emulator/runtime';
+import * as runtimeLuaPipeline from '../../runtime/runtime_lua_pipeline';
+import { Runtime } from '../../../machine/runtime/runtime';
 import { buildDirtyFilePath } from '../../workbench/common/workspace_io';
-import { getWorkspaceCachedSource } from '../../../emulator/workspace_cache';
+import { getWorkspaceCachedSource } from '../../workspace/workspace_cache';
 import { editorDocumentState } from '../editing/editor_document_state';
 import { editorViewState } from '../ui/editor_view_state';
 import { editorRuntimeState } from './editor_runtime_state';
