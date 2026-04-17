@@ -2419,7 +2419,7 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 	return true;
 }
 
-static void maybe_capture_software_frame(void) {
+static void step_software_frame_capture(void) {
 	if (!core_cart_program_active()) {
 		return;
 	}
@@ -3151,7 +3151,7 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 		msg_render_software();
 		fps_render_software();
 		menu_render_software();
-		maybe_capture_software_frame();
+		step_software_frame_capture();
 #ifdef BMSX_LIBRETRO_HOST_SDL
 		if (g_use_sdl) {
 			sdl_present();
@@ -3202,7 +3202,7 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 		msg_render_software();
 		fps_render_software();
 		menu_render_software();
-		maybe_capture_software_frame();
+		step_software_frame_capture();
 #ifdef BMSX_LIBRETRO_HOST_SDL
 		if (g_use_sdl) {
 			sdl_present();
