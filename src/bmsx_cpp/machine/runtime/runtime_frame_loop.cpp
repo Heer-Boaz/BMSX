@@ -13,6 +13,10 @@ inline double to_ms(std::chrono::steady_clock::duration duration) {
 }
 }
 
+void RuntimeFrameLoopState::reset() {
+	frameDeltaMs = 0.0;
+}
+
 void RuntimeFrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platformPaused, bool skipRender) {
 	EngineCore& engine = EngineCore::instance();
 	if (engine.m_state != EngineState::Running && engine.m_state != EngineState::Paused) {
@@ -55,7 +59,7 @@ void RuntimeFrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool p
 			auto terminalInputEnd = std::chrono::steady_clock::now();
 			engine.m_last_tick_timing.runtimeTerminalInputMs = to_ms(terminalInputEnd - terminalInputStart);
 
-			const i64 previousTickSequence = runtime.lastTickSequence();
+			const i64 previousTickSequence = runtime.machineScheduler.lastTickSequence;
 			auto updateStart = std::chrono::steady_clock::now();
 			engine.m_delta_time = runtime.timing.frameDurationMs / 1000.0;
 			runtime.machineScheduler.run(runtime, hostDeltaMs);

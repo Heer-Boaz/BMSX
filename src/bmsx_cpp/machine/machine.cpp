@@ -4,6 +4,7 @@
 #include "core/engine_core.h"
 #include "input/input.h"
 #include "machine/firmware/firmware_api.h"
+#include "render/shared/render_queues.h"
 #include "rompack/rompack.h"
 
 #include <stdexcept>
@@ -82,6 +83,10 @@ void Machine::runDeviceService(uint8_t deviceKind) {
 		default:
 			throw runtimeFault("unknown device service kind " + std::to_string(deviceKind) + ".");
 	}
+}
+
+void Machine::resetRenderBuffers() {
+	RenderQueues::clearBackQueues();
 }
 
 MachineState Machine::captureState() const {

@@ -68,21 +68,19 @@ void Runtime::destroy() {
 }
 
 Runtime::Runtime(const RuntimeOptions& options)
-	: timing(options.ufpsScaled)
+	: timing(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame)
 	, m_api(std::make_unique<Api>(*this))
 	, m_machine(*m_api, *EngineCore::instance().soundMaster())
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)
-	, m_cpuHz(options.cpuHz)
-	, m_vdpWorkUnitsPerSec(options.vdpWorkUnitsPerSec)
-	, m_geoWorkUnitsPerSec(options.geoWorkUnitsPerSec)
-	, m_cycleBudgetPerFrame(options.cycleBudgetPerFrame)
 	{
+	timing.vdpWorkUnitsPerSec = options.vdpWorkUnitsPerSec;
+	timing.geoWorkUnitsPerSec = options.geoWorkUnitsPerSec;
 	m_api->initializeRuntimeKeys();
 	m_machine.memory().clearIoSlots();
 	m_machine.initializeSystemIo();
 	m_machine.resetDevices();
-	setVblankCycles(options.vblankCycles);
+	vblank.setVblankCycles(*this, options.vblankCycles);
 	setVdpWorkUnitsPerSec(options.vdpWorkUnitsPerSec);
 	setGeoWorkUnitsPerSec(options.geoWorkUnitsPerSec);
 	m_randomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
@@ -203,12 +201,12 @@ bool Runtime::processPendingCartBoot() {
 	if (!m_pendingCartBoot) {
 		return false;
 	}
-	if (m_frameActive) {
+	if (frameLoop.frameActive) {
 		resetFrameState();
 	}
 	if (hasEntryContinuation()) {
 		m_pendingCall = PendingCall::None;
-		clearHaltUntilIrq();
+		vblank.clearHaltUntilIrq(*this);
 	}
 	machineScheduler.clearQueuedTime();
 	m_pendingCartBoot = false;
@@ -228,14 +226,14 @@ bool Runtime::processPendingCartBoot() {
 }
 
 void Runtime::refreshDeviceTimings(i64 nowCycles) {
-	MachineTiming timing{};
-	timing.cpuHz = m_cpuHz;
-	timing.dmaBytesPerSecIso = m_dmaBytesPerSecIso;
-	timing.dmaBytesPerSecBulk = m_dmaBytesPerSecBulk;
-	timing.imgDecBytesPerSec = m_imgDecBytesPerSec;
-	timing.geoWorkUnitsPerSec = m_geoWorkUnitsPerSec;
-	timing.vdpWorkUnitsPerSec = m_vdpWorkUnitsPerSec;
-	m_machine.refreshDeviceTimings(timing, nowCycles);
+	MachineTiming machineTiming{};
+	machineTiming.cpuHz = timing.cpuHz;
+	machineTiming.dmaBytesPerSecIso = timing.dmaBytesPerSecIso;
+	machineTiming.dmaBytesPerSecBulk = timing.dmaBytesPerSecBulk;
+	machineTiming.imgDecBytesPerSec = timing.imgDecBytesPerSec;
+	machineTiming.geoWorkUnitsPerSec = timing.geoWorkUnitsPerSec;
+	machineTiming.vdpWorkUnitsPerSec = timing.vdpWorkUnitsPerSec;
+	m_machine.refreshDeviceTimings(machineTiming, nowCycles);
 }
 
 void Runtime::advanceTime(int cycles) {
@@ -244,15 +242,6 @@ void Runtime::advanceTime(int cycles) {
 	}
 	m_machine.advanceDevices(cycles);
 	runDueTimers();
-}
-
-int Runtime::getCyclesIntoFrame() const {
-	return static_cast<int>(m_machine.scheduler().nowCycles() - m_frameStartCycle);
-}
-
-void Runtime::resetSchedulerState() {
-	m_machine.scheduler().reset();
-	m_frameStartCycle = 0;
 }
 
 void Runtime::runDueTimers() {
@@ -265,10 +254,10 @@ void Runtime::runDueTimers() {
 void Runtime::dispatchTimer(uint8_t kind, uint8_t payload) {
 	switch (kind) {
 		case TimerKindVblankBegin:
-			handleVblankBeginTimer();
+			vblank.handleBeginTimer(*this);
 			return;
 		case TimerKindVblankEnd:
-			handleVblankEndTimer();
+			vblank.handleEndTimer(*this);
 			return;
 		case TimerKindDeviceService:
 			runDeviceService(payload);
@@ -278,158 +267,8 @@ void Runtime::dispatchTimer(uint8_t kind, uint8_t payload) {
 	}
 }
 
-void Runtime::scheduleCurrentFrameTimers() {
-	m_machine.scheduler().scheduleVblankEnd(m_frameStartCycle + m_cycleBudgetPerFrame);
-	if (m_vblankStartCycle > 0 && getCyclesIntoFrame() < m_vblankStartCycle) {
-		m_machine.scheduler().scheduleVblankBegin(m_frameStartCycle + m_vblankStartCycle);
-	}
-}
-
-void Runtime::handleVblankBeginTimer() {
-	if (!m_vblankActive) {
-		enterVblank();
-	}
-}
-
-void Runtime::handleVblankEndTimer() {
-	if (m_vblankActive) {
-		leaveVblank();
-	}
-	m_frameStartCycle = m_machine.scheduler().nowCycles();
-	scheduleCurrentFrameTimers();
-	if (m_vblankStartCycle == 0) {
-		enterVblank();
-	}
-}
-
 void Runtime::runDeviceService(uint8_t deviceKind) {
 	m_machine.runDeviceService(deviceKind);
-}
-
-void Runtime::resetVblankState() {
-	resetSchedulerState();
-	m_vblankActive = false;
-	m_vblankSequence = 0;
-	m_lastCompletedVblankSequence = 0;
-	m_machine.inputController().restoreSampleArmed(false);
-	m_machine.irqController().postLoad();
-	resetHaltIrqWait();
-	m_machine.vdp().resetStatus();
-	if (m_vblankStartCycle == 0) {
-		setVblankStatus(true);
-	}
-	scheduleCurrentFrameTimers();
-	refreshDeviceTimings(m_machine.scheduler().nowCycles());
-}
-
-void Runtime::setVblankStatus(bool active) {
-	m_vblankActive = active;
-	m_machine.vdp().setVblankStatus(active);
-}
-
-void Runtime::enterVblank() {
-	m_vblankSequence += 1;
-	commitFrameOnVblankEdge();
-	m_machine.inputController().onVblankEdge();
-	setVblankStatus(true);
-	m_machine.irqController().raise(IRQ_VBLANK);
-	if (m_frameActive && m_machine.cpu().isHaltedUntilIrq() && m_pendingCall == PendingCall::Entry && m_machine.cpu().getFrameDepth() == 1) {
-		completeTickIfPending(m_frameState, m_vblankSequence);
-		m_clearBackQueuesAfterIrqWake = true;
-	}
-}
-
-void Runtime::leaveVblank() {
-	setVblankStatus(false);
-}
-
-void Runtime::commitFrameOnVblankEdge() {
-	m_machine.vdp().syncRegisters();
-	m_machine.vdp().presentReadyFrameOnVblankEdge();
-	m_machine.vdp().commitViewSnapshot(*EngineCore::instance().view());
-}
-
-void Runtime::completeTickIfPending(FrameState& frameState, uint64_t vblankSequence) {
-	if (m_lastCompletedVblankSequence == vblankSequence) {
-		return;
-	}
-	m_activeTickCompleted = true;
-	m_lastCompletedVblankSequence = vblankSequence;
-	machineScheduler.enqueueTickCompletion(*this, frameState);
-}
-
-void Runtime::clearHaltUntilIrq() {
-	m_machine.cpu().clearHaltUntilIrq();
-	resetHaltIrqWait();
-	m_clearBackQueuesAfterIrqWake = false;
-}
-
-void Runtime::resetHaltIrqWait() {
-	m_haltIrqWaitArmed = false;
-	m_haltIrqSignalSequence = 0;
-}
-
-bool Runtime::tryCompleteTickOnPendingVblankIrq(FrameState& frameState) {
-	if (!(m_machine.cpu().getFrameDepth() == 1 && m_pendingCall == PendingCall::Entry && m_machine.cpu().isHaltedUntilIrq())) {
-		return false;
-	}
-	if (m_vblankSequence == 0) {
-		return false;
-	}
-	const uint32_t pendingFlags = m_machine.irqController().pendingFlags();
-	if ((pendingFlags & IRQ_VBLANK) == 0u) {
-		return false;
-	}
-	if (m_lastCompletedVblankSequence == m_vblankSequence) {
-		return false;
-	}
-	completeTickIfPending(frameState, m_vblankSequence);
-	m_clearBackQueuesAfterIrqWake = true;
-	m_machine.cpu().clearHaltUntilIrq();
-	resetHaltIrqWait();
-	return true;
-}
-
-bool Runtime::runHaltedUntilIrq(FrameState& frameState) {
-	runDueTimers();
-	if (!m_machine.cpu().isHaltedUntilIrq()) {
-		resetHaltIrqWait();
-		return false;
-	}
-	if (tryCompleteTickOnPendingVblankIrq(frameState)) {
-		return true;
-	}
-	if (!m_haltIrqWaitArmed) {
-		const uint32_t pendingFlags = m_machine.irqController().pendingFlags();
-		if (pendingFlags != 0u) {
-			m_machine.cpu().clearHaltUntilIrq();
-			return m_activeTickCompleted;
-		}
-		m_haltIrqSignalSequence = m_machine.irqController().signalSequence();
-		m_haltIrqWaitArmed = true;
-	}
-	while (true) {
-		if (m_machine.irqController().signalSequence() != m_haltIrqSignalSequence) {
-			m_machine.cpu().clearHaltUntilIrq();
-			resetHaltIrqWait();
-			return m_activeTickCompleted;
-		}
-		if (frameState.cycleBudgetRemaining > 0) {
-			const i64 cyclesToTarget = m_machine.scheduler().nextDeadline() - m_machine.scheduler().nowCycles();
-			if (cyclesToTarget <= 0) {
-				runDueTimers();
-				continue;
-			}
-			const int idleCycles = static_cast<int>(std::min<i64>(frameState.cycleBudgetRemaining, cyclesToTarget));
-			frameState.cycleBudgetRemaining -= idleCycles;
-			advanceTime(idleCycles);
-				if (tryCompleteTickOnPendingVblankIrq(frameState)) {
-					return true;
-				}
-				continue;
-			}
-		return true;
-	}
 }
 
 void Runtime::raiseEngineIrq(uint32_t mask) {
@@ -445,7 +284,8 @@ void Runtime::raiseEngineIrq(uint32_t mask) {
 }
 
 RunResult Runtime::runWithBudget() {
-	int remaining = m_frameState.cycleBudgetRemaining;
+	FrameState& frameState = frameLoop.frameState;
+	int remaining = frameState.cycleBudgetRemaining;
 	RunResult result = RunResult::Yielded;
 	runDueTimers();
 	while (remaining > 0) {
@@ -468,7 +308,7 @@ RunResult Runtime::runWithBudget() {
 		const int consumed = sliceBudget - sliceRemaining;
 		if (consumed > 0) {
 			remaining -= consumed;
-			m_frameState.activeCpuUsedCycles += consumed;
+			frameState.activeCpuUsedCycles += consumed;
 			advanceTime(consumed);
 		}
 		if (m_machine.cpu().isHaltedUntilIrq() || result == RunResult::Halted) {
@@ -478,7 +318,7 @@ RunResult Runtime::runWithBudget() {
 			throw runtimeFault("CPU yielded without consuming cycles.");
 		}
 	}
-	m_frameState.cycleBudgetRemaining = remaining;
+	frameState.cycleBudgetRemaining = remaining;
 	return result;
 }
 
@@ -496,14 +336,13 @@ void Runtime::queueLifecycleHandlers(bool runInit, bool runNewGame) {
 }
 
 void Runtime::beginFrameState() {
-	m_frameActive = true;
-	m_lastTickCompleted = false;
-	m_activeTickCompleted = false;
-	m_frameState = FrameState{};
-	m_frameState.cycleBudgetRemaining = m_cycleBudgetPerFrame;
-	m_frameState.cycleBudgetGranted = m_cycleBudgetPerFrame;
-	m_frameState.cycleCarryGranted = 0;
-	m_frameDeltaMs = timing.frameDurationMs;
+	frameLoop.frameActive = true;
+	vblank.beginTick();
+	frameLoop.frameState = FrameState{};
+	frameLoop.frameState.cycleBudgetRemaining = timing.cycleBudgetPerFrame;
+	frameLoop.frameState.cycleBudgetGranted = timing.cycleBudgetPerFrame;
+	frameLoop.frameState.cycleCarryGranted = 0;
+	frameLoop.frameDeltaMs = timing.frameDurationMs;
 	m_machine.vdp().beginFrame();
 	auto key = [this](std::string_view text) {
 		return valueString(m_machine.cpu().internString(text));
@@ -526,11 +365,11 @@ void Runtime::beginFrameState() {
 }
 
 void Runtime::finalizeUpdateSlice() {
-	if (hasEntryContinuation() && !m_activeTickCompleted) {
+	if (hasEntryContinuation() && !vblank.tickCompleted()) {
 		return;
 	}
-	m_frameActive = false;
-	m_activeTickCompleted = false;
+	frameLoop.frameActive = false;
+	vblank.abandonTick();
 }
 
 bool Runtime::tickUpdate() {
@@ -554,13 +393,13 @@ bool Runtime::tickUpdate() {
 		return true;
 	}
 
-	FrameState* const previousState = m_frameActive ? &m_frameState : nullptr;
+	FrameState* const previousState = frameLoop.frameActive ? &frameLoop.frameState : nullptr;
 	const int previousRemaining = previousState != nullptr ? previousState->cycleBudgetRemaining : -1;
 	const bool previousPending = hasEntryContinuation();
-	const i64 previousSequence = m_lastTickSequence;
+	const i64 previousSequence = machineScheduler.lastTickSequence;
 	bool startedFrame = false;
-	if (m_frameActive) {
-		if (m_frameState.cycleBudgetRemaining <= 0 && !machineScheduler.refillFrameBudget(*this, m_frameState)) {
+	if (frameLoop.frameActive) {
+		if (frameLoop.frameState.cycleBudgetRemaining <= 0 && !machineScheduler.refillFrameBudget(*this, frameLoop.frameState)) {
 			return false;
 		}
 	} else {
@@ -598,10 +437,10 @@ bool Runtime::tickUpdate() {
 		m_debugUpdateCountTotal += 1;
 	}
 
-	m_frameState.updateExecuted = !hasEntryContinuation();
+	frameLoop.frameState.updateExecuted = !hasEntryContinuation();
 	flushAssetEdits();
 	finalizeUpdateSlice();
-	FrameState* const nextState = m_frameActive ? &m_frameState : nullptr;
+	FrameState* const nextState = frameLoop.frameActive ? &frameLoop.frameState : nullptr;
 	if (nextState != previousState) {
 		return true;
 	}
@@ -611,7 +450,7 @@ bool Runtime::tickUpdate() {
 	if (hasEntryContinuation() != previousPending) {
 		return true;
 	}
-	return m_lastTickSequence != previousSequence;
+	return machineScheduler.lastTickSequence != previousSequence;
 }
 
 void Runtime::tickIdeInput() {
@@ -644,21 +483,16 @@ void Runtime::requestProgramReload() {
 }
 
 void Runtime::resetFrameState() {
-	m_frameActive = false;
-	m_activeTickCompleted = false;
+	frameLoop.frameActive = false;
+	vblank.abandonTick();
 	m_machine.inputController().restoreSampleArmed(false);
-	m_frameState = FrameState{};
-	clearHaltUntilIrq();
-	machineScheduler.reset(*this);
+	frameLoop.frameState = FrameState{};
+	vblank.clearHaltUntilIrq(*this);
+	machineScheduler.reset();
+	frameLoop.reset();
 	screen.reset();
-	m_lastTickBudgetGranted = 0;
-	m_lastTickCpuBudgetGranted = 0;
-	m_lastTickCpuUsedCycles = 0;
-	m_lastTickCompleted = false;
-	m_lastTickBudgetRemaining = 0;
-	m_lastTickSequence = 0;
-	m_lastTickConsumedSequence = 0;
-	resetVblankState();
+	machineScheduler.resetTickTelemetry();
+	vblank.reset(*this);
 }
 
 void Runtime::resetCartBootState() {
@@ -676,26 +510,13 @@ RuntimeState Runtime::captureCurrentState() const {
 	state.persistentData = m_api->persistentData();
 	state.randomSeed = m_randomSeedValue;
 	state.pendingEntryCall = m_pendingCall == PendingCall::Entry;
-	state.cyclesIntoFrame = getCyclesIntoFrame();
+	state.cyclesIntoFrame = vblank.capture(*this).cyclesIntoFrame;
 	return state;
 }
 
 void Runtime::applyState(const RuntimeState& state) {
 	m_machine.restoreState(state.machine);
-	clearHaltUntilIrq();
-	machineScheduler.reset(*this);
-	screen.reset();
-	resetSchedulerState();
-	m_machine.scheduler().setNowCycles(state.cyclesIntoFrame);
-	m_frameStartCycle = 0;
-	m_machine.vdp().resetStatus();
-	m_vblankActive = false;
-	m_activeTickCompleted = false;
-	const bool vblankActive = (m_vblankStartCycle == 0)
-		|| (getCyclesIntoFrame() >= m_vblankStartCycle);
-	setVblankStatus(vblankActive);
-	scheduleCurrentFrameTimers();
-	refreshDeviceTimings(m_machine.scheduler().nowCycles());
+	vblank.restore(*this, RuntimeVblankSnapshot{state.cyclesIntoFrame});
 	m_api->restorePersistentData(state.cartDataNamespace, state.persistentData);
 	m_randomSeedValue = state.randomSeed;
 	m_pendingCall = state.pendingEntryCall ? PendingCall::Entry : PendingCall::None;
@@ -708,7 +529,7 @@ void Runtime::applyState(const RuntimeState& state) {
 		m_machine.cpu().setGlobalByKey(key, value);
 	}
 	flushAssetEdits();
-	resetRenderBuffers();
+	m_machine.resetRenderBuffers();
 }
 
 void Runtime::setSkyboxImages(const SkyboxImageIds& ids) {
@@ -737,7 +558,7 @@ void Runtime::setCanonicalization(CanonicalizationType canonicalization) {
 }
 
 void Runtime::setCpuHz(i64 hz) {
-	m_cpuHz = hz;
+	timing.cpuHz = hz;
 	refreshDeviceTimings(m_machine.scheduler().currentNowCycles());
 }
 
@@ -747,76 +568,54 @@ void Runtime::applyActiveMachineTiming(i64 cpuHz) {
 	const i64 vblankCycles = resolveVblankCycles(cpuHz, timing.ufpsScaled, manifest.viewportHeight);
 	setCpuHz(cpuHz);
 	setCycleBudgetPerFrame(cycleBudget);
-	setVblankCycles(static_cast<int>(vblankCycles));
+	vblank.setVblankCycles(*this, static_cast<int>(vblankCycles));
 	setVdpWorkUnitsPerSec(static_cast<int>(manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC)));
 	setGeoWorkUnitsPerSec(static_cast<int>(manifest.geoWorkUnitsPerSec.value_or(DEFAULT_GEO_WORK_UNITS_PER_SEC)));
 }
 
-void Runtime::setVblankCycles(int cycles) {
-	if (cycles <= 0) {
-		throw runtimeFault("vblank_cycles must be greater than 0.");
-	}
-	if (cycles > m_cycleBudgetPerFrame) {
-		throw runtimeFault("vblank_cycles must be less than or equal to cycles_per_frame.");
-	}
-	m_vblankCycles = cycles;
-	m_vblankStartCycle = m_cycleBudgetPerFrame - m_vblankCycles;
-	resetVblankState();
-}
-
 void Runtime::resetHardwareState() {
 	m_machine.resetDevices();
-	resetVblankState();
-	resetRenderBuffers();
-}
-
-void Runtime::resetRenderBuffers() {
-	RenderQueues::clearBackQueues();
+	vblank.reset(*this);
+	m_machine.resetRenderBuffers();
 }
 
 void Runtime::setVdpWorkUnitsPerSec(int workUnitsPerSec) {
 	if (workUnitsPerSec <= 0) {
 		throw runtimeFault("work_units_per_sec must be greater than 0.");
 	}
-	m_vdpWorkUnitsPerSec = workUnitsPerSec;
-	m_machine.vdp().setTiming(m_cpuHz, m_vdpWorkUnitsPerSec, m_machine.scheduler().currentNowCycles());
+	timing.vdpWorkUnitsPerSec = workUnitsPerSec;
+	m_machine.vdp().setTiming(timing.cpuHz, timing.vdpWorkUnitsPerSec, m_machine.scheduler().currentNowCycles());
 }
 
 void Runtime::setGeoWorkUnitsPerSec(int workUnitsPerSec) {
 	if (workUnitsPerSec <= 0) {
 		throw runtimeFault("geo_work_units_per_sec must be greater than 0.");
 	}
-	m_geoWorkUnitsPerSec = workUnitsPerSec;
-	m_machine.geometryController().setTiming(m_cpuHz, m_geoWorkUnitsPerSec, m_machine.scheduler().currentNowCycles());
+	timing.geoWorkUnitsPerSec = workUnitsPerSec;
+	m_machine.geometryController().setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, m_machine.scheduler().currentNowCycles());
 }
 
 void Runtime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk, int vdpWorkUnitsPerSec, int geoWorkUnitsPerSec) {
-	m_imgDecBytesPerSec = imgDecBytesPerSec;
-	m_dmaBytesPerSecIso = dmaBytesPerSecIso;
-	m_dmaBytesPerSecBulk = dmaBytesPerSecBulk;
+	timing.imgDecBytesPerSec = imgDecBytesPerSec;
+	timing.dmaBytesPerSecIso = dmaBytesPerSecIso;
+	timing.dmaBytesPerSecBulk = dmaBytesPerSecBulk;
 	setVdpWorkUnitsPerSec(vdpWorkUnitsPerSec);
 	setGeoWorkUnitsPerSec(geoWorkUnitsPerSec);
 	refreshDeviceTimings(m_machine.scheduler().currentNowCycles());
 }
 
 void Runtime::setCycleBudgetPerFrame(int budget) {
-	if (budget == m_cycleBudgetPerFrame) {
+	if (budget == timing.cycleBudgetPerFrame) {
 		return;
 	}
-	m_cycleBudgetPerFrame = budget;
+	timing.cycleBudgetPerFrame = budget;
 	setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(budget)));
 	refreshDeviceTimings(m_machine.scheduler().currentNowCycles());
-	if (m_vblankCycles > 0) {
-		if (m_vblankCycles > m_cycleBudgetPerFrame) {
-			throw runtimeFault("vblank_cycles must be less than or equal to cycles_per_frame.");
-		}
-		m_vblankStartCycle = m_cycleBudgetPerFrame - m_vblankCycles;
-		resetVblankState();
-	}
+	vblank.configureCycleBudget(*this);
 }
 
 bool Runtime::hasActiveTick() const {
-	return m_frameActive && m_luaInitialized && m_tickEnabled && !m_runtimeFailed;
+	return frameLoop.frameActive && m_luaInitialized && m_tickEnabled && !m_runtimeFailed;
 }
 
 uint32_t Runtime::trackedRamUsedBytes() const {
@@ -954,19 +753,18 @@ void Runtime::releaseValueScratch(std::vector<Value>&& values) {
 void Runtime::executeUpdateCallback() {
 	try {
 		while (true) {
-			if (m_machine.cpu().isHaltedUntilIrq() && runHaltedUntilIrq(m_frameState)) {
+			if (m_machine.cpu().isHaltedUntilIrq() && vblank.runHaltedUntilIrq(*this, frameLoop.frameState)) {
 				return;
 			}
-			if (m_clearBackQueuesAfterIrqWake) {
+			if (vblank.consumeBackQueueClearAfterIrqWake()) {
 				RenderQueues::clearBackQueues();
-				m_clearBackQueuesAfterIrqWake = false;
 			}
 			if (!hasEntryContinuation()) {
 				return;
 			}
 			RunResult result = runWithBudget();
 			if (m_machine.cpu().isHaltedUntilIrq()) {
-				if (runHaltedUntilIrq(m_frameState)) {
+				if (vblank.runHaltedUntilIrq(*this, frameLoop.frameState)) {
 					return;
 				}
 				continue;

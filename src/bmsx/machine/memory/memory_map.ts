@@ -97,7 +97,7 @@ function resolveNonNegativeInteger(value: number, label: string): number {
 	return resolved;
 }
 
-function alignUp(value: number, alignment: number): number {
+export function alignUp(value: number, alignment: number): number {
 	const mask = alignment - 1;
 	return (value + mask) & ~mask;
 }

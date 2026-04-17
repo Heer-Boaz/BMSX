@@ -171,12 +171,12 @@ bool RuntimeScreenState::consumePresentation(Runtime& runtime, RuntimePresentati
 }
 
 void RuntimeScreenState::syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTickSequence) {
-	if (runtime.lastTickSequence() != previousTickSequence) {
-		markPresentation(GameView::PresentationMode::Completed, runtime.lastTickVisualFrameCommitted());
+	if (runtime.machineScheduler.lastTickSequence != previousTickSequence) {
+		markPresentation(GameView::PresentationMode::Completed, runtime.machineScheduler.lastTickVisualFrameCommitted);
 	} else if (runtime.isDrawPending()) {
 		markPresentation(GameView::PresentationMode::Partial, false);
 	}
-	while (runtime.machineScheduler.consumeTickCompletion(runtime, m_tickCompletionScratch)) {
+	while (runtime.machineScheduler.consumeTickCompletion(m_tickCompletionScratch)) {
 		recordTickCompletion(m_tickCompletionScratch.visualCommitted, m_tickCompletionScratch.vdpFrameHeld);
 	}
 }

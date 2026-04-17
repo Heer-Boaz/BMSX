@@ -154,6 +154,7 @@ add_library(bmsx_core STATIC
 	machine/runtime/runtime_machine_scheduler.cpp
 	machine/runtime/runtime_screen.cpp
 	machine/runtime/runtime_timing.cpp
+	machine/runtime/runtime_vblank.cpp
 	machine/runtime/runtime_debug.cpp
 	machine/memory/memory.cpp
 	machine/memory/memory_map.cpp

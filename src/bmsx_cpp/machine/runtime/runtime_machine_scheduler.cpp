@@ -27,7 +27,7 @@ bool RuntimeMachineSchedulerState::canRunScheduledUpdate(const Runtime& runtime)
 	if (!runtime.m_luaInitialized || !runtime.m_tickEnabled || runtime.m_runtimeFailed) {
 		return false;
 	}
-	if (runtime.m_frameActive && runtime.m_frameState.cycleBudgetRemaining > 0) {
+	if (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0) {
 		return true;
 	}
 	return hasScheduledFrame(runtime);
@@ -45,16 +45,29 @@ void RuntimeMachineSchedulerState::clearQueuedTime() {
 	m_accumulatedHostTimeMs = 0.0;
 }
 
-void RuntimeMachineSchedulerState::clearTickCompletionQueue(Runtime& runtime) {
+void RuntimeMachineSchedulerState::clearTickCompletionQueue() {
 	m_tickCompletionReadIndex = 0;
 	m_tickCompletionWriteIndex = 0;
 	m_tickCompletionCount = 0;
-	runtime.m_lastTickConsumedSequence = runtime.m_lastTickSequence;
+	lastTickConsumedSequence = lastTickSequence;
 }
 
-void RuntimeMachineSchedulerState::reset(Runtime& runtime) {
+void RuntimeMachineSchedulerState::reset() {
 	clearQueuedTime();
-	clearTickCompletionQueue(runtime);
+	clearTickCompletionQueue();
+}
+
+void RuntimeMachineSchedulerState::resetTickTelemetry() {
+	lastTickCompleted = false;
+	lastTickBudgetGranted = 0;
+	lastTickCpuBudgetGranted = 0;
+	lastTickCpuUsedCycles = 0;
+	lastTickBudgetRemaining = 0;
+	lastTickVisualFrameCommitted = true;
+	lastTickVdpFrameCost = 0;
+	lastTickVdpFrameHeld = false;
+	lastTickSequence = 0;
+	lastTickConsumedSequence = 0;
 }
 
 void RuntimeMachineSchedulerState::enqueueTickCompletion(Runtime& runtime, FrameState& frameState) {
@@ -62,7 +75,7 @@ void RuntimeMachineSchedulerState::enqueueTickCompletion(Runtime& runtime, Frame
 		throw runtimeFault("tick completion queue overflow.");
 	}
 	TickCompletion& slot = m_tickCompletionQueue[m_tickCompletionWriteIndex];
-	const i64 sequence = runtime.m_lastTickSequence + 1;
+	const i64 sequence = lastTickSequence + 1;
 	slot.sequence = sequence;
 	slot.remaining = frameState.cycleBudgetRemaining;
 	slot.visualCommitted = runtime.machine().vdp().lastFrameCommitted();
@@ -70,25 +83,25 @@ void RuntimeMachineSchedulerState::enqueueTickCompletion(Runtime& runtime, Frame
 	slot.vdpFrameHeld = runtime.machine().vdp().lastFrameHeld();
 	m_tickCompletionWriteIndex = (m_tickCompletionWriteIndex + 1) % TICK_COMPLETION_QUEUE_CAPACITY;
 	m_tickCompletionCount += 1;
-	runtime.m_lastTickBudgetGranted = frameState.cycleBudgetGranted;
-	runtime.m_lastTickCpuBudgetGranted = frameState.cycleBudgetGranted;
-	runtime.m_lastTickCpuUsedCycles = frameState.activeCpuUsedCycles;
-	runtime.m_lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
-	runtime.m_lastTickVisualFrameCommitted = slot.visualCommitted;
-	runtime.m_lastTickVdpFrameCost = slot.vdpFrameCost;
-	runtime.m_lastTickVdpFrameHeld = slot.vdpFrameHeld;
-	runtime.m_lastTickCompleted = true;
-	runtime.m_lastTickSequence = sequence;
+	lastTickBudgetGranted = frameState.cycleBudgetGranted;
+	lastTickCpuBudgetGranted = frameState.cycleBudgetGranted;
+	lastTickCpuUsedCycles = frameState.activeCpuUsedCycles;
+	lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
+	lastTickVisualFrameCommitted = slot.visualCommitted;
+	lastTickVdpFrameCost = slot.vdpFrameCost;
+	lastTickVdpFrameHeld = slot.vdpFrameHeld;
+	lastTickCompleted = true;
+	lastTickSequence = sequence;
 }
 
-bool RuntimeMachineSchedulerState::consumeTickCompletion(Runtime& runtime, TickCompletion& outCompletion) {
+bool RuntimeMachineSchedulerState::consumeTickCompletion(TickCompletion& outCompletion) {
 	if (m_tickCompletionCount == 0u) {
 		return false;
 	}
 	outCompletion = m_tickCompletionQueue[m_tickCompletionReadIndex];
 	m_tickCompletionReadIndex = (m_tickCompletionReadIndex + 1) % TICK_COMPLETION_QUEUE_CAPACITY;
 	m_tickCompletionCount -= 1u;
-	runtime.m_lastTickConsumedSequence = outCompletion.sequence;
+	lastTickConsumedSequence = outCompletion.sequence;
 	return true;
 }
 
@@ -96,8 +109,8 @@ bool RuntimeMachineSchedulerState::refillFrameBudget(Runtime& runtime, FrameStat
 	if (!consumeScheduledFrame(runtime)) {
 		return false;
 	}
-	frameState.cycleBudgetRemaining += runtime.m_cycleBudgetPerFrame;
-	frameState.cycleBudgetGranted += runtime.m_cycleBudgetPerFrame;
+	frameState.cycleBudgetRemaining += runtime.timing.cycleBudgetPerFrame;
+	frameState.cycleBudgetGranted += runtime.timing.cycleBudgetPerFrame;
 	return true;
 }
 
@@ -105,6 +118,7 @@ bool RuntimeMachineSchedulerState::startScheduledFrame(Runtime& runtime) {
 	if (!consumeScheduledFrame(runtime)) {
 		return false;
 	}
+	lastTickCompleted = false;
 	runtime.beginFrameState();
 	return true;
 }

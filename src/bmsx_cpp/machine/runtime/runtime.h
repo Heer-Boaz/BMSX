@@ -12,6 +12,7 @@
 #include "machine/runtime/runtime_screen.h"
 #include "machine/scheduler/device_scheduler.h"
 #include "machine/runtime/runtime_timing.h"
+#include "machine/runtime/runtime_vblank.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/runtime_frame_loop.h"
 #include "machine/runtime/runtime_machine_scheduler.h"
@@ -39,19 +40,6 @@ class RuntimeAssets;
 class ResourceUsageDetector;
 
 constexpr int DEFAULT_CYCLE_BUDGET = 1'000'000;
-
-/**
- * Runtime frame state for coordinating update execution.
- */
-struct FrameState {
-	bool haltGame = false;
-	bool updateExecuted = false;
-	bool luaFaulted = false;
-	int cycleBudgetRemaining = 0;
-	int cycleBudgetGranted = 0;
-	int cycleCarryGranted = 0;
-	int activeCpuUsedCycles = 0;
-};
 
 /**
  * Viewport size configuration.
@@ -103,6 +91,7 @@ class Runtime {
 public:
 	friend class RuntimeFrameLoopState;
 	friend class RuntimeMachineSchedulerState;
+	friend class RuntimeVblankState;
 
 	enum class ProgramSource {
 		Engine,
@@ -219,7 +208,7 @@ public:
 	void setSkyboxImages(const SkyboxImageIds& ids);
 	void clearSkybox();
 
-	f64 frameDeltaMs() const { return m_frameDeltaMs; }
+	f64 frameDeltaMs() const { return frameLoop.frameDeltaMs; }
 
 	/**
 	 * Get the viewport size.
@@ -259,26 +248,24 @@ public:
 	void setCpuHz(i64 hz);
 	void applyActiveMachineTiming(i64 cpuHz);
 	void setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk, int vdpWorkUnitsPerSec, int geoWorkUnitsPerSec);
-	i64 cpuHz() const { return m_cpuHz; }
-	void setVblankCycles(int cycles);
+	i64 cpuHz() const { return timing.cpuHz; }
 	void setVdpWorkUnitsPerSec(int workUnitsPerSec);
 	void setGeoWorkUnitsPerSec(int workUnitsPerSec);
 	void resetHardwareState();
-	void resetRenderBuffers();
 	void resetRuntimeForProgramReload();
 	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
 	void setCycleBudgetPerFrame(int budget);
 	bool hasActiveTick() const;
-	i64 lastTickSequence() const { return m_lastTickSequence; }
-	int lastTickBudgetRemaining() const { return m_lastTickBudgetRemaining; }
-	int lastTickBudgetGranted() const { return m_lastTickSequence == 0 ? m_cycleBudgetPerFrame : m_lastTickBudgetGranted; }
-	int cpuUsedCyclesLastTick() const { return m_lastTickSequence == 0 ? 0 : m_lastTickCpuUsedCycles; }
+	i64 lastTickSequence() const { return machineScheduler.lastTickSequence; }
+	int lastTickBudgetRemaining() const { return machineScheduler.lastTickBudgetRemaining; }
+	int lastTickBudgetGranted() const { return machineScheduler.lastTickSequence == 0 ? timing.cycleBudgetPerFrame : machineScheduler.lastTickBudgetGranted; }
+	int cpuUsedCyclesLastTick() const { return machineScheduler.lastTickSequence == 0 ? 0 : machineScheduler.lastTickCpuUsedCycles; }
 	int activeCpuCyclesGrantedLastTick() const { return lastTickBudgetGranted(); }
 	int activeCpuUsedCyclesLastTick() const { return cpuUsedCyclesLastTick(); }
-	int vdpWorkUnitsPerSec() const { return m_vdpWorkUnitsPerSec; }
-	bool lastTickVisualFrameCommitted() const { return m_lastTickVisualFrameCommitted; }
-	int lastTickVdpFrameCost() const { return m_lastTickVdpFrameCost; }
-	bool lastTickVdpFrameHeld() const { return m_lastTickVdpFrameHeld; }
+	int vdpWorkUnitsPerSec() const { return timing.vdpWorkUnitsPerSec; }
+	bool lastTickVisualFrameCommitted() const { return machineScheduler.lastTickVisualFrameCommitted; }
+	int lastTickVdpFrameCost() const { return machineScheduler.lastTickVdpFrameCost; }
+	bool lastTickVdpFrameHeld() const { return machineScheduler.lastTickVdpFrameHeld; }
 	uint32_t trackedRamUsedBytes() const;
 	uint32_t trackedVramUsedBytes() const;
 	uint32_t trackedVramTotalBytes() const { return m_machine.vdp().trackedTotalVramBytes(); }
@@ -292,6 +279,7 @@ public:
 	RuntimeTimingState timing;
 	RuntimeMachineSchedulerState machineScheduler;
 	RuntimeFrameLoopState frameLoop;
+	RuntimeVblankState vblank;
 
 private:
 	enum class PendingCall {
@@ -307,26 +295,11 @@ private:
 	void executeUpdateCallback();
 	void refreshDeviceTimings(i64 nowCycles);
 	void advanceTime(int cycles);
-	int getCyclesIntoFrame() const;
-	void resetSchedulerState();
 	void runDueTimers();
 	void dispatchTimer(uint8_t kind, uint8_t payload);
-	void scheduleCurrentFrameTimers();
-	void handleVblankBeginTimer();
-	void handleVblankEndTimer();
 	void runDeviceService(uint8_t deviceKind);
-	void resetVblankState();
-	void setVblankStatus(bool active);
-	void enterVblank();
-	void leaveVblank();
-	void commitFrameOnVblankEdge();
-	void completeTickIfPending(FrameState& frameState, uint64_t vblankSequence);
-	bool tryCompleteTickOnPendingVblankIrq(FrameState& frameState);
-	bool runHaltedUntilIrq(FrameState& frameState);
 	void beginFrameState();
 	void finalizeUpdateSlice();
-	void clearHaltUntilIrq();
-	void resetHaltIrqWait();
 	RunResult runWithBudget();
 	void queueLifecycleHandlers(bool runInit, bool runNewGame);
 	Value requireModule(const std::string& moduleName);
@@ -370,11 +343,6 @@ private:
 	bool m_rebootRequested = false;
 	std::optional<std::string> m_hostFaultMessage;
 
-	// Frame state
-	FrameState m_frameState;
-	bool m_frameActive = false;
-	f64 m_frameDeltaMs = 0.0;
-
 	// Cached function references
 	Value m_pairsIterator = valueNil();
 	Value m_ipairsIterator = valueNil();
@@ -394,33 +362,6 @@ private:
 	i64 m_debugRunCountTotal = 0;
 	i64 m_debugRunYieldsTotal = 0;
 	i64 m_debugUpdateCountTotal = 0;
-	i64 m_lastTickSequence = 0;
-	int m_lastTickBudgetGranted = 0;
-	int m_lastTickCpuBudgetGranted = 0;
-	int m_lastTickCpuUsedCycles = 0;
-	int m_lastTickBudgetRemaining = 0;
-	bool m_lastTickVisualFrameCommitted = true;
-	int m_lastTickVdpFrameCost = 0;
-	bool m_lastTickVdpFrameHeld = false;
-	bool m_lastTickCompleted = false;
-	bool m_activeTickCompleted = false;
-	i64 m_lastTickConsumedSequence = 0;
-	i64 m_cpuHz = 0;
-	i64 m_imgDecBytesPerSec = 0;
-	i64 m_dmaBytesPerSecIso = 0;
-	i64 m_dmaBytesPerSecBulk = 0;
-	int m_vdpWorkUnitsPerSec = 25'600;
-	int m_geoWorkUnitsPerSec = 16'384'000;
-	int m_cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
-	int m_vblankCycles = 0;
-	int m_vblankStartCycle = 0;
-	i64 m_frameStartCycle = 0;
-	uint64_t m_haltIrqSignalSequence = 0;
-	bool m_haltIrqWaitArmed = false;
-	uint64_t m_vblankSequence = 0;
-	uint64_t m_lastCompletedVblankSequence = 0;
-	bool m_clearBackQueuesAfterIrqWake = false;
-	bool m_vblankActive = false;
 };
 
 } // namespace bmsx

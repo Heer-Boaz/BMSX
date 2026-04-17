@@ -112,10 +112,10 @@ void Runtime::handleLuaError(const std::string& message) {
 	m_hostFaultMessage = message;
 	logDebugState();
 	logLuaCallStack();
-	clearHaltUntilIrq();
+	vblank.clearHaltUntilIrq(*this);
 	m_machine.inputController().restoreSampleArmed(false);
 	m_pendingCall = PendingCall::None;
-	m_frameActive = false;
+	frameLoop.frameActive = false;
 	m_runtimeFailed = true;
 }
 

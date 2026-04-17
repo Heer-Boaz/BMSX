@@ -1,14 +1,18 @@
 import { $ } from '../../core/engine_core';
-import type { Runtime } from './runtime';
+import type { FrameState, Runtime } from './runtime';
 import * as runtimeIde from '../../ide/runtime/runtime_ide';
 
 const MAX_FRAME_DELTA = 250;
 
 export class RuntimeFrameLoopState {
 	public currentTimeMs = 0;
+	public frameDeltaMs = 0;
+	public currentFrameState: FrameState = null;
+	public drawFrameState: FrameState = null;
 
 	public reset(): void {
 		this.currentTimeMs = 0;
+		this.frameDeltaMs = 0;
 	}
 
 	public runHostFrame(runtime: Runtime, currentTime: number, runReady: boolean): void {
@@ -37,7 +41,7 @@ export class RuntimeFrameLoopState {
 				} else if (runtime.executionOverlayActive) {
 					runtime.screen.runOverlay(runtime);
 				} else {
-					const previousTickSequence = runtime.lastTickSequence;
+					const previousTickSequence = runtime.machineScheduler.lastTickSequence;
 					$.deltatime = runtime.timing.frameDurationMs;
 					runtime.machineScheduler.run(runtime, hostDeltaMs);
 					runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);

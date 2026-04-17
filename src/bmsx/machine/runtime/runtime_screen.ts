@@ -148,7 +148,7 @@ export class RuntimeScreenState {
 
 	public runOverlay(runtime: Runtime): void {
 		this.clearPresentation();
-		if (runtime.currentFrameState !== null) {
+		if (runtime.frameLoop.currentFrameState !== null) {
 			runtime.abandonFrameState();
 		}
 		runtime.machineScheduler.clearQueuedTime();
@@ -161,12 +161,12 @@ export class RuntimeScreenState {
 		if (runtime.executionOverlayActive) {
 			runtime.machineScheduler.clearQueuedTime();
 			this.markPresentation('completed', false);
-		} else if (runtime.lastTickSequence !== previousTickSequence) {
-			this.markPresentation('completed', runtime.lastTickVisualFrameCommitted);
+		} else if (runtime.machineScheduler.lastTickSequence !== previousTickSequence) {
+			this.markPresentation('completed', runtime.machineScheduler.lastTickVisualFrameCommitted);
 		} else if (runtime.isDrawPending) {
 			this.markPresentation('partial', false);
 		}
-		while (runtime.machineScheduler.consumeTickCompletion(runtime, this.tickCompletionScratch)) {
+		while (runtime.machineScheduler.consumeTickCompletion(this.tickCompletionScratch)) {
 			this.recordTickCompletion(this.tickCompletionScratch.visualCommitted, this.tickCompletionScratch.vdpFrameHeld);
 		}
 	}

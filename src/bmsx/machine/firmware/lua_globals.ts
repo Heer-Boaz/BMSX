@@ -1201,7 +1201,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_scratch_size', GEO_SCRATCH_SIZE);
 	const maxAssets = Math.floor((ASSET_TABLE_SIZE - ASSET_TABLE_HEADER_SIZE) / ASSET_TABLE_ENTRY_SIZE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_max_assets', maxAssets);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_max_cycles_per_frame', runtime.cycleBudgetPerFrame);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_max_cycles_per_frame', runtime.timing.cycleBudgetPerFrame);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_dither', IO_VDP_DITHER);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd', IO_VDP_CMD);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_arg_count', IO_VDP_CMD_ARG_COUNT);
@@ -1401,10 +1401,10 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		out.push(runtime.getVdpWorkUnitsPerSec());
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_work_units_last', createNativeFunction('sys_vdp_work_units_last', (_args, out) => {
-		out.push(runtime.lastTickVdpFrameCost);
+		out.push(runtime.machineScheduler.lastTickVdpFrameCost);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_frame_held', createNativeFunction('sys_vdp_frame_held', (_args, out) => {
-		out.push(runtime.lastTickVdpFrameHeld ? 1 : 0);
+		out.push(runtime.machineScheduler.lastTickVdpFrameHeld ? 1 : 0);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_dma_done', IRQ_DMA_DONE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_dma_error', IRQ_DMA_ERROR);

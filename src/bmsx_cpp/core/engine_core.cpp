@@ -87,39 +87,25 @@ uint64_t alignUpU64(uint64_t value, uint64_t alignment) {
 	return (value + mask) & ~mask;
 }
 
-uint32_t computeRequiredAssetDataBytes(const RuntimeAssets& engineAssets, const RuntimeAssets& assets) {
-	std::unordered_map<std::string, const ImgAsset*> imagesById;
-	imagesById.reserve(engineAssets.img.size() + assets.img.size());
-	for (const auto& entry : engineAssets.img) {
-		imagesById[entry.second.id] = &entry.second;
+uint64_t resolveRomBufferBytes(const RomAssetInfo& rom, const std::string& id, const char* kind) {
+	if (!rom.start || !rom.end || *rom.end <= *rom.start) {
+		throw std::runtime_error(std::string("[EngineCore] ") + kind + " asset '" + id + "' missing ROM buffer offsets for memory sizing.");
 	}
-	for (const auto& entry : assets.img) {
-		imagesById[entry.second.id] = &entry.second;
-	}
+	return static_cast<uint64_t>(*rom.end - *rom.start);
+}
 
-	std::unordered_map<std::string, const AudioAsset*> audioById;
-	audioById.reserve(engineAssets.audio.size() + assets.audio.size());
-	for (const auto& entry : engineAssets.audio) {
-		audioById[entry.second.id] = &entry.second;
+uint32_t computeRequiredAssetDataBytes(const RuntimeAssets& assets) {
+	uint64_t requiredBytes = 0;
+	for (const auto& entry : assets.img) {
+		const ImgAsset& image = entry.second;
+		if (image.rom.type == "atlas" || image.meta.atlassed) {
+			continue;
+		}
+		requiredBytes += alignUpU64(resolveRomBufferBytes(image.rom, image.id, "image"), 4u);
 	}
 	for (const auto& entry : assets.audio) {
-		audioById[entry.second.id] = &entry.second;
-	}
-
-	uint64_t requiredBytes = 0;
-	for (const auto& entry : imagesById) {
-		const ImgAsset& image = *entry.second;
-		if (image.rom.type == "atlas" || image.meta.atlassed || image.pixels.empty()) {
-			continue;
-		}
-		requiredBytes += alignUpU64(static_cast<uint64_t>(image.pixels.size()), 4u);
-	}
-	for (const auto& entry : audioById) {
-		const AudioAsset& audio = *entry.second;
-		if (audio.bytes.empty()) {
-			continue;
-		}
-		requiredBytes += alignUpU64(static_cast<uint64_t>(audio.bytes.size()), 2u);
+		const AudioAsset& audio = entry.second;
+		requiredBytes += alignUpU64(resolveRomBufferBytes(audio.rom, audio.id, "audio"), 2u);
 	}
 	requiredBytes += static_cast<uint64_t>(DEFAULT_ASSET_DATA_HEADROOM_BYTES);
 	requiredBytes = alignUpU64(requiredBytes, static_cast<uint64_t>(ASSET_PAGE_SIZE));
@@ -178,7 +164,7 @@ MemoryMapConfig resolveMemoryMapConfig(const MachineManifest& machine, const Mac
 	const uint32_t requiredAssetTableBytes = computeAssetTableBytes(engineAssets, assets);
 	config.assetTableBytes = requiredAssetTableBytes;
 	const uint32_t stringHandleTableBytes = config.stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
-	const uint32_t requiredAssetDataBytes = computeRequiredAssetDataBytes(engineAssets, assets);
+	const uint32_t requiredAssetDataBytes = computeRequiredAssetDataBytes(assets);
 	const uint64_t assetDataBaseOffset = static_cast<uint64_t>(IO_REGION_SIZE)
 		+ static_cast<uint64_t>(stringHandleTableBytes)
 		+ static_cast<uint64_t>(config.stringHeapBytes)
@@ -662,7 +648,7 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 	runtime.timing.applyUfpsScaled(ufpsScaled);
 	runtime.setCpuHz(cpuHz);
 	runtime.setCycleBudgetPerFrame(cycleBudget);
-	runtime.setVblankCycles(static_cast<int>(vblankCycles));
+	runtime.vblank.setVblankCycles(runtime, static_cast<int>(vblankCycles));
 	runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, vdpWorkUnitsPerSec, geoWorkUnitsPerSec);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Engine);
@@ -791,7 +777,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 			runtime.timing.applyUfpsScaled(runtimeUfpsScaled);
 			runtime.setCpuHz(cpuHz);
 			runtime.setCycleBudgetPerFrame(cycleBudget);
-			runtime.setVblankCycles(static_cast<int>(vblankCycles));
+			runtime.vblank.setVblankCycles(runtime, static_cast<int>(vblankCycles));
 			runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, vdpWorkUnitsPerSec, geoWorkUnitsPerSec);
 			runtime.refreshMemoryMap();
 			runtime.buildAssetMemory(assets(), false);
@@ -816,7 +802,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 			runtime.timing.applyUfpsScaled(runtimeUfpsScaled);
 			runtime.setCpuHz(cpuHz);
 			runtime.setCycleBudgetPerFrame(cycleBudget);
-			runtime.setVblankCycles(static_cast<int>(vblankCycles));
+			runtime.vblank.setVblankCycles(runtime, static_cast<int>(vblankCycles));
 			runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, vdpWorkUnitsPerSec, geoWorkUnitsPerSec);
 			runtime.refreshMemoryMap();
 			runtime.buildAssetMemory(assets(), false);
@@ -881,7 +867,7 @@ bool EngineCore::bootLoadedCart() {
 	runtime.timing.applyUfpsScaled(ufpsScaled);
 	runtime.setCpuHz(cpuHz);
 	runtime.setCycleBudgetPerFrame(cycleBudget);
-	runtime.setVblankCycles(static_cast<int>(vblankCycles));
+	runtime.vblank.setVblankCycles(runtime, static_cast<int>(vblankCycles));
 	runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, vdpWorkUnitsPerSec, geoWorkUnitsPerSec);
 	runtime.refreshMemoryMap();
 	runtime.buildAssetMemory(assets(), false, Runtime::AssetBuildMode::Cart);
@@ -1056,7 +1042,7 @@ void EngineCore::bootRuntimeFromProgram() {
 	runtime.timing.applyUfpsScaled(ufpsScaled);
 	runtime.setCpuHz(cpuHz);
 	runtime.setCycleBudgetPerFrame(cycleBudget);
-	runtime.setVblankCycles(static_cast<int>(vblankCycles));
+	runtime.vblank.setVblankCycles(runtime, static_cast<int>(vblankCycles));
 	runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, vdpWorkUnitsPerSec, geoWorkUnitsPerSec);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Cart);

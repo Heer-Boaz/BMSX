@@ -392,7 +392,7 @@ export class EngineCore {
 	}
 
 	public get_frame_delta_ms(): number {
-		return Runtime.instance.frameDeltaMs;
+		return Runtime.instance.frameLoop.frameDeltaMs;
 	}
 
 	public is_cart_program_active(): boolean {
@@ -612,9 +612,9 @@ export class EngineCore {
 				runtime.machineScheduler.clearQueuedTime();
 				runtime.screen.clearPresentation();
 				runtime.abandonFrameState();
-				runtime.drawFrameState = null;
-				runtime.clearHaltUntilIrq();
-				runtime.resetVblankState();
+				runtime.frameLoop.drawFrameState = null;
+				runtime.vblank.clearHaltUntilIrq(runtime);
+				runtime.vblank.reset(runtime);
 				runtime.overlayRenderer.abandonFrame();
 			}
 

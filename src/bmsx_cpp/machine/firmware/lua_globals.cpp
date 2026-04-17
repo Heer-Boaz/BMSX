@@ -1437,7 +1437,7 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_geo_scratch_base", valueNumber(static_cast<double>(GEO_SCRATCH_BASE)));
 	setGlobal("sys_geo_scratch_size", valueNumber(static_cast<double>(GEO_SCRATCH_SIZE)));
 	setGlobal("sys_max_assets", valueNumber(static_cast<double>(maxAssets)));
-	setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(m_cycleBudgetPerFrame)));
+	setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(timing.cycleBudgetPerFrame)));
 	setGlobal("sys_vdp_dither", valueNumber(static_cast<double>(IO_VDP_DITHER)));
 	setGlobal("sys_vdp_cmd", valueNumber(static_cast<double>(IO_VDP_CMD)));
 	setGlobal("sys_vdp_cmd_arg_count", valueNumber(static_cast<double>(IO_VDP_CMD_ARG_COUNT)));
@@ -1704,11 +1704,11 @@ void Runtime::setupBuiltins() {
 	});
 	registerNativeFunction("sys_vdp_work_units_last", [this](NativeArgsView args, NativeResults& out) {
 		(void)args;
-		out.push_back(valueNumber(static_cast<double>(lastTickVdpFrameCost())));
+		out.push_back(valueNumber(static_cast<double>(machineScheduler.lastTickVdpFrameCost)));
 	});
 	registerNativeFunction("sys_vdp_frame_held", [this](NativeArgsView args, NativeResults& out) {
 		(void)args;
-		out.push_back(valueNumber(lastTickVdpFrameHeld() ? 1.0 : 0.0));
+		out.push_back(valueNumber(machineScheduler.lastTickVdpFrameHeld ? 1.0 : 0.0));
 	});
 	auto findRomAssetInfo = [](RuntimeAssets& assets, const std::string& assetId) -> const RomAssetInfo* {
 		if (const ImgAsset* image = assets.getImg(assetId)) {

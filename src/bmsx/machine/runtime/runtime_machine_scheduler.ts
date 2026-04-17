@@ -33,6 +33,16 @@ function createTickCompletionQueue(): TickCompletion[] {
 }
 
 export class RuntimeMachineSchedulerState {
+	public lastTickSequence = 0;
+	public lastTickBudgetGranted = 0;
+	public lastTickCpuBudgetGranted = 0;
+	public lastTickCpuUsedCycles = 0;
+	public lastTickBudgetRemaining = 0;
+	public lastTickVisualFrameCommitted = true;
+	public lastTickVdpFrameCost = 0;
+	public lastTickVdpFrameHeld = false;
+	public lastTickCompleted = false;
+	public lastTickConsumedSequence = 0;
 	private accumulatedHostTimeMs = 0;
 	private readonly tickCompletionQueue = createTickCompletionQueue();
 	private tickCompletionReadIndex = 0;
@@ -60,7 +70,7 @@ export class RuntimeMachineSchedulerState {
 		if (!runtime.luaInitialized || !runtime.tickEnabled || runtime.luaRuntimeFailed) {
 			return false;
 		}
-		const state = runtime.currentFrameState;
+		const state = runtime.frameLoop.currentFrameState;
 		if (state !== null && state.cycleBudgetRemaining > 0) {
 			return true;
 		}
@@ -79,16 +89,29 @@ export class RuntimeMachineSchedulerState {
 		this.accumulatedHostTimeMs = 0;
 	}
 
-	public clearTickCompletionQueue(runtime: Runtime): void {
+	public clearTickCompletionQueue(): void {
 		this.tickCompletionReadIndex = 0;
 		this.tickCompletionWriteIndex = 0;
 		this.tickCompletionCount = 0;
-		runtime.lastTickConsumedSequence = runtime.lastTickSequence;
+		this.lastTickConsumedSequence = this.lastTickSequence;
 	}
 
-	public reset(runtime: Runtime): void {
+	public reset(): void {
 		this.clearQueuedTime();
-		this.clearTickCompletionQueue(runtime);
+		this.clearTickCompletionQueue();
+	}
+
+	public resetTickTelemetry(): void {
+		this.lastTickCompleted = false;
+		this.lastTickBudgetGranted = 0;
+		this.lastTickCpuBudgetGranted = 0;
+		this.lastTickCpuUsedCycles = 0;
+		this.lastTickBudgetRemaining = 0;
+		this.lastTickVisualFrameCommitted = true;
+		this.lastTickVdpFrameCost = 0;
+		this.lastTickVdpFrameHeld = false;
+		this.lastTickSequence = 0;
+		this.lastTickConsumedSequence = 0;
 	}
 
 	public run(runtime: Runtime, hostDeltaMs: number): void {
@@ -105,7 +128,7 @@ export class RuntimeMachineSchedulerState {
 		}
 	}
 
-	public consumeTickCompletion(runtime: Runtime, out: TickCompletion): boolean {
+	public consumeTickCompletion(out: TickCompletion): boolean {
 		if (this.tickCompletionCount <= 0) {
 			return false;
 		}
@@ -117,7 +140,7 @@ export class RuntimeMachineSchedulerState {
 		out.vdpFrameHeld = slot.vdpFrameHeld;
 		this.tickCompletionReadIndex = (this.tickCompletionReadIndex + 1) % TICK_COMPLETION_QUEUE_CAPACITY;
 		this.tickCompletionCount -= 1;
-		runtime.lastTickConsumedSequence = out.sequence;
+		this.lastTickConsumedSequence = out.sequence;
 		return true;
 	}
 
@@ -131,7 +154,7 @@ export class RuntimeMachineSchedulerState {
 			throw new Error('Runtime fault: tick completion queue overflow.');
 		}
 		const slot = this.tickCompletionQueue[this.tickCompletionWriteIndex]!;
-		const sequence = runtime.lastTickSequence + 1;
+		const sequence = this.lastTickSequence + 1;
 		slot.sequence = sequence;
 		slot.remaining = frameState.cycleBudgetRemaining;
 		slot.visualCommitted = runtime.machine.vdp.lastFrameCommitted;
@@ -139,15 +162,15 @@ export class RuntimeMachineSchedulerState {
 		slot.vdpFrameHeld = runtime.machine.vdp.lastFrameHeld;
 		this.tickCompletionWriteIndex = (this.tickCompletionWriteIndex + 1) % TICK_COMPLETION_QUEUE_CAPACITY;
 		this.tickCompletionCount += 1;
-		runtime.lastTickBudgetGranted = frameState.cycleBudgetGranted;
-		runtime.lastTickCpuBudgetGranted = frameState.cycleBudgetGranted;
-		runtime.lastTickCpuUsedCycles = frameState.activeCpuUsedCycles;
-		runtime.lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
-		runtime.lastTickVisualFrameCommitted = slot.visualCommitted;
-		runtime.lastTickVdpFrameCost = slot.vdpFrameCost;
-		runtime.lastTickVdpFrameHeld = slot.vdpFrameHeld;
-		runtime.lastTickCompleted = true;
-		runtime.lastTickSequence = sequence;
+		this.lastTickBudgetGranted = frameState.cycleBudgetGranted;
+		this.lastTickCpuBudgetGranted = frameState.cycleBudgetGranted;
+		this.lastTickCpuUsedCycles = frameState.activeCpuUsedCycles;
+		this.lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
+		this.lastTickVisualFrameCommitted = slot.visualCommitted;
+		this.lastTickVdpFrameCost = slot.vdpFrameCost;
+		this.lastTickVdpFrameHeld = slot.vdpFrameHeld;
+		this.lastTickCompleted = true;
+		this.lastTickSequence = sequence;
 		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
 		if (debugTickRate) {
 			const cyclesUsed = frameState.activeCpuUsedCycles;
@@ -168,7 +191,7 @@ export class RuntimeMachineSchedulerState {
 				const yieldsPerFrame = this.debugFrameYieldsAcc / this.debugFrameCount;
 				const grantedPerFrame = this.debugFrameGrantedAcc / this.debugFrameCount;
 				const carryPerFrame = this.debugFrameCarryAcc / this.debugFrameCount;
-				console.info(`cycles/sec=${cyclesPerSec.toFixed(1)} cycles/frame=${cyclesPerFrame.toFixed(1)} remaining/frame=${remainingPerFrame.toFixed(1)} yields/frame=${yieldsPerFrame.toFixed(2)} budget=${runtime.cycleBudgetPerFrame} granted=${grantedPerFrame.toFixed(1)} carry=${carryPerFrame.toFixed(1)}`);
+				console.info(`cycles/sec=${cyclesPerSec.toFixed(1)} cycles/frame=${cyclesPerFrame.toFixed(1)} remaining/frame=${remainingPerFrame.toFixed(1)} yields/frame=${yieldsPerFrame.toFixed(2)} budget=${runtime.timing.cycleBudgetPerFrame} granted=${grantedPerFrame.toFixed(1)} carry=${carryPerFrame.toFixed(1)}`);
 				this.debugFrameReportAtMs = now;
 				this.debugFrameCount = 0;
 				this.debugFrameCyclesUsedAcc = 0;
@@ -184,8 +207,8 @@ export class RuntimeMachineSchedulerState {
 		if (!this.consumeScheduledFrame(runtime)) {
 			return false;
 		}
-		frameState.cycleBudgetRemaining += runtime.cycleBudgetPerFrame;
-		frameState.cycleBudgetGranted += runtime.cycleBudgetPerFrame;
+		frameState.cycleBudgetRemaining += runtime.timing.cycleBudgetPerFrame;
+		frameState.cycleBudgetGranted += runtime.timing.cycleBudgetPerFrame;
 		return true;
 	}
 
@@ -200,7 +223,7 @@ export class RuntimeMachineSchedulerState {
 			}
 			this.debugTickYieldsBefore = runtime.debugCycleYieldsTotal;
 		}
-		runtime.lastTickCompleted = false;
+		this.lastTickCompleted = false;
 		runtime.beginFrameState();
 		return true;
 	}

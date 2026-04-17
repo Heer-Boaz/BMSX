@@ -5,8 +5,17 @@ import { resolveUfpsScaled } from './runtime_timing';
 export class RuntimeTimingState {
 	public ufps: number;
 	public frameDurationMs: number;
+	public cpuHz: number;
+	public cycleBudgetPerFrame: number;
+	public vdpWorkUnitsPerSec = 0;
+	public geoWorkUnitsPerSec = 0;
+	public imgDecBytesPerSec = 0;
+	public dmaBytesPerSecIso = 0;
+	public dmaBytesPerSecBulk = 0;
 
-	constructor(public ufpsScaled: number) {
+	constructor(public ufpsScaled: number, cpuHz: number, cycleBudgetPerFrame: number) {
+		this.cpuHz = cpuHz;
+		this.cycleBudgetPerFrame = cycleBudgetPerFrame;
 		this.applyUfpsScaled(ufpsScaled);
 	}
 

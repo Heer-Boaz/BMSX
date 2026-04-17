@@ -59,7 +59,9 @@ i64 resolveVblankCycles(i64 cpuHz, i64 refreshHzScaled, i32 renderHeight) {
 	return vblankCycles;
 }
 
-RuntimeTimingState::RuntimeTimingState(i64 ufpsScaledValue) {
+RuntimeTimingState::RuntimeTimingState(i64 ufpsScaledValue, i64 cpuHzValue, int cycleBudgetPerFrameValue)
+	: cpuHz(cpuHzValue)
+	, cycleBudgetPerFrame(cycleBudgetPerFrameValue) {
 	applyUfpsScaled(ufpsScaledValue);
 }
 

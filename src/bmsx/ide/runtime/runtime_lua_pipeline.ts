@@ -157,7 +157,7 @@ function resolveRuntimeMachineForPlan(runtime: Runtime, plan: RuntimeAssetReload
 export function captureCurrentState(runtime: Runtime): RuntimeState {
 	const storage = runtime.storage.dump();
 	const stateSnapshot = captureRuntimeState(runtime);
-	const vblankState = runtime.captureVblankState();
+	const vblankState = runtime.vblank.capture(runtime);
 	const state: RuntimeState = {
 		luaRuntimeFailed: runtime.luaRuntimeFailed,
 		luaPath: runtime.currentPath,
@@ -201,8 +201,8 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeState, 
 	publishOverlayFrame(null);
 	restoreMachineSnapshot(runtime, snapshot);
 	resumeLuaProgramState(runtime, snapshot, options);
-	runtime.restoreVblankState(snapshot);
-	runtime.resetRenderBuffers();
+	runtime.vblank.restore(runtime, snapshot);
+	runtime.machine.resetRenderBuffers();
 	runtime.luaInitialized = true;
 }
 
@@ -480,24 +480,18 @@ export function resetRuntimeState(runtime: Runtime): void {
 
 export function resetFrameState(runtime: Runtime): void {
 	runtime.abandonFrameState();
-	runtime.drawFrameState = null;
-	runtime.clearHaltUntilIrq();
-	runtime.machineScheduler.reset(runtime);
+	runtime.frameLoop.drawFrameState = null;
+	runtime.vblank.clearHaltUntilIrq(runtime);
+	runtime.machineScheduler.reset();
 	runtime.frameLoop.reset();
 	runtime.screen.reset();
-	runtime.lastTickCompleted = false;
-	runtime.lastTickBudgetGranted = 0;
-	runtime.lastTickCpuBudgetGranted = 0;
-	runtime.lastTickCpuUsedCycles = 0;
-	runtime.lastTickBudgetRemaining = 0;
-	runtime.lastTickSequence = 0;
-	runtime.lastTickConsumedSequence = 0;
+	runtime.machineScheduler.resetTickTelemetry();
 }
 
 export function resetHardwareState(runtime: Runtime): void {
 	runtime.machine.resetDevices();
-	runtime.resetVblankState();
-	runtime.resetRenderBuffers();
+	runtime.vblank.reset(runtime);
+	runtime.machine.resetRenderBuffers();
 }
 
 export function registerGlobal(runtime: Runtime, name: string, value: Value): void {
@@ -1023,7 +1017,7 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, options?: { r
 			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, runtime.timing.ufpsScaled);
 			runtime.setCycleBudgetPerFrame(cycleBudgetPerFrame);
 			const renderHeight = resolveRenderHeight(machine.render_size.height);
-			runtime.setVblankCycles(resolveVblankCycles(cpuHz, runtime.timing.ufpsScaled, renderHeight));
+			runtime.vblank.setVblankCycles(runtime, resolveVblankCycles(cpuHz, runtime.timing.ufpsScaled, renderHeight));
 			runtime.setTransferRatesFromManifest(perfSpecs);
 		} catch (error) {
 			runtimeIde.handleLuaError(runtime, error);

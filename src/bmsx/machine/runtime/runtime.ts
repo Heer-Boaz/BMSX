@@ -16,16 +16,13 @@ import {
 } from '../../lua/luavalue';
 import type { StorageService } from '../../platform/platform';
 import type { SkyboxImageIds } from '../../render/shared/render_types';
-import type { AudioMeta, CartridgeLayerId, ImgMeta, MachineManifest, RomAsset, RomImgAsset, Viewport, RuntimeAssets, id2res } from '../../rompack/rompack';
+import type { AudioMeta, CartridgeLayerId, ImgMeta, RomAsset, RomImgAsset, Viewport, RuntimeAssets, id2res } from '../../rompack/rompack';
 import {
 	CanonicalizationType,
-	ATLAS_PRIMARY_SLOT_ID,
-	ATLAS_SECONDARY_SLOT_ID,
 	CART_ROM_HEADER_SIZE,
 	DEFAULT_GEO_WORK_UNITS_PER_SEC,
 	DEFAULT_VDP_WORK_UNITS_PER_SEC,
 	ENGINE_ATLAS_INDEX,
-	getMachineMemorySpecs,
 	getMachinePerfSpecs,
 	generateAtlasName,
 } from '../../rompack/rompack';
@@ -69,6 +66,11 @@ import {
 import { RuntimeScreenState } from './runtime_screen';
 import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from './runtime_timing';
 import { RuntimeTimingState } from './runtime_timing_state';
+import { RuntimeVblankState } from './runtime_vblank';
+import { buildRuntimeLayerLookup, resolveLayerForPayload, resolveRuntimeLayerAssetById, resolveRuntimeLayerAssetFromEntry, type RuntimeLayerLookup } from './runtime_asset_layers';
+import { resolveBytesPerSec, resolveCpuHz, resolveGeoWorkUnitsPerSec, resolveRuntimeRenderSize, resolveVdpWorkUnitsPerSec } from './runtime_machine_specs';
+import { resolveRuntimeMemoryMapSpecs } from './runtime_memory_specs';
+import { startEngineWithDeferredStartupAudioRefresh } from './runtime_startup_audio';
 import {
 	HOST_FAULT_FLAG_ACTIVE,
 	HOST_FAULT_FLAG_STARTUP_BLOCKING,
@@ -80,28 +82,16 @@ import {
 	IO_SYS_HOST_FAULT_STAGE,
 	IRQ_NEWGAME,
 	IRQ_REINIT,
-	IRQ_VBLANK,
 } from '../bus/io';
 import { HandlerCache } from './handler_cache';
 import { Machine } from '../machine';
-import { Memory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntry } from '../memory/memory';
+import { Memory, type AssetEntry } from '../memory/memory';
 import {
 	CART_ROM_BASE,
-	DEFAULT_GEO_SCRATCH_SIZE,
-	DEFAULT_STRING_HANDLE_COUNT,
-	DEFAULT_STRING_HEAP_SIZE,
-	DEFAULT_VRAM_ATLAS_SLOT_SIZE,
-	DEFAULT_VRAM_STAGING_SIZE,
-	IO_REGION_SIZE,
-	IO_WORD_SIZE,
 	OVERLAY_ROM_BASE,
 	SYSTEM_ROM_BASE,
-	STRING_HANDLE_ENTRY_SIZE,
-	VDP_STREAM_BUFFER_SIZE,
 	configureMemoryMap,
-	type MemoryMapSpecs as MemoryMapSpecs,
 } from '../memory/memory_map';
-import { FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY } from '../devices/vdp/vdp';
 import { PROGRAM_ASSET_ID } from '../program/program_asset';
 import { createVdpBlitterExecutor } from '../../render/vdp/vdp_blitter';
 
@@ -113,10 +103,8 @@ function runtimeFault(message: string): Error {
 export const EDITOR_FONT_VARIANT: FontVariant = 'tiny';
 
 const MAX_POOLED_RUNTIME_SCRATCH_ARRAYS = 32;
-const ASSET_DATA_ALIGNMENT_BYTES = 0x1000;
-const DEFAULT_ASSET_DATA_HEADROOM_BYTES = 1 << 20; // 1 MiB
 
-type FrameState = {
+export type FrameState = {
 	haltGame: boolean;
 	updateExecuted: boolean;
 	luaFaulted: boolean;
@@ -131,60 +119,8 @@ type EditorViewOptionsSnapshot = {
 };
 
 type ProgramSource = 'engine' | 'cart';
-type RuntimeAssetCollectionKey = 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents';
-type RuntimeLayerLookup = Partial<Record<CartridgeLayerId, RuntimeAssetLayer>>;
 
 export var api: Api; // Initialized in Runtime constructor
-
-function buildRuntimeLayerLookup(layers: ReadonlyArray<RuntimeAssetLayer>): RuntimeLayerLookup {
-	const lookup: RuntimeLayerLookup = {};
-	for (let index = 0; index < layers.length; index += 1) {
-		const layer = layers[index]!;
-		lookup[layer.id] = layer;
-	}
-	return lookup;
-}
-
-function getRuntimeLayerAssets(layer: RuntimeAssetLayer, kind: RuntimeAssetCollectionKey): RuntimeAssets[RuntimeAssetCollectionKey] {
-	switch (kind) {
-		case 'img': return layer.assets.img;
-		case 'audio': return layer.assets.audio;
-		case 'model': return layer.assets.model;
-		case 'data': return layer.assets.data;
-		case 'bin': return layer.assets.bin;
-		case 'audioevents': return layer.assets.audioevents;
-	}
-}
-
-function resolveLayerForPayload(lookup: RuntimeLayerLookup, payloadId: CartridgeLayerId): RuntimeAssetLayer {
-	const layer = lookup[payloadId];
-	if (!layer) {
-		throw runtimeFault(`asset layer '${payloadId}' not configured.`);
-	}
-	return layer;
-}
-
-function resolveRuntimeLayerAssetFromEntry<T>(lookup: RuntimeLayerLookup, kind: RuntimeAssetCollectionKey, entry: RomAsset): T {
-	const payloadId = entry.payload_id;
-	if (!payloadId) {
-		throw runtimeFault(`asset '${entry.resid}' missing payload_id.`);
-	}
-	const layer = resolveLayerForPayload(lookup, payloadId);
-	const assets = getRuntimeLayerAssets(layer, kind) as Record<string, T>;
-	const asset = assets[entry.resid];
-	if (!asset) {
-		throw runtimeFault(`${kind} asset '${entry.resid}' missing from '${payloadId}' layer.`);
-	}
-	return asset;
-}
-
-function resolveRuntimeLayerAssetById<T>(lookup: RuntimeLayerLookup, source: RawAssetSource, kind: RuntimeAssetCollectionKey, id: string): T {
-	const entry = source.getEntry(id);
-	if (!entry) {
-		throw runtimeFault(`${kind} asset '${id}' not found.`);
-	}
-	return resolveRuntimeLayerAssetFromEntry<T>(lookup, kind, entry);
-}
 
 export class Runtime {
 	private static readonly ENGINE_IRQ_MASK = (IRQ_REINIT | IRQ_NEWGAME) >>> 0;
@@ -198,66 +134,28 @@ export class Runtime {
 		return new Runtime(options);
 	}
 
-	private static resolvePositiveSafeInteger(value: number | undefined, label: string): number {
-		if (value === undefined) {
-			throw runtimeFault(`${label} is required.`);
-		}
-		if (!Number.isSafeInteger(value) || value <= 0) {
-			throw runtimeFault(`${label} must be a positive safe integer.`);
-		}
-		return value;
-	}
-
-	private static resolveCpuHz(value: number | undefined): number {
-		return Runtime.resolvePositiveSafeInteger(value, 'machine.specs.cpu.cpu_freq_hz');
-	}
-
-	private static resolveBytesPerSec(value: number | undefined, label: string): number {
-		return Runtime.resolvePositiveSafeInteger(value, label);
-	}
-
-	private static resolveVdpWorkUnitsPerSec(value: number | undefined): number {
-		return Runtime.resolvePositiveSafeInteger(value, 'machine.specs.vdp.work_units_per_sec');
-	}
-
-	private static resolveGeoWorkUnitsPerSec(value: number | undefined): number {
-		return Runtime.resolvePositiveSafeInteger(value, 'machine.specs.geo.work_units_per_sec');
-	}
-
-	private static resolveRenderSize(machine: { render_size: { width: number; height: number; } }): Viewport {
-		const width = Runtime.resolvePositiveSafeInteger(machine.render_size.width, 'machine.render_size.width');
-		const height = Runtime.resolvePositiveSafeInteger(machine.render_size.height, 'machine.render_size.height');
-		return { width, height };
-	}
-
 	public setCycleBudgetPerFrame(value: number): void {
-		if (value === this.cycleBudgetPerFrame) {
+		if (value === this.timing.cycleBudgetPerFrame) {
 			return;
 		}
-		this.cycleBudgetPerFrame = value;
+		this.timing.cycleBudgetPerFrame = value;
 		runtimeLuaPipeline.registerGlobal(this, 'sys_max_cycles_per_frame', value);
 		this.refreshDeviceTimings(this.machine.scheduler.currentNowCycles());
-		if (this.vblankCycles > 0) {
-			if (this.vblankCycles > this.cycleBudgetPerFrame) {
-				throw runtimeFault('vblank_cycles must be less than or equal to cycles_per_frame.');
-			}
-			this.vblankStartCycle = this.cycleBudgetPerFrame - this.vblankCycles;
-			this.resetVblankState();
-		}
+		this.vblank.configureCycleBudget(this);
 	}
 
 	public getLastTickBudgetGranted(): number {
-		if (this.lastTickSequence === 0) {
-			return this.cycleBudgetPerFrame;
+		if (this.machineScheduler.lastTickSequence === 0) {
+			return this.timing.cycleBudgetPerFrame;
 		}
-		return this.lastTickCpuBudgetGranted;
+		return this.machineScheduler.lastTickCpuBudgetGranted;
 	}
 
 	public getCpuUsedCyclesLastTick(): number {
-		if (this.lastTickSequence === 0) {
+		if (this.machineScheduler.lastTickSequence === 0) {
 			return 0;
 		}
-		return this.lastTickCpuUsedCycles;
+		return this.machineScheduler.lastTickCpuUsedCycles;
 	}
 
 	public getActiveCpuCyclesGranted(): number {
@@ -265,7 +163,7 @@ export class Runtime {
 	}
 
 	public getVdpWorkUnitsPerSec(): number {
-		return this.vdpWorkUnitsPerSec;
+		return this.timing.vdpWorkUnitsPerSec;
 	}
 
 	public getActiveCpuUsedCyclesLastTick(): number {
@@ -285,7 +183,7 @@ export class Runtime {
 	}
 
 	public hasActiveTick(): boolean {
-		return this.currentFrameState !== null;
+		return this.frameLoop.currentFrameState !== null;
 	}
 
 	public runWithBudget(state: FrameState): RunResult {
@@ -346,7 +244,7 @@ export class Runtime {
 				const yieldsPerSec = this.debugCycleYields * scale;
 				const yieldPct = (this.debugCycleYields / this.debugCycleRuns) * 100;
 				const avgRemaining = this.debugCycleRemainingAcc / this.debugCycleRuns;
-				console.info(`runs=${runsPerSec.toFixed(3)} yields=${yieldsPerSec.toFixed(3)} yield%=${yieldPct.toFixed(2)} avgRemaining=${avgRemaining.toFixed(1)} budget=${this.cycleBudgetPerFrame}`);
+				console.info(`runs=${runsPerSec.toFixed(3)} yields=${yieldsPerSec.toFixed(3)} yield%=${yieldPct.toFixed(2)} avgRemaining=${avgRemaining.toFixed(1)} budget=${this.timing.cycleBudgetPerFrame}`);
 				this.debugCycleReportAtMs = now;
 				this.debugCycleRuns = 0;
 				this.debugCycleYields = 0;
@@ -356,18 +254,18 @@ export class Runtime {
 		return result;
 	}
 
-	private refreshDeviceTimings(nowCycles: number): void {
+	public refreshDeviceTimings(nowCycles: number): void {
 		this.machine.refreshDeviceTimings({
-			cpuHz: this._cpuHz,
-			dmaBytesPerSecIso: this.dmaBytesPerSecIso,
-			dmaBytesPerSecBulk: this.dmaBytesPerSecBulk,
-			imgDecBytesPerSec: this.imgDecBytesPerSec,
-			geoWorkUnitsPerSec: this.geoWorkUnitsPerSec,
-			vdpWorkUnitsPerSec: this.vdpWorkUnitsPerSec,
+			cpuHz: this.timing.cpuHz,
+			dmaBytesPerSecIso: this.timing.dmaBytesPerSecIso,
+			dmaBytesPerSecBulk: this.timing.dmaBytesPerSecBulk,
+			imgDecBytesPerSec: this.timing.imgDecBytesPerSec,
+			geoWorkUnitsPerSec: this.timing.geoWorkUnitsPerSec,
+			vdpWorkUnitsPerSec: this.timing.vdpWorkUnitsPerSec,
 		}, nowCycles);
 	}
 
-	private advanceTime(cycles: number): void {
+	public advanceTime(cycles: number): void {
 		if (cycles <= 0) {
 			return;
 		}
@@ -375,16 +273,7 @@ export class Runtime {
 		this.runDueTimers();
 	}
 
-	private getCyclesIntoFrame(): number {
-		return this.machine.scheduler.nowCycles - this.frameStartCycle;
-	}
-
-	private resetSchedulerState(): void {
-		this.machine.scheduler.reset();
-		this.frameStartCycle = 0;
-	}
-
-	private runDueTimers(): void {
+	public runDueTimers(): void {
 		while (this.machine.scheduler.hasDueTimer()) {
 			const event = this.machine.scheduler.popDueTimer();
 			this.dispatchTimer(event >> 8, event & 0xff);
@@ -394,40 +283,16 @@ export class Runtime {
 	private dispatchTimer(kind: number, payload: number): void {
 		switch (kind) {
 			case TIMER_KIND_VBLANK_BEGIN:
-				this.handleVblankBeginTimer();
+				this.vblank.handleBeginTimer(this);
 				return;
 			case TIMER_KIND_VBLANK_END:
-				this.handleVblankEndTimer();
+				this.vblank.handleEndTimer(this);
 				return;
 			case TIMER_KIND_DEVICE_SERVICE:
 				this.runDeviceService(payload);
 				return;
 			default:
 				throw runtimeFault(`unknown timer kind ${kind}.`);
-		}
-	}
-
-	private scheduleCurrentFrameTimers(): void {
-		this.machine.scheduler.scheduleVblankEnd(this.frameStartCycle + this.cycleBudgetPerFrame);
-		if (this.vblankStartCycle > 0 && this.getCyclesIntoFrame() < this.vblankStartCycle) {
-			this.machine.scheduler.scheduleVblankBegin(this.frameStartCycle + this.vblankStartCycle);
-		}
-	}
-
-	private handleVblankBeginTimer(): void {
-		if (!this.vblankActive) {
-			this.enterVblank();
-		}
-	}
-
-	private handleVblankEndTimer(): void {
-		if (this.vblankActive) {
-			this.leaveVblank();
-		}
-		this.frameStartCycle = this.machine.scheduler.nowCycles;
-		this.scheduleCurrentFrameTimers();
-		if (this.vblankStartCycle === 0) {
-			this.enterVblank();
 		}
 	}
 
@@ -506,203 +371,49 @@ export class Runtime {
 		return this.luaRuntimeFailed;
 	}
 	public get cpuHz(): number {
-		return this._cpuHz;
+		return this.timing.cpuHz;
 	}
 	public setCpuHz(value: number): void {
-		this._cpuHz = value;
+		this.timing.cpuHz = value;
 		this.refreshDeviceTimings(this.machine.scheduler.currentNowCycles());
 	}
 	public applyActiveMachineTiming(cpuHz: number): void {
 		const perfSpecs = getMachinePerfSpecs($.machine_manifest);
 		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, this.timing.ufpsScaled);
-		const renderSize = Runtime.resolveRenderSize($.machine_manifest);
+		const renderSize = resolveRuntimeRenderSize($.machine_manifest);
 		const vblankCycles = resolveVblankCycles(cpuHz, this.timing.ufpsScaled, renderSize.height);
 		this.setCpuHz(cpuHz);
 		this.setCycleBudgetPerFrame(cycleBudgetPerFrame);
-		this.setVblankCycles(vblankCycles);
+		this.vblank.setVblankCycles(this, vblankCycles);
 		this.setVdpWorkUnitsPerSec(perfSpecs.work_units_per_sec);
 		this.setGeoWorkUnitsPerSec(perfSpecs.geo_work_units_per_sec);
 	}
 
 	public setVdpWorkUnitsPerSec(value: number): void {
-		this.vdpWorkUnitsPerSec = Runtime.resolveVdpWorkUnitsPerSec(value);
-		this.machine.vdp.setTiming(this._cpuHz, this.vdpWorkUnitsPerSec, this.machine.scheduler.currentNowCycles());
+		this.timing.vdpWorkUnitsPerSec = resolveVdpWorkUnitsPerSec(value);
+		this.machine.vdp.setTiming(this.timing.cpuHz, this.timing.vdpWorkUnitsPerSec, this.machine.scheduler.currentNowCycles());
 	}
 
 	public setGeoWorkUnitsPerSec(value: number): void {
-		this.geoWorkUnitsPerSec = Runtime.resolveGeoWorkUnitsPerSec(value);
-		this.machine.geometryController.setTiming(this._cpuHz, this.geoWorkUnitsPerSec, this.machine.scheduler.currentNowCycles());
+		this.timing.geoWorkUnitsPerSec = resolveGeoWorkUnitsPerSec(value);
+		this.machine.geometryController.setTiming(this.timing.cpuHz, this.timing.geoWorkUnitsPerSec, this.machine.scheduler.currentNowCycles());
 	}
 
 	public setTransferRatesFromManifest(specs: { imgdec_bytes_per_sec: number; dma_bytes_per_sec_iso: number; dma_bytes_per_sec_bulk: number; work_units_per_sec: number; geo_work_units_per_sec: number; }): void {
-		this.imgDecBytesPerSec = Runtime.resolveBytesPerSec(specs.imgdec_bytes_per_sec, 'machine.specs.cpu.imgdec_bytes_per_sec');
-		this.dmaBytesPerSecIso = Runtime.resolveBytesPerSec(specs.dma_bytes_per_sec_iso, 'machine.specs.dma.dma_bytes_per_sec_iso');
-		this.dmaBytesPerSecBulk = Runtime.resolveBytesPerSec(specs.dma_bytes_per_sec_bulk, 'machine.specs.dma.dma_bytes_per_sec_bulk');
+		this.timing.imgDecBytesPerSec = resolveBytesPerSec(specs.imgdec_bytes_per_sec, 'machine.specs.cpu.imgdec_bytes_per_sec');
+		this.timing.dmaBytesPerSecIso = resolveBytesPerSec(specs.dma_bytes_per_sec_iso, 'machine.specs.dma.dma_bytes_per_sec_iso');
+		this.timing.dmaBytesPerSecBulk = resolveBytesPerSec(specs.dma_bytes_per_sec_bulk, 'machine.specs.dma.dma_bytes_per_sec_bulk');
 		this.setVdpWorkUnitsPerSec(specs.work_units_per_sec);
 		this.setGeoWorkUnitsPerSec(specs.geo_work_units_per_sec);
 		this.refreshDeviceTimings(this.machine.scheduler.currentNowCycles());
 	}
 
-	public setVblankCycles(cycles: number): void {
-		if (cycles <= 0) {
-			throw runtimeFault('vblank_cycles must be greater than 0.');
-		}
-		if (cycles > this.cycleBudgetPerFrame) {
-			throw runtimeFault('vblank_cycles must be less than or equal to cycles_per_frame.');
-		}
-		this.vblankCycles = cycles;
-		this.vblankStartCycle = this.cycleBudgetPerFrame - this.vblankCycles;
-		this.resetVblankState();
-	}
-
-	public resetVblankState(): void {
-		this.resetSchedulerState();
-		this.vblankActive = false;
-		this.vblankSequence = 0;
-		this.lastCompletedVblankSequence = 0;
-		this.machine.inputController.sampleArmed = false;
-		this.machine.irqController.postLoad();
-		this.resetHaltIrqWait();
-		this.machine.vdp.resetStatus();
-		if (this.vblankStartCycle === 0) {
-			this.setVblankStatus(true);
-		}
-		this.scheduleCurrentFrameTimers();
-		this.refreshDeviceTimings(this.machine.scheduler.nowCycles);
-	}
-
-	public resetRenderBuffers(): void {
-		this.machine.resetRenderBuffers();
-	}
-
-	private setVblankStatus(active: boolean): void {
-		this.vblankActive = active;
-		this.machine.vdp.setVblankStatus(active);
-	}
-
-	private enterVblank(): void {
-		// IRQ flags are level/pending; multiple VBLANK edges while pending coalesce.
-		this.vblankSequence += 1;
-		this.commitFrameOnVblankEdge();
-		this.machine.inputController.onVblankEdge();
-		this.setVblankStatus(true);
-		this.machine.irqController.raise(IRQ_VBLANK);
-		const frameState = this.currentFrameState;
-		if (frameState !== null && this.isFrameBoundaryHalt()) {
-			this.completeTickIfPending(frameState, this.vblankSequence);
-			this.clearBackQueuesAfterIrqWake = true;
-		}
-	}
-
-	private leaveVblank(): void {
-		this.setVblankStatus(false);
-	}
-
-	public clearHaltUntilIrq(): void {
-		this.machine.cpu.clearHaltUntilIrq();
-		this.resetHaltIrqWait();
-		this.clearBackQueuesAfterIrqWake = false;
-	}
-
-	private resetHaltIrqWait(): void {
-		this.haltIrqWaitArmed = false;
-		this.haltIrqSignalSequence = 0;
-	}
-
-	private tryCompleteTickOnPendingVblankIrq(state: FrameState): boolean {
-		if (!this.isFrameBoundaryHalt()) {
-			return false;
-		}
-		if (this.vblankSequence === 0) {
-			return false;
-		}
-		const pendingFlags = this.machine.irqController.pendingFlags();
-		if ((pendingFlags & IRQ_VBLANK) === 0) {
-			return false;
-		}
-		if (this.lastCompletedVblankSequence === this.vblankSequence) {
-			return false;
-		}
-		this.completeTickIfPending(state, this.vblankSequence);
-		this.clearBackQueuesAfterIrqWake = true;
-		this.machine.cpu.clearHaltUntilIrq();
-		this.resetHaltIrqWait();
-		return true;
-	}
-
-	private commitFrameOnVblankEdge(): void {
-		this.machine.vdp.syncRegisters();
-		this.machine.vdp.presentReadyFrameOnVblankEdge();
-		this.machine.vdp.commitViewSnapshot();
-	}
-
-	private completeTickIfPending(frameState: FrameState, vblankSequence: number): void {
-		if (this.lastCompletedVblankSequence === vblankSequence) {
-			return;
-		}
-		this.activeTickCompleted = true;
-		this.machineScheduler.enqueueTickCompletion(this, frameState);
-		this.lastCompletedVblankSequence = vblankSequence;
-	}
-
-	public captureVblankState(): { cyclesIntoFrame: number } {
-		return {
-			cyclesIntoFrame: this.getCyclesIntoFrame(),
-		};
-	}
-
-	public restoreVblankState(state: { cyclesIntoFrame: number }): void {
-		this.clearHaltUntilIrq();
-		this.machineScheduler.reset(this);
-		this.frameLoop.reset();
-		this.screen.reset();
-		this.resetSchedulerState();
-		this.machine.scheduler.setNowCycles(state.cyclesIntoFrame);
-		this.frameStartCycle = 0;
-		this.vblankSequence = 0;
-		this.lastCompletedVblankSequence = 0;
-		this.activeTickCompleted = false;
-		this.machine.irqController.postLoad();
-		const vblankActive = (this.vblankStartCycle === 0)
-			|| (this.getCyclesIntoFrame() >= this.vblankStartCycle);
-		this.setVblankStatus(vblankActive);
-		this.scheduleCurrentFrameTimers();
-		this.refreshDeviceTimings(this.machine.scheduler.nowCycles);
-	}
 	private includeJsStackTraces = false;
 	public realtimeCompileOptLevel: 0 | 1 | 2 | 3 = 3;
-	public frameDeltaMs = 0;
-	public currentFrameState: FrameState = null;
-	public drawFrameState: FrameState = null;
-	private clearBackQueuesAfterIrqWake = false;
-	private haltIrqSignalSequence = 0;
-	private haltIrqWaitArmed = false;
-	private vblankSequence = 0;
-	private lastCompletedVblankSequence = 0;
-	public cycleBudgetPerFrame: number;
-	private vblankCycles = 0;
-	private vblankStartCycle = 0;
-	private vblankActive = false;
-	private vdpWorkUnitsPerSec = 0;
-	private geoWorkUnitsPerSec = 0;
-	private _cpuHz: number;
-	private imgDecBytesPerSec = 0;
-	private dmaBytesPerSecIso = 0;
-	private dmaBytesPerSecBulk = 0;
-	private frameStartCycle = 0;
-	public lastTickSequence: number = 0;
-	public lastTickBudgetGranted: number = 0;
-	public lastTickCpuBudgetGranted: number = 0;
-	public lastTickCpuUsedCycles: number = 0;
-	public lastTickBudgetRemaining: number = 0;
-	public lastTickVisualFrameCommitted: boolean = true;
-	public lastTickVdpFrameCost: number = 0;
-	public lastTickVdpFrameHeld: boolean = false;
-	public lastTickCompleted: boolean = false;
-	private activeTickCompleted = false;
 	public readonly machineScheduler = new RuntimeMachineSchedulerState();
 	public readonly frameLoop = new RuntimeFrameLoopState();
 	public readonly screen = new RuntimeScreenState();
+	public readonly vblank = new RuntimeVblankState();
 	private debugCycleReportAtMs: number = 0;
 	private debugCycleRuns: number = 0;
 	private debugCycleYields: number = 0;
@@ -710,7 +421,6 @@ export class Runtime {
 	private debugCycleRunsTotal: number = 0;
 	public debugCycleYieldsTotal: number = 0;
 	public pendingLuaWarnings: string[] = [];
-	public lastTickConsumedSequence: number = 0;
 	public readonly moduleAliases: Map<string, string> = new Map();
 	public readonly luaChunkEnvironmentsByPath: Map<string, LuaEnvironment> = new Map();
 	public readonly luaGenericChunksExecuted: Set<string> = new Set();
@@ -816,7 +526,7 @@ export class Runtime {
 			$.set_inputmap(1, { keyboard: null, gamepad: null, pointer: null }); // Default input mapping for player 1 is required even with no cart to prevent errors
 
 			$.set_lua_sources(engineLuaSources);
-			const engineMemorySpecs = Runtime.resolveMemoryMapSpecs({
+			const engineMemorySpecs = resolveRuntimeMemoryMapSpecs({
 				machine: engineLayer.index.machine,
 				engineMachine: engineLayer.index.machine,
 				engineSource,
@@ -826,9 +536,9 @@ export class Runtime {
 			configureMemoryMap(engineMemorySpecs);
 			const enginePerfSpecs = getMachinePerfSpecs(engineLayer.index.machine);
 			const ufpsScaled = resolveUfpsScaled(enginePerfSpecs.ufps);
-			const cpuHz = Runtime.resolveCpuHz(enginePerfSpecs.cpu_freq_hz);
+			const cpuHz = resolveCpuHz(enginePerfSpecs.cpu_freq_hz);
 			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
-			const engineRenderSize = Runtime.resolveRenderSize(engineLayer.index.machine);
+			const engineRenderSize = resolveRuntimeRenderSize(engineLayer.index.machine);
 			const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, engineRenderSize.height);
 			const memory = new Memory({
 				engineRom: new Uint8Array(engineLayer.payload),
@@ -863,7 +573,7 @@ export class Runtime {
 			await runtime.prepareBootRomStartupState();
 			$.view.default_font = new Font();
 			await runtime.boot();
-			Runtime.startEngineWithDeferredStartupAudioRefresh();
+			startEngineWithDeferredStartupAudioRefresh(runtime);
 			return;
 		}
 
@@ -900,7 +610,7 @@ export class Runtime {
 		await applyWorkspaceOverridesToCart({ cart: cartLuaSources, storage: $.platform.storage, includeServer: true });
 		$.set_lua_sources(engineLuaSources);
 
-		const memoryLimits = Runtime.resolveMemoryMapSpecs({
+		const memoryLimits = resolveRuntimeMemoryMapSpecs({
 			machine: cartLayer.index.machine,
 			engineMachine: engineLayer.index.machine,
 			engineSource,
@@ -910,9 +620,9 @@ export class Runtime {
 		configureMemoryMap(memoryLimits);
 		const cartPerfSpecs = getMachinePerfSpecs(cartLayer.index.machine);
 		const ufpsScaled = resolveUfpsScaled(cartPerfSpecs.ufps);
-		const cpuHz = Runtime.resolveCpuHz(cartPerfSpecs.cpu_freq_hz);
+		const cpuHz = resolveCpuHz(cartPerfSpecs.cpu_freq_hz);
 		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
-		const cartRenderSize = Runtime.resolveRenderSize(cartLayer.index.machine);
+		const cartRenderSize = resolveRuntimeRenderSize(cartLayer.index.machine);
 		const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, cartRenderSize.height);
 		const memory = new Memory({
 			engineRom: new Uint8Array(engineLayer.payload),
@@ -953,7 +663,7 @@ export class Runtime {
 		await runtime.prepareBootRomStartupState();
 		$.view.default_font = new Font();
 		await runtime.boot();
-		Runtime.startEngineWithDeferredStartupAudioRefresh();
+		startEngineWithDeferredStartupAudioRefresh(runtime);
 	}
 
 	public static get instance(): Runtime {
@@ -968,193 +678,6 @@ export class Runtime {
 		// No defense against multiple calls; let it throw if misused.
 		Runtime._instance.dispose();
 		Runtime._instance = null;
-	}
-
-	private static startEngineWithDeferredStartupAudioRefresh(): void {
-		$.bootstrapStartupAudio();
-		$.start();
-		if (!$.platform.audio.available) {
-			return;
-		}
-		const firstFrameHandle = $.platform.frames.start(() => {
-			firstFrameHandle.stop();
-			const audioRefreshHandle = $.platform.frames.start(() => {
-				audioRefreshHandle.stop();
-				void $.refresh_audio_assets().catch((error: unknown) => {
-					const runtime = Runtime.instance;
-					runtime.publishStartupHostFault(error);
-					console.error('Deferred startup audio refresh failed:', error);
-				});
-			});
-		});
-	}
-
-	private static collectAssetEntryIds(engineSource: RawAssetSource, assetSource: RawAssetSource, assetLayers: ReadonlyArray<RuntimeAssetLayer>): Set<string> {
-		const layerLookup = buildRuntimeLayerLookup(assetLayers);
-		const ids = new Set<string>();
-		const engineAtlasId = generateAtlasName(ENGINE_ATLAS_INDEX);
-		const engineAtlas = resolveRuntimeLayerAssetById<RomImgAsset>(layerLookup, engineSource, 'img', engineAtlasId);
-		if (!engineAtlas) {
-			throw runtimeFault(`engine atlas '${engineAtlasId}' not found for memory sizing.`);
-		}
-		ids.add(engineAtlasId);
-		ids.add(ATLAS_PRIMARY_SLOT_ID);
-		ids.add(ATLAS_SECONDARY_SLOT_ID);
-		const sources = [engineSource, assetSource];
-		for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
-			const entries = sources[sourceIndex].list();
-			for (let index = 0; index < entries.length; index += 1) {
-				const entry = entries[index];
-				if (entry.type !== 'image') {
-					continue;
-				}
-				const asset = resolveRuntimeLayerAssetFromEntry<RomImgAsset>(layerLookup, 'img', entry);
-				if (!asset) {
-					throw runtimeFault(`image asset '${entry.resid}' not found for memory sizing.`);
-				}
-				const meta = asset.imgmeta;
-				if (!meta) {
-					throw runtimeFault(`image asset '${entry.resid}' missing metadata for memory sizing.`);
-				}
-				if (meta.atlassed) {
-					ids.add(entry.resid);
-				}
-			}
-			const audioEntries = sources[sourceIndex].list('audio');
-			for (let index = 0; index < audioEntries.length; index += 1) {
-				const entry = audioEntries[index];
-				if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
-					throw runtimeFault(`audio asset '${entry.resid}' missing ROM buffer offsets for memory sizing.`);
-				}
-				ids.add(entry.resid);
-			}
-		}
-
-		return ids;
-	}
-
-	private static computeAssetTableBytes(engineSource: RawAssetSource, assetSource: RawAssetSource, assetLayers: ReadonlyArray<RuntimeAssetLayer>): { bytes: number; entryCount: number; stringBytes: number } {
-		const ids = this.collectAssetEntryIds(engineSource, assetSource, assetLayers);
-		ids.add(FRAMEBUFFER_TEXTURE_KEY);
-		ids.add(FRAMEBUFFER_RENDER_TEXTURE_KEY);
-		const encoder = new TextEncoder();
-		let stringBytes = 0;
-		for (const id of ids) {
-			stringBytes += encoder.encode(id).byteLength + 1;
-		}
-		const entryCount = ids.size;
-		const bytes = ASSET_TABLE_HEADER_SIZE + (entryCount * ASSET_TABLE_ENTRY_SIZE) + stringBytes;
-		return { bytes, entryCount, stringBytes };
-	}
-
-	private static alignUp(value: number, alignment: number): number {
-		const mask = alignment - 1;
-		return (value + mask) & ~mask;
-	}
-
-	private static computeRequiredAssetDataBytes(assetSource: RawAssetSource, assetLayers: ReadonlyArray<RuntimeAssetLayer>): number {
-		const layerLookup = buildRuntimeLayerLookup(assetLayers);
-		let requiredBytes = 0;
-		const entries = assetSource.list();
-		for (let index = 0; index < entries.length; index += 1) {
-			const entry = entries[index];
-			if (entry.type !== 'image' && entry.type !== 'atlas') {
-				continue;
-			}
-			const image = resolveRuntimeLayerAssetFromEntry<RomImgAsset>(layerLookup, 'img', entry);
-			if (image.type === 'atlas' || image.imgmeta?.atlassed) {
-				continue;
-			}
-			if (!image.buffer || image.buffer.byteLength === 0) {
-				continue;
-			}
-			requiredBytes += this.alignUp(image.buffer.byteLength, 4);
-		}
-		const audioEntries = assetSource.list('audio');
-		for (let index = 0; index < audioEntries.length; index += 1) {
-			const audio = resolveRuntimeLayerAssetFromEntry<RomAsset>(layerLookup, 'audio', audioEntries[index]!);
-			if (!audio.buffer || audio.buffer.byteLength === 0) {
-				continue;
-			}
-			requiredBytes += this.alignUp(audio.buffer.byteLength, 2);
-		}
-		requiredBytes += DEFAULT_ASSET_DATA_HEADROOM_BYTES;
-		return this.alignUp(requiredBytes, ASSET_DATA_ALIGNMENT_BYTES);
-	}
-
-	private static resolveEngineAtlasSlotBytes(engineSource: RawAssetSource): number {
-		const engineAtlas = engineSource.getEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
-		if (!engineAtlas || !engineAtlas.imgmeta) {
-			throw runtimeFault('engine atlas metadata is missing.');
-		}
-		const width = Runtime.resolvePositiveSafeInteger(engineAtlas.imgmeta.width, 'engine_atlas.width');
-		const height = Runtime.resolvePositiveSafeInteger(engineAtlas.imgmeta.height, 'engine_atlas.height');
-		return width * height * 4;
-	}
-
-	private static resolveMemoryMapSpecs(params: {
-		machine: MachineManifest;
-		engineMachine: MachineManifest;
-		engineSource: RawAssetSource;
-		assetSource: RawAssetSource;
-		assetLayers: ReadonlyArray<RuntimeAssetLayer>;
-	}): MemoryMapSpecs {
-		const machineConfig = params.machine;
-		const engineMachine = params.engineMachine;
-		const memorySpecs = getMachineMemorySpecs(machineConfig);
-		const engineMemorySpecs = getMachineMemorySpecs(engineMachine);
-		const stringHandleCount = DEFAULT_STRING_HANDLE_COUNT;
-		const stringHeapBytes = DEFAULT_STRING_HEAP_SIZE;
-		const atlasSlotBytes = memorySpecs.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE;
-		const engineAtlasSlotBytes = engineMemorySpecs.system_atlas_slot_bytes ?? this.resolveEngineAtlasSlotBytes(params.engineSource);
-		const renderSize = this.resolveRenderSize(machineConfig);
-		const frameBufferWidth = renderSize.width;
-		const frameBufferHeight = renderSize.height;
-		const frameBufferBytes = frameBufferWidth * frameBufferHeight * 4;
-		if (!Number.isSafeInteger(engineAtlasSlotBytes) || engineAtlasSlotBytes <= 0) {
-			throw runtimeFault('system atlas slot bytes must be a positive integer.');
-		}
-		const stagingBytes = memorySpecs.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE;
-		const assetTableInfo = this.computeAssetTableBytes(params.engineSource, params.assetSource, params.assetLayers);
-		const requiredAssetTableBytes = assetTableInfo.bytes;
-		const assetTableBytes = requiredAssetTableBytes;
-		const requiredAssetDataBytes = this.computeRequiredAssetDataBytes(params.assetSource, params.assetLayers);
-		const assetDataBaseOffset = IO_REGION_SIZE
-			+ (stringHandleCount * STRING_HANDLE_ENTRY_SIZE)
-			+ stringHeapBytes
-			+ assetTableBytes;
-		const assetDataBasePadding = Runtime.alignUp(assetDataBaseOffset, IO_WORD_SIZE) - assetDataBaseOffset;
-		const fixedRamBytes = assetDataBaseOffset
-			+ assetDataBasePadding
-			+ DEFAULT_GEO_SCRATCH_SIZE
-			+ VDP_STREAM_BUFFER_SIZE;
-		const requiredRamBytes = fixedRamBytes + requiredAssetDataBytes;
-		const ramBytes = memorySpecs.ram_bytes === undefined
-			? requiredRamBytes
-			: Runtime.resolvePositiveSafeInteger(memorySpecs.ram_bytes, 'machine.specs.ram.ram_bytes');
-		if (ramBytes < requiredRamBytes) {
-			throw runtimeFault(`machine.specs.ram.ram_bytes (${ramBytes}) must be at least required size ${requiredRamBytes}.`);
-		}
-		const assetDataBytes = ramBytes - fixedRamBytes;
-		const footprintMiB = (ramBytes / (1024 * 1024)).toFixed(2);
-		console.info(
-			`memory footprint: ram=${ramBytes} bytes (${footprintMiB} MiB) `
-			+ `(io=${IO_REGION_SIZE}, string_handles=${stringHandleCount}, string_heap=${stringHeapBytes}, `
-			+ `asset_table=${assetTableBytes} (${assetTableInfo.entryCount} entries, ${assetTableInfo.stringBytes} string bytes), `
-			+ `asset_data=${assetDataBytes}, geo_scratch=${DEFAULT_GEO_SCRATCH_SIZE}, vdp_stream=${VDP_STREAM_BUFFER_SIZE}, vram_staging=${stagingBytes}, framebuffer=${frameBufferBytes} (${frameBufferWidth}x${frameBufferHeight}), `
-			+ `engine_atlas_slot=${engineAtlasSlotBytes}, atlas_slot=${atlasSlotBytes}x2=${atlasSlotBytes * 2}).`,
-		);
-		return {
-			ram_bytes: ramBytes,
-			string_handle_count: stringHandleCount,
-			string_heap_bytes: stringHeapBytes,
-			asset_table_bytes: assetTableBytes,
-			asset_data_bytes: assetDataBytes,
-			atlas_slot_bytes: atlasSlotBytes,
-			system_atlas_slot_bytes: engineAtlasSlotBytes,
-			staging_bytes: stagingBytes,
-			framebuffer_bytes: frameBufferBytes,
-		};
 	}
 
 	private configureProgramSources(params: {
@@ -1227,12 +750,11 @@ export class Runtime {
 
 	private constructor(options: RuntimeOptions) {
 		Runtime._instance = this;
-		this.timing = new RuntimeTimingState(options.ufpsScaled);
+		this.timing = new RuntimeTimingState(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame);
 		const initialVdpWorkUnits = options.vdpWorkUnitsPerSec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC;
 		const initialGeoWorkUnits = options.geoWorkUnitsPerSec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC;
-		this.cycleBudgetPerFrame = options.cycleBudgetPerFrame;
-		this.vdpWorkUnitsPerSec = Runtime.resolveVdpWorkUnitsPerSec(initialVdpWorkUnits);
-		this.geoWorkUnitsPerSec = Runtime.resolveGeoWorkUnitsPerSec(initialGeoWorkUnits);
+		this.timing.vdpWorkUnitsPerSec = resolveVdpWorkUnitsPerSec(initialVdpWorkUnits);
+		this.timing.geoWorkUnitsPerSec = resolveGeoWorkUnitsPerSec(initialGeoWorkUnits);
 		this.storageService = $.platform.storage;
 		this.storage = new RuntimeStorage(this.storageService, $.lua_sources.namespace);
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
@@ -1266,8 +788,8 @@ export class Runtime {
 				}
 			},
 		});
-		this.setCpuHz(options.cpuHz);
-		this.setVblankCycles(options.vblankCycles);
+		this.refreshDeviceTimings(this.machine.scheduler.currentNowCycles());
+		this.vblank.setVblankCycles(this, options.vblankCycles);
 		this.randomSeedValue = $.platform.clock.now();
 
 		api = new Api({
@@ -1319,7 +841,7 @@ export class Runtime {
 		this.luaRuntimeFailed = false;
 		this.luaInitialized = false;
 		this.machine.inputController.sampleArmed = false;
-		this.clearHaltUntilIrq();
+		this.vblank.clearHaltUntilIrq(this);
 	}
 
 	public get activeIdeFontVariant(): FontVariant {
@@ -1412,12 +934,12 @@ export class Runtime {
 	// Frame state is owned by the runtime: it is created per-frame, kept intact for debugger inspection on faults,
 	// and only cleared via finalize/abandon during explicit reboot/reset flows.
 	public beginFrameState(): FrameState {
-		if (this.currentFrameState) {
+		if (this.frameLoop.currentFrameState) {
 			throw runtimeFault('attempted to begin a new frame while another frame is active.');
 		}
 		clearHardwareLighting();
-		this.frameDeltaMs = this.timing.frameDurationMs;
-		const budget = this.cycleBudgetPerFrame;
+		this.frameLoop.frameDeltaMs = this.timing.frameDurationMs;
+		const budget = this.timing.cycleBudgetPerFrame;
 		const state: FrameState = {
 			haltGame: this.debuggerPaused,
 			updateExecuted: false,
@@ -1428,8 +950,8 @@ export class Runtime {
 			activeCpuUsedCycles: 0,
 		};
 		this.machine.vdp.beginFrame();
-		this.activeTickCompleted = false;
-		this.currentFrameState = state;
+		this.vblank.beginTick();
+		this.frameLoop.currentFrameState = state;
 		return state;
 	}
 
@@ -1439,27 +961,27 @@ export class Runtime {
 		}
 		this.processPendingCartBoot();
 		if (runtimeIde.isOverlayActive(this)) {
-			if (this.currentFrameState !== null) {
+			if (this.frameLoop.currentFrameState !== null) {
 				this.abandonFrameState();
 				return true;
 			}
 			return false;
 		}
-		const previousState = this.currentFrameState;
+		const previousState = this.frameLoop.currentFrameState;
 		const previousRemaining = previousState?.cycleBudgetRemaining ?? -1;
 		const previousPending = this.hasEntryContinuation();
-		const previousSequence = this.lastTickSequence;
-		if (this.currentFrameState === null) {
+		const previousSequence = this.machineScheduler.lastTickSequence;
+		if (this.frameLoop.currentFrameState === null) {
 			if (!this.machineScheduler.startScheduledFrame(this)) {
 				return false;
 			}
-		} else if (this.currentFrameState.cycleBudgetRemaining <= 0) {
-			if (!this.machineScheduler.refillFrameBudget(this, this.currentFrameState)) {
+		} else if (this.frameLoop.currentFrameState.cycleBudgetRemaining <= 0) {
+			if (!this.machineScheduler.refillFrameBudget(this, this.frameLoop.currentFrameState)) {
 				return false;
 			}
 		}
-		this.runActiveFrameState(this.currentFrameState);
-		const nextState = this.currentFrameState;
+		this.runActiveFrameState(this.frameLoop.currentFrameState);
+		const nextState = this.frameLoop.currentFrameState;
 		if (nextState !== previousState) {
 			return true;
 		}
@@ -1469,7 +991,7 @@ export class Runtime {
 		if (this.hasEntryContinuation() !== previousPending) {
 			return true;
 		}
-		return this.lastTickSequence !== previousSequence;
+		return this.machineScheduler.lastTickSequence !== previousSequence;
 	}
 
 	private runActiveFrameState(state: FrameState): void {
@@ -1485,15 +1007,15 @@ export class Runtime {
 			fault = error;
 			runtimeIde.handleLuaError(this, error);
 		} finally {
-			if (fault !== null && this.currentFrameState !== null) {
+			if (fault !== null && this.frameLoop.currentFrameState !== null) {
 				this.abandonFrameState();
 			}
 		}
 	}
 
 	private finalizeUpdateSlice(frameState: FrameState): void {
-		this.currentFrameState = frameState;
-		if (this.activeTickCompleted || !this.hasEntryContinuation()) {
+		this.frameLoop.currentFrameState = frameState;
+		if (this.vblank.tickCompleted || !this.hasEntryContinuation()) {
 			this.abandonFrameState();
 		}
 	}
@@ -1526,19 +1048,18 @@ export class Runtime {
 		}
 		try {
 			while (true) {
-				if (this.machine.cpu.isHaltedUntilIrq() && this.runHaltedUntilIrq(state)) {
+				if (this.machine.cpu.isHaltedUntilIrq() && this.vblank.runHaltedUntilIrq(this, state)) {
 					return;
 				}
-				if (this.clearBackQueuesAfterIrqWake) {
+				if (this.vblank.consumeBackQueueClearAfterIrqWake()) {
 					clearBackQueues();
-					this.clearBackQueuesAfterIrqWake = false;
 				}
 				if (this.pendingCall !== 'entry') {
 					return;
 				}
 				const result = this.runWithBudget(state);
 				if (this.machine.cpu.isHaltedUntilIrq()) {
-					if (this.runHaltedUntilIrq(state)) {
+					if (this.vblank.runHaltedUntilIrq(this, state)) {
 						return;
 					}
 					continue;
@@ -1550,62 +1071,16 @@ export class Runtime {
 			}
 		} catch (error) {
 			state.luaFaulted = true;
-			this.clearHaltUntilIrq();
+			this.vblank.clearHaltUntilIrq(this);
 			this.pendingCall = null;
 			runtimeIde.handleLuaError(this, error);
 		}
 	}
 
-	private isFrameBoundaryHalt(): boolean {
-		return this.machine.cpu.getFrameDepth() === 1 && this.pendingCall === 'entry' && this.machine.cpu.isHaltedUntilIrq();
-	}
-
-	private runHaltedUntilIrq(state: FrameState): boolean {
-		this.runDueTimers();
-		if (!this.machine.cpu.isHaltedUntilIrq()) {
-			this.resetHaltIrqWait();
-			return false;
-		}
-		if (this.tryCompleteTickOnPendingVblankIrq(state)) {
-			return true;
-		}
-		if (!this.haltIrqWaitArmed) {
-				const pendingFlags = this.machine.irqController.pendingFlags();
-			if (pendingFlags !== 0) {
-				this.machine.cpu.clearHaltUntilIrq();
-				return this.activeTickCompleted;
-			}
-			this.haltIrqSignalSequence = this.machine.irqController.signalSequence;
-			this.haltIrqWaitArmed = true;
-		}
-		while (true) {
-			if (this.machine.irqController.signalSequence !== this.haltIrqSignalSequence) {
-				this.machine.cpu.clearHaltUntilIrq();
-				this.resetHaltIrqWait();
-				return this.activeTickCompleted;
-			}
-			if (state.cycleBudgetRemaining > 0) {
-				const cyclesToTarget = this.machine.scheduler.nextDeadline() - this.machine.scheduler.nowCycles;
-				if (cyclesToTarget <= 0) {
-					this.runDueTimers();
-					continue;
-				}
-				const idleCycles = cyclesToTarget < state.cycleBudgetRemaining ? cyclesToTarget : state.cycleBudgetRemaining;
-				state.cycleBudgetRemaining -= idleCycles;
-				this.advanceTime(idleCycles);
-				if (this.tryCompleteTickOnPendingVblankIrq(state)) {
-					return true;
-				}
-				continue;
-			}
-			return true;
-		}
-	}
-
 	// Clear reference to allow next frame to begin
 	public abandonFrameState(): void {
-		this.currentFrameState = null;
-		this.activeTickCompleted = false;
+		this.frameLoop.currentFrameState = null;
+		this.vblank.abandonTick();
 	}
 
 	public resolveAssetHandle(id: string): number {
@@ -1985,7 +1460,7 @@ export class Runtime {
 		$.set_assets((this.overlayAssetLayer ?? this.cartAssetLayer).assets);
 		const perfSpecs = getMachinePerfSpecs($.machine_manifest);
 		this.timing.applyUfpsScaled(resolveUfpsScaled(perfSpecs.ufps));
-		const cpuHz = Runtime.resolveCpuHz(perfSpecs.cpu_freq_hz);
+		const cpuHz = resolveCpuHz(perfSpecs.cpu_freq_hz);
 		this.applyActiveMachineTiming(cpuHz);
 		this.setTransferRatesFromManifest(perfSpecs);
 	}
@@ -2010,15 +1485,15 @@ export class Runtime {
 		if (!this.luaGate.ready) {
 			return;
 		}
-		if (this.currentFrameState !== null) {
+		if (this.frameLoop.currentFrameState !== null) {
 			runtimeLuaPipeline.resetFrameState(this);
 		}
 		if (this.pendingCall !== null) {
-			if (this.currentFrameState === null) {
+			if (this.frameLoop.currentFrameState === null) {
 				runtimeLuaPipeline.resetFrameState(this);
 			}
 			this.pendingCall = null;
-			this.clearHaltUntilIrq();
+			this.vblank.clearHaltUntilIrq(this);
 		}
 		this.machineScheduler.clearQueuedTime();
 		this.pendingCartBoot = false;
