@@ -487,39 +487,6 @@ function applySemanticAnnotations(
 	}
 }
 
-export function highlightLine(
-	source: readonly string[] | string,
-	rowOrSemantics?: number | SemanticAnnotations,
-	maybeSemantics?: SemanticAnnotations,
-	builtinIdentifiers?: Iterable<string>,
-): HighlightLine {
-	let lines: readonly string[];
-	let row = 0;
-	let annotations: SemanticAnnotations = null;
-	let builtinCollection: Iterable<string> = builtinIdentifiers ;
-	if (typeof source === 'string') {
-		lines = [source];
-		row = 0;
-	} else {
-		lines = source;
-		if (typeof rowOrSemantics === 'number') {
-			row = rowOrSemantics;
-			annotations = maybeSemantics ;
-		} else {
-			annotations = rowOrSemantics ;
-			if (builtinIdentifiers === undefined && maybeSemantics !== undefined) {
-				builtinCollection = maybeSemantics as Iterable<string>;
-			}
-		}
-	}
-	if (builtinIdentifiers !== undefined) {
-		builtinCollection = builtinIdentifiers;
-	}
-	const line = row >= 0 && row < lines.length ? lines[row] ?? '' : '';
-	const lineAnnotations = annotations ? (row >= 0 && row < annotations.length ? annotations[row] : undefined) : undefined;
-	return highlightTextLine(line, lineAnnotations, builtinCollection);
-}
-
 export function highlightTextLine(
 	line: string,
 	lineAnnotations?: SemanticAnnotations[number],
