@@ -50,6 +50,8 @@ type LuaLintIssueRule =
 	'getter_setter_pattern' |
 	'single_line_method_pattern' |
 	'builtin_recreation_pattern' |
+	'forbidden_math_floor_pattern' |
+	'forbidden_random_helper_pattern' |
 	'local_function_const_pattern' |
 	'local_const_pattern' |
 	'multi_has_tag_pattern' |
@@ -326,6 +328,7 @@ const FORBIDDEN_RENDER_LAYER_STRINGS = new Set<string>([
 	'ui',
 	'ide',
 ]);
+const FORBIDDEN_RANDOM_HELPER_NAME_PATTERN = /^(?:random|rand)(?:[_-]?(?:int|integer|range|between|index|idx)\d*)?$/i;
 const FORBIDDEN_STATE_CALL_RECEIVERS = new Set<string>([
 	'sc',
 	'worldobject',
@@ -353,6 +356,8 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'getter_setter_pattern',
 	'single_line_method_pattern',
 	'builtin_recreation_pattern',
+	'forbidden_math_floor_pattern',
+	'forbidden_random_helper_pattern',
 	'local_function_const_pattern',
 	'local_const_pattern',
 	'multi_has_tag_pattern',
@@ -746,6 +751,18 @@ function lintExplicitTruthyComparisonPattern(expression: LuaExpression, issues: 
 		'explicit_truthy_comparison_pattern',
 		expression,
 		'Explicit boolean literal comparison is forbidden. Use truthy/falsy checks instead.',
+	);
+}
+
+function lintForbiddenMathFloorPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
+	if (getExpressionReferenceName(expression) !== 'math.floor') {
+		return;
+	}
+	pushIssue(
+		issues,
+		'forbidden_math_floor_pattern',
+		expression,
+		'math.floor is forbidden. Use // instead of floor-based rounding or truncation.',
 	);
 }
 
@@ -2192,6 +2209,10 @@ function matchesBuiltinRecreationPattern(functionExpression: LuaFunctionExpressi
 		return false;
 	}
 	return matchesForwardedArgumentList(expression.arguments, getFunctionParameterNames(functionExpression));
+}
+
+function matchesForbiddenRandomHelperPattern(functionName: string): boolean {
+	return FORBIDDEN_RANDOM_HELPER_NAME_PATTERN.test(getFunctionLeafName(functionName));
 }
 
 function getSingleReturnedStringValue(statement: LuaStatement): string {
@@ -5584,6 +5605,15 @@ function lintFunctionBody(
 			`Recreating existing built-in behavior is forbidden ("${functionName}").`,
 		);
 	}
+	const isForbiddenRandomHelper = isNamedFunction && !isBuiltinRecreation && matchesForbiddenRandomHelperPattern(functionName);
+	if (isForbiddenRandomHelper) {
+		pushIssue(
+			issues,
+			'forbidden_random_helper_pattern',
+			functionExpression,
+			`Custom random helper "${functionName}" is forbidden. Use math.random directly instead of inventing a random_int-style wrapper.`,
+		);
+	}
 	const isBool01Duplicate = isNamedFunction && matchesBool01DuplicatePattern(functionExpression);
 	if (isBool01Duplicate) {
 		pushIssue(
@@ -7958,6 +7988,7 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 	lintEmptyStringFallbackPattern(expression, issues);
 	lintOrNilFallbackPattern(expression, issues);
 	lintExplicitTruthyComparisonPattern(expression, issues);
+	lintForbiddenMathFloorPattern(expression, issues);
 	lintStringOrChainComparisonPattern(expression, issues);
 	lintActionTriggeredBoolChainPattern(expression, issues);
 	if (topLevel) {
