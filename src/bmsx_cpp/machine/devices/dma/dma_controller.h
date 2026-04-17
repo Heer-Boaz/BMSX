@@ -10,6 +10,8 @@
 
 namespace bmsx {
 
+class VDP;
+
 class DmaController {
 public:
 	enum class Channel : uint8_t {
@@ -17,16 +19,13 @@ public:
 		Bulk = 1,
 	};
 
-	DmaController(
-			Memory& memory,
-			std::function<void(uint32_t)> raiseIrq,
-			std::function<void(uint32_t src, size_t length)> sealVdpFifoDma,
-			std::function<bool()> canAcceptVdpSubmit,
-			std::function<void()> noteAcceptedVdpSubmit,
-			std::function<void()> noteRejectedVdpSubmit,
-			std::function<int64_t()> getNowCycles,
-			std::function<void(int64_t deadlineCycles)> scheduleService,
-			std::function<void()> cancelService
+		DmaController(
+				Memory& memory,
+				std::function<void(uint32_t)> raiseIrq,
+				VDP& vdp,
+				std::function<int64_t()> getNowCycles,
+				std::function<void(int64_t deadlineCycles)> scheduleService,
+				std::function<void()> cancelService
 	);
 
 	void setTiming(int64_t cpuHz, int64_t isoBytesPerSec, int64_t bulkBytesPerSec, int64_t nowCycles);
@@ -74,7 +73,7 @@ public:
 	};
 
 	void accrueChannel(Channel channel, int64_t bytesPerSec, int64_t& carry, int cycles);
-	void maybeScheduleNextService(int64_t nowCycles);
+	void scheduleNextService(int64_t nowCycles);
 	int64_t cyclesUntilBytes(int64_t bytesPerSec, int64_t carry, uint32_t targetBytes) const;
 	void tickChannel(Channel channel, bool& ioWrittenDirty, bool& imgWrittenDirty);
 	uint32_t processJob(DmaJob& job, uint32_t budget);
@@ -96,13 +95,10 @@ public:
 	int64_t m_bulkCarry = 0;
 	uint32_t m_ioWrittenValue = 0;
 	uint32_t m_imgWrittenValue = 0;
-		Memory& m_memory;
-		std::function<void(uint32_t)> m_raiseIrq;
-		std::function<void(uint32_t src, size_t length)> m_sealVdpFifoDma;
-		std::function<bool()> m_canAcceptVdpSubmit;
-		std::function<void()> m_noteAcceptedVdpSubmit;
-		std::function<void()> m_noteRejectedVdpSubmit;
-		std::function<int64_t()> m_getNowCycles;
+			Memory& m_memory;
+			VDP& m_vdp;
+			std::function<void(uint32_t)> m_raiseIrq;
+			std::function<int64_t()> m_getNowCycles;
 	std::function<void(int64_t deadlineCycles)> m_scheduleService;
 	std::function<void()> m_cancelService;
 	std::vector<uint8_t> m_buffer;

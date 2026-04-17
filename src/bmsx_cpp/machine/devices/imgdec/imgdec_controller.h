@@ -68,7 +68,7 @@ public:
 	void advanceDecode();
 	void finishSuccess(bool clipped);
 	void finishError(std::exception_ptr error = nullptr);
-	void maybeScheduleNextService(int64_t nowCycles);
+	void scheduleNextService(int64_t nowCycles);
 	int64_t cyclesUntilDecodeBytes(uint32_t targetBytes) const;
 
 	GateGroup m_gate;

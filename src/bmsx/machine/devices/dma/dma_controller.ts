@@ -36,6 +36,7 @@ import {
 } from '../../memory/memory_map';
 import type { ImageWritePlan } from '../../memory/memory';
 import { Memory } from '../../memory/memory';
+import type { VDP } from '../vdp/vdp';
 
 type DmaChannelId = 0 | 1;
 const DMA_CH_ISO: DmaChannelId = 0;
@@ -95,10 +96,7 @@ export class DmaController {
 	public constructor(
 		private readonly memory: Memory,
 		private readonly raiseIrq: (mask: number) => void,
-		private readonly sealVdpFifoDma: (src: number, length: number) => void,
-		private readonly canAcceptVdpSubmit: () => boolean,
-		private readonly noteAcceptedVdpSubmit: () => void,
-		private readonly noteRejectedVdpSubmit: () => void,
+		private readonly vdp: VDP,
 		private readonly getNowCycles: () => number,
 		private readonly scheduleService: (deadlineCycles: number) => void,
 		private readonly cancelService: () => void,
@@ -114,7 +112,7 @@ export class DmaController {
 		this.bulkCarry = 0n;
 		this.channels[DMA_CH_ISO].budget = 0;
 		this.channels[DMA_CH_BULK].budget = 0;
-		this.maybeScheduleNextService(nowCycles);
+		this.scheduleNextService(nowCycles);
 	}
 
 	public accrueCycles(cycles: number, nowCycles: number): void {
@@ -123,7 +121,7 @@ export class DmaController {
 		}
 		this.accrueChannel(DMA_CH_ISO, this.isoBytesPerSec, 'isoCarry', cycles);
 		this.accrueChannel(DMA_CH_BULK, this.bulkBytesPerSec, 'bulkCarry', cycles);
-		this.maybeScheduleNextService(nowCycles);
+		this.scheduleNextService(nowCycles);
 	}
 
 	public hasPendingVdpSubmit(): boolean {
@@ -217,7 +215,7 @@ export class DmaController {
 			onComplete,
 		};
 		this.channels[DMA_CH_BULK].queue.push(job);
-		this.maybeScheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.getNowCycles());
 	}
 
 	public onService(nowCycles: number): void {
@@ -235,7 +233,7 @@ export class DmaController {
 			this.memory.writeValue(IO_IMG_WRITTEN, this.imgWrittenValue);
 			this.imgWrittenDirty = false;
 		}
-		this.maybeScheduleNextService(nowCycles);
+		this.scheduleNextService(nowCycles);
 	}
 
 	public tryStartIo(): void {
@@ -250,9 +248,9 @@ export class DmaController {
 		const vdpSubmit = dst === IO_VDP_FIFO;
 		const strict = (ctrl & DMA_CTRL_STRICT) !== 0;
 		this.memory.writeIoValue(IO_DMA_CTRL, ctrl & ~DMA_CTRL_START);
-		if (vdpSubmit && (this.hasPendingVdpSubmit() || !this.canAcceptVdpSubmit())) {
+		if (vdpSubmit && (this.hasPendingVdpSubmit() || !this.vdp.canAcceptVdpSubmit())) {
 			this.finishIoRejected();
-			this.noteRejectedVdpSubmit();
+			this.vdp.rejectSubmitAttempt();
 			return;
 		}
 		this.memory.writeValue(IO_DMA_WRITTEN, 0);
@@ -277,12 +275,15 @@ export class DmaController {
 		}
 		const status = DMA_STATUS_BUSY | (clipped ? DMA_STATUS_CLIPPED : 0);
 		this.memory.writeValue(IO_DMA_STATUS, status);
-		if (vdpSubmit) {
-			this.noteAcceptedVdpSubmit();
-		}
 		if (transferLen === 0) {
+			if (vdpSubmit) {
+				this.vdp.acceptSubmitAttempt();
+			}
 			this.finishIoSuccess(clipped);
 			return;
+		}
+		if (vdpSubmit) {
+			this.vdp.beginDmaSubmit();
 		}
 		const job: DmaIoJob = {
 			kind: 'io',
@@ -299,7 +300,7 @@ export class DmaController {
 		this.ioWrittenValue = 0;
 		this.ioWrittenDirty = true;
 		this.channels[DMA_CH_BULK].queue.push(job);
-		this.maybeScheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.getNowCycles());
 	}
 
 	private tickChannel(channel: DmaChannelId): void {
@@ -453,12 +454,15 @@ export class DmaController {
 
 	private finishIoJob(job: DmaIoJob): void {
 		if (job.error) {
+			if (job.dst === IO_VDP_FIFO) {
+				this.vdp.endDmaSubmit();
+			}
 			this.finishIoError(job.clipped);
 			return;
 		}
 		if (job.dst === IO_VDP_FIFO) {
 			try {
-				this.sealVdpFifoDma(job.src, job.written);
+				this.vdp.sealDmaTransfer(job.src, job.written);
 			} catch {
 				this.finishIoError(job.clipped);
 				return;
@@ -519,7 +523,7 @@ export class DmaController {
 		state.budget += Number(granted);
 	}
 
-	private maybeScheduleNextService(nowCycles: number): void {
+	private scheduleNextService(nowCycles: number): void {
 		const pendingIso = this.hasPendingIsoTransfer();
 		const pendingBulk = this.hasPendingBulkTransfer();
 		if (!pendingIso && !pendingBulk) {

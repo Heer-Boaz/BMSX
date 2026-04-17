@@ -85,7 +85,7 @@ export class ImgDecController {
 		this.decodeBytesPerSec = BigInt(decodeBytesPerSec);
 		this.decodeCarry = 0n;
 		this.availableDecodeBytes = 0;
-		this.maybeScheduleNextService(nowCycles);
+		this.scheduleNextService(nowCycles);
 	}
 
 	public accrueCycles(cycles: number, nowCycles: number): void {
@@ -100,7 +100,7 @@ export class ImgDecController {
 			const granted = wholeBytes > maxGrant ? maxGrant : wholeBytes;
 			this.availableDecodeBytes += Number(granted);
 		}
-		this.maybeScheduleNextService(nowCycles);
+		this.scheduleNextService(nowCycles);
 	}
 
 	public hasPendingDecodeWork(): boolean {
@@ -114,7 +114,7 @@ export class ImgDecController {
 	public decodeToVram(params: { bytes: Uint8Array; dst: number; cap: number }): Promise<{ pixels: Uint8Array; width: number; height: number; clipped: boolean }> {
 		return new Promise((resolve, reject) => {
 			this.queuedJobs.push({ buffer: params.bytes, dst: params.dst, cap: params.cap, resolve, reject });
-			this.maybeScheduleNextService(this.getNowCycles());
+			this.scheduleNextService(this.getNowCycles());
 		});
 	}
 
@@ -175,7 +175,7 @@ export class ImgDecController {
 			return;
 		}
 		this.startJob({ buffer, dst, cap, src, len, job: null, signalIrq: true });
-		this.maybeScheduleNextService(nowCycles);
+		this.scheduleNextService(nowCycles);
 	}
 
 	public onService(nowCycles: number): void {
@@ -188,7 +188,7 @@ export class ImgDecController {
 			const error = this.pendingError;
 			this.pendingError = null;
 			this.finishError(error);
-			this.maybeScheduleNextService(nowCycles);
+			this.scheduleNextService(nowCycles);
 			return;
 		}
 		if (this.pendingResult !== null && this.pendingEntry !== null) {
@@ -201,7 +201,7 @@ export class ImgDecController {
 		if (this.decodeActive && this.availableDecodeBytes > 0) {
 			this.advanceDecode();
 		}
-		this.maybeScheduleNextService(nowCycles);
+		this.scheduleNextService(nowCycles);
 	}
 
 	private tryStartQueued(): void {
@@ -271,13 +271,13 @@ export class ImgDecController {
 			}
 			this.pendingResult = result;
 			this.pendingEntry = entry;
-			this.maybeScheduleNextService(this.getNowCycles());
+			this.scheduleNextService(this.getNowCycles());
 		}).catch((error) => {
 			if (token !== this.decodeToken) {
 				return;
 			}
 			this.pendingError = error;
-			this.maybeScheduleNextService(this.getNowCycles());
+			this.scheduleNextService(this.getNowCycles());
 		});
 	}
 
@@ -343,7 +343,7 @@ export class ImgDecController {
 		if (job && decoded) {
 			job.resolve({ pixels: decoded.pixels, width: decoded.width, height: decoded.height, clipped });
 		}
-		this.maybeScheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.getNowCycles());
 	}
 
 	private finishError(error?: unknown): void {
@@ -366,10 +366,10 @@ export class ImgDecController {
 		if (job) {
 			job.reject(error ?? imageDecoderFault('decode failed.'));
 		}
-		this.maybeScheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.getNowCycles());
 	}
 
-	private maybeScheduleNextService(nowCycles: number): void {
+	private scheduleNextService(nowCycles: number): void {
 		if (!this.active) {
 			if (this.queuedJobs.length !== 0) {
 				this.scheduleService(nowCycles);

@@ -52,7 +52,7 @@ public:
 	};
 
 	void tryStart(int64_t nowCycles);
-	void maybeScheduleNextService(int64_t nowCycles);
+	void scheduleNextService(int64_t nowCycles);
 	int64_t cyclesUntilWorkUnits(uint32_t targetUnits) const;
 	bool validateXform2Submission(const GeoJob& job);
 	bool validateSat2Submission(const GeoJob& job);

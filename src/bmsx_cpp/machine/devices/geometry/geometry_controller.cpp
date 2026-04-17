@@ -102,7 +102,7 @@ void GeometryController::setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64
 	m_workUnitsPerSec = workUnitsPerSec;
 	m_workCarry = 0;
 	m_availableWorkUnits = 0;
-	maybeScheduleNextService(nowCycles);
+	scheduleNextService(nowCycles);
 }
 
 void GeometryController::accrueCycles(int cycles, int64_t nowCycles) {
@@ -119,7 +119,7 @@ void GeometryController::accrueCycles(int cycles, int64_t nowCycles) {
 		const int64_t granted = wholeUnits > maxGrant ? maxGrant : wholeUnits;
 		m_availableWorkUnits += static_cast<uint32_t>(granted);
 	}
-	maybeScheduleNextService(nowCycles);
+	scheduleNextService(nowCycles);
 }
 
 bool GeometryController::hasPendingWork() const {
@@ -199,7 +199,7 @@ void GeometryController::onCtrlWrite(int64_t nowCycles) {
 
 void GeometryController::onService(int64_t nowCycles) {
 	if (!m_activeJob.has_value() || m_availableWorkUnits == 0u) {
-		maybeScheduleNextService(nowCycles);
+		scheduleNextService(nowCycles);
 		return;
 	}
 	uint32_t remaining = m_availableWorkUnits;
@@ -222,7 +222,7 @@ void GeometryController::onService(int64_t nowCycles) {
 		remaining -= 1u;
 	}
 	m_availableWorkUnits = remaining;
-	maybeScheduleNextService(nowCycles);
+	scheduleNextService(nowCycles);
 }
 
 void GeometryController::tryStart(int64_t nowCycles) {
@@ -276,10 +276,10 @@ void GeometryController::tryStart(int64_t nowCycles) {
 	m_availableWorkUnits = 0;
 	m_activeJob = job;
 	writeRegister(IO_GEO_STATUS, GEO_STATUS_BUSY);
-	maybeScheduleNextService(nowCycles);
+	scheduleNextService(nowCycles);
 }
 
-void GeometryController::maybeScheduleNextService(int64_t nowCycles) {
+void GeometryController::scheduleNextService(int64_t nowCycles) {
 	if (!m_activeJob.has_value()) {
 		m_cancelService();
 		return;

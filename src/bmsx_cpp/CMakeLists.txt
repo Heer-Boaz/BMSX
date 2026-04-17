@@ -156,6 +156,7 @@ add_library(bmsx_core STATIC
 	machine/memory/memory.cpp
 	machine/memory/memory_map.cpp
 	machine/devices/vdp/vdp.cpp
+	machine/devices/vdp/vdp_command_processor.cpp
 	machine/memory/string_memory.cpp
 	machine/program/program_loader.cpp
 	machine/program/program_linker.cpp

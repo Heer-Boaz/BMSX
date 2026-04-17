@@ -3,6 +3,7 @@
 #include "machine/cpu/cpu.h"
 #include "machine/bus/io.h"
 #include "machine/memory/memory.h"
+#include "machine/memory/memory_map.h"
 #include "machine/devices/vdp/vdp_render_budget.h"
 #include "rompack/rompack.h"
 #include "render/shared/render_types.h"
@@ -20,19 +21,32 @@ class GameView;
 struct ImgAsset;
 class ImgDecController;
 class BFont;
+class Api;
 struct VdpGles2Blitter;
 
 	class VDP : public Memory::VramWriter {
 public:
-	VDP(
-		Memory& memory,
-		std::function<int64_t()> getNowCycles,
-		std::function<void(int64_t deadlineCycles)> scheduleService,
-		std::function<void()> cancelService
-	);
+		VDP(
+			Memory& memory,
+			CPU& cpu,
+			Api& api,
+			std::function<int64_t()> getNowCycles,
+			std::function<void(int64_t deadlineCycles)> scheduleService,
+			std::function<void()> cancelService
+		);
 
-	void initializeRegisters();
-	void syncRegisters();
+		void initializeRegisters();
+		void resetIngressState();
+		void resetStatus();
+		void setVblankStatus(bool active);
+		bool canAcceptVdpSubmit() const;
+		void acceptSubmitAttempt();
+		void rejectSubmitAttempt();
+		void beginDmaSubmit();
+		void endDmaSubmit();
+		void sealDmaTransfer(uint32_t src, size_t byteLength);
+		void writeVdpFifoBytes(const u8* data, size_t length);
+		void syncRegisters();
 	void setDitherType(i32 type);
 	i32 getDitherType() const { return m_lastDitherType; }
 	void writeVram(uint32_t addr, const u8* data, size_t length) override;
@@ -87,9 +101,13 @@ public:
 
 	const std::array<i32, 2>& atlasSlots() const { return m_slotAtlasIds; }
 
-private:
-	static Value readVdpStatusThunk(void* context, uint32_t addr);
-	static Value readVdpDataThunk(void* context, uint32_t addr);
+	private:
+		static Value readVdpStatusThunk(void* context, uint32_t addr);
+		static Value readVdpDataThunk(void* context, uint32_t addr);
+		static void onFifoWriteThunk(void* context, uint32_t addr, Value value);
+		static void onFifoCtrlWriteThunk(void* context, uint32_t addr, Value value);
+		static void onObsoletePayloadWriteThunk(void* context, uint32_t addr, Value value);
+		static void onCommandWriteThunk(void* context, uint32_t addr, Value value);
 
 	struct ReadSurface {
 		std::string assetId;
@@ -182,9 +200,11 @@ private:
 		u32 lineHeight = 0;
 		std::vector<GlyphRunGlyph> glyphs;
 		std::vector<TileRunBlit> tiles;
-	};
-	Memory& m_memory;
-	ImgDecController* m_imgDecController = nullptr;
+		};
+		Memory& m_memory;
+		CPU& m_cpu;
+		Api& m_api;
+		ImgDecController* m_imgDecController = nullptr;
 	std::unordered_map<i32, std::string> m_atlasResourceById;
 	std::unordered_map<i32, std::vector<std::string>> m_atlasViewIdsById;
 	std::unordered_map<i32, i32> m_atlasSlotById;
@@ -204,10 +224,16 @@ private:
 	i32 m_lastDitherType = 0;
 	i32 m_committedDitherType = 0;
 	int64_t m_cpuHz = 1;
-	int64_t m_workUnitsPerSec = 1;
-	int64_t m_workCarry = 0;
-	int m_availableWorkUnits = 0;
-	std::vector<BlitterCommand> m_buildBlitterQueue;
+		int64_t m_workUnitsPerSec = 1;
+		int64_t m_workCarry = 0;
+		int m_availableWorkUnits = 0;
+		uint32_t m_vdpStatus = 0;
+		bool m_dmaSubmitActive = false;
+		std::array<u8, 4> m_vdpFifoWordScratch{{0, 0, 0, 0}};
+		int m_vdpFifoWordByteCount = 0;
+		std::array<u32, VDP_STREAM_CAPACITY_WORDS> m_vdpFifoStreamWords{};
+		u32 m_vdpFifoStreamWordCount = 0;
+		std::vector<BlitterCommand> m_buildBlitterQueue;
 	std::vector<BlitterCommand> m_activeBlitterQueue;
 	std::vector<BlitterCommand> m_pendingBlitterQueue;
 	std::vector<std::vector<GlyphRunGlyph>> m_glyphBufferPool;
@@ -280,10 +306,24 @@ private:
 	void swapFrameBufferPages();
 	void syncRenderFrameBufferToDisplayPage();
 	void assignBuildToSlot(bool active);
-	void promotePendingFrame();
-	void maybeScheduleNextService(int64_t nowCycles);
-	int64_t cyclesUntilWorkUnits(int targetUnits) const;
-	void clearActiveFrame();
+		void promotePendingFrame();
+		void scheduleNextService(int64_t nowCycles);
+		int64_t cyclesUntilWorkUnits(int targetUnits) const;
+		bool hasOpenDirectVdpFifoIngress() const;
+		bool hasBlockedSubmitPath() const;
+		void setSubmitBusyStatus(bool active);
+		void refreshSubmitBusyStatus();
+		void setSubmitRejectedStatus(bool active);
+		void pushVdpFifoWord(u32 word);
+		void consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
+		void consumeSealedVdpWordStream(u32 wordCount);
+		void sealVdpFifoTransfer();
+		void consumeDirectVdpCommand(u32 cmd);
+		void onVdpFifoWrite();
+		void onVdpFifoCtrlWrite();
+		void onObsoletePayloadIoWrite();
+		void onVdpCommandWrite();
+		void clearActiveFrame();
 	void commitActiveVisualState();
 	void initializeFrameBufferSurface();
 	void resetFrameBufferPriority();

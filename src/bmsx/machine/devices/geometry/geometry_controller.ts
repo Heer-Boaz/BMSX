@@ -163,7 +163,7 @@ export class GeometryController {
 		this.workUnitsPerSec = BigInt(workUnitsPerSec);
 		this.workCarry = 0n;
 		this.availableWorkUnits = 0;
-		this.maybeScheduleNextService(nowCycles);
+		this.scheduleNextService(nowCycles);
 	}
 
 	public accrueCycles(cycles: number, nowCycles: number): void {
@@ -180,7 +180,7 @@ export class GeometryController {
 			const granted = wholeUnits > maxGrant ? maxGrant : wholeUnits;
 			this.availableWorkUnits += Number(granted);
 		}
-		this.maybeScheduleNextService(nowCycles);
+		this.scheduleNextService(nowCycles);
 	}
 
 	public hasPendingWork(): boolean {
@@ -195,7 +195,7 @@ export class GeometryController {
 	public onService(nowCycles: number): void {
 		const job = this.activeJob;
 		if (job === null || this.availableWorkUnits === 0) {
-			this.maybeScheduleNextService(nowCycles);
+			this.scheduleNextService(nowCycles);
 			return;
 		}
 		let remaining = this.availableWorkUnits;
@@ -218,7 +218,7 @@ export class GeometryController {
 			remaining -= 1;
 		}
 		this.availableWorkUnits = remaining;
-		this.maybeScheduleNextService(nowCycles);
+		this.scheduleNextService(nowCycles);
 	}
 
 	public reset(): void {
@@ -338,10 +338,10 @@ export class GeometryController {
 		this.availableWorkUnits = 0;
 		this.activeJob = job;
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_BUSY);
-		this.maybeScheduleNextService(nowCycles);
+		this.scheduleNextService(nowCycles);
 	}
 
-	private maybeScheduleNextService(nowCycles: number): void {
+	private scheduleNextService(nowCycles: number): void {
 		const job = this.activeJob;
 		if (job === null) {
 			this.cancelService();

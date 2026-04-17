@@ -26,7 +26,7 @@ export function addTrackedLuaHeapBytes(delta: number): void {
 		throw new Error('[LuaHeapUsage] Tracked heap bytes underflow.');
 	}
 	if (delta > 0) {
-		maybeCollectTrackedLuaHeapBytes();
+		collectIfHeapPressureExceeded();
 	}
 }
 
@@ -42,7 +42,7 @@ export function enforceLuaHeapBudget(): void {
 	if (luaHeapUsageHooks === null) {
 		return;
 	}
-	maybeCollectTrackedLuaHeapBytes();
+	collectIfHeapPressureExceeded();
 }
 
 export function collectTrackedLuaHeapBytes(): void {
@@ -57,7 +57,7 @@ export function collectTrackedLuaHeapBytes(): void {
 	}
 }
 
-function maybeCollectTrackedLuaHeapBytes(): void {
+function collectIfHeapPressureExceeded(): void {
 	if (luaHeapUsageHooks === null) {
 		return;
 	}

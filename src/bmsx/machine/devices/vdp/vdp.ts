@@ -26,6 +26,10 @@ import {
 	IO_VDP_CMD,
 	IO_VDP_CMD_ARG0,
 		IO_VDP_CMD_ARG_COUNT,
+	IO_VDP_FIFO,
+	IO_VDP_FIFO_CTRL,
+	IO_PAYLOAD_ALLOC_ADDR,
+	IO_PAYLOAD_DATA_ADDR,
 		IO_VDP_PRIMARY_ATLAS_ID,
 		IO_VDP_RD_DATA,
 		IO_VDP_RD_MODE,
@@ -34,11 +38,16 @@ import {
 	IO_VDP_RD_X,
 	IO_VDP_RD_Y,
 	IO_VDP_SECONDARY_ATLAS_ID,
+	IO_VDP_STATUS,
 	IO_VDP_TILE_HANDLE_NONE,
 	VDP_ATLAS_ID_NONE,
+	VDP_FIFO_CTRL_SEAL,
 	VDP_RD_MODE_RGBA8888,
 	VDP_RD_STATUS_OVERFLOW,
 	VDP_RD_STATUS_READY,
+	VDP_STATUS_SUBMIT_BUSY,
+	VDP_STATUS_SUBMIT_REJECTED,
+	VDP_STATUS_VBLANK,
 } from '../../bus/io';
 import { ASSET_FLAG_VIEW, type AssetEntry, type VramWriteSink } from '../../memory/memory';
 import { Memory } from '../../memory/memory';
@@ -54,8 +63,14 @@ import {
 	VRAM_SECONDARY_ATLAS_SIZE,
 	VRAM_STAGING_BASE,
 	VRAM_STAGING_SIZE,
+	VDP_STREAM_BUFFER_SIZE,
+	VDP_STREAM_CAPACITY_WORDS,
+	VDP_STREAM_PACKET_HEADER_WORDS,
+	VDP_STREAM_PAYLOAD_CAPACITY_WORDS,
 } from '../../memory/memory_map';
 import { fmix32, scramble32, signed8FromHash, xorshift32 } from '../../common/hash';
+import { processVdpBufferedCommand, processVdpCommand } from './vdp_command_processor';
+import { getVdpPacketSchema } from './vdp_packet_schema';
 const VDP_SERVICE_BATCH_WORK_UNITS = 128;
 const BMSX_BASE_COLORS: color[] = [
 	{ r: 0 / 255, g: 0 / 255, b: 0 / 255, a: 0 }, // 0 = Transparent
@@ -138,6 +153,10 @@ export function invertColorIndex(colorIndex: number): number {
 
 function vdpFault(message: string): Error {
 	return new Error(`VDP fault: ${message}`);
+}
+
+function vdpStreamFault(message: string): Error {
+	return new Error(`VDP stream fault: ${message}`);
 }
 
 const VDP_RD_SURFACE_ENGINE = 0;
@@ -587,6 +606,12 @@ export class VDP implements VramWriteSink {
 	private workUnitsPerSec: bigint = 1n;
 	private workCarry: bigint = 0n;
 	private availableWorkUnits = 0;
+	private vdpStatus = 0;
+	private dmaSubmitActive = false;
+	private readonly vdpFifoWordScratch = new Uint8Array(4);
+	private vdpFifoWordByteCount = 0;
+	private readonly vdpFifoStreamWords = new Uint32Array(VDP_STREAM_CAPACITY_WORDS);
+	private vdpFifoStreamWordCount = 0;
 	public lastFrameCommitted = true;
 	public lastFrameCost = 0;
 	public lastFrameHeld = false;
@@ -596,15 +621,282 @@ export class VDP implements VramWriteSink {
 		private readonly getNowCycles: () => number,
 		private readonly scheduleService: (deadlineCycles: number) => void,
 		private readonly cancelService: () => void,
-		) {
-			this.memory.setVramWriter(this);
-			this.memory.mapIoRead(IO_VDP_RD_STATUS, this.readVdpStatus.bind(this));
-			this.memory.mapIoRead(IO_VDP_RD_DATA, this.readVdpData.bind(this));
-			this.vramMachineSeed = this.nextVramMachineSeed();
+			) {
+				this.memory.setVramWriter(this);
+				this.memory.mapIoRead(IO_VDP_RD_STATUS, this.readVdpStatus.bind(this));
+				this.memory.mapIoRead(IO_VDP_RD_DATA, this.readVdpData.bind(this));
+				this.memory.mapIoWrite(IO_VDP_FIFO, this.onVdpFifoWrite.bind(this));
+				this.memory.mapIoWrite(IO_VDP_FIFO_CTRL, this.onVdpFifoCtrlWrite.bind(this));
+				this.memory.mapIoWrite(IO_PAYLOAD_ALLOC_ADDR, this.onObsoletePayloadIoWrite.bind(this));
+				this.memory.mapIoWrite(IO_PAYLOAD_DATA_ADDR, this.onObsoletePayloadIoWrite.bind(this));
+				this.memory.mapIoWrite(IO_VDP_CMD, this.onVdpCommandWrite.bind(this));
+				this.vramMachineSeed = this.nextVramMachineSeed();
 		this.vramBootSeed = this.nextVramBootSeed();
 		for (let index = 0; index < VDP_RD_SURFACE_COUNT; index += 1) {
 			this.readCaches.push({ x0: 0, y: 0, width: 0, data: new Uint8Array(0) });
 		}
+	}
+
+	public resetIngressState(): void {
+		this.vdpFifoWordByteCount = 0;
+		this.vdpFifoStreamWordCount = 0;
+		this.dmaSubmitActive = false;
+		this.refreshSubmitBusyStatus();
+	}
+
+	public resetStatus(): void {
+		this.vdpStatus = 0;
+		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
+		this.refreshSubmitBusyStatus();
+	}
+
+	public setVblankStatus(active: boolean): void {
+		const nextStatus = active ? (this.vdpStatus | VDP_STATUS_VBLANK) : (this.vdpStatus & ~VDP_STATUS_VBLANK);
+		if (nextStatus === this.vdpStatus) {
+			return;
+		}
+		this.vdpStatus = nextStatus >>> 0;
+		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
+	}
+
+	public canAcceptVdpSubmit(): boolean {
+		return !this.hasBlockedSubmitPath();
+	}
+
+	public acceptSubmitAttempt(): void {
+		this.setSubmitRejectedStatus(false);
+		this.refreshSubmitBusyStatus();
+	}
+
+	public rejectSubmitAttempt(): void {
+		this.setSubmitRejectedStatus(true);
+		this.refreshSubmitBusyStatus();
+	}
+
+	public beginDmaSubmit(): void {
+		this.dmaSubmitActive = true;
+		this.acceptSubmitAttempt();
+	}
+
+	public endDmaSubmit(): void {
+		this.dmaSubmitActive = false;
+		this.refreshSubmitBusyStatus();
+	}
+
+	public sealDmaTransfer(src: number, byteLength: number): void {
+		try {
+			this.consumeSealedVdpStream(src, byteLength);
+		} finally {
+			this.endDmaSubmit();
+		}
+	}
+
+	public writeVdpFifoBytes(bytes: Uint8Array): void {
+		for (let index = 0; index < bytes.byteLength; index += 1) {
+			this.vdpFifoWordScratch[this.vdpFifoWordByteCount] = bytes[index]!;
+			this.vdpFifoWordByteCount += 1;
+			if (this.vdpFifoWordByteCount !== 4) {
+				continue;
+			}
+			const word = (
+				this.vdpFifoWordScratch[0]
+				| (this.vdpFifoWordScratch[1] << 8)
+				| (this.vdpFifoWordScratch[2] << 16)
+				| (this.vdpFifoWordScratch[3] << 24)
+			) >>> 0;
+			this.vdpFifoWordByteCount = 0;
+			this.pushVdpFifoWord(word);
+		}
+		this.refreshSubmitBusyStatus();
+	}
+
+	private hasOpenDirectVdpFifoIngress(): boolean {
+		return this.vdpFifoWordByteCount !== 0 || this.vdpFifoStreamWordCount !== 0;
+	}
+
+	private hasBlockedSubmitPath(): boolean {
+		return this.hasOpenDirectVdpFifoIngress() || this.dmaSubmitActive || !this.canAcceptSubmittedFrame();
+	}
+
+	private setSubmitBusyStatus(active: boolean): void {
+		const nextStatus = active ? (this.vdpStatus | VDP_STATUS_SUBMIT_BUSY) : (this.vdpStatus & ~VDP_STATUS_SUBMIT_BUSY);
+		if (nextStatus === this.vdpStatus) {
+			return;
+		}
+		this.vdpStatus = nextStatus >>> 0;
+		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
+	}
+
+	private refreshSubmitBusyStatus(): void {
+		this.setSubmitBusyStatus(this.hasBlockedSubmitPath());
+	}
+
+	private setSubmitRejectedStatus(active: boolean): void {
+		const nextStatus = active ? (this.vdpStatus | VDP_STATUS_SUBMIT_REJECTED) : (this.vdpStatus & ~VDP_STATUS_SUBMIT_REJECTED);
+		if (nextStatus === this.vdpStatus) {
+			return;
+		}
+		this.vdpStatus = nextStatus >>> 0;
+		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
+	}
+
+	private pushVdpFifoWord(word: number): void {
+		if (this.vdpFifoStreamWordCount >= VDP_STREAM_CAPACITY_WORDS) {
+			throw vdpStreamFault(`stream overflow (${this.vdpFifoStreamWordCount + 1} > ${VDP_STREAM_CAPACITY_WORDS}).`);
+		}
+		this.vdpFifoStreamWords[this.vdpFifoStreamWordCount] = word >>> 0;
+		this.vdpFifoStreamWordCount += 1;
+		this.refreshSubmitBusyStatus();
+	}
+
+	private consumeSealedVdpStream(baseAddr: number, byteLength: number): void {
+		if ((byteLength & 3) !== 0) {
+			throw vdpStreamFault('sealed stream length must be word-aligned.');
+		}
+		if (byteLength > VDP_STREAM_BUFFER_SIZE) {
+			throw vdpStreamFault(`sealed stream overflow (${byteLength} > ${VDP_STREAM_BUFFER_SIZE}).`);
+		}
+		let cursor = baseAddr;
+		const end = baseAddr + byteLength;
+		this.beginSubmittedFrame();
+		try {
+			while (cursor < end) {
+				if (cursor + VDP_STREAM_PACKET_HEADER_WORDS * 4 > end) {
+					throw vdpStreamFault('stream ended mid-packet header.');
+				}
+				const cmd = this.memory.readU32(cursor) >>> 0;
+				const argWords = this.memory.readU32(cursor + 4) >>> 0;
+				const payloadWords = this.memory.readU32(cursor + 8) >>> 0;
+				if (payloadWords > VDP_STREAM_PAYLOAD_CAPACITY_WORDS) {
+					throw vdpStreamFault(`submit payload overflow (${payloadWords} > ${VDP_STREAM_PAYLOAD_CAPACITY_WORDS}).`);
+				}
+				const packetWordCount = VDP_STREAM_PACKET_HEADER_WORDS + argWords + payloadWords;
+				const packetByteCount = packetWordCount * 4;
+				if (cursor + packetByteCount > end) {
+					throw vdpStreamFault('stream ended mid-packet payload.');
+				}
+				this.syncRegisters();
+				processVdpCommand(Runtime.instance, {
+					cmd,
+					argWords,
+					argsBase: cursor + VDP_STREAM_PACKET_HEADER_WORDS * 4,
+					payloadBase: cursor + (VDP_STREAM_PACKET_HEADER_WORDS + argWords) * 4,
+					payloadWords,
+				});
+				cursor += packetByteCount;
+			}
+			this.sealSubmittedFrame();
+		} catch (error) {
+			this.cancelSubmittedFrame();
+			throw error;
+		}
+		this.refreshSubmitBusyStatus();
+	}
+
+	private consumeSealedVdpWordStream(wordCount: number): void {
+		let cursor = 0;
+		this.beginSubmittedFrame();
+		try {
+			while (cursor < wordCount) {
+				if (cursor + VDP_STREAM_PACKET_HEADER_WORDS > wordCount) {
+					throw vdpStreamFault('stream ended mid-packet header.');
+				}
+				const cmd = this.vdpFifoStreamWords[cursor] >>> 0;
+				const argWords = this.vdpFifoStreamWords[cursor + 1] >>> 0;
+				const payloadWords = this.vdpFifoStreamWords[cursor + 2] >>> 0;
+				if (payloadWords > VDP_STREAM_PAYLOAD_CAPACITY_WORDS) {
+					throw vdpStreamFault(`submit payload overflow (${payloadWords} > ${VDP_STREAM_PAYLOAD_CAPACITY_WORDS}).`);
+				}
+				const packetWordCount = VDP_STREAM_PACKET_HEADER_WORDS + argWords + payloadWords;
+				if (cursor + packetWordCount > wordCount) {
+					throw vdpStreamFault('stream ended mid-packet payload.');
+				}
+				this.syncRegisters();
+				processVdpBufferedCommand(Runtime.instance, {
+					cmd,
+					argWords,
+					argsWordOffset: cursor + VDP_STREAM_PACKET_HEADER_WORDS,
+					payloadWordOffset: cursor + VDP_STREAM_PACKET_HEADER_WORDS + argWords,
+					payloadWords,
+					words: this.vdpFifoStreamWords,
+				});
+				cursor += packetWordCount;
+			}
+			this.sealSubmittedFrame();
+		} catch (error) {
+			this.cancelSubmittedFrame();
+			throw error;
+		}
+		this.refreshSubmitBusyStatus();
+	}
+
+	private sealVdpFifoTransfer(): void {
+		if (this.vdpFifoWordByteCount !== 0) {
+			throw vdpStreamFault('FIFO transfer ended on a partial word.');
+		}
+		if (this.vdpFifoStreamWordCount === 0) {
+			return;
+		}
+		this.consumeSealedVdpWordStream(this.vdpFifoStreamWordCount);
+		this.resetIngressState();
+	}
+
+	private consumeDirectVdpCommand(cmd: number): void {
+		const schema = getVdpPacketSchema(cmd);
+		this.beginSubmittedFrame();
+		try {
+			this.syncRegisters();
+			processVdpCommand(Runtime.instance, {
+				cmd,
+				argWords: schema.argWords,
+				argsBase: IO_VDP_CMD_ARG0,
+				payloadBase: 0,
+				payloadWords: 0,
+			});
+			this.sealSubmittedFrame();
+		} catch (error) {
+			this.cancelSubmittedFrame();
+			throw error;
+		}
+		this.refreshSubmitBusyStatus();
+	}
+
+	private onVdpFifoWrite(): void {
+		if (this.dmaSubmitActive || (!this.hasOpenDirectVdpFifoIngress() && !this.canAcceptSubmittedFrame())) {
+			this.rejectSubmitAttempt();
+			return;
+		}
+		this.acceptSubmitAttempt();
+		this.pushVdpFifoWord(this.memory.readIoU32(IO_VDP_FIFO));
+	}
+
+	private onVdpFifoCtrlWrite(): void {
+		if ((this.memory.readIoU32(IO_VDP_FIFO_CTRL) & VDP_FIFO_CTRL_SEAL) === 0) {
+			return;
+		}
+		if (this.dmaSubmitActive) {
+			this.rejectSubmitAttempt();
+			return;
+		}
+		this.sealVdpFifoTransfer();
+		this.refreshSubmitBusyStatus();
+	}
+
+	private onObsoletePayloadIoWrite(): void {
+		throw vdpFault('payload staging I/O is obsolete. Write payload words directly into the claimed VDP stream packet in RAM.');
+	}
+
+	private onVdpCommandWrite(): void {
+		const command = this.memory.readIoU32(IO_VDP_CMD);
+		if (command === 0) {
+			return;
+		}
+		if (this.hasBlockedSubmitPath()) {
+			this.rejectSubmitAttempt();
+			return;
+		}
+		this.acceptSubmitAttempt();
+		this.consumeDirectVdpCommand(command);
 	}
 
 	public setTiming(cpuHz: number, workUnitsPerSec: number, nowCycles: number): void {
@@ -612,7 +904,7 @@ export class VDP implements VramWriteSink {
 		this.workUnitsPerSec = BigInt(workUnitsPerSec);
 		this.workCarry = 0n;
 		this.availableWorkUnits = 0;
-		this.maybeScheduleNextService(nowCycles);
+		this.scheduleNextService(nowCycles);
 	}
 
 	public accrueCycles(cycles: number, nowCycles: number): void {
@@ -628,7 +920,7 @@ export class VDP implements VramWriteSink {
 			const granted = wholeUnits > maxGrant ? maxGrant : wholeUnits;
 			this.availableWorkUnits += Number(granted);
 		}
-		this.maybeScheduleNextService(nowCycles);
+		this.scheduleNextService(nowCycles);
 	}
 
 	public onService(nowCycles: number): void {
@@ -644,7 +936,8 @@ export class VDP implements VramWriteSink {
 				this.availableWorkUnits -= consumed;
 			}
 		}
-		this.maybeScheduleNextService(nowCycles);
+		this.scheduleNextService(nowCycles);
+		this.refreshSubmitBusyStatus();
 	}
 
 	private packFrameBufferColor(source: color): VdpFrameBufferColor {
@@ -848,7 +1141,8 @@ export class VDP implements VramWriteSink {
 
 	public cancelSubmittedFrame(): void {
 		this.resetBuildFrameState();
-		this.maybeScheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.getNowCycles());
+		this.refreshSubmitBusyStatus();
 	}
 
 	private assignBuildToSlot(slot: 'active' | 'pending'): void {
@@ -884,7 +1178,8 @@ export class VDP implements VramWriteSink {
 		this.buildBlitterQueue.length = 0;
 		this.buildFrameCost = 0;
 		this.buildFrameOpen = false;
-		this.maybeScheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.getNowCycles());
+		this.refreshSubmitBusyStatus();
 	}
 
 	public sealSubmittedFrame(): void {
@@ -924,7 +1219,8 @@ export class VDP implements VramWriteSink {
 		this.pendingSlotAtlasIds[0] = null;
 		this.pendingSlotAtlasIds[1] = null;
 		this.pendingSkyboxFaceIds = null;
-		this.maybeScheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.getNowCycles());
+		this.refreshSubmitBusyStatus();
 	}
 
 	public advanceWork(workUnits: number): void {
@@ -938,7 +1234,7 @@ export class VDP implements VramWriteSink {
 			this.activeFrameWorkRemaining = 0;
 			this.executeBlitterQueue(this.activeBlitterQueue);
 			this.activeFrameReady = true;
-			this.maybeScheduleNextService(this.getNowCycles());
+			this.scheduleNextService(this.getNowCycles());
 			return;
 		}
 		this.activeFrameWorkRemaining -= workUnits;
@@ -965,7 +1261,7 @@ export class VDP implements VramWriteSink {
 		return this.activeFrameWorkRemaining;
 	}
 
-	private maybeScheduleNextService(nowCycles: number): void {
+	private scheduleNextService(nowCycles: number): void {
 		if (this.needsImmediateSchedulerService()) {
 			this.scheduleService(nowCycles);
 			return;
@@ -1020,7 +1316,8 @@ export class VDP implements VramWriteSink {
 			this.lastFrameCost = 0;
 			this.lastFrameHeld = false;
 			this.promotePendingFrame();
-			this.maybeScheduleNextService(this.getNowCycles());
+			this.scheduleNextService(this.getNowCycles());
+			this.refreshSubmitBusyStatus();
 			return;
 		}
 		this.lastFrameCost = this.activeFrameCost;
@@ -1037,7 +1334,8 @@ export class VDP implements VramWriteSink {
 		this.lastFrameHeld = false;
 		this.clearActiveFrame();
 		this.promotePendingFrame();
-		this.maybeScheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.getNowCycles());
+		this.refreshSubmitBusyStatus();
 	}
 
 	private initializeFrameBufferSurface(): void {
@@ -1616,7 +1914,7 @@ export class VDP implements VramWriteSink {
 	public beginFrame(): void {
 		this.readBudgetBytes = VDP_RD_BUDGET_BYTES;
 		this.readOverflow = false;
-		this.maybeScheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.getNowCycles());
 	}
 
 	public readVdpStatus(): number {
@@ -1690,11 +1988,13 @@ export class VDP implements VramWriteSink {
 		this.pendingSlotAtlasIds[1] = null;
 		this.pendingSkyboxFaceIds = null;
 		this.blitterSequence = 0;
-			this.memory.writeIoValue(IO_VDP_DITHER, dither);
-			this.memory.writeIoValue(IO_VDP_CMD, 0);
-			for (let index = 0; index < IO_VDP_CMD_ARG_COUNT; index += 1) {
-				this.memory.writeIoValue(IO_VDP_CMD_ARG0 + index * 4, 0);
-			}
+		this.resetIngressState();
+		this.resetStatus();
+		this.memory.writeIoValue(IO_VDP_DITHER, dither);
+		this.memory.writeIoValue(IO_VDP_CMD, 0);
+		for (let index = 0; index < IO_VDP_CMD_ARG_COUNT; index += 1) {
+			this.memory.writeIoValue(IO_VDP_CMD_ARG0 + index * 4, 0);
+		}
 		this.lastDitherType = dither;
 		this.committedDitherType = dither;
 		this._skyboxFaceIds = null;

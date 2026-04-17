@@ -58,7 +58,7 @@ void ImgDecController::setTiming(int64_t cpuHz, int64_t decodeBytesPerSec, int64
 	m_decodeBytesPerSec = decodeBytesPerSec;
 	m_decodeCarry = 0;
 	m_availableDecodeBytes = 0;
-	maybeScheduleNextService(nowCycles);
+	scheduleNextService(nowCycles);
 }
 
 void ImgDecController::accrueCycles(int cycles, int64_t nowCycles) {
@@ -73,7 +73,7 @@ void ImgDecController::accrueCycles(int cycles, int64_t nowCycles) {
 		const int64_t granted = wholeBytes > maxGrant ? maxGrant : wholeBytes;
 		m_availableDecodeBytes += static_cast<uint32_t>(granted);
 	}
-	maybeScheduleNextService(nowCycles);
+	scheduleNextService(nowCycles);
 }
 
 bool ImgDecController::hasPendingDecodeWork() const {
@@ -106,7 +106,7 @@ void ImgDecController::decodeToVram(
 	job.resolve = std::move(onComplete);
 	job.reject = std::move(onError);
 	m_queuedJobs.push_back(std::move(job));
-	maybeScheduleNextService(m_getNowCycles());
+	scheduleNextService(m_getNowCycles());
 }
 
 void ImgDecController::reset() {
@@ -166,7 +166,7 @@ void ImgDecController::onCtrlWrite(int64_t nowCycles) {
 		return;
 	}
 	startJob(std::move(buffer), dst, cap, src, len, std::nullopt, true);
-	maybeScheduleNextService(nowCycles);
+	scheduleNextService(nowCycles);
 }
 
 void ImgDecController::onService(int64_t nowCycles) {
@@ -179,7 +179,7 @@ void ImgDecController::onService(int64_t nowCycles) {
 		auto error = m_pendingError;
 		m_pendingError = nullptr;
 		finishError(error);
-		maybeScheduleNextService(nowCycles);
+		scheduleNextService(nowCycles);
 		return;
 	}
 	if (m_pendingResult && m_pendingEntry) {
@@ -192,7 +192,7 @@ void ImgDecController::onService(int64_t nowCycles) {
 	if (m_decodeActive && m_availableDecodeBytes > 0u) {
 		advanceDecode();
 	}
-	maybeScheduleNextService(nowCycles);
+	scheduleNextService(nowCycles);
 }
 
 void ImgDecController::tryStartQueued() {
@@ -286,12 +286,12 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 			if (token == m_decodeToken) {
 				m_pendingResult = std::move(result);
 				m_pendingEntry = entry;
-				maybeScheduleNextService(m_getNowCycles());
+				scheduleNextService(m_getNowCycles());
 			}
 		} catch (...) {
 			if (token == m_decodeToken) {
 				m_pendingError = std::current_exception();
-				maybeScheduleNextService(m_getNowCycles());
+				scheduleNextService(m_getNowCycles());
 			}
 		}
 		m_gate.end(m_gateToken);
@@ -398,7 +398,7 @@ void ImgDecController::finishSuccess(bool clipped) {
 	}
 	m_decodeWidth = 0;
 	m_decodeHeight = 0;
-	maybeScheduleNextService(m_getNowCycles());
+	scheduleNextService(m_getNowCycles());
 }
 
 void ImgDecController::finishError(std::exception_ptr error) {
@@ -424,10 +424,10 @@ void ImgDecController::finishError(std::exception_ptr error) {
 	}
 	m_decodeWidth = 0;
 	m_decodeHeight = 0;
-	maybeScheduleNextService(m_getNowCycles());
+	scheduleNextService(m_getNowCycles());
 }
 
-void ImgDecController::maybeScheduleNextService(int64_t nowCycles) {
+void ImgDecController::scheduleNextService(int64_t nowCycles) {
 	if (!m_active) {
 		if (!m_queuedJobs.empty()) {
 			m_scheduleService(nowCycles);

@@ -375,10 +375,6 @@ private:
 	void resetHaltIrqWait();
 	void installIoMap();
 	void handleInputCtrlWrite();
-	void handleVdpFifoWrite();
-	void handleVdpFifoCtrlWrite();
-	void handleObsoletePayloadIoWrite();
-	void handleVdpCommandWrite();
 	RunResult runWithBudget();
 	void queueLifecycleHandlers(bool runInit, bool runNewGame);
 	Value requireModule(const std::string& moduleName);
@@ -394,36 +390,23 @@ private:
 	void prepareCartBootIfNeeded();
 	bool pollSystemBootRequest();
 	bool processPendingCartBoot();
-	void setVdpSubmitBusyStatus(bool active);
-	void refreshVdpSubmitBusyStatus();
-	void setVdpSubmitRejectedStatus(bool active);
-	void noteRejectedVdpSubmitAttempt();
-	void noteAcceptedVdpSubmitAttempt();
 	void flushAssetEdits();
 	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
 	std::vector<Value> acquireValueScratch();
 	void releaseValueScratch(std::vector<Value>&& values);
 	bool hasEntryContinuation() const;
-	void resetVdpIngressState();
-	bool hasOpenDirectVdpFifoIngress() const;
-	bool hasBlockedVdpSubmitPath() const;
-	void consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
-	void consumeDirectVdpCommand(u32 cmd);
-	void writeVdpFifoBytes(const u8* data, size_t length);
-	void sealVdpFifoTransfer();
-	void sealVdpDmaTransfer(uint32_t src, size_t byteLength);
-	void pushVdpFifoWord(u32 word);
 
 	static Runtime* s_instance;
 	static constexpr size_t MAX_POOLED_RUNTIME_SCRATCH = 32;
 
-	// Runtime core
-	Memory m_memory;
-	VDP m_vdp;
-	StringHandleTable m_stringHandles;
-	CPU m_cpu;
-	IrqController m_irqController;
-	std::unique_ptr<ResourceUsageDetector> m_resourceUsageDetector;
+		// Runtime core
+		Memory m_memory;
+		StringHandleTable m_stringHandles;
+		CPU m_cpu;
+		std::unique_ptr<Api> m_api;
+		VDP m_vdp;
+		IrqController m_irqController;
+		std::unique_ptr<ResourceUsageDetector> m_resourceUsageDetector;
 	DmaController m_dmaController;
 	GeometryController m_geometryController;
 	ImgDecController m_imgDecController;
@@ -432,10 +415,7 @@ private:
 	Program* m_program = nullptr;
 	ProgramMetadata* m_programMetadata = nullptr;
 
-	// API
-	std::unique_ptr<Api> m_api;
-
-	// Configuration
+		// Configuration
 	Viewport m_viewport{0, 0};
 	CanonicalizationType m_canonicalization = CanonicalizationType::None;
 	ProgramSource m_programSource = ProgramSource::Cart;
@@ -507,10 +487,6 @@ private:
 	uint32_t m_vblankEnterTimerGeneration = 0;
 	uint32_t m_vblankEndTimerGeneration = 0;
 	std::array<uint32_t, static_cast<size_t>(DeviceServiceKindCount)> m_deviceServiceTimerGeneration{};
-	std::array<u8, 4> m_vdpFifoWordScratch{{0, 0, 0, 0}};
-	int m_vdpFifoWordByteCount = 0;
-	std::array<u32, VDP_STREAM_CAPACITY_WORDS> m_vdpFifoStreamWords{};
-	u32 m_vdpFifoStreamWordCount = 0;
 	uint64_t m_haltIrqSignalSequence = 0;
 	bool m_haltIrqWaitArmed = false;
 	uint64_t m_vblankSequence = 0;
@@ -518,7 +494,6 @@ private:
 	bool m_inputSampleArmed = false;
 	bool m_clearBackQueuesAfterIrqWake = false;
 	bool m_vblankActive = false;
-	u32 m_vdpStatus = 0;
 };
 
 } // namespace bmsx

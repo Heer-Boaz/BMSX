@@ -107,32 +107,21 @@ import {
 	IO_IMG_STATUS,
 	IO_IMG_WRITTEN,
 	IO_INP_CTRL,
-	IO_PAYLOAD_ALLOC_ADDR,
-	IO_PAYLOAD_DATA_ADDR,
 	IO_SYS_BOOT_CART,
 	IO_SYS_CART_BOOTREADY,
 	IO_SYS_HOST_FAULT_FLAGS,
 	IO_SYS_HOST_FAULT_STAGE,
 	IO_VDP_PRIMARY_ATLAS_ID,
-	IO_VDP_CMD,
-	IO_VDP_CMD_ARG0,
-	IO_VDP_FIFO,
-	IO_VDP_FIFO_CTRL,
 	IO_VDP_RD_MODE,
 	IO_VDP_RD_SURFACE,
 	IO_VDP_RD_X,
 	IO_VDP_RD_Y,
 	IO_VDP_SECONDARY_ATLAS_ID,
-	IO_VDP_STATUS,
 	IRQ_NEWGAME,
 	IRQ_REINIT,
 	IRQ_VBLANK,
 	VDP_ATLAS_ID_NONE,
-	VDP_FIFO_CTRL_SEAL,
 	VDP_RD_MODE_RGBA8888,
-	VDP_STATUS_SUBMIT_BUSY,
-	VDP_STATUS_SUBMIT_REJECTED,
-	VDP_STATUS_VBLANK,
 } from '../bus/io';
 import { HandlerCache } from './handler_cache';
 import { Memory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntry } from '../memory/memory';
@@ -155,16 +144,12 @@ import {
 	SYSTEM_ROM_BASE,
 	STRING_HANDLE_ENTRY_SIZE,
 	VDP_STREAM_BUFFER_SIZE,
-	VDP_STREAM_CAPACITY_WORDS,
-	VDP_STREAM_PACKET_HEADER_WORDS,
-	VDP_STREAM_PAYLOAD_CAPACITY_WORDS,
 	configureMemoryMap,
 	type MemoryMapSpecs as MemoryMapSpecs,
 } from '../memory/memory_map';
 import { FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY, VDP } from '../devices/vdp/vdp';
 import { PROGRAM_ASSET_ID } from '../program/program_asset';
 import { createVdpBlitterExecutor } from '../../render/vdp/vdp_blitter';
-import { getVdpPacketSchema } from '../devices/vdp/vdp_packet_schema';
 
 export const BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'left',
@@ -185,14 +170,6 @@ export const BUTTON_ACTIONS: ReadonlyArray<string> = [
 
 function runtimeFault(message: string): Error {
 	return new Error(`Runtime fault: ${message}`);
-}
-
-function vdpFault(message: string): Error {
-	return new Error(`VDP fault: ${message}`);
-}
-
-function vdpStreamFault(message: string): Error {
-	return new Error(`VDP stream fault: ${message}`);
 }
 
 
@@ -372,161 +349,6 @@ export class Runtime {
 		return this.vdpWorkUnitsPerSec;
 	}
 
-	public resetVdpIngressState(): void {
-		this.vdpFifoWordByteCount = 0;
-		this.vdpFifoStreamWordCount = 0;
-	}
-
-	private hasOpenDirectVdpFifoIngress(): boolean {
-		return this.vdpFifoWordByteCount !== 0 || this.vdpFifoStreamWordCount !== 0;
-	}
-
-	private hasBlockedVdpSubmitPath(): boolean {
-		return this.hasOpenDirectVdpFifoIngress() || this.dmaController.hasPendingVdpSubmit() || !this.vdp.canAcceptSubmittedFrame();
-	}
-
-	private pushVdpFifoWord(word: number): void {
-		if (this.vdpFifoStreamWordCount >= VDP_STREAM_CAPACITY_WORDS) {
-			throw vdpStreamFault(`stream overflow (${this.vdpFifoStreamWordCount + 1} > ${VDP_STREAM_CAPACITY_WORDS}).`);
-		}
-		this.vdpFifoStreamWords[this.vdpFifoStreamWordCount] = word >>> 0;
-		this.vdpFifoStreamWordCount += 1;
-	}
-
-	public writeVdpFifoBytes(bytes: Uint8Array): void {
-		for (let index = 0; index < bytes.byteLength; index += 1) {
-			this.vdpFifoWordScratch[this.vdpFifoWordByteCount] = bytes[index]!;
-			this.vdpFifoWordByteCount += 1;
-			if (this.vdpFifoWordByteCount !== 4) {
-				continue;
-			}
-			const word = (
-				this.vdpFifoWordScratch[0]
-				| (this.vdpFifoWordScratch[1] << 8)
-				| (this.vdpFifoWordScratch[2] << 16)
-				| (this.vdpFifoWordScratch[3] << 24)
-			) >>> 0;
-			this.vdpFifoWordByteCount = 0;
-			this.pushVdpFifoWord(word);
-		}
-	}
-
-	private consumeSealedVdpStream(baseAddr: number, byteLength: number): void {
-		if ((byteLength & 3) !== 0) {
-			throw vdpStreamFault('sealed stream length must be word-aligned.');
-		}
-		if (byteLength > VDP_STREAM_BUFFER_SIZE) {
-			throw vdpStreamFault(`sealed stream overflow (${byteLength} > ${VDP_STREAM_BUFFER_SIZE}).`);
-		}
-		let cursor = baseAddr;
-		const end = baseAddr + byteLength;
-		this.vdp.beginSubmittedFrame();
-		try {
-			while (cursor < end) {
-				if (cursor + VDP_STREAM_PACKET_HEADER_WORDS * 4 > end) {
-					throw vdpStreamFault('stream ended mid-packet header.');
-				}
-				const cmd = this.memory.readU32(cursor) >>> 0;
-				const argWords = this.memory.readU32(cursor + 4) >>> 0;
-				const payloadWords = this.memory.readU32(cursor + 8) >>> 0;
-				if (payloadWords > VDP_STREAM_PAYLOAD_CAPACITY_WORDS) {
-					throw vdpStreamFault(`submit payload overflow (${payloadWords} > ${VDP_STREAM_PAYLOAD_CAPACITY_WORDS}).`);
-				}
-				const packetWordCount = VDP_STREAM_PACKET_HEADER_WORDS + argWords + payloadWords;
-				const packetByteCount = packetWordCount * 4;
-				if (cursor + packetByteCount > end) {
-					throw vdpStreamFault('stream ended mid-packet payload.');
-				}
-				this.vdp.syncRegisters();
-				runtimeLuaPipeline.processVdpCommand(this, {
-					cmd,
-					argWords,
-					argsBase: cursor + VDP_STREAM_PACKET_HEADER_WORDS * 4,
-					payloadBase: cursor + (VDP_STREAM_PACKET_HEADER_WORDS + argWords) * 4,
-					payloadWords,
-				});
-				cursor += packetByteCount;
-			}
-			this.vdp.sealSubmittedFrame();
-		} catch (error) {
-			this.vdp.cancelSubmittedFrame();
-			throw error;
-		}
-		this.refreshVdpSubmitBusyStatus();
-	}
-
-	private consumeSealedVdpWordStream(wordCount: number): void {
-		let cursor = 0;
-		this.vdp.beginSubmittedFrame();
-		try {
-			while (cursor < wordCount) {
-				if (cursor + VDP_STREAM_PACKET_HEADER_WORDS > wordCount) {
-					throw vdpStreamFault('stream ended mid-packet header.');
-				}
-				const cmd = this.vdpFifoStreamWords[cursor] >>> 0;
-				const argWords = this.vdpFifoStreamWords[cursor + 1] >>> 0;
-				const payloadWords = this.vdpFifoStreamWords[cursor + 2] >>> 0;
-				if (payloadWords > VDP_STREAM_PAYLOAD_CAPACITY_WORDS) {
-					throw vdpStreamFault(`submit payload overflow (${payloadWords} > ${VDP_STREAM_PAYLOAD_CAPACITY_WORDS}).`);
-				}
-				const packetWordCount = VDP_STREAM_PACKET_HEADER_WORDS + argWords + payloadWords;
-				if (cursor + packetWordCount > wordCount) {
-					throw vdpStreamFault('stream ended mid-packet payload.');
-				}
-				this.vdp.syncRegisters();
-				runtimeLuaPipeline.processVdpBufferedCommand(this, {
-					cmd,
-					argWords,
-					argsWordOffset: cursor + VDP_STREAM_PACKET_HEADER_WORDS,
-					payloadWordOffset: cursor + VDP_STREAM_PACKET_HEADER_WORDS + argWords,
-					payloadWords,
-					words: this.vdpFifoStreamWords,
-				});
-				cursor += packetWordCount;
-			}
-			this.vdp.sealSubmittedFrame();
-		} catch (error) {
-			this.vdp.cancelSubmittedFrame();
-			throw error;
-		}
-		this.refreshVdpSubmitBusyStatus();
-	}
-
-	public sealVdpFifoTransfer(): void {
-		if (this.vdpFifoWordByteCount !== 0) {
-			throw vdpStreamFault('FIFO transfer ended on a partial word.');
-		}
-		if (this.vdpFifoStreamWordCount === 0) {
-			return;
-		}
-		this.consumeSealedVdpWordStream(this.vdpFifoStreamWordCount);
-		this.resetVdpIngressState();
-	}
-
-	public sealVdpDmaTransfer(src: number, byteLength: number): void {
-		this.consumeSealedVdpStream(src, byteLength);
-	}
-
-	private consumeDirectVdpCommand(cmd: number): void {
-		const schema = getVdpPacketSchema(cmd);
-		this.vdp.beginSubmittedFrame();
-		try {
-			this.vdp.syncRegisters();
-			runtimeLuaPipeline.processVdpCommand(this, {
-				cmd,
-				argWords: schema.argWords,
-				argsBase: IO_VDP_CMD_ARG0,
-				payloadBase: 0,
-				payloadWords: 0,
-			});
-			this.vdp.sealSubmittedFrame();
-		} catch (error) {
-			this.vdp.cancelSubmittedFrame();
-			throw error;
-		}
-		this.refreshVdpSubmitBusyStatus();
-	}
-
 	public getActiveCpuUsedCyclesLastTick(): number {
 		return this.getCpuUsedCyclesLastTick();
 	}
@@ -640,7 +462,6 @@ export class Runtime {
 		this.vdp.accrueCycles(cycles, nextNow);
 		this.schedulerNowCycles = nextNow;
 		this.runDueTimers();
-		this.refreshVdpSubmitBusyStatus();
 	}
 
 	private currentSchedulerNowCycles(): number {
@@ -871,14 +692,12 @@ export class Runtime {
 				return;
 			case DEVICE_SERVICE_DMA:
 				this.dmaController.onService(nowCycles);
-				this.refreshVdpSubmitBusyStatus();
 				return;
 			case DEVICE_SERVICE_IMG:
 				this.imgDecController.onService(nowCycles);
 				return;
 			case DEVICE_SERVICE_VDP:
 				this.vdp.onService(nowCycles);
-				this.refreshVdpSubmitBusyStatus();
 				return;
 			default:
 				throw runtimeFault(`unknown device service kind ${deviceKind}.`);
@@ -1017,8 +836,7 @@ export class Runtime {
 		this.inputSampleArmed = false;
 		this.irqController.postLoad();
 		this.resetHaltIrqWait();
-		this.vdpStatus = 0;
-		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
+		this.vdp.resetStatus();
 		if (this.vblankStartCycle === 0) {
 			this.setVblankStatus(true);
 		}
@@ -1035,53 +853,8 @@ export class Runtime {
 	}
 
 	private setVblankStatus(active: boolean): void {
-		if (this.vblankActive === active) {
-			return;
-		}
 		this.vblankActive = active;
-		if (active) {
-			this.vdpStatus |= VDP_STATUS_VBLANK;
-		} else {
-			this.vdpStatus &= ~VDP_STATUS_VBLANK;
-		}
-		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
-	}
-
-	private setVdpSubmitBusyStatus(active: boolean): void {
-		const mask = VDP_STATUS_SUBMIT_BUSY;
-		const nextStatus = active ? (this.vdpStatus | mask) : (this.vdpStatus & ~mask);
-		if (nextStatus === this.vdpStatus) {
-			return;
-		}
-		this.vdpStatus = nextStatus >>> 0;
-		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
-	}
-
-	private refreshVdpSubmitBusyStatus(): void {
-		this.setVdpSubmitBusyStatus(this.hasBlockedVdpSubmitPath());
-	}
-
-	private setVdpSubmitRejectedStatus(active: boolean): void {
-		const mask = VDP_STATUS_SUBMIT_REJECTED;
-		const nextStatus = active ? (this.vdpStatus | mask) : (this.vdpStatus & ~mask);
-		if (nextStatus === this.vdpStatus) {
-			return;
-		}
-		this.vdpStatus = nextStatus >>> 0;
-		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
-	}
-
-	// Sticky reject latch: set when a VDP submit attempt is rejected because the submit path
-	// is busy, and cleared only when a later VDP submit attempt is accepted. Stream building
-	// in RAM does not affect it.
-	private noteRejectedVdpSubmitAttempt(): void {
-		this.setVdpSubmitRejectedStatus(true);
-		this.refreshVdpSubmitBusyStatus();
-	}
-
-	private noteAcceptedVdpSubmitAttempt(): void {
-		this.setVdpSubmitRejectedStatus(false);
-		this.refreshVdpSubmitBusyStatus();
+		this.vdp.setVblankStatus(active);
 	}
 
 	private enterVblank(): void {
@@ -1141,7 +914,6 @@ export class Runtime {
 		this.vdp.syncRegisters();
 		this.vdp.presentReadyFrameOnVblankEdge();
 		this.vdp.commitViewSnapshot();
-		this.refreshVdpSubmitBusyStatus();
 	}
 
 	private completeTickIfPending(frameState: FrameState, vblankSequence: number): void {
@@ -1185,10 +957,6 @@ export class Runtime {
 	public currentFrameState: FrameState = null;
 	public drawFrameState: FrameState = null;
 	private clearBackQueuesAfterIrqWake = false;
-	private readonly vdpFifoWordScratch = new Uint8Array(4);
-	private vdpFifoWordByteCount = 0;
-	private readonly vdpFifoStreamWords = new Uint32Array(VDP_STREAM_CAPACITY_WORDS);
-	private vdpFifoStreamWordCount = 0;
 	private haltIrqSignalSequence = 0;
 	private haltIrqWaitArmed = false;
 	private vblankSequence = 0;
@@ -1198,7 +966,6 @@ export class Runtime {
 	private vblankCycles = 0;
 	private vblankStartCycle = 0;
 	private vblankActive = false;
-	private vdpStatus = 0;
 	private vdpWorkUnitsPerSec = 0;
 	private geoWorkUnitsPerSec = 0;
 	private _cpuHz: number;
@@ -1785,11 +1552,10 @@ export class Runtime {
 			() => this.currentSchedulerNowCycles(),
 			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_VDP, deadlineCycles),
 			() => this.cancelDeviceService(DEVICE_SERVICE_VDP),
-		);
-		this.stringHandles = new StringHandleTable(this.memory);
-		this.runtimeStringPool = new StringPool(this.stringHandles);
-		this.resetVdpIngressState();
-		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
+			);
+			this.stringHandles = new StringHandleTable(this.memory);
+			this.runtimeStringPool = new StringPool(this.stringHandles);
+			this.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
 		this.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, 0);
 		this.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_NONE);
@@ -1826,22 +1592,18 @@ export class Runtime {
 		this.memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, VDP_ATLAS_ID_NONE);
 		this.memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, VDP_ATLAS_ID_NONE);
 		this.memory.writeValue(IO_VDP_RD_SURFACE, 0);
-		this.memory.writeValue(IO_VDP_RD_X, 0);
-		this.memory.writeValue(IO_VDP_RD_Y, 0);
-		this.memory.writeValue(IO_VDP_RD_MODE, VDP_RD_MODE_RGBA8888);
-		this.memory.writeValue(IO_VDP_STATUS, 0);
-		this.vdp.initializeRegisters();
+			this.memory.writeValue(IO_VDP_RD_X, 0);
+			this.memory.writeValue(IO_VDP_RD_Y, 0);
+			this.memory.writeValue(IO_VDP_RD_MODE, VDP_RD_MODE_RGBA8888);
+			this.vdp.initializeRegisters();
 		this.audioController = new AudioController(this.memory, $.sndmaster, (mask) => this.irqController.raise(mask));
 		this.audioController.reset();
-		this.dmaController = new DmaController(
-			this.memory,
-			(mask) => this.irqController.raise(mask),
-			(src, byteLength) => this.sealVdpDmaTransfer(src, byteLength),
-			() => this.hasOpenDirectVdpFifoIngress() || this.vdp.canAcceptSubmittedFrame(),
-			() => this.noteAcceptedVdpSubmitAttempt(),
-			() => this.noteRejectedVdpSubmitAttempt(),
-			() => this.currentSchedulerNowCycles(),
-			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_DMA, deadlineCycles),
+			this.dmaController = new DmaController(
+				this.memory,
+				(mask) => this.irqController.raise(mask),
+				this.vdp,
+				() => this.currentSchedulerNowCycles(),
+				(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_DMA, deadlineCycles),
 			() => this.cancelDeviceService(DEVICE_SERVICE_DMA),
 		);
 		this.imgDecController = new ImgDecController(
@@ -2131,11 +1893,6 @@ export class Runtime {
 
 	private installIoMap(): void {
 		this.memory.mapIoWrite(IO_INP_CTRL, this.onInputCtrlWrite.bind(this));
-		this.memory.mapIoWrite(IO_VDP_FIFO, this.onVdpFifoWrite.bind(this));
-		this.memory.mapIoWrite(IO_VDP_FIFO_CTRL, this.onVdpFifoCtrlWrite.bind(this));
-		this.memory.mapIoWrite(IO_PAYLOAD_ALLOC_ADDR, this.onObsoletePayloadIoWrite.bind(this));
-		this.memory.mapIoWrite(IO_PAYLOAD_DATA_ADDR, this.onObsoletePayloadIoWrite.bind(this));
-		this.memory.mapIoWrite(IO_VDP_CMD, this.onVdpCommandWrite.bind(this));
 	}
 
 	private onInputCtrlWrite(): void {
@@ -2143,44 +1900,6 @@ export class Runtime {
 			this.inputSampleArmed = true;
 		}
 		this.inputController.onCtrlWrite();
-	}
-
-	private onVdpFifoWrite(): void {
-		if (this.dmaController.hasPendingVdpSubmit() || (!this.hasOpenDirectVdpFifoIngress() && !this.vdp.canAcceptSubmittedFrame())) {
-			this.noteRejectedVdpSubmitAttempt();
-			return;
-		}
-		this.noteAcceptedVdpSubmitAttempt();
-		this.pushVdpFifoWord(this.memory.readIoU32(IO_VDP_FIFO));
-	}
-
-	private onVdpFifoCtrlWrite(): void {
-		if ((this.memory.readIoU32(IO_VDP_FIFO_CTRL) & VDP_FIFO_CTRL_SEAL) === 0) {
-			return;
-		}
-		if (this.dmaController.hasPendingVdpSubmit()) {
-			this.noteRejectedVdpSubmitAttempt();
-			return;
-		}
-		this.sealVdpFifoTransfer();
-		this.refreshVdpSubmitBusyStatus();
-	}
-
-	private onObsoletePayloadIoWrite(): void {
-		throw vdpFault('payload staging I/O is obsolete. Write payload words directly into the claimed VDP stream packet in RAM.');
-	}
-
-	private onVdpCommandWrite(): void {
-		const command = this.memory.readIoU32(IO_VDP_CMD);
-		if (command === 0) {
-			return;
-		}
-		if (this.hasBlockedVdpSubmitPath()) {
-			this.noteRejectedVdpSubmitAttempt();
-			return;
-		}
-		this.noteAcceptedVdpSubmitAttempt();
-		this.consumeDirectVdpCommand(command);
 	}
 
 	private runUpdatePhase(state: FrameState): void {

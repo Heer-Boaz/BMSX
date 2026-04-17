@@ -1,6 +1,7 @@
 #include "machine/devices/dma/dma_controller.h"
 
 #include "machine/bus/io.h"
+#include "machine/devices/vdp/vdp.h"
 #include "machine/memory/memory_map.h"
 
 #include <algorithm>
@@ -15,23 +16,17 @@ constexpr uint32_t DMA_SERVICE_BATCH_BYTES = 64u;
 }
 
 DmaController::DmaController(
-		Memory& memory,
-		std::function<void(uint32_t)> raiseIrq,
-		std::function<void(uint32_t src, size_t length)> sealVdpFifoDma,
-		std::function<bool()> canAcceptVdpSubmit,
-		std::function<void()> noteAcceptedVdpSubmit,
-		std::function<void()> noteRejectedVdpSubmit,
-		std::function<int64_t()> getNowCycles,
-		std::function<void(int64_t deadlineCycles)> scheduleService,
-		std::function<void()> cancelService
-)
-		: m_memory(memory)
-		, m_raiseIrq(std::move(raiseIrq))
-		, m_sealVdpFifoDma(std::move(sealVdpFifoDma))
-		, m_canAcceptVdpSubmit(std::move(canAcceptVdpSubmit))
-		, m_noteAcceptedVdpSubmit(std::move(noteAcceptedVdpSubmit))
-		, m_noteRejectedVdpSubmit(std::move(noteRejectedVdpSubmit))
-		, m_getNowCycles(std::move(getNowCycles))
+			Memory& memory,
+			std::function<void(uint32_t)> raiseIrq,
+			VDP& vdp,
+			std::function<int64_t()> getNowCycles,
+			std::function<void(int64_t deadlineCycles)> scheduleService,
+			std::function<void()> cancelService
+	)
+			: m_memory(memory)
+			, m_vdp(vdp)
+			, m_raiseIrq(std::move(raiseIrq))
+			, m_getNowCycles(std::move(getNowCycles))
 		, m_scheduleService(std::move(scheduleService))
 		, m_cancelService(std::move(cancelService)) {
 		m_memory.mapIoWrite(IO_DMA_CTRL, this, &DmaController::onCtrlWriteThunk);
@@ -81,7 +76,7 @@ void DmaController::setTiming(int64_t cpuHz, int64_t isoBytesPerSec, int64_t bul
 	m_bulkCarry = 0;
 	m_channels[static_cast<int>(Channel::Iso)].budget = 0;
 	m_channels[static_cast<int>(Channel::Bulk)].budget = 0;
-	maybeScheduleNextService(nowCycles);
+	scheduleNextService(nowCycles);
 }
 
 void DmaController::accrueCycles(int cycles, int64_t nowCycles) {
@@ -90,7 +85,7 @@ void DmaController::accrueCycles(int cycles, int64_t nowCycles) {
 	}
 	accrueChannel(Channel::Iso, m_isoBytesPerSec, m_isoCarry, cycles);
 	accrueChannel(Channel::Bulk, m_bulkBytesPerSec, m_bulkCarry, cycles);
-	maybeScheduleNextService(nowCycles);
+	scheduleNextService(nowCycles);
 }
 
 void DmaController::onService(int64_t nowCycles) {
@@ -108,7 +103,7 @@ void DmaController::onService(int64_t nowCycles) {
 	if (imgWrittenDirty) {
 		m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(static_cast<double>(m_imgWrittenValue)));
 	}
-	maybeScheduleNextService(nowCycles);
+	scheduleNextService(nowCycles);
 }
 
 uint32_t DmaController::pendingBytesForChannel(Channel channel) const {
@@ -143,7 +138,7 @@ void DmaController::enqueueImageCopy(const Memory::ImageWritePlan& plan, std::ve
 	job.fault = nullptr;
 	job.onComplete = std::move(onComplete);
 	m_channels[static_cast<int>(Channel::Bulk)].queue.push_back(std::move(job));
-	maybeScheduleNextService(m_getNowCycles());
+	scheduleNextService(m_getNowCycles());
 }
 
 void DmaController::reset() {
@@ -305,9 +300,9 @@ void DmaController::tryStartIo() {
 	const bool vdpSubmit = dst == IO_VDP_FIFO;
 	const bool strict = (ctrl & DMA_CTRL_STRICT) != 0;
 	m_memory.writeIoValue(IO_DMA_CTRL, valueNumber(static_cast<double>(ctrl & ~DMA_CTRL_START)));
-	if (vdpSubmit && (hasPendingVdpSubmit() || !m_canAcceptVdpSubmit())) {
+	if (vdpSubmit && (hasPendingVdpSubmit() || !m_vdp.canAcceptVdpSubmit())) {
 		finishIoRejected();
-		m_noteRejectedVdpSubmit();
+		m_vdp.rejectSubmitAttempt();
 		return;
 	}
 	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
@@ -333,12 +328,15 @@ void DmaController::tryStartIo() {
 	}
 	const uint32_t status = DMA_STATUS_BUSY | (clipped ? DMA_STATUS_CLIPPED : 0);
 	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>(status)));
-	if (vdpSubmit) {
-		m_noteAcceptedVdpSubmit();
-	}
 	if (transferLen == 0) {
+		if (vdpSubmit) {
+			m_vdp.acceptSubmitAttempt();
+		}
 		finishIoSuccess(clipped);
 		return;
+	}
+	if (vdpSubmit) {
+		m_vdp.beginDmaSubmit();
 	}
 	DmaJob job;
 	job.kind = DmaJob::Kind::Io;
@@ -352,17 +350,20 @@ void DmaController::tryStartIo() {
 	job.error = false;
 	m_ioWrittenValue = 0;
 	m_channels[static_cast<int>(Channel::Bulk)].queue.push_back(std::move(job));
-	maybeScheduleNextService(m_getNowCycles());
+	scheduleNextService(m_getNowCycles());
 }
 
 void DmaController::finishIoJob(DmaJob& job) {
 	if (job.error) {
+		if (job.dst == IO_VDP_FIFO) {
+			m_vdp.endDmaSubmit();
+		}
 		finishIoError(job.clipped);
 		return;
 	}
 	if (job.dst == IO_VDP_FIFO) {
 		try {
-			m_sealVdpFifoDma(job.src, job.written);
+			m_vdp.sealDmaTransfer(job.src, job.written);
 		} catch (...) {
 			finishIoError(job.clipped);
 			return;
@@ -413,7 +414,7 @@ void DmaController::accrueChannel(Channel channel, int64_t bytesPerSec, int64_t&
 	state.budget += static_cast<uint32_t>(granted);
 }
 
-void DmaController::maybeScheduleNextService(int64_t nowCycles) {
+void DmaController::scheduleNextService(int64_t nowCycles) {
 	const bool pendingIso = hasPendingIsoTransfer();
 	const bool pendingBulk = hasPendingBulkTransfer();
 	if (!pendingIso && !pendingBulk) {
