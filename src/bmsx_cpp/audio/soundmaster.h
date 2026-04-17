@@ -62,6 +62,15 @@ struct SoundMasterPlayRequest {
 	std::optional<i32> priority;
 };
 
+struct SoundMasterResolvedPlayRequest {
+	i32 pitchCents = 0;
+	i32 volumeMilliDb = 0;
+	i32 offsetMs = 0;
+	i32 ratePermil = 1000;
+	std::optional<FilterModulationParams> filter;
+	std::optional<i32> priority;
+};
+
 struct ActiveVoiceInfo {
 	VoiceId voiceId = 0;
 	AssetId id;
@@ -135,6 +144,7 @@ public:
 	bool hasAudio(const AssetId& id) const { return m_assets != nullptr && m_assets->getAudio(id) != nullptr; }
 
 	VoiceId play(const AssetId& id, const SoundMasterPlayRequest& request = {});
+	VoiceId playResolved(const AssetId& id, const SoundMasterResolvedPlayRequest& request);
 	void playWithPolicy(AudioType type, const AssetId& id, const SoundMasterPlayRequest& request = {}, std::optional<AudioPlaybackMode> policy = std::nullopt, std::optional<int> maxVoices = std::nullopt);
 	void stop(AudioType type, AudioStopSelector which, VoiceId voiceId = 0, const AssetId& id = {});
 	void stopEffect();
@@ -220,6 +230,7 @@ private:
 	};
 
 	ModulationParams resolvePlayParams(const ModulationInput& input);
+	ModulationParams resolveResolvedPlayParams(const SoundMasterResolvedPlayRequest& request) const;
 	std::optional<ModulationInput> resolveModulationPreset(const AssetId& key) const;
 	ModulationInput parseModulationInput(const BinValue& value) const;
 	ModulationInput parseModulationInput(const Table& table) const;

@@ -23,8 +23,8 @@ function buildRuntimeAemValidationLookup() {
 	});
 }
 
-function reloadAudioRouter(): void {
-	$.evaluate_lua(`rget('audiorouter'):reload()`);
+function reloadAem(): void {
+	$.evaluate_lua(`rget('aem'):reload()`);
 }
 
 export function listAemResourceDescriptors(): ResourceDescriptor[] {
@@ -98,11 +98,11 @@ export function applyAemSourceToRuntime(descriptor: ResourceDescriptor, source: 
 	const previousDoc = $.assets.audioevents[assetId];
 	try {
 		$.assets.audioevents[assetId] = doc as Record<string, unknown>;
-		reloadAudioRouter();
+		reloadAem();
 	} catch (error) {
 		$.assets.audioevents[assetId] = previousDoc;
 		try {
-			reloadAudioRouter();
+			reloadAem();
 		} catch (restoreError) {
 			throw new Error(`${extractErrorMessage(error)}; rollback failed: ${extractErrorMessage(restoreError)}`);
 		}

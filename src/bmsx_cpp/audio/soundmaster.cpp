@@ -117,6 +117,14 @@ VoiceId SoundMaster::play(const AssetId& id, const SoundMasterPlayRequest& reque
 	return startVoice(asset.meta.type, id, asset, params, priority, initialGain);
 }
 
+VoiceId SoundMaster::playResolved(const AssetId& id, const SoundMasterResolvedPlayRequest& request) {
+	const AudioAsset& asset = getAudioOrThrow(id);
+	const ModulationParams params = resolveResolvedPlayParams(request);
+	const i32 priority = request.priority.has_value() ? request.priority.value() : asset.meta.priority;
+	const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
+	return startVoice(asset.meta.type, id, asset, params, priority, initialGain);
+}
+
 void SoundMaster::playWithPolicy(AudioType type, const AssetId& id, const SoundMasterPlayRequest& request, std::optional<AudioPlaybackMode> policy, std::optional<int> maxVoices) {
 	const AudioAsset& asset = getAudioOrThrow(id);
 	SoundMasterPlayRequest resolvedRequest = request;
@@ -946,6 +954,18 @@ ModulationParams SoundMaster::resolvePlayParams(const ModulationInput& input) {
 	params.playbackRate = (input.playbackRate.has_value() ? input.playbackRate.value() : 1.0f) + randomInRange(input.playbackRateRange);
 	if (input.filter.has_value()) {
 		params.filter = input.filter;
+	}
+	return params;
+}
+
+ModulationParams SoundMaster::resolveResolvedPlayParams(const SoundMasterResolvedPlayRequest& request) const {
+	ModulationParams params;
+	params.pitchDelta = static_cast<f32>(request.pitchCents) / 100.0f;
+	params.volumeDelta = static_cast<f32>(request.volumeMilliDb) / 1000.0f;
+	params.offset = static_cast<f32>(request.offsetMs) / 1000.0f;
+	params.playbackRate = static_cast<f32>(request.ratePermil) / 1000.0f;
+	if (request.filter.has_value()) {
+		params.filter = request.filter;
 	}
 	return params;
 }

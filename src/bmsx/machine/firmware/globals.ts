@@ -42,6 +42,7 @@ import {
 	APU_CHANNEL_SFX,
 	APU_CHANNEL_UI,
 	APU_CMD_PLAY,
+	APU_CMD_QUEUE_PLAY,
 	APU_CMD_STOP_CHANNEL,
 	APU_EVENT_NONE,
 	APU_EVENT_VOICE_ENDED,
@@ -55,8 +56,6 @@ import {
 	APU_FILTER_NOTCH,
 	APU_FILTER_PEAKING,
 	APU_PRIORITY_AUTO,
-	APU_SYNC_IMMEDIATE,
-	APU_SYNC_LOOP,
 	DMA_CTRL_START,
 	DMA_CTRL_STRICT,
 	DMA_STATUS_BUSY,
@@ -135,7 +134,7 @@ import {
 	IO_APU_START_AT_LOOP,
 	IO_APU_START_FRESH,
 	IO_APU_STATUS,
-	IO_APU_SYNC,
+	IO_APU_SYNC_LOOP,
 	IO_APU_VOLUME_MILLIDB,
 	IO_CMD_VDP_BLIT,
 	IO_CMD_VDP_CLEAR,
@@ -1290,7 +1289,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_apu_filter_gain_millidb', IO_APU_FILTER_GAIN_MILLIDB);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_fade_ms', IO_APU_FADE_MS);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_crossfade_ms', IO_APU_CROSSFADE_MS);
-	luaPipeline.registerGlobal(runtime, 'sys_apu_sync', IO_APU_SYNC);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_sync_loop', IO_APU_SYNC_LOOP);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_start_at_loop', IO_APU_START_AT_LOOP);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_start_fresh', IO_APU_START_FRESH);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_cmd', IO_APU_CMD);
@@ -1302,12 +1301,11 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_apu_event_seq', IO_APU_EVENT_SEQ);
 	luaPipeline.registerGlobal(runtime, 'apu_cmd_play', APU_CMD_PLAY);
 	luaPipeline.registerGlobal(runtime, 'apu_cmd_stop_channel', APU_CMD_STOP_CHANNEL);
+	luaPipeline.registerGlobal(runtime, 'apu_cmd_queue_play', APU_CMD_QUEUE_PLAY);
 	luaPipeline.registerGlobal(runtime, 'apu_channel_sfx', APU_CHANNEL_SFX);
 	luaPipeline.registerGlobal(runtime, 'apu_channel_music', APU_CHANNEL_MUSIC);
 	luaPipeline.registerGlobal(runtime, 'apu_channel_ui', APU_CHANNEL_UI);
 	luaPipeline.registerGlobal(runtime, 'apu_priority_auto', APU_PRIORITY_AUTO);
-	luaPipeline.registerGlobal(runtime, 'apu_sync_immediate', APU_SYNC_IMMEDIATE);
-	luaPipeline.registerGlobal(runtime, 'apu_sync_loop', APU_SYNC_LOOP);
 	luaPipeline.registerGlobal(runtime, 'apu_filter_none', APU_FILTER_NONE);
 	luaPipeline.registerGlobal(runtime, 'apu_filter_lowpass', APU_FILTER_LOWPASS);
 	luaPipeline.registerGlobal(runtime, 'apu_filter_highpass', APU_FILTER_HIGHPASS);

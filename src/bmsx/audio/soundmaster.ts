@@ -13,6 +13,15 @@ export interface SoundMasterPlayRequest {
 	priority?: number;
 }
 
+export interface SoundMasterResolvedPlayRequest {
+	pitchCents: number;
+	volumeMilliDb: number;
+	offsetMs: number;
+	ratePermil: number;
+	filter: AudioFilterParams | null;
+	priority?: number;
+}
+
 export interface ActiveVoiceInfo {
 	voiceId: VoiceId;
 	id: asset_id;
@@ -511,6 +520,19 @@ export class SoundMaster {
 		return params;
 	}
 
+	private resolveResolvedPlayParams(request: SoundMasterResolvedPlayRequest): ModulationParams {
+		const params: ModulationParams = {
+			pitchDelta: request.pitchCents / 100,
+			volumeDelta: request.volumeMilliDb / 1000,
+			offset: request.offsetMs / 1000,
+			playbackRate: request.ratePermil / 1000,
+		};
+		if (request.filter !== null) {
+			params.filter = request.filter;
+		}
+		return params;
+	}
+
 	private resolveModulationPreset(key: asset_id): RandomModulationParams | ModulationParams {
 		if (key === undefined || key === null) return undefined;
 		if (this.modulationPresetCache.has(key)) {
@@ -594,6 +616,25 @@ export class SoundMaster {
 				}
 			}
 			const params = this.resolvePlayParams(sourceParams);
+			const meta = this.getAudioMetaOrThrow(id);
+			const typeCandidate = meta.audiotype;
+			if (!this.isAudioType(typeCandidate)) {
+				throw new Error(`[SoundMaster] Audio asset '${String(id)}' has unknown audio type '${String(typeCandidate)}'.`);
+			}
+			const priority = request.priority !== undefined ? request.priority : (meta.priority !== undefined ? meta.priority : 0);
+			const clip = await this.clipFor(id);
+			const playback = this.createVoiceParams(meta, params, clip);
+			const voiceId = this.startVoice(typeCandidate, id, meta, clip, params, priority, playback, null);
+			return voiceId;
+		} catch (error) {
+			console.error(error);
+			return null;
+		}
+	}
+
+	public async playResolved(id: asset_id, request: SoundMasterResolvedPlayRequest): Promise<VoiceId> {
+		try {
+			const params = this.resolveResolvedPlayParams(request);
 			const meta = this.getAudioMetaOrThrow(id);
 			const typeCandidate = meta.audiotype;
 			if (!this.isAudioType(typeCandidate)) {

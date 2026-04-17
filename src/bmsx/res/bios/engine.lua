@@ -43,7 +43,7 @@ local div_toward_zero<const> = require('div_toward_zero')
 local rol8<const> = require('rol8')
 local swap_remove<const> = require('swap_remove')
 local timeline<const> = require('timeline')
-local audio_router<const> = require('audio_router')
+local aem<const> = require('aem')
 local progression<const> = require('progression')
 
 local world_instance<const> = world_module.instance
@@ -766,9 +766,9 @@ function engine.trigger_effect(object_id, effect_id, options)
 end
 
 engine.on_irq(irq_apu, function()
-	audio_router.on_apu_irq()
+	aem.on_apu_irq()
 end)
-audio_router.reload()
+aem.reload()
 progression.init()
 
 -- Register BIOS singletons as persistent registry entries.
@@ -784,7 +784,7 @@ end
 register_singleton(ecs_pipeline.defaultecspipelineregistry, 'ecspipeline', 'ecspipeline')
 register_singleton(fsmlibrary, 'fsmlibrary', 'fsmlibrary')
 register_singleton(progression, 'progression', 'progression')
-register_singleton(audio_router, 'audiorouter', 'audiorouter')
+register_singleton(aem, 'aem', 'aem')
 register_singleton(action_effects, 'actioneffects', 'actioneffects')
 
 if not world_instance._ecs_pipeline_built then

@@ -1525,7 +1525,7 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_apu_filter_gain_millidb", valueNumber(static_cast<double>(IO_APU_FILTER_GAIN_MILLIDB)));
 	setGlobal("sys_apu_fade_ms", valueNumber(static_cast<double>(IO_APU_FADE_MS)));
 	setGlobal("sys_apu_crossfade_ms", valueNumber(static_cast<double>(IO_APU_CROSSFADE_MS)));
-	setGlobal("sys_apu_sync", valueNumber(static_cast<double>(IO_APU_SYNC)));
+	setGlobal("sys_apu_sync_loop", valueNumber(static_cast<double>(IO_APU_SYNC_LOOP)));
 	setGlobal("sys_apu_start_at_loop", valueNumber(static_cast<double>(IO_APU_START_AT_LOOP)));
 	setGlobal("sys_apu_start_fresh", valueNumber(static_cast<double>(IO_APU_START_FRESH)));
 	setGlobal("sys_apu_cmd", valueNumber(static_cast<double>(IO_APU_CMD)));
@@ -1573,12 +1573,11 @@ void Runtime::setupBuiltins() {
 	setGlobal("irq_apu", valueNumber(static_cast<double>(IRQ_APU)));
 	setGlobal("apu_cmd_play", valueNumber(static_cast<double>(APU_CMD_PLAY)));
 	setGlobal("apu_cmd_stop_channel", valueNumber(static_cast<double>(APU_CMD_STOP_CHANNEL)));
+	setGlobal("apu_cmd_queue_play", valueNumber(static_cast<double>(APU_CMD_QUEUE_PLAY)));
 	setGlobal("apu_channel_sfx", valueNumber(static_cast<double>(APU_CHANNEL_SFX)));
 	setGlobal("apu_channel_music", valueNumber(static_cast<double>(APU_CHANNEL_MUSIC)));
 	setGlobal("apu_channel_ui", valueNumber(static_cast<double>(APU_CHANNEL_UI)));
 	setGlobal("apu_priority_auto", valueNumber(static_cast<double>(APU_PRIORITY_AUTO)));
-	setGlobal("apu_sync_immediate", valueNumber(static_cast<double>(APU_SYNC_IMMEDIATE)));
-	setGlobal("apu_sync_loop", valueNumber(static_cast<double>(APU_SYNC_LOOP)));
 	setGlobal("apu_filter_none", valueNumber(static_cast<double>(APU_FILTER_NONE)));
 	setGlobal("apu_filter_lowpass", valueNumber(static_cast<double>(APU_FILTER_LOWPASS)));
 	setGlobal("apu_filter_highpass", valueNumber(static_cast<double>(APU_FILTER_HIGHPASS)));
