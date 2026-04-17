@@ -1,24 +1,24 @@
-import { $ } from '../../core/engine_core';
+import { $ } from '../../core/engine';
 
-import particleFS from '../3d/shaders/particle.frag.glsl';
-import particleVS from '../3d/shaders/particle.vert.glsl';
-import type { PassEncoder, RenderContext, RenderPassStateRegistry } from '../backend/pipeline_interfaces';
-import { RenderPassLibrary } from '../backend/renderpasslib';
-import { ParticlePipelineState } from '../backend/pipeline_interfaces';
-import { TEXTURE_UNIT_ATLAS_ENGINE, TEXTURE_UNIT_ATLAS_PRIMARY, TEXTURE_UNIT_ATLAS_SECONDARY } from '../backend/webgl/webgl.constants';
-import { WebGLBackend } from '../backend/webgl/webgl_backend';
-import type { Camera } from './camera3d';
-import { M4 } from './math3d';
+import particleFS from './shaders/particle.frag.glsl';
+import particleVS from './shaders/particle.vert.glsl';
+import type { PassEncoder, RenderContext, RenderPassStateRegistry } from '../backend/interfaces';
+import { RenderPassLibrary } from '../backend/pass_library';
+import { ParticlePipelineState } from '../backend/interfaces';
+import { TEXTURE_UNIT_ATLAS_ENGINE, TEXTURE_UNIT_ATLAS_PRIMARY, TEXTURE_UNIT_ATLAS_SECONDARY } from '../backend/webgl/constants';
+import { WebGLBackend } from '../backend/webgl/backend';
+import type { Camera } from './camera';
+import { M4 } from './math';
 import {
 	beginParticleQueue,
 	forEachParticleQueue,
 	particleAmbientFactorDefault,
 	particleAmbientModeDefault,
 	particleQueueBackSize
-} from '../shared/render_queues';
-import type { ParticleRenderSubmission } from '../shared/render_types';
+} from '../shared/queues';
+import type { ParticleRenderSubmission } from '../shared/submissions';
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
-import { ENGINE_ATLAS_INDEX, ENGINE_ATLAS_TEXTURE_KEY } from '../../rompack/rompack';
+import { ENGINE_ATLAS_INDEX, ENGINE_ATLAS_TEXTURE_KEY } from '../../rompack/format';
 import { resolveActiveCamera3D } from '../shared/hardware_camera';
 
 const camRight = new Float32Array(3);

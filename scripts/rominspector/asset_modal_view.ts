@@ -1,16 +1,16 @@
 import { PNG } from 'pngjs';
-import type { GLTFModel, ImgMeta, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
+import type { GLTFModel, ImgMeta, RomAsset, RomManifest } from '../../src/bmsx/rompack/format';
 import { decodeBinary } from '../../src/bmsx/common/serializer/binencoder';
-import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../../src/bmsx/rompack/romloader';
+import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../../src/bmsx/rompack/loader';
 import { decodeProgramSymbolsAsset, PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/machine/program/asset';
-import { generateAtlasName } from '../rompacker/atlasbuilder';
+import { generateAtlasName } from '../formater/atlasbuilder';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, renderBufferBar } from './asciiart';
 import { decodeAudioPreviewToPcm } from './audio_preview';
 import {
 	disassembleProgramAsset,
 	loadProgramFromAssets,
 	ROM_MANIFEST_ASSET_ID,
-} from './inspector_shared';
+} from './shared';
 
 const PER_PIXEL_RENDERING_THRESHOLD = 64;
 const HEX_BYTES_PER_LINE = 16;

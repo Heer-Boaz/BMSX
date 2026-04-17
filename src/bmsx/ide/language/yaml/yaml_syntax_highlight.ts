@@ -1,5 +1,5 @@
 import * as constants from '../../common/constants';
-import type { HighlightLine } from '../../common/types';
+import type { HighlightLine } from '../../common/models';
 import { DEFAULT_YAML_VALUE_KEYWORDS, parseYamlInlineTokens } from './yaml_syntax_parser';
 
 const TAB_EXPANSION = ' '.repeat(constants.TAB_SPACES);

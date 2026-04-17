@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { HZ_SCALE } from '../../src/bmsx/platform/platform';
-import { resolveTotalScanlines, resolveVblankCycles } from '../../src/bmsx/machine/runtime/runtime_timing';
+import { resolveTotalScanlines, resolveVblankCycles } from '../../src/bmsx/machine/runtime/timing';
 
 test('VBLANK cycles use PAL-like scanlines for 50 Hz carts', () => {
 	assert.equal(resolveTotalScanlines(50 * HZ_SCALE), 313);

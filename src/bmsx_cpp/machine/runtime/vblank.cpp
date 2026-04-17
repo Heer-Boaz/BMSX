@@ -1,6 +1,6 @@
 #include "machine/runtime/vblank.h"
 
-#include "core/engine_core.h"
+#include "core/engine.h"
 #include "machine/bus/io.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/cpu_executor.h"

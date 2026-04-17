@@ -7,7 +7,7 @@
 #ifndef BMSX_GLYPHS_H
 #define BMSX_GLYPHS_H
 
-#include "render_types.h"
+#include "submissions.h"
 #include <string>
 #include <vector>
 

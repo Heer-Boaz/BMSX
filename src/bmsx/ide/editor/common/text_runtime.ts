@@ -1,19 +1,19 @@
-import { startSearchJob } from '../contrib/find/editor_search';
-import { findCodeTabContext, getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../../workbench/ui/code_tab_contexts';
+import { startSearchJob } from '../contrib/find/search';
+import { findCodeTabContext, getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../../workbench/ui/code_tab/contexts';
 import { clearForwardNavigationHistory } from '../navigation/navigation_history';
 import { handlePostEditMutation, getSelectionRange } from '../editing/text_editing_and_selection';
-import { markDiagnosticsDirty } from '../contrib/diagnostics/diagnostics';
-import { requestSemanticRefresh, clearReferenceHighlights } from '../contrib/intellisense/intellisense';
+import { markDiagnosticsDirty } from '../contrib/diagnostics/analysis';
+import { requestSemanticRefresh, clearReferenceHighlights } from '../contrib/intellisense/engine';
 import { getTextSnapshot } from '../text/source_text';
-import * as runtimeLuaPipeline from '../../runtime/runtime_lua_pipeline';
+import * as luaPipeline from '../../runtime/lua_pipeline';
 import { Runtime } from '../../../machine/runtime/runtime';
-import { buildDirtyFilePath } from '../../workbench/common/workspace_io';
-import { getWorkspaceCachedSource } from '../../workspace/workspace_cache';
-import { editorDocumentState } from '../editing/editor_document_state';
-import { editorViewState } from '../ui/editor_view_state';
-import { editorRuntimeState } from './editor_runtime_state';
-import { applyCaseOutsideStrings } from '../../common/text_utils';
-import { editorSearchState } from '../contrib/find/find_widget_state';
+import { buildDirtyFilePath } from '../../workbench/workspace/io';
+import { getWorkspaceCachedSource } from '../../workspace/cache';
+import { editorDocumentState } from '../editing/document_state';
+import { editorViewState } from '../ui/view_state';
+import { editorRuntimeState } from './runtime_state';
+import { applyCaseOutsideStrings } from '../../common/text';
+import { editorSearchState } from '../contrib/find/widget_state';
 
 export function normalizeCaseOutsideStrings(text: string): string {
 	if (!editorRuntimeState.caseInsensitive || editorRuntimeState.canonicalization === 'none') {
@@ -69,7 +69,7 @@ export function markTextMutated(): void {
 }
 
 export function getSourceForChunk(path: string): string {
-	const asset = runtimeLuaPipeline.resolveLuaSourceRecord(Runtime.instance, path);
+	const asset = luaPipeline.resolveLuaSourceRecord(Runtime.instance, path);
 	const context = findCodeTabContext(path);
 	if (context) {
 		if (context.id === getActiveCodeTabContext().id) {

@@ -1,5 +1,5 @@
-import type { EditorFont } from '../ui/view/editor_font';
-import { applyCaseOutsideStrings, expandTabs as expandTabsExternal } from '../../common/text_utils';
+import type { EditorFont } from '../ui/view/font';
+import { applyCaseOutsideStrings, expandTabs as expandTabsExternal } from '../../common/text';
 import * as constants from '../../common/constants';
 import { api } from '../ui/view/overlay_api';
 import { splitText } from '../text/source_text';

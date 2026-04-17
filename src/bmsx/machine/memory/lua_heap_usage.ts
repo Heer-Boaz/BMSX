@@ -1,4 +1,4 @@
-import { RAM_SIZE } from './memory_map';
+import { RAM_SIZE } from './map';
 
 type LuaHeapUsageHooks = {
 	getBaseRamUsedBytes(): number;

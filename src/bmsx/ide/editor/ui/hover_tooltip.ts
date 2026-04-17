@@ -2,13 +2,13 @@ import { clamp } from '../../../common/clamp';
 import { api } from './view/overlay_api';
 import * as constants from '../../common/constants';
 import { drawEditorText } from '../render/text_renderer';
-import type { CodeHoverTooltip, PointerSnapshot } from '../../common/types';
+import type { CodeHoverTooltip, PointerSnapshot } from '../../common/models';
 import { ensureVisualLines, measureText, positionToVisualIndex, visibleColumnCount, visibleRowCount, visualIndexToSegment } from '../common/text_layout';
-import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from './editor_view';
-import { point_in_rect } from '../../../common/rect_operations';
-import { intellisenseUiState } from '../contrib/intellisense/intellisense_ui_state';
-import { editorDocumentState } from '../editing/editor_document_state';
-import { editorViewState } from './editor_view_state';
+import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from './view';
+import { point_in_rect } from '../../../common/rect';
+import { intellisenseUiState } from '../contrib/intellisense/ui_state';
+import { editorDocumentState } from '../editing/document_state';
+import { editorViewState } from './view_state';
 
 export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: number): void {
 	const tooltip = intellisenseUiState.hoverTooltip;

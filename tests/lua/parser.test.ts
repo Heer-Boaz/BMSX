@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { LuaLexer } from '../../src/bmsx/lua/lexer';
-import { LuaParser } from '../../src/bmsx/lua/parser';
+import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
+import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
 import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator, LuaUnaryOperator } from '../../src/bmsx/lua/ast';
 import type {
 	LuaChunk,

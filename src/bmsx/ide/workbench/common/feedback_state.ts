@@ -1,5 +1,5 @@
 import * as constants from '../../common/constants';
-import type { MessageState } from '../../common/types';
+import type { MessageState } from '../../common/models';
 
 type EditorFeedbackState = {
 	message: MessageState;

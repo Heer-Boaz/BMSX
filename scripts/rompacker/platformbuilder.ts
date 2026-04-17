@@ -4,10 +4,10 @@ import { join, extname } from 'node:path';
 
 import { runPlatformBuild } from './platformbuild';
 import { getNodeLauncherFilename } from './rombuilder';
-import type { RomPackerTarget } from './rompacker.rompack';
-import type { CanonicalizationType } from '../../src/bmsx/rompack/rompack';
+import type { RomPackerTarget } from './formater.rompack';
+import type { CanonicalizationType } from '../../src/bmsx/rompack/format';
 
-import { createCliUi, getParamOrEnv, parseArgsVector } from './cli_shared';
+import { createCliUi, getParamOrEnv, parseArgsVector } from './cli';
 
 const KNOWN_FLAGS = new Set<string>([
 	'--debug',

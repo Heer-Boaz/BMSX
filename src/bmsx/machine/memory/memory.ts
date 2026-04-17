@@ -24,7 +24,7 @@ import {
 	VRAM_SECONDARY_ATLAS_SIZE,
 	VRAM_STAGING_BASE,
 	VRAM_STAGING_SIZE,
-} from './memory_map';
+} from './map';
 import {
 	IO_APU_EVENT_CHANNEL,
 	IO_APU_EVENT_HANDLE,
@@ -49,7 +49,7 @@ import {
 	IO_VDP_STATUS,
 } from '../bus/io';
 import { enforceLuaHeapBudget } from './lua_heap_usage';
-import { hashAssetId, tokenKey } from '../../rompack/asset_tokens';
+import { hashAssetId, tokenKey } from '../../rompack/tokens';
 import { ScratchBatch } from '../../common/scratchbatch';
 import { formatNumberAsHex } from '../../common/byte_hex_string';
 

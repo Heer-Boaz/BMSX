@@ -21,8 +21,8 @@
 },
 {
 	"directory": "/src",
-	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/core/types.cpp.o -c /src/src/bmsx_cpp/core/types.cpp",
-	"file": "/src/src/bmsx_cpp/core/types.cpp"
+	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/core/primitives.cpp.o -c /src/src/bmsx_cpp/core/primitives.cpp",
+	"file": "/src/src/bmsx_cpp/core/primitives.cpp"
 },
 {
 	"directory": "/src",
@@ -46,8 +46,8 @@
 },
 {
 	"directory": "/src",
-	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/core/rompack.cpp.o -c /src/src/bmsx_cpp/core/rompack.cpp",
-	"file": "/src/src/bmsx_cpp/core/rompack.cpp"
+	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/core/format.cpp.o -c /src/src/bmsx_cpp/core/format.cpp",
+	"file": "/src/src/bmsx_cpp/core/format.cpp"
 },
 {
 	"directory": "/src",
@@ -71,33 +71,33 @@
 },
 {
 	"directory": "/src",
-	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/input/inputstatemanager.cpp.o -c /src/src/bmsx_cpp/input/inputstatemanager.cpp",
-	"file": "/src/src/bmsx_cpp/input/inputstatemanager.cpp"
+	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/input/managerstatemanager.cpp.o -c /src/src/bmsx_cpp/input/managerstatemanager.cpp",
+	"file": "/src/src/bmsx_cpp/input/managerstatemanager.cpp"
 },
 {
 	"directory": "/src",
-	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/input/playerinput.cpp.o -c /src/src/bmsx_cpp/input/playerinput.cpp",
-	"file": "/src/src/bmsx_cpp/input/playerinput.cpp"
+	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/input/player.cpp.o -c /src/src/bmsx_cpp/input/player.cpp",
+	"file": "/src/src/bmsx_cpp/input/player.cpp"
 },
 {
 	"directory": "/src",
-	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/input/actionparser.cpp.o -c /src/src/bmsx_cpp/input/actionparser.cpp",
-	"file": "/src/src/bmsx_cpp/input/actionparser.cpp"
+	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/input/action_parser.cpp.o -c /src/src/bmsx_cpp/input/action_parser.cpp",
+	"file": "/src/src/bmsx_cpp/input/action_parser.cpp"
 },
 {
 	"directory": "/src",
-	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/input/input.cpp.o -c /src/src/bmsx_cpp/input/input.cpp",
-	"file": "/src/src/bmsx_cpp/input/input.cpp"
+	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/input/manager.cpp.o -c /src/src/bmsx_cpp/input/manager.cpp",
+	"file": "/src/src/bmsx_cpp/input/manager.cpp"
 },
 {
 	"directory": "/src",
-	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/input/keyboardinput.cpp.o -c /src/src/bmsx_cpp/input/keyboardinput.cpp",
-	"file": "/src/src/bmsx_cpp/input/keyboardinput.cpp"
+	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/input/keyboard.cpp.o -c /src/src/bmsx_cpp/input/keyboard.cpp",
+	"file": "/src/src/bmsx_cpp/input/keyboard.cpp"
 },
 {
 	"directory": "/src",
-	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/input/gamepadinput.cpp.o -c /src/src/bmsx_cpp/input/gamepadinput.cpp",
-	"file": "/src/src/bmsx_cpp/input/gamepadinput.cpp"
+	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/input/gamepad.cpp.o -c /src/src/bmsx_cpp/input/gamepad.cpp",
+	"file": "/src/src/bmsx_cpp/input/gamepad.cpp"
 },
 {
 	"directory": "/src",
@@ -111,8 +111,8 @@
 },
 {
 	"directory": "/src",
-	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/render/render_queues.cpp.o -c /src/src/bmsx_cpp/render/render_queues.cpp",
-	"file": "/src/src/bmsx_cpp/render/render_queues.cpp"
+	"command": "/usr/bin/arm-linux-gnueabihf-g++ --sysroot=/src/.snesmini/sysroot -DBMSX_ENABLE_GLES2=1 -DBMSX_ENABLE_ZLIB=0 -I/src/src/bmsx_cpp -I/src/src/bmsx_cpp/.. -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation -isystem /usr/include -g -fPIC -O3 -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/bmsx_core.dir/render/queues.cpp.o -c /src/src/bmsx_cpp/render/queues.cpp",
+	"file": "/src/src/bmsx_cpp/render/queues.cpp"
 },
 {
 	"directory": "/src",

@@ -1,10 +1,10 @@
 #include "machine/runtime/frame_loop.h"
-#include "core/engine_core.h"
-#include "input/input.h"
+#include "core/engine.h"
+#include "input/manager.h"
 #include "machine/runtime/cart_boot.h"
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/runtime.h"
-#include "render/shared/render_queues.h"
+#include "render/shared/queues.h"
 #include <algorithm>
 
 namespace bmsx {
@@ -197,10 +197,10 @@ void FrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platform
 		const auto tickStart = std::chrono::steady_clock::now();
 		runtime.screen.beginHostFrame();
 		engine.m_last_tick_timing.inputMs = 0.0;
-		engine.m_last_tick_timing.runtimeIdeInputMs = 0.0;
+		engine.m_last_tick_timing.workbenchModeInputMs = 0.0;
 		engine.m_last_tick_timing.runtimeTerminalInputMs = 0.0;
 		engine.m_last_tick_timing.runtimeUpdateMs = 0.0;
-		engine.m_last_tick_timing.runtimeIdeMs = 0.0;
+		engine.m_last_tick_timing.workbenchModeMs = 0.0;
 		engine.m_last_tick_timing.runtimeTerminalMs = 0.0;
 		engine.m_last_tick_timing.microtaskMs = 0.0;
 
@@ -223,7 +223,7 @@ void FrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platform
 			auto ideInputStart = std::chrono::steady_clock::now();
 			runtime.tickIdeInput();
 			auto ideInputEnd = std::chrono::steady_clock::now();
-			engine.m_last_tick_timing.runtimeIdeInputMs = to_ms(ideInputEnd - ideInputStart);
+			engine.m_last_tick_timing.workbenchModeInputMs = to_ms(ideInputEnd - ideInputStart);
 
 			auto terminalInputStart = std::chrono::steady_clock::now();
 			runtime.tickTerminalInput();
@@ -241,7 +241,7 @@ void FrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platform
 			auto ideStart = std::chrono::steady_clock::now();
 			runtime.tickIDE();
 			auto ideEnd = std::chrono::steady_clock::now();
-			engine.m_last_tick_timing.runtimeIdeMs = to_ms(ideEnd - ideStart);
+			engine.m_last_tick_timing.workbenchModeMs = to_ms(ideEnd - ideStart);
 
 			auto terminalStart = std::chrono::steady_clock::now();
 			runtime.tickTerminalMode();

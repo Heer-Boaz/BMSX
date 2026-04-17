@@ -1,15 +1,15 @@
-import { point_in_rect } from '../../../../common/rect_operations';
+import { point_in_rect } from '../../../../common/rect';
 import * as constants from '../../../common/constants';
 import { measureText } from '../../../editor/common/text_layout';
 import { drawEditorText } from '../../../editor/render/text_renderer';
-import { performEditorAction } from '../../../editor/input/commands/editor_actions';
+import { performEditorAction } from '../../../editor/input/commands/actions';
 import { consumeIdeKey, isKeyJustPressed } from '../../../editor/input/keyboard/key_input';
 import { centerDialogBounds } from '../../../editor/render/dialog_layout';
 import { api } from '../../../editor/ui/view/overlay_api';
-import { editorViewState } from '../../../editor/ui/editor_view_state';
-import type { ActionPromptAction, ActionPromptLayout, ActionPromptState, PointerSnapshot } from '../../../common/types';
-import { save } from '../../ui/code_tab_io';
-import { editorDocumentState } from '../../../editor/editing/editor_document_state';
+import { editorViewState } from '../../../editor/ui/view_state';
+import type { ActionPromptAction, ActionPromptLayout, ActionPromptState, PointerSnapshot } from '../../../common/models';
+import { save } from '../../ui/code_tab/io';
+import { editorDocumentState } from '../../../editor/editing/document_state';
 
 type ActionPromptUiState = {
 	prompt: ActionPromptState | null;

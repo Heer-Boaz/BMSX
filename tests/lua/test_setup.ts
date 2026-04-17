@@ -33,7 +33,7 @@ const resolveFilename = (Module as any)._resolveFilename;
 const registryModulePath = path.resolve(__dirname, '../../src/bmsx/core/registry.ts');
 const fsmlibraryModulePath = path.resolve(__dirname, '../../src/bmsx/fsm/fsmlibrary.ts');
 const stateModulePath = path.resolve(__dirname, '../../src/bmsx/fsm/state.ts');
-const gameModulePath = path.resolve(__dirname, '../../src/bmsx/core/game.ts');
+const gameModulePath = path.resolve(__dirname, '../../src/bmsx/core/engine.ts');
 const worldModulePath = path.resolve(__dirname, '../../src/bmsx/core/world.ts');
 const spaceModulePath = path.resolve(__dirname, '../../src/bmsx/core/space.ts');
 

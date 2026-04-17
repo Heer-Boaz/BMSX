@@ -1,6 +1,6 @@
-import { $ } from '../core/engine_core';
+import { $ } from '../core/engine';
 import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, VoiceEndedEvent, AudioFilterParams, RngService, SubscriptionHandle, createSubscriptionHandle } from '../platform';
-import { asset_id, AudioMeta, AudioType, AudioTypes, CartridgeLayerId, DEFAULT_MACHINE_MAX_VOICES, id2res, RomAsset } from '../rompack/rompack';
+import { asset_id, AudioMeta, AudioType, AudioTypes, CartridgeLayerId, DEFAULT_MACHINE_MAX_VOICES, id2res, RomAsset } from '../rompack/format';
 import { Runtime } from '../machine/runtime/runtime';
 import { clamp01 } from '../common/clamp';
 

@@ -1,14 +1,14 @@
-import { resourcePanel } from '../../contrib/resources/resource_panel_controller';
+import { resourcePanel } from '../../contrib/resources/panel/controller';
 import { cycleTab } from '../../ui/tabs';
-import { isCodeTabActive } from '../../ui/code_tab_contexts';
+import { isCodeTabActive } from '../../ui/code_tab/contexts';
 import { selectAllSingleCursor } from '../../../editor/editing/cursor_state';
 import { revealCursor, updateDesiredColumn } from '../../../editor/ui/caret';
-import { resetBlink } from '../../../editor/render/render_caret';
-import { executeEditorCommand } from '../../../editor/input/commands/editor_commands';
+import { resetBlink } from '../../../editor/render/caret';
+import { executeEditorCommand } from '../../../editor/input/commands/dispatcher';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../editor/input/keyboard/key_input';
 import { isInlineWidgetFocused } from '../../../editor/contrib/quick_input/inline_widget';
-import { runEditorKeyHandlers, type EditorKeyHandler } from '../../../editor/input/keyboard/editor_binding_utils';
-import { editorDocumentState } from '../../../editor/editing/editor_document_state';
+import { runEditorKeyHandlers, type EditorKeyHandler } from '../../../editor/input/keyboard/bindings';
+import { editorDocumentState } from '../../../editor/editing/document_state';
 
 function handleCreateResourceBinding(): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || !isKeyJustPressed('KeyN')) {

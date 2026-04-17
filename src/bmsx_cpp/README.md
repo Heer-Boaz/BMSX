@@ -15,12 +15,12 @@ bmsx_cpp/
 ├── subscription.cpp
 ├── audio/
 ├── core/
-│   ├── types.h                 # Core type definitions (Vec2, Vec3, Color, Rect, etc.)
-│   ├── types.cpp
+│   ├── primitives.h                 # Core type definitions (Vec2, Vec3, Color, Rect, etc.)
+│   ├── primitives.cpp
 │   ├── registry.h              # Global object registry (mirrors TS Registry)
 │   ├── registry.cpp
-│   ├── engine_core.h           # System bootstrap and runtime ownership
-│   ├── engine_core.cpp
+│   ├── engine.h           # System bootstrap and runtime ownership
+│   ├── engine.cpp
 │   ├── font.h                  # Font rendering helpers
 │   ├── font.cpp
 │   ├── taskgate.h              # Async gate (mirrors TS TaskGate)
@@ -31,8 +31,8 @@ bmsx_cpp/
 ├── render/
 │   ├── gameview.h              # GameView abstraction
 │   ├── gameview.cpp
-│   ├── texturemanager.h        # Texture manager
-│   ├── texturemanager.cpp
+│   ├── texture_manager.h        # Texture manager
+│   ├── texture_manager.cpp
 │   ├── backend/
 │   │   ├── backend.h
 │   │   ├── backend.cpp
@@ -40,26 +40,26 @@ bmsx_cpp/
 │   │   ├── frame_uniforms.cpp
 │   │   ├── gles2_backend.h
 │   │   ├── gles2_backend.cpp
-│   │   ├── renderpass_builder.h
-│   │   ├── renderpasslib.h
-│   │   └── renderpasslib.cpp
+│   │   ├── pass_builder.h
+│   │   ├── pass_library.h
+│   │   └── pass_library.cpp
 │   ├── graph/
-│   │   ├── rendergraph.h
-│   │   └── rendergraph.cpp
+│   │   ├── graph.h
+│   │   └── graph.cpp
 │   ├── post/
 │   │   ├── crt_pipeline_gles2.h
 │   │   └── crt_pipeline_gles2.cpp
 │   └── shared/
 │       ├── glyphs.h
 │       ├── glyphs.cpp
-│       ├── render_queues.h
-│       ├── render_queues.cpp
-│       └── render_types.h
+│       ├── queues.h
+│       ├── queues.cpp
+│       └── submissions.h
 ├── rompack/
-│   ├── rompack.h               # ROM pack utilities
-│   ├── rompack.cpp
-│   ├── runtime_assets.h        # RuntimeAssets (img, audio, model, data)
-│   └── runtime_assets.cpp
+│   ├── format.h               # ROM pack utilities
+│   ├── format.cpp
+│   ├── assets.h        # RuntimeAssets (img, audio, model, data)
+│   └── assets.cpp
 ├── common/
 │   ├── serializer/
 │   │   ├── binencoder.h
@@ -90,9 +90,9 @@ bmsx_cpp/
 └── platform/
     └── libretro/
         ├── libretro.h          # Libretro API header
-        ├── libretro_entry.cpp  # Libretro callback implementations
-        ├── libretro_platform.h # Platform implementation for libretro
-        └── libretro_platform.cpp
+        ├── entry.cpp  # Libretro callback implementations
+        ├── platform.h # Platform implementation for libretro
+        └── platform.cpp
 ```
 
 ## Architecture (Machine-first)
@@ -156,7 +156,7 @@ The C++ implementation mirrors the TypeScript platform abstraction layer, making
 | `SubscriptionHandle` | `SubscriptionHandle` struct |
 | `Clock`, `FrameLoop`, etc. | Abstract base classes |
 | `platform_browser.ts` | N/A (web only) |
-| N/A | `libretro_platform.cpp` |
+| N/A | `platform.cpp` |
 
 ### Key Patterns
 

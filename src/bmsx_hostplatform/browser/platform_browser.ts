@@ -39,7 +39,7 @@ import {
 } from 'bmsx/platform';
 import { WorkerStreamingAudioService } from './worker_audio';
 import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from '../platform';
-import { type vec2 } from 'bmsx/rompack/rompack';
+import { type vec2 } from 'bmsx/rompack/format';
 
 declare const $: any; // avoid circular dependency issues
 const ONSCREEN_LAYOUT_MODE: 'canvas' | 'gamepad' = 'canvas';
@@ -1422,7 +1422,7 @@ export class BrowserGameViewHost implements GameViewHost {
 	 *    the onscreen gamepad is enabled.
 	 *
 	 * The landscape branch further subtracts the horizontal footprint of both control clusters when
-	 * the canvas is configured to "own" the shared space (`canvas_or_onscreengamepad_must_respect_lebensraum === 'canvas'`).
+	 * the canvas is configured to "own" the shared space (`canvas_or_onscreen_gamepad_must_respect_lebensraum === 'canvas'`).
 	 * That mirrors how the static-flow layout squeezes the canvas; without this subtraction, the canvas
 	 * scale would be computed optimistically and the host flow would shove the controls off-screen.
 	 *

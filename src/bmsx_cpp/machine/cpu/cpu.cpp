@@ -2,7 +2,7 @@
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/memory.h"
 #include "machine/common/number_format.h"
-#include "machine/devices/vdp/vdp_packet_schema.h"
+#include "machine/devices/vdp/packet_schema.h"
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -290,7 +290,7 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "os.date"
 		|| name == "list_lua_resources"
 		|| name == "get_lua_resource_source"
-		|| name == "list_lua_builtins") {
+		|| name == "list_builtins") {
 		return kNativeCostTier4;
 	}
 	return kDefaultNativeCost;

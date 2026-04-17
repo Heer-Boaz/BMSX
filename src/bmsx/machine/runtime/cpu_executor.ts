@@ -1,11 +1,11 @@
-import { $ } from '../../core/engine_core';
+import { $ } from '../../core/engine';
 import { RunResult } from '../cpu/cpu';
 import {
 	TIMER_KIND_DEVICE_SERVICE,
 	TIMER_KIND_VBLANK_BEGIN,
 	TIMER_KIND_VBLANK_END,
-} from '../scheduler/device_scheduler';
-import { runtimeFault } from '../../ide/runtime/runtime_lua_pipeline';
+} from '../scheduler/device';
+import { runtimeFault } from '../../ide/runtime/lua_pipeline';
 import type { FrameState, Runtime } from './runtime';
 
 export class CpuExecutionState {

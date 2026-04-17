@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/types.h"
+#include "core/primitives.h"
 #include "machine/runtime/frame_state.h"
 
 namespace bmsx {

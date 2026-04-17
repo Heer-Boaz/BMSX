@@ -1,4 +1,4 @@
-import { Camera } from '../3d/camera3d';
+import { Camera } from '../3d/camera';
 
 const hardwareCamera = new Camera();
 let hardwareCameraActive = false;

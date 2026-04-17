@@ -1,13 +1,13 @@
-import { $ } from '../../core/engine_core';
-import skyboxFS from '../3d/shaders/skybox.frag.glsl';
-import skyboxVS from '../3d/shaders/skybox.vert.glsl';
-import type { RenderContext } from '../backend/pipeline_interfaces';
-import { RenderPassLibrary } from '../backend/renderpasslib';
-import { SkyboxPipelineState } from '../backend/pipeline_interfaces';
-import { TEXTURE_UNIT_ATLAS_PRIMARY, TEXTURE_UNIT_ATLAS_SECONDARY } from '../backend/webgl/webgl.constants';
-import { WebGLBackend } from '../backend/webgl/webgl_backend';
-import { ATLAS_PRIMARY_SLOT_ID, ATLAS_SECONDARY_SLOT_ID } from '../../rompack/rompack';
-import { _skyTint, _skyExposure } from '../shared/render_queues';
+import { $ } from '../../core/engine';
+import skyboxFS from './shaders/skybox.frag.glsl';
+import skyboxVS from './shaders/skybox.vert.glsl';
+import type { RenderContext } from '../backend/interfaces';
+import { RenderPassLibrary } from '../backend/pass_library';
+import { SkyboxPipelineState } from '../backend/interfaces';
+import { TEXTURE_UNIT_ATLAS_PRIMARY, TEXTURE_UNIT_ATLAS_SECONDARY } from '../backend/webgl/constants';
+import { WebGLBackend } from '../backend/webgl/backend';
+import { ATLAS_PRIMARY_SLOT_ID, ATLAS_SECONDARY_SLOT_ID } from '../../rompack/format';
+import { _skyTint, _skyExposure } from '../shared/queues';
 import { resolveActiveCamera3D } from '../shared/hardware_camera';
 
 let vaoSkybox: WebGLVertexArrayObject = null;

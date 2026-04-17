@@ -1,10 +1,10 @@
-import { getCodeAreaBounds } from '../../../editor/ui/editor_view';
-import { resourcePanel } from '../../contrib/resources/resource_panel_controller';
+import { getCodeAreaBounds } from '../../../editor/ui/view';
+import { resourcePanel } from '../../contrib/resources/panel/controller';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../../../editor/input/keyboard/key_input';
-import { clampResourceViewerScroll, resourceViewerTextCapacity, setResourceViewerScroll } from '../../contrib/resources/resource_viewer';
-import { getActiveResourceViewer } from '../../contrib/resources/resource_view_tabs';
-import type { ResourceViewerState } from '../../../common/types';
-import { editorViewState } from '../../../editor/ui/editor_view_state';
+import { clampResourceViewerScroll, resourceViewerTextCapacity, setResourceViewerScroll } from '../../contrib/resources/viewer';
+import { getActiveResourceViewer } from '../../contrib/resources/view_tabs';
+import type { ResourceViewerState } from '../../../common/models';
+import { editorViewState } from '../../../editor/ui/view_state';
 
 export function handleResourceViewerInput(): void {
 	const viewer = getActiveResourceViewer();

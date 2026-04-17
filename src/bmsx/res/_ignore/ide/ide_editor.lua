@@ -2,8 +2,8 @@ local constants = require("ide_constants")
 local piece_tree_buffer = require("piece_tree_buffer")
 local code_layout = require("code_layout")
 local source_text = require("source_text")
-local lua_analysis_cache = require("lua_analysis_cache")
-local editor_undo = require("editor_undo")
+local analysis_cache = require("analysis_cache")
+local undo = require("undo")
 
 local editor = {}
 
@@ -555,7 +555,7 @@ local function prepare_undo(key, allow_merge)
 		return
 	end
 
-	local record = editor_undo.undo_record.new()
+	local record = undo.undo_record.new()
 	local anchor = state.selection_anchor
 	record:set_before_state(
 		state.cursor_row,
@@ -597,7 +597,7 @@ local function apply_undoable_replace(offset, delete_length, insert_text)
 		return
 	end
 	local record = state.undo_stack[#state.undo_stack]
-	local op = editor_undo.text_undo_op.new()
+	local op = undo.text_undo_op.new()
 
 	if delete_length == 0 and #insert_text > 0 then
 		state.buffer:insert(offset, insert_text)
@@ -1161,7 +1161,7 @@ local function update_analysis_if_needed()
 		return
 	end
 	local source = source_text.get_text_snapshot(state.buffer)
-	state.analysis_entry = lua_analysis_cache.get_cached_lua_parse({
+	state.analysis_entry = analysis_cache.get_cached_parse({
 		path = state.active_path,
 		source = source,
 		version = state.buffer.version,
@@ -1674,7 +1674,7 @@ function editor.init(path)
 	state.buffer = piece_tree_buffer.new(source)
 	state.layout = code_layout.new(state.font, {
 		max_highlight_cache = 512,
-		builtin_identifiers = list_lua_builtins(),
+		builtin_identifiers = list_builtins(),
 	})
 	state.analysis_entry = nil
 	state.analysis_version = -1

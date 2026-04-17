@@ -1,5 +1,5 @@
 import { clamp } from '../../common/clamp';
-import type { SpriteParallaxRig } from '../shared/render_types';
+import type { SpriteParallaxRig } from '../shared/submissions';
 
 export const spriteParallaxRig: SpriteParallaxRig = {
 	vy: 0,

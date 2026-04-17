@@ -1,9 +1,9 @@
 import type { SemanticAnnotations, SymbolKind } from '../../editor/contrib/intellisense/semantic_model';
-import type { HighlightLine } from '../../common/types';
+import type { HighlightLine } from '../../common/models';
 import * as constants from '../../common/constants';
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../machine/firmware/lua_builtin_descriptors';
-import { LuaLexer } from '../../../lua/syntax/lualexer';
-import { KEYWORDS } from '../../../lua/syntax/luatoken';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../machine/firmware/builtin_descriptors';
+import { LuaLexer } from '../../../lua/syntax/lexer';
+import { KEYWORDS } from '../../../lua/syntax/token';
 import { clamp } from '../../../common/clamp';
 import { ScratchBuffer } from '../../../common/scratchbuffer';
 

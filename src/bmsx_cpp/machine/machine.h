@@ -2,16 +2,16 @@
 
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
-#include "machine/devices/audio/audio_controller.h"
-#include "machine/devices/dma/dma_controller.h"
-#include "machine/devices/geometry/geometry_controller.h"
-#include "machine/devices/imgdec/imgdec_controller.h"
-#include "machine/devices/input/input_controller.h"
-#include "machine/devices/irq/irq_controller.h"
+#include "machine/devices/audio/controller.h"
+#include "machine/devices/dma/controller.h"
+#include "machine/devices/geometry/controller.h"
+#include "machine/devices/imgdec/controller.h"
+#include "machine/devices/input/controller.h"
+#include "machine/devices/irq/controller.h"
 #include "machine/devices/vdp/vdp.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/resource_usage_detector.h"
-#include "machine/scheduler/device_scheduler.h"
+#include "machine/scheduler/device.h"
 
 namespace bmsx {
 

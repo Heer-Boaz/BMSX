@@ -1,55 +1,55 @@
-import { $ } from '../../core/engine_core';
+import { $ } from '../../core/engine';
 import { taskGate } from '../../core/taskgate';
-import { Input } from '../../input/input';
-import type { InputMap } from '../../input/inputtypes';
-import type { LuaDefinitionInfo } from '../../lua/syntax/lua_ast';
-import type { LuaEnvironment } from '../../lua/luaenvironment';
-import { LuaRuntimeError } from '../../lua/luaerrors';
-import { LuaHandlerCache } from '../../lua/luahandler_cache';
-import { LuaInterpreter } from '../../lua/luaruntime';
-import type { StackTraceFrame } from '../../lua/luavalue';
+import { Input } from '../../input/manager';
+import type { InputMap } from '../../input/models';
+import type { LuaDefinitionInfo } from '../../lua/syntax/ast';
+import type { LuaEnvironment } from '../../lua/environment';
+import { LuaRuntimeError } from '../../lua/errors';
+import { LuaHandlerCache } from '../../lua/handler_cache';
+import { LuaInterpreter } from '../../lua/runtime';
+import type { StackTraceFrame } from '../../lua/value';
 import {
 	convertToError,
 	setLuaTableCaseInsensitiveKeys,
 	type LuaDebuggerPauseSignal
-} from '../../lua/luavalue';
+} from '../../lua/value';
 import type { StorageService } from '../../platform/platform';
-import type { Viewport } from '../../rompack/rompack';
+import type { Viewport } from '../../rompack/format';
 import {
 	CanonicalizationType,
 	CART_ROM_HEADER_SIZE,
 	DEFAULT_GEO_WORK_UNITS_PER_SEC,
 	DEFAULT_VDP_WORK_UNITS_PER_SEC,
 	getMachinePerfSpecs,
-} from '../../rompack/rompack';
-import { AssetSourceStack, type RawAssetSource } from '../../rompack/asset_source';
-import { buildRuntimeAssetLayer } from '../../rompack/romloader';
+} from '../../rompack/format';
+import { AssetSourceStack, type RawAssetSource } from '../../rompack/source';
+import { buildRuntimeAssetLayer } from '../../rompack/loader';
 import { createIdentifierCanonicalizer } from '../../lua/syntax/identifier_canonicalizer';
-import { Api } from '../firmware/firmware_api';
+import { Api } from '../firmware/api';
 import { Table, type Value, type ProgramMetadata, type NativeFunction, type NativeObject } from '../cpu/cpu';
 import { type StringValue } from '../memory/string_pool';
-import type { TerminalMode } from '../../ide/terminal/ui/terminal_mode';
+import type { TerminalMode } from '../../ide/terminal/ui/mode';
 import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 import { Font, type FontVariant } from '../../render/shared/bmsx_font';
 import type { CartEditor } from '../../ide/cart_editor';
-import { type FaultSnapshot } from '../../ide/editor/render/render_error_overlay';
+import { type FaultSnapshot } from '../../ide/editor/render/error_overlay';
 import { type CpuFrameSnapshot } from '../cpu/cpu';
 import { type LuaSemanticModel, type FileSemanticData } from '../../ide/editor/contrib/intellisense/semantic_model';
-import { registerApiBuiltins } from '../firmware/lua_builtins';
-import { LuaFunctionRedirectCache } from '../firmware/lua_handler_registry';
-import { LuaJsBridge } from '../firmware/lua_js_bridge';
+import { registerApiBuiltins } from '../firmware/builtins';
+import { LuaFunctionRedirectCache } from '../firmware/handler_registry';
+import { LuaJsBridge } from '../firmware/js_bridge';
 import { RuntimeStorage } from '../firmware/cart_storage';
-import type { RuntimeOptions, LuaBuiltinDescriptor, LuaMemberCompletion } from './types';
+import type { RuntimeOptions, LuaBuiltinDescriptor, LuaMemberCompletion } from './contracts';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_ENGINE_PROJECT_ROOT_PATH } from '../../ide/workspace/workspace';
-import { buildLuaSources, type LuaSourceRegistry } from '../program/lua_sources';
-import * as runtimeIde from '../../ide/runtime/runtime_ide';
-import { runtimeFault } from '../../ide/runtime/runtime_lua_pipeline';
-import * as runtimeLuaPipeline from '../../ide/runtime/runtime_lua_pipeline';
-import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
-import type { ParsedLuaChunk } from '../../ide/language/lua/lua_parse';
+import { buildLuaSources, type LuaSourceRegistry } from '../program/sources';
+import * as workbenchMode from '../../ide/runtime/workbench_mode';
+import { runtimeFault } from '../../ide/runtime/lua_pipeline';
+import * as luaPipeline from '../../ide/runtime/lua_pipeline';
+import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../../lua/debugger';
+import type { ParsedLuaChunk } from '../../ide/language/lua/parse';
 import { configureLuaHeapUsage } from '../memory/lua_heap_usage';
 import { FrameLoopState } from './frame_loop';
-import { FrameSchedulerState } from '../scheduler/frame_scheduler';
+import { FrameSchedulerState } from '../scheduler/frame';
 import { RenderPresentationState } from '../../render/presentation_state';
 import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from './timing';
 import { TimingState } from './timing_state';
@@ -57,11 +57,11 @@ import { VblankState } from './vblank';
 import { CpuExecutionState } from './cpu_executor';
 import { CartBootState } from './cart_boot';
 import { HostFaultState } from './host_fault';
-import { LuaScratchState } from '../program/lua_scratch';
-import { invokeClosureHandler, invokeLuaHandler } from '../program/lua_executor';
-import { resolveCpuHz, resolveGeoWorkUnitsPerSec, resolveRuntimeRenderSize, resolveVdpWorkUnitsPerSec } from '../machine_specs';
-import { resolveRuntimeMemoryMapSpecs } from '../memory/memory_specs';
-import { startEngineWithDeferredStartupAudioRefresh } from '../../audio/startup_audio';
+import { LuaScratchState } from '../program/scratch';
+import { invokeClosureHandler, invokeLuaHandler } from '../program/executor';
+import { resolveCpuHz, resolveGeoWorkUnitsPerSec, resolveRuntimeRenderSize, resolveVdpWorkUnitsPerSec } from '../specs';
+import { resolveRuntimeMemoryMapSpecs } from '../memory/specs';
+import { startEngineWithDeferredStartupAudioRefresh } from '../../audio/startup';
 import { RuntimeAssetState } from '../memory/asset_state';
 import {
 	applyActiveMachineTiming,
@@ -73,8 +73,8 @@ import { Machine } from '../machine';
 import { Memory } from '../memory/memory';
 import {
 	configureMemoryMap,
-} from '../memory/memory_map';
-import { createVdpBlitterExecutor } from '../../render/vdp/vdp_blitter';
+} from '../memory/map';
+import { createVdpBlitterExecutor } from '../../render/vdp/blitter';
 
 // Flip back to 'msx' to restore default font in machine/editor
 export const EDITOR_FONT_VARIANT: FontVariant = 'tiny';
@@ -121,7 +121,7 @@ export class Runtime {
 	public executionOverlayActive = false;
 	private _overlayResolutionMode: 'offscreen' | 'viewport'; // Set in constructor
 	public readonly debuggerController = new LuaDebuggerController();
-	public pauseCoordinator = runtimeIde.createPauseCoordinator();
+	public pauseCoordinator = workbenchMode.createPauseCoordinator();
 	public debuggerSuspendSignal: LuaDebuggerPauseSignal = null;
 	public debuggerPaused = false;
 	public debuggerMetrics: LuaDebuggerSessionMetrics = null;
@@ -253,13 +253,13 @@ export class Runtime {
 		});
 
 		if (!cartridge) {
-			$.set_asset_source(engineSource);
+			$.set_source(engineSource);
 			$.set_cart_manifest(null);
 			$.set_machine_manifest(engineLayer.index.machine);
 			$.set_cart_project_root_path(null);
 			$.set_inputmap(1, { keyboard: null, gamepad: null, pointer: null }); // Default input mapping for player 1 is required even with no cart to prevent errors
 
-			$.set_lua_sources(engineLuaSources);
+			$.set_sources(engineLuaSources);
 			const engineMemorySpecs = resolveRuntimeMemoryMapSpecs({
 				machine: engineLayer.index.machine,
 				engineMachine: engineLayer.index.machine,
@@ -321,7 +321,7 @@ export class Runtime {
 		layers.push({ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload });
 		layers.push({ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload });
 		const assetSource = new AssetSourceStack(layers);
-		$.set_asset_source(assetSource);
+		$.set_source(assetSource);
 		$.set_cart_manifest(cartLayer.index.cart_manifest);
 		$.set_machine_manifest(cartLayer.index.machine);
 		$.set_cart_project_root_path(cartLayer.index.projectRootPath);
@@ -342,7 +342,7 @@ export class Runtime {
 		}
 
 		await applyWorkspaceOverridesToCart({ cart: cartLuaSources, storage: $.platform.storage, includeServer: true });
-		$.set_lua_sources(engineLuaSources);
+		$.set_sources(engineLuaSources);
 
 		const memoryLimits = resolveRuntimeMemoryMapSpecs({
 			machine: cartLayer.index.machine,
@@ -434,7 +434,7 @@ export class Runtime {
 	public activateProgramSource(source: ProgramSource): void {
 		const luaSources = source === 'engine' ? this.engineLuaSources : this.cartLuaSources;
 		const canonicalization = source === 'engine' ? this.engineCanonicalization : this.cartCanonicalization;
-		$.set_lua_sources(luaSources);
+		$.set_sources(luaSources);
 		this.applyCanonicalization(canonicalization);
 		api.cartdata(luaSources.namespace);
 	}
@@ -447,10 +447,10 @@ export class Runtime {
 		this.timing.vdpWorkUnitsPerSec = resolveVdpWorkUnitsPerSec(initialVdpWorkUnits);
 		this.timing.geoWorkUnitsPerSec = resolveGeoWorkUnitsPerSec(initialGeoWorkUnits);
 		this.storageService = $.platform.storage;
-		this.storage = new RuntimeStorage(this.storageService, $.lua_sources.namespace);
+		this.storage = new RuntimeStorage(this.storageService, $.sources.namespace);
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
 		this.applyCanonicalization(resolvedCanonicalization);
-		this.engineLuaSources = $.lua_sources;
+		this.engineLuaSources = $.sources;
 		this.engineCanonicalization = resolvedCanonicalization;
 		this.cartCanonicalization = resolvedCanonicalization;
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
@@ -487,18 +487,18 @@ export class Runtime {
 			storage: this.storage,
 			runtime: this,
 		});
-		runtimeIde.initializeIdeFeatures(this, options);
+		workbenchMode.initializeIdeFeatures(this, options);
 	}
 
 	private applyCanonicalization(canonicalization: CanonicalizationType): void {
 		this._canonicalization = canonicalization;
 		this.canonicalizeIdentifierFn = createIdentifierCanonicalizer(this._canonicalization);
 		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
-		runtimeIde.applyCanonicalization(this._canonicalization !== 'none');
+		workbenchMode.applyCanonicalization(this._canonicalization !== 'none');
 	}
 
 	private configureInterpreter(interpreter: LuaInterpreter): void {
-		interpreter.requireHandler = (ctx, module) => runtimeLuaPipeline.requireLuaModule(this, ctx, module);
+		interpreter.requireHandler = (ctx, module) => luaPipeline.requireLuaModule(this, ctx, module);
 	}
 
 	public createLuaInterpreter(): LuaInterpreter {
@@ -551,10 +551,10 @@ export class Runtime {
 		const gateToken = this.luaGate.begin({ blocking: true, tag: 'new_game' });
 		try {
 			this.hostFault.clear(this);
-			runtimeIde.clearActiveDebuggerPause(this);
-			runtimeIde.clearRuntimeFault(this);
+			workbenchMode.clearActiveDebuggerPause(this);
+			workbenchMode.clearRuntimeFault(this);
 			this.luaInitialized = false;
-			runtimeLuaPipeline.invalidateModuleAliases(this);
+			luaPipeline.invalidateModuleAliases(this);
 			this.luaChunkEnvironmentsByPath.clear();
 			this.luaChunkEnvironmentsByPath.clear();
 			this.luaGenericChunksExecuted.clear();
@@ -565,8 +565,8 @@ export class Runtime {
 				await $.resetRuntime();
 				await $.refresh_audio_assets();
 			}
-			api.cartdata($.lua_sources.namespace);
-			runtimeLuaPipeline.bootActiveProgram(this);
+			api.cartdata($.sources.namespace);
+			luaPipeline.bootActiveProgram(this);
 			this.hasCompletedInitialBoot = true;
 		}
 		catch (error) {
@@ -592,12 +592,12 @@ export class Runtime {
 	public async rebootToBootRom(): Promise<void> {
 		const gateToken = this.luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
 		try {
-			runtimeIde.clearActiveDebuggerPause(this);
-			runtimeIde.clearRuntimeFault(this);
-			runtimeIde.deactivateTerminalMode(this);
-			runtimeIde.deactivateEditor(this);
+			workbenchMode.clearActiveDebuggerPause(this);
+			workbenchMode.clearRuntimeFault(this);
+			workbenchMode.deactivateTerminalMode(this);
+			workbenchMode.deactivateEditor(this);
 			this.luaInitialized = false;
-			runtimeLuaPipeline.invalidateModuleAliases(this);
+			luaPipeline.invalidateModuleAliases(this);
 			this.luaChunkEnvironmentsByPath.clear();
 			this.luaGenericChunksExecuted.clear();
 			if (this.editor !== null) {
@@ -611,8 +611,8 @@ export class Runtime {
 				projectRootPath: $.engine_layer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH,
 			});
 			await this.prepareBootRomStartupState({ resetRuntime: true, refreshAudio: true });
-			api.cartdata($.lua_sources.namespace);
-			runtimeLuaPipeline.bootActiveProgram(this);
+			api.cartdata($.sources.namespace);
+			luaPipeline.bootActiveProgram(this);
 		}
 		finally {
 			this.luaGate.end(gateToken);
@@ -635,9 +635,9 @@ export class Runtime {
 
 	public dispose(): void {
 		this.cartBoot.resetDeferredPreparation();
-		runtimeIde.disposeShortcutHandlers(this);
+		workbenchMode.disposeShortcutHandlers(this);
 		this.terminal.deactivate();
-		runtimeIde.deactivateEditor(this);
+		workbenchMode.deactivateEditor(this);
 		this.luaInitialized = false;
 		if (this.editor) {
 			this.editor.shutdown();
@@ -672,7 +672,7 @@ export class Runtime {
 		if (meta && meta.hid && !wrappedError.message.startsWith(`[${meta.hid}]`)) {
 			wrappedError.message = `[${meta.hid}] ${wrappedError.message}`;
 		}
-		runtimeIde.handleLuaError(this, wrappedError);
+		workbenchMode.handleLuaError(this, wrappedError);
 		throw wrappedError;
 	}
 
@@ -683,7 +683,7 @@ export class Runtime {
 			wrappedError.message = `[${meta.hid}] ${wrappedError.message}`;
 		}
 		this.luaInterpreter.recordFaultCallStack();
-		runtimeIde.handleLuaError(this, wrappedError);
+		workbenchMode.handleLuaError(this, wrappedError);
 		throw wrappedError; // Rethrow for higher-level handling
 	}
 

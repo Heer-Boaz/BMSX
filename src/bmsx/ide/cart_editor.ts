@@ -1,7 +1,7 @@
-import { editorRuntimeState } from './editor/common/editor_runtime_state';
-import { clearWorkspaceDirtyBuffers } from './workbench/common/workspace_autosave';
+import { editorRuntimeState } from './editor/common/runtime_state';
+import { clearWorkspaceDirtyBuffers } from './workbench/workspace/autosave';
 
-import { renderFaultOverlay, renderRuntimeFaultOverlay, showRuntimeError, showRuntimeErrorInChunk } from './editor/render/render_error_overlay';
+import { renderFaultOverlay, renderRuntimeFaultOverlay, showRuntimeError, showRuntimeErrorInChunk } from './editor/render/error_overlay';
 import {
 	activateRuntimeEditor as activate,
 	deactivateRuntimeEditor as deactivate,
@@ -9,14 +9,14 @@ import {
 	shutdownRuntimeEditor as shutdown,
 	tickInput,
 	update,
-} from './editor/ui/editor_runtime';
-import { initializeCartEditor } from './editor/ui/editor_bootstrap';
+} from './editor/ui/runtime';
+import { initializeCartEditor } from './editor/ui/bootstrap';
 import {
 	setFontVariant,
 	updateViewport,
-} from './editor/ui/editor_view';
-import { Viewport } from '../rompack/rompack';
-import { clearRuntimeErrorOverlay, clearAllRuntimeErrorOverlays } from './editor/contrib/runtime_error/runtime_error_navigation';
+} from './editor/ui/view';
+import { Viewport } from '../rompack/format';
+import { clearRuntimeErrorOverlay, clearAllRuntimeErrorOverlays } from './editor/contrib/runtime_error/navigation';
 import { getSourceForChunk } from './editor/common/text_runtime';
 
 export { activate, deactivate, draw, shutdown, tickInput, update };

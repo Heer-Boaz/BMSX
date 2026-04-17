@@ -1,13 +1,13 @@
-import { extractErrorMessage } from '../../lua/luavalue';
+import { extractErrorMessage } from '../../lua/value';
 import type { HttpResponse, StorageService } from '../../platform/index';
-import type { LuaSourceRecord, LuaSourceRegistry } from '../../machine/program/lua_sources';
+import type { LuaSourceRecord, LuaSourceRegistry } from '../../machine/program/sources';
 import { Runtime } from '../../machine/runtime/runtime';
-import * as runtimeLuaPipeline from '../runtime/runtime_lua_pipeline';
-import { $ } from '../../core/engine_core';
-import { LuaResourceCreationRequest, ResourceDescriptor } from '../../machine/runtime/types';
-import { joinWorkspacePaths, resolveWorkspacePath, stripProjectRootPrefix } from './workspace_path';
-import { getWorkspaceCachedSource } from './workspace_cache';
-export { joinWorkspacePaths } from './workspace_path';
+import * as luaPipeline from '../runtime/lua_pipeline';
+import { $ } from '../../core/engine';
+import { LuaResourceCreationRequest, ResourceDescriptor } from '../../machine/runtime/contracts';
+import { joinWorkspacePaths, resolveWorkspacePath, stripProjectRootPrefix } from './path';
+import { getWorkspaceCachedSource } from './cache';
+export { joinWorkspacePaths } from './path';
 
 export const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
 export const WORKSPACE_STORAGE_PREFIX = 'bmsx.workspace';
@@ -23,7 +23,7 @@ type WorkspaceWinnerKind = 'override' | 'canonical' | 'rom';
 
 function resolveEditableCartLuaSources(): LuaSourceRegistry {
 	const runtime = Runtime.instance;
-	return runtime.cartLuaSources ? runtime.cartLuaSources : $.lua_sources;
+	return runtime.cartLuaSources ? runtime.cartLuaSources : $.sources;
 }
 
 function resolveEngineProjectRootPath(): string {
@@ -69,7 +69,7 @@ export async function saveLuaResourceSource(path: string, source: string): Promi
 	asset.src = source;
 	asset.update_timestamp = $.platform.clock.dateNow();
 	registry.path2lua[sourcePath] = asset;
-	runtimeLuaPipeline.markSourceChunkAsDirty(Runtime.instance, sourcePath);
+	luaPipeline.markSourceChunkAsDirty(Runtime.instance, sourcePath);
 }
 
 export async function createLuaResource(request: LuaResourceCreationRequest): Promise<ResourceDescriptor> {
@@ -95,10 +95,10 @@ export async function createLuaResource(request: LuaResourceCreationRequest): Pr
 		? Runtime.instance.engineLuaSources
 		: resolveEditableCartLuaSources();
 	registerAsset(registry);
-	runtimeLuaPipeline.invalidateModuleAliases(Runtime.instance);
+	luaPipeline.invalidateModuleAliases(Runtime.instance);
 	const filesystemPath = asset.source_path;
 	await persistWorkspaceSourceFile(filesystemPath, contents, isEngineLuaSourcePath(filesystemPath) ? resolveEngineProjectRootPath() : $.cart_project_root_path);
-	runtimeLuaPipeline.markSourceChunkAsDirty(Runtime.instance, asset.source_path);
+	luaPipeline.markSourceChunkAsDirty(Runtime.instance, asset.source_path);
 	const descriptor: ResourceDescriptor = { path: asset.source_path, type: 'lua' };
 	return descriptor;
 }
@@ -632,7 +632,7 @@ export async function nukeWorkspaceState(): Promise<void> {
 
 export function listResources(): ResourceDescriptor[] {
 	const descriptorsByPath = new Map<string, ResourceDescriptor>();
-	const registries = runtimeLuaPipeline.listLuaSourceRegistries(Runtime.instance);
+	const registries = luaPipeline.listLuaSourceRegistries(Runtime.instance);
 	for (const entry of registries) {
 		const registry = entry.registry;
 		const readOnly = entry.readOnly;

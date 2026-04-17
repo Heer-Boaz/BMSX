@@ -1,8 +1,8 @@
 #include "machine/runtime/timing_config.h"
 
-#include "core/engine_core.h"
+#include "core/engine.h"
 #include "machine/runtime/runtime.h"
-#include "rompack/runtime_assets.h"
+#include "rompack/assets.h"
 
 #include <stdexcept>
 

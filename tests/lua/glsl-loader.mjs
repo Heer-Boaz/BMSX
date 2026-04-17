@@ -20,7 +20,7 @@ export class Reviver {
 }
 export const ConstructorWithSaveGame = class {};
 `],
-	['src/bmsx/core/game.ts', `
+	['src/bmsx/core/engine.ts', `
 const globalScope = typeof globalThis !== 'undefined' ? globalThis : {};
 export const $ = {
 	paused: false,

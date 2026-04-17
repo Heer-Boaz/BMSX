@@ -7,9 +7,9 @@
 #include <vector>
 
 #include "machine/cpu/cpu.h"
-#include "machine/memory/memory_map.h"
+#include "machine/memory/map.h"
 #include "machine/bus/io.h"
-#include "core/types.h"
+#include "core/primitives.h"
 
 namespace bmsx {
 

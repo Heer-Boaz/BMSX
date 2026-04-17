@@ -2,7 +2,7 @@ Goed punt. Laat me eerst begrijpen hoe `require` nu werkt in de compiler en runt
 
 Searched for regex `require|module|import` (`**/src/bmsx/emulator/program_compiler.ts`), 30 results
 
-Searched for regex `require|module|appendLuaChunk|compileChunk` (`**/src/bmsx/emulator/runtime_lua_pipeline.ts`), 30 results
+Searched for regex `require|module|appendLuaChunk|compileChunk` (`**/src/bmsx/emulator/lua_pipeline.ts`), 30 results
 
 Searched for regex `resolveGlobal|resolveRequire|compileCall.*require|RequireExpression|require` (`**/src/bmsx/emulator/program_compiler.ts`), 20 results
 
@@ -12,11 +12,11 @@ Read [](file:///home/boaz/BMSX/src/bmsx/emulator/program_compiler.ts#2870-2870),
 
 Now let me look at how `require` actually works at runtime — when a cart does `local foo = require("bar")`:
 
-Read [](file:///home/boaz/BMSX/src/bmsx/emulator/lua_globals.ts#1430-1430), lines 1430 to 1445
+Read [](file:///home/boaz/BMSX/src/bmsx/emulator/globals.ts#1430-1430), lines 1430 to 1445
 
-Searched for regex `requireModule|function require` (`**/src/bmsx/emulator/runtime_lua_pipeline.ts`), 4 results
+Searched for regex `requireModule|function require` (`**/src/bmsx/emulator/lua_pipeline.ts`), 4 results
 
-Read [](file:///home/boaz/BMSX/src/bmsx/emulator/runtime_lua_pipeline.ts#1422-1422), lines 1422 to 1508
+Read [](file:///home/boaz/BMSX/src/bmsx/emulator/lua_pipeline.ts#1422-1422), lines 1422 to 1508
 
 Now let me understand the semantic frontend and how it resolves cross-module references:
 
@@ -28,7 +28,7 @@ Read [](file:///home/boaz/BMSX/src/bmsx/emulator/program_compiler.ts#215-215), l
 
 Now let me look at the semantic frontend to see if it has cross-module resolution:
 
-Searched for regex `require|module|cross.*file|inter.*module|import|export` (`**/src/bmsx/emulator/lua_semantic_frontend.ts`), 15 results
+Searched for regex `require|module|cross.*file|inter.*module|import|export` (`**/src/bmsx/emulator/lua_frontend.ts`), 15 results
 
 Now let me look at how modules are currently compiled and how `require` is handled at compile time. Let me look at the code around how the compiler actually compiles a call to `require(...)`:
 

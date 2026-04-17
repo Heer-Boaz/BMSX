@@ -1,10 +1,10 @@
-import { $ } from '../../core/engine_core';
+import { $ } from '../../core/engine';
 import axisFS from './shaders/axis_gizmo.frag.glsl';
 import axisVS from './shaders/axis_gizmo.vert.glsl';
-import { RenderPassLibrary } from '../backend/renderpasslib';
-import type { color } from '../shared/render_types';
-import { M4 } from './math3d';
-import { WebGLBackend } from '../backend/webgl/webgl_backend';
+import { RenderPassLibrary } from '../backend/pass_library';
+import type { color } from '../shared/submissions';
+import { M4 } from './math';
+import { WebGLBackend } from '../backend/webgl/backend';
 import { clamp } from '../../common/clamp';;
 import { resolveActiveCamera3D } from '../shared/hardware_camera';
 

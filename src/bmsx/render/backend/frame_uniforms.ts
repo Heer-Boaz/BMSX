@@ -1,5 +1,5 @@
-import type { GPUBackend } from './pipeline_interfaces';
-import { WebGLBackend } from './webgl/webgl_backend';
+import type { GPUBackend } from './interfaces';
+import { WebGLBackend } from './webgl/backend';
 
 // Minimal per-frame uniform buffer (foundation for future shader blocks)
 // Binding indices: keep distinct from lighting UBOs (0,1)

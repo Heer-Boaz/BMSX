@@ -1,6 +1,6 @@
--- editor_undo.lua
+-- undo.lua
 
-local editor_undo = {}
+local undo = {}
 
 local text_undo_op = {}
 text_undo_op.__index = text_undo_op
@@ -86,7 +86,7 @@ function undo_record:set_after_state(cursor_row, cursor_column, scroll_row, scro
 	self.after_selection_anchor_column = selection_anchor_column
 end
 
-editor_undo.text_undo_op = text_undo_op
-editor_undo.undo_record = undo_record
+undo.text_undo_op = text_undo_op
+undo.undo_record = undo_record
 
-return editor_undo
+return undo

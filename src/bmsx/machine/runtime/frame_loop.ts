@@ -1,10 +1,10 @@
-import { $ } from '../../core/engine_core';
+import { $ } from '../../core/engine';
 import type { FrameState, Runtime } from './runtime';
-import * as runtimeIde from '../../ide/runtime/runtime_ide';
-import { clearBackQueues } from '../../render/shared/render_queues';
+import * as workbenchMode from '../../ide/runtime/workbench_mode';
+import { clearBackQueues } from '../../render/shared/queues';
 import { clearHardwareLighting } from '../../render/shared/hardware_lighting';
 import { RunResult } from '../cpu/cpu';
-import { runtimeFault } from '../../ide/runtime/runtime_lua_pipeline';
+import { runtimeFault } from '../../ide/runtime/lua_pipeline';
 
 const MAX_FRAME_DELTA = 250;
 
@@ -46,7 +46,7 @@ export class FrameLoopState {
 			return false;
 		}
 		runtime.cartBoot.processPending(runtime);
-		if (runtimeIde.isOverlayActive(runtime)) {
+		if (workbenchMode.isOverlayActive(runtime)) {
 			if (this.currentFrameState !== null) {
 				this.abandonFrameState(runtime);
 				return true;
@@ -93,8 +93,8 @@ export class FrameLoopState {
 		try {
 			$.input.pollInput();
 			runtime.screen.beginHostFrame(currentTime);
-			runtimeIde.tickIdeInput(runtime);
-			runtimeIde.tickTerminalInput(runtime);
+			workbenchMode.tickIdeInput(runtime);
+			workbenchMode.tickTerminalInput(runtime);
 			hostDeltaMs = Math.min(currentTime - this.currentTimeMs, MAX_FRAME_DELTA);
 			this.currentTimeMs = currentTime;
 
@@ -120,7 +120,7 @@ export class FrameLoopState {
 			}
 		} catch (error) {
 			try {
-				runtimeIde.handleLuaError(runtime, error);
+				workbenchMode.handleLuaError(runtime, error);
 				this.abandonFrameState(runtime);
 				runtime.screen.presentErrorOverlay(runtime, hostDeltaMs);
 			} catch {
@@ -142,7 +142,7 @@ export class FrameLoopState {
 			this.finalizeUpdateSlice(runtime, state);
 		} catch (error) {
 			fault = error;
-			runtimeIde.handleLuaError(runtime, error);
+			workbenchMode.handleLuaError(runtime, error);
 		} finally {
 			if (fault !== null && this.currentFrameState !== null) {
 				this.abandonFrameState(runtime);
@@ -198,7 +198,7 @@ export class FrameLoopState {
 			state.luaFaulted = true;
 			runtime.vblank.clearHaltUntilIrq(runtime);
 			runtime.pendingCall = null;
-			runtimeIde.handleLuaError(runtime, error);
+			workbenchMode.handleLuaError(runtime, error);
 		}
 	}
 }

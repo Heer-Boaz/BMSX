@@ -1,9 +1,9 @@
-import type { ParsedLuaChunk } from '../../../language/lua/lua_parse';
-import { getCachedLuaParse } from '../../../language/lua/lua_analysis_cache';
-import { editorRuntimeState } from '../../common/editor_runtime_state';
+import type { ParsedLuaChunk } from '../../../language/lua/parse';
+import { getCachedLuaParse } from '../../../language/lua/analysis_cache';
+import { editorRuntimeState } from '../../common/runtime_state';
 import { LuaSemanticWorkspace, type FileSemanticData, type LuaSemanticWorkspaceSnapshot } from './semantic_model';
 import { Runtime } from '../../../../machine/runtime/runtime';
-import * as runtimeLuaPipeline from '../../../runtime/runtime_lua_pipeline';
+import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { splitText } from '../../text/source_text';
 
 export type SemanticWorkspacePathInput = {
@@ -91,12 +91,12 @@ export function primeSemanticWorkspaceProjectSources(workspace: LuaSemanticWorks
 		return workspace;
 	}
 	const runtime = Runtime.instance;
-	const registries = runtimeLuaPipeline.listLuaSourceRegistries(runtime);
+	const registries = luaPipeline.listLuaSourceRegistries(runtime);
 	for (let registryIndex = 0; registryIndex < registries.length; registryIndex += 1) {
 		const path2lua = registries[registryIndex]!.registry.path2lua;
 		for (const path in path2lua) {
 			const cacheEntry = runtime.pathSemanticCache.get(path);
-			const source = cacheEntry ? cacheEntry.source : runtimeLuaPipeline.resourceSourceForChunk(runtime, path);
+			const source = cacheEntry ? cacheEntry.source : luaPipeline.resourceSourceForChunk(runtime, path);
 			const existing = workspace.getFileData(path);
 			if (existing && existing.source === source) {
 				continue;

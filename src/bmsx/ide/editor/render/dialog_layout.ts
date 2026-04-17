@@ -1,5 +1,5 @@
-import type { RectBounds } from '../../../rompack/rompack';
-import { editorViewState } from '../ui/editor_view_state';
+import type { RectBounds } from '../../../rompack/format';
+import { editorViewState } from '../ui/view_state';
 
 export function centerDialogBounds(dialogWidth: number, dialogHeight: number, margin: number): RectBounds {
 	const left = Math.max(margin, Math.trunc((editorViewState.viewportWidth - dialogWidth) / 2));

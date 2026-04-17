@@ -1,5 +1,5 @@
-import type { TextureKey } from '../texturemanager';
-import type { color_arr } from '../../rompack/rompack';
+import type { TextureKey } from '../texture_manager';
+import type { color_arr } from '../../rompack/format';
 
 export interface MaterialTextures {
 	albedo?: number;

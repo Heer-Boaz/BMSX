@@ -32,30 +32,30 @@ import {
 	type LuaTableConstructorExpression,
 	type LuaWhileStatement,
 	type LuaGotoStatement,
-} from '../../lua/syntax/lua_ast';
+} from '../../lua/syntax/ast';
 import { createIdentifierCanonicalizer } from '../../lua/syntax/identifier_canonicalizer';
 import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './optimizer';
 import { buildModuleAliasesFromPaths, type ProgramConstReloc } from './asset';
 import { StringPool, StringValue, isStringValue } from '../memory/string_pool';
-import type { CanonicalizationType } from '../../rompack/rompack';
+import type { CanonicalizationType } from '../../rompack/format';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../cpu/instruction_format';
-import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from '../../ide/editor/contrib/intellisense/lua_semantic_frontend';
-import { MMIO_REGISTER_SPEC_BY_ADDRESS, MMIO_REGISTER_SPEC_BY_NAME, type MmioWriteRequirement } from '../bus/mmio_register_spec';
+import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from '../../ide/editor/contrib/intellisense/lua_frontend';
+import { MMIO_REGISTER_SPEC_BY_ADDRESS, MMIO_REGISTER_SPEC_BY_NAME, type MmioWriteRequirement } from '../bus/registers';
 import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compile_value_flow';
-import { ENGINE_SYSTEM_GLOBAL_NAME_SET } from '../firmware/lua_system_globals';
-import { LuaSyntaxError } from '../../lua/luaerrors';
+import { ENGINE_SYSTEM_GLOBAL_NAME_SET } from '../firmware/system_globals';
+import { LuaSyntaxError } from '../../lua/errors';
 import { Decl } from '../../ide/editor/contrib/intellisense/semantic_model';
 import {
 	IMPLICIT_SELF_SYMBOL_HANDLE,
 	getBoundIdentifierReference as getResolvedIdentifierReference,
 	getReferenceSymbolHandle as getResolvedReferenceSymbolHandle,
-} from './lua_bound_reference';
+} from './bound_reference';
 import {
 	classifyAssignmentTargetPreparation,
 	classifyFunctionDeclarationTarget,
-} from './lua_target_semantics';
-import { getMemoryAccessKindForName, MemoryAccessKind } from '../memory/memory_access_kind';
+} from './target_semantics';
+import { getMemoryAccessKindForName, MemoryAccessKind } from '../memory/access_kind';
 
 export type CompiledProgram = {
 	program: Program;
@@ -1181,7 +1181,7 @@ class FunctionBuilder {
 			this.emitABC(OpCode.GETUP, target, upvalue, 0);
 			return;
 		}
-		if (reference.kind === 'memory_map') {
+		if (reference.kind === 'map') {
 			throw new Error(`[Compiler] '${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
 		}
 		if (reference.kind === 'reserved_intrinsic') {
@@ -1244,7 +1244,7 @@ class FunctionBuilder {
 			this.emitABC(OpCode.SETUP, valueReg, upvalue, 0);
 			return;
 		}
-		if (reference.kind === 'memory_map') {
+		if (reference.kind === 'map') {
 			throw new Error(`[Compiler] '${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
 		}
 		if (reference.kind === 'reserved_intrinsic') {
@@ -1901,7 +1901,7 @@ class FunctionBuilder {
 					targets.push({ kind: 'upvalue', upvalue });
 					continue;
 				}
-				if (reference.kind === 'memory_map') {
+				if (reference.kind === 'map') {
 					throw new Error(`[Compiler] '${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
 				}
 				if (reference.kind === 'reserved_intrinsic') {

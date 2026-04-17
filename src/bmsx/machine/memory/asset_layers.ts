@@ -1,6 +1,6 @@
-import type { RawAssetSource } from '../../rompack/asset_source';
-import type { CartridgeLayerId, RomAsset, RuntimeAssets } from '../../rompack/rompack';
-import type { RuntimeAssetLayer } from '../../rompack/romloader';
+import type { RawAssetSource } from '../../rompack/source';
+import type { CartridgeLayerId, RomAsset, RuntimeAssets } from '../../rompack/format';
+import type { RuntimeAssetLayer } from '../../rompack/loader';
 
 export type RuntimeAssetCollectionKey = 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents';
 export type RuntimeLayerLookup = Partial<Record<CartridgeLayerId, RuntimeAssetLayer>>;

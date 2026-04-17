@@ -3,8 +3,8 @@
  */
 import { Buffer } from 'buffer';
 import type { Canvas, Image as NodeCanvasImage } from 'canvas';
-import type { asset_type } from '../../src/bmsx/rompack/rompack';
-import type { CanonicalizationType } from '../../src/bmsx/rompack/rompack';
+import type { asset_type } from '../../src/bmsx/rompack/format';
+import type { CanonicalizationType } from '../../src/bmsx/rompack/format';
 
 export type RomPackerTarget = 'browser' | 'cli' | 'headless' | 'libretro-wsl' | 'libretro-win' | 'libretro-snesmini';
 export type RomPackerMode = 'rompack' | 'bios';

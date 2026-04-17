@@ -1,14 +1,14 @@
-import { $ } from '../core/engine_core';
+import { $ } from '../core/engine';
 import {
 	clearBackQueues,
 	prepareCompletedRenderQueues,
 	prepareHeldRenderQueues,
 	prepareOverlayRenderQueues,
 	preparePartialRenderQueues,
-} from './shared/render_queues';
+} from './shared/queues';
 import type { Runtime } from '../machine/runtime/runtime';
-import type { TickCompletion } from '../machine/scheduler/frame_scheduler';
-import * as runtimeIde from '../ide/runtime/runtime_ide';
+import type { TickCompletion } from '../machine/scheduler/frame';
+import * as workbenchMode from '../ide/runtime/workbench_mode';
 
 export type RenderPresentationMode = 'partial' | 'completed';
 
@@ -101,8 +101,8 @@ export class RenderPresentationState {
 		if (runtime.executionOverlayActive) {
 			clearBackQueues();
 		}
-		runtimeIde.tickIDEDraw(runtime);
-		runtimeIde.tickTerminalModeDraw(runtime);
+		workbenchMode.tickIDEDraw(runtime);
+		workbenchMode.tickTerminalModeDraw(runtime);
 		if (runtime.executionOverlayActive) {
 			prepareOverlayRenderQueues();
 		} else if (out.mode === 'completed' && out.commitFrame) {
@@ -152,8 +152,8 @@ export class RenderPresentationState {
 			runtime.frameLoop.abandonFrameState(runtime);
 		}
 		runtime.frameScheduler.clearQueuedTime();
-		runtimeIde.tickIDE(runtime);
-		runtimeIde.tickTerminalMode(runtime);
+		workbenchMode.tickIDE(runtime);
+		workbenchMode.tickTerminalMode(runtime);
 		this.markPresentation('completed', false);
 	}
 

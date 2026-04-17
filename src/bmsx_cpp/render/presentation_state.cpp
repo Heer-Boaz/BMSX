@@ -1,7 +1,7 @@
 #include "render/presentation_state.h"
-#include "core/engine_core.h"
+#include "core/engine.h"
 #include "machine/runtime/runtime.h"
-#include "render/shared/render_queues.h"
+#include "render/shared/queues.h"
 #include <cstdio>
 #include <cstdlib>
 
@@ -153,7 +153,7 @@ bool RenderPresentationState::consumePresentation(Runtime& runtime, RenderPresen
 	auto ideDrawStart = std::chrono::steady_clock::now();
 	runtime.tickIDEDraw();
 	auto ideDrawEnd = std::chrono::steady_clock::now();
-	outPresentation.runtimeIdeDrawMs = to_ms(ideDrawEnd - ideDrawStart);
+	outPresentation.workbenchModeDrawMs = to_ms(ideDrawEnd - ideDrawStart);
 
 	auto terminalDrawStart = std::chrono::steady_clock::now();
 	runtime.tickTerminalModeDraw();
@@ -220,11 +220,11 @@ void RenderPresentationState::render(EngineCore& engine, Runtime& runtime) {
 		}
 
 		engine.m_last_render_timing.runtimeDrawMs = 0.0;
-		engine.m_last_render_timing.runtimeIdeDrawMs = 0.0;
+		engine.m_last_render_timing.workbenchModeDrawMs = 0.0;
 		engine.m_last_render_timing.runtimeTerminalDrawMs = 0.0;
 		if (runtimePresentPending) {
 			engine.m_last_render_timing.runtimeDrawMs = m_presentationScratch.runtimeDrawMs;
-			engine.m_last_render_timing.runtimeIdeDrawMs = m_presentationScratch.runtimeIdeDrawMs;
+			engine.m_last_render_timing.workbenchModeDrawMs = m_presentationScratch.workbenchModeDrawMs;
 			engine.m_last_render_timing.runtimeTerminalDrawMs = m_presentationScratch.runtimeTerminalDrawMs;
 		}
 

@@ -1,4 +1,4 @@
-import { type vec2 } from 'bmsx/rompack/rompack';
+import { type vec2 } from 'bmsx/rompack/format';
 
 /**
  * Core platform contract.

@@ -1,6 +1,6 @@
--- lua_formatter.lua
+-- formatter.lua
 
-local lua_formatter = {}
+local formatter = {}
 
 local opening_tokens = {
 	["function"] = true,
@@ -142,7 +142,7 @@ local function read_identifier(source, index, length)
 	return cursor
 end
 
-function lua_formatter.scan_tokens(source)
+function formatter.scan_tokens(source)
 	local tokens = {}
 	local length = #source
 	local index = 1
@@ -322,13 +322,13 @@ local function compute_line_metadata(line_count, tokens_by_line)
 	return metadata
 end
 
-function lua_formatter.format_lua_document(source)
+function formatter.format_lua_document(source)
 	if #source == 0 then
 		return ""
 	end
 	local newline = string.find(source, "\r\n", 1, true) and "\r\n" or "\n"
 	local lines = split_source_lines(source)
-	local tokens = lua_formatter.scan_tokens(source)
+	local tokens = formatter.scan_tokens(source)
 	local tokens_by_line = build_tokens_by_line(tokens)
 	local preserved_lines = determine_preserved_lines(tokens)
 	local metadata = compute_line_metadata(#lines, tokens_by_line)
@@ -360,7 +360,7 @@ function lua_formatter.format_lua_document(source)
 	return table.concat(formatted, newline)
 end
 
-function lua_formatter.resolve_offset_position(lines, offset)
+function formatter.resolve_offset_position(lines, offset)
 	local remaining = offset
 	for row = 1, #lines do
 		local line_length = #lines[row]
@@ -376,4 +376,4 @@ function lua_formatter.resolve_offset_position(lines, offset)
 	return { row = last_row - 1, column = #lines[last_row] }
 end
 
-return lua_formatter
+return formatter

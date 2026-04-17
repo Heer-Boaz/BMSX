@@ -1,7 +1,7 @@
 #include "machine/memory/asset_memory.h"
 
 #include "machine/runtime/runtime.h"
-#include "rompack/runtime_assets.h"
+#include "rompack/assets.h"
 
 #include <algorithm>
 #include <vector>

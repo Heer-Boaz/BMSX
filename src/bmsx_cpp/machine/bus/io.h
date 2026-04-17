@@ -1,6 +1,6 @@
 #pragma once
 
-#include "machine/memory/memory_map.h"
+#include "machine/memory/map.h"
 
 namespace bmsx {
 

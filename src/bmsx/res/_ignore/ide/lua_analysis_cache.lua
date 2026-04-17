@@ -1,9 +1,9 @@
--- lua_analysis_cache.lua
+-- analysis_cache.lua
 
-local lua_parse = require("lua_parse")
+local parse = require("parse")
 local source_text = require("source_text")
 
-local lua_analysis_cache = {}
+local analysis_cache = {}
 
 local max_analysis_cache_entries = 24
 local analysis_cache = {}
@@ -33,7 +33,7 @@ local function evict_if_needed()
 	end
 end
 
-function lua_analysis_cache.get_cached_lua_parse(options)
+function analysis_cache.get_cached_parse(options)
 	local cache_key = options.path
 	local version = options.version
 	local cached = analysis_cache[cache_key]
@@ -45,7 +45,7 @@ function lua_analysis_cache.get_cached_lua_parse(options)
 		end
 	end
 	local resolved_lines = options.lines or source_text.split_text(options.source)
-	local parsed = options.parsed or lua_parse.parse_lua_chunk_with_recovery(options.source, options.path, resolved_lines)
+	local parsed = options.parsed or parse.parse_lua_chunk_with_recovery(options.source, options.path, resolved_lines)
 	local entry = {
 		path = options.path,
 		source = options.source,
@@ -63,11 +63,11 @@ function lua_analysis_cache.get_cached_lua_parse(options)
 	return entry
 end
 
-function lua_analysis_cache.invalidate_lua_analysis(path)
+function analysis_cache.invalidate_lua_analysis(path)
 	if analysis_cache[path] ~= nil then
 		analysis_cache[path] = nil
 		analysis_cache_size = analysis_cache_size - 1
 	end
 end
 
-return lua_analysis_cache
+return analysis_cache

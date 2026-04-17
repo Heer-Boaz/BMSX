@@ -1,25 +1,25 @@
-import { editorRuntimeState } from '../../editor/common/editor_runtime_state';
+import { editorRuntimeState } from '../../editor/common/runtime_state';
 import { editorChromeState } from './chrome_state';
-import { editorDiagnosticsState } from '../../editor/contrib/diagnostics/diagnostics_state';
-import { editorViewState } from '../../editor/ui/editor_view_state';
-import type { CodeTabContext, EditorTabDescriptor, EditorTabKind } from '../../common/types';
+import { editorDiagnosticsState } from '../../editor/contrib/diagnostics/state';
+import { editorViewState } from '../../editor/ui/view_state';
+import type { CodeTabContext, EditorTabDescriptor, EditorTabKind } from '../../common/models';
 import { beginNavigationCapture, completeNavigation } from '../../editor/navigation/navigation_history';
 import { closeLineJump } from '../../editor/contrib/find/line_jump';
-import { closeSymbolSearch } from '../../editor/contrib/symbols/symbol_search_shared';
-import { getCodeAreaBounds, hideResourcePanel } from '../../editor/ui/editor_view';
-import { closeSearch } from '../../editor/contrib/find/editor_search';
-import { clampResourceViewerScroll } from '../contrib/resources/resource_viewer';
-import { editorPointerState } from '../../editor/input/pointer/editor_pointer_state';
-import { runtimeErrorState } from '../../editor/contrib/runtime_error/runtime_error_state';
+import { closeSymbolSearch } from '../../editor/contrib/symbols/shared';
+import { getCodeAreaBounds, hideResourcePanel } from '../../editor/ui/view';
+import { closeSearch } from '../../editor/contrib/find/search';
+import { clampResourceViewerScroll } from '../contrib/resources/viewer';
+import { editorPointerState } from '../../editor/input/pointer/state';
+import { runtimeErrorState } from '../../editor/contrib/runtime_error/state';
 import { editorCaretState } from '../../editor/ui/caret_state';
 import {
 	createEntryTabContext,
 	upsertCodeEditorTab,
-} from './code_tab_contexts';
-import { activateCodeEditorTab, storeActiveCodeTabContext } from './code_tab_activation';
-import { endTabDrag } from './tab_drag';
-import { codeTabSessionState } from './code_tab_session_state';
-import { tabSessionState } from './tab_session_state';
+} from './code_tab/contexts';
+import { activateCodeEditorTab, storeActiveCodeTabContext } from './code_tab/activation';
+import { endTabDrag } from './tab/drag';
+import { codeTabSessionState } from './code_tab/session_state';
+import { tabSessionState } from './tab/session_state';
 
 function activateResourceViewerTab(tab: EditorTabDescriptor): void {
 	closeSearch(false, true);

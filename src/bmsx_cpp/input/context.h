@@ -8,7 +8,7 @@
 #ifndef BMSX_INPUT_CONTEXT_H
 #define BMSX_INPUT_CONTEXT_H
 
-#include "inputtypes.h"
+#include "models.h"
 #include <algorithm>
 #include <set>
 

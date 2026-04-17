@@ -9,11 +9,11 @@
 #if BMSX_ENABLE_GLES2
 #include "backend/gles2_backend.h"
 #endif
-#include "backend/renderpasslib.h"
-#include "graph/rendergraph.h"
-#include "core/engine_core.h"
-#include "rompack/rompack.h"
-#include "texturemanager.h"
+#include "backend/pass_library.h"
+#include "graph/graph.h"
+#include "core/engine.h"
+#include "rompack/format.h"
+#include "texture_manager.h"
 #include "common/clamp.h"
 #include <algorithm>
 #include <cmath>
@@ -44,7 +44,7 @@ GameView::~GameView() {
  * Initialize the renderer submit functions.
  *
  * Mirrors TypeScript GameView.renderer.submit structure.
- * Each submit function routes to render_queues helpers.
+ * Each submit function routes to queues helpers.
  */
 void GameView::initializeRenderer() {
 	// sprite -> RenderQueues::submitSprite

@@ -2,16 +2,16 @@ import type { TimerHandle } from '../../../platform/platform';
 import { clamp } from '../../../common/clamp';
 import { ScratchBuffer } from '../../../common/scratchbuffer';
 import { highlightTextLine as highlightTextLineExternal } from '../../language/lua/syntax_highlight';
-import { highlightAemTextLine } from '../../language/aem/aem_syntax_highlight';
+import { highlightAemTextLine } from '../../language/aem/syntax_highlight';
 import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type TokenAnnotation } from '../contrib/intellisense/semantic_model';
-import type { LuaDefinitionInfo } from '../../../lua/syntax/lua_ast';
-import type { CachedHighlight, CodeTabMode, HighlightLine, VisualLineSegment } from '../../common/types';
+import type { LuaDefinitionInfo } from '../../../lua/syntax/ast';
+import type { CachedHighlight, CodeTabMode, HighlightLine, VisualLineSegment } from '../../common/models';
 import { scheduleIdeOnce } from '../../common/background_tasks';
-import { EditorFont } from './view/editor_font';
+import { EditorFont } from './view/font';
 import { getTextSnapshot, splitText } from '../text/source_text';
 import { syncSemanticWorkspacePaths } from '../contrib/intellisense/semantic_workspace_sync';
 import type { TextBuffer } from '../text/text_buffer';
-import type { Position } from '../../common/types';
+import type { Position } from '../../common/models';
 
 interface VisualLinesContext {
 	buffer: TextBuffer;

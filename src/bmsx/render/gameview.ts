@@ -1,15 +1,15 @@
 import { BFont } from './shared/bitmap_font';
-import { $ } from '../core/engine_core';
-import { multiply_vec2 } from '../common/vector_operations';
+import { $ } from '../core/engine';
+import { multiply_vec2 } from '../common/vector';
 import { shallowcopy } from '../common/shallowcopy';
-import type { vec2 } from '../rompack/rompack';
-import * as render_queues from './shared/render_queues';
-import type { AtmosphereParams, BackendContext, GPUBackend, PresentationMode, RenderContext, RenderSubmission, RenderSubmitQueue, TextureHandle } from './backend/pipeline_interfaces';
-import { RenderPassLibrary } from './backend/renderpasslib';
-import { CRTDitherType as DitherType, type RenderPassToken } from './backend/pipeline_interfaces';
-import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/rendergraph';
-import { LightingSystem } from './lighting/lightingsystem';
-import * as renderQueues from './shared/render_queues';
+import type { vec2 } from '../rompack/format';
+import * as queues from './shared/queues';
+import type { AtmosphereParams, BackendContext, GPUBackend, PresentationMode, RenderContext, RenderSubmission, RenderSubmitQueue, TextureHandle } from './backend/interfaces';
+import { RenderPassLibrary } from './backend/pass_library';
+import { CRTDitherType as DitherType, type RenderPassToken } from './backend/interfaces';
+import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/graph';
+import { LightingSystem } from './lighting/system';
+import * as renderQueues from './shared/queues';
 import type {
 	GameViewHost,
 	GameViewCanvas,
@@ -23,13 +23,13 @@ import type {
 	ParticleRenderSubmission,
 	GlyphRenderSubmission,
 	SkyboxImageIds,
-} from './shared/render_types';
+} from './shared/submissions';
 import {
 	ATLAS_PRIMARY_SLOT_ID,
 	ATLAS_SECONDARY_SLOT_ID,
 	ENGINE_ATLAS_TEXTURE_KEY,
-} from 'bmsx/rompack/rompack';
-import { renderGate } from 'bmsx/core/engine_core';
+} from 'bmsx/rompack/format';
+import { renderGate } from 'bmsx/core/engine';
 
 const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay'];
 
@@ -179,30 +179,30 @@ export class GameView implements RenderContext {
 				renderQueues.submitMesh(o);
 			},
 			rect: (o: RectRenderSubmission) => {
-				render_queues.submitRectangle(o);
+				queues.submitRectangle(o);
 			},
 			poly: (o: PolyRenderSubmission) => {
-				render_queues.submitDrawPolygon(o);
+				queues.submitDrawPolygon(o);
 			},
 			glyphs: (o: GlyphRenderSubmission) => {
-				render_queues.submitGlyphs(o)
+				queues.submitGlyphs(o)
 			},
 		},
 	} as RenderSubmitQueue;
 
 	// --- Ambient controls API (best-practice toggles) -------------------------
 	public setSkyboxTintExposure(tint: [number, number, number], exposure = 1.0): void {
-		render_queues.setSkyboxTintExposure(tint, exposure);
+		queues.setSkyboxTintExposure(tint, exposure);
 	}
 	public setParticlesAmbient(mode: 0 | 1, factor = 1.0): void {
-		render_queues.setAmbientDefaults(mode, factor);
+		queues.setAmbientDefaults(mode, factor);
 	}
 	public setSpritesAmbient(enabled: boolean, factor = 1.0): void {
 		this.spriteAmbientEnabledDefault = !!enabled;
 		this.spriteAmbientFactorDefault = Math.max(0, Math.min(1, factor));
 	}
 	public setSpriteParallaxRig(vy: number, scale: number, impact: number, impact_t: number, bias_px: number, parallax_strength: number, scale_strength: number, flip_strength: number, flip_window: number): void {
-		render_queues.setSpriteParallaxRig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
+		queues.setSpriteParallaxRig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
 	}
 
 	private applyPresentationPassState(): void {

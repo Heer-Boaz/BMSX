@@ -1,8 +1,8 @@
-import type { RenderPassLibrary } from '../backend/renderpasslib';
-import type { RenderContext, RenderGraphPassContext, RenderPassStateRegistry } from '../backend/pipeline_interfaces';
-import { WebGLBackend } from '../backend/webgl/webgl_backend';
-import { $ } from '../../core/engine_core';
-import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl/webgl.constants';
+import type { RenderPassLibrary } from '../backend/pass_library';
+import type { RenderContext, RenderGraphPassContext, RenderPassStateRegistry } from '../backend/interfaces';
+import { WebGLBackend } from '../backend/webgl/backend';
+import { $ } from '../../core/engine';
+import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl/constants';
 import fragmentShaderDeviceCode from './shaders/device_quantize.frag.glsl';
 import vertexShaderCRTCode from './shaders/crt.vert.glsl';
 import type { GameView } from '../gameview';

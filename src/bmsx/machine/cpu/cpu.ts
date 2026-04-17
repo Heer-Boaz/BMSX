@@ -3,17 +3,17 @@ import type { RuntimeStringPoolState } from '../memory/string_pool';
 import type { Memory } from '../memory/memory';
 import { addTrackedLuaHeapBytes, replaceTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
 import { formatNumber } from '../common/number_format';
-import { BASE_CYCLES, OpCode } from './cpu_opcode_info';
-import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions, type CpuProfilerSnapshot } from './cpu_profiler';
+import { BASE_CYCLES, OpCode } from './opcode_info';
+import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions, type CpuProfilerSnapshot } from './profiler';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord } from './instruction_format';
-import { MemoryAccessKind } from '../memory/memory_access_kind';
-import { findVdpPacketSchema, getVdpPacketArgKind, VdpPacketWordKind } from '../devices/vdp/vdp_packet_schema';
+import { MemoryAccessKind } from '../memory/access_kind';
+import { findVdpPacketSchema, getVdpPacketArgKind, VdpPacketWordKind } from '../devices/vdp/packet_schema';
 import {
 	VDP_STREAM_BUFFER_BASE,
 	VDP_STREAM_BUFFER_SIZE,
-} from '../memory/memory_map';
+} from '../memory/map';
 
-export { OpCode } from './cpu_opcode_info';
+export { OpCode } from './opcode_info';
 
 export type Value = null | boolean | number | StringValue | Table | Closure | NativeFunction | NativeObject;
 
@@ -126,7 +126,7 @@ function resolveApiNativeCost(name: string): NativeFnCost {
 		case 'cartdata':
 		case 'list_lua_resources':
 		case 'get_lua_resource_source':
-		case 'list_lua_builtins':
+		case 'list_builtins':
 		case 'create_font':
 		case 'set_sprite_parallax_rig':
 		case 'taskgate':

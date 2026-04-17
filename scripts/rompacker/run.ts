@@ -14,4 +14,4 @@ if (typeof require !== 'undefined' && typeof require.extensions === 'object') {
 	}
 }
 
-import './rompacker';
+import './formater';

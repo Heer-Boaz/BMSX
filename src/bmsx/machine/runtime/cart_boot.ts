@@ -1,9 +1,9 @@
-import { $ } from '../../core/engine_core';
-import type { CanonicalizationType } from '../../rompack/rompack';
+import { $ } from '../../core/engine';
+import type { CanonicalizationType } from '../../rompack/format';
 import type { Program, ProgramMetadata } from '../cpu/cpu';
 import { IO_SYS_BOOT_CART, IO_SYS_CART_BOOTREADY } from '../bus/io';
 import { PROGRAM_ASSET_ID } from '../program/asset';
-import * as runtimeLuaPipeline from '../../ide/runtime/runtime_lua_pipeline';
+import * as luaPipeline from '../../ide/runtime/lua_pipeline';
 import type { Runtime } from './runtime';
 
 export type PreparedCartProgram = {
@@ -74,11 +74,11 @@ export class CartBootState {
 			return;
 		}
 		if (runtime.frameLoop.currentFrameState !== null) {
-			runtimeLuaPipeline.resetFrameState(runtime);
+			luaPipeline.resetFrameState(runtime);
 		}
 		if (runtime.pendingCall !== null) {
 			if (runtime.frameLoop.currentFrameState === null) {
-				runtimeLuaPipeline.resetFrameState(runtime);
+				luaPipeline.resetFrameState(runtime);
 			}
 			runtime.pendingCall = null;
 			runtime.vblank.clearHaltUntilIrq(runtime);
@@ -87,7 +87,7 @@ export class CartBootState {
 		this.pending = false;
 		console.info('Switching to cart program after BIOS boot request.');
 		runtime.activateProgramSource('cart');
-		void runtimeLuaPipeline.reloadProgramAndResetWorld(runtime);
+		void luaPipeline.reloadProgramAndResetWorld(runtime);
 	}
 
 	private setReadyFlag(runtime: Runtime, value: boolean): void {
@@ -107,7 +107,7 @@ export class CartBootState {
 		}
 		try {
 			if (runtime.cartLuaSources.can_boot_from_source) {
-				this.preparedProgram = runtimeLuaPipeline.compileCartLuaProgramForBoot(runtime);
+				this.preparedProgram = luaPipeline.compileCartLuaProgramForBoot(runtime);
 				this.setReadyFlag(runtime, true);
 				console.info('Cart boot payload prepared from Lua sources.');
 				return;
@@ -123,7 +123,7 @@ export class CartBootState {
 	}
 
 	private pollSystemBootRequest(runtime: Runtime): void {
-		if ($.lua_sources !== runtime.engineLuaSources) {
+		if ($.sources !== runtime.engineLuaSources) {
 			return;
 		}
 		if (runtime.machine.memory.readIoU32(IO_SYS_BOOT_CART) === 0) {

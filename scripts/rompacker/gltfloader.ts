@@ -1,5 +1,5 @@
 import { Buffer } from 'buffer';
-import type { GLTFIndexArray, GLTFMesh, GLTFModel, GLTFNode, GLTFScene, GLTFSkin } from '../../src/bmsx/rompack/rompack';
+import type { GLTFIndexArray, GLTFMesh, GLTFModel, GLTFNode, GLTFScene, GLTFSkin } from '../../src/bmsx/rompack/format';
 // @ts-ignore
 const { join } = require('path');
 // @ts-ignore

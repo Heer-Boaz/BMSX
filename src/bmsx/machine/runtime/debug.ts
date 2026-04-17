@@ -1,12 +1,12 @@
-import { $ } from '../../core/engine_core';
+import { $ } from '../../core/engine';
 import { describeInstructionAtPc, formatSourceSnippet, type InstructionOperandDebugInfo } from '../cpu/disassembler';
-import { valueToString } from '../firmware/lua_globals';
+import { valueToString } from '../firmware/globals';
 import { Table, isNativeObject, type LocalSlotDebug, type SourceRange, type Value } from '../cpu/cpu';
-import type { LuaSourceRecord } from '../program/lua_sources';
+import type { LuaSourceRecord } from '../program/sources';
 import type { Runtime } from './runtime';
-import { getWorkspaceCachedSource } from '../../ide/workspace/workspace_cache';
+import { getWorkspaceCachedSource } from '../../ide/workspace/cache';
 import { isStringValue, stringValueToString } from '../memory/string_pool';
-import { KEYWORDS } from '../../lua/syntax/luatoken';
+import { KEYWORDS } from '../../lua/syntax/token';
 
 const DEBUG_EXPR_PATTERN = /\b[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*\b/g;
 const MAX_DEBUG_EXPRESSIONS = 8;
@@ -80,7 +80,7 @@ function extractExpressionCandidates(range: SourceRange, sourceText: string): st
 }
 
 function resolveLuaSourceRecord(runtime: Runtime, path: string): LuaSourceRecord | null {
-	return $.lua_sources?.path2lua[path]
+	return $.sources?.path2lua[path]
 		?? runtime.cartLuaSources?.path2lua[path]
 		?? runtime.engineLuaSources?.path2lua[path]
 		?? null;

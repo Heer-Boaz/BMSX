@@ -9,7 +9,7 @@
 #define BMSX_PLATFORM_H
 
 #include "subscription.h"
-#include "core/types.h"
+#include "core/primitives.h"
 #include "render/backend/backend.h"
 #include <functional>
 #include <optional>

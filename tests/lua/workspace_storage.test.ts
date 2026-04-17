@@ -2,7 +2,7 @@ import './test_setup';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { StorageService } from '../../src/bmsx/platform/platform';
-import { $ } from '../../src/bmsx/core/game';
+import { $ } from '../../src/bmsx/core/engine';
 import {
 	buildDirtyFilePath,
 	configureWorkspaceStorage,
@@ -10,7 +10,7 @@ import {
 	readWorkspaceStateFile,
 	writeDirtyBuffer,
 	writeWorkspaceStateFile,
-} from '../../src/bmsx/ide/workspace_storage';
+} from '../../src/bmsx/ide/workbench/workspace/io';
 
 class MockStorage implements StorageService {
 	private readonly store = new Map<string, string>();

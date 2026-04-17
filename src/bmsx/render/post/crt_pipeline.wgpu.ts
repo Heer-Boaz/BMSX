@@ -1,6 +1,6 @@
-import { GPUBackend, TextureHandle } from '../backend/pipeline_interfaces';
-import { RenderPassLibrary } from '../backend/renderpasslib';
-import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu/webgpu_backend';
+import { GPUBackend, TextureHandle } from '../backend/interfaces';
+import { RenderPassLibrary } from '../backend/pass_library';
+import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu/backend';
 
 // Minimal WGSL shaders for present pass (full-screen triangle)
 const VS = /* wgsl */ `

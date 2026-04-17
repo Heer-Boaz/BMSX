@@ -3,11 +3,11 @@
 #include "machine/cpu/cpu.h"
 #include "machine/bus/io.h"
 #include "machine/memory/memory.h"
-#include "machine/memory/memory_map.h"
-#include "machine/scheduler/device_scheduler.h"
-#include "machine/devices/vdp/vdp_render_budget.h"
-#include "rompack/rompack.h"
-#include "render/shared/render_types.h"
+#include "machine/memory/map.h"
+#include "machine/scheduler/device.h"
+#include "machine/devices/vdp/budget.h"
+#include "rompack/format.h"
+#include "render/shared/submissions.h"
 #include <array>
 #include <optional>
 #include <string>

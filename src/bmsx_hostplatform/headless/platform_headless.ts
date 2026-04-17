@@ -1,4 +1,4 @@
-import { new_vec2 } from 'bmsx/common/vector_operations';
+import { new_vec2 } from 'bmsx/common/vector';
 import {
 	AudioClipHandle,
 	AudioFilterParams,
@@ -38,7 +38,7 @@ import {
 	createSubscriptionHandle,
 	HZ_SCALE,
 } from 'bmsx/platform';
-import { HeadlessGameViewHost } from 'bmsx/render/headless/headless_view';
+import { HeadlessGameViewHost } from 'bmsx/render/headless/view';
 
 class RealtimeHeadlessClock implements Clock {
 	private readonly origin = performance.now();

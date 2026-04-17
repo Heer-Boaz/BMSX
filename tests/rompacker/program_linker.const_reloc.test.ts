@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { LuaLexer } from '../../src/bmsx/lua/syntax/lualexer';
-import { LuaParser } from '../../src/bmsx/lua/syntax/luaparser';
+import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
+import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
 import { CPU, OpCode, RunResult, Table, createNativeFunction, type Proto } from '../../src/bmsx/machine/cpu/cpu';
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction } from '../../src/bmsx/machine/cpu/instruction_format';
-import { appendLuaChunkToProgram, compileLuaChunkToProgram } from '../../src/bmsx/machine/program/program_compiler';
-import type { ProgramAsset, ProgramConstReloc } from '../../src/bmsx/machine/program/program_asset';
-import { linkProgramAssets } from '../../src/bmsx/machine/program/program_linker';
+import { appendLuaChunkToProgram, compileLuaChunkToProgram } from '../../src/bmsx/machine/program/compiler';
+import type { ProgramAsset, ProgramConstReloc } from '../../src/bmsx/machine/program/asset';
+import { linkProgramAssets } from '../../src/bmsx/machine/program/linker';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
 import { isStringValue, stringValueToString } from '../../src/bmsx/machine/memory/string_pool';
 

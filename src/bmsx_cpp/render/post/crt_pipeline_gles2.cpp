@@ -4,7 +4,7 @@
 
 #include "crt_pipeline_gles2.h"
 
-#include "core/engine_core.h"
+#include "core/engine.h"
 #include <cstdio>
 #include <stdexcept>
 #include <string>

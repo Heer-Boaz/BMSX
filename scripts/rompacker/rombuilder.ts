@@ -1,16 +1,16 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompack/rompack';
-import type { asset_type, AudioMeta, BoundingBoxPrecalc, CanonicalizationType, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, RectBounds, RomAsset, RomManifest, vec2arr } from '../../src/bmsx/rompack/rompack';
-import { SYSTEM_BOOT_ENTRY_PATH } from '../../src/bmsx/core/system_machine';
-import { encodeRomToc } from '../../src/bmsx/rompack/rom_toc';
-import type { LuaChunk } from '../../src/bmsx/lua/syntax/lua_ast';
+import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompack/format';
+import type { asset_type, AudioMeta, BoundingBoxPrecalc, CanonicalizationType, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, RectBounds, RomAsset, RomManifest, vec2arr } from '../../src/bmsx/rompack/format';
+import { SYSTEM_BOOT_ENTRY_PATH } from '../../src/bmsx/core/system';
+import { encodeRomToc } from '../../src/bmsx/rompack/toc';
+import type { LuaChunk } from '../../src/bmsx/lua/syntax/ast';
 import { encodeAudioAssetToAdpcm } from './adpcm';
 import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
-import type { AtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './rompacker.rompack';
+import type { AtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './formater.rompack';
 // @ts-ignore
 const { build } = require('esbuild');
 // @ts-ignore
@@ -30,11 +30,11 @@ const { finished } = require('stream/promises');
 // @ts-ignore
 const { encodeBinary, decodeBinary } = require('../../src/bmsx/common/serializer/binencoder');
 // @ts-ignore
-const { buildRomMetadataSection } = require('../../src/bmsx/rompack/rom_metadata');
+const { buildRomMetadataSection } = require('../../src/bmsx/rompack/metadata');
 // @ts-ignore
-const { LuaLexer } = require('../../src/bmsx/lua/syntax/lualexer');
+const { LuaLexer } = require('../../src/bmsx/lua/syntax/lexer');
 // @ts-ignore
-const { LuaParser } = require('../../src/bmsx/lua/syntax/luaparser');
+const { LuaParser } = require('../../src/bmsx/lua/syntax/parser');
 // @ts-ignore
 const { compileLuaChunkToProgram, isLuaCompileError } = require('../../src/bmsx/machine/program/compiler');
 // @ts-ignore
@@ -1871,7 +1871,7 @@ export async function deployToServer(_rom_name: string, _title: string) {
  * Checks if the TypeScript file for the ROM loader is newer than its compiled output
  * and compiles it if needed. This function ensures that the output is always up to date.
  *
- * @throws {Error} Will throw if the romloader file does not exist or if compilation fails.
+ * @throws {Error} Will throw if the loader file does not exist or if compilation fails.
  * @returns {Promise<void>} A promise that resolves once the compilation process is complete
  *                         or if no action is needed.
  */

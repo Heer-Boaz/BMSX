@@ -1,4 +1,4 @@
-import type { AudioMeta } from '../../src/bmsx/rompack/rompack';
+import type { AudioMeta } from '../../src/bmsx/rompack/format';
 import { decodeWavToPcm } from '../../src/bmsx/common/wav';
 import { OggVorbisDecoder } from '@wasm-audio-decoders/ogg-vorbis';
 

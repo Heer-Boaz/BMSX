@@ -4,8 +4,8 @@
 
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
-import type { RomAsset, CartRomHeader, RomManifest } from '../../src/bmsx/rompack/rompack';
-import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadRomAssetList, parseCartHeader } from '../../src/bmsx/rompack/romloader';
+import type { RomAsset, CartRomHeader, RomManifest } from '../../src/bmsx/rompack/format';
+import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadRomAssetList, parseCartHeader } from '../../src/bmsx/rompack/loader';
 import {
 	buildManifestAsset,
 	disassembleProgramAsset,
@@ -14,7 +14,7 @@ import {
 	loadProgramFromAssets,
 	ROM_MANIFEST_ASSET_ID,
 	sortAssetsById,
-} from './inspector_shared';
+} from './shared';
 import { runNativeInspectorUI } from './native_ui';
 import { generateCycleCostReport } from './cycle_cost_analysis';
 

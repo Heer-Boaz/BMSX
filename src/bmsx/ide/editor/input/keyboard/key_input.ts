@@ -1,4 +1,4 @@
-import { $ } from '../../../../core/engine_core';
+import { $ } from '../../../../core/engine';
 
 export function isKeyJustPressed(code: string): boolean {
 	const keyboard = $.input.getPlayerInput(1).inputHandlers.keyboard;

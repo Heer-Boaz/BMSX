@@ -1,4 +1,4 @@
-import type { vec3arr } from '../../rompack/rompack';
+import type { vec3arr } from '../../rompack/format';
 
 export interface BaseLight {
 	color: vec3arr;

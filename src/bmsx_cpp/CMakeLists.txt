@@ -93,13 +93,13 @@ add_library(bmsx_core STATIC
 	vendor/stb_impl.c
 
 	# Core systems
-	core/types.cpp
-	core/engine_core.cpp
-	core/system_machine.cpp
+	core/primitives.cpp
+	core/engine.cpp
+	core/system.cpp
 	core/registry.cpp
-	rompack/runtime_assets.cpp
+	rompack/assets.cpp
 	common/serializer/binencoder.cpp
-	rompack/rompack.cpp
+	rompack/format.cpp
 	core/font.cpp
 	core/taskgate.cpp
 	common/byte_hex_string.cpp
@@ -111,43 +111,43 @@ add_library(bmsx_core STATIC
 	audio/soundmaster.cpp
 
 	# Input systems
-	input/inputstatemanager.cpp
-	input/playerinput.cpp
-	input/actionparser.cpp
-	input/input.cpp
-	input/keyboardinput.cpp
-	input/gamepadinput.cpp
-	input/pointerinput.cpp
+	input/state_manager.cpp
+	input/player.cpp
+	input/action_parser.cpp
+	input/manager.cpp
+	input/keyboard.cpp
+	input/gamepad.cpp
+	input/pointer.cpp
 
 	# Render systems
 	render/backend/backend.cpp
 	render/gameview.cpp
 	render/backend/frame_uniforms.cpp
-	render/shared/render_queues.cpp
-	render/texturemanager.cpp
-	render/backend/renderpasslib.cpp
-	render/graph/rendergraph.cpp
+	render/shared/queues.cpp
+	render/texture_manager.cpp
+	render/backend/pass_library.cpp
+	render/graph/graph.cpp
 	render/shared/glyphs.cpp
 
 	# Machine runtime (Lua bytecode interpreter)
 	machine/cpu/cpu.cpp
 	machine/firmware/font.cpp
-	lua/syntax/lualexer.cpp
-	lua/syntax/luaparser.cpp
-	machine/devices/dma/dma_controller.cpp
-	machine/devices/geometry/geometry_controller.cpp
-	machine/devices/imgdec/imgdec_controller.cpp
-	machine/devices/input/input_controller.cpp
-	machine/devices/audio/audio_controller.cpp
-	machine/devices/irq/irq_controller.cpp
-	machine/firmware/firmware_api.cpp
+	lua/syntax/lexer.cpp
+	lua/syntax/parser.cpp
+	machine/devices/dma/controller.cpp
+	machine/devices/geometry/controller.cpp
+	machine/devices/imgdec/controller.cpp
+	machine/devices/input/controller.cpp
+	machine/devices/audio/controller.cpp
+	machine/devices/irq/controller.cpp
+	machine/firmware/api.cpp
 	machine/cpu/disassembler.cpp
-	machine/program/lua_load_compiler.cpp
-	machine/firmware/lua_globals.cpp
+	machine/program/load_compiler.cpp
+	machine/firmware/globals.cpp
 	machine/memory/lua_heap_usage.cpp
-	machine/firmware/lua_runtime.cpp
+	machine/firmware/runtime.cpp
 	machine/machine.cpp
-	machine/scheduler/device_scheduler.cpp
+	machine/scheduler/device.cpp
 	machine/runtime/resource_usage_detector.cpp
 	machine/runtime/runtime.cpp
 	machine/memory/asset_memory.cpp
@@ -155,20 +155,20 @@ add_library(bmsx_core STATIC
 	machine/runtime/cpu_executor.cpp
 	machine/runtime/engine_irq.cpp
 	machine/runtime/frame_loop.cpp
-	machine/program/lua_executor.cpp
-	machine/program/lua_scratch.cpp
-	machine/machine_specs.cpp
-	machine/scheduler/frame_scheduler.cpp
-	machine/memory/memory_specs.cpp
+	machine/program/executor.cpp
+	machine/program/scratch.cpp
+	machine/specs.cpp
+	machine/scheduler/frame.cpp
+	machine/memory/specs.cpp
 	render/presentation_state.cpp
 	machine/runtime/timing.cpp
 	machine/runtime/timing_config.cpp
 	machine/runtime/vblank.cpp
 	machine/runtime/debug.cpp
 	machine/memory/memory.cpp
-	machine/memory/memory_map.cpp
+	machine/memory/map.cpp
 	machine/devices/vdp/vdp.cpp
-	machine/devices/vdp/vdp_command_processor.cpp
+	machine/devices/vdp/command_processor.cpp
 	machine/memory/string_memory.cpp
 	machine/program/loader.cpp
 	machine/program/linker.cpp
@@ -206,8 +206,8 @@ endif()
 
 	if(BMSX_BUILD_LIBRETRO)
 		add_library(bmsx_libretro SHARED
-			platform/libretro/libretro_platform.cpp
-			platform/libretro/libretro_entry.cpp
+			platform/libretro/platform.cpp
+			platform/libretro/entry.cpp
 		)
 
 	target_link_libraries(bmsx_libretro PRIVATE bmsx_core)

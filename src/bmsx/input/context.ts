@@ -1,4 +1,4 @@
-import type { GamepadBinding, GamepadInputMapping, KeyboardBinding, KeyboardInputMapping, PointerBinding, PointerInputMapping } from './inputtypes';
+import type { GamepadBinding, GamepadInputMapping, KeyboardBinding, KeyboardInputMapping, PointerBinding, PointerInputMapping } from './models';
 
 export type Device = 'keyboard' | 'gamepad' | 'pointer';
 

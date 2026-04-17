@@ -1,4 +1,4 @@
-import type { RawAssetSource } from '../../rompack/asset_source';
+import type { RawAssetSource } from '../../rompack/source';
 
 const BADP_HEADER_SIZE = 48;
 const BADP_MAGIC_0 = 0x42; // B

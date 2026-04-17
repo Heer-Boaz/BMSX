@@ -1,29 +1,29 @@
-import type { RenderPassLibrary } from '../backend/renderpasslib';
+import type { RenderPassLibrary } from '../backend/pass_library';
 import type {
 	HostOverlayPipelineState,
 	PassEncoder,
 	RenderPassDesc,
 	RenderPassStateRegistry,
 	RenderSubmission,
-} from '../backend/pipeline_interfaces';
+} from '../backend/interfaces';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../backend/frame_uniforms';
-import { WebGLBackend } from '../backend/webgl/webgl_backend';
+import { WebGLBackend } from '../backend/webgl/backend';
 import {
 	TEXTURE_UNIT_ATLAS_ENGINE,
 	TEXTURE_UNIT_ATLAS_PRIMARY,
 	TEXTURE_UNIT_ATLAS_SECONDARY,
-} from '../backend/webgl/webgl.constants';
-import { $ } from '../../core/engine_core';
+} from '../backend/webgl/constants';
+import { $ } from '../../core/engine';
 import { Runtime } from '../../machine/runtime/runtime';
 import { TAB_SPACES } from '../shared/bitmap_font';
-import type { GlyphRenderSubmission, color } from '../shared/render_types';
+import type { GlyphRenderSubmission, color } from '../shared/submissions';
 import {
 	ATLAS_PRIMARY_SLOT_ID,
 	ATLAS_SECONDARY_SLOT_ID,
 	ENGINE_ATLAS_INDEX,
 	ENGINE_ATLAS_TEXTURE_KEY,
-} from '../../rompack/rompack';
-import { consumeOverlayFrame, hasPendingOverlayFrame } from './editor_overlay_queue';
+} from '../../rompack/format';
+import { consumeOverlayFrame, hasPendingOverlayFrame } from './overlay_queue';
 import vertexShaderCode from '../2d/shaders/2d.vert.glsl';
 import fragmentShaderCode from '../2d/shaders/2d.frag.glsl';
 

@@ -1,4 +1,4 @@
-import { loadAssetList, normalizeCartridgeBlob } from '../../src/bmsx/rompack/romloader';
+import { loadAssetList, normalizeCartridgeBlob } from '../../src/bmsx/rompack/loader';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 

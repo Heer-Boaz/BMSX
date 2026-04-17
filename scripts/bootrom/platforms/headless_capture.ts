@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { PNG } from 'pngjs';
 
 import { taskGate } from '../../../src/bmsx/core/taskgate';
-import { HeadlessGameViewHost, type HeadlessPresentedFrame } from '../../../src/bmsx/render/headless/headless_view';
+import { HeadlessGameViewHost, type HeadlessPresentedFrame } from '../../../src/bmsx/render/headless/view';
 
 export interface ScheduledHeadlessCapture {
 	dueTimeMs: number;

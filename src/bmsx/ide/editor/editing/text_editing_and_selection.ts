@@ -11,28 +11,28 @@
  * - Multi-line editing with selection support
  */
 
-import { $ } from '../../../core/engine_core';
-import { editorRuntimeState } from '../common/editor_runtime_state';
+import { $ } from '../../../core/engine';
+import { editorRuntimeState } from '../common/runtime_state';
 import { showEditorMessage } from '../../workbench/common/feedback_state';
-import type { EditContext, Position } from '../../common/types';
-import { getActiveCodeTabContext } from '../../workbench/ui/code_tab_contexts';
+import type { EditContext, Position } from '../../common/models';
+import { getActiveCodeTabContext } from '../../workbench/ui/code_tab/contexts';
 import { revealCursor, updateDesiredColumn } from '../ui/caret';
-import { markDiagnosticsDirty } from '../contrib/diagnostics/diagnostics';
+import { markDiagnosticsDirty } from '../contrib/diagnostics/analysis';
 import { completionController } from '../contrib/suggest/completion_controller';
 import { currentLine } from '../common/text_layout';
 import { invalidateLineRange, markTextMutated } from '../common/text_runtime';
 import { capturePreMutationSource } from '../common/text_runtime';
-import { resetBlink } from '../render/render_caret';
+import { resetBlink } from '../render/caret';
 import * as constants from '../../common/constants';
-import { formatLuaDocument } from '../../language/lua/lua_formatter';
-import { extractErrorMessage } from '../../../lua/luavalue';
+import { formatLuaDocument } from '../../language/lua/formatter';
+import { extractErrorMessage } from '../../../lua/value';
 import { getTextSnapshot } from '../text/source_text';
 import type { MutableTextPosition, TextBuffer } from '../text/text_buffer';
 import { prepareUndo, applyUndoableReplace, recordEditContext } from './undo_controller';
-import { formatAemDocument } from '../../language/aem/aem_editor';
-import { editorDocumentState } from './editor_document_state';
-import { isActiveCodeTabReadOnly } from '../../workbench/ui/code_tab_contexts';
-import { editorViewState } from '../ui/editor_view_state';
+import { formatAemDocument } from '../../language/aem/editor';
+import { editorDocumentState } from './document_state';
+import { isActiveCodeTabReadOnly } from '../../workbench/ui/code_tab/contexts';
+import { editorViewState } from '../ui/view_state';
 import {
 	clearSingleCursorSelection,
 	collapseSingleCursorSelection,

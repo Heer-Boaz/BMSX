@@ -4,11 +4,11 @@ import { pathToFileURL } from 'node:url';
 
 import { createCanvas, Image, loadImage } from 'canvas';
 
-import { type BootArgs } from '../../../src/bmsx/rompack/rompack';
+import { type BootArgs } from '../../../src/bmsx/rompack/format';
 import { HeadlessPlatformServices } from '../../../src/bmsx_hostplatform/headless/platform_headless';
 import { CLIPlatformServices } from '../../../src/bmsx_hostplatform/cli/platform_cli';
 import type { Platform, InputEvt } from '../../../src/bmsx_hostplatform/platform';
-import { HeadlessGameViewHost } from '../../../src/bmsx/render/headless/headless_view';
+import { HeadlessGameViewHost } from '../../../src/bmsx/render/headless/view';
 import { HeadlessCaptureCoordinator, deriveHeadlessCaptureOutputDir, type ScheduledHeadlessCapture } from './headless_capture';
 import { printHeadlessCpuProfile } from './cpu_profile_report';
 

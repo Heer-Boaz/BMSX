@@ -1,11 +1,11 @@
 #include "machine/machine.h"
 
 #include "audio/soundmaster.h"
-#include "core/engine_core.h"
-#include "input/input.h"
-#include "machine/firmware/firmware_api.h"
-#include "render/shared/render_queues.h"
-#include "rompack/rompack.h"
+#include "core/engine.h"
+#include "input/manager.h"
+#include "machine/firmware/api.h"
+#include "render/shared/queues.h"
+#include "rompack/format.h"
 
 #include <stdexcept>
 

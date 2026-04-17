@@ -1,17 +1,17 @@
 #include "machine/devices/vdp/vdp.h"
-#include "machine/devices/vdp/vdp_command_processor.h"
-#include "machine/devices/vdp/vdp_packet_schema.h"
-#include "machine/memory/memory_map.h"
-#include "rompack/runtime_assets.h"
-#include "core/engine_core.h"
+#include "machine/devices/vdp/command_processor.h"
+#include "machine/devices/vdp/packet_schema.h"
+#include "machine/memory/map.h"
+#include "rompack/assets.h"
+#include "core/engine.h"
 #include "core/font.h"
 #if BMSX_ENABLE_GLES2
 #include "render/backend/gles2_backend.h"
 #endif
-#include "render/shared/render_queues.h"
-#include "render/texturemanager.h"
+#include "render/shared/queues.h"
+#include "render/texture_manager.h"
 #include "vendor/stb_image.h"
-#include "machine/devices/imgdec/imgdec_controller.h"
+#include "machine/devices/imgdec/controller.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>

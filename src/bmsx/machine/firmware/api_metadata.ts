@@ -1,5 +1,5 @@
-import type { EngineCore } from '../../core/engine_core';
-import type { Api } from './firmware_api';
+import type { EngineCore } from '../../core/engine';
+import type { Api } from './api';
 
 export type ApiParameterMetadata = {
 	readonly name: string;
@@ -219,7 +219,7 @@ export const API_METHOD_METADATA = {
 		returnType: 'string',
 		returnDescription: 'Lua source text.',
 	},
-	list_lua_builtins: {
+	list_builtins: {
 		description: 'Returns the list of builtin Lua identifiers used by the runtime.',
 		parameters: [],
 		returnType: 'table',

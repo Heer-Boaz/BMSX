@@ -1,4 +1,4 @@
-import { $ } from '../../core/engine_core';
+import { $ } from '../../core/engine';
 import { Runtime } from '../../machine/runtime/runtime';
 
 export type GlyphMap = Record<string, string>;

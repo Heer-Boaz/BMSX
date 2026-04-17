@@ -1,15 +1,15 @@
-import type { PointerSnapshot } from '../../../common/types';
-import { renderCreateResourceBar, renderLineJumpBar, renderRenameBar, renderResourceSearchBar, renderSearchBar, renderSymbolSearchBar } from '../../render/render_inline_bars';
-import { renameController } from '../rename/rename_controller';
-import { handleCreateResourceInput } from '../../input/quick_input/editor_create_resource_input';
-import { handleLineJumpInput } from '../../input/quick_input/editor_line_jump_input';
-import { handleResourceSearchInput } from '../../input/quick_input/editor_resource_search_input';
-import { handleSearchInput } from '../../input/quick_input/editor_search_input';
-import { handleSymbolSearchInput } from '../../input/quick_input/editor_symbol_search_input';
-import { handleQuickInputPointer } from '../../input/quick_input/editor_quick_input_pointer';
-import { editorSearchState, lineJumpState } from '../find/find_widget_state';
-import { symbolSearchState } from '../symbols/symbol_search_state';
-import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/resource_widget_state';
+import type { PointerSnapshot } from '../../../common/models';
+import { renderCreateResourceBar, renderLineJumpBar, renderRenameBar, renderResourceSearchBar, renderSearchBar, renderSymbolSearchBar } from '../../render/inline_bar/bars';
+import { renameController } from '../rename/controller';
+import { handleCreateResourceInput } from '../../input/quick_input/create_resource/input';
+import { handleLineJumpInput } from '../../input/quick_input/line_jump/input';
+import { handleResourceSearchInput } from '../../input/quick_input/resource_search/input';
+import { handleSearchInput } from '../../input/quick_input/search/input';
+import { handleSymbolSearchInput } from '../../input/quick_input/symbol_search/input';
+import { handleQuickInputPointer } from '../../input/quick_input/pointer/dispatch';
+import { editorSearchState, lineJumpState } from '../find/widget_state';
+import { symbolSearchState } from '../symbols/search_state';
+import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
 
 export function isInlineWidgetFocused(): boolean {
 	return editorSearchState.active

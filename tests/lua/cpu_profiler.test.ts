@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { CPU, OpCode, RunResult, type Program, type ProgramMetadata, type Proto } from '../../src/bmsx/machine/cpu/cpu';
-import { collectCpuProfilerHotPcs } from '../../src/bmsx/machine/cpu/cpu_profiler';
+import { collectCpuProfilerHotPcs } from '../../src/bmsx/machine/cpu/profiler';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../src/bmsx/machine/cpu/instruction_format';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
 

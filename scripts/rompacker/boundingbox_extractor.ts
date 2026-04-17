@@ -1,8 +1,8 @@
 // @ts-ignore
 const { createCanvas } = require('canvas');
 import type { Image } from 'canvas';
-import type { RectBounds, Polygon, vec2arr } from '../../src/bmsx/rompack/rompack';
-import type { ImageResource } from './rompacker.rompack';
+import type { RectBounds, Polygon, vec2arr } from '../../src/bmsx/rompack/format';
+import type { ImageResource } from './formater.rompack';
 import earcut from 'earcut';
 
 type ConvexPiece = {

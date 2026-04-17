@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { compileLoadChunk } from '../../src/bmsx/machine/program/lua_load_compiler';
+import { compileLoadChunk } from '../../src/bmsx/machine/program/load_compiler';
 import { Table } from '../../src/bmsx/machine/cpu/cpu';
 import { StringPool } from '../../src/bmsx/machine/memory/string_pool';
 

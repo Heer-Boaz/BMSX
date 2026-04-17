@@ -1,7 +1,7 @@
-import type { RomAsset } from '../../src/bmsx/rompack/rompack';
+import type { RomAsset } from '../../src/bmsx/rompack/format';
 import { PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/machine/program/asset';
-import { parseCartHeader } from '../../src/bmsx/rompack/romloader';
-import { parseRomMetadataSection } from '../../src/bmsx/rompack/rom_metadata';
+import { parseCartHeader } from '../../src/bmsx/rompack/loader';
+import { parseRomMetadataSection } from '../../src/bmsx/rompack/metadata';
 import { clamp } from '../../src/bmsx/common/clamp';
 import { bufferSegmentGlyph, buildBufferBarModel, type BufferBarCell, type BufferBarModel, type BufferHitRegion, type BufferLegendEntry, type BufferRegion } from './asciiart';
 import { buildAssetModalView, renderPreviewSectionWindow, type AssetModalView, type AssetPreviewSection } from './asset_modal_view';

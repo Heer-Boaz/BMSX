@@ -1,5 +1,5 @@
-import { $ } from '../../core/engine_core';
-import type { BootArgs } from '../../rompack/rompack';
+import { $ } from '../../core/engine';
+import type { BootArgs } from '../../rompack/format';
 
 export async function startCart(args: BootArgs): Promise<void> {
 	await $.init({

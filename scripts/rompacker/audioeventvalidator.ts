@@ -1,5 +1,5 @@
-import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument } from '../../src/bmsx/audio/aem_definition';
-import type { Resource } from './rompacker.rompack';
+import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument } from '../../src/bmsx/audio/aem';
+import type { Resource } from './formater.rompack';
 
 export function validateAudioEventReferences(resources: Resource[]): void {
 	const audioIds: string[] = [];

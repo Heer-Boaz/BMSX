@@ -1,5 +1,5 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
-import type { BootArgs } from '../../src/bmsx/rompack/rompack';
+import type { BootArgs } from '../../src/bmsx/rompack/format';
 import { constructPlatformFromViewHostHandle } from '../../src/bmsx_hostplatform/platform';
 import { createAudioContext, startAudioOnIos } from './bootaudio';
 
@@ -329,7 +329,7 @@ function getParameterByName(name: string, url: string = window.location.href) {
 	return decodeURIComponent(results[2].replace(/\+/g, ' '));
 }
 
-// TODO: DUPLICATE CODE WITH `romloader.ts`!!!
+// TODO: DUPLICATE CODE WITH `loader.ts`!!!
 function splitPng(blob: Uint8Array): { png?: Uint8Array; rest: Uint8Array } {
 	if (
 		blob[0] !== 0x89 || blob[1] !== 0x50 || blob[2] !== 0x4E || blob[3] !== 0x47 ||

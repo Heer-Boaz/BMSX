@@ -1,4 +1,4 @@
-import { M4 } from '../3d/math3d';
+import { M4 } from '../3d/math';
 
 export interface FallbackCameraState {
 	width: number;

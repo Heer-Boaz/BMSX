@@ -1,7 +1,7 @@
 #include "machine/runtime/cpu_executor.h"
 
 #include "machine/runtime/runtime.h"
-#include "machine/scheduler/device_scheduler.h"
+#include "machine/scheduler/device.h"
 
 #include <limits>
 #include <stdexcept>

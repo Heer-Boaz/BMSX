@@ -1,6 +1,6 @@
--- lua_identifier_chain.lua
+-- identifier_chain.lua
 
-local lua_identifier_chain = {}
+local identifier_chain = {}
 local separators = {
 	["."] = true,
 	[":"] = true,
@@ -31,7 +31,7 @@ local function is_valid_identifier_segment(value)
 	return true
 end
 
-function lua_identifier_chain.parse_lua_identifier_chain(expression)
+function identifier_chain.parse_identifier_chain(expression)
 	if not expression or #expression == 0 then
 		return nil
 	end
@@ -56,12 +56,12 @@ function lua_identifier_chain.parse_lua_identifier_chain(expression)
 	return parts
 end
 
-function lua_identifier_chain.resolve_lua_identifier_chain_root(expression)
-	local parts = lua_identifier_chain.parse_lua_identifier_chain(expression)
+function identifier_chain.resolve_identifier_chain_root(expression)
+	local parts = identifier_chain.parse_identifier_chain(expression)
 	if not parts or #parts == 0 then
 		return nil
 	end
 	return parts[1]
 end
 
-return lua_identifier_chain
+return identifier_chain

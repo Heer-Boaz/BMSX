@@ -6,11 +6,11 @@ import type {
 	PolyRenderSubmission,
 	RectRenderSubmission,
 	RenderLayer
-} from '../../render/shared/render_types';
-import { $ } from '../../core/engine_core';
-import { publishOverlayFrame, type EditorOverlayFrame } from '../../render/editor/editor_overlay_queue';
-import type { Viewport } from '../../rompack/rompack';
-import { RenderSubmission } from '../../render/backend/pipeline_interfaces';
+} from '../../render/shared/submissions';
+import { $ } from '../../core/engine';
+import { publishOverlayFrame, type EditorOverlayFrame } from '../../render/editor/overlay_queue';
+import type { Viewport } from '../../rompack/format';
+import { RenderSubmission } from '../../render/backend/interfaces';
 
 export type RenderCommand = RenderSubmission;
 type RectSubmission = Extract<RenderSubmission, { type: 'rect' }>;

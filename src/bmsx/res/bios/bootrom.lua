@@ -197,10 +197,10 @@ local collect_cart_manifest_errors<const> = function(cart_manifest)
 	return errors
 end
 
-local rom_toc_magic<const> = 0x434f5442
-local rom_toc_header_size<const> = 48
-local rom_toc_entry_size<const> = 80
-local rom_toc_invalid_u32<const> = 0xffffffff
+local toc_magic<const> = 0x434f5442
+local toc_header_size<const> = 48
+local toc_entry_size<const> = 80
+local toc_invalid_u32<const> = 0xffffffff
 local rom_asset_type_data<const> = 3
 local program_asset_id<const> = '__program__'
 local program_boot_header_version<const> = 1
@@ -862,7 +862,7 @@ local read_program_const_pool_payload<const> = function(base, size)
 end
 
 local read_toc_string<const> = function(string_table_base, string_table_size, offset, length)
-	if offset == rom_toc_invalid_u32 or length == 0 then
+	if offset == toc_invalid_u32 or length == 0 then
 		return ''
 	end
 	assert_range(offset, length, string_table_size, 'toc string table')
@@ -871,25 +871,25 @@ local read_toc_string<const> = function(string_table_base, string_table_size, of
 end
 
 local find_data_asset_payload_range<const> = function(rom_base, header, target_asset_id)
-	if header.toc_len < rom_toc_header_size then
+	if header.toc_len < toc_header_size then
 		error('ROM TOC is too small.')
 	end
 	local toc_base<const> = rom_base + header.toc_off
 	local toc_magic<const> = mem[toc_base + 0]
-	if toc_magic ~= rom_toc_magic then
+	if toc_magic ~= toc_magic then
 		error('Invalid ROM TOC magic.')
 	end
 	local toc_header_size<const> = mem[toc_base + 4]
-	if toc_header_size ~= rom_toc_header_size then
+	if toc_header_size ~= toc_header_size then
 		error('Unexpected ROM TOC header size.')
 	end
 	local entry_size<const> = mem[toc_base + 8]
-	if entry_size ~= rom_toc_entry_size then
+	if entry_size ~= toc_entry_size then
 		error('Unexpected ROM TOC entry size.')
 	end
 	local entry_count<const> = mem[toc_base + 12]
 	local entry_offset<const> = mem[toc_base + 16]
-	if entry_offset ~= rom_toc_header_size then
+	if entry_offset ~= toc_header_size then
 		error('Unexpected ROM TOC entry offset.')
 	end
 	local string_table_offset<const> = mem[toc_base + 20]
@@ -912,7 +912,7 @@ local find_data_asset_payload_range<const> = function(rom_base, header, target_a
 			if asset_id == target_asset_id then
 				local payload_start<const> = mem[entry + 40]
 				local payload_end<const> = mem[entry + 44]
-				if payload_start == rom_toc_invalid_u32 or payload_end == rom_toc_invalid_u32 or payload_end <= payload_start then
+				if payload_start == toc_invalid_u32 or payload_end == toc_invalid_u32 or payload_end <= payload_start then
 					error('Data asset "' .. target_asset_id .. '" is missing payload range.')
 				end
 				assert_range(payload_start, payload_end - payload_start, header.data_off + header.data_len, target_asset_id .. ' payload')
@@ -2034,7 +2034,7 @@ local collect_cart_precheck_errors<const> = function(cart_header, cart_manifest)
 	local host_fault_flags<const> = mem[sys_host_fault_flags]
 	if (host_fault_flags & sys_host_fault_flag_active) ~= 0 and (host_fault_flags & sys_host_fault_flag_startup_blocking) ~= 0 then
 		local host_fault_stage<const> = mem[sys_host_fault_stage]
-		if host_fault_stage == sys_host_fault_stage_startup_audio_refresh then
+		if host_fault_stage == sys_host_fault_stage_startup_refresh then
 			errors[#errors + 1] = 'HOST STARTUP AUDIO REFRESH FAILED'
 		else
 			errors[#errors + 1] = 'HOST STARTUP FAULT'

@@ -1,6 +1,6 @@
 import type { SoundMaster } from '../audio/soundmaster';
-import type { Input } from '../input/input';
-import { beginMeshQueue, beginParticleQueue, clearBackQueues } from '../render/shared/render_queues';
+import type { Input } from '../input/manager';
+import { beginMeshQueue, beginParticleQueue, clearBackQueues } from '../render/shared/queues';
 import { clearHardwareCamera } from '../render/shared/hardware_camera';
 import { clearHardwareLighting } from '../render/shared/hardware_lighting';
 import {
@@ -11,12 +11,12 @@ import {
 	IO_SYS_HOST_FAULT_STAGE,
 } from './bus/io';
 import { CPU } from './cpu/cpu';
-import { AudioController } from './devices/audio/audio_controller';
-import { DmaController } from './devices/dma/dma_controller';
-import { GeometryController } from './devices/geometry/geometry_controller';
-import { ImgDecController } from './devices/imgdec/imgdec_controller';
-import { InputController, type InputControllerState } from './devices/input/input_controller';
-import { IrqController } from './devices/irq/irq_controller';
+import { AudioController } from './devices/audio/controller';
+import { DmaController } from './devices/dma/controller';
+import { GeometryController } from './devices/geometry/controller';
+import { ImgDecController } from './devices/imgdec/controller';
+import { InputController, type InputControllerState } from './devices/input/controller';
+import { IrqController } from './devices/irq/controller';
 import { VDP, type VdpBlitterExecutor, type VdpState } from './devices/vdp/vdp';
 import { Memory } from './memory/memory';
 import { StringHandleTable } from './memory/string_memory';
@@ -28,7 +28,7 @@ import {
 	DEVICE_SERVICE_IMG,
 	DEVICE_SERVICE_VDP,
 	DeviceScheduler,
-} from './scheduler/device_scheduler';
+} from './scheduler/device';
 
 export type MachineTiming = {
 	cpuHz: number;

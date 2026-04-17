@@ -1,4 +1,4 @@
-import { RenderPassLibrary } from '../backend/renderpasslib';
+import { RenderPassLibrary } from '../backend/pass_library';
 
 // WebGPU stub: registers the Sprites pass for WebGPU builds.
 // This is a placeholder. Replace with real WGSL shaders and GPUBackend calls.

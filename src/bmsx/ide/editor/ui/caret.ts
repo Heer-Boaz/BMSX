@@ -2,13 +2,13 @@ import { breakUndoSequence } from '../editing/undo_controller';
 import { currentLine } from '../common/text_layout';
 import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../common/text_layout';
 import { isShiftDown, isCtrlDown } from '../input/keyboard/key_input';
-import { resetBlink } from '../render/render_caret';
+import { resetBlink } from '../render/caret';
 import { findWordLeft, findWordRight, hasSelection, collapseSelectionTo, clearSelection } from '../editing/text_editing_and_selection';
 import { ensureSingleCursorSelectionAnchor } from '../editing/cursor_state';
-import type { VisualLineSegment } from '../../common/types';
+import type { VisualLineSegment } from '../../common/models';
 import { revealCursor, resolveViewportCapacity, setCursorFromVisualIndex, updateDesiredColumn } from './caret_view';
-import { editorDocumentState } from '../editing/editor_document_state';
-import { editorViewState } from './editor_view_state';
+import { editorDocumentState } from '../editing/document_state';
+import { editorViewState } from './view_state';
 import { completionController } from '../contrib/suggest/completion_controller';
 
 export type VisualCursorOverride = {

@@ -1,4 +1,4 @@
-import type { vec3 } from '../../rompack/rompack';
+import type { vec3 } from '../../rompack/format';
 import { resolveActiveCamera3D } from './hardware_camera';
 
 export type ResolvedCameraState = {

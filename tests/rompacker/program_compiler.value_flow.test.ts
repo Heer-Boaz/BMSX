@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { LuaLexer } from '../../src/bmsx/lua/syntax/lualexer';
-import { LuaParser } from '../../src/bmsx/lua/syntax/luaparser';
+import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
+import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
 import { IO_INP_QUERY } from '../../src/bmsx/machine/bus/io';
-import { compileLuaChunkToProgram } from '../../src/bmsx/machine/program/program_compiler';
+import { compileLuaChunkToProgram } from '../../src/bmsx/machine/program/compiler';
 import {
 	withTemporaryMmioRegisterSpec,
 	type MmioRegisterSpec,
-} from '../../src/bmsx/machine/bus/mmio_register_spec';
+} from '../../src/bmsx/machine/bus/registers';
 
 function parseChunk(source: string, path: string = 'value_flow.lua') {
 	const lexer = new LuaLexer(source, path);

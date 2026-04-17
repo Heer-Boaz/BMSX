@@ -1,12 +1,12 @@
-import { isEditableCodeTab } from '../../workbench/ui/code_tab_contexts';
-import { notifyReadOnlyEdit } from '../ui/editor_view';
+import { isEditableCodeTab } from '../../workbench/ui/code_tab/contexts';
+import { notifyReadOnlyEdit } from '../ui/view';
 import { prepareUndo, applyUndoableReplace } from './undo_controller';
 import { markTextMutated } from '../common/text_runtime';
-import { resetBlink } from '../render/render_caret';
+import { resetBlink } from '../render/caret';
 import { revealCursor, updateDesiredColumn } from '../ui/caret';
 import * as TextEditing from './text_editing_and_selection';
-import { editorDocumentState } from './editor_document_state';
-import { editorViewState } from '../ui/editor_view_state';
+import { editorDocumentState } from './document_state';
+import { editorViewState } from '../ui/view_state';
 
 export function toggleLineComments(): void {
 	if (!isEditableCodeTab()) {

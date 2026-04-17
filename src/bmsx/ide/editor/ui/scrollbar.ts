@@ -1,15 +1,15 @@
 import { clamp } from '../../../common/clamp';
 import { SCROLLBAR_MIN_THUMB_HEIGHT } from '../../common/constants';
-import type { ScrollbarKind } from '../../common/types';
-import type { RectBounds } from '../../../rompack/rompack';
-import { computeMaximumScrollColumn, getCodeAreaBounds } from './editor_view';
+import type { ScrollbarKind } from '../../common/models';
+import type { RectBounds } from '../../../rompack/format';
+import { computeMaximumScrollColumn, getCodeAreaBounds } from './view';
 import { ensureVisualLines, getVisualLineCount } from '../common/text_layout';
-import { resourcePanel } from '../../workbench/contrib/resources/resource_panel_controller';
+import { resourcePanel } from '../../workbench/contrib/resources/panel/controller';
 import { api } from './view/overlay_api';
-import { setResourceViewerScroll } from '../../workbench/contrib/resources/resource_viewer';
-import { getActiveResourceViewer } from '../../workbench/contrib/resources/resource_view_tabs';
+import { setResourceViewerScroll } from '../../workbench/contrib/resources/viewer';
+import { getActiveResourceViewer } from '../../workbench/contrib/resources/view_tabs';
 import { editorCaretState } from './caret_state';
-import { editorViewState } from './editor_view_state';
+import { editorViewState } from './view_state';
 
 export class Scrollbar {
 	public readonly orientation: 'vertical' | 'horizontal';

@@ -2,7 +2,7 @@
 // This is intentionally simple: it pairs shader source with a declared binding layout
 // and provides a stable signature for pipeline/material caching.
 
-import type { GraphicsPipelineBindingLayout, GraphicsPipelineBuildDesc } from './pipeline_interfaces';
+import type { GraphicsPipelineBindingLayout, GraphicsPipelineBuildDesc } from './interfaces';
 
 export interface ShaderModule {
 	code: string;

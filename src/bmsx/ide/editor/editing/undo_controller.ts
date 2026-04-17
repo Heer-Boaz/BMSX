@@ -1,21 +1,21 @@
-import { $ } from '../../../core/engine_core';
-import { EditorUndoRecord, TextUndoOp } from '../text/editor_undo';
+import { $ } from '../../../core/engine';
+import { EditorUndoRecord, TextUndoOp } from '../text/undo';
 import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import * as constants from '../../common/constants';
-import { editorRuntimeState } from '../common/editor_runtime_state';
-import { invalidateLuaCommentContextFromRow } from '../../common/text_utils';
+import { editorRuntimeState } from '../common/runtime_state';
+import { invalidateLuaCommentContextFromRow } from '../../common/text';
 import { capturePreMutationSource } from '../common/text_runtime';
-import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../../workbench/ui/code_tab_contexts';
-import { notifyReadOnlyEdit } from '../ui/editor_view';
+import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../../workbench/ui/code_tab/contexts';
+import { notifyReadOnlyEdit } from '../ui/view';
 import { updateDesiredColumn } from '../ui/caret';
-import { resetBlink } from '../render/render_caret';
+import { resetBlink } from '../render/caret';
 import { ensureCursorVisible } from '../ui/caret';
-import { requestSemanticRefresh } from '../contrib/intellisense/intellisense';
-import type { EditorSnapshot, Position } from '../../common/types';
+import { requestSemanticRefresh } from '../contrib/intellisense/engine';
+import type { EditorSnapshot, Position } from '../../common/models';
 import { editorCaretState } from '../ui/caret_state';
-import { editorDocumentState } from './editor_document_state';
-import { isActiveCodeTabReadOnly } from '../../workbench/ui/code_tab_contexts';
-import { editorViewState } from '../ui/editor_view_state';
+import { editorDocumentState } from './document_state';
+import { isActiveCodeTabReadOnly } from '../../workbench/ui/code_tab/contexts';
+import { editorViewState } from '../ui/view_state';
 
 export function prepareUndo(key: string, allowMerge: boolean): void {
 	if (isActiveCodeTabReadOnly()) {

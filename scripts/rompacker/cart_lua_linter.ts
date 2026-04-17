@@ -1,17 +1,17 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { extname, join, relative, resolve, sep } from 'node:path';
 
-import { LuaLexer } from '../../src/bmsx/lua/syntax/lualexer';
-import { LuaParser } from '../../src/bmsx/lua/syntax/luaparser';
-import type { LuaToken } from '../../src/bmsx/lua/syntax/luatoken';
-import { LuaTokenType } from '../../src/bmsx/lua/syntax/luatoken';
+import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
+import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
+import type { LuaToken } from '../../src/bmsx/lua/syntax/token';
+import { LuaTokenType } from '../../src/bmsx/lua/syntax/token';
 import {
 	LuaAssignmentOperator,
 	LuaBinaryOperator,
 	LuaSyntaxKind,
 	LuaTableFieldKind,
 	LuaUnaryOperator,
-} from '../../src/bmsx/lua/syntax/lua_ast';
+} from '../../src/bmsx/lua/syntax/ast';
 import type {
 	LuaAssignmentStatement,
 	LuaBooleanLiteralExpression,
@@ -29,7 +29,7 @@ import type {
 	LuaStatement,
 	LuaStringLiteralExpression,
 	LuaTableField,
-} from '../../src/bmsx/lua/syntax/lua_ast';
+} from '../../src/bmsx/lua/syntax/ast';
 
 type LuaLintIssueRule =
 	'syntax_error_pattern' |

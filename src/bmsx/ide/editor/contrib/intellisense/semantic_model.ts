@@ -20,13 +20,13 @@ import {
 	type LuaFunctionDeclarationStatement,
 	type LuaDefinitionInfo,
 	type LuaSourceRange,
-} from '../../../../lua/syntax/lua_ast';
-import type { LuaToken } from '../../../../lua/syntax/luatoken';
-import { LuaTokenType } from '../../../../lua/syntax/luatoken';
-import type { LuaSymbolEntry } from '../../../../machine/runtime/types';
-import type { ParsedLuaChunk } from '../../../language/lua/lua_parse';
-import { getCachedLuaParse } from '../../../language/lua/lua_analysis_cache';
-import type { CanonicalizationType } from '../../../../rompack/rompack';
+} from '../../../../lua/syntax/ast';
+import type { LuaToken } from '../../../../lua/syntax/token';
+import { LuaTokenType } from '../../../../lua/syntax/token';
+import type { LuaSymbolEntry } from '../../../../machine/runtime/contracts';
+import type { ParsedLuaChunk } from '../../../language/lua/parse';
+import { getCachedLuaParse } from '../../../language/lua/analysis_cache';
+import type { CanonicalizationType } from '../../../../rompack/format';
 
 export type SymbolKind = 'parameter' | 'local' | 'constant' | 'function' | 'global' | 'tableField' | 'module' | 'type' | 'label' | 'keyword';
 

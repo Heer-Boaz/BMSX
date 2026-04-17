@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { LuaDebuggerPauseSignal } from '../../src/bmsx/lua/runtime';
 import { createLuaInterpreter, isLuaDebuggerPauseSignal } from '../../src/bmsx/lua/runtime';
-import { LuaDebuggerController } from '../../src/bmsx/lua/luadebugger';
+import { LuaDebuggerController } from '../../src/bmsx/lua/debugger';
 import { LuaRuntimeError } from '../../src/bmsx/lua/errors';
 import type { LuaFunctionValue } from '../../src/bmsx/lua/value';
 import { emitDebuggerLifecycleEvent } from '../../src/bmsx/machine/debugger_lifecycle';

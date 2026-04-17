@@ -1,4 +1,4 @@
-import type { PointerSnapshot } from '../../../common/types';
+import type { PointerSnapshot } from '../../../common/models';
 import {
 	closeActionPrompt,
 	drawActionPromptOverlay,

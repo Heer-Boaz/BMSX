@@ -8,7 +8,7 @@ import {
 	getRomManifest,
 	isEngineRuntimeRebuildRequired,
 } from './rombuilder';
-import type { RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
+import type { RomPackerOptions, RomPackerTarget } from './formater.rompack';
 
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
@@ -34,7 +34,7 @@ type PlatformBuildOptions = Pick<RomPackerOptions, 'platform' | 'canonicalizatio
 type BrowserDeployOptions = Pick<RomPackerOptions, 'platform' | 'canonicalization' | 'debug' | 'force' | 'respath' | 'title' | 'rom_name'>;
 
 const LIBRETRO_CORE_BASENAME = 'bmsx_libretro';
-const LIBRETRO_ENTRY_PATH = join(process.cwd(), 'src', 'bmsx_cpp', 'platform', 'libretro', 'libretro_entry.cpp');
+const LIBRETRO_ENTRY_PATH = join(process.cwd(), 'src', 'bmsx_cpp', 'platform', 'libretro', 'entry.cpp');
 
 function runCommand(command: string, args: string[]): void {
 	const result = spawnSync(command, args, { stdio: 'inherit' });

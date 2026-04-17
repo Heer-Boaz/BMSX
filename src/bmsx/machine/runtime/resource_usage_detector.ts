@@ -4,7 +4,7 @@ import {
 	IO_REGION_SIZE,
 	STRING_HANDLE_COUNT,
 	STRING_HANDLE_ENTRY_SIZE,
-} from '../memory/memory_map';
+} from '../memory/map';
 import type { StringHandleTable } from '../memory/string_memory';
 import type { VDP } from '../devices/vdp/vdp';
 

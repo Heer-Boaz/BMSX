@@ -1,4 +1,4 @@
-import { convertToError } from '../../lua/luavalue';
+import { convertToError } from '../../lua/value';
 import {
 	HOST_FAULT_FLAG_ACTIVE,
 	HOST_FAULT_FLAG_STARTUP_BLOCKING,

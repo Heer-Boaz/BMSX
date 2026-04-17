@@ -1,4 +1,4 @@
-import type { Position } from '../../common/types';
+import type { Position } from '../../common/models';
 
 export type MutableSingleCursorState = {
 	cursorRow: number;

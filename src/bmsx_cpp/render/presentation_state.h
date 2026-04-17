@@ -1,7 +1,7 @@
 #pragma once
 
-#include "machine/scheduler/frame_scheduler.h"
-#include "core/types.h"
+#include "machine/scheduler/frame.h"
+#include "core/primitives.h"
 #include "render/gameview.h"
 #include <chrono>
 
@@ -14,7 +14,7 @@ struct RenderPresentation {
 	GameView::PresentationMode mode = GameView::PresentationMode::Completed;
 	bool commitFrame = false;
 	f64 runtimeDrawMs = 0.0;
-	f64 runtimeIdeDrawMs = 0.0;
+	f64 workbenchModeDrawMs = 0.0;
 	f64 runtimeTerminalDrawMs = 0.0;
 };
 

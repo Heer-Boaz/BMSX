@@ -4,7 +4,7 @@ import {
 	STRING_HANDLE_TABLE_BASE,
 	STRING_HEAP_BASE,
 	STRING_HEAP_SIZE,
-} from './memory_map';
+} from './map';
 import { enforceLuaHeapBudget } from './lua_heap_usage';
 import { Memory } from './memory';
 

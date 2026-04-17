@@ -1,9 +1,9 @@
 import { Material } from './material';
 import { ShadowMap } from './shadowmap';
-import { DEFAULT_VERTEX_COLOR } from '../backend/webgl/webgl.constants';
-import type { TextureKey } from '../../render/texturemanager';
-import type { color } from '../shared/render_types';
-import type { vec3arr } from '../../rompack/rompack';
+import { DEFAULT_VERTEX_COLOR } from '../backend/webgl/constants';
+import type { TextureKey } from '../texture_manager';
+import type { color } from '../shared/submissions';
+import type { vec3arr } from '../../rompack/format';
 
 interface MeshOptions {
 	positions?: Float32Array;

@@ -1,8 +1,8 @@
 import pc from 'picocolors';
 
 import { runBrowserDeploy } from './platformbuild';
-import type { CanonicalizationType } from '../../src/bmsx/rompack/rompack';
-import { createCliUi, findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli_shared';
+import type { CanonicalizationType } from '../../src/bmsx/rompack/format';
+import { createCliUi, findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli';
 
 const KNOWN_FLAGS = new Set<string>([
 	'-romname',

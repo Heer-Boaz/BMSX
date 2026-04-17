@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { CodeTabContext, SearchMatch } from '../../src/bmsx/ide/types';
-import type { ResourceDescriptor } from '../../src/bmsx/machine/runtime/types';
-import { createLuaSemanticFrontendFromSnapshot, LuaSemanticWorkspace } from '../../src/bmsx/ide/semantic_workspace';
-import { CrossFileRenameManager, convertRangeToSearchMatch, type CrossFileRenameDependencies } from '../../src/bmsx/ide/rename_controller';
+import type { CodeTabContext, SearchMatch } from '../../src/bmsx/ide/common/models';
+import type { ResourceDescriptor } from '../../src/bmsx/machine/runtime/contracts';
+import { createLuaSemanticFrontendFromSnapshot, LuaSemanticWorkspace } from '../../src/bmsx/ide/editor/contrib/intellisense/semantic_workspace';
+import { CrossFileRenameManager, convertRangeToSearchMatch, type CrossFileRenameDependencies } from '../../src/bmsx/ide/editor/contrib/rename/operations';
 
 function normalizeSource(source: string): string[] {
 	return source.replace(/\r\n/g, '\n').split('\n');

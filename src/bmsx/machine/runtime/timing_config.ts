@@ -1,7 +1,7 @@
-import { $ } from '../../core/engine_core';
-import { getMachinePerfSpecs } from '../../rompack/rompack';
+import { $ } from '../../core/engine';
+import { getMachinePerfSpecs } from '../../rompack/format';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
-import { resolveBytesPerSec, resolveGeoWorkUnitsPerSec, resolveRuntimeRenderSize, resolveVdpWorkUnitsPerSec } from '../machine_specs';
+import { resolveBytesPerSec, resolveGeoWorkUnitsPerSec, resolveRuntimeRenderSize, resolveVdpWorkUnitsPerSec } from '../specs';
 import type { Runtime } from './runtime';
 
 export type TransferRateManifest = {

@@ -6,7 +6,7 @@
 #define BMSX_CRT_PIPELINE_GLES2_H
 
 #include "../gameview.h"
-#include "../backend/renderpasslib.h"
+#include "../backend/pass_library.h"
 #include "../backend/gles2_backend.h"
 
 namespace bmsx {

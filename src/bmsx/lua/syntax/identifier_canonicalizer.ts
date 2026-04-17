@@ -1,4 +1,4 @@
-import type { CanonicalizationType } from '../../rompack/rompack';
+import type { CanonicalizationType } from '../../rompack/format';
 
 export function createIdentifierCanonicalizer(mode: CanonicalizationType): (value: string) => string {
 	if (mode === 'upper') {

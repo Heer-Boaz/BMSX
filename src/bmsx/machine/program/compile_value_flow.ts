@@ -25,18 +25,18 @@ import {
 	type LuaReturnStatement,
 	type LuaStatement,
 	type LuaWhileStatement,
-} from '../../lua/syntax/lua_ast';
-import { walkLuaExpressionTree } from '../../lua/syntax/lua_ast_traversal';
-import type { LuaSemanticFrontendFile } from '../../ide/editor/contrib/intellisense/lua_semantic_frontend';
+} from '../../lua/syntax/ast';
+import { walkLuaExpressionTree } from '../../lua/syntax/ast_traversal';
+import type { LuaSemanticFrontendFile } from '../../ide/editor/contrib/intellisense/lua_frontend';
 import {
 	getBoundIdentifierReference,
 	getIdentifierSymbolHandle,
 	getReferenceSymbolHandle,
-} from './lua_bound_reference';
+} from './bound_reference';
 import {
 	classifyAssignmentTargetPreparation,
 	classifyFunctionDeclarationTarget,
-} from './lua_target_semantics';
+} from './target_semantics';
 
 // ---------------------------------------------------------------------------
 //  Types

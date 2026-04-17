@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/types.h"
+#include "core/primitives.h"
 
 namespace bmsx {
 

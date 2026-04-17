@@ -1,8 +1,8 @@
 import { splitText } from '../../editor/text/source_text';
 import { wrapOverlayLine } from '../../editor/common/text_layout';
-import { editorViewState } from '../../editor/ui/editor_view_state';
+import { editorViewState } from '../../editor/ui/view_state';
 import { editorFeedbackState } from './feedback_state';
-import { problemsPanel } from '../contrib/problems/problems_panel';
+import { problemsPanel } from '../contrib/problems/panel/controller';
 
 export function getTabBarTotalHeight(): number {
 	return editorViewState.tabBarHeight * Math.max(1, editorViewState.tabBarRowCount);

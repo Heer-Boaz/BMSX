@@ -1,12 +1,12 @@
-import { $, renderGate, runGate } from '../../core/engine_core';
+import { $, renderGate, runGate } from '../../core/engine';
 import { taskGate } from '../../core/taskgate';
 import { decodeBinary, decodeBinaryWithPropTable } from '../../common/serializer/binencoder';
-import { syncLuaAssetField } from '../firmware/lua_js_bridge';
+import { syncLuaAssetField } from '../firmware/js_bridge';
 import {
 	CART_ROM_BASE,
 	OVERLAY_ROM_BASE,
 	SYSTEM_ROM_BASE,
-} from './memory_map';
+} from './map';
 import type { Memory } from './memory';
 import {
 	ENGINE_ATLAS_INDEX,
@@ -18,10 +18,10 @@ import {
 	type RomImgAsset,
 	type RuntimeAssets,
 	type id2res,
-} from '../../rompack/rompack';
-import type { RawAssetSource } from '../../rompack/asset_source';
-import { parseCartHeader, type RuntimeAssetLayer } from '../../rompack/romloader';
-import { parseRomMetadataSection } from '../../rompack/rom_metadata';
+} from '../../rompack/format';
+import type { RawAssetSource } from '../../rompack/source';
+import { parseCartHeader, type RuntimeAssetLayer } from '../../rompack/loader';
+import { parseRomMetadataSection } from '../../rompack/metadata';
 import { registerAudioAssets as registerAudioAssetsFromSource } from './audio_assets';
 import {
 	buildRuntimeLayerLookup,
@@ -30,7 +30,7 @@ import {
 	resolveRuntimeLayerAssetFromEntry,
 	type RuntimeLayerLookup,
 } from './asset_layers';
-import { runtimeFault } from '../../ide/runtime/runtime_lua_pipeline';
+import { runtimeFault } from '../../ide/runtime/lua_pipeline';
 import type { Runtime } from '../runtime/runtime';
 
 type RomAssetRangeLookupResult = {
@@ -67,7 +67,7 @@ export class RuntimeAssetState {
 		return resolveRuntimeLayerAssetFromEntry<RomImgAsset>(this.layerLookup, 'img', entry);
 	}
 
-	public getImageAsset(id: string, source: RawAssetSource = $.asset_source): RomImgAsset {
+	public getImageAsset(id: string, source: RawAssetSource = $.source): RomImgAsset {
 		return resolveRuntimeLayerAssetById<RomImgAsset>(this.layerLookup, source, 'img', id);
 	}
 
@@ -75,11 +75,11 @@ export class RuntimeAssetState {
 		return resolveRuntimeLayerAssetFromEntry<RomAsset>(this.layerLookup, 'audio', entry);
 	}
 
-	public getDataAsset(id: string, source: RawAssetSource = $.asset_source): unknown {
+	public getDataAsset(id: string, source: RawAssetSource = $.source): unknown {
 		return resolveRuntimeLayerAssetById<unknown>(this.layerLookup, source, 'data', id);
 	}
 
-	public listImageAssets(source: RawAssetSource = $.asset_source): RomImgAsset[] {
+	public listImageAssets(source: RawAssetSource = $.source): RomImgAsset[] {
 		const entries = source.list();
 		const assets: RomImgAsset[] = [];
 		for (let index = 0; index < entries.length; index += 1) {
@@ -136,7 +136,7 @@ export class RuntimeAssetState {
 		const runToken = runGate.begin({ blocking: true, category: 'asset', tag: 'asset_memory' });
 		try {
 			const mode = params?.mode ?? 'full';
-			const assetSource = params?.source ?? $.asset_source;
+			const assetSource = params?.source ?? $.source;
 			if (!assetSource) {
 				throw runtimeFault('asset source not configured.');
 			}
@@ -205,7 +205,7 @@ export class RuntimeAssetState {
 
 	public buildAudioResourcesForSoundMaster(memory: Memory): id2res {
 		const resources: id2res = {};
-		const source = $.asset_source;
+		const source = $.source;
 		if (!source) {
 			throw runtimeFault('asset source not configured.');
 		}
@@ -271,7 +271,7 @@ export class RuntimeAssetState {
 				return memory.getAudioBytes(entry);
 			}
 		}
-		const source = $.asset_source;
+		const source = $.source;
 		if (!source) {
 			throw runtimeFault('asset source not configured.');
 		}

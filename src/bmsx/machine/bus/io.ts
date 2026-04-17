@@ -1,4 +1,4 @@
-import { IO_BASE, IO_WORD_SIZE, VDP_CMD_ARG_COUNT } from '../memory/memory_map';
+import { IO_BASE, IO_WORD_SIZE, VDP_CMD_ARG_COUNT } from '../memory/map';
 
 export const IO_CMD_VDP_CLEAR = 0x10;
 export const IO_CMD_VDP_FILL_RECT = 0x11;

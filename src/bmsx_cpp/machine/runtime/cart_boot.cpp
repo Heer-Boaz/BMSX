@@ -1,6 +1,6 @@
 #include "machine/runtime/cart_boot.h"
 
-#include "core/engine_core.h"
+#include "core/engine.h"
 #include "machine/bus/io.h"
 #include "machine/runtime/runtime.h"
 

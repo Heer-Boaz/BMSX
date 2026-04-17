@@ -1,9 +1,9 @@
-import { $ } from '../../../core/engine_core';
+import { $ } from '../../../core/engine';
 import { taskGate } from '../../../core/taskgate';
 import { Runtime } from '../../runtime/runtime';
 import { decodePngToRgba } from '../../../common/image_decode';
-import { SKYBOX_FACE_KEYS, type Layer2D, type SkyboxImageIds, type color } from '../../../render/shared/render_types';
-import type { RomAsset, RomImgAsset } from '../../../rompack/rompack';
+import { SKYBOX_FACE_KEYS, type Layer2D, type SkyboxImageIds, type color } from '../../../render/shared/submissions';
+import type { RomAsset, RomImgAsset } from '../../../rompack/format';
 import {
 	VDP_RENDER_ALPHA_COST_MULTIPLIER,
 	VDP_RENDER_CLEAR_COST,
@@ -12,15 +12,15 @@ import {
 	computeClippedLineSpan,
 	computeClippedRect,
 	tileRunCost,
-} from './vdp_render_budget';
+} from './budget';
 import {
 	ATLAS_PRIMARY_SLOT_ID,
 	ATLAS_SECONDARY_SLOT_ID,
 	ENGINE_ATLAS_INDEX,
 	ENGINE_ATLAS_TEXTURE_KEY,
 	generateAtlasName,
-} from '../../../rompack/rompack';
-import type { RawAssetSource } from '../../../rompack/asset_source';
+} from '../../../rompack/format';
+import type { RawAssetSource } from '../../../rompack/source';
 import {
 	IO_VDP_DITHER,
 	IO_VDP_CMD,
@@ -51,7 +51,7 @@ import {
 } from '../../bus/io';
 import { ASSET_FLAG_VIEW, type AssetEntry, type VramWriteSink } from '../../memory/memory';
 import { Memory } from '../../memory/memory';
-import { DEVICE_SERVICE_VDP, type DeviceScheduler } from '../../scheduler/device_scheduler';
+import { DEVICE_SERVICE_VDP, type DeviceScheduler } from '../../scheduler/device';
 import type { BFont } from '../../../render/shared/bitmap_font';
 import {
 	VRAM_SYSTEM_ATLAS_BASE,
@@ -68,10 +68,10 @@ import {
 	VDP_STREAM_CAPACITY_WORDS,
 	VDP_STREAM_PACKET_HEADER_WORDS,
 	VDP_STREAM_PAYLOAD_CAPACITY_WORDS,
-} from '../../memory/memory_map';
+} from '../../memory/map';
 import { fmix32, scramble32, signed8FromHash, xorshift32 } from '../../common/hash';
-import { processVdpBufferedCommand, processVdpCommand } from './vdp_command_processor';
-import { getVdpPacketSchema } from './vdp_packet_schema';
+import { processVdpBufferedCommand, processVdpCommand } from './command_processor';
+import { getVdpPacketSchema } from './packet_schema';
 
 export type VdpState = {
 	atlasSlots: { primary: number | null; secondary: number | null };

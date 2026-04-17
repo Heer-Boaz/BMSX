@@ -1,4 +1,4 @@
-import { RenderPassLibrary } from '../backend/renderpasslib';
+import { RenderPassLibrary } from '../backend/pass_library';
 
 // WebGPU stub: registers the Skybox pass for WebGPU builds.
 export function registerSkyboxPass_WebGPU(library: RenderPassLibrary): void {

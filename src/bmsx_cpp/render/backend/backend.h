@@ -8,7 +8,7 @@
 #ifndef BMSX_BACKEND_H
 #define BMSX_BACKEND_H
 
-#include "../shared/render_types.h"
+#include "../shared/submissions.h"
 #include <array>
 #include <memory>
 #include <functional>

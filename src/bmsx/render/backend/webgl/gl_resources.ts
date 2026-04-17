@@ -1,9 +1,9 @@
 // Centralized low-level WebGL helper & resource creation utilities.
-// Moved out of webgl_backend.ts to keep backend focused on orchestration.
-import { $ } from '../../../core/engine_core';
+// Moved out of backend.ts to keep backend focused on orchestration.
+import { $ } from '../../../core/engine';
 import { formatNumberAsHex } from '../../../common/byte_hex_string';
-import { TextureParams } from '../pipeline_interfaces';
-import { TEXTURE_UNIT_SHADOW_MAP, TEXTURE_UNIT_UPLOAD } from './webgl.constants';
+import { TextureParams } from '../interfaces';
+import { TEXTURE_UNIT_SHADOW_MAP, TEXTURE_UNIT_UPLOAD } from './constants';
 
 function getRenderContext() {
 	return $.view;

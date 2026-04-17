@@ -1,4 +1,4 @@
-import { RenderPassLibrary } from '../backend/renderpasslib';
+import { RenderPassLibrary } from '../backend/pass_library';
 
 // WebGPU stub: registers the Mesh Batch pass for WebGPU builds.
 // Replace with WGSL, vertex/index buffer setup and proper execution.

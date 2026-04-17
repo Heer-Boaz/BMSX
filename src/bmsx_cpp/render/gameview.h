@@ -9,8 +9,8 @@
 #define BMSX_GAMEVIEW_H
 
 #include "backend/backend.h"
-#include "shared/render_types.h"
-#include "shared/render_queues.h"
+#include "shared/submissions.h"
+#include "shared/queues.h"
 #include "core/registry.h"
 #include "../subscription.h"
 #include <memory>
@@ -113,7 +113,7 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Render submission (mirrors TypeScript renderer.submit)
 	//
-	// These functions route to render_queues helpers:
+	// These functions route to queues helpers:
 	// - sprite -> RenderQueues::submitSprite
 	// - rect   -> RenderQueues::submitRectangle
 	// - poly   -> RenderQueues::submitDrawPolygon

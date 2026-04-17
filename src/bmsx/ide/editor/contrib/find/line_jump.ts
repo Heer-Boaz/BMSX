@@ -1,18 +1,18 @@
 import * as constants from '../../../common/constants';
-import { renameController } from '../rename/rename_controller';
+import { renameController } from '../rename/controller';
 import { showEditorMessage } from '../../../workbench/common/feedback_state';
-import { clearReferenceHighlights } from '../intellisense/intellisense';
-import { closeSearch } from './editor_search';
-import { resetBlink } from '../../render/render_caret';
+import { clearReferenceHighlights } from '../intellisense/engine';
+import { closeSearch } from './search';
+import { resetBlink } from '../../render/caret';
 import { setFieldText } from '../../ui/inline_text_field';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { setCursorPosition } from '../../ui/caret';
 import { breakUndoSequence } from '../../editing/undo_controller';
 import * as TextEditing from '../../editing/text_editing_and_selection';
-import { closeSymbolSearch } from '../symbols/symbol_search_shared';
-import { closeResourceSearch } from '../../../workbench/contrib/resources/resource_search';
-import { editorDocumentState } from '../../editing/editor_document_state';
-import { lineJumpState } from './find_widget_state';
+import { closeSymbolSearch } from '../symbols/shared';
+import { closeResourceSearch } from '../../../workbench/contrib/resources/search';
+import { editorDocumentState } from '../../editing/document_state';
+import { lineJumpState } from './widget_state';
 
 export function openLineJump(): void {
 	clearReferenceHighlights();

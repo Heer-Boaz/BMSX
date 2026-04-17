@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-#include "core/types.h"
+#include "core/primitives.h"
 #include "machine/memory/string_memory.h"
 
 namespace bmsx {
