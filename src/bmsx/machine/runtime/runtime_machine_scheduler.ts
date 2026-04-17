@@ -134,9 +134,9 @@ export class RuntimeMachineSchedulerState {
 		const sequence = runtime.lastTickSequence + 1;
 		slot.sequence = sequence;
 		slot.remaining = frameState.cycleBudgetRemaining;
-		slot.visualCommitted = runtime.vdp.lastFrameCommitted;
-		slot.vdpFrameCost = runtime.vdp.lastFrameCost;
-		slot.vdpFrameHeld = runtime.vdp.lastFrameHeld;
+		slot.visualCommitted = runtime.machine.vdp.lastFrameCommitted;
+		slot.vdpFrameCost = runtime.machine.vdp.lastFrameCost;
+		slot.vdpFrameHeld = runtime.machine.vdp.lastFrameHeld;
 		this.tickCompletionWriteIndex = (this.tickCompletionWriteIndex + 1) % TICK_COMPLETION_QUEUE_CAPACITY;
 		this.tickCompletionCount += 1;
 		runtime.lastTickBudgetGranted = frameState.cycleBudgetGranted;

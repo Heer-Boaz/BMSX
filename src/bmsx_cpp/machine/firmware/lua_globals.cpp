@@ -59,7 +59,7 @@ struct LuaPcallError final : std::exception {
 
 	explicit LuaPcallError(Value value)
 		: value(value)
-		, message(valueToString(value, Runtime::instance().cpu().stringPool())) {}
+		, message(valueToString(value, Runtime::instance().machine().cpu().stringPool())) {}
 
 	const char* what() const noexcept override {
 		return message.c_str();
@@ -1134,7 +1134,7 @@ std::string Runtime::valueToString(const Value& value) const {
 		return formatNumber(n);
 	}
 	if (valueIsString(value)) {
-		return m_cpu.stringPool().toString(asStringId(value));
+		return m_machine.cpu().stringPool().toString(asStringId(value));
 	}
 	if (valueIsTable(value)) {
 		return "table";
@@ -1154,13 +1154,13 @@ double Runtime::nextRandom() {
 }
 
 void Runtime::setupBuiltins() {
-	m_cpu.suspendGc();
+	m_machine.cpu().suspendGc();
 	struct ResumeBuiltinGc {
 		CPU& cpu;
 		~ResumeBuiltinGc() {
 			cpu.resumeGc();
 		}
-	} resumeBuiltinGc{ m_cpu };
+	} resumeBuiltinGc{ m_machine.cpu() };
 
 	auto logPcallError = [this](const std::string& message) {
 		std::cerr << "[Runtime] pcall error: " << message << std::endl;
@@ -1175,16 +1175,16 @@ void Runtime::setupBuiltins() {
 			callLuaFunctionInto(asClosure(callee), args, out);
 			return;
 		}
-		throw BMSX_RUNTIME_ERROR(formatNonFunctionCallError(callee, m_cpu));
+		throw BMSX_RUNTIME_ERROR(formatNonFunctionCallError(callee, m_machine.cpu()));
 	};
 	auto key = [this](std::string_view name) {
 		return canonicalizeIdentifier(name);
 	};
 	auto str = [this](std::string_view value) {
-		return valueString(m_cpu.internString(value));
+		return valueString(m_machine.cpu().internString(value));
 	};
 	auto asText = [this](Value value) -> const std::string& {
-		return m_cpu.stringPool().toString(asStringId(value));
+		return m_machine.cpu().stringPool().toString(asStringId(value));
 	};
 	auto clamp01 = [](double value) {
 		return clamp(value, 0.0, 1.0);
@@ -1205,20 +1205,20 @@ void Runtime::setupBuiltins() {
 	const double degToRad = kPi / 180.0;
 	const double maxSafeInteger = 9007199254740991.0;
 
-	auto* mathTable = m_cpu.createTable();
-	mathTable->set(key("abs"), m_cpu.createNativeFunction("math.abs", [](NativeArgsView args, NativeResults& out) {
+	auto* mathTable = m_machine.cpu().createTable();
+	mathTable->set(key("abs"), m_machine.cpu().createNativeFunction("math.abs", [](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		out.push_back(valueNumber(std::abs(value)));
 	}));
-	mathTable->set(key("acos"), m_cpu.createNativeFunction("math.acos", [](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("acos"), m_machine.cpu().createNativeFunction("math.acos", [](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		out.push_back(valueNumber(std::acos(value)));
 	}));
-	mathTable->set(key("asin"), m_cpu.createNativeFunction("math.asin", [](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("asin"), m_machine.cpu().createNativeFunction("math.asin", [](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		out.push_back(valueNumber(std::asin(value)));
 	}));
-	mathTable->set(key("atan"), m_cpu.createNativeFunction("math.atan", [](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("atan"), m_machine.cpu().createNativeFunction("math.atan", [](NativeArgsView args, NativeResults& out) {
 		double y = asNumber(args.at(0));
 		if (args.size() > 1) {
 			double x = asNumber(args.at(1));
@@ -1227,32 +1227,32 @@ void Runtime::setupBuiltins() {
 		}
 		out.push_back(valueNumber(std::atan(y)));
 	}));
-	mathTable->set(key("ceil"), m_cpu.createNativeFunction("math.ceil", [](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("ceil"), m_machine.cpu().createNativeFunction("math.ceil", [](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		out.push_back(valueNumber(std::ceil(value)));
 	}));
-	mathTable->set(key("cos"), m_cpu.createNativeFunction("math.cos", [](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("cos"), m_machine.cpu().createNativeFunction("math.cos", [](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		out.push_back(valueNumber(std::cos(value)));
 	}));
-	mathTable->set(key("deg"), m_cpu.createNativeFunction("math.deg", [radToDeg](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("deg"), m_machine.cpu().createNativeFunction("math.deg", [radToDeg](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		out.push_back(valueNumber(value * radToDeg));
 	}));
-	mathTable->set(key("exp"), m_cpu.createNativeFunction("math.exp", [](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("exp"), m_machine.cpu().createNativeFunction("math.exp", [](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		out.push_back(valueNumber(std::exp(value)));
 	}));
-	mathTable->set(key("floor"), m_cpu.createNativeFunction("math.floor", [](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("floor"), m_machine.cpu().createNativeFunction("math.floor", [](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		out.push_back(valueNumber(std::floor(value)));
 	}));
-	mathTable->set(key("fmod"), m_cpu.createNativeFunction("math.fmod", [](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("fmod"), m_machine.cpu().createNativeFunction("math.fmod", [](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		double divisor = asNumber(args.at(1));
 		out.push_back(valueNumber(std::fmod(value, divisor)));
 	}));
-	mathTable->set(key("log"), m_cpu.createNativeFunction("math.log", [](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("log"), m_machine.cpu().createNativeFunction("math.log", [](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		if (args.size() > 1) {
 			double base = asNumber(args.at(1));
@@ -1261,44 +1261,44 @@ void Runtime::setupBuiltins() {
 		}
 		out.push_back(valueNumber(std::log(value)));
 	}));
-	mathTable->set(key("max"), m_cpu.createNativeFunction("math.max", [](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("max"), m_machine.cpu().createNativeFunction("math.max", [](NativeArgsView args, NativeResults& out) {
 		double result = asNumber(args.at(0));
 		for (size_t i = 1; i < args.size(); ++i) {
 			result = std::max(result, asNumber(args[i]));
 		}
 		out.push_back(valueNumber(result));
 	}));
-	mathTable->set(key("min"), m_cpu.createNativeFunction("math.min", [](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("min"), m_machine.cpu().createNativeFunction("math.min", [](NativeArgsView args, NativeResults& out) {
 		double result = asNumber(args.at(0));
 		for (size_t i = 1; i < args.size(); ++i) {
 			result = std::min(result, asNumber(args[i]));
 		}
 		out.push_back(valueNumber(result));
 	}));
-	mathTable->set(key("modf"), m_cpu.createNativeFunction("math.modf", [](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("modf"), m_machine.cpu().createNativeFunction("math.modf", [](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		double intPart = 0.0;
 		double fracPart = std::modf(value, &intPart);
 		out.push_back(valueNumber(intPart));
 		out.push_back(valueNumber(fracPart));
 	}));
-	mathTable->set(key("rad"), m_cpu.createNativeFunction("math.rad", [degToRad](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("rad"), m_machine.cpu().createNativeFunction("math.rad", [degToRad](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		out.push_back(valueNumber(value * degToRad));
 	}));
-	mathTable->set(key("sin"), m_cpu.createNativeFunction("math.sin", [](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("sin"), m_machine.cpu().createNativeFunction("math.sin", [](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		out.push_back(valueNumber(std::sin(value)));
 	}));
-	mathTable->set(key("sqrt"), m_cpu.createNativeFunction("math.sqrt", [](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("sqrt"), m_machine.cpu().createNativeFunction("math.sqrt", [](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		out.push_back(valueNumber(std::sqrt(value)));
 	}));
-	mathTable->set(key("tan"), m_cpu.createNativeFunction("math.tan", [](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("tan"), m_machine.cpu().createNativeFunction("math.tan", [](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		out.push_back(valueNumber(std::tan(value)));
 	}));
-	mathTable->set(key("tointeger"), m_cpu.createNativeFunction("math.tointeger", [](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("tointeger"), m_machine.cpu().createNativeFunction("math.tointeger", [](NativeArgsView args, NativeResults& out) {
 		const Value& v = args.empty() ? valueNil() : args.at(0);
 		if (!valueIsNumber(v)) {
 			out.push_back(valueNil());
@@ -1316,7 +1316,7 @@ void Runtime::setupBuiltins() {
 		}
 		out.push_back(valueNil());
 	}));
-	mathTable->set(key("type"), m_cpu.createNativeFunction("math.type", [str](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("type"), m_machine.cpu().createNativeFunction("math.type", [str](NativeArgsView args, NativeResults& out) {
 		const Value& v = args.empty() ? valueNil() : args.at(0);
 		if (!valueIsNumber(v)) {
 			out.push_back(valueNil());
@@ -1329,14 +1329,14 @@ void Runtime::setupBuiltins() {
 		}
 		out.push_back(str("float"));
 	}));
-	mathTable->set(key("ult"), m_cpu.createNativeFunction("math.ult", [](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("ult"), m_machine.cpu().createNativeFunction("math.ult", [](NativeArgsView args, NativeResults& out) {
 		double leftValue = asNumber(args.at(0));
 		double rightValue = asNumber(args.at(1));
 		uint32_t left = static_cast<uint32_t>(static_cast<int64_t>(std::trunc(leftValue)));
 		uint32_t right = static_cast<uint32_t>(static_cast<int64_t>(std::trunc(rightValue)));
 		out.push_back(valueBool(left < right));
 	}));
-	mathTable->set(key("random"), m_cpu.createNativeFunction("math.random", [this](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("random"), m_machine.cpu().createNativeFunction("math.random", [this](NativeArgsView args, NativeResults& out) {
 		double randomValue = nextRandom();
 		if (args.empty()) {
 			out.push_back(valueNumber(randomValue));
@@ -1358,7 +1358,7 @@ void Runtime::setupBuiltins() {
 		int span = upper - lower + 1;
 		out.push_back(valueNumber(static_cast<double>(lower + static_cast<int>(randomValue * span))));
 	}));
-	mathTable->set(key("randomseed"), m_cpu.createNativeFunction("math.randomseed", [this](NativeArgsView args, NativeResults& out) {
+	mathTable->set(key("randomseed"), m_machine.cpu().createNativeFunction("math.randomseed", [this](NativeArgsView args, NativeResults& out) {
 		double seedValue = args.empty() ? EngineCore::instance().clock()->now() : asNumber(args.at(0));
 		uint64_t seed = static_cast<uint64_t>(std::floor(seedValue));
 		m_randomSeedValue = static_cast<uint32_t>(seed & 0xffffffffu);
@@ -1369,20 +1369,20 @@ void Runtime::setupBuiltins() {
 	mathTable->set(key("mininteger"), valueNumber(-maxSafeInteger));
 	mathTable->set(key("pi"), valueNumber(kPi));
 
-	auto* easingTable = m_cpu.createTable();
-	easingTable->set(key("linear"), m_cpu.createNativeFunction("easing.linear", [clamp01](NativeArgsView args, NativeResults& out) {
+	auto* easingTable = m_machine.cpu().createTable();
+	easingTable->set(key("linear"), m_machine.cpu().createNativeFunction("easing.linear", [clamp01](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		out.push_back(valueNumber(clamp01(value)));
 	}));
-	easingTable->set(key("ease_in_quad"), m_cpu.createNativeFunction("easing.ease_in_quad", [clamp01](NativeArgsView args, NativeResults& out) {
+	easingTable->set(key("ease_in_quad"), m_machine.cpu().createNativeFunction("easing.ease_in_quad", [clamp01](NativeArgsView args, NativeResults& out) {
 		double x = clamp01(asNumber(args.at(0)));
 		out.push_back(valueNumber(x * x));
 	}));
-	easingTable->set(key("ease_out_quad"), m_cpu.createNativeFunction("easing.ease_out_quad", [clamp01](NativeArgsView args, NativeResults& out) {
+	easingTable->set(key("ease_out_quad"), m_machine.cpu().createNativeFunction("easing.ease_out_quad", [clamp01](NativeArgsView args, NativeResults& out) {
 		double x = clamp01(1.0 - asNumber(args.at(0)));
 		out.push_back(valueNumber(1.0 - (x * x)));
 	}));
-	easingTable->set(key("ease_in_out_quad"), m_cpu.createNativeFunction("easing.ease_in_out_quad", [clamp01](NativeArgsView args, NativeResults& out) {
+	easingTable->set(key("ease_in_out_quad"), m_machine.cpu().createNativeFunction("easing.ease_in_out_quad", [clamp01](NativeArgsView args, NativeResults& out) {
 		double x = clamp01(asNumber(args.at(0)));
 		if (x < 0.5) {
 			out.push_back(valueNumber(2.0 * x * x));
@@ -1391,19 +1391,19 @@ void Runtime::setupBuiltins() {
 		double y = (-2.0 * x) + 2.0;
 		out.push_back(valueNumber(1.0 - ((y * y) / 2.0)));
 	}));
-	easingTable->set(key("ease_out_back"), m_cpu.createNativeFunction("easing.ease_out_back", [clamp01](NativeArgsView args, NativeResults& out) {
+	easingTable->set(key("ease_out_back"), m_machine.cpu().createNativeFunction("easing.ease_out_back", [clamp01](NativeArgsView args, NativeResults& out) {
 		double x = clamp01(asNumber(args.at(0)));
 		const double c1 = 1.70158;
 		const double c3 = c1 + 1.0;
 		out.push_back(valueNumber(1.0 + (c3 * std::pow(x - 1.0, 3.0)) + (c1 * std::pow(x - 1.0, 2.0))));
 	}));
-	easingTable->set(key("smoothstep"), m_cpu.createNativeFunction("easing.smoothstep", [smoothstep01](NativeArgsView args, NativeResults& out) {
+	easingTable->set(key("smoothstep"), m_machine.cpu().createNativeFunction("easing.smoothstep", [smoothstep01](NativeArgsView args, NativeResults& out) {
 		out.push_back(valueNumber(smoothstep01(asNumber(args.at(0)))));
 	}));
-	easingTable->set(key("pingpong01"), m_cpu.createNativeFunction("easing.pingpong01", [pingpong01](NativeArgsView args, NativeResults& out) {
+	easingTable->set(key("pingpong01"), m_machine.cpu().createNativeFunction("easing.pingpong01", [pingpong01](NativeArgsView args, NativeResults& out) {
 		out.push_back(valueNumber(pingpong01(asNumber(args.at(0)))));
 	}));
-	easingTable->set(key("arc01"), m_cpu.createNativeFunction("easing.arc01", [smoothstep01](NativeArgsView args, NativeResults& out) {
+	easingTable->set(key("arc01"), m_machine.cpu().createNativeFunction("easing.arc01", [smoothstep01](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		if (value <= 0.5) {
 			out.push_back(valueNumber(smoothstep01(value * 2.0)));
@@ -1422,12 +1422,12 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_host_fault_flag_startup_blocking", valueNumber(static_cast<double>(HOST_FAULT_FLAG_STARTUP_BLOCKING)));
 	setGlobal("sys_host_fault_stage_none", valueNumber(static_cast<double>(HOST_FAULT_STAGE_NONE)));
 	setGlobal("sys_host_fault_stage_startup_audio_refresh", valueNumber(static_cast<double>(HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH)));
-	setGlobal("sys_host_fault_message", m_cpu.createNativeFunction("sys_host_fault_message", [this](NativeArgsView, NativeResults& out) {
+	setGlobal("sys_host_fault_message", m_machine.cpu().createNativeFunction("sys_host_fault_message", [this](NativeArgsView, NativeResults& out) {
 		if (!m_hostFaultMessage.has_value()) {
 			out.push_back(valueNil());
 			return;
 		}
-		out.push_back(valueString(m_cpu.internString(*m_hostFaultMessage)));
+		out.push_back(valueString(m_machine.cpu().internString(*m_hostFaultMessage)));
 	}));
 	setGlobal("sys_cart_magic_addr", valueNumber(static_cast<double>(CART_ROM_MAGIC_ADDR)));
 	setGlobal("sys_cart_magic", valueNumber(static_cast<double>(CART_ROM_MAGIC)));
@@ -1538,7 +1538,7 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_rom_system_base", valueNumber(static_cast<double>(SYSTEM_ROM_BASE)));
 	setGlobal("sys_rom_cart_base", valueNumber(static_cast<double>(CART_ROM_BASE)));
 	setGlobal("sys_rom_overlay_base", valueNumber(static_cast<double>(OVERLAY_ROM_BASE)));
-	setGlobal("sys_rom_overlay_size", valueNumber(static_cast<double>(m_memory.overlayRomSize())));
+	setGlobal("sys_rom_overlay_size", valueNumber(static_cast<double>(m_machine.memory().overlayRomSize())));
 	const struct PaletteKeys {
 		Value r;
 		Value g;
@@ -1553,7 +1553,7 @@ void Runtime::setupBuiltins() {
 	registerNativeFunction("sys_palette_color", [this, paletteKeys](NativeArgsView args, NativeResults& out) {
 		const int index = static_cast<int>(std::floor(asNumber(args.at(0))));
 		const Color color = api().palette_color(index);
-		Table* table = m_cpu.createTable(0, 4);
+		Table* table = m_machine.cpu().createTable(0, 4);
 		table->set(paletteKeys.r, valueNumber(static_cast<double>(color.r)));
 		table->set(paletteKeys.g, valueNumber(static_cast<double>(color.g)));
 		table->set(paletteKeys.b, valueNumber(static_cast<double>(color.b)));
@@ -1760,21 +1760,21 @@ void Runtime::setupBuiltins() {
 		return { romBase, *rom->start, *rom->end };
 	};
 	registerNativeFunction("resolve_cart_rom_asset_range", [resolveRomAssetRange, this](NativeArgsView args, NativeResults& out) {
-		const std::string& assetId = m_cpu.stringPool().toString(asStringId(args.at(0)));
+		const std::string& assetId = m_machine.cpu().stringPool().toString(asStringId(args.at(0)));
 		const auto [romBase, start, end] = resolveRomAssetRange(assetId, false);
 		out.push_back(valueNumber(static_cast<double>(romBase)));
 		out.push_back(valueNumber(static_cast<double>(start)));
 		out.push_back(valueNumber(static_cast<double>(end)));
 	});
 	registerNativeFunction("resolve_sys_rom_asset_range", [resolveRomAssetRange, this](NativeArgsView args, NativeResults& out) {
-		const std::string& assetId = m_cpu.stringPool().toString(asStringId(args.at(0)));
+		const std::string& assetId = m_machine.cpu().stringPool().toString(asStringId(args.at(0)));
 		const auto [romBase, start, end] = resolveRomAssetRange(assetId, true);
 		out.push_back(valueNumber(static_cast<double>(romBase)));
 		out.push_back(valueNumber(static_cast<double>(start)));
 		out.push_back(valueNumber(static_cast<double>(end)));
 	});
 	registerNativeFunction("resolve_rom_asset_range", [resolveRomAssetRange, this](NativeArgsView args, NativeResults& out) {
-		const std::string& assetId = m_cpu.stringPool().toString(asStringId(args.at(0)));
+		const std::string& assetId = m_machine.cpu().stringPool().toString(asStringId(args.at(0)));
 		const auto [romBase, start, end] = resolveRomAssetRange(assetId, true);
 		out.push_back(valueNumber(static_cast<double>(romBase)));
 		out.push_back(valueNumber(static_cast<double>(start)));
@@ -1810,7 +1810,7 @@ void Runtime::setupBuiltins() {
 			return;
 		}
 		if (valueIsString(v)) {
-			const std::string& text = m_cpu.stringPool().toString(asStringId(v));
+			const std::string& text = m_machine.cpu().stringPool().toString(asStringId(v));
 			if (args.size() >= 2) {
 				int base = static_cast<int>(std::floor(asNumber(args.at(1))));
 				if (base >= 2 && base <= 36) {
@@ -1849,14 +1849,14 @@ void Runtime::setupBuiltins() {
 	registerNativeFunction("assert", [this](NativeArgsView args, NativeResults& out) {
 		const Value& condition = args.empty() ? valueNil() : args.at(0);
 		if (!isTruthy(condition)) {
-			const Value message = args.size() > 1 ? args.at(1) : valueString(m_cpu.internString("assertion failed!"));
+			const Value message = args.size() > 1 ? args.at(1) : valueString(m_machine.cpu().internString("assertion failed!"));
 			throw LuaPcallError(message);
 		}
 		out.append(args.data(), args.size());
 	});
 
 	registerNativeFunction("error", [this](NativeArgsView args, NativeResults& out) {
-		const Value message = args.empty() ? valueString(m_cpu.internString("error")) : args.at(0);
+		const Value message = args.empty() ? valueString(m_machine.cpu().internString("error")) : args.at(0);
 		(void)out;
 		throw LuaPcallError(message);
 	});
@@ -1918,7 +1918,7 @@ void Runtime::setupBuiltins() {
 	});
 
 	registerNativeFunction("select", [](NativeArgsView args, NativeResults& out) {
-		if (valueIsString(args.at(0)) && Runtime::instance().cpu().stringPool().toString(asStringId(args.at(0))) == "#") {
+		if (valueIsString(args.at(0)) && Runtime::instance().machine().cpu().stringPool().toString(asStringId(args.at(0))) == "#") {
 			out.push_back(valueNumber(static_cast<double>(args.size() - 1)));
 			return;
 		}
@@ -1992,9 +1992,9 @@ void Runtime::setupBuiltins() {
 		if (args.size() > 1 && !isNil(args.at(1)) && !valueIsString(args.at(1))) {
 			throw BMSX_RUNTIME_ERROR("loadstring(source [, chunkname]) requires a string chunkname.");
 		}
-		const std::string& source = m_cpu.stringPool().toString(asStringId(args.at(0)));
+		const std::string& source = m_machine.cpu().stringPool().toString(asStringId(args.at(0)));
 		const std::string chunkName = args.size() > 1 && !isNil(args.at(1))
-			? m_cpu.stringPool().toString(asStringId(args.at(1)))
+			? m_machine.cpu().stringPool().toString(asStringId(args.at(1)))
 			: std::string("loadstring");
 		try {
 			out.push_back(compileLoadChunk(*this, source, chunkName));
@@ -2015,7 +2015,7 @@ void Runtime::setupBuiltins() {
 			if (!valueIsString(args.at(2))) {
 				throw BMSX_RUNTIME_ERROR("load(source [, chunkname [, mode]]) requires mode to be a string.");
 			}
-			const std::string& mode = m_cpu.stringPool().toString(asStringId(args.at(2)));
+			const std::string& mode = m_machine.cpu().stringPool().toString(asStringId(args.at(2)));
 			if (mode != "t" && mode != "bt") {
 				throw BMSX_RUNTIME_ERROR("load only supports text mode ('t' or 'bt').");
 			}
@@ -2023,9 +2023,9 @@ void Runtime::setupBuiltins() {
 		if (args.size() > 3 && !isNil(args.at(3))) {
 			throw BMSX_RUNTIME_ERROR("load does not support the environment argument.");
 		}
-		const std::string& source = m_cpu.stringPool().toString(asStringId(args.at(0)));
+		const std::string& source = m_machine.cpu().stringPool().toString(asStringId(args.at(0)));
 		const std::string chunkName = args.size() > 1 && !isNil(args.at(1))
-			? m_cpu.stringPool().toString(asStringId(args.at(1)))
+			? m_machine.cpu().stringPool().toString(asStringId(args.at(1)))
 			: std::string("load");
 		try {
 			out.push_back(compileLoadChunk(*this, source, chunkName));
@@ -2036,7 +2036,7 @@ void Runtime::setupBuiltins() {
 	});
 
 	registerNativeFunction("require", [this](NativeArgsView args, NativeResults& out) {
-		const std::string& moduleName = m_cpu.stringPool().toString(asStringId(args.at(0)));
+		const std::string& moduleName = m_machine.cpu().stringPool().toString(asStringId(args.at(0)));
 		size_t start = moduleName.find_first_not_of(" \t\n\r");
 		if (start == std::string::npos) {
 			out.push_back(requireModule(""));
@@ -2078,7 +2078,7 @@ void Runtime::setupBuiltins() {
 			data->values.assign(args.begin(), args.end());
 		}
 
-		auto native = m_cpu.createNativeObject(
+		auto native = m_machine.cpu().createNativeObject(
 			data.get(),
 			[data, lengthId](const Value& key) -> Value {
 				if (valueIsNumber(key)) {
@@ -2199,10 +2199,10 @@ void Runtime::setupBuiltins() {
 	});
 
 	registerNativeFunction("wrap_text_lines", [this](NativeArgsView args, NativeResults& out) {
-		const std::string text = m_cpu.stringPool().toString(asStringId(args.at(0)));
+		const std::string text = m_machine.cpu().stringPool().toString(asStringId(args.at(0)));
 		const int maxChars = static_cast<int>(std::floor(asNumber(args.at(1))));
-		const std::string firstPrefix = args.size() > 2 && !isNil(args.at(2)) ? m_cpu.stringPool().toString(asStringId(args.at(2))) : std::string();
-		const std::string nextPrefix = args.size() > 3 && !isNil(args.at(3)) ? m_cpu.stringPool().toString(asStringId(args.at(3))) : firstPrefix;
+		const std::string firstPrefix = args.size() > 2 && !isNil(args.at(2)) ? m_machine.cpu().stringPool().toString(asStringId(args.at(2))) : std::string();
+		const std::string nextPrefix = args.size() > 3 && !isNil(args.at(3)) ? m_machine.cpu().stringPool().toString(asStringId(args.at(3))) : firstPrefix;
 		const int firstPrefixLength = utf8_codepoint_count(firstPrefix);
 		const int nextPrefixLength = utf8_codepoint_count(nextPrefix);
 		std::vector<std::string> lines;
@@ -2300,11 +2300,11 @@ void Runtime::setupBuiltins() {
 				logicalLineIndex += 1;
 			}
 		}
-		auto* linesTable = m_cpu.createTable(static_cast<int>(lines.size()), 0);
+		auto* linesTable = m_machine.cpu().createTable(static_cast<int>(lines.size()), 0);
 		for (size_t index = 0; index < lines.size(); ++index) {
-			linesTable->set(valueNumber(static_cast<double>(index + 1)), valueString(m_cpu.internString(lines[index])));
+			linesTable->set(valueNumber(static_cast<double>(index + 1)), valueString(m_machine.cpu().internString(lines[index])));
 		}
-		auto* lineMapTable = m_cpu.createTable(static_cast<int>(lineMap.size()), 0);
+		auto* lineMapTable = m_machine.cpu().createTable(static_cast<int>(lineMap.size()), 0);
 		for (size_t index = 0; index < lineMap.size(); ++index) {
 			lineMapTable->set(valueNumber(static_cast<double>(index + 1)), valueNumber(static_cast<double>(lineMap[index])));
 		}
@@ -2312,7 +2312,7 @@ void Runtime::setupBuiltins() {
 		out.push_back(valueTable(lineMapTable));
 	});
 
-auto* stringTable = m_cpu.createTable();
+auto* stringTable = m_machine.cpu().createTable();
 	const bool packNativeLittleEndian = []() {
 		uint16_t value = 1;
 		return *reinterpret_cast<uint8_t*>(&value) == 1;
@@ -2670,17 +2670,17 @@ auto* stringTable = m_cpu.createTable();
 		std::memcpy(&value, buffer, sizeof(double));
 		return value;
 	};
-stringTable->set(key("len"), m_cpu.createNativeFunction("string.len", [this](NativeArgsView args, NativeResults& out) {
+stringTable->set(key("len"), m_machine.cpu().createNativeFunction("string.len", [this](NativeArgsView args, NativeResults& out) {
 	StringId textId = asStringId(args.at(0));
-	out.push_back(valueNumber(static_cast<double>(m_cpu.stringPool().codepointCount(textId))));
+	out.push_back(valueNumber(static_cast<double>(m_machine.cpu().stringPool().codepointCount(textId))));
 }));
-stringTable->set(key("upper"), m_cpu.createNativeFunction("string.upper", [str, asText](NativeArgsView args, NativeResults& out) {
+stringTable->set(key("upper"), m_machine.cpu().createNativeFunction("string.upper", [str, asText](NativeArgsView args, NativeResults& out) {
 	out.push_back(str(utf8_to_upper(asText(args.at(0)))));
 }));
-stringTable->set(key("lower"), m_cpu.createNativeFunction("string.lower", [str, asText](NativeArgsView args, NativeResults& out) {
+stringTable->set(key("lower"), m_machine.cpu().createNativeFunction("string.lower", [str, asText](NativeArgsView args, NativeResults& out) {
 	out.push_back(str(utf8_to_lower(asText(args.at(0)))));
 }));
-stringTable->set(key("rep"), m_cpu.createNativeFunction("string.rep", [str, asText](NativeArgsView args, NativeResults& out) {
+stringTable->set(key("rep"), m_machine.cpu().createNativeFunction("string.rep", [str, asText](NativeArgsView args, NativeResults& out) {
 	const std::string& text = asText(args.at(0));
 	int count = args.size() > 1 ? static_cast<int>(std::floor(asNumber(args.at(1)))) : 1;
 	if (count <= 0) {
@@ -2705,10 +2705,10 @@ stringTable->set(key("rep"), m_cpu.createNativeFunction("string.rep", [str, asTe
 	}
 	out.push_back(str(result));
 }));
-stringTable->set(key("sub"), m_cpu.createNativeFunction("string.sub", [this, str](NativeArgsView args, NativeResults& out) {
+stringTable->set(key("sub"), m_machine.cpu().createNativeFunction("string.sub", [this, str](NativeArgsView args, NativeResults& out) {
 	StringId textId = asStringId(args.at(0));
-	const std::string& text = m_cpu.stringPool().toString(textId);
-	int length = m_cpu.stringPool().codepointCount(textId);
+	const std::string& text = m_machine.cpu().stringPool().toString(textId);
+	int length = m_machine.cpu().stringPool().codepointCount(textId);
 		auto normalizeIndex = [length](double value) -> int {
 			int integer = static_cast<int>(std::floor(value));
 			if (integer > 0) return integer;
@@ -2727,11 +2727,11 @@ stringTable->set(key("sub"), m_cpu.createNativeFunction("string.sub", [this, str
 	size_t endByte = utf8_byte_index_from_codepoint(text, endIndex + 1);
 	out.push_back(str(text.substr(startByte, endByte - startByte)));
 }));
-stringTable->set(key("find"), m_cpu.createNativeFunction("string.find", [this, str, asText](NativeArgsView args, NativeResults& out) {
+stringTable->set(key("find"), m_machine.cpu().createNativeFunction("string.find", [this, str, asText](NativeArgsView args, NativeResults& out) {
 	StringId sourceId = asStringId(args.at(0));
-	const std::string& source = m_cpu.stringPool().toString(sourceId);
+	const std::string& source = m_machine.cpu().stringPool().toString(sourceId);
 	const std::string& pattern = args.size() > 1 ? asText(args.at(1)) : std::string("");
-	int length = m_cpu.stringPool().codepointCount(sourceId);
+	int length = m_machine.cpu().stringPool().codepointCount(sourceId);
 		auto normalizeIndex = [length](double value) -> int {
 			int integer = static_cast<int>(std::floor(value));
 			if (integer > 0) return integer;
@@ -2783,11 +2783,11 @@ stringTable->set(key("find"), m_cpu.createNativeFunction("string.find", [this, s
 	out.push_back(valueNumber(static_cast<double>(first)));
 	out.push_back(valueNumber(static_cast<double>(last)));
 }));
-stringTable->set(key("match"), m_cpu.createNativeFunction("string.match", [this, str, asText](NativeArgsView args, NativeResults& out) {
+stringTable->set(key("match"), m_machine.cpu().createNativeFunction("string.match", [this, str, asText](NativeArgsView args, NativeResults& out) {
 	StringId sourceId = asStringId(args.at(0));
-	const std::string& source = m_cpu.stringPool().toString(sourceId);
+	const std::string& source = m_machine.cpu().stringPool().toString(sourceId);
 	const std::string& pattern = args.size() > 1 ? asText(args.at(1)) : std::string("");
-	int length = m_cpu.stringPool().codepointCount(sourceId);
+	int length = m_machine.cpu().stringPool().codepointCount(sourceId);
 	auto normalizeIndex = [length](double value) -> int {
 			int integer = static_cast<int>(std::floor(value));
 			if (integer > 0) return integer;
@@ -2819,7 +2819,7 @@ stringTable->set(key("match"), m_cpu.createNativeFunction("string.match", [this,
 	}
 	out.push_back(str(match[0].str()));
 }));
-stringTable->set(key("gsub"), m_cpu.createNativeFunction("string.gsub", [this, callClosureValue, str, asText](NativeArgsView args, NativeResults& out) {
+stringTable->set(key("gsub"), m_machine.cpu().createNativeFunction("string.gsub", [this, callClosureValue, str, asText](NativeArgsView args, NativeResults& out) {
 	const std::string& source = asText(args.at(0));
 	const std::string& pattern = args.size() > 1 ? asText(args.at(1)) : std::string("");
 	const Value replacement = args.size() > 2 ? args.at(2) : str("");
@@ -2922,7 +2922,7 @@ stringTable->set(key("gsub"), m_cpu.createNativeFunction("string.gsub", [this, c
 	out.push_back(valueNumber(static_cast<double>(count)));
 	releaseValueScratch(std::move(fnArgs));
 }));
-stringTable->set(key("gmatch"), m_cpu.createNativeFunction("string.gmatch", [this, str, asText](NativeArgsView args, NativeResults& out) {
+stringTable->set(key("gmatch"), m_machine.cpu().createNativeFunction("string.gmatch", [this, str, asText](NativeArgsView args, NativeResults& out) {
 	struct GMatchState {
 		const std::regex* regex = nullptr;
 		std::string source;
@@ -2935,7 +2935,7 @@ stringTable->set(key("gmatch"), m_cpu.createNativeFunction("string.gmatch", [thi
 	state->regex = &regex;
 	state->source = source;
 	state->index = 0;
-	auto iterator = m_cpu.createNativeFunction("string.gmatch.iterator", [state, str](NativeArgsView args, NativeResults& out) {
+	auto iterator = m_machine.cpu().createNativeFunction("string.gmatch.iterator", [state, str](NativeArgsView args, NativeResults& out) {
 		(void)args;
 		if (state->index > state->source.size()) {
 			out.push_back(valueNil());
@@ -2968,7 +2968,7 @@ stringTable->set(key("gmatch"), m_cpu.createNativeFunction("string.gmatch", [thi
 		});
 		out.push_back(iterator);
 	}));
-stringTable->set(key("byte"), m_cpu.createNativeFunction("string.byte", [asText](NativeArgsView args, NativeResults& out) {
+stringTable->set(key("byte"), m_machine.cpu().createNativeFunction("string.byte", [asText](NativeArgsView args, NativeResults& out) {
 	const std::string& source = asText(args.at(0));
 	int position = args.size() > 1 ? static_cast<int>(std::floor(asNumber(args.at(1)))) : 1;
 	if (position < 1) {
@@ -2983,7 +2983,7 @@ stringTable->set(key("byte"), m_cpu.createNativeFunction("string.byte", [asText]
 	uint32_t codepoint = utf8_codepoint_at(source, byteIndex);
 	out.push_back(valueNumber(static_cast<double>(codepoint)));
 }));
-stringTable->set(key("char"), m_cpu.createNativeFunction("string.char", [str](NativeArgsView args, NativeResults& out) {
+stringTable->set(key("char"), m_machine.cpu().createNativeFunction("string.char", [str](NativeArgsView args, NativeResults& out) {
 	if (args.empty()) {
 		out.push_back(str(""));
 		return;
@@ -2996,11 +2996,11 @@ stringTable->set(key("char"), m_cpu.createNativeFunction("string.char", [str](Na
 	}
 	out.push_back(str(result));
 }));
-stringTable->set(key("format"), m_cpu.createNativeFunction("string.format", [this, str, asText](NativeArgsView args, NativeResults& out) {
+stringTable->set(key("format"), m_machine.cpu().createNativeFunction("string.format", [this, str, asText](NativeArgsView args, NativeResults& out) {
 	const std::string& templateStr = asText(args.at(0));
 	out.push_back(str(formatLuaString(templateStr, args, 1)));
 }));
-stringTable->set(key("pack"), m_cpu.createNativeFunction("string.pack", [str, asText, packParseFormat, packGetNextAlign, packPadToAlign, packReadInteger, packWriteInt, packWriteFloat](NativeArgsView args, NativeResults& out) {
+stringTable->set(key("pack"), m_machine.cpu().createNativeFunction("string.pack", [str, asText, packParseFormat, packGetNextAlign, packPadToAlign, packReadInteger, packWriteInt, packWriteFloat](NativeArgsView args, NativeResults& out) {
 	if (args.empty()) {
 		throw BMSX_RUNTIME_ERROR("string.pack expects a format string.");
 	}
@@ -3086,7 +3086,7 @@ stringTable->set(key("pack"), m_cpu.createNativeFunction("string.pack", [str, as
 	}
 	out.push_back(str(packed));
 }));
-stringTable->set(key("packsize"), m_cpu.createNativeFunction("string.packsize", [asText, packParseFormat, packGetNextAlign](NativeArgsView args, NativeResults& out) {
+stringTable->set(key("packsize"), m_machine.cpu().createNativeFunction("string.packsize", [asText, packParseFormat, packGetNextAlign](NativeArgsView args, NativeResults& out) {
 	if (args.empty()) {
 		throw BMSX_RUNTIME_ERROR("string.packsize expects a format string.");
 	}
@@ -3127,7 +3127,7 @@ stringTable->set(key("packsize"), m_cpu.createNativeFunction("string.packsize", 
 	}
 	out.push_back(valueNumber(static_cast<double>(offset)));
 }));
-stringTable->set(key("unpack"), m_cpu.createNativeFunction("string.unpack", [str, asText, packParseFormat, packGetNextAlign, packReadInt, packReadFloat](NativeArgsView args, NativeResults& out) {
+stringTable->set(key("unpack"), m_machine.cpu().createNativeFunction("string.unpack", [str, asText, packParseFormat, packGetNextAlign, packReadInt, packReadFloat](NativeArgsView args, NativeResults& out) {
 	if (args.size() < 2) {
 		throw BMSX_RUNTIME_ERROR("string.unpack expects a format string and source string.");
 	}
@@ -3216,11 +3216,11 @@ stringTable->set(key("unpack"), m_cpu.createNativeFunction("string.unpack", [str
 	out.push_back(valueNumber(static_cast<double>(offset + 1)));
 }));
 
-	m_cpu.setStringIndexTable(stringTable);
+	m_machine.cpu().setStringIndexTable(stringTable);
 	setGlobal("string", valueTable(stringTable));
 
-	auto* tableLib = m_cpu.createTable();
-tableLib->set(key("insert"), m_cpu.createNativeFunction("table.insert", [](NativeArgsView args, NativeResults& out) {
+	auto* tableLib = m_machine.cpu().createTable();
+tableLib->set(key("insert"), m_machine.cpu().createNativeFunction("table.insert", [](NativeArgsView args, NativeResults& out) {
 	auto* tbl = asTable(args.at(0));
 	int position = 0;
 	Value value;
@@ -3238,7 +3238,7 @@ tableLib->set(key("insert"), m_cpu.createNativeFunction("table.insert", [](Nativ
 	tbl->set(valueNumber(static_cast<double>(position)), value);
 	(void)out;
 }));
-tableLib->set(key("remove"), m_cpu.createNativeFunction("table.remove", [](NativeArgsView args, NativeResults& out) {
+tableLib->set(key("remove"), m_machine.cpu().createNativeFunction("table.remove", [](NativeArgsView args, NativeResults& out) {
 	auto* tbl = asTable(args.at(0));
 	int position = args.size() > 1 ? static_cast<int>(std::floor(asNumber(args.at(1)))) : tbl->length();
 	int length = tbl->length();
@@ -3252,7 +3252,7 @@ tableLib->set(key("remove"), m_cpu.createNativeFunction("table.remove", [](Nativ
 	}
 	out.push_back(removed);
 }));
-tableLib->set(key("concat"), m_cpu.createNativeFunction("table.concat", [this, str](NativeArgsView args, NativeResults& out) {
+tableLib->set(key("concat"), m_machine.cpu().createNativeFunction("table.concat", [this, str](NativeArgsView args, NativeResults& out) {
 	auto* tbl = asTable(args.at(0));
 	const std::string separator = args.size() > 1 ? valueToString(args.at(1)) : std::string("");
 	int length = tbl->length();
@@ -3281,15 +3281,15 @@ tableLib->set(key("concat"), m_cpu.createNativeFunction("table.concat", [this, s
 	out.push_back(str(output));
 }));
 const Value packCountKey = key("n");
-tableLib->set(key("pack"), m_cpu.createNativeFunction("table.pack", [this, packCountKey](NativeArgsView args, NativeResults& out) {
-	auto* tbl = m_cpu.createTable(static_cast<int>(args.size()), 1);
+tableLib->set(key("pack"), m_machine.cpu().createNativeFunction("table.pack", [this, packCountKey](NativeArgsView args, NativeResults& out) {
+	auto* tbl = m_machine.cpu().createTable(static_cast<int>(args.size()), 1);
 	for (size_t i = 0; i < args.size(); ++i) {
 		tbl->set(valueNumber(static_cast<double>(i + 1)), args[i]);
 	}
 	tbl->set(packCountKey, valueNumber(static_cast<double>(args.size())));
 	out.push_back(valueTable(tbl));
 }));
-tableLib->set(key("unpack"), m_cpu.createNativeFunction("table.unpack", [](NativeArgsView args, NativeResults& out) {
+tableLib->set(key("unpack"), m_machine.cpu().createNativeFunction("table.unpack", [](NativeArgsView args, NativeResults& out) {
 	auto* tbl = asTable(args.at(0));
 	int length = tbl->length();
 	auto normalizeIndex = [length](double value, int fallback) -> int {
@@ -3307,7 +3307,7 @@ tableLib->set(key("unpack"), m_cpu.createNativeFunction("table.unpack", [](Nativ
 		out.push_back(tbl->get(valueNumber(static_cast<double>(i))));
 	}
 }));
-tableLib->set(key("sort"), m_cpu.createNativeFunction("table.sort", [this, callClosureValue](NativeArgsView args, NativeResults& out) {
+tableLib->set(key("sort"), m_machine.cpu().createNativeFunction("table.sort", [this, callClosureValue](NativeArgsView args, NativeResults& out) {
 	auto* tbl = asTable(args.at(0));
 	Value comparator = args.size() > 1 ? args.at(1) : valueNil();
 	int length = tbl->length();
@@ -3331,8 +3331,8 @@ tableLib->set(key("sort"), m_cpu.createNativeFunction("table.sort", [this, callC
 			return valueToNumber(left) < valueToNumber(right);
 		}
 		if (valueIsString(left) && valueIsString(right)) {
-			return Runtime::instance().cpu().stringPool().toString(asStringId(left))
-				< Runtime::instance().cpu().stringPool().toString(asStringId(right));
+			return Runtime::instance().machine().cpu().stringPool().toString(asStringId(left))
+				< Runtime::instance().machine().cpu().stringPool().toString(asStringId(right));
 		}
 		throw BMSX_RUNTIME_ERROR("table.sort comparison expects numbers or strings.");
 	});
@@ -3346,7 +3346,7 @@ tableLib->set(key("sort"), m_cpu.createNativeFunction("table.sort", [this, callC
 
 	setGlobal("table", valueTable(tableLib));
 
-auto* osTable = m_cpu.createTable();
+auto* osTable = m_machine.cpu().createTable();
 const Value yearKey = key("year");
 const Value monthKey = key("month");
 const Value dayKey = key("day");
@@ -3356,11 +3356,11 @@ const Value secondKey = key("sec");
 const Value wdayKey = key("wday");
 const Value ydayKey = key("yday");
 const Value isdstKey = key("isdst");
-osTable->set(key("clock"), m_cpu.createNativeFunction("os.clock", [](NativeArgsView args, NativeResults& out) {
+osTable->set(key("clock"), m_machine.cpu().createNativeFunction("os.clock", [](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	out.push_back(valueNumber(EngineCore::instance().clock()->now() / 1000.0));
 }));
-osTable->set(key("time"), m_cpu.createNativeFunction("os.time", [yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey](NativeArgsView args, NativeResults& out) {
+osTable->set(key("time"), m_machine.cpu().createNativeFunction("os.time", [yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey](NativeArgsView args, NativeResults& out) {
 	if (!args.empty() && !isNil(args.at(0))) {
 		auto* table = asTable(args.at(0));
 		std::tm timeInfo{};
@@ -3376,19 +3376,19 @@ osTable->set(key("time"), m_cpu.createNativeFunction("os.time", [yearKey, monthK
 	}
 	out.push_back(valueNumber(static_cast<double>(std::time(nullptr))));
 }));
-osTable->set(key("difftime"), m_cpu.createNativeFunction("os.difftime", [](NativeArgsView args, NativeResults& out) {
+osTable->set(key("difftime"), m_machine.cpu().createNativeFunction("os.difftime", [](NativeArgsView args, NativeResults& out) {
 	double t2 = asNumber(args.at(0));
 	double t1 = asNumber(args.at(1));
 	out.push_back(valueNumber(t2 - t1));
 }));
-osTable->set(key("date"), m_cpu.createNativeFunction("os.date", [str, yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey, wdayKey, ydayKey, isdstKey](NativeArgsView args, NativeResults& out) {
-	std::string format = args.empty() || isNil(args.at(0)) ? std::string("%c") : Runtime::instance().cpu().stringPool().toString(asStringId(args.at(0)));
+osTable->set(key("date"), m_machine.cpu().createNativeFunction("os.date", [str, yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey, wdayKey, ydayKey, isdstKey](NativeArgsView args, NativeResults& out) {
+	std::string format = args.empty() || isNil(args.at(0)) ? std::string("%c") : Runtime::instance().machine().cpu().stringPool().toString(asStringId(args.at(0)));
 	std::time_t timeValue = args.size() > 1 && !isNil(args.at(1))
 		? static_cast<std::time_t>(asNumber(args.at(1)))
 		: std::time(nullptr);
 	std::tm timeInfo = *std::localtime(&timeValue);
 	if (format == "*t") {
-		auto* table = Runtime::instance().cpu().createTable(0, 9);
+		auto* table = Runtime::instance().machine().cpu().createTable(0, 9);
 		table->set(yearKey, valueNumber(static_cast<double>(timeInfo.tm_year + 1900)));
 		table->set(monthKey, valueNumber(static_cast<double>(timeInfo.tm_mon + 1)));
 		table->set(dayKey, valueNumber(static_cast<double>(timeInfo.tm_mday)));
@@ -3407,7 +3407,7 @@ osTable->set(key("date"), m_cpu.createNativeFunction("os.date", [str, yearKey, m
 }));
 	setGlobal("os", valueTable(osTable));
 
-auto nextFn = m_cpu.createNativeFunction("next", [this](NativeArgsView args, NativeResults& out) {
+auto nextFn = m_machine.cpu().createNativeFunction("next", [this](NativeArgsView args, NativeResults& out) {
 	const Value& target = args.at(0);
 	const Value key = args.size() > 1 ? args.at(1) : valueNil();
 	if (valueIsTable(target)) {
@@ -3437,7 +3437,7 @@ auto nextFn = m_cpu.createNativeFunction("next", [this](NativeArgsView args, Nat
 	throw BMSX_RUNTIME_ERROR("next expects a table or native object.");
 });
 
-m_pairsIterator = m_cpu.createNativeFunction("pairs.iterator", [](NativeArgsView args, NativeResults& out) {
+m_pairsIterator = m_machine.cpu().createNativeFunction("pairs.iterator", [](NativeArgsView args, NativeResults& out) {
 	auto* state = asTable(args.at(0));
 	auto* target = asTable(state->get(valueNumber(1.0)));
 	size_t arrayCursor = static_cast<size_t>(asNumber(state->get(valueNumber(2.0))));
@@ -3455,7 +3455,7 @@ m_pairsIterator = m_cpu.createNativeFunction("pairs.iterator", [](NativeArgsView
 	out.push_back(std::get<3>(*entry));
 });
 
-m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsView args, NativeResults& out) {
+m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](NativeArgsView args, NativeResults& out) {
 	const Value& target = args.at(0);
 	double index = 0.0;
 	if (args.size() > 1 && valueIsNumber(args.at(1))) {
@@ -3489,7 +3489,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 	registerNativeFunction("pairs", [this, nextFn](NativeArgsView args, NativeResults& out) {
 		const Value& target = args.at(0);
 		if (valueIsTable(target)) {
-			auto* state = Runtime::instance().cpu().createTable(4, 0);
+			auto* state = Runtime::instance().machine().cpu().createTable(4, 0);
 			state->set(valueNumber(1.0), target);
 			state->set(valueNumber(2.0), valueNumber(0.0));
 			state->set(valueNumber(3.0), valueNumber(0.0));
@@ -3517,7 +3517,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 	});
 
 	const RuntimeAssets& assets = EngineCore::instance().assets();
-	auto* assetsTable = m_cpu.createTable();
+	auto* assetsTable = m_machine.cpu().createTable();
 	auto formatAssetKeyNumber = [](double value) -> std::string {
 		if (value == 0.0) {
 			return "0";
@@ -3527,13 +3527,13 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 		return oss.str();
 	};
 	auto makeAssetMapNativeObject = [this, formatAssetKeyNumber](Table* mapTable) -> Value {
-		return m_cpu.createNativeObject(
+		return m_machine.cpu().createNativeObject(
 			mapTable,
 			[this, mapTable, formatAssetKeyNumber](const Value& keyValue) -> Value {
 				if (valueIsString(keyValue)) {
 					Value value = mapTable->get(keyValue);
 					if (isNil(value)) {
-						const std::string& keyName = m_cpu.stringPool().toString(asStringId(keyValue));
+						const std::string& keyName = m_machine.cpu().stringPool().toString(asStringId(keyValue));
 						throw BMSX_RUNTIME_ERROR("Asset '" + keyName + "' does not exist.");
 					}
 					return value;
@@ -3543,7 +3543,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 					double intpart = 0.0;
 					if (std::isfinite(n) && std::modf(n, &intpart) == 0.0) {
 						std::string keyName = formatAssetKeyNumber(n);
-						Value resolvedKey = valueString(m_cpu.internString(keyName));
+						Value resolvedKey = valueString(m_machine.cpu().internString(keyName));
 						Value value = mapTable->get(resolvedKey);
 						if (isNil(value)) {
 							throw BMSX_RUNTIME_ERROR("Asset '" + keyName + "' does not exist.");
@@ -3563,7 +3563,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 					double intpart = 0.0;
 					if (std::isfinite(n) && std::modf(n, &intpart) == 0.0) {
 						std::string keyName = formatAssetKeyNumber(n);
-						Value resolvedKey = valueString(m_cpu.internString(keyName));
+						Value resolvedKey = valueString(m_machine.cpu().internString(keyName));
 						mapTable->set(resolvedKey, value);
 						return;
 					}
@@ -3628,17 +3628,17 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 		}
 	};
 	auto appendBinEntry = [this, str](Table* table, const std::string& assetId, const BinValue& value) {
-		table->set(str(assetId), binValueToRuntimeValue(m_cpu, value));
+		table->set(str(assetId), binValueToRuntimeValue(m_machine.cpu(), value));
 	};
 	const int imgCapacity = static_cast<int>(assets.img.size());
-	auto* imgTable = m_cpu.createTable(0, imgCapacity);
+	auto* imgTable = m_machine.cpu().createTable(0, imgCapacity);
 	auto appendImgEntry = [this, imgTable, key, str, appendRomAssetFields](const ImgAsset& imgAsset) {
-		auto* imgEntry = m_cpu.createTable(0, 8);
+		auto* imgEntry = m_machine.cpu().createTable(0, 8);
 		appendRomAssetFields(imgEntry, imgAsset.rom, imgAsset.id);
-		if (m_memory.hasAsset(imgAsset.id)) {
-			imgEntry->set(key("handle"), valueNumber(static_cast<double>(m_memory.resolveAssetHandle(imgAsset.id))));
+		if (m_machine.memory().hasAsset(imgAsset.id)) {
+			imgEntry->set(key("handle"), valueNumber(static_cast<double>(m_machine.memory().resolveAssetHandle(imgAsset.id))));
 		}
-		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(m_cpu, imgAsset.meta, key)));
+		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(m_machine.cpu(), imgAsset.meta, key)));
 		imgTable->set(str(imgAsset.id), valueTable(imgEntry));
 	};
 	for (const auto& entry : assets.img) {
@@ -3647,15 +3647,15 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 	assetsTable->set(key("img"), makeAssetMapNativeObject(imgTable));
 
 	const int dataCapacity = static_cast<int>(assets.data.size());
-	auto* dataTable = m_cpu.createTable(0, dataCapacity);
+	auto* dataTable = m_machine.cpu().createTable(0, dataCapacity);
 	for (const auto& entry : assets.data) {
 		appendBinEntry(dataTable, entry.second.id, entry.second.value);
 	}
 	assetsTable->set(key("data"), makeAssetMapNativeObject(dataTable));
 	const int binCapacity = static_cast<int>(assets.bin.size());
-	auto* binTable = m_cpu.createTable(0, binCapacity);
+	auto* binTable = m_machine.cpu().createTable(0, binCapacity);
 	auto appendBinAssetEntry = [this, binTable, str, appendRomAssetFields](const BinAsset& binAsset) {
-		auto* binEntry = m_cpu.createTable(0, 8);
+		auto* binEntry = m_machine.cpu().createTable(0, 8);
 		appendRomAssetFields(binEntry, binAsset.rom, binAsset.id);
 		binTable->set(str(binAsset.id), valueTable(binEntry));
 	};
@@ -3664,14 +3664,14 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 	}
 	assetsTable->set(key("bin"), makeAssetMapNativeObject(binTable));
 	const int audioCapacity = static_cast<int>(assets.audio.size());
-	auto* audioTable = m_cpu.createTable(0, audioCapacity);
+	auto* audioTable = m_machine.cpu().createTable(0, audioCapacity);
 	auto appendAudioEntry = [this, audioTable, key, str, appendRomAssetFields](const AudioAsset& audioAsset) {
-		auto* audioEntry = m_cpu.createTable(0, 6);
+		auto* audioEntry = m_machine.cpu().createTable(0, 6);
 		appendRomAssetFields(audioEntry, audioAsset.rom, audioAsset.id);
-		if (m_memory.hasAsset(audioAsset.id)) {
-			audioEntry->set(key("handle"), valueNumber(static_cast<double>(m_memory.resolveAssetHandle(audioAsset.id))));
+		if (m_machine.memory().hasAsset(audioAsset.id)) {
+			audioEntry->set(key("handle"), valueNumber(static_cast<double>(m_machine.memory().resolveAssetHandle(audioAsset.id))));
 		}
-		audioEntry->set(key("audiometa"), valueTable(buildAudioMetaTable(m_cpu, audioAsset.meta, key)));
+		audioEntry->set(key("audiometa"), valueTable(buildAudioMetaTable(m_machine.cpu(), audioAsset.meta, key)));
 		audioTable->set(str(audioAsset.id), valueTable(audioEntry));
 	};
 	for (const auto& entry : assets.audio) {
@@ -3679,28 +3679,28 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 	}
 	assetsTable->set(key("audio"), makeAssetMapNativeObject(audioTable));
 	const int audioEventCapacity = static_cast<int>(assets.audioevents.size());
-	auto* audioEventsTable = m_cpu.createTable(0, audioEventCapacity);
+	auto* audioEventsTable = m_machine.cpu().createTable(0, audioEventCapacity);
 	for (const auto& entry : assets.audioevents) {
 		appendBinEntry(audioEventsTable, entry.second.id, entry.second.value);
 	}
 	assetsTable->set(key("audioevents"), makeAssetMapNativeObject(audioEventsTable));
 	const int modelCapacity = static_cast<int>(assets.model.size());
-	auto* modelTable = m_cpu.createTable(0, modelCapacity);
+	auto* modelTable = m_machine.cpu().createTable(0, modelCapacity);
 	auto appendModelEntry = [this, modelTable, key, str](const ModelAsset& modelAsset) {
-		modelTable->set(str(modelAsset.id), valueTable(buildModelAssetTable(m_cpu, modelAsset, key)));
+		modelTable->set(str(modelAsset.id), valueTable(buildModelAssetTable(m_machine.cpu(), modelAsset, key)));
 	};
 	for (const auto& entry : assets.model) {
 		appendModelEntry(entry.second);
 	}
 	assetsTable->set(key("model"), makeAssetMapNativeObject(modelTable));
 	assetsTable->set(key("project_root_path"), str(assets.projectRootPath));
-	auto assetsNative = m_cpu.createNativeObject(
+	auto assetsNative = m_machine.cpu().createNativeObject(
 		assetsTable,
 		[this, assetsTable, formatAssetKeyNumber](const Value& keyValue) -> Value {
 			if (valueIsString(keyValue)) {
 				Value value = assetsTable->get(keyValue);
 				if (isNil(value)) {
-					const std::string& keyName = m_cpu.stringPool().toString(asStringId(keyValue));
+					const std::string& keyName = m_machine.cpu().stringPool().toString(asStringId(keyValue));
 					throw BMSX_RUNTIME_ERROR("Asset '" + keyName + "' does not exist.");
 				}
 				return value;
@@ -3710,7 +3710,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 				double intpart = 0.0;
 				if (std::isfinite(n) && std::modf(n, &intpart) == 0.0) {
 					std::string keyName = formatAssetKeyNumber(n);
-					Value resolvedKey = valueString(m_cpu.internString(keyName));
+					Value resolvedKey = valueString(m_machine.cpu().internString(keyName));
 					Value value = assetsTable->get(resolvedKey);
 					if (isNil(value)) {
 						throw BMSX_RUNTIME_ERROR("Asset '" + keyName + "' does not exist.");
@@ -3730,7 +3730,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 				double intpart = 0.0;
 				if (std::isfinite(n) && std::modf(n, &intpart) == 0.0) {
 					std::string keyName = formatAssetKeyNumber(n);
-					Value resolvedKey = valueString(m_cpu.internString(keyName));
+					Value resolvedKey = valueString(m_machine.cpu().internString(keyName));
 					assetsTable->set(resolvedKey, value);
 					return;
 				}
@@ -3759,7 +3759,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 		}
 	};
 	auto buildMachineManifestTable = [this, key, str, canonicalizationLabel](const MachineManifest& manifest) -> Table* {
-		auto* machineTable = m_cpu.createTable(0, 5);
+		auto* machineTable = m_machine.cpu().createTable(0, 5);
 		if (!manifest.namespaceName.empty()) {
 			machineTable->set(key("namespace"), str(manifest.namespaceName));
 		}
@@ -3768,13 +3768,13 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 			machineTable->set(key("ufps"), valueNumber(static_cast<double>(*manifest.ufpsScaled)));
 		}
 		if (manifest.viewportWidth > 0 && manifest.viewportHeight > 0) {
-			auto* renderSizeTable = m_cpu.createTable(0, 2);
+			auto* renderSizeTable = m_machine.cpu().createTable(0, 2);
 			renderSizeTable->set(key("width"), valueNumber(static_cast<double>(manifest.viewportWidth)));
 			renderSizeTable->set(key("height"), valueNumber(static_cast<double>(manifest.viewportHeight)));
 			machineTable->set(key("render_size"), valueTable(renderSizeTable));
 		}
-		auto* specsTable = m_cpu.createTable(0, 6);
-		auto* cpuTable = m_cpu.createTable(0, 2);
+		auto* specsTable = m_machine.cpu().createTable(0, 6);
+		auto* cpuTable = m_machine.cpu().createTable(0, 2);
 		if (manifest.cpuHz) {
 			cpuTable->set(key("cpu_freq_hz"), valueNumber(static_cast<double>(*manifest.cpuHz)));
 		}
@@ -3782,7 +3782,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 			cpuTable->set(key("imgdec_bytes_per_sec"), valueNumber(static_cast<double>(*manifest.imgDecBytesPerSec)));
 		}
 		specsTable->set(key("cpu"), valueTable(cpuTable));
-		auto* dmaTable = m_cpu.createTable(0, 2);
+		auto* dmaTable = m_machine.cpu().createTable(0, 2);
 		if (manifest.dmaBytesPerSecIso) {
 			dmaTable->set(key("dma_bytes_per_sec_iso"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecIso)));
 		}
@@ -3790,19 +3790,19 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 			dmaTable->set(key("dma_bytes_per_sec_bulk"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecBulk)));
 		}
 		specsTable->set(key("dma"), valueTable(dmaTable));
-		auto* vdpTable = m_cpu.createTable(0, 1);
+		auto* vdpTable = m_machine.cpu().createTable(0, 1);
 		vdpTable->set(key("work_units_per_sec"), valueNumber(static_cast<double>(manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC))));
 		specsTable->set(key("vdp"), valueTable(vdpTable));
-		auto* geoTable = m_cpu.createTable(0, 1);
+		auto* geoTable = m_machine.cpu().createTable(0, 1);
 		geoTable->set(key("work_units_per_sec"), valueNumber(static_cast<double>(manifest.geoWorkUnitsPerSec.value_or(DEFAULT_GEO_WORK_UNITS_PER_SEC))));
 		specsTable->set(key("geo"), valueTable(geoTable));
 		if (manifest.ramBytes) {
-			auto* ramTable = m_cpu.createTable(0, 1);
+			auto* ramTable = m_machine.cpu().createTable(0, 1);
 			ramTable->set(key("ram_bytes"), valueNumber(static_cast<double>(*manifest.ramBytes)));
 			specsTable->set(key("ram"), valueTable(ramTable));
 		}
 		if (manifest.atlasSlotBytes || manifest.engineAtlasSlotBytes || manifest.stagingBytes) {
-			auto* vramTable = m_cpu.createTable(0, 3);
+			auto* vramTable = m_machine.cpu().createTable(0, 3);
 			if (manifest.atlasSlotBytes) {
 				vramTable->set(key("atlas_slot_bytes"), valueNumber(static_cast<double>(*manifest.atlasSlotBytes)));
 			}
@@ -3815,8 +3815,8 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 			specsTable->set(key("vram"), valueTable(vramTable));
 		}
 		if (manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
-			auto* audioTable = m_cpu.createTable(0, 1);
-			auto* voicesTable = m_cpu.createTable(0, 3);
+			auto* audioTable = m_machine.cpu().createTable(0, 1);
+			auto* voicesTable = m_machine.cpu().createTable(0, 3);
 			if (manifest.maxVoicesSfx) {
 				voicesTable->set(key("sfx"), valueNumber(static_cast<double>(*manifest.maxVoicesSfx)));
 			}
@@ -3833,7 +3833,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 		return machineTable;
 	};
 	auto buildCartManifestTable = [this, key, str, buildMachineManifestTable](const CartManifest& manifest, const MachineManifest& machine, const std::string& entryPath) -> Table* {
-		auto* manifestTable = m_cpu.createTable();
+		auto* manifestTable = m_machine.cpu().createTable();
 		const std::string_view title = manifest.title.empty() ? manifest.name : manifest.title;
 		if (!title.empty()) {
 			manifestTable->set(key("title"), str(title));
@@ -3847,7 +3847,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 			manifestTable->set(key("short_name"), str(shortName));
 		}
 		manifestTable->set(key("machine"), valueTable(buildMachineManifestTable(machine)));
-		auto* luaTable = m_cpu.createTable(0, 1);
+		auto* luaTable = m_machine.cpu().createTable(0, 1);
 		luaTable->set(key("entry_path"), str(entryPath));
 		manifestTable->set(key("lua"), valueTable(luaTable));
 		return manifestTable;
@@ -3860,11 +3860,11 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 	setGlobal("cart_project_root_path", cartProjectRootPath ? str(*cartProjectRootPath) : valueNil());
 
 	auto viewSize = EngineCore::instance().view()->viewportSize;
-	auto* viewportTable = m_cpu.createTable(0, 2);
+	auto* viewportTable = m_machine.cpu().createTable(0, 2);
 	viewportTable->set(key("x"), valueNumber(static_cast<double>(viewSize.x)));
 	viewportTable->set(key("y"), valueNumber(static_cast<double>(viewSize.y)));
 	auto* view = EngineCore::instance().view();
-	auto* viewTable = m_cpu.createTable(0, 8);
+	auto* viewTable = m_machine.cpu().createTable(0, 8);
 	viewTable->set(key("crt_postprocessing_enabled"), valueBool(view->crt_postprocessing_enabled));
 	viewTable->set(key("enable_noise"), valueBool(view->applyNoise));
 	viewTable->set(key("enable_colorbleed"), valueBool(view->applyColorBleed));
@@ -3874,18 +3874,18 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 	viewTable->set(key("enable_fringing"), valueBool(view->applyFringing));
 	viewTable->set(key("enable_aperture"), valueBool(view->applyAperture));
 
-auto clockNowFn = m_cpu.createNativeFunction("platform.clock.now", [](NativeArgsView args, NativeResults& out) {
+auto clockNowFn = m_machine.cpu().createNativeFunction("platform.clock.now", [](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	out.push_back(valueNumber(EngineCore::instance().clock()->now()));
 });
-auto clockPerfNowFn = m_cpu.createNativeFunction("platform.clock.perf_now", [](NativeArgsView args, NativeResults& out) {
+auto clockPerfNowFn = m_machine.cpu().createNativeFunction("platform.clock.perf_now", [](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	out.push_back(valueNumber(to_ms(std::chrono::steady_clock::now().time_since_epoch())));
 });
-	auto* clockTable = m_cpu.createTable(0, 2);
+	auto* clockTable = m_machine.cpu().createTable(0, 2);
 	clockTable->set(key("now"), clockNowFn);
 	clockTable->set(key("perf_now"), clockPerfNowFn);
-	auto* platformTable = m_cpu.createTable(0, 1);
+	auto* platformTable = m_machine.cpu().createTable(0, 1);
 	platformTable->set(key("clock"), valueTable(clockTable));
 
 	auto packActionStateFlags = [](const ActionState& state) -> Value {
@@ -3904,15 +3904,15 @@ auto clockPerfNowFn = m_cpu.createNativeFunction("platform.clock.perf_now", [](N
 		return valueNumber(static_cast<double>(flags));
 	};
 
-	auto getActionStateFn = m_cpu.createNativeFunction("game.get_action_state", [this, packActionStateFlags](NativeArgsView args, NativeResults& out) {
+	auto getActionStateFn = m_machine.cpu().createNativeFunction("game.get_action_state", [this, packActionStateFlags](NativeArgsView args, NativeResults& out) {
 		int playerIndex = 1;
 		std::string action;
 		std::optional<f64> windowFrames;
 		if (args.size() == 1) {
-			action = m_cpu.stringPool().toString(asStringId(args.at(0)));
+			action = m_machine.cpu().stringPool().toString(asStringId(args.at(0)));
 		} else {
 			playerIndex = static_cast<int>(std::floor(asNumber(args.at(0))));
-			action = m_cpu.stringPool().toString(asStringId(args.at(1)));
+			action = m_machine.cpu().stringPool().toString(asStringId(args.at(1)));
 			if (args.size() > 2 && !isNil(args.at(2))) {
 				windowFrames = asNumber(args.at(2));
 			}
@@ -3922,17 +3922,17 @@ auto clockPerfNowFn = m_cpu.createNativeFunction("platform.clock.perf_now", [](N
 		out.push_back(packActionStateFlags(state));
 	});
 
-auto emitFn = m_cpu.createNativeFunction("game.emit", [](NativeArgsView args, NativeResults& out) {
+auto emitFn = m_machine.cpu().createNativeFunction("game.emit", [](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	(void)out;
 });
 
-auto getFrameDeltaMsFn = m_cpu.createNativeFunction("game.get_frame_delta_ms", [this](NativeArgsView args, NativeResults& out) {
+auto getFrameDeltaMsFn = m_machine.cpu().createNativeFunction("game.get_frame_delta_ms", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	out.push_back(valueNumber(frameDeltaMs()));
 });
 
-	auto* gameTable = m_cpu.createTable(0, 10);
+	auto* gameTable = m_machine.cpu().createTable(0, 10);
 	gameTable->set(key("platform"), valueTable(platformTable));
 	gameTable->set(key("viewportsize"), valueTable(viewportTable));
 	gameTable->set(key("view"), valueTable(viewTable));

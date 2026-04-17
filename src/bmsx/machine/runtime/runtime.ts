@@ -35,7 +35,7 @@ import { parseRomMetadataSection } from '../../rompack/rom_metadata';
 import { decodeBinary, decodeBinaryWithPropTable } from '../../common/serializer/binencoder';
 import { createIdentifierCanonicalizer } from '../../lua/syntax/identifier_canonicalizer';
 import { Api } from '../firmware/firmware_api';
-import { CPU, Table, type Closure, type Value, type Program, type ProgramMetadata, RunResult, type NativeFunction, type NativeObject } from '../cpu/cpu';
+import { Table, type Closure, type Value, type Program, type ProgramMetadata, RunResult, type NativeFunction, type NativeObject } from '../cpu/cpu';
 import { type StringValue } from '../memory/string_pool';
 import type { TerminalMode } from '../../ide/terminal/ui/terminal_mode';
 import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
@@ -58,12 +58,10 @@ import * as runtimeLuaPipeline from '../../ide/runtime/runtime_lua_pipeline';
 import { registerAudioAssets as registerAudioAssetsFromSource } from './runtime_assets';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
 import type { ParsedLuaChunk } from '../../ide/language/lua/lua_parse';
-import { ResourceUsageDetector } from './resource_usage_detector';
 import { configureLuaHeapUsage } from '../memory/lua_heap_usage';
 import { RuntimeFrameLoopState } from './runtime_frame_loop';
 import { RuntimeMachineSchedulerState } from './runtime_machine_scheduler';
 import {
-	DeviceScheduler,
 	TIMER_KIND_DEVICE_SERVICE,
 	TIMER_KIND_VBLANK_BEGIN,
 	TIMER_KIND_VBLANK_END,
@@ -87,12 +85,6 @@ import {
 import { HandlerCache } from './handler_cache';
 import { Machine } from '../machine';
 import { Memory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntry } from '../memory/memory';
-import { DmaController } from '../devices/dma/dma_controller';
-import { GeometryController } from '../devices/geometry/geometry_controller';
-import { ImgDecController } from '../devices/imgdec/imgdec_controller';
-import { InputController } from '../devices/input/input_controller';
-import { AudioController } from '../devices/audio/audio_controller';
-import { IrqController } from '../devices/irq/irq_controller';
 import {
 	CART_ROM_BASE,
 	DEFAULT_GEO_SCRATCH_SIZE,
@@ -109,7 +101,7 @@ import {
 	configureMemoryMap,
 	type MemoryMapSpecs as MemoryMapSpecs,
 } from '../memory/memory_map';
-import { FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY, VDP } from '../devices/vdp/vdp';
+import { FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY } from '../devices/vdp/vdp';
 import { PROGRAM_ASSET_ID } from '../program/program_asset';
 import { createVdpBlitterExecutor } from '../../render/vdp/vdp_blitter';
 
@@ -244,7 +236,7 @@ export class Runtime {
 		}
 		this.cycleBudgetPerFrame = value;
 		runtimeLuaPipeline.registerGlobal(this, 'sys_max_cycles_per_frame', value);
-		this.refreshDeviceTimings(this.deviceScheduler.currentNowCycles());
+		this.refreshDeviceTimings(this.machine.scheduler.currentNowCycles());
 		if (this.vblankCycles > 0) {
 			if (this.vblankCycles > this.cycleBudgetPerFrame) {
 				throw runtimeFault('vblank_cycles must be less than or equal to cycles_per_frame.');
@@ -281,15 +273,15 @@ export class Runtime {
 	}
 
 	public getTrackedRamUsedBytes(): number {
-		return this.resourceUsageDetector.getRamUsedBytes();
+		return this.machine.resourceUsageDetector.getRamUsedBytes();
 	}
 
 	public getTrackedVramUsedBytes(): number {
-		return this.resourceUsageDetector.getVramUsedBytes();
+		return this.machine.resourceUsageDetector.getVramUsedBytes();
 	}
 
 	public getTrackedVramTotalBytes(): number {
-		return this.resourceUsageDetector.getVramTotalBytes();
+		return this.machine.resourceUsageDetector.getVramTotalBytes();
 	}
 
 	public hasActiveTick(): boolean {
@@ -311,9 +303,9 @@ export class Runtime {
 		this.runDueTimers();
 		while (remaining > 0) {
 			let sliceBudget = remaining;
-			const nextDeadline = this.deviceScheduler.nextDeadline();
+			const nextDeadline = this.machine.scheduler.nextDeadline();
 			if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
-				const deadlineBudget = nextDeadline - this.deviceScheduler.nowCycles;
+				const deadlineBudget = nextDeadline - this.machine.scheduler.nowCycles;
 				if (deadlineBudget <= 0) {
 					this.runDueTimers();
 					continue;
@@ -322,17 +314,17 @@ export class Runtime {
 					sliceBudget = deadlineBudget;
 				}
 			}
-			this.deviceScheduler.beginCpuSlice(sliceBudget);
-			result = this.cpu.run(sliceBudget);
-			this.deviceScheduler.endCpuSlice();
-			const sliceRemaining = this.cpu.instructionBudgetRemaining;
+			this.machine.scheduler.beginCpuSlice(sliceBudget);
+			result = this.machine.cpu.run(sliceBudget);
+			this.machine.scheduler.endCpuSlice();
+			const sliceRemaining = this.machine.cpu.instructionBudgetRemaining;
 			const consumed = sliceBudget - sliceRemaining;
 			if (consumed > 0) {
 				remaining -= consumed;
 				state.activeCpuUsedCycles += consumed;
 				this.advanceTime(consumed);
 			}
-			if (this.cpu.isHaltedUntilIrq() || result === RunResult.Halted) {
+			if (this.machine.cpu.isHaltedUntilIrq() || result === RunResult.Halted) {
 				break;
 			}
 			if (consumed <= 0) {
@@ -384,17 +376,17 @@ export class Runtime {
 	}
 
 	private getCyclesIntoFrame(): number {
-		return this.deviceScheduler.nowCycles - this.frameStartCycle;
+		return this.machine.scheduler.nowCycles - this.frameStartCycle;
 	}
 
 	private resetSchedulerState(): void {
-		this.deviceScheduler.reset();
+		this.machine.scheduler.reset();
 		this.frameStartCycle = 0;
 	}
 
 	private runDueTimers(): void {
-		while (this.deviceScheduler.hasDueTimer()) {
-			const event = this.deviceScheduler.popDueTimer();
+		while (this.machine.scheduler.hasDueTimer()) {
+			const event = this.machine.scheduler.popDueTimer();
 			this.dispatchTimer(event >> 8, event & 0xff);
 		}
 	}
@@ -416,9 +408,9 @@ export class Runtime {
 	}
 
 	private scheduleCurrentFrameTimers(): void {
-		this.deviceScheduler.scheduleVblankEnd(this.frameStartCycle + this.cycleBudgetPerFrame);
+		this.machine.scheduler.scheduleVblankEnd(this.frameStartCycle + this.cycleBudgetPerFrame);
 		if (this.vblankStartCycle > 0 && this.getCyclesIntoFrame() < this.vblankStartCycle) {
-			this.deviceScheduler.scheduleVblankBegin(this.frameStartCycle + this.vblankStartCycle);
+			this.machine.scheduler.scheduleVblankBegin(this.frameStartCycle + this.vblankStartCycle);
 		}
 	}
 
@@ -432,7 +424,7 @@ export class Runtime {
 		if (this.vblankActive) {
 			this.leaveVblank();
 		}
-		this.frameStartCycle = this.deviceScheduler.nowCycles;
+		this.frameStartCycle = this.machine.scheduler.nowCycles;
 		this.scheduleCurrentFrameTimers();
 		if (this.vblankStartCycle === 0) {
 			this.enterVblank();
@@ -499,8 +491,6 @@ export class Runtime {
 	private isUpdatePhasePending(): boolean {
 		return this.hasEntryContinuation();
 	}
-	public readonly memory: Memory;
-	public readonly cpu: CPU;
 	public programMetadata: ProgramMetadata | null = null;
 	public consoleMetadata: ProgramMetadata | null = null;
 	public _luaPath: string = null;
@@ -520,7 +510,7 @@ export class Runtime {
 	}
 	public setCpuHz(value: number): void {
 		this._cpuHz = value;
-		this.refreshDeviceTimings(this.deviceScheduler.currentNowCycles());
+		this.refreshDeviceTimings(this.machine.scheduler.currentNowCycles());
 	}
 	public applyActiveMachineTiming(cpuHz: number): void {
 		const perfSpecs = getMachinePerfSpecs($.machine_manifest);
@@ -536,12 +526,12 @@ export class Runtime {
 
 	public setVdpWorkUnitsPerSec(value: number): void {
 		this.vdpWorkUnitsPerSec = Runtime.resolveVdpWorkUnitsPerSec(value);
-		this.vdp.setTiming(this._cpuHz, this.vdpWorkUnitsPerSec, this.deviceScheduler.currentNowCycles());
+		this.machine.vdp.setTiming(this._cpuHz, this.vdpWorkUnitsPerSec, this.machine.scheduler.currentNowCycles());
 	}
 
 	public setGeoWorkUnitsPerSec(value: number): void {
 		this.geoWorkUnitsPerSec = Runtime.resolveGeoWorkUnitsPerSec(value);
-		this.geometryController.setTiming(this._cpuHz, this.geoWorkUnitsPerSec, this.deviceScheduler.currentNowCycles());
+		this.machine.geometryController.setTiming(this._cpuHz, this.geoWorkUnitsPerSec, this.machine.scheduler.currentNowCycles());
 	}
 
 	public setTransferRatesFromManifest(specs: { imgdec_bytes_per_sec: number; dma_bytes_per_sec_iso: number; dma_bytes_per_sec_bulk: number; work_units_per_sec: number; geo_work_units_per_sec: number; }): void {
@@ -550,7 +540,7 @@ export class Runtime {
 		this.dmaBytesPerSecBulk = Runtime.resolveBytesPerSec(specs.dma_bytes_per_sec_bulk, 'machine.specs.dma.dma_bytes_per_sec_bulk');
 		this.setVdpWorkUnitsPerSec(specs.work_units_per_sec);
 		this.setGeoWorkUnitsPerSec(specs.geo_work_units_per_sec);
-		this.refreshDeviceTimings(this.deviceScheduler.currentNowCycles());
+		this.refreshDeviceTimings(this.machine.scheduler.currentNowCycles());
 	}
 
 	public setVblankCycles(cycles: number): void {
@@ -570,15 +560,15 @@ export class Runtime {
 		this.vblankActive = false;
 		this.vblankSequence = 0;
 		this.lastCompletedVblankSequence = 0;
-		this.inputController.sampleArmed = false;
-		this.irqController.postLoad();
+		this.machine.inputController.sampleArmed = false;
+		this.machine.irqController.postLoad();
 		this.resetHaltIrqWait();
-		this.vdp.resetStatus();
+		this.machine.vdp.resetStatus();
 		if (this.vblankStartCycle === 0) {
 			this.setVblankStatus(true);
 		}
 		this.scheduleCurrentFrameTimers();
-		this.refreshDeviceTimings(this.deviceScheduler.nowCycles);
+		this.refreshDeviceTimings(this.machine.scheduler.nowCycles);
 	}
 
 	public resetRenderBuffers(): void {
@@ -587,16 +577,16 @@ export class Runtime {
 
 	private setVblankStatus(active: boolean): void {
 		this.vblankActive = active;
-		this.vdp.setVblankStatus(active);
+		this.machine.vdp.setVblankStatus(active);
 	}
 
 	private enterVblank(): void {
 		// IRQ flags are level/pending; multiple VBLANK edges while pending coalesce.
 		this.vblankSequence += 1;
 		this.commitFrameOnVblankEdge();
-		this.inputController.onVblankEdge();
+		this.machine.inputController.onVblankEdge();
 		this.setVblankStatus(true);
-		this.irqController.raise(IRQ_VBLANK);
+		this.machine.irqController.raise(IRQ_VBLANK);
 		const frameState = this.currentFrameState;
 		if (frameState !== null && this.isFrameBoundaryHalt()) {
 			this.completeTickIfPending(frameState, this.vblankSequence);
@@ -609,7 +599,7 @@ export class Runtime {
 	}
 
 	public clearHaltUntilIrq(): void {
-		this.cpu.clearHaltUntilIrq();
+		this.machine.cpu.clearHaltUntilIrq();
 		this.resetHaltIrqWait();
 		this.clearBackQueuesAfterIrqWake = false;
 	}
@@ -626,7 +616,7 @@ export class Runtime {
 		if (this.vblankSequence === 0) {
 			return false;
 		}
-		const pendingFlags = this.irqController.pendingFlags();
+		const pendingFlags = this.machine.irqController.pendingFlags();
 		if ((pendingFlags & IRQ_VBLANK) === 0) {
 			return false;
 		}
@@ -635,15 +625,15 @@ export class Runtime {
 		}
 		this.completeTickIfPending(state, this.vblankSequence);
 		this.clearBackQueuesAfterIrqWake = true;
-		this.cpu.clearHaltUntilIrq();
+		this.machine.cpu.clearHaltUntilIrq();
 		this.resetHaltIrqWait();
 		return true;
 	}
 
 	private commitFrameOnVblankEdge(): void {
-		this.vdp.syncRegisters();
-		this.vdp.presentReadyFrameOnVblankEdge();
-		this.vdp.commitViewSnapshot();
+		this.machine.vdp.syncRegisters();
+		this.machine.vdp.presentReadyFrameOnVblankEdge();
+		this.machine.vdp.commitViewSnapshot();
 	}
 
 	private completeTickIfPending(frameState: FrameState, vblankSequence: number): void {
@@ -658,7 +648,7 @@ export class Runtime {
 	public captureVblankState(): { cyclesIntoFrame: number; inputSampleArmed: boolean } {
 		return {
 			cyclesIntoFrame: this.getCyclesIntoFrame(),
-			inputSampleArmed: this.inputController.sampleArmed,
+			inputSampleArmed: this.machine.inputController.sampleArmed,
 		};
 	}
 
@@ -667,19 +657,19 @@ export class Runtime {
 		this.machineScheduler.reset(this);
 		this.frameLoop.reset();
 		this.screen.reset();
-		this.inputController.sampleArmed = state.inputSampleArmed === true;
+		this.machine.inputController.sampleArmed = state.inputSampleArmed === true;
 		this.resetSchedulerState();
-		this.deviceScheduler.setNowCycles(state.cyclesIntoFrame);
+		this.machine.scheduler.setNowCycles(state.cyclesIntoFrame);
 		this.frameStartCycle = 0;
 		this.vblankSequence = 0;
 		this.lastCompletedVblankSequence = 0;
 		this.activeTickCompleted = false;
-		this.irqController.postLoad();
+		this.machine.irqController.postLoad();
 		const vblankActive = (this.vblankStartCycle === 0)
 			|| (this.getCyclesIntoFrame() >= this.vblankStartCycle);
 		this.setVblankStatus(vblankActive);
 		this.scheduleCurrentFrameTimers();
-		this.refreshDeviceTimings(this.deviceScheduler.nowCycles);
+		this.refreshDeviceTimings(this.machine.scheduler.nowCycles);
 	}
 	private includeJsStackTraces = false;
 	public realtimeCompileOptLevel: 0 | 1 | 2 | 3 = 3;
@@ -712,7 +702,6 @@ export class Runtime {
 	public lastTickVdpFrameHeld: boolean = false;
 	public lastTickCompleted: boolean = false;
 	private activeTickCompleted = false;
-	public readonly deviceScheduler: DeviceScheduler;
 	public readonly machineScheduler = new RuntimeMachineSchedulerState();
 	public readonly frameLoop = new RuntimeFrameLoopState();
 	public readonly screen = new RuntimeScreenState();
@@ -781,16 +770,8 @@ export class Runtime {
 	private overlayAssetLayer: RuntimeAssetLayer = null;
 	private readonly imageMetaByHandle = new Map<number, ImgMeta>();
 	private readonly audioMetaByHandle = new Map<number, AudioMeta>();
-	public readonly vdp: VDP;
 	public readonly machine: Machine;
-	private readonly resourceUsageDetector: ResourceUsageDetector;
 	private editorViewOptionsSnapshot: EditorViewOptionsSnapshot = null;
-	public readonly dmaController: DmaController;
-	public readonly geometryController: GeometryController;
-	public readonly imgDecController: ImgDecController;
-	public readonly inputController: InputController;
-	public readonly audioController: AudioController;
-	public readonly irqController: IrqController;
 	private engineCanonicalization: CanonicalizationType = null;
 	public cartCanonicalization: CanonicalizationType = null;
 	public preparedCartProgram: {
@@ -1214,14 +1195,14 @@ export class Runtime {
 
 	private publishHostFault(flags: number, stage: number, message: string): void {
 		this.hostFaultMessage = message;
-		this.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, flags >>> 0);
-		this.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, stage >>> 0);
+		this.machine.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, flags >>> 0);
+		this.machine.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, stage >>> 0);
 	}
 
 	private clearHostFaultChannel(): void {
 		this.hostFaultMessage = null;
-		this.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, 0);
-		this.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_NONE);
+		this.machine.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, 0);
+		this.machine.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_NONE);
 	}
 
 	private activateProgramSource(source: ProgramSource): void {
@@ -1268,21 +1249,10 @@ export class Runtime {
 			Input.instance,
 			$.sndmaster,
 		);
-		this.memory = this.machine.memory;
-		this.cpu = this.machine.cpu;
-		this.deviceScheduler = this.machine.scheduler;
-		this.irqController = this.machine.irqController;
-		this.vdp = this.machine.vdp;
-		this.audioController = this.machine.audioController;
-		this.dmaController = this.machine.dmaController;
-		this.imgDecController = this.machine.imgDecController;
-		this.geometryController = this.machine.geometryController;
-		this.inputController = this.machine.inputController;
-		this.resourceUsageDetector = this.machine.resourceUsageDetector;
 		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
 		configureLuaHeapUsage({
-			getBaseRamUsedBytes: () => this.resourceUsageDetector.getBaseRamUsedBytes(),
+			getBaseRamUsedBytes: () => this.machine.resourceUsageDetector.getBaseRamUsedBytes(),
 			collectTrackedHeapBytes: () => {
 				const extraRoots = this.acquireValueScratch();
 				try {
@@ -1291,7 +1261,7 @@ export class Runtime {
 					for (const value of this.moduleCache.values()) {
 						extraRoots.push(value);
 					}
-					return this.cpu.collectTrackedHeapBytes(extraRoots);
+					return this.machine.cpu.collectTrackedHeapBytes(extraRoots);
 				}
 				finally {
 					this.releaseValueScratch(extraRoots);
@@ -1350,7 +1320,7 @@ export class Runtime {
 		this.pendingCall = null;
 		this.luaRuntimeFailed = false;
 		this.luaInitialized = false;
-		this.inputController.sampleArmed = false;
+		this.machine.inputController.sampleArmed = false;
 		this.clearHaltUntilIrq();
 	}
 
@@ -1401,7 +1371,7 @@ export class Runtime {
 			await $.resetRuntime();
 		}
 		await this.buildAssetMemory({ source: this.engineAssetSource, mode: 'full' });
-		this.memory.sealEngineAssets();
+		this.machine.memory.sealEngineAssets();
 		this.activateEngineProgramAssets();
 		if (options?.refreshAudio) {
 			await $.refresh_audio_assets();
@@ -1459,7 +1429,7 @@ export class Runtime {
 			cycleCarryGranted: 0,
 			activeCpuUsedCycles: 0,
 		};
-		this.vdp.beginFrame();
+		this.machine.vdp.beginFrame();
 		this.activeTickCompleted = false;
 		this.currentFrameState = state;
 		return state;
@@ -1509,7 +1479,7 @@ export class Runtime {
 		try {
 			if (this.isUpdatePhasePending()) {
 				this.runUpdatePhase(state);
-				this.vdp.flushAssetEdits();
+				this.machine.vdp.flushAssetEdits();
 				state.updateExecuted = !this.isUpdatePhasePending();
 			}
 			this.finalizeUpdateSlice(state);
@@ -1539,7 +1509,7 @@ export class Runtime {
 		if (unsupported !== 0) {
 			throw runtimeFault(`unsupported engine IRQ mask 0x${unsupported.toString(16)}.`);
 		}
-		this.irqController.raise(normalized);
+		this.machine.irqController.raise(normalized);
 	}
 
 	private runUpdatePhase(state: FrameState): void {
@@ -1558,7 +1528,7 @@ export class Runtime {
 		}
 		try {
 			while (true) {
-				if (this.cpu.isHaltedUntilIrq() && this.runHaltedUntilIrq(state)) {
+				if (this.machine.cpu.isHaltedUntilIrq() && this.runHaltedUntilIrq(state)) {
 					return;
 				}
 				if (this.clearBackQueuesAfterIrqWake) {
@@ -1569,7 +1539,7 @@ export class Runtime {
 					return;
 				}
 				const result = this.runWithBudget(state);
-				if (this.cpu.isHaltedUntilIrq()) {
+				if (this.machine.cpu.isHaltedUntilIrq()) {
 					if (this.runHaltedUntilIrq(state)) {
 						return;
 					}
@@ -1589,12 +1559,12 @@ export class Runtime {
 	}
 
 	private isFrameBoundaryHalt(): boolean {
-		return this.cpu.getFrameDepth() === 1 && this.pendingCall === 'entry' && this.cpu.isHaltedUntilIrq();
+		return this.machine.cpu.getFrameDepth() === 1 && this.pendingCall === 'entry' && this.machine.cpu.isHaltedUntilIrq();
 	}
 
 	private runHaltedUntilIrq(state: FrameState): boolean {
 		this.runDueTimers();
-		if (!this.cpu.isHaltedUntilIrq()) {
+		if (!this.machine.cpu.isHaltedUntilIrq()) {
 			this.resetHaltIrqWait();
 			return false;
 		}
@@ -1602,22 +1572,22 @@ export class Runtime {
 			return true;
 		}
 		if (!this.haltIrqWaitArmed) {
-				const pendingFlags = this.irqController.pendingFlags();
+				const pendingFlags = this.machine.irqController.pendingFlags();
 			if (pendingFlags !== 0) {
-				this.cpu.clearHaltUntilIrq();
+				this.machine.cpu.clearHaltUntilIrq();
 				return this.activeTickCompleted;
 			}
-			this.haltIrqSignalSequence = this.irqController.signalSequence;
+			this.haltIrqSignalSequence = this.machine.irqController.signalSequence;
 			this.haltIrqWaitArmed = true;
 		}
 		while (true) {
-			if (this.irqController.signalSequence !== this.haltIrqSignalSequence) {
-				this.cpu.clearHaltUntilIrq();
+			if (this.machine.irqController.signalSequence !== this.haltIrqSignalSequence) {
+				this.machine.cpu.clearHaltUntilIrq();
 				this.resetHaltIrqWait();
 				return this.activeTickCompleted;
 			}
 			if (state.cycleBudgetRemaining > 0) {
-				const cyclesToTarget = this.deviceScheduler.nextDeadline() - this.deviceScheduler.nowCycles;
+				const cyclesToTarget = this.machine.scheduler.nextDeadline() - this.machine.scheduler.nowCycles;
 				if (cyclesToTarget <= 0) {
 					this.runDueTimers();
 					continue;
@@ -1641,11 +1611,11 @@ export class Runtime {
 	}
 
 	public resolveAssetHandle(id: string): number {
-		return this.memory.resolveAssetHandle(id);
+		return this.machine.memory.resolveAssetHandle(id);
 	}
 
 	public getAssetEntryByHandle(handle: number): AssetEntry {
-		return this.memory.getAssetEntryByHandle(handle);
+		return this.machine.memory.getAssetEntryByHandle(handle);
 	}
 
 	public getImageMetaByHandle(handle: number): ImgMeta {
@@ -1813,10 +1783,10 @@ export class Runtime {
 	}
 
 	public getAudioBytesById(id: string): Uint8Array {
-		if (this.memory.hasAsset(id)) {
-			const entry = this.memory.getAssetEntry(id);
+		if (this.machine.memory.hasAsset(id)) {
+			const entry = this.machine.memory.getAssetEntry(id);
 			if (entry.type === 'audio' && entry.baseSize > 0) {
-				return this.memory.getAudioBytes(entry);
+				return this.machine.memory.getAudioBytes(entry);
 			}
 		}
 		const source = $.asset_source;
@@ -1834,7 +1804,7 @@ export class Runtime {
 	}
 
 	public setSkyboxImages(ids: SkyboxImageIds): void {
-		this.vdp.setSkyboxImages(ids);
+		this.machine.vdp.setSkyboxImages(ids);
 	}
 
 	public disableCrtPostprocessingForEditor(): void {
@@ -1861,7 +1831,7 @@ export class Runtime {
 	}
 
 	private setCartBootReadyFlag(value: boolean): void {
-		this.memory.writeValue(IO_SYS_CART_BOOTREADY, value ? 1 : 0);
+		this.machine.memory.writeValue(IO_SYS_CART_BOOTREADY, value ? 1 : 0);
 	}
 
 	private async prepareCartBoot(): Promise<void> {
@@ -1925,16 +1895,16 @@ export class Runtime {
 				throw runtimeFault('asset source not configured.');
 			}
 			if (mode === 'cart') {
-				this.memory.resetCartAssets();
+				this.machine.memory.resetCartAssets();
 			} else {
-				this.memory.resetAssetMemory();
+				this.machine.memory.resetAssetMemory();
 			}
-			await this.vdp.registerImageAssets(assetSource);
+			await this.machine.vdp.registerImageAssets(assetSource);
 			this.registerAudioAssets(assetSource);
 			this.rebuildAssetMetaCaches(assetSource);
-			this.memory.finalizeAssetTable();
+			this.machine.memory.finalizeAssetTable();
 			this.applyAssetHandlesToActiveLayers();
-			this.memory.markAllAssetsDirty();
+			this.machine.memory.markAllAssetsDirty();
 		} finally {
 			runGate.end(runToken);
 			renderGate.end(renderToken);
@@ -1943,7 +1913,7 @@ export class Runtime {
 	}
 
 	private registerAudioAssets(source: RawAssetSource): void {
-		registerAudioAssetsFromSource(source, this.memory);
+		registerAudioAssetsFromSource(source, this.machine.memory);
 	}
 
 	private rebuildAssetMetaCaches(source: RawAssetSource): void {
@@ -1987,7 +1957,7 @@ export class Runtime {
 				if (!entry || typeof entry.resid !== 'string') {
 					continue;
 				}
-				if (!this.memory.hasAsset(entry.resid)) {
+				if (!this.machine.memory.hasAsset(entry.resid)) {
 					continue;
 				}
 				entry.handle = this.resolveAssetHandle(entry.resid);
@@ -2026,10 +1996,10 @@ export class Runtime {
 		if (!this.isEngineProgramActive()) {
 			return;
 		}
-		if (this.memory.readIoU32(IO_SYS_BOOT_CART) === 0) {
+		if (this.machine.memory.readIoU32(IO_SYS_BOOT_CART) === 0) {
 			return;
 		}
-		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
+		this.machine.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.machineScheduler.clearQueuedTime();
 		this.requestCartBoot();
 	}
@@ -2077,7 +2047,7 @@ export class Runtime {
 
 	public createApiRuntimeError(message: string): LuaRuntimeError {
 		this.luaInterpreter.markFaultEnvironment();
-		const range = this.cpu.getDebugRange(this.cpu.getDebugState().pc);
+		const range = this.machine.cpu.getDebugRange(this.machine.cpu.getDebugState().pc);
 		return range ? new LuaRuntimeError(message, range.path, range.start.line, range.start.column) : new LuaRuntimeError(message, (this._luaPath ?? 'lua'), 0, 0);
 	}
 
@@ -2086,7 +2056,7 @@ export class Runtime {
 	}
 
 	public internString(value: string): StringValue {
-		return this.cpu.getStringPool().intern(value);
+		return this.machine.cpu.getStringPool().intern(value);
 	}
 
 	public canonicalKey(name: string): StringValue {
@@ -2161,39 +2131,39 @@ export class Runtime {
 	}
 
 	public callClosureInto(fn: Closure, args: Value[], out: Value[]): void {
-		const depth = this.cpu.getFrameDepth();
-		const previousBudget = this.cpu.instructionBudgetRemaining;
+		const depth = this.machine.cpu.getFrameDepth();
+		const previousBudget = this.machine.cpu.instructionBudgetRemaining;
 		const budgetSentinel = Number.MAX_SAFE_INTEGER;
-		const previousSink = this.cpu.swapExternalReturnSink(out);
+		const previousSink = this.machine.cpu.swapExternalReturnSink(out);
 		out.length = 0;
 		try {
-			this.cpu.callExternal(fn, args);
-			this.cpu.runUntilDepth(depth, budgetSentinel);
+			this.machine.cpu.callExternal(fn, args);
+			this.machine.cpu.runUntilDepth(depth, budgetSentinel);
 		} catch (error) {
-			this.cpu.unwindToDepth(depth);
+			this.machine.cpu.unwindToDepth(depth);
 			throw error;
 		} finally {
-			this.cpu.swapExternalReturnSink(previousSink);
-			const remaining = this.cpu.instructionBudgetRemaining;
-			this.cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
+			this.machine.cpu.swapExternalReturnSink(previousSink);
+			const remaining = this.machine.cpu.instructionBudgetRemaining;
+			this.machine.cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
 		}
 	}
 
 	public callClosureIntoWithScheduler(fn: Closure, args: Value[], out: Value[]): void {
-		const depth = this.cpu.getFrameDepth();
-		const previousBudget = this.cpu.instructionBudgetRemaining;
+		const depth = this.machine.cpu.getFrameDepth();
+		const previousBudget = this.machine.cpu.instructionBudgetRemaining;
 		const budgetSentinel = Number.MAX_SAFE_INTEGER;
-		const previousSink = this.cpu.swapExternalReturnSink(out);
+		const previousSink = this.machine.cpu.swapExternalReturnSink(out);
 		out.length = 0;
 		try {
-			this.cpu.callExternal(fn, args);
+			this.machine.cpu.callExternal(fn, args);
 			let remaining = budgetSentinel;
 			this.runDueTimers();
-			while (this.cpu.getFrameDepth() > depth) {
+			while (this.machine.cpu.getFrameDepth() > depth) {
 				let sliceBudget = remaining;
-				const nextDeadline = this.deviceScheduler.nextDeadline();
+				const nextDeadline = this.machine.scheduler.nextDeadline();
 				if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
-					const deadlineBudget = nextDeadline - this.deviceScheduler.nowCycles;
+					const deadlineBudget = nextDeadline - this.machine.scheduler.nowCycles;
 					if (deadlineBudget <= 0) {
 						this.runDueTimers();
 						continue;
@@ -2202,16 +2172,16 @@ export class Runtime {
 						sliceBudget = deadlineBudget;
 					}
 				}
-				this.deviceScheduler.beginCpuSlice(sliceBudget);
-				const result = this.cpu.runUntilDepth(depth, sliceBudget);
-				this.deviceScheduler.endCpuSlice();
-				const sliceRemaining = this.cpu.instructionBudgetRemaining;
+				this.machine.scheduler.beginCpuSlice(sliceBudget);
+				const result = this.machine.cpu.runUntilDepth(depth, sliceBudget);
+				this.machine.scheduler.endCpuSlice();
+				const sliceRemaining = this.machine.cpu.instructionBudgetRemaining;
 				const consumed = sliceBudget - sliceRemaining;
 				if (consumed > 0) {
 					remaining -= consumed;
 					this.advanceTime(consumed);
 				}
-				if (this.cpu.getFrameDepth() <= depth) {
+				if (this.machine.cpu.getFrameDepth() <= depth) {
 					break;
 				}
 				if (result === RunResult.Halted) {
@@ -2222,18 +2192,18 @@ export class Runtime {
 				}
 			}
 		} catch (error) {
-			this.cpu.unwindToDepth(depth);
+			this.machine.cpu.unwindToDepth(depth);
 			throw error;
 		} finally {
-			this.cpu.swapExternalReturnSink(previousSink);
-			const remaining = this.cpu.instructionBudgetRemaining;
-			this.cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
+			this.machine.cpu.swapExternalReturnSink(previousSink);
+			const remaining = this.machine.cpu.instructionBudgetRemaining;
+			this.machine.cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
 		}
 	}
 
 	public callClosure(fn: Closure, args: Value[]): Value[] {
-		this.callClosureInto(fn, args, this.cpu.lastReturnValues);
-		return this.cpu.lastReturnValues;
+		this.callClosureInto(fn, args, this.machine.cpu.lastReturnValues);
+		return this.machine.cpu.lastReturnValues;
 	}
 
 	private invokeClosureHandler(fn: Closure, thisArg: unknown, args: ReadonlyArray<unknown>): unknown {

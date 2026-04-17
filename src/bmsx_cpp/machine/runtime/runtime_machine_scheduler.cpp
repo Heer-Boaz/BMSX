@@ -65,9 +65,9 @@ void RuntimeMachineSchedulerState::enqueueTickCompletion(Runtime& runtime, Frame
 	const i64 sequence = runtime.m_lastTickSequence + 1;
 	slot.sequence = sequence;
 	slot.remaining = frameState.cycleBudgetRemaining;
-	slot.visualCommitted = runtime.m_vdp.lastFrameCommitted();
-	slot.vdpFrameCost = runtime.m_vdp.lastFrameCost();
-	slot.vdpFrameHeld = runtime.m_vdp.lastFrameHeld();
+	slot.visualCommitted = runtime.machine().vdp().lastFrameCommitted();
+	slot.vdpFrameCost = runtime.machine().vdp().lastFrameCost();
+	slot.vdpFrameHeld = runtime.machine().vdp().lastFrameHeld();
 	m_tickCompletionWriteIndex = (m_tickCompletionWriteIndex + 1) % TICK_COMPLETION_QUEUE_CAPACITY;
 	m_tickCompletionCount += 1;
 	runtime.m_lastTickBudgetGranted = frameState.cycleBudgetGranted;

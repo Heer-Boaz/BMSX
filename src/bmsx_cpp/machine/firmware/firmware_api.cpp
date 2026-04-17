@@ -216,7 +216,7 @@ static ModulationInput parseModulationInputTable(const Table& table) {
 		return Runtime::instance().canonicalizeIdentifier(name);
 	};
 	auto valueString = [](Value value) -> const std::string& {
-		return Runtime::instance().cpu().stringPool().toString(asStringId(value));
+		return Runtime::instance().machine().cpu().stringPool().toString(asStringId(value));
 	};
 
 	auto getNumber = [&](const std::string& field, std::optional<f32>& out) {
@@ -300,7 +300,7 @@ static ParsedAudioOptions parseAudioOptions(const Value& value) {
 		return Runtime::instance().canonicalizeIdentifier(name);
 	};
 	auto valueString = [](Value v) -> const std::string& {
-		return Runtime::instance().cpu().stringPool().toString(asStringId(v));
+		return Runtime::instance().machine().cpu().stringPool().toString(asStringId(v));
 	};
 
 	Value channelVal = table.get(key("channel"));
@@ -372,7 +372,7 @@ static MusicTransitionSync parseMusicSyncValue(const Value& value) {
 		return Runtime::instance().canonicalizeIdentifier(name);
 	};
 	auto valueString = [](Value v) -> const std::string& {
-		return Runtime::instance().cpu().stringPool().toString(asStringId(v));
+		return Runtime::instance().machine().cpu().stringPool().toString(asStringId(v));
 	};
 	if (valueIsString(value)) {
 		const std::string& text = valueString(value);
@@ -433,7 +433,7 @@ static std::optional<MusicTransitionRequest> parseMusicTransition(const Value& v
 		return Runtime::instance().canonicalizeIdentifier(name);
 	};
 	auto valueString = [](Value v) -> const std::string& {
-		return Runtime::instance().cpu().stringPool().toString(asStringId(v));
+		return Runtime::instance().machine().cpu().stringPool().toString(asStringId(v));
 	};
 
 	Value syncVal = table.get(key("sync"));
@@ -640,10 +640,10 @@ Value Api::get_player_input_handle(int playerIndex) {
 		return m_runtime.canonicalizeIdentifier(name);
 	};
 	auto exactString = [this](std::string_view text) {
-		return valueString(m_runtime.cpu().internString(text));
+		return valueString(m_runtime.machine().cpu().internString(text));
 	};
 	auto makeButtonStateTable = [this, key](const ButtonState& state, bool repeatPressed, int repeatCount) -> Value {
-		Table* table = m_runtime.cpu().createTable(0, 13);
+		Table* table = m_runtime.machine().cpu().createTable(0, 13);
 		table->set(key("pressed"), valueBool(state.pressed));
 		table->set(key("justpressed"), valueBool(state.justpressed));
 		table->set(key("justreleased"), valueBool(state.justreleased));
@@ -669,7 +669,7 @@ Value Api::get_player_input_handle(int playerIndex) {
 			table->set(key("pressId"), valueNumber(static_cast<double>(state.pressId.value())));
 		}
 		if (state.value2d.has_value()) {
-			Table* value2d = m_runtime.cpu().createTable(0, 2);
+			Table* value2d = m_runtime.machine().cpu().createTable(0, 2);
 			value2d->set(key("x"), valueNumber(static_cast<double>(state.value2d->x)));
 			value2d->set(key("y"), valueNumber(static_cast<double>(state.value2d->y)));
 			table->set(key("value2d"), valueTable(value2d));
@@ -677,7 +677,7 @@ Value Api::get_player_input_handle(int playerIndex) {
 		return valueTable(table);
 	};
 	auto makeModifierStateTable = [this, key](const PlayerInput::ModifierState& state) -> Value {
-		Table* table = m_runtime.cpu().createTable(0, 4);
+		Table* table = m_runtime.machine().cpu().createTable(0, 4);
 		table->set(key("shift"), valueBool(state.shift));
 		table->set(key("ctrl"), valueBool(state.ctrl));
 		table->set(key("alt"), valueBool(state.alt));
@@ -685,31 +685,31 @@ Value Api::get_player_input_handle(int playerIndex) {
 		return valueTable(table);
 	};
 
-	const Value getModifiersStateFn = m_runtime.cpu().createNativeFunction("player_input.getModifiersState", [this, playerIndex, makeModifierStateTable](NativeArgsView args, NativeResults& out) {
+	const Value getModifiersStateFn = m_runtime.machine().cpu().createNativeFunction("player_input.getModifiersState", [this, playerIndex, makeModifierStateTable](NativeArgsView args, NativeResults& out) {
 		(void)args;
 		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
 		out.push_back(makeModifierStateTable(input->getModifiersState()));
 	});
-	const Value getButtonStateFn = m_runtime.cpu().createNativeFunction("player_input.getButtonState", [this, playerIndex, makeButtonStateTable](NativeArgsView args, NativeResults& out) {
+	const Value getButtonStateFn = m_runtime.machine().cpu().createNativeFunction("player_input.getButtonState", [this, playerIndex, makeButtonStateTable](NativeArgsView args, NativeResults& out) {
 		const size_t offset = args.size() >= 3 ? 1 : 0;
-		const std::string& button = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset)));
-		const std::string& source = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset + 1)));
+		const std::string& button = m_runtime.machine().cpu().stringPool().toString(asStringId(args.at(offset)));
+		const std::string& source = m_runtime.machine().cpu().stringPool().toString(asStringId(args.at(offset + 1)));
 		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
 		const ButtonState state = input->getButtonState(button, parseInputSource(source));
 		out.push_back(makeButtonStateTable(state, false, 0));
 	});
-	const Value getButtonRepeatStateFn = m_runtime.cpu().createNativeFunction("player_input.getButtonRepeatState", [this, playerIndex, makeButtonStateTable](NativeArgsView args, NativeResults& out) {
+	const Value getButtonRepeatStateFn = m_runtime.machine().cpu().createNativeFunction("player_input.getButtonRepeatState", [this, playerIndex, makeButtonStateTable](NativeArgsView args, NativeResults& out) {
 		const size_t offset = args.size() >= 3 ? 1 : 0;
-		const std::string& button = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset)));
-		const std::string& source = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset + 1)));
+		const std::string& button = m_runtime.machine().cpu().stringPool().toString(asStringId(args.at(offset)));
+		const std::string& source = m_runtime.machine().cpu().stringPool().toString(asStringId(args.at(offset + 1)));
 		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
 		const ActionState state = input->getButtonRepeatState(button, parseInputSource(source));
 		out.push_back(makeButtonStateTable(state, state.repeatpressed.value_or(false), state.repeatcount.value_or(0)));
 	});
-	const Value consumeButtonFn = m_runtime.cpu().createNativeFunction("player_input.consumeButton", [this, playerIndex](NativeArgsView args, NativeResults& out) {
+	const Value consumeButtonFn = m_runtime.machine().cpu().createNativeFunction("player_input.consumeButton", [this, playerIndex](NativeArgsView args, NativeResults& out) {
 		const size_t offset = args.size() >= 3 ? 1 : 0;
-		const std::string& button = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset)));
-		const std::string& source = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset + 1)));
+		const std::string& button = m_runtime.machine().cpu().stringPool().toString(asStringId(args.at(offset)));
+		const std::string& source = m_runtime.machine().cpu().stringPool().toString(asStringId(args.at(offset + 1)));
 		Input::instance().getPlayerInput(playerIndex)->consumeRawButton(button, parseInputSource(source));
 		(void)out;
 	});
@@ -722,7 +722,7 @@ Value Api::get_player_input_handle(int playerIndex) {
 	const Value getButtonRepeatStateIdentifierKey = key("getButtonRepeatState");
 	const Value consumeButtonIdentifierKey = key("consumeButton");
 
-	const Value handle = m_runtime.cpu().createNativeObject(
+	const Value handle = m_runtime.machine().cpu().createNativeObject(
 		nullptr,
 		[this, getModifiersStateKey, getButtonStateKey, getButtonRepeatStateKey, consumeButtonKey, getModifiersStateIdentifierKey, getButtonStateIdentifierKey, getButtonRepeatStateIdentifierKey, consumeButtonIdentifierKey, getModifiersStateFn, getButtonStateFn, getButtonRepeatStateFn, consumeButtonFn](const Value& keyValue) -> Value {
 			if (!valueIsString(keyValue)) {
@@ -732,7 +732,7 @@ Value Api::get_player_input_handle(int playerIndex) {
 			if (keyValue == getButtonStateKey || keyValue == getButtonStateIdentifierKey) return getButtonStateFn;
 			if (keyValue == getButtonRepeatStateKey || keyValue == getButtonRepeatStateIdentifierKey) return getButtonRepeatStateFn;
 			if (keyValue == consumeButtonKey || keyValue == consumeButtonIdentifierKey) return consumeButtonFn;
-			throw BMSX_RUNTIME_ERROR("Unknown player input method '" + m_runtime.cpu().stringPool().toString(asStringId(keyValue)) + "'.");
+			throw BMSX_RUNTIME_ERROR("Unknown player input method '" + m_runtime.machine().cpu().stringPool().toString(asStringId(keyValue)) + "'.");
 		},
 		[](const Value&, const Value&) {
 			throw BMSX_RUNTIME_ERROR("Player input handle is read-only.");
@@ -755,7 +755,7 @@ void Api::registerAllFunctions() {
 		return m_runtime.canonicalizeIdentifier(name);
 	};
 	auto asText = [this](Value value) -> const std::string& {
-		return m_runtime.cpu().stringPool().toString(asStringId(value));
+		return m_runtime.machine().cpu().stringPool().toString(asStringId(value));
 	};
 
 m_runtime.registerNativeFunction("display_width", [this](NativeArgsView args, NativeResults& out) {
@@ -795,7 +795,7 @@ m_runtime.registerNativeFunction("pointer_screen_position", [this](NativeArgsVie
 	(void)args;
 	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
-	Table* table = m_runtime.cpu().createTable(0, 3);
+	Table* table = m_runtime.machine().cpu().createTable(0, 3);
 	if (!state.value2d.has_value()) {
 		table->set(m_keys.x, valueNumber(0.0));
 		table->set(m_keys.y, valueNumber(0.0));
@@ -813,7 +813,7 @@ m_runtime.registerNativeFunction("pointer_delta", [this](NativeArgsView args, Na
 	(void)args;
 	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_delta", InputSource::Pointer);
-	Table* table = m_runtime.cpu().createTable(0, 3);
+	Table* table = m_runtime.machine().cpu().createTable(0, 3);
 	if (!state.value2d.has_value()) {
 		table->set(m_keys.x, valueNumber(0.0));
 		table->set(m_keys.y, valueNumber(0.0));
@@ -831,7 +831,7 @@ m_runtime.registerNativeFunction("pointer_viewport_position", [this](NativeArgsV
 	(void)args;
 	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
-	Table* table = m_runtime.cpu().createTable(0, 4);
+	Table* table = m_runtime.machine().cpu().createTable(0, 4);
 	if (!state.value2d.has_value()) {
 		table->set(m_keys.x, valueNumber(0.0));
 		table->set(m_keys.y, valueNumber(0.0));
@@ -856,7 +856,7 @@ m_runtime.registerNativeFunction("mousepos", [this](NativeArgsView args, NativeR
 	(void)args;
 	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
-	Table* table = m_runtime.cpu().createTable(0, 4);
+	Table* table = m_runtime.machine().cpu().createTable(0, 4);
 	if (!state.value2d.has_value()) {
 		table->set(m_keys.x, valueNumber(0.0));
 		table->set(m_keys.y, valueNumber(0.0));
@@ -881,7 +881,7 @@ m_runtime.registerNativeFunction("mousewheel", [this](NativeArgsView args, Nativ
 	(void)args;
 	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_wheel", InputSource::Pointer);
-	Table* table = m_runtime.cpu().createTable(0, 2);
+	Table* table = m_runtime.machine().cpu().createTable(0, 2);
 	table->set(m_keys.value, valueNumber(static_cast<double>(state.value)));
 	table->set(m_keys.valid, valueBool(state.value != 0.0f));
 	out.push_back(valueTable(table));
@@ -889,12 +889,12 @@ m_runtime.registerNativeFunction("mousewheel", [this](NativeArgsView args, Nativ
 
 m_runtime.registerNativeFunction("get_lua_entry_path", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
-	out.push_back(valueString(m_runtime.cpu().internString(get_lua_entry_path())));
+	out.push_back(valueString(m_runtime.machine().cpu().internString(get_lua_entry_path())));
 });
 
 m_runtime.registerNativeFunction("get_lua_resource_source", [this, asText](NativeArgsView args, NativeResults& out) {
 	const std::string& path = asText(args.at(0));
-	out.push_back(valueString(m_runtime.cpu().internString(get_lua_resource_source(path))));
+	out.push_back(valueString(m_runtime.machine().cpu().internString(get_lua_resource_source(path))));
 });
 
 m_runtime.registerNativeFunction("get_cpu_freq_hz", [this](NativeArgsView args, NativeResults& out) {
@@ -1192,14 +1192,14 @@ Value Api::build_font_descriptor(BFont* font) {
 		return m_runtime.canonicalizeIdentifier(name);
 	};
 	auto str = [this](const std::string& value) {
-		return valueString(m_runtime.cpu().internString(value));
+		return valueString(m_runtime.machine().cpu().internString(value));
 	};
-	Table* glyphs = m_runtime.cpu().createTable(0, static_cast<int>(font->glyphMap().size()));
+	Table* glyphs = m_runtime.machine().cpu().createTable(0, static_cast<int>(font->glyphMap().size()));
 	for (const auto& [codepoint, _imgid] : font->glyphMap()) {
 		std::string glyphKey;
 		utf8AppendCodepoint(glyphKey, codepoint);
 		const FontGlyph& glyph = font->getGlyph(codepoint);
-		Table* glyphEntry = m_runtime.cpu().createTable(0, 4);
+		Table* glyphEntry = m_runtime.machine().cpu().createTable(0, 4);
 		glyphEntry->set(key("imgid"), str(glyph.imgid));
 		glyphEntry->set(key("width"), valueNumber(static_cast<double>(glyph.width)));
 		glyphEntry->set(key("height"), valueNumber(static_cast<double>(glyph.height)));
@@ -1208,14 +1208,14 @@ Value Api::build_font_descriptor(BFont* font) {
 	}
 	{
 		const FontGlyph& tabGlyph = font->getGlyph(static_cast<u32>('\t'));
-		Table* glyphEntry = m_runtime.cpu().createTable(0, 4);
+		Table* glyphEntry = m_runtime.machine().cpu().createTable(0, 4);
 		glyphEntry->set(key("imgid"), str(tabGlyph.imgid));
 		glyphEntry->set(key("width"), valueNumber(static_cast<double>(tabGlyph.width)));
 		glyphEntry->set(key("height"), valueNumber(static_cast<double>(tabGlyph.height)));
 		glyphEntry->set(key("advance"), valueNumber(static_cast<double>(tabGlyph.advance)));
 		glyphs->set(str("\t"), valueTable(glyphEntry));
 	}
-	Table* descriptor = m_runtime.cpu().createTable(0, 4);
+	Table* descriptor = m_runtime.machine().cpu().createTable(0, 4);
 	descriptor->set(key("id"), valueNumber(static_cast<double>(fontId(font))));
 	descriptor->set(key("line_height"), valueNumber(static_cast<double>(font->lineHeight())));
 	descriptor->set(key("advance_padding"), valueNumber(static_cast<double>(font->advancePadding())));
@@ -1224,7 +1224,7 @@ Value Api::build_font_descriptor(BFont* font) {
 }
 
 Value Api::make_font_handle(BFont* font) {
-	return m_runtime.cpu().createNativeObject(
+	return m_runtime.machine().cpu().createNativeObject(
 		font,
 		[](const Value&) {
 			return valueNil();
@@ -1262,7 +1262,7 @@ BFont* Api::create_font(const Value& definition) {
 		return m_runtime.canonicalizeIdentifier(name);
 	};
 	auto asText = [this](Value value) -> const std::string& {
-		return m_runtime.cpu().stringPool().toString(asStringId(value));
+		return m_runtime.machine().cpu().stringPool().toString(asStringId(value));
 	};
 	Table* definitionTable = asTable(definition);
 	Value glyphsValue = definitionTable->get(key("glyphs"));

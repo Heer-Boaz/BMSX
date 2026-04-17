@@ -735,11 +735,11 @@ function resolveLuaFunctionName(runtime: Runtime, protoIndex: number): string {
 }
 
 export function buildLuaStackFrames(runtime: Runtime): StackTraceFrame[] {
-	const callStack = runtime.cpu.getCallStack();
+	const callStack = runtime.machine.cpu.getCallStack();
 	const frames: StackTraceFrame[] = [];
 	for (let index = callStack.length - 1; index >= 0; index -= 1) {
 		const entry = callStack[index];
-		const range = runtime.cpu.getDebugRange(entry.pc);
+		const range = runtime.machine.cpu.getDebugRange(entry.pc);
 		const source = range ? range.path : runtime.currentPath;
 		const line = range ? range.start.line : null;
 		const column = range ? range.start.column : null;
@@ -1330,7 +1330,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_system_base', SYSTEM_ROM_BASE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_cart_base', CART_ROM_BASE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_overlay_base', OVERLAY_ROM_BASE);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_overlay_size', runtime.memory.getOverlayRomSize());
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_overlay_size', runtime.machine.memory.getOverlayRomSize());
 	runtimeLuaPipeline.registerGlobal(runtime, 'resolve_cart_rom_asset_range', createNativeFunction('resolve_cart_rom_asset_range', (args, out) => {
 		const assetId = stringValueToString(args[0] as StringValue);
 		const range = runtime.resolveRomAssetRange(assetId, 'cart');
@@ -1830,7 +1830,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	setKey(stringTable, 'len', createNativeFunction('string.len', (args, out) => {
 		const value = args[0] as StringValue;
-		out.push(runtime.cpu.getStringPool().codepointCount(value));
+		out.push(runtime.machine.cpu.getStringPool().codepointCount(value));
 	}));
 	setKey(stringTable, 'upper', createNativeFunction('string.upper', (args, out) => {
 		const text = runtimeLuaPipeline.requireString(args[0]);
@@ -1867,7 +1867,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	setKey(stringTable, 'sub', createNativeFunction('string.sub', (args, out) => {
 		const value = args[0] as StringValue;
 		const text = stringValueToString(value);
-		const length = runtime.cpu.getStringPool().codepointCount(value);
+		const length = runtime.machine.cpu.getStringPool().codepointCount(value);
 		const normalizeIndex = (valueNumber: number): number => {
 			const integer = Math.floor(valueNumber);
 			if (integer > 0) {
@@ -1900,7 +1900,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const sourceValue = args[0] as StringValue;
 		const source = stringValueToString(sourceValue);
 		const pattern = args.length > 1 ? stringValueToString(args[1] as StringValue) : '';
-		const length = runtime.cpu.getStringPool().codepointCount(sourceValue);
+		const length = runtime.machine.cpu.getStringPool().codepointCount(sourceValue);
 		const normalizeIndex = (valueNumber: number): number => {
 			const integer = Math.floor(valueNumber);
 			if (integer > 0) {
@@ -1954,7 +1954,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const sourceValue = args[0] as StringValue;
 		const source = stringValueToString(sourceValue);
 		const pattern = args.length > 1 ? stringValueToString(args[1] as StringValue) : '';
-		const length = runtime.cpu.getStringPool().codepointCount(sourceValue);
+		const length = runtime.machine.cpu.getStringPool().codepointCount(sourceValue);
 		const normalizeIndex = (valueNumber: number): number => {
 			const integer = Math.floor(valueNumber);
 			if (integer > 0) {
@@ -2152,7 +2152,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const formatted = formatLuaString(runtime, template, args, 1);
 		out.push(runtime.internString(formatted));
 	}));
-	runtime.cpu.setStringIndexTable(stringTable);
+	runtime.machine.cpu.setStringIndexTable(stringTable);
 	runtimeLuaPipeline.registerGlobal(runtime, 'string', stringTable);
 
 	const tableLibrary = new Table(0, 0);

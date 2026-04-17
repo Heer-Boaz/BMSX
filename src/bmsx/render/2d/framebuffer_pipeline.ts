@@ -106,7 +106,7 @@ export function registerFramebuffer2DPass_WebGL(registry: RenderPassLibrary): vo
 				height: $.view.offscreenCanvasSize.y,
 				baseWidth: $.view.viewportSize.x,
 				baseHeight: $.view.viewportSize.y,
-				colorTex: $.view.textures[Runtime.instance.vdp.frameBufferTextureKey],
+				colorTex: $.view.textures[Runtime.instance.machine.vdp.frameBufferTextureKey],
 			};
 			registry.setState('framebuffer_2d', state);
 			const gl = backend.gl;

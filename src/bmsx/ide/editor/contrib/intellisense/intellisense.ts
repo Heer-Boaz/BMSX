@@ -1795,7 +1795,7 @@ export function collectFrameLocals(snapshot: CpuFrameSnapshot[], cpuFrameIndex: 
 		return [];
 	}
 	const frame = snapshot[cpuFrameIndex];
-	const frameRange = runtime.cpu.getDebugRange(frame.pc);
+	const frameRange = runtime.machine.cpu.getDebugRange(frame.pc);
 	if (!frameRange) {
 		return [];
 	}
@@ -1892,7 +1892,7 @@ function resolveRuntimeLocalChainValue(
 	// Use the fault snapshot when the fault overlay is active — by hover time, the crash
 	// frame has been popped from the live CPU stack, so we must use the saved registers.
 	const faultSnapshot = runtime.faultSnapshot ? runtime.lastCpuFaultSnapshot : null;
-	const callStack = faultSnapshot ?? runtime.cpu.getCallStack();
+	const callStack = faultSnapshot ?? runtime.machine.cpu.getCallStack();
 	if (callStack.length === 0) {
 		return null;
 	}
@@ -1901,7 +1901,7 @@ function resolveRuntimeLocalChainValue(
 	let selectedSlot: LocalSlotDebug = null;
 	for (let frameIndex = callStack.length - 1; frameIndex >= 0; frameIndex -= 1) {
 		const frame = callStack[frameIndex];
-		const frameRange = runtime.cpu.getDebugRange(frame.pc);
+		const frameRange = runtime.machine.cpu.getDebugRange(frame.pc);
 		if (!frameRange || frameRange.path !== requestedPath) {
 			continue;
 		}
@@ -1941,7 +1941,7 @@ function resolveRuntimeLocalChainValue(
 		if (upvalueNamesByProto) {
 			for (let frameIndex = callStack.length - 1; frameIndex >= 0; frameIndex -= 1) {
 				const frame = callStack[frameIndex];
-				const frameRange = runtime.cpu.getDebugRange(frame.pc);
+				const frameRange = runtime.machine.cpu.getDebugRange(frame.pc);
 				if (!frameRange || frameRange.path !== requestedPath) {
 					continue;
 				}
@@ -1950,10 +1950,10 @@ function resolveRuntimeLocalChainValue(
 					continue;
 				}
 				const upvalueIndex = frameUpvalueNames.indexOf(canonicalRoot);
-				if (upvalueIndex === -1 || !runtime.cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
+				if (upvalueIndex === -1 || !runtime.machine.cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
 					continue;
 				}
-				const chained = walkValueChain(wrapRuntimeValueForIntellisense(runtime.cpu.readFrameUpvalue(frameIndex, upvalueIndex)), parts, 1);
+				const chained = walkValueChain(wrapRuntimeValueForIntellisense(runtime.machine.cpu.readFrameUpvalue(frameIndex, upvalueIndex)), parts, 1);
 				if (chained === null) {
 					return { kind: 'not_defined' };
 				}
@@ -1964,7 +1964,7 @@ function resolveRuntimeLocalChainValue(
 	}
 	const rawRegValue = faultSnapshot
 		? faultSnapshot[selectedFrameIndex].registers[selectedSlot.register]
-		: runtime.cpu.readFrameRegister(selectedFrameIndex, selectedSlot.register);
+		: runtime.machine.cpu.readFrameRegister(selectedFrameIndex, selectedSlot.register);
 	const chained = walkValueChain(wrapRuntimeValueForIntellisense(rawRegValue), parts, 1);
 	if (chained === null) {
 		return { kind: 'not_defined' };
@@ -1978,7 +1978,7 @@ function resolveRuntimeLocalChainValue(
 
 function resolveRuntimeGlobalChainValue(parts: ReadonlyArray<string>): ({ kind: 'value'; value: LuaValue } | { kind: 'not_defined' }) | null {
 	const runtime = Runtime.instance;
-	const rootRaw = runtime.cpu.getGlobalByKey(runtime.canonicalKey(parts[0]));
+	const rootRaw = runtime.machine.cpu.getGlobalByKey(runtime.canonicalKey(parts[0]));
 	if (rootRaw === null) {
 		return null;
 	}

@@ -292,17 +292,17 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 				height: $.view.canvasSize.y,
 				baseWidth: $.view.viewportSize.x,
 				baseHeight: $.view.viewportSize.y,
-				colorTex: $.view.textures[Runtime.instance.vdp.frameBufferTextureKey],
+				colorTex: $.view.textures[Runtime.instance.machine.vdp.frameBufferTextureKey],
 			} as Framebuffer2DPipelineState);
 		},
 		exec: (backend, _fbo, state: Framebuffer2DPipelineState) => {
-			const frameBufferWidth = Runtime.instance.vdp.frameBufferWidth;
-			const frameBufferHeight = Runtime.instance.vdp.frameBufferHeight;
+			const frameBufferWidth = Runtime.instance.machine.vdp.frameBufferWidth;
+			const frameBufferHeight = Runtime.instance.machine.vdp.frameBufferHeight;
 			if (frameBufferWidth <= 0 || frameBufferHeight <= 0) {
 				throw new Error(`[HeadlessFramebuffer2D] Invalid framebuffer dimensions ${frameBufferWidth}x${frameBufferHeight}.`);
 			}
 			if (!state.colorTex) {
-				throw new Error(`[HeadlessFramebuffer2D] Missing framebuffer texture '${Runtime.instance.vdp.frameBufferTextureKey}'.`);
+				throw new Error(`[HeadlessFramebuffer2D] Missing framebuffer texture '${Runtime.instance.machine.vdp.frameBufferTextureKey}'.`);
 			}
 			const pixels = backend.readTextureRegion(state.colorTex, 0, 0, frameBufferWidth, frameBufferHeight);
 			const expectedByteLength = frameBufferWidth * frameBufferHeight * 4;
@@ -354,7 +354,7 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 			for (let index = 0; index < faces.length; index += 1) {
 				const [face, id] = faces[index];
 				const handle = Runtime.instance.resolveAssetHandle(id);
-				const sample = Runtime.instance.vdp.resolveBlitterSample(handle);
+				const sample = Runtime.instance.machine.vdp.resolveBlitterSample(handle);
 				if (sample.atlasId === ENGINE_ATLAS_INDEX) {
 					throw new Error(`[HeadlessSkybox] Skybox image '${id}' resolved to the engine atlas.`);
 				}

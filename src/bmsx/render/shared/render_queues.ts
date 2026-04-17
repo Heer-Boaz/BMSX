@@ -31,7 +31,7 @@ function submitSpriteDirect(imgid: string, x: number, y: number, z: number, scal
 	if (entry.regionW <= 0 || entry.regionH <= 0) {
 		throw new Error(`[Sprite Pipeline] Image asset '${imgid}' has invalid region size.`);
 	}
-	runtime.vdp.enqueueBlit(
+	runtime.machine.vdp.enqueueBlit(
 		handle,
 		x,
 		y,
@@ -113,7 +113,7 @@ export function clearBackQueues(): void {
 }
 
 export function clearAllQueues(): void {
-	Runtime.instance.vdp.initializeRegisters();
+	Runtime.instance.machine.vdp.initializeRegisters();
 	meshQueue.clearAll();
 	particleQueue.clearAll();
 	activeQueueSource = 'front';
@@ -158,7 +158,7 @@ export function submit_particle(item: ParticleRenderSubmission): void {
 	if (entry.type !== 'image') {
 		throw new Error(`[Particles Pipeline] Asset '${imgid}' is not an image.`);
 	}
-	const sample = runtime.vdp.resolveBlitterSample(handle);
+	const sample = runtime.machine.vdp.resolveBlitterSample(handle);
 	const u0 = sample.source.srcX / sample.surfaceWidth;
 	const v0 = sample.source.srcY / sample.surfaceHeight;
 	const u1 = (sample.source.srcX + sample.source.width) / sample.surfaceWidth;
@@ -197,10 +197,10 @@ export function submitRectangle(options: RectRenderSubmission): void {
 	let { left: x, top: y, z, right: ex, bottom: ey } = options.area;
 	[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
 	if (options.kind === 'fill') {
-		Runtime.instance.vdp.enqueueFillRect(x, y, ex, ey, z, renderLayerTo2dLayer(options.layer), options.color);
+		Runtime.instance.machine.vdp.enqueueFillRect(x, y, ex, ey, z, renderLayerTo2dLayer(options.layer), options.color);
 		return;
 	}
-	Runtime.instance.vdp.enqueueDrawRect(x, y, ex, ey, z, renderLayerTo2dLayer(options.layer), options.color);
+	Runtime.instance.machine.vdp.enqueueDrawRect(x, y, ex, ey, z, renderLayerTo2dLayer(options.layer), options.color);
 }
 
 export function submitDrawPolygon(options: PolyRenderSubmission): void {
@@ -210,7 +210,7 @@ export function submitDrawPolygon(options: PolyRenderSubmission): void {
 	if (options.layer === undefined) {
 		throw new Error('submitDrawPolygon requires layer.');
 	}
-	Runtime.instance.vdp.enqueueDrawPoly(options.points, options.z, options.color, options.thickness, renderLayerTo2dLayer(options.layer));
+	Runtime.instance.machine.vdp.enqueueDrawPoly(options.points, options.z, options.color, options.thickness, renderLayerTo2dLayer(options.layer));
 }
 
 export function submitGlyphs(o: GlyphRenderSubmission) {
@@ -284,7 +284,7 @@ export function setSkyboxTintExposure(tint: [number, number, number], exposure =
  * Text rendering utility (engine-level). Preferred UE-style usage is via TextComponent + TextRenderSystem, which uses this internally.
  */
 export function renderGlyphs(x: number, y: number, textToWrite: string | string[], start: number, end: number, z: number, font: BFont, color: color, backgroundColor: color | undefined, layer: RenderLayer): void {
-	Runtime.instance.vdp.enqueueGlyphRun(
+	Runtime.instance.machine.vdp.enqueueGlyphRun(
 		textToWrite,
 		x,
 		y,

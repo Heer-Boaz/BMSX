@@ -599,7 +599,7 @@ export function handleLuaError(runtime: Runtime, whatever: unknown): void {
 	if (runtime.handledLuaErrors.has(error)) {
 		return;
 	}
-	runtime.lastCpuFaultSnapshot = runtime.cpu.snapshotCallStack();
+	runtime.lastCpuFaultSnapshot = runtime.machine.cpu.snapshotCallStack();
 	runtime.lastLuaCallStack = buildLuaStackFrames(runtime);
 	const message = sanitizeLuaErrorMessage(extractErrorMessage(error));
 	const { line, column, path } = extractErrorLocation(runtime, error);
@@ -736,7 +736,7 @@ export function tickTerminalMode(runtime: Runtime): void {
 	const state = runtime.beginFrameState();
 	const deltaSeconds = runtime.frameDeltaMs / 1000;
 	runtime.terminal.update(deltaSeconds);
-	runtime.vdp.flushAssetEdits();
+	runtime.machine.vdp.flushAssetEdits();
 	runtime.drawFrameState = state;
 	runtime.abandonFrameState();
 }
@@ -775,7 +775,7 @@ export function tickIDE(runtime: Runtime): void {
 	const state = runtime.beginFrameState();
 	const deltaSeconds = runtime.frameDeltaMs / 1000;
 	runtime.editor!.update(deltaSeconds);
-	runtime.vdp.flushAssetEdits();
+	runtime.machine.vdp.flushAssetEdits();
 	runtime.drawFrameState = state;
 	runtime.abandonFrameState();
 }

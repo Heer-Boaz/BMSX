@@ -172,7 +172,7 @@ LoadSubsetPathStep compilePathStep(Runtime& runtime, const std::string& chunkNam
 	if (expression.kind == LuaSyntaxKind::StringLiteralExpression || expression.kind == LuaSyntaxKind::StringRefLiteralExpression) {
 		return {
 			.kind = LoadSubsetPathStep::Kind::Field,
-			.fieldKey = runtime.cpu().internString(expression.stringValue),
+			.fieldKey = runtime.machine().cpu().internString(expression.stringValue),
 		};
 	}
 	fail(chunkName, "index expressions must use string or numeric literals", &expression.range);
@@ -203,7 +203,7 @@ CompiledParamPath compileParamPath(
 		CompiledParamPath base = compileParamPath(runtime, chunkName, *expression.base, paramIndexByName);
 		base.path.push_back({
 			.kind = LoadSubsetPathStep::Kind::Field,
-			.fieldKey = runtime.cpu().internString(expression.name),
+			.fieldKey = runtime.machine().cpu().internString(expression.name),
 		});
 		return base;
 	}
@@ -232,7 +232,7 @@ Value compileLiteralExpr(Runtime& runtime, const std::string& chunkName, const L
 			return valueNumber(expression.numberValue);
 		case LuaSyntaxKind::StringLiteralExpression:
 		case LuaSyntaxKind::StringRefLiteralExpression:
-			return valueString(runtime.cpu().internString(expression.stringValue));
+			return valueString(runtime.machine().cpu().internString(expression.stringValue));
 		default:
 			fail(chunkName, "unsupported literal expression", &expression.range);
 	}
@@ -338,10 +338,10 @@ LoadSubsetCompiledFunction compileChunk(Runtime& runtime, const std::string& chu
 }
 
 Value buildNativeFunction(Runtime& runtime, const LoadSubsetCompiledFunction& compiled, const std::string& chunkName) {
-	return runtime.cpu().createNativeFunction("loadstring:" + chunkName, [&runtime, chunkName, compiled](NativeArgsView args, NativeResults& out) {
+	return runtime.machine().cpu().createNativeFunction("loadstring:" + chunkName, [&runtime, chunkName, compiled](NativeArgsView args, NativeResults& out) {
 		(void)args;
 		out.clear();
-		out.push_back(runtime.cpu().createNativeFunction(chunkName + ":inner", [compiled](NativeArgsView innerArgs, NativeResults& innerOut) {
+		out.push_back(runtime.machine().cpu().createNativeFunction(chunkName + ":inner", [compiled](NativeArgsView innerArgs, NativeResults& innerOut) {
 			innerOut.clear();
 			for (const LoadSubsetOp& op : compiled.ops) {
 				Value node = op.rootParamIndex < static_cast<int>(innerArgs.size()) ? innerArgs[static_cast<size_t>(op.rootParamIndex)] : valueNil();

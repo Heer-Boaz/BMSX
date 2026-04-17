@@ -175,7 +175,7 @@ std::string formatDebugValue(const Runtime& runtime, Value value) {
 	if (valueIsString(value)) {
 		std::ostringstream out;
 		out << '"';
-		for (char ch : runtime.cpu().stringPool().toString(asStringId(value))) {
+		for (char ch : runtime.machine().cpu().stringPool().toString(asStringId(value))) {
 			switch (ch) {
 				case '\\': out << "\\\\"; break;
 				case '"': out << "\\\""; break;
@@ -188,7 +188,7 @@ std::string formatDebugValue(const Runtime& runtime, Value value) {
 		out << '"';
 		return out.str();
 	}
-	return valueToString(value, runtime.cpu().stringPool());
+	return valueToString(value, runtime.machine().cpu().stringPool());
 }
 
 const LocalSlotDebug* selectLocalSlot(const std::vector<LocalSlotDebug>& slots, const std::string& name, const SourceRange& range) {
@@ -218,11 +218,11 @@ std::optional<Value> resolveRootExpressionValue(
 	const SourceRange& range,
 	const std::string& rootName
 ) {
-	std::string canonicalName = runtime.cpu().stringPool().toString(asStringId(canonicalizeDebugIdentifier(runtime, rootName)));
+	std::string canonicalName = runtime.machine().cpu().stringPool().toString(asStringId(canonicalizeDebugIdentifier(runtime, rootName)));
 	if (metadata && protoIndex >= 0 && protoIndex < static_cast<int>(metadata->localSlotsByProto.size())) {
 		const std::vector<LocalSlotDebug>& slots = metadata->localSlotsByProto[static_cast<size_t>(protoIndex)];
 		if (const LocalSlotDebug* slot = selectLocalSlot(slots, canonicalName, range)) {
-			return runtime.cpu().readFrameRegister(frameIndex, slot->reg);
+			return runtime.machine().cpu().readFrameRegister(frameIndex, slot->reg);
 		}
 	}
 	if (metadata && protoIndex >= 0 && protoIndex < static_cast<int>(metadata->upvalueNamesByProto.size())) {
@@ -234,13 +234,13 @@ std::optional<Value> resolveRootExpressionValue(
 			if (upvalueNames[index] != canonicalName) {
 				continue;
 			}
-			if (runtime.cpu().hasFrameUpvalue(frameIndex, static_cast<int>(index))) {
-				return runtime.cpu().readFrameUpvalue(frameIndex, static_cast<int>(index));
+			if (runtime.machine().cpu().hasFrameUpvalue(frameIndex, static_cast<int>(index))) {
+				return runtime.machine().cpu().readFrameUpvalue(frameIndex, static_cast<int>(index));
 			}
 			break;
 		}
 	}
-	const Value globalValue = runtime.cpu().getGlobalByKey(canonicalizeDebugIdentifier(runtime, rootName));
+	const Value globalValue = runtime.machine().cpu().getGlobalByKey(canonicalizeDebugIdentifier(runtime, rootName));
 	if (!isNil(globalValue)) {
 		return globalValue;
 	}
@@ -285,7 +285,7 @@ std::optional<Value> resolveExpressionValue(
 }
 
 std::vector<std::string> collectSourceExpressionDebug(const Runtime& runtime, const SourceRange& range, const std::string& source, const ProgramMetadata* metadata) {
-	const std::vector<std::pair<int, int>> callStack = runtime.cpu().getCallStack();
+	const std::vector<std::pair<int, int>> callStack = runtime.machine().cpu().getCallStack();
 	if (callStack.empty()) {
 		return {};
 	}
@@ -308,18 +308,18 @@ void Runtime::logDebugState() const {
 	if (!m_program || m_program->code.empty()) {
 		return;
 	}
-	if (m_cpu.lastPc < 0 || m_cpu.lastPc >= static_cast<int>(m_program->code.size())) {
+	if (m_machine.cpu().lastPc < 0 || m_machine.cpu().lastPc >= static_cast<int>(m_program->code.size())) {
 		return;
 	}
-	const InstructionDebugInfo instruction = describeInstructionAtPc(*m_program, m_programMetadata, m_cpu.lastPc);
-	const int topFrameIndex = m_cpu.getFrameDepth() - 1;
-	const int registerCount = topFrameIndex >= 0 ? m_cpu.getFrameRegisterCount(topFrameIndex) : 0;
+	const InstructionDebugInfo instruction = describeInstructionAtPc(*m_program, m_programMetadata, m_machine.cpu().lastPc);
+	const int topFrameIndex = m_machine.cpu().getFrameDepth() - 1;
+	const int registerCount = topFrameIndex >= 0 ? m_machine.cpu().getFrameRegisterCount(topFrameIndex) : 0;
 	std::ostringstream summary;
 	summary << "[Runtime] debug: pc=" << instruction.pcText << " op=" << instruction.opName;
 	for (const InstructionOperandDebugInfo& operand : instruction.operands) {
 		summary << ' ' << operand.label << '=' << operand.text;
 		if (operand.registerIndex.has_value() && *operand.registerIndex < registerCount) {
-			summary << '(' << valueToString(m_cpu.readFrameRegister(topFrameIndex, *operand.registerIndex)) << ')';
+			summary << '(' << valueToString(m_machine.cpu().readFrameRegister(topFrameIndex, *operand.registerIndex)) << ')';
 		}
 	}
 	std::cout << summary.str() << std::endl;

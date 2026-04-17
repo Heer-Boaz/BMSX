@@ -68,7 +68,7 @@ static void submitResolvedSprite(Runtime& runtime,
 									const FlipOptions& flip,
 									f32 parallaxWeight) {
 	(void)parallaxWeight;
-	runtime.vdp().enqueueBlit(resolved.handle, x, y, z, renderLayerTo2dLayer(layer), scaleX, scaleY, flip.flip_h, flip.flip_v, color);
+	runtime.machine().vdp().enqueueBlit(resolved.handle, x, y, z, renderLayerTo2dLayer(layer), scaleX, scaleY, flip.flip_h, flip.flip_v, color);
 }
 
 static bool hasCommittedFrontQueueContent() {
@@ -92,7 +92,7 @@ void submitSprite(const ImgRenderSubmission& options) {
 		throw BMSX_RUNTIME_ERROR("submitSprite requires layer.");
 	}
 	auto& runtime = Runtime::instance();
-	auto& memory = runtime.memory();
+	auto& memory = runtime.machine().memory();
 	const ResolvedSpriteAsset resolved = resolveSpriteAsset(memory, options.imgid, "Sprite Queue");
 	submitResolvedSprite(
 		runtime,
@@ -141,7 +141,7 @@ void clearBackQueues() {
 }
 
 void clearAllQueues() {
-	Runtime::instance().vdp().initializeRegisters();
+	Runtime::instance().machine().vdp().initializeRegisters();
 	s_meshQueue.clearAll();
 	s_particleQueue.clearAll();
 	s_activeQueueSource = QueueSource::Front;
@@ -165,10 +165,10 @@ void submitRectangle(const RectRenderSubmission& options) {
 
 	correctAreaStartEnd(x, y, ex, ey);
 	if (options.kind == RectRenderSubmission::Kind::Fill) {
-		Runtime::instance().vdp().enqueueFillRect(x, y, ex, ey, z, renderLayerTo2dLayer(*options.layer), c);
+		Runtime::instance().machine().vdp().enqueueFillRect(x, y, ex, ey, z, renderLayerTo2dLayer(*options.layer), c);
 		return;
 	}
-	Runtime::instance().vdp().enqueueDrawRect(x, y, ex, ey, z, renderLayerTo2dLayer(*options.layer), c);
+	Runtime::instance().machine().vdp().enqueueDrawRect(x, y, ex, ey, z, renderLayerTo2dLayer(*options.layer), c);
 }
 
 void submitDrawPolygon(const PolyRenderSubmission& options) {
@@ -178,7 +178,7 @@ void submitDrawPolygon(const PolyRenderSubmission& options) {
 	if (!options.layer.has_value()) {
 		throw BMSX_RUNTIME_ERROR("submitDrawPolygon requires layer.");
 	}
-	Runtime::instance().vdp().enqueueDrawPoly(options.points, options.z, options.color, *options.thickness, renderLayerTo2dLayer(*options.layer));
+	Runtime::instance().machine().vdp().enqueueDrawPoly(options.points, options.z, options.color, *options.thickness, renderLayerTo2dLayer(*options.layer));
 }
 
 void submitGlyphs(const GlyphRenderSubmission& options) {
@@ -228,7 +228,7 @@ void renderGlyphs(f32 x,
 					const Color& color,
 					const std::optional<Color>& backgroundColor,
 					RenderLayer layer) {
-	Runtime::instance().vdp().enqueueGlyphRun(lines, x, y, z, font, color, backgroundColor, start, end, renderLayerTo2dLayer(layer));
+	Runtime::instance().machine().vdp().enqueueGlyphRun(lines, x, y, z, font, color, backgroundColor, start, end, renderLayerTo2dLayer(layer));
 }
 
 f32 calculateCenteredBlockX(const std::vector<std::string>& lines, i32 charWidth, i32 blockWidth) {

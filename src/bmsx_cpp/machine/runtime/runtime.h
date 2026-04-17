@@ -220,8 +220,8 @@ public:
 	void setProgramSource(ProgramSource source) { m_programSource = source; }
 	bool isEngineProgramActive() const { return m_programSource == ProgramSource::Engine; }
 
-	const std::array<i32, 2>& atlasSlots() const { return m_vdp.atlasSlots(); }
-	void setVdpDitherType(i32 type) { m_vdp.setDitherType(type); }
+	const std::array<i32, 2>& atlasSlots() const { return m_machine.vdp().atlasSlots(); }
+	void setVdpDitherType(i32 type) { m_machine.vdp().setDitherType(type); }
 	void setSkyboxImages(const SkyboxImageIds& ids);
 	void clearSkybox();
 
@@ -232,17 +232,8 @@ public:
 	 */
 	const Viewport& viewport() const { return m_viewport; }
 
-	/**
-	 * Get the CPU instance.
-	 */
-	CPU& cpu() { return m_cpu; }
-	const CPU& cpu() const { return m_cpu; }
-	Memory& memory() { return m_memory; }
-	const Memory& memory() const { return m_memory; }
-	VDP& vdp() { return m_vdp; }
-	const VDP& vdp() const { return m_vdp; }
-	DmaController& dmaController() { return m_dmaController; }
-	const DmaController& dmaController() const { return m_dmaController; }
+	Machine& machine() { return m_machine; }
+	const Machine& machine() const { return m_machine; }
 
 	/**
 	 * Get the API instance.
@@ -296,7 +287,7 @@ public:
 	bool lastTickVdpFrameHeld() const { return m_lastTickVdpFrameHeld; }
 	uint32_t trackedRamUsedBytes() const;
 	uint32_t trackedVramUsedBytes() const;
-	uint32_t trackedVramTotalBytes() const { return m_vdp.trackedTotalVramBytes(); }
+	uint32_t trackedVramTotalBytes() const { return m_machine.vdp().trackedTotalVramBytes(); }
 	bool didLastTickComplete() const { return m_lastTickCompleted; }
 	bool isDrawPending() const;
 	Value canonicalizeIdentifier(std::string_view value);
@@ -370,18 +361,6 @@ private:
 		// Runtime core
 		std::unique_ptr<Api> m_api;
 		Machine m_machine;
-		Memory& m_memory;
-		StringHandleTable& m_stringHandles;
-		CPU& m_cpu;
-		DeviceScheduler& m_deviceScheduler;
-		VDP& m_vdp;
-		IrqController& m_irqController;
-		ResourceUsageDetector* m_resourceUsageDetector = nullptr;
-	DmaController& m_dmaController;
-	GeometryController& m_geometryController;
-	ImgDecController& m_imgDecController;
-	InputController& m_inputController;
-	AudioController& m_audioController;
 	Program* m_program = nullptr;
 	ProgramMetadata* m_programMetadata = nullptr;
 

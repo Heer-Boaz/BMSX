@@ -154,18 +154,18 @@ function resolveRootExpressionValue(
 		if (slot) {
 			return {
 				found: true,
-				value: slot.register < registers.length ? registers[slot.register] : runtime.cpu.readFrameRegister(frameIndex, slot.register),
+				value: slot.register < registers.length ? registers[slot.register] : runtime.machine.cpu.readFrameRegister(frameIndex, slot.register),
 			};
 		}
 	}
 	const upvalueNames = metadata?.upvalueNamesByProto?.[protoIndex];
 	if (upvalueNames) {
 		const upvalueIndex = upvalueNames.indexOf(canonicalName);
-		if (upvalueIndex >= 0 && runtime.cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
-			return { found: true, value: runtime.cpu.readFrameUpvalue(frameIndex, upvalueIndex) };
+		if (upvalueIndex >= 0 && runtime.machine.cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
+			return { found: true, value: runtime.machine.cpu.readFrameUpvalue(frameIndex, upvalueIndex) };
 		}
 	}
-	const globalValue = runtime.cpu.getGlobalByKey(runtime.canonicalKey(rootName));
+	const globalValue = runtime.machine.cpu.getGlobalByKey(runtime.canonicalKey(rootName));
 	if (globalValue !== null) {
 		return { found: true, value: globalValue };
 	}
@@ -202,7 +202,7 @@ function resolveExpressionValue(
 }
 
 function collectSourceExpressionDebug(runtime: Runtime, range: SourceRange, source: string, registers: ReadonlyArray<Value>): string[] {
-	const callStack = runtime.cpu.getCallStack();
+	const callStack = runtime.machine.cpu.getCallStack();
 	if (callStack.length === 0) {
 		return [];
 	}
@@ -222,11 +222,11 @@ function collectSourceExpressionDebug(runtime: Runtime, range: SourceRange, sour
 }
 
 export function logDebugState(runtime: Runtime): void {
-	const program = runtime.cpu.getProgram();
+	const program = runtime.machine.cpu.getProgram();
 	if (!program || program.code.length === 0) {
 		return;
 	}
-	const debug = runtime.cpu.getDebugState();
+	const debug = runtime.machine.cpu.getDebugState();
 	if (debug.pc < 0 || debug.pc >= program.code.length) {
 		return;
 	}

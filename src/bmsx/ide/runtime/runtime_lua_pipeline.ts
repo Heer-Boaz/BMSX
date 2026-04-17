@@ -157,9 +157,9 @@ function resolveRuntimeMachineForPlan(runtime: Runtime, plan: RuntimeAssetReload
 export function captureCurrentState(runtime: Runtime): RuntimeState {
 	const storage = runtime.storage.dump();
 	const stateSnapshot = captureRuntimeState(runtime);
-	const atlasSlots = runtime.vdp.atlasSlotMapping;
-	const skyboxFaceIds = runtime.vdp.skyboxFaceIds;
-	const vdpDitherType = runtime.vdp.ditherType;
+	const atlasSlots = runtime.machine.vdp.atlasSlotMapping;
+	const skyboxFaceIds = runtime.machine.vdp.skyboxFaceIds;
+	const vdpDitherType = runtime.machine.vdp.ditherType;
 	const vblankState = runtime.captureVblankState();
 	const state: RuntimeState = {
 		luaRuntimeFailed: runtime.luaRuntimeFailed,
@@ -200,7 +200,7 @@ export async function resetRuntimeToFreshState(runtime: Runtime) {
 	const reloadPlan = buildRuntimeAssetReloadPlan(runtime);
 	await runtime.buildAssetMemory({ mode: reloadPlan.mode });
 	if (reloadPlan.sealSystemAssets) {
-		runtime.memory.sealEngineAssets();
+		runtime.machine.memory.sealEngineAssets();
 	}
 	await $.refresh_audio_assets();
 	await runtime.boot();
@@ -228,25 +228,25 @@ export function restoreFromStateSnapshot(runtime: Runtime, snapshot: RuntimeStat
 
 export function applyAssetMemorySnapshot(runtime: Runtime, snapshot: RuntimeState): void {
 	if (snapshot.assetMemory) {
-		runtime.memory.restoreAssetMemory(snapshot.assetMemory);
-		runtime.memory.rehydrateAssetEntriesFromTable();
+		runtime.machine.memory.restoreAssetMemory(snapshot.assetMemory);
+		runtime.machine.memory.rehydrateAssetEntriesFromTable();
 	}
 	if (snapshot.atlasSlots) {
-		runtime.vdp.restoreAtlasSlotMapping(snapshot.atlasSlots);
+		runtime.machine.vdp.restoreAtlasSlotMapping(snapshot.atlasSlots);
 	}
 	if (snapshot.skyboxFaceIds !== undefined) {
 		if (snapshot.skyboxFaceIds === null) {
-			runtime.vdp.clearSkybox();
+			runtime.machine.vdp.clearSkybox();
 		} else {
-			runtime.vdp.setSkyboxImages(snapshot.skyboxFaceIds);
+			runtime.machine.vdp.setSkyboxImages(snapshot.skyboxFaceIds);
 		}
 	}
 	if (snapshot.vdpDitherType !== undefined) {
-		runtime.vdp.ditherType = snapshot.vdpDitherType;
+		runtime.machine.vdp.ditherType = snapshot.vdpDitherType;
 	}
-	runtime.vdp.flushAssetEdits();
-	runtime.vdp.commitLiveVisualState();
-	runtime.vdp.commitViewSnapshot();
+	runtime.machine.vdp.flushAssetEdits();
+	runtime.machine.vdp.commitLiveVisualState();
+	runtime.machine.vdp.commitViewSnapshot();
 }
 
 export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeState, options?: { preserveEngineModules?: boolean }): Promise<void> {
@@ -280,7 +280,7 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	interpreter.clearLastFaultEnvironment();
 	const chunk = interpreter.compileChunk(params.source, binding);
 	const { modules, modulePaths } = buildModuleChunks(runtime, binding);
-	const baseProgram = runtime.cpu.getProgram();
+	const baseProgram = runtime.machine.cpu.getProgram();
 	if (!baseProgram) {
 		throw runtimeFault('hot reload requires active program.');
 	}
@@ -304,7 +304,7 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	} else {
 		runtime.moduleCache.clear();
 	}
-	runtime.vdp.resetIngressState();
+	runtime.machine.vdp.resetIngressState();
 	const prelude = runEngineBuiltinPrelude(runtime, program, metadata);
 	const finalizedMetadata = prelude.metadata;
 	beginEntryExecution(runtime, entryProtoIndex);
@@ -326,7 +326,7 @@ export function clearCartModuleCacheForHotResume(runtime: Runtime): void {
 
 export function beginEntryExecution(runtime: Runtime, entryProtoIndex: number): void {
 	resetFrameState(runtime);
-	runtime.cpu.start(entryProtoIndex);
+	runtime.machine.cpu.start(entryProtoIndex);
 	runtime.pendingCall = 'entry';
 }
 
@@ -458,7 +458,7 @@ export function initializeLuaInterpreterFromSnapshot(runtime: Runtime, params: {
 		runtime.moduleAliases.set(entry.alias, entry.path);
 	}
 	runtime.moduleCache.clear();
-	runtime.vdp.resetIngressState();
+	runtime.machine.vdp.resetIngressState();
 	const prelude = runEngineBuiltinPrelude(runtime, program, metadata);
 	runtime.programMetadata = prelude.metadata;
 	beginEntryExecution(runtime, entryProtoIndex);
@@ -600,10 +600,10 @@ export function resetRuntimeState(runtime: Runtime): void {
 	runtime.pendingCall = null;
 	runtime.pendingCartBoot = false;
 	resetHardwareState(runtime);
-	runtime.cpu.globals.clear();
-	runtime.cpu.clearGlobalSlots();
+	runtime.machine.cpu.globals.clear();
+	runtime.machine.cpu.clearGlobalSlots();
 	resetTrackedLuaHeapBytes();
-	addTrackedLuaHeapBytes(runtime.cpu.globals.getTrackedHeapBytes());
+	addTrackedLuaHeapBytes(runtime.machine.cpu.globals.getTrackedHeapBytes());
 	runtime.moduleCache.clear();
 	runtime.moduleProtos.clear();
 	seedGlobals(runtime);
@@ -632,7 +632,7 @@ export function resetHardwareState(runtime: Runtime): void {
 }
 
 export function registerGlobal(runtime: Runtime, name: string, value: Value): void {
-	runtime.cpu.setGlobalByKey(runtime.canonicalKey(name), value);
+	runtime.machine.cpu.setGlobalByKey(runtime.canonicalKey(name), value);
 }
 
 export function buildEngineBuiltinPreludeSource(): string {
@@ -661,7 +661,7 @@ export function runEngineBuiltinPrelude(runtime: Runtime, program: Program, meta
 		optLevel: getRealtimeOptLevel(runtime),
 		entrySource: source,
 	});
-	runtime.cpu.setProgram(compiled.program, compiled.metadata);
+	runtime.machine.cpu.setProgram(compiled.program, compiled.metadata);
 	runtime.programMetadata = compiled.metadata;
 	runtime.callClosure({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
 	applyEngineBuiltinGlobals(runtime);
@@ -673,7 +673,7 @@ export function applyEngineBuiltinGlobals(runtime: Runtime): void {
 	for (let index = 0; index < REQUIRED_ENGINE_SYSTEM_HELPERS.length; index += 1) {
 		const name = REQUIRED_ENGINE_SYSTEM_HELPERS[index];
 		const key = runtime.canonicalKey(name);
-		if (runtime.cpu.globals.get(key) === null) {
+		if (runtime.machine.cpu.globals.get(key) === null) {
 			seedLuaGlobals(runtime);
 			break;
 		}
@@ -691,7 +691,7 @@ export function applyEngineBuiltinGlobals(runtime: Runtime): void {
 	for (let index = 0; index < helperCount; index += 1) {
 		const name = ENGINE_SYSTEM_HELPER_NAMES[index];
 		const key = runtime.canonicalKey(name);
-		const value = runtime.cpu.globals.get(key);
+		const value = runtime.machine.cpu.globals.get(key);
 		if (value !== null) {
 			registerGlobal(runtime, name, value);
 		}
@@ -789,8 +789,8 @@ function shouldHideTerminalSymbolName(name: string, hiddenPrefixes: ReadonlySet<
 }
 
 export function listSymbols(runtime: Runtime): SymbolEntry[] {
-	runtime.cpu.syncGlobalSlotsToTable();
-	const entries = runtime.cpu.globals.entriesArray();
+	runtime.machine.cpu.syncGlobalSlotsToTable();
+	const entries = runtime.machine.cpu.globals.entriesArray();
 	const hiddenPrefixes = collectHiddenSymbolPrefixes(runtime);
 	const symbolsByName = new Map<string, SymbolEntry>();
 	for (let index = 0; index < entries.length; index += 1) {
@@ -998,11 +998,11 @@ export function bootProgramAsset(runtime: Runtime, options?: { preserveState?: b
 		runtime.moduleAliases.set(alias, path);
 	}
 	runtime.moduleCache.clear();
-	runtime.vdp.resetIngressState();
+	runtime.machine.vdp.resetIngressState();
 
 	const inflated = inflateProgram(programAsset.program);
 	try {
-		runtime.cpu.setProgram(inflated, metadata);
+		runtime.machine.cpu.setProgram(inflated, metadata);
 		runtime.programMetadata = metadata;
 		applyEngineBuiltinGlobals(runtime);
 
@@ -1042,7 +1042,7 @@ export function bootPreparedCartProgram(runtime: Runtime, options?: { preserveSt
 		runtime.moduleAliases.set(entry.alias, entry.path);
 	}
 	runtime.moduleCache.clear();
-	runtime.vdp.resetIngressState();
+	runtime.machine.vdp.resetIngressState();
 	const prelude = runEngineBuiltinPrelude(runtime, prepared.program, prepared.metadata);
 	runtime.programMetadata = prelude.metadata;
 	beginEntryExecution(runtime, prepared.entryProtoIndex);
@@ -1103,7 +1103,7 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 			runtime.moduleAliases.set(entry.alias, entry.path);
 		}
 		runtime.moduleCache.clear();
-		runtime.vdp.resetIngressState();
+		runtime.machine.vdp.resetIngressState();
 		const prelude = runEngineBuiltinPrelude(runtime, program, metadata);
 		runtime.programMetadata = prelude.metadata;
 		beginEntryExecution(runtime, entryProtoIndex);
@@ -1137,7 +1137,7 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, options?: { r
 		const reloadPlan = buildRuntimeAssetReloadPlan(runtime);
 		await runtime.buildAssetMemory({ mode: reloadPlan.mode });
 		if (reloadPlan.sealSystemAssets) {
-			runtime.memory.sealEngineAssets();
+			runtime.machine.memory.sealEngineAssets();
 		}
 		await $.resetRuntime(reloadPlan.resetFreshWorldOptions);
 		await $.refresh_audio_assets();
@@ -1298,7 +1298,7 @@ export function buildConsoleMetadata(baseProgram: Program): ProgramMetadata {
 
 export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
 	const chunk = runtime.interpreter.compileChunk(source, 'console');
-	const currentProgram = runtime.cpu.getProgram();
+	const currentProgram = runtime.machine.cpu.getProgram();
 	if (!currentProgram) {
 		throw runtimeFault('console execution requires active program.');
 	}
@@ -1308,7 +1308,7 @@ export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
 		optLevel: getRealtimeOptLevel(runtime),
 		entrySource: source,
 	});
-	runtime.cpu.setProgram(compiled.program, compiled.metadata);
+	runtime.machine.cpu.setProgram(compiled.program, compiled.metadata);
 	if (runtime.programMetadata) {
 		runtime.programMetadata = compiled.metadata;
 	} else {

@@ -668,7 +668,7 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 	runtime.setProgramSource(Runtime::ProgramSource::Engine);
 	runtime.setCanonicalization(m_engine_assets.machine.canonicalization);
 	runtime.buildAssetMemory(m_engine_assets, true);
-	runtime.memory().sealEngineAssets();
+	runtime.machine().memory().sealEngineAssets();
 	refreshAudioAssets(m_engine_assets);
 	runtime.resetRuntimeForProgramReload();
 	runtime.boot(*m_engine_assets.programAsset, m_engine_assets.programSymbols.get());
@@ -1085,10 +1085,10 @@ void EngineCore::refreshAudioAssets(const RuntimeAssets& assets) {
 	const f32 volume = m_sound_master->masterVolume();
 	auto audioResolver = [this, &assets](const AssetId& id) -> AudioDataView {
 		Runtime& runtime = Runtime::instance();
-		if (runtime.memory().hasAsset(id)) {
-			const auto& entry = runtime.memory().getAssetEntry(id);
+		if (runtime.machine().memory().hasAsset(id)) {
+			const auto& entry = runtime.machine().memory().getAssetEntry(id);
 			if (entry.type == Memory::AssetType::Audio && entry.baseSize > 0) {
-				return AudioDataView{ runtime.memory().getAudioData(entry), entry.frames };
+				return AudioDataView{ runtime.machine().memory().getAudioData(entry), entry.frames };
 			}
 		}
 		const AudioAsset* asset = assets.getAudio(id);

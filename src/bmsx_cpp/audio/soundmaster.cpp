@@ -1042,7 +1042,7 @@ ModulationInput SoundMaster::parseModulationInput(const Table& table) const {
 		return Runtime::instance().canonicalizeIdentifier(name);
 	};
 	auto valueString = [](Value value) -> const std::string& {
-		return Runtime::instance().cpu().stringPool().toString(asStringId(value));
+		return Runtime::instance().machine().cpu().stringPool().toString(asStringId(value));
 	};
 
 	auto getNumber = [&](const std::string& field, std::optional<f32>& out) {

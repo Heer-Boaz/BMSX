@@ -25,24 +25,24 @@ std::string canonicalizeModuleAlias(std::string moduleName, CanonicalizationType
 } // namespace
 
 void Runtime::callLuaFunctionInto(Closure* fn, NativeArgsView args, NativeResults& out) {
-	int depthBefore = m_cpu.getFrameDepth();
-	const int previousBudget = m_cpu.instructionBudgetRemaining;
+	int depthBefore = m_machine.cpu().getFrameDepth();
+	const int previousBudget = m_machine.cpu().instructionBudgetRemaining;
 	const int budgetSentinel = std::numeric_limits<int>::max();
-	NativeResults* previousSink = m_cpu.swapExternalReturnSink(&out);
+	NativeResults* previousSink = m_machine.cpu().swapExternalReturnSink(&out);
 	out.clear();
 	try {
-		m_cpu.callExternal(fn, args);
-		m_cpu.runUntilDepth(depthBefore, budgetSentinel);
+		m_machine.cpu().callExternal(fn, args);
+		m_machine.cpu().runUntilDepth(depthBefore, budgetSentinel);
 	} catch (...) {
-		m_cpu.swapExternalReturnSink(previousSink);
-		m_cpu.unwindToDepth(depthBefore);
-		const int remaining = m_cpu.instructionBudgetRemaining;
-		m_cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
+		m_machine.cpu().swapExternalReturnSink(previousSink);
+		m_machine.cpu().unwindToDepth(depthBefore);
+		const int remaining = m_machine.cpu().instructionBudgetRemaining;
+		m_machine.cpu().instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
 		throw;
 	}
-	m_cpu.swapExternalReturnSink(previousSink);
-	const int remaining = m_cpu.instructionBudgetRemaining;
-	m_cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
+	m_machine.cpu().swapExternalReturnSink(previousSink);
+	const int remaining = m_machine.cpu().instructionBudgetRemaining;
+	m_machine.cpu().instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
 }
 
 std::vector<Value> Runtime::callLuaFunction(Closure* fn, const std::vector<Value>& args) {
@@ -70,7 +70,7 @@ Value Runtime::requireModule(const std::string& moduleName) {
 		throw BMSX_RUNTIME_ERROR("require('" + moduleName + "') failed: module not compiled.");
 	}
 	m_moduleCache[path] = valueBool(true);
-	auto* closure = m_cpu.createRootClosure(protoIt->second);
+	auto* closure = m_machine.cpu().createRootClosure(protoIt->second);
 	NativeResults results;
 	callLuaFunctionInto(closure, NativeArgsView(), results);
 	Value value = results.empty() ? valueNil() : results[0];
@@ -84,20 +84,20 @@ void Runtime::logLuaCallStack() const {
 	if (!metadata) {
 		return;
 	}
-	auto stack = m_cpu.getCallStack();
+	auto stack = m_machine.cpu().getCallStack();
 	if (stack.empty()) {
-		auto range = m_cpu.getDebugRange(m_cpu.lastPc);
+		auto range = m_machine.cpu().getDebugRange(m_machine.cpu().lastPc);
 		if (range.has_value()) {
 			std::cout << "  at <current> (" << range->path << ":" << range->startLine << ":" << range->startColumn << ")"
 						<< std::endl;
 		} else {
-			std::cout << "  at <current> (pc=" << m_cpu.lastPc << ")" << std::endl;
+			std::cout << "  at <current> (pc=" << m_machine.cpu().lastPc << ")" << std::endl;
 		}
 		return;
 	}
 	for (const auto& [protoIndex, pc] : stack) {
 		const std::string& protoId = metadata->protoIds[protoIndex];
-		auto range = m_cpu.getDebugRange(pc);
+		auto range = m_machine.cpu().getDebugRange(pc);
 		if (range.has_value()) {
 			std::cout << "  at " << protoId << " (" << range->path << ":" << range->startLine << ":" << range->startColumn << ")"
 						<< std::endl;
@@ -113,7 +113,7 @@ void Runtime::handleLuaError(const std::string& message) {
 	logDebugState();
 	logLuaCallStack();
 	clearHaltUntilIrq();
-	m_inputController.restoreSampleArmed(false);
+	m_machine.inputController().restoreSampleArmed(false);
 	m_pendingCall = PendingCall::None;
 	m_frameActive = false;
 	m_runtimeFailed = true;
@@ -177,7 +177,7 @@ void Runtime::runEngineBuiltinPrelude() {
 	auto* engineModule = asTable(requireModule("bios/engine"));
 	for (const char* name : engineBuiltins) {
 		Value key = canonicalizeIdentifier(name);
-		m_cpu.setGlobalByKey(key, engineModule->get(key));
+		m_machine.cpu().setGlobalByKey(key, engineModule->get(key));
 	}
 	std::cout << "[Runtime] prelude: engine builtins bound" << std::endl;
 }
