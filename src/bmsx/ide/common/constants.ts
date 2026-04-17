@@ -23,8 +23,6 @@ import type { BGamepadButton } from '../../input/inputtypes';
  */
 
 export const TAB_SPACES = 2;
-export const INITIAL_REPEAT_DELAY = 0.28;
-export const REPEAT_INTERVAL = 0.05;
 export const CURSOR_BLINK_INTERVAL = 0.45;
 export const UNDO_HISTORY_LIMIT = 512;
 export const UNDO_COALESCE_INTERVAL_MS = 550;
@@ -551,7 +549,6 @@ export const HOVER_TOOLTIP_PADDING_Y = 2;
 export const HOVER_TOOLTIP_BACKGROUND = 57;
 export let HOVER_TOOLTIP_BORDER: number;
 export const HOVER_TOOLTIP_MAX_VISIBLE_LINES = 10;
-export const HOVER_TOOLTIP_MAX_LINE_LENGTH = 160;
 export const LINE_JUMP_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
 export let COLOR_CREATE_RESOURCE_BACKGROUND: number;
 export let COLOR_CREATE_RESOURCE_TEXT: number;
@@ -756,7 +753,6 @@ export const PROBLEMS_PANEL_GAP_BETWEEN_COLUMNS = 10;
 export const PROBLEMS_PANEL_MAX_WRAP_LINES = 3;
 export const PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN = 4;
 export const DEFAULT_NEW_LUA_RESOURCE_CONTENT = '\n';
-export const DEFAULT_NEW_FSM_RESOURCE_CONTENT = `\n`;
 export const HEADER_BUTTON_PADDING_X = 5;
 export const HEADER_BUTTON_PADDING_Y = 1;
 export const HEADER_BUTTON_SPACING = 4;

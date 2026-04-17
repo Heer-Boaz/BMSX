@@ -221,9 +221,3 @@ export class HandlerCache {
 		return `${moduleId}::${key}`;
 	}
 }
-
-export function isHandlerFunction(candidate: unknown): candidate is HandlerFn {
-	return typeof candidate === 'function'
-		&& Object.prototype.hasOwnProperty.call(candidate, '__hid')
-		&& Object.prototype.hasOwnProperty.call(candidate, '__hmod');
-}

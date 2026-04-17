@@ -21,40 +21,6 @@ export type {
 	OnscreenPointerEvent,
 } from '../platform';
 
-export class NullOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
-	attach(): OnscreenGamepadPlatformSession {
-		throw new Error('[OnscreenGamepad] No platform has been installed.');
-	}
-
-	hideElements(): void {
-		throw new Error('[OnscreenGamepad] No platform has been installed.');
-	}
-
-	collectElementIds(): string[] {
-		throw new Error('[OnscreenGamepad] No platform has been installed.');
-	}
-
-	setElementActive(): void {
-		throw new Error('[OnscreenGamepad] No platform has been installed.');
-	}
-
-	resetElements(): void {
-		throw new Error('[OnscreenGamepad] No platform has been installed.');
-	}
-
-	updateDpadRing(): void {
-		throw new Error('[OnscreenGamepad] No platform has been installed.');
-	}
-
-	supportsVibration(): boolean {
-		return false;
-	}
-
-	vibrate(): void {
-		throw new Error('[OnscreenGamepad] No platform has been installed.');
-	}
-}
-
 interface HitTestResult {
 	elements: string[];
 	buttons: string[];

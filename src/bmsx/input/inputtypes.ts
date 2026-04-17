@@ -84,11 +84,6 @@ export interface InputMap {
 }
 
 /**
- * Represents an entry in a keyboard mapping. Accepts DOM key codes or named button ids.
- */
-export type KeyboardButton = string | BGamepadButton;
-
-/**
  * Represents a gamepad button.
  * @typedef {keyof typeof Input.BUTTON2INDEX } BGamepadButton
  */

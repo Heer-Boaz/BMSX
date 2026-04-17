@@ -220,7 +220,6 @@ public:
 	void setProgramSource(ProgramSource source) { m_programSource = source; }
 	bool isEngineProgramActive() const { return m_programSource == ProgramSource::Engine; }
 
-	const std::array<i32, 2>& atlasSlots() const { return m_machine.vdp().atlasSlots(); }
 	void setVdpDitherType(i32 type) { m_machine.vdp().setDitherType(type); }
 	void setSkyboxImages(const SkyboxImageIds& ids);
 	void clearSkybox();
@@ -288,7 +287,6 @@ public:
 	uint32_t trackedRamUsedBytes() const;
 	uint32_t trackedVramUsedBytes() const;
 	uint32_t trackedVramTotalBytes() const { return m_machine.vdp().trackedTotalVramBytes(); }
-	bool didLastTickComplete() const { return m_lastTickCompleted; }
 	bool isDrawPending() const;
 	Value canonicalizeIdentifier(std::string_view value);
 	void refreshMemoryMap();

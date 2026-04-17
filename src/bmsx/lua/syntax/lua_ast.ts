@@ -294,10 +294,6 @@ export type LuaTableConstructorExpression = LuaNode & {
 	readonly fields: ReadonlyArray<LuaTableField>;
 };
 
-export type LuaFunctionParameter = {
-	readonly name: LuaIdentifierExpression;
-};
-
 export type LuaFunctionExpression = LuaNode & {
 	readonly kind: LuaSyntaxKind.FunctionExpression;
 	readonly parameters: ReadonlyArray<LuaIdentifierExpression>;

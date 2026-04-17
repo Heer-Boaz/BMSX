@@ -202,10 +202,6 @@ export class LuaExecutionThread {
 
 export type LuaExceptionResumeStrategy = 'propagate' | 'skip_statement';
 
-export interface LuaHostAdapter {
-	toJs(value: LuaValue, interpreter: LuaInterpreter): unknown;
-}
-
 export class LuaNativeFunction implements LuaFunctionValue {
 	public readonly name: string;
 	private readonly handler: (args: ReadonlyArray<LuaValue>) => LuaCallResult;

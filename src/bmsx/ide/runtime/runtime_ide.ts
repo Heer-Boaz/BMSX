@@ -337,12 +337,6 @@ export function disposeShortcutHandlers(runtime: Runtime): void {
 	runtime.shortcutDisposers = [];
 }
 
-export function toggleOverlayResolutionMode(runtime: Runtime): 'offscreen' | 'viewport' {
-	const next = runtime.overlayResolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
-	runtime.overlayResolutionMode = next;
-	return next;
-}
-
 export function tickIdeInput(runtime: Runtime): void {
 	if (!editorBlocksRuntimePipeline(runtime) || !runtime.editor!.isActive) {
 		return;
@@ -365,12 +359,6 @@ export function tickTerminalInput(runtime: Runtime): void {
 	}
 	runtime.lastTerminalInputFrame = pollFrame;
 	void runtime.terminal.handleInput();
-}
-
-export function recordLuaWarning(runtime: Runtime, message: string): void {
-	runtime.pendingLuaWarnings.push(message);
-	console.warn(message);
-	flushLuaWarnings(runtime);
 }
 
 export function flushLuaWarnings(runtime: Runtime): void {

@@ -223,8 +223,6 @@ export type EditorRuntimeSyncState = 'synced' | 'restart_pending' | 'diverged';
 
 export type ScrollbarKind = 'codeVertical' | 'codeHorizontal' | 'resourceVertical' | 'resourceHorizontal' | 'viewerVertical';
 
-export type EditorResolutionMode = 'offscreen' | 'viewport';
-
 export type CodeHoverTooltip = {
 	expression: string;
 	contentLines: string[];
@@ -424,35 +422,12 @@ export type EditorContextMenuState = {
 	itemBounds: RectBounds[];
 };
 
-export type EditorSerializedState = {
-	active: boolean;
-	activeTab: EditorTabKind;
-	snapshot: EditorSnapshot;
-	searchQuery: string;
-	searchMatches: SearchMatch[];
-	searchCurrentIndex: number;
-	searchActive: boolean;
-	searchVisible: boolean;
-	lineJumpValue: string;
-	lineJumpActive: boolean;
-	lineJumpVisible: boolean;
-	message: MessageState;
-	runtimeErrorOverlay: RuntimeErrorOverlay;
-	saveGeneration: number;
-	appliedGeneration: number;
-};
-
 export type PointerSnapshot = {
 	viewportX: number;
 	viewportY: number;
 	insideViewport: boolean;
 	valid: boolean;
 	primaryPressed: boolean;
-};
-
-export type KeyPressRecord = {
-	lastPressId: number;
-	downLatched?: boolean;
 };
 
 export type TextField = {

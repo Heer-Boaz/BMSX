@@ -188,44 +188,6 @@ export function captureCurrentState(runtime: Runtime): RuntimeState {
 	return state;
 }
 
-export async function applyState(runtime: Runtime, state: RuntimeState) {
-	if (!state) await resetRuntimeToFreshState(runtime);
-	else restoreFromStateSnapshot(runtime, state);
-}
-
-export async function resetRuntimeToFreshState(runtime: Runtime) {
-	const asset = $.lua_sources.path2lua[$.lua_sources.entry_path];
-	runtime._luaPath = asset.source_path;
-	runtime.luaInitialized = false;
-	const reloadPlan = buildRuntimeAssetReloadPlan(runtime);
-	await runtime.buildAssetMemory({ mode: reloadPlan.mode });
-	if (reloadPlan.sealSystemAssets) {
-		runtime.machine.memory.sealEngineAssets();
-	}
-	await $.refresh_audio_assets();
-	await runtime.boot();
-}
-
-export function restoreFromStateSnapshot(runtime: Runtime, snapshot: RuntimeState): void {
-	runtimeIde.clearActiveDebuggerPause(runtime);
-	const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
-
-	runtime.api.cartdata($.lua_sources.namespace);
-	if (snapshot.storage !== undefined) {
-		runtime.storage.restore(snapshot.storage);
-	}
-
-	runtime.luaRuntimeFailed = false;
-	applyAssetMemorySnapshot(runtime, snapshot);
-	reinitializeLuaProgramFromSnapshot(runtime, snapshot, { runInit: false, hotResume: false });
-	runtime.restoreVblankState(snapshot);
-	runtime.resetRenderBuffers();
-
-	if (savedRuntimeFailed) {
-		runtime.luaRuntimeFailed = true;
-	}
-}
-
 export function applyAssetMemorySnapshot(runtime: Runtime, snapshot: RuntimeState): void {
 	if (snapshot.assetMemory) {
 		runtime.machine.memory.restoreAssetMemory(snapshot.assetMemory);
@@ -394,22 +356,6 @@ export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeState, 
 	}
 }
 
-export function reinitializeLuaProgramFromSnapshot(runtime: Runtime, snapshot: RuntimeState, options: { runInit: boolean; hotResume: boolean }): void {
-	const binding = $.lua_sources.path2lua[$.lua_sources.entry_path];
-	const source = resourceSourceForChunk(runtime, binding.source_path);
-
-	runtime._luaPath = binding.source_path;
-
-	initializeLuaInterpreterFromSnapshot(runtime, {
-		source,
-		path: binding.source_path,
-		snapshot,
-		runInit: options.runInit,
-		hotResume: options.hotResume,
-	});
-	clearNativeMemberCompletionCache();
-}
-
 export function refreshLuaModulesOnResume(runtime: Runtime, resumeModuleId: string): void {
 	const paths = Object.keys($.lua_sources.path2lua);
 	for (let index = 0; index < paths.length; index += 1) {
@@ -418,58 +364,6 @@ export function refreshLuaModulesOnResume(runtime: Runtime, resumeModuleId: stri
 			continue;
 		}
 		refreshLuaHandlersForChunk(runtime, moduleId);
-	}
-}
-
-export function initializeLuaInterpreterFromSnapshot(runtime: Runtime, params: { source: string; path: string; snapshot: RuntimeState; runInit: boolean; hotResume: boolean }): void {
-	const snapshot = params.snapshot;
-	const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
-	const binding = $.lua_sources.path2lua[params.path];
-	if (params.hotResume) {
-		hotResumeProgramEntry(runtime, { source: params.source, path: binding.source_path, preserveEngineModules: !runtime.isEngineProgramActive() });
-		if (params.runInit && !savedRuntimeFailed) {
-			queueLifecycleHandlers(runtime, { runInit: true, runNewGame: true });
-		}
-		restoreRuntimeState(runtime, snapshot);
-		if (savedRuntimeFailed) {
-			runtime.luaRuntimeFailed = true;
-		}
-		return;
-	}
-
-	resetLuaInteroperabilityState(runtime);
-	const interpreter = runtime.createLuaInterpreter();
-	runtime.assignInterpreter(interpreter);
-
-	resetRuntimeState(runtime);
-	const chunk = interpreter.compileChunk(params.source, binding.source_path);
-	const { modules, modulePaths } = buildModuleChunks(runtime, binding.source_path);
-	const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, {
-		canonicalization: runtime.canonicalization,
-		optLevel: getRealtimeOptLevel(runtime),
-		entrySource: params.source,
-	});
-	runtime.moduleProtos.clear();
-	for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
-		runtime.moduleProtos.set(modulePath, protoIndex);
-	}
-	runtime.moduleAliases.clear();
-	for (const entry of buildModuleAliasesFromPaths(modulePaths)) {
-		runtime.moduleAliases.set(entry.alias, entry.path);
-	}
-	runtime.moduleCache.clear();
-	runtime.machine.vdp.resetIngressState();
-	const prelude = runEngineBuiltinPrelude(runtime, program, metadata);
-	runtime.programMetadata = prelude.metadata;
-	beginEntryExecution(runtime, entryProtoIndex);
-	runtime.luaInitialized = true;
-
-	if (params.runInit && !savedRuntimeFailed) {
-		queueLifecycleHandlers(runtime, { runInit: true, runNewGame: false });
-	}
-	restoreRuntimeState(runtime, snapshot);
-	if (savedRuntimeFailed) {
-		runtime.luaRuntimeFailed = true;
 	}
 }
 
@@ -816,14 +710,6 @@ export function listSymbols(runtime: Runtime): SymbolEntry[] {
 
 export function requireString(value: Value): string {
 	return stringValueToString(value as StringValue);
-}
-
-export function resolveProgramAssetSource(runtime: Runtime): RawAssetSource {
-	const source = runtime.isEngineProgramActive() ? runtime.engineAssetSource : runtime.cartAssetSource;
-	if (!source) {
-		throw runtimeFault('program asset source not configured.');
-	}
-	return source;
 }
 
 export function hasLuaAssets(runtime: Runtime): boolean {

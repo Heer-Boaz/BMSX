@@ -61,10 +61,6 @@ export function resolveLuaSourceProjectRootPath(path: string): string {
 	return $.cart_project_root_path;
 }
 
-export function resolveLuaSourceWorkspacePath(path: string): string {
-	return resolveWorkspacePath(path, resolveLuaSourceProjectRootPath(path));
-}
-
 export async function saveLuaResourceSource(path: string, source: string): Promise<void> {
 	const registry = resolveLuaSourceRegistry(path);
 	const asset = registry.path2lua[path];
@@ -105,12 +101,6 @@ export async function createLuaResource(request: LuaResourceCreationRequest): Pr
 	runtimeLuaPipeline.markSourceChunkAsDirty(Runtime.instance, asset.source_path);
 	const descriptor: ResourceDescriptor = { path: asset.source_path, type: 'lua' };
 	return descriptor;
-}
-
-export function sanitizeWorkspaceFilenameSegment(value: string): string {
-	const replaced = value.replace(/[^A-Za-z0-9._-]/g, '_').replace(/_+/g, '_');
-	const trimmed = replaced.replace(/^[_\.]+/, '');
-	return trimmed.length > 0 ? trimmed : 'untitled';
 }
 
 export function buildWorkspaceMetadataPath(projectRootPath: string): string {
@@ -196,10 +186,6 @@ function resolveOverrideUpdatedAt(record: WorkspaceOverrideRecord, fallback: num
 	return typeof record.updatedAt === 'number' ? record.updatedAt : fallback;
 }
 
-export async function persistLuaSourceToFilesystem(path: string, source: string): Promise<void> {
-	await persistWorkspaceSourceFile(path, source, resolveLuaSourceProjectRootPath(path));
-}
-
 export async function persistWorkspaceSourceFile(path: string, source: string, projectRootPath?: string): Promise<void> {
 	if (typeof fetch !== 'function') {
 		throw new Error('Fetch API unavailable; cannot persist workspace source.');
@@ -244,10 +230,6 @@ export async function persistWorkspaceSourceFile(path: string, source: string, p
 	}
 }
 
-export async function fetchLuaSourceFromFilesystem(path: string): Promise<string> {
-	return loadWorkspaceSourceFile(path, resolveLuaSourceProjectRootPath(path));
-}
-
 export async function loadWorkspaceSourceFile(path: string, projectRootPath?: string): Promise<string> {
 	const cached = getWorkspaceCachedSource(path);
 	if (cached !== null) {
@@ -255,44 +237,6 @@ export async function loadWorkspaceSourceFile(path: string, projectRootPath?: st
 	}
 	const payload = await fetchWorkspaceFile(resolveWorkspacePath(path, projectRootPath));
 	return payload ? payload.contents : null;
-}
-
-// StorageService is injected because the workspace merge runs during boot before $.platform is fully wired;
-// reaching back into $.platform.storage here races the runtime initialization.
-export async function mergeWorkspaceOverrides(
-	root: string,
-	storage: StorageService,
-	localOverrides: Map<string, WorkspaceOverrideRecord>,
-	serverOverrides: Map<string, WorkspaceOverrideRecord>,
-): Promise<Map<string, WorkspaceOverrideRecord>> {
-	const merged = new Map<string, WorkspaceOverrideRecord>();
-	const overridePaths = new Set<string>([
-		...localOverrides.keys(),
-		...serverOverrides.keys(),
-	]);
-
-	function ensureLocalStorageHasLatestVersion(path: string, override: WorkspaceOverrideRecord): void {
-		if (root) { // Note that root may be empty string if project root is not set (e.g. in non-debug carts)
-			persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[path, override]]));
-		}
-	}
-
-	for (const path of overridePaths) {
-		const local = localOverrides.get(path);
-		const remote = serverOverrides.get(path);
-		const localTime = local?.updatedAt ?? 0;
-		const remoteTime = remote?.updatedAt ?? 0;
-		if (local && (!remote || localTime >= remoteTime)) {
-			merged.set(path, local);
-			ensureLocalStorageHasLatestVersion(path, local);
-			continue;
-		}
-		if (remote) {
-			merged.set(path, remote);
-			ensureLocalStorageHasLatestVersion(path, remote);
-		}
-	}
-	return merged;
 }
 
 export async function fetchWorkspaceOverridesPriority(cart: LuaSourceRegistry, root: string): Promise<Map<string, WorkspaceOverrideRecord>> {

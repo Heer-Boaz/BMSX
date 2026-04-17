@@ -97,14 +97,13 @@ export class Machine {
 		this.vdp.setTiming(timing.cpuHz, timing.vdpWorkUnitsPerSec, nowCycles);
 	}
 
-	public advanceDevices(cycles: number): number {
+	public advanceDevices(cycles: number): void {
 		const nextNow = this.scheduler.nowCycles + cycles;
 		this.dmaController.accrueCycles(cycles, nextNow);
 		this.imgDecController.accrueCycles(cycles, nextNow);
 		this.geometryController.accrueCycles(cycles, nextNow);
 		this.vdp.accrueCycles(cycles, nextNow);
 		this.scheduler.advanceTo(nextNow);
-		return nextNow;
 	}
 
 	public runDeviceService(deviceKind: number): void {
