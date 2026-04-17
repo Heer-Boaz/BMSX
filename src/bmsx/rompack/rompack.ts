@@ -8,7 +8,6 @@ export const CART_ROM_MAGIC_BYTES = new Uint8Array([0x42, 0x4d, 0x53, 0x58]);
 export const CART_ROM_BASE_HEADER_SIZE = 32;
 export const CART_ROM_PROGRAM_HEADER_SIZE = 64;
 export const CART_ROM_HEADER_SIZE = 72;
-export const CART_PROGRAM_BOOT_FLAG_HAS_BIOS_ENGINE_ALIAS = 1 << 0;
 
 export type CartRomHeader = {
 	headerSize: number;
@@ -31,7 +30,6 @@ export type CartRomHeader = {
 };
 
 export type CartridgeLayerId = 'system' | 'cart' | 'overlay';
-export type CartridgePayloads = Partial<Record<CartridgeLayerId, Uint8Array>>;
 
 export type RomAssetOp = 'delete';
 
@@ -97,7 +95,6 @@ export type id2res = Record<asset_id, RomAsset>;
 export type id2imgres = Record<asset_id, RomImgAsset>;
 export type id2model = Record<asset_id, GLTFModel>;
 export type id2data = Record<asset_id, any>;
-export type id2lua = Record<asset_id, RomLuaAsset>;
 export type AudioEventMapEntry = Record<string, unknown>;
 export type id2audioevent = Record<asset_id, AudioEventMapEntry>;
 
@@ -134,37 +131,11 @@ export interface BootArgs {
 	canonicalization?: CanonicalizationType;
 }
 
-export type Constructor<T> = new (...args: any[]) => T;
-
-/**
- * Represents a type that is a constructor function with a prototype of type T.
- * This effectively allows it to match any class (including abstract classes) that produces T instances.
- * Used for attaching abstract classes to game objects.
- */
-export type ConcreteOrAbstractConstructor<T> = Function & { prototype: T; };
-
-export interface Native {
-	__native__: string;
-}
-
-export type NativeRegisteredObject = Native & Registerable & { constructor: { name: string }, ctor?: { name: string } }; // Used to mark native objects in the console API, includes JS-engine constructor name
-
-/**
- * Represents the direction values.
- */
-export type Direction = 'none' | 'up' | 'right' | 'down' | 'left';
-export type Facing = Direction | 'up-right' | 'down-right' | 'down-left' | 'up-left';
-
 export type Identifier = string | 'model';
 export interface Identifiable {
 	id: Identifier;
 }
 
-export type MaybeRegisterable = Partial<Registerable>;
-
-export interface Parentable {
-	parent?: Identifiable;
-}
 
 export interface Disposable {
 	dispose(): void;
@@ -199,7 +170,6 @@ export const ENGINE_ATLAS_INDEX = 254;
 export const ENGINE_ATLAS_TEXTURE_KEY = '_atlas_engine';
 export const ATLAS_PRIMARY_SLOT_ID = '_atlas_primary';
 export const ATLAS_SECONDARY_SLOT_ID = '_atlas_secondary';
-export type AtlasSlotIndex = 0 | 1;
 
 const atlasNameCache = new Map<number, string>(); // Cache for atlas names to avoid regenerating them for each request
 
@@ -253,8 +223,6 @@ export interface vec2 { x: number; y: number; z?: number; }
 export interface vec3 extends vec2 {
 	z: number;
 }
-
-export type x_y_w_h_arr = vec4arr;
 
 export type RectBounds = {
 	left: number;

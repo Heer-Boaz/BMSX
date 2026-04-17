@@ -73,8 +73,8 @@ function textureByteLength(width: number, height: number): number {
 }
 
 function asTextureSourcePromise(src: TextureSource | Promise<TextureSource>): Promise<TextureSource> | null {
-	const maybePromise = src as Promise<TextureSource>;
-	return typeof maybePromise.then === 'function' ? maybePromise : null;
+	const thenable = src as Promise<TextureSource>;
+	return typeof thenable.then === 'function' ? thenable : null;
 }
 
 export class HeadlessGPUBackend implements GPUBackend {
