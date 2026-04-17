@@ -159,7 +159,7 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			const runtime = Runtime.instance;
 			for (let index = 0; index < SKYBOX_FACE_COUNT; index += 1) {
 				const imageId = gv.skyboxFaceIds[SKYBOX_FACE_KEYS[index]];
-				const handle = runtime.resolveAssetHandle(imageId);
+				const handle = runtime.machine.memory.resolveAssetHandle(imageId);
 				const sample = runtime.machine.vdp.resolveBlitterSample(handle);
 				if (sample.atlasId === ENGINE_ATLAS_INDEX) {
 					throw new Error(`[Skybox] Image '${imageId}' resolved to the engine atlas. Skybox faces must use primary or secondary atlas slots.`);

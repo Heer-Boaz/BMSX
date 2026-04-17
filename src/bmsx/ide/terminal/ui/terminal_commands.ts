@@ -329,7 +329,7 @@ export class TerminalCommandDispatcher {
 
 	public getMemoryStatusLines(): string[] {
 		const totalRamBytes = RAM_SIZE;
-		const usedRamBytes = this.runtime.getTrackedRamUsedBytes();
+		const usedRamBytes = this.runtime.machine.resourceUsageDetector.getRamUsedBytes();
 		const luaHeapBytes = getTrackedLuaHeapBytes();
 		const baseRamBytes = usedRamBytes - luaHeapBytes;
 		const freeRamBytes = totalRamBytes - usedRamBytes;

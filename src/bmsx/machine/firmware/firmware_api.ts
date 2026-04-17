@@ -12,6 +12,7 @@ import type { AudioPlayOptions } from '../../audio/soundmaster';
 import type { vec3arr } from '../../rompack/rompack';
 import { taskGate, GateGroup } from '../../core/taskgate';
 import { Runtime } from '../runtime/runtime';
+import { applyActiveMachineTiming } from '../runtime/runtime_timing_config';
 import * as runtimeLuaPipeline from '../../ide/runtime/runtime_lua_pipeline';
 import { setHardwareCamera } from '../../render/shared/hardware_camera';
 import { putHardwareAmbientLight, putHardwareDirectionalLight, putHardwarePointLight } from '../../render/shared/hardware_lighting';
@@ -289,7 +290,7 @@ export class Api {
 	}
 
 	public skybox(posx: string, negx: string, posy: string, negy: string, posz: string, negz: string): void {
-		this.runtime.setSkyboxImages({ posx, negx, posy, negy, posz, negz });
+		this.runtime.machine.vdp.setSkyboxImages({ posx, negx, posy, negy, posz, negz });
 	}
 
 	public put_ambient_light(id: string, colorvalue: number | color | vec3arr | number[], intensity: number): void {
@@ -391,14 +392,14 @@ export class Api {
 	}
 
 	public get_cpu_freq_hz(): number {
-		return this._runtime.cpuHz;
+		return this._runtime.timing.cpuHz;
 	}
 
 	public set_cpu_freq_hz(cpuHz: number): void {
 		if (!Number.isSafeInteger(cpuHz) || cpuHz <= 0) {
 			throw new Error('[api.set_cpu_freq_hz] cpuHz must be a positive safe integer.');
 		}
-		this._runtime.applyActiveMachineTiming(cpuHz);
+		applyActiveMachineTiming(this._runtime, cpuHz);
 	}
 
 	public list_lua_builtins(): LuaTable {

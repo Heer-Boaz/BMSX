@@ -148,7 +148,7 @@ export class BFont {
 			return computed;
 		}
 		const imgid = this.char_to_img(char);
-		const asset = $.assets.img[imgid] ?? $.system_assets.img[imgid] ?? Runtime.instance.getImageAsset(imgid);
+		const asset = $.assets.img[imgid] ?? $.system_assets.img[imgid] ?? Runtime.instance.assets.getImageAsset(imgid);
 		const width = asset.imgmeta.width;
 		const height = asset.imgmeta.height;
 		const computed: FontGlyph = {

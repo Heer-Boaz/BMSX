@@ -99,7 +99,7 @@ void RuntimeScreenState::flushDebugReport(const Runtime& runtime) {
 		static_cast<unsigned long long>(m_debugPresentHoldPresents),
 		static_cast<unsigned long long>(m_debugPresentPausedPresents),
 		runtime.isDrawPending() ? 1 : 0,
-		runtime.hasActiveTick() ? 1 : 0
+		runtime.frameLoop.hasActiveTick(runtime) ? 1 : 0
 	);
 	m_debugPresentReportAt = now;
 	m_debugPresentHostFrames = 0;

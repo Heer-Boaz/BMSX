@@ -2830,7 +2830,7 @@ stringTable->set(key("gsub"), m_machine.cpu().createNativeFunction("string.gsub"
 	size_t searchIndex = 0;
 	size_t lastIndex = 0;
 	std::string result;
-	std::vector<Value> fnArgs = acquireValueScratch();
+	std::vector<Value> fnArgs = luaScratch.acquireValue();
 	NativeResults fnResults;
 
 	auto renderReplacement = [&](const std::smatch& match) -> std::string {
@@ -2920,7 +2920,7 @@ stringTable->set(key("gsub"), m_machine.cpu().createNativeFunction("string.gsub"
 	result += source.substr(lastIndex);
 	out.push_back(str(result));
 	out.push_back(valueNumber(static_cast<double>(count)));
-	releaseValueScratch(std::move(fnArgs));
+	luaScratch.releaseValue(std::move(fnArgs));
 }));
 stringTable->set(key("gmatch"), m_machine.cpu().createNativeFunction("string.gmatch", [this, str, asText](NativeArgsView args, NativeResults& out) {
 	struct GMatchState {
@@ -3311,12 +3311,12 @@ tableLib->set(key("sort"), m_machine.cpu().createNativeFunction("table.sort", [t
 	auto* tbl = asTable(args.at(0));
 	Value comparator = args.size() > 1 ? args.at(1) : valueNil();
 	int length = tbl->length();
-	std::vector<Value> values = acquireValueScratch();
+	std::vector<Value> values = luaScratch.acquireValue();
 	values.resize(static_cast<size_t>(length));
 	for (int i = 1; i <= length; ++i) {
 		values[static_cast<size_t>(i - 1)] = tbl->get(valueNumber(static_cast<double>(i)));
 	}
-	std::vector<Value> comparatorArgs = acquireValueScratch();
+	std::vector<Value> comparatorArgs = luaScratch.acquireValue();
 	comparatorArgs.resize(2);
 	NativeResults comparatorResults;
 	std::sort(values.begin(), values.end(), [&](const Value& left, const Value& right) -> bool {
@@ -3340,8 +3340,8 @@ tableLib->set(key("sort"), m_machine.cpu().createNativeFunction("table.sort", [t
 		tbl->set(valueNumber(static_cast<double>(i)), values[static_cast<size_t>(i - 1)]);
 	}
 	out.push_back(valueTable(tbl));
-	releaseValueScratch(std::move(comparatorArgs));
-	releaseValueScratch(std::move(values));
+	luaScratch.releaseValue(std::move(comparatorArgs));
+	luaScratch.releaseValue(std::move(values));
 }));
 
 	setGlobal("table", valueTable(tableLib));

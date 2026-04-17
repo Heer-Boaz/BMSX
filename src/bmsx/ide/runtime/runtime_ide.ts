@@ -721,12 +721,12 @@ export function tickTerminalMode(runtime: Runtime): void {
 	if (runtime.frameLoop.currentFrameState !== null || runtime.frameLoop.drawFrameState !== null) {
 		return;
 	}
-	const state = runtime.beginFrameState();
+	const state = runtime.frameLoop.beginFrameState(runtime);
 	const deltaSeconds = runtime.frameLoop.frameDeltaMs / 1000;
 	runtime.terminal.update(deltaSeconds);
 	runtime.machine.vdp.flushAssetEdits();
 	runtime.frameLoop.drawFrameState = state;
-	runtime.abandonFrameState();
+	runtime.frameLoop.abandonFrameState(runtime);
 }
 
 export function tickTerminalModeDraw(runtime: Runtime): void {
@@ -745,7 +745,7 @@ export function tickTerminalModeDraw(runtime: Runtime): void {
 	} finally {
 		if (state !== null) {
 			runtime.frameLoop.drawFrameState = null;
-			runtime.abandonFrameState();
+			runtime.frameLoop.abandonFrameState(runtime);
 		}
 	}
 }
@@ -760,12 +760,12 @@ export function tickIDE(runtime: Runtime): void {
 	if (runtime.frameLoop.currentFrameState !== null || runtime.frameLoop.drawFrameState !== null) {
 		return;
 	}
-	const state = runtime.beginFrameState();
+	const state = runtime.frameLoop.beginFrameState(runtime);
 	const deltaSeconds = runtime.frameLoop.frameDeltaMs / 1000;
 	runtime.editor!.update(deltaSeconds);
 	runtime.machine.vdp.flushAssetEdits();
 	runtime.frameLoop.drawFrameState = state;
-	runtime.abandonFrameState();
+	runtime.frameLoop.abandonFrameState(runtime);
 }
 
 export function tickIDEDraw(runtime: Runtime): void {
@@ -784,7 +784,7 @@ export function tickIDEDraw(runtime: Runtime): void {
 	} finally {
 		if (state !== null) {
 			runtime.frameLoop.drawFrameState = null;
-			runtime.abandonFrameState();
+			runtime.frameLoop.abandonFrameState(runtime);
 		}
 	}
 }

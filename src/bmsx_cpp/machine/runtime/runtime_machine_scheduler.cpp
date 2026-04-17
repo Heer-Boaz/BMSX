@@ -119,15 +119,15 @@ bool RuntimeMachineSchedulerState::startScheduledFrame(Runtime& runtime) {
 		return false;
 	}
 	lastTickCompleted = false;
-	runtime.beginFrameState();
+	runtime.frameLoop.beginFrameState(runtime);
 	return true;
 }
 
 void RuntimeMachineSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
 	accumulateHostTime(runtime, hostDeltaMs);
 	while (canRunScheduledUpdate(runtime)) {
-		const bool progressed = runtime.tickUpdate();
-		if (runtime.hasActiveTick() && !progressed) {
+		const bool progressed = runtime.frameLoop.tickUpdate(runtime);
+		if (runtime.frameLoop.hasActiveTick(runtime) && !progressed) {
 			break;
 		}
 	}

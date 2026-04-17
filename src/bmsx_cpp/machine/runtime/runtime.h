@@ -13,6 +13,9 @@
 #include "machine/scheduler/device_scheduler.h"
 #include "machine/runtime/runtime_timing.h"
 #include "machine/runtime/runtime_vblank.h"
+#include "machine/runtime/runtime_cpu_executor.h"
+#include "machine/runtime/runtime_cart_boot.h"
+#include "machine/runtime/runtime_lua_scratch.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/runtime_frame_loop.h"
 #include "machine/runtime/runtime_machine_scheduler.h"
@@ -20,8 +23,6 @@
 #include "render/gameview.h"
 #include "render/shared/render_types.h"
 #include "core/types.h"
-#include <array>
-#include <chrono>
 #include <memory>
 #include <optional>
 #include <regex>
@@ -78,30 +79,21 @@ struct RuntimeState {
 };
 
 /**
- * Runtime - the main Lua runtime coordinator.
- *
- * Manages:
- * - CPU bytecode execution
- * - API bindings
- * - I/O command processing
- * - Editor/terminal mode coordination
- * - State save/restore
+ * Runtime owns the live machine, Lua API bindings, and save/load state.
+ * Timing, CPU execution, frame scheduling, cart boot, and asset-memory
+ * responsibilities live in their runtime submodules.
  */
 class Runtime {
 public:
 	friend class RuntimeFrameLoopState;
 	friend class RuntimeMachineSchedulerState;
 	friend class RuntimeVblankState;
+	friend class RuntimeCartBootState;
 
 	enum class ProgramSource {
 		Engine,
 		Cart,
 	};
-	enum class AssetBuildMode {
-		Full,
-		Cart,
-	};
-
 	/**
 	 * Create the singleton instance. Throws if already created.
 	 */
@@ -132,11 +124,6 @@ public:
 	void boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex);
 	void boot(const ProgramAsset& asset, ProgramMetadata* metadata);
 	void handleLuaError(const std::string& message);
-
-	/**
-	 * Tick the runtime update phase (called by BmsxCartUpdateSystem).
-	 */
-	bool tickUpdate();
 
 	/**
 	 * Tick IDE input handling.
@@ -172,8 +159,6 @@ public:
 	 * Request a program reload.
 	 */
 	void requestProgramReload();
-	void raiseEngineIrq(uint32_t mask);
-	void resetCartBootState();
 
 	/**
 	 * Capture current runtime state for save.
@@ -205,8 +190,6 @@ public:
 	bool isEngineProgramActive() const { return m_programSource == ProgramSource::Engine; }
 
 	void setVdpDitherType(i32 type) { m_machine.vdp().setDitherType(type); }
-	void setSkyboxImages(const SkyboxImageIds& ids);
-	void clearSkybox();
 
 	f64 frameDeltaMs() const { return frameLoop.frameDeltaMs; }
 
@@ -226,7 +209,6 @@ public:
 	/**
 	 * Call a Lua function from native code.
 	 */
-	std::vector<Value> callLuaFunction(Closure* fn, const std::vector<Value>& args);
 	void callLuaFunctionInto(Closure* fn, NativeArgsView args, NativeResults& out);
 
 	/**
@@ -245,17 +227,9 @@ public:
 	void registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost = std::nullopt);
 
 	void setCanonicalization(CanonicalizationType canonicalization);
-	void setCpuHz(i64 hz);
-	void applyActiveMachineTiming(i64 cpuHz);
-	void setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk, int vdpWorkUnitsPerSec, int geoWorkUnitsPerSec);
-	i64 cpuHz() const { return timing.cpuHz; }
-	void setVdpWorkUnitsPerSec(int workUnitsPerSec);
-	void setGeoWorkUnitsPerSec(int workUnitsPerSec);
 	void resetHardwareState();
 	void resetRuntimeForProgramReload();
 	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
-	void setCycleBudgetPerFrame(int budget);
-	bool hasActiveTick() const;
 	i64 lastTickSequence() const { return machineScheduler.lastTickSequence; }
 	int lastTickBudgetRemaining() const { return machineScheduler.lastTickBudgetRemaining; }
 	int lastTickBudgetGranted() const { return machineScheduler.lastTickSequence == 0 ? timing.cycleBudgetPerFrame : machineScheduler.lastTickBudgetGranted; }
@@ -272,14 +246,16 @@ public:
 	bool isDrawPending() const;
 	Value canonicalizeIdentifier(std::string_view value);
 	void refreshMemoryMap();
-	void buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, AssetBuildMode mode = AssetBuildMode::Full);
 	void restoreVramSlotTextures();
 	void captureVramTextureSnapshots();
 	RuntimeScreenState screen;
 	RuntimeTimingState timing;
 	RuntimeMachineSchedulerState machineScheduler;
+	RuntimeCpuExecutionState cpuExecution;
 	RuntimeFrameLoopState frameLoop;
 	RuntimeVblankState vblank;
+	RuntimeCartBootState cartBoot;
+	RuntimeLuaScratchState luaScratch;
 
 private:
 	enum class PendingCall {
@@ -291,16 +267,6 @@ private:
 
 	void setupBuiltins();
 	void runEngineBuiltinPrelude();
-	void resetFrameState();
-	void executeUpdateCallback();
-	void refreshDeviceTimings(i64 nowCycles);
-	void advanceTime(int cycles);
-	void runDueTimers();
-	void dispatchTimer(uint8_t kind, uint8_t payload);
-	void runDeviceService(uint8_t deviceKind);
-	void beginFrameState();
-	void finalizeUpdateSlice();
-	RunResult runWithBudget();
 	void queueLifecycleHandlers(bool runInit, bool runNewGame);
 	Value requireModule(const std::string& moduleName);
 	const std::regex& buildLuaPatternRegex(const std::string& pattern);
@@ -311,17 +277,9 @@ private:
 	void logDebugState() const;
 	void logLuaCallStack() const;
 	void refreshMemoryMapGlobals();
-	void setCartBootReadyFlag(bool value);
-	void prepareCartBootIfNeeded();
-	bool pollSystemBootRequest();
-	bool processPendingCartBoot();
-	void flushAssetEdits();
-	std::vector<Value> acquireValueScratch();
-	void releaseValueScratch(std::vector<Value>&& values);
 	bool hasEntryContinuation() const;
 
 	static Runtime* s_instance;
-	static constexpr size_t MAX_POOLED_RUNTIME_SCRATCH = 32;
 
 		// Runtime core
 		std::unique_ptr<Api> m_api;
@@ -338,8 +296,6 @@ private:
 	bool m_luaInitialized = false;
 	bool m_runtimeFailed = false;
 	bool m_tickEnabled = true;
-	bool m_cartBootPrepared = false;
-	bool m_pendingCartBoot = false;
 	bool m_rebootRequested = false;
 	std::optional<std::string> m_hostFaultMessage;
 
@@ -353,14 +309,6 @@ private:
 	std::unordered_map<std::string, std::string> m_moduleAliases;
 	std::unordered_map<std::string, Value> m_moduleCache;
 	std::unordered_map<std::string, std::unique_ptr<std::regex>> m_luaPatternRegexCache;
-	std::vector<std::vector<Value>> m_valueScratchPool;
-	bool m_debugRunReportInitialized = false;
-	std::chrono::steady_clock::time_point m_debugRunReportAt;
-	i64 m_debugRunCount = 0;
-	i64 m_debugRunYields = 0;
-	double m_debugRunRemainingAcc = 0.0;
-	i64 m_debugRunCountTotal = 0;
-	i64 m_debugRunYieldsTotal = 0;
 	i64 m_debugUpdateCountTotal = 0;
 };
 

@@ -3,6 +3,8 @@
 #include "core/engine_core.h"
 #include "machine/bus/io.h"
 #include "machine/runtime/runtime.h"
+#include "machine/runtime/runtime_cpu_executor.h"
+#include "machine/runtime/runtime_timing_config.h"
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -60,7 +62,7 @@ void RuntimeVblankState::reset(Runtime& runtime) {
 		setVblankStatus(runtime, true);
 	}
 	scheduleCurrentFrameTimers(runtime);
-	runtime.refreshDeviceTimings(runtime.m_machine.scheduler().nowCycles());
+	refreshDeviceTimings(runtime, runtime.m_machine.scheduler().nowCycles());
 }
 
 RuntimeVblankSnapshot RuntimeVblankState::capture(const Runtime& runtime) const {
@@ -84,7 +86,7 @@ void RuntimeVblankState::restore(Runtime& runtime, const RuntimeVblankSnapshot& 
 	const bool active = (m_vblankStartCycle == 0) || (getCyclesIntoFrame(runtime) >= m_vblankStartCycle);
 	setVblankStatus(runtime, active);
 	scheduleCurrentFrameTimers(runtime);
-	runtime.refreshDeviceTimings(runtime.m_machine.scheduler().nowCycles());
+	refreshDeviceTimings(runtime, runtime.m_machine.scheduler().nowCycles());
 }
 
 void RuntimeVblankState::beginTick() {
@@ -127,7 +129,7 @@ bool RuntimeVblankState::consumeBackQueueClearAfterIrqWake() {
 }
 
 bool RuntimeVblankState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameState) {
-	runtime.runDueTimers();
+	runDueRuntimeTimers(runtime);
 	if (!runtime.m_machine.cpu().isHaltedUntilIrq()) {
 		resetHaltIrqWait();
 		return false;
@@ -153,12 +155,12 @@ bool RuntimeVblankState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameSt
 		if (frameState.cycleBudgetRemaining > 0) {
 			const i64 cyclesToTarget = runtime.m_machine.scheduler().nextDeadline() - runtime.m_machine.scheduler().nowCycles();
 			if (cyclesToTarget <= 0) {
-				runtime.runDueTimers();
+				runDueRuntimeTimers(runtime);
 				continue;
 			}
 			const int idleCycles = static_cast<int>(std::min<i64>(frameState.cycleBudgetRemaining, cyclesToTarget));
 			frameState.cycleBudgetRemaining -= idleCycles;
-			runtime.advanceTime(idleCycles);
+			advanceRuntimeTime(runtime, idleCycles);
 			if (tryCompleteTickOnPendingVblankIrq(runtime, frameState)) {
 				return true;
 			}

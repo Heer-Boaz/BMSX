@@ -4,34 +4,18 @@
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/program/program_loader.h"
 #include "machine/runtime/resource_usage_detector.h"
+#include "machine/runtime/runtime_engine_irq.h"
+#include "machine/runtime/runtime_timing_config.h"
 #include "core/engine_core.h"
 #include "rompack/rompack.h"
 #include "input/input.h"
-#include "render/shared/render_queues.h"
 #include "render/texturemanager.h"
 #include <array>
-#include <algorithm>
-#include <chrono>
-#include <cmath>
 #include <cctype>
-#include <cstdint>
-#include <ctime>
-#include <cstdlib>
-#include <cstdio>
-#include <cstring>
-#include <iomanip>
-#include <iostream>
-#include <limits>
 #include <stdexcept>
-#include <unordered_set>
-#include <vector>
 
 namespace bmsx {
 namespace {
-inline double to_ms(std::chrono::steady_clock::duration duration) {
-	return std::chrono::duration<double, std::milli>(duration).count();
-}
-
 inline std::runtime_error runtimeFault(const std::string& message) {
 	return BMSX_RUNTIME_ERROR("Runtime fault: " + message);
 }
@@ -81,8 +65,8 @@ Runtime::Runtime(const RuntimeOptions& options)
 	m_machine.initializeSystemIo();
 	m_machine.resetDevices();
 	vblank.setVblankCycles(*this, options.vblankCycles);
-	setVdpWorkUnitsPerSec(options.vdpWorkUnitsPerSec);
-	setGeoWorkUnitsPerSec(options.geoWorkUnitsPerSec);
+	setVdpWorkUnitsPerSec(*this, options.vdpWorkUnitsPerSec);
+	setGeoWorkUnitsPerSec(*this, options.geoWorkUnitsPerSec);
 	m_randomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 	refreshMemoryMap();
 	m_machine.cpu().setExternalRootMarker([this](GcHeap& heap) {
@@ -128,13 +112,11 @@ void Runtime::boot(const ProgramAsset& asset, ProgramMetadata* metadata) {
 }
 
 void Runtime::resetRuntimeForProgramReload() {
-	resetFrameState();
+	frameLoop.resetFrameState(*this);
 	m_runtimeFailed = false;
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
-	m_cartBootPrepared = false;
-	m_pendingCartBoot = false;
-	setCartBootReadyFlag(false);
+	cartBoot.reset(*this);
 	m_hostFaultMessage.reset();
 	m_moduleCache.clear();
 	m_machine.cpu().clearGlobalSlots();
@@ -166,162 +148,6 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 	}
 }
 
-void Runtime::setCartBootReadyFlag(bool value) {
-	m_machine.memory().writeValue(IO_SYS_CART_BOOTREADY, valueNumber(value ? 1.0 : 0.0));
-}
-
-void Runtime::prepareCartBootIfNeeded() {
-	if (!isEngineProgramActive()) {
-		return;
-	}
-	if (!EngineCore::instance().hasLoadedCartProgram()) {
-		return;
-	}
-	if (m_cartBootPrepared) {
-		return;
-	}
-	m_cartBootPrepared = true;
-	setCartBootReadyFlag(true);
-}
-
-bool Runtime::pollSystemBootRequest() {
-	if (!isEngineProgramActive()) {
-		return false;
-	}
-	if (m_machine.memory().readIoU32(IO_SYS_BOOT_CART) == 0u) {
-		return false;
-	}
-	m_machine.memory().writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
-	machineScheduler.clearQueuedTime();
-	m_pendingCartBoot = true;
-	return true;
-}
-
-bool Runtime::processPendingCartBoot() {
-	if (!m_pendingCartBoot) {
-		return false;
-	}
-	if (frameLoop.frameActive) {
-		resetFrameState();
-	}
-	if (hasEntryContinuation()) {
-		m_pendingCall = PendingCall::None;
-		vblank.clearHaltUntilIrq(*this);
-	}
-	machineScheduler.clearQueuedTime();
-	m_pendingCartBoot = false;
-	try {
-		if (!EngineCore::instance().bootLoadedCart()) {
-			setCartBootReadyFlag(false);
-			EngineCore::instance().log(LogLevel::Error,
-				"Runtime fault: deferred cart boot request failed while leaving system boot screen active.\n");
-		}
-	} catch (const std::exception& error) {
-		setCartBootReadyFlag(false);
-		EngineCore::instance().log(LogLevel::Error,
-			"Runtime fault: deferred cart boot request failed while leaving system boot screen active: %s\n",
-			error.what());
-	}
-	return true;
-}
-
-void Runtime::refreshDeviceTimings(i64 nowCycles) {
-	MachineTiming machineTiming{};
-	machineTiming.cpuHz = timing.cpuHz;
-	machineTiming.dmaBytesPerSecIso = timing.dmaBytesPerSecIso;
-	machineTiming.dmaBytesPerSecBulk = timing.dmaBytesPerSecBulk;
-	machineTiming.imgDecBytesPerSec = timing.imgDecBytesPerSec;
-	machineTiming.geoWorkUnitsPerSec = timing.geoWorkUnitsPerSec;
-	machineTiming.vdpWorkUnitsPerSec = timing.vdpWorkUnitsPerSec;
-	m_machine.refreshDeviceTimings(machineTiming, nowCycles);
-}
-
-void Runtime::advanceTime(int cycles) {
-	if (cycles <= 0) {
-		return;
-	}
-	m_machine.advanceDevices(cycles);
-	runDueTimers();
-}
-
-void Runtime::runDueTimers() {
-	while (m_machine.scheduler().hasDueTimer()) {
-		const uint16_t event = m_machine.scheduler().popDueTimer();
-		dispatchTimer(static_cast<uint8_t>(event >> 8u), static_cast<uint8_t>(event & 0xffu));
-	}
-}
-
-void Runtime::dispatchTimer(uint8_t kind, uint8_t payload) {
-	switch (kind) {
-		case TimerKindVblankBegin:
-			vblank.handleBeginTimer(*this);
-			return;
-		case TimerKindVblankEnd:
-			vblank.handleEndTimer(*this);
-			return;
-		case TimerKindDeviceService:
-			runDeviceService(payload);
-			return;
-		default:
-			throw runtimeFault("unknown timer kind " + std::to_string(kind) + ".");
-	}
-}
-
-void Runtime::runDeviceService(uint8_t deviceKind) {
-	m_machine.runDeviceService(deviceKind);
-}
-
-void Runtime::raiseEngineIrq(uint32_t mask) {
-	constexpr uint32_t kAllowedMask = IRQ_REINIT | IRQ_NEWGAME;
-	if (mask == 0) {
-		throw runtimeFault("engine IRQ mask must be non-zero.");
-	}
-	const uint32_t unsupported = mask & ~kAllowedMask;
-	if (unsupported != 0u) {
-		throw runtimeFault("unsupported engine IRQ mask " + std::to_string(unsupported) + ".");
-	}
-	m_machine.irqController().raise(mask);
-}
-
-RunResult Runtime::runWithBudget() {
-	FrameState& frameState = frameLoop.frameState;
-	int remaining = frameState.cycleBudgetRemaining;
-	RunResult result = RunResult::Yielded;
-	runDueTimers();
-	while (remaining > 0) {
-		int sliceBudget = remaining;
-		const i64 nextDeadline = m_machine.scheduler().nextDeadline();
-		if (nextDeadline != std::numeric_limits<i64>::max()) {
-			const i64 deadlineBudget = nextDeadline - m_machine.scheduler().nowCycles();
-			if (deadlineBudget <= 0) {
-				runDueTimers();
-				continue;
-			}
-			if (deadlineBudget < sliceBudget) {
-				sliceBudget = static_cast<int>(deadlineBudget);
-			}
-		}
-		m_machine.scheduler().beginCpuSlice(sliceBudget);
-		result = m_machine.cpu().run(sliceBudget);
-		m_machine.scheduler().endCpuSlice();
-		const int sliceRemaining = m_machine.cpu().instructionBudgetRemaining;
-		const int consumed = sliceBudget - sliceRemaining;
-		if (consumed > 0) {
-			remaining -= consumed;
-			frameState.activeCpuUsedCycles += consumed;
-			advanceTime(consumed);
-		}
-		if (m_machine.cpu().isHaltedUntilIrq() || result == RunResult::Halted) {
-			break;
-		}
-		if (consumed <= 0) {
-			throw runtimeFault("CPU yielded without consuming cycles.");
-		}
-	}
-	frameState.cycleBudgetRemaining = remaining;
-	return result;
-}
-
 void Runtime::queueLifecycleHandlers(bool runInit, bool runNewGame) {
 	uint32_t mask = 0;
 	if (runInit) {
@@ -331,126 +157,8 @@ void Runtime::queueLifecycleHandlers(bool runInit, bool runNewGame) {
 		mask |= IRQ_NEWGAME;
 	}
 	if (mask != 0) {
-		raiseEngineIrq(mask);
+		raiseEngineIrq(*this, mask);
 	}
-}
-
-void Runtime::beginFrameState() {
-	frameLoop.frameActive = true;
-	vblank.beginTick();
-	frameLoop.frameState = FrameState{};
-	frameLoop.frameState.cycleBudgetRemaining = timing.cycleBudgetPerFrame;
-	frameLoop.frameState.cycleBudgetGranted = timing.cycleBudgetPerFrame;
-	frameLoop.frameState.cycleCarryGranted = 0;
-	frameLoop.frameDeltaMs = timing.frameDurationMs;
-	m_machine.vdp().beginFrame();
-	auto key = [this](std::string_view text) {
-		return valueString(m_machine.cpu().internString(text));
-	};
-	auto* gameTable = asTable(m_machine.cpu().getGlobalByKey(key("game")));
-	auto* viewportTable = asTable(gameTable->get(key("viewportsize")));
-	auto viewSize = EngineCore::instance().view()->viewportSize;
-	viewportTable->set(key("x"), valueNumber(static_cast<double>(viewSize.x)));
-	viewportTable->set(key("y"), valueNumber(static_cast<double>(viewSize.y)));
-	auto* viewTable = asTable(gameTable->get(key("view")));
-	auto* view = EngineCore::instance().view();
-	viewTable->set(key("crt_postprocessing_enabled"), valueBool(view->crt_postprocessing_enabled));
-	viewTable->set(key("enable_noise"), valueBool(view->applyNoise));
-	viewTable->set(key("enable_colorbleed"), valueBool(view->applyColorBleed));
-	viewTable->set(key("enable_scanlines"), valueBool(view->applyScanlines));
-	viewTable->set(key("enable_blur"), valueBool(view->applyBlur));
-	viewTable->set(key("enable_glow"), valueBool(view->applyGlow));
-	viewTable->set(key("enable_fringing"), valueBool(view->applyFringing));
-	viewTable->set(key("enable_aperture"), valueBool(view->applyAperture));
-}
-
-void Runtime::finalizeUpdateSlice() {
-	if (hasEntryContinuation() && !vblank.tickCompleted()) {
-		return;
-	}
-	frameLoop.frameActive = false;
-	vblank.abandonTick();
-}
-
-bool Runtime::tickUpdate() {
-	if (m_rebootRequested) {
-		m_rebootRequested = false;
-		machineScheduler.clearQueuedTime();
-		if (!EngineCore::instance().rebootLoadedRom()) {
-			EngineCore::instance().log(LogLevel::Error, "Runtime fault: reboot to bootrom failed.\n");
-		}
-		return true;
-	}
-	if (!m_luaInitialized || !m_tickEnabled || m_runtimeFailed) {
-		return false;
-	}
-
-	prepareCartBootIfNeeded();
-	if (pollSystemBootRequest()) {
-		return true;
-	}
-	if (processPendingCartBoot()) {
-		return true;
-	}
-
-	FrameState* const previousState = frameLoop.frameActive ? &frameLoop.frameState : nullptr;
-	const int previousRemaining = previousState != nullptr ? previousState->cycleBudgetRemaining : -1;
-	const bool previousPending = hasEntryContinuation();
-	const i64 previousSequence = machineScheduler.lastTickSequence;
-	bool startedFrame = false;
-	if (frameLoop.frameActive) {
-		if (frameLoop.frameState.cycleBudgetRemaining <= 0 && !machineScheduler.refillFrameBudget(*this, frameLoop.frameState)) {
-			return false;
-		}
-	} else {
-		if (!machineScheduler.startScheduledFrame(*this)) {
-			return false;
-		}
-		startedFrame = true;
-	}
-
-	if (hasEntryContinuation()) {
-		executeUpdateCallback();
-	}
-
-	if (startedFrame) {
-		auto key = [this](std::string_view text) {
-			return valueString(m_machine.cpu().internString(text));
-		};
-		auto* gameTable = asTable(m_machine.cpu().getGlobalByKey(key("game")));
-		auto* viewTable = asTable(gameTable->get(key("view")));
-		auto* view = EngineCore::instance().view();
-		auto readViewBool = [](Value value, const char* field) -> bool {
-			if (!valueIsBool(value)) {
-				throw BMSX_RUNTIME_ERROR(std::string("game.view.") + field + " must be boolean.");
-			}
-			return valueToBool(value);
-		};
-		view->crt_postprocessing_enabled = readViewBool(viewTable->get(key("crt_postprocessing_enabled")), "crt_postprocessing_enabled");
-		view->applyNoise = readViewBool(viewTable->get(key("enable_noise")), "enable_noise");
-		view->applyColorBleed = readViewBool(viewTable->get(key("enable_colorbleed")), "enable_colorbleed");
-		view->applyScanlines = readViewBool(viewTable->get(key("enable_scanlines")), "enable_scanlines");
-		view->applyBlur = readViewBool(viewTable->get(key("enable_blur")), "enable_blur");
-		view->applyGlow = readViewBool(viewTable->get(key("enable_glow")), "enable_glow");
-		view->applyFringing = readViewBool(viewTable->get(key("enable_fringing")), "enable_fringing");
-		view->applyAperture = readViewBool(viewTable->get(key("enable_aperture")), "enable_aperture");
-		m_debugUpdateCountTotal += 1;
-	}
-
-	frameLoop.frameState.updateExecuted = !hasEntryContinuation();
-	flushAssetEdits();
-	finalizeUpdateSlice();
-	FrameState* const nextState = frameLoop.frameActive ? &frameLoop.frameState : nullptr;
-	if (nextState != previousState) {
-		return true;
-	}
-	if (nextState != nullptr && nextState->cycleBudgetRemaining != previousRemaining) {
-		return true;
-	}
-	if (hasEntryContinuation() != previousPending) {
-		return true;
-	}
-	return machineScheduler.lastTickSequence != previousSequence;
 }
 
 void Runtime::tickIdeInput() {
@@ -468,7 +176,7 @@ void Runtime::tickTerminalInput() {
 
 void Runtime::tickTerminalMode() {
 	// Terminal mode update - stub for now
-	flushAssetEdits();
+	m_machine.vdp().flushAssetEdits();
 }
 
 void Runtime::tickTerminalModeDraw() {
@@ -479,26 +187,7 @@ void Runtime::requestProgramReload() {
 	// Reboot is executed on the next update boundary so the active Lua call can unwind first.
 	m_rebootRequested = true;
 	m_luaInitialized = false;
-	resetFrameState();
-}
-
-void Runtime::resetFrameState() {
-	frameLoop.frameActive = false;
-	vblank.abandonTick();
-	m_machine.inputController().restoreSampleArmed(false);
-	frameLoop.frameState = FrameState{};
-	vblank.clearHaltUntilIrq(*this);
-	machineScheduler.reset();
-	frameLoop.reset();
-	screen.reset();
-	machineScheduler.resetTickTelemetry();
-	vblank.reset(*this);
-}
-
-void Runtime::resetCartBootState() {
-	m_cartBootPrepared = false;
-	m_pendingCartBoot = false;
-	setCartBootReadyFlag(false);
+	frameLoop.resetFrameState(*this);
 }
 
 RuntimeState Runtime::captureCurrentState() const {
@@ -528,16 +217,8 @@ void Runtime::applyState(const RuntimeState& state) {
 	for (const auto& [key, value] : state.globals) {
 		m_machine.cpu().setGlobalByKey(key, value);
 	}
-	flushAssetEdits();
+	m_machine.vdp().flushAssetEdits();
 	m_machine.resetRenderBuffers();
-}
-
-void Runtime::setSkyboxImages(const SkyboxImageIds& ids) {
-	m_machine.vdp().setSkyboxImages(ids);
-}
-
-void Runtime::clearSkybox() {
-	m_machine.vdp().clearSkybox();
 }
 
 Value Runtime::getGlobal(std::string_view name) {
@@ -557,65 +238,10 @@ void Runtime::setCanonicalization(CanonicalizationType canonicalization) {
 	m_canonicalization = canonicalization;
 }
 
-void Runtime::setCpuHz(i64 hz) {
-	timing.cpuHz = hz;
-	refreshDeviceTimings(m_machine.scheduler().currentNowCycles());
-}
-
-void Runtime::applyActiveMachineTiming(i64 cpuHz) {
-	const MachineManifest& manifest = EngineCore::instance().machineManifest();
-	const int cycleBudget = calcCyclesPerFrame(cpuHz, timing.ufpsScaled);
-	const i64 vblankCycles = resolveVblankCycles(cpuHz, timing.ufpsScaled, manifest.viewportHeight);
-	setCpuHz(cpuHz);
-	setCycleBudgetPerFrame(cycleBudget);
-	vblank.setVblankCycles(*this, static_cast<int>(vblankCycles));
-	setVdpWorkUnitsPerSec(static_cast<int>(manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC)));
-	setGeoWorkUnitsPerSec(static_cast<int>(manifest.geoWorkUnitsPerSec.value_or(DEFAULT_GEO_WORK_UNITS_PER_SEC)));
-}
-
 void Runtime::resetHardwareState() {
 	m_machine.resetDevices();
 	vblank.reset(*this);
 	m_machine.resetRenderBuffers();
-}
-
-void Runtime::setVdpWorkUnitsPerSec(int workUnitsPerSec) {
-	if (workUnitsPerSec <= 0) {
-		throw runtimeFault("work_units_per_sec must be greater than 0.");
-	}
-	timing.vdpWorkUnitsPerSec = workUnitsPerSec;
-	m_machine.vdp().setTiming(timing.cpuHz, timing.vdpWorkUnitsPerSec, m_machine.scheduler().currentNowCycles());
-}
-
-void Runtime::setGeoWorkUnitsPerSec(int workUnitsPerSec) {
-	if (workUnitsPerSec <= 0) {
-		throw runtimeFault("geo_work_units_per_sec must be greater than 0.");
-	}
-	timing.geoWorkUnitsPerSec = workUnitsPerSec;
-	m_machine.geometryController().setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, m_machine.scheduler().currentNowCycles());
-}
-
-void Runtime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk, int vdpWorkUnitsPerSec, int geoWorkUnitsPerSec) {
-	timing.imgDecBytesPerSec = imgDecBytesPerSec;
-	timing.dmaBytesPerSecIso = dmaBytesPerSecIso;
-	timing.dmaBytesPerSecBulk = dmaBytesPerSecBulk;
-	setVdpWorkUnitsPerSec(vdpWorkUnitsPerSec);
-	setGeoWorkUnitsPerSec(geoWorkUnitsPerSec);
-	refreshDeviceTimings(m_machine.scheduler().currentNowCycles());
-}
-
-void Runtime::setCycleBudgetPerFrame(int budget) {
-	if (budget == timing.cycleBudgetPerFrame) {
-		return;
-	}
-	timing.cycleBudgetPerFrame = budget;
-	setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(budget)));
-	refreshDeviceTimings(m_machine.scheduler().currentNowCycles());
-	vblank.configureCycleBudget(*this);
-}
-
-bool Runtime::hasActiveTick() const {
-	return frameLoop.frameActive && m_luaInitialized && m_tickEnabled && !m_runtimeFailed;
 }
 
 uint32_t Runtime::trackedRamUsedBytes() const {
@@ -665,55 +291,12 @@ void Runtime::refreshMemoryMapGlobals() {
 	setGlobal("sys_vram_size", valueNumber(static_cast<double>(trackedVramTotalBytes())));
 }
 
-void Runtime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, AssetBuildMode mode) {
-	if (mode == AssetBuildMode::Cart) {
-		m_machine.memory().resetCartAssets();
-	} else {
-		m_machine.memory().resetAssetMemory();
-	}
-	m_machine.vdp().registerImageAssets(assets, keepDecodedData);
-	std::vector<const AudioAsset*> audioAssets;
-	audioAssets.reserve(assets.audio.size());
-	std::unordered_set<std::string> audioIdSet;
-	audioIdSet.reserve(assets.audio.size());
-	for (const auto& entry : assets.audio) {
-		const auto& audioAsset = entry.second;
-		audioAssets.push_back(&audioAsset);
-		audioIdSet.insert(audioAsset.id);
-	}
-	std::sort(audioAssets.begin(), audioAssets.end(), [](const AudioAsset* lhs, const AudioAsset* rhs) {
-		return lhs->id < rhs->id;
-	});
-	for (const auto* audioAsset : audioAssets) {
-		const std::string& id = audioAsset->id;
-		if (m_machine.memory().hasAsset(id)) {
-			continue;
-		}
-		m_machine.memory().registerAudioMeta(
-			id,
-			static_cast<uint32_t>(audioAsset->sampleRate),
-			static_cast<uint32_t>(audioAsset->channels),
-			static_cast<uint32_t>(audioAsset->bitsPerSample),
-			static_cast<uint32_t>(audioAsset->frames),
-			static_cast<uint32_t>(audioAsset->dataOffset),
-			static_cast<uint32_t>(audioAsset->dataSize)
-		);
-	}
-
-	m_machine.memory().finalizeAssetTable();
-	m_machine.memory().markAllAssetsDirty();
-}
-
 void Runtime::restoreVramSlotTextures() {
 	m_machine.vdp().restoreVramSlotTextures();
 }
 
 void Runtime::captureVramTextureSnapshots() {
 	m_machine.vdp().captureVramTextureSnapshots();
-}
-
-void Runtime::flushAssetEdits() {
-	m_machine.vdp().flushAssetEdits();
 }
 
 Value Runtime::canonicalizeIdentifier(std::string_view value) {
@@ -731,52 +314,6 @@ Value Runtime::canonicalizeIdentifier(std::string_view value) {
 		ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
 	}
 	return valueString(m_machine.cpu().internString(result));
-}
-
-std::vector<Value> Runtime::acquireValueScratch() {
-	if (!m_valueScratchPool.empty()) {
-		auto scratch = std::move(m_valueScratchPool.back());
-		m_valueScratchPool.pop_back();
-		scratch.clear();
-		return scratch;
-	}
-	return {};
-}
-
-void Runtime::releaseValueScratch(std::vector<Value>&& values) {
-	values.clear();
-	if (m_valueScratchPool.size() < MAX_POOLED_RUNTIME_SCRATCH) {
-		m_valueScratchPool.push_back(std::move(values));
-	}
-}
-
-void Runtime::executeUpdateCallback() {
-	try {
-		while (true) {
-			if (m_machine.cpu().isHaltedUntilIrq() && vblank.runHaltedUntilIrq(*this, frameLoop.frameState)) {
-				return;
-			}
-			if (vblank.consumeBackQueueClearAfterIrqWake()) {
-				RenderQueues::clearBackQueues();
-			}
-			if (!hasEntryContinuation()) {
-				return;
-			}
-			RunResult result = runWithBudget();
-			if (m_machine.cpu().isHaltedUntilIrq()) {
-				if (vblank.runHaltedUntilIrq(*this, frameLoop.frameState)) {
-					return;
-				}
-				continue;
-			}
-			if (result == RunResult::Halted) {
-				m_pendingCall = PendingCall::None;
-			}
-			return;
-		}
-	} catch (const std::exception& e) {
-		handleLuaError(e.what());
-	}
 }
 
 } // namespace bmsx

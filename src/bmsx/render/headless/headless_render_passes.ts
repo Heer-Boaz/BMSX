@@ -61,7 +61,7 @@ function ensureAtlasResource(atlasId: number, slotBytes: number, label: string):
 		return;
 	}
 	let found = false;
-	for (const asset of Runtime.instance.listImageAssets()) {
+	for (const asset of Runtime.instance.assets.listImageAssets()) {
 		if (asset.type !== 'atlas') continue;
 		const meta = asset.imgmeta;
 		if (!meta || meta.atlasid !== atlasId) continue;
@@ -353,7 +353,7 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 			const snapshot: Snapshot = [`faces=${faces.map((face) => face[1]).join(',')}`];
 			for (let index = 0; index < faces.length; index += 1) {
 				const [face, id] = faces[index];
-				const handle = Runtime.instance.resolveAssetHandle(id);
+				const handle = Runtime.instance.machine.memory.resolveAssetHandle(id);
 				const sample = Runtime.instance.machine.vdp.resolveBlitterSample(handle);
 				if (sample.atlasId === ENGINE_ATLAS_INDEX) {
 					throw new Error(`[HeadlessSkybox] Skybox image '${id}' resolved to the engine atlas.`);

@@ -243,6 +243,7 @@ import type { StringValue } from '../memory/string_pool';
 import type { LuaMarshalContext } from '../runtime/types';
 import type { Runtime } from '../runtime/runtime';
 import * as runtimeLuaPipeline from '../../ide/runtime/runtime_lua_pipeline';
+import { callClosureInto } from '../runtime/runtime_lua_executor';
 import { compileLoadChunk } from '../program/lua_load_compiler';
 
 const ACTION_STATE_FLAG_PRESSED = 1 << 0;
@@ -771,7 +772,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			callee.invoke(args, out);
 			return;
 		}
-		runtime.callClosureInto(callee as Closure, args, out);
+		callClosureInto(runtime, callee as Closure, args, out);
 	};
 	const key = (name: string): StringValue => runtime.internString(name);
 	const setKey = (table: Table, name: string, value: Value): void => {
@@ -1190,7 +1191,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_host_fault_stage_none', HOST_FAULT_STAGE_NONE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_host_fault_stage_startup_audio_refresh', HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_host_fault_message', createNativeFunction('sys_host_fault_message', (_args, out) => {
-		const message = runtime.getHostFaultMessage();
+		const message = runtime.hostFault.getMessage();
 		out.push(message === null ? null : runtime.internString(message));
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cart_magic_addr', CART_ROM_MAGIC_ADDR);
@@ -1333,21 +1334,21 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_overlay_size', runtime.machine.memory.getOverlayRomSize());
 	runtimeLuaPipeline.registerGlobal(runtime, 'resolve_cart_rom_asset_range', createNativeFunction('resolve_cart_rom_asset_range', (args, out) => {
 		const assetId = stringValueToString(args[0] as StringValue);
-		const range = runtime.resolveRomAssetRange(assetId, 'cart');
+		const range = runtime.assets.resolveRomAssetRange(assetId, 'cart');
 		out.push(range.romBase);
 		out.push(range.start);
 		out.push(range.end);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'resolve_sys_rom_asset_range', createNativeFunction('resolve_sys_rom_asset_range', (args, out) => {
 		const assetId = stringValueToString(args[0] as StringValue);
-		const range = runtime.resolveRomAssetRange(assetId, 'sys');
+		const range = runtime.assets.resolveRomAssetRange(assetId, 'sys');
 		out.push(range.romBase);
 		out.push(range.start);
 		out.push(range.end);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'resolve_rom_asset_range', createNativeFunction('resolve_rom_asset_range', (args, out) => {
 		const assetId = stringValueToString(args[0] as StringValue);
-		const range = runtime.resolveRomAssetRange(assetId, 'sys');
+		const range = runtime.assets.resolveRomAssetRange(assetId, 'sys');
 		out.push(range.romBase);
 		out.push(range.start);
 		out.push(range.end);
@@ -1362,7 +1363,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_secondary_atlas_size', VRAM_SECONDARY_ATLAS_SIZE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_framebuffer_size', VRAM_FRAMEBUFFER_SIZE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_staging_size', VRAM_STAGING_SIZE);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_size', runtime.getTrackedVramTotalBytes());
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_size', runtime.machine.resourceUsageDetector.getVramTotalBytes());
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_palette_color', createNativeFunction('sys_palette_color', (args, out) => {
 		const index = args[0] as number;
 		if (!Number.isInteger(index)) {
@@ -1380,25 +1381,25 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		out.push(table);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_cycles_used', createNativeFunction('sys_cpu_cycles_used', (_args, out) => {
-		out.push(runtime.getCpuUsedCyclesLastTick());
+		out.push(runtime.machineScheduler.lastTickCpuUsedCycles);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_cycles_granted', createNativeFunction('sys_cpu_cycles_granted', (_args, out) => {
-		out.push(runtime.getLastTickBudgetGranted());
+		out.push(runtime.machineScheduler.lastTickCpuBudgetGranted);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_active_cycles_used', createNativeFunction('sys_cpu_active_cycles_used', (_args, out) => {
-		out.push(runtime.getActiveCpuUsedCyclesLastTick());
+		out.push(runtime.machineScheduler.lastTickCpuUsedCycles);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_active_cycles_granted', createNativeFunction('sys_cpu_active_cycles_granted', (_args, out) => {
-		out.push(runtime.getActiveCpuCyclesGranted());
+		out.push(runtime.machineScheduler.lastTickCpuBudgetGranted);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_ram_used', createNativeFunction('sys_ram_used', (_args, out) => {
-		out.push(runtime.getTrackedRamUsedBytes());
+		out.push(runtime.machine.resourceUsageDetector.getRamUsedBytes());
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_used', createNativeFunction('sys_vram_used', (_args, out) => {
-		out.push(runtime.getTrackedVramUsedBytes());
+		out.push(runtime.machine.resourceUsageDetector.getVramUsedBytes());
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_work_units_per_sec', createNativeFunction('sys_vdp_work_units_per_sec', (_args, out) => {
-		out.push(runtime.getVdpWorkUnitsPerSec());
+		out.push(runtime.timing.vdpWorkUnitsPerSec);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_work_units_last', createNativeFunction('sys_vdp_work_units_last', (_args, out) => {
 		out.push(runtime.machineScheduler.lastTickVdpFrameCost);
@@ -1602,7 +1603,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'pcall', createNativeFunction('pcall', (args, out) => {
 		const fn = args[0];
-		const callArgs = runtime.acquireValueScratch();
+		const callArgs = runtime.luaScratch.acquireValue();
 		try {
 			for (let index = 1; index < args.length; index += 1) {
 				callArgs.push(args[index]);
@@ -1620,14 +1621,14 @@ export function seedLuaGlobals(runtime: Runtime): void {
 						: error as Value,
 			);
 		} finally {
-			runtime.releaseValueScratch(callArgs);
+			runtime.luaScratch.releaseValue(callArgs);
 		}
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'xpcall', createNativeFunction('xpcall', (args, out) => {
 		const fn = args[0];
 		const handler = args[1];
-		const callArgs = runtime.acquireValueScratch();
-		const handlerArgs = runtime.acquireValueScratch();
+		const callArgs = runtime.luaScratch.acquireValue();
+		const handlerArgs = runtime.luaScratch.acquireValue();
 		try {
 			for (let index = 2; index < args.length; index += 1) {
 				callArgs.push(args[index]);
@@ -1643,8 +1644,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			callClosureValue(handler, handlerArgs, out);
 			prependValue(out, false);
 		} finally {
-			runtime.releaseValueScratch(handlerArgs);
-			runtime.releaseValueScratch(callArgs);
+			runtime.luaScratch.releaseValue(handlerArgs);
+			runtime.luaScratch.releaseValue(callArgs);
 		}
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'loadstring', createNativeFunction('loadstring', (args, out) => {
@@ -2001,8 +2002,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		let result = '';
 		let searchIndex = 0;
 		let lastIndex = 0;
-		const fnArgs = runtime.acquireValueScratch();
-		const fnResults = runtime.acquireValueScratch();
+		const fnArgs = runtime.luaScratch.acquireValue();
+		const fnResults = runtime.luaScratch.acquireValue();
 		try {
 			const renderReplacement = (match: RegExpExecArray): string => {
 				if (isStringValue(replacement) || typeof replacement === 'number') {
@@ -2080,8 +2081,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			result += source.slice(lastIndex);
 			out.push(runtime.internString(result), count);
 		} finally {
-			runtime.releaseValueScratch(fnResults);
-			runtime.releaseValueScratch(fnArgs);
+			runtime.luaScratch.releaseValue(fnResults);
+			runtime.luaScratch.releaseValue(fnArgs);
 		}
 	}));
 	setKey(stringTable, 'gmatch', createNativeFunction('string.gmatch', (args, out) => {
@@ -2207,7 +2208,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			out.push(runtime.internString(''));
 			return;
 		}
-		const parts = runtime.acquireStringScratch();
+		const parts = runtime.luaScratch.acquireString();
 		try {
 			for (let index = startIndex; index <= endIndex; index += 1) {
 				const value = target.get(index);
@@ -2215,7 +2216,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			}
 			out.push(runtime.internString(parts.join(separator)));
 		} finally {
-			runtime.releaseStringScratch(parts);
+			runtime.luaScratch.releaseString(parts);
 		}
 	}));
 	setKey(tableLibrary, 'pack', createNativeFunction('table.pack', (args, out) => {
@@ -2252,9 +2253,9 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const target = args[0] as Table;
 		const comparator = args.length > 1 ? args[1] : null;
 		const length = target.length();
-		const values = runtime.acquireValueScratch();
-		const comparatorArgs = runtime.acquireValueScratch();
-		const comparatorResults = runtime.acquireValueScratch();
+		const values = runtime.luaScratch.acquireValue();
+		const comparatorArgs = runtime.luaScratch.acquireValue();
+		const comparatorResults = runtime.luaScratch.acquireValue();
 		try {
 			values.length = length;
 			for (let index = 1; index <= length; index += 1) {
@@ -2287,9 +2288,9 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			}
 			out.push(target);
 		} finally {
-			runtime.releaseValueScratch(comparatorResults);
-			runtime.releaseValueScratch(comparatorArgs);
-			runtime.releaseValueScratch(values);
+			runtime.luaScratch.releaseValue(comparatorResults);
+			runtime.luaScratch.releaseValue(comparatorArgs);
+			runtime.luaScratch.releaseValue(values);
 		}
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'table', tableLibrary);
@@ -2567,7 +2568,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			const native = createNativeFunction(`api.${name}`, (args, out) => {
 				const ctxBase = buildMarshalContext(runtime);
 				const visited = new WeakMap<Table, unknown>();
-				const jsArgs = runtime.acquireValueScratch() as unknown[];
+				const jsArgs = runtime.luaScratch.acquireValue() as unknown[];
 				try {
 					for (let index = 0; index < args.length; index += 1) {
 						const nextCtx = extendMarshalContext(ctxBase, `arg${index}`);
@@ -2579,7 +2580,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 					const message = extractErrorMessage(error);
 					throw runtime.createApiRuntimeError(`[api.${name}] ${message}`);
 				} finally {
-					runtime.releaseValueScratch(jsArgs as unknown as Value[]);
+					runtime.luaScratch.releaseValue(jsArgs as unknown as Value[]);
 				}
 			});
 			runtimeLuaPipeline.registerGlobal(runtime, name, native);

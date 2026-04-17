@@ -1,10 +1,7 @@
 import { $ } from '../../core/engine_core';
+import type { Runtime } from './runtime';
 
-export interface StartupAudioFaultSink {
-	publishStartupHostFault(error: unknown): void;
-}
-
-export function startEngineWithDeferredStartupAudioRefresh(runtime: StartupAudioFaultSink): void {
+export function startEngineWithDeferredStartupAudioRefresh(runtime: Runtime): void {
 	$.bootstrapStartupAudio();
 	$.start();
 	if (!$.platform.audio.available) {
@@ -15,7 +12,7 @@ export function startEngineWithDeferredStartupAudioRefresh(runtime: StartupAudio
 		const audioRefreshHandle = $.platform.frames.start(() => {
 			audioRefreshHandle.stop();
 			void $.refresh_audio_assets().catch((error: unknown) => {
-				runtime.publishStartupHostFault(error);
+				runtime.hostFault.publishStartup(runtime, error);
 				console.error('Deferred startup audio refresh failed:', error);
 			});
 		});

@@ -1374,12 +1374,12 @@ export class VDP implements VramWriteSink {
 	}
 
 	private resolveBlitterSource(handle: number): VdpBlitterSource {
-		const entry = Runtime.instance.getAssetEntryByHandle(handle);
+		const entry = Runtime.instance.machine.memory.getAssetEntryByHandle(handle);
 		if (entry.type !== 'image') {
 			throw vdpFault(`asset handle ${handle} is not an image.`);
 		}
 		if ((entry.flags & ASSET_FLAG_VIEW) !== 0) {
-			const baseEntry = Runtime.instance.getAssetEntryByHandle(entry.ownerIndex);
+			const baseEntry = Runtime.instance.machine.memory.getAssetEntryByHandle(entry.ownerIndex);
 			const slot = this.vramSlots.find((candidate) => candidate.entry.ownerIndex === baseEntry.ownerIndex);
 			if (!slot) {
 				throw vdpFault(`image handle ${handle} is not mapped to a blitter surface.`);
@@ -1543,7 +1543,7 @@ export class VDP implements VramWriteSink {
 			let cursorX = x;
 			for (let glyphIndex = start; glyphIndex < lineLength && glyphIndex < end; glyphIndex += 1) {
 				const glyph = font.getGlyph(line.charAt(baseIndex + glyphIndex));
-				const handle = Runtime.instance.resolveAssetHandle(glyph.imgid);
+				const handle = Runtime.instance.machine.memory.resolveAssetHandle(glyph.imgid);
 				const source = this.resolveBlitterSource(handle);
 				const clipped = computeClippedRect(cursorX, cursorY, cursorX + source.width, cursorY + source.height, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
 				if (clipped.area > 0) {
@@ -1708,7 +1708,7 @@ export class VDP implements VramWriteSink {
 				if (tile === false) {
 					return IO_VDP_TILE_HANDLE_NONE;
 				}
-				return Runtime.instance.resolveAssetHandle(tile);
+				return Runtime.instance.machine.memory.resolveAssetHandle(tile);
 			},
 			mismatchMessage: (source) => `dma_blit_tiles size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`,
 		});
@@ -2100,7 +2100,7 @@ export class VDP implements VramWriteSink {
 				return;
 			}
 			const atlasEntry = this.atlasResourcesById.get(atlasId)!;
-			const atlasAsset = Runtime.instance.getImageAsset(atlasEntry.resid);
+			const atlasAsset = Runtime.instance.assets.getImageAsset(atlasEntry.resid);
 			const { width, height } = atlasAsset.imgmeta!;
 			const size = width * height * 4;
 			if (size > slotEntry.capacity) {
@@ -2150,7 +2150,7 @@ export class VDP implements VramWriteSink {
 		for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
 			const assetId = ids[SKYBOX_FACE_KEYS[index]];
 			source.getEntry(assetId);
-			const asset = runtime.getImageAsset(assetId);
+			const asset = runtime.assets.getImageAsset(assetId);
 			const meta = asset.imgmeta!;
 			if (!meta.atlassed) {
 				throw vdpFault(`skybox image '${assetId}' must be atlassed.`);
@@ -2227,7 +2227,7 @@ export class VDP implements VramWriteSink {
 			if (entry.type !== 'image' && entry.type !== 'atlas') {
 				continue;
 			}
-			const imgAsset = Runtime.instance.getImageAssetByEntry(entry);
+			const imgAsset = Runtime.instance.assets.getImageAssetByEntry(entry);
 			const meta = imgAsset.imgmeta!;
 			if (entry.type === 'atlas') {
 				const atlasId = meta.atlasid!;
@@ -2243,7 +2243,7 @@ export class VDP implements VramWriteSink {
 			}
 		}
 
-		const engineAtlasAsset = Runtime.instance.getImageAsset(engineAtlasName, source);
+		const engineAtlasAsset = Runtime.instance.assets.getImageAsset(engineAtlasName, source);
 		const engineAtlasMeta = engineAtlasAsset.imgmeta!;
 		if (engineAtlasMeta.width <= 0 || engineAtlasMeta.height <= 0) {
 			throw vdpFault(`engine atlas '${engineAtlasName}' missing dimensions.`);
@@ -2284,7 +2284,7 @@ export class VDP implements VramWriteSink {
 
 		for (let index = 0; index < viewEntries.length; index += 1) {
 			const entry = viewEntries[index];
-			const imgAsset = Runtime.instance.getImageAssetByEntry(entry);
+			const imgAsset = Runtime.instance.assets.getImageAssetByEntry(entry);
 			const meta = imgAsset.imgmeta!;
 			const coords = meta.texcoords!;
 			const atlasId = meta.atlasid!;
@@ -2297,7 +2297,7 @@ export class VDP implements VramWriteSink {
 				atlasHeight = engineAtlasMeta.height;
 			} else {
 				const atlasEntry = this.atlasResourcesById.get(atlasId)!;
-				const atlasAsset = Runtime.instance.getImageAssetByEntry(atlasEntry);
+				const atlasAsset = Runtime.instance.assets.getImageAssetByEntry(atlasEntry);
 				atlasWidth = atlasAsset.imgmeta.width;
 				atlasHeight = atlasAsset.imgmeta.height;
 				const mappedSlot = this.atlasSlotById.get(atlasId);

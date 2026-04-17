@@ -1,5 +1,7 @@
 import { IRQ_VBLANK } from '../bus/io';
 import type { FrameState, Runtime } from './runtime';
+import { advanceRuntimeTime, runDueRuntimeTimers } from './runtime_cpu_executor';
+import { refreshDeviceTimings } from './runtime_timing_config';
 
 export type RuntimeVblankSnapshot = {
 	cyclesIntoFrame: number;
@@ -66,7 +68,7 @@ export class RuntimeVblankState {
 			this.setVblankStatus(runtime, true);
 		}
 		this.scheduleCurrentFrameTimers(runtime);
-		runtime.refreshDeviceTimings(runtime.machine.scheduler.nowCycles);
+		refreshDeviceTimings(runtime, runtime.machine.scheduler.nowCycles);
 	}
 
 	public capture(runtime: Runtime): RuntimeVblankSnapshot {
@@ -91,7 +93,7 @@ export class RuntimeVblankState {
 			|| (this.getCyclesIntoFrame(runtime) >= this.vblankStartCycle);
 		this.setVblankStatus(runtime, vblankActive);
 		this.scheduleCurrentFrameTimers(runtime);
-		runtime.refreshDeviceTimings(runtime.machine.scheduler.nowCycles);
+		refreshDeviceTimings(runtime, runtime.machine.scheduler.nowCycles);
 	}
 
 	public beginTick(): void {
@@ -134,7 +136,7 @@ export class RuntimeVblankState {
 	}
 
 	public runHaltedUntilIrq(runtime: Runtime, state: FrameState): boolean {
-		runtime.runDueTimers();
+		runDueRuntimeTimers(runtime);
 		if (!runtime.machine.cpu.isHaltedUntilIrq()) {
 			this.resetHaltIrqWait();
 			return false;
@@ -160,12 +162,12 @@ export class RuntimeVblankState {
 			if (state.cycleBudgetRemaining > 0) {
 				const cyclesToTarget = runtime.machine.scheduler.nextDeadline() - runtime.machine.scheduler.nowCycles;
 				if (cyclesToTarget <= 0) {
-					runtime.runDueTimers();
+					runDueRuntimeTimers(runtime);
 					continue;
 				}
 				const idleCycles = cyclesToTarget < state.cycleBudgetRemaining ? cyclesToTarget : state.cycleBudgetRemaining;
 				state.cycleBudgetRemaining -= idleCycles;
-				runtime.advanceTime(idleCycles);
+				advanceRuntimeTime(runtime, idleCycles);
 				if (this.tryCompleteTickOnPendingVblankIrq(runtime, state)) {
 					return true;
 				}

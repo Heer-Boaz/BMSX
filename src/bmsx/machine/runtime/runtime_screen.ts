@@ -83,7 +83,7 @@ export class RuntimeScreenState {
 		this.recordPresentation(mode, commitFrame);
 		$.sndmaster.finishFrame();
 		$.view.drawgame();
-		runtime.scheduleDeferredCartBootPreparation();
+		runtime.cartBoot.scheduleDeferredPreparation(runtime);
 	}
 
 	private markPresentation(mode: RuntimePresentationMode, commitFrame: boolean): void {
@@ -149,7 +149,7 @@ export class RuntimeScreenState {
 	public runOverlay(runtime: Runtime): void {
 		this.clearPresentation();
 		if (runtime.frameLoop.currentFrameState !== null) {
-			runtime.abandonFrameState();
+			runtime.frameLoop.abandonFrameState(runtime);
 		}
 		runtime.machineScheduler.clearQueuedTime();
 		runtimeIde.tickIDE(runtime);
@@ -220,8 +220,8 @@ export class RuntimeScreenState {
 			+ `tick_deferred=${this.debugPresentTickDeferred} tick_held=${this.debugPresentTickHeld} `
 			+ `present_partial=${this.debugPresentPartialPresents} present_commit=${this.debugPresentCommitPresents} `
 			+ `present_hold=${this.debugPresentHoldPresents} present_paused=${this.debugPresentPausedPresents} `
-			+ `draw_pending=${runtime.isDrawPending ? 1 : 0} active_tick=${runtime.hasActiveTick() ? 1 : 0}`
-		);
+				+ `draw_pending=${runtime.isDrawPending ? 1 : 0} active_tick=${runtime.frameLoop.currentFrameState !== null ? 1 : 0}`
+			);
 		this.debugPresentReportAtMs = currentTime;
 		this.debugPresentHostFrames = 0;
 		this.debugPresentTickCompleted = 0;

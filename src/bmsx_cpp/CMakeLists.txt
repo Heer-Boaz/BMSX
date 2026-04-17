@@ -150,10 +150,19 @@ add_library(bmsx_core STATIC
 	machine/scheduler/device_scheduler.cpp
 	machine/runtime/resource_usage_detector.cpp
 	machine/runtime/runtime.cpp
+	machine/runtime/runtime_asset_memory.cpp
+	machine/runtime/runtime_cart_boot.cpp
+	machine/runtime/runtime_cpu_executor.cpp
+	machine/runtime/runtime_engine_irq.cpp
 	machine/runtime/runtime_frame_loop.cpp
+	machine/runtime/runtime_lua_executor.cpp
+	machine/runtime/runtime_lua_scratch.cpp
+	machine/runtime/runtime_machine_specs.cpp
 	machine/runtime/runtime_machine_scheduler.cpp
+	machine/runtime/runtime_memory_specs.cpp
 	machine/runtime/runtime_screen.cpp
 	machine/runtime/runtime_timing.cpp
+	machine/runtime/runtime_timing_config.cpp
 	machine/runtime/runtime_vblank.cpp
 	machine/runtime/runtime_debug.cpp
 	machine/memory/memory.cpp

@@ -69,7 +69,7 @@ export function performHotResume(): boolean {
 			projectRootPath: $.engine_layer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH,
 		});
 		const preserveEngineModules =
-			!runtime.isEngineProgramActive()
+				$.lua_sources !== runtime.engineLuaSources
 			&& engineChanged.size === 0
 			&& !hasPendingEngineModuleReload(runtime);
 		console.log('[IDE] Capturing runtime snapshot for resume');

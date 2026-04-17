@@ -1,4 +1,5 @@
 #include "machine/firmware/firmware_api.h"
+#include "machine/runtime/runtime_timing_config.h"
 
 #include "core/engine_core.h"
 #include "input/input.h"
@@ -618,7 +619,7 @@ std::string Api::get_lua_resource_source(const std::string& path) const {
 }
 
 double Api::get_cpu_freq_hz() const {
-	return static_cast<double>(m_runtime.cpuHz());
+	return static_cast<double>(m_runtime.timing.cpuHz);
 }
 
 void Api::set_cpu_freq_hz(double cpuHz) {
@@ -626,7 +627,7 @@ void Api::set_cpu_freq_hz(double cpuHz) {
 		throw BMSX_RUNTIME_ERROR("[api.set_cpu_freq_hz] cpuHz must be a positive integer.");
 	}
 	const i64 normalizedCpuHz = static_cast<i64>(cpuHz);
-	m_runtime.applyActiveMachineTiming(normalizedCpuHz);
+	applyActiveMachineTiming(m_runtime, normalizedCpuHz);
 }
 
 Value Api::get_player_input_handle(int playerIndex) {

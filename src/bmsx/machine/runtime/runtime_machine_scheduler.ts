@@ -117,12 +117,12 @@ export class RuntimeMachineSchedulerState {
 	public run(runtime: Runtime, hostDeltaMs: number): void {
 		this.accumulateHostTime(runtime, hostDeltaMs);
 		while (this.canRunScheduledUpdate(runtime)) {
-			const progressed = runtime.tickUpdate();
+			const progressed = runtime.frameLoop.tickUpdate(runtime);
 			if (runtime.executionOverlayActive) {
 				this.clearQueuedTime();
 				break;
 			}
-			if (runtime.hasActiveTick() && !progressed) {
+			if (runtime.frameLoop.currentFrameState !== null && !progressed) {
 				break;
 			}
 		}
@@ -174,7 +174,7 @@ export class RuntimeMachineSchedulerState {
 		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
 		if (debugTickRate) {
 			const cyclesUsed = frameState.activeCpuUsedCycles;
-			const yieldsThisFrame = runtime.debugCycleYieldsTotal - this.debugTickYieldsBefore;
+			const yieldsThisFrame = runtime.cpuExecution.debugCycleYieldsTotal - this.debugTickYieldsBefore;
 			this.debugFrameCount += 1;
 			this.debugFrameCyclesUsedAcc += cyclesUsed;
 			this.debugFrameRemainingAcc += frameState.cycleBudgetRemaining;
@@ -221,10 +221,10 @@ export class RuntimeMachineSchedulerState {
 			if (this.debugFrameReportAtMs === 0) {
 				this.debugFrameReportAtMs = $.platform.clock.now();
 			}
-			this.debugTickYieldsBefore = runtime.debugCycleYieldsTotal;
+			this.debugTickYieldsBefore = runtime.cpuExecution.debugCycleYieldsTotal;
 		}
 		this.lastTickCompleted = false;
-		runtime.beginFrameState();
+		runtime.frameLoop.beginFrameState(runtime);
 		return true;
 	}
 }

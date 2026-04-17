@@ -23,8 +23,8 @@ let activeQueueSource: 'front' | 'back' = 'front';
 
 function submitSpriteDirect(imgid: string, x: number, y: number, z: number, scaleX: number, scaleY: number, colorize: color, layer: RenderLayer, parallaxWeight: number, flipH = false, flipV = false): void {
 	const runtime = Runtime.instance;
-	const handle = runtime.resolveAssetHandle(imgid);
-	const entry = runtime.getAssetEntryByHandle(handle);
+	const handle = runtime.machine.memory.resolveAssetHandle(imgid);
+	const entry = runtime.machine.memory.getAssetEntryByHandle(handle);
 	if (entry.type !== 'image') {
 		throw new Error(`[Sprite Pipeline] Asset '${imgid}' is not an image.`);
 	}
@@ -153,8 +153,8 @@ export function submit_particle(item: ParticleRenderSubmission): void {
 		throw new Error('submit_particle requires texture.');
 	}
 	const imgid = item.texture;
-	const handle = runtime.resolveAssetHandle(imgid);
-	const entry = runtime.getAssetEntryByHandle(handle);
+	const handle = runtime.machine.memory.resolveAssetHandle(imgid);
+	const entry = runtime.machine.memory.getAssetEntryByHandle(handle);
 	if (entry.type !== 'image') {
 		throw new Error(`[Particles Pipeline] Asset '${imgid}' is not an image.`);
 	}

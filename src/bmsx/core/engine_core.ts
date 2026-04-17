@@ -16,6 +16,8 @@ import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system_machin
 import type { LuaSourceRegistry } from '../machine/program/lua_sources';
 import { GateGroup, taskGate } from './taskgate';
 import { Runtime } from '../machine/runtime/runtime';
+import { raiseEngineIrq } from '../machine/runtime/runtime_engine_irq';
+import { runConsoleChunkToNative } from '../machine/runtime/runtime_lua_executor';
 import { IRQ_NEWGAME } from '../machine/bus/io';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 import { InputSource, KeyModifier } from '../input/playerinput';
@@ -396,15 +398,15 @@ export class EngineCore {
 	}
 
 	public is_cart_program_active(): boolean {
-		return Runtime.hasInstance && !Runtime.instance.isEngineProgramActive();
+		return Runtime.hasInstance && $.lua_sources !== Runtime.instance.engineLuaSources;
 	}
 
 	public request_new_game(): void {
-		Runtime.instance.raiseEngineIrq(IRQ_NEWGAME);
+		raiseEngineIrq(Runtime.instance, IRQ_NEWGAME);
 	}
 
 	public evaluate_lua(source: string): unknown[] {
-		return Runtime.instance.runConsoleChunkToNative(source);
+		return runConsoleChunkToNative(Runtime.instance, source);
 	}
 
 	public consume_button(playerIndex: number, buttonCode: string, source: InputSource) {
@@ -438,9 +440,9 @@ export class EngineCore {
 				if (segments.length === 0) {
 					return undefined;
 				}
-				let cursor: unknown;
-				if (Runtime.hasInstance) {
-					cursor = Runtime.instance.getDataAsset(segments[0]);
+					let cursor: unknown;
+					if (Runtime.hasInstance) {
+						cursor = Runtime.instance.assets.getDataAsset(segments[0]);
 				} else {
 					cursor = this._assets.data[segments[0]];
 				}
@@ -468,16 +470,16 @@ export class EngineCore {
 		if (!this.platform.audio.available) {
 			return;
 		}
-		this.sndmaster.bootstrapRuntimeAudio(DEFAULT_MASTER_VOLUME);
-		const resolver = this.buildModulationResolver();
-		const runtime = Runtime.instance;
-		const resources = runtime.buildAudioResourcesForSoundMaster();
-		await SoundMaster.instance.init(
-			resources,
-			DEFAULT_MASTER_VOLUME,
-			resolver,
-			(id) => runtime.getAudioBytesById(id)
-		);
+			this.sndmaster.bootstrapRuntimeAudio(DEFAULT_MASTER_VOLUME);
+			const resolver = this.buildModulationResolver();
+			const runtime = Runtime.instance;
+			const resources = runtime.assets.buildAudioResourcesForSoundMaster(runtime.machine.memory);
+			await SoundMaster.instance.init(
+				resources,
+				DEFAULT_MASTER_VOLUME,
+				resolver,
+				(id) => runtime.assets.getAudioBytesById(runtime.machine.memory, id)
+			);
 		SoundMaster.instance.setMaxVoicesByType(getMachineMaxVoices(this._machine_manifest));
 	}
 
@@ -489,7 +491,7 @@ export class EngineCore {
 	}
 
 	public set_skybox_imgs(ids: SkyboxImageIds): void {
-		Runtime.instance.setSkyboxImages(ids);
+		Runtime.instance.machine.vdp.setSkyboxImages(ids);
 	}
 
 	/**
@@ -611,7 +613,7 @@ export class EngineCore {
 			if (runtime) {
 				runtime.machineScheduler.clearQueuedTime();
 				runtime.screen.clearPresentation();
-				runtime.abandonFrameState();
+				runtime.frameLoop.abandonFrameState(runtime);
 				runtime.frameLoop.drawFrameState = null;
 				runtime.vblank.clearHaltUntilIrq(runtime);
 				runtime.vblank.reset(runtime);

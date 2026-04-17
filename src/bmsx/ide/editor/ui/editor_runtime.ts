@@ -51,6 +51,25 @@ import { captureKeys } from '../input/keyboard/editor_capture_keys';
 import { editorInput } from '../input/keyboard/editor_text_input';
 import { completionController } from '../contrib/suggest/completion_controller';
 
+let crtPostprocessingEnabledBeforeEditor: boolean | null = null;
+
+function disableCrtPostprocessingForEditor(): void {
+	if (crtPostprocessingEnabledBeforeEditor !== null) {
+		return;
+	}
+	crtPostprocessingEnabledBeforeEditor = $.view.crt_postprocessing_enabled;
+	$.view.crt_postprocessing_enabled = false;
+}
+
+function restoreCrtPostprocessingFromEditor(): void {
+	const enabled = crtPostprocessingEnabledBeforeEditor;
+	if (enabled === null) {
+		return;
+	}
+	$.view.crt_postprocessing_enabled = enabled;
+	crtPostprocessingEnabledBeforeEditor = null;
+}
+
 export function tickInput(): void {
 	handleEditorWheelInput();
 	handleTextEditorPointerInput();
@@ -106,7 +125,7 @@ export function shutdownRuntimeEditor(): void {
 	storeActiveCodeTabContext();
 	editorInput.applyOverrides(false, captureKeys);
 	if (editorViewState.dimCrtInEditor) {
-		Runtime.instance.restoreCrtPostprocessingFromEditor();
+		restoreCrtPostprocessingFromEditor();
 	}
 	editorRuntimeState.active = false;
 	setEditorFeedbackActive(false);
@@ -198,7 +217,7 @@ export function activateRuntimeEditor(): void {
 	}
 	editorFeedbackState.deferredMessageDuration = null;
 	if (editorViewState.dimCrtInEditor) {
-		Runtime.instance.disableCrtPostprocessingForEditor();
+		disableCrtPostprocessingForEditor();
 	}
 	if (Runtime.instance.hasRuntimeFailed) {
 		const rendered = renderRuntimeFaultOverlay({
@@ -216,7 +235,7 @@ export function deactivateRuntimeEditor(): void {
 	editorRuntimeState.active = false;
 	setEditorFeedbackActive(false);
 	if (editorViewState.dimCrtInEditor) {
-		Runtime.instance.restoreCrtPostprocessingFromEditor();
+		restoreCrtPostprocessingFromEditor();
 	}
 	completionController.closeSession();
 	editorInput.applyOverrides(false, captureKeys);
