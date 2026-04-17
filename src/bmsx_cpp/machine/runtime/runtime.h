@@ -80,18 +80,13 @@ struct RuntimeOptions {
  * Runtime state snapshot for save/load.
  */
 struct RuntimeState {
-	std::vector<Value> ioMemory;
+	MachineState machine;
 	std::vector<std::pair<Value, Value>> globals; // key-value pairs
 	std::string cartDataNamespace;
 	std::vector<double> persistentData;
 	uint32_t randomSeed = 0;
 	bool pendingEntryCall = false;
-	std::vector<u8> assetMemory;
-	std::array<i32, 2> atlasSlots{{-1, -1}};
-	std::optional<SkyboxImageIds> skyboxFaceIds;
-	i32 vdpDitherType = 0;
 	int cyclesIntoFrame = 0;
-	bool inputSampleArmed = false;
 };
 
 /**
@@ -348,7 +343,6 @@ private:
 	bool pollSystemBootRequest();
 	bool processPendingCartBoot();
 	void flushAssetEdits();
-	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
 	std::vector<Value> acquireValueScratch();
 	void releaseValueScratch(std::vector<Value>&& values);
 	bool hasEntryContinuation() const;

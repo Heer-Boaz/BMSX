@@ -488,6 +488,18 @@ void Memory::restoreAssetMemory(const u8* data, size_t size) {
 	markAllAssetsDirty();
 }
 
+MemoryState Memory::captureState() const {
+	MemoryState state;
+	state.ioMemory = m_ioSlots;
+	state.assetMemory = dumpAssetMemory();
+	return state;
+}
+
+void Memory::restoreState(const MemoryState& state) {
+	loadIoSlots(state.ioMemory);
+	restoreAssetMemory(state.assetMemory.data(), state.assetMemory.size());
+}
+
 u32 Memory::resolveAssetHandle(const std::string& id) const {
 	const auto direct = m_assetIndexById.find(id);
 	if (direct != m_assetIndexById.end()) {

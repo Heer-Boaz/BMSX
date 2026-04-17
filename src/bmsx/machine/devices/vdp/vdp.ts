@@ -72,6 +72,13 @@ import {
 import { fmix32, scramble32, signed8FromHash, xorshift32 } from '../../common/hash';
 import { processVdpBufferedCommand, processVdpCommand } from './vdp_command_processor';
 import { getVdpPacketSchema } from './vdp_packet_schema';
+
+export type VdpState = {
+	atlasSlots: { primary: number | null; secondary: number | null };
+	skyboxFaceIds: SkyboxImageIds | null;
+	ditherType: number;
+};
+
 const VDP_SERVICE_BATCH_WORK_UNITS = 128;
 const BMSX_BASE_COLORS: color[] = [
 	{ r: 0 / 255, g: 0 / 255, b: 0 / 255, a: 0 }, // 0 = Transparent
@@ -2031,17 +2038,29 @@ export class VDP implements VramWriteSink {
 		}
 	}
 
-	public set ditherType(value: number) {
+	private setDitherType(value: number): void {
 		this.memory.writeValue(IO_VDP_DITHER, value);
 		this.syncRegisters();
 	}
 
-	public get ditherType(): number {
-		return this.lastDitherType;
+	public captureState(): VdpState {
+		return {
+			atlasSlots: { primary: this.slotAtlasIds[0], secondary: this.slotAtlasIds[1] },
+			skyboxFaceIds: this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds },
+			ditherType: this.lastDitherType,
+		};
 	}
 
-	public get skyboxFaceIds(): SkyboxImageIds | null {
-		return this._skyboxFaceIds;
+	public restoreState(state: VdpState): void {
+		this.restoreAtlasSlotMapping(state.atlasSlots);
+		if (state.skyboxFaceIds === null) {
+			this.clearSkybox();
+		} else {
+			this.setSkyboxImages(state.skyboxFaceIds);
+		}
+		this.setDitherType(state.ditherType);
+		this.commitLiveVisualState();
+		this.commitViewSnapshot();
 	}
 
 	public commitViewSnapshot(): void {
@@ -2059,11 +2078,7 @@ export class VDP implements VramWriteSink {
 		this.committedSkyboxFaceIds = this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds };
 	}
 
-	public get atlasSlotMapping(): { primary: number | null; secondary: number | null } {
-		return { primary: this.slotAtlasIds[0], secondary: this.slotAtlasIds[1] };
-	}
-
-	public restoreAtlasSlotMapping(mapping: { primary: number | null; secondary: number | null }): void {
+	private restoreAtlasSlotMapping(mapping: { primary: number | null; secondary: number | null }): void {
 		const primaryValue = mapping.primary === null ? VDP_ATLAS_ID_NONE : mapping.primary;
 		const secondaryValue = mapping.secondary === null ? VDP_ATLAS_ID_NONE : mapping.secondary;
 		this.memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, primaryValue);

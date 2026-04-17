@@ -669,30 +669,20 @@ void Runtime::resetCartBootState() {
 
 RuntimeState Runtime::captureCurrentState() const {
 	RuntimeState state;
-	state.ioMemory = m_machine.memory().ioSlots();
+	state.machine = m_machine.captureState();
 	const_cast<CPU&>(m_machine.cpu()).syncGlobalSlotsToTable();
 	state.globals = m_machine.cpu().globals->entries();
 	state.cartDataNamespace = m_api->cartDataNamespace();
 	state.persistentData = m_api->persistentData();
 	state.randomSeed = m_randomSeedValue;
 	state.pendingEntryCall = m_pendingCall == PendingCall::Entry;
-	state.assetMemory = m_machine.memory().dumpAssetMemory();
-	state.atlasSlots = m_machine.vdp().atlasSlots();
-	state.skyboxFaceIds = m_machine.vdp().skyboxFaceIds();
-	state.vdpDitherType = m_machine.vdp().getDitherType();
 	state.cyclesIntoFrame = getCyclesIntoFrame();
-	state.inputSampleArmed = m_machine.inputController().sampleArmed();
 	return state;
 }
 
 void Runtime::applyState(const RuntimeState& state) {
-	// Restore memory
-	m_machine.memory().loadIoSlots(state.ioMemory);
-	m_machine.geometryController().postLoad();
-	m_machine.irqController().postLoad();
-	m_machine.vdp().syncRegisters();
+	m_machine.restoreState(state.machine);
 	clearHaltUntilIrq();
-	m_machine.inputController().restoreSampleArmed(state.inputSampleArmed);
 	machineScheduler.reset(*this);
 	screen.reset();
 	resetSchedulerState();
@@ -706,21 +696,9 @@ void Runtime::applyState(const RuntimeState& state) {
 	setVblankStatus(vblankActive);
 	scheduleCurrentFrameTimers();
 	refreshDeviceTimings(m_machine.scheduler().nowCycles());
-	if (!state.assetMemory.empty()) {
-		m_machine.memory().restoreAssetMemory(state.assetMemory.data(), state.assetMemory.size());
-	}
 	m_api->restorePersistentData(state.cartDataNamespace, state.persistentData);
 	m_randomSeedValue = state.randomSeed;
 	m_pendingCall = state.pendingEntryCall ? PendingCall::Entry : PendingCall::None;
-	applyAtlasSlotMapping(state.atlasSlots);
-	if (state.skyboxFaceIds.has_value()) {
-		m_machine.vdp().setSkyboxImages(*state.skyboxFaceIds);
-	} else {
-		m_machine.vdp().clearSkybox();
-	}
-	m_machine.vdp().setDitherType(state.vdpDitherType);
-	m_machine.vdp().commitLiveVisualState();
-	m_machine.vdp().commitViewSnapshot(*EngineCore::instance().view());
 
 	// Restore globals
 	m_machine.cpu().globals->clear();
@@ -731,10 +709,6 @@ void Runtime::applyState(const RuntimeState& state) {
 	}
 	flushAssetEdits();
 	resetRenderBuffers();
-}
-
-void Runtime::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
-	m_machine.vdp().applyAtlasSlotMapping(slots);
 }
 
 void Runtime::setSkyboxImages(const SkyboxImageIds& ids) {

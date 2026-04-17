@@ -1,6 +1,6 @@
 import type { LuaFunctionValue } from '../../lua/luavalue';
 import type { asset_id, CanonicalizationType, Viewport } from '../../rompack/rompack';
-import type { SkyboxImageIds } from '../../render/shared/render_types';
+import type { MachineState } from '../machine';
 import type { Memory } from '../memory/memory';
 import { LuaEntrySnapshot } from '../firmware/lua_js_bridge';
 
@@ -124,12 +124,8 @@ export type RuntimeState = {
 	luaLocals?: LuaEntrySnapshot;
 	luaRandomSeed?: number;
 	luaProgramCounter?: number;
-	assetMemory?: Uint8Array;
-	atlasSlots?: { primary: number | null; secondary: number | null };
-	skyboxFaceIds?: SkyboxImageIds | null;
-	vdpDitherType?: number;
+	machine: MachineState;
 	cyclesIntoFrame: number;
-	inputSampleArmed?: boolean;
 };
 
 export type LuaMarshalContext = {

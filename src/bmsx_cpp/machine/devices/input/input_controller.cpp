@@ -68,6 +68,16 @@ void InputController::onVblankEdge() {
 	m_sampleArmed = false;
 }
 
+InputControllerState InputController::captureState() const {
+	InputControllerState state;
+	state.sampleArmed = m_sampleArmed;
+	return state;
+}
+
+void InputController::restoreState(const InputControllerState& state) {
+	m_sampleArmed = state.sampleArmed;
+}
+
 void InputController::onQueryWrite() {
 	const Value queryValue = m_memory.readValue(IO_INP_QUERY);
 	const std::string& queryText = m_strings.toString(asStringId(queryValue));

@@ -157,19 +157,13 @@ function resolveRuntimeMachineForPlan(runtime: Runtime, plan: RuntimeAssetReload
 export function captureCurrentState(runtime: Runtime): RuntimeState {
 	const storage = runtime.storage.dump();
 	const stateSnapshot = captureRuntimeState(runtime);
-	const atlasSlots = runtime.machine.vdp.atlasSlotMapping;
-	const skyboxFaceIds = runtime.machine.vdp.skyboxFaceIds;
-	const vdpDitherType = runtime.machine.vdp.ditherType;
 	const vblankState = runtime.captureVblankState();
 	const state: RuntimeState = {
 		luaRuntimeFailed: runtime.luaRuntimeFailed,
 		luaPath: runtime.currentPath,
 		storage,
-		atlasSlots,
-		skyboxFaceIds,
-		vdpDitherType,
+		machine: runtime.machine.captureState(),
 		cyclesIntoFrame: vblankState.cyclesIntoFrame,
-		inputSampleArmed: vblankState.inputSampleArmed,
 	};
 	if (stateSnapshot) {
 		if (stateSnapshot.globals) {
@@ -188,27 +182,8 @@ export function captureCurrentState(runtime: Runtime): RuntimeState {
 	return state;
 }
 
-export function applyAssetMemorySnapshot(runtime: Runtime, snapshot: RuntimeState): void {
-	if (snapshot.assetMemory) {
-		runtime.machine.memory.restoreAssetMemory(snapshot.assetMemory);
-		runtime.machine.memory.rehydrateAssetEntriesFromTable();
-	}
-	if (snapshot.atlasSlots) {
-		runtime.machine.vdp.restoreAtlasSlotMapping(snapshot.atlasSlots);
-	}
-	if (snapshot.skyboxFaceIds !== undefined) {
-		if (snapshot.skyboxFaceIds === null) {
-			runtime.machine.vdp.clearSkybox();
-		} else {
-			runtime.machine.vdp.setSkyboxImages(snapshot.skyboxFaceIds);
-		}
-	}
-	if (snapshot.vdpDitherType !== undefined) {
-		runtime.machine.vdp.ditherType = snapshot.vdpDitherType;
-	}
-	runtime.machine.vdp.flushAssetEdits();
-	runtime.machine.vdp.commitLiveVisualState();
-	runtime.machine.vdp.commitViewSnapshot();
+export function restoreMachineSnapshot(runtime: Runtime, snapshot: RuntimeState): void {
+	runtime.machine.restoreState(snapshot.machine);
 }
 
 export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeState, options?: { preserveEngineModules?: boolean }): Promise<void> {
@@ -224,7 +199,7 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeState, 
 	runtime.handledLuaErrors = new WeakSet<object>();
 	runtime.luaRuntimeFailed = false;
 	publishOverlayFrame(null);
-	applyAssetMemorySnapshot(runtime, snapshot);
+	restoreMachineSnapshot(runtime, snapshot);
 	resumeLuaProgramState(runtime, snapshot, options);
 	runtime.restoreVblankState(snapshot);
 	runtime.resetRenderBuffers();

@@ -15,9 +15,9 @@ import { AudioController } from './devices/audio/audio_controller';
 import { DmaController } from './devices/dma/dma_controller';
 import { GeometryController } from './devices/geometry/geometry_controller';
 import { ImgDecController } from './devices/imgdec/imgdec_controller';
-import { InputController } from './devices/input/input_controller';
+import { InputController, type InputControllerState } from './devices/input/input_controller';
 import { IrqController } from './devices/irq/irq_controller';
-import { VDP, type VdpBlitterExecutor } from './devices/vdp/vdp';
+import { VDP, type VdpBlitterExecutor, type VdpState } from './devices/vdp/vdp';
 import { Memory } from './memory/memory';
 import { StringHandleTable } from './memory/string_memory';
 import { StringPool } from './memory/string_pool';
@@ -37,6 +37,11 @@ export type MachineTiming = {
 	imgDecBytesPerSec: number;
 	geoWorkUnitsPerSec: number;
 	vdpWorkUnitsPerSec: number;
+};
+
+export type MachineState = {
+	input: InputControllerState;
+	vdp: VdpState;
 };
 
 export class Machine {
@@ -122,8 +127,21 @@ export class Machine {
 				this.vdp.onService(nowCycles);
 				return;
 			default:
-				throw new Error(`Runtime fault: unknown device service kind ${deviceKind}.`);
+			throw new Error(`Runtime fault: unknown device service kind ${deviceKind}.`);
 		}
+	}
+
+	public captureState(): MachineState {
+		return {
+			input: this.inputController.captureState(),
+			vdp: this.vdp.captureState(),
+		};
+	}
+
+	public restoreState(state: MachineState): void {
+		this.inputController.restoreState(state.input);
+		this.vdp.restoreState(state.vdp);
+		this.vdp.flushAssetEdits();
 	}
 
 	public resetRenderBuffers(): void {

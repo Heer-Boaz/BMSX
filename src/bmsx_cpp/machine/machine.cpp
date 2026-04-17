@@ -84,4 +84,21 @@ void Machine::runDeviceService(uint8_t deviceKind) {
 	}
 }
 
+MachineState Machine::captureState() const {
+	MachineState state;
+	state.memory = m_memory.captureState();
+	state.input = m_inputController.captureState();
+	state.vdp = m_vdp.captureState();
+	return state;
+}
+
+void Machine::restoreState(const MachineState& state) {
+	m_memory.restoreState(state.memory);
+	m_geometryController.postLoad();
+	m_irqController.postLoad();
+	m_inputController.restoreState(state.input);
+	m_vdp.restoreState(state.vdp);
+	m_vdp.flushAssetEdits();
+}
+
 } // namespace bmsx

@@ -645,19 +645,17 @@ export class Runtime {
 		this.lastCompletedVblankSequence = vblankSequence;
 	}
 
-	public captureVblankState(): { cyclesIntoFrame: number; inputSampleArmed: boolean } {
+	public captureVblankState(): { cyclesIntoFrame: number } {
 		return {
 			cyclesIntoFrame: this.getCyclesIntoFrame(),
-			inputSampleArmed: this.machine.inputController.sampleArmed,
 		};
 	}
 
-	public restoreVblankState(state: { cyclesIntoFrame: number; inputSampleArmed?: boolean }): void {
+	public restoreVblankState(state: { cyclesIntoFrame: number }): void {
 		this.clearHaltUntilIrq();
 		this.machineScheduler.reset(this);
 		this.frameLoop.reset();
 		this.screen.reset();
-		this.machine.inputController.sampleArmed = state.inputSampleArmed === true;
 		this.resetSchedulerState();
 		this.machine.scheduler.setNowCycles(state.cyclesIntoFrame);
 		this.frameStartCycle = 0;

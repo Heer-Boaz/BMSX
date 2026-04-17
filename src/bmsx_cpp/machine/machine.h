@@ -27,6 +27,12 @@ struct MachineTiming {
 	int vdpWorkUnitsPerSec = 0;
 };
 
+struct MachineState {
+	MemoryState memory;
+	InputControllerState input;
+	VdpState vdp;
+};
+
 class Machine {
 public:
 	Machine(Api& api, SoundMaster& soundMaster);
@@ -61,6 +67,8 @@ public:
 	void refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles);
 	void advanceDevices(int cycles);
 	void runDeviceService(uint8_t deviceKind);
+	MachineState captureState() const;
+	void restoreState(const MachineState& state);
 
 private:
 	Memory m_memory;

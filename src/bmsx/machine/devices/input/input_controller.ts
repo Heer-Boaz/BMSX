@@ -24,6 +24,10 @@ type PlayerChipState = {
 	contextPushed: boolean;
 };
 
+export type InputControllerState = {
+	sampleArmed: boolean;
+};
+
 export class InputController {
 	private readonly playerStates: PlayerChipState[] = Array.from(
 		{ length: Input.PLAYERS_MAX },
@@ -81,6 +85,16 @@ export class InputController {
 		}
 		this.input.beginFrame();
 		this.sampleArmed = false;
+	}
+
+	public captureState(): InputControllerState {
+		return {
+			sampleArmed: this.sampleArmed,
+		};
+	}
+
+	public restoreState(state: InputControllerState): void {
+		this.sampleArmed = state.sampleArmed;
 	}
 
 	public onQueryWrite(): void {

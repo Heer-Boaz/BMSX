@@ -3522,11 +3522,28 @@ void VDP::clearSkybox() {
 	m_hasSkybox = false;
 }
 
-std::optional<SkyboxImageIds> VDP::skyboxFaceIds() const {
-	if (!m_hasSkybox) {
-		return std::nullopt;
+VdpState VDP::captureState() const {
+	VdpState state;
+	state.atlasSlots = m_slotAtlasIds;
+	if (m_hasSkybox) {
+		state.skyboxFaceIds = m_skyboxFaceIds;
 	}
-	return m_skyboxFaceIds;
+	state.ditherType = m_lastDitherType;
+	return state;
+}
+
+void VDP::restoreState(const VdpState& state) {
+	m_memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(state.atlasSlots[0] < 0 ? VDP_ATLAS_ID_NONE : state.atlasSlots[0])));
+	m_memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, valueNumber(static_cast<double>(state.atlasSlots[1] < 0 ? VDP_ATLAS_ID_NONE : state.atlasSlots[1])));
+	applyAtlasSlotMapping(state.atlasSlots);
+	if (state.skyboxFaceIds.has_value()) {
+		setSkyboxImages(*state.skyboxFaceIds);
+	} else {
+		clearSkybox();
+	}
+	setDitherType(state.ditherType);
+	commitLiveVisualState();
+	commitViewSnapshot(*EngineCore::instance().view());
 }
 
 void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId) {

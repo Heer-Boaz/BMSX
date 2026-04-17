@@ -24,6 +24,12 @@ class BFont;
 class Api;
 struct VdpGles2Blitter;
 
+struct VdpState {
+	std::array<i32, 2> atlasSlots{{-1, -1}};
+	std::optional<SkyboxImageIds> skyboxFaceIds;
+	i32 ditherType = 0;
+};
+
 	class VDP : public Memory::VramWriter {
 public:
 		VDP(
@@ -43,10 +49,9 @@ public:
 		void beginDmaSubmit();
 		void endDmaSubmit();
 		void sealDmaTransfer(uint32_t src, size_t byteLength);
-		void writeVdpFifoBytes(const u8* data, size_t length);
-		void syncRegisters();
+	void writeVdpFifoBytes(const u8* data, size_t length);
+	void syncRegisters();
 	void setDitherType(i32 type);
-	i32 getDitherType() const { return m_lastDitherType; }
 	void writeVram(uint32_t addr, const u8* data, size_t length) override;
 	void readVram(uint32_t addr, u8* out, size_t length) const override;
 	void beginFrame();
@@ -81,11 +86,11 @@ public:
 	void captureVramTextureSnapshots();
 	void shutdownBackendResources();
 	void flushAssetEdits();
-	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
 	void attachImgDecController(ImgDecController& controller);
 	void setSkyboxImages(const SkyboxImageIds& ids);
 	void clearSkybox();
-	std::optional<SkyboxImageIds> skyboxFaceIds() const;
+	VdpState captureState() const;
+	void restoreState(const VdpState& state);
 	void commitLiveVisualState();
 	void commitViewSnapshot(GameView& view);
 	uint32_t trackedUsedVramBytes() const;
@@ -97,10 +102,9 @@ public:
 	bool hasPendingRenderWork() const { return m_activeFrameOccupied ? !m_activeFrameReady : (m_pendingFrameOccupied && m_pendingFrameCost > 0); }
 	int getPendingRenderWorkUnits() const;
 
-	const std::array<i32, 2>& atlasSlots() const { return m_slotAtlasIds; }
-
-	private:
-		static Value readVdpStatusThunk(void* context, uint32_t addr);
+		private:
+	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
+			static Value readVdpStatusThunk(void* context, uint32_t addr);
 		static Value readVdpDataThunk(void* context, uint32_t addr);
 		static void onFifoWriteThunk(void* context, uint32_t addr, Value value);
 		static void onFifoCtrlWriteThunk(void* context, uint32_t addr, Value value);

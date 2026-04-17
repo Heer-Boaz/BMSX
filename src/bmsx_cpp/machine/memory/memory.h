@@ -17,6 +17,11 @@ constexpr uint32_t ASSET_TABLE_HEADER_SIZE = 40;
 constexpr uint32_t ASSET_TABLE_ENTRY_SIZE = 64;
 constexpr uint32_t ASSET_FLAG_VIEW = 1u << 1;
 
+struct MemoryState {
+	std::vector<Value> ioMemory;
+	std::vector<u8> assetMemory;
+};
+
 class Memory {
 public:
 		class VramWriter {
@@ -157,6 +162,8 @@ public:
 	void markAllAssetsDirty();
 	std::vector<u8> dumpAssetMemory() const;
 	void restoreAssetMemory(const u8* data, size_t size);
+	MemoryState captureState() const;
+	void restoreState(const MemoryState& state);
 	u32 resolveAssetHandle(const std::string& id) const;
 	AssetEntry& getAssetEntry(const std::string& id);
 	const AssetEntry& getAssetEntry(const std::string& id) const;

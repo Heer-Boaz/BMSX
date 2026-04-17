@@ -7,6 +7,10 @@
 
 namespace bmsx {
 
+struct InputControllerState {
+	bool sampleArmed = false;
+};
+
 class InputController {
 public:
 	InputController(Memory& memory, Input& input, const StringPool& strings);
@@ -18,6 +22,8 @@ public:
 	void onVblankEdge();
 	bool sampleArmed() const { return m_sampleArmed; }
 	void restoreSampleArmed(bool armed) { m_sampleArmed = armed; }
+	InputControllerState captureState() const;
+	void restoreState(const InputControllerState& state);
 
 private:
 	static void onCtrlWriteThunk(void* context, uint32_t addr, Value value);
