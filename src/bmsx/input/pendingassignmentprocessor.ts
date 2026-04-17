@@ -28,7 +28,7 @@ export class PendingAssignmentProcessor {
 	}
 
 	private lastNotified: { proposed: number; positionIndex: number } = null;
-	private maybeNotify(proposedPlayerIndex: number): void {
+	private setLastNotifiedIfChanged(proposedPlayerIndex: number): void {
 		const pos = this.pendingIndex;
 		const prev = this.lastNotified;
 		if (!prev || prev.proposed !== proposedPlayerIndex || prev.positionIndex !== pos) {
@@ -61,7 +61,7 @@ export class PendingAssignmentProcessor {
 
 			if (newProposedPlayerIndex !== null) {
 				this.proposedPlayerIndex = newProposedPlayerIndex;
-				this.maybeNotify(this.proposedPlayerIndex);
+				this.setLastNotifiedIfChanged(this.proposedPlayerIndex);
 			}
 			else {
 				// No new player index available for gamepad assignment found => don't do anything!
@@ -107,7 +107,7 @@ export class PendingAssignmentProcessor {
 			}
 		}
 		else {
-			this.maybeNotify(this.proposedPlayerIndex);
+			this.setLastNotifiedIfChanged(this.proposedPlayerIndex);
 			if (this.checkNonConsumedPressed('a', gamepadInput)) {
 				// Assign gamepad to player and remove the joystick icon
 				gamepadInput.consumeButton('a');
