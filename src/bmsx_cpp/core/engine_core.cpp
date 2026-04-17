@@ -10,8 +10,8 @@
 #include "../machine/memory/asset_memory.h"
 #include "../machine/machine_specs.h"
 #include "../machine/memory/memory_specs.h"
-#include "../machine/runtime/runtime_timing_config.h"
-#include "../machine/program/program_linker.h"
+#include "../machine/runtime/timing_config.h"
+#include "../machine/program/linker.h"
 #include "../machine/firmware/font.h"
 #include "rompack/rompack.h"
 #include "render/shared/render_queues.h"
@@ -141,7 +141,7 @@ void EngineCore::start() {
 	if (m_state == EngineState::Initialized || m_state == EngineState::Stopped) {
 		m_state = EngineState::Running;
 		if (Runtime::hasInstance()) {
-			Runtime::instance().machineScheduler.clearQueuedTime();
+			Runtime::instance().frameScheduler.clearQueuedTime();
 		}
 	}
 }
@@ -159,7 +159,7 @@ void EngineCore::resume() {
 	if (m_state == EngineState::Paused) {
 		m_state = EngineState::Running;
 		if (Runtime::hasInstance()) {
-			Runtime::instance().machineScheduler.clearQueuedTime();
+			Runtime::instance().frameScheduler.clearQueuedTime();
 		}
 	}
 }

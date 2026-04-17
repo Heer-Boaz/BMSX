@@ -1,13 +1,13 @@
 #pragma once
 
 #include "core/types.h"
-#include "machine/runtime/runtime_frame_state.h"
+#include "machine/runtime/frame_state.h"
 
 namespace bmsx {
 
 class Runtime;
 
-class RuntimeFrameLoopState {
+class FrameLoopState {
 public:
 	void reset();
 	void resetFrameState(Runtime& runtime);

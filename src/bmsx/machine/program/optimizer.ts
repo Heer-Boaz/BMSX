@@ -1,7 +1,7 @@
 import { OpCode, type Proto, type SourceRange, type UpvalueDesc, type Value } from '../cpu/cpu';
 import { MAX_EXT_CONST, MAX_SIGNED_BX, MIN_SIGNED_BX } from '../cpu/instruction_format';
 import { isStringValue, stringValueToString } from '../memory/string_pool';
-import { applyGlobalOptimizations } from './program_optimizer_ssa';
+import { applyGlobalOptimizations } from './optimizer_ssa';
 
 export type InstructionFormat = 'ABC' | 'ABx' | 'AsBx';
 

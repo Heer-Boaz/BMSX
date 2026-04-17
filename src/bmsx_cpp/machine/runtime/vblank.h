@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/types.h"
-#include "machine/runtime/runtime_frame_state.h"
+#include "machine/runtime/frame_state.h"
 
 namespace bmsx {
 
@@ -11,7 +11,7 @@ struct RuntimeVblankSnapshot {
 	int cyclesIntoFrame = 0;
 };
 
-class RuntimeVblankState {
+class VblankState {
 public:
 	bool tickCompleted() const { return m_activeTickCompleted; }
 	void configureCycleBudget(Runtime& runtime);

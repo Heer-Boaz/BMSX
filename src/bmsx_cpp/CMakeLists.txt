@@ -151,27 +151,27 @@ add_library(bmsx_core STATIC
 	machine/runtime/resource_usage_detector.cpp
 	machine/runtime/runtime.cpp
 	machine/memory/asset_memory.cpp
-	machine/runtime/runtime_cart_boot.cpp
-	machine/runtime/runtime_cpu_executor.cpp
-	machine/runtime/runtime_engine_irq.cpp
-	machine/runtime/runtime_frame_loop.cpp
+	machine/runtime/cart_boot.cpp
+	machine/runtime/cpu_executor.cpp
+	machine/runtime/engine_irq.cpp
+	machine/runtime/frame_loop.cpp
 	machine/program/lua_executor.cpp
 	machine/program/lua_scratch.cpp
 	machine/machine_specs.cpp
-	machine/runtime/runtime_machine_scheduler.cpp
+	machine/scheduler/frame_scheduler.cpp
 	machine/memory/memory_specs.cpp
 	render/presentation_state.cpp
-	machine/runtime/runtime_timing.cpp
-	machine/runtime/runtime_timing_config.cpp
-	machine/runtime/runtime_vblank.cpp
-	machine/runtime/runtime_debug.cpp
+	machine/runtime/timing.cpp
+	machine/runtime/timing_config.cpp
+	machine/runtime/vblank.cpp
+	machine/runtime/debug.cpp
 	machine/memory/memory.cpp
 	machine/memory/memory_map.cpp
 	machine/devices/vdp/vdp.cpp
 	machine/devices/vdp/vdp_command_processor.cpp
 	machine/memory/string_memory.cpp
-	machine/program/program_loader.cpp
-	machine/program/program_linker.cpp
+	machine/program/loader.cpp
+	machine/program/linker.cpp
 )
 
 # stb is plain C; compile it as C to avoid libstdc++'s legacy C wrappers (e.g. <math.h>)

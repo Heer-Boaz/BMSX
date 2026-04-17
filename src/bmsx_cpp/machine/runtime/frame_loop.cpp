@@ -1,8 +1,8 @@
-#include "machine/runtime/runtime_frame_loop.h"
+#include "machine/runtime/frame_loop.h"
 #include "core/engine_core.h"
 #include "input/input.h"
-#include "machine/runtime/runtime_cart_boot.h"
-#include "machine/runtime/runtime_cpu_executor.h"
+#include "machine/runtime/cart_boot.h"
+#include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/runtime.h"
 #include "render/shared/render_queues.h"
 #include <algorithm>
@@ -16,24 +16,24 @@ inline double to_ms(std::chrono::steady_clock::duration duration) {
 }
 }
 
-void RuntimeFrameLoopState::reset() {
+void FrameLoopState::reset() {
 	frameDeltaMs = 0.0;
 }
 
-void RuntimeFrameLoopState::resetFrameState(Runtime& runtime) {
+void FrameLoopState::resetFrameState(Runtime& runtime) {
 	frameActive = false;
 	runtime.vblank.abandonTick();
 	runtime.machine().inputController().restoreSampleArmed(false);
 	frameState = FrameState{};
 	runtime.vblank.clearHaltUntilIrq(runtime);
-	runtime.machineScheduler.reset();
+	runtime.frameScheduler.reset();
 	reset();
 	runtime.screen.reset();
-	runtime.machineScheduler.resetTickTelemetry();
+	runtime.frameScheduler.resetTickTelemetry();
 	runtime.vblank.reset(runtime);
 }
 
-void RuntimeFrameLoopState::beginFrameState(Runtime& runtime) {
+void FrameLoopState::beginFrameState(Runtime& runtime) {
 	frameActive = true;
 	runtime.vblank.beginTick();
 	frameState = FrameState{};
@@ -62,23 +62,23 @@ void RuntimeFrameLoopState::beginFrameState(Runtime& runtime) {
 	viewTable->set(key("enable_aperture"), valueBool(view->applyAperture));
 }
 
-bool RuntimeFrameLoopState::hasActiveTick(const Runtime& runtime) const {
+bool FrameLoopState::hasActiveTick(const Runtime& runtime) const {
 	return frameActive && runtime.m_luaInitialized && runtime.m_tickEnabled && !runtime.m_runtimeFailed;
 }
 
-void RuntimeFrameLoopState::abandonFrameState(Runtime& runtime) {
+void FrameLoopState::abandonFrameState(Runtime& runtime) {
 	frameActive = false;
 	runtime.vblank.abandonTick();
 }
 
-void RuntimeFrameLoopState::finalizeUpdateSlice(Runtime& runtime) {
+void FrameLoopState::finalizeUpdateSlice(Runtime& runtime) {
 	if (runtime.hasEntryContinuation() && !runtime.vblank.tickCompleted()) {
 		return;
 	}
 	abandonFrameState(runtime);
 }
 
-void RuntimeFrameLoopState::executeUpdateCallback(Runtime& runtime) {
+void FrameLoopState::executeUpdateCallback(Runtime& runtime) {
 	try {
 		while (true) {
 			if (runtime.machine().cpu().isHaltedUntilIrq() && runtime.vblank.runHaltedUntilIrq(runtime, frameState)) {
@@ -107,10 +107,10 @@ void RuntimeFrameLoopState::executeUpdateCallback(Runtime& runtime) {
 	}
 }
 
-bool RuntimeFrameLoopState::tickUpdate(Runtime& runtime) {
+bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	if (runtime.m_rebootRequested) {
 		runtime.m_rebootRequested = false;
-		runtime.machineScheduler.clearQueuedTime();
+		runtime.frameScheduler.clearQueuedTime();
 		if (!EngineCore::instance().rebootLoadedRom()) {
 			EngineCore::instance().log(LogLevel::Error, "Runtime fault: reboot to bootrom failed.\n");
 		}
@@ -131,14 +131,14 @@ bool RuntimeFrameLoopState::tickUpdate(Runtime& runtime) {
 	FrameState* const previousState = frameActive ? &frameState : nullptr;
 	const int previousRemaining = previousState != nullptr ? previousState->cycleBudgetRemaining : -1;
 	const bool previousPending = runtime.hasEntryContinuation();
-	const i64 previousSequence = runtime.machineScheduler.lastTickSequence;
+	const i64 previousSequence = runtime.frameScheduler.lastTickSequence;
 	bool startedFrame = false;
 	if (frameActive) {
-		if (frameState.cycleBudgetRemaining <= 0 && !runtime.machineScheduler.refillFrameBudget(runtime, frameState)) {
+		if (frameState.cycleBudgetRemaining <= 0 && !runtime.frameScheduler.refillFrameBudget(runtime, frameState)) {
 			return false;
 		}
 	} else {
-		if (!runtime.machineScheduler.startScheduledFrame(runtime)) {
+		if (!runtime.frameScheduler.startScheduledFrame(runtime)) {
 			return false;
 		}
 		startedFrame = true;
@@ -185,10 +185,10 @@ bool RuntimeFrameLoopState::tickUpdate(Runtime& runtime) {
 	if (runtime.hasEntryContinuation() != previousPending) {
 		return true;
 	}
-	return runtime.machineScheduler.lastTickSequence != previousSequence;
+	return runtime.frameScheduler.lastTickSequence != previousSequence;
 }
 
-void RuntimeFrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platformPaused, bool skipRender) {
+void FrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platformPaused, bool skipRender) {
 	EngineCore& engine = EngineCore::instance();
 	if (engine.m_state != EngineState::Running && engine.m_state != EngineState::Paused) {
 		return;
@@ -230,10 +230,10 @@ void RuntimeFrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool p
 			auto terminalInputEnd = std::chrono::steady_clock::now();
 			engine.m_last_tick_timing.runtimeTerminalInputMs = to_ms(terminalInputEnd - terminalInputStart);
 
-			const i64 previousTickSequence = runtime.machineScheduler.lastTickSequence;
+			const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 			auto updateStart = std::chrono::steady_clock::now();
 			engine.m_delta_time = runtime.timing.frameDurationMs / 1000.0;
-			runtime.machineScheduler.run(runtime, hostDeltaMs);
+			runtime.frameScheduler.run(runtime, hostDeltaMs);
 			runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 			auto updateEnd = std::chrono::steady_clock::now();
 			engine.m_last_tick_timing.runtimeUpdateMs = to_ms(updateEnd - updateStart);

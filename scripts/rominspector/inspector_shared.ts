@@ -7,7 +7,7 @@ import {
 	inflateProgram,
 	PROGRAM_ASSET_ID,
 	PROGRAM_SYMBOLS_ASSET_ID,
-} from '../../src/bmsx/machine/program/program_asset';
+} from '../../src/bmsx/machine/program/asset';
 
 export const ROM_MANIFEST_ASSET_ID = '__rom_manifest__';
 export const ROM_MANIFEST_SOURCE_PATH = 'manifest.rommanifest';

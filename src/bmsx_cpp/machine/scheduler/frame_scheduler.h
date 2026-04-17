@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/types.h"
-#include "machine/runtime/runtime_frame_state.h"
+#include "machine/runtime/frame_state.h"
 #include <array>
 
 namespace bmsx {
@@ -18,7 +18,7 @@ struct TickCompletion {
 
 constexpr size_t TICK_COMPLETION_QUEUE_CAPACITY = 16;
 
-class RuntimeMachineSchedulerState {
+class FrameSchedulerState {
 public:
 	void clearQueuedTime();
 	void clearTickCompletionQueue();

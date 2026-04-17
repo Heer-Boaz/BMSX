@@ -8,7 +8,7 @@ import {
 import { runtimeFault } from '../../ide/runtime/runtime_lua_pipeline';
 import type { FrameState, Runtime } from './runtime';
 
-export class RuntimeCpuExecutionState {
+export class CpuExecutionState {
 	private debugCycleReportAtMs = 0;
 	private debugCycleRuns = 0;
 	private debugCycleYields = 0;

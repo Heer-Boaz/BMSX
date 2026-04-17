@@ -1,6 +1,6 @@
 #pragma once
 
-#include "machine/program/program_loader.h"
+#include "machine/program/loader.h"
 #include <memory>
 #include <string>
 

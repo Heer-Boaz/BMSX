@@ -1,5 +1,5 @@
 import type { RomAsset } from '../../src/bmsx/rompack/rompack';
-import { PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/machine/program/program_asset';
+import { PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/machine/program/asset';
 import { parseCartHeader } from '../../src/bmsx/rompack/romloader';
 import { parseRomMetadataSection } from '../../src/bmsx/rompack/rom_metadata';
 import { clamp } from '../../src/bmsx/common/clamp';

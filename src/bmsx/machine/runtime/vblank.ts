@@ -1,13 +1,13 @@
 import { IRQ_VBLANK } from '../bus/io';
 import type { FrameState, Runtime } from './runtime';
-import { advanceRuntimeTime, runDueRuntimeTimers } from './runtime_cpu_executor';
-import { refreshDeviceTimings } from './runtime_timing_config';
+import { advanceRuntimeTime, runDueRuntimeTimers } from './cpu_executor';
+import { refreshDeviceTimings } from './timing_config';
 
 export type RuntimeVblankSnapshot = {
 	cyclesIntoFrame: number;
 };
 
-export class RuntimeVblankState {
+export class VblankState {
 	private clearBackQueuesAfterIrqWake = false;
 	private haltIrqSignalSequence = 0;
 	private haltIrqWaitArmed = false;
@@ -79,7 +79,7 @@ export class RuntimeVblankState {
 
 	public restore(runtime: Runtime, state: RuntimeVblankSnapshot): void {
 		this.clearHaltUntilIrq(runtime);
-		runtime.machineScheduler.reset();
+		runtime.frameScheduler.reset();
 		runtime.frameLoop.reset();
 		runtime.screen.reset();
 		this.resetScheduler(runtime);
@@ -249,7 +249,7 @@ export class RuntimeVblankState {
 			return;
 		}
 		this.activeTickCompleted = true;
-		runtime.machineScheduler.enqueueTickCompletion(runtime, frameState);
+		runtime.frameScheduler.enqueueTickCompletion(runtime, frameState);
 		this.lastCompletedVblankSequence = vblankSequence;
 	}
 }

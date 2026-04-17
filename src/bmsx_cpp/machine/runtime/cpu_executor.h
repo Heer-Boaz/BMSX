@@ -1,13 +1,13 @@
 #pragma once
 
 #include "machine/cpu/cpu.h"
-#include "machine/runtime/runtime_frame_state.h"
+#include "machine/runtime/frame_state.h"
 
 namespace bmsx {
 
 class Runtime;
 
-class RuntimeCpuExecutionState {
+class CpuExecutionState {
 public:
 	RunResult runWithBudget(Runtime& runtime, FrameState& frameState);
 };

@@ -4,7 +4,7 @@ namespace bmsx {
 
 class Runtime;
 
-class RuntimeCartBootState {
+class CartBootState {
 public:
 	void reset(Runtime& runtime);
 	void prepareIfNeeded(Runtime& runtime);

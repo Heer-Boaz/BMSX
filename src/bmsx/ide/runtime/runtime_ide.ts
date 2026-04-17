@@ -26,7 +26,7 @@ import {
 	parseJsStackFrames,
 	sanitizeLuaErrorMessage,
 } from '../editor/contrib/runtime_error/runtime_error_util';
-import { logDebugState } from '../../machine/runtime/runtime_debug';
+import { logDebugState } from '../../machine/runtime/debug';
 import { TerminalMode } from '../terminal/ui/terminal_mode';
 import type { Runtime } from '../../machine/runtime/runtime';
 import type { RuntimeOptions } from '../../machine/runtime/types';

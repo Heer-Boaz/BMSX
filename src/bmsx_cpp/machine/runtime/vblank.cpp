@@ -1,10 +1,10 @@
-#include "machine/runtime/runtime_vblank.h"
+#include "machine/runtime/vblank.h"
 
 #include "core/engine_core.h"
 #include "machine/bus/io.h"
 #include "machine/runtime/runtime.h"
-#include "machine/runtime/runtime_cpu_executor.h"
-#include "machine/runtime/runtime_timing_config.h"
+#include "machine/runtime/cpu_executor.h"
+#include "machine/runtime/timing_config.h"
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -17,7 +17,7 @@ inline std::runtime_error runtimeFault(const std::string& message) {
 }
 }
 
-void RuntimeVblankState::configureCycleBudget(Runtime& runtime) {
+void VblankState::configureCycleBudget(Runtime& runtime) {
 	if (m_vblankCycles <= 0) {
 		return;
 	}
@@ -28,7 +28,7 @@ void RuntimeVblankState::configureCycleBudget(Runtime& runtime) {
 	reset(runtime);
 }
 
-void RuntimeVblankState::setVblankCycles(Runtime& runtime, int cycles) {
+void VblankState::setVblankCycles(Runtime& runtime, int cycles) {
 	if (cycles <= 0) {
 		throw runtimeFault("vblank_cycles must be greater than 0.");
 	}
@@ -40,16 +40,16 @@ void RuntimeVblankState::setVblankCycles(Runtime& runtime, int cycles) {
 	reset(runtime);
 }
 
-int RuntimeVblankState::getCyclesIntoFrame(const Runtime& runtime) const {
+int VblankState::getCyclesIntoFrame(const Runtime& runtime) const {
 	return static_cast<int>(runtime.m_machine.scheduler().nowCycles() - m_frameStartCycle);
 }
 
-void RuntimeVblankState::resetScheduler(Runtime& runtime) {
+void VblankState::resetScheduler(Runtime& runtime) {
 	runtime.m_machine.scheduler().reset();
 	m_frameStartCycle = 0;
 }
 
-void RuntimeVblankState::reset(Runtime& runtime) {
+void VblankState::reset(Runtime& runtime) {
 	resetScheduler(runtime);
 	m_vblankActive = false;
 	m_vblankSequence = 0;
@@ -65,15 +65,15 @@ void RuntimeVblankState::reset(Runtime& runtime) {
 	refreshDeviceTimings(runtime, runtime.m_machine.scheduler().nowCycles());
 }
 
-RuntimeVblankSnapshot RuntimeVblankState::capture(const Runtime& runtime) const {
+RuntimeVblankSnapshot VblankState::capture(const Runtime& runtime) const {
 	RuntimeVblankSnapshot state;
 	state.cyclesIntoFrame = getCyclesIntoFrame(runtime);
 	return state;
 }
 
-void RuntimeVblankState::restore(Runtime& runtime, const RuntimeVblankSnapshot& state) {
+void VblankState::restore(Runtime& runtime, const RuntimeVblankSnapshot& state) {
 	clearHaltUntilIrq(runtime);
-	runtime.machineScheduler.reset();
+	runtime.frameScheduler.reset();
 	runtime.frameLoop.reset();
 	runtime.screen.reset();
 	resetScheduler(runtime);
@@ -89,21 +89,21 @@ void RuntimeVblankState::restore(Runtime& runtime, const RuntimeVblankSnapshot& 
 	refreshDeviceTimings(runtime, runtime.m_machine.scheduler().nowCycles());
 }
 
-void RuntimeVblankState::beginTick() {
+void VblankState::beginTick() {
 	m_activeTickCompleted = false;
 }
 
-void RuntimeVblankState::abandonTick() {
+void VblankState::abandonTick() {
 	m_activeTickCompleted = false;
 }
 
-void RuntimeVblankState::handleBeginTimer(Runtime& runtime) {
+void VblankState::handleBeginTimer(Runtime& runtime) {
 	if (!m_vblankActive) {
 		enterVblank(runtime);
 	}
 }
 
-void RuntimeVblankState::handleEndTimer(Runtime& runtime) {
+void VblankState::handleEndTimer(Runtime& runtime) {
 	if (m_vblankActive) {
 		leaveVblank(runtime);
 	}
@@ -114,13 +114,13 @@ void RuntimeVblankState::handleEndTimer(Runtime& runtime) {
 	}
 }
 
-void RuntimeVblankState::clearHaltUntilIrq(Runtime& runtime) {
+void VblankState::clearHaltUntilIrq(Runtime& runtime) {
 	runtime.m_machine.cpu().clearHaltUntilIrq();
 	resetHaltIrqWait();
 	m_clearBackQueuesAfterIrqWake = false;
 }
 
-bool RuntimeVblankState::consumeBackQueueClearAfterIrqWake() {
+bool VblankState::consumeBackQueueClearAfterIrqWake() {
 	if (!m_clearBackQueuesAfterIrqWake) {
 		return false;
 	}
@@ -128,7 +128,7 @@ bool RuntimeVblankState::consumeBackQueueClearAfterIrqWake() {
 	return true;
 }
 
-bool RuntimeVblankState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameState) {
+bool VblankState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameState) {
 	runDueRuntimeTimers(runtime);
 	if (!runtime.m_machine.cpu().isHaltedUntilIrq()) {
 		resetHaltIrqWait();
@@ -170,19 +170,19 @@ bool RuntimeVblankState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameSt
 	}
 }
 
-void RuntimeVblankState::scheduleCurrentFrameTimers(Runtime& runtime) {
+void VblankState::scheduleCurrentFrameTimers(Runtime& runtime) {
 	runtime.m_machine.scheduler().scheduleVblankEnd(m_frameStartCycle + runtime.timing.cycleBudgetPerFrame);
 	if (m_vblankStartCycle > 0 && getCyclesIntoFrame(runtime) < m_vblankStartCycle) {
 		runtime.m_machine.scheduler().scheduleVblankBegin(m_frameStartCycle + m_vblankStartCycle);
 	}
 }
 
-void RuntimeVblankState::setVblankStatus(Runtime& runtime, bool active) {
+void VblankState::setVblankStatus(Runtime& runtime, bool active) {
 	m_vblankActive = active;
 	runtime.m_machine.vdp().setVblankStatus(active);
 }
 
-void RuntimeVblankState::enterVblank(Runtime& runtime) {
+void VblankState::enterVblank(Runtime& runtime) {
 	m_vblankSequence += 1;
 	commitFrameOnVblankEdge(runtime);
 	runtime.m_machine.inputController().onVblankEdge();
@@ -194,16 +194,16 @@ void RuntimeVblankState::enterVblank(Runtime& runtime) {
 	}
 }
 
-void RuntimeVblankState::leaveVblank(Runtime& runtime) {
+void VblankState::leaveVblank(Runtime& runtime) {
 	setVblankStatus(runtime, false);
 }
 
-void RuntimeVblankState::resetHaltIrqWait() {
+void VblankState::resetHaltIrqWait() {
 	m_haltIrqWaitArmed = false;
 	m_haltIrqSignalSequence = 0;
 }
 
-bool RuntimeVblankState::tryCompleteTickOnPendingVblankIrq(Runtime& runtime, FrameState& frameState) {
+bool VblankState::tryCompleteTickOnPendingVblankIrq(Runtime& runtime, FrameState& frameState) {
 	if (!isFrameBoundaryHalt(runtime)) {
 		return false;
 	}
@@ -224,24 +224,24 @@ bool RuntimeVblankState::tryCompleteTickOnPendingVblankIrq(Runtime& runtime, Fra
 	return true;
 }
 
-bool RuntimeVblankState::isFrameBoundaryHalt(Runtime& runtime) const {
+bool VblankState::isFrameBoundaryHalt(Runtime& runtime) const {
 	return runtime.m_machine.cpu().getFrameDepth() == 1
 		&& runtime.m_pendingCall == Runtime::PendingCall::Entry
 		&& runtime.m_machine.cpu().isHaltedUntilIrq();
 }
 
-void RuntimeVblankState::commitFrameOnVblankEdge(Runtime& runtime) {
+void VblankState::commitFrameOnVblankEdge(Runtime& runtime) {
 	runtime.m_machine.vdp().syncRegisters();
 	runtime.m_machine.vdp().presentReadyFrameOnVblankEdge();
 	runtime.m_machine.vdp().commitViewSnapshot(*EngineCore::instance().view());
 }
 
-void RuntimeVblankState::completeTickIfPending(Runtime& runtime, FrameState& frameState, uint64_t vblankSequence) {
+void VblankState::completeTickIfPending(Runtime& runtime, FrameState& frameState, uint64_t vblankSequence) {
 	if (m_lastCompletedVblankSequence == vblankSequence) {
 		return;
 	}
 	m_activeTickCompleted = true;
-	runtime.machineScheduler.enqueueTickCompletion(runtime, frameState);
+	runtime.frameScheduler.enqueueTickCompletion(runtime, frameState);
 	m_lastCompletedVblankSequence = vblankSequence;
 }
 

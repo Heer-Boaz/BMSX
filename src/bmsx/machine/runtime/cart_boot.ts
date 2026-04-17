@@ -2,7 +2,7 @@ import { $ } from '../../core/engine_core';
 import type { CanonicalizationType } from '../../rompack/rompack';
 import type { Program, ProgramMetadata } from '../cpu/cpu';
 import { IO_SYS_BOOT_CART, IO_SYS_CART_BOOTREADY } from '../bus/io';
-import { PROGRAM_ASSET_ID } from '../program/program_asset';
+import { PROGRAM_ASSET_ID } from '../program/asset';
 import * as runtimeLuaPipeline from '../../ide/runtime/runtime_lua_pipeline';
 import type { Runtime } from './runtime';
 
@@ -16,7 +16,7 @@ export type PreparedCartProgram = {
 	canonicalization: CanonicalizationType;
 };
 
-export class RuntimeCartBootState {
+export class CartBootState {
 	public pending = false;
 	public preparedProgram: PreparedCartProgram = null;
 	private deferredPreparationHandle: { stop(): void } = null;
@@ -83,7 +83,7 @@ export class RuntimeCartBootState {
 			runtime.pendingCall = null;
 			runtime.vblank.clearHaltUntilIrq(runtime);
 		}
-		runtime.machineScheduler.clearQueuedTime();
+		runtime.frameScheduler.clearQueuedTime();
 		this.pending = false;
 		console.info('Switching to cart program after BIOS boot request.');
 		runtime.activateProgramSource('cart');
@@ -130,7 +130,7 @@ export class RuntimeCartBootState {
 			return;
 		}
 		runtime.machine.memory.writeValue(IO_SYS_BOOT_CART, 0);
-		runtime.machineScheduler.clearQueuedTime();
+		runtime.frameScheduler.clearQueuedTime();
 		this.request(runtime);
 	}
 }

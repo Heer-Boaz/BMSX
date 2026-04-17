@@ -11,14 +11,14 @@ import {
 	readInstructionWord,
 	writeInstruction,
 } from '../cpu/instruction_format';
-import { resolveProgramLayout, type ProgramLayout } from './program_layout';
+import { resolveProgramLayout, type ProgramLayout } from './layout';
 import type {
 	EncodedProgram,
 	EncodedValue,
 	ProgramAsset,
 	ProgramConstReloc,
 	ProgramSymbolsAsset,
-} from './program_asset';
+} from './asset';
 
 type LinkedProgramAsset = {
 	programAsset: ProgramAsset;

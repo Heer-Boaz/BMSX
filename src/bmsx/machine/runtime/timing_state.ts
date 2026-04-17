@@ -1,8 +1,8 @@
 import { $ } from '../../core/engine_core';
 import { HZ_SCALE } from '../../platform/platform';
-import { resolveUfpsScaled } from './runtime_timing';
+import { resolveUfpsScaled } from './timing';
 
-export class RuntimeTimingState {
+export class TimingState {
 	public ufps: number;
 	public frameDurationMs: number;
 	public cpuHz: number;

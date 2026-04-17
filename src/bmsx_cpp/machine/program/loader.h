@@ -48,20 +48,20 @@ struct ProgramAsset {
  * ProgramLoader - loads pre-compiled bytecode from ROM.
  *
  * The rompacker compiles Lua to bytecode at build time using the TypeScript
- * program_compiler and encodes it with binencoder. This class deserializes
+ * compiler.ts and encodes it with binencoder. This class deserializes
  * that bytecode for the C++ runtime.
  */
 class ProgramLoader {
 public:
 	/**
 	 * Load a ProgramAsset from binary data.
-	 * The binary format is produced by program_asset.ts::encodeProgramAsset.
+	 * The binary format is produced by asset.ts::encodeProgramAsset.
 	 */
 	static std::unique_ptr<ProgramAsset> load(const uint8_t* data, size_t size);
 
 	/**
 	 * Load program symbols (ProgramMetadata) from binary data.
-	 * The binary format is produced by program_asset.ts::encodeProgramSymbolsAsset.
+	 * The binary format is produced by asset.ts::encodeProgramSymbolsAsset.
 	 */
 	static std::unique_ptr<ProgramMetadata> loadSymbols(const uint8_t* data, size_t size);
 

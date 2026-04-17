@@ -1,6 +1,6 @@
 import { $ } from '../../core/engine_core';
 import { clamp } from '../../common/clamp';
-import type { Runtime } from './runtime';
+import type { Runtime } from '../runtime/runtime';
 
 export type TickCompletion = {
 	sequence: number;
@@ -32,7 +32,7 @@ function createTickCompletionQueue(): TickCompletion[] {
 	return queue;
 }
 
-export class RuntimeMachineSchedulerState {
+export class FrameSchedulerState {
 	public lastTickSequence = 0;
 	public lastTickBudgetGranted = 0;
 	public lastTickCpuBudgetGranted = 0;

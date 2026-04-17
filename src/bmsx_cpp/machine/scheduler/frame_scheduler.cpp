@@ -1,4 +1,4 @@
-#include "machine/runtime/runtime_machine_scheduler.h"
+#include "machine/scheduler/frame_scheduler.h"
 #include "machine/runtime/runtime.h"
 #include "common/clamp.h"
 #include <algorithm>
@@ -14,16 +14,16 @@ inline std::runtime_error runtimeFault(const std::string& message) {
 }
 }
 
-void RuntimeMachineSchedulerState::accumulateHostTime(const Runtime& runtime, f64 deltaMs) {
+void FrameSchedulerState::accumulateHostTime(const Runtime& runtime, f64 deltaMs) {
 	const f64 maxAccumulatedMs = runtime.timing.frameDurationMs * static_cast<f64>(MAX_CATCH_UP_FRAMES);
 	m_accumulatedHostTimeMs = clamp(m_accumulatedHostTimeMs + deltaMs, 0.0, maxAccumulatedMs);
 }
 
-bool RuntimeMachineSchedulerState::hasScheduledFrame(const Runtime& runtime) const {
+bool FrameSchedulerState::hasScheduledFrame(const Runtime& runtime) const {
 	return m_accumulatedHostTimeMs + FRAME_SLICE_EPSILON_MS >= runtime.timing.frameDurationMs;
 }
 
-bool RuntimeMachineSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
+bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
 	if (!runtime.m_luaInitialized || !runtime.m_tickEnabled || runtime.m_runtimeFailed) {
 		return false;
 	}
@@ -33,7 +33,7 @@ bool RuntimeMachineSchedulerState::canRunScheduledUpdate(const Runtime& runtime)
 	return hasScheduledFrame(runtime);
 }
 
-bool RuntimeMachineSchedulerState::consumeScheduledFrame(const Runtime& runtime) {
+bool FrameSchedulerState::consumeScheduledFrame(const Runtime& runtime) {
 	if (!hasScheduledFrame(runtime)) {
 		return false;
 	}
@@ -41,23 +41,23 @@ bool RuntimeMachineSchedulerState::consumeScheduledFrame(const Runtime& runtime)
 	return true;
 }
 
-void RuntimeMachineSchedulerState::clearQueuedTime() {
+void FrameSchedulerState::clearQueuedTime() {
 	m_accumulatedHostTimeMs = 0.0;
 }
 
-void RuntimeMachineSchedulerState::clearTickCompletionQueue() {
+void FrameSchedulerState::clearTickCompletionQueue() {
 	m_tickCompletionReadIndex = 0;
 	m_tickCompletionWriteIndex = 0;
 	m_tickCompletionCount = 0;
 	lastTickConsumedSequence = lastTickSequence;
 }
 
-void RuntimeMachineSchedulerState::reset() {
+void FrameSchedulerState::reset() {
 	clearQueuedTime();
 	clearTickCompletionQueue();
 }
 
-void RuntimeMachineSchedulerState::resetTickTelemetry() {
+void FrameSchedulerState::resetTickTelemetry() {
 	lastTickCompleted = false;
 	lastTickBudgetGranted = 0;
 	lastTickCpuBudgetGranted = 0;
@@ -70,7 +70,7 @@ void RuntimeMachineSchedulerState::resetTickTelemetry() {
 	lastTickConsumedSequence = 0;
 }
 
-void RuntimeMachineSchedulerState::enqueueTickCompletion(Runtime& runtime, FrameState& frameState) {
+void FrameSchedulerState::enqueueTickCompletion(Runtime& runtime, FrameState& frameState) {
 	if (m_tickCompletionCount >= TICK_COMPLETION_QUEUE_CAPACITY) {
 		throw runtimeFault("tick completion queue overflow.");
 	}
@@ -94,7 +94,7 @@ void RuntimeMachineSchedulerState::enqueueTickCompletion(Runtime& runtime, Frame
 	lastTickSequence = sequence;
 }
 
-bool RuntimeMachineSchedulerState::consumeTickCompletion(TickCompletion& outCompletion) {
+bool FrameSchedulerState::consumeTickCompletion(TickCompletion& outCompletion) {
 	if (m_tickCompletionCount == 0u) {
 		return false;
 	}
@@ -105,7 +105,7 @@ bool RuntimeMachineSchedulerState::consumeTickCompletion(TickCompletion& outComp
 	return true;
 }
 
-bool RuntimeMachineSchedulerState::refillFrameBudget(Runtime& runtime, FrameState& frameState) {
+bool FrameSchedulerState::refillFrameBudget(Runtime& runtime, FrameState& frameState) {
 	if (!consumeScheduledFrame(runtime)) {
 		return false;
 	}
@@ -114,7 +114,7 @@ bool RuntimeMachineSchedulerState::refillFrameBudget(Runtime& runtime, FrameStat
 	return true;
 }
 
-bool RuntimeMachineSchedulerState::startScheduledFrame(Runtime& runtime) {
+bool FrameSchedulerState::startScheduledFrame(Runtime& runtime) {
 	if (!consumeScheduledFrame(runtime)) {
 		return false;
 	}
@@ -123,7 +123,7 @@ bool RuntimeMachineSchedulerState::startScheduledFrame(Runtime& runtime) {
 	return true;
 }
 
-void RuntimeMachineSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
+void FrameSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
 	accumulateHostTime(runtime, hostDeltaMs);
 	while (canRunScheduledUpdate(runtime)) {
 		const bool progressed = runtime.frameLoop.tickUpdate(runtime);

@@ -36,7 +36,7 @@ const { LuaLexer } = require('../../src/bmsx/lua/syntax/lualexer');
 // @ts-ignore
 const { LuaParser } = require('../../src/bmsx/lua/syntax/luaparser');
 // @ts-ignore
-const { compileLuaChunkToProgram, isLuaCompileError } = require('../../src/bmsx/machine/program/program_compiler');
+const { compileLuaChunkToProgram, isLuaCompileError } = require('../../src/bmsx/machine/program/compiler');
 // @ts-ignore
 const {
 	PROGRAM_ASSET_ID,
@@ -46,7 +46,7 @@ const {
 	encodeProgram,
 	encodeProgramAsset,
 	encodeProgramSymbolsAsset,
-} = require('../../src/bmsx/machine/program/program_asset');
+} = require('../../src/bmsx/machine/program/asset');
 // @ts-ignore
 // @ts-ignore
 const pako = require('pako');

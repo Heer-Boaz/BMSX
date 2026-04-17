@@ -10,7 +10,7 @@ import {
 	type Ref,
 	type SymbolID,
 } from './semantic_model';
-import { buildModuleAliasesFromPaths } from '../../../../machine/program/program_asset';
+import { buildModuleAliasesFromPaths } from '../../../../machine/program/asset';
 import {
 	computeLuaDiagnosticsFromAnalysis,
 	getDefaultLuaBuiltinDescriptors,

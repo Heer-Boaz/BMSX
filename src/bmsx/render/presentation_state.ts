@@ -7,7 +7,7 @@ import {
 	preparePartialRenderQueues,
 } from './shared/render_queues';
 import type { Runtime } from '../machine/runtime/runtime';
-import type { TickCompletion } from '../machine/runtime/runtime_machine_scheduler';
+import type { TickCompletion } from '../machine/scheduler/frame_scheduler';
 import * as runtimeIde from '../ide/runtime/runtime_ide';
 
 export type RenderPresentationMode = 'partial' | 'completed';
@@ -151,7 +151,7 @@ export class RenderPresentationState {
 		if (runtime.frameLoop.currentFrameState !== null) {
 			runtime.frameLoop.abandonFrameState(runtime);
 		}
-		runtime.machineScheduler.clearQueuedTime();
+		runtime.frameScheduler.clearQueuedTime();
 		runtimeIde.tickIDE(runtime);
 		runtimeIde.tickTerminalMode(runtime);
 		this.markPresentation('completed', false);
@@ -159,14 +159,14 @@ export class RenderPresentationState {
 
 	public syncAfterRuntimeUpdate(runtime: Runtime, previousTickSequence: number): void {
 		if (runtime.executionOverlayActive) {
-			runtime.machineScheduler.clearQueuedTime();
+			runtime.frameScheduler.clearQueuedTime();
 			this.markPresentation('completed', false);
-		} else if (runtime.machineScheduler.lastTickSequence !== previousTickSequence) {
-			this.markPresentation('completed', runtime.machineScheduler.lastTickVisualFrameCommitted);
+		} else if (runtime.frameScheduler.lastTickSequence !== previousTickSequence) {
+			this.markPresentation('completed', runtime.frameScheduler.lastTickVisualFrameCommitted);
 		} else if (runtime.isDrawPending) {
 			this.markPresentation('partial', false);
 		}
-		while (runtime.machineScheduler.consumeTickCompletion(this.tickCompletionScratch)) {
+		while (runtime.frameScheduler.consumeTickCompletion(this.tickCompletionScratch)) {
 			this.recordTickCompletion(this.tickCompletionScratch.visualCommitted, this.tickCompletionScratch.vdpFrameHeld);
 		}
 	}
@@ -178,7 +178,7 @@ export class RenderPresentationState {
 			this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
 			return;
 		}
-		runtime.machineScheduler.clearQueuedTime();
+		runtime.frameScheduler.clearQueuedTime();
 		this.clearPresentation();
 		prepareHeldRenderQueues();
 		this.presentFrame(runtime, hostDeltaMs, 'completed', false);

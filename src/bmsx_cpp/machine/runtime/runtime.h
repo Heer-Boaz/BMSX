@@ -11,14 +11,14 @@
 #include "machine/machine.h"
 #include "render/presentation_state.h"
 #include "machine/scheduler/device_scheduler.h"
-#include "machine/runtime/runtime_timing.h"
-#include "machine/runtime/runtime_vblank.h"
-#include "machine/runtime/runtime_cpu_executor.h"
-#include "machine/runtime/runtime_cart_boot.h"
+#include "machine/runtime/timing.h"
+#include "machine/runtime/vblank.h"
+#include "machine/runtime/cpu_executor.h"
+#include "machine/runtime/cart_boot.h"
 #include "machine/program/lua_scratch.h"
 #include "machine/memory/memory.h"
-#include "machine/runtime/runtime_frame_loop.h"
-#include "machine/runtime/runtime_machine_scheduler.h"
+#include "machine/runtime/frame_loop.h"
+#include "machine/scheduler/frame_scheduler.h"
 #include "machine/devices/vdp/vdp.h"
 #include "render/gameview.h"
 #include "render/shared/render_types.h"
@@ -85,10 +85,10 @@ struct RuntimeState {
  */
 class Runtime {
 public:
-	friend class RuntimeFrameLoopState;
-	friend class RuntimeMachineSchedulerState;
-	friend class RuntimeVblankState;
-	friend class RuntimeCartBootState;
+	friend class FrameLoopState;
+	friend class FrameSchedulerState;
+	friend class VblankState;
+	friend class CartBootState;
 
 	enum class ProgramSource {
 		Engine,
@@ -230,16 +230,16 @@ public:
 	void resetHardwareState();
 	void resetRuntimeForProgramReload();
 	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
-	i64 lastTickSequence() const { return machineScheduler.lastTickSequence; }
-	int lastTickBudgetRemaining() const { return machineScheduler.lastTickBudgetRemaining; }
-	int lastTickBudgetGranted() const { return machineScheduler.lastTickSequence == 0 ? timing.cycleBudgetPerFrame : machineScheduler.lastTickBudgetGranted; }
-	int cpuUsedCyclesLastTick() const { return machineScheduler.lastTickSequence == 0 ? 0 : machineScheduler.lastTickCpuUsedCycles; }
+	i64 lastTickSequence() const { return frameScheduler.lastTickSequence; }
+	int lastTickBudgetRemaining() const { return frameScheduler.lastTickBudgetRemaining; }
+	int lastTickBudgetGranted() const { return frameScheduler.lastTickSequence == 0 ? timing.cycleBudgetPerFrame : frameScheduler.lastTickBudgetGranted; }
+	int cpuUsedCyclesLastTick() const { return frameScheduler.lastTickSequence == 0 ? 0 : frameScheduler.lastTickCpuUsedCycles; }
 	int activeCpuCyclesGrantedLastTick() const { return lastTickBudgetGranted(); }
 	int activeCpuUsedCyclesLastTick() const { return cpuUsedCyclesLastTick(); }
 	int vdpWorkUnitsPerSec() const { return timing.vdpWorkUnitsPerSec; }
-	bool lastTickVisualFrameCommitted() const { return machineScheduler.lastTickVisualFrameCommitted; }
-	int lastTickVdpFrameCost() const { return machineScheduler.lastTickVdpFrameCost; }
-	bool lastTickVdpFrameHeld() const { return machineScheduler.lastTickVdpFrameHeld; }
+	bool lastTickVisualFrameCommitted() const { return frameScheduler.lastTickVisualFrameCommitted; }
+	int lastTickVdpFrameCost() const { return frameScheduler.lastTickVdpFrameCost; }
+	bool lastTickVdpFrameHeld() const { return frameScheduler.lastTickVdpFrameHeld; }
 	uint32_t trackedRamUsedBytes() const;
 	uint32_t trackedVramUsedBytes() const;
 	uint32_t trackedVramTotalBytes() const { return m_machine.vdp().trackedTotalVramBytes(); }
@@ -249,12 +249,12 @@ public:
 	void restoreVramSlotTextures();
 	void captureVramTextureSnapshots();
 	RenderPresentationState screen;
-	RuntimeTimingState timing;
-	RuntimeMachineSchedulerState machineScheduler;
-	RuntimeCpuExecutionState cpuExecution;
-	RuntimeFrameLoopState frameLoop;
-	RuntimeVblankState vblank;
-	RuntimeCartBootState cartBoot;
+	TimingState timing;
+	FrameSchedulerState frameScheduler;
+	CpuExecutionState cpuExecution;
+	FrameLoopState frameLoop;
+	VblankState vblank;
+	CartBootState cartBoot;
 	LuaScratchState luaScratch;
 
 private:

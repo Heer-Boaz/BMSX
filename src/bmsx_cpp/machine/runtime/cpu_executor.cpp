@@ -1,4 +1,4 @@
-#include "machine/runtime/runtime_cpu_executor.h"
+#include "machine/runtime/cpu_executor.h"
 
 #include "machine/runtime/runtime.h"
 #include "machine/scheduler/device_scheduler.h"
@@ -31,7 +31,7 @@ void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
 
 } // namespace
 
-RunResult RuntimeCpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameState) {
+RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameState) {
 	int remaining = frameState.cycleBudgetRemaining;
 	RunResult result = RunResult::Yielded;
 	runDueRuntimeTimers(runtime);

@@ -1,4 +1,4 @@
-#include "machine/runtime/runtime_engine_irq.h"
+#include "machine/runtime/engine_irq.h"
 
 #include "machine/bus/io.h"
 #include "machine/runtime/runtime.h"

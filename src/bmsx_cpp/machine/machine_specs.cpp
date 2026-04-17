@@ -1,6 +1,6 @@
 #include "machine/machine_specs.h"
 
-#include "machine/runtime/runtime_timing.h"
+#include "machine/runtime/timing.h"
 #include "rompack/runtime_assets.h"
 
 #include <stdexcept>

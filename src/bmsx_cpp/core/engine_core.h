@@ -45,7 +45,7 @@ enum class EngineState {
 
 class EngineCore {
 public:
-	friend class RuntimeFrameLoopState;
+	friend class FrameLoopState;
 	friend class RenderPresentationState;
 
 	struct TickTiming {

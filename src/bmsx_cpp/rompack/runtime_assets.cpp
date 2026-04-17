@@ -4,7 +4,7 @@
 
 #include "runtime_assets.h"
 #include "common/serializer/binencoder.h"
-#include "../machine/program/program_loader.h"
+#include "../machine/program/loader.h"
 #include "common/mem_snapshot.h"
 #include <cstring>
 #include <stdexcept>

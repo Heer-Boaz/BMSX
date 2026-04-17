@@ -8,7 +8,7 @@ import { runtimeFault } from '../../ide/runtime/runtime_lua_pipeline';
 
 const MAX_FRAME_DELTA = 250;
 
-export class RuntimeFrameLoopState {
+export class FrameLoopState {
 	public currentTimeMs = 0;
 	public frameDeltaMs = 0;
 	public currentFrameState: FrameState = null;
@@ -56,13 +56,13 @@ export class RuntimeFrameLoopState {
 		const previousState = this.currentFrameState;
 		const previousRemaining = previousState?.cycleBudgetRemaining ?? -1;
 		const previousPending = runtime.pendingCall === 'entry';
-		const previousSequence = runtime.machineScheduler.lastTickSequence;
+		const previousSequence = runtime.frameScheduler.lastTickSequence;
 		if (this.currentFrameState === null) {
-			if (!runtime.machineScheduler.startScheduledFrame(runtime)) {
+			if (!runtime.frameScheduler.startScheduledFrame(runtime)) {
 				return false;
 			}
 		} else if (this.currentFrameState.cycleBudgetRemaining <= 0) {
-			if (!runtime.machineScheduler.refillFrameBudget(runtime, this.currentFrameState)) {
+			if (!runtime.frameScheduler.refillFrameBudget(runtime, this.currentFrameState)) {
 				return false;
 			}
 		}
@@ -77,7 +77,7 @@ export class RuntimeFrameLoopState {
 		if ((runtime.pendingCall === 'entry') !== previousPending) {
 			return true;
 		}
-		return runtime.machineScheduler.lastTickSequence !== previousSequence;
+		return runtime.frameScheduler.lastTickSequence !== previousSequence;
 	}
 
 	public abandonFrameState(runtime: Runtime): void {
@@ -106,14 +106,14 @@ export class RuntimeFrameLoopState {
 					if (runtime.executionOverlayActive) {
 						runtime.screen.runOverlay(runtime);
 					} else {
-						runtime.machineScheduler.clearQueuedTime();
+						runtime.frameScheduler.clearQueuedTime();
 					}
 				} else if (runtime.executionOverlayActive) {
 					runtime.screen.runOverlay(runtime);
 				} else {
-					const previousTickSequence = runtime.machineScheduler.lastTickSequence;
+					const previousTickSequence = runtime.frameScheduler.lastTickSequence;
 					$.deltatime = runtime.timing.frameDurationMs;
-					runtime.machineScheduler.run(runtime, hostDeltaMs);
+					runtime.frameScheduler.run(runtime, hostDeltaMs);
 					runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 				}
 				runtime.screen.presentPending(runtime, hostDeltaMs);

@@ -17,7 +17,7 @@
 
 #include "core/types.h"
 #include "common/serializer/binencoder.h"
-#include "../machine/program/program_loader.h"
+#include "../machine/program/loader.h"
 #include <string>
 #include <unordered_map>
 #include <vector>

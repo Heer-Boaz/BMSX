@@ -4,7 +4,7 @@ import { isLuaCallSignal } from '../../lua/luavalue';
 import { Closure, RunResult, type Value } from '../cpu/cpu';
 import { buildMarshalContext, extendMarshalContext, toNativeValue, toRuntimeValue } from '../firmware/lua_js_bridge';
 import * as runtimeLuaPipeline from '../../ide/runtime/runtime_lua_pipeline';
-import { advanceRuntimeTime, runDueRuntimeTimers } from '../runtime/runtime_cpu_executor';
+import { advanceRuntimeTime, runDueRuntimeTimers } from '../runtime/cpu_executor';
 import type { Runtime } from '../runtime/runtime';
 
 export function callLuaFunction(runtime: Runtime, fn: LuaFunctionValue, args: unknown[]): unknown[] {

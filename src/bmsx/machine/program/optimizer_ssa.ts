@@ -1,7 +1,7 @@
 import { OpCode, type SourceRange, type Value } from '../cpu/cpu';
 import { MAX_EXT_CONST, MAX_SIGNED_BX, MIN_SIGNED_BX } from '../cpu/instruction_format';
 import { isStringValue, stringValueToString } from '../memory/string_pool';
-import type { Instruction, InstructionSet, OptimizationContext } from './program_optimizer';
+import type { Instruction, InstructionSet, OptimizationContext } from './optimizer';
 
 type Block = {
 	start: number;

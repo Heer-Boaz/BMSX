@@ -1,4 +1,4 @@
-#include "machine/runtime/runtime_cart_boot.h"
+#include "machine/runtime/cart_boot.h"
 
 #include "core/engine_core.h"
 #include "machine/bus/io.h"
@@ -8,17 +8,17 @@
 
 namespace bmsx {
 
-void RuntimeCartBootState::reset(Runtime& runtime) {
+void CartBootState::reset(Runtime& runtime) {
 	m_prepared = false;
 	m_pending = false;
 	setReadyFlag(runtime, false);
 }
 
-void RuntimeCartBootState::setReadyFlag(Runtime& runtime, bool value) {
+void CartBootState::setReadyFlag(Runtime& runtime, bool value) {
 	runtime.machine().memory().writeValue(IO_SYS_CART_BOOTREADY, valueNumber(value ? 1.0 : 0.0));
 }
 
-void RuntimeCartBootState::prepareIfNeeded(Runtime& runtime) {
+void CartBootState::prepareIfNeeded(Runtime& runtime) {
 	if (!runtime.isEngineProgramActive()) {
 		return;
 	}
@@ -32,12 +32,12 @@ void RuntimeCartBootState::prepareIfNeeded(Runtime& runtime) {
 	setReadyFlag(runtime, true);
 }
 
-void RuntimeCartBootState::request(Runtime& runtime) {
+void CartBootState::request(Runtime& runtime) {
 	m_pending = true;
 	setReadyFlag(runtime, false);
 }
 
-bool RuntimeCartBootState::pollSystemBootRequest(Runtime& runtime) {
+bool CartBootState::pollSystemBootRequest(Runtime& runtime) {
 	if (!runtime.isEngineProgramActive()) {
 		return false;
 	}
@@ -45,12 +45,12 @@ bool RuntimeCartBootState::pollSystemBootRequest(Runtime& runtime) {
 		return false;
 	}
 	runtime.machine().memory().writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
-	runtime.machineScheduler.clearQueuedTime();
+	runtime.frameScheduler.clearQueuedTime();
 	request(runtime);
 	return true;
 }
 
-bool RuntimeCartBootState::processPending(Runtime& runtime) {
+bool CartBootState::processPending(Runtime& runtime) {
 	if (!m_pending) {
 		return false;
 	}
@@ -61,7 +61,7 @@ bool RuntimeCartBootState::processPending(Runtime& runtime) {
 		runtime.m_pendingCall = Runtime::PendingCall::None;
 		runtime.vblank.clearHaltUntilIrq(runtime);
 	}
-	runtime.machineScheduler.clearQueuedTime();
+	runtime.frameScheduler.clearQueuedTime();
 	m_pending = false;
 	try {
 		if (!EngineCore::instance().bootLoadedCart()) {

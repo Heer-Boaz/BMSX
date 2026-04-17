@@ -1,6 +1,6 @@
 #pragma once
 
-#include "machine/runtime/runtime_machine_scheduler.h"
+#include "machine/scheduler/frame_scheduler.h"
 #include "core/types.h"
 #include "render/gameview.h"
 #include <chrono>

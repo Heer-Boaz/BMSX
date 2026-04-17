@@ -9,16 +9,16 @@ import { ENGINE_LUA_BUILTIN_FUNCTIONS, ENGINE_LUA_BUILTIN_GLOBALS } from '../../
 import { seedLuaGlobals } from '../../machine/firmware/lua_globals';
 import { ENGINE_SYSTEM_HELPER_NAMES } from '../../machine/firmware/lua_system_globals';
 import { LuaEntrySnapshot } from '../../machine/firmware/lua_js_bridge';
-import { compileLuaChunkToProgram, appendLuaChunkToProgram } from '../../machine/program/program_compiler';
-import { linkProgramAssets } from '../../machine/program/program_linker';
+import { compileLuaChunkToProgram, appendLuaChunkToProgram } from '../../machine/program/compiler';
+import { linkProgramAssets } from '../../machine/program/linker';
 import { getWorkspaceCachedSource } from '../workspace/workspace_cache';
 import type { RuntimeState, SymbolEntry, SymbolKind } from '../../machine/runtime/types';
 import type { LuaSourceRecord, LuaSourceRegistry } from '../../machine/program/lua_sources';
-import { logDebugState } from '../../machine/runtime/runtime_debug';
+import { logDebugState } from '../../machine/runtime/debug';
 import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
 import * as runtimeIde from './runtime_ide';
-import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from '../../machine/runtime/runtime_timing';
-import { setCpuHz, setCycleBudgetPerFrame, setTransferRatesFromManifest } from '../../machine/runtime/runtime_timing_config';
+import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from '../../machine/runtime/timing';
+import { setCpuHz, setCycleBudgetPerFrame, setTransferRatesFromManifest } from '../../machine/runtime/timing_config';
 import {
 	buildModuleAliasMap,
 	buildModuleAliasesFromPaths,
@@ -30,7 +30,7 @@ import {
 	PROGRAM_SYMBOLS_ASSET_ID,
 	type ProgramAsset,
 	type ProgramSymbolsAsset,
-} from '../../machine/program/program_asset';
+} from '../../machine/program/asset';
 import { INSTRUCTION_BYTES } from '../../machine/cpu/instruction_format';
 import {
 	IRQ_NEWGAME,
@@ -41,7 +41,7 @@ import type { RawAssetSource } from '../../rompack/asset_source';
 import { Table, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from '../../machine/cpu/cpu';
 import { StringValue, isStringValue, stringValueToString } from '../../machine/memory/string_pool';
 import { Runtime } from '../../machine/runtime/runtime';
-import { raiseEngineIrq } from '../../machine/runtime/runtime_engine_irq';
+import { raiseEngineIrq } from '../../machine/runtime/engine_irq';
 import { callClosure, callClosureInto, callClosureIntoWithScheduler } from '../../machine/program/lua_executor';
 import { getSourceForChunk } from '../editor/common/text_runtime';
 
@@ -485,10 +485,10 @@ export function resetFrameState(runtime: Runtime): void {
 	runtime.frameLoop.abandonFrameState(runtime);
 	runtime.frameLoop.drawFrameState = null;
 	runtime.vblank.clearHaltUntilIrq(runtime);
-	runtime.machineScheduler.reset();
+	runtime.frameScheduler.reset();
 	runtime.frameLoop.reset();
 	runtime.screen.reset();
-	runtime.machineScheduler.resetTickTelemetry();
+	runtime.frameScheduler.resetTickTelemetry();
 }
 
 export function resetHardwareState(runtime: Runtime): void {

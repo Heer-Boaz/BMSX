@@ -1381,16 +1381,16 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		out.push(table);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_cycles_used', createNativeFunction('sys_cpu_cycles_used', (_args, out) => {
-		out.push(runtime.machineScheduler.lastTickCpuUsedCycles);
+		out.push(runtime.frameScheduler.lastTickCpuUsedCycles);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_cycles_granted', createNativeFunction('sys_cpu_cycles_granted', (_args, out) => {
-		out.push(runtime.machineScheduler.lastTickCpuBudgetGranted);
+		out.push(runtime.frameScheduler.lastTickCpuBudgetGranted);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_active_cycles_used', createNativeFunction('sys_cpu_active_cycles_used', (_args, out) => {
-		out.push(runtime.machineScheduler.lastTickCpuUsedCycles);
+		out.push(runtime.frameScheduler.lastTickCpuUsedCycles);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_active_cycles_granted', createNativeFunction('sys_cpu_active_cycles_granted', (_args, out) => {
-		out.push(runtime.machineScheduler.lastTickCpuBudgetGranted);
+		out.push(runtime.frameScheduler.lastTickCpuBudgetGranted);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_ram_used', createNativeFunction('sys_ram_used', (_args, out) => {
 		out.push(runtime.machine.resourceUsageDetector.getRamUsedBytes());
@@ -1402,10 +1402,10 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		out.push(runtime.timing.vdpWorkUnitsPerSec);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_work_units_last', createNativeFunction('sys_vdp_work_units_last', (_args, out) => {
-		out.push(runtime.machineScheduler.lastTickVdpFrameCost);
+		out.push(runtime.frameScheduler.lastTickVdpFrameCost);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_frame_held', createNativeFunction('sys_vdp_frame_held', (_args, out) => {
-		out.push(runtime.machineScheduler.lastTickVdpFrameHeld ? 1 : 0);
+		out.push(runtime.frameScheduler.lastTickVdpFrameHeld ? 1 : 0);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_dma_done', IRQ_DMA_DONE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_dma_error', IRQ_DMA_ERROR);

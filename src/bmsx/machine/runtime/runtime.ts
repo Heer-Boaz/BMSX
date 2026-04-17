@@ -48,15 +48,15 @@ import * as runtimeLuaPipeline from '../../ide/runtime/runtime_lua_pipeline';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
 import type { ParsedLuaChunk } from '../../ide/language/lua/lua_parse';
 import { configureLuaHeapUsage } from '../memory/lua_heap_usage';
-import { RuntimeFrameLoopState } from './runtime_frame_loop';
-import { RuntimeMachineSchedulerState } from './runtime_machine_scheduler';
+import { FrameLoopState } from './frame_loop';
+import { FrameSchedulerState } from '../scheduler/frame_scheduler';
 import { RenderPresentationState } from '../../render/presentation_state';
-import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from './runtime_timing';
-import { RuntimeTimingState } from './runtime_timing_state';
-import { RuntimeVblankState } from './runtime_vblank';
-import { RuntimeCpuExecutionState } from './runtime_cpu_executor';
-import { RuntimeCartBootState } from './runtime_cart_boot';
-import { RuntimeHostFaultState } from './runtime_host_fault';
+import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from './timing';
+import { TimingState } from './timing_state';
+import { VblankState } from './vblank';
+import { CpuExecutionState } from './cpu_executor';
+import { CartBootState } from './cart_boot';
+import { HostFaultState } from './host_fault';
 import { LuaScratchState } from '../program/lua_scratch';
 import { invokeClosureHandler, invokeLuaHandler } from '../program/lua_executor';
 import { resolveCpuHz, resolveGeoWorkUnitsPerSec, resolveRuntimeRenderSize, resolveVdpWorkUnitsPerSec } from '../machine_specs';
@@ -67,7 +67,7 @@ import {
 	applyActiveMachineTiming,
 	refreshDeviceTimings,
 	setTransferRatesFromManifest,
-} from './runtime_timing_config';
+} from './timing_config';
 import { HandlerCache } from './handler_cache';
 import { Machine } from '../machine';
 import { Memory } from '../memory/memory';
@@ -117,7 +117,7 @@ export class Runtime {
 	public editor: CartEditor | null = null;
 	public readonly overlayRenderer = new OverlayRenderer();
 	public terminal!: TerminalMode;
-	public readonly timing: RuntimeTimingState;
+	public readonly timing: TimingState;
 	public executionOverlayActive = false;
 	private _overlayResolutionMode: 'offscreen' | 'viewport'; // Set in constructor
 	public readonly debuggerController = new LuaDebuggerController();
@@ -169,11 +169,11 @@ export class Runtime {
 	}
 	private includeJsStackTraces = false;
 	public realtimeCompileOptLevel: 0 | 1 | 2 | 3 = 3;
-	public readonly machineScheduler = new RuntimeMachineSchedulerState();
-	public readonly frameLoop = new RuntimeFrameLoopState();
+	public readonly frameScheduler = new FrameSchedulerState();
+	public readonly frameLoop = new FrameLoopState();
 	public readonly screen = new RenderPresentationState();
-	public readonly vblank = new RuntimeVblankState();
-	public readonly cpuExecution = new RuntimeCpuExecutionState();
+	public readonly vblank = new VblankState();
+	public readonly cpuExecution = new CpuExecutionState();
 	public pendingLuaWarnings: string[] = [];
 	public readonly moduleAliases: Map<string, string> = new Map();
 	public readonly luaChunkEnvironmentsByPath: Map<string, LuaEnvironment> = new Map();
@@ -218,7 +218,7 @@ export class Runtime {
 	}
 	private hasCompletedInitialBoot = false;
 	public cartEntryAvailable = true;
-	public readonly hostFault = new RuntimeHostFaultState();
+	public readonly hostFault = new HostFaultState();
 	public engineLuaSources: LuaSourceRegistry = null;
 	public cartLuaSources: LuaSourceRegistry = null;
 	public engineAssetSource: RawAssetSource = null;
@@ -227,7 +227,7 @@ export class Runtime {
 	public readonly machine: Machine;
 	private engineCanonicalization: CanonicalizationType = null;
 	public cartCanonicalization: CanonicalizationType = null;
-	public readonly cartBoot = new RuntimeCartBootState();
+	public readonly cartBoot = new CartBootState();
 	private _canonicalization: CanonicalizationType;
 	private canonicalizeIdentifierFn: (value: string) => string;
 	public get canonicalization(): CanonicalizationType {
@@ -441,7 +441,7 @@ export class Runtime {
 
 	private constructor(options: RuntimeOptions) {
 		Runtime._instance = this;
-		this.timing = new RuntimeTimingState(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame);
+		this.timing = new TimingState(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame);
 		const initialVdpWorkUnits = options.vdpWorkUnitsPerSec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC;
 		const initialGeoWorkUnits = options.geoWorkUnitsPerSec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC;
 		this.timing.vdpWorkUnitsPerSec = resolveVdpWorkUnitsPerSec(initialVdpWorkUnits);

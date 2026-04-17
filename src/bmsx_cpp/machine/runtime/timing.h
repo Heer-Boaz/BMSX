@@ -11,8 +11,8 @@ constexpr i64 DEFAULT_UFPS_SCALED = static_cast<i64>(DEFAULT_UFPS) * HZ_SCALE;
 int calcCyclesPerFrame(i64 cpuHz, i64 refreshHzScaled);
 i64 resolveVblankCycles(i64 cpuHz, i64 refreshHzScaled, i32 renderHeight);
 
-struct RuntimeTimingState {
-	explicit RuntimeTimingState(i64 ufpsScaled = DEFAULT_UFPS_SCALED, i64 cpuHz = 0, int cycleBudgetPerFrame = 0);
+struct TimingState {
+	explicit TimingState(i64 ufpsScaled = DEFAULT_UFPS_SCALED, i64 cpuHz = 0, int cycleBudgetPerFrame = 0);
 	void applyUfpsScaled(i64 value);
 
 	i64 ufpsScaled = DEFAULT_UFPS_SCALED;

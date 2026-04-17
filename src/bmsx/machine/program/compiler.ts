@@ -35,8 +35,8 @@ import {
 } from '../../lua/syntax/lua_ast';
 import { createIdentifierCanonicalizer } from '../../lua/syntax/identifier_canonicalizer';
 import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
-import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './program_optimizer';
-import { buildModuleAliasesFromPaths, type ProgramConstReloc } from './program_asset';
+import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './optimizer';
+import { buildModuleAliasesFromPaths, type ProgramConstReloc } from './asset';
 import { StringPool, StringValue, isStringValue } from '../memory/string_pool';
 import type { CanonicalizationType } from '../../rompack/rompack';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../cpu/instruction_format';

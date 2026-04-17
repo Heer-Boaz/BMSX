@@ -16,7 +16,7 @@ import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system_machin
 import type { LuaSourceRegistry } from '../machine/program/lua_sources';
 import { GateGroup, taskGate } from './taskgate';
 import { Runtime } from '../machine/runtime/runtime';
-import { raiseEngineIrq } from '../machine/runtime/runtime_engine_irq';
+import { raiseEngineIrq } from '../machine/runtime/engine_irq';
 import { runConsoleChunkToNative } from '../machine/program/lua_executor';
 import { IRQ_NEWGAME } from '../machine/bus/io';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
@@ -611,7 +611,7 @@ export class EngineCore {
 
 			const runtime = Runtime.instance;
 			if (runtime) {
-				runtime.machineScheduler.clearQueuedTime();
+				runtime.frameScheduler.clearQueuedTime();
 				runtime.screen.clearPresentation();
 				runtime.frameLoop.abandonFrameState(runtime);
 				runtime.frameLoop.drawFrameState = null;
@@ -653,7 +653,7 @@ export class EngineCore {
 		this._turnCounter = 0;
 		const runtime = Runtime.instance;
 		runtime.frameLoop.currentTimeMs = now;
-		runtime.machineScheduler.clearQueuedTime();
+		runtime.frameScheduler.clearQueuedTime();
 		this.frameLoopHandle = platform.frames.start((currentTime: number) => {
 			runtime.frameLoop.runHostFrame(runtime, currentTime, runGate.ready);
 		});

@@ -9,7 +9,7 @@ import {
 } from '../bus/io';
 import type { Runtime } from './runtime';
 
-export class RuntimeHostFaultState {
+export class HostFaultState {
 	private message: string | null = null;
 
 	public getMessage(): string | null {

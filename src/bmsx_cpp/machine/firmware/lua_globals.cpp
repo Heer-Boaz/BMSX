@@ -1704,11 +1704,11 @@ void Runtime::setupBuiltins() {
 	});
 	registerNativeFunction("sys_vdp_work_units_last", [this](NativeArgsView args, NativeResults& out) {
 		(void)args;
-		out.push_back(valueNumber(static_cast<double>(machineScheduler.lastTickVdpFrameCost)));
+		out.push_back(valueNumber(static_cast<double>(frameScheduler.lastTickVdpFrameCost)));
 	});
 	registerNativeFunction("sys_vdp_frame_held", [this](NativeArgsView args, NativeResults& out) {
 		(void)args;
-		out.push_back(valueNumber(machineScheduler.lastTickVdpFrameHeld ? 1.0 : 0.0));
+		out.push_back(valueNumber(frameScheduler.lastTickVdpFrameHeld ? 1.0 : 0.0));
 	});
 	auto findRomAssetInfo = [](RuntimeAssets& assets, const std::string& assetId) -> const RomAssetInfo* {
 		if (const ImgAsset* image = assets.getImg(assetId)) {
