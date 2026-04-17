@@ -1,4 +1,4 @@
-import type { Viewport } from '../../rompack/rompack';
+import type { Viewport } from '../rompack/rompack';
 
 function runtimeSpecFault(message: string): Error {
 	return new Error(`Runtime fault: ${message}`);

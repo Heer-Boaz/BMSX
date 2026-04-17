@@ -1,4 +1,4 @@
-#include "machine/runtime/runtime_memory_specs.h"
+#include "machine/memory/memory_specs.h"
 
 #include "machine/memory/memory.h"
 #include "rompack/rompack.h"

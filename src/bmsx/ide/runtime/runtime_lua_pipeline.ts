@@ -42,7 +42,7 @@ import { Table, type Closure, type Program, type ProgramMetadata, type Value, is
 import { StringValue, isStringValue, stringValueToString } from '../../machine/memory/string_pool';
 import { Runtime } from '../../machine/runtime/runtime';
 import { raiseEngineIrq } from '../../machine/runtime/runtime_engine_irq';
-import { callClosure, callClosureInto, callClosureIntoWithScheduler } from '../../machine/runtime/runtime_lua_executor';
+import { callClosure, callClosureInto, callClosureIntoWithScheduler } from '../../machine/program/lua_executor';
 import { getSourceForChunk } from '../editor/common/text_runtime';
 
 const LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([

@@ -243,7 +243,7 @@ import type { StringValue } from '../memory/string_pool';
 import type { LuaMarshalContext } from '../runtime/types';
 import type { Runtime } from '../runtime/runtime';
 import * as runtimeLuaPipeline from '../../ide/runtime/runtime_lua_pipeline';
-import { callClosureInto } from '../runtime/runtime_lua_executor';
+import { callClosureInto } from '../program/lua_executor';
 import { compileLoadChunk } from '../program/lua_load_compiler';
 
 const ACTION_STATE_FLAG_PRESSED = 1 << 0;

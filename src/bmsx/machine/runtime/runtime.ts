@@ -38,7 +38,7 @@ import { type LuaSemanticModel, type FileSemanticData } from '../../ide/editor/c
 import { registerApiBuiltins } from '../firmware/lua_builtins';
 import { LuaFunctionRedirectCache } from '../firmware/lua_handler_registry';
 import { LuaJsBridge } from '../firmware/lua_js_bridge';
-import { RuntimeStorage } from './storage';
+import { RuntimeStorage } from '../firmware/cart_storage';
 import type { RuntimeOptions, LuaBuiltinDescriptor, LuaMemberCompletion } from './types';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_ENGINE_PROJECT_ROOT_PATH } from '../../ide/workspace/workspace';
 import { buildLuaSources, type LuaSourceRegistry } from '../program/lua_sources';
@@ -50,19 +50,19 @@ import type { ParsedLuaChunk } from '../../ide/language/lua/lua_parse';
 import { configureLuaHeapUsage } from '../memory/lua_heap_usage';
 import { RuntimeFrameLoopState } from './runtime_frame_loop';
 import { RuntimeMachineSchedulerState } from './runtime_machine_scheduler';
-import { RuntimeScreenState } from './runtime_screen';
+import { RenderPresentationState } from '../../render/presentation_state';
 import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from './runtime_timing';
 import { RuntimeTimingState } from './runtime_timing_state';
 import { RuntimeVblankState } from './runtime_vblank';
 import { RuntimeCpuExecutionState } from './runtime_cpu_executor';
 import { RuntimeCartBootState } from './runtime_cart_boot';
 import { RuntimeHostFaultState } from './runtime_host_fault';
-import { RuntimeLuaScratchState } from './runtime_lua_scratch';
-import { invokeClosureHandler, invokeLuaHandler } from './runtime_lua_executor';
-import { resolveCpuHz, resolveGeoWorkUnitsPerSec, resolveRuntimeRenderSize, resolveVdpWorkUnitsPerSec } from './runtime_machine_specs';
-import { resolveRuntimeMemoryMapSpecs } from './runtime_memory_specs';
-import { startEngineWithDeferredStartupAudioRefresh } from './runtime_startup_audio';
-import { RuntimeAssetState } from './runtime_asset_state';
+import { LuaScratchState } from '../program/lua_scratch';
+import { invokeClosureHandler, invokeLuaHandler } from '../program/lua_executor';
+import { resolveCpuHz, resolveGeoWorkUnitsPerSec, resolveRuntimeRenderSize, resolveVdpWorkUnitsPerSec } from '../machine_specs';
+import { resolveRuntimeMemoryMapSpecs } from '../memory/memory_specs';
+import { startEngineWithDeferredStartupAudioRefresh } from '../../audio/startup_audio';
+import { RuntimeAssetState } from '../memory/asset_state';
 import {
 	applyActiveMachineTiming,
 	refreshDeviceTimings,
@@ -171,7 +171,7 @@ export class Runtime {
 	public realtimeCompileOptLevel: 0 | 1 | 2 | 3 = 3;
 	public readonly machineScheduler = new RuntimeMachineSchedulerState();
 	public readonly frameLoop = new RuntimeFrameLoopState();
-	public readonly screen = new RuntimeScreenState();
+	public readonly screen = new RenderPresentationState();
 	public readonly vblank = new RuntimeVblankState();
 	public readonly cpuExecution = new RuntimeCpuExecutionState();
 	public pendingLuaWarnings: string[] = [];
@@ -179,7 +179,7 @@ export class Runtime {
 	public readonly luaChunkEnvironmentsByPath: Map<string, LuaEnvironment> = new Map();
 	public readonly luaGenericChunksExecuted: Set<string> = new Set();
 	public readonly luaPatternRegexCache: Map<string, RegExp> = new Map();
-	public readonly luaScratch = new RuntimeLuaScratchState();
+	public readonly luaScratch = new LuaScratchState();
 	public readonly luaFunctionRedirectCache = new LuaFunctionRedirectCache();
 	// Wrap Lua closures with stable JS stubs so FSM/input/events can hold onto durable references even across hot-resume.
 	private readonly luaHandlerCache = new LuaHandlerCache(

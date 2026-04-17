@@ -10,7 +10,7 @@ namespace bmsx {
 class EngineCore;
 class Runtime;
 
-struct RuntimePresentation {
+struct RenderPresentation {
 	GameView::PresentationMode mode = GameView::PresentationMode::Completed;
 	bool commitFrame = false;
 	f64 runtimeDrawMs = 0.0;
@@ -18,7 +18,7 @@ struct RuntimePresentation {
 	f64 runtimeTerminalDrawMs = 0.0;
 };
 
-class RuntimeScreenState {
+class RenderPresentationState {
 public:
 	void beginHostFrame();
 	void clearPresentation();
@@ -32,7 +32,7 @@ private:
 	void recordPresentation(GameView::PresentationMode mode, bool commitFrame, bool paused);
 	void flushDebugReport(const Runtime& runtime);
 	void markPresentation(GameView::PresentationMode mode, bool commitFrame);
-	bool consumePresentation(Runtime& runtime, RuntimePresentation& outPresentation);
+	bool consumePresentation(Runtime& runtime, RenderPresentation& outPresentation);
 
 	bool m_pendingPresentation = false;
 	GameView::PresentationMode m_presentationMode = GameView::PresentationMode::Completed;
@@ -48,7 +48,7 @@ private:
 	u64 m_debugPresentCommitPresents = 0;
 	u64 m_debugPresentHoldPresents = 0;
 	u64 m_debugPresentPausedPresents = 0;
-	RuntimePresentation m_runtimePresentationScratch;
+	RenderPresentation m_presentationScratch;
 	TickCompletion m_tickCompletionScratch;
 };
 

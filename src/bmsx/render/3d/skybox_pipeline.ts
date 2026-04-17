@@ -1,5 +1,4 @@
 import { $ } from '../../core/engine_core';
-import { Runtime } from '../../machine/runtime/runtime';
 import skyboxFS from '../3d/shaders/skybox.frag.glsl';
 import skyboxVS from '../3d/shaders/skybox.vert.glsl';
 import type { RenderContext } from '../backend/pipeline_interfaces';
@@ -7,10 +6,9 @@ import { RenderPassLibrary } from '../backend/renderpasslib';
 import { SkyboxPipelineState } from '../backend/pipeline_interfaces';
 import { TEXTURE_UNIT_ATLAS_PRIMARY, TEXTURE_UNIT_ATLAS_SECONDARY } from '../backend/webgl/webgl.constants';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
-import { ATLAS_PRIMARY_SLOT_ID, ATLAS_SECONDARY_SLOT_ID, ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
+import { ATLAS_PRIMARY_SLOT_ID, ATLAS_SECONDARY_SLOT_ID } from '../../rompack/rompack';
 import { _skyTint, _skyExposure } from '../shared/render_queues';
 import { resolveActiveCamera3D } from '../shared/hardware_camera';
-import { SKYBOX_FACE_KEYS } from '../shared/render_types';
 
 let vaoSkybox: WebGLVertexArrayObject = null;
 let skyboxProgram: WebGLProgram;
@@ -23,9 +21,6 @@ let skyboxFaceUvRectLocation: WebGLUniformLocation;
 let skyboxFaceAtlasLocation: WebGLUniformLocation;
 let skyboxTintLocation: WebGLUniformLocation;
 let skyboxExposureLocation: WebGLUniformLocation;
-const SKYBOX_FACE_COUNT = SKYBOX_FACE_KEYS.length;
-const skyboxFaceUvRects = new Float32Array(SKYBOX_FACE_COUNT * 4);
-const skyboxFaceAtlasBindings = new Int32Array(SKYBOX_FACE_COUNT);
 export let skyboxBuffer: WebGLBuffer;
 export function init(backend: WebGLBackend): void {
 	const gl = backend.gl as WebGL2RenderingContext;
@@ -136,7 +131,7 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			init(backend as WebGLBackend);
 		},
 		writesDepth: false,
-		shouldExecute: () => !!resolveActiveCamera3D() && !!$.view.skyboxFaceIds,
+		shouldExecute: () => !!resolveActiveCamera3D() && !!$.view.skyboxFaceUvRects,
 		exec: (backend, fbo, s) => {
 			const webglBackend = backend as WebGLBackend;
 			const runtime: SkyboxRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: $.view };
@@ -144,7 +139,7 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 		},
 		prepare: (backend, _state) => {
 			const gv = $.view;
-			if (!gv.skyboxFaceIds) return;
+			if (!gv.skyboxFaceUvRects || !gv.skyboxFaceAtlasBindings) return;
 			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
 			const cam = resolveActiveCamera3D();
 			if (!cam) return;
@@ -156,21 +151,6 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			if (!atlasSecondaryTex) {
 				throw new Error("[Skybox] Texture '_atlas_secondary' missing from view textures.");
 			}
-			const runtime = Runtime.instance;
-			for (let index = 0; index < SKYBOX_FACE_COUNT; index += 1) {
-				const imageId = gv.skyboxFaceIds[SKYBOX_FACE_KEYS[index]];
-				const handle = runtime.machine.memory.resolveAssetHandle(imageId);
-				const sample = runtime.machine.vdp.resolveBlitterSample(handle);
-				if (sample.atlasId === ENGINE_ATLAS_INDEX) {
-					throw new Error(`[Skybox] Image '${imageId}' resolved to the engine atlas. Skybox faces must use primary or secondary atlas slots.`);
-				}
-				const uvBase = index * 4;
-				skyboxFaceUvRects[uvBase + 0] = sample.source.srcX / sample.surfaceWidth;
-				skyboxFaceUvRects[uvBase + 1] = sample.source.srcY / sample.surfaceHeight;
-				skyboxFaceUvRects[uvBase + 2] = sample.source.width / sample.surfaceWidth;
-				skyboxFaceUvRects[uvBase + 3] = sample.source.height / sample.surfaceHeight;
-				skyboxFaceAtlasBindings[index] = sample.atlasId;
-			}
 			// Update state with dynamic data (reuse camera matrices)
 			const mats = cam.getMatrices();
 			registry.setState('skybox', {
@@ -180,8 +160,8 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 				proj: mats.proj,
 				atlasPrimaryTex,
 				atlasSecondaryTex,
-				faceUvRects: skyboxFaceUvRects,
-				faceAtlasBindings: skyboxFaceAtlasBindings,
+				faceUvRects: gv.skyboxFaceUvRects,
+				faceAtlasBindings: gv.skyboxFaceAtlasBindings,
 			});
 			registry.validatePassResources('skybox', backend);
 		},

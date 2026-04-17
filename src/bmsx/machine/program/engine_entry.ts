@@ -1,5 +1,5 @@
 import { startCart } from './start_cart';
-import { Runtime } from './runtime';
+import { Runtime } from '../runtime/runtime';
 
 type BmsxGlobal = {
 	startCart: typeof startCart;

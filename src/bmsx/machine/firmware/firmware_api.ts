@@ -7,7 +7,7 @@ import {
 } from '../../render/shared/render_types';
 import { Font } from '../../render/shared/bmsx_font';
 import { BFont, GlyphMap } from '../../render/shared/bitmap_font';
-import { RuntimeStorage } from '../runtime/storage';
+import { RuntimeStorage } from './cart_storage';
 import type { AudioPlayOptions } from '../../audio/soundmaster';
 import type { vec3arr } from '../../rompack/rompack';
 import { taskGate, GateGroup } from '../../core/taskgate';

@@ -9,13 +9,13 @@
 #include "machine/devices/irq/irq_controller.h"
 #include "machine/bus/io.h"
 #include "machine/machine.h"
-#include "machine/runtime/runtime_screen.h"
+#include "render/presentation_state.h"
 #include "machine/scheduler/device_scheduler.h"
 #include "machine/runtime/runtime_timing.h"
 #include "machine/runtime/runtime_vblank.h"
 #include "machine/runtime/runtime_cpu_executor.h"
 #include "machine/runtime/runtime_cart_boot.h"
-#include "machine/runtime/runtime_lua_scratch.h"
+#include "machine/program/lua_scratch.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/runtime_frame_loop.h"
 #include "machine/runtime/runtime_machine_scheduler.h"
@@ -248,14 +248,14 @@ public:
 	void refreshMemoryMap();
 	void restoreVramSlotTextures();
 	void captureVramTextureSnapshots();
-	RuntimeScreenState screen;
+	RenderPresentationState screen;
 	RuntimeTimingState timing;
 	RuntimeMachineSchedulerState machineScheduler;
 	RuntimeCpuExecutionState cpuExecution;
 	RuntimeFrameLoopState frameLoop;
 	RuntimeVblankState vblank;
 	RuntimeCartBootState cartBoot;
-	RuntimeLuaScratchState luaScratch;
+	LuaScratchState luaScratch;
 
 private:
 	enum class PendingCall {

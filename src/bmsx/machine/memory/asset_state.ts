@@ -6,8 +6,8 @@ import {
 	CART_ROM_BASE,
 	OVERLAY_ROM_BASE,
 	SYSTEM_ROM_BASE,
-} from '../memory/memory_map';
-import type { Memory } from '../memory/memory';
+} from './memory_map';
+import type { Memory } from './memory';
 import {
 	ENGINE_ATLAS_INDEX,
 	generateAtlasName,
@@ -22,16 +22,16 @@ import {
 import type { RawAssetSource } from '../../rompack/asset_source';
 import { parseCartHeader, type RuntimeAssetLayer } from '../../rompack/romloader';
 import { parseRomMetadataSection } from '../../rompack/rom_metadata';
-import { registerAudioAssets as registerAudioAssetsFromSource } from './runtime_assets';
+import { registerAudioAssets as registerAudioAssetsFromSource } from './audio_assets';
 import {
 	buildRuntimeLayerLookup,
 	resolveLayerForPayload,
 	resolveRuntimeLayerAssetById,
 	resolveRuntimeLayerAssetFromEntry,
 	type RuntimeLayerLookup,
-} from './runtime_asset_layers';
+} from './asset_layers';
 import { runtimeFault } from '../../ide/runtime/runtime_lua_pipeline';
-import type { Runtime } from './runtime';
+import type { Runtime } from '../runtime/runtime';
 
 type RomAssetRangeLookupResult = {
 	found: boolean;

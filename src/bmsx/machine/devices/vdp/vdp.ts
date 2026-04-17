@@ -574,6 +574,10 @@ export class VDP implements VramWriteSink {
 	private cpuReadbackByKey = new Map<string, Uint8Array>();
 	private _skyboxFaceIds: SkyboxImageIds | null = null;
 	private committedSkyboxFaceIds: SkyboxImageIds | null = null;
+	private readonly committedSkyboxFaceUvRects = new Float32Array(SKYBOX_FACE_KEYS.length * 4);
+	private readonly committedSkyboxFaceAtlasBindings = new Int32Array(SKYBOX_FACE_KEYS.length);
+	private readonly committedSkyboxFaceSizes = new Int32Array(SKYBOX_FACE_KEYS.length * 2);
+	private committedSkyboxRenderReady = false;
 	private lastDitherType = 0;
 	private committedDitherType = 0;
 	private _frameBufferWidth = 0;
@@ -1314,6 +1318,7 @@ export class VDP implements VramWriteSink {
 		this.committedSlotAtlasIds[0] = this.activeSlotAtlasIds[0];
 		this.committedSlotAtlasIds[1] = this.activeSlotAtlasIds[1];
 		this.committedSkyboxFaceIds = this.activeSkyboxFaceIds;
+		this.commitSkyboxRenderState(this.committedSkyboxFaceIds);
 	}
 
 	public presentReadyFrameOnVblankEdge(): void {
@@ -1374,12 +1379,12 @@ export class VDP implements VramWriteSink {
 	}
 
 	private resolveBlitterSource(handle: number): VdpBlitterSource {
-		const entry = Runtime.instance.machine.memory.getAssetEntryByHandle(handle);
+		const entry = this.memory.getAssetEntryByHandle(handle);
 		if (entry.type !== 'image') {
 			throw vdpFault(`asset handle ${handle} is not an image.`);
 		}
 		if ((entry.flags & ASSET_FLAG_VIEW) !== 0) {
-			const baseEntry = Runtime.instance.machine.memory.getAssetEntryByHandle(entry.ownerIndex);
+			const baseEntry = this.memory.getAssetEntryByHandle(entry.ownerIndex);
 			const slot = this.vramSlots.find((candidate) => candidate.entry.ownerIndex === baseEntry.ownerIndex);
 			if (!slot) {
 				throw vdpFault(`image handle ${handle} is not mapped to a blitter surface.`);
@@ -1543,7 +1548,7 @@ export class VDP implements VramWriteSink {
 			let cursorX = x;
 			for (let glyphIndex = start; glyphIndex < lineLength && glyphIndex < end; glyphIndex += 1) {
 				const glyph = font.getGlyph(line.charAt(baseIndex + glyphIndex));
-				const handle = Runtime.instance.machine.memory.resolveAssetHandle(glyph.imgid);
+				const handle = this.memory.resolveAssetHandle(glyph.imgid);
 				const source = this.resolveBlitterSource(handle);
 				const clipped = computeClippedRect(cursorX, cursorY, cursorX + source.width, cursorY + source.height, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
 				if (clipped.area > 0) {
@@ -1708,7 +1713,7 @@ export class VDP implements VramWriteSink {
 				if (tile === false) {
 					return IO_VDP_TILE_HANDLE_NONE;
 				}
-				return Runtime.instance.machine.memory.resolveAssetHandle(tile);
+				return this.memory.resolveAssetHandle(tile);
 			},
 			mismatchMessage: (source) => `dma_blit_tiles size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`,
 		});
@@ -2013,6 +2018,7 @@ export class VDP implements VramWriteSink {
 		this.committedDitherType = dither;
 		this._skyboxFaceIds = null;
 		this.committedSkyboxFaceIds = null;
+		this.committedSkyboxRenderReady = false;
 		this.committedSlotAtlasIds[0] = this.slotAtlasIds[0];
 		this.committedSlotAtlasIds[1] = this.slotAtlasIds[1];
 		this.lastFrameCommitted = true;
@@ -2069,6 +2075,9 @@ export class VDP implements VramWriteSink {
 		view.primaryAtlasIdInSlot = this.committedSlotAtlasIds[0];
 		view.secondaryAtlasIdInSlot = this.committedSlotAtlasIds[1];
 		view.skyboxFaceIds = this.committedSkyboxFaceIds;
+		view.skyboxFaceUvRects = this.committedSkyboxRenderReady ? this.committedSkyboxFaceUvRects : null;
+		view.skyboxFaceAtlasBindings = this.committedSkyboxRenderReady ? this.committedSkyboxFaceAtlasBindings : null;
+		view.skyboxFaceSizes = this.committedSkyboxRenderReady ? this.committedSkyboxFaceSizes : null;
 	}
 
 	public commitLiveVisualState(): void {
@@ -2076,6 +2085,32 @@ export class VDP implements VramWriteSink {
 		this.committedSlotAtlasIds[0] = this.slotAtlasIds[0];
 		this.committedSlotAtlasIds[1] = this.slotAtlasIds[1];
 		this.committedSkyboxFaceIds = this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds };
+		this.commitSkyboxRenderState(this.committedSkyboxFaceIds);
+	}
+
+	private commitSkyboxRenderState(ids: SkyboxImageIds | null): void {
+		if (ids === null) {
+			this.committedSkyboxRenderReady = false;
+			return;
+		}
+		for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
+			const assetId = ids[SKYBOX_FACE_KEYS[index]];
+			const handle = this.memory.resolveAssetHandle(assetId);
+			const sample = this.resolveBlitterSample(handle);
+			if (sample.atlasId === ENGINE_ATLAS_INDEX) {
+				throw vdpFault(`skybox image '${assetId}' must live in primary/secondary atlas space, not the engine atlas.`);
+			}
+			const uvBase = index * 4;
+			this.committedSkyboxFaceUvRects[uvBase + 0] = sample.source.srcX / sample.surfaceWidth;
+			this.committedSkyboxFaceUvRects[uvBase + 1] = sample.source.srcY / sample.surfaceHeight;
+			this.committedSkyboxFaceUvRects[uvBase + 2] = sample.source.width / sample.surfaceWidth;
+			this.committedSkyboxFaceUvRects[uvBase + 3] = sample.source.height / sample.surfaceHeight;
+			this.committedSkyboxFaceAtlasBindings[index] = sample.atlasId;
+			const sizeBase = index * 2;
+			this.committedSkyboxFaceSizes[sizeBase + 0] = sample.source.width;
+			this.committedSkyboxFaceSizes[sizeBase + 1] = sample.source.height;
+		}
+		this.committedSkyboxRenderReady = true;
 	}
 
 	private restoreAtlasSlotMapping(mapping: { primary: number | null; secondary: number | null }): void {
@@ -2145,22 +2180,10 @@ export class VDP implements VramWriteSink {
 	}
 
 	public setSkyboxImages(ids: SkyboxImageIds): void {
-		const source = $.asset_source;
-		const runtime = Runtime.instance;
 		for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
 			const assetId = ids[SKYBOX_FACE_KEYS[index]];
-			source.getEntry(assetId);
-			const asset = runtime.assets.getImageAsset(assetId);
-			const meta = asset.imgmeta!;
-			if (!meta.atlassed) {
-				throw vdpFault(`skybox image '${assetId}' must be atlassed.`);
-			}
-			if (meta.atlasid === undefined || meta.atlasid === null) {
-				throw vdpFault(`skybox image '${assetId}' is missing an atlas id.`);
-			}
-			if (meta.atlasid === ENGINE_ATLAS_INDEX) {
-				throw vdpFault(`skybox image '${assetId}' must live in primary/secondary atlas space, not the engine atlas.`);
-			}
+			const handle = this.memory.resolveAssetHandle(assetId);
+			this.resolveBlitterSample(handle);
 		}
 		this._skyboxFaceIds = ids;
 	}
@@ -2215,6 +2238,7 @@ export class VDP implements VramWriteSink {
 		this.cpuReadbackByKey.clear();
 		this._skyboxFaceIds = null;
 		this.committedSkyboxFaceIds = null;
+		this.committedSkyboxRenderReady = false;
 		this.committedDitherType = this.lastDitherType;
 		this.committedSlotAtlasIds[0] = null;
 		this.committedSlotAtlasIds[1] = null;

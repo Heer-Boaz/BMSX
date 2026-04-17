@@ -17,7 +17,7 @@ import type { LuaSourceRegistry } from '../machine/program/lua_sources';
 import { GateGroup, taskGate } from './taskgate';
 import { Runtime } from '../machine/runtime/runtime';
 import { raiseEngineIrq } from '../machine/runtime/runtime_engine_irq';
-import { runConsoleChunkToNative } from '../machine/runtime/runtime_lua_executor';
+import { runConsoleChunkToNative } from '../machine/program/lua_executor';
 import { IRQ_NEWGAME } from '../machine/bus/io';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 import { InputSource, KeyModifier } from '../input/playerinput';

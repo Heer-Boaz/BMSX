@@ -1,8 +1,8 @@
-#include "machine/runtime/runtime_lua_scratch.h"
+#include "machine/program/lua_scratch.h"
 
 namespace bmsx {
 
-std::vector<Value> RuntimeLuaScratchState::acquireValue() {
+std::vector<Value> LuaScratchState::acquireValue() {
 	if (!m_valuePool.empty()) {
 		auto scratch = std::move(m_valuePool.back());
 		m_valuePool.pop_back();
@@ -12,7 +12,7 @@ std::vector<Value> RuntimeLuaScratchState::acquireValue() {
 	return {};
 }
 
-void RuntimeLuaScratchState::releaseValue(std::vector<Value>&& values) {
+void LuaScratchState::releaseValue(std::vector<Value>&& values) {
 	values.clear();
 	if (m_valuePool.size() < MAX_POOLED_SCRATCH) {
 		m_valuePool.push_back(std::move(values));

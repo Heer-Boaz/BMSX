@@ -10,7 +10,7 @@ import {
 	meshQueueBackSize,
 	particleQueueBackSize,
 } from '../shared/render_queues';
-import type { MeshRenderSubmission, ParticleRenderSubmission } from '../shared/render_types';
+import { SKYBOX_FACE_KEYS, type MeshRenderSubmission, type ParticleRenderSubmission } from '../shared/render_types';
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
 import { resolveActiveCamera3D } from '../shared/hardware_camera';
 import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
@@ -339,27 +339,18 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 		shouldExecute: () => !!$.view.skyboxFaceIds,
 		exec: () => {
 			const ids = $.view.skyboxFaceIds;
-			if (!ids) {
+			const sizes = $.view.skyboxFaceSizes;
+			const bindings = $.view.skyboxFaceAtlasBindings;
+			if (!ids || !sizes || !bindings) {
 				return;
 			}
-			const faces: Array<[string, string]> = [
-				['posx', ids.posx],
-				['negx', ids.negx],
-				['posy', ids.posy],
-				['negy', ids.negy],
-				['posz', ids.posz],
-				['negz', ids.negz],
-			];
-			const snapshot: Snapshot = [`faces=${faces.map((face) => face[1]).join(',')}`];
-			for (let index = 0; index < faces.length; index += 1) {
-				const [face, id] = faces[index];
-				const handle = Runtime.instance.machine.memory.resolveAssetHandle(id);
-				const sample = Runtime.instance.machine.vdp.resolveBlitterSample(handle);
-				if (sample.atlasId === ENGINE_ATLAS_INDEX) {
-					throw new Error(`[HeadlessSkybox] Skybox image '${id}' resolved to the engine atlas.`);
-				}
-				const slot = sample.atlasId === 0 ? 'primary' : 'secondary';
-				snapshot.push(`[skybox:${face}] id=${id} size=${sample.source.width}x${sample.source.height} slot=${slot}`);
+			const snapshot: Snapshot = [`faces=${SKYBOX_FACE_KEYS.map((key) => ids[key]).join(',')}`];
+			for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
+				const key = SKYBOX_FACE_KEYS[index];
+				const id = ids[key];
+				const sizeBase = index * 2;
+				const slot = bindings[index] === 0 ? 'primary' : 'secondary';
+				snapshot.push(`[skybox:${key}] id=${id} size=${sizes[sizeBase]}x${sizes[sizeBase + 1]} slot=${slot}`);
 			}
 			previousSkyboxSnapshot = emitDiff('skybox', previousSkyboxSnapshot, snapshot);
 		},

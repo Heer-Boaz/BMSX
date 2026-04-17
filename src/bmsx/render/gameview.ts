@@ -90,6 +90,9 @@ export class GameView implements RenderContext {
 	public primaryAtlasIdInSlot: number | null = null;
 	public secondaryAtlasIdInSlot: number | null = null;
 	public skyboxFaceIds: SkyboxImageIds | null = null;
+	public skyboxFaceUvRects: Float32Array | null = null;
+	public skyboxFaceAtlasBindings: Int32Array | null = null;
+	public skyboxFaceSizes: Int32Array | null = null;
 	public pipelineRegistry?: RenderPassLibrary;
 	private presentationPassTokens: RenderPassToken[] = [];
 	private presentationEnabled = true;
@@ -553,6 +556,9 @@ export class GameView implements RenderContext {
 		this.primaryAtlasIdInSlot = null;
 		this.secondaryAtlasIdInSlot = null;
 		this.skyboxFaceIds = null;
+		this.skyboxFaceUvRects = null;
+		this.skyboxFaceAtlasBindings = null;
+		this.skyboxFaceSizes = null;
 		this.textures[ENGINE_ATLAS_TEXTURE_KEY] = fallback;
 		// Default material textures for meshes
 		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);

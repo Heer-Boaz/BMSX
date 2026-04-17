@@ -1,4 +1,4 @@
-#include "machine/runtime/runtime_asset_memory.h"
+#include "machine/memory/asset_memory.h"
 
 #include "machine/runtime/runtime.h"
 #include "rompack/runtime_assets.h"

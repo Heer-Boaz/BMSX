@@ -1,25 +1,25 @@
-import { $ } from '../../core/engine_core';
+import { $ } from '../core/engine_core';
 import {
 	clearBackQueues,
 	prepareCompletedRenderQueues,
 	prepareHeldRenderQueues,
 	prepareOverlayRenderQueues,
 	preparePartialRenderQueues,
-} from '../../render/shared/render_queues';
-import type { Runtime } from './runtime';
-import type { TickCompletion } from './runtime_machine_scheduler';
-import * as runtimeIde from '../../ide/runtime/runtime_ide';
+} from './shared/render_queues';
+import type { Runtime } from '../machine/runtime/runtime';
+import type { TickCompletion } from '../machine/runtime/runtime_machine_scheduler';
+import * as runtimeIde from '../ide/runtime/runtime_ide';
 
-export type RuntimePresentationMode = 'partial' | 'completed';
+export type RenderPresentationMode = 'partial' | 'completed';
 
-type RuntimePresentation = {
-	mode: RuntimePresentationMode;
+type RenderPresentation = {
+	mode: RenderPresentationMode;
 	commitFrame: boolean;
 };
 
-export class RuntimeScreenState {
+export class RenderPresentationState {
 	private pendingPresentation = false;
-	private presentationMode: RuntimePresentationMode = 'completed';
+	private presentationMode: RenderPresentationMode = 'completed';
 	private presentationCommitFrame = false;
 	private debugPresentReportAtMs = 0;
 	private debugPresentHostFrames = 0;
@@ -31,7 +31,7 @@ export class RuntimeScreenState {
 	private debugPresentCommitPresents = 0;
 	private debugPresentHoldPresents = 0;
 	private debugPresentPausedPresents = 0;
-	private readonly runtimePresentationScratch: RuntimePresentation = {
+	private readonly presentationScratch: RenderPresentation = {
 		mode: 'completed',
 		commitFrame: false,
 	};
@@ -58,7 +58,7 @@ export class RuntimeScreenState {
 		}
 	}
 
-	private recordPresentation(mode: RuntimePresentationMode, commitFrame: boolean): void {
+	private recordPresentation(mode: RenderPresentationMode, commitFrame: boolean): void {
 		if (!Boolean((globalThis as any).__bmsx_debug_presentrate)) {
 			return;
 		}
@@ -77,7 +77,7 @@ export class RuntimeScreenState {
 		this.debugPresentHoldPresents += 1;
 	}
 
-	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RuntimePresentationMode, commitFrame = mode === 'completed'): void {
+	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
 		$.deltatime = hostDeltaMs;
 		$.view.configurePresentation(mode, commitFrame);
 		this.recordPresentation(mode, commitFrame);
@@ -86,13 +86,13 @@ export class RuntimeScreenState {
 		runtime.cartBoot.scheduleDeferredPreparation(runtime);
 	}
 
-	private markPresentation(mode: RuntimePresentationMode, commitFrame: boolean): void {
+	private markPresentation(mode: RenderPresentationMode, commitFrame: boolean): void {
 		this.pendingPresentation = true;
 		this.presentationMode = mode;
 		this.presentationCommitFrame = commitFrame;
 	}
 
-	private consumePresentation(runtime: Runtime, out: RuntimePresentation): boolean {
+	private consumePresentation(runtime: Runtime, out: RenderPresentation): boolean {
 		if (!this.pendingPresentation) {
 			return false;
 		}
@@ -174,8 +174,8 @@ export class RuntimeScreenState {
 	public presentPausedFrame(runtime: Runtime, hostDeltaMs: number): void {
 		if (runtime.executionOverlayActive) {
 			this.runOverlay(runtime);
-			this.consumePresentation(runtime, this.runtimePresentationScratch);
-			this.presentFrame(runtime, hostDeltaMs, this.runtimePresentationScratch.mode, this.runtimePresentationScratch.commitFrame);
+			this.consumePresentation(runtime, this.presentationScratch);
+			this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
 			return;
 		}
 		runtime.machineScheduler.clearQueuedTime();
@@ -185,10 +185,10 @@ export class RuntimeScreenState {
 	}
 
 	public presentPending(runtime: Runtime, hostDeltaMs: number): void {
-		if (!this.consumePresentation(runtime, this.runtimePresentationScratch)) {
+		if (!this.consumePresentation(runtime, this.presentationScratch)) {
 			return;
 		}
-		this.presentFrame(runtime, hostDeltaMs, this.runtimePresentationScratch.mode, this.runtimePresentationScratch.commitFrame);
+		this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
 	}
 
 	public presentErrorOverlay(runtime: Runtime, hostDeltaMs: number): void {
@@ -196,8 +196,8 @@ export class RuntimeScreenState {
 			return;
 		}
 		this.runOverlay(runtime);
-		this.consumePresentation(runtime, this.runtimePresentationScratch);
-		this.presentFrame(runtime, hostDeltaMs, this.runtimePresentationScratch.mode, this.runtimePresentationScratch.commitFrame);
+		this.consumePresentation(runtime, this.presentationScratch);
+		this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
 	}
 
 	public flushDebugReport(currentTime: number, runtime: Runtime): void {

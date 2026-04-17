@@ -268,7 +268,7 @@ export async function buildEngineRuntime(options: { debug: boolean }): Promise<v
 
 	const buildRuntime = async (outfile: string, buildDebug: boolean): Promise<void> => {
 		await build({
-			entryPoints: ['./src/bmsx/machine/runtime/engine_entry.ts'],
+			entryPoints: ['./src/bmsx/machine/program/engine_entry.ts'],
 			bundle: true,
 			platform: 'browser',
 			format: 'iife',

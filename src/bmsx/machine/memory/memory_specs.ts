@@ -9,7 +9,7 @@ import {
 } from '../../rompack/rompack';
 import type { RuntimeAssetLayer } from '../../rompack/romloader';
 import { FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY } from '../devices/vdp/vdp';
-import { ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE } from '../memory/memory';
+import { ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE } from './memory';
 import {
 	DEFAULT_GEO_SCRATCH_SIZE,
 	DEFAULT_STRING_HANDLE_COUNT,
@@ -22,13 +22,13 @@ import {
 	VDP_STREAM_BUFFER_SIZE,
 	alignUp,
 	type MemoryMapSpecs,
-} from '../memory/memory_map';
+} from './memory_map';
 import {
 	buildRuntimeLayerLookup,
 	resolveRuntimeLayerAssetById,
 	resolveRuntimeLayerAssetFromEntry,
-} from './runtime_asset_layers';
-import { resolvePositiveSafeInteger, resolveRuntimeRenderSize } from './runtime_machine_specs';
+} from './asset_layers';
+import { resolvePositiveSafeInteger, resolveRuntimeRenderSize } from '../machine_specs';
 
 const ASSET_DATA_ALIGNMENT_BYTES = 0x1000;
 const DEFAULT_ASSET_DATA_HEADROOM_BYTES = 1 << 20; // 1 MiB

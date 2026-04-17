@@ -1,4 +1,4 @@
-#include "machine/runtime/runtime_screen.h"
+#include "render/presentation_state.h"
 #include "core/engine_core.h"
 #include "machine/runtime/runtime.h"
 #include "render/shared/render_queues.h"
@@ -23,7 +23,7 @@ bool isPresentRateDebugEnabled() {
 
 } // namespace
 
-void RuntimeScreenState::recordHostFrame() {
+void RenderPresentationState::recordHostFrame() {
 	if (!isPresentRateDebugEnabled()) {
 		return;
 	}
@@ -34,7 +34,7 @@ void RuntimeScreenState::recordHostFrame() {
 	m_debugPresentHostFrames += 1;
 }
 
-void RuntimeScreenState::recordTickCompletion(bool visualCommitted, bool vdpFrameHeld) {
+void RenderPresentationState::recordTickCompletion(bool visualCommitted, bool vdpFrameHeld) {
 	if (!isPresentRateDebugEnabled()) {
 		return;
 	}
@@ -49,7 +49,7 @@ void RuntimeScreenState::recordTickCompletion(bool visualCommitted, bool vdpFram
 	}
 }
 
-void RuntimeScreenState::recordPresentation(GameView::PresentationMode mode, bool commitFrame, bool paused) {
+void RenderPresentationState::recordPresentation(GameView::PresentationMode mode, bool commitFrame, bool paused) {
 	if (!isPresentRateDebugEnabled()) {
 		return;
 	}
@@ -68,7 +68,7 @@ void RuntimeScreenState::recordPresentation(GameView::PresentationMode mode, boo
 	m_debugPresentHoldPresents += 1;
 }
 
-void RuntimeScreenState::flushDebugReport(const Runtime& runtime) {
+void RenderPresentationState::flushDebugReport(const Runtime& runtime) {
 	if (!isPresentRateDebugEnabled()) {
 		return;
 	}
@@ -113,17 +113,17 @@ void RuntimeScreenState::flushDebugReport(const Runtime& runtime) {
 	m_debugPresentPausedPresents = 0;
 }
 
-void RuntimeScreenState::beginHostFrame() {
+void RenderPresentationState::beginHostFrame() {
 	recordHostFrame();
 }
 
-void RuntimeScreenState::clearPresentation() {
+void RenderPresentationState::clearPresentation() {
 	m_pendingPresentation = false;
 	m_presentationMode = GameView::PresentationMode::Completed;
 	m_presentationCommitFrame = false;
 }
 
-void RuntimeScreenState::reset() {
+void RenderPresentationState::reset() {
 	clearPresentation();
 	m_debugPresentReportInitialized = false;
 	m_debugPresentHostFrames = 0;
@@ -137,13 +137,13 @@ void RuntimeScreenState::reset() {
 	m_debugPresentPausedPresents = 0;
 }
 
-void RuntimeScreenState::markPresentation(GameView::PresentationMode mode, bool commitFrame) {
+void RenderPresentationState::markPresentation(GameView::PresentationMode mode, bool commitFrame) {
 	m_pendingPresentation = true;
 	m_presentationMode = mode;
 	m_presentationCommitFrame = commitFrame;
 }
 
-bool RuntimeScreenState::consumePresentation(Runtime& runtime, RuntimePresentation& outPresentation) {
+bool RenderPresentationState::consumePresentation(Runtime& runtime, RenderPresentation& outPresentation) {
 	if (!m_pendingPresentation) {
 		return false;
 	}
@@ -170,7 +170,7 @@ bool RuntimeScreenState::consumePresentation(Runtime& runtime, RuntimePresentati
 	return true;
 }
 
-void RuntimeScreenState::syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTickSequence) {
+void RenderPresentationState::syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTickSequence) {
 	if (runtime.machineScheduler.lastTickSequence != previousTickSequence) {
 		markPresentation(GameView::PresentationMode::Completed, runtime.machineScheduler.lastTickVisualFrameCommitted);
 	} else if (runtime.isDrawPending()) {
@@ -181,13 +181,13 @@ void RuntimeScreenState::syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTi
 	}
 }
 
-void RuntimeScreenState::render(EngineCore& engine, Runtime& runtime) {
+void RenderPresentationState::render(EngineCore& engine, Runtime& runtime) {
 	if (engine.m_state != EngineState::Running && engine.m_state != EngineState::Paused) {
 		return;
 	}
 
 	const bool pausedPresent = engine.m_state == EngineState::Paused;
-	const bool runtimePresentPending = !pausedPresent && consumePresentation(runtime, m_runtimePresentationScratch);
+	const bool runtimePresentPending = !pausedPresent && consumePresentation(runtime, m_presentationScratch);
 	const bool shouldPresent = pausedPresent || runtimePresentPending;
 	if (!shouldPresent) {
 		return;
@@ -197,10 +197,10 @@ void RuntimeScreenState::render(EngineCore& engine, Runtime& runtime) {
 	if (engine.m_view) {
 		const GameView::PresentationMode presentMode = pausedPresent
 			? GameView::PresentationMode::Completed
-			: m_runtimePresentationScratch.mode;
+			: m_presentationScratch.mode;
 		const bool commitFrame = pausedPresent
 			? false
-			: m_runtimePresentationScratch.commitFrame;
+			: m_presentationScratch.commitFrame;
 		recordPresentation(presentMode, commitFrame, pausedPresent);
 		if (pausedPresent) {
 			RenderQueues::prepareHeldRenderQueues();
@@ -223,9 +223,9 @@ void RuntimeScreenState::render(EngineCore& engine, Runtime& runtime) {
 		engine.m_last_render_timing.runtimeIdeDrawMs = 0.0;
 		engine.m_last_render_timing.runtimeTerminalDrawMs = 0.0;
 		if (runtimePresentPending) {
-			engine.m_last_render_timing.runtimeDrawMs = m_runtimePresentationScratch.runtimeDrawMs;
-			engine.m_last_render_timing.runtimeIdeDrawMs = m_runtimePresentationScratch.runtimeIdeDrawMs;
-			engine.m_last_render_timing.runtimeTerminalDrawMs = m_runtimePresentationScratch.runtimeTerminalDrawMs;
+			engine.m_last_render_timing.runtimeDrawMs = m_presentationScratch.runtimeDrawMs;
+			engine.m_last_render_timing.runtimeIdeDrawMs = m_presentationScratch.runtimeIdeDrawMs;
+			engine.m_last_render_timing.runtimeTerminalDrawMs = m_presentationScratch.runtimeTerminalDrawMs;
 		}
 
 		const auto drawGameStart = std::chrono::steady_clock::now();

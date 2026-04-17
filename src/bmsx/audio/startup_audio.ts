@@ -1,5 +1,5 @@
-import { $ } from '../../core/engine_core';
-import type { Runtime } from './runtime';
+import { $ } from '../core/engine_core';
+import type { Runtime } from '../machine/runtime/runtime';
 
 export function startEngineWithDeferredStartupAudioRefresh(runtime: Runtime): void {
 	$.bootstrapStartupAudio();

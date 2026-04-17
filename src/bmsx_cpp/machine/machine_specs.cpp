@@ -1,4 +1,4 @@
-#include "machine/runtime/runtime_machine_specs.h"
+#include "machine/machine_specs.h"
 
 #include "machine/runtime/runtime_timing.h"
 #include "rompack/runtime_assets.h"

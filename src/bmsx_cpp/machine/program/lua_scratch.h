@@ -6,7 +6,7 @@
 
 namespace bmsx {
 
-class RuntimeLuaScratchState {
+class LuaScratchState {
 public:
 	std::vector<Value> acquireValue();
 	void releaseValue(std::vector<Value>&& values);
