@@ -72,7 +72,13 @@ export class ImgDecController {
 		private readonly getNowCycles: () => number,
 		private readonly scheduleService: (deadlineCycles: number) => void,
 		private readonly cancelService: () => void,
-	) {}
+	) {
+		this.memory.mapIoWrite(IO_IMG_CTRL, this.onCtrlRegisterWrite.bind(this));
+	}
+
+	private onCtrlRegisterWrite(): void {
+		this.onCtrlWrite(this.getNowCycles());
+	}
 
 	public setTiming(cpuHz: number, decodeBytesPerSec: number, nowCycles: number): void {
 		this.cpuHz = BigInt(cpuHz);
@@ -136,7 +142,7 @@ export class ImgDecController {
 		this.memory.writeValue(IO_IMG_LEN, 0);
 		this.memory.writeValue(IO_IMG_DST, 0);
 		this.memory.writeValue(IO_IMG_CAP, 0);
-		this.memory.writeValue(IO_IMG_CTRL, 0);
+		this.memory.writeIoValue(IO_IMG_CTRL, 0);
 		this.memory.writeValue(IO_IMG_STATUS, 0);
 		this.memory.writeValue(IO_IMG_WRITTEN, 0);
 	}
@@ -148,7 +154,7 @@ export class ImgDecController {
 			return;
 		}
 		if (this.active) {
-			this.memory.writeValue(IO_IMG_CTRL, ctrl & ~IMG_CTRL_START);
+			this.memory.writeIoValue(IO_IMG_CTRL, ctrl & ~IMG_CTRL_START);
 			this.status |= IMG_STATUS_REJECTED;
 			this.memory.writeValue(IO_IMG_STATUS, this.status);
 			return;
@@ -157,7 +163,7 @@ export class ImgDecController {
 		const len = this.memory.readIoU32(IO_IMG_LEN);
 		const dst = this.memory.readIoU32(IO_IMG_DST);
 		const cap = this.memory.readIoU32(IO_IMG_CAP);
-		this.memory.writeValue(IO_IMG_CTRL, ctrl & ~IMG_CTRL_START);
+		this.memory.writeIoValue(IO_IMG_CTRL, ctrl & ~IMG_CTRL_START);
 		let buffer: Uint8Array;
 		try {
 			const bytes = this.memory.readBytes(src, len);

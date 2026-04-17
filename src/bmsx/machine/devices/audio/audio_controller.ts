@@ -102,6 +102,7 @@ export class AudioController {
 		private readonly soundMaster: SoundMaster,
 		private readonly raiseIrq: RaiseIrq,
 	) {
+		this.memory.mapIoWrite(IO_APU_CMD, this.onCommandWrite.bind(this));
 		this.unsubscribeSfx = this.soundMaster.addEndedListener('sfx', (info) => this.onVoiceEnded('sfx', info));
 		this.unsubscribeMusic = this.soundMaster.addEndedListener('music', (info) => this.onVoiceEnded('music', info));
 		this.unsubscribeUi = this.soundMaster.addEndedListener('ui', (info) => this.onVoiceEnded('ui', info));
@@ -131,7 +132,7 @@ export class AudioController {
 		this.memory.writeValue(IO_APU_SYNC, 0);
 		this.memory.writeValue(IO_APU_START_AT_LOOP, 0);
 		this.memory.writeValue(IO_APU_START_FRESH, 0);
-		this.memory.writeValue(IO_APU_CMD, APU_CMD_NONE);
+		this.memory.writeIoValue(IO_APU_CMD, APU_CMD_NONE);
 		this.memory.writeValue(IO_APU_STATUS, 0);
 		this.memory.writeValue(IO_APU_EVENT_KIND, APU_EVENT_NONE);
 		this.memory.writeValue(IO_APU_EVENT_CHANNEL, APU_CHANNEL_SFX);
@@ -140,15 +141,15 @@ export class AudioController {
 		this.memory.writeValue(IO_APU_EVENT_SEQ, 0);
 	}
 
-	public onCommandWrite(command: number): void {
-		switch (command >>> 0) {
+	public onCommandWrite(): void {
+		switch (this.memory.readIoU32(IO_APU_CMD)) {
 			case APU_CMD_PLAY:
 				this.play();
-				this.memory.writeValue(IO_APU_CMD, APU_CMD_NONE);
+				this.memory.writeIoValue(IO_APU_CMD, APU_CMD_NONE);
 				return;
 			case APU_CMD_STOP_CHANNEL:
 				this.stopChannel();
-				this.memory.writeValue(IO_APU_CMD, APU_CMD_NONE);
+				this.memory.writeIoValue(IO_APU_CMD, APU_CMD_NONE);
 				return;
 		}
 	}

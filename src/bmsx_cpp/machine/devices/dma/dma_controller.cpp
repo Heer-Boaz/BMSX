@@ -15,19 +15,31 @@ constexpr uint32_t DMA_SERVICE_BATCH_BYTES = 64u;
 }
 
 DmaController::DmaController(
-	Memory& memory,
-	std::function<void(uint32_t)> raiseIrq,
-	std::function<void(uint32_t src, size_t length)> sealVdpFifoDma,
-	std::function<int64_t()> getNowCycles,
-	std::function<void(int64_t deadlineCycles)> scheduleService,
-	std::function<void()> cancelService
+		Memory& memory,
+		std::function<void(uint32_t)> raiseIrq,
+		std::function<void(uint32_t src, size_t length)> sealVdpFifoDma,
+		std::function<bool()> canAcceptVdpSubmit,
+		std::function<void()> noteAcceptedVdpSubmit,
+		std::function<void()> noteRejectedVdpSubmit,
+		std::function<int64_t()> getNowCycles,
+		std::function<void(int64_t deadlineCycles)> scheduleService,
+		std::function<void()> cancelService
 )
-	: m_memory(memory)
-	, m_raiseIrq(std::move(raiseIrq))
-	, m_sealVdpFifoDma(std::move(sealVdpFifoDma))
-	, m_getNowCycles(std::move(getNowCycles))
-	, m_scheduleService(std::move(scheduleService))
-	, m_cancelService(std::move(cancelService)) {}
+		: m_memory(memory)
+		, m_raiseIrq(std::move(raiseIrq))
+		, m_sealVdpFifoDma(std::move(sealVdpFifoDma))
+		, m_canAcceptVdpSubmit(std::move(canAcceptVdpSubmit))
+		, m_noteAcceptedVdpSubmit(std::move(noteAcceptedVdpSubmit))
+		, m_noteRejectedVdpSubmit(std::move(noteRejectedVdpSubmit))
+		, m_getNowCycles(std::move(getNowCycles))
+		, m_scheduleService(std::move(scheduleService))
+		, m_cancelService(std::move(cancelService)) {
+		m_memory.mapIoWrite(IO_DMA_CTRL, this, &DmaController::onCtrlWriteThunk);
+	}
+
+void DmaController::onCtrlWriteThunk(void* context, uint32_t, Value) {
+	static_cast<DmaController*>(context)->tryStartIo();
+}
 
 bool DmaController::hasPendingVdpSubmit() const {
 	for (const auto& state : m_channels) {
@@ -149,7 +161,7 @@ void DmaController::reset() {
 	m_memory.writeValue(IO_DMA_SRC, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_DST, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_LEN, valueNumber(0.0));
-	m_memory.writeValue(IO_DMA_CTRL, valueNumber(0.0));
+	m_memory.writeIoValue(IO_DMA_CTRL, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_STATUS, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
 }
@@ -292,9 +304,10 @@ void DmaController::tryStartIo() {
 	const uint32_t len = m_memory.readIoU32(IO_DMA_LEN);
 	const bool vdpSubmit = dst == IO_VDP_FIFO;
 	const bool strict = (ctrl & DMA_CTRL_STRICT) != 0;
-	m_memory.writeValue(IO_DMA_CTRL, valueNumber(static_cast<double>(ctrl & ~DMA_CTRL_START)));
-	if (vdpSubmit && hasPendingVdpSubmit()) {
+	m_memory.writeIoValue(IO_DMA_CTRL, valueNumber(static_cast<double>(ctrl & ~DMA_CTRL_START)));
+	if (vdpSubmit && (hasPendingVdpSubmit() || !m_canAcceptVdpSubmit())) {
 		finishIoRejected();
+		m_noteRejectedVdpSubmit();
 		return;
 	}
 	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
@@ -320,6 +333,9 @@ void DmaController::tryStartIo() {
 	}
 	const uint32_t status = DMA_STATUS_BUSY | (clipped ? DMA_STATUS_CLIPPED : 0);
 	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>(status)));
+	if (vdpSubmit) {
+		m_noteAcceptedVdpSubmit();
+	}
 	if (transferLen == 0) {
 		finishIoSuccess(clipped);
 		return;

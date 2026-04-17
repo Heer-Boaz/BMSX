@@ -37,7 +37,10 @@ export class InputController {
 	public constructor(
 		private readonly memory: Memory,
 		private readonly input: Input,
-	) {}
+	) {
+		this.memory.mapIoWrite(IO_INP_QUERY, this.onQueryWrite.bind(this));
+		this.memory.mapIoWrite(IO_INP_CONSUME, this.onConsumeWrite.bind(this));
+	}
 
 	public reset(): void {
 		for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {

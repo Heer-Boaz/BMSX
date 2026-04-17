@@ -25,10 +25,12 @@ import {
 	IO_VDP_DITHER,
 	IO_VDP_CMD,
 	IO_VDP_CMD_ARG0,
-	IO_VDP_CMD_ARG_COUNT,
-	IO_VDP_PRIMARY_ATLAS_ID,
-	IO_VDP_RD_MODE,
-	IO_VDP_RD_SURFACE,
+		IO_VDP_CMD_ARG_COUNT,
+		IO_VDP_PRIMARY_ATLAS_ID,
+		IO_VDP_RD_DATA,
+		IO_VDP_RD_MODE,
+		IO_VDP_RD_STATUS,
+		IO_VDP_RD_SURFACE,
 	IO_VDP_RD_X,
 	IO_VDP_RD_Y,
 	IO_VDP_SECONDARY_ATLAS_ID,
@@ -38,7 +40,7 @@ import {
 	VDP_RD_STATUS_OVERFLOW,
 	VDP_RD_STATUS_READY,
 } from '../../bus/io';
-import { ASSET_FLAG_VIEW, type AssetEntry, type VdpIoHandler, type VramWriteSink } from '../../memory/memory';
+import { ASSET_FLAG_VIEW, type AssetEntry, type VramWriteSink } from '../../memory/memory';
 import { Memory } from '../../memory/memory';
 import type { BFont } from '../../../render/shared/bitmap_font';
 import {
@@ -525,7 +527,7 @@ export const FRAMEBUFFER_TEXTURE_KEY = '_framebuffer_2d';
 export const FRAMEBUFFER_RENDER_TEXTURE_KEY = '_framebuffer_render_2d';
 const BLITTER_FIFO_CAPACITY = 4096;
 
-export class VDP implements VramWriteSink, VdpIoHandler {
+export class VDP implements VramWriteSink {
 	private readonly assetUpdateGate = taskGate.group('asset:update');
 	private readonly atlasSlotById = new Map<number, number>();
 	private readonly atlasViewsById = new Map<number, AssetEntry[]>();
@@ -594,10 +596,11 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		private readonly getNowCycles: () => number,
 		private readonly scheduleService: (deadlineCycles: number) => void,
 		private readonly cancelService: () => void,
-	) {
-		this.memory.setVramWriter(this);
-		this.memory.setVdpIoHandler(this);
-		this.vramMachineSeed = this.nextVramMachineSeed();
+		) {
+			this.memory.setVramWriter(this);
+			this.memory.mapIoRead(IO_VDP_RD_STATUS, this.readVdpStatus.bind(this));
+			this.memory.mapIoRead(IO_VDP_RD_DATA, this.readVdpData.bind(this));
+			this.vramMachineSeed = this.nextVramMachineSeed();
 		this.vramBootSeed = this.nextVramBootSeed();
 		for (let index = 0; index < VDP_RD_SURFACE_COUNT; index += 1) {
 			this.readCaches.push({ x0: 0, y: 0, width: 0, data: new Uint8Array(0) });
@@ -1687,11 +1690,11 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.pendingSlotAtlasIds[1] = null;
 		this.pendingSkyboxFaceIds = null;
 		this.blitterSequence = 0;
-		this.memory.writeValue(IO_VDP_DITHER, dither);
-		this.memory.writeValue(IO_VDP_CMD, 0);
-		for (let index = 0; index < IO_VDP_CMD_ARG_COUNT; index += 1) {
-			this.memory.writeValue(IO_VDP_CMD_ARG0 + index * 4, 0);
-		}
+			this.memory.writeIoValue(IO_VDP_DITHER, dither);
+			this.memory.writeIoValue(IO_VDP_CMD, 0);
+			for (let index = 0; index < IO_VDP_CMD_ARG_COUNT; index += 1) {
+				this.memory.writeIoValue(IO_VDP_CMD_ARG0 + index * 4, 0);
+			}
 		this.lastDitherType = dither;
 		this.committedDitherType = dither;
 		this._skyboxFaceIds = null;

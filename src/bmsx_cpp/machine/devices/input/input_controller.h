@@ -17,6 +17,9 @@ public:
 	void onConsumeWrite();
 
 private:
+	static void onQueryWriteThunk(void* context, uint32_t addr, Value value);
+	static void onConsumeWriteThunk(void* context, uint32_t addr, Value value);
+
 	struct PlayerChipState {
 		KeyboardInputMapping keyboard;
 		GamepadInputMapping gamepad;

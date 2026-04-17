@@ -41,7 +41,9 @@ public:
 		std::function<void(std::exception_ptr)> onError = {});
 
 	private:
-	struct DecodedImage {
+		static void onCtrlWriteThunk(void* context, uint32_t addr, Value value);
+
+		struct DecodedImage {
 		std::vector<uint8_t> pixels;
 		uint32_t width = 0;
 		uint32_t height = 0;

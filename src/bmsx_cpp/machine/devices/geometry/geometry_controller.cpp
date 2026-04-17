@@ -73,20 +73,28 @@ inline uint32_t numberToF32Bits(double value) {
 
 } // namespace
 
-GeometryController::GeometryController(
-	Memory& memory,
-	std::function<void(uint32_t)> raiseIrq,
-	std::function<void(int64_t deadlineCycles)> scheduleService,
-	std::function<void()> cancelService
-)
-	: m_memory(memory)
-	, m_raiseIrq(std::move(raiseIrq))
-	, m_scheduleService(std::move(scheduleService))
-	, m_cancelService(std::move(cancelService)) {
+	GeometryController::GeometryController(
+		Memory& memory,
+		std::function<void(uint32_t)> raiseIrq,
+		std::function<int64_t()> getNowCycles,
+		std::function<void(int64_t deadlineCycles)> scheduleService,
+		std::function<void()> cancelService
+	)
+		: m_memory(memory)
+		, m_raiseIrq(std::move(raiseIrq))
+		, m_getNowCycles(std::move(getNowCycles))
+		, m_scheduleService(std::move(scheduleService))
+		, m_cancelService(std::move(cancelService)) {
+	m_memory.mapIoWrite(IO_GEO_CTRL, this, &GeometryController::onCtrlWriteThunk);
 	m_overlapWorldPolyA.reserve(32u);
 	m_overlapWorldPolyB.reserve(32u);
 	m_overlapClip0.reserve(32u);
 	m_overlapClip1.reserve(32u);
+}
+
+void GeometryController::onCtrlWriteThunk(void* context, uint32_t, Value) {
+	auto* controller = static_cast<GeometryController*>(context);
+	controller->onCtrlWrite(controller->m_getNowCycles());
 }
 
 void GeometryController::setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles) {
@@ -101,6 +109,7 @@ void GeometryController::accrueCycles(int cycles, int64_t nowCycles) {
 	if (!m_activeJob.has_value() || cycles <= 0) {
 		return;
 	}
+
 	const int64_t numerator = m_workUnitsPerSec * static_cast<int64_t>(cycles) + m_workCarry;
 	const int64_t wholeUnits = numerator / m_cpuHz;
 	m_workCarry = numerator % m_cpuHz;
@@ -147,7 +156,7 @@ void GeometryController::reset() {
 	writeRegister(IO_GEO_FAULT, 0);
 }
 
-void GeometryController::normalizeAfterStateRestore() {
+void GeometryController::postLoad() {
 	m_workCarry = 0;
 	m_availableWorkUnits = 0;
 	m_activeJob.reset();
@@ -1243,7 +1252,7 @@ std::optional<uint32_t> GeometryController::resolveIndexedSpan(uint32_t base, ui
 }
 
 void GeometryController::writeRegister(uint32_t addr, uint32_t value) {
-	m_memory.writeValue(addr, valueNumber(static_cast<double>(value)));
+	m_memory.writeIoValue(addr, valueNumber(static_cast<double>(value)));
 }
 
 void GeometryController::writeSat2Result(uint32_t addr, uint32_t hit, int32_t nx, int32_t ny, int32_t depth, uint32_t meta) {

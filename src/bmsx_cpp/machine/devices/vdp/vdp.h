@@ -22,7 +22,7 @@ class ImgDecController;
 class BFont;
 struct VdpGles2Blitter;
 
-class VDP : public Memory::VramWriter, public Memory::VdpIoHandler {
+	class VDP : public Memory::VramWriter {
 public:
 	VDP(
 		Memory& memory,
@@ -61,8 +61,8 @@ public:
 		void enqueuePayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer);
 	uint32_t frameBufferWidth() const { return m_frameBufferWidth; }
 	uint32_t frameBufferHeight() const { return m_frameBufferHeight; }
-	uint32_t readVdpStatus() override;
-	uint32_t readVdpData() override;
+		uint32_t readVdpStatus();
+		uint32_t readVdpData();
 
 	void registerImageAssets(RuntimeAssets& assets, bool keepDecodedData);
 	void restoreVramSlotTextures();
@@ -88,6 +88,9 @@ public:
 	const std::array<i32, 2>& atlasSlots() const { return m_slotAtlasIds; }
 
 private:
+	static Value readVdpStatusThunk(void* context, uint32_t addr);
+	static Value readVdpDataThunk(void* context, uint32_t addr);
+
 	struct ReadSurface {
 		std::string assetId;
 		std::string textureKey;

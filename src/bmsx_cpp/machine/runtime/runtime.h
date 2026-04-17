@@ -6,6 +6,7 @@
 #include "machine/devices/imgdec/imgdec_controller.h"
 #include "machine/devices/input/input_controller.h"
 #include "machine/devices/audio/audio_controller.h"
+#include "machine/devices/irq/irq_controller.h"
 #include "machine/bus/io.h"
 #include "machine/runtime/runtime_screen.h"
 #include "machine/runtime/runtime_timing.h"
@@ -107,7 +108,7 @@ struct RuntimeState {
  * - Editor/terminal mode coordination
  * - State save/restore
  */
-class Runtime : public Memory::IoWriteHandler {
+class Runtime {
 public:
 	friend class RuntimeFrameLoopState;
 	friend class RuntimeMachineSchedulerState;
@@ -186,8 +187,6 @@ public:
 	 * Tick terminal mode draw.
 	 */
 	void tickTerminalModeDraw();
-
-	void onIoWrite(uint32_t addr, Value value) override;
 
 	/**
 	 * Request a program reload.
@@ -374,8 +373,12 @@ private:
 	void finalizeUpdateSlice();
 	void clearHaltUntilIrq();
 	void resetHaltIrqWait();
-	void acknowledgeIrq(uint32_t mask);
-	void signalIrq(uint32_t mask);
+	void installIoMap();
+	void handleInputCtrlWrite();
+	void handleVdpFifoWrite();
+	void handleVdpFifoCtrlWrite();
+	void handleObsoletePayloadIoWrite();
+	void handleVdpCommandWrite();
 	RunResult runWithBudget();
 	void queueLifecycleHandlers(bool runInit, bool runNewGame);
 	Value requireModule(const std::string& moduleName);
@@ -396,7 +399,6 @@ private:
 	void setVdpSubmitRejectedStatus(bool active);
 	void noteRejectedVdpSubmitAttempt();
 	void noteAcceptedVdpSubmitAttempt();
-	void syncVdpSubmitAttemptStatusFromDma(uint32_t dst);
 	void flushAssetEdits();
 	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
 	std::vector<Value> acquireValueScratch();
@@ -420,6 +422,7 @@ private:
 	VDP m_vdp;
 	StringHandleTable m_stringHandles;
 	CPU m_cpu;
+	IrqController m_irqController;
 	std::unique_ptr<ResourceUsageDetector> m_resourceUsageDetector;
 	DmaController m_dmaController;
 	GeometryController m_geometryController;
@@ -504,13 +507,10 @@ private:
 	uint32_t m_vblankEnterTimerGeneration = 0;
 	uint32_t m_vblankEndTimerGeneration = 0;
 	std::array<uint32_t, static_cast<size_t>(DeviceServiceKindCount)> m_deviceServiceTimerGeneration{};
-	bool m_handlingIrqAckWrite = false;
-	bool m_handlingVdpCommandWrite = false;
 	std::array<u8, 4> m_vdpFifoWordScratch{{0, 0, 0, 0}};
 	int m_vdpFifoWordByteCount = 0;
 	std::array<u32, VDP_STREAM_CAPACITY_WORDS> m_vdpFifoStreamWords{};
 	u32 m_vdpFifoStreamWordCount = 0;
-	uint64_t m_irqSignalSequence = 0;
 	uint64_t m_haltIrqSignalSequence = 0;
 	bool m_haltIrqWaitArmed = false;
 	uint64_t m_vblankSequence = 0;

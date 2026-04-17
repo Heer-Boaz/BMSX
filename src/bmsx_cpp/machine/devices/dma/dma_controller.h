@@ -18,12 +18,15 @@ public:
 	};
 
 	DmaController(
-		Memory& memory,
-		std::function<void(uint32_t)> raiseIrq,
-		std::function<void(uint32_t src, size_t length)> sealVdpFifoDma,
-		std::function<int64_t()> getNowCycles,
-		std::function<void(int64_t deadlineCycles)> scheduleService,
-		std::function<void()> cancelService
+			Memory& memory,
+			std::function<void(uint32_t)> raiseIrq,
+			std::function<void(uint32_t src, size_t length)> sealVdpFifoDma,
+			std::function<bool()> canAcceptVdpSubmit,
+			std::function<void()> noteAcceptedVdpSubmit,
+			std::function<void()> noteRejectedVdpSubmit,
+			std::function<int64_t()> getNowCycles,
+			std::function<void(int64_t deadlineCycles)> scheduleService,
+			std::function<void()> cancelService
 	);
 
 	void setTiming(int64_t cpuHz, int64_t isoBytesPerSec, int64_t bulkBytesPerSec, int64_t nowCycles);
@@ -38,8 +41,10 @@ public:
 	void enqueueImageCopy(const Memory::ImageWritePlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped, std::exception_ptr fault)> onComplete);
 	void reset();
 
-private:
-	struct DmaJob {
+	private:
+		static void onCtrlWriteThunk(void* context, uint32_t addr, Value value);
+
+		struct DmaJob {
 		enum class Kind : uint8_t { Io, Image };
 		Kind kind = Kind::Io;
 		Channel channel = Channel::Bulk;
@@ -91,10 +96,13 @@ private:
 	int64_t m_bulkCarry = 0;
 	uint32_t m_ioWrittenValue = 0;
 	uint32_t m_imgWrittenValue = 0;
-	Memory& m_memory;
-	std::function<void(uint32_t)> m_raiseIrq;
-	std::function<void(uint32_t src, size_t length)> m_sealVdpFifoDma;
-	std::function<int64_t()> m_getNowCycles;
+		Memory& m_memory;
+		std::function<void(uint32_t)> m_raiseIrq;
+		std::function<void(uint32_t src, size_t length)> m_sealVdpFifoDma;
+		std::function<bool()> m_canAcceptVdpSubmit;
+		std::function<void()> m_noteAcceptedVdpSubmit;
+		std::function<void()> m_noteRejectedVdpSubmit;
+		std::function<int64_t()> m_getNowCycles;
 	std::function<void(int64_t deadlineCycles)> m_scheduleService;
 	std::function<void()> m_cancelService;
 	std::vector<uint8_t> m_buffer;

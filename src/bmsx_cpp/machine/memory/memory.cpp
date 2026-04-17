@@ -67,7 +67,9 @@ uint64_t hashAssetId(const std::string& id) {
 
 Memory::Memory()
 	: m_ram(RAM_USED_END - RAM_BASE)
-	, m_ioSlots(IO_SLOT_COUNT, valueNil()) {
+	, m_ioSlots(IO_SLOT_COUNT, valueNil())
+	, m_ioReadHandlers(IO_SLOT_COUNT)
+	, m_ioWriteHandlers(IO_SLOT_COUNT) {
 	const size_t pageCount = (ASSET_DATA_END - ASSET_DATA_BASE + ASSET_PAGE_SIZE - 1) / ASSET_PAGE_SIZE;
 	m_assetOwnerPages.assign(pageCount, -1);
 	resetAssetMemory();
@@ -101,16 +103,16 @@ size_t Memory::overlayRomSize() const {
 	return m_overlayRom.size;
 }
 
-void Memory::setVdpIoHandler(VdpIoHandler* handler) {
-	m_vdpIoHandler = handler;
-}
-
-void Memory::setIoWriteHandler(IoWriteHandler* handler) {
-	m_ioWriteHandler = handler;
-}
-
 void Memory::setVramWriter(VramWriter* writer) {
 	m_vramWriter = writer;
+}
+
+void Memory::mapIoRead(uint32_t addr, void* context, IoReadHandler handler) {
+	m_ioReadHandlers[ioIndex(addr)] = { context, handler };
+}
+
+void Memory::mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler) {
+	m_ioWriteHandlers[ioIndex(addr)] = { context, handler };
 }
 
 uint32_t Memory::usedAssetTableBytes() const {
@@ -677,13 +679,12 @@ void Memory::updateImageView(AssetEntry& entry, const AssetEntry& base, uint32_t
 
 Value Memory::readValue(uint32_t addr) const {
 	if (isIoAddress(addr)) {
-		if (addr == IO_VDP_RD_STATUS) {
-			return valueFromNumber(static_cast<double>(m_vdpIoHandler->readVdpStatus()));
+		const size_t slot = ioIndex(addr);
+		const IoReadBinding& binding = m_ioReadHandlers[slot];
+		if (binding.handler != nullptr) {
+			return binding.handler(binding.context, addr);
 		}
-		if (addr == IO_VDP_RD_DATA) {
-			return valueFromNumber(static_cast<double>(m_vdpIoHandler->readVdpData()));
-		}
-		return m_ioSlots[ioIndex(addr)];
+		return m_ioSlots[slot];
 	}
 	if (addr < RAM_BASE) {
 		return valueFromNumber(static_cast<double>(readU32FromRegion(addr)));
@@ -700,9 +701,11 @@ Value Memory::readMappedValue(uint32_t addr) const {
 
 void Memory::writeValue(uint32_t addr, Value value) {
 	if (isIoAddress(addr)) {
-		m_ioSlots[ioIndex(addr)] = value;
-		if (m_ioWriteHandler != nullptr) {
-			m_ioWriteHandler->onIoWrite(addr, value);
+		const size_t slot = ioIndex(addr);
+		m_ioSlots[slot] = value;
+		const IoWriteBinding& binding = m_ioWriteHandlers[slot];
+		if (binding.handler != nullptr) {
+			binding.handler(binding.context, addr, value);
 		}
 		return;
 	}

@@ -96,10 +96,15 @@ export class DmaController {
 		private readonly memory: Memory,
 		private readonly raiseIrq: (mask: number) => void,
 		private readonly sealVdpFifoDma: (src: number, length: number) => void,
+		private readonly canAcceptVdpSubmit: () => boolean,
+		private readonly noteAcceptedVdpSubmit: () => void,
+		private readonly noteRejectedVdpSubmit: () => void,
 		private readonly getNowCycles: () => number,
 		private readonly scheduleService: (deadlineCycles: number) => void,
 		private readonly cancelService: () => void,
-	) {}
+	) {
+		this.memory.mapIoWrite(IO_DMA_CTRL, this.tryStartIo.bind(this));
+	}
 
 	public setTiming(cpuHz: number, isoBytesPerSec: number, bulkBytesPerSec: number, nowCycles: number): void {
 		this.cpuHz = BigInt(cpuHz);
@@ -190,7 +195,7 @@ export class DmaController {
 		this.memory.writeValue(IO_DMA_SRC, 0);
 		this.memory.writeValue(IO_DMA_DST, 0);
 		this.memory.writeValue(IO_DMA_LEN, 0);
-		this.memory.writeValue(IO_DMA_CTRL, 0);
+		this.memory.writeIoValue(IO_DMA_CTRL, 0);
 		this.memory.writeValue(IO_DMA_STATUS, 0);
 		this.memory.writeValue(IO_DMA_WRITTEN, 0);
 	}
@@ -244,9 +249,10 @@ export class DmaController {
 		const len = this.memory.readIoU32(IO_DMA_LEN);
 		const vdpSubmit = dst === IO_VDP_FIFO;
 		const strict = (ctrl & DMA_CTRL_STRICT) !== 0;
-		this.memory.writeValue(IO_DMA_CTRL, ctrl & ~DMA_CTRL_START);
-		if (vdpSubmit && this.hasPendingVdpSubmit()) {
+		this.memory.writeIoValue(IO_DMA_CTRL, ctrl & ~DMA_CTRL_START);
+		if (vdpSubmit && (this.hasPendingVdpSubmit() || !this.canAcceptVdpSubmit())) {
 			this.finishIoRejected();
+			this.noteRejectedVdpSubmit();
 			return;
 		}
 		this.memory.writeValue(IO_DMA_WRITTEN, 0);
@@ -271,6 +277,9 @@ export class DmaController {
 		}
 		const status = DMA_STATUS_BUSY | (clipped ? DMA_STATUS_CLIPPED : 0);
 		this.memory.writeValue(IO_DMA_STATUS, status);
+		if (vdpSubmit) {
+			this.noteAcceptedVdpSubmit();
+		}
 		if (transferLen === 0) {
 			this.finishIoSuccess(clipped);
 			return;

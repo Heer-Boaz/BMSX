@@ -41,10 +41,17 @@ ImgDecController::ImgDecController(
 	: m_gate(imgdecGate().group("imgdec"))
 	, m_memory(memory)
 	, m_dma(dma)
-	, m_raiseIrq(std::move(raiseIrq))
-	, m_getNowCycles(std::move(getNowCycles))
-	, m_scheduleService(std::move(scheduleService))
-	, m_cancelService(std::move(cancelService)) {}
+		, m_raiseIrq(std::move(raiseIrq))
+		, m_getNowCycles(std::move(getNowCycles))
+		, m_scheduleService(std::move(scheduleService))
+		, m_cancelService(std::move(cancelService)) {
+		m_memory.mapIoWrite(IO_IMG_CTRL, this, &ImgDecController::onCtrlWriteThunk);
+	}
+
+void ImgDecController::onCtrlWriteThunk(void* context, uint32_t, Value) {
+	auto* controller = static_cast<ImgDecController*>(context);
+	controller->onCtrlWrite(controller->m_getNowCycles());
+}
 
 void ImgDecController::setTiming(int64_t cpuHz, int64_t decodeBytesPerSec, int64_t nowCycles) {
 	m_cpuHz = cpuHz;
@@ -127,7 +134,7 @@ void ImgDecController::reset() {
 	m_memory.writeValue(IO_IMG_LEN, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_DST, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_CAP, valueNumber(0.0));
-	m_memory.writeValue(IO_IMG_CTRL, valueNumber(0.0));
+	m_memory.writeIoValue(IO_IMG_CTRL, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
 }
@@ -139,7 +146,7 @@ void ImgDecController::onCtrlWrite(int64_t nowCycles) {
 		return;
 	}
 	if (m_active) {
-		m_memory.writeValue(IO_IMG_CTRL, valueNumber(static_cast<double>(ctrl & ~IMG_CTRL_START)));
+		m_memory.writeIoValue(IO_IMG_CTRL, valueNumber(static_cast<double>(ctrl & ~IMG_CTRL_START)));
 		m_status |= IMG_STATUS_REJECTED;
 		m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
 		return;
@@ -148,7 +155,7 @@ void ImgDecController::onCtrlWrite(int64_t nowCycles) {
 	const uint32_t len = m_memory.readIoU32(IO_IMG_LEN);
 	const uint32_t dst = m_memory.readIoU32(IO_IMG_DST);
 	const uint32_t cap = m_memory.readIoU32(IO_IMG_CAP);
-	m_memory.writeValue(IO_IMG_CTRL, valueNumber(static_cast<double>(ctrl & ~IMG_CTRL_START)));
+	m_memory.writeIoValue(IO_IMG_CTRL, valueNumber(static_cast<double>(ctrl & ~IMG_CTRL_START)));
 	std::vector<uint8_t> buffer(len);
 	try {
 		if (len > 0) {

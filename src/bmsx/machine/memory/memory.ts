@@ -105,14 +105,8 @@ export type VramWriteSink = {
 	readVram(addr: number, out: Uint8Array): void;
 };
 
-export type VdpIoHandler = {
-	readVdpStatus(): number;
-	readVdpData(): number;
-};
-
-export type IoWriteHandler = {
-	onIoWrite(addr: number, value: Value): void;
-};
+export type IoReadHandler = (addr: number) => Value;
+export type IoWriteHandler = (addr: number, value: Value) => void;
 
 export type MemoryInit = {
 	engineRom: Uint8Array;
@@ -141,9 +135,9 @@ export class Memory {
 	private readonly ram: Uint8Array;
 	private readonly ramView: DataView;
 	private readonly ioSlots: Value[];
+	private readonly ioReadHandlers: Array<IoReadHandler | null>;
+	private readonly ioWriteHandlers: Array<IoWriteHandler | null>;
 	private vramWriter: VramWriteSink;
-	private vdpIoHandler: VdpIoHandler;
-	private ioWriteHandler: IoWriteHandler | null = null;
 	private readonly vramScratch = new Uint8Array(4);
 	private readonly vramReadScratch = new Uint8Array(4);
 	private readonly mappedFloatBuffer = new ArrayBuffer(8);
@@ -171,6 +165,12 @@ export class Memory {
 		for (let index = 0; index < this.ioSlots.length; index += 1) {
 			this.ioSlots[index] = null;
 		}
+		this.ioReadHandlers = new Array<IoReadHandler | null>(IO_SLOT_COUNT);
+		this.ioWriteHandlers = new Array<IoWriteHandler | null>(IO_SLOT_COUNT);
+		for (let index = 0; index < IO_SLOT_COUNT; index += 1) {
+			this.ioReadHandlers[index] = null;
+			this.ioWriteHandlers[index] = null;
+		}
 		const pageCount = Math.ceil((ASSET_DATA_END - ASSET_DATA_BASE) / ASSET_PAGE_SIZE);
 		this.assetOwnerPages = new Int32Array(pageCount);
 		this.resetAssetMemory();
@@ -192,12 +192,12 @@ export class Memory {
 		return this.ramView.getUint32(headerOffset + 28, true);
 	}
 
-	public setVdpIoHandler(handler: VdpIoHandler): void {
-		this.vdpIoHandler = handler;
+	public mapIoRead(addr: number, handler: IoReadHandler): void {
+		this.ioReadHandlers[this.ioIndex(addr)] = handler;
 	}
 
-	public setIoWriteHandler(handler: IoWriteHandler): void {
-		this.ioWriteHandler = handler;
+	public mapIoWrite(addr: number, handler: IoWriteHandler): void {
+		this.ioWriteHandlers[this.ioIndex(addr)] = handler;
 	}
 
 	public getOverlayRomSize(): number {
@@ -948,13 +948,12 @@ export class Memory {
 
 	public readValue(addr: number): Value {
 		if (this.isIoAddress(addr)) {
-			if (addr === IO_VDP_RD_STATUS) {
-				return this.vdpIoHandler.readVdpStatus();
+			const slot = this.ioIndex(addr);
+			const handler = this.ioReadHandlers[slot];
+			if (handler !== null) {
+				return handler(addr);
 			}
-			if (addr === IO_VDP_RD_DATA) {
-				return this.vdpIoHandler.readVdpData();
-			}
-			return this.ioSlots[this.ioIndex(addr)];
+			return this.ioSlots[slot];
 		}
 		if (addr < RAM_BASE) {
 			return this.readU32FromRegion(addr);
@@ -971,9 +970,11 @@ export class Memory {
 
 	public writeValue(addr: number, value: Value): void {
 		if (this.isIoAddress(addr)) {
-			this.ioSlots[this.ioIndex(addr)] = value;
-			if (this.ioWriteHandler !== null) {
-				this.ioWriteHandler.onIoWrite(addr, value);
+			const slot = this.ioIndex(addr);
+			this.ioSlots[slot] = value;
+			const handler = this.ioWriteHandlers[slot];
+			if (handler !== null) {
+				handler(addr, value);
 			}
 			return;
 		}

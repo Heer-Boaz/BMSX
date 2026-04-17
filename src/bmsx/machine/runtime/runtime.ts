@@ -72,13 +72,6 @@ import { RuntimeScreenState } from './runtime_screen';
 import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from './runtime_timing';
 import { RuntimeTimingState } from './runtime_timing_state';
 import {
-	DMA_CTRL_START,
-	DMA_STATUS_BUSY,
-	DMA_STATUS_DONE,
-	DMA_STATUS_REJECTED,
-	DMA_STATUS_ERROR,
-	GEO_CTRL_ABORT,
-	GEO_CTRL_START,
 	HOST_FAULT_FLAG_ACTIVE,
 	HOST_FAULT_FLAG_STARTUP_BLOCKING,
 	HOST_FAULT_STAGE_NONE,
@@ -113,15 +106,7 @@ import {
 	IO_IMG_SRC,
 	IO_IMG_STATUS,
 	IO_IMG_WRITTEN,
-	IO_INP_ACTION,
-	IO_INP_BIND,
-	IO_INP_CONSUME,
 	IO_INP_CTRL,
-	IO_INP_QUERY,
-	IO_APU_CMD,
-	IMG_CTRL_START,
-	IO_IRQ_ACK,
-	IO_IRQ_FLAGS,
 	IO_PAYLOAD_ALLOC_ADDR,
 	IO_PAYLOAD_DATA_ADDR,
 	IO_SYS_BOOT_CART,
@@ -150,12 +135,13 @@ import {
 	VDP_STATUS_VBLANK,
 } from '../bus/io';
 import { HandlerCache } from './handler_cache';
-import { Memory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntry, type IoWriteHandler } from '../memory/memory';
+import { Memory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntry } from '../memory/memory';
 import { DmaController } from '../devices/dma/dma_controller';
 import { GeometryController } from '../devices/geometry/geometry_controller';
 import { ImgDecController } from '../devices/imgdec/imgdec_controller';
 import { InputController } from '../devices/input/input_controller';
 import { AudioController } from '../devices/audio/audio_controller';
+import { IrqController } from '../devices/irq/irq_controller';
 import {
 	CART_ROM_BASE,
 	DEFAULT_GEO_SCRATCH_SIZE,
@@ -1029,7 +1015,7 @@ export class Runtime {
 		this.vblankSequence = 0;
 		this.lastCompletedVblankSequence = 0;
 		this.inputSampleArmed = false;
-		this.irqSignalSequence = 0;
+		this.irqController.postLoad();
 		this.resetHaltIrqWait();
 		this.vdpStatus = 0;
 		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
@@ -1098,23 +1084,6 @@ export class Runtime {
 		this.refreshVdpSubmitBusyStatus();
 	}
 
-	private syncVdpSubmitAttemptStatusFromDma(dst: number): void {
-		if (dst !== IO_VDP_FIFO) {
-			return;
-		}
-		const dmaStatus = this.memory.readIoU32(IO_DMA_STATUS);
-		if ((dmaStatus & DMA_STATUS_REJECTED) !== 0) {
-			this.noteRejectedVdpSubmitAttempt();
-			return;
-		}
-		if ((dmaStatus & DMA_STATUS_ERROR) !== 0) {
-			return;
-		}
-		if ((dmaStatus & (DMA_STATUS_BUSY | DMA_STATUS_DONE)) !== 0) {
-			this.noteAcceptedVdpSubmitAttempt();
-		}
-	}
-
 	private enterVblank(): void {
 		// IRQ flags are level/pending; multiple VBLANK edges while pending coalesce.
 		this.vblankSequence += 1;
@@ -1124,7 +1093,7 @@ export class Runtime {
 			this.inputSampleArmed = false;
 		}
 		this.setVblankStatus(true);
-		this.signalIrq(IRQ_VBLANK);
+		this.irqController.raise(IRQ_VBLANK);
 		const frameState = this.currentFrameState;
 		if (frameState !== null && this.isFrameBoundaryHalt()) {
 			this.completeTickIfPending(frameState, this.vblankSequence);
@@ -1154,7 +1123,7 @@ export class Runtime {
 		if (this.vblankSequence === 0) {
 			return false;
 		}
-		const pendingFlags = this.memory.readIoU32(IO_IRQ_FLAGS);
+		const pendingFlags = this.irqController.pendingFlags();
 		if ((pendingFlags & IRQ_VBLANK) === 0) {
 			return false;
 		}
@@ -1203,7 +1172,7 @@ export class Runtime {
 		this.vblankSequence = 0;
 		this.lastCompletedVblankSequence = 0;
 		this.activeTickCompleted = false;
-		this.irqSignalSequence = 0;
+		this.irqController.postLoad();
 		const vblankActive = (this.vblankStartCycle === 0)
 			|| (this.getCyclesIntoFrame() >= this.vblankStartCycle);
 		this.setVblankStatus(vblankActive);
@@ -1216,13 +1185,10 @@ export class Runtime {
 	public currentFrameState: FrameState = null;
 	public drawFrameState: FrameState = null;
 	private clearBackQueuesAfterIrqWake = false;
-	private handlingIrqAckWrite = false;
-	private handlingVdpCommandWrite = false;
 	private readonly vdpFifoWordScratch = new Uint8Array(4);
 	private vdpFifoWordByteCount = 0;
 	private readonly vdpFifoStreamWords = new Uint32Array(VDP_STREAM_CAPACITY_WORDS);
 	private vdpFifoStreamWordCount = 0;
-	private irqSignalSequence = 0;
 	private haltIrqSignalSequence = 0;
 	private haltIrqWaitArmed = false;
 	private vblankSequence = 0;
@@ -1339,6 +1305,7 @@ export class Runtime {
 	public readonly imgDecController: ImgDecController;
 	public readonly inputController: InputController;
 	public readonly audioController: AudioController;
+	public readonly irqController: IrqController;
 	private engineCanonicalization: CanonicalizationType = null;
 	public cartCanonicalization: CanonicalizationType = null;
 	public preparedCartProgram: {
@@ -1811,6 +1778,7 @@ export class Runtime {
 		this.cartCanonicalization = resolvedCanonicalization;
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.memory = options.memory;
+		this.irqController = new IrqController(this.memory);
 		this.vdp = new VDP(
 			this.memory,
 			createVdpBlitterExecutor($.view.backend),
@@ -1825,8 +1793,7 @@ export class Runtime {
 		this.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
 		this.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, 0);
 		this.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_NONE);
-		this.memory.writeValue(IO_IRQ_FLAGS, 0);
-		this.memory.writeValue(IO_IRQ_ACK, 0);
+		this.irqController.reset();
 		this.memory.writeValue(IO_DMA_SRC, 0);
 		this.memory.writeValue(IO_DMA_DST, 0);
 		this.memory.writeValue(IO_DMA_LEN, 0);
@@ -1864,13 +1831,15 @@ export class Runtime {
 		this.memory.writeValue(IO_VDP_RD_MODE, VDP_RD_MODE_RGBA8888);
 		this.memory.writeValue(IO_VDP_STATUS, 0);
 		this.vdp.initializeRegisters();
-		this.audioController = new AudioController(this.memory, $.sndmaster, (mask) => this.signalIrq(mask));
+		this.audioController = new AudioController(this.memory, $.sndmaster, (mask) => this.irqController.raise(mask));
 		this.audioController.reset();
-		this.memory.setIoWriteHandler(this as IoWriteHandler);
 		this.dmaController = new DmaController(
 			this.memory,
-			(mask) => this.signalIrq(mask),
+			(mask) => this.irqController.raise(mask),
 			(src, byteLength) => this.sealVdpDmaTransfer(src, byteLength),
+			() => this.hasOpenDirectVdpFifoIngress() || this.vdp.canAcceptSubmittedFrame(),
+			() => this.noteAcceptedVdpSubmitAttempt(),
+			() => this.noteRejectedVdpSubmitAttempt(),
 			() => this.currentSchedulerNowCycles(),
 			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_DMA, deadlineCycles),
 			() => this.cancelDeviceService(DEVICE_SERVICE_DMA),
@@ -1878,19 +1847,21 @@ export class Runtime {
 		this.imgDecController = new ImgDecController(
 			this.memory,
 			this.dmaController,
-			(mask) => this.signalIrq(mask),
+			(mask) => this.irqController.raise(mask),
 			() => this.currentSchedulerNowCycles(),
 			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_IMG, deadlineCycles),
 			() => this.cancelDeviceService(DEVICE_SERVICE_IMG),
 		);
 		this.geometryController = new GeometryController(
 			this.memory,
-			(mask) => this.signalIrq(mask),
+			(mask) => this.irqController.raise(mask),
+			() => this.currentSchedulerNowCycles(),
 			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_GEO, deadlineCycles),
 			() => this.cancelDeviceService(DEVICE_SERVICE_GEO),
 		);
 		this.inputController = new InputController(this.memory, Input.instance);
 		this.inputController.reset();
+		this.installIoMap();
 		this.cpu = new CPU(this.memory, this.runtimeStringPool);
 		this.resourceUsageDetector = new ResourceUsageDetector(
 			this.memory,
@@ -2155,141 +2126,61 @@ export class Runtime {
 		if (unsupported !== 0) {
 			throw runtimeFault(`unsupported engine IRQ mask 0x${unsupported.toString(16)}.`);
 		}
-		this.signalIrq(normalized);
+		this.irqController.raise(normalized);
 	}
 
-	private acknowledgeIrq(mask: number): void {
-		const ack = mask >>> 0;
-		if (ack === 0) {
-			this.handlingIrqAckWrite = true;
-			try {
-				this.memory.writeValue(IO_IRQ_ACK, 0);
-			} finally {
-				this.handlingIrqAckWrite = false;
-			}
-			return;
-		}
-		let flags = this.memory.readIoU32(IO_IRQ_FLAGS);
-		flags &= ~ack;
-		this.memory.writeValue(IO_IRQ_FLAGS, flags >>> 0);
-		this.handlingIrqAckWrite = true;
-		try {
-			this.memory.writeValue(IO_IRQ_ACK, 0);
-		} finally {
-			this.handlingIrqAckWrite = false;
-		}
+	private installIoMap(): void {
+		this.memory.mapIoWrite(IO_INP_CTRL, this.onInputCtrlWrite.bind(this));
+		this.memory.mapIoWrite(IO_VDP_FIFO, this.onVdpFifoWrite.bind(this));
+		this.memory.mapIoWrite(IO_VDP_FIFO_CTRL, this.onVdpFifoCtrlWrite.bind(this));
+		this.memory.mapIoWrite(IO_PAYLOAD_ALLOC_ADDR, this.onObsoletePayloadIoWrite.bind(this));
+		this.memory.mapIoWrite(IO_PAYLOAD_DATA_ADDR, this.onObsoletePayloadIoWrite.bind(this));
+		this.memory.mapIoWrite(IO_VDP_CMD, this.onVdpCommandWrite.bind(this));
 	}
 
-	private signalIrq(mask: number): void {
-		const current = this.memory.readIoU32(IO_IRQ_FLAGS);
-		const next = (current | mask) >>> 0;
-		this.memory.writeValue(IO_IRQ_FLAGS, next);
-		if (next !== current) {
-			this.irqSignalSequence += 1;
+	private onInputCtrlWrite(): void {
+		if (this.memory.readIoU32(IO_INP_CTRL) === INP_CTRL_ARM) {
+			this.inputSampleArmed = true;
 		}
+		this.inputController.onCtrlWrite();
 	}
 
-	public onIoWrite(addr: number, value: Value): void {
-		if (this.handlingVdpCommandWrite || this.handlingIrqAckWrite) {
+	private onVdpFifoWrite(): void {
+		if (this.dmaController.hasPendingVdpSubmit() || (!this.hasOpenDirectVdpFifoIngress() && !this.vdp.canAcceptSubmittedFrame())) {
+			this.noteRejectedVdpSubmitAttempt();
 			return;
 		}
-		if (addr === IO_INP_ACTION || addr === IO_INP_BIND) {
+		this.noteAcceptedVdpSubmitAttempt();
+		this.pushVdpFifoWord(this.memory.readIoU32(IO_VDP_FIFO));
+	}
+
+	private onVdpFifoCtrlWrite(): void {
+		if ((this.memory.readIoU32(IO_VDP_FIFO_CTRL) & VDP_FIFO_CTRL_SEAL) === 0) {
 			return;
 		}
-		if (addr === IO_INP_QUERY) {
-			this.inputController.onQueryWrite();
+		if (this.dmaController.hasPendingVdpSubmit()) {
+			this.noteRejectedVdpSubmitAttempt();
 			return;
 		}
-		if (addr === IO_INP_CONSUME) {
-			this.inputController.onConsumeWrite();
+		this.sealVdpFifoTransfer();
+		this.refreshVdpSubmitBusyStatus();
+	}
+
+	private onObsoletePayloadIoWrite(): void {
+		throw vdpFault('payload staging I/O is obsolete. Write payload words directly into the claimed VDP stream packet in RAM.');
+	}
+
+	private onVdpCommandWrite(): void {
+		const command = this.memory.readIoU32(IO_VDP_CMD);
+		if (command === 0) {
 			return;
 		}
-		if (addr === IO_INP_CTRL) {
-			if (value === INP_CTRL_ARM) {
-				this.inputSampleArmed = true;
-			}
-			this.inputController.onCtrlWrite();
+		if (this.hasBlockedVdpSubmitPath()) {
+			this.noteRejectedVdpSubmitAttempt();
 			return;
 		}
-		if (typeof value !== 'number') {
-			return;
-		}
-		if (addr === IO_IRQ_ACK) {
-			this.acknowledgeIrq(value >>> 0);
-			return;
-		}
-		if (addr === IO_APU_CMD) {
-			this.audioController.onCommandWrite(value >>> 0);
-			return;
-		}
-		if (addr === IO_DMA_CTRL) {
-			if ((value & DMA_CTRL_START) !== 0) {
-				const dst = this.memory.readIoU32(IO_DMA_DST);
-				if (dst === IO_VDP_FIFO && this.hasBlockedVdpSubmitPath()) {
-					this.memory.writeValue(IO_DMA_CTRL, (value >>> 0) & ~DMA_CTRL_START);
-					this.memory.writeValue(IO_DMA_WRITTEN, 0);
-					this.memory.writeValue(IO_DMA_STATUS, DMA_STATUS_REJECTED);
-					this.noteRejectedVdpSubmitAttempt();
-					return;
-				}
-				this.dmaController.tryStartIo();
-				this.syncVdpSubmitAttemptStatusFromDma(dst);
-			}
-			return;
-		}
-		if (addr === IO_IMG_CTRL) {
-			if ((value & IMG_CTRL_START) !== 0) {
-				this.imgDecController.onCtrlWrite(this.currentSchedulerNowCycles());
-			}
-			return;
-		}
-		if (addr === IO_GEO_CTRL) {
-			if ((value & (GEO_CTRL_START | GEO_CTRL_ABORT)) !== 0) {
-				this.geometryController.onCtrlWrite(this.currentSchedulerNowCycles());
-			}
-			return;
-		}
-		if (addr === IO_VDP_FIFO) {
-			if (this.dmaController.hasPendingVdpSubmit() || (!this.hasOpenDirectVdpFifoIngress() && !this.vdp.canAcceptSubmittedFrame())) {
-				this.noteRejectedVdpSubmitAttempt();
-				return;
-			}
-			this.noteAcceptedVdpSubmitAttempt();
-			this.pushVdpFifoWord(value >>> 0);
-			return;
-		}
-		if (addr === IO_VDP_FIFO_CTRL) {
-			if ((value & VDP_FIFO_CTRL_SEAL) === 0) {
-				return;
-			}
-			if (this.dmaController.hasPendingVdpSubmit()) {
-				this.noteRejectedVdpSubmitAttempt();
-				return;
-			}
-			this.sealVdpFifoTransfer();
-			this.refreshVdpSubmitBusyStatus();
-			return;
-		}
-		if (addr === IO_PAYLOAD_ALLOC_ADDR || addr === IO_PAYLOAD_DATA_ADDR) {
-			throw vdpFault('payload staging I/O is obsolete. Write payload words directly into the claimed VDP stream packet in RAM.');
-		}
-		if (addr === IO_VDP_CMD) {
-			if (value === 0) {
-				return;
-			}
-			if (this.hasBlockedVdpSubmitPath()) {
-				this.noteRejectedVdpSubmitAttempt();
-				return;
-			}
-			this.noteAcceptedVdpSubmitAttempt();
-			this.handlingVdpCommandWrite = true;
-			try {
-				this.consumeDirectVdpCommand(value >>> 0);
-			} finally {
-				this.handlingVdpCommandWrite = false;
-			}
-			return;
-		}
+		this.noteAcceptedVdpSubmitAttempt();
+		this.consumeDirectVdpCommand(command);
 	}
 
 	private runUpdatePhase(state: FrameState): void {
@@ -2352,16 +2243,16 @@ export class Runtime {
 			return true;
 		}
 		if (!this.haltIrqWaitArmed) {
-			const pendingFlags = this.memory.readIoU32(IO_IRQ_FLAGS);
+				const pendingFlags = this.irqController.pendingFlags();
 			if (pendingFlags !== 0) {
 				this.cpu.clearHaltUntilIrq();
 				return this.activeTickCompleted;
 			}
-			this.haltIrqSignalSequence = this.irqSignalSequence;
+			this.haltIrqSignalSequence = this.irqController.signalSequence;
 			this.haltIrqWaitArmed = true;
 		}
 		while (true) {
-			if (this.irqSignalSequence !== this.haltIrqSignalSequence) {
+			if (this.irqController.signalSequence !== this.haltIrqSignalSequence) {
 				this.cpu.clearHaltUntilIrq();
 				this.resetHaltIrqWait();
 				return this.activeTickCompleted;

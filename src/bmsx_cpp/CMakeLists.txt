@@ -139,6 +139,7 @@ add_library(bmsx_core STATIC
 	machine/devices/imgdec/imgdec_controller.cpp
 	machine/devices/input/input_controller.cpp
 	machine/devices/audio/audio_controller.cpp
+	machine/devices/irq/irq_controller.cpp
 	machine/firmware/firmware_api.cpp
 	machine/cpu/disassembler.cpp
 	machine/program/lua_load_compiler.cpp

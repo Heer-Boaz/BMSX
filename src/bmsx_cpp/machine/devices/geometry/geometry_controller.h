@@ -12,24 +12,27 @@ namespace bmsx {
 
 class GeometryController {
 public:
-	GeometryController(
-		Memory& memory,
-		std::function<void(uint32_t)> raiseIrq,
-		std::function<void(int64_t deadlineCycles)> scheduleService,
-		std::function<void()> cancelService
-	);
+		GeometryController(
+			Memory& memory,
+			std::function<void(uint32_t)> raiseIrq,
+			std::function<int64_t()> getNowCycles,
+			std::function<void(int64_t deadlineCycles)> scheduleService,
+			std::function<void()> cancelService
+		);
 
 	void setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles);
 	void accrueCycles(int cycles, int64_t nowCycles);
 	bool hasPendingWork() const;
-	uint32_t getPendingWorkUnits() const;
-	void onService(int64_t nowCycles);
-	void reset();
-	void normalizeAfterStateRestore();
-	void onCtrlWrite(int64_t nowCycles);
+		uint32_t getPendingWorkUnits() const;
+		void onService(int64_t nowCycles);
+		void reset();
+		void postLoad();
+		void onCtrlWrite(int64_t nowCycles);
 
-private:
-	struct GeoJob {
+	private:
+		static void onCtrlWriteThunk(void* context, uint32_t addr, Value value);
+
+		struct GeoJob {
 		uint32_t cmd = 0;
 		uint32_t src0 = 0;
 		uint32_t src1 = 0;
@@ -105,10 +108,11 @@ private:
 	double m_overlapContactDepth = 0;
 	double m_overlapContactPx = 0;
 	double m_overlapContactPy = 0;
-	uint32_t m_overlapContactFeatureMeta = 0;
-	Memory& m_memory;
-	std::function<void(uint32_t)> m_raiseIrq;
-	std::function<void(int64_t deadlineCycles)> m_scheduleService;
+		uint32_t m_overlapContactFeatureMeta = 0;
+		Memory& m_memory;
+		std::function<void(uint32_t)> m_raiseIrq;
+		std::function<int64_t()> m_getNowCycles;
+		std::function<void(int64_t deadlineCycles)> m_scheduleService;
 	std::function<void()> m_cancelService;
 };
 

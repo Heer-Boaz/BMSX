@@ -147,9 +147,16 @@ export class GeometryController {
 	public constructor(
 		private readonly memory: Memory,
 		private readonly raiseIrq: (mask: number) => void,
+		private readonly getNowCycles: () => number,
 		private readonly scheduleService: (deadlineCycles: number) => void,
 		private readonly cancelService: () => void,
-	) { }
+	) {
+		this.memory.mapIoWrite(IO_GEO_CTRL, this.onCtrlRegisterWrite.bind(this));
+	}
+
+	private onCtrlRegisterWrite(): void {
+		this.onCtrlWrite(this.getNowCycles());
+	}
 
 	public setTiming(cpuHz: number, workUnitsPerSec: number, nowCycles: number): void {
 		this.cpuHz = BigInt(cpuHz);
@@ -226,7 +233,7 @@ export class GeometryController {
 		this.memory.writeValue(IO_GEO_DST1, 0);
 		this.memory.writeValue(IO_GEO_COUNT, 0);
 		this.memory.writeValue(IO_GEO_CMD, 0);
-		this.memory.writeValue(IO_GEO_CTRL, 0);
+		this.memory.writeIoValue(IO_GEO_CTRL, 0);
 		this.memory.writeValue(IO_GEO_STATUS, 0);
 		this.memory.writeValue(IO_GEO_PARAM0, 0);
 		this.memory.writeValue(IO_GEO_PARAM1, 0);
@@ -237,7 +244,7 @@ export class GeometryController {
 		this.memory.writeValue(IO_GEO_FAULT, 0);
 	}
 
-	public normalizeAfterStateRestore(): void {
+	public postLoad(): void {
 		this.workCarry = 0n;
 		this.availableWorkUnits = 0;
 		this.activeJob = null;
@@ -245,7 +252,7 @@ export class GeometryController {
 		const ctrl = this.memory.readIoU32(IO_GEO_CTRL);
 		const status = this.memory.readIoU32(IO_GEO_STATUS);
 		const processed = this.memory.readIoU32(IO_GEO_PROCESSED);
-		this.memory.writeValue(IO_GEO_CTRL, ctrl & ~(GEO_CTRL_START | GEO_CTRL_ABORT));
+		this.memory.writeIoValue(IO_GEO_CTRL, ctrl & ~(GEO_CTRL_START | GEO_CTRL_ABORT));
 		if ((status & GEO_STATUS_BUSY) !== 0) {
 			this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
 			this.memory.writeValue(IO_GEO_PROCESSED, processed);
@@ -260,7 +267,7 @@ export class GeometryController {
 		if (!start && !abort) {
 			return;
 		}
-		this.memory.writeValue(IO_GEO_CTRL, ctrl & ~(GEO_CTRL_START | GEO_CTRL_ABORT));
+		this.memory.writeIoValue(IO_GEO_CTRL, ctrl & ~(GEO_CTRL_START | GEO_CTRL_ABORT));
 		if (start && abort) {
 			this.finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 			return;

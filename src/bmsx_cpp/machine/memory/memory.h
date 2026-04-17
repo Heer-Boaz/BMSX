@@ -19,34 +19,25 @@ constexpr uint32_t ASSET_FLAG_VIEW = 1u << 1;
 
 class Memory {
 public:
-	class VramWriter {
-	public:
-		virtual ~VramWriter() = default;
-		virtual void writeVram(uint32_t addr, const u8* data, size_t length) = 0;
-		virtual void readVram(uint32_t addr, u8* out, size_t length) const = 0;
-	};
-	class VdpIoHandler {
-	public:
-		virtual ~VdpIoHandler() = default;
-		virtual uint32_t readVdpStatus() = 0;
-		virtual uint32_t readVdpData() = 0;
-	};
-	class IoWriteHandler {
-	public:
-		virtual ~IoWriteHandler() = default;
-		virtual void onIoWrite(uint32_t addr, Value value) = 0;
-	};
+		class VramWriter {
+		public:
+			virtual ~VramWriter() = default;
+			virtual void writeVram(uint32_t addr, const u8* data, size_t length) = 0;
+			virtual void readVram(uint32_t addr, u8* out, size_t length) const = 0;
+		};
+		using IoReadHandler = Value (*)(void* context, uint32_t addr);
+		using IoWriteHandler = void (*)(void* context, uint32_t addr, Value value);
 
 	Memory();
 
 	void setEngineRom(const u8* data, size_t size);
 	void setCartRom(const u8* data, size_t size);
-	void setOverlayRom(u8* data, size_t size);
-	size_t overlayRomSize() const;
-	void setVramWriter(VramWriter* writer);
-	void setVdpIoHandler(VdpIoHandler* handler);
-	void setIoWriteHandler(IoWriteHandler* handler);
-	uint32_t usedAssetTableBytes() const;
+		void setOverlayRom(u8* data, size_t size);
+		size_t overlayRomSize() const;
+		void setVramWriter(VramWriter* writer);
+		void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);
+		void mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler);
+		uint32_t usedAssetTableBytes() const;
 	uint32_t usedAssetDataBytes() const;
 
 	Value readValue(uint32_t addr) const;
@@ -184,19 +175,27 @@ private:
 		const u8* data = nullptr;
 		size_t size = 0;
 	};
-	struct MutableRomSpan {
-		u8* data = nullptr;
-		size_t size = 0;
-	};
+		struct MutableRomSpan {
+			u8* data = nullptr;
+			size_t size = 0;
+		};
+		struct IoReadBinding {
+			void* context = nullptr;
+			IoReadHandler handler = nullptr;
+		};
+		struct IoWriteBinding {
+			void* context = nullptr;
+			IoWriteHandler handler = nullptr;
+		};
 
-	RomSpan m_engineRom;
-	RomSpan m_cartRom;
-	MutableRomSpan m_overlayRom;
-	std::vector<u8> m_ram;
-	std::vector<Value> m_ioSlots;
-	VramWriter* m_vramWriter = nullptr;
-	VdpIoHandler* m_vdpIoHandler = nullptr;
-	IoWriteHandler* m_ioWriteHandler = nullptr;
+		RomSpan m_engineRom;
+		RomSpan m_cartRom;
+		MutableRomSpan m_overlayRom;
+		std::vector<u8> m_ram;
+		std::vector<Value> m_ioSlots;
+		std::vector<IoReadBinding> m_ioReadHandlers;
+		std::vector<IoWriteBinding> m_ioWriteHandlers;
+		VramWriter* m_vramWriter = nullptr;
 
 	std::vector<AssetEntry> m_assetEntries;
 	std::unordered_map<std::string, size_t> m_assetIndexById;

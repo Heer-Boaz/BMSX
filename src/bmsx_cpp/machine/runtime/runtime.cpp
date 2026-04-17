@@ -320,24 +320,29 @@ Runtime::Runtime(const RuntimeOptions& options)
 		)
 	, m_stringHandles(m_memory)
 	, m_cpu(m_memory, &m_stringHandles)
+	, m_irqController(m_memory)
 	, m_dmaController(
 			m_memory,
-			[this](uint32_t mask) { signalIrq(mask); },
+			[this](uint32_t mask) { m_irqController.raise(mask); },
 			[this](uint32_t src, size_t byteLength) { sealVdpDmaTransfer(src, byteLength); },
+			[this]() { return hasOpenDirectVdpFifoIngress() || m_vdp.canAcceptSubmittedFrame(); },
+			[this]() { noteAcceptedVdpSubmitAttempt(); },
+			[this]() { noteRejectedVdpSubmitAttempt(); },
 			[this]() { return currentSchedulerNowCycles(); },
 			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceDma, deadlineCycles); },
 			[this]() { cancelDeviceService(DeviceServiceDma); }
 		)
 	, m_geometryController(
 			m_memory,
-			[this](uint32_t mask) { signalIrq(mask); },
+			[this](uint32_t mask) { m_irqController.raise(mask); },
+			[this]() { return currentSchedulerNowCycles(); },
 			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceGeo, deadlineCycles); },
 			[this]() { cancelDeviceService(DeviceServiceGeo); }
 		)
 	, m_imgDecController(
 			m_memory,
 			m_dmaController,
-			[this](uint32_t mask) { signalIrq(mask); },
+			[this](uint32_t mask) { m_irqController.raise(mask); },
 			[this]() { return currentSchedulerNowCycles(); },
 			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceImg, deadlineCycles); },
 			[this]() { cancelDeviceService(DeviceServiceImg); }
@@ -350,7 +355,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	, m_audioController(
 			m_memory,
 			*EngineCore::instance().soundMaster(),
-			[this](uint32_t mask) { signalIrq(mask); }
+			[this](uint32_t mask) { m_irqController.raise(mask); }
 		)
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)
@@ -367,8 +372,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_HOST_FAULT_STAGE, valueNumber(static_cast<double>(HOST_FAULT_STAGE_NONE)));
-	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(0.0));
-	m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
+	m_irqController.reset();
 	m_memory.writeValue(IO_DMA_SRC, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_DST, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_LEN, valueNumber(0.0));
@@ -411,7 +415,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	m_memory.writeValue(IO_VDP_RD_MODE, valueNumber(static_cast<double>(VDP_RD_MODE_RGBA8888)));
 	m_memory.writeValue(IO_VDP_STATUS, valueNumber(0.0));
 	m_vdp.initializeRegisters();
-	m_memory.setIoWriteHandler(this);
+	installIoMap();
 	setVblankCycles(options.vblankCycles);
 	setVdpWorkUnitsPerSec(options.vdpWorkUnitsPerSec);
 	setGeoWorkUnitsPerSec(options.geoWorkUnitsPerSec);
@@ -677,8 +681,7 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_HOST_FAULT_STAGE, valueNumber(static_cast<double>(HOST_FAULT_STAGE_NONE)));
-	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(0.0));
-	m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
+	m_irqController.reset();
 	m_memory.writeValue(IO_DMA_SRC, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_DST, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_LEN, valueNumber(0.0));
@@ -1052,7 +1055,7 @@ void Runtime::resetVblankState() {
 	m_vblankSequence = 0;
 	m_lastCompletedVblankSequence = 0;
 	m_inputSampleArmed = false;
-	m_irqSignalSequence = 0;
+	m_irqController.postLoad();
 	resetHaltIrqWait();
 	m_vdpStatus = 0;
 	m_memory.writeValue(IO_VDP_STATUS, valueNumber(static_cast<double>(m_vdpStatus)));
@@ -1110,23 +1113,6 @@ void Runtime::noteAcceptedVdpSubmitAttempt() {
 	refreshVdpSubmitBusyStatus();
 }
 
-void Runtime::syncVdpSubmitAttemptStatusFromDma(uint32_t dst) {
-	if (dst != IO_VDP_FIFO) {
-		return;
-	}
-	const uint32_t dmaStatus = m_memory.readIoU32(IO_DMA_STATUS);
-	if ((dmaStatus & DMA_STATUS_REJECTED) != 0u) {
-		noteRejectedVdpSubmitAttempt();
-		return;
-	}
-	if ((dmaStatus & DMA_STATUS_ERROR) != 0u) {
-		return;
-	}
-	if ((dmaStatus & (DMA_STATUS_BUSY | DMA_STATUS_DONE)) != 0u) {
-		noteAcceptedVdpSubmitAttempt();
-	}
-}
-
 void Runtime::enterVblank() {
 	m_vblankSequence += 1;
 	commitFrameOnVblankEdge();
@@ -1135,7 +1121,7 @@ void Runtime::enterVblank() {
 		m_inputSampleArmed = false;
 	}
 	setVblankStatus(true);
-	signalIrq(IRQ_VBLANK);
+	m_irqController.raise(IRQ_VBLANK);
 	if (m_frameActive && m_cpu.isHaltedUntilIrq() && m_pendingCall == PendingCall::Entry && m_cpu.getFrameDepth() == 1) {
 		completeTickIfPending(m_frameState, m_vblankSequence);
 		m_clearBackQueuesAfterIrqWake = true;
@@ -1180,7 +1166,7 @@ bool Runtime::tryCompleteTickOnPendingVblankIrq(FrameState& frameState) {
 	if (m_vblankSequence == 0) {
 		return false;
 	}
-	const uint32_t pendingFlags = m_memory.readIoU32(IO_IRQ_FLAGS);
+	const uint32_t pendingFlags = m_irqController.pendingFlags();
 	if ((pendingFlags & IRQ_VBLANK) == 0u) {
 		return false;
 	}
@@ -1204,16 +1190,16 @@ bool Runtime::runHaltedUntilIrq(FrameState& frameState) {
 		return true;
 	}
 	if (!m_haltIrqWaitArmed) {
-		const uint32_t pendingFlags = m_memory.readIoU32(IO_IRQ_FLAGS);
+		const uint32_t pendingFlags = m_irqController.pendingFlags();
 		if (pendingFlags != 0u) {
 			m_cpu.clearHaltUntilIrq();
 			return m_activeTickCompleted;
 		}
-		m_haltIrqSignalSequence = m_irqSignalSequence;
+		m_haltIrqSignalSequence = m_irqController.signalSequence();
 		m_haltIrqWaitArmed = true;
 	}
 	while (true) {
-		if (m_irqSignalSequence != m_haltIrqSignalSequence) {
+		if (m_irqController.signalSequence() != m_haltIrqSignalSequence) {
 			m_cpu.clearHaltUntilIrq();
 			resetHaltIrqWait();
 			return m_activeTickCompleted;
@@ -1236,41 +1222,6 @@ bool Runtime::runHaltedUntilIrq(FrameState& frameState) {
 	}
 }
 
-void Runtime::signalIrq(uint32_t mask) {
-	const uint32_t current = m_memory.readIoU32(IO_IRQ_FLAGS);
-	const uint32_t next = current | mask;
-	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(next)));
-	if (next != current) {
-		m_irqSignalSequence += 1;
-	}
-}
-
-void Runtime::acknowledgeIrq(uint32_t mask) {
-	const uint32_t ack = mask;
-	if (ack == 0u) {
-		m_handlingIrqAckWrite = true;
-		try {
-			m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
-		} catch (...) {
-			m_handlingIrqAckWrite = false;
-			throw;
-		}
-		m_handlingIrqAckWrite = false;
-		return;
-	}
-	uint32_t flags = m_memory.readIoU32(IO_IRQ_FLAGS);
-	flags &= ~ack;
-	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(flags)));
-	m_handlingIrqAckWrite = true;
-	try {
-		m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
-	} catch (...) {
-		m_handlingIrqAckWrite = false;
-		throw;
-	}
-	m_handlingIrqAckWrite = false;
-}
-
 void Runtime::raiseEngineIrq(uint32_t mask) {
 	constexpr uint32_t kAllowedMask = IRQ_REINIT | IRQ_NEWGAME;
 	if (mask == 0) {
@@ -1280,7 +1231,7 @@ void Runtime::raiseEngineIrq(uint32_t mask) {
 	if (unsupported != 0u) {
 		throw runtimeFault("unsupported engine IRQ mask " + std::to_string(unsupported) + ".");
 	}
-	signalIrq(mask);
+	m_irqController.raise(mask);
 }
 
 RunResult Runtime::runWithBudget() {
@@ -1478,109 +1429,70 @@ void Runtime::tickTerminalModeDraw() {
 	// Terminal mode draw - stub for now
 }
 
-void Runtime::onIoWrite(uint32_t addr, Value value) {
-	if (m_handlingVdpCommandWrite || m_handlingIrqAckWrite) {
+void Runtime::installIoMap() {
+	m_memory.mapIoWrite(IO_INP_CTRL, this, [](void* context, uint32_t, Value) {
+		static_cast<Runtime*>(context)->handleInputCtrlWrite();
+	});
+	m_memory.mapIoWrite(IO_VDP_FIFO, this, [](void* context, uint32_t, Value) {
+		static_cast<Runtime*>(context)->handleVdpFifoWrite();
+	});
+	m_memory.mapIoWrite(IO_VDP_FIFO_CTRL, this, [](void* context, uint32_t, Value) {
+		static_cast<Runtime*>(context)->handleVdpFifoCtrlWrite();
+	});
+	m_memory.mapIoWrite(IO_PAYLOAD_ALLOC_ADDR, this, [](void* context, uint32_t, Value) {
+		static_cast<Runtime*>(context)->handleObsoletePayloadIoWrite();
+	});
+	m_memory.mapIoWrite(IO_PAYLOAD_DATA_ADDR, this, [](void* context, uint32_t, Value) {
+		static_cast<Runtime*>(context)->handleObsoletePayloadIoWrite();
+	});
+	m_memory.mapIoWrite(IO_VDP_CMD, this, [](void* context, uint32_t, Value) {
+		static_cast<Runtime*>(context)->handleVdpCommandWrite();
+	});
+}
+
+void Runtime::handleInputCtrlWrite() {
+	if (m_memory.readIoU32(IO_INP_CTRL) == INP_CTRL_ARM) {
+		m_inputSampleArmed = true;
+	}
+	m_inputController.onCtrlWrite();
+}
+
+void Runtime::handleVdpFifoWrite() {
+	if (m_dmaController.hasPendingVdpSubmit() || (!hasOpenDirectVdpFifoIngress() && !m_vdp.canAcceptSubmittedFrame())) {
+		noteRejectedVdpSubmitAttempt();
 		return;
 	}
-	if (addr == IO_INP_ACTION || addr == IO_INP_BIND) {
+	noteAcceptedVdpSubmitAttempt();
+	pushVdpFifoWord(m_memory.readIoU32(IO_VDP_FIFO));
+}
+
+void Runtime::handleVdpFifoCtrlWrite() {
+	if ((m_memory.readIoU32(IO_VDP_FIFO_CTRL) & VDP_FIFO_CTRL_SEAL) == 0u) {
 		return;
 	}
-	if (addr == IO_INP_QUERY) {
-		m_inputController.onQueryWrite();
+	if (m_dmaController.hasPendingVdpSubmit()) {
+		noteRejectedVdpSubmitAttempt();
 		return;
 	}
-	if (addr == IO_INP_CONSUME) {
-		m_inputController.onConsumeWrite();
+	sealVdpFifoTransfer();
+	refreshVdpSubmitBusyStatus();
+}
+
+void Runtime::handleObsoletePayloadIoWrite() {
+	throw vdpFault("payload staging I/O is obsolete. Write payload words directly into the claimed VDP stream packet in RAM.");
+}
+
+void Runtime::handleVdpCommandWrite() {
+	const uint32_t command = m_memory.readIoU32(IO_VDP_CMD);
+	if (command == 0u) {
 		return;
 	}
-	if (addr == IO_INP_CTRL) {
-		if (valueIsNumber(value) && toU32(asNumber(value)) == INP_CTRL_ARM) {
-			m_inputSampleArmed = true;
-		}
-		m_inputController.onCtrlWrite();
+	if (hasBlockedVdpSubmitPath()) {
+		noteRejectedVdpSubmitAttempt();
 		return;
 	}
-	if (!valueIsNumber(value)) {
-		return;
-	}
-	if (addr == IO_IRQ_ACK) {
-		acknowledgeIrq(toU32(asNumber(value)));
-		return;
-	}
-	if (addr == IO_APU_CMD) {
-		m_audioController.onCommandWrite(toU32(asNumber(value)));
-		return;
-	}
-	if (addr == IO_DMA_CTRL) {
-		if ((toU32(asNumber(value)) & DMA_CTRL_START) != 0u) {
-			const uint32_t dst = m_memory.readIoU32(IO_DMA_DST);
-			if (dst == IO_VDP_FIFO && hasBlockedVdpSubmitPath()) {
-				m_memory.writeValue(IO_DMA_CTRL, valueNumber(static_cast<double>(toU32(asNumber(value)) & ~DMA_CTRL_START)));
-				m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
-				m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>(DMA_STATUS_REJECTED)));
-				noteRejectedVdpSubmitAttempt();
-				return;
-			}
-			m_dmaController.tryStartIo();
-			syncVdpSubmitAttemptStatusFromDma(dst);
-		}
-		return;
-	}
-	if (addr == IO_GEO_CTRL) {
-		if ((toU32(asNumber(value)) & (GEO_CTRL_START | GEO_CTRL_ABORT)) != 0u) {
-			m_geometryController.onCtrlWrite(currentSchedulerNowCycles());
-		}
-		return;
-	}
-	if (addr == IO_IMG_CTRL) {
-		if ((toU32(asNumber(value)) & IMG_CTRL_START) != 0u) {
-			m_imgDecController.onCtrlWrite(currentSchedulerNowCycles());
-		}
-		return;
-	}
-	if (addr == IO_VDP_FIFO) {
-		if (m_dmaController.hasPendingVdpSubmit() || (!hasOpenDirectVdpFifoIngress() && !m_vdp.canAcceptSubmittedFrame())) {
-			noteRejectedVdpSubmitAttempt();
-			return;
-		}
-		noteAcceptedVdpSubmitAttempt();
-		pushVdpFifoWord(toU32(asNumber(value)));
-		return;
-	}
-	if (addr == IO_VDP_FIFO_CTRL) {
-		if ((toU32(asNumber(value)) & VDP_FIFO_CTRL_SEAL) == 0u) {
-			return;
-		}
-		if (m_dmaController.hasPendingVdpSubmit()) {
-			noteRejectedVdpSubmitAttempt();
-			return;
-		}
-		sealVdpFifoTransfer();
-		refreshVdpSubmitBusyStatus();
-		return;
-	}
-	if (addr == IO_PAYLOAD_ALLOC_ADDR || addr == IO_PAYLOAD_DATA_ADDR) {
-		throw vdpFault("payload staging I/O is obsolete. Write payload words directly into the claimed VDP stream packet in RAM.");
-	}
-	if (addr == IO_VDP_CMD) {
-		if (asNumber(value) == 0.0) {
-			return;
-		}
-		if (hasBlockedVdpSubmitPath()) {
-			noteRejectedVdpSubmitAttempt();
-			return;
-		}
-		noteAcceptedVdpSubmitAttempt();
-		m_handlingVdpCommandWrite = true;
-		try {
-			consumeDirectVdpCommand(toU32(asNumber(value)));
-		} catch (...) {
-			m_handlingVdpCommandWrite = false;
-			throw;
-		}
-		m_handlingVdpCommandWrite = false;
-		return;
-	}
+	noteAcceptedVdpSubmitAttempt();
+	consumeDirectVdpCommand(command);
 }
 
 void Runtime::requestProgramReload() {
@@ -1635,7 +1547,8 @@ RuntimeState Runtime::captureCurrentState() const {
 void Runtime::applyState(const RuntimeState& state) {
 	// Restore memory
 	m_memory.loadIoSlots(state.ioMemory);
-	m_geometryController.normalizeAfterStateRestore();
+	m_geometryController.postLoad();
+	m_irqController.postLoad();
 	m_vdp.syncRegisters();
 	clearHaltUntilIrq();
 	m_inputSampleArmed = state.inputSampleArmed;
@@ -1648,7 +1561,6 @@ void Runtime::applyState(const RuntimeState& state) {
 	m_vdpStatus &= ~VDP_STATUS_VBLANK;
 	m_vblankActive = false;
 	m_activeTickCompleted = false;
-	m_irqSignalSequence = 0;
 	const bool vblankActive = (m_vblankStartCycle == 0)
 		|| (getCyclesIntoFrame() >= m_vblankStartCycle);
 	setVblankStatus(vblankActive);
@@ -1739,8 +1651,7 @@ void Runtime::setVblankCycles(int cycles) {
 }
 
 void Runtime::resetHardwareState() {
-	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(0.0));
-	m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
+	m_irqController.reset();
 	m_dmaController.reset();
 	m_geometryController.reset();
 	m_imgDecController.reset();

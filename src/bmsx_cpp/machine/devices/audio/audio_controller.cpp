@@ -59,11 +59,12 @@ void writeNumber(Memory& memory, uint32_t addr, double value) {
 
 } // namespace
 
-AudioController::AudioController(Memory& memory, SoundMaster& soundMaster, std::function<void(uint32_t)> raiseIrq)
-	: m_memory(memory)
-	, m_soundMaster(soundMaster)
-	, m_raiseIrq(std::move(raiseIrq)) {
-	m_sfxEnded = ScopedSubscription(m_soundMaster.addEndedListener(AudioType::Sfx, [this](const ActiveVoiceInfo& info) {
+	AudioController::AudioController(Memory& memory, SoundMaster& soundMaster, std::function<void(uint32_t)> raiseIrq)
+		: m_memory(memory)
+		, m_soundMaster(soundMaster)
+		, m_raiseIrq(std::move(raiseIrq)) {
+		m_memory.mapIoWrite(IO_APU_CMD, this, &AudioController::onCommandWriteThunk);
+		m_sfxEnded = ScopedSubscription(m_soundMaster.addEndedListener(AudioType::Sfx, [this](const ActiveVoiceInfo& info) {
 		onVoiceEnded(AudioType::Sfx, info);
 	}));
 	m_musicEnded = ScopedSubscription(m_soundMaster.addEndedListener(AudioType::Music, [this](const ActiveVoiceInfo& info) {
@@ -92,7 +93,7 @@ void AudioController::reset() {
 	writeNumber(m_memory, IO_APU_SYNC, 0.0);
 	writeNumber(m_memory, IO_APU_START_AT_LOOP, 0.0);
 	writeNumber(m_memory, IO_APU_START_FRESH, 0.0);
-	writeNumber(m_memory, IO_APU_CMD, static_cast<double>(APU_CMD_NONE));
+	m_memory.writeIoValue(IO_APU_CMD, valueNumber(static_cast<double>(APU_CMD_NONE)));
 	writeNumber(m_memory, IO_APU_STATUS, 0.0);
 	writeNumber(m_memory, IO_APU_EVENT_KIND, static_cast<double>(APU_EVENT_NONE));
 	writeNumber(m_memory, IO_APU_EVENT_CHANNEL, static_cast<double>(APU_CHANNEL_SFX));
@@ -101,19 +102,23 @@ void AudioController::reset() {
 	writeNumber(m_memory, IO_APU_EVENT_SEQ, 0.0);
 }
 
-void AudioController::onCommandWrite(uint32_t command) {
-	switch (command) {
+void AudioController::onCommandWrite() {
+	switch (m_memory.readIoU32(IO_APU_CMD)) {
 		case APU_CMD_PLAY:
 			play();
-			writeNumber(m_memory, IO_APU_CMD, static_cast<double>(APU_CMD_NONE));
+			m_memory.writeIoValue(IO_APU_CMD, valueNumber(static_cast<double>(APU_CMD_NONE)));
 			return;
 		case APU_CMD_STOP_CHANNEL:
 			stopChannel();
-			writeNumber(m_memory, IO_APU_CMD, static_cast<double>(APU_CMD_NONE));
+			m_memory.writeIoValue(IO_APU_CMD, valueNumber(static_cast<double>(APU_CMD_NONE)));
 			return;
 		default:
 			return;
 	}
+}
+
+void AudioController::onCommandWriteThunk(void* context, uint32_t, Value) {
+	static_cast<AudioController*>(context)->onCommandWrite();
 }
 
 void AudioController::play() {

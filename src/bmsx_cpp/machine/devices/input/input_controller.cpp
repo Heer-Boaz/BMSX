@@ -9,9 +9,19 @@ constexpr const char* INP_CONTEXT_ID = "inp_chip";
 
 InputController::InputController(Memory& memory, Input& input, const StringPool& strings)
 	: m_memory(memory)
-	, m_input(input)
-	, m_strings(strings)
-	, m_defaultInputMapping(Input::getDefaultInputMapping()) {
+		, m_input(input)
+		, m_strings(strings)
+		, m_defaultInputMapping(Input::getDefaultInputMapping()) {
+	m_memory.mapIoWrite(IO_INP_QUERY, this, &InputController::onQueryWriteThunk);
+	m_memory.mapIoWrite(IO_INP_CONSUME, this, &InputController::onConsumeWriteThunk);
+}
+
+void InputController::onQueryWriteThunk(void* context, uint32_t, Value) {
+	static_cast<InputController*>(context)->onQueryWrite();
+}
+
+void InputController::onConsumeWriteThunk(void* context, uint32_t, Value) {
+	static_cast<InputController*>(context)->onConsumeWrite();
 }
 
 void InputController::reset() {

@@ -1179,10 +1179,11 @@ VDP::VDP(
 	, m_vramStaging(VRAM_STAGING_SIZE)
 	, m_vramGarbageScratch(VRAM_GARBAGE_CHUNK_BYTES)
 	, m_getNowCycles(std::move(getNowCycles))
-	, m_scheduleService(std::move(scheduleService))
-	, m_cancelService(std::move(cancelService)) {
+		, m_scheduleService(std::move(scheduleService))
+		, m_cancelService(std::move(cancelService)) {
 	m_memory.setVramWriter(this);
-	m_memory.setVdpIoHandler(this);
+	m_memory.mapIoRead(IO_VDP_RD_STATUS, this, &VDP::readVdpStatusThunk);
+	m_memory.mapIoRead(IO_VDP_RD_DATA, this, &VDP::readVdpDataThunk);
 	m_buildBlitterQueue.reserve(BLITTER_FIFO_CAPACITY);
 	m_activeBlitterQueue.reserve(BLITTER_FIFO_CAPACITY);
 	m_pendingBlitterQueue.reserve(BLITTER_FIFO_CAPACITY);
@@ -2625,6 +2626,10 @@ uint32_t VDP::readVdpStatus() {
 	return status;
 }
 
+Value VDP::readVdpStatusThunk(void* context, uint32_t) {
+	return valueNumber(static_cast<double>(static_cast<VDP*>(context)->readVdpStatus()));
+}
+
 uint32_t VDP::readVdpData() {
 	const uint32_t surfaceId = m_memory.readIoU32(IO_VDP_RD_SURFACE);
 	const uint32_t x = m_memory.readIoU32(IO_VDP_RD_X);
@@ -2663,6 +2668,10 @@ uint32_t VDP::readVdpData() {
 	return (r | (g << 8u) | (b << 16u) | (a << 24u));
 }
 
+Value VDP::readVdpDataThunk(void* context, uint32_t) {
+	return valueNumber(static_cast<double>(static_cast<VDP*>(context)->readVdpData()));
+}
+
 void VDP::initializeRegisters() {
 	const i32 dither = 0;
 	const auto& frameBufferSurface = m_readSurfaces[VDP_RD_SURFACE_FRAMEBUFFER];
@@ -2685,10 +2694,10 @@ void VDP::initializeRegisters() {
 	m_pendingSlotAtlasIds = {{-1, -1}};
 	m_pendingSkyboxFaceIds = {};
 	m_pendingHasSkybox = false;
-	m_memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(dither)));
-	m_memory.writeValue(IO_VDP_CMD, valueNumber(0.0));
+	m_memory.writeIoValue(IO_VDP_DITHER, valueNumber(static_cast<double>(dither)));
+	m_memory.writeIoValue(IO_VDP_CMD, valueNumber(0.0));
 	for (int index = 0; index < IO_VDP_CMD_ARG_COUNT; ++index) {
-		m_memory.writeValue(IO_VDP_CMD_ARG0 + static_cast<uint32_t>(index) * IO_WORD_SIZE, valueNumber(0.0));
+		m_memory.writeIoValue(IO_VDP_CMD_ARG0 + static_cast<uint32_t>(index) * IO_WORD_SIZE, valueNumber(0.0));
 	}
 	m_lastDitherType = dither;
 	m_committedDitherType = dither;

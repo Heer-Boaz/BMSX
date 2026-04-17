@@ -20,9 +20,11 @@ public:
 	~AudioController() = default;
 
 	void reset();
-	void onCommandWrite(uint32_t command);
+	void onCommandWrite();
 
 private:
+	static void onCommandWriteThunk(void* context, uint32_t addr, Value value);
+
 	Memory& m_memory;
 	SoundMaster& m_soundMaster;
 	std::function<void(uint32_t)> m_raiseIrq;
