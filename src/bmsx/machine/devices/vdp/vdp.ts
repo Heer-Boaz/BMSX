@@ -1628,10 +1628,10 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	}
 
 	public readVdpData(): number {
-		const surfaceId = (this.memory.readValue(IO_VDP_RD_SURFACE) as number) >>> 0;
-		const x = (this.memory.readValue(IO_VDP_RD_X) as number) >>> 0;
-		const y = (this.memory.readValue(IO_VDP_RD_Y) as number) >>> 0;
-		const mode = (this.memory.readValue(IO_VDP_RD_MODE) as number) >>> 0;
+		const surfaceId = this.memory.readIoU32(IO_VDP_RD_SURFACE);
+		const x = this.memory.readIoU32(IO_VDP_RD_X);
+		const y = this.memory.readIoU32(IO_VDP_RD_Y);
+		const mode = this.memory.readIoU32(IO_VDP_RD_MODE);
 		if (mode !== VDP_RD_MODE_RGBA8888) {
 			throw vdpFault(`unsupported VDP read mode ${mode}.`);
 		}
@@ -1708,12 +1708,12 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	}
 
 	public syncRegisters(): void {
-		const dither = this.memory.readValue(IO_VDP_DITHER) as number;
+		const dither = this.memory.readIoI32(IO_VDP_DITHER);
 		if (dither !== this.lastDitherType) {
 			this.lastDitherType = dither;
 		}
-		const primaryRaw = (this.memory.readValue(IO_VDP_PRIMARY_ATLAS_ID) as number) >>> 0;
-		const secondaryRaw = (this.memory.readValue(IO_VDP_SECONDARY_ATLAS_ID) as number) >>> 0;
+		const primaryRaw = this.memory.readIoU32(IO_VDP_PRIMARY_ATLAS_ID);
+		const secondaryRaw = this.memory.readIoU32(IO_VDP_SECONDARY_ATLAS_ID);
 		const primary = primaryRaw === VDP_ATLAS_ID_NONE ? null : primaryRaw;
 		const secondary = secondaryRaw === VDP_ATLAS_ID_NONE ? null : secondaryRaw;
 		if (primary !== this.slotAtlasIds[0] || secondary !== this.slotAtlasIds[1]) {

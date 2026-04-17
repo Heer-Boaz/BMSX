@@ -1,6 +1,6 @@
 import { $ } from '../core/engine_core';
 import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, VoiceEndedEvent, AudioFilterParams, RngService, SubscriptionHandle, createSubscriptionHandle } from '../platform';
-import { asset_id, AudioMeta, AudioType, AudioTypes, CartridgeLayerId, id2res, RomAsset } from '../rompack/rompack';
+import { asset_id, AudioMeta, AudioType, AudioTypes, CartridgeLayerId, DEFAULT_MACHINE_MAX_VOICES, id2res, RomAsset } from '../rompack/rompack';
 import { Runtime } from '../machine/runtime/runtime';
 import { clamp01 } from '../common/clamp';
 
@@ -119,7 +119,6 @@ type AudioQueueItem = {
 };
 
 const MIN_GAIN = 0.0001;
-const DEFAULT_MAX_VOICES: Record<AudioType, number> = { sfx: 16, music: 1, ui: 8 };
 const MIX_MINIMAL_OVERHEAD_SEC = 0.002;
 const MIX_LOW_OVERHEAD_SEC = 0.004;
 const MIX_BALANCED_OVERHEAD_SEC = 0.006;
@@ -297,7 +296,7 @@ export class SoundMaster {
 		this.pendingStingerReturnUnsub = null;
 		this.pendingStingerType = null;
 		this.pendingStingerVoice = null;
-		this.maxVoicesByType = { sfx: DEFAULT_MAX_VOICES.sfx, music: DEFAULT_MAX_VOICES.music, ui: DEFAULT_MAX_VOICES.ui };
+		this.maxVoicesByType = { sfx: DEFAULT_MACHINE_MAX_VOICES.sfx, music: DEFAULT_MACHINE_MAX_VOICES.music, ui: DEFAULT_MACHINE_MAX_VOICES.ui };
 		this.voiceRecordByHandle = new WeakMap();
 		this.mixFps = 50;
 		this.mixLatencyProfile = 'low';
@@ -347,6 +346,10 @@ export class SoundMaster {
 
 	public isRuntimeAudioReady(): boolean {
 		return !!this.audio;
+	}
+
+	public hasAudio(id: asset_id): boolean {
+		return this.tracks[id] !== undefined;
 	}
 
 	public setMaxVoicesByType(specs: Partial<Record<AudioType, number>>): void {

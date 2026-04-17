@@ -282,14 +282,14 @@ void DmaController::finishJob(DmaJob& job) {
 }
 
 void DmaController::tryStartIo() {
-	const uint32_t ctrlValue = toU32(asNumber(m_memory.readValue(IO_DMA_CTRL)));
+	const uint32_t ctrlValue = m_memory.readIoU32(IO_DMA_CTRL);
 	if ((ctrlValue & DMA_CTRL_START) == 0) {
 		return;
 	}
 	const uint32_t ctrl = ctrlValue;
-	const uint32_t src = toU32(asNumber(m_memory.readValue(IO_DMA_SRC)));
-	const uint32_t dst = toU32(asNumber(m_memory.readValue(IO_DMA_DST)));
-	const uint32_t len = toU32(asNumber(m_memory.readValue(IO_DMA_LEN)));
+	const uint32_t src = m_memory.readIoU32(IO_DMA_SRC);
+	const uint32_t dst = m_memory.readIoU32(IO_DMA_DST);
+	const uint32_t len = m_memory.readIoU32(IO_DMA_LEN);
 	const bool vdpSubmit = dst == IO_VDP_FIFO;
 	const bool strict = (ctrl & DMA_CTRL_STRICT) != 0;
 	m_memory.writeValue(IO_DMA_CTRL, valueNumber(static_cast<double>(ctrl & ~DMA_CTRL_START)));

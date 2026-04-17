@@ -1,7 +1,6 @@
 events:
     story.node.enter:
         channel: music
-        max_voices: 1
         rules:
             - when:
                   and:
@@ -125,7 +124,6 @@ events:
 
     combat.start:
         channel: music
-        max_voices: 1
         rules:
             - when:
                   equals:
@@ -154,7 +152,6 @@ events:
 
     combat.results:
         channel: music
-        max_voices: 1
         rules:
             - go:
                   music_transition:

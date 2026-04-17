@@ -478,10 +478,7 @@ export class EngineCore {
 			resolver,
 			(id) => runtime.getAudioBytesById(id)
 		);
-		const maxVoices = getMachineMaxVoices(this._machine_manifest);
-		if (maxVoices) {
-			SoundMaster.instance.setMaxVoicesByType(maxVoices);
-		}
+		SoundMaster.instance.setMaxVoicesByType(getMachineMaxVoices(this._machine_manifest));
 	}
 
 	public bootstrapStartupAudio(): void {

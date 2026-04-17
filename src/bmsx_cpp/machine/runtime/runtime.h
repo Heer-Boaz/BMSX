@@ -5,6 +5,7 @@
 #include "machine/devices/geometry/geometry_controller.h"
 #include "machine/devices/imgdec/imgdec_controller.h"
 #include "machine/devices/input/input_controller.h"
+#include "machine/devices/audio/audio_controller.h"
 #include "machine/bus/io.h"
 #include "machine/runtime/runtime_screen.h"
 #include "machine/runtime/runtime_timing.h"
@@ -424,6 +425,7 @@ private:
 	GeometryController m_geometryController;
 	ImgDecController m_imgDecController;
 	InputController m_inputController;
+	AudioController m_audioController;
 	Program* m_program = nullptr;
 	ProgramMetadata* m_programMetadata = nullptr;
 

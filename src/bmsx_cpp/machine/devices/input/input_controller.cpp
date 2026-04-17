@@ -30,7 +30,7 @@ void InputController::reset() {
 }
 
 void InputController::onCtrlWrite() {
-	switch (toU32(asNumber(m_memory.readValue(IO_INP_CTRL)))) {
+	switch (m_memory.readIoU32(IO_INP_CTRL)) {
 		case INP_CTRL_COMMIT:
 			commitAction();
 			return;
@@ -73,7 +73,7 @@ const InputController::PlayerChipState& InputController::playerState(i32 playerI
 }
 
 i32 InputController::currentPlayerIndex() const {
-	return static_cast<i32>(std::floor(asNumber(m_memory.readValue(IO_INP_PLAYER))));
+	return static_cast<i32>(m_memory.readIoU32(IO_INP_PLAYER));
 }
 
 void InputController::commitAction() {

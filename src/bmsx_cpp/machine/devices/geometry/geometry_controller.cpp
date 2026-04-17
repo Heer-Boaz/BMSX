@@ -152,9 +152,9 @@ void GeometryController::normalizeAfterStateRestore() {
 	m_availableWorkUnits = 0;
 	m_activeJob.reset();
 	m_cancelService();
-	const uint32_t ctrl = readRegister(IO_GEO_CTRL);
-	const uint32_t status = readRegister(IO_GEO_STATUS);
-	const uint32_t processed = readRegister(IO_GEO_PROCESSED);
+	const uint32_t ctrl = m_memory.readIoU32(IO_GEO_CTRL);
+	const uint32_t status = m_memory.readIoU32(IO_GEO_STATUS);
+	const uint32_t processed = m_memory.readIoU32(IO_GEO_PROCESSED);
 	writeRegister(IO_GEO_CTRL, ctrl & ~(GEO_CTRL_START | GEO_CTRL_ABORT));
 	if ((status & GEO_STATUS_BUSY) != 0u) {
 		writeRegister(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
@@ -164,7 +164,7 @@ void GeometryController::normalizeAfterStateRestore() {
 }
 
 void GeometryController::onCtrlWrite(int64_t nowCycles) {
-	const uint32_t ctrl = readRegister(IO_GEO_CTRL);
+	const uint32_t ctrl = m_memory.readIoU32(IO_GEO_CTRL);
 	const bool start = (ctrl & GEO_CTRL_START) != 0u;
 	const bool abort = (ctrl & GEO_CTRL_ABORT) != 0u;
 	if (!start && !abort) {
@@ -218,18 +218,18 @@ void GeometryController::onService(int64_t nowCycles) {
 
 void GeometryController::tryStart(int64_t nowCycles) {
 	GeoJob job;
-	job.cmd = readRegister(IO_GEO_CMD);
-	job.src0 = readRegister(IO_GEO_SRC0);
-	job.src1 = readRegister(IO_GEO_SRC1);
-	job.src2 = readRegister(IO_GEO_SRC2);
-	job.dst0 = readRegister(IO_GEO_DST0);
-	job.dst1 = readRegister(IO_GEO_DST1);
-	job.count = readRegister(IO_GEO_COUNT);
-	job.param0 = readRegister(IO_GEO_PARAM0);
-	job.param1 = readRegister(IO_GEO_PARAM1);
-	job.stride0 = readRegister(IO_GEO_STRIDE0);
-	job.stride1 = readRegister(IO_GEO_STRIDE1);
-	job.stride2 = readRegister(IO_GEO_STRIDE2);
+	job.cmd = m_memory.readIoU32(IO_GEO_CMD);
+	job.src0 = m_memory.readIoU32(IO_GEO_SRC0);
+	job.src1 = m_memory.readIoU32(IO_GEO_SRC1);
+	job.src2 = m_memory.readIoU32(IO_GEO_SRC2);
+	job.dst0 = m_memory.readIoU32(IO_GEO_DST0);
+	job.dst1 = m_memory.readIoU32(IO_GEO_DST1);
+	job.count = m_memory.readIoU32(IO_GEO_COUNT);
+	job.param0 = m_memory.readIoU32(IO_GEO_PARAM0);
+	job.param1 = m_memory.readIoU32(IO_GEO_PARAM1);
+	job.stride0 = m_memory.readIoU32(IO_GEO_STRIDE0);
+	job.stride1 = m_memory.readIoU32(IO_GEO_STRIDE1);
+	job.stride2 = m_memory.readIoU32(IO_GEO_STRIDE2);
 	switch (job.cmd) {
 		case IO_CMD_GEO_XFORM2_BATCH:
 			if (!validateXform2Submission(job)) {
@@ -1180,10 +1180,6 @@ std::optional<uint32_t> GeometryController::resolveByteOffset(uint32_t base, uin
 	return static_cast<uint32_t>(addr);
 }
 
-int32_t GeometryController::readI32(uint32_t addr) const {
-	return static_cast<int32_t>(m_memory.readU32(addr));
-}
-
 float GeometryController::readF32(uint32_t addr) const {
 	return f32BitsToNumber(m_memory.readU32(addr));
 }
@@ -1244,10 +1240,6 @@ std::optional<uint32_t> GeometryController::resolveIndexedSpan(uint32_t base, ui
 		return std::nullopt;
 	}
 	return static_cast<uint32_t>(addr);
-}
-
-uint32_t GeometryController::readRegister(uint32_t addr) const {
-	return toU32(asNumber(m_memory.readValue(addr)));
 }
 
 void GeometryController::writeRegister(uint32_t addr, uint32_t value) {

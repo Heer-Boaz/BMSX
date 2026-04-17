@@ -765,7 +765,10 @@ function engine.trigger_effect(object_id, effect_id, options)
 	return component:trigger(effect_id)
 end
 
-audio_router.init()
+engine.on_irq(irq_apu, function()
+	audio_router.on_apu_irq()
+end)
+audio_router.reload()
 progression.init()
 
 -- Register BIOS singletons as persistent registry entries.

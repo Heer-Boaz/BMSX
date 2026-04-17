@@ -55,7 +55,7 @@ export class InputController {
 	}
 
 	public onCtrlWrite(): void {
-		switch (this.memory.readValue(IO_INP_CTRL) as number) {
+		switch (this.memory.readIoU32(IO_INP_CTRL)) {
 			case INP_CTRL_COMMIT:
 				this.commitAction();
 				return;
@@ -69,7 +69,7 @@ export class InputController {
 
 	public onQueryWrite(): void {
 		const query = this.memory.readValue(IO_INP_QUERY) as StringValue;
-		const playerInput = this.input.getPlayerInput(this.memory.readValue(IO_INP_PLAYER) as number);
+		const playerInput = this.input.getPlayerInput(this.memory.readIoU32(IO_INP_PLAYER));
 		const triggered = playerInput.checkActionTriggered(query.text);
 		this.memory.writeValue(IO_INP_STATUS, triggered ? 1 : 0);
 		this.memory.writeValue(IO_INP_VALUE, 0);
@@ -77,7 +77,7 @@ export class InputController {
 
 	public onConsumeWrite(): void {
 		const actionNames = (this.memory.readValue(IO_INP_CONSUME) as StringValue).text;
-		const playerInput = this.input.getPlayerInput(this.memory.readValue(IO_INP_PLAYER) as number);
+		const playerInput = this.input.getPlayerInput(this.memory.readIoU32(IO_INP_PLAYER));
 		let actionStart = 0;
 		for (let index = 0; index <= actionNames.length; index += 1) {
 			if (index !== actionNames.length && actionNames.charCodeAt(index) !== 44) {
@@ -89,7 +89,7 @@ export class InputController {
 	}
 
 	private commitAction(): void {
-		const playerIndex = this.memory.readValue(IO_INP_PLAYER) as number;
+		const playerIndex = this.memory.readIoU32(IO_INP_PLAYER);
 		const state = this.playerStates[playerIndex - 1]!;
 		const actionName = (this.memory.readValue(IO_INP_ACTION) as StringValue).text;
 		const bindingsText = (this.memory.readValue(IO_INP_BIND) as StringValue).text;
@@ -107,7 +107,7 @@ export class InputController {
 	}
 
 	private resetActions(): void {
-		const playerIndex = this.memory.readValue(IO_INP_PLAYER) as number;
+		const playerIndex = this.memory.readIoU32(IO_INP_PLAYER);
 		const state = this.playerStates[playerIndex - 1]!;
 		if (state.contextPushed) {
 			this.input.getPlayerInput(playerIndex).popContext(INP_CONTEXT_ID);

@@ -60,6 +60,8 @@ public:
 	void writeU8(uint32_t addr, u8 value);
 	void writeMappedU8(uint32_t addr, u8 value);
 
+	uint32_t readIoU32(uint32_t addr) const;
+	int32_t readIoI32(uint32_t addr) const;
 	uint32_t readU32(uint32_t addr) const;
 	uint32_t readMappedU16LE(uint32_t addr) const;
 	uint32_t readMappedU32LE(uint32_t addr) const;

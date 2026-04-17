@@ -780,6 +780,21 @@ void Memory::writeMappedU8(uint32_t addr, u8 value) {
 	writeU8(addr, value);
 }
 
+uint32_t Memory::readIoU32(uint32_t addr) const {
+	if (!isIoAddress(addr)) {
+		throw std::runtime_error("I/O read fault @ " + formatNumberAsHex(addr, 8) + ": invalid register.");
+	}
+	const Value value = readValue(addr);
+	if (!valueIsNumber(value)) {
+		throw std::runtime_error("I/O read fault @ " + formatNumberAsHex(addr, 8) + ": non-numeric register.");
+	}
+	return toU32(asNumber(value));
+}
+
+int32_t Memory::readIoI32(uint32_t addr) const {
+	return toI32(static_cast<double>(readIoU32(addr)));
+}
+
 uint32_t Memory::readU32(uint32_t addr) const {
 	if (isVramRange(addr, 4)) {
 		throw std::runtime_error("VRAM read fault @ " + formatNumberAsHex(addr, 8) + ": write-only len=4.");
@@ -971,6 +986,12 @@ bool Memory::isLuaReadOnlyIoAddress(uint32_t addr) const {
 		|| addr == IO_GEO_FAULT
 		|| addr == IO_IMG_STATUS
 		|| addr == IO_IMG_WRITTEN
+		|| addr == IO_APU_STATUS
+		|| addr == IO_APU_EVENT_KIND
+		|| addr == IO_APU_EVENT_CHANNEL
+		|| addr == IO_APU_EVENT_HANDLE
+		|| addr == IO_APU_EVENT_VOICE
+		|| addr == IO_APU_EVENT_SEQ
 		|| addr == IO_VDP_RD_STATUS
 		|| addr == IO_VDP_RD_DATA
 		|| addr == IO_VDP_STATUS;

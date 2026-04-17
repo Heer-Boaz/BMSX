@@ -132,6 +132,7 @@ public:
 	void resetPlaybackState();
 	void dispose();
 	bool isRuntimeAudioReady() const { return m_assets != nullptr && static_cast<bool>(m_audioResolver); }
+	bool hasAudio(const AssetId& id) const { return m_assets != nullptr && m_assets->getAudio(id) != nullptr; }
 
 	VoiceId play(const AssetId& id, const SoundMasterPlayRequest& request = {});
 	void playWithPolicy(AudioType type, const AssetId& id, const SoundMasterPlayRequest& request = {}, std::optional<AudioPlaybackMode> policy = std::nullopt, std::optional<int> maxVoices = std::nullopt);

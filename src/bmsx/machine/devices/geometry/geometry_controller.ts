@@ -242,9 +242,9 @@ export class GeometryController {
 		this.availableWorkUnits = 0;
 		this.activeJob = null;
 		this.cancelService();
-		const ctrl = this.readRegister(IO_GEO_CTRL);
-		const status = this.readRegister(IO_GEO_STATUS);
-		const processed = this.readRegister(IO_GEO_PROCESSED);
+		const ctrl = this.memory.readIoU32(IO_GEO_CTRL);
+		const status = this.memory.readIoU32(IO_GEO_STATUS);
+		const processed = this.memory.readIoU32(IO_GEO_PROCESSED);
 		this.memory.writeValue(IO_GEO_CTRL, ctrl & ~(GEO_CTRL_START | GEO_CTRL_ABORT));
 		if ((status & GEO_STATUS_BUSY) !== 0) {
 			this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
@@ -254,7 +254,7 @@ export class GeometryController {
 	}
 
 	public onCtrlWrite(nowCycles: number): void {
-		const ctrl = this.readRegister(IO_GEO_CTRL);
+		const ctrl = this.memory.readIoU32(IO_GEO_CTRL);
 		const start = (ctrl & GEO_CTRL_START) !== 0;
 		const abort = (ctrl & GEO_CTRL_ABORT) !== 0;
 		if (!start && !abort) {
@@ -280,18 +280,18 @@ export class GeometryController {
 
 	private tryStart(nowCycles: number): void {
 		const job: GeoJob = {
-			cmd: this.readRegister(IO_GEO_CMD),
-			src0: this.readRegister(IO_GEO_SRC0),
-			src1: this.readRegister(IO_GEO_SRC1),
-			src2: this.readRegister(IO_GEO_SRC2),
-			dst0: this.readRegister(IO_GEO_DST0),
-			dst1: this.readRegister(IO_GEO_DST1),
-			count: this.readRegister(IO_GEO_COUNT),
-			param0: this.readRegister(IO_GEO_PARAM0),
-			param1: this.readRegister(IO_GEO_PARAM1),
-			stride0: this.readRegister(IO_GEO_STRIDE0),
-			stride1: this.readRegister(IO_GEO_STRIDE1),
-			stride2: this.readRegister(IO_GEO_STRIDE2),
+			cmd: this.memory.readIoU32(IO_GEO_CMD),
+			src0: this.memory.readIoU32(IO_GEO_SRC0),
+			src1: this.memory.readIoU32(IO_GEO_SRC1),
+			src2: this.memory.readIoU32(IO_GEO_SRC2),
+			dst0: this.memory.readIoU32(IO_GEO_DST0),
+			dst1: this.memory.readIoU32(IO_GEO_DST1),
+			count: this.memory.readIoU32(IO_GEO_COUNT),
+			param0: this.memory.readIoU32(IO_GEO_PARAM0),
+			param1: this.memory.readIoU32(IO_GEO_PARAM1),
+			stride0: this.memory.readIoU32(IO_GEO_STRIDE0),
+			stride1: this.memory.readIoU32(IO_GEO_STRIDE1),
+			stride2: this.memory.readIoU32(IO_GEO_STRIDE2),
 			processed: 0,
 		};
 		switch (job.cmd) {
@@ -1299,10 +1299,6 @@ export class GeometryController {
 			return null;
 		}
 		return addr >>> 0;
-	}
-
-	private readRegister(addr: number): number {
-		return (this.memory.readValue(addr) as number) >>> 0;
 	}
 
 	private writeSat2Result(addr: number, hit: number, nx: number, ny: number, depth: number, meta: number): void {

@@ -142,7 +142,7 @@ export class ImgDecController {
 	}
 
 	public onCtrlWrite(nowCycles: number): void {
-		const ctrlValue = this.memory.readValue(IO_IMG_CTRL) as number;
+		const ctrlValue = this.memory.readIoU32(IO_IMG_CTRL);
 		const ctrl = ctrlValue >>> 0;
 		if ((ctrl & IMG_CTRL_START) === 0) {
 			return;
@@ -153,10 +153,10 @@ export class ImgDecController {
 			this.memory.writeValue(IO_IMG_STATUS, this.status);
 			return;
 		}
-		const src = (this.memory.readValue(IO_IMG_SRC) as number) >>> 0;
-		const len = (this.memory.readValue(IO_IMG_LEN) as number) >>> 0;
-		const dst = (this.memory.readValue(IO_IMG_DST) as number) >>> 0;
-		const cap = (this.memory.readValue(IO_IMG_CAP) as number) >>> 0;
+		const src = this.memory.readIoU32(IO_IMG_SRC);
+		const len = this.memory.readIoU32(IO_IMG_LEN);
+		const dst = this.memory.readIoU32(IO_IMG_DST);
+		const cap = this.memory.readIoU32(IO_IMG_CAP);
 		this.memory.writeValue(IO_IMG_CTRL, ctrl & ~IMG_CTRL_START);
 		let buffer: Uint8Array;
 		try {

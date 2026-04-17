@@ -74,14 +74,12 @@ private:
 	void writeOverlap2dSummary(const GeoJob& job, uint32_t flags);
 	void writeOverlap2dResult(uint32_t addr, double nx, double ny, double depth, double px, double py, uint32_t pieceA, uint32_t pieceB, uint32_t featureMeta, uint32_t pairMeta);
 	std::optional<uint32_t> resolveByteOffset(uint32_t base, uint32_t offset, uint32_t byteLength) const;
-	int32_t readI32(uint32_t addr) const;
 	float readF32(uint32_t addr) const;
 	void completeRecord(GeoJob& job);
 	void finishSuccess(uint32_t processed);
 	void finishError(uint32_t code, uint32_t recordIndex, bool signalIrq = true);
 	void finishRejected(uint32_t code);
 	std::optional<uint32_t> resolveIndexedSpan(uint32_t base, uint32_t index, uint32_t stride, uint32_t byteLength) const;
-	uint32_t readRegister(uint32_t addr) const;
 	void writeRegister(uint32_t addr, uint32_t value);
 	void writeSat2Result(uint32_t addr, uint32_t hit, int32_t nx, int32_t ny, int32_t depth, uint32_t meta);
 	static uint32_t packFault(uint32_t code, uint32_t recordIndex);

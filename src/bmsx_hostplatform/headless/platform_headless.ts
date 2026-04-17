@@ -334,6 +334,9 @@ class SilentVoice implements VoiceHandle {
 	readonly startedAt = 0;
 	readonly startOffset = 0;
 	private readonly endListeners = new Set<(e: { clippedAt: number; }) => void>();
+	constructor() {
+		queueMicrotask(() => this.end());
+	}
 	onEnded(cb: (e: { clippedAt: number; }) => void): SubscriptionHandle {
 		this.endListeners.add(cb);
 		return createSubscriptionHandle(() => { this.endListeners.delete(cb); });
@@ -343,6 +346,9 @@ class SilentVoice implements VoiceHandle {
 	setFilter(_p: AudioFilterParams): void { }
 	setRate(_v: number): void { }
 	stop(): void {
+		this.end();
+	}
+	private end(): void {
 		for (const cb of this.endListeners) cb({ clippedAt: 0 });
 		this.endListeners.clear();
 	}
@@ -350,7 +356,7 @@ class SilentVoice implements VoiceHandle {
 }
 
 class SilentAudioService implements AudioService {
-	readonly available = false;
+	readonly available = true;
 	currentTime(): number { return 0; }
 	sampleRate(): number { return 44100; }
 	coreQueuedFrames(): number { return 0; }

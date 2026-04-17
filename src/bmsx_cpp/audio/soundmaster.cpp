@@ -41,7 +41,7 @@ static inline u16 readLE16Audio(const u8* data) {
 SoundMaster::SoundMaster()
 	: m_rng(std::random_device{}()),
 		m_unitDist(0.0f, 1.0f) {
-	m_maxVoicesByType = {16, 1, 8};
+	m_maxVoicesByType = {1, 1, 1};
 	resetPlaybackState();
 }
 
@@ -84,7 +84,6 @@ void SoundMaster::resetPlaybackState() {
 	for (auto& pool : m_pausedByType) pool.clear();
 	for (auto& queue : m_audioQueueByType) queue.clear();
 	m_resumeOnNextEndByType = {false, false, false};
-	for (auto& list : m_endedListenersByType) list.clear();
 	m_currentVoiceIdByType = {0, 0, 0};
 	m_currentAudioIdByType = {"", "", ""};
 	m_currentParamsByType = {ModulationParams{}, ModulationParams{}, ModulationParams{}};

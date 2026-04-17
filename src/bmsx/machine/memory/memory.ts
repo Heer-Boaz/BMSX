@@ -26,6 +26,12 @@ import {
 	VRAM_STAGING_SIZE,
 } from './memory_map';
 import {
+	IO_APU_EVENT_CHANNEL,
+	IO_APU_EVENT_HANDLE,
+	IO_APU_EVENT_KIND,
+	IO_APU_EVENT_SEQ,
+	IO_APU_EVENT_VOICE,
+	IO_APU_STATUS,
 	IO_DMA_STATUS,
 	IO_DMA_WRITTEN,
 	IO_GEO_FAULT,
@@ -1047,6 +1053,21 @@ export class Memory {
 		this.writeU8(addr, value);
 	}
 
+	public readIoU32(addr: number): number {
+		if (!this.isIoAddress(addr)) {
+			throw new Error(`I/O read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: invalid register.`);
+		}
+		const value = this.readValue(addr);
+		if (typeof value !== 'number') {
+			throw new Error(`I/O read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: non-numeric register.`);
+		}
+		return value >>> 0;
+	}
+
+	public readIoI32(addr: number): number {
+		return this.readIoU32(addr) | 0;
+	}
+
 	public readU32(addr: number): number {
 		this.assertReadableRange(addr, 4);
 		if (addr < RAM_BASE) {
@@ -1252,6 +1273,12 @@ export class Memory {
 			|| addr === IO_GEO_FAULT
 			|| addr === IO_IMG_STATUS
 			|| addr === IO_IMG_WRITTEN
+			|| addr === IO_APU_STATUS
+			|| addr === IO_APU_EVENT_KIND
+			|| addr === IO_APU_EVENT_CHANNEL
+			|| addr === IO_APU_EVENT_HANDLE
+			|| addr === IO_APU_EVENT_VOICE
+			|| addr === IO_APU_EVENT_SEQ
 			|| addr === IO_VDP_RD_STATUS
 			|| addr === IO_VDP_RD_DATA
 			|| addr === IO_VDP_STATUS;

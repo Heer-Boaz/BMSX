@@ -425,6 +425,11 @@ export type MachineVoiceSpecs = {
 	music?: number;
 	ui?: number;
 };
+export const DEFAULT_MACHINE_MAX_VOICES: Required<MachineVoiceSpecs> = {
+	sfx: 1,
+	music: 1,
+	ui: 1,
+};
 export type MachineCpuSpecs = {
 	cpu_freq_hz: number;
 	imgdec_bytes_per_sec: number;
@@ -533,8 +538,13 @@ export function getMachineMemorySpecs(machine: MachineManifest): MachineMemorySp
 	};
 }
 
-export function getMachineMaxVoices(machine: MachineManifest): MachineVoiceSpecs | undefined {
-	return machine.specs.audio?.max_voices;
+export function getMachineMaxVoices(machine: MachineManifest): Required<MachineVoiceSpecs> {
+	const voices = machine.specs.audio?.max_voices;
+	return {
+		sfx: voices?.sfx ?? DEFAULT_MACHINE_MAX_VOICES.sfx,
+		music: voices?.music ?? DEFAULT_MACHINE_MAX_VOICES.music,
+		ui: voices?.ui ?? DEFAULT_MACHINE_MAX_VOICES.ui,
+	};
 }
 // 		data: merge(bullshit.data, engine.data),
 // 		audioevents: merge(bullshit.audioevents, engine.audioevents),

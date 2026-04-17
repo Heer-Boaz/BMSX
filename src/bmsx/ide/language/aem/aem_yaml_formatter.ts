@@ -12,7 +12,6 @@ const EVENT_META_KEYS = new Set([
 	'name',
 	'kind',
 	'channel',
-	'max_voices',
 	'policy',
 	'rules',
 ]);
@@ -54,7 +53,6 @@ const CONDITION_EXIT_KEYS = new Set([
 	'name',
 	'kind',
 	'channel',
-	'max_voices',
 	'policy',
 	'rules',
 	'when',

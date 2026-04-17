@@ -38,6 +38,25 @@ import {
 import { CART_ROM_MAGIC, DEFAULT_GEO_WORK_UNITS_PER_SEC, DEFAULT_VDP_WORK_UNITS_PER_SEC, type CartManifest, type MachineManifest } from '../../rompack/rompack';
 import { BmsxColors } from '../devices/vdp/vdp';
 import {
+	APU_CHANNEL_MUSIC,
+	APU_CHANNEL_SFX,
+	APU_CHANNEL_UI,
+	APU_CMD_PLAY,
+	APU_CMD_STOP_CHANNEL,
+	APU_EVENT_NONE,
+	APU_EVENT_VOICE_ENDED,
+	APU_FILTER_ALLPASS,
+	APU_FILTER_BANDPASS,
+	APU_FILTER_HIGHPASS,
+	APU_FILTER_HIGHSHELF,
+	APU_FILTER_LOWPASS,
+	APU_FILTER_LOWSHELF,
+	APU_FILTER_NONE,
+	APU_FILTER_NOTCH,
+	APU_FILTER_PEAKING,
+	APU_PRIORITY_AUTO,
+	APU_SYNC_IMMEDIATE,
+	APU_SYNC_LOOP,
 	DMA_CTRL_START,
 	DMA_CTRL_STRICT,
 	DMA_STATUS_BUSY,
@@ -95,6 +114,29 @@ import {
 	INP_CTRL_ARM,
 	INP_CTRL_RESET,
 	IO_ARG_STRIDE,
+	IO_APU_CHANNEL,
+	IO_APU_CMD,
+	IO_APU_CROSSFADE_MS,
+	IO_APU_EVENT_CHANNEL,
+	IO_APU_EVENT_HANDLE,
+	IO_APU_EVENT_KIND,
+	IO_APU_EVENT_SEQ,
+	IO_APU_EVENT_VOICE,
+	IO_APU_FADE_MS,
+	IO_APU_FILTER_FREQ_HZ,
+	IO_APU_FILTER_GAIN_MILLIDB,
+	IO_APU_FILTER_KIND,
+	IO_APU_FILTER_Q_MILLI,
+	IO_APU_HANDLE,
+	IO_APU_OFFSET_MS,
+	IO_APU_PITCH_CENTS,
+	IO_APU_PRIORITY,
+	IO_APU_RATE_PERMIL,
+	IO_APU_START_AT_LOOP,
+	IO_APU_START_FRESH,
+	IO_APU_STATUS,
+	IO_APU_SYNC,
+	IO_APU_VOLUME_MILLIDB,
 	IO_CMD_VDP_BLIT,
 	IO_CMD_VDP_CLEAR,
 	IO_CMD_VDP_DRAW_LINE,
@@ -165,6 +207,7 @@ import {
 	IO_VDP_STATUS,
 	IRQ_DMA_DONE,
 	IRQ_DMA_ERROR,
+	IRQ_APU,
 	IRQ_GEO_DONE,
 	IRQ_GEO_ERROR,
 	IRQ_IMG_DONE,
@@ -1233,6 +1276,48 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_inp_status', IO_INP_STATUS);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_inp_value', IO_INP_VALUE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_inp_consume', IO_INP_CONSUME);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_handle', IO_APU_HANDLE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_channel', IO_APU_CHANNEL);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_priority', IO_APU_PRIORITY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_pitch_cents', IO_APU_PITCH_CENTS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_volume_millidb', IO_APU_VOLUME_MILLIDB);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_offset_ms', IO_APU_OFFSET_MS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_rate_permil', IO_APU_RATE_PERMIL);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_filter_kind', IO_APU_FILTER_KIND);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_filter_freq_hz', IO_APU_FILTER_FREQ_HZ);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_filter_q_milli', IO_APU_FILTER_Q_MILLI);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_filter_gain_millidb', IO_APU_FILTER_GAIN_MILLIDB);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_fade_ms', IO_APU_FADE_MS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_crossfade_ms', IO_APU_CROSSFADE_MS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_sync', IO_APU_SYNC);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_start_at_loop', IO_APU_START_AT_LOOP);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_start_fresh', IO_APU_START_FRESH);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_cmd', IO_APU_CMD);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_status', IO_APU_STATUS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_event_kind', IO_APU_EVENT_KIND);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_event_channel', IO_APU_EVENT_CHANNEL);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_event_handle', IO_APU_EVENT_HANDLE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_event_voice', IO_APU_EVENT_VOICE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_apu_event_seq', IO_APU_EVENT_SEQ);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_cmd_play', APU_CMD_PLAY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_cmd_stop_channel', APU_CMD_STOP_CHANNEL);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_channel_sfx', APU_CHANNEL_SFX);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_channel_music', APU_CHANNEL_MUSIC);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_channel_ui', APU_CHANNEL_UI);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_priority_auto', APU_PRIORITY_AUTO);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_sync_immediate', APU_SYNC_IMMEDIATE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_sync_loop', APU_SYNC_LOOP);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_filter_none', APU_FILTER_NONE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_filter_lowpass', APU_FILTER_LOWPASS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_filter_highpass', APU_FILTER_HIGHPASS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_filter_bandpass', APU_FILTER_BANDPASS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_filter_notch', APU_FILTER_NOTCH);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_filter_allpass', APU_FILTER_ALLPASS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_filter_peaking', APU_FILTER_PEAKING);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_filter_lowshelf', APU_FILTER_LOWSHELF);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_filter_highshelf', APU_FILTER_HIGHSHELF);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_event_none', APU_EVENT_NONE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'apu_event_voice_ended', APU_EVENT_VOICE_ENDED);
 	runtimeLuaPipeline.registerGlobal(runtime, 'inp_ctrl_commit', INP_CTRL_COMMIT);
 	runtimeLuaPipeline.registerGlobal(runtime, 'inp_ctrl_arm', INP_CTRL_ARM);
 	runtimeLuaPipeline.registerGlobal(runtime, 'inp_ctrl_reset', INP_CTRL_RESET);
@@ -1330,6 +1415,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_vblank', IRQ_VBLANK);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_reinit', IRQ_REINIT);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_newgame', IRQ_NEWGAME);
+	runtimeLuaPipeline.registerGlobal(runtime, 'irq_apu', IRQ_APU);
 	runtimeLuaPipeline.registerGlobal(runtime, 'dma_ctrl_start', DMA_CTRL_START);
 	runtimeLuaPipeline.registerGlobal(runtime, 'dma_ctrl_strict', DMA_CTRL_STRICT);
 	runtimeLuaPipeline.registerGlobal(runtime, 'dma_status_busy', DMA_STATUS_BUSY);

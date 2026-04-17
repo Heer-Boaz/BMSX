@@ -234,14 +234,14 @@ export class DmaController {
 	}
 
 	public tryStartIo(): void {
-		const ctrlValue = this.memory.readValue(IO_DMA_CTRL) as number;
+		const ctrlValue = this.memory.readIoU32(IO_DMA_CTRL);
 		if ((ctrlValue & DMA_CTRL_START) === 0) {
 			return;
 		}
 		const ctrl = ctrlValue >>> 0;
-		const src = (this.memory.readValue(IO_DMA_SRC) as number) >>> 0;
-		const dst = (this.memory.readValue(IO_DMA_DST) as number) >>> 0;
-		const len = (this.memory.readValue(IO_DMA_LEN) as number) >>> 0;
+		const src = this.memory.readIoU32(IO_DMA_SRC);
+		const dst = this.memory.readIoU32(IO_DMA_DST);
+		const len = this.memory.readIoU32(IO_DMA_LEN);
 		const vdpSubmit = dst === IO_VDP_FIFO;
 		const strict = (ctrl & DMA_CTRL_STRICT) !== 0;
 		this.memory.writeValue(IO_DMA_CTRL, ctrl & ~DMA_CTRL_START);

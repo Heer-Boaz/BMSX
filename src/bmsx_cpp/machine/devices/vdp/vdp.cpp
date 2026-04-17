@@ -2626,10 +2626,10 @@ uint32_t VDP::readVdpStatus() {
 }
 
 uint32_t VDP::readVdpData() {
-	const uint32_t surfaceId = toU32(asNumber(m_memory.readValue(IO_VDP_RD_SURFACE)));
-	const uint32_t x = toU32(asNumber(m_memory.readValue(IO_VDP_RD_X)));
-	const uint32_t y = toU32(asNumber(m_memory.readValue(IO_VDP_RD_Y)));
-	const uint32_t mode = toU32(asNumber(m_memory.readValue(IO_VDP_RD_MODE)));
+	const uint32_t surfaceId = m_memory.readIoU32(IO_VDP_RD_SURFACE);
+	const uint32_t x = m_memory.readIoU32(IO_VDP_RD_X);
+	const uint32_t y = m_memory.readIoU32(IO_VDP_RD_Y);
+	const uint32_t mode = m_memory.readIoU32(IO_VDP_RD_MODE);
 	if (mode != VDP_RD_MODE_RGBA8888) {
 		throw vdpFault("unsupported VDP read mode.");
 	}
@@ -2707,12 +2707,12 @@ void VDP::initializeRegisters() {
 }
 
 void VDP::syncRegisters() {
-	const i32 dither = static_cast<i32>(asNumber(m_memory.readValue(IO_VDP_DITHER)));
+	const i32 dither = m_memory.readIoI32(IO_VDP_DITHER);
 	if (dither != m_lastDitherType) {
 		m_lastDitherType = dither;
 	}
-	const uint32_t primaryRaw = toU32(asNumber(m_memory.readValue(IO_VDP_PRIMARY_ATLAS_ID)));
-	const uint32_t secondaryRaw = toU32(asNumber(m_memory.readValue(IO_VDP_SECONDARY_ATLAS_ID)));
+	const uint32_t primaryRaw = m_memory.readIoU32(IO_VDP_PRIMARY_ATLAS_ID);
+	const uint32_t secondaryRaw = m_memory.readIoU32(IO_VDP_SECONDARY_ATLAS_ID);
 	const i32 primary = primaryRaw == VDP_ATLAS_ID_NONE ? -1 : static_cast<i32>(primaryRaw);
 	const i32 secondary = secondaryRaw == VDP_ATLAS_ID_NONE ? -1 : static_cast<i32>(secondaryRaw);
 	if (primary != m_slotAtlasIds[0] || secondary != m_slotAtlasIds[1]) {

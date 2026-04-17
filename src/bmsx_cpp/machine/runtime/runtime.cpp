@@ -347,6 +347,11 @@ Runtime::Runtime(const RuntimeOptions& options)
 			Input::instance(),
 			m_cpu.stringPool()
 		)
+	, m_audioController(
+			m_memory,
+			*EngineCore::instance().soundMaster(),
+			[this](uint32_t mask) { signalIrq(mask); }
+		)
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)
 	, m_cpuHz(options.cpuHz)
@@ -396,6 +401,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	m_dmaController.reset();
 	m_imgDecController.reset();
 	m_inputController.reset();
+	m_audioController.reset();
 	m_vdp.attachImgDecController(m_imgDecController);
 	m_memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
 	m_memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
@@ -740,7 +746,7 @@ bool Runtime::pollSystemBootRequest() {
 	if (!isEngineProgramActive()) {
 		return false;
 	}
-	if (asNumber(m_memory.readValue(IO_SYS_BOOT_CART)) == 0.0) {
+	if (m_memory.readIoU32(IO_SYS_BOOT_CART) == 0u) {
 		return false;
 	}
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
@@ -1108,7 +1114,7 @@ void Runtime::syncVdpSubmitAttemptStatusFromDma(uint32_t dst) {
 	if (dst != IO_VDP_FIFO) {
 		return;
 	}
-	const uint32_t dmaStatus = toU32(asNumber(m_memory.readValue(IO_DMA_STATUS)));
+	const uint32_t dmaStatus = m_memory.readIoU32(IO_DMA_STATUS);
 	if ((dmaStatus & DMA_STATUS_REJECTED) != 0u) {
 		noteRejectedVdpSubmitAttempt();
 		return;
@@ -1174,7 +1180,7 @@ bool Runtime::tryCompleteTickOnPendingVblankIrq(FrameState& frameState) {
 	if (m_vblankSequence == 0) {
 		return false;
 	}
-	const uint32_t pendingFlags = toU32(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
+	const uint32_t pendingFlags = m_memory.readIoU32(IO_IRQ_FLAGS);
 	if ((pendingFlags & IRQ_VBLANK) == 0u) {
 		return false;
 	}
@@ -1198,7 +1204,7 @@ bool Runtime::runHaltedUntilIrq(FrameState& frameState) {
 		return true;
 	}
 	if (!m_haltIrqWaitArmed) {
-		const uint32_t pendingFlags = toU32(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
+		const uint32_t pendingFlags = m_memory.readIoU32(IO_IRQ_FLAGS);
 		if (pendingFlags != 0u) {
 			m_cpu.clearHaltUntilIrq();
 			return m_activeTickCompleted;
@@ -1231,7 +1237,7 @@ bool Runtime::runHaltedUntilIrq(FrameState& frameState) {
 }
 
 void Runtime::signalIrq(uint32_t mask) {
-	const uint32_t current = toU32(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
+	const uint32_t current = m_memory.readIoU32(IO_IRQ_FLAGS);
 	const uint32_t next = current | mask;
 	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(next)));
 	if (next != current) {
@@ -1252,7 +1258,7 @@ void Runtime::acknowledgeIrq(uint32_t mask) {
 		m_handlingIrqAckWrite = false;
 		return;
 	}
-	uint32_t flags = toU32(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
+	uint32_t flags = m_memory.readIoU32(IO_IRQ_FLAGS);
 	flags &= ~ack;
 	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(flags)));
 	m_handlingIrqAckWrite = true;
@@ -1501,9 +1507,13 @@ void Runtime::onIoWrite(uint32_t addr, Value value) {
 		acknowledgeIrq(toU32(asNumber(value)));
 		return;
 	}
+	if (addr == IO_APU_CMD) {
+		m_audioController.onCommandWrite(toU32(asNumber(value)));
+		return;
+	}
 	if (addr == IO_DMA_CTRL) {
 		if ((toU32(asNumber(value)) & DMA_CTRL_START) != 0u) {
-			const uint32_t dst = toU32(asNumber(m_memory.readValue(IO_DMA_DST)));
+			const uint32_t dst = m_memory.readIoU32(IO_DMA_DST);
 			if (dst == IO_VDP_FIFO && hasBlockedVdpSubmitPath()) {
 				m_memory.writeValue(IO_DMA_CTRL, valueNumber(static_cast<double>(toU32(asNumber(value)) & ~DMA_CTRL_START)));
 				m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
@@ -1634,7 +1644,7 @@ void Runtime::applyState(const RuntimeState& state) {
 	resetSchedulerState();
 	m_schedulerNowCycles = state.cyclesIntoFrame;
 	m_frameStartCycle = 0;
-	m_vdpStatus = toU32(asNumber(m_memory.readValue(IO_VDP_STATUS)));
+	m_vdpStatus = m_memory.readIoU32(IO_VDP_STATUS);
 	m_vdpStatus &= ~VDP_STATUS_VBLANK;
 	m_vblankActive = false;
 	m_activeTickCompleted = false;
@@ -1735,6 +1745,7 @@ void Runtime::resetHardwareState() {
 	m_geometryController.reset();
 	m_imgDecController.reset();
 	m_inputController.reset();
+	m_audioController.reset();
 	resetVblankState();
 	resetRenderBuffers();
 }

@@ -34,6 +34,43 @@ test('cart lua linter rejects const copies from globals module aliases', async (
 	);
 });
 
+test('cart lua linter rejects math.floor references in cart and bios profiles', async () => {
+	await withLuaLintFixture(
+		'cart_lua_linter_math_floor_reference',
+		[
+			'local floor<const> = math.floor',
+			'return floor((width + 1) / 2)',
+		].join('\n'),
+		async root => {
+			for (const profile of ['cart', 'bios'] as const) {
+				await assert.rejects(
+					lintCartLuaSources({ roots: [root], profile }),
+					/math\.floor is forbidden\. Use \/\/ instead of floor-based rounding or truncation\./,
+				);
+			}
+		},
+	);
+});
+
+test('cart lua linter rejects custom random helpers in cart and bios profiles', async () => {
+	await withLuaLintFixture(
+		'cart_lua_linter_random_helper',
+		[
+			'local random_int<const> = function(min, max)',
+			'\treturn min + (math.random() * (max - min))',
+			'end',
+		].join('\n'),
+		async root => {
+			for (const profile of ['cart', 'bios'] as const) {
+				await assert.rejects(
+					lintCartLuaSources({ roots: [root], profile }),
+					/Custom random helper "random_int" is forbidden\. Use math\.random directly instead of inventing a random_int-style wrapper\./,
+				);
+			}
+		},
+	);
+});
+
 test('cart lua linter rejects chained const copies from constants module aliases', async () => {
 	await withLuaLintFixture(
 		'cart_lua_linter_chained_const_copy',

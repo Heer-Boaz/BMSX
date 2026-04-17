@@ -1113,15 +1113,9 @@ void EngineCore::refreshAudioAssets(const RuntimeAssets& assets) {
 	};
 	m_sound_master->init(assets, volume, audioResolver);
 	const MachineManifest& machineManifest = this->machineManifest();
-	const std::optional<int> maxSfx = machineManifest.maxVoicesSfx
-		? std::optional<int>(static_cast<int>(*machineManifest.maxVoicesSfx))
-		: std::nullopt;
-	const std::optional<int> maxMusic = machineManifest.maxVoicesMusic
-		? std::optional<int>(static_cast<int>(*machineManifest.maxVoicesMusic))
-		: std::nullopt;
-	const std::optional<int> maxUi = machineManifest.maxVoicesUi
-		? std::optional<int>(static_cast<int>(*machineManifest.maxVoicesUi))
-		: std::nullopt;
+	const int maxSfx = machineManifest.maxVoicesSfx ? static_cast<int>(*machineManifest.maxVoicesSfx) : 1;
+	const int maxMusic = machineManifest.maxVoicesMusic ? static_cast<int>(*machineManifest.maxVoicesMusic) : 1;
+	const int maxUi = machineManifest.maxVoicesUi ? static_cast<int>(*machineManifest.maxVoicesUi) : 1;
 	m_sound_master->setMaxVoicesByType(maxSfx, maxMusic, maxUi);
 }
 

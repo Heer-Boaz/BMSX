@@ -118,6 +118,7 @@ import {
 	IO_INP_CONSUME,
 	IO_INP_CTRL,
 	IO_INP_QUERY,
+	IO_APU_CMD,
 	IMG_CTRL_START,
 	IO_IRQ_ACK,
 	IO_IRQ_FLAGS,
@@ -154,6 +155,7 @@ import { DmaController } from '../devices/dma/dma_controller';
 import { GeometryController } from '../devices/geometry/geometry_controller';
 import { ImgDecController } from '../devices/imgdec/imgdec_controller';
 import { InputController } from '../devices/input/input_controller';
+import { AudioController } from '../devices/audio/audio_controller';
 import {
 	CART_ROM_BASE,
 	DEFAULT_GEO_SCRATCH_SIZE,
@@ -1100,7 +1102,7 @@ export class Runtime {
 		if (dst !== IO_VDP_FIFO) {
 			return;
 		}
-		const dmaStatus = (this.memory.readValue(IO_DMA_STATUS) as number) >>> 0;
+		const dmaStatus = this.memory.readIoU32(IO_DMA_STATUS);
 		if ((dmaStatus & DMA_STATUS_REJECTED) !== 0) {
 			this.noteRejectedVdpSubmitAttempt();
 			return;
@@ -1152,7 +1154,7 @@ export class Runtime {
 		if (this.vblankSequence === 0) {
 			return false;
 		}
-		const pendingFlags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
+		const pendingFlags = this.memory.readIoU32(IO_IRQ_FLAGS);
 		if ((pendingFlags & IRQ_VBLANK) === 0) {
 			return false;
 		}
@@ -1336,6 +1338,7 @@ export class Runtime {
 	public readonly geometryController: GeometryController;
 	public readonly imgDecController: ImgDecController;
 	public readonly inputController: InputController;
+	public readonly audioController: AudioController;
 	private engineCanonicalization: CanonicalizationType = null;
 	public cartCanonicalization: CanonicalizationType = null;
 	public preparedCartProgram: {
@@ -1861,6 +1864,8 @@ export class Runtime {
 		this.memory.writeValue(IO_VDP_RD_MODE, VDP_RD_MODE_RGBA8888);
 		this.memory.writeValue(IO_VDP_STATUS, 0);
 		this.vdp.initializeRegisters();
+		this.audioController = new AudioController(this.memory, $.sndmaster, (mask) => this.signalIrq(mask));
+		this.audioController.reset();
 		this.memory.setIoWriteHandler(this as IoWriteHandler);
 		this.dmaController = new DmaController(
 			this.memory,
@@ -2164,7 +2169,7 @@ export class Runtime {
 			}
 			return;
 		}
-		let flags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
+		let flags = this.memory.readIoU32(IO_IRQ_FLAGS);
 		flags &= ~ack;
 		this.memory.writeValue(IO_IRQ_FLAGS, flags >>> 0);
 		this.handlingIrqAckWrite = true;
@@ -2176,7 +2181,7 @@ export class Runtime {
 	}
 
 	private signalIrq(mask: number): void {
-		const current = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
+		const current = this.memory.readIoU32(IO_IRQ_FLAGS);
 		const next = (current | mask) >>> 0;
 		this.memory.writeValue(IO_IRQ_FLAGS, next);
 		if (next !== current) {
@@ -2213,9 +2218,13 @@ export class Runtime {
 			this.acknowledgeIrq(value >>> 0);
 			return;
 		}
+		if (addr === IO_APU_CMD) {
+			this.audioController.onCommandWrite(value >>> 0);
+			return;
+		}
 		if (addr === IO_DMA_CTRL) {
 			if ((value & DMA_CTRL_START) !== 0) {
-				const dst = (this.memory.readValue(IO_DMA_DST) as number) >>> 0;
+				const dst = this.memory.readIoU32(IO_DMA_DST);
 				if (dst === IO_VDP_FIFO && this.hasBlockedVdpSubmitPath()) {
 					this.memory.writeValue(IO_DMA_CTRL, (value >>> 0) & ~DMA_CTRL_START);
 					this.memory.writeValue(IO_DMA_WRITTEN, 0);
@@ -2343,7 +2352,7 @@ export class Runtime {
 			return true;
 		}
 		if (!this.haltIrqWaitArmed) {
-			const pendingFlags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
+			const pendingFlags = this.memory.readIoU32(IO_IRQ_FLAGS);
 			if (pendingFlags !== 0) {
 				this.cpu.clearHaltUntilIrq();
 				return this.activeTickCompleted;
@@ -2781,7 +2790,7 @@ export class Runtime {
 		if (!this.isEngineProgramActive()) {
 			return;
 		}
-		if (!this.memory.readValue(IO_SYS_BOOT_CART)) {
+		if (this.memory.readIoU32(IO_SYS_BOOT_CART) === 0) {
 			return;
 		}
 		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
