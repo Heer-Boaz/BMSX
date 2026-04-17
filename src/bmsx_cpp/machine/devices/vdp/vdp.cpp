@@ -3039,8 +3039,15 @@ void VDP::initializeRegisters() {
 	m_pendingSlotAtlasIds = {{-1, -1}};
 	m_pendingSkyboxFaceIds = {};
 	m_pendingHasSkybox = false;
+	m_slotAtlasIds = {{-1, -1}};
 	resetIngressState();
 	resetStatus();
+	m_memory.writeIoValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
+	m_memory.writeIoValue(IO_VDP_SECONDARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
+	m_memory.writeIoValue(IO_VDP_RD_SURFACE, valueNumber(static_cast<double>(VDP_RD_SURFACE_ENGINE)));
+	m_memory.writeIoValue(IO_VDP_RD_X, valueNumber(0.0));
+	m_memory.writeIoValue(IO_VDP_RD_Y, valueNumber(0.0));
+	m_memory.writeIoValue(IO_VDP_RD_MODE, valueNumber(static_cast<double>(VDP_RD_MODE_RGBA8888)));
 	m_memory.writeIoValue(IO_VDP_DITHER, valueNumber(static_cast<double>(dither)));
 	m_memory.writeIoValue(IO_VDP_CMD, valueNumber(0.0));
 	for (int index = 0; index < IO_VDP_CMD_ARG_COUNT; ++index) {

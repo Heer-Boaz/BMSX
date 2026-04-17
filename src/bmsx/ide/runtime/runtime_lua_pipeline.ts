@@ -32,8 +32,6 @@ import {
 } from '../../machine/program/program_asset';
 import { INSTRUCTION_BYTES } from '../../machine/cpu/instruction_format';
 import {
-	IO_IRQ_ACK,
-	IO_IRQ_FLAGS,
 	IRQ_NEWGAME,
 	IRQ_REINIT,
 } from '../../machine/bus/io';
@@ -628,12 +626,13 @@ export function resetFrameState(runtime: Runtime): void {
 }
 
 export function resetHardwareState(runtime: Runtime): void {
-	runtime.memory.writeValue(IO_IRQ_FLAGS, 0);
-	runtime.memory.writeValue(IO_IRQ_ACK, 0);
+	runtime.irqController.reset();
 	runtime.dmaController.reset();
 	runtime.geometryController.reset();
 	runtime.imgDecController.reset();
 	runtime.inputController.reset();
+	runtime.audioController.reset();
+	runtime.vdp.initializeRegisters();
 	runtime.resetVblankState();
 	runtime.resetRenderBuffers();
 }

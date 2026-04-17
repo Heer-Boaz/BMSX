@@ -76,50 +76,13 @@ import {
 	HOST_FAULT_FLAG_STARTUP_BLOCKING,
 	HOST_FAULT_STAGE_NONE,
 	HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH,
-	IO_DMA_CTRL,
-	IO_DMA_DST,
-	IO_DMA_LEN,
-	IO_DMA_SRC,
-	IO_DMA_STATUS,
-	IO_DMA_WRITTEN,
-	IO_GEO_CMD,
-	IO_GEO_COUNT,
-	IO_GEO_CTRL,
-	IO_GEO_DST0,
-	IO_GEO_DST1,
-	IO_GEO_FAULT,
-	IO_GEO_PARAM0,
-	IO_GEO_PARAM1,
-	IO_GEO_PROCESSED,
-	IO_GEO_SRC0,
-	IO_GEO_SRC1,
-	IO_GEO_SRC2,
-	IO_GEO_STATUS,
-	IO_GEO_STRIDE0,
-	IO_GEO_STRIDE1,
-	IO_GEO_STRIDE2,
-	IO_IMG_CAP,
-	IO_IMG_CTRL,
-	IO_IMG_DST,
-	IO_IMG_LEN,
-	IO_IMG_SRC,
-	IO_IMG_STATUS,
-	IO_IMG_WRITTEN,
 	IO_SYS_BOOT_CART,
 	IO_SYS_CART_BOOTREADY,
 	IO_SYS_HOST_FAULT_FLAGS,
 	IO_SYS_HOST_FAULT_STAGE,
-	IO_VDP_PRIMARY_ATLAS_ID,
-	IO_VDP_RD_MODE,
-	IO_VDP_RD_SURFACE,
-	IO_VDP_RD_X,
-	IO_VDP_RD_Y,
-	IO_VDP_SECONDARY_ATLAS_ID,
 	IRQ_NEWGAME,
 	IRQ_REINIT,
 	IRQ_VBLANK,
-	VDP_ATLAS_ID_NONE,
-	VDP_RD_MODE_RGBA8888,
 } from '../bus/io';
 import { HandlerCache } from './handler_cache';
 import { Memory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntry } from '../memory/memory';
@@ -1554,44 +1517,7 @@ export class Runtime {
 		this.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, 0);
 		this.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_NONE);
 		this.irqController.reset();
-		this.memory.writeValue(IO_DMA_SRC, 0);
-		this.memory.writeValue(IO_DMA_DST, 0);
-		this.memory.writeValue(IO_DMA_LEN, 0);
-		this.memory.writeValue(IO_DMA_CTRL, 0);
-		this.memory.writeValue(IO_DMA_STATUS, 0);
-		this.memory.writeValue(IO_DMA_WRITTEN, 0);
-		this.memory.writeValue(IO_GEO_SRC0, 0);
-		this.memory.writeValue(IO_GEO_SRC1, 0);
-		this.memory.writeValue(IO_GEO_SRC2, 0);
-		this.memory.writeValue(IO_GEO_DST0, 0);
-		this.memory.writeValue(IO_GEO_DST1, 0);
-		this.memory.writeValue(IO_GEO_COUNT, 0);
-		this.memory.writeValue(IO_GEO_CMD, 0);
-		this.memory.writeValue(IO_GEO_CTRL, 0);
-		this.memory.writeValue(IO_GEO_STATUS, 0);
-		this.memory.writeValue(IO_GEO_PARAM0, 0);
-		this.memory.writeValue(IO_GEO_PARAM1, 0);
-		this.memory.writeValue(IO_GEO_STRIDE0, 0);
-		this.memory.writeValue(IO_GEO_STRIDE1, 0);
-		this.memory.writeValue(IO_GEO_STRIDE2, 0);
-		this.memory.writeValue(IO_GEO_PROCESSED, 0);
-		this.memory.writeValue(IO_GEO_FAULT, 0);
-		this.memory.writeValue(IO_IMG_SRC, 0);
-		this.memory.writeValue(IO_IMG_LEN, 0);
-		this.memory.writeValue(IO_IMG_DST, 0);
-		this.memory.writeValue(IO_IMG_CAP, 0);
-		this.memory.writeValue(IO_IMG_CTRL, 0);
-		this.memory.writeValue(IO_IMG_STATUS, 0);
-		this.memory.writeValue(IO_IMG_WRITTEN, 0);
-		this.memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, VDP_ATLAS_ID_NONE);
-		this.memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, VDP_ATLAS_ID_NONE);
-		this.memory.writeValue(IO_VDP_RD_SURFACE, 0);
-			this.memory.writeValue(IO_VDP_RD_X, 0);
-			this.memory.writeValue(IO_VDP_RD_Y, 0);
-			this.memory.writeValue(IO_VDP_RD_MODE, VDP_RD_MODE_RGBA8888);
-			this.vdp.initializeRegisters();
 		this.audioController = new AudioController(this.memory, $.sndmaster, (mask) => this.irqController.raise(mask));
-		this.audioController.reset();
 			this.dmaController = new DmaController(
 				this.memory,
 				(mask) => this.irqController.raise(mask),
@@ -1617,6 +1543,11 @@ export class Runtime {
 		);
 		this.inputController = new InputController(this.memory, Input.instance);
 		this.inputController.reset();
+		this.dmaController.reset();
+		this.geometryController.reset();
+		this.imgDecController.reset();
+		this.audioController.reset();
+		this.vdp.initializeRegisters();
 		this.cpu = new CPU(this.memory, this.runtimeStringPool);
 		this.resourceUsageDetector = new ResourceUsageDetector(
 			this.memory,

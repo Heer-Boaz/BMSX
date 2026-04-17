@@ -1987,9 +1987,17 @@ export class VDP implements VramWriteSink {
 		this.pendingSlotAtlasIds[0] = null;
 		this.pendingSlotAtlasIds[1] = null;
 		this.pendingSkyboxFaceIds = null;
+		this.slotAtlasIds[0] = null;
+		this.slotAtlasIds[1] = null;
 		this.blitterSequence = 0;
 		this.resetIngressState();
 		this.resetStatus();
+		this.memory.writeIoValue(IO_VDP_PRIMARY_ATLAS_ID, VDP_ATLAS_ID_NONE);
+		this.memory.writeIoValue(IO_VDP_SECONDARY_ATLAS_ID, VDP_ATLAS_ID_NONE);
+		this.memory.writeIoValue(IO_VDP_RD_SURFACE, VDP_RD_SURFACE_ENGINE);
+		this.memory.writeIoValue(IO_VDP_RD_X, 0);
+		this.memory.writeIoValue(IO_VDP_RD_Y, 0);
+		this.memory.writeIoValue(IO_VDP_RD_MODE, VDP_RD_MODE_RGBA8888);
 		this.memory.writeIoValue(IO_VDP_DITHER, dither);
 		this.memory.writeIoValue(IO_VDP_CMD, 0);
 		for (let index = 0; index < IO_VDP_CMD_ARG_COUNT; index += 1) {
