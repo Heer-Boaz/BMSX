@@ -341,7 +341,7 @@ export class TuiInput {
 			return;
 		}
 		const shift = ch >= 'A' && ch <= 'Z';
-		this.pushKey(ch.toLowerCase(), ch, false, shift);
+		if (ch) this.pushKey(ch.toLowerCase(), ch, false, shift); // Note: This will treat all non-ASCII characters as unmodified, which is a common but not universal convention(?) Also, I saw an issue where `ch` was null.
 	}
 
 	private decodeModifier(value: number): { shift: boolean; meta: boolean; ctrl: boolean } {
