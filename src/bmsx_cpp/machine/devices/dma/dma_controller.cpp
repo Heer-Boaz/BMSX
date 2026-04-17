@@ -1,6 +1,7 @@
 #include "machine/devices/dma/dma_controller.h"
 
 #include "machine/bus/io.h"
+#include "machine/devices/irq/irq_controller.h"
 #include "machine/devices/vdp/vdp.h"
 #include "machine/memory/memory_map.h"
 
@@ -17,7 +18,7 @@ constexpr uint32_t DMA_SERVICE_BATCH_BYTES = 64u;
 
 DmaController::DmaController(
 			Memory& memory,
-			std::function<void(uint32_t)> raiseIrq,
+			IrqController& irq,
 			VDP& vdp,
 			std::function<int64_t()> getNowCycles,
 			std::function<void(int64_t deadlineCycles)> scheduleService,
@@ -25,7 +26,7 @@ DmaController::DmaController(
 	)
 			: m_memory(memory)
 			, m_vdp(vdp)
-			, m_raiseIrq(std::move(raiseIrq))
+			, m_irq(irq)
 			, m_getNowCycles(std::move(getNowCycles))
 		, m_scheduleService(std::move(scheduleService))
 		, m_cancelService(std::move(cancelService)) {
@@ -378,7 +379,7 @@ void DmaController::finishIoSuccess(bool clipped) {
 		status |= DMA_STATUS_CLIPPED;
 	}
 	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>(status)));
-	m_raiseIrq(IRQ_DMA_DONE);
+	m_irq.raise(IRQ_DMA_DONE);
 }
 
 void DmaController::finishIoError(bool clipped) {
@@ -387,7 +388,7 @@ void DmaController::finishIoError(bool clipped) {
 		status |= DMA_STATUS_CLIPPED;
 	}
 	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>(status)));
-	m_raiseIrq(IRQ_DMA_ERROR);
+	m_irq.raise(IRQ_DMA_ERROR);
 }
 
 void DmaController::finishIoRejected() {

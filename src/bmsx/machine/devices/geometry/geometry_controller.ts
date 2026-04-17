@@ -69,6 +69,7 @@ import {
 	toSignedWord,
 	transformFixed16,
 } from '../../common/numeric';
+import type { IrqController } from '../irq/irq_controller';
 
 type GeoJob = {
 	cmd: number;
@@ -146,7 +147,7 @@ export class GeometryController {
 
 	public constructor(
 		private readonly memory: Memory,
-		private readonly raiseIrq: (mask: number) => void,
+		private readonly irq: IrqController,
 		private readonly getNowCycles: () => number,
 		private readonly scheduleService: (deadlineCycles: number) => void,
 		private readonly cancelService: () => void,
@@ -1268,7 +1269,7 @@ export class GeometryController {
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_DONE);
 		this.memory.writeValue(IO_GEO_PROCESSED, processed >>> 0);
 		this.memory.writeValue(IO_GEO_FAULT, 0);
-		this.raiseIrq(IRQ_GEO_DONE);
+		this.irq.raise(IRQ_GEO_DONE);
 	}
 
 	private finishError(code: number, recordIndex: number): void {
@@ -1278,7 +1279,7 @@ export class GeometryController {
 		this.cancelService();
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
 		this.memory.writeValue(IO_GEO_FAULT, packFault(code, recordIndex));
-		this.raiseIrq(IRQ_GEO_ERROR);
+		this.irq.raise(IRQ_GEO_ERROR);
 	}
 
 	private finishRejected(code: number): void {
@@ -1289,7 +1290,7 @@ export class GeometryController {
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_REJECTED);
 		this.memory.writeValue(IO_GEO_PROCESSED, 0);
 		this.memory.writeValue(IO_GEO_FAULT, packFault(code, GEO_RECORD_INDEX_NONE));
-		this.raiseIrq(IRQ_GEO_ERROR);
+		this.irq.raise(IRQ_GEO_ERROR);
 	}
 
 	private resolveIndexedSpan(base: number, index: number, stride: number, byteLength: number): number | null {

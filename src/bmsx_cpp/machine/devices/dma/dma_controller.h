@@ -10,6 +10,7 @@
 
 namespace bmsx {
 
+class IrqController;
 class VDP;
 
 class DmaController {
@@ -21,7 +22,7 @@ public:
 
 		DmaController(
 				Memory& memory,
-				std::function<void(uint32_t)> raiseIrq,
+				IrqController& irq,
 				VDP& vdp,
 				std::function<int64_t()> getNowCycles,
 				std::function<void(int64_t deadlineCycles)> scheduleService,
@@ -97,7 +98,7 @@ public:
 	uint32_t m_imgWrittenValue = 0;
 			Memory& m_memory;
 			VDP& m_vdp;
-			std::function<void(uint32_t)> m_raiseIrq;
+			IrqController& m_irq;
 			std::function<int64_t()> m_getNowCycles;
 	std::function<void(int64_t deadlineCycles)> m_scheduleService;
 	std::function<void()> m_cancelService;

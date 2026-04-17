@@ -5,18 +5,18 @@
 #include "subscription.h"
 
 #include <cstdint>
-#include <functional>
 #include <string>
 
 namespace bmsx {
 
 class SoundMaster;
+class IrqController;
 struct ActiveVoiceInfo;
 struct ModulationInput;
 
 class AudioController {
 public:
-	AudioController(Memory& memory, SoundMaster& soundMaster, std::function<void(uint32_t)> raiseIrq);
+	AudioController(Memory& memory, SoundMaster& soundMaster, IrqController& irq);
 	~AudioController() = default;
 
 	void reset();
@@ -27,7 +27,7 @@ private:
 
 	Memory& m_memory;
 	SoundMaster& m_soundMaster;
-	std::function<void(uint32_t)> m_raiseIrq;
+	IrqController& m_irq;
 	ScopedSubscription m_sfxEnded;
 	ScopedSubscription m_musicEnded;
 	ScopedSubscription m_uiEnded;

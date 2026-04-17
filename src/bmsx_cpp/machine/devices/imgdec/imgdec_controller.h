@@ -13,13 +13,14 @@
 namespace bmsx {
 
 class DmaController;
+class IrqController;
 
 class ImgDecController {
 public:
 	ImgDecController(
 		Memory& memory,
 		DmaController& dma,
-		std::function<void(uint32_t)> raiseIrq,
+		IrqController& irq,
 		std::function<int64_t()> getNowCycles,
 		std::function<void(int64_t deadlineCycles)> scheduleService,
 		std::function<void()> cancelService
@@ -97,7 +98,7 @@ public:
 	std::unordered_map<uint32_t, Memory::ImageWriteEntry*> m_externalSlots;
 	Memory& m_memory;
 	DmaController& m_dma;
-	std::function<void(uint32_t)> m_raiseIrq;
+	IrqController& m_irq;
 	std::function<int64_t()> m_getNowCycles;
 	std::function<void(int64_t deadlineCycles)> m_scheduleService;
 	std::function<void()> m_cancelService;

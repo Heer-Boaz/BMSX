@@ -10,11 +10,13 @@
 
 namespace bmsx {
 
+class IrqController;
+
 class GeometryController {
 public:
 		GeometryController(
 			Memory& memory,
-			std::function<void(uint32_t)> raiseIrq,
+			IrqController& irq,
 			std::function<int64_t()> getNowCycles,
 			std::function<void(int64_t deadlineCycles)> scheduleService,
 			std::function<void()> cancelService
@@ -110,7 +112,7 @@ public:
 	double m_overlapContactPy = 0;
 		uint32_t m_overlapContactFeatureMeta = 0;
 		Memory& m_memory;
-		std::function<void(uint32_t)> m_raiseIrq;
+		IrqController& m_irq;
 		std::function<int64_t()> m_getNowCycles;
 		std::function<void(int64_t deadlineCycles)> m_scheduleService;
 	std::function<void()> m_cancelService;

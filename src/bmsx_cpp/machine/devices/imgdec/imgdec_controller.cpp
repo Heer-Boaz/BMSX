@@ -1,5 +1,6 @@
 #include "machine/devices/imgdec/imgdec_controller.h"
 
+#include "machine/devices/irq/irq_controller.h"
 #include "machine/devices/dma/dma_controller.h"
 #include "machine/memory/memory_map.h"
 #include "machine/bus/io.h"
@@ -33,7 +34,7 @@ constexpr uint32_t IMGDEC_SERVICE_BATCH_BYTES = 256u;
 ImgDecController::ImgDecController(
 	Memory& memory,
 	DmaController& dma,
-	std::function<void(uint32_t)> raiseIrq,
+	IrqController& irq,
 	std::function<int64_t()> getNowCycles,
 	std::function<void(int64_t deadlineCycles)> scheduleService,
 	std::function<void()> cancelService
@@ -41,7 +42,7 @@ ImgDecController::ImgDecController(
 	: m_gate(imgdecGate().group("imgdec"))
 	, m_memory(memory)
 	, m_dma(dma)
-		, m_raiseIrq(std::move(raiseIrq))
+		, m_irq(irq)
 		, m_getNowCycles(std::move(getNowCycles))
 		, m_scheduleService(std::move(scheduleService))
 		, m_cancelService(std::move(cancelService)) {
@@ -390,7 +391,7 @@ void ImgDecController::finishSuccess(bool clipped) {
 	}
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
 	if (m_signalIrq) {
-		m_raiseIrq(IRQ_IMG_DONE);
+		m_irq.raise(IRQ_IMG_DONE);
 	}
 	m_signalIrq = false;
 	if (activeJob && activeJob->resolve) {
@@ -413,7 +414,7 @@ void ImgDecController::finishError(std::exception_ptr error) {
 	m_status = (m_status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE | IMG_STATUS_ERROR;
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
 	if (m_signalIrq) {
-		m_raiseIrq(IRQ_IMG_ERROR);
+		m_irq.raise(IRQ_IMG_ERROR);
 	}
 	m_signalIrq = false;
 	if (!error) {

@@ -3,6 +3,7 @@
 #include "audio/soundmaster.h"
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
+#include "machine/devices/irq/irq_controller.h"
 
 #include <stdexcept>
 
@@ -59,10 +60,10 @@ void writeNumber(Memory& memory, uint32_t addr, double value) {
 
 } // namespace
 
-	AudioController::AudioController(Memory& memory, SoundMaster& soundMaster, std::function<void(uint32_t)> raiseIrq)
+	AudioController::AudioController(Memory& memory, SoundMaster& soundMaster, IrqController& irq)
 		: m_memory(memory)
 		, m_soundMaster(soundMaster)
-		, m_raiseIrq(std::move(raiseIrq)) {
+		, m_irq(irq) {
 		m_memory.mapIoWrite(IO_APU_CMD, this, &AudioController::onCommandWriteThunk);
 		m_sfxEnded = ScopedSubscription(m_soundMaster.addEndedListener(AudioType::Sfx, [this](const ActiveVoiceInfo& info) {
 		onVoiceEnded(AudioType::Sfx, info);
@@ -211,7 +212,7 @@ void AudioController::onVoiceEnded(AudioType type, const ActiveVoiceInfo& info) 
 	writeNumber(m_memory, IO_APU_EVENT_HANDLE, static_cast<double>(m_memory.resolveAssetHandle(info.id)));
 	writeNumber(m_memory, IO_APU_EVENT_VOICE, static_cast<double>(info.voiceId));
 	writeNumber(m_memory, IO_APU_EVENT_SEQ, static_cast<double>(m_eventSequence));
-	m_raiseIrq(IRQ_APU);
+	m_irq.raise(IRQ_APU);
 }
 
 } // namespace bmsx

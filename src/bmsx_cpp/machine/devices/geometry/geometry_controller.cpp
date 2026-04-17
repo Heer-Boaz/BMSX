@@ -1,6 +1,7 @@
 #include "machine/devices/geometry/geometry_controller.h"
 
 #include "machine/bus/io.h"
+#include "machine/devices/irq/irq_controller.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -75,13 +76,13 @@ inline uint32_t numberToF32Bits(double value) {
 
 	GeometryController::GeometryController(
 		Memory& memory,
-		std::function<void(uint32_t)> raiseIrq,
+		IrqController& irq,
 		std::function<int64_t()> getNowCycles,
 		std::function<void(int64_t deadlineCycles)> scheduleService,
 		std::function<void()> cancelService
 	)
 		: m_memory(memory)
-		, m_raiseIrq(std::move(raiseIrq))
+		, m_irq(irq)
 		, m_getNowCycles(std::move(getNowCycles))
 		, m_scheduleService(std::move(scheduleService))
 		, m_cancelService(std::move(cancelService)) {
@@ -1209,7 +1210,7 @@ void GeometryController::finishSuccess(uint32_t processed) {
 	writeRegister(IO_GEO_STATUS, GEO_STATUS_DONE);
 	writeRegister(IO_GEO_PROCESSED, processed);
 	writeRegister(IO_GEO_FAULT, 0u);
-	m_raiseIrq(IRQ_GEO_DONE);
+	m_irq.raise(IRQ_GEO_DONE);
 }
 
 void GeometryController::finishError(uint32_t code, uint32_t recordIndex, bool signalIrq) {
@@ -1220,7 +1221,7 @@ void GeometryController::finishError(uint32_t code, uint32_t recordIndex, bool s
 	writeRegister(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
 	writeRegister(IO_GEO_FAULT, packFault(code, recordIndex));
 	if (signalIrq) {
-		m_raiseIrq(IRQ_GEO_ERROR);
+		m_irq.raise(IRQ_GEO_ERROR);
 	}
 }
 
@@ -1232,7 +1233,7 @@ void GeometryController::finishRejected(uint32_t code) {
 	writeRegister(IO_GEO_STATUS, GEO_STATUS_REJECTED);
 	writeRegister(IO_GEO_PROCESSED, 0u);
 	writeRegister(IO_GEO_FAULT, packFault(code, GEO_RECORD_INDEX_NONE));
-	m_raiseIrq(IRQ_GEO_ERROR);
+	m_irq.raise(IRQ_GEO_ERROR);
 }
 
 std::optional<uint32_t> GeometryController::resolveIndexedSpan(uint32_t base, uint32_t index, uint32_t stride, uint32_t byteLength) const {

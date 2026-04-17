@@ -27,6 +27,7 @@ import type { AssetEntry, ImageWritePlan } from '../../memory/memory';
 import { Memory } from '../../memory/memory';
 import type { DecodedImage } from '../../../common/image_decode';
 import { DmaController } from '../dma/dma_controller';
+import type { IrqController } from '../irq/irq_controller';
 
 type ImgDecJob = {
 	buffer: Uint8Array;
@@ -68,7 +69,7 @@ export class ImgDecController {
 	public constructor(
 		private readonly memory: Memory,
 		private readonly dma: DmaController,
-		private readonly raiseIrq: (mask: number) => void,
+		private readonly irq: IrqController,
 		private readonly getNowCycles: () => number,
 		private readonly scheduleService: (deadlineCycles: number) => void,
 		private readonly cancelService: () => void,
@@ -337,7 +338,7 @@ export class ImgDecController {
 		this.status = (this.status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE | (clipped ? IMG_STATUS_CLIPPED : 0);
 		this.memory.writeValue(IO_IMG_STATUS, this.status);
 		if (this.signalIrq) {
-			this.raiseIrq(IRQ_IMG_DONE);
+			this.irq.raise(IRQ_IMG_DONE);
 		}
 		this.signalIrq = false;
 		if (job && decoded) {
@@ -360,7 +361,7 @@ export class ImgDecController {
 		this.status = (this.status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE | IMG_STATUS_ERROR;
 		this.memory.writeValue(IO_IMG_STATUS, this.status);
 		if (this.signalIrq) {
-			this.raiseIrq(IRQ_IMG_ERROR);
+			this.irq.raise(IRQ_IMG_ERROR);
 		}
 		this.signalIrq = false;
 		if (job) {

@@ -36,6 +36,7 @@ import {
 } from '../../memory/memory_map';
 import type { ImageWritePlan } from '../../memory/memory';
 import { Memory } from '../../memory/memory';
+import type { IrqController } from '../irq/irq_controller';
 import type { VDP } from '../vdp/vdp';
 
 type DmaChannelId = 0 | 1;
@@ -95,7 +96,7 @@ export class DmaController {
 
 	public constructor(
 		private readonly memory: Memory,
-		private readonly raiseIrq: (mask: number) => void,
+		private readonly irq: IrqController,
 		private readonly vdp: VDP,
 		private readonly getNowCycles: () => number,
 		private readonly scheduleService: (deadlineCycles: number) => void,
@@ -477,7 +478,7 @@ export class DmaController {
 			status |= DMA_STATUS_CLIPPED;
 		}
 		this.memory.writeValue(IO_DMA_STATUS, status);
-		this.raiseIrq(IRQ_DMA_DONE);
+		this.irq.raise(IRQ_DMA_DONE);
 	}
 
 	private finishIoError(clipped: boolean): void {
@@ -486,7 +487,7 @@ export class DmaController {
 			status |= DMA_STATUS_CLIPPED;
 		}
 		this.memory.writeValue(IO_DMA_STATUS, status);
-		this.raiseIrq(IRQ_DMA_ERROR);
+		this.irq.raise(IRQ_DMA_ERROR);
 	}
 
 	private finishIoRejected(): void {

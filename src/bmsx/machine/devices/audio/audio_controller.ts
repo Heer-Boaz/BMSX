@@ -46,8 +46,7 @@ import {
 	IRQ_APU,
 } from '../../bus/io';
 import { Memory } from '../../memory/memory';
-
-type RaiseIrq = (mask: number) => void;
+import type { IrqController } from '../irq/irq_controller';
 
 function decodeChannel(channel: number): AudioType {
 	if (channel === APU_CHANNEL_MUSIC) {
@@ -100,7 +99,7 @@ export class AudioController {
 	public constructor(
 		private readonly memory: Memory,
 		private readonly soundMaster: SoundMaster,
-		private readonly raiseIrq: RaiseIrq,
+		private readonly irq: IrqController,
 	) {
 		this.memory.mapIoWrite(IO_APU_CMD, this.onCommandWrite.bind(this));
 		this.unsubscribeSfx = this.soundMaster.addEndedListener('sfx', (info) => this.onVoiceEnded('sfx', info));
@@ -243,7 +242,7 @@ export class AudioController {
 		this.memory.writeValue(IO_APU_EVENT_HANDLE, this.memory.resolveAssetHandle(info.id));
 		this.memory.writeValue(IO_APU_EVENT_VOICE, info.voiceId >>> 0);
 		this.memory.writeValue(IO_APU_EVENT_SEQ, this.eventSequence);
-		this.raiseIrq(IRQ_APU);
+		this.irq.raise(IRQ_APU);
 	}
 
 }

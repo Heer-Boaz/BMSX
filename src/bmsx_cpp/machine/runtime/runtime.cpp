@@ -102,7 +102,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	, m_irqController(m_memory)
 	, m_dmaController(
 			m_memory,
-			[this](uint32_t mask) { m_irqController.raise(mask); },
+			m_irqController,
 			m_vdp,
 			[this]() { return currentSchedulerNowCycles(); },
 			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceDma, deadlineCycles); },
@@ -110,7 +110,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 		)
 	, m_geometryController(
 			m_memory,
-			[this](uint32_t mask) { m_irqController.raise(mask); },
+			m_irqController,
 			[this]() { return currentSchedulerNowCycles(); },
 			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceGeo, deadlineCycles); },
 			[this]() { cancelDeviceService(DeviceServiceGeo); }
@@ -118,7 +118,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	, m_imgDecController(
 			m_memory,
 			m_dmaController,
-			[this](uint32_t mask) { m_irqController.raise(mask); },
+			m_irqController,
 			[this]() { return currentSchedulerNowCycles(); },
 			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceImg, deadlineCycles); },
 			[this]() { cancelDeviceService(DeviceServiceImg); }
@@ -131,7 +131,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	, m_audioController(
 			m_memory,
 			*EngineCore::instance().soundMaster(),
-			[this](uint32_t mask) { m_irqController.raise(mask); }
+			m_irqController
 		)
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)

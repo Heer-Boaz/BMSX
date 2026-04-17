@@ -1509,34 +1509,34 @@ export class Runtime {
 			() => this.currentSchedulerNowCycles(),
 			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_VDP, deadlineCycles),
 			() => this.cancelDeviceService(DEVICE_SERVICE_VDP),
-			);
-			this.stringHandles = new StringHandleTable(this.memory);
-			this.runtimeStringPool = new StringPool(this.stringHandles);
-			this.memory.writeValue(IO_SYS_BOOT_CART, 0);
+		);
+		this.stringHandles = new StringHandleTable(this.memory);
+		this.runtimeStringPool = new StringPool(this.stringHandles);
+		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
 		this.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, 0);
 		this.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_NONE);
 		this.irqController.reset();
-		this.audioController = new AudioController(this.memory, $.sndmaster, (mask) => this.irqController.raise(mask));
-			this.dmaController = new DmaController(
-				this.memory,
-				(mask) => this.irqController.raise(mask),
-				this.vdp,
-				() => this.currentSchedulerNowCycles(),
-				(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_DMA, deadlineCycles),
+		this.audioController = new AudioController(this.memory, $.sndmaster, this.irqController);
+		this.dmaController = new DmaController(
+			this.memory,
+			this.irqController,
+			this.vdp,
+			() => this.currentSchedulerNowCycles(),
+			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_DMA, deadlineCycles),
 			() => this.cancelDeviceService(DEVICE_SERVICE_DMA),
 		);
 		this.imgDecController = new ImgDecController(
 			this.memory,
 			this.dmaController,
-			(mask) => this.irqController.raise(mask),
+			this.irqController,
 			() => this.currentSchedulerNowCycles(),
 			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_IMG, deadlineCycles),
 			() => this.cancelDeviceService(DEVICE_SERVICE_IMG),
 		);
 		this.geometryController = new GeometryController(
 			this.memory,
-			(mask) => this.irqController.raise(mask),
+			this.irqController,
 			() => this.currentSchedulerNowCycles(),
 			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_GEO, deadlineCycles),
 			() => this.cancelDeviceService(DEVICE_SERVICE_GEO),
