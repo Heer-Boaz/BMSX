@@ -90,38 +90,31 @@ Runtime::Runtime(const RuntimeOptions& options)
 	, m_memory()
 	, m_stringHandles(m_memory)
 	, m_cpu(m_memory, &m_stringHandles)
+	, m_deviceScheduler(m_cpu)
 	, m_api(std::make_unique<Api>(*this))
 	, m_vdp(
 			m_memory,
 			m_cpu,
 			*m_api,
-			[this]() { return currentSchedulerNowCycles(); },
-			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceVdp, deadlineCycles); },
-			[this]() { cancelDeviceService(DeviceServiceVdp); }
+			m_deviceScheduler
 		)
 	, m_irqController(m_memory)
 	, m_dmaController(
 			m_memory,
 			m_irqController,
 			m_vdp,
-			[this]() { return currentSchedulerNowCycles(); },
-			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceDma, deadlineCycles); },
-			[this]() { cancelDeviceService(DeviceServiceDma); }
+			m_deviceScheduler
 		)
 	, m_geometryController(
 			m_memory,
 			m_irqController,
-			[this]() { return currentSchedulerNowCycles(); },
-			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceGeo, deadlineCycles); },
-			[this]() { cancelDeviceService(DeviceServiceGeo); }
+			m_deviceScheduler
 		)
 	, m_imgDecController(
 			m_memory,
 			m_dmaController,
 			m_irqController,
-			[this]() { return currentSchedulerNowCycles(); },
-			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceImg, deadlineCycles); },
-			[this]() { cancelDeviceService(DeviceServiceImg); }
+			m_deviceScheduler
 		)
 	, m_inputController(
 			m_memory,
@@ -319,157 +312,28 @@ void Runtime::advanceTime(int cycles) {
 	if (cycles <= 0) {
 		return;
 	}
-	const i64 nextNow = m_schedulerNowCycles + cycles;
+	const i64 nextNow = m_deviceScheduler.nowCycles() + cycles;
 	m_dmaController.accrueCycles(cycles, nextNow);
 	m_imgDecController.accrueCycles(cycles, nextNow);
 	m_geometryController.accrueCycles(cycles, nextNow);
 	m_vdp.accrueCycles(cycles, nextNow);
-	m_schedulerNowCycles = nextNow;
+	m_deviceScheduler.advanceTo(nextNow);
 	runDueTimers();
 }
 
-i64 Runtime::currentSchedulerNowCycles() const {
-	if (!m_schedulerSliceActive) {
-		return m_schedulerNowCycles;
-	}
-	const int consumed = m_activeSliceBudgetCycles - m_cpu.instructionBudgetRemaining;
-	return m_activeSliceBaseCycle + consumed;
-}
-
 int Runtime::getCyclesIntoFrame() const {
-	return static_cast<int>(m_schedulerNowCycles - m_frameStartCycle);
+	return static_cast<int>(m_deviceScheduler.nowCycles() - m_frameStartCycle);
 }
 
 void Runtime::resetSchedulerState() {
-	clearTimerHeap();
-	m_schedulerNowCycles = 0;
+	m_deviceScheduler.reset();
 	m_frameStartCycle = 0;
-	m_schedulerSliceActive = false;
-	m_activeSliceBaseCycle = 0;
-	m_activeSliceBudgetCycles = 0;
-	m_activeSliceTargetCycle = 0;
-	m_vblankEnterTimerGeneration = 0;
-	m_vblankEndTimerGeneration = 0;
-	m_deviceServiceTimerGeneration.fill(0);
-}
-
-void Runtime::clearTimerHeap() {
-	m_timerCount = 0;
-	m_timerDeadlines.clear();
-	m_timerKinds.clear();
-	m_timerPayloads.clear();
-	m_timerGenerations.clear();
-}
-
-uint32_t Runtime::nextTimerGeneration(uint32_t value) {
-	const uint32_t next = value + 1u;
-	return next == 0u ? 1u : next;
-}
-
-void Runtime::pushTimer(i64 deadline, uint8_t kind, uint8_t payload, uint32_t generation) {
-	size_t index = m_timerCount;
-	m_timerCount += 1;
-	m_timerDeadlines.push_back(deadline);
-	m_timerKinds.push_back(kind);
-	m_timerPayloads.push_back(payload);
-	m_timerGenerations.push_back(generation);
-	while (index > 0) {
-		const size_t parent = (index - 1u) >> 1u;
-		if (m_timerDeadlines[parent] <= deadline) {
-			break;
-		}
-		m_timerDeadlines[index] = m_timerDeadlines[parent];
-		m_timerKinds[index] = m_timerKinds[parent];
-		m_timerPayloads[index] = m_timerPayloads[parent];
-		m_timerGenerations[index] = m_timerGenerations[parent];
-		index = parent;
-	}
-	m_timerDeadlines[index] = deadline;
-	m_timerKinds[index] = kind;
-	m_timerPayloads[index] = payload;
-	m_timerGenerations[index] = generation;
-}
-
-void Runtime::removeTopTimer() {
-	if (m_timerCount == 0) {
-		return;
-	}
-	const size_t lastIndex = m_timerCount - 1u;
-	const i64 deadline = m_timerDeadlines[lastIndex];
-	const uint8_t kind = m_timerKinds[lastIndex];
-	const uint8_t payload = m_timerPayloads[lastIndex];
-	const uint32_t generation = m_timerGenerations[lastIndex];
-	m_timerCount = lastIndex;
-	m_timerDeadlines.pop_back();
-	m_timerKinds.pop_back();
-	m_timerPayloads.pop_back();
-	m_timerGenerations.pop_back();
-	if (lastIndex == 0u) {
-		return;
-	}
-	size_t index = 0u;
-	const size_t half = lastIndex >> 1u;
-	while (index < half) {
-		size_t child = (index << 1u) + 1u;
-		if (child + 1u < lastIndex && m_timerDeadlines[child + 1u] < m_timerDeadlines[child]) {
-			child += 1u;
-		}
-		if (m_timerDeadlines[child] >= deadline) {
-			break;
-		}
-		m_timerDeadlines[index] = m_timerDeadlines[child];
-		m_timerKinds[index] = m_timerKinds[child];
-		m_timerPayloads[index] = m_timerPayloads[child];
-		m_timerGenerations[index] = m_timerGenerations[child];
-		index = child;
-	}
-	m_timerDeadlines[index] = deadline;
-	m_timerKinds[index] = kind;
-	m_timerPayloads[index] = payload;
-	m_timerGenerations[index] = generation;
-}
-
-bool Runtime::isTimerCurrent(uint8_t kind, uint8_t payload, uint32_t generation) const {
-	switch (kind) {
-		case TimerKindVblankBegin:
-			return generation == m_vblankEnterTimerGeneration;
-		case TimerKindVblankEnd:
-			return generation == m_vblankEndTimerGeneration;
-		case TimerKindDeviceService:
-			return generation == m_deviceServiceTimerGeneration[payload];
-		default:
-			throw runtimeFault("unknown timer kind " + std::to_string(kind) + ".");
-	}
-}
-
-void Runtime::discardStaleTopTimers() {
-	while (m_timerCount > 0u) {
-		const uint8_t kind = m_timerKinds[0];
-		const uint8_t payload = m_timerPayloads[0];
-		const uint32_t generation = m_timerGenerations[0];
-		if (isTimerCurrent(kind, payload, generation)) {
-			return;
-		}
-		removeTopTimer();
-	}
-}
-
-i64 Runtime::nextTimerDeadline() {
-	discardStaleTopTimers();
-	if (m_timerCount == 0u) {
-		return std::numeric_limits<i64>::max();
-	}
-	return m_timerDeadlines[0];
 }
 
 void Runtime::runDueTimers() {
-	discardStaleTopTimers();
-	while (m_timerCount > 0u && m_timerDeadlines[0] <= m_schedulerNowCycles) {
-		const uint8_t kind = m_timerKinds[0];
-		const uint8_t payload = m_timerPayloads[0];
-		removeTopTimer();
-		dispatchTimer(kind, payload);
-		discardStaleTopTimers();
+	while (m_deviceScheduler.hasDueTimer()) {
+		const uint16_t event = m_deviceScheduler.popDueTimer();
+		dispatchTimer(static_cast<uint8_t>(event >> 8u), static_cast<uint8_t>(event & 0xffu));
 	}
 }
 
@@ -489,24 +353,10 @@ void Runtime::dispatchTimer(uint8_t kind, uint8_t payload) {
 	}
 }
 
-void Runtime::scheduleVblankBeginTimer(i64 deadlineCycles) {
-	const uint32_t generation = nextTimerGeneration(m_vblankEnterTimerGeneration);
-	m_vblankEnterTimerGeneration = generation;
-	pushTimer(deadlineCycles, TimerKindVblankBegin, 0u, generation);
-	requestYieldForEarlierDeadline(deadlineCycles);
-}
-
-void Runtime::scheduleVblankEndTimer(i64 deadlineCycles) {
-	const uint32_t generation = nextTimerGeneration(m_vblankEndTimerGeneration);
-	m_vblankEndTimerGeneration = generation;
-	pushTimer(deadlineCycles, TimerKindVblankEnd, 0u, generation);
-	requestYieldForEarlierDeadline(deadlineCycles);
-}
-
 void Runtime::scheduleCurrentFrameTimers() {
-	scheduleVblankEndTimer(m_frameStartCycle + m_cycleBudgetPerFrame);
+	m_deviceScheduler.scheduleVblankEnd(m_frameStartCycle + m_cycleBudgetPerFrame);
 	if (m_vblankStartCycle > 0 && getCyclesIntoFrame() < m_vblankStartCycle) {
-		scheduleVblankBeginTimer(m_frameStartCycle + m_vblankStartCycle);
+		m_deviceScheduler.scheduleVblankBegin(m_frameStartCycle + m_vblankStartCycle);
 	}
 }
 
@@ -520,36 +370,15 @@ void Runtime::handleVblankEndTimer() {
 	if (m_vblankActive) {
 		leaveVblank();
 	}
-	m_frameStartCycle = m_schedulerNowCycles;
+	m_frameStartCycle = m_deviceScheduler.nowCycles();
 	scheduleCurrentFrameTimers();
 	if (m_vblankStartCycle == 0) {
 		enterVblank();
 	}
 }
 
-void Runtime::scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles) {
-	const uint32_t generation = nextTimerGeneration(m_deviceServiceTimerGeneration[deviceKind]);
-	m_deviceServiceTimerGeneration[deviceKind] = generation;
-	pushTimer(deadlineCycles, TimerKindDeviceService, deviceKind, generation);
-	requestYieldForEarlierDeadline(deadlineCycles);
-}
-
-void Runtime::cancelDeviceService(uint8_t deviceKind) {
-	m_deviceServiceTimerGeneration[deviceKind] = nextTimerGeneration(m_deviceServiceTimerGeneration[deviceKind]);
-}
-
-void Runtime::requestYieldForEarlierDeadline(i64 deadlineCycles) {
-	if (!m_schedulerSliceActive) {
-		return;
-	}
-	if (deadlineCycles > m_activeSliceTargetCycle) {
-		return;
-	}
-	m_cpu.requestYield();
-}
-
 void Runtime::runDeviceService(uint8_t deviceKind) {
-	const i64 nowCycles = m_schedulerNowCycles;
+	const i64 nowCycles = m_deviceScheduler.nowCycles();
 	switch (deviceKind) {
 		case DeviceServiceGeo:
 			m_geometryController.onService(nowCycles);
@@ -581,7 +410,7 @@ void Runtime::resetVblankState() {
 		setVblankStatus(true);
 	}
 	scheduleCurrentFrameTimers();
-	refreshDeviceTimings(m_schedulerNowCycles);
+	refreshDeviceTimings(m_deviceScheduler.nowCycles());
 }
 
 void Runtime::setVblankStatus(bool active) {
@@ -677,7 +506,7 @@ bool Runtime::runHaltedUntilIrq(FrameState& frameState) {
 			return m_activeTickCompleted;
 		}
 		if (frameState.cycleBudgetRemaining > 0) {
-			const i64 cyclesToTarget = nextTimerDeadline() - m_schedulerNowCycles;
+			const i64 cyclesToTarget = m_deviceScheduler.nextDeadline() - m_deviceScheduler.nowCycles();
 			if (cyclesToTarget <= 0) {
 				runDueTimers();
 				continue;
@@ -712,9 +541,9 @@ RunResult Runtime::runWithBudget() {
 	runDueTimers();
 	while (remaining > 0) {
 		int sliceBudget = remaining;
-		const i64 nextDeadline = nextTimerDeadline();
+		const i64 nextDeadline = m_deviceScheduler.nextDeadline();
 		if (nextDeadline != std::numeric_limits<i64>::max()) {
-			const i64 deadlineBudget = nextDeadline - m_schedulerNowCycles;
+			const i64 deadlineBudget = nextDeadline - m_deviceScheduler.nowCycles();
 			if (deadlineBudget <= 0) {
 				runDueTimers();
 				continue;
@@ -723,12 +552,9 @@ RunResult Runtime::runWithBudget() {
 				sliceBudget = static_cast<int>(deadlineBudget);
 			}
 		}
-		m_schedulerSliceActive = true;
-		m_activeSliceBaseCycle = m_schedulerNowCycles;
-		m_activeSliceBudgetCycles = sliceBudget;
-		m_activeSliceTargetCycle = m_schedulerNowCycles + sliceBudget;
+		m_deviceScheduler.beginCpuSlice(sliceBudget);
 		result = m_cpu.run(sliceBudget);
-		m_schedulerSliceActive = false;
+		m_deviceScheduler.endCpuSlice();
 		const int sliceRemaining = m_cpu.instructionBudgetRemaining;
 		const int consumed = sliceBudget - sliceRemaining;
 		if (consumed > 0) {
@@ -961,7 +787,7 @@ void Runtime::applyState(const RuntimeState& state) {
 	machineScheduler.reset(*this);
 	screen.reset();
 	resetSchedulerState();
-	m_schedulerNowCycles = state.cyclesIntoFrame;
+	m_deviceScheduler.setNowCycles(state.cyclesIntoFrame);
 	m_frameStartCycle = 0;
 	m_vdp.resetStatus();
 	m_vblankActive = false;
@@ -970,7 +796,7 @@ void Runtime::applyState(const RuntimeState& state) {
 		|| (getCyclesIntoFrame() >= m_vblankStartCycle);
 	setVblankStatus(vblankActive);
 	scheduleCurrentFrameTimers();
-	refreshDeviceTimings(m_schedulerNowCycles);
+	refreshDeviceTimings(m_deviceScheduler.nowCycles());
 	if (!state.assetMemory.empty()) {
 		m_memory.restoreAssetMemory(state.assetMemory.data(), state.assetMemory.size());
 	}
@@ -1029,7 +855,7 @@ void Runtime::setCanonicalization(CanonicalizationType canonicalization) {
 
 void Runtime::setCpuHz(i64 hz) {
 	m_cpuHz = hz;
-	refreshDeviceTimings(currentSchedulerNowCycles());
+	refreshDeviceTimings(m_deviceScheduler.currentNowCycles());
 }
 
 void Runtime::applyActiveMachineTiming(i64 cpuHz) {
@@ -1076,7 +902,7 @@ void Runtime::setVdpWorkUnitsPerSec(int workUnitsPerSec) {
 		throw runtimeFault("work_units_per_sec must be greater than 0.");
 	}
 	m_vdpWorkUnitsPerSec = workUnitsPerSec;
-	m_vdp.setTiming(m_cpuHz, m_vdpWorkUnitsPerSec, currentSchedulerNowCycles());
+	m_vdp.setTiming(m_cpuHz, m_vdpWorkUnitsPerSec, m_deviceScheduler.currentNowCycles());
 }
 
 void Runtime::setGeoWorkUnitsPerSec(int workUnitsPerSec) {
@@ -1084,7 +910,7 @@ void Runtime::setGeoWorkUnitsPerSec(int workUnitsPerSec) {
 		throw runtimeFault("geo_work_units_per_sec must be greater than 0.");
 	}
 	m_geoWorkUnitsPerSec = workUnitsPerSec;
-	m_geometryController.setTiming(m_cpuHz, m_geoWorkUnitsPerSec, currentSchedulerNowCycles());
+	m_geometryController.setTiming(m_cpuHz, m_geoWorkUnitsPerSec, m_deviceScheduler.currentNowCycles());
 }
 
 void Runtime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk, int vdpWorkUnitsPerSec, int geoWorkUnitsPerSec) {
@@ -1093,7 +919,7 @@ void Runtime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64
 	m_dmaBytesPerSecBulk = dmaBytesPerSecBulk;
 	setVdpWorkUnitsPerSec(vdpWorkUnitsPerSec);
 	setGeoWorkUnitsPerSec(geoWorkUnitsPerSec);
-	refreshDeviceTimings(currentSchedulerNowCycles());
+	refreshDeviceTimings(m_deviceScheduler.currentNowCycles());
 }
 
 void Runtime::setCycleBudgetPerFrame(int budget) {
@@ -1102,7 +928,7 @@ void Runtime::setCycleBudgetPerFrame(int budget) {
 	}
 	m_cycleBudgetPerFrame = budget;
 	setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(budget)));
-	refreshDeviceTimings(currentSchedulerNowCycles());
+	refreshDeviceTimings(m_deviceScheduler.currentNowCycles());
 	if (m_vblankCycles > 0) {
 		if (m_vblankCycles > m_cycleBudgetPerFrame) {
 			throw runtimeFault("vblank_cycles must be less than or equal to cycles_per_frame.");

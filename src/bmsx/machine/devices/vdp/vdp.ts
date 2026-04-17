@@ -51,6 +51,7 @@ import {
 } from '../../bus/io';
 import { ASSET_FLAG_VIEW, type AssetEntry, type VramWriteSink } from '../../memory/memory';
 import { Memory } from '../../memory/memory';
+import { DEVICE_SERVICE_VDP, type DeviceScheduler } from '../../scheduler/device_scheduler';
 import type { BFont } from '../../../render/shared/bitmap_font';
 import {
 	VRAM_SYSTEM_ATLAS_BASE,
@@ -618,9 +619,7 @@ export class VDP implements VramWriteSink {
 	public constructor(
 		private readonly memory: Memory,
 		private readonly blitterExecutor: VdpBlitterExecutor | null,
-		private readonly getNowCycles: () => number,
-		private readonly scheduleService: (deadlineCycles: number) => void,
-		private readonly cancelService: () => void,
+		private readonly scheduler: DeviceScheduler,
 			) {
 				this.memory.setVramWriter(this);
 				this.memory.mapIoRead(IO_VDP_RD_STATUS, this.readVdpStatus.bind(this));
@@ -1141,7 +1140,7 @@ export class VDP implements VramWriteSink {
 
 	public cancelSubmittedFrame(): void {
 		this.resetBuildFrameState();
-		this.scheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.scheduler.currentNowCycles());
 		this.refreshSubmitBusyStatus();
 	}
 
@@ -1178,7 +1177,7 @@ export class VDP implements VramWriteSink {
 		this.buildBlitterQueue.length = 0;
 		this.buildFrameCost = 0;
 		this.buildFrameOpen = false;
-		this.scheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.scheduler.currentNowCycles());
 		this.refreshSubmitBusyStatus();
 	}
 
@@ -1219,7 +1218,7 @@ export class VDP implements VramWriteSink {
 		this.pendingSlotAtlasIds[0] = null;
 		this.pendingSlotAtlasIds[1] = null;
 		this.pendingSkyboxFaceIds = null;
-		this.scheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.scheduler.currentNowCycles());
 		this.refreshSubmitBusyStatus();
 	}
 
@@ -1234,7 +1233,7 @@ export class VDP implements VramWriteSink {
 			this.activeFrameWorkRemaining = 0;
 			this.executeBlitterQueue(this.activeBlitterQueue);
 			this.activeFrameReady = true;
-			this.scheduleNextService(this.getNowCycles());
+			this.scheduleNextService(this.scheduler.currentNowCycles());
 			return;
 		}
 		this.activeFrameWorkRemaining -= workUnits;
@@ -1263,20 +1262,20 @@ export class VDP implements VramWriteSink {
 
 	private scheduleNextService(nowCycles: number): void {
 		if (this.needsImmediateSchedulerService()) {
-			this.scheduleService(nowCycles);
+			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_VDP, nowCycles);
 			return;
 		}
 		if (!this.hasPendingRenderWork()) {
-			this.cancelService();
+			this.scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
 			return;
 		}
 		const pendingWork = this.getPendingRenderWorkUnits();
 		const targetUnits = pendingWork < VDP_SERVICE_BATCH_WORK_UNITS ? pendingWork : VDP_SERVICE_BATCH_WORK_UNITS;
 		if (this.availableWorkUnits >= targetUnits) {
-			this.scheduleService(nowCycles);
+			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_VDP, nowCycles);
 			return;
 		}
-		this.scheduleService(nowCycles + this.cyclesUntilWorkUnits(targetUnits - this.availableWorkUnits));
+		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_VDP, nowCycles + this.cyclesUntilWorkUnits(targetUnits - this.availableWorkUnits));
 	}
 
 	private cyclesUntilWorkUnits(targetUnits: number): number {
@@ -1316,7 +1315,7 @@ export class VDP implements VramWriteSink {
 			this.lastFrameCost = 0;
 			this.lastFrameHeld = false;
 			this.promotePendingFrame();
-			this.scheduleNextService(this.getNowCycles());
+			this.scheduleNextService(this.scheduler.currentNowCycles());
 			this.refreshSubmitBusyStatus();
 			return;
 		}
@@ -1334,7 +1333,7 @@ export class VDP implements VramWriteSink {
 		this.lastFrameHeld = false;
 		this.clearActiveFrame();
 		this.promotePendingFrame();
-		this.scheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.scheduler.currentNowCycles());
 		this.refreshSubmitBusyStatus();
 	}
 
@@ -1914,7 +1913,7 @@ export class VDP implements VramWriteSink {
 	public beginFrame(): void {
 		this.readBudgetBytes = VDP_RD_BUDGET_BYTES;
 		this.readOverflow = false;
-		this.scheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.scheduler.currentNowCycles());
 	}
 
 	public readVdpStatus(): number {
@@ -1980,7 +1979,7 @@ export class VDP implements VramWriteSink {
 		this.recycleBlitterBuffers(this.pendingBlitterQueue);
 		this.workCarry = 0n;
 		this.availableWorkUnits = 0;
-		this.cancelService();
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
 		this.pendingFrameOccupied = false;
 		this.pendingFrameCost = 0;
 		this.pendingDitherType = 0;
@@ -2184,7 +2183,7 @@ export class VDP implements VramWriteSink {
 		this.recycleBlitterBuffers(this.pendingBlitterQueue);
 		this.workCarry = 0n;
 		this.availableWorkUnits = 0;
-		this.cancelService();
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
 		this.pendingFrameOccupied = false;
 		this.pendingFrameCost = 0;
 		this.pendingDitherType = 0;

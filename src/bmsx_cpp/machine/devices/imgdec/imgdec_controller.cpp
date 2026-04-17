@@ -35,23 +35,19 @@ ImgDecController::ImgDecController(
 	Memory& memory,
 	DmaController& dma,
 	IrqController& irq,
-	std::function<int64_t()> getNowCycles,
-	std::function<void(int64_t deadlineCycles)> scheduleService,
-	std::function<void()> cancelService
+	DeviceScheduler& scheduler
 )
 	: m_gate(imgdecGate().group("imgdec"))
 	, m_memory(memory)
 	, m_dma(dma)
-		, m_irq(irq)
-		, m_getNowCycles(std::move(getNowCycles))
-		, m_scheduleService(std::move(scheduleService))
-		, m_cancelService(std::move(cancelService)) {
+	, m_irq(irq)
+	, m_scheduler(scheduler) {
 		m_memory.mapIoWrite(IO_IMG_CTRL, this, &ImgDecController::onCtrlWriteThunk);
 	}
 
 void ImgDecController::onCtrlWriteThunk(void* context, uint32_t, Value) {
 	auto* controller = static_cast<ImgDecController*>(context);
-	controller->onCtrlWrite(controller->m_getNowCycles());
+	controller->onCtrlWrite(controller->m_scheduler.currentNowCycles());
 }
 
 void ImgDecController::setTiming(int64_t cpuHz, int64_t decodeBytesPerSec, int64_t nowCycles) {
@@ -107,7 +103,7 @@ void ImgDecController::decodeToVram(
 	job.resolve = std::move(onComplete);
 	job.reject = std::move(onError);
 	m_queuedJobs.push_back(std::move(job));
-	scheduleNextService(m_getNowCycles());
+	scheduleNextService(m_scheduler.currentNowCycles());
 }
 
 void ImgDecController::reset() {
@@ -130,7 +126,7 @@ void ImgDecController::reset() {
 	m_signalIrq = false;
 	m_queuedJobs.clear();
 	m_activeJob.reset();
-	m_cancelService();
+	m_scheduler.cancelDeviceService(DeviceServiceImg);
 	m_memory.writeValue(IO_IMG_SRC, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_LEN, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_DST, valueNumber(0.0));
@@ -173,7 +169,7 @@ void ImgDecController::onCtrlWrite(int64_t nowCycles) {
 void ImgDecController::onService(int64_t nowCycles) {
 	tryStartQueued();
 	if (!m_active) {
-		m_cancelService();
+		m_scheduler.cancelDeviceService(DeviceServiceImg);
 		return;
 	}
 	if (m_pendingError) {
@@ -287,12 +283,12 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 			if (token == m_decodeToken) {
 				m_pendingResult = std::move(result);
 				m_pendingEntry = entry;
-				scheduleNextService(m_getNowCycles());
+				scheduleNextService(m_scheduler.currentNowCycles());
 			}
 		} catch (...) {
 			if (token == m_decodeToken) {
 				m_pendingError = std::current_exception();
-				scheduleNextService(m_getNowCycles());
+				scheduleNextService(m_scheduler.currentNowCycles());
 			}
 		}
 		m_gate.end(m_gateToken);
@@ -399,7 +395,7 @@ void ImgDecController::finishSuccess(bool clipped) {
 	}
 	m_decodeWidth = 0;
 	m_decodeHeight = 0;
-	scheduleNextService(m_getNowCycles());
+	scheduleNextService(m_scheduler.currentNowCycles());
 }
 
 void ImgDecController::finishError(std::exception_ptr error) {
@@ -425,33 +421,33 @@ void ImgDecController::finishError(std::exception_ptr error) {
 	}
 	m_decodeWidth = 0;
 	m_decodeHeight = 0;
-	scheduleNextService(m_getNowCycles());
+	scheduleNextService(m_scheduler.currentNowCycles());
 }
 
 void ImgDecController::scheduleNextService(int64_t nowCycles) {
 	if (!m_active) {
 		if (!m_queuedJobs.empty()) {
-			m_scheduleService(nowCycles);
+			m_scheduler.scheduleDeviceService(DeviceServiceImg, nowCycles);
 			return;
 		}
-		m_cancelService();
+		m_scheduler.cancelDeviceService(DeviceServiceImg);
 		return;
 	}
 	if (m_pendingError || (m_pendingResult.has_value() && m_pendingEntry.has_value())) {
-		m_scheduleService(nowCycles);
+		m_scheduler.scheduleDeviceService(DeviceServiceImg, nowCycles);
 		return;
 	}
 	if (m_decodeActive && !m_decodeQueued && m_decodeRemaining > 0) {
 		const uint32_t pendingBytes = static_cast<uint32_t>(m_decodeRemaining);
 		const uint32_t targetBytes = pendingBytes < IMGDEC_SERVICE_BATCH_BYTES ? pendingBytes : IMGDEC_SERVICE_BATCH_BYTES;
 		if (m_availableDecodeBytes >= targetBytes) {
-			m_scheduleService(nowCycles);
+			m_scheduler.scheduleDeviceService(DeviceServiceImg, nowCycles);
 			return;
 		}
-		m_scheduleService(nowCycles + cyclesUntilDecodeBytes(targetBytes - m_availableDecodeBytes));
+		m_scheduler.scheduleDeviceService(DeviceServiceImg, nowCycles + cyclesUntilDecodeBytes(targetBytes - m_availableDecodeBytes));
 		return;
 	}
-	m_cancelService();
+	m_scheduler.cancelDeviceService(DeviceServiceImg);
 }
 
 int64_t ImgDecController::cyclesUntilDecodeBytes(uint32_t targetBytes) const {

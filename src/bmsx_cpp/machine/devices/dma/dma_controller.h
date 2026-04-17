@@ -1,6 +1,7 @@
 #pragma once
 
 #include "machine/memory/memory.h"
+#include "machine/scheduler/device_scheduler.h"
 
 #include <cstdint>
 #include <deque>
@@ -24,9 +25,7 @@ public:
 				Memory& memory,
 				IrqController& irq,
 				VDP& vdp,
-				std::function<int64_t()> getNowCycles,
-				std::function<void(int64_t deadlineCycles)> scheduleService,
-				std::function<void()> cancelService
+				DeviceScheduler& scheduler
 	);
 
 	void setTiming(int64_t cpuHz, int64_t isoBytesPerSec, int64_t bulkBytesPerSec, int64_t nowCycles);
@@ -99,9 +98,7 @@ public:
 			Memory& m_memory;
 			VDP& m_vdp;
 			IrqController& m_irq;
-			std::function<int64_t()> m_getNowCycles;
-	std::function<void(int64_t deadlineCycles)> m_scheduleService;
-	std::function<void()> m_cancelService;
+			DeviceScheduler& m_scheduler;
 	std::vector<uint8_t> m_buffer;
 };
 

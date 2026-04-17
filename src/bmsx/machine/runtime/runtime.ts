@@ -68,6 +68,16 @@ import { ResourceUsageDetector } from './resource_usage_detector';
 import { configureLuaHeapUsage } from '../memory/lua_heap_usage';
 import { RuntimeFrameLoopState } from './runtime_frame_loop';
 import { RuntimeMachineSchedulerState } from './runtime_machine_scheduler';
+import {
+	DEVICE_SERVICE_DMA,
+	DEVICE_SERVICE_GEO,
+	DEVICE_SERVICE_IMG,
+	DEVICE_SERVICE_VDP,
+	DeviceScheduler,
+	TIMER_KIND_DEVICE_SERVICE,
+	TIMER_KIND_VBLANK_BEGIN,
+	TIMER_KIND_VBLANK_END,
+} from '../scheduler/device_scheduler';
 import { RuntimeScreenState } from './runtime_screen';
 import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from './runtime_timing';
 import { RuntimeTimingState } from './runtime_timing_state';
@@ -158,15 +168,6 @@ type EditorViewOptionsSnapshot = {
 type ProgramSource = 'engine' | 'cart';
 type RuntimeAssetCollectionKey = 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents';
 type RuntimeLayerLookup = Partial<Record<CartridgeLayerId, RuntimeAssetLayer>>;
-
-const TIMER_KIND_VBLANK_BEGIN = 1;
-const TIMER_KIND_VBLANK_END = 2;
-const TIMER_KIND_DEVICE_SERVICE = 3;
-const DEVICE_SERVICE_GEO = 1;
-const DEVICE_SERVICE_DMA = 2;
-const DEVICE_SERVICE_IMG = 3;
-const DEVICE_SERVICE_VDP = 4;
-const DEVICE_SERVICE_KIND_COUNT = DEVICE_SERVICE_VDP + 1;
 
 export var api: Api; // Initialized in Runtime constructor
 
@@ -270,7 +271,7 @@ export class Runtime {
 		}
 		this.cycleBudgetPerFrame = value;
 		runtimeLuaPipeline.registerGlobal(this, 'sys_max_cycles_per_frame', value);
-		this.refreshDeviceTimings(this.currentSchedulerNowCycles());
+		this.refreshDeviceTimings(this.deviceScheduler.currentNowCycles());
 		if (this.vblankCycles > 0) {
 			if (this.vblankCycles > this.cycleBudgetPerFrame) {
 				throw runtimeFault('vblank_cycles must be less than or equal to cycles_per_frame.');
@@ -349,9 +350,9 @@ export class Runtime {
 		this.runDueTimers();
 		while (remaining > 0) {
 			let sliceBudget = remaining;
-			const nextDeadline = this.nextTimerDeadline();
+			const nextDeadline = this.deviceScheduler.nextDeadline();
 			if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
-				const deadlineBudget = nextDeadline - this.schedulerNowCycles;
+				const deadlineBudget = nextDeadline - this.deviceScheduler.nowCycles;
 				if (deadlineBudget <= 0) {
 					this.runDueTimers();
 					continue;
@@ -360,12 +361,9 @@ export class Runtime {
 					sliceBudget = deadlineBudget;
 				}
 			}
-			this.schedulerSliceActive = true;
-			this.activeSliceBaseCycle = this.schedulerNowCycles;
-			this.activeSliceBudgetCycles = sliceBudget;
-			this.activeSliceTargetCycle = this.schedulerNowCycles + sliceBudget;
+			this.deviceScheduler.beginCpuSlice(sliceBudget);
 			result = this.cpu.run(sliceBudget);
-			this.schedulerSliceActive = false;
+			this.deviceScheduler.endCpuSlice();
 			const sliceRemaining = this.cpu.instructionBudgetRemaining;
 			const consumed = sliceBudget - sliceRemaining;
 			if (consumed > 0) {
@@ -416,157 +414,28 @@ export class Runtime {
 		if (cycles <= 0) {
 			return;
 		}
-		const nextNow = this.schedulerNowCycles + cycles;
+		const nextNow = this.deviceScheduler.nowCycles + cycles;
 		this.dmaController.accrueCycles(cycles, nextNow);
 		this.imgDecController.accrueCycles(cycles, nextNow);
 		this.geometryController.accrueCycles(cycles, nextNow);
 		this.vdp.accrueCycles(cycles, nextNow);
-		this.schedulerNowCycles = nextNow;
+		this.deviceScheduler.advanceTo(nextNow);
 		this.runDueTimers();
 	}
 
-	private currentSchedulerNowCycles(): number {
-		if (!this.schedulerSliceActive) {
-			return this.schedulerNowCycles;
-		}
-		const consumed = this.activeSliceBudgetCycles - this.cpu.instructionBudgetRemaining;
-		return this.activeSliceBaseCycle + consumed;
-	}
-
 	private getCyclesIntoFrame(): number {
-		return this.schedulerNowCycles - this.frameStartCycle;
+		return this.deviceScheduler.nowCycles - this.frameStartCycle;
 	}
 
 	private resetSchedulerState(): void {
-		this.clearTimerHeap();
-		this.schedulerNowCycles = 0;
+		this.deviceScheduler.reset();
 		this.frameStartCycle = 0;
-		this.schedulerSliceActive = false;
-		this.activeSliceBaseCycle = 0;
-		this.activeSliceBudgetCycles = 0;
-		this.activeSliceTargetCycle = 0;
-		this.vblankEnterTimerGeneration = 0;
-		this.vblankEndTimerGeneration = 0;
-		this.deviceServiceTimerGeneration.fill(0);
-	}
-
-	private clearTimerHeap(): void {
-		this.timerCount = 0;
-		this.timerDeadlines.length = 0;
-		this.timerKinds.length = 0;
-		this.timerPayloads.length = 0;
-		this.timerGenerations.length = 0;
-	}
-
-	private nextTimerGeneration(value: number): number {
-		const next = (value + 1) >>> 0;
-		return next === 0 ? 1 : next;
-	}
-
-	private pushTimer(deadline: number, kind: number, payload: number, generation: number): void {
-		let index = this.timerCount;
-		this.timerCount += 1;
-		this.timerDeadlines[index] = deadline;
-		this.timerKinds[index] = kind;
-		this.timerPayloads[index] = payload;
-		this.timerGenerations[index] = generation;
-		while (index > 0) {
-			const parent = (index - 1) >> 1;
-			if (this.timerDeadlines[parent]! <= deadline) {
-				break;
-			}
-			this.timerDeadlines[index] = this.timerDeadlines[parent]!;
-			this.timerKinds[index] = this.timerKinds[parent]!;
-			this.timerPayloads[index] = this.timerPayloads[parent]!;
-			this.timerGenerations[index] = this.timerGenerations[parent]!;
-			index = parent;
-		}
-		this.timerDeadlines[index] = deadline;
-		this.timerKinds[index] = kind;
-		this.timerPayloads[index] = payload;
-		this.timerGenerations[index] = generation;
-	}
-
-	private removeTopTimer(): void {
-		const lastIndex = this.timerCount - 1;
-		if (lastIndex < 0) {
-			return;
-		}
-		const deadline = this.timerDeadlines[lastIndex]!;
-		const kind = this.timerKinds[lastIndex]!;
-		const payload = this.timerPayloads[lastIndex]!;
-		const generation = this.timerGenerations[lastIndex]!;
-		this.timerCount = lastIndex;
-		this.timerDeadlines.length = lastIndex;
-		this.timerKinds.length = lastIndex;
-		this.timerPayloads.length = lastIndex;
-		this.timerGenerations.length = lastIndex;
-		if (lastIndex === 0) {
-			return;
-		}
-		let index = 0;
-		const half = lastIndex >> 1;
-		while (index < half) {
-			let child = (index << 1) + 1;
-			if (child + 1 < lastIndex && this.timerDeadlines[child + 1]! < this.timerDeadlines[child]!) {
-				child += 1;
-			}
-			if (this.timerDeadlines[child]! >= deadline) {
-				break;
-			}
-			this.timerDeadlines[index] = this.timerDeadlines[child]!;
-			this.timerKinds[index] = this.timerKinds[child]!;
-			this.timerPayloads[index] = this.timerPayloads[child]!;
-			this.timerGenerations[index] = this.timerGenerations[child]!;
-			index = child;
-		}
-		this.timerDeadlines[index] = deadline;
-		this.timerKinds[index] = kind;
-		this.timerPayloads[index] = payload;
-		this.timerGenerations[index] = generation;
-	}
-
-	private isTimerCurrent(kind: number, payload: number, generation: number): boolean {
-		switch (kind) {
-			case TIMER_KIND_VBLANK_BEGIN:
-				return generation === this.vblankEnterTimerGeneration;
-			case TIMER_KIND_VBLANK_END:
-				return generation === this.vblankEndTimerGeneration;
-			case TIMER_KIND_DEVICE_SERVICE:
-				return generation === this.deviceServiceTimerGeneration[payload];
-			default:
-				throw runtimeFault(`unknown timer kind ${kind}.`);
-		}
-	}
-
-	private discardStaleTopTimers(): void {
-		while (this.timerCount > 0) {
-			const kind = this.timerKinds[0]!;
-			const payload = this.timerPayloads[0]!;
-			const generation = this.timerGenerations[0]!;
-			if (this.isTimerCurrent(kind, payload, generation)) {
-				return;
-			}
-			this.removeTopTimer();
-		}
-	}
-
-	private nextTimerDeadline(): number {
-		this.discardStaleTopTimers();
-		if (this.timerCount === 0) {
-			return Number.MAX_SAFE_INTEGER;
-		}
-		return this.timerDeadlines[0]!;
 	}
 
 	private runDueTimers(): void {
-		this.discardStaleTopTimers();
-		while (this.timerCount > 0 && this.timerDeadlines[0]! <= this.schedulerNowCycles) {
-			const kind = this.timerKinds[0]!;
-			const payload = this.timerPayloads[0]!;
-			this.removeTopTimer();
-			this.dispatchTimer(kind, payload);
-			this.discardStaleTopTimers();
+		while (this.deviceScheduler.hasDueTimer()) {
+			const event = this.deviceScheduler.popDueTimer();
+			this.dispatchTimer(event >> 8, event & 0xff);
 		}
 	}
 
@@ -586,24 +455,10 @@ export class Runtime {
 		}
 	}
 
-	private scheduleVblankBeginTimer(deadlineCycles: number): void {
-		const generation = this.nextTimerGeneration(this.vblankEnterTimerGeneration);
-		this.vblankEnterTimerGeneration = generation;
-		this.pushTimer(deadlineCycles, TIMER_KIND_VBLANK_BEGIN, 0, generation);
-		this.requestYieldForEarlierDeadline(deadlineCycles);
-	}
-
-	private scheduleVblankEndTimer(deadlineCycles: number): void {
-		const generation = this.nextTimerGeneration(this.vblankEndTimerGeneration);
-		this.vblankEndTimerGeneration = generation;
-		this.pushTimer(deadlineCycles, TIMER_KIND_VBLANK_END, 0, generation);
-		this.requestYieldForEarlierDeadline(deadlineCycles);
-	}
-
 	private scheduleCurrentFrameTimers(): void {
-		this.scheduleVblankEndTimer(this.frameStartCycle + this.cycleBudgetPerFrame);
+		this.deviceScheduler.scheduleVblankEnd(this.frameStartCycle + this.cycleBudgetPerFrame);
 		if (this.vblankStartCycle > 0 && this.getCyclesIntoFrame() < this.vblankStartCycle) {
-			this.scheduleVblankBeginTimer(this.frameStartCycle + this.vblankStartCycle);
+			this.deviceScheduler.scheduleVblankBegin(this.frameStartCycle + this.vblankStartCycle);
 		}
 	}
 
@@ -617,36 +472,15 @@ export class Runtime {
 		if (this.vblankActive) {
 			this.leaveVblank();
 		}
-		this.frameStartCycle = this.schedulerNowCycles;
+		this.frameStartCycle = this.deviceScheduler.nowCycles;
 		this.scheduleCurrentFrameTimers();
 		if (this.vblankStartCycle === 0) {
 			this.enterVblank();
 		}
 	}
 
-	private scheduleDeviceService(deviceKind: number, deadlineCycles: number): void {
-		const generation = this.nextTimerGeneration(this.deviceServiceTimerGeneration[deviceKind]!);
-		this.deviceServiceTimerGeneration[deviceKind] = generation;
-		this.pushTimer(deadlineCycles, TIMER_KIND_DEVICE_SERVICE, deviceKind, generation);
-		this.requestYieldForEarlierDeadline(deadlineCycles);
-	}
-
-	private cancelDeviceService(deviceKind: number): void {
-		this.deviceServiceTimerGeneration[deviceKind] = this.nextTimerGeneration(this.deviceServiceTimerGeneration[deviceKind]!);
-	}
-
-	private requestYieldForEarlierDeadline(deadlineCycles: number): void {
-		if (!this.schedulerSliceActive) {
-			return;
-		}
-		if (deadlineCycles > this.activeSliceTargetCycle) {
-			return;
-		}
-		this.cpu.requestYield();
-	}
-
 	private runDeviceService(deviceKind: number): void {
-		const nowCycles = this.schedulerNowCycles;
+		const nowCycles = this.deviceScheduler.nowCycles;
 		switch (deviceKind) {
 			case DEVICE_SERVICE_GEO:
 				this.geometryController.onService(nowCycles);
@@ -744,7 +578,7 @@ export class Runtime {
 	}
 	public setCpuHz(value: number): void {
 		this._cpuHz = value;
-		this.refreshDeviceTimings(this.currentSchedulerNowCycles());
+		this.refreshDeviceTimings(this.deviceScheduler.currentNowCycles());
 	}
 	public applyActiveMachineTiming(cpuHz: number): void {
 		const perfSpecs = getMachinePerfSpecs($.machine_manifest);
@@ -760,12 +594,12 @@ export class Runtime {
 
 	public setVdpWorkUnitsPerSec(value: number): void {
 		this.vdpWorkUnitsPerSec = Runtime.resolveVdpWorkUnitsPerSec(value);
-		this.vdp.setTiming(this._cpuHz, this.vdpWorkUnitsPerSec, this.currentSchedulerNowCycles());
+		this.vdp.setTiming(this._cpuHz, this.vdpWorkUnitsPerSec, this.deviceScheduler.currentNowCycles());
 	}
 
 	public setGeoWorkUnitsPerSec(value: number): void {
 		this.geoWorkUnitsPerSec = Runtime.resolveGeoWorkUnitsPerSec(value);
-		this.geometryController.setTiming(this._cpuHz, this.geoWorkUnitsPerSec, this.currentSchedulerNowCycles());
+		this.geometryController.setTiming(this._cpuHz, this.geoWorkUnitsPerSec, this.deviceScheduler.currentNowCycles());
 	}
 
 	public setTransferRatesFromManifest(specs: { imgdec_bytes_per_sec: number; dma_bytes_per_sec_iso: number; dma_bytes_per_sec_bulk: number; work_units_per_sec: number; geo_work_units_per_sec: number; }): void {
@@ -774,7 +608,7 @@ export class Runtime {
 		this.dmaBytesPerSecBulk = Runtime.resolveBytesPerSec(specs.dma_bytes_per_sec_bulk, 'machine.specs.dma.dma_bytes_per_sec_bulk');
 		this.setVdpWorkUnitsPerSec(specs.work_units_per_sec);
 		this.setGeoWorkUnitsPerSec(specs.geo_work_units_per_sec);
-		this.refreshDeviceTimings(this.currentSchedulerNowCycles());
+		this.refreshDeviceTimings(this.deviceScheduler.currentNowCycles());
 	}
 
 	public setVblankCycles(cycles: number): void {
@@ -802,7 +636,7 @@ export class Runtime {
 			this.setVblankStatus(true);
 		}
 		this.scheduleCurrentFrameTimers();
-		this.refreshDeviceTimings(this.schedulerNowCycles);
+		this.refreshDeviceTimings(this.deviceScheduler.nowCycles);
 	}
 
 	public resetRenderBuffers(): void {
@@ -897,7 +731,7 @@ export class Runtime {
 		this.screen.reset();
 		this.inputController.sampleArmed = state.inputSampleArmed === true;
 		this.resetSchedulerState();
-		this.schedulerNowCycles = state.cyclesIntoFrame;
+		this.deviceScheduler.setNowCycles(state.cyclesIntoFrame);
 		this.frameStartCycle = 0;
 		this.vblankSequence = 0;
 		this.lastCompletedVblankSequence = 0;
@@ -907,7 +741,7 @@ export class Runtime {
 			|| (this.getCyclesIntoFrame() >= this.vblankStartCycle);
 		this.setVblankStatus(vblankActive);
 		this.scheduleCurrentFrameTimers();
-		this.refreshDeviceTimings(this.schedulerNowCycles);
+		this.refreshDeviceTimings(this.deviceScheduler.nowCycles);
 	}
 	private includeJsStackTraces = false;
 	public realtimeCompileOptLevel: 0 | 1 | 2 | 3 = 3;
@@ -929,20 +763,7 @@ export class Runtime {
 	private imgDecBytesPerSec = 0;
 	private dmaBytesPerSecIso = 0;
 	private dmaBytesPerSecBulk = 0;
-	private schedulerNowCycles = 0;
 	private frameStartCycle = 0;
-	private schedulerSliceActive = false;
-	private activeSliceBaseCycle = 0;
-	private activeSliceBudgetCycles = 0;
-	private activeSliceTargetCycle = 0;
-	private readonly timerDeadlines: number[] = [];
-	private readonly timerKinds: number[] = [];
-	private readonly timerPayloads: number[] = [];
-	private readonly timerGenerations: number[] = [];
-	private timerCount = 0;
-	private vblankEnterTimerGeneration = 0;
-	private vblankEndTimerGeneration = 0;
-	private readonly deviceServiceTimerGeneration = new Uint32Array(DEVICE_SERVICE_KIND_COUNT);
 	public lastTickSequence: number = 0;
 	public lastTickBudgetGranted: number = 0;
 	public lastTickCpuBudgetGranted: number = 0;
@@ -953,6 +774,7 @@ export class Runtime {
 	public lastTickVdpFrameHeld: boolean = false;
 	public lastTickCompleted: boolean = false;
 	private activeTickCompleted = false;
+	public readonly deviceScheduler: DeviceScheduler;
 	public readonly machineScheduler = new RuntimeMachineSchedulerState();
 	public readonly frameLoop = new RuntimeFrameLoopState();
 	public readonly screen = new RuntimeScreenState();
@@ -1502,16 +1324,16 @@ export class Runtime {
 		this.cartCanonicalization = resolvedCanonicalization;
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.memory = options.memory;
+		this.stringHandles = new StringHandleTable(this.memory);
+		this.runtimeStringPool = new StringPool(this.stringHandles);
+		this.cpu = new CPU(this.memory, this.runtimeStringPool);
+		this.deviceScheduler = new DeviceScheduler(this.cpu);
 		this.irqController = new IrqController(this.memory);
 		this.vdp = new VDP(
 			this.memory,
 			createVdpBlitterExecutor($.view.backend),
-			() => this.currentSchedulerNowCycles(),
-			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_VDP, deadlineCycles),
-			() => this.cancelDeviceService(DEVICE_SERVICE_VDP),
+			this.deviceScheduler,
 		);
-		this.stringHandles = new StringHandleTable(this.memory);
-		this.runtimeStringPool = new StringPool(this.stringHandles);
 		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
 		this.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, 0);
@@ -1522,24 +1344,18 @@ export class Runtime {
 			this.memory,
 			this.irqController,
 			this.vdp,
-			() => this.currentSchedulerNowCycles(),
-			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_DMA, deadlineCycles),
-			() => this.cancelDeviceService(DEVICE_SERVICE_DMA),
+			this.deviceScheduler,
 		);
 		this.imgDecController = new ImgDecController(
 			this.memory,
 			this.dmaController,
 			this.irqController,
-			() => this.currentSchedulerNowCycles(),
-			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_IMG, deadlineCycles),
-			() => this.cancelDeviceService(DEVICE_SERVICE_IMG),
+			this.deviceScheduler,
 		);
 		this.geometryController = new GeometryController(
 			this.memory,
 			this.irqController,
-			() => this.currentSchedulerNowCycles(),
-			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_GEO, deadlineCycles),
-			() => this.cancelDeviceService(DEVICE_SERVICE_GEO),
+			this.deviceScheduler,
 		);
 		this.inputController = new InputController(this.memory, Input.instance);
 		this.inputController.reset();
@@ -1548,7 +1364,6 @@ export class Runtime {
 		this.imgDecController.reset();
 		this.audioController.reset();
 		this.vdp.initializeRegisters();
-		this.cpu = new CPU(this.memory, this.runtimeStringPool);
 		this.resourceUsageDetector = new ResourceUsageDetector(
 			this.memory,
 			this.stringHandles,
@@ -1890,7 +1705,7 @@ export class Runtime {
 				return this.activeTickCompleted;
 			}
 			if (state.cycleBudgetRemaining > 0) {
-				const cyclesToTarget = this.nextTimerDeadline() - this.schedulerNowCycles;
+				const cyclesToTarget = this.deviceScheduler.nextDeadline() - this.deviceScheduler.nowCycles;
 				if (cyclesToTarget <= 0) {
 					this.runDueTimers();
 					continue;
@@ -2478,9 +2293,9 @@ export class Runtime {
 			this.runDueTimers();
 			while (this.cpu.getFrameDepth() > depth) {
 				let sliceBudget = remaining;
-				const nextDeadline = this.nextTimerDeadline();
+				const nextDeadline = this.deviceScheduler.nextDeadline();
 				if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
-					const deadlineBudget = nextDeadline - this.schedulerNowCycles;
+					const deadlineBudget = nextDeadline - this.deviceScheduler.nowCycles;
 					if (deadlineBudget <= 0) {
 						this.runDueTimers();
 						continue;
@@ -2489,12 +2304,9 @@ export class Runtime {
 						sliceBudget = deadlineBudget;
 					}
 				}
-				this.schedulerSliceActive = true;
-				this.activeSliceBaseCycle = this.schedulerNowCycles;
-				this.activeSliceBudgetCycles = sliceBudget;
-				this.activeSliceTargetCycle = this.schedulerNowCycles + sliceBudget;
+				this.deviceScheduler.beginCpuSlice(sliceBudget);
 				const result = this.cpu.runUntilDepth(depth, sliceBudget);
-				this.schedulerSliceActive = false;
+				this.deviceScheduler.endCpuSlice();
 				const sliceRemaining = this.cpu.instructionBudgetRemaining;
 				const consumed = sliceBudget - sliceRemaining;
 				if (consumed > 0) {

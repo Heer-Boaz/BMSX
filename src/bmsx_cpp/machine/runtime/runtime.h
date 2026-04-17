@@ -9,6 +9,7 @@
 #include "machine/devices/irq/irq_controller.h"
 #include "machine/bus/io.h"
 #include "machine/runtime/runtime_screen.h"
+#include "machine/scheduler/device_scheduler.h"
 #include "machine/runtime/runtime_timing.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/runtime_frame_loop.h"
@@ -19,7 +20,6 @@
 #include "core/types.h"
 #include <array>
 #include <chrono>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <regex>
@@ -318,19 +318,6 @@ private:
 		None,
 		Entry,
 	};
-	enum TimerKind : uint8_t {
-		TimerKindVblankBegin = 1,
-		TimerKindVblankEnd = 2,
-		TimerKindDeviceService = 3,
-	};
-	enum DeviceServiceKind : uint8_t {
-		DeviceServiceGeo = 1,
-		DeviceServiceDma = 2,
-		DeviceServiceImg = 3,
-		DeviceServiceVdp = 4,
-		DeviceServiceKindCount = 5,
-	};
-
 	explicit Runtime(const RuntimeOptions& options);
 	~Runtime();
 
@@ -340,26 +327,13 @@ private:
 	void executeUpdateCallback();
 	void refreshDeviceTimings(i64 nowCycles);
 	void advanceTime(int cycles);
-	i64 currentSchedulerNowCycles() const;
 	int getCyclesIntoFrame() const;
 	void resetSchedulerState();
-	void clearTimerHeap();
-	static uint32_t nextTimerGeneration(uint32_t value);
-	void pushTimer(i64 deadline, uint8_t kind, uint8_t payload, uint32_t generation);
-	void removeTopTimer();
-	bool isTimerCurrent(uint8_t kind, uint8_t payload, uint32_t generation) const;
-	void discardStaleTopTimers();
-	i64 nextTimerDeadline();
 	void runDueTimers();
 	void dispatchTimer(uint8_t kind, uint8_t payload);
-	void scheduleVblankBeginTimer(i64 deadlineCycles);
-	void scheduleVblankEndTimer(i64 deadlineCycles);
 	void scheduleCurrentFrameTimers();
 	void handleVblankBeginTimer();
 	void handleVblankEndTimer();
-	void scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles);
-	void cancelDeviceService(uint8_t deviceKind);
-	void requestYieldForEarlierDeadline(i64 deadlineCycles);
 	void runDeviceService(uint8_t deviceKind);
 	void resetVblankState();
 	void setVblankStatus(bool active);
@@ -401,6 +375,7 @@ private:
 		Memory m_memory;
 		StringHandleTable m_stringHandles;
 		CPU m_cpu;
+		DeviceScheduler m_deviceScheduler;
 		std::unique_ptr<Api> m_api;
 		VDP m_vdp;
 		IrqController m_irqController;
@@ -471,20 +446,7 @@ private:
 	int m_cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
 	int m_vblankCycles = 0;
 	int m_vblankStartCycle = 0;
-	i64 m_schedulerNowCycles = 0;
 	i64 m_frameStartCycle = 0;
-	bool m_schedulerSliceActive = false;
-	i64 m_activeSliceBaseCycle = 0;
-	int m_activeSliceBudgetCycles = 0;
-	i64 m_activeSliceTargetCycle = 0;
-	std::vector<i64> m_timerDeadlines;
-	std::vector<uint8_t> m_timerKinds;
-	std::vector<uint8_t> m_timerPayloads;
-	std::vector<uint32_t> m_timerGenerations;
-	size_t m_timerCount = 0;
-	uint32_t m_vblankEnterTimerGeneration = 0;
-	uint32_t m_vblankEndTimerGeneration = 0;
-	std::array<uint32_t, static_cast<size_t>(DeviceServiceKindCount)> m_deviceServiceTimerGeneration{};
 	uint64_t m_haltIrqSignalSequence = 0;
 	bool m_haltIrqWaitArmed = false;
 	uint64_t m_vblankSequence = 0;

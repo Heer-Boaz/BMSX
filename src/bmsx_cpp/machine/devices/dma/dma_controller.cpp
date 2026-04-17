@@ -20,16 +20,12 @@ DmaController::DmaController(
 			Memory& memory,
 			IrqController& irq,
 			VDP& vdp,
-			std::function<int64_t()> getNowCycles,
-			std::function<void(int64_t deadlineCycles)> scheduleService,
-			std::function<void()> cancelService
+			DeviceScheduler& scheduler
 	)
 			: m_memory(memory)
 			, m_vdp(vdp)
 			, m_irq(irq)
-			, m_getNowCycles(std::move(getNowCycles))
-		, m_scheduleService(std::move(scheduleService))
-		, m_cancelService(std::move(cancelService)) {
+			, m_scheduler(scheduler) {
 		m_memory.mapIoWrite(IO_DMA_CTRL, this, &DmaController::onCtrlWriteThunk);
 	}
 
@@ -91,7 +87,7 @@ void DmaController::accrueCycles(int cycles, int64_t nowCycles) {
 
 void DmaController::onService(int64_t nowCycles) {
 	if (!hasPendingIsoTransfer() && !hasPendingBulkTransfer()) {
-		m_cancelService();
+		m_scheduler.cancelDeviceService(DeviceServiceDma);
 		return;
 	}
 	bool ioWrittenDirty = false;
@@ -139,7 +135,7 @@ void DmaController::enqueueImageCopy(const Memory::ImageWritePlan& plan, std::ve
 	job.fault = nullptr;
 	job.onComplete = std::move(onComplete);
 	m_channels[static_cast<int>(Channel::Bulk)].queue.push_back(std::move(job));
-	scheduleNextService(m_getNowCycles());
+	scheduleNextService(m_scheduler.currentNowCycles());
 }
 
 void DmaController::reset() {
@@ -153,7 +149,7 @@ void DmaController::reset() {
 	m_ioWrittenValue = 0;
 	m_imgWrittenValue = 0;
 	m_buffer.clear();
-	m_cancelService();
+	m_scheduler.cancelDeviceService(DeviceServiceDma);
 	m_memory.writeValue(IO_DMA_SRC, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_DST, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_LEN, valueNumber(0.0));
@@ -351,7 +347,7 @@ void DmaController::tryStartIo() {
 	job.error = false;
 	m_ioWrittenValue = 0;
 	m_channels[static_cast<int>(Channel::Bulk)].queue.push_back(std::move(job));
-	scheduleNextService(m_getNowCycles());
+	scheduleNextService(m_scheduler.currentNowCycles());
 }
 
 void DmaController::finishIoJob(DmaJob& job) {
@@ -419,7 +415,7 @@ void DmaController::scheduleNextService(int64_t nowCycles) {
 	const bool pendingIso = hasPendingIsoTransfer();
 	const bool pendingBulk = hasPendingBulkTransfer();
 	if (!pendingIso && !pendingBulk) {
-		m_cancelService();
+		m_scheduler.cancelDeviceService(DeviceServiceDma);
 		return;
 	}
 	int64_t nextDeadline = std::numeric_limits<int64_t>::max();
@@ -427,7 +423,7 @@ void DmaController::scheduleNextService(int64_t nowCycles) {
 		const uint32_t pendingBytes = pendingBytesForChannel(Channel::Iso);
 		const uint32_t targetBytes = pendingBytes < DMA_SERVICE_BATCH_BYTES ? pendingBytes : DMA_SERVICE_BATCH_BYTES;
 		if (m_channels[static_cast<int>(Channel::Iso)].budget >= targetBytes) {
-			m_scheduleService(nowCycles);
+			m_scheduler.scheduleDeviceService(DeviceServiceDma, nowCycles);
 			return;
 		}
 		const int64_t deadline = nowCycles + cyclesUntilBytes(m_isoBytesPerSec, m_isoCarry, targetBytes - m_channels[static_cast<int>(Channel::Iso)].budget);
@@ -437,13 +433,13 @@ void DmaController::scheduleNextService(int64_t nowCycles) {
 		const uint32_t pendingBytes = pendingBytesForChannel(Channel::Bulk);
 		const uint32_t targetBytes = pendingBytes < DMA_SERVICE_BATCH_BYTES ? pendingBytes : DMA_SERVICE_BATCH_BYTES;
 		if (m_channels[static_cast<int>(Channel::Bulk)].budget >= targetBytes) {
-			m_scheduleService(nowCycles);
+			m_scheduler.scheduleDeviceService(DeviceServiceDma, nowCycles);
 			return;
 		}
 		const int64_t deadline = nowCycles + cyclesUntilBytes(m_bulkBytesPerSec, m_bulkCarry, targetBytes - m_channels[static_cast<int>(Channel::Bulk)].budget);
 		nextDeadline = deadline < nextDeadline ? deadline : nextDeadline;
 	}
-	m_scheduleService(nextDeadline);
+	m_scheduler.scheduleDeviceService(DeviceServiceDma, nextDeadline);
 }
 
 int64_t DmaController::cyclesUntilBytes(int64_t bytesPerSec, int64_t carry, uint32_t targetBytes) const {

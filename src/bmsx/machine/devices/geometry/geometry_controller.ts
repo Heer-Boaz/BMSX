@@ -70,6 +70,7 @@ import {
 	transformFixed16,
 } from '../../common/numeric';
 import type { IrqController } from '../irq/irq_controller';
+import { DEVICE_SERVICE_GEO, type DeviceScheduler } from '../../scheduler/device_scheduler';
 
 type GeoJob = {
 	cmd: number;
@@ -148,15 +149,13 @@ export class GeometryController {
 	public constructor(
 		private readonly memory: Memory,
 		private readonly irq: IrqController,
-		private readonly getNowCycles: () => number,
-		private readonly scheduleService: (deadlineCycles: number) => void,
-		private readonly cancelService: () => void,
+		private readonly scheduler: DeviceScheduler,
 	) {
 		this.memory.mapIoWrite(IO_GEO_CTRL, this.onCtrlRegisterWrite.bind(this));
 	}
 
 	private onCtrlRegisterWrite(): void {
-		this.onCtrlWrite(this.getNowCycles());
+		this.onCtrlWrite(this.scheduler.currentNowCycles());
 	}
 
 	public setTiming(cpuHz: number, workUnitsPerSec: number, nowCycles: number): void {
@@ -226,7 +225,7 @@ export class GeometryController {
 		this.workCarry = 0n;
 		this.availableWorkUnits = 0;
 		this.activeJob = null;
-		this.cancelService();
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		this.memory.writeValue(IO_GEO_SRC0, 0);
 		this.memory.writeValue(IO_GEO_SRC1, 0);
 		this.memory.writeValue(IO_GEO_SRC2, 0);
@@ -249,7 +248,7 @@ export class GeometryController {
 		this.workCarry = 0n;
 		this.availableWorkUnits = 0;
 		this.activeJob = null;
-		this.cancelService();
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		const ctrl = this.memory.readIoU32(IO_GEO_CTRL);
 		const status = this.memory.readIoU32(IO_GEO_STATUS);
 		const processed = this.memory.readIoU32(IO_GEO_PROCESSED);
@@ -345,16 +344,16 @@ export class GeometryController {
 	private scheduleNextService(nowCycles: number): void {
 		const job = this.activeJob;
 		if (job === null) {
-			this.cancelService();
+			this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 			return;
 		}
 		const remainingRecords = job.count - job.processed;
 		const targetUnits = remainingRecords < GEO_SERVICE_BATCH_RECORDS ? remainingRecords : GEO_SERVICE_BATCH_RECORDS;
 		if (this.availableWorkUnits >= targetUnits) {
-			this.scheduleService(nowCycles);
+			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, nowCycles);
 			return;
 		}
-		this.scheduleService(nowCycles + this.cyclesUntilWorkUnits(targetUnits - this.availableWorkUnits));
+		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, nowCycles + this.cyclesUntilWorkUnits(targetUnits - this.availableWorkUnits));
 	}
 
 	private cyclesUntilWorkUnits(targetUnits: number): number {
@@ -1265,7 +1264,7 @@ export class GeometryController {
 		this.activeJob = null;
 		this.workCarry = 0n;
 		this.availableWorkUnits = 0;
-		this.cancelService();
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_DONE);
 		this.memory.writeValue(IO_GEO_PROCESSED, processed >>> 0);
 		this.memory.writeValue(IO_GEO_FAULT, 0);
@@ -1276,7 +1275,7 @@ export class GeometryController {
 		this.activeJob = null;
 		this.workCarry = 0n;
 		this.availableWorkUnits = 0;
-		this.cancelService();
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
 		this.memory.writeValue(IO_GEO_FAULT, packFault(code, recordIndex));
 		this.irq.raise(IRQ_GEO_ERROR);
@@ -1286,7 +1285,7 @@ export class GeometryController {
 		this.activeJob = null;
 		this.workCarry = 0n;
 		this.availableWorkUnits = 0;
-		this.cancelService();
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_REJECTED);
 		this.memory.writeValue(IO_GEO_PROCESSED, 0);
 		this.memory.writeValue(IO_GEO_FAULT, packFault(code, GEO_RECORD_INDEX_NONE));

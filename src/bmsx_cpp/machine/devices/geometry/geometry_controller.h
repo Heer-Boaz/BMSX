@@ -1,10 +1,10 @@
 #pragma once
 
 #include "machine/memory/memory.h"
+#include "machine/scheduler/device_scheduler.h"
 
 #include <array>
 #include <cstdint>
-#include <functional>
 #include <optional>
 #include <vector>
 
@@ -17,9 +17,7 @@ public:
 		GeometryController(
 			Memory& memory,
 			IrqController& irq,
-			std::function<int64_t()> getNowCycles,
-			std::function<void(int64_t deadlineCycles)> scheduleService,
-			std::function<void()> cancelService
+			DeviceScheduler& scheduler
 		);
 
 	void setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles);
@@ -113,9 +111,7 @@ public:
 		uint32_t m_overlapContactFeatureMeta = 0;
 		Memory& m_memory;
 		IrqController& m_irq;
-		std::function<int64_t()> m_getNowCycles;
-		std::function<void(int64_t deadlineCycles)> m_scheduleService;
-	std::function<void()> m_cancelService;
+		DeviceScheduler& m_scheduler;
 };
 
 } // namespace bmsx

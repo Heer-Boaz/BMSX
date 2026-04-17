@@ -77,15 +77,11 @@ inline uint32_t numberToF32Bits(double value) {
 	GeometryController::GeometryController(
 		Memory& memory,
 		IrqController& irq,
-		std::function<int64_t()> getNowCycles,
-		std::function<void(int64_t deadlineCycles)> scheduleService,
-		std::function<void()> cancelService
+		DeviceScheduler& scheduler
 	)
 		: m_memory(memory)
 		, m_irq(irq)
-		, m_getNowCycles(std::move(getNowCycles))
-		, m_scheduleService(std::move(scheduleService))
-		, m_cancelService(std::move(cancelService)) {
+		, m_scheduler(scheduler) {
 	m_memory.mapIoWrite(IO_GEO_CTRL, this, &GeometryController::onCtrlWriteThunk);
 	m_overlapWorldPolyA.reserve(32u);
 	m_overlapWorldPolyB.reserve(32u);
@@ -95,7 +91,7 @@ inline uint32_t numberToF32Bits(double value) {
 
 void GeometryController::onCtrlWriteThunk(void* context, uint32_t, Value) {
 	auto* controller = static_cast<GeometryController*>(context);
-	controller->onCtrlWrite(controller->m_getNowCycles());
+	controller->onCtrlWrite(controller->m_scheduler.currentNowCycles());
 }
 
 void GeometryController::setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles) {
@@ -138,7 +134,7 @@ void GeometryController::reset() {
 	m_workCarry = 0;
 	m_availableWorkUnits = 0;
 	m_activeJob.reset();
-	m_cancelService();
+	m_scheduler.cancelDeviceService(DeviceServiceGeo);
 	writeRegister(IO_GEO_SRC0, 0);
 	writeRegister(IO_GEO_SRC1, 0);
 	writeRegister(IO_GEO_SRC2, 0);
@@ -161,7 +157,7 @@ void GeometryController::postLoad() {
 	m_workCarry = 0;
 	m_availableWorkUnits = 0;
 	m_activeJob.reset();
-	m_cancelService();
+	m_scheduler.cancelDeviceService(DeviceServiceGeo);
 	const uint32_t ctrl = m_memory.readIoU32(IO_GEO_CTRL);
 	const uint32_t status = m_memory.readIoU32(IO_GEO_STATUS);
 	const uint32_t processed = m_memory.readIoU32(IO_GEO_PROCESSED);
@@ -282,16 +278,16 @@ void GeometryController::tryStart(int64_t nowCycles) {
 
 void GeometryController::scheduleNextService(int64_t nowCycles) {
 	if (!m_activeJob.has_value()) {
-		m_cancelService();
+		m_scheduler.cancelDeviceService(DeviceServiceGeo);
 		return;
 	}
 	const uint32_t remainingRecords = m_activeJob->count - m_activeJob->processed;
 	const uint32_t targetUnits = remainingRecords < GEO_SERVICE_BATCH_RECORDS ? remainingRecords : GEO_SERVICE_BATCH_RECORDS;
 	if (m_availableWorkUnits >= targetUnits) {
-		m_scheduleService(nowCycles);
+		m_scheduler.scheduleDeviceService(DeviceServiceGeo, nowCycles);
 		return;
 	}
-	m_scheduleService(nowCycles + cyclesUntilWorkUnits(targetUnits - m_availableWorkUnits));
+	m_scheduler.scheduleDeviceService(DeviceServiceGeo, nowCycles + cyclesUntilWorkUnits(targetUnits - m_availableWorkUnits));
 }
 
 int64_t GeometryController::cyclesUntilWorkUnits(uint32_t targetUnits) const {
@@ -1206,7 +1202,7 @@ void GeometryController::finishSuccess(uint32_t processed) {
 	m_activeJob.reset();
 	m_workCarry = 0;
 	m_availableWorkUnits = 0u;
-	m_cancelService();
+	m_scheduler.cancelDeviceService(DeviceServiceGeo);
 	writeRegister(IO_GEO_STATUS, GEO_STATUS_DONE);
 	writeRegister(IO_GEO_PROCESSED, processed);
 	writeRegister(IO_GEO_FAULT, 0u);
@@ -1217,7 +1213,7 @@ void GeometryController::finishError(uint32_t code, uint32_t recordIndex, bool s
 	m_activeJob.reset();
 	m_workCarry = 0;
 	m_availableWorkUnits = 0u;
-	m_cancelService();
+	m_scheduler.cancelDeviceService(DeviceServiceGeo);
 	writeRegister(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
 	writeRegister(IO_GEO_FAULT, packFault(code, recordIndex));
 	if (signalIrq) {
@@ -1229,7 +1225,7 @@ void GeometryController::finishRejected(uint32_t code) {
 	m_activeJob.reset();
 	m_workCarry = 0;
 	m_availableWorkUnits = 0u;
-	m_cancelService();
+	m_scheduler.cancelDeviceService(DeviceServiceGeo);
 	writeRegister(IO_GEO_STATUS, GEO_STATUS_REJECTED);
 	writeRegister(IO_GEO_PROCESSED, 0u);
 	writeRegister(IO_GEO_FAULT, packFault(code, GEO_RECORD_INDEX_NONE));

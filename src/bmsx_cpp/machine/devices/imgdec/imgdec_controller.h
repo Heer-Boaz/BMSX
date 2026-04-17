@@ -2,6 +2,7 @@
 
 #include "core/taskgate.h"
 #include "machine/memory/memory.h"
+#include "machine/scheduler/device_scheduler.h"
 #include <cstdint>
 #include <exception>
 #include <deque>
@@ -21,9 +22,7 @@ public:
 		Memory& memory,
 		DmaController& dma,
 		IrqController& irq,
-		std::function<int64_t()> getNowCycles,
-		std::function<void(int64_t deadlineCycles)> scheduleService,
-		std::function<void()> cancelService
+		DeviceScheduler& scheduler
 	);
 
 	void setTiming(int64_t cpuHz, int64_t decodeBytesPerSec, int64_t nowCycles);
@@ -99,9 +98,7 @@ public:
 	Memory& m_memory;
 	DmaController& m_dma;
 	IrqController& m_irq;
-	std::function<int64_t()> m_getNowCycles;
-	std::function<void(int64_t deadlineCycles)> m_scheduleService;
-	std::function<void()> m_cancelService;
+	DeviceScheduler& m_scheduler;
 };
 
 } // namespace bmsx

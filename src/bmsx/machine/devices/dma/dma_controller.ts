@@ -38,6 +38,7 @@ import type { ImageWritePlan } from '../../memory/memory';
 import { Memory } from '../../memory/memory';
 import type { IrqController } from '../irq/irq_controller';
 import type { VDP } from '../vdp/vdp';
+import { DEVICE_SERVICE_DMA, type DeviceScheduler } from '../../scheduler/device_scheduler';
 
 type DmaChannelId = 0 | 1;
 const DMA_CH_ISO: DmaChannelId = 0;
@@ -98,9 +99,7 @@ export class DmaController {
 		private readonly memory: Memory,
 		private readonly irq: IrqController,
 		private readonly vdp: VDP,
-		private readonly getNowCycles: () => number,
-		private readonly scheduleService: (deadlineCycles: number) => void,
-		private readonly cancelService: () => void,
+		private readonly scheduler: DeviceScheduler,
 	) {
 		this.memory.mapIoWrite(IO_DMA_CTRL, this.tryStartIo.bind(this));
 	}
@@ -190,7 +189,7 @@ export class DmaController {
 		this.ioWrittenDirty = false;
 		this.imgWrittenValue = 0;
 		this.imgWrittenDirty = false;
-		this.cancelService();
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 		this.memory.writeValue(IO_DMA_SRC, 0);
 		this.memory.writeValue(IO_DMA_DST, 0);
 		this.memory.writeValue(IO_DMA_LEN, 0);
@@ -216,12 +215,12 @@ export class DmaController {
 			onComplete,
 		};
 		this.channels[DMA_CH_BULK].queue.push(job);
-		this.scheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.scheduler.currentNowCycles());
 	}
 
 	public onService(nowCycles: number): void {
 		if (!this.hasPendingIsoTransfer() && !this.hasPendingBulkTransfer()) {
-			this.cancelService();
+			this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 			return;
 		}
 		this.tickChannel(DMA_CH_ISO);
@@ -301,7 +300,7 @@ export class DmaController {
 		this.ioWrittenValue = 0;
 		this.ioWrittenDirty = true;
 		this.channels[DMA_CH_BULK].queue.push(job);
-		this.scheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.scheduler.currentNowCycles());
 	}
 
 	private tickChannel(channel: DmaChannelId): void {
@@ -528,7 +527,7 @@ export class DmaController {
 		const pendingIso = this.hasPendingIsoTransfer();
 		const pendingBulk = this.hasPendingBulkTransfer();
 		if (!pendingIso && !pendingBulk) {
-			this.cancelService();
+			this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 			return;
 		}
 		let nextDeadline = Number.MAX_SAFE_INTEGER;
@@ -536,7 +535,7 @@ export class DmaController {
 			const pendingBytes = this.getPendingBytesForChannel(DMA_CH_ISO);
 			const targetBytes = pendingBytes < DMA_SERVICE_BATCH_BYTES ? pendingBytes : DMA_SERVICE_BATCH_BYTES;
 			if (this.channels[DMA_CH_ISO].budget >= targetBytes) {
-				this.scheduleService(nowCycles);
+				this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, nowCycles);
 				return;
 			}
 			nextDeadline = Math.min(nextDeadline, nowCycles + this.cyclesUntilBytes(this.isoBytesPerSec, this.isoCarry, targetBytes - this.channels[DMA_CH_ISO].budget));
@@ -545,12 +544,12 @@ export class DmaController {
 			const pendingBytes = this.getPendingBytesForChannel(DMA_CH_BULK);
 			const targetBytes = pendingBytes < DMA_SERVICE_BATCH_BYTES ? pendingBytes : DMA_SERVICE_BATCH_BYTES;
 			if (this.channels[DMA_CH_BULK].budget >= targetBytes) {
-				this.scheduleService(nowCycles);
+				this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, nowCycles);
 				return;
 			}
 			nextDeadline = Math.min(nextDeadline, nowCycles + this.cyclesUntilBytes(this.bulkBytesPerSec, this.bulkCarry, targetBytes - this.channels[DMA_CH_BULK].budget));
 		}
-		this.scheduleService(nextDeadline);
+		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, nextDeadline);
 	}
 
 	private cyclesUntilBytes(bytesPerSec: bigint, carry: bigint, targetBytes: number): number {

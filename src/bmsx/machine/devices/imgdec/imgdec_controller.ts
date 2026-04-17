@@ -28,6 +28,7 @@ import { Memory } from '../../memory/memory';
 import type { DecodedImage } from '../../../common/image_decode';
 import { DmaController } from '../dma/dma_controller';
 import type { IrqController } from '../irq/irq_controller';
+import { DEVICE_SERVICE_IMG, type DeviceScheduler } from '../../scheduler/device_scheduler';
 
 type ImgDecJob = {
 	buffer: Uint8Array;
@@ -70,15 +71,13 @@ export class ImgDecController {
 		private readonly memory: Memory,
 		private readonly dma: DmaController,
 		private readonly irq: IrqController,
-		private readonly getNowCycles: () => number,
-		private readonly scheduleService: (deadlineCycles: number) => void,
-		private readonly cancelService: () => void,
+		private readonly scheduler: DeviceScheduler,
 	) {
 		this.memory.mapIoWrite(IO_IMG_CTRL, this.onCtrlRegisterWrite.bind(this));
 	}
 
 	private onCtrlRegisterWrite(): void {
-		this.onCtrlWrite(this.getNowCycles());
+		this.onCtrlWrite(this.scheduler.currentNowCycles());
 	}
 
 	public setTiming(cpuHz: number, decodeBytesPerSec: number, nowCycles: number): void {
@@ -115,7 +114,7 @@ export class ImgDecController {
 	public decodeToVram(params: { bytes: Uint8Array; dst: number; cap: number }): Promise<{ pixels: Uint8Array; width: number; height: number; clipped: boolean }> {
 		return new Promise((resolve, reject) => {
 			this.queuedJobs.push({ buffer: params.bytes, dst: params.dst, cap: params.cap, resolve, reject });
-			this.scheduleNextService(this.getNowCycles());
+			this.scheduleNextService(this.scheduler.currentNowCycles());
 		});
 	}
 
@@ -138,7 +137,7 @@ export class ImgDecController {
 		this.signalIrq = false;
 		this.queuedJobs.length = 0;
 		this.activeJob = null;
-		this.cancelService();
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMG);
 		this.memory.writeValue(IO_IMG_SRC, 0);
 		this.memory.writeValue(IO_IMG_LEN, 0);
 		this.memory.writeValue(IO_IMG_DST, 0);
@@ -182,7 +181,7 @@ export class ImgDecController {
 	public onService(nowCycles: number): void {
 		this.tryStartQueued();
 		if (!this.active) {
-			this.cancelService();
+			this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMG);
 			return;
 		}
 		if (this.pendingError !== null) {
@@ -272,13 +271,13 @@ export class ImgDecController {
 			}
 			this.pendingResult = result;
 			this.pendingEntry = entry;
-			this.scheduleNextService(this.getNowCycles());
+			this.scheduleNextService(this.scheduler.currentNowCycles());
 		}).catch((error) => {
 			if (token !== this.decodeToken) {
 				return;
 			}
 			this.pendingError = error;
-			this.scheduleNextService(this.getNowCycles());
+			this.scheduleNextService(this.scheduler.currentNowCycles());
 		});
 	}
 
@@ -344,7 +343,7 @@ export class ImgDecController {
 		if (job && decoded) {
 			job.resolve({ pixels: decoded.pixels, width: decoded.width, height: decoded.height, clipped });
 		}
-		this.scheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.scheduler.currentNowCycles());
 	}
 
 	private finishError(error?: unknown): void {
@@ -367,32 +366,32 @@ export class ImgDecController {
 		if (job) {
 			job.reject(error ?? imageDecoderFault('decode failed.'));
 		}
-		this.scheduleNextService(this.getNowCycles());
+		this.scheduleNextService(this.scheduler.currentNowCycles());
 	}
 
 	private scheduleNextService(nowCycles: number): void {
 		if (!this.active) {
 			if (this.queuedJobs.length !== 0) {
-				this.scheduleService(nowCycles);
+				this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMG, nowCycles);
 				return;
 			}
-			this.cancelService();
+			this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMG);
 			return;
 		}
 		if (this.pendingError !== null || (this.pendingResult !== null && this.pendingEntry !== null)) {
-			this.scheduleService(nowCycles);
+			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMG, nowCycles);
 			return;
 		}
 		if (this.decodeActive && !this.decodeQueued && this.decodeRemaining > 0) {
 			const targetBytes = this.decodeRemaining < IMGDEC_SERVICE_BATCH_BYTES ? this.decodeRemaining : IMGDEC_SERVICE_BATCH_BYTES;
 			if (this.availableDecodeBytes >= targetBytes) {
-				this.scheduleService(nowCycles);
+				this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMG, nowCycles);
 				return;
 			}
-			this.scheduleService(nowCycles + this.cyclesUntilDecodeBytes(targetBytes - this.availableDecodeBytes));
+			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMG, nowCycles + this.cyclesUntilDecodeBytes(targetBytes - this.availableDecodeBytes));
 			return;
 		}
-		this.cancelService();
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMG);
 	}
 
 	private cyclesUntilDecodeBytes(targetBytes: number): number {

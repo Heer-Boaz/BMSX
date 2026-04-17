@@ -4,11 +4,11 @@
 #include "machine/bus/io.h"
 #include "machine/memory/memory.h"
 #include "machine/memory/memory_map.h"
+#include "machine/scheduler/device_scheduler.h"
 #include "machine/devices/vdp/vdp_render_budget.h"
 #include "rompack/rompack.h"
 #include "render/shared/render_types.h"
 #include <array>
-#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -30,9 +30,7 @@ public:
 			Memory& memory,
 			CPU& cpu,
 			Api& api,
-			std::function<int64_t()> getNowCycles,
-			std::function<void(int64_t deadlineCycles)> scheduleService,
-			std::function<void()> cancelService
+			DeviceScheduler& scheduler
 		);
 
 		void initializeRegisters();
@@ -268,9 +266,7 @@ public:
 	std::array<Memory::ImageWriteEntry, 6> m_skyboxSlots{};
 	std::array<ReadSurface, 4> m_readSurfaces{};
 	std::array<ReadCache, 4> m_readCaches{};
-	std::function<int64_t()> m_getNowCycles;
-	std::function<void(int64_t deadlineCycles)> m_scheduleService;
-	std::function<void()> m_cancelService;
+	DeviceScheduler& m_scheduler;
 
 	void registerVramSlot(const Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId);
 	void registerReadSurface(uint32_t surfaceId, const std::string& assetId, const std::string& textureKey);

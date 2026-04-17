@@ -1191,18 +1191,14 @@ VDP::VDP(
 	Memory& memory,
 	CPU& cpu,
 	Api& api,
-	std::function<int64_t()> getNowCycles,
-	std::function<void(int64_t deadlineCycles)> scheduleService,
-	std::function<void()> cancelService
+	DeviceScheduler& scheduler
 )
 	: m_memory(memory)
 	, m_cpu(cpu)
 	, m_api(api)
 	, m_vramStaging(VRAM_STAGING_SIZE)
 	, m_vramGarbageScratch(VRAM_GARBAGE_CHUNK_BYTES)
-	, m_getNowCycles(std::move(getNowCycles))
-		, m_scheduleService(std::move(scheduleService))
-		, m_cancelService(std::move(cancelService)) {
+	, m_scheduler(scheduler) {
 	m_memory.setVramWriter(this);
 	m_memory.mapIoRead(IO_VDP_RD_STATUS, this, &VDP::readVdpStatusThunk);
 	m_memory.mapIoRead(IO_VDP_RD_DATA, this, &VDP::readVdpDataThunk);
@@ -1787,7 +1783,7 @@ void VDP::beginSubmittedFrame() {
 
 void VDP::cancelSubmittedFrame() {
 	resetBuildFrameState();
-	scheduleNextService(m_getNowCycles());
+	scheduleNextService(m_scheduler.currentNowCycles());
 	refreshSubmitBusyStatus();
 }
 
@@ -1824,7 +1820,7 @@ void VDP::assignBuildToSlot(bool active) {
 	}
 	m_buildFrameCost = 0;
 	m_buildFrameOpen = false;
-	scheduleNextService(m_getNowCycles());
+	scheduleNextService(m_scheduler.currentNowCycles());
 	refreshSubmitBusyStatus();
 }
 
@@ -1863,7 +1859,7 @@ void VDP::promotePendingFrame() {
 	m_pendingSlotAtlasIds = {{-1, -1}};
 	m_pendingSkyboxFaceIds = {};
 	m_pendingHasSkybox = false;
-	scheduleNextService(m_getNowCycles());
+	scheduleNextService(m_scheduler.currentNowCycles());
 	refreshSubmitBusyStatus();
 }
 
@@ -1878,7 +1874,7 @@ void VDP::advanceWork(int workUnits) {
 		m_activeFrameWorkRemaining = 0;
 		executeBlitterQueue(m_activeBlitterQueue);
 		m_activeFrameReady = true;
-		scheduleNextService(m_getNowCycles());
+		scheduleNextService(m_scheduler.currentNowCycles());
 		return;
 	}
 	m_activeFrameWorkRemaining -= workUnits;
@@ -1893,20 +1889,20 @@ int VDP::getPendingRenderWorkUnits() const {
 
 void VDP::scheduleNextService(int64_t nowCycles) {
 	if (needsImmediateSchedulerService()) {
-		m_scheduleService(nowCycles);
+		m_scheduler.scheduleDeviceService(DeviceServiceVdp, nowCycles);
 		return;
 	}
 	if (!hasPendingRenderWork()) {
-		m_cancelService();
+		m_scheduler.cancelDeviceService(DeviceServiceVdp);
 		return;
 	}
 	const int pendingWork = getPendingRenderWorkUnits();
 	const int targetUnits = pendingWork < VDP_SERVICE_BATCH_WORK_UNITS ? pendingWork : VDP_SERVICE_BATCH_WORK_UNITS;
 	if (m_availableWorkUnits >= targetUnits) {
-		m_scheduleService(nowCycles);
+		m_scheduler.scheduleDeviceService(DeviceServiceVdp, nowCycles);
 		return;
 	}
-	m_scheduleService(nowCycles + cyclesUntilWorkUnits(targetUnits - m_availableWorkUnits));
+	m_scheduler.scheduleDeviceService(DeviceServiceVdp, nowCycles + cyclesUntilWorkUnits(targetUnits - m_availableWorkUnits));
 }
 
 int64_t VDP::cyclesUntilWorkUnits(int targetUnits) const {
@@ -1949,7 +1945,7 @@ void VDP::presentReadyFrameOnVblankEdge() {
 		m_lastFrameCost = 0;
 		m_lastFrameHeld = false;
 		promotePendingFrame();
-		scheduleNextService(m_getNowCycles());
+		scheduleNextService(m_scheduler.currentNowCycles());
 		refreshSubmitBusyStatus();
 		return;
 	}
@@ -1967,7 +1963,7 @@ void VDP::presentReadyFrameOnVblankEdge() {
 	m_lastFrameHeld = false;
 	clearActiveFrame();
 	promotePendingFrame();
-	scheduleNextService(m_getNowCycles());
+	scheduleNextService(m_scheduler.currentNowCycles());
 	refreshSubmitBusyStatus();
 }
 
