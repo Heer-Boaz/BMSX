@@ -76,7 +76,6 @@ import {
 	HOST_FAULT_FLAG_STARTUP_BLOCKING,
 	HOST_FAULT_STAGE_NONE,
 	HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH,
-	INP_CTRL_ARM,
 	IO_DMA_CTRL,
 	IO_DMA_DST,
 	IO_DMA_LEN,
@@ -106,7 +105,6 @@ import {
 	IO_IMG_SRC,
 	IO_IMG_STATUS,
 	IO_IMG_WRITTEN,
-	IO_INP_CTRL,
 	IO_SYS_BOOT_CART,
 	IO_SYS_CART_BOOTREADY,
 	IO_SYS_HOST_FAULT_FLAGS,
@@ -833,7 +831,7 @@ export class Runtime {
 		this.vblankActive = false;
 		this.vblankSequence = 0;
 		this.lastCompletedVblankSequence = 0;
-		this.inputSampleArmed = false;
+		this.inputController.sampleArmed = false;
 		this.irqController.postLoad();
 		this.resetHaltIrqWait();
 		this.vdp.resetStatus();
@@ -861,10 +859,7 @@ export class Runtime {
 		// IRQ flags are level/pending; multiple VBLANK edges while pending coalesce.
 		this.vblankSequence += 1;
 		this.commitFrameOnVblankEdge();
-		if (this.inputSampleArmed) {
-			Input.instance.beginFrame();
-			this.inputSampleArmed = false;
-		}
+		this.inputController.onVblankEdge();
 		this.setVblankStatus(true);
 		this.irqController.raise(IRQ_VBLANK);
 		const frameState = this.currentFrameState;
@@ -928,7 +923,7 @@ export class Runtime {
 	public captureVblankState(): { cyclesIntoFrame: number; inputSampleArmed: boolean } {
 		return {
 			cyclesIntoFrame: this.getCyclesIntoFrame(),
-			inputSampleArmed: this.inputSampleArmed,
+			inputSampleArmed: this.inputController.sampleArmed,
 		};
 	}
 
@@ -937,7 +932,7 @@ export class Runtime {
 		this.machineScheduler.reset(this);
 		this.frameLoop.reset();
 		this.screen.reset();
-		this.inputSampleArmed = state.inputSampleArmed === true;
+		this.inputController.sampleArmed = state.inputSampleArmed === true;
 		this.resetSchedulerState();
 		this.schedulerNowCycles = state.cyclesIntoFrame;
 		this.frameStartCycle = 0;
@@ -961,7 +956,6 @@ export class Runtime {
 	private haltIrqWaitArmed = false;
 	private vblankSequence = 0;
 	private lastCompletedVblankSequence = 0;
-	private inputSampleArmed = false;
 	public cycleBudgetPerFrame: number;
 	private vblankCycles = 0;
 	private vblankStartCycle = 0;
@@ -1623,7 +1617,6 @@ export class Runtime {
 		);
 		this.inputController = new InputController(this.memory, Input.instance);
 		this.inputController.reset();
-		this.installIoMap();
 		this.cpu = new CPU(this.memory, this.runtimeStringPool);
 		this.resourceUsageDetector = new ResourceUsageDetector(
 			this.memory,
@@ -1699,7 +1692,7 @@ export class Runtime {
 		this.pendingCall = null;
 		this.luaRuntimeFailed = false;
 		this.luaInitialized = false;
-		this.inputSampleArmed = false;
+		this.inputController.sampleArmed = false;
 		this.clearHaltUntilIrq();
 	}
 
@@ -1889,17 +1882,6 @@ export class Runtime {
 			throw runtimeFault(`unsupported engine IRQ mask 0x${unsupported.toString(16)}.`);
 		}
 		this.irqController.raise(normalized);
-	}
-
-	private installIoMap(): void {
-		this.memory.mapIoWrite(IO_INP_CTRL, this.onInputCtrlWrite.bind(this));
-	}
-
-	private onInputCtrlWrite(): void {
-		if (this.memory.readIoU32(IO_INP_CTRL) === INP_CTRL_ARM) {
-			this.inputSampleArmed = true;
-		}
-		this.inputController.onCtrlWrite();
 	}
 
 	private runUpdatePhase(state: FrameState): void {

@@ -373,8 +373,6 @@ private:
 	void finalizeUpdateSlice();
 	void clearHaltUntilIrq();
 	void resetHaltIrqWait();
-	void installIoMap();
-	void handleInputCtrlWrite();
 	RunResult runWithBudget();
 	void queueLifecycleHandlers(bool runInit, bool runNewGame);
 	Value requireModule(const std::string& moduleName);
@@ -491,7 +489,6 @@ private:
 	bool m_haltIrqWaitArmed = false;
 	uint64_t m_vblankSequence = 0;
 	uint64_t m_lastCompletedVblankSequence = 0;
-	bool m_inputSampleArmed = false;
 	bool m_clearBackQueuesAfterIrqWake = false;
 	bool m_vblankActive = false;
 };

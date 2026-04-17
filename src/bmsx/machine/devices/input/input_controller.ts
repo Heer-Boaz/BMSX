@@ -33,16 +33,19 @@ export class InputController {
 			contextPushed: false,
 		}),
 	);
+	public sampleArmed = false;
 
 	public constructor(
 		private readonly memory: Memory,
 		private readonly input: Input,
 	) {
+		this.memory.mapIoWrite(IO_INP_CTRL, this.onCtrlWrite.bind(this));
 		this.memory.mapIoWrite(IO_INP_QUERY, this.onQueryWrite.bind(this));
 		this.memory.mapIoWrite(IO_INP_CONSUME, this.onConsumeWrite.bind(this));
 	}
 
 	public reset(): void {
+		this.sampleArmed = false;
 		for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
 			const state = this.playerStates[playerIndex - 1]!;
 			if (state.contextPushed) {
@@ -53,6 +56,7 @@ export class InputController {
 			state.contextPushed = false;
 		}
 		this.memory.writeValue(IO_INP_PLAYER, 1);
+		this.memory.writeIoValue(IO_INP_CTRL, 0);
 		this.memory.writeValue(IO_INP_STATUS, 0);
 		this.memory.writeValue(IO_INP_VALUE, 0);
 	}
@@ -63,11 +67,20 @@ export class InputController {
 				this.commitAction();
 				return;
 			case INP_CTRL_ARM:
+				this.sampleArmed = true;
 				return;
 			case INP_CTRL_RESET:
 				this.resetActions();
 				return;
 		}
+	}
+
+	public onVblankEdge(): void {
+		if (!this.sampleArmed) {
+			return;
+		}
+		this.input.beginFrame();
+		this.sampleArmed = false;
 	}
 
 	public onQueryWrite(): void {

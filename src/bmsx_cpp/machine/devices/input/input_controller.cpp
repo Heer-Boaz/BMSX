@@ -12,8 +12,13 @@ InputController::InputController(Memory& memory, Input& input, const StringPool&
 		, m_input(input)
 		, m_strings(strings)
 		, m_defaultInputMapping(Input::getDefaultInputMapping()) {
+	m_memory.mapIoWrite(IO_INP_CTRL, this, &InputController::onCtrlWriteThunk);
 	m_memory.mapIoWrite(IO_INP_QUERY, this, &InputController::onQueryWriteThunk);
 	m_memory.mapIoWrite(IO_INP_CONSUME, this, &InputController::onConsumeWriteThunk);
+}
+
+void InputController::onCtrlWriteThunk(void* context, uint32_t, Value) {
+	static_cast<InputController*>(context)->onCtrlWrite();
 }
 
 void InputController::onQueryWriteThunk(void* context, uint32_t, Value) {
@@ -25,6 +30,7 @@ void InputController::onConsumeWriteThunk(void* context, uint32_t, Value) {
 }
 
 void InputController::reset() {
+	m_sampleArmed = false;
 	for (i32 playerIndex = 1; playerIndex <= PLAYERS_MAX; playerIndex += 1) {
 		PlayerChipState& state = playerState(playerIndex);
 		if (state.contextPushed) {
@@ -35,6 +41,7 @@ void InputController::reset() {
 		state.contextPushed = false;
 	}
 	m_memory.writeValue(IO_INP_PLAYER, valueNumber(1.0));
+	m_memory.writeIoValue(IO_INP_CTRL, valueNumber(0.0));
 	m_memory.writeValue(IO_INP_STATUS, valueNumber(0.0));
 	m_memory.writeValue(IO_INP_VALUE, valueNumber(0.0));
 }
@@ -45,11 +52,20 @@ void InputController::onCtrlWrite() {
 			commitAction();
 			return;
 		case INP_CTRL_ARM:
+			m_sampleArmed = true;
 			return;
 		case INP_CTRL_RESET:
 			resetActions();
 			return;
 	}
+}
+
+void InputController::onVblankEdge() {
+	if (!m_sampleArmed) {
+		return;
+	}
+	m_input.beginFrame();
+	m_sampleArmed = false;
 }
 
 void InputController::onQueryWrite() {

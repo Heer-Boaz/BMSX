@@ -189,7 +189,6 @@ Runtime::Runtime(const RuntimeOptions& options)
 	m_memory.writeValue(IO_VDP_RD_Y, valueNumber(0.0));
 	m_memory.writeValue(IO_VDP_RD_MODE, valueNumber(static_cast<double>(VDP_RD_MODE_RGBA8888)));
 	m_vdp.initializeRegisters();
-	installIoMap();
 	setVblankCycles(options.vblankCycles);
 	setVdpWorkUnitsPerSec(options.vdpWorkUnitsPerSec);
 	setGeoWorkUnitsPerSec(options.geoWorkUnitsPerSec);
@@ -629,7 +628,7 @@ void Runtime::resetVblankState() {
 	m_vblankActive = false;
 	m_vblankSequence = 0;
 	m_lastCompletedVblankSequence = 0;
-	m_inputSampleArmed = false;
+	m_inputController.restoreSampleArmed(false);
 	m_irqController.postLoad();
 	resetHaltIrqWait();
 	m_vdp.resetStatus();
@@ -648,10 +647,7 @@ void Runtime::setVblankStatus(bool active) {
 void Runtime::enterVblank() {
 	m_vblankSequence += 1;
 	commitFrameOnVblankEdge();
-	if (m_inputSampleArmed) {
-		Input::instance().beginFrame();
-		m_inputSampleArmed = false;
-	}
+	m_inputController.onVblankEdge();
 	setVblankStatus(true);
 	m_irqController.raise(IRQ_VBLANK);
 	if (m_frameActive && m_cpu.isHaltedUntilIrq() && m_pendingCall == PendingCall::Entry && m_cpu.getFrameDepth() == 1) {
@@ -960,19 +956,6 @@ void Runtime::tickTerminalModeDraw() {
 	// Terminal mode draw - stub for now
 }
 
-void Runtime::installIoMap() {
-	m_memory.mapIoWrite(IO_INP_CTRL, this, [](void* context, uint32_t, Value) {
-		static_cast<Runtime*>(context)->handleInputCtrlWrite();
-	});
-}
-
-void Runtime::handleInputCtrlWrite() {
-	if (m_memory.readIoU32(IO_INP_CTRL) == INP_CTRL_ARM) {
-		m_inputSampleArmed = true;
-	}
-	m_inputController.onCtrlWrite();
-}
-
 void Runtime::requestProgramReload() {
 	// Reboot is executed on the next update boundary so the active Lua call can unwind first.
 	m_rebootRequested = true;
@@ -983,7 +966,7 @@ void Runtime::requestProgramReload() {
 void Runtime::resetFrameState() {
 	m_frameActive = false;
 	m_activeTickCompleted = false;
-	m_inputSampleArmed = false;
+	m_inputController.restoreSampleArmed(false);
 	m_frameState = FrameState{};
 	clearHaltUntilIrq();
 	machineScheduler.reset(*this);
@@ -1018,7 +1001,7 @@ RuntimeState Runtime::captureCurrentState() const {
 	state.skyboxFaceIds = m_vdp.skyboxFaceIds();
 	state.vdpDitherType = m_vdp.getDitherType();
 	state.cyclesIntoFrame = getCyclesIntoFrame();
-	state.inputSampleArmed = m_inputSampleArmed;
+	state.inputSampleArmed = m_inputController.sampleArmed();
 	return state;
 }
 
@@ -1029,7 +1012,7 @@ void Runtime::applyState(const RuntimeState& state) {
 	m_irqController.postLoad();
 	m_vdp.syncRegisters();
 	clearHaltUntilIrq();
-	m_inputSampleArmed = state.inputSampleArmed;
+	m_inputController.restoreSampleArmed(state.inputSampleArmed);
 	machineScheduler.reset(*this);
 	screen.reset();
 	resetSchedulerState();
