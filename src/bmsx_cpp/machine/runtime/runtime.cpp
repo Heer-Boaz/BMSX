@@ -41,24 +41,6 @@ constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 
 }
 
-// Button actions for standard gamepad/keyboard mapping
-const std::vector<std::string> BUTTON_ACTIONS = {
-	"left",
-	"right",
-	"up",
-	"down",
-	"b",
-	"a",
-	"x",
-	"y",
-	"start",
-	"select",
-	"rt",
-	"lt",
-	"rb",
-	"lb",
-};
-
 // Static instance pointer
 Runtime* Runtime::s_instance = nullptr;
 
@@ -87,45 +69,20 @@ void Runtime::destroy() {
 
 Runtime::Runtime(const RuntimeOptions& options)
 	: timing(options.ufpsScaled)
-	, m_memory()
-	, m_stringHandles(m_memory)
-	, m_cpu(m_memory, &m_stringHandles)
-	, m_deviceScheduler(m_cpu)
 	, m_api(std::make_unique<Api>(*this))
-	, m_vdp(
-			m_memory,
-			m_cpu,
-			*m_api,
-			m_deviceScheduler
-		)
-	, m_irqController(m_memory)
-	, m_dmaController(
-			m_memory,
-			m_irqController,
-			m_vdp,
-			m_deviceScheduler
-		)
-	, m_geometryController(
-			m_memory,
-			m_irqController,
-			m_deviceScheduler
-		)
-	, m_imgDecController(
-			m_memory,
-			m_dmaController,
-			m_irqController,
-			m_deviceScheduler
-		)
-	, m_inputController(
-			m_memory,
-			Input::instance(),
-			m_cpu.stringPool()
-		)
-	, m_audioController(
-			m_memory,
-			*EngineCore::instance().soundMaster(),
-			m_irqController
-		)
+	, m_machine(*m_api, *EngineCore::instance().soundMaster())
+	, m_memory(m_machine.memory())
+	, m_stringHandles(m_machine.stringHandles())
+	, m_cpu(m_machine.cpu())
+	, m_deviceScheduler(m_machine.scheduler())
+	, m_vdp(m_machine.vdp())
+	, m_irqController(m_machine.irqController())
+	, m_resourceUsageDetector(&m_machine.resourceUsageDetector())
+	, m_dmaController(m_machine.dmaController())
+	, m_geometryController(m_machine.geometryController())
+	, m_imgDecController(m_machine.imgDecController())
+	, m_inputController(m_machine.inputController())
+	, m_audioController(m_machine.audioController())
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)
 	, m_cpuHz(options.cpuHz)
@@ -133,21 +90,10 @@ Runtime::Runtime(const RuntimeOptions& options)
 	, m_geoWorkUnitsPerSec(options.geoWorkUnitsPerSec)
 	, m_cycleBudgetPerFrame(options.cycleBudgetPerFrame)
 	{
-		// Initialize I/O memory region
-		m_memory.clearIoSlots();
-		// System flags
-	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
-	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
-	m_memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, valueNumber(0.0));
-	m_memory.writeValue(IO_SYS_HOST_FAULT_STAGE, valueNumber(static_cast<double>(HOST_FAULT_STAGE_NONE)));
-	m_irqController.reset();
-	m_dmaController.reset();
-	m_geometryController.reset();
-	m_imgDecController.reset();
-	m_inputController.reset();
-	m_audioController.reset();
-	m_vdp.attachImgDecController(m_imgDecController);
-	m_vdp.initializeRegisters();
+	m_api->initializeRuntimeKeys();
+	m_memory.clearIoSlots();
+	m_machine.initializeSystemIo();
+	m_machine.resetDevices();
 	setVblankCycles(options.vblankCycles);
 	setVdpWorkUnitsPerSec(options.vdpWorkUnitsPerSec);
 	setGeoWorkUnitsPerSec(options.geoWorkUnitsPerSec);
@@ -162,11 +108,6 @@ Runtime::Runtime(const RuntimeOptions& options)
 		m_api->markRoots(heap);
 	});
 
-	m_resourceUsageDetector = std::make_unique<ResourceUsageDetector>(
-		m_memory,
-		m_stringHandles,
-		m_vdp
-	);
 	configureLuaHeapUsage({
 		.collect = [this]() {
 			m_cpu.collectHeap();
@@ -213,10 +154,7 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_cpu.clearGlobalSlots();
 	m_cpu.globals->clear();
 	m_memory.clearIoSlots();
-	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
-	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
-	m_memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, valueNumber(0.0));
-	m_memory.writeValue(IO_SYS_HOST_FAULT_STAGE, valueNumber(static_cast<double>(HOST_FAULT_STAGE_NONE)));
+	m_machine.initializeSystemIo();
 	resetHardwareState();
 	m_randomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 }
@@ -302,22 +240,21 @@ bool Runtime::processPendingCartBoot() {
 }
 
 void Runtime::refreshDeviceTimings(i64 nowCycles) {
-	m_dmaController.setTiming(m_cpuHz, m_dmaBytesPerSecIso, m_dmaBytesPerSecBulk, nowCycles);
-	m_imgDecController.setTiming(m_cpuHz, m_imgDecBytesPerSec, nowCycles);
-	m_geometryController.setTiming(m_cpuHz, m_geoWorkUnitsPerSec, nowCycles);
-	m_vdp.setTiming(m_cpuHz, m_vdpWorkUnitsPerSec, nowCycles);
+	MachineTiming timing{};
+	timing.cpuHz = m_cpuHz;
+	timing.dmaBytesPerSecIso = m_dmaBytesPerSecIso;
+	timing.dmaBytesPerSecBulk = m_dmaBytesPerSecBulk;
+	timing.imgDecBytesPerSec = m_imgDecBytesPerSec;
+	timing.geoWorkUnitsPerSec = m_geoWorkUnitsPerSec;
+	timing.vdpWorkUnitsPerSec = m_vdpWorkUnitsPerSec;
+	m_machine.refreshDeviceTimings(timing, nowCycles);
 }
 
 void Runtime::advanceTime(int cycles) {
 	if (cycles <= 0) {
 		return;
 	}
-	const i64 nextNow = m_deviceScheduler.nowCycles() + cycles;
-	m_dmaController.accrueCycles(cycles, nextNow);
-	m_imgDecController.accrueCycles(cycles, nextNow);
-	m_geometryController.accrueCycles(cycles, nextNow);
-	m_vdp.accrueCycles(cycles, nextNow);
-	m_deviceScheduler.advanceTo(nextNow);
+	m_machine.advanceDevices(cycles);
 	runDueTimers();
 }
 
@@ -378,23 +315,7 @@ void Runtime::handleVblankEndTimer() {
 }
 
 void Runtime::runDeviceService(uint8_t deviceKind) {
-	const i64 nowCycles = m_deviceScheduler.nowCycles();
-	switch (deviceKind) {
-		case DeviceServiceGeo:
-			m_geometryController.onService(nowCycles);
-			return;
-	case DeviceServiceDma:
-		m_dmaController.onService(nowCycles);
-		return;
-		case DeviceServiceImg:
-			m_imgDecController.onService(nowCycles);
-			return;
-	case DeviceServiceVdp:
-		m_vdp.onService(nowCycles);
-		return;
-		default:
-			throw runtimeFault("unknown device service kind " + std::to_string(deviceKind) + ".");
-	}
+	m_machine.runDeviceService(deviceKind);
 }
 
 void Runtime::resetVblankState() {
@@ -882,13 +803,7 @@ void Runtime::setVblankCycles(int cycles) {
 }
 
 void Runtime::resetHardwareState() {
-	m_irqController.reset();
-	m_dmaController.reset();
-	m_geometryController.reset();
-	m_imgDecController.reset();
-	m_inputController.reset();
-	m_audioController.reset();
-	m_vdp.initializeRegisters();
+	m_machine.resetDevices();
 	resetVblankState();
 	resetRenderBuffers();
 }
@@ -1073,8 +988,6 @@ void Runtime::releaseValueScratch(std::vector<Value>&& values) {
 		m_valueScratchPool.push_back(std::move(values));
 	}
 }
-
-
 
 void Runtime::executeUpdateCallback() {
 	try {

@@ -146,6 +146,7 @@ add_library(bmsx_core STATIC
 	machine/firmware/lua_globals.cpp
 	machine/memory/lua_heap_usage.cpp
 	machine/firmware/lua_runtime.cpp
+	machine/machine.cpp
 	machine/scheduler/device_scheduler.cpp
 	machine/runtime/resource_usage_detector.cpp
 	machine/runtime/runtime.cpp

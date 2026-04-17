@@ -20,6 +20,7 @@ public:
 	explicit Api(Runtime& runtime);
 	~Api();
 
+	void initializeRuntimeKeys();
 	void registerAllFunctions();
 	void markRoots(GcHeap& heap);
 	void appendRootValues(NativeResults& out) const;

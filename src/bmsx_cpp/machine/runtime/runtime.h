@@ -8,6 +8,7 @@
 #include "machine/devices/audio/audio_controller.h"
 #include "machine/devices/irq/irq_controller.h"
 #include "machine/bus/io.h"
+#include "machine/machine.h"
 #include "machine/runtime/runtime_screen.h"
 #include "machine/scheduler/device_scheduler.h"
 #include "machine/runtime/runtime_timing.h"
@@ -38,11 +39,6 @@ class RuntimeAssets;
 class ResourceUsageDetector;
 
 constexpr int DEFAULT_CYCLE_BUDGET = 1'000'000;
-
-/**
- * Standard button actions for gamepad/keyboard input.
- */
-extern const std::vector<std::string> BUTTON_ACTIONS;
 
 /**
  * Runtime frame state for coordinating update execution.
@@ -372,19 +368,20 @@ private:
 	static constexpr size_t MAX_POOLED_RUNTIME_SCRATCH = 32;
 
 		// Runtime core
-		Memory m_memory;
-		StringHandleTable m_stringHandles;
-		CPU m_cpu;
-		DeviceScheduler m_deviceScheduler;
 		std::unique_ptr<Api> m_api;
-		VDP m_vdp;
-		IrqController m_irqController;
-		std::unique_ptr<ResourceUsageDetector> m_resourceUsageDetector;
-	DmaController m_dmaController;
-	GeometryController m_geometryController;
-	ImgDecController m_imgDecController;
-	InputController m_inputController;
-	AudioController m_audioController;
+		Machine m_machine;
+		Memory& m_memory;
+		StringHandleTable& m_stringHandles;
+		CPU& m_cpu;
+		DeviceScheduler& m_deviceScheduler;
+		VDP& m_vdp;
+		IrqController& m_irqController;
+		ResourceUsageDetector* m_resourceUsageDetector = nullptr;
+	DmaController& m_dmaController;
+	GeometryController& m_geometryController;
+	ImgDecController& m_imgDecController;
+	InputController& m_inputController;
+	AudioController& m_audioController;
 	Program* m_program = nullptr;
 	ProgramMetadata* m_programMetadata = nullptr;
 

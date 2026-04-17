@@ -36,17 +36,11 @@ import { decodeBinary, decodeBinaryWithPropTable } from '../../common/serializer
 import { createIdentifierCanonicalizer } from '../../lua/syntax/identifier_canonicalizer';
 import { Api } from '../firmware/firmware_api';
 import { CPU, Table, type Closure, type Value, type Program, type ProgramMetadata, RunResult, type NativeFunction, type NativeObject } from '../cpu/cpu';
-import { StringPool, StringValue } from '../memory/string_pool';
-import { StringHandleTable } from '../memory/string_memory';
+import { type StringValue } from '../memory/string_pool';
 import type { TerminalMode } from '../../ide/terminal/ui/terminal_mode';
 import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 import { Font, type FontVariant } from '../../render/shared/bmsx_font';
-import {
-	beginMeshQueue,
-	beginParticleQueue,
-	clearBackQueues,
-} from '../../render/shared/render_queues';
-import { clearHardwareCamera } from '../../render/shared/hardware_camera';
+import { clearBackQueues } from '../../render/shared/render_queues';
 import { clearHardwareLighting } from '../../render/shared/hardware_lighting';
 import type { CartEditor } from '../../ide/cart_editor';
 import { type FaultSnapshot } from '../../ide/editor/render/render_error_overlay';
@@ -69,10 +63,6 @@ import { configureLuaHeapUsage } from '../memory/lua_heap_usage';
 import { RuntimeFrameLoopState } from './runtime_frame_loop';
 import { RuntimeMachineSchedulerState } from './runtime_machine_scheduler';
 import {
-	DEVICE_SERVICE_DMA,
-	DEVICE_SERVICE_GEO,
-	DEVICE_SERVICE_IMG,
-	DEVICE_SERVICE_VDP,
 	DeviceScheduler,
 	TIMER_KIND_DEVICE_SERVICE,
 	TIMER_KIND_VBLANK_BEGIN,
@@ -95,6 +85,7 @@ import {
 	IRQ_VBLANK,
 } from '../bus/io';
 import { HandlerCache } from './handler_cache';
+import { Machine } from '../machine';
 import { Memory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntry } from '../memory/memory';
 import { DmaController } from '../devices/dma/dma_controller';
 import { GeometryController } from '../devices/geometry/geometry_controller';
@@ -122,27 +113,9 @@ import { FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY, VDP } from '..
 import { PROGRAM_ASSET_ID } from '../program/program_asset';
 import { createVdpBlitterExecutor } from '../../render/vdp/vdp_blitter';
 
-export const BUTTON_ACTIONS: ReadonlyArray<string> = [
-	'left',
-	'right',
-	'up',
-	'down',
-	'b',
-	'a',
-	'x',
-	'y',
-	'start',
-	'select',
-	'rt',
-	'lt',
-	'rb',
-	'lb',
-];
-
 function runtimeFault(message: string): Error {
 	return new Error(`Runtime fault: ${message}`);
 }
-
 
 // Flip back to 'msx' to restore default font in machine/editor
 export const EDITOR_FONT_VARIANT: FontVariant = 'tiny';
@@ -281,14 +254,6 @@ export class Runtime {
 		}
 	}
 
-	public getLastTickSequence(): number {
-		return this.lastTickSequence;
-	}
-
-	public getLastTickBudgetRemaining(): number {
-		return this.lastTickBudgetRemaining;
-	}
-
 	public getLastTickBudgetGranted(): number {
 		if (this.lastTickSequence === 0) {
 			return this.cycleBudgetPerFrame;
@@ -325,10 +290,6 @@ export class Runtime {
 
 	public getTrackedVramTotalBytes(): number {
 		return this.resourceUsageDetector.getVramTotalBytes();
-	}
-
-	public didLastTickComplete(): boolean {
-		return this.lastTickCompleted;
 	}
 
 	public hasActiveTick(): boolean {
@@ -404,22 +365,21 @@ export class Runtime {
 	}
 
 	private refreshDeviceTimings(nowCycles: number): void {
-		this.dmaController.setTiming(this._cpuHz, this.dmaBytesPerSecIso, this.dmaBytesPerSecBulk, nowCycles);
-		this.imgDecController.setTiming(this._cpuHz, this.imgDecBytesPerSec, nowCycles);
-		this.geometryController.setTiming(this._cpuHz, this.geoWorkUnitsPerSec, nowCycles);
-		this.vdp.setTiming(this._cpuHz, this.vdpWorkUnitsPerSec, nowCycles);
+		this.machine.refreshDeviceTimings({
+			cpuHz: this._cpuHz,
+			dmaBytesPerSecIso: this.dmaBytesPerSecIso,
+			dmaBytesPerSecBulk: this.dmaBytesPerSecBulk,
+			imgDecBytesPerSec: this.imgDecBytesPerSec,
+			geoWorkUnitsPerSec: this.geoWorkUnitsPerSec,
+			vdpWorkUnitsPerSec: this.vdpWorkUnitsPerSec,
+		}, nowCycles);
 	}
 
 	private advanceTime(cycles: number): void {
 		if (cycles <= 0) {
 			return;
 		}
-		const nextNow = this.deviceScheduler.nowCycles + cycles;
-		this.dmaController.accrueCycles(cycles, nextNow);
-		this.imgDecController.accrueCycles(cycles, nextNow);
-		this.geometryController.accrueCycles(cycles, nextNow);
-		this.vdp.accrueCycles(cycles, nextNow);
-		this.deviceScheduler.advanceTo(nextNow);
+		this.machine.advanceDevices(cycles);
 		this.runDueTimers();
 	}
 
@@ -480,23 +440,7 @@ export class Runtime {
 	}
 
 	private runDeviceService(deviceKind: number): void {
-		const nowCycles = this.deviceScheduler.nowCycles;
-		switch (deviceKind) {
-			case DEVICE_SERVICE_GEO:
-				this.geometryController.onService(nowCycles);
-				return;
-			case DEVICE_SERVICE_DMA:
-				this.dmaController.onService(nowCycles);
-				return;
-			case DEVICE_SERVICE_IMG:
-				this.imgDecController.onService(nowCycles);
-				return;
-			case DEVICE_SERVICE_VDP:
-				this.vdp.onService(nowCycles);
-				return;
-			default:
-				throw runtimeFault(`unknown device service kind ${deviceKind}.`);
-		}
+		this.machine.runDeviceService(deviceKind);
 	}
 
 	public readonly storage: RuntimeStorage;
@@ -557,8 +501,6 @@ export class Runtime {
 	}
 	public readonly memory: Memory;
 	public readonly cpu: CPU;
-	private readonly stringHandles: StringHandleTable;
-	private readonly runtimeStringPool: StringPool;
 	public programMetadata: ProgramMetadata | null = null;
 	public consoleMetadata: ProgramMetadata | null = null;
 	public _luaPath: string = null;
@@ -640,11 +582,7 @@ export class Runtime {
 	}
 
 	public resetRenderBuffers(): void {
-		clearHardwareCamera();
-		clearHardwareLighting();
-		clearBackQueues();
-		beginMeshQueue();
-		beginParticleQueue();
+		this.machine.resetRenderBuffers();
 	}
 
 	private setVblankStatus(active: boolean): void {
@@ -844,6 +782,7 @@ export class Runtime {
 	private readonly imageMetaByHandle = new Map<number, ImgMeta>();
 	private readonly audioMetaByHandle = new Map<number, AudioMeta>();
 	public readonly vdp: VDP;
+	public readonly machine: Machine;
 	private readonly resourceUsageDetector: ResourceUsageDetector;
 	private editorViewOptionsSnapshot: EditorViewOptionsSnapshot = null;
 	public readonly dmaController: DmaController;
@@ -1323,52 +1262,25 @@ export class Runtime {
 		this.engineCanonicalization = resolvedCanonicalization;
 		this.cartCanonicalization = resolvedCanonicalization;
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
-		this.memory = options.memory;
-		this.stringHandles = new StringHandleTable(this.memory);
-		this.runtimeStringPool = new StringPool(this.stringHandles);
-		this.cpu = new CPU(this.memory, this.runtimeStringPool);
-		this.deviceScheduler = new DeviceScheduler(this.cpu);
-		this.irqController = new IrqController(this.memory);
-		this.vdp = new VDP(
-			this.memory,
+		this.machine = new Machine(
+			options.memory,
 			createVdpBlitterExecutor($.view.backend),
-			this.deviceScheduler,
+			Input.instance,
+			$.sndmaster,
 		);
-		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
-		this.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
-		this.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, 0);
-		this.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_NONE);
-		this.irqController.reset();
-		this.audioController = new AudioController(this.memory, $.sndmaster, this.irqController);
-		this.dmaController = new DmaController(
-			this.memory,
-			this.irqController,
-			this.vdp,
-			this.deviceScheduler,
-		);
-		this.imgDecController = new ImgDecController(
-			this.memory,
-			this.dmaController,
-			this.irqController,
-			this.deviceScheduler,
-		);
-		this.geometryController = new GeometryController(
-			this.memory,
-			this.irqController,
-			this.deviceScheduler,
-		);
-		this.inputController = new InputController(this.memory, Input.instance);
-		this.inputController.reset();
-		this.dmaController.reset();
-		this.geometryController.reset();
-		this.imgDecController.reset();
-		this.audioController.reset();
-		this.vdp.initializeRegisters();
-		this.resourceUsageDetector = new ResourceUsageDetector(
-			this.memory,
-			this.stringHandles,
-			this.vdp,
-		);
+		this.memory = this.machine.memory;
+		this.cpu = this.machine.cpu;
+		this.deviceScheduler = this.machine.scheduler;
+		this.irqController = this.machine.irqController;
+		this.vdp = this.machine.vdp;
+		this.audioController = this.machine.audioController;
+		this.dmaController = this.machine.dmaController;
+		this.imgDecController = this.machine.imgDecController;
+		this.geometryController = this.machine.geometryController;
+		this.inputController = this.machine.inputController;
+		this.resourceUsageDetector = this.machine.resourceUsageDetector;
+		this.machine.initializeSystemIo();
+		this.machine.resetDevices();
 		configureLuaHeapUsage({
 			getBaseRamUsedBytes: () => this.resourceUsageDetector.getBaseRamUsedBytes(),
 			collectTrackedHeapBytes: () => {
@@ -1898,20 +1810,6 @@ export class Runtime {
 			};
 		}
 		return resources;
-	}
-
-	public getImagePixels(entry: AssetEntry): Uint8Array {
-		if (entry.type !== 'image') {
-			throw runtimeFault(`asset '${entry.id}' is not an image.`);
-		}
-		return this.memory.getImagePixels(entry);
-	}
-
-	public getAudioBytes(entry: AssetEntry): Uint8Array {
-		if (entry.type !== 'audio') {
-			throw runtimeFault(`asset '${entry.id}' is not audio.`);
-		}
-		return this.memory.getAudioBytes(entry);
 	}
 
 	public getAudioBytesById(id: string): Uint8Array {

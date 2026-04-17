@@ -523,6 +523,12 @@ Api::Api(Runtime& runtime)
 	: m_runtime(runtime)
 	, m_persistentData(PERSISTENT_DATA_SIZE, 0.0)
 {
+	m_font = std::make_unique<Font>(EngineCore::instance().systemAssets());
+}
+
+Api::~Api() = default;
+
+void Api::initializeRuntimeKeys() {
 	m_keys.x = m_runtime.canonicalizeIdentifier("x");
 	m_keys.y = m_runtime.canonicalizeIdentifier("y");
 	m_keys.z = m_runtime.canonicalizeIdentifier("z");
@@ -536,10 +542,7 @@ Api::Api(Runtime& runtime)
 	m_keys.valid = m_runtime.canonicalizeIdentifier("valid");
 	m_keys.inside = m_runtime.canonicalizeIdentifier("inside");
 	m_keys.value = m_runtime.canonicalizeIdentifier("value");
-	m_font = std::make_unique<Font>(EngineCore::instance().systemAssets());
 }
-
-Api::~Api() = default;
 
 void Api::markRoots(GcHeap& heap) {
 	for (Value handle : m_playerInputHandles) {

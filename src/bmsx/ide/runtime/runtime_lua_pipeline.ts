@@ -626,13 +626,7 @@ export function resetFrameState(runtime: Runtime): void {
 }
 
 export function resetHardwareState(runtime: Runtime): void {
-	runtime.irqController.reset();
-	runtime.dmaController.reset();
-	runtime.geometryController.reset();
-	runtime.imgDecController.reset();
-	runtime.inputController.reset();
-	runtime.audioController.reset();
-	runtime.vdp.initializeRegisters();
+	runtime.machine.resetDevices();
 	runtime.resetVblankState();
 	runtime.resetRenderBuffers();
 }
