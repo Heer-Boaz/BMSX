@@ -2248,12 +2248,12 @@ function matchesBool01DuplicatePattern(functionExpression: LuaFunctionExpression
 	const parameterName = functionExpression.parameters[0].name;
 	const body = functionExpression.body.body;
 	if (body.length === 2) {
-		const maybeIf = body[0];
+		const firstStatement = body[0];
 		const fallback = getSingleReturnedStringValue(body[1]);
-		if (maybeIf.kind !== LuaSyntaxKind.IfStatement || !fallback || maybeIf.clauses.length !== 1) {
+		if (firstStatement.kind !== LuaSyntaxKind.IfStatement || !fallback || firstStatement.clauses.length !== 1) {
 			return false;
 		}
-		const onlyClause = maybeIf.clauses[0];
+		const onlyClause = firstStatement.clauses[0];
 		if (!onlyClause.condition || onlyClause.block.body.length !== 1) {
 			return false;
 		}
@@ -7954,11 +7954,11 @@ function lintBranchUninitializedLocalPattern(statements: ReadonlyArray<LuaStatem
 			continue;
 		}
 		const name = declaration.names[0].name;
-		const maybeIf = statements[index + 1];
-		if (maybeIf.kind !== LuaSyntaxKind.IfStatement) {
+		const firstStatement = statements[index + 1];
+		if (firstStatement.kind !== LuaSyntaxKind.IfStatement) {
 			continue;
 		}
-		if (!isSingleBranchConditionalAssignment(maybeIf, name)) {
+		if (!isSingleBranchConditionalAssignment(firstStatement, name)) {
 			continue;
 		}
 		let usedAfter = false;

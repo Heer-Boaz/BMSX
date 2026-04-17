@@ -124,7 +124,7 @@ export class BoundingBoxExtractor {
 			return pts;
 		};
 
-	const visited = new Uint8Array(width * height);
+		const visited = new Uint8Array(width * height);
 		const polygons: Polygon[] = [];
 		let hasMask = false;
 		let minx = width;
@@ -781,18 +781,18 @@ export class BoundingBoxExtractor {
 			const aTris = tris.reduce((s, t) => s + Math.abs(this.polyArea(t)), 0);
 			const absErr = Math.abs(signedSrc - aTris);
 			const relErr = signedSrc > 1e-6 ? absErr / signedSrc : 0;
-		// Extra validation: compare with mask area from source image when available
-		let maskRelErr = 0;
-		const maybeCanvas = res?.img as unknown as { getContext?: (type: '2d') => CanvasRenderingContext2D; width: number; height: number; };
-		if (maybeCanvas?.getContext) {
-			try {
-				const ctx = maybeCanvas.getContext('2d');
-				const w = maybeCanvas.width, h = maybeCanvas.height;
-				const data = ctx.getImageData(0, 0, w, h).data;
-				let on = 0; for (let i = 3; i < data.length; i += 4) if (data[i] >= this.DEFAULT_ALPHA_T) on++;
-				const maskArea = on; // unit squares
-				maskRelErr = maskArea > 1e-6 ? Math.abs(maskArea - aTris) / maskArea : 0;
-			} catch { }
+			// Extra validation: compare with mask area from source image when available
+			let maskRelErr = 0;
+			const canvasLike = res?.img as unknown as { getContext?: (type: '2d') => CanvasRenderingContext2D; width: number; height: number; };
+			if (canvasLike?.getContext) {
+				try {
+					const ctx = canvasLike.getContext('2d');
+					const w = canvasLike.width, h = canvasLike.height;
+					const data = ctx.getImageData(0, 0, w, h).data;
+					let on = 0; for (let i = 3; i < data.length; i += 4) if (data[i] >= this.DEFAULT_ALPHA_T) on++;
+					const maskArea = on; // unit squares
+					maskRelErr = maskArea > 1e-6 ? Math.abs(maskArea - aTris) / maskArea : 0;
+				} catch { }
 			}
 			if (!(aTris > 0) || (absErr > 2 && relErr > 1e-2) || (maskRelErr > 0.2)) {
 				// Fallback to convex hull fan of all ring points
@@ -1047,7 +1047,7 @@ export class BoundingBoxExtractor {
 	private static triangulateWithHoles(g: { outer: Polygon; holes: Polygon[] }): Polygon[] {
 		const verts: number[] = [];
 		const holesIdx: number[] = [];
-		const pushRing = (r: Polygon)  => { for (let i = 0; i < r.length; i++) verts.push(r[i]); };
+		const pushRing = (r: Polygon) => { for (let i = 0; i < r.length; i++) verts.push(r[i]); };
 		pushRing(g.outer);
 		let idx = g.outer.length / 2;
 		for (const h of g.holes) { holesIdx.push(idx); pushRing(h); idx += h.length / 2; }

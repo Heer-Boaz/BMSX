@@ -662,7 +662,7 @@ function chooseGlobalGainForTargetBits(
 
 	// Fixed bits (excluding section/scalefac/spectral)
 	const icsInfoBits = includeIcsInfo ? (1 + 2 + 1 + 6 + 1) : 0; // long ics_info bits
-	const fixedBits = 8 + icsInfoBits + 3; // global_gain + (maybe) ics_info + (pulse/tns/gain_control)
+	const fixedBits = 8 + icsInfoBits + 3; // global_gain + (perhaps) ics_info + (pulse/tns/gain_control)
 
 	// Binary search: larger global_gain => larger gain => smaller quant => fewer bits (monotonic enough)
 	let lo = 0;
@@ -699,7 +699,7 @@ function estimateTotalBitsLongForGlobalGain(
 	tmpSfbCb: Uint8Array
 ): number {
 	const icsInfoBits = includeIcsInfo ? (1 + 2 + 1 + 6 + 1) : 0; // long ics_info bits
-	const fixedBits = 8 + icsInfoBits + 3; // global_gain + (maybe) ics_info + (pulse/tns/gain_control)
+	const fixedBits = 8 + icsInfoBits + 3; // global_gain + (perhaps) ics_info + (pulse/tns/gain_control)
 
 	const gain = sfGain(globalGain);
 	const { spectralBits, codedBands } = estimateSpectralBitsLong(spec, swbOffsets, maxSfb, gain, tmpSfbCb);
