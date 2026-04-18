@@ -1,7 +1,5 @@
 /*
  * graph.h - Render graph runtime for scheduling and executing passes
- *
- * Mirrors TypeScript RenderGraphRuntime concept.
  */
 
 #ifndef BMSX_RENDERGRAPH_H

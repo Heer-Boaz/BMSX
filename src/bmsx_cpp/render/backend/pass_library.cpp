@@ -1,7 +1,5 @@
 /*
  * pass_library.cpp - Render pass library implementation
- *
- * Mirrors TypeScript pass_library.ts
  */
 
 #include "pass_library.h"

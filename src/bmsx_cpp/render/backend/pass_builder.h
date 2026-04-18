@@ -1,7 +1,5 @@
 /*
  * pass_builder.h - Fluent builder for render pass descriptions
- *
- * Mirrors TypeScript pass_builder.ts
  */
 
 #ifndef BMSX_RENDERPASS_BUILDER_H
@@ -39,7 +37,6 @@ struct BuilderDepthAttachmentSpec {
  * RenderPassBuilder
  *
  * Fluent builder to assemble a RenderPassDesc consistently.
- * Mirrors TypeScript RenderPassBuilder class.
  * ============================================================================ */
 
 class RenderPassBuilder {

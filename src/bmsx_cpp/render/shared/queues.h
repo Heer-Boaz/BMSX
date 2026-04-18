@@ -1,7 +1,6 @@
 /*
  * queues.h - Render submission queues
  *
- * Mirrors TypeScript queues.ts
  * 2D submissions are rasterized into the live fantasy framebuffer; mesh/particles still use FeatureQueue.
  */
 

@@ -1,7 +1,5 @@
 /*
  * font.h - Bitmap font support
- *
- * Mirrors TypeScript core/font.ts.
  */
 
 #ifndef BMSX_FONT_H

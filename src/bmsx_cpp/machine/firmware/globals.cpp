@@ -1,5 +1,6 @@
 #include "machine/runtime/runtime.h"
 #include "machine/firmware/api.h"
+#include "machine/firmware/input_state_tables.h"
 #include "machine/program/load_compiler.h"
 #include "machine/common/number_format.h"
 #include "core/engine.h"
@@ -41,17 +42,6 @@ AssetToken hashAssetTokenLocal(const std::string& id) {
 }
 
 constexpr uint32_t CART_ROM_MAGIC = 0x58534D42u;
-constexpr uint32_t ACTION_STATE_FLAG_PRESSED = 1u << 0u;
-constexpr uint32_t ACTION_STATE_FLAG_JUSTPRESSED = 1u << 1u;
-constexpr uint32_t ACTION_STATE_FLAG_JUSTRELEASED = 1u << 2u;
-constexpr uint32_t ACTION_STATE_FLAG_WASPRESSED = 1u << 3u;
-constexpr uint32_t ACTION_STATE_FLAG_WASRELEASED = 1u << 4u;
-constexpr uint32_t ACTION_STATE_FLAG_CONSUMED = 1u << 5u;
-constexpr uint32_t ACTION_STATE_FLAG_ALLJUSTPRESSED = 1u << 6u;
-constexpr uint32_t ACTION_STATE_FLAG_ALLWASPRESSED = 1u << 7u;
-constexpr uint32_t ACTION_STATE_FLAG_ALLJUSTRELEASED = 1u << 8u;
-constexpr uint32_t ACTION_STATE_FLAG_GUARDEDJUSTPRESSED = 1u << 9u;
-constexpr uint32_t ACTION_STATE_FLAG_REPEATPRESSED = 1u << 10u;
 
 struct LuaPcallError final : std::exception {
 	const Value value;
@@ -3877,23 +3867,7 @@ auto clockPerfNowFn = m_machine.cpu().createNativeFunction("platform.clock.perf_
 	auto* platformTable = m_machine.cpu().createTable(0, 1);
 	platformTable->set(key("clock"), valueTable(clockTable));
 
-	auto packActionStateFlags = [](const ActionState& state) -> Value {
-		uint32_t flags = 0;
-		if (state.pressed) flags |= ACTION_STATE_FLAG_PRESSED;
-		if (state.justpressed) flags |= ACTION_STATE_FLAG_JUSTPRESSED;
-		if (state.justreleased) flags |= ACTION_STATE_FLAG_JUSTRELEASED;
-		if (state.waspressed) flags |= ACTION_STATE_FLAG_WASPRESSED;
-		if (state.wasreleased) flags |= ACTION_STATE_FLAG_WASRELEASED;
-		if (state.consumed) flags |= ACTION_STATE_FLAG_CONSUMED;
-		if (state.alljustpressed) flags |= ACTION_STATE_FLAG_ALLJUSTPRESSED;
-		if (state.allwaspressed) flags |= ACTION_STATE_FLAG_ALLWASPRESSED;
-		if (state.alljustreleased) flags |= ACTION_STATE_FLAG_ALLJUSTRELEASED;
-		if (state.guardedjustpressed.has_value() && state.guardedjustpressed.value()) flags |= ACTION_STATE_FLAG_GUARDEDJUSTPRESSED;
-		if (state.repeatpressed.has_value() && state.repeatpressed.value()) flags |= ACTION_STATE_FLAG_REPEATPRESSED;
-		return valueNumber(static_cast<double>(flags));
-	};
-
-	auto getActionStateFn = m_machine.cpu().createNativeFunction("game.get_action_state", [this, packActionStateFlags](NativeArgsView args, NativeResults& out) {
+	auto getActionStateFn = m_machine.cpu().createNativeFunction("game.get_action_state", [this](NativeArgsView args, NativeResults& out) {
 		int playerIndex = 1;
 		std::string action;
 		std::optional<f64> windowFrames;
@@ -3908,7 +3882,7 @@ auto clockPerfNowFn = m_machine.cpu().createNativeFunction("platform.clock.perf_
 		}
 		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
 		ActionState state = input->getActionState(action, windowFrames);
-		out.push_back(packActionStateFlags(state));
+		out.push_back(valueNumber(static_cast<double>(packActionStateFlags(state))));
 	});
 
 auto emitFn = m_machine.cpu().createNativeFunction("game.emit", [](NativeArgsView args, NativeResults& out) {

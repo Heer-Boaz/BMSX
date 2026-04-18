@@ -1,7 +1,5 @@
 /*
  * player.cpp - Per-player input handling implementation
- *
- * Mirrors TypeScript input/player.ts
  */
 
 #include "player.h"

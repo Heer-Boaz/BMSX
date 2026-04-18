@@ -1,7 +1,6 @@
 /*
  * gameview.cpp - GameView implementation
  *
- * Mirrors TypeScript GameView class.
  * Uses RenderQueues for sprite/mesh/particle submission.
  */
 
@@ -43,7 +42,6 @@ GameView::~GameView() {
 /**
  * Initialize the renderer submit functions.
  *
- * Mirrors TypeScript GameView.renderer.submit structure.
  * Each submit function routes to queues helpers.
  */
 void GameView::initializeRenderer() {
@@ -203,7 +201,6 @@ void GameView::finalizePresentation() {
 /**
  * Main render loop - executes the render graph.
  *
- * Mirrors TypeScript GameView.drawgame().
  * The render graph calls individual pipelines (sprites, meshes, particles, CRT, etc.)
  * in the correct order.
  */
@@ -231,7 +228,7 @@ void GameView::setPipelineRegistry(std::unique_ptr<RenderPassLibrary> registry) 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Texture binding helpers (mirrors TypeScript)
+// Texture binding helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::setActiveTexUnit(i32 unit) {
@@ -263,7 +260,7 @@ void GameView::bindCubemapTex(TextureHandle tex) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Ambient control API (mirrors TypeScript)
+// Ambient control API
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::setSkyboxTintExposure(const std::array<f32, 3>& tint, f32 exposure) {
@@ -291,7 +288,7 @@ void GameView::setSpriteParallaxRig(f32 vy, f32 scale, f32 impact, f32 impact_t,
 // ─────────────────────────────────────────────────────────────────────────────
 // Convenience methods for drawing primitives
 //
-// These use renderer.submit internally, matching TypeScript behavior.
+// These use renderer.submit internally.
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::fillRectangle(const RectBounds& area, const Color& color, RenderLayer layer) {
@@ -326,7 +323,7 @@ void GameView::drawLine(i32 x0, i32 y0, i32 x1, i32 y1, const Color& color, Rend
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Render graph (mirrors TypeScript rebuildGraph)
+// Render graph
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::rebuildGraph() {
@@ -532,8 +529,6 @@ inline f32 quantizeRgb555PSX(f32 c, i32 ditherOffset) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CRT Post-processing (software implementation)
-//
-// This mirrors the WebGL CRT shader for feature parity.
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::applyCRTPostProcessing(const u32* src,

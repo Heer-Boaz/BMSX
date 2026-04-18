@@ -1,7 +1,5 @@
 /*
  * format.h - ROM pack utilities
- *
- * Mirrors TypeScript format.ts atlas helpers.
  */
 
 #ifndef BMSX_ROMPACK_H

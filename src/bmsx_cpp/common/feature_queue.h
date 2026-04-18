@@ -1,7 +1,6 @@
 /*
  * feature_queue.h - Generic double-buffered feature queue
  *
- * Mirrors TypeScript FeatureQueue class.
  * Backed by ScratchBatch for stable capacity and no sparse holes.
  * Supports front/back swap per frame.
  */
@@ -34,7 +33,6 @@ public:
 	 * Front capacity will be adjusted on next swap.
 	 */
 	void reserve(size_t minCapacity) {
-		if (minCapacity <= 0) return;
 		if (minCapacity > m_backCapacity) {
 			m_back = ScratchBatch<T>(minCapacity);
 			m_backCapacity = minCapacity;
@@ -59,13 +57,19 @@ public:
 		m_back.clear();
 	}
 
-	void forEachFront(const std::function<void(T&, size_t)>& fn) { m_front.forEach(fn); }
-	void forEachFront(const std::function<void(const T&, size_t)>& fn) const { m_front.forEach(fn); }
-	void forEachBack(const std::function<void(T&, size_t)>& fn) { m_back.forEach(fn); }
-	void forEachBack(const std::function<void(const T&, size_t)>& fn) const { m_back.forEach(fn); }
+	template<typename Fn>
+	void forEachFront(Fn&& fn) { m_front.forEach(std::forward<Fn>(fn)); }
+	template<typename Fn>
+	void forEachFront(Fn&& fn) const { m_front.forEach(std::forward<Fn>(fn)); }
+	template<typename Fn>
+	void forEachBack(Fn&& fn) { m_back.forEach(std::forward<Fn>(fn)); }
+	template<typename Fn>
+	void forEachBack(Fn&& fn) const { m_back.forEach(std::forward<Fn>(fn)); }
 
-	void sortFront(const std::function<bool(const T&, const T&)>& compare) { m_front.sort(compare); }
-	void sortBack(const std::function<bool(const T&, const T&)>& compare) { m_back.sort(compare); }
+	template<typename Compare>
+	void sortFront(Compare&& compare) { m_front.sort(std::forward<Compare>(compare)); }
+	template<typename Compare>
+	void sortBack(Compare&& compare) { m_back.sort(std::forward<Compare>(compare)); }
 
 	// Direct access to front buffer for iteration
 	ScratchBatch<T>& front() { return m_front; }

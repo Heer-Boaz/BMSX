@@ -2,6 +2,7 @@
 
 #include "machine/cpu/cpu.h"
 #include "machine/firmware/font.h"
+#include "machine/firmware/input_state_tables.h"
 #include "input/models.h"
 #include "core/primitives.h"
 #include "render/shared/submissions.h"
@@ -68,6 +69,7 @@ private:
 		Value inside = valueNil();
 		Value value = valueNil();
 	} m_keys;
+	InputStateTableKeys m_inputStateKeys;
 
 	Runtime& m_runtime;
 	std::unique_ptr<Font> m_font;

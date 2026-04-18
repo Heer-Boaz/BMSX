@@ -1,7 +1,5 @@
 /*
  * gamepad.cpp - Gamepad input handler implementation
- *
- * Mirrors TypeScript input/gamepad.ts
  */
 
 #include "gamepad.h"

@@ -1,7 +1,5 @@
 /*
  * action_parser.cpp - Action definition parser implementation
- *
- * Mirrors TypeScript input/action_parser.ts
  */
 
 #include "action_parser.h"

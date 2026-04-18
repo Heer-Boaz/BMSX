@@ -2,7 +2,6 @@
  * state_manager.h - Input state manager for BMSX
  *
  * Manages button state tracking and input buffering for edge detection.
- * Mirrors TypeScript InputStateManager class from input/manager.ts
  */
 
 #ifndef BMSX_INPUTSTATEMANAGER_H

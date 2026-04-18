@@ -2,6 +2,7 @@
 #include "core/engine.h"
 #include "machine/runtime/runtime.h"
 #include "render/shared/queues.h"
+#include "render/test_pattern.h"
 #include <cstdio>
 #include <cstdlib>
 
@@ -212,7 +213,7 @@ void RenderPresentationState::render(EngineCore& engine, Runtime& runtime) {
 
 		if (!engine.m_rom_loaded) {
 			const auto testStart = std::chrono::steady_clock::now();
-			engine.renderTestPattern();
+			renderTestPattern(*engine.m_view, engine.m_total_time);
 			const auto testEnd = std::chrono::steady_clock::now();
 			engine.m_last_render_timing.testPatternMs = to_ms(testEnd - testStart);
 		} else {

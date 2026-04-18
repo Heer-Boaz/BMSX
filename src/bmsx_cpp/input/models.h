@@ -1,7 +1,5 @@
 /*
  * models.h - Input system type definitions for BMSX
- *
- * Mirrors TypeScript input/models.ts
  */
 
 #ifndef BMSX_INPUTTYPES_H

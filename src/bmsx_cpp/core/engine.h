@@ -1,10 +1,8 @@
 /*
- * engine.h - Core engine interface (EngineCore in TypeScript)
+ * engine.h - C++ host shell for BMSX
  *
- * This mirrors the TypeScript EngineCore class which:
- * - Manages the game loop and frame timing
- * - Holds references to Registry, Assets
- * - Provides the global $ accessor pattern
+ * Owns libretro-facing platform state, ROM asset sets, and runtime boot handoff.
+ * Cart-visible hardware belongs under machine, not in EngineCore.
  */
 
 #ifndef BMSX_ENGINE_CORE_H
@@ -40,7 +38,7 @@ enum class EngineState {
 };
 
 /* ============================================================================
- * EngineCore - Main game engine (mirrors TypeScript EngineCore)
+ * EngineCore - libretro host shell and runtime bootstrap owner
  * ============================================================================ */
 
 class EngineCore {
@@ -88,7 +86,7 @@ public:
 	bool isRunning() const { return m_state == EngineState::Running; }
 	bool isPaused() const { return m_state == EngineState::Paused; }
 
-	// Core subsystems (like TypeScript $)
+	// Core host subsystems
 	Platform* platform() { return m_platform; }
 	GameView* view() { return m_view.get(); }
 	Registry& registry() { return Registry::instance(); }
@@ -125,13 +123,6 @@ public:
 	void refreshRenderAssets();
 	void log(LogLevel level, const char* fmt, ...);
 
-	// Input helpers (mirror TypeScript EngineCore)
-	bool action_triggered(int playerIndex, const std::string& action);
-	void consume_action(int playerIndex, const std::string& action);
-
-	// Skybox helpers (mirror TypeScript EngineCore)
-	void set_skybox_imgs(const SkyboxImageIds& ids);
-
 	// ROM loading
 	bool loadEngineAssets(const u8* data, size_t size);  // Load bmsx-bios.rom first
 	bool loadEngineAssetsOwned(std::vector<u8>&& data);  // Load engine assets without extra copy
@@ -144,12 +135,11 @@ public:
 	bool romLoaded() const { return m_rom_loaded; }
 	bool hasLoadedCartProgram() const { return m_loaded_cart_has_program; }
 	bool engineAssetsLoaded() const { return m_engine_assets_loaded; }
-	void prepareLoadedRomAssets();
 
 	// Boot engine without cart - uses program from engine assets (bootrom.lua)
 	bool bootWithoutCart();
 
-	// Registry shortcuts (like TypeScript $)
+	// Registry shortcuts
 	template<typename T = Registerable>
 	T* get(const std::string& id) {
 		return registry().get<T>(id);
@@ -163,15 +153,12 @@ public:
 		registry().registerObject(obj);
 	}
 
-	// Singleton access (global $ pattern)
+	// Singleton access
 	static EngineCore& instance();
 	static EngineCore* instancePtr();
 
 private:
-	void renderTestPattern();  // Visual test when no ROM loaded
 	void bootRuntimeFromProgram();  // Boot runtime with pre-compiled program from ROM
-	void refreshAudioAssets();
-	void refreshAudioAssets(const RuntimeAssets& assets);
 	void activateEngineAssets();
 	void activateCartAssets();
 	void setMachineManifest(const MachineManifest& manifest);
@@ -224,7 +211,7 @@ private:
 };
 
 /* ============================================================================
- * Global accessor (mirrors TypeScript $)
+ * Global engine accessor
  * ============================================================================ */
 
 // Usage: $().assets(), $().view(), etc.

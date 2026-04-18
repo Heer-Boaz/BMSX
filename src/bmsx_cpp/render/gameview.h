@@ -1,7 +1,6 @@
 /*
  * gameview.h - GameView for BMSX
  *
- * Mirrors TypeScript GameView class.
  * Manages viewport, render submissions, and presentation.
  */
 
@@ -27,8 +26,6 @@ class RenderGraphRuntime;
 
 /* ============================================================================
  * Atmosphere parameters (fog, etc.)
- *
- * Mirrors TypeScript AtmosphereParams.
  * ============================================================================ */
 
 struct AtmosphereParams {
@@ -45,7 +42,6 @@ struct AtmosphereParams {
 /* ============================================================================
  * GameView - Main rendering view
  *
- * Mirrors TypeScript GameView class structure.
  * The renderer.submit functions route to the appropriate pipeline
  * (e.g., framebuffer 2D, MeshPipeline, etc.).
  *
@@ -79,7 +75,7 @@ public:
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Backend management (mirrors TypeScript backend getter/setter)
+	// Backend management
 	// ─────────────────────────────────────────────────────────────────────────
 	void setBackend(std::unique_ptr<GPUBackend> backend);
 	GPUBackend* backend() { return m_backend.get(); }
@@ -87,7 +83,7 @@ public:
 	BackendType backendType() const;
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Viewport and canvas sizes (mirrors TypeScript properties)
+	// Viewport and canvas sizes
 	// ─────────────────────────────────────────────────────────────────────────
 	Vec2 viewportSize;       // The logical game resolution (e.g. 256x212 for MSX2)
 	Vec2 canvasSize;         // The backing buffer size
@@ -111,7 +107,7 @@ public:
 	u8 presentationHistoryDestinationIndex() const { return presentationHistorySourceIndex == 0 ? 1 : 0; }
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Render submission (mirrors TypeScript renderer.submit)
+	// Render submission
 	//
 	// These functions route to queues helpers:
 	// - sprite -> RenderQueues::submitSprite
@@ -134,7 +130,7 @@ public:
 	Renderer renderer;
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Textures map (mirrors TypeScript textures property)
+	// Textures map
 	// ─────────────────────────────────────────────────────────────────────────
 	std::unordered_map<std::string, TextureHandle> textures;
 
@@ -146,23 +142,23 @@ public:
 	SkyboxImageIds skyboxFaceIds;
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Pipeline registry (mirrors TypeScript pipelineRegistry)
+	// Pipeline registry
 	// ─────────────────────────────────────────────────────────────────────────
 	RenderPassLibrary* pipelineRegistry() { return m_pipelineRegistry.get(); }
 	void setPipelineRegistry(std::unique_ptr<RenderPassLibrary> registry);
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Font (mirrors TypeScript default_font)
+	// Font
 	// ─────────────────────────────────────────────────────────────────────────
 	BFont* default_font = nullptr;
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Post-processing settings (mirrors current TypeScript properties)
+	// Post-processing settings
 	// ─────────────────────────────────────────────────────────────────────────
 	bool crt_postprocessing_enabled = true;
 	DitherType dither_type = DitherType::None;
 
-	// CRT effect toggles and parameters (mirrors TypeScript GameView)
+	// CRT effect toggles and parameters
 	bool applyNoise = true;
 	bool applyColorBleed = true;
 	bool applyScanlines = true;
@@ -176,7 +172,7 @@ public:
 	std::array<f32, 3> glowColor = {0.12f, 0.10f, 0.09f};
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Sprite ambient settings (mirrors TypeScript)
+	// Sprite ambient settings
 	// ─────────────────────────────────────────────────────────────────────────
 	bool spriteAmbientEnabledDefault = false;
 	f32 spriteAmbientFactorDefault = 1.0f;
@@ -185,18 +181,18 @@ public:
 	u8 presentationHistorySourceIndex = 0;
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Viewport type for IDE (mirrors TypeScript viewportTypeIde)
+	// Viewport type for IDE
 	// ─────────────────────────────────────────────────────────────────────────
 	enum class ViewportType { Viewport, Offscreen };
 	ViewportType viewportTypeIde = ViewportType::Viewport;
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Atmosphere (fog) (mirrors TypeScript)
+	// Atmosphere (fog)
 	// ─────────────────────────────────────────────────────────────────────────
 	AtmosphereParams atmosphere;
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Texture binding helpers (mirrors TypeScript activeTexUnit etc.)
+	// Texture binding helpers
 	// ─────────────────────────────────────────────────────────────────────────
 	i32 activeTexUnit() const { return m_activeTexUnit; }
 	void setActiveTexUnit(i32 unit);
@@ -212,7 +208,7 @@ public:
 	void reset();
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Render graph (mirrors TypeScript renderGraph)
+	// Render graph
 	// ─────────────────────────────────────────────────────────────────────────
 	void rebuildGraph();
 	RenderGraphRuntime* renderGraph() { return m_renderGraph.get(); }
@@ -225,7 +221,7 @@ public:
 								i32 dstPitch);
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Ambient control API (mirrors TypeScript best-practice toggles)
+	// Ambient control API
 	// ─────────────────────────────────────────────────────────────────────────
 	void setSkyboxTintExposure(const std::array<f32, 3>& tint, f32 exposure = 1.0f);
 	void setParticlesAmbient(i32 mode, f32 factor = 1.0f);
@@ -237,7 +233,7 @@ public:
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Convenience methods for drawing primitives
-	// These use renderer.submit internally, matching TypeScript behavior.
+	// These use renderer.submit internally.
 	// ─────────────────────────────────────────────────────────────────────────
 	void fillRectangle(const RectBounds& area, const Color& color, RenderLayer layer = RenderLayer::World);
 	void drawRectangle(const RectBounds& area, const Color& color, RenderLayer layer = RenderLayer::World);

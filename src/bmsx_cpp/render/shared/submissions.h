@@ -1,7 +1,6 @@
 /*
  * submissions.h - Render submission types for BMSX
  *
- * Mirrors TypeScript submissions.ts
  * These are the data structures used to submit render commands.
  */
 

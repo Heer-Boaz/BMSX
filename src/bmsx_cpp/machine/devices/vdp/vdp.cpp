@@ -667,7 +667,7 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 		if (start >= end) {
 			return;
 		}
-		static std::vector<const VDP::BlitterCommand*> sortedCommands;
+		auto& sortedCommands = vdp.m_sortedBlitterCommandScratch;
 		sortedCommands.clear();
 		for (size_t index = start; index < end; ++index) {
 			const auto& command = queue[index];
@@ -693,6 +693,8 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 			}
 		);
 		setupVdpDrawState(host);
+		state.vertices.clear();
+		state.vertices.reserve(sortedCommands.size() * 6u);
 		VdpDrawMode boundMode = VdpDrawMode::None;
 		auto flushVertices = [&]() {
 			if (state.vertices.empty()) {
@@ -707,12 +709,22 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 			glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(state.vertices.size()));
 			state.vertices.clear();
 		};
+		auto bindMode = [&](VdpDrawMode mode) {
+			if (boundMode == mode) {
+				return;
+			}
+			flushVertices();
+			if (mode == VdpDrawMode::Solid) {
+				bindVdpSolidMode(host, boundMode);
+				return;
+			}
+			bindVdpAtlasMode(host, boundMode);
+		};
 		const VDP::FrameBufferColor white{255u, 255u, 255u, 255u};
 		for (const VDP::BlitterCommand* command : sortedCommands) {
 			switch (command->type) {
 				case VDP::BlitterCommandType::Blit: {
-					bindVdpAtlasMode(host, boundMode);
-					state.vertices.clear();
+					bindMode(VdpDrawMode::Atlas);
 					appendBlitVertices(
 						host,
 						state.vertices,
@@ -721,12 +733,10 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 						host.surfaces[command->source.surfaceId].atlasId,
 						command->color
 					);
-					flushVertices();
 					break;
 				}
 				case VDP::BlitterCommandType::FillRect: {
-					bindVdpSolidMode(host, boundMode);
-					state.vertices.clear();
+					bindMode(VdpDrawMode::Solid);
 					f32 left = std::round(command->x0);
 					f32 top = std::round(command->y0);
 					f32 right = std::round(command->x1);
@@ -752,20 +762,16 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 							command->color
 						);
 					}
-					flushVertices();
 					break;
 				}
 				case VDP::BlitterCommandType::DrawLine: {
-					bindVdpSolidMode(host, boundMode);
-					state.vertices.clear();
+					bindMode(VdpDrawMode::Solid);
 					appendLineQuadVertices(state.vertices, *command, command->color);
-					flushVertices();
 					break;
 				}
 				case VDP::BlitterCommandType::GlyphRun: {
 					if (command->backgroundColor.has_value()) {
-						bindVdpSolidMode(host, boundMode);
-						state.vertices.clear();
+						bindMode(VdpDrawMode::Solid);
 						for (const auto& glyph : command->glyphs) {
 							appendAxisAlignedQuadVertices(
 								state.vertices,
@@ -781,10 +787,8 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 								*command->backgroundColor
 							);
 						}
-						flushVertices();
 					}
-					bindVdpAtlasMode(host, boundMode);
-					state.vertices.clear();
+					bindMode(VdpDrawMode::Atlas);
 					for (const auto& glyph : command->glyphs) {
 						const auto& surface = host.surfaces[glyph.surfaceId];
 						const f32 u0 = static_cast<f32>(glyph.srcX) * surface.invWidth;
@@ -805,12 +809,10 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 							command->color
 						);
 					}
-					flushVertices();
 					break;
 				}
 				case VDP::BlitterCommandType::TileRun: {
-					bindVdpAtlasMode(host, boundMode);
-					state.vertices.clear();
+					bindMode(VdpDrawMode::Atlas);
 					for (const auto& tile : command->tiles) {
 						const auto& surface = host.surfaces[tile.surfaceId];
 						const f32 u0 = static_cast<f32>(tile.srcX) * surface.invWidth;
@@ -831,7 +833,6 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 							white
 						);
 					}
-					flushVertices();
 					break;
 				}
 				case VDP::BlitterCommandType::Clear:
@@ -839,6 +840,7 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 					break;
 			}
 		}
+		flushVertices();
 	};
 	auto drawCopyRect = [&](const VDP::BlitterCommand& command) {
 		const VDP::FrameBufferColor white{255u, 255u, 255u, 255u};
@@ -3901,20 +3903,18 @@ void VDP::prefetchReadCache(uint32_t surfaceId, const ReadSurface& surface, uint
 		return;
 	}
 	const uint32_t chunkW = std::min(VDP_RD_MAX_CHUNK_PIXELS, std::min(width - x, maxPixelsByBudget));
-	auto data = readSurfacePixels(surface, x, y, chunkW, 1);
 	auto& cache = m_readCaches[surfaceId];
+	readSurfacePixels(surface, x, y, chunkW, 1, cache.data);
 	cache.x0 = x;
 	cache.y = y;
 	cache.width = chunkW;
-	cache.data = std::move(data);
 }
 
-std::vector<u8> VDP::readSurfacePixels(const ReadSurface& surface, uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
+void VDP::readSurfacePixels(const ReadSurface& surface, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::vector<u8>& out) {
 	auto* texmanager = EngineCore::instance().texmanager();
-	std::vector<u8> out(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
+	out.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
 	texmanager->backend()->readTextureRegion(texmanager->getTextureByUri(surface.textureKey), out.data(), static_cast<i32>(width), static_cast<i32>(height),
 								static_cast<i32>(x), static_cast<i32>(y), {});
-	return out;
 }
 
 void VDP::commitViewSnapshot(GameView& view) {

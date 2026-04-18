@@ -1,7 +1,7 @@
 /*
  * binencoder.h - Binary encoder/decoder for ROM assets
  *
- * Mirrors TypeScript binencoder.ts format.
+ * Shared ROM metadata binary format.
  * Used for decoding ROM metadata blobs.
  */
 
@@ -25,7 +25,7 @@ namespace bmsx {
 constexpr u8 BINENC_VERSION = 0xA1;
 
 /* ============================================================================
- * Type tags (matches TypeScript Tag enum)
+ * Type tags
  * ============================================================================ */
 
 enum class BinTag : u8 {

@@ -1,8 +1,7 @@
 /*
- * platform.h - Platform abstraction layer for BMSX
+ * platform.h - Platform boundary for BMSX
  *
- * This mirrors the TypeScript Platform interface, providing an abstraction
- * over host-specific functionality like timing, input, audio, and rendering.
+ * Owns host-specific timing, input, audio, and rendering hooks.
  */
 
 #ifndef BMSX_PLATFORM_H

@@ -3,8 +3,6 @@
  *
  * Manages input for a single player, including action state evaluation,
  * input mapping, and context stacking.
- *
- * Mirrors TypeScript input/player.ts
  */
 
 #ifndef BMSX_PLAYERINPUT_H

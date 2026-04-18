@@ -1,7 +1,5 @@
 /*
  * font.h - font variants
- *
- * Mirrors TypeScript machine/firmware/font.ts.
  */
 
 #ifndef BMSX_MACHINE_FONT_H

@@ -1647,7 +1647,7 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 				}
 			}
 
-			// Store atlas assets as regular images (matches TypeScript runtime)
+			// Store atlas assets as regular images for render lookup.
 			assets.img[assetToken] = std::move(imgAsset);
 		}
 		else if (assetType == "audio") {

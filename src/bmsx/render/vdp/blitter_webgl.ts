@@ -52,6 +52,9 @@ type WebGLVdpBlitterRuntime = {
 	uParallaxRig: WebGLUniformLocation;
 	uParallaxRig2: WebGLUniformLocation;
 	uParallaxFlipWindow: WebGLUniformLocation;
+	sortedCommands: VdpWebGLBlitterCommand[];
+	rankedCommands: VdpWebGLBlitterCommand[];
+	priorityDepthBySeq: Map<number, number>;
 };
 
 const INSTANCE_FLOATS = 17;
@@ -59,6 +62,7 @@ const INSTANCE_STRIDE_BYTES = INSTANCE_FLOATS * 4;
 const INITIAL_BATCH_CAPACITY = 256;
 const SOLID_TEXCOORD_0 = 0;
 const SOLID_TEXCOORD_1 = 1;
+const WHITE_COLOR: FrameBufferColor = { r: 255, g: 255, b: 255, a: 255 };
 
 let runtime: WebGLVdpBlitterRuntime | null = null;
 
@@ -146,6 +150,9 @@ function ensureRuntime(backend: WebGLBackend): WebGLVdpBlitterRuntime {
 		uParallaxRig,
 		uParallaxRig2,
 		uParallaxFlipWindow,
+		sortedCommands: [],
+		rankedCommands: [],
+		priorityDepthBySeq: new Map(),
 	};
 	return runtime;
 }
@@ -263,6 +270,13 @@ function flushBatch(backend: WebGLBackend, pass: PassEncoder, state: WebGLVdpBli
 	backend.drawInstanced(pass, 6, count, 0, 0);
 }
 
+function flushPendingBatch(backend: WebGLBackend, pass: PassEncoder, state: WebGLVdpBlitterRuntime, count: number): number {
+	if (count !== 0) {
+		flushBatch(backend, pass, state, count);
+	}
+	return 0;
+}
+
 function writeQuad(state: WebGLVdpBlitterRuntime, index: number, originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, z: number, fx: number, priorityDepth: number, color: FrameBufferColor, atlasId: number): void {
 	const base = index * INSTANCE_FLOATS;
 	const data = state.floatData;
@@ -293,7 +307,7 @@ function writeAxisAlignedQuad(state: WebGLVdpBlitterRuntime, index: number, x: n
 	writeQuad(state, index, x, y, width, 0, 0, height, u0, v0, u1, v1, z, fx, priorityDepth, color, atlasId);
 }
 
-function renderFillCommand(backend: WebGLBackend, pass: PassEncoder, state: WebGLVdpBlitterRuntime, command: BlitterFillRectCommand, priorityDepth: number): void {
+function appendFillCommand(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, index: number, command: BlitterFillRectCommand, priorityDepth: number): number {
 	let left = Math.round(command.x0);
 	let top = Math.round(command.y0);
 	let right = Math.round(command.x1);
@@ -309,22 +323,23 @@ function renderFillCommand(backend: WebGLBackend, pass: PassEncoder, state: WebG
 		bottom = swap;
 	}
 	if (left === right || top === bottom) {
-		return;
+		return 0;
 	}
-	writeAxisAlignedQuad(state, 0, left, top, right - left, bottom - top, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, command.z, 0, priorityDepth, command.color, 0);
-	flushBatch(backend, pass, state, 1);
+	ensureCapacity(backend, state, index + 1);
+	writeAxisAlignedQuad(state, index, left, top, right - left, bottom - top, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, command.z, 0, priorityDepth, command.color, 0);
+	return 1;
 }
 
-function renderLineCommand(backend: WebGLBackend, pass: PassEncoder, state: WebGLVdpBlitterRuntime, command: BlitterDrawLineCommand, priorityDepth: number): void {
+function appendLineCommand(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, index: number, command: BlitterDrawLineCommand, priorityDepth: number): number {
 	const thickness = Math.max(1, Math.round(command.thickness));
 	const dx = command.x1 - command.x0;
 	const dy = command.y1 - command.y0;
 	const length = Math.hypot(dx, dy);
 	if (length === 0) {
 		const half = thickness * 0.5;
-			writeAxisAlignedQuad(state, 0, command.x0 - half, command.y0 - half, thickness, thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, command.z, 0, priorityDepth, command.color, 0);
-		flushBatch(backend, pass, state, 1);
-		return;
+		ensureCapacity(backend, state, index + 1);
+		writeAxisAlignedQuad(state, index, command.x0 - half, command.y0 - half, thickness, thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, command.z, 0, priorityDepth, command.color, 0);
+		return 1;
 	}
 	const tangentX = dx / length;
 	const tangentY = dy / length;
@@ -333,11 +348,12 @@ function renderLineCommand(backend: WebGLBackend, pass: PassEncoder, state: WebG
 	const half = thickness * 0.5;
 	const originX = command.x0 - tangentX * half - normalX * half;
 	const originY = command.y0 - tangentY * half - normalY * half;
-	writeQuad(state, 0, originX, originY, dx + tangentX * thickness, dy + tangentY * thickness, normalX * thickness, normalY * thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, command.z, 0, priorityDepth, command.color, 0);
-	flushBatch(backend, pass, state, 1);
+	ensureCapacity(backend, state, index + 1);
+	writeQuad(state, index, originX, originY, dx + tangentX * thickness, dy + tangentY * thickness, normalX * thickness, normalY * thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, command.z, 0, priorityDepth, command.color, 0);
+	return 1;
 }
 
-function renderBlitCommand(host: VdpWebGLBlitterHost, backend: WebGLBackend, pass: PassEncoder, state: WebGLVdpBlitterRuntime, command: BlitterBlitCommand, priorityDepth: number): void {
+function appendBlitCommand(host: VdpWebGLBlitterHost, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, index: number, command: BlitterBlitCommand, priorityDepth: number): number {
 	const surface = host.getSurface(command.source.surfaceId);
 	const dstWidth = Math.max(1, Math.round(command.source.width * command.scaleX));
 	const dstHeight = Math.max(1, Math.round(command.source.height * command.scaleY));
@@ -355,9 +371,10 @@ function renderBlitCommand(host: VdpWebGLBlitterHost, backend: WebGLBackend, pas
 		v0 = v1;
 		v1 = swap;
 	}
+	ensureCapacity(backend, state, index + 1);
 	writeAxisAlignedQuad(
 		state,
-		0,
+		index,
 		Math.round(command.dstX),
 		Math.round(command.dstY),
 		dstWidth,
@@ -372,19 +389,19 @@ function renderBlitCommand(host: VdpWebGLBlitterHost, backend: WebGLBackend, pas
 			command.color,
 			host.getShaderAtlasId(command.source.surfaceId),
 		);
-	flushBatch(backend, pass, state, 1);
+	return 1;
 }
 
-function renderGlyphRunBackground(backend: WebGLBackend, pass: PassEncoder, state: WebGLVdpBlitterRuntime, command: BlitterGlyphRunCommand, priorityDepth: number): void {
+function appendGlyphRunBackground(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, index: number, command: BlitterGlyphRunCommand, priorityDepth: number): number {
 	if (command.backgroundColor === null || command.glyphs.length === 0) {
-		return;
+		return 0;
 	}
-	ensureCapacity(backend, state, command.glyphs.length);
+	ensureCapacity(backend, state, index + command.glyphs.length);
 	for (let i = 0; i < command.glyphs.length; i += 1) {
 		const glyph = command.glyphs[i];
 		writeAxisAlignedQuad(
 			state,
-			i,
+			index + i,
 			glyph.dstX,
 			glyph.dstY,
 			glyph.advance,
@@ -400,14 +417,14 @@ function renderGlyphRunBackground(backend: WebGLBackend, pass: PassEncoder, stat
 			0,
 		);
 	}
-	flushBatch(backend, pass, state, command.glyphs.length);
+	return command.glyphs.length;
 }
 
-function renderGlyphRunGlyphs(host: VdpWebGLBlitterHost, backend: WebGLBackend, pass: PassEncoder, state: WebGLVdpBlitterRuntime, command: BlitterGlyphRunCommand, priorityDepth: number): void {
+function appendGlyphRunGlyphs(host: VdpWebGLBlitterHost, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, index: number, command: BlitterGlyphRunCommand, priorityDepth: number): number {
 	if (command.glyphs.length === 0) {
-		return;
+		return 0;
 	}
-	ensureCapacity(backend, state, command.glyphs.length);
+	ensureCapacity(backend, state, index + command.glyphs.length);
 	for (let i = 0; i < command.glyphs.length; i += 1) {
 		const glyph = command.glyphs[i];
 		const surface = host.getSurface(glyph.surfaceId);
@@ -415,16 +432,16 @@ function renderGlyphRunGlyphs(host: VdpWebGLBlitterHost, backend: WebGLBackend, 
 		const v0 = glyph.srcY / surface.height;
 		const u1 = (glyph.srcX + glyph.width) / surface.width;
 		const v1 = (glyph.srcY + glyph.height) / surface.height;
-		writeAxisAlignedQuad(state, i, glyph.dstX, glyph.dstY, glyph.width, glyph.height, u0, v0, u1, v1, command.z, 0, priorityDepth, command.color, host.getShaderAtlasId(glyph.surfaceId));
+		writeAxisAlignedQuad(state, index + i, glyph.dstX, glyph.dstY, glyph.width, glyph.height, u0, v0, u1, v1, command.z, 0, priorityDepth, command.color, host.getShaderAtlasId(glyph.surfaceId));
 	}
-	flushBatch(backend, pass, state, command.glyphs.length);
+	return command.glyphs.length;
 }
 
-function renderTileRunCommand(host: VdpWebGLBlitterHost, backend: WebGLBackend, pass: PassEncoder, state: WebGLVdpBlitterRuntime, command: BlitterTileRunCommand, priorityDepth: number): void {
+function appendTileRunCommand(host: VdpWebGLBlitterHost, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, index: number, command: BlitterTileRunCommand, priorityDepth: number): number {
 	if (command.tiles.length === 0) {
-		return;
+		return 0;
 	}
-	ensureCapacity(backend, state, command.tiles.length);
+	ensureCapacity(backend, state, index + command.tiles.length);
 	for (let i = 0; i < command.tiles.length; i += 1) {
 		const tile = command.tiles[i];
 		const surface = host.getSurface(tile.surfaceId);
@@ -432,9 +449,9 @@ function renderTileRunCommand(host: VdpWebGLBlitterHost, backend: WebGLBackend, 
 		const v0 = tile.srcY / surface.height;
 		const u1 = (tile.srcX + tile.width) / surface.width;
 		const v1 = (tile.srcY + tile.height) / surface.height;
-		writeAxisAlignedQuad(state, i, tile.dstX, tile.dstY, tile.width, tile.height, u0, v0, u1, v1, command.z, 0, priorityDepth, { r: 255, g: 255, b: 255, a: 255 }, host.getShaderAtlasId(tile.surfaceId));
+		writeAxisAlignedQuad(state, index + i, tile.dstX, tile.dstY, tile.width, tile.height, u0, v0, u1, v1, command.z, 0, priorityDepth, WHITE_COLOR, host.getShaderAtlasId(tile.surfaceId));
 	}
-	flushBatch(backend, pass, state, command.tiles.length);
+	return command.tiles.length;
 }
 
 function getPriorityDepth(priorityDepthBySeq: ReadonlyMap<number, number>, seq: number): number {
@@ -445,53 +462,77 @@ function getPriorityDepth(priorityDepthBySeq: ReadonlyMap<number, number>, seq: 
 	return priorityDepth;
 }
 
-function drawSortedSegment(host: VdpWebGLBlitterHost, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, priorityDepthTexture: WebGLTexture, priorityDepthBySeq: ReadonlyMap<number, number>, commands: readonly VdpWebGLBlitterCommand[]): void {
-	if (commands.length === 0) {
+function drawSortedSegment(host: VdpWebGLBlitterHost, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, priorityDepthTexture: WebGLTexture, priorityDepthBySeq: ReadonlyMap<number, number>, commands: readonly VdpWebGLBlitterCommand[], start: number, end: number): void {
+	if (start >= end) {
 		return;
 	}
+	const sorted = state.sortedCommands;
+	sorted.length = 0;
+	for (let i = start; i < end; i += 1) {
+		const command = commands[i];
+		if (command.opcode === 'clear' || command.opcode === 'copy_rect') {
+			continue;
+		}
+		sorted.push(command);
+	}
+	if (sorted.length === 0) {
+		return;
+	}
+	sorted.sort(compareByPriority);
 	const frameBufferTexture = $.texmanager.getTextureByUri(host.frameBufferTextureKey)!;
 	const pass = backend.beginRenderPass({
 		color: { tex: frameBufferTexture },
 		depth: { tex: priorityDepthTexture },
 	});
 	bindPassState(backend, state, pass, host);
-	const sorted = commands.slice().sort(compareByPriority);
 	let boundMode: DrawMode | null = null;
+	let batchCount = 0;
 	for (let i = 0; i < sorted.length; i += 1) {
 		const command = sorted[i];
 		if (command.opcode === 'clear' || command.opcode === 'copy_rect') {
 			throw new Error('[VDPBlitter2D] Clear/copy commands must not be drawn inside sorted segments.');
 		}
-		const nextMode: DrawMode = command.opcode === 'fill_rect' || command.opcode === 'draw_line' ? 'solid' : 'atlas';
-		if (boundMode !== nextMode) {
-			bindTexturesForMode(host, state, nextMode);
-			boundMode = nextMode;
+		if (command.opcode !== 'glyph_run') {
+			const nextMode: DrawMode = command.opcode === 'fill_rect' || command.opcode === 'draw_line' ? 'solid' : 'atlas';
+			if (boundMode !== nextMode) {
+				batchCount = flushPendingBatch(backend, pass, state, batchCount);
+				bindTexturesForMode(host, state, nextMode);
+				boundMode = nextMode;
+			}
 		}
 		const priorityDepth = getPriorityDepth(priorityDepthBySeq, command.seq);
 		switch (command.opcode) {
 			case 'blit':
-				renderBlitCommand(host, backend, pass, state, command, priorityDepth);
+				batchCount += appendBlitCommand(host, backend, state, batchCount, command, priorityDepth);
 				break;
 			case 'fill_rect':
-				renderFillCommand(backend, pass, state, command, priorityDepth);
+				batchCount += appendFillCommand(backend, state, batchCount, command, priorityDepth);
 				break;
 			case 'draw_line':
-				renderLineCommand(backend, pass, state, command, priorityDepth);
+				batchCount += appendLineCommand(backend, state, batchCount, command, priorityDepth);
 				break;
 			case 'glyph_run':
 				if (command.backgroundColor !== null) {
-					bindTexturesForMode(host, state, 'solid');
-					renderGlyphRunBackground(backend, pass, state, command, priorityDepth);
+					if (boundMode !== 'solid') {
+						batchCount = flushPendingBatch(backend, pass, state, batchCount);
+						bindTexturesForMode(host, state, 'solid');
+						boundMode = 'solid';
+					}
+					batchCount += appendGlyphRunBackground(backend, state, batchCount, command, priorityDepth);
 				}
-				bindTexturesForMode(host, state, 'atlas');
-				boundMode = 'atlas';
-				renderGlyphRunGlyphs(host, backend, pass, state, command, priorityDepth);
+				if (boundMode !== 'atlas') {
+					batchCount = flushPendingBatch(backend, pass, state, batchCount);
+					bindTexturesForMode(host, state, 'atlas');
+					boundMode = 'atlas';
+				}
+				batchCount += appendGlyphRunGlyphs(host, backend, state, batchCount, command, priorityDepth);
 				break;
 			case 'tile_run':
-				renderTileRunCommand(host, backend, pass, state, command, priorityDepth);
+				batchCount += appendTileRunCommand(host, backend, state, batchCount, command, priorityDepth);
 				break;
 		}
 	}
+	flushPendingBatch(backend, pass, state, batchCount);
 	backend.bindVertexArray(null);
 	backend.endRenderPass(pass);
 	backend.setBlendEnabled(false);
@@ -552,7 +593,7 @@ function copyFrameBufferRect(host: VdpWebGLBlitterHost, backend: WebGLBackend, s
 		command.z,
 		0,
 		getPriorityDepth(priorityDepthBySeq, command.seq),
-		{ r: 255, g: 255, b: 255, a: 255 },
+		WHITE_COLOR,
 		0,
 	);
 	flushBatch(backend, pass, state, 1);
@@ -563,9 +604,18 @@ function copyFrameBufferRect(host: VdpWebGLBlitterHost, backend: WebGLBackend, s
 	backend.setDepthMask(true);
 }
 
-function buildPriorityDepthBySequence(commands: readonly VdpWebGLBlitterCommand[]): Map<number, number> {
-	const ranked = commands.filter((command) => command.opcode !== 'clear').slice().sort(compareByPriority);
-	const priorityDepthBySeq = new Map<number, number>();
+function buildPriorityDepthBySequence(state: WebGLVdpBlitterRuntime, commands: readonly VdpWebGLBlitterCommand[]): ReadonlyMap<number, number> {
+	const ranked = state.rankedCommands;
+	ranked.length = 0;
+	for (let i = 0; i < commands.length; i += 1) {
+		const command = commands[i];
+		if (command.opcode !== 'clear') {
+			ranked.push(command);
+		}
+	}
+	ranked.sort(compareByPriority);
+	const priorityDepthBySeq = state.priorityDepthBySeq;
+	priorityDepthBySeq.clear();
 	const rankCount = ranked.length;
 	for (let rank = 0; rank < rankCount; rank += 1) {
 		priorityDepthBySeq.set(ranked[rank].seq, (rankCount - rank) / (rankCount + 1));
@@ -587,13 +637,13 @@ export class WebGLVdpBlitterExecutor implements VdpBlitterExecutor {
 		}
 		const state = ensureRuntime(this.backend);
 		const priorityDepthTexture = ensurePriorityDepthTexture(this.backend, state, host.width, host.height);
-		const priorityDepthBySeq = buildPriorityDepthBySequence(commands);
+		const priorityDepthBySeq = buildPriorityDepthBySequence(state, commands);
 		resetPriorityDepthSurface(host, this.backend, priorityDepthTexture);
 		let segmentStart = 0;
 		for (let i = 0; i < commands.length; i += 1) {
 			const command = commands[i];
 			if (command.opcode === 'clear') {
-				drawSortedSegment(host, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands.slice(segmentStart, i));
+				drawSortedSegment(host, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands, segmentStart, i);
 				clearFrameBuffer(host, this.backend, priorityDepthTexture, command);
 				segmentStart = i + 1;
 				continue;
@@ -601,10 +651,10 @@ export class WebGLVdpBlitterExecutor implements VdpBlitterExecutor {
 			if (command.opcode !== 'copy_rect') {
 				continue;
 			}
-			drawSortedSegment(host, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands.slice(segmentStart, i));
+			drawSortedSegment(host, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands, segmentStart, i);
 			copyFrameBufferRect(host, this.backend, state, priorityDepthTexture, priorityDepthBySeq, command);
 			segmentStart = i + 1;
 		}
-		drawSortedSegment(host, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands.slice(segmentStart));
+		drawSortedSegment(host, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands, segmentStart, commands.length);
 	}
 }

@@ -1,7 +1,6 @@
 /*
  * backend.h - GPU Backend interface for BMSX
  *
- * Mirrors TypeScript GPUBackend interface.
  * For libretro, we implement a software framebuffer backend.
  */
 
@@ -106,7 +105,6 @@ struct PassEncoder {
 /* ============================================================================
  * GPUBackend - Abstract rendering backend interface
  *
- * This interface mirrors TypeScript's GPUBackend.
  * For libretro, we implement SoftwareBackend which renders to a framebuffer.
  * ============================================================================ */
 

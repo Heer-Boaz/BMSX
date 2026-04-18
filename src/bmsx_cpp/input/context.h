@@ -2,7 +2,6 @@
  * context.h - Input mapping context stack for BMSX
  *
  * Provides layered input mappings with priority-based resolution.
- * Mirrors TypeScript input/context.ts
  */
 
 #ifndef BMSX_INPUT_CONTEXT_H

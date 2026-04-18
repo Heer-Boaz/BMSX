@@ -10,8 +10,6 @@ namespace bmsx {
 
 /**
  * ProgramAsset - deserialized pre-compiled Lua program.
- *
- * This mirrors the TypeScript ProgramAsset structure.
  */
 struct ProgramAsset {
 	enum class ConstRelocKind {

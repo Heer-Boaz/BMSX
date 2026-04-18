@@ -1,7 +1,5 @@
 /*
  * keyboard.h - Keyboard input handler for BMSX
- *
- * Mirrors TypeScript input/keyboard.ts
  */
 
 #ifndef BMSX_KEYBOARDINPUT_H

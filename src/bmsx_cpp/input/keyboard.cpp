@@ -1,7 +1,5 @@
 /*
  * keyboard.cpp - Keyboard input handler implementation
- *
- * Mirrors TypeScript input/keyboard.ts
  */
 
 #include "keyboard.h"

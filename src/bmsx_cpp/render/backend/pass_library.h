@@ -1,7 +1,6 @@
 /*
  * pass_library.h - Render pass library and registry
  *
- * Mirrors TypeScript pass_library.ts
  * Manages render pass registration, state, and execution.
  */
 
@@ -30,8 +29,6 @@ class RenderGraphContext;
 
 /* ============================================================================
  * Render pass state types
- *
- * Mirrors TypeScript PassStateTypes.
  * ============================================================================ */
 
 struct SkyboxPipelineState {
@@ -124,8 +121,6 @@ struct FrameSharedState {
 
 /* ============================================================================
  * Render pass definition
- *
- * Mirrors TypeScript RenderPassDef interface.
  * ============================================================================ */
 
 using RenderPassId = std::string;
@@ -207,8 +202,6 @@ struct RenderPassToken {
 
 /* ============================================================================
  * RenderPassLibrary
- *
- * Mirrors TypeScript RenderPassLibrary class.
  * ============================================================================ */
 
 class RenderPassLibrary {

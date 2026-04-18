@@ -1,7 +1,5 @@
 /*
  * glyphs.h - Glyph rendering utilities
- *
- * Mirrors TypeScript render/glyphs.ts.
  */
 
 #ifndef BMSX_GLYPHS_H

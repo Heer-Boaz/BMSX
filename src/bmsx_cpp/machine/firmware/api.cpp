@@ -1,5 +1,6 @@
 #include "machine/firmware/api.h"
 #include "machine/runtime/timing_config.h"
+#include "machine/firmware/input_state_tables.h"
 
 #include "core/engine.h"
 #include "input/manager.h"
@@ -198,6 +199,7 @@ void Api::initializeRuntimeKeys() {
 	m_keys.valid = m_runtime.luaKey("valid");
 	m_keys.inside = m_runtime.luaKey("inside");
 	m_keys.value = m_runtime.luaKey("value");
+	m_inputStateKeys = createInputStateTableKeys(m_runtime);
 }
 
 void Api::markRoots(GcHeap& heap) {
@@ -263,40 +265,6 @@ Value Api::get_player_input_handle(int playerIndex) {
 	auto exactString = [this](std::string_view text) {
 		return valueString(m_runtime.machine().cpu().internString(text));
 	};
-	auto makeButtonStateTable = [this, key](const ButtonState& state, bool repeatPressed, int repeatCount) -> Value {
-		Table* table = m_runtime.machine().cpu().createTable(0, 13);
-		table->set(key("pressed"), valueBool(state.pressed));
-		table->set(key("justpressed"), valueBool(state.justpressed));
-		table->set(key("justreleased"), valueBool(state.justreleased));
-		table->set(key("waspressed"), valueBool(state.waspressed));
-		table->set(key("wasreleased"), valueBool(state.wasreleased));
-		table->set(key("repeatpressed"), valueBool(repeatPressed));
-		table->set(key("repeatcount"), valueNumber(static_cast<double>(repeatCount)));
-		table->set(key("consumed"), valueBool(state.consumed));
-		table->set(key("value"), valueNumber(static_cast<double>(state.value)));
-		if (state.presstime.has_value()) {
-			table->set(key("presstime"), valueNumber(state.presstime.value()));
-		}
-		if (state.timestamp.has_value()) {
-			table->set(key("timestamp"), valueNumber(state.timestamp.value()));
-		}
-		if (state.pressedAtMs.has_value()) {
-			table->set(key("pressedAtMs"), valueNumber(state.pressedAtMs.value()));
-		}
-		if (state.releasedAtMs.has_value()) {
-			table->set(key("releasedAtMs"), valueNumber(state.releasedAtMs.value()));
-		}
-		if (state.pressId.has_value()) {
-			table->set(key("pressId"), valueNumber(static_cast<double>(state.pressId.value())));
-		}
-		if (state.value2d.has_value()) {
-			Table* value2d = m_runtime.machine().cpu().createTable(0, 2);
-			value2d->set(key("x"), valueNumber(static_cast<double>(state.value2d->x)));
-			value2d->set(key("y"), valueNumber(static_cast<double>(state.value2d->y)));
-			table->set(key("value2d"), valueTable(value2d));
-		}
-		return valueTable(table);
-	};
 	auto makeModifierStateTable = [this, key](const PlayerInput::ModifierState& state) -> Value {
 		Table* table = m_runtime.machine().cpu().createTable(0, 4);
 		table->set(key("shift"), valueBool(state.shift));
@@ -311,21 +279,21 @@ Value Api::get_player_input_handle(int playerIndex) {
 		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
 		out.push_back(makeModifierStateTable(input->getModifiersState()));
 	});
-	const Value getButtonStateFn = m_runtime.machine().cpu().createNativeFunction("player_input.getButtonState", [this, playerIndex, makeButtonStateTable](NativeArgsView args, NativeResults& out) {
+	const Value getButtonStateFn = m_runtime.machine().cpu().createNativeFunction("player_input.getButtonState", [this, playerIndex](NativeArgsView args, NativeResults& out) {
 		const size_t offset = args.size() >= 3 ? 1 : 0;
 		const std::string& button = m_runtime.machine().cpu().stringPool().toString(asStringId(args.at(offset)));
 		const std::string& source = m_runtime.machine().cpu().stringPool().toString(asStringId(args.at(offset + 1)));
 		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
 		const ButtonState state = input->getButtonState(button, parseInputSource(source));
-		out.push_back(makeButtonStateTable(state, false, 0));
+		out.push_back(buildButtonStateTable(m_runtime, m_inputStateKeys, state, false, 0));
 	});
-	const Value getButtonRepeatStateFn = m_runtime.machine().cpu().createNativeFunction("player_input.getButtonRepeatState", [this, playerIndex, makeButtonStateTable](NativeArgsView args, NativeResults& out) {
+	const Value getButtonRepeatStateFn = m_runtime.machine().cpu().createNativeFunction("player_input.getButtonRepeatState", [this, playerIndex](NativeArgsView args, NativeResults& out) {
 		const size_t offset = args.size() >= 3 ? 1 : 0;
 		const std::string& button = m_runtime.machine().cpu().stringPool().toString(asStringId(args.at(offset)));
 		const std::string& source = m_runtime.machine().cpu().stringPool().toString(asStringId(args.at(offset + 1)));
 		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
 		const ActionState state = input->getButtonRepeatState(button, parseInputSource(source));
-		out.push_back(makeButtonStateTable(state, state.repeatpressed.value_or(false), state.repeatcount.value_or(0)));
+		out.push_back(buildButtonStateTable(m_runtime, m_inputStateKeys, state, state.repeatpressed.value_or(false), state.repeatcount.value_or(0)));
 	});
 	const Value consumeButtonFn = m_runtime.machine().cpu().createNativeFunction("player_input.consumeButton", [this, playerIndex](NativeArgsView args, NativeResults& out) {
 		const size_t offset = args.size() >= 3 ? 1 : 0;

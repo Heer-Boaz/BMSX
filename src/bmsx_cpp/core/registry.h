@@ -1,10 +1,5 @@
 /*
  * registry.h - Global object registry for BMSX
- *
- * This mirrors the TypeScript Registry class which:
- * - Stores all Registerable objects by ID
- * - Supports persistent objects that survive clear()
- * - Provides lookup and iteration by type
  */
 
 #ifndef BMSX_REGISTRY_H
@@ -29,7 +24,7 @@ class Registerable {
 public:
 	virtual ~Registerable() = default;
 
-	// Unique identifier (required) - matches TypeScript registryId
+	// Unique identifier.
 	virtual const Identifier& registryId() const = 0;
 
 	// Helper that returns registryId (for compatibility)

@@ -1,7 +1,6 @@
 /*
  * scratchbatch.h - Lightweight reusable scratch collections for per-frame batching
  *
- * Mirrors TypeScript ScratchBatch class.
  * Goals:
  * - Avoid per-frame allocations by retaining backing storage.
  * - Offer a simple, consistent API across systems.
@@ -13,7 +12,7 @@
 #include "core/primitives.h"
 #include <vector>
 #include <algorithm>
-#include <functional>
+#include <utility>
 
 namespace bmsx {
 
@@ -59,21 +58,24 @@ public:
 	T& operator[](size_t index) { return m_items[index]; }
 	const T& operator[](size_t index) const { return m_items[index]; }
 
-	void forEach(const std::function<void(T&, size_t)>& fn) {
+	template<typename Fn>
+	void forEach(Fn&& fn) {
 		for (size_t i = 0; i < m_size; ++i) {
 			fn(m_items[i], i);
 		}
 	}
 
-	void forEach(const std::function<void(const T&, size_t)>& fn) const {
+	template<typename Fn>
+	void forEach(Fn&& fn) const {
 		for (size_t i = 0; i < m_size; ++i) {
 			fn(m_items[i], i);
 		}
 	}
 
 	// Sort only the active window; avoids copying.
-	void sort(const std::function<bool(const T&, const T&)>& compareFn) {
-		std::sort(m_items.begin(), m_items.begin() + m_size, compareFn);
+	template<typename Compare>
+	void sort(Compare&& compareFn) {
+		std::sort(m_items.begin(), m_items.begin() + m_size, std::forward<Compare>(compareFn));
 	}
 
 	// Iterator support

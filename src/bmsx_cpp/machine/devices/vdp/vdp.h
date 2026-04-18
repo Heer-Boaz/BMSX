@@ -238,6 +238,7 @@ public:
 		std::vector<BlitterCommand> m_buildBlitterQueue;
 	std::vector<BlitterCommand> m_activeBlitterQueue;
 	std::vector<BlitterCommand> m_pendingBlitterQueue;
+	std::vector<const BlitterCommand*> m_sortedBlitterCommandScratch;
 	std::vector<std::vector<GlyphRunGlyph>> m_glyphBufferPool;
 	std::vector<std::vector<TileRunBlit>> m_tileBufferPool;
 	u32 m_blitterSequence = 0;
@@ -278,7 +279,7 @@ public:
 	void invalidateReadCache(uint32_t surfaceId);
 	ReadCache& getReadCache(uint32_t surfaceId, const ReadSurface& surface, uint32_t x, uint32_t y);
 	void prefetchReadCache(uint32_t surfaceId, const ReadSurface& surface, uint32_t x, uint32_t y);
-	std::vector<u8> readSurfacePixels(const ReadSurface& surface, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+	void readSurfacePixels(const ReadSurface& surface, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::vector<u8>& out);
 	VramSlot& findVramSlot(uint32_t addr, size_t length);
 	const VramSlot& findVramSlot(uint32_t addr, size_t length) const;
 	void syncVramSlotTextureSize(VramSlot& slot);

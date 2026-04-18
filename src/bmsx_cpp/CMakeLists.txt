@@ -109,6 +109,7 @@ add_library(bmsx_core STATIC
 	# Audio systems
 	audio/biquad_filter.cpp
 	audio/soundmaster.cpp
+	audio/resources.cpp
 
 	# Input systems
 	input/state_manager.cpp
@@ -128,6 +129,7 @@ add_library(bmsx_core STATIC
 	render/backend/pass_library.cpp
 	render/graph/graph.cpp
 	render/shared/glyphs.cpp
+	render/test_pattern.cpp
 
 	# Machine runtime (Lua bytecode interpreter)
 	machine/cpu/cpu.cpp
@@ -141,6 +143,7 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/controller.cpp
 	machine/devices/irq/controller.cpp
 	machine/firmware/api.cpp
+	machine/firmware/input_state_tables.cpp
 	machine/cpu/disassembler.cpp
 	machine/program/load_compiler.cpp
 	machine/firmware/globals.cpp
@@ -154,6 +157,7 @@ add_library(bmsx_core STATIC
 	machine/runtime/cart_boot.cpp
 	machine/runtime/cpu_executor.cpp
 	machine/runtime/engine_irq.cpp
+	machine/runtime/boot_timing.cpp
 	machine/runtime/frame_loop.cpp
 	machine/program/executor.cpp
 	machine/program/scratch.cpp

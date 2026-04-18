@@ -2,8 +2,6 @@
  * input.h - Main input system singleton for BMSX
  *
  * Manages player inputs, device bindings, and gamepad assignments.
- *
- * Mirrors TypeScript input/manager.ts
  */
 
 #ifndef BMSX_INPUT_H

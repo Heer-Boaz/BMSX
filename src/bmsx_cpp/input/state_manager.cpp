@@ -1,7 +1,5 @@
 /*
  * state_manager.cpp - Input state manager implementation
- *
- * Mirrors TypeScript InputStateManager class from input/manager.ts
  */
 
 #include "state_manager.h"

@@ -1,7 +1,5 @@
 /*
  * gamepad.h - Gamepad input handler for BMSX
- *
- * Mirrors TypeScript input/gamepad.ts
  */
 
 #ifndef BMSX_GAMEPADINPUT_H

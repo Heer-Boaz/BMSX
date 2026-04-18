@@ -1,7 +1,5 @@
 /*
  * input.cpp - Main input system implementation
- *
- * Mirrors TypeScript input/manager.ts
  */
 
 #include "manager.h"

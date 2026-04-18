@@ -3,8 +3,6 @@
  *
  * Parses action definition expressions like "left[jp] && a[p]" into
  * an AST that can be evaluated against current input state.
- *
- * Mirrors TypeScript input/action_parser.ts
  */
 
 #ifndef BMSX_ACTIONPARSER_H

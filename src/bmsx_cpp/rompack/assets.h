@@ -1,15 +1,5 @@
 /*
  * assets.h - Runtime asset management for BMSX
- *
- * This mirrors the TypeScript RuntimeAssets structure where:
- * - img: Image/texture assets
- * - audio: Audio assets
- * - model: 3D model assets
- * - data: Generic data assets (JSON, etc.)
- * - bin: Raw ROM-addressable binary assets
- * - audioevents: Audio event definitions
- * - programAsset: Pre-compiled Lua bytecode program
- * - programSymbols: Program metadata (symbols/debug info)
  */
 
 #ifndef BMSX_RUNTIME_ASSETS_H
@@ -32,12 +22,12 @@ namespace bmsx {
 constexpr i64 DEFAULT_VDP_WORK_UNITS_PER_SEC = 25'600;
 constexpr i64 DEFAULT_GEO_WORK_UNITS_PER_SEC = 16'384'000;
 
-// Program asset ID (matches TypeScript PROGRAM_ASSET_ID)
+// Program asset IDs emitted by the ROM compiler.
 constexpr const char* PROGRAM_ASSET_ID = "__program__";
 constexpr const char* PROGRAM_SYMBOLS_ASSET_ID = "__program_symbols__";
 
 /* ============================================================================
- * Asset identifiers (string-based, like TypeScript)
+ * Asset identifiers
  * ============================================================================ */
 
 using AssetId = std::string;
@@ -48,7 +38,7 @@ using DataId = AssetId;
 using AssetToken = uint64_t;
 
 /* ============================================================================
- * ROM asset metadata (mirrors TypeScript RomAsset fields)
+ * ROM asset metadata
  * ============================================================================ */
 
 struct RomAssetInfo {
@@ -80,7 +70,7 @@ struct ImgMeta {
 	bool atlassed = false;           // Whether this image is part of an atlas
 	i32 atlasid = 0;                  // Which atlas this image belongs to (0=primary, 1=secondary, 254=engine)
 
-	// Texture coordinates for sprite rendering (matches TypeScript ImgMeta)
+	// Texture coordinates for sprite rendering.
 	// Each array is [u0, v0, u1, v1, u2, v2, u3, v3] for quad vertices
 	std::array<f32, 12> texcoords{0, 0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 1};       // Normal
 	std::array<f32, 12> texcoords_fliph{1, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 1};  // Flipped horizontal
@@ -377,7 +367,7 @@ struct CartManifest {
 };
 
 /* ============================================================================
- * RuntimeAssets - Main asset container (mirrors TypeScript RuntimeAssets)
+ * RuntimeAssets - Main asset container
  * ============================================================================ */
 
 class RuntimeAssets {

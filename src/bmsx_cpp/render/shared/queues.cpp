@@ -1,7 +1,6 @@
 /*
  * queues.cpp - Render submission queues implementation
  *
- * Mirrors TypeScript queues.ts.
  * 2D submissions are translated into framebuffer blits here; mesh/particles stay queued.
  */
 
@@ -35,7 +34,7 @@ SpriteParallaxRig spriteParallaxRig{};
 std::array<f32, 3> _skyTint = {1.0f, 1.0f, 1.0f};
 f32 _skyExposure = 1.0f;
 
-// Default Z coordinate (mirrors TypeScript DEFAULT_ZCOORD)
+// Default Z coordinate.
 static constexpr f32 DEFAULT_ZCOORD = 0.0f;
 
 struct ResolvedSpriteAsset {

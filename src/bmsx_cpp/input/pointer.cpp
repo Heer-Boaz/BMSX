@@ -1,7 +1,5 @@
 /*
  * pointer.cpp - Pointer input handler implementation
- *
- * Mirrors TypeScript input/pointer.ts
  */
 
 #include "pointer.h"
