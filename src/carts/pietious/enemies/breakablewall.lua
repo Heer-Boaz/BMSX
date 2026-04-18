@@ -64,17 +64,24 @@ function breakablewall:ctor()
 			end
 		end
 	end
-	self.events:on({
-		event = 'overlap.begin',
-		subscriber = self,
-		handler = function(event)
-			local contact_kind<const> = combat_overlap.classify_player_contact(event)
-			if contact_kind == nil then
-				return
-			end
-			local result<const> = combat_damage.resolve(self, combat_damage.build_weapon_request(self, self.enemy_kind, event, contact_kind))
-			self:process_damage_result(result)
-		end,
+end
+
+function breakablewall.register_enemy_fsm()
+	define_fsm('breakablewall', {
+		initial = 'active',
+		on = {
+			['overlap.begin'] = function(self, _state, event)
+				local contact_kind<const> = combat_overlap.classify_player_contact(event)
+				if contact_kind == nil then
+					return
+				end
+				local result<const> = combat_damage.resolve(self, combat_damage.build_weapon_request(self, self.enemy_kind, event, contact_kind))
+				self:process_damage_result(result)
+			end,
+		},
+		states = {
+			active = {},
+		},
 	})
 end
 
@@ -82,6 +89,7 @@ function breakablewall.register_enemy_definition()
 	define_prefab({
 		def_id = 'enemy.breakablewall',
 		class = breakablewall,
+		fsms = { 'breakablewall' },
 		components = { 'collider2dcomponent', 'customvisualcomponent' },
 		defaults = {
 			trigger = nil,

@@ -218,30 +218,6 @@ function director:start_daemon_appearance(after_death)
 	end
 end
 
-function director:bind()
-	self.events:on({
-		event = 'room.switched',
-		emitter = 'pietolon',
-		subscriber = self,
-		handler = function(event)
-			self.events:emit('room_state.sync')
-			if room_switch_passthrough_dirs[event.dir] then
-				return
-			end
-			self.events:emit('room_switched')
-		end,
-	})
-
-	self.events:on({
-		event = 'lithograph.request',
-		emitter = 'pietolon',
-		subscriber = self,
-		handler = function(event)
-			self.events:emit('lithograph_requested', { lines = { event.text_line } })
-		end,
-	})
-end
-
 function director:ctor()
 	self.daemon_smoke_next = 1
 	self.daemon_clouds = {}
@@ -385,6 +361,15 @@ local define_director_fsm<const> = function()
 				emitter = 'pietolon',
 				go = '/death',
 			},
+			['room.switched'] = {
+				emitter = 'pietolon',
+				go = function(self, _state, event)
+					self.events:emit('room_state.sync')
+					if not room_switch_passthrough_dirs[event.dir] then
+						return '/room_switch_wait'
+					end
+				end,
+			},
 		},
 		states = {
 			boot = {
@@ -406,16 +391,18 @@ local define_director_fsm<const> = function()
 					self.events:emit('room')
 				end,
 				on = {
-					['room_switched'] = '/room_switch_wait',
 					-- LITHOGRAPH — room-local. Handled here (not on root) because
 					-- lithographs are only reachable from the room state via
 					-- a tile interaction in 'pietolon'.
-					['lithograph_requested'] = function(self, _state, event)
-						self:set_active_space('lithograph')
-						-- Single broadcast with payload (lines). No separate 'lithograph.open'.
-						self.events:emit('lithograph', { lines = event.lines })
-						return '/lithograph'
-					end,
+					['lithograph.request'] = {
+						emitter = 'pietolon',
+						go = function(self, _state, event)
+							self:set_active_space('lithograph')
+							-- Single broadcast with payload (lines). No separate 'lithograph.open'.
+							self.events:emit('lithograph', { lines = { event.text_line } })
+							return '/lithograph'
+						end,
+					},
 				},
 				input_event_handlers = {
 					['lb[jp] || rb[jp]'] = function(self)

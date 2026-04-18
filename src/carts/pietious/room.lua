@@ -173,6 +173,19 @@ local room_visible_mode_events<const> = {
 	'player.shrine_overlay_exit',
 	'player.world_emerge',
 }
+local room_tile_visibility_on<const> = {}
+for i = 1, #room_hidden_mode_events do
+	room_tile_visibility_on[room_hidden_mode_events[i]] = {
+		emitter = 'd',
+		go = '/tile_visibility/hidden',
+	}
+end
+for i = 1, #room_visible_mode_events do
+	room_tile_visibility_on[room_visible_mode_events[i]] = {
+		emitter = 'd',
+		go = '/tile_visibility/visible',
+	}
+end
 
 local pillar_themes<const> = {
 	castleblue = {
@@ -954,31 +967,6 @@ function room_object:bind_visual()
 	end
 end
 
-function room_object:bind()
-	for i = 1, #room_hidden_mode_events do
-		local event_name<const> = room_hidden_mode_events[i]
-		self.events:on({
-			event = event_name,
-			emitter = 'd',
-			subscriber = self,
-			handler = function()
-				self:hide_room_tiles()
-			end,
-		})
-	end
-	for i = 1, #room_visible_mode_events do
-		local event_name<const> = room_visible_mode_events[i]
-		self.events:on({
-			event = event_name,
-			emitter = 'd',
-			subscriber = self,
-			handler = function()
-				self:show_room_tiles()
-			end,
-		})
-	end
-end
-
 function room_object:ctor()
 	self.destroyed_rock_ids = {}
 	self.rock_drops = {}
@@ -1007,7 +995,6 @@ function room_object:ctor()
 	self.water_body_handle = assets.img.water_body_msx.handle
 	self.tiles_visible = false
 	self:bind_visual()
-	self:bind()
 end
 
 function room_object:hide_room_tiles()
@@ -1352,6 +1339,19 @@ local define_room_fsm<const> = function()
 								autoplay = true,
 							},
 						},
+					},
+				},
+			},
+			tile_visibility = {
+				is_concurrent = true,
+				initial = 'hidden',
+				on = room_tile_visibility_on,
+				states = {
+					hidden = {
+						entering_state = room_object.hide_room_tiles,
+					},
+					visible = {
+						entering_state = room_object.show_room_tiles,
 					},
 				},
 			},

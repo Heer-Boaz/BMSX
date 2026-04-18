@@ -1,16 +1,5 @@
 -- shrine.lua
 -- shrine overlay renderer — displays text on the shrine screen.
---
--- SELF-MANAGING SUBSCRIBER PATTERN:
--- Subscribes to two director broadcasts in bind():
---   'shrine' (from 'd') — sets self.lines from event.lines payload.
---   'room'   (from 'd') — clears self.lines (self-clear on mode change).
--- No separate 'shrine.open' or 'shrine.clear' events exist.  The shrine
--- manages its own state entirely through broadcast subscriptions.
---
--- This is the canonical example of how subsystems should consume mode
--- broadcasts: subscribe in bind(), read payload data from the event, and
--- self-clear when the mode returns to 'room'.
 
 local constants<const> = require('constants')
 local font_module<const> = require('font')
@@ -23,25 +12,6 @@ function shrine:bind_visual()
 	renderer.producer = function(_ctx)
 		self:render()
 	end
-end
-
-function shrine:bind()
-	self.events:on({
-		event = 'shrine',
-		emitter = 'd',
-		subscriber = self,
-		handler = function(event)
-			self.lines = event.lines
-		end,
-	})
-	self.events:on({
-		event = 'room',
-		emitter = 'd',
-		subscriber = self,
-		handler = function()
-			self.lines = {}
-		end,
-	})
 end
 
 function shrine:ctor()
@@ -107,10 +77,34 @@ function room_shrine:ctor()
 	self:gfx('shrine')
 end
 
+local define_shrine_fsm<const> = function()
+	define_fsm('shrine', {
+		initial = 'active',
+		on = {
+			['shrine'] = {
+				emitter = 'd',
+				go = function(self, _state, event)
+					self.lines = event.lines
+				end,
+			},
+			['room'] = {
+				emitter = 'd',
+				go = function(self)
+					self.lines = {}
+				end,
+			},
+		},
+		states = {
+			active = {},
+		},
+	})
+end
+
 local register_shrine_definition<const> = function()
 	define_prefab({
 		def_id = 'shrine',
 		class = shrine,
+		fsms = { 'shrine' },
 		components = { 'customvisualcomponent' },
 		defaults = {
 			id = 'shrine',
@@ -131,6 +125,7 @@ end
 return {
 	shrine = shrine,
 	room_shrine = room_shrine,
+	define_shrine_fsm = define_shrine_fsm,
 	register_shrine_definition = register_shrine_definition,
 	register_room_shrine_definition = register_room_shrine_definition,
 }

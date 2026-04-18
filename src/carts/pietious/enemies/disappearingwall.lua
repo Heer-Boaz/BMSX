@@ -39,29 +39,33 @@ function disappearingwall:bind_visual()
 	end
 end
 
-function disappearingwall:bind()
-	self.events:on({
-		event = 'room.condition_set',
-		subscriber = self,
-		handler = function(event)
-			if event.condition ~= self.trigger then
-				return
-			end
-			self:mark_for_disposal()
-		end,
-	})
-end
-
 function disappearingwall:ctor()
 	self:get_component('collider2dcomponent'):apply_collision_profile('enemy')
 	self:update_wall_size()
 	self:bind_visual()
 end
 
+function disappearingwall.register_enemy_fsm()
+	define_fsm('disappearingwall', {
+		initial = 'active',
+		on = {
+			['room.condition_set'] = function(self, _state, event)
+				if event.condition == self.trigger then
+					self:mark_for_disposal()
+				end
+			end,
+		},
+		states = {
+			active = {},
+		},
+	})
+end
+
 function disappearingwall.register_enemy_definition()
 	define_prefab({
 		def_id = 'enemy.disappearingwall',
 		class = disappearingwall,
+		fsms = { 'disappearingwall' },
 		components = { 'collider2dcomponent', 'customvisualcomponent' },
 		defaults = {
 			trigger = nil,

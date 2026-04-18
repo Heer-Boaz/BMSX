@@ -59,50 +59,8 @@ function item_screen:bind_visual()
 	end
 end
 
-function item_screen:bind()
-	self.events:on({
-		event = 'item',
-		emitter = 'd',
-		subscriber = self,
-		handler = function(_event)
-			self:reset_for_open()
-			self:play_timeline(selector_blink_timeline_id, { rewind = true, snap_to_start = true })
-		end,
-	})
-	self.events:on({
-		event = 'item_screen.blink_toggle',
-		subscriber = self,
-		handler = function(_event)
-			if get_space() ~= 'item' then
-				return
-			end
-			self.selector_hidden = not self.selector_hidden
-			self.map_highlight = not self.map_highlight
-		end,
-	})
-	for i = 1, #item_screen_mode_exit_events do
-		local event_name<const> = item_screen_mode_exit_events[i]
-		self.events:on({
-			event = event_name,
-			emitter = 'd',
-			subscriber = self,
-			handler = function(_event)
-				self:stop_timeline(selector_blink_timeline_id)
-			end,
-		})
-	end
-end
-
 function item_screen:ctor()
 	self:bind_visual()
-	self:define_timeline(timeline.new({
-		id = selector_blink_timeline_id,
-		frames = timeline.range(selector_blink_frames),
-		playback_mode = 'loop',
-		markers = {
-			{ frame = selector_blink_frames - 1, event = 'item_screen.blink_toggle' },
-		},
-	}))
 	self.secondary_weapon_selection_index = 0
 	self.selector_hidden = false
 	self.map_highlight = true
@@ -306,21 +264,54 @@ function item_screen:draw_screen()
 end
 
 local define_item_screen_fsm<const> = function()
+	local open_on<const> = {
+		['item_screen.blink_toggle'] = function(self)
+			self.selector_hidden = not self.selector_hidden
+			self.map_highlight = not self.map_highlight
+		end,
+	}
+	for i = 1, #item_screen_mode_exit_events do
+		open_on[item_screen_mode_exit_events[i]] = {
+			emitter = 'd',
+			go = '/closed',
+		}
+	end
 	define_fsm('item_screen', {
-		initial = 'active',
+		initial = 'closed',
 		states = {
-			active = {
+			closed = {
+				on = {
+					['item'] = {
+						emitter = 'd',
+						go = '/open',
+					},
+				},
+			},
+			open = {
+				entering_state = item_screen.reset_for_open,
+				timelines = {
+					[selector_blink_timeline_id] = {
+						def = {
+							frames = timeline.range(selector_blink_frames),
+							playback_mode = 'loop',
+							markers = {
+								{ frame = selector_blink_frames - 1, event = 'item_screen.blink_toggle' },
+							},
+						},
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = {
+							rewind = true,
+							snap_to_start = true,
+						},
+					},
+				},
+				on = open_on,
 				input_event_handlers = {
 					['right[jp]'] = function(self)
-						if get_space() ~= 'item' then
-							return
-						end
 						self:shift_secondary_weapon_selection(1)
 					end,
 					['left[jp]'] = function(self)
-						if get_space() ~= 'item' then
-							return
-						end
 						self:shift_secondary_weapon_selection(-1)
 					end,
 				},

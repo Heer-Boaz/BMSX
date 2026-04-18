@@ -23,7 +23,9 @@ local enemy_registry<const> = {}
 
 function enemy_registry.register_all()
 	for i = 1, #enemy_modules_without_bt do
-		enemy_modules_without_bt[i].register_enemy_definition()
+		local module<const> = enemy_modules_without_bt[i]
+		module.register_enemy_fsm()
+		module.register_enemy_definition()
 	end
 
 	for i = 1, #enemy_modules_with_bt do
