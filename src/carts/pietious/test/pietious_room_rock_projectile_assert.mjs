@@ -41,14 +41,6 @@ function prepareScene(test, logger) {
 			end,
 		})
 
-		inst('pepernoot_projectile', {
-			id = 'probe.room.projectile',
-			space_id = 'main',
-			owner_id = player.id,
-			direction = 1,
-			pos = { x = rock.x - constants.secondary_weapon.pepernoot_speed_px, y = rock.y, z = 113 },
-		})
-
 		return {
 			rock_exists = rock ~= nil,
 			rock_x = rock and rock.x or -1,
@@ -59,14 +51,35 @@ function prepareScene(test, logger) {
 	test.assert(state.rock_exists, 'expected room rock_002_01 to exist');
 }
 
+function spawnProjectile(test, id, direction) {
+	test.evalLua(`
+		local constants = require('constants')
+		local rock = oget('rock_002_01')
+		local player = oget('pietolon')
+		local projectile_x = rock.x - constants.secondary_weapon.pepernoot_speed_px
+		if ${direction} < 0 then
+			projectile_x = rock.x + constants.rock.width
+		end
+		inst('pepernoot_projectile', {
+			id = '${id}',
+			space_id = 'main',
+			owner_id = player.id,
+			direction = ${direction},
+			pos = { x = projectile_x, y = rock.y, z = 113 },
+		})
+	`);
+}
+
 function readScene(test) {
 	const [state] = test.evalLua(`
 		local rock = oget('rock_002_01')
-		local projectile = oget('probe.room.projectile')
+		local projectile_r = oget('probe.room.projectile.r')
+		local projectile_l = oget('probe.room.projectile.l')
 		return {
 			rock_exists = rock ~= nil,
 			rock_health = rock and rock.health or -1,
-			projectile_exists = projectile ~= nil,
+			projectile_r_exists = projectile_r ~= nil,
+			projectile_l_exists = projectile_l ~= nil,
 			damage_events = _probe_room_rock_damage_events or 0,
 		}
 	`);
@@ -81,14 +94,25 @@ export default function schedule({ logger, test }) {
 		});
 
 		prepareScene(test, logger);
+		spawnProjectile(test, 'probe.room.projectile.r', 1);
 		await test.waitFrames(6);
 
-		const state = readScene(test);
-		logger(`[assert] room rock projectile health=${state.rock_health} events=${state.damage_events} projectileExists=${state.projectile_exists}`);
-		test.assert(state.rock_exists, 'room rock disappeared unexpectedly');
-		test.assert(state.rock_health === 2, `expected projectile to damage room rock once, got health=${state.rock_health}`);
-		test.assert(state.damage_events === 1, `expected exactly one room-rock damage event, got ${state.damage_events}`);
-		test.assert(!state.projectile_exists, 'expected projectile to be disposed after room rock hit');
+		let state = readScene(test);
+		logger(`[assert] room rock projectile rightward health=${state.rock_health} events=${state.damage_events} projectileExists=${state.projectile_r_exists}`);
+		test.assert(state.rock_exists, 'room rock disappeared unexpectedly after rightward shot');
+		test.assert(state.rock_health === 2, `expected rightward projectile to damage room rock once, got health=${state.rock_health}`);
+		test.assert(state.damage_events === 1, `expected one room-rock damage event after rightward shot, got ${state.damage_events}`);
+		test.assert(!state.projectile_r_exists, 'expected rightward projectile to be disposed after room rock hit');
+
+		spawnProjectile(test, 'probe.room.projectile.l', -1);
+		await test.waitFrames(6);
+
+		state = readScene(test);
+		logger(`[assert] room rock projectile leftward health=${state.rock_health} events=${state.damage_events} projectileExists=${state.projectile_l_exists}`);
+		test.assert(state.rock_exists, 'room rock disappeared unexpectedly after leftward shot');
+		test.assert(state.rock_health === 1, `expected leftward projectile to damage room rock once, got health=${state.rock_health}`);
+		test.assert(state.damage_events === 2, `expected two room-rock damage events after both shots, got ${state.damage_events}`);
+		test.assert(!state.projectile_l_exists, 'expected leftward projectile to be disposed after room rock hit');
 		test.finish('[assert] room rock projectile overlap passed');
 	});
 }

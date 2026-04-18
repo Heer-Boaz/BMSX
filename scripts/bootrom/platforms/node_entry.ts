@@ -780,7 +780,7 @@ function createHeadlessTestApi(
 	};
 	const getObjectPresenceState = (objects: ObjectPresenceSpec): Record<string, boolean> => {
 		const objectEntries = Object.entries(objects);
-		const locals = objectEntries.map(([name, objectId]) => `local ${name} = object(${JSON.stringify(objectId)})`).join('\n');
+		const locals = objectEntries.map(([name, objectId]) => `local ${name} = oget(${JSON.stringify(objectId)})`).join('\n');
 		const fields = objectEntries.map(([name]) => `has_${name} = ${name} ~= nil`).join(',\n');
 		const [state] = evalLua<[Record<string, boolean>]>(`
 			${locals}
