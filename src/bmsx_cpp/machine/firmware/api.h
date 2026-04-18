@@ -30,15 +30,10 @@ public:
 
 	int display_width() const;
 	int display_height() const;
-	Value get_player_input(std::optional<int> playerIndex);
-	bool mousebtn(int button) const;
-	bool mousebtnp(int button) const;
-	bool mousebtnr(int button) const;
 	std::string get_lua_entry_path() const;
 	std::string get_lua_resource_source(const std::string& path) const;
 	double get_cpu_freq_hz() const;
 	void set_cpu_freq_hz(double cpuHz);
-	double stat(int index) const;
 	Color palette_color(int index) const;
 
 	BFont* resolveFontId(uint32_t id) const;
@@ -51,17 +46,10 @@ public:
 	void dset(int index, double value);
 	double dget(int index) const;
 
-	void sfx(const std::string& id);
-	void stop_sfx();
-	void music(const std::string& id);
-	void stop_music(std::optional<i32> fadeMs = std::nullopt);
-	void set_master_volume(double volume);
 	void set_sprite_parallax_rig(f32 vy, f32 scale, f32 impact, f32 impact_t,
 									f32 bias_px, f32 parallax_strength,
 									f32 scale_strength, f32 flip_strength,
 									f32 flip_window);
-	void pause_audio();
-	void resume_audio();
 	void reboot();
 
 private:

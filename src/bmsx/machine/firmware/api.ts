@@ -148,114 +148,6 @@ export class Api {
 		return $.view.viewportSize.y;
 	}
 
-	public get keyboard() {
-		return Input.instance.getPlayerInput(1).inputHandlers.keyboard;
-	}
-
-	private pointerButtonCode(button: number): string {
-		switch (button) {
-			case 0: return 'pointer_primary';
-			case 1: return 'pointer_secondary';
-			case 2: return 'pointer_aux';
-			case 3: return 'pointer_back';
-			case 4: return 'pointer_forward';
-			default:
-				throw new Error(`Unsupported pointer button index ${button}.`);
-		}
-	}
-
-	public mousebtn(button: number): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState(this.pointerButtonCode(button), 'pointer').pressed === true;
-	}
-
-	public mousebtnp(button: number): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState(this.pointerButtonCode(button), 'pointer').justpressed === true;
-	}
-
-	public mousebtnr(button: number): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState(this.pointerButtonCode(button), 'pointer').justreleased === true;
-	}
-
-	private buildPointerTable(x: number, y: number, valid: boolean, inside: boolean | null = null): Table {
-		const table = new Table(0, inside === null ? 3 : 4);
-		table.set(this.pointerXKey, x);
-		table.set(this.pointerYKey, y);
-		table.set(this.pointerValidKey, valid);
-		if (inside !== null) {
-			table.set(this.pointerInsideKey, inside);
-		}
-		return table;
-	}
-
-	private buildMousewheelTable(value: number, valid: boolean): Table {
-		const table = new Table(0, 2);
-		table.set(this.mousewheelValueKey, value);
-		table.set(this.mousewheelValidKey, valid);
-		return table;
-	}
-
-	public pointer_screen_position(): Table {
-		const state = Input.instance.getPlayerInput(1).getButtonState('pointer_position', 'pointer');
-		const value = state.value2d;
-		if (!value) {
-			return this.buildPointerTable(0, 0, false);
-		}
-		return this.buildPointerTable(value[0], value[1], true);
-	}
-
-	public pointer_delta(): Table {
-		const state = Input.instance.getPlayerInput(1).getButtonState('pointer_delta', 'pointer');
-		const value = state.value2d;
-		if (!value) {
-			return this.buildPointerTable(0, 0, false);
-		}
-		return this.buildPointerTable(value[0], value[1], true);
-	}
-
-	public pointer_viewport_position(): Table {
-		const state = Input.instance.getPlayerInput(1).getButtonState('pointer_position', 'pointer');
-		const value = state.value2d;
-		if (!value) {
-			return this.buildPointerTable(0, 0, false, false);
-		}
-		const view = $.view;
-		const rect = view.surface.measureDisplay();
-		const width = rect.width;
-		const height = rect.height;
-		if (width <= 0 || height <= 0) {
-			return this.buildPointerTable(0, 0, false, false);
-		}
-		const relativeX = value[0] - rect.left;
-		const relativeY = value[1] - rect.top;
-		const inside = relativeX >= 0 && relativeX < width && relativeY >= 0 && relativeY < height;
-		const viewport = view.viewportSize;
-		return this.buildPointerTable(
-			(relativeX / width) * viewport.x,
-			(relativeY / height) * viewport.y,
-			true,
-			inside,
-		);
-	}
-
-	public mousepos(): Table {
-		return this.pointer_viewport_position();
-	}
-
-	public mousewheel(): Table {
-		const state = Input.instance.getPlayerInput(1).getButtonState('pointer_wheel', 'pointer');
-		if (state.value === null || state.value === undefined) {
-			return this.buildMousewheelTable(0, false);
-		}
-		return this.buildMousewheelTable(state.value, true);
-	}
-
-	public stat(index: number): number {
-		if (!Number.isFinite(index)) {
-			throw new Error('stat index must be finite.');
-		}
-		throw new Error('stat is not implemented.');
-	}
-
 	public put_mesh(mesh: MeshRenderSubmission['mesh'], matrix: MeshRenderSubmission['matrix'], options?: Omit<MeshRenderSubmission, 'mesh' | 'matrix'>): void {
 		const submission: MeshRenderSubmission = {
 			mesh,
@@ -454,41 +346,11 @@ export class Api {
 		return this.storage.getValue(index);
 	}
 
-	// Current audio entrypoints still bridge to host playback. The target
-	// architecture is APU MMIO, with BIOS/cart libraries writing registers.
-	public sfx(id: string, options?: AudioPlayOptions): void {
-		$.sndmaster.playSfx(id, options);
-	}
-
-	public stop_sfx(): void {
-		$.sndmaster.stopEffect();
-	}
-
-	public music(id: string, options?: AudioPlayOptions): void {
-		$.sndmaster.playMusic(id, options);
-	}
-
-	public stop_music(options?: AudioPlayOptions): void {
-		$.sndmaster.stopMusicWithOptions(options);
-	}
-
-	public set_master_volume(volume: number): void {
-		$.sndmaster.volume = volume;
-	}
-
 	public set_sprite_parallax_rig(vy: number, scale: number, impact: number, impact_t: number, bias_px: number, parallax_strength: number, scale_strength: number, flip_strength: number, flip_window: number): void {
 		if (arguments.length !== 9) {
 			throw new Error('set_sprite_parallax_rig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window) requires exactly 9 arguments.');
 		}
 		$.view.setSpriteParallaxRig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
-	}
-
-	public pause_audio(): void {
-		$.sndmaster.pause();
-	}
-
-	public resume_audio(): void {
-		$.sndmaster.resume();
 	}
 
 	public taskgate(name: string): GateGroup {

@@ -561,41 +561,6 @@ void Api::appendRootValues(NativeResults& out) const {
 	}
 }
 
-Value Api::get_player_input(std::optional<int> playerIndex) {
-	const int index = playerIndex.has_value() ? playerIndex.value() : 1;
-	if (index < 1 || index > PLAYERS_MAX) {
-		throw BMSX_RUNTIME_ERROR("Player index out of range.");
-	}
-	return get_player_input_handle(index);
-}
-
-std::string Api::pointer_button_code(int button) const {
-	switch (button) {
-		case 0: return "pointer_primary";
-		case 1: return "pointer_secondary";
-		case 2: return "pointer_aux";
-		case 3: return "pointer_back";
-		case 4: return "pointer_forward";
-		default:
-			throw BMSX_RUNTIME_ERROR("Unsupported pointer button index " + std::to_string(button) + ".");
-	}
-}
-
-bool Api::mousebtn(int button) const {
-	const ButtonState state = Input::instance().getPlayerInput(1)->getButtonState(pointer_button_code(button), InputSource::Pointer);
-	return state.pressed;
-}
-
-bool Api::mousebtnp(int button) const {
-	const ButtonState state = Input::instance().getPlayerInput(1)->getButtonState(pointer_button_code(button), InputSource::Pointer);
-	return state.justpressed;
-}
-
-bool Api::mousebtnr(int button) const {
-	const ButtonState state = Input::instance().getPlayerInput(1)->getButtonState(pointer_button_code(button), InputSource::Pointer);
-	return state.justreleased;
-}
-
 std::string Api::get_lua_entry_path() const {
 	const RuntimeAssets& assets = EngineCore::instance().assets();
 	const std::string& entryPath = assets.entryPoint;
@@ -769,125 +734,6 @@ m_runtime.registerNativeFunction("display_height", [this](NativeArgsView args, N
 	out.push_back(valueNumber(static_cast<double>(display_height())));
 });
 
-m_runtime.registerNativeFunction("get_player_input", [this](NativeArgsView args, NativeResults& out) {
-	std::optional<int> playerIndex;
-	if (!args.empty() && !isNil(args.at(0))) {
-		playerIndex = static_cast<int>(std::floor(asNumber(args.at(0))));
-	}
-	out.push_back(get_player_input(playerIndex));
-});
-
-m_runtime.registerNativeFunction("mousebtn", [this](NativeArgsView args, NativeResults& out) {
-	const int button = static_cast<int>(std::floor(asNumber(args.at(0))));
-	out.push_back(valueBool(mousebtn(button)));
-});
-
-m_runtime.registerNativeFunction("mousebtnp", [this](NativeArgsView args, NativeResults& out) {
-	const int button = static_cast<int>(std::floor(asNumber(args.at(0))));
-	out.push_back(valueBool(mousebtnp(button)));
-});
-
-m_runtime.registerNativeFunction("mousebtnr", [this](NativeArgsView args, NativeResults& out) {
-	const int button = static_cast<int>(std::floor(asNumber(args.at(0))));
-	out.push_back(valueBool(mousebtnr(button)));
-});
-
-m_runtime.registerNativeFunction("pointer_screen_position", [this](NativeArgsView args, NativeResults& out) {
-	(void)args;
-	PlayerInput* input = Input::instance().getPlayerInput(1);
-	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
-	Table* table = m_runtime.machine().cpu().createTable(0, 3);
-	if (!state.value2d.has_value()) {
-		table->set(m_keys.x, valueNumber(0.0));
-		table->set(m_keys.y, valueNumber(0.0));
-		table->set(m_keys.valid, valueBool(false));
-		out.push_back(valueTable(table));
-		return;
-	}
-	table->set(m_keys.x, valueNumber(static_cast<double>(state.value2d->x)));
-	table->set(m_keys.y, valueNumber(static_cast<double>(state.value2d->y)));
-	table->set(m_keys.valid, valueBool(true));
-	out.push_back(valueTable(table));
-});
-
-m_runtime.registerNativeFunction("pointer_delta", [this](NativeArgsView args, NativeResults& out) {
-	(void)args;
-	PlayerInput* input = Input::instance().getPlayerInput(1);
-	const ButtonState state = input->getButtonState("pointer_delta", InputSource::Pointer);
-	Table* table = m_runtime.machine().cpu().createTable(0, 3);
-	if (!state.value2d.has_value()) {
-		table->set(m_keys.x, valueNumber(0.0));
-		table->set(m_keys.y, valueNumber(0.0));
-		table->set(m_keys.valid, valueBool(false));
-		out.push_back(valueTable(table));
-		return;
-	}
-	table->set(m_keys.x, valueNumber(static_cast<double>(state.value2d->x)));
-	table->set(m_keys.y, valueNumber(static_cast<double>(state.value2d->y)));
-	table->set(m_keys.valid, valueBool(true));
-	out.push_back(valueTable(table));
-});
-
-m_runtime.registerNativeFunction("pointer_viewport_position", [this](NativeArgsView args, NativeResults& out) {
-	(void)args;
-	PlayerInput* input = Input::instance().getPlayerInput(1);
-	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
-	Table* table = m_runtime.machine().cpu().createTable(0, 4);
-	if (!state.value2d.has_value()) {
-		table->set(m_keys.x, valueNumber(0.0));
-		table->set(m_keys.y, valueNumber(0.0));
-		table->set(m_keys.valid, valueBool(false));
-		table->set(m_keys.inside, valueBool(false));
-		out.push_back(valueTable(table));
-		return;
-	}
-	const double x = static_cast<double>(state.value2d->x);
-	const double y = static_cast<double>(state.value2d->y);
-	const double width = EngineCore::instance().view()->viewportSize.x;
-	const double height = EngineCore::instance().view()->viewportSize.y;
-	const bool inside = x >= 0.0 && x < width && y >= 0.0 && y < height;
-	table->set(m_keys.x, valueNumber(x));
-	table->set(m_keys.y, valueNumber(y));
-	table->set(m_keys.valid, valueBool(true));
-	table->set(m_keys.inside, valueBool(inside));
-	out.push_back(valueTable(table));
-});
-
-m_runtime.registerNativeFunction("mousepos", [this](NativeArgsView args, NativeResults& out) {
-	(void)args;
-	PlayerInput* input = Input::instance().getPlayerInput(1);
-	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
-	Table* table = m_runtime.machine().cpu().createTable(0, 4);
-	if (!state.value2d.has_value()) {
-		table->set(m_keys.x, valueNumber(0.0));
-		table->set(m_keys.y, valueNumber(0.0));
-		table->set(m_keys.valid, valueBool(false));
-		table->set(m_keys.inside, valueBool(false));
-		out.push_back(valueTable(table));
-		return;
-	}
-	const double x = static_cast<double>(state.value2d->x);
-	const double y = static_cast<double>(state.value2d->y);
-	const double width = EngineCore::instance().view()->viewportSize.x;
-	const double height = EngineCore::instance().view()->viewportSize.y;
-	const bool inside = x >= 0.0 && x < width && y >= 0.0 && y < height;
-	table->set(m_keys.x, valueNumber(x));
-	table->set(m_keys.y, valueNumber(y));
-	table->set(m_keys.valid, valueBool(true));
-	table->set(m_keys.inside, valueBool(inside));
-	out.push_back(valueTable(table));
-});
-
-m_runtime.registerNativeFunction("mousewheel", [this](NativeArgsView args, NativeResults& out) {
-	(void)args;
-	PlayerInput* input = Input::instance().getPlayerInput(1);
-	const ButtonState state = input->getButtonState("pointer_wheel", InputSource::Pointer);
-	Table* table = m_runtime.machine().cpu().createTable(0, 2);
-	table->set(m_keys.value, valueNumber(static_cast<double>(state.value)));
-	table->set(m_keys.valid, valueBool(state.value != 0.0f));
-	out.push_back(valueTable(table));
-});
-
 m_runtime.registerNativeFunction("get_lua_entry_path", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	out.push_back(valueString(m_runtime.machine().cpu().internString(get_lua_entry_path())));
@@ -906,11 +752,6 @@ m_runtime.registerNativeFunction("get_cpu_freq_hz", [this](NativeArgsView args, 
 m_runtime.registerNativeFunction("set_cpu_freq_hz", [this](NativeArgsView args, NativeResults& out) {
 	set_cpu_freq_hz(asNumber(args.at(0)));
 	(void)out;
-});
-
-m_runtime.registerNativeFunction("stat", [this](NativeArgsView args, NativeResults& out) {
-	int index = static_cast<int>(std::floor(asNumber(args.at(0))));
-	out.push_back(valueNumber(stat(index)));
 });
 
 m_runtime.registerNativeFunction("put_mesh", [this, key](NativeArgsView args, NativeResults& out) {
@@ -976,63 +817,6 @@ m_runtime.registerNativeFunction("dget", [this](NativeArgsView args, NativeResul
 	out.push_back(valueNumber(dget(index)));
 });
 
-// Current audio entrypoints still bridge to host playback. The target
-// architecture is APU MMIO, with BIOS/cart libraries writing registers.
-m_runtime.registerNativeFunction("sfx", [this, asText](NativeArgsView args, NativeResults& out) {
-	const std::string& id = asText(args.at(0));
-	Value optionsValue = args.size() > 1 ? args.at(1) : valueNil();
-	ParsedAudioOptions options = parseAudioOptions(optionsValue);
-	AudioType channel = options.channel.value_or(AudioType::Sfx);
-	if (channel == AudioType::Music) {
-		throw BMSX_RUNTIME_ERROR("sfx does not support music channel");
-	}
-	EngineCore::instance().soundMaster()->playWithPolicy(channel, id, options.request, options.policy, options.maxVoices);
-	(void)out;
-});
-
-m_runtime.registerNativeFunction("stop_sfx", [this](NativeArgsView args, NativeResults& out) {
-	(void)args;
-	stop_sfx();
-	(void)out;
-});
-
-m_runtime.registerNativeFunction("music", [this, asText](NativeArgsView args, NativeResults& out) {
-	std::string id;
-	if (!args.empty() && !isNil(args.at(0))) {
-		id = asText(args.at(0));
-	}
-	Value optionsValue = args.size() > 1 ? args.at(1) : valueNil();
-	std::optional<MusicTransitionRequest> transition = parseMusicTransition(optionsValue, id);
-	if (transition.has_value()) {
-		EngineCore::instance().soundMaster()->requestMusicTransition(transition.value());
-		(void)out;
-		return;
-	}
-	if (id.empty()) {
-		EngineCore::instance().soundMaster()->stopMusic();
-		(void)out;
-		return;
-	}
-	ParsedAudioOptions options = parseAudioOptions(optionsValue);
-	if (options.channel.has_value() && options.channel.value() != AudioType::Music) {
-		throw BMSX_RUNTIME_ERROR("music does not support non-music channel");
-	}
-	EngineCore::instance().soundMaster()->playWithPolicy(AudioType::Music, id, options.request, options.policy, options.maxVoices);
-	(void)out;
-});
-
-m_runtime.registerNativeFunction("stop_music", [this](NativeArgsView args, NativeResults& out) {
-	const Value optionsValue = args.empty() ? valueNil() : args.at(0);
-	stop_music(parseStopMusicFadeMs(optionsValue));
-	(void)out;
-});
-
-m_runtime.registerNativeFunction("set_master_volume", [this](NativeArgsView args, NativeResults& out) {
-	double volume = asNumber(args.at(0));
-	set_master_volume(volume);
-	(void)out;
-});
-
 m_runtime.registerNativeFunction("set_sprite_parallax_rig", [this](NativeArgsView args, NativeResults& out) {
 	if (args.size() != 9) {
 		throw BMSX_RUNTIME_ERROR("set_sprite_parallax_rig expects 9 arguments.");
@@ -1050,18 +834,6 @@ m_runtime.registerNativeFunction("set_sprite_parallax_rig", [this](NativeArgsVie
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("pause_audio", [this](NativeArgsView args, NativeResults& out) {
-	(void)args;
-	pause_audio();
-	(void)out;
-});
-
-m_runtime.registerNativeFunction("resume_audio", [this](NativeArgsView args, NativeResults& out) {
-	(void)args;
-	resume_audio();
-	(void)out;
-});
-
 m_runtime.registerNativeFunction("reboot", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	reboot();
@@ -1075,10 +847,6 @@ int Api::display_width() const {
 
 int Api::display_height() const {
 	return static_cast<int>(EngineCore::instance().view()->viewportSize.y);
-}
-
-double Api::stat(int /*index*/) const {
-	throw BMSX_RUNTIME_ERROR("stat is not implemented.");
 }
 
 BFont* Api::resolveFontId(uint32_t id) const {
@@ -1141,32 +909,6 @@ void Api::restorePersistentData(const std::string& ns, const std::vector<double>
 	}
 }
 
-void Api::sfx(const std::string& id) {
-	EngineCore::instance().soundMaster()->play(id);
-}
-
-void Api::stop_sfx() {
-	EngineCore::instance().soundMaster()->stopEffect();
-}
-
-void Api::music(const std::string& id) {
-	auto* soundMaster = EngineCore::instance().soundMaster();
-	if (id.empty()) {
-		soundMaster->stopMusic();
-		return;
-	}
-	soundMaster->stopMusic();
-	soundMaster->play(id);
-}
-
-void Api::stop_music(std::optional<i32> fadeMs) {
-	EngineCore::instance().soundMaster()->stopMusic(fadeMs);
-}
-
-void Api::set_master_volume(double volume) {
-	EngineCore::instance().soundMaster()->setMasterVolume(static_cast<f32>(volume));
-}
-
 void Api::set_sprite_parallax_rig(f32 vy, f32 scale, f32 impact, f32 impact_t,
 									f32 bias_px, f32 parallax_strength,
 									f32 scale_strength, f32 flip_strength,
@@ -1174,14 +916,6 @@ void Api::set_sprite_parallax_rig(f32 vy, f32 scale, f32 impact, f32 impact_t,
 	EngineCore::instance().view()->setSpriteParallaxRig(
 		vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength,
 		flip_strength, flip_window);
-}
-
-void Api::pause_audio() {
-	EngineCore::instance().soundMaster()->pauseAll();
-}
-
-void Api::resume_audio() {
-	EngineCore::instance().soundMaster()->resume();
 }
 
 void Api::reboot() {
