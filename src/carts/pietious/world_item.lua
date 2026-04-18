@@ -55,6 +55,10 @@ function world_item:ctor()
 	self:gfx(constants.world_item.sprite[self.item_type])
 end
 
+function world_item:onspawn(_pos)
+	self.x, self.y = oget('room'):snap_world_to_tile(self.x, self.y)
+end
+
 local define_world_item_fsm<const> = function()
 		define_fsm('world_item', {
 			initial = 'active',

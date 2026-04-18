@@ -75,6 +75,32 @@ function leaveSourceRoom(test) {
 	return state;
 }
 
+function samplePickupTileAlignment(test) {
+	const [state] = test.evalLua(`
+		inst('world_item', {
+			id = 'test.world_item.tile_alignment',
+			space_id = 'main',
+			pos = { x = 67, y = 71, z = 130 },
+			item_type = 'greenvase',
+		})
+		inst('loot_drop', {
+			id = 'test.loot_drop.tile_alignment',
+			space_id = 'main',
+			pos = { x = 77, y = 83, z = 130 },
+			loot_type = 'ammo',
+		})
+		local world_item = oget('test.world_item.tile_alignment')
+		local loot_drop = oget('test.loot_drop.tile_alignment')
+		return {
+			world_item_x = world_item.x,
+			world_item_y = world_item.y,
+			loot_drop_x = loot_drop.x,
+			loot_drop_y = loot_drop.y,
+		}
+	`);
+	return state;
+}
+
 export default function schedule({ logger, test }) {
 	test.run(async () => {
 		await test.waitForGameplay({
@@ -86,22 +112,26 @@ export default function schedule({ logger, test }) {
 			},
 		});
 
-			let state = spawnSourceRoom(test);
-			test.assert(state.lamp_drop_exists === true, 'inventory item from destroyed rock did not spawn');
-			test.assert(state.ammo_drop_exists === true, 'refill item from destroyed rock did not stay in its source room');
-			test.assert(state.vase_exists === true, 'appearing inventory item did not spawn');
+		let state = spawnSourceRoom(test);
+		test.assert(state.lamp_drop_exists === true, 'inventory item from destroyed rock did not spawn');
+		test.assert(state.ammo_drop_exists === true, 'refill item from destroyed rock did not stay in its source room');
+		test.assert(state.vase_exists === true, 'appearing inventory item did not spawn');
 
-			state = leaveSourceRoom(test);
-			test.assert(state.lamp_drop_exists === false, 'inventory rock drop stayed live after leaving room');
-			test.assert(state.ammo_drop_exists === false, 'refill rock drop stayed live after leaving room');
-			test.assert(state.vase_exists === false, 'appearing item stayed live after leaving room');
+		state = leaveSourceRoom(test);
+		test.assert(state.lamp_drop_exists === false, 'inventory rock drop stayed live after leaving room');
+		test.assert(state.ammo_drop_exists === false, 'refill rock drop stayed live after leaving room');
+		test.assert(state.vase_exists === false, 'appearing item stayed live after leaving room');
 
 		await test.waitFrames(1);
 
-			state = spawnSourceRoom(test);
-			test.assert(state.lamp_drop_exists === true, 'inventory rock drop did not respawn on return');
-			test.assert(state.ammo_drop_exists === true, 'refill rock drop did not respawn in source room');
-			test.assert(state.vase_exists === true, 'appearing item did not respawn on return');
+		state = spawnSourceRoom(test);
+		test.assert(state.lamp_drop_exists === true, 'inventory rock drop did not respawn on return');
+		test.assert(state.ammo_drop_exists === true, 'refill rock drop did not respawn in source room');
+		test.assert(state.vase_exists === true, 'appearing item did not respawn on return');
+
+		state = samplePickupTileAlignment(test);
+		test.assert(state.world_item_x === 64 && state.world_item_y === 64, `world_item not tile-aligned: ${state.world_item_x},${state.world_item_y}`);
+		test.assert(state.loot_drop_x === 72 && state.loot_drop_y === 80, `loot_drop not tile-aligned: ${state.loot_drop_x},${state.loot_drop_y}`);
 		test.finish('[assert] room item progression persistence passed');
 	});
 }

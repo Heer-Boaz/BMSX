@@ -20,6 +20,10 @@ function loot_drop:ctor()
 	self:gfx(sprite_for_loot_type(self.loot_type))
 end
 
+function loot_drop:onspawn(_pos)
+	self.x, self.y = oget('room'):snap_world_to_tile(self.x, self.y)
+end
+
 local define_loot_drop_fsm<const> = function()
 	define_fsm('loot_drop', {
 		initial = 'active',
