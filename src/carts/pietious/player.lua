@@ -709,27 +709,52 @@ function player:take_hit(amount, source_x, source_y, reason)
 	return true
 end
 
-function player:collect_loot(loot_type, loot_value)
-	if self:has_tag(state_tags.variant.dying) then
-		return false
-	end
+local loot_type_by_item_type<const> = {
+	life = 'life',
+	lifefromrock = 'life',
+	ammo = 'ammo',
+	ammofromrock = 'ammo',
+}
+
+function player:collect_loot(loot_type, loot_value, item_type, item_id)
 	if loot_type == 'life' then
 		self.health = self.health + loot_value
 		if self.health > self.max_health then
 			self.health = self.max_health
 		end
 		self:emit_health_changed()
-		return true
-	end
-	if loot_type == 'ammo' then
+	elseif loot_type == 'ammo' then
 		self.weapon_level = self.weapon_level + loot_value
 		if self.weapon_level > constants.hud.weapon_level then
 			self.weapon_level = constants.hud.weapon_level
 		end
 		self:emit_weapon_changed()
-		return true
+	else
+		error('pietious player invalid loot_type=' .. tostring(loot_type))
 	end
-	error('pietious player invalid loot_type=' .. tostring(loot_type))
+	self.events:emit('item.picked', { item_type = item_type, item_id = item_id, loot_type = loot_type, loot_value = loot_value })
+	return true
+end
+
+function player:collect_item(item_type, item_id)
+	local loot_type<const> = loot_type_by_item_type[item_type]
+	if loot_type ~= nil then
+		if loot_type == 'life' then
+			return self:collect_loot(loot_type, constants.pickup_item.life_regen, item_type, item_id)
+		end
+		return self:collect_loot(loot_type, constants.pickup_item.ammo_regen, item_type, item_id)
+	end
+	if item_type == 'keyworld1' then
+		self.health = self.max_health
+		self:emit_health_changed()
+		self.inventory_items.keyworld1 = true
+	elseif constants.world_item.inventory[item_type] then
+		self.inventory_items[item_type] = true
+	else
+		error('pietious player invalid item_type=' .. tostring(item_type))
+	end
+	self.events:emit('item.picked', { item_type = item_type, item_id = item_id })
+	return true
 end
 
 function player:find_near_shrine()

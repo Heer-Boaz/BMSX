@@ -220,26 +220,24 @@ events:
             - go:
                   audio_id: pepernoot
 
-    pickupitem:
+    item.picked:
         channel: sfx
         rules:
-            - go:
-                  audio_id: pickupitem
-
-    worldkey:
-        channel: music
-        rules:
-            - go:
+            - when:
+                  equals:
+                      item_type: keyworld1
+              go:
                   music_transition:
                       audio_id: music_castle
                       sync:
                           stinger: pickupkey
-
-    healing:
-        channel: sfx
-        rules:
-            - go:
+            - when:
+                  in:
+                      item_type: [life, lifefromrock]
+              go:
                   audio_id: healing
+            - go:
+                  audio_id: pickupitem
 
     f1:
         channel: sfx

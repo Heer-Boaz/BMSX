@@ -33,13 +33,8 @@ local define_loot_drop_fsm<const> = function()
 					return
 				end
 				local player<const> = oget(event.other_id)
-				if player:collect_loot(self.loot_type, self.loot_value) then
-					if self.loot_type == 'life' then
-						player.events:emit('healing')
-					else
-						player.events:emit('pickupitem')
-					end
-					self.events:emit('picked')
+				if player:collect_loot(self.loot_type, self.loot_value, self.loot_type) then
+					self:mark_for_disposal()
 				end
 			end,
 			['room.switched'] = {
@@ -48,14 +43,7 @@ local define_loot_drop_fsm<const> = function()
 			},
 		},
 		states = {
-			active = {
-				on = {
-					['picked'] = '/picked',
-				},
-			},
-			picked = {
-				entering_state = worldobject.mark_for_disposal,
-			},
+			active = {},
 		},
 	})
 end

@@ -482,9 +482,6 @@ function validateActionSpec(
 			errors.push(`Invalid music_transition at ${where}: expected object`);
 			return;
 		}
-		if (eventChannel !== 'music') {
-			errors.push(`Event '${eventName ?? '<root>'}' in ${file} uses music_transition but channel is not 'music'.`);
-		}
 		checkUnknownKeys(transition as Record<string, unknown>, MUSIC_TRANSITION_KEYS, `${where}.music_transition`, errors);
 		const sync = transition.sync;
 		const ruleKey = buildRuleKey(file, eventName, ruleIndex);

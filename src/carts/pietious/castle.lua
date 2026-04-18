@@ -382,96 +382,6 @@ function castle:refresh_current_room_customizations()
 	self:emit_room_state_changed()
 end
 
-function castle:bind()
-	self.events:on({
-		event = 'seal_dissolution',
-		emitter = 'd',
-		subscriber = self,
-		handler = function()
-			self:begin_seal_dissolution()
-		end,
-	})
-	self.events:on({
-		event = 'daemon_appearance',
-		emitter = 'd',
-		subscriber = self,
-		handler = function()
-			self:begin_daemon_appearance()
-		end,
-	})
-	self.events:on({
-		event = 'daemon_appearance_done',
-		emitter = 'd',
-		subscriber = self,
-		handler = function()
-			self:activate_current_room_daemon_fight()
-		end,
-	})
-
-	self.events:on({
-		event = 'seal_dissolution_done',
-		emitter = 'd',
-		subscriber = self,
-		handler = function()
-			self:finish_seal_dissolution()
-		end,
-	})
-	self.events:on({
-		event = director_seal_frame_event,
-		emitter = 'd',
-		subscriber = self,
-		handler = function(event)
-			self:apply_seal_timeline_frame(event.frame_value + 1)
-		end,
-	})
-	self.events:on({
-		event = 'world_entrance.opening_2',
-		emitter = 'c',
-		subscriber = self,
-		handler = function(event)
-			self.world_entrance_states[event.target].state = 'opening_2'
-		end,
-	})
-	self.events:on({
-		event = 'world_entrance.opened',
-		emitter = 'c',
-		subscriber = self,
-		handler = function(event)
-			self.world_entrance_states[event.target].state = 'open'
-		end,
-	})
-	self.events:on({
-		event = 'worldkey',
-		emitter = 'pietolon',
-		subscriber = self,
-		handler = function()
-			self:mark_current_world_boss_defeated()
-		end,
-	})
-	-- director emits 'room' when the room state becomes active; castle
-	-- only flushes a deferred room.enter here for transitions that delayed it.
-	self.events:on({
-		event = 'room',
-		emitter = 'd',
-		subscriber = self,
-		handler = function()
-			if self.room_enter_pending then
-				self:emit_room_enter()
-			end
-		end,
-	})
-	-- director emits this when the player has died; castle resolves internal
-	-- state (seal tags) and replies with 'death_resolved' { restart_daemon = bool }.
-	self.events:on({
-		event = 'player.death_resolve',
-		emitter = 'd',
-		subscriber = self,
-		handler = function()
-			self:resolve_death()
-		end,
-	})
-end
-
 function castle:begin_seal_dissolution()
 	local room<const> = current_room()
 	self.world_boss_defeated[room.world_number] = false
@@ -815,10 +725,90 @@ function castle:halo_teleport_to_room_1(emit_room_enter_now)
 	}
 end
 
+local define_castle_fsm<const> = function()
+	define_fsm('castle', {
+		initial = 'active',
+		on = {
+			['seal_dissolution'] = {
+				emitter = 'd',
+				go = function(self)
+					self:begin_seal_dissolution()
+				end,
+			},
+			['daemon_appearance'] = {
+				emitter = 'd',
+				go = function(self)
+					self:begin_daemon_appearance()
+				end,
+			},
+			['daemon_appearance_done'] = {
+				emitter = 'd',
+				go = function(self)
+					self:activate_current_room_daemon_fight()
+				end,
+			},
+			['seal_dissolution_done'] = {
+				emitter = 'd',
+				go = function(self)
+					self:finish_seal_dissolution()
+				end,
+			},
+			[director_seal_frame_event] = {
+				emitter = 'd',
+				go = function(self, _state, event)
+					self:apply_seal_timeline_frame(event.frame_value + 1)
+				end,
+			},
+			['world_entrance.opening_2'] = {
+				emitter = 'c',
+				go = function(self, _state, event)
+					self.world_entrance_states[event.target].state = 'opening_2'
+				end,
+			},
+			['world_entrance.opened'] = {
+				emitter = 'c',
+				go = function(self, _state, event)
+					self.world_entrance_states[event.target].state = 'open'
+				end,
+			},
+			['item.picked'] = {
+				emitter = 'pietolon',
+				go = function(self, _state, event)
+					if event.item_type == 'keyworld1' then
+						self:mark_current_world_boss_defeated()
+					end
+				end,
+			},
+			-- director emits 'room' when the room state becomes active; castle
+			-- only flushes a deferred room.enter here for transitions that delayed it.
+			['room'] = {
+				emitter = 'd',
+				go = function(self)
+					if self.room_enter_pending then
+						self:emit_room_enter()
+					end
+				end,
+			},
+			-- director emits this when the player has died; castle resolves internal
+			-- state (seal tags) and replies with 'death_resolved' { restart_daemon = bool }.
+			['player.death_resolve'] = {
+				emitter = 'd',
+				go = function(self)
+					self:resolve_death()
+				end,
+			},
+		},
+		states = {
+			active = {},
+		},
+	})
+end
+
 local register_castle_definition<const> = function()
 	define_prefab({
 		def_id = 'castle',
 		class = castle,
+		fsms = { 'castle' },
 		defaults = {
 			id = 'c',
 			current_room_number = 0,
@@ -831,5 +821,6 @@ end
 
 return {
 	castle = castle,
+	define_castle_fsm = define_castle_fsm,
 	register_castle_definition = register_castle_definition,
 }

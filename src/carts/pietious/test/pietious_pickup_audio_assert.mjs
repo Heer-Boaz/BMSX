@@ -39,8 +39,7 @@ function getScenarioState(engine) {
 	const [state] = evalLua(engine, `
 		local player = oget('pietolon')
 		return {
-			healing_count = player._test_event_counts and player._test_event_counts.healing or 0,
-			pickupitem_count = player._test_event_counts and player._test_event_counts.pickupitem or 0,
+			item_picked_count = player._test_event_counts and player._test_event_counts['item.picked'] or 0,
 			healing_pickup_exists = oget('test.heal') ~= nil,
 			world_item_exists = oget('test.worlditem') ~= nil,
 			health = player.health,
@@ -71,9 +70,9 @@ function setupScenario(engine, logger) {
 		player.weapon_level = 0
 		player:emit_weapon_changed()
 		local original_emit = player.events.emit
-		player._test_event_counts = { healing = 0, pickupitem = 0 }
+		player._test_event_counts = { ['item.picked'] = 0 }
 		player.events.emit = function(port, event_name, payload)
-			if event_name == 'healing' or event_name == 'pickupitem' then
+			if event_name == 'item.picked' then
 				player._test_event_counts[event_name] = player._test_event_counts[event_name] + 1
 			end
 			return original_emit(port, event_name, payload)
@@ -115,9 +114,9 @@ function updateHealing(engine, scenario, logger) {
 	if (healingVoices > scenario.maxHealingVoices) {
 		scenario.maxHealingVoices = healingVoices;
 	}
-	assert(state.healing_count <= 1, `healing emitted ${state.healing_count} times`);
+	assert(state.item_picked_count <= 1, `item.picked emitted ${state.item_picked_count} times during healing pickup`);
 	assert(scenario.maxHealingVoices <= 1, `healing audio voices overlapped max=${scenario.maxHealingVoices}`);
-	if (state.healing_count === 1 && !state.healing_pickup_exists) {
+	if (state.item_picked_count === 1 && !state.healing_pickup_exists) {
 		scenario.stableFrames += 1;
 		if (scenario.stableFrames >= STABLE_FRAMES) {
 			spawnWorldItem(engine, logger);
@@ -139,9 +138,9 @@ function updatePickupItem(scenario, logger, state) {
 	if (pickupVoices > scenario.maxPickupitemVoices) {
 		scenario.maxPickupitemVoices = pickupVoices;
 	}
-	assert(state.pickupitem_count <= 1, `pickupitem emitted ${state.pickupitem_count} times`);
+	assert(state.item_picked_count <= 2, `item.picked emitted ${state.item_picked_count} times after ammo pickup`);
 	assert(scenario.maxPickupitemVoices <= 1, `pickupitem audio voices overlapped max=${scenario.maxPickupitemVoices}`);
-	if (state.pickupitem_count === 1 && !state.world_item_exists) {
+	if (state.item_picked_count === 2 && !state.world_item_exists) {
 		scenario.stableFrames += 1;
 		if (scenario.stableFrames >= STABLE_FRAMES) {
 			logger('[assert] pickup-audio counts ok');
