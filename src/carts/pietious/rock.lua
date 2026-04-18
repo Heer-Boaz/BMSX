@@ -5,21 +5,6 @@ local rock<const> = {}
 rock.__index = rock
 local rock_break_timeline_id<const> = 'rock.tl.break'
 
-local dropped_item_uses_y_offset<const> = {
-		pepernoot = true,
-		spyglass = true,
-}
-
-local drop_offset_y_for_item_type<const> = function(item_type)
-		if item_type == nil then
-				return 0
-		end
-		if dropped_item_uses_y_offset[item_type] then
-				return constants.room.tile_size
-		end
-		return 0
-end
-
 function rock:ctor()
 	self.collider:apply_collision_profile('enemy')
 	self.collider.spaceevents = 'current'
@@ -49,24 +34,36 @@ function rock:process_damage_result(result)
 end
 
 function rock:begin_break()
-		local room<const> = oget('room')
-		room:mark_rock_destroyed(self.id)
-		if self.item_type == nil then
-				return
-		end
-		local player<const> = oget('pietolon')
-		if player and player.inventory_items and player.inventory_items[self.item_type] then
-				return
-		end
-		local drop_y<const> = self.y + drop_offset_y_for_item_type(self.item_type)
-		local id<const> = 'drop.' .. self.id
-		inst('world_item', {
-				id = id,
-				space_id = 'main',
-				pos = { x = self.x, y = drop_y, z = 130 },
-				item_id = id,
-				item_type = self.item_type,
-		})
+	local room<const> = oget('room')
+	room:mark_rock_destroyed(self.id)
+	if self.item_type == nil then
+		return
+	end
+	if oget('pietolon').inventory_items[self.item_type] then
+		return
+	end
+	local drop_y<const> = self.y + constants.world_item.drop_offset_y[self.item_type]
+	local id<const> = 'drop.' .. self.id
+	local rock_drop_id = nil
+	if not constants.world_item.inventory[self.item_type] then
+		rock_drop_id = id
+		room.rock_drops[id] = {
+			room_number = room.room_number,
+			x = self.x,
+			y = drop_y,
+			item_type = self.item_type,
+		}
+	end
+	local drop<const> = inst('world_item', {
+		id = id,
+		space_id = 'main',
+		pos = { x = self.x, y = drop_y, z = 130 },
+		item_id = id,
+		item_type = self.item_type,
+		rock_drop_id = rock_drop_id,
+		rs_room_number = room.room_number,
+	})
+	drop:add_tag('rs')
 end
 
 local define_rock_fsm<const> = function()

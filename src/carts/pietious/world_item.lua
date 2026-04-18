@@ -75,7 +75,11 @@ local define_world_item_fsm<const> = function()
 				if item_id == nil then
 					item_id = self.id
 				end
-				progression.set(oget('c'), 'item_picked_' .. item_id, true)
+				if self.rock_drop_id ~= nil then
+					oget('room').rock_drops[self.rock_drop_id] = nil
+				elseif constants.world_item.inventory[self.item_type] then
+					progression.set(oget('c'), 'item_picked_' .. item_id, true)
+				end
 				self.events:emit('picked')
 			end,
 		},

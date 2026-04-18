@@ -741,6 +741,12 @@ function room_object:mark_rock_destroyed(rock_id)
 	self:rebuild_room_tiles()
 end
 
+function room_object:reset_rock_drops()
+	for id in pairs(self.rock_drops) do
+		self.rock_drops[id] = nil
+	end
+end
+
 function room_object:water_kind_at_world(world_x, world_y)
 	local tx<const>, ty<const> = self:world_to_tile(world_x, world_y)
 	return water_kind_at_tile(self, tx, ty)
@@ -975,6 +981,7 @@ end
 
 function room_object:ctor()
 	self.destroyed_rock_ids = {}
+	self.rock_drops = {}
 	self.logic_rows = {}
 	self.room_tile_handles = {}
 	self.room_tile_handle_count = 0

@@ -682,6 +682,7 @@ end
 function castle:initialize(initial_room_number, emit_room_enter_now)
 	local rm<const> = oget('room')
 	local room_number<const> = initial_room_number or castle_map.start_room_number
+	rm:reset_rock_drops()
 	self.current_room_number = room_number
 	rm:load_room(room_number)
 	rm.map_id = rm.world_number
@@ -749,7 +750,9 @@ function castle:enter_world(target)
 	switch.spawn_x = transition.world_spawn_x
 	switch.spawn_y = transition.world_spawn_y
 	switch.spawn_facing = transition.world_spawn_facing
-	current_room():load_room(switch.to_room_number)
+	local room<const> = current_room()
+	room:reset_rock_drops()
+	room:load_room(switch.to_room_number)
 	self:commit_room_switch(
 		switch,
 		switch.map_id,
@@ -767,6 +770,7 @@ function castle:leave_world_to_castle(emit_room_enter_now)
 
 	local transition<const> = castle_map.world_transitions_by_number[world_number]
 
+	room:reset_rock_drops()
 	room:load_room(transition.castle_room_number)
 	self.current_room_number = transition.castle_room_number
 	local switch<const> = create_room_switch(from_room_number, self.current_room_number, 'world_leave')
@@ -792,6 +796,7 @@ function castle:halo_teleport_to_room_1(emit_room_enter_now)
 	local room<const> = current_room()
 	local from_room_number<const> = self.current_room_number
 
+	room:reset_rock_drops()
 	room:load_room(halo_destination_room_number)
 	self.current_room_number = halo_destination_room_number
 	local switch<const> = create_room_switch(from_room_number, self.current_room_number, 'halo')

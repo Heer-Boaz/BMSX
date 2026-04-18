@@ -221,6 +221,30 @@ constants.pickup_item = {
 }
 
 constants.world_item = {
+	drop_offset_y = {
+		ammo = 0,
+		ammofromrock = 0,
+		life = 0,
+		lifefromrock = 0,
+		keyworld1 = 0,
+		map_world1 = 0,
+		halo = 0,
+		pepernoot = constants.room.tile_size,
+		spyglass = constants.room.tile_size,
+		lamp = 0,
+		schoentjes = 0,
+		greenvase = 0,
+	},
+	inventory = {
+		keyworld1 = true,
+		map_world1 = true,
+		halo = true,
+		pepernoot = true,
+		spyglass = true,
+		lamp = true,
+		schoentjes = true,
+		greenvase = true,
+	},
 	sprite = {
 		ammo = 'ammo',
 		ammofromrock = 'ammo',

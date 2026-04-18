@@ -1,5 +1,6 @@
 
 local progression<const> = require('progression')
+local constants<const> = require('constants')
 
 local room_spawner<const> = {}
 
@@ -99,7 +100,7 @@ local spawn_items<const> = function(room)
 		local def<const> = room.items[i]
 		local picked<const> = progression.get(castle, 'item_picked_' .. def.id)
 		local matches_conditions<const> = progression.matches(castle, def.conditions)
-		local already_owned<const> = player.inventory_items and player.inventory_items[def.item_type]
+		local already_owned<const> = player.inventory_items[def.item_type]
 
 		local should_spawn<const> = not picked and matches_conditions and not already_owned
 		local existing<const> = oget(def.id)
@@ -161,6 +162,48 @@ local spawn_enemies<const> = function(room)
 	end
 end
 
+local spawn_destroyed_rock_inventory_items<const> = function(room)
+	local castle<const> = oget('c')
+	local player<const> = oget('pietolon')
+	for i = 1, #room.rocks do
+		local def<const> = room.rocks[i]
+		local item_type<const> = def.item_type
+		if room.destroyed_rock_ids[def.id] and constants.world_item.inventory[item_type] then
+			local item_id<const> = 'drop.' .. def.id
+			local picked<const> = progression.get(castle, 'item_picked_' .. item_id)
+			local already_owned<const> = player.inventory_items[item_type]
+			if not picked and not already_owned and oget(item_id) == nil then
+				local obj<const> = inst('world_item', {
+					id = item_id,
+					space_id = 'main',
+					pos = { x = def.x, y = def.y + constants.world_item.drop_offset_y[item_type], z = 130 },
+					item_id = item_id,
+					item_type = item_type,
+					rs_room_number = room.room_number,
+				})
+				obj:add_tag('rs')
+			end
+		end
+	end
+end
+
+local spawn_rock_drops<const> = function(room)
+	for id, drop in pairs(room.rock_drops) do
+		if drop.room_number == room.room_number and oget(id) == nil then
+			local obj<const> = inst('world_item', {
+				id = id,
+				space_id = 'main',
+				pos = { x = drop.x, y = drop.y, z = 130 },
+				item_id = id,
+				item_type = drop.item_type,
+				rock_drop_id = id,
+				rs_room_number = room.room_number,
+			})
+			obj:add_tag('rs')
+		end
+	end
+end
+
 function room_spawner.spawn_all_for_room(room)
 	for obj in all_objects_by_tag('rs') do
 		if obj.rs_room_number ~= room.room_number then
@@ -168,6 +211,8 @@ function room_spawner.spawn_all_for_room(room)
 		end
 	end
 	spawn_rocks(room)
+	spawn_destroyed_rock_inventory_items(room)
+	spawn_rock_drops(room)
 	spawn_lithographs(room)
 	spawn_shrines(room)
 	spawn_draaideuren(room)

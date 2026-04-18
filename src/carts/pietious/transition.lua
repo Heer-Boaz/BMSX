@@ -38,6 +38,22 @@ function transition:bind_visual()
 end
 
 function transition:draw_transition_overlay()
+	memwrite(
+		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),
+		sys_vdp_cmd_fill_rect,
+		10,
+		0,
+		0,
+		0,
+		display_width(),
+		display_height(),
+		340,
+		sys_vdp_layer_ui,
+		0,
+		0,
+		0,
+		1
+	)
 	if not oget('d'):has_tag('d.bt') then
 		return
 	end
