@@ -167,8 +167,8 @@ std::vector<std::string> extractExpressionCandidates(const SourceRange& range, c
 	return result;
 }
 
-Value canonicalizeDebugIdentifier(const Runtime& runtime, std::string_view value) {
-	return const_cast<Runtime&>(runtime).canonicalizeIdentifier(value);
+Value debugKey(const Runtime& runtime, std::string_view value) {
+	return const_cast<Runtime&>(runtime).canonicalKey(value);
 }
 
 std::string formatDebugValue(const Runtime& runtime, Value value) {
@@ -218,7 +218,7 @@ std::optional<Value> resolveRootExpressionValue(
 	const SourceRange& range,
 	const std::string& rootName
 ) {
-	std::string canonicalName = runtime.machine().cpu().stringPool().toString(asStringId(canonicalizeDebugIdentifier(runtime, rootName)));
+	std::string canonicalName = runtime.machine().cpu().stringPool().toString(asStringId(debugKey(runtime, rootName)));
 	if (metadata && protoIndex >= 0 && protoIndex < static_cast<int>(metadata->localSlotsByProto.size())) {
 		const std::vector<LocalSlotDebug>& slots = metadata->localSlotsByProto[static_cast<size_t>(protoIndex)];
 		if (const LocalSlotDebug* slot = selectLocalSlot(slots, canonicalName, range)) {
@@ -240,7 +240,7 @@ std::optional<Value> resolveRootExpressionValue(
 			break;
 		}
 	}
-	const Value globalValue = runtime.machine().cpu().getGlobalByKey(canonicalizeDebugIdentifier(runtime, rootName));
+	const Value globalValue = runtime.machine().cpu().getGlobalByKey(debugKey(runtime, rootName));
 	if (!isNil(globalValue)) {
 		return globalValue;
 	}
@@ -270,9 +270,9 @@ std::optional<Value> resolveExpressionValue(
 			? std::string_view(expression).substr(nameStart)
 			: std::string_view(expression).substr(nameStart, nextDot - nameStart);
 		if (valueIsTable(current)) {
-			current = asTable(current)->get(canonicalizeDebugIdentifier(runtime, part));
+			current = asTable(current)->get(debugKey(runtime, part));
 		} else if (valueIsNativeObject(current) && asNativeObject(current)->get) {
-			current = asNativeObject(current)->get(canonicalizeDebugIdentifier(runtime, part));
+			current = asNativeObject(current)->get(debugKey(runtime, part));
 		} else {
 			return std::nullopt;
 		}

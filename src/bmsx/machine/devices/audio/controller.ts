@@ -235,7 +235,7 @@ export class AudioController {
 		this.playSequenceByType[channel] = (this.playSequenceByType[channel] + 1) >>> 0;
 		if (channel === 'music') {
 			this.activeVoiceByType[channel] = 0;
-			this.playMusic(id);
+			this.startMusicTransitionFromApu(id);
 			return;
 		}
 		this.activeVoiceByType[channel] = ACTIVE_VOICE_PENDING;
@@ -251,7 +251,7 @@ export class AudioController {
 		});
 	}
 
-	private playMusic(id: string): void {
+	private startMusicTransitionFromApu(id: string): void {
 		const fadeSamples = this.memory.readIoU32(IO_APU_FADE_SAMPLES);
 		const crossfadeSamples = this.memory.readIoU32(IO_APU_CROSSFADE_SAMPLES);
 		const request: Parameters<SoundMaster['requestMusicTransition']>[0] = {

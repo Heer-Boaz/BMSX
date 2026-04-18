@@ -229,7 +229,7 @@ export class Runtime {
 	public cartCanonicalization: CanonicalizationType = null;
 	public readonly cartBoot = new CartBootState();
 	private _canonicalization: CanonicalizationType;
-	private canonicalizeIdentifierFn: (value: string) => string;
+	public canonicalizeIdentifier: (value: string) => string;
 	public get canonicalization(): CanonicalizationType {
 		return this._canonicalization;
 	}
@@ -492,7 +492,7 @@ export class Runtime {
 
 	private applyCanonicalization(canonicalization: CanonicalizationType): void {
 		this._canonicalization = canonicalization;
-		this.canonicalizeIdentifierFn = createIdentifierCanonicalizer(this._canonicalization);
+		this.canonicalizeIdentifier = createIdentifierCanonicalizer(this._canonicalization);
 		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
 		workbenchMode.applyCanonicalization(this._canonicalization !== 'none');
 	}
@@ -653,10 +653,6 @@ export class Runtime {
 		this.luaInterpreter.markFaultEnvironment();
 		const range = this.machine.cpu.getDebugRange(this.machine.cpu.getDebugState().pc);
 		return range ? new LuaRuntimeError(message, range.path, range.start.line, range.start.column) : new LuaRuntimeError(message, (this._luaPath ?? 'lua'), 0, 0);
-	}
-
-	public canonicalizeIdentifier(name: string): string {
-		return this.canonicalizeIdentifierFn(name);
 	}
 
 	public internString(value: string): StringValue {

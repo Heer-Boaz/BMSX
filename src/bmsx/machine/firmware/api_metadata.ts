@@ -247,41 +247,6 @@ export const API_METHOD_METADATA = {
 		returnType: 'number',
 		returnDescription: 'Stored numeric value.',
 	},
-	sfx: {
-		description: 'Plays a sound effect by identifier.',
-		parameters: [
-			{ name: 'id', description: 'Sound effect id.' },
-			{ name: 'options', optional: true, description: 'Optional playback options.' },
-		],
-		returnType: 'void',
-	},
-	stop_sfx: {
-		description: 'Stops the currently playing sound effect.',
-		parameters: [],
-		returnType: 'void',
-	},
-	music: {
-		description: 'Starts or stops background music playback.',
-		parameters: [
-			{ name: 'id', optional: true, description: 'Music track id (omit/nil to stop playback).' },
-			{ name: 'options', optional: true, description: 'Optional playback options.' },
-		],
-		returnType: 'void',
-	},
-	stop_music: {
-		description: 'Stops background music playback.',
-		parameters: [
-			{ name: 'options', optional: true, description: 'Optional stop options such as fade_ms.' },
-		],
-		returnType: 'void',
-	},
-	set_master_volume: {
-		description: 'Sets master audio volume.',
-		parameters: [
-			{ name: 'volume', description: 'Volume scalar between 0 and 1.' },
-		],
-		returnType: 'void',
-	},
 	set_sprite_parallax_rig: {
 		description: 'Sets global sprite parallax rig values for the current frame.',
 		parameters: [
@@ -295,16 +260,6 @@ export const API_METHOD_METADATA = {
 			{ name: 'flip_strength', description: 'Bias flip amount (0..1) during the flip window.' },
 			{ name: 'flip_window', description: 'Seconds for the bias flip window.' },
 		],
-		returnType: 'void',
-	},
-	pause_audio: {
-		description: 'Pauses console audio playback.',
-		parameters: [],
-		returnType: 'void',
-	},
-	resume_audio: {
-		description: 'Resumes audio after a pause_audio call.',
-		parameters: [],
 		returnType: 'void',
 	},
 	world: {

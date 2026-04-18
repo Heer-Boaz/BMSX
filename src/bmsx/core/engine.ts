@@ -1,4 +1,4 @@
-import { ModulationParams, ModulationPresetResolver, RandomModulationParams, SoundMaster, SoundMasterPlayRequest } from "../audio/soundmaster";
+import { ModulationParams, ModulationPresetResolver, RandomModulationParams, SoundMaster } from "../audio/soundmaster";
 import { Input } from "../input/manager";
 import type { InputMap, VibrationParams } from "../input/models";
 import { ActionState, ActionStateQuery, type ButtonState } from '../input/models';
@@ -346,18 +346,6 @@ export class EngineCore {
 	public get texmanager(): TextureManager { return TextureManager.instance!; }
 	public get sndmaster(): SoundMaster { return SoundMaster.instance; }
 	public get platform(): Platform { return this._platform!; }
-
-	public playaudio(id: asset_id, options?: RandomModulationParams | ModulationParams | string | SoundMasterPlayRequest): void {
-		if (typeof options === 'string') {
-			void this.sndmaster.play(id, { modulation_preset: options });
-			return;
-		}
-		void this.sndmaster.play(id, options);
-	}
-
-	public stopmusic(): void {
-		this.sndmaster.stopMusic();
-	}
 
 	public set_inputmap(playerIndex: number, map: InputMap): void {
 		this.input.getPlayerInput(playerIndex).setInputMap(map);

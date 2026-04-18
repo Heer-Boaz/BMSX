@@ -65,30 +65,12 @@ export interface ModulationPresetResolver {
 	resolve(key: asset_id): RandomModulationParams | ModulationParams;
 }
 
-type AudioPlaybackMode = 'replace' | 'ignore' | 'queue' | 'stop' | 'pause';
 type MusicTransitionStingerSync = { stinger: asset_id; return_to?: asset_id; return_to_previous?: boolean };
 type MusicTransitionDelaySync = { delay_ms: number };
 type MusicTransitionSync = 'immediate' | 'loop' | MusicTransitionDelaySync | MusicTransitionStingerSync;
-type AudioRouterOptions = {
-	modulation_params?: RandomModulationParams | ModulationParams;
-	params?: RandomModulationParams | ModulationParams;
-	modulation_preset?: asset_id;
-	priority?: number;
-	policy?: AudioPlaybackMode;
-	max_voices?: number;
-	channel?: AudioType;
-	audio_id?: asset_id;
-	sync?: MusicTransitionSync;
-	fade_ms?: number;
-	crossfade_ms?: number;
-	start_at_loop_start?: boolean;
-	start_fresh?: boolean;
-};
-export type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | AudioRouterOptions;
 
-// Host-side audio playback/output and browser latency handling. This class is
-// not the console audio device; cart-visible audio should be owned by a
-// machine-side MMIO controller when the APU boundary is introduced.
+// Host-side audio playback/output and browser latency handling. This is the
+// mixer behind the machine APU; cart-visible audio is MMIO, not SoundMaster.
 export type AudioBytesResolver = (id: asset_id) => Uint8Array;
 
 type RomAudioResource = RomAsset & {
@@ -112,19 +94,6 @@ interface ActiveVoiceRecord extends ActiveVoiceInfo {
 	backendEnded: SubscriptionHandle | null;
 	finalized: boolean;
 }
-
-type ParsedAudioOptions = {
-	request: SoundMasterPlayRequest;
-	policy?: AudioPlaybackMode;
-	maxVoices?: number;
-	channel?: AudioType;
-};
-
-type AudioQueueItem = {
-	id: asset_id;
-	request: SoundMasterPlayRequest;
-	maxVoices: number;
-};
 
 const MIN_GAIN = 0.0001;
 const MIX_MINIMAL_OVERHEAD_SEC = 0.002;
@@ -218,36 +187,6 @@ function isMusicTransitionDelaySync(sync: MusicTransitionSync): sync is MusicTra
 	return typeof sync === 'object' && (sync as MusicTransitionDelaySync).delay_ms !== undefined;
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null;
-}
-
-function parseAudioChannel(value: unknown): AudioType {
-	if (value === 'sfx' || value === 'music' || value === 'ui') {
-		return value;
-	}
-	throw new Error(`Unknown audio channel "${String(value)}".`);
-}
-
-function parsePlaybackMode(value: unknown): AudioPlaybackMode {
-	if (value === 'replace' || value === 'ignore' || value === 'queue' || value === 'stop' || value === 'pause') {
-		return value;
-	}
-	throw new Error(`Unknown audio policy "${String(value)}".`);
-}
-
-function hasModulationFields(value: Record<string, unknown>): boolean {
-	return value.pitchDelta !== undefined
-		|| value.volumeDelta !== undefined
-		|| value.offset !== undefined
-		|| value.playbackRate !== undefined
-		|| value.pitchRange !== undefined
-		|| value.volumeRange !== undefined
-		|| value.offsetRange !== undefined
-		|| value.playbackRateRange !== undefined
-		|| value.filter !== undefined;
-}
-
 export class SoundMaster {
 	public static readonly instance: SoundMaster = new SoundMaster();
 
@@ -265,8 +204,6 @@ export class SoundMaster {
 	private currentPlayParamsByType: Record<AudioType, ModulationParams>;
 	public currentAudioByType: Record<AudioType, AudioMetadataWithID>;
 	private pausedByType: Record<AudioType, PausedSnapshot[]>;
-	private audioQueueByType: Record<AudioType, AudioQueueItem[]>;
-	private resumeOnNextEndByType: Record<AudioType, boolean>;
 	private endedListenersByType: Record<AudioType, Set<(info: ActiveVoiceInfo) => void>>;
 	private nextVoiceId: VoiceId;
 	private musicTransitionTimer: ReturnType<typeof setTimeout>;
@@ -294,8 +231,6 @@ export class SoundMaster {
 		this.currentPlayParamsByType = { sfx: null, music: null, ui: null };
 		this.currentAudioByType = { sfx: null, music: null, ui: null };
 		this.pausedByType = { sfx: [], music: [], ui: [] };
-		this.audioQueueByType = { sfx: [], music: [], ui: [] };
-		this.resumeOnNextEndByType = { sfx: false, music: false, ui: false };
 		this.endedListenersByType = { sfx: new Set(), music: new Set(), ui: new Set() };
 		this.nextVoiceId = 1;
 		this.musicTransitionTimer = null;
@@ -390,8 +325,6 @@ export class SoundMaster {
 		this.currentPlayParamsByType = { sfx: null, music: null, ui: null };
 		this.currentAudioByType = { sfx: null, music: null, ui: null };
 		this.pausedByType = { sfx: [], music: [], ui: [] };
-		this.audioQueueByType = { sfx: [], music: [], ui: [] };
-		this.resumeOnNextEndByType = { sfx: false, music: false, ui: false };
 		this.nextVoiceId = 1;
 		this.voiceRecordByHandle = new WeakMap();
 	}
@@ -738,8 +671,6 @@ export class SoundMaster {
 			}
 		}
 
-		this.onAudioChannelEnded(type);
-
 		const listeners = this.endedListenersByType[type];
 		if (listeners.size > 0) {
 			const payload: ActiveVoiceInfo = {
@@ -928,238 +859,6 @@ export class SoundMaster {
 
 	private isAudioType(value: unknown): value is AudioType {
 		return typeof value === 'string' && AudioTypes.includes(value as AudioType);
-	}
-
-	private parseAudioOptions(options?: AudioPlayOptions): ParsedAudioOptions {
-		const out: ParsedAudioOptions = { request: {} };
-		if (options === null || options === undefined) {
-			return out;
-		}
-		if (!isObject(options)) {
-			throw new Error('audio options must be a table.');
-		}
-
-		if (options.channel !== undefined) {
-			out.channel = parseAudioChannel(options.channel);
-		}
-		if (options.policy !== undefined) {
-			out.policy = parsePlaybackMode(options.policy);
-		}
-		if (options.max_voices !== undefined) {
-			if (typeof options.max_voices !== 'number') {
-				throw new Error('max_voices must be a number.');
-			}
-			out.maxVoices = Math.floor(options.max_voices);
-		}
-		if (options.priority !== undefined) {
-			if (typeof options.priority !== 'number') {
-				throw new Error('priority must be a number.');
-			}
-			out.request.priority = Math.floor(options.priority);
-		}
-
-		if (options.modulation_params !== undefined) {
-			if (!isObject(options.modulation_params)) {
-				throw new Error('modulation_params must be a table.');
-			}
-			out.request.params = options.modulation_params as RandomModulationParams | ModulationParams;
-		} else if (options.params !== undefined) {
-			if (!isObject(options.params)) {
-				throw new Error('params must be a table.');
-			}
-			out.request.params = options.params as RandomModulationParams | ModulationParams;
-		} else if (hasModulationFields(options)) {
-			out.request.params = options as RandomModulationParams | ModulationParams;
-		}
-
-		if (!out.request.params && options.modulation_preset !== undefined) {
-			if (typeof options.modulation_preset !== 'string') {
-				throw new Error('modulation_preset must be a string.');
-			}
-			out.request.modulation_preset = options.modulation_preset;
-		}
-
-		return out;
-	}
-
-	private resolveMusicTransition(options: AudioPlayOptions | undefined, id?: asset_id): {
-		request?: {
-			to: asset_id;
-			sync?: MusicTransitionSync;
-			fade_ms?: number;
-			crossfade_ms?: number;
-			start_at_loop_start?: boolean;
-			start_fresh?: boolean;
-		};
-	} {
-		if (!options) {
-			return {};
-		}
-		if (!isObject(options)) {
-			throw new Error('music options must be a table.');
-		}
-		const hasTransition = options.sync !== undefined
-			|| options.fade_ms !== undefined
-			|| options.crossfade_ms !== undefined
-			|| options.start_at_loop_start !== undefined
-			|| options.start_fresh !== undefined
-			|| options.audio_id !== undefined;
-		if (!hasTransition) {
-			return {};
-		}
-		const target = (id && id.length > 0) ? id : options.audio_id;
-		if (!target || typeof target !== 'string') {
-			throw new Error('music_transition.audio_id must be a string.');
-		}
-		if (options.fade_ms !== undefined && typeof options.fade_ms !== 'number') {
-			throw new Error('music_transition.fade_ms must be a number.');
-		}
-		if (options.crossfade_ms !== undefined && typeof options.crossfade_ms !== 'number') {
-			throw new Error('music_transition.crossfade_ms must be a number.');
-		}
-		if (options.fade_ms !== undefined && options.crossfade_ms !== undefined) {
-			throw new Error('music_transition cannot specify both fade_ms and crossfade_ms.');
-		}
-		if (options.start_at_loop_start !== undefined && typeof options.start_at_loop_start !== 'boolean') {
-			throw new Error('music_transition.start_at_loop_start must be a boolean.');
-		}
-		if (options.start_fresh !== undefined && typeof options.start_fresh !== 'boolean') {
-			throw new Error('music_transition.start_fresh must be a boolean.');
-		}
-		if (options.sync !== undefined && typeof options.sync !== 'string' && !isObject(options.sync)) {
-			throw new Error('music_transition.sync must be a string or table.');
-		}
-		return {
-			request: {
-				to: target,
-				sync: options.sync as MusicTransitionSync | undefined,
-				fade_ms: options.fade_ms,
-				crossfade_ms: options.crossfade_ms,
-				start_at_loop_start: options.start_at_loop_start,
-				start_fresh: options.start_fresh,
-			},
-		};
-	}
-
-	private onAudioChannelEnded(type: AudioType): void {
-		if (this.resumeOnNextEndByType[type]) {
-			this.resumeOnNextEndByType[type] = false;
-			this.resumeType(type);
-			return;
-		}
-		const queue = this.audioQueueByType[type];
-		while (queue.length > 0) {
-			const item = queue[0];
-			if (this.activeCountByType(type) >= item.maxVoices) {
-				return;
-			}
-			queue.shift();
-			void this.play(item.id, item.request);
-		}
-	}
-
-	public playWithPolicy(type: AudioType, id: asset_id, request: SoundMasterPlayRequest = {}, policy: AudioPlaybackMode = 'replace', maxVoices = 1): void {
-		if (!this.isRuntimeAudioAvailable()) {
-			return;
-		}
-		const audioMeta = this.getAudioMetaOrThrow(id);
-		const priority = request.priority ?? audioMeta.priority ?? 0;
-		const resolvedRequest: SoundMasterPlayRequest = { ...request, priority };
-		if (maxVoices < 1) {
-			throw new Error('max_voices must be at least 1.');
-		}
-		if (policy === 'stop') {
-			this.stop(type, 'all');
-			this.audioQueueByType[type] = [];
-			return;
-		}
-		const active = this.activeCountByType(type);
-		if (active >= maxVoices) {
-			if (policy === 'ignore') {
-				return;
-			}
-			if (policy === 'replace') {
-				const infos = this.getActiveVoiceInfosByType(type);
-				if (infos.length === 0) {
-					throw new Error('No active voices returned for audio channel.');
-				}
-				let minIdx = 0;
-				let minPr = infos[0].priority;
-				let oldest = infos[0].startedAt;
-				for (let i = 1; i < infos.length; i += 1) {
-					const info = infos[i];
-					if (info.priority < minPr || (info.priority === minPr && info.startedAt < oldest)) {
-						minIdx = i;
-						minPr = info.priority;
-						oldest = info.startedAt;
-					}
-				}
-				if (priority < minPr) {
-					return;
-				}
-				this.stop(type, 'byvoice', infos[minIdx].voiceId);
-			}
-			if (policy === 'pause') {
-				this.pause(type);
-				this.resumeOnNextEndByType[type] = true;
-			}
-			if (policy === 'queue') {
-				this.audioQueueByType[type].push({ id, request: resolvedRequest, maxVoices });
-				return;
-			}
-		}
-		void this.play(id, resolvedRequest);
-	}
-
-	public playSfx(id: asset_id, options?: AudioPlayOptions): void {
-		if (!this.isRuntimeAudioAvailable()) {
-			return;
-		}
-		const parsed = this.parseAudioOptions(options);
-		const channel = parsed.channel ?? 'sfx';
-		if (channel === 'music') {
-			throw new Error('sfx does not support music channel.');
-		}
-		this.playWithPolicy(channel, id, parsed.request, parsed.policy, parsed.maxVoices ?? 1);
-	}
-
-	public playMusic(id: asset_id, options?: AudioPlayOptions): void {
-		if (!this.isRuntimeAudioAvailable()) {
-			return;
-		}
-		const transition = this.resolveMusicTransition(options, id);
-		if (transition.request) {
-			this.requestMusicTransition(transition.request);
-			return;
-		}
-		if (!id) {
-			this.stopMusic();
-			return;
-		}
-		const parsed = this.parseAudioOptions(options);
-		if (parsed.channel && parsed.channel !== 'music') {
-			throw new Error('music does not support non-music channel.');
-		}
-		this.playWithPolicy('music', id, parsed.request, parsed.policy, parsed.maxVoices ?? 1);
-	}
-
-	public stopMusicWithOptions(options?: AudioPlayOptions): void {
-		if (options === undefined) {
-			this.stopMusic();
-			return;
-		}
-		if (!isObject(options)) {
-			throw new Error('stop_music options must be a table.');
-		}
-		if (options.fade_ms !== undefined && typeof options.fade_ms !== 'number') {
-			throw new Error('stop_music.fade_ms must be a number.');
-		}
-		if (options.crossfade_ms !== undefined) {
-			throw new Error('stop_music does not support crossfade_ms.');
-		}
-		this.stopMusic({
-			fade_ms: options.fade_ms,
-		});
 	}
 
 	public stop(idOrType?: asset_id | AudioType, which?: AudioStopSelector, idOrVoice?: asset_id | VoiceId): void {

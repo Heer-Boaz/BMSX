@@ -191,13 +191,13 @@ void AudioController::startPlay(uint32_t handle, const std::string& id, AudioTyp
 	m_activeHandleByType[idx] = handle;
 	if (channel == AudioType::Music) {
 		m_activeVoiceByType[idx] = 0;
-		playMusic(id);
+		startMusicTransitionFromApu(id);
 		return;
 	}
 	m_activeVoiceByType[idx] = m_soundMaster.playResolved(id, request);
 }
 
-void AudioController::playMusic(const std::string& id) {
+void AudioController::startMusicTransitionFromApu(const std::string& id) {
 	MusicTransitionRequest request;
 	request.to = id;
 	request.sync.kind = m_memory.readIoU32(IO_APU_SYNC_LOOP) != 0u

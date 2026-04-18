@@ -14,7 +14,6 @@ local colors<const> = {
 local state<const> = {
 	open = false,
 	selected = 1,
-	audio_paused = false,
 }
 
 local menu<const> = {}
@@ -23,15 +22,6 @@ local toggle_menu<const> = function()
 	state.open = not state.open
 	if state.open then
 		state.selected = 1
-		if not state.audio_paused then
-			pause_audio()
-			state.audio_paused = true
-		end
-	else
-		if state.audio_paused then
-			resume_audio()
-			state.audio_paused = false
-		end
 	end
 end
 

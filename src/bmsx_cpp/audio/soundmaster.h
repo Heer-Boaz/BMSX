@@ -1,8 +1,8 @@
 /*
  * soundmaster.h - Host-side audio playback and mixing.
  *
- * This is not the console audio device. Cart-visible audio should be owned by
- * a machine-side MMIO controller when the APU boundary is introduced.
+ * This is the mixer behind the machine APU. Cart-visible audio is MMIO, not
+ * SoundMaster.
  */
 
 #pragma once
@@ -21,8 +21,6 @@
 namespace bmsx {
 
 using VoiceId = u64;
-
-class Table;
 
 struct ModulationRange {
 	f32 min = 0.0f;
@@ -95,14 +93,6 @@ enum class AudioStopSelector {
 	ByVoice,
 };
 
-enum class AudioPlaybackMode {
-	Replace,
-	Ignore,
-	Queue,
-	Stop,
-	Pause,
-};
-
 struct MusicTransitionSync {
 	enum class Kind { Immediate, Loop, Delay, Stinger } kind = Kind::Immediate;
 	i32 delayMs = 0;
@@ -144,7 +134,6 @@ public:
 
 	VoiceId play(const AssetId& id, const SoundMasterPlayRequest& request = {});
 	VoiceId playResolved(const AssetId& id, const SoundMasterResolvedPlayRequest& request);
-	void playWithPolicy(AudioType type, const AssetId& id, const SoundMasterPlayRequest& request = {}, std::optional<AudioPlaybackMode> policy = std::nullopt, std::optional<int> maxVoices = std::nullopt);
 	void stop(AudioType type, AudioStopSelector which, VoiceId voiceId = 0, const AssetId& id = {});
 	void stopEffect();
 	void stopMusic(std::optional<i32> fadeMs = std::nullopt);
@@ -222,17 +211,10 @@ private:
 		std::optional<f64> startAtSeconds;
 	};
 
-	struct AudioQueueItem {
-		AssetId id;
-		SoundMasterPlayRequest request;
-		int maxVoices = 1;
-	};
-
 	ModulationParams resolvePlayParams(const ModulationInput& input);
 	ModulationParams resolveResolvedPlayParams(const SoundMasterResolvedPlayRequest& request) const;
 	std::optional<ModulationInput> resolveModulationPreset(const AssetId& key) const;
 	ModulationInput parseModulationInput(const BinValue& value) const;
-	ModulationInput parseModulationInput(const Table& table) const;
 
 	const AudioAsset& getAudioOrThrow(const AssetId& id) const;
 	AudioDataView resolveAudioData(const AssetId& id) const;
@@ -250,7 +232,6 @@ private:
 	void enqueueTransition(const MusicTransitionRequest& request, f64 delaySec, std::optional<f64> startAtSeconds);
 	void processPendingTransitions(f64 dt);
 	void rampVoiceGain(VoiceRecord& record, f32 target, f64 durationSec);
-	void onAudioChannelEnded(AudioType type);
 	void badpLoadBlock(VoiceRecord& record, size_t offset);
 	void badpSeekToFrame(VoiceRecord& record, size_t frame);
 	void badpResetDecoder(VoiceRecord& record, size_t frame);
@@ -269,8 +250,6 @@ private:
 
 	std::array<std::vector<VoiceRecord>, 3> m_voicesByType;
 	std::array<std::vector<PausedSnapshot>, 3> m_pausedByType;
-	std::array<std::vector<AudioQueueItem>, 3> m_audioQueueByType;
-	std::array<bool, 3> m_resumeOnNextEndByType{};
 	std::array<VoiceId, 3> m_currentVoiceIdByType{};
 	std::array<AssetId, 3> m_currentAudioIdByType{};
 	std::array<ModulationParams, 3> m_currentParamsByType{};

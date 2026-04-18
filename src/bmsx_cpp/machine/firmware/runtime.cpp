@@ -148,7 +148,7 @@ void Runtime::runEngineBuiltinPrelude() {
 	};
 	auto* engineModule = asTable(requireModule("bios/engine"));
 	for (const char* name : engineBuiltins) {
-		Value key = canonicalizeIdentifier(name);
+		Value key = canonicalKey(name);
 		m_machine.cpu().setGlobalByKey(key, engineModule->get(key));
 	}
 	std::cout << "[Runtime] prelude: engine builtins bound" << std::endl;

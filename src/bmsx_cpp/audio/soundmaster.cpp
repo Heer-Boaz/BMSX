@@ -82,8 +82,6 @@ void SoundMaster::setMaxVoicesByType(std::optional<int> sfx, std::optional<int> 
 void SoundMaster::resetPlaybackState() {
 	for (auto& pool : m_voicesByType) pool.clear();
 	for (auto& pool : m_pausedByType) pool.clear();
-	for (auto& queue : m_audioQueueByType) queue.clear();
-	m_resumeOnNextEndByType = {false, false, false};
 	m_currentVoiceIdByType = {0, 0, 0};
 	m_currentAudioIdByType = {"", "", ""};
 	m_currentParamsByType = {ModulationParams{}, ModulationParams{}, ModulationParams{}};
@@ -123,64 +121,6 @@ VoiceId SoundMaster::playResolved(const AssetId& id, const SoundMasterResolvedPl
 	const i32 priority = request.priority.has_value() ? request.priority.value() : asset.meta.priority;
 	const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
 	return startVoice(asset.meta.type, id, asset, params, priority, initialGain);
-}
-
-void SoundMaster::playWithPolicy(AudioType type, const AssetId& id, const SoundMasterPlayRequest& request, std::optional<AudioPlaybackMode> policy, std::optional<int> maxVoices) {
-	const AudioAsset& asset = getAudioOrThrow(id);
-	SoundMasterPlayRequest resolvedRequest = request;
-	const i32 priority = resolvedRequest.priority.has_value() ? resolvedRequest.priority.value() : asset.meta.priority;
-	resolvedRequest.priority = priority;
-
-	const AudioPlaybackMode resolvedPolicy = policy.value_or(AudioPlaybackMode::Replace);
-	const int resolvedMaxVoices = maxVoices.value_or(1);
-	if (resolvedMaxVoices < 1) {
-		throw std::runtime_error("max_voices must be at least 1");
-	}
-
-	const size_t typeIdx = typeIndex(type);
-	if (resolvedPolicy == AudioPlaybackMode::Stop) {
-		stop(type, AudioStopSelector::All);
-		m_audioQueueByType[typeIdx].clear();
-		return;
-	}
-
-	const size_t active = activeCountByType(type);
-	if (active >= static_cast<size_t>(resolvedMaxVoices)) {
-		if (resolvedPolicy == AudioPlaybackMode::Ignore) {
-			return;
-		}
-		if (resolvedPolicy == AudioPlaybackMode::Replace) {
-			const std::vector<ActiveVoiceInfo> infos = getActiveVoiceInfosByType(type);
-			if (infos.empty()) {
-				throw std::runtime_error("No active voices returned for audio channel");
-			}
-			size_t minIdx = 0;
-			i32 minPr = infos[0].priority;
-			f64 oldestStart = infos[0].startedAt;
-			for (size_t i = 1; i < infos.size(); ++i) {
-				const auto& info = infos[i];
-				if (info.priority < minPr || (info.priority == minPr && info.startedAt < oldestStart)) {
-					minPr = info.priority;
-					minIdx = i;
-					oldestStart = info.startedAt;
-				}
-			}
-			if (priority < minPr) {
-				return;
-			}
-			stop(type, AudioStopSelector::ByVoice, infos[minIdx].voiceId);
-		}
-		if (resolvedPolicy == AudioPlaybackMode::Pause) {
-			pause(type);
-			m_resumeOnNextEndByType[typeIdx] = true;
-		}
-		if (resolvedPolicy == AudioPlaybackMode::Queue) {
-			m_audioQueueByType[typeIdx].push_back(AudioQueueItem{id, resolvedRequest, resolvedMaxVoices});
-			return;
-		}
-	}
-
-	play(id, resolvedRequest);
 }
 
 void SoundMaster::stop(AudioType type, AudioStopSelector which, VoiceId voiceId, const AssetId& id) {
@@ -285,24 +225,6 @@ void SoundMaster::resumeType(AudioType type) {
 		const AudioAsset& asset = getAudioOrThrow(snapshot.id);
 		const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
 		startVoice(asset.meta.type, snapshot.id, asset, params, snapshot.priority, initialGain);
-	}
-}
-
-void SoundMaster::onAudioChannelEnded(AudioType type) {
-	const size_t idx = typeIndex(type);
-	if (m_resumeOnNextEndByType[idx]) {
-		m_resumeOnNextEndByType[idx] = false;
-		resumeType(type);
-		return;
-	}
-	auto& queue = m_audioQueueByType[idx];
-	while (!queue.empty()) {
-		const AudioQueueItem item = queue.front();
-		if (activeCountByType(type) >= static_cast<size_t>(item.maxVoices)) {
-			return;
-		}
-		queue.erase(queue.begin());
-		play(item.id, item.request);
 	}
 }
 
@@ -1057,82 +979,6 @@ ModulationInput SoundMaster::parseModulationInput(const BinValue& value) const {
 	return input;
 }
 
-ModulationInput SoundMaster::parseModulationInput(const Table& table) const {
-	auto key = [](const std::string& name) {
-		return Runtime::instance().canonicalizeIdentifier(name);
-	};
-	auto valueString = [](Value value) -> const std::string& {
-		return Runtime::instance().machine().cpu().stringPool().toString(asStringId(value));
-	};
-
-	auto getNumber = [&](const std::string& field, std::optional<f32>& out) {
-		Value v = table.get(key(field));
-		if (isNil(v)) return;
-		if (valueIsNumber(v)) {
-			out = static_cast<f32>(valueToNumber(v));
-			return;
-		}
-		throw BMSX_RUNTIME_ERROR("Modulation param '" + field + "' is not a number");
-	};
-
-	auto getRange = [&](const std::string& field, std::optional<ModulationRange>& out) {
-		Value v = table.get(key(field));
-		if (isNil(v)) return;
-		if (!valueIsTable(v)) {
-			throw BMSX_RUNTIME_ERROR("Modulation range '" + field + "' is not an array");
-		}
-		const Table& arr = *asTable(v);
-		const int len = arr.length();
-		if (len < 2) {
-			throw BMSX_RUNTIME_ERROR("Modulation range '" + field + "' is missing bounds");
-		}
-		const Value v0 = arr.get(valueNumber(1.0));
-		const Value v1 = arr.get(valueNumber(2.0));
-		if (!valueIsNumber(v0) || !valueIsNumber(v1)) {
-			throw BMSX_RUNTIME_ERROR("Modulation range '" + field + "' bounds are not numbers");
-		}
-		out = ModulationRange{static_cast<f32>(valueToNumber(v0)), static_cast<f32>(valueToNumber(v1))};
-	};
-
-	ModulationInput input;
-	getNumber("pitchDelta", input.pitchDelta);
-	getNumber("volumeDelta", input.volumeDelta);
-	getNumber("offset", input.offset);
-	getNumber("playbackRate", input.playbackRate);
-	getRange("pitchRange", input.pitchRange);
-	getRange("volumeRange", input.volumeRange);
-	getRange("offsetRange", input.offsetRange);
-	getRange("playbackRateRange", input.playbackRateRange);
-
-	Value filterVal = table.get(key("filter"));
-	if (!isNil(filterVal)) {
-		if (!valueIsTable(filterVal)) {
-			throw BMSX_RUNTIME_ERROR("Modulation filter must be a table");
-		}
-		const Table& ftable = *asTable(filterVal);
-		FilterModulationParams filter;
-		Value typeVal = ftable.get(key("type"));
-		if (valueIsString(typeVal)) {
-			filter.type = valueString(typeVal);
-		}
-		Value freqVal = ftable.get(key("frequency"));
-		if (valueIsNumber(freqVal)) {
-			filter.frequency = static_cast<f32>(valueToNumber(freqVal));
-		}
-		Value qVal = ftable.get(key("q"));
-		if (valueIsNumber(qVal)) {
-			filter.q = static_cast<f32>(valueToNumber(qVal));
-		}
-		Value gainVal = ftable.get(key("gain"));
-		if (valueIsNumber(gainVal)) {
-			filter.gain = static_cast<f32>(valueToNumber(gainVal));
-		}
-		input.filter = filter;
-	}
-
-	return input;
-}
-
 const AudioAsset& SoundMaster::getAudioOrThrow(const AssetId& id) const {
 	const AudioAsset* asset = m_assets ? m_assets->getAudio(id) : nullptr;
 	if (!asset) {
@@ -1395,7 +1241,6 @@ void SoundMaster::removeVoice(AudioType type, size_t index) {
 
 void SoundMaster::finalizeVoiceEnd(AudioType type, const VoiceRecord& record) {
 	const size_t idx = typeIndex(type);
-	onAudioChannelEnded(type);
 	if (m_endedListenersByType[idx].empty()) return;
 	ActiveVoiceInfo info{
 		record.voiceId,

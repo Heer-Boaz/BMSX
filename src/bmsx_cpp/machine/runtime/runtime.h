@@ -244,7 +244,7 @@ public:
 	uint32_t trackedVramUsedBytes() const;
 	uint32_t trackedVramTotalBytes() const { return m_machine.vdp().trackedTotalVramBytes(); }
 	bool isDrawPending() const;
-	Value canonicalizeIdentifier(std::string_view value);
+	Value canonicalKey(std::string_view value);
 	void refreshMemoryMap();
 	void restoreVramSlotTextures();
 	void captureVramTextureSnapshots();

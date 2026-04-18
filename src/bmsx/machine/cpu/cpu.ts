@@ -105,10 +105,6 @@ function resolveApiNativeCost(name: string): NativeFnCost {
 		case 'put_point_light':
 		case 'resolveFontId':
 		case 'dget':
-		case 'sfx':
-		case 'stop_sfx':
-		case 'music':
-		case 'stop_music':
 		case 'reboot':
 			return NATIVE_COST_TIER1;
 		case 'pointer_screen_position':
@@ -118,9 +114,6 @@ function resolveApiNativeCost(name: string): NativeFnCost {
 		case 'mousewheel':
 		case 'set_cpu_freq_hz':
 		case 'dset':
-		case 'set_master_volume':
-		case 'pause_audio':
-		case 'resume_audio':
 			return NATIVE_COST_TIER2;
 		case 'set_camera':
 		case 'cartdata':

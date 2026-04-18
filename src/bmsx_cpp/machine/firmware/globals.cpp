@@ -1178,7 +1178,7 @@ void Runtime::setupBuiltins() {
 		throw BMSX_RUNTIME_ERROR(formatNonFunctionCallError(callee, m_machine.cpu()));
 	};
 	auto key = [this](std::string_view name) {
-		return canonicalizeIdentifier(name);
+		return canonicalKey(name);
 	};
 	auto str = [this](std::string_view value) {
 		return valueString(m_machine.cpu().internString(value));

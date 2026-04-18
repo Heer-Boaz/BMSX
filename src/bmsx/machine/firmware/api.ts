@@ -1,5 +1,4 @@
 import { $, runGate } from '../../core/engine';
-import { Input } from '../../input/manager';
 import {
 	color,
 	MeshRenderSubmission,
@@ -8,7 +7,6 @@ import {
 import { Font } from '../../render/shared/bmsx_font';
 import { BFont, GlyphMap } from '../../render/shared/bitmap_font';
 import { RuntimeStorage } from './cart_storage';
-import type { AudioPlayOptions } from '../../audio/soundmaster';
 import type { vec3arr } from '../../rompack/format';
 import { taskGate, GateGroup } from '../../core/taskgate';
 import { Runtime } from '../runtime/runtime';
@@ -20,10 +18,8 @@ import { listResources } from '../../ide/workspace/workspace';
 import { getWorkspaceCachedSource } from '../../ide/workspace/cache';
 import { buildDirtyFilePath, hasWorkspaceStorage } from '../../ide/workbench/workspace/io';
 import { DEFAULT_LUA_BUILTIN_NAMES } from './builtin_descriptors';
-import { Table } from '../cpu/cpu';
 import { createLuaTable, type LuaTable } from '../../lua/value';
 import { BmsxColors } from '../devices/vdp/vdp';
-import type { StringValue } from '../memory/string_pool';
 
 export type ApiOptions = {
 	storage: RuntimeStorage;
@@ -58,12 +54,6 @@ export class Api {
 	private readonly cameraEyeScratch: vec3arr = [0, 0, 0];
 	private readonly lightColorScratch: vec3arr = [0, 0, 0];
 	private readonly lightVecScratch: vec3arr = [0, 0, 0];
-	private readonly pointerXKey: StringValue;
-	private readonly pointerYKey: StringValue;
-	private readonly pointerValidKey: StringValue;
-	private readonly pointerInsideKey: StringValue;
-	private readonly mousewheelValueKey: StringValue;
-	private readonly mousewheelValidKey: StringValue;
 	private _runtime: Runtime;
 
 	constructor(options: ApiOptions) {
@@ -77,12 +67,6 @@ export class Api {
 		}
 		this.storage = options.storage;
 		this._runtime = options.runtime;
-		this.pointerXKey = this._runtime.canonicalKey('x');
-		this.pointerYKey = this._runtime.canonicalKey('y');
-		this.pointerValidKey = this._runtime.canonicalKey('valid');
-		this.pointerInsideKey = this._runtime.canonicalKey('inside');
-		this.mousewheelValueKey = this._runtime.canonicalKey('value');
-		this.mousewheelValidKey = this._runtime.canonicalKey('valid');
 		this.font = new Font();
 		this.registerFont(this.font);
 	}

@@ -96,29 +96,6 @@ InputSource parseInputSource(const std::string& source) {
 	throw BMSX_RUNTIME_ERROR("Unknown input source '" + source + "'.");
 }
 
-struct ParsedAudioOptions {
-	SoundMasterPlayRequest request;
-	std::optional<AudioPlaybackMode> policy;
-	std::optional<int> maxVoices;
-	std::optional<AudioType> channel;
-};
-
-static AudioPlaybackMode parsePlaybackMode(const std::string& value) {
-	if (value == "replace") return AudioPlaybackMode::Replace;
-	if (value == "ignore") return AudioPlaybackMode::Ignore;
-	if (value == "queue") return AudioPlaybackMode::Queue;
-	if (value == "stop") return AudioPlaybackMode::Stop;
-	if (value == "pause") return AudioPlaybackMode::Pause;
-	throw BMSX_RUNTIME_ERROR("Unknown audio policy '" + value + "'");
-}
-
-static AudioType parseAudioChannel(const std::string& value) {
-	if (value == "sfx") return AudioType::Sfx;
-	if (value == "music") return AudioType::Music;
-	if (value == "ui") return AudioType::Ui;
-	throw BMSX_RUNTIME_ERROR("Unknown audio channel '" + value + "'");
-}
-
 static u32 readUtf8Codepoint(const std::string& text, size_t& index) {
 	const size_t size = text.size();
 	u8 c0 = static_cast<u8>(text[index]);
@@ -196,328 +173,6 @@ static void utf8AppendCodepoint(std::string& out, u32 codepoint) {
 	out.push_back(static_cast<char>(0x80u | (codepoint & 0x3Fu)));
 }
 
-static bool hasModulationFields(const Table& table) {
-	auto key = [](std::string_view name) {
-		return Runtime::instance().canonicalizeIdentifier(name);
-	};
-	if (!isNil(table.get(key("pitchDelta")))) return true;
-	if (!isNil(table.get(key("volumeDelta")))) return true;
-	if (!isNil(table.get(key("offset")))) return true;
-	if (!isNil(table.get(key("playbackRate")))) return true;
-	if (!isNil(table.get(key("pitchRange")))) return true;
-	if (!isNil(table.get(key("volumeRange")))) return true;
-	if (!isNil(table.get(key("offsetRange")))) return true;
-	if (!isNil(table.get(key("playbackRateRange")))) return true;
-	if (!isNil(table.get(key("filter")))) return true;
-	return false;
-}
-
-static ModulationInput parseModulationInputTable(const Table& table) {
-	auto key = [](std::string_view name) {
-		return Runtime::instance().canonicalizeIdentifier(name);
-	};
-	auto valueString = [](Value value) -> const std::string& {
-		return Runtime::instance().machine().cpu().stringPool().toString(asStringId(value));
-	};
-
-	auto getNumber = [&](const std::string& field, std::optional<f32>& out) {
-		Value v = table.get(key(field));
-		if (isNil(v)) return;
-		if (valueIsNumber(v)) {
-			out = static_cast<f32>(valueToNumber(v));
-			return;
-		}
-		throw BMSX_RUNTIME_ERROR("Modulation param '" + field + "' is not a number");
-	};
-
-	auto getRange = [&](const std::string& field, std::optional<ModulationRange>& out) {
-		Value v = table.get(key(field));
-		if (isNil(v)) return;
-		if (!valueIsTable(v)) {
-			throw BMSX_RUNTIME_ERROR("Modulation range '" + field + "' is not an array");
-		}
-		const Table& arr = *asTable(v);
-		const int len = arr.length();
-		if (len < 2) {
-			throw BMSX_RUNTIME_ERROR("Modulation range '" + field + "' is missing bounds");
-		}
-		const Value v0 = arr.get(valueNumber(1.0));
-		const Value v1 = arr.get(valueNumber(2.0));
-		if (!valueIsNumber(v0) || !valueIsNumber(v1)) {
-			throw BMSX_RUNTIME_ERROR("Modulation range '" + field + "' bounds are not numbers");
-		}
-		out = ModulationRange{static_cast<f32>(valueToNumber(v0)), static_cast<f32>(valueToNumber(v1))};
-	};
-
-	ModulationInput input;
-	getNumber("pitchDelta", input.pitchDelta);
-	getNumber("volumeDelta", input.volumeDelta);
-	getNumber("offset", input.offset);
-	getNumber("playbackRate", input.playbackRate);
-	getRange("pitchRange", input.pitchRange);
-	getRange("volumeRange", input.volumeRange);
-	getRange("offsetRange", input.offsetRange);
-	getRange("playbackRateRange", input.playbackRateRange);
-
-	Value filterVal = table.get(key("filter"));
-	if (!isNil(filterVal)) {
-		if (!valueIsTable(filterVal)) {
-			throw BMSX_RUNTIME_ERROR("Modulation filter must be a table");
-		}
-		const Table& ftable = *asTable(filterVal);
-		FilterModulationParams filter;
-		Value typeVal = ftable.get(key("type"));
-		if (valueIsString(typeVal)) {
-			filter.type = valueString(typeVal);
-		}
-		Value freqVal = ftable.get(key("frequency"));
-		if (valueIsNumber(freqVal)) {
-			filter.frequency = static_cast<f32>(valueToNumber(freqVal));
-		}
-		Value qVal = ftable.get(key("q"));
-		if (valueIsNumber(qVal)) {
-			filter.q = static_cast<f32>(valueToNumber(qVal));
-		}
-		Value gainVal = ftable.get(key("gain"));
-		if (valueIsNumber(gainVal)) {
-			filter.gain = static_cast<f32>(valueToNumber(gainVal));
-		}
-		input.filter = filter;
-	}
-
-	return input;
-}
-
-static ParsedAudioOptions parseAudioOptions(const Value& value) {
-	ParsedAudioOptions out;
-	if (isNil(value)) {
-		return out;
-	}
-	if (!valueIsTable(value)) {
-		throw BMSX_RUNTIME_ERROR("audio options must be a table");
-	}
-	const Table& table = *asTable(value);
-	auto key = [](std::string_view name) {
-		return Runtime::instance().canonicalizeIdentifier(name);
-	};
-	auto valueString = [](Value v) -> const std::string& {
-		return Runtime::instance().machine().cpu().stringPool().toString(asStringId(v));
-	};
-
-	Value channelVal = table.get(key("channel"));
-	if (!isNil(channelVal)) {
-		if (!valueIsString(channelVal)) {
-			throw BMSX_RUNTIME_ERROR("audio channel must be a string");
-		}
-		out.channel = parseAudioChannel(valueString(channelVal));
-	}
-
-	Value policyVal = table.get(key("policy"));
-	if (!isNil(policyVal)) {
-		if (!valueIsString(policyVal)) {
-			throw BMSX_RUNTIME_ERROR("audio policy must be a string");
-		}
-		out.policy = parsePlaybackMode(valueString(policyVal));
-	}
-
-	Value maxVal = table.get(key("max_voices"));
-	if (!isNil(maxVal)) {
-		if (!valueIsNumber(maxVal)) {
-			throw BMSX_RUNTIME_ERROR("max_voices must be a number");
-		}
-		out.maxVoices = static_cast<int>(std::floor(valueToNumber(maxVal)));
-	}
-
-	Value priorityVal = table.get(key("priority"));
-	if (!isNil(priorityVal)) {
-		if (!valueIsNumber(priorityVal)) {
-			throw BMSX_RUNTIME_ERROR("priority must be a number");
-		}
-		out.request.priority = static_cast<i32>(std::floor(valueToNumber(priorityVal)));
-	}
-
-	Value modulationParamsVal = table.get(key("modulation_params"));
-	Value paramsVal = table.get(key("params"));
-	Value modulationPresetVal = table.get(key("modulation_preset"));
-
-	if (!isNil(modulationParamsVal)) {
-		if (!valueIsTable(modulationParamsVal)) {
-			throw BMSX_RUNTIME_ERROR("modulation_params must be a table");
-		}
-		out.request.params = parseModulationInputTable(*asTable(modulationParamsVal));
-	} else if (!isNil(paramsVal)) {
-		if (!valueIsTable(paramsVal)) {
-			throw BMSX_RUNTIME_ERROR("params must be a table");
-		}
-		out.request.params = parseModulationInputTable(*asTable(paramsVal));
-	} else if (hasModulationFields(table)) {
-		out.request.params = parseModulationInputTable(table);
-	}
-
-	if (!out.request.params.has_value() && !isNil(modulationPresetVal)) {
-		if (!valueIsString(modulationPresetVal)) {
-			throw BMSX_RUNTIME_ERROR("modulation_preset must be a string");
-		}
-		out.request.modulationPreset = valueString(modulationPresetVal);
-	}
-
-	return out;
-}
-
-static MusicTransitionSync parseMusicSyncValue(const Value& value) {
-	MusicTransitionSync sync;
-	if (isNil(value)) {
-		return sync;
-	}
-	auto key = [](std::string_view name) {
-		return Runtime::instance().canonicalizeIdentifier(name);
-	};
-	auto valueString = [](Value v) -> const std::string& {
-		return Runtime::instance().machine().cpu().stringPool().toString(asStringId(v));
-	};
-	if (valueIsString(value)) {
-		const std::string& text = valueString(value);
-		if (text == "loop") {
-			sync.kind = MusicTransitionSync::Kind::Loop;
-		} else {
-			sync.kind = MusicTransitionSync::Kind::Immediate;
-		}
-		return sync;
-	}
-	if (!valueIsTable(value)) {
-		throw BMSX_RUNTIME_ERROR("music sync must be a string or table");
-	}
-	const Table& table = *asTable(value);
-	Value delayVal = table.get(key("delay_ms"));
-	if (!isNil(delayVal)) {
-		if (!valueIsNumber(delayVal)) {
-			throw BMSX_RUNTIME_ERROR("sync.delay_ms must be a number");
-		}
-		sync.kind = MusicTransitionSync::Kind::Delay;
-		sync.delayMs = static_cast<i32>(std::floor(valueToNumber(delayVal)));
-		return sync;
-	}
-	Value stingerVal = table.get(key("stinger"));
-	if (!isNil(stingerVal)) {
-		if (!valueIsString(stingerVal)) {
-			throw BMSX_RUNTIME_ERROR("sync.stinger must be a string");
-		}
-		sync.kind = MusicTransitionSync::Kind::Stinger;
-		sync.stinger = valueString(stingerVal);
-		Value returnVal = table.get(key("return_to"));
-		if (!isNil(returnVal)) {
-			if (!valueIsString(returnVal)) {
-				throw BMSX_RUNTIME_ERROR("sync.return_to must be a string");
-			}
-			sync.returnTo = valueString(returnVal);
-		}
-		Value prevVal = table.get(key("return_to_previous"));
-		if (!isNil(prevVal)) {
-			if (!valueIsBool(prevVal)) {
-				throw BMSX_RUNTIME_ERROR("sync.return_to_previous must be a boolean");
-			}
-			sync.returnToPrevious = valueToBool(prevVal);
-		}
-	}
-	return sync;
-}
-
-static std::optional<MusicTransitionRequest> parseMusicTransition(const Value& value, const std::string& id) {
-	if (isNil(value)) {
-		return std::nullopt;
-	}
-	if (!valueIsTable(value)) {
-		throw BMSX_RUNTIME_ERROR("music options must be a table");
-	}
-	const Table& table = *asTable(value);
-	auto key = [](std::string_view name) {
-		return Runtime::instance().canonicalizeIdentifier(name);
-	};
-	auto valueString = [](Value v) -> const std::string& {
-		return Runtime::instance().machine().cpu().stringPool().toString(asStringId(v));
-	};
-
-	Value syncVal = table.get(key("sync"));
-	Value fadeVal = table.get(key("fade_ms"));
-	Value crossfadeVal = table.get(key("crossfade_ms"));
-	Value loopVal = table.get(key("start_at_loop_start"));
-	Value freshVal = table.get(key("start_fresh"));
-	Value audioIdVal = table.get(key("audio_id"));
-	const bool hasTransition = !isNil(syncVal) || !isNil(fadeVal) || !isNil(crossfadeVal) || !isNil(loopVal) || !isNil(freshVal) || !isNil(audioIdVal);
-	if (!hasTransition) {
-		return std::nullopt;
-	}
-
-	MusicTransitionRequest request;
-	if (!id.empty()) {
-		request.to = id;
-	} else if (!isNil(audioIdVal)) {
-		if (!valueIsString(audioIdVal)) {
-			throw BMSX_RUNTIME_ERROR("music_transition.audio_id must be a string");
-		}
-		request.to = valueString(audioIdVal);
-	} else {
-		throw BMSX_RUNTIME_ERROR("music_transition.audio_id is required");
-	}
-
-	if (!isNil(syncVal)) {
-		request.sync = parseMusicSyncValue(syncVal);
-	}
-	if (!isNil(fadeVal)) {
-		if (!valueIsNumber(fadeVal)) {
-			throw BMSX_RUNTIME_ERROR("music_transition.fade_ms must be a number");
-		}
-		request.fadeMs = static_cast<i32>(std::floor(valueToNumber(fadeVal)));
-	}
-	if (!isNil(crossfadeVal)) {
-		if (!valueIsNumber(crossfadeVal)) {
-			throw BMSX_RUNTIME_ERROR("music_transition.crossfade_ms must be a number");
-		}
-		request.crossfadeMs = static_cast<i32>(std::floor(valueToNumber(crossfadeVal)));
-	}
-	if (!isNil(fadeVal) && !isNil(crossfadeVal)) {
-		throw BMSX_RUNTIME_ERROR("music_transition cannot specify both fade_ms and crossfade_ms");
-	}
-	if (!isNil(loopVal)) {
-		if (!valueIsBool(loopVal)) {
-			throw BMSX_RUNTIME_ERROR("music_transition.start_at_loop_start must be a boolean");
-		}
-		request.startAtLoopStart = valueToBool(loopVal);
-	}
-	if (!isNil(freshVal)) {
-		if (!valueIsBool(freshVal)) {
-			throw BMSX_RUNTIME_ERROR("music_transition.start_fresh must be a boolean");
-		}
-		request.startFresh = valueToBool(freshVal);
-	}
-	return request;
-}
-
-static std::optional<i32> parseStopMusicFadeMs(const Value& value) {
-	if (isNil(value)) {
-		return std::nullopt;
-	}
-	if (!valueIsTable(value)) {
-		throw BMSX_RUNTIME_ERROR("stop_music options must be a table");
-	}
-	const Table& table = *asTable(value);
-	auto key = [](std::string_view name) {
-		return Runtime::instance().canonicalizeIdentifier(name);
-	};
-	Value fadeVal = table.get(key("fade_ms"));
-	Value crossfadeVal = table.get(key("crossfade_ms"));
-	if (!isNil(fadeVal) && !valueIsNumber(fadeVal)) {
-		throw BMSX_RUNTIME_ERROR("stop_music.fade_ms must be a number");
-	}
-	if (!isNil(crossfadeVal)) {
-		throw BMSX_RUNTIME_ERROR("stop_music does not support crossfade_ms");
-	}
-	if (isNil(fadeVal)) {
-		return std::nullopt;
-	}
-	return static_cast<i32>(std::floor(valueToNumber(fadeVal)));
-}
-
 } // namespace
 
 Api::Api(Runtime& runtime)
@@ -530,19 +185,19 @@ Api::Api(Runtime& runtime)
 Api::~Api() = default;
 
 void Api::initializeRuntimeKeys() {
-	m_keys.x = m_runtime.canonicalizeIdentifier("x");
-	m_keys.y = m_runtime.canonicalizeIdentifier("y");
-	m_keys.z = m_runtime.canonicalizeIdentifier("z");
-	m_keys.r = m_runtime.canonicalizeIdentifier("r");
-	m_keys.g = m_runtime.canonicalizeIdentifier("g");
-	m_keys.b = m_runtime.canonicalizeIdentifier("b");
-	m_keys.a = m_runtime.canonicalizeIdentifier("a");
-	m_keys.definition = m_runtime.canonicalizeIdentifier("definition");
-	m_keys.action = m_runtime.canonicalizeIdentifier("action");
-	m_keys.name = m_runtime.canonicalizeIdentifier("name");
-	m_keys.valid = m_runtime.canonicalizeIdentifier("valid");
-	m_keys.inside = m_runtime.canonicalizeIdentifier("inside");
-	m_keys.value = m_runtime.canonicalizeIdentifier("value");
+	m_keys.x = m_runtime.canonicalKey("x");
+	m_keys.y = m_runtime.canonicalKey("y");
+	m_keys.z = m_runtime.canonicalKey("z");
+	m_keys.r = m_runtime.canonicalKey("r");
+	m_keys.g = m_runtime.canonicalKey("g");
+	m_keys.b = m_runtime.canonicalKey("b");
+	m_keys.a = m_runtime.canonicalKey("a");
+	m_keys.definition = m_runtime.canonicalKey("definition");
+	m_keys.action = m_runtime.canonicalKey("action");
+	m_keys.name = m_runtime.canonicalKey("name");
+	m_keys.valid = m_runtime.canonicalKey("valid");
+	m_keys.inside = m_runtime.canonicalKey("inside");
+	m_keys.value = m_runtime.canonicalKey("value");
 }
 
 void Api::markRoots(GcHeap& heap) {
@@ -603,7 +258,7 @@ Value Api::get_player_input_handle(int playerIndex) {
 	}
 
 	auto key = [this](std::string_view name) {
-		return m_runtime.canonicalizeIdentifier(name);
+		return m_runtime.canonicalKey(name);
 	};
 	auto exactString = [this](std::string_view text) {
 		return valueString(m_runtime.machine().cpu().internString(text));
@@ -718,7 +373,7 @@ Value Api::get_player_input_handle(int playerIndex) {
 
 void Api::registerAllFunctions() {
 	auto key = [this](std::string_view name) {
-		return m_runtime.canonicalizeIdentifier(name);
+		return m_runtime.canonicalKey(name);
 	};
 	auto asText = [this](Value value) -> const std::string& {
 		return m_runtime.machine().cpu().stringPool().toString(asStringId(value));
@@ -924,7 +579,7 @@ void Api::reboot() {
 
 Value Api::build_font_descriptor(BFont* font) {
 	auto key = [this](std::string_view name) {
-		return m_runtime.canonicalizeIdentifier(name);
+		return m_runtime.canonicalKey(name);
 	};
 	auto str = [this](const std::string& value) {
 		return valueString(m_runtime.machine().cpu().internString(value));
@@ -994,7 +649,7 @@ BFont* Api::create_font(const Value& definition) {
 		throw BMSX_RUNTIME_ERROR("create_font(definition) requires a table.");
 	}
 	auto key = [this](std::string_view name) {
-		return m_runtime.canonicalizeIdentifier(name);
+		return m_runtime.canonicalKey(name);
 	};
 	auto asText = [this](Value value) -> const std::string& {
 		return m_runtime.machine().cpu().stringPool().toString(asStringId(value));

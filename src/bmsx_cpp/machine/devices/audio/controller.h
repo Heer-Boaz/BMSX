@@ -48,7 +48,7 @@ private:
 	void play();
 	void queuePlay();
 	void startPlay(uint32_t handle, const std::string& id, AudioType channel, const SoundMasterResolvedPlayRequest& request);
-	void playMusic(const std::string& id);
+	void startMusicTransitionFromApu(const std::string& id);
 	void stopChannel();
 	SoundMasterResolvedPlayRequest readResolvedPlayRequest() const;
 	void onVoiceEnded(AudioType type, const ActiveVoiceInfo& info);

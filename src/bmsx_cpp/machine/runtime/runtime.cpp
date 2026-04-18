@@ -222,16 +222,16 @@ void Runtime::applyState(const RuntimeState& state) {
 }
 
 Value Runtime::getGlobal(std::string_view name) {
-	return m_machine.cpu().getGlobalByKey(canonicalizeIdentifier(name));
+	return m_machine.cpu().getGlobalByKey(canonicalKey(name));
 }
 
 void Runtime::setGlobal(std::string_view name, const Value& value) {
-	m_machine.cpu().setGlobalByKey(canonicalizeIdentifier(name), value);
+	m_machine.cpu().setGlobalByKey(canonicalKey(name), value);
 }
 
 void Runtime::registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost) {
 	auto nativeFn = m_machine.cpu().createNativeFunction(name, std::move(fn), cost);
-	m_machine.cpu().setGlobalByKey(canonicalizeIdentifier(name), nativeFn);
+	m_machine.cpu().setGlobalByKey(canonicalKey(name), nativeFn);
 }
 
 void Runtime::setCanonicalization(CanonicalizationType canonicalization) {
@@ -299,7 +299,7 @@ void Runtime::captureVramTextureSnapshots() {
 	m_machine.vdp().captureVramTextureSnapshots();
 }
 
-Value Runtime::canonicalizeIdentifier(std::string_view value) {
+Value Runtime::canonicalKey(std::string_view value) {
 	if (m_canonicalization == CanonicalizationType::None) {
 		return valueString(m_machine.cpu().internString(value));
 	}
