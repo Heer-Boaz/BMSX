@@ -1,5 +1,5 @@
 -- collision2d.lua
--- GEO overlap orchestration for direct pair queries + ECS overlap passes
+-- GEO overlap orchestration for direct pair queries + same-step ECS overlap passes
 
 local collision2d<const> = {}
 
@@ -18,18 +18,9 @@ local geo_direct_instance_base<const> = geo_direct_shape_base + geo_overlap_aabb
 local geo_direct_pair_base<const> = geo_direct_instance_base + geo_overlap_instance_bytes * 2
 local geo_direct_result_base<const> = geo_direct_pair_base + geo_overlap_pair_bytes
 local geo_direct_summary_base<const> = geo_direct_result_base + geo_overlap_result_bytes
-local geo_overlap_async_base<const> = geo_direct_summary_base + geo_overlap_summary_bytes
-local geo_overlap_async_size<const> = sys_geo_scratch_size - geo_direct_query_scratch_bytes
-local overlap_state_idle<const> = 0
-local overlap_state_busy<const> = 1
-local overlap_state_ready<const> = 2
+local geo_overlap_batch_base<const> = geo_direct_summary_base + geo_overlap_summary_bytes
+local geo_overlap_batch_size<const> = sys_geo_scratch_size - geo_direct_query_scratch_bytes
 local geo_batch_token = 0
-local overlap_query_state
-local overlap_query_discard_ready
-local overlap_query_result_base
-local overlap_query_summary_base
-local overlap_query_collider_count = 0
-local overlap_query_colliders<const> = {}
 local direct_query_contact<const> = {
 	normal = { x = 0, y = 0 },
 	depth = 0,
@@ -66,31 +57,6 @@ local ack_geo_irq_if_pending<const> = function()
 	if geo_flags ~= 0 then
 		mem[sys_irq_ack] = geo_flags
 	end
-end
-
-local mark_overlap_query_idle<const> = function()
-	overlap_query_state = overlap_state_idle
-end
-
-local mark_overlap_query_busy<const> = function()
-	overlap_query_state = overlap_state_busy
-end
-
-local mark_overlap_query_ready<const> = function()
-	overlap_query_state = overlap_state_ready
-end
-
-local clear_overlap_query_discard<const> = function()
-	overlap_query_discard_ready = false
-end
-
-local mark_overlap_query_discard<const> = function()
-	overlap_query_discard_ready = true
-end
-
-local clear_overlap_query_buffers<const> = function()
-	overlap_query_result_base = 0
-	overlap_query_summary_base = 0
 end
 
 local stage_geo_aabb_shape<const> = function(collider, shape_addr)
@@ -138,24 +104,6 @@ local wait_for_geo_completion<const> = function(label)
 			irq(flags)
 		end
 	end
-end
-
-local clear_overlap_query_colliders<const> = function()
-	while overlap_query_collider_count > 0 do
-		overlap_query_colliders[overlap_query_collider_count] = nil
-		overlap_query_collider_count = overlap_query_collider_count - 1
-	end
-end
-
-local set_overlap_query_colliders<const> = function(colliders, collider_count)
-	local previous_count<const> = overlap_query_collider_count
-	for i = 1, collider_count do
-		overlap_query_colliders[i] = colliders[i]
-	end
-	for i = collider_count + 1, previous_count do
-		overlap_query_colliders[i] = nil
-	end
-	overlap_query_collider_count = collider_count
 end
 
 local ensure_pair_contacts<const> = function(pair)
@@ -230,27 +178,6 @@ local decode_overlap_results<const> = function(colliders, collider_count, result
 	return result_count
 end
 
-local refresh_overlap_query_state<const> = function()
-	if overlap_query_state ~= overlap_state_busy then
-		return overlap_query_state
-	end
-	local status<const> = mem[sys_geo_status]
-	if (status & geo_status_busy) ~= 0 then
-		return overlap_query_state
-	end
-	ack_geo_irq_if_pending()
-	if (status & geo_status_rejected) ~= 0 or (status & geo_status_error) ~= 0 then
-		mark_overlap_query_idle()
-		clear_overlap_query_discard()
-		raise_geo_fault('overlap full pass')
-	end
-	if (status & geo_status_done) ~= 0 then
-		mark_overlap_query_ready()
-		return overlap_query_state
-	end
-	error('GEO overlap async state lost')
-end
-
 local submit_geo_overlap_candidate_batch<const> = function(instance_base, pair_base, result_base, summary_base, instance_count, pair_count)
 	memwrite(
 		sys_geo_src0,
@@ -277,7 +204,7 @@ local submit_geo_overlap_candidate_batch<const> = function(instance_base, pair_b
 	wait_for_geo_completion('overlap batch')
 end
 
-local submit_geo_overlap_full_pass_async<const> = function(instance_base, result_base, summary_base, instance_count, result_capacity)
+local submit_geo_overlap_full_pass<const> = function(instance_base, result_base, summary_base, instance_count, result_capacity)
 	memwrite(
 		sys_geo_src0,
 		instance_base,
@@ -307,28 +234,9 @@ local submit_geo_overlap_full_pass_async<const> = function(instance_base, result
 	end
 end
 
-mark_overlap_query_idle()
-clear_overlap_query_discard()
-clear_overlap_query_buffers()
-
-function collision2d.reset_overlap_pipeline()
-	mark_overlap_query_idle()
-	clear_overlap_query_discard()
-	clear_overlap_query_buffers()
-	clear_overlap_query_colliders()
-end
-
-function collision2d.invalidate_overlap_pass()
-	mark_overlap_query_discard()
-end
-
-function collision2d.submit_overlap_pass(colliders, collider_count)
-	local state<const> = refresh_overlap_query_state()
-	if state ~= overlap_state_idle or collider_count <= 1 then
-		return false
-	end
+function collision2d.collect_overlaps(colliders, collider_count, pairs)
 	local batch_token<const> = next_geo_batch_token()
-	local shape_base<const> = geo_overlap_async_base
+	local shape_base<const> = geo_overlap_batch_base
 	local instance_base<const> = shape_base + collider_count * geo_overlap_aabb_shape_bytes
 	for i = 1, collider_count do
 		local collider<const> = colliders[i]
@@ -338,7 +246,7 @@ function collision2d.submit_overlap_pass(colliders, collider_count)
 		stage_geo_overlap_instance(collider, batch_token, instance_base, shape_base + (i - 1) * geo_overlap_aabb_shape_bytes)
 	end
 	local max_pair_count<const> = (collider_count * (collider_count - 1)) // 2
-	local scratch_for_results<const> = geo_overlap_async_size - collider_count * (geo_overlap_aabb_shape_bytes + geo_overlap_instance_bytes) - geo_overlap_summary_bytes
+	local scratch_for_results<const> = geo_overlap_batch_size - collider_count * (geo_overlap_aabb_shape_bytes + geo_overlap_instance_bytes) - geo_overlap_summary_bytes
 	if scratch_for_results < geo_overlap_result_bytes then
 		error('GEO overlap scratch overflow (instances=' .. tostring(collider_count) .. ')')
 	end
@@ -346,26 +254,14 @@ function collision2d.submit_overlap_pass(colliders, collider_count)
 	local result_capacity<const> = math.min(max_pair_count, scratch_result_capacity)
 	local result_base<const> = instance_base + collider_count * geo_overlap_instance_bytes
 	local summary_base<const> = result_base + result_capacity * geo_overlap_result_bytes
-	set_overlap_query_colliders(colliders, collider_count)
-	overlap_query_result_base = result_base
-	overlap_query_summary_base = summary_base
-	submit_geo_overlap_full_pass_async(instance_base, result_base, summary_base, collider_count, result_capacity)
-	mark_overlap_query_busy()
-	clear_overlap_query_discard()
-	return true
-end
-
-function collision2d.consume_overlap_pass(pairs)
-	local state<const> = refresh_overlap_query_state()
-	if state ~= overlap_state_ready then
-		return nil
+	submit_geo_overlap_full_pass(instance_base, result_base, summary_base, collider_count, result_capacity)
+	wait_for_geo_completion('overlap full pass')
+	for i = 1, collider_count do
+		local collider<const> = colliders[i]
+		collider._overlap_cache_valid = false
+		collider._world_polys_cache_valid = false
 	end
-	mark_overlap_query_idle()
-	if overlap_query_discard_ready then
-		clear_overlap_query_discard()
-		return 0
-	end
-	return decode_overlap_results(overlap_query_colliders, overlap_query_collider_count, overlap_query_result_base, overlap_query_summary_base, pairs)
+	return decode_overlap_results(colliders, collider_count, result_base, summary_base, pairs)
 end
 
 function collision2d.collides(a, b)
@@ -377,11 +273,6 @@ function collision2d.collides(a, b)
 	end
 	a:get_world_area()
 	b:get_world_area()
-	local overlap_state<const> = refresh_overlap_query_state()
-	if overlap_state == overlap_state_busy then
-		wait_for_geo_completion('overlap full pass')
-		mark_overlap_query_ready()
-	end
 	local batch_token<const> = next_geo_batch_token()
 	a._geo_overlap_instance_token = batch_token
 	a._geo_overlap_instance_index = 0

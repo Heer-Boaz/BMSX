@@ -362,7 +362,6 @@ function overlap2dsystem.new(priority)
 	self.event_colliders = {}
 	self.overlap_pairs = scratchrecordbatch.new(64)
 	self.event_collider_count = 0
-	collision2d.reset_overlap_pipeline()
 	return self
 end
 
@@ -389,24 +388,12 @@ function overlap2dsystem:update()
 	self.event_collider_count = event_collider_count
 
 	if event_collider_count <= 1 then
-		collision2d.invalidate_overlap_pass()
 		emit_overlap_end_events(prev_pairs, nil)
 		clear_pair_map(prev_pairs)
 		return
 	end
 
-	local overlap_pair_count<const> = collision2d.consume_overlap_pass(overlap_pairs)
-	local submitted<const> = collision2d.submit_overlap_pass(event_colliders, event_collider_count)
-	if submitted then
-		for i = 1, event_collider_count do
-			local collider<const> = event_colliders[i]
-			collider._overlap_cache_valid = false
-			collider._world_polys_cache_valid = false
-		end
-	end
-	if overlap_pair_count == nil then
-		return
-	end
+	local overlap_pair_count<const> = collision2d.collect_overlaps(event_colliders, event_collider_count, overlap_pairs)
 
 	for i = 1, overlap_pair_count do
 		local pair<const> = overlap_pairs.items[i]
