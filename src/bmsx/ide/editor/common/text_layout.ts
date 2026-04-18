@@ -9,8 +9,6 @@ import { getCodeTabContexts } from '../../workbench/ui/code_tab/contexts';
 import { editorViewState } from '../ui/view_state';
 import { resourcePanel } from '../../workbench/contrib/resources/panel/controller';
 import { editorDocumentState } from '../editing/document_state';
-import { editorRuntimeState } from './runtime_state';
-import { applyCaseOutsideStrings } from '../../common/text';
 import { caretNavigation } from '../ui/caret';
 import * as constants from '../../common/constants';
 import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from '../../common/constants';
@@ -205,13 +203,7 @@ export function rewrapRuntimeErrorOverlays(): void {
 }
 
 export function normalizeCaseOutsideStrings(text: string): string {
-	if (!editorRuntimeState.caseInsensitive || editorRuntimeState.canonicalization === 'none') {
-		return text;
-	}
-	const transform = editorRuntimeState.canonicalization === 'upper'
-		? (ch: string) => ch.toUpperCase()
-		: (ch: string) => ch.toLowerCase();
-	return applyCaseOutsideStrings(text, transform);
+	return text;
 }
 
 export function currentLine(): string {

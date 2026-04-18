@@ -346,7 +346,6 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 		options.playerIndex = 1;
 		options.viewport.x = runtimeMachine.viewportWidth;
 		options.viewport.y = runtimeMachine.viewportHeight;
-		options.canonicalization = m_engine_assets.machine.canonicalization;
 		options.ufpsScaled = ufpsScaled;
 		options.cpuHz = cpuHz;
 		options.cycleBudgetPerFrame = cycleBudget;
@@ -364,7 +363,6 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 	setTransferRatesFromManifest(runtime, { imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, vdpWorkUnitsPerSec, geoWorkUnitsPerSec });
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Engine);
-	runtime.setCanonicalization(m_engine_assets.machine.canonicalization);
 	buildAssetMemory(runtime, m_engine_assets, true);
 	runtime.machine().memory().sealEngineAssets();
 	refreshAudioAssets(m_engine_assets);
@@ -476,7 +474,6 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 				options.playerIndex = 1;
 				options.viewport.x = assets().machine.viewportWidth;
 				options.viewport.y = assets().machine.viewportHeight;
-				options.canonicalization = assets().machine.canonicalization;
 				options.ufpsScaled = runtimeUfpsScaled;
 				options.cpuHz = cpuHz;
 				options.cycleBudgetPerFrame = cycleBudget;
@@ -501,7 +498,6 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 				options.playerIndex = 1;
 				options.viewport.x = assets().machine.viewportWidth;
 				options.viewport.y = assets().machine.viewportHeight;
-				options.canonicalization = assets().machine.canonicalization;
 				options.ufpsScaled = runtimeUfpsScaled;
 				options.cpuHz = cpuHz;
 				options.cycleBudgetPerFrame = cycleBudget;
@@ -565,7 +561,6 @@ bool EngineCore::bootLoadedCart() {
 		options.playerIndex = 1;
 		options.viewport.x = assets().machine.viewportWidth;
 		options.viewport.y = assets().machine.viewportHeight;
-		options.canonicalization = assets().machine.canonicalization;
 		options.ufpsScaled = ufpsScaled;
 		options.cpuHz = cpuHz;
 		options.cycleBudgetPerFrame = cycleBudget;
@@ -739,7 +734,6 @@ void EngineCore::bootRuntimeFromProgram() {
 		options.playerIndex = 1;
 		options.viewport.x = activeAssets.machine.viewportWidth;
 		options.viewport.y = activeAssets.machine.viewportHeight;
-		options.canonicalization = activeAssets.machine.canonicalization;
 		options.ufpsScaled = ufpsScaled;
 		options.cpuHz = cpuHz;
 		options.cycleBudgetPerFrame = cycleBudget;
@@ -758,7 +752,6 @@ void EngineCore::bootRuntimeFromProgram() {
 	setTransferRatesFromManifest(runtime, { imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, vdpWorkUnitsPerSec, geoWorkUnitsPerSec });
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Cart);
-	runtime.setCanonicalization(activeAssets.machine.canonicalization);
 	runtime.resetRuntimeForProgramReload();
 	if (m_engine_assets_loaded && m_engine_assets.programAsset && m_engine_assets.programAsset->program) {
 		auto linked = linkProgramAssets(

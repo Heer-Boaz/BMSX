@@ -3,7 +3,6 @@ short_name: 'renderhwtest'
 rom_name: 'renderhwtest'
 machine:
     render_size: {width: 256, height: 212}
-    canonicalization: lower
     namespace: 'renderhwtest'
     ufps: 50000000
     specs:

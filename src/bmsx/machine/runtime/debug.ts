@@ -147,10 +147,9 @@ function resolveRootExpressionValue(
 	rootName: string,
 ): { found: boolean; value: Value } {
 	const metadata = runtime.programMetadata;
-	const canonicalName = runtime.canonicalizeIdentifier(rootName);
 	const slots = metadata?.localSlotsByProto?.[protoIndex];
 	if (slots && slots.length > 0) {
-		const slot = selectLocalSlot(slots, canonicalName, range);
+		const slot = selectLocalSlot(slots, rootName, range);
 		if (slot) {
 			return {
 				found: true,
@@ -160,12 +159,12 @@ function resolveRootExpressionValue(
 	}
 	const upvalueNames = metadata?.upvalueNamesByProto?.[protoIndex];
 	if (upvalueNames) {
-		const upvalueIndex = upvalueNames.indexOf(canonicalName);
+		const upvalueIndex = upvalueNames.indexOf(rootName);
 		if (upvalueIndex >= 0 && runtime.machine.cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
 			return { found: true, value: runtime.machine.cpu.readFrameUpvalue(frameIndex, upvalueIndex) };
 		}
 	}
-	const globalValue = runtime.machine.cpu.getGlobalByKey(runtime.canonicalKey(rootName));
+	const globalValue = runtime.machine.cpu.getGlobalByKey(runtime.luaKey(rootName));
 	if (globalValue !== null) {
 		return { found: true, value: globalValue };
 	}
@@ -188,9 +187,9 @@ function resolveExpressionValue(
 	let current = root.value;
 	for (let index = 1; index < parts.length; index += 1) {
 		if (current instanceof Table) {
-			current = current.get(runtime.canonicalKey(parts[index]));
+			current = current.get(runtime.luaKey(parts[index]));
 		} else if (isNativeObject(current)) {
-			current = current.get(runtime.canonicalKey(parts[index]));
+			current = current.get(runtime.luaKey(parts[index]));
 		} else {
 			return { found: false, value: null };
 		}

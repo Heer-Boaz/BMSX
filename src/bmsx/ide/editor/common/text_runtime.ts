@@ -12,17 +12,10 @@ import { getWorkspaceCachedSource } from '../../workspace/cache';
 import { editorDocumentState } from '../editing/document_state';
 import { editorViewState } from '../ui/view_state';
 import { editorRuntimeState } from './runtime_state';
-import { applyCaseOutsideStrings } from '../../common/text';
 import { editorSearchState } from '../contrib/find/widget_state';
 
 export function normalizeCaseOutsideStrings(text: string): string {
-	if (!editorRuntimeState.caseInsensitive || editorRuntimeState.canonicalization === 'none') {
-		return text;
-	}
-	const transform = editorRuntimeState.canonicalization === 'upper'
-		? (ch: string) => ch.toUpperCase()
-		: (ch: string) => ch.toLowerCase();
-	return applyCaseOutsideStrings(text, transform);
+	return text;
 }
 
 export function capturePreMutationSource(): void {

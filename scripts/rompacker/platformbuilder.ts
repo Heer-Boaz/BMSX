@@ -5,7 +5,6 @@ import { join, extname } from 'node:path';
 import { runPlatformBuild } from './platformbuild';
 import { getNodeLauncherFilename } from './rombuilder';
 import type { RomPackerTarget } from './formater.rompack';
-import type { CanonicalizationType } from '../../src/bmsx/rompack/format';
 
 import { createCliUi, getParamOrEnv, parseArgsVector } from './cli';
 
@@ -13,7 +12,6 @@ const KNOWN_FLAGS = new Set<string>([
 	'--debug',
 	'--force',
 	'--platform',
-	'--preserve-lua-case',
 	'-h',
 	'--help',
 ]);
@@ -171,7 +169,6 @@ type ParsedPlatformOptions = {
 	platform: RomPackerTarget;
 	debug: boolean;
 	force: boolean;
-	canonicalization: CanonicalizationType;
 };
 
 async function getMtimeMs(path: string): Promise<number> {
@@ -282,7 +279,6 @@ function parseOptions(args: string[]): ParsedPlatformOptions {
 		ui.writeOut('  --platform <target>       Target platform: browser (default), cli, headless, libretro-wsl, libretro-win\n', 'warning');
 		ui.writeOut('  --debug                   Build debug artifacts\n', 'warning');
 		ui.writeOut('  --force                   Force rebuild\n', 'warning');
-		ui.writeOut('  --preserve-lua-case       Disable Lua case folding for bootrom canonicalization\n', 'warning');
 		process.exit(0);
 	}
 
@@ -291,24 +287,10 @@ function parseOptions(args: string[]): ParsedPlatformOptions {
 	const platformRaw = getParamOrEnv(args, '--platform', 'ROM_PLATFORM', 'browser', KNOWN_FLAGS);
 	const platform = platformRaw.toLowerCase() as RomPackerTarget;
 
-	const preserveLuaCase = seenFlags.has('--preserve-lua-case');
-	const canonicalizationEnv = process.env.ROM_LUA_CANONICALIZATION;
-	let canonicalization: CanonicalizationType = 'lower';
-	if (canonicalizationEnv && canonicalizationEnv.length > 0) {
-		if (canonicalizationEnv === 'none' || canonicalizationEnv === 'lower' || canonicalizationEnv === 'upper') {
-			canonicalization = canonicalizationEnv;
-		} else {
-			throw new Error(`Unsupported value "${canonicalizationEnv}" for ROM_LUA_CANONICALIZATION. Expected one of: 'none', 'lower', 'upper'.`);
-		}
-	} else if (preserveLuaCase) {
-		canonicalization = 'none';
-	}
-
 	return {
 		platform,
 		debug,
 		force,
-		canonicalization,
 	};
 }
 

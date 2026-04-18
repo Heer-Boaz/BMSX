@@ -2,7 +2,7 @@ import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
 import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompack/format';
-import type { asset_type, AudioMeta, BoundingBoxPrecalc, CanonicalizationType, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, RectBounds, RomAsset, RomManifest, vec2arr } from '../../src/bmsx/rompack/format';
+import type { asset_type, AudioMeta, BoundingBoxPrecalc, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, RectBounds, RomAsset, RomManifest, vec2arr } from '../../src/bmsx/rompack/format';
 import { SYSTEM_BOOT_ENTRY_PATH } from '../../src/bmsx/core/system';
 import { encodeRomToc } from '../../src/bmsx/rompack/toc';
 import type { LuaChunk } from '../../src/bmsx/lua/syntax/ast';
@@ -752,7 +752,7 @@ function formatLuaCompileError(error: { path: string; message: string; line: num
 }
 
 function compileLuaChunkBuffer(source: string, path: string): Buffer {
-	const lexer = new LuaLexer(source, path, { canonicalizeIdentifiers: LUA_CANONICALIZATION });
+	const lexer = new LuaLexer(source, path);
 	const tokens = lexer.scanTokens();
 	const parser = new LuaParser(tokens, path, source);
 	const chunk = parser.parseChunk();
@@ -1081,141 +1081,6 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 	return result;
 }
 
-type LuaCaseState =
-	| { kind: 'normal' }
-	| { kind: 'shortString'; delimiter: '\'' | '"'; escaped: boolean }
-	| { kind: 'lineComment' }
-	| { kind: 'longString'; closing: string }
-	| { kind: 'longComment'; closing: string };
-
-type LuaLongBracketMatch = { length: number; closing: string };
-
-function matchLuaLongBracket(source: string, start: number): LuaLongBracketMatch {
-	if (source.charCodeAt(start) !== 91) {
-		return null;
-	}
-	const length = source.length;
-	let index = start + 1;
-	let equalsCount = 0;
-	while (index < length && source.charCodeAt(index) === 61) {
-		equalsCount += 1;
-		index += 1;
-	}
-	if (index >= length || source.charCodeAt(index) !== 91) {
-		return null;
-	}
-	const openingLength = index - start + 1;
-	const closing = `]${'='.repeat(equalsCount)}]`;
-	return { length: openingLength, closing };
-}
-
-function changeCasingLuaSourceExceptStrings(source: string): string {
-	if (source.length === 0) {
-		return source;
-	}
-	const builder: string[] = [];
-	const changeCasing = (text: string) => {
-		switch (LUA_CANONICALIZATION) {
-			case 'none':
-				return text;
-			case 'upper':
-				return text.toUpperCase();
-			case 'lower':
-				return text.toLowerCase();
-		}
-	};
-	let state: LuaCaseState = { kind: 'normal' };
-	let index = 0;
-	while (index < source.length) {
-		const current = source.charAt(index);
-		switch (state.kind) {
-			case 'shortString': {
-				builder.push(current);
-				index += 1;
-				if (!state.escaped) {
-					if (current === '\\') {
-						state = { kind: 'shortString', delimiter: state.delimiter, escaped: true };
-						break;
-					}
-					if (current === state.delimiter) {
-						state = { kind: 'normal' };
-					}
-					break;
-				}
-				state = { kind: 'shortString', delimiter: state.delimiter, escaped: false };
-				break;
-			}
-			case 'longString': {
-				if (source.startsWith(state.closing, index)) {
-					builder.push(state.closing);
-					index += state.closing.length;
-					state = { kind: 'normal' };
-					break;
-				}
-				builder.push(current);
-				index += 1;
-				break;
-			}
-			case 'longComment': {
-				if (source.startsWith(state.closing, index)) {
-					builder.push(state.closing);
-					index += state.closing.length;
-					state = { kind: 'normal' };
-					break;
-				}
-				builder.push(changeCasing(current));
-				index += 1;
-				break;
-			}
-			case 'lineComment': {
-				builder.push(changeCasing(current));
-				index += 1;
-				if (current === '\n' || current === '\r') {
-					state = { kind: 'normal' };
-				}
-				break;
-			}
-			default: {
-				if (current === '\'' || current === '"') {
-					builder.push(current);
-					index += 1;
-					state = { kind: 'shortString', delimiter: current as '\'' | '"', escaped: false };
-					break;
-				}
-				if (current === '-' && index + 1 < source.length && source.charAt(index + 1) === '-') {
-					builder.push('-');
-					builder.push('-');
-					index += 2;
-					if (index < source.length && source.charAt(index) === '[') {
-						const longComment = matchLuaLongBracket(source, index);
-						if (longComment) {
-							builder.push(source.slice(index, index + longComment.length));
-							index += longComment.length;
-							state = { kind: 'longComment', closing: longComment.closing };
-							break;
-						}
-					}
-					state = { kind: 'lineComment' };
-					break;
-				}
-				if (current === '[') {
-					const longString = matchLuaLongBracket(source, index);
-					if (longString) {
-						builder.push(source.slice(index, index + longString.length));
-						index += longString.length;
-						state = { kind: 'longString', closing: longString.closing };
-						break;
-					}
-				}
-				builder.push(changeCasing(current));
-				index += 1;
-				break;
-			}
-		}
-	}
-	return builder.join('');
-}
-
 /**
  * Builds a list of resources located at `respath` for the specified `romname`.
  * @param rom_name The name of the ROM pack to build the list for.
@@ -1266,19 +1131,9 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 				if (!buffer) {
 					throw new Error(`[RomPacker] Lua resource "${meta.name}" is missing its source file payload.`);
 				}
-				if (!LUA_CANONICALIZATION) {
-					return {
-						...metaObject,
-						buffer,
-					} as Resource;
-				}
-				const source = buffer.toString('utf8');
-				const normalizedSource = normalizeLineEndings(source);
-				const uppercased = changeCasingLuaSourceExceptStrings(normalizedSource);
-				const upperBuffer = Buffer.from(uppercased, 'utf8');
 				return {
 					...metaObject,
-					buffer: upperBuffer,
+					buffer,
 				} as Resource;
 			}
 			default:
@@ -1587,7 +1442,6 @@ export function appendProgramAsset(
 	const optLevel = options.optLevel ?? 3;
 
 	const compiled = compileLuaChunkToProgram(entryChunk, modules, {
-		canonicalization: LUA_CANONICALIZATION,
 		optLevel,
 		entrySource: entryAsset.buffer.toString('utf8'),
 	});
@@ -1880,10 +1734,9 @@ export interface BootromBuildOptions {
 	debug: boolean;
 	forceBuild: boolean;
 	platform: RomPackerTarget;
-	canonicalization: CanonicalizationType;
 }
 
-async function buildBrowserBootrom(options: { debug: boolean; forceBuild: boolean; canonicalization: CanonicalizationType; }): Promise<void> {
+async function buildBrowserBootrom(options: { debug: boolean; forceBuild: boolean; }): Promise<void> {
 	const romTsPath = join(__dirname, BOOTROM_TS_RELATIVE_PATH);
 	const romJsPath = join(__dirname, BOOTROM_JS_RELATIVE_PATH);
 
@@ -1907,10 +1760,6 @@ async function buildBrowserBootrom(options: { debug: boolean; forceBuild: boolea
 		return;
 	}
 
-	const define = {
-		'__BOOTROM_CANONICALIZATION__': JSON.stringify(options.canonicalization),
-	};
-
 	const esbuildOptions: any = {
 		entryPoints: [romTsPath],
 		bundle: true,
@@ -1922,7 +1771,6 @@ async function buildBrowserBootrom(options: { debug: boolean; forceBuild: boolea
 		minify: !options.debug,
 		keepNames: true,
 		outfile: romJsPath,
-		define,
 	};
 	if (options.debug) {
 		esbuildOptions['sourcemap'] = 'inline';
@@ -1976,7 +1824,6 @@ async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
 	const define = {
 		'__BOOTROM_TARGET__': JSON.stringify(options.platform),
 		'__BOOTROM_DEBUG__': options.debug ? 'true' : 'false',
-		'__BOOTROM_CANONICALIZATION__': JSON.stringify(options.canonicalization),
 	};
 
 	const esbuildOptions: any = {
@@ -2005,7 +1852,7 @@ async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
 
 export async function buildBootromScriptIfNewer(options: BootromBuildOptions): Promise<void> {
 	if (options.platform === 'browser') {
-		await buildBrowserBootrom({ debug: options.debug, forceBuild: options.forceBuild, canonicalization: options.canonicalization });
+		await buildBrowserBootrom({ debug: options.debug, forceBuild: options.forceBuild });
 		return;
 	}
 	if (options.platform === 'cli' || options.platform === 'headless') {
@@ -2172,9 +2019,3 @@ export const ENGINE_ATLAS_INDEX = 254; // Keep in sync with src/bmsx/render/atla
 export let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 // Define common assets path
 export const commonResPath = `./src/bmsx/res`;
-
-export let LUA_CANONICALIZATION: CanonicalizationType = 'none';
-
-export function setLuaCanonicalization(type: CanonicalizationType): void {
-	LUA_CANONICALIZATION = type;
-}

@@ -1,7 +1,6 @@
 import type { LuaDefinitionInfo, LuaDefinitionKind, LuaSourceRange } from '../../../../lua/syntax/ast';
 import { LuaEnvironment } from '../../../../lua/environment';
 import { LuaLexer } from '../../../../lua/syntax/lexer';
-import { createIdentifierCanonicalizer } from '../../../../lua/syntax/identifier_canonicalizer';
 import { clamp } from '../../../../common/clamp';
 import type { ParsedLuaChunk } from '../../../language/lua/parse';
 import type { LuaSyntaxError } from '../../../../lua/errors';
@@ -105,22 +104,15 @@ function buildDefinitionPriority(order: LuaDefinitionKind[]): (kind: LuaDefiniti
 const definitionPriorityForSymbols = buildDefinitionPriority(SYMBOL_PRIORITY_ORDER);
 const definitionPriorityForLocals = buildDefinitionPriority(LOCAL_DEFINITION_PRIORITY_ORDER);
 
-const identityCanonicalizer = (value: string): string => value;
 const globalSymbolsCache: { version: number; entries: LuaSymbolEntry[] } = { version: -1, entries: [] };
-
-function getActiveCanonicalizer(): (value: string) => string {
-	return editorRuntimeState.caseInsensitive ? createIdentifierCanonicalizer(editorRuntimeState.canonicalization) : identityCanonicalizer;
-}
 
 function hasStaticLuaBuiltinName(name: string): boolean {
 	const trimmed = name.trim();
 	if (trimmed.length === 0) {
 		return false;
 	}
-	const canonicalize = Runtime.instance?.canonicalizeIdentifier ?? identityCanonicalizer;
-	const target = canonicalize(trimmed);
 	for (let index = 0; index < DEFAULT_LUA_BUILTIN_NAMES.length; index += 1) {
-		if (canonicalize(DEFAULT_LUA_BUILTIN_NAMES[index]) === target) {
+		if (DEFAULT_LUA_BUILTIN_NAMES[index] === trimmed) {
 			return true;
 		}
 	}
@@ -128,10 +120,8 @@ function hasStaticLuaBuiltinName(name: string): boolean {
 }
 
 export function isReservedMemoryMapName(name: string): boolean {
-	const canonicalize = getActiveCanonicalizer();
-	const canonical = canonicalize(name);
 	for (let index = 0; index < MEMORY_ACCESS_KIND_NAMES.length; index += 1) {
-		if (canonicalize(MEMORY_ACCESS_KIND_NAMES[index]) === canonical) {
+		if (MEMORY_ACCESS_KIND_NAMES[index] === name) {
 			return true;
 		}
 	}
@@ -155,7 +145,6 @@ export function collectLuaModuleAliases(options: LuaScopedSymbolOptions): Map<st
 	const parsed = getCachedLuaParse({
 		path: options.path,
 		source: options.source,
-		canonicalization: editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none',
 	}).parsed;
 	const aliases = new Map<string, ModuleAliasEntry>();
 	const entries = collectModuleAliasEntriesFromChunk(parsed.chunk);
@@ -505,7 +494,6 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 		version: options.version,
 		parsed: options.parsed,
 		withSyntaxError: true,
-		canonicalization: editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none',
 	});
 	const syntaxError = parseEntry.syntaxError;
 	if (syntaxError) {
@@ -934,7 +922,6 @@ function findContextMenuTokenMatch(row: number, column: number, path: string, so
 		path,
 		source,
 		version: editorDocumentState.textVersion,
-		canonicalization: editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none',
 	}).parsed.tokens;
 	const targetLine = row + 1;
 	let adjacent: ContextMenuTokenMatch = null;
@@ -1507,7 +1494,7 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 				if (!source) {
 					continue;
 				}
-				model = buildLuaSemanticModel(source, path.path, undefined, undefined, editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none');
+				model = buildLuaSemanticModel(source, path.path);
 				models.set(path.path, model);
 			}
 			const semanticDefinition = model.lookupIdentifier(usageRow, usageColumn, chain);
@@ -1663,7 +1650,6 @@ export function buildSemanticModelForChunk(path: string): LuaSemanticModel {
 		lines: cachedMatch?.lines,
 		withSyntaxError: false,
 		parsed: cachedMatch?.parsed,
-		canonicalization: editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none',
 	});
 	const baseLines = parseEntry.lines;
 	const parsed = parseEntry.parsed;
@@ -1896,7 +1882,7 @@ function resolveRuntimeLocalChainValue(
 	if (callStack.length === 0) {
 		return null;
 	}
-	const canonicalRoot = runtime.canonicalizeIdentifier(parts[0]);
+	const rootName = parts[0];
 	let selectedFrameIndex = -1;
 	let selectedSlot: LocalSlotDebug = null;
 	for (let frameIndex = callStack.length - 1; frameIndex >= 0; frameIndex -= 1) {
@@ -1912,7 +1898,7 @@ function resolveRuntimeLocalChainValue(
 		let frameBest: LocalSlotDebug = null;
 		for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
 			const slot = slots[slotIndex];
-			if (slot.name !== canonicalRoot) {
+			if (slot.name !== rootName) {
 				continue;
 			}
 			const slotScope = slot.scope as unknown as LuaSourceRange;
@@ -1949,7 +1935,7 @@ function resolveRuntimeLocalChainValue(
 				if (!frameUpvalueNames) {
 					continue;
 				}
-				const upvalueIndex = frameUpvalueNames.indexOf(canonicalRoot);
+				const upvalueIndex = frameUpvalueNames.indexOf(rootName);
 				if (upvalueIndex === -1 || !runtime.machine.cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
 					continue;
 				}
@@ -1978,7 +1964,7 @@ function resolveRuntimeLocalChainValue(
 
 function resolveRuntimeGlobalChainValue(parts: ReadonlyArray<string>): ({ kind: 'value'; value: LuaValue } | { kind: 'not_defined' }) | null {
 	const runtime = Runtime.instance;
-	const rootRaw = runtime.machine.cpu.getGlobalByKey(runtime.canonicalKey(parts[0]));
+	const rootRaw = runtime.machine.cpu.getGlobalByKey(runtime.luaKey(parts[0]));
 	if (rootRaw === null) {
 		return null;
 	}
@@ -2394,8 +2380,7 @@ export function isLuaBuiltinFunctionName(name: string): boolean {
 	if (!name || name.length === 0) {
 		return false;
 	}
-	const canonical = Runtime.instance.canonicalizeIdentifier(name);
-	return Runtime.instance.luaBuiltinMetadata.has(canonical) || hasStaticLuaBuiltinName(canonical);
+	return Runtime.instance.luaBuiltinMetadata.has(name) || hasStaticLuaBuiltinName(name);
 }
 
 export function describeLuaFunctionValue(value: LuaFunctionValue): string {
@@ -2619,7 +2604,7 @@ let builtinIdentifierEpoch = 0;
 
 export function getBuiltinIdentifiersSnapshot(): { epoch: number; ids: ReadonlySet<string> } {
 	const cached = editorRuntimeState.builtinIdentifierCache;
-	if (cached && cached.caseInsensitive === editorRuntimeState.caseInsensitive && cached.canonicalization === editorRuntimeState.canonicalization) {
+	if (cached && cached.caseInsensitive === editorRuntimeState.caseInsensitive) {
 		return cached;
 	}
 	const descriptors = listLuaBuiltinFunctions();
@@ -2628,23 +2613,15 @@ export function getBuiltinIdentifiersSnapshot(): { epoch: number; ids: ReadonlyS
 		names.push(descriptors[index].name);
 	}
 	names.sort((a, b) => a.localeCompare(b));
-	const canonicalize = editorRuntimeState.caseInsensitive
-		? (editorRuntimeState.canonicalization === 'upper'
-			? (value: string) => value.toUpperCase()
-			: (value: string) => value.toLowerCase())
-		: (value: string) => value;
 	const ids = new Set<string>();
 	for (let i = 0; i < names.length; i += 1) {
 		const name = names[i];
-		const canonical = canonicalize(name);
-		ids.add(canonical);
 		ids.add(name);
 	}
 	builtinIdentifierEpoch += 1;
 	const entry = {
 		epoch: builtinIdentifierEpoch,
 		ids,
-		canonicalization: editorRuntimeState.canonicalization,
 		caseInsensitive: editorRuntimeState.caseInsensitive,
 	};
 	editorRuntimeState.builtinIdentifierCache = entry;

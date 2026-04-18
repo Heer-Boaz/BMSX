@@ -11,7 +11,6 @@
 #include "input/manager.h"
 #include "render/texture_manager.h"
 #include <array>
-#include <cctype>
 #include <stdexcept>
 
 namespace bmsx {
@@ -56,7 +55,6 @@ Runtime::Runtime(const RuntimeOptions& options)
 	, m_api(std::make_unique<Api>(*this))
 	, m_machine(*m_api, *EngineCore::instance().soundMaster())
 	, m_viewport(options.viewport)
-	, m_canonicalization(options.canonicalization)
 	{
 	timing.vdpWorkUnitsPerSec = options.vdpWorkUnitsPerSec;
 	timing.geoWorkUnitsPerSec = options.geoWorkUnitsPerSec;
@@ -222,20 +220,16 @@ void Runtime::applyState(const RuntimeState& state) {
 }
 
 Value Runtime::getGlobal(std::string_view name) {
-	return m_machine.cpu().getGlobalByKey(canonicalKey(name));
+	return m_machine.cpu().getGlobalByKey(luaKey(name));
 }
 
 void Runtime::setGlobal(std::string_view name, const Value& value) {
-	m_machine.cpu().setGlobalByKey(canonicalKey(name), value);
+	m_machine.cpu().setGlobalByKey(luaKey(name), value);
 }
 
 void Runtime::registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost) {
 	auto nativeFn = m_machine.cpu().createNativeFunction(name, std::move(fn), cost);
-	m_machine.cpu().setGlobalByKey(canonicalKey(name), nativeFn);
-}
-
-void Runtime::setCanonicalization(CanonicalizationType canonicalization) {
-	m_canonicalization = canonicalization;
+	m_machine.cpu().setGlobalByKey(luaKey(name), nativeFn);
 }
 
 void Runtime::resetHardwareState() {
@@ -299,21 +293,8 @@ void Runtime::captureVramTextureSnapshots() {
 	m_machine.vdp().captureVramTextureSnapshots();
 }
 
-Value Runtime::canonicalKey(std::string_view value) {
-	if (m_canonicalization == CanonicalizationType::None) {
-		return valueString(m_machine.cpu().internString(value));
-	}
-	std::string result(value);
-	if (m_canonicalization == CanonicalizationType::Upper) {
-		for (char& ch : result) {
-			ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
-		}
-		return valueString(m_machine.cpu().internString(result));
-	}
-	for (char& ch : result) {
-		ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-	}
-	return valueString(m_machine.cpu().internString(result));
+Value Runtime::luaKey(std::string_view value) {
+	return valueString(m_machine.cpu().internString(value));
 }
 
 } // namespace bmsx

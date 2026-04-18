@@ -4,7 +4,6 @@
 import { Buffer } from 'buffer';
 import type { Canvas, Image as NodeCanvasImage } from 'canvas';
 import type { asset_type } from '../../src/bmsx/rompack/format';
-import type { CanonicalizationType } from '../../src/bmsx/rompack/format';
 
 export type RomPackerTarget = 'browser' | 'cli' | 'headless' | 'libretro-wsl' | 'libretro-win' | 'libretro-snesmini';
 export type RomPackerMode = 'rompack' | 'bios';
@@ -20,8 +19,6 @@ export interface RomPackerOptions {
 	platform: RomPackerTarget;
 	/** Accepted for CLI parity; rompack mode no longer type-checks TypeScript games. */
 	skipTypecheck?: boolean;
-	/** When true (default), rompacker folds Lua identifiers to lowercase for case-insensitive mode. */
-	canonicalization: CanonicalizationType;
 	/** VM optimizer level. */
 	optLevel: 0 | 1 | 2 | 3;
 	mode: RomPackerMode;

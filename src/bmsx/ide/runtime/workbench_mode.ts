@@ -16,7 +16,6 @@ import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, 
 import { editorDebuggerState } from '../workbench/contrib/debugger/state';
 import { showEditorWarningBanner } from '../workbench/common/feedback_state';
 import type { RuntimeErrorDetails } from '../common/models';
-import { setEditorCaseInsensitivity } from '../editor/render/text_renderer';
 import { buildLuaStackFrames } from '../../machine/firmware/globals';
 import { seedDefaultLuaBuiltins } from '../../machine/firmware/builtins';
 import {
@@ -195,10 +194,6 @@ export function initializeIdeFeatures(runtime: Runtime, options: RuntimeOptions)
 	registerRuntimeShortcuts(runtime);
 	setDebuggerBreakpoints(runtime, editorDebuggerState.breakpoints);
 	updateGamePipelineExts(runtime);
-}
-
-export function applyCanonicalization(canonicalization: boolean): void {
-	setEditorCaseInsensitivity(canonicalization);
 }
 
 export function setActiveIdeFontVariant(runtime: Runtime, variant: Runtime['activeIdeFontVariant']): void {

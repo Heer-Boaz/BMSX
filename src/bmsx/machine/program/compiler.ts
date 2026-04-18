@@ -37,7 +37,6 @@ import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDes
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './optimizer';
 import { buildModuleAliasesFromPaths, type ProgramConstReloc } from './asset';
 import { StringPool, StringValue, isStringValue } from '../memory/string_pool';
-import type { CanonicalizationType } from '../../rompack/format';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../cpu/instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from '../../ide/editor/contrib/intellisense/lua_frontend';
 import { MMIO_REGISTER_SPEC_BY_ADDRESS, MMIO_REGISTER_SPEC_BY_NAME, type MmioWriteRequirement } from '../bus/registers';
@@ -89,7 +88,6 @@ export const isLuaCompileError = (value: unknown): value is LuaCompileError =>
 type CompileOptions = {
 	baseProgram?: Program;
 	baseMetadata?: ProgramMetadata;
-	canonicalization?: CanonicalizationType;
 	optLevel?: OptimizationLevel;
 	entrySource?: string;
 };
@@ -3297,7 +3295,6 @@ function buildCompilerSemanticFrontend(
 	}
 	return buildLuaSemanticFrontend(sources, {
 		extraGlobalNames,
-		canonicalization: options.canonicalization ?? 'none',
 	});
 }
 

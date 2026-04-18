@@ -30,8 +30,8 @@ export interface BuilderLogger {
 	};
 }
 
-type PlatformBuildOptions = Pick<RomPackerOptions, 'platform' | 'canonicalization' | 'debug' | 'force'>;
-type BrowserDeployOptions = Pick<RomPackerOptions, 'platform' | 'canonicalization' | 'debug' | 'force' | 'respath' | 'title' | 'rom_name'>;
+type PlatformBuildOptions = Pick<RomPackerOptions, 'platform' | 'debug' | 'force'>;
+type BrowserDeployOptions = Pick<RomPackerOptions, 'platform' | 'debug' | 'force' | 'respath' | 'title' | 'rom_name'>;
 
 const LIBRETRO_CORE_BASENAME = 'bmsx_libretro';
 const LIBRETRO_ENTRY_PATH = join(process.cwd(), 'src', 'bmsx_cpp', 'platform', 'libretro', 'entry.cpp');
@@ -145,7 +145,7 @@ async function stageLibretroArtifacts(platform: RomPackerTarget, debug: boolean)
 }
 
 export async function runPlatformBuild(options: PlatformBuildOptions, logger: BuilderLogger): Promise<void> {
-	const { platform, canonicalization, debug, force } = options;
+	const { platform, debug, force } = options;
 	const { progress } = logger;
 
 	logger.divider('Platform');
@@ -187,7 +187,7 @@ export async function runPlatformBuild(options: PlatformBuildOptions, logger: Bu
 		});
 	}
 	await runStep('Build platform artifacts', async () => {
-		await buildBootromScriptIfNewer({ debug, forceBuild: force, platform, canonicalization });
+		await buildBootromScriptIfNewer({ debug, forceBuild: force, platform });
 		logger.ok('Boot ROM ready');
 
 		if (platform === 'browser') {
@@ -206,7 +206,7 @@ export async function runPlatformBuild(options: PlatformBuildOptions, logger: Bu
 }
 
 export async function runBrowserDeploy(options: BrowserDeployOptions, logger: BuilderLogger): Promise<void> {
-	const { platform, canonicalization, debug, force, respath, title: cliTitle, rom_name: cliRomName } = options;
+	const { platform, debug, force, respath, title: cliTitle, rom_name: cliRomName } = options;
 	if (platform !== 'browser') {
 		throw new Error('Deploy only supports platform "browser".');
 	}
@@ -242,7 +242,7 @@ export async function runBrowserDeploy(options: BrowserDeployOptions, logger: Bu
 		logger.ok(`Engine runtime ready → ${pc.white(engineRuntimeOut.replace('./dist/', 'dist/'))}`);
 	}
 
-	await buildBootromScriptIfNewer({ debug, forceBuild: force, platform, canonicalization });
+	await buildBootromScriptIfNewer({ debug, forceBuild: force, platform });
 	await buildGameHtmlAndManifest(romName, resolvedTitle, short_name, debug, true);
 	logger.ok(`Browser loader → ${pc.white('dist/index.html')}`);
 	logger.ok(`Manifest → ${pc.white('dist/manifest.webmanifest')}`);

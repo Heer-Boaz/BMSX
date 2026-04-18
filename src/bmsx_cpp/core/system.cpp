@@ -8,7 +8,6 @@ const MachineManifest SYSTEM_MACHINE_MANIFEST = [] {
 	manifest.namespaceName = "bmsx";
 	manifest.viewportWidth = 256;
 	manifest.viewportHeight = 212;
-	manifest.canonicalization = CanonicalizationType::Lower;
 	manifest.ufpsScaled = 50'000'000;
 	manifest.cpuHz = 1'000'000;
 	manifest.imgDecBytesPerSec = 26'214'400;

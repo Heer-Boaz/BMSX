@@ -124,7 +124,6 @@ local flatten_manifest<const> = function(manifest, root_path)
 		entry_path = manifest.lua and manifest.lua.entry_path,
 		namespace = machine.namespace,
 		render_size = format_render_size_label(machine.render_size),
-		canonicalization = machine.canonicalization,
 		input = manifest.input,
 		root = root_path,
 		cpu_freq_hz = cpu.cpu_freq_hz,
@@ -140,7 +139,6 @@ local flatten_machine_manifest<const> = function(machine)
 	return {
 		namespace = machine.namespace,
 		render_size = format_render_size_label(machine.render_size),
-		canonicalization = machine.canonicalization,
 		cpu_freq_hz = cpu.cpu_freq_hz,
 		ufps = machine.ufps,
 	}
@@ -2158,7 +2156,6 @@ local build_info<const> = function()
 	local cart_rom<const> = cart_manifest and cart_manifest.rom_name or '--'
 	-- local cart_ns = cart_manifest and cart_manifest.namespace or '--'
 	local cart_view_label<const> = cart_manifest and cart_manifest.render_size or '--'
-	-- local cart_canon = cart_manifest and cart_manifest.canonicalization or '--'
 	-- local cart_entry = cart_manifest and cart_manifest.entry_path or '--'
 	-- local cart_input = cart_manifest and cart_manifest.input or '--'
 	local cart_cpu_raw<const> = cart_manifest and cart_manifest.cpu_freq_hz

@@ -26,7 +26,6 @@ import { LuaTokenType } from '../../../../lua/syntax/token';
 import type { LuaSymbolEntry } from '../../../../machine/runtime/contracts';
 import type { ParsedLuaChunk } from '../../../language/lua/parse';
 import { getCachedLuaParse } from '../../../language/lua/analysis_cache';
-import type { CanonicalizationType } from '../../../../rompack/format';
 
 export type SymbolKind = 'parameter' | 'local' | 'constant' | 'function' | 'global' | 'tableField' | 'module' | 'type' | 'label' | 'keyword';
 
@@ -280,10 +279,7 @@ function createWorkspaceSnapshotFromIndex(index: LuaProjectIndex): LuaSemanticWo
 	return new LuaSemanticWorkspaceSnapshot(index.getVersion(), files, sources);
 }
 
-export function buildLuaSemanticWorkspaceSnapshot(
-	sources: ReadonlyArray<LuaSemanticWorkspaceSnapshotInput>,
-	canonicalization: CanonicalizationType = 'none',
-): LuaSemanticWorkspaceSnapshot {
+export function buildLuaSemanticWorkspaceSnapshot(sources: ReadonlyArray<LuaSemanticWorkspaceSnapshotInput>): LuaSemanticWorkspaceSnapshot {
 	const workspace = new LuaSemanticWorkspace();
 	for (let index = 0; index < sources.length; index += 1) {
 		const source = sources[index];
@@ -297,13 +293,12 @@ export function buildLuaSemanticWorkspaceSnapshot(
 			lines: source.lines,
 			version: source.version,
 			parsed: source.parsed,
-			canonicalization,
 			withSyntaxError: true,
 		});
 		if (parseEntry.syntaxError) {
 			throw new Error(`[LuaSemanticWorkspace] Syntax error in ${source.path}: ${parseEntry.syntaxError.message}`);
 		}
-		workspace.updateFile(source.path, parseEntry.source, parseEntry.lines, parseEntry.parsed, source.version, canonicalization);
+		workspace.updateFile(source.path, parseEntry.source, parseEntry.lines, parseEntry.parsed, source.version);
 	}
 	return workspace.getSnapshot();
 }
@@ -412,7 +407,6 @@ export function buildLuaFileSemanticData(
 	lines?: readonly string[],
 	parsed?: ParsedLuaChunk,
 	version?: number,
-	canonicalization: CanonicalizationType = 'none',
 ): FileSemanticData {
 	const parseEntry = getCachedLuaParse({
 		path,
@@ -420,7 +414,6 @@ export function buildLuaFileSemanticData(
 		lines,
 		version,
 		parsed,
-		canonicalization,
 	});
 	const fileLines = parseEntry.lines;
 	const chunk = parseEntry.parsed.chunk;
@@ -465,8 +458,8 @@ export function buildLuaFileSemanticData(
 	};
 }
 
-export function buildLuaSemanticModel(source: string, path: string, lines?: readonly string[], parsed?: ParsedLuaChunk, canonicalization: CanonicalizationType = 'none'): LuaSemanticModel {
-	const data = buildLuaFileSemanticData(source, path, lines, parsed, undefined, canonicalization);
+export function buildLuaSemanticModel(source: string, path: string, lines?: readonly string[], parsed?: ParsedLuaChunk): LuaSemanticModel {
+	const data = buildLuaFileSemanticData(source, path, lines, parsed);
 	return data.model;
 }
 
@@ -622,8 +615,8 @@ export class LuaProjectIndex {
 	private version = 0;
 	private nextFileOrder = 1;
 
-	public updateFile(file: string, source: string, lines?: readonly string[], parsed?: ParsedLuaChunk, version?: number, canonicalization: CanonicalizationType = 'none'): LuaSemanticModel {
-		const data = buildLuaFileSemanticData(source, file, lines, parsed, version, canonicalization);
+	public updateFile(file: string, source: string, lines?: readonly string[], parsed?: ParsedLuaChunk, version?: number): LuaSemanticModel {
+		const data = buildLuaFileSemanticData(source, file, lines, parsed, version);
 		return this.storeFileData(file, data);
 	}
 
@@ -3315,8 +3308,8 @@ export class LuaSemanticWorkspace {
 		return this.index.getVersion();
 	}
 
-	public updateFile(file: string, source: string, lines?: readonly string[], parsed?: ParsedLuaChunk, version?: number, canonicalization: CanonicalizationType = 'none'): LuaSemanticModel {
-		const model = this.index.updateFile(file, source, lines, parsed, version, canonicalization);
+	public updateFile(file: string, source: string, lines?: readonly string[], parsed?: ParsedLuaChunk, version?: number): LuaSemanticModel {
+		const model = this.index.updateFile(file, source, lines, parsed, version);
 		this.snapshot = null;
 		return model;
 	}

@@ -50,13 +50,6 @@ static void updateFlippedBoundingBox(ImgMeta& meta) {
 	meta.boundingbox.fliphv.height = meta.boundingbox.original.height;
 }
 
-static CanonicalizationType parseCanonicalization(const std::string& value) {
-	if (value == "none") return CanonicalizationType::None;
-	if (value == "upper") return CanonicalizationType::Upper;
-	if (value == "lower") return CanonicalizationType::Lower;
-	throw BMSX_RUNTIME_ERROR("Unknown canonicalization value: " + value);
-}
-
 static const BinValue* findObjectField(const BinObject& obj, const char* key);
 
 static const BinObject& requireObject(const BinObject& obj, const char* key, const char* label) {
@@ -1420,7 +1413,6 @@ static void decodeCartridgeMetadata(const u8* romData, const CartRomHeader& head
 	if (manifestObj.count("machine") && manifestObj.at("machine").isObject()) {
 		const auto& machineObj = manifestObj.at("machine").asObject();
 		if (machineObj.count("namespace")) assets.machine.namespaceName = machineObj.at("namespace").asString();
-		assets.machine.canonicalization = parseCanonicalization(machineObj.at("canonicalization").asString());
 		parseMachineSpecs(machineObj, assets.machine);
 		if (machineObj.count("render_size") && machineObj.at("render_size").isObject()) {
 			const auto& vpObj = machineObj.at("render_size").asObject();

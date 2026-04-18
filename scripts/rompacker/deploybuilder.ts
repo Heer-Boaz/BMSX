@@ -1,7 +1,6 @@
 import pc from 'picocolors';
 
 import { runBrowserDeploy } from './platformbuild';
-import type { CanonicalizationType } from '../../src/bmsx/rompack/format';
 import { createCliUi, findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli';
 
 const KNOWN_FLAGS = new Set<string>([
@@ -10,7 +9,6 @@ const KNOWN_FLAGS = new Set<string>([
 	'-respath',
 	'--debug',
 	'--force',
-	'--preserve-lua-case',
 	'-h',
 	'--help',
 ]);
@@ -30,7 +28,6 @@ type ParsedDeployOptions = {
 	rom_name: string;
 	title: string;
 	respath: string;
-	canonicalization: CanonicalizationType;
 };
 
 function parseOptions(args: string[]): ParsedDeployOptions {
@@ -48,7 +45,6 @@ function parseOptions(args: string[]): ParsedDeployOptions {
 		ui.writeOut('  -respath <path>           Resource path override\n', 'warning');
 		ui.writeOut('  --debug                   Build debug artifacts\n', 'warning');
 		ui.writeOut('  --force                   Force rebuild\n', 'warning');
-		ui.writeOut('  --preserve-lua-case       Disable Lua case folding for bootrom canonicalization\n', 'warning');
 		process.exit(0);
 	}
 
@@ -77,19 +73,6 @@ function parseOptions(args: string[]): ParsedDeployOptions {
 		throw new Error(`Resource path "${respathRaw}" does not exist. Tried: ${attempted || '<none>'}.`);
 	}
 
-	const preserveLuaCase = seenFlags.has('--preserve-lua-case');
-	const canonicalizationEnv = process.env.ROM_LUA_CANONICALIZATION;
-	let canonicalization: CanonicalizationType = 'lower';
-	if (canonicalizationEnv && canonicalizationEnv.length > 0) {
-		if (canonicalizationEnv === 'none' || canonicalizationEnv === 'lower' || canonicalizationEnv === 'upper') {
-			canonicalization = canonicalizationEnv;
-		} else {
-			throw new Error(`Unsupported value "${canonicalizationEnv}" for ROM_LUA_CANONICALIZATION. Expected one of: 'none', 'lower', 'upper'.`);
-		}
-	} else if (preserveLuaCase) {
-		canonicalization = 'none';
-	}
-
 	return {
 		platform: 'browser',
 		debug,
@@ -97,7 +80,6 @@ function parseOptions(args: string[]): ParsedDeployOptions {
 		rom_name: cartFolder,
 		title,
 		respath: normalizePathKey(resolvedResPath),
-		canonicalization,
 	};
 }
 

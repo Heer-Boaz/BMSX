@@ -8222,7 +8222,7 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 			const source = await readFile(absolutePath, 'utf8');
 			const workspacePath = toWorkspaceRelativePath(absolutePath);
 			suppressedLineRangesByPath.set(workspacePath, collectSuppressedLineRanges(source));
-			const lexer = new LuaLexer(source, workspacePath, { canonicalizeIdentifiers: 'none' });
+			const lexer = new LuaLexer(source, workspacePath);
 			const lexed = lexer.scanTokensWithRecovery();
 			const tokens = lexed.tokens;
 			lintUppercaseCode(workspacePath, tokens, issues);

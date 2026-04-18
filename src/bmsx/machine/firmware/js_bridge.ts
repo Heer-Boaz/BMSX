@@ -1054,7 +1054,7 @@ export function syncLuaAssetField(runtime: Runtime, asset: object, field: string
 	if (!(cached instanceof Table)) {
 		return;
 	}
-	cached.set(runtime.canonicalKey(field), value);
+	cached.set(runtime.luaKey(field), value);
 }
 
 export function toRuntimeValue(runtime: Runtime, value: unknown): Value {

@@ -10,13 +10,11 @@ import { LuaInterpreter } from '../../lua/runtime';
 import type { StackTraceFrame } from '../../lua/value';
 import {
 	convertToError,
-	setLuaTableCaseInsensitiveKeys,
 	type LuaDebuggerPauseSignal
 } from '../../lua/value';
 import type { StorageService } from '../../platform/platform';
 import type { Viewport } from '../../rompack/format';
 import {
-	CanonicalizationType,
 	CART_ROM_HEADER_SIZE,
 	DEFAULT_GEO_WORK_UNITS_PER_SEC,
 	DEFAULT_VDP_WORK_UNITS_PER_SEC,
@@ -24,7 +22,6 @@ import {
 } from '../../rompack/format';
 import { AssetSourceStack, type RawAssetSource } from '../../rompack/source';
 import { buildRuntimeAssetLayer } from '../../rompack/loader';
-import { createIdentifierCanonicalizer } from '../../lua/syntax/identifier_canonicalizer';
 import { Api } from '../firmware/api';
 import { Table, type Value, type ProgramMetadata, type NativeFunction, type NativeObject } from '../cpu/cpu';
 import { type StringValue } from '../memory/string_pool';
@@ -225,14 +222,7 @@ export class Runtime {
 	public cartAssetSource: RawAssetSource = null;
 	public readonly assets = new RuntimeAssetState();
 	public readonly machine: Machine;
-	private engineCanonicalization: CanonicalizationType = null;
-	public cartCanonicalization: CanonicalizationType = null;
 	public readonly cartBoot = new CartBootState();
-	private _canonicalization: CanonicalizationType;
-	public canonicalizeIdentifier: (value: string) => string;
-	public get canonicalization(): CanonicalizationType {
-		return this._canonicalization;
-	}
 	public get interpreter(): LuaInterpreter {
 		return this.luaInterpreter;
 	}
@@ -280,7 +270,6 @@ export class Runtime {
 			});
 			const runtime = Runtime.createInstance({
 				playerIndex,
-				canonicalization: engineLayer.index.machine.canonicalization,
 				viewport: engineRenderSize,
 				memory,
 				ufpsScaled,
@@ -296,7 +285,6 @@ export class Runtime {
 			runtime.configureProgramSources({
 				engineSources: engineLuaSources,
 				engineAssetSource: engineSource,
-				engineCanonicalization: engineLayer.index.machine.canonicalization,
 			});
 			await applyWorkspaceOverridesToRegistry({
 				registry: engineLuaSources,
@@ -365,7 +353,6 @@ export class Runtime {
 		});
 		const runtime = Runtime.createInstance({
 			playerIndex,
-			canonicalization: engineLayer.index.machine.canonicalization,
 			viewport: cartRenderSize,
 			memory,
 			ufpsScaled,
@@ -385,8 +372,6 @@ export class Runtime {
 			cartSources: cartLuaSources,
 			engineAssetSource: engineSource,
 			cartAssetSource: cartSource,
-			engineCanonicalization: engineLayer.index.machine.canonicalization,
-			cartCanonicalization: cartLayer.index.machine.canonicalization,
 		});
 		await applyWorkspaceOverridesToRegistry({
 			registry: engineLuaSources,
@@ -419,23 +404,17 @@ export class Runtime {
 		cartSources?: LuaSourceRegistry;
 		engineAssetSource: RawAssetSource;
 		cartAssetSource?: RawAssetSource;
-		engineCanonicalization: CanonicalizationType;
-		cartCanonicalization?: CanonicalizationType;
 	}): void {
 		this.engineLuaSources = params.engineSources;
 		this.cartLuaSources = params.cartSources;
 		this.engineAssetSource = params.engineAssetSource;
 		this.cartAssetSource = params.cartAssetSource;
-		this.engineCanonicalization = params.engineCanonicalization;
-		this.cartCanonicalization = params.cartCanonicalization ?? params.engineCanonicalization;
 		this.cartBoot.reset(this);
 	}
 
 	public activateProgramSource(source: ProgramSource): void {
 		const luaSources = source === 'engine' ? this.engineLuaSources : this.cartLuaSources;
-		const canonicalization = source === 'engine' ? this.engineCanonicalization : this.cartCanonicalization;
 		$.set_sources(luaSources);
-		this.applyCanonicalization(canonicalization);
 		api.cartdata(luaSources.namespace);
 	}
 
@@ -448,11 +427,7 @@ export class Runtime {
 		this.timing.geoWorkUnitsPerSec = resolveGeoWorkUnitsPerSec(initialGeoWorkUnits);
 		this.storageService = $.platform.storage;
 		this.storage = new RuntimeStorage(this.storageService, $.sources.namespace);
-		const resolvedCanonicalization = options.canonicalization ?? 'none';
-		this.applyCanonicalization(resolvedCanonicalization);
 		this.engineLuaSources = $.sources;
-		this.engineCanonicalization = resolvedCanonicalization;
-		this.cartCanonicalization = resolvedCanonicalization;
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.machine = new Machine(
 			options.memory,
@@ -490,29 +465,12 @@ export class Runtime {
 		workbenchMode.initializeIdeFeatures(this, options);
 	}
 
-	private applyCanonicalization(canonicalization: CanonicalizationType): void {
-		this._canonicalization = canonicalization;
-		this.canonicalizeIdentifier = createIdentifierCanonicalizer(this._canonicalization);
-		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
-		workbenchMode.applyCanonicalization(this._canonicalization !== 'none');
-	}
-
 	private configureInterpreter(interpreter: LuaInterpreter): void {
 		interpreter.requireHandler = (ctx, module) => luaPipeline.requireLuaModule(this, ctx, module);
 	}
 
 	public createLuaInterpreter(): LuaInterpreter {
-		const interpreter = new LuaInterpreter(this.luaJsBridge, this._canonicalization);
-		this.configureInterpreter(interpreter);
-		interpreter.attachDebugger(this.debuggerController);
-		interpreter.clearLastFaultEnvironment();
-		registerApiBuiltins(interpreter);
-		interpreter.setReservedIdentifiers(this.getReservedLuaIdentifiers());
-		return interpreter;
-	}
-
-	public createLuaInterpreterForCanonicalization(canonicalization: CanonicalizationType): LuaInterpreter {
-		const interpreter = new LuaInterpreter(this.luaJsBridge, canonicalization);
+		const interpreter = new LuaInterpreter(this.luaJsBridge);
 		this.configureInterpreter(interpreter);
 		interpreter.attachDebugger(this.debuggerController);
 		interpreter.clearLastFaultEnvironment();
@@ -659,8 +617,8 @@ export class Runtime {
 		return this.machine.cpu.getStringPool().intern(value);
 	}
 
-	public canonicalKey(name: string): StringValue {
-		return this.internString(this.canonicalizeIdentifier(name));
+	public luaKey(name: string): StringValue {
+		return this.internString(name);
 	}
 
 	private handleClosureHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): void {

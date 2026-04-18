@@ -92,19 +92,13 @@ export type LuaTable = {
 
 type TableState = {
 	metatable: LuaTable;
-	stringKeys: Map<string, { key: string; upper?: string }>;
+	stringKeys: Map<string, { key: string }>;
 	stringValues: Map<string, LuaValue>;
-	uppercaseIndex?: Map<string, string>;
 	nonPrimitiveKeys?: Map<LuaValue, LuaValue>;
 	numericKeys: Set<number>;
 };
 
 const tableState = new WeakMap<LuaTable, TableState>();
-let caseInsensitiveKeys = true;
-
-export function setLuaTableCaseInsensitiveKeys(enabled: boolean): void {
-	caseInsensitiveKeys = enabled;
-}
 
 const luaTablePrototype = Object.create(null) as LuaTableMethods & { [LUA_TABLE_BRAND]?: true };
 
@@ -120,7 +114,6 @@ export function createLuaTable(): LuaTable {
 		metatable: null,
 		stringKeys: new Map(),
 		stringValues: new Map(),
-		uppercaseIndex: caseInsensitiveKeys ? new Map() : undefined,
 		nonPrimitiveKeys: undefined,
 		numericKeys: new Set(),
 	});
@@ -139,45 +132,6 @@ function getState(table: LuaTable): TableState {
 	return state;
 }
 
-function ensureUppercaseIndex(state: TableState): Map<string, string> {
-	if (!state.uppercaseIndex) {
-		const index = new Map<string, string>();
-		for (const [canonicalKey, info] of state.stringKeys.entries()) {
-			const upper = info.key.toUpperCase();
-			index.set(upper, canonicalKey);
-			if (info.upper === undefined) {
-				info.upper = upper;
-			}
-		}
-		state.uppercaseIndex = index;
-	}
-	return state.uppercaseIndex;
-}
-
-function resolveStringPropertyForWrite(state: TableState, key: string): string {
-	if (!caseInsensitiveKeys) {
-		return key;
-	}
-	const upper = key.toUpperCase();
-	const index = ensureUppercaseIndex(state);
-	const existing = index.get(upper);
-	if (existing !== undefined) {
-		return existing;
-	}
-	index.set(upper, key);
-	return key;
-}
-
-function resolveStringPropertyForRead(state: TableState, key: string): string {
-	if (!caseInsensitiveKeys) {
-		return key;
-	}
-	const upper = key.toUpperCase();
-	const index = ensureUppercaseIndex(state);
-	const existing = index.get(upper);
-	return existing !== undefined ? existing : key;
-}
-
 function tableSet(this: LuaTable, key: LuaValue, value: LuaValue): void {
 	if (value === null) {
 		tableDelete.call(this, key);
@@ -191,15 +145,9 @@ function tableSet(this: LuaTable, key: LuaValue, value: LuaValue): void {
 		return;
 	}
 	if (typeof key === 'string') {
-		const canonicalKey = resolveStringPropertyForWrite(state, key);
-		state.stringValues.set(canonicalKey, value);
-		if (!state.stringKeys.has(canonicalKey)) {
-			const upper = caseInsensitiveKeys ? key.toUpperCase() : undefined;
-			if (caseInsensitiveKeys) {
-				const index = ensureUppercaseIndex(state);
-				index.set(upper!, canonicalKey);
-			}
-			state.stringKeys.set(canonicalKey, { key: canonicalKey, upper });
+		state.stringValues.set(key, value);
+		if (!state.stringKeys.has(key)) {
+			state.stringKeys.set(key, { key });
 		}
 		return;
 	}
@@ -222,8 +170,7 @@ function tableGet(this: LuaTable, key: LuaValue): LuaValue {
 		return null;
 	}
 	if (typeof key === 'string') {
-		const canonicalKey = resolveStringPropertyForRead(state, key);
-		const value = state.stringValues.get(canonicalKey);
+		const value = state.stringValues.get(key);
 		return value === undefined ? null : value;
 	}
 	const map = state.nonPrimitiveKeys;
@@ -245,18 +192,8 @@ function tableDelete(this: LuaTable, key: LuaValue): void {
 		return;
 	}
 	if (typeof key === 'string') {
-		const canonicalKey = resolveStringPropertyForRead(state, key);
-		state.stringValues.delete(canonicalKey);
-		const entry = state.stringKeys.get(canonicalKey);
-		if (entry) {
-			if (entry.upper && state.uppercaseIndex) {
-				const current = state.uppercaseIndex.get(entry.upper);
-				if (current === canonicalKey) {
-					state.uppercaseIndex.delete(entry.upper);
-				}
-			}
-			state.stringKeys.delete(canonicalKey);
-		}
+		state.stringValues.delete(key);
+		state.stringKeys.delete(key);
 		return;
 	}
 	const map = state.nonPrimitiveKeys;
@@ -273,8 +210,7 @@ function tableHas(this: LuaTable, key: LuaValue): boolean {
 		return Object.prototype.hasOwnProperty.call(this, property);
 	}
 	if (typeof key === 'string') {
-		const canonicalKey = resolveStringPropertyForRead(state, key);
-		return state.stringValues.has(canonicalKey);
+		return state.stringValues.has(key);
 	}
 	const map = state.nonPrimitiveKeys;
 	return map ? map.has(key) : false;
@@ -289,8 +225,8 @@ function tableEntriesArray(this: LuaTable): ReadonlyArray<[LuaValue, LuaValue]> 
 			entries.push([index, this[property]]);
 		}
 	}
-	for (const [canonicalKey, info] of state.stringKeys.entries()) {
-		const value = state.stringValues.get(canonicalKey);
+	for (const [stringKey, info] of state.stringKeys.entries()) {
+		const value = state.stringValues.get(stringKey);
 		if (value !== undefined) {
 			entries.push([info.key, value]);
 		}

@@ -2,7 +2,7 @@ import { $ } from '../../core/engine';
 import type { LuaChunk } from '../../lua/syntax/ast';
 import { LuaInterpreter } from '../../lua/runtime';
 import type { LuaValue } from '../../lua/value';
-import { convertToError, isLuaFunctionValue, isLuaTable, setLuaTableCaseInsensitiveKeys } from '../../lua/value';
+import { convertToError, isLuaFunctionValue, isLuaTable } from '../../lua/value';
 import { publishOverlayFrame } from '../../render/editor/overlay_queue';
 import { clearNativeMemberCompletionCache } from '../editor/contrib/intellisense/engine';
 import { ENGINE_LUA_BUILTIN_FUNCTIONS, ENGINE_LUA_BUILTIN_GLOBALS } from '../../machine/firmware/builtin_descriptors';
@@ -36,7 +36,7 @@ import {
 	IRQ_NEWGAME,
 	IRQ_REINIT,
 } from '../../machine/bus/io';
-import { CanonicalizationType, getMachinePerfSpecs } from '../../rompack/format';
+import { getMachinePerfSpecs } from '../../rompack/format';
 import type { RawAssetSource } from '../../rompack/source';
 import { Table, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from '../../machine/cpu/cpu';
 import { StringValue, isStringValue, stringValueToString } from '../../machine/memory/string_pool';
@@ -227,7 +227,6 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, {
 		baseProgram,
 		baseMetadata,
-		canonicalization: runtime.canonicalization,
 		optLevel: getRealtimeOptLevel(runtime),
 		entrySource: params.source,
 	});
@@ -464,7 +463,6 @@ export function resetLuaInteroperabilityState(runtime: Runtime): void {
 	runtime.luaGenericChunksExecuted.clear();
 	runtime.handledLuaErrors = new WeakSet<object>();
 	runtime.luaFunctionRedirectCache.clear();
-	setLuaTableCaseInsensitiveKeys(runtime.canonicalization !== 'none');
 }
 
 export function resetRuntimeState(runtime: Runtime): void {
@@ -498,7 +496,7 @@ export function resetHardwareState(runtime: Runtime): void {
 }
 
 export function registerGlobal(runtime: Runtime, name: string, value: Value): void {
-	runtime.machine.cpu.setGlobalByKey(runtime.canonicalKey(name), value);
+	runtime.machine.cpu.setGlobalByKey(runtime.luaKey(name), value);
 }
 
 export function buildEngineBuiltinPreludeSource(): string {
@@ -523,7 +521,6 @@ export function runEngineBuiltinPrelude(runtime: Runtime, program: Program, meta
 	const chunk = interpreter.compileChunk(source, ENGINE_BUILTIN_PRELUDE_PATH);
 	interpreter.setReservedIdentifiers(runtime.getReservedLuaIdentifiers());
 	const compiled = appendLuaChunkToProgram(program, metadata, chunk, {
-		canonicalization: runtime.canonicalization,
 		optLevel: getRealtimeOptLevel(runtime),
 		entrySource: source,
 	});
@@ -538,7 +535,7 @@ export function applyEngineBuiltinGlobals(runtime: Runtime): void {
 	const helperCount = ENGINE_SYSTEM_HELPER_NAMES.length;
 	for (let index = 0; index < REQUIRED_ENGINE_SYSTEM_HELPERS.length; index += 1) {
 		const name = REQUIRED_ENGINE_SYSTEM_HELPERS[index];
-		const key = runtime.canonicalKey(name);
+		const key = runtime.luaKey(name);
 		if (runtime.machine.cpu.globals.get(key) === null) {
 			seedLuaGlobals(runtime);
 			break;
@@ -547,16 +544,16 @@ export function applyEngineBuiltinGlobals(runtime: Runtime): void {
 	const engine = requireModule(runtime, 'engine') as Table;
 	for (let index = 0; index < ENGINE_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
 		const name = ENGINE_LUA_BUILTIN_FUNCTIONS[index].name;
-		const member = engine.get(runtime.canonicalKey(name)) as Closure;
+		const member = engine.get(runtime.luaKey(name)) as Closure;
 		registerGlobal(runtime, name, member);
 	}
 	for (let index = 0; index < ENGINE_LUA_BUILTIN_GLOBALS.length; index += 1) {
 		const name = ENGINE_LUA_BUILTIN_GLOBALS[index].name;
-		registerGlobal(runtime, name, engine.get(runtime.canonicalKey(name)));
+		registerGlobal(runtime, name, engine.get(runtime.luaKey(name)));
 	}
 	for (let index = 0; index < helperCount; index += 1) {
 		const name = ENGINE_SYSTEM_HELPER_NAMES[index];
-		const key = runtime.canonicalKey(name);
+		const key = runtime.luaKey(name);
 		const value = runtime.machine.cpu.globals.get(key);
 		if (value !== null) {
 			registerGlobal(runtime, name, value);
@@ -618,15 +615,15 @@ function stripSymbolModuleSourcePrefix(path: string): string {
 	return normalized;
 }
 
-function sanitizeSymbolModuleSlotSegment(value: string, runtime: Runtime): string {
-	return runtime.canonicalizeIdentifier(value).replace(/[^A-Za-z0-9_]/g, '_');
+function sanitizeSymbolModuleSlotSegment(value: string): string {
+	return value.replace(/[^A-Za-z0-9_]/g, '_');
 }
 
-function buildSymbolModuleSlotPrefix(modulePath: string, runtime: Runtime): string {
+function buildSymbolModuleSlotPrefix(modulePath: string): string {
 	const compactPath = stripSymbolModuleSourcePrefix(modulePath);
 	const parts = compactPath.split('/').filter(part => part.length > 0);
 	const normalizedParts = parts.length > 0 ? parts : [compactPath];
-	return normalizedParts.map(part => sanitizeSymbolModuleSlotSegment(part, runtime)).join('__');
+	return normalizedParts.map(sanitizeSymbolModuleSlotSegment).join('__');
 }
 
 function collectHiddenSymbolPrefixes(runtime: Runtime): Set<string> {
@@ -639,7 +636,7 @@ function collectHiddenSymbolPrefixes(runtime: Runtime): Set<string> {
 		}
 		const luaAssets = Object.values(registry.path2lua);
 		for (let assetIndex = 0; assetIndex < luaAssets.length; assetIndex += 1) {
-			prefixes.add(buildSymbolModuleSlotPrefix(luaAssets[assetIndex].source_path, runtime));
+			prefixes.add(buildSymbolModuleSlotPrefix(luaAssets[assetIndex].source_path));
 		}
 	}
 	return prefixes;
@@ -801,7 +798,6 @@ export function compileCartLuaProgramForBoot(runtime: Runtime): {
 	moduleProtoMap: Map<string, number>;
 	moduleAliases: Array<{ alias: string; path: string }>;
 	entryPath: string;
-	canonicalization: CanonicalizationType;
 } {
 	const entryAsset = runtime.cartLuaSources.path2lua[runtime.cartLuaSources.entry_path];
 	if (!entryAsset) {
@@ -809,11 +805,10 @@ export function compileCartLuaProgramForBoot(runtime: Runtime): {
 	}
 	const entryPath = entryAsset.source_path;
 	const entrySource = resourceSourceForChunk(runtime, entryPath);
-	const interpreter = runtime.createLuaInterpreterForCanonicalization(runtime.cartCanonicalization);
+	const interpreter = runtime.createLuaInterpreter();
 	const entryChunk = interpreter.compileChunk(entrySource, entryPath);
 	const { modules, modulePaths } = buildModuleChunksForInterpreter(runtime, entryPath, interpreter, [runtime.cartLuaSources, runtime.engineLuaSources]);
 	const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules, {
-		canonicalization: runtime.cartCanonicalization,
 		optLevel: getRealtimeOptLevel(runtime),
 		entrySource: entrySource,
 	});
@@ -824,7 +819,6 @@ export function compileCartLuaProgramForBoot(runtime: Runtime): {
 		moduleProtoMap,
 		moduleAliases: buildModuleAliasesFromPaths(modulePaths),
 		entryPath,
-		canonicalization: runtime.cartCanonicalization,
 	};
 }
 
@@ -883,7 +877,7 @@ export function bootPreparedCartProgram(runtime: Runtime, options?: { preserveSt
 	const prepared = runtime.cartBoot.preparedProgram;
 	runtime.cartEntryAvailable = true;
 	resetLuaInteroperabilityState(runtime);
-	const interpreter = runtime.createLuaInterpreterForCanonicalization(prepared.canonicalization);
+	const interpreter = runtime.createLuaInterpreter();
 	runtime.assignInterpreter(interpreter);
 
 	runtime._luaPath = prepared.entryPath;
@@ -948,7 +942,6 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 		const entryChunk = interpreter.compileChunk(entrySource, entryPath);
 		const { modules, modulePaths } = buildModuleChunks(runtime, entryPath);
 		const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules, {
-			canonicalization: runtime.canonicalization,
 			optLevel: getRealtimeOptLevel(runtime),
 			entrySource: entrySource,
 		});
@@ -1084,8 +1077,7 @@ export function reloadGenericLuaChunk(runtime: Runtime, path: string, sourceOver
 }
 
 export function requireLuaModule(runtime: Runtime, interpreter: LuaInterpreter, moduleName: string): LuaValue {
-	const canonicalName = runtime.canonicalizeIdentifier(moduleName);
-	const path = runtime.moduleAliases.get(moduleName) ?? runtime.moduleAliases.get(canonicalName);
+	const path = runtime.moduleAliases.get(moduleName);
 	if (!path) {
 		throw interpreter.runtimeError(`require('${moduleName}') failed: module not found.`);
 	}
@@ -1107,8 +1099,7 @@ export function requireLuaModule(runtime: Runtime, interpreter: LuaInterpreter, 
 }
 
 export function requireModule(runtime: Runtime, moduleName: string): Value {
-	const canonicalName = runtime.canonicalizeIdentifier(moduleName);
-	const path = runtime.moduleAliases.get(moduleName) ?? runtime.moduleAliases.get(canonicalName);
+	const path = runtime.moduleAliases.get(moduleName);
 	if (!path) {
 		throw runtime.createApiRuntimeError(`require('${moduleName}') failed: module not found.`);
 	}
@@ -1162,7 +1153,6 @@ export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
 	}
 	const baseMetadata = runtime.programMetadata ?? runtime.consoleMetadata ?? buildConsoleMetadata(currentProgram);
 	const compiled = appendLuaChunkToProgram(currentProgram, baseMetadata, chunk, {
-		canonicalization: runtime.canonicalization,
 		optLevel: getRealtimeOptLevel(runtime),
 		entrySource: source,
 	});

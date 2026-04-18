@@ -1,6 +1,5 @@
 import type { ParsedLuaChunk } from '../../../language/lua/parse';
 import { getCachedLuaParse } from '../../../language/lua/analysis_cache';
-import { editorRuntimeState } from '../../common/runtime_state';
 import { LuaSemanticWorkspace, type FileSemanticData, type LuaSemanticWorkspaceSnapshot } from './semantic_model';
 import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
@@ -65,11 +64,10 @@ export function syncSemanticWorkspacePath(input: SemanticWorkspacePathInput, wor
 		version: input.version,
 		withSyntaxError: false,
 		parsed: input.parsed,
-		canonicalization: editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none',
 	});
 	const existing = workspace.getFileData(input.path);
 	if (!existing || existing.source !== parseEntry.source) {
-		workspace.updateFile(input.path, parseEntry.source, parseEntry.lines, parseEntry.parsed, input.version, editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none');
+		workspace.updateFile(input.path, parseEntry.source, parseEntry.lines, parseEntry.parsed, input.version);
 	}
 	const data = workspace.getFileData(input.path);
 	cacheSemanticAnalysis(input.path, parseEntry.source, data, parseEntry.parsed);
@@ -103,7 +101,7 @@ export function primeSemanticWorkspaceProjectSources(workspace: LuaSemanticWorks
 			}
 			const lines = cacheEntry?.lines ?? splitText(source);
 			const parsed = cacheEntry?.parsed;
-			workspace.updateFile(path, source, lines, parsed, undefined, editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none');
+			workspace.updateFile(path, source, lines, parsed, undefined);
 			const data = workspace.getFileData(path);
 			cacheSemanticAnalysis(path, source, data, parsed);
 		}

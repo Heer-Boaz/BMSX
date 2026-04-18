@@ -168,7 +168,7 @@ std::vector<std::string> extractExpressionCandidates(const SourceRange& range, c
 }
 
 Value debugKey(const Runtime& runtime, std::string_view value) {
-	return const_cast<Runtime&>(runtime).canonicalKey(value);
+	return const_cast<Runtime&>(runtime).luaKey(value);
 }
 
 std::string formatDebugValue(const Runtime& runtime, Value value) {
@@ -218,10 +218,10 @@ std::optional<Value> resolveRootExpressionValue(
 	const SourceRange& range,
 	const std::string& rootName
 ) {
-	std::string canonicalName = runtime.machine().cpu().stringPool().toString(asStringId(debugKey(runtime, rootName)));
+	std::string rootKeyName = runtime.machine().cpu().stringPool().toString(asStringId(debugKey(runtime, rootName)));
 	if (metadata && protoIndex >= 0 && protoIndex < static_cast<int>(metadata->localSlotsByProto.size())) {
 		const std::vector<LocalSlotDebug>& slots = metadata->localSlotsByProto[static_cast<size_t>(protoIndex)];
-		if (const LocalSlotDebug* slot = selectLocalSlot(slots, canonicalName, range)) {
+		if (const LocalSlotDebug* slot = selectLocalSlot(slots, rootKeyName, range)) {
 			return runtime.machine().cpu().readFrameRegister(frameIndex, slot->reg);
 		}
 	}
@@ -231,7 +231,7 @@ std::optional<Value> resolveRootExpressionValue(
 		// Without this, C++ fault logs hide stale-closure bugs behind unrelated nil/number output.
 		const std::vector<std::string>& upvalueNames = metadata->upvalueNamesByProto[static_cast<size_t>(protoIndex)];
 		for (size_t index = 0; index < upvalueNames.size(); ++index) {
-			if (upvalueNames[index] != canonicalName) {
+			if (upvalueNames[index] != rootKeyName) {
 				continue;
 			}
 			if (runtime.machine().cpu().hasFrameUpvalue(frameIndex, static_cast<int>(index))) {

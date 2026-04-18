@@ -289,12 +289,11 @@ export function valueToStringValue(runtime: Runtime, value: Value): StringValue 
 }
 
 function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest): Table {
-	const key = (name: string) => runtime.canonicalKey(name);
+	const key = (name: string) => runtime.luaKey(name);
 	const table = new Table(0, 5);
 	if (manifest.namespace.length > 0) {
 		table.set(key('namespace'), runtime.internString(manifest.namespace));
 	}
-	table.set(key('canonicalization'), runtime.internString(manifest.canonicalization));
 	if (manifest.ufps) {
 		table.set(key('ufps'), manifest.ufps);
 	}
@@ -368,7 +367,7 @@ function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest):
 }
 
 function buildCartManifestTable(runtime: Runtime, manifest: CartManifest, machine: MachineManifest, entryPath: string): Table {
-	const key = (name: string) => runtime.canonicalKey(name);
+	const key = (name: string) => runtime.luaKey(name);
 	const table = new Table(0, 4);
 	if (manifest.title !== undefined && manifest.title.length > 0) {
 		table.set(key('title'), runtime.internString(manifest.title));

@@ -2,7 +2,7 @@ import type { color } from '../../../render/shared/submissions';
 import { BmsxColors } from '../../../machine/devices/vdp/vdp';
 import { EditorFont } from '../../editor/ui/view/font';
 import type { FontVariant } from '../../../render/shared/bmsx_font';
-import { invalidateLuaCommentContextFromRow, applyCaseOutsideStrings } from '../../common/text';
+import { invalidateLuaCommentContextFromRow } from '../../common/text';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { drawCompletionPopupWithRenderer, drawParameterHintOverlayWithRenderer } from '../../editor/render/completion';
 import {
@@ -648,7 +648,7 @@ export class TerminalMode {
 			const promptWidth = this.measureDisplayText(this.promptPrefix, uppercaseDisplay);
 			const firstLineMax = Math.max(8, contentWidth - promptWidth);
 			const otherLineMax = Math.max(8, contentWidth);
-			const displayInput = this.toDisplayText(textFromLines(this.field.lines), uppercaseDisplay);
+			const displayInput = this.toDisplayText(textFromLines(this.field.lines));
 			const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax);
 
 			// space available for output lines above the input area
@@ -847,8 +847,7 @@ export class TerminalMode {
 		if (text.length === 0) {
 			return [''];
 		}
-		const uppercaseDisplay = this.useUppercaseDisplay();
-		const normalized = this.toDisplayText(text, uppercaseDisplay);
+		const normalized = this.toDisplayText(text);
 		const limit = Math.max(8, maxWidth);
 		const measure = (value: string): number => this.font.measure(value.replace(/\t/g, ' '.repeat(constants.TAB_SPACES)));
 		const segments: string[] = [];
@@ -947,7 +946,7 @@ export class TerminalMode {
 		const promptWidth = this.measureDisplayText(this.promptPrefix, uppercaseDisplay);
 		const firstLineMax = Math.max(8, contentWidth - promptWidth);
 		const otherLineMax = Math.max(8, contentWidth);
-		const displayInput = this.toDisplayText(textFromLines(this.field.lines), uppercaseDisplay);
+		const displayInput = this.toDisplayText(textFromLines(this.field.lines));
 		const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax);
 		const availableHeight = surfaceHeight - PADDING_Y * 2 - (inputWrap.segments.length * lineHeight);
 		const baseMaxLines = Math.max(1, Math.floor(availableHeight / lineHeight));
@@ -1117,15 +1116,6 @@ export class TerminalMode {
 	}
 
 	private handleTextMutation(previousText: string, editContext: EditContext): void {
-		if (this.runtime.canonicalization !== 'none') {
-			const before = textFromLines(this.field.lines);
-			const normalized = this.normalizeInputCase(before);
-			if (normalized !== before) {
-				const offset = getCursorOffset(this.field);
-				setFieldText(this.field, normalized, false);
-				setCursorFromOffset(this.field, Math.min(offset, textFromLines(this.field.lines).length));
-			}
-		}
 		const context = previousText !== null ? this.buildEditContext(previousText, textFromLines(this.field.lines)) : editContext;
 		this.textVersion += 1;
 		this.cachedLinesVersion = -1;
@@ -1140,17 +1130,6 @@ export class TerminalMode {
 			return;
 		}
 		this.handleTextMutation(previous, null);
-	}
-
-	private normalizeInputCase(text: string): string {
-		if (this.runtime.canonicalization === 'none') {
-			return text;
-		}
-
-		const transform = this.runtime.canonicalization === 'upper'
-			? (ch: string) => ch.toUpperCase()
-			: (ch: string) => ch.toLowerCase();
-		return applyCaseOutsideStrings(text, transform);
 	}
 
 	private drawCompletionOverlays(surface: Viewport, promptWidth: number): void {
@@ -1232,7 +1211,7 @@ export class TerminalMode {
 		const inputColor = BmsxColors[OUTPUT_COLORS.stdout];
 		const selectionState = resolveInlineFieldSelectionState(this.field);
 		const uppercaseDisplay = this.useUppercaseDisplay();
-		const displayText = this.toDisplayText(textFromLines(this.field.lines), uppercaseDisplay);
+		const displayText = this.toDisplayText(textFromLines(this.field.lines));
 		const inlinePreview = selectionState.hasSelection ? null : this.completion.getInlineCompletionPreview();
 		let nextCursorInfo: CursorScreenInfo = null;
 		const cursorRow = this.field.cursorRow;
@@ -1356,15 +1335,13 @@ export class TerminalMode {
 		renderer.glyphs({ glyphs: display, x: originX, y: originY, z: 0, color: tint, font: this.font.renderFont() });
 	}
 
-	private toDisplayText(value: string, uppercase: boolean): string {
-		if (uppercase && this.runtime.canonicalization !== 'none') {
-			return applyCaseOutsideStrings(value, (ch) => ch.toUpperCase());
-		}
+	private toDisplayText(value: string): string {
 		return value;
 	}
 
 	private toRenderedGlyphText(value: string, uppercase: boolean): string {
-		return this.toDisplayText(value, uppercase).replace(/\t/g, ' '.repeat(TAB_SPACES));
+		void uppercase;
+		return this.toDisplayText(value).replace(/\t/g, ' '.repeat(TAB_SPACES));
 	}
 
 	private measureDisplayText(value: string, uppercase: boolean): number {

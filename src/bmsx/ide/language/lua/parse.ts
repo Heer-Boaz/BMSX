@@ -3,7 +3,6 @@ import { LuaSyntaxError } from '../../../lua/errors';
 import { LuaLexer } from '../../../lua/syntax/lexer';
 import { LuaParser } from '../../../lua/syntax/parser';
 import type { LuaToken } from '../../../lua/syntax/token';
-import type { CanonicalizationType } from '../../../rompack/format';
 import { splitText } from '../../editor/text/source_text';
 
 export type ParsedLuaChunk = {
@@ -12,17 +11,17 @@ export type ParsedLuaChunk = {
 	syntaxError?: LuaSyntaxError | null;
 };
 
-export function parseLuaChunk(source: string, path: string, lines?: readonly string[], canonicalization: CanonicalizationType = 'none'): ParsedLuaChunk {
-	const lexer = new LuaLexer(source, path, { canonicalizeIdentifiers: canonicalization });
+export function parseLuaChunk(source: string, path: string, lines?: readonly string[]): ParsedLuaChunk {
+	const lexer = new LuaLexer(source, path);
 	const tokens = lexer.scanTokens();
 	const parser = new LuaParser(tokens, path, source, lines);
 	const chunk = parser.parseChunk();
 	return { chunk, tokens, syntaxError: null };
 }
 
-export function parseLuaChunkWithRecovery(source: string, path: string, lines?: readonly string[], canonicalization: CanonicalizationType = 'none'): ParsedLuaChunk {
+export function parseLuaChunkWithRecovery(source: string, path: string, lines?: readonly string[]): ParsedLuaChunk {
 	const resolvedLines: readonly string[] = lines ?? splitText(source);
-	const lexer = new LuaLexer(source, path, { canonicalizeIdentifiers: canonicalization });
+	const lexer = new LuaLexer(source, path);
 	const lexed = lexer.scanTokensWithRecovery();
 	const tokens = lexed.tokens;
 	const parser = new LuaParser(tokens, path, source, resolvedLines);

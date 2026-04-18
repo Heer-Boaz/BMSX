@@ -37,8 +37,6 @@ import type {
 } from './syntax/ast';
 import { LuaEnvironment } from './environment';
 import { LuaRuntimeError, LuaSyntaxError } from './errors';
-import { type CanonicalizationType } from '../rompack/format';
-import { createIdentifierCanonicalizer } from './syntax/identifier_canonicalizer';
 import { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue, type LuaCallResult, isLuaCallSignal } from './value';
 import {
 	createLuaNativeMemberHandle,
@@ -278,9 +276,6 @@ export class LuaInterpreter {
 	private luaValueListScratchIndex = 0;
 	private readonly returnValueBuffer: LuaValue[] = [];
 	private adapter!: LuaInteropAdapter;
-	private caseInsensitiveNativeAccess = true;
-	private identifierCanonicalizationMode: CanonicalizationType = 'none';
-	private readonly canonicalize: (value: string) => string;
 	private nativeValueCache: WeakMap<object | Function, LuaNativeValue> = new WeakMap();
 	private readonly nativeMethodCache: WeakMap<LuaNativeValue, Map<string, LuaFunctionValue>> = new WeakMap<
 		LuaNativeValue,
@@ -300,12 +295,9 @@ export class LuaInterpreter {
 	private activeStatementRange: LuaSourceRange = null;
 	private activeStatementFrame: StatementsFrame = null;
 
-	public constructor(adapter: LuaInteropAdapter, canonicalization: CanonicalizationType = 'none') {
+	public constructor(adapter: LuaInteropAdapter) {
 		this.globals = LuaEnvironment.createRoot();
 		this.adapter = adapter;
-		this.identifierCanonicalizationMode = canonicalization;
-		this.canonicalize = createIdentifierCanonicalizer(canonicalization);
-		this.caseInsensitiveNativeAccess = canonicalization !== 'none';
 		this.currentChunk = '<path>';
 		this.randomSeedValue = $.platform.clock.now();
 		this.packageTable = createLuaTable();
@@ -331,7 +323,6 @@ export class LuaInterpreter {
 			path,
 			source,
 			withSyntaxError: true,
-			canonicalization: this.identifierCanonicalizationMode,
 		});
 		if (parseEntry.syntaxError) {
 			throw parseEntry.syntaxError;
@@ -2405,24 +2396,6 @@ export class LuaInterpreter {
 		if (propertyName in native) {
 			return propertyName;
 		}
-		if (!this.caseInsensitiveNativeAccess) {
-			return null;
-		}
-		const upper = propertyName.toUpperCase();
-		let prototype: object = native;
-		while (prototype && prototype !== Object.prototype) {
-			const names = Object.getOwnPropertyNames(prototype);
-			for (let index = 0; index < names.length; index += 1) {
-				const candidate = names[index];
-				if (candidate === propertyName) {
-					return candidate;
-				}
-				if (candidate.toUpperCase() === upper) {
-					return candidate;
-				}
-			}
-			prototype = Object.getPrototypeOf(prototype);
-		}
 		return null;
 	}
 
@@ -2944,7 +2917,7 @@ export class LuaInterpreter {
 	}
 
 	private ensureIdentifierNotReserved(name: string, range: LuaSourceRange): void {
-		if (this._reservedIdentifiers.has(this.canonicalize(name))) {
+		if (this._reservedIdentifiers.has(name)) {
 			throw new LuaSyntaxError(`'${name}' is reserved and cannot be redefined.`, range.path, range.start.line, range.start.column);
 		}
 	}
@@ -2957,11 +2930,11 @@ export class LuaInterpreter {
 	}
 
 	private initializeBuiltins(): void {
-		this.packageTable.set(this.canonicalize('loaded'), this.packageLoaded);
-		this.globals.set(this.canonicalize('package'), this.packageTable);
-		this.globals.set(this.canonicalize('require'), new LuaNativeFunction(this.canonicalize('require'), (args) => this.invokeRequireBuiltin(args)));
+		this.packageTable.set('loaded', this.packageLoaded);
+		this.globals.set('package', this.packageTable);
+		this.globals.set('require', new LuaNativeFunction('require', (args) => this.invokeRequireBuiltin(args)));
 
-		this.globals.set(this.canonicalize('print'), new LuaNativeFunction(this.canonicalize('print'), (args) => {
+		this.globals.set('print', new LuaNativeFunction('print', (args) => {
 			const parts: string[] = [];
 			for (const value of args) {
 				parts.push(this.toLuaString(value));
@@ -2979,7 +2952,7 @@ export class LuaInterpreter {
 		// - array(a, b, c) -> native Array [a, b, c]
 		// - array(table) copies 1-based numeric entries into a native Array, appending any non-numeric keys.
 		// The array stays native so that JS receives real arrays via the bridge.
-		this.globals.set(this.canonicalize('array'), new LuaNativeFunction(this.canonicalize('array'), (args) => {
+		this.globals.set('array', new LuaNativeFunction('array', (args) => {
 			const nativeArray: unknown[] = [];
 			if (args.length === 1 && isLuaTable(args[0])) {
 				const source = args[0] as LuaTable;
@@ -3000,7 +2973,7 @@ export class LuaInterpreter {
 			return [this.getOrCreateNativeValue(nativeArray, 'Array')];
 		}));
 
-		this.globals.set(this.canonicalize('assert'), new LuaNativeFunction(this.canonicalize('assert'), (args) => {
+		this.globals.set('assert', new LuaNativeFunction('assert', (args) => {
 			const condition = args.length > 0 ? args[0] : null;
 			if (this.isTruthy(condition)) {
 				return Array.from(args);
@@ -3010,13 +2983,13 @@ export class LuaInterpreter {
 			throw this.runtimeError(message);
 		}));
 
-		this.globals.set(this.canonicalize('error'), new LuaNativeFunction(this.canonicalize('error'), (args) => {
+		this.globals.set('error', new LuaNativeFunction('error', (args) => {
 			const value = args.length > 0 ? args[0] : 'nil';
 			const message = typeof value === 'string' ? value : this.toLuaString(value);
 			throw this.runtimeError(message);
 		}));
 
-		this.globals.set(this.canonicalize('type'), new LuaNativeFunction(this.canonicalize('type'), (args) => {
+		this.globals.set('type', new LuaNativeFunction('type', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			let result: string;
 			if (value instanceof LuaNativeValue) {
@@ -3045,12 +3018,12 @@ export class LuaInterpreter {
 			return [result];
 		}));
 
-		this.globals.set(this.canonicalize('tostring'), new LuaNativeFunction(this.canonicalize('tostring'), (args) => {
+		this.globals.set('tostring', new LuaNativeFunction('tostring', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			return [this.toLuaString(value)];
 		}));
 
-		this.globals.set(this.canonicalize('tonumber'), new LuaNativeFunction(this.canonicalize('tonumber'), (args) => {
+		this.globals.set('tonumber', new LuaNativeFunction('tonumber', (args) => {
 			if (args.length === 0) {
 				return [null];
 			}
@@ -3072,7 +3045,7 @@ export class LuaInterpreter {
 			return [null];
 		}));
 
-		this.globals.set(this.canonicalize('setmetatable'), new LuaNativeFunction(this.canonicalize('setmetatable'), (args) => {
+		this.globals.set('setmetatable', new LuaNativeFunction('setmetatable', (args) => {
 			if (args.length === 0 || (!(isLuaTable(args[0])) && !(args[0] instanceof LuaNativeValue))) {
 				throw this.runtimeError('setmetatable expects a table or native value as the first argument.');
 			}
@@ -3096,7 +3069,7 @@ export class LuaInterpreter {
 			return [nativeTarget];
 		}));
 
-		this.globals.set(this.canonicalize('getmetatable'), new LuaNativeFunction(this.canonicalize('getmetatable'), (args) => {
+		this.globals.set('getmetatable', new LuaNativeFunction('getmetatable', (args) => {
 			if (args.length === 0 || (!(isLuaTable(args[0])) && !(args[0] instanceof LuaNativeValue))) {
 				throw this.runtimeError('getmetatable expects a table or native value as the first argument.');
 			}
@@ -3113,14 +3086,14 @@ export class LuaInterpreter {
 			return [metatable];
 		}));
 
-		this.globals.set(this.canonicalize('rawequal'), new LuaNativeFunction(this.canonicalize('rawequal'), (args) => {
+		this.globals.set('rawequal', new LuaNativeFunction('rawequal', (args) => {
 			if (args.length < 2) {
 				return [false];
 			}
 			return [args[0] === args[1]];
 		}));
 
-		this.globals.set(this.canonicalize('rawget'), new LuaNativeFunction(this.canonicalize('rawget'), (args) => {
+		this.globals.set('rawget', new LuaNativeFunction('rawget', (args) => {
 			if (args.length === 0 || !(isLuaTable(args[0]))) {
 				throw this.runtimeError('rawget expects a table as the first argument.');
 			}
@@ -3129,7 +3102,7 @@ export class LuaInterpreter {
 			return [table.get(key)];
 		}));
 
-		this.globals.set(this.canonicalize('rawset'), new LuaNativeFunction(this.canonicalize('rawset'), (args) => {
+		this.globals.set('rawset', new LuaNativeFunction('rawset', (args) => {
 			if (args.length < 2 || !(isLuaTable(args[0]))) {
 				throw this.runtimeError('rawset expects a table as the first argument.');
 			}
@@ -3140,7 +3113,7 @@ export class LuaInterpreter {
 			return [table];
 		}));
 
-		this.globals.set(this.canonicalize('pcall'), new LuaNativeFunction(this.canonicalize('pcall'), (args) => {
+		this.globals.set('pcall', new LuaNativeFunction('pcall', (args) => {
 			const fn = this.expectFunction(args.length > 0 ? args[0] : null, 'pcall expects a function.', null);
 			const functionArgs = this.allocateValueList();
 			for (let index = 1; index < args.length; index += 1) {
@@ -3167,7 +3140,7 @@ export class LuaInterpreter {
 			}
 		}));
 
-		this.globals.set(this.canonicalize('xpcall'), new LuaNativeFunction(this.canonicalize('xpcall'), (args) => {
+		this.globals.set('xpcall', new LuaNativeFunction('xpcall', (args) => {
 			const fn = this.expectFunction(args.length > 0 ? args[0] : null, 'xpcall expects a function.', null);
 			const messageHandler = this.expectFunction(args.length > 1 ? args[1] : null, 'xpcall expects a message handler.', null);
 			const functionArgs = this.allocateValueList();
@@ -3202,7 +3175,7 @@ export class LuaInterpreter {
 			}
 		}));
 
-		this.globals.set(this.canonicalize('select'), new LuaNativeFunction(this.canonicalize('select'), (args) => {
+		this.globals.set('select', new LuaNativeFunction('select', (args) => {
 			if (args.length === 0) {
 				throw this.runtimeError('select expects at least one argument.');
 			}
@@ -3226,7 +3199,7 @@ export class LuaInterpreter {
 			return result;
 		}));
 
-		this.globals.set(this.canonicalize('next'), new LuaNativeFunction(this.canonicalize('next'), (args) => {
+		this.globals.set('next', new LuaNativeFunction('next', (args) => {
 			if (args.length === 0 || !(isLuaTable(args[0]))) {
 				throw this.runtimeError('next expects a table as the first argument.');
 			}
@@ -3256,22 +3229,22 @@ export class LuaInterpreter {
 		const radToDeg = 180 / Math.PI;
 		const degToRad = Math.PI / 180;
 		const mathTable = createLuaTable();
-		mathTable.set(this.canonicalize('abs'), new LuaNativeFunction(this.canonicalize('abs'), (args) => {
+		mathTable.set('abs', new LuaNativeFunction('abs', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.abs expects a number.', null);
 			return [Math.abs(number)];
 		}));
-		mathTable.set(this.canonicalize('acos'), new LuaNativeFunction(this.canonicalize('acos'), (args) => {
+		mathTable.set('acos', new LuaNativeFunction('acos', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.acos expects a number.', null);
 			return [Math.acos(number)];
 		}));
-		mathTable.set(this.canonicalize('asin'), new LuaNativeFunction(this.canonicalize('asin'), (args) => {
+		mathTable.set('asin', new LuaNativeFunction('asin', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.asin expects a number.', null);
 			return [Math.asin(number)];
 		}));
-		mathTable.set(this.canonicalize('atan'), new LuaNativeFunction(this.canonicalize('atan'), (args) => {
+		mathTable.set('atan', new LuaNativeFunction('atan', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const y = this.expectNumber(value, 'math.atan expects a number.', null);
 			if (args.length > 1) {
@@ -3280,39 +3253,39 @@ export class LuaInterpreter {
 			}
 			return [Math.atan(y)];
 		}));
-		mathTable.set(this.canonicalize('ceil'), new LuaNativeFunction(this.canonicalize('ceil'), (args) => {
+		mathTable.set('ceil', new LuaNativeFunction('ceil', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.ceil expects a number.', null);
 			return [Math.ceil(number)];
 		}));
-		mathTable.set(this.canonicalize('cos'), new LuaNativeFunction(this.canonicalize('cos'), (args) => {
+		mathTable.set('cos', new LuaNativeFunction('cos', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.cos expects a number.', null);
 			return [Math.cos(number)];
 		}));
-		mathTable.set(this.canonicalize('deg'), new LuaNativeFunction(this.canonicalize('deg'), (args) => {
+		mathTable.set('deg', new LuaNativeFunction('deg', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.deg expects a number.', null);
 			return [number * radToDeg];
 		}));
-		mathTable.set(this.canonicalize('exp'), new LuaNativeFunction(this.canonicalize('exp'), (args) => {
+		mathTable.set('exp', new LuaNativeFunction('exp', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.exp expects a number.', null);
 			return [Math.exp(number)];
 		}));
-		mathTable.set(this.canonicalize('floor'), new LuaNativeFunction(this.canonicalize('floor'), (args) => {
+		mathTable.set('floor', new LuaNativeFunction('floor', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.floor expects a number.', null);
 			return [Math.floor(number)];
 		}));
-		mathTable.set(this.canonicalize('fmod'), new LuaNativeFunction(this.canonicalize('fmod'), (args) => {
+		mathTable.set('fmod', new LuaNativeFunction('fmod', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const divisorValue = args.length > 1 ? args[1] : null;
 			const number = this.expectNumber(value, 'math.fmod expects a number.', null);
 			const divisor = this.expectNumber(divisorValue, 'math.fmod expects a number.', null);
 			return [number % divisor];
 		}));
-		mathTable.set(this.canonicalize('log'), new LuaNativeFunction(this.canonicalize('log'), (args) => {
+		mathTable.set('log', new LuaNativeFunction('log', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.log expects a number.', null);
 			if (args.length > 1) {
@@ -3321,7 +3294,7 @@ export class LuaInterpreter {
 			}
 			return [Math.log(number)];
 		}));
-		mathTable.set(this.canonicalize('max'), new LuaNativeFunction(this.canonicalize('max'), (args) => {
+		mathTable.set('max', new LuaNativeFunction('max', (args) => {
 			if (args.length === 0) {
 				throw this.runtimeError('math.max expects at least one argument.');
 			}
@@ -3334,7 +3307,7 @@ export class LuaInterpreter {
 			}
 			return [result];
 		}));
-		mathTable.set(this.canonicalize('min'), new LuaNativeFunction(this.canonicalize('min'), (args) => {
+		mathTable.set('min', new LuaNativeFunction('min', (args) => {
 			if (args.length === 0) {
 				throw this.runtimeError('math.min expects at least one argument.');
 			}
@@ -3347,23 +3320,23 @@ export class LuaInterpreter {
 			}
 			return [result];
 		}));
-		mathTable.set(this.canonicalize('modf'), new LuaNativeFunction(this.canonicalize('modf'), (args) => {
+		mathTable.set('modf', new LuaNativeFunction('modf', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.modf expects a number.', null);
 			const integerPart = Math.trunc(number);
 			return [integerPart, number - integerPart];
 		}));
-		mathTable.set(this.canonicalize('rad'), new LuaNativeFunction(this.canonicalize('rad'), (args) => {
+		mathTable.set('rad', new LuaNativeFunction('rad', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.rad expects a number.', null);
 			return [number * degToRad];
 		}));
-		mathTable.set(this.canonicalize('sin'), new LuaNativeFunction(this.canonicalize('sin'), (args) => {
+		mathTable.set('sin', new LuaNativeFunction('sin', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.sin expects a number.', null);
 			return [Math.sin(number)];
 		}));
-		mathTable.set(this.canonicalize('sign'), new LuaNativeFunction(this.canonicalize('sign'), (args) => {
+		mathTable.set('sign', new LuaNativeFunction('sign', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.sign expects a number.', null);
 			if (number < 0) {
@@ -3374,7 +3347,7 @@ export class LuaInterpreter {
 			}
 			return [0];
 		}));
-		mathTable.set(this.canonicalize('sqrt'), new LuaNativeFunction(this.canonicalize('sqrt'), (args) => {
+		mathTable.set('sqrt', new LuaNativeFunction('sqrt', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.sqrt expects a number.', null);
 			if (number < 0) {
@@ -3382,19 +3355,19 @@ export class LuaInterpreter {
 			}
 			return [Math.sqrt(number)];
 		}));
-		mathTable.set(this.canonicalize('tan'), new LuaNativeFunction(this.canonicalize('tan'), (args) => {
+		mathTable.set('tan', new LuaNativeFunction('tan', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.tan expects a number.', null);
 			return [Math.tan(number)];
 		}));
-		mathTable.set(this.canonicalize('tointeger'), new LuaNativeFunction(this.canonicalize('tointeger'), (args) => {
+		mathTable.set('tointeger', new LuaNativeFunction('tointeger', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
 				return [null];
 			}
 			return [value];
 		}));
-		mathTable.set(this.canonicalize('type'), new LuaNativeFunction(this.canonicalize('type'), (args) => {
+		mathTable.set('type', new LuaNativeFunction('type', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			if (typeof value !== 'number') {
 				return [null];
@@ -3404,12 +3377,12 @@ export class LuaInterpreter {
 			}
 			return ['float'];
 		}));
-		mathTable.set(this.canonicalize('ult'), new LuaNativeFunction(this.canonicalize('ult'), (args) => {
+		mathTable.set('ult', new LuaNativeFunction('ult', (args) => {
 			const left = this.expectNumber(args[0], 'math.ult expects a number.', null) >>> 0;
 			const right = this.expectNumber(args[1], 'math.ult expects a number.', null) >>> 0;
 			return [left < right];
 		}));
-		mathTable.set(this.canonicalize('random'), new LuaNativeFunction(this.canonicalize('random'), (args) => {
+		mathTable.set('random', new LuaNativeFunction('random', (args) => {
 			const randomValue = this.nextRandom();
 			if (args.length === 0) {
 				return [randomValue];
@@ -3432,16 +3405,16 @@ export class LuaInterpreter {
 			const span = upperInt - lowerInt + 1;
 			return [lowerInt + Math.floor(randomValue * span)];
 		}));
-		mathTable.set(this.canonicalize('randomseed'), new LuaNativeFunction(this.canonicalize('randomseed'), (args) => {
+		mathTable.set('randomseed', new LuaNativeFunction('randomseed', (args) => {
 			const seedValue = args.length > 0 ? this.expectNumber(args[0], 'math.randomseed expects a number.', null) : $.platform.clock.now();
 			this.randomSeedValue = Math.floor(seedValue) >>> 0;
 			return EMPTY_VALUES;
 		}));
-		mathTable.set(this.canonicalize('huge'), Number.POSITIVE_INFINITY);
-		mathTable.set(this.canonicalize('maxinteger'), maxSafeInteger);
-		mathTable.set(this.canonicalize('mininteger'), -maxSafeInteger);
-		mathTable.set(this.canonicalize('pi'), Math.PI);
-		this.globals.set(this.canonicalize('math'), mathTable);
+		mathTable.set('huge', Number.POSITIVE_INFINITY);
+		mathTable.set('maxinteger', maxSafeInteger);
+		mathTable.set('mininteger', -maxSafeInteger);
+		mathTable.set('pi', Math.PI);
+		this.globals.set('math', mathTable);
 
 		const stringTable = createLuaTable();
 		const packNativeEndian = (() => {
@@ -3783,22 +3756,22 @@ export class LuaInterpreter {
 			const view = new DataView(buffer);
 			return size === 4 ? view.getFloat32(0, littleEndian) : view.getFloat64(0, littleEndian);
 		};
-		stringTable.set(this.canonicalize('len'), new LuaNativeFunction(this.canonicalize('len'), (args) => {
+		stringTable.set('len', new LuaNativeFunction('len', (args) => {
 			const value = args.length > 0 ? args[0] : '';
 			const str = this.expectString(value, 'string.len expects a string.', null);
 			return [str.length];
 		}));
-		stringTable.set(this.canonicalize('upper'), new LuaNativeFunction(this.canonicalize('upper'), (args) => {
+		stringTable.set('upper', new LuaNativeFunction('upper', (args) => {
 			const value = args.length > 0 ? args[0] : '';
 			const str = this.expectString(value, 'string.upper expects a string.', null);
 			return [str.toUpperCase()];
 		}));
-		stringTable.set(this.canonicalize('lower'), new LuaNativeFunction(this.canonicalize('lower'), (args) => {
+		stringTable.set('lower', new LuaNativeFunction('lower', (args) => {
 			const value = args.length > 0 ? args[0] : '';
 			const str = this.expectString(value, 'string.lower expects a string.', null);
 			return [str.toLowerCase()];
 		}));
-		stringTable.set(this.canonicalize('sub'), new LuaNativeFunction(this.canonicalize('sub'), (args) => {
+		stringTable.set('sub', new LuaNativeFunction('sub', (args) => {
 			const source = args.length > 0 ? args[0] : '';
 			const str = this.expectString(source, 'string.sub expects a string.', null);
 			const length = str.length;
@@ -3827,7 +3800,7 @@ export class LuaInterpreter {
 			}
 			return [str.substring(startIndex - 1, endIndex)];
 		}));
-		stringTable.set(this.canonicalize('find'), new LuaNativeFunction(this.canonicalize('find'), (args) => {
+		stringTable.set('find', new LuaNativeFunction('find', (args) => {
 			const source = args.length > 0 ? args[0] : '';
 			const pattern = args.length > 1 ? args[1] : '';
 			const str = this.expectString(source, 'string.find expects a string.', null);
@@ -3841,7 +3814,7 @@ export class LuaInterpreter {
 			const last = first + pat.length - 1;
 			return [first, last];
 		}));
-		stringTable.set(this.canonicalize('byte'), new LuaNativeFunction(this.canonicalize('byte'), (args) => {
+		stringTable.set('byte', new LuaNativeFunction('byte', (args) => {
 			const source = args.length > 0 ? args[0] : '';
 			const str = this.expectString(source, 'string.byte expects a string.', null);
 			const positionArg = args.length > 1 ? this.expectNumber(args[1], 'string.byte expects a numeric position.', null) : 1;
@@ -3851,7 +3824,7 @@ export class LuaInterpreter {
 			}
 			return [str.charCodeAt(position)];
 		}));
-		stringTable.set(this.canonicalize('char'), new LuaNativeFunction(this.canonicalize('char'), (args) => {
+		stringTable.set('char', new LuaNativeFunction('char', (args) => {
 			if (args.length === 0) {
 				return [''];
 			}
@@ -3862,7 +3835,7 @@ export class LuaInterpreter {
 			}
 			return [result];
 		}));
-		stringTable.set(this.canonicalize('format'), new LuaNativeFunction(this.canonicalize('format'), (args) => {
+		stringTable.set('format', new LuaNativeFunction('format', (args) => {
 			if (args.length === 0) {
 				throw this.runtimeError('string.format expects a format string.');
 			}
@@ -4192,7 +4165,7 @@ export class LuaInterpreter {
 
 			return [output];
 		}));
-		stringTable.set(this.canonicalize('pack'), new LuaNativeFunction(this.canonicalize('pack'), (args) => {
+		stringTable.set('pack', new LuaNativeFunction('pack', (args) => {
 			if (args.length === 0) {
 				throw this.runtimeError('string.pack expects a format string.');
 			}
@@ -4276,7 +4249,7 @@ export class LuaInterpreter {
 			}
 			return [packBytesToString(new Uint8Array(bytes))];
 		}));
-		stringTable.set(this.canonicalize('packsize'), new LuaNativeFunction(this.canonicalize('packsize'), (args) => {
+		stringTable.set('packsize', new LuaNativeFunction('packsize', (args) => {
 			if (args.length === 0) {
 				throw this.runtimeError('string.packsize expects a format string.');
 			}
@@ -4319,7 +4292,7 @@ export class LuaInterpreter {
 			}
 			return [offset];
 		}));
-		stringTable.set(this.canonicalize('unpack'), new LuaNativeFunction(this.canonicalize('unpack'), (args) => {
+		stringTable.set('unpack', new LuaNativeFunction('unpack', (args) => {
 			if (args.length < 2) {
 				throw this.runtimeError('string.unpack expects a format string and source string.');
 			}
@@ -4416,10 +4389,10 @@ export class LuaInterpreter {
 			results.push(offset + 1);
 			return results;
 		}));
-		this.globals.set(this.canonicalize('string'), stringTable);
+		this.globals.set('string', stringTable);
 
 		const tableLibrary = createLuaTable();
-		tableLibrary.set(this.canonicalize('insert'), new LuaNativeFunction(this.canonicalize('insert'), (args) => {
+		tableLibrary.set('insert', new LuaNativeFunction('insert', (args) => {
 			if (args.length < 2) {
 				throw this.runtimeError('table.insert expects at least two arguments.');
 			}
@@ -4440,7 +4413,7 @@ export class LuaInterpreter {
 			return EMPTY_VALUES;
 		}));
 
-		tableLibrary.set(this.canonicalize('remove'), new LuaNativeFunction(this.canonicalize('remove'), (args) => {
+		tableLibrary.set('remove', new LuaNativeFunction('remove', (args) => {
 			if (args.length === 0 || !(isLuaTable(args[0]))) {
 				throw this.runtimeError('table.remove expects a table as the first argument.');
 			}
@@ -4450,7 +4423,7 @@ export class LuaInterpreter {
 			return removed === null ? EMPTY_VALUES : [removed];
 		}));
 
-		tableLibrary.set(this.canonicalize('concat'), new LuaNativeFunction(this.canonicalize('concat'), (args) => {
+		tableLibrary.set('concat', new LuaNativeFunction('concat', (args) => {
 			if (args.length === 0 || !(isLuaTable(args[0]))) {
 				throw this.runtimeError('table.concat expects a table as the first argument.');
 			}
@@ -4482,7 +4455,7 @@ export class LuaInterpreter {
 			return [parts.join(separator)];
 		}));
 
-		tableLibrary.set(this.canonicalize('pack'), new LuaNativeFunction(this.canonicalize('pack'), (args) => {
+		tableLibrary.set('pack', new LuaNativeFunction('pack', (args) => {
 			const table = createLuaTable();
 			for (let index = 0; index < args.length; index += 1) {
 				table.set(index + 1, args[index]);
@@ -4491,7 +4464,7 @@ export class LuaInterpreter {
 			return [table];
 		}));
 
-		tableLibrary.set(this.canonicalize('unpack'), new LuaNativeFunction(this.canonicalize('unpack'), (args) => {
+		tableLibrary.set('unpack', new LuaNativeFunction('unpack', (args) => {
 			if (args.length === 0 || !(isLuaTable(args[0]))) {
 				throw this.runtimeError('table.unpack expects a table as the first argument.');
 			}
@@ -4523,7 +4496,7 @@ export class LuaInterpreter {
 
 		// table.fromnative(value): convert a native Array (or LuaNativeValue wrapping one) into a Lua table.
 		// Numeric slots become 1-based Lua indices; the original native Array is kept on __native for pass-through.
-		tableLibrary.set(this.canonicalize('fromnative'), new LuaNativeFunction(this.canonicalize('table.fromnative'), (args) => {
+		tableLibrary.set('fromnative', new LuaNativeFunction('table.fromnative', (args) => {
 			if (args.length === 0) {
 				return [createLuaTable()];
 			}
@@ -4547,7 +4520,7 @@ export class LuaInterpreter {
 			return [table];
 		}));
 
-		tableLibrary.set(this.canonicalize('sort'), new LuaNativeFunction(this.canonicalize('sort'), (args) => {
+		tableLibrary.set('sort', new LuaNativeFunction('sort', (args) => {
 			if (args.length === 0 || !(isLuaTable(args[0]))) {
 				throw this.runtimeError('table.sort expects a table as the first argument.');
 			}
@@ -4583,10 +4556,10 @@ export class LuaInterpreter {
 			return [target];
 		}));
 
-		this.globals.set(this.canonicalize('table'), tableLibrary);
+		this.globals.set('table', tableLibrary);
 
 		const osTable = createLuaTable();
-		osTable.set(this.canonicalize('time'), new LuaNativeFunction(this.canonicalize('os.time'), (args) => {
+		osTable.set('time', new LuaNativeFunction('os.time', (args) => {
 			if (args.length === 0) {
 				return [Math.floor($.platform.clock.now() / 1000)];
 			}
@@ -4594,12 +4567,12 @@ export class LuaInterpreter {
 			if (!(isLuaTable(tableArg))) {
 				throw this.runtimeError('os.time expects a table or no arguments.');
 			}
-			const year = tableArg.get(this.canonicalize('year'));
-			const month = tableArg.get(this.canonicalize('month'));
-			const day = tableArg.get(this.canonicalize('day'));
-			const hour = tableArg.get(this.canonicalize('hour'));
-			const min = tableArg.get(this.canonicalize('min'));
-			const sec = tableArg.get(this.canonicalize('sec'));
+			const year = tableArg.get('year');
+			const month = tableArg.get('month');
+			const day = tableArg.get('day');
+			const hour = tableArg.get('hour');
+			const min = tableArg.get('min');
+			const sec = tableArg.get('sec');
 			const date = new Date(
 				this.expectNumber(year, 'os.time table requires year.', null),
 				this.expectNumber(month, 'os.time table requires month.', null) - 1,
@@ -4610,7 +4583,7 @@ export class LuaInterpreter {
 			);
 			return [Math.floor(date.getTime() / 1000)];
 		}));
-		osTable.set(this.canonicalize('date'), new LuaNativeFunction(this.canonicalize('os.date'), (args) => {
+		osTable.set('date', new LuaNativeFunction('os.date', (args) => {
 			const formatValue = args.length > 0 ? args[0] : null;
 			const timestampValue = args.length > 1 ? args[1] : null;
 			const timestamp = timestampValue === null ? Math.floor($.platform.clock.now() / 1000) : Math.floor(this.expectNumber(timestampValue, 'os.date expects numeric timestamp.', null));
@@ -4621,25 +4594,25 @@ export class LuaInterpreter {
 			const format = this.expectString(formatValue, 'os.date expects a format string.', null);
 			if (format === '*t') {
 				const table = createLuaTable();
-				table.set(this.canonicalize('year'), date.getUTCFullYear());
-				table.set(this.canonicalize('month'), date.getUTCMonth() + 1);
-				table.set(this.canonicalize('day'), date.getUTCDate());
-				table.set(this.canonicalize('hour'), date.getUTCHours());
-				table.set(this.canonicalize('min'), date.getUTCMinutes());
-				table.set(this.canonicalize('sec'), date.getUTCSeconds());
-				table.set(this.canonicalize('isdst'), false);
+				table.set('year', date.getUTCFullYear());
+				table.set('month', date.getUTCMonth() + 1);
+				table.set('day', date.getUTCDate());
+				table.set('hour', date.getUTCHours());
+				table.set('min', date.getUTCMinutes());
+				table.set('sec', date.getUTCSeconds());
+				table.set('isdst', false);
 				return [table];
 			}
 			return [date.toISOString()];
 		}));
-		osTable.set(this.canonicalize('difftime'), new LuaNativeFunction(this.canonicalize('os.difftime'), (args) => {
+		osTable.set('difftime', new LuaNativeFunction('os.difftime', (args) => {
 			const t2 = args.length > 0 ? this.expectNumber(args[0], 'os.difftime expects numeric arguments.', null) : 0;
 			const t1 = args.length > 1 ? this.expectNumber(args[1], 'os.difftime expects numeric arguments.', null) : 0;
 			return [t2 - t1];
 		}));
-		this.globals.set(this.canonicalize('os'), osTable);
+		this.globals.set('os', osTable);
 
-		this.globals.set(this.canonicalize('pairs'), new LuaNativeFunction(this.canonicalize('pairs'), (args) => {
+		this.globals.set('pairs', new LuaNativeFunction('pairs', (args) => {
 			if (args.length === 0) {
 				throw this.runtimeError('pairs expects a table or native value argument.');
 			}
@@ -4668,12 +4641,12 @@ export class LuaInterpreter {
 			throw this.runtimeError('pairs expects a table or native value argument.');
 		}));
 
-		this.globals.set(this.canonicalize('ipairs'), new LuaNativeFunction(this.canonicalize('ipairs'), (args) => {
+		this.globals.set('ipairs', new LuaNativeFunction('ipairs', (args) => {
 			if (args.length === 0) {
 				throw this.runtimeError('ipairs expects a table or native value argument.');
 			}
 			const target = args[0];
-			const ipairsMetamethod = this.extractMetamethodFunction(target, this.canonicalize('__ipairs'), null);
+			const ipairsMetamethod = this.extractMetamethodFunction(target, '__ipairs', null);
 			if (ipairsMetamethod !== null) {
 				const metaArgs = this.allocateValueList();
 				metaArgs.push(target);
@@ -4688,7 +4661,7 @@ export class LuaInterpreter {
 			}
 			if (isLuaTable(target)) {
 				const table = target;
-				const iterator = new LuaNativeFunction(this.canonicalize('ipairs_iterator'), (iteratorArgs) => {
+				const iterator = new LuaNativeFunction('ipairs_iterator', (iteratorArgs) => {
 					const tableArg = iteratorArgs.length > 0 ? iteratorArgs[0] : null;
 					const indexValue = iteratorArgs.length > 1 ? iteratorArgs[1] : null;
 					if (!(isLuaTable(tableArg))) {
@@ -4709,7 +4682,7 @@ export class LuaInterpreter {
 			throw this.runtimeError('ipairs expects a table or native value argument.');
 		}));
 
-		this.globals.set(this.canonicalize('serialize'), new LuaNativeFunction(this.canonicalize('serialize'), (args) => {
+		this.globals.set('serialize', new LuaNativeFunction('serialize', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			try {
 				const serialized = this.serializeValueInternal(value, new Set<LuaTable>());
@@ -4721,7 +4694,7 @@ export class LuaInterpreter {
 			}
 		}));
 
-		this.globals.set(this.canonicalize('deserialize'), new LuaNativeFunction(this.canonicalize('deserialize'), (args) => {
+		this.globals.set('deserialize', new LuaNativeFunction('deserialize', (args) => {
 			if (args.length === 0) {
 				throw this.runtimeError('deserialize expects a string argument.');
 			}

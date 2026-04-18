@@ -268,7 +268,6 @@ export class TerminalCommandDispatcher {
 		lines.push(`Cart: ${$.cart_project_root_path} (${$.sources.namespace})`);
 		lines.push(`Lua runtime: ${runtimeState} | Entry: ${pathLabel}`);
 		lines.push(`Status: ${faultLabel} | Debugger: ${debuggerLabel}`);
-		lines.push(`Canonicalization: ${this.runtime.canonicalization}`);
 		lines.push(`Real-time compile opt: -O${this.runtime.realtimeCompileOptLevel}`);
 		lines.push(`Overlay: ${this.runtime.overlayResolutionMode} ${overlay.width}x${overlay.height}`);
 		if (root) {

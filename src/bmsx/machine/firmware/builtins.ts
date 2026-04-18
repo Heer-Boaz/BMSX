@@ -165,17 +165,15 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 }
 
 function registerEngineBuiltins(interpreter: LuaInterpreter): void {
-	const runtime = Runtime.instance;
 	const env = interpreter.globalEnvironment;
-	const requireName = runtime.canonicalizeIdentifier('require');
 	const callEngineMember = (name: string, args: ReadonlyArray<LuaValue>): LuaCallResult => {
-		const requireFn = interpreter.getGlobal(requireName) as LuaFunctionValue;
+		const requireFn = interpreter.getGlobal('require') as LuaFunctionValue;
 		const engineValue = requireFn.call(['engine']);
 		if (isLuaCallSignal(engineValue)) {
 			return engineValue;
 		}
 		const engineTable = engineValue[0] as LuaTable;
-		const member = engineTable.get(runtime.canonicalizeIdentifier(name)) as LuaFunctionValue;
+		const member = engineTable.get(name) as LuaFunctionValue;
 		return member.call(args);
 	};
 	for (let index = 0; index < ENGINE_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
@@ -187,9 +185,9 @@ function registerEngineBuiltins(interpreter: LuaInterpreter): void {
 
 export function registerLuaBuiltin(metadata: LuaBuiltinDescriptor): void {
 	const runtime = Runtime.instance;
-	const normalizedName = runtime.canonicalizeIdentifier(metadata.name.trim());
-	if (normalizedName.length === 0) {
-		throw new Error(`Invalid Lua builtin name for '${normalizedName}'.`);
+	const name = metadata.name.trim();
+	if (name.length === 0) {
+		throw new Error(`Invalid Lua builtin name for '${name}'.`);
 	}
 	const params: string[] = [];
 	const optionalSet: Set<string> = new Set();
@@ -200,7 +198,7 @@ export function registerLuaBuiltin(metadata: LuaBuiltinDescriptor): void {
 		const raw = sourceParams[index];
 		const description = index < sourceDescriptions.length ? sourceDescriptions[index] : null;
 		if (typeof raw !== 'string' || raw.trim().length === 0) {
-			throw new Error(`Invalid Lua builtin parameter at index ${index} for '${normalizedName}'.`);
+			throw new Error(`Invalid Lua builtin parameter at index ${index} for '${name}'.`);
 		}
 		if (raw === '...' || raw.endsWith('...')) {
 			params.push(raw);
@@ -221,24 +219,24 @@ export function registerLuaBuiltin(metadata: LuaBuiltinDescriptor): void {
 	}
 	if (Array.isArray(metadata.optionalParams)) {
 		for (let index = 0; index < metadata.optionalParams.length; index += 1) {
-			const name = metadata.optionalParams[index];
-			if (typeof name !== 'string' || name.length === 0) {
-				throw new Error(`Invalid Lua optional parameter at index ${index} for '${normalizedName}'.`);
+			const optionalName = metadata.optionalParams[index];
+			if (typeof optionalName !== 'string' || optionalName.length === 0) {
+				throw new Error(`Invalid Lua optional parameter at index ${index} for '${name}'.`);
 			}
-			optionalSet.add(name);
+			optionalSet.add(optionalName);
 		}
 	}
-	const signature = typeof metadata.signature === 'string' ? metadata.signature : normalizedName;
+	const signature = typeof metadata.signature === 'string' ? metadata.signature : name;
 	const optionalParams = optionalSet.size > 0 ? Array.from(optionalSet) : undefined;
 	const descriptor: LuaBuiltinDescriptor = {
-		name: normalizedName,
+		name,
 		params,
 		signature,
 		optionalParams,
 		parameterDescriptions: normalizedDescriptions,
 		description: metadata.description,
 	};
-	runtime.luaBuiltinMetadata.set(normalizedName, descriptor);
+	runtime.luaBuiltinMetadata.set(name, descriptor);
 }
 
 function extractFunctionParameters(fn: (...args: unknown[]) => unknown): string[] {
@@ -314,9 +312,8 @@ export function seedDefaultLuaBuiltins(): void {
 
 export function registerLuaGlobal(env: LuaEnvironment, name: string, value: LuaValue): void {
 	const runtime = Runtime.instance;
-	const key = runtime.canonicalizeIdentifier(name);
-	env.set(key, value);
-	runtime.apiFunctionNames.add(key);
+	env.set(name, value);
+	runtime.apiFunctionNames.add(name);
 }
 
 function wrapResultValue(value: unknown): ReadonlyArray<LuaValue> {

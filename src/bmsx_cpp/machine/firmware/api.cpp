@@ -185,19 +185,19 @@ Api::Api(Runtime& runtime)
 Api::~Api() = default;
 
 void Api::initializeRuntimeKeys() {
-	m_keys.x = m_runtime.canonicalKey("x");
-	m_keys.y = m_runtime.canonicalKey("y");
-	m_keys.z = m_runtime.canonicalKey("z");
-	m_keys.r = m_runtime.canonicalKey("r");
-	m_keys.g = m_runtime.canonicalKey("g");
-	m_keys.b = m_runtime.canonicalKey("b");
-	m_keys.a = m_runtime.canonicalKey("a");
-	m_keys.definition = m_runtime.canonicalKey("definition");
-	m_keys.action = m_runtime.canonicalKey("action");
-	m_keys.name = m_runtime.canonicalKey("name");
-	m_keys.valid = m_runtime.canonicalKey("valid");
-	m_keys.inside = m_runtime.canonicalKey("inside");
-	m_keys.value = m_runtime.canonicalKey("value");
+	m_keys.x = m_runtime.luaKey("x");
+	m_keys.y = m_runtime.luaKey("y");
+	m_keys.z = m_runtime.luaKey("z");
+	m_keys.r = m_runtime.luaKey("r");
+	m_keys.g = m_runtime.luaKey("g");
+	m_keys.b = m_runtime.luaKey("b");
+	m_keys.a = m_runtime.luaKey("a");
+	m_keys.definition = m_runtime.luaKey("definition");
+	m_keys.action = m_runtime.luaKey("action");
+	m_keys.name = m_runtime.luaKey("name");
+	m_keys.valid = m_runtime.luaKey("valid");
+	m_keys.inside = m_runtime.luaKey("inside");
+	m_keys.value = m_runtime.luaKey("value");
 }
 
 void Api::markRoots(GcHeap& heap) {
@@ -258,7 +258,7 @@ Value Api::get_player_input_handle(int playerIndex) {
 	}
 
 	auto key = [this](std::string_view name) {
-		return m_runtime.canonicalKey(name);
+		return m_runtime.luaKey(name);
 	};
 	auto exactString = [this](std::string_view text) {
 		return valueString(m_runtime.machine().cpu().internString(text));
@@ -373,7 +373,7 @@ Value Api::get_player_input_handle(int playerIndex) {
 
 void Api::registerAllFunctions() {
 	auto key = [this](std::string_view name) {
-		return m_runtime.canonicalKey(name);
+		return m_runtime.luaKey(name);
 	};
 	auto asText = [this](Value value) -> const std::string& {
 		return m_runtime.machine().cpu().stringPool().toString(asStringId(value));
@@ -579,7 +579,7 @@ void Api::reboot() {
 
 Value Api::build_font_descriptor(BFont* font) {
 	auto key = [this](std::string_view name) {
-		return m_runtime.canonicalKey(name);
+		return m_runtime.luaKey(name);
 	};
 	auto str = [this](const std::string& value) {
 		return valueString(m_runtime.machine().cpu().internString(value));
@@ -649,7 +649,7 @@ BFont* Api::create_font(const Value& definition) {
 		throw BMSX_RUNTIME_ERROR("create_font(definition) requires a table.");
 	}
 	auto key = [this](std::string_view name) {
-		return m_runtime.canonicalKey(name);
+		return m_runtime.luaKey(name);
 	};
 	auto asText = [this](Value value) -> const std::string& {
 		return m_runtime.machine().cpu().stringPool().toString(asStringId(value));

@@ -1178,7 +1178,7 @@ void Runtime::setupBuiltins() {
 		throw BMSX_RUNTIME_ERROR(formatNonFunctionCallError(callee, m_machine.cpu()));
 	};
 	auto key = [this](std::string_view name) {
-		return canonicalKey(name);
+		return luaKey(name);
 	};
 	auto str = [this](std::string_view value) {
 		return valueString(m_machine.cpu().internString(value));
@@ -3748,23 +3748,11 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 	);
 	setGlobal("assets", assetsNative);
 
-	auto canonicalizationLabel = [](CanonicalizationType value) -> const char* {
-		switch (value) {
-			case CanonicalizationType::Upper:
-				return "upper";
-			case CanonicalizationType::Lower:
-				return "lower";
-			case CanonicalizationType::None:
-			default:
-				return "none";
-		}
-	};
-	auto buildMachineManifestTable = [this, key, str, canonicalizationLabel](const MachineManifest& manifest) -> Table* {
+	auto buildMachineManifestTable = [this, key, str](const MachineManifest& manifest) -> Table* {
 		auto* machineTable = m_machine.cpu().createTable(0, 5);
 		if (!manifest.namespaceName.empty()) {
 			machineTable->set(key("namespace"), str(manifest.namespaceName));
 		}
-		machineTable->set(key("canonicalization"), str(canonicalizationLabel(manifest.canonicalization)));
 		if (manifest.ufpsScaled) {
 			machineTable->set(key("ufps"), valueNumber(static_cast<double>(*manifest.ufpsScaled)));
 		}

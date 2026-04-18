@@ -1,7 +1,6 @@
 import { LuaLexer } from '../../../lua/syntax/lexer';
 import type { LuaToken } from '../../../lua/syntax/token';
 import { LuaTokenType } from '../../../lua/syntax/token';
-import { editorRuntimeState } from '../../editor/common/runtime_state';
 
 type LineMetadata = {
 	decreaseBefore: number;
@@ -31,7 +30,7 @@ export function formatLuaDocument(source: string): string {
 	}
 	const newline = source.indexOf('\r\n') >= 0 ? '\r\n' : '\n';
 	const lines = source.split(/\r?\n/);
-	const lexer = new LuaLexer(source, 'console-editor', { canonicalizeIdentifiers: editorRuntimeState.caseInsensitive ? editorRuntimeState.canonicalization : 'none' });
+	const lexer = new LuaLexer(source, 'console-editor');
 	const tokens = lexer.scanTokens();
 	const tokensByLine = buildTokensByLine(tokens);
 	const preservedLines = determinePreservedLines(source, tokens, lines.length);

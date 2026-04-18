@@ -38,8 +38,7 @@ export function initializeCartEditor(viewport: Viewport): void {
 	editorViewState.fontVariant = runtime.activeIdeFontVariant;
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 	editorRuntimeState.themeVariant = constants.getActiveIdeThemeVariant();
-	editorRuntimeState.canonicalization = Runtime.instance.cartCanonicalization;
-	editorRuntimeState.caseInsensitive = editorRuntimeState.canonicalization !== 'none';
+	editorRuntimeState.caseInsensitive = false;
 	editorDocumentState.preMutationSource = null;
 	applyViewportSize(viewport);
 	editorRuntimeState.clockNow = $.platform.clock.now;

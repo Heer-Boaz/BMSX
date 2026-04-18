@@ -78,8 +78,7 @@ export type LuaToken = {
 };
 
 export function resolveKeyword(identifier: string): LuaTokenType {
-	const key = identifier.toLowerCase();
-	switch (key) {
+	switch (identifier) {
 		case 'and':
 			return LuaTokenType.And;
 		case 'break':

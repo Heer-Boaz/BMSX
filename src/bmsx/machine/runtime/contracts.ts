@@ -1,5 +1,5 @@
 import type { LuaFunctionValue } from '../../lua/value';
-import type { asset_id, CanonicalizationType, Viewport } from '../../rompack/format';
+import type { asset_id, Viewport } from '../../rompack/format';
 import type { MachineState } from '../machine';
 import type { Memory } from '../memory/memory';
 import { LuaEntrySnapshot } from '../firmware/js_bridge';
@@ -105,7 +105,6 @@ export type LuaHoverResult = {
 
 export type RuntimeOptions = {
 	playerIndex: number;
-	canonicalization?: CanonicalizationType;
 	viewport: Viewport;
 	memory: Memory;
 	ufpsScaled: number;

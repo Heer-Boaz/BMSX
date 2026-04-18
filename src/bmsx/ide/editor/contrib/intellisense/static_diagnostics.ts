@@ -1,4 +1,3 @@
-import { createIdentifierCanonicalizer } from '../../../../lua/syntax/identifier_canonicalizer';
 import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
@@ -13,7 +12,6 @@ import {
 	type LuaStatement,
 	type LuaStringLiteralExpression,
 } from '../../../../lua/syntax/ast';
-import type { CanonicalizationType } from '../../../../rompack/format';
 import { API_METHOD_METADATA } from '../../../../machine/firmware/api_metadata';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../../../../machine/firmware/builtin_descriptors';
 import { MEMORY_ACCESS_KIND_NAMES } from '../../../../machine/memory/access_kind';
@@ -26,8 +24,6 @@ import {
 	type LuaSemanticWorkspaceSnapshotInput,
 } from './semantic_model';
 import { getCachedLuaParse } from '../../../language/lua/analysis_cache';
-
-const identityCanonicalizer = (value: string): string => value;
 
 export type LuaDiagnosticSeverity = 'error' | 'warning';
 
@@ -50,7 +46,6 @@ export type LuaAnalysisDiagnosticOptions = {
 	globalSymbols: readonly LuaSymbolEntry[];
 	builtinDescriptors: readonly LuaBuiltinDescriptor[];
 	apiSignatures: ReadonlyMap<string, LuaApiSignatureMetadata>;
-	canonicalize?: (value: string) => string;
 	extraGlobalNames?: readonly string[];
 };
 
@@ -61,7 +56,6 @@ export type LuaProjectSource = {
 };
 
 export type LuaProjectDiagnosticOptions = {
-	canonicalization?: CanonicalizationType;
 	builtinDescriptors?: readonly LuaBuiltinDescriptor[];
 	apiSignatures?: ReadonlyMap<string, LuaApiSignatureMetadata>;
 	extraGlobalNames?: readonly string[];
@@ -111,35 +105,25 @@ export function getStaticLuaApiSignatureMap(): ReadonlyMap<string, LuaApiSignatu
 			optionalParams: optionalList,
 		};
 		cachedStaticApiSignatureMap.set(name, descriptor);
-		const lower = name.toLowerCase();
-		if (!cachedStaticApiSignatureMap.has(lower)) {
-			cachedStaticApiSignatureMap.set(lower, descriptor);
-		}
-		const upper = name.toUpperCase();
-		if (!cachedStaticApiSignatureMap.has(upper)) {
-			cachedStaticApiSignatureMap.set(upper, descriptor);
-		}
 	}
 	return cachedStaticApiSignatureMap;
 }
 
 export function computeLuaDiagnosticsFromAnalysis(options: LuaAnalysisDiagnosticOptions): LuaStaticDiagnostic[] {
 	const diagnostics: LuaStaticDiagnostic[] = [];
-	const canonicalize = options.canonicalize ?? identityCanonicalizer;
-	const canonicalApiRoot = canonicalize('api');
+	const apiRoot = 'api';
 	const globalKnownNames = buildGlobalKnownNameSet(
 		options.globalSymbols,
 		options.builtinDescriptors,
 		options.apiSignatures,
-		canonicalize,
 		options.extraGlobalNames,
 	);
-	const builtinLookup = buildBuiltinLookup(options.builtinDescriptors, canonicalize);
-	addIdentifierDiagnosticsFromSemantic(diagnostics, options.analysis, globalKnownNames, canonicalize);
+	const builtinLookup = buildBuiltinLookup(options.builtinDescriptors);
+	addIdentifierDiagnosticsFromSemantic(diagnostics, options.analysis, globalKnownNames);
 	addConstLocalWriteDiagnosticsFromSemantic(diagnostics, options.analysis);
 	addConstLocalInitializerDiagnostics(diagnostics, options.chunk);
-	addCallDiagnosticsFromSemantic(diagnostics, options.analysis, builtinLookup, options.apiSignatures, canonicalApiRoot, canonicalize);
-	addReservedMemoryDiagnosticsFromSemantic(diagnostics, options.analysis, options.chunk, canonicalize);
+	addCallDiagnosticsFromSemantic(diagnostics, options.analysis, builtinLookup, options.apiSignatures, apiRoot);
+	addReservedMemoryDiagnosticsFromSemantic(diagnostics, options.analysis, options.chunk);
 	return diagnostics;
 }
 
@@ -153,7 +137,6 @@ export function computeLuaProjectDiagnostics(
 	}
 	const builtinDescriptors = options.builtinDescriptors ?? getDefaultLuaBuiltinDescriptors();
 	const apiSignatures = options.apiSignatures ?? getStaticLuaApiSignatureMap();
-	const canonicalize = createIdentifierCanonicalizer(options.canonicalization ?? 'none');
 	const validSources: MutableProjectSource[] = [];
 	const snapshotInputs: LuaSemanticWorkspaceSnapshotInput[] = [];
 	for (let index = 0; index < sources.length; index += 1) {
@@ -163,7 +146,6 @@ export function computeLuaProjectDiagnostics(
 			source: source.source,
 			version: source.version,
 			withSyntaxError: true,
-			canonicalization: options.canonicalization ?? 'none',
 		});
 		if (parseEntry.syntaxError) {
 			results.set(source.path, [toSyntaxDiagnostic(parseEntry.syntaxError.message, parseEntry.syntaxError.line, parseEntry.syntaxError.column)]);
@@ -180,7 +162,7 @@ export function computeLuaProjectDiagnostics(
 	if (snapshotInputs.length === 0) {
 		return results;
 	}
-	const snapshot = buildLuaSemanticWorkspaceSnapshot(snapshotInputs, options.canonicalization ?? 'none');
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(snapshotInputs);
 	for (let index = 0; index < snapshot.sources.length; index += 1) {
 		const source = snapshot.sources[index];
 		validSources.push({
@@ -198,7 +180,6 @@ export function computeLuaProjectDiagnostics(
 			globalSymbols,
 			builtinDescriptors,
 			apiSignatures,
-			canonicalize,
 			extraGlobalNames: options.extraGlobalNames,
 		}));
 	}
@@ -287,20 +268,18 @@ function buildGlobalKnownNameSet(
 	globalSymbols: readonly LuaSymbolEntry[],
 	builtinDescriptors: readonly LuaBuiltinDescriptor[],
 	apiSignatures: ReadonlyMap<string, LuaApiSignatureMetadata>,
-	canonicalize: (value: string) => string,
 	extraGlobalNames?: readonly string[],
 ): Set<string> {
 	const knownNames = new Set<string>();
 	const addName = (value: string): void => {
-		const canonical = canonicalize(value);
-		knownNames.add(canonical);
-		const dotIndex = canonical.indexOf('.');
+		knownNames.add(value);
+		const dotIndex = value.indexOf('.');
 		if (dotIndex !== -1) {
-			knownNames.add(canonical.slice(0, dotIndex));
+			knownNames.add(value.slice(0, dotIndex));
 		}
-		const colonIndex = canonical.indexOf(':');
+		const colonIndex = value.indexOf(':');
 		if (colonIndex !== -1) {
-			knownNames.add(canonical.slice(0, colonIndex));
+			knownNames.add(value.slice(0, colonIndex));
 		}
 	};
 	addName('api');
@@ -324,14 +303,11 @@ function buildGlobalKnownNameSet(
 	return knownNames;
 }
 
-function buildBuiltinLookup(
-	builtinDescriptors: readonly LuaBuiltinDescriptor[],
-	canonicalize: (value: string) => string,
-): Map<string, LuaBuiltinDescriptor> {
+function buildBuiltinLookup(builtinDescriptors: readonly LuaBuiltinDescriptor[]): Map<string, LuaBuiltinDescriptor> {
 	const lookup = new Map<string, LuaBuiltinDescriptor>();
 	for (let index = 0; index < builtinDescriptors.length; index += 1) {
 		const descriptor = builtinDescriptors[index];
-		lookup.set(canonicalize(descriptor.name), descriptor);
+		lookup.set(descriptor.name, descriptor);
 	}
 	return lookup;
 }
@@ -340,7 +316,6 @@ function addIdentifierDiagnosticsFromSemantic(
 	diagnostics: LuaStaticDiagnostic[],
 	analysis: FileSemanticData,
 	globalKnownNames: ReadonlySet<string>,
-	canonicalize: (value: string) => string,
 ): void {
 	const refs = analysis.refs;
 	for (let index = 0; index < refs.length; index += 1) {
@@ -348,8 +323,7 @@ function addIdentifierDiagnosticsFromSemantic(
 		if (ref.isWrite || ref.target || ref.referenceKind !== 'identifier' || ref.namePath.length !== 1) {
 			continue;
 		}
-		const canonicalName = canonicalize(ref.name);
-		if (globalKnownNames.has(canonicalName)) {
+		if (globalKnownNames.has(ref.name)) {
 			continue;
 		}
 		const row = ref.range.start.line - 1;
@@ -453,8 +427,7 @@ function addCallDiagnosticsFromSemantic(
 	analysis: FileSemanticData,
 	builtinLookup: Map<string, LuaBuiltinDescriptor>,
 	apiSignatures: ReadonlyMap<string, LuaApiSignatureMetadata>,
-	canonicalApiRoot: string,
-	canonicalize: (value: string) => string,
+	apiRoot: string,
 ): void {
 	const calls = analysis.callExpressions;
 	if (calls.length === 0) {
@@ -463,7 +436,7 @@ function addCallDiagnosticsFromSemantic(
 	const signatures = analysis.functionSignatures ?? new Map<string, FunctionSignatureInfo>();
 	for (let index = 0; index < calls.length; index += 1) {
 		const call = calls[index];
-		const metadata = resolveCallSignature(call, builtinLookup, apiSignatures, canonicalApiRoot, canonicalize);
+		const metadata = resolveCallSignature(call, builtinLookup, apiSignatures, apiRoot);
 		if (metadata) {
 			validateCallArity(diagnostics, call, metadata);
 			continue;
@@ -479,25 +452,23 @@ function resolveCallSignature(
 	call: LuaCallExpression,
 	builtinLookup: Map<string, LuaBuiltinDescriptor>,
 	apiSignatures: ReadonlyMap<string, LuaApiSignatureMetadata>,
-	canonicalApiRoot: string,
-	canonicalize: (value: string) => string,
+	apiRoot: string,
 ): CallSignatureMetadata | null {
 	if (call.methodName !== null) {
-		const qualified = resolveQualifiedName(call.callee, canonicalize);
-		if (qualified && qualified.parts.length > 0 && qualified.parts[0] === canonicalApiRoot) {
-			const methodName = canonicalize(call.methodName);
-			const apiMeta = apiSignatures.get(methodName) ?? apiSignatures.get(call.methodName);
+		const qualified = resolveQualifiedName(call.callee);
+		if (qualified && qualified.parts.length > 0 && qualified.parts[0] === apiRoot) {
+			const apiMeta = apiSignatures.get(call.methodName);
 			if (apiMeta) {
 				return createCallSignatureMetadata(`api.${call.methodName}`, apiMeta.params, apiMeta.optionalParams, 'method', 'function');
 			}
 		}
 		return null;
 	}
-	const qualified = resolveQualifiedName(call.callee, canonicalize);
+	const qualified = resolveQualifiedName(call.callee);
 	if (!qualified) {
 		return null;
 	}
-	if (qualified.parts.length >= 2 && qualified.parts[0] === canonicalApiRoot) {
+	if (qualified.parts.length >= 2 && qualified.parts[0] === apiRoot) {
 		const method = qualified.parts[qualified.parts.length - 1];
 		const apiMeta = apiSignatures.get(method);
 		if (apiMeta) {
@@ -533,18 +504,18 @@ function createCallSignatureMetadata(
 	};
 }
 
-function resolveQualifiedName(expression: LuaExpression, canonicalize: (value: string) => string): QualifiedName | null {
+function resolveQualifiedName(expression: LuaExpression): QualifiedName | null {
 	const parts: string[] = [];
 	let current: LuaExpression = expression;
 	while (current) {
 		if (current.kind === LuaSyntaxKind.IdentifierExpression) {
 			const identifier = current as LuaIdentifierExpression;
-			parts.unshift(canonicalize(identifier.name));
+			parts.unshift(identifier.name);
 			return { parts };
 		}
 		if (current.kind === LuaSyntaxKind.MemberExpression) {
 			const member = current as LuaMemberExpression;
-			parts.unshift(canonicalize(member.identifier));
+			parts.unshift(member.identifier);
 			current = member.base;
 			continue;
 		}
@@ -608,7 +579,7 @@ function buildCallInfo(call: LuaCallExpression): FunctionCallInfo | null {
 		}
 		return { path: `${basePath}:${call.methodName}`, style: 'method' };
 	}
-	const qualified = resolveQualifiedName(call.callee, identityCanonicalizer);
+	const qualified = resolveQualifiedName(call.callee);
 	if (!qualified) {
 		return null;
 	}
@@ -708,17 +679,16 @@ function buildRangeKey(range: LuaSourceRange): string {
 	return `${range.start.line}:${range.start.column}`;
 }
 
-function isReservedMemoryMapName(name: string, canonicalize: (value: string) => string): boolean {
-	const canonicalName = canonicalize(name);
+function isReservedMemoryMapName(name: string): boolean {
 	for (let index = 0; index < MEMORY_ACCESS_KIND_NAMES.length; index += 1) {
-		if (canonicalize(MEMORY_ACCESS_KIND_NAMES[index]) === canonicalName) {
+		if (MEMORY_ACCESS_KIND_NAMES[index] === name) {
 			return true;
 		}
 	}
 	return false;
 }
 
-function collectAllowedReservedMemoryRanges(chunk: LuaChunk, canonicalize: (value: string) => string): Set<string> {
+function collectAllowedReservedMemoryRanges(chunk: LuaChunk): Set<string> {
 	const allowed = new Set<string>();
 	const visitBlock = (statements: readonly LuaStatement[]): void => {
 		for (let index = 0; index < statements.length; index += 1) {
@@ -795,7 +765,7 @@ function collectAllowedReservedMemoryRanges(chunk: LuaChunk, canonicalize: (valu
 	const visitExpression = (expression: LuaExpression): void => {
 		switch (expression.kind) {
 			case LuaSyntaxKind.IndexExpression:
-				if (expression.base.kind === LuaSyntaxKind.IdentifierExpression && isReservedMemoryMapName(expression.base.name, canonicalize)) {
+				if (expression.base.kind === LuaSyntaxKind.IdentifierExpression && isReservedMemoryMapName(expression.base.name)) {
 					allowed.add(buildRangeKey(expression.base.range));
 				}
 				visitExpression(expression.base);
@@ -847,12 +817,11 @@ function addReservedMemoryDiagnosticsFromSemantic(
 	diagnostics: LuaStaticDiagnostic[],
 	analysis: FileSemanticData,
 	chunk: LuaChunk,
-	canonicalize: (value: string) => string,
 ): void {
-	const allowedReservedRanges = collectAllowedReservedMemoryRanges(chunk, canonicalize);
+	const allowedReservedRanges = collectAllowedReservedMemoryRanges(chunk);
 	for (let index = 0; index < analysis.decls.length; index += 1) {
 		const decl = analysis.decls[index];
-		if (!isReservedMemoryMapName(decl.name, canonicalize)) {
+		if (!isReservedMemoryMapName(decl.name)) {
 			continue;
 		}
 		if (decl.kind === 'local' || decl.kind === 'constant' || decl.kind === 'parameter') {
@@ -865,7 +834,7 @@ function addReservedMemoryDiagnosticsFromSemantic(
 	}
 	for (let index = 0; index < analysis.refs.length; index += 1) {
 		const ref = analysis.refs[index];
-		if (!isReservedMemoryMapName(ref.name, canonicalize) || ref.referenceKind !== 'identifier' || ref.namePath.length !== 1) {
+		if (!isReservedMemoryMapName(ref.name) || ref.referenceKind !== 'identifier' || ref.namePath.length !== 1) {
 			continue;
 		}
 		if (allowedReservedRanges.has(buildRangeKey(ref.range))) {

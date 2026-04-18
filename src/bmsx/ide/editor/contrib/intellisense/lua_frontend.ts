@@ -1,9 +1,7 @@
 import { LuaSyntaxKind, type LuaCallExpression, type LuaChunk, type LuaIdentifierExpression, type LuaSourceRange, type LuaStringLiteralExpression } from '../../../../lua/syntax/ast';
-import { createIdentifierCanonicalizer } from '../../../../lua/syntax/identifier_canonicalizer';
 import { LuaTokenType } from '../../../../lua/syntax/token';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../machine/runtime/contracts';
 import { MEMORY_ACCESS_KIND_NAMES } from '../../../../machine/memory/access_kind';
-import type { CanonicalizationType } from '../../../../rompack/format';
 import type { ParsedLuaChunk } from '../../../language/lua/parse';
 import {
 	buildLuaSemanticWorkspaceSnapshot,
@@ -39,7 +37,6 @@ export type LuaSemanticFrontendOptions = {
 	apiSignatures?: ReadonlyMap<string, LuaApiSignatureMetadata>;
 	extraGlobalNames?: readonly string[];
 	externalGlobalSymbols?: readonly LuaSymbolEntry[];
-	canonicalization?: CanonicalizationType;
 };
 
 export type LuaBoundReferenceKind = 'lexical' | 'global' | 'map' | 'reserved_intrinsic' | 'unresolved';
@@ -123,9 +120,7 @@ export function buildLuaSemanticFrontend(
 ): LuaSemanticFrontend {
 	const builtinDescriptors = options.builtinDescriptors ?? getDefaultLuaBuiltinDescriptors();
 	const apiSignatures = options.apiSignatures ?? getStaticLuaApiSignatureMap();
-	const canonicalization = options.canonicalization ?? 'none';
-	const canonicalize = createIdentifierCanonicalizer(canonicalization);
-	const snapshot = buildLuaSemanticWorkspaceSnapshot(sources, canonicalization);
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(sources);
 	const preparedSources = snapshot.sources.map(source => ({
 		path: source.path,
 		chunk: source.chunk,
@@ -140,7 +135,7 @@ export function buildLuaSemanticFrontend(
 	}
 	// Frontend queries must resolve against the prepared snapshot, not whatever the workspace becomes later.
 	const globalSymbols = buildCombinedGlobalSymbols(snapshot.listGlobalDecls(), options.externalGlobalSymbols);
-	const knownGlobalNames = buildKnownGlobalNameSet(globalSymbols, builtinDescriptors, apiSignatures, canonicalize, options.extraGlobalNames);
+	const knownGlobalNames = buildKnownGlobalNameSet(globalSymbols, builtinDescriptors, apiSignatures, options.extraGlobalNames);
 	const moduleTargetsByAlias = buildModuleTargetAliasMap(preparedSources);
 	for (let index = 0; index < preparedSources.length; index += 1) {
 		const source = preparedSources[index];
@@ -150,7 +145,6 @@ export function buildLuaSemanticFrontend(
 			globalSymbols,
 			builtinDescriptors,
 			apiSignatures,
-			canonicalize,
 			extraGlobalNames: options.extraGlobalNames,
 		});
 		files.set(source.path, createBoundFile(source, diagnostics, knownGlobalNames, moduleTargetsByAlias, sourcesByPath, snapshot));
@@ -794,20 +788,18 @@ function buildKnownGlobalNameSet(
 	globalSymbols: readonly LuaSymbolEntry[],
 	builtinDescriptors: readonly LuaBuiltinDescriptor[],
 	apiSignatures: ReadonlyMap<string, LuaApiSignatureMetadata>,
-	canonicalize: (value: string) => string,
 	extraGlobalNames?: readonly string[],
 ): Set<string> {
 	const names = new Set<string>();
 	const addName = (value: string): void => {
-		const name = canonicalize(value);
-		names.add(name);
-		const dotIndex = name.indexOf('.');
+		names.add(value);
+		const dotIndex = value.indexOf('.');
 		if (dotIndex !== -1) {
-			names.add(name.slice(0, dotIndex));
+			names.add(value.slice(0, dotIndex));
 		}
-		const colonIndex = name.indexOf(':');
+		const colonIndex = value.indexOf(':');
 		if (colonIndex !== -1) {
-			names.add(name.slice(0, colonIndex));
+			names.add(value.slice(0, colonIndex));
 		}
 	};
 	addName('api');

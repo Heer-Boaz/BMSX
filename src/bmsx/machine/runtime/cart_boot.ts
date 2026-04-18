@@ -1,5 +1,4 @@
 import { $ } from '../../core/engine';
-import type { CanonicalizationType } from '../../rompack/format';
 import type { Program, ProgramMetadata } from '../cpu/cpu';
 import { IO_SYS_BOOT_CART, IO_SYS_CART_BOOTREADY } from '../bus/io';
 import { PROGRAM_ASSET_ID } from '../program/asset';
@@ -13,7 +12,6 @@ export type PreparedCartProgram = {
 	moduleProtoMap: Map<string, number>;
 	moduleAliases: Array<{ alias: string; path: string }>;
 	entryPath: string;
-	canonicalization: CanonicalizationType;
 };
 
 export class CartBootState {

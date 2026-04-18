@@ -3,20 +3,17 @@
 import pc from 'picocolors';
 import { Presets, SingleBar } from 'cli-progress';
 
-import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST, SYSTEM_ROM_NAME } from '../../src/bmsx/core/system';
+import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../src/bmsx/core/system';
 import { createCliUi, findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartLuaSources } from './cart_lua_linter';
-import { appendProgramAsset, commonResPath, createAtlasses, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization } from './rombuilder';
+import { appendProgramAsset, commonResPath, createAtlasses, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, setAtlasFlag } from './rombuilder';
 import type { RomPackerOptions } from './formater.rompack';
-import type { CanonicalizationType, RomAsset } from '../../src/bmsx/rompack/format';
+import type { RomAsset } from '../../src/bmsx/rompack/format';
 import { LuaError } from '../../src/bmsx/lua/errors';
 
 import { join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
-
-// CASE_INSENSITIVE_LUA and its setter are declared earlier in the file to avoid
-// temporal-dead-zone issues when they are used during module initialization.
 
 type ParsedOptions = RomPackerOptions;
 const ui = createCliUi({ bannerTitle: 'BMSX BUILDER', labelWidth: 14 });
@@ -39,7 +36,6 @@ const KNOWN_FLAGS = new Set<string>([
 	'--textureatlas',
 	'--skiptypecheck',
 	'--mode',
-	'--preserve-lua-case',
 	'-h',
 	'--help',
 ]);
@@ -190,7 +186,6 @@ function parseOptions(args: string[]): ParsedOptions {
 		writeOut(`  --debug                  Build debug artifacts\n`, 'warning');
 		writeOut(`  --force                  Force the compilation and build of the rompack\n`, 'warning');
 		writeOut(`  --textureatlas <yes|no>  Enable or disable texture atlas (default: yes)\n`, 'warning');
-		writeOut(`  --preserve-lua-case      Disable Lua case folding (default: enabled)\n`, 'warning');
 		writeOut(`  --mode <rompack|bios>  What to build (default: rompack)\n`, 'warning');
 		writeOut(`  -O0|-O1|-O2|-O3          Bytecode optimizer level (default: -O3)\n`, 'warning');
 		process.exit(0);
@@ -233,20 +228,6 @@ function parseOptions(args: string[]): ParsedOptions {
 	const respathOverride = getOptionalParam(args, '-respath', 'RES_PATH');
 	let respath = mode === 'bios' ? './src/bmsx/res' : '';
 
-	const preserveLuaCase = seenFlags.has('--preserve-lua-case');
-	const canonicalizationEnv = process.env.ROM_LUA_CANONICALIZATION;
-	let canonicalization: CanonicalizationType = 'lower'; // By default we fold to lower case to align with JS conventions
-	if (canonicalizationEnv && canonicalizationEnv.length > 0) {
-		if (canonicalizationEnv === 'none' || canonicalizationEnv === 'lower' || canonicalizationEnv === 'upper') {
-			canonicalization = canonicalizationEnv;
-		} else {
-			throw new Error(`Unsupported value "${canonicalizationEnv}" for ROM_LUA_CANONICALIZATION. Expected one of: 'none', 'lower', 'upper'.`);
-		}
-	}
-	else if (preserveLuaCase) {
-		canonicalization = 'none';
-	}
-
 	let extraLuaRoots: string[] = [];
 	if (mode === 'bios') {
 		respath = getParamOrEnv(args, '-respath', 'RES_PATH', './src/bmsx/res', KNOWN_FLAGS);
@@ -275,7 +256,6 @@ function parseOptions(args: string[]): ParsedOptions {
 		useTextureAtlas,
 		skipTypecheck,
 		platform: 'browser',
-		canonicalization,
 		optLevel,
 		mode,
 		shouldBundleCartCode: false,
@@ -512,10 +492,9 @@ class ProgressReporter {
 }
 
 async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter): Promise<void> {
-	const { respath, bootloader_path, force, debug, optLevel, canonicalization, useTextureAtlas } = options;
+	const { respath, bootloader_path, force, debug, optLevel, useTextureAtlas } = options;
 
 	setAtlasFlag(useTextureAtlas);
-	setLuaCanonicalization(canonicalization);
 
 	const BIOSResPath = respath || commonResPath;
 	if (!BIOSResPath) {
@@ -561,9 +540,6 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		return;
 	}
 
-	const previousCanonicalization = LUA_CANONICALIZATION;
-	const BIOSCanonicalization = SYSTEM_MACHINE_MANIFEST.canonicalization ?? previousCanonicalization;
-	setLuaCanonicalization(BIOSCanonicalization);
 	const runBIOSStep = async <T>(task: string, action: () => Promise<T>): Promise<T> => {
 		const result = progress ? await progress.runWithDetail(task, action) : await action();
 		if (progress) {
@@ -571,34 +547,30 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		}
 		return result;
 	};
-	try {
-		const biosLuaRoots = [normalizePathKey(BIOSResPath)];
-		await runBIOSStep(TASK.BIOS_LINT, () => lintCartLuaSources({ roots: biosLuaRoots, profile: 'bios' }));
+	const biosLuaRoots = [normalizePathKey(BIOSResPath)];
+	await runBIOSStep(TASK.BIOS_LINT, () => lintCartLuaSources({ roots: biosLuaRoots, profile: 'bios' }));
 
-		const BIOSResMetaList = await runBIOSStep(TASK.MANIFEST_SCAN, () => getResMetaList([BIOSResPath], BIOSRomName, {
-			extraLuaPaths: [],
-			virtualRoot: BIOSVirtualRoot,
-			resolveAtlasIndex: true,
-		}));
-		const BIOSResources = await runBIOSStep(TASK.RESOURCE_LIST, () => getResourcesList(BIOSResMetaList));
-		if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-			await runBIOSStep(TASK.ATLAS_BUILD, () => createAtlasses(BIOSResources));
-		} else if (progress) {
-			progress.skipTasks(1);
-		}
-		validateAudioEventReferences(BIOSResources);
-		const BIOSRomAssets = await runBIOSStep(TASK.ROM_ASSETS, () => generateRomAssets(BIOSResources, message => progress?.setDetail(message)));
-		const BIOSProgramBoot = appendProgramAsset(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, { includeSymbols: true, optLevel });
-		stripLuaAssets(BIOSRomAssets, debug);
-		await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomAssets, BIOSRomName, { projectRootPath: '', manifest: null, zipRom: false, debug, programBoot: BIOSProgramBoot }));
-		if (progress) {
-			await progress.showDone();
-			progress.suspend();
-		}
-		logOk(`BIOS assets ready → ${pc.white(`dist/${BIOSRomName}${debug ? '.debug' : ''}.rom`)}`);
-	} finally {
-		setLuaCanonicalization(previousCanonicalization);
+	const BIOSResMetaList = await runBIOSStep(TASK.MANIFEST_SCAN, () => getResMetaList([BIOSResPath], BIOSRomName, {
+		extraLuaPaths: [],
+		virtualRoot: BIOSVirtualRoot,
+		resolveAtlasIndex: true,
+	}));
+	const BIOSResources = await runBIOSStep(TASK.RESOURCE_LIST, () => getResourcesList(BIOSResMetaList));
+	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+		await runBIOSStep(TASK.ATLAS_BUILD, () => createAtlasses(BIOSResources));
+	} else if (progress) {
+		progress.skipTasks(1);
 	}
+	validateAudioEventReferences(BIOSResources);
+	const BIOSRomAssets = await runBIOSStep(TASK.ROM_ASSETS, () => generateRomAssets(BIOSResources, message => progress?.setDetail(message)));
+	const BIOSProgramBoot = appendProgramAsset(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, { includeSymbols: true, optLevel });
+	stripLuaAssets(BIOSRomAssets, debug);
+	await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomAssets, BIOSRomName, { projectRootPath: '', manifest: null, zipRom: false, debug, programBoot: BIOSProgramBoot }));
+	if (progress) {
+		await progress.showDone();
+		progress.suspend();
+	}
+	logOk(`BIOS assets ready → ${pc.white(`dist/${BIOSRomName}${debug ? '.debug' : ''}.rom`)}`);
 }
 
 async function main() {
@@ -612,7 +584,7 @@ async function main() {
 		const args = process.argv.slice(2);
 		const options = parseOptions(args);
 
-		let { title, rom_name, bootloader_path, respath, force, debug, useTextureAtlas, canonicalization, optLevel, mode, extraLuaRoots } = options;
+		let { title, rom_name, bootloader_path, respath, force, debug, useTextureAtlas, optLevel, mode, extraLuaRoots } = options;
 
 		if (mode === 'bios') {
 			progress = new ProgressReporter(biosBuildTasks);
@@ -635,7 +607,6 @@ async function main() {
 		luaErrorVirtualRoots = [virtualRoot];
 
 		setAtlasFlag(useTextureAtlas);
-		setLuaCanonicalization(canonicalization);
 
 		const resourceRoots = isBIOSMode
 			? [respath || commonResPath]
@@ -672,7 +643,7 @@ async function main() {
 		logDivider('Options');
 		logBullet('Rebuild', force ? pc.yellow('force') : pc.green('auto (mtime check)'));
 		logBullet('Atlas', useTextureAtlas ? pc.green('enabled') : pc.red('disabled'));
-		logBullet('Lua case', canonicalization !== 'none' ? pc.green(`fold ${canonicalization}`) : pc.yellow('preserve case'));
+		logBullet('Lua case', pc.green('lower-case identifiers required'));
 		logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
 		logBullet('Opt level', pc.white(`-O${optLevel}`));
 		if (!isBIOSMode) {

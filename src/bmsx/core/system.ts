@@ -8,7 +8,6 @@ export const SYSTEM_MACHINE_MANIFEST: MachineManifest = {
 		width: 256,
 		height: 212,
 	},
-	canonicalization: 'lower',
 	namespace: 'bmsx',
 	ufps: 50_000_000,
 	specs: {

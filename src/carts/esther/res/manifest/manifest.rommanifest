@@ -5,7 +5,6 @@ machine:
     render_size:
         width: 320
         height: 240
-    canonicalization: lower
     namespace: 'esther'
     ufps: 60000000
     specs:

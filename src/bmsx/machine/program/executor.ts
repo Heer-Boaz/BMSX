@@ -44,7 +44,7 @@ export function runConsoleChunkToNative(runtime: Runtime, source: string): unkno
 }
 
 export function installNativeGlobal(runtime: Runtime, name: string, value: unknown): void {
-	runtime.machine.cpu.setGlobalByKey(runtime.canonicalKey(name), toRuntimeValue(runtime, value));
+	runtime.machine.cpu.setGlobalByKey(runtime.luaKey(name), toRuntimeValue(runtime, value));
 	const metadata = runtime.programMetadata ?? runtime.consoleMetadata;
 	if (metadata && !metadata.globalNames.includes(name)) {
 		metadata.globalNames.push(name);

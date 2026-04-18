@@ -56,7 +56,6 @@ struct Viewport {
 struct RuntimeOptions {
 	int playerIndex = 0;
 	Viewport viewport{0, 0};
-	CanonicalizationType canonicalization = CanonicalizationType::None;
 	i64 ufpsScaled = DEFAULT_UFPS_SCALED;
 	i64 cpuHz = 0;
 	int cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
@@ -226,7 +225,6 @@ public:
 	 */
 	void registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost = std::nullopt);
 
-	void setCanonicalization(CanonicalizationType canonicalization);
 	void resetHardwareState();
 	void resetRuntimeForProgramReload();
 	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
@@ -244,7 +242,7 @@ public:
 	uint32_t trackedVramUsedBytes() const;
 	uint32_t trackedVramTotalBytes() const { return m_machine.vdp().trackedTotalVramBytes(); }
 	bool isDrawPending() const;
-	Value canonicalKey(std::string_view value);
+	Value luaKey(std::string_view value);
 	void refreshMemoryMap();
 	void restoreVramSlotTextures();
 	void captureVramTextureSnapshots();
@@ -287,9 +285,8 @@ private:
 	Program* m_program = nullptr;
 	ProgramMetadata* m_programMetadata = nullptr;
 
-		// Configuration
+	// Configuration
 	Viewport m_viewport{0, 0};
-	CanonicalizationType m_canonicalization = CanonicalizationType::None;
 	ProgramSource m_programSource = ProgramSource::Cart;
 
 	// State flags

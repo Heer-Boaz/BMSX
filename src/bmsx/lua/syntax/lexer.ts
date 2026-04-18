@@ -1,6 +1,4 @@
-import { CanonicalizationType } from '../../rompack/format';
 import { LuaSyntaxError } from '../errors';
-import { createIdentifierCanonicalizer } from './identifier_canonicalizer';
 import type { LuaToken, LuaTokenLiteral } from './token';
 import { LuaTokenType, resolveKeyword } from './token';
 
@@ -13,10 +11,8 @@ export class LuaLexer {
 	private tokenStartIndex: number;
 	private tokenStartLine: number;
 	private tokenStartColumn: number;
-	private readonly identifierCanonicalization: CanonicalizationType;
-	private readonly canonicalizeIdentifier: (value: string) => string;
 
-	constructor(source: string, path: string, options?: { canonicalizeIdentifiers?: CanonicalizationType }) {
+	constructor(source: string, path: string) {
 		this.source = source;
 		this.path = path;
 		this.currentIndex = 0;
@@ -25,8 +21,6 @@ export class LuaLexer {
 		this.tokenStartIndex = 0;
 		this.tokenStartLine = 1;
 		this.tokenStartColumn = 1;
-		this.identifierCanonicalization = options?.canonicalizeIdentifiers ?? 'none';
-		this.canonicalizeIdentifier = createIdentifierCanonicalizer(this.identifierCanonicalization);
 	}
 
 	public scanTokens(): LuaToken[] {
@@ -229,21 +223,23 @@ export class LuaLexer {
 			this.advance();
 		}
 		const lexeme = this.currentLexeme();
-		const canonical = this.canonicalizeIdentifier(lexeme);
-		const keywordType = resolveKeyword(canonical);
+		if (LuaLexer.hasUppercaseAscii(lexeme)) {
+			throw new LuaSyntaxError(`[LuaLexer] Upper-case identifiers are not allowed in cart Lua: '${lexeme}'.`, this.path, this.tokenStartLine, this.tokenStartColumn);
+		}
+		const keywordType = resolveKeyword(lexeme);
 		if (keywordType === LuaTokenType.True) {
-			this.pushIdentifierToken(tokens, keywordType, true, canonical);
+			this.pushIdentifierToken(tokens, keywordType, true, lexeme);
 			return;
 		}
 		if (keywordType === LuaTokenType.False) {
-			this.pushIdentifierToken(tokens, keywordType, false, canonical);
+			this.pushIdentifierToken(tokens, keywordType, false, lexeme);
 			return;
 		}
 		if (keywordType === LuaTokenType.Nil) {
-			this.pushIdentifierToken(tokens, keywordType, null, canonical);
+			this.pushIdentifierToken(tokens, keywordType, null, lexeme);
 			return;
 		}
-		this.pushIdentifierToken(tokens, keywordType ?? LuaTokenType.Identifier, null, canonical);
+		this.pushIdentifierToken(tokens, keywordType ?? LuaTokenType.Identifier, null, lexeme);
 	}
 
 	private scanNumber(tokens: LuaToken[], startedWithDot: boolean): void {
@@ -602,6 +598,16 @@ export class LuaLexer {
 	public static isIdentifierPart(char: string): boolean {
 		const code = char.charCodeAt(0);
 		return (code >= 97 && code <= 122) || (code >= 65 && code <= 90) || code === 95 || code === 36 || (code >= 48 && code <= 57);
+	}
+
+	private static hasUppercaseAscii(value: string): boolean {
+		for (let index = 0; index < value.length; index += 1) {
+			const code = value.charCodeAt(index);
+			if (code >= 65 && code <= 90) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private isAtEnd(): boolean {

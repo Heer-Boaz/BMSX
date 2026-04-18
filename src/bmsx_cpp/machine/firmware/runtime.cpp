@@ -1,34 +1,11 @@
 #include "machine/runtime/runtime.h"
 #include <array>
-#include <cctype>
 #include <iostream>
 
 namespace bmsx {
 
-namespace {
-
-std::string canonicalizeModuleAlias(std::string moduleName, CanonicalizationType canonicalization) {
-	if (canonicalization == CanonicalizationType::None) {
-		return moduleName;
-	}
-	const bool toUpper = canonicalization == CanonicalizationType::Upper;
-	for (char& ch : moduleName) {
-		const unsigned char value = static_cast<unsigned char>(ch);
-		ch = toUpper
-			? static_cast<char>(std::toupper(value))
-			: static_cast<char>(std::tolower(value));
-	}
-	return moduleName;
-}
-
-} // namespace
-
 Value Runtime::requireModule(const std::string& moduleName) {
 	auto aliasIt = m_moduleAliases.find(moduleName);
-	if (aliasIt == m_moduleAliases.end()) {
-		const std::string canonicalName = canonicalizeModuleAlias(moduleName, m_canonicalization);
-		aliasIt = m_moduleAliases.find(canonicalName);
-	}
 	if (aliasIt == m_moduleAliases.end()) {
 		throw BMSX_RUNTIME_ERROR("require('" + moduleName + "') failed: module not found.");
 	}
@@ -148,7 +125,7 @@ void Runtime::runEngineBuiltinPrelude() {
 	};
 	auto* engineModule = asTable(requireModule("bios/engine"));
 	for (const char* name : engineBuiltins) {
-		Value key = canonicalKey(name);
+		Value key = luaKey(name);
 		m_machine.cpu().setGlobalByKey(key, engineModule->get(key));
 	}
 	std::cout << "[Runtime] prelude: engine builtins bound" << std::endl;

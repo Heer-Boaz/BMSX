@@ -128,7 +128,6 @@ export interface BootArgs {
 	enableOnscreenGamepad?: boolean;
 	platform: Platform;
 	viewHost?: GameViewHost;
-	canonicalization?: CanonicalizationType;
 }
 
 export type Identifier = string | 'model';
@@ -387,7 +386,6 @@ export interface ImgMeta {
 
 export type TextureSource = unknown & { close?(): void; width: number; height: number; data?: Uint8Array; }; // platform-specific source type (e.g. ImageBitmap in browsers)
 export type Viewport = { width: number; height: number; };
-export type CanonicalizationType = 'none' | 'upper' | 'lower';
 export type MachineVoiceSpecs = {
 	sfx?: number;
 	music?: number;
@@ -435,7 +433,6 @@ export type MachineSpecs = {
 
 export type MachineManifest = {
 	render_size: Viewport;
-	canonicalization: CanonicalizationType;
 	namespace: string;
 	ufps: number;
 	specs: MachineSpecs;
@@ -518,7 +515,6 @@ export function getMachineMaxVoices(machine: MachineManifest): Required<MachineV
 // 		audioevents: merge(bullshit.audioevents, engine.audioevents),
 // 		cart: bullshit.cart,
 // 		project_root_path: bullshit.project_root_path,
-// 		canonicalization: bullshit.canonicalization,
 // 		manifest: bullshit.manifest,
 // 	};
 // 	return merged;
