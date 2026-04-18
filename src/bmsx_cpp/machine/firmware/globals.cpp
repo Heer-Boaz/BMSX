@@ -2049,10 +2049,9 @@ void Runtime::setupBuiltins() {
 		auto data = std::make_shared<NativeArray>();
 		if (args.size() == 1 && valueIsTable(args.at(0))) {
 			const auto* tbl = asTable(args.at(0));
-			const auto entries = tbl->entries();
-			for (const auto& [key, value] : entries) {
-				if (valueIsNumber(key)) {
-					double n = valueToNumber(key);
+			tbl->forEachEntry([&data](Value tableKey, Value value) {
+				if (valueIsNumber(tableKey)) {
+					double n = valueToNumber(tableKey);
 					double intpart = 0.0;
 					if (std::modf(n, &intpart) == 0.0 && n >= 1.0) {
 						int index = static_cast<int>(n) - 1;
@@ -2060,11 +2059,11 @@ void Runtime::setupBuiltins() {
 							data->values.resize(static_cast<size_t>(index + 1));
 						}
 						data->values[static_cast<size_t>(index)] = value;
-						continue;
+						return;
 					}
 				}
 				data->values.push_back(value);
-			}
+			});
 		} else {
 			data->values.assign(args.begin(), args.end());
 		}

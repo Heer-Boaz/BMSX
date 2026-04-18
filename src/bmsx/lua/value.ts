@@ -79,10 +79,14 @@ type LuaTableMethods = {
 	delete(key: LuaValue): void;
 	has(key: LuaValue): boolean;
 	entriesArray(): ReadonlyArray<[LuaValue, LuaValue]>;
+	forEachEntry(visitor: LuaTableEntryVisitor): void;
+	nextEntry(after: LuaValue): [LuaValue, LuaValue] | null;
 	numericLength(): number;
 	setMetatable(table: LuaTable): void;
 	getMetatable(): LuaTable;
 };
+
+type LuaTableEntryVisitor = (key: LuaValue, value: LuaValue) => void;
 
 const LUA_TABLE_BRAND = Symbol('LuaTableBrand');
 
@@ -216,27 +220,80 @@ function tableHas(this: LuaTable, key: LuaValue): boolean {
 	return map ? map.has(key) : false;
 }
 
-function tableEntriesArray(this: LuaTable): ReadonlyArray<[LuaValue, LuaValue]> {
+function tableForEachEntry(this: LuaTable, visitor: LuaTableEntryVisitor): void {
 	const state = getState(this);
-	const entries: Array<[LuaValue, LuaValue]> = [];
 	for (const index of state.numericKeys.values()) {
 		const property = String(index);
 		if (Object.prototype.hasOwnProperty.call(this, property)) {
-			entries.push([index, this[property]]);
+			const value = this[property];
+			if (value !== undefined) {
+				visitor(index, value);
+			}
 		}
 	}
 	for (const [stringKey, info] of state.stringKeys.entries()) {
 		const value = state.stringValues.get(stringKey);
 		if (value !== undefined) {
-			entries.push([info.key, value]);
+			visitor(info.key, value);
 		}
 	}
 	if (state.nonPrimitiveKeys) {
 		for (const [key, value] of state.nonPrimitiveKeys.entries()) {
-			entries.push([key, value]);
+			visitor(key, value);
 		}
 	}
+}
+
+function tableEntriesArray(this: LuaTable): ReadonlyArray<[LuaValue, LuaValue]> {
+	const entries: Array<[LuaValue, LuaValue]> = [];
+	tableForEachEntry.call(this, (key, value) => {
+		entries.push([key, value]);
+	});
 	return entries;
+}
+
+function tableNextEntry(this: LuaTable, after: LuaValue): [LuaValue, LuaValue] | null {
+	const state = getState(this);
+	let returnCurrent = after === null;
+	for (const index of state.numericKeys.values()) {
+		const property = String(index);
+		if (!Object.prototype.hasOwnProperty.call(this, property)) {
+			continue;
+		}
+		const value = this[property];
+		if (value === undefined) {
+			continue;
+		}
+		if (returnCurrent) {
+			return [index, value];
+		}
+		if (index === after) {
+			returnCurrent = true;
+		}
+	}
+	for (const [stringKey, info] of state.stringKeys.entries()) {
+		const value = state.stringValues.get(stringKey);
+		if (value === undefined) {
+			continue;
+		}
+		if (returnCurrent) {
+			return [info.key, value];
+		}
+		if (info.key === after) {
+			returnCurrent = true;
+		}
+	}
+	if (state.nonPrimitiveKeys) {
+		for (const [key, value] of state.nonPrimitiveKeys.entries()) {
+			if (returnCurrent) {
+				return [key, value];
+			}
+			if (key === after) {
+				returnCurrent = true;
+			}
+		}
+	}
+	return null;
 }
 
 function tableNumericLength(this: LuaTable): number {
@@ -263,6 +320,8 @@ Object.defineProperties(luaTablePrototype, {
 	delete: { value: tableDelete, enumerable: false, configurable: false },
 	has: { value: tableHas, enumerable: false, configurable: false },
 	entriesArray: { value: tableEntriesArray, enumerable: false, configurable: false },
+	forEachEntry: { value: tableForEachEntry, enumerable: false, configurable: false },
+	nextEntry: { value: tableNextEntry, enumerable: false, configurable: false },
 	numericLength: { value: tableNumericLength, enumerable: false, configurable: false },
 	setMetatable: { value: tableSetMetatable, enumerable: false, configurable: false },
 	getMetatable: { value: tableGetMetatable, enumerable: false, configurable: false },

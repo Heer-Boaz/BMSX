@@ -653,27 +653,24 @@ function shouldHideTerminalSymbolName(name: string, hiddenPrefixes: ReadonlySet<
 
 export function listSymbols(runtime: Runtime): SymbolEntry[] {
 	runtime.machine.cpu.syncGlobalSlotsToTable();
-	const entries = runtime.machine.cpu.globals.entriesArray();
 	const hiddenPrefixes = collectHiddenSymbolPrefixes(runtime);
 	const symbolsByName = new Map<string, SymbolEntry>();
-	for (let index = 0; index < entries.length; index += 1) {
-		const entry = entries[index];
-		const key = entry[0];
+	runtime.machine.cpu.globals.forEachEntry((key, value) => {
 		if (!isStringValue(key)) {
-			continue;
+			return;
 		}
 		const name = stringValueToString(key);
 		if (shouldHideTerminalSymbolName(name, hiddenPrefixes) || symbolsByName.has(name)) {
-			continue;
+			return;
 		}
-		const classification = describeSymbolValue(entry[1]);
+		const classification = describeSymbolValue(value);
 		symbolsByName.set(name, {
 			name,
 			kind: classification.kind,
 			valueType: classification.valueType,
 			origin: 'global',
 		});
-	}
+	});
 	return Array.from(symbolsByName.values());
 }
 

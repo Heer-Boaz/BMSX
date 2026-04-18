@@ -851,14 +851,6 @@ void Table::clear() {
 	replaceTrackedLuaHeapBytes(previousBytes, trackedHeapBytes());
 }
 
-std::vector<std::pair<Value, Value>> Table::entries() const {
-	std::vector<std::pair<Value, Value>> result;
-	forEachEntry([&result](Value key, Value value) {
-		result.emplace_back(key, value);
-	});
-	return result;
-}
-
 std::optional<std::pair<Value, Value>> Table::nextEntry(const Value& after) const {
 	if (isNil(after)) {
 		for (size_t i = 0; i < m_array.size(); ++i) {

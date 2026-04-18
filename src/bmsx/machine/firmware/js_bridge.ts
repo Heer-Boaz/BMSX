@@ -98,58 +98,47 @@ export class LuaJsBridge implements LuaInteropAdapter {
 			}
 			return nativeRef;
 		}
-		const entries = table.entriesArray();
-		if (entries.length === 0) {
-			const empty: Record<string, unknown> = {};
-			visited.set(table, empty);
-			return empty;
-		}
-		const numericEntries: Array<{ key: number; value: LuaValue }> = [];
-		const otherEntries: Array<{ key: LuaValue; value: LuaValue }> = [];
-		let maxNumericIndex = 0;
-		for (let i = 0; i < entries.length; i += 1) {
-			const [key, entryValue] = entries[i];
-			if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
-				numericEntries.push({ key, value: entryValue });
-				if (key > maxNumericIndex) {
-					maxNumericIndex = key;
+			let entryCount = 0;
+			let numericCount = 0;
+			let hasOtherEntries = false;
+			let maxNumericIndex = 0;
+			table.forEachEntry((key) => {
+				entryCount += 1;
+				if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+					numericCount += 1;
+					if (key > maxNumericIndex) {
+						maxNumericIndex = key;
+					}
+					return;
 				}
-				continue;
+				hasOtherEntries = true;
+			});
+			if (entryCount === 0) {
+				const empty: Record<string, unknown> = {};
+				visited.set(table, empty);
+				return empty;
 			}
-			otherEntries.push({ key, value: entryValue });
-		}
-		const hasOnlyNumeric = otherEntries.length === 0;
-		if (hasOnlyNumeric && numericEntries.length > 0) {
-			const result: unknown[] = new Array(maxNumericIndex);
-			visited.set(table, result);
-			for (let index = 1; index <= maxNumericIndex; index += 1) {
+			if (!hasOtherEntries && numericCount > 0) {
+				const result: unknown[] = new Array(maxNumericIndex);
+				visited.set(table, result);
+				for (let index = 1; index <= maxNumericIndex; index += 1) {
 				const nextContext = extendMarshalContext(tableContext, String(index));
 				result[index - 1] = this.luaValueToJsWithVisited(table.get(index), nextContext, visited);
 			}
 			return result;
+			}
+			const objectResult: Record<string, unknown> = {};
+			visited.set(table, objectResult);
+			table.forEachEntry((key, entryValue) => {
+				const segment = this.describeMarshalSegment(key);
+				objectResult[String(key)] = this.luaValueToJsWithVisited(
+					entryValue,
+					segment ? extendMarshalContext(tableContext, segment) : tableContext,
+					visited,
+				);
+			});
+			return objectResult;
 		}
-		const objectResult: Record<string, unknown> = {};
-		visited.set(table, objectResult);
-		for (let index = 0; index < numericEntries.length; index += 1) {
-			const entry = numericEntries[index];
-			const segment = this.describeMarshalSegment(entry.key);
-			objectResult[String(entry.key)] = this.luaValueToJsWithVisited(
-				entry.value,
-				segment ? extendMarshalContext(tableContext, segment) : tableContext,
-				visited,
-			);
-		}
-		for (let index = 0; index < otherEntries.length; index += 1) {
-			const entry = otherEntries[index];
-			const segment = this.describeMarshalSegment(entry.key);
-			objectResult[String(entry.key)] = this.luaValueToJsWithVisited(
-				entry.value,
-				segment ? extendMarshalContext(tableContext, segment) : tableContext,
-				visited,
-			);
-		}
-		return objectResult;
-	}
 
 	public getOrAssignTableId(table: LuaTable): number {
 		const existing = this.tableIds.get(table);
@@ -372,14 +361,14 @@ export class LuaJsBridge implements LuaInteropAdapter {
 			? ensureTable(this.parseSnapshotReferenceId((rootRef as { r: unknown }).r))
 			: rootRef;
 
-		if (isLuaTable(resolvedRoot)) {
-			const entries: Array<[string, LuaValue]> = [];
-			for (const [key, value] of resolvedRoot.entriesArray()) {
-				const stringKey = typeof key === 'string' ? key : String(key);
-				entries.push([stringKey, value]);
+			if (isLuaTable(resolvedRoot)) {
+				const entries: Array<[string, LuaValue]> = [];
+				resolvedRoot.forEachEntry((key, value) => {
+					const stringKey = typeof key === 'string' ? key : String(key);
+					entries.push([stringKey, value]);
+				});
+				return entries;
 			}
-			return entries;
-		}
 		if (resolvedRoot && typeof resolvedRoot === 'object') {
 			const entries: Array<[string, LuaValue]> = [];
 			for (const [name, value] of Object.entries(resolvedRoot)) {
@@ -427,62 +416,60 @@ export class LuaJsBridge implements LuaInteropAdapter {
 		if (visited.has(target)) {
 			return;
 		}
-		visited.add(target);
-		target.setMetatable(snapshot.getMetatable());
-		const entries = snapshot.entriesArray();
-		for (let index = 0; index < entries.length; index += 1) {
-			const [key, value] = entries[index];
-			if (isLuaTable(value)) {
-				const current = target.get(key);
-				if (isLuaTable(current)) {
-					this.applyLuaTableSnapshot(current, value, visited);
-					continue;
+			visited.add(target);
+			target.setMetatable(snapshot.getMetatable());
+			snapshot.forEachEntry((key, value) => {
+				if (isLuaTable(value)) {
+					const current = target.get(key);
+					if (isLuaTable(current)) {
+						this.applyLuaTableSnapshot(current, value, visited);
+						return;
+					}
 				}
-			}
-			target.set(key, value);
+				target.set(key, value);
+			});
 		}
-	}
 
 	public mergeLuaTablePreservingState(target: LuaTable, fresh: LuaTable, visited: WeakSet<LuaTable> = new WeakSet()): void {
 		if (visited.has(target)) {
 			return;
 		}
-		visited.add(target);
-		target.setMetatable(fresh.getMetatable());
-		const seenKeys = new Set<LuaValue>();
-		const entries = fresh.entriesArray();
-		for (let index = 0; index < entries.length; index += 1) {
-			const [key, freshValue] = entries[index];
-			seenKeys.add(key);
-			const current = target.get(key);
-			if (isLuaFunctionValue(freshValue)) {
-				target.set(key, freshValue);
-				continue;
-			}
-			if (isLuaTable(freshValue)) {
-				if (isLuaTable(current)) {
-					this.mergeLuaTablePreservingState(current, freshValue, visited);
-					continue;
+			visited.add(target);
+			target.setMetatable(fresh.getMetatable());
+			const seenKeys = new Set<LuaValue>();
+			fresh.forEachEntry((key, freshValue) => {
+				seenKeys.add(key);
+				const current = target.get(key);
+				if (isLuaFunctionValue(freshValue)) {
+					target.set(key, freshValue);
+					return;
 				}
-				target.set(key, freshValue);
-				continue;
-			}
-			if (current === null || isLuaFunctionValue(current)) {
-				target.set(key, freshValue);
-				continue;
-			}
-			if (isLuaTable(current)) {
-				target.set(key, freshValue);
+				if (isLuaTable(freshValue)) {
+					if (isLuaTable(current)) {
+						this.mergeLuaTablePreservingState(current, freshValue, visited);
+						return;
+					}
+					target.set(key, freshValue);
+					return;
+				}
+				if (current === null || isLuaFunctionValue(current)) {
+					target.set(key, freshValue);
+					return;
+				}
+				if (isLuaTable(current)) {
+					target.set(key, freshValue);
+				}
+			});
+			const staleKeys: LuaValue[] = [];
+			target.forEachEntry((key, value) => {
+				if (isLuaFunctionValue(value) && !seenKeys.has(key)) {
+					staleKeys.push(key);
+				}
+			});
+			for (let index = 0; index < staleKeys.length; index += 1) {
+				target.set(staleKeys[index], null);
 			}
 		}
-		const existing = target.entriesArray();
-		for (let index = 0; index < existing.length; index += 1) {
-			const [key, value] = existing[index];
-			if (isLuaFunctionValue(value) && !seenKeys.has(key)) {
-				target.set(key, null);
-			}
-		}
-	}
 
 	public createLuaSnapshotContext(): LuaSnapshotContext {
 		return { ids: new WeakMap<LuaTable, number>(), objects: {}, nextId: 1 };
@@ -520,26 +507,24 @@ export class LuaJsBridge implements LuaInteropAdapter {
 		return { r: id };
 	}
 
-	public buildLuaTableSnapshotPayload(table: LuaTable, ctx: LuaSnapshotContext): unknown {
-		const entries = table.entriesArray();
-		if (entries.length === 0) {
-			return {};
-		}
-		const numericEntries = new Map<number, unknown>();
-		const objectEntries: Record<string, unknown> = {};
-		const complexEntries: Array<{ key: unknown; value: unknown }> = [];
-		let hasStringKey = false;
-		let maxNumericIndex = 0;
-		let hasComplexKeys = false;
-		for (const [key, entryValue] of entries) {
-			if (isLuaFunctionValue(entryValue)) {
-				continue;
-			}
-			if (typeof key === 'string' && key.toLowerCase() === '__index') {
-				continue;
-			}
-			let serializedEntry: unknown;
-			try {
+		public buildLuaTableSnapshotPayload(table: LuaTable, ctx: LuaSnapshotContext): unknown {
+			const numericEntries = new Map<number, unknown>();
+			const objectEntries: Record<string, unknown> = {};
+			const complexEntries: Array<{ key: unknown; value: unknown }> = [];
+			let hasEntries = false;
+			let hasStringKey = false;
+			let maxNumericIndex = 0;
+			let hasComplexKeys = false;
+			table.forEachEntry((key, entryValue) => {
+				hasEntries = true;
+				if (isLuaFunctionValue(entryValue)) {
+					return;
+				}
+				if (typeof key === 'string' && key.toLowerCase() === '__index') {
+					return;
+				}
+				let serializedEntry: unknown;
+				try {
 				if (entryValue instanceof LuaNativeValue) {
 					serializedEntry = entryValue.native;
 				} else {
@@ -547,38 +532,41 @@ export class LuaJsBridge implements LuaInteropAdapter {
 				}
 			}
 			catch (error) {
-				if ($.debug) {
-					console.warn(`Skipping Lua table entry '${String(key)}' during snapshot:`, error);
+					if ($.debug) {
+						console.warn(`Skipping Lua table entry '${String(key)}' during snapshot:`, error);
+					}
+					return;
 				}
-				continue;
-			}
-			let serializedKey: unknown;
-			try {
+				let serializedKey: unknown;
+				try {
 				serializedKey = this.serializeLuaSnapshotKey(key, ctx);
 			} catch (error) {
-				if ($.debug) {
-					console.warn(`Skipping Lua table key '${String(key)}' during snapshot:`, error);
+					if ($.debug) {
+						console.warn(`Skipping Lua table key '${String(key)}' during snapshot:`, error);
+					}
+					return;
 				}
-				continue;
-			}
-			if (serializedKey === undefined) {
-				continue;
-			}
-			complexEntries.push({ key: serializedKey, value: serializedEntry });
-			if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+				if (serializedKey === undefined) {
+					return;
+				}
+				complexEntries.push({ key: serializedKey, value: serializedEntry });
+				if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
 				numericEntries.set(key, serializedEntry);
-				if (key > maxNumericIndex) {
-					maxNumericIndex = key;
+					if (key > maxNumericIndex) {
+						maxNumericIndex = key;
+					}
+					return;
 				}
-				continue;
+				if (typeof key === 'string') {
+					hasStringKey = true;
+					objectEntries[key] = serializedEntry;
+					return;
+				}
+				hasComplexKeys = true;
+			});
+			if (!hasEntries) {
+				return {};
 			}
-			if (typeof key === 'string') {
-				hasStringKey = true;
-				objectEntries[key] = serializedEntry;
-				continue;
-			}
-			hasComplexKeys = true;
-		}
 		const numericCount = numericEntries.size;
 		const isSequential = numericCount > 0 && !hasStringKey && numericCount === maxNumericIndex;
 		const needsMap = hasComplexKeys || (numericCount > 0 && (!isSequential || hasStringKey));
@@ -674,22 +662,20 @@ export class LuaJsBridge implements LuaInteropAdapter {
 		}
 		if (!isLuaTable(value)) {
 			return value;
-		}
-		if (visited.has(value)) {
+			}
+			if (visited.has(value)) {
+				return value;
+			}
+			visited.add(value);
+			value.forEachEntry((rawKey, entry) => {
+				const segment = typeof rawKey === 'string' ? rawKey : String(rawKey);
+				const wrapped = this.wrapFunctionsInValue(moduleId, entry, [...path, segment], visited, options);
+				if (wrapped !== entry) {
+					value.set(rawKey, wrapped);
+				}
+			});
 			return value;
 		}
-		visited.add(value);
-		const entries = value.entriesArray();
-		for (let index = 0; index < entries.length; index += 1) {
-			const [rawKey, entry] = entries[index];
-			const segment = typeof rawKey === 'string' ? rawKey : String(rawKey);
-			const wrapped = this.wrapFunctionsInValue(moduleId, entry, [...path, segment], visited, options);
-			if (wrapped !== entry) {
-				value.set(rawKey, wrapped);
-			}
-		}
-		return value;
-	}
 
 	public isFunctionFromChunk(fn: LuaFunctionValue, path: string): boolean {
 		const candidate = fn as { getSourceRange?: () => LuaSourceRange };
@@ -855,28 +841,27 @@ function tableToNative(runtime: Runtime, table: Table, context: LuaMarshalContex
 	}
 	const tableId = getOrAssignTableId(runtime, table);
 	const tableContext = extendMarshalContext(context, `table${tableId}`);
-	const entries = table.entriesArray();
-	if (entries.length === 0) {
+	let entryCount = 0;
+	let numericCount = 0;
+	let hasOtherEntries = false;
+	let maxNumericIndex = 0;
+	table.forEachEntry((key) => {
+		entryCount += 1;
+		if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+			numericCount += 1;
+			if (key > maxNumericIndex) {
+				maxNumericIndex = key;
+			}
+			return;
+		}
+		hasOtherEntries = true;
+	});
+	if (entryCount === 0) {
 		const empty: Record<string, unknown> = {};
 		visited.set(table, empty);
 		return empty;
 	}
-	const numericEntries: Array<{ key: number; value: Value }> = [];
-	const otherEntries: Array<{ key: Value; value: Value }> = [];
-	let maxNumericIndex = 0;
-	for (let index = 0; index < entries.length; index += 1) {
-		const [key, entryValue] = entries[index];
-		if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
-			numericEntries.push({ key, value: entryValue });
-			if (key > maxNumericIndex) {
-				maxNumericIndex = key;
-			}
-			continue;
-		}
-		otherEntries.push({ key, value: entryValue });
-	}
-	const hasOnlyNumeric = otherEntries.length === 0;
-	if (hasOnlyNumeric && numericEntries.length > 0) {
+	if (!hasOtherEntries && numericCount > 0) {
 		const result: unknown[] = new Array(maxNumericIndex);
 		visited.set(table, result);
 		for (let index = 1; index <= maxNumericIndex; index += 1) {
@@ -887,18 +872,11 @@ function tableToNative(runtime: Runtime, table: Table, context: LuaMarshalContex
 	}
 	const objectResult: Record<string, unknown> = {};
 	visited.set(table, objectResult);
-	for (let index = 0; index < numericEntries.length; index += 1) {
-		const entry = numericEntries[index];
-		const segment = describeMarshalSegment(entry.key);
+	table.forEachEntry((key, entryValue) => {
+		const segment = describeMarshalSegment(key);
 		const nextContext = segment ? extendMarshalContext(tableContext, segment) : tableContext;
-		objectResult[stringifyKey(entry.key)] = toNativeValue(runtime, entry.value, nextContext, visited);
-	}
-	for (let index = 0; index < otherEntries.length; index += 1) {
-		const entry = otherEntries[index];
-		const segment = describeMarshalSegment(entry.key);
-		const nextContext = segment ? extendMarshalContext(tableContext, segment) : tableContext;
-		objectResult[stringifyKey(entry.key)] = toNativeValue(runtime, entry.value, nextContext, visited);
-	}
+		objectResult[stringifyKey(key)] = toNativeValue(runtime, entryValue, nextContext, visited);
+	});
 	return objectResult;
 }
 

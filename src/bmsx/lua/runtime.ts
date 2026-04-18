@@ -69,6 +69,7 @@ export type LuaCallFrame = {
 
 const EMPTY_VALUES: LuaValue[] = Object.freeze([]) as unknown as LuaValue[];
 const EMPTY_CALLSTACK: ReadonlyArray<LuaCallFrame> = Object.freeze([]) as unknown as ReadonlyArray<LuaCallFrame>;
+const NIL_VALUE_RESULT: LuaValue[] = Object.freeze([null]) as unknown as LuaValue[];
 
 export const enum SliceResult {
 	Done = 0,
@@ -211,8 +212,7 @@ export class LuaNativeFunction implements LuaFunctionValue {
 
 	public call(args: ReadonlyArray<LuaValue>): LuaCallResult {
 		try {
-			const result = this.handler(args);
-			return Array.isArray(result) ? Array.from(result) : result;
+			return this.handler(args);
 		} catch (error) {
 			Runtime.instance.interpreter.recordFaultCallStack();
 			throw error;
@@ -274,6 +274,8 @@ export class LuaInterpreter {
 	private readonly yieldSignal: MutableYieldSignal;
 	private readonly luaValueListScratch: LuaValue[][] = [];
 	private luaValueListScratchIndex = 0;
+	private readonly luaTableListScratch: LuaTable[][] = [];
+	private luaTableListScratchIndex = 0;
 	private readonly returnValueBuffer: LuaValue[] = [];
 	private adapter!: LuaInteropAdapter;
 	private nativeValueCache: WeakMap<object | Function, LuaNativeValue> = new WeakMap();
@@ -392,6 +394,22 @@ export class LuaInterpreter {
 		}
 		list.length = 0;
 		return list;
+	}
+
+	private allocateLuaTableList(): LuaTable[] {
+		const index = this.luaTableListScratchIndex++;
+		let list = this.luaTableListScratch[index];
+		if (list === undefined) {
+			list = [];
+			this.luaTableListScratch[index] = list;
+		}
+		list.length = 0;
+		return list;
+	}
+
+	private releaseLuaTableList(list: LuaTable[]): void {
+		list.length = 0;
+		this.luaTableListScratchIndex -= 1;
 	}
 
 	private consumeReturnValues(): LuaValue[] {
@@ -727,6 +745,7 @@ export class LuaInterpreter {
 				}
 				const frame = this.frameStack[this.frameStack.length - 1];
 				const scratchIndex = this.luaValueListScratchIndex;
+				const tableScratchIndex = this.luaTableListScratchIndex;
 				let signal: ExecutionSignal;
 				try {
 					signal = this.stepFrame(frame);
@@ -741,6 +760,7 @@ export class LuaInterpreter {
 					throw error;
 				} finally {
 					this.luaValueListScratchIndex = scratchIndex;
+					this.luaTableListScratchIndex = tableScratchIndex;
 				}
 				if (signal !== null && signal.kind === 'pause') {
 					return this.bindPauseResume(signal as PauseSignal, targetDepth);
@@ -1546,84 +1566,152 @@ export class LuaInterpreter {
 		throw this.runtimeError('Unsupported assignment target kind.');
 	}
 
-	private getTableValueWithMetamethod(table: LuaTable, key: LuaValue, range: LuaSourceRange, visited: Set<LuaTable> = new Set<LuaTable>()): LuaValue {
-		if (visited.has(table)) {
-			throw this.throwErrorWithRangeOrCurrentRange(range, 'Metatable __index loop detected.');
+		private tableVisited(visited: ReadonlyArray<LuaTable>, table: LuaTable): boolean {
+			for (let index = 0; index < visited.length; index += 1) {
+				if (visited[index] === table) {
+					return true;
+				}
+			}
+			return false;
 		}
-		visited.add(table);
-		const direct = table.get(key);
-		if (direct !== null) {
-			visited.delete(table);
-			return direct;
+
+		private invokeIndexMetamethod(receiver: LuaTable, key: LuaValue, functionValue: LuaFunctionValue): LuaValue {
+			const args = this.allocateValueList();
+			args.push(receiver);
+			args.push(key);
+			const values = functionValue.call(args);
+			if (isLuaCallSignal(values)) {
+				return values as any;
+			}
+			return values.length > 0 ? values[0] : null;
+		}
+
+		private invokeNewIndexMetamethod(receiver: LuaTable, key: LuaValue, value: LuaValue, functionValue: LuaFunctionValue): void {
+			const args = this.allocateValueList();
+			args.push(receiver);
+			args.push(key);
+			args.push(value);
+			const result = functionValue.call(args);
+			if (isLuaCallSignal(result)) {
+				return;
+			}
+		}
+
+		private getTableValueWithMetamethod(table: LuaTable, key: LuaValue, range: LuaSourceRange): LuaValue {
+			const direct = table.get(key);
+			if (direct !== null) {
+				return direct;
+			}
+			const metatable = table.getMetatable();
+			if (metatable === null) {
+				return null;
+			}
+			const firstHandler = metatable.get('__index');
+			if (firstHandler === null) {
+				return null;
+			}
+			if (!isLuaTable(firstHandler)) {
+				const functionValue = this.expectFunction(firstHandler, '__index metamethod must be a function or table.', range);
+				return this.invokeIndexMetamethod(table, key, functionValue);
+			}
+			let current = firstHandler;
+			let visited: LuaTable[] | null = this.allocateLuaTableList();
+			visited.push(table);
+			try {
+				for (;;) {
+					if (this.tableVisited(visited, current)) {
+						throw this.throwErrorWithRangeOrCurrentRange(range, 'Metatable __index loop detected.');
+					}
+					visited.push(current);
+					const currentDirect = current.get(key);
+					if (currentDirect !== null) {
+						return currentDirect;
+					}
+					const currentMetatable = current.getMetatable();
+					if (currentMetatable === null) {
+						return null;
+					}
+					const handler = currentMetatable.get('__index');
+					if (handler === null) {
+						return null;
+					}
+					if (isLuaTable(handler)) {
+						current = handler;
+						continue;
+					}
+					const functionValue = this.expectFunction(handler, '__index metamethod must be a function or table.', range);
+					const receiver = current;
+					this.releaseLuaTableList(visited);
+					visited = null;
+					return this.invokeIndexMetamethod(receiver, key, functionValue);
+				}
+			} finally {
+				if (visited !== null) {
+					this.releaseLuaTableList(visited);
+				}
+			}
+		}
+
+		private setTableValueWithMetamethod(table: LuaTable, key: LuaValue, value: LuaValue, range: LuaSourceRange): void {
+			if (table.has(key)) {
+				table.set(key, value);
+				return;
 		}
 		const metatable = table.getMetatable();
-		if (metatable === null) {
-			visited.delete(table);
-			return null;
+			if (metatable === null) {
+				table.set(key, value);
+				return;
+			}
+			const firstHandler = metatable.get('__newindex');
+			if (firstHandler === null) {
+				table.set(key, value);
+				return;
+			}
+			if (!isLuaTable(firstHandler)) {
+				const functionValue = this.expectFunction(firstHandler, '__newindex metamethod must be a function or table.', range);
+				this.invokeNewIndexMetamethod(table, key, value, functionValue);
+				return;
+			}
+			let current = firstHandler;
+			let visited: LuaTable[] | null = this.allocateLuaTableList();
+			visited.push(table);
+			try {
+				for (;;) {
+					if (this.tableVisited(visited, current)) {
+						throw this.runtimeErrorAt(range, 'Metatable __newindex loop detected.');
+					}
+					visited.push(current);
+					if (current.has(key)) {
+						current.set(key, value);
+						return;
+					}
+					const currentMetatable = current.getMetatable();
+					if (currentMetatable === null) {
+						current.set(key, value);
+						return;
+					}
+					const handler = currentMetatable.get('__newindex');
+					if (handler === null) {
+						current.set(key, value);
+						return;
+					}
+					if (isLuaTable(handler)) {
+						current = handler;
+						continue;
+					}
+					const functionValue = this.expectFunction(handler, '__newindex metamethod must be a function or table.', range);
+					const receiver = current;
+					this.releaseLuaTableList(visited);
+					visited = null;
+					this.invokeNewIndexMetamethod(receiver, key, value, functionValue);
+					return;
+				}
+			} finally {
+				if (visited !== null) {
+					this.releaseLuaTableList(visited);
+				}
+			}
 		}
-		const handler = metatable.get('__index');
-		if (handler === null) {
-			visited.delete(table);
-			return null;
-		}
-		if (isLuaTable(handler)) {
-			const result = this.getTableValueWithMetamethod(handler, key, range, visited);
-			visited.delete(table);
-			return result;
-		}
-		const functionValue = this.expectFunction(handler, '__index metamethod must be a function or table.', range);
-		const args = this.allocateValueList();
-		args.push(table);
-		args.push(key);
-		const values = functionValue.call(args);
-		if (isLuaCallSignal(values)) {
-			return values as any;
-		}
-		const first = values.length > 0 ? values[0] : null;
-		visited.delete(table);
-		return first;
-	}
-
-	private setTableValueWithMetamethod(table: LuaTable, key: LuaValue, value: LuaValue, range: LuaSourceRange): void {
-		this.setTableValueWithMetamethodInternal(table, key, value, range, new Set<LuaTable>());
-	}
-
-	private setTableValueWithMetamethodInternal(table: LuaTable, key: LuaValue, value: LuaValue, range: LuaSourceRange, visited: Set<LuaTable>): void {
-		if (table.has(key)) {
-			table.set(key, value);
-			return;
-		}
-		const metatable = table.getMetatable();
-		if (metatable === null) {
-			table.set(key, value);
-			return;
-		}
-		if (visited.has(table)) {
-			throw this.runtimeErrorAt(range, 'Metatable __newindex loop detected.');
-		}
-		visited.add(table);
-		const handler = metatable.get('__newindex');
-		if (handler === null) {
-			table.set(key, value);
-			visited.delete(table);
-			return;
-		}
-		if (isLuaTable(handler)) {
-			this.setTableValueWithMetamethodInternal(handler, key, value, range, visited);
-			visited.delete(table);
-			return;
-		}
-		const functionValue = this.expectFunction(handler, '__newindex metamethod must be a function or table.', range);
-		const args = this.allocateValueList();
-		args.push(table);
-		args.push(key);
-		args.push(value);
-		const result = functionValue.call(args);
-		if (isLuaCallSignal(result)) {
-			return;
-		}
-		visited.delete(table);
-	}
 
 	private applyAugmentedAssignment(operator: LuaAssignmentOperator, current: LuaValue, operand: LuaValue, range: LuaSourceRange): LuaValue {
 		switch (operator) {
@@ -1695,21 +1783,20 @@ export class LuaInterpreter {
 		if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
 			return value;
 		}
-		if (isLuaTable(value)) {
-			if (visited.has(value)) {
-				throw this.runtimeError('Cannot serialize cyclic table structures.');
-			}
-			visited.add(value);
-			const entriesData: unknown[] = [];
-			const entries = value.entriesArray();
-			for (const entry of entries) {
-				const serializedKey = this.serializeValueInternal(entry[0], visited);
-				const serializedValue = this.serializeValueInternal(entry[1], visited);
-				entriesData.push({ key: serializedKey, value: serializedValue });
-			}
-			const metatable = value.getMetatable();
-			const serializedMetatable = metatable !== null ? this.serializeValueInternal(metatable, visited) : null;
-			visited.delete(value);
+			if (isLuaTable(value)) {
+				if (visited.has(value)) {
+					throw this.runtimeError('Cannot serialize cyclic table structures.');
+				}
+				visited.add(value);
+				const entriesData: unknown[] = [];
+				value.forEachEntry((key, entryValue) => {
+					const serializedKey = this.serializeValueInternal(key, visited);
+					const serializedValue = this.serializeValueInternal(entryValue, visited);
+					entriesData.push({ key: serializedKey, value: serializedValue });
+				});
+				const metatable = value.getMetatable();
+				const serializedMetatable = metatable !== null ? this.serializeValueInternal(metatable, visited) : null;
+				visited.delete(value);
 			return { type: 'table', entries: entriesData, metatable: serializedMetatable };
 		}
 		const functionValue = this.expectFunction(value, 'Unable to serialize value.', null);
@@ -2439,52 +2526,40 @@ export class LuaInterpreter {
 		return { found: true, value: this.convertFromHost(property), resolvedName, displayName: normalized.displayName };
 	}
 
-	private getNativeValueWithMetamethod(target: LuaNativeValue, key: LuaValue, range: LuaSourceRange, visited: Set<LuaNativeValue> = new Set<LuaNativeValue>()): LuaValue {
-		const getMissingPropertyMessage = (property: ReturnType<typeof this.getNativePropertyValue>, target: LuaNativeValue): string => {
-			const keyName = property.displayName && property.displayName.length > 0
-				? property.displayName
+		private getNativeValueWithMetamethod(target: LuaNativeValue, key: LuaValue, range: LuaSourceRange): LuaValue {
+			const getMissingPropertyMessage = (property: ReturnType<typeof this.getNativePropertyValue>, target: LuaNativeValue): string => {
+				const keyName = property.displayName && property.displayName.length > 0
+					? property.displayName
 				: typeof key === 'string' || typeof key === 'number'
 					? String(key)
-					: '<unknown>';
-			return `Attempted to index missing native member '${keyName}' on ${this.nativeTypeName(target)}. Did you forget to define it as a 'default' or 'override' member (e.g. via 'define_prefab')?`;
-		}
-		if (visited.has(target)) {
-			const loopMessage = 'Metatable __index loop detected.';
-			this.throwErrorWithRangeOrCurrentRange(range, loopMessage);
-		}
-		visited.add(target);
-		const property = this.getNativePropertyValue(target, key, range);
-		if (property.found) {
-			visited.delete(target);
-			return property.value;
-		}
-		const metatable = target.metatable;
-		if (metatable === null) {
-			visited.delete(target);
-			this.throwErrorWithRangeOrCurrentRange(range, getMissingPropertyMessage(property, target));
-		}
-		const handler = metatable?.get('__index');
-		if (!handler) {
-			visited.delete(target);
-			this.throwErrorWithRangeOrCurrentRange(range, getMissingPropertyMessage(property, target));
-		}
-		else if (isLuaTable(handler)) {
-			const result = this.getTableValueWithMetamethod(handler, key, range);
-			visited.delete(target);
-			return result;
-		}
-		const functionValue = this.expectFunction(handler, '__index metamethod must be a function or table.', range);
-		const args = this.allocateValueList();
+						: '<unknown>';
+				return `Attempted to index missing native member '${keyName}' on ${this.nativeTypeName(target)}. Did you forget to define it as a 'default' or 'override' member (e.g. via 'define_prefab')?`;
+			}
+			const property = this.getNativePropertyValue(target, key, range);
+			if (property.found) {
+				return property.value;
+			}
+			const metatable = target.metatable;
+			if (metatable === null) {
+				this.throwErrorWithRangeOrCurrentRange(range, getMissingPropertyMessage(property, target));
+			}
+			const handler = metatable?.get('__index');
+			if (!handler) {
+				this.throwErrorWithRangeOrCurrentRange(range, getMissingPropertyMessage(property, target));
+			}
+			else if (isLuaTable(handler)) {
+				return this.getTableValueWithMetamethod(handler, key, range);
+			}
+			const functionValue = this.expectFunction(handler, '__index metamethod must be a function or table.', range);
+			const args = this.allocateValueList();
 		args.push(target);
 		args.push(key);
 		const values = functionValue.call(args);
-		if (isLuaCallSignal(values)) {
-			return values as any;
+			if (isLuaCallSignal(values)) {
+				return values as any;
+			}
+			return values.length > 0 ? values[0] : null;
 		}
-		const first = values.length > 0 ? values[0] : null;
-		visited.delete(target);
-		return first;
-	}
 
 	private setNativeProperty(target: LuaNativeValue, key: { propertyName: string; displayName: string }, value: LuaValue, range: LuaSourceRange): void {
 		if (Array.isArray(target.native)) {
@@ -2545,13 +2620,13 @@ export class LuaInterpreter {
 		const keys = this.enumerateNativeKeys(target);
 		let pointer = 0;
 		const iterator = new LuaNativeFunction('native_pairs_iterator', (iteratorArgs) => {
-			const nativeTarget = iteratorArgs.length > 0 ? iteratorArgs[0] : null;
-			if (!(nativeTarget instanceof LuaNativeValue) || nativeTarget !== target) {
-				return [null];
-			}
-			if (pointer >= keys.length) {
-				return [null];
-			}
+				const nativeTarget = iteratorArgs.length > 0 ? iteratorArgs[0] : null;
+				if (!(nativeTarget instanceof LuaNativeValue) || nativeTarget !== target) {
+					return NIL_VALUE_RESULT;
+				}
+				if (pointer >= keys.length) {
+					return NIL_VALUE_RESULT;
+				}
 			const key = keys[pointer];
 			pointer += 1;
 			const value = this.getNativeValueWithMetamethod(target, key, null);
@@ -2563,15 +2638,15 @@ export class LuaInterpreter {
 	private createNativeIpairsIterator(target: LuaNativeValue): LuaValue[] {
 		const iterator = new LuaNativeFunction('native_ipairs_iterator', (iteratorArgs) => {
 			const nativeTarget = iteratorArgs.length > 0 ? iteratorArgs[0] : null;
-			const previousIndex = iteratorArgs.length > 1 ? iteratorArgs[1] : null;
-			if (!(nativeTarget instanceof LuaNativeValue) || nativeTarget !== target) {
-				return [null];
-			}
-			const nextIndex = typeof previousIndex === 'number' ? previousIndex + 1 : 1;
-			const value = this.getNativeValueWithMetamethod(target, nextIndex, null);
-			if (value === null) {
-				return [null];
-			}
+				const previousIndex = iteratorArgs.length > 1 ? iteratorArgs[1] : null;
+				if (!(nativeTarget instanceof LuaNativeValue) || nativeTarget !== target) {
+					return NIL_VALUE_RESULT;
+				}
+				const nextIndex = typeof previousIndex === 'number' ? previousIndex + 1 : 1;
+				const value = this.getNativeValueWithMetamethod(target, nextIndex, null);
+				if (value === null) {
+					return NIL_VALUE_RESULT;
+				}
 			return [nextIndex, value];
 		});
 		return [iterator, target, 0];
@@ -2952,32 +3027,30 @@ export class LuaInterpreter {
 		// - array(a, b, c) -> native Array [a, b, c]
 		// - array(table) copies 1-based numeric entries into a native Array, appending any non-numeric keys.
 		// The array stays native so that JS receives real arrays via the bridge.
-		this.globals.set('array', new LuaNativeFunction('array', (args) => {
-			const nativeArray: unknown[] = [];
-			if (args.length === 1 && isLuaTable(args[0])) {
-				const source = args[0] as LuaTable;
-				const entries = source.entriesArray();
-				for (let index = 0; index < entries.length; index += 1) {
-					const [key, value] = entries[index];
-					if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
-						nativeArray[key - 1] = value;
-						continue;
-					}
-					nativeArray.push(value);
+			this.globals.set('array', new LuaNativeFunction('array', (args) => {
+				const nativeArray: unknown[] = [];
+				if (args.length === 1 && isLuaTable(args[0])) {
+					const source = args[0] as LuaTable;
+					source.forEachEntry((key, value) => {
+						if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+							nativeArray[key - 1] = value;
+							return;
+						}
+						nativeArray.push(value);
+					});
+					return [this.getOrCreateNativeValue(nativeArray, 'Array')];
 				}
-				return [this.getOrCreateNativeValue(nativeArray, 'Array')];
-			}
 			for (let index = 0; index < args.length; index += 1) {
 				nativeArray[index] = args[index];
 			}
 			return [this.getOrCreateNativeValue(nativeArray, 'Array')];
 		}));
 
-		this.globals.set('assert', new LuaNativeFunction('assert', (args) => {
-			const condition = args.length > 0 ? args[0] : null;
-			if (this.isTruthy(condition)) {
-				return Array.from(args);
-			}
+			this.globals.set('assert', new LuaNativeFunction('assert', (args) => {
+				const condition = args.length > 0 ? args[0] : null;
+				if (this.isTruthy(condition)) {
+					return args;
+				}
 			const messageValue = args.length > 1 ? args[1] : 'assertion failed!';
 			const message = typeof messageValue === 'string' ? messageValue : this.toLuaString(messageValue);
 			throw this.runtimeError(message);
@@ -3202,28 +3275,11 @@ export class LuaInterpreter {
 		this.globals.set('next', new LuaNativeFunction('next', (args) => {
 			if (args.length === 0 || !(isLuaTable(args[0]))) {
 				throw this.runtimeError('next expects a table as the first argument.');
-			}
-			const table = args[0] as LuaTable;
-			const lastKey = args.length > 1 ? args[1] : null;
-			const entries = table.entriesArray();
-			if (entries.length === 0) {
-				return [null];
-			}
-			if (lastKey === null) {
-				const [firstKey, firstValue] = entries[0];
-				return [firstKey, firstValue];
-			}
-			let returnNext = false;
-			for (const [key, value] of entries) {
-				if (returnNext) {
-					return [key, value];
 				}
-				if (key === lastKey) {
-					returnNext = true;
-				}
-			}
-			return [null];
-		}));
+				const table = args[0] as LuaTable;
+				const lastKey = args.length > 1 ? args[1] : null;
+				return table.nextEntry(lastKey) ?? NIL_VALUE_RESULT;
+			}));
 
 		const maxSafeInteger = Number.MAX_SAFE_INTEGER;
 		const radToDeg = 180 / Math.PI;
@@ -4625,11 +4681,11 @@ export class LuaInterpreter {
 				if (isLuaCallSignal(result)) {
 					return result;
 				}
-				if (result.length < 2) {
-					throw this.runtimeError('__pairs metamethod must return at least two values.');
+					if (result.length < 2) {
+						throw this.runtimeError('__pairs metamethod must return at least two values.');
+					}
+					return result;
 				}
-				return Array.from(result);
-			}
 			if (isLuaTable(target)) {
 				const nextBuiltin = this.globals.get('next');
 				const iterator = this.expectFunction(nextBuiltin, 'next function unavailable.', null);
@@ -4654,11 +4710,11 @@ export class LuaInterpreter {
 				if (isLuaCallSignal(result)) {
 					return result;
 				}
-				if (result.length < 2) {
-					throw this.runtimeError('__ipairs metamethod must return at least two values.');
+					if (result.length < 2) {
+						throw this.runtimeError('__ipairs metamethod must return at least two values.');
+					}
+					return result;
 				}
-				return Array.from(result);
-			}
 			if (isLuaTable(target)) {
 				const table = target;
 				const iterator = new LuaNativeFunction('ipairs_iterator', (iteratorArgs) => {

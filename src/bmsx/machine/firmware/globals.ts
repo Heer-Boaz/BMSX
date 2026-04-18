@@ -931,23 +931,21 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		return regex;
 	};
 
-	const createNativeArrayFromTable = (table: Table, context: LuaMarshalContext): unknown[] => {
-		const tableId = getOrAssignTableId(runtime, table);
-		const tableContext = extendMarshalContext(context, `table${tableId}`);
-		const entries = table.entriesArray();
-		const output: unknown[] = [];
-		for (let index = 0; index < entries.length; index += 1) {
-			const [keyValue, value] = entries[index];
-			if (typeof keyValue === 'number' && Number.isInteger(keyValue) && keyValue >= 1) {
-				output[keyValue - 1] = toNativeValue(runtime, value, extendMarshalContext(tableContext, String(keyValue)), new WeakMap());
-				continue;
-			}
-			const segment = describeMarshalSegment(keyValue);
-			const nextContext = segment ? extendMarshalContext(tableContext, segment) : tableContext;
-			output.push(toNativeValue(runtime, value, nextContext, new WeakMap()));
-		}
-		return output;
-	};
+		const createNativeArrayFromTable = (table: Table, context: LuaMarshalContext): unknown[] => {
+			const tableId = getOrAssignTableId(runtime, table);
+			const tableContext = extendMarshalContext(context, `table${tableId}`);
+			const output: unknown[] = [];
+			table.forEachEntry((keyValue, value) => {
+				if (typeof keyValue === 'number' && Number.isInteger(keyValue) && keyValue >= 1) {
+					output[keyValue - 1] = toNativeValue(runtime, value, extendMarshalContext(tableContext, String(keyValue)), new WeakMap());
+					return;
+				}
+				const segment = describeMarshalSegment(keyValue);
+				const nextContext = segment ? extendMarshalContext(tableContext, segment) : tableContext;
+				output.push(toNativeValue(runtime, value, nextContext, new WeakMap()));
+			});
+			return output;
+		};
 
 	const collectApiMembers = (): Array<{ name: string; kind: 'method' | 'getter'; descriptor: PropertyDescriptor }> => {
 		const map = new Map<string, { kind: 'method' | 'getter'; descriptor: PropertyDescriptor }>();

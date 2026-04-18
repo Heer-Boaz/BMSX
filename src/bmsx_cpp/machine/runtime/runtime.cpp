@@ -192,7 +192,9 @@ RuntimeState Runtime::captureCurrentState() const {
 	RuntimeState state;
 	state.machine = m_machine.captureState();
 	const_cast<CPU&>(m_machine.cpu()).syncGlobalSlotsToTable();
-	state.globals = m_machine.cpu().globals->entries();
+	m_machine.cpu().globals->forEachEntry([&state](Value key, Value value) {
+		state.globals.emplace_back(key, value);
+	});
 	state.cartDataNamespace = m_api->cartDataNamespace();
 	state.persistentData = m_api->persistentData();
 	state.randomSeed = m_randomSeedValue;

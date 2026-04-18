@@ -873,7 +873,6 @@ public:
 			}
 		}
 	}
-	std::vector<std::pair<Value, Value>> entries() const;
 	std::optional<std::pair<Value, Value>> nextEntry(const Value& after) const;
 	std::optional<std::tuple<size_t, size_t, Value, Value>> nextEntryFromCursor(size_t arrayCursor, size_t hashCursor, const Value& previousHashKey = valueNil()) const;
 	TableRuntimeState captureRuntimeState() const;

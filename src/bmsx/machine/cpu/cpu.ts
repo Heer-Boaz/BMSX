@@ -692,20 +692,26 @@ export class Table {
 
 	public entriesArray(): ReadonlyArray<[Value, Value]> {
 		const entries: Array<[Value, Value]> = [];
+		this.forEachEntry((key, value) => {
+			entries.push([key, value]);
+		});
+		return entries;
+	}
+
+	public forEachEntry(visitor: (key: Value, value: Value) => void): void {
 		for (let index = 0; index < this.array.length; index += 1) {
 			const value = this.array[index];
 			if (value === null || value === undefined) {
 				continue;
 			}
-			entries.push([index + 1, value]);
+			visitor(index + 1, value);
 		}
 		for (let index = 0; index < this.hash.length; index += 1) {
 			const node = this.hash[index];
 			if (node.key !== null) {
-				entries.push([node.key, node.value]);
+				visitor(node.key, node.value);
 			}
 		}
-		return entries;
 	}
 
 	public getMetatable(): Table | null {
