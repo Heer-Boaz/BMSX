@@ -1,6 +1,5 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { pathToFileURL } from 'node:url';
 
 import { createCanvas, Image, loadImage } from 'canvas';
 
@@ -11,6 +10,7 @@ import type { Platform, InputEvt } from '../../../src/bmsx_hostplatform/platform
 import { HeadlessGameViewHost } from '../../../src/bmsx/render/headless/view';
 import { HeadlessCaptureCoordinator, deriveHeadlessCaptureOutputDir, type ScheduledHeadlessCapture } from './headless_capture';
 import { printHeadlessCpuProfile } from './cpu_profile_report';
+import { runHostTest } from './hostrunner/host_test_runner';
 
 declare const __BOOTROM_TARGET__: 'cli' | 'headless';
 declare const __BOOTROM_DEBUG__: boolean;
@@ -21,7 +21,7 @@ interface LaunchOptions {
 	frameIntervalMs?: number;
 	debugOverride?: boolean;
 	inputTimelinePath?: string;
-	inputModulePath?: string;
+	testPath?: string;
 	ttlMs?: number;
 	engineRuntimePath?: string;
 	engineAssetsPath?: string;
@@ -51,111 +51,12 @@ interface InputTimelineEntry {
 	description?: string;
 }
 
-type ObjectPresenceSpec = Record<string, string>;
-
-interface HeadlessPollOptions {
-	timeoutMs: number;
-	pollMs?: number;
-	description: string;
-}
-
-interface HeadlessCartWaitOptions {
-	timeoutMs: number;
-	pollMs?: number;
-	settleMs?: number;
-}
-
-interface HeadlessObjectWaitOptions {
-	objects: ObjectPresenceSpec;
-	timeoutMs: number;
-	pollMs?: number;
-	settleMs?: number;
-}
-
-interface HeadlessGameplayWaitOptions extends HeadlessObjectWaitOptions {
-	cartSettleMs?: number;
-	requestNewGame?: boolean;
-}
-
-interface HeadlessButtonEvent {
-	type: 'button';
-	deviceId: string;
-	code: string;
-	down: boolean;
-	value: number;
-	timestamp: number;
-	pressId: number;
-	modifiers: {
-		ctrl: boolean;
-		shift: boolean;
-		alt: boolean;
-		meta: boolean;
-	};
-}
-
-interface HeadlessTestApi {
-	run(task: () => void | Promise<void>): void;
-	finish(message?: string): never;
-	fail(message: string): never;
-	assert(condition: boolean, message: string): asserts condition;
-	getEngine(): any;
-	nowMs(): number;
-	getRenderFrameIndex(): number;
-	evalLua<T = unknown>(source: string): T;
-	sleep(ms: number): Promise<void>;
-	waitFrames(frameCount: number): Promise<void>;
-	buttonEvent(code: string, down: boolean, pressId: number, timestampMs: number): HeadlessButtonEvent;
-	scheduleInput(entries: InputTimelineEntry[]): void;
-	pollUntil<T>(check: () => T | false | null | undefined | Promise<T | false | null | undefined>, options: HeadlessPollOptions): Promise<T>;
-	waitForCartActive(options: HeadlessCartWaitOptions): Promise<any>;
-	getObjectPresenceState(objects: ObjectPresenceSpec): Record<string, boolean>;
-	hasObjectPresence(state: Record<string, boolean>, objects: ObjectPresenceSpec): boolean;
-	waitForObjectPresence(options: HeadlessObjectWaitOptions): Promise<Record<string, boolean>>;
-	waitForGameplay(options: HeadlessGameplayWaitOptions): Promise<Record<string, boolean>>;
-}
-
-type HeadlessAssertionRunState = {
+type HostTestRunState = {
 	moduleLabel: string;
 	requireExplicitFinish: boolean;
 	assertCount: number;
 	finished: boolean;
 };
-
-class HeadlessAssertionFailure extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = 'HeadlessAssertionFailure';
-	}
-}
-
-function resolveAssertionCaptureSite(stack: string | undefined): string | null {
-	if (!stack) {
-		return null;
-	}
-	const lines = stack.split('\n');
-	let fallbackSite: string | null = null;
-	for (let i = 1; i < lines.length; i += 1) {
-		const line = lines[i]!.trim();
-		const match = /^at\s+(?:(.*?)\s+\()?(.+?):(\d+):(\d+)\)?$/.exec(line);
-		if (!match) {
-			continue;
-		}
-		const fnName = match[1] ?? '';
-		const filePath = match[2]!;
-		if (filePath.endsWith('/dist/headless_debug.js') || filePath.endsWith('\\dist\\headless_debug.js')) {
-			continue;
-		}
-		const site = `${filePath}:${match[3]}`;
-		if (fallbackSite === null) {
-			fallbackSite = site;
-		}
-		if (fnName === 'assert' || fnName === 'fail' || fnName === 'currentAssert') {
-			continue;
-		}
-		return site;
-	}
-	return fallbackSite;
-}
 
 interface TimelineScheduler {
 	nowMs(): number;
@@ -167,7 +68,6 @@ type TimelineExecutionPoint = {
 	frame?: number;
 };
 
-const HEADLESS_EXIT_SIGNAL = Symbol('headless-exit');
 let processExitController: ((code: number) => void) | null = null;
 
 let maxScheduledDeadlineMs = 0;
@@ -314,7 +214,7 @@ function printHelp(): void {
 	console.log('  --no-debug               Force non-debug mode.');
 	console.log('  --ttl <seconds>          Auto-terminate after the given number of seconds (default 10).');
 	console.log('  --input-timeline <file>  JSON timeline of InputEvt entries to schedule; headless capture markers write screenshots next to the timeline.');
-	console.log('  --input-module <file>    JS/TS module exporting a scheduler for custom input logic.');
+	console.log('  --test <file>            Host test file executed by the headless test runner.');
 	console.log('  --engine-runtime <path>  JS runtime bundle for the engine (defaults to dist/engine(.debug).js).');
 	console.log('  --engine-assets <path>   Engine asset pack ROM (defaults to dist/bmsx-bios(.debug).rom).');
 	console.log('  --cpu-profile            Enable fantasy CPU profiling and print a report on exit.');
@@ -322,7 +222,7 @@ function printHelp(): void {
 	console.log('');
 	console.log('romFolder:');
 	console.log('  If --rom is omitted, a romFolder positional argument resolves to');
-	console.log('  dist/<romFolder>(.debug).rom and auto-looks for timeline/module under');
+	console.log('  dist/<romFolder>(.debug).rom and auto-looks for timeline under');
 	console.log('  src/carts/<romFolder>/test/.');
 }
 
@@ -381,10 +281,10 @@ function parseArgs(argv: string[]): LaunchOptions {
 			index += 2;
 			continue;
 		}
-		if (arg === '--input-module') {
+		if (arg === '--test') {
 			const next = argv[index + 1];
-			if (!next) throw new Error('Expected path after --input-module.');
-			options.inputModulePath = next;
+			if (!next) throw new Error('Expected path after --test.');
+			options.testPath = next;
 			index += 2;
 			continue;
 		}
@@ -680,280 +580,12 @@ async function scheduleInputTimelineFromFile(
 	scheduler.scheduleOnce(0, pollCartActive);
 }
 
-function createHeadlessTestApi(
-	moduleLabel: string,
-	frameIntervalMs: number,
-	logger: (msg: string) => void,
-	scheduleInput: (entries: InputTimelineEntry[]) => void,
-	runState: HeadlessAssertionRunState | null,
-	requestExit: (code: number) => void,
-	scheduler: TimelineScheduler,
-	captureAssert: ((description: string) => void) | null,
-	canCaptureAssertNow: (() => boolean) | null,
-): HeadlessTestApi {
-	const capturedAssertSites = new Set<string>();
-	const captureAssertSnapshot = (label: string): void => {
-		captureAssert?.(label);
-	};
-	const fail = (message: string): never => {
-		if (!captureAssert || (canCaptureAssertNow && !canCaptureAssertNow())) {
-			throw new HeadlessAssertionFailure(`[assert] ${message}`);
-		}
-		const assertIndex = runState ? runState.assertCount + 1 : 0;
-		const captureSite = resolveAssertionCaptureSite(new Error().stack);
-		const captureLabel = captureSite
-			? `assert_fail_${String(assertIndex).padStart(4, '0')} @ ${captureSite}: ${message}`
-			: `assert_fail_${String(assertIndex).padStart(4, '0')}: ${message}`;
-		captureAssertSnapshot(captureLabel);
-		throw new HeadlessAssertionFailure(`[assert] ${message}`);
-	};
-	const assert = (condition: boolean, message: string): asserts condition => {
-		if (runState) {
-			runState.assertCount += 1;
-		}
-		if (condition && (!captureAssert || (canCaptureAssertNow && !canCaptureAssertNow()))) {
-			return;
-		}
-		const assertIndex = runState ? runState.assertCount : 0;
-		if (condition) {
-			const captureSite = resolveAssertionCaptureSite(new Error().stack);
-			if (!captureSite || !capturedAssertSites.has(captureSite)) {
-				if (captureSite) {
-					capturedAssertSites.add(captureSite);
-				}
-				const captureLabel = captureSite
-					? `assert_${String(assertIndex).padStart(4, '0')}_pass @ ${captureSite}: ${message}`
-					: `assert_${String(assertIndex).padStart(4, '0')}_pass: ${message}`;
-				captureAssertSnapshot(captureLabel);
-			}
-		}
-		if (!condition) {
-			fail(message);
-		}
-	};
-	const getEngine = (): any => {
-		return (globalThis as Record<string, any>).$;
-	};
-	const nowMs = (): number => {
-		return Math.round(scheduler.nowMs());
-	};
-	const getRenderFrameIndex = (): number => {
-		return getEngine().view.renderFrameIndex;
-	};
-	const evalLua = <T = unknown>(source: string): T => {
-		return getEngine().evaluate_lua(source) as T;
-	};
-	const sleep = async (ms: number): Promise<void> => {
-		await new Promise<void>(resolve => scheduler.scheduleOnce(ms, resolve));
-	};
-	const waitFrames = async (frameCount: number): Promise<void> => {
-		await sleep(frameCount * frameIntervalMs);
-	};
-	const buttonEvent = (code: string, down: boolean, pressId: number, timestampMs: number): HeadlessButtonEvent => {
-		return {
-			type: 'button',
-			deviceId: 'keyboard:0',
-			code,
-			down,
-			value: down ? 1 : 0,
-			timestamp: timestampMs,
-			pressId,
-			modifiers: { ctrl: false, shift: false, alt: false, meta: false },
-		};
-	};
-	const pollUntil = async <T>(
-		check: () => T | false | null | undefined | Promise<T | false | null | undefined>,
-		options: HeadlessPollOptions,
-	): Promise<T> => {
-		const startedAt = scheduler.nowMs();
-		const pollMs = options.pollMs ?? frameIntervalMs;
-		for (;;) {
-			const result = await check();
-			if (result) {
-				return result;
-			}
-			if (scheduler.nowMs() - startedAt >= options.timeoutMs) {
-				fail(`timeout while waiting for ${options.description}`);
-			}
-			await sleep(pollMs);
-		}
-	};
-	const getObjectPresenceState = (objects: ObjectPresenceSpec): Record<string, boolean> => {
-		const objectEntries = Object.entries(objects);
-		const locals = objectEntries.map(([name, objectId]) => `local ${name} = oget(${JSON.stringify(objectId)})`).join('\n');
-		const fields = objectEntries.map(([name]) => `has_${name} = ${name} ~= nil`).join(',\n');
-		const [state] = evalLua<[Record<string, boolean>]>(`
-			${locals}
-			return {
-				${fields}
-			}
-		`);
-		return state;
-	};
-	const hasObjectPresence = (state: Record<string, boolean>, objects: ObjectPresenceSpec): boolean => {
-		for (const name of Object.keys(objects)) {
-			if (!state[`has_${name}`]) {
-				return false;
-			}
-		}
-		return true;
-	};
-	const waitForObjectPresence = async (options: HeadlessObjectWaitOptions): Promise<Record<string, boolean>> => {
-		const state = await pollUntil<Record<string, boolean> | null>(() => {
-			const nextState = getObjectPresenceState(options.objects);
-			return hasObjectPresence(nextState, options.objects) ? nextState : null;
-		}, {
-			timeoutMs: options.timeoutMs,
-			pollMs: options.pollMs,
-			description: `${moduleLabel} gameplay objects`,
-		});
-		if (options.settleMs && options.settleMs > 0) {
-			logger(`module:${moduleLabel} [assert] gameplay objects ready, waiting for settle`);
-			await sleep(options.settleMs);
-		}
-		return state;
-	};
-	const waitForCartActive = async (options: HeadlessCartWaitOptions): Promise<any> => {
-		await pollUntil<any>(() => {
-			const engine = getEngine();
-			return engine && engine.initialized ? engine : null;
-		}, {
-			timeoutMs: options.timeoutMs,
-			pollMs: options.pollMs,
-			description: `${moduleLabel} engine init`,
-		});
-		const engine = getEngine();
-		await pollUntil<boolean>(() => {
-			return engine.is_cart_program_active() ? true : false;
-		}, {
-			timeoutMs: options.timeoutMs,
-			pollMs: options.pollMs,
-			description: `${moduleLabel} cart active`,
-		});
-		logger(`module:${moduleLabel} [assert] cart active, waiting for settle`);
-		await sleep(options.settleMs ?? 500);
-		return engine;
-	};
-	const waitForGameplay = async (options: HeadlessGameplayWaitOptions): Promise<Record<string, boolean>> => {
-		const engine = await waitForCartActive({
-			timeoutMs: options.timeoutMs,
-			pollMs: options.pollMs,
-			settleMs: options.cartSettleMs ?? 500,
-		});
-		if (options.requestNewGame !== false) {
-			logger(`module:${moduleLabel} [assert] cart active, requesting new_game`);
-			engine.request_new_game();
-		}
-		return waitForObjectPresence({
-			objects: options.objects,
-			timeoutMs: options.timeoutMs,
-			pollMs: options.pollMs,
-			settleMs: options.settleMs ?? 1000,
-		});
-	};
-	return {
-		run(task) {
-			void Promise.resolve()
-				.then(task)
-				.catch(err => {
-					if (err === HEADLESS_EXIT_SIGNAL) {
-						return;
-					}
-					if (err instanceof HeadlessAssertionFailure) {
-						console.error(`[bootrom:${__BOOTROM_TARGET__}] Fatal error:`, err);
-						requestExit(1);
-						return;
-					}
-					setTimeout(() => {
-						throw err;
-					}, 0);
-				});
-		},
-		finish(message) {
-			if (runState) {
-				runState.finished = true;
-			}
-			if (message) {
-				logger(`module:${moduleLabel} ${message}`);
-			}
-			const pendingDelayMs = getPendingScheduledDelayMs(scheduler.nowMs(), frameIntervalMs);
-			if (pendingDelayMs > 0) {
-				logger(`module:${moduleLabel} waiting ${pendingDelayMs}ms for scheduled inputs/captures before exit`);
-				scheduler.scheduleOnce(pendingDelayMs, () => {
-					requestExit(0);
-				});
-				throw HEADLESS_EXIT_SIGNAL;
-			}
-			requestExit(0);
-			throw HEADLESS_EXIT_SIGNAL;
-		},
-		fail,
-		assert,
-		getEngine,
-		nowMs,
-		getRenderFrameIndex,
-		evalLua,
-		sleep,
-		waitFrames,
-		buttonEvent,
-		scheduleInput,
-		pollUntil,
-		waitForCartActive,
-		getObjectPresenceState,
-		hasObjectPresence,
-		waitForObjectPresence,
-		waitForGameplay,
-	};
-}
-
-async function runInputModuleScheduler(
-	modulePath: string,
-	frameIntervalMs: number,
-	postInput: (evt: InputEvt) => void,
-	scheduleCapture: ((capture: ScheduledHeadlessCapture) => void) | null,
-	captureAssert: ((description: string) => void) | null,
-	canCaptureAssertNow: (() => boolean) | null,
-	logger: (msg: string) => void,
-	runState: HeadlessAssertionRunState | null,
-	requestExit: (code: number) => void,
-	scheduler: TimelineScheduler,
-): Promise<void> {
-	const resolved = path.resolve(modulePath);
-	const moduleUrl = pathToFileURL(resolved).href;
-	const imported = await import(moduleUrl);
-	const moduleScheduler = typeof imported.default === 'function' ? imported.default : typeof imported.schedule === 'function' ? imported.schedule : null;
-	if (typeof moduleScheduler !== 'function') {
-		throw new Error(`Input module '${modulePath}' must export a function (default or named 'schedule').`);
-	}
-	const moduleLabel = path.basename(resolved);
-	const scheduleInput = (entries: InputTimelineEntry[]) => scheduleTimelineEntries(entries, frameIntervalMs, postInput, scheduleCapture, logger, `module:${moduleLabel}`, scheduler);
-	const context = {
-		postInput: (evt: InputEvt) => postInput(evt),
-		frameIntervalMs,
-		logger: (message: string) => logger(`module:${moduleLabel} ${message}`),
-		schedule: scheduleInput,
-		test: createHeadlessTestApi(moduleLabel, frameIntervalMs, logger, scheduleInput, runState, requestExit, scheduler, captureAssert, canCaptureAssertNow),
-	};
-	let result: unknown;
-	try {
-		result = await moduleScheduler(context);
-	} catch (error) {
-		if (error === HEADLESS_EXIT_SIGNAL) {
-			return;
-		}
-		throw error;
-	}
-	if (Array.isArray(result)) {
-		scheduleInput(result as InputTimelineEntry[]);
-	}
-}
-
-function assertHeadlessAssertionRunState(runState: HeadlessAssertionRunState): void {
+function assertHostTestRunState(runState: HostTestRunState): void {
 	if (runState.assertCount <= 0) {
-		throw new Error(`[bootrom:${__BOOTROM_TARGET__}] Assertion module '${runState.moduleLabel}' completed without assertions.`);
+		throw new Error(`[bootrom:${__BOOTROM_TARGET__}] Host test '${runState.moduleLabel}' completed without assertions.`);
 	}
 	if (runState.requireExplicitFinish && !runState.finished) {
-		throw new Error(`[bootrom:${__BOOTROM_TARGET__}] Assertion module '${runState.moduleLabel}' did not call test.finish() before TTL.`);
+		throw new Error(`[bootrom:${__BOOTROM_TARGET__}] Host test '${runState.moduleLabel}' did not finish before TTL.`);
 	}
 }
 
@@ -1226,11 +858,11 @@ async function main(): Promise<void> {
 	const inputLogger = (message: string) => console.log(`[bootrom:${__BOOTROM_TARGET__}:input] ${message}`);
 	const romFolder = cliOptions.romFolder;
 	let cartRoot: string | null = null;
-	let assertionRunState: HeadlessAssertionRunState | null = null;
+	let hostTestRunState: HostTestRunState | null = null;
 	let captureScheduler: ((capture: ScheduledHeadlessCapture) => void) | null = null;
 	let timelineAutoExitArmed = false;
 	const armTimelineAutoExit = (): void => {
-		if (timelineAutoExitArmed || assertionRunState) {
+		if (timelineAutoExitArmed || hostTestRunState) {
 			return;
 		}
 		timelineAutoExitArmed = true;
@@ -1272,7 +904,7 @@ async function main(): Promise<void> {
 			if (!coordinator) {
 				return;
 			}
-			coordinator.captureNow(description, `module:${path.basename(sourcePath)}`);
+			coordinator.captureNow(description, `host:${path.basename(sourcePath)}`);
 		};
 	};
 	const canCaptureImmediately = (): boolean => {
@@ -1282,63 +914,46 @@ async function main(): Promise<void> {
 		cartRoot = await resolveCartRoot(romFolder);
 	}
 	const autoTimelinePath = await resolveAutoTimelinePath(cartRoot, romFolder);
-	const autoModulePath = cartRoot && romFolder ? path.join(cartRoot, 'test', `${romFolder}_assert_results.mjs`) : null;
-	const hasAutoModule = autoModulePath ? await fileExists(autoModulePath) : false;
 	let scheduledTimeline = false;
-	if (cliOptions.inputTimelinePath) {
+	if (cliOptions.testPath) {
+		hostTestRunState = {
+			moduleLabel: path.basename(cliOptions.testPath),
+			requireExplicitFinish: true,
+			assertCount: 0,
+			finished: false,
+		};
+		await runHostTest({
+			testPath: cliOptions.testPath,
+			frameIntervalMs: frameInterval,
+			logger: inputLogger,
+			getEngine: () => (globalThis as Record<string, any>).$,
+			postInput,
+			requestExit,
+			scheduler,
+			runState: hostTestRunState,
+			captureNow: ensureImmediateCapture(cliOptions.testPath),
+			canCaptureNow: canCaptureImmediately,
+		});
+	} else if (cliOptions.inputTimelinePath) {
 		captureScheduler = ensureCaptureScheduler(cliOptions.inputTimelinePath);
 		await scheduleInputTimelineFromFile(cliOptions.inputTimelinePath, frameInterval, postInput, captureScheduler, inputLogger, scheduler, armTimelineAutoExit);
 		scheduledTimeline = true;
-	} else if (cliOptions.inputModulePath) {
-		await runInputModuleScheduler(
-			cliOptions.inputModulePath,
-			frameInterval,
-			postInput,
-			captureScheduler ?? ensureCaptureScheduler(cliOptions.inputModulePath),
-			ensureImmediateCapture(cliOptions.inputModulePath),
-			canCaptureImmediately,
-			inputLogger,
-			null,
-			requestExit,
-			scheduler,
-		);
-	} else if (autoModulePath && hasAutoModule) {
-		if (await fileExists(autoModulePath)) {
-			assertionRunState = {
-				moduleLabel: path.basename(autoModulePath),
-				requireExplicitFinish: true,
-				assertCount: 0,
-				finished: false,
-			};
-			await runInputModuleScheduler(
-				autoModulePath,
-				frameInterval,
-				postInput,
-				captureScheduler ?? ensureCaptureScheduler(autoModulePath),
-				ensureImmediateCapture(autoModulePath),
-				canCaptureImmediately,
-				inputLogger,
-				assertionRunState,
-				requestExit,
-				scheduler,
-			);
-		}
 	} else if (autoTimelinePath) {
 		captureScheduler = ensureCaptureScheduler(autoTimelinePath);
 		await scheduleInputTimelineFromFile(autoTimelinePath, frameInterval, postInput, captureScheduler, inputLogger, scheduler, armTimelineAutoExit);
 		scheduledTimeline = true;
 	}
 	const hasTimelineRun = scheduledTimeline;
-	const defaultTtl = assertionRunState || hasTimelineRun ? 60_000 : 1_000;
-	const pendingExitSettleMs = assertionRunState ? 15_000 : 5_000;
+	const defaultTtl = hostTestRunState || hasTimelineRun ? 60_000 : 1_000;
+	const pendingExitSettleMs = hostTestRunState ? 15_000 : 5_000;
 	const minTtl = Math.max(defaultTtl, getPendingScheduledDelayMs(scheduler.nowMs(), pendingExitSettleMs));
 	const requestedTtl = typeof cliOptions.ttlMs === 'number' && cliOptions.ttlMs > 0 ? Math.round(cliOptions.ttlMs) : defaultTtl;
 	const ttlMs = Math.max(requestedTtl, minTtl);
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] TTL set to ${ttlMs}ms (min required ${minTtl}ms).`);
 	scheduler.scheduleOnce(ttlMs, () => {
 		try {
-			if (assertionRunState) {
-				assertHeadlessAssertionRunState(assertionRunState);
+			if (hostTestRunState) {
+				assertHostTestRunState(hostTestRunState);
 			}
 		} catch (error) {
 			console.error(`[bootrom:${__BOOTROM_TARGET__}] Fatal error:`, error);

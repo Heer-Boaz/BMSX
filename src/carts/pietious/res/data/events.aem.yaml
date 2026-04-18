@@ -85,8 +85,8 @@ events:
             - go:
                   sequence:
                       - stop_music: true
-                      - audio_id: pickupkey
-                      - audio_id: danceofjoy
+                      - pickupkey
+                      - danceofjoy
 
     # Seal breakdown -> daemon appears (music).
     # The daemon-fight cue is scheduled later (daemon_appearance_done), to avoid canceling the stinger.
@@ -157,7 +157,7 @@ events:
             - go:
                   sequence:
                       - stop_music: true
-                      - audio_id: dying
+                      - dying
 
     enter_world_start:
         channel: sfx
@@ -165,7 +165,7 @@ events:
             - go:
                   sequence:
                       - stop_music: true
-                      - audio_id: enterleave
+                      - enterleave
 
     enter_shrine_start:
         channel: sfx
@@ -173,7 +173,7 @@ events:
             - go:
                   sequence:
                       - stop_music: true
-                      - audio_id: enterleave
+                      - enterleave
 
     player.shrine_overlay_exit:
         channel: music
@@ -193,7 +193,7 @@ events:
             - go:
                   sequence:
                       - stop_music: true
-                      - audio_id: enterleave
+                      - enterleave
 
     world_emerge_done:
         channel: music

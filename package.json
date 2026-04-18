@@ -49,9 +49,9 @@
 	},
 	"scripts": {
 		"headless:game": "node dist/headless_debug.js --engine-runtime dist/engine.debug.js --engine-assets dist/bmsx-bios.debug.rom",
-		"headless:assert": "sh -c 'rom=\"$1\"; if [ -z \"$rom\" ]; then echo \"Usage: npm run headless:assert -- <gameromname>\"; exit 1; fi; node dist/headless_debug.js --engine-runtime dist/engine.debug.js --engine-assets dist/bmsx-bios.debug.rom --input-module \"src/carts/$rom/test/${rom}_assert_results.mjs\" \"$rom\"' --",
+		"headless:test": "sh -c 'rom=\"$1\"; test=\"$2\"; if [ -z \"$rom\" ] || [ -z \"$test\" ]; then echo \"Usage: npm run headless:test -- <gameromname> <test-file>\"; exit 1; fi; node dist/headless_debug.js --engine-runtime dist/engine.debug.js --engine-assets dist/bmsx-bios.debug.rom --test \"$test\" \"$rom\"' --",
 		"headless:forcebuildallrun": "sh -c 'rom=\"$1\"; if [ -z \"$rom\" ]; then echo \"Usage: npm run headless:forcebuildallrun -- <gameromname>\"; exit 1; fi; npm run build:platform:headless -- --debug --force && npm run build:bios -- --debug --force && npx tsx scripts/rompacker/rompacker.ts --mode rompack --skiptypecheck --debug --force -romname \"$rom\" && npm run headless:game -- \"$rom\"' --",
-		"headless:forcebuildallassert": "sh -c 'rom=\"$1\"; if [ -z \"$rom\" ]; then echo \"Usage: npm run headless:forcebuildallassert -- <gameromname>\"; exit 1; fi; npm run build:platform:headless -- --debug --force && npm run build:bios -- --debug --force && npx tsx scripts/rompacker/rompacker.ts --mode rompack --skiptypecheck --debug --force -romname \"$rom\" && npm run headless:assert -- \"$rom\"' --",
+		"headless:forcebuildalltest": "sh -c 'rom=\"$1\"; test=\"$2\"; if [ -z \"$rom\" ] || [ -z \"$test\" ]; then echo \"Usage: npm run headless:forcebuildalltest -- <gameromname> <test-file>\"; exit 1; fi; npm run build:platform:headless -- --debug --force && npm run build:bios -- --debug --force && npx tsx scripts/rompacker/rompacker.ts --mode rompack --skiptypecheck --debug --force -romname \"$rom\" && npm run headless:test -- \"$rom\" \"$test\"' --",
 		"test:lua": "npx tsx --test tests/lua/*.ts",
 		"test:rompacker": "npx tsx --test tests/rompacker/*.ts",
 		"compile:engine": "npx tsc --build ./src/bmsx",

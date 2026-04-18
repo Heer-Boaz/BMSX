@@ -876,6 +876,7 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 		'out',
 		'rom',
 		'res',
+		'test',
 	]);
 
 	EXTRA_LUA_SCAN_SKIP.add(WORKSPACE_STATE_DIR_NAME);
@@ -2058,7 +2059,7 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 		}
 	}
 
-	const shouldRebuild = async (dir: string, checkCodeFiles: boolean, checkAssets: boolean): Promise<boolean> => {
+	const shouldRebuild = async (dir: string, checkCodeFiles: boolean, checkAssets: boolean, skipTestDirs = false): Promise<boolean> => {
 		try {
 			await access(dir);
 		} catch {
@@ -2070,10 +2071,10 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 			const entryPath = join(dir, entry.name);
 
 			if (entry.isDirectory()) {
-				if (entry.name === '_ignore' || entry.name === 'node_modules' || isWorkspaceStateDirectory(entry.name)) {
+				if (entry.name === '_ignore' || entry.name === 'node_modules' || isWorkspaceStateDirectory(entry.name) || (skipTestDirs && entry.name === 'test')) {
 					continue;
 				}
-				const rebuild = await shouldRebuild(entryPath, checkCodeFiles, checkAssets);
+				const rebuild = await shouldRebuild(entryPath, checkCodeFiles, checkAssets, skipTestDirs);
 				if (rebuild) {
 					return true;
 				}
@@ -2106,7 +2107,7 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 		if (!root || root.length === 0) continue;
 		const normalized = resolve(root);
 		if (normalized === normalizedBoot || normalized === normalizedRes) continue;
-		extraChecks.push(shouldRebuild(root, true, cartProject));
+		extraChecks.push(shouldRebuild(root, true, cartProject, true));
 	}
 
 	const extraNeedsRebuild = extraChecks.length > 0 ? await Promise.all(extraChecks).then(results => results.some(Boolean)) : false;

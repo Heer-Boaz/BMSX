@@ -273,6 +273,7 @@ const SKIPPED_DIRECTORY_NAMES = new Set<string>([
 	'.bmsx',
 	'node_modules',
 	'_ignore',
+	'test',
 ]);
 const BUILTIN_GLOBAL_FUNCTIONS = new Set<string>([
 	'assert',

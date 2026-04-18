@@ -129,20 +129,20 @@ Run an already-built cart in headless mode:
 npm run headless:game -- pietious
 ```
 
-Run the explicit headless assert route:
+Run an explicit host test:
 
 ```bash
-npm run headless:assert -- pietious
+npm run headless:test -- pietious src/carts/pietious/test/pietious_enter_world_assert.lua
 ```
 
 Important:
 
 - `headless:forcebuildallrun` and `headless:game` take the cart folder name
 - headless uses `dist/headless_debug.js`, `dist/engine.debug.js`, and `dist/bmsx-bios.debug.rom`
-- `headless:game` now prefers `src/carts/<cart>/test/<cart>_assert_results.mjs` when present
-- if no auto assert module exists, `headless:game` falls back to `<cart>_demo.json`
+- host tests are always explicit; `headless:game` does not auto-load legacy assert modules
+- if no explicit test is provided, `headless:game` falls back to `<cart>_demo.json`
 - headless timelines run unpaced, so the full scenario completes as fast as the emulator can simulate it
-- `headless:assert` and `headless:forcebuildallassert` are the explicit assert paths
+- `headless:test` and `headless:forcebuildalltest` are the explicit host-test paths
 
 ## Libretro / Custom Host
 
