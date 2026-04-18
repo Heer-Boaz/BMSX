@@ -60,7 +60,7 @@ type HostTestRunState = {
 
 interface TimelineScheduler {
 	nowMs(): number;
-	scheduleOnce(delayMs: number, cb: () => void): void;
+	scheduleOnce(delayMs: number, cb: (timestampMs: number) => void): void;
 }
 
 type TimelineExecutionPoint = {
@@ -91,8 +91,8 @@ function getPendingScheduledDelayMs(nowMs: number, settleMs = 0): number {
 function createTimelineScheduler(platform: Platform): TimelineScheduler {
 	return {
 		nowMs: () => platform.clock.now(),
-		scheduleOnce: (delayMs: number, cb: () => void): void => {
-			platform.clock.scheduleOnce(delayMs, () => cb());
+		scheduleOnce: (delayMs: number, cb: (timestampMs: number) => void): void => {
+			platform.clock.scheduleOnce(delayMs, cb);
 		},
 	};
 }

@@ -573,6 +573,8 @@ export class Input implements RegisterablePersistent {
 
 	private platformInputUnsubscribe: SubscriptionHandle = null;
 	private focusChangeUnsubscribe: SubscriptionHandle = null;
+	private nextPlatformPressId = 1;
+	private readonly platformPressIds = new Map<string, Map<string, number>>();
 	private readonly platformInputListener = (event: InputEvt): void => {
 		this.handleInputEvent(event);
 	};
@@ -914,26 +916,50 @@ export class Input implements RegisterablePersistent {
 	}
 
 	private routeButtonEvent(binding: DeviceBinding, evt: Extract<InputEvt, { type: 'button' }>): void {
+		const pressId = this.resolvePlatformPressId(evt);
 		if (binding.source === 'keyboard') {
 			const handler = binding.handler as KeyboardInput;
 			if (evt.down) handler.keydown(evt.code); else handler.keyup(evt.code);
 		} else if (binding.source === 'pointer') {
+			const value = evt.value ?? (evt.down ? 1 : 0);
 			const handler = binding.handler as PointerInput;
 			handler.ingestButton(evt.code, makeButtonState({
 				pressed: evt.down,
 				justpressed: evt.down,
 				justreleased: !evt.down,
 				timestamp: evt.timestamp,
-				pressId: evt.pressId,
-				value: evt.value,
+				pressId,
+				value,
 			}));
 		} else if (binding.source === 'gamepad') {
+			const value = evt.value ?? (evt.down ? 1 : 0);
 			const handler = binding.handler as GamepadInput;
-			handler.ingestButton(evt.code, evt.down, evt.value, evt.timestamp, evt.pressId);
+			handler.ingestButton(evt.code, evt.down, value, evt.timestamp, pressId);
 		}
 		if (this.gameplayCaptureEnabled && binding.assignedPlayer !== null) {
-			this.enqueueButtonEvent(binding.assignedPlayer, binding.source, evt.code, evt.down ? 'press' : 'release', evt.timestamp, evt.pressId);
+			this.enqueueButtonEvent(binding.assignedPlayer, binding.source, evt.code, evt.down ? 'press' : 'release', evt.timestamp, pressId);
 		}
+	}
+
+	private resolvePlatformPressId(evt: Extract<InputEvt, { type: 'button' }>): number {
+		if (evt.pressId !== undefined) {
+			return evt.pressId;
+		}
+		if (evt.down) {
+			const pressId = this.nextPlatformPressId;
+			this.nextPlatformPressId += 1;
+			let devicePressIds = this.platformPressIds.get(evt.deviceId);
+			if (devicePressIds === undefined) {
+				devicePressIds = new Map();
+				this.platformPressIds.set(evt.deviceId, devicePressIds);
+			}
+			devicePressIds.set(evt.code, pressId);
+			return pressId;
+		}
+		const devicePressIds = this.platformPressIds.get(evt.deviceId)!;
+		const pressId = devicePressIds.get(evt.code)!;
+		devicePressIds.delete(evt.code);
+		return pressId;
 	}
 
 	private routeAxis1(binding: DeviceBinding, evt: Extract<InputEvt, { type: 'axis1' }>): void {
@@ -967,7 +993,7 @@ export class Input implements RegisterablePersistent {
 		}
 	}
 
-	private enqueueButtonEvent(playerIndex: number, source: InputSource, code: string, type: 'press' | 'release', timestamp: number, pressId: number): void {
+	private enqueueButtonEvent(playerIndex: number, source: InputSource, code: string, type: 'press' | 'release', timestamp: number, pressId?: number): void {
 		const player = this.getPlayerInput(playerIndex);
 		player.recordButtonEvent(source, code, { eventType: type, identifier: code, timestamp, consumed: false, pressId });
 	}

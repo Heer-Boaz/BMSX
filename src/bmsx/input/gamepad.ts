@@ -64,7 +64,7 @@ export class GamepadInput implements InputHandler {
 		return getPressedState(this.buttonStates, btn);
 	}
 
-	public ingestButton(code: string, down: boolean, value: number, timestamp: number, pressId: number): void {
+	public ingestButton(code: string, down: boolean, value: number, timestamp: number, pressId?: number): void {
 		const state = this.buttonStates[code] ?? makeButtonState();
 		if (down) {
 			const existingPressId = pressId ?? state.pressId ?? this.nextPressId++;
@@ -86,7 +86,7 @@ export class GamepadInput implements InputHandler {
 			state.value = 0;
 			state.waspressed = state.waspressed || wasPressed;
 			state.wasreleased = state.wasreleased || wasPressed;
-			if (pressId !== null) state.pressId = pressId;
+			if (pressId !== undefined) state.pressId = pressId;
 			state.consumed = false;
 		}
 		this.buttonStates[code] = state;

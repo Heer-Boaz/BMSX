@@ -43,6 +43,14 @@ export function runConsoleChunkToNative(runtime: Runtime, source: string): unkno
 	return output;
 }
 
+export function installNativeGlobal(runtime: Runtime, name: string, value: unknown): void {
+	runtime.machine.cpu.setGlobalByKey(runtime.canonicalKey(name), toRuntimeValue(runtime, value));
+	const metadata = runtime.programMetadata ?? runtime.consoleMetadata;
+	if (metadata && !metadata.globalNames.includes(name)) {
+		metadata.globalNames.push(name);
+	}
+}
+
 export function callClosureInto(runtime: Runtime, fn: Closure, args: Value[], out: Value[]): void {
 	const depth = runtime.machine.cpu.getFrameDepth();
 	const previousBudget = runtime.machine.cpu.instructionBudgetRemaining;

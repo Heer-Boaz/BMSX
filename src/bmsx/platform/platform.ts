@@ -216,7 +216,7 @@ export interface InputModifiers {
 }
 
 export type InputEvt =
-	| { type: 'button'; deviceId: string; code: string; down: boolean; value: number; timestamp: MonoTime; pressId: number; modifiers?: InputModifiers }
+	| { type: 'button'; deviceId: string; code: string; down: boolean; value?: number; timestamp: MonoTime; pressId?: number; modifiers?: InputModifiers }
 	| { type: 'axis1'; deviceId: string; code: string; x: number; timestamp: MonoTime; modifiers?: InputModifiers }
 	| { type: 'axis2'; deviceId: string; code: string; x: number; y: number; timestamp: MonoTime; modifiers?: InputModifiers }
 	| { type: 'connect'; device: InputDevice; timestamp: MonoTime }

@@ -139,11 +139,11 @@ Important:
 
 - `headless:forcebuildallrun` and `headless:game` take the cart folder name
 - headless uses `dist/headless_debug.js`, `dist/engine.debug.js`, and `dist/bmsx-bios.debug.rom`
-- host tests are always explicit; `headless:game` does not auto-load legacy assert modules
+- host tests are always explicit; `headless:game` does not auto-load assert modules
 - if no explicit test is provided, `headless:game` falls back to `<cart>_demo.json`
 - headless timelines run unpaced, so the full scenario completes as fast as the emulator can simulate it
 - `headless:test` and `headless:forcebuildalltest` are the explicit host-test paths
-- Lua host tests expose `host.press(code, frames)`, `host.down(code)`, `host.up(code)`, `host.at(frame, command)`, `host.capture(label)`, and `host.log(message)` for simple Lua-built input timelines
+- Lua host tests run through `scripts/bootrom/platforms/hostrunner/host_test_runner.lua`; TypeScript only installs the native bridge and schedules ticks. The Lua runner exposes `host.press(code, frames)`, `host.down(code)`, `host.up(code)`, `host.at(frame, command)`, `host.capture(label)`, and `host.log(message)` for simple Lua-built input timelines
 
 ## Libretro / Custom Host
 

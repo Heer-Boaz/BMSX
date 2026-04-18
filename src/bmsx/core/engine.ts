@@ -17,7 +17,7 @@ import type { LuaSourceRegistry } from '../machine/program/sources';
 import { GateGroup, taskGate } from './taskgate';
 import { Runtime } from '../machine/runtime/runtime';
 import { raiseEngineIrq } from '../machine/runtime/engine_irq';
-import { runConsoleChunkToNative } from '../machine/program/executor';
+import { installNativeGlobal, runConsoleChunkToNative } from '../machine/program/executor';
 import { IRQ_NEWGAME } from '../machine/bus/io';
 import type { GPUBackend } from '../render/backend/interfaces';
 import { InputSource, KeyModifier } from '../input/player';
@@ -407,6 +407,10 @@ export class EngineCore {
 
 	public evaluate_lua(source: string): unknown[] {
 		return runConsoleChunkToNative(Runtime.instance, source);
+	}
+
+	public install_native_global(name: string, value: unknown): void {
+		installNativeGlobal(Runtime.instance, name, value);
 	}
 
 	public consume_button(playerIndex: number, buttonCode: string, source: InputSource) {
