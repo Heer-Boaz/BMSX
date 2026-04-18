@@ -38,6 +38,9 @@ import {
 import { CART_ROM_MAGIC, DEFAULT_GEO_WORK_UNITS_PER_SEC, DEFAULT_VDP_WORK_UNITS_PER_SEC, type CartManifest, type MachineManifest } from '../../rompack/format';
 import { BmsxColors } from '../devices/vdp/vdp';
 import {
+	APU_GAIN_Q12_ONE,
+	APU_RATE_STEP_Q16_ONE,
+	APU_SAMPLE_RATE_HZ,
 	APU_CHANNEL_MUSIC,
 	APU_CHANNEL_SFX,
 	APU_CHANNEL_UI,
@@ -115,27 +118,26 @@ import {
 	IO_ARG_STRIDE,
 	IO_APU_CHANNEL,
 	IO_APU_CMD,
-	IO_APU_CROSSFADE_MS,
+	IO_APU_CROSSFADE_SAMPLES,
 	IO_APU_EVENT_CHANNEL,
 	IO_APU_EVENT_HANDLE,
 	IO_APU_EVENT_KIND,
 	IO_APU_EVENT_SEQ,
 	IO_APU_EVENT_VOICE,
-	IO_APU_FADE_MS,
+	IO_APU_FADE_SAMPLES,
 	IO_APU_FILTER_FREQ_HZ,
 	IO_APU_FILTER_GAIN_MILLIDB,
 	IO_APU_FILTER_KIND,
 	IO_APU_FILTER_Q_MILLI,
+	IO_APU_GAIN_Q12,
 	IO_APU_HANDLE,
-	IO_APU_OFFSET_MS,
-	IO_APU_PITCH_CENTS,
 	IO_APU_PRIORITY,
-	IO_APU_RATE_PERMIL,
+	IO_APU_RATE_STEP_Q16,
+	IO_APU_START_SAMPLE,
 	IO_APU_START_AT_LOOP,
 	IO_APU_START_FRESH,
 	IO_APU_STATUS,
 	IO_APU_SYNC_LOOP,
-	IO_APU_VOLUME_MILLIDB,
 	IO_CMD_VDP_BLIT,
 	IO_CMD_VDP_CLEAR,
 	IO_CMD_VDP_DRAW_LINE,
@@ -1279,16 +1281,15 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_apu_handle', IO_APU_HANDLE);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_channel', IO_APU_CHANNEL);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_priority', IO_APU_PRIORITY);
-	luaPipeline.registerGlobal(runtime, 'sys_apu_pitch_cents', IO_APU_PITCH_CENTS);
-	luaPipeline.registerGlobal(runtime, 'sys_apu_volume_millidb', IO_APU_VOLUME_MILLIDB);
-	luaPipeline.registerGlobal(runtime, 'sys_apu_offset_ms', IO_APU_OFFSET_MS);
-	luaPipeline.registerGlobal(runtime, 'sys_apu_rate_permil', IO_APU_RATE_PERMIL);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_rate_step_q16', IO_APU_RATE_STEP_Q16);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_gain_q12', IO_APU_GAIN_Q12);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_start_sample', IO_APU_START_SAMPLE);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_filter_kind', IO_APU_FILTER_KIND);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_filter_freq_hz', IO_APU_FILTER_FREQ_HZ);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_filter_q_milli', IO_APU_FILTER_Q_MILLI);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_filter_gain_millidb', IO_APU_FILTER_GAIN_MILLIDB);
-	luaPipeline.registerGlobal(runtime, 'sys_apu_fade_ms', IO_APU_FADE_MS);
-	luaPipeline.registerGlobal(runtime, 'sys_apu_crossfade_ms', IO_APU_CROSSFADE_MS);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_fade_samples', IO_APU_FADE_SAMPLES);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_crossfade_samples', IO_APU_CROSSFADE_SAMPLES);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_sync_loop', IO_APU_SYNC_LOOP);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_start_at_loop', IO_APU_START_AT_LOOP);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_start_fresh', IO_APU_START_FRESH);
@@ -1305,6 +1306,9 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'apu_channel_sfx', APU_CHANNEL_SFX);
 	luaPipeline.registerGlobal(runtime, 'apu_channel_music', APU_CHANNEL_MUSIC);
 	luaPipeline.registerGlobal(runtime, 'apu_channel_ui', APU_CHANNEL_UI);
+	luaPipeline.registerGlobal(runtime, 'apu_sample_rate_hz', APU_SAMPLE_RATE_HZ);
+	luaPipeline.registerGlobal(runtime, 'apu_rate_step_q16_one', APU_RATE_STEP_Q16_ONE);
+	luaPipeline.registerGlobal(runtime, 'apu_gain_q12_one', APU_GAIN_Q12_ONE);
 	luaPipeline.registerGlobal(runtime, 'apu_priority_auto', APU_PRIORITY_AUTO);
 	luaPipeline.registerGlobal(runtime, 'apu_filter_none', APU_FILTER_NONE);
 	luaPipeline.registerGlobal(runtime, 'apu_filter_lowpass', APU_FILTER_LOWPASS);

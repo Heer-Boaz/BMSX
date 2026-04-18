@@ -19,15 +19,9 @@ local apu<const> = {
 	},
 }
 
-function apu.play(handle, channel, cmd)
-	mem[sys_apu_handle] = handle
+function apu.stop_channel(channel, fade_samples)
 	mem[sys_apu_channel] = channel
-	mem[sys_apu_cmd] = cmd
-end
-
-function apu.stop_channel(channel, fade_ms)
-	mem[sys_apu_channel] = channel
-	mem[sys_apu_fade_ms] = fade_ms
+	mem[sys_apu_fade_samples] = fade_samples
 	mem[sys_apu_cmd] = apu_cmd_stop_channel
 end
 

@@ -16,6 +16,7 @@ import {
 import type { CanonicalizationType } from '../../../../rompack/format';
 import { API_METHOD_METADATA } from '../../../../machine/firmware/api_metadata';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../../../../machine/firmware/builtin_descriptors';
+import { MEMORY_ACCESS_KIND_NAMES } from '../../../../machine/memory/access_kind';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../machine/runtime/contracts';
 import {
 	buildLuaSemanticWorkspaceSnapshot,
@@ -27,7 +28,6 @@ import {
 import { getCachedLuaParse } from '../../../language/lua/analysis_cache';
 
 const identityCanonicalizer = (value: string): string => value;
-const RESERVED_MEMORY_MAP_NAMES = ['mem', 'mem8', 'mem16le', 'mem32le', 'memf32le', 'memf64le'] as const;
 
 export type LuaDiagnosticSeverity = 'error' | 'warning';
 
@@ -710,8 +710,8 @@ function buildRangeKey(range: LuaSourceRange): string {
 
 function isReservedMemoryMapName(name: string, canonicalize: (value: string) => string): boolean {
 	const canonicalName = canonicalize(name);
-	for (let index = 0; index < RESERVED_MEMORY_MAP_NAMES.length; index += 1) {
-		if (canonicalize(RESERVED_MEMORY_MAP_NAMES[index]) === canonicalName) {
+	for (let index = 0; index < MEMORY_ACCESS_KIND_NAMES.length; index += 1) {
+		if (canonicalize(MEMORY_ACCESS_KIND_NAMES[index]) === canonicalName) {
 			return true;
 		}
 	}

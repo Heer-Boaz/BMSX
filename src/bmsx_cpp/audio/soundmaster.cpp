@@ -960,10 +960,10 @@ ModulationParams SoundMaster::resolvePlayParams(const ModulationInput& input) {
 
 ModulationParams SoundMaster::resolveResolvedPlayParams(const SoundMasterResolvedPlayRequest& request) const {
 	ModulationParams params;
-	params.pitchDelta = static_cast<f32>(request.pitchCents) / 100.0f;
-	params.volumeDelta = static_cast<f32>(request.volumeMilliDb) / 1000.0f;
-	params.offset = static_cast<f32>(request.offsetMs) / 1000.0f;
-	params.playbackRate = static_cast<f32>(request.ratePermil) / 1000.0f;
+	params.pitchDelta = 0.0f;
+	params.volumeDelta = request.gainLinear > 0.0f ? 20.0f * std::log10(request.gainLinear) : -96.0f;
+	params.offset = request.offsetSeconds;
+	params.playbackRate = request.playbackRate;
 	if (request.filter.has_value()) {
 		params.filter = request.filter;
 	}

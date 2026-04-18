@@ -38,12 +38,88 @@ local resolve_data_path<const> = function(path)
 	end
 end
 
+local compile_apu_defaults<const> = function(action)
+	action.__apu_priority = action.priority or apu_priority_auto
+	action.__apu_pitch_delta = 0
+	action.__apu_pitch_range_min = 0
+	action.__apu_pitch_range_span = 0
+	action.__apu_volume_delta = 0
+	action.__apu_volume_range_min = 0
+	action.__apu_volume_range_span = 0
+	action.__apu_start_sample = 0
+	action.__apu_start_range_min = 0
+	action.__apu_start_range_span = 0
+	action.__apu_rate = 1
+	action.__apu_rate_range_min = 0
+	action.__apu_rate_range_span = 0
+	action.__apu_filter_kind = apu_filter_none
+	action.__apu_filter_freq_hz = 0
+	action.__apu_filter_q_milli = 1000
+	action.__apu_filter_gain_millidb = 0
+end
+
+local compile_modulation<const> = function(action, params)
+	action.__apu_pitch_delta = params['pitchDelta'] or 0
+	local pitch_range<const> = params['pitchRange']
+	if pitch_range ~= nil then
+		action.__apu_pitch_range_min = pitch_range[1]
+		action.__apu_pitch_range_span = pitch_range[2] - pitch_range[1]
+	end
+
+	action.__apu_volume_delta = params['volumeDelta'] or 0
+	local volume_range<const> = params['volumeRange']
+	if volume_range ~= nil then
+		action.__apu_volume_range_min = volume_range[1]
+		action.__apu_volume_range_span = volume_range[2] - volume_range[1]
+	end
+
+	action.__apu_start_sample = (params.offset or 0) * apu_sample_rate_hz
+	local offset_range<const> = params['offsetRange']
+	if offset_range ~= nil then
+		action.__apu_start_range_min = offset_range[1] * apu_sample_rate_hz
+		action.__apu_start_range_span = (offset_range[2] - offset_range[1]) * apu_sample_rate_hz
+	end
+
+	action.__apu_rate = params['playbackRate'] or 1
+	local rate_range<const> = params['playbackRateRange']
+	if rate_range ~= nil then
+		action.__apu_rate_range_min = rate_range[1]
+		action.__apu_rate_range_span = rate_range[2] - rate_range[1]
+	end
+
+	local filter<const> = params.filter
+	if filter ~= nil then
+		local filter_kind<const> = apu.filter_kind[filter.type]
+		if filter_kind == nil then
+			error('aem invalid filter type: ' .. tostring(filter.type))
+		end
+		action.__apu_filter_kind = filter_kind
+		action.__apu_filter_freq_hz = filter.frequency
+		action.__apu_filter_q_milli = filter.q * 1000
+		action.__apu_filter_gain_millidb = filter.gain * 1000
+	end
+end
+
+local compile_transition<const> = function(transition)
+	transition.__apu_fade_samples = (transition.fade_ms or 0) * apu_sample_rate_hz / 1000
+	transition.__apu_crossfade_samples = (transition.crossfade_ms or 0) * apu_sample_rate_hz / 1000
+	transition.__apu_sync_loop = transition.sync == 'loop' and 1 or 0
+	transition.__apu_start_at_loop = transition.start_at_loop_start and 1 or 0
+	transition.__apu_start_fresh = transition.start_fresh and 1 or 0
+end
+
 local compile_action
 compile_action = function(action)
-	if action.modulation_params ~= nil then
-		action.__apu_mod = action.modulation_params
-	elseif action.modulation_preset ~= nil then
-		action.__apu_mod = resolve_data_path(action.modulation_preset)
+	if action.audio_id ~= nil or action.modulation_params ~= nil or action.modulation_preset ~= nil then
+		compile_apu_defaults(action)
+		if action.modulation_params ~= nil then
+			compile_modulation(action, action.modulation_params)
+		elseif action.modulation_preset ~= nil then
+			compile_modulation(action, resolve_data_path(action.modulation_preset))
+		end
+	end
+	if action.music_transition ~= nil then
+		compile_transition(action.music_transition)
 	end
 	if action.cooldown_ms ~= nil and action.cooldown_ms > 0 then
 		action.__cooldown_by_actor = {}
@@ -242,92 +318,96 @@ local apply_cooldown<const> = function(action, payload)
 	return true
 end
 
-local write_apu_modulation<const> = function(action)
-	if action == nil then
-		return
-	end
-	if action.priority ~= nil then
-		mem[sys_apu_priority] = action.priority
-	end
-	local params<const> = action.__apu_mod
-	if params == nil then
-		return
+local play_action_apu<const> = function(handle, channel, action, cmd)
+	local pitch_delta = action.__apu_pitch_delta
+	local pitch_range_span<const> = action.__apu_pitch_range_span
+	if pitch_range_span ~= 0 then
+		pitch_delta = pitch_delta + action.__apu_pitch_range_min + (pitch_range_span * math.random())
 	end
 
-	local pitch_delta = params['pitchDelta'] or 0
-	local pitch_range<const> = params['pitchRange']
-	if pitch_range ~= nil then
-		pitch_delta = pitch_delta + pitch_range[1] + ((pitch_range[2] - pitch_range[1]) * math.random())
+	local volume_delta = action.__apu_volume_delta
+	local volume_range_span<const> = action.__apu_volume_range_span
+	if volume_range_span ~= 0 then
+		volume_delta = volume_delta + action.__apu_volume_range_min + (volume_range_span * math.random())
 	end
-	if pitch_delta ~= 0 then
-		mem[sys_apu_pitch_cents] = pitch_delta * 100
+	local gain_q12<const> = (10 ^ (volume_delta / 20)) * apu_gain_q12_one
+
+	local start_sample = action.__apu_start_sample
+	local start_range_span<const> = action.__apu_start_range_span
+	if start_range_span ~= 0 then
+		start_sample = start_sample + action.__apu_start_range_min + (start_range_span * math.random())
 	end
 
-	local volume_delta = params['volumeDelta'] or 0
-	local volume_range<const> = params['volumeRange']
-	if volume_range ~= nil then
-		volume_delta = volume_delta + volume_range[1] + ((volume_range[2] - volume_range[1]) * math.random())
+	local rate = action.__apu_rate
+	local rate_range_span<const> = action.__apu_rate_range_span
+	if rate_range_span ~= 0 then
+		rate = rate + action.__apu_rate_range_min + (rate_range_span * math.random())
 	end
-	if volume_delta ~= 0 then
-		mem[sys_apu_volume_millidb] = volume_delta * 1000
-	end
+	local rate_step_q16<const> = rate * (2 ^ (pitch_delta / 12)) * apu_rate_step_q16_one
 
-	local offset = params.offset or 0
-	local offset_range<const> = params['offsetRange']
-	if offset_range ~= nil then
-		offset = offset + offset_range[1] + ((offset_range[2] - offset_range[1]) * math.random())
-	end
-	if offset ~= 0 then
-		mem[sys_apu_offset_ms] = offset * 1000
-	end
-
-	local rate = params['playbackRate'] or 1
-	local rate_range<const> = params['playbackRateRange']
-	if rate_range ~= nil then
-		rate = rate + rate_range[1] + ((rate_range[2] - rate_range[1]) * math.random())
-	end
-	if rate ~= 1 then
-		mem[sys_apu_rate_permil] = rate * 1000
-	end
-
-	local filter<const> = params.filter
-	if filter ~= nil then
-		local filter_kind<const> = apu.filter_kind[filter.type]
-		if filter_kind == nil then
-			error('aem invalid filter type: ' .. tostring(filter.type))
-		end
-		mem[sys_apu_filter_kind] = filter_kind
-		mem[sys_apu_filter_freq_hz] = filter.frequency
-		mem[sys_apu_filter_q_milli] = filter.q * 1000
-		mem[sys_apu_filter_gain_millidb] = filter.gain * 1000
-	end
+	memwrite(
+		sys_apu_handle,
+		handle,
+		channel,
+		action.__apu_priority,
+		rate_step_q16,
+		gain_q12,
+		start_sample,
+		action.__apu_filter_kind,
+		action.__apu_filter_freq_hz,
+		action.__apu_filter_q_milli,
+		action.__apu_filter_gain_millidb,
+		0,
+		0,
+		0,
+		0,
+		0,
+		cmd
+	)
 end
 
-local write_apu_transition<const> = function(transition)
-	if transition == nil then
-		return
-	end
-	if transition.fade_ms ~= nil then
-		mem[sys_apu_fade_ms] = transition.fade_ms
-	end
-	if transition.crossfade_ms ~= nil then
-		mem[sys_apu_crossfade_ms] = transition.crossfade_ms
-	end
-	if transition.sync == 'loop' then
-		mem[sys_apu_sync_loop] = 1
-	end
-	if transition.start_at_loop_start then
-		mem[sys_apu_start_at_loop] = 1
-	end
-	if transition.start_fresh then
-		mem[sys_apu_start_fresh] = 1
-	end
+local play_transition_apu<const> = function(handle, transition)
+	memwrite(
+		sys_apu_handle,
+		handle,
+		apu_channel_music,
+		apu_priority_auto,
+		apu_rate_step_q16_one,
+		apu_gain_q12_one,
+		0,
+		apu_filter_none,
+		0,
+		1000,
+		0,
+		transition.__apu_fade_samples,
+		transition.__apu_crossfade_samples,
+		transition.__apu_sync_loop,
+		transition.__apu_start_at_loop,
+		transition.__apu_start_fresh,
+		apu_cmd_play
+	)
 end
 
-local play_apu<const> = function(handle, channel, action, transition, cmd)
-	write_apu_modulation(action)
-	write_apu_transition(transition)
-	apu.play(handle, channel, cmd)
+local play_plain_apu<const> = function(handle, channel, cmd)
+	memwrite(
+		sys_apu_handle,
+		handle,
+		channel,
+		apu_priority_auto,
+		apu_rate_step_q16_one,
+		apu_gain_q12_one,
+		0,
+		apu_filter_none,
+		0,
+		1000,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		cmd
+	)
 end
 
 local clear_stinger<const> = function()
@@ -365,30 +445,27 @@ local dispatch_music_transition<const> = function(transition)
 		end
 		stinger_music_handle = target_handle
 		stinger_music_transition = transition
-		play_apu(stinger_handle, stinger_channel, nil, nil, apu_cmd_play)
+		play_plain_apu(stinger_handle, stinger_channel, apu_cmd_play)
 		return
 	end
-	play_apu(assets.audio[transition.audio_id].handle, apu_channel_music, nil, transition, apu_cmd_play)
+	play_transition_apu(assets.audio[transition.audio_id].handle, transition)
 end
 
 local dispatch_audio_play<const> = function(entry, handle, action, payload)
 	if not apply_cooldown(action, payload) then
 		return
 	end
-	play_apu(handle, entry.__channel, action, nil, entry.__queued and apu_cmd_queue_play or apu_cmd_play)
+	play_action_apu(handle, entry.__channel, action, entry.__queued and apu_cmd_queue_play or apu_cmd_play)
 end
 
 local dispatch_action<const> = function(entry, action, payload)
 	if type(action) == 'string' then
-		dispatch_audio_play(entry, assets.audio[action].handle, nil, payload)
+		play_plain_apu(assets.audio[action].handle, entry.__channel, entry.__queued and apu_cmd_queue_play or apu_cmd_play)
 		return
 	end
 	if action.stop_music then
-		local fade_ms = 0
-		if type(action.stop_music) ~= 'boolean' then
-			fade_ms = action.stop_music.fade_ms or 0
-		end
-		apu.stop_channel(apu_channel_music, fade_ms)
+		local fade_samples<const> = type(action.stop_music) == 'boolean' and 0 or ((action.stop_music.fade_ms or 0) * apu_sample_rate_hz / 1000)
+		apu.stop_channel(apu_channel_music, fade_samples)
 		return
 	end
 	if action.sequence then
@@ -449,7 +526,7 @@ local on_apu_irq<const> = function()
 	if stinger_handle == handle
 		and stinger_channel == channel
 		and stinger_seq == music_request_seq then
-		play_apu(stinger_music_handle, apu_channel_music, nil, stinger_music_transition, apu_cmd_play)
+		play_transition_apu(stinger_music_handle, stinger_music_transition)
 		clear_stinger()
 	end
 end

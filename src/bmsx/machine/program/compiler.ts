@@ -33,7 +33,6 @@ import {
 	type LuaWhileStatement,
 	type LuaGotoStatement,
 } from '../../lua/syntax/ast';
-import { createIdentifierCanonicalizer } from '../../lua/syntax/identifier_canonicalizer';
 import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './optimizer';
 import { buildModuleAliasesFromPaths, type ProgramConstReloc } from './asset';
@@ -108,7 +107,7 @@ type LocalBindingKind = 'local' | 'const' | 'parameter';
 
 type LocalBinding = {
 	symbolHandle: string;
-	canonicalName: string;
+	name: string;
 	reg: number;
 	kind: LocalBindingKind;
 	constValue: Value | null;
@@ -175,7 +174,6 @@ const isSmallSignedImmediate = (value: number): boolean =>
 class ProgramBuilder {
 	public readonly constPool: Value[];
 	public readonly stringPool: StringPool;
-	public readonly canonicalizeIdentifier: (value: string) => string;
 	public readonly optLevel: OptimizationLevel;
 	private readonly constMap: Map<string, number>;
 	private readonly systemGlobalNameSet: Set<string>;
@@ -196,17 +194,15 @@ class ProgramBuilder {
 
 	public constructor(
 		baseConstPool: ReadonlyArray<Value> | null = null,
-		canonicalization: CanonicalizationType = 'none',
 		stringPool: StringPool | null = null,
 		optLevel: OptimizationLevel = 0,
 		baseMetadata: ProgramMetadata | null = null,
 	) {
 		this.constPool = baseConstPool ? Array.from(baseConstPool) : [];
-		this.canonicalizeIdentifier = createIdentifierCanonicalizer(canonicalization);
 		this.stringPool = stringPool ?? new StringPool();
 		this.optLevel = optLevel;
 		this.constMap = new Map<string, number>();
-		this.systemGlobalNameSet = new Set(Array.from(ENGINE_SYSTEM_GLOBAL_NAME_SET, name => this.canonicalizeIdentifier(name)));
+		this.systemGlobalNameSet = new Set(ENGINE_SYSTEM_GLOBAL_NAME_SET);
 		for (let index = 0; index < this.constPool.length; index += 1) {
 			const value = this.constPool[index];
 			this.constMap.set(this.makeConstKey(value), index);
@@ -220,13 +216,13 @@ class ProgramBuilder {
 		}
 		const systemNames = metadata.systemGlobalNames;
 		for (let index = 0; index < systemNames.length; index += 1) {
-			const name = this.canonicalizeIdentifier(systemNames[index]);
+			const name = systemNames[index];
 			this.systemGlobalNames.push(name);
 			this.systemGlobalNameMap.set(name, index);
 		}
 		const globalNames = metadata.globalNames;
 		for (let index = 0; index < globalNames.length; index += 1) {
-			const name = this.canonicalizeIdentifier(globalNames[index]);
+			const name = globalNames[index];
 			this.globalNames.push(name);
 			this.globalNameMap.set(name, index);
 		}
@@ -253,32 +249,31 @@ class ProgramBuilder {
 	}
 
 	public resolveGlobalAccess(name: string): { system: boolean; slot: number } {
-		const canonicalName = this.canonicalizeIdentifier(name);
-		if (this.systemGlobalNameSet.has(canonicalName)) {
-			return { system: true, slot: this.resolveSystemGlobalSlot(canonicalName) };
+		if (this.systemGlobalNameSet.has(name)) {
+			return { system: true, slot: this.resolveSystemGlobalSlot(name) };
 		}
-		return { system: false, slot: this.resolveGlobalSlot(canonicalName) };
+		return { system: false, slot: this.resolveGlobalSlot(name) };
 	}
 
-	private resolveSystemGlobalSlot(canonicalName: string): number {
-		const existing = this.systemGlobalNameMap.get(canonicalName);
+	private resolveSystemGlobalSlot(name: string): number {
+		const existing = this.systemGlobalNameMap.get(name);
 		if (existing !== undefined) {
 			return existing;
 		}
 		const index = this.systemGlobalNames.length;
-		this.systemGlobalNames.push(canonicalName);
-		this.systemGlobalNameMap.set(canonicalName, index);
+		this.systemGlobalNames.push(name);
+		this.systemGlobalNameMap.set(name, index);
 		return index;
 	}
 
-	private resolveGlobalSlot(canonicalName: string): number {
-		const existing = this.globalNameMap.get(canonicalName);
+	private resolveGlobalSlot(name: string): number {
+		const existing = this.globalNameMap.get(name);
 		if (existing !== undefined) {
 			return existing;
 		}
 		const index = this.globalNames.length;
-		this.globalNames.push(canonicalName);
-		this.globalNameMap.set(canonicalName, index);
+		this.globalNames.push(name);
+		this.globalNameMap.set(name, index);
 		return index;
 	}
 
@@ -506,7 +501,6 @@ class FunctionBuilder {
 	private readonly protoId: string;
 	private readonly moduleCompileContext: ModuleCompileContext | null;
 	private readonly moduleCompileInfo: ModuleCompileInfo | null;
-	private readonly canonicalizeIdentifier: (value: string) => string;
 	private readonly code: Instruction[] = [];
 	private readonly ranges: Array<SourceRange | null> = [];
 	private finalizedCode: Uint8Array | null = null;
@@ -549,7 +543,6 @@ class FunctionBuilder {
 		this.protoId = params.protoId;
 		this.moduleCompileContext = params.moduleCompileContext ?? parent?.moduleCompileContext ?? null;
 		this.moduleCompileInfo = params.moduleCompileInfo ?? null;
-		this.canonicalizeIdentifier = program.canonicalizeIdentifier;
 	}
 
 	public compileChunk(chunk: LuaChunk): void {
@@ -844,10 +837,6 @@ class FunctionBuilder {
 		this.tempTop = this.localCount;
 	}
 
-	private canonicalizeName(name: string): string {
-		return this.canonicalizeIdentifier(name);
-	}
-
 	private finalizeLabels(): void {
 		if (this.pendingLabelJumps.size === 0) {
 			return;
@@ -875,12 +864,11 @@ class FunctionBuilder {
 		constClosureProtoIndex: number | null = null,
 		moduleBinding: ModuleBinding | null = null,
 	): number {
-		const canonicalName = this.canonicalizeName(name);
-		if (getMemoryAccessKindForName(canonicalName) !== null) {
-			throw new Error(`[Compiler] '${canonicalName}' is a reserved memory map name and cannot be used as a local or parameter.`);
+		if (getMemoryAccessKindForName(name) !== null) {
+			throw new Error(`[Compiler] '${name}' is a reserved memory map name and cannot be used as a local or parameter.`);
 		}
-		if (this.isReservedIntrinsicName(canonicalName)) {
-			throw new Error(`[Compiler] '${canonicalName}' is a reserved intrinsic name and cannot be used as a local or parameter.`);
+		if (name === 'memwrite') {
+			throw new Error(`[Compiler] '${name}' is a reserved intrinsic name and cannot be used as a local or parameter.`);
 		}
 		const reg = this.localCount;
 		this.localCount += 1;
@@ -892,7 +880,7 @@ class FunctionBuilder {
 		}
 		const binding: LocalBinding = {
 			symbolHandle,
-			canonicalName,
+			name,
 			reg,
 			kind,
 			constValue,
@@ -905,7 +893,7 @@ class FunctionBuilder {
 		scope.locals.push(binding);
 		const effectiveScopeRange = scopeRange ?? scope.range;
 		this.localDebugSlots.push({
-			name: canonicalName,
+			name,
 			register: reg,
 			definition: cloneSourceRange(definitionRange),
 			scope: cloneSourceRange(effectiveScopeRange),
@@ -941,7 +929,7 @@ class FunctionBuilder {
 		return binding ? binding.reg : null;
 	}
 
-	private resolveUpvalue(symbolHandle: string, canonicalName: string): number | null {
+	private resolveUpvalue(symbolHandle: string, name: string): number | null {
 		const existing = this.upvalueMap.get(symbolHandle);
 		if (existing !== undefined) {
 			return existing;
@@ -953,15 +941,15 @@ class FunctionBuilder {
 		if (parentLocal !== null) {
 			const index = this.upvalueDescs.length;
 			this.upvalueDescs.push({ inStack: true, index: parentLocal.reg });
-			this.upvalueNames.push(canonicalName);
+			this.upvalueNames.push(name);
 			this.upvalueMap.set(symbolHandle, index);
 			return index;
 		}
-		const parentUpvalue = this.parent.resolveUpvalue(symbolHandle, canonicalName);
+		const parentUpvalue = this.parent.resolveUpvalue(symbolHandle, name);
 		if (parentUpvalue !== null) {
 			const index = this.upvalueDescs.length;
 			this.upvalueDescs.push({ inStack: false, index: parentUpvalue });
-			this.upvalueNames.push(canonicalName);
+			this.upvalueNames.push(name);
 			this.upvalueMap.set(symbolHandle, index);
 			return index;
 		}
@@ -1007,8 +995,8 @@ class FunctionBuilder {
 		return getResolvedReferenceSymbolHandle(reference);
 	}
 
-	private getReferenceCanonicalName(reference: LuaBoundReference): string {
-		return this.canonicalizeName(reference.ref.name);
+	private getReferenceName(reference: LuaBoundReference): string {
+		return reference.ref.name;
 	}
 
 	private resolveReferenceVisibleBinding(reference: LuaBoundReference): LocalBinding | null {
@@ -1032,7 +1020,7 @@ class FunctionBuilder {
 		if (!symbolHandle) {
 			return null;
 		}
-		return this.resolveUpvalue(symbolHandle, this.getReferenceCanonicalName(reference));
+		return this.resolveUpvalue(symbolHandle, this.getReferenceName(reference));
 	}
 
 	private resolveReferenceConstBinding(reference: LuaBoundReference): LocalBinding | null {
@@ -1055,10 +1043,7 @@ class FunctionBuilder {
 		if (!this.moduleCompileContext) {
 			return null;
 		}
-		const canonicalName = this.canonicalizeName(moduleName);
-		return this.moduleCompileContext.moduleAliasMap.get(moduleName)
-			?? this.moduleCompileContext.moduleAliasMap.get(canonicalName)
-			?? null;
+		return this.moduleCompileContext.moduleAliasMap.get(moduleName) ?? null;
 	}
 
 	private resolveModuleCompileInfo(path: string): ModuleCompileInfo | null {
@@ -1085,7 +1070,7 @@ class FunctionBuilder {
 			return null;
 		}
 		const callee = call.callee as LuaIdentifierExpression;
-		if (this.canonicalizeName(callee.name) !== 'require') {
+		if (callee.name !== 'require') {
 			return null;
 		}
 		if (call.arguments[0].kind !== LuaSyntaxKind.StringLiteralExpression) {
@@ -1126,7 +1111,7 @@ class FunctionBuilder {
 			return null;
 		}
 		const key = expression.kind === LuaSyntaxKind.MemberExpression
-			? this.canonicalizeName((expression as LuaMemberExpression).identifier)
+			? (expression as LuaMemberExpression).identifier
 			: this.tryGetModuleExportStaticKey((expression as LuaIndexExpression).index);
 		if (!key) {
 			return null;
@@ -1142,8 +1127,7 @@ class FunctionBuilder {
 	}
 
 	private tryGetModuleExportStaticKey(expression: LuaExpression): string | null {
-		const key = extractTableKeyFromExpression(expression);
-		return key ? this.canonicalizeName(key) : null;
+		return extractTableKeyFromExpression(expression);
 	}
 
 	private tryResolveModuleExportSlotFromExpression(expression: LuaExpression): string | null {
@@ -1163,7 +1147,7 @@ class FunctionBuilder {
 	}
 
 	private emitReferenceLoad(reference: LuaBoundReference, target: number): void {
-		const name = this.getReferenceCanonicalName(reference);
+		const name = this.getReferenceName(reference);
 		const constBinding = this.resolveReferenceConstBinding(reference);
 		if (constBinding !== null) {
 			this.emitLoadConst(target, constBinding.constValue);
@@ -1225,7 +1209,7 @@ class FunctionBuilder {
 	}
 
 	private emitReferenceStore(reference: LuaBoundReference, valueReg: number): void {
-		const name = this.getReferenceCanonicalName(reference);
+		const name = this.getReferenceName(reference);
 		const symbolHandle = this.getReferenceSymbolHandle(reference);
 		const localBinding = symbolHandle ? this.resolveLocalBinding(symbolHandle) : null;
 		if (localBinding !== null) {
@@ -1725,7 +1709,7 @@ class FunctionBuilder {
 		const values = statement.values;
 		if (names.length === 1 && attributes[0] === 'const' && values.length === 1 && values[0].kind === LuaSyntaxKind.FunctionExpression) {
 			const decl = this.requireBoundDeclaration(names[0].range, `local '${names[0].name}'`);
-			const name = this.canonicalizeName(decl.name);
+			const name = decl.name;
 			const target = this.declareLocalFromDecl(decl, names[0].range);
 			const hint = this.createLocalFunctionHint(name);
 			const closureProtoIndex = this.compileExpressionWithStaticClosureProto(values[0], target, 1, hint);
@@ -1759,7 +1743,7 @@ class FunctionBuilder {
 				}
 				const reg = this.allocTemp();
 				const name = i < names.length
-					? this.canonicalizeName(this.requireBoundDeclaration(names[i].range, `local '${names[i].name}'`).name)
+					? this.requireBoundDeclaration(names[i].range, `local '${names[i].name}'`).name
 					: '';
 				const hint = expr.kind === LuaSyntaxKind.FunctionExpression && i < names.length
 					? this.createLocalFunctionHint(name)
@@ -1789,7 +1773,7 @@ class FunctionBuilder {
 			} else {
 				const lastReg = this.allocTemp();
 				const lastName = lastIndex < names.length
-					? this.canonicalizeName(this.requireBoundDeclaration(names[lastIndex].range, `local '${names[lastIndex].name}'`).name)
+					? this.requireBoundDeclaration(names[lastIndex].range, `local '${names[lastIndex].name}'`).name
 					: '';
 				const resultCount = wantsMulti ? remaining : 1;
 				const lastHint = lastExpr.kind === LuaSyntaxKind.FunctionExpression && lastIndex < names.length
@@ -1812,7 +1796,7 @@ class FunctionBuilder {
 		}
 		for (let i = 0; i < names.length; i += 1) {
 			const decl = this.requireBoundDeclaration(names[i].range, `local '${names[i].name}'`);
-			const name = this.canonicalizeName(decl.name);
+			const name = decl.name;
 			const attribute = attributes[i];
 			const lastIndex = values.length - 1;
 			const hasInitializer = values.length > 0 && (i < lastIndex || i === lastIndex || (i > lastIndex && this.isMultiReturnExpression(values[lastIndex])));
@@ -1883,7 +1867,7 @@ class FunctionBuilder {
 				const identifier = expr as LuaIdentifierExpression;
 				const reference = this.getIdentifierWriteReference(identifier);
 				const symbolHandle = this.getReferenceSymbolHandle(reference);
-				const name = this.getReferenceCanonicalName(reference);
+				const name = this.getReferenceName(reference);
 				const localBinding = symbolHandle ? this.resolveLocalBinding(symbolHandle) : null;
 				if (localBinding !== null) {
 					if (localBinding.kind === 'const') {
@@ -1918,36 +1902,15 @@ class FunctionBuilder {
 				const member = expr as LuaMemberExpression;
 				const baseReg = this.allocTemp();
 				this.compileExpressionInto(targetPreparation.base, baseReg, 1);
-				const keyConst = this.program.constIndexString(this.canonicalizeName(member.identifier));
+				const keyConst = this.program.constIndexString(member.identifier);
 				targets.push({ kind: 'table', tableReg: baseReg, keyConst });
 				continue;
 			}
 			if (targetPreparation.kind === 'memory') {
-				const memoryTarget = this.tryCompileMemoryTarget(expr as LuaIndexExpression);
-				if (memoryTarget !== null) {
-					targets.push(memoryTarget);
-					continue;
-				}
-				// Defensive fallback: if we couldn't compile as a memory target,
-				// treat the bound reference as a table base and proceed.
-				const baseRegMem = this.allocTemp();
-				this.emitReferenceLoad(targetPreparation.baseReference, baseRegMem);
-				const keyConstMem = this.tryGetConstIndex(targetPreparation.index);
-				if (keyConstMem !== undefined) {
-					targets.push({ kind: 'table', tableReg: baseRegMem, keyConst: keyConstMem });
-					continue;
-				}
-				const keyRegMem = this.allocTemp();
-				this.compileExpressionInto(targetPreparation.index, keyRegMem, 1);
-				targets.push({ kind: 'table', tableReg: baseRegMem, keyReg: keyRegMem });
+				targets.push(this.compileMemoryTarget(targetPreparation));
 				continue;
 			}
 			if (targetPreparation.kind === 'index') {
-				const memoryTarget = this.tryCompileMemoryTarget(expr as LuaIndexExpression);
-				if (memoryTarget !== null) {
-					targets.push(memoryTarget);
-					continue;
-				}
 				const baseReg = this.allocTemp();
 				this.compileExpressionInto(targetPreparation.base, baseReg, 1);
 				const keyConst = this.tryGetConstIndex(targetPreparation.index);
@@ -2273,7 +2236,7 @@ class FunctionBuilder {
 	}
 
 	private compileGoto(statement: LuaGotoStatement): void {
-		const label = this.canonicalizeName(statement.label);
+		const label = statement.label;
 		const target = this.labelPositions.get(label);
 		const jumpIndex = this.emitJumpPlaceholder();
 		if (target !== undefined) {
@@ -2289,7 +2252,7 @@ class FunctionBuilder {
 	}
 
 	private compileLabel(statement: LuaLabelStatement): void {
-		const label = this.canonicalizeName(statement.label);
+		const label = statement.label;
 		if (this.labelPositions.has(label)) {
 			throw new Error(`Duplicate label '${label}'.`);
 		}
@@ -2315,7 +2278,7 @@ class FunctionBuilder {
 
 	private compileLocalFunction(statement: any): void {
 		const decl = this.requireBoundDeclaration(statement.name.range, `local function '${statement.name.name}'`);
-		const name = this.canonicalizeName(decl.name);
+		const name = decl.name;
 		const reg = this.declareLocalFromDecl(decl, statement.name.range);
 		const hint = this.createLocalFunctionHint(name);
 		const protoId = this.createChildProtoId(hint);
@@ -2325,8 +2288,8 @@ class FunctionBuilder {
 
 	private compileFunctionDeclaration(statement: any): void {
 		const fnExpr = statement.functionExpression as LuaFunctionExpression;
-		const methodName = statement.name.methodName !== null ? this.canonicalizeName(statement.name.methodName) : null;
-		const identifiers = (statement.name.identifiers as string[]).map(name => this.canonicalizeName(name));
+		const methodName = statement.name.methodName;
+		const identifiers = statement.name.identifiers as string[];
 		const target = classifyFunctionDeclarationTarget(this.semantics, statement);
 		const hint = buildDeclarationHint(identifiers, methodName);
 		const protoId = this.createChildProtoId(hint);
@@ -2350,12 +2313,12 @@ class FunctionBuilder {
 		}
 		this.emitReferenceLoad(target.baseReference, baseReg);
 		for (let i = 0; i < target.intermediateKeys.length; i += 1) {
-			const key = this.program.constIndexString(this.canonicalizeName(target.intermediateKeys[i]));
+			const key = this.program.constIndexString(target.intermediateKeys[i]);
 			const nextReg = this.allocTemp();
 			this.emitTableGetConst(nextReg, baseReg, key);
 			this.emitABC(OpCode.MOV, baseReg, nextReg, 0);
 		}
-		const keyName = this.canonicalizeName(target.finalKey);
+		const keyName = target.finalKey;
 		const keyConst = this.program.constIndexString(keyName);
 		this.emitTableSetConst(baseReg, keyConst, closureReg);
 	}
@@ -2428,7 +2391,7 @@ class FunctionBuilder {
 		}
 		const baseReg = this.allocTemp();
 		this.compileExpressionInto(expression.base, baseReg, 1);
-		const key = this.program.constIndexString(this.canonicalizeName(expression.identifier));
+		const key = this.program.constIndexString(expression.identifier);
 		this.emitTableGetConst(target, baseReg, key);
 	}
 
@@ -2438,8 +2401,9 @@ class FunctionBuilder {
 			this.emitModuleExportLoad(slotName, target);
 			return;
 		}
-		const memoryTarget = this.tryCompileMemoryTarget(expression as LuaIndexExpression);
-		if (memoryTarget !== null) {
+		const targetPreparation = classifyAssignmentTargetPreparation(this.semantics, expression as LuaIndexExpression);
+		if (targetPreparation.kind === 'memory') {
+			const memoryTarget = this.compileMemoryTarget(targetPreparation);
 			this.emitMemoryLoad(target, memoryTarget.accessKind, memoryTarget.addrConst, memoryTarget.addrReg);
 			return;
 		}
@@ -2487,7 +2451,7 @@ class FunctionBuilder {
 			if (field.kind === LuaTableFieldKind.IdentifierKey) {
 				const valueReg = this.allocTemp();
 				this.compileExpressionInto(field.value, valueReg, 1);
-				const keyConst = this.program.constIndexString(this.canonicalizeName(field.name));
+				const keyConst = this.program.constIndexString(field.name);
 				this.emitTableSetConst(target, keyConst, valueReg);
 				this.tempTop = tempBase;
 				continue;
@@ -2525,15 +2489,7 @@ class FunctionBuilder {
 		return this.program.constIndex(constValue);
 	}
 
-	private isReservedIntrinsicName(name: string): boolean {
-		return name === 'memwrite';
-	}
-
-	private tryCompileMemoryTarget(expression: LuaIndexExpression): Extract<AssignmentTarget, { kind: 'memory' }> | null {
-		const target = classifyAssignmentTargetPreparation(this.semantics, expression);
-		if (target.kind !== 'memory') {
-			return null;
-		}
+	private compileMemoryTarget(target: Extract<ReturnType<typeof classifyAssignmentTargetPreparation>, { kind: 'memory' }>): Extract<AssignmentTarget, { kind: 'memory' }> {
 		const addrConst = this.tryGetNumericConstIndex(target.index);
 		if (addrConst !== undefined) {
 			return { kind: 'memory', accessKind: target.accessKind, addrConst };
@@ -2581,7 +2537,7 @@ class FunctionBuilder {
 		if (addressExpression.kind === LuaSyntaxKind.IdentifierExpression) {
 			const reference = this.getIdentifierReference(addressExpression as LuaIdentifierExpression);
 			if (reference.kind === 'global') {
-				const name = this.getReferenceCanonicalName(reference);
+				const name = this.getReferenceName(reference);
 				const spec = MMIO_REGISTER_SPEC_BY_NAME.get(name);
 				if (spec) return spec.writeRequirement;
 			}
@@ -2597,7 +2553,7 @@ class FunctionBuilder {
 		if (addressExpression.kind === LuaSyntaxKind.IdentifierExpression) {
 			const reference = this.getIdentifierReference(addressExpression as LuaIdentifierExpression);
 			if (reference.kind === 'global') {
-				const name = this.getReferenceCanonicalName(reference);
+				const name = this.getReferenceName(reference);
 				if (MMIO_REGISTER_SPEC_BY_NAME.has(name)) return name;
 			}
 		}
@@ -2633,7 +2589,7 @@ class FunctionBuilder {
 			return false;
 		}
 		const reference = this.getIdentifierReference(expression.callee as LuaIdentifierExpression);
-		if (reference.kind === 'reserved_intrinsic' && this.getReferenceCanonicalName(reference) === 'memwrite') {
+		if (reference.kind === 'reserved_intrinsic' && this.getReferenceName(reference) === 'memwrite') {
 			this.compileMemWriteIntrinsic(expression, target, resultCount);
 			return true;
 		}
@@ -2839,7 +2795,7 @@ class FunctionBuilder {
 		if (this.tryCompileIntrinsicCall(expression, target, resultCount)) {
 			return;
 		}
-		const methodName = expression.methodName !== null ? this.canonicalizeName(expression.methodName) : null;
+		const methodName = expression.methodName !== null ? expression.methodName : null;
 		const hasMethod = methodName && methodName.length > 0;
 		const moduleMethodSlot = hasMethod ? this.tryResolveModuleExportMethodSlot(expression.callee, methodName) : null;
 		const constClosureBinding = !hasMethod && expression.callee.kind === LuaSyntaxKind.IdentifierExpression
@@ -3044,47 +3000,43 @@ const stripModuleSourcePrefix = (path: string): string => {
 	return normalized;
 };
 
-const sanitizeModuleSlotSegment = (value: string, canonicalizeName: (value: string) => string): string => {
-	const canonical = canonicalizeName(value);
-	return canonical.replace(/[^A-Za-z0-9_]/g, '_');
-};
+const sanitizeModuleSlotSegment = (value: string): string =>
+	value.replace(/[^A-Za-z0-9_]/g, '_');
 
-const buildModuleSlotPrefix = (modulePath: string, canonicalizeName: (value: string) => string): string => {
+const buildModuleSlotPrefix = (modulePath: string): string => {
 	const compactPath = stripModuleSourcePrefix(modulePath);
 	const parts = compactPath.split('/').filter(part => part.length > 0);
 	const normalizedParts = parts.length > 0 ? parts : [compactPath];
-	return normalizedParts.map(part => sanitizeModuleSlotSegment(part, canonicalizeName)).join('__');
+	return normalizedParts.map(sanitizeModuleSlotSegment).join('__');
 };
 
 const buildModuleExportSlotName = (
 	modulePath: string,
 	exportPath: ReadonlyArray<string>,
-	canonicalizeName: (value: string) => string,
 ): string =>
-	[buildModuleSlotPrefix(modulePath, canonicalizeName), ...exportPath.map(part => sanitizeModuleSlotSegment(part, canonicalizeName))].join('__');
+	[buildModuleSlotPrefix(modulePath), ...exportPath.map(sanitizeModuleSlotSegment)].join('__');
 
 const resolveStaticModuleShapePath = (
 	expression: LuaExpression,
 	localShapes: ReadonlyMap<string, ModuleExportNode>,
-	canonicalizeName: (value: string) => string,
 ): ModuleExportNode | null => {
 	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
 		const identifier = expression as LuaIdentifierExpression;
-		const shape = localShapes.get(canonicalizeName(identifier.name));
+		const shape = localShapes.get(identifier.name);
 		return shape ? cloneModuleExportNode(shape) : null;
 	}
 	if (expression.kind === LuaSyntaxKind.MemberExpression) {
 		const member = expression as LuaMemberExpression;
-		const baseShape = resolveStaticModuleShapePath(member.base, localShapes, canonicalizeName);
+		const baseShape = resolveStaticModuleShapePath(member.base, localShapes);
 		if (!baseShape) {
 			return null;
 		}
-		const child = baseShape.children.get(canonicalizeName(member.identifier));
+		const child = baseShape.children.get(member.identifier);
 		return child ? cloneModuleExportNode(child) : null;
 	}
 	if (expression.kind === LuaSyntaxKind.IndexExpression) {
 		const indexExpr = expression as LuaIndexExpression;
-		const baseShape = resolveStaticModuleShapePath(indexExpr.base, localShapes, canonicalizeName);
+		const baseShape = resolveStaticModuleShapePath(indexExpr.base, localShapes);
 		if (!baseShape) {
 			return null;
 		}
@@ -3092,7 +3044,7 @@ const resolveStaticModuleShapePath = (
 		if (!key) {
 			return null;
 		}
-		const child = baseShape.children.get(canonicalizeName(key));
+		const child = baseShape.children.get(key);
 		return child ? cloneModuleExportNode(child) : null;
 	}
 	return null;
@@ -3101,7 +3053,6 @@ const resolveStaticModuleShapePath = (
 const buildModuleShapeFromExpression = (
 	expression: LuaExpression,
 	localShapes: ReadonlyMap<string, ModuleExportNode>,
-	canonicalizeName: (value: string) => string,
 ): ModuleExportNode | null => {
 	if (expression.kind === LuaSyntaxKind.TableConstructorExpression) {
 		const table = expression as LuaTableConstructorExpression;
@@ -3118,13 +3069,13 @@ const buildModuleShapeFromExpression = (
 				continue;
 			}
 			node.children.set(
-				canonicalizeName(key),
-				buildModuleShapeFromExpression(field.value, localShapes, canonicalizeName) ?? createModuleExportNode(),
+				key,
+				buildModuleShapeFromExpression(field.value, localShapes) ?? createModuleExportNode(),
 			);
 		}
 		return node;
 	}
-	return resolveStaticModuleShapePath(expression, localShapes, canonicalizeName);
+	return resolveStaticModuleShapePath(expression, localShapes);
 };
 
 const assignModuleShapePath = (
@@ -3151,7 +3102,6 @@ const assignModuleShapePath = (
 
 const buildTopLevelLocalModuleShapes = (
 	chunk: LuaChunk,
-	canonicalizeName: (value: string) => string,
 ): Map<string, ModuleExportNode> => {
 	const localShapes = new Map<string, ModuleExportNode>();
 	for (let index = 0; index < chunk.body.length; index += 1) {
@@ -3164,11 +3114,11 @@ const buildTopLevelLocalModuleShapes = (
 				if (!value) {
 					continue;
 				}
-				const shape = buildModuleShapeFromExpression(value, localShapes, canonicalizeName);
+				const shape = buildModuleShapeFromExpression(value, localShapes);
 				if (!shape) {
 					continue;
 				}
-				localShapes.set(canonicalizeName(localAssignment.names[nameIndex].name), shape);
+				localShapes.set(localAssignment.names[nameIndex].name, shape);
 			}
 			continue;
 		}
@@ -3183,7 +3133,7 @@ const buildTopLevelLocalModuleShapes = (
 				if (!path || path.length === 0) {
 					continue;
 				}
-				const rootName = canonicalizeName(path[0]);
+				const rootName = path[0];
 				const rootShape = localShapes.get(rootName);
 				if (!rootShape) {
 					continue;
@@ -3192,8 +3142,8 @@ const buildTopLevelLocalModuleShapes = (
 				if (!right) {
 					continue;
 				}
-				const shape = buildModuleShapeFromExpression(right, localShapes, canonicalizeName) ?? createModuleExportNode();
-				assignModuleShapePath(rootShape, path.slice(1).map(canonicalizeName), shape);
+				const shape = buildModuleShapeFromExpression(right, localShapes) ?? createModuleExportNode();
+				assignModuleShapePath(rootShape, path.slice(1), shape);
 			}
 			continue;
 		}
@@ -3202,14 +3152,14 @@ const buildTopLevelLocalModuleShapes = (
 			if (declaration.name.identifiers.length === 0) {
 				continue;
 			}
-			const rootName = canonicalizeName(declaration.name.identifiers[0]);
+			const rootName = declaration.name.identifiers[0];
 			const rootShape = localShapes.get(rootName);
 			if (!rootShape) {
 				continue;
 			}
-			const path = declaration.name.identifiers.slice(1).map(canonicalizeName);
+			const path = declaration.name.identifiers.slice(1);
 			if (declaration.name.methodName && declaration.name.methodName.length > 0) {
-				path.push(canonicalizeName(declaration.name.methodName));
+				path.push(declaration.name.methodName);
 			}
 			if (path.length === 0) {
 				continue;
@@ -3219,9 +3169,9 @@ const buildTopLevelLocalModuleShapes = (
 		}
 		if (statement.kind === LuaSyntaxKind.LocalFunctionStatement) {
 			const declaration = statement as LuaLocalFunctionStatement;
-			const existing = localShapes.get(canonicalizeName(declaration.name.name));
+			const existing = localShapes.get(declaration.name.name);
 			if (existing) {
-				localShapes.set(canonicalizeName(declaration.name.name), existing);
+				localShapes.set(declaration.name.name, existing);
 			}
 		}
 	}
@@ -3231,7 +3181,6 @@ const buildTopLevelLocalModuleShapes = (
 const buildModuleCompileInfo = (
 	modulePath: string,
 	chunk: LuaChunk,
-	canonicalizeName: (value: string) => string,
 ): ModuleCompileInfo | null => {
 	if (chunk.body.length === 0) {
 		return null;
@@ -3244,8 +3193,8 @@ const buildModuleCompileInfo = (
 	if (returnStatement.expressions.length !== 1) {
 		return null;
 	}
-	const localShapes = buildTopLevelLocalModuleShapes(chunk, canonicalizeName);
-	const exportRoot = buildModuleShapeFromExpression(returnStatement.expressions[0], localShapes, canonicalizeName);
+	const localShapes = buildTopLevelLocalModuleShapes(chunk);
+	const exportRoot = buildModuleShapeFromExpression(returnStatement.expressions[0], localShapes);
 	if (!exportRoot || exportRoot.children.size === 0) {
 		return null;
 	}
@@ -3253,7 +3202,7 @@ const buildModuleCompileInfo = (
 	const assignSlots = (node: ModuleExportNode, path: string[]): void => {
 		for (const [key, child] of node.children) {
 			const childPath = path.concat(key);
-			child.slotName = buildModuleExportSlotName(modulePath, childPath, canonicalizeName);
+			child.slotName = buildModuleExportSlotName(modulePath, childPath);
 			exportSlotsByPathKey.set(buildModuleExportPathKey(childPath), child.slotName);
 			assignSlots(child, childPath);
 		}
@@ -3270,7 +3219,6 @@ const buildModuleCompileInfo = (
 const buildModuleCompileContext = (
 	entryChunk: LuaChunk,
 	modules: ReadonlyArray<ProgramModule>,
-	canonicalizeName: (value: string) => string,
 ): ModuleCompileContext => {
 	const modulePaths = [entryChunk.range.path];
 	for (let index = 0; index < modules.length; index += 1) {
@@ -3283,15 +3231,11 @@ const buildModuleCompileContext = (
 		if (!moduleAliasMap.has(entry.alias)) {
 			moduleAliasMap.set(entry.alias, entry.path);
 		}
-		const canonicalAlias = canonicalizeName(entry.alias);
-		if (!moduleAliasMap.has(canonicalAlias)) {
-			moduleAliasMap.set(canonicalAlias, entry.path);
-		}
 	}
 	const modulesByPath = new Map<string, ModuleCompileInfo>();
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
-		const info = buildModuleCompileInfo(module.path, module.chunk, canonicalizeName);
+		const info = buildModuleCompileInfo(module.path, module.chunk);
 		if (info) {
 			modulesByPath.set(module.path, info);
 		}
@@ -3353,6 +3297,7 @@ function buildCompilerSemanticFrontend(
 	}
 	return buildLuaSemanticFrontend(sources, {
 		extraGlobalNames,
+		canonicalization: options.canonicalization ?? 'none',
 	});
 }
 
@@ -3422,10 +3367,9 @@ function cloneProto(proto: Proto): Proto {
 function createProgramBuilderFromProgram(
 	base: Program,
 	metadata: ProgramMetadata,
-	canonicalization: CanonicalizationType,
 	optLevel: OptimizationLevel,
 ): ProgramBuilder {
-	const builder = new ProgramBuilder(base.constPool, canonicalization, base.constPoolStringPool, optLevel, metadata);
+	const builder = new ProgramBuilder(base.constPool, base.constPoolStringPool, optLevel, metadata);
 	const protoIds = metadata.protoIds;
 	if (!protoIds || protoIds.length !== base.protos.length) {
 		throw new Error('[ProgramBuilder] Base program proto ids missing or mismatched.');
@@ -3449,11 +3393,9 @@ function createProgramBuilderFromProgram(
 }
 
 export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray<ProgramModule> = [], options: CompileOptions = {}): CompiledProgram {
-	const canonicalization = options.canonicalization ?? 'none';
 	const optLevel = options.optLevel ?? 0;
-	const canonicalizeName = createIdentifierCanonicalizer(canonicalization);
 	const frontend = buildCompilerSemanticFrontend(chunk, modules, options);
-	const moduleCompileContext = buildModuleCompileContext(chunk, modules, canonicalizeName);
+	const moduleCompileContext = buildModuleCompileContext(chunk, modules);
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
@@ -3464,9 +3406,9 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		if (!options.baseMetadata) {
 			throw new Error('[ProgramBuilder] Base program metadata is required.');
 		}
-		programBuilder = createProgramBuilderFromProgram(options.baseProgram, options.baseMetadata, canonicalization, optLevel);
+		programBuilder = createProgramBuilderFromProgram(options.baseProgram, options.baseMetadata, optLevel);
 	} else {
-		programBuilder = new ProgramBuilder(null, canonicalization, null, optLevel);
+		programBuilder = new ProgramBuilder(null, null, optLevel);
 	}
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
@@ -3544,14 +3486,13 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 }
 
 export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata, chunk: LuaChunk, options: CompileOptions = {}): { program: Program; metadata: ProgramMetadata; entryProtoIndex: number } {
-	const canonicalization = options.canonicalization ?? 'none';
 	const optLevel = options.optLevel ?? 0;
 	const frontend = buildCompilerSemanticFrontend(chunk, [], { ...options, baseMetadata: metadata });
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
 	}
-	const programBuilder = createProgramBuilderFromProgram(base, metadata, canonicalization, optLevel);
+	const programBuilder = createProgramBuilderFromProgram(base, metadata, optLevel);
 	const compileErrors: CompileError[] = [];
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);

@@ -14,10 +14,9 @@ export interface SoundMasterPlayRequest {
 }
 
 export interface SoundMasterResolvedPlayRequest {
-	pitchCents: number;
-	volumeMilliDb: number;
-	offsetMs: number;
-	ratePermil: number;
+	playbackRate: number;
+	gainLinear: number;
+	offsetSeconds: number;
 	filter: AudioFilterParams | null;
 	priority?: number;
 }
@@ -522,10 +521,10 @@ export class SoundMaster {
 
 	private resolveResolvedPlayParams(request: SoundMasterResolvedPlayRequest): ModulationParams {
 		const params: ModulationParams = {
-			pitchDelta: request.pitchCents / 100,
-			volumeDelta: request.volumeMilliDb / 1000,
-			offset: request.offsetMs / 1000,
-			playbackRate: request.ratePermil / 1000,
+			pitchDelta: 0,
+			volumeDelta: request.gainLinear > 0 ? 20 * Math.log10(request.gainLinear) : -96,
+			offset: request.offsetSeconds,
+			playbackRate: request.playbackRate,
 		};
 		if (request.filter !== null) {
 			params.filter = request.filter;

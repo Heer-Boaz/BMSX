@@ -7,8 +7,10 @@ export const enum MemoryAccessKind {
 	F64LE,
 }
 
+export const MEMORY_ACCESS_KIND_NAMES = ['mem', 'mem8', 'mem16le', 'mem32le', 'memf32le', 'memf64le'] as const;
+
 export function getMemoryAccessKindForName(name: string): MemoryAccessKind | null {
-	switch (name.toLowerCase()) {
+	switch (name) {
 		case 'mem':
 			return MemoryAccessKind.Word;
 		case 'mem8':

@@ -1,6 +1,9 @@
 import type { ActiveVoiceInfo, SoundMaster, SoundMasterResolvedPlayRequest } from '../../../audio/soundmaster';
 import type { AudioType } from '../../../rompack/format';
 import {
+	APU_GAIN_Q12_ONE,
+	APU_RATE_STEP_Q16_ONE,
+	APU_SAMPLE_RATE_HZ,
 	APU_CHANNEL_MUSIC,
 	APU_CHANNEL_SFX,
 	APU_CHANNEL_UI,
@@ -22,27 +25,26 @@ import {
 	APU_PRIORITY_AUTO,
 	IO_APU_CHANNEL,
 	IO_APU_CMD,
-	IO_APU_CROSSFADE_MS,
+	IO_APU_CROSSFADE_SAMPLES,
 	IO_APU_EVENT_CHANNEL,
 	IO_APU_EVENT_HANDLE,
 	IO_APU_EVENT_KIND,
 	IO_APU_EVENT_SEQ,
 	IO_APU_EVENT_VOICE,
-	IO_APU_FADE_MS,
+	IO_APU_FADE_SAMPLES,
 	IO_APU_FILTER_FREQ_HZ,
 	IO_APU_FILTER_GAIN_MILLIDB,
 	IO_APU_FILTER_KIND,
 	IO_APU_FILTER_Q_MILLI,
+	IO_APU_GAIN_Q12,
 	IO_APU_HANDLE,
-	IO_APU_OFFSET_MS,
-	IO_APU_PITCH_CENTS,
 	IO_APU_PRIORITY,
-	IO_APU_RATE_PERMIL,
+	IO_APU_RATE_STEP_Q16,
+	IO_APU_START_SAMPLE,
 	IO_APU_START_AT_LOOP,
 	IO_APU_START_FRESH,
 	IO_APU_STATUS,
 	IO_APU_SYNC_LOOP,
-	IO_APU_VOLUME_MILLIDB,
 	IRQ_APU,
 } from '../../bus/io';
 import { Memory } from '../../memory/memory';
@@ -55,6 +57,10 @@ interface QueuedAudioPlay {
 }
 
 const ACTIVE_VOICE_PENDING = -1;
+
+function apuSamplesToMilliseconds(samples: number): number {
+	return (samples * 1000) / APU_SAMPLE_RATE_HZ;
+}
 
 function decodeChannel(channel: number): AudioType {
 	if (channel === APU_CHANNEL_MUSIC) {
@@ -157,16 +163,15 @@ export class AudioController {
 		this.memory.writeValue(IO_APU_HANDLE, 0);
 		this.memory.writeValue(IO_APU_CHANNEL, APU_CHANNEL_SFX);
 		this.memory.writeValue(IO_APU_PRIORITY, APU_PRIORITY_AUTO);
-		this.memory.writeValue(IO_APU_PITCH_CENTS, 0);
-		this.memory.writeValue(IO_APU_VOLUME_MILLIDB, 0);
-		this.memory.writeValue(IO_APU_OFFSET_MS, 0);
-		this.memory.writeValue(IO_APU_RATE_PERMIL, 1000);
+		this.memory.writeValue(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
+		this.memory.writeValue(IO_APU_GAIN_Q12, APU_GAIN_Q12_ONE);
+		this.memory.writeValue(IO_APU_START_SAMPLE, 0);
 		this.memory.writeValue(IO_APU_FILTER_KIND, APU_FILTER_NONE);
 		this.memory.writeValue(IO_APU_FILTER_FREQ_HZ, 0);
 		this.memory.writeValue(IO_APU_FILTER_Q_MILLI, 1000);
 		this.memory.writeValue(IO_APU_FILTER_GAIN_MILLIDB, 0);
-		this.memory.writeValue(IO_APU_FADE_MS, 0);
-		this.memory.writeValue(IO_APU_CROSSFADE_MS, 0);
+		this.memory.writeValue(IO_APU_FADE_SAMPLES, 0);
+		this.memory.writeValue(IO_APU_CROSSFADE_SAMPLES, 0);
 		this.memory.writeValue(IO_APU_SYNC_LOOP, 0);
 		this.memory.writeValue(IO_APU_START_AT_LOOP, 0);
 		this.memory.writeValue(IO_APU_START_FRESH, 0);
@@ -247,18 +252,18 @@ export class AudioController {
 	}
 
 	private playMusic(id: string): void {
-		const fadeMs = this.memory.readIoI32(IO_APU_FADE_MS);
-		const crossfadeMs = this.memory.readIoI32(IO_APU_CROSSFADE_MS);
+		const fadeSamples = this.memory.readIoU32(IO_APU_FADE_SAMPLES);
+		const crossfadeSamples = this.memory.readIoU32(IO_APU_CROSSFADE_SAMPLES);
 		const request: Parameters<SoundMaster['requestMusicTransition']>[0] = {
 			to: id,
 			sync: this.memory.readIoU32(IO_APU_SYNC_LOOP) !== 0 ? 'loop' : 'immediate',
 			start_at_loop_start: this.memory.readIoU32(IO_APU_START_AT_LOOP) !== 0,
 			start_fresh: this.memory.readIoU32(IO_APU_START_FRESH) !== 0,
 		};
-		if (crossfadeMs > 0) {
-			request.crossfade_ms = crossfadeMs;
+		if (crossfadeSamples > 0) {
+			request.crossfade_ms = apuSamplesToMilliseconds(crossfadeSamples);
 		} else {
-			request.fade_ms = fadeMs;
+			request.fade_ms = apuSamplesToMilliseconds(fadeSamples);
 		}
 		this.soundMaster.requestMusicTransition(request);
 	}
@@ -271,9 +276,9 @@ export class AudioController {
 		this.queuedByType[channel].length = 0;
 		this.queuedFirstByType[channel] = 0;
 		if (channel === 'music') {
-			const fadeMs = this.memory.readIoI32(IO_APU_FADE_MS);
-			if (fadeMs > 0) {
-				this.soundMaster.stopMusic({ fade_ms: fadeMs });
+			const fadeSamples = this.memory.readIoU32(IO_APU_FADE_SAMPLES);
+			if (fadeSamples > 0) {
+				this.soundMaster.stopMusic({ fade_ms: apuSamplesToMilliseconds(fadeSamples) });
 				return;
 			}
 			this.soundMaster.stopMusic();
@@ -284,16 +289,14 @@ export class AudioController {
 
 	private readResolvedPlayRequest(): SoundMasterResolvedPlayRequest {
 		const priority = this.memory.readIoI32(IO_APU_PRIORITY);
-		const pitchCents = this.memory.readIoI32(IO_APU_PITCH_CENTS);
-		const volumeMilliDb = this.memory.readIoI32(IO_APU_VOLUME_MILLIDB);
-		const offsetMs = this.memory.readIoI32(IO_APU_OFFSET_MS);
-		const ratePermil = this.memory.readIoI32(IO_APU_RATE_PERMIL);
+		const rateStepQ16 = this.memory.readIoI32(IO_APU_RATE_STEP_Q16);
+		const gainQ12 = this.memory.readIoI32(IO_APU_GAIN_Q12);
+		const startSample = this.memory.readIoU32(IO_APU_START_SAMPLE);
 		const filterKind = this.memory.readIoU32(IO_APU_FILTER_KIND);
 		const request: SoundMasterResolvedPlayRequest = {
-			pitchCents,
-			volumeMilliDb,
-			offsetMs,
-			ratePermil,
+			playbackRate: rateStepQ16 / APU_RATE_STEP_Q16_ONE,
+			gainLinear: gainQ12 / APU_GAIN_Q12_ONE,
+			offsetSeconds: startSample / APU_SAMPLE_RATE_HZ,
 			filter: null,
 		};
 		if (priority !== APU_PRIORITY_AUTO) {

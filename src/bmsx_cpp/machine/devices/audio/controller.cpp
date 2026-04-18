@@ -66,6 +66,10 @@ const char* decodeFilterKind(uint32_t kind) {
 	}
 }
 
+int32_t apuSamplesToMilliseconds(uint32_t samples) {
+	return static_cast<int32_t>((static_cast<double>(samples) * 1000.0) / static_cast<double>(APU_SAMPLE_RATE_HZ));
+}
+
 void writeNumber(Memory& memory, uint32_t addr, double value) {
 	memory.writeValue(addr, valueNumber(value));
 }
@@ -109,16 +113,15 @@ void AudioController::resetCommandLatch() {
 	writeNumber(m_memory, IO_APU_HANDLE, 0.0);
 	writeNumber(m_memory, IO_APU_CHANNEL, static_cast<double>(APU_CHANNEL_SFX));
 	writeNumber(m_memory, IO_APU_PRIORITY, static_cast<double>(APU_PRIORITY_AUTO));
-	writeNumber(m_memory, IO_APU_PITCH_CENTS, 0.0);
-	writeNumber(m_memory, IO_APU_VOLUME_MILLIDB, 0.0);
-	writeNumber(m_memory, IO_APU_OFFSET_MS, 0.0);
-	writeNumber(m_memory, IO_APU_RATE_PERMIL, 1000.0);
+	writeNumber(m_memory, IO_APU_RATE_STEP_Q16, static_cast<double>(APU_RATE_STEP_Q16_ONE));
+	writeNumber(m_memory, IO_APU_GAIN_Q12, static_cast<double>(APU_GAIN_Q12_ONE));
+	writeNumber(m_memory, IO_APU_START_SAMPLE, 0.0);
 	writeNumber(m_memory, IO_APU_FILTER_KIND, static_cast<double>(APU_FILTER_NONE));
 	writeNumber(m_memory, IO_APU_FILTER_FREQ_HZ, 0.0);
 	writeNumber(m_memory, IO_APU_FILTER_Q_MILLI, 1000.0);
 	writeNumber(m_memory, IO_APU_FILTER_GAIN_MILLIDB, 0.0);
-	writeNumber(m_memory, IO_APU_FADE_MS, 0.0);
-	writeNumber(m_memory, IO_APU_CROSSFADE_MS, 0.0);
+	writeNumber(m_memory, IO_APU_FADE_SAMPLES, 0.0);
+	writeNumber(m_memory, IO_APU_CROSSFADE_SAMPLES, 0.0);
 	writeNumber(m_memory, IO_APU_SYNC_LOOP, 0.0);
 	writeNumber(m_memory, IO_APU_START_AT_LOOP, 0.0);
 	writeNumber(m_memory, IO_APU_START_FRESH, 0.0);
@@ -200,8 +203,10 @@ void AudioController::playMusic(const std::string& id) {
 	request.sync.kind = m_memory.readIoU32(IO_APU_SYNC_LOOP) != 0u
 		? MusicTransitionSync::Kind::Loop
 		: MusicTransitionSync::Kind::Immediate;
-	const int32_t fadeMs = m_memory.readIoI32(IO_APU_FADE_MS);
-	const int32_t crossfadeMs = m_memory.readIoI32(IO_APU_CROSSFADE_MS);
+	const uint32_t fadeSamples = m_memory.readIoU32(IO_APU_FADE_SAMPLES);
+	const uint32_t crossfadeSamples = m_memory.readIoU32(IO_APU_CROSSFADE_SAMPLES);
+	const int32_t fadeMs = apuSamplesToMilliseconds(fadeSamples);
+	const int32_t crossfadeMs = apuSamplesToMilliseconds(crossfadeSamples);
 	request.fadeMs = fadeMs > 0 ? fadeMs : 0;
 	if (crossfadeMs > 0) {
 		request.crossfadeMs = crossfadeMs;
@@ -218,7 +223,7 @@ void AudioController::stopChannel() {
 	m_activeVoiceByType[idx] = 0;
 	m_queuedByType[idx].clear();
 	if (channel == AudioType::Music) {
-		const int32_t fadeMs = m_memory.readIoI32(IO_APU_FADE_MS);
+		const int32_t fadeMs = apuSamplesToMilliseconds(m_memory.readIoU32(IO_APU_FADE_SAMPLES));
 		m_soundMaster.stopMusic(fadeMs > 0 ? std::optional<i32>(fadeMs) : std::nullopt);
 		return;
 	}
@@ -228,15 +233,13 @@ void AudioController::stopChannel() {
 SoundMasterResolvedPlayRequest AudioController::readResolvedPlayRequest() const {
 	SoundMasterResolvedPlayRequest request;
 	const int32_t priority = m_memory.readIoI32(IO_APU_PRIORITY);
-	const int32_t pitchCents = m_memory.readIoI32(IO_APU_PITCH_CENTS);
-	const int32_t volumeMilliDb = m_memory.readIoI32(IO_APU_VOLUME_MILLIDB);
-	const int32_t offsetMs = m_memory.readIoI32(IO_APU_OFFSET_MS);
-	const int32_t ratePermil = m_memory.readIoI32(IO_APU_RATE_PERMIL);
+	const int32_t rateStepQ16 = m_memory.readIoI32(IO_APU_RATE_STEP_Q16);
+	const int32_t gainQ12 = m_memory.readIoI32(IO_APU_GAIN_Q12);
+	const uint32_t startSample = m_memory.readIoU32(IO_APU_START_SAMPLE);
 	const uint32_t filterKind = m_memory.readIoU32(IO_APU_FILTER_KIND);
-	request.pitchCents = pitchCents;
-	request.volumeMilliDb = volumeMilliDb;
-	request.offsetMs = offsetMs;
-	request.ratePermil = ratePermil;
+	request.playbackRate = static_cast<f32>(rateStepQ16) / static_cast<f32>(APU_RATE_STEP_Q16_ONE);
+	request.gainLinear = static_cast<f32>(gainQ12) / static_cast<f32>(APU_GAIN_Q12_ONE);
+	request.offsetSeconds = static_cast<f32>(startSample) / static_cast<f32>(APU_SAMPLE_RATE_HZ);
 	if (priority != APU_PRIORITY_AUTO) {
 		request.priority = priority;
 	}

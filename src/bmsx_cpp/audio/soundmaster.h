@@ -63,10 +63,9 @@ struct SoundMasterPlayRequest {
 };
 
 struct SoundMasterResolvedPlayRequest {
-	i32 pitchCents = 0;
-	i32 volumeMilliDb = 0;
-	i32 offsetMs = 0;
-	i32 ratePermil = 1000;
+	f32 playbackRate = 1.0f;
+	f32 gainLinear = 1.0f;
+	f32 offsetSeconds = 0.0f;
 	std::optional<FilterModulationParams> filter;
 	std::optional<i32> priority;
 };

@@ -289,6 +289,24 @@ function checkModulationParams(
 	checkRange(params.volumeRange, 'volumeRange', where, errors);
 	checkRange(params.offsetRange, 'offsetRange', where, errors);
 	checkRange(params.playbackRateRange, 'playbackRateRange', where, errors);
+	if (typeof params.offset === 'number' && params.offset < 0 && params.offsetRange === undefined) {
+		errors.push(`Invalid offset '${params.offset}' at ${where}: effective APU start sample must be >= 0`);
+	}
+	if (Array.isArray(params.offsetRange) && typeof params.offsetRange[0] === 'number' && typeof params.offsetRange[1] === 'number') {
+		const offsetBase = typeof params.offset === 'number' ? params.offset : 0;
+		if (offsetBase + params.offsetRange[0] < 0) {
+			errors.push(`Invalid offsetRange at ${where}: effective APU start sample must be >= 0`);
+		}
+	}
+	if (typeof params.playbackRate === 'number' && params.playbackRate <= 0) {
+		errors.push(`Invalid playbackRate '${params.playbackRate}' at ${where}: effective APU rate step must be > 0`);
+	}
+	if (Array.isArray(params.playbackRateRange) && typeof params.playbackRateRange[0] === 'number' && typeof params.playbackRateRange[1] === 'number') {
+		const rateBase = typeof params.playbackRate === 'number' ? params.playbackRate : 1;
+		if (rateBase + params.playbackRateRange[0] <= 0) {
+			errors.push(`Invalid playbackRateRange at ${where}: effective APU rate step must be > 0`);
+		}
+	}
 	if (params.filter === undefined) {
 		return;
 	}

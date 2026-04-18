@@ -16,6 +16,7 @@ import { buildMarshalContext, toNativeValue } from '../../../../machine/firmware
 import { buildLuaSemanticFrontend } from './lua_frontend';
 import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
+import { MEMORY_ACCESS_KIND_NAMES } from '../../../../machine/memory/access_kind';
 import { isStringValue, stringValueToString } from '../../../../machine/memory/string_pool';
 import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverRequest, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaMemberCompletionRequest, LuaSymbolEntry, LuaSymbolKind } from '../../../../machine/runtime/contracts';
 import { ScratchBatchPooled } from '../../../../common/scratchbatch';
@@ -105,7 +106,6 @@ const definitionPriorityForSymbols = buildDefinitionPriority(SYMBOL_PRIORITY_ORD
 const definitionPriorityForLocals = buildDefinitionPriority(LOCAL_DEFINITION_PRIORITY_ORDER);
 
 const identityCanonicalizer = (value: string): string => value;
-const RESERVED_MEMORY_MAP_NAMES = ['mem', 'mem8', 'mem16le', 'mem32le', 'memf32le', 'memf64le'] as const;
 const globalSymbolsCache: { version: number; entries: LuaSymbolEntry[] } = { version: -1, entries: [] };
 
 function getActiveCanonicalizer(): (value: string) => string {
@@ -130,8 +130,8 @@ function hasStaticLuaBuiltinName(name: string): boolean {
 export function isReservedMemoryMapName(name: string): boolean {
 	const canonicalize = getActiveCanonicalizer();
 	const canonical = canonicalize(name);
-	for (let index = 0; index < RESERVED_MEMORY_MAP_NAMES.length; index += 1) {
-		if (canonicalize(RESERVED_MEMORY_MAP_NAMES[index]) === canonical) {
+	for (let index = 0; index < MEMORY_ACCESS_KIND_NAMES.length; index += 1) {
+		if (canonicalize(MEMORY_ACCESS_KIND_NAMES[index]) === canonical) {
 			return true;
 		}
 	}
