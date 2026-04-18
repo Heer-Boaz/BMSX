@@ -40,7 +40,9 @@ function __bmsx_host_test.setup()
 	player.y = selected_entrance.stair_y
 	player.facing = 1
 	player.events:emit('landed_to_quiet')
-	return { press = 'ArrowDown', hold_frames = 2 }
+	return {
+		host.at(0, host.press('ArrowDown', 2)),
+	}
 end
 
 function __bmsx_host_test.update(_frame, _current_music)

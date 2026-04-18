@@ -143,6 +143,7 @@ Important:
 - if no explicit test is provided, `headless:game` falls back to `<cart>_demo.json`
 - headless timelines run unpaced, so the full scenario completes as fast as the emulator can simulate it
 - `headless:test` and `headless:forcebuildalltest` are the explicit host-test paths
+- Lua host tests expose `host.press(code, frames)`, `host.down(code)`, `host.up(code)`, `host.at(frame, command)`, `host.capture(label)`, and `host.log(message)` for simple Lua-built input timelines
 
 ## Libretro / Custom Host
 
