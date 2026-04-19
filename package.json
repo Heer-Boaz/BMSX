@@ -78,7 +78,8 @@
 		"run:libretro-host:wsl:fb": "./build-libretro-host/bmsx_libretro_host --core ./dist/bmsx_libretro.so --video fb --backend software",
 		"clean:dist": "node scripts/clean-dist.mjs",
 		"fix:indent": "node scripts/fix-ts-indentation-safe.js",
-		"check:indent": "node scripts/fix-ts-indentation-safe.js --check"
+		"check:indent": "node scripts/fix-ts-indentation-safe.js --check",
+		"analyze:duplicates": "npx tsx scripts/analysis/duplicate_symbols.ts"
 	},
 	"repository": {
 		"type": "git",
