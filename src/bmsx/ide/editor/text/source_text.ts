@@ -1,13 +1,29 @@
 import type { TextBuffer } from './text_buffer';
 
-export const NEWLINE = '\n';
-
-export function textFromLines(lines: readonly string[]): string {
-	return lines.join(NEWLINE);
+export function splitText(text: string): string[] {
+	const lines: string[] = [];
+	appendTextLines(lines, text);
+	return lines;
 }
 
-export function splitText(text: string): string[] {
-	return text.split(NEWLINE);
+export function writeTextLines(out: string[], text: string): void {
+	out.length = 0;
+	appendTextLines(out, text);
+}
+
+export function appendTextLines(out: string[], text: string): void {
+	let lineStart = 0;
+	for (let index = 0; index <= text.length; index += 1) {
+		if (index !== text.length && text.charCodeAt(index) !== 10) {
+			continue;
+		}
+		let lineEnd = index;
+		if (lineEnd > lineStart && text.charCodeAt(lineEnd - 1) === 13) {
+			lineEnd -= 1;
+		}
+		out.push(text.slice(lineStart, lineEnd));
+		lineStart = index + 1;
+	}
 }
 
 type TextSnapshotCacheEntry = {
@@ -55,13 +71,4 @@ export function getLinesSnapshot(buffer: TextBuffer): readonly string[] {
 		entry.lines = lines;
 	}
 	return entry.lines;
-}
-
-export function copyLinesSnapshot(buffer: TextBuffer): string[] {
-	const lines = getLinesSnapshot(buffer);
-	const copy = new Array<string>(lines.length);
-	for (let index = 0; index < lines.length; index += 1) {
-		copy[index] = lines[index];
-	}
-	return copy;
 }

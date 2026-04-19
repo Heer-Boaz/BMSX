@@ -5,7 +5,7 @@ import * as luaPipeline from '../../../runtime/lua_pipeline';
 import type { ResourceDescriptor } from '../../../../machine/runtime/contracts';
 import * as constants from '../../../common/constants';
 import { computeResourceTabTitle } from '../../ui/tab/titles';
-import { splitText } from '../../../editor/text/source_text';
+import { appendTextLines } from '../../../editor/text/source_text';
 import type { ResourceViewerState } from '../../../common/models';
 
 export type ResourceViewerBounds = {
@@ -63,7 +63,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 			if (typeof source === 'string') {
 				appendResourceViewerLine(lines, '-- Lua Source --');
 				lines.push('');
-				appendResourceViewerLines(lines, source.split(/\r?\n/));
+				appendTextLines(lines, source);
 			} else {
 				error = `Lua source '${descriptor.asset_id}' unavailable.`;
 			}
@@ -74,7 +74,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 			if (dataEntry !== undefined) {
 				appendResourceViewerLine(lines, '-- Data --');
 				lines.push('');
-				appendResourceViewerLines(lines, safeJsonStringify(dataEntry).split(/\r?\n/));
+				appendTextLines(lines, safeJsonStringify(dataEntry));
 			} else {
 				error = `Data asset '${descriptor.asset_id}' not found.`;
 			}
@@ -146,7 +146,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 			}
 			appendResourceViewerLine(lines, '-- Audio Events --');
 			lines.push('');
-			appendResourceViewerLines(lines, safeJsonStringify(events).split(/\r?\n/));
+			appendTextLines(lines, safeJsonStringify(events));
 			break;
 		}
 		default: {
@@ -233,16 +233,7 @@ export function applyResourceViewerScroll(viewer: ResourceViewerState, capacity:
 }
 
 function appendResourceViewerLine(target: string[], entry: string): void {
-	const parts = splitText(entry);
-	for (let index = 0; index < parts.length; index += 1) {
-		target.push(parts[index]);
-	}
-}
-
-function appendResourceViewerLines(target: string[], additions: Iterable<string>): void {
-	for (const entry of additions) {
-		appendResourceViewerLine(target, entry);
-	}
+	appendTextLines(target, entry);
 }
 
 function safeJsonStringify(value: unknown, space = 2): string {

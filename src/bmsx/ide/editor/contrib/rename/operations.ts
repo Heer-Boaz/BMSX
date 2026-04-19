@@ -4,7 +4,7 @@ import type { LuaSourceRange } from '../../../../lua/syntax/ast';
 import { clamp } from '../../../../common/clamp';
 import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } from '../../../workbench/ui/code_tab/contexts';
 import { findResourceDescriptorForChunk } from '../../../workbench/contrib/resources/lookup';
-import { copyLinesSnapshot, textFromLines } from '../../text/source_text';
+import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import { syncSemanticWorkspacePath, getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace_sync';
 import { markTextMutated } from '../../common/text_runtime';
 import { markDiagnosticsDirtyForChunk } from '../diagnostics/controller';
@@ -16,11 +16,6 @@ import { editorCaretState } from '../../ui/view/caret/state';
 import { editorDocumentState } from '../../editing/document_state';
 import { registerCodeTabContext, setTabDirty } from '../../../workbench/ui/code_tab/contexts';
 import { editorViewState } from '../../ui/view/state';
-
-export type RenameLineEdit = {
-	row: number;
-	text: string;
-};
 
 export function commitRename(
 	matches: readonly SearchMatch[],
@@ -96,38 +91,6 @@ export function commitRename(
 	return updatedTotal;
 }
 
-export function planRenameLineEdits(lines: readonly string[], matches: readonly SearchMatch[], newName: string): RenameLineEdit[] {
-	if (matches.length === 0) {
-		return [];
-	}
-	const edits: RenameLineEdit[] = [];
-	let currentRow = matches[0].row;
-	let source = lines[currentRow] ?? '';
-	let builder = '';
-	let sliceStart = 0;
-	for (let index = 0; index < matches.length; index += 1) {
-		const match = matches[index];
-		if (match.row !== currentRow) {
-			builder += source.slice(sliceStart);
-			if (builder !== source) {
-				edits.push({ row: currentRow, text: builder });
-			}
-			currentRow = match.row;
-			source = lines[currentRow] ?? '';
-			builder = '';
-			sliceStart = 0;
-		}
-		builder += source.slice(sliceStart, match.start);
-		builder += newName;
-		sliceStart = match.end;
-	}
-	builder += source.slice(sliceStart);
-	if (builder !== source) {
-		edits.push({ row: currentRow, text: builder });
-	}
-	return edits;
-}
-
 export class CrossFileRenameManager {
 	public constructor() {}
 
@@ -139,7 +102,6 @@ export class CrossFileRenameManager {
 		if (context.readOnly === true) {
 			return 0;
 		}
-		const lines = this.getContextLinesForRename(context);
 		const matches = new Array<SearchMatch>(ranges.length);
 		for (let index = 0; index < ranges.length; index += 1) {
 			matches[index] = convertRangeToSearchMatch(ranges[index]);
@@ -148,32 +110,24 @@ export class CrossFileRenameManager {
 			return 0;
 		}
 		matches.sort((a, b) => a.row !== b.row ? a.row - b.row : a.start - b.start);
-		const edits = planRenameLineEdits(lines, matches, newName);
-		if (edits.length === 0) {
-			return 0;
+		for (let index = matches.length - 1; index >= 0; index -= 1) {
+			const match = matches[index];
+			const startOffset = context.buffer.offsetAt(match.row, match.start);
+			const endOffset = context.buffer.offsetAt(match.row, match.end);
+			context.buffer.replace(startOffset, endOffset - startOffset, newName);
 		}
-		for (let index = 0; index < edits.length; index += 1) {
-			const edit = edits[index];
-			lines[edit.row] = edit.text;
-		}
-		this.applyLinesToContextSnapshot(context, lines);
+		this.markContextBufferMutated(context);
 		const workspace = getOrCreateSemanticWorkspace();
 		syncSemanticWorkspacePath({
 			path,
-			source: textFromLines(lines),
-			lines,
+			source: getTextSnapshot(context.buffer),
+			lines: getLinesSnapshot(context.buffer),
 			version: context.textVersion,
 		}, workspace);
 		return matches.length;
 	}
 
-	private getContextLinesForRename(context: CodeTabContext): string[] {
-		return copyLinesSnapshot(context.buffer);
-	}
-
-	private applyLinesToContextSnapshot(context: CodeTabContext, lines: readonly string[]): void {
-		const source = textFromLines(lines);
-		context.buffer.replace(0, context.buffer.length, source);
+	private markContextBufferMutated(context: CodeTabContext): void {
 		context.textVersion = context.buffer.version;
 		context.dirty = true;
 		context.savePointDepth = -1;

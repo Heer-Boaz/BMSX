@@ -2,12 +2,12 @@ import { getCodeAreaBounds } from '../ui/view/view';
 import { rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/overlay';
 import { runtimeErrorState } from '../contrib/runtime_error/state';
 import * as TextEditing from '../editing/text_editing_and_selection';
-import type { HighlightLine, RuntimeErrorOverlay, VisualLineSegment } from '../../common/models';
+import type { HighlightLine, RuntimeErrorOverlay } from '../../common/models';
 import { splitText } from '../text/source_text';
+import { truncateMeasuredText, writeWrappedMeasuredLine } from '../../common/text';
 import { getCodeTabContexts } from '../../workbench/ui/code_tab/contexts';
 import { editorViewState } from '../ui/view/state';
 import { editorDocumentState } from '../editing/document_state';
-import { caretNavigation } from '../ui/view/caret/caret';
 import * as constants from '../../common/constants';
 import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from '../../common/constants';
 
@@ -27,25 +27,7 @@ export function measureText(text: string): number {
 }
 
 export function truncateTextToWidth(text: string, maxWidth: number): string {
-	if (maxWidth <= 0) return '';
-	if (measureText(text) <= maxWidth) return text;
-	const ellipsis = '...';
-	const ellipsisWidth = measureText(ellipsis);
-	if (ellipsisWidth > maxWidth) return '';
-	let low = 0;
-	let high = text.length;
-	let best = '';
-	while (low <= high) {
-		const mid = Math.floor((low + high) / 2);
-		const candidate = text.slice(0, mid) + ellipsis;
-		if (measureText(candidate) <= maxWidth) {
-			best = candidate;
-			low = mid + 1;
-		} else {
-			high = mid - 1;
-		}
-	}
-	return best;
+	return truncateMeasuredText(text, maxWidth, measureTextRange);
 }
 
 export function assertMonospace(): void {
@@ -99,25 +81,6 @@ export function ensureVisualLines(): void {
 	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollRow, visualLineCount, estimatedVisibleRowCount);
 }
 
-export function getVisualLineCount(): number {
-	ensureVisualLines();
-	return editorViewState.layout.getVisualLineCount();
-}
-
-export function visualIndexToSegment(index: number): VisualLineSegment {
-	ensureVisualLines();
-	return editorViewState.layout.visualIndexToSegment(index);
-}
-
-export function positionToVisualIndex(row: number, column: number): number {
-	ensureVisualLines();
-	const override = caretNavigation.lookup(row, column);
-	if (override) {
-		return override.visualIndex;
-	}
-	return editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, row, column);
-}
-
 export function computeRuntimeErrorOverlayMaxWidth(): number {
 	const bounds = getCodeAreaBounds();
 	const scrollbarSpace = editorViewState.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0;
@@ -134,49 +97,7 @@ export function wrapOverlayLine(line: string, maxWidth: number): string[] {
 }
 
 export function writeWrappedOverlayLine(segments: string[], line: string, maxWidth: number): void {
-	const initialLength = segments.length;
-	if (line.length === 0) {
-		segments.push('');
-		return;
-	}
-	let segmentStart = 0;
-	let lastBreak = -1;
-	let segmentWidth = 0;
-	for (let index = 0; index < line.length; index += 1) {
-		const ch = line.charAt(index);
-		if (ch === ' ' || ch === '\t') {
-			lastBreak = index;
-		}
-		segmentWidth += ch === '\t' ? editorViewState.spaceAdvance * constants.TAB_SPACES : editorViewState.font.advance(ch);
-		if (segmentWidth <= maxWidth) {
-			continue;
-		}
-		if (lastBreak >= segmentStart) {
-			segments.push(line.slice(segmentStart, lastBreak));
-			segmentStart = lastBreak + 1;
-			lastBreak = -1;
-			index = segmentStart - 1;
-			segmentWidth = 0;
-			continue;
-		}
-		if (index === segmentStart) {
-			segments.push(line.charAt(index));
-			segmentStart = index + 1;
-			segmentWidth = 0;
-		} else {
-			segments.push(line.slice(segmentStart, index));
-			segmentStart = index;
-			index = segmentStart - 1;
-			segmentWidth = 0;
-		}
-		lastBreak = -1;
-	}
-	if (segmentStart < line.length) {
-		segments.push(line.slice(segmentStart));
-	}
-	if (segments.length === initialLength) {
-		segments.push('');
-	}
+	writeWrappedMeasuredLine(segments, line, maxWidth, measureTextRange);
 }
 
 function rewrapRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void {

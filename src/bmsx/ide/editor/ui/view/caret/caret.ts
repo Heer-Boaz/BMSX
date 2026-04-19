@@ -1,5 +1,5 @@
 import { breakUndoSequence } from '../../../editing/undo_controller';
-import { currentLine, ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../../../common/text_layout';
+import { currentLine, ensureVisualLines } from '../../../common/text_layout';
 import { isShiftDown, isCtrlDown } from '../../../input/keyboard/key_input';
 import { resetBlink } from '../../../render/caret';
 import { findWordLeft, findWordRight, hasSelection, collapseSelectionTo, clearSelection } from '../../../editing/text_editing_and_selection';
@@ -9,46 +9,8 @@ import { revealCursor, resolveViewportCapacity, setCursorFromVisualIndex, update
 import { editorDocumentState } from '../../../editing/document_state';
 import { editorViewState } from '../state';
 import { completionController } from '../../../contrib/suggest/completion_controller';
-
-export type VisualCursorOverride = {
-	row: number;
-	column: number;
-	visualIndex: number;
-	segmentStartColumn: number;
-};
-
-export class CaretNavigationState {
-	private override: VisualCursorOverride = null;
-
-	public clear(): void {
-		this.override = null;
-	}
-
-	public capture(row: number, column: number, visualIndex: number, segmentStartColumn: number): void {
-		this.override = {
-			row,
-			column,
-			visualIndex,
-			segmentStartColumn,
-		};
-	}
-
-	public lookup(row: number, column: number): { visualIndex: number; segmentStartColumn: number } {
-		const current = this.override;
-		if (!current) {
-			return null;
-		}
-		if (current.row !== row || current.column !== column) {
-			return null;
-		}
-		return {
-			visualIndex: current.visualIndex,
-			segmentStartColumn: current.segmentStartColumn,
-		};
-	}
-}
-
-export const caretNavigation = new CaretNavigationState();
+import { caretNavigation } from './state';
+import { resolveCursorVisualIndex } from './visual_index';
 
 export function resolveIndentAwareHome(line: string, segment: VisualLineSegment, currentColumn: number): number {
 	const lineLength = line.length;
@@ -108,7 +70,7 @@ export function moveCursorVertical(delta: number): void {
 	if (visualCount === 0) {
 		return;
 	}
-	const currentIndex = editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+	const currentIndex = editorViewState.layout.positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	const targetIndex = editorViewState.layout.clampVisualIndex(visualCount, currentIndex + delta);
 	const desired = editorDocumentState.desiredColumn;
 	const desiredDisplay = editorDocumentState.desiredDisplayOffset;
@@ -131,7 +93,7 @@ export function moveCursorHorizontal(delta: number): void {
 	if (visualCount === 0) {
 		return;
 	}
-	const visualIndex = editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+	const visualIndex = editorViewState.layout.positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 	if (!segment) {
 		return;
@@ -145,7 +107,7 @@ export function moveCursorHorizontal(delta: number): void {
 		} else {
 			let moved = false;
 				if (editorViewState.wordWrapEnabled && visualIndex > 0) {
-					const prevSegment = visualIndexToSegment(visualIndex - 1);
+					const prevSegment = editorViewState.layout.visualIndexToSegment(visualIndex - 1);
 					if (prevSegment && prevSegment.row === segment.row) {
 						editorDocumentState.cursorRow = prevSegment.row;
 						const prevLine = buffer.getLineContent(prevSegment.row);
@@ -170,7 +132,7 @@ export function moveCursorHorizontal(delta: number): void {
 		} else {
 			let moved = false;
 			if (editorViewState.wordWrapEnabled && visualIndex < visualCount - 1) {
-				const nextSegment = visualIndexToSegment(visualIndex + 1);
+				const nextSegment = editorViewState.layout.visualIndexToSegment(visualIndex + 1);
 				if (nextSegment && nextSegment.row === segment.row) {
 					editorDocumentState.cursorRow = nextSegment.row;
 					editorDocumentState.cursorColumn = nextSegment.startColumn;
@@ -329,7 +291,7 @@ export function moveCursorHome(): void {
 		editorDocumentState.cursorColumn = 0;
 	} else {
 		ensureVisualLines();
-		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 		const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 		if (segment) {
 			editorDocumentState.cursorRow = segment.row;
@@ -366,7 +328,7 @@ export function moveCursorEnd(): void {
 		editorDocumentState.cursorColumn = buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow);
 	} else {
 		ensureVisualLines();
-		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 		const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 		if (segment) {
 			editorDocumentState.cursorRow = segment.row;
@@ -394,8 +356,8 @@ export function pageUp(): void {
 		clearSelection();
 	}
 	const { rows } = resolveViewportCapacity();
-	const visualCount = getVisualLineCount();
-	const currentVisual = positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+	const visualCount = editorViewState.layout.getVisualLineCount();
+	const currentVisual = resolveCursorVisualIndex();
 	const targetVisual = editorViewState.layout.clampVisualScroll(currentVisual - rows, visualCount, rows);
 	setCursorFromVisualIndex(targetVisual, editorDocumentState.desiredColumn, editorDocumentState.desiredDisplayOffset);
 	resetBlink();
@@ -414,8 +376,8 @@ export function pageDown(): void {
 		clearSelection();
 	}
 	const { rows } = resolveViewportCapacity();
-	const visualCount = getVisualLineCount();
-	const currentVisual = positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+	const visualCount = editorViewState.layout.getVisualLineCount();
+	const currentVisual = resolveCursorVisualIndex();
 	const targetVisual = editorViewState.layout.clampVisualIndex(visualCount, currentVisual + rows);
 	setCursorFromVisualIndex(targetVisual, editorDocumentState.desiredColumn, editorDocumentState.desiredDisplayOffset);
 	resetBlink();

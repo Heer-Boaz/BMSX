@@ -3,7 +3,7 @@ import type { EditorFont } from '../ui/view/font';
 import { drawEditorText } from './text_renderer';
 import { bottomMargin } from '../../workbench/common/layout';
 import { showEditorMessage } from '../../workbench/common/feedback_state';
-import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, writeWrappedOverlayLine } from '../common/text_layout';
+import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, writeWrappedOverlayLine } from '../common/text_layout';
 import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../../common/models';
 import type { StackTraceFrame } from '../../../lua/value';
 import type { RectBounds } from '../../../rompack/format';
@@ -184,14 +184,14 @@ export function resolveRuntimeErrorOverlayAnchor(
 	contentRight: number,
 	availableBottom: number): RuntimeErrorOverlayAnchor {
 	ensureVisualLines();
-	const visualIndex = positionToVisualIndex(overlay.row, overlay.column);
+	const visualIndex = editorViewState.layout.positionToVisualIndex(overlay.row, overlay.column);
 	const visibleRowsCandidate = ((availableBottom - codeTop) / editorViewState.lineHeight) | 0;
 	const visibleRows = visibleRowsCandidate > 1 ? visibleRowsCandidate : 1;
 	const relativeRow = visualIndex - editorViewState.scrollRow;
 	if (relativeRow < 0 || relativeRow >= visibleRows) {
 		return null;
 	}
-	const segment = visualIndexToSegment(visualIndex);
+	const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 	if (!segment) {
 		return null;
 	}
@@ -239,7 +239,7 @@ export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, te
 		return 'absent';
 	}
 	ensureVisualLines();
-	const visualIndex = positionToVisualIndex(overlay.row, overlay.column);
+	const visualIndex = editorViewState.layout.positionToVisualIndex(overlay.row, overlay.column);
 	const visibleRows = editorViewState.cachedVisibleRowCount > 1 ? editorViewState.cachedVisibleRowCount : 1;
 	const visibleStart = editorViewState.scrollRow;
 	const visibleEnd = visibleStart + visibleRows - 1;

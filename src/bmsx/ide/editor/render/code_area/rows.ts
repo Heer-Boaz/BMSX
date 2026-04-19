@@ -2,7 +2,7 @@ import type { CursorScreenInfo } from '../../../common/models';
 import type { Font } from '../../../../render/shared/bmsx_font';
 import { drawEditorText } from '../text_renderer';
 import { api } from '../../ui/view/overlay_api';
-import { computeSelectionSlice, visualIndexToSegment } from '../../common/text_layout';
+import { computeSelectionSlice } from '../../common/text_layout';
 import * as constants from '../../../common/constants';
 import { runtimeErrorState } from '../../contrib/runtime_error/state';
 import { drawReferenceHighlightsForRow, drawSearchHighlightsForRow } from './highlights';
@@ -48,7 +48,7 @@ export function drawCodeAreaRows(
 			drawEditorText(editorViewState.font, '~', viewport.textLeft, rowY, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM);
 			continue;
 		}
-		const segment = visualIndexToSegment(visualIndex);
+		const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 		if (!segment) {
 			drawEditorText(editorViewState.font, '~', viewport.textLeft, rowY, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM);
 			continue;

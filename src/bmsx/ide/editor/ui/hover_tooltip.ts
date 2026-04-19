@@ -3,7 +3,7 @@ import { api } from './view/overlay_api';
 import * as constants from '../../common/constants';
 import { drawEditorText } from '../render/text_renderer';
 import type { CodeHoverTooltip, PointerSnapshot } from '../../common/models';
-import { ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment } from '../common/text_layout';
+import { ensureVisualLines, measureText } from '../common/text_layout';
 import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from './view/view';
 import { point_in_rect } from '../../../common/rect';
 import { intellisenseUiState } from '../contrib/intellisense/ui_state';
@@ -30,14 +30,14 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	}
 	ensureVisualLines();
 	const visibleRows = editorViewState.cachedVisibleRowCount;
-	const visualIndex = positionToVisualIndex(tooltip.row, tooltip.startColumn);
+	const visualIndex = editorViewState.layout.positionToVisualIndex(tooltip.row, tooltip.startColumn);
 	const relativeRow = visualIndex - editorViewState.scrollRow;
 	if (relativeRow < 0 || relativeRow >= visibleRows) {
 		tooltip.bubbleBounds = null;
 		return;
 	}
 	const rowTop = codeTop + relativeRow * editorViewState.lineHeight;
-	const segment = visualIndexToSegment(visualIndex);
+	const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 	if (!segment) {
 		tooltip.bubbleBounds = null;
 		return;

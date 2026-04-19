@@ -23,7 +23,7 @@ class FenwickPrefix {
 	private treeSize = 0;
 
 	public reset(size: number): void {
-		this.treeSize = Math.max(0, size);
+		this.treeSize = size;
 		this.tree.length = this.treeSize + 1;
 		for (let i = 0; i < this.tree.length; i += 1) {
 			this.tree[i] = 0;
@@ -161,14 +161,12 @@ export class CodeLayout {
 		options: { maxHighlightCache: number; semanticDebounceMs: number; clockNow: () => number; getBuiltinIdentifiers: () => BuiltinIdentifierSnapshot; computeWrapWidth: () => number },
 	) {
 		this.maxHighlightCache = options.maxHighlightCache;
-		this.semanticDebounceMs = Math.max(0, options.semanticDebounceMs);
+		this.semanticDebounceMs = options.semanticDebounceMs;
 		this.clockNow = options.clockNow;
 		this.getBuiltinIdentifiers = options.getBuiltinIdentifiers;
 		this.computeWrapWidth = options.computeWrapWidth;
 		this.refreshBuiltinIdentifiers();
-		const probeAdvance = this.font.advance('M');
-		const fallbackAdvance = this.font.advance(' ');
-		this.averageCharAdvance = Math.max(1, Number.isFinite(probeAdvance) && probeAdvance > 0 ? probeAdvance : (Number.isFinite(fallbackAdvance) && fallbackAdvance > 0 ? fallbackAdvance : 1));
+		this.averageCharAdvance = this.font.advance('M');
 	}
 
 	public setCodeTabMode(mode: CodeTabMode): void {
@@ -452,10 +450,8 @@ export class CodeLayout {
 	}
 
 	public markVisualLinesDirtyForRows(startRow: number, endRow: number): void {
-		const safeStart = Number.isFinite(startRow) ? Math.floor(startRow) : 0;
-		const safeEnd = Number.isFinite(endRow) ? Math.floor(endRow) : safeStart;
-		const clampedStart = clamp(safeStart, 0, Number.MAX_SAFE_INTEGER);
-		const clampedEnd = clamp(safeEnd, clampedStart, Number.MAX_SAFE_INTEGER);
+		const clampedStart = startRow > 0 ? startRow : 0;
+		const clampedEnd = endRow > clampedStart ? endRow : clampedStart;
 		if (this.visualLinesDirty) {
 			if (this.visualLinesDirtyByViewport) {
 				return;
@@ -504,32 +500,19 @@ export class CodeLayout {
 	}
 
 	public getVisualLineCount(): number {
-		const total = this.rowVisualLinePrefix.getTotal();
-		return total > 0 ? total : this.visualLines.length;
+		return this.visualLines.length;
 	}
 
 	public visualIndexToSegment(index: number): VisualLineSegment {
-		if (index < 0 || index >= this.visualLines.length) {
-			return null;
-		}
 		return this.visualLines[index];
 	}
 
-	public positionToVisualIndex(buffer: TextBuffer, row: number, column: number): number {
-		if (this.visualLines.length === 0) {
-			return 0;
-		}
-		const safeRow = clamp(row, 0, buffer.getLineCount() - 1);
-		const baseIndex = this.getRowStartIndex(safeRow);
-		if (baseIndex < 0) {
-			return 0;
-		}
-		const rowSegmentCount = this.rowVisualLineCounts[safeRow] ?? 0;
-		if (rowSegmentCount <= 0) {
-			return Math.min(baseIndex, this.visualLines.length - 1);
-		}
-		const endIndex = Math.min(this.visualLines.length, baseIndex + rowSegmentCount);
-		const targetColumn = Math.max(0, column);
+	public positionToVisualIndex(row: number, column: number): number {
+		const baseIndex = this.getRowStartIndex(row);
+		const rowSegmentCount = this.rowVisualLineCounts[row];
+		const endCandidate = baseIndex + rowSegmentCount;
+		const endIndex = endCandidate < this.visualLines.length ? endCandidate : this.visualLines.length;
+		const targetColumn = column > 0 ? column : 0;
 		let low = baseIndex;
 		let high = endIndex;
 		while (low < high) {
@@ -540,8 +523,8 @@ export class CodeLayout {
 				high = mid;
 			}
 		}
-		const segmentIndex = Math.min(endIndex - 1, Math.max(baseIndex, low - 1));
-		return clamp(segmentIndex, 0, this.visualLines.length - 1);
+		const segmentIndex = low - 1;
+		return segmentIndex > baseIndex ? segmentIndex : baseIndex;
 	}
 
 	public getVisualLines(): readonly VisualLineSegment[] {
@@ -603,7 +586,7 @@ export class CodeLayout {
 			this.rebuildAllVisualLines(buffer, wordWrapEnabled, wrapWidth);
 			this.lastHotRowStart = 0;
 			this.lastHotRowEnd = lineCount - 1;
-			this.lastHotGuardRows = Math.max(8, Math.floor(visibleRowEstimate / 2));
+			this.lastHotGuardRows = this.computeHotGuardRows(visibleRowEstimate);
 			return;
 		}
 		let hotStart = 0;
@@ -633,7 +616,7 @@ export class CodeLayout {
 		this.rebuildRowRange(buffer, wordWrapEnabled, wrapWidth, rebuildStart, rebuildEnd);
 		this.lastHotRowStart = hotStart;
 		this.lastHotRowEnd = hotEnd;
-		this.lastHotGuardRows = Math.max(8, Math.floor(visibleRowEstimate / 2));
+		this.lastHotGuardRows = this.computeHotGuardRows(visibleRowEstimate);
 	}
 
 	private rebuildAllVisualLines(
@@ -647,7 +630,7 @@ export class CodeLayout {
 		const effectiveWrapWidth = wordWrapEnabled ? wrapWidth : Number.POSITIVE_INFINITY;
 		const approxWrapColumns = !wordWrapEnabled || wrapWidth === Number.POSITIVE_INFINITY
 			? Number.POSITIVE_INFINITY
-			: Math.max(1, Math.floor(wrapWidth / Math.max(1, this.averageCharAdvance)));
+			: this.computeApproxWrapColumns(wrapWidth);
 		this.rowVisualLinePrefix.resizeOrClear(lineCount);
 		let writeIndex = 0;
 		for (let row = 0; row < lineCount; row += 1) {
@@ -675,7 +658,7 @@ export class CodeLayout {
 		const effectiveWrapWidth = wordWrapEnabled ? wrapWidth : Number.POSITIVE_INFINITY;
 		const approxWrapColumns = !wordWrapEnabled || wrapWidth === Number.POSITIVE_INFINITY
 			? Number.POSITIVE_INFINITY
-			: Math.max(1, Math.floor(wrapWidth / Math.max(1, this.averageCharAdvance)));
+			: this.computeApproxWrapColumns(wrapWidth);
 		for (let row = startRow; row <= endRow; row += 1) {
 			const startIndex = this.getRowStartIndex(row);
 			const oldCount = this.rowVisualLineCounts[row] ?? 0;
@@ -803,6 +786,16 @@ export class CodeLayout {
 			column = endColumn;
 		}
 		return writeIndex;
+	}
+
+	private computeHotGuardRows(visibleRowEstimate: number): number {
+		const guardRows = visibleRowEstimate >> 1;
+		return guardRows > 8 ? guardRows : 8;
+	}
+
+	private computeApproxWrapColumns(wrapWidth: number): number {
+		const columns = (wrapWidth / this.averageCharAdvance) | 0;
+		return columns > 0 ? columns : 1;
 	}
 
 	public getSemanticModel(buffer: TextBuffer, documentVersion: number, path: string): LuaSemanticModel {
@@ -1073,7 +1066,7 @@ export class CodeLayout {
 		if (total <= 0) {
 			return this.visualLines.length === 0 ? -1 : 0;
 		}
-		const clampedVisual = clamp(Math.floor(visualIndex), 0, this.visualLines.length - 1);
+		const clampedVisual = clamp(visualIndex, 0, this.visualLines.length - 1);
 		const clampedByTotal = clamp(clampedVisual, 0, total - 1);
 		const rowCount = this.rowVisualLinePrefix.length;
 		if (rowCount === 0) {

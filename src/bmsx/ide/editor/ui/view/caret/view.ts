@@ -1,10 +1,11 @@
 import { clamp } from '../../../../../common/clamp';
-import { caretNavigation } from './caret';
-import { ensureVisualLines, positionToVisualIndex } from '../../../common/text_layout';
+import { ensureVisualLines } from '../../../common/text_layout';
 import { editorCaretState } from './state';
 import { editorDocumentState } from '../../../editing/document_state';
 import { editorViewState } from '../state';
 import { resolveCodeAreaViewport, type CodeAreaViewport } from '../../code_area_viewport';
+import { caretNavigation } from './state';
+import { resolveCursorVisualIndex } from './visual_index';
 
 export function revealCursor(): void {
 	editorCaretState.cursorRevealSuspended = false;
@@ -18,12 +19,12 @@ export function resolveViewportCapacity(): CodeAreaViewport {
 export function centerCursorVertically(): void {
 	const { rows } = resolveViewportCapacity();
 	const totalVisual = editorViewState.layout.getVisualLineCount();
-	const cursorVisualIndex = positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+	const cursorVisual = resolveCursorVisualIndex();
 	if (rows <= 1) {
-		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(cursorVisualIndex, totalVisual, rows);
+		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(cursorVisual, totalVisual, rows);
 		return;
 	}
-	const target = cursorVisualIndex - Math.floor(rows / 2);
+	const target = cursorVisual - Math.floor(rows / 2);
 	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(target, totalVisual, rows);
 }
 
@@ -34,16 +35,16 @@ export function ensureCursorVisible(): void {
 
 	const { rows, columns, maxScrollColumn: docMaxScrollColumn } = resolveViewportCapacity();
 	const totalVisual = editorViewState.layout.getVisualLineCount();
-	const cursorVisualIndex = positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+	const cursorVisual = resolveCursorVisualIndex();
 	const maxScrollRow = Math.max(0, totalVisual - rows);
 	const verticalMargin = Math.min(3, Math.max(0, Math.floor(rows / 6)));
 	const topGuard = editorViewState.scrollRow + verticalMargin;
 	const bottomGuard = editorViewState.scrollRow + rows - 1 - verticalMargin;
 
-	if (cursorVisualIndex < topGuard) {
-		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(cursorVisualIndex - verticalMargin, totalVisual, rows);
-	} else if (cursorVisualIndex > bottomGuard) {
-		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(cursorVisualIndex - rows + 1 + verticalMargin, totalVisual, rows);
+	if (cursorVisual < topGuard) {
+		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(cursorVisual - verticalMargin, totalVisual, rows);
+	} else if (cursorVisual > bottomGuard) {
+		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(cursorVisual - rows + 1 + verticalMargin, totalVisual, rows);
 	} else if (editorViewState.scrollRow > maxScrollRow) {
 		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollRow, totalVisual, rows);
 	}
@@ -158,7 +159,7 @@ export function updateDesiredColumn(): void {
 		if (override) {
 			segmentStartColumn = override.segmentStartColumn;
 		} else {
-			const visualIndex = editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+			const visualIndex = editorViewState.layout.positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 			const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 			if (segment) {
 				segmentStartColumn = segment.startColumn;

@@ -589,10 +589,10 @@ export function toggleWordWrap(): void {
 
 	if (editorViewState.wordWrapEnabled) {
 		editorViewState.scrollColumn = 0;
-		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, anchorRow, anchorColumnForWrap), currentVisualCount, editorViewState.cachedVisibleRowCount);
+		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.layout.positionToVisualIndex(anchorRow, anchorColumnForWrap), currentVisualCount, editorViewState.cachedVisibleRowCount);
 	} else {
 		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(anchorColumnForUnwrap, computeMaximumScrollColumn());
-		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, anchorRow, editorViewState.scrollColumn), currentVisualCount, editorViewState.cachedVisibleRowCount);
+		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.layout.positionToVisualIndex(anchorRow, editorViewState.scrollColumn), currentVisualCount, editorViewState.cachedVisibleRowCount);
 	}
 	editorPointerState.lastPointerRowResolution = null;
 	ensureCursorVisible();
