@@ -14,7 +14,6 @@ import {
 } from '../../../../lua/syntax/ast';
 import { API_METHOD_METADATA } from '../../../../machine/firmware/api_metadata';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../../../../machine/firmware/builtin_descriptors';
-import { MEMORY_ACCESS_KIND_NAMES } from '../../../../machine/memory/access_kind';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../machine/runtime/contracts';
 import {
 	buildLuaSemanticWorkspaceSnapshot,
@@ -24,6 +23,7 @@ import {
 	type LuaSemanticWorkspaceSnapshotInput,
 } from './semantic_model';
 import { getCachedLuaParse } from '../../../language/lua/analysis_cache';
+import { buildLuaKnownNameSet, isReservedMemoryMapName, luaRangeStartKey, methodPathToPropertyPath, semanticSymbolKindToLuaSymbolKind } from './semantic_common';
 
 export type LuaDiagnosticSeverity = 'error' | 'warning';
 
@@ -112,11 +112,12 @@ export function getStaticLuaApiSignatureMap(): ReadonlyMap<string, LuaApiSignatu
 export function computeLuaDiagnosticsFromAnalysis(options: LuaAnalysisDiagnosticOptions): LuaStaticDiagnostic[] {
 	const diagnostics: LuaStaticDiagnostic[] = [];
 	const apiRoot = 'api';
-	const globalKnownNames = buildGlobalKnownNameSet(
+	const globalKnownNames = buildLuaKnownNameSet(
 		options.globalSymbols,
 		options.builtinDescriptors,
 		options.apiSignatures,
 		options.extraGlobalNames,
+		true,
 	);
 	const builtinLookup = buildBuiltinLookup(options.builtinDescriptors);
 	addIdentifierDiagnosticsFromSemantic(diagnostics, options.analysis, globalKnownNames);
@@ -193,7 +194,7 @@ function buildGlobalSymbols(decls: readonly Decl[]): LuaSymbolEntry[] {
 		symbols.push({
 			name: decl.name,
 			path: decl.namePath.length > 0 ? decl.namePath.join('.') : decl.name,
-			kind: symbolKindToLuaKind(decl.kind),
+			kind: semanticSymbolKindToLuaSymbolKind(decl.kind),
 			location: {
 				path: decl.file,
 				range: {
@@ -206,21 +207,6 @@ function buildGlobalSymbols(decls: readonly Decl[]): LuaSymbolEntry[] {
 		});
 	}
 	return symbols;
-}
-
-function symbolKindToLuaKind(kind: Decl['kind']): LuaSymbolEntry['kind'] {
-	switch (kind) {
-		case 'tableField':
-			return 'table_field';
-		case 'function':
-			return 'function';
-		case 'parameter':
-			return 'parameter';
-		case 'constant':
-			return 'constant';
-		default:
-			return 'variable';
-	}
 }
 
 function toSyntaxDiagnostic(message: string, line: number, column: number): LuaStaticDiagnostic {
@@ -262,45 +248,6 @@ function pushRangeDiagnostic(
 	const startColumn = range.start.column > 0 ? range.start.column - 1 : 0;
 	const endColumn = range.end.column > range.start.column ? range.end.column - 1 : startColumn + 1;
 	pushDiagnostic(diagnostics, row, startColumn, endColumn, message, severity);
-}
-
-function buildGlobalKnownNameSet(
-	globalSymbols: readonly LuaSymbolEntry[],
-	builtinDescriptors: readonly LuaBuiltinDescriptor[],
-	apiSignatures: ReadonlyMap<string, LuaApiSignatureMetadata>,
-	extraGlobalNames?: readonly string[],
-): Set<string> {
-	const knownNames = new Set<string>();
-	const addName = (value: string): void => {
-		knownNames.add(value);
-		const dotIndex = value.indexOf('.');
-		if (dotIndex !== -1) {
-			knownNames.add(value.slice(0, dotIndex));
-		}
-		const colonIndex = value.indexOf(':');
-		if (colonIndex !== -1) {
-			knownNames.add(value.slice(0, colonIndex));
-		}
-	};
-	addName('api');
-	addName('self');
-	if (extraGlobalNames) {
-		for (let index = 0; index < extraGlobalNames.length; index += 1) {
-			addName(extraGlobalNames[index]);
-		}
-	}
-	for (let index = 0; index < globalSymbols.length; index += 1) {
-		const symbol = globalSymbols[index];
-		addName(symbol.name);
-		addName(symbol.path);
-	}
-	for (let index = 0; index < builtinDescriptors.length; index += 1) {
-		addName(builtinDescriptors[index].name);
-	}
-	for (const [name] of apiSignatures) {
-		addName(name);
-	}
-	return knownNames;
 }
 
 function buildBuiltinLookup(builtinDescriptors: readonly LuaBuiltinDescriptor[]): Map<string, LuaBuiltinDescriptor> {
@@ -586,16 +533,6 @@ function buildCallInfo(call: LuaCallExpression): FunctionCallInfo | null {
 	return { path: qualified.parts.join('.'), style: 'function' };
 }
 
-function convertMethodPathToProperty(path: string): string | null {
-	const index = path.lastIndexOf(':');
-	if (index === -1) {
-		return null;
-	}
-	const prefix = path.slice(0, index);
-	const suffix = path.slice(index + 1);
-	return `${prefix}.${suffix}`;
-}
-
 function convertPropertyPathToMethod(path: string): string | null {
 	const index = path.lastIndexOf('.');
 	if (index === -1) {
@@ -619,7 +556,7 @@ function resolveUserFunctionSignature(
 		return createCallSignatureMetadata(callInfo.path, direct.params, undefined, callInfo.style, direct.declarationStyle, direct.minimumArgumentCount);
 	}
 	if (callInfo.style === 'method') {
-		const dotPath = convertMethodPathToProperty(callInfo.path);
+		const dotPath = methodPathToPropertyPath(callInfo.path);
 		if (dotPath) {
 			const fallback = signatures.get(dotPath);
 			if (fallback) {
@@ -673,19 +610,6 @@ function validateCallArity(diagnostics: LuaStaticDiagnostic[], call: LuaCallExpr
 
 function isMultiReturnExpression(expression: LuaExpression): boolean {
 	return expression.kind === LuaSyntaxKind.CallExpression || expression.kind === LuaSyntaxKind.VarargExpression;
-}
-
-function buildRangeKey(range: LuaSourceRange): string {
-	return `${range.start.line}:${range.start.column}`;
-}
-
-function isReservedMemoryMapName(name: string): boolean {
-	for (let index = 0; index < MEMORY_ACCESS_KIND_NAMES.length; index += 1) {
-		if (MEMORY_ACCESS_KIND_NAMES[index] === name) {
-			return true;
-		}
-	}
-	return false;
 }
 
 function collectAllowedReservedMemoryRanges(chunk: LuaChunk): Set<string> {
@@ -766,7 +690,7 @@ function collectAllowedReservedMemoryRanges(chunk: LuaChunk): Set<string> {
 		switch (expression.kind) {
 			case LuaSyntaxKind.IndexExpression:
 				if (expression.base.kind === LuaSyntaxKind.IdentifierExpression && isReservedMemoryMapName(expression.base.name)) {
-					allowed.add(buildRangeKey(expression.base.range));
+					allowed.add(luaRangeStartKey(expression.base.range));
 				}
 				visitExpression(expression.base);
 				visitExpression(expression.index);
@@ -837,7 +761,7 @@ function addReservedMemoryDiagnosticsFromSemantic(
 		if (!isReservedMemoryMapName(ref.name) || ref.referenceKind !== 'identifier' || ref.namePath.length !== 1) {
 			continue;
 		}
-		if (allowedReservedRanges.has(buildRangeKey(ref.range))) {
+		if (allowedReservedRanges.has(luaRangeStartKey(ref.range))) {
 			continue;
 		}
 		pushRangeDiagnostic(diagnostics, ref.range, `'${ref.name}' is a reserved memory map. Use direct indexing syntax like ${ref.name}[addr].`, 'error');

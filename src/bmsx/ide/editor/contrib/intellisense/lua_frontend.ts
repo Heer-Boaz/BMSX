@@ -1,7 +1,6 @@
 import { LuaSyntaxKind, type LuaCallExpression, type LuaChunk, type LuaIdentifierExpression, type LuaSourceRange, type LuaStringLiteralExpression } from '../../../../lua/syntax/ast';
 import { LuaTokenType } from '../../../../lua/syntax/token';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../machine/runtime/contracts';
-import { MEMORY_ACCESS_KIND_NAMES } from '../../../../machine/memory/access_kind';
 import type { ParsedLuaChunk } from '../../../language/lua/parse';
 import {
 	buildLuaSemanticWorkspaceSnapshot,
@@ -19,6 +18,7 @@ import {
 	type LuaApiSignatureMetadata,
 	type LuaStaticDiagnostic,
 } from './static_diagnostics';
+import { buildLuaKnownNameSet, isReservedMemoryMapName, luaNamePathMatches, luaPositionInRange, luaRangeKey, luaRangeStartKey, semanticSymbolKindToLuaSymbolKind } from './semantic_common';
 
 const RESERVED_INTRINSIC_NAMES = ['memwrite'] as const;
 
@@ -135,7 +135,7 @@ export function buildLuaSemanticFrontend(
 	}
 	// Frontend queries must resolve against the prepared snapshot, not whatever the workspace becomes later.
 	const globalSymbols = buildCombinedGlobalSymbols(snapshot.listGlobalDecls(), options.externalGlobalSymbols);
-	const knownGlobalNames = buildKnownGlobalNameSet(globalSymbols, builtinDescriptors, apiSignatures, options.extraGlobalNames);
+	const knownGlobalNames = buildLuaKnownNameSet(globalSymbols, builtinDescriptors, apiSignatures, options.extraGlobalNames, false);
 	const moduleTargetsByAlias = buildModuleTargetAliasMap(preparedSources);
 	for (let index = 0; index < preparedSources.length; index += 1) {
 		const source = preparedSources[index];
@@ -176,7 +176,7 @@ export function buildLuaSemanticFrontend(
 				const fileDecls = preparedSources[index].analysis.decls;
 				for (let declIndex = 0; declIndex < fileDecls.length; declIndex += 1) {
 					const decl = fileDecls[declIndex];
-					if (namePathMatches(decl.namePath, namePath)) {
+					if (luaNamePathMatches(decl.namePath, namePath)) {
 						matches.push(decl);
 					}
 				}
@@ -194,7 +194,7 @@ export function buildLuaSemanticFrontend(
 			}
 			for (let index = 0; index < source.analysis.decls.length; index += 1) {
 				const decl = source.analysis.decls[index];
-				if (positionInRange(line, column, decl.range)) {
+				if (luaPositionInRange(line, column, decl.range)) {
 					return {
 						id: decl.id,
 						decl,
@@ -204,7 +204,7 @@ export function buildLuaSemanticFrontend(
 			}
 			for (let index = 0; index < source.analysis.refs.length; index += 1) {
 				const ref = source.analysis.refs[index];
-				if (!ref.target || !positionInRange(line, column, ref.range)) {
+				if (!ref.target || !luaPositionInRange(line, column, ref.range)) {
 					continue;
 				}
 				const decl = snapshot.getDecl(ref.target);
@@ -406,7 +406,7 @@ function resolveCallExpressionForReference(ref: Ref, calls: readonly LuaCallExpr
 
 function callExpressionMatchesReference(call: LuaCallExpression, ref: Ref): boolean {
 	if (call.methodName) {
-		return ref.name === call.methodName && positionInRange(ref.range.start.line, ref.range.start.column, call.range);
+		return ref.name === call.methodName && luaPositionInRange(ref.range.start.line, ref.range.start.column, call.range);
 	}
 	if (call.callee.kind === LuaSyntaxKind.MemberExpression) {
 		return ref.name === call.callee.identifier
@@ -418,7 +418,7 @@ function callExpressionMatchesReference(call: LuaCallExpression, ref: Ref): bool
 			&& ref.range.start.line === call.callee.range.start.line
 			&& ref.range.start.column === call.callee.range.start.column;
 	}
-	return positionInRange(ref.range.start.line, ref.range.start.column, call.callee.range);
+	return luaPositionInRange(ref.range.start.line, ref.range.start.column, call.callee.range);
 }
 
 function resolveCallerDeclaration(functionDecls: readonly Decl[], line: number, column: number): Decl {
@@ -428,7 +428,7 @@ function resolveCallerDeclaration(functionDecls: readonly Decl[], line: number, 
 		if (comparePosition(decl.range.start.line, decl.range.start.column, line, column) > 0) {
 			continue;
 		}
-		if (!positionInRange(line, column, decl.scope)) {
+		if (!luaPositionInRange(line, column, decl.scope)) {
 			continue;
 		}
 		if (!best) {
@@ -508,16 +508,16 @@ function createBoundFile(
 	const referencesByStart = new Map<string, LuaBoundReference>();
 	for (let index = 0; index < decls.length; index += 1) {
 		const decl = decls[index];
-		declarationsByRange.set(buildRangeKey(decl.range), decl);
-		const startKey = buildStartKey(decl.range);
+		declarationsByRange.set(luaRangeKey(decl.range), decl);
+		const startKey = luaRangeStartKey(decl.range);
 		if (!declarationsByStart.has(startKey)) {
 			declarationsByStart.set(startKey, decl);
 		}
 	}
 	for (let index = 0; index < refsByStart.length; index += 1) {
 		const reference = refsByStart[index];
-		referencesByRange.set(buildRangeKey(reference.ref.range), reference);
-		const startKey = buildStartKey(reference.ref.range);
+		referencesByRange.set(luaRangeKey(reference.ref.range), reference);
+		const startKey = luaRangeStartKey(reference.ref.range);
 		if (!referencesByStart.has(startKey)) {
 			referencesByStart.set(startKey, reference);
 		}
@@ -525,19 +525,19 @@ function createBoundFile(
 	return {
 		diagnostics,
 		getDeclaration(range: LuaSourceRange): Decl {
-			return declarationsByRange.get(buildRangeKey(range))
-				?? declarationsByStart.get(buildStartKey(range))
+			return declarationsByRange.get(luaRangeKey(range))
+				?? declarationsByStart.get(luaRangeStartKey(range))
 				?? null;
 		},
 		getReference(range: LuaSourceRange): LuaBoundReference {
-			return referencesByRange.get(buildRangeKey(range))
-				?? referencesByStart.get(buildStartKey(range))
+			return referencesByRange.get(luaRangeKey(range))
+				?? referencesByStart.get(luaRangeStartKey(range))
 				?? null;
 		},
 		getNavigationTargetAt(line: number, column: number): LuaSemanticNavigationTarget {
 			for (let index = 0; index < decls.length; index += 1) {
 				const decl = decls[index];
-				if (positionInRange(line, column, decl.range)) {
+				if (luaPositionInRange(line, column, decl.range)) {
 					return {
 						kind: 'declaration',
 						range: decl.range,
@@ -546,7 +546,7 @@ function createBoundFile(
 			}
 			for (let index = 0; index < refsByStart.length; index += 1) {
 				const reference = refsByStart[index];
-				if (!positionInRange(line, column, reference.ref.range)) {
+				if (!luaPositionInRange(line, column, reference.ref.range)) {
 					continue;
 				}
 				if (!reference.decl) {
@@ -559,7 +559,7 @@ function createBoundFile(
 			}
 			for (let index = 0; index < requireTargetsByStart.length; index += 1) {
 				const target = requireTargetsByStart[index];
-				if (!positionInRange(line, column, target.range)) {
+				if (!luaPositionInRange(line, column, target.range)) {
 					continue;
 				}
 				return {
@@ -749,7 +749,7 @@ function buildCombinedGlobalSymbols(decls: readonly Decl[], externalGlobalSymbol
 		symbols.push({
 			name: decl.name,
 			path: decl.namePath.length > 0 ? decl.namePath.join('.') : decl.name,
-			kind: symbolKindToLuaKind(decl.kind),
+			kind: semanticSymbolKindToLuaSymbolKind(decl.kind),
 			location: {
 				path: decl.file,
 				range: {
@@ -767,66 +767,6 @@ function buildCombinedGlobalSymbols(decls: readonly Decl[], externalGlobalSymbol
 		}
 	}
 	return symbols;
-}
-
-function symbolKindToLuaKind(kind: Decl['kind']): LuaSymbolEntry['kind'] {
-	switch (kind) {
-		case 'tableField':
-			return 'table_field';
-		case 'function':
-			return 'function';
-		case 'parameter':
-			return 'parameter';
-		case 'constant':
-			return 'constant';
-		default:
-			return 'variable';
-	}
-}
-
-function buildKnownGlobalNameSet(
-	globalSymbols: readonly LuaSymbolEntry[],
-	builtinDescriptors: readonly LuaBuiltinDescriptor[],
-	apiSignatures: ReadonlyMap<string, LuaApiSignatureMetadata>,
-	extraGlobalNames?: readonly string[],
-): Set<string> {
-	const names = new Set<string>();
-	const addName = (value: string): void => {
-		names.add(value);
-		const dotIndex = value.indexOf('.');
-		if (dotIndex !== -1) {
-			names.add(value.slice(0, dotIndex));
-		}
-		const colonIndex = value.indexOf(':');
-		if (colonIndex !== -1) {
-			names.add(value.slice(0, colonIndex));
-		}
-	};
-	addName('api');
-	if (extraGlobalNames) {
-		for (let index = 0; index < extraGlobalNames.length; index += 1) {
-			addName(extraGlobalNames[index]);
-		}
-	}
-	for (let index = 0; index < globalSymbols.length; index += 1) {
-		addName(globalSymbols[index].name);
-		addName(globalSymbols[index].path);
-	}
-	for (let index = 0; index < builtinDescriptors.length; index += 1) {
-		addName(builtinDescriptors[index].name);
-	}
-	for (const [name] of apiSignatures) {
-		addName(name);
-	}
-	return names;
-}
-
-function buildRangeKey(range: LuaSourceRange): string {
-	return `${range.start.line}:${range.start.column}:${range.end.line}:${range.end.column}`;
-}
-
-function buildStartKey(range: LuaSourceRange): string {
-	return `${range.start.line}:${range.start.column}`;
 }
 
 function comparePosition(
@@ -850,15 +790,6 @@ function comparePosition(
 	return 0;
 }
 
-function positionInRange(
-	line: number,
-	column: number,
-	range: LuaSourceRange,
-): boolean {
-	return comparePosition(line, column, range.start.line, range.start.column) >= 0
-		&& comparePosition(line, column, range.end.line, range.end.column) <= 0;
-}
-
 function lowerBoundReferenceStart(
 	refs: readonly LuaBoundReference[],
 	line: number,
@@ -877,15 +808,6 @@ function lowerBoundReferenceStart(
 	return low;
 }
 
-function isReservedMemoryMapName(name: string): boolean {
-	for (let index = 0; index < MEMORY_ACCESS_KIND_NAMES.length; index += 1) {
-		if (MEMORY_ACCESS_KIND_NAMES[index] === name) {
-			return true;
-		}
-	}
-	return false;
-}
-
 function isReservedIntrinsicName(name: string): boolean {
 	for (let index = 0; index < RESERVED_INTRINSIC_NAMES.length; index += 1) {
 		if (RESERVED_INTRINSIC_NAMES[index] === name) {
@@ -893,16 +815,4 @@ function isReservedIntrinsicName(name: string): boolean {
 		}
 	}
 	return false;
-}
-
-function namePathMatches(candidate: readonly string[], desired: readonly string[]): boolean {
-	if (candidate.length !== desired.length) {
-		return false;
-	}
-	for (let index = 0; index < candidate.length; index += 1) {
-		if (candidate[index] !== desired[index]) {
-			return false;
-		}
-	}
-	return true;
 }

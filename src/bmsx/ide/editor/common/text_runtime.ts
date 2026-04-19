@@ -14,10 +14,6 @@ import { editorViewState } from '../ui/view/state';
 import { editorRuntimeState } from './runtime_state';
 import { editorSearchState } from '../contrib/find/widget_state';
 
-export function normalizeCaseOutsideStrings(text: string): string {
-	return text;
-}
-
 export function capturePreMutationSource(): void {
 	if (!editorRuntimeState.caseInsensitive) {
 		return;

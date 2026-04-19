@@ -15,9 +15,8 @@ import { buildMarshalContext, toNativeValue } from '../../../../machine/firmware
 import { buildLuaSemanticFrontend } from './lua_frontend';
 import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
-import { MEMORY_ACCESS_KIND_NAMES } from '../../../../machine/memory/access_kind';
 import { isStringValue, stringValueToString } from '../../../../machine/memory/string_pool';
-import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverRequest, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaMemberCompletionRequest, LuaSymbolEntry, LuaSymbolKind } from '../../../../machine/runtime/contracts';
+import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverRequest, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaMemberCompletionRequest, LuaSymbolEntry } from '../../../../machine/runtime/contracts';
 import { ScratchBatchPooled } from '../../../../common/scratchbatch';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { focusChunkSource } from '../../../workbench/contrib/resources/navigation';
@@ -38,9 +37,10 @@ import { editorPointerState } from '../../input/pointer/state';
 import { editorSearchState, lineJumpState } from '../find/widget_state';
 import { symbolSearchState } from '../symbols/search_state';
 import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
-import { parseLuaIdentifierChain as parseLuaIdentifierChainShared } from '../../../language/lua/identifier_chain';
-import { buildLuaSemanticModel, collectModuleAliasEntriesFromChunk, Decl, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData, type ModuleAliasEntry } from './semantic_model';
+import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain';
+import { buildLuaSemanticModel, collectModuleAliasEntriesFromChunk, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData, type ModuleAliasEntry } from './semantic_model';
 import { cacheSemanticWorkspaceAnalysis, getOrCreateSemanticWorkspace, prepareSemanticWorkspaceForEditorBuffer, primeSemanticWorkspaceProjectSources, syncSemanticWorkspacePath } from './semantic_workspace_sync';
+import { semanticSymbolKindToLuaSymbolKind } from './semantic_common';
 import { isLuaCommentContext } from '../../../common/text';
 import { writeWrappedOverlayLine } from '../../common/text_layout';
 import type { ApiCompletionMetadata, CodeTabContext, EditorContextToken, LuaCompletionItem, PointerSnapshot } from '../../../common/models';
@@ -114,15 +114,6 @@ function hasStaticLuaBuiltinName(name: string): boolean {
 	}
 	for (let index = 0; index < DEFAULT_LUA_BUILTIN_NAMES.length; index += 1) {
 		if (DEFAULT_LUA_BUILTIN_NAMES[index] === trimmed) {
-			return true;
-		}
-	}
-	return false;
-}
-
-export function isReservedMemoryMapName(name: string): boolean {
-	for (let index = 0; index < MEMORY_ACCESS_KIND_NAMES.length; index += 1) {
-		if (MEMORY_ACCESS_KIND_NAMES[index] === name) {
 			return true;
 		}
 	}
@@ -1399,21 +1390,6 @@ export function listLuaBuiltinFunctions(): LuaBuiltinDescriptor[] {
 	return result;
 }
 
-function symbolKindToLuaKind(kind: Decl['kind']): LuaSymbolKind {
-	switch (kind) {
-		case 'tableField':
-			return 'table_field';
-		case 'function':
-			return 'function';
-		case 'parameter':
-			return 'parameter';
-		case 'constant':
-			return 'constant';
-		default:
-			return 'variable';
-	}
-}
-
 export function listGlobalLuaSymbols(): LuaSymbolEntry[] {
 	const workspace = getSemanticWorkspace();
 	primeSemanticWorkspaceProjectSources(workspace);
@@ -1430,7 +1406,7 @@ export function listGlobalLuaSymbols(): LuaSymbolEntry[] {
 		entries.push({
 			name: decl.name,
 			path,
-			kind: symbolKindToLuaKind(decl.kind),
+			kind: semanticSymbolKindToLuaSymbolKind(decl.kind),
 			location: buildDefinitionLocationFromRange(decl.range),
 		});
 	}
@@ -1698,10 +1674,6 @@ function rangeArea(range: SourceRange): number {
 	const lineSpan = Math.max(0, range.end.line - range.start.line);
 	const columnSpan = Math.max(0, range.end.column - range.start.column);
 	return (lineSpan * 100000) + columnSpan;
-}
-
-export function parseLuaIdentifierChain(expression: string): string[] {
-	return parseLuaIdentifierChainShared(expression);
 }
 
 function resolveTableChainMemberValue(table: LuaTable, key: string): LuaValue {

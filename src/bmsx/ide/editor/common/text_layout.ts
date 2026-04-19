@@ -120,10 +120,6 @@ export function rewrapRuntimeErrorOverlays(): void {
 	}
 }
 
-export function normalizeCaseOutsideStrings(text: string): string {
-	return text;
-}
-
 export function currentLine(): string {
 	if (editorDocumentState.cursorRow < 0 || editorDocumentState.cursorRow >= editorDocumentState.buffer.getLineCount()) {
 		return '';

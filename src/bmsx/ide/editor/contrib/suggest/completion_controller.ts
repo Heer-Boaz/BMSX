@@ -6,7 +6,6 @@ import {
 	getApiCompletionData,
 	getKeywordCompletions,
 	intellisenseUiReady,
-	isReservedMemoryMapName,
 	listGlobalLuaSymbols,
 	listLuaBuiltinFunctions,
 	listLuaModuleSymbols,
@@ -14,6 +13,7 @@ import {
 	type LuaScopedSymbol,
 	shouldAutoTriggerCompletions,
 } from '../intellisense/engine';
+import { isReservedMemoryMapName } from '../intellisense/semantic_common';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../../../lua/syntax/ast';
 import {
 	CompletionContext,

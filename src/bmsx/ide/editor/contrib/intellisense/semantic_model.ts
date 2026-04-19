@@ -26,8 +26,10 @@ import { LuaTokenType } from '../../../../lua/syntax/token';
 import type { LuaSymbolEntry } from '../../../../machine/runtime/contracts';
 import type { ParsedLuaChunk } from '../../../language/lua/parse';
 import { getCachedLuaParse } from '../../../language/lua/analysis_cache';
+import { luaNamePathMatches, luaPositionInRange, methodPathToPropertyPath } from './semantic_common';
+import type { SemanticSymbolKind as SymbolKind } from './semantic_common';
 
-export type SymbolKind = 'parameter' | 'local' | 'constant' | 'function' | 'global' | 'tableField' | 'module' | 'type' | 'label' | 'keyword';
+export type { SemanticSymbolKind as SymbolKind } from './semantic_common';
 
 export type SymbolID = string;
 
@@ -238,14 +240,14 @@ export class LuaSemanticWorkspaceSnapshot {
 		}
 		for (let declIndex = 0; declIndex < data.decls.length; declIndex += 1) {
 			const decl = data.decls[declIndex];
-			if (!positionInRange(row, column, decl.range)) {
+			if (!luaPositionInRange(row, column, decl.range)) {
 				continue;
 			}
 			return { id: decl.id, decl };
 		}
 		for (let refIndex = 0; refIndex < data.refs.length; refIndex += 1) {
 			const ref = data.refs[refIndex];
-			if (!ref.target || !positionInRange(row, column, ref.range)) {
+			if (!ref.target || !luaPositionInRange(row, column, ref.range)) {
 				continue;
 			}
 			const decl = this.declById.get(ref.target);
@@ -1174,7 +1176,7 @@ export class LuaProjectIndex {
 		const data = record.data;
 		for (let declIndex = 0; declIndex < data.decls.length; declIndex += 1) {
 			const decl = data.decls[declIndex]!;
-			if (!positionInRange(row, column, decl.range)) {
+			if (!luaPositionInRange(row, column, decl.range)) {
 				continue;
 			}
 			const stored = this.symbols.get(decl.id) ?? decl;
@@ -1182,7 +1184,7 @@ export class LuaProjectIndex {
 		}
 		for (let refIndex = 0; refIndex < data.refs.length; refIndex += 1) {
 			const ref = data.refs[refIndex]!;
-			if (!positionInRange(row, column, ref.range)) {
+			if (!luaPositionInRange(row, column, ref.range)) {
 				continue;
 			}
 			const targetId = ref.target ?? (ref.symbolKey.length > 0 ? this.globalsByKey.get(ref.symbolKey)  : null);
@@ -1331,8 +1333,8 @@ function symbolAtPosition(options: {
 	const { row, column, namePath, decls, refs, declById } = options;
 	for (let index = 0; index < decls.length; index += 1) {
 		const decl = decls[index];
-		if (positionInRange(row, column, decl.range)) {
-			if (namePath && !namePathMatches(decl.namePath, namePath)) {
+		if (luaPositionInRange(row, column, decl.range)) {
+			if (namePath && !luaNamePathMatches(decl.namePath, namePath)) {
 				continue;
 			}
 			return { id: decl.id, decl };
@@ -1340,10 +1342,10 @@ function symbolAtPosition(options: {
 	}
 	for (let index = 0; index < refs.length; index += 1) {
 		const ref = refs[index];
-		if (!positionInRange(row, column, ref.range)) {
+		if (!luaPositionInRange(row, column, ref.range)) {
 			continue;
 		}
-		if (namePath && !namePathMatches(ref.namePath, namePath)) {
+		if (namePath && !luaNamePathMatches(ref.namePath, namePath)) {
 			continue;
 		}
 		const targetId = ref.target;
@@ -1357,18 +1359,6 @@ function symbolAtPosition(options: {
 		return { id: targetId, decl };
 	}
 	return null;
-}
-
-function namePathMatches(candidate: readonly string[], desired: readonly string[]): boolean {
-	if (candidate.length !== desired.length) {
-		return false;
-	}
-	for (let index = 0; index < desired.length; index += 1) {
-		if (candidate[index] !== desired[index]) {
-			return false;
-		}
-	}
-	return true;
 }
 
 class SemanticBuilder {
@@ -2491,19 +2481,6 @@ function compareDefinitionInfo(a: LuaDefinitionInfo, b: LuaDefinitionInfo): numb
 	return a.name.localeCompare(b.name);
 }
 
-function positionInRange(row: number, column: number, range: LuaSourceRange): boolean {
-	if (row < range.start.line || row > range.end.line) {
-		return false;
-	}
-	if (row === range.start.line && column !== null && column < range.start.column) {
-		return false;
-	}
-	if (row === range.end.line && column !== null && column > range.end.column) {
-		return false;
-	}
-	return true;
-}
-
 function toDecl(internal: InternalDecl): Decl {
 	return {
 		id: internal.id,
@@ -2618,16 +2595,6 @@ function buildFunctionNamePath(name: { identifiers: readonly string[]; methodNam
 	return identifiers;
 }
 
-function convertMethodPathToProperty(path: string): string {
-	const index = path.lastIndexOf(':');
-	if (index === -1) {
-		return null;
-	}
-	const prefix = path.slice(0, index);
-	const suffix = path.slice(index + 1);
-	return prefix.length > 0 ? `${prefix}.${suffix}` : suffix;
-}
-
 function registerFunctionSignatureExplicit(
 	signatures: Map<string, FunctionSignatureInfo>,
 	path: string,
@@ -2661,7 +2628,7 @@ function registerFunctionFromExpression(
 	const minimumArgumentCount = inferMinimumArgumentCount(expression, params, signatures);
 	registerFunctionSignatureExplicit(signatures, path, params, expression.hasVararg, minimumArgumentCount, declarationStyle);
 	if (declarationStyle === 'method') {
-		const dotPath = convertMethodPathToProperty(path);
+		const dotPath = methodPathToPropertyPath(path);
 		if (dotPath) {
 			const extended = ['self', ...params];
 			registerFunctionSignatureExplicit(signatures, dotPath, extended, expression.hasVararg, minimumArgumentCount + 1, 'function');
