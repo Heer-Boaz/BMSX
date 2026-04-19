@@ -1,6 +1,7 @@
 import { $ } from '../../../../core/engine';
 import { toggleBreakpointForEditorRow } from '../../../workbench/contrib/debugger/controller';
 import { resolvePointerRow } from '../../ui/view';
+import type { CodeAreaBounds } from '../../ui/view';
 import { openEditorContextMenuFromPointer } from '../../../workbench/input/pointer/context_menu/input';
 import type { PointerSnapshot } from '../../../common/models';
 import { editorPointerState, resetPointerClickTracking } from './state';
@@ -21,11 +22,11 @@ export function handleCodeAreaSecondaryPointer(
 	return true;
 }
 
-export function handleCodeAreaGutterPointer(snapshot: PointerSnapshot, justPressed: boolean, inGutter: boolean): boolean {
+export function handleCodeAreaGutterPointer(snapshot: PointerSnapshot, justPressed: boolean, inGutter: boolean, bounds: CodeAreaBounds): boolean {
 	if (!justPressed || !inGutter) {
 		return false;
 	}
-	const targetRow = resolvePointerRow(snapshot.viewportY);
+	const targetRow = resolvePointerRow(snapshot.viewportY, bounds);
 	if (!toggleBreakpointForEditorRow(targetRow)) {
 		return false;
 	}

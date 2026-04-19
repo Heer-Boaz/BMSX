@@ -1,13 +1,9 @@
 import * as constants from '../../common/constants';
 import { editorFeedbackState } from '../../workbench/common/feedback_state';
+import { ensureVisualLines } from '../common/text_layout';
+import { getCodeAreaBounds, maximumLineLength } from './view';
 import { editorViewState } from './view_state';
-
-export type CodeAreaBounds = {
-	codeTop: number;
-	codeBottom: number;
-	codeRight: number;
-	textLeft: number;
-};
+import type { CodeAreaBounds } from './view';
 
 export type CodeAreaViewportMetrics = {
 	rows: number;
@@ -18,7 +14,10 @@ export type CodeAreaViewportMetrics = {
 	trackRight: number;
 	wrapEnabled: boolean;
 	sliceWidth: number;
+	maxScrollColumn: number;
 };
+
+export type CodeAreaViewport = CodeAreaBounds & CodeAreaViewportMetrics;
 
 const codeAreaViewportMetrics: CodeAreaViewportMetrics = {
 	rows: 1,
@@ -29,6 +28,26 @@ const codeAreaViewportMetrics: CodeAreaViewportMetrics = {
 	trackRight: 0,
 	wrapEnabled: false,
 	sliceWidth: 3,
+	maxScrollColumn: 0,
+};
+
+const codeAreaViewport: CodeAreaViewport = {
+	codeTop: 0,
+	codeBottom: 0,
+	codeLeft: 0,
+	codeRight: 0,
+	gutterLeft: 0,
+	gutterRight: 0,
+	textLeft: 0,
+	rows: 1,
+	columns: 1,
+	visualCount: 0,
+	contentRight: 0,
+	contentBottom: 0,
+	trackRight: 0,
+	wrapEnabled: false,
+	sliceWidth: 3,
+	maxScrollColumn: 0,
 };
 
 function cellCapacity(size: number, cellSize: number): number {
@@ -69,5 +88,34 @@ export function resolveCodeAreaViewportMetrics(
 	codeAreaViewportMetrics.trackRight = bounds.codeRight - verticalScrollbarWidth;
 	codeAreaViewportMetrics.wrapEnabled = wrapEnabled;
 	codeAreaViewportMetrics.sliceWidth = columns + 2;
+	codeAreaViewportMetrics.maxScrollColumn = wrapEnabled || maximumColumns <= columns ? 0 : maximumColumns - columns;
 	return codeAreaViewportMetrics;
+}
+
+export function resolveCodeAreaViewport(): CodeAreaViewport {
+	ensureVisualLines();
+	const bounds = getCodeAreaBounds();
+	const metrics = resolveCodeAreaViewportMetrics(
+		bounds,
+		editorViewState.layout.getVisualLineCount(),
+		editorViewState.wordWrapEnabled ? 0 : maximumLineLength(),
+	);
+
+	codeAreaViewport.codeTop = bounds.codeTop;
+	codeAreaViewport.codeBottom = bounds.codeBottom;
+	codeAreaViewport.codeLeft = bounds.codeLeft;
+	codeAreaViewport.codeRight = bounds.codeRight;
+	codeAreaViewport.gutterLeft = bounds.gutterLeft;
+	codeAreaViewport.gutterRight = bounds.gutterRight;
+	codeAreaViewport.textLeft = bounds.textLeft;
+	codeAreaViewport.rows = metrics.rows;
+	codeAreaViewport.columns = metrics.columns;
+	codeAreaViewport.visualCount = metrics.visualCount;
+	codeAreaViewport.contentRight = metrics.contentRight;
+	codeAreaViewport.contentBottom = metrics.contentBottom;
+	codeAreaViewport.trackRight = metrics.trackRight;
+	codeAreaViewport.wrapEnabled = metrics.wrapEnabled;
+	codeAreaViewport.sliceWidth = metrics.sliceWidth;
+	codeAreaViewport.maxScrollColumn = metrics.maxScrollColumn;
+	return codeAreaViewport;
 }

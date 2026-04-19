@@ -1,6 +1,5 @@
 import type { CursorScreenInfo } from '../../../common/models';
 import { drawHoverTooltip } from '../../ui/hover_tooltip';
-import { computeMaximumScrollColumn } from '../../ui/view';
 import { renderRuntimeErrorOverlay, type RuntimeErrorOverlayRenderResult } from '../error_overlay';
 import { renderEditorContextMenu } from '../../../workbench/render/context_menu';
 import type { CodeAreaViewportBounds } from '../../../workbench/contrib/context_menu/widget';
@@ -63,6 +62,7 @@ export function finalizeCodeAreaRender(
 	rowCapacity: number,
 	columnCapacity: number,
 	wrapEnabled: boolean,
+	maxScrollColumn: number,
 	cursorInfo: CursorScreenInfo,
 ): void {
 	const verticalTrackLeft = bounds.codeRight - constants.SCROLLBAR_WIDTH;
@@ -80,9 +80,9 @@ export function finalizeCodeAreaRender(
 		horizontalTrackScratch.top = contentBottom;
 		horizontalTrackScratch.right = trackRight;
 		horizontalTrackScratch.bottom = contentBottom + constants.SCROLLBAR_WIDTH;
-		const maxColumns = columnCapacity + computeMaximumScrollColumn();
+		const maxColumns = columnCapacity + maxScrollColumn;
 		editorViewState.scrollbars.codeHorizontal.layout(horizontalTrackScratch, maxColumns, columnCapacity, editorViewState.scrollColumn);
-		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(editorViewState.scrollbars.codeHorizontal.getScroll(), computeMaximumScrollColumn());
+		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(editorViewState.scrollbars.codeHorizontal.getScroll(), maxScrollColumn);
 		editorViewState.codeHorizontalScrollbarVisible = editorViewState.scrollbars.codeHorizontal.isVisible();
 	} else {
 		editorViewState.scrollColumn = 0;

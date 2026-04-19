@@ -144,10 +144,10 @@ export function pointerHitsHoverTarget(snapshot: PointerSnapshot, tooltip: CodeH
 	if (snapshot.viewportY < bounds.codeTop || snapshot.viewportY >= bounds.codeBottom) {
 		return false;
 	}
-	const row = resolvePointerRow(snapshot.viewportY);
+	const row = resolvePointerRow(snapshot.viewportY, bounds);
 	if (row !== tooltip.row) {
 		return false;
 	}
-	const column = resolvePointerColumn(row, snapshot.viewportX);
+	const column = resolvePointerColumn(row, snapshot.viewportX, bounds);
 	return column >= tooltip.startColumn && column <= tooltip.endColumn;
 }

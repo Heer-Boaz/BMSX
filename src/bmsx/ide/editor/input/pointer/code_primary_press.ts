@@ -2,7 +2,8 @@ import { $ } from '../../../../core/engine';
 import { setCursorPosition } from '../../ui/caret';
 import { setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { focusPrimaryEditorSurface } from '../../../workbench/ui/focus';
-import { resolvePointerColumn, resolvePointerRow } from '../../ui/view';
+import { resolvePointerTextPosition } from '../../ui/view';
+import type { CodeAreaBounds } from '../../ui/view';
 import { executeEditorGoToDefinitionAt } from '../commands/symbol_navigation';
 import type { PointerSnapshot } from '../../../common/models';
 import * as TextEditing from '../../editing/text_editing_and_selection';
@@ -14,14 +15,16 @@ export function handleCodeAreaPrimaryPressPointer(
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	insideCodeArea: boolean,
-	gotoModifierActive: boolean
+	gotoModifierActive: boolean,
+	bounds: CodeAreaBounds
 ): boolean {
 	if (!justPressed || !insideCodeArea) {
 		return false;
 	}
 	focusPrimaryEditorSurface();
-	const targetRow = resolvePointerRow(snapshot.viewportY);
-	const targetColumn = resolvePointerColumn(targetRow, snapshot.viewportX);
+	const target = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
+	const targetRow = target.row;
+	const targetColumn = target.column;
 	if (gotoModifierActive && executeEditorGoToDefinitionAt(targetRow, targetColumn)) {
 		editorPointerState.pointerSelecting = false;
 		editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;

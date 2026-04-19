@@ -198,24 +198,53 @@ export function codeViewportTop(): number {
 		+ getLineJumpBarHeight();
 }
 
-export function getCodeAreaBounds(): { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; gutterLeft: number; gutterRight: number; textLeft: number } {
+export type CodeAreaBounds = {
+	codeTop: number;
+	codeBottom: number;
+	codeLeft: number;
+	codeRight: number;
+	gutterLeft: number;
+	gutterRight: number;
+	textLeft: number;
+};
+
+const codeAreaBounds: CodeAreaBounds = {
+	codeTop: 0,
+	codeBottom: 0,
+	codeLeft: 0,
+	codeRight: 0,
+	gutterLeft: 0,
+	gutterRight: 0,
+	textLeft: 0,
+};
+
+export function getCodeAreaBounds(): CodeAreaBounds {
 	const codeLeft = resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
 	const gutterLeft = codeLeft;
 	const gutterRight = gutterLeft + updateGutterWidth();
-	return {
-		codeTop: codeViewportTop(),
-		codeBottom: editorViewState.viewportHeight - bottomMargin(),
-		codeLeft,
-		codeRight: editorViewState.viewportWidth,
-		gutterLeft,
-		gutterRight,
-		textLeft: gutterRight + 2,
-	};
+	codeAreaBounds.codeTop = codeViewportTop();
+	codeAreaBounds.codeBottom = editorViewState.viewportHeight - bottomMargin();
+	codeAreaBounds.codeLeft = codeLeft;
+	codeAreaBounds.codeRight = editorViewState.viewportWidth;
+	codeAreaBounds.gutterLeft = gutterLeft;
+	codeAreaBounds.gutterRight = gutterRight;
+	codeAreaBounds.textLeft = gutterRight + 2;
+	return codeAreaBounds;
 }
 
-export function resolvePointerRow(viewportY: number): number {
+export type PointerTextPosition = {
+	row: number;
+	column: number;
+};
+
+const pointerTextPosition: PointerTextPosition = {
+	row: 0,
+	column: 0,
+};
+
+export function resolvePointerRow(viewportY: number, bounds: CodeAreaBounds = getCodeAreaBounds()): number {
 	ensureVisualLines();
-	const relativeY = viewportY - getCodeAreaBounds().codeTop;
+	const relativeY = viewportY - bounds.codeTop;
 	let visualIndex = editorViewState.scrollRow + Math.floor(relativeY / editorViewState.lineHeight);
 	const visualCount = editorViewState.layout.getVisualLineCount();
 	visualIndex = editorViewState.layout.clampVisualIndex(Math.max(1, visualCount), visualIndex);
@@ -228,8 +257,7 @@ export function resolvePointerRow(viewportY: number): number {
 	return segment.row;
 }
 
-export function resolvePointerColumn(row: number, viewportX: number): number {
-	const bounds = getCodeAreaBounds();
+export function resolvePointerColumn(row: number, viewportX: number, bounds: CodeAreaBounds = getCodeAreaBounds()): number {
 	const entry = editorViewState.layout.getCachedHighlight(editorDocumentState.buffer, row);
 	const line = entry.src;
 	if (line.length === 0) {
@@ -276,6 +304,13 @@ export function resolvePointerColumn(row: number, viewportX: number): number {
 		column = segmentStart;
 	}
 	return editorViewState.layout.clampLineLength(line.length, column);
+}
+
+export function resolvePointerTextPosition(viewportX: number, viewportY: number, bounds: CodeAreaBounds = getCodeAreaBounds()): PointerTextPosition {
+	const row = resolvePointerRow(viewportY, bounds);
+	pointerTextPosition.row = row;
+	pointerTextPosition.column = resolvePointerColumn(row, viewportX, bounds);
+	return pointerTextPosition;
 }
 
 export function handlePointerAutoScroll(viewportX: number, viewportY: number): void {

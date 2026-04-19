@@ -1,24 +1,18 @@
 import { clamp } from '../../../common/clamp';
-import { getCodeAreaBounds, maximumLineLength } from './view';
 import { caretNavigation } from './caret';
 import { ensureVisualLines, positionToVisualIndex } from '../common/text_layout';
 import { editorCaretState } from './caret_state';
 import { editorDocumentState } from '../editing/document_state';
 import { editorViewState } from './view_state';
-import { resolveCodeAreaViewportMetrics, type CodeAreaViewportMetrics } from './code_area_viewport';
+import { resolveCodeAreaViewport, type CodeAreaViewport } from './code_area_viewport';
 
 export function revealCursor(): void {
 	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
 }
 
-export function resolveViewportCapacity(): CodeAreaViewportMetrics {
-	ensureVisualLines();
-	return resolveCodeAreaViewportMetrics(
-		getCodeAreaBounds(),
-		editorViewState.layout.getVisualLineCount(),
-		editorViewState.wordWrapEnabled ? 0 : maximumLineLength(),
-	);
+export function resolveViewportCapacity(): CodeAreaViewport {
+	return resolveCodeAreaViewport();
 }
 
 export function centerCursorVertically(): void {
@@ -38,7 +32,7 @@ export function ensureCursorVisible(): void {
 	const clampedLine = editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
 	editorDocumentState.cursorColumn = editorViewState.layout.clampLineLength(clampedLine.length, editorDocumentState.cursorColumn);
 
-	const { rows, columns } = resolveViewportCapacity();
+	const { rows, columns, maxScrollColumn: docMaxScrollColumn } = resolveViewportCapacity();
 	const totalVisual = editorViewState.layout.getVisualLineCount();
 	const cursorVisualIndex = positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	const maxScrollRow = Math.max(0, totalVisual - rows);
@@ -60,7 +54,6 @@ export function ensureCursorVisible(): void {
 	}
 
 	const lineLength = clampedLine.length;
-	const docMaxScrollColumn = Math.max(0, maximumLineLength() - columns);
 	const lineMaxScrollColumn = Math.max(0, lineLength - columns);
 	const maxScrollColumn = Math.min(docMaxScrollColumn, lineMaxScrollColumn);
 	const horizontalMargin = Math.min(4, Math.max(0, Math.floor(columns / 6)));

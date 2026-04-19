@@ -26,7 +26,8 @@ import { editorCaretState } from '../../ui/caret_state';
 import { intellisenseUiState } from './ui_state';
 import { resetBlink } from '../../render/caret';
 import { tryShowLuaErrorOverlay } from '../runtime_error/navigation';
-import { resolvePointerColumn, resolvePointerRow } from '../../ui/view';
+import { resolvePointerTextPosition } from '../../ui/view';
+import type { CodeAreaBounds } from '../../ui/view';
 import * as constants from '../../../common/constants';
 import { activateCodeTab, setActiveTab } from '../../../workbench/ui/tabs';
 import { findCodeTabContext, getActiveCodeTabContext, isActiveLuaCodeTab, isReadOnlyCodeTab } from '../../../workbench/ui/code_tab/contexts';
@@ -586,14 +587,15 @@ export function shouldAutoTriggerCompletions(): boolean {
 	}
 	const now = editorRuntimeState.clockNow();
 	return now - lastEditAt <= constants.COMPLETION_TYPING_GRACE_MS;
-} export function updateHoverTooltip(snapshot: PointerSnapshot): void {
+} export function updateHoverTooltip(snapshot: PointerSnapshot, bounds?: CodeAreaBounds): void {
 	if (!isActiveLuaCodeTab()) {
 		clearHoverTooltip();
 		return;
 	}
 	const context = getActiveCodeTabContext();
-	const row = resolvePointerRow(snapshot.viewportY);
-	const column = resolvePointerColumn(row, snapshot.viewportX);
+	const pointer = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
+	const row = pointer.row;
+	const column = pointer.column;
 	const token = extractHoverExpression(row, column);
 	if (!token) {
 		clearHoverTooltip();

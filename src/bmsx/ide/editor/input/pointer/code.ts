@@ -30,13 +30,13 @@ export function handleCodeAreaPointerInput(
 	if (handleCodeAreaSecondaryPointer(snapshot, insideCodeArea, inGutter, pointerSecondaryJustPressed, playerInput)) {
 		return;
 	}
-	if (handleCodeAreaGutterPointer(snapshot, justPressed, inGutter)) {
+	if (handleCodeAreaGutterPointer(snapshot, justPressed, inGutter, bounds)) {
 		return;
 	}
-	if (handleCodeAreaPrimaryPressPointer(snapshot, justPressed, insideCodeArea, gotoModifierActive)) {
+	if (handleCodeAreaPrimaryPressPointer(snapshot, justPressed, insideCodeArea, gotoModifierActive, bounds)) {
 		return;
 	}
-	handleCodeAreaSelectionPointer(snapshot);
-	updateCodeAreaPointerFeedback(snapshot, insideCodeArea, gotoModifierActive, editorPointerState.pointerSelecting, activeContext);
+	handleCodeAreaSelectionPointer(snapshot, bounds);
+	updateCodeAreaPointerFeedback(snapshot, insideCodeArea, gotoModifierActive, editorPointerState.pointerSelecting, activeContext, bounds);
 	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 }

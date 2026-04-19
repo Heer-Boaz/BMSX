@@ -2,7 +2,7 @@ import { isEditableCodeTab } from '../../../ui/code_tab/contexts';
 import { resolveContextMenuToken } from '../../../../editor/contrib/intellisense/engine';
 import { buildEditorContextMenuEntries } from '../../../contrib/context_menu/entries';
 import { editorContextMenuState } from '../../../contrib/context_menu/state';
-import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from '../../../../editor/ui/view';
+import { getCodeAreaBounds, resolvePointerTextPosition } from '../../../../editor/ui/view';
 import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from '../../../contrib/context_menu/widget';
 import { executeEditorContextMenuAction } from '../../../contrib/context_menu/actions';
 import type { PointerSnapshot } from '../../../../common/models';
@@ -45,9 +45,9 @@ export function handleEditorContextMenuPointerSession(snapshot: PointerSnapshot,
 }
 
 export function openEditorContextMenuAtPointer(snapshot: PointerSnapshot): boolean {
-	const targetRow = resolvePointerRow(snapshot.viewportY);
-	const targetColumn = resolvePointerColumn(targetRow, snapshot.viewportX);
-	const token = resolveContextMenuToken(targetRow, targetColumn);
+	const bounds = getCodeAreaBounds();
+	const target = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
+	const token = resolveContextMenuToken(target.row, target.column);
 	if (!token) {
 		return false;
 	}
@@ -60,7 +60,7 @@ export function openEditorContextMenuAtPointer(snapshot: PointerSnapshot): boole
 		snapshot.viewportY,
 		token,
 		entries,
-		getCodeAreaBounds()
+		bounds
 	);
 	updateEditorContextMenuHover(snapshot.viewportX, snapshot.viewportY);
 	return true;
