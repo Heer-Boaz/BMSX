@@ -1,5 +1,5 @@
 import { clamp } from '../../../../common/clamp';
-import { point_in_rect } from '../../../../common/rect';
+import { create_rect_bounds, point_in_rect } from '../../../../common/rect';
 import { measureText } from '../../../editor/common/text_layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { EditorContextMenuEntry, EditorContextToken } from '../../../common/models';
@@ -29,7 +29,7 @@ let contextMenuLayoutFontVariant: unknown = null;
 function getContextMenuItemBounds(index: number): RectBounds {
 	let bounds = editorContextMenuState.itemBounds[index];
 	if (!bounds) {
-		bounds = { left: 0, top: 0, right: 0, bottom: 0 };
+		bounds = create_rect_bounds();
 		editorContextMenuState.itemBounds[index] = bounds;
 	}
 	return bounds;

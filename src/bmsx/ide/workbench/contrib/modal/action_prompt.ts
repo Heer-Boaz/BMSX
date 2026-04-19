@@ -1,4 +1,4 @@
-import { point_in_rect } from '../../../../common/rect';
+import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../../common/rect';
 import * as constants from '../../../common/constants';
 import { measureText } from '../../../editor/common/text_layout';
 import { drawEditorText } from '../../../editor/render/text_renderer';
@@ -88,23 +88,12 @@ function markActionPromptLayoutCurrent(action: ActionPromptAction): void {
 	actionPromptLayoutFontVariant = editorViewState.fontVariant;
 }
 
-function createRectBounds() {
-	return { left: 0, top: 0, right: 0, bottom: 0 };
-}
-
-function setRect(bounds: { left: number; top: number; right: number; bottom: number }, left: number, top: number, right: number, bottom: number): void {
-	bounds.left = left;
-	bounds.top = top;
-	bounds.right = right;
-	bounds.bottom = bottom;
-}
-
 function createActionPromptLayout(): ActionPromptLayout {
 	return {
-		bounds: createRectBounds(),
-		saveAndContinue: createRectBounds(),
-		continue: createRectBounds(),
-		cancel: createRectBounds(),
+		bounds: create_rect_bounds(),
+		saveAndContinue: create_rect_bounds(),
+		continue: create_rect_bounds(),
+		cancel: create_rect_bounds(),
 	};
 }
 
@@ -174,11 +163,11 @@ export function updateActionPromptLayout(): void {
 
 	const buttonY = layout.bounds.bottom - ACTION_PROMPT_PADDING_Y - buttonHeight;
 	let buttonX = layout.bounds.left + ACTION_PROMPT_PADDING_X;
-	setRect(layout.saveAndContinue, buttonX, buttonY, buttonX + primaryWidth, buttonY + buttonHeight);
+	write_rect_bounds(layout.saveAndContinue, buttonX, buttonY, buttonX + primaryWidth, buttonY + buttonHeight);
 	buttonX = layout.saveAndContinue.right + buttonSpacing;
-	setRect(layout.continue, buttonX, buttonY, buttonX + secondaryWidth, buttonY + buttonHeight);
+	write_rect_bounds(layout.continue, buttonX, buttonY, buttonX + secondaryWidth, buttonY + buttonHeight);
 	buttonX = layout.continue.right + buttonSpacing;
-	setRect(layout.cancel, buttonX, buttonY, buttonX + cancelWidth, buttonY + buttonHeight);
+	write_rect_bounds(layout.cancel, buttonX, buttonY, buttonX + cancelWidth, buttonY + buttonHeight);
 	markActionPromptLayoutCurrent(prompt.action);
 }
 

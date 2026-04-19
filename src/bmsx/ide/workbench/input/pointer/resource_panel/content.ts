@@ -22,7 +22,7 @@ export function handleResourcePanelPointer(snapshot: PointerSnapshot, justPresse
 	resourcePanel.setFocused(true);
 	resetPointerClickTracking();
 	clearHoverTooltip();
-	const margin = Math.max(4, editorViewState.lineHeight);
+	const margin = editorViewState.lineHeight;
 	if (snapshot.viewportY < panelBounds.top + margin) {
 		resourcePanel.scrollBy(-1);
 	} else if (snapshot.viewportY >= panelBounds.bottom - margin) {

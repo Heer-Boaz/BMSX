@@ -1,11 +1,13 @@
 import * as constants from '../../../../common/constants';
 import { clamp } from '../../../../../common/clamp';
+import { create_rect_bounds } from '../../../../../common/rect';
+import { ScratchBuffer } from '../../../../../common/scratchbuffer';
 import { Scrollbar } from '../../../../editor/ui/scrollbar';
 import { renderResourcePanel } from '../../../render/resource_panel';
 import type { ResourceBrowserItem } from '../../../../common/models';
 import type { RectBounds } from '../../../../../rompack/format';
 import { showEditorMessage } from '../../../common/feedback_state';
-import { measureText } from '../../../../editor/common/text_layout';
+import { measureTextRange } from '../../../../editor/common/text_layout';
 import type { CallHierarchyView } from '../../../../editor/contrib/call_hierarchy/view';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import {
@@ -15,10 +17,11 @@ import {
 } from './items';
 import {
 	clampResourcePanelRatio,
-	computeResourcePanelMaxHScroll,
+	createResourcePanelLayout,
 	writeResourcePanelBounds,
-	resourcePanelLineCapacity,
 	defaultResourcePanelRatio,
+	writeResourcePanelLayout,
+	type ResourcePanelLayout,
 } from './layout';
 import {
 	clampResourcePanelSelectionIndex,
@@ -45,6 +48,32 @@ export interface ResourcePanelScrollbars {
 	resourceHorizontal: Scrollbar;
 }
 
+export type ResourcePanelItemMetrics = {
+	item: ResourceBrowserItem;
+	line: string;
+	contentStartColumn: number;
+	indentText: string;
+	contentText: string;
+	indentWidth: number;
+	contentWidth: number;
+	markerStartWidth: number;
+	markerEndWidth: number;
+};
+
+function createResourcePanelItemMetrics(): ResourcePanelItemMetrics {
+	return {
+		item: null,
+		line: null,
+		contentStartColumn: -1,
+		indentText: '',
+		contentText: '',
+		indentWidth: 0,
+		contentWidth: 0,
+		markerStartWidth: 0,
+		markerEndWidth: 0,
+	};
+}
+
 export class ResourcePanelController {
 	private static readonly EMPTY_ITEMS: ResourceBrowserItem[] = [];
 	public visible = false;
@@ -65,7 +94,9 @@ export class ResourcePanelController {
 	private callHierarchyView: CallHierarchyView = null;
 	private pendingSelectionAssetId: string = null;
 	private readonly callHierarchyExpandedNodeIds = new Set<string>();
-	private readonly bounds: RectBounds = { left: 0, top: 0, right: 0, bottom: 0 };
+	private readonly bounds: RectBounds = create_rect_bounds();
+	private readonly layout: ResourcePanelLayout = createResourcePanelLayout(this.bounds);
+	private readonly itemMetrics = new ScratchBuffer<ResourcePanelItemMetrics>(createResourcePanelItemMetrics);
 
 	// Scrollbars for the panel
 	public readonly resourceVertical: Scrollbar;
@@ -87,6 +118,7 @@ export class ResourcePanelController {
 	public setFontMetrics(lineHeight: number, charAdvance: number): void {
 		this.lineHeight = lineHeight;
 		this.charAdvance = charAdvance;
+		this.itemMetrics.clear();
 	}
 
 	// === Panel lifecycle ===
@@ -162,12 +194,11 @@ export class ResourcePanelController {
 
 	// === Public helpers used by editor pointer logic ===
 	indexAtPosition(_x: number, y: number): number {
-		const bounds = this.getBounds();
-		if (!bounds) {
+		const layout = this.prepareLayout();
+		if (!layout) {
 			return -1;
 		}
-		const contentTop = bounds.top + 2;
-		const relativeY = y - contentTop;
+		const relativeY = y - layout.contentTop;
 		if (relativeY < 0) return -1;
 		return resourcePanelIndexAtRelativeY(this.scroll, relativeY, this.lineHeight, this.items.length);
 	}
@@ -189,33 +220,29 @@ export class ResourcePanelController {
 		if (!item || !item.callHierarchyExpandable) {
 			return false;
 		}
-		const markerEndColumn = item.contentStartColumn;
-		const markerStartColumn = markerEndColumn - 2;
-		const bounds = this.getBounds();
-		if (!bounds) {
+		const layout = this.prepareLayout();
+		if (!layout) {
 			return false;
 		}
-		const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
-		const markerLeft = contentLeft - this.hscroll + measureText(item.line.slice(0, markerStartColumn));
-		const markerRight = contentLeft - this.hscroll + measureText(item.line.slice(0, markerEndColumn));
+		const metrics = this.getItemMetrics(index);
+		const markerLeft = layout.contentLeft - this.hscroll + metrics.markerStartWidth;
+		const markerRight = layout.contentLeft - this.hscroll + metrics.markerEndWidth;
 		return viewportX >= markerLeft && viewportX < markerRight;
 	}
 
 	setScroll(scroll: number): void {
-		const capacity = this.lineCapacity();
-		const maxScroll = Math.max(0, this.items.length - capacity);
-		this.scroll = clamp(Math.round(scroll), 0, maxScroll);
+		const layout = this.prepareLayout();
+		this.scroll = clamp(scroll | 0, 0, layout ? layout.maxVerticalScroll : 0);
 	}
 
 	setHScroll(scroll: number): void {
-		const maxScroll = this.computeMaxHScroll();
-		this.hscroll = clamp(Math.round(scroll), 0, maxScroll);
+		const layout = this.prepareLayout();
+		this.hscroll = clamp(scroll | 0, 0, layout ? layout.maxHorizontalScroll : 0);
 	}
 
 	scrollBy(amount: number): void {
-		const capacity = this.lineCapacity();
-		const maxScroll = Math.max(0, this.items.length - capacity);
-		this.scroll = clamp(this.scroll + Math.round(amount), 0, maxScroll);
+		const layout = this.prepareLayout();
+		this.scroll = clamp(this.scroll + (amount | 0), 0, layout ? layout.maxVerticalScroll : 0);
 		this.ensureSelectionVisible();
 		this.clampHScroll();
 	}
@@ -336,17 +363,15 @@ export class ResourcePanelController {
 	}
 
 	public ensureSelectionVisible(): void {
-		const capacity = this.lineCapacity();
+		const layout = this.prepareLayout();
+		const capacity = layout ? layout.capacity : 1;
 		this.scroll = ensureResourcePanelSelectionScroll(this.selectionIndex, this.scroll, capacity, this.items.length);
 		this.clampHScroll();
 	}
 
 	public lineCapacity(): number {
-		const bounds = this.getBounds();
-		if (!bounds) {
-			return 1;
-		}
-		return resourcePanelLineCapacity(bounds, this.items.length, this.maxLineWidth, this.lineHeight);
+		const layout = this.prepareLayout();
+		return layout ? layout.capacity : 1;
 	}
 
 	public getBounds(): RectBounds {
@@ -356,12 +381,42 @@ export class ResourcePanelController {
 		return writeResourcePanelBounds(this.bounds, this.widthRatio) ? this.bounds : null;
 	}
 
-	public computeMaxHScroll(): number {
+	public prepareLayout(): ResourcePanelLayout {
 		const bounds = this.getBounds();
 		if (!bounds) {
-			return 0;
+			return null;
 		}
-		return computeResourcePanelMaxHScroll(bounds, this.items.length, this.maxLineWidth, this.lineHeight);
+		return writeResourcePanelLayout(this.layout, this.items.length, this.maxLineWidth, this.lineHeight);
+	}
+
+	public getItemMetrics(index: number): ResourcePanelItemMetrics {
+		const item = this.items[index];
+		const metrics = this.itemMetrics.get(index);
+		if (
+			metrics.item === item
+			&& metrics.line === item.line
+			&& metrics.contentStartColumn === item.contentStartColumn
+		) {
+			return metrics;
+		}
+		const line = item.line;
+		const contentStartColumn = item.contentStartColumn;
+		const markerStartColumn = item.callHierarchyExpandable ? contentStartColumn - 2 : contentStartColumn;
+		metrics.item = item;
+		metrics.line = line;
+		metrics.contentStartColumn = contentStartColumn;
+		metrics.indentText = line.slice(0, contentStartColumn);
+		metrics.contentText = line.slice(contentStartColumn);
+		metrics.indentWidth = measureTextRange(line, 0, contentStartColumn);
+		metrics.contentWidth = measureTextRange(line, contentStartColumn, line.length);
+		metrics.markerStartWidth = measureTextRange(line, 0, markerStartColumn);
+		metrics.markerEndWidth = metrics.indentWidth;
+		return metrics;
+	}
+
+	public computeMaxHScroll(): number {
+		const layout = this.prepareLayout();
+		return layout ? layout.maxHorizontalScroll : 0;
 	}
 
 	public clampHScroll(): void {
@@ -420,6 +475,7 @@ export class ResourcePanelController {
 		scroll: number;
 	}): void {
 		this.items = refreshed.items;
+		this.itemMetrics.clear();
 		this.maxLineWidth = refreshed.maxLineWidth;
 		this.selectionIndex = refreshed.selectionIndex;
 		this.scroll = refreshed.scroll;

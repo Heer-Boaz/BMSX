@@ -175,9 +175,16 @@ export function resolveResourceViewerLayout(
 	const paddingX = constants.RESOURCE_PANEL_PADDING_X;
 	const availableWidth = bounds.codeRight - bounds.codeLeft - paddingX * 2;
 	if (viewer.image && totalHeight > 0 && availableWidth > 0) {
-		const reservedTextHeight = Math.min(totalHeight * 0.45, lineHeight * clamp(viewer.lines.length + (viewer.error ? 1 : 0), 3, 8));
-		const maxImageHeight = Math.max(lineHeight * 2, totalHeight - reservedTextHeight);
-		const scale = Math.min(availableWidth / viewer.image.width, maxImageHeight / viewer.image.height);
+		const textRows = clamp(viewer.lines.length + (viewer.error ? 1 : 0), 3, 8);
+		const reservedByRatio = totalHeight * 0.45;
+		const reservedByRows = lineHeight * textRows;
+		const reservedTextHeight = reservedByRatio < reservedByRows ? reservedByRatio : reservedByRows;
+		const minImageHeight = lineHeight * 2;
+		const remainingImageHeight = totalHeight - reservedTextHeight;
+		const maxImageHeight = remainingImageHeight > minImageHeight ? remainingImageHeight : minImageHeight;
+		const widthScale = availableWidth / viewer.image.width;
+		const heightScale = maxImageHeight / viewer.image.height;
+		const scale = widthScale < heightScale ? widthScale : heightScale;
 		let width = (viewer.image.width * scale) | 0;
 		let height = (viewer.image.height * scale) | 0;
 		if (width < 1) {
@@ -220,8 +227,9 @@ export function applyResourceViewerScroll(viewer: ResourceViewerState, capacity:
 		viewer.scroll = 0;
 		return;
 	}
-	const maxScroll = Math.max(0, viewer.lines.length - capacity);
-	viewer.scroll = clamp(Math.round(scroll), 0, maxScroll);
+	const scrollLimit = viewer.lines.length - capacity;
+	const maxScroll = scrollLimit > 0 ? scrollLimit : 0;
+	viewer.scroll = clamp((scroll + 0.5) | 0, 0, maxScroll);
 }
 
 function appendResourceViewerLine(target: string[], entry: string): void {

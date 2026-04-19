@@ -27,6 +27,31 @@ export function set_inplace_area(a: RectBounds, n: RectBounds): void {
 	a.top = n.top;
 }
 
+export function create_rect_bounds(): RectBounds {
+	return { left: 0, top: 0, right: 0, bottom: 0 };
+}
+
+export function write_rect_bounds(a: RectBounds, left: number, top: number, right: number, bottom: number): void {
+	a.left = left;
+	a.top = top;
+	a.right = right;
+	a.bottom = bottom;
+}
+
+export function clear_rect_bounds(a: RectBounds): void {
+	a.left = 0;
+	a.top = 0;
+	a.right = 0;
+	a.bottom = 0;
+}
+
+export function copy_rect_bounds(a: RectBounds, n: RectBounds): void {
+	a.left = n.left;
+	a.top = n.top;
+	a.right = n.right;
+	a.bottom = n.bottom;
+}
+
 /**
  * Creates a new area with the specified coordinates.
  * @param sx The x-coordinate of the start point.
@@ -79,4 +104,3 @@ export function point_in_rect(x: number, y: number, rect: RectBounds): boolean {
 	}
 	return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
 }
-

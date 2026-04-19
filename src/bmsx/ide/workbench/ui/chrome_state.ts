@@ -1,4 +1,5 @@
 import type { RectBounds } from '../../../rompack/format';
+import { create_rect_bounds } from '../../../common/rect';
 import type { MenuId, TopBarButtonId } from '../../common/models';
 
 type EditorChromeState = {
@@ -14,23 +15,23 @@ type EditorChromeState = {
 
 export const editorChromeState: EditorChromeState = {
 	topBarButtonBounds: {
-		"hot-resume": { left: 0, top: 0, right: 0, bottom: 0 },
-		reboot: { left: 0, top: 0, right: 0, bottom: 0 },
-		save: { left: 0, top: 0, right: 0, bottom: 0 },
-		resources: { left: 0, top: 0, right: 0, bottom: 0 },
-		problems: { left: 0, top: 0, right: 0, bottom: 0 },
-		filter: { left: 0, top: 0, right: 0, bottom: 0 },
-		wrap: { left: 0, top: 0, right: 0, bottom: 0 },
-		debugContinue: { left: 0, top: 0, right: 0, bottom: 0 },
-		debugStepOver: { left: 0, top: 0, right: 0, bottom: 0 },
-		debugStepInto: { left: 0, top: 0, right: 0, bottom: 0 },
-		debugStepOut: { left: 0, top: 0, right: 0, bottom: 0 },
+		"hot-resume": create_rect_bounds(),
+		reboot: create_rect_bounds(),
+		save: create_rect_bounds(),
+		resources: create_rect_bounds(),
+		problems: create_rect_bounds(),
+		filter: create_rect_bounds(),
+		wrap: create_rect_bounds(),
+		debugContinue: create_rect_bounds(),
+		debugStepOver: create_rect_bounds(),
+		debugStepInto: create_rect_bounds(),
+		debugStepOut: create_rect_bounds(),
 	},
 	menuEntryBounds: {
-		file: { left: 0, top: 0, right: 0, bottom: 0 },
-		run: { left: 0, top: 0, right: 0, bottom: 0 },
-		view: { left: 0, top: 0, right: 0, bottom: 0 },
-		debug: { left: 0, top: 0, right: 0, bottom: 0 },
+		file: create_rect_bounds(),
+		run: create_rect_bounds(),
+		view: create_rect_bounds(),
+		debug: create_rect_bounds(),
 	},
 	menuDropdownBounds: null,
 	openMenuId: null,

@@ -2,12 +2,12 @@ import { clamp } from '../../../../../common/clamp';
 import type { ResourceBrowserItem } from '../../../../common/models';
 
 export function resourcePanelIndexAtRelativeY(scroll: number, relativeY: number, lineHeight: number, itemCount: number): number {
-	const index = scroll + Math.floor(relativeY / lineHeight);
+	const index = scroll + ((relativeY / lineHeight) | 0);
 	return index >= 0 && index < itemCount ? index : -1;
 }
 
 export function clampResourcePanelSelectionIndex(index: number, itemCount: number): number {
-	return clamp(index, -1, Math.max(-1, itemCount - 1));
+	return clamp(index, -1, itemCount - 1);
 }
 
 export function moveResourcePanelSelectionIndex(selectionIndex: number, itemCount: number, delta: number): number {
@@ -19,12 +19,17 @@ export function moveResourcePanelSelectionIndex(selectionIndex: number, itemCoun
 }
 
 export function ensureResourcePanelSelectionScroll(selectionIndex: number, scroll: number, capacity: number, itemCount: number): number {
-	const maxScroll = Math.max(0, itemCount - capacity);
+	const scrollLimit = itemCount - capacity;
+	const maxScroll = scrollLimit > 0 ? scrollLimit : 0;
 	if (selectionIndex < scroll) {
 		return selectionIndex;
 	}
 	const overflow = selectionIndex - (scroll + capacity - 1);
-	return overflow > 0 ? Math.min(scroll + overflow, maxScroll) : scroll;
+	if (overflow <= 0) {
+		return scroll;
+	}
+	const requestedScroll = scroll + overflow;
+	return requestedScroll < maxScroll ? requestedScroll : maxScroll;
 }
 
 export function scrollResourcePanelHorizontalOffset(hscroll: number, amount: number, maxScroll: number): number {

@@ -2,6 +2,7 @@ import { api } from '../../editor/ui/view/overlay_api';
 import * as constants from '../../common/constants';
 import type { EditorTabDescriptor } from '../../common/models';
 import type { RectBounds } from '../../../rompack/format';
+import { clear_rect_bounds, create_rect_bounds, write_rect_bounds } from '../../../common/rect';
 import { TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../../common/constants';
 import { ScratchBuffer } from '../../../common/scratchbuffer';
 import { editorChromeState } from '../ui/chrome_state';
@@ -35,27 +36,14 @@ const createTabMetrics = (): TabMetrics => ({
 	tabWidth: 0,
 });
 
-const createNumber = (): number => 0;
-
 const tabMetricsScratch = new ScratchBuffer<TabMetrics>(createTabMetrics, 8);
-const costsScratch = new ScratchBuffer<number>(createNumber, 8);
-const nextBreakScratch = new ScratchBuffer<number>(createNumber, 8);
-
-function writeRect(bounds: RectBounds, left: number, top: number, right: number, bottom: number): void {
-	bounds.left = left;
-	bounds.top = top;
-	bounds.right = right;
-	bounds.bottom = bottom;
-}
-
-function clearRect(bounds: RectBounds): void {
-	writeRect(bounds, 0, 0, 0, 0);
-}
+const costsScratch: number[] = [];
+const nextBreakScratch: number[] = [];
 
 function getTabButtonBounds(tabId: string): RectBounds {
 	let bounds = editorChromeState.tabButtonBounds.get(tabId);
 	if (!bounds) {
-		bounds = { left: 0, top: 0, right: 0, bottom: 0 };
+		bounds = create_rect_bounds();
 		editorChromeState.tabButtonBounds.set(tabId, bounds);
 	}
 	return bounds;
@@ -64,7 +52,7 @@ function getTabButtonBounds(tabId: string): RectBounds {
 function getTabCloseBounds(tabId: string): RectBounds {
 	let bounds = editorChromeState.tabCloseButtonBounds.get(tabId);
 	if (!bounds) {
-		bounds = { left: 0, top: 0, right: 0, bottom: 0 };
+		bounds = create_rect_bounds();
 		editorChromeState.tabCloseButtonBounds.set(tabId, bounds);
 	}
 	return bounds;
@@ -72,8 +60,8 @@ function getTabCloseBounds(tabId: string): RectBounds {
 
 export function renderTabBar(): number {
 	tabMetricsScratch.clear();
-	costsScratch.clear();
-	nextBreakScratch.clear();
+	costsScratch.length = 0;
+	nextBreakScratch.length = 0;
 
 	const rowHeight = editorViewState.tabBarHeight;
 	const closeButtonWidth = measureText(constants.TAB_CLOSE_BUTTON_SYMBOL);
@@ -92,8 +80,8 @@ export function renderTabBar(): number {
 	}
 
 	tabMetricsScratch.reserve(tabCount);
-	costsScratch.reserve(tabCount + 1);
-	nextBreakScratch.reserve(tabCount);
+	costsScratch.length = tabCount + 1;
+	nextBreakScratch.length = tabCount;
 
 	for (let index = 0; index < tabCount; index += 1) {
 		const tab = tabs[index];
@@ -125,7 +113,7 @@ export function renderTabBar(): number {
 	const maxWidth = availableTabRowWidth > minTabRowWidth ? availableTabRowWidth : minTabRowWidth;
 	const costs = costsScratch;
 	const nextBreak = nextBreakScratch;
-	costs.set(n, 0);
+	costs[n] = 0;
 
 	for (let i = n - 1; i >= 0; i -= 1) {
 		let bestRows = Number.POSITIVE_INFINITY;
@@ -142,7 +130,7 @@ export function renderTabBar(): number {
 			if (!fits) {
 				break;
 			}
-			const rows = 1 + costs.peek(j + 1);
+			const rows = 1 + costs[j + 1];
 			const usedWidth = candidateRight;
 			const leftover = maxWidth - usedWidth;
 			const penalty = leftover * leftover;
@@ -154,14 +142,14 @@ export function renderTabBar(): number {
 			cursor = candidateRight + spacing;
 		}
 		if (!Number.isFinite(bestRows)) {
-			bestRows = 1 + costs.peek(i + 1);
+			bestRows = 1 + costs[i + 1];
 			bestBreak = i + 1;
 		}
-		costs.set(i, bestRows);
-		nextBreak.set(i, bestBreak);
+		costs[i] = bestRows;
+		nextBreak[i] = bestBreak;
 	}
 
-	const totalRows = costs.peek(0);
+	const totalRows = costs[0];
 	const barTop = editorViewState.headerHeight;
 	const totalHeight = totalRows * rowHeightTotal;
 	const barBottom = barTop + totalHeight;
@@ -172,7 +160,7 @@ export function renderTabBar(): number {
 	let rowStart = 0;
 	let rowIndex = 0;
 	while (rowStart < n) {
-		const rowEnd = nextBreak.peek(rowStart);
+		const rowEnd = nextBreak[rowStart];
 		let cursor = TAB_DIRTY_LEFT_MARGIN;
 		const rowTop = barTop + rowIndex * rowHeightTotal;
 		const boundsTop = rowTop + 1;
@@ -183,7 +171,7 @@ export function renderTabBar(): number {
 			const left = cursor;
 			const right = left + entry.tabWidth;
 			const bounds = getTabButtonBounds(tab.id);
-			writeRect(bounds, left, boundsTop, right, boundsBottom);
+			write_rect_bounds(bounds, left, boundsTop, right, boundsBottom);
 
 			const active = tabSessionState.activeTabId === tab.id;
 			const fillColor = active ? constants.COLOR_TAB_ACTIVE_BACKGROUND : constants.COLOR_TAB_INACTIVE_BACKGROUND;
@@ -202,13 +190,13 @@ export function renderTabBar(): number {
 
 			if (entry.closable) {
 				const closeBounds = getTabCloseBounds(tab.id);
-				writeRect(closeBounds, bounds.right - entry.closeWidth, bounds.top, bounds.right, bounds.bottom);
+				write_rect_bounds(closeBounds, bounds.right - entry.closeWidth, bounds.top, bounds.right, bounds.bottom);
 				if (hovered) {
 					const closeX = closeBounds.left + constants.TAB_CLOSE_BUTTON_PADDING_X;
 					const closeY = closeBounds.top + constants.TAB_CLOSE_BUTTON_PADDING_Y;
 					drawEditorText(editorViewState.font, constants.TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, undefined, textColor);
 				} else {
-					clearRect(closeBounds);
+					clear_rect_bounds(closeBounds);
 					if (entry.dirty && entry.markerWidth > 0) {
 						const markerLeft = bounds.right - entry.closeWidth;
 						const markerX = markerLeft + ((entry.closeWidth - entry.markerWidth) >> 1);
@@ -219,7 +207,7 @@ export function renderTabBar(): number {
 					}
 				}
 			} else {
-				clearRect(getTabCloseBounds(tab.id));
+				clear_rect_bounds(getTabCloseBounds(tab.id));
 				if (entry.dirty && entry.markerWidth > 0) {
 					const spacing = constants.TAB_DIRTY_MARKER_SPACING;
 					const markerX = indicatorWidth > 0

@@ -1,6 +1,6 @@
 import type { ResourceDescriptor } from '../../../../../machine/runtime/contracts';
 import { Runtime } from '../../../../../machine/runtime/runtime';
-import { measureText } from '../../../../editor/common/text_layout';
+import { measureTextRange } from '../../../../editor/common/text_layout';
 import type { ResourceBrowserItem } from '../../../../common/models';
 import { listResourcesStrict } from '../catalog';
 import type { CallHierarchyView, CallHierarchyViewNode } from '../../../../editor/contrib/call_hierarchy/view';
@@ -42,9 +42,7 @@ export function computeResourcePanelMaxLineWidth(items: readonly ResourceBrowser
 	let maxWidth = 0;
 	for (let index = 0; index < items.length; index += 1) {
 		const item = items[index];
-		const indent = item.line.slice(0, item.contentStartColumn);
-		const content = item.line.slice(item.contentStartColumn);
-		const width = measureText(indent) + measureText(content);
+		const width = measureTextRange(item.line, 0, item.line.length);
 		if (width > maxWidth) {
 			maxWidth = width;
 		}

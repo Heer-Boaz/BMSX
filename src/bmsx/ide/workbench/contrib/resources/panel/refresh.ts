@@ -32,7 +32,7 @@ export function refreshResourcePanelResourceState(options: {
 	const items = buildResourcePanelItems(options.filterMode);
 	const maxLineWidth = computeResourcePanelMaxLineWidth(items);
 	const capacity = resourcePanelLineCapacity(options.bounds, items.length, maxLineWidth, options.lineHeight);
-	const targetAssetId = options.targetAssetId ?? options.previousDescriptor?.asset_id ?? null;
+	const targetAssetId = options.targetAssetId || (options.previousDescriptor ? options.previousDescriptor.asset_id : null);
 	let selectionIndex = targetAssetId ? findResourcePanelIndexByAssetId(items, targetAssetId) : -1;
 	if (selectionIndex === -1 && options.previousIndex >= 0 && options.previousIndex < items.length) {
 		selectionIndex = options.previousIndex;
@@ -40,7 +40,8 @@ export function refreshResourcePanelResourceState(options: {
 	if (selectionIndex === -1 && items.length > 0) {
 		selectionIndex = 0;
 	}
-	const maxScroll = Math.max(0, items.length - capacity);
+	const scrollLimit = items.length - capacity;
+	const maxScroll = scrollLimit > 0 ? scrollLimit : 0;
 	const scroll = selectionIndex >= 0
 		? ensureResourcePanelSelectionScroll(selectionIndex, clamp(options.previousScroll, 0, maxScroll), capacity, items.length)
 		: clamp(options.previousScroll, 0, maxScroll);
@@ -67,7 +68,8 @@ export function refreshResourcePanelCallHierarchyState(options: {
 	if (selectionIndex === -1 && items.length > 0) {
 		selectionIndex = 0;
 	}
-	const maxScroll = Math.max(0, items.length - capacity);
+	const scrollLimit = items.length - capacity;
+	const maxScroll = scrollLimit > 0 ? scrollLimit : 0;
 	const scroll = selectionIndex >= 0
 		? ensureResourcePanelSelectionScroll(selectionIndex, clamp(options.previousScroll, 0, maxScroll), capacity, items.length)
 		: clamp(options.previousScroll, 0, maxScroll);
