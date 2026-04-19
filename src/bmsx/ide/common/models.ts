@@ -418,8 +418,9 @@ export type EditorContextMenuState = {
 	token: EditorContextToken | null;
 	entries: readonly EditorContextMenuEntry[];
 	hoverIndex: number;
-	bounds: RectBounds | null;
+	bounds: RectBounds;
 	itemBounds: RectBounds[];
+	itemCount: number;
 };
 
 export type PointerSnapshot = {

@@ -15,6 +15,18 @@ const Z_MENU_SHADOW = Z_MENU_DROPDOWN_BASE - 1;
 const Z_MENU_DROPDOWN = Z_MENU_DROPDOWN_BASE;
 const Z_MENU_DROPDOWN_TEXT = Z_MENU_DROPDOWN_BASE + 1;
 const Z_MENU_MARKER = Z_MENU_DROPDOWN_BASE + 2;
+const menuDropdownBoundsScratch: RectBounds = { left: 0, top: 0, right: 0, bottom: 0 };
+
+function writeRect(bounds: RectBounds, left: number, top: number, right: number, bottom: number): void {
+	bounds.left = left;
+	bounds.top = top;
+	bounds.right = right;
+	bounds.bottom = bottom;
+}
+
+function clearRect(bounds: RectBounds): void {
+	writeRect(bounds, 0, 0, 0, 0);
+}
 
 export function renderTopBar(): void {
 	clearMenuBounds();
@@ -41,13 +53,13 @@ function renderMenuRow(menuEntries: TopBarMenuEntry[]): number {
 		const textWidth = measureText(entry.label);
 		const buttonWidth = textWidth + constants.HEADER_BUTTON_PADDING_X * 2;
 		const right = buttonX + buttonWidth;
+		const bounds = editorChromeState.menuEntryBounds[entry.id];
 		if (right > availableRight) {
-			editorChromeState.menuEntryBounds[entry.id] = { left: 0, top: 0, right: 0, bottom: 0 };
+			clearRect(bounds);
 			continue;
 		}
 		const bottom = buttonTop + buttonHeight;
-		const bounds: RectBounds = { left: buttonX, top: buttonTop, right, bottom };
-		editorChromeState.menuEntryBounds[entry.id] = bounds;
+		writeRect(bounds, buttonX, buttonTop, right, bottom);
 		const isOpen = editorChromeState.openMenuId === entry.id;
 		const fillColor = isOpen ? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND : constants.COLOR_HEADER_BUTTON_BACKGROUND;
 		const textColor = isOpen ? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT : constants.COLOR_HEADER_BUTTON_TEXT;
@@ -98,13 +110,8 @@ function renderMenuDropdown(menu: TopBarMenuEntry, anchor: RectBounds, itemHeigh
 			currentTop += separatorHeight;
 			continue;
 		}
-		const bounds: RectBounds = {
-			left: dropdownLeft,
-			top: currentTop,
-			right: dropdownRight,
-			bottom: currentTop + itemHeight,
-		};
-		editorChromeState.topBarButtonBounds[item.command] = bounds;
+		const bounds = editorChromeState.topBarButtonBounds[item.command];
+		writeRect(bounds, dropdownLeft, currentTop, dropdownRight, currentTop + itemHeight);
 		const fillColor = item.active
 			? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND
 			: (item.disabled ? constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND : constants.COLOR_HEADER_BUTTON_BACKGROUND);
@@ -123,7 +130,8 @@ function renderMenuDropdown(menu: TopBarMenuEntry, anchor: RectBounds, itemHeigh
 		drawEditorText(editorViewState.font, item.label, textX, textY, Z_MENU_DROPDOWN_TEXT, textColor);
 		currentTop = bounds.bottom;
 	}
-	editorChromeState.menuDropdownBounds = { left: dropdownLeft, top: dropdownTop, right: dropdownRight, bottom: dropdownTop + totalHeight };
+	writeRect(menuDropdownBoundsScratch, dropdownLeft, dropdownTop, dropdownRight, dropdownTop + totalHeight);
+	editorChromeState.menuDropdownBounds = menuDropdownBoundsScratch;
 }
 
 function computeDropdownWidth(menu: TopBarMenuEntry, markerSize: number, paddingX: number, anchorWidth: number): number {
@@ -154,11 +162,11 @@ function computeDropdownHeight(menu: TopBarMenuEntry, itemHeight: number, separa
 function clearMenuBounds(): void {
 	for (let i = 0; i < MENU_IDS.length; i += 1) {
 		const id = MENU_IDS[i];
-		editorChromeState.menuEntryBounds[id] = { left: 0, top: 0, right: 0, bottom: 0 };
+		clearRect(editorChromeState.menuEntryBounds[id]);
 	}
 	for (let i = 0; i < MENU_COMMANDS.length; i += 1) {
 		const command = MENU_COMMANDS[i];
-		editorChromeState.topBarButtonBounds[command] = { left: 0, top: 0, right: 0, bottom: 0 };
+		clearRect(editorChromeState.topBarButtonBounds[command]);
 	}
 	editorChromeState.menuDropdownBounds = null;
 }

@@ -1148,7 +1148,7 @@ export class TerminalMode {
 		const draw = (text: string, x: number, y: number, color: number): void => {
 			drawEditorText(this.font, this.toRenderedGlyphText(text, uppercaseDisplay), x, y, undefined, color);
 		};
-		this.completion.popupBounds = drawCompletionPopupWithRenderer(this.completion.session, this.cursorScreenInfo, this.font.lineHeight, bounds, measure, draw);
+		this.completion.popupBounds = drawCompletionPopupWithRenderer(this.completion.session, this.cursorScreenInfo, this.font.lineHeight, bounds, measure, draw, this.completion.popupBoundsScratch);
 		drawParameterHintOverlayWithRenderer(this.completion.hint, this.cursorScreenInfo, this.font.lineHeight, bounds, measure, draw);
 	}
 

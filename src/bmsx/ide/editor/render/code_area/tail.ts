@@ -92,7 +92,7 @@ export function finalizeCodeAreaRender(
 	if (editorCaretState.cursorVisible && cursorInfo) {
 		drawCursor(cursorInfo, viewport.textLeft);
 	}
-	completionController.popupBounds = drawCompletionPopup(completionController.session, cursorInfo, editorViewState.lineHeight, viewport);
+	completionController.popupBounds = drawCompletionPopup(completionController.session, cursorInfo, editorViewState.lineHeight, viewport, completionController.popupBoundsScratch);
 	drawParameterHintOverlay(completionController.hint, cursorInfo, editorViewState.lineHeight, viewport);
 	if (editorViewState.codeVerticalScrollbarVisible) {
 		editorViewState.scrollbars.codeVertical.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);

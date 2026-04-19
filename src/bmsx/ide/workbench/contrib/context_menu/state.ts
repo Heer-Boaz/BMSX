@@ -9,8 +9,9 @@ export const editorContextMenuState: EditorContextMenuState = {
 	token: null,
 	entries: EMPTY_CONTEXT_MENU_ENTRIES,
 	hoverIndex: -1,
-	bounds: null,
+	bounds: { left: 0, top: 0, right: 0, bottom: 0 },
 	itemBounds: [],
+	itemCount: 0,
 };
 
 export function resetEditorContextMenuState(): void {
@@ -18,6 +19,5 @@ export function resetEditorContextMenuState(): void {
 	editorContextMenuState.token = null;
 	editorContextMenuState.entries = EMPTY_CONTEXT_MENU_ENTRIES;
 	editorContextMenuState.hoverIndex = -1;
-	editorContextMenuState.bounds = null;
-	editorContextMenuState.itemBounds.length = 0;
+	editorContextMenuState.itemCount = 0;
 }

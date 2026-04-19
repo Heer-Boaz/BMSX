@@ -4,6 +4,7 @@ import { measureText } from '../../../editor/common/text_layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { EditorContextMenuEntry, EditorContextToken } from '../../../common/models';
 import { editorContextMenuState, resetEditorContextMenuState } from './state';
+import type { RectBounds } from '../../../../rompack/format';
 
 export type CodeAreaViewportBounds = {
 	codeLeft: number;
@@ -14,6 +15,51 @@ export type CodeAreaViewportBounds = {
 
 export const CONTEXT_MENU_PADDING_X = 6;
 export const CONTEXT_MENU_PADDING_Y = 1;
+
+let contextMenuLayoutEntries: readonly EditorContextMenuEntry[] = null;
+let contextMenuLayoutAnchorX = -1;
+let contextMenuLayoutAnchorY = -1;
+let contextMenuLayoutCodeLeft = -1;
+let contextMenuLayoutCodeTop = -1;
+let contextMenuLayoutCodeRight = -1;
+let contextMenuLayoutCodeBottom = -1;
+let contextMenuLayoutLineHeight = -1;
+let contextMenuLayoutFontVariant: unknown = null;
+
+function getContextMenuItemBounds(index: number): RectBounds {
+	let bounds = editorContextMenuState.itemBounds[index];
+	if (!bounds) {
+		bounds = { left: 0, top: 0, right: 0, bottom: 0 };
+		editorContextMenuState.itemBounds[index] = bounds;
+	}
+	return bounds;
+}
+
+function isContextMenuLayoutCurrent(codeBounds: CodeAreaViewportBounds): boolean {
+	const menu = editorContextMenuState;
+	return contextMenuLayoutEntries === menu.entries
+		&& contextMenuLayoutAnchorX === menu.anchorX
+		&& contextMenuLayoutAnchorY === menu.anchorY
+		&& contextMenuLayoutCodeLeft === codeBounds.codeLeft
+		&& contextMenuLayoutCodeTop === codeBounds.codeTop
+		&& contextMenuLayoutCodeRight === codeBounds.codeRight
+		&& contextMenuLayoutCodeBottom === codeBounds.codeBottom
+		&& contextMenuLayoutLineHeight === editorViewState.lineHeight
+		&& contextMenuLayoutFontVariant === editorViewState.fontVariant;
+}
+
+function markContextMenuLayoutCurrent(codeBounds: CodeAreaViewportBounds): void {
+	const menu = editorContextMenuState;
+	contextMenuLayoutEntries = menu.entries;
+	contextMenuLayoutAnchorX = menu.anchorX;
+	contextMenuLayoutAnchorY = menu.anchorY;
+	contextMenuLayoutCodeLeft = codeBounds.codeLeft;
+	contextMenuLayoutCodeTop = codeBounds.codeTop;
+	contextMenuLayoutCodeRight = codeBounds.codeRight;
+	contextMenuLayoutCodeBottom = codeBounds.codeBottom;
+	contextMenuLayoutLineHeight = editorViewState.lineHeight;
+	contextMenuLayoutFontVariant = editorViewState.fontVariant;
+}
 
 export function openEditorContextMenu(
 	anchorX: number,
@@ -29,6 +75,8 @@ export function openEditorContextMenu(
 	menu.token = token;
 	menu.entries = entries;
 	menu.hoverIndex = -1;
+	menu.itemCount = entries.length;
+	contextMenuLayoutEntries = null;
 	layoutEditorContextMenu(codeBounds);
 }
 
@@ -40,6 +88,9 @@ export function layoutEditorContextMenu(codeBounds: CodeAreaViewportBounds): voi
 	const menu = editorContextMenuState;
 	if (!menu.visible || menu.entries.length === 0) {
 		closeEditorContextMenu();
+		return;
+	}
+	if (isContextMenuLayoutCurrent(codeBounds)) {
 		return;
 	}
 	const rowHeight = editorViewState.lineHeight + CONTEXT_MENU_PADDING_Y * 2;
@@ -57,41 +108,29 @@ export function layoutEditorContextMenu(codeBounds: CodeAreaViewportBounds): voi
 	const right = left + menuWidth;
 	const bottom = top + menuHeight;
 	const bounds = menu.bounds;
-	if (bounds) {
-		bounds.left = left;
-		bounds.top = top;
-		bounds.right = right;
-		bounds.bottom = bottom;
-	} else {
-		menu.bounds = { left, top, right, bottom };
-	}
-	menu.itemBounds.length = menu.entries.length;
+	bounds.left = left;
+	bounds.top = top;
+	bounds.right = right;
+	bounds.bottom = bottom;
+	menu.itemCount = menu.entries.length;
 	for (let index = 0; index < menu.entries.length; index += 1) {
 		const itemTop = top + index * rowHeight;
-		const itemBounds = menu.itemBounds[index];
-		if (itemBounds) {
-			itemBounds.left = left;
-			itemBounds.top = itemTop;
-			itemBounds.right = right;
-			itemBounds.bottom = itemTop + rowHeight;
-		} else {
-			menu.itemBounds[index] = {
-				left,
-				top: itemTop,
-				right,
-				bottom: itemTop + rowHeight,
-			};
-		}
+		const itemBounds = getContextMenuItemBounds(index);
+		itemBounds.left = left;
+		itemBounds.top = itemTop;
+		itemBounds.right = right;
+		itemBounds.bottom = itemTop + rowHeight;
 	}
+	markContextMenuLayoutCurrent(codeBounds);
 }
 
 export function findEditorContextMenuEntryAt(x: number, y: number): number {
 	const menu = editorContextMenuState;
 	const bounds = menu.bounds;
-	if (!menu.visible || !bounds || !point_in_rect(x, y, bounds)) {
+	if (!menu.visible || !point_in_rect(x, y, bounds)) {
 		return -1;
 	}
-	for (let index = 0; index < menu.itemBounds.length; index += 1) {
+	for (let index = 0; index < menu.itemCount; index += 1) {
 		if (point_in_rect(x, y, menu.itemBounds[index])) {
 			return index;
 		}

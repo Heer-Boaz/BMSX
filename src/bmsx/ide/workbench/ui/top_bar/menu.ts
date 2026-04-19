@@ -35,6 +35,41 @@ export type TopBarMenuEntry = {
 	items: Array<TopBarMenuItem | TopBarMenuSeparator>;
 };
 
+const saveMenuItem: TopBarMenuItem = { type: 'command', command: 'save', label: 'Save', active: false, disabled: true };
+const resourcesMenuItem: TopBarMenuItem = { type: 'command', command: 'resources', label: 'Show Files', active: false, disabled: false };
+const hotResumeMenuItem: TopBarMenuItem = { type: 'command', command: 'hot-resume', label: 'Hot Resume', active: false, disabled: false };
+const rebootMenuItem: TopBarMenuItem = { type: 'command', command: 'reboot', label: 'Reboot', active: false, disabled: false };
+const problemsMenuItem: TopBarMenuItem = { type: 'command', command: 'problems', label: 'Problems Panel', active: false, disabled: false };
+const wrapMenuItem: TopBarMenuItem = { type: 'command', command: 'wrap', label: 'Word Wrap', active: false, disabled: false };
+const filterMenuItem: TopBarMenuItem = { type: 'command', command: 'filter', label: 'All Resources', active: false, disabled: true };
+const debugContinueMenuItem: TopBarMenuItem = { type: 'command', command: 'debugContinue', label: 'Continue', active: false, disabled: true };
+const debugStepOverMenuItem: TopBarMenuItem = { type: 'command', command: 'debugStepOver', label: 'Step Over', active: false, disabled: true };
+const debugStepIntoMenuItem: TopBarMenuItem = { type: 'command', command: 'debugStepInto', label: 'Step Into', active: false, disabled: true };
+const debugStepOutMenuItem: TopBarMenuItem = { type: 'command', command: 'debugStepOut', label: 'Step Out', active: false, disabled: true };
+
+const topBarMenuEntries: TopBarMenuEntry[] = [
+	{
+		id: 'file',
+		label: 'FILE',
+		items: [saveMenuItem, resourcesMenuItem],
+	},
+	{
+		id: 'run',
+		label: 'RUN',
+		items: [hotResumeMenuItem, rebootMenuItem],
+	},
+	{
+		id: 'view',
+		label: 'VIEW',
+		items: [problemsMenuItem, wrapMenuItem, filterMenuItem],
+	},
+	{
+		id: 'debug',
+		label: 'DEBUG',
+		items: [debugContinueMenuItem, debugStepOverMenuItem, debugStepIntoMenuItem, debugStepOutMenuItem],
+	},
+];
+
 export function buildTopBarMenuEntries(): TopBarMenuEntry[] {
 	const resourcePanelActive = resourcePanel.isVisible();
 	const resourcePanelMode = resourcePanel.getMode();
@@ -43,55 +78,19 @@ export function buildTopBarMenuEntries(): TopBarMenuEntry[] {
 	const debuggerPaused = editorDebuggerState.controls.executionState === 'paused';
 	const problemsActive = problemsPanel.isVisible;
 	const filterActive = filterMode === 'lua_only';
-	return [
-		{
-			id: 'file',
-			label: 'FILE',
-			items: [
-				{ type: 'command', command: 'save', label: 'Save', active: false, disabled: !editorDocumentState.dirty },
-				{
-					type: 'command',
-					command: 'resources',
-					label: resourcePanelActive ? 'Hide Files' : 'Show Files',
-					active: resourcePanelActive,
-					disabled: false,
-				},
-			],
-		},
-		{
-			id: 'run',
-			label: 'RUN',
-			items: [
-				{ type: 'command', command: 'hot-resume', label: 'Hot Resume', active: false, disabled: false },
-				{ type: 'command', command: 'reboot', label: 'Reboot', active: false, disabled: false },
-			],
-		},
-		{
-			id: 'view',
-			label: 'VIEW',
-			items: [
-				{ type: 'command', command: 'problems', label: 'Problems Panel', active: problemsActive, disabled: false },
-				{ type: 'command', command: 'wrap', label: 'Word Wrap', active: editorViewState.wordWrapEnabled, disabled: false },
-				{
-					type: 'command',
-					command: 'filter',
-					label: filterActive ? 'Lua Files Only' : 'All Resources',
-					active: filterActive,
-					disabled: !resourcePanelActive || !resourceFilesMode,
-				},
-			],
-		},
-		{
-			id: 'debug',
-			label: 'DEBUG',
-			items: [
-				{ type: 'command', command: 'debugContinue', label: 'Continue', active: false, disabled: !debuggerPaused },
-				{ type: 'command', command: 'debugStepOver', label: 'Step Over', active: false, disabled: !debuggerPaused },
-				{ type: 'command', command: 'debugStepInto', label: 'Step Into', active: false, disabled: !debuggerPaused },
-				{ type: 'command', command: 'debugStepOut', label: 'Step Out', active: false, disabled: !debuggerPaused },
-			],
-		},
-	];
+	saveMenuItem.disabled = !editorDocumentState.dirty;
+	resourcesMenuItem.label = resourcePanelActive ? 'Hide Files' : 'Show Files';
+	resourcesMenuItem.active = resourcePanelActive;
+	problemsMenuItem.active = problemsActive;
+	wrapMenuItem.active = editorViewState.wordWrapEnabled;
+	filterMenuItem.label = filterActive ? 'Lua Files Only' : 'All Resources';
+	filterMenuItem.active = filterActive;
+	filterMenuItem.disabled = !resourcePanelActive || !resourceFilesMode;
+	debugContinueMenuItem.disabled = !debuggerPaused;
+	debugStepOverMenuItem.disabled = !debuggerPaused;
+	debugStepIntoMenuItem.disabled = !debuggerPaused;
+	debugStepOutMenuItem.disabled = !debuggerPaused;
+	return topBarMenuEntries;
 }
 
 export function isTopBarCommandEnabled(command: TopBarButtonId): boolean {

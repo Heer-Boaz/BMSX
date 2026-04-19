@@ -21,9 +21,6 @@ export function renderEditorContextMenu(codeBounds: CodeAreaViewportBounds): voi
 	}
 	layoutEditorContextMenu(codeBounds);
 	const bounds = menu.bounds;
-	if (!bounds) {
-		return;
-	}
 	api.fill_rect(
 		bounds.left + CONTEXT_MENU_SHADOW_OFFSET,
 		bounds.top + CONTEXT_MENU_SHADOW_OFFSET,

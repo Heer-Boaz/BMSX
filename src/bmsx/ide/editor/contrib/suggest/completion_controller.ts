@@ -59,6 +59,7 @@ export class CompletionController {
 	private readonly inlineCompletionPreviewScratch = { row: 0, column: 0, suffix: '' };
 	private readonly lastCursorPositionScratch = { row: 0, column: 0 };
 	private readonly parameterHintAnchorScratch = { row: 0, column: 0 };
+	public readonly popupBoundsScratch = { left: 0, top: 0, right: 0, bottom: 0 };
 
 	protected isCompletionContextActive(): boolean {
 		return isActiveLuaCodeTab();

@@ -1,7 +1,7 @@
 import { clamp } from '../../../common/clamp';
 import { api } from '../ui/view/overlay_api';
 import * as constants from '../../common/constants';
-import { wrapTextDynamic } from '../../common/text';
+import { truncateWithMeasure, wrapTextDynamic } from '../../common/text';
 import { measureText } from '../common/text_layout';
 import type { CompletionSession, CursorScreenInfo, ParameterHintState } from '../../common/models';
 import { drawEditorText } from './text_renderer';
@@ -36,6 +36,7 @@ function drawCompletionPopupCore(
 	bounds: CompletionRenderBounds,
 	measure: CompletionTextMeasure,
 	draw: CompletionTextDraw,
+	outBounds: CompletionPopupBounds,
 ): CompletionPopupBounds | null {
 	if (!session || !cursorInfo) return null;
 	if (session.filteredItems.length === 0) return null;
@@ -97,7 +98,10 @@ function drawCompletionPopupCore(
 	const popupBottom = popupTop + popupHeight;
 	api.fill_rect(popupLeft, popupTop, popupRight, popupBottom, undefined, constants.COLOR_COMPLETION_BACKGROUND);
 	api.blit_rect(popupLeft, popupTop, popupRight, popupBottom, undefined, constants.COLOR_COMPLETION_BORDER);
-	const popupBounds: CompletionPopupBounds = { left: popupLeft, top: popupTop, right: popupRight, bottom: popupBottom };
+	outBounds.left = popupLeft;
+	outBounds.top = popupTop;
+	outBounds.right = popupRight;
+	outBounds.bottom = popupBottom;
 	const maxLabelWidth = Math.max(0, popupWidth - constants.COMPLETION_POPUP_PADDING_X * 2);
 	for (let drawIndex = 0; drawIndex < visibleCount; drawIndex += 1) {
 		const itemIndex = startIndex + drawIndex;
@@ -111,10 +115,10 @@ function drawCompletionPopupCore(
 			api.fill_rect(popupLeft + 1, highlightTop, popupRight - 1, highlightBottom, undefined, constants.COLOR_COMPLETION_HIGHLIGHT);
 		}
 		const textX = popupLeft + constants.COMPLETION_POPUP_PADDING_X;
-		const label = wrapTextDynamic(item.label, maxLabelWidth, maxLabelWidth, measure, 1)[0];
+		const label = truncateWithMeasure(item.label, maxLabelWidth, measure);
 		draw(label, textX, lineTop, labelColor);
 	}
-	return popupBounds;
+	return outBounds;
 }
 
 export function drawCompletionPopup(
@@ -122,8 +126,9 @@ export function drawCompletionPopup(
 	cursorInfo: CursorScreenInfo | null,
 	lineHeight: number,
 	bounds: CompletionRenderBounds,
+	outBounds: CompletionPopupBounds,
 ): CompletionPopupBounds | null {
-	return drawCompletionPopupCore(session, cursorInfo, lineHeight, bounds, measureText, drawCompletionText);
+	return drawCompletionPopupCore(session, cursorInfo, lineHeight, bounds, measureText, drawCompletionText, outBounds);
 }
 
 export function drawCompletionPopupWithRenderer(
@@ -133,8 +138,9 @@ export function drawCompletionPopupWithRenderer(
 	bounds: CompletionRenderBounds,
 	measure: CompletionTextMeasure,
 	draw: CompletionTextDraw,
+	outBounds: CompletionPopupBounds,
 ): CompletionPopupBounds | null {
-	return drawCompletionPopupCore(session, cursorInfo, lineHeight, bounds, measure, draw);
+	return drawCompletionPopupCore(session, cursorInfo, lineHeight, bounds, measure, draw, outBounds);
 }
 
 function drawParameterHintOverlayCore(
@@ -190,7 +196,7 @@ function drawParameterHintOverlayCore(
 		}
 		const remainingWidth = maxTextWidth - signatureWidth;
 		if (remainingWidth <= 0) break;
-		const clipped = wrapTextDynamic(part.text, remainingWidth, remainingWidth, measure, 1)[0];
+			const clipped = truncateWithMeasure(part.text, remainingWidth, measure);
 		if (clipped.length > 0) {
 			clippedSegments.push({ text: clipped, color: part.color });
 			signatureWidth += measure(clipped);

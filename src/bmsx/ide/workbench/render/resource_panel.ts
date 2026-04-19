@@ -12,13 +12,38 @@ import * as constants from '../../common/constants';
 import { BmsxColors } from '../../../machine/devices/vdp/vdp';
 import { renderErrorOverlayText } from '../../editor/render/error_overlay';
 import { drawRectOutlineColor } from '../../editor/render/caret';
-import { centerDialogBounds } from '../../editor/render/dialog_layout';
+import { writeCenteredDialogBounds } from '../../editor/render/dialog_layout';
 import { resourcePanelLineCapacity } from '../contrib/resources/panel/layout';
 import { editorViewState } from '../../editor/ui/view/state';
 
 const resourcePanelVerticalTrack: RectBounds = { left: 0, top: 0, right: 0, bottom: 0 };
 const resourcePanelHorizontalTrack: RectBounds = { left: 0, top: 0, right: 0, bottom: 0 };
 const resourceViewerVerticalTrack: RectBounds = { left: 0, top: 0, right: 0, bottom: 0 };
+const createResourceErrorDialogBounds: RectBounds = { left: 0, top: 0, right: 0, bottom: 0 };
+const createResourceErrorLines: string[] = [];
+let createResourceErrorCachedMessage = '';
+let createResourceErrorCachedWrapWidth = -1;
+
+function resolveCreateResourceErrorLines(message: string, wrapWidth: number): string[] {
+	if (message === createResourceErrorCachedMessage && wrapWidth === createResourceErrorCachedWrapWidth) {
+		return createResourceErrorLines;
+	}
+	createResourceErrorCachedMessage = message;
+	createResourceErrorCachedWrapWidth = wrapWidth;
+	createResourceErrorLines.length = 0;
+	const segments = message.split(/\r?\n/);
+	for (let i = 0; i < segments.length; i += 1) {
+		const segment = segments[i].trim();
+		const wrapped = wrapOverlayLine(segment.length === 0 ? '' : segment, wrapWidth);
+		for (let j = 0; j < wrapped.length; j += 1) {
+			createResourceErrorLines.push(wrapped[j]);
+		}
+	}
+	if (createResourceErrorLines.length === 0) {
+		createResourceErrorLines.push('');
+	}
+	return createResourceErrorLines;
+}
 
 export function renderResourcePanel(controller: ResourcePanelController): void {
 	if (!controller.visible) {
@@ -193,34 +218,23 @@ export function drawResourcePanel(): void {
 export function drawCreateResourceErrorDialog(message: string): void {
 	const maxDialogWidth = Math.min(editorViewState.viewportWidth - 16, 360);
 	const wrapWidth = Math.max(editorViewState.charAdvance, maxDialogWidth - (constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
-	const segments = message.split(/\r?\n/);
-	const lines: string[] = [];
-	for (let i = 0; i < segments.length; i += 1) {
-		const segment = segments[i].trim();
-		const wrapped = wrapOverlayLine(segment.length === 0 ? '' : segment, wrapWidth);
-		for (let j = 0; j < wrapped.length; j += 1) {
-			lines.push(wrapped[j]);
-		}
-	}
-	if (lines.length === 0) {
-		lines.push('');
-	}
+	const lines = resolveCreateResourceErrorLines(message, wrapWidth);
 	let contentWidth = 0;
 	for (let i = 0; i < lines.length; i += 1) {
 		contentWidth = Math.max(contentWidth, measureText(lines[i]));
 	}
 	const dialogWidth = Math.min(editorViewState.viewportWidth - 16, Math.max(180, contentWidth + constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
 	const dialogHeight = Math.min(editorViewState.viewportHeight - 16, lines.length * editorViewState.lineHeight + constants.ERROR_OVERLAY_PADDING_Y * 2 + 16);
-	const { left, top, right, bottom } = centerDialogBounds(dialogWidth, dialogHeight, 8);
-	api.fill_rect(left, top, right, bottom, undefined, constants.COLOR_STATUS_BACKGROUND);
-	api.blit_rect(left, top, right, bottom, undefined, constants.COLOR_CREATE_RESOURCE_ERROR);
+	writeCenteredDialogBounds(createResourceErrorDialogBounds, dialogWidth, dialogHeight, 8);
+	api.fill_rect(createResourceErrorDialogBounds.left, createResourceErrorDialogBounds.top, createResourceErrorDialogBounds.right, createResourceErrorDialogBounds.bottom, undefined, constants.COLOR_STATUS_BACKGROUND);
+	api.blit_rect(createResourceErrorDialogBounds.left, createResourceErrorDialogBounds.top, createResourceErrorDialogBounds.right, createResourceErrorDialogBounds.bottom, undefined, constants.COLOR_CREATE_RESOURCE_ERROR);
 	const dialogPaddingX = constants.ERROR_OVERLAY_PADDING_X + 6;
 	const dialogPaddingY = constants.ERROR_OVERLAY_PADDING_Y + 6;
 	renderErrorOverlayText(
 		editorViewState.font,
 		lines,
-		left + dialogPaddingX,
-		top + dialogPaddingY,
+		createResourceErrorDialogBounds.left + dialogPaddingX,
+		createResourceErrorDialogBounds.top + dialogPaddingY,
 		editorViewState.lineHeight,
 		constants.COLOR_STATUS_TEXT
 	);

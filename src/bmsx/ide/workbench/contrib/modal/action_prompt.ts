@@ -4,12 +4,13 @@ import { measureText } from '../../../editor/common/text_layout';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { performEditorAction } from '../../../editor/input/commands/actions';
 import { consumeIdeKey, isKeyJustPressed } from '../../../editor/input/keyboard/key_input';
-import { centerDialogBounds } from '../../../editor/render/dialog_layout';
+import { writeCenteredDialogBounds } from '../../../editor/render/dialog_layout';
 import { api } from '../../../editor/ui/view/overlay_api';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { ActionPromptAction, ActionPromptLayout, ActionPromptState, PointerSnapshot } from '../../../common/models';
 import { save } from '../../ui/code_tab/io';
 import { editorDocumentState } from '../../../editor/editing/document_state';
+import type { FontVariant } from '../../../../render/shared/bmsx_font';
 
 type ActionPromptUiState = {
 	prompt: ActionPromptState | null;
@@ -45,6 +46,28 @@ export const actionPromptState: ActionPromptUiState = {
 	prompt: null,
 };
 
+let actionPromptLayoutAction: ActionPromptAction = null;
+let actionPromptLayoutViewportWidth = -1;
+let actionPromptLayoutViewportHeight = -1;
+let actionPromptLayoutLineHeight = -1;
+let actionPromptLayoutFontVariant: FontVariant = null;
+
+function isActionPromptLayoutCurrent(action: ActionPromptAction): boolean {
+	return actionPromptLayoutAction === action
+		&& actionPromptLayoutViewportWidth === editorViewState.viewportWidth
+		&& actionPromptLayoutViewportHeight === editorViewState.viewportHeight
+		&& actionPromptLayoutLineHeight === editorViewState.lineHeight
+		&& actionPromptLayoutFontVariant === editorViewState.fontVariant;
+}
+
+function markActionPromptLayoutCurrent(action: ActionPromptAction): void {
+	actionPromptLayoutAction = action;
+	actionPromptLayoutViewportWidth = editorViewState.viewportWidth;
+	actionPromptLayoutViewportHeight = editorViewState.viewportHeight;
+	actionPromptLayoutLineHeight = editorViewState.lineHeight;
+	actionPromptLayoutFontVariant = editorViewState.fontVariant;
+}
+
 function createRectBounds() {
 	return { left: 0, top: 0, right: 0, bottom: 0 };
 }
@@ -74,11 +97,13 @@ export function showActionPrompt(action: ActionPromptAction): void {
 		action,
 		layout: createActionPromptLayout(),
 	};
+	actionPromptLayoutAction = null;
 	updateActionPromptLayout();
 }
 
 export function closeActionPrompt(): void {
 	actionPromptState.prompt = null;
+	actionPromptLayoutAction = null;
 }
 
 export function getActionPromptText(action: ActionPromptAction): ActionPromptText {
@@ -110,6 +135,9 @@ export function updateActionPromptLayout(): void {
 	if (!prompt) {
 		return;
 	}
+	if (isActionPromptLayoutCurrent(prompt.action)) {
+		return;
+	}
 	const layout = prompt.layout!;
 	const { messageLines, primaryLabel, secondaryLabel } = getActionPromptText(prompt.action);
 	let maxMessageWidth = 0;
@@ -129,16 +157,16 @@ export function updateActionPromptLayout(): void {
 	const messageSpacing = editorViewState.lineHeight + 2;
 	const dialogWidth = Math.max(maxMessageWidth + ACTION_PROMPT_PADDING_X * 2, buttonRowWidth + ACTION_PROMPT_PADDING_X * 2);
 	const dialogHeight = ACTION_PROMPT_PADDING_Y * 2 + messageLines.length * messageSpacing + 6 + buttonHeight;
-	const dialogBounds = centerDialogBounds(dialogWidth, dialogHeight, 4);
-	setRect(layout.bounds, dialogBounds.left, dialogBounds.top, dialogBounds.right, dialogBounds.bottom);
+	writeCenteredDialogBounds(layout.bounds, dialogWidth, dialogHeight, 4);
 
-	const buttonY = dialogBounds.bottom - ACTION_PROMPT_PADDING_Y - buttonHeight;
-	let buttonX = dialogBounds.left + ACTION_PROMPT_PADDING_X;
+	const buttonY = layout.bounds.bottom - ACTION_PROMPT_PADDING_Y - buttonHeight;
+	let buttonX = layout.bounds.left + ACTION_PROMPT_PADDING_X;
 	setRect(layout.saveAndContinue, buttonX, buttonY, buttonX + primaryWidth, buttonY + buttonHeight);
 	buttonX = layout.saveAndContinue.right + buttonSpacing;
 	setRect(layout.continue, buttonX, buttonY, buttonX + secondaryWidth, buttonY + buttonHeight);
 	buttonX = layout.continue.right + buttonSpacing;
 	setRect(layout.cancel, buttonX, buttonY, buttonX + cancelWidth, buttonY + buttonHeight);
+	markActionPromptLayoutCurrent(prompt.action);
 }
 
 export function findActionPromptChoiceAt(x: number, y: number): ActionPromptChoice | null {

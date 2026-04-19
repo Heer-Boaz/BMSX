@@ -444,7 +444,7 @@ function findMaxFittingIndexMeasure(text: string, maxWidth: number, measure: (t:
 	}
 	return breakIndex;
 }
-function truncateWithMeasure(text: string, maxWidth: number, measure: (t: string) => number): string {
+export function truncateWithMeasure(text: string, maxWidth: number, measure: (t: string) => number): string {
 	if (maxWidth <= 0) return '';
 	if (measure(text) <= maxWidth) return text;
 	const ellipsis = '...';
