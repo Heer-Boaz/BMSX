@@ -261,6 +261,10 @@ void OpenGLES2Backend::destroyTexture(TextureHandle handle) {
 }
 
 void OpenGLES2Backend::copyTexture(TextureHandle source, TextureHandle destination, i32 width, i32 height) {
+	copyTextureRegion(source, destination, 0, 0, 0, 0, width, height);
+}
+
+void OpenGLES2Backend::copyTextureRegion(TextureHandle source, TextureHandle destination, i32 srcX, i32 srcY, i32 dstX, i32 dstY, i32 width, i32 height) {
 	auto* src = static_cast<GLES2Texture*>(source);
 	auto* dst = static_cast<GLES2Texture*>(destination);
 	const GLuint prevFbo = m_current_fbo;
@@ -272,7 +276,7 @@ void OpenGLES2Backend::copyTexture(TextureHandle source, TextureHandle destinati
 	glBindTexture(GL_TEXTURE_2D, dst->id);
 	m_active_texture_unit = 0;
 	m_bound_texture_2d_by_unit[0] = dst->id;
-	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
+	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, dstX, dstY, srcX, srcY, width, height);
 	glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
 	glBindTexture(GL_TEXTURE_2D, prevUploadBinding);
 	m_bound_texture_2d_by_unit[0] = prevUploadBinding;

@@ -2451,7 +2451,7 @@ export class VDP implements VramWriteSink {
 		if ($.view.backend.type === 'webgpu') {
 			return this.readCpuReadback(cache, surface, x, y, width, height);
 		}
-		return $.view.backend.readTextureRegion($.texmanager.getTextureByUri(surface.textureKey), x, y, width, height);
+		return $.view.backend.readTextureRegion($.texmanager.getTextureByUri(surface.textureKey), x, y, width, height, cache.data);
 	}
 
 	private readCpuReadback(cache: VdpReadCache, surface: VdpReadSurface, x: number, y: number, width: number, height: number): Uint8Array {

@@ -271,6 +271,16 @@ void SoftwareBackend::copyTexture(TextureHandle source, TextureHandle destinatio
 	dst->data = src->data;
 }
 
+void SoftwareBackend::copyTextureRegion(TextureHandle source, TextureHandle destination, i32 srcX, i32 srcY, i32 dstX, i32 dstY, i32 width, i32 height) {
+	auto* src = static_cast<SoftwareTexture*>(source);
+	auto* dst = static_cast<SoftwareTexture*>(destination);
+	for (i32 row = 0; row < height; ++row) {
+		const auto* srcRow = src->data.data() + static_cast<size_t>(srcY + row) * static_cast<size_t>(src->width) + static_cast<size_t>(srcX);
+		auto* dstRow = dst->data.data() + static_cast<size_t>(dstY + row) * static_cast<size_t>(dst->width) + static_cast<size_t>(dstX);
+		std::memcpy(dstRow, srcRow, static_cast<size_t>(width) * sizeof(u32));
+	}
+}
+
 void SoftwareBackend::clear(const Color* color, const f32* depth) {
 	if (color && m_framebuffer) {
 		u32 packed = color->toARGB32();

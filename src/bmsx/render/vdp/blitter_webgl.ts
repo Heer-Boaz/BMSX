@@ -569,7 +569,7 @@ function clearFrameBuffer(host: VdpWebGLBlitterHost, backend: WebGLBackend, prio
 function copyFrameBufferRect(host: VdpWebGLBlitterHost, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, priorityDepthTexture: WebGLTexture, priorityDepthBySeq: ReadonlyMap<number, number>, command: BlitterCopyRectCommand): void {
 	const frameBufferTexture = $.texmanager.getTextureByUri(host.frameBufferTextureKey)! as WebGLTexture;
 	const copySnapshotTexture = ensureCopySnapshotTexture(backend, state, host.width, host.height);
-	backend.copyTexture(frameBufferTexture, copySnapshotTexture, host.width, host.height);
+	backend.copyTextureRegion(frameBufferTexture, copySnapshotTexture, command.srcX, command.srcY, command.srcX, command.srcY, command.width, command.height);
 	const pass = backend.beginRenderPass({
 		color: { tex: frameBufferTexture },
 		depth: { tex: priorityDepthTexture },

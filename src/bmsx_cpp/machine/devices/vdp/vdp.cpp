@@ -845,7 +845,7 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 	auto drawCopyRect = [&](const VDP::BlitterCommand& command) {
 		const VDP::FrameBufferColor white{255u, 255u, 255u, 255u};
 		TextureHandle snapshot = ensureVdpGles2CopySnapshot(backend, host.width, host.height);
-		backend->copyTexture(host.renderTexture, snapshot, host.width, host.height);
+		backend->copyTextureRegion(host.renderTexture, snapshot, command.srcX, command.srcY, command.srcX, command.srcY, command.width, command.height);
 		state.vertices.clear();
 		state.vertices.reserve(6u);
 		appendAxisAlignedQuadVertices(

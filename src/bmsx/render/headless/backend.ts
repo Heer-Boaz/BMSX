@@ -202,7 +202,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		this.accountUpload('texture', textureByteLength(srcWidth, srcHeight));
 	}
 
-	readTextureRegion(handle: TextureHandle, x: number, y: number, width: number, height: number): Uint8Array {
+	readTextureRegion(handle: TextureHandle, x: number, y: number, width: number, height: number, out?: Uint8Array): Uint8Array {
 		const record = this.getTextureRecord(handle);
 		if (record.cubemapFaces) {
 			throw new Error('[HeadlessBackend] readTextureRegion only supports 2D textures.');
@@ -211,15 +211,16 @@ export class HeadlessGPUBackend implements GPUBackend {
 			throw new Error(`[HeadlessBackend] Texture read ${width}x${height}@${x},${y} out of bounds for ${record.width}x${record.height}.`);
 		}
 		const src = this.ensureTexturePixels(record);
-		const out = new Uint8Array(textureByteLength(width, height));
+		const byteLength = textureByteLength(width, height);
+		const pixels = out && out.byteLength >= byteLength ? out : new Uint8Array(byteLength);
 		const srcStride = record.width * 4;
 		const outStride = width * 4;
 		for (let row = 0; row < height; row += 1) {
 			const srcOffset = (y + row) * srcStride + x * 4;
 			const outOffset = row * outStride;
-			out.set(src.subarray(srcOffset, srcOffset + outStride), outOffset);
+			pixels.set(src.subarray(srcOffset, srcOffset + outStride), outOffset);
 		}
-		return out;
+		return pixels;
 	}
 
 	createSolidTexture2D(width: number, height: number, rgba: color_arr, _desc: TextureParams = {}): TextureHandle {
@@ -315,7 +316,25 @@ export class HeadlessGPUBackend implements GPUBackend {
 		if (dstRecord.width !== width || dstRecord.height !== height) {
 			throw new Error(`[HeadlessBackend] Destination copy size mismatch: expected ${dstRecord.width}x${dstRecord.height}, got ${width}x${height}.`);
 		}
-		dstRecord.pixels = new Uint8Array(this.ensureTexturePixels(srcRecord));
+		this.ensureTexturePixels(dstRecord).set(this.ensureTexturePixels(srcRecord));
+	}
+
+	copyTextureRegion(source: TextureHandle, destination: TextureHandle, srcX: number, srcY: number, dstX: number, dstY: number, width: number, height: number): void {
+		const srcRecord = this.getTextureRecord(source);
+		const dstRecord = this.getTextureRecord(destination);
+		if (srcRecord.cubemapFaces || dstRecord.cubemapFaces) {
+			throw new Error('[HeadlessBackend] copyTextureRegion only supports 2D textures.');
+		}
+		const srcPixels = this.ensureTexturePixels(srcRecord);
+		const dstPixels = this.ensureTexturePixels(dstRecord);
+		const srcStride = srcRecord.width * 4;
+		const dstStride = dstRecord.width * 4;
+		const rowBytes = width * 4;
+		for (let row = 0; row < height; row += 1) {
+			const srcOffset = (srcY + row) * srcStride + srcX * 4;
+			const dstOffset = (dstY + row) * dstStride + dstX * 4;
+			dstPixels.set(srcPixels.subarray(srcOffset, srcOffset + rowBytes), dstOffset);
+		}
 	}
 
 	createColorTexture(desc: { width: number; height: number; format?: unknown }): TextureHandle {

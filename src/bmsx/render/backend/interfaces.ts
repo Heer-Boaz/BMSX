@@ -153,7 +153,7 @@ export interface GPUBackend {
 	updateTexture(handle: TextureHandle, src: TextureSource): void;
 	resizeTexture(handle: TextureHandle, width: number, height: number, desc: TextureParams): TextureHandle;
 	updateTextureRegion(handle: TextureHandle, src: TextureSource, x: number, y: number): void;
-	readTextureRegion(handle: TextureHandle, x: number, y: number, width: number, height: number): Uint8Array;
+	readTextureRegion(handle: TextureHandle, x: number, y: number, width: number, height: number, out?: Uint8Array): Uint8Array;
 	createSolidTexture2D(width: number, height: number, rgba: color_arr, desc?: TextureParams): TextureHandle;
 	createCubemapFromSources(faces: readonly [TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource], desc: TextureParams): TextureHandle;
 	createSolidCubemap(size: number, rgba: color_arr, desc: TextureParams): TextureHandle;
@@ -161,6 +161,7 @@ export interface GPUBackend {
 	uploadCubemapFace(cubemap: TextureHandle, face: number, src: TextureSource): void;
 	destroyTexture(handle: TextureHandle): void;
 	copyTexture(source: TextureHandle, destination: TextureHandle, width: number, height: number): void;
+	copyTextureRegion(source: TextureHandle, destination: TextureHandle, srcX: number, srcY: number, dstX: number, dstY: number, width: number, height: number): void;
 	createColorTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
 	createDepthTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
 	createRenderTarget(color?: TextureHandle, depth?: TextureHandle): RenderTargetHandle;

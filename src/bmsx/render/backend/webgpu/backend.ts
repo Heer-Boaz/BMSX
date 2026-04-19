@@ -129,8 +129,8 @@ export class WebGPUBackend implements GPUBackend {
 		this.accountUpload('texture', img.width * img.height * 4);
 	}
 
-	readTextureRegion(_handle: TextureHandle, _x: number, _y: number, _width: number, _height: number): Uint8Array {
-		throw new Error('[WebGPUBackend] Texture readback is not supported.');
+	readTextureRegion(_handle: TextureHandle, _x: number, _y: number, _width: number, _height: number, _out?: Uint8Array): Uint8Array {
+		throw new Error('[WebGPUBackend] Texture readback is not yet supported, but it will be implemented in the future.');
 	}
 
 	createSolidTexture2D(width: number, height: number, rgba: color_arr, _desc: TextureParams = {}): TextureHandle {
@@ -276,10 +276,14 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	copyTexture(source: TextureHandle, destination: TextureHandle, width: number, height: number): void {
+		this.copyTextureRegion(source, destination, 0, 0, 0, 0, width, height);
+	}
+
+	copyTextureRegion(source: TextureHandle, destination: TextureHandle, srcX: number, srcY: number, dstX: number, dstY: number, width: number, height: number): void {
 		const commandEncoder = this.device.createCommandEncoder();
 		commandEncoder.copyTextureToTexture(
-			{ texture: source as GPUTexture },
-			{ texture: destination as GPUTexture },
+			{ texture: source as GPUTexture, origin: { x: srcX, y: srcY, z: 0 } },
+			{ texture: destination as GPUTexture, origin: { x: dstX, y: dstY, z: 0 } },
 			{ width, height, depthOrArrayLayers: 1 },
 		);
 		this.device.queue.submit([commandEncoder.finish()]);

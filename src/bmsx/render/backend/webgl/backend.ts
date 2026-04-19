@@ -137,7 +137,7 @@ export class WebGLBackend implements GPUBackend {
 		gl.bindTexture(gl.TEXTURE_2D, null);
 	}
 
-	readTextureRegion(handle: WebGLTexture, x: number, y: number, width: number, height: number): Uint8Array {
+	readTextureRegion(handle: WebGLTexture, x: number, y: number, width: number, height: number, out?: Uint8Array): Uint8Array {
 		const gl = this.gl;
 		const size = this.texInfo.get(handle);
 		if (!size) {
@@ -150,7 +150,8 @@ export class WebGLBackend implements GPUBackend {
 		if (glY < 0) {
 			throw new Error('[WebGLBackend] Readback Y coordinate out of bounds.');
 		}
-		const buffer = new Uint8Array(width * height * 4);
+		const byteLength = width * height * 4;
+		const buffer = out && out.byteLength >= byteLength ? out : new Uint8Array(byteLength);
 		gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
 		gl.readPixels(x, glY, width, height, gl.RGBA, gl.UNSIGNED_BYTE, buffer);
 		gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
@@ -249,6 +250,10 @@ export class WebGLBackend implements GPUBackend {
 	}
 	destroyTexture(handle: WebGLTexture): void { this.gl.deleteTexture(handle); }
 	copyTexture(source: WebGLTexture, destination: WebGLTexture, width: number, height: number): void {
+		this.copyTextureRegion(source, destination, 0, 0, 0, 0, width, height);
+	}
+
+	copyTextureRegion(source: WebGLTexture, destination: WebGLTexture, srcX: number, srcY: number, dstX: number, dstY: number, width: number, height: number): void {
 		const gl = this.gl;
 		const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
 		const prevActiveUnit = this.currentActiveTexUnit;
@@ -259,7 +264,7 @@ export class WebGLBackend implements GPUBackend {
 		gl.bindTexture(gl.TEXTURE_2D, destination);
 		this.currentActiveTexUnit = TEXTURE_UNIT_UPLOAD;
 		this.boundTex2D[TEXTURE_UNIT_UPLOAD] = destination;
-		gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
+		gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, dstX, dstY, srcX, srcY, width, height);
 		gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
 		gl.bindTexture(gl.TEXTURE_2D, prevTexture);
 		this.boundTex2D[TEXTURE_UNIT_UPLOAD] = prevTexture;

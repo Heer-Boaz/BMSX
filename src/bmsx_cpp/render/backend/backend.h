@@ -128,6 +128,7 @@ public:
 	virtual TextureHandle createSolidTexture2D(i32 width, i32 height, const Color& color) = 0;
 	virtual void destroyTexture(TextureHandle handle) = 0;
 	virtual void copyTexture(TextureHandle source, TextureHandle destination, i32 width, i32 height) = 0;
+	virtual void copyTextureRegion(TextureHandle source, TextureHandle destination, i32 srcX, i32 srcY, i32 dstX, i32 dstY, i32 width, i32 height) = 0;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Render pass management
@@ -178,6 +179,7 @@ public:
 	TextureHandle createSolidTexture2D(i32 width, i32 height, const Color& color) override;
 	void destroyTexture(TextureHandle handle) override;
 	void copyTexture(TextureHandle source, TextureHandle destination, i32 width, i32 height) override;
+	void copyTextureRegion(TextureHandle source, TextureHandle destination, i32 srcX, i32 srcY, i32 dstX, i32 dstY, i32 width, i32 height) override;
 
 	// Render pass management
 	void clear(const Color* color, const f32* depth) override;
