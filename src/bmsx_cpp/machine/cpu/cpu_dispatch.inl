@@ -509,13 +509,13 @@ DISPATCH_LABEL(CALL) {
 		NativeFunction* fn = asNativeFunction(callee);
 		CYCLES_ADD(static_cast<int>(fn->cycleBase));
 		const NativeArgsView args(FRAME.registers + static_cast<size_t>(a + 1), static_cast<size_t>(argCount));
-		NativeResults out = acquireNativeReturnScratch();
+		auto outScratch = acquireNativeReturnScratch();
+		NativeResults& out = outScratch.get();
 		fn->invoke(args, out);
 		if (!m_frames.empty() && m_frames.back().get() == &FRAME) {
 			writeReturnValues(FRAME, a, retCount, out.data(), static_cast<int>(out.size()));
 		}
 		runHousekeeping();
-		releaseNativeReturnScratch(std::move(out));
 		DISPATCH_CONTINUE();
 	}
 	throw BMSX_RUNTIME_ERROR(formatNonFunctionCallError(

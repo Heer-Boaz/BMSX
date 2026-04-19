@@ -1089,6 +1089,24 @@ void GcHeap::collect() {
 	m_nextGC = m_bytesAllocated * 2;
 }
 
+NativeResultsScratchScope::NativeResultsScratchScope(CPU& cpu, NativeResults& out) noexcept
+	: m_cpu(&cpu)
+	, m_out(&out) {
+}
+
+NativeResultsScratchScope::NativeResultsScratchScope(NativeResultsScratchScope&& other) noexcept
+	: m_cpu(other.m_cpu)
+	, m_out(other.m_out) {
+	other.m_cpu = nullptr;
+	other.m_out = nullptr;
+}
+
+NativeResultsScratchScope::~NativeResultsScratchScope() {
+	if (m_cpu) {
+		m_cpu->releaseNativeReturnScratch(*m_out);
+	}
+}
+
 CPU::CPU(Memory& memory, StringHandleTable* handleTable)
 	: m_memory(memory)
 	, m_stringPool(handleTable) {
@@ -2481,20 +2499,16 @@ void CPU::refreshFrameRegisterPointers() {
 	}
 }
 
-NativeResults CPU::acquireNativeReturnScratch() {
-	if (!m_nativeReturnPool.empty()) {
-		NativeResults out = std::move(m_nativeReturnPool.back());
-		m_nativeReturnPool.pop_back();
-		out.clear();
-		return out;
-	}
-	return NativeResults{};
+NativeResultsScratchScope CPU::acquireNativeReturnScratch() {
+	NativeResults& out = m_nativeReturnScratch.get(m_nativeReturnScratchIndex);
+	m_nativeReturnScratchIndex += 1;
+	out.clear();
+	return NativeResultsScratchScope(*this, out);
 }
 
-void CPU::releaseNativeReturnScratch(NativeResults&& out) {
-	if (m_nativeReturnPool.size() < MAX_POOLED_NATIVE_RETURN_ARRAYS) {
-		m_nativeReturnPool.push_back(std::move(out));
-	}
+void CPU::releaseNativeReturnScratch(NativeResults& out) {
+	out.clear();
+	m_nativeReturnScratchIndex -= 1;
 }
 
 void CPU::markRoots(GcHeap& heap) {
@@ -2513,6 +2527,12 @@ void CPU::markRoots(GcHeap& heap) {
 	if (m_externalReturnSink) {
 		for (size_t i = 0; i < m_externalReturnSink->size(); ++i) {
 			heap.markValue((*m_externalReturnSink)[i]);
+		}
+	}
+	for (size_t scratchIndex = 0; scratchIndex < m_nativeReturnScratchIndex; ++scratchIndex) {
+		NativeResults& scratch = m_nativeReturnScratch.get(scratchIndex);
+		for (size_t valueIndex = 0; valueIndex < scratch.size(); ++valueIndex) {
+			heap.markValue(scratch[valueIndex]);
 		}
 	}
 	for (const auto& value : m_systemGlobalValues) {

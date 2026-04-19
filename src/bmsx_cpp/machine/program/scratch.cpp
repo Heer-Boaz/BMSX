@@ -2,21 +2,34 @@
 
 namespace bmsx {
 
-std::vector<Value> LuaScratchState::acquireValue() {
-	if (!m_valuePool.empty()) {
-		auto scratch = std::move(m_valuePool.back());
-		m_valuePool.pop_back();
-		scratch.clear();
-		return scratch;
-	}
-	return {};
+LuaScratchState::ValueLease::ValueLease(LuaScratchState& owner, std::vector<Value>& values) noexcept
+	: m_owner(&owner)
+	, m_values(&values) {
 }
 
-void LuaScratchState::releaseValue(std::vector<Value>&& values) {
-	values.clear();
-	if (m_valuePool.size() < MAX_POOLED_SCRATCH) {
-		m_valuePool.push_back(std::move(values));
+LuaScratchState::ValueLease::ValueLease(ValueLease&& other) noexcept
+	: m_owner(other.m_owner)
+	, m_values(other.m_values) {
+	other.m_owner = nullptr;
+	other.m_values = nullptr;
+}
+
+LuaScratchState::ValueLease::~ValueLease() {
+	if (m_owner) {
+		m_owner->releaseValue(*m_values);
 	}
+}
+
+LuaScratchState::ValueLease LuaScratchState::acquireValue() {
+	std::vector<Value>& values = m_valueScratch.get(m_valueScratchIndex);
+	m_valueScratchIndex += 1;
+	values.clear();
+	return ValueLease(*this, values);
+}
+
+void LuaScratchState::releaseValue(std::vector<Value>& values) {
+	values.clear();
+	m_valueScratchIndex -= 1;
 }
 
 } // namespace bmsx

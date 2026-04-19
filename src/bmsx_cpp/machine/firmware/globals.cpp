@@ -2122,45 +2122,59 @@ void Runtime::setupBuiltins() {
 				return static_cast<int>(data->values.size());
 			},
 			[data](const Value& after) -> std::optional<std::pair<Value, Value>> {
-				std::vector<Value> keys;
-				for (size_t i = 0; i < data->values.size(); ++i) {
-					if (!isNil(data->values[i])) {
-						keys.emplace_back(valueNumber(static_cast<double>(i + 1)));
-					}
-				}
-				for (const auto& id : data->propOrder) {
-					const auto it = data->props.find(id);
-					if (it == data->props.end()) {
-						continue;
-					}
-					if (isNil(it->second)) {
-						continue;
-					}
-					keys.emplace_back(valueString(id));
-				}
-				if (keys.empty()) {
-					return std::nullopt;
-				}
-				size_t nextIndex = 0;
+				size_t valueIndex = 0;
+				size_t propIndex = 0;
+				bool scanValues = true;
 				if (!isNil(after)) {
-					nextIndex = static_cast<size_t>(-1);
-					for (size_t i = 0; i < keys.size(); ++i) {
-						if (keys[i] == after) {
-							nextIndex = i + 1;
-							break;
+					if (valueIsNumber(after)) {
+						double n = valueToNumber(after);
+						double intpart = 0.0;
+						if (std::modf(n, &intpart) != 0.0 || n < 1.0) {
+							return std::nullopt;
 						}
-					}
-					if (nextIndex == static_cast<size_t>(-1) || nextIndex >= keys.size()) {
+						const size_t index = static_cast<size_t>(n) - 1;
+						if (index >= data->values.size() || isNil(data->values[index])) {
+							return std::nullopt;
+						}
+						valueIndex = index + 1;
+					} else if (valueIsString(after)) {
+						scanValues = false;
+						const StringId afterId = asStringId(after);
+						propIndex = std::numeric_limits<size_t>::max();
+						for (size_t index = 0; index < data->propOrder.size(); ++index) {
+							if (data->propOrder[index] == afterId) {
+								const auto it = data->props.find(afterId);
+								if (it == data->props.end() || isNil(it->second)) {
+									return std::nullopt;
+								}
+								propIndex = index + 1;
+								break;
+							}
+						}
+						if (propIndex == std::numeric_limits<size_t>::max()) {
+							return std::nullopt;
+						}
+					} else {
 						return std::nullopt;
 					}
 				}
-				const Value key = keys[nextIndex];
-				if (valueIsNumber(key)) {
-					int index = static_cast<int>(valueToNumber(key)) - 1;
-					return std::make_pair(key, data->values[static_cast<size_t>(index)]);
+				if (scanValues) {
+					for (size_t index = valueIndex; index < data->values.size(); ++index) {
+						if (!isNil(data->values[index])) {
+							const Value key = valueNumber(static_cast<double>(index + 1));
+							return std::make_pair(key, data->values[index]);
+						}
+					}
 				}
-				StringId id = asStringId(key);
-				return std::make_pair(key, data->props[id]);
+				for (size_t index = propIndex; index < data->propOrder.size(); ++index) {
+					const StringId id = data->propOrder[index];
+					const auto it = data->props.find(id);
+					if (it == data->props.end() || isNil(it->second)) {
+						continue;
+					}
+					return std::make_pair(valueString(id), it->second);
+				}
+				return std::nullopt;
 			},
 			[data](GcHeap& heap) {
 				for (const auto& value : data->values) {
@@ -2820,7 +2834,8 @@ stringTable->set(key("gsub"), m_machine.cpu().createNativeFunction("string.gsub"
 	size_t searchIndex = 0;
 	size_t lastIndex = 0;
 	std::string result;
-	std::vector<Value> fnArgs = luaScratch.acquireValue();
+	auto fnArgsScratch = luaScratch.acquireValue();
+	std::vector<Value>& fnArgs = fnArgsScratch.get();
 	NativeResults fnResults;
 
 	auto renderReplacement = [&](const std::smatch& match) -> std::string {
@@ -2910,7 +2925,6 @@ stringTable->set(key("gsub"), m_machine.cpu().createNativeFunction("string.gsub"
 	result += source.substr(lastIndex);
 	out.push_back(str(result));
 	out.push_back(valueNumber(static_cast<double>(count)));
-	luaScratch.releaseValue(std::move(fnArgs));
 }));
 stringTable->set(key("gmatch"), m_machine.cpu().createNativeFunction("string.gmatch", [this, str, asText](NativeArgsView args, NativeResults& out) {
 	struct GMatchState {
@@ -3301,12 +3315,14 @@ tableLib->set(key("sort"), m_machine.cpu().createNativeFunction("table.sort", [t
 	auto* tbl = asTable(args.at(0));
 	Value comparator = args.size() > 1 ? args.at(1) : valueNil();
 	int length = tbl->length();
-	std::vector<Value> values = luaScratch.acquireValue();
+	auto valuesScratch = luaScratch.acquireValue();
+	std::vector<Value>& values = valuesScratch.get();
 	values.resize(static_cast<size_t>(length));
 	for (int i = 1; i <= length; ++i) {
 		values[static_cast<size_t>(i - 1)] = tbl->get(valueNumber(static_cast<double>(i)));
 	}
-	std::vector<Value> comparatorArgs = luaScratch.acquireValue();
+	auto comparatorArgsScratch = luaScratch.acquireValue();
+	std::vector<Value>& comparatorArgs = comparatorArgsScratch.get();
 	comparatorArgs.resize(2);
 	NativeResults comparatorResults;
 	std::sort(values.begin(), values.end(), [&](const Value& left, const Value& right) -> bool {
@@ -3330,8 +3346,6 @@ tableLib->set(key("sort"), m_machine.cpu().createNativeFunction("table.sort", [t
 		tbl->set(valueNumber(static_cast<double>(i)), values[static_cast<size_t>(i - 1)]);
 	}
 	out.push_back(valueTable(tbl));
-	luaScratch.releaseValue(std::move(comparatorArgs));
-	luaScratch.releaseValue(std::move(values));
 }));
 
 	setGlobal("table", valueTable(tableLib));

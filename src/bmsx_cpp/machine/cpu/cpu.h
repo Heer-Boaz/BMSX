@@ -15,11 +15,13 @@
 #include <utility>
 #include <vector>
 
+#include "common/scratchbuffer.h"
 #include "core/primitives.h"
 #include "machine/memory/string_memory.h"
 
 namespace bmsx {
 
+class CPU;
 class GcHeap;
 class Memory;
 
@@ -604,6 +606,22 @@ public:
  */
 using NativeFunctionInvoke = std::function<void(NativeArgsView, NativeResults&)>;
 
+class NativeResultsScratchScope {
+public:
+	NativeResultsScratchScope(CPU& cpu, NativeResults& out) noexcept;
+	NativeResultsScratchScope(const NativeResultsScratchScope&) = delete;
+	NativeResultsScratchScope& operator=(const NativeResultsScratchScope&) = delete;
+	NativeResultsScratchScope(NativeResultsScratchScope&& other) noexcept;
+	NativeResultsScratchScope& operator=(NativeResultsScratchScope&& other) = delete;
+	~NativeResultsScratchScope();
+
+	NativeResults& get() noexcept { return *m_out; }
+
+private:
+	CPU* m_cpu = nullptr;
+	NativeResults* m_out = nullptr;
+};
+
 enum class ObjType : uint8_t {
 	Table,
 	Closure,
@@ -1036,6 +1054,8 @@ public:
 	Table* globals = nullptr;
 
 private:
+	friend class NativeResultsScratchScope;
+
 	void executeInstruction(CallFrame& frame, const DecodedInstruction& decoded);
 	void runHousekeeping();
 	void tickHotLoopHousekeeping();
@@ -1077,8 +1097,8 @@ private:
 	void releaseFrame(std::unique_ptr<CallFrame> frame);
 	void ensureStackSize(size_t size);
 	void refreshFrameRegisterPointers();
-	NativeResults acquireNativeReturnScratch();
-	void releaseNativeReturnScratch(NativeResults&& out);
+	NativeResultsScratchScope acquireNativeReturnScratch();
+	void releaseNativeReturnScratch(NativeResults& out);
 
 	void decodeProgram();
 	void markRoots(GcHeap& heap);
@@ -1095,8 +1115,8 @@ private:
 	std::function<void(GcHeap&)> m_externalRootMarker;
 	NativeResults* m_externalReturnSink = nullptr;
 
-	std::vector<NativeResults> m_nativeReturnPool;
-	static constexpr size_t MAX_POOLED_NATIVE_RETURN_ARRAYS = 32;
+	ScratchBuffer<NativeResults> m_nativeReturnScratch;
+	size_t m_nativeReturnScratchIndex = 0;
 
 	std::vector<std::unique_ptr<CallFrame>> m_framePool;
 	static constexpr int MAX_POOLED_FRAMES = 32;
