@@ -4,7 +4,7 @@ import type { LuaSourceRange } from '../../../../lua/syntax/ast';
 import { clamp } from '../../../../common/clamp';
 import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } from '../../../workbench/ui/code_tab/contexts';
 import { findResourceDescriptorForChunk } from '../../../workbench/contrib/resources/lookup';
-import { getTextSnapshot, splitText } from '../../text/source_text';
+import { copyLinesSnapshot, textFromLines } from '../../text/source_text';
 import { syncSemanticWorkspacePath, getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace_sync';
 import { markTextMutated } from '../../common/text_runtime';
 import { markDiagnosticsDirtyForChunk } from '../diagnostics/controller';
@@ -160,7 +160,7 @@ export class CrossFileRenameManager {
 		const workspace = getOrCreateSemanticWorkspace();
 		syncSemanticWorkspacePath({
 			path,
-			source: lines.join('\n'),
+			source: textFromLines(lines),
 			lines,
 			version: context.textVersion,
 		}, workspace);
@@ -168,11 +168,11 @@ export class CrossFileRenameManager {
 	}
 
 	private getContextLinesForRename(context: CodeTabContext): string[] {
-		return splitText(getTextSnapshot(context.buffer));
+		return copyLinesSnapshot(context.buffer);
 	}
 
 	private applyLinesToContextSnapshot(context: CodeTabContext, lines: readonly string[]): void {
-		const source = lines.join('\n');
+		const source = textFromLines(lines);
 		context.buffer.replace(0, context.buffer.length, source);
 		context.textVersion = context.buffer.version;
 		context.dirty = true;

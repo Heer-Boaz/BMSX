@@ -47,7 +47,6 @@ import { TerminalSuggestController } from './suggest_controller';
 import { TerminalSuggestModel } from '../common/suggest_model';
 import type { MutableTextPosition, TextBuffer } from '../../editor/text/text_buffer';
 import { clamp } from '../../../common/clamp';
-import { textFromLines } from '../../editor/text/source_text';
 import { COLOR_COMPLETION_PREVIEW_TEXT, TAB_SPACES } from '../../common/constants';
 import { advancePhaseBlink, resetBlinkState } from '../../editor/ui/caret_blink';
 import { measureWrappedInlineSegmentDecoration, resolveInlineFieldSelectionState } from '../../editor/ui/inline_field_view';
@@ -69,6 +68,7 @@ type TerminalOutputEntry = {
 class InlineFieldTextBuffer implements TextBuffer {
 	public constructor(
 		private readonly getLines: () => readonly string[],
+		private readonly getTextValue: () => string,
 		private readonly getVersion: () => number,
 	) { }
 
@@ -174,7 +174,7 @@ class InlineFieldTextBuffer implements TextBuffer {
 	}
 
 	public getText(): string {
-		return this.getLines().join('\n');
+		return this.getTextValue();
 	}
 }
 
@@ -241,7 +241,7 @@ export class TerminalMode {
 
 		this.font = new EditorFont(runtime.activeIdeFontVariant);
 		this.maxEntries = MAX_OUTPUT_ENTRIES;
-		this.buffer = new InlineFieldTextBuffer(() => this.getLinesSnapshot(), () => this.textVersion);
+		this.buffer = new InlineFieldTextBuffer(() => this.getLinesSnapshot(), () => this.field.text, () => this.textVersion);
 		const owner = this;
 		this.completion = new class extends CompletionController {
 			private readonly cursorScratch = { row: 0, column: 0 };
@@ -312,14 +312,14 @@ export class TerminalMode {
 			}
 
 			protected override replaceSelection(text: string): void {
-				const previous = textFromLines(owner.field.lines);
+				const previous = owner.field.text;
 				deleteSelection(owner.field);
 				if (text.length > 0) {
 					insertValue(owner.field, text);
 				}
 				const context = text.length > 0
 					? { kind: 'insert', text } as EditContext
-					: owner.buildEditContext(previous, textFromLines(owner.field.lines));
+					: owner.buildEditContext(previous, owner.field.text);
 				owner.handleTextMutation(previous, context);
 			}
 
@@ -345,7 +345,7 @@ export class TerminalMode {
 		}();
 		this.completion.enterCommitsCompletion = true;
 		this.suggestModel = new TerminalSuggestModel({
-			getInputText: () => textFromLines(this.field.lines),
+			getInputText: () => this.field.text,
 			getCursorOffset: () => getCursorOffset(this.field),
 			restoreInput: (text, cursor) => this.restoreInputState(text, cursor),
 			replaceInputRange: (start, end, value) => this.replaceInputRange(start, end, value),
@@ -456,12 +456,12 @@ export class TerminalMode {
 		if (historyHandled) {
 			this.resetBlink();
 		}
-		const previousText = textFromLines(this.field.lines);
+		const previousText = this.field.text;
 		const previousCursor = getCursorOffset(this.field);
 		const previousAnchor = selectionAnchorOffset(this.field);
 		const textChanged = applyInlineFieldEditing(this.field, options);
 		if (textChanged) {
-			const editContext = this.buildEditContext(previousText, textFromLines(this.field.lines));
+			const editContext = this.buildEditContext(previousText, this.field.text);
 			this.handleTextMutation(previousText, editContext);
 		} else if (previousCursor !== getCursorOffset(this.field) || previousAnchor !== selectionAnchorOffset(this.field)) {
 			if (!this.suggestModel.refreshOpenPanelFilter()) {
@@ -556,14 +556,14 @@ export class TerminalMode {
 	}
 
 	private restoreInputState(text: string, cursor: number): void {
-		const previous = textFromLines(this.field.lines);
+		const previous = this.field.text;
 		setFieldText(this.field, text, false);
 		setCursorFromOffset(this.field, cursor);
 		this.onExternalFieldMutation(previous, text);
 	}
 
 	private replaceInputRange(start: number, end: number, value: string): void {
-		const previous = textFromLines(this.field.lines);
+		const previous = this.field.text;
 		const next = previous.slice(0, start) + value + previous.slice(end);
 		setFieldText(this.field, next, false);
 		setCursorFromOffset(this.field, start + value.length);
@@ -647,7 +647,7 @@ export class TerminalMode {
 			const promptWidth = this.measureDisplayText(this.promptPrefix, uppercaseDisplay);
 			const firstLineMax = Math.max(8, contentWidth - promptWidth);
 			const otherLineMax = Math.max(8, contentWidth);
-			const displayInput = this.toDisplayText(textFromLines(this.field.lines));
+			const displayInput = this.toDisplayText(this.field.text);
 			const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax, uppercaseDisplay);
 
 			// space available for output lines above the input area
@@ -804,7 +804,7 @@ export class TerminalMode {
 		}
 		consumeIdeKey('Enter');
 		consumeIdeKey('NumpadEnter');
-		const command = textFromLines(this.field.lines).trimEnd();
+		const command = this.field.text.trimEnd();
 		if (command.length === 0) {
 			this.resetBlink();
 			return null;
@@ -815,7 +815,7 @@ export class TerminalMode {
 	}
 
 	private resetInputField(value: string): void {
-		const previous = textFromLines(this.field.lines);
+		const previous = this.field.text;
 		setFieldText(this.field, value, true);
 		this.onExternalFieldMutation(previous, value);
 	}
@@ -946,7 +946,7 @@ export class TerminalMode {
 		const promptWidth = this.measureDisplayText(this.promptPrefix, uppercaseDisplay);
 		const firstLineMax = Math.max(8, contentWidth - promptWidth);
 		const otherLineMax = Math.max(8, contentWidth);
-		const displayInput = this.toDisplayText(textFromLines(this.field.lines));
+		const displayInput = this.toDisplayText(this.field.text);
 		const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax, uppercaseDisplay);
 		const availableHeight = surfaceHeight - PADDING_Y * 2 - (inputWrap.segments.length * lineHeight);
 		const baseMaxLines = Math.max(1, Math.floor(availableHeight / lineHeight));
@@ -1116,7 +1116,7 @@ export class TerminalMode {
 	}
 
 	private handleTextMutation(previousText: string, editContext: EditContext): void {
-		const context = previousText !== null ? this.buildEditContext(previousText, textFromLines(this.field.lines)) : editContext;
+		const context = previousText !== null ? this.buildEditContext(previousText, this.field.text) : editContext;
 		this.textVersion += 1;
 		this.cachedLinesVersion = -1;
 		invalidateLuaCommentContextFromRow(this.buffer, 0);
@@ -1211,7 +1211,7 @@ export class TerminalMode {
 		const inputColor = BmsxColors[OUTPUT_COLORS.stdout];
 		const selectionState = resolveInlineFieldSelectionState(this.field);
 		const uppercaseDisplay = this.useUppercaseDisplay();
-		const displayText = this.toDisplayText(textFromLines(this.field.lines));
+		const displayText = this.toDisplayText(this.field.text);
 		const inlinePreview = selectionState.hasSelection ? null : this.completion.getInlineCompletionPreview();
 		let nextCursorInfo: CursorScreenInfo = null;
 		const cursorRow = this.field.cursorRow;

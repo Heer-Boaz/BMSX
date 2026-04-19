@@ -47,7 +47,7 @@ import type { LuaSourceRecord } from '../../../../machine/program/sources';
 import { Pool } from '../../../../common/pool';
 import { $ } from '../../../../core/engine';
 import { KEYWORDS, LuaTokenType, type LuaToken } from '../../../../lua/syntax/token';
-import { getTextSnapshot, splitText } from '../../text/source_text';
+import { getLinesSnapshot, getTextSnapshot, splitText } from '../../text/source_text';
 import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from '../../ui/view_state';
 import { referenceState } from '../references/state';
@@ -1464,7 +1464,7 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 			prepareSemanticWorkspaceForEditorBuffer({
 				path: preferredChunk,
 				source,
-				lines: splitText(source),
+				lines: getLinesSnapshot(editorDocumentState.buffer),
 				version: editorDocumentState.textVersion,
 			});
 		} else {

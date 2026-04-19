@@ -5,7 +5,7 @@ import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isS
 import type { InlineInputOptions, Position, TextField } from '../../common/models';
 import { clamp } from '../../../common/clamp';
 import { LuaLexer } from '../../../lua/syntax/lexer';
-import { splitText, textFromLines } from '../text/source_text';
+import { splitText } from '../text/source_text';
 import { advanceToggleBlink } from './caret_blink';
 import { editorCaretState } from './caret_state';
 import { editorDocumentState } from '../editing/document_state';
@@ -86,6 +86,7 @@ const writeInlineFieldClipboard = (payload: string): void => {
 
 const applyTextUpdate = (field: TextField, nextText: string, nextCursorOffset: number): void => {
 	const lines = splitText(nextText);
+	field.text = nextText;
 	field.lines = lines;
 	offsetToPosition(lines, nextCursorOffset, scratchPosition);
 	setSingleCursorPosition(field, scratchPosition.row, scratchPosition.column);
@@ -105,6 +106,7 @@ const totalLength = (field: TextField): number => {
 
 export function createInlineTextField(): TextField {
 	return {
+		text: '',
 		lines: [''],
 		cursorRow: 0,
 		cursorColumn: 0,
@@ -173,7 +175,7 @@ export function deleteSelection(field: TextField): boolean {
 	}
 	const start = anchorOffset < cursorOffsetValue ? anchorOffset : cursorOffsetValue;
 	const end = anchorOffset < cursorOffsetValue ? cursorOffsetValue : anchorOffset;
-	const text = textFromLines(field.lines);
+	const text = field.text;
 	const nextText = text.slice(0, start) + text.slice(end);
 	applyTextUpdate(field, nextText, start);
 	return true;
@@ -198,7 +200,7 @@ export function insertValue(field: TextField, value: string): boolean {
 		return false;
 	}
 	deleteSelection(field);
-	const text = textFromLines(field.lines);
+	const text = field.text;
 	const offset = cursorOffset(field);
 	const nextText = text.slice(0, offset) + value + text.slice(offset);
 	const nextCursor = offset + value.length;
@@ -214,7 +216,7 @@ export function backspace(field: TextField): boolean {
 	if (offset === 0) {
 		return false;
 	}
-	const text = textFromLines(field.lines);
+	const text = field.text;
 	const nextText = text.slice(0, offset - 1) + text.slice(offset);
 	applyTextUpdate(field, nextText, offset - 1);
 	return true;
@@ -224,7 +226,7 @@ export function deleteForward(field: TextField): boolean {
 	if (deleteSelection(field)) {
 		return true;
 	}
-	const text = textFromLines(field.lines);
+	const text = field.text;
 	const offset = cursorOffset(field);
 	if (offset >= text.length) {
 		return false;
@@ -238,7 +240,7 @@ export function deleteWordBackward(field: TextField): boolean {
 	if (deleteSelection(field)) {
 		return true;
 	}
-	const text = textFromLines(field.lines);
+	const text = field.text;
 	const offset = cursorOffset(field);
 	if (offset === 0) {
 		return false;
@@ -265,7 +267,7 @@ export function deleteWordForward(field: TextField): boolean {
 	if (deleteSelection(field)) {
 		return true;
 	}
-	const text = textFromLines(field.lines);
+	const text = field.text;
 	const offset = cursorOffset(field);
 	if (offset >= text.length) {
 		return false;
@@ -306,7 +308,7 @@ export function moveCursorRelative(field: TextField, delta: number, extendSelect
 }
 
 export function moveWordLeft(field: TextField, extendSelection: boolean): void {
-	const text = textFromLines(field.lines);
+	const text = field.text;
 	const offset = cursorOffset(field);
 	const index = findWordLeftOffset(offset, index => text.charCodeAt(index));
 	offsetToPosition(field.lines, index, scratchPosition);
@@ -314,7 +316,7 @@ export function moveWordLeft(field: TextField, extendSelection: boolean): void {
 }
 
 export function moveWordRight(field: TextField, extendSelection: boolean): void {
-	const text = textFromLines(field.lines);
+	const text = field.text;
 	const offset = cursorOffset(field);
 	const index = findWordRightOffset(text.length, offset, index => text.charCodeAt(index));
 	offsetToPosition(field.lines, index, scratchPosition);
@@ -348,7 +350,7 @@ export function selectedText(field: TextField): string {
 	}
 	const start = anchorOffset < cursorOffsetValue ? anchorOffset : cursorOffsetValue;
 	const end = anchorOffset < cursorOffsetValue ? cursorOffsetValue : anchorOffset;
-	const text = textFromLines(field.lines);
+	const text = field.text;
 	return text.slice(start, end);
 }
 
@@ -401,6 +403,7 @@ export function registerPointerClick(field: TextField, column: number, doubleCli
 
 export function setFieldText(field: TextField, value: string, moveCursorToEnd: boolean): void {
 	const lines = splitText(value);
+	field.text = value;
 	field.lines = lines;
 	if (moveCursorToEnd) {
 		const lastRow = lines.length - 1;
@@ -436,7 +439,7 @@ export function applyInlineFieldEditing(
 
 	if (useCtrl && isKeyJustPressed('KeyC')) {
 		const selected = selectedText(field);
-		const payload = selected && selected.length > 0 ? selected : textFromLines(field.lines);
+		const payload = selected && selected.length > 0 ? selected : field.text;
 		if (payload.length > 0) {
 			writeInlineFieldClipboard(payload);
 		}
@@ -447,7 +450,7 @@ export function applyInlineFieldEditing(
 		const selected = selectedText(field);
 		let payload = selected;
 		if (!payload || payload.length === 0) {
-			payload = textFromLines(field.lines);
+			payload = field.text;
 			if (payload.length > 0) {
 				selectAll(field);
 			}

@@ -5,7 +5,6 @@ import { drawEditorText } from './text_renderer';
 import type { CursorScreenInfo, TextField } from '../../common/models';
 import { getCursorOffset } from '../ui/inline_text_field';
 import { api } from '../ui/view/overlay_api';
-import { textFromLines } from '../text/source_text';
 import { resetBlinkState } from '../ui/caret_blink';
 import { editorCaretState } from '../ui/caret_state';
 import { editorViewState } from '../ui/view_state';
@@ -28,7 +27,7 @@ export function drawInlineCaret(
 	baseTextColor: number = constants.COLOR_STATUS_TEXT
 ): void {
 	if (!editorCaretState.cursorVisible) return;
-	const text = textFromLines(field.lines);
+	const text = field.text;
 	const cursorIndex = getCursorOffset(field);
 	const rawGlyph = cursorIndex < text.length ? text.charAt(cursorIndex) : ' ';
 	const caretGlyph = getCaretGlyphForDisplay(rawGlyph);

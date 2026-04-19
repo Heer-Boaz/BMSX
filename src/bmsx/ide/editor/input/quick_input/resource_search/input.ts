@@ -3,7 +3,6 @@ import { showEditorMessage } from '../../../../workbench/common/feedback_state';
 import { applyInlineFieldEditing } from '../../../ui/inline_text_field';
 import { applyResourceSearchSelection, closeResourceSearch, focusEditorFromResourceSearch } from '../../../../workbench/contrib/resources/search';
 import { applyLineJumpFieldText, openLineJump } from '../../../contrib/find/line_jump';
-import { textFromLines } from '../../../text/source_text';
 import { consumeIdeKey, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../keyboard/key_input';
 import { resourceSearchWindowCapacity } from '../../../ui/view';
 import { ensureResourceSearchSelectionVisible, moveResourceSearchSelection, updateResourceSearchMatches } from '../../../../workbench/contrib/resources/search_catalog';
@@ -76,7 +75,7 @@ export function handleResourceSearchInput(): void {
 		characterFilter: undefined,
 		maxLength: null,
 	});
-	resourceSearchState.query = textFromLines(resourceSearchState.field.lines);
+	resourceSearchState.query = resourceSearchState.field.text;
 	if (!textChanged) {
 		return;
 	}

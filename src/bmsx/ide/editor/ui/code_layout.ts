@@ -8,7 +8,7 @@ import type { LuaDefinitionInfo } from '../../../lua/syntax/ast';
 import type { CachedHighlight, CodeTabMode, HighlightLine, VisualLineSegment } from '../../common/models';
 import { scheduleIdeOnce } from '../../common/background_tasks';
 import { EditorFont } from './view/font';
-import { getTextSnapshot, splitText } from '../text/source_text';
+import { getLinesSnapshot, getTextSnapshot } from '../text/source_text';
 import { syncSemanticWorkspacePaths } from '../contrib/intellisense/semantic_workspace_sync';
 import type { TextBuffer } from '../text/text_buffer';
 import type { Position } from '../../common/models';
@@ -891,7 +891,7 @@ export class CodeLayout {
 	private materializeSemanticSource(pending: PendingSemanticUpdate): string {
 		if (pending.source === undefined) {
 			pending.source = getTextSnapshot(pending.buffer);
-			pending.lines = splitText(pending.source);
+			pending.lines = getLinesSnapshot(pending.buffer);
 		}
 		return pending.source;
 	}

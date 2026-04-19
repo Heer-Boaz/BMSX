@@ -431,6 +431,7 @@ export type PointerSnapshot = {
 };
 
 export type TextField = {
+	text: string;
 	lines: string[];
 	cursorRow: number;
 	cursorColumn: number;

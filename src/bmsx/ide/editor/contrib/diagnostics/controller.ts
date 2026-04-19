@@ -4,7 +4,7 @@ import { computeAggregatedEditorDiagnostics, markDiagnosticsDirty, type Diagnost
 import { editorRuntimeState } from '../../common/runtime_state';
 import type { EditorDiagnostic, CodeTabContext } from '../../../common/models';
 import { listLuaSymbols, listGlobalLuaSymbols, listLuaBuiltinFunctions } from '../intellisense/engine';
-import { getTextSnapshot, splitText } from '../../text/source_text';
+import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import { enqueueBackgroundTask, scheduleIdeOnce } from '../../../common/background_tasks';
 import {
 	findCodeTabContext,
@@ -202,7 +202,7 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			id: context.id,
 			path,
 			source,
-			lines: splitText(source),
+			lines: getLinesSnapshot(buffer),
 			version,
 		};
 		inputs.push(input);

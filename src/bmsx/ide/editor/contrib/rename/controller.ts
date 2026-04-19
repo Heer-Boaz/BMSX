@@ -6,7 +6,6 @@ import * as constants from '../../../common/constants';
 import { clamp } from '../../../../common/clamp';
 import { LuaLexer } from '../../../../lua/syntax/lexer';
 import { focusEditorFromRename } from './prompt';
-import { textFromLines } from '../../text/source_text';
 import { showEditorMessage } from '../../../workbench/common/feedback_state';
 import { setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { commitRename } from './operations';
@@ -120,7 +119,7 @@ export class RenameController {
 		if (!this.active || !this.info) {
 			return;
 		}
-		const nextName = textFromLines(this.field.lines).trim();
+		const nextName = this.field.text.trim();
 		switch (validateRenameIdentifier(nextName, this.originalName)) {
 			case 'empty':
 				showEditorMessage('Identifier cannot be empty', constants.COLOR_STATUS_WARNING, 1.6);

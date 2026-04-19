@@ -203,7 +203,6 @@ if (args.includes('--bench')) {
 	runSanity();
 }
 
-function formatNumberAsHex(resolved: any) {
-	throw new Error('Function not implemented.');
+function formatNumberAsHex(value: number): string {
+	return `0x${value.toString(16)}`;
 }
-

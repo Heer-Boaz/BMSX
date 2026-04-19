@@ -1,6 +1,5 @@
 import { applyInlineFieldEditing } from '../../../ui/inline_text_field';
 import { applyLineJump, closeLineJump, openLineJump } from '../../../contrib/find/line_jump';
-import { textFromLines } from '../../../text/source_text';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../keyboard/key_input';
 import { lineJumpState } from '../../../contrib/find/widget_state';
 
@@ -30,7 +29,7 @@ export function handleLineJumpInput(): void {
 		characterFilter: digitFilter,
 		maxLength: 6,
 	});
-	lineJumpState.value = textFromLines(lineJumpState.field.lines);
+	lineJumpState.value = lineJumpState.field.text;
 	if (textChanged) {
 		return;
 	}

@@ -1,8 +1,8 @@
 import type { EditorFont } from '../ui/view/font';
+import type { Font } from '../../../render/shared/bmsx_font';
 import { applyCaseOutsideStrings, expandTabs as expandTabsExternal } from '../../common/text';
 import * as constants from '../../common/constants';
 import { api } from '../ui/view/overlay_api';
-import { splitText } from '../text/source_text';
 import { ScratchBuffer } from '../../../common/scratchbuffer';
 
 let CASE_INSENSITIVE_EDITOR = true;
@@ -19,24 +19,32 @@ type DrawEditorTextOptions = {
 const createStringSlot = (): string => '';
 const uppercaseScratch = new ScratchBuffer<string>(createStringSlot, 32);
 
+function drawEditorTextLine(renderFont: Font, text: string, x: number, y: number, z: number, color: number, useUppercase: boolean): void {
+	const expanded = expandTabsExternal(text);
+	if (expanded.length === 0) {
+		return;
+	}
+	const display = useUppercase ? applyCaseOutsideStrings(expanded, (ch) => ch.toUpperCase()) : expanded;
+	api.blit_text_inline_with_font(display, x, y, z, color, renderFont);
+}
+
 export function drawEditorText(font: EditorFont, text: string, originX: number, originY: number, z: number, color: number, options?: DrawEditorTextOptions): void {
-	const baseX = originX;
-	let cursorY = originY;
-	const lines = splitText(text);
 	const renderFont = font.renderFont();
 	const preserveCase = options?.preserveCase ?? false;
 	const forceUppercase = options?.forceUppercase ?? true;
 	const useUppercase = !preserveCase && CASE_INSENSITIVE_EDITOR && forceUppercase;
-	for (let i = 0; i < lines.length; i += 1) {
-		const expanded = expandTabsExternal(lines[i]);
-		if (expanded.length > 0) {
-			const display = useUppercase ? applyCaseOutsideStrings(expanded, (ch) => ch.toUpperCase()) : expanded;
-			api.blit_text_inline_with_font(display, baseX, cursorY, z, color, renderFont);
+
+	let lineStart = 0;
+	let cursorY = originY;
+	for (let index = 0; index < text.length; index += 1) {
+		if (text.charCodeAt(index) !== 10) {
+			continue;
 		}
-		if (i < lines.length - 1) {
-			cursorY += font.lineHeight;
-		}
+		drawEditorTextLine(renderFont, text.slice(lineStart, index), originX, cursorY, z, color, useUppercase);
+		cursorY += font.lineHeight;
+		lineStart = index + 1;
 	}
+	drawEditorTextLine(renderFont, text.slice(lineStart), originX, cursorY, z, color, useUppercase);
 }
 
 export function drawEditorColoredText(font: EditorFont, text: string, colors: readonly number[], originX: number, originY: number, z: number, fallbackColor: number, options?: DrawEditorTextOptions): void {

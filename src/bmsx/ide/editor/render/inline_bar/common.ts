@@ -5,7 +5,6 @@ import { api } from '../../ui/view/overlay_api';
 import { drawEditorText } from '../text_renderer';
 import { drawInlineCaret } from '../caret';
 import { measureText } from '../../common/text_layout';
-import { textFromLines } from '../../text/source_text';
 import { editorViewState } from '../../ui/view_state';
 
 export type InlineBarFieldRenderState = {
@@ -50,7 +49,7 @@ export function renderInlineBarField(
 ): InlineBarFieldRenderState {
 	drawEditorText(editorViewState.font, label, labelX, labelY, undefined, textColor);
 
-	const fieldText = textFromLines(field.lines);
+	const fieldText = field.text;
 	const displayText = fieldText.length === 0 && !placeholderActive
 		? placeholderText
 		: fieldText;

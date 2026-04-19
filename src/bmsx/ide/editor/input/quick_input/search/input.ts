@@ -1,6 +1,5 @@
 import { activeSearchMatchCount, applySearchSelection, jumpToNextMatch, jumpToPreviousMatch, onSearchQueryChanged, openSearch, searchPageSize, stepSearchSelection } from '../../../contrib/find/search';
 import { applyInlineFieldEditing } from '../../../ui/inline_text_field';
-import { textFromLines } from '../../../text/source_text';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../keyboard/key_input';
 import { redo, undo } from '../../../editing/undo_controller';
 import { save } from '../../../../workbench/ui/code_tab/io';
@@ -99,7 +98,7 @@ export function handleSearchInput(): void {
 		characterFilter: undefined,
 		maxLength: null,
 	});
-	editorSearchState.query = textFromLines(editorSearchState.field.lines);
+	editorSearchState.query = editorSearchState.field.text;
 	if (textChanged) {
 		onSearchQueryChanged();
 	}

@@ -4,7 +4,6 @@ import { applyInlineFieldEditing } from '../../../ui/inline_text_field';
 import { applySymbolSearchSelection } from '../../../contrib/symbols/search';
 import { moveSymbolSearchSelection, updateSymbolSearchMatches } from '../../../contrib/symbols/search_catalog';
 import { closeSymbolSearch, ensureSymbolSearchSelectionVisible } from '../../../contrib/symbols/shared';
-import { textFromLines } from '../../../text/source_text';
 import { consumeIdeKey, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../keyboard/key_input';
 import { symbolSearchPageSize } from '../../../ui/view';
 import { symbolSearchState } from '../../../contrib/symbols/search_state';
@@ -66,7 +65,7 @@ export function handleSymbolSearchInput(): void {
 		characterFilter: undefined,
 		maxLength: null,
 	});
-	symbolSearchState.query = textFromLines(symbolSearchState.field.lines);
+	symbolSearchState.query = symbolSearchState.field.text;
 	if (textChanged) {
 		updateSymbolSearchMatches();
 	}

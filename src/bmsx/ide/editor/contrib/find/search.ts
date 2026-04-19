@@ -19,7 +19,6 @@ import { clearReferenceHighlights } from '../intellisense/engine';
 import { ensureCursorVisible, revealCursor } from '../../ui/caret';
 import { resetBlink } from '../../render/caret';
 import { scheduleMicrotask } from '../../../../platform/index';
-import { textFromLines } from '../../text/source_text';
 import { applyInlineFieldPointer, setFieldText } from '../../ui/inline_text_field';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { editorDocumentState } from '../../editing/document_state';
@@ -109,7 +108,7 @@ export function openSearch(useSelection: boolean, scope: 'local' | 'global' = 'l
 		}
 	}
 
-	editorSearchState.query = textFromLines(editorSearchState.field.lines);
+	editorSearchState.query = editorSearchState.field.text;
 	onSearchQueryChanged();
 	resetBlink();
 }
@@ -122,7 +121,7 @@ export function closeSearch(clearQuery: boolean, forceHide = false): void {
 	if (clearQuery) {
 		applySearchFieldText('', true);
 	}
-	editorSearchState.query = textFromLines(editorSearchState.field.lines);
+	editorSearchState.query = editorSearchState.field.text;
 
 	const hide = forceHide || clearQuery || editorSearchState.query.length === 0;
 	if (hide) {

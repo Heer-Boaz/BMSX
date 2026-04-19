@@ -3,7 +3,7 @@ import { showEditorMessage } from '../../../workbench/common/feedback_state';
 import type { ReferenceMatchInfo } from './state';
 import type { CodeTabContext } from '../../../common/models';
 import { symbolSearchPageSize } from '../../ui/view';
-import { getTextSnapshot, splitText } from '../../text/source_text';
+import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import { editorDocumentState } from '../../editing/document_state';
 import { getCodeTabContexts } from '../../../workbench/ui/code_tab/contexts';
 import { symbolSearchState } from '../symbols/search_state';
@@ -18,15 +18,18 @@ import { getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace
 
 export function buildReferenceSearchCatalog(info: ReferenceMatchInfo, context: CodeTabContext): ReferenceCatalogEntry[] {
 	const path = context.descriptor.path;
-	const activeLines = splitText(getTextSnapshot(editorDocumentState.buffer));
+	const activeSource = getTextSnapshot(editorDocumentState.buffer);
+	const activeLines = getLinesSnapshot(editorDocumentState.buffer);
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: context,
+		activeSource,
 		activeLines,
 		codeTabContexts: getCodeTabContexts(),
 	};
 	return buildProjectReferenceCatalog({
 		workspace: getOrCreateSemanticWorkspace(),
 		info,
+		source: activeSource,
 		lines: activeLines,
 		path,
 		environment,

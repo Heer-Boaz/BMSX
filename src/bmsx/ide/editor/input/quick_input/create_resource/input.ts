@@ -1,7 +1,6 @@
 import * as constants from '../../../../common/constants';
 import { applyInlineFieldEditing } from '../../../ui/inline_text_field';
 import { resetBlink } from '../../../render/caret';
-import { textFromLines } from '../../../text/source_text';
 import { closeCreateResourcePrompt } from '../../../../workbench/contrib/resources/create';
 import { confirmCreateResourcePrompt, isValidCreateResourceCharacter } from '../../../../workbench/contrib/resources/create_operation';
 import { consumeIdeKey, isKeyJustPressed } from '../../keyboard/key_input';
@@ -31,5 +30,5 @@ export function handleCreateResourceInput(): void {
 		createResourceState.error = null;
 		resetBlink();
 	}
-	createResourceState.path = textFromLines(createResourceState.field.lines);
+	createResourceState.path = createResourceState.field.text;
 }

@@ -8,12 +8,13 @@ import { createEditorSemanticFrontend } from '../intellisense/frontend';
 import { LuaSemanticWorkspace } from '../intellisense/semantic_workspace';
 import { syncSemanticWorkspacePaths, type SemanticWorkspacePathInput } from '../intellisense/semantic_workspace_sync';
 import { ReferenceState, type ReferenceMatchInfo } from './state';
-import { getTextSnapshot, splitText } from '../../text/source_text';
+import { getLinesSnapshot, getTextSnapshot, splitText } from '../../text/source_text';
 import { listResources } from '../../../workspace/workspace';
 import type { Decl, LuaSemanticWorkspaceSnapshot } from '../intellisense/semantic_model';
 
 export type ProjectReferenceEnvironment = {
 	activeContext: CodeTabContext;
+	activeSource: string;
 	activeLines: readonly string[];
 	codeTabContexts: Iterable<CodeTabContext>;
 	listResources?: () => ResourceDescriptor[];
@@ -50,11 +51,12 @@ export function computeSourceLabel(path: string): string {
 export function buildReferenceCatalogForExpression(options: {
 	workspace: LuaSemanticWorkspace;
 	info: ReferenceMatchInfo;
+	source: string;
 	lines: readonly string[];
 	path: string;
 	environment: ProjectReferenceEnvironment;
 }): ReferenceCatalogEntry[] {
-	const { metadata, frontend } = prepareProjectSemanticFrontend(options.workspace, options.environment, options.path, options.lines);
+	const { metadata, frontend } = prepareProjectSemanticFrontend(options.workspace, options.environment, options.path, options.source, options.lines);
 	const entries: ReferenceCatalogEntry[] = [];
 	const existingKeys = new Set<string>();
 	let nextIndex = 0;
@@ -131,13 +133,14 @@ export function resolveDefinitionLocationForExpression(options: {
 	environment: ProjectReferenceEnvironment;
 	workspace: LuaSemanticWorkspace;
 	currentPath: string;
+	currentSource: string;
 	currentLines: readonly string[];
 }): LuaDefinitionLocation {
 	const namePath = parseLuaIdentifierChain(options.expression);
 	if (!namePath || namePath.length === 0) {
 		return null;
 	}
-	const { metadata, frontend } = prepareProjectSemanticFrontend(options.workspace, options.environment, options.currentPath, options.currentLines);
+	const { metadata, frontend } = prepareProjectSemanticFrontend(options.workspace, options.environment, options.currentPath, options.currentSource, options.currentLines);
 	const candidates = frontend.findDeclarationsByNamePath(namePath);
 	let best: Decl = null;
 	let bestScore = Number.NEGATIVE_INFINITY;
@@ -196,6 +199,7 @@ function prepareProjectSemanticFrontend(
 	workspace: LuaSemanticWorkspace,
 	environment: ProjectReferenceEnvironment,
 	currentPath: string,
+	currentSource: string,
 	currentLines: readonly string[],
 ): {
 	metadata: Map<string, FileMetadata>;
@@ -204,17 +208,20 @@ function prepareProjectSemanticFrontend(
 } {
 	const metadata = new Map<string, FileMetadata>();
 	const inputs: SemanticWorkspacePathInput[] = [];
-	registerProjectFile(inputs, metadata, currentPath, currentLines);
+	registerProjectFile(inputs, metadata, currentPath, currentSource, currentLines);
 
 	for (const context of environment.codeTabContexts) {
 		const path = context.descriptor.path;
 		if (metadata.has(path)) {
 			continue;
 		}
+		const source = context === environment.activeContext
+			? environment.activeSource
+			: resolveContextSource(context);
 		const lines = context === environment.activeContext
 			? environment.activeLines
-			: splitText(resolveContextSource(context));
-		registerProjectFile(inputs, metadata, path, lines);
+			: getLinesSnapshot(context.buffer);
+		registerProjectFile(inputs, metadata, path, source, lines);
 	}
 
 	const resources = environment.listResources ? environment.listResources() : listResources();
@@ -227,7 +234,7 @@ function prepareProjectSemanticFrontend(
 			? environment.loadLuaResource(descriptor.asset_id)
 			: luaPipeline.resourceSourceForChunk(Runtime.instance, descriptor.path);
 		const lines = splitText(source);
-		registerProjectFile(inputs, metadata, descriptor.path, lines, descriptor.asset_id);
+		registerProjectFile(inputs, metadata, descriptor.path, source, lines, descriptor.asset_id);
 	}
 	const snapshot = syncSemanticWorkspacePaths(inputs, workspace);
 
@@ -242,13 +249,13 @@ function registerProjectFile(
 	inputs: SemanticWorkspacePathInput[],
 	metadata: Map<string, FileMetadata>,
 	path: string,
+	source: string,
 	lines: readonly string[],
 	asset_id?: string,
 ): void {
 	if (metadata.has(path)) {
 		return;
 	}
-	const source = lines.join('\n');
 	inputs.push({ path, source, lines });
 	metadata.set(path, {
 		path,
@@ -259,19 +266,7 @@ function registerProjectFile(
 }
 
 function resolveContextSource(context: CodeTabContext): string {
-	const buffer = (context as Partial<CodeTabContext>).buffer;
-	if (buffer) {
-		return getTextSnapshot(buffer);
-	}
-	const lastSavedSource = (context as { lastSavedSource?: string }).lastSavedSource;
-	if (typeof lastSavedSource === 'string') {
-		return lastSavedSource;
-	}
-	const load = (context as { load?: () => string }).load;
-	if (typeof load === 'function') {
-		return load();
-	}
-	throw new Error(`[ReferenceSources] Missing source for '${context.descriptor.path}'.`);
+	return getTextSnapshot(context.buffer);
 }
 
 function toDefinitionLocation(
