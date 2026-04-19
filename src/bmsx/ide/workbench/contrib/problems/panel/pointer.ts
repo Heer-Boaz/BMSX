@@ -5,7 +5,7 @@ import * as constants from '../../../../common/constants';
 import { gotoDiagnostic } from '../../../../editor/contrib/diagnostics/navigation';
 import { computeProblemsPanelItemHeight, computeProblemsPanelLayout } from './layout';
 import type { ProblemsPanelController } from './controller';
-import { editorViewState } from '../../../../editor/ui/view_state';
+import { editorViewState } from '../../../../editor/ui/view/state';
 
 export function handleProblemsPanelPointerInput(
 	controller: ProblemsPanelController,

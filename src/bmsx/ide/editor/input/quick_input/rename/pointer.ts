@@ -1,6 +1,6 @@
 import { point_in_rect } from '../../../../../common/rect';
 import { processInlineFieldPointer } from '../../../contrib/find/search';
-import { getRenameBarBounds } from '../../../ui/view';
+import { getRenameBarBounds } from '../../../ui/view/view';
 import { renameController } from '../../../contrib/rename/controller';
 import type { PointerSnapshot } from '../../../../common/models';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';

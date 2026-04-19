@@ -1,4 +1,4 @@
-import { centerCursorVertically, setCursorPosition } from '../../ui/caret';
+import { centerCursorVertically, setCursorPosition } from '../../ui/view/caret/caret';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { activateCodeTab, isTabActive, setActiveTab } from '../../../workbench/ui/tabs';
 import { getActiveCodeTabContext, getCodeTabContexts } from '../../../workbench/ui/code_tab/contexts';
@@ -8,10 +8,10 @@ import { resetBlink } from '../../render/caret';
 import { showRuntimeErrorInChunk } from '../../render/error_overlay';
 import * as constants from '../../../common/constants';
 import { editorPointerState } from '../../input/pointer/state';
-import { editorCaretState } from '../../ui/caret_state';
+import { editorCaretState } from '../../ui/view/caret/state';
 import { runtimeErrorState } from './state';
 import { editorDocumentState } from '../../editing/document_state';
-import { editorViewState } from '../../ui/view_state';
+import { editorViewState } from '../../ui/view/state';
 
 type RuntimeErrorOverlayTarget = { context: CodeTabContext; overlay: RuntimeErrorOverlay };
 

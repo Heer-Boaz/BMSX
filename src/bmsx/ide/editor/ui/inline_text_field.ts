@@ -6,8 +6,8 @@ import type { InlineInputOptions, Position, TextField } from '../../common/model
 import { clamp } from '../../../common/clamp';
 import { LuaLexer } from '../../../lua/syntax/lexer';
 import { splitText } from '../text/source_text';
-import { advanceToggleBlink } from './caret_blink';
-import { editorCaretState } from './caret_state';
+import { advanceToggleBlink } from './view/caret/blink';
+import { editorCaretState } from './view/caret/state';
 import { editorDocumentState } from '../editing/document_state';
 import {
 	clearSingleCursorSelection,

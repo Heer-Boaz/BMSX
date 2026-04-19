@@ -5,7 +5,7 @@ import { wrapTextDynamic } from '../../common/text';
 import { measureText } from '../common/text_layout';
 import type { CompletionSession, CursorScreenInfo, ParameterHintState } from '../../common/models';
 import { drawEditorText } from './text_renderer';
-import { editorViewState } from '../ui/view_state';
+import { editorViewState } from '../ui/view/state';
 
 export type CompletionRenderBounds = {
 	codeTop: number;

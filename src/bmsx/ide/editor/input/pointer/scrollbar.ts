@@ -3,7 +3,7 @@ import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intell
 import { bottomMargin } from '../../../workbench/common/layout';
 import type { PointerSnapshot } from '../../../common/models';
 import { editorPointerState } from './state';
-import { editorViewState } from '../../ui/view_state';
+import { editorViewState } from '../../ui/view/state';
 
 export function handleEditorScrollbarPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	if (!justPressed) {

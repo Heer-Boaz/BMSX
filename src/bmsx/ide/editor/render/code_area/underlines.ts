@@ -3,7 +3,7 @@ import { clamp } from '../../../../common/clamp';
 import * as constants from '../../../common/constants';
 import { api } from '../../ui/view/overlay_api';
 import { getDiagnosticsForRow } from '../../contrib/diagnostics/controller';
-import { editorViewState } from '../../ui/view_state';
+import { editorViewState } from '../../ui/view/state';
 import { editorDocumentState } from '../../editing/document_state';
 
 type GotoHighlight = {

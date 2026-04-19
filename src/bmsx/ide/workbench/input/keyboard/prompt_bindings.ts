@@ -2,7 +2,7 @@ import { resourcePanel } from '../../contrib/resources/panel/controller';
 import { cycleTab } from '../../ui/tabs';
 import { isCodeTabActive } from '../../ui/code_tab/contexts';
 import { selectAllSingleCursor } from '../../../editor/editing/cursor_state';
-import { revealCursor, updateDesiredColumn } from '../../../editor/ui/caret';
+import { revealCursor, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
 import { resetBlink } from '../../../editor/render/caret';
 import { executeEditorCommand } from '../../../editor/input/commands/dispatcher';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../editor/input/keyboard/key_input';

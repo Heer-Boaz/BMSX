@@ -2,7 +2,7 @@ import { point_in_rect } from '../../../../../common/rect';
 import type { PointerSnapshot } from '../../../../common/models';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../../../editor/contrib/intellisense/engine';
 import { editorPointerState, resetPointerClickTracking } from '../../../../editor/input/pointer/state';
-import { editorViewState } from '../../../../editor/ui/view_state';
+import { editorViewState } from '../../../../editor/ui/view/state';
 import { resourcePanel } from '../../../contrib/resources/panel/controller';
 
 export function handleResourcePanelPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {

@@ -19,7 +19,7 @@ import type { LuaDefinitionInfo } from '../../../../lua/syntax/ast';
 import type { ModuleAliasEntry } from '../intellisense/semantic_model';
 import { diagnosticsDebounceMs, editorDiagnosticsState, EMPTY_DIAGNOSTICS } from './state';
 import { editorDocumentState } from '../../editing/document_state';
-import { editorViewState } from '../../ui/view_state';
+import { editorViewState } from '../../ui/view/state';
 import { problemsPanel } from '../../../workbench/contrib/problems/panel/controller';
 
 const diagnosticsMinIntervalMs = 600;

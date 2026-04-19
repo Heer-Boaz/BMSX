@@ -6,7 +6,7 @@ import * as constants from '../../../../common/constants';
 import { api } from '../../../../editor/ui/view/overlay_api';
 import { drawEditorText } from '../../../../editor/render/text_renderer';
 import type { PanelLayout } from './layout';
-import { editorViewState } from '../../../../editor/ui/view_state';
+import { editorViewState } from '../../../../editor/ui/view/state';
 
 function renderSeverityLabel(severity: 'none' | 'error' | 'warning'): string {
 	switch (severity) {

@@ -1,7 +1,7 @@
 import { $ } from '../../../../core/engine';
 import { toggleBreakpointForEditorRow } from '../../../workbench/contrib/debugger/controller';
-import { resolvePointerRow } from '../../ui/view';
-import type { CodeAreaBounds } from '../../ui/view';
+import { resolvePointerRow } from '../../ui/view/view';
+import type { CodeAreaBounds } from '../../ui/view/view';
 import { openEditorContextMenuFromPointer } from '../../../workbench/input/pointer/context_menu/input';
 import type { PointerSnapshot } from '../../../common/models';
 import { editorPointerState, resetPointerClickTracking } from './state';

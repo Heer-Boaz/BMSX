@@ -1,9 +1,8 @@
 import type { RectBounds } from '../../../rompack/format';
 import type { ResourcePanelController } from '../contrib/resources/panel/controller';
 import { clamp } from '../../../common/clamp';
-import { getCodeAreaBounds } from '../../editor/ui/view';
-import { resourceViewerClampScroll } from '../input/keyboard/resource_viewer_input';
-import { resourceViewerImageLayout, resourceViewerTextCapacity, setResourceViewerScroll } from '../contrib/resources/viewer';
+import { getCodeAreaBounds } from '../../editor/ui/view/view';
+import { applyResourceViewerScroll, resolveResourceViewerLayout } from '../contrib/resources/viewer';
 import { getActiveResourceViewer } from '../contrib/resources/view_tabs';
 import { resourcePanel } from '../contrib/resources/panel/controller';
 import { drawEditorText } from '../../editor/render/text_renderer';
@@ -15,7 +14,7 @@ import { renderErrorOverlayText } from '../../editor/render/error_overlay';
 import { drawRectOutlineColor } from '../../editor/render/caret';
 import { centerDialogBounds } from '../../editor/render/dialog_layout';
 import { resourcePanelLineCapacity } from '../contrib/resources/panel/layout';
-import { editorViewState } from '../../editor/ui/view_state';
+import { editorViewState } from '../../editor/ui/view/state';
 
 const resourcePanelVerticalTrack: RectBounds = { left: 0, top: 0, right: 0, bottom: 0 };
 const resourcePanelHorizontalTrack: RectBounds = { left: 0, top: 0, right: 0, bottom: 0 };
@@ -132,10 +131,11 @@ export function drawResourceViewer(): void {
 	if (!viewer) {
 		return;
 	}
-	resourceViewerClampScroll(viewer);
 	const bounds = getCodeAreaBounds();
 	const contentLeft = bounds.codeLeft + constants.RESOURCE_PANEL_PADDING_X;
-	const capacity = resourceViewerTextCapacity(viewer, bounds, editorViewState.lineHeight);
+	const layout = resolveResourceViewerLayout(viewer, bounds, editorViewState.lineHeight);
+	const capacity = layout.textCapacity;
+	applyResourceViewerScroll(viewer, capacity, viewer.scroll);
 	const totalLines = viewer.lines.length;
 	const verticalScrollbar = editorViewState.scrollbars.viewerVertical;
 	const verticalTrack = resourceViewerVerticalTrack;
@@ -145,16 +145,13 @@ export function drawResourceViewer(): void {
 	verticalTrack.bottom = bounds.codeBottom;
 	verticalScrollbar.layout(verticalTrack, totalLines, Math.max(1, capacity), viewer.scroll);
 	const verticalVisible = verticalScrollbar.isVisible();
-	setResourceViewerScroll(viewer, bounds, editorViewState.lineHeight, verticalScrollbar.getScroll());
+	applyResourceViewerScroll(viewer, capacity, verticalScrollbar.getScroll());
 
 	api.fill_rect(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, undefined, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
 
-	const contentTop = bounds.codeTop + 2;
-	const layout = resourceViewerImageLayout(viewer, bounds, editorViewState.lineHeight);
-	let textTop = contentTop;
-	if (layout && viewer.image) {
-		// ensureResourceViewerSprite(viewer.image.asset_id, { left: layout.left, top: layout.top, scale: layout.scale });
-		textTop = layout.bottom + editorViewState.lineHeight;
+	const textTop = layout.textTop;
+	if (layout.hasImage && viewer.image) {
+		// ensureResourceViewerSprite(viewer.image.asset_id, { left: layout.imageLeft, top: layout.imageTop, scale: layout.imageScale });
 	} else {
 		// hideResourceViewerSprite();
 	}

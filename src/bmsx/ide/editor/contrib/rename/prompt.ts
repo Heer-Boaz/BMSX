@@ -4,11 +4,11 @@ import { closeSearch } from '../find/search';
 import { getActiveCodeTabContext, isEditableCodeTab } from '../../../workbench/ui/code_tab/contexts';
 import { closeResourceSearch } from '../../../workbench/contrib/resources/search';
 import { closeLineJump } from '../find/line_jump';
-import { notifyReadOnlyEdit } from '../../ui/view';
+import { notifyReadOnlyEdit } from '../../ui/view/view';
 import { resetBlink } from '../../render/caret';
-import { revealCursor } from '../../ui/caret';
+import { revealCursor } from '../../ui/view/caret/caret';
 import { closeSymbolSearch } from '../symbols/shared';
-import { editorCaretState } from '../../ui/caret_state';
+import { editorCaretState } from '../../ui/view/caret/state';
 import { editorDocumentState } from '../../editing/document_state';
 import { createResourceState } from '../../../workbench/contrib/resources/widget_state';
 

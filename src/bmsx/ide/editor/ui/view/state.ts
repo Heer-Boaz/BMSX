@@ -1,9 +1,9 @@
-import type { FontVariant } from '../../../render/shared/bmsx_font';
-import type { ScrollbarKind } from '../../common/models';
-import type { InlineFieldMetrics } from './inline_text_field';
-import { Scrollbar, ScrollbarController } from './scrollbar';
-import { CodeLayout } from './code_layout';
-import { EditorFont } from './view/font';
+import type { FontVariant } from '../../../../render/shared/bmsx_font';
+import type { ScrollbarKind } from '../../../common/models';
+import type { InlineFieldMetrics } from '../inline_text_field';
+import { Scrollbar, ScrollbarController } from '../scrollbar';
+import { CodeLayout } from '../code_layout';
+import { EditorFont } from './font';
 
 export type EditorViewState = {
 	scrollRow: number;
@@ -31,6 +31,7 @@ export type EditorViewState = {
 	maxLineLengthDirty: boolean;
 	cachedVisibleRowCount: number;
 	cachedVisibleColumnCount: number;
+	cachedMaxScrollColumn: number;
 	dimCrtInEditor: boolean;
 	wordWrapEnabled: boolean;
 };
@@ -61,6 +62,7 @@ export const editorViewState: EditorViewState = {
 	maxLineLengthDirty: true,
 	cachedVisibleRowCount: 1,
 	cachedVisibleColumnCount: 1,
+	cachedMaxScrollColumn: 0,
 	dimCrtInEditor: true,
 	wordWrapEnabled: true,
 };

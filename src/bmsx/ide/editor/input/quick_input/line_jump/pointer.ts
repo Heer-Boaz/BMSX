@@ -1,6 +1,6 @@
 import { point_in_rect } from '../../../../../common/rect';
 import { closeSearch, processInlineFieldPointer } from '../../../contrib/find/search';
-import { getLineJumpBarBounds } from '../../../ui/view';
+import { getLineJumpBarBounds } from '../../../ui/view/view';
 import type { PointerSnapshot } from '../../../../common/models';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
 import { lineJumpState } from '../../../contrib/find/widget_state';

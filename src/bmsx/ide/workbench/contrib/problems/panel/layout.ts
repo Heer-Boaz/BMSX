@@ -6,7 +6,7 @@ import { clamp } from '../../../../../common/clamp';
 import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight } from '../../../common/layout';
 import * as constants from '../../../../common/constants';
 import { problemsPanel } from './controller';
-import { editorViewState } from '../../../../editor/ui/view_state';
+import { editorViewState } from '../../../../editor/ui/view/state';
 
 export type PanelLayout = {
 	headerTop: number;

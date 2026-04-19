@@ -6,7 +6,7 @@ import { closeSearch } from './search';
 import { resetBlink } from '../../render/caret';
 import { setFieldText } from '../../ui/inline_text_field';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
-import { setCursorPosition } from '../../ui/caret';
+import { setCursorPosition } from '../../ui/view/caret/caret';
 import { breakUndoSequence } from '../../editing/undo_controller';
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import { closeSymbolSearch } from '../symbols/shared';

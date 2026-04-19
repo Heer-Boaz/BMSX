@@ -6,7 +6,7 @@ import { resetBlink } from '../../../editor/render/caret';
 import { focusEditorFromSearch } from '../../../editor/contrib/find/search';
 import { focusEditorFromLineJump } from '../../../editor/contrib/find/line_jump';
 import { listResources } from '../../../workspace/workspace';
-import { editorCaretState } from '../../../editor/ui/caret_state';
+import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { renameController } from '../../../editor/contrib/rename/controller';
 import { createResourceState } from './widget_state';
 

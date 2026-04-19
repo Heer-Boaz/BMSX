@@ -2,9 +2,9 @@ import { clamp } from '../../../common/clamp';
 import { setActiveTab, activateCodeTab } from '../../workbench/ui/tabs';
 import { focusChunkSource } from '../../workbench/contrib/resources/navigation';
 import { getActiveCodeTabContext, getCodeTabContextById, isCodeTabActive } from '../../workbench/ui/code_tab/contexts';
-import { setCursorPosition, ensureCursorVisible } from '../ui/caret';
+import { setCursorPosition, ensureCursorVisible } from '../ui/view/caret/caret';
 import * as TextEditing from '../editing/text_editing_and_selection';
-import { editorCaretState } from '../ui/caret_state';
+import { editorCaretState } from '../ui/view/caret/state';
 import { editorDocumentState } from '../editing/document_state';
 
 const NAVIGATION_HISTORY_LIMIT = 64;

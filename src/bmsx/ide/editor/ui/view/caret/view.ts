@@ -1,10 +1,10 @@
-import { clamp } from '../../../common/clamp';
+import { clamp } from '../../../../../common/clamp';
 import { caretNavigation } from './caret';
-import { ensureVisualLines, positionToVisualIndex } from '../common/text_layout';
-import { editorCaretState } from './caret_state';
-import { editorDocumentState } from '../editing/document_state';
-import { editorViewState } from './view_state';
-import { resolveCodeAreaViewport, type CodeAreaViewport } from './code_area_viewport';
+import { ensureVisualLines, positionToVisualIndex } from '../../../common/text_layout';
+import { editorCaretState } from './state';
+import { editorDocumentState } from '../../../editing/document_state';
+import { editorViewState } from '../state';
+import { resolveCodeAreaViewport, type CodeAreaViewport } from '../../code_area_viewport';
 
 export function revealCursor(): void {
 	editorCaretState.cursorRevealSuspended = false;

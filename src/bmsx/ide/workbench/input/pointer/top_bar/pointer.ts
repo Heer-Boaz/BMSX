@@ -4,7 +4,7 @@ import { editorChromeState } from '../../../ui/chrome_state';
 import type { PointerSnapshot } from '../../../../common/models';
 import { executeTopBarCommand } from '../../../../editor/input/commands/dispatcher';
 import { consumeChromePointerPress } from '../../../../editor/input/pointer/chrome_press';
-import { editorViewState } from '../../../../editor/ui/view_state';
+import { editorViewState } from '../../../../editor/ui/view/state';
 
 export function handleTopBarPointer(snapshot: PointerSnapshot): boolean {
 	const x = snapshot.viewportX;

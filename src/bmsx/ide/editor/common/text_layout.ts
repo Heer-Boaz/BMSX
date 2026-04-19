@@ -1,14 +1,13 @@
-import { getResourcePanelWidth, updateGutterWidth } from '../ui/view';
+import { getCodeAreaBounds } from '../ui/view/view';
 import { rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/overlay';
 import { runtimeErrorState } from '../contrib/runtime_error/state';
 import * as TextEditing from '../editing/text_editing_and_selection';
 import type { HighlightLine, RuntimeErrorOverlay, VisualLineSegment } from '../../common/models';
 import { splitText } from '../text/source_text';
 import { getCodeTabContexts } from '../../workbench/ui/code_tab/contexts';
-import { editorViewState } from '../ui/view_state';
-import { resourcePanel } from '../../workbench/contrib/resources/panel/controller';
+import { editorViewState } from '../ui/view/state';
 import { editorDocumentState } from '../editing/document_state';
-import { caretNavigation } from '../ui/caret';
+import { caretNavigation } from '../ui/view/caret/caret';
 import * as constants from '../../common/constants';
 import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from '../../common/constants';
 
@@ -56,14 +55,6 @@ export function assertMonospace(): void {
 	}
 }
 
-export function visibleRowCount(): number {
-	return editorViewState.cachedVisibleRowCount > 0 ? editorViewState.cachedVisibleRowCount : 1;
-}
-
-export function visibleColumnCount(): number {
-	return editorViewState.cachedVisibleColumnCount > 0 ? editorViewState.cachedVisibleColumnCount : 1;
-}
-
 export function computeSelectionSlice(lineIndex: number, highlight: HighlightLine, sliceStart: number, sliceEnd: number): { startDisplay: number; endDisplay: number; } {
 	const range = TextEditing.getSelectionRange();
 	if (!range) {
@@ -93,7 +84,7 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 }
 
 export function ensureVisualLines(): void {
-	const estimatedVisibleRowCount = Math.max(1, editorViewState.cachedVisibleRowCount);
+	const estimatedVisibleRowCount = editorViewState.cachedVisibleRowCount;
 	editorViewState.scrollRow = editorViewState.layout.ensureVisualLines(
 		editorDocumentState.buffer,
 		editorViewState.wordWrapEnabled,
@@ -124,12 +115,11 @@ export function positionToVisualIndex(row: number, column: number): number {
 }
 
 export function computeRuntimeErrorOverlayMaxWidth(): number {
-	const resourceWidth = resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
-	const gutterSpace = updateGutterWidth() + 2;
+	const bounds = getCodeAreaBounds();
 	const scrollbarSpace = editorViewState.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0;
 	const rightMargin = constants.CODE_AREA_RIGHT_MARGIN;
 	const connectorOffset = ERROR_OVERLAY_CONNECTOR_OFFSET + ERROR_OVERLAY_PADDING_X * 2;
-	const available = editorViewState.viewportWidth - resourceWidth - gutterSpace - scrollbarSpace - rightMargin - connectorOffset;
+	const available = bounds.codeRight - bounds.textLeft - scrollbarSpace - rightMargin - connectorOffset;
 	return Math.max(editorViewState.charAdvance, available);
 }
 

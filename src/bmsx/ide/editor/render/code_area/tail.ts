@@ -8,9 +8,10 @@ import { api } from '../../ui/view/overlay_api';
 import { drawCompletionPopup, drawParameterHintOverlay, type CompletionRenderBounds } from '../completion';
 import { drawCursor } from '../caret';
 import type { RectBounds } from '../../../../rompack/format';
-import { editorCaretState } from '../../ui/caret_state';
-import { editorViewState } from '../../ui/view_state';
+import { editorCaretState } from '../../ui/view/caret/state';
+import { editorViewState } from '../../ui/view/state';
 import { completionController } from '../../contrib/suggest/completion_controller';
+import type { CodeAreaViewport } from '../../ui/code_area_viewport';
 
 const verticalTrackScratch: RectBounds = {
 	left: 0,
@@ -55,56 +56,49 @@ function drawRuntimeErrorOverlayIndicator(
 }
 
 export function finalizeCodeAreaRender(
-	bounds: CompletionRenderBounds & CodeAreaViewportBounds,
-	contentBottom: number,
-	trackRight: number,
-	visualCount: number,
-	rowCapacity: number,
-	columnCapacity: number,
-	wrapEnabled: boolean,
-	maxScrollColumn: number,
+	viewport: CodeAreaViewport & CompletionRenderBounds & CodeAreaViewportBounds,
 	cursorInfo: CursorScreenInfo,
 ): void {
-	const verticalTrackLeft = bounds.codeRight - constants.SCROLLBAR_WIDTH;
+	const verticalTrackLeft = viewport.codeRight - constants.SCROLLBAR_WIDTH;
 	verticalTrackScratch.left = verticalTrackLeft;
-	verticalTrackScratch.top = bounds.codeTop;
+	verticalTrackScratch.top = viewport.codeTop;
 	verticalTrackScratch.right = verticalTrackLeft + constants.SCROLLBAR_WIDTH;
-	verticalTrackScratch.bottom = contentBottom;
+	verticalTrackScratch.bottom = viewport.contentBottom;
 
-	editorViewState.scrollbars.codeVertical.layout(verticalTrackScratch, visualCount, rowCapacity, editorViewState.scrollRow);
-	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollbars.codeVertical.getScroll(), visualCount, rowCapacity);
+	editorViewState.scrollbars.codeVertical.layout(verticalTrackScratch, viewport.visualCount, viewport.rows, editorViewState.scrollRow);
+	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollbars.codeVertical.getScroll(), viewport.visualCount, viewport.rows);
 	editorViewState.codeVerticalScrollbarVisible = editorViewState.scrollbars.codeVertical.isVisible();
 
-	if (!wrapEnabled) {
-		horizontalTrackScratch.left = bounds.codeLeft;
-		horizontalTrackScratch.top = contentBottom;
-		horizontalTrackScratch.right = trackRight;
-		horizontalTrackScratch.bottom = contentBottom + constants.SCROLLBAR_WIDTH;
-		const maxColumns = columnCapacity + maxScrollColumn;
-		editorViewState.scrollbars.codeHorizontal.layout(horizontalTrackScratch, maxColumns, columnCapacity, editorViewState.scrollColumn);
-		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(editorViewState.scrollbars.codeHorizontal.getScroll(), maxScrollColumn);
+	if (!viewport.wrapEnabled) {
+		horizontalTrackScratch.left = viewport.codeLeft;
+		horizontalTrackScratch.top = viewport.contentBottom;
+		horizontalTrackScratch.right = viewport.trackRight;
+		horizontalTrackScratch.bottom = viewport.contentBottom + constants.SCROLLBAR_WIDTH;
+		const maxColumns = viewport.columns + viewport.maxScrollColumn;
+		editorViewState.scrollbars.codeHorizontal.layout(horizontalTrackScratch, maxColumns, viewport.columns, editorViewState.scrollColumn);
+		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(editorViewState.scrollbars.codeHorizontal.getScroll(), viewport.maxScrollColumn);
 		editorViewState.codeHorizontalScrollbarVisible = editorViewState.scrollbars.codeHorizontal.isVisible();
 	} else {
 		editorViewState.scrollColumn = 0;
 		editorViewState.codeHorizontalScrollbarVisible = false;
 	}
 
-	const runtimeOverlayState: RuntimeErrorOverlayRenderResult = renderRuntimeErrorOverlay(bounds.codeTop, bounds.codeRight, bounds.textLeft);
+	const runtimeOverlayState: RuntimeErrorOverlayRenderResult = renderRuntimeErrorOverlay(viewport.codeTop, viewport.codeRight, viewport.textLeft);
 	if (runtimeOverlayState === 'above' || runtimeOverlayState === 'below') {
-		drawRuntimeErrorOverlayIndicator(runtimeOverlayState, bounds.codeTop, bounds.codeRight, bounds.textLeft, contentBottom);
+		drawRuntimeErrorOverlayIndicator(runtimeOverlayState, viewport.codeTop, viewport.codeRight, viewport.textLeft, viewport.contentBottom);
 	}
-	drawHoverTooltip(bounds.codeTop, contentBottom, bounds.textLeft);
+	drawHoverTooltip(viewport.codeTop, viewport.contentBottom, viewport.textLeft);
 
 	if (editorCaretState.cursorVisible && cursorInfo) {
-		drawCursor(cursorInfo, bounds.textLeft);
+		drawCursor(cursorInfo, viewport.textLeft);
 	}
-	completionController.popupBounds = drawCompletionPopup(completionController.session, cursorInfo, editorViewState.lineHeight, bounds);
-	drawParameterHintOverlay(completionController.hint, cursorInfo, editorViewState.lineHeight, bounds);
+	completionController.popupBounds = drawCompletionPopup(completionController.session, cursorInfo, editorViewState.lineHeight, viewport);
+	drawParameterHintOverlay(completionController.hint, cursorInfo, editorViewState.lineHeight, viewport);
 	if (editorViewState.codeVerticalScrollbarVisible) {
 		editorViewState.scrollbars.codeVertical.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
 	if (editorViewState.codeHorizontalScrollbarVisible) {
 		editorViewState.scrollbars.codeHorizontal.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
-	renderEditorContextMenu(bounds);
+	renderEditorContextMenu(viewport);
 }

@@ -5,7 +5,7 @@ import { applySymbolSearchSelection } from '../../../contrib/symbols/search';
 import { moveSymbolSearchSelection, updateSymbolSearchMatches } from '../../../contrib/symbols/search_catalog';
 import { closeSymbolSearch, ensureSymbolSearchSelectionVisible } from '../../../contrib/symbols/shared';
 import { consumeIdeKey, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../keyboard/key_input';
-import { symbolSearchPageSize } from '../../../ui/view';
+import { symbolSearchPageSize } from '../../../ui/view/view';
 import { symbolSearchState } from '../../../contrib/symbols/search_state';
 
 export function handleSymbolSearchInput(): void {

@@ -15,6 +15,30 @@ export type ResourceViewerBounds = {
 	codeRight: number;
 };
 
+export type ResourceViewerLayout = {
+	hasImage: boolean;
+	imageLeft: number;
+	imageTop: number;
+	imageWidth: number;
+	imageHeight: number;
+	imageBottom: number;
+	imageScale: number;
+	textTop: number;
+	textCapacity: number;
+};
+
+const resourceViewerLayout: ResourceViewerLayout = {
+	hasImage: false,
+	imageLeft: 0,
+	imageTop: 0,
+	imageWidth: 0,
+	imageHeight: 0,
+	imageBottom: 0,
+	imageScale: 1,
+	textTop: 0,
+	textCapacity: 0,
+};
+
 export function buildResourceViewerState(descriptor: ResourceDescriptor): ResourceViewerState {
 	const title = computeResourceTabTitle(descriptor);
 	const lines: string[] = [
@@ -138,40 +162,49 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 	return state;
 }
 
-export function resourceViewerImageLayout(
+export function resolveResourceViewerLayout(
 	viewer: ResourceViewerState,
 	bounds: ResourceViewerBounds,
 	lineHeight: number,
-): { left: number; top: number; width: number; height: number; bottom: number; scale: number } {
-	if (!viewer.image) {
-		return null;
-	}
+): ResourceViewerLayout {
+	const contentTop = bounds.codeTop + 2;
+	resourceViewerLayout.hasImage = false;
+	resourceViewerLayout.textTop = contentTop;
+	resourceViewerLayout.textCapacity = 0;
 	const totalHeight = bounds.codeBottom - bounds.codeTop;
-	if (totalHeight <= 0) {
-		return null;
-	}
 	const paddingX = constants.RESOURCE_PANEL_PADDING_X;
 	const availableWidth = bounds.codeRight - bounds.codeLeft - paddingX * 2;
-	if (availableWidth <= 0) {
-		return null;
+	if (viewer.image && totalHeight > 0 && availableWidth > 0) {
+		const reservedTextHeight = Math.min(totalHeight * 0.45, lineHeight * clamp(viewer.lines.length + (viewer.error ? 1 : 0), 3, 8));
+		const maxImageHeight = Math.max(lineHeight * 2, totalHeight - reservedTextHeight);
+		const scale = Math.min(availableWidth / viewer.image.width, maxImageHeight / viewer.image.height);
+		let width = (viewer.image.width * scale) | 0;
+		let height = (viewer.image.height * scale) | 0;
+		if (width < 1) {
+			width = 1;
+		}
+		if (height < 1) {
+			height = 1;
+		}
+		const left = bounds.codeLeft + paddingX + (((availableWidth - width) / 2) | 0);
+		const top = contentTop;
+		resourceViewerLayout.hasImage = true;
+		resourceViewerLayout.imageLeft = left;
+		resourceViewerLayout.imageTop = top;
+		resourceViewerLayout.imageWidth = width;
+		resourceViewerLayout.imageHeight = height;
+		resourceViewerLayout.imageBottom = top + height;
+		resourceViewerLayout.imageScale = scale;
+		resourceViewerLayout.textTop = resourceViewerLayout.imageBottom + lineHeight;
 	}
-	const reservedTextHeight = Math.min(totalHeight * 0.45, lineHeight * clamp(viewer.lines.length + (viewer.error ? 1 : 0), 3, 8));
-	const maxImageHeight = Math.max(lineHeight * 2, totalHeight - reservedTextHeight);
-	const scale = Math.min(availableWidth / viewer.image.width, maxImageHeight / viewer.image.height);
-	const width = Math.max(1, Math.trunc(viewer.image.width * scale));
-	const height = Math.max(1, Math.trunc(viewer.image.height * scale));
-	const left = bounds.codeLeft + paddingX + Math.max(0, Math.trunc((availableWidth - width) / 2));
-	const top = bounds.codeTop + 2;
-	return { left, top, width, height, bottom: top + height, scale };
+	if (resourceViewerLayout.textTop < bounds.codeBottom) {
+		resourceViewerLayout.textCapacity = ((bounds.codeBottom - resourceViewerLayout.textTop) / lineHeight) | 0;
+	}
+	return resourceViewerLayout;
 }
 
 export function resourceViewerTextCapacity(viewer: ResourceViewerState, bounds: ResourceViewerBounds, lineHeight: number): number {
-	const layout = resourceViewerImageLayout(viewer, bounds, lineHeight);
-	const textTop = layout ? layout.bottom + lineHeight : bounds.codeTop + 2;
-	if (textTop >= bounds.codeBottom) {
-		return 0;
-	}
-	return Math.max(0, Math.floor((bounds.codeBottom - textTop) / lineHeight));
+	return resolveResourceViewerLayout(viewer, bounds, lineHeight).textCapacity;
 }
 
 export function clampResourceViewerScroll(viewer: ResourceViewerState, bounds: ResourceViewerBounds, lineHeight: number): void {
@@ -179,7 +212,10 @@ export function clampResourceViewerScroll(viewer: ResourceViewerState, bounds: R
 }
 
 export function setResourceViewerScroll(viewer: ResourceViewerState, bounds: ResourceViewerBounds, lineHeight: number, scroll: number): void {
-	const capacity = resourceViewerTextCapacity(viewer, bounds, lineHeight);
+	applyResourceViewerScroll(viewer, resourceViewerTextCapacity(viewer, bounds, lineHeight), scroll);
+}
+
+export function applyResourceViewerScroll(viewer: ResourceViewerState, capacity: number, scroll: number): void {
 	if (capacity <= 0) {
 		viewer.scroll = 0;
 		return;

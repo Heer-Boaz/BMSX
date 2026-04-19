@@ -2,7 +2,7 @@ import * as constants from '../../../common/constants';
 import { showEditorMessage } from '../../../workbench/common/feedback_state';
 import type { ReferenceMatchInfo } from './state';
 import type { CodeTabContext } from '../../../common/models';
-import { symbolSearchPageSize } from '../../ui/view';
+import { symbolSearchPageSize } from '../../ui/view/view';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import { editorDocumentState } from '../../editing/document_state';
 import { getCodeTabContexts } from '../../../workbench/ui/code_tab/contexts';

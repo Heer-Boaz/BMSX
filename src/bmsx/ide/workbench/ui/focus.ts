@@ -1,4 +1,4 @@
-import { setCursorPosition } from '../../editor/ui/caret';
+import { setCursorPosition } from '../../editor/ui/view/caret/caret';
 import { setSingleCursorSelectionAnchor } from '../../editor/editing/cursor_state';
 import { focusEditorFromSearch } from '../../editor/contrib/find/search';
 import { resourcePanel } from '../contrib/resources/panel/controller';

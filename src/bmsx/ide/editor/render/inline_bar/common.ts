@@ -5,7 +5,7 @@ import { api } from '../../ui/view/overlay_api';
 import { drawEditorText } from '../text_renderer';
 import { drawInlineCaret } from '../caret';
 import { measureText } from '../../common/text_layout';
-import { editorViewState } from '../../ui/view_state';
+import { editorViewState } from '../../ui/view/state';
 
 export type InlineBarFieldRenderState = {
 	fieldText: string;

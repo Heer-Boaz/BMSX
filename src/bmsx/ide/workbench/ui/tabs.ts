@@ -1,17 +1,17 @@
 import { editorRuntimeState } from '../../editor/common/runtime_state';
 import { editorChromeState } from './chrome_state';
 import { editorDiagnosticsState } from '../../editor/contrib/diagnostics/state';
-import { editorViewState } from '../../editor/ui/view_state';
+import { editorViewState } from '../../editor/ui/view/state';
 import type { CodeTabContext, EditorTabDescriptor, EditorTabKind } from '../../common/models';
 import { beginNavigationCapture, completeNavigation } from '../../editor/navigation/navigation_history';
 import { closeLineJump } from '../../editor/contrib/find/line_jump';
 import { closeSymbolSearch } from '../../editor/contrib/symbols/shared';
-import { getCodeAreaBounds, hideResourcePanel } from '../../editor/ui/view';
+import { getCodeAreaBounds, hideResourcePanel } from '../../editor/ui/view/view';
 import { closeSearch } from '../../editor/contrib/find/search';
 import { clampResourceViewerScroll } from '../contrib/resources/viewer';
 import { editorPointerState } from '../../editor/input/pointer/state';
 import { runtimeErrorState } from '../../editor/contrib/runtime_error/state';
-import { editorCaretState } from '../../editor/ui/caret_state';
+import { editorCaretState } from '../../editor/ui/view/caret/state';
 import {
 	createEntryTabContext,
 	upsertCodeEditorTab,

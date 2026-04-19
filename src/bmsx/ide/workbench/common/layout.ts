@@ -1,6 +1,6 @@
 import { splitText } from '../../editor/text/source_text';
 import { wrapOverlayLine } from '../../editor/common/text_layout';
-import { editorViewState } from '../../editor/ui/view_state';
+import { editorViewState } from '../../editor/ui/view/state';
 import { editorFeedbackState } from './feedback_state';
 import { problemsPanel } from '../contrib/problems/panel/controller';
 

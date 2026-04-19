@@ -3,7 +3,7 @@ import { api } from '../../ui/view/overlay_api';
 import { drawEditorText } from '../text_renderer';
 import { drawCreateResourceErrorDialog } from '../../../workbench/render/resource_panel';
 import { activeSearchMatchCount, getVisibleSearchResultEntries } from '../../contrib/find/search';
-import { editorViewState } from '../../ui/view_state';
+import { editorViewState } from '../../ui/view/state';
 import { editorSearchState, lineJumpState } from '../../contrib/find/widget_state';
 import {
 	getCreateResourceBarBounds,
@@ -20,7 +20,7 @@ import {
 	searchVisibleResultCount,
 	symbolSearchEntryHeight,
 	symbolSearchVisibleResultCount,
-} from '../../ui/view';
+} from '../../ui/view/view';
 import { measureText } from '../../common/text_layout';
 import { renderInlineBarField, renderInlineBarFrame } from './common';
 import { problemsPanel } from '../../../workbench/contrib/problems/panel/controller';

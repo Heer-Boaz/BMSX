@@ -1,35 +1,33 @@
-import { $ } from '../../../core/engine';
-import { lower_bound } from '../../../common/lower_bound';
-import { EditorFont } from './view/font';
-import type { FontVariant } from '../../../render/shared/bmsx_font';
-import type { Viewport } from '../../../rompack/format';
-import type { ResourceDescriptor } from '../../common/models';
-import * as constants from '../../common/constants';
-import { CodeLayout } from './code_layout';
-import { markDiagnosticsDirty } from '../contrib/diagnostics/analysis';
-import { computeSearchPageStats } from '../contrib/find/search';
-import { showEditorMessage } from '../../workbench/common/feedback_state';
-import { editorChromeState } from '../../workbench/ui/chrome_state';
-import { editorPointerState } from '../input/pointer/state';
-import { editorCaretState } from './caret_state';
-import { getBuiltinIdentifiersSnapshot, requestSemanticRefresh } from '../contrib/intellisense/engine';
-import { ensureCursorVisible, updateDesiredColumn } from './caret';
-import { editorDocumentState } from '../editing/document_state';
-import { editorViewState } from './view_state';
-import { editorSearchState, lineJumpState } from '../contrib/find/widget_state';
-import { symbolSearchState } from '../contrib/symbols/search_state';
-import { resourcePanel } from '../../workbench/contrib/resources/panel/controller';
-import { getActiveCodeTabContext, getActiveCodeTabContextId } from '../../workbench/ui/code_tab/contexts';
-import { renameController } from '../contrib/rename/controller';
-import { editorRuntimeState } from '../common/runtime_state';
+import { $ } from '../../../../core/engine';
+import { lower_bound } from '../../../../common/lower_bound';
+import { EditorFont } from './font';
+import type { FontVariant } from '../../../../render/shared/bmsx_font';
+import type { Viewport } from '../../../../rompack/format';
+import type { ResourceDescriptor } from '../../../common/models';
+import * as constants from '../../../common/constants';
+import { CodeLayout } from '../code_layout';
+import { markDiagnosticsDirty } from '../../contrib/diagnostics/analysis';
+import { computeSearchPageStats } from '../../contrib/find/search';
+import { showEditorMessage } from '../../../workbench/common/feedback_state';
+import { editorChromeState } from '../../../workbench/ui/chrome_state';
+import { editorPointerState } from '../../input/pointer/state';
+import { editorCaretState } from './caret/state';
+import { getBuiltinIdentifiersSnapshot, requestSemanticRefresh } from '../../contrib/intellisense/engine';
+import { ensureCursorVisible, updateDesiredColumn } from './caret/caret';
+import { editorDocumentState } from '../../editing/document_state';
+import { editorViewState } from './state';
+import { editorSearchState, lineJumpState } from '../../contrib/find/widget_state';
+import { symbolSearchState } from '../../contrib/symbols/search_state';
+import { resourcePanel } from '../../../workbench/contrib/resources/panel/controller';
+import { getActiveCodeTabContext, getActiveCodeTabContextId } from '../../../workbench/ui/code_tab/contexts';
+import { renameController } from '../../contrib/rename/controller';
+import { editorRuntimeState } from '../../common/runtime_state';
 import {
 	ensureVisualLines,
 	rewrapRuntimeErrorOverlays,
-	visibleColumnCount,
-	visibleRowCount,
-} from '../common/text_layout';
-import { bottomMargin, getTabBarTotalHeight, topMargin } from '../../workbench/common/layout';
-import { createResourceState, resourceSearchState } from '../../workbench/contrib/resources/widget_state';
+} from '../../common/text_layout';
+import { bottomMargin, getTabBarTotalHeight, topMargin } from '../../../workbench/common/layout';
+import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
 
 function decimalDigitCount(value: number): number {
 	let digits = 1;
@@ -73,7 +71,7 @@ export function maximumLineLength(): number {
 }
 
 export function computeMaximumScrollColumn(): number {
-	const limit = maximumLineLength() - visibleColumnCount();
+	const limit = maximumLineLength() - editorViewState.cachedVisibleColumnCount;
 	if (limit <= 0) {
 		return 0;
 	}
@@ -313,11 +311,10 @@ export function resolvePointerTextPosition(viewportX: number, viewportY: number,
 	return pointerTextPosition;
 }
 
-export function handlePointerAutoScroll(viewportX: number, viewportY: number): void {
+export function handlePointerAutoScroll(viewportX: number, viewportY: number, bounds: CodeAreaBounds = getCodeAreaBounds()): void {
 	if (!editorPointerState.pointerSelecting) {
 		return;
 	}
-	const bounds = getCodeAreaBounds();
 	ensureVisualLines();
 	let rowDelta = 0;
 	if (viewportY < bounds.codeTop) {
@@ -325,16 +322,15 @@ export function handlePointerAutoScroll(viewportX: number, viewportY: number): v
 	} else if (viewportY >= bounds.codeBottom) {
 		rowDelta = 1;
 	}
-	const rows = visibleRowCount();
+	const rows = editorViewState.cachedVisibleRowCount;
 	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollRow + rowDelta, editorViewState.layout.getVisualLineCount(), rows);
-	const maxScrollColumn = computeMaximumScrollColumn();
 	if (viewportX >= bounds.gutterLeft && !editorViewState.wordWrapEnabled) {
 		if (viewportX < bounds.textLeft) {
 			editorViewState.scrollColumn -= 1;
 		} else if (viewportX >= bounds.codeRight) {
 			editorViewState.scrollColumn += 1;
 		}
-		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(editorViewState.scrollColumn, maxScrollColumn);
+		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(editorViewState.scrollColumn, editorViewState.cachedMaxScrollColumn);
 	}
 	if (editorViewState.wordWrapEnabled) {
 		editorViewState.scrollColumn = 0;
@@ -346,7 +342,7 @@ export function scrollRows(deltaRows: number): void {
 		return;
 	}
 	ensureVisualLines();
-	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollRow + deltaRows, editorViewState.layout.getVisualLineCount(), visibleRowCount());
+	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollRow + deltaRows, editorViewState.layout.getVisualLineCount(), editorViewState.cachedVisibleRowCount);
 }
 
 export function getCreateResourceBarHeight(): number {
@@ -507,10 +503,10 @@ export function toggleWordWrap(): void {
 
 	if (editorViewState.wordWrapEnabled) {
 		editorViewState.scrollColumn = 0;
-		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, anchorRow, anchorColumnForWrap), currentVisualCount, visibleRowCount());
+		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, anchorRow, anchorColumnForWrap), currentVisualCount, editorViewState.cachedVisibleRowCount);
 	} else {
 		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(anchorColumnForUnwrap, computeMaximumScrollColumn());
-		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, anchorRow, editorViewState.scrollColumn), currentVisualCount, visibleRowCount());
+		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, anchorRow, editorViewState.scrollColumn), currentVisualCount, editorViewState.cachedVisibleRowCount);
 	}
 	editorPointerState.lastPointerRowResolution = null;
 	ensureCursorVisible();
@@ -547,10 +543,6 @@ export function selectResourceInPanel(descriptor: ResourceDescriptor): void {
 	}
 }
 
-export function applyPendingResourceSelection(): void {
-	resourcePanel.applyPendingSelection();
-}
-
 export function getResourcePanelWidth(): number {
 	if (!resourcePanel.isVisible()) {
 		return 0;
@@ -563,9 +555,8 @@ export function getResourcePanelWidth(): number {
 }
 
 export function computeWrapWidth(): number {
-	const resourceWidth = resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
-	const gutterSpace = updateGutterWidth() + 2;
-	const available = editorViewState.viewportWidth - resourceWidth - gutterSpace;
+	const bounds = getCodeAreaBounds();
+	const available = bounds.codeRight - bounds.textLeft;
 	return Math.max(editorViewState.charAdvance, available - 2);
 }
 

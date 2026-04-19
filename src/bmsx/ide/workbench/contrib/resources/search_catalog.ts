@@ -3,7 +3,7 @@ import { showEditorMessage } from '../../common/feedback_state';
 import { listResourcesStrict } from './catalog';
 import { clampQuickInputDisplayOffset, advanceQuickInputSelection } from '../../../editor/navigation/quick_input_navigation';
 import { resetBlink } from '../../../editor/render/caret';
-import { resourceSearchWindowCapacity } from '../../../editor/ui/view';
+import { resourceSearchWindowCapacity } from '../../../editor/ui/view/view';
 import { $ } from '../../../../core/engine';
 import { resourceSearchState } from './widget_state';
 

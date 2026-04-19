@@ -14,7 +14,7 @@ import { initializeCartEditor } from './editor/ui/bootstrap';
 import {
 	setFontVariant,
 	updateViewport,
-} from './editor/ui/view';
+} from './editor/ui/view/view';
 import { Viewport } from '../rompack/format';
 import { clearRuntimeErrorOverlay, clearAllRuntimeErrorOverlays } from './editor/contrib/runtime_error/navigation';
 import { getSourceForChunk } from './editor/common/text_runtime';

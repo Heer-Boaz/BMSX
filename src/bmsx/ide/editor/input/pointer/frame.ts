@@ -1,11 +1,11 @@
 import { $ } from '../../../../core/engine';
 import { applyScrollbarScroll } from '../../ui/scrollbar';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/engine';
-import { mapScreenPointToViewport } from '../../ui/view';
+import { mapScreenPointToViewport } from '../../ui/view/view';
 import { updateTabHoverState } from '../../../workbench/input/pointer/tab_bar/pointer';
 import type { PointerSnapshot } from '../../../common/models';
 import { editorPointerState } from './state';
-import { editorViewState } from '../../ui/view_state';
+import { editorViewState } from '../../ui/view/state';
 import { editorSearchState, lineJumpState } from '../../contrib/find/widget_state';
 import { symbolSearchState } from '../../contrib/symbols/search_state';
 import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';

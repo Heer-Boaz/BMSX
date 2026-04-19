@@ -8,7 +8,7 @@ import { closeLineJump } from '../../../editor/contrib/find/line_jump';
 import { closeSymbolSearch } from '../../../editor/contrib/symbols/shared';
 import { closeSearch } from '../../../editor/contrib/find/search';
 import { resetBlink } from '../../../editor/render/caret';
-import { selectResourceInPanel } from '../../../editor/ui/view';
+import { selectResourceInPanel } from '../../../editor/ui/view/view';
 import { closeResourceSearch } from './search';
 import { findResourceDescriptorForChunk } from './lookup';
 import { openResourceViewerTab } from './view_tabs';

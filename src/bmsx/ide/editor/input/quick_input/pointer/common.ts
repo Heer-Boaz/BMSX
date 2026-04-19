@@ -4,7 +4,7 @@ import { clearHoverTooltip, clearGotoHoverHighlight } from '../../../contrib/int
 import { resetBlink } from '../../../render/caret';
 import { measureText } from '../../../common/text_layout';
 import { editorPointerState } from '../../pointer/state';
-import { editorCaretState } from '../../../ui/caret_state';
+import { editorCaretState } from '../../../ui/view/caret/state';
 
 export function activateQuickInputField(): void {
 	resourcePanel.setFocused(false);

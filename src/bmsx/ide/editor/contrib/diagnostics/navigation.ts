@@ -3,9 +3,9 @@ import type { EditorDiagnostic } from '../../../common/models';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { activateCodeTab, setActiveTab } from '../../../workbench/ui/tabs';
 import { getActiveCodeTabContextId, isCodeTabActive } from '../../../workbench/ui/code_tab/contexts';
-import { setCursorPosition, ensureCursorVisible } from '../../ui/caret';
+import { setCursorPosition, ensureCursorVisible } from '../../ui/view/caret/caret';
 import * as TextEditing from '../../editing/text_editing_and_selection';
-import { editorCaretState } from '../../ui/caret_state';
+import { editorCaretState } from '../../ui/view/caret/state';
 import { editorDocumentState } from '../../editing/document_state';
 
 export function gotoDiagnostic(diagnostic: EditorDiagnostic): void {

@@ -10,12 +10,12 @@ import { markTextMutated } from '../../common/text_runtime';
 import { markDiagnosticsDirtyForChunk } from '../diagnostics/controller';
 import { prepareUndo, applyUndoableReplace, recordEditContext } from '../../editing/undo_controller';
 import { setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
-import { updateDesiredColumn, ensureCursorVisible } from '../../ui/caret';
+import { updateDesiredColumn, ensureCursorVisible } from '../../ui/view/caret/caret';
 import { resetBlink } from '../../render/caret';
-import { editorCaretState } from '../../ui/caret_state';
+import { editorCaretState } from '../../ui/view/caret/state';
 import { editorDocumentState } from '../../editing/document_state';
 import { registerCodeTabContext, setTabDirty } from '../../../workbench/ui/code_tab/contexts';
-import { editorViewState } from '../../ui/view_state';
+import { editorViewState } from '../../ui/view/state';
 
 export type RenameLineEdit = {
 	row: number;

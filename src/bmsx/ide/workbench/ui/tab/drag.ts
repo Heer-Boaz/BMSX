@@ -5,7 +5,7 @@ import { editorChromeState } from '../chrome_state';
 import { getTabBarTotalHeight } from '../../common/layout';
 import { measureText } from '../../../editor/common/text_layout';
 import { editorPointerState, resetPointerClickTracking } from '../../../editor/input/pointer/state';
-import { editorViewState } from '../../../editor/ui/view_state';
+import { editorViewState } from '../../../editor/ui/view/state';
 import { tabSessionState } from './session_state';
 
 export type TabLayoutEntry = {

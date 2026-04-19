@@ -10,7 +10,7 @@ import type { RectBounds } from '../../../rompack/format';
 import { point_in_rect } from '../../../common/rect';
 import { Runtime } from '../../../machine/runtime/runtime';
 import { api } from '../ui/view/overlay_api';
-import { centerCursorVertically, revealCursor, updateDesiredColumn } from '../ui/caret';
+import { centerCursorVertically, revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';
 import * as constants from '../../common/constants';
 import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/overlay';
 import { resetBlink } from './caret';
@@ -22,10 +22,10 @@ import { activate } from '../../cart_editor';
 import { focusChunkSource } from '../../workbench/contrib/resources/navigation';
 import { setActiveRuntimeErrorOverlay, setExecutionStopHighlight } from '../contrib/runtime_error/navigation';
 import { editorPointerState } from '../input/pointer/state';
-import { editorCaretState } from '../ui/caret_state';
+import { editorCaretState } from '../ui/view/caret/state';
 import { runtimeErrorState } from '../contrib/runtime_error/state';
 import { editorDocumentState } from '../editing/document_state';
-import { editorViewState } from '../ui/view_state';
+import { editorViewState } from '../ui/view/state';
 
 export interface ErrorOverlayBounds {
 	left: number;

@@ -8,14 +8,14 @@ import { isResourceViewActive } from '../../../workbench/ui/tabs';
 import { isCodeTabActive } from '../../../workbench/ui/code_tab/contexts';
 import { getProblemsPanelBounds } from '../../../workbench/contrib/problems/panel/controller';
 import { isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll } from '../../ui/hover_tooltip';
-import { getCodeAreaBounds, getResourceSearchBarBounds, scrollResourceBrowser, scrollRows } from '../../ui/view';
+import { getCodeAreaBounds, getResourceSearchBarBounds, scrollResourceBrowser, scrollRows } from '../../ui/view/view';
 import { moveResourceSearchSelection } from '../../../workbench/contrib/resources/search_catalog';
 import { isShiftDown } from '../keyboard/key_input';
 import { scrollResourceBrowserHorizontal, scrollResourceViewer } from '../../../workbench/input/keyboard/resource_viewer_input';
 import { editorPointerState } from './state';
-import { editorCaretState } from '../../ui/caret_state';
+import { editorCaretState } from '../../ui/view/caret/state';
 import { intellisenseUiState } from '../../contrib/intellisense/ui_state';
-import { editorViewState } from '../../ui/view_state';
+import { editorViewState } from '../../ui/view/state';
 import { resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
 import { completionController } from '../../contrib/suggest/completion_controller';
 

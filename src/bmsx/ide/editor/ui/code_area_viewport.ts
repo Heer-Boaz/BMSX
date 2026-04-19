@@ -1,9 +1,9 @@
 import * as constants from '../../common/constants';
 import { editorFeedbackState } from '../../workbench/common/feedback_state';
 import { ensureVisualLines } from '../common/text_layout';
-import { getCodeAreaBounds, maximumLineLength } from './view';
-import { editorViewState } from './view_state';
-import type { CodeAreaBounds } from './view';
+import { getCodeAreaBounds, maximumLineLength } from './view/view';
+import { editorViewState } from './view/state';
+import type { CodeAreaBounds } from './view/view';
 
 export type CodeAreaViewportMetrics = {
 	rows: number;
@@ -78,6 +78,7 @@ export function resolveCodeAreaViewportMetrics(
 	editorViewState.codeHorizontalScrollbarVisible = horizontalScrollbarWidth !== 0;
 	editorViewState.cachedVisibleRowCount = rows;
 	editorViewState.cachedVisibleColumnCount = columns;
+	editorViewState.cachedMaxScrollColumn = wrapEnabled || maximumColumns <= columns ? 0 : maximumColumns - columns;
 
 	const contentRight = bounds.codeRight - verticalScrollbarWidth - constants.CODE_AREA_RIGHT_MARGIN;
 	codeAreaViewportMetrics.rows = rows;
@@ -88,7 +89,7 @@ export function resolveCodeAreaViewportMetrics(
 	codeAreaViewportMetrics.trackRight = bounds.codeRight - verticalScrollbarWidth;
 	codeAreaViewportMetrics.wrapEnabled = wrapEnabled;
 	codeAreaViewportMetrics.sliceWidth = columns + 2;
-	codeAreaViewportMetrics.maxScrollColumn = wrapEnabled || maximumColumns <= columns ? 0 : maximumColumns - columns;
+	codeAreaViewportMetrics.maxScrollColumn = editorViewState.cachedMaxScrollColumn;
 	return codeAreaViewportMetrics;
 }
 

@@ -2,7 +2,7 @@ import { $ } from '../../../core/engine';
 import { Runtime } from '../../../machine/runtime/runtime';
 import * as luaPipeline from '../../runtime/lua_pipeline';
 import { editorDocumentState } from '../../editor/editing/document_state';
-import { editorViewState } from '../../editor/ui/view_state';
+import { editorViewState } from '../../editor/ui/view/state';
 import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../../workspace/cache';
 import { restoreSnapshot } from '../../editor/editing/undo_controller';
 import { resetNavigationHistoryState } from '../../editor/navigation/navigation_history';

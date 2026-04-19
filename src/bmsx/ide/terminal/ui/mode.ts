@@ -48,7 +48,7 @@ import { TerminalSuggestModel } from '../common/suggest_model';
 import type { MutableTextPosition, TextBuffer } from '../../editor/text/text_buffer';
 import { clamp } from '../../../common/clamp';
 import { COLOR_COMPLETION_PREVIEW_TEXT, TAB_SPACES } from '../../common/constants';
-import { advancePhaseBlink, resetBlinkState } from '../../editor/ui/caret_blink';
+import { advancePhaseBlink, resetBlinkState } from '../../editor/ui/view/caret/blink';
 import { measureWrappedInlineSegmentDecoration, resolveInlineFieldSelectionState } from '../../editor/ui/inline_field_view';
 
 type TerminalOutputKind =

@@ -6,7 +6,7 @@ import { performEditorAction } from '../../../editor/input/commands/actions';
 import { consumeIdeKey, isKeyJustPressed } from '../../../editor/input/keyboard/key_input';
 import { centerDialogBounds } from '../../../editor/render/dialog_layout';
 import { api } from '../../../editor/ui/view/overlay_api';
-import { editorViewState } from '../../../editor/ui/view_state';
+import { editorViewState } from '../../../editor/ui/view/state';
 import type { ActionPromptAction, ActionPromptLayout, ActionPromptState, PointerSnapshot } from '../../../common/models';
 import { save } from '../../ui/code_tab/io';
 import { editorDocumentState } from '../../../editor/editing/document_state';

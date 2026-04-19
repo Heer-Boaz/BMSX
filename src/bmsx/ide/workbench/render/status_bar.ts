@@ -11,7 +11,7 @@ import { Runtime } from '../../../machine/runtime/runtime';
 import { api } from '../../editor/ui/view/overlay_api';
 import { workspaceState } from '../workspace/state';
 import { editorDocumentState } from '../../editor/editing/document_state';
-import { editorViewState } from '../../editor/ui/view_state';
+import { editorViewState } from '../../editor/ui/view/state';
 import { problemsPanel } from '../contrib/problems/panel/controller';
 import { resourcePanel } from '../contrib/resources/panel/controller';
 import { symbolSearchState } from '../../editor/contrib/symbols/search_state';

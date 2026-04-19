@@ -8,7 +8,7 @@ import {
 	CONTEXT_MENU_PADDING_Y,
 	layoutEditorContextMenu,
 } from '../contrib/context_menu/widget';
-import { editorViewState } from '../../editor/ui/view_state';
+import { editorViewState } from '../../editor/ui/view/state';
 const CONTEXT_MENU_SHADOW_OFFSET = 2;
 const Z_CONTEXT_MENU_SHADOW = 2199;
 const Z_CONTEXT_MENU_BACKGROUND = 2200;

@@ -4,7 +4,7 @@ import { applyInlineFieldEditing } from '../../../ui/inline_text_field';
 import { applyResourceSearchSelection, closeResourceSearch, focusEditorFromResourceSearch } from '../../../../workbench/contrib/resources/search';
 import { applyLineJumpFieldText, openLineJump } from '../../../contrib/find/line_jump';
 import { consumeIdeKey, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../keyboard/key_input';
-import { resourceSearchWindowCapacity } from '../../../ui/view';
+import { resourceSearchWindowCapacity } from '../../../ui/view/view';
 import { ensureResourceSearchSelectionVisible, moveResourceSearchSelection, updateResourceSearchMatches } from '../../../../workbench/contrib/resources/search_catalog';
 import { openGlobalSymbolSearch, openSymbolSearch } from '../../../contrib/symbols/search';
 import { lineJumpState } from '../../../contrib/find/widget_state';

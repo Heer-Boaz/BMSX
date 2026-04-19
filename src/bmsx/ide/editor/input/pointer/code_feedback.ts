@@ -1,7 +1,7 @@
 import { isCodeTabActive } from '../../../workbench/ui/code_tab/contexts';
 import { clearHoverTooltip, clearGotoHoverHighlight, refreshGotoHoverHighlight, updateHoverTooltip } from '../../contrib/intellisense/engine';
-import { resolvePointerTextPosition } from '../../ui/view';
-import type { CodeAreaBounds } from '../../ui/view';
+import { resolvePointerTextPosition } from '../../ui/view/view';
+import type { CodeAreaBounds } from '../../ui/view/view';
 import type { CodeTabContext, PointerSnapshot } from '../../../common/models';
 import { isAltDown } from '../keyboard/key_input';
 

@@ -2,7 +2,7 @@ import { isEditableCodeTab } from '../../../ui/code_tab/contexts';
 import { resolveContextMenuToken } from '../../../../editor/contrib/intellisense/engine';
 import { buildEditorContextMenuEntries } from '../../../contrib/context_menu/entries';
 import { editorContextMenuState } from '../../../contrib/context_menu/state';
-import { getCodeAreaBounds, resolvePointerTextPosition } from '../../../../editor/ui/view';
+import { getCodeAreaBounds, resolvePointerTextPosition } from '../../../../editor/ui/view/view';
 import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from '../../../contrib/context_menu/widget';
 import { executeEditorContextMenuAction } from '../../../contrib/context_menu/actions';
 import type { PointerSnapshot } from '../../../../common/models';

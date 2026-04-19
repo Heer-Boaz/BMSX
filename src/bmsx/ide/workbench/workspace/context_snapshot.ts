@@ -1,7 +1,7 @@
 import { clamp_safe } from '../../../common/clamp';
 import type { CodeTabContext, EditorSnapshot, Position } from '../../common/models';
 import { editorDocumentState } from '../../editor/editing/document_state';
-import { editorViewState } from '../../editor/ui/view_state';
+import { editorViewState } from '../../editor/ui/view/state';
 import { getTextSnapshot } from '../../editor/text/source_text';
 import type { SnapshotMetadata } from './models';
 import { getActiveCodeTabContextId } from '../ui/code_tab/contexts';

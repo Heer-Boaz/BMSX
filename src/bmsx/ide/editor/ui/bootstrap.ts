@@ -14,14 +14,14 @@ import { assertMonospace } from '../common/text_layout';
 import * as constants from '../../common/constants';
 import type { Viewport } from '../../../rompack/format';
 import { editorDocumentState } from '../editing/document_state';
-import { editorViewState } from './view_state';
+import { editorViewState } from './view/state';
 import { editorSearchState, lineJumpState } from '../contrib/find/widget_state';
 import { symbolSearchState } from '../contrib/symbols/search_state';
 import {
 	applyViewportSize,
 	configureFontVariant,
 	resetResourcePanelState,
-} from './view';
+} from './view/view';
 import { applyResourceSearchFieldText } from '../../workbench/contrib/resources/search';
 import { applyLineJumpFieldText } from '../contrib/find/line_jump';
 import { applyCreateResourceFieldText } from '../../workbench/contrib/resources/create';
@@ -77,6 +77,7 @@ export function initializeCartEditor(viewport: Viewport): void {
 	editorViewState.codeHorizontalScrollbarVisible = false;
 	editorViewState.cachedVisibleRowCount = 1;
 	editorViewState.cachedVisibleColumnCount = 1;
+	editorViewState.cachedMaxScrollColumn = 0;
 	initializeTabs(createEntryTabContext());
 	resetResourcePanelState();
 	editorDocumentState.desiredColumn = editorDocumentState.cursorColumn;

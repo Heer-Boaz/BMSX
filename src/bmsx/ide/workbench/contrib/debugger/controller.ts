@@ -7,7 +7,7 @@ import { showEditorMessage } from '../../common/feedback_state';
 import { focusChunkSource } from '../resources/navigation';
 import { getActiveCodeTabContext } from '../../ui/code_tab/contexts';
 import { clamp, clamp_fallback } from '../../../../common/clamp';
-import { centerCursorVertically, ensureCursorVisible, setCursorPosition, updateDesiredColumn } from '../../../editor/ui/caret';
+import { centerCursorVertically, ensureCursorVisible, setCursorPosition, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
 import { resetPointerClickTracking, editorPointerState } from '../../../editor/input/pointer/state';
 import { resetBlink } from '../../../editor/render/caret';
 import type { LuaCallFrame } from '../../../../lua/runtime';
@@ -15,7 +15,7 @@ import { extractErrorMessage, type LuaDebuggerPauseSignal, type StackTraceFrame 
 import * as constants from '../../../common/constants';
 import { findFunctionDefinitionRowInActiveFile } from '../../../editor/contrib/intellisense/engine';
 import { clearExecutionStopHighlights, setExecutionStopHighlight, clearRuntimeErrorOverlay } from '../../../editor/contrib/runtime_error/navigation';
-import { editorCaretState } from '../../../editor/ui/caret_state';
+import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorDocumentState } from '../../../editor/editing/document_state';
 
 type DebuggerResumeCommand = 'continue' | 'step_over' | 'step_into' | 'step_out' | 'ignore_exception' | 'step_out_exception';

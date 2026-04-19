@@ -5,7 +5,7 @@ import { measureText } from '../../editor/common/text_layout';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { api } from '../../editor/ui/view/overlay_api';
 import { buildTopBarMenuEntries, MENU_COMMANDS, MENU_IDS, TopBarMenuEntry } from '../ui/top_bar/menu';
-import { editorViewState } from '../../editor/ui/view_state';
+import { editorViewState } from '../../editor/ui/view/state';
 
 const Z_TOP_BAR_BACKGROUND = 10;
 const Z_MENU_BUTTON = 14;

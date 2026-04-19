@@ -7,7 +7,7 @@ import { beginTabDrag, endTabDrag } from '../../../ui/tab/drag';
 import { getTabBarTotalHeight } from '../../../common/layout';
 import { consumeChromePointerPress } from '../../../../editor/input/pointer/chrome_press';
 import { editorPointerState } from '../../../../editor/input/pointer/state';
-import { editorViewState } from '../../../../editor/ui/view_state';
+import { editorViewState } from '../../../../editor/ui/view/state';
 import { tabSessionState } from '../../../ui/tab/session_state';
 
 export function handleTabBarPointer(snapshot: PointerSnapshot): boolean {

@@ -1,10 +1,10 @@
 import type { PointerSnapshot } from '../../../../common/models';
 import { clearGotoHoverHighlight } from '../../../../editor/contrib/intellisense/engine';
 import { editorChromeState } from '../../../ui/chrome_state';
-import { getResourcePanelWidth, hideResourcePanel } from '../../../../editor/ui/view';
+import { getResourcePanelWidth, hideResourcePanel } from '../../../../editor/ui/view/view';
 import * as constants from '../../../../common/constants';
 import { editorPointerState, resetPointerClickTracking } from '../../../../editor/input/pointer/state';
-import { editorViewState } from '../../../../editor/ui/view_state';
+import { editorViewState } from '../../../../editor/ui/view/state';
 import { resourcePanel } from '../../../contrib/resources/panel/controller';
 
 export function handleResourcePanelResizePointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {

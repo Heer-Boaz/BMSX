@@ -6,16 +6,16 @@ import { editorRuntimeState } from '../common/runtime_state';
 import { invalidateLuaCommentContextFromRow } from '../../common/text';
 import { capturePreMutationSource } from '../common/text_runtime';
 import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../../workbench/ui/code_tab/contexts';
-import { notifyReadOnlyEdit } from '../ui/view';
-import { updateDesiredColumn } from '../ui/caret';
+import { notifyReadOnlyEdit } from '../ui/view/view';
+import { updateDesiredColumn } from '../ui/view/caret/caret';
 import { resetBlink } from '../render/caret';
-import { ensureCursorVisible } from '../ui/caret';
+import { ensureCursorVisible } from '../ui/view/caret/caret';
 import { requestSemanticRefresh } from '../contrib/intellisense/engine';
 import type { EditorSnapshot, Position } from '../../common/models';
-import { editorCaretState } from '../ui/caret_state';
+import { editorCaretState } from '../ui/view/caret/state';
 import { editorDocumentState } from './document_state';
 import { isActiveCodeTabReadOnly } from '../../workbench/ui/code_tab/contexts';
-import { editorViewState } from '../ui/view_state';
+import { editorViewState } from '../ui/view/state';
 
 export function prepareUndo(key: string, allowMerge: boolean): void {
 	if (isActiveCodeTabReadOnly()) {

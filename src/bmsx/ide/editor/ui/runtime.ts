@@ -10,7 +10,7 @@ import { cancelGlobalSearchJob, startSearchJob } from '../contrib/find/search';
 import { editorRuntimeState } from '../common/runtime_state';
 import { editorFeedbackState, setEditorFeedbackActive, showEditorMessage, updateEditorMessage } from '../../workbench/common/feedback_state';
 import { bumpTextVersion } from '../common/text_runtime';
-import { ensureCursorVisible } from './caret';
+import { ensureCursorVisible } from './view/caret/caret';
 import { drawProblemsPanel } from '../../workbench/contrib/problems/panel/controller';
 import { renderTopBar, renderTopBarDropdown } from '../../workbench/render/top_bar';
 import { renderTabBar } from '../../workbench/render/tab_bar';
@@ -18,7 +18,7 @@ import { renderCodeArea } from '../render/code_area/area';
 import { renderStatusBar } from '../../workbench/render/status_bar';
 import { drawResourcePanel, drawResourceViewer } from '../../workbench/render/resource_panel';
 import { editorDocumentState } from '../editing/document_state';
-import { editorViewState } from './view_state';
+import { editorViewState } from './view/state';
 import { editorSearchState, lineJumpState } from '../contrib/find/widget_state';
 import { renderInlineWidgets } from '../contrib/quick_input/inline_widget';
 import { renderRuntimeFaultOverlay } from '../render/error_overlay';
@@ -33,7 +33,7 @@ import { clearWorkspaceCachedSources } from '../../workspace/cache';
 import { clearBackgroundTasks } from '../../common/background_tasks';
 import { clearGotoHoverHighlight } from '../contrib/intellisense/engine';
 import { updateRuntimeErrorOverlay } from '../contrib/runtime_error/overlay';
-import { hideResourcePanel } from './view';
+import { hideResourcePanel } from './view/view';
 import {
 	applySearchFieldText,
 	cancelSearchJob,
@@ -41,12 +41,12 @@ import {
 import { clearExecutionStopHighlights, syncRuntimeErrorOverlayFromContext } from '../contrib/runtime_error/navigation';
 import { processDiagnosticsQueue } from '../contrib/diagnostics/controller';
 import { editorDiagnosticsState } from '../contrib/diagnostics/state';
-import { updateDesiredColumn } from './caret';
+import { updateDesiredColumn } from './view/caret/caret';
 import { applyLineJumpFieldText } from '../contrib/find/line_jump';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt } from '../../workbench/contrib/resources/create';
 import { createResourceState } from '../../workbench/contrib/resources/widget_state';
 import { editorPointerState } from '../input/pointer/state';
-import { editorCaretState } from './caret_state';
+import { editorCaretState } from './view/caret/state';
 import { captureKeys } from '../input/keyboard/capture_keys';
 import { editorInput } from '../input/keyboard/text_input';
 import { completionController } from '../contrib/suggest/completion_controller';

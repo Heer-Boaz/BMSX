@@ -10,7 +10,7 @@ import { Runtime } from '../../../machine/runtime/runtime';
 import { buildDirtyFilePath } from '../../workbench/workspace/io';
 import { getWorkspaceCachedSource } from '../../workspace/cache';
 import { editorDocumentState } from '../editing/document_state';
-import { editorViewState } from '../ui/view_state';
+import { editorViewState } from '../ui/view/state';
 import { editorRuntimeState } from './runtime_state';
 import { editorSearchState } from '../contrib/find/widget_state';
 

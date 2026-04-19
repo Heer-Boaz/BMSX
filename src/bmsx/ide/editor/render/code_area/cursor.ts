@@ -5,7 +5,7 @@ import * as constants from '../../../common/constants';
 import { api } from '../../ui/view/overlay_api';
 import { drawHighlightSlice } from './highlights';
 import { editorDocumentState } from '../../editing/document_state';
-import { editorViewState } from '../../ui/view_state';
+import { editorViewState } from '../../ui/view/state';
 
 type InlineCompletionPreview = {
 	row: number;

@@ -4,7 +4,7 @@ import { Runtime } from '../../../machine/runtime/runtime';
 import * as workbenchMode from '../../runtime/workbench_mode';
 import { editorDocumentState } from '../../editor/editing/document_state';
 import { fetchWorkspaceFile } from '../../workspace/workspace';
-import { setFontVariant } from '../../editor/ui/view';
+import { setFontVariant } from '../../editor/ui/view/view';
 import { initializeTabs } from '../ui/tabs';
 import {
 	clearCodeTabContexts,

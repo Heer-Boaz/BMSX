@@ -2,10 +2,10 @@ import { point_in_rect } from '../../../../../common/rect';
 import * as constants from '../../../../common/constants';
 import { applySearchSelection, ensureSearchSelectionVisible, processInlineFieldPointer } from '../../../contrib/find/search';
 import { closeLineJump } from '../../../contrib/find/line_jump';
-import { getSearchBarBounds, searchResultEntryHeight, searchVisibleResultCount } from '../../../ui/view';
+import { getSearchBarBounds, searchResultEntryHeight, searchVisibleResultCount } from '../../../ui/view/view';
 import type { PointerSnapshot } from '../../../../common/models';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
-import { editorViewState } from '../../../ui/view_state';
+import { editorViewState } from '../../../ui/view/state';
 import { editorSearchState } from '../../../contrib/find/widget_state';
 
 export function handleSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {

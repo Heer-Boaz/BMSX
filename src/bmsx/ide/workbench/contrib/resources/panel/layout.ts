@@ -2,9 +2,9 @@ import { $ } from '../../../../../core/engine';
 import type { RectBounds } from '../../../../../rompack/format';
 import { clamp } from '../../../../../common/clamp';
 import * as constants from '../../../../common/constants';
-import { codeViewportTop } from '../../../../editor/ui/view';
+import { codeViewportTop } from '../../../../editor/ui/view/view';
 import { bottomMargin } from '../../../common/layout';
-import { editorViewState } from '../../../../editor/ui/view_state';
+import { editorViewState } from '../../../../editor/ui/view/state';
 
 export function defaultResourcePanelRatio(): number {
 	const metrics = $.platform.gameviewHost.getCapability('viewport-metrics').getViewportMetrics();

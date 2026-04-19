@@ -1,14 +1,14 @@
 import { point_in_rect } from '../../../../../common/rect';
 import * as constants from '../../../../common/constants';
 import { closeSearch, processInlineFieldPointer } from '../../../contrib/find/search';
-import { getResourceSearchBarBounds, resourceSearchEntryHeight, resourceSearchVisibleResultCount } from '../../../ui/view';
+import { getResourceSearchBarBounds, resourceSearchEntryHeight, resourceSearchVisibleResultCount } from '../../../ui/view/view';
 import type { PointerSnapshot } from '../../../../common/models';
 import { applyResourceSearchSelection } from '../../../../workbench/contrib/resources/search';
 import { ensureResourceSearchSelectionVisible } from '../../../../workbench/contrib/resources/search_catalog';
 import { closeLineJump } from '../../../contrib/find/line_jump';
 import { closeSymbolSearch } from '../../../contrib/symbols/shared';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
-import { editorViewState } from '../../../ui/view_state';
+import { editorViewState } from '../../../ui/view/state';
 import { resourceSearchState } from '../../../../workbench/contrib/resources/widget_state';
 
 export function handleResourceSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {

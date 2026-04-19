@@ -1,13 +1,13 @@
 import { point_in_rect } from '../../../../../common/rect';
 import * as constants from '../../../../common/constants';
 import { closeSearch, processInlineFieldPointer } from '../../../contrib/find/search';
-import { getSymbolSearchBarBounds, symbolSearchEntryHeight, symbolSearchVisibleResultCount } from '../../../ui/view';
+import { getSymbolSearchBarBounds, symbolSearchEntryHeight, symbolSearchVisibleResultCount } from '../../../ui/view/view';
 import type { PointerSnapshot } from '../../../../common/models';
 import { closeLineJump } from '../../../contrib/find/line_jump';
 import { applySymbolSearchSelection } from '../../../contrib/symbols/search';
 import { ensureSymbolSearchSelectionVisible } from '../../../contrib/symbols/shared';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
-import { editorViewState } from '../../../ui/view_state';
+import { editorViewState } from '../../../ui/view/state';
 import { symbolSearchState } from '../../../contrib/symbols/search_state';
 
 export function handleSymbolSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {

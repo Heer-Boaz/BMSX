@@ -12,7 +12,7 @@ import * as constants from '../../../common/constants';
 import { setEditorCaseInsensitivity } from '../../render/text_renderer';
 import { editorDocumentState } from '../../editing/document_state';
 import { getCodeTabContexts } from '../../../workbench/ui/code_tab/contexts';
-import { editorViewState } from '../../ui/view_state';
+import { editorViewState } from '../../ui/view/state';
 
 export function performEditorAction(action: ActionPromptAction): boolean {
 	switch (action) {

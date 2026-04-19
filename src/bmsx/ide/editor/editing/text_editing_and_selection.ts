@@ -16,7 +16,7 @@ import { editorRuntimeState } from '../common/runtime_state';
 import { showEditorMessage } from '../../workbench/common/feedback_state';
 import type { EditContext, Position } from '../../common/models';
 import { getActiveCodeTabContext } from '../../workbench/ui/code_tab/contexts';
-import { revealCursor, updateDesiredColumn } from '../ui/caret';
+import { revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';
 import { markDiagnosticsDirty } from '../contrib/diagnostics/analysis';
 import { completionController } from '../contrib/suggest/completion_controller';
 import { currentLine } from '../common/text_layout';
@@ -32,7 +32,7 @@ import { prepareUndo, applyUndoableReplace, recordEditContext } from './undo_con
 import { formatAemDocument } from '../../language/aem/editor';
 import { editorDocumentState } from './document_state';
 import { isActiveCodeTabReadOnly } from '../../workbench/ui/code_tab/contexts';
-import { editorViewState } from '../ui/view_state';
+import { editorViewState } from '../ui/view/state';
 import {
 	clearSingleCursorSelection,
 	collapseSingleCursorSelection,

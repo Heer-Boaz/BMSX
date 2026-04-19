@@ -3,12 +3,20 @@ import { api } from './view/overlay_api';
 import * as constants from '../../common/constants';
 import { drawEditorText } from '../render/text_renderer';
 import type { CodeHoverTooltip, PointerSnapshot } from '../../common/models';
-import { ensureVisualLines, measureText, positionToVisualIndex, visibleColumnCount, visibleRowCount, visualIndexToSegment } from '../common/text_layout';
-import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from './view';
+import { ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment } from '../common/text_layout';
+import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from './view/view';
 import { point_in_rect } from '../../../common/rect';
 import { intellisenseUiState } from '../contrib/intellisense/ui_state';
 import { editorDocumentState } from '../editing/document_state';
-import { editorViewState } from './view_state';
+import { editorViewState } from './view/state';
+import type { RectBounds } from '../../../rompack/format';
+
+const hoverTooltipBubbleBounds: RectBounds = {
+	left: 0,
+	top: 0,
+	right: 0,
+	bottom: 0,
+};
 
 export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: number): void {
 	const tooltip = intellisenseUiState.hoverTooltip;
@@ -20,8 +28,8 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 		tooltip.bubbleBounds = null;
 		return;
 	}
-	const visibleRows = visibleRowCount();
 	ensureVisualLines();
+	const visibleRows = editorViewState.cachedVisibleRowCount;
 	const visualIndex = positionToVisualIndex(tooltip.row, tooltip.startColumn);
 	const relativeRow = visualIndex - editorViewState.scrollRow;
 	if (relativeRow < 0 || relativeRow >= visibleRows) {
@@ -44,7 +52,7 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	}
 	const columnCount = editorViewState.wordWrapEnabled
 		? Math.max(0, segment.endColumn - columnStart)
-		: visibleColumnCount() + 8;
+		: editorViewState.cachedVisibleColumnCount + 8;
 	const slice = editorViewState.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
 	const sliceStartDisplay = slice.startDisplay;
 	const sliceEndLimit = editorViewState.wordWrapEnabled ? editorViewState.layout.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
@@ -61,16 +69,17 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	tooltip.scrollOffset = clamp(tooltip.scrollOffset, 0, maxOffset);
 	const visibleCount = Math.max(1, Math.min(maxVisible, content.length - tooltip.scrollOffset));
 	tooltip.visibleLineCount = visibleCount;
-	const visibleLines = content.slice(tooltip.scrollOffset, tooltip.scrollOffset + visibleCount);
+	const visibleStart = tooltip.scrollOffset;
+	const visibleEnd = visibleStart + visibleCount;
 	let maxLineWidth = 0;
-	for (const line of visibleLines) {
-		const width = measureText(line);
+	for (let i = visibleStart; i < visibleEnd; i += 1) {
+		const width = measureText(content[i]);
 		if (width > maxLineWidth) {
 			maxLineWidth = width;
 		}
 	}
 	const bubbleWidth = maxLineWidth + constants.HOVER_TOOLTIP_PADDING_X * 2;
-	const bubbleHeight = visibleLines.length * editorViewState.lineHeight + constants.HOVER_TOOLTIP_PADDING_Y * 2;
+	const bubbleHeight = visibleCount * editorViewState.lineHeight + constants.HOVER_TOOLTIP_PADDING_Y * 2;
 	const viewportRight = editorViewState.viewportWidth - 1;
 	let bubbleLeft = expressionEndX + editorViewState.spaceAdvance;
 	if (bubbleLeft + bubbleWidth > viewportRight) {
@@ -93,11 +102,15 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	}
 	api.fill_rect_color(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, undefined, constants.HOVER_TOOLTIP_BACKGROUND);
 	api.blit_rect(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, undefined, constants.HOVER_TOOLTIP_BORDER);
-	for (let i = 0; i < visibleLines.length; i += 1) {
+	for (let i = 0; i < visibleCount; i += 1) {
 		const lineY = bubbleTop + constants.HOVER_TOOLTIP_PADDING_Y + i * editorViewState.lineHeight;
-		drawEditorText(editorViewState.font, visibleLines[i], bubbleLeft + constants.HOVER_TOOLTIP_PADDING_X, lineY, undefined, constants.COLOR_STATUS_TEXT);
+		drawEditorText(editorViewState.font, content[visibleStart + i], bubbleLeft + constants.HOVER_TOOLTIP_PADDING_X, lineY, undefined, constants.COLOR_STATUS_TEXT);
 	}
-	tooltip.bubbleBounds = { left: bubbleLeft, top: bubbleTop, right: bubbleLeft + bubbleWidth, bottom: bubbleTop + bubbleHeight };
+	hoverTooltipBubbleBounds.left = bubbleLeft;
+	hoverTooltipBubbleBounds.top = bubbleTop;
+	hoverTooltipBubbleBounds.right = bubbleLeft + bubbleWidth;
+	hoverTooltipBubbleBounds.bottom = bubbleTop + bubbleHeight;
+	tooltip.bubbleBounds = hoverTooltipBubbleBounds;
 }
 
 export function adjustHoverTooltipScroll(stepCount: number): boolean {

@@ -2,19 +2,25 @@ import { clamp } from '../../../common/clamp';
 import { SCROLLBAR_MIN_THUMB_HEIGHT } from '../../common/constants';
 import type { ScrollbarKind } from '../../common/models';
 import type { RectBounds } from '../../../rompack/format';
-import { computeMaximumScrollColumn, getCodeAreaBounds } from './view';
+import { getCodeAreaBounds } from './view/view';
 import { ensureVisualLines } from '../common/text_layout';
 import { resourcePanel } from '../../workbench/contrib/resources/panel/controller';
 import { api } from './view/overlay_api';
 import { setResourceViewerScroll } from '../../workbench/contrib/resources/viewer';
 import { getActiveResourceViewer } from '../../workbench/contrib/resources/view_tabs';
-import { editorCaretState } from './caret_state';
-import { editorViewState } from './view_state';
+import { editorCaretState } from './view/caret/state';
+import { editorViewState } from './view/state';
 
 export class Scrollbar {
 	public readonly orientation: 'vertical' | 'horizontal';
 	private track: RectBounds = null;
 	private thumb: RectBounds = null;
+	private readonly thumbRect: RectBounds = {
+		left: 0,
+		top: 0,
+		right: 0,
+		bottom: 0,
+	};
 	private scrollValue = 0;
 	private maxScrollValue = 0;
 	private viewportSize = 0;
@@ -58,11 +64,19 @@ export class Scrollbar {
 		const normalized = this.maxScrollValue === 0 ? 0 : this.scrollValue / this.maxScrollValue;
 		const thumbStart = trackStart + normalized * maxThumbTravel;
 		const thumbEnd = thumbStart + thumbLength;
+		const thumb = this.thumbRect;
 		if (this.orientation === 'vertical') {
-			this.thumb = { left: this.track.left, top: thumbStart, right: this.track.right, bottom: thumbEnd };
+			thumb.left = this.track.left;
+			thumb.top = thumbStart;
+			thumb.right = this.track.right;
+			thumb.bottom = thumbEnd;
 		} else {
-			this.thumb = { left: thumbStart, top: this.track.top, right: thumbEnd, bottom: this.track.bottom };
+			thumb.left = thumbStart;
+			thumb.top = this.track.top;
+			thumb.right = thumbEnd;
+			thumb.bottom = this.track.bottom;
 		}
+		this.thumb = thumb;
 	}
 
 	public draw(trackColor: number, thumbColor: number): void {
@@ -157,6 +171,8 @@ export class Scrollbar {
 
 export type ScrollbarMap = Record<ScrollbarKind, Scrollbar>;
 
+const SCROLLBAR_HIT_ORDER: ScrollbarKind[] = ['codeVertical', 'codeHorizontal', 'resourceVertical', 'resourceHorizontal', 'viewerVertical'];
+
 export class ScrollbarController {
 	private active: { kind: ScrollbarKind; pointerOffset: number } = null;
 
@@ -176,9 +192,8 @@ export class ScrollbarController {
 	 */
 	public begin(pointerX: number, pointerY: number, primaryPressed: boolean, bottomMargin: number, apply: (kind: ScrollbarKind, scroll: number) => void): boolean {
 		if (!primaryPressed) return false;
-		const order: ScrollbarKind[] = ['codeVertical', 'codeHorizontal', 'resourceVertical', 'resourceHorizontal', 'viewerVertical'];
-		for (let i = 0; i < order.length; i += 1) {
-			const kind = order[i];
+		for (let i = 0; i < SCROLLBAR_HIT_ORDER.length; i += 1) {
+			const kind = SCROLLBAR_HIT_ORDER[i];
 			const scrollbar = this.scrollbars[kind];
 			const track = scrollbar.getTrack();
 			if (!track) continue;
@@ -227,13 +242,10 @@ export class ScrollbarController {
 }
 
 export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void {
-	if (Number.isNaN(scroll)) {
-		return;
-	}
 	switch (kind) {
 		case 'codeVertical': {
 			ensureVisualLines();
-			editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(Math.round(scroll), editorViewState.layout.getVisualLineCount(), Math.max(1, editorViewState.cachedVisibleRowCount));
+			editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(Math.round(scroll), editorViewState.layout.getVisualLineCount(), editorViewState.cachedVisibleRowCount);
 			editorCaretState.cursorRevealSuspended = true;
 			break;
 		}
@@ -242,7 +254,7 @@ export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void 
 				editorViewState.scrollColumn = 0;
 				break;
 			}
-			editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(Math.round(scroll), computeMaximumScrollColumn());
+			editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(Math.round(scroll), editorViewState.cachedMaxScrollColumn);
 			editorCaretState.cursorRevealSuspended = true;
 			break;
 		}

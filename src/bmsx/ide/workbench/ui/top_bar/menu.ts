@@ -2,7 +2,7 @@ import { resourcePanel } from '../../contrib/resources/panel/controller';
 import { problemsPanel } from '../../contrib/problems/panel/controller';
 import { editorDebuggerState } from '../../contrib/debugger/state';
 import { editorDocumentState } from '../../../editor/editing/document_state';
-import { editorViewState } from '../../../editor/ui/view_state';
+import { editorViewState } from '../../../editor/ui/view/state';
 
 export const MENU_IDS = ['file', 'run', 'view', 'debug'] as const;
 export type MenuId = typeof MENU_IDS[number];

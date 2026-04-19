@@ -1,6 +1,6 @@
 import { point_in_rect } from '../../../../../common/rect';
 import { processInlineFieldPointer } from '../../../contrib/find/search';
-import { getCreateResourceBarBounds } from '../../../ui/view';
+import { getCreateResourceBarBounds } from '../../../ui/view/view';
 import type { PointerSnapshot } from '../../../../common/models';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
 import { createResourceState } from '../../../../workbench/contrib/resources/widget_state';

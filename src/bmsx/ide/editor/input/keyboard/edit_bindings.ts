@@ -1,7 +1,7 @@
 import { jumpToNextMatch, jumpToPreviousMatch } from '../../contrib/find/search';
 import { closeActiveTab } from '../../../workbench/ui/tabs';
 import { isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab } from '../../../workbench/ui/code_tab/contexts';
-import { notifyReadOnlyEdit } from '../../ui/view';
+import { notifyReadOnlyEdit } from '../../ui/view/view';
 import { toggleLineComments } from '../../editing/line_comments';
 import { redo, undo } from '../../editing/undo_controller';
 import { applyDocumentFormatting, copySelectionToClipboard, cutLineToClipboard, cutSelectionToClipboard, pasteFromClipboard } from '../../editing/text_editing_and_selection';

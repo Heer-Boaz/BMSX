@@ -1,6 +1,6 @@
 import { $ } from '../../../../core/engine';
 import type { CodeTabContext, PointerSnapshot } from '../../../common/models';
-import { getCodeAreaBounds } from '../../ui/view';
+import { getCodeAreaBounds } from '../../ui/view/view';
 import { handleCodeAreaPointerGuards } from './code_guard';
 import { handleCodeAreaPrimaryPressPointer } from './code_primary_press';
 import { handleCodeAreaGutterPointer, handleCodeAreaSecondaryPointer } from './code_secondary_actions';

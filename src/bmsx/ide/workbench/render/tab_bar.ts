@@ -8,7 +8,7 @@ import { editorChromeState } from '../ui/chrome_state';
 import { measureText } from '../../editor/common/text_layout';
 import { editorPointerState } from '../../editor/input/pointer/state';
 import { drawEditorText } from '../../editor/render/text_renderer';
-import { editorViewState } from '../../editor/ui/view_state';
+import { editorViewState } from '../../editor/ui/view/state';
 import { tabSessionState } from '../ui/tab/session_state';
 
 type TabMetrics = {

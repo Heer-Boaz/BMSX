@@ -1,6 +1,6 @@
 import { resourcePanel } from '../../../workbench/contrib/resources/panel/controller';
 import { toggleProblemsPanel } from '../../../workbench/contrib/problems/panel/controller';
-import { toggleWordWrap } from '../../ui/view';
+import { toggleWordWrap } from '../../ui/view/view';
 import type { EditorCommandId } from './dispatcher';
 
 export type EditorViewCommandId =

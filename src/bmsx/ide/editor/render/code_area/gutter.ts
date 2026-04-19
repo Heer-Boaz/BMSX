@@ -1,28 +1,19 @@
 import type { Font } from '../../../../render/shared/bmsx_font';
 import * as constants from '../../../common/constants';
 import { api } from '../../ui/view/overlay_api';
-import { editorViewState } from '../../ui/view_state';
+import { editorViewState } from '../../ui/view/state';
+import type { CodeAreaViewport } from '../../ui/code_area_viewport';
 
-export function drawCodeAreaBackground(
-	codeLeft: number,
-	codeTop: number,
-	codeRight: number,
-	codeBottom: number,
-	gutterLeft: number,
-	gutterRight: number,
-	contentBottom: number,
-): void {
-	api.fill_rect(codeLeft, codeTop, codeRight, codeBottom, undefined, constants.COLOR_CODE_BACKGROUND);
-	if (gutterRight > gutterLeft) {
-		api.fill_rect(gutterLeft, codeTop, gutterRight, contentBottom, undefined, constants.COLOR_GUTTER_BACKGROUND);
+export function drawCodeAreaBackground(viewport: CodeAreaViewport): void {
+	api.fill_rect(viewport.codeLeft, viewport.codeTop, viewport.codeRight, viewport.codeBottom, undefined, constants.COLOR_CODE_BACKGROUND);
+	if (viewport.gutterRight > viewport.gutterLeft) {
+		api.fill_rect(viewport.gutterLeft, viewport.codeTop, viewport.gutterRight, viewport.contentBottom, undefined, constants.COLOR_GUTTER_BACKGROUND);
 	}
 }
 
 export function drawCodeAreaRowChrome(
 	renderFont: Font,
-	gutterLeft: number,
-	gutterRight: number,
-	contentRight: number,
+	viewport: CodeAreaViewport,
 	rowY: number,
 	lineIndex: number,
 	isPrimaryVisualSegment: boolean,
@@ -32,23 +23,23 @@ export function drawCodeAreaRowChrome(
 	breakpointLaneWidth: number,
 ): void {
 	if (isExecutionStopRow) {
-		api.fill_rect_color(gutterLeft, rowY, gutterRight, rowY + editorViewState.lineHeight, undefined, constants.EXECUTION_STOP_OVERLAY);
-		api.fill_rect_color(gutterRight, rowY, contentRight, rowY + editorViewState.lineHeight, undefined, constants.EXECUTION_STOP_OVERLAY);
+		api.fill_rect_color(viewport.gutterLeft, rowY, viewport.gutterRight, rowY + editorViewState.lineHeight, undefined, constants.EXECUTION_STOP_OVERLAY);
+		api.fill_rect_color(viewport.gutterRight, rowY, viewport.contentRight, rowY + editorViewState.lineHeight, undefined, constants.EXECUTION_STOP_OVERLAY);
 	} else if (isCursorLine) {
-		api.fill_rect_color(gutterLeft, rowY, gutterRight, rowY + editorViewState.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
-		api.fill_rect_color(gutterRight, rowY, contentRight, rowY + editorViewState.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
+		api.fill_rect_color(viewport.gutterLeft, rowY, viewport.gutterRight, rowY + editorViewState.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
+		api.fill_rect_color(viewport.gutterRight, rowY, viewport.contentRight, rowY + editorViewState.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
 	}
-	if (gutterRight > gutterLeft && isPrimaryVisualSegment) {
+	if (viewport.gutterRight > viewport.gutterLeft && isPrimaryVisualSegment) {
 		const lineNumberText = `${lineIndex + 1}`;
-		const lineNumberX = gutterRight - 1 - editorViewState.font.measure(lineNumberText);
+		const lineNumberX = viewport.gutterRight - 1 - editorViewState.font.measure(lineNumberText);
 		const lineNumberColor = isExecutionStopRow || isCursorLine
 			? constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT
 			: constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
 		api.blit_text_inline_with_font(lineNumberText, lineNumberX, rowY, undefined, lineNumberColor, renderFont);
 	}
-	if (hasBreakpointForRow && gutterRight > gutterLeft && isPrimaryVisualSegment) {
-		const markerLeft = gutterLeft + 1;
-		const markerRight = gutterLeft + breakpointLaneWidth - 1;
+	if (hasBreakpointForRow && viewport.gutterRight > viewport.gutterLeft && isPrimaryVisualSegment) {
+		const markerLeft = viewport.gutterLeft + 1;
+		const markerRight = viewport.gutterLeft + breakpointLaneWidth - 1;
 		const markerTop = rowY + 1;
 		const markerBottom = rowY + editorViewState.lineHeight - 1;
 		api.fill_rect_color(markerLeft, markerTop, markerRight, markerBottom, undefined, constants.COLOR_BREAKPOINT_BORDER);

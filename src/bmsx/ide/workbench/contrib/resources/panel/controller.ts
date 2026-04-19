@@ -7,7 +7,7 @@ import type { RectBounds } from '../../../../../rompack/format';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { measureText } from '../../../../editor/common/text_layout';
 import type { CallHierarchyView } from '../../../../editor/contrib/call_hierarchy/view';
-import { editorViewState } from '../../../../editor/ui/view_state';
+import { editorViewState } from '../../../../editor/ui/view/state';
 import {
 	findResourcePanelIndexByAssetId,
 	findResourcePanelIndexByCallHierarchyNodeId,

@@ -1,6 +1,6 @@
 import { clamp } from '../../../../common/clamp';
 import { editorDocumentState } from '../../editing/document_state';
-import { editorViewState } from '../../ui/view_state';
+import { editorViewState } from '../../ui/view/state';
 import {
 	getApiCompletionData,
 	getKeywordCompletions,
@@ -33,7 +33,7 @@ import { assignRowColumn } from '../../../common/state';
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import { getActiveCodeTabContext, isActiveLuaCodeTab } from '../../../workbench/ui/code_tab/contexts';
 import { prepareUndo } from '../../editing/undo_controller';
-import { updateDesiredColumn, revealCursor } from '../../ui/caret';
+import { updateDesiredColumn, revealCursor } from '../../ui/view/caret/caret';
 import { resetBlink } from '../../render/caret';
 import { ModuleAliasEntry } from '../intellisense/semantic_model';
 import { getActiveSemanticDefinitions, getLuaModuleAliases } from '../diagnostics/controller';

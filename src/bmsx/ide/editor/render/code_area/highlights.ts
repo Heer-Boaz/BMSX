@@ -3,7 +3,7 @@ import type { CachedHighlight } from '../../../common/models';
 import type { Font } from '../../../../render/shared/bmsx_font';
 import * as constants from '../../../common/constants';
 import { api } from '../../ui/view/overlay_api';
-import { editorViewState } from '../../ui/view_state';
+import { editorViewState } from '../../ui/view/state';
 import { editorSearchState } from '../../contrib/find/widget_state';
 import { referenceState } from '../../contrib/references/state';
 import { renameController } from '../../contrib/rename/controller';
