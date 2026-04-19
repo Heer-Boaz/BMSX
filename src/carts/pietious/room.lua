@@ -664,6 +664,7 @@ local apply_room_template<const> = function(room_state, template)
 	room_state.water = template.water
 	room_state.enemies = template.enemies
 	room_state.rocks = template.rocks
+	room_state.inventory_rocks = template.inventory_rocks
 	room_state.items = template.items
 	room_state.lithographs = template.lithographs
 	room_state.shrines = template.shrines

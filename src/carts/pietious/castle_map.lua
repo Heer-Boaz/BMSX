@@ -293,23 +293,29 @@ end
 
 local build_rocks<const> = function(room_number, object_defs)
 	local rocks<const> = {}
+	local inventory_rocks<const> = {}
 	local rock_index = 0
 
 	for i = 1, #object_defs do
 		local object_def<const> = object_defs[i]
 		if object_def.type == 'rock' then
+			local item_type<const> = object_def.item
 			rock_index = rock_index + 1
-			rocks[#rocks + 1] = {
+			local rock<const> = {
 				id = string.format('rock_%03d_%02d', room_number, rock_index),
 				x = tile_x_to_world(object_def.x),
 				y = tile_y_to_world(object_def.y),
-				item_type = object_def.item,
+				item_type = item_type,
 				conditions = object_def.condition or empty_conditions,
 			}
+			rocks[#rocks + 1] = rock
+			if item_type ~= nil and constants.world_item.inventory[item_type] then
+				inventory_rocks[#inventory_rocks + 1] = rock
+			end
 		end
 	end
 
-	return rocks
+	return rocks, inventory_rocks
 end
 
 local build_items<const> = function(room_number, object_defs)
@@ -442,22 +448,24 @@ local load_room_templates<const> = function()
 	for raw_room_number, room_def in pairs(data) do
 		if type(room_def) == 'table' and room_def.map ~= nil then
 			local room_number<const> = tonumber(raw_room_number)
-			local room_links<const> = build_links(room_number, room_def.exits)
-			local map_rows<const> = room_def.map
-			local object_defs<const> = room_def.objects or {}
-			templates[room_number] = {
-					room_number = room_number,
-				world_number = room_def.worldnumber or 0, -- Normalized to prevent bugs like indexing with string world numbers for events/progression
+				local room_links<const> = build_links(room_number, room_def.exits)
+				local map_rows<const> = room_def.map
+				local object_defs<const> = room_def.objects or {}
+				local rocks<const>, inventory_rocks<const> = build_rocks(room_number, object_defs)
+				templates[room_number] = {
+						room_number = room_number,
+					world_number = room_def.worldnumber or 0, -- Normalized to prevent bugs like indexing with string world numbers for events/progression
 				room_subtype = room_def.subtype,
 			custom = room_def.custom,
 			water = build_water_spec(room_number, room_def.water),
 			map_rows = map_rows,
 			spawn = build_spawn(map_rows),
 			room_links = room_links,
-			edge_gates = build_edge_gates(map_rows, room_links),
-			enemies = build_enemies(room_number, room_def.subtype, object_defs),
-			rocks = build_rocks(room_number, object_defs),
-			items = build_items(room_number, object_defs),
+				edge_gates = build_edge_gates(map_rows, room_links),
+				enemies = build_enemies(room_number, room_def.subtype, object_defs),
+				rocks = rocks,
+				inventory_rocks = inventory_rocks,
+				items = build_items(room_number, object_defs),
 			lithographs = build_lithographs(room_number, object_defs),
 			shrines = build_shrines(room_number, object_defs),
 				seal = build_seal(room_number, object_defs),

@@ -12,8 +12,9 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <vector>
+#include <deque>
 #include <utility>
+#include <vector>
 
 namespace bmsx {
 
@@ -136,7 +137,7 @@ public:
 	auto end() const { return m_items.begin() + m_size; }
 
 private:
-	std::vector<T> m_items;
+	std::deque<T> m_items;
 	size_t m_size = 0;
 };
 

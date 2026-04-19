@@ -165,10 +165,10 @@ end
 local spawn_destroyed_rock_inventory_items<const> = function(room)
 	local castle<const> = oget('c')
 	local player<const> = oget('pietolon')
-	for i = 1, #room.rocks do
-		local def<const> = room.rocks[i]
+	for i = 1, #room.inventory_rocks do
+		local def<const> = room.inventory_rocks[i]
 		local item_type<const> = def.item_type
-		if room.destroyed_rock_ids[def.id] and constants.world_item.inventory[item_type] then
+		if room.destroyed_rock_ids[def.id] then
 			local item_id<const> = 'drop.' .. def.id
 			local picked<const> = progression.get(castle, 'item_picked_' .. item_id)
 			local already_owned<const> = player.inventory_items[item_type]
