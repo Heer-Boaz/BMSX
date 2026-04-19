@@ -4,6 +4,7 @@ import * as constants from '../../../common/constants';
 import { api } from '../../ui/view/overlay_api';
 import { getDiagnosticsForRow } from '../../contrib/diagnostics/controller';
 import { editorViewState } from '../../ui/view_state';
+import { editorDocumentState } from '../../editing/document_state';
 
 type GotoHighlight = {
 	row: number;
@@ -95,9 +96,12 @@ export function drawGotoUnderlineForRow(
 	sliceStartDisplay: number,
 	sliceEndDisplay: number,
 	activeGotoHighlight: GotoHighlight,
-	gotoVisualIndex: number,
 ): void {
-	if (!activeGotoHighlight || gotoVisualIndex === null || visualIndex !== gotoVisualIndex || activeGotoHighlight.row !== lineIndex) {
+	if (!activeGotoHighlight || activeGotoHighlight.row !== lineIndex) {
+		return;
+	}
+	const gotoVisualIndex = editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, activeGotoHighlight.row, activeGotoHighlight.startColumn);
+	if (visualIndex !== gotoVisualIndex) {
 		return;
 	}
 	const highlight = entry.hi;

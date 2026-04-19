@@ -3,7 +3,7 @@ import { SCROLLBAR_MIN_THUMB_HEIGHT } from '../../common/constants';
 import type { ScrollbarKind } from '../../common/models';
 import type { RectBounds } from '../../../rompack/format';
 import { computeMaximumScrollColumn, getCodeAreaBounds } from './view';
-import { ensureVisualLines, getVisualLineCount } from '../common/text_layout';
+import { ensureVisualLines } from '../common/text_layout';
 import { resourcePanel } from '../../workbench/contrib/resources/panel/controller';
 import { api } from './view/overlay_api';
 import { setResourceViewerScroll } from '../../workbench/contrib/resources/viewer';
@@ -233,7 +233,7 @@ export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void 
 	switch (kind) {
 		case 'codeVertical': {
 			ensureVisualLines();
-			editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(Math.round(scroll), getVisualLineCount(), Math.max(1, editorViewState.cachedVisibleRowCount));
+			editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(Math.round(scroll), editorViewState.layout.getVisualLineCount(), Math.max(1, editorViewState.cachedVisibleRowCount));
 			editorCaretState.cursorRevealSuspended = true;
 			break;
 		}

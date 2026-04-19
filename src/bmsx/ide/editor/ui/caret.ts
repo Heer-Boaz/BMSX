@@ -1,6 +1,5 @@
 import { breakUndoSequence } from '../editing/undo_controller';
-import { currentLine } from '../common/text_layout';
-import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../common/text_layout';
+import { currentLine, ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../common/text_layout';
 import { isShiftDown, isCtrlDown } from '../input/keyboard/key_input';
 import { resetBlink } from '../render/caret';
 import { findWordLeft, findWordRight, hasSelection, collapseSelectionTo, clearSelection } from '../editing/text_editing_and_selection';
@@ -105,11 +104,11 @@ export function setCursorPosition(row: number, column: number): void {
 export function moveCursorVertical(delta: number): void {
 	caretNavigation.clear();
 	ensureVisualLines();
-	const visualCount = getVisualLineCount();
+	const visualCount = editorViewState.layout.getVisualLineCount();
 	if (visualCount === 0) {
 		return;
 	}
-	const currentIndex = positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+	const currentIndex = editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	const targetIndex = editorViewState.layout.clampVisualIndex(visualCount, currentIndex + delta);
 	const desired = editorDocumentState.desiredColumn;
 	const desiredDisplay = editorDocumentState.desiredDisplayOffset;
@@ -128,12 +127,12 @@ export function moveCursorHorizontal(delta: number): void {
 	}
 	caretNavigation.clear();
 	ensureVisualLines();
-	const visualCount = getVisualLineCount();
+	const visualCount = editorViewState.layout.getVisualLineCount();
 	if (visualCount === 0) {
 		return;
 	}
-	const visualIndex = positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
-	const segment = visualIndexToSegment(visualIndex);
+	const visualIndex = editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+	const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 	if (!segment) {
 		return;
 	}
@@ -330,8 +329,8 @@ export function moveCursorHome(): void {
 		editorDocumentState.cursorColumn = 0;
 	} else {
 		ensureVisualLines();
-		const visualIndex = previousOverride?.visualIndex ?? positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
-		const segment = visualIndexToSegment(visualIndex);
+		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+		const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 		if (segment) {
 			editorDocumentState.cursorRow = segment.row;
 			const line = buffer.getLineContent(segment.row);
@@ -367,8 +366,8 @@ export function moveCursorEnd(): void {
 		editorDocumentState.cursorColumn = buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow);
 	} else {
 		ensureVisualLines();
-		const visualIndex = previousOverride?.visualIndex ?? positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
-		const segment = visualIndexToSegment(visualIndex);
+		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+		const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 		if (segment) {
 			editorDocumentState.cursorRow = segment.row;
 			const line = buffer.getLineContent(segment.row);

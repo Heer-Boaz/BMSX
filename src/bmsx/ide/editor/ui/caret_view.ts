@@ -1,61 +1,29 @@
 import { clamp } from '../../../common/clamp';
-import * as constants from '../../common/constants';
 import { getCodeAreaBounds, maximumLineLength } from './view';
 import { caretNavigation } from './caret';
-import { editorFeedbackState } from '../../workbench/common/feedback_state';
-import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../common/text_layout';
+import { ensureVisualLines, positionToVisualIndex } from '../common/text_layout';
 import { editorCaretState } from './caret_state';
 import { editorDocumentState } from '../editing/document_state';
 import { editorViewState } from './view_state';
+import { resolveCodeAreaViewportMetrics, type CodeAreaViewportMetrics } from './code_area_viewport';
 
 export function revealCursor(): void {
 	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
 }
 
-export function resolveViewportCapacity(): { rows: number; columns: number } {
+export function resolveViewportCapacity(): CodeAreaViewportMetrics {
 	ensureVisualLines();
-	const bounds = getCodeAreaBounds();
-	const gutterOffset = bounds.textLeft - bounds.codeLeft;
-	const wrapEnabled = editorViewState.wordWrapEnabled;
-	const advance = editorFeedbackState.warnNonMonospace ? editorViewState.spaceAdvance : editorViewState.charAdvance;
-	const visualCount = getVisualLineCount();
-
-	let horizontalVisible = !wrapEnabled && editorViewState.codeHorizontalScrollbarVisible;
-	let verticalVisible = editorViewState.codeVerticalScrollbarVisible;
-	let rowCapacity = 1;
-	let columnCapacity = 1;
-
-	for (let i = 0; i < 3; i += 1) {
-		const availableHeight = Math.max(0, (bounds.codeBottom - bounds.codeTop) - (horizontalVisible ? constants.SCROLLBAR_WIDTH : 0));
-		rowCapacity = Math.max(1, Math.floor(availableHeight / editorViewState.lineHeight));
-		verticalVisible = visualCount > rowCapacity;
-		const availableWidth = Math.max(
-			0,
-			(bounds.codeRight - bounds.codeLeft)
-			- (verticalVisible ? constants.SCROLLBAR_WIDTH : 0)
-			- gutterOffset
-			- constants.CODE_AREA_RIGHT_MARGIN,
-		);
-		columnCapacity = Math.max(1, Math.floor(availableWidth / advance));
-		if (wrapEnabled) {
-			horizontalVisible = false;
-		} else {
-			horizontalVisible = maximumLineLength() > columnCapacity;
-		}
-	}
-
-	editorViewState.codeVerticalScrollbarVisible = verticalVisible;
-	editorViewState.codeHorizontalScrollbarVisible = !wrapEnabled && horizontalVisible;
-	editorViewState.cachedVisibleRowCount = rowCapacity;
-	editorViewState.cachedVisibleColumnCount = columnCapacity;
-
-	return { rows: rowCapacity, columns: columnCapacity };
+	return resolveCodeAreaViewportMetrics(
+		getCodeAreaBounds(),
+		editorViewState.layout.getVisualLineCount(),
+		editorViewState.wordWrapEnabled ? 0 : maximumLineLength(),
+	);
 }
 
 export function centerCursorVertically(): void {
 	const { rows } = resolveViewportCapacity();
-	const totalVisual = getVisualLineCount();
+	const totalVisual = editorViewState.layout.getVisualLineCount();
 	const cursorVisualIndex = positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	if (rows <= 1) {
 		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(cursorVisualIndex, totalVisual, rows);
@@ -71,7 +39,7 @@ export function ensureCursorVisible(): void {
 	editorDocumentState.cursorColumn = editorViewState.layout.clampLineLength(clampedLine.length, editorDocumentState.cursorColumn);
 
 	const { rows, columns } = resolveViewportCapacity();
-	const totalVisual = getVisualLineCount();
+	const totalVisual = editorViewState.layout.getVisualLineCount();
 	const cursorVisualIndex = positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	const maxScrollRow = Math.max(0, totalVisual - rows);
 	const verticalMargin = Math.min(3, Math.max(0, Math.floor(rows / 6)));
@@ -197,8 +165,8 @@ export function updateDesiredColumn(): void {
 		if (override) {
 			segmentStartColumn = override.segmentStartColumn;
 		} else {
-			const visualIndex = positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
-			const segment = visualIndexToSegment(visualIndex);
+			const visualIndex = editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+			const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 			if (segment) {
 				segmentStartColumn = segment.startColumn;
 			}

@@ -1,5 +1,4 @@
 import { getResourcePanelWidth, updateGutterWidth } from '../ui/view';
-import { getActiveCodeTabContext } from '../../workbench/ui/code_tab/contexts';
 import { rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/overlay';
 import { runtimeErrorState } from '../contrib/runtime_error/state';
 import * as TextEditing from '../editing/text_editing_and_selection';
@@ -94,27 +93,15 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 }
 
 export function ensureVisualLines(): void {
-	const activeContext = getActiveCodeTabContext();
-	const path = activeContext.descriptor.path;
 	const estimatedVisibleRowCount = Math.max(1, editorViewState.cachedVisibleRowCount);
-	editorViewState.scrollRow = editorViewState.layout.ensureVisualLines({
-		buffer: editorDocumentState.buffer,
-		wordWrapEnabled: editorViewState.wordWrapEnabled,
-		scrollRow: editorViewState.scrollRow,
-		documentVersion: editorDocumentState.textVersion,
-		path,
-		computeWrapWidth: () => computeWrapWidth(),
+	editorViewState.scrollRow = editorViewState.layout.ensureVisualLines(
+		editorDocumentState.buffer,
+		editorViewState.wordWrapEnabled,
+		editorViewState.scrollRow,
 		estimatedVisibleRowCount,
-	});
+	);
 	const visualLineCount = editorViewState.layout.getVisualLineCount();
 	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollRow, visualLineCount, estimatedVisibleRowCount);
-}
-
-export function computeWrapWidth(): number {
-	const resourceWidth = resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
-	const gutterSpace = updateGutterWidth() + 2;
-	const available = editorViewState.viewportWidth - resourceWidth - gutterSpace;
-	return Math.max(editorViewState.charAdvance, available - 2);
 }
 
 export function getVisualLineCount(): number {

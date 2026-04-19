@@ -142,6 +142,8 @@ function updateExecutionState(state: DebuggerExecutionState): void {
 export type SerializedBreakpointMap = Record<string, number[]>;
 
 export type BreakpointToggleResult = 'added' | 'removed' | 'unchanged';
+const emptyBreakpoints = new Set<number>();
+
 function ensureBucket(pathKey: string): Set<number> {
 	let bucket = editorDebuggerState.breakpoints.get(pathKey);
 	if (!bucket) {
@@ -153,10 +155,10 @@ function ensureBucket(pathKey: string): Set<number> {
 
 export function getBreakpointsForChunk(path: string): ReadonlySet<number> {
 	if (!path) {
-		return null;
+		return emptyBreakpoints;
 	}
 	const bucket = editorDebuggerState.breakpoints.get(path);
-	return bucket;
+	return bucket ? bucket : emptyBreakpoints;
 }
 
 export function toggleBreakpoint(path: string, line: number): BreakpointToggleResult {

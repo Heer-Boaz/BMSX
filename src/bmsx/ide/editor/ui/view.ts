@@ -24,12 +24,9 @@ import { renameController } from '../contrib/rename/controller';
 import { editorRuntimeState } from '../common/runtime_state';
 import {
 	ensureVisualLines,
-	getVisualLineCount,
-	positionToVisualIndex,
 	rewrapRuntimeErrorOverlays,
 	visibleColumnCount,
 	visibleRowCount,
-	visualIndexToSegment,
 } from '../common/text_layout';
 import { bottomMargin, getTabBarTotalHeight, topMargin } from '../../workbench/common/layout';
 import { createResourceState, resourceSearchState } from '../../workbench/contrib/resources/widget_state';
@@ -220,9 +217,9 @@ export function resolvePointerRow(viewportY: number): number {
 	ensureVisualLines();
 	const relativeY = viewportY - getCodeAreaBounds().codeTop;
 	let visualIndex = editorViewState.scrollRow + Math.floor(relativeY / editorViewState.lineHeight);
-	const visualCount = getVisualLineCount();
+	const visualCount = editorViewState.layout.getVisualLineCount();
 	visualIndex = editorViewState.layout.clampVisualIndex(Math.max(1, visualCount), visualIndex);
-	const segment = visualIndexToSegment(visualIndex);
+	const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 	if (!segment) {
 		editorPointerState.lastPointerRowResolution = null;
 		return editorViewState.layout.clampBufferRow(editorDocumentState.buffer, visualIndex);
@@ -294,7 +291,7 @@ export function handlePointerAutoScroll(viewportX: number, viewportY: number): v
 		rowDelta = 1;
 	}
 	const rows = visibleRowCount();
-	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollRow + rowDelta, getVisualLineCount(), rows);
+	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollRow + rowDelta, editorViewState.layout.getVisualLineCount(), rows);
 	const maxScrollColumn = computeMaximumScrollColumn();
 	if (viewportX >= bounds.gutterLeft && !editorViewState.wordWrapEnabled) {
 		if (viewportX < bounds.textLeft) {
@@ -314,7 +311,7 @@ export function scrollRows(deltaRows: number): void {
 		return;
 	}
 	ensureVisualLines();
-	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollRow + deltaRows, getVisualLineCount(), visibleRowCount());
+	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollRow + deltaRows, editorViewState.layout.getVisualLineCount(), visibleRowCount());
 }
 
 export function getCreateResourceBarHeight(): number {
@@ -424,6 +421,7 @@ export function configureFontVariant(variant: FontVariant): void {
 		semanticDebounceMs: 200,
 		clockNow: editorRuntimeState.clockNow,
 		getBuiltinIdentifiers: () => getBuiltinIdentifiersSnapshot(),
+		computeWrapWidth,
 	});
 	const activeContext = getActiveCodeTabContext();
 	if (activeContext) {
@@ -449,8 +447,9 @@ export function setFontVariant(variant: FontVariant): void {
 export function toggleWordWrap(): void {
 	ensureVisualLines();
 	const previousWrap = editorViewState.wordWrapEnabled;
-	const previousTopIndex = editorViewState.layout.clampVisualIndex(getVisualLineCount(), editorViewState.scrollRow);
-	const previousTopSegment = visualIndexToSegment(previousTopIndex);
+	const previousVisualCount = editorViewState.layout.getVisualLineCount();
+	const previousTopIndex = editorViewState.layout.clampVisualIndex(previousVisualCount, editorViewState.scrollRow);
+	const previousTopSegment = editorViewState.layout.visualIndexToSegment(previousTopIndex);
 	const anchorRow = previousTopSegment ? previousTopSegment.row : editorDocumentState.cursorRow;
 	const anchorColumnForWrap = previousTopSegment ? previousTopSegment.startColumn : 0;
 	const anchorColumnForUnwrap = previousTopSegment
@@ -464,6 +463,7 @@ export function toggleWordWrap(): void {
 	editorCaretState.cursorRevealSuspended = false;
 	editorViewState.layout.markVisualLinesDirty();
 	ensureVisualLines();
+	const currentVisualCount = editorViewState.layout.getVisualLineCount();
 
 	editorDocumentState.cursorRow = editorViewState.layout.clampBufferRow(editorDocumentState.buffer, previousCursorRow);
 	const currentLine = editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
@@ -472,10 +472,10 @@ export function toggleWordWrap(): void {
 
 	if (editorViewState.wordWrapEnabled) {
 		editorViewState.scrollColumn = 0;
-		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(positionToVisualIndex(anchorRow, anchorColumnForWrap), getVisualLineCount(), visibleRowCount());
+		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, anchorRow, anchorColumnForWrap), currentVisualCount, visibleRowCount());
 	} else {
 		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(anchorColumnForUnwrap, computeMaximumScrollColumn());
-		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(positionToVisualIndex(anchorRow, editorViewState.scrollColumn), getVisualLineCount(), visibleRowCount());
+		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.layout.positionToVisualIndex(editorDocumentState.buffer, anchorRow, editorViewState.scrollColumn), currentVisualCount, visibleRowCount());
 	}
 	editorPointerState.lastPointerRowResolution = null;
 	ensureCursorVisible();
@@ -525,6 +525,13 @@ export function getResourcePanelWidth(): number {
 		return 0;
 	}
 	return Math.max(0, bounds.right - bounds.left);
+}
+
+export function computeWrapWidth(): number {
+	const resourceWidth = resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
+	const gutterSpace = updateGutterWidth() + 2;
+	const available = editorViewState.viewportWidth - resourceWidth - gutterSpace;
+	return Math.max(editorViewState.charAdvance, available - 2);
 }
 
 export function scrollResourceBrowser(amount: number): void {

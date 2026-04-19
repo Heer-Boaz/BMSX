@@ -37,7 +37,6 @@ export function drawCodeAreaRows(
 	sliceWidth: number,
 	breakpointsForChunk: ReadonlySet<number>,
 	activeGotoHighlight: ActiveGotoHighlight,
-	gotoVisualIndex: number,
 	cursorVisualIndex: number,
 	inlineCompletionPreview: InlineCompletionPreview,
 	shouldRenderInlinePreview: boolean,
@@ -64,7 +63,7 @@ export function drawCodeAreaRows(
 		const lineIndex = segment.row;
 		const entry = editorViewState.layout.getCachedHighlight(editorDocumentState.buffer, lineIndex);
 		const isPrimaryVisualSegment = segment.startColumn === 0;
-		const hasBreakpointForRow = breakpointsForChunk?.has(lineIndex + 1) ?? false;
+		const hasBreakpointForRow = breakpointsForChunk.has(lineIndex + 1);
 		const isExecutionStopRow = runtimeErrorState.executionStopRow !== null && lineIndex === runtimeErrorState.executionStopRow;
 		const isCursorLine = lineIndex === editorDocumentState.cursorRow;
 		drawCodeAreaRowChrome(
@@ -141,7 +140,6 @@ export function drawCodeAreaRows(
 			sliceStartDisplay,
 			sliceEndDisplay,
 			activeGotoHighlight,
-			gotoVisualIndex,
 		);
 		if (visualIndex === cursorVisualIndex) {
 			cursorInfo = computeCursorScreenInfo(entry, textLeft, rowY, sliceStartDisplay);

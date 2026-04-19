@@ -13,16 +13,6 @@ import { syncSemanticWorkspacePaths } from '../contrib/intellisense/semantic_wor
 import type { TextBuffer } from '../text/text_buffer';
 import type { Position } from '../../common/models';
 
-interface VisualLinesContext {
-	buffer: TextBuffer;
-	wordWrapEnabled: boolean;
-	scrollRow: number;
-	documentVersion: number;
-	path: string;
-	computeWrapWidth(): number;
-	estimatedVisibleRowCount?: number;
-}
-
 interface SliceResult {
 	startDisplay: number;
 	endDisplay: number;
@@ -135,6 +125,7 @@ export class CodeLayout {
 	private readonly semanticDebounceMs: number;
 	private readonly clockNow: () => number;
 	private readonly getBuiltinIdentifiers: () => BuiltinIdentifierSnapshot;
+	private readonly computeWrapWidth: () => number;
 	private pendingSemantic: PendingSemanticUpdate = null;
 	// private inFlightSemantic: PendingSemanticUpdate = null;
 	private semanticDueAtMs: number = null;
@@ -157,7 +148,6 @@ export class CodeLayout {
 		startDisplay: 0,
 		endDisplay: 0,
 	};
-	private lastViewportRowEstimate = 120;
 	private semanticTimer: TimerHandle = null;
 	private lastSemanticError: string = null;
 	private lastSemanticErrorVersion = -1;
@@ -168,12 +158,13 @@ export class CodeLayout {
 
 	constructor(
 		private readonly font: EditorFont,
-		options: { maxHighlightCache: number; semanticDebounceMs: number; clockNow: () => number; getBuiltinIdentifiers: () => BuiltinIdentifierSnapshot },
+		options: { maxHighlightCache: number; semanticDebounceMs: number; clockNow: () => number; getBuiltinIdentifiers: () => BuiltinIdentifierSnapshot; computeWrapWidth: () => number },
 	) {
 		this.maxHighlightCache = options.maxHighlightCache;
 		this.semanticDebounceMs = Math.max(0, options.semanticDebounceMs);
 		this.clockNow = options.clockNow;
 		this.getBuiltinIdentifiers = options.getBuiltinIdentifiers;
+		this.computeWrapWidth = options.computeWrapWidth;
 		this.refreshBuiltinIdentifiers();
 		const probeAdvance = this.font.advance('M');
 		const fallbackAdvance = this.font.advance(' ');
@@ -485,19 +476,23 @@ export class CodeLayout {
 		}
 	}
 
-	public ensureVisualLines(context: VisualLinesContext): number {
+	public ensureVisualLines(
+		buffer: TextBuffer,
+		wordWrapEnabled: boolean,
+		scrollRow: number,
+		estimatedVisibleRowCount: number,
+	): number {
 		this.refreshBuiltinIdentifiers();
-		const visibleRows = Math.max(1, context.estimatedVisibleRowCount ?? this.lastViewportRowEstimate);
-		this.lastViewportRowEstimate = visibleRows;
-		if (!this.visualLinesDirty && !this.viewportWithinHotWindow(context, visibleRows)) {
-			this.markVisualLinesDirtyForRows(0, context.buffer.getLineCount() - 1);
+		const visibleRows = Math.max(1, estimatedVisibleRowCount);
+		if (!this.visualLinesDirty && !this.viewportWithinHotWindow(buffer, scrollRow, visibleRows)) {
+			this.markVisualLinesDirtyForRows(0, buffer.getLineCount() - 1);
 		}
 		if (this.visualLinesDirty) {
 			this.rebuildVisualLines(
-				context.buffer,
-				context.wordWrapEnabled,
-				context.computeWrapWidth(),
-				context.scrollRow,
+				buffer,
+				wordWrapEnabled,
+				this.computeWrapWidth(),
+				scrollRow,
 				visibleRows,
 			);
 			this.visualLinesDirty = false;
@@ -505,7 +500,7 @@ export class CodeLayout {
 			this.dirtyVisualStartRow = 0;
 			this.dirtyVisualEndRow = -1;
 		}
-		return this.clampScrollRow(context.scrollRow);
+		return this.clampScrollRow(scrollRow);
 	}
 
 	public getVisualLineCount(): number {
@@ -1042,20 +1037,20 @@ export class CodeLayout {
 		}
 	}
 
-	private viewportWithinHotWindow(context: VisualLinesContext, visibleRows: number): boolean {
+	private viewportWithinHotWindow(buffer: TextBuffer, scrollRow: number, visibleRows: number): boolean {
 		if (this.lastHotRowEnd < this.lastHotRowStart || this.visualLines.length === 0) {
 			return false;
 		}
 		const totalVisual = this.visualLines.length;
-		const startRow = this.getRowForVisualIndex(clamp(context.scrollRow, 0, totalVisual - 1));
-		const endVisual = clamp(context.scrollRow + Math.max(1, visibleRows) - 1, 0, totalVisual - 1);
+		const startRow = this.getRowForVisualIndex(clamp(scrollRow, 0, totalVisual - 1));
+		const endVisual = clamp(scrollRow + Math.max(1, visibleRows) - 1, 0, totalVisual - 1);
 		const endRow = this.getRowForVisualIndex(endVisual);
 		if (startRow < 0 || endRow < 0) {
 			return false;
 		}
 		const viewportStartRow = Math.min(startRow, endRow);
 		const viewportEndRow = Math.max(startRow, endRow);
-		const lineCount = context.buffer.getLineCount();
+		const lineCount = buffer.getLineCount();
 		const maxRow = Math.max(0, lineCount - 1);
 		const guardStart = this.lastHotRowStart === 0 ? 0 : this.lastHotGuardRows;
 		const guardEnd = this.lastHotRowEnd >= maxRow ? 0 : this.lastHotGuardRows;
