@@ -1,4 +1,4 @@
-import { PieceTreeBuffer } from '../src/bmsx/ide/text/piece_tree_buffer';
+import { PieceTreeBuffer } from '../src/bmsx/ide/editor/text/piece_tree_buffer';
 
 type MutablePos = { row: number; column: number };
 
