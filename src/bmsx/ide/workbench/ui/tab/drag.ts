@@ -17,6 +17,33 @@ export type TabLayoutEntry = {
 	rowIndex: number;
 };
 
+const tabLayoutScratch: TabLayoutEntry[] = [];
+
+function getTabLayoutEntry(index: number): TabLayoutEntry {
+	let entry = tabLayoutScratch[index];
+	if (!entry) {
+		entry = {
+			id: '',
+			left: 0,
+			right: 0,
+			width: 0,
+			center: 0,
+			rowIndex: 0,
+		};
+		tabLayoutScratch[index] = entry;
+	}
+	return entry;
+}
+
+function writeTabLayoutEntry(entry: TabLayoutEntry, id: string, left: number, right: number, width: number, rowIndex: number): void {
+	entry.id = id;
+	entry.left = left;
+	entry.right = right;
+	entry.width = width;
+	entry.center = (left + right) * 0.5;
+	entry.rowIndex = rowIndex;
+}
+
 export function measureTabWidth(tab: EditorTabDescriptor): number {
 	const textWidth = measureText(tab.title);
 	let indicatorWidth = 0;
@@ -29,37 +56,17 @@ export function measureTabWidth(tab: EditorTabDescriptor): number {
 }
 
 export function computeTabLayout(): TabLayoutEntry[] {
-	const layout: TabLayoutEntry[] = [];
+	const layout = tabLayoutScratch;
+	layout.length = tabSessionState.tabs.length;
 	for (let index = 0; index < tabSessionState.tabs.length; index += 1) {
 		const tab = tabSessionState.tabs[index];
-		const bounds = editorChromeState.tabButtonBounds.get(tab.id);
-		if (bounds) {
-			const left = bounds.left;
-			const right = bounds.right;
-			const width = Math.max(0, right - left);
-			const rowIndex = Math.max(0, Math.floor((bounds.top - editorViewState.headerHeight) / editorViewState.tabBarHeight));
-			layout.push({
-				id: tab.id,
-				left,
-				right,
-				width,
-				center: (left + right) * 0.5,
-				rowIndex,
-			});
-			continue;
-		}
-		const width = measureTabWidth(tab);
-		const previous = layout.length > 0 ? layout[layout.length - 1] : null;
-		const left = previous ? previous.right + constants.TAB_BUTTON_SPACING : 4;
-		const right = left + width;
-		layout.push({
-			id: tab.id,
-			left,
-			right,
-			width,
-			center: (left + right) * 0.5,
-			rowIndex: previous ? previous.rowIndex : 0,
-		});
+		const entry = getTabLayoutEntry(index);
+		const bounds = editorChromeState.tabButtonBounds.get(tab.id)!;
+		const left = bounds.left;
+		const right = bounds.right;
+		const width = right - left;
+		const rowIndex = ((bounds.top - editorViewState.headerHeight) / editorViewState.tabBarHeight) | 0;
+		writeTabLayoutEntry(entry, tab.id, left, right, width, rowIndex);
 	}
 	return layout;
 }
@@ -69,8 +76,8 @@ export function beginTabDrag(tabId: string, pointerX: number): void {
 		editorPointerState.tabDragState = null;
 		return;
 	}
-	const bounds = editorChromeState.tabButtonBounds.get(tabId);
-	const pointerOffset = bounds ? pointerX - bounds.left : 0;
+	const bounds = editorChromeState.tabButtonBounds.get(tabId)!;
+	const pointerOffset = pointerX - bounds.left;
 	editorPointerState.tabDragState = {
 		tabId,
 		pointerOffset,
@@ -90,15 +97,18 @@ export function updateTabDrag(pointerX: number, pointerY: number): void {
 		resetPointerClickTracking();
 	}
 	const layout = computeTabLayout();
-	const currentIndex = layout.findIndex(item => item.id === state.tabId);
+	let currentIndex = 0;
+	while (layout[currentIndex].id !== state.tabId) {
+		currentIndex += 1;
+	}
 	const dragged = layout[currentIndex];
 	const pointerLeft = pointerX - state.pointerOffset;
-	const pointerCenter = pointerLeft + Math.max(dragged.width, 1) * 0.5;
+	const pointerCenter = pointerLeft + (dragged.width >> 1);
 	const totalTabHeight = getTabBarTotalHeight();
 	const withinTabBar = pointerY >= editorViewState.headerHeight && pointerY < editorViewState.headerHeight + totalTabHeight;
-	const maxRowIndex = Math.max(0, editorViewState.tabBarRowCount - 1);
+	const maxRowIndex = editorViewState.tabBarRowCount - 1;
 	const pointerRow = withinTabBar
-		? clamp(Math.floor((pointerY - editorViewState.headerHeight) / editorViewState.tabBarHeight), 0, maxRowIndex)
+		? clamp(((pointerY - editorViewState.headerHeight) / editorViewState.tabBarHeight) | 0, 0, maxRowIndex)
 		: dragged.rowIndex;
 	const rowStride = editorViewState.viewportWidth + constants.TAB_BUTTON_SPACING * 4;
 	const pointerValue = pointerRow * rowStride + pointerCenter;
@@ -116,11 +126,22 @@ export function updateTabDrag(pointerX: number, pointerY: number): void {
 	if (desiredIndex === currentIndex) {
 		return;
 	}
-	const tabIndex = tabSessionState.tabs.findIndex(entry => entry.id === state.tabId);
-	const removed = tabSessionState.tabs.splice(tabIndex, 1);
-	const tab = removed[0];
+	const tabs = tabSessionState.tabs;
+	let tabIndex = 0;
+	while (tabs[tabIndex].id !== state.tabId) {
+		tabIndex += 1;
+	}
+	const tab = tabs[tabIndex];
+	for (let index = tabIndex; index < tabs.length - 1; index += 1) {
+		tabs[index] = tabs[index + 1];
+	}
+	tabs.length -= 1;
 	const targetIndex = clamp(desiredIndex, 0, tabSessionState.tabs.length);
-	tabSessionState.tabs.splice(targetIndex, 0, tab);
+	tabs.length += 1;
+	for (let index = tabs.length - 1; index > targetIndex; index -= 1) {
+		tabs[index] = tabs[index - 1];
+	}
+	tabs[targetIndex] = tab;
 }
 
 export function endTabDrag(): void {

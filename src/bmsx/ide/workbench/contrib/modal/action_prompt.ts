@@ -39,6 +39,26 @@ const CLOSE_MESSAGE_LINES = [
 	'SAVE BEFORE HIDING THE EDITOR?',
 ] as const;
 
+const CANCEL_LABEL = 'CANCEL';
+
+const HOT_RESUME_PROMPT_TEXT: ActionPromptText = {
+	messageLines: HOT_RESUME_MESSAGE_LINES,
+	primaryLabel: 'SAVE & RESUME',
+	secondaryLabel: 'RESUME WITHOUT SAVING',
+};
+
+const REBOOT_PROMPT_TEXT: ActionPromptText = {
+	messageLines: REBOOT_MESSAGE_LINES,
+	primaryLabel: 'SAVE & REBOOT',
+	secondaryLabel: 'REBOOT WITHOUT SAVING',
+};
+
+const CLOSE_PROMPT_TEXT: ActionPromptText = {
+	messageLines: CLOSE_MESSAGE_LINES,
+	primaryLabel: 'SAVE & HIDE',
+	secondaryLabel: 'HIDE WITHOUT SAVING',
+};
+
 export const ACTION_PROMPT_PADDING_X = 12;
 export const ACTION_PROMPT_PADDING_Y = 12;
 
@@ -88,15 +108,19 @@ function createActionPromptLayout(): ActionPromptLayout {
 	};
 }
 
+const actionPromptLayout = createActionPromptLayout();
+const actionPrompt: ActionPromptState = {
+	action: 'close',
+	layout: actionPromptLayout,
+};
+
 export function hasActionPrompt(): boolean {
 	return actionPromptState.prompt !== null;
 }
 
 export function showActionPrompt(action: ActionPromptAction): void {
-	actionPromptState.prompt = {
-		action,
-		layout: createActionPromptLayout(),
-	};
+	actionPrompt.action = action;
+	actionPromptState.prompt = actionPrompt;
 	actionPromptLayoutAction = null;
 	updateActionPromptLayout();
 }
@@ -109,24 +133,12 @@ export function closeActionPrompt(): void {
 export function getActionPromptText(action: ActionPromptAction): ActionPromptText {
 	switch (action) {
 		case 'hot-resume':
-			return {
-				messageLines: HOT_RESUME_MESSAGE_LINES,
-				primaryLabel: 'SAVE & RESUME',
-				secondaryLabel: 'RESUME WITHOUT SAVING',
-			};
+			return HOT_RESUME_PROMPT_TEXT;
 		case 'reboot':
-			return {
-				messageLines: REBOOT_MESSAGE_LINES,
-				primaryLabel: 'SAVE & REBOOT',
-				secondaryLabel: 'REBOOT WITHOUT SAVING',
-			};
+			return REBOOT_PROMPT_TEXT;
 		case 'theme-toggle':
 		case 'close':
-			return {
-				messageLines: CLOSE_MESSAGE_LINES,
-				primaryLabel: 'SAVE & HIDE',
-				secondaryLabel: 'HIDE WITHOUT SAVING',
-			};
+			return CLOSE_PROMPT_TEXT;
 	}
 }
 
@@ -147,15 +159,16 @@ export function updateActionPromptLayout(): void {
 			maxMessageWidth = width;
 		}
 	}
-	const cancelLabel = 'CANCEL';
 	const primaryWidth = measureText(primaryLabel) + constants.HEADER_BUTTON_PADDING_X * 2;
 	const secondaryWidth = measureText(secondaryLabel) + constants.HEADER_BUTTON_PADDING_X * 2;
-	const cancelWidth = measureText(cancelLabel) + constants.HEADER_BUTTON_PADDING_X * 2;
+	const cancelWidth = measureText(CANCEL_LABEL) + constants.HEADER_BUTTON_PADDING_X * 2;
 	const buttonSpacing = constants.HEADER_BUTTON_SPACING;
 	const buttonRowWidth = primaryWidth + secondaryWidth + cancelWidth + buttonSpacing * 2;
 	const buttonHeight = editorViewState.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
 	const messageSpacing = editorViewState.lineHeight + 2;
-	const dialogWidth = Math.max(maxMessageWidth + ACTION_PROMPT_PADDING_X * 2, buttonRowWidth + ACTION_PROMPT_PADDING_X * 2);
+	const messageDialogWidth = maxMessageWidth + ACTION_PROMPT_PADDING_X * 2;
+	const buttonDialogWidth = buttonRowWidth + ACTION_PROMPT_PADDING_X * 2;
+	const dialogWidth = messageDialogWidth > buttonDialogWidth ? messageDialogWidth : buttonDialogWidth;
 	const dialogHeight = ACTION_PROMPT_PADDING_Y * 2 + messageLines.length * messageSpacing + 6 + buttonHeight;
 	writeCenteredDialogBounds(layout.bounds, dialogWidth, dialogHeight, 4);
 
@@ -261,5 +274,5 @@ export function drawActionPromptOverlay(): void {
 
 	api.fill_rect(layout.cancel.left, layout.cancel.top, layout.cancel.right, layout.cancel.bottom, undefined, constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND);
 	api.blit_rect(layout.cancel.left, layout.cancel.top, layout.cancel.right, layout.cancel.bottom, undefined, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(editorViewState.font, 'CANCEL', layout.cancel.left + constants.HEADER_BUTTON_PADDING_X, buttonY + constants.HEADER_BUTTON_PADDING_Y, undefined, constants.COLOR_HEADER_BUTTON_TEXT);
+	drawEditorText(editorViewState.font, CANCEL_LABEL, layout.cancel.left + constants.HEADER_BUTTON_PADDING_X, buttonY + constants.HEADER_BUTTON_PADDING_Y, undefined, constants.COLOR_HEADER_BUTTON_TEXT);
 }

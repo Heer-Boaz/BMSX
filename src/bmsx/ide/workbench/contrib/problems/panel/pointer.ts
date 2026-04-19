@@ -1,9 +1,7 @@
 import type { PointerSnapshot } from '../../../../common/models';
 import type { RectBounds } from '../../../../../rompack/format';
 import { clamp } from '../../../../../common/clamp';
-import * as constants from '../../../../common/constants';
 import { gotoDiagnostic } from '../../../../editor/contrib/diagnostics/navigation';
-import { computeProblemsPanelItemHeight, computeProblemsPanelLayout } from './layout';
 import type { ProblemsPanelController } from './controller';
 import { editorViewState } from '../../../../editor/ui/view/state';
 
@@ -16,8 +14,7 @@ export function handleProblemsPanelPointerInput(
 	if (!controller.isVisible) {
 		return false;
 	}
-	const layout = computeProblemsPanelLayout(bounds);
-	controller.updateCachedLayout(layout);
+	const layout = controller.prepareLayout(bounds);
 	const inside =
 		snapshot.valid
 		&& snapshot.insideViewport
@@ -48,12 +45,12 @@ export function handleProblemsPanelPointerInput(
 		}
 		return true;
 	}
-	const availableWidth = Math.max(0, bounds.right - bounds.left - constants.PROBLEMS_PANEL_CONTENT_PADDING_X * 2);
+	const availableWidth = controller.resolveAvailableWidth(bounds);
 	const relativeY = snapshot.viewportY - layout.contentTop;
 	let itemTop = 0;
 	let diagnosticIndex = controller.getScrollIndex();
 	while (diagnosticIndex < diagnostics.length) {
-		const itemHeight = computeProblemsPanelItemHeight(diagnostics[diagnosticIndex], availableWidth);
+		const itemHeight = controller.getItemLayout(diagnosticIndex, availableWidth).height;
 		if (relativeY < itemTop + itemHeight) {
 			break;
 		}
@@ -72,7 +69,7 @@ export function handleProblemsPanelPointerInput(
 		return true;
 	}
 	controller.setSelectionIndex(diagnosticIndex);
-	controller.revealSelection(layout, controller.resolvePanelWidth(availableWidth));
+	controller.revealSelection(layout, availableWidth);
 	gotoDiagnostic(diagnostics[diagnosticIndex]);
 	return true;
 }
@@ -89,18 +86,18 @@ export function handleProblemsPanelWheelInput(
 	const diagnostics = controller.getDiagnostics();
 	const panelWidth = controller.resolvePanelWidth();
 	let advance = 0;
-	let pixels = Math.max(1, steps) * editorViewState.lineHeight;
+	let pixels = steps * editorViewState.lineHeight;
 	let diagnosticIndex = controller.getScrollIndex();
 	if (direction > 0) {
 		while (diagnosticIndex < diagnostics.length - 1 && pixels > 0) {
-			pixels -= Math.max(1, computeProblemsPanelItemHeight(diagnostics[diagnosticIndex], panelWidth));
+			pixels -= controller.getItemLayout(diagnosticIndex, panelWidth).height;
 			diagnosticIndex += 1;
 			advance += 1;
 		}
 	} else if (direction < 0) {
 		diagnosticIndex -= 1;
 		while (diagnosticIndex >= 0 && pixels > 0) {
-			pixels -= Math.max(1, computeProblemsPanelItemHeight(diagnostics[diagnosticIndex], panelWidth));
+			pixels -= controller.getItemLayout(diagnosticIndex, panelWidth).height;
 			diagnosticIndex -= 1;
 			advance += 1;
 		}
@@ -111,7 +108,7 @@ export function handleProblemsPanelWheelInput(
 	const newScroll = clamp(
 		controller.getScrollIndex() + (direction > 0 ? advance : -advance),
 		0,
-		Math.max(0, diagnostics.length - 1),
+		diagnostics.length - 1,
 	);
 	if (newScroll === controller.getScrollIndex()) {
 		return false;

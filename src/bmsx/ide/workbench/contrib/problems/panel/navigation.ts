@@ -1,6 +1,5 @@
 import { clamp } from '../../../../../common/clamp';
 import { gotoDiagnostic } from '../../../../editor/contrib/diagnostics/navigation';
-import { estimateProblemsPanelVisibleCount } from './layout';
 import type { ProblemsPanelController } from './controller';
 
 export type ProblemsPanelCommand = 'up' | 'down' | 'page-up' | 'page-down' | 'home' | 'end' | 'activate';
@@ -47,7 +46,7 @@ export function handleProblemsPanelNavigationCommand(controller: ProblemsPanelCo
 			if (diagnostics.length === 0) {
 				return false;
 			}
-			const step = Math.max(1, estimateProblemsPanelVisibleCount(diagnostics, controller.getScrollIndex(), layout, controller.resolvePanelWidth()));
+			const step = controller.estimateVisibleCount(layout, controller.resolvePanelWidth());
 			const delta = command === 'page-up' ? -step : step;
 			const selectionIndex = controller.getSelectionIndex();
 			const nextIndex = clamp(

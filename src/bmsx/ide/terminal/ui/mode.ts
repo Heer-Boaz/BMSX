@@ -1218,6 +1218,7 @@ export class TerminalMode {
 		const cursorColumn = this.field.cursorColumn;
 		const segmentCount = wrap.segments.length;
 		const measureText = (text: string): number => this.measureDisplayText(text, uppercaseDisplay);
+		const measureTextRange = (text: string, start: number, end: number): number => this.measureDisplayTextRange(text, start, end, uppercaseDisplay);
 
 		for (let si = 0; si < segmentCount; si += 1) {
 			const seg = wrap.segments[si];
@@ -1235,6 +1236,7 @@ export class TerminalMode {
 				promptWidth,
 				this.font.lineHeight,
 				measureText,
+				measureTextRange,
 			);
 			const x = segmentDecoration.x;
 			const y = segmentDecoration.y;
@@ -1349,6 +1351,41 @@ export class TerminalMode {
 			return 0;
 		}
 		return this.font.measure(this.toRenderedGlyphText(value, uppercase));
+	}
+
+	private measureDisplayTextRange(value: string, start: number, end: number, uppercase: boolean): number {
+		if (start >= end) {
+			return 0;
+		}
+		let width = 0;
+		let inString = false;
+		let quote = '';
+		let escapeNext = false;
+		for (let index = 0; index < end; index += 1) {
+			const ch = value.charAt(index);
+			let measured = ch;
+			if (inString) {
+				if (escapeNext) {
+					escapeNext = false;
+				} else if (ch === '\\') {
+					escapeNext = true;
+				} else if (ch === quote) {
+					inString = false;
+					quote = '';
+				}
+			} else if (ch === '"' || ch === '\'' || ch === '`') {
+				inString = true;
+				quote = ch;
+			} else if (uppercase) {
+				measured = ch.toUpperCase();
+			}
+			if (index >= start) {
+				width += measured === '\t'
+					? this.font.advance(' ') * TAB_SPACES
+					: this.font.advance(measured);
+			}
+		}
+		return width;
 	}
 
 	private useUppercaseDisplay(): boolean {

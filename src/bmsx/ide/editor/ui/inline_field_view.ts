@@ -66,6 +66,25 @@ function charAdvance(metrics: InlineFieldMetrics, ch: string): number {
 		: metrics.advanceChar(ch);
 }
 
+function measureInlineFieldRange(text: string, start: number, end: number, measureText: (text: string) => number): number {
+	if (start >= end) {
+		return 0;
+	}
+	return measureText(text.slice(start, end));
+}
+
+function measureInlineFieldRangeWith(
+	text: string,
+	start: number,
+	end: number,
+	measureText: (text: string) => number,
+	measureTextRange: ((text: string, start: number, end: number) => number) | undefined,
+): number {
+	return measureTextRange
+		? measureTextRange(text, start, end)
+		: measureInlineFieldRange(text, start, end, measureText);
+}
+
 export function resolveInlineFieldSelectionState(field: TextField, out: InlineFieldSelectionState = scratchInlineFieldSelectionState): InlineFieldSelectionState {
 	const cursorOffset = getCursorOffset(field);
 	const anchorOffset = selectionAnchorOffset(field);
@@ -167,6 +186,7 @@ export function measureWrappedInlineSegmentDecoration(
 	promptWidth: number,
 	lineHeight: number,
 	measureText: (text: string) => number,
+	measureTextRange?: (text: string, start: number, end: number) => number,
 	out: WrappedInlineSegmentDecoration = scratchWrappedInlineSegmentDecoration,
 ): WrappedInlineSegmentDecoration {
 	const x = segmentIndex === 0 ? baseX + promptWidth : baseX;
@@ -186,8 +206,8 @@ export function measureWrappedInlineSegmentDecoration(
 		const selectionEnd = Math.min(selectionState.selectionEnd, segmentEnd);
 		if (selectionStart < selectionEnd) {
 			out.hasSelection = true;
-			out.selectionLeft = x + measureText(displayText.slice(segmentStart, selectionStart));
-			out.selectionWidth = measureText(displayText.slice(selectionStart, selectionEnd));
+			out.selectionLeft = x + measureInlineFieldRangeWith(displayText, segmentStart, selectionStart, measureText, measureTextRange);
+			out.selectionWidth = measureInlineFieldRangeWith(displayText, selectionStart, selectionEnd, measureText, measureTextRange);
 		}
 	}
 
@@ -204,7 +224,7 @@ export function measureWrappedInlineSegmentDecoration(
 	}
 
 	out.caretLocalIndex = cursorOffset - segmentStart;
-	out.caretBaseX = x + measureText(displayText.slice(segmentStart, cursorOffset));
+	out.caretBaseX = x + measureInlineFieldRangeWith(displayText, segmentStart, cursorOffset, measureText, measureTextRange);
 	out.caretLeft = out.caretBaseX;
 	out.caretChar = cursorOffset < displayText.length ? displayText.charAt(cursorOffset) : ' ';
 	out.caretWidth = measureText(out.caretChar);

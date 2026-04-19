@@ -11,15 +11,19 @@ import { caretNavigation } from '../ui/view/caret/caret';
 import * as constants from '../../common/constants';
 import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from '../../common/constants';
 
-export function measureText(text: string): number {
+export function measureTextRange(text: string, start: number, end: number): number {
 	let width = 0;
-	for (let i = 0; i < text.length; i++) {
+	for (let i = start; i < end; i++) {
 		const ch = text.charAt(i);
 		if (ch === '\t') { width += editorViewState.spaceAdvance * constants.TAB_SPACES; continue; }
 		if (ch === '\n') continue;
 		width += editorViewState.font.advance(ch);
 	}
 	return width;
+}
+
+export function measureText(text: string): number {
+	return measureTextRange(text, 0, text.length);
 }
 
 export function truncateTextToWidth(text: string, maxWidth: number): string {

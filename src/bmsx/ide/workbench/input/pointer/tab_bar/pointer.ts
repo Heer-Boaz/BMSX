@@ -80,9 +80,11 @@ export function updateTabHoverState(snapshot: PointerSnapshot): void {
 	}
 	const x = snapshot.viewportX;
 	let hovered: string = null;
-	for (const [tabId, bounds] of editorChromeState.tabButtonBounds) {
-		if (point_in_rect(x, y, bounds)) {
-			hovered = tabId;
+	for (let index = 0; index < tabSessionState.tabs.length; index += 1) {
+		const tab = tabSessionState.tabs[index];
+		const bounds = editorChromeState.tabButtonBounds.get(tab.id);
+		if (bounds && point_in_rect(x, y, bounds)) {
+			hovered = tab.id;
 			break;
 		}
 	}
