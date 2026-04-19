@@ -24,8 +24,10 @@ export function renderStatusBar(): void {
 	const statusBackground = constants.COLOR_STATUS_BACKGROUND;
 	api.fill_rect(0, statusTop, editorViewState.viewportWidth, statusBottom, undefined, statusBackground);
 	if (runtimeFaulted) {
-		const accentHeight = Math.max(2, Math.trunc(editorViewState.lineHeight / 6));
-		const accentBottom = Math.min(statusBottom, statusTop + accentHeight);
+		const accentHeightCandidate = (editorViewState.lineHeight / 6) | 0;
+		const accentHeight = accentHeightCandidate > 2 ? accentHeightCandidate : 2;
+		const accentBottomCandidate = statusTop + accentHeight;
+		const accentBottom = accentBottomCandidate < statusBottom ? accentBottomCandidate : statusBottom;
 		api.fill_rect_color(0, statusTop, editorViewState.viewportWidth, accentBottom, undefined, constants.COLOR_STATUS_WARNING);
 	}
 	const statusTextColor = runtimeFaulted ? constants.COLOR_STATUS_ALERT : constants.COLOR_STATUS_TEXT;
@@ -59,7 +61,9 @@ export function renderStatusBar(): void {
 		const range = location.range;
 		const positionSuffix = range ? `:${range.startLine}:${range.startColumn}` : '';
 		const fullText = `${displayPath}${positionSuffix}`;
-		const pathText = truncateTextToWidth(fullText, Math.max(0, editorViewState.viewportWidth - 8));
+		const maxPathWidthCandidate = editorViewState.viewportWidth - 8;
+		const maxPathWidth = maxPathWidthCandidate > 0 ? maxPathWidthCandidate : 0;
+		const pathText = truncateTextToWidth(fullText, maxPathWidth);
 		drawEditorText(editorViewState.font, pathText, 4, statusTop + 2, undefined, statusTextColor);
 		return;
 	}

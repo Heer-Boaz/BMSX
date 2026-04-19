@@ -42,7 +42,7 @@ import { parseLuaIdentifierChain as parseLuaIdentifierChainShared } from '../../
 import { buildLuaSemanticModel, collectModuleAliasEntriesFromChunk, Decl, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData, type ModuleAliasEntry } from './semantic_model';
 import { cacheSemanticWorkspaceAnalysis, getOrCreateSemanticWorkspace, prepareSemanticWorkspaceForEditorBuffer, primeSemanticWorkspaceProjectSources, syncSemanticWorkspacePath } from './semantic_workspace_sync';
 import { isLuaCommentContext } from '../../../common/text';
-import { wrapOverlayLine } from '../../common/text_layout';
+import { writeWrappedOverlayLine } from '../../common/text_layout';
 import type { ApiCompletionMetadata, CodeTabContext, EditorContextToken, LuaCompletionItem, PointerSnapshot } from '../../../common/models';
 import type { LuaSourceRecord } from '../../../../machine/program/sources';
 import { Pool } from '../../../../common/pool';
@@ -537,10 +537,7 @@ function wrapHoverLines(lines: string[]): string[] {
 	);
 	const wrapped: string[] = [];
 	for (let i = 0; i < lines.length; i += 1) {
-		const segments = wrapOverlayLine(lines[i], wrapWidth);
-		for (let j = 0; j < segments.length; j += 1) {
-			wrapped.push(segments[j]);
-		}
+		writeWrappedOverlayLine(wrapped, lines[i], wrapWidth);
 	}
 	return wrapped;
 }

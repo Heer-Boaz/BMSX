@@ -8,7 +8,7 @@ import { getActiveResourceViewer } from '../contrib/resources/view_tabs';
 import { resourcePanel } from '../contrib/resources/panel/controller';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { api } from '../../editor/ui/view/overlay_api';
-import { measureText, wrapOverlayLine } from '../../editor/common/text_layout';
+import { measureText, writeWrappedOverlayLine } from '../../editor/common/text_layout';
 import * as constants from '../../common/constants';
 import { BmsxColors } from '../../../machine/devices/vdp/vdp';
 import { renderErrorOverlayText } from '../../editor/render/error_overlay';
@@ -29,13 +29,23 @@ function resolveCreateResourceErrorLines(message: string, wrapWidth: number): st
 	createResourceErrorCachedMessage = message;
 	createResourceErrorCachedWrapWidth = wrapWidth;
 	createResourceErrorLines.length = 0;
-	const segments = message.split(/\r?\n/);
-	for (let i = 0; i < segments.length; i += 1) {
-		const segment = segments[i].trim();
-		const wrapped = wrapOverlayLine(segment.length === 0 ? '' : segment, wrapWidth);
-		for (let j = 0; j < wrapped.length; j += 1) {
-			createResourceErrorLines.push(wrapped[j]);
+	let lineStart = 0;
+	for (let index = 0; index <= message.length; index += 1) {
+		if (index !== message.length && message.charCodeAt(index) !== 10) {
+			continue;
 		}
+		let lineEnd = index;
+		if (lineEnd > lineStart && message.charCodeAt(lineEnd - 1) === 13) {
+			lineEnd -= 1;
+		}
+		while (lineStart < lineEnd && message.charCodeAt(lineStart) <= 32) {
+			lineStart += 1;
+		}
+		while (lineEnd > lineStart && message.charCodeAt(lineEnd - 1) <= 32) {
+			lineEnd -= 1;
+		}
+		writeWrappedOverlayLine(createResourceErrorLines, message.slice(lineStart, lineEnd), wrapWidth);
+		lineStart = index + 1;
 	}
 	if (createResourceErrorLines.length === 0) {
 		createResourceErrorLines.push('');

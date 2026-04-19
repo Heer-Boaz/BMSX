@@ -1,11 +1,16 @@
-import { splitText } from '../../editor/text/source_text';
-import { wrapOverlayLine } from '../../editor/common/text_layout';
+import { writeWrappedOverlayLine } from '../../editor/common/text_layout';
 import { editorViewState } from '../../editor/ui/view/state';
 import { editorFeedbackState } from './feedback_state';
 import { problemsPanel } from '../contrib/problems/panel/controller';
 
+const statusMessageLines: string[] = [];
+let statusMessageCachedVisible = false;
+let statusMessageCachedText = '';
+let statusMessageCachedMaxWidth = -1;
+
 export function getTabBarTotalHeight(): number {
-	return editorViewState.tabBarHeight * Math.max(1, editorViewState.tabBarRowCount);
+	const rowCount = editorViewState.tabBarRowCount > 1 ? editorViewState.tabBarRowCount : 1;
+	return editorViewState.tabBarHeight * rowCount;
 }
 
 export function topMargin(): number {
@@ -13,26 +18,57 @@ export function topMargin(): number {
 }
 
 export function getStatusMessageLines(): string[] {
-	if (!editorFeedbackState.message.visible) {
-		return [];
+	writeStatusMessageLines();
+	return statusMessageLines;
+}
+
+function writeStatusMessageLines(): void {
+	const message = editorFeedbackState.message;
+	const maxWidthCandidate = editorViewState.viewportWidth - 8;
+	const maxWidth = maxWidthCandidate > editorViewState.charAdvance ? maxWidthCandidate : editorViewState.charAdvance;
+	if (
+		message.visible === statusMessageCachedVisible
+		&& message.text === statusMessageCachedText
+		&& maxWidth === statusMessageCachedMaxWidth
+	) {
+		return;
 	}
-	const rawLines = splitText(editorFeedbackState.message.text);
-	const maxWidth = Math.max(editorViewState.viewportWidth - 8, editorViewState.charAdvance);
-	const wrappedLines: string[] = [];
-	for (let i = 0; i < rawLines.length; i += 1) {
-		const wrapped = wrapOverlayLine(rawLines[i], maxWidth);
-		for (let j = 0; j < wrapped.length; j += 1) {
-			wrappedLines.push(wrapped[j]);
+
+	statusMessageCachedVisible = message.visible;
+	statusMessageCachedText = message.text;
+	statusMessageCachedMaxWidth = maxWidth;
+	statusMessageLines.length = 0;
+
+	if (!message.visible) {
+		return;
+	}
+
+	const text = message.text;
+	let lineStart = 0;
+	for (let index = 0; index <= text.length; index += 1) {
+		if (index !== text.length && text.charCodeAt(index) !== 10) {
+			continue;
 		}
+		let lineEnd = index;
+		if (lineEnd > lineStart && text.charCodeAt(lineEnd - 1) === 13) {
+			lineEnd -= 1;
+		}
+		writeWrappedOverlayLine(statusMessageLines, text.slice(lineStart, lineEnd), maxWidth);
+		lineStart = index + 1;
 	}
-	return wrappedLines.length > 0 ? wrappedLines : [''];
+
+	if (statusMessageLines.length === 0) {
+		statusMessageLines.push('');
+	}
 }
 
 export function statusAreaHeight(): number {
 	if (!editorFeedbackState.message.visible) {
 		return editorViewState.baseBottomMargin;
 	}
-	return editorViewState.baseBottomMargin + Math.max(1, getStatusMessageLines().length) * editorViewState.lineHeight + 4;
+	writeStatusMessageLines();
+	const lineCount = statusMessageLines.length > 1 ? statusMessageLines.length : 1;
+	return editorViewState.baseBottomMargin + lineCount * editorViewState.lineHeight + 4;
 }
 
 export function getVisibleProblemsPanelHeight(): number {
@@ -43,11 +79,11 @@ export function getVisibleProblemsPanelHeight(): number {
 	if (planned <= 0) {
 		return 0;
 	}
-	const maxAvailable = Math.max(0, editorViewState.viewportHeight - statusAreaHeight() - (editorViewState.headerHeight + getTabBarTotalHeight()));
+	const maxAvailable = editorViewState.viewportHeight - statusAreaHeight() - (editorViewState.headerHeight + getTabBarTotalHeight());
 	if (maxAvailable <= 0) {
 		return 0;
 	}
-	return Math.min(planned, maxAvailable);
+	return planned < maxAvailable ? planned : maxAvailable;
 }
 
 export function bottomMargin(): number {

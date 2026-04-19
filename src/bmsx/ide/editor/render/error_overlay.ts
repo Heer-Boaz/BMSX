@@ -3,7 +3,7 @@ import type { EditorFont } from '../ui/view/font';
 import { drawEditorText } from './text_renderer';
 import { bottomMargin } from '../../workbench/common/layout';
 import { showEditorMessage } from '../../workbench/common/feedback_state';
-import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, wrapOverlayLine } from '../common/text_layout';
+import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, writeWrappedOverlayLine } from '../common/text_layout';
 import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../../common/models';
 import type { StackTraceFrame } from '../../../lua/value';
 import type { RectBounds } from '../../../rompack/format';
@@ -61,14 +61,18 @@ export function computeErrorOverlayBounds(
 ): ErrorOverlayBounds {
 	let maxLineWidth = 0;
 	for (let i = 0; i < lines.length; i += 1) {
-		maxLineWidth = Math.max(maxLineWidth, measureText(lines[i]));
+		const width = measureText(lines[i]);
+		if (width > maxLineWidth) {
+			maxLineWidth = width;
+		}
 	}
 	const bubbleWidth = maxLineWidth + constants.ERROR_OVERLAY_PADDING_X * 2;
 	const bubbleHeight = lines.length * lineHeight + constants.ERROR_OVERLAY_PADDING_Y * 2;
 
 	let bubbleLeft = anchorX + constants.ERROR_OVERLAY_CONNECTOR_OFFSET;
 	if (bubbleLeft + bubbleWidth > codeBounds.right - 1) {
-		bubbleLeft = Math.max(codeBounds.left, codeBounds.right - 1 - bubbleWidth);
+		const leftCandidate = codeBounds.right - 1 - bubbleWidth;
+		bubbleLeft = codeBounds.left > leftCandidate ? codeBounds.left : leftCandidate;
 	}
 
 	const availableBottom = codeBounds.bottom;
@@ -77,12 +81,14 @@ export function computeErrorOverlayBounds(
 	if (bubbleTop + bubbleHeight > availableBottom) {
 		let aboveTop = rowTop - bubbleHeight - 2;
 		if (aboveTop < codeBounds.top) {
-			aboveTop = Math.max(codeBounds.top, availableBottom - bubbleHeight);
+			const topCandidate = availableBottom - bubbleHeight;
+			aboveTop = codeBounds.top > topCandidate ? codeBounds.top : topCandidate;
 		}
 		bubbleTop = aboveTop;
 	}
 	if (bubbleTop + bubbleHeight > availableBottom) {
-		bubbleTop = Math.max(codeBounds.top, availableBottom - bubbleHeight);
+		const topCandidate = availableBottom - bubbleHeight;
+		bubbleTop = codeBounds.top > topCandidate ? codeBounds.top : topCandidate;
 	}
 	if (bubbleTop < codeBounds.top) {
 		bubbleTop = codeBounds.top;
@@ -107,17 +113,20 @@ export function renderErrorOverlay(
 	api.fill_rect_color(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, background);
 	const startX = bounds.left + paddingX;
 	const contentRightInset = config.contentRightInset ?? 0;
-	const lineRightLimit = Math.max(startX, bounds.right - paddingX - contentRightInset);
-	const highlightSet = new Set<number>();
-	if (highlightLines) {
-		for (let index = 0; index < highlightLines.length; index += 1) {
-			const value = highlightLines[index];
-			highlightSet.add(value);
-		}
-	}
+	const lineRightLimitCandidate = bounds.right - paddingX - contentRightInset;
+	const lineRightLimit = startX > lineRightLimitCandidate ? startX : lineRightLimitCandidate;
 	let currentY = bounds.top + paddingY;
 	for (let i = 0; i < lines.length; i += 1) {
-		if (highlightSet.has(i)) {
+		let highlighted = false;
+		if (highlightLines) {
+			for (let index = 0; index < highlightLines.length; index += 1) {
+				if (highlightLines[index] === i) {
+					highlighted = true;
+					break;
+				}
+			}
+		}
+		if (highlighted) {
 			const lineLeft = startX;
 			const lineRight = lineRightLimit;
 			if (lineRight > lineLeft) {
@@ -138,8 +147,8 @@ export function renderErrorOverlay(
 		return;
 	}
 
-	const connectorTop = Math.min(startY, endY);
-	const connectorBottom = Math.max(startY, endY);
+	const connectorTop = startY < endY ? startY : endY;
+	const connectorBottom = startY > endY ? startY : endY;
 	api.fill_rect_color(left, connectorTop, right, connectorBottom, undefined, background);
 }
 
@@ -158,12 +167,10 @@ export function renderErrorOverlayText(
 	}
 }
 export function computeRuntimeErrorOverlayGeometry(codeRight: number, textLeft: number): { contentRight: number; availableBottom: number; } {
-	const contentRight = Math.max(
-		textLeft,
-		codeRight
+	const contentRightCandidate = codeRight
 		- (editorViewState.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
-		- constants.CODE_AREA_RIGHT_MARGIN
-	);
+		- constants.CODE_AREA_RIGHT_MARGIN;
+	const contentRight = textLeft > contentRightCandidate ? textLeft : contentRightCandidate;
 	const codeBottom = editorViewState.viewportHeight - bottomMargin();
 	const availableBottom = editorViewState.codeHorizontalScrollbarVisible
 		? codeBottom - constants.SCROLLBAR_WIDTH
@@ -178,7 +185,8 @@ export function resolveRuntimeErrorOverlayAnchor(
 	availableBottom: number): RuntimeErrorOverlayAnchor {
 	ensureVisualLines();
 	const visualIndex = positionToVisualIndex(overlay.row, overlay.column);
-	const visibleRows = Math.max(1, Math.floor((availableBottom - codeTop) / editorViewState.lineHeight));
+	const visibleRowsCandidate = ((availableBottom - codeTop) / editorViewState.lineHeight) | 0;
+	const visibleRows = visibleRowsCandidate > 1 ? visibleRowsCandidate : 1;
 	const relativeRow = visualIndex - editorViewState.scrollRow;
 	if (relativeRow < 0 || relativeRow >= visibleRows) {
 		return null;
@@ -195,16 +203,21 @@ export function resolveRuntimeErrorOverlayAnchor(
 	}
 	let columnCount: number;
 	if (editorViewState.wordWrapEnabled) {
-		columnCount = Math.max(0, segment.endColumn - columnStart);
+		const columnCountCandidate = segment.endColumn - columnStart;
+		columnCount = columnCountCandidate > 0 ? columnCountCandidate : 0;
 	} else {
-		const availableWidth = Math.max(0, contentRight - textLeft);
-		const visibleColumns = Math.max(1, Math.floor(availableWidth / editorViewState.charAdvance));
+		const availableWidthCandidate = contentRight - textLeft;
+		const availableWidth = availableWidthCandidate > 0 ? availableWidthCandidate : 0;
+		const visibleColumnsCandidate = (availableWidth / editorViewState.charAdvance) | 0;
+		const visibleColumns = visibleColumnsCandidate > 1 ? visibleColumnsCandidate : 1;
 		columnCount = visibleColumns + 4;
 	}
 	const slice = editorViewState.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
 	const sliceStartDisplay = slice.startDisplay;
 	const sliceEndLimit = editorViewState.wordWrapEnabled ? editorViewState.layout.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
-	const sliceEndDisplay = editorViewState.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
+	const sliceEndDisplay = editorViewState.wordWrapEnabled
+		? (slice.endDisplay < sliceEndLimit ? slice.endDisplay : sliceEndLimit)
+		: slice.endDisplay;
 	const anchorDisplay = editorViewState.layout.columnToDisplay(highlight, overlay.column);
 	const clampedAnchorDisplay = anchorDisplay < sliceStartDisplay
 		? sliceStartDisplay
@@ -227,7 +240,7 @@ export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, te
 	}
 	ensureVisualLines();
 	const visualIndex = positionToVisualIndex(overlay.row, overlay.column);
-	const visibleRows = Math.max(1, editorViewState.cachedVisibleRowCount);
+	const visibleRows = editorViewState.cachedVisibleRowCount > 1 ? editorViewState.cachedVisibleRowCount : 1;
 	const visibleStart = editorViewState.scrollRow;
 	const visibleEnd = visibleStart + visibleRows - 1;
 	if (visualIndex < visibleStart) {
@@ -258,7 +271,8 @@ export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, te
 		overlay.layout = null;
 		return 'rendered';
 	}
-	const highlightLines: number[] = [];
+	const highlightLines = runtimeErrorHighlightLines;
+	highlightLines.length = 0;
 	if (overlay.hovered && overlay.hoverLine >= 0 && overlay.hoverLine < overlay.lineDescriptors.length) {
 		const descriptor = overlay.lineDescriptors[overlay.hoverLine];
 		if (descriptor && descriptor.role === 'frame') {
@@ -288,6 +302,7 @@ const COPY_ICON_ID = 'copy';
 const COPY_ICON_WIDTH = 6;
 const COPY_ICON_HEIGHT = 8;
 const COPY_BUTTON_GAP = 2;
+const runtimeErrorHighlightLines: number[] = [];
 
 export type RuntimeErrorOverlayRenderResult = 'absent' | 'rendered' | 'above' | 'below';
 
@@ -333,27 +348,23 @@ export function computeRuntimeErrorOverlayLayout(
 	maxTextWidth: number
 ): RuntimeErrorOverlayLayoutResult {
 	const sourceLines = overlay.lines.length > 0 ? overlay.lines : ['Runtime error'];
-	const buttonSize = Math.max(anchor.lineHeight, COPY_ICON_HEIGHT + 2);
+	const copyIconButtonSize = COPY_ICON_HEIGHT + 2;
+	const buttonSize = anchor.lineHeight > copyIconButtonSize ? anchor.lineHeight : copyIconButtonSize;
 	const reserveWidth = buttonSize + COPY_BUTTON_GAP;
-	const maxLineWidthLimit = Math.max(
-		editorViewState.charAdvance,
-		Math.min(
-			maxTextWidth,
-			(codeRight - textLeft) - constants.ERROR_OVERLAY_CONNECTOR_OFFSET - paddingX * 2
-		)
-	);
-	const wrapWidth = Math.max(1, maxLineWidthLimit - reserveWidth);
+	const contentLimit = (codeRight - textLeft) - constants.ERROR_OVERLAY_CONNECTOR_OFFSET - paddingX * 2;
+	let maxLineWidthLimit = maxTextWidth < contentLimit ? maxTextWidth : contentLimit;
+	if (maxLineWidthLimit < editorViewState.charAdvance) {
+		maxLineWidthLimit = editorViewState.charAdvance;
+	}
+	const wrapWidthCandidate = maxLineWidthLimit - reserveWidth;
+	const wrapWidth = wrapWidthCandidate > 1 ? wrapWidthCandidate : 1;
 	const displayLines: string[] = [];
 	const displayLineMap: number[] = [];
 	for (let d = 0; d < sourceLines.length; d += 1) {
 		const text = sourceLines[d];
-		const wrapped = wrapOverlayLine(text, wrapWidth);
-		for (let i = 0; i < wrapped.length; i += 1) {
-			displayLines.push(wrapped[i]);
-			displayLineMap.push(d);
-		}
-		if (wrapped.length === 0) {
-			displayLines.push('');
+		const lineStart = displayLines.length;
+		writeWrappedOverlayLine(displayLines, text, wrapWidth);
+		for (let i = lineStart; i < displayLines.length; i += 1) {
 			displayLineMap.push(d);
 		}
 	}
@@ -374,8 +385,9 @@ export function computeRuntimeErrorOverlayLayout(
 	);
 
 	const placedBelow = bubbleBounds.top >= belowTop - 1;
-	const connectorLeft = Math.max(textLeft, anchor.anchorX);
-	const connectorRight = Math.min(bubbleBounds.left, connectorLeft + 3);
+	const connectorLeft = textLeft > anchor.anchorX ? textLeft : anchor.anchorX;
+	const connectorRightCandidate = connectorLeft + 3;
+	const connectorRight = bubbleBounds.left < connectorRightCandidate ? bubbleBounds.left : connectorRightCandidate;
 
 	let connector: ErrorOverlayRenderConfig['connector'] = undefined;
 	if (connectorRight > connectorLeft) {
@@ -401,7 +413,8 @@ export function computeRuntimeErrorOverlayLayout(
 
 	const lineRects: RectBounds[] = [];
 	const lineLeft = bubbleBounds.left + paddingX;
-	const lineRight = Math.max(lineLeft, bubbleBounds.right - paddingX - reserveWidth);
+	const lineRightCandidate = bubbleBounds.right - paddingX - reserveWidth;
+	const lineRight = lineRightCandidate > lineLeft ? lineRightCandidate : lineLeft;
 	let currentY = bubbleBounds.top + paddingY;
 	for (let index = 0; index < displayLines.length; index += 1) {
 		lineRects.push({ left: lineLeft, top: currentY, right: lineRight, bottom: currentY + anchor.lineHeight });

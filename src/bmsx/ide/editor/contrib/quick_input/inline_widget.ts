@@ -10,6 +10,7 @@ import { handleQuickInputPointer } from '../../input/quick_input/pointer/dispatc
 import { editorSearchState, lineJumpState } from '../find/widget_state';
 import { symbolSearchState } from '../symbols/search_state';
 import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
+import { refreshInlineBarLayout } from '../../ui/view/view';
 
 export function isInlineWidgetFocused(): boolean {
 	return editorSearchState.active
@@ -53,6 +54,7 @@ export function handleInlineWidgetPointer(snapshot: PointerSnapshot, justPressed
 }
 
 export function renderInlineWidgets(): void {
+	refreshInlineBarLayout();
 	renderCreateResourceBar();
 	renderSearchBar();
 	renderResourceSearchBar();

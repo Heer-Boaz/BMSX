@@ -122,7 +122,8 @@ const drawSymbolSearchResultRow = (match: InlineSymbolSearchResult, rowTop: numb
 		const sourceLabel = match.entry.sourceLabel ?? '';
 		if (sourceLabel) {
 			const sourceWidth = measureText(sourceLabel);
-			const sourceX = Math.max(textX, lineX - editorViewState.spaceAdvance - sourceWidth);
+			const sourceXCandidate = lineX - editorViewState.spaceAdvance - sourceWidth;
+			const sourceX = sourceXCandidate > textX ? sourceXCandidate : textX;
 			drawEditorText(editorViewState.font, sourceLabel, sourceX, rowTop, undefined, constants.COLOR_SYMBOL_SEARCH_KIND);
 		}
 	}
@@ -151,7 +152,9 @@ export function renderCreateResourceBar(): void {
 	if (createResourceState.working) {
 		const status = 'CREATING...';
 		const statusWidth = measureText(status);
-		const statusX = Math.max(fieldState.textX + fieldState.displayWidth + editorViewState.spaceAdvance, bounds.right - statusWidth - 4);
+		const fieldRight = fieldState.textX + fieldState.displayWidth + editorViewState.spaceAdvance;
+		const statusRightX = bounds.right - statusWidth - 4;
+		const statusX = fieldRight > statusRightX ? fieldRight : statusRightX;
 		drawEditorText(editorViewState.font, status, statusX, bounds.top + constants.CREATE_RESOURCE_BAR_MARGIN_Y, undefined, constants.COLOR_CREATE_RESOURCE_TEXT);
 	} else if (createResourceState.error && createResourceState.error.length > 0) {
 		drawCreateResourceErrorDialog(createResourceState.error);
@@ -337,7 +340,9 @@ export function renderRenameBar(): void {
 	}
 	if (status.length > 0) {
 		const statusWidth = measureText(status);
-		const statusX = Math.max(fieldState.textX + fieldState.displayWidth + editorViewState.spaceAdvance, bounds.right - statusWidth - 4);
+		const fieldRight = fieldState.textX + fieldState.displayWidth + editorViewState.spaceAdvance;
+		const statusRightX = bounds.right - statusWidth - 4;
+		const statusX = fieldRight > statusRightX ? fieldRight : statusRightX;
 		drawEditorText(editorViewState.font, status, statusX, labelY, undefined, constants.COLOR_SEARCH_TEXT);
 	}
 }

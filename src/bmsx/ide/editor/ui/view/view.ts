@@ -26,26 +26,28 @@ import {
 	ensureVisualLines,
 	rewrapRuntimeErrorOverlays,
 } from '../../common/text_layout';
-import { bottomMargin, getTabBarTotalHeight, topMargin } from '../../../workbench/common/layout';
+import { bottomMargin, topMargin } from '../../../workbench/common/layout';
 import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
 
 function decimalDigitCount(value: number): number {
 	let digits = 1;
-	let remaining = Math.max(1, value);
+	let remaining = value > 1 ? value : 1;
 	while (remaining >= 10) {
-		remaining = Math.floor(remaining / 10);
+		remaining = (remaining / 10) | 0;
 		digits += 1;
 	}
 	return digits;
 }
 
 export function getBreakpointLaneWidth(): number {
-	return Math.max(6, editorViewState.charAdvance + 2);
+	const width = editorViewState.charAdvance + 2;
+	return width > 6 ? width : 6;
 }
 
 export function updateGutterWidth(): number {
 	const lineCount = editorDocumentState.buffer.getLineCount();
-	const digitCount = Math.max(2, decimalDigitCount(lineCount));
+	const computedDigits = decimalDigitCount(lineCount);
+	const digitCount = computedDigits > 2 ? computedDigits : 2;
 	editorViewState.gutterWidth = getBreakpointLaneWidth() + 4 + digitCount * editorViewState.font.advance('0');
 	return editorViewState.gutterWidth;
 }
@@ -106,12 +108,13 @@ export function resourceSearchVisibleResultCount(): number {
 	if (!resourceSearchState.visible) {
 		return 0;
 	}
-	const remaining = Math.max(0, resourceSearchState.matches.length - resourceSearchState.displayOffset);
+	const remainingCandidate = resourceSearchState.matches.length - resourceSearchState.displayOffset;
+	const remaining = remainingCandidate > 0 ? remainingCandidate : 0;
 	const capacity = resourceSearchWindowCapacity();
 	if (capacity <= 0) {
 		return remaining;
 	}
-	return Math.min(remaining, capacity);
+	return remaining < capacity ? remaining : capacity;
 }
 
 export function isSymbolSearchCompactMode(): boolean {
@@ -139,8 +142,10 @@ export function symbolSearchVisibleResultCount(): number {
 	if (!symbolSearchState.visible) {
 		return 0;
 	}
-	const remaining = Math.max(0, symbolSearchState.matches.length - symbolSearchState.displayOffset);
-	return Math.min(remaining, symbolSearchPageSize());
+	const remainingCandidate = symbolSearchState.matches.length - symbolSearchState.displayOffset;
+	const remaining = remainingCandidate > 0 ? remainingCandidate : 0;
+	const pageSize = symbolSearchPageSize();
+	return remaining < pageSize ? remaining : pageSize;
 }
 
 export function applyViewportSize(viewport: Viewport): void {
@@ -179,21 +184,16 @@ export function mapScreenPointToViewport(screenX: number, screenY: number): { x:
 	const relativeY = screenY - rect.top;
 	const inside = relativeX >= 0 && relativeX < rect.width && relativeY >= 0 && relativeY < rect.height;
 	return {
-		x: Math.trunc((relativeX / rect.width) * editorViewState.viewportWidth),
-		y: Math.trunc((relativeY / rect.height) * editorViewState.viewportHeight),
+		x: ((relativeX / rect.width) * editorViewState.viewportWidth) | 0,
+		y: ((relativeY / rect.height) * editorViewState.viewportHeight) | 0,
 		inside,
 		valid: true,
 	};
 }
 
 export function codeViewportTop(): number {
-	return topMargin()
-		+ getCreateResourceBarHeight()
-		+ getSearchBarHeight()
-		+ getResourceSearchBarHeight()
-		+ getSymbolSearchBarHeight()
-		+ getRenameBarHeight()
-		+ getLineJumpBarHeight();
+	writeInlineBarLayout();
+	return inlineBarLayout.codeViewportTop;
 }
 
 export type CodeAreaBounds = {
@@ -243,9 +243,10 @@ const pointerTextPosition: PointerTextPosition = {
 export function resolvePointerRow(viewportY: number, bounds: CodeAreaBounds = getCodeAreaBounds()): number {
 	ensureVisualLines();
 	const relativeY = viewportY - bounds.codeTop;
-	let visualIndex = editorViewState.scrollRow + Math.floor(relativeY / editorViewState.lineHeight);
+	let visualIndex = editorViewState.scrollRow + ((relativeY / editorViewState.lineHeight) | 0);
 	const visualCount = editorViewState.layout.getVisualLineCount();
-	visualIndex = editorViewState.layout.clampVisualIndex(Math.max(1, visualCount), visualIndex);
+	const visualLimit = visualCount > 1 ? visualCount : 1;
+	visualIndex = editorViewState.layout.clampVisualIndex(visualLimit, visualIndex);
 	const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 	if (!segment) {
 		editorPointerState.lastPointerRowResolution = null;
@@ -403,6 +404,15 @@ export function getLineJumpBarHeight(): number {
 }
 
 type BarBounds = { top: number; bottom: number; left: number; right: number };
+type InlineBarLayout = {
+	codeViewportTop: number;
+	barHeight: number[];
+	barBounds: BarBounds[];
+};
+
+function createBarBounds(): BarBounds {
+	return { top: 0, bottom: 0, left: 0, right: 0 };
+}
 
 const barHeightGetters = [
 	getCreateResourceBarHeight,
@@ -413,24 +423,100 @@ const barHeightGetters = [
 	getLineJumpBarHeight,
 ] as const;
 
-function computeBarBounds(barIndex: number): BarBounds {
-	const height = barHeightGetters[barIndex]();
-	if (height <= 0) {
-		return null;
-	}
-	let top = editorViewState.headerHeight + getTabBarTotalHeight();
-	for (let i = 0; i < barIndex; i++) {
-		top += barHeightGetters[i]();
-	}
-	return { top, bottom: top + height, left: 0, right: editorViewState.viewportWidth };
+const inlineBarLayout: InlineBarLayout = {
+	codeViewportTop: 0,
+	barHeight: [0, 0, 0, 0, 0, 0],
+	barBounds: [
+		createBarBounds(),
+		createBarBounds(),
+		createBarBounds(),
+		createBarBounds(),
+		createBarBounds(),
+		createBarBounds(),
+	],
+};
+
+let inlineBarLayoutStamp = 0;
+let inlineBarLayoutValid = false;
+
+function addLayoutStamp(stamp: number, value: number): number {
+	return ((stamp * 33) ^ value) | 0;
 }
 
-export function getCreateResourceBarBounds(): BarBounds { return computeBarBounds(0); }
-export function getSearchBarBounds(): BarBounds { return computeBarBounds(1); }
-export function getResourceSearchBarBounds(): BarBounds { return computeBarBounds(2); }
-export function getSymbolSearchBarBounds(): BarBounds { return computeBarBounds(3); }
-export function getRenameBarBounds(): BarBounds { return computeBarBounds(4); }
-export function getLineJumpBarBounds(): BarBounds { return computeBarBounds(5); }
+function computeInlineBarLayoutStamp(): number {
+	let stamp = 5381;
+	stamp = addLayoutStamp(stamp, editorViewState.viewportWidth);
+	stamp = addLayoutStamp(stamp, editorViewState.viewportHeight);
+	stamp = addLayoutStamp(stamp, editorViewState.headerHeight);
+	stamp = addLayoutStamp(stamp, editorViewState.tabBarHeight);
+	stamp = addLayoutStamp(stamp, editorViewState.tabBarRowCount);
+	stamp = addLayoutStamp(stamp, editorViewState.lineHeight);
+	stamp = addLayoutStamp(stamp, createResourceState.visible ? 1 : 0);
+	stamp = addLayoutStamp(stamp, editorSearchState.visible ? 1 : 0);
+	stamp = addLayoutStamp(stamp, editorSearchState.scope === 'global' ? 2 : 1);
+	stamp = addLayoutStamp(stamp, editorSearchState.matches.length);
+	stamp = addLayoutStamp(stamp, editorSearchState.globalMatches.length);
+	stamp = addLayoutStamp(stamp, editorSearchState.displayOffset);
+	stamp = addLayoutStamp(stamp, resourceSearchState.visible ? 1 : 0);
+	stamp = addLayoutStamp(stamp, resourceSearchState.matches.length);
+	stamp = addLayoutStamp(stamp, resourceSearchState.displayOffset);
+	stamp = addLayoutStamp(stamp, symbolSearchState.visible ? 1 : 0);
+	stamp = addLayoutStamp(stamp, symbolSearchState.matches.length);
+	stamp = addLayoutStamp(stamp, symbolSearchState.displayOffset);
+	stamp = addLayoutStamp(stamp, symbolSearchState.global ? 1 : 0);
+	stamp = addLayoutStamp(stamp, symbolSearchState.mode === 'references' ? 2 : 1);
+	stamp = addLayoutStamp(stamp, renameController.isVisible() ? 1 : 0);
+	stamp = addLayoutStamp(stamp, renameController.getMatchCount() || 0);
+	stamp = addLayoutStamp(stamp, lineJumpState.visible ? 1 : 0);
+	return stamp;
+}
+
+function writeInlineBarLayout(): void {
+	const stamp = computeInlineBarLayoutStamp();
+	if (inlineBarLayoutValid && stamp === inlineBarLayoutStamp) {
+		return;
+	}
+	inlineBarLayoutValid = true;
+	inlineBarLayoutStamp = stamp;
+	let top = topMargin();
+	for (let index = 0; index < barHeightGetters.length; index += 1) {
+		const height = barHeightGetters[index]();
+		const bounds = inlineBarLayout.barBounds[index];
+		inlineBarLayout.barHeight[index] = height;
+		if (height <= 0) {
+			bounds.left = 0;
+			bounds.top = top;
+			bounds.right = 0;
+			bounds.bottom = top;
+			continue;
+		}
+		bounds.left = 0;
+		bounds.top = top;
+		bounds.right = editorViewState.viewportWidth;
+		bounds.bottom = top + height;
+		top = bounds.bottom;
+	}
+	inlineBarLayout.codeViewportTop = top;
+}
+
+export function refreshInlineBarLayout(): void {
+	writeInlineBarLayout();
+}
+
+function getInlineBarBounds(barIndex: number): BarBounds {
+	writeInlineBarLayout();
+	if (inlineBarLayout.barHeight[barIndex] <= 0) {
+		return null;
+	}
+	return inlineBarLayout.barBounds[barIndex];
+}
+
+export function getCreateResourceBarBounds(): BarBounds { return getInlineBarBounds(0); }
+export function getSearchBarBounds(): BarBounds { return getInlineBarBounds(1); }
+export function getResourceSearchBarBounds(): BarBounds { return getInlineBarBounds(2); }
+export function getSymbolSearchBarBounds(): BarBounds { return getInlineBarBounds(3); }
+export function getRenameBarBounds(): BarBounds { return getInlineBarBounds(4); }
+export function getLineJumpBarBounds(): BarBounds { return getInlineBarBounds(5); }
 
 export function configureFontVariant(variant: FontVariant): void {
 	editorViewState.fontVariant = variant;
@@ -551,13 +637,15 @@ export function getResourcePanelWidth(): number {
 	if (!bounds) {
 		return 0;
 	}
-	return Math.max(0, bounds.right - bounds.left);
+	const width = bounds.right - bounds.left;
+	return width > 0 ? width : 0;
 }
 
 export function computeWrapWidth(): number {
 	const bounds = getCodeAreaBounds();
 	const available = bounds.codeRight - bounds.textLeft;
-	return Math.max(editorViewState.charAdvance, available - 2);
+	const width = available - 2;
+	return width > editorViewState.charAdvance ? width : editorViewState.charAdvance;
 }
 
 export function scrollResourceBrowser(amount: number): void {

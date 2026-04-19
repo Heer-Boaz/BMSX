@@ -79,8 +79,8 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 	}
 	const startDisplay = editorViewState.layout.columnToDisplay(highlight, selectionStartColumn);
 	const endDisplay = editorViewState.layout.columnToDisplay(highlight, selectionEndColumn);
-	const visibleStart = Math.max(sliceStart, startDisplay);
-	const visibleEnd = Math.min(sliceEnd, endDisplay);
+	const visibleStart = sliceStart > startDisplay ? sliceStart : startDisplay;
+	const visibleEnd = sliceEnd < endDisplay ? sliceEnd : endDisplay;
 	if (visibleEnd <= visibleStart) {
 		return null;
 	}
@@ -124,21 +124,31 @@ export function computeRuntimeErrorOverlayMaxWidth(): number {
 	const rightMargin = constants.CODE_AREA_RIGHT_MARGIN;
 	const connectorOffset = ERROR_OVERLAY_CONNECTOR_OFFSET + ERROR_OVERLAY_PADDING_X * 2;
 	const available = bounds.codeRight - bounds.textLeft - scrollbarSpace - rightMargin - connectorOffset;
-	return Math.max(editorViewState.charAdvance, available);
+	return available > editorViewState.charAdvance ? available : editorViewState.charAdvance;
 }
 
 export function wrapOverlayLine(line: string, maxWidth: number): string[] {
-	if (line.length === 0) return [''];
 	const segments: string[] = [];
+	writeWrappedOverlayLine(segments, line, maxWidth);
+	return segments;
+}
+
+export function writeWrappedOverlayLine(segments: string[], line: string, maxWidth: number): void {
+	const initialLength = segments.length;
+	if (line.length === 0) {
+		segments.push('');
+		return;
+	}
 	let segmentStart = 0;
 	let lastBreak = -1;
+	let segmentWidth = 0;
 	for (let index = 0; index < line.length; index += 1) {
 		const ch = line.charAt(index);
 		if (ch === ' ' || ch === '\t') {
 			lastBreak = index;
 		}
-		const candidateWidth = measureText(line.slice(segmentStart, index + 1));
-		if (candidateWidth <= maxWidth) {
+		segmentWidth += ch === '\t' ? editorViewState.spaceAdvance * constants.TAB_SPACES : editorViewState.font.advance(ch);
+		if (segmentWidth <= maxWidth) {
 			continue;
 		}
 		if (lastBreak >= segmentStart) {
@@ -146,21 +156,27 @@ export function wrapOverlayLine(line: string, maxWidth: number): string[] {
 			segmentStart = lastBreak + 1;
 			lastBreak = -1;
 			index = segmentStart - 1;
+			segmentWidth = 0;
 			continue;
 		}
 		if (index === segmentStart) {
 			segments.push(line.charAt(index));
 			segmentStart = index + 1;
+			segmentWidth = 0;
 		} else {
 			segments.push(line.slice(segmentStart, index));
 			segmentStart = index;
+			index = segmentStart - 1;
+			segmentWidth = 0;
 		}
 		lastBreak = -1;
 	}
 	if (segmentStart < line.length) {
 		segments.push(line.slice(segmentStart));
 	}
-	return segments.length > 0 ? segments : [''];
+	if (segments.length === initialLength) {
+		segments.push('');
+	}
 }
 
 function rewrapRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void {

@@ -12,7 +12,7 @@ export function splitText(text: string): string[] {
 
 type TextSnapshotCacheEntry = {
 	v: number;
-	s: string;
+	s: string | null;
 	lines: readonly string[] | null;
 };
 
@@ -24,27 +24,35 @@ function getSnapshotCacheEntry(buffer: TextBuffer): TextSnapshotCacheEntry {
 	if (cached && cached.v === v) {
 		return cached;
 	}
-	const s = buffer.getText();
 	if (cached) {
 		cached.v = v;
-		cached.s = s;
+		cached.s = null;
 		cached.lines = null;
 		return cached;
 	} else {
-		const entry: TextSnapshotCacheEntry = { v, s, lines: null };
+		const entry: TextSnapshotCacheEntry = { v, s: null, lines: null };
 		textSnapshotCache.set(buffer, entry);
 		return entry;
 	}
 }
 
 export function getTextSnapshot(buffer: TextBuffer): string {
-	return getSnapshotCacheEntry(buffer).s;
+	const entry = getSnapshotCacheEntry(buffer);
+	if (entry.s === null) {
+		entry.s = buffer.getText();
+	}
+	return entry.s;
 }
 
 export function getLinesSnapshot(buffer: TextBuffer): readonly string[] {
 	const entry = getSnapshotCacheEntry(buffer);
 	if (entry.lines === null) {
-		entry.lines = splitText(entry.s);
+		const lineCount = buffer.getLineCount();
+		const lines = new Array<string>(lineCount);
+		for (let index = 0; index < lineCount; index += 1) {
+			lines[index] = buffer.getLineContent(index);
+		}
+		entry.lines = lines;
 	}
 	return entry.lines;
 }
