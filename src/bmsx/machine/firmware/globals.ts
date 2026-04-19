@@ -233,6 +233,7 @@ import {
 	getOrCreateAssetsNativeObject,
 	getOrCreateNativeObject,
 	nextNativeEntry,
+	pushNativePairsIterator,
 	toNativeValue,
 	toRuntimeValue,
 	wrapNativeResult,
@@ -935,16 +936,21 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			const tableId = getOrAssignTableId(runtime, table);
 			const tableContext = extendMarshalContext(context, `table${tableId}`);
 			const output: unknown[] = [];
-			table.forEachEntry((keyValue, value) => {
-				if (typeof keyValue === 'number' && Number.isInteger(keyValue) && keyValue >= 1) {
-					output[keyValue - 1] = toNativeValue(runtime, value, extendMarshalContext(tableContext, String(keyValue)), new WeakMap());
-					return;
-				}
-				const segment = describeMarshalSegment(keyValue);
-				const nextContext = segment ? extendMarshalContext(tableContext, segment) : tableContext;
-				output.push(toNativeValue(runtime, value, nextContext, new WeakMap()));
-			});
-			return output;
+			const visited = runtime.luaScratch.acquireTableMarshal();
+			try {
+				table.forEachEntry((keyValue, value) => {
+					if (typeof keyValue === 'number' && Number.isInteger(keyValue) && keyValue >= 1) {
+						output[keyValue - 1] = toNativeValue(runtime, value, extendMarshalContext(tableContext, String(keyValue)), visited);
+						return;
+					}
+					const segment = describeMarshalSegment(keyValue);
+					const nextContext = segment ? extendMarshalContext(tableContext, segment) : tableContext;
+					output.push(toNativeValue(runtime, value, nextContext, visited));
+				});
+				return output;
+			} finally {
+				runtime.luaScratch.releaseTableMarshal(visited);
+			}
 		};
 
 	const collectApiMembers = (): Array<{ name: string; kind: 'method' | 'getter'; descriptor: PropertyDescriptor }> => {
@@ -1702,8 +1708,13 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			result = createNativeArrayFromTable(args[0], ctxBase);
 		} else {
 			result = new Array(args.length);
-			for (let index = 0; index < args.length; index += 1) {
-				result[index] = toNativeValue(runtime, args[index], ctxBase, new WeakMap());
+			const visited = runtime.luaScratch.acquireTableMarshal();
+			try {
+				for (let index = 0; index < args.length; index += 1) {
+					result[index] = toNativeValue(runtime, args[index], ctxBase, visited);
+				}
+			} finally {
+				runtime.luaScratch.releaseTableMarshal(visited);
 			}
 		}
 		out.push(getOrCreateNativeObject(runtime, result));
@@ -2550,7 +2561,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 				.join(' <- ');
 			throw runtime.createApiRuntimeError(`pairs expects a table or native object (got ${valueToString(target)}). stack=${stack}`);
 		}
-		out.push(nextFn, target, null);
+		pushNativePairsIterator(runtime, target, out);
 	}));
 	luaPipeline.registerGlobal(runtime, 'ipairs', createNativeFunction('ipairs', (args, out) => {
 		const target = args[0];
@@ -2566,7 +2577,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			const callable = descriptor.value as (...args: unknown[]) => unknown;
 			const native = createNativeFunction(`api.${name}`, (args, out) => {
 				const ctxBase = buildMarshalContext(runtime);
-				const visited = new WeakMap<Table, unknown>();
+				const visited = runtime.luaScratch.acquireTableMarshal();
 				const jsArgs = runtime.luaScratch.acquireValue() as unknown[];
 				try {
 					for (let index = 0; index < args.length; index += 1) {
@@ -2580,6 +2591,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 					throw runtime.createApiRuntimeError(`[api.${name}] ${message}`);
 				} finally {
 					runtime.luaScratch.releaseValue(jsArgs as unknown as Value[]);
+					runtime.luaScratch.releaseTableMarshal(visited);
 				}
 			});
 			luaPipeline.registerGlobal(runtime, name, native);

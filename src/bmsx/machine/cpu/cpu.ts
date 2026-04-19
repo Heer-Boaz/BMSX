@@ -12,6 +12,7 @@ import {
 	VDP_STREAM_BUFFER_BASE,
 	VDP_STREAM_BUFFER_SIZE,
 } from '../memory/map';
+import { ScratchBuffer } from '../../common/scratchbuffer';
 
 export { OpCode } from './opcode_info';
 
@@ -1470,9 +1471,8 @@ type TableLoadInlineCache = {
 	value: Value;
 };
 
-// Pool constants for frame/native-return reuse
+// Pool constant for frame reuse
 const MAX_POOLED_FRAMES = 32;
-const MAX_POOLED_NATIVE_RETURN_ARRAYS = 32;
 const signExtend = (value: number, bits: number): number => {
 	const shift = 32 - bits;
 	return (value << shift) >> shift;
@@ -1510,9 +1510,14 @@ export class CPU {
 	private yieldRequested = false;
 	private readonly frames: CallFrame[] = [];
 	private readonly openUpvalues: OpenUpvalueSlot[] = [];
-	private readonly nativeArgsPool: NativeArgsProxyHandle[] = [];
+	private readonly nativeArgsScratch = new ScratchBuffer<NativeArgsProxyHandle>(() => {
+		const view = new NativeArgsView();
+		return { view, proxy: new Proxy(view, nativeArgsProxyHandler) as unknown as NativeArgs };
+	});
+	private nativeArgsScratchIndex = 0;
 	private readonly debugRegistersScratch: Value[] = [];
-	private readonly nativeReturnPool: Value[][] = [];
+	private readonly nativeReturnScratch = new ScratchBuffer<Value[]>(() => []);
+	private nativeReturnScratchIndex = 0;
 	private readonly profiler = new CpuExecutionProfiler();
 	private profilerEnabled = false;
 	private externalReturnSink: Value[] | null = null;
@@ -1570,33 +1575,26 @@ export class CPU {
 	}
 
 	private acquireNativeArgsProxy(): NativeArgsProxyHandle {
-		const pool = this.nativeArgsPool;
-		if (pool.length > 0) {
-			return pool.pop()!;
-		}
-		const view = new NativeArgsView();
-		return { view, proxy: new Proxy(view, nativeArgsProxyHandler) as unknown as NativeArgs };
+		const handle = this.nativeArgsScratch.get(this.nativeArgsScratchIndex);
+		this.nativeArgsScratchIndex += 1;
+		return handle;
 	}
 
 	private releaseNativeArgsProxy(handle: NativeArgsProxyHandle): void {
 		handle.view.clear();
-		this.nativeArgsPool.push(handle);
+		this.nativeArgsScratchIndex -= 1;
 	}
 
 	private acquireNativeReturnScratch(): Value[] {
-		const pool = this.nativeReturnPool;
-		if (pool.length > 0) {
-			const out = pool.pop()!;
-			out.length = 0;
-			return out;
-		}
-		return [];
+		const out = this.nativeReturnScratch.get(this.nativeReturnScratchIndex);
+		this.nativeReturnScratchIndex += 1;
+		out.length = 0;
+		return out;
 	}
 
 	private releaseNativeReturnScratch(out: Value[]): void {
-		if (this.nativeReturnPool.length < MAX_POOLED_NATIVE_RETURN_ARRAYS) {
-			this.nativeReturnPool.push(out);
-		}
+		out.length = 0;
+		this.nativeReturnScratchIndex -= 1;
 	}
 
 	private findOpenUpvalue(frame: CallFrame, index: number): Upvalue | null {

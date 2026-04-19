@@ -53,6 +53,7 @@ import { Runtime } from '../machine/runtime/runtime';
 import { isLuaHandlerFunction } from './handler_cache';
 import { LuaInteropAdapter } from '../machine/firmware/js_bridge';
 import { getCachedLuaParse } from '../ide/language/lua/analysis_cache';
+import { ScratchBuffer } from '../common/scratchbuffer';
 
 type ExecutionFrame = any;
 type StatementsFrame = any;
@@ -272,9 +273,9 @@ export class LuaInterpreter {
 	private yieldTargetDepth = 0;
 	private readonly yieldLocation = { path: '<path>', line: 0, column: 0 };
 	private readonly yieldSignal: MutableYieldSignal;
-	private readonly luaValueListScratch: LuaValue[][] = [];
+	private readonly luaValueListScratch = new ScratchBuffer<LuaValue[]>(() => []);
 	private luaValueListScratchIndex = 0;
-	private readonly luaTableListScratch: LuaTable[][] = [];
+	private readonly luaTableListScratch = new ScratchBuffer<LuaTable[]>(() => []);
 	private luaTableListScratchIndex = 0;
 	private readonly returnValueBuffer: LuaValue[] = [];
 	private adapter!: LuaInteropAdapter;
@@ -387,22 +388,14 @@ export class LuaInterpreter {
 
 	public allocateValueList(): LuaValue[] {
 		const index = this.luaValueListScratchIndex++;
-		let list = this.luaValueListScratch[index];
-		if (list === undefined) {
-			list = [];
-			this.luaValueListScratch[index] = list;
-		}
+		const list = this.luaValueListScratch.get(index);
 		list.length = 0;
 		return list;
 	}
 
 	private allocateLuaTableList(): LuaTable[] {
 		const index = this.luaTableListScratchIndex++;
-		let list = this.luaTableListScratch[index];
-		if (list === undefined) {
-			list = [];
-			this.luaTableListScratch[index] = list;
-		}
+		const list = this.luaTableListScratch.get(index);
 		list.length = 0;
 		return list;
 	}

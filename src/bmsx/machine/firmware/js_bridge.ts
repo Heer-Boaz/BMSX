@@ -17,6 +17,7 @@ export interface LuaInteropAdapter {
 	toLua(value: unknown): LuaValue;
 }
 type LuaSnapshotContext = { ids: WeakMap<LuaTable, number>; objects: LuaSnapshotObjects; nextId: number };
+type TableMarshalVisited = { get(table: Table): unknown | undefined; set(table: Table, value: unknown): void };
 
 function reserveTableHashSize(entryCount: number): number {
 	if (entryCount <= 0) {
@@ -776,6 +777,11 @@ function nativeKeysEqual(left: Value, right: Value): boolean {
 	return false;
 }
 
+function isArrayIndexProperty(key: string, length: number): boolean {
+	const numeric = Number(key);
+	return Number.isInteger(numeric) && String(numeric) === key && numeric >= 0 && numeric < length;
+}
+
 function collectNativeKeys(runtime: Runtime, raw: object): Value[] {
 	const keys: Value[] = [];
 	if (Array.isArray(raw)) {
@@ -788,10 +794,11 @@ function collectNativeKeys(runtime: Runtime, raw: object): Value[] {
 			}
 			keys.push(index + 1);
 		}
-		const ownKeys = Object.keys(arr);
-		for (const key of ownKeys) {
-			const numeric = Number(key);
-			if (Number.isInteger(numeric) && String(numeric) === key && numeric >= 0 && numeric < arr.length) {
+		for (const key in arrRecord) {
+			if (!Object.prototype.hasOwnProperty.call(arrRecord, key)) {
+				continue;
+			}
+			if (isArrayIndexProperty(key, arr.length)) {
 				continue;
 			}
 			const value = arrRecord[key];
@@ -803,7 +810,10 @@ function collectNativeKeys(runtime: Runtime, raw: object): Value[] {
 		return keys;
 	}
 	const obj = raw as Record<string, unknown>;
-	for (const key of Object.keys(obj)) {
+	for (const key in obj) {
+		if (!Object.prototype.hasOwnProperty.call(obj, key)) {
+			continue;
+		}
 		const value = obj[key];
 		if (value === undefined || value === null) {
 			continue;
@@ -813,18 +823,49 @@ function collectNativeKeys(runtime: Runtime, raw: object): Value[] {
 	return keys;
 }
 
-function readNativeRawValue(raw: object, key: Value): unknown {
-	if (Array.isArray(raw)) {
-		if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
-			return (raw as unknown[])[key - 1];
+function findNativePropertyAfter(runtime: Runtime, raw: Record<string, unknown>, after: Value, skipArrayLength: number): [Value, unknown] | null {
+	let returnNext = after === null;
+	for (const prop in raw) {
+		if (!Object.prototype.hasOwnProperty.call(raw, prop)) {
+			continue;
 		}
-		const rawRecord = raw as unknown as Record<string, unknown>;
-		const prop = isStringValue(key) ? stringValueToString(key) : String(key);
-		return rawRecord[prop];
+		if (skipArrayLength >= 0 && isArrayIndexProperty(prop, skipArrayLength)) {
+			continue;
+		}
+		const value = raw[prop];
+		if (value === undefined || value === null) {
+			continue;
+		}
+		const key = parseNativeKeyFromString(runtime, prop);
+		if (returnNext) {
+			return [key, value];
+		}
+		if (nativeKeysEqual(key, after)) {
+			returnNext = true;
+		}
 	}
-	const rawRecord = raw as unknown as Record<string, unknown>;
-	const prop = isStringValue(key) ? stringValueToString(key) : String(key);
-	return rawRecord[prop];
+	return null;
+}
+
+function findNativeRawEntryAfter(runtime: Runtime, raw: object, after: Value): [Value, unknown] | null {
+	if (Array.isArray(raw)) {
+		const arr = raw as unknown[];
+		if (after !== null && (typeof after !== 'number' || !Number.isInteger(after) || after < 1)) {
+			return findNativePropertyAfter(runtime, raw as unknown as Record<string, unknown>, after, arr.length);
+		}
+		let startIndex = 0;
+		if (after !== null) {
+			startIndex = after as number;
+		}
+		for (let index = startIndex; index < arr.length; index += 1) {
+			const value = arr[index];
+			if (value !== undefined && value !== null) {
+				return [index + 1, value];
+			}
+		}
+		return findNativePropertyAfter(runtime, raw as unknown as Record<string, unknown>, null, arr.length);
+	}
+	return findNativePropertyAfter(runtime, raw as Record<string, unknown>, after, -1);
 }
 
 function stringifyKey(key: Value): string {
@@ -834,7 +875,7 @@ function stringifyKey(key: Value): string {
 	return String(key);
 }
 
-function tableToNative(runtime: Runtime, table: Table, context: LuaMarshalContext, visited: WeakMap<Table, unknown>): unknown {
+function tableToNative(runtime: Runtime, table: Table, context: LuaMarshalContext, visited: TableMarshalVisited): unknown {
 	const cached = visited.get(table);
 	if (cached !== undefined) {
 		return cached;
@@ -896,6 +937,36 @@ export function nextNativeEntry(runtime: Runtime, target: NativeObject, after: V
 		return target.nextEntry(after);
 	}
 	return buildNativeNextEntry(runtime, target.raw)(after);
+}
+
+export function pushNativePairsIterator(runtime: Runtime, target: NativeObject, out: Value[]): void {
+	const keys = collectNativeKeys(runtime, target.raw);
+	let pointer = 0;
+	const iterator = createNativeFunction('native.pairs.iterator', (args, iteratorOut) => {
+		const nativeTarget = args[0];
+		if (!isNativeObject(nativeTarget) || nativeTarget !== target) {
+			iteratorOut.push(null);
+			return;
+		}
+		const after = args.length > 1 ? args[1] : null;
+		if (after !== null && pointer > 0 && !nativeKeysEqual(keys[pointer - 1], after)) {
+			pointer = 0;
+			while (pointer < keys.length && !nativeKeysEqual(keys[pointer], after)) {
+				pointer += 1;
+			}
+			if (pointer < keys.length) {
+				pointer += 1;
+			}
+		}
+		if (pointer >= keys.length) {
+			iteratorOut.push(null);
+			return;
+		}
+		const key = keys[pointer];
+		pointer += 1;
+		iteratorOut.push(key, target.get(key));
+	});
+	out.push(iterator, target, null);
 }
 
 export function getOrCreateAssetsNativeObject(runtime: Runtime): NativeObject {
@@ -981,25 +1052,12 @@ export function getOrCreateAssetMapNativeObject(runtime: Runtime, map: Record<st
 
 function buildNativeNextEntry(runtime: Runtime, raw: object, kind?: 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents'): (after: Value) => [Value, Value] | null {
 	return (after: Value): [Value, Value] | null => {
-		const keys = collectNativeKeys(runtime, raw);
-		if (keys.length === 0) {
+		const entry = findNativeRawEntryAfter(runtime, raw, after);
+		if (entry === null) {
 			return null;
 		}
-		let nextIndex = 0;
-		if (after !== null) {
-			nextIndex = -1;
-			for (let index = 0; index < keys.length; index += 1) {
-				if (nativeKeysEqual(keys[index], after)) {
-					nextIndex = index + 1;
-					break;
-				}
-			}
-			if (nextIndex < 0 || nextIndex >= keys.length) {
-				return null;
-			}
-		}
-		const key = keys[nextIndex];
-		const value = readNativeRawValue(raw, key);
+		const key = entry[0];
+		const value = entry[1];
 		return [key, toRuntimeAssetEntryValue(runtime, value, kind)];
 	};
 }
@@ -1096,7 +1154,7 @@ export function toRuntimeValue(runtime: Runtime, value: unknown): Value {
 	return getOrCreateNativeObject(runtime, value as object);
 }
 
-export function toNativeValue(runtime: Runtime, value: Value, context: LuaMarshalContext, visited: WeakMap<Table, unknown>): unknown {
+export function toNativeValue(runtime: Runtime, value: Value, context: LuaMarshalContext, visited: TableMarshalVisited): unknown {
 	if (value === null || typeof value === 'boolean' || typeof value === 'number') {
 		return value;
 	}
@@ -1111,16 +1169,23 @@ export function toNativeValue(runtime: Runtime, value: Value, context: LuaMarsha
 	}
 	if (isNativeFunction(value)) {
 		return (...args: unknown[]) => {
-			const callArgs: Value[] = [];
-			for (let index = 0; index < args.length; index += 1) {
-				callArgs.push(toRuntimeValue(runtime, args[index]));
+			const callArgs = runtime.luaScratch.acquireValue();
+			const results = runtime.luaScratch.acquireValue();
+			const resultVisited = runtime.luaScratch.acquireTableMarshal();
+			try {
+				for (let index = 0; index < args.length; index += 1) {
+					callArgs.push(toRuntimeValue(runtime, args[index]));
+				}
+				value.invoke(callArgs, results);
+				if (results.length === 0) {
+					return undefined;
+				}
+				return toNativeValue(runtime, results[0], context, resultVisited);
+			} finally {
+				runtime.luaScratch.releaseTableMarshal(resultVisited);
+				runtime.luaScratch.releaseValue(results);
+				runtime.luaScratch.releaseValue(callArgs);
 			}
-			const results: Value[] = [];
-			value.invoke(callArgs, results);
-			if (results.length === 0) {
-				return undefined;
-			}
-			return toNativeValue(runtime, results[0], context, new WeakMap());
 		};
 	}
 	const handler = runtime.closureHandlerCache.getOrCreate(value as Closure, {
@@ -1212,13 +1277,18 @@ export function getOrCreateNativeFunction(runtime: Runtime, fn: Function): Nativ
 	const name = resolveNativeTypeName(fn);
 	const wrapper = createNativeFunction(name, (args, out) => {
 		const ctx = buildMarshalContext(runtime);
-		const visited = new WeakMap<Table, unknown>();
-		const jsArgs: unknown[] = [];
-		for (let index = 0; index < args.length; index += 1) {
-			jsArgs.push(toNativeValue(runtime, args[index], ctx, visited));
+		const visited = runtime.luaScratch.acquireTableMarshal();
+		const jsArgs = runtime.luaScratch.acquireValue() as unknown[];
+		try {
+			for (let index = 0; index < args.length; index += 1) {
+				jsArgs.push(toNativeValue(runtime, args[index], ctx, visited));
+			}
+			const result = fn.apply(undefined, jsArgs);
+			wrapNativeResult(runtime, result, out);
+		} finally {
+			runtime.luaScratch.releaseValue(jsArgs as unknown as Value[]);
+			runtime.luaScratch.releaseTableMarshal(visited);
 		}
-		const result = fn.apply(undefined, jsArgs);
-		wrapNativeResult(runtime, result, out);
 	});
 	runtime.nativeFunctionCache.set(fn, wrapper);
 	return wrapper;
@@ -1237,37 +1307,41 @@ export function getOrCreateNativeMethod(runtime: Runtime, target: object, key: s
 	const name = `${resolveNativeTypeName(target)}.${key}`;
 	const wrapper = createNativeFunction(name, (args, out) => {
 		const ctx = buildMarshalContext(runtime);
-		const visited = new WeakMap<Table, unknown>();
+		const visited = runtime.luaScratch.acquireTableMarshal();
+		const jsArgs = runtime.luaScratch.acquireValue() as unknown[];
 		const member = (target as Record<string, unknown>)[key];
-		if (!isLuaHandlerFunction(member)) {
-			const jsArgs: unknown[] = [];
-			let startIndex = 0;
-			if (args.length > 0) {
-				const first = toNativeValue(runtime, args[0], ctx, visited);
-				if (first !== target) {
-					jsArgs.push(first);
+		try {
+			if (!isLuaHandlerFunction(member)) {
+				if (typeof member !== 'function') {
+					throw new Error(`Property '${key}' is not callable.`);
 				}
-				startIndex = 1;
+				let startIndex = 0;
+				if (args.length > 0) {
+					const first = toNativeValue(runtime, args[0], ctx, visited);
+					if (first !== target) {
+						jsArgs.push(first);
+					}
+					startIndex = 1;
+				}
+				for (let index = startIndex; index < args.length; index += 1) {
+					jsArgs.push(toNativeValue(runtime, args[index], ctx, visited));
+				}
+				const result = (member as (...inner: unknown[]) => unknown).apply(target, jsArgs);
+				wrapNativeResult(runtime, result, out);
+				return;
 			}
-			for (let index = startIndex; index < args.length; index += 1) {
+			for (let index = 0; index < args.length; index += 1) {
 				jsArgs.push(toNativeValue(runtime, args[index], ctx, visited));
 			}
 			if (typeof member !== 'function') {
 				throw new Error(`Property '${key}' is not callable.`);
 			}
-			const result = (member as (...inner: unknown[]) => unknown).apply(target, jsArgs);
+			const result = (member as (...inner: unknown[]) => unknown).apply(undefined, jsArgs);
 			wrapNativeResult(runtime, result, out);
-			return;
+		} finally {
+			runtime.luaScratch.releaseValue(jsArgs as unknown as Value[]);
+			runtime.luaScratch.releaseTableMarshal(visited);
 		}
-		const jsArgs: unknown[] = [];
-		for (let index = 0; index < args.length; index += 1) {
-			jsArgs.push(toNativeValue(runtime, args[index], ctx, visited));
-		}
-		if (typeof member !== 'function') {
-			throw new Error(`Property '${key}' is not callable.`);
-		}
-		const result = (member as (...inner: unknown[]) => unknown).apply(undefined, jsArgs);
-		wrapNativeResult(runtime, result, out);
 	});
 	bucket.set(key, wrapper);
 	return wrapper;
