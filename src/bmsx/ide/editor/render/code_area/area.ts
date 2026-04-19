@@ -73,7 +73,7 @@ export function renderCodeArea(): void {
 	const shouldRenderInlinePreview = inlineCompletionPreview !== null
 		&& inlineCompletionPreview.row === editorDocumentState.cursorRow
 		&& inlineCompletionPreview.column === editorDocumentState.cursorColumn;
-	const useUppercase = editorRuntimeState.caseInsensitive;
+	const useUppercase = editorRuntimeState.uppercaseDisplay;
 	const renderFont = editorViewState.font.renderFont();
 	const breakpointLaneWidth = getBreakpointLaneWidth();
 	const sliceWidth = columnCapacity + 2;

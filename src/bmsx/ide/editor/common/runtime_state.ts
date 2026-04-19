@@ -12,6 +12,7 @@ export const editorRuntimeState = {
 	playerIndex: 0,
 	themeVariant: constants.getActiveIdeThemeVariant(),
 	caseInsensitive: false,
+	uppercaseDisplay: true,
 	builtinIdentifierCache: null as BuiltinIdentifierCache,
 	clockNow: null as () => number,
 	active: false,

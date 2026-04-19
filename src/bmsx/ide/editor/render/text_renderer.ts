@@ -25,7 +25,7 @@ export function drawEditorText(font: EditorFont, text: string, originX: number, 
 	const lines = splitText(text);
 	const renderFont = font.renderFont();
 	const preserveCase = options?.preserveCase ?? false;
-	const forceUppercase = options?.forceUppercase ?? (font.variant === 'tiny');
+	const forceUppercase = options?.forceUppercase ?? true;
 	const useUppercase = !preserveCase && CASE_INSENSITIVE_EDITOR && forceUppercase;
 	for (let i = 0; i < lines.length; i += 1) {
 		const expanded = expandTabsExternal(lines[i]);
@@ -45,7 +45,7 @@ export function drawEditorColoredText(font: EditorFont, text: string, colors: re
 	const renderFont = font.renderFont();
 	const apiWithFont = api;
 	const preserveCase = options?.preserveCase ?? false;
-	const forceUppercase = options?.forceUppercase ?? (font.variant === 'tiny');
+	const forceUppercase = options?.forceUppercase ?? true;
 	const useUppercase = !preserveCase && CASE_INSENSITIVE_EDITOR && forceUppercase;
 	const renderText = useUppercase ? toUpperExceptStrings(text, colors, fallbackColor) : text;
 	let index = 0;

@@ -2,7 +2,7 @@ import type { color } from '../../../render/shared/submissions';
 import { BmsxColors } from '../../../machine/devices/vdp/vdp';
 import { EditorFont } from '../../editor/ui/view/font';
 import type { FontVariant } from '../../../render/shared/bmsx_font';
-import { invalidateLuaCommentContextFromRow } from '../../common/text';
+import { applyCaseOutsideStrings, invalidateLuaCommentContextFromRow } from '../../common/text';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { drawCompletionPopupWithRenderer, drawParameterHintOverlayWithRenderer } from '../../editor/render/completion';
 import {
@@ -204,7 +204,7 @@ const OUTPUT_COLORS: Record<TerminalOutputKind, number> = {
 
 export class TerminalMode {
 	public font: EditorFont;
-	private readonly uppercaseDisplayOverride: boolean;
+	private readonly uppercaseDisplayOverride = true;
 	private readonly maxEntries: number;
 	private readonly characterBackgroundColor = { r: 0, g: 0, b: 0, a: CHARACTER_TILE_ALPHA } as color;
 	private readonly caretColor = BmsxColors[15];
@@ -240,7 +240,6 @@ export class TerminalMode {
 		this.setPromptPrefix(this.terminalCommands.getPrompt());
 
 		this.font = new EditorFont(runtime.activeIdeFontVariant);
-		this.uppercaseDisplayOverride = false;
 		this.maxEntries = MAX_OUTPUT_ENTRIES;
 		this.buffer = new InlineFieldTextBuffer(() => this.getLinesSnapshot(), () => this.textVersion);
 		const owner = this;
@@ -649,7 +648,7 @@ export class TerminalMode {
 			const firstLineMax = Math.max(8, contentWidth - promptWidth);
 			const otherLineMax = Math.max(8, contentWidth);
 			const displayInput = this.toDisplayText(textFromLines(this.field.lines));
-			const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax);
+			const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax, uppercaseDisplay);
 
 			// space available for output lines above the input area
 			const availableHeight = surface.height - PADDING_Y * 2 - (inputWrap.segments.length * lineHeight);
@@ -849,7 +848,8 @@ export class TerminalMode {
 		}
 		const normalized = this.toDisplayText(text);
 		const limit = Math.max(8, maxWidth);
-		const measure = (value: string): number => this.font.measure(value.replace(/\t/g, ' '.repeat(constants.TAB_SPACES)));
+		const uppercaseDisplay = this.useUppercaseDisplay();
+		const measure = (value: string): number => this.measureDisplayText(value, uppercaseDisplay);
 		const segments: string[] = [];
 		let segmentStart = 0;
 		let lastBreak = -1;
@@ -947,7 +947,7 @@ export class TerminalMode {
 		const firstLineMax = Math.max(8, contentWidth - promptWidth);
 		const otherLineMax = Math.max(8, contentWidth);
 		const displayInput = this.toDisplayText(textFromLines(this.field.lines));
-		const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax);
+		const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax, uppercaseDisplay);
 		const availableHeight = surfaceHeight - PADDING_Y * 2 - (inputWrap.segments.length * lineHeight);
 		const baseMaxLines = Math.max(1, Math.floor(availableHeight / lineHeight));
 		return Math.max(1, baseMaxLines - 1);
@@ -1153,7 +1153,7 @@ export class TerminalMode {
 	}
 
 	// New helper: wraps display text with a smaller first-line width (after prompt) and full width for following lines.
-	private wrapDisplayWithFirstWidth(text: string, firstWidth: number, otherWidth: number): { segments: string[]; starts: number[] } {
+	private wrapDisplayWithFirstWidth(text: string, firstWidth: number, otherWidth: number, uppercaseDisplay: boolean): { segments: string[]; starts: number[] } {
 		const segments: string[] = [];
 		const starts: number[] = [];
 		let current = '';
@@ -1173,7 +1173,7 @@ export class TerminalMode {
 				widthLimit = otherWidth;
 				continue;
 			}
-			const adv = ch === '\t' ? this.font.advance(' ') * constants.TAB_SPACES : this.font.measure(ch);
+			const adv = ch === '\t' ? this.font.advance(' ') * constants.TAB_SPACES : this.measureDisplayText(ch, uppercaseDisplay);
 			if (currentWidth + adv > widthLimit) {
 				if (current.length > 0) {
 					segments.push(current);
@@ -1340,8 +1340,8 @@ export class TerminalMode {
 	}
 
 	private toRenderedGlyphText(value: string, uppercase: boolean): string {
-		void uppercase;
-		return this.toDisplayText(value).replace(/\t/g, ' '.repeat(TAB_SPACES));
+		const expanded = this.toDisplayText(value).replace(/\t/g, ' '.repeat(TAB_SPACES));
+		return uppercase ? applyCaseOutsideStrings(expanded, (ch) => ch.toUpperCase()) : expanded;
 	}
 
 	private measureDisplayText(value: string, uppercase: boolean): number {

@@ -125,6 +125,6 @@ function toggleThemeMode(): void {
 	}
 	constants.setIdeThemeVariant(nextVariant);
 	editorRuntimeState.themeVariant = constants.getActiveIdeThemeVariant();
-	setEditorCaseInsensitivity(editorRuntimeState.caseInsensitive);
+	setEditorCaseInsensitivity(editorRuntimeState.uppercaseDisplay);
 	editorViewState.layout.invalidateAllHighlights();
 }

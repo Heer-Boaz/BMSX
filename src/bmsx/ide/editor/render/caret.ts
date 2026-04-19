@@ -45,7 +45,7 @@ export function drawInlineCaret(
 }
 
 export function getCaretGlyphForDisplay(baseChar: string, baseColor?: number): string {
-	if (!editorRuntimeState.caseInsensitive) {
+	if (!editorRuntimeState.uppercaseDisplay) {
 		return baseChar;
 	}
 	if (baseColor === constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING) {

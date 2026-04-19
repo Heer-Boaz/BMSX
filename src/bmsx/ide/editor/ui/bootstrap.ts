@@ -29,6 +29,7 @@ import { applySearchFieldText } from '../contrib/find/search';
 import { initializeNavigationState } from '../navigation/navigation_history';
 import { applySymbolSearchFieldText } from '../contrib/symbols/shared';
 import { editorRuntimeState } from '../common/runtime_state';
+import { setEditorCaseInsensitivity } from '../render/text_renderer';
 import { problemsPanel } from '../../workbench/contrib/problems/panel/controller';
 import { createResourceState, resourceSearchState } from '../../workbench/contrib/resources/widget_state';
 
@@ -39,6 +40,8 @@ export function initializeCartEditor(viewport: Viewport): void {
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 	editorRuntimeState.themeVariant = constants.getActiveIdeThemeVariant();
 	editorRuntimeState.caseInsensitive = false;
+	editorRuntimeState.uppercaseDisplay = true;
+	setEditorCaseInsensitivity(editorRuntimeState.uppercaseDisplay);
 	editorDocumentState.preMutationSource = null;
 	applyViewportSize(viewport);
 	editorRuntimeState.clockNow = $.platform.clock.now;
