@@ -6,6 +6,7 @@ export const COMMON_LANGUAGE_LINT_RULES = [
 	'or_nil_fallback_pattern',
 	'explicit_truthy_comparison_pattern',
 	'string_or_chain_comparison_pattern',
+	'string_switch_chain_pattern',
 	'single_line_method_pattern',
 	'useless_terminal_return_pattern',
 ] as const;

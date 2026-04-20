@@ -773,6 +773,10 @@ function isEmptyStringLiteral(node: ts.Expression): node is ts.StringLiteral {
 	return ts.isStringLiteral(node) && node.text === '';
 }
 
+function isStringLiteralLike(node: ts.Expression): boolean {
+	return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
+}
+
 function isNullOrUndefined(node: ts.Expression): boolean {
 	return node.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(node) && node.text === 'undefined');
 }
@@ -1618,6 +1622,59 @@ function collectStringOrChainSubjects(node: ts.Expression, subjects: string[]): 
 	return true;
 }
 
+function stringSwitchComparisonSubject(node: ts.Expression): string | null {
+	const unwrapped = unwrapExpression(node);
+	if (!ts.isBinaryExpression(unwrapped) || unwrapped.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken) {
+		return null;
+	}
+	const leftIsString = isStringLiteralLike(unwrapped.left);
+	const rightIsString = isStringLiteralLike(unwrapped.right);
+	if (leftIsString === rightIsString) {
+		return null;
+	}
+	const subject = leftIsString ? unwrapped.right : unwrapped.left;
+	return isExpressionInScopeFingerprint(subject);
+}
+
+function lintStringSwitchChain(node: ts.IfStatement, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
+	const parent = node.parent;
+	if (ts.isIfStatement(parent) && parent.elseStatement === node) {
+		return;
+	}
+	const subjects: string[] = [];
+	let current: ts.IfStatement | undefined = node;
+	while (current !== undefined) {
+		const subject = stringSwitchComparisonSubject(current.expression);
+		if (subject === null) {
+			return;
+		}
+		subjects.push(subject);
+		const elseStatement = current.elseStatement;
+		if (elseStatement === undefined || !ts.isIfStatement(elseStatement)) {
+			break;
+		}
+		current = elseStatement;
+	}
+	if (subjects.length < 3) {
+		return;
+	}
+	const first = subjects[0];
+	for (let index = 1; index < subjects.length; index += 1) {
+		if (subjects[index] !== first) {
+			return;
+		}
+	}
+	const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+	issues.push({
+		kind: 'string_switch_chain_pattern',
+		file: sourceFile.fileName,
+		line: position.line + 1,
+		column: position.character + 1,
+		name: 'string_switch_chain_pattern',
+		message: 'Multiple string comparisons against the same expression are forbidden. Use `switch`-statement or lookup table instead.',
+	});
+}
+
 function lintBinaryExpressionForCodeQuality(
 	node: ts.BinaryExpression,
 	sourceFile: ts.SourceFile,
@@ -1634,9 +1691,9 @@ function lintBinaryExpressionForCodeQuality(
 			);
 		}
 	}
-	if (node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
-		const subjects: string[] = [];
-		if (collectStringOrChainSubjects(node, subjects) && subjects.length > 1) {
+		if (node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
+			const subjects: string[] = [];
+			if (collectStringOrChainSubjects(node, subjects) && subjects.length > 2) {
 			const first = subjects[0];
 			let sameSubject = true;
 			for (let index = 1; index < subjects.length; index += 1) {
@@ -2369,10 +2426,11 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 		if (ts.isBinaryExpression(node)) {
 			lintBinaryExpressionForCodeQuality(node, sourceFile, issues);
 		}
-		if (ts.isIfStatement(node)) {
-			lintNullishReturnGuard(node, sourceFile, issues);
-			lintLookupAliasOptionalChain(node, sourceFile, issues);
-		}
+			if (ts.isIfStatement(node)) {
+				lintNullishReturnGuard(node, sourceFile, issues);
+				lintLookupAliasOptionalChain(node, sourceFile, issues);
+				lintStringSwitchChain(node, sourceFile, issues);
+			}
 		if (ts.isReturnStatement(node)) {
 			lintLookupAliasOptionalChain(node, sourceFile, issues);
 		}

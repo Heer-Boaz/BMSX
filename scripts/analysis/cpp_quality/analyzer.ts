@@ -24,17 +24,18 @@ import {
 	collectCppNormalizedBody,
 	createCppFunctionUsageInfo,
 	createCppFacadeStats,
-	lintCppEnsureLazyInitPattern,
-	lintCppTerminalReturnPaddingPattern,
-	isCppSingleLineWrapperAllowedByUsage,
-	lintCppCrossLayerIncludes,
-	lintCppFacadeStats,
-	lintCppHotPathCalls,
-	lintCppLocalBindings,
-	lintCppNullishReturnGuards,
-	lintCppRepeatedExpressions,
-	lintCppSimpleTokenPatterns,
-} from './rules';
+		lintCppEnsureLazyInitPattern,
+		lintCppTerminalReturnPaddingPattern,
+		isCppSingleLineWrapperAllowedByUsage,
+		lintCppCrossLayerIncludes,
+		lintCppFacadeStats,
+		lintCppHotPathCalls,
+		lintCppLocalBindings,
+		lintCppNullishReturnGuards,
+		lintCppStringSwitchChains,
+		lintCppRepeatedExpressions,
+		lintCppSimpleTokenPatterns,
+	} from './rules';
 import { buildCppPairMap, tokenizeCpp } from '../../../src/bmsx/language/cpp/syntax/tokens';
 import type { CppClassRange, CppFunctionInfo, CppTypeDeclarationInfo } from '../../../src/bmsx/language/cpp/syntax/declarations';
 
@@ -82,10 +83,10 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 		const functions = analysis.functions;
 		const facadeStats = createCppFacadeStats(functions, tokens);
 		lintCppSimpleTokenPatterns(file, tokens, lintIssues);
-		lintCppHotPathCalls(file, tokens, pairs, lintIssues);
-		lintCppCrossLayerIncludes(file, source, lintIssues);
-		for (let functionIndex = 0; functionIndex < functions.length; functionIndex += 1) {
-			const info = functions[functionIndex];
+				lintCppHotPathCalls(file, tokens, pairs, lintIssues);
+				lintCppCrossLayerIncludes(file, source, lintIssues);
+				for (let functionIndex = 0; functionIndex < functions.length; functionIndex += 1) {
+					const info = functions[functionIndex];
 			if (facadeStats !== null) {
 				facadeStats.callableCount += 1;
 			}
@@ -129,11 +130,12 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 			}
 			lintCppEnsureLazyInitPattern(file, tokens, pairs, info, lintIssues);
 			lintCppTerminalReturnPaddingPattern(file, tokens, info, lintIssues);
-			lintCppLocalBindings(file, tokens, info, lintIssues);
-			lintCppNullishReturnGuards(file, tokens, pairs, info, lintIssues);
-			lintCppRepeatedExpressions(file, tokens, pairs, info, lintIssues);
-			collectCppNormalizedBody(file, tokens, info, normalizedBodies);
-		}
+				lintCppLocalBindings(file, tokens, info, lintIssues);
+				lintCppNullishReturnGuards(file, tokens, pairs, info, lintIssues);
+				lintCppStringSwitchChains(file, tokens, pairs, info, lintIssues);
+				lintCppRepeatedExpressions(file, tokens, pairs, info, lintIssues);
+				collectCppNormalizedBody(file, tokens, info, normalizedBodies);
+			}
 		if (facadeStats !== null) {
 			lintCppFacadeStats(file, facadeStats, lintIssues);
 		}
