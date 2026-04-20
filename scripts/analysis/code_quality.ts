@@ -748,6 +748,10 @@ function isNullOrUndefined(node: ts.Expression): boolean {
 	return node.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(node) && node.text === 'undefined');
 }
 
+function isNullishEqualityOperator(kind: ts.SyntaxKind): boolean {
+	return kind === ts.SyntaxKind.EqualsEqualsToken || kind === ts.SyntaxKind.EqualsEqualsEqualsToken;
+}
+
 function isExpressionInScopeFingerprint(node: ts.Expression): string | null {
 	if (ts.isIdentifier(node)) {
 		return `id:${node.text}`;
@@ -784,6 +788,94 @@ function isExpressionInScopeFingerprint(node: ts.Expression): string | null {
 		return isExpressionInScopeFingerprint(inner);
 	}
 	return null;
+}
+
+function expressionAccessFingerprint(node: ts.Expression): string | null {
+	const unwrapped = unwrapExpression(node);
+	if (ts.isCallExpression(unwrapped)) {
+		return expressionAccessFingerprint(unwrapped.expression);
+	}
+	return isExpressionInScopeFingerprint(unwrapped);
+}
+
+function expressionUsesGuardedValue(expression: ts.Expression, guardFingerprint: string): boolean {
+	const expressionFingerprint = expressionAccessFingerprint(expression);
+	return expressionFingerprint !== null && (
+		expressionFingerprint === guardFingerprint
+		|| expressionFingerprint.startsWith(`${guardFingerprint}.`)
+		|| expressionFingerprint.startsWith(`${guardFingerprint}[`)
+	);
+}
+
+function nullishGuardFingerprint(condition: ts.Expression): string | null {
+	const unwrapped = unwrapExpression(condition);
+	if (!ts.isBinaryExpression(unwrapped)) {
+		return null;
+	}
+	if (unwrapped.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
+		const left = nullishGuardFingerprint(unwrapped.left);
+		const right = nullishGuardFingerprint(unwrapped.right);
+		return left !== null && left === right ? left : null;
+	}
+	if (!isNullishEqualityOperator(unwrapped.operatorToken.kind)) {
+		return null;
+	}
+	if (isNullOrUndefined(unwrapped.left)) {
+		return expressionAccessFingerprint(unwrapped.right);
+	}
+	if (isNullOrUndefined(unwrapped.right)) {
+		return expressionAccessFingerprint(unwrapped.left);
+	}
+	return null;
+}
+
+function isNullishReturnStatement(statement: ts.Statement): boolean {
+	if (ts.isReturnStatement(statement)) {
+		return statement.expression !== undefined && isNullOrUndefined(statement.expression);
+	}
+	if (!ts.isBlock(statement) || statement.statements.length !== 1) {
+		return false;
+	}
+	const onlyStatement = statement.statements[0];
+	return ts.isReturnStatement(onlyStatement) && onlyStatement.expression !== undefined && isNullOrUndefined(onlyStatement.expression);
+}
+
+function nextStatementAfter(statement: ts.Statement): ts.Statement | null {
+	const parent = statement.parent;
+	if (!parent || (!ts.isBlock(parent) && !ts.isSourceFile(parent))) {
+		return null;
+	}
+	const statements = parent.statements;
+	for (let index = 0; index < statements.length - 1; index += 1) {
+		if (statements[index] === statement) {
+			return statements[index + 1];
+		}
+	}
+	return null;
+}
+
+function lintNullishReturnGuard(node: ts.IfStatement, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
+	if (node.elseStatement !== undefined || !isNullishReturnStatement(node.thenStatement)) {
+		return;
+	}
+	const guardFingerprint = nullishGuardFingerprint(node.expression);
+	if (guardFingerprint === null) {
+		return;
+	}
+	const next = nextStatementAfter(node);
+	if (next === null || !ts.isReturnStatement(next) || next.expression === undefined) {
+		return;
+	}
+	if (!expressionUsesGuardedValue(next.expression, guardFingerprint)) {
+		return;
+	}
+	pushLintIssue(
+		issues,
+		sourceFile,
+		node,
+		'nullish_return_guard_pattern',
+		'Nullish guard that only returns null/undefined before returning the guarded value is forbidden. Keep the compact expression form instead of expanding it into a branch.',
+	);
 }
 
 function unwrapExpression(node: ts.Expression): ts.Expression {
@@ -1564,6 +1656,9 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[]): void
 		}
 		if (ts.isBinaryExpression(node)) {
 			lintBinaryExpressionForCodeQuality(node, sourceFile, issues);
+		}
+		if (ts.isIfStatement(node)) {
+			lintNullishReturnGuard(node, sourceFile, issues);
 		}
 		if (ts.isConditionalExpression(node) && (isNullOrUndefined(node.whenTrue) || isNullOrUndefined(node.whenFalse))) {
 			pushLintIssue(

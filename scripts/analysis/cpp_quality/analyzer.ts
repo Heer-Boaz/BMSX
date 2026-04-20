@@ -26,6 +26,7 @@ import {
 	lintCppFacadeStats,
 	lintCppHotPathCalls,
 	lintCppLocalBindings,
+	lintCppNullishReturnGuards,
 	lintCppRepeatedExpressions,
 	lintCppSimpleTokenPatterns,
 } from './rules';
@@ -96,6 +97,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 				}
 			}
 			lintCppLocalBindings(file, tokens, info, lintIssues);
+			lintCppNullishReturnGuards(file, tokens, pairs, info, lintIssues);
 			lintCppRepeatedExpressions(file, tokens, pairs, info, lintIssues);
 			collectCppNormalizedBody(file, tokens, info, normalizedBodies);
 		}
