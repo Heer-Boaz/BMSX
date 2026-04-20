@@ -40,6 +40,24 @@ typedef struct {
 	uint64_t frame;
 } TimelineCaptureEvent;
 
+typedef enum {
+	TIMELINE_EVENT_FIELD_UNKNOWN = 0,
+	TIMELINE_EVENT_FIELD_TYPE,
+	TIMELINE_EVENT_FIELD_CODE,
+	TIMELINE_EVENT_FIELD_DOWN,
+} TimelineEventFieldKind;
+
+typedef enum {
+	TIMELINE_TIMING_FIELD_UNKNOWN = 0,
+	TIMELINE_TIMING_FIELD_FRAME,
+	TIMELINE_TIMING_FIELD_MS,
+	TIMELINE_TIMING_FIELD_TIME_MS,
+	TIMELINE_TIMING_FIELD_DELAY_MS,
+	TIMELINE_TIMING_FIELD_REPEAT,
+	TIMELINE_TIMING_FIELD_REPEAT_EVERY_FRAMES,
+	TIMELINE_TIMING_FIELD_REPEAT_EVERY_MS,
+} TimelineTimingFieldKind;
+
 static void timeline_logf(const char* format, ...);
 
 static TestInputEvent* g_test_input_events = NULL;
@@ -215,6 +233,45 @@ static void add_test_capture_event(uint64_t frame) {
 	}
 	g_test_capture_events[g_test_capture_event_count].frame = frame;
 	++g_test_capture_event_count;
+}
+
+static TimelineEventFieldKind resolve_timeline_event_field_kind(const char* key) {
+	switch (key[0]) {
+		case 't':
+			return strcmp(key, "type") == 0 ? TIMELINE_EVENT_FIELD_TYPE : TIMELINE_EVENT_FIELD_UNKNOWN;
+		case 'c':
+			return strcmp(key, "code") == 0 ? TIMELINE_EVENT_FIELD_CODE : TIMELINE_EVENT_FIELD_UNKNOWN;
+		case 'd':
+			return strcmp(key, "down") == 0 ? TIMELINE_EVENT_FIELD_DOWN : TIMELINE_EVENT_FIELD_UNKNOWN;
+		default:
+			return TIMELINE_EVENT_FIELD_UNKNOWN;
+	}
+}
+
+static TimelineTimingFieldKind resolve_timeline_timing_field_kind(const char* key) {
+	switch (key[0]) {
+		case 'f':
+			return strcmp(key, "frame") == 0 ? TIMELINE_TIMING_FIELD_FRAME : TIMELINE_TIMING_FIELD_UNKNOWN;
+		case 'm':
+			return strcmp(key, "ms") == 0 ? TIMELINE_TIMING_FIELD_MS : TIMELINE_TIMING_FIELD_UNKNOWN;
+		case 't':
+			return strcmp(key, "timeMs") == 0 ? TIMELINE_TIMING_FIELD_TIME_MS : TIMELINE_TIMING_FIELD_UNKNOWN;
+		case 'd':
+			return strcmp(key, "delayMs") == 0 ? TIMELINE_TIMING_FIELD_DELAY_MS : TIMELINE_TIMING_FIELD_UNKNOWN;
+		case 'r':
+			if (strcmp(key, "repeat") == 0) {
+				return TIMELINE_TIMING_FIELD_REPEAT;
+			}
+			if (strcmp(key, "repeatEveryFrames") == 0) {
+				return TIMELINE_TIMING_FIELD_REPEAT_EVERY_FRAMES;
+			}
+			if (strcmp(key, "repeatEveryMs") == 0) {
+				return TIMELINE_TIMING_FIELD_REPEAT_EVERY_MS;
+			}
+			return TIMELINE_TIMING_FIELD_UNKNOWN;
+		default:
+			return TIMELINE_TIMING_FIELD_UNKNOWN;
+	}
 }
 
 static void json_cursor_skip_ws(JsonCursor* cursor) {
@@ -452,27 +509,34 @@ static bool parse_timeline_event(JsonCursor* cursor, TimelineEvent* entry) {
 		if (!json_cursor_ensure(cursor, ':')) {
 			return false;
 		}
-		if (strcmp(key, "type") == 0) {
-			char type[kJsonKeyBuffer];
-			if (!json_parse_string(cursor, type, sizeof(type))) {
-				return false;
+		const TimelineEventFieldKind field_kind = resolve_timeline_event_field_kind(key);
+		switch (field_kind) {
+			case TIMELINE_EVENT_FIELD_TYPE: {
+				char type[kJsonKeyBuffer];
+				if (!json_parse_string(cursor, type, sizeof(type))) {
+					return false;
+				}
+				has_type = true;
+				event_is_button = strcmp(type, "button") == 0;
+				break;
 			}
-			has_type = true;
-			event_is_button = strcmp(type, "button") == 0;
-		} else if (strcmp(key, "code") == 0) {
-			if (!json_parse_string(cursor, code, sizeof(code))) {
-				return false;
-			}
-			has_code = true;
-		} else if (strcmp(key, "down") == 0) {
-			if (!json_parse_bool(cursor, &down)) {
-				return false;
-			}
-			has_down = true;
-		} else {
-			if (!json_skip_value(cursor)) {
-				return false;
-			}
+			case TIMELINE_EVENT_FIELD_CODE:
+				if (!json_parse_string(cursor, code, sizeof(code))) {
+					return false;
+				}
+				has_code = true;
+				break;
+			case TIMELINE_EVENT_FIELD_DOWN:
+				if (!json_parse_bool(cursor, &down)) {
+					return false;
+				}
+				has_down = true;
+				break;
+			default:
+				if (!json_skip_value(cursor)) {
+					return false;
+				}
+				break;
 		}
 		json_cursor_skip_ws(cursor);
 		if (json_cursor_consume(cursor, ',')) {
@@ -524,50 +588,71 @@ static bool parse_timeline_entry(JsonCursor* cursor, uint64_t frame_usec, uint64
 		if (!json_cursor_ensure(cursor, ':')) {
 			return false;
 		}
-		if (strcmp(key, "frame") == 0 || strcmp(key, "ms") == 0 || strcmp(key, "timeMs") == 0 ||
-				strcmp(key, "delayMs") == 0 || strcmp(key, "repeat") == 0 ||
-				strcmp(key, "repeatEveryFrames") == 0 || strcmp(key, "repeatEveryMs") == 0) {
-			double number = 0.0;
-			if (!json_parse_number(cursor, &number)) {
-				timeline_parse_errorf(cursor, "entry %zu: failed to parse numeric field '%s'", index, key);
-				return false;
+		const TimelineTimingFieldKind field_kind = resolve_timeline_timing_field_kind(key);
+		switch (field_kind) {
+			case TIMELINE_TIMING_FIELD_FRAME:
+			case TIMELINE_TIMING_FIELD_MS:
+			case TIMELINE_TIMING_FIELD_TIME_MS:
+			case TIMELINE_TIMING_FIELD_DELAY_MS:
+			case TIMELINE_TIMING_FIELD_REPEAT:
+			case TIMELINE_TIMING_FIELD_REPEAT_EVERY_FRAMES:
+			case TIMELINE_TIMING_FIELD_REPEAT_EVERY_MS: {
+				double number = 0.0;
+				if (!json_parse_number(cursor, &number)) {
+					timeline_parse_errorf(cursor, "entry %zu: failed to parse numeric field '%s'", index, key);
+					return false;
+				}
+				uint64_t rounded = (uint64_t)llround(number);
+				switch (field_kind) {
+					case TIMELINE_TIMING_FIELD_FRAME:
+						has_frame = true;
+						frame = rounded;
+						break;
+					case TIMELINE_TIMING_FIELD_MS:
+					case TIMELINE_TIMING_FIELD_TIME_MS:
+						has_ms = true;
+						ms_value = rounded;
+						break;
+					case TIMELINE_TIMING_FIELD_DELAY_MS:
+						has_delay = true;
+						delay_ms = rounded;
+						break;
+					case TIMELINE_TIMING_FIELD_REPEAT:
+						has_repeat = true;
+						repeat = rounded;
+						break;
+					case TIMELINE_TIMING_FIELD_REPEAT_EVERY_FRAMES:
+						has_repeat_every_frames = true;
+						repeat_every_frames = rounded;
+						break;
+					case TIMELINE_TIMING_FIELD_REPEAT_EVERY_MS:
+						has_repeat_every_ms = true;
+						repeat_every_ms = rounded;
+						break;
+					default:
+						break;
+				}
+				break;
 			}
-			uint64_t rounded = (uint64_t)llround(number);
-			if (strcmp(key, "frame") == 0) {
-				has_frame = true;
-				frame = rounded;
-			} else if (strcmp(key, "ms") == 0 || strcmp(key, "timeMs") == 0) {
-				has_ms = true;
-				ms_value = rounded;
-			} else if (strcmp(key, "delayMs") == 0) {
-				has_delay = true;
-				delay_ms = rounded;
-			} else if (strcmp(key, "repeat") == 0) {
-				has_repeat = true;
-				repeat = rounded;
-			} else if (strcmp(key, "repeatEveryFrames") == 0) {
-				has_repeat_every_frames = true;
-				repeat_every_frames = rounded;
-			} else if (strcmp(key, "repeatEveryMs") == 0) {
-				has_repeat_every_ms = true;
-				repeat_every_ms = rounded;
-			}
-		} else if (strcmp(key, "capture") == 0) {
-			bool capture = false;
-			if (!json_parse_bool(cursor, &capture)) {
-				timeline_parse_errorf(cursor, "entry %zu: failed to parse boolean field '%s'", index, key);
-				return false;
-			}
-			has_capture = capture;
-		} else if (strcmp(key, "event") == 0) {
-			if (!parse_timeline_event(cursor, &event_entry)) {
-				timeline_parse_errorf(cursor, "entry %zu has unsupported or malformed event", index);
-				event_entry.code[0] = '\0';
-			}
-		} else {
-			if (!json_skip_value(cursor)) {
-				return false;
-			}
+			default:
+				if (strcmp(key, "capture") == 0) {
+					bool capture = false;
+					if (!json_parse_bool(cursor, &capture)) {
+						timeline_parse_errorf(cursor, "entry %zu: failed to parse boolean field '%s'", index, key);
+						return false;
+					}
+					has_capture = capture;
+				} else if (strcmp(key, "event") == 0) {
+					if (!parse_timeline_event(cursor, &event_entry)) {
+						timeline_parse_errorf(cursor, "entry %zu has unsupported or malformed event", index);
+						event_entry.code[0] = '\0';
+					}
+				} else {
+					if (!json_skip_value(cursor)) {
+						return false;
+					}
+				}
+				break;
 		}
 		json_cursor_skip_ws(cursor);
 		if (json_cursor_consume(cursor, ',')) {

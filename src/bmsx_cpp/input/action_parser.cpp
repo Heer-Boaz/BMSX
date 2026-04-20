@@ -3,11 +3,58 @@
  */
 
 #include "action_parser.h"
+#include <array>
 #include <stdexcept>
 #include <regex>
 #include <cmath>
+#include <string_view>
 
 namespace bmsx {
+
+namespace {
+
+enum class StaticModifierKind {
+	P,
+	R,
+	Jp,
+	AmpJp,
+	Jr,
+	AmpJr,
+	Gp,
+	Rp,
+	C,
+	H,
+};
+
+struct StaticModifierEntry {
+	std::string_view key;
+	StaticModifierKind kind;
+};
+
+constexpr std::array<StaticModifierEntry, 10> STATIC_MODIFIER_ENTRIES = {{
+	{"p", StaticModifierKind::P},
+	{"r", StaticModifierKind::R},
+	{"jp", StaticModifierKind::Jp},
+	{"&jp", StaticModifierKind::AmpJp},
+	{"jr", StaticModifierKind::Jr},
+	{"&jr", StaticModifierKind::AmpJr},
+	{"gp", StaticModifierKind::Gp},
+	{"rp", StaticModifierKind::Rp},
+	{"c", StaticModifierKind::C},
+	{"h", StaticModifierKind::H},
+}};
+
+bool resolveStaticModifierKind(const std::string& raw, StaticModifierKind& kind) {
+	for (const auto& entry : STATIC_MODIFIER_ENTRIES) {
+		if (raw == entry.key) {
+			kind = entry.kind;
+			return true;
+		}
+	}
+	return false;
+}
+
+} // namespace
 
 /* ============================================================================
  * Static cache
@@ -466,48 +513,61 @@ ModFn makeModPred(const std::string& tok) {
 	std::string raw = neg ? tok.substr(1) : tok;
 	ModFn fn;
 	
-	// Static modifiers
-	if (raw == "p") {
-		fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
-			return get(n, win).pressed;
-		};
-	} else if (raw == "r") {
-		fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
-			return !get(n, win).pressed;
-		};
-	} else if (raw == "jp") {
-		fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
-			return get(n, win).justpressed;
-		};
-	} else if (raw == "&jp") {
-		fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
-			return get(n, win).alljustpressed;
-		};
-	} else if (raw == "jr") {
-		fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
-			return get(n, win).justreleased;
-		};
-	} else if (raw == "&jr") {
-		fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
-			return get(n, win).alljustreleased;
-		};
-	} else if (raw == "gp") {
-		fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
-			return get(n, win).guardedjustpressed.value_or(false);
-		};
-	} else if (raw == "rp") {
-		fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
-			return get(n, win).repeatpressed.value_or(false);
-		};
-	} else if (raw == "c") {
-		fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
-			return get(n, win).consumed;
-		};
-	} else if (raw == "h") {
-		// Hold: pressed for more than 1 frame
-		fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
-			return get(n, win).presstime.value_or(0.0) >= 1.0;
-		};
+	StaticModifierKind staticKind;
+	if (resolveStaticModifierKind(raw, staticKind)) {
+		switch (staticKind) {
+			case StaticModifierKind::P:
+				fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
+					return get(n, win).pressed;
+				};
+				break;
+			case StaticModifierKind::R:
+				fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
+					return !get(n, win).pressed;
+				};
+				break;
+			case StaticModifierKind::Jp:
+				fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
+					return get(n, win).justpressed;
+				};
+				break;
+			case StaticModifierKind::AmpJp:
+				fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
+					return get(n, win).alljustpressed;
+				};
+				break;
+			case StaticModifierKind::Jr:
+				fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
+					return get(n, win).justreleased;
+				};
+				break;
+			case StaticModifierKind::AmpJr:
+				fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
+					return get(n, win).alljustreleased;
+				};
+				break;
+			case StaticModifierKind::Gp:
+				fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
+					return get(n, win).guardedjustpressed.value_or(false);
+				};
+				break;
+			case StaticModifierKind::Rp:
+				fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
+					return get(n, win).repeatpressed.value_or(false);
+				};
+				break;
+			case StaticModifierKind::C:
+				fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
+					return get(n, win).consumed;
+				};
+				break;
+			case StaticModifierKind::H:
+				// Hold: pressed for more than 1 frame
+				fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
+					return get(n, win).presstime.value_or(0.0) >= 1.0;
+				};
+				break;
+		}
 	} else {
 		// Windowed modifiers
 		static const std::regex wpRe(R"(^wp\{(\d+)\})");

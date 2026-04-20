@@ -168,7 +168,7 @@ std::vector<std::string> extractExpressionCandidates(const SourceRange& range, c
 }
 
 Value debugKey(const Runtime& runtime, std::string_view value) {
-	return valueString(runtime.machine().cpu().internString(value));
+	return runtime.luaKey(value);
 }
 
 std::string formatDebugValue(const Runtime& runtime, Value value) {

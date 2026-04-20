@@ -3,6 +3,7 @@
 #include "machine/firmware/input_state_tables.h"
 #include "machine/program/load_compiler.h"
 #include "machine/common/number_format.h"
+#include "machine/memory/lua_heap_usage.h"
 #include "core/engine.h"
 #include "rompack/format.h"
 #include "rompack/assets.h"

@@ -15,7 +15,14 @@ export function isSymbolQueryChar(ch: string): boolean {
 	if (code >= 48 && code <= 57) return true;
 	if (code >= 65 && code <= 90) return true;
 	if (code >= 97 && code <= 122) return true;
-	return ch === '_' || ch === '.' || ch === ':';
+	switch (ch) {
+		case '_':
+		case '.':
+		case ':':
+			return true;
+		default:
+			return false;
+	}
 }
 
 export function findSymbolCompletionBounds(text: string, cursor: number): { start: number; end: number } {

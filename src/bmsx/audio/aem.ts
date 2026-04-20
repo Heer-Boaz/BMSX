@@ -657,8 +657,13 @@ export function validateAemDocument(doc: unknown, lookup: AemValidationLookup, f
 	const keys = Object.keys(object);
 	for (let index = 0; index < keys.length; index += 1) {
 		const key = keys[index]!;
-		if (key === '$type' || key === 'name' || key === 'channel' || key === 'policy' || key === 'rules') {
-			continue;
+		switch (key) {
+			case '$type':
+			case 'name':
+			case 'channel':
+			case 'policy':
+			case 'rules':
+				continue;
 		}
 		validateEventDefinition(object[key], fileTag, key, lookup, errors, warnings, musicTransitionsWithFallback);
 	}

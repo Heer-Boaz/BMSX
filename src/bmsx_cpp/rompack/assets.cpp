@@ -8,6 +8,7 @@
 #include "common/mem_snapshot.h"
 #include <cstring>
 #include <stdexcept>
+#include <string_view>
 #if BMSX_ENABLE_ZLIB
 #include <zlib.h>
 #endif
@@ -135,6 +136,18 @@ static constexpr u32 ROM_TOC_HEADER_SIZE = 48;
 static constexpr u32 ROM_TOC_ENTRY_SIZE = 88;
 static constexpr u32 ROM_TOC_INVALID_U32 = 0xffffffff;
 
+enum class AssetTypeKind {
+	ImageAtlas,
+	Audio,
+	Model,
+	Aem,
+	Bin,
+	Lua,
+	Data,
+	Skip,
+	Unknown,
+};
+
 static std::string assetTypeFromId(u32 id) {
 	switch (id) {
 		case 1: return "image";
@@ -150,6 +163,58 @@ static std::string assetTypeFromId(u32 id) {
 		default:
 			throw BMSX_RUNTIME_ERROR("Unknown asset type id: " + std::to_string(id));
 	}
+}
+
+static AssetTypeKind resolveAssetTypeKind(std::string_view assetType) {
+	switch (assetType[0]) {
+		case 'i':
+			if (assetType == "image") {
+				return AssetTypeKind::ImageAtlas;
+			}
+			break;
+		case 'a':
+			if (assetType == "atlas") {
+				return AssetTypeKind::ImageAtlas;
+			}
+			if (assetType == "audio") {
+				return AssetTypeKind::Audio;
+			}
+			if (assetType == "aem") {
+				return AssetTypeKind::Aem;
+			}
+			break;
+		case 'm':
+			if (assetType == "model") {
+				return AssetTypeKind::Model;
+			}
+			break;
+		case 'b':
+			if (assetType == "bin") {
+				return AssetTypeKind::Bin;
+			}
+			break;
+		case 'l':
+			if (assetType == "lua") {
+				return AssetTypeKind::Lua;
+			}
+			break;
+		case 'd':
+			if (assetType == "data") {
+				return AssetTypeKind::Data;
+			}
+			break;
+		case 'r':
+			if (assetType == "romlabel") {
+				return AssetTypeKind::Skip;
+			}
+			break;
+		case 'c':
+			if (assetType == "code") {
+				return AssetTypeKind::Skip;
+			}
+			break;
+	}
+	return AssetTypeKind::Unknown;
 }
 
 static constexpr u64 ASSET_TOKEN_OFFSET_BASIS = 0xcbf29ce484222325ull;
@@ -1572,38 +1637,39 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 			static_cast<size_t>(metaBufStart) >= sharedMetadataPayloadOffset &&
 			static_cast<size_t>(metaBufEnd) <= sharedMetadataEndOffset;
 
-		if (assetType == "image" || assetType == "atlas") {
-			ImgAsset imgAsset;
-			imgAsset.id = assetId;
-			imgAsset.rom = romInfo;
+		switch (resolveAssetTypeKind(assetType)) {
+			case AssetTypeKind::ImageAtlas: {
+				ImgAsset imgAsset;
+				imgAsset.id = assetId;
+				imgAsset.rom = romInfo;
 
-			// Load image metadata
-			if (metaBufStart >= 0 && metaBufEnd > metaBufStart) {
-				BinValue metaVal = useSharedMetadata
-					? decodeBinaryWithPropTable(romData + metaBufStart, static_cast<size_t>(metaBufEnd - metaBufStart), sharedMetadata.propNames)
-					: decodeBinary(romData + metaBufStart, static_cast<size_t>(metaBufEnd - metaBufStart));
-				if (metaVal.isObject()) {
-					const auto& imgMeta = metaVal.asObject();
-					imgAsset.meta.width = imgMeta.count("width") ? imgMeta.at("width").toI32() : 0;
-					imgAsset.meta.height = imgMeta.count("height") ? imgMeta.at("height").toI32() : 0;
-					imgAsset.meta.atlassed = imgMeta.count("atlassed") && imgMeta.at("atlassed").isBool() && imgMeta.at("atlassed").asBool();
-					imgAsset.meta.atlasid = imgMeta.count("atlasid") ? imgMeta.at("atlasid").toI32() : 0;
+				// Load image metadata
+				if (metaBufStart >= 0 && metaBufEnd > metaBufStart) {
+					BinValue metaVal = useSharedMetadata
+						? decodeBinaryWithPropTable(romData + metaBufStart, static_cast<size_t>(metaBufEnd - metaBufStart), sharedMetadata.propNames)
+						: decodeBinary(romData + metaBufStart, static_cast<size_t>(metaBufEnd - metaBufStart));
+					if (metaVal.isObject()) {
+						const auto& imgMeta = metaVal.asObject();
+						imgAsset.meta.width = imgMeta.count("width") ? imgMeta.at("width").toI32() : 0;
+						imgAsset.meta.height = imgMeta.count("height") ? imgMeta.at("height").toI32() : 0;
+						imgAsset.meta.atlassed = imgMeta.count("atlassed") && imgMeta.at("atlassed").isBool() && imgMeta.at("atlassed").asBool();
+						imgAsset.meta.atlasid = imgMeta.count("atlasid") ? imgMeta.at("atlasid").toI32() : 0;
 
-					// Load texcoords
-					if (imgMeta.count("texcoords")) {
-						const auto& tcVal = imgMeta.at("texcoords");
-						if (tcVal.isArray()) {
-							const auto& tc = tcVal.asArray();
-							for (size_t i = 0; i < 12; ++i) {
-								imgAsset.meta.texcoords[i] = static_cast<f32>(tc.at(i).toNumber());
+						// Load texcoords
+						if (imgMeta.count("texcoords")) {
+							const auto& tcVal = imgMeta.at("texcoords");
+							if (tcVal.isArray()) {
+								const auto& tc = tcVal.asArray();
+								for (size_t i = 0; i < 12; ++i) {
+									imgAsset.meta.texcoords[i] = static_cast<f32>(tc.at(i).toNumber());
+								}
+								updateFlippedTexcoords(imgAsset.meta);
+							} else if (tcVal.isBinary()) {
+								const auto& tc = tcVal.asBinary();
+								std::memcpy(imgAsset.meta.texcoords.data(), tc.data(), sizeof(imgAsset.meta.texcoords));
+								updateFlippedTexcoords(imgAsset.meta);
 							}
-							updateFlippedTexcoords(imgAsset.meta);
-						} else if (tcVal.isBinary()) {
-							const auto& tc = tcVal.asBinary();
-							std::memcpy(imgAsset.meta.texcoords.data(), tc.data(), sizeof(imgAsset.meta.texcoords));
-							updateFlippedTexcoords(imgAsset.meta);
 						}
-					}
 
 						// Load bounding box
 						if (imgMeta.count("boundingbox") && imgMeta.at("boundingbox").isObject()) {
@@ -1618,18 +1684,18 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 						}
 						updateFlippedBoundingBox(imgAsset.meta);
 
-					if (imgMeta.count("centerpoint")) {
-						const auto center = readF32Array(imgMeta.at("centerpoint"), assetId, "centerpoint");
-						if (center.size() < 2) {
-							throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' field 'centerpoint' expected 2 elements.");
+						if (imgMeta.count("centerpoint")) {
+							const auto center = readF32Array(imgMeta.at("centerpoint"), assetId, "centerpoint");
+							if (center.size() < 2) {
+								throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' field 'centerpoint' expected 2 elements.");
+							}
+							imgAsset.meta.centerX = center[0];
+							imgAsset.meta.centerY = center[1];
+							imgAsset.meta.hasCenterpoint = true;
 						}
-						imgAsset.meta.centerX = center[0];
-						imgAsset.meta.centerY = center[1];
-						imgAsset.meta.hasCenterpoint = true;
-					}
-					if (imgMeta.count("collisionblob_id") && imgMeta.at("collisionblob_id").isString()) {
-						imgAsset.meta.collisionBlobId = imgMeta.at("collisionblob_id").asString();
-					}
+						if (imgMeta.count("collisionblob_id") && imgMeta.at("collisionblob_id").isString()) {
+							imgAsset.meta.collisionBlobId = imgMeta.at("collisionblob_id").asString();
+						}
 
 						if (imgMeta.count("hitpolygons") && imgMeta.at("hitpolygons").isObject()) {
 							const auto& hpObj = imgMeta.at("hitpolygons").asObject();
@@ -1644,141 +1710,152 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 								imgAsset.meta.hitpolygons = std::move(hitpolygons);
 							}
 						}
-				}
-			}
-
-			// Store atlas assets as regular images for render lookup.
-			assets.img[assetToken] = std::move(imgAsset);
-		}
-		else if (assetType == "audio") {
-			AudioAsset audioAsset;
-			audioAsset.id = assetId;
-			audioAsset.rom = romInfo;
-
-			// Load audio metadata
-			if (metaBufStart < 0 || metaBufEnd <= metaBufStart) {
-				throw BMSX_RUNTIME_ERROR("Audio asset missing metadata: " + assetId);
-			}
-			BinValue metaVal = useSharedMetadata
-				? decodeBinaryWithPropTable(romData + metaBufStart, static_cast<size_t>(metaBufEnd - metaBufStart), sharedMetadata.propNames)
-				: decodeBinary(romData + metaBufStart, static_cast<size_t>(metaBufEnd - metaBufStart));
-			const auto& audioMeta = metaVal.asObject();
-			audioAsset.meta.type = audioTypeFromString(audioMeta.at("audiotype").asString());
-			audioAsset.meta.priority = audioMeta.at("priority").toI32();
-			if (audioMeta.count("loop") && !audioMeta.at("loop").isNull()) {
-				audioAsset.meta.loopStart = static_cast<f32>(audioMeta.at("loop").toNumber());
-			}
-			if (audioMeta.count("loopEnd") && !audioMeta.at("loopEnd").isNull()) {
-				audioAsset.meta.loopEnd = static_cast<f32>(audioMeta.at("loopEnd").toNumber());
-			}
-
-			if (bufStart < 0 || bufEnd <= bufStart) {
-				throw BMSX_RUNTIME_ERROR("Audio asset missing payload: " + assetId);
-			}
-
-			const u8* audioData = romData + bufStart;
-			size_t audioSize = bufEnd - bufStart;
-			BadpMetadata metadata = parseBadpMetadata(audioData, audioSize);
-			audioAsset.sampleRate = metadata.sampleRate;
-			audioAsset.channels = metadata.channels;
-			audioAsset.bitsPerSample = 4;
-			audioAsset.dataOffset = metadata.dataOffset;
-			audioAsset.dataSize = metadata.dataSize;
-			audioAsset.frames = metadata.frames;
-			audioAsset.badpSeekFrames = std::move(metadata.seekFrames);
-			audioAsset.badpSeekOffsets = std::move(metadata.seekOffsets);
-			audioAsset.bytes.clear();
-
-			assets.audio[assetToken] = std::move(audioAsset);
-		}
-		else if (assetType == "model") {
-			if (bufStart < 0 || bufEnd <= bufStart) {
-				throw BMSX_RUNTIME_ERROR("Model asset missing payload: " + assetId);
-			}
-			const u8* modelData = romData + bufStart;
-			const size_t modelSize = static_cast<size_t>(bufEnd - bufStart);
-			BinValue modelValue = decodeBinary(modelData, modelSize);
-			const u8* textureData = nullptr;
-			size_t textureSize = 0;
-			if (textureBufStart >= 0 && textureBufEnd > textureBufStart) {
-				textureData = romData + textureBufStart;
-				textureSize = static_cast<size_t>(textureBufEnd - textureBufStart);
-			}
-			ModelAsset modelAsset = parseModelAsset(assetId, modelValue, textureData, textureSize);
-			assets.model[assetToken] = std::move(modelAsset);
-		}
-		else if (assetType == "aem") {
-			if (bufStart < 0 || bufEnd <= bufStart) {
-				throw BMSX_RUNTIME_ERROR("Audio event asset missing payload: " + assetId);
-			}
-			BinValue audioEvents = decodeBinary(romData + bufStart, bufEnd - bufStart);
-			AudioEventAsset audioEventAsset;
-			audioEventAsset.id = assetId;
-			audioEventAsset.rom = romInfo;
-			audioEventAsset.value = std::move(audioEvents);
-			assets.audioevents[assetToken] = std::move(audioEventAsset);
-		}
-		else if (assetType == "bin") {
-			if (bufStart < 0 || bufEnd <= bufStart) {
-				throw BMSX_RUNTIME_ERROR("Bin asset missing payload: " + assetId);
-			}
-			BinAsset binAsset;
-			binAsset.id = assetId;
-			binAsset.rom = romInfo;
-			assets.bin[assetToken] = std::move(binAsset);
-		}
-		else if (assetType == "lua") {
-			if (!romInfo.sourcePath.has_value()) {
-				throw BMSX_RUNTIME_ERROR("Lua asset missing source path: " + assetId);
-			}
-			if (bufStart < 0 || bufEnd <= bufStart) {
-				throw BMSX_RUNTIME_ERROR("Lua asset missing source payload: " + assetId);
-			}
-			LuaSourceAsset luaAsset;
-			luaAsset.id = assetId;
-			luaAsset.path = *romInfo.sourcePath;
-			luaAsset.rom = romInfo;
-			luaAsset.source.assign(reinterpret_cast<const char*>(romData + bufStart), static_cast<size_t>(bufEnd - bufStart));
-			assets.lua[hashAssetToken(luaAsset.path)] = std::move(luaAsset);
-		}
-		else if (assetType == "data") {
-			std::cerr << "[BMSX] Data asset found: id='" << assetId << "' bufStart=" << bufStart << " bufEnd=" << bufEnd << std::endl;
-			if (bufStart >= 0 && bufEnd > bufStart) {
-				// Check if this is the program asset
-				if (assetId == PROGRAM_ASSET_ID) {
-					std::cerr << "[BMSX] Loading program asset (" << (bufEnd - bufStart) << " bytes)" << std::endl;
-					try {
-						// Load pre-compiled Lua bytecode program
-						assets.programAsset = ProgramLoader::load(romData + bufStart, bufEnd - bufStart);
-						if (assets.programAsset) {
-							std::cerr << "[BMSX] Program loaded successfully!" << std::endl;
-						} else {
-							std::cerr << "[BMSX] Program load returned nullptr!" << std::endl;
-						}
-					} catch (const std::exception& e) {
-						std::cerr << "[BMSX] Program load FAILED: " << e.what() << std::endl;
 					}
-				} else if (assetId == PROGRAM_SYMBOLS_ASSET_ID) {
-					std::cerr << "[BMSX] Loading program symbols asset (" << (bufEnd - bufStart) << " bytes)" << std::endl;
-					try {
-						assets.programSymbols = ProgramLoader::loadSymbols(romData + bufStart, bufEnd - bufStart);
-						if (assets.programSymbols) {
-							std::cerr << "[BMSX] Program symbols loaded successfully!" << std::endl;
-						} else {
-							std::cerr << "[BMSX] Program symbols load returned nullptr!" << std::endl;
-						}
-					} catch (const std::exception& e) {
-						std::cerr << "[BMSX] Program symbols load FAILED: " << e.what() << std::endl;
-					}
-				} else {
-					BinValue dataValue = decodeBinary(romData + bufStart, bufEnd - bufStart);
-					DataAsset dataAsset;
-					dataAsset.id = assetId;
-					dataAsset.rom = romInfo;
-					dataAsset.value = std::move(dataValue);
-					assets.data[assetToken] = std::move(dataAsset);
 				}
+
+				// Store atlas assets as regular images for render lookup.
+				assets.img[assetToken] = std::move(imgAsset);
+				break;
 			}
+			case AssetTypeKind::Audio: {
+				AudioAsset audioAsset;
+				audioAsset.id = assetId;
+				audioAsset.rom = romInfo;
+
+				// Load audio metadata
+				if (metaBufStart < 0 || metaBufEnd <= metaBufStart) {
+					throw BMSX_RUNTIME_ERROR("Audio asset missing metadata: " + assetId);
+				}
+				BinValue metaVal = useSharedMetadata
+					? decodeBinaryWithPropTable(romData + metaBufStart, static_cast<size_t>(metaBufEnd - metaBufStart), sharedMetadata.propNames)
+					: decodeBinary(romData + metaBufStart, static_cast<size_t>(metaBufEnd - metaBufStart));
+				const auto& audioMeta = metaVal.asObject();
+				audioAsset.meta.type = audioTypeFromString(audioMeta.at("audiotype").asString());
+				audioAsset.meta.priority = audioMeta.at("priority").toI32();
+				if (audioMeta.count("loop") && !audioMeta.at("loop").isNull()) {
+					audioAsset.meta.loopStart = static_cast<f32>(audioMeta.at("loop").toNumber());
+				}
+				if (audioMeta.count("loopEnd") && !audioMeta.at("loopEnd").isNull()) {
+					audioAsset.meta.loopEnd = static_cast<f32>(audioMeta.at("loopEnd").toNumber());
+				}
+
+				if (bufStart < 0 || bufEnd <= bufStart) {
+					throw BMSX_RUNTIME_ERROR("Audio asset missing payload: " + assetId);
+				}
+
+				const u8* audioData = romData + bufStart;
+				size_t audioSize = bufEnd - bufStart;
+				BadpMetadata metadata = parseBadpMetadata(audioData, audioSize);
+				audioAsset.sampleRate = metadata.sampleRate;
+				audioAsset.channels = metadata.channels;
+				audioAsset.bitsPerSample = 4;
+				audioAsset.dataOffset = metadata.dataOffset;
+				audioAsset.dataSize = metadata.dataSize;
+				audioAsset.frames = metadata.frames;
+				audioAsset.badpSeekFrames = std::move(metadata.seekFrames);
+				audioAsset.badpSeekOffsets = std::move(metadata.seekOffsets);
+				audioAsset.bytes.clear();
+
+				assets.audio[assetToken] = std::move(audioAsset);
+				break;
+			}
+			case AssetTypeKind::Model: {
+				if (bufStart < 0 || bufEnd <= bufStart) {
+					throw BMSX_RUNTIME_ERROR("Model asset missing payload: " + assetId);
+				}
+				const u8* modelData = romData + bufStart;
+				const size_t modelSize = static_cast<size_t>(bufEnd - bufStart);
+				BinValue modelValue = decodeBinary(modelData, modelSize);
+				const u8* textureData = nullptr;
+				size_t textureSize = 0;
+				if (textureBufStart >= 0 && textureBufEnd > textureBufStart) {
+					textureData = romData + textureBufStart;
+					textureSize = static_cast<size_t>(textureBufEnd - textureBufStart);
+				}
+				ModelAsset modelAsset = parseModelAsset(assetId, modelValue, textureData, textureSize);
+				assets.model[assetToken] = std::move(modelAsset);
+				break;
+			}
+			case AssetTypeKind::Aem: {
+				if (bufStart < 0 || bufEnd <= bufStart) {
+					throw BMSX_RUNTIME_ERROR("Audio event asset missing payload: " + assetId);
+				}
+				BinValue audioEvents = decodeBinary(romData + bufStart, bufEnd - bufStart);
+				AudioEventAsset audioEventAsset;
+				audioEventAsset.id = assetId;
+				audioEventAsset.rom = romInfo;
+				audioEventAsset.value = std::move(audioEvents);
+				assets.audioevents[assetToken] = std::move(audioEventAsset);
+				break;
+			}
+			case AssetTypeKind::Bin: {
+				if (bufStart < 0 || bufEnd <= bufStart) {
+					throw BMSX_RUNTIME_ERROR("Bin asset missing payload: " + assetId);
+				}
+				BinAsset binAsset;
+				binAsset.id = assetId;
+				binAsset.rom = romInfo;
+				assets.bin[assetToken] = std::move(binAsset);
+				break;
+			}
+			case AssetTypeKind::Lua: {
+				if (!romInfo.sourcePath.has_value()) {
+					throw BMSX_RUNTIME_ERROR("Lua asset missing source path: " + assetId);
+				}
+				if (bufStart < 0 || bufEnd <= bufStart) {
+					throw BMSX_RUNTIME_ERROR("Lua asset missing source payload: " + assetId);
+				}
+				LuaSourceAsset luaAsset;
+				luaAsset.id = assetId;
+				luaAsset.path = *romInfo.sourcePath;
+				luaAsset.rom = romInfo;
+				luaAsset.source.assign(reinterpret_cast<const char*>(romData + bufStart), static_cast<size_t>(bufEnd - bufStart));
+				assets.lua[hashAssetToken(luaAsset.path)] = std::move(luaAsset);
+				break;
+			}
+			case AssetTypeKind::Data: {
+				std::cerr << "[BMSX] Data asset found: id='" << assetId << "' bufStart=" << bufStart << " bufEnd=" << bufEnd << std::endl;
+				if (bufStart >= 0 && bufEnd > bufStart) {
+					// Check if this is the program asset
+					if (assetId == PROGRAM_ASSET_ID) {
+						std::cerr << "[BMSX] Loading program asset (" << (bufEnd - bufStart) << " bytes)" << std::endl;
+						try {
+							// Load pre-compiled Lua bytecode program
+							assets.programAsset = ProgramLoader::load(romData + bufStart, bufEnd - bufStart);
+							if (assets.programAsset) {
+								std::cerr << "[BMSX] Program loaded successfully!" << std::endl;
+							} else {
+								std::cerr << "[BMSX] Program load returned nullptr!" << std::endl;
+							}
+						} catch (const std::exception& e) {
+							std::cerr << "[BMSX] Program load FAILED: " << e.what() << std::endl;
+						}
+					} else if (assetId == PROGRAM_SYMBOLS_ASSET_ID) {
+						std::cerr << "[BMSX] Loading program symbols asset (" << (bufEnd - bufStart) << " bytes)" << std::endl;
+						try {
+							assets.programSymbols = ProgramLoader::loadSymbols(romData + bufStart, bufEnd - bufStart);
+							if (assets.programSymbols) {
+								std::cerr << "[BMSX] Program symbols loaded successfully!" << std::endl;
+							} else {
+								std::cerr << "[BMSX] Program symbols load returned nullptr!" << std::endl;
+							}
+						} catch (const std::exception& e) {
+							std::cerr << "[BMSX] Program symbols load FAILED: " << e.what() << std::endl;
+						}
+					} else {
+						BinValue dataValue = decodeBinary(romData + bufStart, bufEnd - bufStart);
+						DataAsset dataAsset;
+						dataAsset.id = assetId;
+						dataAsset.rom = romInfo;
+						dataAsset.value = std::move(dataValue);
+						assets.data[assetToken] = std::move(dataAsset);
+					}
+				}
+				break;
+			}
+			case AssetTypeKind::Skip:
+			case AssetTypeKind::Unknown:
+				break;
 		}
 	}
 

@@ -92,17 +92,22 @@ export function isYamlAnchorChar(ch: string): boolean {
 }
 
 export function isYamlOperatorChar(ch: string): boolean {
-	return ch === '{'
-		|| ch === '}'
-		|| ch === '['
-		|| ch === ']'
-		|| ch === ':'
-		|| ch === ','
-		|| ch === '-'
-		|| ch === '?'
-		|| ch === '|'
-		|| ch === '>'
-		|| ch === '!';
+	switch (ch) {
+		case '{':
+		case '}':
+		case '[':
+		case ']':
+		case ':':
+		case ',':
+		case '-':
+		case '?':
+		case '|':
+		case '>':
+		case '!':
+			return true;
+		default:
+			return false;
+	}
 }
 
 export function countLeadingYamlSpaces(line: string): number {
