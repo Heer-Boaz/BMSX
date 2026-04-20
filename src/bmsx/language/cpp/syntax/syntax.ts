@@ -5,6 +5,7 @@ export const CPP_CONTROL_CALL_KEYWORDS = new Set([
 	'catch',
 	'for',
 	'if',
+	'return',
 	'requires',
 	'switch',
 	'while',

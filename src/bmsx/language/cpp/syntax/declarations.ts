@@ -4,9 +4,82 @@ import {
 	countCppParameters,
 	cppCallTarget,
 	cppCallTargetFromStatement,
-	findTopLevelCppSemicolon,
 } from './syntax';
 import type { CppToken } from './tokens';
+
+const CPP_BOUNDARY_STYLE_FUNCTION_NAME_WORDS: ReadonlySet<string> = new Set([
+	'acquire',
+	'add',
+	'append',
+	'apply',
+	'attach',
+	'begin',
+	'bind',
+	'build',
+	'call',
+	'capture',
+	'change',
+	'clear',
+	'copy',
+	'configure',
+	'create',
+	'count',
+	'decode',
+	'destroy',
+	'disable',
+	'dispose',
+	'detach',
+	'encode',
+	'enable',
+	'end',
+	'ensure',
+	'fault',
+	'focus',
+	'format',
+	'get',
+	'has',
+	'ident',
+	'init',
+	'install',
+	'emplace',
+	'load',
+	'make',
+	'on',
+	'pending',
+	'open',
+	'pixels',
+	'push',
+	'read',
+	'release',
+	'register',
+	'remove',
+	'replace',
+	'render',
+	'reset',
+	'resolve',
+	'resume',
+	'resize',
+	'save',
+	'set',
+	'setup',
+	'size',
+	'state',
+	'snapshot',
+	'submit',
+	'suspend',
+	'switch',
+	'reserve',
+	'shutdown',
+	'start',
+	'to',
+	'try',
+	'update',
+	'use',
+	'value',
+	'with',
+	'write',
+	'thunk',
+]);
 
 export type CppClassRange = {
 	name: string;
@@ -121,15 +194,8 @@ export function collectCppFunctionDefinitions(
 		if (tokens[index].text !== '{') {
 			continue;
 		}
-		let cursor = index - 1;
-		while (cursor >= 0 && CPP_POST_FUNCTION_QUALIFIERS.has(tokens[cursor].text)) {
-			cursor -= 1;
-		}
-		if (cursor < 0 || tokens[cursor].text !== ')') {
-			continue;
-		}
-		const openParen = pairs[cursor];
-		if (openParen < 1) {
+		const openParen = findCppFunctionDeclaratorOpenParen(tokens, pairs, index);
+		if (openParen < 1 || !isCppFunctionBodyAfterDeclarator(tokens, pairs, openParen, index)) {
 			continue;
 		}
 		const nameIndex = openParen - 1;
@@ -147,17 +213,20 @@ export function collectCppFunctionDefinitions(
 		if (closeBrace < 0) {
 			continue;
 		}
+		const name = tokens[nameIndex].text;
 		const context = target.includes('::') ? target.slice(0, target.lastIndexOf('::')) : classContextAt(classRanges, index);
-		const signature = `${countCppParameters(tokens, openParen, cursor)}:${tokens[nameIndex].text}`;
+		const closeParen = pairs[openParen];
+		const signature = `${countCppParameters(tokens, openParen, closeParen)}:${tokens[nameIndex].text}`;
+		const isConstructorLike = context !== null && (name === context || name === `~${context}`);
 		functions.push({
-			name: tokens[nameIndex].text,
+			name,
 			qualifiedName: target,
 			context,
 			signature,
 			nameToken: nameIndex,
 			bodyStart: index,
 			bodyEnd: closeBrace,
-			wrapperTarget: cppWrapperTarget(tokens, pairs, index, closeBrace),
+			wrapperTarget: isConstructorLike || isBoundaryStyleFunctionName(name) ? null : cppWrapperTarget(tokens, pairs, index, closeBrace),
 		});
 		index = closeBrace;
 	}
@@ -178,28 +247,215 @@ function classContextAt(classRanges: readonly CppClassRange[], bodyStart: number
 	return best === null ? null : best.name;
 }
 
+function findCppFunctionDeclaratorOpenParen(tokens: readonly CppToken[], pairs: readonly number[], bodyStart: number): number {
+	let cursor = bodyStart - 1;
+	let parenDepth = 0;
+	let bracketDepth = 0;
+	let braceDepth = 0;
+	for (let index = bodyStart - 1; index >= 0; index -= 1) {
+		const text = tokens[index].text;
+		if (text === ')') {
+			parenDepth += 1;
+			continue;
+		}
+		if (text === '(') {
+			parenDepth -= 1;
+			continue;
+		}
+		if (text === ']') {
+			bracketDepth += 1;
+			continue;
+		}
+		if (text === '[') {
+			bracketDepth -= 1;
+			continue;
+		}
+		if (text === '}') {
+			braceDepth += 1;
+			continue;
+		}
+		if (text === '{') {
+			braceDepth -= 1;
+			continue;
+		}
+		if (text === ':' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+			cursor = index - 1;
+			break;
+		}
+	}
+	while (cursor >= 0 && CPP_POST_FUNCTION_QUALIFIERS.has(tokens[cursor].text)) {
+		cursor -= 1;
+	}
+	if (cursor < 0 || tokens[cursor].text !== ')') {
+		return -1;
+	}
+	const openParen = pairs[cursor];
+	if (openParen < 1) {
+		return -1;
+	}
+	return openParen;
+}
+
+function isCppFunctionBodyAfterDeclarator(tokens: readonly CppToken[], pairs: readonly number[], openParen: number, bodyStart: number): boolean {
+	const closeParen = pairs[openParen];
+	if (closeParen < 0 || bodyStart <= closeParen) {
+		return false;
+	}
+	let parenDepth = 0;
+	let bracketDepth = 0;
+	let braceDepth = 0;
+	for (let index = closeParen + 1; index < bodyStart; index += 1) {
+		const text = tokens[index].text;
+		if (text === '(') {
+			parenDepth += 1;
+			continue;
+		}
+		if (text === ')') {
+			parenDepth -= 1;
+			continue;
+		}
+		if (text === '[') {
+			bracketDepth += 1;
+			continue;
+		}
+		if (text === ']') {
+			bracketDepth -= 1;
+			continue;
+		}
+		if (text === '{') {
+			braceDepth += 1;
+			continue;
+		}
+		if (text === '}') {
+			braceDepth -= 1;
+			continue;
+		}
+		if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+			if (text === ';' || text === '{' || text === '}') {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
 function cppWrapperTarget(tokens: readonly CppToken[], pairs: readonly number[], bodyStart: number, bodyEnd: number): string | null {
 	let statementStart = bodyStart + 1;
-	let firstEnd = findTopLevelCppSemicolon(tokens, statementStart, bodyEnd);
-	if (firstEnd < 0) {
+	if (statementStart >= bodyEnd) {
 		return null;
 	}
-	if (isEmptyReturnStatement(tokens, statementStart, firstEnd) && tokens[statementStart]?.text === 'if') {
-		statementStart = firstEnd + 1;
-		firstEnd = findTopLevelCppSemicolon(tokens, statementStart, bodyEnd);
-		if (firstEnd < 0) {
+	if (tokens[statementStart]?.text === 'if') {
+		let guardEnd = -1;
+		let parenDepth = 0;
+		let bracketDepth = 0;
+		let braceDepth = 0;
+		for (let index = statementStart; index < bodyEnd; index += 1) {
+			const text = tokens[index].text;
+			if (text === '(') {
+				parenDepth += 1;
+				continue;
+			}
+			if (text === ')') {
+				parenDepth -= 1;
+				continue;
+			}
+			if (text === '[') {
+				bracketDepth += 1;
+				continue;
+			}
+			if (text === ']') {
+				bracketDepth -= 1;
+				continue;
+			}
+			if (text === '{' || text === '}') {
+				return null;
+			}
+			if (text === ';' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+				guardEnd = index;
+				break;
+			}
+		}
+		if (guardEnd < 0 || !isEmptyReturnStatement(tokens, statementStart, guardEnd)) {
+			return null;
+		}
+		statementStart = guardEnd + 1;
+		if (statementStart >= bodyEnd) {
 			return null;
 		}
 	}
-	if (firstEnd + 1 !== bodyEnd) {
+	let semicolonIndex = -1;
+	let parenDepth = 0;
+	let bracketDepth = 0;
+	for (let index = statementStart; index < bodyEnd; index += 1) {
+		const text = tokens[index].text;
+		if (text === '(') {
+			parenDepth += 1;
+			continue;
+		}
+		if (text === ')') {
+			parenDepth -= 1;
+			continue;
+		}
+		if (text === '[') {
+			bracketDepth += 1;
+			continue;
+		}
+		if (text === ']') {
+			bracketDepth -= 1;
+			continue;
+		}
+		if (text === '{' || text === '}') {
+			return null;
+		}
+		if (parenDepth === 0 && bracketDepth === 0) {
+			if (text === ';') {
+				if (semicolonIndex >= 0) {
+					return null;
+				}
+				semicolonIndex = index;
+				continue;
+			}
+			if (
+				text === 'break'
+				|| text === 'catch'
+				|| text === 'co_return'
+				|| text === 'continue'
+				|| text === 'do'
+				|| text === 'for'
+				|| text === 'goto'
+				|| text === 'if'
+				|| text === 'return'
+				|| text === 'switch'
+				|| text === 'throw'
+				|| text === 'try'
+				|| text === 'while'
+			) {
+				return null;
+			}
+		}
+	}
+	if (semicolonIndex < 0 || semicolonIndex + 1 !== bodyEnd) {
 		return null;
 	}
-	return cppCallTargetFromStatement(tokens, pairs, statementStart, firstEnd);
+	return cppCallTargetFromStatement(tokens, pairs, statementStart, semicolonIndex);
 }
 
 function isEmptyReturnStatement(tokens: readonly CppToken[], start: number, end: number): boolean {
 	for (let index = start; index < end; index += 1) {
 		if (tokens[index].text === 'return' && tokens[index + 1]?.text === ';') {
+			return true;
+		}
+	}
+	return false;
+}
+
+function isBoundaryStyleFunctionName(name: string): boolean {
+	const words = name.match(/[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z0-9])/g);
+	if (words === null) {
+		return CPP_BOUNDARY_STYLE_FUNCTION_NAME_WORDS.has(name.toLowerCase());
+	}
+	for (let index = 0; index < words.length; index += 1) {
+		if (CPP_BOUNDARY_STYLE_FUNCTION_NAME_WORDS.has(words[index].toLowerCase())) {
 			return true;
 		}
 	}
