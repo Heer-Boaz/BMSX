@@ -4,7 +4,7 @@ import * as constants from '../../../common/constants';
 import { clamp, clamp_wrap } from '../../../../common/clamp';
 import { getSelectionRange, getSelectionText } from '../../editing/text_editing_and_selection';
 import type { GlobalSearchJob, GlobalSearchMatch, SearchComputationJob, SearchMatch, TextField } from '../../../common/models';
-import type { ResourceDescriptor } from '../../../../machine/runtime/contracts';
+import type { ResourceDescriptor } from '../../../../rompack/resource';
 import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { enqueueBackgroundTask } from '../../../common/background_tasks';

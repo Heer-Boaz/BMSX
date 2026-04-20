@@ -1,4 +1,5 @@
-import type { SemanticAnnotations, SymbolKind } from '../../editor/contrib/intellisense/semantic_model';
+import type { SemanticSymbolKind } from '../../common/semantic/semantic_symbols';
+import type { SemanticAnnotations } from '../../common/semantic/semantic_tokens';
 import type { HighlightLine } from '../../common/models';
 import * as constants from '../../common/constants';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../machine/firmware/builtin_descriptors';
@@ -269,7 +270,7 @@ function resolveIdentifierPathAt(line: string, column: number): string {
 	return line.slice(identifierPathStartScratch[0], identifierPathEndScratch[segmentCount - 1]);
 }
 
-function resolveColorForSymbolKind(kind: SymbolKind): number {
+function resolveColorForSemanticSymbolKind(kind: SemanticSymbolKind): number {
 	switch (kind) {
 		case 'parameter':
 			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_PARAMETER;
@@ -281,7 +282,7 @@ function resolveColorForSymbolKind(kind: SymbolKind): number {
 			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_HANDLE;
 		case 'global':
 			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_GLOBAL_VARIABLE;
-		case 'tableField':
+		case 'property':
 			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_TABLE_FIELD;
 		case 'module':
 			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_MODULE;
@@ -479,7 +480,7 @@ function applySemanticAnnotations(
 		const path = resolveIdentifierPathAt(line, start);
 		const tokenText = line.slice(start, tokenEnd).trim();
 		const isBuiltin = (path && builtinLookup(path)) || (tokenText.length > 0 && builtinLookup(tokenText));
-		const color = isBuiltin ? constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN : resolveColorForSymbolKind(annotation.kind);
+		const color = isBuiltin ? constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN : resolveColorForSemanticSymbolKind(annotation.kind);
 		for (let column = start; column < end; column += 1) {
 			columnColors[column] = color;
 		}

@@ -5,7 +5,7 @@ import { clamp } from '../../../../common/clamp';
 import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } from '../../../workbench/ui/code_tab/contexts';
 import { findResourceDescriptorForChunk } from '../../../workbench/contrib/resources/lookup';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
-import { syncSemanticWorkspacePath, getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace_sync';
+import { syncSemanticWorkspacePath, getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace_state';
 import { markTextMutated } from '../../common/text_runtime';
 import { markDiagnosticsDirtyForChunk } from '../diagnostics/controller';
 import { prepareUndo, applyUndoableReplace, recordEditContext } from '../../editing/undo_controller';

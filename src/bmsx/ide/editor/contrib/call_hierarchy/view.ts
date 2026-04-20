@@ -1,5 +1,5 @@
 import type { LuaIncomingCallHierarchyNode } from '../intellisense/lua_frontend';
-import type { LuaDefinitionLocation } from '../../../../machine/runtime/contracts';
+import type { LuaDefinitionLocation } from '../../../../lua/semantic_contracts';
 import { createEditorSemanticFrontend } from '../intellisense/frontend';
 import type { LuaSemanticWorkspaceSnapshot, SymbolID } from '../intellisense/semantic_model';
 

@@ -3,13 +3,15 @@ import { clamp } from '../../../common/clamp';
 import { ScratchBuffer } from '../../../common/scratchbuffer';
 import { highlightTextLine as highlightTextLineExternal } from '../../language/lua/syntax_highlight';
 import { highlightAemTextLine } from '../../language/aem/syntax_highlight';
-import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type TokenAnnotation } from '../contrib/intellisense/semantic_model';
+import type { LuaSemanticModel } from '../contrib/intellisense/semantic_model';
+import type { SemanticSymbolKind } from '../../common/semantic/semantic_symbols';
+import type { SemanticAnnotations, TokenAnnotation } from '../../common/semantic/semantic_tokens';
 import type { LuaDefinitionInfo } from '../../../lua/syntax/ast';
 import type { CachedHighlight, CodeTabMode, HighlightLine, VisualLineSegment } from '../../common/models';
 import { scheduleIdeOnce } from '../../common/background_tasks';
 import { EditorFont } from './view/font';
 import { getLinesSnapshot, getTextSnapshot } from '../text/source_text';
-import { syncSemanticWorkspacePaths } from '../contrib/intellisense/semantic_workspace_sync';
+import { syncSemanticWorkspacePaths } from '../contrib/intellisense/semantic_workspace_state';
 import type { TextBuffer } from '../text/text_buffer';
 import type { Position } from '../../common/models';
 
@@ -1003,7 +1005,7 @@ export class CodeLayout {
 		return hash >>> 0;
 	}
 
-	private hashSymbolKind(kind: SymbolKind): number {
+	private hashSymbolKind(kind: SemanticSymbolKind): number {
 		switch (kind) {
 			case 'parameter':
 				return 1;
@@ -1015,7 +1017,7 @@ export class CodeLayout {
 				return 4;
 			case 'global':
 				return 5;
-			case 'tableField':
+			case 'property':
 				return 6;
 			case 'module':
 				return 7;

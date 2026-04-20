@@ -23,26 +23,15 @@ import {
 } from '../../../../lua/syntax/ast';
 import type { LuaToken } from '../../../../lua/syntax/token';
 import { LuaTokenType } from '../../../../lua/syntax/token';
-import type { LuaSymbolEntry } from '../../../../machine/runtime/contracts';
+import type { LuaSymbolEntry } from '../../../../lua/semantic_contracts';
 import type { ParsedLuaChunk } from '../../../language/lua/parse';
 import { getCachedLuaParse } from '../../../language/lua/analysis_cache';
-import { luaNamePathMatches, luaPositionInRange, methodPathToPropertyPath } from './semantic_common';
-import type { SemanticSymbolKind as SymbolKind } from './semantic_common';
-
-export type { SemanticSymbolKind as SymbolKind } from './semantic_common';
+import { sourcePositionInRange } from '../../../common/semantic/source_range';
+import { semanticNamePathMatches, type SemanticSymbolKind } from '../../../common/semantic/semantic_symbols';
+import type { SemanticAnnotations, SemanticRole } from '../../../common/semantic/semantic_tokens';
+import { methodPathToPropertyPath } from './lua_semantic_common';
 
 export type SymbolID = string;
-
-export type SemanticRole = 'definition' | 'usage';
-
-export type TokenAnnotation = {
-	start: number;
-	end: number;
-	kind: SymbolKind;
-	role: SemanticRole;
-};
-
-export type SemanticAnnotations = Array<TokenAnnotation[]>;
 
 export type LuaReferenceLookupResult = {
 	definition: LuaDefinitionInfo;
@@ -99,7 +88,7 @@ export type Decl = {
 	name: string;
 	namePath: readonly string[];
 	symbolKey: string;
-	kind: SymbolKind;
+	kind: SemanticSymbolKind;
 	range: LuaSourceRange;
 	scope: LuaSourceRange;
 	isGlobal: boolean;
@@ -240,14 +229,14 @@ export class LuaSemanticWorkspaceSnapshot {
 		}
 		for (let declIndex = 0; declIndex < data.decls.length; declIndex += 1) {
 			const decl = data.decls[declIndex];
-			if (!luaPositionInRange(row, column, decl.range)) {
+			if (!sourcePositionInRange(row, column, decl.range)) {
 				continue;
 			}
 			return { id: decl.id, decl };
 		}
 		for (let refIndex = 0; refIndex < data.refs.length; refIndex += 1) {
 			const ref = data.refs[refIndex];
-			if (!ref.target || !luaPositionInRange(row, column, ref.range)) {
+			if (!ref.target || !sourcePositionInRange(row, column, ref.range)) {
 				continue;
 			}
 			const decl = this.declById.get(ref.target);
@@ -1176,7 +1165,7 @@ export class LuaProjectIndex {
 		const data = record.data;
 		for (let declIndex = 0; declIndex < data.decls.length; declIndex += 1) {
 			const decl = data.decls[declIndex]!;
-			if (!luaPositionInRange(row, column, decl.range)) {
+			if (!sourcePositionInRange(row, column, decl.range)) {
 				continue;
 			}
 			const stored = this.symbols.get(decl.id) ?? decl;
@@ -1184,7 +1173,7 @@ export class LuaProjectIndex {
 		}
 		for (let refIndex = 0; refIndex < data.refs.length; refIndex += 1) {
 			const ref = data.refs[refIndex]!;
-			if (!luaPositionInRange(row, column, ref.range)) {
+			if (!sourcePositionInRange(row, column, ref.range)) {
 				continue;
 			}
 			const targetId = ref.target ?? (ref.symbolKey.length > 0 ? this.globalsByKey.get(ref.symbolKey)  : null);
@@ -1333,8 +1322,8 @@ function symbolAtPosition(options: {
 	const { row, column, namePath, decls, refs, declById } = options;
 	for (let index = 0; index < decls.length; index += 1) {
 		const decl = decls[index];
-		if (luaPositionInRange(row, column, decl.range)) {
-			if (namePath && !luaNamePathMatches(decl.namePath, namePath)) {
+		if (sourcePositionInRange(row, column, decl.range)) {
+			if (namePath && !semanticNamePathMatches(decl.namePath, namePath)) {
 				continue;
 			}
 			return { id: decl.id, decl };
@@ -1342,10 +1331,10 @@ function symbolAtPosition(options: {
 	}
 	for (let index = 0; index < refs.length; index += 1) {
 		const ref = refs[index];
-		if (!luaPositionInRange(row, column, ref.range)) {
+		if (!sourcePositionInRange(row, column, ref.range)) {
 			continue;
 		}
-		if (namePath && !luaNamePathMatches(ref.namePath, namePath)) {
+		if (namePath && !semanticNamePathMatches(ref.namePath, namePath)) {
 			continue;
 		}
 		const targetId = ref.target;
@@ -1368,7 +1357,7 @@ class SemanticBuilder {
 	private readonly annotations: SemanticAnnotations;
 	private readonly tokenMap: Map<string, TokenInfo>;
 	private readonly scopeStack: Scope[] = [];
-	private readonly tableFields: Map<string, InternalDecl> = new Map();
+	private readonly properties: Map<string, InternalDecl> = new Map();
 	private readonly globalsByKey: Map<string, InternalDecl> = new Map();
 	private readonly decls: InternalDecl[] = [];
 	private readonly declById: Map<SymbolID, InternalDecl> = new Map();
@@ -1461,7 +1450,7 @@ class SemanticBuilder {
 				const namePath = buildFunctionNamePath(functionDeclaration.name);
 				const symbolKey = joinNamePath(namePath);
 				const scope = this.currentScope();
-				let decl = this.tableFields.get(symbolKey);
+				let decl = this.properties.get(symbolKey);
 				if (!decl) {
 					const scopeRange = scope.range;
 					const isGlobal = scope.kind === 'path';
@@ -1479,7 +1468,7 @@ class SemanticBuilder {
 						isGlobal,
 						active: true,
 					});
-					this.tableFields.set(symbolKey, decl);
+					this.properties.set(symbolKey, decl);
 					if (isGlobal) {
 						this.globalsByKey.set(symbolKey, decl);
 					}
@@ -1816,7 +1805,7 @@ class SemanticBuilder {
 		const key = joinNamePath(namePath);
 		const decl = receiverHintKey && isPathHintKey(receiverHintKey) && getPathHintFile(receiverHintKey) !== this.path
 			? null
-			: this.tableFields.get(key);
+			: this.properties.get(key);
 		const targetId = decl ? decl.id : null;
 		this.recordReference({
 			namePath,
@@ -1899,7 +1888,7 @@ class SemanticBuilder {
 		const key = joinNamePath(namePath);
 		const decl = baseInfo?.hintKey && isPathHintKey(baseInfo.hintKey) && getPathHintFile(baseInfo.hintKey) !== this.path
 			? null
-			: this.tableFields.get(key);
+			: this.properties.get(key);
 		const targetId = decl ? decl.id : null;
 		this.recordReference({
 			namePath,
@@ -1920,7 +1909,7 @@ class SemanticBuilder {
 		return null;
 	}
 
-	private declareLocal(name: LuaIdentifierExpression, kind: SymbolKind, activate: boolean): InternalDecl {
+	private declareLocal(name: LuaIdentifierExpression, kind: SemanticSymbolKind, activate: boolean): InternalDecl {
 		const scope = this.currentScope();
 		const range = buildIdentifierRange(name, this.tokenMap, this.path);
 		const decl = this.createDecl({
@@ -1978,7 +1967,7 @@ class SemanticBuilder {
 
 	private ensureTableField(namePath: readonly string[], start: Position, length: number, baseDecl: InternalDecl): InternalDecl {
 		const key = joinNamePath(namePath);
-		const existing = this.tableFields.get(key);
+		const existing = this.properties.get(key);
 		if (existing) {
 			return existing;
 		}
@@ -1988,14 +1977,14 @@ class SemanticBuilder {
 		const decl = this.createDecl({
 			namePath: namePath,
 			name: namePath[namePath.length - 1],
-			kind: 'tableField',
+			kind: 'property',
 			range,
 			scopeRange,
 			scopeRef: scope,
 			isGlobal: baseDecl ? baseDecl.isGlobal : scope.kind === 'path',
 			active: true,
 		});
-		this.tableFields.set(key, decl);
+		this.properties.set(key, decl);
 		if (decl.isGlobal) {
 			this.globalsByKey.set(key, decl);
 		}
@@ -2006,7 +1995,7 @@ class SemanticBuilder {
 	private createDecl(options: {
 		namePath: readonly string[];
 		name: string;
-		kind: SymbolKind;
+		kind: SemanticSymbolKind;
 		range: LuaSourceRange;
 		scopeRange: LuaSourceRange;
 		scopeRef: Scope;
@@ -2087,7 +2076,7 @@ class SemanticBuilder {
 			if (namePath.length === 1) {
 				targetDecl = this.resolveName(identifier) ?? this.globalsByKey.get(identifier);
 			} else {
-				targetDecl = this.tableFields.get(joinNamePath(namePath));
+				targetDecl = this.properties.get(joinNamePath(namePath));
 			}
 			this.recordReference({
 				namePath,
@@ -2175,7 +2164,7 @@ class SemanticBuilder {
 		}
 	}
 
-	private annotate(range: LuaSourceRange, length: number, kind: SymbolKind, role: SemanticRole): void {
+	private annotate(range: LuaSourceRange, length: number, kind: SemanticSymbolKind, role: SemanticRole): void {
 		const rowIndex = range.start.line - 1;
 		if (rowIndex < 0 || rowIndex >= this.annotations.length) {
 			return;
@@ -2261,9 +2250,9 @@ function tokenKey(line: number, column: number): string {
 	return `${line}:${column}`;
 }
 
-function inferReferenceKind(ref: Ref): SymbolKind {
+function inferReferenceKind(ref: Ref): SemanticSymbolKind {
 	if (ref.symbolKey.includes('.')) {
-		return 'tableField';
+		return 'property';
 	}
 	return 'global';
 }
@@ -2313,13 +2302,13 @@ function cloneRange(range: LuaSourceRange): LuaSourceRange {
 	};
 }
 
-function symbolKindToDefinitionKind(kind: SymbolKind): LuaDefinitionInfo['kind'] {
+function symbolKindToDefinitionKind(kind: SemanticSymbolKind): LuaDefinitionInfo['kind'] {
 	switch (kind) {
 		case 'parameter':
 			return 'parameter';
 		case 'function':
 			return 'function';
-		case 'tableField':
+		case 'property':
 			return 'table_field';
 		case 'constant':
 			return 'constant';
@@ -2330,7 +2319,7 @@ function symbolKindToDefinitionKind(kind: SymbolKind): LuaDefinitionInfo['kind']
 	}
 }
 
-function createSymbolId(file: string, range: LuaSourceRange, kind: SymbolKind, namePath: readonly string[]): SymbolID {
+function createSymbolId(file: string, range: LuaSourceRange, kind: SemanticSymbolKind, namePath: readonly string[]): SymbolID {
 	const key = joinNamePath(namePath);
 	return `${file}|${range.start.line}|${range.start.column}|${kind}|${key}`;
 }

@@ -1,12 +1,13 @@
 import { clamp } from '../../../../common/clamp';
-import type { LuaDefinitionLocation, LuaSymbolEntry, ResourceDescriptor } from '../../../../machine/runtime/contracts';
+import type { LuaDefinitionLocation, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
+import type { ResourceDescriptor } from '../../../../rompack/resource';
 import type { CodeTabContext, SearchMatch, SymbolSearchResult } from '../../../common/models';
 import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain';
 import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { createEditorSemanticFrontend } from '../intellisense/frontend';
 import { LuaSemanticWorkspace } from '../intellisense/semantic_workspace';
-import { syncSemanticWorkspacePaths, type SemanticWorkspacePathInput } from '../intellisense/semantic_workspace_sync';
+import { syncSemanticWorkspacePaths, type SemanticWorkspacePathInput } from '../intellisense/semantic_workspace_state';
 import { ReferenceState, type ReferenceMatchInfo } from './state';
 import { getLinesSnapshot, getTextSnapshot, splitText } from '../../text/source_text';
 import { listResources } from '../../../workspace/workspace';
@@ -349,7 +350,7 @@ function appendCatalogEntry(entries: ReferenceCatalogEntry[], existingKeys: Set<
 function declarationPriority(decl: Decl): number {
 	const topLevel = decl.scope.start.line === 1 && decl.scope.start.column === 1;
 	switch (decl.kind) {
-		case 'tableField':
+		case 'property':
 			return 700;
 		case 'function':
 			return topLevel ? 650 : 520;

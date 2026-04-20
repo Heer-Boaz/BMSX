@@ -1,4 +1,4 @@
-import type { ResourceDescriptor } from '../../../../machine/runtime/contracts';
+import type { ResourceDescriptor } from '../../../../rompack/resource';
 import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 

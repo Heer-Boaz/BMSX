@@ -1,4 +1,4 @@
-import type { LuaHoverResult } from '../../../../machine/runtime/contracts';
+import type { LuaHoverResult } from '../../../../lua/semantic_contracts';
 import type { CodeHoverTooltip } from '../../../common/models';
 
 type GotoHoverHighlight = {

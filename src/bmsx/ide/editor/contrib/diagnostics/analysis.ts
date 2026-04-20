@@ -1,10 +1,10 @@
-import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../machine/runtime/contracts';
+import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
 import type { EditorDiagnostic } from '../../../common/models';
 import { computeLuaDiagnostics, getApiCompletionData } from '../intellisense/engine';
 import { getCachedLuaParse } from '../../../language/lua/analysis_cache';
 import { editorRuntimeState } from '../../common/runtime_state';
 import { diagnosticsDebounceMs, editorDiagnosticsState } from './state';
-import { cacheSemanticParseState } from '../intellisense/semantic_workspace_sync';
+import { cacheRuntimeSemanticParseState } from '../intellisense/semantic_workspace_runtime';
 import { getCodeTabContexts } from '../../../workbench/ui/code_tab/contexts';
 
 export type DiagnosticContextInput = {
@@ -43,7 +43,7 @@ export function computeAggregatedEditorDiagnostics(
 		});
 		const baseLines = parseEntry.lines;
 		const parsed = parseEntry.parsed;
-		cacheSemanticParseState(path, source, baseLines, parsed);
+		cacheRuntimeSemanticParseState(path, source, baseLines, parsed);
 		const localSymbols = providers.listLocalSymbols(path);
 		const luaDiagnostics = computeLuaDiagnostics({
 			source,

@@ -13,7 +13,7 @@ import {
 	type LuaScopedSymbol,
 	shouldAutoTriggerCompletions,
 } from '../intellisense/engine';
-import { isReservedMemoryMapName } from '../intellisense/semantic_common';
+import { isReservedMemoryMapName } from '../intellisense/lua_semantic_common';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../../../lua/syntax/ast';
 import {
 	CompletionContext,
@@ -24,7 +24,7 @@ import {
 	LuaCompletionKind,
 	ParameterHintState,
 } from '../../../common/models';
-import type { LuaBuiltinDescriptor, LuaDefinitionRange, LuaSymbolEntry } from '../../../../machine/runtime/contracts';
+import type { LuaBuiltinDescriptor, LuaDefinitionRange, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
 import * as constants from '../../../common/constants';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
 import { isLuaCommentContext } from '../../../common/text';

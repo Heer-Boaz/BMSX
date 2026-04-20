@@ -1,4 +1,4 @@
-import type { LuaSymbolEntry } from '../../../../machine/runtime/contracts';
+import type { LuaSymbolEntry } from '../../../../lua/semantic_contracts';
 import * as constants from '../../../common/constants';
 import { computeSourceLabel } from '../references/sources';
 import { getActiveCodeTabContext } from '../../../workbench/ui/code_tab/contexts';

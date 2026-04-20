@@ -1,7 +1,9 @@
 import ts from 'typescript';
 
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import type { CodeQualityLintRule } from '../lint/rules';
 
 type DuplicateKind = 'class' | 'enum' | 'function' | 'interface' | 'method' | 'namespace' | 'type' | 'wrapper';
 
@@ -27,28 +29,8 @@ type DuplicateGroup = {
 	locations: DuplicateLocation[];
 };
 
-type LintIssueKind =
-	| 'local_const_pattern'
-	| 'single_use_local_pattern'
-	| 'empty_string_condition_pattern'
-	| 'empty_string_fallback_pattern'
-	| 'or_nil_fallback_pattern'
-	| 'explicit_truthy_comparison_pattern'
-	| 'string_or_chain_comparison_pattern'
-	| 'single_line_method_pattern'
-	| 'hot_path_object_literal_pattern'
-	| 'hot_path_closure_argument_pattern'
-	| 'nullish_null_normalization_pattern'
-	| 'defensive_optional_chain_pattern'
-	| 'numeric_defensive_sanitization_pattern'
-	| 'repeated_expression_pattern'
-	| 'facade_module_density_pattern'
-	| 'normalized_ast_duplicate_pattern'
-	| 'cross_layer_import_pattern'
-	| 'duplicate_exported_type_name_pattern';
-
 type LintIssue = {
-	kind: LintIssueKind;
+	kind: CodeQualityLintRule;
 	file: string;
 	line: number;
 	column: number;
@@ -145,24 +127,30 @@ const REQUIRED_STATE_ROOTS = new Set([
 
 type CliOptions = {
 	csv: boolean;
-	failOnDuplicate: boolean;
+	failOnIssues: boolean;
 	summaryOnly: boolean;
 	paths: string[];
 };
 
+type ProjectLanguage = 'cpp' | 'ts' | 'mixed' | 'unknown';
+const CPP_FILE_EXTENSIONS = new Set(['.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx']);
+
 function printHelp(): void {
-	console.log('Usage: npx tsx scripts/analysis/code_quality.ts [--csv] [--fail-on-duplicates] [--summary-only] [--root <path> ...]');
+	console.log('Usage: npx tsx scripts/analysis/code_quality.ts [--csv] [--summary-only] [--fail-on-issues] [--root <path> ...]');
 	console.log('');
 	console.log('Options:');
 	console.log('  --csv                  Output CSV report');
-	console.log('  --fail-on-duplicates   Exit with code 1 when duplicates are found');
+	console.log('  --fail-on-issues       Exit with code 1 when issues are found');
 	console.log('  --summary-only         Print only high-level summaries (no per-issue detail)');
 	console.log('  --root <path>          Extra root directory (default: src, scripts, tests, tools)');
 	console.log('  --help                 Show this help message');
+	console.log('');
+	console.log('When a C++ folder is detected, extra flags are passed directly to:');
+	console.log('  scripts/analysis/code_quality_cpp.ts');
 }
 
 function parseArgs(argv: string[]): CliOptions {
-	let failOnDuplicate = false;
+	let failOnIssues = false;
 	let csv = false;
 	let summaryOnly = false;
 	const paths: string[] = [];
@@ -176,8 +164,8 @@ function parseArgs(argv: string[]): CliOptions {
 			csv = true;
 			continue;
 		}
-		if (arg === '--fail-on-duplicates') {
-			failOnDuplicate = true;
+		if (arg === '--fail-on-issues') {
+			failOnIssues = true;
 			continue;
 		}
 		if (arg === '--summary-only') {
@@ -201,17 +189,119 @@ function parseArgs(argv: string[]): CliOptions {
 	if (paths.length === 0) {
 		return {
 			csv,
-			failOnDuplicate,
+			failOnIssues,
 			summaryOnly,
 			paths: DEFAULT_ROOTS,
 		};
 	}
 	return {
 		csv,
-		failOnDuplicate,
+		failOnIssues,
 		summaryOnly,
 		paths,
 	};
+}
+
+function extractRootsForLanguageDetection(argv: string[]): string[] {
+	const paths: string[] = [];
+	for (let index = 0; index < argv.length; index += 1) {
+		const arg = argv[index];
+		if (arg === '--root') {
+			const value = argv[index + 1];
+			if (value === undefined || value.startsWith('-')) {
+				throw new Error('Missing value for --root');
+			}
+			paths.push(value);
+			index += 1;
+			continue;
+		}
+		if (arg === '--compile-commands' || arg === '--config') {
+			const next = argv[index + 1];
+			if (next !== undefined && !next.startsWith('-')) {
+				index += 1;
+			}
+			continue;
+		}
+		if (arg.startsWith('--')) {
+			// Skip option/value pairs that are intended for the C++ linter. This keeps
+			// mixed CLI behavior working without hard-coding all options here.
+			continue;
+		}
+		paths.push(arg);
+	}
+	if (paths.length === 0) {
+		return DEFAULT_ROOTS;
+	}
+	return paths;
+}
+
+function hasCommand(command: string): boolean {
+	const result = spawnSync(command, ['--version'], {
+		encoding: 'utf8',
+		stdio: 'ignore',
+		maxBuffer: 1024 * 1024,
+	});
+	return result.error === undefined;
+}
+
+function runCppQuality(args: readonly string[]): number {
+	if (!hasCommand('npx')) {
+		throw new Error('npx is required to run C++ quality checks');
+	}
+	const result = spawnSync('npx', ['tsx', 'scripts/analysis/code_quality_cpp.ts', ...args], {
+		encoding: 'utf8',
+		maxBuffer: 24 * 1024 * 1024,
+		stdio: 'inherit',
+	});
+	if (result.error) {
+		throw result.error;
+	}
+	return result.status ?? 0;
+}
+
+function detectProjectLanguage(roots: readonly string[]): ProjectLanguage {
+	let hasTypeScript = false;
+	let hasCpp = false;
+	const stack = roots.map(resolveInputPath);
+	while (stack.length > 0) {
+		const current = stack.pop();
+		if (current === undefined || !existsSync(current)) {
+			continue;
+		}
+		const stats = statSync(current);
+		if (stats.isFile()) {
+			const extension = extname(current);
+			if (FILE_EXTENSIONS.has(extension)) {
+				hasTypeScript = true;
+			}
+			if (CPP_FILE_EXTENSIONS.has(extension)) {
+				hasCpp = true;
+			}
+			if (hasTypeScript && hasCpp) {
+				return 'mixed';
+			}
+			continue;
+		}
+		if (!stats.isDirectory()) {
+			continue;
+		}
+		const directoryName = basename(current);
+		if (shouldSkipDirectory(directoryName)) {
+			continue;
+		}
+		const entries = readdirSync(current, { withFileTypes: true });
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			stack.push(join(current, entry.name));
+		}
+	}
+	if (hasTypeScript && !hasCpp) {
+		return 'ts';
+	}
+	if (!hasTypeScript && hasCpp) {
+		return 'cpp';
+	}
+	return 'unknown';
 }
 
 function resolveInputPath(candidate: string): string {
@@ -245,7 +335,7 @@ function pushLintIssue(
 	issues: LintIssue[],
 	sourceFile: ts.SourceFile,
 	node: ts.Node,
-	kind: LintIssueKind,
+	kind: CodeQualityLintRule,
 	message: string,
 	name = kind,
 ): void {
@@ -585,8 +675,12 @@ function isIdentifierPropertyName(node: ts.Identifier, parent: ts.Node): boolean
 	return false;
 }
 
+function isTsAssignmentOperator(kind: ts.SyntaxKind): boolean {
+	return kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment;
+}
+
 function isWriteIdentifier(node: ts.Identifier, parent: ts.Node): boolean {
-	if (ts.isBinaryExpression(parent) && ts.isAssignmentOperator(parent.operatorToken.kind) && parent.left === node) {
+	if (ts.isBinaryExpression(parent) && isTsAssignmentOperator(parent.operatorToken.kind) && parent.left === node) {
 		return true;
 	}
 	if (ts.isPrefixUnaryExpression(parent) && (parent.operator === ts.SyntaxKind.PlusPlusToken || parent.operator === ts.SyntaxKind.MinusMinusToken)) {
@@ -2217,7 +2311,7 @@ function printTextReport(groups: DuplicateGroup[], lintIssues: LintIssue[], scan
 	}
 	if (!summaryOnly && lintIssues.length > 0) {
 		console.log(`Found ${lintIssues.length} lint issue(s).\n`);
-		const issuesByKind = new Map<LintIssueKind, LintIssue[]>();
+		const issuesByKind = new Map<CodeQualityLintRule, LintIssue[]>();
 		for (const issue of lintIssues) {
 			let list = issuesByKind.get(issue.kind);
 			if (list === undefined) {
@@ -2290,7 +2384,28 @@ function toRelativePath(path: string): string {
 }
 
 function run(): void {
-	const options = parseArgs(process.argv.slice(2));
+	const argv = process.argv.slice(2);
+	if (argv.includes('--help')) {
+		parseArgs(argv);
+		return;
+	}
+	const inferredRoots = extractRootsForLanguageDetection(argv);
+	const language = detectProjectLanguage(inferredRoots);
+	if (language === 'cpp') {
+		const exitCode = runCppQuality(argv);
+		if (exitCode !== 0) {
+			process.exit(exitCode);
+		}
+		return;
+	}
+	const options = parseArgs(argv);
+	if (language === 'mixed') {
+		throw new Error('Mixed TypeScript and C++ sources detected. Run the analyzer on one language folder at a time.');
+	}
+	if (language === 'unknown') {
+		console.log('No TypeScript or C++ files found in the provided roots.');
+		return;
+	}
 	const fileList = collectTypeScriptFiles(options.paths);
 	const buckets = new Map<string, DuplicateLocation[]>();
 	const classInfosByKey = new Map<string, ClassInfo>();
@@ -2343,7 +2458,7 @@ function run(): void {
 		});
 		printTextReport(groups, sortedIssues, fileList.length, options.summaryOnly);
 	}
-	if (options.failOnDuplicate && groups.length > 0) {
+	if (options.failOnIssues && (groups.length > 0 || normalizedLintIssues.length > 0)) {
 		process.exit(1);
 	}
 }

@@ -9,7 +9,7 @@ import { editorDiagnosticsState } from '../contrib/diagnostics/state';
 import { initializeDebuggerUiState } from '../../workbench/contrib/debugger/controller';
 import { initializeWorkspaceStorage } from '../../workbench/workspace/storage';
 import { Runtime } from '../../../machine/runtime/runtime';
-import { resetSemanticWorkspace } from '../contrib/intellisense/semantic_workspace_sync';
+import { resetSemanticWorkspace } from '../contrib/intellisense/semantic_workspace_state';
 import { assertMonospace } from '../common/text_layout';
 import * as constants from '../../common/constants';
 import type { Viewport } from '../../../rompack/format';

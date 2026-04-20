@@ -14,7 +14,7 @@ import {
 } from '../../../../lua/syntax/ast';
 import { API_METHOD_METADATA } from '../../../../machine/firmware/api_metadata';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../../../../machine/firmware/builtin_descriptors';
-import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../machine/runtime/contracts';
+import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
 import {
 	buildLuaSemanticWorkspaceSnapshot,
 	type Decl,
@@ -23,7 +23,8 @@ import {
 	type LuaSemanticWorkspaceSnapshotInput,
 } from './semantic_model';
 import { getCachedLuaParse } from '../../../language/lua/analysis_cache';
-import { buildLuaKnownNameSet, isReservedMemoryMapName, luaRangeStartKey, methodPathToPropertyPath, semanticSymbolKindToLuaSymbolKind } from './semantic_common';
+import { sourceRangeStartKey } from '../../../common/semantic/source_range';
+import { buildLuaKnownNameSet, isReservedMemoryMapName, methodPathToPropertyPath, semanticSymbolKindToLuaSymbolKind } from './lua_semantic_common';
 
 export type LuaDiagnosticSeverity = 'error' | 'warning';
 
@@ -690,7 +691,7 @@ function collectAllowedReservedMemoryRanges(chunk: LuaChunk): Set<string> {
 		switch (expression.kind) {
 			case LuaSyntaxKind.IndexExpression:
 				if (expression.base.kind === LuaSyntaxKind.IdentifierExpression && isReservedMemoryMapName(expression.base.name)) {
-					allowed.add(luaRangeStartKey(expression.base.range));
+					allowed.add(sourceRangeStartKey(expression.base.range));
 				}
 				visitExpression(expression.base);
 				visitExpression(expression.index);
@@ -761,7 +762,7 @@ function addReservedMemoryDiagnosticsFromSemantic(
 		if (!isReservedMemoryMapName(ref.name) || ref.referenceKind !== 'identifier' || ref.namePath.length !== 1) {
 			continue;
 		}
-		if (allowedReservedRanges.has(luaRangeStartKey(ref.range))) {
+		if (allowedReservedRanges.has(sourceRangeStartKey(ref.range))) {
 			continue;
 		}
 		pushRangeDiagnostic(diagnostics, ref.range, `'${ref.name}' is a reserved memory map. Use direct indexing syntax like ${ref.name}[addr].`, 'error');

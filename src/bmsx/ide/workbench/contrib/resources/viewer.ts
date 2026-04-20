@@ -2,7 +2,7 @@ import { $ } from '../../../../core/engine';
 import { clamp } from '../../../../common/clamp';
 import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
-import type { ResourceDescriptor } from '../../../../machine/runtime/contracts';
+import type { ResourceDescriptor } from '../../../../rompack/resource';
 import * as constants from '../../../common/constants';
 import { computeResourceTabTitle } from '../../ui/tab/titles';
 import { appendTextLines } from '../../../editor/text/source_text';

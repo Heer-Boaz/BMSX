@@ -14,7 +14,7 @@ import {
 	type ProjectReferenceEnvironment,
 	type ReferenceCatalogEntry,
 } from './sources';
-import { getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace_sync';
+import { getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace_state';
 
 export function buildReferenceSearchCatalog(info: ReferenceMatchInfo, context: CodeTabContext): ReferenceCatalogEntry[] {
 	const path = context.descriptor.path;

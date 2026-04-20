@@ -1,7 +1,7 @@
 import { Runtime } from '../../../../machine/runtime/runtime';
 import { createLuaSemanticFrontendFromSnapshot } from './semantic_workspace';
 import type { LuaSemanticWorkspaceSnapshot } from './semantic_model';
-import { prepareSemanticWorkspaceForEditorBuffer } from './semantic_workspace_sync';
+import { prepareRuntimeSemanticWorkspaceForEditorBuffer } from './semantic_workspace_runtime';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import type { TextBuffer } from '../../text/text_buffer';
 
@@ -11,7 +11,7 @@ export function runtimeSemanticExtraGlobalNames(): string[] {
 
 export function buildEditorSemanticSnapshot(path: string, buffer: TextBuffer, textVersion: number): LuaSemanticWorkspaceSnapshot {
 	const source = getTextSnapshot(buffer);
-	return prepareSemanticWorkspaceForEditorBuffer({
+	return prepareRuntimeSemanticWorkspaceForEditorBuffer({
 		path,
 		source,
 		lines: getLinesSnapshot(buffer),

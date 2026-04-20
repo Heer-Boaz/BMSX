@@ -16,7 +16,7 @@ import { buildLuaSemanticFrontend } from './lua_frontend';
 import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { isStringValue, stringValueToString } from '../../../../machine/memory/string_pool';
-import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverRequest, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaMemberCompletionRequest, LuaSymbolEntry } from '../../../../machine/runtime/contracts';
+import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverRequest, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaMemberCompletionRequest, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
 import { ScratchBatchPooled } from '../../../../common/scratchbatch';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { focusChunkSource } from '../../../workbench/contrib/resources/navigation';
@@ -39,8 +39,9 @@ import { symbolSearchState } from '../symbols/search_state';
 import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
 import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain';
 import { buildLuaSemanticModel, collectModuleAliasEntriesFromChunk, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData, type ModuleAliasEntry } from './semantic_model';
-import { cacheSemanticWorkspaceAnalysis, getOrCreateSemanticWorkspace, prepareSemanticWorkspaceForEditorBuffer, primeSemanticWorkspaceProjectSources, syncSemanticWorkspacePath } from './semantic_workspace_sync';
-import { semanticSymbolKindToLuaSymbolKind } from './semantic_common';
+import { getOrCreateSemanticWorkspace } from './semantic_workspace_state';
+import { cacheRuntimeSemanticWorkspaceAnalysis, prepareRuntimeSemanticWorkspaceForEditorBuffer, primeRuntimeSemanticWorkspaceProjectSources, syncRuntimeSemanticWorkspacePath } from './semantic_workspace_runtime';
+import { semanticSymbolKindToLuaSymbolKind } from './lua_semantic_common';
 import { isLuaCommentContext } from '../../../common/text';
 import { writeWrappedOverlayLine } from '../../common/text_layout';
 import type { ApiCompletionMetadata, CodeTabContext, EditorContextToken, LuaCompletionItem, PointerSnapshot } from '../../../common/models';
@@ -464,7 +465,7 @@ function resolveSemanticDataForDiagnostics(input: SemanticResolutionInput): File
 			return workspaceData;
 		}
 	}
-	const data = syncSemanticWorkspacePath({
+	const data = syncRuntimeSemanticWorkspacePath({
 		path: pathKey,
 		source: input.source,
 		lines: input.lines,
@@ -1392,7 +1393,7 @@ export function listLuaBuiltinFunctions(): LuaBuiltinDescriptor[] {
 
 export function listGlobalLuaSymbols(): LuaSymbolEntry[] {
 	const workspace = getSemanticWorkspace();
-	primeSemanticWorkspaceProjectSources(workspace);
+	primeRuntimeSemanticWorkspaceProjectSources(workspace);
 	const snapshot = workspace.getSnapshot();
 	const version = snapshot.version;
 	if (globalSymbolsCache.version === version) {
@@ -1436,14 +1437,14 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 		const activeContext = getActiveCodeTabContext();
 		if (activeContext.descriptor.path === preferredChunk) {
 			const source = getTextSnapshot(editorDocumentState.buffer);
-			prepareSemanticWorkspaceForEditorBuffer({
+			prepareRuntimeSemanticWorkspaceForEditorBuffer({
 				path: preferredChunk,
 				source,
 				lines: getLinesSnapshot(editorDocumentState.buffer),
 				version: editorDocumentState.textVersion,
 			});
 		} else {
-			primeSemanticWorkspaceProjectSources(getSemanticWorkspace());
+			primeRuntimeSemanticWorkspaceProjectSources(getSemanticWorkspace());
 		}
 		const workspaceSymbol = getSemanticWorkspace().getSnapshot().symbolAt(preferredChunk, usageRow, usageColumn);
 		if (workspaceSymbol) {
@@ -1616,7 +1617,7 @@ export function buildSemanticModelForChunk(path: string): LuaSemanticModel {
 	const workspace = getSemanticWorkspace();
 	const workspaceData = workspace.getSnapshot().getFileData(path);
 	if (workspaceData && workspaceData.source === source) {
-		cacheSemanticWorkspaceAnalysis(path, source, workspaceData, cachedMatch?.parsed);
+		cacheRuntimeSemanticWorkspaceAnalysis(path, source, workspaceData, cachedMatch?.parsed);
 		return workspaceData.model;
 	}
 	const parseEntry = getCachedLuaParse({
@@ -1628,7 +1629,7 @@ export function buildSemanticModelForChunk(path: string): LuaSemanticModel {
 	});
 	const baseLines = parseEntry.lines;
 	const parsed = parseEntry.parsed;
-	const data = syncSemanticWorkspacePath({
+	const data = syncRuntimeSemanticWorkspacePath({
 		path,
 		source: parseEntry.source,
 		lines: baseLines,

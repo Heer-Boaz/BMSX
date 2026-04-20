@@ -5,6 +5,7 @@ import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
 import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
 import type { LuaToken } from '../../src/bmsx/lua/syntax/token';
 import { LuaTokenType } from '../../src/bmsx/lua/syntax/token';
+import { LUA_CART_LINT_RULES, type LuaCartLintRule } from '../lint/rules';
 import {
 	LuaAssignmentOperator,
 	LuaBinaryOperator,
@@ -31,87 +32,10 @@ import type {
 	LuaTableField,
 } from '../../src/bmsx/lua/syntax/ast';
 
-type LuaLintIssueRule =
-	'syntax_error_pattern' |
-	'uppercase_code_pattern' |
-	'comparison_wrapper_getter_pattern' |
-	'visual_update_pattern' |
-	'bool01_duplicate_pattern' |
-	'pure_copy_function_pattern' |
-	'useless_assert_pattern' |
-	'empty_string_condition_pattern' |
-	'empty_string_fallback_pattern' |
-	'or_nil_fallback_pattern' |
-	'explicit_truthy_comparison_pattern' |
-	'string_or_chain_comparison_pattern' |
-	'cross_file_local_global_constant_pattern' |
-	'shadowed_require_alias_pattern' |
-	'unused_init_value_pattern' |
-	'getter_setter_pattern' |
-	'single_line_method_pattern' |
-	'builtin_recreation_pattern' |
-	'forbidden_math_floor_pattern' |
-	'forbidden_random_helper_pattern' |
-	'local_function_const_pattern' |
-	'local_const_pattern' |
-	'multi_has_tag_pattern' |
-	'single_use_has_tag_pattern' |
-	'single_use_local_pattern' |
-	'self_property_local_alias_pattern' |
-	'imgid_assignment_pattern' |
-	'self_imgid_assignment_pattern' |
-	'imgid_fallback_pattern' |
-	'forbidden_transition_to_pattern' |
-	'forbidden_matches_state_path_pattern' |
-	'forbidden_dispatch_pattern' |
-	'event_handler_dispatch_pattern' |
-	'event_handler_state_dispatch_pattern' |
-	'event_handler_flag_proxy_pattern' |
-	'contiguous_multi_emit_pattern' |
-	'dispatch_fanout_loop_pattern' |
-	'tick_flag_polling_pattern' |
-	'tick_input_check_pattern' |
-	'action_triggered_bool_chain_pattern' |
-	'set_space_roundtrip_pattern' |
-	'cross_object_state_event_relay_pattern' |
-	'foreign_object_internal_mutation_pattern' |
-	'runtime_tag_table_access_pattern' |
-	'fsm_state_name_mirror_assignment_pattern' |
-	'constant_copy_pattern' |
-	'split_local_table_init_pattern' |
-	'duplicate_initializer_pattern' |
-	'handler_identity_dispatch_pattern' |
-	'ensure_local_alias_pattern' |
-	'service_definition_suffix_pattern' |
-	'define_factory_tick_enabled_pattern' |
-	'define_factory_space_id_pattern' |
-	'create_service_id_addon_pattern' |
-	'define_service_id_pattern' |
-	'fsm_entering_state_visual_setup_pattern' |
-	'fsm_direct_state_handler_shorthand_pattern' |
-	'fsm_event_reemit_handler_pattern' |
-	'fsm_forbidden_legacy_fields_pattern' |
-	'fsm_process_input_polling_transition_pattern' |
-	'fsm_run_checks_input_transition_pattern' |
-	'fsm_lifecycle_wrapper_pattern' |
-	'fsm_tick_counter_transition_pattern' |
-	'fsm_id_label_pattern' |
-	'bt_id_label_pattern' |
-	'injected_service_id_property_pattern' |
-	'inline_static_lookup_table_pattern' |
-	'staged_export_local_call_pattern' |
-	'staged_export_local_table_pattern' |
-	'require_lua_extension_pattern' |
-	'branch_uninitialized_local_pattern' |
-	'ensure_pattern' |
-	'forbidden_render_wrapper_call_pattern' |
-	'forbidden_render_module_require_pattern' |
-	'forbidden_render_layer_string_pattern';
-
 type LuaLintProfile = 'cart' | 'bios';
 
 type LuaLintIssue = {
-	readonly rule: LuaLintIssueRule;
+	readonly rule: LuaCartLintRule;
 	readonly path: string;
 	readonly line: number;
 	readonly column: number;
@@ -338,84 +262,7 @@ const SINGLE_USE_LOCAL_SMALL_HELPER_MAX_LINES = 7;
 const LINT_SUPPRESSION_OPEN_MARKER = '-- bmsx-lint:disable';
 const LINT_SUPPRESSION_CLOSE_MARKER = '-- bmsx-lint:enable';
 const suppressedLineRangesByPath = new Map<string, ReadonlyArray<LuaLintSuppressionRange>>();
-const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
-	'syntax_error_pattern',
-	'uppercase_code_pattern',
-	'comparison_wrapper_getter_pattern',
-	'visual_update_pattern',
-	'bool01_duplicate_pattern',
-	'pure_copy_function_pattern',
-	'useless_assert_pattern',
-	'empty_string_condition_pattern',
-	'empty_string_fallback_pattern',
-	'or_nil_fallback_pattern',
-	'explicit_truthy_comparison_pattern',
-	'string_or_chain_comparison_pattern',
-	'cross_file_local_global_constant_pattern',
-	'shadowed_require_alias_pattern',
-	'unused_init_value_pattern',
-	'getter_setter_pattern',
-	'single_line_method_pattern',
-	'builtin_recreation_pattern',
-	'forbidden_math_floor_pattern',
-	'forbidden_random_helper_pattern',
-	'local_function_const_pattern',
-	'local_const_pattern',
-	'multi_has_tag_pattern',
-	'single_use_has_tag_pattern',
-	'single_use_local_pattern',
-	'self_property_local_alias_pattern',
-	'imgid_assignment_pattern',
-	'self_imgid_assignment_pattern',
-	'imgid_fallback_pattern',
-	'forbidden_transition_to_pattern',
-	'forbidden_matches_state_path_pattern',
-	'forbidden_dispatch_pattern',
-	'event_handler_dispatch_pattern',
-	'event_handler_state_dispatch_pattern',
-	'event_handler_flag_proxy_pattern',
-	'contiguous_multi_emit_pattern',
-	'dispatch_fanout_loop_pattern',
-	'tick_flag_polling_pattern',
-	'tick_input_check_pattern',
-	'action_triggered_bool_chain_pattern',
-	'set_space_roundtrip_pattern',
-	'cross_object_state_event_relay_pattern',
-	'foreign_object_internal_mutation_pattern',
-	'runtime_tag_table_access_pattern',
-	'fsm_state_name_mirror_assignment_pattern',
-	'constant_copy_pattern',
-	'split_local_table_init_pattern',
-	'duplicate_initializer_pattern',
-	'handler_identity_dispatch_pattern',
-	'ensure_local_alias_pattern',
-	'service_definition_suffix_pattern',
-	'define_factory_tick_enabled_pattern',
-	'define_factory_space_id_pattern',
-	'create_service_id_addon_pattern',
-	'define_service_id_pattern',
-	'fsm_entering_state_visual_setup_pattern',
-	'fsm_direct_state_handler_shorthand_pattern',
-	'fsm_event_reemit_handler_pattern',
-	'fsm_forbidden_legacy_fields_pattern',
-	'fsm_process_input_polling_transition_pattern',
-	'fsm_run_checks_input_transition_pattern',
-	'fsm_lifecycle_wrapper_pattern',
-	'fsm_tick_counter_transition_pattern',
-	'fsm_id_label_pattern',
-	'bt_id_label_pattern',
-	'injected_service_id_property_pattern',
-	'inline_static_lookup_table_pattern',
-	'staged_export_local_call_pattern',
-	'staged_export_local_table_pattern',
-	'require_lua_extension_pattern',
-	'branch_uninitialized_local_pattern',
-	'ensure_pattern',
-	'forbidden_render_wrapper_call_pattern',
-	'forbidden_render_module_require_pattern',
-	'forbidden_render_layer_string_pattern',
-];
-const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
+const BIOS_PROFILE_DISABLED_RULES = new Set<LuaCartLintRule>([
 	'visual_update_pattern',
 	'bool01_duplicate_pattern',
 	'pure_copy_function_pattern',
@@ -459,13 +306,13 @@ const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
 	'bt_id_label_pattern',
 	'injected_service_id_property_pattern',
 ]);
-let activeLintRules: ReadonlySet<LuaLintIssueRule> = new Set(ALL_LUA_LINT_RULES);
+let activeLintRules: ReadonlySet<LuaCartLintRule> = new Set(LUA_CART_LINT_RULES);
 
-function resolveEnabledRules(profile: LuaLintProfile): ReadonlySet<LuaLintIssueRule> {
+function resolveEnabledRules(profile: LuaLintProfile): ReadonlySet<LuaCartLintRule> {
 	if (profile === 'cart') {
-		return new Set(ALL_LUA_LINT_RULES);
+		return new Set(LUA_CART_LINT_RULES);
 	}
-	const enabled = new Set(ALL_LUA_LINT_RULES);
+	const enabled = new Set(LUA_CART_LINT_RULES);
 	for (const rule of BIOS_PROFILE_DISABLED_RULES) {
 		enabled.delete(rule);
 	}
@@ -590,7 +437,7 @@ async function collectLuaFiles(roots: ReadonlyArray<string>): Promise<string[]> 
 	return Array.from(new Set(files)).sort();
 }
 
-function pushIssue(issues: LuaLintIssue[], rule: LuaLintIssueRule, node: { readonly range: { readonly path: string; readonly start: { readonly line: number; readonly column: number; }; }; }, message: string): void {
+function pushIssue(issues: LuaLintIssue[], rule: LuaCartLintRule, node: { readonly range: { readonly path: string; readonly start: { readonly line: number; readonly column: number; }; }; }, message: string): void {
 	if (!activeLintRules.has(rule)) {
 		return;
 	}
@@ -606,7 +453,7 @@ function pushIssue(issues: LuaLintIssue[], rule: LuaLintIssueRule, node: { reado
 	});
 }
 
-function pushIssueAt(issues: LuaLintIssue[], rule: LuaLintIssueRule, path: string, line: number, column: number, message: string): void {
+function pushIssueAt(issues: LuaLintIssue[], rule: LuaCartLintRule, path: string, line: number, column: number, message: string): void {
 	if (!activeLintRules.has(rule)) {
 		return;
 	}
@@ -7543,7 +7390,7 @@ function lintBtIdLabelPattern(expression: LuaCallExpression, issues: LuaLintIssu
 function lintCollectionStringValuesForLabel(
 	expression: LuaExpression,
 	label: string,
-	rule: LuaLintIssueRule,
+	rule: LuaCartLintRule,
 	issues: LuaLintIssue[],
 	messagePrefix: string,
 ): void {
@@ -8210,7 +8057,7 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 	activeLintRules = resolveEnabledRules(profile);
 	const files = await collectLuaFiles(options.roots);
 	if (files.length === 0) {
-		activeLintRules = new Set(ALL_LUA_LINT_RULES);
+		activeLintRules = new Set(LUA_CART_LINT_RULES);
 		return;
 	}
 
@@ -8266,8 +8113,8 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 			lintSingleUseLocalPattern(chunk.body, issues);
 		}
 		lintCrossFileLocalGlobalConstantPattern(topLevelLocalStringConstants, issues);
-		} finally {
-		activeLintRules = new Set(ALL_LUA_LINT_RULES);
+	} finally {
+		activeLintRules = new Set(LUA_CART_LINT_RULES);
 		suppressedLineRangesByPath.clear();
 	}
 

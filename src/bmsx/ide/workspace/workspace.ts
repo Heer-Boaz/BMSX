@@ -4,7 +4,7 @@ import type { LuaSourceRecord, LuaSourceRegistry } from '../../machine/program/s
 import { Runtime } from '../../machine/runtime/runtime';
 import * as luaPipeline from '../runtime/lua_pipeline';
 import { $ } from '../../core/engine';
-import { LuaResourceCreationRequest, ResourceDescriptor } from '../../machine/runtime/contracts';
+import type { LuaResourceCreationRequest, ResourceDescriptor } from '../../rompack/resource';
 import { joinWorkspacePaths, resolveWorkspacePath, stripProjectRootPrefix } from './path';
 import { getWorkspaceCachedSource } from './cache';
 export { joinWorkspacePaths } from './path';

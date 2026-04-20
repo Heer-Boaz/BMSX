@@ -8,11 +8,10 @@ import { clearNativeMemberCompletionCache } from '../editor/contrib/intellisense
 import { ENGINE_LUA_BUILTIN_FUNCTIONS, ENGINE_LUA_BUILTIN_GLOBALS } from '../../machine/firmware/builtin_descriptors';
 import { seedLuaGlobals } from '../../machine/firmware/globals';
 import { ENGINE_SYSTEM_HELPER_NAMES } from '../../machine/firmware/system_globals';
-import { LuaEntrySnapshot } from '../../machine/firmware/js_bridge';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram } from '../../machine/program/compiler';
 import { linkProgramAssets } from '../../machine/program/linker';
 import { getWorkspaceCachedSource } from '../workspace/cache';
-import type { RuntimeState, SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
+import type { LuaEntrySnapshot, RuntimeState, SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
 import type { LuaSourceRecord, LuaSourceRegistry } from '../../machine/program/sources';
 import { logDebugState } from '../../machine/runtime/debug';
 import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';

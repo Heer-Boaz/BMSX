@@ -1,7 +1,7 @@
 import { $ } from '../../../core/engine';
 import { extractErrorMessage } from '../../../lua/value';
 import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument, type StructuredTextDocumentFormat } from '../../../audio/aem';
-import type { ResourceDescriptor } from '../../../machine/runtime/contracts';
+import type { ResourceDescriptor } from '../../../rompack/resource';
 import { loadWorkspaceSourceFile, persistWorkspaceSourceFile } from '../../workspace/workspace';
 import { formatAemYamlDocument } from './yaml_formatter';
 
