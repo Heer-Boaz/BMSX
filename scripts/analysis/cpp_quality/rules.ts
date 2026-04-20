@@ -192,9 +192,14 @@ const NUMERIC_DEFENSIVE_CALLS = new Set([
 
 const SEMANTIC_NORMALIZATION_WRAPPER_SUFFIXES = [
 	'.join',
+	'.contains',
+	'.ends_with',
+	'.starts_with',
 	'.replace',
 	'.replaceAll',
 	'.trim',
+	'.trimStart',
+	'.trimEnd',
 	'.split',
 	'.substr',
 	'.substring',
@@ -202,9 +207,14 @@ const SEMANTIC_NORMALIZATION_WRAPPER_SUFFIXES = [
 	'.tolower',
 	'.toupper',
 	'::join',
+	'::contains',
+	'::ends_with',
+	'::starts_with',
 	'::replace',
 	'::replaceAll',
 	'::trim',
+	'::trimStart',
+	'::trimEnd',
 	'::split',
 	'::substr',
 	'::substring',
@@ -226,8 +236,11 @@ const SEMANTIC_NORMALIZATION_WRAPPER_TARGETS = new Set([
 	'substr',
 	'substring',
 	'join',
+	'contains',
 	'normalize',
 	'round',
+	'starts_with',
+	'ends_with',
 	'std::clamp',
 	'std::ceil',
 	'std::floor',
@@ -237,6 +250,8 @@ const SEMANTIC_NORMALIZATION_WRAPPER_TARGETS = new Set([
 	'std::replace',
 	'std::replace_all',
 	'std::trim',
+	'trimStart',
+	'trimEnd',
 	'std::round',
 	'std::tolower',
 	'std::toupper',
@@ -248,8 +263,8 @@ const SEMANTIC_NORMALIZATION_WRAPPER_TARGETS = new Set([
 ]);
 
 const CPP_NORMALIZED_BODY_MIN_LENGTH = 120;
-const CPP_SEMANTIC_NORMALIZED_BODY_MIN_LENGTH = 80;
 const COMPACT_SAMPLE_TEXT_LENGTH = 180;
+const CPP_SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT = 2;
 
 function isSemanticNormalizationWrapperTarget(target: string): boolean {
 	if (SEMANTIC_NORMALIZATION_WRAPPER_TARGETS.has(target)) {
@@ -261,6 +276,104 @@ function isSemanticNormalizationWrapperTarget(target: string): boolean {
 		}
 	}
 	return false;
+}
+
+function semanticNormalizationFamily(target: string): string | null {
+	if (target === 'clamp' || target === 'max' || target === 'min' || target === 'std::clamp' || target === 'std::max' || target === 'std::min') {
+		return 'numeric:bounds';
+	}
+	if (
+		target === 'ceil'
+		|| target === 'floor'
+		|| target === 'round'
+		|| target === 'trunc'
+		|| target === 'std::ceil'
+		|| target === 'std::floor'
+		|| target === 'std::round'
+		|| target === 'std::trunc'
+	) {
+		return 'numeric:rounding';
+	}
+	if (target === 'isfinite' || target === 'std::isfinite') {
+		return 'numeric:finite';
+	}
+	if (
+		target === 'replace'
+		|| target === 'replaceAll'
+		|| target === 'std::replace'
+		|| target === 'std::replace_all'
+		|| target.endsWith('.replace')
+		|| target.endsWith('::replace')
+		|| target.endsWith('.replaceAll')
+		|| target.endsWith('::replaceAll')
+	) {
+		return 'text:replace';
+	}
+	if (target === 'normalize' || target === 'std::normalize' || target.endsWith('.normalize') || target.endsWith('::normalize')) {
+		return 'text:normalize';
+	}
+	if (
+		target === 'trim'
+		|| target === 'std::trim'
+		|| target === 'trimStart'
+		|| target === 'trimEnd'
+		|| target === 'std::trimStart'
+		|| target === 'std::trimEnd'
+		|| target.endsWith('.trim')
+		|| target.endsWith('::trim')
+		|| target.endsWith('.trimStart')
+		|| target.endsWith('::trimStart')
+		|| target.endsWith('.trimEnd')
+		|| target.endsWith('::trimEnd')
+	) {
+		return 'text:trim';
+	}
+	if (
+		target === 'tolower'
+		|| target === 'toupper'
+		|| target === 'std::tolower'
+		|| target === 'std::toupper'
+		|| target.endsWith('.tolower')
+		|| target.endsWith('::tolower')
+		|| target.endsWith('.toupper')
+		|| target.endsWith('::toupper')
+		|| target.endsWith('.toLower')
+		|| target.endsWith('::toLower')
+		|| target.endsWith('.toUpper')
+		|| target.endsWith('::toUpper')
+	) {
+		return 'text:case';
+	}
+	if (
+		target === 'join'
+		|| target === 'split'
+		|| target === 'substr'
+		|| target === 'substring'
+		|| target.endsWith('.join')
+		|| target.endsWith('::join')
+		|| target.endsWith('.split')
+		|| target.endsWith('::split')
+		|| target.endsWith('.substr')
+		|| target.endsWith('::substr')
+		|| target.endsWith('.substring')
+		|| target.endsWith('::substring')
+	) {
+		return 'text:segment';
+	}
+	if (
+		target === 'contains'
+		|| target === 'starts_with'
+		|| target === 'ends_with'
+		|| target.endsWith('.contains')
+		|| target.endsWith('::contains')
+		|| target.endsWith('.starts_with')
+		|| target.endsWith('::starts_with')
+		|| target.endsWith('.ends_with')
+		|| target.endsWith('::ends_with')
+	) {
+		return 'text:lookup';
+	}
+	return null;
 }
 
 const HOT_PATH_TEMPORARY_TYPES = new Set([
@@ -281,6 +394,48 @@ function compactSampleText(text: string): string {
 		return text;
 	}
 	return `${text.slice(0, COMPACT_SAMPLE_TEXT_LENGTH - 3)}...`;
+}
+
+function collectSemanticNormalizationFamilies(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number): string[] {
+	const families: string[] = [];
+	const addFamily = (family: string): void => {
+		for (let index = 0; index < families.length; index += 1) {
+			if (families[index] === family) {
+				return;
+			}
+		}
+		families.push(family);
+	};
+	for (let index = start; index < end; index += 1) {
+		if (tokens[index].text !== '(' || pairs[index] < 0 || pairs[index] > end) {
+			continue;
+		}
+		const target = cppCallTarget(tokens, index);
+		if (target === null || (!NUMERIC_DEFENSIVE_CALLS.has(target) && !isSemanticNormalizationWrapperTarget(target))) {
+			continue;
+		}
+		const family = semanticNormalizationFamily(target);
+		if (family !== null) {
+			addFamily(family);
+		}
+	}
+	families.sort((left, right) => left.localeCompare(right));
+	return families;
+}
+
+function collectSemanticNormalizationCallSignatures(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number): string[] {
+	const signatures: string[] = [];
+	for (let index = start; index < end; index += 1) {
+		if (tokens[index].text !== '(' || pairs[index] < 0 || pairs[index] > end) {
+			continue;
+		}
+		const target = cppCallTarget(tokens, index);
+		if (target !== null && (NUMERIC_DEFENSIVE_CALLS.has(target) || isSemanticNormalizationWrapperTarget(target))) {
+			const callEnd = pairs[index] + 1;
+			signatures.push(`${target}:${semanticCppExpressionFingerprint(target, tokens, findCppAccessChainStart(tokens, index - 1), callEnd)}`);
+		}
+	}
+	return signatures;
 }
 
 function isHotPathFile(fileName: string): boolean {
@@ -1086,6 +1241,8 @@ function semanticCppExpressionFingerprint(target: string, tokens: readonly CppTo
 
 export function lintCppSemanticRepeatedExpressions(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
 	const expressions = new Map<string, { token: CppToken; count: number; sampleText: string }>();
+	const semanticCallSignatures = collectSemanticNormalizationCallSignatures(tokens, pairs, info.bodyStart + 1, info.bodyEnd);
+	const semanticTargetPrefix = semanticCallSignatures.join('|');
 	const activeSemanticCalls: number[] = [];
 	for (let index = info.bodyStart + 1; index < info.bodyEnd; index += 1) {
 		while (activeSemanticCalls.length > 0 && activeSemanticCalls[activeSemanticCalls.length - 1] <= index) {
@@ -1107,7 +1264,9 @@ export function lintCppSemanticRepeatedExpressions(file: string, tokens: readonl
 		if (text.length < 24 || text.startsWith('this.') || text.startsWith('this->')) {
 			continue;
 		}
-		const fingerprint = semanticCppExpressionFingerprint(target, tokens, callStart, callEnd);
+		const fingerprint = semanticTargetPrefix.length > 0
+			? `${semanticTargetPrefix}|${semanticCppExpressionFingerprint(target, tokens, callStart, callEnd)}`
+			: semanticCppExpressionFingerprint(target, tokens, callStart, callEnd);
 		const existing = expressions.get(fingerprint);
 		if (existing !== undefined) {
 			existing.count += 1;
@@ -1121,7 +1280,7 @@ export function lintCppSemanticRepeatedExpressions(file: string, tokens: readonl
 		activeSemanticCalls.push(callEnd);
 	}
 	for (const value of expressions.values()) {
-		if (value.count <= 2) {
+		if (value.count < CPP_SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT) {
 			continue;
 		}
 		issues.push({
@@ -1135,17 +1294,15 @@ export function lintCppSemanticRepeatedExpressions(file: string, tokens: readonl
 	}
 }
 
-export function collectCppNormalizedBody(file: string, tokens: readonly CppToken[], info: CppFunctionInfo, normalizedBodies: CppNormalizedBodyInfo[]): void {
+export function collectCppNormalizedBody(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, normalizedBodies: CppNormalizedBodyInfo[]): void {
 	const semanticNormalization = info.wrapperTarget !== null && isSemanticNormalizationWrapperTarget(info.wrapperTarget);
 	if (info.wrapperTarget !== null && !semanticNormalization) {
 		return;
 	}
 	const bodyText = normalizedCppTokenText(tokens, info.bodyStart + 1, info.bodyEnd);
-	if (semanticNormalization) {
-		if (bodyText.length < CPP_SEMANTIC_NORMALIZED_BODY_MIN_LENGTH) {
-			return;
-		}
-	} else if (bodyText.length < CPP_NORMALIZED_BODY_MIN_LENGTH) {
+	const semanticFamilies = collectSemanticNormalizationFamilies(tokens, pairs, info.bodyStart + 1, info.bodyEnd);
+	const semanticBody = semanticNormalization || semanticFamilies.length > 0;
+	if (!semanticBody && bodyText.length < CPP_NORMALIZED_BODY_MIN_LENGTH) {
 		return;
 	}
 	normalizedBodies.push({
@@ -1154,6 +1311,7 @@ export function collectCppNormalizedBody(file: string, tokens: readonly CppToken
 		line: tokens[info.nameToken].line,
 		column: tokens[info.nameToken].column,
 		fingerprint: normalizedBodyFingerprint(tokens, info.bodyStart + 1, info.bodyEnd),
+		semanticFamilies: semanticFamilies.length > 0 ? semanticFamilies : null,
 	});
 }
 

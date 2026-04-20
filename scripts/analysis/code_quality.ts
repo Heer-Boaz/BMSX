@@ -74,6 +74,7 @@ type NormalizedBodyInfo = {
 	line: number;
 	column: number;
 	fingerprint: string;
+	semanticFamilies: string[] | null;
 };
 
 type FunctionUsageInfo = {
@@ -163,8 +164,8 @@ const SEMANTIC_NORMALIZATION_CALL_TARGETS = new Set([
 ]);
 
 const NORMALIZED_BODY_MIN_LENGTH = 120;
-const SEMANTIC_NORMALIZED_BODY_MIN_LENGTH = 80;
 const COMPACT_SAMPLE_TEXT_LENGTH = 180;
+const SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT = 2;
 
 const REQUIRED_STATE_ROOTS = new Set([
 	'$',
@@ -1583,23 +1584,72 @@ function isSemanticNormalizationCallTarget(target: string): boolean {
 	return false;
 }
 
-function containsSemanticNormalizationCall(node: ts.Node): boolean {
-	let found = false;
-	const visit = (current: ts.Node): void => {
-		if (found) {
-			return;
-		}
-		if (ts.isCallExpression(current)) {
-			const target = callTargetText(current);
-			if (target !== null && isSemanticNormalizationCallTarget(target)) {
-				found = true;
-				return;
-			}
-		}
-		ts.forEachChild(current, visit);
-	};
-	visit(node);
-	return found;
+function semanticNormalizationFamily(target: string): string | null {
+	if (target === 'Number.isFinite') {
+		return 'numeric:finite';
+	}
+	if (target === 'Math.max' || target === 'Math.min' || target === 'clamp') {
+		return 'numeric:bounds';
+	}
+	if (target === 'Math.ceil' || target === 'Math.floor' || target === 'Math.round' || target === 'Math.trunc') {
+		return 'numeric:rounding';
+	}
+	if (target === 'replace' || target === 'replaceAll' || target.endsWith('.replace') || target.endsWith('.replaceAll')) {
+		return 'text:replace';
+	}
+	if (target === 'normalize' || target.endsWith('.normalize')) {
+		return 'text:normalize';
+	}
+	if (
+		target === 'startsWith'
+		|| target === 'endsWith'
+		|| target === 'includes'
+		|| target === 'indexOf'
+		|| target === 'lastIndexOf'
+		|| target.endsWith('.startsWith')
+		|| target.endsWith('.endsWith')
+		|| target.endsWith('.includes')
+		|| target.endsWith('.indexOf')
+		|| target.endsWith('.lastIndexOf')
+	) {
+		return 'text:lookup';
+	}
+	if (target === 'trim' || target.endsWith('.trim') || target.endsWith('.trimStart') || target.endsWith('.trimEnd')) {
+		return 'text:trim';
+	}
+	if (
+		target === 'toLowerCase'
+		|| target === 'toUpperCase'
+		|| target === 'toLocaleLowerCase'
+		|| target === 'toLocaleUpperCase'
+		|| target.endsWith('.toLowerCase')
+		|| target.endsWith('.toUpperCase')
+		|| target.endsWith('.toLocaleLowerCase')
+		|| target.endsWith('.toLocaleUpperCase')
+	) {
+		return 'text:case';
+	}
+	if (
+		target === 'join'
+		|| target === 'split'
+		|| target === 'slice'
+		|| target === 'substr'
+		|| target === 'substring'
+		|| target === 'padStart'
+		|| target === 'padEnd'
+		|| target.endsWith('.join')
+		|| target.endsWith('.split')
+		|| target.endsWith('.slice')
+		|| target.endsWith('.substr')
+		|| target.endsWith('.substring')
+		|| target.endsWith('.padStart')
+		|| target.endsWith('.padEnd')
+	) {
+		return target === 'padStart' || target === 'padEnd' || target.endsWith('.padStart') || target.endsWith('.padEnd')
+			? 'text:padding'
+			: 'text:segment';
+	}
+	return null;
 }
 
 function compactSampleText(text: string): string {
@@ -1607,6 +1657,33 @@ function compactSampleText(text: string): string {
 		return text;
 	}
 	return `${text.slice(0, COMPACT_SAMPLE_TEXT_LENGTH - 3)}...`;
+}
+
+function collectSemanticNormalizationFamilies(node: ts.Node): string[] {
+	const families: string[] = [];
+	const addFamily = (family: string): void => {
+		for (let index = 0; index < families.length; index += 1) {
+			if (families[index] === family) {
+				return;
+			}
+		}
+		families.push(family);
+	};
+	const visit = (current: ts.Node): void => {
+		if (ts.isCallExpression(current)) {
+			const target = callTargetText(current);
+			if (target !== null && (isSemanticNormalizationCallTarget(target) || isNumericDefensiveCall(current))) {
+				const family = semanticNormalizationFamily(target);
+				if (family !== null) {
+					addFamily(family);
+				}
+			}
+		}
+		ts.forEachChild(current, visit);
+	};
+	visit(node);
+	families.sort((left, right) => left.localeCompare(right));
+	return families;
 }
 
 function isNestedInsideSemanticCall(node: ts.Expression, parent: ts.Node | undefined): boolean {
@@ -2242,7 +2319,8 @@ function collectNormalizedBody(
 		return;
 	}
 	const text = body.getText(sourceFile);
-	const semanticNormalization = containsSemanticNormalizationCall(body);
+	const semanticFamilies = collectSemanticNormalizationFamilies(body);
+	const semanticNormalization = semanticFamilies.length > 0;
 	if (ts.isBlock(body)) {
 		if (!semanticNormalization) {
 			if (body.statements.length < 2 || isSingleLineWrapperCandidate(node)) {
@@ -2251,8 +2329,6 @@ function collectNormalizedBody(
 			if (text.length < NORMALIZED_BODY_MIN_LENGTH) {
 				return;
 			}
-		} else if (text.length < SEMANTIC_NORMALIZED_BODY_MIN_LENGTH) {
-			return;
 		}
 	} else if (!semanticNormalization) {
 		return;
@@ -2267,6 +2343,7 @@ function collectNormalizedBody(
 		line: position.line + 1,
 		column: position.character + 1,
 		fingerprint: normalizedAstFingerprint(body),
+		semanticFamilies: semanticNormalization ? semanticFamilies : null,
 	});
 }
 
@@ -2355,6 +2432,53 @@ function addNormalizedBodyDuplicateIssues(normalizedBodies: readonly NormalizedB
 	}
 }
 
+function addSemanticNormalizedBodyDuplicateIssues(normalizedBodies: readonly NormalizedBodyInfo[], issues: LintIssue[]): void {
+	const bySignature = new Map<string, NormalizedBodyInfo[]>();
+	for (let index = 0; index < normalizedBodies.length; index += 1) {
+		const entry = normalizedBodies[index];
+		if (entry.semanticFamilies === null) {
+			continue;
+		}
+		for (let familyIndex = 0; familyIndex < entry.semanticFamilies.length; familyIndex += 1) {
+			const family = entry.semanticFamilies[familyIndex];
+			let list = bySignature.get(family);
+			if (list === undefined) {
+				list = [];
+				bySignature.set(family, list);
+			}
+			list.push(entry);
+		}
+	}
+	for (const [family, list] of bySignature) {
+		if (list.length <= 1) {
+			continue;
+		}
+		const fingerprints = new Set<string>();
+		const names = new Set<string>();
+		for (let index = 0; index < list.length; index += 1) {
+			fingerprints.add(list[index].fingerprint);
+			names.add(list[index].name);
+		}
+		if (names.size <= 1 || fingerprints.size <= 1) {
+			continue;
+		}
+		const namePreview = Array.from(names).sort((left, right) => left.localeCompare(right)).slice(0, 4);
+		const nameSuffix = names.size > namePreview.length ? ' …' : '';
+		const nameSummary = namePreview.join(', ') + nameSuffix;
+		for (let index = 0; index < list.length; index += 1) {
+			const entry = list[index];
+			issues.push({
+				kind: 'semantic_normalized_body_duplicate_pattern',
+				file: entry.file,
+				line: entry.line,
+				column: entry.column,
+				name: 'semantic_normalized_body_duplicate_pattern',
+				message: `Function/method body shares a semantic ${family.replace(':', ' ')} cluster with differently named bodies: ${nameSummary}. Extract shared ownership instead of copying logic.`,
+			});
+		}
+	}
+}
+
 function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], functionUsageInfo: FunctionUsageInfo): void {
 	const hotPath = isHotPathFile(sourceFile.fileName);
 	const scopes: Array<Map<string, LintBinding[]>> = [];
@@ -2373,7 +2497,7 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 			return;
 		}
 		for (const info of scope.values()) {
-			if (info.count <= 2) {
+			if (info.count < SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT) {
 				continue;
 			}
 			issues.push({
@@ -3508,6 +3632,7 @@ function run(): void {
 	}
 	addDuplicateExportedTypeIssues(exportedTypes, lintIssues);
 	addNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
+	addSemanticNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
 	for (const sourceFile of sourceFiles) {
 		walkDeclarations(sourceFile, buckets, classInfosByKey, classInfosByName, classInfosByFileName);
 	}

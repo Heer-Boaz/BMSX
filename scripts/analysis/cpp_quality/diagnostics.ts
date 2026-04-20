@@ -46,6 +46,7 @@ export type CppNormalizedBodyInfo = {
 	line: number;
 	column: number;
 	fingerprint: string;
+	semanticFamilies: string[] | null;
 };
 
 export function pushLintIssue(
@@ -183,6 +184,53 @@ export function addNormalizedBodyDuplicateIssues(normalizedBodies: readonly CppN
 				column: entry.column,
 				name: 'normalized_ast_duplicate_pattern',
 				message: `Function/method body duplicates ${list.length} normalized token bodies with different names: ${nameSummary}. Extract shared ownership instead of copying logic.`,
+			});
+		}
+	}
+}
+
+export function addSemanticNormalizedBodyDuplicateIssues(normalizedBodies: readonly CppNormalizedBodyInfo[], issues: CppLintIssue[]): void {
+	const bySignature = new Map<string, CppNormalizedBodyInfo[]>();
+	for (let index = 0; index < normalizedBodies.length; index += 1) {
+		const entry = normalizedBodies[index];
+		if (entry.semanticFamilies === null) {
+			continue;
+		}
+		for (let familyIndex = 0; familyIndex < entry.semanticFamilies.length; familyIndex += 1) {
+			const family = entry.semanticFamilies[familyIndex];
+			let list = bySignature.get(family);
+			if (list === undefined) {
+				list = [];
+				bySignature.set(family, list);
+			}
+			list.push(entry);
+		}
+	}
+	for (const [family, list] of bySignature) {
+		if (list.length <= 1) {
+			continue;
+		}
+		const fingerprints = new Set<string>();
+		const names = new Set<string>();
+		for (let index = 0; index < list.length; index += 1) {
+			fingerprints.add(list[index].fingerprint);
+			names.add(list[index].name);
+		}
+		if (names.size <= 1 || fingerprints.size <= 1) {
+			continue;
+		}
+		const namePreview = Array.from(names).sort((left, right) => left.localeCompare(right)).slice(0, 4);
+		const nameSuffix = names.size > namePreview.length ? ' …' : '';
+		const nameSummary = namePreview.join(', ') + nameSuffix;
+		for (let index = 0; index < list.length; index += 1) {
+			const entry = list[index];
+			issues.push({
+				kind: 'semantic_normalized_body_duplicate_pattern',
+				file: entry.file,
+				line: entry.line,
+				column: entry.column,
+				name: 'semantic_normalized_body_duplicate_pattern',
+				message: `Function/method body shares a semantic ${family.replace(':', ' ')} cluster with differently named bodies: ${nameSummary}. Extract shared ownership instead of copying logic.`,
 			});
 		}
 	}

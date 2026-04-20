@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import {
 	addDuplicateExportedTypeIssues,
 	addNormalizedBodyDuplicateIssues,
+	addSemanticNormalizedBodyDuplicateIssues,
 	buildDuplicateGroups,
 	pushLintIssue,
 	recordDeclaration,
@@ -136,7 +137,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 				lintCppStringSwitchChains(file, tokens, pairs, info, lintIssues);
 				lintCppRepeatedExpressions(file, tokens, pairs, info, lintIssues);
 				lintCppSemanticRepeatedExpressions(file, tokens, pairs, info, lintIssues);
-				collectCppNormalizedBody(file, tokens, info, normalizedBodies);
+				collectCppNormalizedBody(file, tokens, pairs, info, normalizedBodies);
 			}
 		if (facadeStats !== null) {
 			lintCppFacadeStats(file, facadeStats, lintIssues);
@@ -144,6 +145,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 	}
 	addDuplicateExportedTypeIssues(exportedTypes, lintIssues);
 	addNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
+	addSemanticNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
 	return relativeAnalysisResult({
 		duplicateGroups: buildDuplicateGroups(duplicateBuckets),
 		lintIssues,
