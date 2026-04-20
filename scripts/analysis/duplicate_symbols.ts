@@ -5,6 +5,14 @@ import { basename, extname, isAbsolute, join, relative, resolve } from 'node:pat
 
 type DuplicateKind = 'class' | 'enum' | 'function' | 'interface' | 'method' | 'namespace' | 'type';
 
+type ClassInfo = {
+	key: string;
+	fileName: string;
+	shortName: string;
+	extendsExpression: string | null;
+	methods: Set<string>;
+};
+
 type DuplicateLocation = {
 	file: string;
 	line: number;
@@ -176,6 +184,241 @@ function getPropertyName(node: ts.PropertyName | ts.Expression): string | null {
 	return null;
 }
 
+function hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {
+	const modifiers = (node as { modifiers?: ts.NodeArray<ts.Modifier> }).modifiers;
+	if (modifiers === undefined) {
+		return false;
+	}
+	for (let i = 0; i < modifiers.length; i += 1) {
+		if (modifiers[i].kind === kind) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function getClassScopePath(node: ts.Node): string | null {
+	const parts: string[] = [];
+	let current: ts.Node | undefined = node;
+	while (current) {
+		if (ts.isClassDeclaration(current) || ts.isInterfaceDeclaration(current) || ts.isModuleDeclaration(current)) {
+			if (current.name) {
+				const name = getPropertyName(current.name);
+				if (name !== null) {
+					parts.push(name);
+				}
+			}
+		}
+		current = current.parent;
+	}
+	if (parts.length === 0) {
+		return null;
+	}
+	parts.reverse();
+	return parts.join('.');
+}
+
+function isAbstractClass(node: ts.ClassDeclaration): boolean {
+	return hasModifier(node, ts.SyntaxKind.AbstractKeyword);
+}
+
+function isIgnoredMethod(node: ts.MethodDeclaration | ts.GetAccessorDeclaration | ts.SetAccessorDeclaration): boolean {
+	return hasModifier(node, ts.SyntaxKind.OverrideKeyword) || hasModifier(node, ts.SyntaxKind.AbstractKeyword);
+}
+
+function getExtendsExpression(node: ts.ClassDeclaration, importAliases: Map<string, string>): string | null {
+	const heritage = node.heritageClauses;
+	if (heritage === undefined) {
+		return null;
+	}
+	for (let i = 0; i < heritage.length; i += 1) {
+		const clause = heritage[i];
+		if (clause.token !== ts.SyntaxKind.ExtendsKeyword) {
+			continue;
+		}
+		const types = clause.types;
+		for (let j = 0; j < types.length; j += 1) {
+			const expr = types[j].expression;
+			const text = getExpressionText(expr, importAliases);
+			if (text !== null) {
+				return text;
+			}
+		}
+	}
+	return null;
+}
+
+function getExpressionText(node: ts.Expression, aliases?: Map<string, string>): string | null {
+	if (ts.isIdentifier(node)) {
+		const alias = aliases?.get(node.text);
+		return alias ?? node.text;
+	}
+	if (ts.isPropertyAccessExpression(node)) {
+		const left = getExpressionText(node.expression, aliases);
+		if (left === null) {
+			return null;
+		}
+		return `${left}.${node.name.text}`;
+	}
+	return null;
+}
+
+function collectImportAliases(sourceFile: ts.SourceFile): Map<string, string> {
+	const aliases = new Map<string, string>();
+	for (let i = 0; i < sourceFile.statements.length; i += 1) {
+		const node = sourceFile.statements[i];
+		if (!ts.isImportDeclaration(node) || node.importClause === undefined) {
+			continue;
+		}
+		const defaultImport = node.importClause.name;
+		if (defaultImport !== undefined) {
+			aliases.set(defaultImport.text, defaultImport.text);
+		}
+		const bindings = node.importClause.namedBindings;
+		if (bindings === undefined) {
+			continue;
+		}
+		if (ts.isNamedImports(bindings)) {
+			const elements = bindings.elements;
+			for (let j = 0; j < elements.length; j += 1) {
+				const element = elements[j];
+				const importedName = element.propertyName?.text ?? element.name.text;
+				aliases.set(element.name.text, importedName);
+			}
+			continue;
+		}
+	}
+	return aliases;
+}
+
+function collectClassInfos(
+	sourceFile: ts.SourceFile,
+	classInfosByKey: Map<string, ClassInfo>,
+	classInfosByName: Map<string, ClassInfo[]>,
+	classInfosByFileName: Map<string, Map<string, ClassInfo[]>>,
+): void {
+	const importAliases = collectImportAliases(sourceFile);
+	const visit = (node: ts.Node): void => {
+		if (ts.isClassDeclaration(node) && node.name !== undefined) {
+			const key = getClassScopePath(node);
+			if (key === null) {
+				return;
+			}
+			const methods = new Set<string>();
+			for (let i = 0; i < node.members.length; i += 1) {
+				const member = node.members[i];
+				if (
+					!ts.isMethodDeclaration(member) &&
+					!ts.isGetAccessorDeclaration(member) &&
+					!ts.isSetAccessorDeclaration(member)
+				) {
+					continue;
+				}
+				const methodName = getPropertyName(member.name);
+				if (methodName === null) {
+					continue;
+				}
+				methods.add(`${getMethodDiscriminator(member)}:${methodName}`);
+			}
+			const classInfo: ClassInfo = {
+				key,
+				fileName: sourceFile.fileName,
+				shortName: node.name.text,
+				extendsExpression: getExtendsExpression(node, importAliases),
+				methods,
+			};
+			classInfosByKey.set(key, classInfo);
+			let list = classInfosByName.get(node.name.text);
+			if (list === undefined) {
+				list = [];
+				classInfosByName.set(node.name.text, list);
+			}
+			list.push(classInfo);
+			let byName = classInfosByFileName.get(sourceFile.fileName);
+			if (byName === undefined) {
+				byName = new Map<string, ClassInfo[]>();
+				classInfosByFileName.set(sourceFile.fileName, byName);
+			}
+			let fileScopedList = byName.get(node.name.text);
+			if (fileScopedList === undefined) {
+				fileScopedList = [];
+				byName.set(node.name.text, fileScopedList);
+			}
+			fileScopedList.push(classInfo);
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(sourceFile);
+}
+
+function resolveParentClassInfo(
+	info: ClassInfo,
+	classInfosByKey: Map<string, ClassInfo>,
+	classInfosByName: Map<string, ClassInfo[]>,
+	classInfosByFileName: Map<string, Map<string, ClassInfo[]>>,
+): ClassInfo | null {
+	if (info.extendsExpression === null) {
+		return null;
+	}
+	const exact = classInfosByKey.get(info.extendsExpression);
+	if (exact !== undefined) {
+		return exact;
+	}
+	const sameFile = classInfosByFileName.get(info.fileName);
+	if (sameFile !== undefined) {
+		const fileScoped = sameFile.get(info.extendsExpression);
+		if (fileScoped !== undefined && fileScoped.length > 0) {
+			return fileScoped[0];
+		}
+	}
+	const candidates = classInfosByName.get(info.extendsExpression);
+	if (candidates === undefined || candidates.length === 0) {
+		return null;
+	}
+	for (let i = 0; i < candidates.length; i += 1) {
+		if (candidates[i].key === info.key) {
+			continue;
+		}
+		return candidates[i];
+	}
+	return candidates[0];
+}
+
+function isInheritedMethod(
+	method: ts.MethodDeclaration | ts.GetAccessorDeclaration | ts.SetAccessorDeclaration,
+	classInfo: ClassInfo | null,
+	classInfosByKey: Map<string, ClassInfo>,
+	classInfosByName: Map<string, ClassInfo[]>,
+	classInfosByFileName: Map<string, Map<string, ClassInfo[]>>,
+): boolean {
+	if (classInfo === null) {
+		return false;
+	}
+	const name = getPropertyName(method.name);
+	if (name === null) {
+		return false;
+	}
+	const methodKey = `${getMethodDiscriminator(method)}:${name}`;
+	let current: ClassInfo | null = resolveParentClassInfo(
+		classInfo,
+		classInfosByKey,
+		classInfosByName,
+		classInfosByFileName,
+	);
+	const visited = new Set<string>();
+	while (current !== null) {
+		if (visited.has(current.key)) {
+			return false;
+		}
+		visited.add(current.key);
+		if (current.methods.has(methodKey)) {
+			return true;
+		}
+		current = resolveParentClassInfo(current, classInfosByKey, classInfosByName, classInfosByFileName);
+	}
+	return false;
+}
+
 function recordDeclaration(
 	buckets: Map<string, DuplicateLocation[]>,
 	kind: DuplicateKind,
@@ -184,8 +427,12 @@ function recordDeclaration(
 	line: number,
 	column: number,
 	context?: string,
+	methodDiscriminator?: string,
 ): void {
-	const key = `${kind}:${name}`;
+	const key =
+		kind === 'method' && context !== undefined
+			? `method\u0000${methodDiscriminator ?? 'method'}\u0000${context}\u0000${name}`
+			: `${kind}\u0000${name}`;
 	let list = buckets.get(key);
 	if (list === undefined) {
 		list = [];
@@ -199,13 +446,19 @@ function recordDeclaration(
 	});
 }
 
+function getMethodDiscriminator(node: ts.MethodDeclaration | ts.GetAccessorDeclaration | ts.SetAccessorDeclaration): string {
+	if (ts.isGetAccessorDeclaration(node)) return 'get';
+	if (ts.isSetAccessorDeclaration(node)) return 'set';
+	return 'method';
+}
+
 function getMethodContext(
 	node: ts.MethodDeclaration | ts.GetAccessorDeclaration | ts.SetAccessorDeclaration | ts.MethodSignature,
 ): string | null {
 	const container = node.parent;
 	if (ts.isClassLike(container) && container.name) {
-		const name = getPropertyName(container.name);
-		if (name !== null) return `class ${name}`;
+		const scope = getClassScopePath(container);
+		if (scope !== null) return `class ${scope}`;
 	}
 	if (ts.isTypeLiteralNode(container)) return 'type literal';
 	if (ts.isInterfaceDeclaration(container) && container.name) return `interface ${container.name.text}`;
@@ -239,6 +492,9 @@ function getOwningObjectName(node: ts.ObjectLiteralExpression | ts.PropertyAssig
 function walkDeclarations(
 	sourceFile: ts.SourceFile,
 	buckets: Map<string, DuplicateLocation[]>,
+	classInfosByKey: Map<string, ClassInfo>,
+	classInfosByName: Map<string, ClassInfo[]>,
+	classInfosByFileName: Map<string, Map<string, ClassInfo[]>>,
 ): void {
 	const visit = (node: ts.Node): void => {
 		if (ts.isFunctionDeclaration(node) && node.name !== undefined && node.body !== undefined) {
@@ -248,7 +504,7 @@ function walkDeclarations(
 				recordDeclaration(buckets, 'function', name, sourceFile.fileName, position.line + 1, position.character + 1);
 			}
 		}
-		if (ts.isClassDeclaration(node) && node.name !== undefined) {
+		if (ts.isClassDeclaration(node) && node.name !== undefined && !isAbstractClass(node)) {
 			const name = getPropertyName(node.name);
 			if (name !== null) {
 				const position = sourceFile.getLineAndCharacterOfPosition(node.name.getStart());
@@ -287,10 +543,16 @@ function walkDeclarations(
 			const position = sourceFile.getLineAndCharacterOfPosition(node.name.getStart());
 			recordDeclaration(buckets, 'function', node.name.text, sourceFile.fileName, position.line + 1, position.character + 1);
 		}
-		if (ts.isMethodDeclaration(node) && node.body !== undefined) {
+		if (ts.isMethodDeclaration(node) && node.body !== undefined && !isIgnoredMethod(node)) {
 			const name = getPropertyName(node.name);
 			if (name !== null) {
 				const position = sourceFile.getLineAndCharacterOfPosition(node.name.getStart());
+				const container = node.parent;
+				const classScope = ts.isClassDeclaration(container) && container.name !== undefined ? getClassScopePath(container) : null;
+				const classInfo = classScope === null ? null : classInfosByKey.get(classScope);
+				if (isInheritedMethod(node, classInfo, classInfosByKey, classInfosByName, classInfosByFileName)) {
+					return;
+				}
 				recordDeclaration(
 					buckets,
 					'method',
@@ -299,13 +561,24 @@ function walkDeclarations(
 					position.line + 1,
 					position.character + 1,
 					getMethodContext(node),
+					getMethodDiscriminator(node),
 				);
 			}
 		}
-		if ((ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) && node.body !== undefined) {
+		if (
+			(ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) &&
+			node.body !== undefined &&
+			!isIgnoredMethod(node)
+		) {
 			const name = getPropertyName(node.name);
 			if (name !== null) {
 				const position = sourceFile.getLineAndCharacterOfPosition(node.name.getStart());
+				const container = node.parent;
+				const classScope = ts.isClassDeclaration(container) && container.name !== undefined ? getClassScopePath(container) : null;
+				const classInfo = classScope === null ? null : classInfosByKey.get(classScope);
+				if (isInheritedMethod(node, classInfo, classInfosByKey, classInfosByName, classInfosByFileName)) {
+					return;
+				}
 				recordDeclaration(
 					buckets,
 					'method',
@@ -314,21 +587,7 @@ function walkDeclarations(
 					position.line + 1,
 					position.character + 1,
 					getMethodContext(node),
-				);
-			}
-		}
-		if (ts.isMethodSignature(node)) {
-			const name = getPropertyName(node.name);
-			if (name !== null) {
-				const position = sourceFile.getLineAndCharacterOfPosition(node.name.getStart());
-				recordDeclaration(
-					buckets,
-					'method',
-					name,
-					sourceFile.fileName,
-					position.line + 1,
-					position.character + 1,
-					getMethodContext(node),
+					getMethodDiscriminator(node),
 				);
 			}
 		}
@@ -357,7 +616,18 @@ function buildDuplicateGroups(
 	const result: DuplicateGroup[] = [];
 	for (const [key, locations] of buckets) {
 		if (locations.length <= 1) continue;
-		const [kind, name] = key.split(':', 2);
+		const split = key.indexOf('\u0000');
+		if (split === -1) {
+			continue;
+		}
+		const kind = key.slice(0, split) as DuplicateKind;
+		let name = key.slice(split + 1);
+		if (kind === 'method') {
+			const firstSep = name.indexOf('\u0000');
+			if (firstSep !== -1) {
+				name = name.slice(name.indexOf('\u0000', firstSep + 1) + 1);
+			}
+		}
 		result.push({
 			kind: kind as DuplicateKind,
 			name,
@@ -437,11 +707,19 @@ function run(): void {
 	const options = parseArgs(process.argv.slice(2));
 	const fileList = collectTypeScriptFiles(options.paths);
 	const buckets = new Map<string, DuplicateLocation[]>();
+	const classInfosByKey = new Map<string, ClassInfo>();
+	const classInfosByName = new Map<string, ClassInfo[]>();
+	const classInfosByFileName = new Map<string, Map<string, ClassInfo[]>>();
+	const sourceFiles: ts.SourceFile[] = [];
 	for (const filePath of fileList) {
 		const sourceText = readFileSync(filePath, 'utf8');
 		const kind = filePath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
 		const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, kind);
-		walkDeclarations(sourceFile, buckets);
+		sourceFiles.push(sourceFile);
+		collectClassInfos(sourceFile, classInfosByKey, classInfosByName, classInfosByFileName);
+	}
+	for (const sourceFile of sourceFiles) {
+		walkDeclarations(sourceFile, buckets, classInfosByKey, classInfosByName, classInfosByFileName);
 	}
 	const groups = buildDuplicateGroups(buckets).map(group => ({
 		...group,
