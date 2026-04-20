@@ -159,9 +159,9 @@ function collectTopOpcodesFromCounts(counts: Uint32Array, totalInstructions: num
 		}
 		const baseCost = BASE_CYCLES[opcode];
 		const cycles = count * baseCost;
-			rows.push({
-				opcode,
-				name: getOpcodeName(opcode),
+		rows.push({
+			opcode,
+			name: getCpuProfilerOpcodeName(opcode),
 			count,
 			percent: percent(count, totalInstructions),
 			baseCost,
@@ -180,6 +180,10 @@ function collectTopOpcodesFromCounts(counts: Uint32Array, totalInstructions: num
 		return left.opcode - right.opcode;
 	});
 	return rows.slice(0, limit);
+}
+
+export function getCpuProfilerOpcodeName(opcode: number): string {
+	return getOpcodeName(opcode);
 }
 
 export class CpuExecutionProfiler {
@@ -244,6 +248,10 @@ export class CpuExecutionProfiler {
 			debugRanges: this.debugRanges.slice(),
 		};
 	}
+}
+
+export function collectCpuProfilerHotOpcodes(snapshot: CpuProfilerSnapshot, limit = 16): CpuProfilerHotOpcode[] {
+	return collectTopOpcodesFromCounts(snapshot.opcodeCounts, snapshot.totalInstructions, snapshot.totalBaseCycles, limit);
 }
 
 export function collectCpuProfilerHotPaths(snapshot: CpuProfilerSnapshot, limit = 16): CpuProfilerHotPath[] {
@@ -389,7 +397,7 @@ export function collectCpuProfilerHotPcs(snapshot: CpuProfilerSnapshot, limit = 
 			wordIndex,
 			pc: wordIndex * INSTRUCTION_BYTES,
 			opcode,
-			opcodeName: getOpcodeName(opcode),
+			opcodeName: getCpuProfilerOpcodeName(opcode),
 			count,
 			percent: percent(count, snapshot.totalInstructions),
 			protoIndex,
@@ -558,7 +566,7 @@ export function formatCpuProfilerReport(snapshot: CpuProfilerSnapshot, options: 
 		opcode === OpCode.LOAD_MEM || opcode === OpCode.STORE_MEM || opcode === OpCode.STORE_MEM_WORDS
 	);
 	const concatGroupRows = collectCpuProfilerOpcodeGroupProtos(snapshot, opcode => opcode === OpCode.CONCAT || opcode === OpCode.CONCATN);
-	const opcodeRows = collectTopOpcodesFromCounts(snapshot.opcodeCounts, snapshot.totalInstructions, snapshot.totalBaseCycles, topOpcodes);
+	const opcodeRows = collectCpuProfilerHotOpcodes(snapshot, topOpcodes);
 	const pcRows = collectCpuProfilerHotPcs(snapshot, topPcs);
 	const lines: string[] = [];
 	lines.push('Fantasy CPU Runtime Profile');

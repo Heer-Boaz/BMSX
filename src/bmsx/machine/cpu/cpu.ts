@@ -688,7 +688,7 @@ export class Table {
 		this.hash.length = 0;
 		this.hashFree = -1;
 		this.bumpVersion();
-		addTrackedLuaHeapBytes(this.getTrackedHeapBytes() - previousBytes);
+		replaceTrackedLuaHeapBytes(previousBytes, this.getTrackedHeapBytes());
 	}
 
 	public entriesArray(): ReadonlyArray<[Value, Value]> {
@@ -751,7 +751,7 @@ export class Table {
 		this.hashFree = state.hashFree;
 		this.metatable = state.metatable;
 		this.bumpVersion();
-		addTrackedLuaHeapBytes(this.getTrackedHeapBytes() - previousBytes);
+		replaceTrackedLuaHeapBytes(previousBytes, this.getTrackedHeapBytes());
 	}
 
 	public walkTrackedValues(visitor: (value: Value) => void): void {
@@ -1018,7 +1018,7 @@ export class Table {
 				this.rawSet(node.key, node.value);
 			}
 		}
-		addTrackedLuaHeapBytes(this.getTrackedHeapBytes() - previousBytes);
+		replaceTrackedLuaHeapBytes(previousBytes, this.getTrackedHeapBytes());
 	}
 
 	private rawSet(key: Value, value: Value): void {

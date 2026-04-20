@@ -80,22 +80,25 @@ void FrameLoopState::finalizeUpdateSlice(Runtime& runtime) {
 
 void FrameLoopState::executeUpdateCallback(Runtime& runtime) {
 	try {
-		while (runtime.hasEntryContinuation()) {
+		while (true) {
 			if (runtime.machine().cpu().isHaltedUntilIrq() && runtime.vblank.runHaltedUntilIrq(runtime, frameState)) {
 				return;
 			}
 			if (runtime.vblank.consumeBackQueueClearAfterIrqWake()) {
 				RenderQueues::clearBackQueues();
 			}
-			if (runtime.cpuExecution.runWithBudget(runtime, frameState) == RunResult::Halted) {
-				runtime.m_pendingCall = Runtime::PendingCall::None;
+			if (!runtime.hasEntryContinuation()) {
 				return;
 			}
+			RunResult result = runtime.cpuExecution.runWithBudget(runtime, frameState);
 			if (runtime.machine().cpu().isHaltedUntilIrq()) {
 				if (runtime.vblank.runHaltedUntilIrq(runtime, frameState)) {
 					return;
 				}
 				continue;
+			}
+			if (result == RunResult::Halted) {
+				runtime.m_pendingCall = Runtime::PendingCall::None;
 			}
 			return;
 		}
@@ -125,8 +128,8 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 		return true;
 	}
 
-	const FrameState* const previousState = frameActive ? &frameState : nullptr;
-	const int previousRemaining = previousState ? previousState->cycleBudgetRemaining : -1;
+	FrameState* const previousState = frameActive ? &frameState : nullptr;
+	const int previousRemaining = previousState != nullptr ? previousState->cycleBudgetRemaining : -1;
 	const bool previousPending = runtime.hasEntryContinuation();
 	const i64 previousSequence = runtime.frameScheduler.lastTickSequence;
 	bool startedFrame = false;
@@ -227,9 +230,11 @@ void FrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platform
 			auto terminalInputEnd = std::chrono::steady_clock::now();
 			engine.m_last_tick_timing.runtimeTerminalInputMs = to_ms(terminalInputEnd - terminalInputStart);
 
+			const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 			auto updateStart = std::chrono::steady_clock::now();
 			engine.m_delta_time = runtime.timing.frameDurationMs / 1000.0;
-			runtime.screen.syncAfterRuntimeUpdate(runtime, runtime.frameScheduler.run(runtime, hostDeltaMs));
+			runtime.frameScheduler.run(runtime, hostDeltaMs);
+			runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 			auto updateEnd = std::chrono::steady_clock::now();
 			engine.m_last_tick_timing.runtimeUpdateMs = to_ms(updateEnd - updateStart);
 

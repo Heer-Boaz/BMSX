@@ -59,3 +59,10 @@ export function getReferenceSymbolHandle(reference: LuaBoundReference): string |
 	}
 	return null;
 }
+
+export function getIdentifierSymbolHandle(
+	semantics: LuaSemanticFrontendFile,
+	expression: LuaIdentifierExpression,
+): string | null {
+	return getReferenceSymbolHandle(getBoundIdentifierReference(semantics, expression));
+}

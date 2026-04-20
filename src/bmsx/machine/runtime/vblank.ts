@@ -27,11 +27,10 @@ export class VblankState {
 		if (this.vblankCycles <= 0) {
 			return;
 		}
-		const cycleBudgetPerFrame = runtime.timing.cycleBudgetPerFrame;
-		if (this.vblankCycles > cycleBudgetPerFrame) {
+		if (this.vblankCycles > runtime.timing.cycleBudgetPerFrame) {
 			throw new Error('Runtime fault: vblank_cycles must be less than or equal to cycles_per_frame.');
 		}
-		this.vblankStartCycle = cycleBudgetPerFrame - this.vblankCycles;
+		this.vblankStartCycle = runtime.timing.cycleBudgetPerFrame - this.vblankCycles;
 		this.reset(runtime);
 	}
 
@@ -39,12 +38,11 @@ export class VblankState {
 		if (cycles <= 0) {
 			throw new Error('Runtime fault: vblank_cycles must be greater than 0.');
 		}
-		const cycleBudgetPerFrame = runtime.timing.cycleBudgetPerFrame;
-		if (cycles > cycleBudgetPerFrame) {
+		if (cycles > runtime.timing.cycleBudgetPerFrame) {
 			throw new Error('Runtime fault: vblank_cycles must be less than or equal to cycles_per_frame.');
 		}
 		this.vblankCycles = cycles;
-		this.vblankStartCycle = cycleBudgetPerFrame - this.vblankCycles;
+		this.vblankStartCycle = runtime.timing.cycleBudgetPerFrame - this.vblankCycles;
 		this.reset(runtime);
 	}
 
@@ -91,7 +89,9 @@ export class VblankState {
 		this.lastCompletedVblankSequence = 0;
 		this.activeTickCompleted = false;
 		runtime.machine.irqController.postLoad();
-		this.setVblankStatus(runtime, this.vblankStartCycle === 0 || this.getCyclesIntoFrame(runtime) >= this.vblankStartCycle);
+		const vblankActive = (this.vblankStartCycle === 0)
+			|| (this.getCyclesIntoFrame(runtime) >= this.vblankStartCycle);
+		this.setVblankStatus(runtime, vblankActive);
 		this.scheduleCurrentFrameTimers(runtime);
 		refreshDeviceTimings(runtime, runtime.machine.scheduler.nowCycles);
 	}
@@ -136,8 +136,8 @@ export class VblankState {
 	}
 
 	public runHaltedUntilIrq(runtime: Runtime, state: FrameState): boolean {
-		const machine = runtime.machine;
-		if (!machine.cpu.isHaltedUntilIrq()) {
+		runDueRuntimeTimers(runtime);
+		if (!runtime.machine.cpu.isHaltedUntilIrq()) {
 			this.resetHaltIrqWait();
 			return false;
 		}
@@ -145,26 +145,28 @@ export class VblankState {
 			return true;
 		}
 		if (!this.haltIrqWaitArmed) {
-			if (machine.irqController.pendingFlags() !== 0) {
-				return this.clearHaltUntilIrqDuringRun(runtime, false);
+			const pendingFlags = runtime.machine.irqController.pendingFlags();
+			if (pendingFlags !== 0) {
+				runtime.machine.cpu.clearHaltUntilIrq();
+				return this.activeTickCompleted;
 			}
-			this.haltIrqSignalSequence = this.getIrqSignalSequence(runtime);
+			this.haltIrqSignalSequence = runtime.machine.irqController.signalSequence;
 			this.haltIrqWaitArmed = true;
 		}
 		while (true) {
-			runDueRuntimeTimers(runtime);
-			if (this.getIrqSignalSequence(runtime) !== this.haltIrqSignalSequence) {
-				return this.clearHaltUntilIrqDuringRun(runtime, true);
+			if (runtime.machine.irqController.signalSequence !== this.haltIrqSignalSequence) {
+				runtime.machine.cpu.clearHaltUntilIrq();
+				this.resetHaltIrqWait();
+				return this.activeTickCompleted;
 			}
-			let cycleBudgetRemaining = this.getCycleBudgetRemaining(state);
-			if (cycleBudgetRemaining > 0) {
-				const cyclesToTarget = machine.scheduler.nextDeadline() - machine.scheduler.nowCycles;
+			if (state.cycleBudgetRemaining > 0) {
+				const cyclesToTarget = runtime.machine.scheduler.nextDeadline() - runtime.machine.scheduler.nowCycles;
 				if (cyclesToTarget <= 0) {
+					runDueRuntimeTimers(runtime);
 					continue;
 				}
-				const idleCycles = cyclesToTarget < cycleBudgetRemaining ? cyclesToTarget : cycleBudgetRemaining;
-				cycleBudgetRemaining -= idleCycles;
-				this.setCycleBudgetRemaining(state, cycleBudgetRemaining);
+				const idleCycles = cyclesToTarget < state.cycleBudgetRemaining ? cyclesToTarget : state.cycleBudgetRemaining;
+				state.cycleBudgetRemaining -= idleCycles;
 				advanceRuntimeTime(runtime, idleCycles);
 				if (this.tryCompleteTickOnPendingVblankIrq(runtime, state)) {
 					return true;
@@ -201,8 +203,7 @@ export class VblankState {
 	}
 
 	private leaveVblank(runtime: Runtime): void {
-		this.vblankActive = false;
-		runtime.machine.vdp.setVblankStatus(false);
+		this.setVblankStatus(runtime, false);
 	}
 
 	private resetHaltIrqWait(): void {
@@ -217,7 +218,8 @@ export class VblankState {
 		if (this.vblankSequence === 0) {
 			return false;
 		}
-		if ((runtime.machine.irqController.pendingFlags() & IRQ_VBLANK) === 0) {
+		const pendingFlags = runtime.machine.irqController.pendingFlags();
+		if ((pendingFlags & IRQ_VBLANK) === 0) {
 			return false;
 		}
 		if (this.lastCompletedVblankSequence === this.vblankSequence) {
@@ -234,26 +236,6 @@ export class VblankState {
 		return runtime.machine.cpu.getFrameDepth() === 1
 			&& runtime.pendingCall === 'entry'
 			&& runtime.machine.cpu.isHaltedUntilIrq();
-	}
-
-	private getIrqSignalSequence(runtime: Runtime): number {
-		return runtime.machine.irqController.signalSequence;
-	}
-
-	private clearHaltUntilIrqDuringRun(runtime: Runtime, resetHaltIrqWait: boolean): boolean {
-		runtime.machine.cpu.clearHaltUntilIrq();
-		if (resetHaltIrqWait) {
-			this.resetHaltIrqWait();
-		}
-		return this.activeTickCompleted;
-	}
-
-	private getCycleBudgetRemaining(state: FrameState): number {
-		return state.cycleBudgetRemaining;
-	}
-
-	private setCycleBudgetRemaining(state: FrameState, value: number): void {
-		state.cycleBudgetRemaining = value;
 	}
 
 	private commitFrameOnVblankEdge(runtime: Runtime): void {

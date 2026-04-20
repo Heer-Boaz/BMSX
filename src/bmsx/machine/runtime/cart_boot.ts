@@ -25,7 +25,7 @@ export class CartBootState {
 		this.pending = false;
 		this.preparedProgram = null;
 		this.resetDeferredPreparation();
-		runtime.machine.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
+		this.setReadyFlag(runtime, false);
 	}
 
 	public resetDeferredPreparation(): void {
@@ -57,7 +57,7 @@ export class CartBootState {
 			this.deferredPreparationCompleted = true;
 			void this.prepare(runtime).catch((error: unknown) => {
 				console.error('Failed to prepare cart boot:', error);
-				runtime.machine.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
+				this.setReadyFlag(runtime, false);
 			});
 		});
 		this.deferredPreparationHandle = handle;
@@ -71,10 +71,13 @@ export class CartBootState {
 		if (!runtime.luaGate.ready) {
 			return;
 		}
-		if (runtime.frameLoop.currentFrameState !== null || runtime.pendingCall !== null) {
+		if (runtime.frameLoop.currentFrameState !== null) {
 			luaPipeline.resetFrameState(runtime);
 		}
 		if (runtime.pendingCall !== null) {
+			if (runtime.frameLoop.currentFrameState === null) {
+				luaPipeline.resetFrameState(runtime);
+			}
 			runtime.pendingCall = null;
 			runtime.vblank.clearHaltUntilIrq(runtime);
 		}
@@ -85,32 +88,36 @@ export class CartBootState {
 		void luaPipeline.reloadProgramAndResetWorld(runtime);
 	}
 
+	private setReadyFlag(runtime: Runtime, value: boolean): void {
+		runtime.machine.memory.writeValue(IO_SYS_CART_BOOTREADY, value ? 1 : 0);
+	}
+
 	private request(runtime: Runtime): void {
 		this.pending = true;
-		runtime.machine.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
+		this.setReadyFlag(runtime, false);
 	}
 
 	private async prepare(runtime: Runtime): Promise<void> {
+		this.setReadyFlag(runtime, false);
 		this.preparedProgram = null;
-		if (runtime.assets.cartLayer && runtime.cartAssetSource && runtime.cartLuaSources) {
-			try {
-				if (runtime.cartLuaSources.can_boot_from_source) {
-					this.preparedProgram = luaPipeline.compileCartLuaProgramForBoot(runtime);
-					console.info('Cart boot payload prepared from Lua sources.');
-					runtime.machine.memory.writeValue(IO_SYS_CART_BOOTREADY, 1);
-					return;
-				}
-				runtime.machine.memory.writeValue(
-					IO_SYS_CART_BOOTREADY,
-					runtime.cartAssetSource.getEntry(PROGRAM_ASSET_ID) ? 1 : 0,
-				);
-			} catch (error) {
-				this.preparedProgram = null;
-				console.error('Failed to prepare cart boot payload:', error);
-				throw error;
-			}
+		if (!runtime.assets.cartLayer || !runtime.cartAssetSource || !runtime.cartLuaSources) {
+			return;
 		}
-		runtime.machine.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
+		try {
+			if (runtime.cartLuaSources.can_boot_from_source) {
+				this.preparedProgram = luaPipeline.compileCartLuaProgramForBoot(runtime);
+				this.setReadyFlag(runtime, true);
+				console.info('Cart boot payload prepared from Lua sources.');
+				return;
+			}
+			const programEntry = runtime.cartAssetSource.getEntry(PROGRAM_ASSET_ID);
+			this.setReadyFlag(runtime, !!programEntry);
+		} catch (error) {
+			this.preparedProgram = null;
+			this.setReadyFlag(runtime, false);
+			console.error('Failed to prepare cart boot payload:', error);
+			throw error;
+		}
 	}
 
 	private pollSystemBootRequest(runtime: Runtime): void {

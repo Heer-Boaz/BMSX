@@ -17,7 +17,7 @@ export class ResourceUsageDetector {
 	}
 
 	public getRamUsedBytes(): number {
-		return this.getBaseRamUsedBytes() + getTrackedLuaHeapBytes();
+		return this.computeTrackedRamUsedBytes();
 	}
 
 	public getVramUsedBytes(): number {
@@ -36,4 +36,7 @@ export class ResourceUsageDetector {
 			+ this.memory.getUsedAssetDataBytes();
 	}
 
+	private computeTrackedRamUsedBytes(): number {
+		return this.getBaseRamUsedBytes() + getTrackedLuaHeapBytes();
+	}
 }

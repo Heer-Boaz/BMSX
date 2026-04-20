@@ -133,6 +133,24 @@ const resolveValueExpr = (runtime: Runtime, args: ReadonlyArray<Value>, expr: Lo
 	return node;
 };
 
+const buildNativeFunction = (runtime: Runtime, compiled: LoadSubsetCompiledFunction, name: string): NativeFunction =>
+	createNativeFunction(name, (args, out) => {
+		out.length = 0;
+		for (let index = 0; index < compiled.ops.length; index += 1) {
+			const op = compiled.ops[index]!;
+			let node: Value = op.rootParamIndex < args.length ? args[op.rootParamIndex]! : null;
+			for (let pathIndex = 0; pathIndex < op.path.length - 1; pathIndex += 1) {
+				node = getPathStepValue(runtime, node, op.path[pathIndex]!);
+			}
+			setPathStepValue(
+				runtime,
+				node,
+				op.path[op.path.length - 1]!,
+				resolveValueExpr(runtime, args, op.valueExpr),
+			);
+		}
+	});
+
 const fail = (runtime: Runtime, chunkName: string, message: string, range?: LuaSourceRange): never => {
 	if (range !== undefined) {
 		throw runtime.createApiRuntimeError(`[loadstring:${chunkName}] ${message} at ${range.start.line}:${range.start.column}.`);
@@ -316,22 +334,7 @@ export function compileLoadChunk(runtime: Runtime, source: string, chunkName: st
 	const parser = new LuaParser(tokens, chunkName, source);
 	const chunk = parser.parseChunk();
 	const compiled = compileChunk(runtime, chunkName, chunk);
-	const compiledFunction = createNativeFunction(`${chunkName}:inner`, (args, out) => {
-		out.length = 0;
-		for (let index = 0; index < compiled.ops.length; index += 1) {
-			const op = compiled.ops[index]!;
-			let node: Value = op.rootParamIndex < args.length ? args[op.rootParamIndex]! : null;
-			for (let pathIndex = 0; pathIndex < op.path.length - 1; pathIndex += 1) {
-				node = getPathStepValue(runtime, node, op.path[pathIndex]!);
-			}
-			setPathStepValue(
-				runtime,
-				node,
-				op.path[op.path.length - 1]!,
-				resolveValueExpr(runtime, args, op.valueExpr),
-			);
-		}
-	});
+	const compiledFunction = buildNativeFunction(runtime, compiled, `${chunkName}:inner`);
 	return createNativeFunction(`loadstring:${chunkName}`, (_args, out) => {
 		out.push(compiledFunction);
 	});

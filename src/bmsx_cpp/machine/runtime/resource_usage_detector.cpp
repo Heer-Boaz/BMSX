@@ -8,7 +8,7 @@ ResourceUsageDetector::ResourceUsageDetector(Memory& memory, StringHandleTable& 
 	, m_stringHandles(stringHandles)
 	, m_vdp(vdp) {}
 
-uint32_t ResourceUsageDetector::baseRamUsedBytes() const {
+uint32_t ResourceUsageDetector::computeBaseRamUsedBytes() const {
 	return IO_REGION_SIZE
 		+ (STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE)
 		+ m_stringHandles.usedHeapBytes()
@@ -17,7 +17,7 @@ uint32_t ResourceUsageDetector::baseRamUsedBytes() const {
 }
 
 uint32_t ResourceUsageDetector::ramUsedBytes() const {
-	return baseRamUsedBytes() + static_cast<uint32_t>(trackedLuaHeapBytes());
+	return computeBaseRamUsedBytes() + static_cast<uint32_t>(trackedLuaHeapBytes());
 }
 
 uint32_t ResourceUsageDetector::vramUsedBytes() const {

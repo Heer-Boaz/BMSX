@@ -28,7 +28,7 @@ public:
 	bool consumeTickCompletion(TickCompletion& outCompletion);
 	bool refillFrameBudget(Runtime& runtime, FrameState& frameState);
 	bool startScheduledFrame(Runtime& runtime);
-	i64 run(Runtime& runtime, f64 hostDeltaMs);
+	void run(Runtime& runtime, f64 hostDeltaMs);
 
 	i64 lastTickSequence = 0;
 	int lastTickBudgetGranted = 0;

@@ -16,7 +16,7 @@ export class CpuExecutionState {
 	private debugCycleRunsTotal = 0;
 	public debugCycleYieldsTotal = 0;
 
-	public runWithBudget(runtime: Runtime, state: FrameState, cycleBudgetRemaining: number): RunResult {
+	public runWithBudget(runtime: Runtime, state: FrameState): RunResult {
 		const debugCycle = Boolean((globalThis as any).__bmsx_debug_tickrate);
 		if (debugCycle) {
 			if (this.debugCycleReportAtMs === 0) {
@@ -25,33 +25,34 @@ export class CpuExecutionState {
 			this.debugCycleRuns += 1;
 			this.debugCycleRunsTotal += 1;
 		}
-		let remaining = cycleBudgetRemaining;
+		const budgetBefore = state.cycleBudgetRemaining;
+		let remaining = budgetBefore;
 		let result = RunResult.Yielded;
-		const scheduler = runtime.machine.scheduler;
-		const cpu = runtime.machine.cpu;
+		runDueRuntimeTimers(runtime);
 		while (remaining > 0) {
-			runDueRuntimeTimers(runtime);
 			let sliceBudget = remaining;
-			const nextDeadline = scheduler.nextDeadline();
+			const nextDeadline = runtime.machine.scheduler.nextDeadline();
 			if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
-				const deadlineBudget = nextDeadline - scheduler.nowCycles;
+				const deadlineBudget = nextDeadline - runtime.machine.scheduler.nowCycles;
 				if (deadlineBudget <= 0) {
+					runDueRuntimeTimers(runtime);
 					continue;
 				}
 				if (deadlineBudget < sliceBudget) {
 					sliceBudget = deadlineBudget;
 				}
 			}
-			scheduler.beginCpuSlice(sliceBudget);
-			result = cpu.run(sliceBudget);
-			scheduler.endCpuSlice();
-			const consumed = sliceBudget - cpu.instructionBudgetRemaining;
+			runtime.machine.scheduler.beginCpuSlice(sliceBudget);
+			result = runtime.machine.cpu.run(sliceBudget);
+			runtime.machine.scheduler.endCpuSlice();
+			const sliceRemaining = runtime.machine.cpu.instructionBudgetRemaining;
+			const consumed = sliceBudget - sliceRemaining;
 			if (consumed > 0) {
 				remaining -= consumed;
 				state.activeCpuUsedCycles += consumed;
 				advanceRuntimeTime(runtime, consumed);
 			}
-			if (cpu.isHaltedUntilIrq() || result === RunResult.Halted) {
+			if (runtime.machine.cpu.isHaltedUntilIrq() || result === RunResult.Halted) {
 				break;
 			}
 			if (consumed <= 0) {
@@ -69,7 +70,11 @@ export class CpuExecutionState {
 			const elapsedMs = now - this.debugCycleReportAtMs;
 			if (elapsedMs >= 1000) {
 				const scale = 1000 / elapsedMs;
-				console.info(`runs=${(this.debugCycleRuns * scale).toFixed(3)} yields=${(this.debugCycleYields * scale).toFixed(3)} yield%= ${((this.debugCycleYields / this.debugCycleRuns) * 100).toFixed(2)} avgRemaining=${(this.debugCycleRemainingAcc / this.debugCycleRuns).toFixed(1)} budget=${runtime.timing.cycleBudgetPerFrame}`);
+				const runsPerSec = this.debugCycleRuns * scale;
+				const yieldsPerSec = this.debugCycleYields * scale;
+				const yieldPct = (this.debugCycleYields / this.debugCycleRuns) * 100;
+				const avgRemaining = this.debugCycleRemainingAcc / this.debugCycleRuns;
+				console.info(`runs=${runsPerSec.toFixed(3)} yields=${yieldsPerSec.toFixed(3)} yield%=${yieldPct.toFixed(2)} avgRemaining=${avgRemaining.toFixed(1)} budget=${runtime.timing.cycleBudgetPerFrame}`);
 				this.debugCycleReportAtMs = now;
 				this.debugCycleRuns = 0;
 				this.debugCycleYields = 0;

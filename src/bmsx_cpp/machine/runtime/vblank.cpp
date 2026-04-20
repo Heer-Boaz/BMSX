@@ -129,20 +129,8 @@ bool VblankState::consumeBackQueueClearAfterIrqWake() {
 }
 
 bool VblankState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameState) {
-	auto& machine = runtime.m_machine;
-	auto& cpu = machine.cpu();
-	auto& irqController = machine.irqController();
-	auto& scheduler = machine.scheduler();
-	const auto clearHaltUntilIrqDuringRun = [&](bool resetWaitState) -> bool {
-		cpu.clearHaltUntilIrq();
-		if (resetWaitState) {
-			resetHaltIrqWait();
-		}
-		return m_activeTickCompleted;
-	};
-
 	runDueRuntimeTimers(runtime);
-	if (!cpu.isHaltedUntilIrq()) {
+	if (!runtime.m_machine.cpu().isHaltedUntilIrq()) {
 		resetHaltIrqWait();
 		return false;
 	}
@@ -150,21 +138,24 @@ bool VblankState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameState) {
 		return true;
 	}
 	if (!m_haltIrqWaitArmed) {
-		const uint32_t pendingFlags = irqController.pendingFlags();
+		const uint32_t pendingFlags = runtime.m_machine.irqController().pendingFlags();
 		if (pendingFlags != 0u) {
-			return clearHaltUntilIrqDuringRun(false);
+			runtime.m_machine.cpu().clearHaltUntilIrq();
+			return m_activeTickCompleted;
 		}
-		m_haltIrqSignalSequence = irqController.signalSequence();
+		m_haltIrqSignalSequence = runtime.m_machine.irqController().signalSequence();
 		m_haltIrqWaitArmed = true;
 	}
 	while (true) {
-		runDueRuntimeTimers(runtime);
-		if (irqController.signalSequence() != m_haltIrqSignalSequence) {
-			return clearHaltUntilIrqDuringRun(true);
+		if (runtime.m_machine.irqController().signalSequence() != m_haltIrqSignalSequence) {
+			runtime.m_machine.cpu().clearHaltUntilIrq();
+			resetHaltIrqWait();
+			return m_activeTickCompleted;
 		}
 		if (frameState.cycleBudgetRemaining > 0) {
-			const i64 cyclesToTarget = scheduler.nextDeadline() - scheduler.nowCycles();
+			const i64 cyclesToTarget = runtime.m_machine.scheduler().nextDeadline() - runtime.m_machine.scheduler().nowCycles();
 			if (cyclesToTarget <= 0) {
+				runDueRuntimeTimers(runtime);
 				continue;
 			}
 			const int idleCycles = static_cast<int>(std::min<i64>(frameState.cycleBudgetRemaining, cyclesToTarget));
@@ -204,8 +195,7 @@ void VblankState::enterVblank(Runtime& runtime) {
 }
 
 void VblankState::leaveVblank(Runtime& runtime) {
-	m_vblankActive = false;
-	runtime.m_machine.vdp().setVblankStatus(false);
+	setVblankStatus(runtime, false);
 }
 
 void VblankState::resetHaltIrqWait() {

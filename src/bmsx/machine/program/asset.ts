@@ -73,7 +73,9 @@ export function encodeProgram(program: Program): EncodedProgram {
 	};
 }
 
-export const encodeProgramAsset = encodeBinary;
+export function encodeProgramAsset(asset: ProgramAsset): Uint8Array {
+	return encodeBinary(asset);
+}
 
 export function decodeProgramAsset(bytes: Uint8Array): ProgramAsset {
 	const root = requireObject(decodeBinary(bytes), 'ProgramAsset');
@@ -91,9 +93,13 @@ export function decodeProgramAsset(bytes: Uint8Array): ProgramAsset {
 	};
 }
 
-export const encodeProgramSymbolsAsset = encodeBinary;
+export function encodeProgramSymbolsAsset(asset: ProgramSymbolsAsset): Uint8Array {
+	return encodeBinary(asset);
+}
 
-export const decodeProgramSymbolsAsset: (bytes: Uint8Array) => ProgramSymbolsAsset = decodeBinary;
+export function decodeProgramSymbolsAsset(bytes: Uint8Array): ProgramSymbolsAsset {
+	return decodeBinary(bytes) as ProgramSymbolsAsset;
+}
 
 export function buildProgramBootHeader(asset: ProgramAsset): ProgramBootHeader {
 	let flags = 0;

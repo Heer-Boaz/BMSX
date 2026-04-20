@@ -14,8 +14,12 @@ declare global {
 
 const globalTarget = globalThis as typeof globalThis & { bmsx?: BmsxGlobal };
 
-globalTarget.bmsx = {
-	startCart,
-	setCpuProfilerEnabled: (enabled: boolean) => Runtime.instance.machine.cpu.setProfilerEnabled(enabled),
-	formatCpuProfilerReport: () => Runtime.instance.machine.cpu.formatProfilerReport(),
-};
+function setCpuProfilerEnabled(enabled: boolean): void {
+	Runtime.instance.machine.cpu.setProfilerEnabled(enabled);
+}
+
+function formatCpuProfilerReport(): string {
+	return Runtime.instance.machine.cpu.formatProfilerReport();
+}
+
+globalTarget.bmsx = { startCart, setCpuProfilerEnabled, formatCpuProfilerReport };

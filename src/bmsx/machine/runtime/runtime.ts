@@ -21,7 +21,7 @@ import {
 	getMachinePerfSpecs,
 } from '../../rompack/format';
 import { AssetSourceStack, type RawAssetSource } from '../../rompack/source';
-import { buildRuntimeAssetLayer, type RuntimeAssetLayer } from '../../rompack/loader';
+import { buildRuntimeAssetLayer } from '../../rompack/loader';
 import { Api } from '../firmware/api';
 import { Table, type Value, type ProgramMetadata, type NativeFunction, type NativeObject } from '../cpu/cpu';
 import { type StringValue } from '../memory/string_pool';
@@ -36,8 +36,7 @@ import { registerApiBuiltins } from '../firmware/builtins';
 import { LuaFunctionRedirectCache } from '../firmware/handler_registry';
 import { LuaJsBridge } from '../firmware/js_bridge';
 import { RuntimeStorage } from '../firmware/cart_storage';
-import type { LuaBuiltinDescriptor, LuaMemberCompletion } from '../../lua/semantic_contracts';
-import type { RuntimeOptions } from './contracts';
+import type { RuntimeOptions, LuaBuiltinDescriptor, LuaMemberCompletion } from './contracts';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_ENGINE_PROJECT_ROOT_PATH } from '../../ide/workspace/workspace';
 import { buildLuaSources, type LuaSourceRegistry } from '../program/sources';
 import * as workbenchMode from '../../ide/runtime/workbench_mode';
@@ -57,7 +56,7 @@ import { CartBootState } from './cart_boot';
 import { HostFaultState } from './host_fault';
 import { LuaScratchState } from '../program/scratch';
 import { invokeClosureHandler, invokeLuaHandler } from '../program/executor';
-import { resolvePositiveSafeInteger, resolveRuntimeRenderSize } from '../specs';
+import { resolveCpuHz, resolveGeoWorkUnitsPerSec, resolveRuntimeRenderSize, resolveVdpWorkUnitsPerSec } from '../specs';
 import { resolveRuntimeMemoryMapSpecs } from '../memory/specs';
 import { startEngineWithDeferredStartupAudioRefresh } from '../../audio/startup';
 import { RuntimeAssetState } from '../memory/asset_state';
@@ -77,13 +76,6 @@ import { createVdpBlitterExecutor } from '../../render/vdp/blitter';
 // Flip back to 'msx' to restore default font in machine/editor
 export const EDITOR_FONT_VARIANT: FontVariant = 'tiny';
 
-const resolveOverlayRom = (overlayLayer: RuntimeAssetLayer | null): Uint8Array | null => {
-	if (overlayLayer === null) {
-		return null;
-	}
-	return new Uint8Array(overlayLayer.payload);
-};
-
 export type FrameState = {
 	haltGame: boolean;
 	updateExecuted: boolean;
@@ -102,7 +94,8 @@ export class Runtime {
 	private static _instance: Runtime = null;
 
 	public static createInstance(options: RuntimeOptions): Runtime {
-		if (Runtime._instance !== null) {
+		const existing = Runtime._instance;
+		if (existing) {
 			throw runtimeFault('instance already exists.');
 		}
 		return new Runtime(options);
@@ -187,12 +180,12 @@ export class Runtime {
 	public readonly luaFunctionRedirectCache = new LuaFunctionRedirectCache();
 	// Wrap Lua closures with stable JS stubs so FSM/input/events can hold onto durable references even across hot-resume.
 	private readonly luaHandlerCache = new LuaHandlerCache(
-		invokeLuaHandler.bind(this, this),
-		this.handleLuaHandlerError.bind(this),
+		(fn, thisArg, args) => invokeLuaHandler(this, fn, thisArg, args),
+		(error, meta) => this.handleLuaHandlerError(error, meta),
 	);
 	public readonly closureHandlerCache = new HandlerCache(
-		invokeClosureHandler.bind(this, this),
-		this.handleClosureHandlerError.bind(this),
+		(fn, thisArg, args) => invokeClosureHandler(this, fn, thisArg, args),
+		(error, meta) => this.handleClosureHandlerError(error, meta),
 	);
 	public readonly moduleProtos = new Map<string, number>();
 	public readonly moduleCache = new Map<string, Value>();
@@ -240,7 +233,6 @@ export class Runtime {
 	public static async init(cartridge?: Uint8Array): Promise<void> {
 		const engineLayer = $.engine_layer;
 		const playerIndex = Input.instance.startupGamepadIndex ?? 1;
-		const engineMachine = engineLayer.index.machine;
 
 		const engineSource = new AssetSourceStack([{ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload }]);
 		const engineLuaSources = buildLuaSources({
@@ -249,81 +241,67 @@ export class Runtime {
 			index: engineLayer.index,
 			allowedPayloadIds: ['system'],
 		});
-		$.set_sources(engineLuaSources);
-		let engineProjectRootPath = engineLayer.index.projectRootPath;
-		if (engineProjectRootPath === null) {
-			engineProjectRootPath = DEFAULT_ENGINE_PROJECT_ROOT_PATH;
-		}
-		const engineRegistryOverrideParams = {
-			registry: engineLuaSources,
-			storage: $.platform.storage,
-			includeServer: true,
-			projectRootPath: engineProjectRootPath,
-		};
-		const configureRuntimeAssets = (runtime: Runtime, runtimeAssetLayers: RuntimeAssetLayer[]): void => {
-			const runtimeAssets = runtime.assets;
-			runtimeAssets.biosLayer = engineLayer;
-			runtimeAssets.setLayers(runtimeAssetLayers);
-		};
-		const finalizeBoot = async (runtime: Runtime): Promise<void> => {
-			await runtime.prepareBootRomStartupState();
-			$.view.default_font = new Font();
-			await runtime.boot();
-			startEngineWithDeferredStartupAudioRefresh(runtime);
-		};
 
 		if (!cartridge) {
 			$.set_source(engineSource);
 			$.set_cart_manifest(null);
-			$.set_machine_manifest(engineMachine);
+			$.set_machine_manifest(engineLayer.index.machine);
 			$.set_cart_project_root_path(null);
 			$.set_inputmap(1, { keyboard: null, gamepad: null, pointer: null }); // Default input mapping for player 1 is required even with no cart to prevent errors
 
-			configureMemoryMap(resolveRuntimeMemoryMapSpecs({
-					machine: engineMachine,
-					engineMachine,
-					engineSource,
-					assetSource: engineSource,
-					assetLayers: [engineLayer],
-				}));
-			const enginePerfSpecs = getMachinePerfSpecs(engineMachine);
+			$.set_sources(engineLuaSources);
+			const engineMemorySpecs = resolveRuntimeMemoryMapSpecs({
+				machine: engineLayer.index.machine,
+				engineMachine: engineLayer.index.machine,
+				engineSource,
+				assetSource: engineSource,
+				assetLayers: [engineLayer],
+			});
+			configureMemoryMap(engineMemorySpecs);
+			const enginePerfSpecs = getMachinePerfSpecs(engineLayer.index.machine);
 			const ufpsScaled = resolveUfpsScaled(enginePerfSpecs.ufps);
-			const cpuHz = resolvePositiveSafeInteger(enginePerfSpecs.cpu_freq_hz, 'machine.specs.cpu.cpu_freq_hz');
-			const engineRenderSize = resolveRuntimeRenderSize(engineMachine);
+			const cpuHz = resolveCpuHz(enginePerfSpecs.cpu_freq_hz);
+			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
+			const engineRenderSize = resolveRuntimeRenderSize(engineLayer.index.machine);
+			const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, engineRenderSize.height);
+			const memory = new Memory({
+				engineRom: new Uint8Array(engineLayer.payload),
+				cartRom: new Uint8Array(CART_ROM_HEADER_SIZE),
+			});
 			const runtime = Runtime.createInstance({
 				playerIndex,
 				viewport: engineRenderSize,
-				memory: new Memory({
-					engineRom: new Uint8Array(engineLayer.payload),
-					cartRom: new Uint8Array(CART_ROM_HEADER_SIZE),
-				}),
+				memory,
 				ufpsScaled,
 				cpuHz,
-				cycleBudgetPerFrame: calcCyclesPerFrameScaled(cpuHz, ufpsScaled),
-				vblankCycles: resolveVblankCycles(cpuHz, ufpsScaled, engineRenderSize.height),
+				cycleBudgetPerFrame,
+				vblankCycles,
 				vdpWorkUnitsPerSec: enginePerfSpecs.work_units_per_sec,
 				geoWorkUnitsPerSec: enginePerfSpecs.geo_work_units_per_sec,
 			});
-			setTransferRatesFromManifest(runtime, enginePerfSpecs);
-			configureRuntimeAssets(runtime, [engineLayer as RuntimeAssetLayer]);
+				setTransferRatesFromManifest(runtime, enginePerfSpecs);
+				runtime.assets.biosLayer = engineLayer;
+				runtime.assets.setLayers([engineLayer]);
 			runtime.configureProgramSources({
 				engineSources: engineLuaSources,
 				engineAssetSource: engineSource,
 			});
-			await applyWorkspaceOverridesToRegistry(engineRegistryOverrideParams);
-			await finalizeBoot(runtime);
+			await applyWorkspaceOverridesToRegistry({
+				registry: engineLuaSources,
+				storage: $.platform.storage,
+				includeServer: true,
+				projectRootPath: engineLayer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH,
+			});
+			await runtime.prepareBootRomStartupState();
+			$.view.default_font = new Font();
+			await runtime.boot();
+			startEngineWithDeferredStartupAudioRefresh(runtime);
 			return;
 		}
 
 		const cartLayer = await buildRuntimeAssetLayer({ blob: cartridge, id: 'cart' });
 		const overlayBlob = $.workspace_overlay;
-		let overlayLayer: Awaited<ReturnType<typeof buildRuntimeAssetLayer>> | null;
-		if (overlayBlob == null) {
-			overlayLayer = null;
-		}
-		else {
-			overlayLayer = await buildRuntimeAssetLayer({ blob: overlayBlob, id: 'overlay' });
-		}
+		const overlayLayer = overlayBlob ? await buildRuntimeAssetLayer({ blob: overlayBlob, id: 'overlay' }) : null;
 		const layers = [];
 		if (overlayLayer) {
 			layers.push({ id: overlayLayer.id, index: overlayLayer.index, payload: overlayLayer.payload });
@@ -344,51 +322,68 @@ export class Runtime {
 			allowedPayloadIds: overlayLayer ? ['overlay', 'cart'] : ['cart'],
 		});
 
-		for (const mappedInput of Object.entries(cartLayer.index.input ?? { 1: { keyboard: null, gamepad: null, pointer: null } as InputMap })) {
-			$.set_inputmap(parseInt(mappedInput[0], 10), mappedInput[1]);
+		const inputMappingPerPlayer = cartLayer.index.input ?? { 1: { keyboard: null, gamepad: null, pointer: null } as InputMap };
+		for (const playerIndexStr of Object.keys(inputMappingPerPlayer)) {
+			const mappedIndex = parseInt(playerIndexStr, 10);
+			const inputMapping = inputMappingPerPlayer[mappedIndex];
+			$.set_inputmap(mappedIndex, inputMapping);
 		}
 
 		await applyWorkspaceOverridesToCart({ cart: cartLuaSources, storage: $.platform.storage, includeServer: true });
-		const runtimeAssetLayers = overlayLayer ? [engineLayer, cartLayer, overlayLayer] : [engineLayer, cartLayer];
-		configureMemoryMap(resolveRuntimeMemoryMapSpecs({
-				machine: cartLayer.index.machine,
-				engineMachine: engineMachine,
-				engineSource,
-				assetSource,
-				assetLayers: runtimeAssetLayers,
-			}));
-				const cartPerfSpecs = getMachinePerfSpecs(cartLayer.index.machine);
-				const cartUfpsScaled = resolveUfpsScaled(cartPerfSpecs.ufps);
-				const cartCpuHz = resolvePositiveSafeInteger(cartPerfSpecs.cpu_freq_hz, 'machine.specs.cpu.cpu_freq_hz');
-				const cartRenderSize = resolveRuntimeRenderSize(cartLayer.index.machine);
-				const runtime = Runtime.createInstance({
-					playerIndex,
-					viewport: cartRenderSize,
-					memory: new Memory({
-						engineRom: new Uint8Array(engineLayer.payload),
-						cartRom: new Uint8Array(cartLayer.payload),
-						overlayRom: resolveOverlayRom(overlayLayer),
-					}),
-					ufpsScaled: cartUfpsScaled,
-					cpuHz: cartCpuHz,
-					cycleBudgetPerFrame: calcCyclesPerFrameScaled(cartCpuHz, cartUfpsScaled),
-					vblankCycles: resolveVblankCycles(cartCpuHz, cartUfpsScaled, cartRenderSize.height),
-					vdpWorkUnitsPerSec: cartPerfSpecs.work_units_per_sec,
-					geoWorkUnitsPerSec: cartPerfSpecs.geo_work_units_per_sec,
-				});
+		$.set_sources(engineLuaSources);
+
+		const memoryLimits = resolveRuntimeMemoryMapSpecs({
+			machine: cartLayer.index.machine,
+			engineMachine: engineLayer.index.machine,
+			engineSource,
+			assetSource,
+			assetLayers: overlayLayer ? [engineLayer, cartLayer, overlayLayer] : [engineLayer, cartLayer],
+		});
+		configureMemoryMap(memoryLimits);
+		const cartPerfSpecs = getMachinePerfSpecs(cartLayer.index.machine);
+		const ufpsScaled = resolveUfpsScaled(cartPerfSpecs.ufps);
+		const cpuHz = resolveCpuHz(cartPerfSpecs.cpu_freq_hz);
+		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
+		const cartRenderSize = resolveRuntimeRenderSize(cartLayer.index.machine);
+		const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, cartRenderSize.height);
+		const memory = new Memory({
+			engineRom: new Uint8Array(engineLayer.payload),
+			cartRom: new Uint8Array(cartLayer.payload),
+			overlayRom: overlayLayer ? new Uint8Array(overlayLayer.payload) : null,
+		});
+		const runtime = Runtime.createInstance({
+			playerIndex,
+			viewport: cartRenderSize,
+			memory,
+			ufpsScaled,
+			cpuHz,
+			cycleBudgetPerFrame,
+			vblankCycles,
+			vdpWorkUnitsPerSec: cartPerfSpecs.work_units_per_sec,
+			geoWorkUnitsPerSec: cartPerfSpecs.geo_work_units_per_sec,
+		});
 			setTransferRatesFromManifest(runtime, cartPerfSpecs);
-			configureRuntimeAssets(runtime, runtimeAssetLayers as RuntimeAssetLayer[]);
+			runtime.assets.biosLayer = engineLayer;
+			runtime.assets.setLayers(overlayLayer ? [engineLayer, cartLayer, overlayLayer] : [engineLayer, cartLayer]);
 			runtime.assets.cartLayer = cartLayer;
 			runtime.assets.overlayLayer = overlayLayer;
-				runtime.configureProgramSources({
-					engineSources: engineLuaSources,
-					cartSources: cartLuaSources,
-					engineAssetSource: engineSource,
-					cartAssetSource: cartSource,
-				});
-				await applyWorkspaceOverridesToRegistry({ ...engineRegistryOverrideParams });
-				await finalizeBoot(runtime);
-			}
+		runtime.configureProgramSources({
+			engineSources: engineLuaSources,
+			cartSources: cartLuaSources,
+			engineAssetSource: engineSource,
+			cartAssetSource: cartSource,
+		});
+		await applyWorkspaceOverridesToRegistry({
+			registry: engineLuaSources,
+			storage: $.platform.storage,
+			includeServer: true,
+			projectRootPath: engineLayer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH,
+		});
+		await runtime.prepareBootRomStartupState();
+		$.view.default_font = new Font();
+		await runtime.boot();
+		startEngineWithDeferredStartupAudioRefresh(runtime);
+	}
 
 	public static get instance(): Runtime {
 		return Runtime._instance!;
@@ -426,14 +421,10 @@ export class Runtime {
 	private constructor(options: RuntimeOptions) {
 		Runtime._instance = this;
 		this.timing = new TimingState(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame);
-		this.timing.vdpWorkUnitsPerSec = resolvePositiveSafeInteger(
-			options.vdpWorkUnitsPerSec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC,
-			'machine.specs.vdp.work_units_per_sec',
-		);
-		this.timing.geoWorkUnitsPerSec = resolvePositiveSafeInteger(
-			options.geoWorkUnitsPerSec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC,
-			'machine.specs.geo.work_units_per_sec',
-		);
+		const initialVdpWorkUnits = options.vdpWorkUnitsPerSec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC;
+		const initialGeoWorkUnits = options.geoWorkUnitsPerSec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC;
+		this.timing.vdpWorkUnitsPerSec = resolveVdpWorkUnitsPerSec(initialVdpWorkUnits);
+		this.timing.geoWorkUnitsPerSec = resolveGeoWorkUnitsPerSec(initialGeoWorkUnits);
 		this.storageService = $.platform.storage;
 		this.storage = new RuntimeStorage(this.storageService, $.sources.namespace);
 		this.engineLuaSources = $.sources;
@@ -447,13 +438,15 @@ export class Runtime {
 		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
 		configureLuaHeapUsage({
-			getBaseRamUsedBytes: this.machine.resourceUsageDetector.getBaseRamUsedBytes.bind(this.machine.resourceUsageDetector),
+			getBaseRamUsedBytes: () => this.machine.resourceUsageDetector.getBaseRamUsedBytes(),
 			collectTrackedHeapBytes: () => {
 				const extraRoots = this.luaScratch.acquireValue();
 				try {
 					extraRoots.push(this.pairsIterator);
 					extraRoots.push(this.ipairsIterator);
-					extraRoots.push(...this.moduleCache.values());
+					for (const value of this.moduleCache.values()) {
+						extraRoots.push(value);
+					}
 					return this.machine.cpu.collectTrackedHeapBytes(extraRoots);
 				}
 				finally {
@@ -461,7 +454,7 @@ export class Runtime {
 				}
 			},
 		});
-		refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
+			refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
 		this.vblank.setVblankCycles(this, options.vblankCycles);
 		this.randomSeedValue = $.platform.clock.now();
 
@@ -472,9 +465,13 @@ export class Runtime {
 		workbenchMode.initializeIdeFeatures(this, options);
 	}
 
+	private configureInterpreter(interpreter: LuaInterpreter): void {
+		interpreter.requireHandler = (ctx, module) => luaPipeline.requireLuaModule(this, ctx, module);
+	}
+
 	public createLuaInterpreter(): LuaInterpreter {
 		const interpreter = new LuaInterpreter(this.luaJsBridge);
-		interpreter.requireHandler = luaPipeline.requireLuaModule.bind(this);
+		this.configureInterpreter(interpreter);
 		interpreter.attachDebugger(this.debuggerController);
 		interpreter.clearLastFaultEnvironment();
 		registerApiBuiltins(interpreter);
@@ -509,31 +506,33 @@ export class Runtime {
 	}
 
 	public async boot(): Promise<void> {
-		await this.luaGate.trackFn(async () => {
-				try {
-				this.hostFault.clear(this);
-				workbenchMode.clearActiveDebuggerPause(this);
-				workbenchMode.clearRuntimeFault(this);
-				this.luaInitialized = false;
-				luaPipeline.invalidateModuleAliases(this);
-				this.luaChunkEnvironmentsByPath.clear();
-				this.luaChunkEnvironmentsByPath.clear();
-				this.luaGenericChunksExecuted.clear();
-				if (this.editor !== null) {
-					this.editor.clearRuntimeErrorOverlay();
-				}
-				if (this.hasCompletedInitialBoot) { // Subsequent boot: reset the runtime state
-					await $.resetRuntime();
-					await $.refresh_audio_assets();
-				}
-				api.cartdata($.sources.namespace);
-				luaPipeline.bootActiveProgram(this);
-				this.hasCompletedInitialBoot = true;
-				}
-				catch (error) {
-					throw runtimeFault(`failed to boot runtime: ${error}`);
-				}
-			}, { blocking: true, tag: 'new_game' });
+		const gateToken = this.luaGate.begin({ blocking: true, tag: 'new_game' });
+		try {
+			this.hostFault.clear(this);
+			workbenchMode.clearActiveDebuggerPause(this);
+			workbenchMode.clearRuntimeFault(this);
+			this.luaInitialized = false;
+			luaPipeline.invalidateModuleAliases(this);
+			this.luaChunkEnvironmentsByPath.clear();
+			this.luaChunkEnvironmentsByPath.clear();
+			this.luaGenericChunksExecuted.clear();
+			if (this.editor !== null) {
+				this.editor.clearRuntimeErrorOverlay();
+			}
+			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset the runtime state
+				await $.resetRuntime();
+				await $.refresh_audio_assets();
+			}
+			api.cartdata($.sources.namespace);
+			luaPipeline.bootActiveProgram(this);
+			this.hasCompletedInitialBoot = true;
+		}
+		catch (error) {
+			throw runtimeFault(`failed to boot runtime: ${error}`);
+		}
+		finally {
+			this.luaGate.end(gateToken);
+		}
 	}
 
 	private async prepareBootRomStartupState(options?: { resetRuntime?: boolean; refreshAudio?: boolean }): Promise<void> {
@@ -549,7 +548,8 @@ export class Runtime {
 	}
 
 	public async rebootToBootRom(): Promise<void> {
-		await this.luaGate.trackFn(async () => {
+		const gateToken = this.luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
+		try {
 			workbenchMode.clearActiveDebuggerPause(this);
 			workbenchMode.clearRuntimeFault(this);
 			workbenchMode.deactivateTerminalMode(this);
@@ -571,7 +571,10 @@ export class Runtime {
 			await this.prepareBootRomStartupState({ resetRuntime: true, refreshAudio: true });
 			api.cartdata($.sources.namespace);
 			luaPipeline.bootActiveProgram(this);
-		}, { blocking: true, tag: 'reboot_bootrom' });
+		}
+		finally {
+			this.luaGate.end(gateToken);
+		}
 	}
 
 	private activateEngineProgramAssets(): void {
@@ -583,7 +586,8 @@ export class Runtime {
 		$.set_assets((this.assets.overlayLayer ?? this.assets.cartLayer).assets);
 		const perfSpecs = getMachinePerfSpecs($.machine_manifest);
 		this.timing.applyUfpsScaled(resolveUfpsScaled(perfSpecs.ufps));
-		applyActiveMachineTiming(this, resolvePositiveSafeInteger(perfSpecs.cpu_freq_hz, 'machine.specs.cpu.cpu_freq_hz'));
+		const cpuHz = resolveCpuHz(perfSpecs.cpu_freq_hz);
+		applyActiveMachineTiming(this, cpuHz);
 		setTransferRatesFromManifest(this, perfSpecs);
 	}
 
@@ -610,19 +614,11 @@ export class Runtime {
 	}
 
 	public internString(value: string): StringValue {
-		const internedString = this.machine.cpu.getStringPool().intern(value);
-		if (value.length < 0) {
-			return internedString;
-		}
-		return internedString;
+		return this.machine.cpu.getStringPool().intern(value);
 	}
 
 	public luaKey(name: string): StringValue {
-		const key = this.internString(name);
-		if (name.length < 0) {
-			return key;
-		}
-		return key;
+		return this.internString(name);
 	}
 
 	private handleClosureHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): void {

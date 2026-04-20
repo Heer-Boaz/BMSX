@@ -20,28 +20,6 @@ int resolvePositiveWorkUnits(i64 value, const char* name) {
 	return static_cast<int>(value);
 }
 
-void updateDeviceTimings(Runtime& runtime) {
-	refreshDeviceTimings(runtime, runtime.machine().scheduler().currentNowCycles());
-}
-
-void setWorkUnitsPerSec(Runtime& runtime, i64 value, const char* name, bool vdp) {
-	const int workUnitsPerSec = resolvePositiveWorkUnits(value, name);
-	if (vdp) {
-		runtime.timing.vdpWorkUnitsPerSec = workUnitsPerSec;
-		runtime.machine().vdp().setTiming(runtime.timing.cpuHz, runtime.timing.vdpWorkUnitsPerSec, runtime.machine().scheduler().currentNowCycles());
-	} else {
-		runtime.timing.geoWorkUnitsPerSec = workUnitsPerSec;
-		runtime.machine().geometryController().setTiming(runtime.timing.cpuHz, runtime.timing.geoWorkUnitsPerSec, runtime.machine().scheduler().currentNowCycles());
-	}
-}
-
-void setCycleBudget(Runtime& runtime, int value) {
-	runtime.timing.cycleBudgetPerFrame = value;
-	runtime.setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(value)));
-	updateDeviceTimings(runtime);
-	runtime.vblank.configureCycleBudget(runtime);
-}
-
 } // namespace
 
 void refreshDeviceTimings(Runtime& runtime, i64 nowCycles) {
@@ -56,26 +34,28 @@ void refreshDeviceTimings(Runtime& runtime, i64 nowCycles) {
 }
 
 void setCpuHz(Runtime& runtime, i64 value) {
-	if (value == runtime.timing.cpuHz) {
-		return;
-	}
 	runtime.timing.cpuHz = value;
-	updateDeviceTimings(runtime);
+	refreshDeviceTimings(runtime, runtime.machine().scheduler().currentNowCycles());
 }
 
 void setCycleBudgetPerFrame(Runtime& runtime, int value) {
 	if (value == runtime.timing.cycleBudgetPerFrame) {
 		return;
 	}
-	setCycleBudget(runtime, value);
+	runtime.timing.cycleBudgetPerFrame = value;
+	runtime.setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(value)));
+	refreshDeviceTimings(runtime, runtime.machine().scheduler().currentNowCycles());
+	runtime.vblank.configureCycleBudget(runtime);
 }
 
 void setVdpWorkUnitsPerSec(Runtime& runtime, int value) {
-	setWorkUnitsPerSec(runtime, value, "work_units_per_sec", true);
+	runtime.timing.vdpWorkUnitsPerSec = resolvePositiveWorkUnits(value, "work_units_per_sec");
+	runtime.machine().vdp().setTiming(runtime.timing.cpuHz, runtime.timing.vdpWorkUnitsPerSec, runtime.machine().scheduler().currentNowCycles());
 }
 
 void setGeoWorkUnitsPerSec(Runtime& runtime, int value) {
-	setWorkUnitsPerSec(runtime, value, "geo_work_units_per_sec", false);
+	runtime.timing.geoWorkUnitsPerSec = resolvePositiveWorkUnits(value, "geo_work_units_per_sec");
+	runtime.machine().geometryController().setTiming(runtime.timing.cpuHz, runtime.timing.geoWorkUnitsPerSec, runtime.machine().scheduler().currentNowCycles());
 }
 
 void setTransferRatesFromManifest(Runtime& runtime, const RuntimeTransferRates& rates) {
@@ -84,7 +64,7 @@ void setTransferRatesFromManifest(Runtime& runtime, const RuntimeTransferRates& 
 	runtime.timing.dmaBytesPerSecBulk = rates.dmaBytesPerSecBulk;
 	setVdpWorkUnitsPerSec(runtime, rates.vdpWorkUnitsPerSec);
 	setGeoWorkUnitsPerSec(runtime, rates.geoWorkUnitsPerSec);
-	updateDeviceTimings(runtime);
+	refreshDeviceTimings(runtime, runtime.machine().scheduler().currentNowCycles());
 }
 
 void applyActiveMachineTiming(Runtime& runtime, i64 cpuHz) {
