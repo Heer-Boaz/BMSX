@@ -319,7 +319,19 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 	applyManifestMemorySpecs(runtimeMachine, m_engine_assets.machine, sizingAssets, m_engine_assets);
 	configureViewForMachine(runtimeMachine);
 
-	Runtime& runtime = ensureRuntime(timing);
+	if (!Runtime::hasInstance()) {
+		Runtime::createInstance(RuntimeOptions{
+			1,
+			{ timing.viewportWidth, timing.viewportHeight },
+			timing.ufpsScaled,
+			timing.cpuHz,
+			timing.cycleBudgetPerFrame,
+			timing.vblankCycles,
+			timing.vdpWorkUnitsPerSec,
+			timing.geoWorkUnitsPerSec,
+		});
+	}
+	Runtime& runtime = Runtime::instance();
 	applyRuntimeTiming(runtime, timing);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Engine);
@@ -421,7 +433,19 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 		setMachineManifest(cartMachine);
 		applyManifestMemorySpecs(assets().machine, m_engine_assets.machine, assets(), m_engine_assets);
 		const ResolvedRuntimeTiming timing = resolveRuntimeTiming(assets().machine, transferMachine, cpuHz, runtimeUfpsScaled);
-		Runtime& runtime = ensureRuntime(timing);
+			if (!Runtime::hasInstance()) {
+				Runtime::createInstance(RuntimeOptions{
+					1,
+					{ timing.viewportWidth, timing.viewportHeight },
+					timing.ufpsScaled,
+					timing.cpuHz,
+					timing.cycleBudgetPerFrame,
+					timing.vblankCycles,
+					timing.vdpWorkUnitsPerSec,
+					timing.geoWorkUnitsPerSec,
+				});
+			}
+			Runtime& runtime = Runtime::instance();
 		applyRuntimeTiming(runtime, timing);
 		runtime.refreshMemoryMap();
 		buildAssetMemory(runtime, assets(), false);
@@ -455,7 +479,19 @@ bool EngineCore::bootLoadedCart() {
 	applyManifestMemorySpecs(assets().machine, m_engine_assets.machine, assets(), m_engine_assets);
 	configureViewForMachine(assets().machine);
 
-	Runtime& runtime = ensureRuntime(timing);
+		if (!Runtime::hasInstance()) {
+			Runtime::createInstance(RuntimeOptions{
+				1,
+				{ timing.viewportWidth, timing.viewportHeight },
+				timing.ufpsScaled,
+				timing.cpuHz,
+				timing.cycleBudgetPerFrame,
+				timing.vblankCycles,
+				timing.vdpWorkUnitsPerSec,
+				timing.geoWorkUnitsPerSec,
+			});
+		}
+		Runtime& runtime = Runtime::instance();
 	applyRuntimeTiming(runtime, timing);
 	runtime.refreshMemoryMap();
 	buildAssetMemory(runtime, assets(), false, RuntimeAssetBuildMode::Cart);
@@ -521,7 +557,19 @@ void EngineCore::bootRuntimeFromProgram() {
 	m_linked_program_symbols.reset();
 	const RuntimeAssets& activeAssets = assets();
 	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(activeAssets.machine);
-	Runtime& runtime = ensureRuntime(timing);
+		if (!Runtime::hasInstance()) {
+			Runtime::createInstance(RuntimeOptions{
+				1,
+				{ timing.viewportWidth, timing.viewportHeight },
+				timing.ufpsScaled,
+				timing.cpuHz,
+				timing.cycleBudgetPerFrame,
+				timing.vblankCycles,
+				timing.vdpWorkUnitsPerSec,
+				timing.geoWorkUnitsPerSec,
+			});
+		}
+		Runtime& runtime = Runtime::instance();
 	applyRuntimeTiming(runtime, timing);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Cart);

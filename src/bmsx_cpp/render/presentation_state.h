@@ -20,14 +20,13 @@ struct RenderPresentation {
 
 class RenderPresentationState {
 public:
-	void beginHostFrame();
+	void recordHostFrame();
 	void clearPresentation();
 	void reset();
 	void syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTickSequence);
 	void render(EngineCore& engine, Runtime& runtime);
 
 private:
-	void recordHostFrame();
 	void recordTickCompletion(bool visualCommitted, bool vdpFrameHeld);
 	void recordPresentation(GameView::PresentationMode mode, bool commitFrame, bool paused);
 	void flushDebugReport(const Runtime& runtime);

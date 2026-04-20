@@ -72,7 +72,7 @@ void FrameLoopState::abandonFrameState(Runtime& runtime) {
 }
 
 void FrameLoopState::finalizeUpdateSlice(Runtime& runtime) {
-	if (runtime.hasEntryContinuation() && !runtime.vblank.tickCompleted()) {
+	if (runtime.m_pendingCall == Runtime::PendingCall::Entry && !runtime.vblank.tickCompleted()) {
 		return;
 	}
 	abandonFrameState(runtime);
@@ -87,7 +87,7 @@ void FrameLoopState::executeUpdateCallback(Runtime& runtime) {
 			if (runtime.vblank.consumeBackQueueClearAfterIrqWake()) {
 				RenderQueues::clearBackQueues();
 			}
-			if (!runtime.hasEntryContinuation()) {
+			if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
 				return;
 			}
 			const RunResult result = runtime.cpuExecution.runWithBudget(runtime, frameState);
@@ -130,7 +130,7 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 
 	const bool previousFrameActive = frameActive;
 	const int previousRemaining = previousFrameActive ? frameState.cycleBudgetRemaining : -1;
-	const bool previousPending = runtime.hasEntryContinuation();
+	const bool previousPending = runtime.m_pendingCall == Runtime::PendingCall::Entry;
 	const i64 previousSequence = runtime.frameScheduler.lastTickSequence;
 	const bool startedFrame = !frameActive;
 	if (frameActive) {
@@ -143,7 +143,7 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 		}
 	}
 
-	if (runtime.hasEntryContinuation()) {
+	if (runtime.m_pendingCall == Runtime::PendingCall::Entry) {
 		executeUpdateCallback(runtime);
 	}
 
@@ -171,9 +171,9 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 		runtime.m_debugUpdateCountTotal += 1;
 	}
 
-	frameState.updateExecuted = !runtime.hasEntryContinuation();
-	runtime.machine().vdp().flushAssetEdits();
-	finalizeUpdateSlice(runtime);
+		frameState.updateExecuted = runtime.m_pendingCall != Runtime::PendingCall::Entry;
+		runtime.machine().vdp().flushAssetEdits();
+		finalizeUpdateSlice(runtime);
 	const bool nextFrameActive = frameActive;
 	if (nextFrameActive != previousFrameActive) {
 		return true;
@@ -181,9 +181,9 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	if (nextFrameActive && frameState.cycleBudgetRemaining != previousRemaining) {
 		return true;
 	}
-	if (runtime.hasEntryContinuation() != previousPending) {
-		return true;
-	}
+		if ((runtime.m_pendingCall == Runtime::PendingCall::Entry) != previousPending) {
+			return true;
+		}
 	return runtime.frameScheduler.lastTickSequence != previousSequence;
 }
 
@@ -194,7 +194,7 @@ void FrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platform
 	}
 	try {
 		const auto tickStart = std::chrono::steady_clock::now();
-		runtime.screen.beginHostFrame();
+		runtime.screen.recordHostFrame();
 		engine.m_last_tick_timing.inputMs = 0.0;
 		engine.m_last_tick_timing.workbenchModeInputMs = 0.0;
 		engine.m_last_tick_timing.runtimeTerminalInputMs = 0.0;
@@ -212,41 +212,26 @@ void FrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platform
 			engine.m_fps = 1.0 / hostDeltaSeconds;
 		}
 
-		const auto inputStart = std::chrono::steady_clock::now();
-		Input::instance().pollInput();
-		const auto inputEnd = std::chrono::steady_clock::now();
-		engine.m_last_tick_timing.inputMs = to_ms(inputEnd - inputStart);
+			const auto inputStart = std::chrono::steady_clock::now();
+			Input::instance().pollInput();
+			const auto inputEnd = std::chrono::steady_clock::now();
+			engine.m_last_tick_timing.inputMs = to_ms(inputEnd - inputStart);
 
-		runtime.screen.clearPresentation();
-		if (!platformPaused) {
-			const auto ideInputStart = std::chrono::steady_clock::now();
-			runtime.tickIdeInput();
-			const auto ideInputEnd = std::chrono::steady_clock::now();
-			engine.m_last_tick_timing.workbenchModeInputMs = to_ms(ideInputEnd - ideInputStart);
+			runtime.screen.clearPresentation();
+			if (!platformPaused) {
+				const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
+				const auto updateStart = std::chrono::steady_clock::now();
+				engine.m_delta_time = runtime.timing.frameDurationMs / 1000.0;
+				runtime.frameScheduler.run(runtime, hostDeltaMs);
+				runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
+				const auto updateEnd = std::chrono::steady_clock::now();
+				engine.m_last_tick_timing.runtimeUpdateMs = to_ms(updateEnd - updateStart);
 
-			const auto terminalInputStart = std::chrono::steady_clock::now();
-			runtime.tickTerminalInput();
-			const auto terminalInputEnd = std::chrono::steady_clock::now();
-			engine.m_last_tick_timing.runtimeTerminalInputMs = to_ms(terminalInputEnd - terminalInputStart);
-
-			const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
-			const auto updateStart = std::chrono::steady_clock::now();
-			engine.m_delta_time = runtime.timing.frameDurationMs / 1000.0;
-			runtime.frameScheduler.run(runtime, hostDeltaMs);
-			runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
-			const auto updateEnd = std::chrono::steady_clock::now();
-			engine.m_last_tick_timing.runtimeUpdateMs = to_ms(updateEnd - updateStart);
-
-			const auto ideStart = std::chrono::steady_clock::now();
-			runtime.tickIDE();
-			const auto ideEnd = std::chrono::steady_clock::now();
-			engine.m_last_tick_timing.workbenchModeMs = to_ms(ideEnd - ideStart);
-
-			const auto terminalStart = std::chrono::steady_clock::now();
-			runtime.tickTerminalMode();
-			const auto terminalEnd = std::chrono::steady_clock::now();
-			engine.m_last_tick_timing.runtimeTerminalMs = to_ms(terminalEnd - terminalStart);
-		}
+				const auto terminalStart = std::chrono::steady_clock::now();
+				runtime.machine().vdp().flushAssetEdits();
+				const auto terminalEnd = std::chrono::steady_clock::now();
+				engine.m_last_tick_timing.runtimeTerminalMs = to_ms(terminalEnd - terminalStart);
+			}
 		engine.m_delta_time = hostDeltaSeconds;
 
 		if (engine.m_platform && engine.m_platform->microtaskQueue()) {

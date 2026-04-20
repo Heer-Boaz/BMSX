@@ -1683,11 +1683,19 @@ void Runtime::setupBuiltins() {
 	});
 	registerNativeFunction("sys_ram_used", [this](NativeArgsView args, NativeResults& out) {
 		(void)args;
-		out.push_back(valueNumber(static_cast<double>(trackedRamUsedBytes())));
+		const auto& usage = m_machine.resourceUsageDetector();
+		out.push_back(valueNumber(static_cast<double>(
+			IO_REGION_SIZE
+				+ (STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE)
+				+ usage.m_stringHandles.usedHeapBytes()
+				+ usage.m_memory.usedAssetTableBytes()
+				+ usage.m_memory.usedAssetDataBytes()
+				+ static_cast<uint32_t>(trackedLuaHeapBytes())
+		)));
 	});
 	registerNativeFunction("sys_vram_used", [this](NativeArgsView args, NativeResults& out) {
 		(void)args;
-		out.push_back(valueNumber(static_cast<double>(trackedVramUsedBytes())));
+		out.push_back(valueNumber(static_cast<double>(m_machine.resourceUsageDetector().m_vdp.trackedUsedVramBytes())));
 		});
 	registerNativeFunction("sys_vdp_work_units_per_sec", [this](NativeArgsView args, NativeResults& out) {
 		(void)args;

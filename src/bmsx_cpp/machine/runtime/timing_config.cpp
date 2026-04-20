@@ -23,13 +23,14 @@ int resolvePositiveWorkUnits(i64 value, const char* name) {
 } // namespace
 
 void refreshDeviceTimings(Runtime& runtime, i64 nowCycles) {
-	MachineTiming machineTiming{};
-	machineTiming.cpuHz = runtime.timing.cpuHz;
-	machineTiming.dmaBytesPerSecIso = runtime.timing.dmaBytesPerSecIso;
-	machineTiming.dmaBytesPerSecBulk = runtime.timing.dmaBytesPerSecBulk;
-	machineTiming.imgDecBytesPerSec = runtime.timing.imgDecBytesPerSec;
-	machineTiming.geoWorkUnitsPerSec = runtime.timing.geoWorkUnitsPerSec;
-	machineTiming.vdpWorkUnitsPerSec = runtime.timing.vdpWorkUnitsPerSec;
+	const MachineTiming machineTiming{
+		runtime.timing.cpuHz,
+		runtime.timing.dmaBytesPerSecIso,
+		runtime.timing.dmaBytesPerSecBulk,
+		runtime.timing.imgDecBytesPerSec,
+		runtime.timing.geoWorkUnitsPerSec,
+		runtime.timing.vdpWorkUnitsPerSec,
+	};
 	runtime.machine().refreshDeviceTimings(machineTiming, nowCycles);
 }
 

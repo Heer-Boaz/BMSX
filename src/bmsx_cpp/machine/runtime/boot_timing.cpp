@@ -33,23 +33,6 @@ ResolvedRuntimeTiming resolveRuntimeTiming(
 	return timing;
 }
 
-Runtime& ensureRuntime(const ResolvedRuntimeTiming& timing) {
-	if (!Runtime::hasInstance()) {
-		RuntimeOptions options;
-		options.playerIndex = 1;
-		options.viewport.x = timing.viewportWidth;
-		options.viewport.y = timing.viewportHeight;
-		options.ufpsScaled = timing.ufpsScaled;
-		options.cpuHz = timing.cpuHz;
-		options.cycleBudgetPerFrame = timing.cycleBudgetPerFrame;
-		options.vblankCycles = timing.vblankCycles;
-		options.vdpWorkUnitsPerSec = timing.vdpWorkUnitsPerSec;
-		options.geoWorkUnitsPerSec = timing.geoWorkUnitsPerSec;
-		Runtime::createInstance(options);
-	}
-	return Runtime::instance();
-}
-
 void applyRuntimeTiming(Runtime& runtime, const ResolvedRuntimeTiming& timing) {
 	runtime.timing.applyUfpsScaled(timing.ufpsScaled);
 	setCpuHz(runtime, timing.cpuHz);

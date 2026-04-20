@@ -81,7 +81,14 @@ Runtime::Runtime(const RuntimeOptions& options)
 			m_machine.cpu().collectHeap();
 		},
 		.getBaseRamUsedBytes = [this]() {
-			return static_cast<size_t>(m_machine.resourceUsageDetector().baseRamUsedBytes());
+			const auto& usage = m_machine.resourceUsageDetector();
+			return static_cast<size_t>(
+				IO_REGION_SIZE
+					+ (STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE)
+					+ usage.m_stringHandles.usedHeapBytes()
+					+ usage.m_memory.usedAssetTableBytes()
+					+ usage.m_memory.usedAssetDataBytes()
+			);
 		},
 	});
 
@@ -147,38 +154,10 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 }
 
 void Runtime::queueLifecycleHandlers(bool runInit, bool runNewGame) {
-	uint32_t mask = 0;
-	if (runInit) {
-		mask |= IRQ_REINIT;
-	}
-	if (runNewGame) {
-		mask |= IRQ_NEWGAME;
-	}
+	const uint32_t mask = (runInit ? IRQ_REINIT : 0u) | (runNewGame ? IRQ_NEWGAME : 0u);
 	if (mask != 0) {
 		raiseEngineIrq(*this, mask);
 	}
-}
-
-void Runtime::tickIdeInput() {
-}
-
-void Runtime::tickIDE() {
-}
-
-void Runtime::tickIDEDraw() {
-}
-
-void Runtime::tickTerminalInput() {
-	// Terminal input handling - stub for now
-}
-
-void Runtime::tickTerminalMode() {
-	// Terminal mode update - stub for now
-	m_machine.vdp().flushAssetEdits();
-}
-
-void Runtime::tickTerminalModeDraw() {
-	// Terminal mode draw - stub for now
 }
 
 void Runtime::requestProgramReload() {
@@ -221,40 +200,19 @@ void Runtime::applyState(const RuntimeState& state) {
 	m_machine.resetRenderBuffers();
 }
 
-Value Runtime::getGlobal(std::string_view name) {
-	return m_machine.cpu().getGlobalByKey(luaKey(name));
-}
-
 void Runtime::setGlobal(std::string_view name, const Value& value) {
-	m_machine.cpu().setGlobalByKey(luaKey(name), value);
+	m_machine.cpu().setGlobalByKey(valueString(m_machine.cpu().internString(name)), value);
 }
 
 void Runtime::registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost) {
 	const auto nativeFn = m_machine.cpu().createNativeFunction(name, std::move(fn), cost);
-	m_machine.cpu().setGlobalByKey(luaKey(name), nativeFn);
+	m_machine.cpu().setGlobalByKey(valueString(m_machine.cpu().internString(name)), nativeFn);
 }
 
 void Runtime::resetHardwareState() {
 	m_machine.resetDevices();
 	vblank.reset(*this);
 	m_machine.resetRenderBuffers();
-}
-
-uint32_t Runtime::trackedRamUsedBytes() const {
-	return m_machine.resourceUsageDetector().ramUsedBytes();
-}
-
-uint32_t Runtime::trackedVramUsedBytes() const {
-	return m_machine.resourceUsageDetector().vramUsedBytes();
-}
-
-bool Runtime::isDrawPending() const {
-	return hasEntryContinuation()
-		|| m_runtimeFailed;
-}
-
-bool Runtime::hasEntryContinuation() const {
-	return m_pendingCall == PendingCall::Entry;
 }
 
 void Runtime::refreshMemoryMap() {
@@ -284,7 +242,7 @@ void Runtime::refreshMemoryMapGlobals() {
 	setGlobal("sys_vram_secondary_atlas_size", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_SIZE)));
 	setGlobal("sys_vram_framebuffer_size", valueNumber(static_cast<double>(VRAM_FRAMEBUFFER_SIZE)));
 	setGlobal("sys_vram_staging_size", valueNumber(static_cast<double>(VRAM_STAGING_SIZE)));
-	setGlobal("sys_vram_size", valueNumber(static_cast<double>(trackedVramTotalBytes())));
+	setGlobal("sys_vram_size", valueNumber(static_cast<double>(m_machine.vdp().trackedTotalVramBytes())));
 }
 
 void Runtime::restoreVramSlotTextures() {
@@ -293,10 +251,6 @@ void Runtime::restoreVramSlotTextures() {
 
 void Runtime::captureVramTextureSnapshots() {
 	m_machine.vdp().captureVramTextureSnapshots();
-}
-
-Value Runtime::luaKey(std::string_view value) {
-	return valueString(m_machine.cpu().internString(value));
 }
 
 } // namespace bmsx

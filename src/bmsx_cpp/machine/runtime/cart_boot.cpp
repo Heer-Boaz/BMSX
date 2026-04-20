@@ -57,7 +57,7 @@ bool CartBootState::processPending(Runtime& runtime) {
 	if (runtime.frameLoop.frameActive) {
 		runtime.frameLoop.resetFrameState(runtime);
 	}
-	if (runtime.hasEntryContinuation()) {
+	if (runtime.m_pendingCall == Runtime::PendingCall::Entry) {
 		runtime.m_pendingCall = Runtime::PendingCall::None;
 		runtime.vblank.clearHaltUntilIrq(runtime);
 	}

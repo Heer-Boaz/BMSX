@@ -28,7 +28,6 @@ ResolvedRuntimeTiming resolveRuntimeTiming(
 	i64 cpuHz,
 	i64 ufpsScaled
 );
-Runtime& ensureRuntime(const ResolvedRuntimeTiming& timing);
 void applyRuntimeTiming(Runtime& runtime, const ResolvedRuntimeTiming& timing);
 
 } // namespace bmsx

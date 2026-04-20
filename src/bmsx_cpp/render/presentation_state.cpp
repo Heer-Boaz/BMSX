@@ -114,10 +114,6 @@ void RenderPresentationState::flushDebugReport(const Runtime& runtime) {
 	m_debugPresentPausedPresents = 0;
 }
 
-void RenderPresentationState::beginHostFrame() {
-	recordHostFrame();
-}
-
 void RenderPresentationState::clearPresentation() {
 	m_pendingPresentation = false;
 	m_presentationMode = GameView::PresentationMode::Completed;
@@ -151,15 +147,6 @@ bool RenderPresentationState::consumePresentation(Runtime& runtime, RenderPresen
 	outPresentation.mode = m_presentationMode;
 	outPresentation.commitFrame = m_presentationCommitFrame;
 
-	auto ideDrawStart = std::chrono::steady_clock::now();
-	runtime.tickIDEDraw();
-	auto ideDrawEnd = std::chrono::steady_clock::now();
-	outPresentation.workbenchModeDrawMs = to_ms(ideDrawEnd - ideDrawStart);
-
-	auto terminalDrawStart = std::chrono::steady_clock::now();
-	runtime.tickTerminalModeDraw();
-	auto terminalDrawEnd = std::chrono::steady_clock::now();
-	outPresentation.runtimeTerminalDrawMs = to_ms(terminalDrawEnd - terminalDrawStart);
 	if (outPresentation.mode == GameView::PresentationMode::Completed && outPresentation.commitFrame) {
 		RenderQueues::prepareCompletedRenderQueues();
 	} else if (outPresentation.mode == GameView::PresentationMode::Completed) {

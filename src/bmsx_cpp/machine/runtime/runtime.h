@@ -125,36 +125,6 @@ public:
 	void handleLuaError(const std::string& message);
 
 	/**
-	 * Tick IDE input handling.
-	 */
-	void tickIdeInput();
-
-	/**
-	 * Tick IDE update phase.
-	 */
-	void tickIDE();
-
-	/**
-	 * Tick IDE draw phase.
-	 */
-	void tickIDEDraw();
-
-	/**
-	 * Tick terminal input handling.
-	 */
-	void tickTerminalInput();
-
-	/**
-	 * Tick terminal mode update.
-	 */
-	void tickTerminalMode();
-
-	/**
-	 * Tick terminal mode draw.
-	 */
-	void tickTerminalModeDraw();
-
-	/**
 	 * Request a program reload.
 	 */
 	void requestProgramReload();
@@ -211,11 +181,6 @@ public:
 	void callLuaFunctionInto(Closure* fn, NativeArgsView args, NativeResults& out);
 
 	/**
-	 * Get a global variable by name.
-	 */
-	Value getGlobal(std::string_view name);
-
-	/**
 	 * Set a global variable.
 	 */
 	void setGlobal(std::string_view name, const Value& value);
@@ -238,11 +203,7 @@ public:
 	bool lastTickVisualFrameCommitted() const { return frameScheduler.lastTickVisualFrameCommitted; }
 	int lastTickVdpFrameCost() const { return frameScheduler.lastTickVdpFrameCost; }
 	bool lastTickVdpFrameHeld() const { return frameScheduler.lastTickVdpFrameHeld; }
-	uint32_t trackedRamUsedBytes() const;
-	uint32_t trackedVramUsedBytes() const;
-	uint32_t trackedVramTotalBytes() const { return m_machine.vdp().trackedTotalVramBytes(); }
-	bool isDrawPending() const;
-	Value luaKey(std::string_view value);
+	bool isDrawPending() const { return m_runtimeFailed || m_pendingCall == PendingCall::Entry; }
 	void refreshMemoryMap();
 	void restoreVramSlotTextures();
 	void captureVramTextureSnapshots();
@@ -275,7 +236,6 @@ private:
 	void logDebugState() const;
 	void logLuaCallStack() const;
 	void refreshMemoryMapGlobals();
-	bool hasEntryContinuation() const;
 
 	static Runtime* s_instance;
 

@@ -24,6 +24,7 @@ import {
 	collectCppNormalizedBody,
 	createCppFunctionUsageInfo,
 	createCppFacadeStats,
+	lintCppEnsureLazyInitPattern,
 	isCppSingleLineWrapperAllowedByUsage,
 	lintCppCrossLayerIncludes,
 	lintCppFacadeStats,
@@ -125,6 +126,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 					facadeStats.wrapperCount += 1;
 				}
 			}
+			lintCppEnsureLazyInitPattern(file, tokens, info, lintIssues);
 			lintCppLocalBindings(file, tokens, info, lintIssues);
 			lintCppNullishReturnGuards(file, tokens, pairs, info, lintIssues);
 			lintCppRepeatedExpressions(file, tokens, pairs, info, lintIssues);

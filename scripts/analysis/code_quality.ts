@@ -118,6 +118,12 @@ const HOT_PATH_FILES = [
 	'/src/bmsx/ide/editor/ui/code_layout.ts',
 ] as const;
 
+const ENSURE_PATTERN_PATH_SEGMENTS = [
+	'/src/bmsx/machine/runtime/',
+	'/src/bmsx/render/editor/',
+	'/src/bmsx/render/vdp/',
+] as const;
+
 const REQUIRED_STATE_ROOTS = new Set([
 	'$',
 	'editorDocumentState',
@@ -334,6 +340,16 @@ function isHotPathFile(fileName: string): boolean {
 	}
 	for (let index = 0; index < HOT_PATH_FILES.length; index += 1) {
 		if (normalized.endsWith(HOT_PATH_FILES[index])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function isEnsurePatternHotPathFile(fileName: string): boolean {
+	const normalized = normalizePathForAnalysis(fileName);
+	for (let index = 0; index < ENSURE_PATTERN_PATH_SEGMENTS.length; index += 1) {
+		if (normalized.includes(ENSURE_PATTERN_PATH_SEGMENTS[index])) {
 			return true;
 		}
 	}
@@ -978,6 +994,102 @@ function lintLookupAliasOptionalChain(node: ts.Statement, sourceFile: ts.SourceF
 		node,
 		'lookup_alias_return_pattern',
 		'Temporary lookup alias is forbidden. Inline the lookup expression directly and use optional chaining on it instead.',
+	);
+}
+
+function getSingleReturnExpression(statement: ts.Statement): ts.Expression | null {
+	if (ts.isReturnStatement(statement)) {
+		return statement.expression ?? null;
+	}
+	if (!ts.isBlock(statement) || statement.statements.length !== 1) {
+		return null;
+	}
+	const onlyStatement = statement.statements[0];
+	if (!ts.isReturnStatement(onlyStatement)) {
+		return null;
+	}
+	return onlyStatement.expression ?? null;
+}
+
+function functionBodyContainsLazyInitAssignment(root: ts.Node, targetFingerprint: string): boolean {
+	let found = false;
+	const visit = (current: ts.Node): void => {
+		if (found) {
+			return;
+		}
+		if (current !== root && ts.isFunctionLike(current)) {
+			return;
+		}
+		if (ts.isBinaryExpression(current) && isTsAssignmentOperator(current.operatorToken.kind)) {
+			const assignmentTarget = expressionAccessFingerprint(current.left);
+			if (assignmentTarget === targetFingerprint) {
+				const assignedValue = unwrapExpression(current.right);
+				if (
+					ts.isCallExpression(assignedValue)
+					|| ts.isNewExpression(assignedValue)
+					|| ts.isObjectLiteralExpression(assignedValue)
+					|| ts.isArrayLiteralExpression(assignedValue)
+				) {
+					found = true;
+					return;
+				}
+			}
+		}
+		ts.forEachChild(current, visit);
+	};
+	visit(root);
+	return found;
+}
+
+function lintEnsurePattern(
+	node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
+	sourceFile: ts.SourceFile,
+	issues: LintIssue[],
+): void {
+	if (!isEnsurePatternHotPathFile(sourceFile.fileName)) {
+		return;
+	}
+	const names = getFunctionNodeUsageNames(node);
+	if (names.length === 0 || !names.some(name => name.startsWith('ensure'))) {
+		return;
+	}
+	const body = node.body;
+	if (body === undefined || !ts.isBlock(body) || body.statements.length < 2) {
+		return;
+	}
+	const lastStatement = body.statements[body.statements.length - 1];
+	const returnExpression = getSingleReturnExpression(lastStatement);
+	if (returnExpression === null) {
+		return;
+	}
+	const targetFingerprint = expressionAccessFingerprint(returnExpression);
+	if (targetFingerprint === null) {
+		return;
+	}
+	let hasGuardReturn = false;
+	for (let index = 0; index < body.statements.length - 1; index += 1) {
+		const statement = body.statements[index];
+		if (!ts.isIfStatement(statement) || statement.elseStatement !== undefined) {
+			continue;
+		}
+		const guardReturn = getSingleReturnExpression(statement.thenStatement);
+		if (guardReturn === null) {
+			continue;
+		}
+		if (expressionAccessFingerprint(guardReturn) === targetFingerprint) {
+			hasGuardReturn = true;
+			break;
+		}
+	}
+	if (!hasGuardReturn || !functionBodyContainsLazyInitAssignment(body, targetFingerprint)) {
+		return;
+	}
+	pushLintIssue(
+		issues,
+		sourceFile,
+		node.name ?? node,
+		'ensure_pattern',
+		'Lazy ensure/init wrapper is forbidden. Initialize the resource eagerly instead of guarding creation and returning the cached singleton.',
 	);
 }
 
@@ -2118,6 +2230,18 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 		}
 		if (ts.isReturnStatement(node)) {
 			lintLookupAliasOptionalChain(node, sourceFile, issues);
+		}
+		if (
+			ts.isFunctionDeclaration(node)
+			|| ts.isMethodDeclaration(node)
+			|| ts.isFunctionExpression(node)
+			|| ts.isArrowFunction(node)
+		) {
+			lintEnsurePattern(
+				node as ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
+				sourceFile,
+				issues,
+			);
 		}
 		if (ts.isConditionalExpression(node) && (isNullOrUndefined(node.whenTrue) || isNullOrUndefined(node.whenFalse))) {
 			pushLintIssue(

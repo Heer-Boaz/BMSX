@@ -108,8 +108,11 @@ function isIOSAudioTarget(): boolean {
 		return false;
 	}
 	const platform = navigator.platform;
-	if (platform === 'iPhone' || platform === 'iPad' || platform === 'iPod') {
-		return true;
+	switch (platform) {
+		case 'iPhone':
+		case 'iPad':
+		case 'iPod':
+			return true;
 	}
 	if (platform === 'MacIntel' && navigator.maxTouchPoints > 1) {
 		return true;
@@ -209,7 +212,7 @@ export class SoundMaster {
 	private musicTransitionTimer: ReturnType<typeof setTimeout>;
 	private musicTransitionRequestId: number;
 	private pendingStingerReturnTo: asset_id;
-	private pendingStingerReturnUnsub: (() => void) | null;
+		private pendingStingerReturnUnsub: (() => void) | null;
 	private pendingStingerType: AudioType | null;
 	private pendingStingerVoice: VoiceId | null;
 	private maxVoicesByType: Record<AudioType, number>;
@@ -283,7 +286,7 @@ export class SoundMaster {
 		this.tracks = this.coerceAudioResources(audioResources);
 		this.streamClips = {};
 		this.streamClipLoads = {};
-		this.resetVoiceState();
+		this.resetPlaybackState();
 		this.startMixer();
 	}
 
@@ -317,7 +320,7 @@ export class SoundMaster {
 		}
 	}
 
-	private resetVoiceState(): void {
+	public resetPlaybackState(): void {
 		this.beginMusicTransition();
 		this.stopAllVoices();
 		this.voicesByType = { sfx: [], music: [], ui: [] };
@@ -327,10 +330,6 @@ export class SoundMaster {
 		this.pausedByType = { sfx: [], music: [], ui: [] };
 		this.nextVoiceId = 1;
 		this.voiceRecordByHandle = new WeakMap();
-	}
-
-	public resetPlaybackState(): void {
-		this.resetVoiceState();
 	}
 
 	private stopAllVoices(): void {
@@ -423,21 +422,21 @@ export class SoundMaster {
 		return ('params' in obj) || ('priority' in obj) || ('modulation_preset' in obj);
 	}
 
-	private resolvePlayParams(options: ModulationInput): ModulationParams {
+	private resolvePlayParams(options?: ModulationInput): ModulationParams {
 		if (!options) return {};
-		const anyOptions = options as RandomModulationParams | ModulationParams;
 
 		const randomInRange = (range?: ModulationRange): number => {
 			if (!range) return 0;
-			let min = range[0];
-			let max = range[1];
-			if (min > max) { const t = min; min = max; max = t; }
-			const span = max - min;
-			return min + span * this.R.next();
+			const first = range[0];
+			const second = range[1];
+			if (first <= second) {
+				return first + (second - first) * this.R.next();
+			}
+			return second + (first - second) * this.R.next();
 		};
 
-		const baseParams = anyOptions as ModulationParams;
-		const randomParams = anyOptions as RandomModulationParams;
+		const baseParams = options as ModulationParams;
+		const randomParams = options as RandomModulationParams;
 
 		const params: ModulationParams = {};
 		params.offset = (baseParams.offset !== undefined ? baseParams.offset : 0) + randomInRange(randomParams.offsetRange);
@@ -465,8 +464,7 @@ export class SoundMaster {
 		return params;
 	}
 
-	private resolveModulationPreset(key: asset_id): RandomModulationParams | ModulationParams {
-		if (key === undefined || key === null) return undefined;
+	private resolveModulationPreset(key: asset_id): RandomModulationParams | ModulationParams | undefined {
 		if (this.modulationPresetCache.has(key)) {
 			return this.modulationPresetCache.get(key);
 		}
@@ -482,17 +480,18 @@ export class SoundMaster {
 	private createVoiceParams(meta: AudioMeta, params: ModulationParams, clip: AudioClipHandle): AudioPlaybackParams {
 		const loopStart = meta.loop;
 		const loopEnd = (meta as { loopEnd?: number }).loopEnd;
-		const loop = (loopStart !== undefined && loopStart !== null) ? { start: loopStart, end: loopEnd } : null;
+		let loop: AudioPlaybackParams['loop'] = null;
+		if (loopStart !== undefined) {
+			loop = { start: loopStart, end: loopEnd };
+		}
 
-		let rate = params.playbackRate !== undefined ? params.playbackRate : 1;
-		const pitch = params.pitchDelta !== undefined ? params.pitchDelta : 0;
-		const pitchRate = Math.pow(2, pitch / 12);
-		rate *= pitchRate;
+		let rate = params.playbackRate ?? 1;
+		rate *= Math.pow(2, (params.pitchDelta ?? 0) / 12);
 		if (rate <= 0) {
 			throw new Error('[SoundMaster] Playback rate must be positive.');
 		}
 
-		let offset = params.offset !== undefined ? params.offset : 0;
+		let offset = params.offset ?? 0;
 		const duration = clip.duration;
 		if (duration > 0) {
 			if (loop) {
@@ -505,8 +504,7 @@ export class SoundMaster {
 			}
 		}
 
-		const volumeDelta = params.volumeDelta !== undefined ? params.volumeDelta : 0;
-		let gainLinear = Math.pow(10, volumeDelta / 20);
+		let gainLinear = Math.pow(10, (params.volumeDelta ?? 0) / 20);
 		if (gainLinear < 0) gainLinear = 0;
 		if (gainLinear > 1) gainLinear = 1;
 
@@ -514,10 +512,10 @@ export class SoundMaster {
 		if (params.filter) {
 			const filterParams = params.filter;
 			filter = {
-				type: filterParams.type !== undefined ? filterParams.type : 'lowpass',
-				frequency: filterParams.frequency !== undefined ? filterParams.frequency : 350,
-				q: filterParams.q !== undefined ? filterParams.q : 1,
-				gain: filterParams.gain !== undefined ? filterParams.gain : 0,
+				type: filterParams.type ?? 'lowpass',
+				frequency: filterParams.frequency ?? 350,
+				q: filterParams.q ?? 1,
+				gain: filterParams.gain ?? 0,
 			};
 		}
 
@@ -531,20 +529,18 @@ export class SoundMaster {
 	}
 
 	private effectivePlaybackRate(params: ModulationParams): number {
-		if (!params) return 1;
-		const base = params.playbackRate !== undefined ? params.playbackRate : 1;
-		const pitch = params.pitchDelta !== undefined ? params.pitchDelta : 0;
-		return base * Math.pow(2, pitch / 12);
+		return (params.playbackRate ?? 1) * Math.pow(2, (params.pitchDelta ?? 0) / 12);
 	}
 
 	public async play(id: asset_id, options?: SoundMasterPlayRequest | ModulationParams | RandomModulationParams): Promise<VoiceId> {
 		try {
 			const request = this.normalizePlayRequest(options);
+			const modulationPreset = request.modulation_preset;
 			let sourceParams = request.params;
-			if (!sourceParams && request.modulation_preset !== undefined) {
-				sourceParams = this.resolveModulationPreset(request.modulation_preset);
+			if (!sourceParams && modulationPreset !== undefined) {
+				sourceParams = this.resolveModulationPreset(modulationPreset);
 				if (!sourceParams) {
-					console.warn(`SoundMaster: Missing modulation preset '${String(request.modulation_preset)}' for ${String(id)}`);
+					console.warn(`SoundMaster: Missing modulation preset '${String(modulationPreset)}' for ${String(id)}`);
 				}
 			}
 			const params = this.resolvePlayParams(sourceParams);
@@ -553,10 +549,10 @@ export class SoundMaster {
 			if (!this.isAudioType(typeCandidate)) {
 				throw new Error(`[SoundMaster] Audio asset '${String(id)}' has unknown audio type '${String(typeCandidate)}'.`);
 			}
-			const priority = request.priority !== undefined ? request.priority : (meta.priority !== undefined ? meta.priority : 0);
+			const priority = request.priority ?? meta.priority ?? 0;
 			const clip = await this.clipFor(id);
 			const playback = this.createVoiceParams(meta, params, clip);
-			const voiceId = this.startVoice(typeCandidate, id, meta, clip, params, priority, playback, null);
+			const voiceId = this.startVoice(typeCandidate, id, meta, clip, params, priority, playback);
 			return voiceId;
 		} catch (error) {
 			console.error(error);
@@ -572,10 +568,10 @@ export class SoundMaster {
 			if (!this.isAudioType(typeCandidate)) {
 				throw new Error(`[SoundMaster] Audio asset '${String(id)}' has unknown audio type '${String(typeCandidate)}'.`);
 			}
-			const priority = request.priority !== undefined ? request.priority : (meta.priority !== undefined ? meta.priority : 0);
+			const priority = request.priority ?? meta.priority ?? 0;
 			const clip = await this.clipFor(id);
 			const playback = this.createVoiceParams(meta, params, clip);
-			const voiceId = this.startVoice(typeCandidate, id, meta, clip, params, priority, playback, null);
+			const voiceId = this.startVoice(typeCandidate, id, meta, clip, params, priority, playback);
 			return voiceId;
 		} catch (error) {
 			console.error(error);
@@ -591,14 +587,13 @@ export class SoundMaster {
 		params: ModulationParams,
 		priority: number,
 		playback: AudioPlaybackParams,
-		onStarted: ((voice: StreamVoiceHandle, record: ActiveVoiceRecord) => void) | null,
 	): VoiceId {
 		const pool = this.voicesByType[type];
 		const capacity = this.maxVoicesByType[type];
 		if (capacity > 0 && pool.length >= capacity) {
 			const dropIndex = this.selectVoiceDropIndex(pool);
-			const dropRecord = dropIndex >= 0 ? pool[dropIndex] : undefined;
-			if (dropRecord) {
+			if (dropIndex >= 0) {
+				const dropRecord = pool[dropIndex];
 				if (priority < dropRecord.priority) {
 					return null;
 				}
@@ -607,12 +602,7 @@ export class SoundMaster {
 		}
 
 		const voiceId = this.nextVoiceId++;
-		let backendVoice: VoiceHandle;
-		try {
-			backendVoice = this.A.createVoice(clip.backendClip, playback);
-		} catch (error) {
-			throw error;
-		}
+		const backendVoice = this.A.createVoice(clip.backendClip, playback);
 		const startedAt = backendVoice.startedAt;
 		const startOffset = backendVoice.startOffset;
 		const voice = new StreamVoiceHandle(this, voiceId, startedAt, startOffset);
@@ -640,8 +630,6 @@ export class SoundMaster {
 		this.currentAudioByType[type] = { ...meta, id };
 		this.currentPlayParamsByType[type] = params;
 
-		if (onStarted) onStarted(voice, record);
-
 		return voiceId;
 	}
 
@@ -652,19 +640,20 @@ export class SoundMaster {
 			record.backendEnded.unsubscribe();
 			record.backendEnded = null;
 		}
-		this.voiceRecordByHandle.delete(record.handle);
-		record.handle.emitEnded(this.A.currentTime());
-		record.handle.disconnect();
-		record.backendVoice.disconnect();
+			this.voiceRecordByHandle.delete(record.handle);
+			record.handle.emitEnded(this.A.currentTime());
+			record.handle.disconnect();
+			record.backendVoice.disconnect();
 
-		if (this.currentVoiceByType[type] === record.handle) {
-			const pool = this.voicesByType[type];
-			const latest = pool.length > 0 ? pool[pool.length - 1] : null;
-			if (latest) {
-				this.currentVoiceByType[type] = latest.handle;
-				this.currentAudioByType[type] = { ...latest.meta, id: latest.id };
-				this.currentPlayParamsByType[type] = latest.params;
-			} else {
+			if (this.currentVoiceByType[type] === record.handle) {
+				const pool = this.voicesByType[type];
+				const latestIndex = pool.length - 1;
+				if (latestIndex >= 0) {
+					const latest = pool[latestIndex];
+					this.currentVoiceByType[type] = latest.handle;
+					this.currentAudioByType[type] = { ...latest.meta, id: latest.id };
+					this.currentPlayParamsByType[type] = latest.params;
+				} else {
 				this.currentVoiceByType[type] = null;
 				this.currentAudioByType[type] = null;
 				this.currentPlayParamsByType[type] = null;
@@ -1038,34 +1027,6 @@ export class SoundMaster {
 		this.A.pushCoreFrames(samples, channels, sampleRate);
 	}
 
-	public currentTimeByType(type: AudioType): number {
-		const handle = this.currentVoiceByType[type];
-		if (!handle) return null;
-		const record = this.voiceRecordByHandle.get(handle);
-		if (!record || record.finalized) return null;
-		const rate = this.effectivePlaybackRate(record.params);
-		const now = this.A.currentTime();
-		return record.startOffset + (now - record.startedAt) * rate;
-	}
-
-	public currentTrackByType(type: AudioType): asset_id {
-		const audioMeta = this.currentAudioByType[type];
-		return audioMeta ? audioMeta.id : null;
-	}
-
-	public currentTrackMetaByType(type: AudioType): AudioMeta {
-		const audioMeta = this.currentAudioByType[type];
-		return audioMeta ? audioMeta : null;
-	}
-
-	public currentModulationParamsByType(type: AudioType): ModulationParams {
-		return this.currentPlayParamsByType[type] || null;
-	}
-
-	public activeCountByType(type: AudioType): number {
-		return this.voicesByType[type].length;
-	}
-
 	public getActiveVoiceInfosByType(type: AudioType): ActiveVoiceInfo[] {
 		const pool = this.voicesByType[type];
 		const result: ActiveVoiceInfo[] = [];
@@ -1082,10 +1043,6 @@ export class SoundMaster {
 			});
 		}
 		return result;
-	}
-
-	public getCurrentTimeSec(): number {
-		return this.A.currentTime();
 	}
 
 	public snapshotVoices(type: AudioType): { id: asset_id; offset: number; params: ModulationParams; priority: number; }[] {
@@ -1111,7 +1068,9 @@ export class SoundMaster {
 	public addEndedListener(type: AudioType, listener: (info: ActiveVoiceInfo) => void): () => void {
 		const listeners = this.endedListenersByType[type];
 		listeners.add(listener);
-		return () => listeners.delete(listener);
+		return () => {
+			listeners.delete(listener);
+		};
 	}
 
 	public requestMusicTransition(opts: {
@@ -1127,16 +1086,18 @@ export class SoundMaster {
 			throw new Error('[SoundMaster] music_transition cannot specify both fade_ms and crossfade_ms.');
 		}
 
-		const sync = opts.sync !== undefined ? opts.sync : 'immediate';
-		const fade_ms = opts.fade_ms !== undefined ? opts.fade_ms : 0;
-		const crossfade_ms = opts.crossfade_ms;
-		const start_at_loop_start = opts.start_at_loop_start !== undefined ? opts.start_at_loop_start : false;
-		const start_fresh = opts.start_fresh !== undefined ? opts.start_fresh : false;
+		const sync = opts.sync ?? 'immediate';
+		const start_fresh = opts.start_fresh ?? false;
+		let startOffset: number | undefined;
+		if (start_fresh) {
+			startOffset = 0;
+		}
 		const runTransition = (target: asset_id, startAtSeconds?: number): void => {
-			this.startMusicTransition(target, fade_ms, crossfade_ms, start_at_loop_start, startAtSeconds);
+			this.startMusicTransition(target, opts.fade_ms ?? 0, opts.crossfade_ms, opts.start_at_loop_start ?? false, startAtSeconds);
 		};
 
-		if (!isMusicTransitionStingerSync(sync) && !start_fresh && this.currentTrackByType('music') === opts.to) {
+		const currentRecord = this.getCurrentRecord('music');
+		if (!isMusicTransitionStingerSync(sync) && !start_fresh && currentRecord?.id === opts.to) {
 			return;
 		}
 
@@ -1145,29 +1106,30 @@ export class SoundMaster {
 			if (!this.isAudioType(stingerType)) {
 				throw new Error(`[SoundMaster] Audio asset '${String(sync.stinger)}' has unknown audio type.`);
 			}
-				if (sync.return_to_previous) {
-					const previousId = this.currentTrackByType('music');
-					const previousOffset = this.currentTimeByType('music') ?? 0;
-					this.pendingStingerReturnTo = previousId !== null ? previousId : opts.to;
-					this.stop('music', 'all');
-					this.play(sync.stinger).then(voiceId => {
-						if (transitionId !== this.musicTransitionRequestId) {
-							if (voiceId !== null) {
-								this.stop(stingerType, 'byvoice', voiceId);
-							}
-							return;
-						}
-						if (voiceId === null) {
-							if (transitionId === this.musicTransitionRequestId) {
-								this.pendingStingerReturnTo = null;
-							this.pendingStingerType = null;
-							this.pendingStingerVoice = null;
-						}
-						return;
+			const previousId = currentRecord?.id;
+			let returnOffset: number | undefined;
+			if (sync.return_to_previous && currentRecord) {
+				returnOffset = currentRecord.startOffset + (this.A.currentTime() - currentRecord.startedAt) * this.effectivePlaybackRate(currentRecord.params);
+			}
+			const returnTarget = sync.return_to_previous ? (previousId ?? opts.to) : (sync.return_to ?? opts.to);
+			this.pendingStingerReturnTo = returnTarget;
+			this.stop('music', 'all');
+			this.play(sync.stinger).then(voiceId => {
+				if (transitionId !== this.musicTransitionRequestId) {
+					if (voiceId !== null) {
+						this.stop(stingerType, 'byvoice', voiceId);
 					}
-					this.pendingStingerType = stingerType;
-					this.pendingStingerVoice = voiceId;
-					const unsub = this.addEndedListener(stingerType, info => {
+					return;
+				}
+				if (voiceId === null) {
+					this.pendingStingerReturnTo = null;
+					this.pendingStingerType = null;
+					this.pendingStingerVoice = null;
+					return;
+				}
+				this.pendingStingerType = stingerType;
+				this.pendingStingerVoice = voiceId;
+					const listener = (info: ActiveVoiceInfo): void => {
 						if (info.voiceId !== voiceId) {
 							return;
 						}
@@ -1177,65 +1139,23 @@ export class SoundMaster {
 						}
 						if (this.pendingStingerReturnUnsub === unsub) {
 							this.pendingStingerReturnUnsub = null;
-						}
-							const target = this.pendingStingerReturnTo;
-							this.pendingStingerReturnTo = null;
-							this.pendingStingerType = null;
-							this.pendingStingerVoice = null;
-							if (target !== null) {
-								runTransition(target, previousOffset);
-							}
-						});
-						this.pendingStingerReturnUnsub = unsub;
-					}).catch(() => {});
-				return;
-			}
-				const returnTarget = sync.return_to !== undefined ? sync.return_to : opts.to;
-				this.pendingStingerReturnTo = returnTarget;
-				this.stop('music', 'all');
-				this.play(sync.stinger).then(voiceId => {
-						if (transitionId !== this.musicTransitionRequestId) {
-							if (voiceId !== null) {
-								this.stop(stingerType, 'byvoice', voiceId);
-							}
-							return;
-						}
-						if (voiceId === null) {
-							if (transitionId === this.musicTransitionRequestId) {
-								this.pendingStingerReturnTo = null;
-							this.pendingStingerType = null;
-							this.pendingStingerVoice = null;
-						}
-						return;
 					}
-					this.pendingStingerType = stingerType;
-					this.pendingStingerVoice = voiceId;
-					const unsub = this.addEndedListener(stingerType, info => {
-						if (info.voiceId !== voiceId) {
-							return;
+					const target = this.pendingStingerReturnTo;
+					this.pendingStingerReturnTo = null;
+					this.pendingStingerType = null;
+					this.pendingStingerVoice = null;
+						if (target !== null) {
+							runTransition(target, returnOffset);
 						}
-					unsub();
-					if (transitionId !== this.musicTransitionRequestId) {
-						return;
-					}
-						if (this.pendingStingerReturnUnsub === unsub) {
-							this.pendingStingerReturnUnsub = null;
-						}
-							const target = this.pendingStingerReturnTo;
-							this.pendingStingerReturnTo = null;
-							this.pendingStingerType = null;
-							this.pendingStingerVoice = null;
-							if (target !== null) {
-								runTransition(target);
-							}
-						});
-						this.pendingStingerReturnUnsub = unsub;
-			}).catch(() => {});
+					};
+					const unsub = this.addEndedListener(stingerType, listener);
+					this.pendingStingerReturnUnsub = unsub;
+				}).catch(() => {});
 			return;
 		}
 
 		if (sync === 'immediate') {
-			runTransition(opts.to, start_fresh ? 0 : undefined);
+			runTransition(opts.to, startOffset);
 			return;
 		}
 
@@ -1246,50 +1166,46 @@ export class SoundMaster {
 				if (transitionId !== this.musicTransitionRequestId) {
 					return;
 				}
-				runTransition(opts.to, start_fresh ? 0 : undefined);
+				runTransition(opts.to, startOffset);
 			}, delay_ms);
 			return;
 		}
 
-		const currentRecord = this.getCurrentRecord('music');
 		if (!currentRecord) {
-			runTransition(opts.to, start_fresh ? 0 : undefined);
+			runTransition(opts.to, startOffset);
 			return;
 		}
 
 		const duration = currentRecord.clip.duration;
 		if (!(duration > 0)) {
-			runTransition(opts.to, start_fresh ? 0 : undefined);
+			runTransition(opts.to, startOffset);
 			return;
 		}
 
-		const nowOffset = this.currentTimeByType('music');
-		if (nowOffset === null) {
-			runTransition(opts.to, start_fresh ? 0 : undefined);
-			return;
-		}
-
+		const nowOffset = currentRecord.startOffset + (this.A.currentTime() - currentRecord.startedAt) * this.effectivePlaybackRate(currentRecord.params);
 		const offsetMod = ((nowOffset % duration) + duration) % duration;
-		let boundary = duration;
 		const loopStart = currentRecord.meta.loop;
-		if (loopStart !== undefined && loopStart !== null) {
-			boundary = offsetMod < loopStart ? loopStart : duration;
-		}
-		const delaySec = Math.max(0, boundary - offsetMod);
+		const delaySec = Math.max(
+			0,
+			((loopStart !== undefined && offsetMod < loopStart) ? loopStart : duration) - offsetMod,
+		);
 		this.musicTransitionTimer = setTimeout(() => {
 			this.musicTransitionTimer = null;
 			if (transitionId !== this.musicTransitionRequestId) {
 				return;
 			}
-			runTransition(opts.to, start_fresh ? 0 : undefined);
+			runTransition(opts.to, startOffset);
 		}, Math.floor(delaySec * 1000));
 	}
 
-	private getCurrentRecord(type: AudioType): ActiveVoiceRecord {
+	private getCurrentRecord(type: AudioType): ActiveVoiceRecord | null {
 		const handle = this.currentVoiceByType[type];
 		if (!handle) return null;
 		const record = this.voiceRecordByHandle.get(handle);
-		return record && !record.finalized ? record : null;
+		if (record && !record.finalized) {
+			return record;
+		}
+		return null;
 	}
 
 	private startMusicTransition(target: asset_id, fade_ms: number, crossfade_ms: number | undefined, start_at_loop_start: boolean, startAtSeconds?: number): void {
@@ -1302,14 +1218,14 @@ export class SoundMaster {
 
 	private startMusicNow(target: asset_id, start_at_loop_start: boolean, startAtSeconds?: number): void {
 		const meta = this.getAudioMetaOrThrow(target);
-		const baseOffset = startAtSeconds !== undefined ? startAtSeconds : ((start_at_loop_start && meta.loop !== undefined && meta.loop !== null) ? meta.loop : 0);
+		const baseOffset = startAtSeconds !== undefined ? startAtSeconds : (start_at_loop_start && meta.loop !== undefined ? meta.loop : 0);
 		void (async () => {
 			try {
 				const clip = await this.clipFor(target);
 				const params: ModulationParams = { offset: baseOffset };
 				const playback = this.createVoiceParams(meta, params, clip);
-				const priority = meta.priority !== undefined ? meta.priority : 0;
-				this.startVoice('music', target, meta, clip, params, priority, playback, null);
+				const priority = meta.priority ?? 0;
+				this.startVoice('music', target, meta, clip, params, priority, playback);
 			} catch (error) {
 				console.error(error);
 			}
@@ -1387,7 +1303,7 @@ export class SoundMaster {
 		const crossfadeSec = crossfadeMs / 1000;
 		const oldRecords = this.voicesByType.music.slice();
 		const meta = this.getAudioMetaOrThrow(target);
-		const baseOffset = startAtSeconds !== undefined ? startAtSeconds : ((start_at_loop_start && meta.loop !== undefined && meta.loop !== null) ? meta.loop : 0);
+		const baseOffset = startAtSeconds !== undefined ? startAtSeconds : (start_at_loop_start && meta.loop !== undefined ? meta.loop : 0);
 		void (async () => {
 			try {
 				const clip = await this.clipFor(target);
@@ -1396,14 +1312,16 @@ export class SoundMaster {
 				if (crossfadeMs > 0) {
 					playback.gainLinear = MIN_GAIN;
 				}
-				const priority = meta.priority !== undefined ? meta.priority : 0;
-				const voiceId = this.startVoice('music', target, meta, clip, params, priority, playback, crossfadeMs > 0
-					? (voice) => {
-						voice.rampGainLinear(1.0, crossfadeSec);
-					}
-					: null);
+				const priority = meta.priority ?? 0;
+				const voiceId = this.startVoice('music', target, meta, clip, params, priority, playback);
 				if (voiceId === null) {
 					return;
+				}
+				if (crossfadeMs > 0) {
+					const voice = this.currentVoiceByType.music;
+					if (voice) {
+						voice.rampGainLinear(1.0, crossfadeSec);
+					}
 				}
 				for (let i = 0; i < oldRecords.length; i++) {
 					const oldRecord = oldRecords[i];

@@ -301,7 +301,6 @@ export class Runtime {
 		}
 
 		const cartLayer = await buildRuntimeAssetLayer({ blob: cartridge, id: 'cart' });
-		const engineMachine = engineLayer.index.machine;
 		const overlayBlob = $.workspace_overlay;
 		let overlayLayer: RuntimeAssetLayer | null = null;
 		if (overlayBlob) {
