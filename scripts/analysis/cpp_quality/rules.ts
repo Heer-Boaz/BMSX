@@ -170,17 +170,98 @@ const DECLARATION_NAME_BLOCKLIST = new Set([
 ]);
 
 const NUMERIC_DEFENSIVE_CALLS = new Set([
+	'clamp',
 	'ceil',
 	'floor',
 	'isfinite',
+	'max',
+	'min',
 	'round',
+	'std::clamp',
 	'std::ceil',
 	'std::floor',
 	'std::isfinite',
+	'std::max',
+	'std::min',
 	'std::round',
 	'std::trunc',
+	'tolower',
+	'std::tolower',
 	'trunc',
 ]);
+
+const SEMANTIC_NORMALIZATION_WRAPPER_SUFFIXES = [
+	'.join',
+	'.replace',
+	'.replaceAll',
+	'.trim',
+	'.split',
+	'.substr',
+	'.substring',
+	'.normalize',
+	'.tolower',
+	'.toupper',
+	'::join',
+	'::replace',
+	'::replaceAll',
+	'::trim',
+	'::split',
+	'::substr',
+	'::substring',
+	'::normalize',
+	'::tolower',
+	'::toupper',
+];
+
+const SEMANTIC_NORMALIZATION_WRAPPER_TARGETS = new Set([
+	'clamp',
+	'ceil',
+	'floor',
+	'isfinite',
+	'max',
+	'min',
+	'replace',
+	'replaceAll',
+	'split',
+	'substr',
+	'substring',
+	'join',
+	'normalize',
+	'round',
+	'std::clamp',
+	'std::ceil',
+	'std::floor',
+	'std::isfinite',
+	'std::max',
+	'std::min',
+	'std::replace',
+	'std::replace_all',
+	'std::trim',
+	'std::round',
+	'std::tolower',
+	'std::toupper',
+	'std::trunc',
+	'tolower',
+	'toupper',
+	'trim',
+	'trunc',
+]);
+
+const CPP_NORMALIZED_BODY_MIN_LENGTH = 120;
+const CPP_SEMANTIC_NORMALIZED_BODY_MIN_LENGTH = 80;
+const COMPACT_SAMPLE_TEXT_LENGTH = 180;
+
+function isSemanticNormalizationWrapperTarget(target: string): boolean {
+	if (SEMANTIC_NORMALIZATION_WRAPPER_TARGETS.has(target)) {
+		return true;
+	}
+	for (let index = 0; index < SEMANTIC_NORMALIZATION_WRAPPER_SUFFIXES.length; index += 1) {
+		if (target.endsWith(SEMANTIC_NORMALIZATION_WRAPPER_SUFFIXES[index])) {
+			return true;
+		}
+	}
+	return false;
+}
 
 const HOT_PATH_TEMPORARY_TYPES = new Set([
 	'std::function',
@@ -193,6 +274,13 @@ const HOT_PATH_TEMPORARY_TYPES = new Set([
 
 function normalizePathForAnalysis(path: string): string {
 	return path.replace(/\\/g, '/');
+}
+
+function compactSampleText(text: string): string {
+	if (text.length <= COMPACT_SAMPLE_TEXT_LENGTH) {
+		return text;
+	}
+	return `${text.slice(0, COMPACT_SAMPLE_TEXT_LENGTH - 3)}...`;
 }
 
 function isHotPathFile(fileName: string): boolean {
@@ -973,17 +1061,91 @@ export function lintCppRepeatedExpressions(file: string, tokens: readonly CppTok
 			line: value.token.line,
 			column: value.token.column,
 			name: 'repeated_expression_pattern',
-			message: `Expression is repeated ${value.count} times in the same scope: ${text}`,
+			message: `Expression is repeated ${value.count} times in the same scope: ${compactSampleText(text)}`,
+		});
+	}
+}
+
+function semanticCppExpressionFingerprint(target: string, tokens: readonly CppToken[], start: number, end: number): string {
+	let text = `${target}|`;
+	for (let index = start; index < end; index += 1) {
+		const token = tokens[index];
+		if (token.kind === 'id') {
+			text += 'Identifier|';
+		} else if (token.kind === 'string' || token.kind === 'char') {
+			text += 'StringLiteral|';
+		} else if (token.kind === 'number') {
+			text += 'NumericLiteral|';
+		} else {
+			text += token.text;
+			text += '|';
+		}
+	}
+	return text;
+}
+
+export function lintCppSemanticRepeatedExpressions(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
+	const expressions = new Map<string, { token: CppToken; count: number; sampleText: string }>();
+	const activeSemanticCalls: number[] = [];
+	for (let index = info.bodyStart + 1; index < info.bodyEnd; index += 1) {
+		while (activeSemanticCalls.length > 0 && activeSemanticCalls[activeSemanticCalls.length - 1] <= index) {
+			activeSemanticCalls.pop();
+		}
+		if (tokens[index].text !== '(' || pairs[index] < 0 || pairs[index] >= info.bodyEnd) {
+			continue;
+		}
+		const target = cppCallTarget(tokens, index);
+		if (target === null || (!NUMERIC_DEFENSIVE_CALLS.has(target) && !isSemanticNormalizationWrapperTarget(target))) {
+			continue;
+		}
+		if (activeSemanticCalls.length > 0) {
+			continue;
+		}
+		const callStart = findCppAccessChainStart(tokens, index - 1);
+		const callEnd = pairs[index] + 1;
+		const text = normalizedCppTokenText(tokens, callStart, callEnd);
+		if (text.length < 24 || text.startsWith('this.') || text.startsWith('this->')) {
+			continue;
+		}
+		const fingerprint = semanticCppExpressionFingerprint(target, tokens, callStart, callEnd);
+		const existing = expressions.get(fingerprint);
+		if (existing !== undefined) {
+			existing.count += 1;
+			continue;
+		}
+		expressions.set(fingerprint, {
+			token: tokens[callStart],
+			count: 1,
+			sampleText: compactSampleText(text),
+		});
+		activeSemanticCalls.push(callEnd);
+	}
+	for (const value of expressions.values()) {
+		if (value.count <= 2) {
+			continue;
+		}
+		issues.push({
+			kind: 'semantic_repeated_expression_pattern',
+			file,
+			line: value.token.line,
+			column: value.token.column,
+			name: 'semantic_repeated_expression_pattern',
+			message: `Semantic transform call is repeated ${value.count} times in the same scope: ${value.sampleText}`,
 		});
 	}
 }
 
 export function collectCppNormalizedBody(file: string, tokens: readonly CppToken[], info: CppFunctionInfo, normalizedBodies: CppNormalizedBodyInfo[]): void {
-	if (info.wrapperTarget !== null) {
+	const semanticNormalization = info.wrapperTarget !== null && isSemanticNormalizationWrapperTarget(info.wrapperTarget);
+	if (info.wrapperTarget !== null && !semanticNormalization) {
 		return;
 	}
 	const bodyText = normalizedCppTokenText(tokens, info.bodyStart + 1, info.bodyEnd);
-	if (bodyText.length < 120) {
+	if (semanticNormalization) {
+		if (bodyText.length < CPP_SEMANTIC_NORMALIZED_BODY_MIN_LENGTH) {
+			return;
+		}
+	} else if (bodyText.length < CPP_NORMALIZED_BODY_MIN_LENGTH) {
 		return;
 	}
 	normalizedBodies.push({

@@ -22,6 +22,7 @@ export const CODE_QUALITY_ONLY_LINT_RULES = [
 	'defensive_optional_chain_pattern',
 	'numeric_defensive_sanitization_pattern',
 	'repeated_expression_pattern',
+	'semantic_repeated_expression_pattern',
 	'facade_module_density_pattern',
 	'normalized_ast_duplicate_pattern',
 	'cross_layer_import_pattern',

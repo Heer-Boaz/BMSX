@@ -58,6 +58,7 @@ type RepeatedExpressionInfo = {
 	line: number;
 	column: number;
 	count: number;
+	sampleText: string;
 };
 
 type ExportedTypeInfo = {
@@ -123,6 +124,47 @@ const ENSURE_PATTERN_PATH_SEGMENTS = [
 	'/src/bmsx/render/editor/',
 	'/src/bmsx/render/vdp/',
 ] as const;
+
+const SEMANTIC_NORMALIZATION_CALL_SUFFIXES = [
+	'.endsWith',
+	'.includes',
+	'.indexOf',
+	'.lastIndexOf',
+	'.normalize',
+	'.padEnd',
+	'.padStart',
+	'.replace',
+	'.replaceAll',
+	'.slice',
+	'.join',
+	'.split',
+	'.startsWith',
+	'.substr',
+	'.substring',
+	'.trimEnd',
+	'.trimStart',
+	'.toLocaleLowerCase',
+	'.toLocaleUpperCase',
+	'.toLowerCase',
+	'.toUpperCase',
+	'.trim',
+] as const;
+
+const SEMANTIC_NORMALIZATION_CALL_TARGETS = new Set([
+	'Math.max',
+	'Math.min',
+	'Math.floor',
+	'Math.round',
+	'Math.ceil',
+	'Math.trunc',
+	'clamp',
+	'replace',
+	'replaceAll',
+]);
+
+const NORMALIZED_BODY_MIN_LENGTH = 120;
+const SEMANTIC_NORMALIZED_BODY_MIN_LENGTH = 80;
+const COMPACT_SAMPLE_TEXT_LENGTH = 180;
 
 const REQUIRED_STATE_ROOTS = new Set([
 	'$',
@@ -1529,6 +1571,58 @@ function containsClosureExpression(node: ts.Node): boolean {
 	return found;
 }
 
+function isSemanticNormalizationCallTarget(target: string): boolean {
+	if (SEMANTIC_NORMALIZATION_CALL_TARGETS.has(target)) {
+		return true;
+	}
+	for (let index = 0; index < SEMANTIC_NORMALIZATION_CALL_SUFFIXES.length; index += 1) {
+		if (target.endsWith(SEMANTIC_NORMALIZATION_CALL_SUFFIXES[index])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function containsSemanticNormalizationCall(node: ts.Node): boolean {
+	let found = false;
+	const visit = (current: ts.Node): void => {
+		if (found) {
+			return;
+		}
+		if (ts.isCallExpression(current)) {
+			const target = callTargetText(current);
+			if (target !== null && isSemanticNormalizationCallTarget(target)) {
+				found = true;
+				return;
+			}
+		}
+		ts.forEachChild(current, visit);
+	};
+	visit(node);
+	return found;
+}
+
+function compactSampleText(text: string): string {
+	if (text.length <= COMPACT_SAMPLE_TEXT_LENGTH) {
+		return text;
+	}
+	return `${text.slice(0, COMPACT_SAMPLE_TEXT_LENGTH - 3)}...`;
+}
+
+function isNestedInsideSemanticCall(node: ts.Expression, parent: ts.Node | undefined): boolean {
+	let current = parent;
+	while (current !== undefined && ts.isParenthesizedExpression(current)) {
+		current = current.parent;
+	}
+	if (current === undefined) {
+		return false;
+	}
+	if (!ts.isCallExpression(current) && !ts.isNewExpression(current)) {
+		return false;
+	}
+	return current.expression !== node;
+}
+
 function callTargetText(node: ts.CallExpression | ts.NewExpression): string | null {
 	const expression = ts.isCallExpression(node) ? node.expression : node.expression;
 	return expression ? getExpressionText(expression) : null;
@@ -1537,10 +1631,13 @@ function callTargetText(node: ts.CallExpression | ts.NewExpression): string | nu
 function isNumericDefensiveCall(node: ts.CallExpression): boolean {
 	const target = callTargetText(node);
 	return target === 'Math.floor'
+		|| target === 'Math.max'
+		|| target === 'Math.min'
 		|| target === 'Math.round'
 		|| target === 'Math.ceil'
 		|| target === 'Math.trunc'
-		|| target === 'Number.isFinite';
+		|| target === 'Number.isFinite'
+		|| target === 'clamp';
 }
 
 function isExpressionChildOfLargerExpression(node: ts.Expression, parent: ts.Node | undefined): boolean {
@@ -1588,6 +1685,30 @@ function repeatedExpressionFingerprint(node: ts.Expression, sourceFile: ts.Sourc
 		return null;
 	}
 	return text;
+}
+
+function semanticRepeatedExpressionFingerprint(node: ts.Expression, sourceFile: ts.SourceFile, parent: ts.Node | undefined): string | null {
+	if (isExpressionChildOfLargerExpression(node, parent)) {
+		return null;
+	}
+	if (!ts.isCallExpression(node)) {
+		return null;
+	}
+	if (isNestedInsideSemanticCall(node, parent)) {
+		return null;
+	}
+	const target = callTargetText(node);
+	if (target === null || (!isSemanticNormalizationCallTarget(target) && !isNumericDefensiveCall(node))) {
+		return null;
+	}
+	const text = node.getText(sourceFile).replace(/\s+/g, ' ');
+	if (text.length < 24) {
+		return null;
+	}
+	if (text.startsWith('this.')) {
+		return null;
+	}
+	return `${target}|${normalizedAstFingerprint(node)}`;
 }
 
 function isEqualityOperator(kind: ts.SyntaxKind): boolean {
@@ -2117,14 +2238,23 @@ function collectNormalizedBody(
 	normalizedBodies: NormalizedBodyInfo[],
 ): void {
 	const body = node.body;
-	if (body === undefined || !ts.isBlock(body)) {
-		return;
-	}
-	if (body.statements.length < 2 || isSingleLineWrapperCandidate(node)) {
+	if (body === undefined) {
 		return;
 	}
 	const text = body.getText(sourceFile);
-	if (text.length < 120) {
+	const semanticNormalization = containsSemanticNormalizationCall(body);
+	if (ts.isBlock(body)) {
+		if (!semanticNormalization) {
+			if (body.statements.length < 2 || isSingleLineWrapperCandidate(node)) {
+				return;
+			}
+			if (text.length < NORMALIZED_BODY_MIN_LENGTH) {
+				return;
+			}
+		} else if (text.length < SEMANTIC_NORMALIZED_BODY_MIN_LENGTH) {
+			return;
+		}
+	} else if (!semanticNormalization) {
 		return;
 	}
 	const locationNode = (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isFunctionExpression(node)) && node.name
@@ -2229,18 +2359,20 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 	const hotPath = isHotPathFile(sourceFile.fileName);
 	const scopes: Array<Map<string, LintBinding[]>> = [];
 	const repeatedScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
+	const semanticRepeatedScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
 	const enterScope = (): void => {
 		scopes.push(new Map<string, LintBinding[]>());
 	};
 	const enterRepeatedScope = (): void => {
 		repeatedScopes.push(new Map<string, RepeatedExpressionInfo>());
+		semanticRepeatedScopes.push(new Map<string, RepeatedExpressionInfo>());
 	};
 	const leaveRepeatedScope = (): void => {
 		const scope = repeatedScopes.pop();
 		if (!scope) {
 			return;
 		}
-		for (const [text, info] of scope) {
+		for (const info of scope.values()) {
 			if (info.count <= 2) {
 				continue;
 			}
@@ -2250,7 +2382,7 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 				line: info.line,
 				column: info.column,
 				name: 'repeated_expression_pattern',
-				message: `Expression is repeated ${info.count} times in the same scope: ${text}`,
+				message: `Expression is repeated ${info.count} times in the same scope: ${info.sampleText}`,
 			});
 		}
 	};
@@ -2288,6 +2420,25 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 					});
 				}
 			}
+		}
+	};
+	const leaveSemanticRepeatedScope = (): void => {
+		const scope = semanticRepeatedScopes.pop();
+		if (!scope) {
+			return;
+		}
+		for (const info of scope.values()) {
+			if (info.count <= 2) {
+				continue;
+			}
+			issues.push({
+				kind: 'semantic_repeated_expression_pattern',
+				file: sourceFile.fileName,
+				line: info.line,
+				column: info.column,
+				name: 'semantic_repeated_expression_pattern',
+				message: `Semantic transform call is repeated ${info.count} times in the same scope: ${info.sampleText}`,
+			});
 		}
 	};
 	const declareBinding = (declaration: ts.VariableDeclaration, declarationList: ts.VariableDeclarationList): void => {
@@ -2378,6 +2529,29 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 			line: position.line + 1,
 			column: position.character + 1,
 			count: 1,
+			sampleText: compactSampleText(node.getText(sourceFile).replace(/\s+/g, ' ')),
+		});
+	};
+	const recordSemanticRepeatedExpression = (node: ts.Expression, parent: ts.Node | undefined): void => {
+		const fingerprint = semanticRepeatedExpressionFingerprint(node, sourceFile, parent);
+		if (fingerprint === null) {
+			return;
+		}
+		const scope = semanticRepeatedScopes[semanticRepeatedScopes.length - 1];
+		if (!scope) {
+			return;
+		}
+		const existing = scope.get(fingerprint);
+		if (existing) {
+			existing.count += 1;
+			return;
+		}
+		const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+		scope.set(fingerprint, {
+			line: position.line + 1,
+			column: position.character + 1,
+			count: 1,
+			sampleText: compactSampleText(node.getText(sourceFile).replace(/\s+/g, ' ')),
 		});
 	};
 	const lintHotPathCallArguments = (node: ts.CallExpression | ts.NewExpression): void => {
@@ -2474,6 +2648,7 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 					'Defensive numeric sanitization in IDE hot paths is forbidden. Coordinates and layout values must already be valid integers.',
 				);
 			}
+			recordSemanticRepeatedExpression(node, parent);
 		}
 		if (ts.isNewExpression(node)) {
 			lintHotPathCallArguments(node);
@@ -2522,6 +2697,7 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 		}
 		ts.forEachChild(node, child => visit(child, node));
 		if (repeatedEntered) {
+			leaveSemanticRepeatedScope();
 			leaveRepeatedScope();
 		}
 		if (entered) {

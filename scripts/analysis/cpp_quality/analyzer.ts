@@ -34,6 +34,7 @@ import {
 		lintCppNullishReturnGuards,
 		lintCppStringSwitchChains,
 		lintCppRepeatedExpressions,
+		lintCppSemanticRepeatedExpressions,
 		lintCppSimpleTokenPatterns,
 	} from './rules';
 import { buildCppPairMap, tokenizeCpp } from '../../../src/bmsx/language/cpp/syntax/tokens';
@@ -134,6 +135,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 				lintCppNullishReturnGuards(file, tokens, pairs, info, lintIssues);
 				lintCppStringSwitchChains(file, tokens, pairs, info, lintIssues);
 				lintCppRepeatedExpressions(file, tokens, pairs, info, lintIssues);
+				lintCppSemanticRepeatedExpressions(file, tokens, pairs, info, lintIssues);
 				collectCppNormalizedBody(file, tokens, info, normalizedBodies);
 			}
 		if (facadeStats !== null) {
