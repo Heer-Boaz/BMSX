@@ -536,7 +536,7 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[]): void
 						file: sourceFile.fileName,
 						line: binding.line,
 						column: binding.column,
-						name: binding.name,
+						name: 'local_const_pattern',
 						message: `Prefer "const" for "${binding.name}"; it is never reassigned.`,
 					});
 				}
@@ -546,7 +546,7 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[]): void
 						file: sourceFile.fileName,
 						line: binding.line,
 						column: binding.column,
-						name: binding.name,
+						name: 'single_use_local_pattern',
 						message: `Local "${binding.name}" is read only once in this scope.`,
 					});
 				}
@@ -1078,10 +1078,10 @@ function printTextReport(groups: DuplicateGroup[], lintIssues: LintIssue[], scan
 		for (const group of groups) {
 			console.log(`[${group.kind}] ${group.name} (${group.count}x)`);
 			for (const location of group.locations) {
-				console.log(`  - ${formatLocation(location)}`);
+				console.log(`  ${formatLocation(location)}`);
 			}
 			if (group.kind === 'interface') {
-				console.log('  - interface declarations can legally merge; verify if intentional.');
+				console.log('  interface declarations can legally merge; verify if intentional.');
 			}
 			console.log('');
 		}
@@ -1104,7 +1104,7 @@ function printTextReport(groups: DuplicateGroup[], lintIssues: LintIssue[], scan
 			}
 			console.log(`[lint:${kind}]`);
 			for (const issue of issues) {
-				console.log(`  - ${formatLintIssue(issue)}`);
+				console.log(`  ${formatLintIssue(issue)}`);
 			}
 			console.log('');
 		}
@@ -1121,7 +1121,7 @@ function quoteCsv(value: string | number | undefined): string {
 
 function printCsvReport(groups: DuplicateGroup[], lintIssues: LintIssue[], scannedFiles: number): void {
 	console.log(`scanned_files,${quoteCsv(scannedFiles)}`);
-	console.log('kind,name,count,file,line,column,context,message');
+	console.log('kind,name_or_rule,count,file,line,column,context,message');
 	for (const group of groups) {
 		for (const location of group.locations) {
 			console.log([
