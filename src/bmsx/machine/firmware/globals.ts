@@ -285,12 +285,11 @@ export function valueToString(value: Value): string {
 	return 'function';
 }
 
-export function valueToStringValue(runtime: Runtime, value: Value): StringValue {
-	return runtime.internString(valueToString(value));
-}
-
 function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest): Table {
-	const key = (name: string) => runtime.luaKey(name);
+	const key = (name: string): StringValue => {
+		const luaKey = runtime.luaKey(name);
+		return luaKey;
+	};
 	const table = new Table(0, 5);
 	if (manifest.namespace.length > 0) {
 		table.set(key('namespace'), runtime.internString(manifest.namespace));
@@ -368,7 +367,10 @@ function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest):
 }
 
 function buildCartManifestTable(runtime: Runtime, manifest: CartManifest, machine: MachineManifest, entryPath: string): Table {
-	const key = (name: string) => runtime.luaKey(name);
+	const key = (name: string): StringValue => {
+		const luaKey = runtime.luaKey(name);
+		return luaKey;
+	};
 	const table = new Table(0, 4);
 	if (manifest.title !== undefined && manifest.title.length > 0) {
 		table.set(key('title'), runtime.internString(manifest.title));
@@ -775,9 +777,13 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		}
 		callClosureInto(runtime, callee as Closure, args, out);
 	};
-	const key = (name: string): StringValue => runtime.internString(name);
+	const key = (name: string): StringValue => {
+		const interned = runtime.internString(name);
+		return interned;
+	};
 	const setKey = (table: Table, name: string, value: Value): void => {
-		table.set(key(name), value);
+		const tableKey = key(name);
+		table.set(tableKey, value);
 	};
 	const paletteRKey = key('r');
 	const paletteGKey = key('g');
@@ -1502,7 +1508,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	luaPipeline.registerGlobal(runtime, 'tostring', createNativeFunction('tostring', (args, out) => {
 		const value = args.length > 0 ? args[0] : null;
-		out.push(valueToStringValue(runtime, value));
+		out.push(runtime.internString(valueToString(value)));
 	}));
 	luaPipeline.registerGlobal(runtime, 'tonumber', createNativeFunction('tonumber', (args, out) => {
 		if (args.length === 0) {

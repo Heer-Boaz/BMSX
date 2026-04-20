@@ -18,12 +18,11 @@ export class HostFaultState {
 
 	public publishStartup(runtime: Runtime, error: unknown): void {
 		const normalized = convertToError(error);
-		const message = normalized.message.length > 0 ? normalized.message : String(error);
 		this.publish(
 			runtime,
 			HOST_FAULT_FLAG_ACTIVE | HOST_FAULT_FLAG_STARTUP_BLOCKING,
 			HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH,
-			message,
+			normalized.message.length > 0 ? normalized.message : String(error),
 		);
 	}
 

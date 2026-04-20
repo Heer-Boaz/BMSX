@@ -555,10 +555,6 @@ const replaceWithJump = (instruction: Instruction, target: number): void => {
 	instruction.callProtoIndex = null;
 };
 
-const replaceWithNop = (instruction: Instruction): void => {
-	replaceWithMov(instruction, 0, 0);
-};
-
 const simplifyBranches = (
 	instructions: Instruction[],
 	instrUses: UseSlot[][],
@@ -600,7 +596,7 @@ const simplifyBranches = (
 				if (shouldJump) {
 					replaceWithJump(instruction, getJumpTarget(instruction));
 				} else {
-					replaceWithNop(instruction);
+					replaceWithMov(instruction, 0, 0);
 				}
 				instrUses[i] = [];
 				break;
@@ -617,7 +613,7 @@ const simplifyBranches = (
 				if (shouldJump) {
 					replaceWithJump(instruction, getJumpTarget(instruction));
 				} else {
-					replaceWithNop(instruction);
+					replaceWithMov(instruction, 0, 0);
 				}
 				instrUses[i] = [];
 				break;
@@ -633,7 +629,7 @@ const simplifyBranches = (
 				if (shouldSkip) {
 					replaceWithJump(instruction, Math.min(i + 2, count));
 				} else {
-					replaceWithNop(instruction);
+					replaceWithMov(instruction, 0, 0);
 				}
 				instrUses[i] = [];
 				break;
@@ -672,7 +668,7 @@ const simplifyBranches = (
 				if (shouldSkip) {
 					replaceWithJump(instruction, Math.min(i + 2, count));
 				} else {
-					replaceWithNop(instruction);
+					replaceWithMov(instruction, 0, 0);
 				}
 				instrUses[i] = [];
 				break;

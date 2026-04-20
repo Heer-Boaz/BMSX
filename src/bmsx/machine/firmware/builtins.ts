@@ -1,7 +1,7 @@
 import { $ } from '../../core/engine';
 import { InputMap } from '../../input/models';
 import { LuaEnvironment } from '../../lua/environment';
-import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../../lua/errors';
+import { LuaError, LuaSyntaxError } from '../../lua/errors';
 import { LuaInterpreter, LuaNativeFunction } from '../../lua/runtime';
 import { extractErrorMessage, isLuaCallSignal, LuaFunctionValue, LuaNativeValue, type LuaCallResult } from '../../lua/value';
 import { isLuaTable, LuaTable, LuaValue } from '../../lua/value';
@@ -13,19 +13,18 @@ import {
 } from './builtin_descriptors';
 import { extendMarshalContext } from './js_bridge';
 import { api, Runtime } from '../runtime/runtime';
-import type { LuaBuiltinDescriptor } from '../runtime/contracts';
+import type { LuaBuiltinDescriptor } from '../../lua/semantic_contracts';
 
 const FIRMWARE_LUA_GLOBAL_METHODS = new Set<string>();
 
 export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 	const runtime = Runtime.instance;
 	runtime.apiFunctionNames.clear();
-	const runtimeError = (message: string): LuaRuntimeError => interpreter.runtimeError(message);
 
 	const env = interpreter.globalEnvironment;
 	const setInputMapNative = new LuaNativeFunction('set_input_map', (args) => {
 		if (args.length === 0 || !isLuaTable(args[0])) {
-			throw runtimeError('set_input_map(mapping [, player]) requires a table as the first argument.');
+			throw interpreter.runtimeError('set_input_map(mapping [, player]) requires a table as the first argument.');
 		}
 			const mappingTable = args[0] as LuaTable;
 			const targetPlayer = args.length >= 2
@@ -35,13 +34,13 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 		const marshalCtx = { moduleId, path: [] };
 		const mappingValue = runtime.luaJsBridge.convertFromLua(mappingTable, marshalCtx) as InputMap;
 		if (!mappingValue || typeof mappingValue !== 'object') {
-			throw runtimeError('set_input_map(mapping [, player]) requires mapping to be a table.');
+			throw interpreter.runtimeError('set_input_map(mapping [, player]) requires mapping to be a table.');
 		}
 		for (const key of ['keyboard', 'gamepad', 'pointer']) {
 			if (key in mappingValue) {
 				const layer = mappingValue[key];
 				if (layer !== undefined && layer !== null && typeof layer !== 'object') {
-					throw runtimeError(`set_input_map(mapping [, player]) requires ${key} to be a table.`);
+					throw interpreter.runtimeError(`set_input_map(mapping [, player]) requires ${key} to be a table.`);
 				}
 				// Apply the layer mapping to the player input
 				for (const [_action, bindings] of Object.entries(layer)) {
@@ -70,7 +69,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 		if (kind === 'method') {
 			const callable = descriptor.value;
 			if (typeof callable !== 'function') {
-				throw runtimeError(`API method '${name}' is not callable.`);
+				throw interpreter.runtimeError(`API method '${name}' is not callable.`);
 			}
 			const params = extractFunctionParameters(callable as (...args: unknown[]) => unknown);
 			const apiMetadata = API_METHOD_METADATA[name];
@@ -80,7 +79,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 				for (let index = 0; index < apiMetadata.parameters.length; index += 1) {
 					const metadataParam = apiMetadata.parameters[index];
 					if (!metadataParam || typeof metadataParam.name !== 'string') {
-						throw runtimeError(`API method '${name}' has invalid parameter metadata.`);
+						throw interpreter.runtimeError(`API method '${name}' has invalid parameter metadata.`);
 					}
 					if (metadataParam.optional) {
 						optionalSet.add(metadataParam.name);
@@ -127,7 +126,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 						throw error;
 					}
 					const message = extractErrorMessage(error);
-					throw runtimeError(`[api.${name}] ${message}`);
+					throw interpreter.runtimeError(`[api.${name}] ${message}`);
 				}
 			});
 			registerLuaGlobal(env, name, native);
@@ -153,7 +152,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 						throw error;
 					}
 					const message = extractErrorMessage(error);
-					throw runtimeError(`[api.${name}] ${message}`);
+					throw interpreter.runtimeError(`[api.${name}] ${message}`);
 				}
 			});
 			registerLuaGlobal(env, name, native);
@@ -307,7 +306,9 @@ function sanitizeParameterName(token: string, index: number): string {
 }
 
 export function seedDefaultLuaBuiltins(): void {
-	DEFAULT_LUA_BUILTIN_FUNCTIONS.forEach(registerLuaBuiltin);
+		for (const builtin of DEFAULT_LUA_BUILTIN_FUNCTIONS) {
+			registerLuaBuiltin(builtin);
+		}
 }
 
 export function registerLuaGlobal(env: LuaEnvironment, name: string, value: LuaValue): void {

@@ -54,10 +54,14 @@ bool CartBootState::processPending(Runtime& runtime) {
 	if (!m_pending) {
 		return false;
 	}
-	if (runtime.frameLoop.frameActive) {
+	const bool hadActiveFrame = runtime.frameLoop.frameActive;
+	if (hadActiveFrame) {
 		runtime.frameLoop.resetFrameState(runtime);
 	}
 	if (runtime.hasEntryContinuation()) {
+		if (!hadActiveFrame) {
+			runtime.frameLoop.resetFrameState(runtime);
+		}
 		runtime.m_pendingCall = Runtime::PendingCall::None;
 		runtime.vblank.clearHaltUntilIrq(runtime);
 	}

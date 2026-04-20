@@ -79,26 +79,24 @@ void FrameLoopState::finalizeUpdateSlice(Runtime& runtime) {
 }
 
 void FrameLoopState::executeUpdateCallback(Runtime& runtime) {
+	auto& cpu = runtime.machine().cpu();
 	try {
-		while (true) {
-			if (runtime.machine().cpu().isHaltedUntilIrq() && runtime.vblank.runHaltedUntilIrq(runtime, frameState)) {
+		while (runtime.hasEntryContinuation()) {
+			if (cpu.isHaltedUntilIrq() && runtime.vblank.runHaltedUntilIrq(runtime, frameState)) {
 				return;
 			}
 			if (runtime.vblank.consumeBackQueueClearAfterIrqWake()) {
 				RenderQueues::clearBackQueues();
 			}
-			if (!runtime.hasEntryContinuation()) {
+			if (runtime.cpuExecution.runWithBudget(runtime, frameState) == RunResult::Halted) {
+				runtime.m_pendingCall = Runtime::PendingCall::None;
 				return;
 			}
-			RunResult result = runtime.cpuExecution.runWithBudget(runtime, frameState);
-			if (runtime.machine().cpu().isHaltedUntilIrq()) {
+			if (cpu.isHaltedUntilIrq()) {
 				if (runtime.vblank.runHaltedUntilIrq(runtime, frameState)) {
 					return;
 				}
 				continue;
-			}
-			if (result == RunResult::Halted) {
-				runtime.m_pendingCall = Runtime::PendingCall::None;
 			}
 			return;
 		}
@@ -128,8 +126,8 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 		return true;
 	}
 
-	FrameState* const previousState = frameActive ? &frameState : nullptr;
-	const int previousRemaining = previousState != nullptr ? previousState->cycleBudgetRemaining : -1;
+	const FrameState* const previousState = frameActive ? &frameState : nullptr;
+	const int previousRemaining = previousState ? previousState->cycleBudgetRemaining : -1;
 	const bool previousPending = runtime.hasEntryContinuation();
 	const i64 previousSequence = runtime.frameScheduler.lastTickSequence;
 	bool startedFrame = false;

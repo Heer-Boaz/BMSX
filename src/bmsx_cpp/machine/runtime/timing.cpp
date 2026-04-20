@@ -22,9 +22,8 @@ int calcCyclesPerFrame(i64 cpuHz, i64 refreshHzScaled) {
 	if (refreshHzScaled <= HZ_SCALE) {
 		throw std::runtime_error("[RuntimeTiming] refreshHzScaled must be greater than 1 Hz.");
 	}
-	const i64 wholeCycles = (cpuHz / refreshHzScaled) * HZ_SCALE;
-	const i64 remainderCycles = ((cpuHz % refreshHzScaled) * HZ_SCALE) / refreshHzScaled;
-	const i64 cyclesPerFrame = wholeCycles + remainderCycles;
+	const i64 cyclesPerFrame = ((cpuHz / refreshHzScaled) * HZ_SCALE)
+		+ ((cpuHz % refreshHzScaled) * HZ_SCALE) / refreshHzScaled;
 	if (cyclesPerFrame <= 0) {
 		throw std::runtime_error("[RuntimeTiming] cycles per frame must be a positive integer.");
 	}
@@ -46,10 +45,8 @@ i64 resolveVblankCycles(i64 cpuHz, i64 refreshHzScaled, i32 renderHeight) {
 	// Pietious at 5 MHz/50 Hz only 544 VBLANK cycles, effectively a one-scanline frame edge. The
 	// scanline ratio gives floor(100000 * 192 / 313) visible cycles and 38659 VBLANK cycles, which
 	// keeps the cart refresh at 50/60 Hz while allowing MSX/Konami-style 25/30 Hz game ticks in cart code.
-	const i64 activeDisplayCycles =
-		(cycleBudgetPerFrame / totalScanlines) * static_cast<i64>(renderHeight)
-		+ ((cycleBudgetPerFrame % totalScanlines) * static_cast<i64>(renderHeight)) / totalScanlines;
-	const i64 vblankCycles = cycleBudgetPerFrame - activeDisplayCycles;
+	const i64 vblankCycles = cycleBudgetPerFrame - (((cycleBudgetPerFrame / totalScanlines) * static_cast<i64>(renderHeight))
+		+ ((cycleBudgetPerFrame % totalScanlines) * static_cast<i64>(renderHeight)) / totalScanlines);
 	if (vblankCycles <= 0) {
 		throw std::runtime_error("[RuntimeTiming] vblank_cycles must be greater than 0.");
 	}

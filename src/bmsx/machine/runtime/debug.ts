@@ -55,8 +55,7 @@ function extractRawSourceFragment(range: SourceRange, sourceText: string): strin
 }
 
 function extractExpressionCandidates(range: SourceRange, sourceText: string): string[] {
-	const fragment = extractRawSourceFragment(range, sourceText);
-	const matches = fragment.match(DEBUG_EXPR_PATTERN);
+	const matches = extractRawSourceFragment(range, sourceText).match(DEBUG_EXPR_PATTERN);
 	if (!matches) {
 		return [];
 	}
@@ -80,10 +79,19 @@ function extractExpressionCandidates(range: SourceRange, sourceText: string): st
 }
 
 function resolveLuaSourceRecord(runtime: Runtime, path: string): LuaSourceRecord | null {
-	return $.sources?.path2lua[path]
-		?? runtime.cartLuaSources?.path2lua[path]
-		?? runtime.engineLuaSources?.path2lua[path]
-		?? null;
+	const sharedSource = $.sources.path2lua[path];
+	if (sharedSource) {
+		return sharedSource;
+	}
+	const cartSource = runtime.cartLuaSources?.path2lua[path];
+	if (cartSource) {
+		return cartSource;
+	}
+	const engineSource = runtime.engineLuaSources?.path2lua[path];
+	if (engineSource) {
+		return engineSource;
+	}
+	return null;
 }
 
 function resourceSourceForPath(runtime: Runtime, path: string): string | null {
@@ -91,16 +99,18 @@ function resourceSourceForPath(runtime: Runtime, path: string): string | null {
 	if (!binding) {
 		return null;
 	}
-	const cached = getWorkspaceCachedSource(binding.source_path);
-	return cached !== null ? cached : binding.src;
+	const cachedSource = getWorkspaceCachedSource(binding.source_path);
+	if (cachedSource !== null) {
+		return cachedSource;
+	}
+	return binding.src;
 }
 
 function formatInstructionOperandDebug(operand: InstructionOperandDebugInfo, registers: ReadonlyArray<Value>): string {
-	let text = `${operand.label}=${operand.text}`;
 	if (operand.registerIndex !== undefined && operand.registerIndex < registers.length) {
-		text += `(${formatDebugValue(registers[operand.registerIndex])})`;
+		return `${operand.label}=${operand.text}(${formatDebugValue(registers[operand.registerIndex])})`;
 	}
-	return text;
+	return `${operand.label}=${operand.text}`;
 }
 
 function formatDebugSourceLine(range: SourceRange, source: string | null): string {
@@ -186,10 +196,8 @@ function resolveExpressionValue(
 	}
 	let current = root.value;
 	for (let index = 1; index < parts.length; index += 1) {
-		if (current instanceof Table) {
-			current = current.get(runtime.luaKey(parts[index]));
-		} else if (isNativeObject(current)) {
-			current = current.get(runtime.luaKey(parts[index]));
+		if (current instanceof Table || isNativeObject(current)) {
+			current = (current as Table | NativeObject).get(runtime.luaKey(parts[index]));
 		} else {
 			return { found: false, value: null };
 		}
@@ -206,12 +214,11 @@ function collectSourceExpressionDebug(runtime: Runtime, range: SourceRange, sour
 		return [];
 	}
 	const frameIndex = callStack.length - 1;
-	const protoIndex = callStack[frameIndex].protoIndex;
 	const expressions = extractExpressionCandidates(range, source);
 	const result: string[] = [];
 	for (let index = 0; index < expressions.length; index += 1) {
 		const expression = expressions[index];
-		const resolved = resolveExpressionValue(runtime, frameIndex, protoIndex, range, registers, expression);
+		const resolved = resolveExpressionValue(runtime, frameIndex, callStack[frameIndex].protoIndex, range, registers, expression);
 		if (!resolved.found) {
 			continue;
 		}
@@ -230,7 +237,11 @@ export function logDebugState(runtime: Runtime): void {
 		return;
 	}
 	const instruction = describeInstructionAtPc(program, debug.pc, runtime.programMetadata, { formatStyle: 'assembly' });
-	const operandSummary = instruction.operands.map(operand => formatInstructionOperandDebug(operand, debug.registers)).join(' ');
+	const operandSummaries = [];
+	for (let index = 0; index < instruction.operands.length; index += 1) {
+		operandSummaries.push(formatInstructionOperandDebug(instruction.operands[index], debug.registers));
+	}
+	const operandSummary = operandSummaries.join(' ');
 	console.error(`\tpc=${instruction.pcText} op=${instruction.opName}${operandSummary.length > 0 ? ` ${operandSummary}` : ''}`);
 	console.error(`\tinstr=${instruction.pcText}: ${instruction.instructionText}`);
 	if (instruction.sourceRange) {

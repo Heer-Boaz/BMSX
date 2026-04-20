@@ -1056,7 +1056,7 @@ class FunctionBuilder {
 		if (!moduleInfo) {
 			return null;
 		}
-		return moduleInfo.exportSlotsByPathKey.get(buildModuleExportPathKey(exportPath)) ?? null;
+		return moduleInfo.exportSlotsByPathKey.get(exportPath.join('.')) ?? null;
 	}
 
 	private tryResolveRequireModuleBinding(expression: LuaExpression): ModuleBinding | null {
@@ -2914,18 +2914,16 @@ function opForAssignment(operator: LuaAssignmentOperator): OpCode {
 	}
 }
 
-const buildNamePath = (parts: ReadonlyArray<string>): string => parts.join('.');
-
 const buildDeclarationHint = (identifiers: ReadonlyArray<string>, methodName: string | null): string => {
 	const parts = identifiers.length > 0 ? identifiers.slice() : [];
 	if (methodName && methodName.length > 0) {
 		parts.push(methodName);
 	}
-	return `decl:${buildNamePath(parts)}`;
+	return `decl:${parts.join('.')}`;
 };
 
 const buildAssignmentHint = (path: ReadonlyArray<string>): string =>
-	`assign:${buildNamePath(path)}`;
+	`assign:${path.join('.')}`;
 
 const extractTableKeyFromExpression = (expression: LuaExpression): string | null => {
 	switch (expression.kind) {
@@ -2980,9 +2978,6 @@ const cloneModuleExportNode = (node: ModuleExportNode): ModuleExportNode => {
 	return clone;
 };
 
-const buildModuleExportPathKey = (path: ReadonlyArray<string>): string =>
-	path.join('.');
-
 const stripLuaExtension = (path: string): string =>
 	path.toLowerCase().endsWith('.lua') ? path.slice(0, path.length - 4) : path;
 
@@ -2998,21 +2993,21 @@ const stripModuleSourcePrefix = (path: string): string => {
 	return normalized;
 };
 
-const sanitizeModuleSlotSegment = (value: string): string =>
-	value.replace(/[^A-Za-z0-9_]/g, '_');
-
 const buildModuleSlotPrefix = (modulePath: string): string => {
 	const compactPath = stripModuleSourcePrefix(modulePath);
 	const parts = compactPath.split('/').filter(part => part.length > 0);
 	const normalizedParts = parts.length > 0 ? parts : [compactPath];
-	return normalizedParts.map(sanitizeModuleSlotSegment).join('__');
+	return normalizedParts.map((value: string) => value.replace(/[^A-Za-z0-9_]/g, '_')).join('__');
 };
 
 const buildModuleExportSlotName = (
 	modulePath: string,
 	exportPath: ReadonlyArray<string>,
 ): string =>
-	[buildModuleSlotPrefix(modulePath), ...exportPath.map(sanitizeModuleSlotSegment)].join('__');
+	[
+		buildModuleSlotPrefix(modulePath),
+		...exportPath.map(value => value.replace(/[^A-Za-z0-9_]/g, '_')),
+	].join('__');
 
 const resolveStaticModuleShapePath = (
 	expression: LuaExpression,
@@ -3201,7 +3196,7 @@ const buildModuleCompileInfo = (
 		for (const [key, child] of node.children) {
 			const childPath = path.concat(key);
 			child.slotName = buildModuleExportSlotName(modulePath, childPath);
-			exportSlotsByPathKey.set(buildModuleExportPathKey(childPath), child.slotName);
+			exportSlotsByPathKey.set(childPath.join('.'), child.slotName);
 			assignSlots(child, childPath);
 		}
 	};

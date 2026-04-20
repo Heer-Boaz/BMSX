@@ -1193,8 +1193,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 		copies.set(register, source);
 	};
 
-	const rewriteRegisterOperand = (operand: number, copies: Map<number, number>): number => resolveCopy(operand, copies);
-
 	const rewriteRkOperand = (
 		instruction: Instruction,
 		operand: number,
@@ -1203,7 +1201,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 		copies: Map<number, number>,
 	): number => {
 		if ((instruction.rkMask & maskBit) === 0) {
-			return rewriteRegisterOperand(operand, copies);
+			return resolveCopy(operand, copies);
 		}
 		if (operand < 0) {
 			return operand;
@@ -1220,7 +1218,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 		) {
 			return -1 - constant.constIndex;
 		}
-		return rewriteRegisterOperand(operand, copies);
+		return resolveCopy(operand, copies);
 	};
 
 	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
@@ -1238,7 +1236,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 
 			switch (instruction.op) {
 				case OpCode.MOV: {
-					const resolved = rewriteRegisterOperand(instruction.b, copies);
+					const resolved = resolveCopy(instruction.b, copies);
 					if (resolved !== instruction.b) {
 						instruction.b = resolved;
 						changed = true;
@@ -1251,7 +1249,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					break;
 				}
 				case OpCode.GETT: {
-					const nextB = rewriteRegisterOperand(instruction.b, copies);
+					const nextB = resolveCopy(instruction.b, copies);
 					if (nextB !== instruction.b) {
 						instruction.b = nextB;
 						changed = true;
@@ -1266,7 +1264,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.GETI:
 				case OpCode.GETFIELD:
 				case OpCode.SELF: {
-					const nextB = rewriteRegisterOperand(instruction.b, copies);
+					const nextB = resolveCopy(instruction.b, copies);
 					if (nextB !== instruction.b) {
 						instruction.b = nextB;
 						changed = true;
@@ -1274,7 +1272,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					break;
 				}
 				case OpCode.SETT: {
-					const nextA = rewriteRegisterOperand(instruction.a, copies);
+					const nextA = resolveCopy(instruction.a, copies);
 					if (nextA !== instruction.a) {
 						instruction.a = nextA;
 						changed = true;
@@ -1293,7 +1291,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				}
 				case OpCode.SETI:
 				case OpCode.SETFIELD: {
-					const nextA = rewriteRegisterOperand(instruction.a, copies);
+					const nextA = resolveCopy(instruction.a, copies);
 					if (nextA !== instruction.a) {
 						instruction.a = nextA;
 						changed = true;
@@ -1337,7 +1335,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.NOT:
 				case OpCode.LEN:
 				case OpCode.BNOT: {
-					const nextB = rewriteRegisterOperand(instruction.b, copies);
+					const nextB = resolveCopy(instruction.b, copies);
 					if (nextB !== instruction.b) {
 						instruction.b = nextB;
 						changed = true;
@@ -1347,7 +1345,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.TEST:
 				case OpCode.JMPIF:
 				case OpCode.JMPIFNOT: {
-					const nextA = rewriteRegisterOperand(instruction.a, copies);
+					const nextA = resolveCopy(instruction.a, copies);
 					if (nextA !== instruction.a) {
 						instruction.a = nextA;
 						changed = true;
@@ -1356,7 +1354,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				}
 				case OpCode.BR_TRUE:
 				case OpCode.BR_FALSE: {
-					const nextA = rewriteRegisterOperand(instruction.a, copies);
+					const nextA = resolveCopy(instruction.a, copies);
 					if (nextA !== instruction.a) {
 						instruction.a = nextA;
 						changed = true;
@@ -1364,7 +1362,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					break;
 				}
 				case OpCode.TESTSET: {
-					const nextB = rewriteRegisterOperand(instruction.b, copies);
+					const nextB = resolveCopy(instruction.b, copies);
 					if (nextB !== instruction.b) {
 						instruction.b = nextB;
 						changed = true;
@@ -1376,7 +1374,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.SETGL:
 				case OpCode.SETUP:
 				case OpCode.STORE_MEM: {
-					const nextA = rewriteRegisterOperand(instruction.a, copies);
+					const nextA = resolveCopy(instruction.a, copies);
 					if (nextA !== instruction.a) {
 						instruction.a = nextA;
 						changed = true;

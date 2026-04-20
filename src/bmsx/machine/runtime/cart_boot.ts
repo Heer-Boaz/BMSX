@@ -71,11 +71,12 @@ export class CartBootState {
 		if (!runtime.luaGate.ready) {
 			return;
 		}
-		if (runtime.frameLoop.currentFrameState !== null) {
+		const currentFrameState = runtime.frameLoop.currentFrameState;
+		if (currentFrameState !== null) {
 			luaPipeline.resetFrameState(runtime);
 		}
 		if (runtime.pendingCall !== null) {
-			if (runtime.frameLoop.currentFrameState === null) {
+			if (currentFrameState === null) {
 				luaPipeline.resetFrameState(runtime);
 			}
 			runtime.pendingCall = null;
@@ -110,8 +111,7 @@ export class CartBootState {
 				console.info('Cart boot payload prepared from Lua sources.');
 				return;
 			}
-			const programEntry = runtime.cartAssetSource.getEntry(PROGRAM_ASSET_ID);
-			this.setReadyFlag(runtime, !!programEntry);
+			this.setReadyFlag(runtime, !!runtime.cartAssetSource.getEntry(PROGRAM_ASSET_ID));
 		} catch (error) {
 			this.preparedProgram = null;
 			this.setReadyFlag(runtime, false);

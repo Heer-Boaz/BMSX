@@ -76,10 +76,6 @@ function parseBadpInfo(buffer: Uint8Array): RuntimeAudioInfo {
 	};
 }
 
-export function parseAudioInfo(buffer: Uint8Array): RuntimeAudioInfo {
-	return parseBadpInfo(buffer);
-}
-
 export function registerAudioAssets(source: RawAssetSource, registry: RuntimeAudioRegistry): void {
 	const entries = source.list('audio');
 	for (let index = 0; index < entries.length; index += 1) {
@@ -93,7 +89,7 @@ export function registerAudioAssets(source: RawAssetSource, registry: RuntimeAud
 		const buffer = source.getBytesView(entry);
 		let info: RuntimeAudioInfo;
 		try {
-			info = parseAudioInfo(buffer);
+			info = parseBadpInfo(buffer);
 		} catch (error) {
 			throw new Error(`[RuntimeAssets] Unsupported audio format for '${entry.resid}'.`, { cause: error as Error });
 		}

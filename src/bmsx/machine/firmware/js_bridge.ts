@@ -5,12 +5,8 @@ import { LuaHandlerCache, isLuaHandlerFunction } from '../../lua/handler_cache';
 import { LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, isLuaNativeMemberHandle, LuaFunctionValue } from '../../lua/value';
 import { Table, type Closure, type NativeFunction, type NativeObject, type Value, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject } from '../cpu/cpu';
 import { Runtime } from '../runtime/runtime';
-import { LuaMarshalContext } from '../runtime/contracts';
+import type { LuaEntrySnapshot, LuaMarshalContext, LuaSnapshotGraph, LuaSnapshotObjects } from '../runtime/contracts';
 import { isStringValue, stringValueToString } from '../memory/string_pool';
-
-export type LuaSnapshotObjects = Record<number, unknown>;
-export type LuaSnapshotGraph = { root: unknown; objects: LuaSnapshotObjects };
-export type LuaEntrySnapshot = Record<string, unknown> | LuaSnapshotGraph;
 
 export interface LuaInteropAdapter {
 	convertFromLua(value: LuaValue, context?: LuaMarshalContext): unknown;

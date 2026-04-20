@@ -54,14 +54,16 @@ export class FrameLoopState {
 			return false;
 		}
 		const previousState = this.currentFrameState;
-		const previousRemaining = previousState?.cycleBudgetRemaining ?? -1;
-		const previousPending = runtime.pendingCall === 'entry';
-		const previousSequence = runtime.frameScheduler.lastTickSequence;
+		const previous = {
+			pendingCall: runtime.pendingCall,
+			frameState: previousState,
+			tickSequence: runtime.frameScheduler.lastTickSequence,
+		};
 		if (this.currentFrameState === null) {
 			if (!runtime.frameScheduler.startScheduledFrame(runtime)) {
 				return false;
 			}
-		} else if (this.currentFrameState.cycleBudgetRemaining <= 0) {
+		} else if (previousState !== null && previousState.cycleBudgetRemaining <= 0) {
 			if (!runtime.frameScheduler.refillFrameBudget(runtime, this.currentFrameState)) {
 				return false;
 			}
@@ -71,13 +73,13 @@ export class FrameLoopState {
 		if (nextState !== previousState) {
 			return true;
 		}
-		if (nextState !== null && nextState.cycleBudgetRemaining !== previousRemaining) {
+		if (nextState !== null && nextState.cycleBudgetRemaining !== (previous.frameState?.cycleBudgetRemaining ?? -1)) {
 			return true;
 		}
-		if ((runtime.pendingCall === 'entry') !== previousPending) {
+		if (runtime.pendingCall !== previous.pendingCall) {
 			return true;
 		}
-		return runtime.frameScheduler.lastTickSequence !== previousSequence;
+		return runtime.frameScheduler.lastTickSequence !== previous.tickSequence;
 	}
 
 	public abandonFrameState(runtime: Runtime): void {
@@ -101,20 +103,19 @@ export class FrameLoopState {
 			if ($.paused) {
 				runtime.screen.presentPausedFrame(runtime, hostDeltaMs);
 			} else {
+				const overlayActive = runtime.executionOverlayActive;
 				runtime.screen.clearPresentation();
 				if (!runReady) {
-					if (runtime.executionOverlayActive) {
+					if (overlayActive) {
 						runtime.screen.runOverlay(runtime);
 					} else {
 						runtime.frameScheduler.clearQueuedTime();
 					}
-				} else if (runtime.executionOverlayActive) {
+				} else if (overlayActive) {
 					runtime.screen.runOverlay(runtime);
 				} else {
-					const previousTickSequence = runtime.frameScheduler.lastTickSequence;
 					$.deltatime = runtime.timing.frameDurationMs;
-					runtime.frameScheduler.run(runtime, hostDeltaMs);
-					runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
+					runtime.screen.syncAfterRuntimeUpdate(runtime, this.runFrameTick(runtime, hostDeltaMs));
 				}
 				runtime.screen.presentPending(runtime, hostDeltaMs);
 			}
@@ -132,7 +133,6 @@ export class FrameLoopState {
 	}
 
 	private runActiveFrameState(runtime: Runtime, state: FrameState): void {
-		let fault: unknown = null;
 		try {
 			if (runtime.pendingCall === 'entry') {
 				this.runUpdatePhase(runtime, state);
@@ -141,11 +141,12 @@ export class FrameLoopState {
 			}
 			this.finalizeUpdateSlice(runtime, state);
 		} catch (error) {
-			fault = error;
-			workbenchMode.handleLuaError(runtime, error);
-		} finally {
-			if (fault !== null && this.currentFrameState !== null) {
-				this.abandonFrameState(runtime);
+			try {
+				workbenchMode.handleLuaError(runtime, error);
+			} finally {
+				if (this.currentFrameState !== null) {
+					this.abandonFrameState(runtime);
+				}
 			}
 		}
 	}
@@ -171,26 +172,24 @@ export class FrameLoopState {
 		if (state.haltGame) {
 			return;
 		}
+		const cpu = runtime.machine.cpu;
 		try {
-			while (true) {
-				if (runtime.machine.cpu.isHaltedUntilIrq() && runtime.vblank.runHaltedUntilIrq(runtime, state)) {
+			while (runtime.pendingCall === 'entry') {
+				if (cpu.isHaltedUntilIrq() && runtime.vblank.runHaltedUntilIrq(runtime, state)) {
 					return;
 				}
 				if (runtime.vblank.consumeBackQueueClearAfterIrqWake()) {
 					clearBackQueues();
 				}
-				if (runtime.pendingCall !== 'entry') {
+				if (runtime.cpuExecution.runWithBudget(runtime, state) === RunResult.Halted) {
+					runtime.pendingCall = null;
 					return;
 				}
-				const result = runtime.cpuExecution.runWithBudget(runtime, state);
-				if (runtime.machine.cpu.isHaltedUntilIrq()) {
+				if (cpu.isHaltedUntilIrq()) {
 					if (runtime.vblank.runHaltedUntilIrq(runtime, state)) {
 						return;
 					}
 					continue;
-				}
-				if (result === RunResult.Halted) {
-					runtime.pendingCall = null;
 				}
 				return;
 			}
@@ -200,5 +199,11 @@ export class FrameLoopState {
 			runtime.pendingCall = null;
 			workbenchMode.handleLuaError(runtime, error);
 		}
+	}
+
+	private runFrameTick(runtime: Runtime, hostDeltaMs: number): number {
+		const previousTickSequence = runtime.frameScheduler.lastTickSequence;
+		runtime.frameScheduler.run(runtime, hostDeltaMs);
+		return previousTickSequence;
 	}
 }

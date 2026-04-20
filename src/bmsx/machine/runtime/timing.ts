@@ -11,9 +11,8 @@ export function calcCyclesPerFrameScaled(cpuHz: number, refreshHzScaled: number)
 	if (!Number.isSafeInteger(refreshHzScaled) || refreshHzScaled <= 0) {
 		throw new Error('[RuntimeTiming] refreshHzScaled must be a positive safe integer.');
 	}
-	const wholeCycles = Math.floor(cpuHz / refreshHzScaled) * HZ_SCALE;
-	const remainderCycles = Math.floor((cpuHz % refreshHzScaled) * HZ_SCALE / refreshHzScaled);
-	const cyclesPerFrame = wholeCycles + remainderCycles;
+	const cyclesPerFrame = (Math.floor(cpuHz / refreshHzScaled) * HZ_SCALE)
+		+ Math.floor((cpuHz % refreshHzScaled) * HZ_SCALE / refreshHzScaled);
 	if (!Number.isSafeInteger(cyclesPerFrame) || cyclesPerFrame <= 0) {
 		throw new Error('[RuntimeTiming] cycles per frame must be a positive safe integer.');
 	}
@@ -48,10 +47,8 @@ export function resolveVblankCycles(cpuFreqHz: number, ufpsScaled: number, rende
 	// Pietious at 5 MHz/50 Hz only 544 VBLANK cycles, effectively a one-scanline frame edge. The
 	// scanline ratio gives floor(100000 * 192 / 313) visible cycles and 38659 VBLANK cycles, which
 	// keeps the cart refresh at 50/60 Hz while allowing MSX/Konami-style 25/30 Hz game ticks in cart code.
-	const visibleWhole = Math.floor(cycleBudgetPerFrame / totalScanlines) * renderHeight;
-	const visibleRemainder = Math.floor(((cycleBudgetPerFrame % totalScanlines) * renderHeight) / totalScanlines);
-	const activeDisplayCycles = visibleWhole + visibleRemainder;
-	const vblankCycles = cycleBudgetPerFrame - activeDisplayCycles;
+	const vblankCycles = cycleBudgetPerFrame - ((Math.floor(cycleBudgetPerFrame / totalScanlines) * renderHeight)
+		+ Math.floor(((cycleBudgetPerFrame % totalScanlines) * renderHeight) / totalScanlines));
 	if (!Number.isSafeInteger(vblankCycles) || vblankCycles < 0 || vblankCycles > cycleBudgetPerFrame) {
 		throw new Error('[RuntimeTiming] invalid vblank cycle configuration.');
 	}

@@ -30,7 +30,6 @@ import { walkLuaExpressionTree } from '../../lua/syntax/ast_traversal';
 import type { LuaSemanticFrontendFile } from '../../ide/editor/contrib/intellisense/lua_frontend';
 import {
 	getBoundIdentifierReference,
-	getIdentifierSymbolHandle,
 	getReferenceSymbolHandle,
 } from './bound_reference';
 import {
@@ -256,7 +255,7 @@ function evaluateExpressionFact(
 		case LuaSyntaxKind.VarargExpression:
 			return { fact: UNKNOWN_VALUE_FACT, state };
 		case LuaSyntaxKind.IdentifierExpression: {
-			const handle = getIdentifierSymbolHandle(semantics, expression as LuaIdentifierExpression);
+			const handle = getReferenceSymbolHandle(getBoundIdentifierReference(semantics, expression as LuaIdentifierExpression));
 			if (handle === null) return { fact: UNKNOWN_VALUE_FACT, state };
 			return { fact: state.get(handle) ?? UNKNOWN_VALUE_FACT, state };
 		}
@@ -385,17 +384,35 @@ function collectNestedClosureWritesFromStatement(
 		case LuaSyntaxKind.LocalAssignmentStatement: {
 			const local = statement as LuaLocalAssignmentStatement;
 			for (let index = 0; index < local.values.length; index += 1) {
-				collectNestedClosureWritesFromExpression(local.values[index], semantics, out);
+				walkLuaExpressionTree(local.values[index], (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			}
 			return;
 		}
 		case LuaSyntaxKind.AssignmentStatement: {
 			const assignment = statement as LuaAssignmentStatement;
 			for (let index = 0; index < assignment.left.length; index += 1) {
-				collectNestedClosureWritesFromExpression(assignment.left[index], semantics, out);
+				walkLuaExpressionTree(assignment.left[index], (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			}
 			for (let index = 0; index < assignment.right.length; index += 1) {
-				collectNestedClosureWritesFromExpression(assignment.right[index], semantics, out);
+				walkLuaExpressionTree(assignment.right[index], (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			}
 			return;
 		}
@@ -408,7 +425,13 @@ function collectNestedClosureWritesFromStatement(
 		case LuaSyntaxKind.ReturnStatement: {
 			const returnStatement = statement as LuaReturnStatement;
 			for (let index = 0; index < returnStatement.expressions.length; index += 1) {
-				collectNestedClosureWritesFromExpression(returnStatement.expressions[index], semantics, out);
+				walkLuaExpressionTree(returnStatement.expressions[index], (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			}
 			return;
 		}
@@ -416,29 +439,65 @@ function collectNestedClosureWritesFromStatement(
 			for (const clause of (statement as LuaIfStatement).clauses) {
 				const condition = clause.condition as LuaExpression | null;
 				if (condition) {
-					collectNestedClosureWritesFromExpression(condition, semantics, out);
+					walkLuaExpressionTree(condition, (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 				}
 				collectNestedClosureWritesFromStatementList(clause.block.body, semantics, out);
 			}
 			return;
 		case LuaSyntaxKind.WhileStatement: {
 			const whileStatement = statement as LuaWhileStatement;
-			collectNestedClosureWritesFromExpression(whileStatement.condition, semantics, out);
+			walkLuaExpressionTree(whileStatement.condition, (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			collectNestedClosureWritesFromStatementList(whileStatement.block.body, semantics, out);
 			return;
 		}
 		case LuaSyntaxKind.RepeatStatement: {
 			const repeatStatement = statement as LuaRepeatStatement;
 			collectNestedClosureWritesFromStatementList(repeatStatement.block.body, semantics, out);
-			collectNestedClosureWritesFromExpression(repeatStatement.condition, semantics, out);
+			walkLuaExpressionTree(repeatStatement.condition, (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			return;
 		}
 		case LuaSyntaxKind.ForNumericStatement: {
 			const forNumeric = statement as LuaForNumericStatement;
-			collectNestedClosureWritesFromExpression(forNumeric.start, semantics, out);
-			collectNestedClosureWritesFromExpression(forNumeric.limit, semantics, out);
+			walkLuaExpressionTree(forNumeric.start, (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
+			walkLuaExpressionTree(forNumeric.limit, (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			if (forNumeric.step !== null) {
-				collectNestedClosureWritesFromExpression(forNumeric.step, semantics, out);
+				walkLuaExpressionTree(forNumeric.step, (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			}
 			collectNestedClosureWritesFromStatementList(forNumeric.block.body, semantics, out);
 			return;
@@ -446,7 +505,13 @@ function collectNestedClosureWritesFromStatement(
 		case LuaSyntaxKind.ForGenericStatement: {
 			const forGeneric = statement as LuaForGenericStatement;
 			for (let index = 0; index < forGeneric.iterators.length; index += 1) {
-				collectNestedClosureWritesFromExpression(forGeneric.iterators[index], semantics, out);
+				walkLuaExpressionTree(forGeneric.iterators[index], (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			}
 			collectNestedClosureWritesFromStatementList(forGeneric.block.body, semantics, out);
 			return;
@@ -455,7 +520,13 @@ function collectNestedClosureWritesFromStatement(
 			collectNestedClosureWritesFromStatementList((statement as LuaDoStatement).block.body, semantics, out);
 			return;
 		case LuaSyntaxKind.CallStatement:
-			collectNestedClosureWritesFromExpression((statement as LuaCallStatement).expression, semantics, out);
+			walkLuaExpressionTree((statement as LuaCallStatement).expression, (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			return;
 		case LuaSyntaxKind.BreakStatement:
 		case LuaSyntaxKind.HaltUntilIrqStatement:
@@ -465,20 +536,6 @@ function collectNestedClosureWritesFromStatement(
 		default:
 			unreachableFlowValue(kind, 'statement kind');
 	}
-}
-
-function collectNestedClosureWritesFromExpression(
-	expression: LuaExpression,
-	semantics: LuaSemanticFrontendFile,
-	out: Set<string>,
-): void {
-	walkLuaExpressionTree(expression, (candidate) => {
-		if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
-			return;
-		}
-		collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
-		return false;
-	});
 }
 
 function collectLexicalWritesInFunctionBody(
@@ -505,7 +562,13 @@ function collectLexicalWritesInStatement(
 				if (handle !== undefined) out.add(handle);
 			}
 			for (let index = 0; index < local.values.length; index += 1) {
-				collectNestedClosureWritesFromExpression(local.values[index], semantics, out);
+				walkLuaExpressionTree(local.values[index], (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			}
 			return;
 		}
@@ -517,10 +580,22 @@ function collectLexicalWritesInStatement(
 					const handle = resolveReferenceHandle(target as LuaIdentifierExpression, semantics);
 					if (handle !== undefined) out.add(handle);
 				}
-				collectNestedClosureWritesFromExpression(target, semantics, out);
+				walkLuaExpressionTree(target, (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			}
 			for (let index = 0; index < assignment.right.length; index += 1) {
-				collectNestedClosureWritesFromExpression(assignment.right[index], semantics, out);
+				walkLuaExpressionTree(assignment.right[index], (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			}
 			return;
 		}
@@ -543,7 +618,13 @@ function collectLexicalWritesInStatement(
 		case LuaSyntaxKind.ReturnStatement: {
 			const returnStatement = statement as LuaReturnStatement;
 			for (let index = 0; index < returnStatement.expressions.length; index += 1) {
-				collectNestedClosureWritesFromExpression(returnStatement.expressions[index], semantics, out);
+				walkLuaExpressionTree(returnStatement.expressions[index], (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			}
 			return;
 		}
@@ -551,31 +632,67 @@ function collectLexicalWritesInStatement(
 			for (const clause of (statement as LuaIfStatement).clauses) {
 				const condition = clause.condition as LuaExpression | null;
 				if (condition) {
-					collectNestedClosureWritesFromExpression(condition, semantics, out);
+					walkLuaExpressionTree(condition, (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 				}
 				collectLexicalWritesInFunctionBody(clause.block.body, semantics, out);
 			}
 			return;
 		case LuaSyntaxKind.WhileStatement: {
 			const whileStatement = statement as LuaWhileStatement;
-			collectNestedClosureWritesFromExpression(whileStatement.condition, semantics, out);
+			walkLuaExpressionTree(whileStatement.condition, (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			collectLexicalWritesInFunctionBody(whileStatement.block.body, semantics, out);
 			return;
 		}
 		case LuaSyntaxKind.RepeatStatement: {
 			const repeatStatement = statement as LuaRepeatStatement;
 			collectLexicalWritesInFunctionBody(repeatStatement.block.body, semantics, out);
-			collectNestedClosureWritesFromExpression(repeatStatement.condition, semantics, out);
+			walkLuaExpressionTree(repeatStatement.condition, (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			return;
 		}
 		case LuaSyntaxKind.ForNumericStatement: {
 			const forNumeric = statement as LuaForNumericStatement;
 			const handle = resolveDeclarationHandle(forNumeric.variable, semantics);
 			if (handle !== undefined) out.add(handle);
-			collectNestedClosureWritesFromExpression(forNumeric.start, semantics, out);
-			collectNestedClosureWritesFromExpression(forNumeric.limit, semantics, out);
+			walkLuaExpressionTree(forNumeric.start, (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
+			walkLuaExpressionTree(forNumeric.limit, (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			if (forNumeric.step !== null) {
-				collectNestedClosureWritesFromExpression(forNumeric.step, semantics, out);
+				walkLuaExpressionTree(forNumeric.step, (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			}
 			collectLexicalWritesInFunctionBody(forNumeric.block.body, semantics, out);
 			return;
@@ -587,7 +704,13 @@ function collectLexicalWritesInStatement(
 				if (handle !== undefined) out.add(handle);
 			}
 			for (let index = 0; index < forGeneric.iterators.length; index += 1) {
-				collectNestedClosureWritesFromExpression(forGeneric.iterators[index], semantics, out);
+				walkLuaExpressionTree(forGeneric.iterators[index], (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			}
 			collectLexicalWritesInFunctionBody(forGeneric.block.body, semantics, out);
 			return;
@@ -596,7 +719,13 @@ function collectLexicalWritesInStatement(
 			collectLexicalWritesInFunctionBody((statement as LuaDoStatement).block.body, semantics, out);
 			return;
 		case LuaSyntaxKind.CallStatement:
-			collectNestedClosureWritesFromExpression((statement as LuaCallStatement).expression, semantics, out);
+			walkLuaExpressionTree((statement as LuaCallStatement).expression, (candidate) => {
+			if (candidate.kind !== LuaSyntaxKind.FunctionExpression) {
+				return;
+			}
+			collectLexicalWritesInFunctionBody((candidate as LuaFunctionExpression).body.body, semantics, out);
+			return false;
+		});
 			return;
 		case LuaSyntaxKind.BreakStatement:
 		case LuaSyntaxKind.HaltUntilIrqStatement:
