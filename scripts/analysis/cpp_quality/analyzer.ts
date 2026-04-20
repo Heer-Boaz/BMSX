@@ -20,8 +20,11 @@ import {
 	collectCppTypeDeclarations,
 } from '../../../src/bmsx/language/cpp/syntax/declarations';
 import {
+	collectCppFunctionUsageCounts,
 	collectCppNormalizedBody,
+	createCppFunctionUsageInfo,
 	createCppFacadeStats,
+	isCppSingleLineWrapperAllowedByUsage,
 	lintCppCrossLayerIncludes,
 	lintCppFacadeStats,
 	lintCppHotPathCalls,
@@ -31,12 +34,25 @@ import {
 	lintCppSimpleTokenPatterns,
 } from './rules';
 import { buildCppPairMap, tokenizeCpp } from '../../../src/bmsx/language/cpp/syntax/tokens';
+import type { CppClassRange, CppFunctionInfo, CppTypeDeclarationInfo } from '../../../src/bmsx/language/cpp/syntax/declarations';
+
+type CppFileAnalysis = {
+	file: string;
+	source: string;
+	tokens: ReturnType<typeof tokenizeCpp>;
+	pairs: number[];
+	classRanges: CppClassRange[];
+	typeDeclarations: CppTypeDeclarationInfo[];
+	functions: CppFunctionInfo[];
+};
 
 export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 	const duplicateBuckets = new Map<string, CppDuplicateLocation[]>();
 	const lintIssues: CppLintIssue[] = [];
 	const exportedTypes: CppExportedTypeInfo[] = [];
 	const normalizedBodies: CppNormalizedBodyInfo[] = [];
+	const fileAnalyses: CppFileAnalysis[] = [];
+	const functionUsageInfo = createCppFunctionUsageInfo();
 	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
 		const file = files[fileIndex];
 		const source = readFileSync(file, 'utf8');
@@ -44,13 +60,24 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 		const pairs = buildCppPairMap(tokens);
 		const classRanges = collectCppClassRanges(tokens, pairs);
 		const typeDeclarations = collectCppTypeDeclarations(tokens, classRanges);
+		const functions = collectCppFunctionDefinitions(tokens, pairs, classRanges);
+		collectCppFunctionUsageCounts(tokens, pairs, functionUsageInfo);
+		fileAnalyses.push({ file, source, tokens, pairs, classRanges, typeDeclarations, functions });
+	}
+	for (let fileIndex = 0; fileIndex < fileAnalyses.length; fileIndex += 1) {
+		const analysis = fileAnalyses[fileIndex];
+		const file = analysis.file;
+		const source = analysis.source;
+		const tokens = analysis.tokens;
+		const pairs = analysis.pairs;
+		const typeDeclarations = analysis.typeDeclarations;
 		for (let typeIndex = 0; typeIndex < typeDeclarations.length; typeIndex += 1) {
 			const declaration = typeDeclarations[typeIndex];
 			const nameToken = tokens[declaration.nameToken];
 			recordDeclaration(duplicateBuckets, declaration.kind, declaration.name, file, nameToken.line, nameToken.column);
 			exportedTypes.push({ name: declaration.name, file, line: nameToken.line, column: nameToken.column });
 		}
-		const functions = collectCppFunctionDefinitions(tokens, pairs, classRanges);
+		const functions = analysis.functions;
 		const facadeStats = createCppFacadeStats(functions, tokens);
 		lintCppSimpleTokenPatterns(file, tokens, lintIssues);
 		lintCppHotPathCalls(file, tokens, pairs, lintIssues);
@@ -82,13 +109,15 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 					tokens[info.nameToken].column,
 					info.wrapperTarget,
 				);
-				pushLintIssue(
-					lintIssues,
-					file,
-					tokens[info.nameToken],
-					'single_line_method_pattern',
-					'Single-line wrapper function/method is forbidden. Prefer direct logic over delegation wrappers.',
-				);
+				if (!isCppSingleLineWrapperAllowedByUsage(info, functionUsageInfo)) {
+					pushLintIssue(
+						lintIssues,
+						file,
+						tokens[info.nameToken],
+						'single_line_method_pattern',
+						'Single-line wrapper function/method is forbidden. Prefer direct logic over delegation wrappers.',
+					);
+				}
 				if (facadeStats !== null) {
 					if (facadeStats.wrapperCount === 0) {
 						facadeStats.firstWrapperToken = tokens[info.nameToken];
