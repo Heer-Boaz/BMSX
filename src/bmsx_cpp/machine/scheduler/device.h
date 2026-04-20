@@ -38,8 +38,7 @@ public:
 	i64 nextDeadline();
 	bool hasDueTimer();
 	uint16_t popDueTimer();
-	void scheduleVblankBegin(i64 deadlineCycles);
-	void scheduleVblankEnd(i64 deadlineCycles);
+	void scheduleVblankTimer(uint8_t timerKind, i64 deadlineCycles);
 	void scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles);
 	void cancelDeviceService(uint8_t deviceKind);
 

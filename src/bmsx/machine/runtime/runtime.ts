@@ -87,6 +87,7 @@ export type FrameState = {
 };
 
 type ProgramSource = 'engine' | 'cart';
+type RuntimeAssetLayer = Awaited<ReturnType<typeof buildRuntimeAssetLayer>>;
 
 export var api: Api; // Initialized in Runtime constructor
 
@@ -94,8 +95,7 @@ export class Runtime {
 	private static _instance: Runtime = null;
 
 	public static createInstance(options: RuntimeOptions): Runtime {
-		const existing = Runtime._instance;
-		if (existing) {
+		if (Runtime._instance) {
 			throw runtimeFault('instance already exists.');
 		}
 		return new Runtime(options);
@@ -241,28 +241,29 @@ export class Runtime {
 			index: engineLayer.index,
 			allowedPayloadIds: ['system'],
 		});
+		const engineMachine = engineLayer.index.machine;
 
 		if (!cartridge) {
 			$.set_source(engineSource);
 			$.set_cart_manifest(null);
-			$.set_machine_manifest(engineLayer.index.machine);
+			$.set_machine_manifest(engineMachine);
 			$.set_cart_project_root_path(null);
 			$.set_inputmap(1, { keyboard: null, gamepad: null, pointer: null }); // Default input mapping for player 1 is required even with no cart to prevent errors
 
 			$.set_sources(engineLuaSources);
 			const engineMemorySpecs = resolveRuntimeMemoryMapSpecs({
-				machine: engineLayer.index.machine,
-				engineMachine: engineLayer.index.machine,
+				machine: engineMachine,
+				engineMachine,
 				engineSource,
 				assetSource: engineSource,
 				assetLayers: [engineLayer],
 			});
 			configureMemoryMap(engineMemorySpecs);
-			const enginePerfSpecs = getMachinePerfSpecs(engineLayer.index.machine);
+			const enginePerfSpecs = getMachinePerfSpecs(engineMachine);
 			const ufpsScaled = resolveUfpsScaled(enginePerfSpecs.ufps);
 			const cpuHz = resolveCpuHz(enginePerfSpecs.cpu_freq_hz);
 			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
-			const engineRenderSize = resolveRuntimeRenderSize(engineLayer.index.machine);
+			const engineRenderSize = resolveRuntimeRenderSize(engineMachine);
 			const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, engineRenderSize.height);
 			const memory = new Memory({
 				engineRom: new Uint8Array(engineLayer.payload),
@@ -300,8 +301,12 @@ export class Runtime {
 		}
 
 		const cartLayer = await buildRuntimeAssetLayer({ blob: cartridge, id: 'cart' });
+		const engineMachine = engineLayer.index.machine;
 		const overlayBlob = $.workspace_overlay;
-		const overlayLayer = overlayBlob ? await buildRuntimeAssetLayer({ blob: overlayBlob, id: 'overlay' }) : null;
+		let overlayLayer: RuntimeAssetLayer | null = null;
+		if (overlayBlob) {
+			overlayLayer = await buildRuntimeAssetLayer({ blob: overlayBlob, id: 'overlay' });
+		}
 		const layers = [];
 		if (overlayLayer) {
 			layers.push({ id: overlayLayer.id, index: overlayLayer.index, payload: overlayLayer.payload });
@@ -311,7 +316,7 @@ export class Runtime {
 		const assetSource = new AssetSourceStack(layers);
 		$.set_source(assetSource);
 		$.set_cart_manifest(cartLayer.index.cart_manifest);
-		$.set_machine_manifest(cartLayer.index.machine);
+		$.set_machine_manifest(engineMachine);
 		$.set_cart_project_root_path(cartLayer.index.projectRootPath);
 
 		const cartSource = new AssetSourceStack([{ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload }]);
@@ -334,7 +339,7 @@ export class Runtime {
 
 		const memoryLimits = resolveRuntimeMemoryMapSpecs({
 			machine: cartLayer.index.machine,
-			engineMachine: engineLayer.index.machine,
+			engineMachine,
 			engineSource,
 			assetSource,
 			assetLayers: overlayLayer ? [engineLayer, cartLayer, overlayLayer] : [engineLayer, cartLayer],
@@ -346,10 +351,14 @@ export class Runtime {
 		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
 		const cartRenderSize = resolveRuntimeRenderSize(cartLayer.index.machine);
 		const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, cartRenderSize.height);
+		let overlayRom: Uint8Array | null = null;
+		if (overlayLayer) {
+			overlayRom = new Uint8Array(overlayLayer.payload);
+		}
 		const memory = new Memory({
 			engineRom: new Uint8Array(engineLayer.payload),
 			cartRom: new Uint8Array(cartLayer.payload),
-			overlayRom: overlayLayer ? new Uint8Array(overlayLayer.payload) : null,
+			overlayRom,
 		});
 		const runtime = Runtime.createInstance({
 			playerIndex,

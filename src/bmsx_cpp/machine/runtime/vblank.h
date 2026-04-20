@@ -33,7 +33,6 @@ private:
 	void scheduleCurrentFrameTimers(Runtime& runtime);
 	void setVblankStatus(Runtime& runtime, bool active);
 	void enterVblank(Runtime& runtime);
-	void leaveVblank(Runtime& runtime);
 	void resetHaltIrqWait();
 	bool tryCompleteTickOnPendingVblankIrq(Runtime& runtime, FrameState& frameState);
 	bool isFrameBoundaryHalt(Runtime& runtime) const;

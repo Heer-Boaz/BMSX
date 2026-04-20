@@ -59,8 +59,7 @@ export class DeviceScheduler {
 		if (!this.schedulerSliceActive) {
 			return this.schedulerNowCycles;
 		}
-		const consumed = this.activeSliceBudgetCycles - this.cpu.instructionBudgetRemaining;
-		return this.activeSliceBaseCycle + consumed;
+		return this.activeSliceBaseCycle + (this.activeSliceBudgetCycles - this.cpu.instructionBudgetRemaining);
 	}
 
 	public beginCpuSlice(sliceBudget: number): void {
@@ -98,17 +97,16 @@ export class DeviceScheduler {
 		return (kind << TIMER_EVENT_KIND_SHIFT) | payload;
 	}
 
-	public scheduleVblankBegin(deadlineCycles: number): void {
-		const generation = nextTimerGeneration(this.vblankEnterTimerGeneration);
-		this.vblankEnterTimerGeneration = generation;
-		this.pushTimer(deadlineCycles, TIMER_KIND_VBLANK_BEGIN, 0, generation);
-		this.requestYieldForEarlierDeadline(deadlineCycles);
-	}
-
-	public scheduleVblankEnd(deadlineCycles: number): void {
-		const generation = nextTimerGeneration(this.vblankEndTimerGeneration);
-		this.vblankEndTimerGeneration = generation;
-		this.pushTimer(deadlineCycles, TIMER_KIND_VBLANK_END, 0, generation);
+	public scheduleVblankTimer(timerKind: number, deadlineCycles: number): void {
+		let generation: number;
+		if (timerKind === TIMER_KIND_VBLANK_BEGIN) {
+			generation = nextTimerGeneration(this.vblankEnterTimerGeneration);
+			this.vblankEnterTimerGeneration = generation;
+		} else {
+			generation = nextTimerGeneration(this.vblankEndTimerGeneration);
+			this.vblankEndTimerGeneration = generation;
+		}
+		this.pushTimer(deadlineCycles, timerKind, 0, generation);
 		this.requestYieldForEarlierDeadline(deadlineCycles);
 	}
 
@@ -173,8 +171,7 @@ export class DeviceScheduler {
 			return;
 		}
 		let index = 0;
-		const half = lastIndex >> 1;
-		while (index < half) {
+		while (index < (lastIndex >> 1)) {
 			let child = (index << 1) + 1;
 			if (child + 1 < lastIndex && this.timerDeadlines[child + 1]! < this.timerDeadlines[child]!) {
 				child += 1;
@@ -209,10 +206,7 @@ export class DeviceScheduler {
 
 	private discardStaleTopTimers(): void {
 		while (this.timerCount > 0) {
-			const kind = this.timerKinds[0]!;
-			const payload = this.timerPayloads[0]!;
-			const generation = this.timerGenerations[0]!;
-			if (this.isTimerCurrent(kind, payload, generation)) {
+			if (this.isTimerCurrent(this.timerKinds[0]!, this.timerPayloads[0]!, this.timerGenerations[0]!)) {
 				return;
 			}
 			this.removeTopTimer();

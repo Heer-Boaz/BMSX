@@ -33,7 +33,7 @@ export function isCppNullToken(token: CppToken): boolean {
 
 export function isCppAssignmentOperator(text: string): boolean {
 	return text === '=' || text === '+=' || text === '-=' || text === '*=' || text === '/=' || text === '%=' ||
-		text === '<<=' || text === '>>=';
+		text === '<<=' || text === '>>=' || text === '&=' || text === '|=' || text === '^=';
 }
 
 export function previousCppIdentifier(tokens: readonly CppToken[], index: number): number {

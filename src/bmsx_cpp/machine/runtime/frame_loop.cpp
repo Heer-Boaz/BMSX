@@ -45,13 +45,13 @@ void FrameLoopState::beginFrameState(Runtime& runtime) {
 	auto key = [&runtime](std::string_view text) {
 		return valueString(runtime.machine().cpu().internString(text));
 	};
-	auto* gameTable = asTable(runtime.machine().cpu().getGlobalByKey(key("game")));
-	auto* viewportTable = asTable(gameTable->get(key("viewportsize")));
-	auto viewSize = EngineCore::instance().view()->viewportSize;
+	auto* const gameTable = asTable(runtime.machine().cpu().getGlobalByKey(key("game")));
+	auto* const viewportTable = asTable(gameTable->get(key("viewportsize")));
+	const auto viewSize = EngineCore::instance().view()->viewportSize;
 	viewportTable->set(key("x"), valueNumber(static_cast<double>(viewSize.x)));
 	viewportTable->set(key("y"), valueNumber(static_cast<double>(viewSize.y)));
-	auto* viewTable = asTable(gameTable->get(key("view")));
-	auto* view = EngineCore::instance().view();
+	auto* const viewTable = asTable(gameTable->get(key("view")));
+	auto* const view = EngineCore::instance().view();
 	viewTable->set(key("crt_postprocessing_enabled"), valueBool(view->crt_postprocessing_enabled));
 	viewTable->set(key("enable_noise"), valueBool(view->applyNoise));
 	viewTable->set(key("enable_colorbleed"), valueBool(view->applyColorBleed));
@@ -90,7 +90,7 @@ void FrameLoopState::executeUpdateCallback(Runtime& runtime) {
 			if (!runtime.hasEntryContinuation()) {
 				return;
 			}
-			RunResult result = runtime.cpuExecution.runWithBudget(runtime, frameState);
+			const RunResult result = runtime.cpuExecution.runWithBudget(runtime, frameState);
 			if (runtime.machine().cpu().isHaltedUntilIrq()) {
 				if (runtime.vblank.runHaltedUntilIrq(runtime, frameState)) {
 					return;
@@ -128,11 +128,11 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 		return true;
 	}
 
-	FrameState* const previousState = frameActive ? &frameState : nullptr;
-	const int previousRemaining = previousState != nullptr ? previousState->cycleBudgetRemaining : -1;
+	const bool previousFrameActive = frameActive;
+	const int previousRemaining = previousFrameActive ? frameState.cycleBudgetRemaining : -1;
 	const bool previousPending = runtime.hasEntryContinuation();
 	const i64 previousSequence = runtime.frameScheduler.lastTickSequence;
-	bool startedFrame = false;
+	const bool startedFrame = !frameActive;
 	if (frameActive) {
 		if (frameState.cycleBudgetRemaining <= 0 && !runtime.frameScheduler.refillFrameBudget(runtime, frameState)) {
 			return false;
@@ -141,7 +141,6 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 		if (!runtime.frameScheduler.startScheduledFrame(runtime)) {
 			return false;
 		}
-		startedFrame = true;
 	}
 
 	if (runtime.hasEntryContinuation()) {
@@ -152,9 +151,9 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 		auto key = [&runtime](std::string_view text) {
 			return valueString(runtime.machine().cpu().internString(text));
 		};
-		auto* gameTable = asTable(runtime.machine().cpu().getGlobalByKey(key("game")));
-		auto* viewTable = asTable(gameTable->get(key("view")));
-		auto* view = EngineCore::instance().view();
+		auto* const gameTable = asTable(runtime.machine().cpu().getGlobalByKey(key("game")));
+		auto* const viewTable = asTable(gameTable->get(key("view")));
+		auto* const view = EngineCore::instance().view();
 		auto readViewBool = [](Value value, const char* field) -> bool {
 			if (!valueIsBool(value)) {
 				throw BMSX_RUNTIME_ERROR(std::string("game.view.") + field + " must be boolean.");
@@ -175,11 +174,11 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	frameState.updateExecuted = !runtime.hasEntryContinuation();
 	runtime.machine().vdp().flushAssetEdits();
 	finalizeUpdateSlice(runtime);
-	FrameState* const nextState = frameActive ? &frameState : nullptr;
-	if (nextState != previousState) {
+	const bool nextFrameActive = frameActive;
+	if (nextFrameActive != previousFrameActive) {
 		return true;
 	}
-	if (nextState != nullptr && nextState->cycleBudgetRemaining != previousRemaining) {
+	if (nextFrameActive && frameState.cycleBudgetRemaining != previousRemaining) {
 		return true;
 	}
 	if (runtime.hasEntryContinuation() != previousPending) {
@@ -220,32 +219,32 @@ void FrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platform
 
 		runtime.screen.clearPresentation();
 		if (!platformPaused) {
-			auto ideInputStart = std::chrono::steady_clock::now();
+			const auto ideInputStart = std::chrono::steady_clock::now();
 			runtime.tickIdeInput();
-			auto ideInputEnd = std::chrono::steady_clock::now();
+			const auto ideInputEnd = std::chrono::steady_clock::now();
 			engine.m_last_tick_timing.workbenchModeInputMs = to_ms(ideInputEnd - ideInputStart);
 
-			auto terminalInputStart = std::chrono::steady_clock::now();
+			const auto terminalInputStart = std::chrono::steady_clock::now();
 			runtime.tickTerminalInput();
-			auto terminalInputEnd = std::chrono::steady_clock::now();
+			const auto terminalInputEnd = std::chrono::steady_clock::now();
 			engine.m_last_tick_timing.runtimeTerminalInputMs = to_ms(terminalInputEnd - terminalInputStart);
 
 			const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
-			auto updateStart = std::chrono::steady_clock::now();
+			const auto updateStart = std::chrono::steady_clock::now();
 			engine.m_delta_time = runtime.timing.frameDurationMs / 1000.0;
 			runtime.frameScheduler.run(runtime, hostDeltaMs);
 			runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
-			auto updateEnd = std::chrono::steady_clock::now();
+			const auto updateEnd = std::chrono::steady_clock::now();
 			engine.m_last_tick_timing.runtimeUpdateMs = to_ms(updateEnd - updateStart);
 
-			auto ideStart = std::chrono::steady_clock::now();
+			const auto ideStart = std::chrono::steady_clock::now();
 			runtime.tickIDE();
-			auto ideEnd = std::chrono::steady_clock::now();
+			const auto ideEnd = std::chrono::steady_clock::now();
 			engine.m_last_tick_timing.workbenchModeMs = to_ms(ideEnd - ideStart);
 
-			auto terminalStart = std::chrono::steady_clock::now();
+			const auto terminalStart = std::chrono::steady_clock::now();
 			runtime.tickTerminalMode();
-			auto terminalEnd = std::chrono::steady_clock::now();
+			const auto terminalEnd = std::chrono::steady_clock::now();
 			engine.m_last_tick_timing.runtimeTerminalMs = to_ms(terminalEnd - terminalStart);
 		}
 		engine.m_delta_time = hostDeltaSeconds;

@@ -40,8 +40,7 @@ i64 DeviceScheduler::currentNowCycles() const {
 	if (!m_schedulerSliceActive) {
 		return m_schedulerNowCycles;
 	}
-	const int consumed = m_activeSliceBudgetCycles - m_cpu.instructionBudgetRemaining;
-	return m_activeSliceBaseCycle + consumed;
+	return m_activeSliceBaseCycle + (m_activeSliceBudgetCycles - m_cpu.instructionBudgetRemaining);
 }
 
 void DeviceScheduler::beginCpuSlice(int sliceBudget) {
@@ -79,17 +78,16 @@ uint16_t DeviceScheduler::popDueTimer() {
 	return static_cast<uint16_t>((static_cast<uint16_t>(kind) << TIMER_EVENT_KIND_SHIFT) | payload);
 }
 
-void DeviceScheduler::scheduleVblankBegin(i64 deadlineCycles) {
-	const uint32_t generation = nextTimerGeneration(m_vblankEnterTimerGeneration);
-	m_vblankEnterTimerGeneration = generation;
-	pushTimer(deadlineCycles, TimerKindVblankBegin, 0u, generation);
-	requestYieldForEarlierDeadline(deadlineCycles);
-}
-
-void DeviceScheduler::scheduleVblankEnd(i64 deadlineCycles) {
-	const uint32_t generation = nextTimerGeneration(m_vblankEndTimerGeneration);
-	m_vblankEndTimerGeneration = generation;
-	pushTimer(deadlineCycles, TimerKindVblankEnd, 0u, generation);
+void DeviceScheduler::scheduleVblankTimer(uint8_t timerKind, i64 deadlineCycles) {
+	uint32_t generation;
+	if (timerKind == TimerKindVblankBegin) {
+		generation = nextTimerGeneration(m_vblankEnterTimerGeneration);
+		m_vblankEnterTimerGeneration = generation;
+	} else {
+		generation = nextTimerGeneration(m_vblankEndTimerGeneration);
+		m_vblankEndTimerGeneration = generation;
+	}
+	pushTimer(deadlineCycles, timerKind, 0u, generation);
 	requestYieldForEarlierDeadline(deadlineCycles);
 }
 
@@ -101,7 +99,8 @@ void DeviceScheduler::scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycl
 }
 
 void DeviceScheduler::cancelDeviceService(uint8_t deviceKind) {
-	m_deviceServiceTimerGeneration[deviceKind] = nextTimerGeneration(m_deviceServiceTimerGeneration[deviceKind]);
+	uint32_t& generation = m_deviceServiceTimerGeneration[deviceKind];
+	generation = nextTimerGeneration(generation);
 }
 
 void DeviceScheduler::clearTimerHeap() {
@@ -154,8 +153,7 @@ void DeviceScheduler::removeTopTimer() {
 		return;
 	}
 	size_t index = 0u;
-	const size_t half = lastIndex >> 1u;
-	while (index < half) {
+	while (index < (lastIndex >> 1u)) {
 		size_t child = (index << 1u) + 1u;
 		if (child + 1u < lastIndex && m_timerDeadlines[child + 1u] < m_timerDeadlines[child]) {
 			child += 1u;
@@ -190,10 +188,7 @@ bool DeviceScheduler::isTimerCurrent(uint8_t kind, uint8_t payload, uint32_t gen
 
 void DeviceScheduler::discardStaleTopTimers() {
 	while (m_timerCount > 0u) {
-		const uint8_t kind = m_timerKinds[0];
-		const uint8_t payload = m_timerPayloads[0];
-		const uint32_t generation = m_timerGenerations[0];
-		if (isTimerCurrent(kind, payload, generation)) {
+		if (isTimerCurrent(m_timerKinds[0], m_timerPayloads[0], m_timerGenerations[0])) {
 			return;
 		}
 		removeTopTimer();

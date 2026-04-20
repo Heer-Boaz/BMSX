@@ -230,7 +230,7 @@ void Runtime::setGlobal(std::string_view name, const Value& value) {
 }
 
 void Runtime::registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost) {
-	auto nativeFn = m_machine.cpu().createNativeFunction(name, std::move(fn), cost);
+	const auto nativeFn = m_machine.cpu().createNativeFunction(name, std::move(fn), cost);
 	m_machine.cpu().setGlobalByKey(luaKey(name), nativeFn);
 }
 

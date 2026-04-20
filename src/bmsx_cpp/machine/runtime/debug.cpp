@@ -155,7 +155,7 @@ std::vector<std::string> extractExpressionCandidates(const SourceRange& range, c
 			}
 			end = segmentEnd;
 		}
-		std::string expression = fragment.substr(index, end - index);
+		const std::string expression = fragment.substr(index, end - index);
 		if (LUA_KEYWORDS.find(expression) == LUA_KEYWORDS.end() && seen.insert(expression).second) {
 			result.push_back(std::move(expression));
 			if (static_cast<int>(result.size()) >= MAX_DEBUG_EXPRESSIONS) {
@@ -218,7 +218,7 @@ std::optional<Value> resolveRootExpressionValue(
 	const SourceRange& range,
 	const std::string& rootName
 ) {
-	std::string rootKeyName = runtime.machine().cpu().stringPool().toString(asStringId(debugKey(runtime, rootName)));
+	const std::string rootKeyName = runtime.machine().cpu().stringPool().toString(asStringId(debugKey(runtime, rootName)));
 	if (metadata && protoIndex >= 0 && protoIndex < static_cast<int>(metadata->localSlotsByProto.size())) {
 		const std::vector<LocalSlotDebug>& slots = metadata->localSlotsByProto[static_cast<size_t>(protoIndex)];
 		if (const LocalSlotDebug* slot = selectLocalSlot(slots, rootKeyName, range)) {
@@ -257,7 +257,7 @@ std::optional<Value> resolveExpressionValue(
 ) {
 	const size_t firstDot = expression.find('.');
 	const std::string rootName = firstDot == std::string::npos ? expression : expression.substr(0, firstDot);
-	std::optional<Value> root = resolveRootExpressionValue(runtime, metadata, frameIndex, protoIndex, range, rootName);
+	const std::optional<Value> root = resolveRootExpressionValue(runtime, metadata, frameIndex, protoIndex, range, rootName);
 	if (!root.has_value()) {
 		return std::nullopt;
 	}

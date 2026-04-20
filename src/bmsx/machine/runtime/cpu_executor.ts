@@ -25,8 +25,7 @@ export class CpuExecutionState {
 			this.debugCycleRuns += 1;
 			this.debugCycleRunsTotal += 1;
 		}
-		const budgetBefore = state.cycleBudgetRemaining;
-		let remaining = budgetBefore;
+		let remaining = state.cycleBudgetRemaining;
 		let result = RunResult.Yielded;
 		runDueRuntimeTimers(runtime);
 		while (remaining > 0) {

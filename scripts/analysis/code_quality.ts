@@ -48,6 +48,10 @@ type LintBinding = {
 	writeCount: number;
 	isExported: boolean;
 	isTopLevel: boolean;
+	initializerTextLength: number;
+	isSimpleAliasInitializer: boolean;
+	firstReadParentKind: ts.SyntaxKind | null;
+	firstReadParentOperatorKind: ts.SyntaxKind | null;
 };
 
 type RepeatedExpressionInfo = {
@@ -908,6 +912,67 @@ function unwrapExpression(node: ts.Expression): ts.Expression {
 	}
 }
 
+function isSimpleAliasExpression(node: ts.Expression | undefined): boolean {
+	if (node === undefined) {
+		return false;
+	}
+	const unwrapped = unwrapExpression(node);
+	return ts.isIdentifier(unwrapped) || ts.isPropertyAccessExpression(unwrapped);
+}
+
+function normalizeSingleUseContext(node: ts.Node): { kind: ts.SyntaxKind; operatorKind: ts.SyntaxKind | null } {
+	let current: ts.Node = node;
+	while (
+		ts.isParenthesizedExpression(current)
+		|| ts.isAsExpression(current)
+		|| ts.isNonNullExpression(current)
+		|| ((ts as unknown as { isTypeAssertionExpression?: (node: ts.Node) => node is ts.TypeAssertion }).isTypeAssertionExpression?.(current) ?? false)
+	) {
+		current = current.parent;
+	}
+	return {
+		kind: current.kind,
+		operatorKind: ts.isBinaryExpression(current) ? current.operatorToken.kind : null,
+	};
+}
+
+function isSingleUseSuppressingBinaryOperator(kind: ts.SyntaxKind): boolean {
+	return kind === ts.SyntaxKind.EqualsEqualsToken
+		|| kind === ts.SyntaxKind.EqualsEqualsEqualsToken
+		|| kind === ts.SyntaxKind.ExclamationEqualsToken
+		|| kind === ts.SyntaxKind.ExclamationEqualsEqualsToken
+		|| kind === ts.SyntaxKind.LessThanToken
+		|| kind === ts.SyntaxKind.LessThanEqualsToken
+		|| kind === ts.SyntaxKind.GreaterThanToken
+		|| kind === ts.SyntaxKind.GreaterThanEqualsToken
+		|| kind === ts.SyntaxKind.AmpersandAmpersandToken
+		|| kind === ts.SyntaxKind.BarBarToken
+		|| kind === ts.SyntaxKind.QuestionQuestionToken;
+}
+
+function shouldReportSingleUseLocal(binding: LintBinding): boolean {
+	if (!binding.hasInitializer || !binding.isSimpleAliasInitializer) {
+		return false;
+	}
+	if (binding.initializerTextLength > 32) {
+		return false;
+	}
+	if (
+		binding.firstReadParentKind === ts.SyntaxKind.PropertyAccessExpression
+		|| binding.firstReadParentKind === ts.SyntaxKind.ElementAccessExpression
+	) {
+		return false;
+	}
+	if (
+		binding.firstReadParentKind === ts.SyntaxKind.BinaryExpression
+		&& binding.firstReadParentOperatorKind !== null
+		&& isSingleUseSuppressingBinaryOperator(binding.firstReadParentOperatorKind)
+	) {
+		return false;
+	}
+	return true;
+}
+
 function isFunctionExpressionLike(node: ts.Node): node is ts.ArrowFunction | ts.FunctionExpression {
 	return ts.isArrowFunction(node) || ts.isFunctionExpression(node);
 }
@@ -1265,13 +1330,18 @@ function repeatedExpressionFingerprint(node: ts.Expression, sourceFile: ts.Sourc
 	if (isExpressionChildOfLargerExpression(node, parent)) {
 		return null;
 	}
+	if (ts.isCallExpression(node)) {
+		return null;
+	}
 	if (
 		!ts.isConditionalExpression(node)
 		&& !ts.isBinaryExpression(node)
-		&& !ts.isCallExpression(node)
 		&& !ts.isElementAccessExpression(node)
 		&& !ts.isPropertyAccessExpression(node)
 	) {
+		return null;
+	}
+	if (ts.isBinaryExpression(node) && isTsAssignmentOperator(node.operatorToken.kind)) {
 		return null;
 	}
 	const text = node.getText(sourceFile).replace(/\s+/g, ' ');
@@ -1760,7 +1830,7 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 			return;
 		}
 		for (const [text, info] of scope) {
-			if (info.count <= 1) {
+			if (info.count <= 2) {
 				continue;
 			}
 			issues.push({
@@ -1796,14 +1866,14 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 						message: `Prefer "const" for "${binding.name}"; it is never reassigned.`,
 					});
 				}
-				if (binding.readCount === 1) {
+				if (binding.readCount === 1 && shouldReportSingleUseLocal(binding)) {
 					issues.push({
 						kind: 'single_use_local_pattern',
 						file: sourceFile.fileName,
 						line: binding.line,
 						column: binding.column,
 						name: 'single_use_local_pattern',
-						message: `Local "${binding.name}" is read only once in this scope.`,
+						message: `Local alias "${binding.name}" is read only once in this scope.`,
 					});
 				}
 			}
@@ -1827,17 +1897,22 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 		if (!scope) {
 			return;
 		}
+		const initializer = declaration.initializer;
 		const position = sourceFile.getLineAndCharacterOfPosition(declaration.name.getStart());
 		const binding: LintBinding = {
 			name,
 			line: position.line + 1,
 			column: position.character + 1,
 			isConst,
-			hasInitializer: declaration.initializer !== undefined,
+			hasInitializer: initializer !== undefined,
 			readCount: 0,
 			writeCount: 0,
 			isExported: isTopLevel && isExportedVariableDeclaration(declaration),
 			isTopLevel,
+			initializerTextLength: initializer === undefined ? 0 : initializer.getText(sourceFile).replace(/\s+/g, ' ').trim().length,
+			isSimpleAliasInitializer: isSimpleAliasExpression(initializer),
+			firstReadParentKind: null,
+			firstReadParentOperatorKind: null,
 		};
 		let list = scope.get(name);
 		if (list === undefined) {
@@ -1863,6 +1938,11 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 			if (isWriteIdentifier(node, parent)) {
 				binding.writeCount += 1;
 			} else {
+				if (binding.readCount === 0) {
+					const useContext = normalizeSingleUseContext(parent);
+					binding.firstReadParentKind = useContext.kind;
+					binding.firstReadParentOperatorKind = useContext.operatorKind;
+				}
 				binding.readCount += 1;
 			}
 			return;

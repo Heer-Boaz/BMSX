@@ -38,9 +38,14 @@ type CppLocalBinding = {
 	line: number;
 	column: number;
 	isConst: boolean;
+	isReference: boolean;
 	hasInitializer: boolean;
 	readCount: number;
 	writeCount: number;
+	initializerTextLength: number;
+	isSimpleAliasInitializer: boolean;
+	firstReadLeftText: string | null;
+	firstReadRightText: string | null;
 };
 
 export type CppFunctionUsageInfo = {
@@ -226,17 +231,20 @@ export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], 
 			continue;
 		}
 		markBindingUses(binding, tokens, info.bodyStart, info.bodyEnd);
-		if (!binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
+		if (!binding.isConst && !binding.isReference && binding.hasInitializer && binding.writeCount === 0) {
 			pushLintIssue(issues, file, tokens[binding.nameToken], 'local_const_pattern', `Prefer "const" for "${binding.name}"; it is never reassigned.`);
 		}
-		if (binding.readCount === 1) {
-			pushLintIssue(issues, file, tokens[binding.nameToken], 'single_use_local_pattern', `Local "${binding.name}" is read only once in this scope.`);
+		if (binding.readCount === 1 && shouldReportSingleUseLocal(binding)) {
+			pushLintIssue(issues, file, tokens[binding.nameToken], 'single_use_local_pattern', `Local alias "${binding.name}" is read only once in this scope.`);
 		}
 	}
 }
 
 function declarationFromStatement(tokens: readonly CppToken[], start: number, end: number): CppLocalBinding | null {
-	while (start < end && tokens[start].text === 'const') {
+	const declarationStart = start;
+	let isLeadingConst = false;
+	while (start < end && (tokens[start].text === 'const' || tokens[start].text === 'constexpr')) {
+		isLeadingConst = true;
 		start += 1;
 	}
 	if (start >= end || DECLARATION_START_BLOCKLIST.has(tokens[start].text)) {
@@ -268,11 +276,16 @@ function declarationFromStatement(tokens: readonly CppToken[], start: number, en
 	if (DECLARATION_NAME_BLOCKLIST.has(nameToken.text) || isIgnoredName(nameToken.text)) {
 		return null;
 	}
-	let isConst = false;
-	for (let index = start; index < nameIndex; index += 1) {
+	const initializerText = trimmedCppExpressionText(tokens, initializerIndex + 1, end);
+	let isConst = isLeadingConst;
+	let isReference = false;
+	for (let index = declarationStart; index < nameIndex; index += 1) {
 		if (tokens[index].text === 'const' || tokens[index].text === 'constexpr') {
 			isConst = true;
 			break;
+		}
+		if (tokens[index].text === '&' || tokens[index].text === '&&') {
+			isReference = true;
 		}
 	}
 	return {
@@ -281,9 +294,14 @@ function declarationFromStatement(tokens: readonly CppToken[], start: number, en
 		line: nameToken.line,
 		column: nameToken.column,
 		isConst,
+		isReference,
 		hasInitializer: true,
 		readCount: 0,
 		writeCount: 0,
+		initializerTextLength: initializerText.length,
+		isSimpleAliasInitializer: isCppSimpleAliasInitializer(tokens, initializerIndex + 1, end),
+		firstReadLeftText: null,
+		firstReadRightText: null,
 	};
 }
 
@@ -299,9 +317,61 @@ function markBindingUses(binding: CppLocalBinding, tokens: readonly CppToken[], 
 		if (isWriteUse(tokens, index)) {
 			binding.writeCount += 1;
 		} else {
+			if (binding.readCount === 0) {
+				binding.firstReadLeftText = tokens[index - 1]?.text ?? null;
+				binding.firstReadRightText = tokens[index + 1]?.text ?? null;
+			}
 			binding.readCount += 1;
 		}
 	}
+}
+
+function isCppSimpleAliasInitializer(tokens: readonly CppToken[], start: number, end: number): boolean {
+	let seenToken = false;
+	for (let index = start; index < end; index += 1) {
+		const token = tokens[index];
+		if (token.kind === 'id') {
+			seenToken = true;
+			continue;
+		}
+		if (token.text === '.' || token.text === '->' || token.text === '::') {
+			continue;
+		}
+		return false;
+	}
+	return seenToken;
+}
+
+function isCppSingleUseSuppressingToken(text: string | null): boolean {
+	return text === '.'
+		|| text === '->'
+		|| text === '::'
+		|| text === '['
+		|| text === ']'
+		|| text === '=='
+		|| text === '==='
+		|| text === '!='
+		|| text === '!=='
+		|| text === '<'
+		|| text === '<='
+		|| text === '>'
+		|| text === '>='
+		|| text === '&&'
+		|| text === '||'
+		|| text === '??';
+}
+
+function shouldReportSingleUseLocal(binding: CppLocalBinding): boolean {
+	if (!binding.hasInitializer || !binding.isSimpleAliasInitializer) {
+		return false;
+	}
+	if (binding.initializerTextLength > 32) {
+		return false;
+	}
+	if (isCppSingleUseSuppressingToken(binding.firstReadLeftText) || isCppSingleUseSuppressingToken(binding.firstReadRightText)) {
+		return false;
+	}
+	return true;
 }
 
 function isWriteUse(tokens: readonly CppToken[], index: number): boolean {
@@ -605,13 +675,6 @@ export function lintCppRepeatedExpressions(file: string, tokens: readonly CppTok
 		}
 		expressions.set(text, { token: tokens[start], count: 1 });
 	};
-	for (let index = info.bodyStart + 1; index < info.bodyEnd; index += 1) {
-		if (tokens[index].text === '(' && pairs[index] > index && pairs[index] <= info.bodyEnd && cppCallTarget(tokens, index) !== null) {
-			const start = findCppAccessChainStart(tokens, index - 1);
-			record(start, pairs[index] + 1);
-			index = pairs[index];
-		}
-	}
 	const ranges = collectCppStatementRanges(tokens, info.bodyStart + 1, info.bodyEnd);
 	for (let index = 0; index < ranges.length; index += 1) {
 		const start = ranges[index][0];
@@ -621,7 +684,7 @@ export function lintCppRepeatedExpressions(file: string, tokens: readonly CppTok
 		}
 	}
 	for (const [text, value] of expressions) {
-		if (value.count <= 1) {
+		if (value.count <= 2) {
 			continue;
 		}
 		issues.push({

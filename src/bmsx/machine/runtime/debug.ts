@@ -79,11 +79,10 @@ function extractExpressionCandidates(range: SourceRange, sourceText: string): st
 	return result;
 }
 
-function resolveLuaSourceRecord(runtime: Runtime, path: string): LuaSourceRecord | null {
-	return $.sources?.path2lua[path]
+function resolveLuaSourceRecord(runtime: Runtime, path: string): LuaSourceRecord | undefined {
+	return $.sources.path2lua[path]
 		?? runtime.cartLuaSources?.path2lua[path]
-		?? runtime.engineLuaSources?.path2lua[path]
-		?? null;
+		?? runtime.engineLuaSources?.path2lua[path];
 }
 
 function resourceSourceForPath(runtime: Runtime, path: string): string | null {
@@ -92,7 +91,10 @@ function resourceSourceForPath(runtime: Runtime, path: string): string | null {
 		return null;
 	}
 	const cached = getWorkspaceCachedSource(binding.source_path);
-	return cached !== null ? cached : binding.src;
+	if (cached === null) {
+		return binding.src;
+	}
+	return cached;
 }
 
 function formatInstructionOperandDebug(operand: InstructionOperandDebugInfo, registers: ReadonlyArray<Value>): string {
@@ -206,12 +208,11 @@ function collectSourceExpressionDebug(runtime: Runtime, range: SourceRange, sour
 		return [];
 	}
 	const frameIndex = callStack.length - 1;
-	const protoIndex = callStack[frameIndex].protoIndex;
 	const expressions = extractExpressionCandidates(range, source);
 	const result: string[] = [];
 	for (let index = 0; index < expressions.length; index += 1) {
 		const expression = expressions[index];
-		const resolved = resolveExpressionValue(runtime, frameIndex, protoIndex, range, registers, expression);
+		const resolved = resolveExpressionValue(runtime, frameIndex, callStack[frameIndex].protoIndex, range, registers, expression);
 		if (!resolved.found) {
 			continue;
 		}

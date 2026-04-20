@@ -89,50 +89,46 @@ export class FrameLoopState {
 		if (!$.running) {
 			return;
 		}
+		const screen = runtime.screen;
 		let hostDeltaMs = 0;
 		try {
 			$.input.pollInput();
-			runtime.screen.beginHostFrame(currentTime);
+			screen.beginHostFrame(currentTime);
 			workbenchMode.tickIdeInput(runtime);
 			workbenchMode.tickTerminalInput(runtime);
 			hostDeltaMs = Math.min(currentTime - this.currentTimeMs, MAX_FRAME_DELTA);
 			this.currentTimeMs = currentTime;
 
 			if ($.paused) {
-				runtime.screen.presentPausedFrame(runtime, hostDeltaMs);
+				screen.presentPausedFrame(runtime, hostDeltaMs);
 			} else {
-				runtime.screen.clearPresentation();
-				if (!runReady) {
-					if (runtime.executionOverlayActive) {
-						runtime.screen.runOverlay(runtime);
-					} else {
-						runtime.frameScheduler.clearQueuedTime();
-					}
-				} else if (runtime.executionOverlayActive) {
-					runtime.screen.runOverlay(runtime);
+				screen.clearPresentation();
+				if (runtime.executionOverlayActive) {
+					screen.runOverlay(runtime);
+				} else if (!runReady) {
+					runtime.frameScheduler.clearQueuedTime();
 				} else {
 					const previousTickSequence = runtime.frameScheduler.lastTickSequence;
 					$.deltatime = runtime.timing.frameDurationMs;
 					runtime.frameScheduler.run(runtime, hostDeltaMs);
-					runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
+					screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 				}
-				runtime.screen.presentPending(runtime, hostDeltaMs);
+				screen.presentPending(runtime, hostDeltaMs);
 			}
 		} catch (error) {
 			try {
 				workbenchMode.handleLuaError(runtime, error);
 				this.abandonFrameState(runtime);
-				runtime.screen.presentErrorOverlay(runtime, hostDeltaMs);
+				screen.presentErrorOverlay(runtime, hostDeltaMs);
 			} catch {
 				console.error(`Error while handling surfaced game error in runtime: ${error}`);
 				this.abandonFrameState(runtime);
 			}
 		}
-		runtime.screen.flushDebugReport(currentTime, runtime);
+		screen.flushDebugReport(currentTime, runtime);
 	}
 
 	private runActiveFrameState(runtime: Runtime, state: FrameState): void {
-		let fault: unknown = null;
 		try {
 			if (runtime.pendingCall === 'entry') {
 				this.runUpdatePhase(runtime, state);
@@ -141,11 +137,12 @@ export class FrameLoopState {
 			}
 			this.finalizeUpdateSlice(runtime, state);
 		} catch (error) {
-			fault = error;
-			workbenchMode.handleLuaError(runtime, error);
-		} finally {
-			if (fault !== null && this.currentFrameState !== null) {
-				this.abandonFrameState(runtime);
+			try {
+				workbenchMode.handleLuaError(runtime, error);
+			} finally {
+				if (this.currentFrameState !== null) {
+					this.abandonFrameState(runtime);
+				}
 			}
 		}
 	}
@@ -158,6 +155,8 @@ export class FrameLoopState {
 	}
 
 	private runUpdatePhase(runtime: Runtime, state: FrameState): void {
+		const cpu = runtime.machine.cpu;
+		const vblank = runtime.vblank;
 		if (!runtime.cartEntryAvailable) {
 			return;
 		}
@@ -173,18 +172,18 @@ export class FrameLoopState {
 		}
 		try {
 			while (true) {
-				if (runtime.machine.cpu.isHaltedUntilIrq() && runtime.vblank.runHaltedUntilIrq(runtime, state)) {
+				if (cpu.isHaltedUntilIrq() && vblank.runHaltedUntilIrq(runtime, state)) {
 					return;
 				}
-				if (runtime.vblank.consumeBackQueueClearAfterIrqWake()) {
+				if (vblank.consumeBackQueueClearAfterIrqWake()) {
 					clearBackQueues();
 				}
 				if (runtime.pendingCall !== 'entry') {
 					return;
 				}
 				const result = runtime.cpuExecution.runWithBudget(runtime, state);
-				if (runtime.machine.cpu.isHaltedUntilIrq()) {
-					if (runtime.vblank.runHaltedUntilIrq(runtime, state)) {
+				if (cpu.isHaltedUntilIrq()) {
+					if (vblank.runHaltedUntilIrq(runtime, state)) {
 						return;
 					}
 					continue;
