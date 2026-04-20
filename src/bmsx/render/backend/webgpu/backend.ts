@@ -496,26 +496,33 @@ export class WebGPUBackend implements GPUBackend {
 		const expectList = this.pipelineExpected.get(pipelineHandle.id) ?? [];
 		let bg = this.bindGroupCache.get(pipelineHandle.id);
 		const layout = (pipeline as GPURenderPipeline).getBindGroupLayout(0);
-		if (!bg) {
-			const entries: GPUBindGroupEntry[] = [];
-			let missing = false;
-			for (const exp of expectList) {
-				if (exp.kind === 'buffer') {
-					const buf = this.uniformBindings.get(exp.binding);
-					if (!buf) { missing = true; break; }
-					entries.push({ binding: exp.binding, resource: { buffer: buf } });
-				} else if (exp.kind === 'texture') {
-					const view = this.textureBindings.get(exp.binding);
-					if (!view) { missing = true; break; }
-					entries.push({ binding: exp.binding, resource: view });
-				} else if (exp.kind === 'sampler') {
-					const samp = this.samplerBindings.get(exp.binding);
-					if (!samp) { missing = true; break; }
-					entries.push({ binding: exp.binding, resource: samp });
+			if (!bg) {
+				const entries: GPUBindGroupEntry[] = [];
+				let missing = false;
+				for (const exp of expectList) {
+					switch (exp.kind) {
+						case 'buffer': {
+							const buf = this.uniformBindings.get(exp.binding);
+							if (!buf) { missing = true; break; }
+							entries.push({ binding: exp.binding, resource: { buffer: buf } });
+							break;
+						}
+						case 'texture': {
+							const view = this.textureBindings.get(exp.binding);
+							if (!view) { missing = true; break; }
+							entries.push({ binding: exp.binding, resource: view });
+							break;
+						}
+						case 'sampler': {
+							const samp = this.samplerBindings.get(exp.binding);
+							if (!samp) { missing = true; break; }
+							entries.push({ binding: exp.binding, resource: samp });
+							break;
+						}
+					}
 				}
-			}
-			if (!missing && entries.length === expectList.length) {
-				bg = this.device.createBindGroup({ layout, entries });
+				if (!missing && entries.length === expectList.length) {
+					bg = this.device.createBindGroup({ layout, entries });
 				this.bindGroupCache.set(pipelineHandle.id, bg);
 			}
 		}

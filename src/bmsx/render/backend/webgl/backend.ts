@@ -675,10 +675,20 @@ export class WebGLBackend implements GPUBackend {
 	}
 	accountUpload(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {
 		this.frameStats.bytesUploaded += bytes;
-		if (kind === 'vertex') this.frameStats.vertexBytes += bytes;
-		else if (kind === 'index') this.frameStats.indexBytes += bytes;
-		else if (kind === 'uniform') this.frameStats.uniformBytes += bytes;
-		else if (kind === 'texture') this.frameStats.textureBytes += bytes;
+		switch (kind) {
+			case 'vertex':
+				this.frameStats.vertexBytes += bytes;
+				break;
+			case 'index':
+				this.frameStats.indexBytes += bytes;
+				break;
+			case 'uniform':
+				this.frameStats.uniformBytes += bytes;
+				break;
+			case 'texture':
+				this.frameStats.textureBytes += bytes;
+				break;
+		}
 	}
 
 	// --- Cached buffer/VAO/state binds ---

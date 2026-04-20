@@ -237,6 +237,9 @@ export class TextureManager {
 	private imageCache = new Map<ImageKey, ImageCacheEntry>(); // currently used only for future dedupe
 	private gpuCache = new Map<TextureKey, GPUCacheEntry>();
 	private textureBarrier: AssetBarrier<TextureHandle>;
+	private readonly destroyTextureHandle = (handle: TextureHandle): void => {
+		this.backend.destroyTexture(handle);
+	};
 
 	constructor(private backend: GPUBackend, private defaultGroup: GateGroup = taskGate.group('texture:default')) {
 		this.textureBarrier = new AssetBarrier<TextureHandle>(this.defaultGroup);
@@ -285,16 +288,14 @@ export class TextureManager {
 						category: 'texture',
 						block_render: false,
 						tag: `tex:${key}`,
-						disposer: (h) => {
-							backend.destroyTexture(h);
-						},
+						disposer: this.destroyTextureHandle,
 						warnIfLongerMs: 1000,
 					}
 				);
 
 		// Entry may have been released while loading
 		const entry = this.gpuCache.get(key);
-		if (!entry) { this.backend.destroyTexture(handle); return key; }
+		if (!entry) { this.destroyTextureHandle(handle); return key; }
 		entry.handle = handle;
 		return key;
 	}
@@ -314,36 +315,34 @@ export class TextureManager {
 			// Put fallback or empty entry
 			this.gpuCache.set(key, { handle: fallbackHandle, refCount: 1, ownedFallback: false, barrier: this.textureBarrier });
 
-			void this.textureBarrier.acquire(
+		void this.textureBarrier.acquire(
 				key,
-			async () => {
-				const bmp = await loadBitmapFn() as TextureSource;
-				const real = this.backend!.createTexture(bmp, desc);
-				if ('close' in bmp) (bmp as { close: () => void }).close();
-				return real;
-			},
+				async () => {
+					const bmp = await loadBitmapFn() as TextureSource;
+					const real = this.backend!.createTexture(bmp, desc);
+					if ('close' in bmp) (bmp as { close: () => void }).close();
+					return real;
+				},
 					{
 						category: 'texture',
 						block_render: false,
 						tag: `tex:${key}`,
-						disposer: (h) => {
-							this.backend.destroyTexture(h);
-						},
+						disposer: this.destroyTextureHandle,
 						warnIfLongerMs: 1000,
 					}
-				).then((realHandle) => {
-			const entry = this.gpuCache.get(key);
-			if (!entry) { this.backend.destroyTexture(realHandle); return; }
-			if (entry.handle !== realHandle) {
-				const old = entry.handle;
-				entry.handle = realHandle;
-				// Destroy only manager-owned fallbacks
-				if (old && entry.ownedFallback) this.backend.destroyTexture(old);
-				entry.ownedFallback = false;
-			}
-		}).catch(err => {
-			console.error(`Texture acquire failed for key=${key}`, err);
-		});
+					).then((realHandle) => {
+				const entry = this.gpuCache.get(key);
+				if (!entry) { this.destroyTextureHandle(realHandle); return; }
+				if (entry.handle !== realHandle) {
+					const old = entry.handle;
+					entry.handle = realHandle;
+					// Destroy only manager-owned fallbacks
+					if (old && entry.ownedFallback) this.destroyTextureHandle(old);
+					entry.ownedFallback = false;
+				}
+			}).catch((err) => {
+				console.error(`Texture acquire failed for key=${key}`, err);
+			});
 
 		return key;
 	}
@@ -354,35 +353,33 @@ export class TextureManager {
 		this.gpuCache.set(key, { handle: fallback, refCount: 1, ownedFallback: true });
 	}
 
-		private launchCubemapReplacement(
-			key: string,
-			acquireFn: () => Promise<TextureHandle>,
-			assetBarrier?: AssetBarrier<TextureHandle>,
-			tag?: string
-		): void {
-			const barrier = assetBarrier ?? this.textureBarrier;
-				void barrier.acquire(
-					key,
-					() => {
-						return acquireFn();
-					},
-					{
-						category: 'texture',
-						block_render: !!assetBarrier, // external barrier implies blocking caller wants it visible
-						tag: tag ?? `cubemap:${key}`,
-						disposer: (h) => {
-							this.backend.destroyTexture(h);
-						},
-						warnIfLongerMs: 1000,
-					}
-				).then((real) => {
+	private launchCubemapReplacement(
+		key: string,
+		acquireFn: () => Promise<TextureHandle>,
+		assetBarrier?: AssetBarrier<TextureHandle>,
+		tag?: string
+	): void {
+		const barrier = assetBarrier ?? this.textureBarrier;
+			void barrier.acquire(
+				key,
+				acquireFn,
+				{
+					category: 'texture',
+					block_render: !!assetBarrier, // external barrier implies blocking caller wants it visible
+					tag: tag ?? `cubemap:${key}`,
+					disposer: this.destroyTextureHandle,
+					warnIfLongerMs: 1000,
+				}
+			).then((real) => {
 			const entry = this.gpuCache.get(key);
-			if (!entry) { this.backend!.destroyTexture(real); return; }
+			if (!entry) { this.destroyTextureHandle(real); return; }
 			const old = entry.handle;
 			entry.handle = real;
-			if (old && entry.ownedFallback) this.backend!.destroyTexture(old);
+			if (old && entry.ownedFallback) this.destroyTextureHandle(old);
 			entry.ownedFallback = false;
-		}).catch(err => console.error(`Cubemap acquire failed for key=${key}`, err));
+		}).catch((err) => {
+			console.error(`Cubemap acquire failed for key=${key}`, err);
+		});
 	}
 
 	public acquireCubemap(options: {
@@ -413,12 +410,12 @@ export class TextureManager {
 		const streamed = options.streamed ?? false;
 
 			if (!streamed) {
-				this.launchCubemapReplacement(key, async () => {
-					if (delay_ms) {
-						await new Promise<void>((resolve) => {
-							setTimeout(resolve, delay_ms);
-						});
-					}
+					this.launchCubemapReplacement(key, async () => {
+						if (delay_ms) {
+							await new Promise<void>((resolve) => {
+								setTimeout(resolve, delay_ms);
+							});
+						}
 
 				// Find first provided loader (if any) to pick face size
 				const firstProvidedIndex = faceLoaders.findIndex(p => p != null);
@@ -449,12 +446,12 @@ export class TextureManager {
 				return this.backend!.createCubemapFromSources(faces, desc);
 			}, assetBarrier, `cubemap:${name}`);
 		} else {
-				this.launchCubemapReplacement(key, async () => {
-					if (delay_ms) {
-						await new Promise<void>((resolve) => {
-							setTimeout(resolve, delay_ms);
-						});
-					}
+					this.launchCubemapReplacement(key, async () => {
+						if (delay_ms) {
+							await new Promise<void>((resolve) => {
+								setTimeout(resolve, delay_ms);
+							});
+						}
 
 				// Determine size from first available loader (or use 1)
 				const firstProvidedIndex = faceLoaders.findIndex(p => p != null);
@@ -471,19 +468,19 @@ export class TextureManager {
 
 				// Upload every face: use provided loader or synthesized solid image
 					const uploadPromises: Promise<void>[] = faceLoaders.map((p, idx) => {
-						if (p != null) {
-							return (p as Promise<TextureSource>).then(img => {
-								if (img.width !== size || img.height !== size) {
-									throw new Error(`[TextureManager] Cubemap face ${idx} size mismatch. Expected ${size}x${size}, got ${img.width}x${img.height}`);
-								}
-								this.backend.uploadCubemapFace(cubemap, idx, img);
-							});
-						} else {
-							return this.createSolid(size, fallbackColor).then(img => {
-								this.backend.uploadCubemapFace(cubemap, idx, img);
-							});
-						}
-					});
+							if (p != null) {
+								return (p as Promise<TextureSource>).then(img => {
+									if (img.width !== size || img.height !== size) {
+										throw new Error(`[TextureManager] Cubemap face ${idx} size mismatch. Expected ${size}x${size}, got ${img.width}x${img.height}`);
+									}
+									this.backend.uploadCubemapFace(cubemap, idx, img);
+								});
+							} else {
+									return this.createSolid(size, fallbackColor).then(img => {
+										this.backend.uploadCubemapFace(cubemap, idx, img);
+								});
+							}
+						});
 
 				await Promise.all(uploadPromises);
 				return cubemap;
@@ -538,21 +535,17 @@ export class TextureManager {
 		if (existing) {
 			return existing.handle;
 		}
-		const source: TextureSource = { width, height, data: pixels };
-		const handle = this.backend.createTexture(source, desc);
-		this.gpuCache.set(key, { handle, refCount: 1, ownedFallback: false, barrier: this.textureBarrier });
-			void this.textureBarrier.acquire(
-				key,
-				() => {
-					return Promise.resolve(handle);
-				},
-				{
-					category: 'texture',
-					block_render: false,
-					tag: `tex:${key}`,
-					disposer: (h) => {
-						this.backend.destroyTexture(h);
-					},
+			const source: TextureSource = { width, height, data: pixels };
+			const handle = this.backend.createTexture(source, desc);
+			this.gpuCache.set(key, { handle, refCount: 1, ownedFallback: false, barrier: this.textureBarrier });
+				void this.textureBarrier.acquire(
+					key,
+					async () => handle,
+					{
+						category: 'texture',
+						block_render: false,
+						tag: `tex:${key}`,
+						disposer: this.destroyTextureHandle,
 				}
 			);
 		return handle;
@@ -601,12 +594,12 @@ export class TextureManager {
 			if (!entry || !entry.handle) {
 				throw new Error(`TextureManager: texture '${keyBase}' is not initialized.`);
 			}
-			const newHandle = this.backend.resizeTexture(entry.handle, width, height, desc);
-			if (newHandle !== entry.handle) {
-				this.textureBarrier.replaceValue(key, newHandle, (h) => this.backend.destroyTexture(h));
-				entry.handle = newHandle;
-				entry.ownedFallback = false;
-			}
+				const newHandle = this.backend.resizeTexture(entry.handle, width, height, desc);
+				if (newHandle !== entry.handle) {
+					this.textureBarrier.replaceValue(key, newHandle, this.destroyTextureHandle);
+					entry.handle = newHandle;
+					entry.ownedFallback = false;
+				}
 			updated = true;
 			updatedHandle = entry.handle;
 		}
@@ -757,11 +750,9 @@ export class TextureManager {
 			if (e.refCount <= 0) {
 				// Let the barrier dispose the real handle
 				const barrier = e.barrier ?? this.textureBarrier;
-				barrier.release(key, (h) => {
-					this.backend.destroyTexture(h);
-				});
+				barrier.release(key, this.destroyTextureHandle);
 				// Dispose manager-owned fallback if still present (barrier never saw it)
-				if (e.ownedFallback && e.handle) this.backend.destroyTexture(e.handle);
+				if (e.ownedFallback && e.handle) this.destroyTextureHandle(e.handle);
 				this.gpuCache.delete(key);
 			}
 	}
@@ -769,17 +760,11 @@ export class TextureManager {
 	public clear(): void {
 		// Dispose any manager-owned fallbacks that never entered the barrier
 			for (const entry of this.gpuCache.values()) {
-				if (entry.ownedFallback && entry.handle) this.backend.destroyTexture(entry.handle);
+				if (entry.ownedFallback && entry.handle) this.destroyTextureHandle(entry.handle);
 			}
 			this.gpuCache.clear();
 			// Dispose everything the barrier owns
-			this.textureBarrier.clear((h) => {
-				this.backend.destroyTexture(h);
-			});
+			this.textureBarrier.clear(this.destroyTextureHandle);
 			this.imageCache.clear();
 		}
-
-	public dispose(): void {
-		this.clear();
 	}
-}

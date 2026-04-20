@@ -16,7 +16,7 @@ import { registerCRT_WebGL } from '../post/crt_pipeline';
 import { registerDeviceQuantize_WebGL } from '../post/device_quantize_pipeline';
 import { registerCRT_WebGPU } from '../post/crt_pipeline.wgpu';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from './frame_uniforms';
-import { AnyBackend, CRTPipelineState, DeviceQuantizePipelineState, FogUniforms, FrameSharedState, Framebuffer2DPipelineState, GPUBackend, HostOverlayPipelineState, MeshBatchPipelineState, ParticlePipelineState, PassEncoder, RenderContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry, RenderPassToken, SkyboxPipelineState } from './interfaces';
+import { AnyBackend, CRTPipelineState, DeviceQuantizePipelineState, FogUniforms, FrameSharedState, Framebuffer2DPipelineState, GPUBackend, HostOverlayPipelineState, MeshBatchPipelineState, ParticlePipelineState, PassEncoder, RenderContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry, SkyboxPipelineState } from './interfaces';
 import { checkWebGLError } from './webgl/helpers';
 import { WebGLBackend } from './webgl/backend';
 import { registerHeadlessPasses } from '../headless/passes';
@@ -49,7 +49,6 @@ export class RenderPassLibrary {
 	private passes: RenderPassDef[] = []; // Mutable list for ordering/scheduling
 	private passEnabled = new Map<string, boolean>();
 	private registered = new Map<string, RegisteredPassRec>();
-	private readonly tokensById = new Map<string, RenderPassToken>();
 	constructor(private backend: GPUBackend) { }
 
 	registerBuiltin(backend: GPUBackend) {
@@ -153,7 +152,7 @@ export class RenderPassLibrary {
 	public validatePassResources(passId: string, backend: GPUBackend): void {
 		let pass: RenderPassDef;
 		try {
-			const idx = this.findPipelinePassIndex(passId);
+			const idx = this.passes.findIndex((p) => String(p.id) === passId);
 			if (idx < 0) return;
 			pass = this.passes[idx];
 			const layout = pass.bindingLayout; if (!layout) return;
@@ -256,14 +255,11 @@ export class RenderPassLibrary {
 
 	// Passes list access
 	getPipelinePasses(): readonly RenderPassDef[] { return this.passes; }
-	appendPipelinePass(pass: RenderPassDef): void { this.register(pass); }
 	insertPipelinePass(pass: RenderPassDef, index: number): void {
 		if (index < 0 || index > this.passes.length) index = this.passes.length;
 		this.passes.splice(index, 0, pass);
 		// Caller must ensure pass conforms to RegisteredPipeline if execution desired
 	}
-	replacePipelinePasses(mutator: (arr: RenderPassDef[]) => void): void { mutator(this.passes); }
-	findPipelinePassIndex(id: string): number { return this.passes.findIndex(p => String(p.id) === id); }
 
 	// Build render graph from current pass registry with Clear/Present wiring
 	buildRenderGraph(view: RenderContext, lightingSystem: LightingSystem): RenderGraphRuntime {
@@ -276,7 +272,13 @@ export class RenderPassLibrary {
 		let frameDepthHandle: number = null;
 		let deviceColorHandle: number = null;
 		const passList = this.getPipelinePasses().filter(pass => !pass.graph?.skip);
-		const deviceColorEnabled = passList.some(pass => pass.graph?.writes?.includes('device_color'));
+		let deviceColorEnabled = false;
+		for (const pass of passList) {
+			if (pass.graph?.writes?.includes('device_color')) {
+				deviceColorEnabled = true;
+				break;
+			}
+		}
 		const getHandle = (slot: RenderGraphSlot): number => {
 			switch (slot) {
 				case 'frame_color':
@@ -291,22 +293,22 @@ export class RenderPassLibrary {
 			}
 		};
 
-		rg.addPass({
-			name: 'FrameTargets',
-			setup: (io) => {
-				const color = io.createTex({ width: offscreenWidth, height: offscreenHeight, name: 'FrameColor' });
-				const depth = io.createTex({ width: offscreenWidth, height: offscreenHeight, depth: true, name: 'FrameDepth' });
-				const deviceColor = deviceColorEnabled
-					? io.createTex({ width: offscreenWidth, height: offscreenHeight, name: 'DeviceColor', transient: true })
-					: null;
-				io.exportToBackbuffer(color);
-				frameColorHandle = color;
-				frameDepthHandle = depth;
-				deviceColorHandle = deviceColor;
-				return null;
-			},
-			execute: () => { },
-		});
+			rg.addPass({
+				name: 'FrameTargets',
+				setup: (io) => {
+					const color = io.createTex({ width: offscreenWidth, height: offscreenHeight, name: 'FrameColor' });
+					const depth = io.createTex({ width: offscreenWidth, height: offscreenHeight, depth: true, name: 'FrameDepth' });
+					deviceColorHandle = null;
+					if (deviceColorEnabled) {
+						deviceColorHandle = io.createTex({ width: offscreenWidth, height: offscreenHeight, name: 'DeviceColor', transient: true });
+					}
+					io.exportToBackbuffer(color);
+					frameColorHandle = color;
+					frameDepthHandle = depth;
+					return null;
+				},
+				execute: () => { },
+			});
 
 		rg.addPass({
 			name: 'FrameClear',
@@ -366,30 +368,42 @@ export class RenderPassLibrary {
 				const viewState = { camPos: camState.camPos, viewProj: camState.viewProj, skyboxView: camState.skyboxView, proj: camState.proj };
 				const lighting = lightingSystem.update();
 				// Build fog state alongside frame-shared so consumers can rely on it
-				const fog: FogUniforms = {
-					fogD50: gv.atmosphere.fogD50,
-					fogStart: gv.atmosphere.fogStart,
-					fogColorLow: gv.atmosphere.fogColorLow,
-					fogColorHigh: gv.atmosphere.fogColorHigh,
-					fogYMin: gv.atmosphere.fogYMin,
-					fogYMax: gv.atmosphere.fogYMax,
-				};
-				this.setState('frame_shared', { view: viewState, lighting, fog });
-				const ambientUniform = lighting?.ambient
-					? { color: lighting.ambient.color, intensity: lighting.ambient.intensity }
-					: undefined;
-				updateAndBindFrameUniforms(gv.backend, {
-					offscreen: { x: offscreenWidth, y: offscreenHeight },
-					logical: { x: viewportWidth, y: viewportHeight },
-					time: frameTime,
-					delta: frameDelta,
-					view: camState.view,
-					proj: camState.proj,
-					cameraPos: camState.camPos,
-					ambient: ambientUniform,
-				});
-			}
-		});
+					const fog: FogUniforms = {
+						fogD50: gv.atmosphere.fogD50,
+						fogStart: gv.atmosphere.fogStart,
+						fogColorLow: gv.atmosphere.fogColorLow,
+						fogColorHigh: gv.atmosphere.fogColorHigh,
+						fogYMin: gv.atmosphere.fogYMin,
+						fogYMax: gv.atmosphere.fogYMax,
+					};
+					this.setState('frame_shared', { view: viewState, lighting, fog });
+					if (lighting?.ambient) {
+						updateAndBindFrameUniforms(gv.backend, {
+							offscreen: { x: offscreenWidth, y: offscreenHeight },
+							logical: { x: viewportWidth, y: viewportHeight },
+							time: frameTime,
+							delta: frameDelta,
+							view: camState.view,
+							proj: camState.proj,
+							cameraPos: camState.camPos,
+							ambient: {
+								color: lighting.ambient.color,
+								intensity: lighting.ambient.intensity,
+							},
+						});
+					} else {
+						updateAndBindFrameUniforms(gv.backend, {
+							offscreen: { x: offscreenWidth, y: offscreenHeight },
+							logical: { x: viewportWidth, y: viewportHeight },
+							time: frameTime,
+							delta: frameDelta,
+							view: camState.view,
+							proj: camState.proj,
+							cameraPos: camState.camPos,
+						});
+					}
+				}
+			});
 
 		// Build pass sequence from registry
 		for (const desc of passList) {
@@ -419,48 +433,52 @@ export class RenderPassLibrary {
 					const willRun = enabled && (!desc.shouldExecute || desc.shouldExecute());
 					if (!willRun) return;
 					const graph = desc.graph;
-					if (graph?.buildState) {
-						const graphCtx = {
-							view: $.view,
-							getTex: (slot: RenderGraphSlot) => ctx.getTex(getHandle(slot)),
-						};
+						if (graph?.buildState) {
+							const graphCtx = {
+								view: $.view,
+								getTex: (slot: RenderGraphSlot) => ctx.getTex(getHandle(slot)),
+							};
 						const builtState = graph.buildState(graphCtx) as RenderPassStateRegistry[RenderPassStateId];
 						const passId = desc.id as keyof PassStateTypes & RenderPassStateId;
 						this.setState(passId, builtState as PassStateTypes[typeof passId]);
 					}
-					if (data.present) {
-						// Execute the pass; PipelineRegistry ensures the program/pipeline is bound.
-						const gv = $.view;
-						const presentInput = graph?.presentInput ?? 'auto';
-						const allowDevice = presentInput !== 'frame_color';
-						const useDither = allowDevice && deviceColorEnabled && gv.dither_type !== 0;
-						const baseTex = frameColorHandle !== null ? ctx.getTex(frameColorHandle) : null;
-						const deviceTex = deviceColorEnabled ? ctx.getTex(deviceColorHandle) : null;
-						const colorTex = useDither ? deviceTex : baseTex;
-						if (desc.id === 'crt') {
-							const applyCrt = gv.crt_postprocessing_enabled;
-							this.setState('crt', {
-								width: offscreenWidth,
-								height: offscreenHeight,
-								baseWidth: viewportWidth,
-								baseHeight: viewportHeight,
-								colorTex,
-								options: {
-									enableNoise: applyCrt && gv.enable_noise,
-									enableColorBleed: applyCrt && gv.enable_colorbleed,
-									enableScanlines: applyCrt && gv.enable_scanlines,
-									enableBlur: applyCrt && gv.enable_blur,
+						if (data.present) {
+							// Execute the pass; PipelineRegistry ensures the program/pipeline is bound.
+							const gv = $.view;
+							const presentInput = graph?.presentInput ?? 'auto';
+							const allowDevice = presentInput !== 'frame_color';
+							const useDither = allowDevice && deviceColorEnabled && gv.dither_type !== 0;
+							if (desc.id === 'crt') {
+								const applyCrt = gv.crt_postprocessing_enabled;
+								const crtState: CRTPipelineState = {
+									width: offscreenWidth,
+									height: offscreenHeight,
+									baseWidth: viewportWidth,
+									baseHeight: viewportHeight,
+									colorTex: null,
+									options: {
+										enableNoise: applyCrt && gv.enable_noise,
+										enableColorBleed: applyCrt && gv.enable_colorbleed,
+										enableScanlines: applyCrt && gv.enable_scanlines,
+										enableBlur: applyCrt && gv.enable_blur,
 									enableGlow: applyCrt && gv.enable_glow,
 									enableFringing: applyCrt && gv.enable_fringing,
 									enableAperture: applyCrt && gv.enable_aperture,
 									noiseIntensity: gv.noiseIntensity,
 									colorBleed: gv.colorBleed,
 									blurIntensity: gv.blurIntensity,
-									glowColor: gv.glowColor,
-								},
-							});
-						}
-						this.execute(desc.id, null);
+										glowColor: gv.glowColor,
+									},
+								};
+								if (frameColorHandle !== null) {
+									crtState.colorTex = ctx.getTex(frameColorHandle);
+								}
+								if (useDither) {
+									crtState.colorTex = ctx.getTex(deviceColorHandle);
+								}
+								this.setState('crt', crtState);
+							}
+							this.execute(desc.id, null);
 					} else if (isStateOnly) {
 						// Even for state-only passes, route through execute() to keep behavior uniform.
 						this.execute(desc.id, null);
@@ -520,23 +538,4 @@ export class RenderPassLibrary {
 		this.passEnabled.set(id, enabled);
 	}
 	isPassEnabled(id: string): boolean { return this.passEnabled.get(id) ?? true; }
-
-	public createPassToken(id: string, options?: { enabled?: boolean }): RenderPassToken {
-		const normalized = String(id);
-		if (this.tokensById.has(normalized)) {
-			return this.tokensById.get(normalized)!;
-		}
-		if (options && 'enabled' in options) {
-			this.setPassEnabled(normalized, options.enabled);
-		}
-		const token: RenderPassToken = {
-			id: normalized,
-			enable: () => this.setPassEnabled(normalized, true),
-			disable: () => this.setPassEnabled(normalized, false),
-			set: (enabled: boolean) => this.setPassEnabled(normalized, enabled),
-			isEnabled: () => this.isPassEnabled(normalized),
-		};
-		this.tokensById.set(normalized, token);
-		return token;
-	}
 }

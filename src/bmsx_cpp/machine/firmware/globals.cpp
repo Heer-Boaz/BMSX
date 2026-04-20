@@ -2219,10 +2219,19 @@ void Runtime::setupBuiltins() {
 		const int nextPrefixLength = utf8_codepoint_count(nextPrefix);
 		std::vector<std::string> lines;
 		std::vector<int> lineMap;
-		if (!text.empty()) {
-			const auto isWrapWhitespace = [](const std::string& codepoint) {
-				return codepoint == " " || codepoint == "\t";
-			};
+			if (!text.empty()) {
+				const auto isWrapWhitespace = [](const std::string& codepoint) {
+					if (codepoint.size() != 1) {
+						return false;
+					}
+					switch (codepoint[0]) {
+						case ' ':
+						case '\t':
+							return true;
+						default:
+							return false;
+					}
+				};
 			const auto splitCodepoints = [](const std::string& value) {
 				std::vector<std::string> codepoints;
 				codepoints.reserve(static_cast<size_t>(utf8_codepoint_count(value)));

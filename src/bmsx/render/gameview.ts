@@ -6,7 +6,7 @@ import type { vec2 } from '../rompack/format';
 import * as queues from './shared/queues';
 import type { AtmosphereParams, BackendContext, GPUBackend, PresentationMode, RenderContext, RenderSubmission, RenderSubmitQueue, TextureHandle } from './backend/interfaces';
 import { RenderPassLibrary } from './backend/pass_library';
-import { CRTDitherType as DitherType, type RenderPassToken } from './backend/interfaces';
+import { CRTDitherType as DitherType } from './backend/interfaces';
 import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/graph';
 import { LightingSystem } from './lighting/system';
 import * as renderQueues from './shared/queues';
@@ -90,7 +90,6 @@ export class GameView implements RenderContext {
 	public skyboxFaceAtlasBindings: Int32Array | null = null;
 	public skyboxFaceSizes: Int32Array | null = null;
 	public pipelineRegistry?: RenderPassLibrary;
-	private presentationPassTokens: RenderPassToken[] = [];
 	private presentationEnabled = true;
 	// Active texture unit cache
 	private _activeTexUnit: number = null;
@@ -179,25 +178,14 @@ export class GameView implements RenderContext {
 		this.spriteAmbientFactorDefault = Math.max(0, Math.min(1, factor));
 	}
 
-	private applyPresentationPassState(): void {
-		if (this.presentationPassTokens.length === 0) {
+	public applyPresentationPassState(): void {
+		const registry = this.pipelineRegistry;
+		if (!registry) {
 			return;
 		}
-		for (const token of this.presentationPassTokens) {
-			token.set(this.presentationEnabled);
+		for (let index = 0; index < PRESENTATION_PASS_IDS.length; index += 1) {
+			registry.setPassEnabled(PRESENTATION_PASS_IDS[index], this.presentationEnabled);
 		}
-	}
-
-	public initializePresentationPassTokens(): void {
-		if (!this.pipelineRegistry) {
-			return;
-		}
-		const tokens: RenderPassToken[] = [];
-		for (let i = 0; i < PRESENTATION_PASS_IDS.length; i += 1) {
-			tokens.push(this.pipelineRegistry.createPassToken(PRESENTATION_PASS_IDS[i]));
-		}
-		this.presentationPassTokens = tokens;
-		this.applyPresentationPassState();
 	}
 
 	public setPresentationPassesEnabled(enabled: boolean): void {

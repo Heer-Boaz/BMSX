@@ -46,10 +46,6 @@ function makeTextureHandle(kind: string): TextureHandle {
 	return { id: ++textureIdSeq, kind } as TextureHandle;
 }
 
-function makePassEncoder(desc: RenderPassDesc): PassEncoder {
-	return { fbo: null, desc };
-}
-
 function createFrameStats(): HeadlessFrameStats {
 	return {
 		draws: 0,
@@ -111,6 +107,18 @@ export class HeadlessGPUBackend implements GPUBackend {
 		const id = this.getTextureId(handle);
 		this.textures.set(id, { id, kind, width, height, pixels, cubemapFaces });
 		return handle;
+	}
+
+	private createBufferRecord(
+		recordMap: Map<number, HeadlessBufferRecord>,
+		kind: 'vertex' | 'uniform',
+		usage: 'static' | 'dynamic',
+		bytes: Uint8Array,
+	): unknown {
+		const id = ++bufferIdSeq;
+		recordMap.set(id, { id, usage, bytes });
+		this.accountUpload(kind, bytes.byteLength);
+		return { id, kind: `${kind}-buffer` };
 	}
 
 	private normalizeTextureSource(src: TextureSource): Uint8Array {
@@ -322,11 +330,18 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	createColorTexture(desc: { width: number; height: number; format?: unknown }): TextureHandle {
-		return this.createTextureRecord('color', desc.width, desc.height, new Uint8Array(textureByteLength(desc.width, desc.height)), null);
+		const handle = makeTextureHandle('color');
+		const id = this.getTextureId(handle);
+		const pixels = new Uint8Array(textureByteLength(desc.width, desc.height));
+		this.textures.set(id, { id, kind: 'color', width: desc.width, height: desc.height, pixels, cubemapFaces: null });
+		return handle;
 	}
 
 	createDepthTexture(desc: { width: number; height: number; format?: unknown }): TextureHandle {
-		return this.createTextureRecord('depth', desc.width, desc.height, null, null);
+		const handle = makeTextureHandle('depth');
+		const id = this.getTextureId(handle);
+		this.textures.set(id, { id, kind: 'depth', width: desc.width, height: desc.height, pixels: null, cubemapFaces: null });
+		return handle;
 	}
 
 	createRenderTarget(color?: TextureHandle, depth?: TextureHandle): { size: { x: number; y: number }; colors: TextureHandle[]; depth?: TextureHandle } {
@@ -345,7 +360,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	clear(_opts: { color?: color_arr; depth?: number }): void { }
 
 	beginRenderPass(desc: RenderPassDesc): PassEncoder {
-		return makePassEncoder(desc);
+		return { fbo: null, desc };
 	}
 
 	endRenderPass(_pass: PassEncoder): void { }
@@ -381,11 +396,8 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	createVertexBuffer(data: ArrayBufferView, usage: 'static' | 'dynamic'): unknown {
-		const id = ++bufferIdSeq;
 		const bytes = toBytes(data);
-		this.vertexBuffers.set(id, { id, usage, bytes });
-		this.accountUpload('vertex', bytes.byteLength);
-		return { id, kind: 'vertex-buffer' };
+		return this.createBufferRecord(this.vertexBuffers, 'vertex', usage, bytes);
 	}
 
 	updateVertexBuffer(buf: unknown, data: ArrayBufferView, dstOffset = 0): void {
@@ -416,15 +428,12 @@ export class HeadlessGPUBackend implements GPUBackend {
 	bindVertexArray(_vao: unknown): void { }
 
 	deleteVertexArray(vao: unknown): void {
-		const id = (vao as { id: number }).id;
-		this.vaos.delete(id);
+		this.vaos.delete((vao as { id: number }).id);
 	}
 
 	createUniformBuffer(byteSize: number, usage: 'static' | 'dynamic'): unknown {
-		const id = ++bufferIdSeq;
 		const bytes = new Uint8Array(byteSize);
-		this.uniformBuffers.set(id, { id, usage, bytes });
-		return { id, kind: 'uniform-buffer' };
+		return this.createBufferRecord(this.uniformBuffers, 'uniform', usage, bytes);
 	}
 
 	updateUniformBuffer(buf: unknown, data: ArrayBufferView, dstByteOffset = 0): void {
@@ -452,16 +461,26 @@ export class HeadlessGPUBackend implements GPUBackend {
 
 	endFrame(): void { }
 
-	getFrameStats(): { draws: number; drawIndexed: number; drawsInstanced: number; drawIndexedInstanced: number; bytesUploaded: number } {
+	getFrameStats(): typeof this.frameStats {
 		return this.frameStats;
 	}
 
 	accountUpload(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {
 		this.frameStats.bytesUploaded += bytes;
-		if (kind === 'vertex') this.frameStats.vertexBytes += bytes;
-		else if (kind === 'index') this.frameStats.indexBytes += bytes;
-		else if (kind === 'uniform') this.frameStats.uniformBytes += bytes;
-		else this.frameStats.textureBytes += bytes;
+		switch (kind) {
+			case 'vertex':
+				this.frameStats.vertexBytes += bytes;
+				break;
+			case 'index':
+				this.frameStats.indexBytes += bytes;
+				break;
+			case 'uniform':
+				this.frameStats.uniformBytes += bytes;
+				break;
+			case 'texture':
+				this.frameStats.textureBytes += bytes;
+				break;
+		}
 	}
 
 	setPassState<S>(id: RenderPassId, state: S): void {

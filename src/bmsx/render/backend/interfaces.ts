@@ -265,14 +265,6 @@ export interface RenderContext {
 	};
 }
 
-export interface RenderPassToken {
-	readonly id: string;
-	enable(): void;
-	disable(): void;
-	set(enabled: boolean): void;
-	isEnabled(): boolean;
-}
-
 export type FogUniforms = {
 	fogD50: number;
 	fogStart: number;

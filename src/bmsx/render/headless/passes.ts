@@ -18,7 +18,6 @@ import { VRAM_ATLAS_SLOT_SIZE, VRAM_SYSTEM_ATLAS_SLOT_SIZE } from '../../machine
 import type { Mesh } from '../3d/mesh';
 import { Runtime } from '../../machine/runtime/runtime';
 import type { HeadlessPresentHost } from './view';
-import type { LightingFrameState } from '../lighting/system';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerFramePasses(registry);
@@ -368,18 +367,13 @@ function makeMeshState(registry: RenderPassLibrary): MeshBatchPipelineState {
 	}
 	const mats = cam.getMatrices();
 	const frustum = cam.frustumPlanesPacked.slice();
-	const frameShared = registry.getState('frame_shared');
-	let lighting: LightingFrameState | undefined = undefined;
-	if (frameShared) {
-		lighting = frameShared.lighting;
-	}
 	return {
 		width: gv.offscreenCanvasSize.x,
 		height: gv.offscreenCanvasSize.y,
 		camPos: cam.position,
 		viewProj: mats.vp,
 		cameraFrustum: frustum,
-		lighting,
+		lighting: registry.getState('frame_shared')?.lighting,
 	};
 }
 

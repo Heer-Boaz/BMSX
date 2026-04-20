@@ -1063,11 +1063,14 @@ function buildNativeNextEntry(runtime: Runtime, raw: object, kind?: 'img' | 'aud
 }
 
 function toRuntimeAssetEntryValue(runtime: Runtime, value: unknown, kind?: 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents'): Value {
-	if (kind === 'img' || kind === 'audio' || kind === 'model') {
-		if (value !== undefined && value !== null && typeof value === 'object') {
-			return getOrCreateNativeObject(runtime, value as object);
-		}
-		return toRuntimeValue(runtime, value);
+	switch (kind) {
+		case 'img':
+		case 'audio':
+		case 'model':
+			if (value !== undefined && value !== null && typeof value === 'object') {
+				return getOrCreateNativeObject(runtime, value as object);
+			}
+			return toRuntimeValue(runtime, value);
 	}
 	if (value === undefined || value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
 		return toRuntimeValue(runtime, value);

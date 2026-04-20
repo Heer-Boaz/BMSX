@@ -152,7 +152,10 @@ const rewriteConstRelocations = (
 			: reloc.kind === 'sys'
 				? cartSystemGlobalRemap[reloc.constIndex]
 				: cartConstRemap[reloc.constIndex];
-		if (reloc.kind === 'bx' || reloc.kind === 'gl' || reloc.kind === 'sys') {
+		switch (reloc.kind) {
+			case 'bx':
+			case 'gl':
+			case 'sys': {
 			const nextWide = mappedIndex >> (MAX_BX_BITS + EXT_BX_BITS);
 			if (!hasWide && nextWide !== 0) {
 				throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} requires WIDE prefix.`);
@@ -168,9 +171,9 @@ const rewriteConstRelocations = (
 			}
 			writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
 			continue;
-		}
-
-		if (reloc.kind === 'const_b' || reloc.kind === 'const_c') {
+			}
+			case 'const_b':
+			case 'const_c': {
 			const relocOnB = reloc.kind === 'const_b';
 			const extBits = relocOnB ? EXT_B_BITS : EXT_C_BITS;
 			const baseBits = MAX_OPERAND_BITS + extBits;
@@ -210,6 +213,7 @@ const rewriteConstRelocations = (
 			}
 			writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
 			continue;
+			}
 		}
 
 		const relocOnB = reloc.kind === 'rk_b';

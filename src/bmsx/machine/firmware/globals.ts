@@ -556,30 +556,47 @@ export function formatLuaString(runtime: Runtime, template: string, args: Readon
 			}
 			case 'd':
 			case 'i':
-			case 'u':
-			case 'o':
-			case 'x':
-			case 'X': {
-				let number = takeArgument() as number;
-				let integerValue = Math.trunc(number);
-				const unsigned = specifier === 'u' || specifier === 'o' || specifier === 'x' || specifier === 'X';
-				if (unsigned) {
-					integerValue = integerValue >>> 0;
-				}
-				const negative = !unsigned && integerValue < 0;
-				const sign = negative ? '-' : (specifier === 'd' || specifier === 'i') ? signPrefix(integerValue) : '';
-				const magnitude = negative ? -integerValue : integerValue;
-				let base = 10;
-				if (specifier === 'o') {
-					base = 8;
-				}
-				if (specifier === 'x' || specifier === 'X') {
-					base = 16;
-				}
-				let digits = Math.trunc(magnitude).toString(base);
-				if (specifier === 'X') {
-					digits = digits.toUpperCase();
-				}
+				case 'u':
+				case 'o':
+				case 'x':
+				case 'X': {
+					let number = takeArgument() as number;
+					let integerValue = Math.trunc(number);
+					let unsigned = false;
+					switch (specifier) {
+						case 'u':
+						case 'o':
+						case 'x':
+						case 'X':
+							unsigned = true;
+							break;
+					}
+					if (unsigned) {
+						integerValue = integerValue >>> 0;
+					}
+					const negative = !unsigned && integerValue < 0;
+					let sign = negative ? '-' : '';
+					switch (specifier) {
+						case 'd':
+						case 'i':
+							sign = negative ? '-' : signPrefix(integerValue);
+							break;
+					}
+					const magnitude = negative ? -integerValue : integerValue;
+					let base = 10;
+					switch (specifier) {
+						case 'o':
+							base = 8;
+							break;
+						case 'x':
+						case 'X':
+							base = 16;
+							break;
+					}
+					let digits = Math.trunc(magnitude).toString(base);
+					if (specifier === 'X') {
+						digits = digits.toUpperCase();
+					}
 				if (precision !== null) {
 					const required = Math.max(precision, 0);
 					if (digits.length < required) {
@@ -905,16 +922,24 @@ export function seedLuaGlobals(runtime: Runtime): void {
 				output += index === pattern.length - 1 ? '$' : '\\$';
 				continue;
 			}
-			if (ch === '(' || ch === ')' || ch === '.' || ch === '+' || ch === '*' || ch === '?') {
+				switch (ch) {
+					case '(':
+					case ')':
+					case '.':
+					case '+':
+					case '*':
+					case '?':
+						output += ch;
+						continue;
+					case '|':
+					case '{':
+					case '}':
+					case '\\':
+						output += `\\${ch}`;
+						continue;
+				}
 				output += ch;
-				continue;
 			}
-			if (ch === '|' || ch === '{' || ch === '}' || ch === '\\') {
-				output += `\\${ch}`;
-				continue;
-			}
-			output += ch;
-		}
 		if (inClass) {
 			throw runtime.createApiRuntimeError('string.gmatch invalid pattern.');
 		}

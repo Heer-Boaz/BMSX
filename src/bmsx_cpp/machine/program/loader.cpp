@@ -7,30 +7,29 @@ namespace bmsx {
 
 namespace {
 
+struct ConstRelocKindEntry {
+	const char* name;
+	ProgramAsset::ConstRelocKind kind;
+};
+
+constexpr ConstRelocKindEntry CONST_RELOC_KIND_ENTRIES[] = {
+	{"bx", ProgramAsset::ConstRelocKind::Bx},
+	{"rk_b", ProgramAsset::ConstRelocKind::RkB},
+	{"rk_c", ProgramAsset::ConstRelocKind::RkC},
+	{"const_b", ProgramAsset::ConstRelocKind::ConstB},
+	{"const_c", ProgramAsset::ConstRelocKind::ConstC},
+	{"gl", ProgramAsset::ConstRelocKind::Gl},
+	{"sys", ProgramAsset::ConstRelocKind::Sys},
+};
+
 ProgramAsset::ConstRelocKind parseConstRelocKind(const std::string& kind) {
-	if (kind == "bx") {
-		return ProgramAsset::ConstRelocKind::Bx;
-	}
-	if (kind == "rk_b") {
-		return ProgramAsset::ConstRelocKind::RkB;
-	}
-	if (kind == "rk_c") {
-		return ProgramAsset::ConstRelocKind::RkC;
+	for (const auto& entry : CONST_RELOC_KIND_ENTRIES) {
+		if (kind == entry.name) {
+			return entry.kind;
+		}
 	}
 	// Lua 5.4-style specialized table ops such as GETFIELD/SETFIELD/GETI/SETI patch a plain
 	// const operand in B/C. Treating them as legacy RK relocations corrupts the linked bytecode.
-	if (kind == "const_b") {
-		return ProgramAsset::ConstRelocKind::ConstB;
-	}
-	if (kind == "const_c") {
-		return ProgramAsset::ConstRelocKind::ConstC;
-	}
-	if (kind == "gl") {
-		return ProgramAsset::ConstRelocKind::Gl;
-	}
-	if (kind == "sys") {
-		return ProgramAsset::ConstRelocKind::Sys;
-	}
 	throw BMSX_RUNTIME_ERROR("ProgramLoader: unknown const reloc kind '" + kind + "'.");
 }
 

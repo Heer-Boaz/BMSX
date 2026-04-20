@@ -13,6 +13,7 @@
 #include "vendor/stb_image.h"
 #include "machine/devices/imgdec/controller.h"
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -44,6 +45,17 @@ constexpr int VRAM_GARBAGE_FORCE_T1 = 280;
 constexpr int VRAM_GARBAGE_FORCE_T2 = 480;
 constexpr int VRAM_GARBAGE_FORCE_T_DEN = 1000;
 constexpr u8 IMPLICIT_FRAME_CLEAR_RGBA[4] = {0u, 0u, 0u, 255u};
+
+struct SkyboxPayloadBaseEntry {
+	const char* payload;
+	uint32_t base;
+};
+
+constexpr std::array<SkyboxPayloadBaseEntry, 3> SKYBOX_PAYLOAD_BASES = {{
+	{"system", SYSTEM_ROM_BASE},
+	{"overlay", OVERLAY_ROM_BASE},
+	{"cart", CART_ROM_BASE},
+}};
 
 #if BMSX_ENABLE_GLES2
 constexpr float VDP_GLES2_PRIMARY_ATLAS_ID = 0.0f;
@@ -2917,18 +2929,20 @@ void VDP::commitSkyboxImages(const SkyboxImageIds& ids) {
 			throw vdpFault("skybox image '" + assetId + "' has invalid ROM range.");
 		}
 		uint32_t base = CART_ROM_BASE;
-		if (asset->rom.payloadId.has_value()) {
-			const auto& payload = *asset->rom.payloadId;
-			if (payload == "system") {
-				base = SYSTEM_ROM_BASE;
-			} else if (payload == "overlay") {
-				base = OVERLAY_ROM_BASE;
-			} else if (payload == "cart") {
-				base = CART_ROM_BASE;
-			} else {
-				throw vdpFault("skybox image '" + assetId + "' has unsupported payload_id " + payload + ".");
+			if (asset->rom.payloadId.has_value()) {
+				const auto& payload = *asset->rom.payloadId;
+				bool found = false;
+				for (const auto& entry : SKYBOX_PAYLOAD_BASES) {
+					if (payload == entry.payload) {
+						base = entry.base;
+						found = true;
+						break;
+					}
+				}
+				if (!found) {
+					throw vdpFault("skybox image '" + assetId + "' has unsupported payload_id " + payload + ".");
+				}
 			}
-		}
 		const size_t len = static_cast<size_t>(end - start);
 		std::vector<u8> buffer(len);
 		m_memory.readBytes(base + static_cast<uint32_t>(start), buffer.data(), len);

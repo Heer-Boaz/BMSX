@@ -960,14 +960,14 @@ export function renderMeshBatch(backend: WebGLBackend, context: RenderContext, f
 	assertTextureContext(context);
 	const gl = backend.gl as WebGL2RenderingContext;
 	const runtime: MeshPassRuntime = { backend, gl, context };
-		const pending = beginMeshQueue();
-		if (pending === 0) return;
-		_morphUsage.pos = 0; _morphUsage.norm = 0;
-		const submissions: MeshRenderSubmission[] = [];
-		forEachMeshQueue((it) => {
-			submissions.push(it);
-		});
-		const drawLists = buildDrawLists(submissions, state);
+	const pending = beginMeshQueue();
+	if (pending === 0) return;
+	_morphUsage.pos = 0; _morphUsage.norm = 0;
+	const submissions = new Array<MeshRenderSubmission>(pending);
+	forEachMeshQueue((it, index) => {
+		submissions[index] = it;
+	});
+	const drawLists = buildDrawLists(submissions, state);
 		runtime.backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
 		setupRenderingState(runtime, state);
 	gl.disable(gl.BLEND);

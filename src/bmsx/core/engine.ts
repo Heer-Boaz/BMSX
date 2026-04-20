@@ -382,7 +382,7 @@ export class EngineCore {
 		const pipelineRegistry = new RenderPassLibrary(gpuBackend);
 		pipelineRegistry.registerBuiltin(gpuBackend);
 		gview.pipelineRegistry = pipelineRegistry;
-		gview.initializePresentationPassTokens();
+		gview.applyPresentationPassState();
 		gview.init();
 
 		resolvedViewHost.onResize((dims) => {
