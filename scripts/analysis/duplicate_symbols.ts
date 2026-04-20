@@ -812,7 +812,8 @@ function formatLocation(location: DuplicateLocation): string {
 function formatVscodeLocationLink(file: string, line: number, column: number): string {
 	const absolute = isAbsolute(file) ? file : resolve(process.cwd(), file);
 	const normalized = absolute.replace(/\\/g, '/');
-	return `vscode://file/${encodeURI(normalized)}:${line}:${column}`;
+	const relativePath = toRelativePath(normalized);
+	return `${relativePath}:${line}:${column}`;
 }
 
 function printTextReport(groups: DuplicateGroup[], scannedFiles: number): void {
