@@ -64,13 +64,8 @@ const SOLID_TEXCOORD_0 = 0;
 const SOLID_TEXCOORD_1 = 1;
 const WHITE_COLOR: FrameBufferColor = { r: 255, g: 255, b: 255, a: 255 };
 
-let runtime: WebGLVdpBlitterRuntime | null = null;
-
-function ensureRuntime(backend: WebGLBackend): WebGLVdpBlitterRuntime {
+function createRuntime(backend: WebGLBackend): WebGLVdpBlitterRuntime {
 	const gl = backend.gl as WebGL2RenderingContext;
-	if (runtime !== null && runtime.gl === gl) {
-		return runtime;
-	}
 	const pipeline = backend.createRenderPassInstance({
 		label: 'VDPBlitter2D',
 		vsCode: vertexShaderCode,
@@ -125,7 +120,7 @@ function ensureRuntime(backend: WebGLBackend): WebGLVdpBlitterRuntime {
 	backend.vertexAttribDivisor(atlasLocation, 1);
 	backend.bindVertexArray(null);
 	backend.bindArrayBuffer(null);
-	runtime = {
+	return {
 		gl,
 		pipeline,
 		vao,
@@ -154,7 +149,6 @@ function ensureRuntime(backend: WebGLBackend): WebGLVdpBlitterRuntime {
 		rankedCommands: [],
 		priorityDepthBySeq: new Map(),
 	};
-	return runtime;
 }
 
 function bindFloatAttribute(backend: WebGLBackend, location: number, size: number, offset: number): void {
@@ -181,30 +175,37 @@ function ensureCapacity(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, co
 	backend.bindArrayBuffer(null);
 }
 
-function ensurePriorityDepthTexture(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, width: number, height: number): WebGLTexture {
-	if (state.priorityDepthTexture !== null && state.priorityDepthWidth === width && state.priorityDepthHeight === height) {
-		return state.priorityDepthTexture;
+function preparePriorityDepthTexture(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, width: number, height: number): WebGLTexture {
+	const texture = state.priorityDepthTexture;
+	if (texture !== null && state.priorityDepthWidth === width && state.priorityDepthHeight === height) {
+		return texture;
 	}
-	if (state.priorityDepthTexture !== null) {
-		backend.destroyTexture(state.priorityDepthTexture);
+	if (texture !== null) {
+		backend.destroyTexture(texture);
 	}
-	state.priorityDepthTexture = backend.createDepthTexture({ width, height }) as WebGLTexture;
+	const nextTexture = backend.createDepthTexture({ width, height }) as WebGLTexture;
+	state.priorityDepthTexture = nextTexture;
 	state.priorityDepthWidth = width;
 	state.priorityDepthHeight = height;
-	return state.priorityDepthTexture;
+	return nextTexture;
 }
 
-function ensureCopySnapshotTexture(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, width: number, height: number): WebGLTexture {
-	if (state.copySnapshotTexture !== null && state.copySnapshotWidth === width && state.copySnapshotHeight === height) {
-		return state.copySnapshotTexture;
+function prepareCopySnapshotTexture(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, width: number, height: number): WebGLTexture {
+	let texture = state.copySnapshotTexture;
+	if (texture === null) {
+		texture = backend.createColorTexture({ width, height }) as WebGLTexture;
+		state.copySnapshotTexture = texture;
 	}
-	if (state.copySnapshotTexture !== null) {
-		backend.destroyTexture(state.copySnapshotTexture);
+	else {
+		const currentWidth = state.copySnapshotWidth;
+		const currentHeight = state.copySnapshotHeight;
+		if (currentWidth !== width || currentHeight !== height) {
+			backend.resizeTexture(texture, width, height, {});
+		}
 	}
-	state.copySnapshotTexture = backend.createColorTexture({ width, height }) as WebGLTexture;
 	state.copySnapshotWidth = width;
 	state.copySnapshotHeight = height;
-	return state.copySnapshotTexture;
+	return texture;
 }
 
 function compareByPriority(a: VdpWebGLBlitterCommand, b: VdpWebGLBlitterCommand): number {
@@ -470,8 +471,10 @@ function drawSortedSegment(host: VdpWebGLBlitterHost, backend: WebGLBackend, sta
 	sorted.length = 0;
 	for (let i = start; i < end; i += 1) {
 		const command = commands[i];
-		if (command.opcode === 'clear' || command.opcode === 'copy_rect') {
-			continue;
+		switch (command.opcode) {
+			case 'clear':
+			case 'copy_rect':
+				continue;
 		}
 		sorted.push(command);
 	}
@@ -489,11 +492,22 @@ function drawSortedSegment(host: VdpWebGLBlitterHost, backend: WebGLBackend, sta
 	let batchCount = 0;
 	for (let i = 0; i < sorted.length; i += 1) {
 		const command = sorted[i];
-		if (command.opcode === 'clear' || command.opcode === 'copy_rect') {
-			throw new Error('[VDPBlitter2D] Clear/copy commands must not be drawn inside sorted segments.');
+		switch (command.opcode) {
+			case 'clear':
+			case 'copy_rect':
+				throw new Error('[VDPBlitter2D] Clear/copy commands must not be drawn inside sorted segments.');
 		}
 		if (command.opcode !== 'glyph_run') {
-			const nextMode: DrawMode = command.opcode === 'fill_rect' || command.opcode === 'draw_line' ? 'solid' : 'atlas';
+			let nextMode: DrawMode;
+			switch (command.opcode) {
+				case 'fill_rect':
+				case 'draw_line':
+					nextMode = 'solid';
+					break;
+				default:
+					nextMode = 'atlas';
+					break;
+			}
 			if (boundMode !== nextMode) {
 				batchCount = flushPendingBatch(backend, pass, state, batchCount);
 				bindTexturesForMode(host, state, nextMode);
@@ -568,7 +582,7 @@ function clearFrameBuffer(host: VdpWebGLBlitterHost, backend: WebGLBackend, prio
 
 function copyFrameBufferRect(host: VdpWebGLBlitterHost, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, priorityDepthTexture: WebGLTexture, priorityDepthBySeq: ReadonlyMap<number, number>, command: BlitterCopyRectCommand): void {
 	const frameBufferTexture = $.texmanager.getTextureByUri(host.frameBufferTextureKey)! as WebGLTexture;
-	const copySnapshotTexture = ensureCopySnapshotTexture(backend, state, host.width, host.height);
+	const copySnapshotTexture = prepareCopySnapshotTexture(backend, state, host.width, host.height);
 	backend.copyTextureRegion(frameBufferTexture, copySnapshotTexture, command.srcX, command.srcY, command.srcX, command.srcY, command.width, command.height);
 	const pass = backend.beginRenderPass({
 		color: { tex: frameBufferTexture },
@@ -625,18 +639,20 @@ function buildPriorityDepthBySequence(state: WebGLVdpBlitterRuntime, commands: r
 
 export class WebGLVdpBlitterExecutor implements VdpBlitterExecutor {
 	public readonly backendType = 'webgl2' as const;
+	private readonly runtime: WebGLVdpBlitterRuntime;
 
 	public constructor(
 		private readonly backend: WebGLBackend,
 	) {
+		this.runtime = createRuntime(backend);
 	}
 
 	public execute(host: VdpWebGLBlitterHost, commands: readonly VdpWebGLBlitterCommand[]): void {
 		if (commands.length === 0) {
 			return;
 		}
-		const state = ensureRuntime(this.backend);
-		const priorityDepthTexture = ensurePriorityDepthTexture(this.backend, state, host.width, host.height);
+		const state = this.runtime;
+		const priorityDepthTexture = preparePriorityDepthTexture(this.backend, state, host.width, host.height);
 		const priorityDepthBySeq = buildPriorityDepthBySequence(state, commands);
 		resetPriorityDepthSurface(host, this.backend, priorityDepthTexture);
 		let segmentStart = 0;

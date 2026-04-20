@@ -264,9 +264,10 @@ export class HeadlessVdpBlitterExecutor implements VdpBlitterExecutor {
 			&& dstX + width > srcX
 			&& dstY < srcY + height
 			&& dstY + height > srcY;
-		const startRow = overlapping && dstY > srcY ? height - 1 : 0;
-		const endRow = overlapping && dstY > srcY ? -1 : height;
-		const step = overlapping && dstY > srcY ? -1 : 1;
+		const copyBackward = overlapping && dstY > srcY;
+		const startRow = copyBackward ? height - 1 : 0;
+		const endRow = copyBackward ? -1 : height;
+		const step = copyBackward ? -1 : 1;
 		for (let row = startRow; row !== endRow; row += step) {
 			const sourceIndex = ((srcY + row) * frameWidth + srcX) * 4;
 			const targetIndex = ((dstY + row) * frameWidth + dstX) * 4;

@@ -268,25 +268,36 @@ export class RenderPassLibrary {
 	// Build render graph from current pass registry with Clear/Present wiring
 	buildRenderGraph(view: RenderContext, lightingSystem: LightingSystem): RenderGraphRuntime {
 		const rg = new RenderGraphRuntime(view.backend);
+		const offscreenWidth = view.offscreenCanvasSize.x;
+		const offscreenHeight = view.offscreenCanvasSize.y;
+		const viewportWidth = view.viewportSize.x;
+		const viewportHeight = view.viewportSize.y;
 		let frameColorHandle: number = null;
 		let frameDepthHandle: number = null;
 		let deviceColorHandle: number = null;
 		const passList = this.getPipelinePasses().filter(pass => !pass.graph?.skip);
 		const deviceColorEnabled = passList.some(pass => pass.graph?.writes?.includes('device_color'));
 		const getHandle = (slot: RenderGraphSlot): number => {
-			if (slot === 'frame_color') return frameColorHandle;
-			if (slot === 'frame_depth') return frameDepthHandle;
-			if (slot === 'frame_history_a' || slot === 'frame_history_b') return null;
-			return deviceColorHandle;
+			switch (slot) {
+				case 'frame_color':
+					return frameColorHandle;
+				case 'frame_depth':
+					return frameDepthHandle;
+				case 'frame_history_a':
+				case 'frame_history_b':
+					return null;
+				default:
+					return deviceColorHandle;
+			}
 		};
 
 		rg.addPass({
 			name: 'FrameTargets',
 			setup: (io) => {
-				const color = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'FrameColor' });
-				const depth = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, depth: true, name: 'FrameDepth' });
+				const color = io.createTex({ width: offscreenWidth, height: offscreenHeight, name: 'FrameColor' });
+				const depth = io.createTex({ width: offscreenWidth, height: offscreenHeight, depth: true, name: 'FrameDepth' });
 				const deviceColor = deviceColorEnabled
-					? io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'DeviceColor', transient: true })
+					? io.createTex({ width: offscreenWidth, height: offscreenHeight, name: 'DeviceColor', transient: true })
 					: null;
 				io.exportToBackbuffer(color);
 				frameColorHandle = color;
@@ -306,13 +317,13 @@ export class RenderPassLibrary {
 				return null;
 			},
 			execute: (ctx) => {
-				if (frameColorHandle == null) {
+				if (frameColorHandle === null) {
 					return;
 				}
 				const clearDesc: RenderPassDesc = {
 					color: { tex: ctx.getTex(frameColorHandle), clear: [0, 0, 0, 1] },
 				};
-				if (frameDepthHandle != null) {
+				if (frameDepthHandle !== null) {
 					clearDesc.depth = { tex: ctx.getTex(frameDepthHandle), clearDepth: 1.0 };
 				}
 				const clearPass = view.backend.beginRenderPass(clearDesc);
@@ -346,8 +357,8 @@ export class RenderPassLibrary {
 				const frameDelta = frame ? frame.delta : 0;
 				const gv = $.view;
 				updateAndBindFrameUniforms(gv.backend, {
-					offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
-					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
+					offscreen: { x: offscreenWidth, y: offscreenHeight },
+					logical: { x: viewportWidth, y: viewportHeight },
 					time: frameTime,
 					delta: frameDelta,
 				});
@@ -364,12 +375,12 @@ export class RenderPassLibrary {
 					fogYMax: gv.atmosphere.fogYMax,
 				};
 				this.setState('frame_shared', { view: viewState, lighting, fog });
-				const ambientUniform = (lighting && lighting.ambient)
+				const ambientUniform = lighting?.ambient
 					? { color: lighting.ambient.color, intensity: lighting.ambient.intensity }
 					: undefined;
 				updateAndBindFrameUniforms(gv.backend, {
-					offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
-					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
+					offscreen: { x: offscreenWidth, y: offscreenHeight },
+					logical: { x: viewportWidth, y: viewportHeight },
 					time: frameTime,
 					delta: frameDelta,
 					view: camState.view,
@@ -401,7 +412,7 @@ export class RenderPassLibrary {
 						if (desc.writesDepth && frameDepthHandle != null) io.writeTex(frameDepthHandle);
 						else if (desc.depthTest && frameDepthHandle != null) io.readTex(frameDepthHandle);
 					}
-					return { width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, present: isPresent };
+					return { width: offscreenWidth, height: offscreenHeight, present: isPresent };
 				},
 				execute: (ctx, _frame, data: { width: number; height: number; present: boolean }) => {
 					const enabled = this.isPassEnabled(desc.id);
@@ -421,27 +432,27 @@ export class RenderPassLibrary {
 						// Execute the pass; PipelineRegistry ensures the program/pipeline is bound.
 						const gv = $.view;
 						const presentInput = graph?.presentInput ?? 'auto';
-						const allowDevice = presentInput === 'device_color' || presentInput === 'auto';
+						const allowDevice = presentInput !== 'frame_color';
 						const useDither = allowDevice && deviceColorEnabled && gv.dither_type !== 0;
-						const baseTex = frameColorHandle != null ? ctx.getTex(frameColorHandle) : null;
+						const baseTex = frameColorHandle !== null ? ctx.getTex(frameColorHandle) : null;
 						const deviceTex = deviceColorEnabled ? ctx.getTex(deviceColorHandle) : null;
 						const colorTex = useDither ? deviceTex : baseTex;
 						if (desc.id === 'crt') {
-							const applyCrt = !!gv.crt_postprocessing_enabled;
+							const applyCrt = gv.crt_postprocessing_enabled;
 							this.setState('crt', {
-								width: gv.offscreenCanvasSize.x,
-								height: gv.offscreenCanvasSize.y,
-								baseWidth: gv.viewportSize.x,
-								baseHeight: gv.viewportSize.y,
+								width: offscreenWidth,
+								height: offscreenHeight,
+								baseWidth: viewportWidth,
+								baseHeight: viewportHeight,
 								colorTex,
 								options: {
-									enableNoise: applyCrt && !!gv.enable_noise,
-									enableColorBleed: applyCrt && !!gv.enable_colorbleed,
-									enableScanlines: applyCrt && !!gv.enable_scanlines,
-									enableBlur: applyCrt && !!gv.enable_blur,
-									enableGlow: applyCrt && !!gv.enable_glow,
-									enableFringing: applyCrt && !!gv.enable_fringing,
-									enableAperture: applyCrt && !!gv.enable_aperture,
+									enableNoise: applyCrt && gv.enable_noise,
+									enableColorBleed: applyCrt && gv.enable_colorbleed,
+									enableScanlines: applyCrt && gv.enable_scanlines,
+									enableBlur: applyCrt && gv.enable_blur,
+									enableGlow: applyCrt && gv.enable_glow,
+									enableFringing: applyCrt && gv.enable_fringing,
+									enableAperture: applyCrt && gv.enable_aperture,
 									noiseIntensity: gv.noiseIntensity,
 									colorBleed: gv.colorBleed,
 									blurIntensity: gv.blurIntensity,
@@ -455,14 +466,20 @@ export class RenderPassLibrary {
 						this.execute(desc.id, null);
 					} else {
 						if (frameColorHandle == null || frameDepthHandle == null) return;
-						const needsDepth = !!(desc.writesDepth || desc.depthTest);
+						const needsDepth = desc.writesDepth || desc.depthTest;
 						const defaultWrites: RenderGraphSlot[] = needsDepth ? ['frame_color', 'frame_depth'] : ['frame_color'];
-						const writeSlots = (graph && graph.writes && graph.writes.length) ? graph.writes : defaultWrites;
+						const writeSlots = graph?.writes?.length ? graph.writes : defaultWrites;
 						let colorHandle: number = null;
 						let depthHandle: number = null;
 						for (const slot of writeSlots) {
-							if (slot === 'frame_depth') depthHandle = getHandle(slot);
-							else colorHandle = getHandle(slot);
+							switch (slot) {
+								case 'frame_depth':
+									depthHandle = getHandle(slot);
+									break;
+								default:
+									colorHandle = getHandle(slot);
+									break;
+							}
 						}
 						this.execute(desc.id, ctx.getFBO(colorHandle, depthHandle) as WebGLFramebuffer);
 					}
@@ -471,13 +488,13 @@ export class RenderPassLibrary {
 		}
 
 		// Quick validation of render passes
-		try {
-			const dummyFrame: any = { views: [], frameIndex: 0, time: 0, delta: 0 };
-			rg.compile(dummyFrame);
-			const texInfo = rg.getTextureDebugInfo();
-			const frameColor = frameColorHandle != null ? texInfo.find(t => t.index === frameColorHandle) : texInfo.find(t => t.present);
-			if (frameColor) {
-				const writerNames = frameColor.writers.map(i => rg.getPassNames()[i]);
+			try {
+				const dummyFrame: any = { views: [], frameIndex: 0, time: 0, delta: 0 };
+				rg.compile(dummyFrame);
+				const texInfo = rg.getTextureDebugInfo();
+				const frameColor = frameColorHandle !== null ? texInfo.find(t => t.index === frameColorHandle) : texInfo.find(t => t.present);
+				if (frameColor) {
+					const writerNames = frameColor.writers.map(i => rg.getPassNames()[i]);
 				const contentWriters = writerNames.filter(n => n !== 'FrameTargets' && n !== 'FrameBaselineRestore');
 				const hasPotentialWriters = this.getPipelinePasses().some(p => !p.stateOnly && !p.present);
 				if (contentWriters.length === 0 && hasPotentialWriters) {
@@ -500,9 +517,9 @@ export class RenderPassLibrary {
 
 	// Enable/disable passes at runtime (debug/editor)
 	setPassEnabled(id: string, enabled: boolean): void {
-		this.passEnabled.set(id, !!enabled);
+		this.passEnabled.set(id, enabled);
 	}
-	isPassEnabled(id: string): boolean { return this.passEnabled.get(id) !== false; }
+	isPassEnabled(id: string): boolean { return this.passEnabled.get(id) ?? true; }
 
 	public createPassToken(id: string, options?: { enabled?: boolean }): RenderPassToken {
 		const normalized = String(id);
@@ -510,7 +527,7 @@ export class RenderPassLibrary {
 			return this.tokensById.get(normalized)!;
 		}
 		if (options && 'enabled' in options) {
-			this.setPassEnabled(normalized, !!options.enabled);
+			this.setPassEnabled(normalized, options.enabled);
 		}
 		const token: RenderPassToken = {
 			id: normalized,

@@ -128,12 +128,12 @@ export class EngineCore {
 
 	private showDebuggerControls(): void {
 		this._debuggerControlsVisible = true;
-		$.view.showPauseOverlay();
+		$.view.showFadingOverlay('⏸️');
 	}
 
 	private hideDebuggerControls(): void {
 		this._debuggerControlsVisible = false;
-		$.view.showResumeOverlay();
+		$.view.hideFadingOverlay();
 	}
 
 	/**

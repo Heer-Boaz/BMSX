@@ -31,9 +31,9 @@ export class WebGLBackend implements GPUBackend {
 	private cachedDepthTestEnabled: boolean = null;
 	private cachedDepthFunc: number = null;
 	private cachedBlendFunc: { src: number; dst: number } = null;
-	private currentActiveTexUnit: number = null;
-	private boundTex2D: (WebGLTexture)[] = [];
-	private boundTexCube: (WebGLTexture)[] = [];
+	private currentActiveTexUnit = 0;
+	private boundTex2D: (WebGLTexture | null)[] = new Array(32).fill(null);
+	private boundTexCube: (WebGLTexture | null)[] = new Array(32).fill(null);
 	private texInfo = new WeakMap<WebGLTexture, { w: number; h: number; srgb: boolean }>();
 	private readbackFbo: WebGLFramebuffer = null;
 	private uniformCache = new WeakMap<WebGLProgram, Map<string, WebGLUniformLocation>>();
@@ -50,7 +50,7 @@ export class WebGLBackend implements GPUBackend {
 	createTexture(src: TextureSource | Promise<TextureSource>, desc: TextureParams): WebGLTexture {
 		const source = src as TextureSource;
 		const data = source.data;
-		const srgb = desc.srgb !== false;
+		const srgb = desc.srgb ?? true;
 		const internalFormat = srgb ? this.gl.SRGB8_ALPHA8 : this.gl.RGBA8;
 		if (data) {
 			const gl = this.gl;
@@ -81,7 +81,7 @@ export class WebGLBackend implements GPUBackend {
 		const gl = this.gl;
 		const data = src.data;
 		const info = this.texInfo.get(handle);
-		const srgb = info ? info.srgb : true;
+		const srgb = info?.srgb ?? true;
 		const internalFormat = srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8;
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
 		gl.bindTexture(gl.TEXTURE_2D, handle);
@@ -93,11 +93,10 @@ export class WebGLBackend implements GPUBackend {
 				gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, src.width, src.height, gl.RGBA, gl.UNSIGNED_BYTE, data);
 			}
 		} else {
-			const img = src as ImageBitmap;
 			if (needsResize) {
-				gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, gl.RGBA, gl.UNSIGNED_BYTE, img);
+				gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, gl.RGBA, gl.UNSIGNED_BYTE, src as ImageBitmap);
 			} else {
-				gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, img);
+				gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, src as ImageBitmap);
 			}
 		}
 		this.texInfo.set(handle, { w: src.width, h: src.height, srgb });
@@ -110,7 +109,7 @@ export class WebGLBackend implements GPUBackend {
 	resizeTexture(handle: WebGLTexture, width: number, height: number, _desc: TextureParams): WebGLTexture {
 		const gl = this.gl;
 		const info = this.texInfo.get(handle);
-		const srgb = info ? info.srgb : _desc.srgb !== false;
+		const srgb = _desc.srgb ?? info?.srgb ?? true;
 		const internalFormat = srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8;
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
 		gl.bindTexture(gl.TEXTURE_2D, handle);
@@ -128,8 +127,7 @@ export class WebGLBackend implements GPUBackend {
 		if (data) {
 			gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, src.width, src.height, gl.RGBA, gl.UNSIGNED_BYTE, data);
 		} else {
-			const img = src as ImageBitmap;
-			gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, gl.RGBA, gl.UNSIGNED_BYTE, img);
+			gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, gl.RGBA, gl.UNSIGNED_BYTE, src as ImageBitmap);
 		}
 		const bytes = src.width * src.height * 4;
 		this.frameStats.bytesUploaded += bytes;
@@ -197,8 +195,7 @@ export class WebGLBackend implements GPUBackend {
 			if (data) {
 				gl.texImage2D(targets[i], 0, gl.RGBA, src.width, src.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
 			} else {
-				const img = src as ImageBitmap;
-				gl.texImage2D(targets[i], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+				gl.texImage2D(targets[i], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src as ImageBitmap);
 			}
 		}
 		gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_BASE_LEVEL, 0); gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAX_LEVEL, 0);
@@ -212,7 +209,17 @@ export class WebGLBackend implements GPUBackend {
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);
 		const tex = gl.createTexture()!;
 		gl.bindTexture(gl.TEXTURE_CUBE_MAP, tex);
-		const data = new Uint8Array(size * size * 4); for (let i = 0; i < size * size; i++) data.set([Math.round(rgba[0] * 255), Math.round(rgba[1] * 255), Math.round(rgba[2] * 255), Math.round(rgba[3] * 255)], i * 4);
+		const data = new Uint8Array(size * size * 4);
+		const red = Math.round(rgba[0] * 255);
+		const green = Math.round(rgba[1] * 255);
+		const blue = Math.round(rgba[2] * 255);
+		const alpha = Math.round(rgba[3] * 255);
+		for (let offset = 0; offset < data.length; offset += 4) {
+			data[offset + 0] = red;
+			data[offset + 1] = green;
+			data[offset + 2] = blue;
+			data[offset + 3] = alpha;
+		}
 		const targets = [gl.TEXTURE_CUBE_MAP_POSITIVE_X, gl.TEXTURE_CUBE_MAP_NEGATIVE_X, gl.TEXTURE_CUBE_MAP_POSITIVE_Y, gl.TEXTURE_CUBE_MAP_NEGATIVE_Y, gl.TEXTURE_CUBE_MAP_POSITIVE_Z, gl.TEXTURE_CUBE_MAP_NEGATIVE_Z] as const;
 		for (const t of targets) gl.texImage2D(t, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
 		gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_BASE_LEVEL, 0); gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAX_LEVEL, 0);
@@ -243,21 +250,19 @@ export class WebGLBackend implements GPUBackend {
 		if (data) {
 			gl.texImage2D(targets[face], 0, gl.RGBA, src.width, src.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
 		} else {
-			const img = src as ImageBitmap;
-			gl.texImage2D(targets[face], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+			gl.texImage2D(targets[face], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src as ImageBitmap);
 		}
 		gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
 	}
-	destroyTexture(handle: WebGLTexture): void { this.gl.deleteTexture(handle); }
-	copyTexture(source: WebGLTexture, destination: WebGLTexture, width: number, height: number): void {
-		this.copyTextureRegion(source, destination, 0, 0, 0, 0, width, height);
+	destroyTexture(handle: WebGLTexture): void {
+		this.gl.deleteTexture(handle);
 	}
 
 	copyTextureRegion(source: WebGLTexture, destination: WebGLTexture, srcX: number, srcY: number, dstX: number, dstY: number, width: number, height: number): void {
 		const gl = this.gl;
 		const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
 		const prevActiveUnit = this.currentActiveTexUnit;
-		const prevTexture = this.boundTex2D[TEXTURE_UNIT_UPLOAD] ?? null;
+		const prevTexture = this.boundTex2D[TEXTURE_UNIT_UPLOAD];
 		gl.bindFramebuffer(gl.FRAMEBUFFER, this.readbackFbo);
 		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, source, 0);
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
@@ -268,9 +273,7 @@ export class WebGLBackend implements GPUBackend {
 		gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
 		gl.bindTexture(gl.TEXTURE_2D, prevTexture);
 		this.boundTex2D[TEXTURE_UNIT_UPLOAD] = prevTexture;
-		if (prevActiveUnit != null) {
-			gl.activeTexture(gl.TEXTURE0 + prevActiveUnit);
-		}
+		gl.activeTexture(gl.TEXTURE0 + prevActiveUnit);
 		this.currentActiveTexUnit = prevActiveUnit;
 	}
 	createColorTexture(desc: { width: number; height: number; format?: GLenum }): WebGLTexture {
@@ -289,49 +292,78 @@ export class WebGLBackend implements GPUBackend {
 		this.texInfo.set(tex, { w: desc.width, h: desc.height, srgb: false });
 		return tex;
 	}
-	createDepthTexture(desc: { width: number; height: number }): WebGLTexture { return GLR.glCreateDepthTexture(this.gl, desc.width, desc.height, TEXTURE_UNIT_UPLOAD); }
+	createDepthTexture(desc: { width: number; height: number }): WebGLTexture {
+		return GLR.glCreateDepthTexture(this.gl, desc.width, desc.height, TEXTURE_UNIT_UPLOAD);
+	}
 	createRenderTarget(color?: WebGLTexture, depth?: WebGLTexture): RenderTargetHandle {
 		const gl = this.gl;
 		const fbo = gl.createFramebuffer();
 		gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-		if (color) gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, color, 0);
-		if (depth) gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, depth, 0);
+		if (color !== undefined) {
+			gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, color, 0);
+		}
+		if (depth !== undefined) {
+			gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, depth, 0);
+		}
 		// Ensure draw buffer routing is valid for user FBOs
-		if (color) gl.drawBuffers([gl.COLOR_ATTACHMENT0]); else gl.drawBuffers([gl.NONE]);
+		if (color !== undefined) {
+			gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+		} else {
+			gl.drawBuffers([gl.NONE]);
+		}
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 		return fbo;
 	}
-	bindFBO(fbo: WebGLFramebuffer): void { this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, fbo); }
 	clear(opts: { color?: color_arr; depth?: number }): void {
 		const gl = this.gl;
 		let mask = 0;
-		if (opts.color) { gl.clearColor(...opts.color); mask |= gl.COLOR_BUFFER_BIT; }
+		if (opts.color !== undefined) { gl.clearColor(...opts.color); mask |= gl.COLOR_BUFFER_BIT; }
 		if (opts.depth !== undefined) { gl.clearDepth(opts.depth); mask |= gl.DEPTH_BUFFER_BIT; }
-		if (mask) gl.clear(mask);
+		if (mask !== 0) gl.clear(mask);
 	}
 	beginRenderPass(desc: RenderPassDesc): PassEncoder {
 		let fbo: WebGLFramebuffer = null;
 		// Normalize single color into colors[0]
-		const firstColor = desc.colors && desc.colors.length ? desc.colors[0] : desc.color;
-		if (firstColor || desc.depth) {
-			const colorTex = firstColor ? (firstColor.tex as WebGLTexture) : null;
-			const depthTex = desc.depth ? (desc.depth.tex as WebGLTexture) : null;
-			if (colorTex) {
+		const firstColor = desc.colors?.[0] ?? desc.color;
+		const hasColor = firstColor !== undefined;
+		const hasDepth = desc.depth !== undefined;
+		if (hasColor || hasDepth) {
+			let colorTex: WebGLTexture | null = null;
+			if (hasColor) {
+				colorTex = firstColor.tex as WebGLTexture;
+			}
+			let depthTex: WebGLTexture | null = null;
+			if (hasDepth) {
+				depthTex = desc.depth.tex as WebGLTexture;
+			}
+			if (hasColor) {
 				if (!this.texIds.has(colorTex)) this.texIds.set(colorTex, this.nextTexId++);
 				const cid = this.texIds.get(colorTex)!;
 				let did = 0;
-				if (depthTex) { if (!this.texIds.has(depthTex)) this.texIds.set(depthTex, this.nextTexId++); did = this.texIds.get(depthTex)!; }
+				if (depthTex !== null) {
+					if (!this.texIds.has(depthTex)) this.texIds.set(depthTex, this.nextTexId++);
+					did = this.texIds.get(depthTex)!;
+				}
 				const key = cid + ':' + did;
 				let cached = this.fboCache.get(key);
-				if (!cached) { cached = this.createRenderTarget(colorTex, depthTex) as WebGLFramebuffer; this.fboCache.set(key, cached); }
-				fbo = cached;
-			} else {
-				fbo = this.createRenderTarget(colorTex, depthTex) as WebGLFramebuffer;
+			if (!cached) {
+				cached = this.createRenderTarget(colorTex, depthTex) as WebGLFramebuffer;
+				this.fboCache.set(key, cached);
 			}
-			this.bindFBO(fbo);
-			const clearColor = firstColor ? firstColor.clear : undefined;
-			const clearDepth = desc.depth ? desc.depth.clearDepth : undefined;
-			if (clearColor || clearDepth !== undefined) {
+			fbo = cached;
+		} else {
+			fbo = this.createRenderTarget(colorTex, depthTex) as WebGLFramebuffer;
+		}
+		this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, fbo);
+		let clearColor: color_arr | undefined;
+		if (hasColor) {
+			clearColor = firstColor.clear;
+			}
+			let clearDepth: number | undefined;
+			if (hasDepth) {
+				clearDepth = desc.depth.clearDepth;
+			}
+			if (clearColor !== undefined || clearDepth !== undefined) {
 				this.clear({ color: clearColor, depth: clearDepth });
 			}
 		}
@@ -342,8 +374,12 @@ export class WebGLBackend implements GPUBackend {
 		// No-op in WebGL; unbind if needed
 		this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
 	}
-	getCaps() { return { maxColorAttachments: 1 }; }
-	transitionTexture(): void { } // No-op in WebGL
+	getCaps() {
+		return { maxColorAttachments: 1 };
+	}
+	transitionTexture(): void {
+		// No-op in WebGL
+	}
 	// --- Pipeline API ---
 	createRenderPassInstance(desc: GraphicsPipelineBuildDesc): RenderPassInstanceHandle {
 		const program = this.buildProgram(desc.vsCode, desc.fsCode, desc.label);
@@ -374,9 +410,6 @@ export class WebGLBackend implements GPUBackend {
 	// Remove registerCustomPipeline; use PipelineManager.register directly
 	private hashString(s: string): number { let h = 0; for (let i = 0; i < s.length; i++) h = Math.imul(31, h) + s.charCodeAt(i) | 0; return h >>> 0; }
 	getPassState<S = unknown>(label: string): S {
-		if (this.extraStates[label]) return this.extraStates[label] as S;
-		// Assume external PipelineManager; if integrated, call manager.getState
-		// For now, keep extraStates for legacy, but migrate to manager
 		return this.extraStates[label] as S;
 	}
 	setPassState<State = unknown>(label: string, state: State): void {
@@ -475,14 +508,53 @@ export class WebGLBackend implements GPUBackend {
 			const ebo = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING) as WebGLBuffer;
 			// Attempt to inspect a few common attributes
 			const posLoc = this.getAttribLocation('a_position');
-			const instLocs = ['a_i0', 'a_i1', 'a_i2', 'a_i3'].map(n => this.getAttribLocation(n));
-			const attribState = (loc: number) => (loc >= 0 ? {
-				enabled: !!gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_ENABLED),
-				divisor: gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_DIVISOR) as number,
-				buf: gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING) as WebGLBuffer,
-			} : null);
-			const pos = attribState(posLoc);
-			const inst = instLocs.map(attribState);
+			const instLoc0 = this.getAttribLocation('a_i0');
+			const instLoc1 = this.getAttribLocation('a_i1');
+			const instLoc2 = this.getAttribLocation('a_i2');
+			const instLoc3 = this.getAttribLocation('a_i3');
+			const attribEnabled = gl.VERTEX_ATTRIB_ARRAY_ENABLED;
+			const attribDivisor = gl.VERTEX_ATTRIB_ARRAY_DIVISOR;
+			const attribBufferBinding = gl.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING;
+			let pos: { enabled: boolean; divisor: number; buf: WebGLBuffer } | null = null;
+			if (posLoc >= 0) {
+				pos = {
+					enabled: !!gl.getVertexAttrib(posLoc, attribEnabled),
+					divisor: gl.getVertexAttrib(posLoc, attribDivisor) as number,
+					buf: gl.getVertexAttrib(posLoc, attribBufferBinding) as WebGLBuffer,
+				};
+			}
+			let inst0: { enabled: boolean; divisor: number; buf: WebGLBuffer } | null = null;
+			if (instLoc0 >= 0) {
+				inst0 = {
+					enabled: !!gl.getVertexAttrib(instLoc0, attribEnabled),
+					divisor: gl.getVertexAttrib(instLoc0, attribDivisor) as number,
+					buf: gl.getVertexAttrib(instLoc0, attribBufferBinding) as WebGLBuffer,
+				};
+			}
+			let inst1: { enabled: boolean; divisor: number; buf: WebGLBuffer } | null = null;
+			if (instLoc1 >= 0) {
+				inst1 = {
+					enabled: !!gl.getVertexAttrib(instLoc1, attribEnabled),
+					divisor: gl.getVertexAttrib(instLoc1, attribDivisor) as number,
+					buf: gl.getVertexAttrib(instLoc1, attribBufferBinding) as WebGLBuffer,
+				};
+			}
+			let inst2: { enabled: boolean; divisor: number; buf: WebGLBuffer } | null = null;
+			if (instLoc2 >= 0) {
+				inst2 = {
+					enabled: !!gl.getVertexAttrib(instLoc2, attribEnabled),
+					divisor: gl.getVertexAttrib(instLoc2, attribDivisor) as number,
+					buf: gl.getVertexAttrib(instLoc2, attribBufferBinding) as WebGLBuffer,
+				};
+			}
+			let inst3: { enabled: boolean; divisor: number; buf: WebGLBuffer } | null = null;
+			if (instLoc3 >= 0) {
+				inst3 = {
+					enabled: !!gl.getVertexAttrib(instLoc3, attribEnabled),
+					divisor: gl.getVertexAttrib(instLoc3, attribDivisor) as number,
+					buf: gl.getVertexAttrib(instLoc3, attribBufferBinding) as WebGLBuffer,
+				};
+			}
 			let u0: WebGLBuffer = null, u1: WebGLBuffer = null;
 			u0 = gl.getIndexedParameter(gl.UNIFORM_BUFFER_BINDING, 0) as WebGLBuffer;
 			u1 = gl.getIndexedParameter(gl.UNIFORM_BUFFER_BINDING, 1) as WebGLBuffer;
@@ -491,7 +563,10 @@ export class WebGLBackend implements GPUBackend {
 				`firstIndex=${firstIndex} indexCount=${indexCount} instanceCount=${instanceCount} firstInstance=${firstInstance} indexType=${type}; ` +
 				`vao=${!!vao} ebo=${!!ebo} ubo0=${!!u0} ubo1=${!!u1}; ` +
 				`pos=${pos ? `en=${pos.enabled} buf=${!!pos.buf}` : 'n/a'}; ` +
-				`inst=${inst.map(s => s ? `en=${s.enabled} div=${s.divisor} buf=${!!s.buf}` : 'n/a').join(',')}`
+				`inst=${inst0 ? `en=${inst0.enabled} div=${inst0.divisor} buf=${!!inst0.buf}` : 'n/a'},` +
+				`${inst1 ? `en=${inst1.enabled} div=${inst1.divisor} buf=${!!inst1.buf}` : 'n/a'},` +
+				`${inst2 ? `en=${inst2.enabled} div=${inst2.divisor} buf=${!!inst2.buf}` : 'n/a'},` +
+				`${inst3 ? `en=${inst3.enabled} div=${inst3.divisor} buf=${!!inst3.buf}` : 'n/a'}`
 			);
 		}
 	}
@@ -510,7 +585,9 @@ export class WebGLBackend implements GPUBackend {
 		const gl = this.gl; gl.bindBuffer(gl.UNIFORM_BUFFER, buf); gl.bufferSubData(gl.UNIFORM_BUFFER, dstByteOffset, data); gl.bindBuffer(gl.UNIFORM_BUFFER, null); this.frameStats.bytesUploaded += data.byteLength; this.frameStats.uniformBytes += data.byteLength;
 	}
 
-	bindUniformBufferBase(bindingIndex: number, buf: WebGLBuffer): void { this.gl.bindBufferBase(this.gl.UNIFORM_BUFFER, bindingIndex, buf); }
+	bindUniformBufferBase(bindingIndex: number, buf: WebGLBuffer): void {
+		this.gl.bindBufferBase(this.gl.UNIFORM_BUFFER, bindingIndex, buf);
+	}
 
 	// --- Render state helpers ---
 	setActiveTexture(unit: number): void {
@@ -519,33 +596,18 @@ export class WebGLBackend implements GPUBackend {
 		this.currentActiveTexUnit = unit;
 	}
 	bindTexture2D(tex: WebGLTexture): void {
-		const unit = this.currentActiveTexUnit ?? 0;
+		const unit = this.currentActiveTexUnit;
 		if (this.boundTex2D[unit] === tex) return;
 		this.gl.bindTexture(this.gl.TEXTURE_2D, tex);
 		this.boundTex2D[unit] = tex;
 	}
 	bindTextureCube(tex: WebGLTexture): void {
-		const unit = this.currentActiveTexUnit ?? 0;
+		const unit = this.currentActiveTexUnit;
 		if (this.boundTexCube[unit] === tex) return;
 		this.gl.bindTexture(this.gl.TEXTURE_CUBE_MAP, tex);
 		this.boundTexCube[unit] = tex;
 	}
-
-	vertexAttrib2f(index: number, x: number, y: number): void { this.gl.vertexAttrib2f(index, x, y); }
-	vertexAttrib3f(index: number, x: number, y: number, z: number): void { this.gl.vertexAttrib3f(index, x, y, z); }
-	vertexAttrib4f(index: number, x: number, y: number, z: number, w: number): void { this.gl.vertexAttrib4f(index, x, y, z, w); }
 	getError?(): number { return this.gl.getError(); }
-
-	// --- Backend-agnostic convenience wrappers ---
-	setAttribPointerFloat(index: number, size: number, stride: number, offset: number): void {
-		this.gl.vertexAttribPointer(index, size, this.gl.FLOAT, false, stride, offset);
-	}
-	setAttribIPointerU8(index: number, size: number, stride: number, offset: number): void {
-		this.gl.vertexAttribIPointer(index, size, this.gl.UNSIGNED_BYTE, stride, offset);
-	}
-	setAttribIPointerU16(index: number, size: number, stride: number, offset: number): void {
-		this.gl.vertexAttribIPointer(index, size, this.gl.UNSIGNED_SHORT, stride, offset);
-	}
 
 	// --- Uniform helpers ---
 	private getCurrentProgramOrThrow(): WebGLProgram {
@@ -608,7 +670,9 @@ export class WebGLBackend implements GPUBackend {
 
 	beginFrame(): void { this.frameStats.draws = this.frameStats.drawIndexed = this.frameStats.drawsInstanced = this.frameStats.drawIndexedInstanced = 0; this.frameStats.bytesUploaded = 0; this.frameStats.vertexBytes = 0; this.frameStats.indexBytes = 0; this.frameStats.uniformBytes = 0; this.frameStats.textureBytes = 0; }
 	endFrame(): void { /* no-op for now */ }
-	getFrameStats() { return this.frameStats; }
+	getFrameStats() {
+		return this.frameStats;
+	}
 	accountUpload(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {
 		this.frameStats.bytesUploaded += bytes;
 		if (kind === 'vertex') this.frameStats.vertexBytes += bytes;
@@ -628,7 +692,11 @@ export class WebGLBackend implements GPUBackend {
 		this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, buf);
 		this.currentElementArrayBuffer = buf;
 	}
-	createVertexArray(): WebGLVertexArrayObject { const vao = this.gl.createVertexArray(); if (!vao) throw new Error('Failed to create VAO'); return vao; }
+	createVertexArray(): WebGLVertexArrayObject {
+		const vao = this.gl.createVertexArray();
+		if (!vao) throw new Error('Failed to create VAO');
+		return vao;
+	}
 	bindVertexArray(vao: WebGLVertexArrayObject): void {
 		// VAO switch changes the element-array binding association.
 		// Invalidate cached ARRAY/ELEMENT_ARRAY buffers so subsequent
@@ -644,7 +712,9 @@ export class WebGLBackend implements GPUBackend {
 		// clearing avoids stale cache preventing intended binds during VAO setup.
 		this.currentArrayBuffer = null;
 	}
-	deleteVertexArray(vao: WebGLVertexArrayObject): void { if (vao) this.gl.deleteVertexArray(vao); }
+	deleteVertexArray(vao: WebGLVertexArrayObject): void {
+		if (vao) this.gl.deleteVertexArray(vao);
+	}
 
 	setViewport(vp: { x: number; y: number; w: number; h: number }): void {
 		const c = this.cachedViewport;

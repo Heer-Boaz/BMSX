@@ -74,7 +74,10 @@ function textureByteLength(width: number, height: number): number {
 
 function asTextureSourcePromise(src: TextureSource | Promise<TextureSource>): Promise<TextureSource> | null {
 	const thenable = src as Promise<TextureSource>;
-	return typeof thenable.then === 'function' ? thenable : null;
+	if (typeof thenable.then === 'function') {
+		return thenable;
+	}
+	return null;
 }
 
 export class HeadlessGPUBackend implements GPUBackend {
@@ -157,9 +160,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		const handle = this.createTextureRecord('texture', width, height, new Uint8Array(textureByteLength(width, height)), null);
 		const promise = asTextureSourcePromise(src);
 		if (promise) {
-			void promise.then((resolved) => {
-				this.updateTexture(handle, resolved);
-			});
+			void promise.then(this.updateTexture.bind(this, handle));
 			return handle;
 		}
 		this.updateTexture(handle, src as TextureSource);
@@ -302,23 +303,6 @@ export class HeadlessGPUBackend implements GPUBackend {
 		this.textures.delete(id);
 	}
 
-	copyTexture(source: TextureHandle, destination: TextureHandle, width: number, height: number): void {
-		// Headless is a debug backend; keep explicit validation here so render-graph
-		// contract mistakes fail loudly during headless runs instead of getting masked.
-		const srcRecord = this.getTextureRecord(source);
-		const dstRecord = this.getTextureRecord(destination);
-		if (srcRecord.cubemapFaces || dstRecord.cubemapFaces) {
-			throw new Error('[HeadlessBackend] copyTexture only supports 2D textures.');
-		}
-		if (srcRecord.width !== width || srcRecord.height !== height) {
-			throw new Error(`[HeadlessBackend] Source copy size mismatch: expected ${srcRecord.width}x${srcRecord.height}, got ${width}x${height}.`);
-		}
-		if (dstRecord.width !== width || dstRecord.height !== height) {
-			throw new Error(`[HeadlessBackend] Destination copy size mismatch: expected ${dstRecord.width}x${dstRecord.height}, got ${width}x${height}.`);
-		}
-		this.ensureTexturePixels(dstRecord).set(this.ensureTexturePixels(srcRecord));
-	}
-
 	copyTextureRegion(source: TextureHandle, destination: TextureHandle, srcX: number, srcY: number, dstX: number, dstY: number, width: number, height: number): void {
 		const srcRecord = this.getTextureRecord(source);
 		const dstRecord = this.getTextureRecord(destination);
@@ -435,12 +419,6 @@ export class HeadlessGPUBackend implements GPUBackend {
 		const id = (vao as { id: number }).id;
 		this.vaos.delete(id);
 	}
-
-	setAttribPointerFloat(_index: number, _size: number, _stride: number, _offset: number): void { }
-
-	setAttribIPointerU8(_index: number, _size: number, _stride: number, _offset: number): void { }
-
-	setAttribIPointerU16(_index: number, _size: number, _stride: number, _offset: number): void { }
 
 	createUniformBuffer(byteSize: number, usage: 'static' | 'dynamic'): unknown {
 		const id = ++bufferIdSeq;

@@ -1,6 +1,6 @@
 import { Float32ArrayPool } from '../../common/pool';
 import type { AmbientLight } from '../3d/light';
-import * as MeshPipeline from '../3d/mesh_pipeline';
+import { addDirectionalLight, addPointLight, clearLights, directionalLightList, pointLightList } from '../3d/mesh_pipeline';
 import {
 	consumeHardwareLightingDirty,
 	getHardwareDirectionalLights,
@@ -47,12 +47,12 @@ export class LightingSystem {
 		const pointCount = pointLights.size;
 
 		if (hardwareDirty) {
-			MeshPipeline.clearLights();
+			clearLights();
 			for (const [id, light] of directionalLights) {
-				MeshPipeline.addDirectionalLight(id, light);
+				addDirectionalLight(id, light);
 			}
 			for (const [id, light] of pointLights) {
-				MeshPipeline.addPointLight(id, light);
+				addPointLight(id, light);
 			}
 		}
 
@@ -93,8 +93,8 @@ export interface LightingDescriptor {
 
 // Build a descriptor snapshot for any backend (e.g. WebGPU) from current GL-side light lists.
 export function buildLightingDescriptor(frame: LightingFrameState): LightingDescriptor {
-	const dirs = MeshPipeline.getDirectionalLights();
-	const pts = MeshPipeline.getPointLightsAll();
+	const dirs = directionalLightList;
+	const pts = pointLightList;
 	const dirCount = Math.min(dirs.length, frame.dirCount);
 	const pointCount = Math.min(pts.length, frame.pointCount);
 	const dirDirections = new Float32Array(dirCount * 3);
@@ -150,8 +150,8 @@ export function resetLightingDescriptorPools(): void {
 }
 
 export function buildLightingDescriptorPooled(frame: LightingFrameState): LightingDescriptor {
-	const dirs = MeshPipeline.getDirectionalLights();
-	const pts = MeshPipeline.getPointLightsAll();
+	const dirs = directionalLightList;
+	const pts = pointLightList;
 	const dirCount = Math.min(dirs.length, frame.dirCount, DEFAULT_MAX_DIR_LIGHTS);
 	const pointCount = Math.min(pts.length, frame.pointCount, DEFAULT_MAX_POINT_LIGHTS);
 

@@ -1,6 +1,6 @@
 import { $ } from '../../core/engine';
 import { RenderPassLibrary } from '../backend/pass_library';
-import { Framebuffer2DPipelineState, MeshBatchPipelineState, ParticlePipelineState } from '../backend/interfaces';
+import { Framebuffer2DPipelineState, MeshBatchPipelineState, ParticlePipelineState, type RenderPassDef } from '../backend/interfaces';
 import { M4 } from '../3d/math';
 import {
 	beginMeshQueue,
@@ -18,6 +18,7 @@ import { VRAM_ATLAS_SLOT_SIZE, VRAM_SYSTEM_ATLAS_SLOT_SIZE } from '../../machine
 import type { Mesh } from '../3d/mesh';
 import { Runtime } from '../../machine/runtime/runtime';
 import type { HeadlessPresentHost } from './view';
+import type { LightingFrameState } from '../lighting/system';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerFramePasses(registry);
@@ -282,7 +283,7 @@ function emitDiff(label: string, previous: Snapshot, current: Snapshot): Snapsho
 }
 
 function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
-	registry.register({
+	const pass: RenderPassDef<Framebuffer2DPipelineState> = {
 		id: 'framebuffer_2d',
 		name: 'HeadlessFramebuffer2D',
 		stateOnly: true,
@@ -328,11 +329,12 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 			];
 			previousFrameBufferSnapshot = emitDiff('framebuffer', previousFrameBufferSnapshot, snapshot);
 		},
-	});
+	};
+	registry.register(pass);
 }
 
 function registerSkyboxPass(registry: RenderPassLibrary): void {
-	registry.register({
+	const pass: RenderPassDef<unknown> = {
 		id: 'skybox',
 		name: 'HeadlessSkybox',
 		stateOnly: true,
@@ -354,7 +356,8 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 			}
 			previousSkyboxSnapshot = emitDiff('skybox', previousSkyboxSnapshot, snapshot);
 		},
-	});
+	};
+	registry.register(pass);
 }
 
 function makeMeshState(registry: RenderPassLibrary): MeshBatchPipelineState {
@@ -366,18 +369,22 @@ function makeMeshState(registry: RenderPassLibrary): MeshBatchPipelineState {
 	const mats = cam.getMatrices();
 	const frustum = cam.frustumPlanesPacked.slice();
 	const frameShared = registry.getState('frame_shared');
+	let lighting: LightingFrameState | undefined = undefined;
+	if (frameShared) {
+		lighting = frameShared.lighting;
+	}
 	return {
 		width: gv.offscreenCanvasSize.x,
 		height: gv.offscreenCanvasSize.y,
 		camPos: cam.position,
 		viewProj: mats.vp,
 		cameraFrustum: frustum,
-		lighting: frameShared ? frameShared.lighting : undefined,
+		lighting,
 	};
 }
 
 function registerMeshPass(registry: RenderPassLibrary): void {
-	registry.register({
+	const pass: RenderPassDef<MeshBatchPipelineState> = {
 		id: 'meshbatch',
 		name: 'HeadlessMeshes',
 		stateOnly: true,
@@ -433,7 +440,7 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 						}
 					}
 					const translation = translationFromMatrix(submission.matrix);
-					const shadow = submission.receive_shadow === undefined ? 'default' : submission.receive_shadow ? 'yes' : 'no';
+						const shadow = submission.receive_shadow ? 'yes' : 'no';
 					const morphCount = submission.morph_weights ? submission.morph_weights.length : 0;
 					snapshot.push(`[mesh#${index}] mesh=${submission.mesh.name} translate=${translation} shadow=${shadow} morphs=${morphCount}`);
 					index += 1;
@@ -441,7 +448,8 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 			}
 			previousMeshSnapshot = emitDiff('mesh', previousMeshSnapshot, snapshot);
 		},
-	});
+	};
+	registry.register(pass);
 }
 
 function makeParticleState(): ParticlePipelineState {
@@ -468,7 +476,7 @@ function makeParticleState(): ParticlePipelineState {
 }
 
 function registerParticlePass(registry: RenderPassLibrary): void {
-	registry.register({
+	const pass: RenderPassDef<ParticlePipelineState> = {
 		id: 'particles',
 		name: 'HeadlessParticles',
 		stateOnly: true,
@@ -534,5 +542,6 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 			}
 			previousParticleSnapshot = emitDiff('particles', previousParticleSnapshot, snapshot);
 		},
-	});
+	};
+	registry.register(pass);
 }

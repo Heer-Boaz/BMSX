@@ -96,14 +96,15 @@ export class RenderPresentationState {
 		if (!this.pendingPresentation) {
 			return false;
 		}
+		const overlayActive = runtime.executionOverlayActive;
 		out.mode = this.presentationMode;
-		out.commitFrame = runtime.executionOverlayActive ? false : this.presentationCommitFrame;
-		if (runtime.executionOverlayActive) {
+		out.commitFrame = overlayActive ? false : this.presentationCommitFrame;
+		if (overlayActive) {
 			clearBackQueues();
 		}
 		workbenchMode.tickIDEDraw(runtime);
 		workbenchMode.tickTerminalModeDraw(runtime);
-		if (runtime.executionOverlayActive) {
+		if (overlayActive) {
 			prepareOverlayRenderQueues();
 		} else if (out.mode === 'completed' && out.commitFrame) {
 			prepareCompletedRenderQueues();

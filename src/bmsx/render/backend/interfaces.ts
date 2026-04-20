@@ -160,7 +160,6 @@ export interface GPUBackend {
 	createCubemapEmpty(size: number, desc: TextureParams): TextureHandle;
 	uploadCubemapFace(cubemap: TextureHandle, face: number, src: TextureSource): void;
 	destroyTexture(handle: TextureHandle): void;
-	copyTexture(source: TextureHandle, destination: TextureHandle, width: number, height: number): void;
 	copyTextureRegion(source: TextureHandle, destination: TextureHandle, srcX: number, srcY: number, dstX: number, dstY: number, width: number, height: number): void;
 	createColorTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
 	createDepthTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
@@ -185,11 +184,6 @@ export interface GPUBackend {
 	createVertexArray?(): unknown;
 	bindVertexArray?(vao: unknown): void;
 	deleteVertexArray?(vao: unknown): void;
-
-	// Backend-agnostic attribute convenience wrappers (avoid GL enums in pipeline code)
-	setAttribPointerFloat?(index: number, size: number, stride: number, offset: number): void;
-	setAttribIPointerU8?(index: number, size: number, stride: number, offset: number): void;
-	setAttribIPointerU16?(index: number, size: number, stride: number, offset: number): void;
 
 	// Optional draw helpers
 	drawInstanced?(pass: PassEncoder, vertexCount: number, instanceCount: number, firstVertex?: number, firstInstance?: number): void;

@@ -275,10 +275,6 @@ export class WebGPUBackend implements GPUBackend {
 		(handle as GPUTexture).destroy();
 	}
 
-	copyTexture(source: TextureHandle, destination: TextureHandle, width: number, height: number): void {
-		this.copyTextureRegion(source, destination, 0, 0, 0, 0, width, height);
-	}
-
 	copyTextureRegion(source: TextureHandle, destination: TextureHandle, srcX: number, srcY: number, dstX: number, dstY: number, width: number, height: number): void {
 		const commandEncoder = this.device.createCommandEncoder();
 		commandEncoder.copyTextureToTexture(

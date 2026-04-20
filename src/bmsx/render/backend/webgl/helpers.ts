@@ -229,32 +229,48 @@ export function generateDetailedDrawError(
 
 	// Additional state checks for common INVALID_OPERATION causes
 	const currentVAO = gl.getParameter(gl.VERTEX_ARRAY_BINDING);
-	const vaoBound = !!currentVAO;
+	const vaoBound = currentVAO !== null;
 	const currentElementBuffer = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING);
-	const elementBufferBound = !!currentElementBuffer;
-	const maxIndex = Math.max(...m.indices!); // For clearer out-of-bounds diagnostics
+	const elementBufferBound = currentElementBuffer !== null;
+	let maxIndex = 0;
+	for (let i = 0; i < m.indices!.length; i += 1) {
+		const index = m.indices![i];
+		if (index > maxIndex) {
+			maxIndex = index;
+		}
+	}
 
 	// Read the data from the buffers for debugging
+	const bytesPerFloat = Float32Array.BYTES_PER_ELEMENT;
+	const bytesPerUint16 = Uint16Array.BYTES_PER_ELEMENT;
+	const positionBytes = vertexCount * 3 * bytesPerFloat;
+	const texcoordBytes = vertexCount * 2 * bytesPerFloat;
+	const normalBytes = vertexCount * 3 * bytesPerFloat;
+	const tangentBytes = vertexCount * 4 * bytesPerFloat;
+	const jointBytes = vertexCount * 4 * bytesPerUint16;
+	const morphBytes = vertexCount * 3 * bytesPerFloat;
 	const jointData = getBufferData(jointBuffer3D, gl.UNSIGNED_SHORT, vertexCount * 4);
 	const weightData = getBufferData(weightBuffer3D, gl.FLOAT, vertexCount * 4);
-	const morphPositionData = morphPositionBuffers3D.map(b => b ? getBufferData(b, gl.FLOAT, vertexCount * 3) : null);
-	const morphNormalData = morphNormalBuffers3D.map(b => b ? getBufferData(b, gl.FLOAT, vertexCount * 3) : null);
-	const morphTangentData = morphTangentBuffers3D.map(b => b ? getBufferData(b, gl.FLOAT, vertexCount * 3) : null);
-	const jointMatrices = jointMatrixArray.length > 0 ? Array.from({ length: jointMatrixArray.length / 16 }, (_, i) => jointMatrixArray.slice(i * 16, (i + 1) * 16)) : null;
+	const morphPositionData = morphPositionBuffers3D.map(b => b ? getBufferData(b, gl.FLOAT, vertexCount * 3) : undefined);
+	const morphNormalData = morphNormalBuffers3D.map(b => b ? getBufferData(b, gl.FLOAT, vertexCount * 3) : undefined);
+	const morphTangentData = morphTangentBuffers3D.map(b => b ? getBufferData(b, gl.FLOAT, vertexCount * 3) : undefined);
+	const jointMatrices = jointMatrixArray.length > 0
+		? Array.from({ length: jointMatrixArray.length / 16 }, (_, i) => jointMatrixArray.slice(i * 16, (i + 1) * 16))
+		: undefined;
 	const positions = getBufferData(vertexBuffer3D, gl.FLOAT, vertexCount * 3);
-	const texcoords = m.hasTexcoords ? getBufferData(texcoordBuffer3D, gl.FLOAT, vertexCount * 2) : null;
-	const normals = m.hasNormals ? getBufferData(normalBuffer3D, gl.FLOAT, vertexCount * 3) : null;
-	const tangents = m.hasTangents ? getBufferData(tangentBuffer3D, gl.FLOAT, vertexCount * 4) : null;
+	const texcoords = m.hasTexcoords ? getBufferData(texcoordBuffer3D, gl.FLOAT, vertexCount * 2) : undefined;
+	const normals = m.hasNormals ? getBufferData(normalBuffer3D, gl.FLOAT, vertexCount * 3) : undefined;
+	const tangents = m.hasTangents ? getBufferData(tangentBuffer3D, gl.FLOAT, vertexCount * 4) : undefined;
 	const vertexData = {
-		jointData: jointData,
-		weightData: weightData,
+		jointData,
+		weightData,
 		morphPositions: morphPositionData,
 		morphNormals: morphNormalData,
 		morphTangents: morphTangentData,
-		positions: positions,
-		texcoords: texcoords,
-		normals: normals,
-		tangents: tangents,
+		positions,
+		texcoords,
+		normals,
+		tangents,
 	};
 
 	const bufferSize = {
@@ -271,29 +287,29 @@ export function generateDetailedDrawError(
 	};
 
 	const bufferSizeCorrectness = {
-		vertexBuffer3D: bufferSize.vertexBuffer3D === vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT,
+		vertexBuffer3D: bufferSize.vertexBuffer3D === positionBytes,
 		indexBuffer3D: indexBuffer3D ? bufferSize.indexBuffer3D === m.indices!.length * typeToByteSize[type] : false,
-		texcoordBuffer3D: m.hasTexcoords ? bufferSize.texcoordBuffer3D === vertexCount * 2 * Float32Array.BYTES_PER_ELEMENT : true,
-		normalBuffer3D: m.hasNormals ? bufferSize.normalBuffer3D === vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT : true,
-		tangentBuffer3D: m.hasTangents ? bufferSize.tangentBuffer3D === vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT : true,
-		jointBuffer3D: m.hasSkinning ? bufferSize.jointBuffer3D === vertexCount * 4 * Uint16Array.BYTES_PER_ELEMENT : true,
-		weightBuffer3D: m.hasSkinning ? bufferSize.weightBuffer3D === vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT : true,
-		morphPositionBuffers3D: morphPositionBuffers3D.map((b, i) => b ? bufferSize.morphPositionBuffers3D[i] === vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT : true),
-		morphNormalBuffers3D: morphNormalBuffers3D.map((b, i) => b ? bufferSize.morphNormalBuffers3D[i] === vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT : true),
-		morphTangentBuffers3D: morphTangentBuffers3D.map((b, i) => b ? bufferSize.morphTangentBuffers3D[i] === vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT : true),
+		texcoordBuffer3D: m.hasTexcoords ? bufferSize.texcoordBuffer3D === texcoordBytes : true,
+		normalBuffer3D: m.hasNormals ? bufferSize.normalBuffer3D === normalBytes : true,
+		tangentBuffer3D: m.hasTangents ? bufferSize.tangentBuffer3D === tangentBytes : true,
+		jointBuffer3D: m.hasSkinning ? bufferSize.jointBuffer3D === jointBytes : true,
+		weightBuffer3D: m.hasSkinning ? bufferSize.weightBuffer3D === vertexCount * 4 * bytesPerFloat : true,
+		morphPositionBuffers3D: morphPositionBuffers3D.map((b, i) => b ? bufferSize.morphPositionBuffers3D[i] === morphBytes : true),
+		morphNormalBuffers3D: morphNormalBuffers3D.map((b, i) => b ? bufferSize.morphNormalBuffers3D[i] === morphBytes : true),
+		morphTangentBuffers3D: morphTangentBuffers3D.map((b, i) => b ? bufferSize.morphTangentBuffers3D[i] === morphBytes : true),
 	};
 
 	const bufferSizeCorrectnessReasons = {
-		vertexBuffer3D: bufferSizeCorrectness.vertexBuffer3D ? 'yes' : `no, because ${bufferSize.vertexBuffer3D - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`,
+		vertexBuffer3D: bufferSizeCorrectness.vertexBuffer3D ? 'yes' : `no, because ${bufferSize.vertexBuffer3D - positionBytes} bytes are missing`,
 		indexBuffer3D: indexBuffer3D ? (bufferSizeCorrectness.indexBuffer3D ? 'yes' : `no, because ${bufferSize.indexBuffer3D - m.indices!.length * typeToByteSize[type]} bytes are missing`) : 'Unbound!',
-		texcoordBuffer3D: m.hasTexcoords ? (bufferSizeCorrectness.texcoordBuffer3D ? 'yes' : `no, because ${bufferSize.texcoordBuffer3D - vertexCount * 2 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!',
-		normalBuffer3D: m.hasNormals ? (bufferSizeCorrectness.normalBuffer3D ? 'yes' : `no, because ${bufferSize.normalBuffer3D - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!',
-		tangentBuffer3D: m.hasTangents ? (bufferSizeCorrectness.tangentBuffer3D ? 'yes' : `no, because ${bufferSize.tangentBuffer3D - vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!',
-		jointBuffer3D: m.hasSkinning ? (bufferSizeCorrectness.jointBuffer3D ? 'yes' : `no, because ${bufferSize.jointBuffer3D - vertexCount * 4 * Uint16Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!',
-		weightBuffer3D: m.hasSkinning ? (bufferSizeCorrectness.weightBuffer3D ? 'yes' : `no, because ${bufferSize.weightBuffer3D - vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!',
-		morphPositionBuffers3D: '[' + morphPositionBuffers3D.map((b, i) => b ? (bufferSize.morphPositionBuffers3D[i] ? 'yes' : `no, because ${bufferSize.morphPositionBuffers3D[i] - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!').join(', ') + ']',
-		morphNormalBuffers3D: '[' + morphNormalBuffers3D.map((b, i) => b ? (bufferSize.morphNormalBuffers3D[i] ? 'yes' : `no, because ${bufferSize.morphNormalBuffers3D[i] - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!').join(', ') + ']',
-		morphTangentBuffers3D: '[' + morphTangentBuffers3D.map((b, i) => b ? (bufferSize.morphTangentBuffers3D[i] ? 'yes' : `no, because ${bufferSize.morphTangentBuffers3D[i] - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!').join(', ') + ']',
+		texcoordBuffer3D: m.hasTexcoords ? (bufferSizeCorrectness.texcoordBuffer3D ? 'yes' : `no, because ${bufferSize.texcoordBuffer3D - texcoordBytes} bytes are missing`) : 'Unbound!',
+		normalBuffer3D: m.hasNormals ? (bufferSizeCorrectness.normalBuffer3D ? 'yes' : `no, because ${bufferSize.normalBuffer3D - normalBytes} bytes are missing`) : 'Unbound!',
+		tangentBuffer3D: m.hasTangents ? (bufferSizeCorrectness.tangentBuffer3D ? 'yes' : `no, because ${bufferSize.tangentBuffer3D - tangentBytes} bytes are missing`) : 'Unbound!',
+		jointBuffer3D: m.hasSkinning ? (bufferSizeCorrectness.jointBuffer3D ? 'yes' : `no, because ${bufferSize.jointBuffer3D - jointBytes} bytes are missing`) : 'Unbound!',
+		weightBuffer3D: m.hasSkinning ? (bufferSizeCorrectness.weightBuffer3D ? 'yes' : `no, because ${bufferSize.weightBuffer3D - vertexCount * 4 * bytesPerFloat} bytes are missing`) : 'Unbound!',
+		morphPositionBuffers3D: '[' + morphPositionBuffers3D.map((b, i) => b ? (bufferSize.morphPositionBuffers3D[i] ? 'yes' : `no, because ${bufferSize.morphPositionBuffers3D[i] - morphBytes} bytes are missing`) : 'Unbound!').join(', ') + ']',
+		morphNormalBuffers3D: '[' + morphNormalBuffers3D.map((b, i) => b ? (bufferSize.morphNormalBuffers3D[i] ? 'yes' : `no, because ${bufferSize.morphNormalBuffers3D[i] - morphBytes} bytes are missing`) : 'Unbound!').join(', ') + ']',
+		morphTangentBuffers3D: '[' + morphTangentBuffers3D.map((b, i) => b ? (bufferSize.morphTangentBuffers3D[i] ? 'yes' : `no, because ${bufferSize.morphTangentBuffers3D[i] - morphBytes} bytes are missing`) : 'Unbound!').join(', ') + ']',
 	};
 
 	const material = m.material;
@@ -319,6 +335,7 @@ export function generateDetailedDrawError(
 	}
 	const normalMat = new Float32Array(9);
 	M4.normal3Into(normalMat, identityMatrix);
+	const currentProgram = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
 
 	return `Mesh ${m.name} has indices but drawElements failed. Vertex count: ${vertexCount}, Indices length: ${m.indices!.length}
 		Max index: ${maxIndex} (must be < ${vertexCount})
@@ -333,16 +350,16 @@ ${Object.entries(bufferSizeCorrectnessReasons).map(([buffer, result]) => `\t\t${
 		_________________________________________________________________
 		Draw Error: ${drawError}
 		WebGL error: ${getWebGLErrorString(gl, drawError)}
-		Framebuffer Created: ${framebuffer ? 'yes' : 'no'}
+		Framebuffer Created: ${framebuffer !== null ? 'yes' : 'no'}
 		Framebuffer Bound: ${gl.getParameter(gl.FRAMEBUFFER_BINDING) === framebuffer ? 'yes' : 'no'}
 		Framebuffer status: ${getFramebufferStatusString(gl, gl.checkFramebufferStatus(gl.FRAMEBUFFER))}
 		VAO bound: ${vaoBound ? 'yes' : 'no'}
 		Element Array Buffer bound: ${elementBufferBound ? 'yes' : 'no'}
-		glTextureIndexes units reserved vs bound for Albedo: TEXTURE${TEXTURE_UNIT_ALBEDO}:TEXTURE${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), albedoTextureLocation3D)}, Normal: TEXTURE${TEXTURE_UNIT_NORMAL}:TEXTURE${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), normalTextureLocation3D)}, MetallicRoughness: TEXTURE${TEXTURE_UNIT_METALLIC_ROUGHNESS}:TEXTURE${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), metallicRoughnessTextureLocation3D)}, Shadow Map: TEXTURE${TEXTURE_UNIT_SHADOW_MAP}:TEXTURE${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), shadowMapLocation3D)}
-		glTextureIndex units correctly mapped: ${TEXTURE_UNIT_ALBEDO === gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), albedoTextureLocation3D) &&
-		TEXTURE_UNIT_NORMAL === gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), normalTextureLocation3D) &&
-		TEXTURE_UNIT_METALLIC_ROUGHNESS === gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), metallicRoughnessTextureLocation3D) &&
-		TEXTURE_UNIT_SHADOW_MAP === gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), shadowMapLocation3D)}
+		glTextureIndexes units reserved vs bound for Albedo: TEXTURE${TEXTURE_UNIT_ALBEDO}:TEXTURE${gl.getUniform(currentProgram, albedoTextureLocation3D)}, Normal: TEXTURE${TEXTURE_UNIT_NORMAL}:TEXTURE${gl.getUniform(currentProgram, normalTextureLocation3D)}, MetallicRoughness: TEXTURE${TEXTURE_UNIT_METALLIC_ROUGHNESS}:TEXTURE${gl.getUniform(currentProgram, metallicRoughnessTextureLocation3D)}, Shadow Map: TEXTURE${TEXTURE_UNIT_SHADOW_MAP}:TEXTURE${gl.getUniform(currentProgram, shadowMapLocation3D)}
+		glTextureIndex units correctly mapped: ${TEXTURE_UNIT_ALBEDO === gl.getUniform(currentProgram, albedoTextureLocation3D) &&
+		TEXTURE_UNIT_NORMAL === gl.getUniform(currentProgram, normalTextureLocation3D) &&
+		TEXTURE_UNIT_METALLIC_ROUGHNESS === gl.getUniform(currentProgram, metallicRoughnessTextureLocation3D) &&
+		TEXTURE_UNIT_SHADOW_MAP === gl.getUniform(currentProgram, shadowMapLocation3D)}
 		glTextureUniforms set correctly (thus: value correctly maps to texture unit):
 		_________________________________________________________________
 		Material Color: ${JSON.stringify(matColor)}, Metallic Factor: ${metallicFactor}, Roughness Factor: ${roughnessFactor}

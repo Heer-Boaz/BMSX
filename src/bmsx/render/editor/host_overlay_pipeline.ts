@@ -155,15 +155,9 @@ function destroyRuntime(runtimeToDestroy: HostOverlayRuntime): void {
 	gl.deleteTexture(runtimeToDestroy.whiteTexture);
 }
 
-function ensureRuntime(backend: WebGLBackend): HostOverlayRuntime {
+function bootstrapRuntime(backend: WebGLBackend): HostOverlayRuntime {
 	const gl = backend.gl as WebGL2RenderingContext;
 	const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
-	if (!program) {
-		throw new Error('[HostOverlay] No active WebGL program.');
-	}
-	if (runtime !== null && runtime.gl === gl && runtime.program === program) {
-		return runtime;
-	}
 	if (runtime !== null) {
 		destroyRuntime(runtime);
 	}
@@ -425,6 +419,8 @@ function drawGlyphRunBackgrounds(backend: WebGLBackend, state: HostOverlayRuntim
 	if (command.background_color === undefined || glyphCount === 0) {
 		return boundTextures;
 	}
+	const font = command.font!;
+	const lineHeight = font.lineHeight;
 	const nextBoundTextures = bindSolidTexture(state, boundTextures);
 	ensureCapacity(backend, state, glyphCount);
 	let count = 0;
@@ -438,18 +434,18 @@ function drawGlyphRunBackgrounds(backend: WebGLBackend, state: HostOverlayRuntim
 			const char = line.charAt(index);
 			if (char === '\n') {
 				originX = Math.round(command.x);
-				originY += command.font!.lineHeight;
+				originY += lineHeight;
 				continue;
 			}
 			if (char === '\t') {
-				originX += command.font!.advance(' ') * TAB_SPACES;
+				originX += font.advance(' ') * TAB_SPACES;
 				continue;
 			}
-			const glyph = command.font!.getGlyph(char);
-			count += pushFillRect(state, count, originX, originY, originX + glyph.advance, originY + command.font!.lineHeight, command.z!, command.background_color);
+			const glyph = font.getGlyph(char);
+			count += pushFillRect(state, count, originX, originY, originX + glyph.advance, originY + lineHeight, command.z!, command.background_color);
 			originX += glyph.advance;
 		}
-		originY += command.font!.lineHeight;
+		originY += lineHeight;
 	}
 	if (count !== 0) {
 		flushBatch(backend, state, count);
@@ -458,6 +454,8 @@ function drawGlyphRunBackgrounds(backend: WebGLBackend, state: HostOverlayRuntim
 }
 
 function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: GlyphRenderSubmission, fontLineCount: number, lines: string[], boundTextures: BoundTextureState): BoundTextureState {
+	const font = command.font!;
+	const lineHeight = font.lineHeight;
 	let currentBoundTextures = boundTextures;
 	let batchSource: HostOverlayImageSource | null = null;
 	let count = 0;
@@ -478,14 +476,14 @@ function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, ca
 			const char = line.charAt(index);
 			if (char === '\n') {
 				originX = Math.round(command.x);
-				originY += command.font!.lineHeight;
+				originY += lineHeight;
 				continue;
 			}
 			if (char === '\t') {
-				originX += command.font!.advance(' ') * TAB_SPACES;
+				originX += font.advance(' ') * TAB_SPACES;
 				continue;
 			}
-			const glyph = command.font!.getGlyph(char);
+			const glyph = font.getGlyph(char);
 			const source = resolveImageSource(cache, glyph.imgid);
 			if (batchSource === null
 				|| batchSource.mode !== source.mode
@@ -514,7 +512,7 @@ function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, ca
 			count += 1;
 			originX += glyph.advance;
 		}
-		originY += command.font!.lineHeight;
+		originY += lineHeight;
 	}
 	flushGlyphBatch();
 	return currentBoundTextures;
@@ -561,8 +559,7 @@ function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passSta
 	backend.bindVertexArray(state.vao);
 }
 
-function renderOverlay(backend: WebGLBackend, passState: HostOverlayPipelineState): void {
-	const state = ensureRuntime(backend);
+function renderOverlay(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
 	const gl = backend.gl as WebGL2RenderingContext;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 	bindPassState(backend, state, passState);
@@ -603,6 +600,9 @@ export function registerHostOverlayPass_WebGL(registry: RenderPassLibrary): void
 		vsCode: vertexShaderCode,
 		fsCode: fragmentShaderCode,
 		present: true,
+		bootstrap: (backend) => {
+			bootstrapRuntime(backend as WebGLBackend);
+		},
 		shouldExecute: () => hasPendingOverlayFrame(),
 		prepare: () => {
 			const frame = consumeOverlayFrame()!;
@@ -616,7 +616,7 @@ export function registerHostOverlayPass_WebGL(registry: RenderPassLibrary): void
 			registry.setState('host_overlay', state);
 		},
 		exec: (backend: WebGLBackend, _fbo, state: RenderPassStateRegistry['host_overlay']) => {
-			renderOverlay(backend, state);
+			renderOverlay(backend, runtime!, state);
 		},
 	});
 }

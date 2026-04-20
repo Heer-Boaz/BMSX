@@ -42,10 +42,6 @@ interface GameViewOpts {
 
 export class GameView implements RenderContext {
 	public dispose(): void {
-		this.disposeReactiveSubscriptions();
-	}
-
-	private disposeReactiveSubscriptions(): void {
 		if (GameView.fullscreenKeyListenerUnsub) {
 			GameView.fullscreenKeyListenerUnsub.unsubscribe();
 			GameView.fullscreenKeyListenerUnsub = null;
@@ -145,11 +141,11 @@ export class GameView implements RenderContext {
 			poly: (o: PolyRenderSubmission) => void;
 			glyphs: (o: GlyphRenderSubmission) => void;
 		};
-	} = {
-		submit: {
-			typed: (o: RenderSubmission) => {
-				switch (o.type) {
-					case 'img':
+		} = {
+			submit: {
+				typed: (o: RenderSubmission) => {
+					switch (o.type) {
+						case 'img':
 						this.renderer.submit.sprite(o);
 						return;
 					case 'mesh':
@@ -164,45 +160,23 @@ export class GameView implements RenderContext {
 					case 'poly':
 						this.renderer.submit.poly(o);
 						return;
-					case 'glyphs':
-						this.renderer.submit.glyphs(o);
-						return;
-				}
+						case 'glyphs':
+							this.renderer.submit.glyphs(o);
+							return;
+					}
+				},
+				particle: renderQueues.submit_particle,
+				sprite: renderQueues.submitSprite,
+				mesh: renderQueues.submitMesh,
+				rect: queues.submitRectangle,
+				poly: queues.submitDrawPolygon,
+				glyphs: queues.submitGlyphs,
 			},
-			particle: (o: ParticleRenderSubmission) => {
-				renderQueues.submit_particle(o);
-			},
-			sprite: (o: ImgRenderSubmission) => {
-				renderQueues.submitSprite(o);
-			},
-			mesh: (o: MeshRenderSubmission) => {
-				renderQueues.submitMesh(o);
-			},
-			rect: (o: RectRenderSubmission) => {
-				queues.submitRectangle(o);
-			},
-			poly: (o: PolyRenderSubmission) => {
-				queues.submitDrawPolygon(o);
-			},
-			glyphs: (o: GlyphRenderSubmission) => {
-				queues.submitGlyphs(o)
-			},
-		},
-	} as RenderSubmitQueue;
+		} as RenderSubmitQueue;
 
-	// --- Ambient controls API (best-practice toggles) -------------------------
-	public setSkyboxTintExposure(tint: [number, number, number], exposure = 1.0): void {
-		queues.setSkyboxTintExposure(tint, exposure);
-	}
-	public setParticlesAmbient(mode: 0 | 1, factor = 1.0): void {
-		queues.setAmbientDefaults(mode, factor);
-	}
 	public setSpritesAmbient(enabled: boolean, factor = 1.0): void {
 		this.spriteAmbientEnabledDefault = !!enabled;
 		this.spriteAmbientFactorDefault = Math.max(0, Math.min(1, factor));
-	}
-	public setSpriteParallaxRig(vy: number, scale: number, impact: number, impact_t: number, bias_px: number, parallax_strength: number, scale_strength: number, flip_strength: number, flip_window: number): void {
-		queues.setSpriteParallaxRig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
 	}
 
 	private applyPresentationPassState(): void {
@@ -218,7 +192,11 @@ export class GameView implements RenderContext {
 		if (!this.pipelineRegistry) {
 			return;
 		}
-		this.presentationPassTokens = PRESENTATION_PASS_IDS.map(id => this.pipelineRegistry!.createPassToken(id));
+		const tokens: RenderPassToken[] = [];
+		for (let i = 0; i < PRESENTATION_PASS_IDS.length; i += 1) {
+			tokens.push(this.pipelineRegistry.createPassToken(PRESENTATION_PASS_IDS[i]));
+		}
+		this.presentationPassTokens = tokens;
 		this.applyPresentationPassState();
 	}
 
@@ -321,9 +299,10 @@ export class GameView implements RenderContext {
 			}
 		}
 
-		if (dimensions.viewportScale !== undefined) {
-			if (this.viewportScale !== dimensions.viewportScale) {
-				this.viewportScale = dimensions.viewportScale;
+		const viewportScale = dimensions.viewportScale;
+		if (viewportScale !== undefined) {
+			if (this.viewportScale !== viewportScale) {
+				this.viewportScale = viewportScale;
 				viewportScaleChanged = true;
 			}
 		}
@@ -419,16 +398,22 @@ export class GameView implements RenderContext {
 
 	public get fullscreen(): boolean {
 		const controller = this.host.getCapability('display-mode');
-		return controller ? controller.isFullscreen() : false;
+		if (!controller) {
+			return false;
+		}
+		return controller.isFullscreen();
 	}
 
-	public static get fullscreenEnabled() {
+	public static get fullscreenEnabled(): boolean {
 		const view = $.view;
 		if (!view) {
 			throw new Error('[GameView] View not available while checking fullscreen support.');
 		}
 		const controller = view.host.getCapability('display-mode');
-		return controller ? controller.isSupported() : false;
+		if (!controller) {
+			return false;
+		}
+		return controller.isSupported();
 	}
 
 	public static async triggerFullScreenOnFakeUserEvent(): Promise<void> {
@@ -439,11 +424,7 @@ export class GameView implements RenderContext {
 		if (GameView.fullscreenEnabled) {
 			try {
 				$.paused = true;
-				const controller = view.host.getCapability('display-mode');
-				if (!controller) {
-					console.warn('[GameView] Display mode controller not available; cannot enter fullscreen.');
-					return;
-				}
+				const controller = view.host.getCapability('display-mode')!;
 				await controller.setFullscreen(true);
 			}
 			catch (error) {
@@ -479,11 +460,7 @@ export class GameView implements RenderContext {
 		if (GameView.fullscreenEnabled) {
 			try {
 				$.paused = true;
-				const controller = view.host.getCapability('display-mode');
-				if (!controller) {
-					console.warn('[GameView] Display mode controller not available; cannot exit fullscreen.');
-					return;
-				}
+				const controller = view.host.getCapability('display-mode')!;
 				await controller.setFullscreen(false);
 			}
 			catch (error) {
@@ -500,8 +477,7 @@ export class GameView implements RenderContext {
 		}
 	}
 
-
-	public showFadingOverlay(text: string) {
+	public showFadingOverlay(text: string): void {
 		const overlays = this.host.getCapability('overlay');
 		if (!overlays) {
 			console.warn('[GameView] Overlay manager not available; skipping overlay presentation.');
@@ -513,7 +489,7 @@ export class GameView implements RenderContext {
 		overlay.addClass('visible');
 	}
 
-	public hideFadingOverlay() {
+	public hideFadingOverlay(): void {
 		const overlays = this.host.getCapability('overlay');
 		if (!overlays) return;
 		const overlay = overlays.getOverlay('pause-overlay');
@@ -522,16 +498,9 @@ export class GameView implements RenderContext {
 		overlay.removeClass('visible');
 		overlay.forceReflow();
 		overlay.onAnimationEnd(() => {
+			overlay.removeClass('fade-out');
 			overlay.remove();
 		});
-	}
-
-	public showPauseOverlay() {
-		$.view.showFadingOverlay('⏸️');
-	}
-
-	public showResumeOverlay() {
-		$.view.hideFadingOverlay();
 	}
 
 	public set backend(backend: GPUBackend) {

@@ -10,7 +10,7 @@ import meshVS from './shaders/3d.vert.glsl';
 import * as GLR from '../backend/webgl/gl_resources';
 import { RenderPassLibrary } from '../backend/pass_library';
 import { MeshBatchPipelineState } from '../backend/interfaces';
-import type { PassEncoder, RenderContext } from '../backend/interfaces';
+import type { PassEncoder, RenderContext, RenderPassDef } from '../backend/interfaces';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_MORPH_NORM, TEXTURE_UNIT_MORPH_POS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../backend/webgl/constants';
 import { checkWebGLError } from '../backend/webgl/helpers';
 import { WebGLBackend } from '../backend/webgl/backend';
@@ -63,8 +63,9 @@ interface MeshDrawLists {
 let activeBackend: WebGLBackend = null;
 
 // Legacy direct submission array removed. Use submitMesh() with the shared render queue.
-export function getQueuedMeshCount(): number { return meshQueueBackSize(); }
 let lightsDirty: boolean = true; // set to true on any light mutation; consumed by LightingSystem
+export let directionalLightList: ReadonlyArray<DirectionalLight> = [];
+export let pointLightList: ReadonlyArray<PointLight> = [];
 
 interface MeshBuffers {
 	vertex: WebGLBuffer;
@@ -209,11 +210,15 @@ let lastMorphEnabled = false;
 const lastMorphWeightArray = new Float32Array(MAX_MORPH_TARGETS);
 const morphIndexScratch = new Int32Array(MAX_MORPH_TARGETS);
 const zeroMorphIndices = new Int32Array(MAX_MORPH_TARGETS);
+const morphWeightScratch = new Float32Array(MAX_MORPH_TARGETS);
 
 let lastUseInstancing = -1;
 
 const sphereCenterScratch = new Float32Array(3);
 const cameraPosScratch = new Float32Array(3);
+const meshPassEncoderScratch: PassEncoder = { fbo: null, desc: { label: 'meshbatch' } };
+const cameraPointScratch = { x: 0, y: 0, z: 0 };
+const visibleSubmissionScratch: MeshRenderSubmission[] = [];
 
 function assignPosition(out: Float32Array, pos: Float32Array | { x: number; y: number; z: number }): Float32Array {
 	if (ArrayBuffer.isView(pos)) {
@@ -250,8 +255,7 @@ function getVAOSignature(m: Mesh, instanced: boolean, morph: boolean): string {
 
 // --- Pipeline helpers -------------------------------------------------------
 function isTransparent(m: Mesh): boolean {
-	const material = m.material;
-	return !!(material && material.surface === 'transparent');
+	return m.material?.surface === 'transparent';
 }
 // function isMasked(m: Mesh): boolean { return !!(m.material && m.material.surface === 'masked'); }
 function isOpaque(m: Mesh): boolean {
@@ -259,11 +263,11 @@ function isOpaque(m: Mesh): boolean {
 	if (!material || material.surface === undefined) {
 		return true;
 	}
-	return material.surface === 'opaque' || material.surface === 'masked';
+	return material.surface !== 'transparent';
 }
 function getMeshColor(m: Mesh): [number, number, number, number] {
 	const material = m.material;
-	const color = material ? material.color : undefined;
+	const color = material?.color;
 	return [
 		color ? color[0] : 1,
 		color ? color[1] : 1,
@@ -380,9 +384,10 @@ function getMeshBuffers(runtime: MeshPassRuntime, m: Mesh): MeshBuffers {
 }
 // Ambient lighting is supplied via FrameUniforms (u_ambient_frame) — no direct uniform updates here.
 export function uploadDirectionalLights(): void {
+	const lights = Array.from(directionalLights.values());
+	directionalLightList = lights;
 	if (!activeBackend) { lightsDirty = true; return; }
 	ensureLightBuffersInitialized(activeBackend);
-	const lights = Array.from(directionalLights.values());
 	const count = Math.min(lights.length, MAX_DIR_LIGHTS);
 	if (!dirLightData || !dirLightBuffer) { lightsDirty = true; return; }
 	dirLightData.fill(0);
@@ -401,9 +406,10 @@ export function uploadDirectionalLights(): void {
 	lightsDirty = true;
 }
 export function uploadPointLights(): void {
+	const lights = Array.from(pointLights.values());
+	pointLightList = lights;
 	if (!activeBackend) { lightsDirty = true; return; }
 	ensureLightBuffersInitialized(activeBackend);
-	const lights = Array.from(pointLights.values());
 	const count = Math.min(lights.length, MAX_POINT_LIGHTS);
 	if (!pointLightData || !pointLightBuffer) { lightsDirty = true; return; }
 	pointLightData.fill(0);
@@ -426,17 +432,15 @@ export function addDirectionalLight(id: Identifier, light: DirectionalLight): vo
 export function removeDirectionalLight(id: string): void { if (directionalLights.delete(id)) uploadDirectionalLights(); }
 export function addPointLight(id: Identifier, light: PointLight): void { if (!light.pos) throw new Error('Point light must have a position'); if (!light.color) throw new Error('Point light must have a color'); if (light.range === undefined) throw new Error('Point light must have a range'); pointLights.set(id, { ...light, type: 'point' }); uploadPointLights(); }
 export function removePointLight(id: string): void { if (pointLights.delete(id)) uploadPointLights(); }
-export function getPointLight(id: string): PointLight { return pointLights.get(id); }
-export function getDirectionalLights(): ReadonlyArray<DirectionalLight> { return Array.from(directionalLights.values()); }
-export function getPointLightsAll(): ReadonlyArray<PointLight> { return Array.from(pointLights.values()); }
 export function clearLights(): void {
-	if (activeBackend) ensureLightBuffersInitialized(activeBackend);
 	directionalLights.clear();
 	pointLights.clear();
+	directionalLightList = [];
+	pointLightList = [];
+	if (activeBackend) ensureLightBuffersInitialized(activeBackend);
 	uploadDirectionalLights();
 	uploadPointLights();
 }
-export function consumeLightsDirty(): boolean { const d = lightsDirty; lightsDirty = false; return d; }
 export function lightsDirtyNow(): boolean { return lightsDirty; }
 export const DIR_LIGHT_UNIFORM_BINDING = DIR_LIGHT_BINDING; export const POINT_LIGHT_UNIFORM_BINDING = POINT_LIGHT_BINDING;
 export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale: number): void {
@@ -612,24 +616,38 @@ function buildDrawLists(submissions: MeshRenderSubmission[], state: MeshBatchPip
 	const transparentSingles: MeshRenderSubmission[] = [];
 	const frustum = state.cameraFrustum;
 	const cameraPos = assignPosition(cameraPosScratch, state.camPos);
-	const cameraPoint = { x: cameraPos[0], y: cameraPos[1], z: cameraPos[2] };
-	const visible = frustum && frustum.length > 0
-		? submissions.filter(({ mesh: meshEntry, matrix }) => {
-			if (meshEntry.boundingRadius === 0) return true;
-			transformBoundingSphereCenter(sphereCenterScratch, matrix, meshEntry.boundingCenter as vec3arr);
-			const radius = transformedBoundingSphereRadius(matrix, meshEntry.boundingRadius);
-			return sphereInFrustumPacked(frustum, V3.fromF32ArrToArr(sphereCenterScratch), radius);
-		})
-		: submissions.slice();
+	cameraPointScratch.x = cameraPos[0];
+	cameraPointScratch.y = cameraPos[1];
+	cameraPointScratch.z = cameraPos[2];
+	const visible = visibleSubmissionScratch;
+	visible.length = 0;
+	if (frustum && frustum.length > 0) {
+		for (const submission of submissions) {
+			const meshEntry = submission.mesh;
+			if (meshEntry.boundingRadius === 0) {
+				visible.push(submission);
+				continue;
+			}
+			transformBoundingSphereCenter(sphereCenterScratch, submission.matrix, meshEntry.boundingCenter as vec3arr);
+			const radius = transformedBoundingSphereRadius(submission.matrix, meshEntry.boundingRadius);
+			if (sphereInFrustumPacked(frustum, V3.fromF32ArrToArr(sphereCenterScratch), radius)) {
+				visible.push(submission);
+			}
+		}
+	} else {
+		for (let i = 0; i < submissions.length; i += 1) {
+			visible.push(submissions[i]);
+		}
+	}
 	visible.sort((a, b) => {
 		const sa = a.mesh.materialSignature;
 		const sb = b.mesh.materialSignature;
 		if (sa !== sb) return sa < sb ? -1 : 1;
-		return translationDistanceSquared(a.matrix, cameraPoint) - translationDistanceSquared(b.matrix, cameraPoint);
+		return translationDistanceSquared(a.matrix, cameraPointScratch) - translationDistanceSquared(b.matrix, cameraPointScratch);
 	});
 	for (const entry of visible) {
 		const mesh = entry.mesh;
-		const receivesShadow = entry.receive_shadow !== false;
+		const receivesShadow = entry.receive_shadow;
 		if (!mesh.hasSkinning && !mesh.hasMorphTargets && isOpaque(mesh) && receivesShadow) {
 			const key = `G:${mesh.name}|${mesh.materialSignature}`;
 			let group = instanced.get(key);
@@ -642,12 +660,9 @@ function buildDrawLists(submissions: MeshRenderSubmission[], state: MeshBatchPip
 		}
 	}
 	if (transparentSingles.length > 1) {
-		transparentSingles.sort((a, b) => translationDistanceSquared(b.matrix, cameraPoint) - translationDistanceSquared(a.matrix, cameraPoint));
+		transparentSingles.sort((a, b) => translationDistanceSquared(b.matrix, cameraPointScratch) - translationDistanceSquared(a.matrix, cameraPointScratch));
 	}
 	return { instanced, opaqueSingles, transparentSingles };
-}
-function setupViewport(runtime: MeshPassRuntime, canvasWidth: number, canvasHeight: number): void {
-	runtime.backend.setViewport({ x: 0, y: 0, w: canvasWidth, h: canvasHeight });
 }
 function setupRenderingState(runtime: MeshPassRuntime, state: MeshBatchPipelineState): void {
 	const { backend, gl } = runtime;
@@ -691,7 +706,7 @@ function setMeshTextures(runtime: MeshPassRuntime, m: Mesh, buffers: MeshBuffers
 		gl.uniform1i(albedoTextureLocation3D, TEXTURE_UNIT_ALBEDO);
 		stateCache.albedo = tex;
 	}
-	stateCache.useAlbedo = tex !== null ? 1 : 0;
+	stateCache.useAlbedo = tex ? 1 : 0;
 
 	tex = m.gpuTextureNormal ? $.texmanager.getTexture(m.gpuTextureNormal) : (context.textures['_default_normal'] as WebGLTexture);
 	if (tex !== stateCache.normal) {
@@ -700,7 +715,7 @@ function setMeshTextures(runtime: MeshPassRuntime, m: Mesh, buffers: MeshBuffers
 		gl.uniform1i(normalTextureLocation3D, TEXTURE_UNIT_NORMAL);
 		stateCache.normal = tex;
 	}
-	stateCache.useNormal = tex !== null ? 1 : 0;
+	stateCache.useNormal = tex ? 1 : 0;
 
 	tex = m.gpuTextureMetallicRoughness ? $.texmanager.getTexture(m.gpuTextureMetallicRoughness) : (context.textures['_default_mr'] as WebGLTexture);
 	if (tex !== stateCache.mr) {
@@ -709,7 +724,7 @@ function setMeshTextures(runtime: MeshPassRuntime, m: Mesh, buffers: MeshBuffers
 		gl.uniform1i(metallicRoughnessTextureLocation3D, TEXTURE_UNIT_METALLIC_ROUGHNESS);
 		stateCache.mr = tex;
 	}
-	stateCache.useMR = tex !== null ? 1 : 0;
+	stateCache.useMR = tex ? 1 : 0;
 
 	// Morph position texture bind (optional)
 	if (buffers.morphPosTex && buffers.morphPosTexSize) {
@@ -759,35 +774,52 @@ function renderInstancedMeshes(runtime: MeshPassRuntime, instancedGroups: Map<st
 	checkWebGLError('mesh.instanced: after setUseInstancing');
 	uploadJointPalette(gl, undefined, false);
 	checkWebGLError('mesh.instanced: after uploadJointPalette');
-	for (const { mesh: m, instances } of instancedGroups.values()) {
-		const buffers = getMeshBuffers(runtime, m);
-		const morphWeights = m.morphWeights ?? [];
-		const hasMorph = m.hasMorphTargets && morphWeights.some(w => w !== 0);
-		const sig = getVAOSignature(m, true, hasMorph);
-		checkWebGLError('mesh.instanced: before getVAOSignature');
-		let vao: WebGLVertexArrayObject;
-		if (hasMorph) {
-			if (buffers.vaoInstancedSig !== sig) { if (buffers.vaoInstanced) gl.deleteVertexArray(buffers.vaoInstanced); buffers.vaoInstanced = buildVAOForMesh(runtime, m, buffers, true, true); buffers.vaoInstancedSig = sig; }
-			vao = buffers.vaoInstanced!;
-			checkWebGLError('mesh.instanced: after getVAOSignature');
-		} else {
-			if (buffers.vaoInstancedNoMorphSig !== sig) { if (buffers.vaoInstancedNoMorph) gl.deleteVertexArray(buffers.vaoInstancedNoMorph); buffers.vaoInstancedNoMorph = buildVAOForMesh(runtime, m, buffers, true, false); buffers.vaoInstancedNoMorphSig = sig; }
-			vao = buffers.vaoInstancedNoMorph!;
-			checkWebGLError('mesh.instanced: after getVAOSignature');
-		}
-		const indexed = !!buffers.index;
-		const indexType = buffers.indexType!;
-		const fallbackIndexCount = m.indices ? m.indices.length : 0;
-		const indexCount = buffers.indexCount ?? fallbackIndexCount;
-		const materialForCull = m.material;
-		applyCullState(runtime, !!(materialForCull && materialForCull.doubleSided));
-		setMeshMaterial(gl, m);
-		checkWebGLError('mesh.instanced: after setMeshMaterial');
-		setMeshTextures(runtime, m, buffers, true);
-		checkWebGLError('mesh.instanced: after setMeshTextures');
-		if (hasMorph) { const w = new Float32Array(MAX_MORPH_TARGETS); const src = m.morphWeights ?? []; for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, src.length); i++) w[i] = src[i] ?? 0; uploadMorphWeights(gl, w); } else uploadMorphWeights(gl, null);
-		checkWebGLError('mesh.instanced: after uploadMorphWeights');
-		backend.bindVertexArray(vao);
+		for (const { mesh: m, instances } of instancedGroups.values()) {
+			const buffers = getMeshBuffers(runtime, m);
+			const morphWeights = m.morphWeights ?? [];
+			const hasMorph = m.hasMorphTargets && morphWeights.some(w => w !== 0);
+			const sig = getVAOSignature(m, true, hasMorph);
+			checkWebGLError('mesh.instanced: before getVAOSignature');
+			let vao: WebGLVertexArrayObject;
+			if (hasMorph) {
+				let cachedVao = buffers.vaoInstanced;
+				if (buffers.vaoInstancedSig !== sig) {
+					if (cachedVao) gl.deleteVertexArray(cachedVao);
+					cachedVao = buildVAOForMesh(runtime, m, buffers, true, true);
+					buffers.vaoInstanced = cachedVao;
+					buffers.vaoInstancedSig = sig;
+				}
+				vao = cachedVao!;
+				checkWebGLError('mesh.instanced: after getVAOSignature');
+			} else {
+				let cachedVao = buffers.vaoInstancedNoMorph;
+				if (buffers.vaoInstancedNoMorphSig !== sig) {
+					if (cachedVao) gl.deleteVertexArray(cachedVao);
+					cachedVao = buildVAOForMesh(runtime, m, buffers, true, false);
+					buffers.vaoInstancedNoMorph = cachedVao;
+					buffers.vaoInstancedNoMorphSig = sig;
+				}
+				vao = cachedVao!;
+				checkWebGLError('mesh.instanced: after getVAOSignature');
+			}
+			const indexed = Boolean(buffers.index);
+			const fallbackIndexCount = m.indices ? m.indices.length : 0;
+			const indexCount = buffers.indexCount ?? fallbackIndexCount;
+			applyCullState(runtime, Boolean(m.material?.doubleSided));
+			setMeshMaterial(gl, m);
+			checkWebGLError('mesh.instanced: after setMeshMaterial');
+			setMeshTextures(runtime, m, buffers, true);
+			checkWebGLError('mesh.instanced: after setMeshTextures');
+			if (hasMorph) {
+				const src = m.morphWeights ?? [];
+				morphWeightScratch.fill(0);
+				for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, src.length); i++) morphWeightScratch[i] = src[i] ?? 0;
+				uploadMorphWeights(gl, morphWeightScratch);
+			} else {
+				uploadMorphWeights(gl, null);
+			}
+			checkWebGLError('mesh.instanced: after uploadMorphWeights');
+			backend.bindVertexArray(vao);
 		checkWebGLError('mesh.instanced: after bindVertexArray');
 		// Partition by transform reflection to maintain correct front-face under culling
 		const cw: typeof instances = []; // mirrored → CW
@@ -817,14 +849,14 @@ function renderInstancedMeshes(runtime: MeshPassRuntime, instancedGroups: Map<st
 				gl.bufferData(gl.ARRAY_BUFFER, MAX_INSTANCES * INSTANCE_STRIDE_BYTES, gl.DYNAMIC_DRAW);
 				const bytes = batchCount * INSTANCE_STRIDE_BYTES;
 				const u8slice = instanceScratchU8.subarray(0, bytes);
-				gl.bufferSubData(gl.ARRAY_BUFFER, 0, u8slice);
-				backend.accountUpload('vertex', u8slice.byteLength);
-				checkWebGLError('mesh.instanced: after bufferSubData');
-				const _pass: PassEncoder = { fbo: null, desc: { label: 'meshbatch' } };
-				if (indexed) backend.drawIndexedInstanced(_pass, indexCount, batchCount, 0, 0, 0, indexType);
-				else backend.drawInstanced(_pass, m.vertexCount, batchCount, 0, 0);
-			}
-		};
+					gl.bufferSubData(gl.ARRAY_BUFFER, 0, u8slice);
+					backend.accountUpload('vertex', u8slice.byteLength);
+					checkWebGLError('mesh.instanced: after bufferSubData');
+					meshPassEncoderScratch.fbo = null;
+					if (indexed) backend.drawIndexedInstanced(meshPassEncoderScratch, indexCount, batchCount, 0, 0, 0, buffers.indexType!);
+					else backend.drawInstanced(meshPassEncoderScratch, m.vertexCount, batchCount, 0, 0);
+				}
+			};
 		// Draw mirrored (CW) then normal (CCW); restore CCW at end for safety
 		drawBatches(cw, gl.CW);
 		drawBatches(ccw, gl.CCW);
@@ -844,7 +876,7 @@ let lastRoughness = 1.0;
 function setMeshMaterial(gl: WebGL2RenderingContext, m: Mesh): void {
 	const mat = m.material;
 	const sig = m.materialSignature;
-	const color = mat ? mat.color : undefined;
+	const color = mat?.color;
 	const r = color ? color[0] : 1;
 	const g = color ? color[1] : 1;
 	const b = color ? color[2] : 1;
@@ -861,7 +893,7 @@ function setMeshMaterial(gl: WebGL2RenderingContext, m: Mesh): void {
 	if (lastMetallic !== metallic || lastMaterialSig !== sig) { gl.uniform1f(metallicFactorLocation3D, metallic); lastMetallic = metallic; }
 	if (lastRoughness !== roughness || lastMaterialSig !== sig) { gl.uniform1f(roughnessFactorLocation3D, roughness); lastRoughness = roughness; }
 	// Surface classification uniforms
-	const surfaceClass = mat ? mat.surface : undefined;
+	const surfaceClass = mat?.surface;
 	const surf = surfaceClass === 'transparent' ? 2 : (surfaceClass === 'masked' ? 1 : 0);
 	gl.uniform1i(surfaceLocation3D, surf);
 	const alphaCutoff = mat && mat.alphaCutoff !== undefined ? mat.alphaCutoff : 0.5;
@@ -871,43 +903,55 @@ function setMeshMaterial(gl: WebGL2RenderingContext, m: Mesh): void {
 function renderSingleMeshes(runtime: MeshPassRuntime, singles: MeshRenderSubmission[], framebuffer: WebGLFramebuffer): void {
 	const { backend, gl } = runtime;
 	setUseInstancing(gl, false);
-	for (const { mesh: m, matrix, joint_matrices: jointMatrices, morph_weights: morphWeights, receive_shadow: receiveShadow } of singles) {
-		const buffers = getMeshBuffers(runtime, m);
-		const srcWeights = morphWeights ?? m.morphWeights ?? [];
-		const hasMorph = m.hasMorphTargets && srcWeights.some(w => w !== 0);
-		const sig = getVAOSignature(m, false, hasMorph);
-		let vao: WebGLVertexArrayObject;
-		if (hasMorph) {
-			if (buffers.vaoSig !== sig) { if (buffers.vao) gl.deleteVertexArray(buffers.vao); buffers.vao = buildVAOForMesh(runtime, m, buffers, false, true); buffers.vaoSig = sig; }
-			vao = buffers.vao!;
-		} else {
-			if (buffers.vaoNoMorphSig !== sig) { if (buffers.vaoNoMorph) gl.deleteVertexArray(buffers.vaoNoMorph); buffers.vaoNoMorph = buildVAOForMesh(runtime, m, buffers, false, false); buffers.vaoNoMorphSig = sig; }
-			vao = buffers.vaoNoMorph!;
+		for (const { mesh: m, matrix, joint_matrices: jointMatrices, morph_weights: morphWeights, receive_shadow: receiveShadow } of singles) {
+			const buffers = getMeshBuffers(runtime, m);
+			const srcWeights = morphWeights ?? m.morphWeights ?? [];
+			const hasMorph = m.hasMorphTargets && srcWeights.some(w => w !== 0);
+			const sig = getVAOSignature(m, false, hasMorph);
+			let vao: WebGLVertexArrayObject;
+			if (hasMorph) {
+				let cachedVao = buffers.vao;
+				if (buffers.vaoSig !== sig) {
+					if (cachedVao) gl.deleteVertexArray(cachedVao);
+					cachedVao = buildVAOForMesh(runtime, m, buffers, false, true);
+					buffers.vao = cachedVao;
+					buffers.vaoSig = sig;
+				}
+				vao = cachedVao!;
+			} else {
+				let cachedVao = buffers.vaoNoMorph;
+				if (buffers.vaoNoMorphSig !== sig) {
+					if (cachedVao) gl.deleteVertexArray(cachedVao);
+					cachedVao = buildVAOForMesh(runtime, m, buffers, false, false);
+					buffers.vaoNoMorph = cachedVao;
+					buffers.vaoNoMorphSig = sig;
+				}
+				vao = cachedVao!;
+			}
+			uploadJointPalette(gl, jointMatrices, m.hasSkinning);
+			if (hasMorph) {
+				morphWeightScratch.fill(0);
+				for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, srcWeights.length); i++) morphWeightScratch[i] = srcWeights[i] ?? 0;
+				uploadMorphWeights(gl, morphWeightScratch);
+			} else {
+				uploadMorphWeights(gl, null);
+			}
+			applyCullState(runtime, Boolean(m.material?.doubleSided));
+			setMeshMaterial(gl, m);
+			setMeshTextures(runtime, m, buffers, receiveShadow);
+			gl.uniformMatrix4fv(modelLocation3D, false, matrix);
+			const normal9 = normal9Pool.ensure(); M4.normal3Into(normal9, matrix); gl.uniformMatrix3fv(normalMatrixLocation3D, false, normal9);
+			backend.bindVertexArray(vao);
+			meshPassEncoderScratch.fbo = framebuffer;
+			checkWebGLError('mesh.single: before draw');
+			const mirrored = isMatrixMirrored(matrix);
+			if (mirrored) gl.frontFace(gl.CW);
+			if (buffers.index) backend.drawIndexed(meshPassEncoderScratch, buffers.indexCount ?? m.indices!.length, 0, buffers.indexType);
+			else backend.draw(meshPassEncoderScratch, 0, m.vertexCount);
+			if (mirrored) gl.frontFace(gl.CCW);
+			checkWebGLError('mesh.single: after draw');
+			backend.bindVertexArray(null);
 		}
-		uploadJointPalette(gl, jointMatrices, m.hasSkinning);
-		if (hasMorph) {
-			const w = new Float32Array(MAX_MORPH_TARGETS);
-			for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, srcWeights.length); i++) w[i] = srcWeights[i] ?? 0;
-			uploadMorphWeights(gl, w);
-		} else uploadMorphWeights(gl, null);
-		const instMaterial = m.material;
-		applyCullState(runtime, !!(instMaterial && instMaterial.doubleSided));
-		setMeshMaterial(gl, m);
-		const allowShadow = receiveShadow !== false;
-		setMeshTextures(runtime, m, buffers, allowShadow);
-		gl.uniformMatrix4fv(modelLocation3D, false, matrix);
-		const normal9 = normal9Pool.ensure(); M4.normal3Into(normal9, matrix); gl.uniformMatrix3fv(normalMatrixLocation3D, false, normal9);
-		backend.bindVertexArray(vao);
-		const _p2 = { fbo: framebuffer, desc: { label: 'meshbatch' } };
-		checkWebGLError('mesh.single: before draw');
-		const mirrored = isMatrixMirrored(matrix);
-		if (mirrored) gl.frontFace(gl.CW);
-		if (buffers.index) backend.drawIndexed(_p2, buffers.indexCount ?? m.indices!.length, 0, buffers.indexType);
-		else backend.draw(_p2, 0, m.vertexCount);
-		if (mirrored) gl.frontFace(gl.CCW);
-		checkWebGLError('mesh.single: after draw');
-		backend.bindVertexArray(null);
-	}
 	normal9Pool.reset();
 	applyCullState(runtime, false);
 }
@@ -916,14 +960,16 @@ export function renderMeshBatch(backend: WebGLBackend, context: RenderContext, f
 	assertTextureContext(context);
 	const gl = backend.gl as WebGL2RenderingContext;
 	const runtime: MeshPassRuntime = { backend, gl, context };
-	const pending = beginMeshQueue();
-	if (pending === 0) return;
-	_morphUsage.pos = 0; _morphUsage.norm = 0;
-	const submissions: MeshRenderSubmission[] = [];
-	forEachMeshQueue((it) => { submissions.push(it); });
-	const drawLists = buildDrawLists(submissions, state);
-	setupViewport(runtime, state.width, state.height);
-	setupRenderingState(runtime, state);
+		const pending = beginMeshQueue();
+		if (pending === 0) return;
+		_morphUsage.pos = 0; _morphUsage.norm = 0;
+		const submissions: MeshRenderSubmission[] = [];
+		forEachMeshQueue((it) => {
+			submissions.push(it);
+		});
+		const drawLists = buildDrawLists(submissions, state);
+		runtime.backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
+		setupRenderingState(runtime, state);
 	gl.disable(gl.BLEND);
 	gl.depthMask(true);
 	renderInstancedMeshes(runtime, drawLists.instanced);
@@ -938,30 +984,30 @@ export function renderMeshBatch(backend: WebGLBackend, context: RenderContext, f
 }
 
 export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
-	registry.register({
+	const vs = shaderModule(meshVS, { uniforms: ['FrameUniforms', 'DirLightBlock', 'PointLightBlock'] }, 'mesh-vs');
+	const fs = shaderModule(
+		meshFS,
+		{
+			uniforms: ['FrameUniforms', 'DirLightBlock', 'PointLightBlock'],
+			textures: [
+				{ name: 'u_albedoTexture' },
+				{ name: 'u_normalTexture' },
+				{ name: 'u_metallicRoughnessTexture' },
+			],
+			buffers: [
+				{ name: 'DirLightBlock', size: 0, usage: 'uniform' },
+				{ name: 'PointLightBlock', size: 0, usage: 'uniform' },
+			],
+		},
+		'mesh-fs'
+	);
+	const build = makePipelineBuildDesc('Meshes', vs, fs);
+	const pass: RenderPassDef<MeshBatchPipelineState> = {
 		id: 'meshbatch',
 		name: 'Meshes',
-		...(() => {
-			const vs = shaderModule(meshVS, { uniforms: ['FrameUniforms', 'DirLightBlock', 'PointLightBlock'] }, 'mesh-vs');
-			const fs = shaderModule(
-				meshFS,
-				{
-					uniforms: ['FrameUniforms', 'DirLightBlock', 'PointLightBlock'],
-					textures: [
-						{ name: 'u_albedoTexture' },
-						{ name: 'u_normalTexture' },
-						{ name: 'u_metallicRoughnessTexture' },
-					],
-					buffers: [
-						{ name: 'DirLightBlock', size: 0, usage: 'uniform' },
-						{ name: 'PointLightBlock', size: 0, usage: 'uniform' },
-					],
-				},
-				'mesh-fs'
-			);
-			const build = makePipelineBuildDesc('Meshes', vs, fs);
-			return { vsCode: build.vsCode, fsCode: build.fsCode, bindingLayout: build.bindingLayout };
-		})(),
+		vsCode: build.vsCode,
+		fsCode: build.fsCode,
+		bindingLayout: build.bindingLayout,
 		bootstrap: (backend) => {
 			const webglBackend = backend as WebGLBackend;
 			activeBackend = webglBackend;
@@ -973,16 +1019,14 @@ export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
 			// Default textures are managed by TextureManager and GameView.initializeDefaultTextures
 		},
 		writesDepth: true,
-		shouldExecute: () => !!(getQueuedMeshCount()),
+		shouldExecute: () => meshQueueBackSize() > 0,
 		exec: (backend, fbo, s) => {
 			const webglBackend = backend as WebGLBackend;
 			activeBackend = webglBackend;
-			const state = s as MeshBatchPipelineState;
-			renderMeshBatch(webglBackend, $.view, fbo as WebGLFramebuffer, state);
+			renderMeshBatch(webglBackend, $.view, fbo as WebGLFramebuffer, s as MeshBatchPipelineState);
 		},
 		prepare: (backend, _state) => {
 			const ctx = $.view as RenderContext;
-			const width = ctx.offscreenCanvasSize.x; const height = ctx.offscreenCanvasSize.y;
 			const cam = resolveActiveCamera3D();
 			if (!cam) {
 				console.warn('[Draw Meshes] No active 3D camera found, skipping mesh draw');
@@ -992,15 +1036,18 @@ export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
 			const mats = cam.getMatrices();
 			const frustum = cam.frustumPlanesPacked.slice();
 			const meshState: MeshBatchPipelineState = {
-				width,
-				height,
+				width: ctx.offscreenCanvasSize.x,
+				height: ctx.offscreenCanvasSize.y,
 				camPos: cam.position,
 				viewProj: mats.vp,
 				cameraFrustum: frustum,
-				lighting: frameShared ? frameShared.lighting : undefined,
 			};
+			if (frameShared) {
+				meshState.lighting = frameShared.lighting;
+			}
 			registry.setState('meshbatch', meshState);
 			registry.validatePassResources('meshbatch', backend);
 		},
-	});
+	};
+	registry.register(pass);
 }

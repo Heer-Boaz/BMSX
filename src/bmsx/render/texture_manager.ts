@@ -263,32 +263,34 @@ export class TextureManager {
 	private async ensureTextureReady(
 		key: string,
 		loadBitmapFn: () => Promise<TextureSource>,
-		desc: TextureParams,
-		options?: { closeSource?: boolean }
+		desc: TextureParams
 	): Promise<TextureKey> {
 		if (!this.backend) throw new Error('TextureManager backend not set');
+		const backend = this.backend;
 
 		// Fast path or reserve to avoid race
-		let gpu = this.gpuCache.get(key);
+		const gpu = this.gpuCache.get(key);
 		if (gpu) { gpu.refCount++; return key; }
 		this.gpuCache.set(key, { handle: undefined, refCount: 1, barrier: this.textureBarrier }); // reserve entry before awaiting
 
 		const handle = await this.textureBarrier.acquire(
 			key,
-			async () => {
-				const bmp = await loadBitmapFn() as TextureSource;
-				const h = this.backend.createTexture(bmp, desc);
-				if (options?.closeSource !== false && 'close' in bmp) (bmp as { close: () => void }).close();
-				return h;
-			},
-			{
-				category: 'texture',
-				block_render: false,
-				tag: `tex:${key}`,
-				disposer: (h) => this.backend.destroyTexture(h),
-				warnIfLongerMs: 1000,
-			}
-		);
+				async () => {
+					const bmp = await loadBitmapFn() as TextureSource;
+					const h = backend.createTexture(bmp, desc);
+					if ('close' in bmp) (bmp as { close: () => void }).close();
+					return h;
+				},
+					{
+						category: 'texture',
+						block_render: false,
+						tag: `tex:${key}`,
+						disposer: (h) => {
+							backend.destroyTexture(h);
+						},
+						warnIfLongerMs: 1000,
+					}
+				);
 
 		// Entry may have been released while loading
 		const entry = this.gpuCache.get(key);
@@ -306,28 +308,30 @@ export class TextureManager {
 	): TextureKey {
 		if (!this.backend) throw new Error('TextureManager backend not set');
 
-		let gpu = this.gpuCache.get(key);
+		const gpu = this.gpuCache.get(key);
 		if (gpu) { gpu.refCount++; return key; }
 
-		// Put fallback or empty entry
-		this.gpuCache.set(key, { handle: fallbackHandle, refCount: 1, ownedFallback: false, barrier: this.textureBarrier });
+			// Put fallback or empty entry
+			this.gpuCache.set(key, { handle: fallbackHandle, refCount: 1, ownedFallback: false, barrier: this.textureBarrier });
 
-		void this.textureBarrier.acquire(
-			key,
+			void this.textureBarrier.acquire(
+				key,
 			async () => {
 				const bmp = await loadBitmapFn() as TextureSource;
 				const real = this.backend!.createTexture(bmp, desc);
 				if ('close' in bmp) (bmp as { close: () => void }).close();
 				return real;
 			},
-			{
-				category: 'texture',
-				block_render: false,
-				tag: `tex:${key}`,
-				disposer: (h) => this.backend!.destroyTexture(h),
-				warnIfLongerMs: 1000,
-			}
-		).then((realHandle) => {
+					{
+						category: 'texture',
+						block_render: false,
+						tag: `tex:${key}`,
+						disposer: (h) => {
+							this.backend.destroyTexture(h);
+						},
+						warnIfLongerMs: 1000,
+					}
+				).then((realHandle) => {
 			const entry = this.gpuCache.get(key);
 			if (!entry) { this.backend.destroyTexture(realHandle); return; }
 			if (entry.handle !== realHandle) {
@@ -350,24 +354,28 @@ export class TextureManager {
 		this.gpuCache.set(key, { handle: fallback, refCount: 1, ownedFallback: true });
 	}
 
-	private launchCubemapReplacement(
-		key: string,
-		acquireFn: () => Promise<TextureHandle>,
-		assetBarrier?: AssetBarrier<TextureHandle>,
-		tag?: string
-	): void {
-		const barrier = assetBarrier ?? this.textureBarrier;
-		void barrier.acquire(
-			key,
-			async () => await acquireFn(),
-			{
-				category: 'texture',
-				block_render: !!assetBarrier, // external barrier implies blocking caller wants it visible
-				tag: tag ?? `cubemap:${key}`,
-				disposer: (h) => this.backend!.destroyTexture(h),
-				warnIfLongerMs: 1000,
-			}
-		).then((real) => {
+		private launchCubemapReplacement(
+			key: string,
+			acquireFn: () => Promise<TextureHandle>,
+			assetBarrier?: AssetBarrier<TextureHandle>,
+			tag?: string
+		): void {
+			const barrier = assetBarrier ?? this.textureBarrier;
+				void barrier.acquire(
+					key,
+					() => {
+						return acquireFn();
+					},
+					{
+						category: 'texture',
+						block_render: !!assetBarrier, // external barrier implies blocking caller wants it visible
+						tag: tag ?? `cubemap:${key}`,
+						disposer: (h) => {
+							this.backend.destroyTexture(h);
+						},
+						warnIfLongerMs: 1000,
+					}
+				).then((real) => {
 			const entry = this.gpuCache.get(key);
 			if (!entry) { this.backend!.destroyTexture(real); return; }
 			const old = entry.handle;
@@ -393,7 +401,7 @@ export class TextureManager {
 
 		const key = this.makeCubemapKey(name, faceIdsForKey, desc);
 
-		let gpu = this.gpuCache.get(key);
+		const gpu = this.gpuCache.get(key);
 		if (gpu) { gpu.refCount++; return key; }
 
 		this.reserveFallbackCubemap(key, desc, fallbackColor);
@@ -404,9 +412,13 @@ export class TextureManager {
 
 		const streamed = options.streamed ?? false;
 
-		if (!streamed) {
-			this.launchCubemapReplacement(key, async () => {
-				if (delay_ms) await new Promise(r => setTimeout(r, delay_ms));
+			if (!streamed) {
+				this.launchCubemapReplacement(key, async () => {
+					if (delay_ms) {
+						await new Promise<void>((resolve) => {
+							setTimeout(resolve, delay_ms);
+						});
+					}
 
 				// Find first provided loader (if any) to pick face size
 				const firstProvidedIndex = faceLoaders.findIndex(p => p != null);
@@ -437,8 +449,12 @@ export class TextureManager {
 				return this.backend!.createCubemapFromSources(faces, desc);
 			}, assetBarrier, `cubemap:${name}`);
 		} else {
-			this.launchCubemapReplacement(key, async () => {
-				if (delay_ms) await new Promise(r => setTimeout(r, delay_ms));
+				this.launchCubemapReplacement(key, async () => {
+					if (delay_ms) {
+						await new Promise<void>((resolve) => {
+							setTimeout(resolve, delay_ms);
+						});
+					}
 
 				// Determine size from first available loader (or use 1)
 				const firstProvidedIndex = faceLoaders.findIndex(p => p != null);
@@ -454,20 +470,20 @@ export class TextureManager {
 				const cubemap = this.backend!.createCubemapEmpty(size, desc);
 
 				// Upload every face: use provided loader or synthesized solid image
-				const uploadPromises: Promise<void>[] = faceLoaders.map((p, idx) => {
-					if (p != null) {
-						return (p as Promise<TextureSource>).then(img => {
-							if (img.width !== size || img.height !== size) {
-								throw new Error(`[TextureManager] Cubemap face ${idx} size mismatch. Expected ${size}x${size}, got ${img.width}x${img.height}`);
-							}
-							this.backend!.uploadCubemapFace(cubemap, idx, img);
-						});
-					} else {
-						return this.createSolid(size, fallbackColor).then(img => {
-							this.backend!.uploadCubemapFace(cubemap, idx, img);
-						});
-					}
-				});
+					const uploadPromises: Promise<void>[] = faceLoaders.map((p, idx) => {
+						if (p != null) {
+							return (p as Promise<TextureSource>).then(img => {
+								if (img.width !== size || img.height !== size) {
+									throw new Error(`[TextureManager] Cubemap face ${idx} size mismatch. Expected ${size}x${size}, got ${img.width}x${img.height}`);
+								}
+								this.backend.uploadCubemapFace(cubemap, idx, img);
+							});
+						} else {
+							return this.createSolid(size, fallbackColor).then(img => {
+								this.backend.uploadCubemapFace(cubemap, idx, img);
+							});
+						}
+					});
 
 				await Promise.all(uploadPromises);
 				return cubemap;
@@ -479,23 +495,20 @@ export class TextureManager {
 
 	public async fetchModelTextures(meshModel: GLTFModel): Promise<Index2GpuTexture> {
 		const gpuTextures: Index2GpuTexture = {};
-		let count = 0;
-		if (meshModel.imageBuffers) {
-			count = meshModel.imageBuffers.length;
-		} else if (meshModel.imageURIs) {
-			count = meshModel.imageURIs.length;
-		}
+		const count = meshModel.imageBuffers ? meshModel.imageBuffers.length : meshModel.imageURIs ? meshModel.imageURIs.length : 0;
 		if (count === 0) return gpuTextures;
 
 		for (let i = 0; i < count; i++) {
 			if (meshModel.imageBuffers) {
 				const buf = meshModel.imageBuffers[i];
-				const key = await this.loadModelTextureFromBuffer(buf, { modelName: meshModel.name, modelImageIndex: i });
+				const key = this.makeModelBufferKey({ modelName: meshModel.name, modelImageIndex: i });
+				await this.ensureTextureReady(key, this.fromBuffer.bind(this, key, buf), {});
 				gpuTextures[i] = key;
 			} else if (meshModel.imageURIs) {
 				const uri = meshModel.imageURIs[i];
 				if (!uri) continue;
-				const key = await this.fetchModelTextureFromUri(uri, { modelName: meshModel.name, modelImageIndex: i });
+				const key = this.makeKey(uri, {});
+				await this.ensureTextureReady(key, this.fromBuffer.bind(this, uri), {});
 				gpuTextures[i] = key;
 			}
 		}
@@ -503,12 +516,7 @@ export class TextureManager {
 	}
 
 	public async releaseModelTextures(model: GLTFModel): Promise<void> {
-		let count = 0;
-		if (model.imageBuffers) {
-			count = model.imageBuffers.length;
-		} else if (model.imageURIs) {
-			count = model.imageURIs.length;
-		}
+		const count = model.imageBuffers ? model.imageBuffers.length : model.imageURIs ? model.imageURIs.length : 0;
 		for (let i = 0; i < count; i++) {
 			const key = model.imageBuffers
 				? this.makeModelBufferKey({ modelName: model.name, modelImageIndex: i })
@@ -517,28 +525,10 @@ export class TextureManager {
 		}
 	}
 
-	private async loadAndCacheTexture(
-		key: string,
-		loadBitmapFn: () => Promise<TextureSource>,
-		desc: TextureParams
-	): Promise<TextureKey> {
-		return this.ensureTextureReady(key, loadBitmapFn, desc);
-	}
-
-	public async loadModelTextureFromBuffer(buffer: ArrayBuffer, identifier: ModelTextureIdentifier, desc: TextureParams = {}): Promise<TextureKey> {
-		const key = this.makeModelBufferKey(identifier);
-		return this.loadAndCacheTexture(key, () => this.fromBuffer(key, buffer), desc);
-	}
-
-	public async fetchModelTextureFromUri(uri: string, _identifier: ModelTextureIdentifier, desc: TextureParams = {}, buffer?: ArrayBuffer): Promise<TextureKey> {
-		const key = this.makeKey(uri, desc);
-		return this.loadAndCacheTexture(key, () => this.fromBuffer(uri, buffer), desc);
-	}
-
 	public async loadTextureFromPixels(keyBase: string, pixels: Uint8Array, width: number, height: number, desc: TextureParams = {}): Promise<TextureHandle> {
 		const key = this.makeKey(keyBase, desc);
 		const source: TextureSource = { width, height, data: pixels };
-		await this.ensureTextureReady(key, async () => source, desc, { closeSource: false });
+		await this.ensureTextureReady(key, async () => source, desc);
 		return this.getTexture(key);
 	}
 
@@ -551,16 +541,20 @@ export class TextureManager {
 		const source: TextureSource = { width, height, data: pixels };
 		const handle = this.backend.createTexture(source, desc);
 		this.gpuCache.set(key, { handle, refCount: 1, ownedFallback: false, barrier: this.textureBarrier });
-		void this.textureBarrier.acquire(
-			key,
-			async () => handle,
-			{
-				category: 'texture',
-				block_render: false,
-				tag: `tex:${key}`,
-				disposer: (h) => this.backend.destroyTexture(h),
-			}
-		);
+			void this.textureBarrier.acquire(
+				key,
+				() => {
+					return Promise.resolve(handle);
+				},
+				{
+					category: 'texture',
+					block_render: false,
+					tag: `tex:${key}`,
+					disposer: (h) => {
+						this.backend.destroyTexture(h);
+					},
+				}
+			);
 		return handle;
 	}
 
@@ -642,8 +636,7 @@ export class TextureManager {
 	}
 
 	public getImage(key: ImageKey): TextureSource {
-		const imgEntry = this.imageCache.get(key);
-		return imgEntry?.bitmap;
+		return this.imageCache.get(key)?.bitmap;
 	}
 
 	async fromBuffer(uri: string, buffer?: ArrayBuffer, options?: { flipY?: boolean; }): Promise<TextureSource> {
@@ -687,36 +680,37 @@ export class TextureManager {
 		const toUint8 = (v: number) => (v <= 1 ? Math.round(v * 255) : Math.round(v));
 		const alpha = a <= 1 ? a : Math.max(0, Math.min(1, a / 255));
 		const cssColor = `rgba(${toUint8(r)}, ${toUint8(g)}, ${toUint8(b)}, ${alpha})`;
+		const dimension = Math.max(1, size);
 
 		// Prefer OffscreenCanvas when available (works in workers and main thread)
 		if (typeof OffscreenCanvas !== 'undefined') {
-			const oc = new OffscreenCanvas(Math.max(1, size), Math.max(1, size));
+			const oc = new OffscreenCanvas(dimension, dimension);
 			const ctx = oc.getContext('2d');
 			if (ctx) {
 				ctx.fillStyle = cssColor;
-				ctx.fillRect(0, 0, size, size);
+				ctx.fillRect(0, 0, dimension, dimension);
 				return createImageBitmap(oc);
 			}
 		}
 
 		// Fallback to HTMLCanvasElement
-		const canvas = (typeof document !== 'undefined') ? document.createElement('canvas') : null;
-		if (!canvas) throw new Error('No canvas available to create solid ImageBitmap');
-		canvas.width = Math.max(1, size);
-		canvas.height = Math.max(1, size);
+		if (typeof document === 'undefined') throw new Error('No canvas available to create solid ImageBitmap');
+		const canvas = document.createElement('canvas');
+		canvas.width = dimension;
+		canvas.height = dimension;
 		const ctx = canvas.getContext('2d')!;
 		ctx.fillStyle = cssColor;
-		ctx.fillRect(0, 0, size, size);
+		ctx.fillRect(0, 0, dimension, dimension);
 		return createImageBitmap(canvas, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
 	}
 
 	public getTexture(key: TextureKey): TextureHandle {
-		const entry = this.gpuCache.get(key);
-		return entry?.handle;
+		return this.gpuCache.get(key)?.handle;
 	}
 
 	public getTextureByUri(uri: string, desc: TextureParams = {}): TextureHandle {
-		return this.getTexture(this.makeKey(uri, desc));
+		const key = this.makeKey(uri, desc);
+		return this.getTexture(key);
 	}
 
 	public swapTextureHandlesByUri(uriA: string, uriB: string, descA: TextureParams = {}, descB: TextureParams = {}): void {
@@ -730,12 +724,12 @@ export class TextureManager {
 		if (!entryB || !entryB.handle) {
 			throw new Error(`TextureManager: texture '${uriB}' is not initialized.`);
 		}
-		const handle = entryA.handle;
+		let swap: TextureHandle | boolean = entryA.handle;
 		entryA.handle = entryB.handle;
-		entryB.handle = handle;
-		const fallback = entryA.ownedFallback;
+		entryB.handle = swap as TextureHandle;
+		swap = entryA.ownedFallback;
 		entryA.ownedFallback = entryB.ownedFallback;
-		entryB.ownedFallback = fallback;
+		entryB.ownedFallback = swap as boolean;
 	}
 
 	public copyTextureByUri(sourceUri: string, destinationUri: string, width: number, height: number, sourceDesc: TextureParams = {}, destinationDesc: TextureParams = {}): void {
@@ -748,37 +742,42 @@ export class TextureManager {
 		if (!destinationEntry || !destinationEntry.handle) {
 			throw new Error(`TextureManager: texture '${destinationUri}' is not initialized.`);
 		}
-		this.backend.copyTexture(sourceEntry.handle, destinationEntry.handle, width, height);
+		this.backend.copyTextureRegion(sourceEntry.handle, destinationEntry.handle, 0, 0, 0, 0, width, height);
 	}
 
 	public releaseByUri(uri: string, desc: TextureParams = {}): void {
-		this.releaseByKey(this.makeKey(uri, desc));
+		const key = this.makeKey(uri, desc);
+		this.releaseByKey(key);
 	}
 
 	public releaseByKey(key: TextureKey): void {
 		const e = this.gpuCache.get(key);
 		if (!e) return;
 		e.refCount--;
-		if (e.refCount <= 0) {
-			// Let the barrier dispose the real handle
-			const barrier = e.barrier ?? this.textureBarrier;
-			barrier.release(key, (h) => { this.backend.destroyTexture(h); });
-			// Dispose manager-owned fallback if still present (barrier never saw it)
-			if (e.ownedFallback && e.handle) this.backend.destroyTexture(e.handle);
-			this.gpuCache.delete(key);
-		}
+			if (e.refCount <= 0) {
+				// Let the barrier dispose the real handle
+				const barrier = e.barrier ?? this.textureBarrier;
+				barrier.release(key, (h) => {
+					this.backend.destroyTexture(h);
+				});
+				// Dispose manager-owned fallback if still present (barrier never saw it)
+				if (e.ownedFallback && e.handle) this.backend.destroyTexture(e.handle);
+				this.gpuCache.delete(key);
+			}
 	}
 
 	public clear(): void {
 		// Dispose any manager-owned fallbacks that never entered the barrier
-		for (const [_, entry] of this.gpuCache) {
-			if (entry.ownedFallback && entry.handle) this.backend.destroyTexture(entry.handle);
+			for (const entry of this.gpuCache.values()) {
+				if (entry.ownedFallback && entry.handle) this.backend.destroyTexture(entry.handle);
+			}
+			this.gpuCache.clear();
+			// Dispose everything the barrier owns
+			this.textureBarrier.clear((h) => {
+				this.backend.destroyTexture(h);
+			});
+			this.imageCache.clear();
 		}
-		this.gpuCache.clear();
-		// Dispose everything the barrier owns
-		this.textureBarrier.clear((h) => { this.backend.destroyTexture(h); });
-		this.imageCache.clear();
-	}
 
 	public dispose(): void {
 		this.clear();

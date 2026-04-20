@@ -14,6 +14,7 @@ import { applyActiveMachineTiming } from '../runtime/timing_config';
 import * as luaPipeline from '../../ide/runtime/lua_pipeline';
 import { setHardwareCamera } from '../../render/shared/hardware_camera';
 import { putHardwareAmbientLight, putHardwareDirectionalLight, putHardwarePointLight } from '../../render/shared/hardware_lighting';
+import { setSpriteParallaxRig } from '../../render/shared/queues';
 import { listResources } from '../../ide/workspace/workspace';
 import { getWorkspaceCachedSource } from '../../ide/workspace/cache';
 import { buildDirtyFilePath, hasWorkspaceStorage } from '../../ide/workbench/workspace/io';
@@ -138,7 +139,7 @@ export class Api {
 			matrix,
 			joint_matrices: options?.joint_matrices,
 			morph_weights: options?.morph_weights,
-			receive_shadow: options?.receive_shadow,
+			receive_shadow: options?.receive_shadow !== false,
 		};
 		$.view.renderer.submit.mesh(submission);
 	}
@@ -334,7 +335,7 @@ export class Api {
 		if (arguments.length !== 9) {
 			throw new Error('set_sprite_parallax_rig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window) requires exactly 9 arguments.');
 		}
-		$.view.setSpriteParallaxRig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
+		setSpriteParallaxRig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
 	}
 
 	public taskgate(name: string): GateGroup {

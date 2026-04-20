@@ -72,7 +72,7 @@ export type MeshRenderSubmission = {
 	matrix: Float32Array;
 	joint_matrices?: Float32Array[];
 	morph_weights?: number[];
-	receive_shadow?: boolean;
+	receive_shadow: boolean;
 	layer?: RenderLayer; // Currently unused
 };
 
