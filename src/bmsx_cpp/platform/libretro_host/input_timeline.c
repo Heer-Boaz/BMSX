@@ -89,28 +89,26 @@ static uint64_t frame_to_ms_rounded(uint64_t frame, uint64_t frame_usec) {
 	return (uint64_t)llroundl(scaled / 1000.0L);
 }
 
-static int compare_test_input_events(const void* a, const void* b) {
-	const TestInputEvent* lhs = (const TestInputEvent*)a;
-	const TestInputEvent* rhs = (const TestInputEvent*)b;
-	if (lhs->frame < rhs->frame) {
+static int compare_frame_values(uint64_t lhs, uint64_t rhs) {
+	if (lhs < rhs) {
 		return -1;
 	}
-	if (lhs->frame > rhs->frame) {
+	if (lhs > rhs) {
 		return 1;
 	}
 	return 0;
 }
 
+static int compare_test_input_events(const void* a, const void* b) {
+	const TestInputEvent* lhs = (const TestInputEvent*)a;
+	const TestInputEvent* rhs = (const TestInputEvent*)b;
+	return compare_frame_values(lhs->frame, rhs->frame);
+}
+
 static int compare_test_capture_events(const void* a, const void* b) {
 	const TimelineCaptureEvent* lhs = (const TimelineCaptureEvent*)a;
 	const TimelineCaptureEvent* rhs = (const TimelineCaptureEvent*)b;
-	if (lhs->frame < rhs->frame) {
-		return -1;
-	}
-	if (lhs->frame > rhs->frame) {
-		return 1;
-	}
-	return 0;
+	return compare_frame_values(lhs->frame, rhs->frame);
 }
 
 static void* read_file_bytes(const char* path, size_t* out_size) {

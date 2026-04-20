@@ -30,18 +30,6 @@ inline double to_ms(std::chrono::steady_clock::duration duration) {
 	return std::chrono::duration<double, std::milli>(duration).count();
 }
 
-constexpr uint64_t ASSET_TOKEN_OFFSET_BASIS = 0xcbf29ce484222325ull;
-constexpr uint64_t ASSET_TOKEN_PRIME = 0x100000001b3ull;
-
-AssetToken hashAssetTokenLocal(const std::string& id) {
-	AssetToken hash = ASSET_TOKEN_OFFSET_BASIS;
-	for (unsigned char c : id) {
-		hash ^= static_cast<AssetToken>(c);
-		hash *= ASSET_TOKEN_PRIME;
-	}
-	return hash;
-}
-
 constexpr uint32_t CART_ROM_MAGIC = 0x58534D42u;
 
 struct LuaPcallError final : std::exception {
@@ -1717,7 +1705,7 @@ void Runtime::setupBuiltins() {
 		if (const AudioAsset* audio = assets.getAudio(assetId)) {
 			return &audio->rom;
 		}
-		const AssetToken token = hashAssetTokenLocal(assetId);
+		const AssetToken token = hashAssetToken(assetId);
 		auto dataIt = assets.data.find(token);
 		if (dataIt != assets.data.end()) {
 			return &dataIt->second.rom;

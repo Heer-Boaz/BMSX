@@ -55,27 +55,41 @@ inline float readPacketF32(const Reader& reader, int index) {
 }
 
 template<typename Reader>
-inline uint32_t readPacketArgU32(const Reader& reader, uint32_t cmd, int index) {
-	if (getVdpPacketArgKind(cmd, static_cast<uint32_t>(index)) != VdpPacketWordKind::U32) {
-		throw vdpFault("packet arg " + std::to_string(index) + " is not encoded as u32.");
-	}
+inline uint32_t readPacketWordU32(const Reader& reader, int index) {
 	return readPacketU32(reader, index);
 }
 
 template<typename Reader>
-inline int32_t readPacketArgI32(const Reader& reader, uint32_t cmd, int index) {
-	if (getVdpPacketArgKind(cmd, static_cast<uint32_t>(index)) != VdpPacketWordKind::U32) {
-		throw vdpFault("packet arg " + std::to_string(index) + " is not encoded as u32.");
-	}
+inline int32_t readPacketWordI32(const Reader& reader, int index) {
 	return readPacketI32(reader, index);
 }
 
 template<typename Reader>
-inline float readPacketArgF32(const Reader& reader, uint32_t cmd, int index) {
-	if (getVdpPacketArgKind(cmd, static_cast<uint32_t>(index)) != VdpPacketWordKind::F32) {
-		throw vdpFault("packet arg " + std::to_string(index) + " is not encoded as f32.");
-	}
+inline float readPacketWordF32(const Reader& reader, int index) {
 	return readPacketF32(reader, index);
+}
+
+template<typename Reader, typename Value, typename ConvertFn>
+inline Value readPacketArgChecked(const Reader& reader, uint32_t cmd, int index, VdpPacketWordKind expectedKind, const char* kindLabel, ConvertFn convert) {
+	if (getVdpPacketArgKind(cmd, static_cast<uint32_t>(index)) != expectedKind) {
+		throw vdpFault("packet arg " + std::to_string(index) + " is not encoded as " + kindLabel + ".");
+	}
+	return convert(reader, index);
+}
+
+template<typename Reader>
+inline uint32_t readPacketArgU32(const Reader& reader, uint32_t cmd, int index) {
+	return readPacketArgChecked<Reader, uint32_t>(reader, cmd, index, VdpPacketWordKind::U32, "u32", readPacketWordU32<Reader>);
+}
+
+template<typename Reader>
+inline int32_t readPacketArgI32(const Reader& reader, uint32_t cmd, int index) {
+	return readPacketArgChecked<Reader, int32_t>(reader, cmd, index, VdpPacketWordKind::U32, "u32", readPacketWordI32<Reader>);
+}
+
+template<typename Reader>
+inline float readPacketArgF32(const Reader& reader, uint32_t cmd, int index) {
+	return readPacketArgChecked<Reader, float>(reader, cmd, index, VdpPacketWordKind::F32, "f32", readPacketWordF32<Reader>);
 }
 
 template<typename Reader>

@@ -9,6 +9,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <string_view>
+#include <utility>
 #if BMSX_ENABLE_ZLIB
 #include <zlib.h>
 #endif
@@ -217,18 +218,6 @@ static AssetTypeKind resolveAssetTypeKind(std::string_view assetType) {
 	return AssetTypeKind::Unknown;
 }
 
-static constexpr u64 ASSET_TOKEN_OFFSET_BASIS = 0xcbf29ce484222325ull;
-static constexpr u64 ASSET_TOKEN_PRIME = 0x100000001b3ull;
-
-static AssetToken hashAssetToken(const std::string& id) {
-	AssetToken hash = ASSET_TOKEN_OFFSET_BASIS;
-	for (unsigned char c : id) {
-		hash ^= static_cast<AssetToken>(c);
-		hash *= ASSET_TOKEN_PRIME;
-	}
-	return hash;
-}
-
 static AssetToken makeAssetToken(u32 lo, u32 hi) {
 	return (static_cast<AssetToken>(hi) << 32) | static_cast<AssetToken>(lo);
 }
@@ -272,6 +261,86 @@ static const BinValue* findObjectField(const BinObject& obj, const char* key) {
 	return &it->second;
 }
 
+static bool isNumberEntry(const BinValue& value) {
+	return value.isNumber();
+}
+
+static bool isStringEntry(const BinValue& value) {
+	return value.isString();
+}
+
+static bool isBoolEntry(const BinValue& value) {
+	return value.isBool();
+}
+
+static bool toBoolEntry(const BinValue& value) {
+	return value.asBool();
+}
+
+static f32 toF32Entry(const BinValue& value) {
+	return static_cast<f32>(value.toNumber());
+}
+
+static u8 toU8Entry(const BinValue& value) {
+	return static_cast<u8>(value.toI32());
+}
+
+static u16 toU16Entry(const BinValue& value) {
+	return static_cast<u16>(value.toI32());
+}
+
+static u32 toU32Entry(const BinValue& value) {
+	return static_cast<u32>(value.toI32());
+}
+
+static i32 toI32Entry(const BinValue& value) {
+	return value.toI32();
+}
+
+static std::string toStringEntry(const BinValue& value) {
+	return value.asString();
+}
+
+template<typename MapType>
+static typename MapType::mapped_type* findAssetValue(MapType& map, const AssetId& id) {
+	const AssetToken token = hashAssetToken(id);
+	auto it = map.find(token);
+	if (it == map.end()) {
+		return nullptr;
+	}
+	return &it->second;
+}
+
+template<typename MapType>
+static const typename MapType::mapped_type* findAssetValue(const MapType& map, const AssetId& id) {
+	const AssetToken token = hashAssetToken(id);
+	auto it = map.find(token);
+	if (it == map.end()) {
+		return nullptr;
+	}
+	return &it->second;
+}
+
+template<typename MapType>
+static auto findAssetPayloadValue(MapType& map, const AssetId& id) -> decltype(&std::declval<typename MapType::mapped_type&>().value) {
+	const AssetToken token = hashAssetToken(id);
+	auto it = map.find(token);
+	if (it == map.end()) {
+		return nullptr;
+	}
+	return &it->second.value;
+}
+
+template<typename MapType>
+static auto findAssetPayloadValue(const MapType& map, const AssetId& id) -> decltype(&std::declval<const typename MapType::mapped_type&>().value) {
+	const AssetToken token = hashAssetToken(id);
+	auto it = map.find(token);
+	if (it == map.end()) {
+		return nullptr;
+	}
+	return &it->second.value;
+}
+
 static const BinValue& requireObjectField(const BinObject& obj, const std::string& assetId, const char* key) {
 	const BinValue* value = findObjectField(obj, key);
 	if (!value) {
@@ -280,136 +349,63 @@ static const BinValue& requireObjectField(const BinObject& obj, const std::strin
 	return *value;
 }
 
-static std::vector<f32> readF32Array(const BinValue& value, const std::string& assetId, const char* field) {
+template<typename T, typename ValidateFn, typename ConvertFn>
+static std::vector<T> readArrayValues(const BinValue& value, const std::string& assetId, const char* field, const char* entryType, ValidateFn validate, ConvertFn convert) {
+	if (!value.isArray()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected array.");
+	}
+	const auto& arr = value.asArray();
+	std::vector<T> out;
+	out.reserve(arr.size());
+	for (const auto& entry : arr) {
+		if (!validate(entry)) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' contains non-" + std::string(entryType) + " entries.");
+		}
+		out.push_back(convert(entry));
+	}
+	return out;
+}
+
+template<typename T, typename ConvertFn>
+static std::vector<T> readBinaryOrArrayValues(const BinValue& value, const std::string& assetId, const char* field, const char* typeLabel, ConvertFn convert) {
 	if (value.isBinary()) {
 		const auto& bin = value.asBinary();
-		if (bin.size() % sizeof(f32) != 0) {
-			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' has invalid float buffer size.");
+		if (bin.size() % sizeof(T) != 0) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' has invalid " + std::string(typeLabel) + " buffer size.");
 		}
-		std::vector<f32> out(bin.size() / sizeof(f32));
+		std::vector<T> out(bin.size() / sizeof(T));
 		if (!bin.empty()) {
 			std::memcpy(out.data(), bin.data(), bin.size());
 		}
 		return out;
 	}
-	if (value.isArray()) {
-		const auto& arr = value.asArray();
-		std::vector<f32> out;
-		out.reserve(arr.size());
-		for (const auto& entry : arr) {
-			if (!entry.isNumber()) {
-				throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' contains non-number entries.");
-			}
-			out.push_back(static_cast<f32>(entry.toNumber()));
-		}
-		return out;
-	}
-	throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected array or binary.");
+	return readArrayValues<T>(value, assetId, field, "number", [](const BinValue& entry) {
+		return entry.isNumber();
+	}, convert);
+}
+
+static std::vector<f32> readF32Array(const BinValue& value, const std::string& assetId, const char* field) {
+	return readBinaryOrArrayValues<f32>(value, assetId, field, "float", toF32Entry);
 }
 
 static std::vector<u16> readU16Array(const BinValue& value, const std::string& assetId, const char* field) {
-	if (value.isBinary()) {
-		const auto& bin = value.asBinary();
-		if (bin.size() % sizeof(u16) != 0) {
-			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' has invalid uint16 buffer size.");
-		}
-		std::vector<u16> out(bin.size() / sizeof(u16));
-		if (!bin.empty()) {
-			std::memcpy(out.data(), bin.data(), bin.size());
-		}
-		return out;
-	}
-	if (value.isArray()) {
-		const auto& arr = value.asArray();
-		std::vector<u16> out;
-		out.reserve(arr.size());
-		for (const auto& entry : arr) {
-			if (!entry.isNumber()) {
-				throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' contains non-number entries.");
-			}
-			out.push_back(static_cast<u16>(entry.toI32()));
-		}
-		return out;
-	}
-	throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected array or binary.");
+	return readBinaryOrArrayValues<u16>(value, assetId, field, "uint16", toU16Entry);
 }
 
 static std::vector<u32> readU32Array(const BinValue& value, const std::string& assetId, const char* field) {
-	if (value.isBinary()) {
-		const auto& bin = value.asBinary();
-		if (bin.size() % sizeof(u32) != 0) {
-			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' has invalid uint32 buffer size.");
-		}
-		std::vector<u32> out(bin.size() / sizeof(u32));
-		if (!bin.empty()) {
-			std::memcpy(out.data(), bin.data(), bin.size());
-		}
-		return out;
-	}
-	if (value.isArray()) {
-		const auto& arr = value.asArray();
-		std::vector<u32> out;
-		out.reserve(arr.size());
-		for (const auto& entry : arr) {
-			if (!entry.isNumber()) {
-				throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' contains non-number entries.");
-			}
-			out.push_back(static_cast<u32>(entry.toI32()));
-		}
-		return out;
-	}
-	throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected array or binary.");
+	return readBinaryOrArrayValues<u32>(value, assetId, field, "uint32", toU32Entry);
 }
 
 static std::vector<u8> readU8Array(const BinValue& value, const std::string& assetId, const char* field) {
-	if (value.isBinary()) {
-		return value.asBinary();
-	}
-	if (value.isArray()) {
-		const auto& arr = value.asArray();
-		std::vector<u8> out;
-		out.reserve(arr.size());
-		for (const auto& entry : arr) {
-			if (!entry.isNumber()) {
-				throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' contains non-number entries.");
-			}
-			out.push_back(static_cast<u8>(entry.toI32()));
-		}
-		return out;
-	}
-	throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected array or binary.");
+	return readBinaryOrArrayValues<u8>(value, assetId, field, "uint8", toU8Entry);
 }
 
 static std::vector<i32> readI32Array(const BinValue& value, const std::string& assetId, const char* field) {
-	if (!value.isArray()) {
-		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected array.");
-	}
-	const auto& arr = value.asArray();
-	std::vector<i32> out;
-	out.reserve(arr.size());
-	for (const auto& entry : arr) {
-		if (!entry.isNumber()) {
-			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' contains non-number entries.");
-		}
-		out.push_back(entry.toI32());
-	}
-	return out;
+	return readArrayValues<i32>(value, assetId, field, "number", isNumberEntry, toI32Entry);
 }
 
 static std::vector<std::string> readStringArray(const BinValue& value, const std::string& assetId, const char* field) {
-	if (!value.isArray()) {
-		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected array.");
-	}
-	const auto& arr = value.asArray();
-	std::vector<std::string> out;
-	out.reserve(arr.size());
-	for (const auto& entry : arr) {
-		if (!entry.isString()) {
-			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' contains non-string entries.");
-		}
-		out.push_back(entry.asString());
-	}
-	return out;
+	return readArrayValues<std::string>(value, assetId, field, "string", isStringEntry, toStringEntry);
 }
 
 static std::vector<std::vector<f32>> readF32ArrayList(const BinValue& value, const std::string& assetId, const char* field) {
@@ -442,48 +438,32 @@ static std::vector<std::vector<f32>> flipPolygons(const std::vector<std::vector<
 	return out;
 }
 
-static std::optional<f32> readOptionalF32(const BinObject& obj, const std::string& assetId, const char* field) {
+template<typename T, typename ValidateFn, typename ReadFn>
+static std::optional<T> readOptionalValue(const BinObject& obj, const std::string& assetId, const char* field, const char* expected, ValidateFn validate, ReadFn read) {
 	const BinValue* value = findObjectField(obj, field);
 	if (!value) {
 		return std::nullopt;
 	}
-	if (!value->isNumber()) {
-		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected number.");
+	if (!validate(*value)) {
+		throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' field '" + std::string(field) + "' expected " + std::string(expected) + ".");
 	}
-	return static_cast<f32>(value->toNumber());
+	return read(*value);
+}
+
+static std::optional<f32> readOptionalF32(const BinObject& obj, const std::string& assetId, const char* field) {
+	return readOptionalValue<f32>(obj, assetId, field, "number", isNumberEntry, toF32Entry);
 }
 
 static std::optional<i32> readOptionalI32(const BinObject& obj, const std::string& assetId, const char* field) {
-	const BinValue* value = findObjectField(obj, field);
-	if (!value) {
-		return std::nullopt;
-	}
-	if (!value->isNumber()) {
-		throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' field '" + std::string(field) + "' expected number.");
-	}
-	return value->toI32();
+	return readOptionalValue<i32>(obj, assetId, field, "number", isNumberEntry, toI32Entry);
 }
 
 static std::optional<bool> readOptionalBool(const BinObject& obj, const std::string& assetId, const char* field) {
-	const BinValue* value = findObjectField(obj, field);
-	if (!value) {
-		return std::nullopt;
-	}
-	if (!value->isBool()) {
-		throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' field '" + std::string(field) + "' expected bool.");
-	}
-	return value->asBool();
+	return readOptionalValue<bool>(obj, assetId, field, "bool", isBoolEntry, toBoolEntry);
 }
 
 static std::optional<std::string> readOptionalString(const BinObject& obj, const std::string& assetId, const char* field) {
-	const BinValue* value = findObjectField(obj, field);
-	if (!value) {
-		return std::nullopt;
-	}
-	if (!value->isString()) {
-		throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' field '" + std::string(field) + "' expected string.");
-	}
-	return value->asString();
+	return readOptionalValue<std::string>(obj, assetId, field, "string", isStringEntry, toStringEntry);
 }
 
 static std::optional<std::array<f32, 3>> readOptionalVec3(const BinObject& obj, const std::string& assetId, const char* field) {
@@ -946,111 +926,51 @@ static ModelAsset parseModelAsset(const std::string& assetId, const BinValue& va
  * ============================================================================ */
 
 ImgAsset* RuntimeAssets::getImg(const AssetId& id) {
-	const AssetToken token = hashAssetToken(id);
-	auto it = img.find(token);
-	if (it != img.end()) {
-		return &it->second;
-	}
-	return nullptr;
+	return findAssetValue(img, id);
 }
 
 const ImgAsset* RuntimeAssets::getImg(const AssetId& id) const {
-	const AssetToken token = hashAssetToken(id);
-	auto it = img.find(token);
-	if (it != img.end()) {
-		return &it->second;
-	}
-	return nullptr;
+	return findAssetValue(img, id);
 }
 
 AudioAsset* RuntimeAssets::getAudio(const AssetId& id) {
-	const AssetToken token = hashAssetToken(id);
-	auto it = audio.find(token);
-	if (it != audio.end()) {
-		return &it->second;
-	}
-	return nullptr;
+	return findAssetValue(audio, id);
 }
 
 const AudioAsset* RuntimeAssets::getAudio(const AssetId& id) const {
-	const AssetToken token = hashAssetToken(id);
-	auto it = audio.find(token);
-	if (it != audio.end()) {
-		return &it->second;
-	}
-	return nullptr;
+	return findAssetValue(audio, id);
 }
 
 ModelAsset* RuntimeAssets::getModel(const AssetId& id) {
-	const AssetToken token = hashAssetToken(id);
-	auto it = model.find(token);
-	if (it != model.end()) {
-		return &it->second;
-	}
-	return nullptr;
+	return findAssetValue(model, id);
 }
 
 const ModelAsset* RuntimeAssets::getModel(const AssetId& id) const {
-	const AssetToken token = hashAssetToken(id);
-	auto it = model.find(token);
-	if (it != model.end()) {
-		return &it->second;
-	}
-	return nullptr;
+	return findAssetValue(model, id);
 }
 
 const BinValue* RuntimeAssets::getData(const AssetId& id) const {
-	const AssetToken token = hashAssetToken(id);
-	auto it = data.find(token);
-	if (it != data.end()) {
-		return &it->second.value;
-	}
-	return nullptr;
+	return findAssetPayloadValue(data, id);
 }
 
 BinAsset* RuntimeAssets::getBin(const AssetId& id) {
-	const AssetToken token = hashAssetToken(id);
-	auto it = bin.find(token);
-	if (it != bin.end()) {
-		return &it->second;
-	}
-	return nullptr;
+	return findAssetValue(bin, id);
 }
 
 const BinAsset* RuntimeAssets::getBin(const AssetId& id) const {
-	const AssetToken token = hashAssetToken(id);
-	auto it = bin.find(token);
-	if (it != bin.end()) {
-		return &it->second;
-	}
-	return nullptr;
+	return findAssetValue(bin, id);
 }
 
 LuaSourceAsset* RuntimeAssets::getLua(const AssetId& path) {
-	const AssetToken token = hashAssetToken(path);
-	auto it = lua.find(token);
-	if (it != lua.end()) {
-		return &it->second;
-	}
-	return nullptr;
+	return findAssetValue(lua, path);
 }
 
 const LuaSourceAsset* RuntimeAssets::getLua(const AssetId& path) const {
-	const AssetToken token = hashAssetToken(path);
-	auto it = lua.find(token);
-	if (it != lua.end()) {
-		return &it->second;
-	}
-	return nullptr;
+	return findAssetValue(lua, path);
 }
 
 const BinValue* RuntimeAssets::getAudioEvent(const AssetId& id) const {
-	const AssetToken token = hashAssetToken(id);
-	auto it = audioevents.find(token);
-	if (it != audioevents.end()) {
-		return &it->second.value;
-	}
-	return nullptr;
+	return findAssetPayloadValue(audioevents, id);
 }
 
 bool RuntimeAssets::hasImg(const AssetId& id) const {

@@ -120,6 +120,7 @@ private:
 	
 	std::optional<i32> getLatestUnconsumedEdgeId(const std::string& button, InputEvent::Type eventType) const;
 	std::optional<BufferedEdgeRecord> getBufferedEdgeRecord(const std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap, const std::string& button, i32 windowFrames) const;
+	bool wasEventInWindow(const std::deque<BufferedInputEvent>& inputBuffer, const std::string& button, InputEvent::Type eventType, i64 currentFrame, i32 windowFrames) const;
 	bool isBufferedFrameInWindow(i64 frame, i32 windowFrames) const;
 	void pruneOldEvents();
 	void pruneBufferedEdges(std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap);

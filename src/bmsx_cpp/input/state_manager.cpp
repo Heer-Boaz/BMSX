@@ -7,6 +7,13 @@
 
 namespace bmsx {
 
+static bool isFrameInWindow(i64 currentFrame, i64 frame, i32 windowFrames) {
+	if (windowFrames <= 0) {
+		return false;
+	}
+	return currentFrame - frame < windowFrames;
+}
+
 /* ============================================================================
  * Constructor
  * ============================================================================ */
@@ -242,29 +249,11 @@ ButtonState InputStateManager::getButtonState(const std::string& button, std::op
 }
 
 bool InputStateManager::wasPressedInWindow(const std::string& button, i32 windowFrames) const {
-	for (const auto& bufferedEvent : m_inputBuffer) {
-		if (bufferedEvent.event.identifier == button &&
-			bufferedEvent.event.eventType == InputEvent::Type::Press &&
-			bufferedEvent.frame <= m_currentFrame &&
-			isBufferedFrameInWindow(bufferedEvent.frame, windowFrames)) {
-			return true;
-		}
-	}
-	
-	return false;
+	return wasEventInWindow(m_inputBuffer, button, InputEvent::Type::Press, m_currentFrame, windowFrames);
 }
 
 bool InputStateManager::wasReleasedInWindow(const std::string& button, i32 windowFrames) const {
-	for (const auto& bufferedEvent : m_inputBuffer) {
-		if (bufferedEvent.event.identifier == button &&
-			bufferedEvent.event.eventType == InputEvent::Type::Release &&
-			bufferedEvent.frame <= m_currentFrame &&
-			isBufferedFrameInWindow(bufferedEvent.frame, windowFrames)) {
-			return true;
-		}
-	}
-	
-	return false;
+	return wasEventInWindow(m_inputBuffer, button, InputEvent::Type::Release, m_currentFrame, windowFrames);
 }
 
 std::optional<i32> InputStateManager::getLatestUnconsumedPressId(const std::string& button) const {
@@ -334,28 +323,37 @@ std::optional<InputStateManager::BufferedEdgeRecord> InputStateManager::getBuffe
 		return std::nullopt;
 	}
 	const BufferedEdgeRecord& edge = it->second;
-	if (edge.consumed || edge.frame > m_currentFrame || !isBufferedFrameInWindow(edge.frame, windowFrames)) {
+	if (edge.consumed || edge.frame > m_currentFrame || !isFrameInWindow(m_currentFrame, edge.frame, windowFrames)) {
 		return std::nullopt;
 	}
 	return edge;
 }
 
 bool InputStateManager::isBufferedFrameInWindow(i64 frame, i32 windowFrames) const {
-	if (windowFrames <= 0) {
-		return false;
+	return isFrameInWindow(m_currentFrame, frame, windowFrames);
+}
+
+bool InputStateManager::wasEventInWindow(const std::deque<BufferedInputEvent>& inputBuffer, const std::string& button, InputEvent::Type eventType, i64 currentFrame, i32 windowFrames) const {
+	for (const auto& bufferedEvent : inputBuffer) {
+		if (bufferedEvent.event.identifier == button &&
+			bufferedEvent.event.eventType == eventType &&
+			bufferedEvent.frame <= currentFrame &&
+			isFrameInWindow(currentFrame, bufferedEvent.frame, windowFrames)) {
+			return true;
+		}
 	}
-	return m_currentFrame - frame < windowFrames;
+	return false;
 }
 
 void InputStateManager::pruneOldEvents() {
-	while (!m_inputBuffer.empty() && !isBufferedFrameInWindow(m_inputBuffer.front().frame, BUFFER_FRAME_RETENTION)) {
+	while (!m_inputBuffer.empty() && !isFrameInWindow(m_currentFrame, m_inputBuffer.front().frame, BUFFER_FRAME_RETENTION)) {
 		m_inputBuffer.pop_front();
 	}
 }
 
 void InputStateManager::pruneBufferedEdges(std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap) {
 	for (auto it = edgeMap.begin(); it != edgeMap.end();) {
-		if (!isBufferedFrameInWindow(it->second.frame, BUFFER_FRAME_RETENTION)) {
+		if (!isFrameInWindow(m_currentFrame, it->second.frame, BUFFER_FRAME_RETENTION)) {
 			it = edgeMap.erase(it);
 			continue;
 		}

@@ -37,6 +37,15 @@ using ModelId = AssetId;
 using DataId = AssetId;
 using AssetToken = uint64_t;
 
+inline AssetToken hashAssetToken(const std::string& id) {
+	AssetToken hash = 0xcbf29ce484222325ull;
+	for (unsigned char c : id) {
+		hash ^= static_cast<AssetToken>(c);
+		hash *= 0x100000001b3ull;
+	}
+	return hash;
+}
+
 /* ============================================================================
  * ROM asset metadata
  * ============================================================================ */

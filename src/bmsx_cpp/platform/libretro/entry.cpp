@@ -800,34 +800,6 @@ static RenderBackendPreference parse_backend_preference(const char* value) {
 	return RenderBackendPreference::Software;
 }
 
-static bool parse_crt_postprocessing_enabled(const char* value) {
-	if (!value || !value[0]) return false;
-	if (std::strcmp(value, kCrtPostprocessingOn) == 0 || std::strcmp(value, "On") == 0) {
-		return true;
-	}
-	if (std::strcmp(value, kCrtPostprocessingOff) == 0 || std::strcmp(value, "Off") == 0) {
-		return false;
-	}
-	logging.log(RETRO_LOG_WARN,
-				"[BMSX] Unknown CRT post-processing option '%s', using off\n",
-				value);
-	return false;
-}
-
-static bool parse_postprocess_detail_enabled(const char* value) {
-	if (!value || !value[0]) return false;
-	if (std::strcmp(value, kPostprocessDetailOn) == 0 || std::strcmp(value, "On") == 0) {
-		return true;
-	}
-	if (std::strcmp(value, kPostprocessDetailOff) == 0 || std::strcmp(value, "Off") == 0) {
-		return false;
-	}
-	logging.log(RETRO_LOG_WARN,
-				"[BMSX] Unknown post-processing detail option '%s', using off\n",
-				value);
-	return false;
-}
-
 static bool parse_toggle_option(const char* value, const char* label, bool default_value) {
 	if (!value || !value[0]) return default_value;
 	if (std::strcmp(value, kToggleOn) == 0 || std::strcmp(value, "On") == 0) {
@@ -857,23 +829,11 @@ static RenderBackendPreference read_backend_preference() {
 }
 
 static bool read_crt_postprocessing_enabled() {
-	retro_variable var;
-	var.key = kOptionCrtPostprocessing;
-	var.value = nullptr;
-	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
-		return parse_crt_postprocessing_enabled(var.value);
-	}
-	return false;
+	return read_toggle_option(kOptionCrtPostprocessing, "CRT post-processing", false);
 }
 
 static bool read_postprocess_detail_enabled() {
-	retro_variable var;
-	var.key = kOptionPostprocessDetail;
-	var.value = nullptr;
-	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
-		return parse_postprocess_detail_enabled(var.value);
-	}
-	return false;
+	return read_toggle_option(kOptionPostprocessDetail, "post-processing detail", false);
 }
 
 static bool read_frameskip_enabled() {

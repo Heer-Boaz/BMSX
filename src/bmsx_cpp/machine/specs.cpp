@@ -7,99 +7,66 @@
 
 namespace bmsx {
 
-bool tryResolveCpuHz(const MachineManifest& manifest, i64& outHz) {
-	if (!manifest.cpuHz) {
+static constexpr const char* kCpuHzMissingMessage = "[RuntimeMachineSpecs] machine.specs.cpu.cpu_freq_hz is required.";
+static constexpr const char* kCpuHzInvalidMessage = "[RuntimeMachineSpecs] machine.specs.cpu.cpu_freq_hz must be a positive integer.";
+static constexpr const char* kUfpsMissingMessage = "[RuntimeMachineSpecs] machine.ufps is required.";
+static constexpr const char* kUfpsInvalidMessage = "[RuntimeMachineSpecs] machine.ufps must be greater than 1 Hz.";
+
+template<typename Predicate>
+static bool tryResolveValue(const std::optional<i64>& value, i64& out, Predicate predicate) {
+	if (!value || !predicate(*value)) {
 		return false;
 	}
-	const i64 hz = *manifest.cpuHz;
-	if (hz <= 0) {
-		return false;
-	}
-	outHz = hz;
+	out = *value;
 	return true;
+}
+
+i64 requirePositiveManifestValue(const std::optional<i64>& value, const char* missingMessage, const char* invalidMessage) {
+	if (!value) {
+		throw std::runtime_error(missingMessage);
+	}
+	if (*value <= 0) {
+		throw std::runtime_error(invalidMessage);
+	}
+	return *value;
+}
+
+i64 resolvePositiveManifestValue(const std::optional<i64>& value, i64 defaultValue, const char* invalidMessage) {
+	const i64 resolved = value.value_or(defaultValue);
+	if (resolved <= 0) {
+		throw std::runtime_error(invalidMessage);
+	}
+	return resolved;
+}
+
+i64 requireManifestValueAbove(const std::optional<i64>& value, i64 minimumExclusive, const char* missingMessage, const char* invalidMessage) {
+	if (!value) {
+		throw std::runtime_error(missingMessage);
+	}
+	if (*value <= minimumExclusive) {
+		throw std::runtime_error(invalidMessage);
+	}
+	return *value;
+}
+
+bool tryResolveCpuHz(const MachineManifest& manifest, i64& outHz) {
+	return tryResolveValue(manifest.cpuHz, outHz, [](i64 hz) {
+		return hz > 0;
+	});
 }
 
 i64 resolveCpuHz(const MachineManifest& manifest) {
-	if (!manifest.cpuHz) {
-		throw std::runtime_error("[RuntimeMachineSpecs] machine.specs.cpu.cpu_freq_hz is required.");
-	}
-	const i64 hz = *manifest.cpuHz;
-	if (hz <= 0) {
-		throw std::runtime_error("[RuntimeMachineSpecs] machine.specs.cpu.cpu_freq_hz must be a positive integer.");
-	}
-	return hz;
-}
-
-i64 resolveImgDecBytesPerSec(const MachineManifest& manifest) {
-	if (!manifest.imgDecBytesPerSec) {
-		throw std::runtime_error("[RuntimeMachineSpecs] machine.specs.cpu.imgdec_bytes_per_sec is required.");
-	}
-	const i64 value = *manifest.imgDecBytesPerSec;
-	if (value <= 0) {
-		throw std::runtime_error("[RuntimeMachineSpecs] machine.specs.cpu.imgdec_bytes_per_sec must be a positive integer.");
-	}
-	return value;
-}
-
-i64 resolveDmaBytesPerSecIso(const MachineManifest& manifest) {
-	if (!manifest.dmaBytesPerSecIso) {
-		throw std::runtime_error("[RuntimeMachineSpecs] machine.specs.dma.dma_bytes_per_sec_iso is required.");
-	}
-	const i64 value = *manifest.dmaBytesPerSecIso;
-	if (value <= 0) {
-		throw std::runtime_error("[RuntimeMachineSpecs] machine.specs.dma.dma_bytes_per_sec_iso must be a positive integer.");
-	}
-	return value;
-}
-
-i64 resolveDmaBytesPerSecBulk(const MachineManifest& manifest) {
-	if (!manifest.dmaBytesPerSecBulk) {
-		throw std::runtime_error("[RuntimeMachineSpecs] machine.specs.dma.dma_bytes_per_sec_bulk is required.");
-	}
-	const i64 value = *manifest.dmaBytesPerSecBulk;
-	if (value <= 0) {
-		throw std::runtime_error("[RuntimeMachineSpecs] machine.specs.dma.dma_bytes_per_sec_bulk must be a positive integer.");
-	}
-	return value;
-}
-
-i64 resolveVdpWorkUnitsPerSec(const MachineManifest& manifest) {
-	const i64 value = manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC);
-	if (value <= 0) {
-		throw std::runtime_error("[RuntimeMachineSpecs] machine.specs.vdp.work_units_per_sec must be a positive integer.");
-	}
-	return value;
-}
-
-i64 resolveGeoWorkUnitsPerSec(const MachineManifest& manifest) {
-	const i64 value = manifest.geoWorkUnitsPerSec.value_or(DEFAULT_GEO_WORK_UNITS_PER_SEC);
-	if (value <= 0) {
-		throw std::runtime_error("[RuntimeMachineSpecs] machine.specs.geo.work_units_per_sec must be a positive integer.");
-	}
-	return value;
+	return requirePositiveManifestValue(manifest.cpuHz, kCpuHzMissingMessage, kCpuHzInvalidMessage);
 }
 
 bool tryResolveUfpsScaled(const MachineManifest& manifest, i64& outUfpsScaled) {
-	if (!manifest.ufpsScaled) {
-		return false;
-	}
-	const i64 ufpsScaled = *manifest.ufpsScaled;
-	if (ufpsScaled <= HZ_SCALE) {
-		return false;
-	}
-	outUfpsScaled = ufpsScaled;
-	return true;
+	return tryResolveValue(manifest.ufpsScaled, outUfpsScaled, [](i64 ufpsScaled) {
+		return ufpsScaled > HZ_SCALE;
+	});
 }
 
 i64 resolveUfpsScaled(const MachineManifest& manifest) {
-	if (!manifest.ufpsScaled) {
-		throw std::runtime_error("[RuntimeMachineSpecs] machine.ufps is required.");
-	}
-	const i64 ufpsScaled = *manifest.ufpsScaled;
-	if (ufpsScaled <= HZ_SCALE) {
-		throw std::runtime_error("[RuntimeMachineSpecs] machine.ufps must be greater than 1 Hz.");
-	}
-	return ufpsScaled;
+	return requireManifestValueAbove(manifest.ufpsScaled, HZ_SCALE, kUfpsMissingMessage, kUfpsInvalidMessage);
 }
 
 } // namespace bmsx

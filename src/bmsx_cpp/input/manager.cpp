@@ -111,39 +111,15 @@ PlayerInput* Input::getPlayerInput(i32 playerIndex) {
  * ============================================================================ */
 
 void Input::registerKeyboard(const std::string& deviceId, InputHandler* handler) {
-	DeviceBinding binding;
-	binding.handler = handler;
-	binding.source = InputSource::Keyboard;
-	binding.assignedPlayer = DEFAULT_KEYBOARD_PLAYER_INDEX;
-	binding.deviceId = deviceId;
-	
-	m_deviceBindings[deviceId] = binding;
-	
-	// Assign to keyboard player
-	m_playerInputs[toInternalPlayerIndex(DEFAULT_KEYBOARD_PLAYER_INDEX)]->setHandler(InputSource::Keyboard, handler);
+	registerDeviceBinding(deviceId, handler, InputSource::Keyboard, DEFAULT_KEYBOARD_PLAYER_INDEX);
 }
 
 void Input::registerGamepad(const std::string& deviceId, InputHandler* handler) {
-	DeviceBinding binding;
-	binding.handler = handler;
-	binding.source = InputSource::Gamepad;
-	binding.assignedPlayer = std::nullopt;  // Not assigned yet
-	binding.deviceId = deviceId;
-	
-	m_deviceBindings[deviceId] = binding;
+	registerDeviceBinding(deviceId, handler, InputSource::Gamepad, std::nullopt);
 }
 
 void Input::registerPointer(const std::string& deviceId, InputHandler* handler) {
-	DeviceBinding binding;
-	binding.handler = handler;
-	binding.source = InputSource::Pointer;
-	binding.assignedPlayer = DEFAULT_KEYBOARD_PLAYER_INDEX;
-	binding.deviceId = deviceId;
-	
-	m_deviceBindings[deviceId] = binding;
-	
-	// Assign to keyboard player
-	m_playerInputs[toInternalPlayerIndex(DEFAULT_KEYBOARD_PLAYER_INDEX)]->setHandler(InputSource::Pointer, handler);
+	registerDeviceBinding(deviceId, handler, InputSource::Pointer, DEFAULT_KEYBOARD_PLAYER_INDEX);
 }
 
 void Input::unregisterDevice(const std::string& deviceId) {
@@ -195,6 +171,19 @@ void Input::handleFocusChange(bool /*focused*/) {
 			binding.handler->reset();
 		}
 	}
+}
+
+void Input::registerDeviceBinding(const std::string& deviceId, InputHandler* handler, InputSource source, std::optional<i32> assignedPlayer) {
+	m_deviceBindings[deviceId] = DeviceBinding{
+		.handler = handler,
+		.source = source,
+		.assignedPlayer = assignedPlayer,
+		.deviceId = deviceId,
+	};
+	if (!assignedPlayer.has_value()) {
+		return;
+	}
+	m_playerInputs[toInternalPlayerIndex(assignedPlayer.value())]->setHandler(source, handler);
 }
 
 /* ============================================================================

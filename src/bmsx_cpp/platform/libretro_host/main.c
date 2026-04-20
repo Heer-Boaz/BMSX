@@ -1421,26 +1421,26 @@ static void menu_toggle(void) {
 	menu_mark_dirty();
 }
 
-static void menu_draw_pixel(int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
-	if (!g_menu_surface || x < 0 || y < 0 || x >= g_menu_surface_w || y >= g_menu_surface_h) {
+static void surface_draw_pixel(uint8_t* surface, int surface_w, int surface_h, int surface_stride, int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+	if (!surface || x < 0 || y < 0 || x >= surface_w || y >= surface_h) {
 		return;
 	}
-	uint8_t* p = g_menu_surface + (size_t)y * (size_t)g_menu_surface_stride + (size_t)x * 4u;
+	uint8_t* p = surface + (size_t)y * (size_t)surface_stride + (size_t)x * 4u;
 	p[0] = r;
 	p[1] = g;
 	p[2] = b;
 	p[3] = a;
 }
 
-static void menu_draw_rect(int x, int y, int w, int h, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+static void surface_draw_rect(uint8_t* surface, int surface_w, int surface_h, int surface_stride, int x, int y, int w, int h, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
 	for (int yy = 0; yy < h; ++yy) {
 		for (int xx = 0; xx < w; ++xx) {
-			menu_draw_pixel(x + xx, y + yy, r, g, b, a);
+			surface_draw_pixel(surface, surface_w, surface_h, surface_stride, x + xx, y + yy, r, g, b, a);
 		}
 	}
 }
 
-static void menu_draw_char(int x, int y, char c, uint8_t r, uint8_t g, uint8_t b, uint8_t a, int scale) {
+static void surface_draw_char(uint8_t* surface, int surface_w, int surface_h, int surface_stride, int x, int y, char c, uint8_t r, uint8_t g, uint8_t b, uint8_t a, int scale) {
 	if (c >= 'a' && c <= 'z') {
 		c = (char)(c - ('a' - 'A'));
 	}
@@ -1451,7 +1451,7 @@ static void menu_draw_char(int x, int y, char c, uint8_t r, uint8_t g, uint8_t b
 			if (bits & (1u << (4 - col))) {
 				for (int sy = 0; sy < scale; ++sy) {
 					for (int sx = 0; sx < scale; ++sx) {
-						menu_draw_pixel(x + col * scale + sx, y + row * scale + sy, r, g, b, a);
+						surface_draw_pixel(surface, surface_w, surface_h, surface_stride, x + col * scale + sx, y + row * scale + sy, r, g, b, a);
 					}
 				}
 			}
@@ -1459,11 +1459,11 @@ static void menu_draw_char(int x, int y, char c, uint8_t r, uint8_t g, uint8_t b
 	}
 }
 
-static void menu_draw_text(int x, int y, const char* text, uint8_t r, uint8_t g, uint8_t b, uint8_t a, int scale) {
+static void surface_draw_text(uint8_t* surface, int surface_w, int surface_h, int surface_stride, int x, int y, const char* text, uint8_t r, uint8_t g, uint8_t b, uint8_t a, int scale) {
 	if (!text) return;
 	const int advance = (5 + 1) * scale;
 	for (const char* p = text; *p; ++p) {
-		menu_draw_char(x, y, *p, r, g, b, a, scale);
+		surface_draw_char(surface, surface_w, surface_h, surface_stride, x, y, *p, r, g, b, a, scale);
 		x += advance;
 	}
 }
@@ -1504,45 +1504,6 @@ static void fps_mark_dirty(void) {
 	g_fps_gl_dirty = true;
 }
 
-static void fps_draw_pixel(int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
-	if (!g_fps_surface || x < 0 || y < 0 || x >= g_fps_surface_w || y >= g_fps_surface_h) {
-		return;
-	}
-	uint8_t* p = g_fps_surface + (size_t)y * (size_t)g_fps_surface_stride + (size_t)x * 4u;
-	p[0] = r;
-	p[1] = g;
-	p[2] = b;
-	p[3] = a;
-}
-
-static void fps_draw_char(int x, int y, char c, uint8_t r, uint8_t g, uint8_t b, uint8_t a, int scale) {
-	if (c >= 'a' && c <= 'z') {
-		c = (char)(c - ('a' - 'A'));
-	}
-	const uint8_t* rows = menu_glyph_rows(c);
-	for (int row = 0; row < 7; ++row) {
-		uint8_t bits = rows[row];
-		for (int col = 0; col < 5; ++col) {
-			if (bits & (1u << (4 - col))) {
-				for (int sy = 0; sy < scale; ++sy) {
-					for (int sx = 0; sx < scale; ++sx) {
-						fps_draw_pixel(x + col * scale + sx, y + row * scale + sy, r, g, b, a);
-					}
-				}
-			}
-		}
-	}
-}
-
-static void fps_draw_text(int x, int y, const char* text, uint8_t r, uint8_t g, uint8_t b, uint8_t a, int scale) {
-	if (!text) return;
-	const int advance = (5 + 1) * scale;
-	for (const char* p = text; *p; ++p) {
-		fps_draw_char(x, y, *p, r, g, b, a, scale);
-		x += advance;
-	}
-}
-
 static void fps_rebuild_surface(void) {
 	if (!g_show_fps || g_fb.width <= 0 || g_fb.height <= 0) {
 		return;
@@ -1579,7 +1540,7 @@ static void fps_rebuild_surface(void) {
 	if (g_fps_y < 0) g_fps_y = 0;
 
 	const uint8_t text_r = 80, text_g = 220, text_b = 80, text_a = 255;
-	fps_draw_text(padding, padding, g_fps_text, text_r, text_g, text_b, text_a, scale);
+	surface_draw_text(g_fps_surface, g_fps_surface_w, g_fps_surface_h, g_fps_surface_stride, padding, padding, g_fps_text, text_r, text_g, text_b, text_a, scale);
 
 	g_fps_dirty = false;
 	g_fps_gl_dirty = true;
@@ -1844,53 +1805,6 @@ static void msg_build_lines(int max_chars) {
 	}
 }
 
-static void msg_draw_pixel(int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
-	if (!g_msg_surface || x < 0 || y < 0 || x >= g_msg_surface_w || y >= g_msg_surface_h) {
-		return;
-	}
-	uint8_t* p = g_msg_surface + (size_t)y * (size_t)g_msg_surface_stride + (size_t)x * 4u;
-	p[0] = r;
-	p[1] = g;
-	p[2] = b;
-	p[3] = a;
-}
-
-static void msg_draw_rect(int x, int y, int w, int h, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
-	for (int yy = 0; yy < h; ++yy) {
-		for (int xx = 0; xx < w; ++xx) {
-			msg_draw_pixel(x + xx, y + yy, r, g, b, a);
-		}
-	}
-}
-
-static void msg_draw_char(int x, int y, char c, uint8_t r, uint8_t g, uint8_t b, uint8_t a, int scale) {
-	if (c >= 'a' && c <= 'z') {
-		c = (char)(c - ('a' - 'A'));
-	}
-	const uint8_t* rows = menu_glyph_rows(c);
-	for (int row = 0; row < 7; ++row) {
-		uint8_t bits = rows[row];
-		for (int col = 0; col < 5; ++col) {
-			if (bits & (1u << (4 - col))) {
-				for (int sy = 0; sy < scale; ++sy) {
-					for (int sx = 0; sx < scale; ++sx) {
-						msg_draw_pixel(x + col * scale + sx, y + row * scale + sy, r, g, b, a);
-					}
-				}
-			}
-		}
-	}
-}
-
-static void msg_draw_text(int x, int y, const char* text, uint8_t r, uint8_t g, uint8_t b, uint8_t a, int scale) {
-	if (!text) return;
-	const int advance = (5 + 1) * scale;
-	for (const char* p = text; *p; ++p) {
-		msg_draw_char(x, y, *p, r, g, b, a, scale);
-		x += advance;
-	}
-}
-
 static void msg_rebuild_surface(void) {
 	if (g_msg_frames_left == 0 || !g_msg_text[0] || g_fb.width <= 0 || g_fb.height <= 0) {
 		return;
@@ -1949,10 +1863,10 @@ static void msg_rebuild_surface(void) {
 
 	const uint8_t bg_r = 8, bg_g = 8, bg_b = 8, bg_a = 180;
 	const uint8_t text_r = 240, text_g = 240, text_b = 240, text_a = 255;
-	msg_draw_rect(0, 0, g_msg_surface_w, g_msg_surface_h, bg_r, bg_g, bg_b, bg_a);
+	surface_draw_rect(g_msg_surface, g_msg_surface_w, g_msg_surface_h, g_msg_surface_stride, 0, 0, g_msg_surface_w, g_msg_surface_h, bg_r, bg_g, bg_b, bg_a);
 	for (int i = 0; i < g_msg_line_count; ++i) {
 		int y = padding + i * line_h;
-		msg_draw_text(padding, y, g_msg_lines[i], text_r, text_g, text_b, text_a, scale);
+		surface_draw_text(g_msg_surface, g_msg_surface_w, g_msg_surface_h, g_msg_surface_stride, padding, y, g_msg_lines[i], text_r, text_g, text_b, text_a, scale);
 	}
 	g_msg_dirty = false;
 	g_msg_gl_dirty = true;
@@ -2177,18 +2091,18 @@ static void menu_rebuild_surface(void) {
 	const uint8_t dim_r = 180, dim_g = 180, dim_b = 180, dim_a = 255;
 	const uint8_t title_r = 96, title_g = 200, title_b = 255, title_a = 255;
 
-	menu_draw_rect(0, box_y, g_menu_surface_w, box_h, bg_r, bg_g, bg_b, bg_a);
-	menu_draw_text(padding, 0, title, title_r, title_g, title_b, title_a, scale);
+	surface_draw_rect(g_menu_surface, g_menu_surface_w, g_menu_surface_h, g_menu_surface_stride, 0, box_y, g_menu_surface_w, box_h, bg_r, bg_g, bg_b, bg_a);
+	surface_draw_text(g_menu_surface, g_menu_surface_w, g_menu_surface_h, g_menu_surface_stride, padding, 0, title, title_r, title_g, title_b, title_a, scale);
 
 	int cursor_y = box_y + padding;
 
 	if (g_menu_option_count == 0) {
-		menu_draw_text(padding, cursor_y, "NO OPTIONS", dim_r, dim_g, dim_b, dim_a, scale);
+		surface_draw_text(g_menu_surface, g_menu_surface_w, g_menu_surface_h, g_menu_surface_stride, padding, cursor_y, "NO OPTIONS", dim_r, dim_g, dim_b, dim_a, scale);
 		cursor_y += line_h;
 	} else {
 		for (size_t i = 0; i < g_menu_option_count; ++i) {
 			if (i == g_menu_selected) {
-				menu_draw_rect(0, cursor_y - 2, g_menu_surface_w, line_h, hl_r, hl_g, hl_b, hl_a);
+				surface_draw_rect(g_menu_surface, g_menu_surface_w, g_menu_surface_h, g_menu_surface_stride, 0, cursor_y - 2, g_menu_surface_w, line_h, hl_r, hl_g, hl_b, hl_a);
 			}
 			const MenuOption* opt = &g_menu_options[i];
 			const bool disabled = menu_option_is_disabled(opt);
@@ -2203,7 +2117,7 @@ static void menu_rebuild_surface(void) {
 			const uint8_t line_r = disabled ? dim_r : text_r;
 			const uint8_t line_g = disabled ? dim_g : text_g;
 			const uint8_t line_b = disabled ? dim_b : text_b;
-			menu_draw_text(padding, cursor_y, line, line_r, line_g, line_b, text_a, scale);
+			surface_draw_text(g_menu_surface, g_menu_surface_w, g_menu_surface_h, g_menu_surface_stride, padding, cursor_y, line, line_r, line_g, line_b, text_a, scale);
 			cursor_y += line_h;
 		}
 	}
@@ -2212,7 +2126,7 @@ static void menu_rebuild_surface(void) {
 		int footer_x = g_menu_surface_w - padding - footer_w;
 		if (footer_x < padding) footer_x = padding;
 		int footer_y = box_y + box_h - padding - line_h;
-		menu_draw_text(footer_x, footer_y, footer, dim_r, dim_g, dim_b, dim_a, scale);
+		surface_draw_text(g_menu_surface, g_menu_surface_w, g_menu_surface_h, g_menu_surface_stride, footer_x, footer_y, footer, dim_r, dim_g, dim_b, dim_a, scale);
 	}
 
 	g_menu_dirty = false;

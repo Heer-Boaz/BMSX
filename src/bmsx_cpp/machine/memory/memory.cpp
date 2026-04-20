@@ -1,5 +1,6 @@
 #include "machine/memory/memory.h"
 #include "machine/memory/lua_heap_usage.h"
+#include "rompack/assets.h"
 #include "common/byte_hex_string.h"
 
 #include <algorithm>
@@ -15,8 +16,6 @@ constexpr uint32_t ASSET_PAGE_SHIFT = 12;
 constexpr uint32_t ASSET_PAGE_SIZE = 1u << ASSET_PAGE_SHIFT;
 constexpr uint32_t ASSET_TYPE_IMAGE = 1;
 constexpr uint32_t ASSET_TYPE_AUDIO = 2;
-constexpr uint64_t ASSET_TOKEN_OFFSET_BASIS = 0xcbf29ce484222325ull;
-constexpr uint64_t ASSET_TOKEN_PRIME = 0x100000001b3ull;
 
 inline uint32_t alignUp(uint32_t value, uint32_t alignment) {
 	const uint32_t mask = alignment - 1;
@@ -55,14 +54,6 @@ bool isVramRangeLocal(uint32_t addr, size_t length) {
 		|| rangeOverlaps(addr, length, VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
 }
 
-uint64_t hashAssetId(const std::string& id) {
-	uint64_t hash = ASSET_TOKEN_OFFSET_BASIS;
-	for (unsigned char c : id) {
-		hash ^= static_cast<uint64_t>(c);
-		hash *= ASSET_TOKEN_PRIME;
-	}
-	return hash;
-}
 }
 
 Memory::Memory()
@@ -154,7 +145,7 @@ bool Memory::hasAsset(const std::string& id) const {
 	if (m_assetIndexById.find(id) != m_assetIndexById.end()) {
 		return true;
 	}
-	const uint64_t token = hashAssetId(id);
+	const uint64_t token = hashAssetToken(id);
 	return m_assetIndexByToken.find(token) != m_assetIndexByToken.end();
 }
 
@@ -505,7 +496,7 @@ u32 Memory::resolveAssetHandle(const std::string& id) const {
 	if (direct != m_assetIndexById.end()) {
 		return static_cast<u32>(direct->second);
 	}
-	const uint64_t token = hashAssetId(id);
+	const uint64_t token = hashAssetToken(id);
 	const auto hashed = m_assetIndexByToken.find(token);
 	if (hashed == m_assetIndexByToken.end()) {
 		throw std::runtime_error("[Memory] Asset '" + id + "' not registered in memory.");
@@ -1114,7 +1105,7 @@ size_t Memory::addAssetEntry(AssetEntry entry) {
 	if (m_assetIndexById.count(entry.id) != 0) {
 		throw std::runtime_error("[Memory] Asset entry already registered.");
 	}
-	entry.idToken = hashAssetId(entry.id);
+	entry.idToken = hashAssetToken(entry.id);
 	const auto tokenIt = m_assetIndexByToken.find(entry.idToken);
 	if (tokenIt != m_assetIndexByToken.end()) {
 		throw std::runtime_error("[Memory] Asset token collision detected.");

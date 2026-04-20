@@ -192,6 +192,7 @@ private:
 	// ─────────────────────────────────────────────────────────────────────────
 	
 	void handleFocusChange(bool focused);
+	void registerDeviceBinding(const std::string& deviceId, InputHandler* handler, InputSource source, std::optional<i32> assignedPlayer);
 	void enqueueButtonEvent(i32 playerIndex, InputSource source, const std::string& code, 
 							InputEvent::Type type, f64 timestamp, 
 							std::optional<i32> pressId);

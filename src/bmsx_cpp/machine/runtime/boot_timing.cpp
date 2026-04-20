@@ -23,11 +23,11 @@ ResolvedRuntimeTiming resolveRuntimeTiming(
 	timing.viewportHeight = viewportMachine.viewportHeight;
 	timing.ufpsScaled = ufpsScaled;
 	timing.cpuHz = cpuHz;
-	timing.imgDecBytesPerSec = resolveImgDecBytesPerSec(timingMachine);
-	timing.dmaBytesPerSecIso = resolveDmaBytesPerSecIso(timingMachine);
-	timing.dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(timingMachine);
-	timing.vdpWorkUnitsPerSec = static_cast<int>(resolveVdpWorkUnitsPerSec(timingMachine));
-	timing.geoWorkUnitsPerSec = static_cast<int>(resolveGeoWorkUnitsPerSec(timingMachine));
+	timing.imgDecBytesPerSec = requirePositiveManifestValue(timingMachine.imgDecBytesPerSec, "[RuntimeMachineSpecs] machine.specs.cpu.imgdec_bytes_per_sec is required.", "[RuntimeMachineSpecs] machine.specs.cpu.imgdec_bytes_per_sec must be a positive integer.");
+	timing.dmaBytesPerSecIso = requirePositiveManifestValue(timingMachine.dmaBytesPerSecIso, "[RuntimeMachineSpecs] machine.specs.dma.dma_bytes_per_sec_iso is required.", "[RuntimeMachineSpecs] machine.specs.dma.dma_bytes_per_sec_iso must be a positive integer.");
+	timing.dmaBytesPerSecBulk = requirePositiveManifestValue(timingMachine.dmaBytesPerSecBulk, "[RuntimeMachineSpecs] machine.specs.dma.dma_bytes_per_sec_bulk is required.", "[RuntimeMachineSpecs] machine.specs.dma.dma_bytes_per_sec_bulk must be a positive integer.");
+	timing.vdpWorkUnitsPerSec = static_cast<int>(resolvePositiveManifestValue(timingMachine.vdpWorkUnitsPerSec, DEFAULT_VDP_WORK_UNITS_PER_SEC, "[RuntimeMachineSpecs] machine.specs.vdp.work_units_per_sec must be a positive integer."));
+	timing.geoWorkUnitsPerSec = static_cast<int>(resolvePositiveManifestValue(timingMachine.geoWorkUnitsPerSec, DEFAULT_GEO_WORK_UNITS_PER_SEC, "[RuntimeMachineSpecs] machine.specs.geo.work_units_per_sec must be a positive integer."));
 	timing.cycleBudgetPerFrame = calcCyclesPerFrame(cpuHz, ufpsScaled);
 	timing.vblankCycles = static_cast<int>(resolveVblankCycles(cpuHz, ufpsScaled, timingMachine.viewportHeight));
 	return timing;
