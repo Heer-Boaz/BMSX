@@ -568,13 +568,11 @@ function quoteCsv(value: string | number | undefined): string {
 	return text;
 }
 
+function printCsvRow(fields: readonly (string | number | undefined)[]): void {
+	console.log(fields.map(quoteCsv).join(','));
+}
+
 function printCsvReport(issues: readonly LintIssue[], duplicateGroups: readonly CppDuplicateGroup[], scannedFiles: number, summaryOnly: boolean): void {
-	if (issues.length === 0 && duplicateGroups.length === 0) {
-		console.log('file,line,column,tool,check,severity,message');
-		console.log(`summary,scanned_files,,,${quoteCsv(scannedFiles)},`);
-		console.log('summary,total_issues,0,,,0,');
-		return;
-	}
 	console.log('file,line,column,tool,check,severity,message');
 	if (!summaryOnly) {
 		for (let groupIndex = 0; groupIndex < duplicateGroups.length; groupIndex += 1) {
@@ -605,16 +603,16 @@ function printCsvReport(issues: readonly LintIssue[], duplicateGroups: readonly 
 			].join(','));
 		}
 	}
-	console.log(`summary,scanned_files,,,${quoteCsv(scannedFiles)},,`);
-	console.log(`summary,total_issues,${issues.length},,,${quoteCsv(issues.length)},`);
-	console.log(`summary,total_duplicate_groups,${duplicateGroups.length},,,${quoteCsv(duplicateGroups.length)},`);
+	printCsvRow(['summary', 'scanned_files', '', '', scannedFiles, '', '']);
+	printCsvRow(['summary', 'total_issues', issues.length, '', '', issues.length, '']);
+	printCsvRow(['summary', 'total_duplicate_groups', duplicateGroups.length, '', '', duplicateGroups.length, '']);
 	const byCheck = new Map<string, number>();
 	for (let i = 0; i < issues.length; i += 1) {
 		const issue = issues[i];
 		byCheck.set(issue.check, (byCheck.get(issue.check) ?? 0) + 1);
 	}
 	for (const [check, count] of Array.from(byCheck.entries()).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))) {
-		console.log(`summary,by_check,${check},,${count},,`);
+		printCsvRow(['summary', 'by_check', check, '', count, '', '']);
 	}
 }
 

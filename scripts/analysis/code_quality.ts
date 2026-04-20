@@ -2208,6 +2208,9 @@ function addNormalizedBodyDuplicateIssues(normalizedBodies: readonly NormalizedB
 		if (names.size <= 1) {
 			continue;
 		}
+		const namePreview = Array.from(names).sort((left, right) => left.localeCompare(right)).slice(0, 4);
+		const nameSuffix = names.size > namePreview.length ? ' …' : '';
+		const nameSummary = namePreview.join(', ') + nameSuffix;
 		for (let index = 0; index < list.length; index += 1) {
 			const entry = list[index];
 			issues.push({
@@ -2216,7 +2219,7 @@ function addNormalizedBodyDuplicateIssues(normalizedBodies: readonly NormalizedB
 				line: entry.line,
 				column: entry.column,
 				name: 'normalized_ast_duplicate_pattern',
-				message: `Function/method body duplicates ${list.length} normalized AST bodies with different names. Extract shared ownership instead of copying logic.`,
+				message: `Function/method body duplicates ${list.length} normalized AST bodies with different names: ${nameSummary}. Extract shared ownership instead of copying logic.`,
 			});
 		}
 	}
@@ -3145,13 +3148,13 @@ function printCsvDuplicateSummaryRows(groups: readonly DuplicateGroup[]): void {
 		const percent = formatPercent(count, totalDuplicateDeclarations);
 		console.log([
 			quoteCsv('summary'),
-			quoteCsv(`duplicate_kind:${kind[0]}`),
+			quoteCsv(`duplicate_kind:${kind}`),
 			quoteCsv(count),
 			quoteCsv(''),
 			quoteCsv(percent),
 			quoteCsv(''),
 			quoteCsv(''),
-			quoteCsv(`Duplicate declarations by kind "${kind[0]}" (${percent})`),
+			quoteCsv(`Duplicate declarations by kind "${kind}" (${percent})`),
 		].join(','));
 	}
 }
@@ -3235,7 +3238,6 @@ function quoteCsv(value: string | number | undefined): string {
 }
 
 function printCsvReport(groups: DuplicateGroup[], lintIssues: LintIssue[], scannedFiles: number, summaryOnly: boolean): void {
-	console.log(`scanned_files,${quoteCsv(scannedFiles)}`);
 	console.log('kind,name_or_rule,count,file,line,column,context,message');
 	if (!summaryOnly) {
 		for (const group of groups) {
@@ -3265,6 +3267,16 @@ function printCsvReport(groups: DuplicateGroup[], lintIssues: LintIssue[], scann
 			].join(','));
 		}
 	}
+	console.log([
+		quoteCsv('summary'),
+		quoteCsv('scanned_files'),
+		quoteCsv(scannedFiles),
+		quoteCsv(''),
+		quoteCsv(''),
+		quoteCsv(''),
+		quoteCsv(''),
+		quoteCsv(''),
+	].join(','));
 	printCsvDuplicateSummaryRows(groups);
 	printCsvLintSummaryRows(lintIssues);
 }
