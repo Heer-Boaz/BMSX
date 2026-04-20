@@ -114,7 +114,8 @@ export class FrameSchedulerState {
 		this.lastTickConsumedSequence = 0;
 	}
 
-	public run(runtime: Runtime, hostDeltaMs: number): void {
+	public run(runtime: Runtime, hostDeltaMs: number): number {
+		const previousTickSequence = this.lastTickSequence;
 		this.accumulateHostTime(runtime, hostDeltaMs);
 		while (this.canRunScheduledUpdate(runtime)) {
 			const progressed = runtime.frameLoop.tickUpdate(runtime);
@@ -126,6 +127,7 @@ export class FrameSchedulerState {
 				break;
 			}
 		}
+		return previousTickSequence;
 	}
 
 	public consumeTickCompletion(out: TickCompletion): boolean {

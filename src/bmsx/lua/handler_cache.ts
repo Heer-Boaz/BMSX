@@ -51,7 +51,7 @@ export class LuaHandlerCache {
 			return cached;
 		}
 
-		const moduleId = this.normalizeModuleId(ctx.moduleId);
+		const moduleId = ctx.moduleId;
 		const key = this.resolveKey(moduleId, ctx.path);
 		if (!key) {
 			throw new Error(`[LuaHandlerCache] Unable to resolve handler key for module '${moduleId}'.`);
@@ -82,12 +82,11 @@ export class LuaHandlerCache {
 	}
 
 	public rebind(moduleId: string, path: ReadonlyArray<string>, fn: LuaFunctionValue): void {
-		const normalizedModule = this.normalizeModuleId(moduleId);
-		const key = this.resolveKey(normalizedModule, path, { reuseOnly: true });
+		const key = this.resolveKey(moduleId, path, { reuseOnly: true });
 		if (!key) {
 			return;
 		}
-		const hid = this.buildHid(normalizedModule, key);
+		const hid = this.buildHid(moduleId, key);
 		const record = this.byHid.get(hid);
 		if (!record) {
 			return;
@@ -103,8 +102,7 @@ export class LuaHandlerCache {
 	}
 
 	public listByModule(moduleId: string): ReadonlyArray<LuaHandlerFn> {
-		const normalizedModule = this.normalizeModuleId(moduleId);
-		const bucket = this.byModule.get(normalizedModule);
+		const bucket = this.byModule.get(moduleId);
 		if (!bucket) {
 			return [];
 		}
@@ -116,18 +114,17 @@ export class LuaHandlerCache {
 	}
 
 	public unloadModule(moduleId: string): void {
-		const normalizedModule = this.normalizeModuleId(moduleId);
-		const bucket = this.byModule.get(normalizedModule);
+		const bucket = this.byModule.get(moduleId);
 		if (!bucket) {
 			return;
 		}
 		for (const [key, record] of bucket.entries()) {
-			this.byHid.delete(this.buildHid(normalizedModule, key));
+			this.byHid.delete(this.buildHid(moduleId, key));
 			this.byHandler.delete(record.handler);
 		}
 		bucket.clear();
-		this.byModule.delete(normalizedModule);
-		this.anonCounters.delete(normalizedModule);
+		this.byModule.delete(moduleId);
+		this.anonCounters.delete(moduleId);
 	}
 
 	private createHandler(
@@ -206,10 +203,6 @@ export class LuaHandlerCache {
 
 	private buildHid(moduleId: string, key: string): string {
 		return `mod:${moduleId}#${key}`;
-	}
-
-	private normalizeModuleId(moduleId: string): string {
-		return moduleId.trim();
 	}
 
 	private pathToText(path: ReadonlyArray<string>): string {

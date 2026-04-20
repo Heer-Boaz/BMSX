@@ -11,11 +11,7 @@ namespace bmsx {
 void CartBootState::reset(Runtime& runtime) {
 	m_prepared = false;
 	m_pending = false;
-	setReadyFlag(runtime, false);
-}
-
-void CartBootState::setReadyFlag(Runtime& runtime, bool value) {
-	runtime.machine().memory().writeValue(IO_SYS_CART_BOOTREADY, valueNumber(value ? 1.0 : 0.0));
+	runtime.machine().memory().writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
 }
 
 void CartBootState::prepareIfNeeded(Runtime& runtime) {
@@ -29,12 +25,12 @@ void CartBootState::prepareIfNeeded(Runtime& runtime) {
 		return;
 	}
 	m_prepared = true;
-	setReadyFlag(runtime, true);
+	runtime.machine().memory().writeValue(IO_SYS_CART_BOOTREADY, valueNumber(1.0));
 }
 
 void CartBootState::request(Runtime& runtime) {
 	m_pending = true;
-	setReadyFlag(runtime, false);
+	runtime.machine().memory().writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
 }
 
 bool CartBootState::pollSystemBootRequest(Runtime& runtime) {
@@ -54,14 +50,11 @@ bool CartBootState::processPending(Runtime& runtime) {
 	if (!m_pending) {
 		return false;
 	}
-	const bool hadActiveFrame = runtime.frameLoop.frameActive;
-	if (hadActiveFrame) {
+	const bool hasActiveEntry = runtime.hasEntryContinuation();
+	if (runtime.frameLoop.frameActive || hasActiveEntry) {
 		runtime.frameLoop.resetFrameState(runtime);
 	}
-	if (runtime.hasEntryContinuation()) {
-		if (!hadActiveFrame) {
-			runtime.frameLoop.resetFrameState(runtime);
-		}
+	if (hasActiveEntry) {
 		runtime.m_pendingCall = Runtime::PendingCall::None;
 		runtime.vblank.clearHaltUntilIrq(runtime);
 	}
@@ -69,12 +62,13 @@ bool CartBootState::processPending(Runtime& runtime) {
 	m_pending = false;
 	try {
 		if (!EngineCore::instance().bootLoadedCart()) {
-			setReadyFlag(runtime, false);
+			runtime.machine().memory().writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
 			EngineCore::instance().log(LogLevel::Error,
 				"Runtime fault: deferred cart boot request failed while leaving system boot screen active.\n");
+			return true;
 		}
 	} catch (const std::exception& error) {
-		setReadyFlag(runtime, false);
+		runtime.machine().memory().writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
 		EngineCore::instance().log(LogLevel::Error,
 			"Runtime fault: deferred cart boot request failed while leaving system boot screen active: %s\n",
 			error.what());

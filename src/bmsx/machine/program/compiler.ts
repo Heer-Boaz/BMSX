@@ -2979,7 +2979,7 @@ const cloneModuleExportNode = (node: ModuleExportNode): ModuleExportNode => {
 };
 
 const stripLuaExtension = (path: string): string =>
-	path.toLowerCase().endsWith('.lua') ? path.slice(0, path.length - 4) : path;
+	path.endsWith('.lua') ? path.slice(0, path.length - 4) : path;
 
 const stripModuleSourcePrefix = (path: string): string => {
 	const normalized = stripLuaExtension(path.replace(/\\/g, '/'));

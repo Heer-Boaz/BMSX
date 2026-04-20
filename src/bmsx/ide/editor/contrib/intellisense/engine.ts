@@ -235,14 +235,6 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 					returnDescription: metadata?.returnDescription,
 				};
 				signatures.set(name, metadataEntry);
-				const lower = name.toLowerCase();
-				const upper = name.toUpperCase();
-				if (lower !== name && !signatures.has(lower)) {
-					signatures.set(lower, metadataEntry);
-				}
-				if (upper !== name && !signatures.has(upper)) {
-					signatures.set(upper, metadataEntry);
-				}
 				processed.add(name);
 				continue;
 			}
@@ -271,14 +263,6 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 					returnDescription: metadata?.returnDescription,
 				};
 				signatures.set(name, metadataEntry);
-				const lower = name.toLowerCase();
-				const upper = name.toUpperCase();
-				if (lower !== name && !signatures.has(lower)) {
-					signatures.set(lower, metadataEntry);
-				}
-				if (upper !== name && !signatures.has(upper)) {
-					signatures.set(upper, metadataEntry);
-				}
 				processed.add(name);
 			}
 		}
@@ -675,7 +659,7 @@ export function buildMemberCompletionItems(request: LuaMemberCompletionRequest):
 		items.push({
 			label: entry.name,
 			insertText: entry.name,
-			sortKey: `${kind}:${entry.name.toLowerCase()}`,
+			sortKey: `${kind}:${entry.name}`,
 			kind,
 			detail,
 			parameters,
@@ -1013,7 +997,7 @@ export function resolveContextMenuToken(row: number, column: number): EditorCont
 	const expression = extractHoverExpression(row, safeColumn);
 	if (expression) {
 		const segmentText = line.slice(expression.startColumn, expression.endColumn);
-		const isKeyword = KEYWORDS.has(segmentText.toLowerCase());
+		const isKeyword = KEYWORDS.has(segmentText);
 		if (!isKeyword) {
 			return buildContextMenuToken(
 				row,
@@ -2304,7 +2288,7 @@ export function adjustMethodParametersForColon(params: string[]): string[] {
 		return [];
 	}
 	const first = params[0] ?? '';
-	const normalized = first.trim().toLowerCase();
+	const normalized = first.trim();
 	if (normalized === 'self' || normalized === 'this') {
 		return params.slice(1);
 	}

@@ -36,14 +36,13 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 	auto& cpu = runtime.machine().cpu();
 	int remaining = frameState.cycleBudgetRemaining;
 	RunResult result = RunResult::Yielded;
-	runDueRuntimeTimers(runtime);
 	while (remaining > 0) {
+		runDueRuntimeTimers(runtime);
 		int sliceBudget = remaining;
 		const i64 nextDeadline = scheduler.nextDeadline();
 		if (nextDeadline != std::numeric_limits<i64>::max()) {
 			const i64 deadlineBudget = nextDeadline - scheduler.nowCycles();
 			if (deadlineBudget <= 0) {
-				runDueRuntimeTimers(runtime);
 				continue;
 			}
 			if (deadlineBudget < sliceBudget) {
@@ -78,7 +77,9 @@ void advanceRuntimeTime(Runtime& runtime, int cycles) {
 void runDueRuntimeTimers(Runtime& runtime) {
 	while (runtime.machine().scheduler().hasDueTimer()) {
 		const uint16_t event = runtime.machine().scheduler().popDueTimer();
-		dispatchRuntimeTimer(runtime, static_cast<uint8_t>(event >> 8u), static_cast<uint8_t>(event & 0xffu));
+		const auto timerKind = static_cast<uint8_t>(event >> 8u);
+		const auto timerPayload = static_cast<uint8_t>(event & 0xffu);
+		dispatchRuntimeTimer(runtime, timerKind, timerPayload);
 	}
 }
 

@@ -16,7 +16,7 @@ export class CpuExecutionState {
 	private debugCycleRunsTotal = 0;
 	public debugCycleYieldsTotal = 0;
 
-	public runWithBudget(runtime: Runtime, state: FrameState): RunResult {
+	public runWithBudget(runtime: Runtime, state: FrameState, cycleBudgetRemaining: number): RunResult {
 		const debugCycle = Boolean((globalThis as any).__bmsx_debug_tickrate);
 		if (debugCycle) {
 			if (this.debugCycleReportAtMs === 0) {
@@ -25,18 +25,17 @@ export class CpuExecutionState {
 			this.debugCycleRuns += 1;
 			this.debugCycleRunsTotal += 1;
 		}
-		let remaining = state.cycleBudgetRemaining;
+		let remaining = cycleBudgetRemaining;
 		let result = RunResult.Yielded;
 		const scheduler = runtime.machine.scheduler;
 		const cpu = runtime.machine.cpu;
-		runDueRuntimeTimers(runtime);
 		while (remaining > 0) {
+			runDueRuntimeTimers(runtime);
 			let sliceBudget = remaining;
 			const nextDeadline = scheduler.nextDeadline();
 			if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
 				const deadlineBudget = nextDeadline - scheduler.nowCycles;
 				if (deadlineBudget <= 0) {
-					runDueRuntimeTimers(runtime);
 					continue;
 				}
 				if (deadlineBudget < sliceBudget) {

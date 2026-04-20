@@ -123,7 +123,8 @@ bool FrameSchedulerState::startScheduledFrame(Runtime& runtime) {
 	return true;
 }
 
-void FrameSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
+i64 FrameSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
+	const i64 previousTickSequence = lastTickSequence;
 	accumulateHostTime(runtime, hostDeltaMs);
 	while (canRunScheduledUpdate(runtime)) {
 		const bool progressed = runtime.frameLoop.tickUpdate(runtime);
@@ -131,6 +132,7 @@ void FrameSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
 			break;
 		}
 	}
+	return previousTickSequence;
 }
 
 } // namespace bmsx

@@ -569,8 +569,7 @@ export function highlightTextLine(
 			const firstStart = identifierPathStartScratch[0];
 			const firstEnd = identifierPathEndScratch[0];
 			const word = line.slice(firstStart, firstEnd);
-			const lowerWord = word.toLowerCase();
-			if (KEYWORDS.has(lowerWord)) {
+			if (KEYWORDS.has(word)) {
 				for (let column = firstStart; column < firstEnd; column += 1) {
 					columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_KEYWORD;
 				}
@@ -580,15 +579,15 @@ export function highlightTextLine(
 				i = builtinEnd;
 				continue;
 			}
-			if (lowerWord === 'function') {
+			if (word === 'function') {
 				i = highlightFunctionSignature(line, firstEnd, columnColors);
 				continue;
 			}
-			if (lowerWord === 'goto') {
+			if (word === 'goto') {
 				i = highlightGotoLabel(line, firstEnd, columnColors);
 				continue;
 			}
-			if (lowerWord === '::') {
+			if (word === '::') {
 				i = highlightScopedLabel(line, firstEnd, columnColors);
 				continue;
 			}

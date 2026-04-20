@@ -37,7 +37,7 @@ function normalizeQuery(raw: string): string {
 
 function forEachMatchInLine(line: string, query: string, cb: (start: number, end: number) => void): void {
 	if (query.length === 0) return;
-	const haystack = editorRuntimeState.caseInsensitive ? line.toLowerCase() : line;
+	const haystack = normalizeQuery(line);
 	let from = 0;
 	const needleLength = query.length;
 	while (from <= haystack.length - needleLength) {

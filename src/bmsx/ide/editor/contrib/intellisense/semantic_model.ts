@@ -575,7 +575,7 @@ function tryExtractRequireModuleName(expression: LuaExpression): string {
 	if (callee.kind !== LuaSyntaxKind.IdentifierExpression) {
 		return null;
 	}
-	if ((callee as LuaIdentifierExpression).name.toLowerCase() !== 'require') {
+	if ((callee as LuaIdentifierExpression).name !== 'require') {
 		return null;
 	}
 	if (call.arguments.length === 0) {

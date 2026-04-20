@@ -170,7 +170,7 @@ export function filterReferenceCatalog(options: {
 	selectionIndex: number;
 	displayOffset: number;
 } {
-	const normalized = options.query.trim().toLowerCase();
+	const normalized = options.query.trim();
 	const matches: SymbolSearchResult[] = [];
 	for (let index = 0; index < options.catalog.length; index += 1) {
 		const entry = options.catalog[index];
@@ -323,7 +323,7 @@ function createCatalogEntry(args: {
 			__referenceColumn: args.match.start + 1,
 		},
 		displayName: snippet,
-		searchKey: [snippet, symbolName, args.meta.sourceLabel].join(' ').trim().toLowerCase(),
+		searchKey: [snippet, symbolName, args.meta.sourceLabel].join(' ').trim(),
 		line: args.match.row + 1,
 		kindLabel: 'REF',
 		sourceLabel: args.meta.sourceLabel,

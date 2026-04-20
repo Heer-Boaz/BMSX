@@ -216,7 +216,7 @@ export class CompletionController {
 		const addParentheses = item.kind === 'api_method' || item.kind === 'native_method';
 		const insertion = addParentheses ? `${item.insertText}()` : item.insertText;
 		const prefix = session.context.prefix;
-		if (!insertion.toLowerCase().startsWith(prefix.toLowerCase())) {
+		if (!insertion.startsWith(prefix)) {
 			return null;
 		}
 		if (prefix.length >= insertion.length) {
@@ -538,7 +538,7 @@ export class CompletionController {
 
 	private collectCompletionItems(context: CompletionContext): LuaCompletionItem[] {
 		if (context.kind === 'member') {
-			if (context.objectName.toLowerCase() === 'api') {
+			if (context.objectName === 'api') {
 				return getApiCompletionData().items.slice();
 			}
 			const merged: LuaCompletionItem[] = [];
@@ -651,7 +651,7 @@ export class CompletionController {
 			const params = Array.isArray(descriptor.params) ? descriptor.params.slice() : [];
 			const baseDetail = descriptor.signature && descriptor.signature.length > 0 ? descriptor.signature : 'Lua builtin';
 			const detail = descriptor.description && descriptor.description.length > 0 ? `${baseDetail} • ${descriptor.description}` : baseDetail;
-			items.push({ label, insertText, sortKey: `builtin:${label.toLowerCase()}`, kind: 'builtin', detail, parameters: params });
+			items.push({ label, insertText, sortKey: `builtin:${label}`, kind: 'builtin', detail, parameters: params });
 		}
 		items.sort((a, b) => a.label.localeCompare(b.label));
 		return items;
@@ -939,14 +939,14 @@ export class CompletionController {
 				parameterDescriptions: descriptor.parameterDescriptions ? descriptor.parameterDescriptions.slice() : undefined,
 				description: descriptor.description ,
 			};
-			this.builtinDescriptorMap.set(normalized.toLowerCase(), entry);
+			this.builtinDescriptorMap.set(normalized, entry);
 		};
 		for (let i = 0; i < descriptors.length; i += 1) registerDescriptor(descriptors[i]);
 
 		// Also expose API methods as global built-ins if not already present,
 		// since the runtime registers them globally too.
 		for (const [name, meta] of getApiCompletionData().signatures) {
-			const key = name.toLowerCase();
+			const key = name;
 			if (!this.builtinDescriptorMap.has(key)) {
 				const optionalParams = meta.optionalParams ?? [];
 				const optionalSet = optionalParams.length > 0 ? new Set(optionalParams) : null;
@@ -968,9 +968,9 @@ export class CompletionController {
 
 	private findBuiltinDescriptor(objectName: string, methodName: string): LuaBuiltinDescriptor {
 		this.ensureBuiltinDescriptorCache();
-		const methodKey = methodName.toLowerCase();
+		const methodKey = methodName;
 		if (objectName) {
-			const compositeKey = `${objectName.toLowerCase()}.${methodKey}`;
+			const compositeKey = `${objectName}.${methodKey}`;
 			const composite = this.builtinDescriptorMap.get(compositeKey);
 			if (composite) {
 				return {
@@ -1111,7 +1111,7 @@ export class CompletionController {
 
 	private applyCompletionFilter(session: CompletionSession): void {
 		const prefix = session.context.prefix;
-		const cacheKey = prefix.toLowerCase();
+		const cacheKey = prefix;
 		let filtered = session.filterCache.get(cacheKey);
 		if (!filtered) {
 			filtered = this.filterCompletionItems(session.items, prefix);
@@ -1130,11 +1130,11 @@ export class CompletionController {
 	}
 
 	private filterCompletionItems(items: LuaCompletionItem[], prefix: string): LuaCompletionItem[] {
-		const lower = prefix.toLowerCase();
+		const lower = prefix;
 		const matches: Array<{ item: LuaCompletionItem; score: number; exact: boolean }> = [];
 		for (let i = 0; i < items.length; i += 1) {
 			const item = items[i];
-			const labelLower = item.label.toLowerCase();
+			const labelLower = item.label;
 			let score: number = null;
 			let exact = false;
 			if (labelLower.startsWith(lower)) { score = 0; exact = labelLower === lower; }
@@ -1233,7 +1233,7 @@ export class CompletionController {
 		if (expected.kind !== actual.kind) return false;
 		if (expected.kind === 'member' && actual.kind === 'member') {
 			if (expected.operator !== actual.operator) return false;
-			if (expected.objectName.toLowerCase() !== actual.objectName.toLowerCase()) return false;
+			if (expected.objectName !== actual.objectName) return false;
 		}
 		return true;
 	}
@@ -1390,8 +1390,8 @@ export class CompletionController {
 			}
 		}
 
-		const isApiObject = objectName !== null && objectName.toLowerCase() === 'api';
-		const normalizedMethodName = methodName.toLowerCase();
+		const isApiObject = objectName !== null && objectName === 'api';
+		const normalizedMethodName = methodName;
 		if (isApiObject) {
 			const apiMeta = getApiCompletionData().signatures.get(normalizedMethodName);
 			if (apiMeta) {

@@ -73,7 +73,7 @@ export function refreshSymbolCatalog(force: boolean): void {
 		return {
 			symbol: entry,
 			displayName: display,
-			searchKey: sourceLabel ? `${display} ${sourceLabel}`.toLowerCase() : display.toLowerCase(),
+			searchKey: sourceLabel ? `${display} ${sourceLabel}` : display,
 			line: entry.location.range.startLine,
 			kindLabel: symbolKindLabel(entry.kind),
 			sourceLabel,

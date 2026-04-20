@@ -45,7 +45,7 @@ export class HandlerCache {
 			return cached;
 		}
 
-		const moduleId = this.normalizeModuleId(ctx.moduleId);
+		const moduleId = ctx.moduleId;
 		const pathText = this.pathToText(ctx.path);
 		const key = this.resolveKey(moduleId, ctx.path);
 		if (!key) {
@@ -76,13 +76,11 @@ export class HandlerCache {
 	}
 
 	public rebind(moduleId: string, path: ReadonlyArray<string>, fn: Closure): void {
-		const module = this.normalizeModuleId(moduleId);
-		const key = this.resolveKey(module, path, { reuseOnly: true });
+		const key = this.resolveKey(moduleId, path, { reuseOnly: true });
 		if (!key) {
 			return;
 		}
-		const hid = this.buildHid(module, key);
-		const record = this.byHid.get(hid);
+		const record = this.byHid.get(this.buildHid(moduleId, key));
 		if (!record) {
 			return;
 		}
@@ -91,14 +89,13 @@ export class HandlerCache {
 		this.byClosure.set(fn, record.handler);
 	}
 
-	public unwrap(handler: HandlerFn): { fn: Closure } | null {
+	public unwrap(handler: HandlerFn): { fn: Closure } {
 		const record = this.byHandler.get(handler);
-		return record ? record.current : null;
+		return record!.current;
 	}
 
 	public listByModule(moduleId: string): ReadonlyArray<HandlerFn> {
-		const normalizedModule = this.normalizeModuleId(moduleId);
-		const bucket = this.byModule.get(normalizedModule);
+		const bucket = this.byModule.get(moduleId);
 		if (!bucket) {
 			return [];
 		}
@@ -106,18 +103,17 @@ export class HandlerCache {
 	}
 
 	public unloadModule(moduleId: string): void {
-		const normalizedModule = this.normalizeModuleId(moduleId);
-		const bucket = this.byModule.get(normalizedModule);
+		const bucket = this.byModule.get(moduleId);
 		if (!bucket) {
 			return;
 		}
 		for (const [key, record] of bucket.entries()) {
-			this.byHid.delete(this.buildHid(normalizedModule, key));
+			this.byHid.delete(this.buildHid(moduleId, key));
 			this.byHandler.delete(record.handler);
 		}
 		bucket.clear();
-		this.byModule.delete(normalizedModule);
-		this.anonCounters.delete(normalizedModule);
+		this.byModule.delete(moduleId);
+		this.anonCounters.delete(moduleId);
 	}
 
 	private createHandler(
@@ -126,12 +122,12 @@ export class HandlerCache {
 		path: string,
 		fn: Closure,
 	): HandlerFn {
-		let currentFn = fn;
+		const current = { fn };
 		const cache = this;
 
 		const handler = function handler(this: unknown, ...args: unknown[]) {
 			try {
-				return cache.callClosure(currentFn, this, args);
+				return cache.callClosure(current.fn, this, args);
 			} catch (error) {
 				cache.reportError(error, { hid, moduleId, path });
 				return undefined;
@@ -144,7 +140,7 @@ export class HandlerCache {
 			__hpath: { value: path, enumerable: false, writable: false, configurable: true },
 			__rebind: {
 				value: (nextFn: Closure) => {
-					currentFn = nextFn;
+					current.fn = nextFn;
 					cache.byClosure.set(nextFn, handler);
 				},
 				enumerable: false,
@@ -194,26 +190,11 @@ export class HandlerCache {
 		bucket.set(key, record);
 	}
 
-	private normalizeModuleId(moduleId: string): string {
-		if (moduleId.length === 0) {
-			return 'unknown';
-		}
-		return moduleId;
-	}
-
 	private pathToText(path: ReadonlyArray<string> = []): string {
 		if (path.length === 0) {
 			return '';
 		}
-		let result = '';
-		for (let index = 0; index < path.length; index += 1) {
-			const segment = path[index];
-			result += `${segment.length}:${segment}`;
-			if (index < path.length - 1) {
-				result += '|';
-			}
-		}
-		return result;
+		return path.map(segment => `${segment.length}:${segment}`).join('|');
 	}
 
 	private buildHid(moduleId: string, key: string): string {
