@@ -27,7 +27,15 @@ type DuplicateGroup = {
 	locations: DuplicateLocation[];
 };
 
-type LintIssueKind = 'local_const_pattern' | 'single_use_local_pattern';
+type LintIssueKind =
+	| 'local_const_pattern'
+	| 'single_use_local_pattern'
+	| 'empty_string_condition_pattern'
+	| 'empty_string_fallback_pattern'
+	| 'or_nil_fallback_pattern'
+	| 'explicit_truthy_comparison_pattern'
+	| 'string_or_chain_comparison_pattern'
+	| 'single_line_method_pattern';
 
 type LintIssue = {
 	kind: LintIssueKind;
@@ -512,6 +520,229 @@ function shouldIgnoreLintName(name: string): boolean {
 	return name.length === 0 || name === '_' || name.startsWith('_');
 }
 
+function isBooleanLiteral(node: ts.Expression): boolean | null {
+	if (node.kind === ts.SyntaxKind.TrueKeyword) {
+		return true;
+	}
+	if (node.kind === ts.SyntaxKind.FalseKeyword) {
+		return false;
+	}
+	return null;
+}
+
+function isEmptyStringLiteral(node: ts.Expression): node is ts.StringLiteral {
+	return ts.isStringLiteral(node) && node.text === '';
+}
+
+function isNullOrUndefined(node: ts.Expression): boolean {
+	return node.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(node) && node.text === 'undefined');
+}
+
+function isExpressionInScopeFingerprint(node: ts.Expression): string | null {
+	if (ts.isIdentifier(node)) {
+		return `id:${node.text}`;
+	}
+	if (node.kind === ts.SyntaxKind.ThisKeyword) {
+		return 'this';
+	}
+	if (node.kind === ts.SyntaxKind.SuperKeyword) {
+		return 'super';
+	}
+	if (ts.isPropertyAccessExpression(node)) {
+		const left = isExpressionInScopeFingerprint(node.expression);
+		if (left === null) {
+			return null;
+		}
+		return `${left}.${node.name.text}`;
+	}
+	if (ts.isElementAccessExpression(node)) {
+		const base = isExpressionInScopeFingerprint(node.expression);
+		if (base === null) {
+			return null;
+		}
+		if (ts.isStringLiteral(node.argumentExpression) || ts.isNumericLiteral(node.argumentExpression)) {
+			return `${base}[${node.argumentExpression.getText()}]`;
+		}
+		return null;
+	}
+	if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isNonNullExpression(node)) {
+		const inner = ts.isParenthesizedExpression(node)
+			? node.expression
+			: ts.isAsExpression(node)
+				? node.expression
+				: node.expression;
+		return isExpressionInScopeFingerprint(inner);
+	}
+	return null;
+}
+
+function isEqualityOperator(kind: ts.SyntaxKind): boolean {
+	return kind === ts.SyntaxKind.EqualsEqualsToken
+		|| kind === ts.SyntaxKind.EqualsEqualsEqualsToken
+		|| kind === ts.SyntaxKind.ExclamationEqualsToken
+		|| kind === ts.SyntaxKind.ExclamationEqualsEqualsToken;
+}
+
+function collectStringOrChainSubjects(node: ts.Expression, subjects: string[]): boolean {
+	if (ts.isParenthesizedExpression(node)) {
+		return collectStringOrChainSubjects(node.expression, subjects);
+	}
+	if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
+		return collectStringOrChainSubjects(node.left, subjects) && collectStringOrChainSubjects(node.right, subjects);
+	}
+	if (!ts.isBinaryExpression(node) || !isEqualityOperator(node.operatorToken.kind)) {
+		return false;
+	}
+	if (!ts.isStringLiteral(node.left) && !ts.isStringLiteral(node.right)) {
+		return false;
+	}
+	if (ts.isStringLiteral(node.left) && ts.isStringLiteral(node.right)) {
+		return false;
+	}
+	const subject = ts.isStringLiteral(node.left) ? node.right : node.left;
+	const subjectKey = isExpressionInScopeFingerprint(subject);
+	if (subjectKey === null) {
+		return false;
+	}
+	subjects.push(subjectKey);
+	return true;
+}
+
+function lintBinaryExpressionForCodeQuality(
+	node: ts.BinaryExpression,
+	sourceFile: ts.SourceFile,
+	issues: LintIssue[]):
+	void {
+	if (node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
+		const subjects: string[] = [];
+		if (collectStringOrChainSubjects(node, subjects) && subjects.length > 1) {
+			const first = subjects[0];
+			let sameSubject = true;
+			for (let index = 1; index < subjects.length; index += 1) {
+				if (subjects[index] !== first) {
+					sameSubject = false;
+					break;
+				}
+			}
+			if (sameSubject) {
+				const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
+				issues.push({
+					kind: 'string_or_chain_comparison_pattern',
+					file: sourceFile.fileName,
+					line: position.line + 1,
+					column: position.character + 1,
+					name: 'string_or_chain_comparison_pattern',
+					message: 'Multiple OR-comparisons against the same expression with string literals are forbidden. Use `switch`-statement or set-like lookups instead.',
+				});
+			}
+		}
+	}
+	if (isEqualityOperator(node.operatorToken.kind)) {
+		if (
+			(isEmptyStringLiteral(node.left) && !ts.isStringLiteral(node.right))
+			|| (isEmptyStringLiteral(node.right) && !ts.isStringLiteral(node.left))
+		) {
+			const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
+			issues.push({
+				kind: 'empty_string_condition_pattern',
+				file: sourceFile.fileName,
+				line: position.line + 1,
+				column: position.character + 1,
+				name: 'empty_string_condition_pattern',
+				message: 'Empty-string condition checks are forbidden. Prefer explicit truthy/falsy checks.',
+			});
+		}
+		const leftBoolean = isBooleanLiteral(node.left);
+		const rightBoolean = isBooleanLiteral(node.right);
+		if ((leftBoolean !== null || rightBoolean !== null) && !(leftBoolean !== null && rightBoolean !== null)) {
+			const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
+			issues.push({
+				kind: 'explicit_truthy_comparison_pattern',
+				file: sourceFile.fileName,
+				line: position.line + 1,
+				column: position.character + 1,
+				name: 'explicit_truthy_comparison_pattern',
+				message: 'Explicit boolean literal comparison is forbidden. Use truthy/falsy checks instead.',
+			});
+		}
+	}
+	if (node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
+		if (
+			(isEmptyStringLiteral(node.left) && !ts.isStringLiteral(node.right))
+			|| (isEmptyStringLiteral(node.right) && !ts.isStringLiteral(node.left))
+		) {
+			const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
+			issues.push({
+				kind: 'empty_string_fallback_pattern',
+				file: sourceFile.fileName,
+				line: position.line + 1,
+				column: position.character + 1,
+				name: 'empty_string_fallback_pattern',
+				message: 'Empty-string fallback via `||` is forbidden. Do not use empty strings as default values.',
+			});
+		}
+		if (
+			(isNullOrUndefined(node.left) && !isNullOrUndefined(node.right))
+			|| (isNullOrUndefined(node.right) && !isNullOrUndefined(node.left))
+		) {
+			const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
+			issues.push({
+				kind: 'or_nil_fallback_pattern',
+				file: sourceFile.fileName,
+				line: position.line + 1,
+				column: position.character + 1,
+				name: 'or_nil_fallback_pattern',
+				message: '`|| null`/`|| undefined` fallback is forbidden. Use direct checks or nullish coalescing.',
+			});
+		}
+	}
+}
+
+function isSingleLineWrapperCandidate(functionNode: ts.Node): boolean {
+	if (
+		ts.isFunctionDeclaration(functionNode)
+		|| ts.isMethodDeclaration(functionNode)
+		|| ts.isFunctionExpression(functionNode)
+		|| ts.isArrowFunction(functionNode)
+	) {
+		const body = functionNode.body;
+		if (body === undefined) {
+			return false;
+		}
+		if (!ts.isBlock(body)) {
+			return ts.isCallExpression(body);
+		}
+		if (body.statements.length !== 1) {
+			return false;
+		}
+		const statement = body.statements[0];
+		if (ts.isReturnStatement(statement)) {
+			return statement.expression !== undefined && ts.isCallExpression(statement.expression);
+		}
+		if (ts.isExpressionStatement(statement)) {
+			return ts.isCallExpression(statement.expression);
+		}
+		return false;
+	}
+	return false;
+}
+
+function reportSingleLineMethodIssue(
+	node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
+	sourceFile: ts.SourceFile,
+	issues: LintIssue[],
+): void {
+	const position = sourceFile.getLineAndCharacterOfPosition(node.name?.getStart() ?? node.getStart());
+	issues.push({
+		kind: 'single_line_method_pattern',
+		file: sourceFile.fileName,
+		line: position.line + 1,
+		column: position.character + 1,
+		name: 'single_line_method_pattern',
+		message: 'Single-line wrapper function/method is forbidden. Prefer direct logic over delegation wrappers.',
+	});
+}
+
 function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[]): void {
 	const scopes: Array<Map<string, LintBinding[]>> = [];
 	const enterScope = (): void => {
@@ -622,6 +853,24 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[]): void
 		}
 		if (ts.isIdentifier(node) && parent !== undefined) {
 			markIdentifier(node, parent);
+		}
+		if (ts.isBinaryExpression(node)) {
+			lintBinaryExpressionForCodeQuality(node, sourceFile, issues);
+		}
+		if (
+			(
+				ts.isFunctionDeclaration(node)
+				|| ts.isMethodDeclaration(node)
+				|| ts.isFunctionExpression(node)
+				|| ts.isArrowFunction(node)
+			) && !ts.isConstructorDeclaration(node)
+			&& isSingleLineWrapperCandidate(node)
+		) {
+			reportSingleLineMethodIssue(
+				node as ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
+				sourceFile,
+				issues,
+			);
 		}
 		ts.forEachChild(node, child => visit(child, node));
 		if (entered) {
