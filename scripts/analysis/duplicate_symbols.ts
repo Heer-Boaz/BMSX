@@ -3,7 +3,7 @@ import ts from 'typescript';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path';
 
-type DuplicateKind = 'class' | 'enum' | 'function' | 'interface' | 'method' | 'namespace' | 'type';
+type DuplicateKind = 'class' | 'enum' | 'function' | 'interface' | 'method' | 'namespace' | 'type' | 'wrapper';
 
 type ClassInfo = {
 	key: string;
@@ -263,6 +263,101 @@ function getExpressionText(node: ts.Expression, aliases?: Map<string, string>): 
 	return null;
 }
 
+type FunctionLikeWithSignature = {
+	parameters: ts.NodeArray<ts.ParameterDeclaration>;
+	typeParameters?: ts.NodeArray<ts.TypeParameterDeclaration>;
+	type?: ts.TypeNode;
+};
+
+function getFunctionSignature(node: FunctionLikeWithSignature): string {
+	const typeParameterCount = node.typeParameters?.length ?? 0;
+	const parts: string[] = [];
+	for (let i = 0; i < node.parameters.length; i += 1) {
+		const parameter = node.parameters[i];
+		let marker = '';
+		if (parameter.dotDotDotToken !== undefined) {
+			marker += '...';
+		}
+		if (parameter.questionToken !== undefined) {
+			marker += '?';
+		}
+		if (parameter.initializer !== undefined) {
+			marker += '=';
+		}
+		if (parameter.name.kind === ts.SyntaxKind.ObjectBindingPattern) {
+			marker += 'obj';
+		} else if (parameter.name.kind === ts.SyntaxKind.ArrayBindingPattern) {
+			marker += 'arr';
+		} else {
+			marker += 'id';
+		}
+		parts.push(marker);
+	}
+	return `${typeParameterCount}:${parts.join(',')}`;
+}
+
+function getCallExpressionTarget(node: ts.Expression): string | null {
+	let current: ts.Expression = node;
+	while (true) {
+		if (ts.isParenthesizedExpression(current)) {
+			current = current.expression;
+			continue;
+		}
+		if (ts.isAsExpression(current)) {
+			current = current.expression;
+			continue;
+		}
+		const isTypeAssertion = (ts as unknown as { isTypeAssertionExpression?: (node: ts.Node) => node is ts.TypeAssertion })
+			.isTypeAssertionExpression;
+		if (isTypeAssertion !== undefined && isTypeAssertion(current)) {
+			current = current.expression;
+			continue;
+		}
+		if (ts.isNonNullExpression(current)) {
+			current = current.expression;
+			continue;
+		}
+		break;
+	}
+	if (!ts.isCallExpression(current)) {
+		return null;
+	}
+	return getExpressionText(current.expression);
+}
+
+function getSingleStatementWrapperTarget(statement: ts.Statement): string | null {
+	if (ts.isReturnStatement(statement) && statement.expression !== undefined) {
+		return getCallExpressionTarget(statement.expression);
+	}
+	if (ts.isExpressionStatement(statement)) {
+		return getCallExpressionTarget(statement.expression);
+	}
+	return null;
+}
+
+function getFunctionWrapperTarget(
+	node: ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression,
+): string | null {
+	const body = node.body;
+	if (ts.isBlock(body)) {
+		const statements = body.statements;
+		if (statements.length === 1) {
+			return getSingleStatementWrapperTarget(statements[0]);
+		}
+		if (statements.length === 2) {
+			const first = statements[0];
+			const second = statements[1];
+			if (ts.isIfStatement(first) && first.elseStatement === undefined) {
+				if (ts.isReturnStatement(first.thenStatement) && first.thenStatement.expression === undefined) {
+					return getSingleStatementWrapperTarget(second);
+				}
+			}
+		}
+		return null;
+	}
+	return getCallExpressionTarget(body);
+}
+
 function collectImportAliases(sourceFile: ts.SourceFile): Map<string, string> {
 	const aliases = new Map<string, string>();
 	for (let i = 0; i < sourceFile.statements.length; i += 1) {
@@ -427,12 +522,18 @@ function recordDeclaration(
 	line: number,
 	column: number,
 	context?: string,
-	methodDiscriminator?: string,
+	keyHint?: string,
 ): void {
-	const key =
-		kind === 'method' && context !== undefined
-			? `method\u0000${methodDiscriminator ?? 'method'}\u0000${context}\u0000${name}`
-			: `${kind}\u0000${name}`;
+	let key: string;
+	if (kind === 'method' && context !== undefined) {
+		key = `method\u0000${keyHint ?? 'method'}\u0000${context}\u0000${name}`;
+	} else if (kind === 'function') {
+		key = `function\u0000${name}\u0000${keyHint ?? 'default'}`;
+	} else if (kind === 'wrapper') {
+		key = `wrapper\u0000${name}\u0000${context ?? 'delegate'}`;
+	} else {
+		key = `${kind}\u0000${name}`;
+	}
 	let list = buckets.get(key);
 	if (list === undefined) {
 		list = [];
@@ -501,7 +602,30 @@ function walkDeclarations(
 			const name = getPropertyName(node.name);
 			if (name !== null) {
 				const position = sourceFile.getLineAndCharacterOfPosition(node.name.getStart());
-				recordDeclaration(buckets, 'function', name, sourceFile.fileName, position.line + 1, position.character + 1);
+				const signature = getFunctionSignature(node);
+				const wrapperTarget = getFunctionWrapperTarget(node);
+				if (wrapperTarget === null) {
+					recordDeclaration(
+						buckets,
+						'function',
+						name,
+						sourceFile.fileName,
+						position.line + 1,
+						position.character + 1,
+						undefined,
+						signature,
+					);
+				} else {
+					recordDeclaration(
+						buckets,
+						'wrapper',
+						name,
+						sourceFile.fileName,
+						position.line + 1,
+						position.character + 1,
+						wrapperTarget,
+					);
+				}
 			}
 		}
 		if (ts.isClassDeclaration(node) && node.name !== undefined && !isAbstractClass(node)) {
@@ -541,7 +665,30 @@ function walkDeclarations(
 		}
 		if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && isFunctionLikeValue(node.initializer)) {
 			const position = sourceFile.getLineAndCharacterOfPosition(node.name.getStart());
-			recordDeclaration(buckets, 'function', node.name.text, sourceFile.fileName, position.line + 1, position.character + 1);
+			const signature = getFunctionSignature(node.initializer);
+			const wrapperTarget = getFunctionWrapperTarget(node.initializer);
+			if (wrapperTarget === null) {
+				recordDeclaration(
+					buckets,
+					'function',
+					node.name.text,
+					sourceFile.fileName,
+					position.line + 1,
+					position.character + 1,
+					undefined,
+					signature,
+				);
+			} else {
+					recordDeclaration(
+						buckets,
+						'wrapper',
+						node.name.text,
+						sourceFile.fileName,
+						position.line + 1,
+						position.character + 1,
+						wrapperTarget,
+					);
+			}
 		}
 		if (ts.isMethodDeclaration(node) && node.body !== undefined && !isIgnoredMethod(node)) {
 			const name = getPropertyName(node.name);
@@ -615,17 +762,24 @@ function buildDuplicateGroups(
 ): DuplicateGroup[] {
 	const result: DuplicateGroup[] = [];
 	for (const [key, locations] of buckets) {
-		if (locations.length <= 1) continue;
 		const split = key.indexOf('\u0000');
 		if (split === -1) {
 			continue;
 		}
 		const kind = key.slice(0, split) as DuplicateKind;
+		if (kind !== 'wrapper' && locations.length <= 1) {
+			continue;
+		}
 		let name = key.slice(split + 1);
 		if (kind === 'method') {
 			const firstSep = name.indexOf('\u0000');
 			if (firstSep !== -1) {
 				name = name.slice(name.indexOf('\u0000', firstSep + 1) + 1);
+			}
+		} else if (kind === 'function' || kind === 'wrapper') {
+			const firstSep = name.indexOf('\u0000');
+			if (firstSep !== -1) {
+				name = name.slice(0, firstSep);
 			}
 		}
 		result.push({
@@ -648,10 +802,17 @@ function buildDuplicateGroups(
 }
 
 function formatLocation(location: DuplicateLocation): string {
+	const link = formatVscodeLocationLink(location.file, location.line, location.column);
 	if (location.context) {
-		return `${location.file}:${location.line}:${location.column} (${location.context})`;
+		return `${link} (${location.context})`;
 	}
-	return `${location.file}:${location.line}:${location.column}`;
+	return link;
+}
+
+function formatVscodeLocationLink(file: string, line: number, column: number): string {
+	const absolute = isAbsolute(file) ? file : resolve(process.cwd(), file);
+	const normalized = absolute.replace(/\\/g, '/');
+	return `vscode://file/${encodeURI(normalized)}:${line}:${column}`;
 }
 
 function printTextReport(groups: DuplicateGroup[], scannedFiles: number): void {
@@ -690,7 +851,7 @@ function printCsvReport(groups: DuplicateGroup[], scannedFiles: number): void {
 				quoteCsv(group.kind),
 				quoteCsv(group.name),
 				quoteCsv(group.count),
-				quoteCsv(location.file),
+				quoteCsv(formatVscodeLocationLink(location.file, location.line, location.column)),
 				quoteCsv(location.line),
 				quoteCsv(location.column),
 				quoteCsv(location.context ?? ''),
