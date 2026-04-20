@@ -1293,7 +1293,7 @@ export class SoundMaster {
 	}
 
 	private startMusicTransition(target: asset_id, fade_ms: number, crossfade_ms: number | undefined, start_at_loop_start: boolean, startAtSeconds?: number): void {
-		if (crossfade_ms !== undefined) {
+		if (crossfade_ms > 0) {
 			this.startMusicWithCrossfade(target, crossfade_ms, start_at_loop_start, startAtSeconds);
 			return;
 		}

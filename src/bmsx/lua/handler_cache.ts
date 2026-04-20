@@ -96,9 +96,8 @@ export class LuaHandlerCache {
 		this.byLuaFn.set(fn, record.handler);
 	}
 
-	public unwrap(handler: LuaHandlerFn): { fn: LuaFunctionValue } {
-		const record = this.byHandler.get(handler);
-		return record ? record.current : null;
+	public unwrap(handler: LuaHandlerFn): { fn: LuaFunctionValue } | undefined {
+		return this.byHandler.get(handler)?.current;
 	}
 
 	public listByModule(moduleId: string): ReadonlyArray<LuaHandlerFn> {

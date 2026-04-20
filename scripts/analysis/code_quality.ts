@@ -863,6 +863,20 @@ function nextStatementAfter(statement: ts.Statement): ts.Statement | null {
 	return null;
 }
 
+function previousStatementBefore(statement: ts.Statement): ts.Statement | null {
+	const parent = statement.parent;
+	if (!parent || (!ts.isBlock(parent) && !ts.isSourceFile(parent))) {
+		return null;
+	}
+	const statements = parent.statements;
+	for (let index = 1; index < statements.length; index += 1) {
+		if (statements[index] === statement) {
+			return statements[index - 1];
+		}
+	}
+	return null;
+}
+
 function lintNullishReturnGuard(node: ts.IfStatement, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
 	if (node.elseStatement !== undefined || !isNullishReturnStatement(node.thenStatement)) {
 		return;
@@ -884,6 +898,86 @@ function lintNullishReturnGuard(node: ts.IfStatement, sourceFile: ts.SourceFile,
 		node,
 		'nullish_return_guard_pattern',
 		'Nullish guard that only returns null/undefined before returning the guarded value is forbidden. Keep the compact expression form instead of expanding it into a branch.',
+	);
+}
+
+function isLookupCallExpression(node: ts.Expression): boolean {
+	const unwrapped = unwrapExpression(node);
+	return ts.isCallExpression(unwrapped)
+		&& ts.isPropertyAccessExpression(unwrapped.expression)
+		&& unwrapped.expression.name.text === 'get';
+}
+
+function lintLookupAliasOptionalChain(node: ts.Statement, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
+	const previous = previousStatementBefore(node);
+	if (previous === null || !ts.isVariableStatement(previous)) {
+		return;
+	}
+	const declarations = previous.declarationList.declarations;
+	if (declarations.length !== 1) {
+		return;
+	}
+	const declaration = declarations[0];
+	if (!ts.isIdentifier(declaration.name) || declaration.initializer === undefined || !isLookupCallExpression(declaration.initializer)) {
+		return;
+	}
+	const declarationFingerprint = `id:${declaration.name.text}`;
+	if (ts.isIfStatement(node)) {
+		if (node.elseStatement !== undefined || !isNullishReturnStatement(node.thenStatement)) {
+			return;
+		}
+		const guardExpression = unwrapExpression(node.expression);
+		if (!ts.isPrefixUnaryExpression(guardExpression) || guardExpression.operator !== ts.SyntaxKind.ExclamationToken) {
+			return;
+		}
+		const guardFingerprintText = expressionAccessFingerprint(guardExpression.operand);
+		if (guardFingerprintText !== declarationFingerprint) {
+			return;
+		}
+		const next = nextStatementAfter(node);
+		if (next === null || !ts.isReturnStatement(next) || next.expression === undefined) {
+			return;
+		}
+		const returnedFingerprint = expressionAccessFingerprint(next.expression);
+		if (
+			returnedFingerprint === null
+			|| returnedFingerprint === declarationFingerprint
+			|| (
+				!returnedFingerprint.startsWith(`${declarationFingerprint}.`)
+				&& !returnedFingerprint.startsWith(`${declarationFingerprint}[`)
+			)
+		) {
+			return;
+		}
+		pushLintIssue(
+			issues,
+			sourceFile,
+			node,
+			'lookup_alias_return_pattern',
+			'Temporary lookup alias is forbidden. Inline the lookup expression directly and use optional chaining on it instead.',
+		);
+		return;
+	}
+	if (!ts.isReturnStatement(node) || node.expression === undefined) {
+		return;
+	}
+	const returnedFingerprint = expressionAccessFingerprint(node.expression);
+	if (
+		returnedFingerprint === null
+		|| returnedFingerprint === declarationFingerprint
+		|| (
+			!returnedFingerprint.startsWith(`${declarationFingerprint}.`)
+			&& !returnedFingerprint.startsWith(`${declarationFingerprint}[`)
+		)
+	) {
+		return;
+	}
+	pushLintIssue(
+		issues,
+		sourceFile,
+		node,
+		'lookup_alias_return_pattern',
+		'Temporary lookup alias is forbidden. Inline the lookup expression directly and use optional chaining on it instead.',
 	);
 }
 
@@ -2020,6 +2114,10 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 		}
 		if (ts.isIfStatement(node)) {
 			lintNullishReturnGuard(node, sourceFile, issues);
+			lintLookupAliasOptionalChain(node, sourceFile, issues);
+		}
+		if (ts.isReturnStatement(node)) {
+			lintLookupAliasOptionalChain(node, sourceFile, issues);
 		}
 		if (ts.isConditionalExpression(node) && (isNullOrUndefined(node.whenTrue) || isNullOrUndefined(node.whenFalse))) {
 			pushLintIssue(

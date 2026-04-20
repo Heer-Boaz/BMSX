@@ -91,12 +91,8 @@ export class HandlerCache {
 		this.byClosure.set(fn, record.handler);
 	}
 
-	public unwrap(handler: HandlerFn): { fn: Closure } {
-		const record = this.byHandler.get(handler);
-		if (!record) {
-			return null;
-		}
-		return record.current;
+	public unwrap(handler: HandlerFn): { fn: Closure } | undefined {
+		return this.byHandler.get(handler)?.current;
 	}
 
 	public listByModule(moduleId: string): ReadonlyArray<HandlerFn> {

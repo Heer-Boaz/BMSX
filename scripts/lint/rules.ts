@@ -14,6 +14,7 @@ export const CODE_QUALITY_ONLY_LINT_RULES = [
 	'hot_path_closure_argument_pattern',
 	'nullish_null_normalization_pattern',
 	'nullish_return_guard_pattern',
+	'lookup_alias_return_pattern',
 	'defensive_optional_chain_pattern',
 	'numeric_defensive_sanitization_pattern',
 	'repeated_expression_pattern',
