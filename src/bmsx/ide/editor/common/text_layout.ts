@@ -30,7 +30,7 @@ export function truncateTextToWidth(text: string, maxWidth: number): string {
 	return truncateMeasuredText(text, maxWidth, measureTextRange);
 }
 
-export function assertMonospace(): void {
+export function assertMonospace(): void { // TODO: WTF IS THIS SHIT?!?!?!?!?!?!?!?!! WHY HAS THIS EVER BEEN IMPLEMENTED?!?!?!?!?!?!?!
 	const sample = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-*/%<>=#(){}[]:,.;\'"`~!@^&|\\?_ ';
 	const reference = editorViewState.font.advance('M');
 	for (let i = 0; i < sample.length; i++) {
