@@ -27,6 +27,29 @@ type DuplicateGroup = {
 	locations: DuplicateLocation[];
 };
 
+type LintIssueKind = 'local_const_pattern' | 'single_use_local_pattern';
+
+type LintIssue = {
+	kind: LintIssueKind;
+	file: string;
+	line: number;
+	column: number;
+	name: string;
+	message: string;
+};
+
+type LintBinding = {
+	name: string;
+	line: number;
+	column: number;
+	isConst: boolean;
+	hasInitializer: boolean;
+	readCount: number;
+	writeCount: number;
+	isExported: boolean;
+	isTopLevel: boolean;
+};
+
 const DEFAULT_ROOTS = ['src', 'scripts', 'tests', 'tools'];
 const FILE_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts']);
 const SKIP_DIRECTORIES = new Set([
@@ -57,7 +80,7 @@ type CliOptions = {
 };
 
 function printHelp(): void {
-	console.log('Usage: npx tsx scripts/analysis/duplicate_symbols.ts [--csv] [--fail-on-duplicates] [--root <path> ...]');
+	console.log('Usage: npx tsx scripts/analysis/code_quality.ts [--csv] [--fail-on-duplicates] [--root <path> ...]');
 	console.log('');
 	console.log('Options:');
 	console.log('  --csv                  Output CSV report');
@@ -384,6 +407,228 @@ function collectImportAliases(sourceFile: ts.SourceFile): Map<string, string> {
 		}
 	}
 	return aliases;
+}
+
+function isVariableImportExportName(node: ts.Node): boolean {
+	if (
+		ts.isImportClause(node) ||
+		ts.isNamespaceImport(node) ||
+		ts.isImportSpecifier(node) ||
+		ts.isExportSpecifier(node) ||
+		ts.isImportEqualsDeclaration(node)
+	) {
+		return true;
+	}
+	return false;
+}
+
+function isDeclarationIdentifier(node: ts.Identifier, parent: ts.Node): boolean {
+	if (ts.isVariableDeclaration(parent)) return parent.name === node;
+	if (ts.isParameter(parent)) return parent.name === node;
+	if (ts.isFunctionDeclaration(parent) || ts.isFunctionExpression(parent) || ts.isMethodDeclaration(parent)) {
+		return parent.name === node;
+	}
+	if (ts.isClassDeclaration(parent) || ts.isInterfaceDeclaration(parent) || ts.isTypeAliasDeclaration(parent)) {
+		return parent.name === node;
+	}
+	if (ts.isGetAccessorDeclaration(parent) || ts.isSetAccessorDeclaration(parent)) {
+		return parent.name === node;
+	}
+	if (ts.isEnumDeclaration(parent) || ts.isEnumMember(parent)) {
+		return parent.name === node;
+	}
+	if (ts.isTypeParameterDeclaration(parent)) return parent.name === node;
+	if (ts.isPropertyDeclaration(parent) || ts.isMethodSignature(parent) || ts.isPropertySignature(parent)) {
+		return parent.name === node;
+	}
+	if (ts.isImportClause(parent) && parent.name === node) return true;
+	return isVariableImportExportName(parent);
+}
+
+function isIdentifierPropertyName(node: ts.Identifier, parent: ts.Node): boolean {
+	if (ts.isPropertyAccessExpression(parent)) {
+		return parent.name === node;
+	}
+	if (ts.isPropertyAssignment(parent)) {
+		return parent.name === node;
+	}
+	if (ts.isPropertyDeclaration(parent) || ts.isMethodDeclaration(parent) || ts.isGetAccessorDeclaration(parent) || ts.isSetAccessorDeclaration(parent)) {
+		return parent.name === node;
+	}
+	if (ts.isMethodSignature(parent) || ts.isPropertySignature(parent)) {
+		return parent.name === node;
+	}
+	return false;
+}
+
+function isWriteIdentifier(node: ts.Identifier, parent: ts.Node): boolean {
+	if (ts.isBinaryExpression(parent) && ts.isAssignmentOperator(parent.operatorToken.kind) && parent.left === node) {
+		return true;
+	}
+	if (ts.isPrefixUnaryExpression(parent) && (parent.operator === ts.SyntaxKind.PlusPlusToken || parent.operator === ts.SyntaxKind.MinusMinusToken)) {
+		return true;
+	}
+	if (ts.isPostfixUnaryExpression(parent) && (parent.operator === ts.SyntaxKind.PlusPlusToken || parent.operator === ts.SyntaxKind.MinusMinusToken)) {
+		return true;
+	}
+	return false;
+}
+
+function isScopeBoundary(node: ts.Node, parent: ts.Node | undefined): boolean {
+	if (ts.isSourceFile(node)) {
+		return true;
+	}
+	if (ts.isModuleBlock(node)) {
+		return true;
+	}
+	if (ts.isFunctionLike(node)) {
+		return true;
+	}
+	return ts.isBlock(node) && !ts.isFunctionLike(parent ?? node);
+}
+
+function isExportedVariableDeclaration(node: ts.VariableDeclaration): boolean {
+	const parent = node.parent;
+	if (!parent || !ts.isVariableDeclarationList(parent)) {
+		return false;
+	}
+	const statement = parent.parent;
+	if (!statement || !ts.isVariableStatement(statement)) {
+		return false;
+	}
+	const modifiers = statement.modifiers;
+	if (!modifiers) {
+		return false;
+	}
+	for (let i = 0; i < modifiers.length; i += 1) {
+		if (modifiers[i].kind === ts.SyntaxKind.ExportKeyword) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function shouldIgnoreLintName(name: string): boolean {
+	return name.length === 0 || name === '_' || name.startsWith('_');
+}
+
+function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[]): void {
+	const scopes: Array<Map<string, LintBinding[]>> = [];
+	const enterScope = (): void => {
+		scopes.push(new Map<string, LintBinding[]>());
+	};
+	const leaveScope = (): void => {
+		const scope = scopes.pop();
+		if (!scope) {
+			return;
+		}
+		if (scopes.length === 0) {
+			return;
+		}
+		for (const bindings of scope.values()) {
+			for (const binding of bindings) {
+				if (binding.isTopLevel || binding.isExported || shouldIgnoreLintName(binding.name)) {
+					continue;
+				}
+				if (!binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
+					issues.push({
+						kind: 'local_const_pattern',
+						file: sourceFile.fileName,
+						line: binding.line,
+						column: binding.column,
+						name: binding.name,
+						message: `Prefer "const" for "${binding.name}"; it is never reassigned.`,
+					});
+				}
+				if (binding.readCount === 1) {
+					issues.push({
+						kind: 'single_use_local_pattern',
+						file: sourceFile.fileName,
+						line: binding.line,
+						column: binding.column,
+						name: binding.name,
+						message: `Local "${binding.name}" is read only once in this scope.`,
+					});
+				}
+			}
+		}
+	};
+	const declareBinding = (declaration: ts.VariableDeclaration, declarationList: ts.VariableDeclarationList): void => {
+		if (!ts.isIdentifier(declaration.name)) {
+			return;
+		}
+		const isConst = (declarationList.flags & ts.NodeFlags.Const) !== 0;
+		const isLet = (declarationList.flags & ts.NodeFlags.Let) !== 0;
+		if (!isConst && !isLet) {
+			return;
+		}
+		const name = declaration.name.text;
+		if (shouldIgnoreLintName(name)) {
+			return;
+		}
+		const isTopLevel = scopes.length === 1;
+		const scope = scopes[scopes.length - 1];
+		if (!scope) {
+			return;
+		}
+		const position = sourceFile.getLineAndCharacterOfPosition(declaration.name.getStart());
+		const binding: LintBinding = {
+			name,
+			line: position.line + 1,
+			column: position.character + 1,
+			isConst,
+			hasInitializer: declaration.initializer !== undefined,
+			readCount: 0,
+			writeCount: 0,
+			isExported: isTopLevel && isExportedVariableDeclaration(declaration),
+			isTopLevel,
+		};
+		let list = scope.get(name);
+		if (list === undefined) {
+			list = [];
+			scope.set(name, list);
+		}
+		list.push(binding);
+	};
+	const markIdentifier = (node: ts.Identifier, parent: ts.Node): void => {
+		if (isDeclarationIdentifier(node, parent)) {
+			return;
+		}
+		if (isIdentifierPropertyName(node, parent)) {
+			return;
+		}
+		for (let index = scopes.length - 1; index >= 0; index -= 1) {
+			const scope = scopes[index];
+			const list = scope.get(node.text);
+			if (!list || list.length === 0) {
+				continue;
+			}
+			const binding = list[list.length - 1];
+			if (isWriteIdentifier(node, parent)) {
+				binding.writeCount += 1;
+			} else {
+				binding.readCount += 1;
+			}
+			return;
+		}
+	};
+	const visit = (node: ts.Node, parent: ts.Node | undefined): void => {
+		const entered = isScopeBoundary(node, parent);
+		if (entered) {
+			enterScope();
+		}
+		if (ts.isVariableDeclaration(node) && ts.isVariableDeclarationList(node.parent)) {
+			declareBinding(node, node.parent);
+		}
+		if (ts.isIdentifier(node) && parent !== undefined) {
+			markIdentifier(node, parent);
+		}
+		ts.forEachChild(node, child => visit(child, node));
+		if (entered) {
+			leaveScope();
+		}
+	};
+	visit(sourceFile, undefined);
 }
 
 function collectClassInfos(
@@ -809,6 +1054,11 @@ function formatLocation(location: DuplicateLocation): string {
 	return link;
 }
 
+function formatLintIssue(issue: LintIssue): string {
+	const link = formatVscodeLocationLink(issue.file, issue.line, issue.column);
+	return `${link}: ${issue.message} (${issue.name})`;
+}
+
 function formatVscodeLocationLink(file: string, line: number, column: number): string {
 	const absolute = isAbsolute(file) ? file : resolve(process.cwd(), file);
 	const normalized = absolute.replace(/\\/g, '/');
@@ -816,22 +1066,48 @@ function formatVscodeLocationLink(file: string, line: number, column: number): s
 	return `${relativePath}:${line}:${column}`;
 }
 
-function printTextReport(groups: DuplicateGroup[], scannedFiles: number): void {
-	if (groups.length === 0) {
-		console.log('No duplicates found.');
+function printTextReport(groups: DuplicateGroup[], lintIssues: LintIssue[], scannedFiles: number): void {
+	if (groups.length === 0 && lintIssues.length === 0) {
+		console.log('No duplicates or lint issues found.');
 		console.log(`Scanned ${scannedFiles} TypeScript files.`);
 		return;
 	}
-	console.log(`Found ${groups.length} duplicated declaration groups in ${scannedFiles} files.\n`);
-	for (const group of groups) {
-		console.log(`[${group.kind}] ${group.name} (${group.count}x)`);
-		for (const location of group.locations) {
-			console.log(`  - ${formatLocation(location)}`);
+	console.log(`Scanned ${scannedFiles} TypeScript files.\n`);
+	if (groups.length > 0) {
+		console.log(`Found ${groups.length} duplicated declaration group(s).\n`);
+		for (const group of groups) {
+			console.log(`[${group.kind}] ${group.name} (${group.count}x)`);
+			for (const location of group.locations) {
+				console.log(`  - ${formatLocation(location)}`);
+			}
+			if (group.kind === 'interface') {
+				console.log('  - interface declarations can legally merge; verify if intentional.');
+			}
+			console.log('');
 		}
-		if (group.kind === 'interface') {
-			console.log('  - interface declarations can legally merge; verify if intentional.');
+	}
+	if (lintIssues.length > 0) {
+		console.log(`Found ${lintIssues.length} lint issue(s).\n`);
+		const issuesByKind = new Map<LintIssueKind, LintIssue[]>();
+		for (const issue of lintIssues) {
+			let list = issuesByKind.get(issue.kind);
+			if (list === undefined) {
+				list = [];
+				issuesByKind.set(issue.kind, list);
+			}
+			list.push(issue);
 		}
-		console.log('');
+		for (const kind of Array.from(issuesByKind.keys()).sort()) {
+			const issues = issuesByKind.get(kind);
+			if (issues === undefined || issues.length === 0) {
+				continue;
+			}
+			console.log(`[lint:${kind}]`);
+			for (const issue of issues) {
+				console.log(`  - ${formatLintIssue(issue)}`);
+			}
+			console.log('');
+		}
 	}
 }
 
@@ -843,9 +1119,9 @@ function quoteCsv(value: string | number | undefined): string {
 	return text;
 }
 
-function printCsvReport(groups: DuplicateGroup[], scannedFiles: number): void {
+function printCsvReport(groups: DuplicateGroup[], lintIssues: LintIssue[], scannedFiles: number): void {
 	console.log(`scanned_files,${quoteCsv(scannedFiles)}`);
-	console.log('kind,name,count,file,line,column,context');
+	console.log('kind,name,count,file,line,column,context,message');
 	for (const group of groups) {
 		for (const location of group.locations) {
 			console.log([
@@ -856,8 +1132,21 @@ function printCsvReport(groups: DuplicateGroup[], scannedFiles: number): void {
 				quoteCsv(location.line),
 				quoteCsv(location.column),
 				quoteCsv(location.context ?? ''),
+				quoteCsv(''),
 			].join(','));
 		}
+	}
+	for (const issue of lintIssues) {
+		console.log([
+			quoteCsv(`lint:${issue.kind}`),
+			quoteCsv(issue.name),
+			quoteCsv(1),
+			quoteCsv(formatVscodeLocationLink(issue.file, issue.line, issue.column)),
+			quoteCsv(issue.line),
+			quoteCsv(issue.column),
+			quoteCsv(''),
+			quoteCsv(issue.message),
+		].join(','));
 	}
 }
 
@@ -872,6 +1161,7 @@ function run(): void {
 	const classInfosByKey = new Map<string, ClassInfo>();
 	const classInfosByName = new Map<string, ClassInfo[]>();
 	const classInfosByFileName = new Map<string, Map<string, ClassInfo[]>>();
+	const lintIssues: LintIssue[] = [];
 	const sourceFiles: ts.SourceFile[] = [];
 	for (const filePath of fileList) {
 		const sourceText = readFileSync(filePath, 'utf8');
@@ -879,6 +1169,7 @@ function run(): void {
 		const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, kind);
 		sourceFiles.push(sourceFile);
 		collectClassInfos(sourceFile, classInfosByKey, classInfosByName, classInfosByFileName);
+		collectLintIssues(sourceFile, lintIssues);
 	}
 	for (const sourceFile of sourceFiles) {
 		walkDeclarations(sourceFile, buckets, classInfosByKey, classInfosByName, classInfosByFileName);
@@ -890,10 +1181,26 @@ function run(): void {
 			file: toRelativePath(location.file),
 		})),
 	}));
+	const normalizedLintIssues = lintIssues.map(issue => ({
+		...issue,
+		file: toRelativePath(issue.file),
+	}));
 	if (options.csv) {
-		printCsvReport(groups, fileList.length);
+		printCsvReport(groups, normalizedLintIssues, fileList.length);
 	} else {
-		printTextReport(groups, fileList.length);
+		const sortedIssues = [...normalizedLintIssues].sort((left, right) => {
+			if (left.file !== right.file) {
+				return left.file.localeCompare(right.file);
+			}
+			if (left.line !== right.line) {
+				return left.line - right.line;
+			}
+			if (left.column !== right.column) {
+				return left.column - right.column;
+			}
+			return left.kind.localeCompare(right.kind);
+		});
+		printTextReport(groups, sortedIssues, fileList.length);
 	}
 	if (options.failOnDuplicate && groups.length > 0) {
 		process.exit(1);

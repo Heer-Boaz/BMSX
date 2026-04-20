@@ -79,7 +79,7 @@
 		"clean:dist": "node scripts/clean-dist.mjs",
 		"fix:indent": "node scripts/fix-ts-indentation-safe.js",
 		"check:indent": "node scripts/fix-ts-indentation-safe.js --check",
-		"analyze:duplicates": "npx tsx scripts/analysis/duplicate_symbols.ts"
+		"analyze:code-quality": "npx tsx scripts/analysis/code_quality.ts"
 	},
 	"repository": {
 		"type": "git",
