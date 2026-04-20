@@ -1,7 +1,7 @@
 import ts from 'typescript';
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 
 type DuplicateKind = 'class' | 'enum' | 'function' | 'interface' | 'method' | 'namespace' | 'type' | 'wrapper';
 
@@ -35,7 +35,17 @@ type LintIssueKind =
 	| 'or_nil_fallback_pattern'
 	| 'explicit_truthy_comparison_pattern'
 	| 'string_or_chain_comparison_pattern'
-	| 'single_line_method_pattern';
+	| 'single_line_method_pattern'
+	| 'hot_path_object_literal_pattern'
+	| 'hot_path_closure_argument_pattern'
+	| 'nullish_null_normalization_pattern'
+	| 'defensive_optional_chain_pattern'
+	| 'numeric_defensive_sanitization_pattern'
+	| 'repeated_expression_pattern'
+	| 'facade_module_density_pattern'
+	| 'normalized_ast_duplicate_pattern'
+	| 'cross_layer_import_pattern'
+	| 'duplicate_exported_type_name_pattern';
 
 type LintIssue = {
 	kind: LintIssueKind;
@@ -56,6 +66,27 @@ type LintBinding = {
 	writeCount: number;
 	isExported: boolean;
 	isTopLevel: boolean;
+};
+
+type RepeatedExpressionInfo = {
+	line: number;
+	column: number;
+	count: number;
+};
+
+type ExportedTypeInfo = {
+	name: string;
+	file: string;
+	line: number;
+	column: number;
+};
+
+type NormalizedBodyInfo = {
+	name: string;
+	file: string;
+	line: number;
+	column: number;
+	fingerprint: string;
 };
 
 const DEFAULT_ROOTS = ['src', 'scripts', 'tests', 'tools'];
@@ -79,6 +110,36 @@ const SKIP_DIRECTORIES = new Set([
 	'CMakeFiles',
 	'dist',
 	'node_modules',
+]);
+
+const HOT_PATH_SEGMENTS = [
+	'/src/bmsx/ide/editor/input/',
+	'/src/bmsx/ide/editor/render/',
+	'/src/bmsx/ide/editor/ui/',
+	'/src/bmsx/ide/terminal/ui/',
+	'/src/bmsx/ide/workbench/input/',
+	'/src/bmsx/ide/workbench/render/',
+] as const;
+
+const HOT_PATH_FILES = [
+	'/src/bmsx/ide/editor/common/text_layout.ts',
+	'/src/bmsx/ide/editor/ui/code_layout.ts',
+] as const;
+
+const REQUIRED_STATE_ROOTS = new Set([
+	'$',
+	'editorDocumentState',
+	'editorRuntimeState',
+	'editorSearchState',
+	'editorViewState',
+	'editorPointerState',
+	'editorCaretState',
+	'intellisenseUiState',
+	'lineJumpState',
+	'referenceState',
+	'resourceSearchState',
+	'runtimeErrorState',
+	'symbolSearchState',
 ]);
 
 type CliOptions = {
@@ -149,6 +210,44 @@ function resolveInputPath(candidate: string): string {
 
 function shouldSkipDirectory(name: string): boolean {
 	return SKIP_DIRECTORIES.has(name) || (name.length > 0 && name[0] === '.');
+}
+
+function normalizePathForAnalysis(path: string): string {
+	return path.replace(/\\/g, '/');
+}
+
+function isHotPathFile(fileName: string): boolean {
+	const normalized = normalizePathForAnalysis(fileName);
+	for (let index = 0; index < HOT_PATH_SEGMENTS.length; index += 1) {
+		if (normalized.includes(HOT_PATH_SEGMENTS[index])) {
+			return true;
+		}
+	}
+	for (let index = 0; index < HOT_PATH_FILES.length; index += 1) {
+		if (normalized.endsWith(HOT_PATH_FILES[index])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function pushLintIssue(
+	issues: LintIssue[],
+	sourceFile: ts.SourceFile,
+	node: ts.Node,
+	kind: LintIssueKind,
+	message: string,
+	name = kind,
+): void {
+	const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+	issues.push({
+		kind,
+		file: sourceFile.fileName,
+		line: position.line + 1,
+		column: position.character + 1,
+		name,
+		message,
+	});
 }
 
 function collectTypeScriptFiles(pathCandidates: ReadonlyArray<string>): string[] {
@@ -576,6 +675,131 @@ function isExpressionInScopeFingerprint(node: ts.Expression): string | null {
 	return null;
 }
 
+function unwrapExpression(node: ts.Expression): ts.Expression {
+	let current = node;
+	while (true) {
+		if (ts.isParenthesizedExpression(current)) {
+			current = current.expression;
+			continue;
+		}
+		if (ts.isAsExpression(current)) {
+			current = current.expression;
+			continue;
+		}
+		const isTypeAssertion = (ts as unknown as { isTypeAssertionExpression?: (node: ts.Node) => node is ts.TypeAssertion })
+			.isTypeAssertionExpression;
+		if (isTypeAssertion !== undefined && isTypeAssertion(current)) {
+			current = current.expression;
+			continue;
+		}
+		if (ts.isNonNullExpression(current)) {
+			current = current.expression;
+			continue;
+		}
+		return current;
+	}
+}
+
+function isFunctionExpressionLike(node: ts.Node): node is ts.ArrowFunction | ts.FunctionExpression {
+	return ts.isArrowFunction(node) || ts.isFunctionExpression(node);
+}
+
+function expressionRootName(node: ts.Expression): string | null {
+	const current = unwrapExpression(node);
+	if (ts.isIdentifier(current)) {
+		return current.text;
+	}
+	if (current.kind === ts.SyntaxKind.ThisKeyword) {
+		return 'this';
+	}
+	if (ts.isPropertyAccessExpression(current)) {
+		return expressionRootName(current.expression);
+	}
+	if (ts.isElementAccessExpression(current)) {
+		return expressionRootName(current.expression);
+	}
+	if (ts.isCallExpression(current)) {
+		return expressionRootName(current.expression);
+	}
+	return null;
+}
+
+function hasQuestionDotToken(node: ts.Node): boolean {
+	return (node as { questionDotToken?: ts.QuestionDotToken }).questionDotToken !== undefined;
+}
+
+function containsClosureExpression(node: ts.Node): boolean {
+	let found = false;
+	const visit = (current: ts.Node): void => {
+		if (found) {
+			return;
+		}
+		if (isFunctionExpressionLike(current)) {
+			found = true;
+			return;
+		}
+		ts.forEachChild(current, visit);
+	};
+	visit(node);
+	return found;
+}
+
+function callTargetText(node: ts.CallExpression | ts.NewExpression): string | null {
+	const expression = ts.isCallExpression(node) ? node.expression : node.expression;
+	return expression ? getExpressionText(expression) : null;
+}
+
+function isNumericDefensiveCall(node: ts.CallExpression): boolean {
+	const target = callTargetText(node);
+	return target === 'Math.floor'
+		|| target === 'Math.round'
+		|| target === 'Math.ceil'
+		|| target === 'Math.trunc'
+		|| target === 'Number.isFinite';
+}
+
+function isExpressionChildOfLargerExpression(node: ts.Expression, parent: ts.Node | undefined): boolean {
+	if (parent === undefined) {
+		return false;
+	}
+	if (ts.isPropertyAccessExpression(parent) && parent.expression === node) {
+		return true;
+	}
+	if (ts.isElementAccessExpression(parent) && parent.expression === node) {
+		return true;
+	}
+	if (ts.isCallExpression(parent) && parent.expression === node) {
+		return true;
+	}
+	if (ts.isNewExpression(parent) && parent.expression === node) {
+		return true;
+	}
+	return false;
+}
+
+function repeatedExpressionFingerprint(node: ts.Expression, sourceFile: ts.SourceFile, parent: ts.Node | undefined): string | null {
+	if (isExpressionChildOfLargerExpression(node, parent)) {
+		return null;
+	}
+	if (
+		!ts.isConditionalExpression(node)
+		&& !ts.isBinaryExpression(node)
+		&& !ts.isCallExpression(node)
+		&& !ts.isElementAccessExpression(node)
+		&& !ts.isPropertyAccessExpression(node)
+	) {
+		return null;
+	}
+	const text = node.getText(sourceFile).replace(/\s+/g, ' ');
+	if (text.length < 24) {
+		return null;
+	}
+	if (text.startsWith('this.')) {
+		return null;
+	}
+	return text;
+}
+
 function isEqualityOperator(kind: ts.SyntaxKind): boolean {
 	return kind === ts.SyntaxKind.EqualsEqualsToken
 		|| kind === ts.SyntaxKind.EqualsEqualsEqualsToken
@@ -613,6 +837,17 @@ function lintBinaryExpressionForCodeQuality(
 	sourceFile: ts.SourceFile,
 	issues: LintIssue[]):
 	void {
+	if (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
+		if (isNullOrUndefined(node.right)) {
+			pushLintIssue(
+				issues,
+				sourceFile,
+				node.operatorToken,
+				'nullish_null_normalization_pattern',
+				'`?? null`/`?? undefined` normalization is forbidden. Preserve undefined/null directly or handle the case explicitly.',
+			);
+		}
+	}
 	if (node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
 		const subjects: string[] = [];
 		if (collectStringOrChainSubjects(node, subjects) && subjects.length > 1) {
@@ -743,10 +978,316 @@ function reportSingleLineMethodIssue(
 	});
 }
 
+function hasExportModifier(node: ts.Node): boolean {
+	const modifiers = (node as { modifiers?: ts.NodeArray<ts.Modifier> }).modifiers;
+	if (!modifiers) {
+		return false;
+	}
+	for (let index = 0; index < modifiers.length; index += 1) {
+		if (modifiers[index].kind === ts.SyntaxKind.ExportKeyword) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function lintFacadeModuleDensity(sourceFile: ts.SourceFile, issues: LintIssue[]): void {
+	let exportedCallableCount = 0;
+	let exportedWrapperCount = 0;
+	let firstWrapperNode: ts.Node | null = null;
+	for (let index = 0; index < sourceFile.statements.length; index += 1) {
+		const statement = sourceFile.statements[index];
+		if (ts.isFunctionDeclaration(statement) && statement.body !== undefined && hasExportModifier(statement)) {
+			exportedCallableCount += 1;
+			if (getFunctionWrapperTarget(statement) !== null) {
+				exportedWrapperCount += 1;
+				firstWrapperNode ??= statement.name ?? statement;
+			}
+			continue;
+		}
+		if (!ts.isVariableStatement(statement) || !hasExportModifier(statement)) {
+			continue;
+		}
+		const declarations = statement.declarationList.declarations;
+		for (let declarationIndex = 0; declarationIndex < declarations.length; declarationIndex += 1) {
+			const declaration = declarations[declarationIndex];
+			if (!isFunctionLikeValue(declaration.initializer)) {
+				continue;
+			}
+			exportedCallableCount += 1;
+			if (getFunctionWrapperTarget(declaration.initializer) !== null) {
+				exportedWrapperCount += 1;
+				firstWrapperNode ??= declaration.name;
+			}
+		}
+	}
+	if (exportedWrapperCount >= 3 && exportedWrapperCount * 10 >= exportedCallableCount * 6 && firstWrapperNode !== null) {
+		pushLintIssue(
+			issues,
+			sourceFile,
+			firstWrapperNode,
+			'facade_module_density_pattern',
+			`Module exports ${exportedWrapperCount}/${exportedCallableCount} callable wrappers. Facade modules are forbidden; move ownership to the real module.`,
+		);
+	}
+}
+
+function ideLayer(path: string): string | null {
+	const normalized = normalizePathForAnalysis(path);
+	const marker = '/src/bmsx/ide/';
+	const index = normalized.indexOf(marker);
+	if (index === -1) {
+		return null;
+	}
+	const rest = normalized.slice(index + marker.length);
+	const slash = rest.indexOf('/');
+	return slash === -1 ? rest : rest.slice(0, slash);
+}
+
+function forbiddenLayerImportReason(sourceLayer: string, targetLayer: string): string | null {
+	if (sourceLayer === targetLayer) {
+		return null;
+	}
+	if (sourceLayer === 'common') {
+		return `ide/common must not import ${targetLayer}; common code must stay below feature layers.`;
+	}
+	if (sourceLayer === 'language' && targetLayer !== 'common') {
+		return `ide/language must not import ${targetLayer}; language code must stay UI/workbench independent.`;
+	}
+	if (sourceLayer === 'terminal' && (targetLayer === 'editor' || targetLayer === 'workbench')) {
+		return `ide/terminal must not import ${targetLayer}; terminal code must not depend on editor/workbench internals.`;
+	}
+	if (sourceLayer === 'editor' && targetLayer === 'workbench') {
+		return 'ide/editor must not import ide/workbench; workbench may compose editor, not the reverse.';
+	}
+	if (sourceLayer === 'workbench' && targetLayer === 'editor') {
+		return 'ide/workbench must not import deep editor internals directly; route shared contracts through common modules.';
+	}
+	if (sourceLayer === 'runtime' && (targetLayer === 'editor' || targetLayer === 'workbench')) {
+		return `ide/runtime must not import ${targetLayer}; runtime glue must not own UI feature internals.`;
+	}
+	return null;
+}
+
+function lintCrossLayerImports(sourceFile: ts.SourceFile, issues: LintIssue[]): void {
+	const sourceLayer = ideLayer(sourceFile.fileName);
+	if (sourceLayer === null) {
+		return;
+	}
+	for (let index = 0; index < sourceFile.statements.length; index += 1) {
+		const statement = sourceFile.statements[index];
+		if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+			continue;
+		}
+		const specifier = statement.moduleSpecifier.text;
+		if (!specifier.startsWith('.')) {
+			continue;
+		}
+		const targetPath = resolve(dirname(sourceFile.fileName), specifier);
+		const targetLayer = ideLayer(targetPath);
+		if (targetLayer === null) {
+			continue;
+		}
+		const reason = forbiddenLayerImportReason(sourceLayer, targetLayer);
+		if (reason === null) {
+			continue;
+		}
+		pushLintIssue(
+			issues,
+			sourceFile,
+			statement.moduleSpecifier,
+			'cross_layer_import_pattern',
+			reason,
+		);
+	}
+}
+
+function collectExportedTypes(sourceFile: ts.SourceFile, exportedTypes: ExportedTypeInfo[]): void {
+	for (let index = 0; index < sourceFile.statements.length; index += 1) {
+		const statement = sourceFile.statements[index];
+		if (!hasExportModifier(statement)) {
+			continue;
+		}
+		if (ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) {
+			const position = sourceFile.getLineAndCharacterOfPosition(statement.name.getStart(sourceFile));
+			exportedTypes.push({
+				name: statement.name.text,
+				file: sourceFile.fileName,
+				line: position.line + 1,
+				column: position.character + 1,
+			});
+		}
+	}
+}
+
+function normalizedAstFingerprint(node: ts.Node): string {
+	const parts: string[] = [];
+	const visit = (current: ts.Node): void => {
+		if (ts.isIdentifier(current)) {
+			parts.push('Identifier');
+			return;
+		}
+		if (ts.isStringLiteral(current) || ts.isNoSubstitutionTemplateLiteral(current)) {
+			parts.push('StringLiteral');
+			return;
+		}
+		if (ts.isNumericLiteral(current)) {
+			parts.push('NumericLiteral');
+			return;
+		}
+		parts.push(ts.SyntaxKind[current.kind]);
+		if (ts.isBinaryExpression(current)) {
+			parts.push(`op:${ts.SyntaxKind[current.operatorToken.kind]}`);
+		}
+		if (ts.isPrefixUnaryExpression(current) || ts.isPostfixUnaryExpression(current)) {
+			parts.push(`op:${ts.SyntaxKind[current.operator]}`);
+		}
+		ts.forEachChild(current, visit);
+	};
+	visit(node);
+	return parts.join('|');
+}
+
+function collectNormalizedBody(
+	sourceFile: ts.SourceFile,
+	name: string,
+	node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
+	normalizedBodies: NormalizedBodyInfo[],
+): void {
+	const body = node.body;
+	if (body === undefined || !ts.isBlock(body)) {
+		return;
+	}
+	if (body.statements.length < 2 || isSingleLineWrapperCandidate(node)) {
+		return;
+	}
+	const text = body.getText(sourceFile);
+	if (text.length < 120) {
+		return;
+	}
+	const locationNode = (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isFunctionExpression(node)) && node.name
+		? node.name
+		: body;
+	const position = sourceFile.getLineAndCharacterOfPosition(locationNode.getStart(sourceFile));
+	normalizedBodies.push({
+		name,
+		file: sourceFile.fileName,
+		line: position.line + 1,
+		column: position.character + 1,
+		fingerprint: normalizedAstFingerprint(body),
+	});
+}
+
+function collectNormalizedBodies(sourceFile: ts.SourceFile, normalizedBodies: NormalizedBodyInfo[]): void {
+	const visit = (node: ts.Node): void => {
+		if (ts.isFunctionDeclaration(node) && node.name !== undefined) {
+			collectNormalizedBody(sourceFile, node.name.text, node, normalizedBodies);
+		} else if (ts.isMethodDeclaration(node) && node.body !== undefined) {
+			const name = getPropertyName(node.name);
+			if (name !== null) {
+				collectNormalizedBody(sourceFile, name, node, normalizedBodies);
+			}
+		} else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && isFunctionLikeValue(node.initializer)) {
+			collectNormalizedBody(sourceFile, node.name.text, node.initializer, normalizedBodies);
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(sourceFile);
+}
+
+function addDuplicateExportedTypeIssues(exportedTypes: readonly ExportedTypeInfo[], issues: LintIssue[]): void {
+	const byName = new Map<string, ExportedTypeInfo[]>();
+	for (let index = 0; index < exportedTypes.length; index += 1) {
+		const entry = exportedTypes[index];
+		let list = byName.get(entry.name);
+		if (list === undefined) {
+			list = [];
+			byName.set(entry.name, list);
+		}
+		list.push(entry);
+	}
+	for (const [name, list] of byName) {
+		if (list.length <= 1) {
+			continue;
+		}
+		for (let index = 0; index < list.length; index += 1) {
+			const entry = list[index];
+			issues.push({
+				kind: 'duplicate_exported_type_name_pattern',
+				file: entry.file,
+				line: entry.line,
+				column: entry.column,
+				name: 'duplicate_exported_type_name_pattern',
+				message: `Exported type/interface name "${name}" is declared ${list.length} times. Shared domain types must have one owner.`,
+			});
+		}
+	}
+}
+
+function addNormalizedBodyDuplicateIssues(normalizedBodies: readonly NormalizedBodyInfo[], issues: LintIssue[]): void {
+	const byFingerprint = new Map<string, NormalizedBodyInfo[]>();
+	for (let index = 0; index < normalizedBodies.length; index += 1) {
+		const entry = normalizedBodies[index];
+		let list = byFingerprint.get(entry.fingerprint);
+		if (list === undefined) {
+			list = [];
+			byFingerprint.set(entry.fingerprint, list);
+		}
+		list.push(entry);
+	}
+	for (const list of byFingerprint.values()) {
+		if (list.length <= 1) {
+			continue;
+		}
+		const names = new Set<string>();
+		for (let index = 0; index < list.length; index += 1) {
+			names.add(list[index].name);
+		}
+		if (names.size <= 1) {
+			continue;
+		}
+		for (let index = 0; index < list.length; index += 1) {
+			const entry = list[index];
+			issues.push({
+				kind: 'normalized_ast_duplicate_pattern',
+				file: entry.file,
+				line: entry.line,
+				column: entry.column,
+				name: 'normalized_ast_duplicate_pattern',
+				message: `Function/method body duplicates ${list.length} normalized AST bodies with different names. Extract shared ownership instead of copying logic.`,
+			});
+		}
+	}
+}
+
 function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[]): void {
+	const hotPath = isHotPathFile(sourceFile.fileName);
 	const scopes: Array<Map<string, LintBinding[]>> = [];
+	const repeatedScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
 	const enterScope = (): void => {
 		scopes.push(new Map<string, LintBinding[]>());
+	};
+	const enterRepeatedScope = (): void => {
+		repeatedScopes.push(new Map<string, RepeatedExpressionInfo>());
+	};
+	const leaveRepeatedScope = (): void => {
+		const scope = repeatedScopes.pop();
+		if (!scope) {
+			return;
+		}
+		for (const [text, info] of scope) {
+			if (info.count <= 1) {
+				continue;
+			}
+			issues.push({
+				kind: 'repeated_expression_pattern',
+				file: sourceFile.fileName,
+				line: info.line,
+				column: info.column,
+				name: 'repeated_expression_pattern',
+				message: `Expression is repeated ${info.count} times in the same scope: ${text}`,
+			});
+		}
 	};
 	const leaveScope = (): void => {
 		const scope = scopes.pop();
@@ -843,10 +1384,66 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[]): void
 			return;
 		}
 	};
+	const recordRepeatedExpression = (node: ts.Expression, parent: ts.Node | undefined): void => {
+		const fingerprint = repeatedExpressionFingerprint(node, sourceFile, parent);
+		if (fingerprint === null) {
+			return;
+		}
+		const scope = repeatedScopes[repeatedScopes.length - 1];
+		if (!scope) {
+			return;
+		}
+		const existing = scope.get(fingerprint);
+		if (existing) {
+			existing.count += 1;
+			return;
+		}
+		const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+		scope.set(fingerprint, {
+			line: position.line + 1,
+			column: position.character + 1,
+			count: 1,
+		});
+	};
+	const lintHotPathCallArguments = (node: ts.CallExpression | ts.NewExpression): void => {
+		if (!hotPath) {
+			return;
+		}
+		const args = node.arguments;
+		if (args === undefined) {
+			return;
+		}
+		for (let index = 0; index < args.length; index += 1) {
+			const argument = args[index];
+			const unwrapped = unwrapExpression(argument);
+			if (ts.isObjectLiteralExpression(unwrapped) || ts.isArrayLiteralExpression(unwrapped)) {
+				pushLintIssue(
+					issues,
+					sourceFile,
+					unwrapped,
+					'hot_path_object_literal_pattern',
+					'Object/array literal payload allocation in hot-path calls is forbidden. Pass primitives or reuse state/scratch storage.',
+				);
+			}
+			if (isFunctionExpressionLike(unwrapped) || containsClosureExpression(unwrapped)) {
+				pushLintIssue(
+					issues,
+					sourceFile,
+					unwrapped,
+					'hot_path_closure_argument_pattern',
+					'Closure/function argument allocation in hot-path calls is forbidden. Move ownership to direct methods or stable state.',
+				);
+			}
+		}
+	};
 	const visit = (node: ts.Node, parent: ts.Node | undefined): void => {
 		const entered = isScopeBoundary(node, parent);
+		const repeatedEntered = ts.isSourceFile(node) || ts.isFunctionLike(node);
 		if (entered) {
 			enterScope();
+		}
+		if (repeatedEntered) {
+			enterRepeatedScope();
 		}
 		if (ts.isVariableDeclaration(node) && ts.isVariableDeclarationList(node.parent)) {
 			declareBinding(node, node.parent);
@@ -856,6 +1453,53 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[]): void
 		}
 		if (ts.isBinaryExpression(node)) {
 			lintBinaryExpressionForCodeQuality(node, sourceFile, issues);
+		}
+		if (ts.isConditionalExpression(node) && (isNullOrUndefined(node.whenTrue) || isNullOrUndefined(node.whenFalse))) {
+			pushLintIssue(
+				issues,
+				sourceFile,
+				node,
+				'nullish_null_normalization_pattern',
+				'Conditional null/undefined normalization is forbidden. Preserve the actual value or branch explicitly.',
+			);
+		}
+		if (ts.isCallExpression(node)) {
+			lintHotPathCallArguments(node);
+			if (hotPath && isNumericDefensiveCall(node)) {
+				pushLintIssue(
+					issues,
+					sourceFile,
+					node,
+					'numeric_defensive_sanitization_pattern',
+					'Defensive numeric sanitization in IDE hot paths is forbidden. Coordinates and layout values must already be valid integers.',
+				);
+			}
+		}
+		if (ts.isNewExpression(node)) {
+			lintHotPathCallArguments(node);
+		}
+		if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node) || ts.isCallExpression(node)) {
+			if (hasQuestionDotToken(node)) {
+				const root = expressionRootName(node as ts.Expression);
+				if (root !== null && REQUIRED_STATE_ROOTS.has(root)) {
+					pushLintIssue(
+						issues,
+						sourceFile,
+						node,
+						'defensive_optional_chain_pattern',
+						`Optional chaining on required IDE/runtime root "${root}" is forbidden.`,
+					);
+				}
+			}
+		}
+		if (
+			ts.isConditionalExpression(node)
+			|| ts.isBinaryExpression(node)
+			|| ts.isCallExpression(node)
+			|| ts.isElementAccessExpression(node)
+			|| ts.isPropertyAccessExpression(node)
+		) {
+			recordRepeatedExpression(node, parent);
 		}
 		if (
 			(
@@ -873,11 +1517,16 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[]): void
 			);
 		}
 		ts.forEachChild(node, child => visit(child, node));
+		if (repeatedEntered) {
+			leaveRepeatedScope();
+		}
 		if (entered) {
 			leaveScope();
 		}
 	};
 	visit(sourceFile, undefined);
+	lintFacadeModuleDensity(sourceFile, issues);
+	lintCrossLayerImports(sourceFile, issues);
 }
 
 function collectClassInfos(
@@ -1412,14 +2061,20 @@ function run(): void {
 	const classInfosByFileName = new Map<string, Map<string, ClassInfo[]>>();
 	const lintIssues: LintIssue[] = [];
 	const sourceFiles: ts.SourceFile[] = [];
+	const exportedTypes: ExportedTypeInfo[] = [];
+	const normalizedBodies: NormalizedBodyInfo[] = [];
 	for (const filePath of fileList) {
 		const sourceText = readFileSync(filePath, 'utf8');
 		const kind = filePath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
 		const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, kind);
 		sourceFiles.push(sourceFile);
 		collectClassInfos(sourceFile, classInfosByKey, classInfosByName, classInfosByFileName);
+		collectExportedTypes(sourceFile, exportedTypes);
+		collectNormalizedBodies(sourceFile, normalizedBodies);
 		collectLintIssues(sourceFile, lintIssues);
 	}
+	addDuplicateExportedTypeIssues(exportedTypes, lintIssues);
+	addNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
 	for (const sourceFile of sourceFiles) {
 		walkDeclarations(sourceFile, buckets, classInfosByKey, classInfosByName, classInfosByFileName);
 	}
