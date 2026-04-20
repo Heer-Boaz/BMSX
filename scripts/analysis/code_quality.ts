@@ -597,6 +597,10 @@ function getSingleStatementWrapperTarget(statement: ts.Statement): string | null
 function getFunctionWrapperTarget(
 	node: ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression,
 ): string | null {
+	const name = node.name?.text;
+	if (name !== undefined && isBoundaryStyleWrapperName(name)) {
+		return null;
+	}
 	const body = node.body;
 	if (body === undefined || body === null) {
 		return null;
@@ -1090,6 +1094,28 @@ function lintEnsurePattern(
 		node.name ?? node,
 		'ensure_pattern',
 		'Lazy ensure/init wrapper is forbidden. Initialize the resource eagerly instead of guarding creation and returning the cached singleton.',
+	);
+}
+
+function lintTerminalReturnPaddingPattern(
+	node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
+	sourceFile: ts.SourceFile,
+	issues: LintIssue[],
+): void {
+	const body = node.body;
+	if (body === undefined || !ts.isBlock(body) || body.statements.length === 0) {
+		return;
+	}
+	const lastStatement = body.statements[body.statements.length - 1];
+	if (!ts.isReturnStatement(lastStatement) || lastStatement.expression !== undefined) {
+		return;
+	}
+	pushLintIssue(
+		issues,
+		sourceFile,
+		lastStatement,
+		'useless_terminal_return_pattern',
+		'Terminal `return;` is forbidden. Remove no-op returns instead of padding the body.',
 	);
 }
 
@@ -1694,30 +1720,31 @@ function lintBinaryExpressionForCodeQuality(
 }
 
 function isSingleLineWrapperCandidate(functionNode: ts.Node): boolean {
-	if (
-		ts.isFunctionDeclaration(functionNode)
-		|| ts.isMethodDeclaration(functionNode)
-		|| ts.isFunctionExpression(functionNode)
-		|| ts.isArrowFunction(functionNode)
-	) {
-		const body = functionNode.body;
-		if (body === undefined) {
-			return false;
-		}
-		if (!ts.isBlock(body)) {
-			return ts.isCallExpression(body);
-		}
-		if (body.statements.length !== 1) {
-			return false;
-		}
-		const statement = body.statements[0];
-		if (ts.isReturnStatement(statement)) {
-			return statement.expression !== undefined && ts.isCallExpression(statement.expression);
-		}
-		if (ts.isExpressionStatement(statement)) {
-			return ts.isCallExpression(statement.expression);
-		}
+	if (!ts.isFunctionDeclaration(functionNode) && !ts.isMethodDeclaration(functionNode)) {
 		return false;
+	}
+	const name = functionNode.name?.getText();
+	if (name !== undefined && isBoundaryStyleWrapperName(name)) {
+		return false;
+	}
+	const body = functionNode.body;
+	if (body === undefined) {
+		return false;
+	}
+	if (!ts.isBlock(body)) {
+		return ts.isCallExpression(body) && !isDirectMutationCallExpression(body);
+	}
+	if (body.statements.length !== 1) {
+		return false;
+	}
+	const statement = body.statements[0];
+	if (ts.isReturnStatement(statement)) {
+		return statement.expression !== undefined
+			&& ts.isCallExpression(statement.expression)
+			&& !isDirectMutationCallExpression(statement.expression);
+	}
+	if (ts.isExpressionStatement(statement)) {
+		return ts.isCallExpression(statement.expression) && !isDirectMutationCallExpression(statement.expression);
 	}
 	return false;
 }
@@ -1736,6 +1763,124 @@ function reportSingleLineMethodIssue(
 		name: 'single_line_method_pattern',
 		message: 'Single-line wrapper function/method is forbidden. Prefer direct logic over delegation wrappers.',
 	});
+}
+
+// Direct mutations on owned containers are real setters, not delegation wrappers.
+const DIRECT_MUTATION_METHOD_NAMES = new Set([
+	'add',
+	'clear',
+	'delete',
+	'pop',
+	'push',
+	'set',
+	'shift',
+	'splice',
+	'unshift',
+]);
+
+const BOUNDARY_WRAPPER_NAME_WORDS: ReadonlySet<string> = new Set([
+	'acquire',
+	'add',
+	'append',
+	'apply',
+	'attach',
+	'begin',
+	'bind',
+	'build',
+	'capture',
+	'change',
+	'clear',
+	'copy',
+	'configure',
+	'create',
+	'count',
+	'decode',
+	'destroy',
+	'disable',
+	'dispose',
+	'detach',
+	'encode',
+	'enable',
+	'end',
+	'ensure',
+	'focus',
+	'format',
+	'get',
+	'has',
+	'ident',
+	'init',
+	'install',
+	'launch',
+	'load',
+	'make',
+	'on',
+	'open',
+	'emplace',
+	'pixels',
+	'push',
+	'read',
+	'release',
+	'register',
+	'remove',
+	'replace',
+	'render',
+	'reset',
+	'resolve',
+	'resize',
+	'snapshot',
+	'save',
+	'set',
+	'setup',
+	'size',
+	'state',
+	'submit',
+	'switch',
+	'reserve',
+	'shutdown',
+	'start',
+	'to',
+	'update',
+	'use',
+	'value',
+	'write',
+	'with',
+]);
+
+function isBoundaryStyleWrapperName(name: string): boolean {
+	const words = name.match(/[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z0-9])/g);
+	if (words === null) {
+		return BOUNDARY_WRAPPER_NAME_WORDS.has(name.toLowerCase());
+	}
+	for (let index = 0; index < words.length; index += 1) {
+		if (BOUNDARY_WRAPPER_NAME_WORDS.has(words[index].toLowerCase())) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function isDirectMutationReceiver(expression: ts.Expression): boolean {
+	let current = expression;
+	while (ts.isParenthesizedExpression(current)) {
+		current = current.expression;
+	}
+	if (ts.isIdentifier(current) || current.kind === ts.SyntaxKind.ThisKeyword) {
+		return true;
+	}
+	if (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current)) {
+		return isDirectMutationReceiver(current.expression);
+	}
+	return false;
+}
+
+function isDirectMutationCallExpression(callExpression: ts.CallExpression): boolean {
+	if (!ts.isPropertyAccessExpression(callExpression.expression)) {
+		return false;
+	}
+	if (!DIRECT_MUTATION_METHOD_NAMES.has(callExpression.expression.name.text)) {
+		return false;
+	}
+	return isDirectMutationReceiver(callExpression.expression.expression);
 }
 
 function hasExportModifier(node: ts.Node): boolean {
@@ -2238,6 +2383,11 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 			|| ts.isArrowFunction(node)
 		) {
 			lintEnsurePattern(
+				node as ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
+				sourceFile,
+				issues,
+			);
+			lintTerminalReturnPaddingPattern(
 				node as ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
 				sourceFile,
 				issues,

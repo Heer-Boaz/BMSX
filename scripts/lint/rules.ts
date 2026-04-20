@@ -7,6 +7,7 @@ export const COMMON_LANGUAGE_LINT_RULES = [
 	'explicit_truthy_comparison_pattern',
 	'string_or_chain_comparison_pattern',
 	'single_line_method_pattern',
+	'useless_terminal_return_pattern',
 ] as const;
 
 export const CODE_QUALITY_ONLY_LINT_RULES = [

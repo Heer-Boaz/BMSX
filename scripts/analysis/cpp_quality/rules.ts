@@ -26,6 +26,78 @@ import {
 import type { CppToken } from '../../../src/bmsx/language/cpp/syntax/tokens';
 import { cppTokenText, normalizedCppTokenText } from '../../../src/bmsx/language/cpp/syntax/tokens';
 
+const CPP_SINGLE_LINE_WRAPPER_NAME_WORDS: ReadonlySet<string> = new Set([
+	'acquire',
+	'add',
+	'append',
+	'apply',
+	'attach',
+	'begin',
+	'bind',
+	'build',
+	'call',
+	'capture',
+	'change',
+	'clear',
+	'copy',
+	'configure',
+	'create',
+	'count',
+	'decode',
+	'destroy',
+	'disable',
+	'dispose',
+	'detach',
+	'encode',
+	'enable',
+	'end',
+	'ensure',
+	'focus',
+	'format',
+	'get',
+	'has',
+	'ident',
+	'init',
+	'install',
+	'emplace',
+	'load',
+	'make',
+	'on',
+	'pending',
+	'open',
+	'pixels',
+	'push',
+	'read',
+	'release',
+	'register',
+	'remove',
+	'replace',
+	'render',
+	'reset',
+	'resolve',
+	'resume',
+	'resize',
+	'snapshot',
+	'save',
+	'set',
+	'setup',
+	'size',
+	'state',
+	'suspend',
+	'submit',
+	'switch',
+	'reserve',
+	'shutdown',
+	'start',
+	'to',
+	'try',
+	'update',
+	'use',
+	'value',
+	'write',
+	'with',
+]);
+
 type CppFacadeStats = {
 	callableCount: number;
 	wrapperCount: number;
@@ -183,6 +255,12 @@ export function collectCppFunctionUsageCounts(tokens: readonly CppToken[], pairs
 }
 
 export function isCppSingleLineWrapperAllowedByUsage(info: CppFunctionInfo, usageInfo: CppFunctionUsageInfo): boolean {
+	if (isCppConstructorLike(info)) {
+		return true;
+	}
+	if (isCppBoundaryStyleWrapperName(info.name)) {
+		return true;
+	}
 	const names = [info.qualifiedName, info.name, `leaf:${info.name}`];
 	let total = 0;
 	for (let index = 0; index < names.length; index += 1) {
@@ -197,6 +275,27 @@ export function isCppSingleLineWrapperAllowedByUsage(info: CppFunctionInfo, usag
 		}
 	}
 	return false;
+}
+
+function isCppBoundaryStyleWrapperName(name: string): boolean {
+	const words = name.match(/[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z0-9])/g);
+	if (words === null) {
+		return CPP_SINGLE_LINE_WRAPPER_NAME_WORDS.has(name.toLowerCase());
+	}
+	for (let index = 0; index < words.length; index += 1) {
+		if (CPP_SINGLE_LINE_WRAPPER_NAME_WORDS.has(words[index].toLowerCase())) {
+			return true;
+		}
+	}
+	const lower = name.toLowerCase();
+	return lower.endsWith('fault') || lower.endsWith('thunk');
+}
+
+function isCppConstructorLike(info: CppFunctionInfo): boolean {
+	if (info.context === null) {
+		return false;
+	}
+	return info.name === info.context || info.name === `~${info.context}`;
 }
 
 export function createCppFacadeStats(functions: readonly CppFunctionInfo[], tokens: readonly CppToken[]): CppFacadeStats | null {
@@ -223,7 +322,7 @@ export function lintCppFacadeStats(file: string, stats: CppFacadeStats, issues: 
 	);
 }
 
-export function lintCppEnsureLazyInitPattern(file: string, tokens: readonly CppToken[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
+export function lintCppEnsureLazyInitPattern(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
 	if (!info.name.startsWith('ensure')) {
 		return;
 	}
@@ -278,6 +377,49 @@ export function lintCppEnsureLazyInitPattern(file: string, tokens: readonly CppT
 		tokens[info.nameToken],
 		'ensure_lazy_init_pattern',
 		'Lazy ensure/init wrapper is forbidden. Initialize eagerly instead of guarding creation and returning the cached singleton.',
+	);
+}
+
+export function lintCppTerminalReturnPaddingPattern(file: string, tokens: readonly CppToken[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
+	let statementStart = info.bodyStart + 1;
+	let parenDepth = 0;
+	let bracketDepth = 0;
+	let braceDepth = 0;
+	let lastStart = -1;
+	let lastEnd = -1;
+	for (let index = info.bodyStart + 1; index < info.bodyEnd; index += 1) {
+		const text = tokens[index].text;
+		if (text === '(') parenDepth += 1;
+		else if (text === ')') parenDepth -= 1;
+		else if (text === '[') bracketDepth += 1;
+		else if (text === ']') bracketDepth -= 1;
+		else if (text === '{') {
+			braceDepth += 1;
+			statementStart = index + 1;
+			continue;
+		}
+		else if (text === '}') {
+			braceDepth -= 1;
+			statementStart = index + 1;
+			continue;
+		}
+		else if (text === ';' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+			if (statementStart < index) {
+				lastStart = statementStart;
+				lastEnd = index;
+			}
+			statementStart = index + 1;
+		}
+	}
+	if (lastStart < 0 || tokens[lastStart]?.text !== 'return' || lastEnd !== lastStart + 1) {
+		return;
+	}
+	pushLintIssue(
+		issues,
+		file,
+		tokens[lastStart],
+		'useless_terminal_return_pattern',
+		'Terminal `return;` is forbidden. Remove no-op returns instead of padding the body.',
 	);
 }
 
