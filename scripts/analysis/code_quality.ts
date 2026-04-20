@@ -394,16 +394,20 @@ function getExpressionText(node: ts.Expression, aliases?: Map<string, string>): 
 }
 
 type FunctionLikeWithSignature = {
-	parameters: ts.NodeArray<ts.ParameterDeclaration>;
+	parameters?: ts.NodeArray<ts.ParameterDeclaration> | undefined;
 	typeParameters?: ts.NodeArray<ts.TypeParameterDeclaration>;
 	type?: ts.TypeNode;
 };
 
 function getFunctionSignature(node: FunctionLikeWithSignature): string {
 	const typeParameterCount = node.typeParameters?.length ?? 0;
+	const parameters = node.parameters;
+	if (parameters === undefined) {
+		return `${typeParameterCount}:`;
+	}
 	const parts: string[] = [];
-	for (let i = 0; i < node.parameters.length; i += 1) {
-		const parameter = node.parameters[i];
+	for (let i = 0; i < parameters.length; i += 1) {
+		const parameter = parameters[i];
 		let marker = '';
 		if (parameter.dotDotDotToken !== undefined) {
 			marker += '...';
@@ -469,6 +473,9 @@ function getFunctionWrapperTarget(
 	node: ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression,
 ): string | null {
 	const body = node.body;
+	if (body === undefined || body === null) {
+		return null;
+	}
 	if (ts.isBlock(body)) {
 		const statements = body.statements;
 		if (statements.length === 1) {
