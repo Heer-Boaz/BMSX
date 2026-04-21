@@ -98,7 +98,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 		}
 		const functions = analysis.functions;
 		const facadeStats = createCppFacadeStats(functions, tokens);
-		lintCppSimpleTokenPatterns(file, tokens, pairs, lintIssues, ledger);
+		lintCppSimpleTokenPatterns(file, tokens, pairs, regions, lintIssues, ledger);
 		lintCppSinglePropertyOptionsTypes(file, tokens, analysis.classRanges, lintIssues);
 		lintCppCrossLayerIncludes(file, source, lintIssues);
 		for (let functionIndex = 0; functionIndex < functions.length; functionIndex += 1) {
@@ -155,8 +155,8 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 			lintCppStringSwitchChains(file, tokens, pairs, info, lintIssues);
 			lintCppRepeatedExpressions(file, tokens, pairs, info, lintIssues);
 			lintCppSemanticRepeatedExpressions(file, tokens, pairs, info, lintIssues);
-			collectCppRepeatedStatementSequences(file, tokens, pairs, info, statementSequences);
-			collectCppNormalizedBody(file, tokens, pairs, info, normalizedBodies, ledger);
+			collectCppRepeatedStatementSequences(file, tokens, pairs, info, regions, statementSequences);
+			collectCppNormalizedBody(file, tokens, pairs, info, regions, normalizedBodies, ledger);
 		}
 		if (facadeStats !== null) {
 			lintCppFacadeStats(file, facadeStats, lintIssues);

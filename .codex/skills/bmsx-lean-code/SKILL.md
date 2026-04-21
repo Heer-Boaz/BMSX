@@ -64,6 +64,12 @@ Use region directives for scope-based analysis instead of hardcoded path excepti
 
 // @bmsx-analyse start ensure-acceptable -- explicit capacity helper, not lazy singleton ownership
 // @bmsx-analyse end ensure-acceptable
+
+// @bmsx-analyse start required-state editorDocumentState,editorViewState -- owned state roots in this module
+// @bmsx-analyse end required-state
+
+// @bmsx-analyse start value-or-boundary -- manifest default is resolved at this boundary
+// @bmsx-analyse end value-or-boundary
 ```
 
 ## Finish Line

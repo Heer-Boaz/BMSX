@@ -40,7 +40,23 @@ Allowed forms:
 // @bmsx-analyse end hot-path
 // @bmsx-analyse start ensure-acceptable -- reason
 // @bmsx-analyse end ensure-acceptable
+// @bmsx-analyse start required-state editorDocumentState,editorViewState -- reason
+// @bmsx-analyse end required-state
+// @bmsx-analyse start repeated-sequence-acceptable -- reason
+// @bmsx-analyse end repeated-sequence-acceptable
+// @bmsx-analyse start normalized-body-acceptable -- reason
+// @bmsx-analyse end normalized-body-acceptable
+// @bmsx-analyse start value-or-boundary -- reason
+// @bmsx-analyse end value-or-boundary
+// @bmsx-analyse start numeric-sanitization-acceptable -- reason
+// @bmsx-analyse end numeric-sanitization-acceptable
+// @bmsx-analyse start allocation-fallback-acceptable -- reason
+// @bmsx-analyse end allocation-fallback-acceptable
+// @bmsx-analyse start optional-chain-acceptable -- reason
+// @bmsx-analyse end optional-chain-acceptable
 ```
+
+Region starts may carry comma- or whitespace-separated labels after the region kind. Use those labels for local contracts such as required state roots instead of baking project-specific symbol names into the analyzer.
 
 ## Final Audit
 Before finishing:

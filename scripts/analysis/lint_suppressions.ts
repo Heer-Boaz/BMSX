@@ -14,6 +14,7 @@ type LintSuppressionDirective = {
 
 export type AnalysisRegion = {
 	kind: string;
+	labels: readonly string[];
 	startLine: number;
 	endLine: number;
 };
@@ -115,16 +116,34 @@ function parseLintSuppressionDirectives(sourceText: string): LintSuppressionDire
 	return directives;
 }
 
-function parseRegionKind(text: string): string | null {
+type AnalysisRegionHeader = {
+	kind: string;
+	labels: string[];
+};
+
+function parseRegionHeader(text: string): AnalysisRegionHeader | null {
 	const descriptionStart = text.search(/\s--(?:\s|$)/);
 	const kindText = descriptionStart === -1 ? text : text.slice(0, descriptionStart);
-	const kind = kindText.trim().split(/\s+/)[0] ?? '';
-	return kind.length === 0 ? null : kind;
+	const parts = kindText.replace(/\*\//g, ' ').trim().split(/[,\s]+/);
+	const labels: string[] = [];
+	let kind = '';
+	for (let index = 0; index < parts.length; index += 1) {
+		const part = parts[index].replace(/^[^A-Za-z0-9_$./*-]+|[^A-Za-z0-9_$./*-]+$/g, '');
+		if (part.length === 0) {
+			continue;
+		}
+		if (kind.length === 0) {
+			kind = part;
+		} else {
+			labels.push(part);
+		}
+	}
+	return kind.length === 0 ? null : { kind, labels };
 }
 
 export function collectAnalysisRegions(sourceText: string): AnalysisRegion[] {
 	const regions: AnalysisRegion[] = [];
-	const activeStarts = new Map<string, number[]>();
+	const activeStarts = new Map<string, Array<{ line: number; labels: readonly string[] }>>();
 	const lines = sourceText.split(/\r\n|\r|\n/);
 	for (let index = 0; index < lines.length; index += 1) {
 		const line = index + 1;
@@ -132,31 +151,33 @@ export function collectAnalysisRegions(sourceText: string): AnalysisRegion[] {
 		if (directive === null || directive.command !== 'start' && directive.command !== 'end') {
 			continue;
 		}
-		const kind = parseRegionKind(directive.rest);
-		if (kind === null) {
+		const header = parseRegionHeader(directive.rest);
+		if (header === null) {
 			continue;
 		}
+		const { kind, labels } = header;
 		if (directive.command === 'start') {
 			let starts = activeStarts.get(kind);
 			if (starts === undefined) {
 				starts = [];
 				activeStarts.set(kind, starts);
 			}
-			starts.push(line + 1);
+			starts.push({ line: line + 1, labels });
 			continue;
 		}
 		const starts = activeStarts.get(kind);
 		if (starts === undefined || starts.length === 0) {
 			continue;
 		}
-		const startLine = starts.pop()!;
-		if (startLine <= line - 1) {
-			regions.push({ kind, startLine, endLine: line - 1 });
+		const start = starts.pop()!;
+		if (start.line <= line - 1) {
+			regions.push({ kind, labels: start.labels, startLine: start.line, endLine: line - 1 });
 		}
 	}
 	for (const [kind, starts] of activeStarts) {
 		for (let index = 0; index < starts.length; index += 1) {
-			regions.push({ kind, startLine: starts[index], endLine: lines.length });
+			const start = starts[index];
+			regions.push({ kind, labels: start.labels, startLine: start.line, endLine: lines.length });
 		}
 	}
 	regions.sort((a, b) => a.startLine - b.startLine || a.endLine - b.endLine || a.kind.localeCompare(b.kind));
@@ -170,6 +191,27 @@ export function lineInAnalysisRegion(regions: readonly AnalysisRegion[], kind: s
 			return false;
 		}
 		if (region.kind === kind && line <= region.endLine) {
+			return true;
+		}
+	}
+	return false;
+}
+
+export function lineHasAnalysisRegionLabel(
+	regions: readonly AnalysisRegion[],
+	kind: string,
+	line: number,
+	label: string,
+): boolean {
+	for (let index = 0; index < regions.length; index += 1) {
+		const region = regions[index];
+		if (line < region.startLine) {
+			return false;
+		}
+		if (region.kind !== kind || line > region.endLine) {
+			continue;
+		}
+		if (region.labels.length === 0 || region.labels.includes('*') || region.labels.includes(label)) {
 			return true;
 		}
 	}

@@ -979,6 +979,7 @@ export function collectCppRepeatedStatementSequences(
 	tokens: readonly CppToken[],
 	pairs: readonly number[],
 	info: CppFunctionInfo,
+	regions: readonly AnalysisRegion[],
 	sequences: CppStatementSequenceInfo[],
 ): void {
 	for (let index = info.bodyStart; index < info.bodyEnd; index += 1) {
@@ -989,7 +990,7 @@ export function collectCppRepeatedStatementSequences(
 		if (close < 0 || close > info.bodyEnd) {
 			continue;
 		}
-		collectCppRepeatedStatementSequencesInBlock(file, tokens, index + 1, close, info.name, sequences);
+		collectCppRepeatedStatementSequencesInBlock(file, tokens, index + 1, close, info.name, regions, sequences);
 	}
 }
 
@@ -999,6 +1000,7 @@ function collectCppRepeatedStatementSequencesInBlock(
 	blockStart: number,
 	blockEnd: number,
 	functionName: string,
+	regions: readonly AnalysisRegion[],
 	sequences: CppStatementSequenceInfo[],
 ): void {
 	const ranges = collectCppStatementRanges(tokens, blockStart, blockEnd);
@@ -1027,6 +1029,9 @@ function collectCppRepeatedStatementSequencesInBlock(
 		}
 		const first = ranges[index][0];
 		const last = ranges[index + CPP_REPEATED_STATEMENT_SEQUENCE_MIN_COUNT - 1][1] - 1;
+		if (lineInAnalysisRegion(regions, 'repeated-sequence-acceptable', tokens[first].line)) {
+			continue;
+		}
 		sequences.push({
 			file,
 			line: tokens[first].line,
@@ -1062,7 +1067,6 @@ export function addCppRepeatedStatementSequenceIssues(
 		list.push(entry);
 	}
 	const reportedRanges = new Map<string, Array<{ start: number; end: number }>>();
-	const ledgerRanges = new Map<string, Array<{ start: number; end: number }>>();
 	const duplicateGroups = Array.from(byFingerprint.values())
 		.filter(list => list.length > 1)
 		.sort((left, right) => {
@@ -1072,24 +1076,11 @@ export function addCppRepeatedStatementSequenceIssues(
 		});
 	for (let groupIndex = 0; groupIndex < duplicateGroups.length; groupIndex += 1) {
 		const list = duplicateGroups[groupIndex];
-		const reportable: CppStatementSequenceInfo[] = [];
-		for (let entryIndex = 0; entryIndex < list.length; entryIndex += 1) {
-			const entry = list[entryIndex];
-			const skipKind = cppRepeatedStatementSequenceSkipKind(entry);
-			if (skipKind !== null) {
-				if (cppStatementSequenceOverlapsLedgerRange(entry, ledgerRanges)) {
-					continue;
-				}
-				noteQualityLedger(ledger, `skipped_cpp_repeated_statement_sequence_${skipKind}`);
-			} else {
-				reportable.push(entry);
-			}
-		}
-		if (reportable.length <= 1) {
+		if (list.length <= 1) {
 			continue;
 		}
-		for (let entryIndex = 0; entryIndex < reportable.length; entryIndex += 1) {
-			const entry = reportable[entryIndex];
+		for (let entryIndex = 0; entryIndex < list.length; entryIndex += 1) {
+			const entry = list[entryIndex];
 			let ranges = reportedRanges.get(entry.file);
 			if (ranges === undefined) {
 				ranges = [];
@@ -1111,63 +1102,14 @@ export function addCppRepeatedStatementSequenceIssues(
 				line: entry.line,
 				column: entry.column,
 				name: 'repeated_statement_sequence_pattern',
-				message: `${entry.statementCount} consecutive C++ statements are copied in ${reportable.length} reportable places. Extract the shared operation or collapse the duplicated lifecycle block.`,
+				message: `${entry.statementCount} consecutive C++ statements are copied in ${list.length} reportable places. Extract the shared operation or collapse the duplicated lifecycle block.`,
 			});
 		}
 	}
 }
 
-function cppStatementSequenceOverlapsLedgerRange(entry: CppStatementSequenceInfo, rangesByFile: Map<string, Array<{ start: number; end: number }>>): boolean {
-	let ranges = rangesByFile.get(entry.file);
-	if (ranges === undefined) {
-		ranges = [];
-		rangesByFile.set(entry.file, ranges);
-	}
-	if (cppStatementSequenceOverlapsReportedRange(entry, ranges)) {
-		return true;
-	}
-	ranges.push({ start: entry.line, end: entry.endLine });
-	return false;
-}
-
 function cppReportableStatementSequenceKind(entry: CppStatementSequenceInfo): string {
-	const normalized = normalizePathForAnalysis(entry.file);
-	if (normalized.includes('/src/bmsx_cpp/machine/program/')) {
-		return 'program_pipeline';
-	}
-	if (normalized.includes('/src/bmsx_cpp/machine/memory/')) {
-		return 'memory_map';
-	}
-	if (normalized.includes('/src/bmsx_cpp/machine/runtime/')) {
-		return 'runtime_loop';
-	}
-	if (normalized.includes('/src/bmsx_cpp/machine/devices/')) {
-		return 'device_logic';
-	}
-	if (normalized.includes('/src/bmsx_cpp/machine/scheduler/')) {
-		return 'scheduler';
-	}
-	return 'machine_core';
-}
-
-function cppRepeatedStatementSequenceSkipKind(entry: CppStatementSequenceInfo): string | null {
-	const normalized = normalizePathForAnalysis(entry.file);
-	if (normalized.endsWith('/src/bmsx_cpp/machine/cpu/cpu.cpp')) {
-		return 'cpu_specialization';
-	}
-	if (normalized.includes('/src/bmsx_cpp/machine/devices/vdp/')) {
-		return 'render_specialization';
-	}
-	if (
-		normalized.endsWith('/src/bmsx_cpp/render/backend/backend.cpp') &&
-		entry.fingerprint.includes('shadeBlitPixel')
-	) {
-		return 'render_blit_depth_specialization';
-	}
-	if (normalized.endsWith('/src/bmsx_cpp/machine/firmware/globals.cpp')) {
-		return 'lua_library_surface';
-	}
-	return null;
+	return entry.functionName.length === 0 ? 'disabled' : 'disabled_function_body';
 }
 
 function cppStatementSequenceOverlapsReportedRange(entry: CppStatementSequenceInfo, ranges: readonly { start: number; end: number }[]): boolean {
@@ -1298,7 +1240,7 @@ function cppCatchBlockFinishesError(tokens: readonly CppToken[], start: number, 
 }
 
 export function lintCppRedundantNumericSanitizationPattern(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, regions: readonly AnalysisRegion[], issues: CppLintIssue[]): void {
-	if (normalizePathForAnalysis(file).endsWith('/src/bmsx_cpp/common/clamp.h')) {
+	if (lineInAnalysisRegion(regions, 'numeric-sanitization-acceptable', tokens[info.nameToken].line)) {
 		return;
 	}
 	if (lineInAnalysisRegion(regions, 'hot-path', tokens[info.nameToken].line)) {
@@ -1351,7 +1293,7 @@ export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], 
 		}
 		if (!CPP_LOCAL_CONST_PATTERN_ENABLED && !binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
 			noteQualityLedger(ledger, 'skipped_cpp_local_const_disabled');
-			noteQualityLedger(ledger, `skipped_cpp_local_const_${cppLocalConstCandidateKind(file, info, regions, tokens, binding)}`);
+			noteQualityLedger(ledger, `skipped_cpp_local_const_${cppLocalConstCandidateKind(info, regions, tokens, binding)}`);
 		} else if (CPP_LOCAL_CONST_PATTERN_ENABLED && shouldReportCppLocalConst(binding)) {
 			pushLintIssue(issues, file, tokens[binding.nameToken], 'local_const_pattern', `Prefer "const" for "${binding.name}"; it is never reassigned.`);
 		} else if (!binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
@@ -1363,9 +1305,8 @@ export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], 
 	}
 }
 
-function cppLocalConstCandidateKind(file: string, info: CppFunctionInfo, regions: readonly AnalysisRegion[], tokens: readonly CppToken[], binding: CppLocalBinding): string {
-	const normalized = normalizePathForAnalysis(file);
-	if (normalized.endsWith('/src/bmsx_cpp/machine/cpu/cpu.cpp') && /^[A-Z0-9_]+$/.test(binding.name)) {
+function cppLocalConstCandidateKind(info: CppFunctionInfo, regions: readonly AnalysisRegion[], tokens: readonly CppToken[], binding: CppLocalBinding): string {
+	if (lineInAnalysisRegion(regions, 'local-const-specialization', tokens[binding.nameToken].line) && /^[A-Z0-9_]+$/.test(binding.name)) {
 		return 'vm_specialization';
 	}
 	const prefix = isHotPathFunction(info, regions, tokens) ? 'hot_path_' : '';
@@ -1730,7 +1671,7 @@ function isWriteUse(tokens: readonly CppToken[], index: number): boolean {
 		tokens[index - 1]?.text === '++' || tokens[index - 1]?.text === '--';
 }
 
-export function lintCppSimpleTokenPatterns(file: string, tokens: readonly CppToken[], pairs: readonly number[], issues: CppLintIssue[], ledger: QualityLedger): void {
+export function lintCppSimpleTokenPatterns(file: string, tokens: readonly CppToken[], pairs: readonly number[], regions: readonly AnalysisRegion[], issues: CppLintIssue[], ledger: QualityLedger): void {
 	for (let index = 0; index < tokens.length; index += 1) {
 		const token = tokens[index];
 		if (token.kind === 'string' && token.text.includes('__native__')) {
@@ -1742,7 +1683,7 @@ export function lintCppSimpleTokenPatterns(file: string, tokens: readonly CppTok
 				if (cppValueOrHasEagerFallbackWork(tokens, pairs, index)) {
 					pushLintIssue(issues, file, token, 'eager_value_or_fallback_pattern', 'std::optional::value_or eagerly evaluates its fallback. Use an explicit branch when the fallback does work.');
 				} else {
-					const boundaryKind = cppValueOrBoundaryKind(file, target);
+					const boundaryKind = cppValueOrBoundaryKind(regions, token.line);
 					if (boundaryKind === null) {
 						pushLintIssue(issues, file, token, 'optional_value_or_fallback_pattern', 'std::optional::value_or fallback is only allowed at explicit manifest/input/optional-parameter boundaries. Branch or require the value instead of hiding missing internal state.');
 					} else {
@@ -1792,24 +1733,8 @@ function cppValueOrHasEagerFallbackWork(tokens: readonly CppToken[], pairs: read
 	return false;
 }
 
-function cppValueOrBoundaryKind(file: string, target: string): string | null {
-	const normalized = normalizePathForAnalysis(file);
-	if (normalized.endsWith('/src/bmsx_cpp/machine/specs.cpp') && target === 'value.value_or') {
-		return 'manifest_default';
-	}
-	if (
-		(normalized.endsWith('/src/bmsx_cpp/machine/runtime/timing_config.cpp') || normalized.endsWith('/src/bmsx_cpp/machine/firmware/globals.cpp'))
-		&& (target.endsWith('.vdpWorkUnitsPerSec.value_or') || target.endsWith('.geoWorkUnitsPerSec.value_or'))
-	) {
-		return 'manifest_default';
-	}
-	if (
-		normalized.endsWith('/src/bmsx_cpp/machine/firmware/api.cpp')
-		&& (target.endsWith('.repeatpressed.value_or') || target.endsWith('.repeatcount.value_or'))
-	) {
-		return 'input_state_default';
-	}
-	return null;
+function cppValueOrBoundaryKind(regions: readonly AnalysisRegion[], line: number): string | null {
+	return lineInAnalysisRegion(regions, 'value-or-boundary', line) ? 'analysis_region' : null;
 }
 
 function lintTernaryFallback(file: string, tokens: readonly CppToken[], questionIndex: number, issues: CppLintIssue[]): void {
@@ -2335,13 +2260,13 @@ export function lintCppSemanticRepeatedExpressions(file: string, tokens: readonl
 	}
 }
 
-export function collectCppNormalizedBody(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, normalizedBodies: CppNormalizedBodyInfo[], ledger: QualityLedger): void {
+export function collectCppNormalizedBody(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, regions: readonly AnalysisRegion[], normalizedBodies: CppNormalizedBodyInfo[], ledger: QualityLedger): void {
 	if (info.name.endsWith('Thunk')) {
 		noteQualityLedger(ledger, 'skipped_cpp_normalized_body_thunk');
 		return;
 	}
-	if (isCppStateTransitionBody(file, info)) {
-		noteQualityLedger(ledger, 'skipped_cpp_normalized_body_state_transition');
+	if (lineInAnalysisRegion(regions, 'normalized-body-acceptable', tokens[info.nameToken].line)) {
+		noteQualityLedger(ledger, 'skipped_cpp_normalized_body_analysis_region');
 		return;
 	}
 	const semanticNormalization = info.wrapperTarget !== null && isSemanticNormalizationWrapperTarget(info.wrapperTarget);
@@ -2364,12 +2289,6 @@ export function collectCppNormalizedBody(file: string, tokens: readonly CppToken
 		fingerprint: normalizedBodyFingerprint(tokens, info.bodyStart + 1, info.bodyEnd),
 		semanticSignatures: semanticBody ? semanticSignatures : null,
 	});
-}
-
-function isCppStateTransitionBody(file: string, info: CppFunctionInfo): boolean {
-	const normalized = normalizePathForAnalysis(file);
-	return normalized.endsWith('/src/bmsx_cpp/core/engine.cpp')
-		&& (info.qualifiedName === 'EngineCore::pause' || info.qualifiedName === 'EngineCore::resume');
 }
 
 function normalizedBodyFingerprint(tokens: readonly CppToken[], start: number, end: number): string {

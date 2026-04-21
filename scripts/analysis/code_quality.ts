@@ -3,7 +3,13 @@ import ts from 'typescript';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
-import { collectAnalysisRegions, filterSuppressedLintIssues, lineInAnalysisRegion, type AnalysisRegion } from './lint_suppressions';
+import {
+	collectAnalysisRegions,
+	filterSuppressedLintIssues,
+	lineHasAnalysisRegionLabel,
+	lineInAnalysisRegion,
+	type AnalysisRegion,
+} from './lint_suppressions';
 import { createQualityLedger, noteQualityLedger, qualityLedgerEntries, type QualityLedger } from './quality_ledger';
 import type { CodeQualityLintRule } from '../lint/rules';
 
@@ -171,16 +177,6 @@ const SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT = 2;
 const REPEATED_STATEMENT_SEQUENCE_MIN_COUNT = 4;
 const REPEATED_STATEMENT_SEQUENCE_MIN_TEXT_LENGTH = 140;
 const LOCAL_CONST_PATTERN_ENABLED = true;
-const NUMERIC_SANITIZATION_PATH_SEGMENTS = [
-	'/src/bmsx/ide/',
-	'/src/bmsx/machine/',
-	'/src/bmsx/render/',
-] as const;
-const CONTRACT_NUMERIC_SANITIZATION_PATH_SEGMENTS = [
-	'/src/bmsx/ide/',
-	'/src/bmsx/machine/',
-	'/src/bmsx/render/',
-] as const;
 const CONTRACT_NUMERIC_NAMES = new Set([
 	'column',
 	'col',
@@ -197,26 +193,6 @@ const CONTRACT_NUMERIC_SANITIZERS = new Set([
 	'Number.isFinite',
 	'clamp',
 	'clamp_fallback',
-]);
-
-const ALLOCATION_FALLBACK_PATH_SEGMENTS = [
-	'/src/bmsx/machine/',
-] as const;
-
-const REQUIRED_STATE_ROOTS = new Set([
-	'$',
-	'editorDocumentState',
-	'editorRuntimeState',
-	'editorSearchState',
-	'editorViewState',
-	'editorPointerState',
-	'editorCaretState',
-	'intellisenseUiState',
-	'lineJumpState',
-	'referenceState',
-	'resourceSearchState',
-	'runtimeErrorState',
-	'symbolSearchState',
 ]);
 
 type CliOptions = {
@@ -435,6 +411,16 @@ function nodeStartLine(sourceFile: ts.SourceFile, node: ts.Node): number {
 
 function nodeIsInAnalysisRegion(sourceFile: ts.SourceFile, regions: readonly AnalysisRegion[], kind: string, node: ts.Node): boolean {
 	return lineInAnalysisRegion(regions, kind, nodeStartLine(sourceFile, node));
+}
+
+function nodeHasAnalysisRegionLabel(
+	sourceFile: ts.SourceFile,
+	regions: readonly AnalysisRegion[],
+	kind: string,
+	node: ts.Node,
+	label: string,
+): boolean {
+	return lineHasAnalysisRegionLabel(regions, kind, nodeStartLine(sourceFile, node), label);
 }
 
 function collectTypeScriptFiles(pathCandidates: ReadonlyArray<string>): string[] {
@@ -1126,6 +1112,7 @@ function lintConsecutiveDuplicateStatements(
 function collectRepeatedStatementSequences(
 	statements: ts.NodeArray<ts.Statement>,
 	sourceFile: ts.SourceFile,
+	regions: readonly AnalysisRegion[],
 	sequences: StatementSequenceInfo[],
 ): void {
 	if (statements.length < REPEATED_STATEMENT_SEQUENCE_MIN_COUNT) {
@@ -1155,6 +1142,9 @@ function collectRepeatedStatementSequences(
 		const first = statements[index];
 		const last = statements[index + REPEATED_STATEMENT_SEQUENCE_MIN_COUNT - 1];
 		const start = sourceFile.getLineAndCharacterOfPosition(first.getStart(sourceFile));
+		if (lineInAnalysisRegion(regions, 'repeated-sequence-acceptable', start.line + 1)) {
+			continue;
+		}
 		const end = sourceFile.getLineAndCharacterOfPosition(last.getEnd());
 		sequences.push({
 			file: sourceFile.fileName,
@@ -1481,16 +1471,6 @@ function splitIdentifierWords(text: string): string[] {
 	return words === null ? [text.toLowerCase()] : words.map(word => word.toLowerCase());
 }
 
-function isProductionCodePath(fileName: string): boolean {
-	const normalized = normalizePathForAnalysis(fileName);
-	for (let index = 0; index < NUMERIC_SANITIZATION_PATH_SEGMENTS.length; index += 1) {
-		if (normalized.includes(NUMERIC_SANITIZATION_PATH_SEGMENTS[index])) {
-			return true;
-		}
-	}
-	return false;
-}
-
 function splitJoinDelimiterFingerprint(expression: ts.Expression | undefined): string | null {
 	if (expression === undefined) {
 		return null;
@@ -1614,7 +1594,7 @@ function isSemanticFloorDivisionCall(node: ts.CallExpression): boolean {
 }
 
 function isMinimumRasterPixelSizeCall(node: ts.CallExpression, sourceFile: ts.SourceFile): boolean {
-	if (!sourcePathIncludes(sourceFile, '/src/bmsx/render/') || callTargetText(node) !== 'Math.max' || node.arguments.length !== 2) {
+	if (callTargetText(node) !== 'Math.max' || node.arguments.length !== 2) {
 		return false;
 	}
 	let roundedArgument: ts.Expression | null = null;
@@ -1717,9 +1697,6 @@ function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile
 }
 
 function catchBlockHandlesLuaFaultBoundary(node: ts.CatchClause, sourceFile: ts.SourceFile): boolean {
-	if (!sourcePathIncludes(sourceFile, '/src/bmsx/lua/runtime.ts')) {
-		return false;
-	}
 	let handled = false;
 	const visit = (current: ts.Node): void => {
 		if (handled) {
@@ -1845,9 +1822,6 @@ function lintSplitJoinRoundtripPattern(
 	issues: LintIssue[],
 	scopes: Array<Map<string, LintBinding[]>>,
 ): void {
-	if (!isProductionCodePath(sourceFile.fileName)) {
-		return;
-	}
 	const outerTarget = getCallTargetLeafName(node.expression);
 	if (outerTarget === null || !isJoinLikeCallTarget(outerTarget)) {
 		return;
@@ -1887,7 +1861,7 @@ function lintRedundantNumericSanitizationPattern(
 	regions: readonly AnalysisRegion[],
 	issues: LintIssue[],
 ): void {
-	if (!isProductionCodePath(sourceFile.fileName) || nodeIsInAnalysisRegion(sourceFile, regions, 'hot-path', node) || !isNumericDefensiveCall(node)) {
+	if (nodeIsInAnalysisRegion(sourceFile, regions, 'hot-path', node) || !isNumericDefensiveCall(node)) {
 		return;
 	}
 	if (isNestedInsideNumericSanitizationCall(node, node.parent)) {
@@ -2366,16 +2340,6 @@ function isAllocationExpression(node: ts.Expression): boolean {
 		|| ts.isNewExpression(unwrapped);
 }
 
-function isAllocationFallbackPath(fileName: string): boolean {
-	const normalized = normalizePathForAnalysis(fileName);
-	for (let index = 0; index < ALLOCATION_FALLBACK_PATH_SEGMENTS.length; index += 1) {
-		if (normalized.includes(ALLOCATION_FALLBACK_PATH_SEGMENTS[index])) {
-			return true;
-		}
-	}
-	return false;
-}
-
 function isInsideConstructor(node: ts.Node): boolean {
 	let current: ts.Node | undefined = node;
 	while (current !== undefined) {
@@ -2401,11 +2365,10 @@ function enclosingVariableDeclarationName(node: ts.Node): string | null {
 	return null;
 }
 
-function sourcePathIncludes(sourceFile: ts.SourceFile, segment: string): boolean {
-	return normalizePathForAnalysis(sourceFile.fileName).includes(segment);
-}
-
-function optionalChainBoundaryKind(node: ts.Expression, sourceFile: ts.SourceFile): string | null {
+function optionalChainBoundaryKind(node: ts.Expression, sourceFile: ts.SourceFile, regions: readonly AnalysisRegion[]): string | null {
+	if (nodeIsInAnalysisRegion(sourceFile, regions, 'optional-chain-acceptable', node)) {
+		return 'analysis-region';
+	}
 	const root = expressionRootName(node);
 	if (root === 'options' || root === 'opts' || root === 'params') {
 		return 'optional-parameter';
@@ -2413,26 +2376,8 @@ function optionalChainBoundaryKind(node: ts.Expression, sourceFile: ts.SourceFil
 	if (root === 'metadata' || root === 'apiMetadata' || root === 'manifest' || root === 'layout' || root === 'specs' || root === 'ram') {
 		return 'data-contract';
 	}
-	if (isDebugLuaSourceOptionalChain(node, sourceFile)) {
-		return 'debug-lua-source';
-	}
-	if (isLinkerMetadataOptionalChain(node, sourceFile)) {
-		return 'linker-metadata';
-	}
 	if (isMapLookupProjectionOptionalChain(node)) {
 		return 'lookup-projection';
-	}
-	if (isValueTagGuardOptionalChain(node, sourceFile)) {
-		return 'value-tag-guard';
-	}
-	if (isOptionalCompileContextChain(node, sourceFile)) {
-		return 'compile-context';
-	}
-	if (isOptionalStringHandleChain(node, sourceFile)) {
-		return 'string-handle-table';
-	}
-	if (isNullableFrameStateSnapshot(node, sourceFile)) {
-		return 'frame-state-snapshot';
 	}
 	return null;
 }
@@ -2447,55 +2392,6 @@ function isMapLookupProjectionOptionalChain(node: ts.Expression): boolean {
 		return false;
 	}
 	return getCallTargetLeafName(receiver.expression) === 'get';
-}
-
-function isLinkerMetadataOptionalChain(node: ts.Expression, sourceFile: ts.SourceFile): boolean {
-	if (!sourcePathIncludes(sourceFile, '/src/bmsx/machine/program/linker.ts')) {
-		return false;
-	}
-	const root = expressionRootName(node);
-	return root === 'engineSymbols'
-		|| root === 'cartSymbols'
-		|| root === 'engineMetadata'
-		|| root === 'cartMetadata';
-}
-
-function isDebugLuaSourceOptionalChain(node: ts.Expression, sourceFile: ts.SourceFile): boolean {
-	if (!sourcePathIncludes(sourceFile, '/src/bmsx/machine/runtime/debug.ts')) {
-		return false;
-	}
-	const text = node.getText(sourceFile);
-	return text.startsWith('runtime.cartLuaSources?.')
-		|| text.startsWith('runtime.engineLuaSources?.');
-}
-
-function isValueTagGuardOptionalChain(node: ts.Expression, sourceFile: ts.SourceFile): boolean {
-	if (!sourcePathIncludes(sourceFile, '/src/bmsx/machine/cpu/cpu.ts')) {
-		return false;
-	}
-	const unwrapped = unwrapExpression(node);
-	return ts.isPropertyAccessExpression(unwrapped)
-		&& unwrapped.name.text === 'kind'
-		&& expressionRootName(unwrapped.expression) === 'value';
-}
-
-function isOptionalCompileContextChain(node: ts.Expression, sourceFile: ts.SourceFile): boolean {
-	if (!sourcePathIncludes(sourceFile, '/src/bmsx/machine/program/compiler.ts')) {
-		return false;
-	}
-	const text = node.getText(sourceFile);
-	return text.startsWith('parent?.moduleCompileContext')
-		|| text.startsWith('this.moduleCompileContext?.');
-}
-
-function isOptionalStringHandleChain(node: ts.Expression, sourceFile: ts.SourceFile): boolean {
-	return sourcePathIncludes(sourceFile, '/src/bmsx/machine/memory/string_pool.ts')
-		&& node.getText(sourceFile).startsWith('this.handleTable?.');
-}
-
-function isNullableFrameStateSnapshot(node: ts.Expression, sourceFile: ts.SourceFile): boolean {
-	return sourcePathIncludes(sourceFile, '/src/bmsx/machine/runtime/frame_loop.ts')
-		&& expressionRootName(node) === 'previousState';
 }
 
 function isTypeofFunctionComparison(node: ts.BinaryExpression): boolean {
@@ -2761,15 +2657,6 @@ function isNumericDefensiveCall(node: ts.CallExpression): boolean {
 		|| target === 'clamp';
 }
 
-function isContractNumericSanitizationFile(sourceFile: ts.SourceFile): boolean {
-	for (let index = 0; index < CONTRACT_NUMERIC_SANITIZATION_PATH_SEGMENTS.length; index += 1) {
-		if (sourcePathIncludes(sourceFile, CONTRACT_NUMERIC_SANITIZATION_PATH_SEGMENTS[index])) {
-			return true;
-		}
-	}
-	return false;
-}
-
 function isContractNumericPropertyAccess(node: ts.Expression): boolean {
 	const unwrapped = unwrapExpression(node);
 	if (!ts.isPropertyAccessExpression(unwrapped)) {
@@ -2841,9 +2728,6 @@ function isContractNumericSanitizerCall(node: ts.CallExpression): boolean {
 }
 
 function lintContractNumericDefensiveSanitizationPattern(node: ts.Node, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
-	if (!isContractNumericSanitizationFile(sourceFile)) {
-		return;
-	}
 	if (ts.isCallExpression(node) && isContractNumericSanitizerCall(node)) {
 		pushLintIssue(
 			issues,
@@ -3379,6 +3263,7 @@ function nullishFallbackLedgerKind(node: ts.BinaryExpression): string {
 function lintBinaryExpressionForCodeQuality(
 	node: ts.BinaryExpression,
 	sourceFile: ts.SourceFile,
+	regions: readonly AnalysisRegion[],
 	issues: LintIssue[],
 	ledger: QualityLedger):
 	void {
@@ -3412,7 +3297,7 @@ function lintBinaryExpressionForCodeQuality(
 				'Empty-string fallback via `??` is forbidden. Do not use empty strings as default values.',
 			);
 		}
-		if (isAllocationFallbackPath(sourceFile.fileName) && isAllocationExpression(node.right)) {
+		if (isAllocationExpression(node.right) && !nodeIsInAnalysisRegion(sourceFile, regions, 'allocation-fallback-acceptable', node)) {
 			if (isInsideConstructor(node)) {
 				noteQualityLedger(ledger, 'allowed_allocation_fallback_constructor_default');
 			} else {
@@ -3421,7 +3306,7 @@ function lintBinaryExpressionForCodeQuality(
 					sourceFile,
 					node.operatorToken,
 					'allocation_fallback_pattern',
-					'Allocation fallback via `??` is forbidden in machine runtime code. Use shared defaults, explicit branches, or require ownership at the call boundary.',
+					'Allocation fallback via `??` is forbidden. Use shared defaults, explicit branches, or require ownership at the call boundary.',
 				);
 			}
 		}
@@ -3548,41 +3433,8 @@ function hasPrivateOrProtectedModifier(node: ts.Node): boolean {
 	return false;
 }
 
-function isFirmwareCartApiMethod(functionNode: ts.Node, sourceFile: ts.SourceFile): boolean {
-	return sourceFile.fileName.endsWith('/src/bmsx/machine/firmware/api.ts')
-		&& ts.isMethodDeclaration(functionNode)
-		&& !hasPrivateOrProtectedModifier(functionNode);
-}
-
 function isPublicContractMethod(functionNode: ts.Node): boolean {
 	return ts.isMethodDeclaration(functionNode) && !hasPrivateOrProtectedModifier(functionNode);
-}
-
-function isBytecodeSpecializationBody(sourceFile: ts.SourceFile, name: string): boolean {
-	const fileName = sourceFile.fileName;
-	if (fileName.endsWith('/src/bmsx/machine/cpu/cpu.ts')) {
-		return /^(load|store)Table[A-Za-z]*Index(Cached)?$/.test(name);
-	}
-	if (fileName.endsWith('/src/bmsx/machine/program/compiler.ts')) {
-		return /^(emitModuleExport(?:Load|Store)|emitMemory(?:Load|Store)|compile(?:And|Or)Expression|resolveReference[A-Za-z]+)$/.test(name)
-			|| /^resolve(?:System)?GlobalSlot$/.test(name);
-	}
-	if (fileName.endsWith('/src/bmsx/machine/firmware/api.ts')) {
-		return name === 'registerFont';
-	}
-	if (fileName.endsWith('/src/bmsx/machine/program/load_compiler.ts')) {
-		return name === 'compileChunk' || name === 'compileReturnedFunction';
-	}
-	if (fileName.endsWith('/src/bmsx/machine/program/optimizer.ts')) {
-		return /^clear(?:Closure|Const)Range$/.test(name);
-	}
-	if (
-		fileName.endsWith('/src/bmsx/machine/program/optimizer_ssa.ts')
-		|| fileName.endsWith('/src/bmsx/machine/program/optimizer_values.ts')
-	) {
-		return /^replaceWith(?:Mov|Unm)$/.test(name);
-	}
-	return false;
 }
 
 function isTrivialDelegationCallExpression(callExpression: ts.CallExpression): boolean {
@@ -3617,7 +3469,7 @@ function isSingleLineWrapperCandidate(functionNode: ts.Node, sourceFile: ts.Sour
 	if (!ts.isFunctionDeclaration(functionNode) && !ts.isMethodDeclaration(functionNode)) {
 		return false;
 	}
-	if (hasExportModifier(functionNode) || isPublicContractMethod(functionNode) || isFirmwareCartApiMethod(functionNode, sourceFile)) {
+	if (hasExportModifier(functionNode) || isPublicContractMethod(functionNode)) {
 		return false;
 	}
 	const name = functionNode.name?.getText();
@@ -4002,6 +3854,7 @@ function normalizedAstFingerprint(node: ts.Node): string {
 
 function collectNormalizedBody(
 	sourceFile: ts.SourceFile,
+	regions: readonly AnalysisRegion[],
 	name: string,
 	node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
 	normalizedBodies: NormalizedBodyInfo[],
@@ -4019,8 +3872,8 @@ function collectNormalizedBody(
 		noteQualityLedger(ledger, 'skipped_normalized_body_public_contract');
 		return;
 	}
-	if (isBytecodeSpecializationBody(sourceFile, name)) {
-		noteQualityLedger(ledger, 'skipped_normalized_body_bytecode_specialization');
+	if (nodeIsInAnalysisRegion(sourceFile, regions, 'normalized-body-acceptable', node)) {
+		noteQualityLedger(ledger, 'skipped_normalized_body_analysis_region');
 		return;
 	}
 	const body = node.body;
@@ -4060,16 +3913,17 @@ function collectNormalizedBody(
 }
 
 function collectNormalizedBodies(sourceFile: ts.SourceFile, normalizedBodies: NormalizedBodyInfo[], ledger: QualityLedger): void {
+	const regions = collectAnalysisRegions(sourceFile.text);
 	const visit = (node: ts.Node): void => {
 		if (ts.isFunctionDeclaration(node) && node.name !== undefined) {
-			collectNormalizedBody(sourceFile, node.name.text, node, normalizedBodies, ledger);
+			collectNormalizedBody(sourceFile, regions, node.name.text, node, normalizedBodies, ledger);
 		} else if (ts.isMethodDeclaration(node) && node.body !== undefined) {
 			const name = getPropertyName(node.name);
 			if (name !== null) {
-				collectNormalizedBody(sourceFile, name, node, normalizedBodies, ledger);
+				collectNormalizedBody(sourceFile, regions, name, node, normalizedBodies, ledger);
 			}
 		} else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && isFunctionLikeValue(node.initializer)) {
-			collectNormalizedBody(sourceFile, node.name.text, node.initializer, normalizedBodies, ledger);
+			collectNormalizedBody(sourceFile, regions, node.name.text, node.initializer, normalizedBodies, ledger);
 		}
 		ts.forEachChild(node, visit);
 	};
@@ -4191,7 +4045,7 @@ function addSemanticNormalizedBodyDuplicateIssues(normalizedBodies: readonly Nor
 	}
 }
 
-function addRepeatedStatementSequenceIssues(sequences: readonly StatementSequenceInfo[], issues: LintIssue[], ledger: QualityLedger): void {
+function addRepeatedStatementSequenceIssues(sequences: readonly StatementSequenceInfo[], issues: LintIssue[]): void {
 	const byFingerprint = new Map<string, StatementSequenceInfo[]>();
 	for (let index = 0; index < sequences.length; index += 1) {
 		const entry = sequences[index];
@@ -4212,21 +4066,11 @@ function addRepeatedStatementSequenceIssues(sequences: readonly StatementSequenc
 		});
 	for (let groupIndex = 0; groupIndex < duplicateGroups.length; groupIndex += 1) {
 		const list = duplicateGroups[groupIndex];
-		const reportable: StatementSequenceInfo[] = [];
-		for (let entryIndex = 0; entryIndex < list.length; entryIndex += 1) {
-			const entry = list[entryIndex];
-			const skipKind = repeatedStatementSequenceSkipKind(entry);
-			if (skipKind !== null) {
-				noteQualityLedger(ledger, `skipped_repeated_statement_sequence_${skipKind}`);
-			} else {
-				reportable.push(entry);
-			}
-		}
-		if (reportable.length <= 1) {
+		if (list.length <= 1) {
 			continue;
 		}
-		for (let entryIndex = 0; entryIndex < reportable.length; entryIndex += 1) {
-			const entry = reportable[entryIndex];
+		for (let entryIndex = 0; entryIndex < list.length; entryIndex += 1) {
+			const entry = list[entryIndex];
 			let ranges = reportedRanges.get(entry.file);
 			if (ranges === undefined) {
 				ranges = [];
@@ -4242,65 +4086,10 @@ function addRepeatedStatementSequenceIssues(sequences: readonly StatementSequenc
 				line: entry.line,
 				column: entry.column,
 				name: 'repeated_statement_sequence_pattern',
-				message: `${entry.statementCount} consecutive statements are copied in ${reportable.length} reportable places. Extract the shared operation or collapse the duplicated lifecycle block.`,
+				message: `${entry.statementCount} consecutive statements are copied in ${list.length} reportable places. Extract the shared operation or collapse the duplicated lifecycle block.`,
 			});
 		}
 	}
-}
-
-function repeatedStatementSequenceSkipKind(entry: StatementSequenceInfo): string | null {
-	const normalized = normalizePathForAnalysis(entry.file);
-	if (normalized.endsWith('/src/bmsx/machine/cpu/cpu.ts')) {
-		return 'cpu_specialization';
-	}
-	if (
-		normalized.endsWith('/src/bmsx/machine/program/compiler.ts')
-		|| normalized.endsWith('/src/bmsx/machine/program/optimizer.ts')
-		|| normalized.endsWith('/src/bmsx/machine/program/optimizer_ssa.ts')
-	) {
-		return 'compiler_specialization';
-	}
-	if (normalized.endsWith('/src/bmsx/machine/devices/vdp/vdp.ts')) {
-		return 'render_specialization';
-	}
-	if (normalized.endsWith('/src/bmsx/machine/firmware/input_state_tables.ts')) {
-		return 'input_state_table';
-	}
-	if (normalized.endsWith('/src/bmsx/machine/cpu/profiler.ts')) {
-		return 'profiler_aggregation';
-	}
-	if (normalized.endsWith('/src/bmsx/machine/program/executor.ts')) {
-		return 'external_call_frame';
-	}
-	if (normalized.endsWith('/src/bmsx/machine/program/linker.ts')) {
-		return 'relocation_encoding';
-	}
-	if (
-		(normalized.endsWith('/src/bmsx/machine/cpu/disassembler.ts') || normalized.endsWith('/src/bmsx/machine/firmware/globals.ts'))
-		&& entry.fingerprint.includes('isNativeFunction')
-		&& entry.fingerprint.includes('isNativeObject')
-	) {
-		return 'value_formatting';
-	}
-	if (normalized.endsWith('/src/bmsx/machine/firmware/js_bridge.ts') && entry.fingerprint.includes('table.forEachEntry')) {
-		return 'table_shape_scan';
-	}
-	if (
-		normalized.endsWith('/src/bmsx/machine/firmware/globals.ts')
-		&& (entry.fingerprint.includes('normalizeLuaIndex')
-			|| entry.fingerprint.includes('codepointCount')
-			|| entry.fingerprint.includes('getLuaPatternRegex'))
-	) {
-		return 'lua_string_pattern';
-	}
-	if (
-		normalized.endsWith('/src/bmsx/machine/scheduler/device.ts')
-		&& entry.fingerprint.includes('timerDeadlines')
-		&& entry.fingerprint.includes('timerGenerations')
-	) {
-		return 'scheduler_heap_storage';
-	}
-	return null;
 }
 
 function statementSequenceOverlapsReportedRange(entry: StatementSequenceInfo, ranges: readonly { start: number; end: number }[]): boolean {
@@ -4637,7 +4426,7 @@ function collectLintIssues(
 		}
 		if (ts.isBinaryExpression(node)) {
 			lintContractNumericDefensiveSanitizationPattern(node, sourceFile, issues);
-			lintBinaryExpressionForCodeQuality(node, sourceFile, issues, ledger);
+			lintBinaryExpressionForCodeQuality(node, sourceFile, regions, issues, ledger);
 		}
 		if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && node.text === '__native__') {
 			pushLintIssue(
@@ -4653,7 +4442,7 @@ function collectLintIssues(
 		}
 		if (ts.isSourceFile(node) || ts.isBlock(node) || ts.isCaseClause(node) || ts.isDefaultClause(node)) {
 			lintConsecutiveDuplicateStatements(node.statements, sourceFile, issues);
-			collectRepeatedStatementSequences(node.statements, sourceFile, statementSequences);
+			collectRepeatedStatementSequences(node.statements, sourceFile, regions, statementSequences);
 		}
 			if (ts.isIfStatement(node)) {
 				lintNullishReturnGuard(node, sourceFile, issues);
@@ -4741,7 +4530,7 @@ function collectLintIssues(
 			}
 			if (hasQuestionDotToken(node)) {
 				const root = expressionRootName(node as ts.Expression);
-				if (root !== null && REQUIRED_STATE_ROOTS.has(root)) {
+				if (root !== null && nodeHasAnalysisRegionLabel(sourceFile, regions, 'required-state', node, root)) {
 					pushLintIssue(
 						issues,
 						sourceFile,
@@ -4750,7 +4539,7 @@ function collectLintIssues(
 						`Optional chaining on required IDE/runtime root "${root}" is forbidden.`,
 					);
 				} else {
-					const boundaryKind = optionalChainBoundaryKind(node as ts.Expression, sourceFile);
+					const boundaryKind = optionalChainBoundaryKind(node as ts.Expression, sourceFile, regions);
 					if (boundaryKind === null) {
 						noteQualityLedger(ledger, 'unclassified_optional_chain');
 					} else {
@@ -5670,7 +5459,7 @@ function run(): void {
 	addDuplicateExportedTypeIssues(exportedTypes, lintIssues);
 	addNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
 	addSemanticNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
-	addRepeatedStatementSequenceIssues(statementSequences, lintIssues, ledger);
+	addRepeatedStatementSequenceIssues(statementSequences, lintIssues);
 	for (const sourceFile of sourceFiles) {
 		walkDeclarations(sourceFile, buckets, classInfosByKey, classInfosByName, classInfosByFileName);
 	}

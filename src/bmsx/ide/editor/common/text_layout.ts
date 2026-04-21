@@ -1,4 +1,5 @@
 // @bmsx-analyse start hot-path -- editor text measurement/layout helpers run during render and caret updates.
+// @bmsx-analyse start required-state editorDocumentState,editorViewState,runtimeErrorState -- editor state roots are owned singletons in this module.
 import { getCodeAreaBounds } from '../ui/view/view';
 import { rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/overlay';
 import { runtimeErrorState } from '../contrib/runtime_error/state';
@@ -127,4 +128,5 @@ export function currentLine(): string {
 	}
 	return editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
 }
+// @bmsx-analyse end required-state
 // @bmsx-analyse end hot-path

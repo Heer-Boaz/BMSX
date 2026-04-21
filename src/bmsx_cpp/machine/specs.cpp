@@ -31,6 +31,7 @@ i64 requirePositiveManifestValue(const std::optional<i64>& value, const char* mi
 	return *value;
 }
 
+// @bmsx-analyse start value-or-boundary -- manifest defaults are resolved at the manifest boundary.
 i64 resolvePositiveManifestValue(const std::optional<i64>& value, i64 defaultValue, const char* invalidMessage) {
 	const i64 resolved = value.value_or(defaultValue);
 	if (resolved <= 0) {
@@ -38,6 +39,7 @@ i64 resolvePositiveManifestValue(const std::optional<i64>& value, i64 defaultVal
 	}
 	return resolved;
 }
+// @bmsx-analyse end value-or-boundary
 
 i64 requireManifestValueAbove(const std::optional<i64>& value, i64 minimumExclusive, const char* missingMessage, const char* invalidMessage) {
 	if (!value) {
