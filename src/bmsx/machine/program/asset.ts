@@ -241,7 +241,7 @@ export function buildModuleAliasMap(entries: ReadonlyArray<{ alias: string; path
 	return map;
 }
 
-function stripLuaExtension(candidate: string): string {
+export function stripLuaExtension(candidate: string): string {
 	const lower = candidate.toLowerCase();
 	if (lower.endsWith('.lua')) {
 		return candidate.slice(0, candidate.length - 4);

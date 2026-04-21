@@ -851,6 +851,10 @@ function isNullishEqualityOperator(kind: ts.SyntaxKind): boolean {
 	return kind === ts.SyntaxKind.EqualsEqualsToken || kind === ts.SyntaxKind.EqualsEqualsEqualsToken;
 }
 
+function isPositiveEqualityOperator(kind: ts.SyntaxKind): boolean {
+	return kind === ts.SyntaxKind.EqualsEqualsToken || kind === ts.SyntaxKind.EqualsEqualsEqualsToken;
+}
+
 function isExpressionInScopeFingerprint(node: ts.Expression): string | null {
 	if (ts.isIdentifier(node)) {
 		return `id:${node.text}`;
@@ -1378,6 +1382,14 @@ function isNestedInsideNumericSanitizationCall(node: ts.CallExpression, parent: 
 	return false;
 }
 
+function isSemanticFloorDivisionCall(node: ts.CallExpression): boolean {
+	if (callTargetText(node) !== 'Math.floor' || node.arguments.length !== 1) {
+		return false;
+	}
+	const argument = unwrapExpression(node.arguments[0]);
+	return ts.isBinaryExpression(argument) && argument.operatorToken.kind === ts.SyntaxKind.SlashToken;
+}
+
 function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
 	const statements = node.block.statements;
 	if (statements.length === 0) {
@@ -1475,6 +1487,9 @@ function lintRedundantNumericSanitizationPattern(
 		return;
 	}
 	if (isNestedInsideNumericSanitizationCall(node, node.parent)) {
+		return;
+	}
+	if (isSemanticFloorDivisionCall(node)) {
 		return;
 	}
 	if (!containsNestedNumericSanitizationCall(node) && !hasBoundedNumericHint(node)) {
@@ -2217,6 +2232,119 @@ function lintStringSwitchChain(node: ts.IfStatement, sourceFile: ts.SourceFile, 
 	});
 }
 
+type ExplicitValueCheck = {
+	readonly subject: string;
+	readonly isPositive: boolean;
+};
+
+function falseLiteralComparison(node: ts.Expression): ExplicitValueCheck | null {
+	const unwrapped = unwrapExpression(node);
+	if (!ts.isBinaryExpression(unwrapped)) {
+		return null;
+	}
+	const operatorKind = unwrapped.operatorToken.kind;
+	if (!isEqualityOperator(operatorKind)) {
+		return null;
+	}
+	const leftBoolean = isBooleanLiteral(unwrapped.left);
+	const rightBoolean = isBooleanLiteral(unwrapped.right);
+	const leftHasBoolean = leftBoolean !== null;
+	const rightHasBoolean = rightBoolean !== null;
+	if (leftHasBoolean === rightHasBoolean) {
+		return null;
+	}
+	if (leftHasBoolean) {
+		if (leftBoolean) {
+			return null;
+		}
+		const subject = isExpressionInScopeFingerprint(unwrapped.right);
+		if (subject === null) {
+			return null;
+		}
+		return {
+			subject,
+			isPositive: isPositiveEqualityOperator(operatorKind),
+		};
+	}
+	if (rightBoolean) {
+		return null;
+	}
+	const subject = isExpressionInScopeFingerprint(unwrapped.left);
+	if (subject === null) {
+		return null;
+	}
+	return {
+		subject,
+		isPositive: isPositiveEqualityOperator(operatorKind),
+	};
+}
+
+function nullishLiteralComparison(node: ts.Expression): ExplicitValueCheck | null {
+	const unwrapped = unwrapExpression(node);
+	if (!ts.isBinaryExpression(unwrapped)) {
+		return null;
+	}
+	const operatorKind = unwrapped.operatorToken.kind;
+	if (!isEqualityOperator(operatorKind)) {
+		return null;
+	}
+	let subject: string | null = null;
+	if (isNullOrUndefined(unwrapped.left)) {
+		subject = isExpressionInScopeFingerprint(unwrapped.right);
+	} else if (isNullOrUndefined(unwrapped.right)) {
+		subject = isExpressionInScopeFingerprint(unwrapped.left);
+	}
+	if (subject === null) {
+		return null;
+	}
+	return {
+		subject,
+		isPositive: isPositiveEqualityOperator(operatorKind),
+	};
+}
+
+function binaryParentAndSibling(node: ts.Expression): { parent: ts.BinaryExpression; sibling: ts.Expression } | null {
+	let current: ts.Node = node;
+	let parent = current.parent;
+	while (
+		parent !== undefined
+		&& (ts.isParenthesizedExpression(parent) || ts.isAsExpression(parent) || ts.isNonNullExpression(parent))
+	) {
+		current = parent;
+		parent = parent.parent;
+	}
+	if (parent === undefined || !ts.isBinaryExpression(parent)) {
+		return null;
+	}
+	if (parent.left === current) {
+		return { parent, sibling: parent.right };
+	}
+	if (parent.right === current) {
+		return { parent, sibling: parent.left };
+	}
+	return null;
+}
+
+function isExplicitNonJsTruthinessPair(node: ts.BinaryExpression): boolean {
+	const falseCheck = falseLiteralComparison(node);
+	if (falseCheck === null) {
+		return false;
+	}
+	const context = binaryParentAndSibling(node);
+	if (context === null) {
+		return false;
+	}
+	const nullishCheck = nullishLiteralComparison(context.sibling);
+	if (nullishCheck === null || nullishCheck.subject !== falseCheck.subject || nullishCheck.isPositive !== falseCheck.isPositive) {
+		return false;
+	}
+	const pairOperatorKind = context.parent.operatorToken.kind;
+	if (falseCheck.isPositive) {
+		return pairOperatorKind === ts.SyntaxKind.BarBarToken;
+	}
+	return pairOperatorKind === ts.SyntaxKind.AmpersandAmpersandToken;
+}
+
 function lintBinaryExpressionForCodeQuality(
 	node: ts.BinaryExpression,
 	sourceFile: ts.SourceFile,
@@ -2274,7 +2402,11 @@ function lintBinaryExpressionForCodeQuality(
 		}
 		const leftBoolean = isBooleanLiteral(node.left);
 		const rightBoolean = isBooleanLiteral(node.right);
-		if ((leftBoolean !== null || rightBoolean !== null) && !(leftBoolean !== null && rightBoolean !== null)) {
+		if (
+			(leftBoolean !== null || rightBoolean !== null)
+			&& !(leftBoolean !== null && rightBoolean !== null)
+			&& !isExplicitNonJsTruthinessPair(node)
+		) {
 			const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
 			issues.push({
 				kind: 'explicit_truthy_comparison_pattern',

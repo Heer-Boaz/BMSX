@@ -1,8 +1,21 @@
 import { OpCode, type SourceRange, type Value } from '../cpu/cpu';
-import { MAX_EXT_CONST, MAX_SIGNED_BX, MIN_SIGNED_BX } from '../cpu/instruction_format';
-import { isStringValue, stringValueToString } from '../memory/string_pool';
-import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, type Block } from './control_flow';
+import { MAX_EXT_CONST } from '../cpu/instruction_format';
+import { isStringValue } from '../memory/string_pool';
+import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from './control_flow';
 import type { Instruction, InstructionSet, OptimizationContext } from './optimizer';
+import { cloneInstruction, computeMaxRegister, isPureInstruction, isRegisterOperand, pushRegister, pushRegisterRange } from './optimizer_instructions';
+import {
+	evaluateBinary,
+	evaluateComparison,
+	evaluateUnary,
+	getImmediateConstValue,
+	isConstPoolValue,
+	isTruthy,
+	replaceWithConst,
+	replaceWithJump,
+	replaceWithMov,
+	type ConstValue,
+} from './optimizer_values';
 
 type Phi = {
 	reg: number;
@@ -26,11 +39,6 @@ type ValueDef = {
 	index: number;
 };
 
-type ConstValue = {
-	value: Value;
-	constIndex: number;
-};
-
 type DefSlot = {
 	reg: number;
 	valueId: number;
@@ -41,160 +49,6 @@ const RK_C = 2;
 const SCCP_UNDEF = 0;
 const SCCP_CONST = 1;
 const SCCP_OVERDEFINED = 2;
-
-const getImmediateConstValue = (instruction: Instruction, context: OptimizationContext): ConstValue | null => {
-	switch (instruction.op) {
-		case OpCode.KNIL:
-			return { value: null, constIndex: context.constIndex(null) };
-		case OpCode.KFALSE:
-			return { value: false, constIndex: context.constIndex(false) };
-		case OpCode.KTRUE:
-			return { value: true, constIndex: context.constIndex(true) };
-		case OpCode.K0:
-			return { value: 0, constIndex: context.constIndex(0) };
-		case OpCode.K1:
-			return { value: 1, constIndex: context.constIndex(1) };
-		case OpCode.KM1:
-			return { value: -1, constIndex: context.constIndex(-1) };
-		case OpCode.KSMI:
-			return { value: instruction.b, constIndex: context.constIndex(instruction.b) };
-		default:
-			return null;
-	}
-};
-
-const computeMaxRegister = (instructions: Instruction[]): number => {
-	let maxRegister = 0;
-	const updateMax = (register: number): void => {
-		if (register > maxRegister) {
-			maxRegister = register;
-		}
-	};
-	for (const instruction of instructions) {
-		switch (instruction.op) {
-			case OpCode.KNIL:
-			case OpCode.KFALSE:
-			case OpCode.KTRUE:
-			case OpCode.K0:
-			case OpCode.K1:
-			case OpCode.KM1:
-			case OpCode.KSMI:
-			case OpCode.LOADK:
-			case OpCode.LOADNIL:
-			case OpCode.LOADBOOL:
-			case OpCode.GETG:
-			case OpCode.GETSYS:
-			case OpCode.GETGL:
-			case OpCode.GETI:
-			case OpCode.GETFIELD:
-			case OpCode.NEWT:
-			case OpCode.CLOSURE:
-			case OpCode.GETUP:
-				updateMax(instruction.a);
-				break;
-			case OpCode.SETG:
-			case OpCode.SETSYS:
-			case OpCode.SETGL:
-			case OpCode.SETUP:
-			case OpCode.TEST:
-			case OpCode.JMPIF:
-			case OpCode.JMPIFNOT:
-			case OpCode.BR_TRUE:
-			case OpCode.BR_FALSE:
-			case OpCode.LOAD_MEM:
-				updateMax(instruction.a);
-				if (instruction.op === OpCode.LOAD_MEM) {
-					updateMax(instruction.b);
-				}
-				break;
-			case OpCode.MOV:
-			case OpCode.UNM:
-			case OpCode.NOT:
-			case OpCode.LEN:
-			case OpCode.BNOT:
-				updateMax(instruction.a);
-				updateMax(instruction.b);
-				break;
-			case OpCode.ADD:
-			case OpCode.SUB:
-			case OpCode.MUL:
-			case OpCode.DIV:
-			case OpCode.MOD:
-			case OpCode.FLOORDIV:
-			case OpCode.POW:
-			case OpCode.BAND:
-			case OpCode.BOR:
-			case OpCode.BXOR:
-			case OpCode.SHL:
-			case OpCode.SHR:
-			case OpCode.CONCAT:
-			case OpCode.EQ:
-			case OpCode.LT:
-			case OpCode.LE:
-			case OpCode.GETT:
-			case OpCode.SETT: {
-				updateMax(instruction.a);
-				if (instruction.b >= 0) {
-					updateMax(instruction.b);
-				}
-				if (instruction.c >= 0) {
-					updateMax(instruction.c);
-				}
-				break;
-			}
-			case OpCode.SETI:
-			case OpCode.SETFIELD: {
-				updateMax(instruction.a);
-				if (instruction.c >= 0) {
-					updateMax(instruction.c);
-				}
-				break;
-			}
-			case OpCode.SELF:
-				updateMax(instruction.a);
-				updateMax(instruction.a + 1);
-				updateMax(instruction.b);
-				break;
-			case OpCode.CONCATN: {
-				updateMax(instruction.a);
-				updateMax(instruction.b);
-				updateMax(instruction.b + Math.max(instruction.c - 1, 0));
-				break;
-			}
-			case OpCode.TESTSET:
-				updateMax(instruction.a);
-				updateMax(instruction.b);
-				break;
-			case OpCode.VARARG:
-				updateMax(instruction.a);
-				updateMax(instruction.a + Math.max(instruction.b - 1, 0));
-				break;
-			case OpCode.CALL:
-			case OpCode.RET: {
-				updateMax(instruction.a);
-				if (instruction.b > 0) {
-					updateMax(instruction.a + instruction.b - 1);
-				}
-				if (instruction.op === OpCode.CALL && instruction.c > 0) {
-					updateMax(instruction.a + instruction.c - 1);
-				}
-				break;
-			}
-			case OpCode.STORE_MEM:
-				updateMax(instruction.a);
-				updateMax(instruction.b);
-				break;
-			case OpCode.STORE_MEM_WORDS:
-				updateMax(instruction.a);
-				updateMax(instruction.a + Math.max(instruction.c - 1, 0));
-				updateMax(instruction.b);
-				break;
-			default:
-				break;
-		}
-	}
-	return maxRegister;
-};
 
 const supportsRkB = (op: OpCode): boolean => {
 	switch (op) {
@@ -283,56 +137,18 @@ const isValueNumberable = (op: OpCode): boolean => {
 	}
 };
 
-const isPureInstruction = (instruction: Instruction): boolean => {
-	switch (instruction.op) {
-		case OpCode.MOV:
-		case OpCode.KNIL:
-		case OpCode.KFALSE:
-		case OpCode.KTRUE:
-		case OpCode.K0:
-		case OpCode.K1:
-		case OpCode.KM1:
-		case OpCode.KSMI:
-		case OpCode.LOADK:
-		case OpCode.LOADNIL:
-		case OpCode.NEWT:
-		case OpCode.ADD:
-		case OpCode.SUB:
-		case OpCode.MUL:
-		case OpCode.DIV:
-		case OpCode.MOD:
-		case OpCode.FLOORDIV:
-		case OpCode.POW:
-		case OpCode.BAND:
-		case OpCode.BOR:
-		case OpCode.BXOR:
-		case OpCode.SHL:
-		case OpCode.SHR:
-		case OpCode.CONCAT:
-		case OpCode.CONCATN:
-		case OpCode.UNM:
-		case OpCode.NOT:
-		case OpCode.BNOT:
-		case OpCode.CLOSURE:
-		case OpCode.GETUP:
-		case OpCode.VARARG:
-			return true;
-		case OpCode.LOADBOOL:
-			return instruction.c === 0;
-		default:
-			return false;
+const intersectImmediateDominator = (idom: number[], rpoIndex: number[], a: number, b: number): number => {
+	let finger1 = a;
+	let finger2 = b;
+	while (finger1 !== finger2) {
+		while (rpoIndex[finger1] > rpoIndex[finger2]) {
+			finger1 = idom[finger1];
+		}
+		while (rpoIndex[finger2] > rpoIndex[finger1]) {
+			finger2 = idom[finger2];
+		}
 	}
-};
-
-const replaceWithMov = (instruction: Instruction, dst: number, src: number): void => {
-	instruction.op = OpCode.MOV;
-	instruction.a = dst;
-	instruction.b = src;
-	instruction.c = 0;
-	instruction.format = 'ABC';
-	instruction.rkMask = 0;
-	instruction.target = null;
-	instruction.callProtoIndex = null;
+	return finger1;
 };
 
 const replaceWithUnm = (instruction: Instruction, dst: number, src: number): void => {
@@ -343,17 +159,6 @@ const replaceWithUnm = (instruction: Instruction, dst: number, src: number): voi
 	instruction.format = 'ABC';
 	instruction.rkMask = 0;
 	instruction.target = null;
-	instruction.callProtoIndex = null;
-};
-
-const replaceWithJump = (instruction: Instruction, target: number): void => {
-	instruction.op = OpCode.JMP;
-	instruction.a = 0;
-	instruction.b = 0;
-	instruction.c = 0;
-	instruction.format = 'AsBx';
-	instruction.rkMask = 0;
-	instruction.target = target;
 	instruction.callProtoIndex = null;
 };
 
@@ -482,144 +287,6 @@ const simplifyBranches = (
 			default:
 				break;
 		}
-	}
-};
-
-const replaceWithConst = (instruction: Instruction, target: number, value: Value, context: OptimizationContext): ConstValue => {
-	instruction.target = null;
-	instruction.rkMask = 0;
-	instruction.callProtoIndex = null;
-	if (value === null) {
-		instruction.op = OpCode.KNIL;
-		instruction.a = target;
-		instruction.b = 0;
-		instruction.c = 0;
-		instruction.format = 'ABC';
-		return { value, constIndex: context.constIndex(null) };
-	}
-	if (typeof value === 'boolean') {
-		instruction.op = value ? OpCode.KTRUE : OpCode.KFALSE;
-		instruction.a = target;
-		instruction.b = 0;
-		instruction.c = 0;
-		instruction.format = 'ABC';
-		return { value, constIndex: context.constIndex(value) };
-	}
-	if (typeof value === 'number' && Number.isInteger(value)) {
-		if (value === 0) {
-			instruction.op = OpCode.K0;
-			instruction.a = target;
-			instruction.b = 0;
-			instruction.c = 0;
-			instruction.format = 'ABC';
-			return { value, constIndex: context.constIndex(value) };
-		}
-		if (value === 1) {
-			instruction.op = OpCode.K1;
-			instruction.a = target;
-			instruction.b = 0;
-			instruction.c = 0;
-			instruction.format = 'ABC';
-			return { value, constIndex: context.constIndex(value) };
-		}
-		if (value === -1) {
-			instruction.op = OpCode.KM1;
-			instruction.a = target;
-			instruction.b = 0;
-			instruction.c = 0;
-			instruction.format = 'ABC';
-			return { value, constIndex: context.constIndex(value) };
-		}
-		if (value >= MIN_SIGNED_BX && value <= MAX_SIGNED_BX) {
-			instruction.op = OpCode.KSMI;
-			instruction.a = target;
-			instruction.b = value;
-			instruction.c = 0;
-			instruction.format = 'ABx';
-			return { value, constIndex: context.constIndex(value) };
-		}
-	}
-	const constIndex = context.constIndex(value);
-	instruction.op = OpCode.LOADK;
-	instruction.a = target;
-	instruction.b = constIndex;
-	instruction.c = 0;
-	instruction.format = 'ABx';
-	return { value, constIndex };
-};
-
-const evaluateUnary = (op: OpCode, value: Value): Value | null => {
-	switch (op) {
-		case OpCode.UNM:
-			return -(value as number);
-		case OpCode.BNOT:
-			return ~(value as number);
-		case OpCode.NOT:
-			return value === null || value === false;
-		case OpCode.LEN:
-			if (isStringValue(value)) {
-				return value.codepointCount;
-			}
-			return null;
-		default:
-			return null;
-	}
-};
-
-const evaluateBinary = (op: OpCode, left: Value, right: Value): Value | null => {
-	const leftNum = Number(left as number);
-	const rightNum = Number(right as number);
-	switch (op) {
-		case OpCode.ADD:
-			return leftNum + rightNum;
-		case OpCode.SUB:
-			return leftNum - rightNum;
-		case OpCode.MUL:
-			return leftNum * rightNum;
-		case OpCode.DIV:
-			return leftNum / rightNum;
-		case OpCode.MOD:
-			return leftNum % rightNum;
-		case OpCode.FLOORDIV:
-			return Math.floor(leftNum / rightNum);
-		case OpCode.POW:
-			return Math.pow(leftNum, rightNum);
-		case OpCode.BAND:
-			return leftNum & rightNum;
-		case OpCode.BOR:
-			return leftNum | rightNum;
-		case OpCode.BXOR:
-			return leftNum ^ rightNum;
-		case OpCode.SHL:
-			return leftNum << (rightNum & 31);
-		case OpCode.SHR:
-			return leftNum >> (rightNum & 31);
-		default:
-			return null;
-	}
-};
-
-const isTruthy = (value: Value): boolean => value !== null && value !== false;
-
-const isConstPoolValue = (value: Value): boolean =>
-	value === null || typeof value === 'boolean' || typeof value === 'number' || isStringValue(value);
-
-const evaluateComparison = (op: OpCode, left: Value, right: Value): boolean | null => {
-	switch (op) {
-		case OpCode.EQ:
-			return left === right;
-		case OpCode.LT:
-			if (isStringValue(left) && isStringValue(right)) {
-				return stringValueToString(left) < stringValueToString(right);
-			}
-			return (left as number) < (right as number);
-		case OpCode.LE:
-			if (isStringValue(left) && isStringValue(right)) {
-				return stringValueToString(left) <= stringValueToString(right);
-			}
-			return (left as number) <= (right as number);
-		default:
-			return null;
 	}
 };
 
@@ -1181,23 +848,13 @@ const collectUsesForSsa = (instruction: Instruction): UseOperand[] => {
 
 const collectUsesForLiveness = (instruction: Instruction, maxRegister: number): number[] => {
 	const uses: number[] = [];
-	const add = (reg: number): void => {
-		if (reg >= 0) {
-			uses.push(reg);
-		}
-	};
-	const addRange = (base: number, count: number): void => {
-		for (let offset = 0; offset < count; offset += 1) {
-			add(base + offset);
-		}
-	};
 	switch (instruction.op) {
 		case OpCode.MOV:
 		case OpCode.UNM:
 		case OpCode.NOT:
 		case OpCode.LEN:
 		case OpCode.BNOT:
-			add(instruction.b);
+			pushRegister(uses, instruction.b);
 			break;
 		case OpCode.SETG:
 		case OpCode.SETSYS:
@@ -1208,36 +865,36 @@ const collectUsesForLiveness = (instruction: Instruction, maxRegister: number): 
 		case OpCode.JMPIFNOT:
 		case OpCode.BR_TRUE:
 		case OpCode.BR_FALSE:
-			add(instruction.a);
+			pushRegister(uses, instruction.a);
 			break;
 		case OpCode.TESTSET:
-			add(instruction.b);
+			pushRegister(uses, instruction.b);
 			break;
 		case OpCode.GETI:
 		case OpCode.GETFIELD:
 		case OpCode.SELF:
-			add(instruction.b);
+			pushRegister(uses, instruction.b);
 			break;
 		case OpCode.GETT:
-			add(instruction.b);
-			if ((instruction.rkMask & RK_C) === 0 || instruction.c >= 0) {
-				add(instruction.c);
+			pushRegister(uses, instruction.b);
+			if (isRegisterOperand(instruction, RK_C, instruction.c)) {
+				pushRegister(uses, instruction.c);
 			}
 			break;
 		case OpCode.SETI:
 		case OpCode.SETFIELD:
-			add(instruction.a);
-			if ((instruction.rkMask & RK_C) === 0 || instruction.c >= 0) {
-				add(instruction.c);
+			pushRegister(uses, instruction.a);
+			if (isRegisterOperand(instruction, RK_C, instruction.c)) {
+				pushRegister(uses, instruction.c);
 			}
 			break;
 		case OpCode.SETT:
-			add(instruction.a);
-			if ((instruction.rkMask & RK_B) === 0 || instruction.b >= 0) {
-				add(instruction.b);
+			pushRegister(uses, instruction.a);
+			if (isRegisterOperand(instruction, RK_B, instruction.b)) {
+				pushRegister(uses, instruction.b);
 			}
-			if ((instruction.rkMask & RK_C) === 0 || instruction.c >= 0) {
-				add(instruction.c);
+			if (isRegisterOperand(instruction, RK_C, instruction.c)) {
+				pushRegister(uses, instruction.c);
 			}
 			break;
 		case OpCode.ADD:
@@ -1256,35 +913,35 @@ const collectUsesForLiveness = (instruction: Instruction, maxRegister: number): 
 		case OpCode.EQ:
 		case OpCode.LT:
 		case OpCode.LE:
-			if ((instruction.rkMask & RK_B) === 0 || instruction.b >= 0) {
-				add(instruction.b);
+			if (isRegisterOperand(instruction, RK_B, instruction.b)) {
+				pushRegister(uses, instruction.b);
 			}
-			if ((instruction.rkMask & RK_C) === 0 || instruction.c >= 0) {
-				add(instruction.c);
+			if (isRegisterOperand(instruction, RK_C, instruction.c)) {
+				pushRegister(uses, instruction.c);
 			}
 			break;
 		case OpCode.CONCATN:
-			addRange(instruction.b, instruction.c);
+			pushRegisterRange(uses, instruction.b, instruction.c);
 			break;
 		case OpCode.LOAD_MEM:
-			add(instruction.b);
+			pushRegister(uses, instruction.b);
 			break;
 		case OpCode.STORE_MEM:
-			add(instruction.a);
-			add(instruction.b);
+			pushRegister(uses, instruction.a);
+			pushRegister(uses, instruction.b);
 			break;
 		case OpCode.STORE_MEM_WORDS:
-			addRange(instruction.a, instruction.c);
-			add(instruction.b);
+			pushRegisterRange(uses, instruction.a, instruction.c);
+			pushRegister(uses, instruction.b);
 			break;
 		case OpCode.CALL: {
 			const countValue = instruction.b === 0 ? maxRegister - instruction.a : instruction.b;
-			addRange(instruction.a, countValue + 1);
+			pushRegisterRange(uses, instruction.a, countValue + 1);
 			break;
 		}
 		case OpCode.RET: {
 			const countValue = instruction.b === 0 ? maxRegister - instruction.a + 1 : instruction.b;
-			addRange(instruction.a, countValue);
+			pushRegisterRange(uses, instruction.a, countValue);
 			break;
 		}
 		default:
@@ -1295,16 +952,6 @@ const collectUsesForLiveness = (instruction: Instruction, maxRegister: number): 
 
 const collectDefs = (instruction: Instruction, maxRegister: number): number[] => {
 	const defs: number[] = [];
-	const add = (reg: number): void => {
-		if (reg >= 0) {
-			defs.push(reg);
-		}
-	};
-	const addRange = (base: number, count: number): void => {
-		for (let offset = 0; offset < count; offset += 1) {
-			add(base + offset);
-		}
-	};
 	switch (instruction.op) {
 		case OpCode.MOV:
 		case OpCode.KNIL:
@@ -1344,28 +991,28 @@ const collectDefs = (instruction: Instruction, maxRegister: number): number[] =>
 		case OpCode.CLOSURE:
 		case OpCode.GETUP:
 		case OpCode.LOAD_MEM:
-			add(instruction.a);
+			pushRegister(defs, instruction.a);
 			break;
 		case OpCode.SELF:
-			addRange(instruction.a, 2);
+			pushRegisterRange(defs, instruction.a, 2);
 			break;
 		case OpCode.TESTSET:
-			add(instruction.a);
+			pushRegister(defs, instruction.a);
 			break;
 		case OpCode.SETI:
 		case OpCode.SETFIELD:
 			break;
 		case OpCode.LOADNIL:
-			addRange(instruction.a, instruction.b);
+			pushRegisterRange(defs, instruction.a, instruction.b);
 			break;
 		case OpCode.VARARG: {
 			const countValue = instruction.b === 0 ? maxRegister - instruction.a + 1 : instruction.b;
-			addRange(instruction.a, countValue);
+			pushRegisterRange(defs, instruction.a, countValue);
 			break;
 		}
 		case OpCode.CALL: {
 			const countValue = instruction.c === 0 ? maxRegister - instruction.a + 1 : instruction.c;
-			addRange(instruction.a, countValue);
+			pushRegisterRange(defs, instruction.a, countValue);
 			break;
 		}
 		default:
@@ -1768,17 +1415,6 @@ const simplifyAlgebraic = (instructions: Instruction[], context: OptimizationCon
 	}
 };
 
-const cloneInstruction = (instruction: Instruction): Instruction => ({
-	op: instruction.op,
-	a: instruction.a,
-	b: instruction.b,
-	c: instruction.c,
-	format: instruction.format,
-	rkMask: instruction.rkMask,
-	target: instruction.target,
-	callProtoIndex: instruction.callProtoIndex,
-});
-
 const isControlFlowInstruction = (instruction: Instruction): boolean => {
 	if (instruction.op === OpCode.RET) {
 		return true;
@@ -1872,19 +1508,6 @@ const computeDominators = (
 
 	const idom = new Array<number>(blocks.length).fill(-1);
 	idom[0] = 0;
-	const intersect = (a: number, b: number): number => {
-		let finger1 = a;
-		let finger2 = b;
-		while (finger1 !== finger2) {
-			while (rpoIndex[finger1] > rpoIndex[finger2]) {
-				finger1 = idom[finger1];
-			}
-			while (rpoIndex[finger2] > rpoIndex[finger1]) {
-				finger2 = idom[finger2];
-			}
-		}
-		return finger1;
-	};
 
 	let changed = true;
 	while (changed) {
@@ -1908,7 +1531,7 @@ const computeDominators = (
 				if (pred === newIdom || idom[pred] === -1) {
 					continue;
 				}
-				newIdom = intersect(pred, newIdom);
+				newIdom = intersectImmediateDominator(idom, rpoIndex, pred, newIdom);
 			}
 			if (idom[blockIndex] !== newIdom) {
 				idom[blockIndex] = newIdom;
@@ -2546,57 +2169,6 @@ const applyLoopOptimizations = (set: InstructionSet, context: OptimizationContex
 	return current;
 };
 
-const remapInstructions = (
-	instructions: Instruction[],
-	ranges: Array<SourceRange | null>,
-	keep: boolean[],
-	forwardRemovedTargets: boolean,
-): InstructionSet => {
-	const count = instructions.length;
-	const indexMap = new Array<number>(count);
-	let newIndex = 0;
-	for (let i = 0; i < count; i += 1) {
-		if (keep[i]) {
-			indexMap[i] = newIndex;
-			newIndex += 1;
-		} else {
-			indexMap[i] = -1;
-		}
-	}
-	const forwardMap = new Array<number>(count);
-	let nextKept = newIndex;
-	for (let i = count - 1; i >= 0; i -= 1) {
-		if (keep[i]) {
-			nextKept = indexMap[i];
-		}
-		forwardMap[i] = nextKept;
-	}
-
-	const nextInstructions: Instruction[] = new Array(newIndex);
-	const nextRanges: Array<SourceRange | null> = new Array(newIndex);
-	let writeIndex = 0;
-	for (let i = 0; i < count; i += 1) {
-		if (!keep[i]) {
-			continue;
-		}
-		const instruction = instructions[i];
-		if (isJump(instruction)) {
-			const target = getJumpTarget(instruction);
-			const mappedTarget = target === count
-				? newIndex
-				: (forwardRemovedTargets ? forwardMap[target] : indexMap[target]);
-			if (mappedTarget < 0) {
-				throw new Error(`[ProgramOptimizer] Jump target ${target} was removed.`);
-			}
-			instruction.target = mappedTarget;
-		}
-		nextInstructions[writeIndex] = instruction;
-		nextRanges[writeIndex] = ranges[i];
-		writeIndex += 1;
-	}
-	return { instructions: nextInstructions, ranges: nextRanges };
-};
-
 const eliminateDeadStoresGlobal = (set: InstructionSet, context: OptimizationContext): InstructionSet => {
 	const { instructions, ranges } = set;
 	const count = instructions.length;
@@ -2781,19 +2353,6 @@ export const applyGlobalOptimizations = (
 
 	const idom = new Array<number>(blocks.length).fill(-1);
 	idom[0] = 0;
-	const intersect = (a: number, b: number): number => {
-		let finger1 = a;
-		let finger2 = b;
-		while (finger1 !== finger2) {
-			while (rpoIndex[finger1] > rpoIndex[finger2]) {
-				finger1 = idom[finger1];
-			}
-			while (rpoIndex[finger2] > rpoIndex[finger1]) {
-				finger2 = idom[finger2];
-			}
-		}
-		return finger1;
-	};
 
 	let changed = true;
 	while (changed) {
@@ -2817,7 +2376,7 @@ export const applyGlobalOptimizations = (
 				if (pred === newIdom || idom[pred] === -1) {
 					continue;
 				}
-				newIdom = intersect(pred, newIdom);
+				newIdom = intersectImmediateDominator(idom, rpoIndex, pred, newIdom);
 			}
 			if (idom[blockIndex] !== newIdom) {
 				idom[blockIndex] = newIdom;

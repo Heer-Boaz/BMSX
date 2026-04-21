@@ -35,7 +35,8 @@ import {
 } from '../../lua/syntax/ast';
 import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './optimizer';
-import { buildModuleAliasesFromPaths, type ProgramConstReloc } from './asset';
+import { buildModuleAliasesFromPaths, stripLuaExtension, type ProgramConstReloc } from './asset';
+import { cloneSourceRange } from './source_range';
 import { StringPool, StringValue, isStringValue } from '../memory/string_pool';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../cpu/instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from '../../ide/editor/contrib/intellisense/lua_frontend';
@@ -470,18 +471,6 @@ const buildProtoId = (parentId: string, hint: string): string => {
 	if (!hint) throw new Error('Proto hint is required and defensive programming is not allowed.');
 	return `${parentId}/${hint}`;
 }
-
-const cloneSourceRange = (range: LuaSourceRange | SourceRange): SourceRange => ({
-	path: range.path,
-	start: {
-		line: range.start.line,
-		column: range.start.column,
-	},
-	end: {
-		line: range.end.line,
-		column: range.end.column,
-	},
-});
 
 const cloneLocalSlotDebug = (slot: LocalSlotDebug): LocalSlotDebug => ({
 	name: slot.name,
@@ -2982,9 +2971,6 @@ const cloneModuleExportNode = (node: ModuleExportNode): ModuleExportNode => {
 
 const buildModuleExportPathKey = (path: ReadonlyArray<string>): string =>
 	path.join('.');
-
-const stripLuaExtension = (path: string): string =>
-	path.toLowerCase().endsWith('.lua') ? path.slice(0, path.length - 4) : path;
 
 const stripModuleSourcePrefix = (path: string): string => {
 	const normalized = stripLuaExtension(path.replace(/\\/g, '/'));

@@ -1,5 +1,5 @@
-import { OpCode } from '../cpu/cpu';
-import type { Instruction } from './optimizer';
+import { OpCode, type SourceRange } from '../cpu/cpu';
+import type { Instruction, InstructionSet } from './optimizer';
 
 export type Block = {
 	start: number;
@@ -18,6 +18,57 @@ export const getJumpTarget = (instruction: Instruction): number => {
 		throw new Error('[ProgramOptimizer] Jump target is missing.');
 	}
 	return instruction.target;
+};
+
+export const remapInstructions = (
+	instructions: Instruction[],
+	ranges: Array<SourceRange | null>,
+	keep: boolean[],
+	forwardRemovedTargets: boolean,
+): InstructionSet => {
+	const count = instructions.length;
+	const indexMap = new Array<number>(count);
+	let newIndex = 0;
+	for (let i = 0; i < count; i += 1) {
+		if (keep[i]) {
+			indexMap[i] = newIndex;
+			newIndex += 1;
+		} else {
+			indexMap[i] = -1;
+		}
+	}
+	const forwardMap = new Array<number>(count);
+	let nextKept = newIndex;
+	for (let i = count - 1; i >= 0; i -= 1) {
+		if (keep[i]) {
+			nextKept = indexMap[i];
+		}
+		forwardMap[i] = nextKept;
+	}
+
+	const nextInstructions: Instruction[] = new Array(newIndex);
+	const nextRanges: Array<SourceRange | null> = new Array(newIndex);
+	let writeIndex = 0;
+	for (let i = 0; i < count; i += 1) {
+		if (!keep[i]) {
+			continue;
+		}
+		const instruction = instructions[i];
+		if (isJump(instruction)) {
+			const target = getJumpTarget(instruction);
+			const mappedTarget = target === count
+				? newIndex
+				: (forwardRemovedTargets ? forwardMap[target] : indexMap[target]);
+			if (mappedTarget < 0) {
+				throw new Error(`[ProgramOptimizer] Jump target ${target} was removed.`);
+			}
+			instruction.target = mappedTarget;
+		}
+		nextInstructions[writeIndex] = instruction;
+		nextRanges[writeIndex] = ranges[i];
+		writeIndex += 1;
+	}
+	return { instructions: nextInstructions, ranges: nextRanges };
 };
 
 export const buildBasicBlocks = (instructions: Instruction[]): Block[] => {

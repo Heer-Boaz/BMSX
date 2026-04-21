@@ -19,6 +19,7 @@ import type {
 	ProgramConstReloc,
 	ProgramSymbolsAsset,
 } from './asset';
+import { cloneSourceRange } from './source_range';
 
 type LinkedProgramAsset = {
 	programAsset: ProgramAsset;
@@ -322,12 +323,6 @@ const cloneProto = (proto: Proto, entryOffset: number): Proto => {
 		upvalueDescs,
 	};
 };
-
-const cloneSourceRange = (range: SourceRange): SourceRange => ({
-	path: range.path,
-	start: { line: range.start.line, column: range.start.column },
-	end: { line: range.end.line, column: range.end.column },
-});
 
 const cloneLocalSlot = (slot: LocalSlotDebug): LocalSlotDebug => ({
 	name: slot.name,

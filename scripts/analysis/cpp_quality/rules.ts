@@ -613,6 +613,26 @@ function isCppNumericSanitizationCall(tokens: readonly CppToken[], openParen: nu
 	return target !== null && NUMERIC_DEFENSIVE_CALLS.has(target) && !isCppNumericLimitsMemberCall(tokens, openParen);
 }
 
+function isCppSemanticFloorDivisionCall(tokens: readonly CppToken[], pairs: readonly number[], openParen: number, target: string | null): boolean {
+	if (target !== 'floor' && target !== 'std::floor') {
+		return false;
+	}
+	const closeParen = pairs[openParen];
+	if (closeParen < 0) {
+		return false;
+	}
+	const args = splitCppArgumentRanges(tokens, openParen + 1, closeParen);
+	if (args.length !== 1) {
+		return false;
+	}
+	for (let index = args[0][0]; index < args[0][1]; index += 1) {
+		if (tokens[index].text === '/') {
+			return true;
+		}
+	}
+	return false;
+}
+
 function isIgnoredName(name: string): boolean {
 	return name.length === 0 || name === '_' || name.startsWith('_');
 }
@@ -901,10 +921,13 @@ export function lintCppRedundantNumericSanitizationPattern(file: string, tokens:
 		if (tokens[index].text !== '(' || pairs[index] < 0 || pairs[index] > info.bodyEnd) {
 			continue;
 		}
-			const target = cppCallTarget(tokens, index);
-			if (!isCppNumericSanitizationCall(tokens, index, target)) {
-				continue;
-			}
+		const target = cppCallTarget(tokens, index);
+		if (!isCppNumericSanitizationCall(tokens, index, target)) {
+			continue;
+		}
+		if (isCppSemanticFloorDivisionCall(tokens, pairs, index, target)) {
+			continue;
+		}
 		if (activeNumericCalls.length > 0) {
 			continue;
 		}
