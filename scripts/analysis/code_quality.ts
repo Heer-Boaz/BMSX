@@ -196,6 +196,28 @@ const NUMERIC_SANITIZATION_PATH_SEGMENTS = [
 	'/src/bmsx/machine/',
 	'/src/bmsx/render/',
 ] as const;
+const CONTRACT_NUMERIC_SANITIZATION_PATH_SEGMENTS = [
+	'/src/bmsx/ide/',
+	'/src/bmsx/machine/',
+	'/src/bmsx/render/',
+] as const;
+const CONTRACT_NUMERIC_NAMES = new Set([
+	'column',
+	'col',
+	'line',
+	'row',
+]);
+const CONTRACT_NUMERIC_SANITIZERS = new Set([
+	'Math.ceil',
+	'Math.floor',
+	'Math.max',
+	'Math.min',
+	'Math.round',
+	'Math.trunc',
+	'Number.isFinite',
+	'clamp',
+	'clamp_fallback',
+]);
 
 const ALLOCATION_FALLBACK_PATH_SEGMENTS = [
 	'/src/bmsx/machine/',
@@ -2770,6 +2792,123 @@ function isNumericDefensiveCall(node: ts.CallExpression): boolean {
 		|| target === 'clamp';
 }
 
+function isContractNumericSanitizationFile(sourceFile: ts.SourceFile): boolean {
+	for (let index = 0; index < CONTRACT_NUMERIC_SANITIZATION_PATH_SEGMENTS.length; index += 1) {
+		if (sourcePathIncludes(sourceFile, CONTRACT_NUMERIC_SANITIZATION_PATH_SEGMENTS[index])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function isContractNumericPropertyAccess(node: ts.Expression): boolean {
+	const unwrapped = unwrapExpression(node);
+	if (!ts.isPropertyAccessExpression(unwrapped)) {
+		return false;
+	}
+	return CONTRACT_NUMERIC_NAMES.has(unwrapped.name.text);
+}
+
+function expressionContainsContractNumeric(node: ts.Expression): boolean {
+	let found = false;
+	const visit = (current: ts.Node): void => {
+		if (found) {
+			return;
+		}
+		if (
+			(ts.isIdentifier(current) && CONTRACT_NUMERIC_NAMES.has(current.text))
+			|| (ts.isPropertyAccessExpression(current) && isContractNumericPropertyAccess(current))
+		) {
+			found = true;
+			return;
+		}
+		ts.forEachChild(current, visit);
+	};
+	visit(node);
+	return found;
+}
+
+function isContractNumericSentinelExpression(node: ts.Expression): boolean {
+	const unwrapped = unwrapExpression(node);
+	if (ts.isNumericLiteral(unwrapped)) {
+		return unwrapped.text === '0' || unwrapped.text === '1' || unwrapped.text === 'Number.MAX_SAFE_INTEGER';
+	}
+	if (unwrapped.kind === ts.SyntaxKind.NullKeyword || unwrapped.kind === ts.SyntaxKind.UndefinedKeyword) {
+		return true;
+	}
+	if (ts.isIdentifier(unwrapped)) {
+		return unwrapped.text === 'undefined';
+	}
+	if (ts.isStringLiteral(unwrapped)) {
+		return unwrapped.text === 'number';
+	}
+	return false;
+}
+
+function isOrderingComparisonOperator(kind: ts.SyntaxKind): boolean {
+	return kind === ts.SyntaxKind.GreaterThanToken
+		|| kind === ts.SyntaxKind.GreaterThanEqualsToken
+		|| kind === ts.SyntaxKind.LessThanToken
+		|| kind === ts.SyntaxKind.LessThanEqualsToken;
+}
+
+function isContractNumericDefensiveComparison(node: ts.BinaryExpression): boolean {
+	const operator = node.operatorToken.kind;
+	if (!isEqualityOperator(operator) && !isOrderingComparisonOperator(operator)) {
+		return false;
+	}
+	return (expressionContainsContractNumeric(node.left) && isContractNumericSentinelExpression(node.right))
+		|| (expressionContainsContractNumeric(node.right) && isContractNumericSentinelExpression(node.left));
+}
+
+function isContractNumericSanitizerCall(node: ts.CallExpression): boolean {
+	const target = callTargetText(node);
+	if (target === null || !CONTRACT_NUMERIC_SANITIZERS.has(target)) {
+		return false;
+	}
+	for (let index = 0; index < node.arguments.length; index += 1) {
+		if (expressionContainsContractNumeric(node.arguments[index])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function lintContractNumericDefensiveSanitizationPattern(node: ts.Node, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
+	if (!isContractNumericSanitizationFile(sourceFile)) {
+		return;
+	}
+	if (ts.isCallExpression(node) && isContractNumericSanitizerCall(node)) {
+		pushLintIssue(
+			issues,
+			sourceFile,
+			node,
+			'contract_numeric_defensive_sanitization_pattern',
+			'Defensive contract-number sanitization is forbidden. Internal line/column/row values must be bounded once at their owner, not finite/floor/clamp/null-normalized at every use.',
+		);
+		return;
+	}
+	if (ts.isBinaryExpression(node) && isContractNumericDefensiveComparison(node)) {
+		pushLintIssue(
+			issues,
+			sourceFile,
+			node,
+			'contract_numeric_defensive_sanitization_pattern',
+			'Defensive contract-number sentinel checks are forbidden. Internal line/column/row values must stay in their contract domain instead of being normalized to null or fallback coordinates.',
+		);
+		return;
+	}
+	if (ts.isTypeOfExpression(node) && expressionContainsContractNumeric(node.expression)) {
+		pushLintIssue(
+			issues,
+			sourceFile,
+			node,
+			'contract_numeric_defensive_sanitization_pattern',
+			'Defensive contract-number type checks are forbidden. Internal line/column/row values are typed contracts, not untrusted payloads.',
+		);
+	}
+}
+
 function isExpressionChildOfLargerExpression(node: ts.Expression, parent: ts.Node | undefined): boolean {
 	if (parent === undefined) {
 		return false;
@@ -4509,6 +4648,7 @@ function collectLintIssues(
 			markIdentifier(node, parent);
 		}
 		if (ts.isBinaryExpression(node)) {
+			lintContractNumericDefensiveSanitizationPattern(node, sourceFile, issues);
 			lintBinaryExpressionForCodeQuality(node, sourceFile, issues, ledger);
 		}
 		if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && node.text === '__native__') {
@@ -4571,6 +4711,7 @@ function collectLintIssues(
 			);
 		}
 		if (ts.isCallExpression(node)) {
+			lintContractNumericDefensiveSanitizationPattern(node, sourceFile, issues);
 			lintHotPathCallArguments(node);
 			if (hotPath && isNumericDefensiveCall(node)) {
 				pushLintIssue(
@@ -4587,6 +4728,9 @@ function collectLintIssues(
 		}
 		if (ts.isNewExpression(node)) {
 			lintHotPathCallArguments(node);
+		}
+		if (ts.isTypeOfExpression(node)) {
+			lintContractNumericDefensiveSanitizationPattern(node, sourceFile, issues);
 		}
 		if (
 			(

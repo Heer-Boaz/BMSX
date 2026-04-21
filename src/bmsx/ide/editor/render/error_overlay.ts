@@ -557,26 +557,15 @@ export function showRuntimeError(
 	column: number,
 	message: string,
 	details?: RuntimeErrorDetails,
-	path?: string
+	path: string = ''
 ): void {
 	if (!editorRuntimeState.active) {
 		activate();
 	}
-	const normalizedLine = Number.isFinite(line) ? line : null;
-	const normalizedColumn = Number.isFinite(column) ? column : null;
-	const processedLine = normalizedLine;
 	const buffer = editorDocumentState.buffer;
-	const targetRow = normalizedLine !== null
-		? editorViewState.layout.clampBufferRow(buffer, normalizedLine - 1)
-		: editorViewState.layout.clampBufferRow(buffer, editorDocumentState.cursorRow);
-	const processedColumn = normalizedColumn !== null ? normalizedColumn - 1 : null;
+	const targetRow = editorViewState.layout.clampBufferRow(buffer, line - 1);
 	const currentLine = buffer.getLineContent(targetRow);
-	let targetColumn = editorDocumentState.cursorColumn;
-	if (processedColumn !== null) {
-		targetColumn = editorViewState.layout.clampLineLength(currentLine.length, processedColumn);
-	} else {
-		targetColumn = editorViewState.layout.clampLineLength(currentLine.length, targetColumn);
-	}
+	const targetColumn = editorViewState.layout.clampLineLength(currentLine.length, column - 1);
 	editorDocumentState.cursorRow = targetRow;
 	editorDocumentState.cursorColumn = targetColumn;
 	editorDocumentState.selectionAnchor = null;
@@ -589,10 +578,8 @@ export function showRuntimeError(
 	revealCursor();
 	resetBlink();
 	const normalizedMessage = message && message.length > 0 ? message.trim() : 'Runtime error';
-	const locationLabel = formatRuntimeErrorLocation(path, processedLine, normalizedColumn);
-	const overlayMessage = locationLabel
-		? `${locationLabel}: ${normalizedMessage}`
-		: (processedLine !== null ? `Line ${processedLine}:${normalizedMessage}` : normalizedMessage);
+	const locationLabel = formatRuntimeErrorLocation(path, line, column);
+	const overlayMessage = locationLabel ? `${locationLabel}: ${normalizedMessage}` : normalizedMessage;
 	const messageLines = splitText(overlayMessage);
 	const overlayDetails = cloneRuntimeErrorDetails(details );
 	const overlay: RuntimeErrorOverlay = {
@@ -613,7 +600,7 @@ export function showRuntimeError(
 	};
 	rebuildRuntimeErrorOverlayView(overlay);
 	setActiveRuntimeErrorOverlay(overlay);
-	setExecutionStopHighlight(processedLine !== null ? targetRow : null);
+	setExecutionStopHighlight(targetRow);
 	const statusLine = overlay.lines.length > 0 ? overlay.lines[0] : 'Runtime error';
 	showEditorMessage(statusLine, constants.COLOR_STATUS_ERROR, 2.0);
 }

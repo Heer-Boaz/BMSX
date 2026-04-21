@@ -34,6 +34,7 @@ export const CODE_QUALITY_ONLY_LINT_RULES = [
 	'optional_value_or_fallback_pattern',
 	'allocation_fallback_pattern',
 	'numeric_defensive_sanitization_pattern',
+	'contract_numeric_defensive_sanitization_pattern',
 	'redundant_numeric_sanitization_pattern',
 	'repeated_expression_pattern',
 	'repeated_machine_device_chain_pattern',

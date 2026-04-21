@@ -425,8 +425,8 @@ function pushDiagnostic(row: number, startColumn: number, endColumn: number, mes
 }
 
 function pushSyntaxErrorDiagnostic(error: LuaSyntaxError): void {
-	const row = error.line > 0 ? error.line - 1 : 0;
-	const startColumn = error.column > 0 ? error.column - 1 : 0;
+	const row = error.line - 1;
+	const startColumn = error.column - 1;
 	const endColumn = startColumn + 1;
 	pushDiagnostic(row, startColumn, endColumn, error.message, 'error');
 }
@@ -1181,8 +1181,8 @@ export function inspectLuaExpression(request: LuaHoverRequest): LuaHoverResult {
 	if (!chain) {
 		return null;
 	}
-	const usageRow = Number.isFinite(request.row) ? Math.max(1, Math.floor(request.row)) : null;
-	const usageColumn = Number.isFinite(request.column) ? Math.max(1, Math.floor(request.column)) : null;
+	const usageRow = request.row;
+	const usageColumn = request.column;
 	const resolved = resolveLuaChainValue(chain, request.path, usageRow, usageColumn);
 	const staticDefinition = findStaticDefinitionLocation(chain, usageRow, usageColumn, request.path);
 	if (!resolved) {
@@ -1415,7 +1415,7 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 	if (chain.length === 0) {
 		return null;
 	}
-	if (preferredChunk && usageRow !== null && usageColumn !== null) {
+	if (preferredChunk) {
 		const activeContext = getActiveCodeTabContext();
 		if (activeContext.descriptor.path === preferredChunk) {
 			const source = getTextSnapshot(editorDocumentState.buffer);
@@ -1443,22 +1443,20 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 		return null;
 	}
 	const { definitions, paths, models } = bundle;
-	if (usageRow !== null && usageColumn !== null) {
-		for (let index = 0; index < paths.length; index += 1) {
-			const path = paths[index];
-			let model = models.get(path.path);
-			if (!model) {
-				const source = luaPipeline.resourceSourceForChunk(Runtime.instance, path.path);
-				if (!source) {
-					continue;
-				}
-				model = buildLuaSemanticModel(source, path.path);
-				models.set(path.path, model);
+	for (let index = 0; index < paths.length; index += 1) {
+		const path = paths[index];
+		let model = models.get(path.path);
+		if (!model) {
+			const source = luaPipeline.resourceSourceForChunk(Runtime.instance, path.path);
+			if (!source) {
+				continue;
 			}
-			const semanticDefinition = model.lookupIdentifier(usageRow, usageColumn, chain);
-			if (semanticDefinition) {
-				return buildDefinitionLocationFromRange(semanticDefinition.definition);
-			}
+			model = buildLuaSemanticModel(source, path.path);
+			models.set(path.path, model);
+		}
+		const semanticDefinition = model.lookupIdentifier(usageRow, usageColumn, chain);
+		if (semanticDefinition) {
+			return buildDefinitionLocationFromRange(semanticDefinition.definition);
 		}
 	}
 	const identifier = chain[chain.length - 1];
@@ -1476,25 +1474,10 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 	const selectPreferred = (candidate: LuaDefinitionInfo, current: LuaDefinitionInfo): LuaDefinitionInfo => {
 		const candidatePriority = definitionPriorityForLocals(candidate.kind);
 		const currentPriority = current ? definitionPriorityForLocals(current.kind) : -1;
-		if (usageRow !== null) {
-			if (!positionWithinRange(usageRow, usageColumn, candidate.scope)) {
-				return current;
-			}
-			if (usageRow < candidate.definition.start.line) {
-				return current;
-			}
-			if (
-				!current
-				|| candidatePriority > currentPriority
-				|| (candidatePriority === currentPriority
-					&& (
-						candidate.definition.start.line > current.definition.start.line
-						|| (candidate.definition.start.line === current.definition.start.line
-							&& candidate.definition.start.column >= current.definition.start.column)
-					))
-			) {
-				return candidate;
-			}
+		if (!positionWithinRange(usageRow, usageColumn, candidate.scope)) {
+			return current;
+		}
+		if (usageRow < candidate.definition.start.line) {
 			return current;
 		}
 		if (
@@ -1502,12 +1485,13 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 			|| candidatePriority > currentPriority
 			|| (candidatePriority === currentPriority
 				&& (
-					candidate.definition.start.line < current.definition.start.line
+					candidate.definition.start.line > current.definition.start.line
 					|| (candidate.definition.start.line === current.definition.start.line
-						&& candidate.definition.start.column < current.definition.start.column)
+						&& candidate.definition.start.column >= current.definition.start.column)
 				))
-		)
+		) {
 			return candidate;
+		}
 		return current;
 	};
 	let bestExact: LuaDefinitionInfo = null;
@@ -1627,10 +1611,10 @@ export function positionWithinRange(row: number, column: number, range: LuaSourc
 	if (row < range.start.line || row > range.end.line) {
 		return false;
 	}
-	if (row === range.start.line && column !== null && column < range.start.column) {
+	if (row === range.start.line && column < range.start.column) {
 		return false;
 	}
-	if (row === range.end.line && column !== null && column > range.end.column) {
+	if (row === range.end.line && column > range.end.column) {
 		return false;
 	}
 	return true;
@@ -1646,9 +1630,6 @@ function positionAfterOrEqual(
 	}
 	if (row < start.line) {
 		return false;
-	}
-	if (column === null) {
-		return true;
 	}
 	return column >= start.column;
 }

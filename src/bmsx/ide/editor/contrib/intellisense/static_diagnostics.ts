@@ -210,8 +210,8 @@ function buildGlobalSymbols(decls: readonly Decl[]): LuaSymbolEntry[] {
 }
 
 function toSyntaxDiagnostic(message: string, line: number, column: number): LuaStaticDiagnostic {
-	const row = line > 0 ? line - 1 : 0;
-	const startColumn = column > 0 ? column - 1 : 0;
+	const row = line - 1;
+	const startColumn = column - 1;
 	return {
 		row,
 		startColumn,
@@ -244,8 +244,8 @@ function pushRangeDiagnostic(
 	message: string,
 	severity: EditorDiagnosticSeverity,
 ): void {
-	const row = range.start.line > 0 ? range.start.line - 1 : 0;
-	const startColumn = range.start.column > 0 ? range.start.column - 1 : 0;
+	const row = range.start.line - 1;
+	const startColumn = range.start.column - 1;
 	const endColumn = range.end.column > range.start.column ? range.end.column - 1 : startColumn + 1;
 	pushDiagnostic(diagnostics, row, startColumn, endColumn, message, severity);
 }
@@ -592,8 +592,8 @@ function validateCallArity(diagnostics: LuaStaticDiagnostic[], call: LuaCallExpr
 	if (actualCount >= required) {
 		return;
 	}
-	const row = call.range.start.line > 0 ? call.range.start.line - 1 : 0;
-	const startColumn = call.range.start.column > 0 ? call.range.start.column - 1 : 0;
+	const row = call.range.start.line - 1;
+	const startColumn = call.range.start.column - 1;
 	const endColumnCandidate = call.range.end.column;
 	const endColumn = endColumnCandidate > startColumn ? endColumnCandidate : startColumn + 1;
 	const expectedLabel = required === 1 ? 'argument' : 'arguments';

@@ -10,7 +10,6 @@ import {
 	type StackTraceFrame,
 } from '../../lua/value';
 import { publishOverlayFrame } from '../../render/editor/overlay_queue';
-import { clamp_fallback } from '../../common/clamp';
 import * as constants from '../common/constants';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../common/constants';
 import { editorDebuggerState } from '../workbench/contrib/debugger/state';
@@ -63,6 +62,7 @@ class DebugPauseCoordinator {
 }
 
 type DebuggerStepOrigin = { path: string; line: number; depth: number };
+type RuntimeErrorLocation = { path: string; line: number; column: number };
 type RenderTargetVec2 = { x: number; y: number };
 type RenderTargetSnapshot = {
 	viewportSize: RenderTargetVec2;
@@ -79,6 +79,7 @@ export const EDITOR_TARGET: RenderTargetVec2 = { x: 384, y: 288 };
 // export const EDITOR_TARGET: RenderTargetVec2 = { x: 768, y: 576 };
 // export const EDITOR_TARGET: RenderTargetVec2 = { x: 512, y: 384 };
 const RT_STATE = new WeakMap<Runtime, RenderTargetState>();
+const EMPTY_LUA_CALL_FRAMES: ReadonlyArray<LuaCallFrame> = [];
 
 function getRenderTargetState(runtime: Runtime): RenderTargetState {
 	let state = RT_STATE.get(runtime);
@@ -177,6 +178,58 @@ function resolveEditorSourceWorkspacePath(runtime: Runtime, source: string): str
 		return resolveWorkspacePath(source, engineRoot);
 	}
 	return resolveWorkspacePath(source, $.cart_project_root_path);
+}
+
+function luaErrorSourcePath(error: LuaError): string {
+	return error.path.startsWith('@') ? error.path.slice(1) : error.path;
+}
+
+function runtimeLuaErrorLocation(error: LuaError): RuntimeErrorLocation {
+	return {
+		path: luaErrorSourcePath(error),
+		line: error.line,
+		column: error.column,
+	};
+}
+
+function runtimeStackFrameLocation(frame: StackTraceFrame): RuntimeErrorLocation {
+	return {
+		path: frame.source,
+		line: frame.line,
+		column: frame.column,
+	};
+}
+
+function resolveRuntimeErrorLocation(runtime: Runtime, error: Error): RuntimeErrorLocation {
+	if (runtime.lastLuaCallStack.length > 0) {
+		return runtimeStackFrameLocation(runtime.lastLuaCallStack[0]);
+	}
+	if (error instanceof LuaError) {
+		return runtimeLuaErrorLocation(error);
+	}
+	return { path: runtime.currentPath, line: 0, column: 0 };
+}
+
+function createLuaErrorStackFrame(error: LuaError, functionName: string): StackTraceFrame {
+	const source = luaErrorSourcePath(error);
+	return {
+		origin: 'lua',
+		functionName,
+		source,
+		line: error.line,
+		column: error.column,
+		raw: buildLuaFrameRawLabel(functionName, source),
+	};
+}
+
+function errorStackFunctionName(callFrames: ReadonlyArray<LuaCallFrame>, luaFrames: ReadonlyArray<StackTraceFrame>): string {
+	if (callFrames.length > 0) {
+		return callFrames[callFrames.length - 1].functionName;
+	}
+	if (luaFrames.length > 0) {
+		return luaFrames[0].functionName;
+	}
+	return null;
 }
 
 export function createPauseCoordinator(): DebugPauseCoordinator {
@@ -383,8 +436,7 @@ export function setDebuggerPaused(runtime: Runtime, paused: boolean): void {
 }
 
 export function applyDebuggerStopLocation(signal: LuaDebuggerPauseSignal): void {
-	const normalizedLine = clamp_fallback(signal.location.line, 1, Number.MAX_SAFE_INTEGER, 1);
-	setExecutionStopHighlight(normalizedLine - 1);
+	setExecutionStopHighlight(signal.location.line - 1);
 }
 
 export function onLuaDebuggerPause(runtime: Runtime, signal: LuaDebuggerPauseSignal): void {
@@ -528,55 +580,27 @@ export function recordDebuggerExceptionFault(runtime: Runtime, signal: LuaDebugg
 		runtime.faultOverlayNeedsFlush = true;
 		return;
 	}
-	const signalLine = clamp_fallback(signal.location.line, 1, Number.MAX_SAFE_INTEGER, null);
-	const signalColumn = clamp_fallback(signal.location.column, 1, Number.MAX_SAFE_INTEGER, null);
 	if (!exception) {
 		setRuntimeFault(runtime, {
 			message: 'Runtime error',
 			path: signal.location.path,
-			line: signalLine,
-			column: signalColumn,
+			line: signal.location.line,
+			column: signal.location.column,
 			details: buildRuntimeErrorDetailsForEditor(runtime, null, 'Runtime error', signal.callStack),
 			fromDebugger: true,
 		});
 		return;
 	}
 	const message = sanitizeLuaErrorMessage(extractErrorMessage(exception));
-	let path: string = exception.path;
-	if (!path || path.length === 0) {
-		path = signal.location.path;
-	}
-	const normalizedLine = clamp_fallback(exception.line, 1, Number.MAX_SAFE_INTEGER, null);
-	const normalizedColumn = clamp_fallback(exception.column, 1, Number.MAX_SAFE_INTEGER, null);
+	const location = runtimeLuaErrorLocation(exception);
 	setRuntimeFault(runtime, {
 		message,
-		path,
-		line: normalizedLine ?? signalLine,
-		column: normalizedColumn ?? signalColumn,
+		path: location.path,
+		line: location.line,
+		column: location.column,
 		details: buildRuntimeErrorDetailsForEditor(runtime, exception, message, signal.callStack),
 		fromDebugger: true,
 	});
-}
-
-function extractErrorLocation(runtime: Runtime, error: unknown): { line: number; column: number; path: string } {
-	if (error instanceof LuaError) {
-		const rawChunk = typeof error.path === 'string' && error.path.length > 0 ? error.path : null;
-		const path = rawChunk && rawChunk.startsWith('@') ? rawChunk.slice(1) : rawChunk;
-		return {
-			line: Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null,
-			column: Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null,
-			path: path,
-		};
-	}
-	if (runtime.lastLuaCallStack.length > 0) {
-		const frame = runtime.lastLuaCallStack[0];
-		return {
-			line: frame.line,
-			column: frame.column,
-			path: frame.source,
-		};
-	}
-	return { line: null, column: null, path: null };
 }
 
 export function handleLuaError(runtime: Runtime, whatever: unknown): void {
@@ -587,11 +611,7 @@ export function handleLuaError(runtime: Runtime, whatever: unknown): void {
 	runtime.lastCpuFaultSnapshot = runtime.machine.cpu.snapshotCallStack();
 	runtime.lastLuaCallStack = buildLuaStackFrames(runtime);
 	const message = sanitizeLuaErrorMessage(extractErrorMessage(error));
-	const { line, column, path } = extractErrorLocation(runtime, error);
-	const innermostFrame = runtime.lastLuaCallStack.length > 0 ? runtime.lastLuaCallStack[0] : null;
-	const resolvedPath = innermostFrame ? innermostFrame.source : (path ?? runtime.currentPath);
-	const resolvedLine = innermostFrame ? innermostFrame.line : line;
-	const resolvedColumn = innermostFrame ? innermostFrame.column : column;
+	const location = resolveRuntimeErrorLocation(runtime, error);
 	const runtimeDetails = buildRuntimeErrorDetailsForEditor(runtime, error, message);
 	const stackText = buildErrorStackString(
 		error instanceof Error && error.name ? error.name : 'Error',
@@ -601,9 +621,9 @@ export function handleLuaError(runtime: Runtime, whatever: unknown): void {
 	);
 	setRuntimeFault(runtime, {
 		message,
-		path: resolvedPath,
-		line: resolvedLine,
-		column: resolvedColumn,
+		path: location.path,
+		line: location.line,
+		column: location.column,
 		details: runtimeDetails,
 		fromDebugger: false,
 	});
@@ -623,7 +643,7 @@ export function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unkno
 		return null;
 	}
 	const useInterpreterStack = callStack !== undefined;
-	const callFrames = useInterpreterStack ? callStack : null;
+	const callFrames = callStack === undefined ? EMPTY_LUA_CALL_FRAMES : callStack;
 	let luaFrames: StackTraceFrame[] = [];
 	if (useInterpreterStack) {
 		luaFrames = callFrames.length > 0 ? convertLuaCallFrames(callFrames) : [];
@@ -631,72 +651,7 @@ export function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unkno
 		luaFrames = runtime.lastLuaCallStack.slice();
 	}
 	if (error instanceof LuaError) {
-		const src = typeof error.path === 'string' && error.path.length > 0 ? error.path : null;
-			const line = Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null;
-			const col = Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null;
-			const innermostCall = callFrames && callFrames.length > 0 ? callFrames[callFrames.length - 1] : null;
-			const innermostFrame = luaFrames.length > 0 ? luaFrames[0] : null;
-			let effectiveSource = src;
-			let resolvedLine = line;
-			let resolvedColumn = col;
-			if (innermostFrame) {
-				if (effectiveSource === null) {
-					effectiveSource = innermostFrame.source;
-				}
-				if (resolvedLine === null) {
-					resolvedLine = innermostFrame.line;
-				}
-				if (resolvedColumn === null) {
-					resolvedColumn = innermostFrame.column;
-				}
-			}
-			let alreadyCaptured = false;
-			if (innermostFrame) {
-				const sourceMatches = effectiveSource === null
-					? innermostFrame.source.length === 0
-					: innermostFrame.source === effectiveSource;
-				const lineMatches = resolvedLine === null
-					? innermostFrame.line === 0
-					: innermostFrame.line === resolvedLine;
-				const columnMatches = resolvedColumn === null
-					? innermostFrame.column === 0
-					: innermostFrame.column === resolvedColumn;
-				alreadyCaptured = sourceMatches && lineMatches && columnMatches;
-			}
-		if (!alreadyCaptured) {
-			const fnName =
-				innermostCall && innermostCall.functionName && innermostCall.functionName.length > 0
-					? innermostCall.functionName
-					: innermostFrame && innermostFrame.functionName && innermostFrame.functionName.length > 0
-						? innermostFrame.functionName
-						: null;
-				if (innermostFrame && effectiveSource && innermostFrame.source === effectiveSource) {
-					const updated: StackTraceFrame = {
-						origin: innermostFrame.origin,
-						functionName: fnName,
-						source: effectiveSource,
-						line: resolvedLine,
-						column: resolvedColumn,
-						raw: buildLuaFrameRawLabel(fnName, effectiveSource),
-						pathPath: effectiveSource,
-					};
-					luaFrames[0] = updated;
-				} else {
-					const frameSource = src !== null ? src : effectiveSource;
-				const top: StackTraceFrame = {
-					origin: 'lua',
-					functionName: fnName,
-					source: frameSource,
-					line: resolvedLine,
-					column: resolvedColumn,
-					raw: buildLuaFrameRawLabel(fnName, frameSource),
-					};
-					if (frameSource && frameSource.length > 0) {
-						top.pathPath = frameSource;
-					}
-					luaFrames.unshift(top);
-				}
-		}
+		luaFrames[0] = createLuaErrorStackFrame(error, errorStackFunctionName(callFrames, luaFrames));
 	}
 	if (luaFrames.length > 0) {
 		for (const frame of luaFrames) {

@@ -90,7 +90,7 @@ function mapJsFrameToOriginalSource(frame: StackTraceFrame): StackTraceFrame {
 	if (frame.origin !== 'js') {
 		return frame;
 	}
-	if (!frame.source || frame.line === null || frame.column === null) {
+	if (!frame.source || !frame.line || !frame.column) {
 		return frame;
 	}
 	const registry = getInlineSourceMapRegistry();
@@ -109,14 +109,14 @@ function mapJsFrameToOriginalSource(frame: StackTraceFrame): StackTraceFrame {
 	}
 	// Stack traces use 1-based columns; source maps expect 0-based columns.
 	const mapped = originalPositionFor(consumer, { line: frame.line, column: frame.column - 1 });
-	if (!mapped.source || mapped.line === null) {
+	if (!mapped.source || !mapped.line) {
 		return frame;
 	}
 	return {
 		...frame,
 		source: normalizeMappedSourcePathForEditor(mapped.source),
 		line: mapped.line,
-		column: mapped.column === null ? null : mapped.column,
+		column: mapped.column || 0,
 	};
 }
 
@@ -137,23 +137,14 @@ export function convertLuaCallFrames(callFrames: ReadonlyArray<LuaCallFrame>): S
 	const frames: StackTraceFrame[] = [];
 	for (let index = callFrames.length - 1; index >= 0; index -= 1) {
 		const frame = callFrames[index];
-		const source = frame.source ? frame.source : null;
-		const effectiveLine = frame.line > 0 ? frame.line : null;
-		const effectiveColumn = frame.column > 0 ? frame.column : null;
-		let rawLabel = '';
-		if (frame.functionName) {
-			rawLabel = frame.functionName;
-		}
-		if (source) {
-			rawLabel = rawLabel.length > 0 ? `${rawLabel} @ ${source}` : source;
-		}
+		const rawLabel = buildLuaFrameRawLabel(frame.functionName, frame.source);
 		const runtimeFrame: StackTraceFrame = {
 			origin: 'lua',
-			functionName: frame.functionName ? frame.functionName : null,
-			source,
-			line: effectiveLine,
-			column: effectiveColumn,
-			raw: rawLabel ?? '[unknown]', // We explicitly don't check for rawLabel.length here because we want to support empty labels (e.g. 'lua]' is implicit and thus empty)
+			functionName: frame.functionName,
+			source: frame.source,
+			line: frame.line,
+			column: frame.column,
+			raw: rawLabel,
 		};
 		frames.push(runtimeFrame);
 	}
@@ -249,13 +240,10 @@ export function parseJsStackLine(line: string): StackTraceFrame {
 }
 
 
-export function formatRuntimeErrorLocation(path?: string | null, line?: number | null, column?: number | null): string {
-	let label = path && path.length > 0 ? ensureDotSlashPrefix(path) : '';
-	if (line !== null && line !== undefined) {
-		const suffix = column !== null && column !== undefined ? `${line}:${column}` : `${line}`;
-		label = label.length > 0 ? `${label}:${suffix}` : `${suffix}`;
-	}
-	return label.length > 0 ? label : null;
+export function formatRuntimeErrorLocation(path: string, line: number, column: number): string {
+	const label = path && path.length > 0 ? ensureDotSlashPrefix(path) : '';
+	const suffix = `${line}:${column}`;
+	return label.length > 0 ? `${label}:${suffix}` : suffix;
 }
 
 export function collectRuntimeStackFrames(details: RuntimeErrorDetails, includeJsStackTraces: boolean = true): StackTraceFrame[] {
@@ -284,9 +272,9 @@ export function formatRuntimeStackFrame(frame: StackTraceFrame): string {
 	if (sourceLabel && sourceLabel.length > 0) {
 		location = sourceLabel;
 	}
-	if (frame.line !== null) {
+	if (frame.line) {
 		location = location.length > 0 ? `${location}:${frame.line}` : `${frame.line}`;
-		if (frame.column !== null) {
+		if (frame.column) {
 			location += `:${frame.column}`;
 		}
 	}
