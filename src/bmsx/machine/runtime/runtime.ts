@@ -633,20 +633,22 @@ export class Runtime {
 		return this.internString(name);
 	}
 
-	private handleClosureHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): never {
+	private prepareHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): Error {
 		const wrappedError = convertToError(error);
 		if (meta && meta.hid && !wrappedError.message.startsWith(`[${meta.hid}]`)) {
 			wrappedError.message = `[${meta.hid}] ${wrappedError.message}`;
 		}
+		return wrappedError;
+	}
+
+	private handleClosureHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): never {
+		const wrappedError = this.prepareHandlerError(error, meta);
 		workbenchMode.handleLuaError(this, wrappedError);
 		throw wrappedError;
 	}
 
 	private handleLuaHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): never {
-		const wrappedError = convertToError(error);
-		if (meta && meta.hid && !wrappedError.message.startsWith(`[${meta.hid}]`)) {
-			wrappedError.message = `[${meta.hid}] ${wrappedError.message}`;
-		}
+		const wrappedError = this.prepareHandlerError(error, meta);
 		this.luaInterpreter.recordFaultCallStack();
 		workbenchMode.handleLuaError(this, wrappedError);
 		throw wrappedError;

@@ -52,21 +52,21 @@ export class FrameLoopState {
 				return true;
 			}
 			return false;
+		}
+		const previousState = this.currentFrameState;
+		const previousRemaining = previousState?.cycleBudgetRemaining ?? -1;
+		const frameScheduler = runtime.frameScheduler;
+		const previousPendingEntry = runtime.pendingCall === 'entry';
+		const previousSequence = frameScheduler.lastTickSequence;
+		if (this.currentFrameState === null) {
+			if (!frameScheduler.startScheduledFrame(runtime)) {
+				return false;
 			}
-			const previousState = this.currentFrameState;
-			const previousRemaining = previousState?.cycleBudgetRemaining ?? -1;
-			const frameScheduler = runtime.frameScheduler;
-			const previousPendingEntry = runtime.pendingCall === 'entry';
-			const previousSequence = frameScheduler.lastTickSequence;
-			if (this.currentFrameState === null) {
-				if (!frameScheduler.startScheduledFrame(runtime)) {
-					return false;
-				}
-			} else if (this.currentFrameState.cycleBudgetRemaining <= 0) {
-				if (!frameScheduler.refillFrameBudget(runtime, this.currentFrameState)) {
-					return false;
-				}
+		} else if (this.currentFrameState.cycleBudgetRemaining <= 0) {
+			if (!frameScheduler.refillFrameBudget(runtime, this.currentFrameState)) {
+				return false;
 			}
+		}
 		this.runActiveFrameState(runtime, this.currentFrameState);
 		const nextState = this.currentFrameState;
 		if (nextState !== previousState) {
@@ -75,12 +75,13 @@ export class FrameLoopState {
 		if (nextState !== null && nextState.cycleBudgetRemaining !== previousRemaining) {
 			return true;
 		}
-			const nextPendingEntry = runtime.pendingCall === 'entry';
-			if (nextPendingEntry !== previousPendingEntry) {
-				return true;
-			}
-			return frameScheduler.lastTickSequence !== previousSequence;
+		const nextPendingCall = runtime.pendingCall;
+		if ((nextPendingCall === 'entry') !== previousPendingEntry) {
+			return true;
 		}
+		const nextSequence = frameScheduler.lastTickSequence;
+		return nextSequence !== previousSequence;
+	}
 
 	public abandonFrameState(runtime: Runtime): void {
 		this.currentFrameState = null;

@@ -1,11 +1,10 @@
 import {
 	CPP_CONTROL_CALL_KEYWORDS,
 	CPP_POST_FUNCTION_QUALIFIERS,
-	countCppParameters,
 	cppCallTarget,
 	cppCallTargetFromStatement,
 } from './syntax';
-import type { CppToken } from './tokens';
+import { cppTokenText, type CppToken } from './tokens';
 
 const CPP_BOUNDARY_STYLE_FUNCTION_NAME_WORDS: ReadonlySet<string> = new Set([
 	'acquire',
@@ -51,6 +50,7 @@ const CPP_BOUNDARY_STYLE_FUNCTION_NAME_WORDS: ReadonlySet<string> = new Set([
 	'push',
 	'read',
 	'release',
+	'refresh',
 	'register',
 	'remove',
 	'replace',
@@ -184,6 +184,18 @@ export function collectCppTypeDeclarations(tokens: readonly CppToken[], classRan
 	return declarations;
 }
 
+function cppFunctionSignature(tokens: readonly CppToken[], openParen: number, closeParen: number, bodyStart: number, name: string): string {
+	const parameters = cppTokenText(tokens, openParen + 1, closeParen).replace(/\s+/g, ' ');
+	const qualifiers: string[] = [];
+	for (let cursor = closeParen + 1; cursor < bodyStart; cursor += 1) {
+		const text = tokens[cursor].text;
+		if (CPP_POST_FUNCTION_QUALIFIERS.has(text) || text === '&' || text === '&&') {
+			qualifiers.push(text);
+		}
+	}
+	return `${name}(${parameters})${qualifiers.length > 0 ? `:${qualifiers.join(':')}` : ''}`;
+}
+
 export function collectCppFunctionDefinitions(
 	tokens: readonly CppToken[],
 	pairs: readonly number[],
@@ -216,7 +228,7 @@ export function collectCppFunctionDefinitions(
 		const name = tokens[nameIndex].text;
 		const context = target.includes('::') ? target.slice(0, target.lastIndexOf('::')) : classContextAt(classRanges, index);
 		const closeParen = pairs[openParen];
-		const signature = `${countCppParameters(tokens, openParen, closeParen)}:${tokens[nameIndex].text}`;
+		const signature = cppFunctionSignature(tokens, openParen, closeParen, index, name);
 		const isConstructorLike = context !== null && (name === context || name === `~${context}`);
 		functions.push({
 			name,

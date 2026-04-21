@@ -2,15 +2,12 @@
 
 #include "machine/bus/io.h"
 #include "machine/runtime/runtime.h"
+#include "machine/runtime/runtime_fault.h"
 
 #include <stdexcept>
 
 namespace bmsx {
 namespace {
-
-inline std::runtime_error runtimeFault(const std::string& message) {
-	return BMSX_RUNTIME_ERROR("Runtime fault: " + message);
-}
 
 constexpr uint32_t ENGINE_IRQ_MASK = IRQ_REINIT | IRQ_NEWGAME;
 

@@ -4,18 +4,13 @@
 #include "core/engine.h"
 #include "input/manager.h"
 #include "machine/firmware/api.h"
+#include "machine/runtime/runtime_fault.h"
 #include "render/shared/queues.h"
 #include "rompack/format.h"
 
 #include <stdexcept>
 
 namespace bmsx {
-namespace {
-inline std::runtime_error runtimeFault(const std::string& message) {
-	return BMSX_RUNTIME_ERROR("Runtime fault: " + message);
-}
-}
-
 Machine::Machine(Api& api, SoundMaster& soundMaster)
 	: m_memory()
 	, m_stringHandles(m_memory)

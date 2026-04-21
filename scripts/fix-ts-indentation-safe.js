@@ -91,7 +91,7 @@ function splitNullDelimited(buffer) {
 		.filter(Boolean);
 }
 
-function listCandidateFiles() {
+function listCandidateFiles(requestedPaths = []) {
 	const tracked = child.spawnSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'buffer' });
 	if (tracked.status !== 0) {
 		throw new Error(`git ls-files failed: ${tracked.stderr ? tracked.stderr.toString('utf8') : tracked.status}`);
@@ -101,7 +101,21 @@ function listCandidateFiles() {
 		throw new Error(`git ls-files --others failed: ${untracked.stderr ? untracked.stderr.toString('utf8') : untracked.status}`);
 	}
 	const files = new Set([...splitNullDelimited(tracked.stdout), ...splitNullDelimited(untracked.stdout)]);
-	return Array.from(files);
+	const allFiles = Array.from(files);
+	if (requestedPaths.length === 0) {
+		return allFiles;
+	}
+	const normalizedRequests = requestedPaths
+		.map(p => path.relative(ROOT, path.resolve(ROOT, p)).replace(/\\/g, '/').replace(/\/$/, ''))
+		.filter(p => p.length > 0 && p !== '.');
+	return allFiles.filter(file => {
+		for (const requested of normalizedRequests) {
+			if (file === requested || file.startsWith(`${requested}/`)) {
+				return true;
+			}
+		}
+		return false;
+	});
 }
 
 function convertFile(src, tabWidth = TAB_WIDTH) {
@@ -282,8 +296,9 @@ function convertLeadingIndentToSpaces(src, tabWidth = TAB_WIDTH) {
 
 function main() {
 	const checkOnly = process.argv.indexOf('--check') !== -1 || process.argv.indexOf('-c') !== -1;
+	const requestedPaths = process.argv.slice(2).filter(arg => arg !== '--check' && arg !== '-c');
 	const editorConfig = loadEditorConfig();
-	const files = listCandidateFiles()
+	const files = listCandidateFiles(requestedPaths)
 		.filter(p => !p.startsWith('tools/retroarch-gles2/') && p !== 'tools/retroarch-gles2')
 		.filter(p => {
 			const base = path.basename(p);

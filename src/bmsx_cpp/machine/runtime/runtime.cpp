@@ -5,6 +5,7 @@
 #include "machine/program/loader.h"
 #include "machine/runtime/resource_usage_detector.h"
 #include "machine/runtime/engine_irq.h"
+#include "machine/runtime/runtime_fault.h"
 #include "machine/runtime/timing_config.h"
 #include "core/engine.h"
 #include "rompack/format.h"
@@ -15,10 +16,6 @@
 
 namespace bmsx {
 namespace {
-inline std::runtime_error runtimeFault(const std::string& message) {
-	return BMSX_RUNTIME_ERROR("Runtime fault: " + message);
-}
-
 constexpr size_t CART_ROM_HEADER_SIZE = 72;
 constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 
@@ -56,15 +53,12 @@ Runtime::Runtime(const RuntimeOptions& options)
 	, m_machine(*m_api, *EngineCore::instance().soundMaster())
 	, m_viewport(options.viewport)
 	{
-	timing.vdpWorkUnitsPerSec = options.vdpWorkUnitsPerSec;
-	timing.geoWorkUnitsPerSec = options.geoWorkUnitsPerSec;
 	m_api->initializeRuntimeKeys();
 	m_machine.memory().clearIoSlots();
 	m_machine.initializeSystemIo();
 	m_machine.resetDevices();
 	vblank.setVblankCycles(*this, options.vblankCycles);
-	setVdpWorkUnitsPerSec(*this, options.vdpWorkUnitsPerSec);
-	setGeoWorkUnitsPerSec(*this, options.geoWorkUnitsPerSec);
+	setRenderWorkUnitsPerSec(*this, options.vdpWorkUnitsPerSec, options.geoWorkUnitsPerSec);
 	m_randomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 	refreshMemoryMap();
 	m_machine.cpu().setExternalRootMarker([this](GcHeap& heap) {
@@ -243,14 +237,6 @@ void Runtime::refreshMemoryMapGlobals() {
 	setGlobal("sys_vram_framebuffer_size", valueNumber(static_cast<double>(VRAM_FRAMEBUFFER_SIZE)));
 	setGlobal("sys_vram_staging_size", valueNumber(static_cast<double>(VRAM_STAGING_SIZE)));
 	setGlobal("sys_vram_size", valueNumber(static_cast<double>(m_machine.vdp().trackedTotalVramBytes())));
-}
-
-void Runtime::restoreVramSlotTextures() {
-	m_machine.vdp().restoreVramSlotTextures();
-}
-
-void Runtime::captureVramTextureSnapshots() {
-	m_machine.vdp().captureVramTextureSnapshots();
 }
 
 } // namespace bmsx

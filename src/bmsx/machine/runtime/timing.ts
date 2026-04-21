@@ -4,6 +4,12 @@ const PAL_TOTAL_SCANLINES = 313;
 const NTSC_TOTAL_SCANLINES = 262;
 const PAL_NTSC_REFRESH_CUTOFF_SCALED = 55 * HZ_SCALE;
 
+function floorScaledRatio(value: number, multiplier: number, divisor: number): number {
+	const whole = Math.floor(value / divisor) * multiplier;
+	const remainder = Math.floor((value % divisor) * multiplier / divisor);
+	return whole + remainder;
+}
+
 export function calcCyclesPerFrameScaled(cpuHz: number, refreshHzScaled: number): number {
 	if (!Number.isSafeInteger(cpuHz) || cpuHz <= 0) {
 		throw new Error('[RuntimeTiming] cpuHz must be a positive safe integer.');
@@ -11,9 +17,7 @@ export function calcCyclesPerFrameScaled(cpuHz: number, refreshHzScaled: number)
 	if (!Number.isSafeInteger(refreshHzScaled) || refreshHzScaled <= 0) {
 		throw new Error('[RuntimeTiming] refreshHzScaled must be a positive safe integer.');
 	}
-	const wholeCycles = Math.floor(cpuHz / refreshHzScaled) * HZ_SCALE;
-	const remainderCycles = Math.floor((cpuHz % refreshHzScaled) * HZ_SCALE / refreshHzScaled);
-	const cyclesPerFrame = wholeCycles + remainderCycles;
+	const cyclesPerFrame = floorScaledRatio(cpuHz, HZ_SCALE, refreshHzScaled);
 	if (!Number.isSafeInteger(cyclesPerFrame) || cyclesPerFrame <= 0) {
 		throw new Error('[RuntimeTiming] cycles per frame must be a positive safe integer.');
 	}
@@ -48,9 +52,7 @@ export function resolveVblankCycles(cpuFreqHz: number, ufpsScaled: number, rende
 	// Pietious at 5 MHz/50 Hz only 544 VBLANK cycles, effectively a one-scanline frame edge. The
 	// scanline ratio gives floor(100000 * 192 / 313) visible cycles and 38659 VBLANK cycles, which
 	// keeps the cart refresh at 50/60 Hz while allowing MSX/Konami-style 25/30 Hz game ticks in cart code.
-	const visibleWhole = Math.floor(cycleBudgetPerFrame / totalScanlines) * renderHeight;
-	const visibleRemainder = Math.floor(((cycleBudgetPerFrame % totalScanlines) * renderHeight) / totalScanlines);
-	const activeDisplayCycles = visibleWhole + visibleRemainder;
+	const activeDisplayCycles = floorScaledRatio(cycleBudgetPerFrame, renderHeight, totalScanlines);
 	const vblankCycles = cycleBudgetPerFrame - activeDisplayCycles;
 	if (!Number.isSafeInteger(vblankCycles) || vblankCycles < 0 || vblankCycles > cycleBudgetPerFrame) {
 		throw new Error('[RuntimeTiming] invalid vblank cycle configuration.');

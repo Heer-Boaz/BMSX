@@ -70,6 +70,7 @@ const CPP_SINGLE_LINE_WRAPPER_NAME_WORDS: ReadonlySet<string> = new Set([
 	'push',
 	'read',
 	'release',
+	'refresh',
 	'register',
 	'remove',
 	'replace',
@@ -430,6 +431,16 @@ function semanticNormalizationFamily(target: string): string | null {
 	return null;
 }
 
+function semanticOperationName(target: string): string {
+	const namespaceIndex = target.lastIndexOf('::');
+	const dotIndex = target.lastIndexOf('.');
+	const separatorIndex = Math.max(namespaceIndex, dotIndex);
+	if (separatorIndex < 0) {
+		return target;
+	}
+	return target.slice(separatorIndex + (separatorIndex === namespaceIndex ? 2 : 1));
+}
+
 const HOT_PATH_TEMPORARY_TYPES = new Set([
 	'std::function',
 	'std::map',
@@ -491,16 +502,8 @@ function rangeContainsNestedCppNumericSanitization(tokens: readonly CppToken[], 
 	return false;
 }
 
-function collectSemanticNormalizationFamilies(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number): string[] {
-	const families: string[] = [];
-	const addFamily = (family: string): void => {
-		for (let index = 0; index < families.length; index += 1) {
-			if (families[index] === family) {
-				return;
-			}
-		}
-		families.push(family);
-	};
+function collectSemanticBodySignatures(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number): string[] {
+	const callsByFamily = new Map<string, Map<string, number>>();
 	for (let index = start; index < end; index += 1) {
 		if (tokens[index].text !== '(' || pairs[index] < 0 || pairs[index] > end) {
 			continue;
@@ -511,11 +514,31 @@ function collectSemanticNormalizationFamilies(tokens: readonly CppToken[], pairs
 		}
 		const family = semanticNormalizationFamily(target);
 		if (family !== null) {
-			addFamily(family);
+			let calls = callsByFamily.get(family);
+			if (calls === undefined) {
+				calls = new Map<string, number>();
+				callsByFamily.set(family, calls);
+			}
+			const operation = semanticOperationName(target);
+			calls.set(operation, (calls.get(operation) ?? 0) + 1);
 		}
 	}
-	families.sort((left, right) => left.localeCompare(right));
-	return families;
+	const signatures: string[] = [];
+	for (const [family, calls] of callsByFamily) {
+		let count = 0;
+		const parts: string[] = [];
+		for (const [operation, operationCount] of calls) {
+			count += operationCount;
+			parts.push(`${operation}x${operationCount}`);
+		}
+		if (count < 2) {
+			continue;
+		}
+		parts.sort((left, right) => left.localeCompare(right));
+		signatures.push(`${family}|${parts.join(',')}`);
+	}
+	signatures.sort((left, right) => left.localeCompare(right));
+	return signatures;
 }
 
 function collectSemanticNormalizationCallSignatures(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number): string[] {
@@ -1601,10 +1624,10 @@ export function lintCppSemanticRepeatedExpressions(file: string, tokens: readonl
 		if (tokens[index].text !== '(' || pairs[index] < 0 || pairs[index] >= info.bodyEnd) {
 			continue;
 		}
-			const target = cppCallTarget(tokens, index);
-			if (target === null || (!isCppNumericSanitizationCall(tokens, index, target) && !isSemanticNormalizationWrapperTarget(target))) {
-				continue;
-			}
+		const target = cppCallTarget(tokens, index);
+		if (target === null || (!isCppNumericSanitizationCall(tokens, index, target) && !isSemanticNormalizationWrapperTarget(target))) {
+			continue;
+		}
 		if (activeSemanticCalls.length > 0) {
 			continue;
 		}
@@ -1650,8 +1673,8 @@ export function collectCppNormalizedBody(file: string, tokens: readonly CppToken
 		return;
 	}
 	const bodyText = normalizedCppTokenText(tokens, info.bodyStart + 1, info.bodyEnd);
-	const semanticFamilies = collectSemanticNormalizationFamilies(tokens, pairs, info.bodyStart + 1, info.bodyEnd);
-	const semanticBody = semanticNormalization || semanticFamilies.length > 0;
+	const semanticSignatures = collectSemanticBodySignatures(tokens, pairs, info.bodyStart + 1, info.bodyEnd);
+	const semanticBody = semanticSignatures.length > 0;
 	if (!semanticBody && bodyText.length < CPP_NORMALIZED_BODY_MIN_LENGTH) {
 		return;
 	}
@@ -1661,7 +1684,7 @@ export function collectCppNormalizedBody(file: string, tokens: readonly CppToken
 		line: tokens[info.nameToken].line,
 		column: tokens[info.nameToken].column,
 		fingerprint: normalizedBodyFingerprint(tokens, info.bodyStart + 1, info.bodyEnd),
-		semanticFamilies: semanticFamilies.length > 0 ? semanticFamilies : null,
+		semanticSignatures: semanticBody ? semanticSignatures : null,
 	});
 }
 

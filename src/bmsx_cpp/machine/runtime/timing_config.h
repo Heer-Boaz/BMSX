@@ -17,8 +17,7 @@ struct RuntimeTransferRates {
 void refreshDeviceTimings(Runtime& runtime, i64 nowCycles);
 void setCpuHz(Runtime& runtime, i64 value);
 void setCycleBudgetPerFrame(Runtime& runtime, int value);
-void setVdpWorkUnitsPerSec(Runtime& runtime, int value);
-void setGeoWorkUnitsPerSec(Runtime& runtime, int value);
+void setRenderWorkUnitsPerSec(Runtime& runtime, int vdpValue, int geoValue);
 void setTransferRatesFromManifest(Runtime& runtime, const RuntimeTransferRates& rates);
 void applyActiveMachineTiming(Runtime& runtime, i64 cpuHz);
 

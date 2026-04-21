@@ -1,15 +1,12 @@
 #include "machine/scheduler/frame.h"
 #include "machine/runtime/runtime.h"
+#include "machine/runtime/runtime_fault.h"
 #include <stdexcept>
 
 namespace bmsx {
 namespace {
 constexpr int MAX_CATCH_UP_FRAMES = 5;
 constexpr double FRAME_SLICE_EPSILON_MS = 0.000001;
-
-inline std::runtime_error runtimeFault(const std::string& message) {
-	return std::runtime_error(std::string("Runtime fault: ") + message);
-}
 }
 
 void FrameSchedulerState::accumulateHostTime(const Runtime& runtime, f64 deltaMs) {

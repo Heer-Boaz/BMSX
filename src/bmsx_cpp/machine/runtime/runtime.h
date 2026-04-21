@@ -207,8 +207,6 @@ public:
 	bool lastTickVdpFrameHeld() const { return frameScheduler.lastTickVdpFrameHeld; }
 	bool isDrawPending() const { return m_runtimeFailed || m_pendingCall == PendingCall::Entry; }
 	void refreshMemoryMap();
-	void restoreVramSlotTextures();
-	void captureVramTextureSnapshots();
 	RenderPresentationState screen;
 	TimingState timing;
 	FrameSchedulerState frameScheduler;

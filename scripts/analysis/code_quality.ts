@@ -76,7 +76,7 @@ type NormalizedBodyInfo = {
 	line: number;
 	column: number;
 	fingerprint: string;
-	semanticFamilies: string[] | null;
+	semanticSignatures: string[] | null;
 };
 
 type FunctionUsageInfo = {
@@ -1945,6 +1945,25 @@ function semanticNormalizationFamily(target: string): string | null {
 	return null;
 }
 
+function semanticOperationName(target: string): string {
+	if (target.startsWith('Math.')) {
+		return target;
+	}
+	for (let index = 0; index < SEMANTIC_NORMALIZATION_CALL_SUFFIXES.length; index += 1) {
+		const suffix = SEMANTIC_NORMALIZATION_CALL_SUFFIXES[index];
+		if (target.endsWith(suffix)) {
+			return suffix.startsWith('.') ? suffix.slice(1) : suffix;
+		}
+	}
+	const dotIndex = target.lastIndexOf('.');
+	return dotIndex >= 0 ? target.slice(dotIndex + 1) : target;
+}
+
+function semanticSignatureLabel(signature: string): string {
+	const separator = signature.indexOf('|');
+	return (separator >= 0 ? signature.slice(0, separator) : signature).replace(':', ' ');
+}
+
 function compactSampleText(text: string): string {
 	if (text.length <= COMPACT_SAMPLE_TEXT_LENGTH) {
 		return text;
@@ -1952,31 +1971,43 @@ function compactSampleText(text: string): string {
 	return `${text.slice(0, COMPACT_SAMPLE_TEXT_LENGTH - 3)}...`;
 }
 
-function collectSemanticNormalizationFamilies(node: ts.Node): string[] {
-	const families: string[] = [];
-	const addFamily = (family: string): void => {
-		for (let index = 0; index < families.length; index += 1) {
-			if (families[index] === family) {
-				return;
-			}
-		}
-		families.push(family);
-	};
+function collectSemanticBodySignatures(node: ts.Node): string[] {
+	const callsByFamily = new Map<string, Map<string, number>>();
 	const visit = (current: ts.Node): void => {
 		if (ts.isCallExpression(current)) {
 			const target = callTargetText(current);
 			if (target !== null && (isSemanticNormalizationCallTarget(target) || isNumericDefensiveCall(current))) {
 				const family = semanticNormalizationFamily(target);
 				if (family !== null) {
-					addFamily(family);
+					let calls = callsByFamily.get(family);
+					if (calls === undefined) {
+						calls = new Map<string, number>();
+						callsByFamily.set(family, calls);
+					}
+					const operation = semanticOperationName(target);
+					calls.set(operation, (calls.get(operation) ?? 0) + 1);
 				}
 			}
 		}
 		ts.forEachChild(current, visit);
 	};
 	visit(node);
-	families.sort((left, right) => left.localeCompare(right));
-	return families;
+	const signatures: string[] = [];
+	for (const [family, calls] of callsByFamily) {
+		let count = 0;
+		const parts: string[] = [];
+		for (const [operation, operationCount] of calls) {
+			count += operationCount;
+			parts.push(`${operation}x${operationCount}`);
+		}
+		if (count < 2) {
+			continue;
+		}
+		parts.sort((left, right) => left.localeCompare(right));
+		signatures.push(`${family}|${parts.join(',')}`);
+	}
+	signatures.sort((left, right) => left.localeCompare(right));
+	return signatures;
 }
 
 function isNestedInsideSemanticCall(node: ts.Expression, parent: ts.Node | undefined): boolean {
@@ -2029,6 +2060,20 @@ function isExpressionChildOfLargerExpression(node: ts.Expression, parent: ts.Nod
 	return false;
 }
 
+function isTemporalSnapshotName(name: string): boolean {
+	return /^(previous|next|before|after|initial)[A-Z_]/.test(name);
+}
+
+function isTemporalSnapshotInitializer(node: ts.Expression, parent: ts.Node | undefined): boolean {
+	if (parent === undefined || !ts.isVariableDeclaration(parent) || parent.initializer !== node || !ts.isIdentifier(parent.name)) {
+		return false;
+	}
+	if (!isTemporalSnapshotName(parent.name.text)) {
+		return false;
+	}
+	return ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node);
+}
+
 function repeatedExpressionFingerprint(node: ts.Expression, sourceFile: ts.SourceFile, parent: ts.Node | undefined): string | null {
 	if (isExpressionChildOfLargerExpression(node, parent)) {
 		return null;
@@ -2048,6 +2093,9 @@ function repeatedExpressionFingerprint(node: ts.Expression, sourceFile: ts.Sourc
 		return null;
 	}
 	if (ts.isBinaryExpression(node) && isTsAssignmentOperator(node.operatorToken.kind)) {
+		return null;
+	}
+	if (isTemporalSnapshotInitializer(node, parent)) {
 		return null;
 	}
 	const text = node.getText(sourceFile).replace(/\s+/g, ' ');
@@ -2419,6 +2467,7 @@ const BOUNDARY_WRAPPER_NAME_WORDS: ReadonlySet<string> = new Set([
 	'push',
 	'read',
 	'release',
+	'refresh',
 	'register',
 	'remove',
 	'replace',
@@ -2663,10 +2712,10 @@ function collectNormalizedBody(
 		return;
 	}
 	const text = body.getText(sourceFile);
-	const semanticFamilies = collectSemanticNormalizationFamilies(body);
-	const semanticNormalization = semanticFamilies.length > 0;
+	const semanticSignatures = collectSemanticBodySignatures(body);
+	const semanticBody = semanticSignatures.length > 0;
 	if (ts.isBlock(body)) {
-		if (!semanticNormalization) {
+		if (!semanticBody) {
 			if (body.statements.length < 2 || isSingleLineWrapperCandidate(node)) {
 				return;
 			}
@@ -2674,7 +2723,7 @@ function collectNormalizedBody(
 				return;
 			}
 		}
-	} else if (!semanticNormalization) {
+	} else if (!semanticBody) {
 		return;
 	}
 	const locationNode = (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isFunctionExpression(node)) && node.name
@@ -2687,7 +2736,7 @@ function collectNormalizedBody(
 		line: position.line + 1,
 		column: position.character + 1,
 		fingerprint: normalizedAstFingerprint(body),
-		semanticFamilies: semanticNormalization ? semanticFamilies : null,
+		semanticSignatures: semanticBody ? semanticSignatures : null,
 	});
 }
 
@@ -2780,20 +2829,20 @@ function addSemanticNormalizedBodyDuplicateIssues(normalizedBodies: readonly Nor
 	const bySignature = new Map<string, NormalizedBodyInfo[]>();
 	for (let index = 0; index < normalizedBodies.length; index += 1) {
 		const entry = normalizedBodies[index];
-		if (entry.semanticFamilies === null) {
+		if (entry.semanticSignatures === null) {
 			continue;
 		}
-		for (let familyIndex = 0; familyIndex < entry.semanticFamilies.length; familyIndex += 1) {
-			const family = entry.semanticFamilies[familyIndex];
-			let list = bySignature.get(family);
+		for (let signatureIndex = 0; signatureIndex < entry.semanticSignatures.length; signatureIndex += 1) {
+			const signature = entry.semanticSignatures[signatureIndex];
+			let list = bySignature.get(signature);
 			if (list === undefined) {
 				list = [];
-				bySignature.set(family, list);
+				bySignature.set(signature, list);
 			}
 			list.push(entry);
 		}
 	}
-	for (const [family, list] of bySignature) {
+	for (const [signature, list] of bySignature) {
 		if (list.length <= 1) {
 			continue;
 		}
@@ -2817,7 +2866,7 @@ function addSemanticNormalizedBodyDuplicateIssues(normalizedBodies: readonly Nor
 				line: entry.line,
 				column: entry.column,
 				name: 'semantic_normalized_body_duplicate_pattern',
-				message: `Function/method body shares a semantic ${family.replace(':', ' ')} cluster with differently named bodies: ${nameSummary}. Extract shared ownership instead of copying logic.`,
+				message: `Function/method body shares a semantic ${semanticSignatureLabel(signature)} operation signature with differently named bodies: ${nameSummary}. Extract shared ownership instead of copying logic.`,
 			});
 		}
 	}

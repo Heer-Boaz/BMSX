@@ -1,12 +1,8 @@
 import { OpCode, type SourceRange, type Value } from '../cpu/cpu';
 import { MAX_EXT_CONST, MAX_SIGNED_BX, MIN_SIGNED_BX } from '../cpu/instruction_format';
 import { isStringValue, stringValueToString } from '../memory/string_pool';
+import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, type Block } from './control_flow';
 import type { Instruction, InstructionSet, OptimizationContext } from './optimizer';
-
-type Block = {
-	start: number;
-	end: number;
-};
 
 type Phi = {
 	reg: number;
@@ -46,13 +42,6 @@ const SCCP_UNDEF = 0;
 const SCCP_CONST = 1;
 const SCCP_OVERDEFINED = 2;
 
-const isJump = (instruction: Instruction): boolean =>
-	instruction.op === OpCode.JMP
-	|| instruction.op === OpCode.JMPIF
-	|| instruction.op === OpCode.JMPIFNOT
-	|| instruction.op === OpCode.BR_TRUE
-	|| instruction.op === OpCode.BR_FALSE;
-
 const getImmediateConstValue = (instruction: Instruction, context: OptimizationContext): ConstValue | null => {
 	switch (instruction.op) {
 		case OpCode.KNIL:
@@ -72,193 +61,6 @@ const getImmediateConstValue = (instruction: Instruction, context: OptimizationC
 		default:
 			return null;
 	}
-};
-
-const getJumpTarget = (instruction: Instruction): number => {
-	if (instruction.target === null) {
-		throw new Error('[ProgramOptimizer] Jump target is missing.');
-	}
-	return instruction.target;
-};
-
-const buildBasicBlocks = (instructions: Instruction[]): Block[] => {
-	const count = instructions.length;
-	if (count === 0) {
-		return [];
-	}
-	const leaders = new Set<number>();
-	leaders.add(0);
-	for (let i = 0; i < count; i += 1) {
-		const instruction = instructions[i];
-		const next = i + 1;
-		const nextNext = i + 2;
-		switch (instruction.op) {
-			case OpCode.JMP:
-				if (instruction.target !== null && instruction.target < count) {
-					leaders.add(instruction.target);
-				}
-				if (next < count) {
-					leaders.add(next);
-				}
-				break;
-			case OpCode.JMPIF:
-			case OpCode.JMPIFNOT:
-			case OpCode.BR_TRUE:
-			case OpCode.BR_FALSE:
-				if (instruction.target !== null && instruction.target < count) {
-					leaders.add(instruction.target);
-				}
-				if (next < count) {
-					leaders.add(next);
-				}
-				break;
-			case OpCode.RET:
-				if (next < count) {
-					leaders.add(next);
-				}
-				break;
-			case OpCode.LOADBOOL:
-				if (next < count) {
-					leaders.add(next);
-				}
-				if (instruction.c !== 0 && nextNext < count) {
-					leaders.add(nextNext);
-				}
-				break;
-			case OpCode.TEST:
-			case OpCode.TESTSET:
-			case OpCode.EQ:
-			case OpCode.LT:
-			case OpCode.LE:
-				if (next < count) {
-					leaders.add(next);
-				}
-				if (nextNext < count) {
-					leaders.add(nextNext);
-				}
-				break;
-			default:
-				break;
-		}
-	}
-	const sorted = Array.from(leaders).sort((a, b) => a - b);
-	const blocks: Block[] = [];
-	for (let i = 0; i < sorted.length; i += 1) {
-		const start = sorted[i];
-		const end = i + 1 < sorted.length ? sorted[i + 1] : count;
-		if (start < end) {
-			blocks.push({ start, end });
-		}
-	}
-	return blocks;
-};
-
-const buildBlockGraph = (instructions: Instruction[], blocks: Block[]): {
-	blockForIndex: number[];
-	predecessors: number[][];
-	successors: number[][];
-} => {
-	const count = instructions.length;
-	const blockForIndex = new Array<number>(count);
-	for (let i = 0; i < blocks.length; i += 1) {
-		const block = blocks[i];
-		for (let index = block.start; index < block.end; index += 1) {
-			blockForIndex[index] = i;
-		}
-	}
-	const successors: number[][] = new Array(blocks.length);
-	const predecessors: number[][] = new Array(blocks.length);
-	for (let i = 0; i < blocks.length; i += 1) {
-		successors[i] = [];
-		predecessors[i] = [];
-	}
-
-	const addSuccessor = (blockIndex: number, targetIndex: number | null): void => {
-		if (targetIndex === null) {
-			return;
-		}
-		const list = successors[blockIndex];
-		for (let i = 0; i < list.length; i += 1) {
-			if (list[i] === targetIndex) {
-				return;
-			}
-		}
-		list.push(targetIndex);
-	};
-
-	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
-		const block = blocks[blockIndex];
-		const lastIndex = block.end - 1;
-		if (lastIndex < 0 || lastIndex >= count) {
-			continue;
-		}
-		const instruction = instructions[lastIndex];
-		const nextIndex = lastIndex + 1;
-		const nextNextIndex = lastIndex + 2;
-		switch (instruction.op) {
-			case OpCode.RET:
-				break;
-			case OpCode.JMP: {
-				const target = getJumpTarget(instruction);
-				addSuccessor(blockIndex, target < count ? blockForIndex[target] : null);
-				break;
-			}
-			case OpCode.JMPIF:
-			case OpCode.JMPIFNOT: {
-				const target = getJumpTarget(instruction);
-				addSuccessor(blockIndex, target < count ? blockForIndex[target] : null);
-				if (nextIndex < count) {
-					addSuccessor(blockIndex, blockForIndex[nextIndex]);
-				}
-				break;
-			}
-			case OpCode.BR_TRUE:
-			case OpCode.BR_FALSE: {
-				const target = getJumpTarget(instruction);
-				addSuccessor(blockIndex, target < count ? blockForIndex[target] : null);
-				if (nextIndex < count) {
-					addSuccessor(blockIndex, blockForIndex[nextIndex]);
-				}
-				break;
-			}
-			case OpCode.LOADBOOL: {
-				if (nextIndex < count) {
-					addSuccessor(blockIndex, blockForIndex[nextIndex]);
-				}
-				if (instruction.c !== 0 && nextNextIndex < count) {
-					addSuccessor(blockIndex, blockForIndex[nextNextIndex]);
-				}
-				break;
-			}
-			case OpCode.TEST:
-			case OpCode.TESTSET:
-			case OpCode.EQ:
-			case OpCode.LT:
-			case OpCode.LE: {
-				if (nextIndex < count) {
-					addSuccessor(blockIndex, blockForIndex[nextIndex]);
-				}
-				if (nextNextIndex < count) {
-					addSuccessor(blockIndex, blockForIndex[nextNextIndex]);
-				}
-				break;
-			}
-			default:
-				if (nextIndex < count) {
-					addSuccessor(blockIndex, blockForIndex[nextIndex]);
-				}
-				break;
-		}
-	}
-
-	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
-		const nextBlocks = successors[blockIndex];
-		for (let i = 0; i < nextBlocks.length; i += 1) {
-			predecessors[nextBlocks[i]].push(blockIndex);
-		}
-	}
-
-	return { blockForIndex, predecessors, successors };
 };
 
 const computeMaxRegister = (instructions: Instruction[]): number => {
@@ -1974,7 +1776,7 @@ const cloneInstruction = (instruction: Instruction): Instruction => ({
 	format: instruction.format,
 	rkMask: instruction.rkMask,
 	target: instruction.target,
-	callProtoIndex: instruction.callProtoIndex ?? null,
+	callProtoIndex: instruction.callProtoIndex,
 });
 
 const isControlFlowInstruction = (instruction: Instruction): boolean => {

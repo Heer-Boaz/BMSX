@@ -235,11 +235,12 @@ void LibretroPlatform::onContextDestroy() {
 #if BMSX_ENABLE_GLES2
 	auto* view = m_engine->view();
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
-	if (!m_render_assets_need_refresh && Runtime::hasInstance()) {
-		Runtime::instance().captureVramTextureSnapshots();
-	}
 	if (Runtime::hasInstance()) {
-		Runtime::instance().machine().vdp().shutdownBackendResources();
+		auto& vdp = Runtime::instance().machine().vdp();
+		if (!m_render_assets_need_refresh) {
+			vdp.captureVramTextureSnapshots();
+		}
+		vdp.shutdownBackendResources();
 	}
 	m_engine->texmanager()->clear();
 	m_render_assets_need_refresh = true;

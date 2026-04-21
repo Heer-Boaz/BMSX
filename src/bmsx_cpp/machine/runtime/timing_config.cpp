@@ -2,16 +2,13 @@
 
 #include "core/engine.h"
 #include "machine/runtime/runtime.h"
+#include "machine/runtime/runtime_fault.h"
 #include "rompack/assets.h"
 
 #include <stdexcept>
 
 namespace bmsx {
 namespace {
-
-inline std::runtime_error runtimeFault(const std::string& message) {
-	return BMSX_RUNTIME_ERROR("Runtime fault: " + message);
-}
 
 int resolvePositiveWorkUnits(i64 value, const char* name) {
 	if (value <= 0) {
@@ -49,22 +46,18 @@ void setCycleBudgetPerFrame(Runtime& runtime, int value) {
 	runtime.vblank.configureCycleBudget(runtime);
 }
 
-void setVdpWorkUnitsPerSec(Runtime& runtime, int value) {
-	runtime.timing.vdpWorkUnitsPerSec = resolvePositiveWorkUnits(value, "work_units_per_sec");
-	runtime.machine().vdp().setTiming(runtime.timing.cpuHz, runtime.timing.vdpWorkUnitsPerSec, runtime.machine().scheduler().currentNowCycles());
-}
-
-void setGeoWorkUnitsPerSec(Runtime& runtime, int value) {
-	runtime.timing.geoWorkUnitsPerSec = resolvePositiveWorkUnits(value, "geo_work_units_per_sec");
-	runtime.machine().geometryController().setTiming(runtime.timing.cpuHz, runtime.timing.geoWorkUnitsPerSec, runtime.machine().scheduler().currentNowCycles());
+void setRenderWorkUnitsPerSec(Runtime& runtime, int vdpValue, int geoValue) {
+	runtime.timing.vdpWorkUnitsPerSec = resolvePositiveWorkUnits(vdpValue, "work_units_per_sec");
+	runtime.timing.geoWorkUnitsPerSec = resolvePositiveWorkUnits(geoValue, "geo_work_units_per_sec");
+	refreshDeviceTimings(runtime, runtime.machine().scheduler().currentNowCycles());
 }
 
 void setTransferRatesFromManifest(Runtime& runtime, const RuntimeTransferRates& rates) {
 	runtime.timing.imgDecBytesPerSec = rates.imgDecBytesPerSec;
 	runtime.timing.dmaBytesPerSecIso = rates.dmaBytesPerSecIso;
 	runtime.timing.dmaBytesPerSecBulk = rates.dmaBytesPerSecBulk;
-	setVdpWorkUnitsPerSec(runtime, rates.vdpWorkUnitsPerSec);
-	setGeoWorkUnitsPerSec(runtime, rates.geoWorkUnitsPerSec);
+	runtime.timing.vdpWorkUnitsPerSec = resolvePositiveWorkUnits(rates.vdpWorkUnitsPerSec, "work_units_per_sec");
+	runtime.timing.geoWorkUnitsPerSec = resolvePositiveWorkUnits(rates.geoWorkUnitsPerSec, "geo_work_units_per_sec");
 	refreshDeviceTimings(runtime, runtime.machine().scheduler().currentNowCycles());
 }
 
@@ -75,8 +68,11 @@ void applyActiveMachineTiming(Runtime& runtime, i64 cpuHz) {
 	setCpuHz(runtime, cpuHz);
 	setCycleBudgetPerFrame(runtime, cycleBudget);
 	runtime.vblank.setVblankCycles(runtime, static_cast<int>(vblankCycles));
-	setVdpWorkUnitsPerSec(runtime, resolvePositiveWorkUnits(manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC), "work_units_per_sec"));
-	setGeoWorkUnitsPerSec(runtime, resolvePositiveWorkUnits(manifest.geoWorkUnitsPerSec.value_or(DEFAULT_GEO_WORK_UNITS_PER_SEC), "geo_work_units_per_sec"));
+	setRenderWorkUnitsPerSec(
+		runtime,
+		manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC),
+		manifest.geoWorkUnitsPerSec.value_or(DEFAULT_GEO_WORK_UNITS_PER_SEC)
+	);
 }
 
 } // namespace bmsx

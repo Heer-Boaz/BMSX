@@ -88,23 +88,27 @@ export function classifyFunctionDeclarationTarget(
 	statement: LuaFunctionDeclarationStatement,
 ): FunctionDeclarationTarget {
 	const { baseReference, finalReference } = getFunctionDeclarationBoundReferences(semantics, statement);
+	const identifiers = statement.name.identifiers;
+	const methodName = statement.name.methodName;
 	// Declaration headers are restricted to identifier chains (`fn`, `tbl.fn`,
 	// `tbl:method`), so the only flow-visible lexical write is the simple
 	// identifier form. Dotted/method forms read the base and then mutate table
 	// state, but they do not rewrite the base lexical symbol itself.
-	if (statement.name.identifiers.length === 1 && statement.name.methodName === null) {
-		const lexicalHandle = finalReference === null ? undefined : getReferenceSymbolHandle(finalReference) ?? undefined;
+	if (identifiers.length === 1 && methodName === null) {
+		let lexicalHandle: string | undefined;
+		if (finalReference !== null) {
+			lexicalHandle = getReferenceSymbolHandle(finalReference);
+		}
 		return {
 			kind: 'simple',
 			lexicalHandle,
 			finalReference,
 		};
 	}
-	const identifiers = statement.name.identifiers;
-	const finalKey = statement.name.methodName === null
+	const finalKey = methodName === null
 		? identifiers[identifiers.length - 1]
-		: statement.name.methodName;
-	const intermediateKeys = statement.name.methodName === null
+		: methodName;
+	const intermediateKeys = methodName === null
 		? identifiers.slice(1, identifiers.length - 1)
 		: identifiers.slice(1);
 	return {

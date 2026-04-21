@@ -46,7 +46,7 @@ export type CppNormalizedBodyInfo = {
 	line: number;
 	column: number;
 	fingerprint: string;
-	semanticFamilies: string[] | null;
+	semanticSignatures: string[] | null;
 };
 
 export function pushLintIssue(
@@ -193,20 +193,20 @@ export function addSemanticNormalizedBodyDuplicateIssues(normalizedBodies: reado
 	const bySignature = new Map<string, CppNormalizedBodyInfo[]>();
 	for (let index = 0; index < normalizedBodies.length; index += 1) {
 		const entry = normalizedBodies[index];
-		if (entry.semanticFamilies === null) {
+		if (entry.semanticSignatures === null) {
 			continue;
 		}
-		for (let familyIndex = 0; familyIndex < entry.semanticFamilies.length; familyIndex += 1) {
-			const family = entry.semanticFamilies[familyIndex];
-			let list = bySignature.get(family);
+		for (let signatureIndex = 0; signatureIndex < entry.semanticSignatures.length; signatureIndex += 1) {
+			const signature = entry.semanticSignatures[signatureIndex];
+			let list = bySignature.get(signature);
 			if (list === undefined) {
 				list = [];
-				bySignature.set(family, list);
+				bySignature.set(signature, list);
 			}
 			list.push(entry);
 		}
 	}
-	for (const [family, list] of bySignature) {
+	for (const [signature, list] of bySignature) {
 		if (list.length <= 1) {
 			continue;
 		}
@@ -230,10 +230,15 @@ export function addSemanticNormalizedBodyDuplicateIssues(normalizedBodies: reado
 				line: entry.line,
 				column: entry.column,
 				name: 'semantic_normalized_body_duplicate_pattern',
-				message: `Function/method body shares a semantic ${family.replace(':', ' ')} cluster with differently named bodies: ${nameSummary}. Extract shared ownership instead of copying logic.`,
+				message: `Function/method body shares a semantic ${semanticSignatureLabel(signature)} operation signature with differently named bodies: ${nameSummary}. Extract shared ownership instead of copying logic.`,
 			});
 		}
 	}
+}
+
+function semanticSignatureLabel(signature: string): string {
+	const separator = signature.indexOf('|');
+	return (separator >= 0 ? signature.slice(0, separator) : signature).replace(':', ' ');
 }
 
 export function relativeAnalysisResult(result: CppAnalysisResult): CppAnalysisResult {

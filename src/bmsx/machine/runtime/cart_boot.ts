@@ -72,13 +72,11 @@ export class CartBootState {
 			return;
 		}
 		const frameLoop = runtime.frameLoop;
-		if (frameLoop.currentFrameState !== null) {
+		const hasPendingCall = runtime.pendingCall !== null;
+		if (frameLoop.currentFrameState !== null || hasPendingCall) {
 			luaPipeline.resetFrameState(runtime);
 		}
-		if (runtime.pendingCall !== null) {
-			if (frameLoop.currentFrameState === null) {
-				luaPipeline.resetFrameState(runtime);
-			}
+		if (hasPendingCall) {
 			runtime.pendingCall = null;
 			runtime.vblank.clearHaltUntilIrq(runtime);
 		}

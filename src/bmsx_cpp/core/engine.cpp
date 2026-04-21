@@ -182,7 +182,7 @@ void EngineCore::refreshRenderAssets() {
 	}
 	m_view->initializeDefaultTextures();
 	if (Runtime::hasInstance()) {
-		Runtime::instance().restoreVramSlotTextures();
+		Runtime::instance().machine().vdp().restoreVramSlotTextures();
 	}
 }
 

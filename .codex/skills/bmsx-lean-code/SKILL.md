@@ -28,6 +28,7 @@ Use this skill whenever working in the BMSX repo or discussing BMSX code quality
 - Name concepts once. If an expression such as bounds, normalization, lookup, line splitting, keyword lowercasing, or caret math repeats, extract a real concept or shared helper.
 - In cart code, use cart-facing globals/helpers instead of `engine.*`, keep repeated string identifiers short, and read constants directly instead of aliasing global constant tables.
 - Treat serialization as part of feature design. Registry/persistent runtime objects and host-only state should not leak into saved game state.
+- Do not hand-fix indentation. Make the code change, then run `npm run fix:indent -- <touched paths>` for formatting/indent cleanup. If that tool cannot handle the touched language well enough, improve the tool or call out the limitation instead of committing manual whitespace churn.
 
 ## Anti-Workaround Rule
 Do not satisfy a quality rule by producing worse code. If a rule pushes toward worse code, fix the rule first.
@@ -50,7 +51,7 @@ Before finalizing a code-quality change, inspect your own diff specifically for 
 ```ts
 // bmsx-lint:disable-next-line empty_catch_pattern -- browser API cleanup is best-effort here
 try {
-	releaseExternalHandle();
+    releaseExternalHandle();
 } catch {
 }
 ```
@@ -59,6 +60,7 @@ try {
 Run checks that match the touched area. Prefer these when relevant:
 
 ```bash
+npm run fix:indent -- <touched paths>
 npm run compile:engine
 npm run analyze:code-quality -- --root src/bmsx/machine
 npm run analyze:code-quality -- --root src/bmsx_cpp/machine
