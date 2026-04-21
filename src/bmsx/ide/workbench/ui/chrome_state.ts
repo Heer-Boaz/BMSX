@@ -1,6 +1,6 @@
 import type { RectBounds } from '../../../rompack/format';
 import { create_rect_bounds } from '../../../common/rect';
-import type { MenuId, TopBarButtonId } from '../../common/models';
+import type { MenuId, TopBarButtonId } from './top_bar/menu';
 
 type EditorChromeState = {
 	topBarButtonBounds: Record<TopBarButtonId, RectBounds>;

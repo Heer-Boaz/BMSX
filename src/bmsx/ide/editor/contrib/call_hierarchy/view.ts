@@ -2,6 +2,7 @@ import type { LuaIncomingCallHierarchyNode } from '../intellisense/lua_frontend'
 import type { LuaDefinitionLocation } from '../../../../lua/semantic_contracts';
 import { createEditorSemanticFrontend } from '../intellisense/frontend';
 import type { LuaSemanticWorkspaceSnapshot, SymbolID } from '../intellisense/semantic_model';
+import { computeSourceLabel } from '../../../common/paths';
 
 export type CallHierarchyViewNodeKind = 'root' | 'caller' | 'call';
 
@@ -102,9 +103,4 @@ function toDefinitionLocation(range: { path: string; start: { line: number; colu
 			endColumn: range.end.column,
 		},
 	};
-}
-
-function computeSourceLabel(path: string): string {
-	const lastSlash = path.lastIndexOf('/');
-	return lastSlash !== -1 && lastSlash + 1 < path.length ? path.slice(lastSlash + 1) : path;
 }

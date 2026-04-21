@@ -26,7 +26,7 @@ import { LuaTokenType } from '../../../../lua/syntax/token';
 import type { LuaSymbolEntry } from '../../../../lua/semantic_contracts';
 import type { ParsedLuaChunk } from '../../../language/lua/parse';
 import { getCachedLuaParse } from '../../../language/lua/analysis_cache';
-import { sourcePositionInRange } from '../../../common/semantic/source_range';
+import { sourcePositionInRange, type SourcePosition } from '../../../common/semantic/source_range';
 import { semanticNamePathMatches, type SemanticSymbolKind } from '../../../common/semantic/semantic_symbols';
 import type { SemanticAnnotations, SemanticRole } from '../../../common/semantic/semantic_tokens';
 import { methodPathToPropertyPath } from './lua_semantic_common';
@@ -380,11 +380,6 @@ type SemanticBuildResult = {
 	declValueHints: DeclValueHintEntry[];
 	prefabClasses: PrefabClassEntry[];
 	objectBindings: ObjectBindingEntry[];
-};
-
-type Position = {
-	line: number;
-	column: number;
 };
 
 type TokenInfo = {
@@ -1965,7 +1960,7 @@ class SemanticBuilder {
 		return decl;
 	}
 
-	private ensureTableField(namePath: readonly string[], start: Position, length: number, baseDecl: InternalDecl): InternalDecl {
+	private ensureTableField(namePath: readonly string[], start: SourcePosition, length: number, baseDecl: InternalDecl): InternalDecl {
 		const key = joinNamePath(namePath);
 		const existing = this.properties.get(key);
 		if (existing) {
@@ -2275,7 +2270,7 @@ function buildRangeFromToken(tokenInfo: TokenInfo, path: string): LuaSourceRange
 	return buildRangeFromPosition({ line: token.line, column: token.column }, token.lexeme.length, path);
 }
 
-function buildRangeFromPosition(position: Position, length: number, path: string): LuaSourceRange {
+function buildRangeFromPosition(position: SourcePosition, length: number, path: string): LuaSourceRange {
 	const endColumn = position.column + Math.max(length, 1) - 1;
 	return {
 		path,

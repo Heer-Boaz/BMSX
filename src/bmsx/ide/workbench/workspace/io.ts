@@ -173,7 +173,7 @@ async function writeWorkspaceFile(relativePath: string, contents: string): Promi
 	}
 }
 
-async function deleteWorkspaceFile(relativePath: string): Promise<void> {
+async function deleteWorkspaceFileFromBackends(relativePath: string): Promise<void> {
 	if (localBackend) {
 		await localBackend.deleteFile(relativePath);
 	}
@@ -272,7 +272,7 @@ export async function writeDirtyBuffer(relativePath: string, contents: string): 
 }
 
 export async function deleteDirtyBuffer(relativePath: string): Promise<void> {
-	await deleteWorkspaceFile(relativePath);
+	await deleteWorkspaceFileFromBackends(relativePath);
 }
 
 export function scheduleWorkspaceServerRetry(delayMs: number): void {

@@ -1,4 +1,4 @@
-import { getCursorOffset, selectionAnchorOffset } from './inline_text_field';
+import { charAdvance, getCursorOffset, selectionAnchorOffset } from './inline_text_field';
 import type { InlineFieldMetrics } from './inline_text_field';
 import type { TextField } from '../../common/models';
 
@@ -59,12 +59,6 @@ const scratchWrappedInlineSegmentDecoration: WrappedInlineSegmentDecoration = {
 	caretLocalIndex: 0,
 	caretChar: ' ',
 };
-
-function charAdvance(metrics: InlineFieldMetrics, ch: string): number {
-	return ch === '\t'
-		? metrics.spaceAdvance * metrics.tabSpaces
-		: metrics.advanceChar(ch);
-}
 
 function measureInlineFieldRange(text: string, start: number, end: number, measureText: (text: string) => number): number {
 	if (start >= end) {

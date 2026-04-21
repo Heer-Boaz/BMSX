@@ -77,7 +77,7 @@ export function performHotResume(): boolean {
 		console.log('[IDE] Clear execution stop highlights before resume');
 		workbenchMode.clearFaultState(runtime);
 		console.log('[IDE] Resuming from snapshot after hot-resume');
-		await luaPipeline.resumeFromSnapshot(runtime, snapshot, { preserveEngineModules });
+			await luaPipeline.resumeFromSnapshot(runtime, snapshot, preserveEngineModules);
 		if (shouldUpdateGeneration) {
 			console.log('[IDE] Updating applied generation after resume');
 			editorDocumentState.appliedGeneration = targetGeneration;

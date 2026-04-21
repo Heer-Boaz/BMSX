@@ -314,7 +314,7 @@ export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnaps
 	updateDesiredColumn();
 	resetBlink();
 	editorCaretState.cursorRevealSuspended = false;
-	if (options?.preserveScroll !== true) {
+	if (!options?.preserveScroll) {
 		ensureCursorVisible();
 	}
 	requestSemanticRefresh();

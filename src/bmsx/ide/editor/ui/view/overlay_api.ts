@@ -88,12 +88,12 @@ export class OverlayApi {
 		}
 		this.activeRenderer.sprite({
 			imgid,
-			pos: { x, y, z },
-			scale: { x: scaleX, y: scaleY },
-			flip: {
-				flip_h: options !== undefined && options.flip_h === true,
-				flip_v: options !== undefined && options.flip_v === true,
-			},
+				pos: { x, y, z },
+				scale: { x: scaleX, y: scaleY },
+				flip: {
+					flip_h: options !== undefined && !!options.flip_h,
+					flip_v: options !== undefined && !!options.flip_v,
+				},
 			colorize: options !== undefined && options.colorize !== undefined
 				? options.colorize
 				: { r: 1, g: 1, b: 1, a: 1 },

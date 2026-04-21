@@ -25,15 +25,14 @@ import {
 import { getCachedLuaParse } from '../../../language/lua/analysis_cache';
 import { sourceRangeStartKey } from '../../../common/semantic/source_range';
 import { buildLuaKnownNameSet, isReservedMemoryMapName, methodPathToPropertyPath, semanticSymbolKindToLuaSymbolKind } from './lua_semantic_common';
-
-export type LuaDiagnosticSeverity = 'error' | 'warning';
+import type { EditorDiagnosticSeverity } from '../../../common/models';
 
 export type LuaStaticDiagnostic = {
 	row: number;
 	startColumn: number;
 	endColumn: number;
 	message: string;
-	severity: LuaDiagnosticSeverity;
+	severity: EditorDiagnosticSeverity;
 };
 
 export type LuaApiSignatureMetadata = {
@@ -228,7 +227,7 @@ function pushDiagnostic(
 	startColumn: number,
 	endColumn: number,
 	message: string,
-	severity: LuaDiagnosticSeverity,
+	severity: EditorDiagnosticSeverity,
 ): void {
 	diagnostics.push({
 		row,
@@ -243,7 +242,7 @@ function pushRangeDiagnostic(
 	diagnostics: LuaStaticDiagnostic[],
 	range: LuaSourceRange,
 	message: string,
-	severity: LuaDiagnosticSeverity,
+	severity: EditorDiagnosticSeverity,
 ): void {
 	const row = range.start.line > 0 ? range.start.line - 1 : 0;
 	const startColumn = range.start.column > 0 ? range.start.column - 1 : 0;

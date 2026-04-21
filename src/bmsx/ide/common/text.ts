@@ -1,5 +1,10 @@
 import * as constants from './constants';
-import type { TextBuffer } from '../editor/text/text_buffer';
+
+type LuaCommentTextBuffer = {
+	readonly version: number;
+	getLineCount(): number;
+	getLineContent(row: number): string;
+};
 
 export function expandTabs(source: string): string {
 	if (source.indexOf('\t') === -1) return source;
@@ -15,17 +20,29 @@ export function expandTabs(source: string): string {
 	return result;
 }
 
-export function applyCaseOutsideStrings(text: string, transform: (ch: string) => string): string {
-	if (text.length === 0) {
-		return text;
+function isStringQuote(ch: string): boolean {
+	switch (ch) {
+		case '"':
+		case '\'':
+		case '`':
+			return true;
+		default:
+			return false;
 	}
+}
+
+export function applyCaseOutsideStrings(text: string, transform: (ch: string) => string): string {
 	let inString = false;
-	let quote: string = null;
+	let quote = '';
 	let escapeNext = false;
+	let result = '';
 	let mutated = false;
 	for (let i = 0; i < text.length; i += 1) {
 		const ch = text.charAt(i);
 		if (inString) {
+			if (mutated) {
+				result += ch;
+			}
 			if (escapeNext) {
 				escapeNext = false;
 				continue;
@@ -36,54 +53,32 @@ export function applyCaseOutsideStrings(text: string, transform: (ch: string) =>
 			}
 			if (ch === quote) {
 				inString = false;
-				quote = null;
+				quote = '';
 			}
 			continue;
 		}
-		if (ch === '"' || ch === '\'' || ch === '`') {
+		if (isStringQuote(ch)) {
 			inString = true;
 			quote = ch;
+			if (mutated) {
+				result += ch;
+			}
 			continue;
 		}
-		if (transform(ch) !== ch) {
+		const transformed = transform(ch);
+		if (transformed === ch) {
+			if (mutated) {
+				result += ch;
+			}
+			continue;
+		}
+		if (!mutated) {
+			result = text.slice(0, i);
 			mutated = true;
-			break;
 		}
+		result += transformed;
 	}
-	if (!mutated) {
-		return text;
-	}
-	let result = '';
-	inString = false;
-	quote = null;
-	escapeNext = false;
-	for (let i = 0; i < text.length; i += 1) {
-		const ch = text.charAt(i);
-		if (inString) {
-			result += ch;
-			if (escapeNext) {
-				escapeNext = false;
-				continue;
-			}
-			if (ch === '\\') {
-				escapeNext = true;
-				continue;
-			}
-			if (ch === quote) {
-				inString = false;
-				quote = null;
-			}
-			continue;
-		}
-		if (ch === '"' || ch === '\'' || ch === '`') {
-			inString = true;
-			quote = ch;
-			result += ch;
-			continue;
-		}
-		result += transform(ch);
-	}
-	return result;
+	return mutated ? result : text;
 }
 
 export type TextRangeMeasure = (text: string, start: number, end: number) => number;
@@ -132,6 +127,22 @@ function findMeasuredWrapEnd(text: string, start: number, end: number, maxWidth:
 	return end;
 }
 
+function findMeasuredPrefixEnd(text: string, maxWidth: number, measureRange: TextRangeMeasure): number {
+	let low = 0;
+	let high = text.length;
+	let best = 0;
+	while (low <= high) {
+		const mid = (low + high) >>> 1;
+		if (measureRange(text, 0, mid) <= maxWidth) {
+			best = mid;
+			low = mid + 1;
+		} else {
+			high = mid - 1;
+		}
+	}
+	return best;
+}
+
 export function truncateMeasuredText(text: string, maxWidth: number, measureRange: TextRangeMeasure, marker = '...'): string {
 	if (maxWidth <= 0) {
 		return '';
@@ -144,19 +155,7 @@ export function truncateMeasuredText(text: string, maxWidth: number, measureRang
 		return '';
 	}
 	const bodyWidth = maxWidth - markerWidth;
-	let low = 0;
-	let high = text.length;
-	let best = 0;
-	while (low <= high) {
-		const mid = (low + high) >>> 1;
-		if (measureRange(text, 0, mid) <= bodyWidth) {
-			best = mid;
-			low = mid + 1;
-		} else {
-			high = mid - 1;
-		}
-	}
-	return text.slice(0, best) + marker;
+	return text.slice(0, findMeasuredPrefixEnd(text, bodyWidth, measureRange)) + marker;
 }
 
 export function appendMeasuredTruncationMarker(text: string, maxWidth: number, measureRange: TextRangeMeasure, marker = '...'): string {
@@ -168,19 +167,7 @@ export function appendMeasuredTruncationMarker(text: string, maxWidth: number, m
 	if (measureRange(text, 0, text.length) <= bodyWidth) {
 		return text + marker;
 	}
-	let low = 0;
-	let high = text.length;
-	let best = 0;
-	while (low <= high) {
-		const mid = (low + high) >>> 1;
-		if (measureRange(text, 0, mid) <= bodyWidth) {
-			best = mid;
-			low = mid + 1;
-		} else {
-			high = mid - 1;
-		}
-	}
-	return text.slice(0, best) + marker;
+	return text.slice(0, findMeasuredPrefixEnd(text, bodyWidth, measureRange)) + marker;
 }
 
 export function writeWrappedMeasuredText(
@@ -288,7 +275,7 @@ export function wrapTextDynamic(
 }
 
 export function isLuaCommentContext(
-	buffer: TextBuffer,
+	buffer: LuaCommentTextBuffer,
 	targetRow: number,
 	targetColumn: number
 ): boolean {
@@ -299,88 +286,8 @@ export function isLuaCommentContext(
 	const cache = getLuaCommentContextCache(buffer);
 	ensureLuaCommentStateUpTo(buffer, cache, targetRow);
 	const line = buffer.getLineContent(targetRow);
-	let mode = cache.modeState[targetRow];
-	let level = cache.levelState[targetRow];
-	let index = 0;
-	while (index < line.length && index < targetColumn) {
-		if (mode === MODE_LONG_COMMENT) {
-			const ch = line.charCodeAt(index);
-			if (ch === 93) {
-				const closeLen = longBracketCloseLengthAt(line, index, level);
-				if (closeLen > 0) {
-					mode = MODE_NORMAL;
-					level = 0;
-					index += closeLen;
-					continue;
-				}
-			}
-			index += 1;
-			continue;
-		}
-		if (mode === MODE_LONG_STRING) {
-			const ch = line.charCodeAt(index);
-			if (ch === 93) {
-				const closeLen = longBracketCloseLengthAt(line, index, level);
-				if (closeLen > 0) {
-					mode = MODE_NORMAL;
-					level = 0;
-					index += closeLen;
-					continue;
-				}
-			}
-			index += 1;
-			continue;
-		}
-		if (mode === MODE_STRING_SINGLE || mode === MODE_STRING_DOUBLE) {
-			const ch = line.charCodeAt(index);
-			if (ch === 92) {
-				const escape = index + 1 < line.length ? line.charCodeAt(index + 1) : 0;
-				index += escape === 122 ? 2 + skipLuaStringWhitespace(line, index + 2) : 2;
-				continue;
-			}
-			if ((mode === MODE_STRING_SINGLE && ch === 39) || (mode === MODE_STRING_DOUBLE && ch === 34)) {
-				mode = MODE_NORMAL;
-				index += 1;
-				continue;
-			}
-			index += 1;
-			continue;
-		}
-
-		const ch = line.charCodeAt(index);
-		const next = index + 1 < line.length ? line.charCodeAt(index + 1) : 0;
-		if (ch === 45 && next === 45) {
-			const openIndex = index + 2;
-			const openLevel = openIndex < line.length ? longBracketLevelAt(line, openIndex) : -1;
-			if (openLevel >= 0) {
-				mode = MODE_LONG_COMMENT;
-				level = openLevel;
-				index = openIndex + openLevel + 2;
-				continue;
-			}
-			return true;
-		}
-		if (ch === 91) {
-			const openLevel = longBracketLevelAt(line, index);
-			if (openLevel >= 0) {
-				mode = MODE_LONG_STRING;
-				level = openLevel;
-				index += openLevel + 2;
-				continue;
-			}
-		}
-		if (ch === 39) {
-			mode = MODE_STRING_SINGLE;
-			index += 1;
-			continue;
-		}
-		if (ch === 34) {
-			mode = MODE_STRING_DOUBLE;
-			index += 1;
-			continue;
-		}
-		index += 1;
-	}
+	const state = scanLuaLineMode(line, cache.modeState[targetRow], cache.levelState[targetRow], targetColumn, true);
+	const mode = stateMode(state);
 	return mode === MODE_LONG_COMMENT;
 }
 
@@ -400,9 +307,9 @@ class LuaCommentContextCache {
 	}
 }
 
-const luaCommentContextCache = new WeakMap<TextBuffer, LuaCommentContextCache>();
+const luaCommentContextCache = new WeakMap<LuaCommentTextBuffer, LuaCommentContextCache>();
 
-export function invalidateLuaCommentContextFromRow(buffer: TextBuffer, row: number): void {
+export function invalidateLuaCommentContextFromRow(buffer: LuaCommentTextBuffer, row: number): void {
 	let cache = luaCommentContextCache.get(buffer);
 	if (!cache) {
 		cache = new LuaCommentContextCache();
@@ -428,7 +335,7 @@ export function invalidateLuaCommentContextFromRow(buffer: TextBuffer, row: numb
 	cache.validThroughRow = Math.min(cache.validThroughRow, clampedRow);
 }
 
-function getLuaCommentContextCache(buffer: TextBuffer): LuaCommentContextCache {
+function getLuaCommentContextCache(buffer: LuaCommentTextBuffer): LuaCommentContextCache {
 	let cache = luaCommentContextCache.get(buffer);
 	if (!cache) {
 		cache = new LuaCommentContextCache();
@@ -438,7 +345,7 @@ function getLuaCommentContextCache(buffer: TextBuffer): LuaCommentContextCache {
 	return cache;
 }
 
-function ensureLuaCommentStateUpTo(buffer: TextBuffer, cache: LuaCommentContextCache, targetRow: number): void {
+function ensureLuaCommentStateUpTo(buffer: LuaCommentTextBuffer, cache: LuaCommentContextCache, targetRow: number): void {
 	const lineCount = buffer.getLineCount();
 	if (cache.lineCount !== lineCount) {
 		cache.reset(lineCount, buffer.version);
@@ -452,86 +359,9 @@ function ensureLuaCommentStateUpTo(buffer: TextBuffer, cache: LuaCommentContextC
 		let mode = cache.modeState[row];
 		let level = cache.levelState[row];
 		const line = buffer.getLineContent(row);
-		let index = 0;
-		while (index < line.length) {
-			if (mode === MODE_LONG_COMMENT) {
-				const ch = line.charCodeAt(index);
-				if (ch === 93) {
-					const closeLen = longBracketCloseLengthAt(line, index, level);
-					if (closeLen > 0) {
-						mode = MODE_NORMAL;
-						level = 0;
-						index += closeLen;
-						continue;
-					}
-				}
-				index += 1;
-				continue;
-			}
-			if (mode === MODE_LONG_STRING) {
-				const ch = line.charCodeAt(index);
-				if (ch === 93) {
-					const closeLen = longBracketCloseLengthAt(line, index, level);
-					if (closeLen > 0) {
-						mode = MODE_NORMAL;
-						level = 0;
-						index += closeLen;
-						continue;
-					}
-				}
-				index += 1;
-				continue;
-			}
-			if (mode === MODE_STRING_SINGLE || mode === MODE_STRING_DOUBLE) {
-				const ch = line.charCodeAt(index);
-				if (ch === 92) {
-					const escape = index + 1 < line.length ? line.charCodeAt(index + 1) : 0;
-					index += escape === 122 ? 2 + skipLuaStringWhitespace(line, index + 2) : 2;
-					continue;
-				}
-				if ((mode === MODE_STRING_SINGLE && ch === 39) || (mode === MODE_STRING_DOUBLE && ch === 34)) {
-					mode = MODE_NORMAL;
-					index += 1;
-					continue;
-				}
-				index += 1;
-				continue;
-			}
-
-			const ch = line.charCodeAt(index);
-			const next = index + 1 < line.length ? line.charCodeAt(index + 1) : 0;
-			if (ch === 45 && next === 45) {
-				const openIndex = index + 2;
-				const openLevel = openIndex < line.length ? longBracketLevelAt(line, openIndex) : -1;
-				if (openLevel >= 0) {
-					mode = MODE_LONG_COMMENT;
-					level = openLevel;
-					index = openIndex + openLevel + 2;
-					continue;
-				}
-				break;
-			}
-			if (ch === 91) {
-				const openLevel = longBracketLevelAt(line, index);
-				if (openLevel >= 0) {
-					mode = MODE_LONG_STRING;
-					level = openLevel;
-					index += openLevel + 2;
-					continue;
-				}
-			}
-			if (ch === 39) {
-				mode = MODE_STRING_SINGLE;
-				index += 1;
-				continue;
-			}
-			if (ch === 34) {
-				mode = MODE_STRING_DOUBLE;
-				index += 1;
-				continue;
-			}
-			index += 1;
-		}
+		const state = scanLuaLineMode(line, mode, level, line.length, false);
+		mode = stateMode(state);
+		level = stateLevel(state);
 		cache.modeState[row + 1] = mode;
 		cache.levelState[row + 1] = level;
 		cache.validThroughRow = row + 1;
@@ -543,6 +373,98 @@ const MODE_STRING_SINGLE = 1;
 const MODE_STRING_DOUBLE = 2;
 const MODE_LONG_STRING = 3;
 const MODE_LONG_COMMENT = 4;
+
+function packLuaLineState(mode: number, level: number): number {
+	return mode | (level << 3);
+}
+
+function stateMode(state: number): number {
+	return state & 7;
+}
+
+function stateLevel(state: number): number {
+	return state >>> 3;
+}
+
+function luaStringCloseCode(mode: number): number {
+	return mode === MODE_STRING_SINGLE ? 39 : 34;
+}
+
+function scanLuaLineMode(line: string, startMode: number, startLevel: number, endColumn: number, keepLineComment: boolean): number {
+	let mode = startMode;
+	let level = startLevel;
+	let index = 0;
+	const end = endColumn < line.length ? endColumn : line.length;
+	while (index < end) {
+		if (mode === MODE_LONG_COMMENT || mode === MODE_LONG_STRING) {
+			const ch = line.charCodeAt(index);
+			if (ch === 93) {
+				const closeLen = longBracketCloseLengthAt(line, index, level);
+				if (closeLen > 0) {
+					mode = MODE_NORMAL;
+					level = 0;
+					index += closeLen;
+					continue;
+				}
+			}
+			index += 1;
+			continue;
+		}
+		if (mode === MODE_STRING_SINGLE || mode === MODE_STRING_DOUBLE) {
+			const ch = line.charCodeAt(index);
+			if (ch === 92) {
+				const nextIndex = index + 1;
+				index += nextIndex < line.length && line.charCodeAt(nextIndex) === 122
+					? 2 + skipLuaStringWhitespace(line, index + 2)
+					: 2;
+				continue;
+			}
+			if (ch === luaStringCloseCode(mode)) {
+				mode = MODE_NORMAL;
+				index += 1;
+				continue;
+			}
+			index += 1;
+			continue;
+		}
+
+		const ch = line.charCodeAt(index);
+		const nextIndex = index + 1;
+		const next = nextIndex < line.length ? line.charCodeAt(nextIndex) : 0;
+		if (ch === 45 && next === 45) {
+			const openIndex = index + 2;
+			const openLevel = openIndex < line.length ? longBracketLevelAt(line, openIndex) : -1;
+			if (openLevel >= 0) {
+				mode = MODE_LONG_COMMENT;
+				level = openLevel;
+				index = openIndex + openLevel + 2;
+				continue;
+			}
+			return packLuaLineState(keepLineComment ? MODE_LONG_COMMENT : mode, level);
+		}
+		if (ch === 91) {
+			const openLevel = longBracketLevelAt(line, index);
+			if (openLevel >= 0) {
+				mode = MODE_LONG_STRING;
+				level = openLevel;
+				index += openLevel + 2;
+				continue;
+			}
+		}
+		if (ch === 39) {
+			mode = MODE_STRING_SINGLE;
+			index += 1;
+			continue;
+		}
+		if (ch === 34) {
+			mode = MODE_STRING_DOUBLE;
+			index += 1;
+			continue;
+		}
+		index += 1;
+	}
+	return packLuaLineState(mode, level);
+}
 
 function longBracketLevelAt(line: string, index: number): number {
 	if (line.charCodeAt(index) !== 91) {
@@ -576,13 +498,27 @@ function skipLuaStringWhitespace(line: string, index: number): number {
 	let cursor = index;
 	while (cursor < line.length) {
 		const code = line.charCodeAt(cursor);
-		if (code !== 32 && code !== 9 && code !== 13 && code !== 10 && code !== 11 && code !== 12) {
+		if (!isLuaWhitespaceCode(code)) {
 			break;
 		}
 		cursor += 1;
 		skipped += 1;
 	}
 	return skipped;
+}
+
+function isLuaWhitespaceCode(code: number): boolean {
+	switch (code) {
+		case 9:
+		case 10:
+		case 11:
+		case 12:
+		case 13:
+		case 32:
+			return true;
+		default:
+			return false;
+	}
 }
 export function truncateWithMeasure(text: string, maxWidth: number, measure: (t: string) => number): string {
 	return truncateMeasuredText(text, maxWidth, (value, start, end) => measureWithWholeTextCallback(value, start, end, measure));

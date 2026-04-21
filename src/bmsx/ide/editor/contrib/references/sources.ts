@@ -12,6 +12,7 @@ import { ReferenceState, type ReferenceMatchInfo } from './state';
 import { getLinesSnapshot, getTextSnapshot, splitText } from '../../text/source_text';
 import { listResources } from '../../../workspace/workspace';
 import type { Decl, LuaSemanticWorkspaceSnapshot } from '../intellisense/semantic_model';
+import { computeSourceLabel } from '../../../common/paths';
 
 export type ProjectReferenceEnvironment = {
 	activeContext: CodeTabContext;
@@ -43,11 +44,6 @@ type FileMetadata = {
 	sourceLabel: string;
 	asset_id?: string;
 };
-
-export function computeSourceLabel(path: string): string {
-	const lastSlash = path.lastIndexOf('/');
-	return lastSlash !== -1 && lastSlash + 1 < path.length ? path.slice(lastSlash + 1) : path;
-}
 
 export function buildReferenceCatalogForExpression(options: {
 	workspace: LuaSemanticWorkspace;

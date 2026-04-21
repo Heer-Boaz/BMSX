@@ -156,7 +156,7 @@ function popRenderTargetOwner(runtime: Runtime, owner: TargetOwner): void {
 }
 
 function editorBlocksRuntimePipeline(runtime: Runtime): boolean {
-	return runtime.editor !== null && runtime.editor.blocksRuntimePipeline === true;
+	return runtime.editor !== null && runtime.editor.blocksRuntimePipeline;
 }
 
 function isManagedOverlayEditorActive(runtime: Runtime): boolean {
@@ -264,13 +264,14 @@ export function activateEditor(runtime: Runtime): void {
 	if (runtime.terminal.isActive) {
 		runtime.terminal.deactivate();
 	}
-	const wasActive = runtime.editor!.isActive;
+	const editor = runtime.editor!;
+	const wasActive = editor.isActive;
 	if (!wasActive) {
 		pushRenderTargetOwner(runtime, 'editor');
 	}
 	try {
-		if (!runtime.editor!.isActive) {
-			runtime.editor!.activate();
+		if (!editor.isActive) {
+			editor.activate();
 		}
 	} catch (error) {
 		if (!wasActive) {
@@ -278,15 +279,16 @@ export function activateEditor(runtime: Runtime): void {
 		}
 		throw error;
 	}
-	if (!runtime.editor!.isActive && !wasActive) {
+	if (!editor.isActive && !wasActive) {
 		popRenderTargetOwner(runtime, 'editor');
 	}
 	updateGamePipelineExts(runtime);
 }
 
 export function deactivateEditor(runtime: Runtime): void {
-	if (runtime.editor!.isActive === true) {
-		runtime.editor!.deactivate();
+	const editor = runtime.editor!;
+	if (editor.isActive) {
+		editor.deactivate();
 	}
 	popRenderTargetOwner(runtime, 'editor');
 	updateGamePipelineExts(runtime);
@@ -630,18 +632,37 @@ export function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unkno
 	}
 	if (error instanceof LuaError) {
 		const src = typeof error.path === 'string' && error.path.length > 0 ? error.path : null;
-		const line = Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null;
-		const col = Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null;
-		const innermostCall = callFrames && callFrames.length > 0 ? callFrames[callFrames.length - 1] : null;
-		const innermostFrame = luaFrames.length > 0 ? luaFrames[0] : null;
-		const effectiveSource = src !== null ? src : innermostFrame ? innermostFrame.source : null;
-		const resolvedLine = line !== null ? line : (innermostFrame ? innermostFrame.line : null);
-		const resolvedColumn = col !== null ? col : (innermostFrame ? innermostFrame.column : null);
-		const alreadyCaptured =
-			!!innermostFrame &&
-			innermostFrame.source === (effectiveSource ?? '') &&
-			innermostFrame.line === (resolvedLine ?? 0) &&
-			innermostFrame.column === (resolvedColumn ?? 0);
+			const line = Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null;
+			const col = Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null;
+			const innermostCall = callFrames && callFrames.length > 0 ? callFrames[callFrames.length - 1] : null;
+			const innermostFrame = luaFrames.length > 0 ? luaFrames[0] : null;
+			let effectiveSource = src;
+			let resolvedLine = line;
+			let resolvedColumn = col;
+			if (innermostFrame) {
+				if (effectiveSource === null) {
+					effectiveSource = innermostFrame.source;
+				}
+				if (resolvedLine === null) {
+					resolvedLine = innermostFrame.line;
+				}
+				if (resolvedColumn === null) {
+					resolvedColumn = innermostFrame.column;
+				}
+			}
+			let alreadyCaptured = false;
+			if (innermostFrame) {
+				const sourceMatches = effectiveSource === null
+					? innermostFrame.source.length === 0
+					: innermostFrame.source === effectiveSource;
+				const lineMatches = resolvedLine === null
+					? innermostFrame.line === 0
+					: innermostFrame.line === resolvedLine;
+				const columnMatches = resolvedColumn === null
+					? innermostFrame.column === 0
+					: innermostFrame.column === resolvedColumn;
+				alreadyCaptured = sourceMatches && lineMatches && columnMatches;
+			}
 		if (!alreadyCaptured) {
 			const fnName =
 				innermostCall && innermostCall.functionName && innermostCall.functionName.length > 0
@@ -649,21 +670,19 @@ export function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unkno
 					: innermostFrame && innermostFrame.functionName && innermostFrame.functionName.length > 0
 						? innermostFrame.functionName
 						: null;
-			if (innermostFrame && effectiveSource && innermostFrame.source === effectiveSource) {
-				const hint = effectiveSource;
-				const updated: StackTraceFrame = {
-					origin: innermostFrame.origin,
-					functionName: fnName,
-					source: effectiveSource,
-					line: resolvedLine,
-					column: resolvedColumn,
-					raw: buildLuaFrameRawLabel(fnName, effectiveSource),
-					pathPath: innermostFrame.pathPath,
-				};
-				updated.pathPath = hint;
-				luaFrames[0] = updated;
-			} else {
-				const frameSource = src !== null ? src : effectiveSource;
+				if (innermostFrame && effectiveSource && innermostFrame.source === effectiveSource) {
+					const updated: StackTraceFrame = {
+						origin: innermostFrame.origin,
+						functionName: fnName,
+						source: effectiveSource,
+						line: resolvedLine,
+						column: resolvedColumn,
+						raw: buildLuaFrameRawLabel(fnName, effectiveSource),
+						pathPath: effectiveSource,
+					};
+					luaFrames[0] = updated;
+				} else {
+					const frameSource = src !== null ? src : effectiveSource;
 				const top: StackTraceFrame = {
 					origin: 'lua',
 					functionName: fnName,
@@ -671,15 +690,12 @@ export function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unkno
 					line: resolvedLine,
 					column: resolvedColumn,
 					raw: buildLuaFrameRawLabel(fnName, frameSource),
-				};
-				if (frameSource && frameSource.length > 0) {
-					const hint = frameSource;
-					if (hint) {
-						top.pathPath = hint;
+					};
+					if (frameSource && frameSource.length > 0) {
+						top.pathPath = frameSource;
 					}
+					luaFrames.unshift(top);
 				}
-				luaFrames.unshift(top);
-			}
 		}
 	}
 	if (luaFrames.length > 0) {

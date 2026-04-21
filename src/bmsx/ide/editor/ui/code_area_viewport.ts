@@ -62,16 +62,17 @@ export function resolveCodeAreaViewportMetrics(
 ): CodeAreaViewportMetrics {
 	const wrapEnabled = editorViewState.wordWrapEnabled;
 	const advance = editorFeedbackState.warnNonMonospace ? editorViewState.spaceAdvance : editorViewState.charAdvance;
-	let horizontalScrollbarWidth = !wrapEnabled && editorViewState.codeHorizontalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0;
-	let verticalScrollbarWidth = editorViewState.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0;
+	const scrollbarWidth = constants.SCROLLBAR_WIDTH;
+	let horizontalScrollbarWidth = !wrapEnabled && editorViewState.codeHorizontalScrollbarVisible ? scrollbarWidth : 0;
+	let verticalScrollbarWidth = editorViewState.codeVerticalScrollbarVisible ? scrollbarWidth : 0;
 	let rows = codeAreaViewportMetrics.rows;
 	let columns = codeAreaViewportMetrics.columns;
 
 	for (let i = 0; i < 3; i += 1) {
 		rows = cellCapacity(bounds.codeBottom - bounds.codeTop - horizontalScrollbarWidth, editorViewState.lineHeight);
-		verticalScrollbarWidth = visualCount > rows ? constants.SCROLLBAR_WIDTH : 0;
+		verticalScrollbarWidth = visualCount > rows ? scrollbarWidth : 0;
 		columns = cellCapacity(bounds.codeRight - bounds.textLeft - verticalScrollbarWidth - constants.CODE_AREA_RIGHT_MARGIN, advance);
-		horizontalScrollbarWidth = !wrapEnabled && maximumColumns > columns ? constants.SCROLLBAR_WIDTH : 0;
+		horizontalScrollbarWidth = !wrapEnabled && maximumColumns > columns ? scrollbarWidth : 0;
 	}
 
 	editorViewState.codeVerticalScrollbarVisible = verticalScrollbarWidth !== 0;

@@ -213,8 +213,6 @@ export type VisualLineSegment = {
 	endColumn: number;
 };
 
-export type TopBarButtonId = import('../workbench/ui/top_bar/menu').TopBarButtonId;
-export type MenuId = import('../workbench/ui/top_bar/menu').MenuId;
 export type CodeTabMode = 'lua' | 'aem';
 
 export type EditorTabId = `resource:${string}` | `code:${string}`;

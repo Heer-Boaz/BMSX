@@ -31,6 +31,7 @@ import {
 	ENGINE_ATLAS_INDEX,
 	ENGINE_ATLAS_TEXTURE_KEY,
 } from '../../rompack/format';
+import type { BFont, FontGlyph } from '../shared/bitmap_font';
 import { consumeOverlayFrame, hasPendingOverlayFrame } from './overlay_queue';
 import vertexShaderCode from '../2d/shaders/2d.vert.glsl';
 import fragmentShaderCode from '../2d/shaders/2d.frag.glsl';
@@ -64,6 +65,22 @@ type HostOverlayRuntime = {
 	capacity: number;
 	whiteTexture: WebGLTexture;
 	uniforms: WebGLSpriteQuadUniforms;
+};
+
+type GlyphRunCursor = {
+	font: BFont;
+	lines: string[];
+	fullLines: boolean;
+	start: number;
+	end: number;
+	baseX: number;
+	originX: number;
+	originY: number;
+	lineIndex: number;
+	charIndex: number;
+	glyph: FontGlyph;
+	x: number;
+	y: number;
 };
 
 const INSTANCE_FLOATS = 16;
@@ -343,37 +360,71 @@ function drawImageCommand(backend: WebGLBackend, state: HostOverlayRuntime, cach
 	return nextBoundTextures;
 }
 
-function drawGlyphRunBackgrounds(backend: WebGLBackend, state: HostOverlayRuntime, command: GlyphRenderSubmission, fontLineCount: number, glyphCount: number, lines: string[], boundTextures: BoundTextureState): BoundTextureState {
-	if (command.background_color === undefined || glyphCount === 0) {
+function createGlyphRunCursor(command: GlyphRenderSubmission, lines: string[]): GlyphRunCursor {
+	const fullLines = Array.isArray(command.glyphs);
+	const font = command.font!;
+	return {
+		font,
+		lines,
+		fullLines,
+		start: fullLines ? 0 : command.glyph_start!,
+		end: fullLines ? 0 : command.glyph_end!,
+		baseX: Math.round(command.x),
+		originX: Math.round(command.x),
+		originY: Math.round(command.y),
+		lineIndex: 0,
+		charIndex: 0,
+		glyph: font.getGlyph(' '),
+		x: 0,
+		y: 0,
+	};
+}
+
+function nextGlyphRunGlyph(cursor: GlyphRunCursor): boolean {
+	while (cursor.lineIndex < cursor.lines.length) {
+		const line = cursor.lines[cursor.lineIndex];
+		const end = cursor.fullLines ? line.length : cursor.end;
+		if (cursor.charIndex === 0) {
+			cursor.charIndex = cursor.fullLines ? 0 : cursor.start;
+		}
+		while (cursor.charIndex < line.length && cursor.charIndex < end) {
+			const char = line.charAt(cursor.charIndex);
+			cursor.charIndex += 1;
+			if (char === '\n') {
+				cursor.originX = cursor.baseX;
+				cursor.originY += cursor.font.lineHeight;
+				continue;
+			}
+			if (char === '\t') {
+				cursor.originX += cursor.font.advance(' ') * TAB_SPACES;
+				continue;
+			}
+			cursor.glyph = cursor.font.getGlyph(char);
+			cursor.x = cursor.originX;
+			cursor.y = cursor.originY;
+			cursor.originX += cursor.glyph.advance;
+			return true;
+		}
+		cursor.lineIndex += 1;
+		cursor.charIndex = 0;
+		cursor.originX = cursor.baseX;
+		cursor.originY += cursor.font.lineHeight;
+	}
+	return false;
+}
+
+function drawGlyphRunBackgrounds(backend: WebGLBackend, state: HostOverlayRuntime, command: GlyphRenderSubmission, lines: string[], boundTextures: BoundTextureState): BoundTextureState {
+	if (command.background_color === undefined) {
 		return boundTextures;
 	}
 	const font = command.font!;
 	const lineHeight = font.lineHeight;
 	const nextBoundTextures = bindSolidTexture(state, boundTextures);
-	ensureWebGLInstanceBufferCapacity(backend, state, glyphCount, INSTANCE_FLOATS);
 	let count = 0;
-	let originY = Math.round(command.y);
-	for (let lineIndex = 0; lineIndex < fontLineCount; lineIndex += 1) {
-		const line = lines[lineIndex];
-		let originX = Math.round(command.x);
-		const start = Array.isArray(command.glyphs) ? 0 : command.glyph_start!;
-		const end = Array.isArray(command.glyphs) ? line.length : command.glyph_end!;
-		for (let index = start; index < line.length && index < end; index += 1) {
-			const char = line.charAt(index);
-			if (char === '\n') {
-				originX = Math.round(command.x);
-				originY += lineHeight;
-				continue;
-			}
-			if (char === '\t') {
-				originX += font.advance(' ') * TAB_SPACES;
-				continue;
-			}
-			const glyph = font.getGlyph(char);
-			count += pushFillRect(state, count, originX, originY, originX + glyph.advance, originY + lineHeight, command.z!, command.background_color);
-			originX += glyph.advance;
-		}
-		originY += lineHeight;
+	const cursor = createGlyphRunCursor(command, lines);
+	while (nextGlyphRunGlyph(cursor)) {
+		ensureWebGLInstanceBufferCapacity(backend, state, count + 1, INSTANCE_FLOATS);
+		count += pushFillRect(state, count, cursor.x, cursor.y, cursor.x + cursor.glyph.advance, cursor.y + lineHeight, command.z!, command.background_color);
 	}
 	if (count !== 0) {
 		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
@@ -381,9 +432,7 @@ function drawGlyphRunBackgrounds(backend: WebGLBackend, state: HostOverlayRuntim
 	return nextBoundTextures;
 }
 
-function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: GlyphRenderSubmission, fontLineCount: number, lines: string[], boundTextures: BoundTextureState): BoundTextureState {
-	const font = command.font!;
-	const lineHeight = font.lineHeight;
+function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: GlyphRenderSubmission, lines: string[], boundTextures: BoundTextureState): BoundTextureState {
 	let currentBoundTextures = boundTextures;
 	let batchSource: HostOverlayImageSource | null = null;
 	let count = 0;
@@ -394,53 +443,35 @@ function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, ca
 		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
 		count = 0;
 	};
-	let originY = Math.round(command.y);
-	for (let lineIndex = 0; lineIndex < fontLineCount; lineIndex += 1) {
-		const line = lines[lineIndex];
-		let originX = Math.round(command.x);
-		const start = Array.isArray(command.glyphs) ? 0 : command.glyph_start!;
-		const end = Array.isArray(command.glyphs) ? line.length : command.glyph_end!;
-		for (let index = start; index < line.length && index < end; index += 1) {
-			const char = line.charAt(index);
-			if (char === '\n') {
-				originX = Math.round(command.x);
-				originY += lineHeight;
-				continue;
-			}
-			if (char === '\t') {
-				originX += font.advance(' ') * TAB_SPACES;
-				continue;
-			}
-			const glyph = font.getGlyph(char);
-			const source = resolveImageSource(cache, glyph.imgid);
-			if (batchSource === null
-				|| batchSource.mode !== source.mode
-				|| batchSource.texture !== source.texture
-				|| batchSource.atlasId !== source.atlasId) {
-				flushGlyphBatch();
-				currentBoundTextures = bindSourceTexture(source, currentBoundTextures);
-				batchSource = source;
-			}
-			ensureWebGLInstanceBufferCapacity(backend, state, count + 1, INSTANCE_FLOATS);
-			writeAxisAlignedQuad(
-				state,
-				count,
-				originX,
-				originY,
-				glyph.width,
-				glyph.height,
-				source.u0,
-				source.v0,
-				source.u1,
-				source.v1,
-				command.z!,
-				command.color!,
-				source.atlasId,
-			);
-			count += 1;
-			originX += glyph.advance;
+	const cursor = createGlyphRunCursor(command, lines);
+	while (nextGlyphRunGlyph(cursor)) {
+		const glyph = cursor.glyph;
+		const source = resolveImageSource(cache, glyph.imgid);
+		if (batchSource === null
+			|| batchSource.mode !== source.mode
+			|| batchSource.texture !== source.texture
+			|| batchSource.atlasId !== source.atlasId) {
+			flushGlyphBatch();
+			currentBoundTextures = bindSourceTexture(source, currentBoundTextures);
+			batchSource = source;
 		}
-		originY += lineHeight;
+		ensureWebGLInstanceBufferCapacity(backend, state, count + 1, INSTANCE_FLOATS);
+		writeAxisAlignedQuad(
+			state,
+			count,
+			cursor.x,
+			cursor.y,
+			glyph.width,
+			glyph.height,
+			source.u0,
+			source.v0,
+			source.u1,
+			source.v1,
+			command.z!,
+			command.color!,
+			source.atlasId,
+		);
+		count += 1;
 	}
 	flushGlyphBatch();
 	return currentBoundTextures;
@@ -448,20 +479,8 @@ function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, ca
 
 function drawGlyphRunCommand(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: GlyphRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
 	const lines = Array.isArray(command.glyphs) ? command.glyphs : [command.glyphs];
-	let glyphCount = 0;
-	for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-		const line = lines[lineIndex];
-		const start = Array.isArray(command.glyphs) ? 0 : command.glyph_start!;
-		const end = Array.isArray(command.glyphs) ? line.length : command.glyph_end!;
-		for (let index = start; index < line.length && index < end; index += 1) {
-			const char = line.charAt(index);
-			if (char !== '\n' && char !== '\t') {
-				glyphCount += 1;
-			}
-		}
-	}
-	let currentBoundTextures = drawGlyphRunBackgrounds(backend, state, command, lines.length, glyphCount, lines, boundTextures);
-	currentBoundTextures = drawGlyphRunGlyphs(backend, state, cache, command, lines.length, lines, currentBoundTextures);
+	let currentBoundTextures = drawGlyphRunBackgrounds(backend, state, command, lines, boundTextures);
+	currentBoundTextures = drawGlyphRunGlyphs(backend, state, cache, command, lines, currentBoundTextures);
 	return currentBoundTextures;
 }
 

@@ -65,7 +65,7 @@ const clampRowColumn = (field: TextField, row: number, column: number): Position
 	return scratchPosition;
 };
 
-const charAdvance = (metrics: InlineFieldMetrics, ch: string): number => (
+export const charAdvance = (metrics: InlineFieldMetrics, ch: string): number => (
 	ch === '\t'
 		? metrics.spaceAdvance * metrics.tabSpaces
 		: metrics.advanceChar(ch)
@@ -79,8 +79,8 @@ const writeInlineFieldClipboard = (payload: string): void => {
 	editorDocumentState.customClipboard = payload;
 	try {
 		void $.platform.clipboard.writeText(payload);
+	// bmsx-lint:disable-next-line empty_catch_pattern -- System clipboard write is best-effort; the editor clipboard already has the payload.
 	} catch {
-		// ignore clipboard failures
 	}
 };
 
@@ -428,7 +428,7 @@ export function applyInlineFieldEditing(
 	const altDown = isAltDown();
 	const { allowSpace } = options;
 	const characterFilter = options.characterFilter;
-	const maxLength = options.maxLength ?? null;
+	const maxLength = options.maxLength;
 	const useCtrl = ctrlDown || metaDown;
 	let textChanged = false;
 
@@ -477,7 +477,7 @@ export function applyInlineFieldEditing(
 				insertion = filtered;
 			}
 			if (insertion.length > 0) {
-				if (maxLength !== null) {
+				if (maxLength !== undefined) {
 					const currentLength = totalLength(field);
 					const selectedLength = selectionLength(field);
 					const remaining = maxLength - (currentLength - selectedLength);
@@ -541,11 +541,11 @@ export function applyInlineFieldEditing(
 		moveToEnd(field, shiftDown);
 	}
 
-	if (allowSpace && !useCtrl && !metaDown && !altDown && shouldRepeatKeyFromPlayer('Space')) {
-		consumeIdeKey('Space');
-		if (maxLength === null) {
-			textChanged = insertValue(field, ' ') || textChanged;
-		} else {
+		if (allowSpace && !useCtrl && !metaDown && !altDown && shouldRepeatKeyFromPlayer('Space')) {
+			consumeIdeKey('Space');
+			if (maxLength === undefined) {
+				textChanged = insertValue(field, ' ') || textChanged;
+			} else {
 			const currentLength = totalLength(field);
 			const selectedLength = selectionLength(field);
 			if (maxLength - (currentLength - selectedLength) > 0) {
@@ -570,7 +570,7 @@ export function applyInlineFieldEditing(
 					consumeIdeKey(code);
 					continue;
 				}
-				if (maxLength !== null) {
+				if (maxLength !== undefined) {
 					const currentLength = totalLength(field);
 					const selectedLength = selectionLength(field);
 					const available = maxLength - (currentLength - selectedLength);

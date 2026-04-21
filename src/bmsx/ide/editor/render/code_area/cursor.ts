@@ -7,7 +7,7 @@ import { drawHighlightSlice } from './highlights';
 import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from '../../ui/view/state';
 
-type InlineCompletionPreview = {
+export type InlineCompletionPreview = {
 	row: number;
 	column: number;
 	suffix: string;

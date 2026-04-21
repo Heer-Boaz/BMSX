@@ -6,7 +6,7 @@ import { computeSelectionSlice } from '../../common/text_layout';
 import * as constants from '../../../common/constants';
 import { runtimeErrorState } from '../../contrib/runtime_error/state';
 import { drawReferenceHighlightsForRow, drawSearchHighlightsForRow } from './highlights';
-import { computeCursorScreenInfo, drawCodeRowText } from './cursor';
+import { computeCursorScreenInfo, drawCodeRowText, type InlineCompletionPreview } from './cursor';
 import { drawDiagnosticUnderlinesForRow, drawGotoUnderlineForRow } from './underlines';
 import { drawCodeAreaRowChrome } from './gutter';
 import { editorDocumentState } from '../../editing/document_state';
@@ -18,12 +18,6 @@ type ActiveGotoHighlight = {
 	startColumn: number;
 	endColumn: number;
 	expression: string;
-};
-
-type InlineCompletionPreview = {
-	row: number;
-	column: number;
-	suffix: string;
 };
 
 export function drawCodeAreaRows(

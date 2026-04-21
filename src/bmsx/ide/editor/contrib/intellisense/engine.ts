@@ -44,7 +44,7 @@ import { cacheRuntimeSemanticWorkspaceAnalysis, prepareRuntimeSemanticWorkspaceF
 import { semanticSymbolKindToLuaSymbolKind } from './lua_semantic_common';
 import { isLuaCommentContext } from '../../../common/text';
 import { writeWrappedOverlayLine } from '../../common/text_layout';
-import type { ApiCompletionMetadata, CodeTabContext, EditorContextToken, LuaCompletionItem, PointerSnapshot } from '../../../common/models';
+import type { ApiCompletionMetadata, CodeTabContext, EditorContextToken, EditorDiagnosticSeverity, LuaCompletionItem, PointerSnapshot } from '../../../common/models';
 import type { LuaSourceRecord } from '../../../../machine/program/sources';
 import { Pool } from '../../../../common/pool';
 import { $ } from '../../../../core/engine';
@@ -340,14 +340,12 @@ function sanitizeParameterName(token: string, index: number): string {
 	return sanitized;
 }
 
-export type LuaDiagnosticSeverity = 'error' | 'warning';
-
 export type LuaDiagnostic = {
 	row: number;
 	startColumn: number;
 	endColumn: number;
 	message: string;
-	severity: LuaDiagnosticSeverity;
+	severity: EditorDiagnosticSeverity;
 };
 
 export type LuaDiagnosticOptions = {
@@ -368,7 +366,7 @@ type MutableLuaDiagnostic = {
 	startColumn: number;
 	endColumn: number;
 	message: string;
-	severity: LuaDiagnosticSeverity;
+	severity: EditorDiagnosticSeverity;
 };
 
 const luaDiagnosticPoolAccessor = Pool.createLazy<MutableLuaDiagnostic>({
@@ -417,7 +415,7 @@ function finalizeLuaDiagnostics(): LuaDiagnostic[] {
 	return result;
 }
 
-function pushDiagnostic(row: number, startColumn: number, endColumn: number, message: string, severity: LuaDiagnosticSeverity): void {
+function pushDiagnostic(row: number, startColumn: number, endColumn: number, message: string, severity: EditorDiagnosticSeverity): void {
 	const slot = luaDiagnosticBatch.next();
 	slot.row = row;
 	slot.startColumn = startColumn;

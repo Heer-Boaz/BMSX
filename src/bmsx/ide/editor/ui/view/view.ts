@@ -28,6 +28,17 @@ import {
 } from '../../common/text_layout';
 import { bottomMargin, topMargin } from '../../../workbench/common/layout';
 import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
+import type { InlineFieldMetrics } from '../inline_text_field';
+
+function advanceInlineFieldChar(ch: string): number {
+	return editorViewState.font.advance(ch);
+}
+
+const editorInlineFieldMetrics: InlineFieldMetrics = {
+	advanceChar: advanceInlineFieldChar,
+	spaceAdvance: 0,
+	tabSpaces: constants.TAB_SPACES,
+};
 
 function decimalDigitCount(value: number): number {
 	let digits = 1;
@@ -265,8 +276,9 @@ export function resolvePointerColumn(row: number, viewportX: number, bounds: Cod
 	const highlight = entry.hi;
 	let segmentStartColumn = editorViewState.layout.clampLineLength(line.length, editorViewState.scrollColumn);
 	let segmentEndColumn = line.length;
-	const resolvedSegment = editorPointerState.lastPointerRowResolution?.segment;
-	if (editorViewState.wordWrapEnabled && resolvedSegment && resolvedSegment.row === row) {
+	const lastPointerRowResolution = editorPointerState.lastPointerRowResolution;
+	if (editorViewState.wordWrapEnabled && lastPointerRowResolution && lastPointerRowResolution.segment.row === row) {
+		const resolvedSegment = lastPointerRowResolution.segment;
 		segmentStartColumn = resolvedSegment.startColumn;
 		segmentEndColumn = resolvedSegment.endColumn;
 	}
@@ -524,11 +536,8 @@ export function configureFontVariant(variant: FontVariant): void {
 	editorViewState.lineHeight = editorViewState.font.lineHeight;
 	editorViewState.charAdvance = editorViewState.font.advance('M');
 	editorViewState.spaceAdvance = editorViewState.font.advance(' ');
-	editorViewState.inlineFieldMetricsRef = {
-		advanceChar: (ch: string) => editorViewState.font.advance(ch),
-		spaceAdvance: editorViewState.spaceAdvance,
-		tabSpaces: constants.TAB_SPACES,
-	};
+	editorInlineFieldMetrics.spaceAdvance = editorViewState.spaceAdvance;
+	editorViewState.inlineFieldMetricsRef = editorInlineFieldMetrics;
 	updateGutterWidth();
 	editorViewState.headerHeight = editorViewState.lineHeight + 4;
 	editorViewState.tabBarHeight = editorViewState.lineHeight + 3;

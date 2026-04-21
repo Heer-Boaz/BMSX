@@ -746,11 +746,10 @@ export function copySelectionLines(delta: number): void {
 
 	const anchor = editorDocumentState.selectionAnchor;
 	if (anchor && (anchor.row !== editorDocumentState.cursorRow || anchor.column !== editorDocumentState.cursorColumn)) {
-		const cursorRow = editorDocumentState.cursorRow + rowOffset;
-		anchor.row += rowOffset;
-		editorDocumentState.cursorRow = cursorRow;
-		editorDocumentState.cursorRow = cursorRow;
-		editorDocumentState.cursorColumn = editorViewState.layout.clampBufferColumn(buffer, cursorRow, editorDocumentState.cursorColumn);
+			const cursorRow = editorDocumentState.cursorRow + rowOffset;
+			anchor.row += rowOffset;
+			editorDocumentState.cursorRow = cursorRow;
+			editorDocumentState.cursorColumn = editorViewState.layout.clampBufferColumn(buffer, cursorRow, editorDocumentState.cursorColumn);
 	} else {
 		const targetRow = editorViewState.layout.clampBufferRow(buffer, editorDocumentState.cursorRow + rowOffset);
 		editorDocumentState.cursorRow = targetRow;
@@ -938,8 +937,7 @@ export async function cutLineToClipboard(): Promise<void> {
 	editorDocumentState.cursorRow = editorViewState.layout.clampBufferRow(buffer, editorDocumentState.cursorRow);
 	editorDocumentState.cursorColumn = editorViewState.layout.clampBufferColumn(buffer, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 
-	const removedRow = row;
-	editorViewState.layout.invalidateHighlightsFromRow(Math.min(removedRow, buffer.getLineCount() - 1));
+		editorViewState.layout.invalidateHighlightsFromRow(Math.min(row, buffer.getLineCount() - 1));
 	editorViewState.layout.invalidateLine(editorDocumentState.cursorRow);
 	editorDocumentState.selectionAnchor = null;
 	markTextMutated();

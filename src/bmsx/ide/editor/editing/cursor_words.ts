@@ -10,6 +10,28 @@ const wordBoundsScratch: WordBounds = {
 	end: 0,
 };
 
+function isWordWhitespaceCode(code: number): boolean {
+	switch (code) {
+		case 9:
+		case 10:
+		case 11:
+		case 12:
+		case 13:
+		case 32:
+			return true;
+		default:
+			return false;
+	}
+}
+
+function isWordIdentifierCode(code: number): boolean {
+	return (code >= 97 && code <= 122)
+		|| (code >= 65 && code <= 90)
+		|| code === 95
+		|| code === 36
+		|| (code >= 48 && code <= 57);
+}
+
 export function findWordBoundsInLine(line: string, column: number, out: WordBounds = wordBoundsScratch): WordBounds {
 	if (line.length === 0) {
 		out.start = 0;
@@ -74,24 +96,24 @@ export function findWordLeftOffset(offset: number, charCodeAt: (offset: number) 
 	let index = offset;
 	while (index > 0) {
 		const code = charCodeAt(index - 1);
-		if (code !== 32 && code !== 9 && code !== 13 && code !== 10 && code !== 11 && code !== 12) {
+		if (!isWordWhitespaceCode(code)) {
 			break;
 		}
 		index -= 1;
 	}
 	while (index > 0) {
 		const code = charCodeAt(index - 1);
-		if (code === 32 || code === 9 || code === 13 || code === 10 || code === 11 || code === 12) {
+		if (isWordWhitespaceCode(code)) {
 			break;
 		}
-		if ((code >= 97 && code <= 122) || (code >= 65 && code <= 90) || code === 95 || code === 36 || (code >= 48 && code <= 57)) {
+		if (isWordIdentifierCode(code)) {
 			break;
 		}
 		index -= 1;
 	}
 	while (index > 0) {
 		const code = charCodeAt(index - 1);
-		if (!((code >= 97 && code <= 122) || (code >= 65 && code <= 90) || code === 95 || code === 36 || (code >= 48 && code <= 57))) {
+		if (!isWordIdentifierCode(code)) {
 			break;
 		}
 		index -= 1;
@@ -106,7 +128,7 @@ export function findWordRightOffset(length: number, offset: number, charCodeAt: 
 	let index = offset;
 	while (index < length) {
 		const code = charCodeAt(index);
-		if (code !== 32 && code !== 9 && code !== 13 && code !== 10 && code !== 11 && code !== 12) {
+		if (!isWordWhitespaceCode(code)) {
 			break;
 		}
 		index += 1;
@@ -115,11 +137,11 @@ export function findWordRightOffset(length: number, offset: number, charCodeAt: 
 		return length;
 	}
 	const firstCode = charCodeAt(index);
-	const word = (firstCode >= 97 && firstCode <= 122) || (firstCode >= 65 && firstCode <= 90) || firstCode === 95 || firstCode === 36 || (firstCode >= 48 && firstCode <= 57);
+	const word = isWordIdentifierCode(firstCode);
 	while (index < length) {
 		const code = charCodeAt(index);
-		const isWhitespace = code === 32 || code === 9 || code === 13 || code === 10 || code === 11 || code === 12;
-		const isIdentifier = (code >= 97 && code <= 122) || (code >= 65 && code <= 90) || code === 95 || code === 36 || (code >= 48 && code <= 57);
+		const isWhitespace = isWordWhitespaceCode(code);
+		const isIdentifier = isWordIdentifierCode(code);
 		if (isWhitespace || isIdentifier !== word) {
 			break;
 		}
@@ -127,7 +149,7 @@ export function findWordRightOffset(length: number, offset: number, charCodeAt: 
 	}
 	while (index < length) {
 		const code = charCodeAt(index);
-		if (code !== 32 && code !== 9 && code !== 13 && code !== 10 && code !== 11 && code !== 12) {
+		if (!isWordWhitespaceCode(code)) {
 			break;
 		}
 		index += 1;

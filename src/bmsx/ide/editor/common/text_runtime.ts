@@ -1,7 +1,7 @@
 import { startSearchJob } from '../contrib/find/search';
 import { findCodeTabContext, getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../../workbench/ui/code_tab/contexts';
 import { clearForwardNavigationHistory } from '../navigation/navigation_history';
-import { handlePostEditMutation, getSelectionRange } from '../editing/text_editing_and_selection';
+import { handlePostEditMutation } from '../editing/text_editing_and_selection';
 import { markDiagnosticsDirty } from '../contrib/diagnostics/analysis';
 import { requestSemanticRefresh, clearReferenceHighlights } from '../contrib/intellisense/engine';
 import { getTextSnapshot } from '../text/source_text';
@@ -82,16 +82,4 @@ export function invalidateLineRange(startRow: number, endRow: number): void {
 	for (let row = from; row <= to; row += 1) {
 		editorViewState.layout.invalidateLine(row);
 	}
-}
-
-export function getLineRangeForMovement(): { startRow: number; endRow: number } {
-	const range = getSelectionRange();
-	if (!range) {
-		return { startRow: editorDocumentState.cursorRow, endRow: editorDocumentState.cursorRow };
-	}
-	let endRow = range.end.row;
-	if (range.end.column === 0 && endRow > range.start.row) {
-		endRow -= 1;
-	}
-	return { startRow: range.start.row, endRow };
 }
