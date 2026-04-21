@@ -275,10 +275,7 @@ Memory::AssetEntry& Memory::registerImageBuffer(const std::string& id, const u8*
 	entry.baseStride = stride;
 	entry.regionW = width;
 	entry.regionH = height;
-	const size_t index = addAssetEntry(std::move(entry));
-	m_assetEntries[index].ownerIndex = index;
-	mapAssetPages(index, addr, size);
-	return m_assetEntries[index];
+	return addOwnedAssetEntry(std::move(entry), addr, size);
 }
 
 Memory::AssetEntry& Memory::registerImageSlot(const std::string& id, uint32_t capacityBytes, uint32_t flags) {
@@ -297,10 +294,7 @@ Memory::AssetEntry& Memory::registerImageSlot(const std::string& id, uint32_t ca
 	entry.regionY = 0;
 	entry.regionW = 0;
 	entry.regionH = 0;
-	const size_t index = addAssetEntry(std::move(entry));
-	m_assetEntries[index].ownerIndex = index;
-	mapAssetPages(index, addr, capacityBytes);
-	return m_assetEntries[index];
+	return addOwnedAssetEntry(std::move(entry), addr, capacityBytes);
 }
 
 Memory::AssetEntry& Memory::registerImageSlotAt(const std::string& id, uint32_t baseAddr, uint32_t capacityBytes, uint32_t flags, bool clear) {
@@ -368,10 +362,7 @@ Memory::AssetEntry& Memory::registerAudioBuffer(
 	const size_t offset = static_cast<size_t>(addr - RAM_BASE);
 	std::memcpy(m_ram.data() + offset, bytes, size);
 	AssetEntry entry = makeAudioAssetEntry(id, addr, size, size, sampleRate, channels, bitsPerSample, frames, dataOffset, dataSize);
-	const size_t index = addAssetEntry(std::move(entry));
-	m_assetEntries[index].ownerIndex = index;
-	mapAssetPages(index, addr, size);
-	return m_assetEntries[index];
+	return addOwnedAssetEntry(std::move(entry), addr, size);
 }
 
 Memory::AssetEntry& Memory::registerAudioMeta(
@@ -447,10 +438,7 @@ void Memory::finalizeAssetTable() {
 		writeU32LE(base + entryOffset + 8, tokenLo);
 		writeU32LE(base + entryOffset + 12, tokenHi);
 		writeU32LE(base + entryOffset + 16, idAddr);
-		writeU32LE(base + entryOffset + 20, entry.baseAddr);
-		writeU32LE(base + entryOffset + 24, entry.baseSize);
-		writeU32LE(base + entryOffset + 28, entry.capacity);
-		writeAssetEntryPayload(base, entryOffset, entry);
+		writeAssetEntryMutableData(base, entryOffset, entry);
 	}
 
 	const uint32_t stringOffset = stringTableAddr - RAM_BASE;
@@ -1068,6 +1056,20 @@ size_t Memory::addAssetEntry(AssetEntry entry) {
 	return index;
 }
 
+Memory::AssetEntry& Memory::addOwnedAssetEntry(AssetEntry entry, uint32_t addr, uint32_t size) {
+	const size_t index = addAssetEntry(std::move(entry));
+	m_assetEntries[index].ownerIndex = index;
+	mapAssetPages(index, addr, size);
+	return m_assetEntries[index];
+}
+
+void Memory::writeAssetEntryMutableData(u8* base, uint32_t entryOffset, const AssetEntry& entry) {
+	writeU32LE(base + entryOffset + 20, entry.baseAddr);
+	writeU32LE(base + entryOffset + 24, entry.baseSize);
+	writeU32LE(base + entryOffset + 28, entry.capacity);
+	writeAssetEntryPayload(base, entryOffset, entry);
+}
+
 void Memory::writeAssetEntryPayload(u8* base, uint32_t entryOffset, const AssetEntry& entry) {
 	switch (entry.type) {
 		case AssetType::Image:
@@ -1093,11 +1095,7 @@ void Memory::writeAssetEntryPayload(u8* base, uint32_t entryOffset, const AssetE
 void Memory::updateAssetEntryData(size_t index, const AssetEntry& entry) {
 	const uint32_t entryAddr = ASSET_TABLE_BASE + ASSET_TABLE_HEADER_SIZE + static_cast<uint32_t>(index * ASSET_TABLE_ENTRY_SIZE);
 	const uint32_t entryOffset = entryAddr - RAM_BASE;
-	u8* base = m_ram.data();
-	writeU32LE(base + entryOffset + 20, entry.baseAddr);
-	writeU32LE(base + entryOffset + 24, entry.baseSize);
-	writeU32LE(base + entryOffset + 28, entry.capacity);
-	writeAssetEntryPayload(base, entryOffset, entry);
+	writeAssetEntryMutableData(m_ram.data(), entryOffset, entry);
 }
 
 } // namespace bmsx

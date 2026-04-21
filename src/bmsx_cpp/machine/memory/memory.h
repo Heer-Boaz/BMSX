@@ -231,6 +231,8 @@ private:
 	void markAssetDirty(uint32_t addr, uint32_t size);
 	uint32_t allocateAssetData(uint32_t size, uint32_t alignment);
 	size_t addAssetEntry(AssetEntry entry);
+	AssetEntry& addOwnedAssetEntry(AssetEntry entry, uint32_t addr, uint32_t size);
+	void writeAssetEntryMutableData(u8* base, uint32_t entryOffset, const AssetEntry& entry);
 	void writeAssetEntryPayload(u8* base, uint32_t entryOffset, const AssetEntry& entry);
 	void updateAssetEntryData(size_t index, const AssetEntry& entry);
 };

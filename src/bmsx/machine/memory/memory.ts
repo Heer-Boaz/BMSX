@@ -264,16 +264,7 @@ export class Memory {
 			this.assetIndexById.set(entry.id, index);
 			this.assetIndexByToken.set(tokenKey(entry.idTokenLo, entry.idTokenHi), index);
 		}
-		for (let index = 0; index < this.assetEntries.length; index += 1) {
-			const entry = this.assetEntries[index];
-			if (entry.ownerIndex !== index) {
-				continue;
-			}
-			if (this.isVramRange(entry.baseAddr, entry.capacity)) {
-				continue;
-			}
-			this.mapAssetPages(index, entry.baseAddr, entry.capacity);
-		}
+		this.mapOwnedAssetPages(this.assetEntries.length);
 		this.assetDataCursor = this.cartAssetDataBase;
 		if (previousDataCursor > this.cartAssetDataBase) {
 			const clearEnd = Math.min(previousDataCursor, ASSET_DATA_ALLOC_END);
@@ -312,9 +303,7 @@ export class Memory {
 			audioDataSize: 0,
 			ownerIndex: -1,
 		});
-		entry.ownerIndex = this.registerAssetEntry(entry);
-		this.mapAssetPages(entry.ownerIndex, addr, params.capacityBytes);
-		return entry;
+		return this.registerOwnedAssetEntry(entry, addr, params.capacityBytes);
 	}
 
 	public registerImageSlotAt(params: {
@@ -397,9 +386,7 @@ export class Memory {
 			audioDataSize: 0,
 			ownerIndex: -1,
 		});
-		entry.ownerIndex = this.registerAssetEntry(entry);
-		this.mapAssetPages(entry.ownerIndex, addr, size);
-		return entry;
+		return this.registerOwnedAssetEntry(entry, addr, size);
 	}
 
 	public registerImageView(params: {
@@ -472,9 +459,7 @@ export class Memory {
 			audioDataSize: params.dataSize,
 			ownerIndex: -1,
 		});
-		entry.ownerIndex = this.registerAssetEntry(entry);
-		this.mapAssetPages(entry.ownerIndex, addr, params.bytes.byteLength);
-		return entry;
+		return this.registerOwnedAssetEntry(entry, addr, params.bytes.byteLength);
 	}
 
 	public registerAudioMeta(params: {
@@ -638,10 +623,7 @@ export class Memory {
 			this.ramView.setUint32(entryOffset + 8, entry.idTokenLo, true);
 			this.ramView.setUint32(entryOffset + 12, entry.idTokenHi, true);
 			this.ramView.setUint32(entryOffset + 16, idOffset, true);
-			this.ramView.setUint32(entryOffset + 20, entry.baseAddr, true);
-			this.ramView.setUint32(entryOffset + 24, entry.baseSize, true);
-			this.ramView.setUint32(entryOffset + 28, entry.capacity, true);
-			this.writeAssetEntryPayload(entryOffset, entry);
+			this.writeAssetEntryMutableData(entryOffset, entry);
 		}
 
 		const stringOffset = stringTableAddr - RAM_BASE;
@@ -919,16 +901,7 @@ export class Memory {
 		}
 
 		this.assetOwnerPages.fill(-1);
-		for (let index = 0; index < entryCount; index += 1) {
-			const entry = this.assetEntries[index];
-			if (entry.ownerIndex !== index) {
-				continue;
-			}
-			if (this.isVramRange(entry.baseAddr, entry.capacity)) {
-				continue;
-			}
-			this.mapAssetPages(index, entry.baseAddr, entry.capacity);
-		}
+		this.mapOwnedAssetPages(entryCount);
 		this.assetDataCursor = dataBase + dataLength;
 		this.assetTableFinalized = true;
 	}
@@ -1354,9 +1327,32 @@ export class Memory {
 		return index;
 	}
 
+	private registerOwnedAssetEntry(entry: AssetEntry, addr: number, size: number): AssetEntry {
+		entry.ownerIndex = this.registerAssetEntry(entry);
+		this.mapAssetPages(entry.ownerIndex, addr, size);
+		return entry;
+	}
+
+	private mapOwnedAssetPages(entryCount: number): void {
+		for (let index = 0; index < entryCount; index += 1) {
+			const entry = this.assetEntries[index];
+			if (entry.ownerIndex !== index) {
+				continue;
+			}
+			if (this.isVramRange(entry.baseAddr, entry.capacity)) {
+				continue;
+			}
+			this.mapAssetPages(index, entry.baseAddr, entry.capacity);
+		}
+	}
+
 	private writeAssetEntryData(index: number, entry: AssetEntry): void {
 		const entryAddr = ASSET_TABLE_BASE + ASSET_TABLE_HEADER_SIZE + index * ASSET_TABLE_ENTRY_SIZE;
 		const entryOffset = entryAddr - RAM_BASE;
+		this.writeAssetEntryMutableData(entryOffset, entry);
+	}
+
+	private writeAssetEntryMutableData(entryOffset: number, entry: AssetEntry): void {
 		this.ramView.setUint32(entryOffset + 20, entry.baseAddr, true);
 		this.ramView.setUint32(entryOffset + 24, entry.baseSize, true);
 		this.ramView.setUint32(entryOffset + 28, entry.capacity, true);

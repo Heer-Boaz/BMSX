@@ -372,8 +372,8 @@ const SEMANTIC_NORMALIZATION_WRAPPER_TARGETS = new Set([
 const CPP_NORMALIZED_BODY_MIN_LENGTH = 120;
 const COMPACT_SAMPLE_TEXT_LENGTH = 180;
 const CPP_SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT = 2;
-const CPP_REPEATED_STATEMENT_SEQUENCE_MIN_COUNT = 5;
-const CPP_REPEATED_STATEMENT_SEQUENCE_MIN_TEXT_LENGTH = 160;
+const CPP_REPEATED_STATEMENT_SEQUENCE_MIN_COUNT = 4;
+const CPP_REPEATED_STATEMENT_SEQUENCE_MIN_TEXT_LENGTH = 140;
 const CPP_REPEATED_STATEMENT_SEQUENCE_PATTERN_ENABLED = true;
 const CPP_LOCAL_CONST_PATTERN_ENABLED = false;
 
@@ -1716,6 +1716,9 @@ function isWriteUse(tokens: readonly CppToken[], index: number): boolean {
 export function lintCppSimpleTokenPatterns(file: string, tokens: readonly CppToken[], pairs: readonly number[], issues: CppLintIssue[], ledger: QualityLedger): void {
 	for (let index = 0; index < tokens.length; index += 1) {
 		const token = tokens[index];
+		if (token.kind === 'string' && token.text.includes('__native__')) {
+			pushLintIssue(issues, file, token, 'legacy_native_bridge_key_pattern', 'Legacy native bridge key "__native__" is forbidden. Use the current "__native" key instead of adding alias fallbacks.');
+		}
 		if (token.text === '(') {
 			const target = cppCallTarget(tokens, index);
 			if (target !== null && (target === 'value_or' || target.endsWith('.value_or') || target.endsWith('::value_or'))) {

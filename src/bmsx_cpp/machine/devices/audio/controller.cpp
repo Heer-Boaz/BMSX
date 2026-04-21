@@ -154,12 +154,17 @@ void AudioController::onCommandWriteThunk(void* context, uint32_t, Value) {
 	static_cast<AudioController*>(context)->onCommandWrite();
 }
 
-void AudioController::play() {
-	const uint32_t handle = m_memory.readIoU32(IO_APU_HANDLE);
+const Memory::AssetEntry& AudioController::requireAudioEntry(uint32_t handle) const {
 	const Memory::AssetEntry& entry = m_memory.getAssetEntryByHandle(handle);
 	if (entry.type != Memory::AssetType::Audio) {
 		throw std::runtime_error("[APU] asset handle " + std::to_string(handle) + " is not audio.");
 	}
+	return entry;
+}
+
+void AudioController::play() {
+	const uint32_t handle = m_memory.readIoU32(IO_APU_HANDLE);
+	const Memory::AssetEntry& entry = requireAudioEntry(handle);
 	const AudioType channel = decodeChannel(m_memory.readIoU32(IO_APU_CHANNEL));
 	m_queuedByType[typeIndex(channel)].clear();
 	startPlay(handle, entry.id, channel, readResolvedPlayRequest());
@@ -167,10 +172,7 @@ void AudioController::play() {
 
 void AudioController::queuePlay() {
 	const uint32_t handle = m_memory.readIoU32(IO_APU_HANDLE);
-	const Memory::AssetEntry& entry = m_memory.getAssetEntryByHandle(handle);
-	if (entry.type != Memory::AssetType::Audio) {
-		throw std::runtime_error("[APU] asset handle " + std::to_string(handle) + " is not audio.");
-	}
+	const Memory::AssetEntry& entry = requireAudioEntry(handle);
 	const AudioType channel = decodeChannel(m_memory.readIoU32(IO_APU_CHANNEL));
 	const SoundMasterResolvedPlayRequest request = readResolvedPlayRequest();
 	const size_t idx = typeIndex(channel);

@@ -186,8 +186,8 @@ const NORMALIZED_BODY_MIN_LENGTH = 120;
 const COMPACT_SAMPLE_TEXT_LENGTH = 180;
 const REPEATED_EXPRESSION_PAIR_MIN_LENGTH = 48;
 const SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT = 2;
-const REPEATED_STATEMENT_SEQUENCE_MIN_COUNT = 5;
-const REPEATED_STATEMENT_SEQUENCE_MIN_TEXT_LENGTH = 160;
+const REPEATED_STATEMENT_SEQUENCE_MIN_COUNT = 4;
+const REPEATED_STATEMENT_SEQUENCE_MIN_TEXT_LENGTH = 140;
 const LOCAL_CONST_PATTERN_ENABLED = true;
 const NUMERIC_SANITIZATION_PATH_SEGMENTS = [
 	'/src/bmsx/ide/',
@@ -2923,6 +2923,91 @@ function isNumericLiteralText(node: ts.Expression, value: string): boolean {
 	return ts.isNumericLiteral(unwrapped) && unwrapped.text === value;
 }
 
+function isNumericLiteralLike(node: ts.Expression): boolean {
+	const unwrapped = unwrapExpression(node);
+	if (ts.isNumericLiteral(unwrapped)) {
+		return true;
+	}
+	if (ts.isPrefixUnaryExpression(unwrapped) && (unwrapped.operator === ts.SyntaxKind.MinusToken || unwrapped.operator === ts.SyntaxKind.PlusToken)) {
+		return ts.isNumericLiteral(unwrapExpression(unwrapped.operand));
+	}
+	return false;
+}
+
+function isLookupFallbackExpression(node: ts.Expression): boolean {
+	const unwrapped = unwrapExpression(node);
+	if (ts.isElementAccessExpression(unwrapped)) {
+		return true;
+	}
+	if (!ts.isCallExpression(unwrapped)) {
+		return false;
+	}
+	const target = unwrapExpression(unwrapped.expression);
+	return ts.isPropertyAccessExpression(target) && target.name.text === 'get';
+}
+
+function isLuaSourceLookupExpression(node: ts.Expression): boolean {
+	const unwrapped = unwrapExpression(node);
+	if (ts.isBinaryExpression(unwrapped) && unwrapped.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
+		return isLuaSourceLookupExpression(unwrapped.left) || isLuaSourceLookupExpression(unwrapped.right);
+	}
+	if (!ts.isElementAccessExpression(unwrapped)) {
+		return false;
+	}
+	const target = unwrapExpression(unwrapped.expression);
+	return ts.isPropertyAccessExpression(target) && target.name.text === 'path2lua';
+}
+
+function isLuaSourceLookupFallback(node: ts.BinaryExpression): boolean {
+	return isLuaSourceLookupExpression(node.left) && isLuaSourceLookupExpression(node.right);
+}
+
+function isRuntimeAssetLayerFallback(node: ts.BinaryExpression): boolean {
+	return expressionAccessFingerprint(node.left) === 'this.assets.overlayLayer'
+		&& expressionAccessFingerprint(node.right) === 'this.assets.cartLayer';
+}
+
+function isSharedConstantFallbackExpression(node: ts.Expression): boolean {
+	const unwrapped = unwrapExpression(node);
+	return ts.isIdentifier(unwrapped) && /^[A-Z][A-Z0-9_]*$/.test(unwrapped.text);
+}
+
+function isFunctionLikeWithParameters(node: ts.Node): node is ts.FunctionDeclaration
+	| ts.MethodDeclaration
+	| ts.FunctionExpression
+	| ts.ArrowFunction
+	| ts.ConstructorDeclaration
+	| ts.GetAccessorDeclaration
+	| ts.SetAccessorDeclaration {
+	return ts.isFunctionDeclaration(node)
+		|| ts.isMethodDeclaration(node)
+		|| ts.isFunctionExpression(node)
+		|| ts.isArrowFunction(node)
+		|| ts.isConstructorDeclaration(node)
+		|| ts.isGetAccessorDeclaration(node)
+		|| ts.isSetAccessorDeclaration(node);
+}
+
+function isOptionalParameterFallback(node: ts.BinaryExpression): boolean {
+	const left = unwrapExpression(node.left);
+	if (!ts.isIdentifier(left)) {
+		return false;
+	}
+	let current: ts.Node | undefined = node.parent;
+	while (current !== undefined) {
+		if (isFunctionLikeWithParameters(current)) {
+			for (let index = 0; index < current.parameters.length; index += 1) {
+				const parameter = current.parameters[index];
+				if (ts.isIdentifier(parameter.name) && parameter.name.text === left.text) {
+					return parameter.questionToken !== undefined || parameter.initializer !== undefined;
+				}
+			}
+		}
+		current = current.parent;
+	}
+	return false;
+}
+
 function nullishZeroOperandFingerprint(node: ts.Expression): string | null {
 	const unwrapped = unwrapExpression(node);
 	if (!ts.isBinaryExpression(unwrapped) || unwrapped.operatorToken.kind !== ts.SyntaxKind.QuestionQuestionToken) {
@@ -2965,6 +3050,15 @@ function nullishFallbackLedgerKind(node: ts.BinaryExpression): string {
 	if (isNullOrUndefined(node.right)) {
 		return 'nullish';
 	}
+	if (isOptionalParameterFallback(node)) {
+		return 'optional_parameter_default';
+	}
+	if (isLuaSourceLookupFallback(node)) {
+		return 'lua_source_lookup';
+	}
+	if (isRuntimeAssetLayerFallback(node)) {
+		return 'runtime_asset_layer';
+	}
 	const root = expressionRootName(node.left);
 	if (root === 'options' || root === 'opts' || root === 'params') {
 		return 'option_default';
@@ -2979,10 +3073,16 @@ function nullishFallbackLedgerKind(node: ts.BinaryExpression): string {
 	if (ts.isIdentifier(right) && right.text.startsWith('EMPTY_')) {
 		return 'shared_empty';
 	}
+	if (isLookupFallbackExpression(node.left) || isLookupFallbackExpression(right)) {
+		return 'lookup_default';
+	}
+	if (isSharedConstantFallbackExpression(right)) {
+		return 'shared_constant';
+	}
 	if (ts.isCallExpression(right)) {
 		return 'lazy_call';
 	}
-	if (ts.isNumericLiteral(right)) {
+	if (isNumericLiteralLike(right)) {
 		return 'numeric_literal';
 	}
 	if (ts.isStringLiteral(right)) {
@@ -3872,11 +3972,30 @@ function repeatedStatementSequenceSkipKind(entry: StatementSequenceInfo): string
 	if (normalized.endsWith('/src/bmsx/machine/program/linker.ts')) {
 		return 'relocation_encoding';
 	}
+	if (
+		(normalized.endsWith('/src/bmsx/machine/cpu/disassembler.ts') || normalized.endsWith('/src/bmsx/machine/firmware/globals.ts'))
+		&& entry.fingerprint.includes('isNativeFunction')
+		&& entry.fingerprint.includes('isNativeObject')
+	) {
+		return 'value_formatting';
+	}
 	if (normalized.endsWith('/src/bmsx/machine/firmware/js_bridge.ts') && entry.fingerprint.includes('table.forEachEntry')) {
 		return 'table_shape_scan';
 	}
-	if (normalized.endsWith('/src/bmsx/machine/firmware/globals.ts') && entry.fingerprint.includes('normalizeLuaIndex')) {
+	if (
+		normalized.endsWith('/src/bmsx/machine/firmware/globals.ts')
+		&& (entry.fingerprint.includes('normalizeLuaIndex')
+			|| entry.fingerprint.includes('codepointCount')
+			|| entry.fingerprint.includes('getLuaPatternRegex'))
+	) {
 		return 'lua_string_pattern';
+	}
+	if (
+		normalized.endsWith('/src/bmsx/machine/scheduler/device.ts')
+		&& entry.fingerprint.includes('timerDeadlines')
+		&& entry.fingerprint.includes('timerGenerations')
+	) {
+		return 'scheduler_heap_storage';
 	}
 	return null;
 }
@@ -4210,6 +4329,15 @@ function collectLintIssues(
 		}
 		if (ts.isBinaryExpression(node)) {
 			lintBinaryExpressionForCodeQuality(node, sourceFile, issues, ledger);
+		}
+		if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && node.text === '__native__') {
+			pushLintIssue(
+				issues,
+				sourceFile,
+				node,
+				'legacy_native_bridge_key_pattern',
+				'Legacy native bridge key "__native__" is forbidden. Use the current "__native" key instead of adding alias fallbacks.',
+			);
 		}
 		if (ts.isCatchClause(node)) {
 			lintCatchClausePatterns(node, sourceFile, issues, ledger);

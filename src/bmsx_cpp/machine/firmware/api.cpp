@@ -98,6 +98,19 @@ InputSource parseInputSource(const std::string& source) {
 	throw BMSX_RUNTIME_ERROR("Unknown input source '" + source + "'.");
 }
 
+struct ButtonInputRequest {
+	const std::string& button;
+	InputSource source;
+};
+
+ButtonInputRequest readButtonInputRequest(Runtime& runtime, NativeArgsView args) {
+	const size_t offset = args.size() >= 3 ? 1 : 0;
+	const StringPool& strings = runtime.machine().cpu().stringPool();
+	const std::string& button = strings.toString(asStringId(args.at(offset)));
+	const std::string& source = strings.toString(asStringId(args.at(offset + 1)));
+	return {button, parseInputSource(source)};
+}
+
 static u32 utf8SingleCodepoint(const std::string& text) {
 	if (text.empty()) {
 		throw BMSX_RUNTIME_ERROR("Font glyph key must not be empty.");
@@ -195,11 +208,12 @@ Value Api::get_player_input_handle(int playerIndex) {
 		return cached;
 	}
 
+	CPU& cpu = m_runtime.machine().cpu();
 	auto key = [this](std::string_view name) {
 		return m_runtime.luaKey(name);
 	};
-	auto exactString = [this](std::string_view text) {
-		return valueString(m_runtime.machine().cpu().internString(text));
+	auto exactString = [&cpu](std::string_view text) {
+		return valueString(cpu.internString(text));
 	};
 	auto makeModifierStateTable = [this, key](const PlayerInput::ModifierState& state) -> Value {
 		Table* table = m_runtime.machine().cpu().createTable(0, 4);
@@ -210,32 +224,26 @@ Value Api::get_player_input_handle(int playerIndex) {
 		return valueTable(table);
 	};
 
-	const Value getModifiersStateFn = m_runtime.machine().cpu().createNativeFunction("player_input.getModifiersState", [this, playerIndex, makeModifierStateTable](NativeArgsView args, NativeResults& out) {
+	const Value getModifiersStateFn = cpu.createNativeFunction("player_input.getModifiersState", [this, playerIndex, makeModifierStateTable](NativeArgsView args, NativeResults& out) {
 		(void)args;
 		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
 		out.push_back(makeModifierStateTable(input->getModifiersState()));
 	});
-	const Value getButtonStateFn = m_runtime.machine().cpu().createNativeFunction("player_input.getButtonState", [this, playerIndex](NativeArgsView args, NativeResults& out) {
-		const size_t offset = args.size() >= 3 ? 1 : 0;
-		const std::string& button = m_runtime.machine().cpu().stringPool().toString(asStringId(args.at(offset)));
-		const std::string& source = m_runtime.machine().cpu().stringPool().toString(asStringId(args.at(offset + 1)));
+	const Value getButtonStateFn = cpu.createNativeFunction("player_input.getButtonState", [this, playerIndex](NativeArgsView args, NativeResults& out) {
+		const ButtonInputRequest request = readButtonInputRequest(m_runtime, args);
 		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
-		const ButtonState state = input->getButtonState(button, parseInputSource(source));
+		const ButtonState state = input->getButtonState(request.button, request.source);
 		out.push_back(buildButtonStateTable(m_runtime, m_inputStateKeys, state, false, 0));
 	});
-	const Value getButtonRepeatStateFn = m_runtime.machine().cpu().createNativeFunction("player_input.getButtonRepeatState", [this, playerIndex](NativeArgsView args, NativeResults& out) {
-		const size_t offset = args.size() >= 3 ? 1 : 0;
-		const std::string& button = m_runtime.machine().cpu().stringPool().toString(asStringId(args.at(offset)));
-		const std::string& source = m_runtime.machine().cpu().stringPool().toString(asStringId(args.at(offset + 1)));
+	const Value getButtonRepeatStateFn = cpu.createNativeFunction("player_input.getButtonRepeatState", [this, playerIndex](NativeArgsView args, NativeResults& out) {
+		const ButtonInputRequest request = readButtonInputRequest(m_runtime, args);
 		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
-		const ActionState state = input->getButtonRepeatState(button, parseInputSource(source));
-		out.push_back(buildButtonStateTable(m_runtime, m_inputStateKeys, state, state.repeatpressed.value_or(false), state.repeatcount.value_or(0)));
+		const ActionState state = input->getButtonRepeatState(request.button, request.source);
+		out.push_back(buildButtonStateTable(m_runtime, m_inputStateKeys, state, *state.repeatpressed, *state.repeatcount));
 	});
-	const Value consumeButtonFn = m_runtime.machine().cpu().createNativeFunction("player_input.consumeButton", [this, playerIndex](NativeArgsView args, NativeResults& out) {
-		const size_t offset = args.size() >= 3 ? 1 : 0;
-		const std::string& button = m_runtime.machine().cpu().stringPool().toString(asStringId(args.at(offset)));
-		const std::string& source = m_runtime.machine().cpu().stringPool().toString(asStringId(args.at(offset + 1)));
-		Input::instance().getPlayerInput(playerIndex)->consumeRawButton(button, parseInputSource(source));
+	const Value consumeButtonFn = cpu.createNativeFunction("player_input.consumeButton", [this, playerIndex](NativeArgsView args, NativeResults& out) {
+		const ButtonInputRequest request = readButtonInputRequest(m_runtime, args);
+		Input::instance().getPlayerInput(playerIndex)->consumeRawButton(request.button, request.source);
 		(void)out;
 	});
 	const Value getModifiersStateKey = exactString("getModifiersState");
@@ -247,7 +255,7 @@ Value Api::get_player_input_handle(int playerIndex) {
 	const Value getButtonRepeatStateIdentifierKey = key("getButtonRepeatState");
 	const Value consumeButtonIdentifierKey = key("consumeButton");
 
-	const Value handle = m_runtime.machine().cpu().createNativeObject(
+	const Value handle = cpu.createNativeObject(
 		nullptr,
 		[this, getModifiersStateKey, getButtonStateKey, getButtonRepeatStateKey, consumeButtonKey, getModifiersStateIdentifierKey, getButtonStateIdentifierKey, getButtonRepeatStateIdentifierKey, consumeButtonIdentifierKey, getModifiersStateFn, getButtonStateFn, getButtonRepeatStateFn, consumeButtonFn](const Value& keyValue) -> Value {
 			if (!valueIsString(keyValue)) {

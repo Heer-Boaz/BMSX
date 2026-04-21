@@ -3059,13 +3059,17 @@ const buildModuleShapeFromExpression = (
 			}
 			node.children.set(
 				key,
-				buildModuleShapeFromExpression(field.value, localShapes) ?? createModuleExportNode(),
+				buildModuleShapeOrEmpty(field.value, localShapes),
 			);
 		}
 		return node;
 	}
 	return resolveStaticModuleShapePath(expression, localShapes);
 };
+
+function buildModuleShapeOrEmpty(expression: LuaExpression, localShapes: ReadonlyMap<string, ModuleExportNode>): ModuleExportNode {
+	return buildModuleShapeFromExpression(expression, localShapes) ?? createModuleExportNode();
+}
 
 const assignModuleShapePath = (
 	root: ModuleExportNode,
@@ -3131,7 +3135,7 @@ const buildTopLevelLocalModuleShapes = (
 				if (!right) {
 					continue;
 				}
-				const shape = buildModuleShapeFromExpression(right, localShapes) ?? createModuleExportNode();
+				const shape = buildModuleShapeOrEmpty(right, localShapes);
 				assignModuleShapePath(rootShape, path.slice(1), shape);
 			}
 			continue;

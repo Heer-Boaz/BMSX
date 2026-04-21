@@ -48,6 +48,7 @@ private:
 	void resetCommandLatch();
 	void play();
 	void queuePlay();
+	const Memory::AssetEntry& requireAudioEntry(uint32_t handle) const;
 	void startPlay(uint32_t handle, const std::string& id, AudioType channel, const SoundMasterResolvedPlayRequest& request);
 	void startMusicTransitionFromApu(const std::string& id);
 	void stopChannel();

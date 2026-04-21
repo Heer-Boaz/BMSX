@@ -92,7 +92,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 		const tableId = this.getOrAssignTableId(table);
 		// Carry the marshal path forward so diagnostics point to the logical location inside the Lua object graph.
 		const tableContext = extendMarshalContext(context, `table${tableId}`);
-		const nativeRef = table.get('__native') ?? table.get('__native__');
+		const nativeRef = table.get('__native');
 		if (nativeRef !== null) {
 			if (nativeRef instanceof LuaNativeValue) {
 				return nativeRef.native;

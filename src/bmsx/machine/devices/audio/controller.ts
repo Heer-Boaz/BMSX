@@ -47,7 +47,7 @@ import {
 	IO_APU_SYNC_LOOP,
 	IRQ_APU,
 } from '../../bus/io';
-import { Memory } from '../../memory/memory';
+import { Memory, type AssetEntry } from '../../memory/memory';
 import type { IrqController } from '../irq/controller';
 
 interface QueuedAudioPlay {
@@ -200,10 +200,7 @@ export class AudioController {
 
 	private play(): void {
 		const handle = this.memory.readIoU32(IO_APU_HANDLE);
-		const entry = this.memory.getAssetEntryByHandle(handle);
-		if (entry.type !== 'audio') {
-			throw new Error(`[APU] asset handle ${handle} is not audio.`);
-		}
+		const entry = this.requireAudioEntry(handle);
 		const channel = decodeChannel(this.memory.readIoU32(IO_APU_CHANNEL));
 		this.queuedByType[channel].length = 0;
 		this.queuedFirstByType[channel] = 0;
@@ -212,10 +209,7 @@ export class AudioController {
 
 	private queuePlay(): void {
 		const handle = this.memory.readIoU32(IO_APU_HANDLE);
-		const entry = this.memory.getAssetEntryByHandle(handle);
-		if (entry.type !== 'audio') {
-			throw new Error(`[APU] asset handle ${handle} is not audio.`);
-		}
+		const entry = this.requireAudioEntry(handle);
 		const channel = decodeChannel(this.memory.readIoU32(IO_APU_CHANNEL));
 		const request = this.readResolvedPlayRequest();
 		if (this.activeHandleByType[channel] !== 0) {
@@ -223,6 +217,14 @@ export class AudioController {
 			return;
 		}
 		this.startPlay(handle, entry.id, channel, request);
+	}
+
+	private requireAudioEntry(handle: number): AssetEntry {
+		const entry = this.memory.getAssetEntryByHandle(handle);
+		if (entry.type !== 'audio') {
+			throw new Error(`[APU] asset handle ${handle} is not audio.`);
+		}
+		return entry;
 	}
 
 	private startPlay(handle: number, id: string, channel: AudioType, request: SoundMasterResolvedPlayRequest): void {

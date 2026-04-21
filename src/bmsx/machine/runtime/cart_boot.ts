@@ -99,9 +99,6 @@ export class CartBootState {
 	private async prepare(runtime: Runtime): Promise<void> {
 		this.setReadyFlag(runtime, false);
 		this.preparedProgram = null;
-		if (!runtime.assets.cartLayer || !runtime.cartAssetSource || !runtime.cartLuaSources) {
-			return;
-		}
 		try {
 			if (runtime.cartLuaSources.can_boot_from_source) {
 				this.preparedProgram = luaPipeline.compileCartLuaProgramForBoot(runtime);

@@ -52,7 +52,7 @@ export type NativeFunction = {
 	readonly kind: typeof NATIVE_FUNCTION_KIND;
 	readonly name: string;
 	invoke(args: NativeArgs, out: Value[]): void;
-	cost?: NativeFnCost;
+	readonly cost: NativeFnCost;
 };
 
 export type NativeArgs = ReadonlyArray<Value>;
@@ -2693,8 +2693,7 @@ export class CPU {
 						throw new Error(`Attempted to call a nil value. at ${this.formatLastSourceLocation()}`);
 					}
 					if (isNativeFunction(callee)) {
-						const cost = callee.cost ?? DEFAULT_NATIVE_COST;
-						this.charge(cost.base);
+						this.charge(callee.cost.base);
 						const argsHandle = this.acquireNativeArgsProxy();
 						const results = this.acquireNativeReturnScratch();
 						try {
