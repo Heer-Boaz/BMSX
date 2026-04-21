@@ -238,6 +238,7 @@ import {
 	toRuntimeValue,
 	wrapNativeResult,
 } from './js_bridge';
+import { collectApiMembers } from './api_members';
 import { buildLuaFrameRawLabel } from '../../ide/editor/contrib/runtime_error/format';
 import { isStringValue, stringValueToString } from '../memory/string_pool';
 
@@ -977,25 +978,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 				runtime.luaScratch.releaseTableMarshal(visited);
 			}
 		};
-
-	const collectApiMembers = (): Array<{ name: string; kind: 'method' | 'getter'; descriptor: PropertyDescriptor }> => {
-		const map = new Map<string, { kind: 'method' | 'getter'; descriptor: PropertyDescriptor }>();
-		let prototype: object = Object.getPrototypeOf(runtime.api);
-		while (prototype && prototype !== Object.prototype) {
-			for (const name of Object.getOwnPropertyNames(prototype)) {
-				if (name === 'constructor') continue;
-				const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
-				if (!descriptor || map.has(name)) continue;
-				if (typeof descriptor.value === 'function') {
-					map.set(name, { kind: 'method', descriptor });
-				} else if (descriptor.get) {
-					map.set(name, { kind: 'getter', descriptor });
-				}
-			}
-			prototype = Object.getPrototypeOf(prototype);
-		}
-		return Array.from(map.entries(), ([name, value]) => ({ name, kind: value.kind, descriptor: value.descriptor }));
-	};
 
 	const exposeObjects = (): void => {
 		const entries: Array<[string, object]> = [
@@ -2596,7 +2578,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		out.push(ipairsIterator, target, 0);
 	}));
 
-	const members = collectApiMembers();
+	const members = collectApiMembers(runtime.api);
 	for (const { name, kind, descriptor } of members) {
 		if (kind === 'method') {
 			const callable = descriptor.value as (...args: unknown[]) => unknown;

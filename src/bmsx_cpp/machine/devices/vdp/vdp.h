@@ -309,7 +309,6 @@ public:
 	void assignBuildToSlot(bool active);
 		void promotePendingFrame();
 		void scheduleNextService(int64_t nowCycles);
-		int64_t cyclesUntilWorkUnits(int targetUnits) const;
 		bool hasOpenDirectVdpFifoIngress() const;
 		bool hasBlockedSubmitPath() const;
 		void setSubmitBusyStatus(bool active);

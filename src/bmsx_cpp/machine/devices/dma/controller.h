@@ -74,7 +74,6 @@ public:
 
 	void accrueChannel(Channel channel, int64_t bytesPerSec, int64_t& carry, int cycles);
 	void scheduleNextService(int64_t nowCycles);
-	int64_t cyclesUntilBytes(int64_t bytesPerSec, int64_t carry, uint32_t targetBytes) const;
 	void tickChannel(Channel channel, bool& ioWrittenDirty, bool& imgWrittenDirty);
 	uint32_t processJob(DmaJob& job, uint32_t budget);
 	uint32_t processImageJob(DmaJob& job, uint32_t budget);

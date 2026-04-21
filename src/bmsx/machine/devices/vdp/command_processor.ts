@@ -8,11 +8,8 @@ import {
 	IO_CMD_VDP_TILE_RUN,
 } from '../../bus/io';
 import type { Runtime } from '../../runtime/runtime';
+import { vdpFault } from './fault';
 import { assertVdpPacketArgWords, getVdpPacketArgKind, VdpPacketWordKind } from './packet_schema';
-
-function vdpFault(message: string): Error {
-	return new Error(`VDP fault: ${message}`);
-}
 
 const VDP_PACKET_F32_BUFFER = new ArrayBuffer(4);
 const VDP_PACKET_F32_VIEW = new DataView(VDP_PACKET_F32_BUFFER);
@@ -61,38 +58,24 @@ const VDP_PACKET_MEMORY_PAYLOAD = new MemoryPacketWordReader();
 const VDP_PACKET_BUFFER_ARGS = new BufferPacketWordReader();
 const VDP_PACKET_BUFFER_PAYLOAD = new BufferPacketWordReader();
 
-function readPacketU32(reader: PacketWordReader, index: number): number {
+function readPacketArgWord(reader: PacketWordReader, cmd: number, index: number, kind: VdpPacketWordKind, label: string): number {
+	if (getVdpPacketArgKind(cmd, index) !== kind) {
+		throw vdpFault(`packet arg ${index} for command ${cmd >>> 0} is not encoded as ${label}.`);
+	}
 	return reader.readU32(index);
 }
 
-function readPacketI32(reader: PacketWordReader, index: number): number {
-	return reader.readU32(index) | 0;
-}
-
-function readPacketF32(reader: PacketWordReader, index: number): number {
-	VDP_PACKET_F32_VIEW.setUint32(0, reader.readU32(index) >>> 0, true);
-	return VDP_PACKET_F32_VIEW.getFloat32(0, true);
-}
-
 function readPacketArgU32(reader: PacketWordReader, cmd: number, index: number): number {
-	if (getVdpPacketArgKind(cmd, index) !== VdpPacketWordKind.U32) {
-		throw vdpFault(`packet arg ${index} for command ${cmd >>> 0} is not encoded as u32.`);
-	}
-	return readPacketU32(reader, index);
+	return readPacketArgWord(reader, cmd, index, VdpPacketWordKind.U32, 'u32');
 }
 
 function readPacketArgI32(reader: PacketWordReader, cmd: number, index: number): number {
-	if (getVdpPacketArgKind(cmd, index) !== VdpPacketWordKind.U32) {
-		throw vdpFault(`packet arg ${index} for command ${cmd >>> 0} is not encoded as u32.`);
-	}
-	return readPacketI32(reader, index);
+	return readPacketArgWord(reader, cmd, index, VdpPacketWordKind.U32, 'u32') | 0;
 }
 
 function readPacketArgF32(reader: PacketWordReader, cmd: number, index: number): number {
-	if (getVdpPacketArgKind(cmd, index) !== VdpPacketWordKind.F32) {
-		throw vdpFault(`packet arg ${index} for command ${cmd >>> 0} is not encoded as f32.`);
-	}
-	return readPacketF32(reader, index);
+	VDP_PACKET_F32_VIEW.setUint32(0, readPacketArgWord(reader, cmd, index, VdpPacketWordKind.F32, 'f32') >>> 0, true);
+	return VDP_PACKET_F32_VIEW.getFloat32(0, true);
 }
 
 function readPacketColor(reader: PacketWordReader, cmd: number, offset: number): { r: number; g: number; b: number; a: number } {

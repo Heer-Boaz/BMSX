@@ -5,6 +5,7 @@
 #include "machine/memory/map.h"
 #include "machine/bus/io.h"
 #include "machine/memory/memory.h"
+#include "machine/scheduler/budget.h"
 #include "core/engine.h"
 #include "rompack/format.h"
 #include "vendor/stb_image.h"
@@ -62,9 +63,7 @@ void ImgDecController::accrueCycles(int cycles, int64_t nowCycles) {
 	if (!m_active || !m_decodeActive || m_decodeQueued || m_decodeRemaining == 0 || cycles <= 0) {
 		return;
 	}
-	const int64_t numerator = m_decodeBytesPerSec * static_cast<int64_t>(cycles) + m_decodeCarry;
-	const int64_t wholeBytes = numerator / m_cpuHz;
-	m_decodeCarry = numerator % m_cpuHz;
+	const int64_t wholeBytes = accrueBudgetUnits(m_cpuHz, m_decodeBytesPerSec, m_decodeCarry, cycles);
 	if (wholeBytes > 0) {
 		const int64_t maxGrant = static_cast<int64_t>(m_decodeRemaining) - static_cast<int64_t>(m_availableDecodeBytes);
 		const int64_t granted = wholeBytes > maxGrant ? maxGrant : wholeBytes;
@@ -444,19 +443,10 @@ void ImgDecController::scheduleNextService(int64_t nowCycles) {
 			m_scheduler.scheduleDeviceService(DeviceServiceImg, nowCycles);
 			return;
 		}
-		m_scheduler.scheduleDeviceService(DeviceServiceImg, nowCycles + cyclesUntilDecodeBytes(targetBytes - m_availableDecodeBytes));
+		m_scheduler.scheduleDeviceService(DeviceServiceImg, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, m_decodeBytesPerSec, m_decodeCarry, targetBytes - m_availableDecodeBytes));
 		return;
 	}
 	m_scheduler.cancelDeviceService(DeviceServiceImg);
-}
-
-int64_t ImgDecController::cyclesUntilDecodeBytes(uint32_t targetBytes) const {
-	const int64_t needed = static_cast<int64_t>(targetBytes) * m_cpuHz - m_decodeCarry;
-	if (needed <= 0) {
-		return 1;
-	}
-	const int64_t cycles = (needed + m_decodeBytesPerSec - 1) / m_decodeBytesPerSec;
-	return cycles <= 0 ? 1 : cycles;
 }
 
 } // namespace bmsx

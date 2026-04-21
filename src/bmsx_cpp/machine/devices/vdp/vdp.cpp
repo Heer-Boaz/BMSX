@@ -1,5 +1,6 @@
 #include "machine/devices/vdp/vdp.h"
 #include "machine/devices/vdp/command_processor.h"
+#include "machine/devices/vdp/fault.h"
 #include "machine/devices/vdp/packet_schema.h"
 #include "machine/memory/map.h"
 #include "rompack/assets.h"
@@ -12,6 +13,7 @@
 #include "render/texture_manager.h"
 #include "vendor/stb_image.h"
 #include "machine/devices/imgdec/controller.h"
+#include "machine/scheduler/budget.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -19,7 +21,6 @@
 #include <cstring>
 #include <limits>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <unordered_set>
 
@@ -113,17 +114,6 @@ struct VdpGles2Runtime {
 };
 
 VdpGles2Runtime g_vdpGles2Runtime{};
-inline std::runtime_error vdpFault(const std::string& message) {
-	return BMSX_RUNTIME_ERROR("VDP fault: " + message);
-}
-
-inline std::runtime_error vdpStreamFault(const std::string& message) {
-	return BMSX_RUNTIME_ERROR("VDP stream fault: " + message);
-}
-
-inline std::runtime_error vdpBackendFault(const std::string& message) {
-	return BMSX_RUNTIME_ERROR("VDP backend fault: " + message);
-}
 
 std::string dumpStreamWords(const Memory& memory, uint32_t baseAddr, uint32_t wordCount) {
 	std::ostringstream out;
@@ -1553,9 +1543,7 @@ void VDP::accrueCycles(int cycles, int64_t nowCycles) {
 	if (!hasPendingRenderWork() || cycles <= 0) {
 		return;
 	}
-	const int64_t numerator = m_workUnitsPerSec * static_cast<int64_t>(cycles) + m_workCarry;
-	const int64_t wholeUnits = numerator / m_cpuHz;
-	m_workCarry = numerator % m_cpuHz;
+	const int64_t wholeUnits = accrueBudgetUnits(m_cpuHz, m_workUnitsPerSec, m_workCarry, cycles);
 	if (wholeUnits > 0) {
 		const int remainingWork = getPendingRenderWorkUnits() - m_availableWorkUnits;
 		const int64_t maxGrant = remainingWork <= 0 ? 0 : remainingWork;
@@ -1916,16 +1904,7 @@ void VDP::scheduleNextService(int64_t nowCycles) {
 		m_scheduler.scheduleDeviceService(DeviceServiceVdp, nowCycles);
 		return;
 	}
-	m_scheduler.scheduleDeviceService(DeviceServiceVdp, nowCycles + cyclesUntilWorkUnits(targetUnits - m_availableWorkUnits));
-}
-
-int64_t VDP::cyclesUntilWorkUnits(int targetUnits) const {
-	const int64_t needed = static_cast<int64_t>(targetUnits) * m_cpuHz - m_workCarry;
-	if (needed <= 0) {
-		return 1;
-	}
-	const int64_t cycles = (needed + m_workUnitsPerSec - 1) / m_workUnitsPerSec;
-	return cycles <= 0 ? 1 : cycles;
+	m_scheduler.scheduleDeviceService(DeviceServiceVdp, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, m_workUnitsPerSec, m_workCarry, targetUnits - m_availableWorkUnits));
 }
 
 void VDP::clearActiveFrame() {

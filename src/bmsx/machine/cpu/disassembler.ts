@@ -1,5 +1,5 @@
 import { OpCode, Table, isNativeFunction, isNativeObject, type Program, type ProgramMetadata, type SourceRange, type Value } from './cpu';
-import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord } from './instruction_format';
+import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
 import { formatNumber } from '../common/number_format';
 import { isStringValue, stringValueToString } from '../memory/string_pool';
 
@@ -89,11 +89,6 @@ const normalizeOptions = (options: DisassemblyOptions): ResolvedOptions => {
 		protoAddressOp,
 		pcBias: options.pcBias ?? 0,
 	};
-};
-
-const signExtend = (value: number, bits: number): number => {
-	const shift = 32 - bits;
-	return (value << shift) >> shift;
 };
 
 const formatHexWord = (word: number, options: ResolvedOptions): string => {

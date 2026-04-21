@@ -4,6 +4,7 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/devices/vdp/vdp.h"
 #include "machine/memory/map.h"
+#include "machine/scheduler/budget.h"
 
 #include <algorithm>
 #include <limits>
@@ -400,9 +401,7 @@ void DmaController::accrueChannel(Channel channel, int64_t bytesPerSec, int64_t&
 		state.budget = 0;
 		return;
 	}
-	const int64_t numerator = bytesPerSec * static_cast<int64_t>(cycles) + carry;
-	const int64_t wholeBytes = numerator / m_cpuHz;
-	carry = numerator % m_cpuHz;
+	const int64_t wholeBytes = accrueBudgetUnits(m_cpuHz, bytesPerSec, carry, cycles);
 	if (wholeBytes <= 0) {
 		return;
 	}
@@ -422,33 +421,26 @@ void DmaController::scheduleNextService(int64_t nowCycles) {
 	if (pendingIso) {
 		const uint32_t pendingBytes = pendingBytesForChannel(Channel::Iso);
 		const uint32_t targetBytes = pendingBytes < DMA_SERVICE_BATCH_BYTES ? pendingBytes : DMA_SERVICE_BATCH_BYTES;
-		if (m_channels[static_cast<int>(Channel::Iso)].budget >= targetBytes) {
+		const DmaChannelState& state = m_channels[static_cast<int>(Channel::Iso)];
+		if (state.budget >= targetBytes) {
 			m_scheduler.scheduleDeviceService(DeviceServiceDma, nowCycles);
 			return;
 		}
-		const int64_t deadline = nowCycles + cyclesUntilBytes(m_isoBytesPerSec, m_isoCarry, targetBytes - m_channels[static_cast<int>(Channel::Iso)].budget);
+		const int64_t deadline = nowCycles + cyclesUntilBudgetUnits(m_cpuHz, m_isoBytesPerSec, m_isoCarry, targetBytes - state.budget);
 		nextDeadline = deadline < nextDeadline ? deadline : nextDeadline;
 	}
 	if (pendingBulk) {
 		const uint32_t pendingBytes = pendingBytesForChannel(Channel::Bulk);
 		const uint32_t targetBytes = pendingBytes < DMA_SERVICE_BATCH_BYTES ? pendingBytes : DMA_SERVICE_BATCH_BYTES;
-		if (m_channels[static_cast<int>(Channel::Bulk)].budget >= targetBytes) {
+		const DmaChannelState& state = m_channels[static_cast<int>(Channel::Bulk)];
+		if (state.budget >= targetBytes) {
 			m_scheduler.scheduleDeviceService(DeviceServiceDma, nowCycles);
 			return;
 		}
-		const int64_t deadline = nowCycles + cyclesUntilBytes(m_bulkBytesPerSec, m_bulkCarry, targetBytes - m_channels[static_cast<int>(Channel::Bulk)].budget);
+		const int64_t deadline = nowCycles + cyclesUntilBudgetUnits(m_cpuHz, m_bulkBytesPerSec, m_bulkCarry, targetBytes - state.budget);
 		nextDeadline = deadline < nextDeadline ? deadline : nextDeadline;
 	}
 	m_scheduler.scheduleDeviceService(DeviceServiceDma, nextDeadline);
-}
-
-int64_t DmaController::cyclesUntilBytes(int64_t bytesPerSec, int64_t carry, uint32_t targetBytes) const {
-	const int64_t needed = static_cast<int64_t>(targetBytes) * m_cpuHz - carry;
-	if (needed <= 0) {
-		return 1;
-	}
-	const int64_t cycles = (needed + bytesPerSec - 1) / bytesPerSec;
-	return cycles <= 0 ? 1 : cycles;
 }
 
 uint32_t DmaController::resolveMaxWritable(uint32_t dst) const {

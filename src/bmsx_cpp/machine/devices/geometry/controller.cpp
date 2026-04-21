@@ -2,6 +2,7 @@
 
 #include "machine/bus/io.h"
 #include "machine/devices/irq/controller.h"
+#include "machine/scheduler/budget.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -107,9 +108,7 @@ void GeometryController::accrueCycles(int cycles, int64_t nowCycles) {
 		return;
 	}
 
-	const int64_t numerator = m_workUnitsPerSec * static_cast<int64_t>(cycles) + m_workCarry;
-	const int64_t wholeUnits = numerator / m_cpuHz;
-	m_workCarry = numerator % m_cpuHz;
+	const int64_t wholeUnits = accrueBudgetUnits(m_cpuHz, m_workUnitsPerSec, m_workCarry, cycles);
 	if (wholeUnits > 0) {
 		const uint32_t remainingRecords = m_activeJob->count - m_activeJob->processed;
 		const int64_t maxGrant = static_cast<int64_t>(remainingRecords - m_availableWorkUnits);
@@ -287,16 +286,7 @@ void GeometryController::scheduleNextService(int64_t nowCycles) {
 		m_scheduler.scheduleDeviceService(DeviceServiceGeo, nowCycles);
 		return;
 	}
-	m_scheduler.scheduleDeviceService(DeviceServiceGeo, nowCycles + cyclesUntilWorkUnits(targetUnits - m_availableWorkUnits));
-}
-
-int64_t GeometryController::cyclesUntilWorkUnits(uint32_t targetUnits) const {
-	const int64_t needed = static_cast<int64_t>(targetUnits) * m_cpuHz - m_workCarry;
-	if (needed <= 0) {
-		return 1;
-	}
-	const int64_t cycles = (needed + m_workUnitsPerSec - 1) / m_workUnitsPerSec;
-	return cycles <= 0 ? 1 : cycles;
+	m_scheduler.scheduleDeviceService(DeviceServiceGeo, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, m_workUnitsPerSec, m_workCarry, targetUnits - m_availableWorkUnits));
 }
 
 bool GeometryController::validateXform2Submission(const GeoJob& job) {

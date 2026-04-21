@@ -5,7 +5,7 @@ import { addTrackedLuaHeapBytes, replaceTrackedLuaHeapBytes } from '../memory/lu
 import { formatNumber } from '../common/number_format';
 import { BASE_CYCLES, OpCode } from './opcode_info';
 import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions, type CpuProfilerSnapshot } from './profiler';
-import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord } from './instruction_format';
+import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
 import { MemoryAccessKind } from '../memory/access_kind';
 import { findVdpPacketSchema, getVdpPacketArgKind, VdpPacketWordKind } from '../devices/vdp/packet_schema';
 import {
@@ -1473,11 +1473,6 @@ type TableLoadInlineCache = {
 
 // Pool constant for frame reuse
 const MAX_POOLED_FRAMES = 32;
-const signExtend = (value: number, bits: number): number => {
-	const shift = 32 - bits;
-	return (value << shift) >> shift;
-};
-
 const USES_BX = new Uint8Array(64);
 USES_BX[OpCode.LOADK] = 1;
 USES_BX[OpCode.KSMI] = 1;

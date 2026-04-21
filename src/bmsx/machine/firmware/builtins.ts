@@ -7,6 +7,7 @@ import { extractErrorMessage, isLuaCallSignal, LuaFunctionValue, LuaNativeValue,
 import { isLuaTable, LuaTable, LuaValue } from '../../lua/value';
 import { arrayify } from '../../common/arrayify';
 import { API_METHOD_METADATA } from './api_metadata';
+import { collectApiMembers } from './api_members';
 import {
 	DEFAULT_LUA_BUILTIN_FUNCTIONS,
 	ENGINE_LUA_BUILTIN_FUNCTIONS,
@@ -62,7 +63,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 		description: 'Replaces the input bindings for the console player. The optional player argument is zero-based.',
 	});
 
-	const members = collectApiMembers();
+	const members = collectApiMembers(api);
 	for (const { name, kind, descriptor } of members) {
 		if (!descriptor) {
 			continue;
@@ -361,24 +362,4 @@ function exposeEngineObjects(env: LuaEnvironment): void {
 	for (const [name, object] of entries) {
 		registerLuaGlobal(env, name, new LuaNativeValue(object));
 	}
-}
-
-function collectApiMembers(): Array<{ name: string; kind: 'method' | 'getter'; descriptor: PropertyDescriptor }> {
-	const map = new Map<string, { kind: 'method' | 'getter'; descriptor: PropertyDescriptor }>();
-	let prototype: object = Object.getPrototypeOf(api);
-	while (prototype && prototype !== Object.prototype) {
-		for (const name of Object.getOwnPropertyNames(prototype)) {
-			if (name === 'constructor') continue;
-			const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
-			if (!descriptor || map.has(name)) continue;
-			if (typeof descriptor.value === 'function') {
-				map.set(name, { kind: 'method', descriptor });
-			}
-			else if (descriptor.get) {
-				map.set(name, { kind: 'getter', descriptor });
-			}
-		}
-		prototype = Object.getPrototypeOf(prototype);
-	}
-	return Array.from(map.entries(), ([name, value]) => ({ name, kind: value.kind, descriptor: value.descriptor }));
 }

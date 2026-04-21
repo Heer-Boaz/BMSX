@@ -27,6 +27,11 @@ export const MAX_EXT_CONST = (1 << (MAX_OPERAND_BITS + EXT_B_BITS - 1)) - 1;
 export const MAX_EXT_BX = (MAX_WIDE << (MAX_BX_BITS + EXT_BX_BITS)) | MAX_BASE_BX;
 
 
+export function signExtend(value: number, bits: number): number {
+	const shift = 32 - bits;
+	return (value << shift) >> shift;
+}
+
 export function packInstructionWord(op: number, a: number, b: number, c: number, ext: number = 0): number {
 	return ((ext & 0xff) << 24)
 		| ((op & 0x3f) << 18)

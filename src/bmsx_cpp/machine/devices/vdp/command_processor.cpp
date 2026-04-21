@@ -1,20 +1,16 @@
 #include "machine/devices/vdp/command_processor.h"
 #include "machine/devices/vdp/vdp.h"
+#include "machine/devices/vdp/fault.h"
 #include "machine/devices/vdp/packet_schema.h"
 #include "machine/firmware/api.h"
 #include "machine/memory/memory.h"
 #include "machine/bus/io.h"
 #include <cstring>
 #include <optional>
-#include <stdexcept>
 #include <string>
 
 namespace bmsx {
 namespace {
-
-inline std::runtime_error vdpFault(const std::string& message) {
-	return BMSX_RUNTIME_ERROR("VDP fault: " + message);
-}
 
 struct MemoryPacketWordReader {
 	static constexpr bool kMemoryBacked = true;
@@ -37,59 +33,29 @@ struct BufferPacketWordReader {
 };
 
 template<typename Reader>
-inline uint32_t readPacketU32(const Reader& reader, int index) {
+inline uint32_t readPacketArgWord(const Reader& reader, uint32_t cmd, int index, VdpPacketWordKind expectedKind, const char* kindLabel) {
+	if (getVdpPacketArgKind(cmd, static_cast<uint32_t>(index)) != expectedKind) {
+		throw vdpFault("packet arg " + std::to_string(index) + " is not encoded as " + kindLabel + ".");
+	}
 	return reader.readU32(index);
 }
 
 template<typename Reader>
-inline int32_t readPacketI32(const Reader& reader, int index) {
-	return static_cast<int32_t>(reader.readU32(index));
-}
-
-template<typename Reader>
-inline float readPacketF32(const Reader& reader, int index) {
-	const uint32_t bits = reader.readU32(index);
-	float value = 0.0f;
-	std::memcpy(&value, &bits, sizeof(value));
-	return value;
-}
-
-template<typename Reader>
-inline uint32_t readPacketWordU32(const Reader& reader, int index) {
-	return readPacketU32(reader, index);
-}
-
-template<typename Reader>
-inline int32_t readPacketWordI32(const Reader& reader, int index) {
-	return readPacketI32(reader, index);
-}
-
-template<typename Reader>
-inline float readPacketWordF32(const Reader& reader, int index) {
-	return readPacketF32(reader, index);
-}
-
-template<typename Reader, typename Value, typename ConvertFn>
-inline Value readPacketArgChecked(const Reader& reader, uint32_t cmd, int index, VdpPacketWordKind expectedKind, const char* kindLabel, ConvertFn convert) {
-	if (getVdpPacketArgKind(cmd, static_cast<uint32_t>(index)) != expectedKind) {
-		throw vdpFault("packet arg " + std::to_string(index) + " is not encoded as " + kindLabel + ".");
-	}
-	return convert(reader, index);
-}
-
-template<typename Reader>
 inline uint32_t readPacketArgU32(const Reader& reader, uint32_t cmd, int index) {
-	return readPacketArgChecked<Reader, uint32_t>(reader, cmd, index, VdpPacketWordKind::U32, "u32", readPacketWordU32<Reader>);
+	return readPacketArgWord(reader, cmd, index, VdpPacketWordKind::U32, "u32");
 }
 
 template<typename Reader>
 inline int32_t readPacketArgI32(const Reader& reader, uint32_t cmd, int index) {
-	return readPacketArgChecked<Reader, int32_t>(reader, cmd, index, VdpPacketWordKind::U32, "u32", readPacketWordI32<Reader>);
+	return static_cast<int32_t>(readPacketArgWord(reader, cmd, index, VdpPacketWordKind::U32, "u32"));
 }
 
 template<typename Reader>
 inline float readPacketArgF32(const Reader& reader, uint32_t cmd, int index) {
-	return readPacketArgChecked<Reader, float>(reader, cmd, index, VdpPacketWordKind::F32, "f32", readPacketWordF32<Reader>);
+	const uint32_t bits = readPacketArgWord(reader, cmd, index, VdpPacketWordKind::F32, "f32");
+	float value = 0.0f;
+	std::memcpy(&value, &bits, sizeof(value));
+	return value;
 }
 
 template<typename Reader>

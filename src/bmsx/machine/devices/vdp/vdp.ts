@@ -71,6 +71,7 @@ import {
 } from '../../memory/map';
 import { fmix32, scramble32, signed8FromHash, xorshift32 } from '../../common/hash';
 import { processVdpBufferedCommand, processVdpCommand } from './command_processor';
+import { vdpFault, vdpStreamFault } from './fault';
 import { getVdpPacketSchema } from './packet_schema';
 
 export type VdpState = {
@@ -157,14 +158,6 @@ export function invertColorIndex(colorIndex: number): number {
 	const color = BmsxColors[colorIndex];
 	const luminance = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
 	return luminance > 0.5 ? 0 : 15;
-}
-
-function vdpFault(message: string): Error {
-	return new Error(`VDP fault: ${message}`);
-}
-
-function vdpStreamFault(message: string): Error {
-	return new Error(`VDP stream fault: ${message}`);
 }
 
 const VDP_RD_SURFACE_ENGINE = 0;
@@ -441,6 +434,45 @@ export type VdpTileRunBlit = VdpBlitterSource & {
 	dstX: number;
 	dstY: number;
 };
+
+export type VdpTileRunInputBase = {
+	cols: number;
+	rows: number;
+	tile_w: number;
+	tile_h: number;
+	origin_x: number;
+	origin_y: number;
+	scroll_x: number;
+	scroll_y: number;
+	z: number;
+	layer: Layer2D;
+};
+
+export type VdpAssetTileRunInput = VdpTileRunInputBase & {
+	tiles: Array<string | false>;
+};
+
+export type VdpResolvedTileRunInput = VdpTileRunInputBase & {
+	handles: number[];
+};
+
+export type VdpPayloadTileRunInput = VdpTileRunInputBase & {
+	payload_base: number;
+	tile_count: number;
+};
+
+export type VdpPayloadWordsTileRunInput = VdpTileRunInputBase & {
+	payload_words: Uint32Array;
+	payload_word_offset: number;
+	tile_count: number;
+};
+
+type VdpTileRunInput = VdpAssetTileRunInput | VdpResolvedTileRunInput | VdpPayloadTileRunInput | VdpPayloadWordsTileRunInput;
+const VDP_TILE_RUN_SOURCE_ASSETS = 0;
+const VDP_TILE_RUN_SOURCE_HANDLES = 1;
+const VDP_TILE_RUN_SOURCE_PAYLOAD = 2;
+const VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS = 3;
+type VdpTileRunHandleSource = typeof VDP_TILE_RUN_SOURCE_ASSETS | typeof VDP_TILE_RUN_SOURCE_HANDLES | typeof VDP_TILE_RUN_SOURCE_PAYLOAD | typeof VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS;
 
 export type VdpBlitterClearCommand = {
 	opcode: 'clear';
@@ -1609,20 +1641,14 @@ export class VDP implements VramWriteSink {
 		});
 	}
 
-	private enqueueTileRunInternal(desc: {
-		cols: number;
-		rows: number;
-		tile_w: number;
-		tile_h: number;
-		origin_x: number;
-		origin_y: number;
-		scroll_x: number;
-		scroll_y: number;
-		z: number;
-		layer: Layer2D;
-		resolveTileHandle: (index: number) => number;
-		mismatchMessage: (source: VdpBlitterSource) => string;
-	}): void {
+	private requireTileRunCount(label: string, tileCount: number, cols: number, rows: number): void {
+		const expected = cols * rows;
+		if (tileCount !== expected) {
+			throw vdpFault(`${label} size mismatch (${tileCount} != ${expected}).`);
+		}
+	}
+
+	private enqueueTileRunInternal(desc: VdpTileRunInput, handleSource: VdpTileRunHandleSource, mismatchLabel: string): void {
 		const frameWidth = this._frameBufferWidth;
 		const frameHeight = this._frameBufferHeight;
 		const totalWidth = desc.cols * desc.tile_w;
@@ -1661,13 +1687,32 @@ export class VDP implements VramWriteSink {
 			const base = row * desc.cols;
 			let rowHasVisibleTile = false;
 			for (let col = 0; col < desc.cols; col += 1) {
-				const handle = desc.resolveTileHandle(base + col);
+				const index = base + col;
+				let handle: number;
+				switch (handleSource) {
+					case VDP_TILE_RUN_SOURCE_ASSETS: {
+						const tile = (desc as VdpAssetTileRunInput).tiles[index];
+						handle = tile === false ? IO_VDP_TILE_HANDLE_NONE : this.memory.resolveAssetHandle(tile);
+						break;
+					}
+					case VDP_TILE_RUN_SOURCE_HANDLES:
+						handle = (desc as VdpResolvedTileRunInput).handles[index]!;
+						break;
+					case VDP_TILE_RUN_SOURCE_PAYLOAD:
+						handle = this.memory.readU32((desc as VdpPayloadTileRunInput).payload_base + index * 4) >>> 0;
+						break;
+					case VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS: {
+						const payload = desc as VdpPayloadWordsTileRunInput;
+						handle = payload.payload_words[payload.payload_word_offset + index] >>> 0;
+						break;
+					}
+				}
 				if (handle === IO_VDP_TILE_HANDLE_NONE) {
 					continue;
 				}
 				const source = this.resolveBlitterSource(handle);
 				if (source.width !== desc.tile_w || source.height !== desc.tile_h) {
-					throw new Error(desc.mismatchMessage(source));
+					throw new Error(`${mismatchLabel} (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`);
 				}
 				const tileX = dstX + (col * desc.tile_w) - srcClipX;
 				const tileY = dstY + (row * desc.tile_h) - srcClipY;
@@ -1705,66 +1750,22 @@ export class VDP implements VramWriteSink {
 		});
 	}
 
-	public enqueueTileRun(desc: { tiles: Array<string | false>; cols: number; rows: number; tile_w: number; tile_h: number; origin_x: number; origin_y: number; scroll_x: number; scroll_y: number; z: number; layer: Layer2D }): void {
-		this.enqueueTileRunInternal({
-			...desc,
-			resolveTileHandle: (index) => {
-				const tile = desc.tiles[index];
-				if (tile === false) {
-					return IO_VDP_TILE_HANDLE_NONE;
-				}
-				return this.memory.resolveAssetHandle(tile);
-			},
-			mismatchMessage: (source) => `dma_blit_tiles size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`,
-		});
+	public enqueueTileRun(desc: VdpAssetTileRunInput): void {
+		this.enqueueTileRunInternal(desc, VDP_TILE_RUN_SOURCE_ASSETS, 'dma_blit_tiles size mismatch');
 	}
 
-	public enqueueResolvedTileRun(desc: { handles: number[]; cols: number; rows: number; tile_w: number; tile_h: number; origin_x: number; origin_y: number; scroll_x: number; scroll_y: number; z: number; layer: Layer2D }): void {
-		this.enqueueTileRunInternal({
-			...desc,
-			resolveTileHandle: (index) => desc.handles[index]!,
-			mismatchMessage: (source) => `VDP fault: enqueueResolvedTileRun tile size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`,
-		});
+	public enqueueResolvedTileRun(desc: VdpResolvedTileRunInput): void {
+		this.enqueueTileRunInternal(desc, VDP_TILE_RUN_SOURCE_HANDLES, 'VDP fault: enqueueResolvedTileRun tile size mismatch');
 	}
 
-	public enqueuePayloadTileRun(desc: { payload_base: number; tile_count: number; cols: number; rows: number; tile_w: number; tile_h: number; origin_x: number; origin_y: number; scroll_x: number; scroll_y: number; z: number; layer: Layer2D }): void {
-		if (desc.tile_count !== desc.cols * desc.rows) {
-			throw vdpFault(`enqueuePayloadTileRun size mismatch (${desc.tile_count} != ${desc.cols * desc.rows}).`);
-		}
-		this.enqueueTileRunInternal({
-			cols: desc.cols,
-			rows: desc.rows,
-			tile_w: desc.tile_w,
-			tile_h: desc.tile_h,
-			origin_x: desc.origin_x,
-			origin_y: desc.origin_y,
-			scroll_x: desc.scroll_x,
-			scroll_y: desc.scroll_y,
-			z: desc.z,
-			layer: desc.layer,
-			resolveTileHandle: (index) => this.memory.readU32(desc.payload_base + index * 4) >>> 0,
-			mismatchMessage: (source) => `VDP fault: enqueuePayloadTileRun tile size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`,
-		});
+	public enqueuePayloadTileRun(desc: VdpPayloadTileRunInput): void {
+		this.requireTileRunCount('enqueuePayloadTileRun', desc.tile_count, desc.cols, desc.rows);
+		this.enqueueTileRunInternal(desc, VDP_TILE_RUN_SOURCE_PAYLOAD, 'VDP fault: enqueuePayloadTileRun tile size mismatch');
 	}
 
-	public enqueuePayloadTileRunWords(desc: { payload_words: Uint32Array; payload_word_offset: number; tile_count: number; cols: number; rows: number; tile_w: number; tile_h: number; origin_x: number; origin_y: number; scroll_x: number; scroll_y: number; z: number; layer: Layer2D }): void {
-		if (desc.tile_count !== desc.cols * desc.rows) {
-			throw vdpFault(`enqueuePayloadTileRunWords size mismatch (${desc.tile_count} != ${desc.cols * desc.rows}).`);
-		}
-		this.enqueueTileRunInternal({
-			cols: desc.cols,
-			rows: desc.rows,
-			tile_w: desc.tile_w,
-			tile_h: desc.tile_h,
-			origin_x: desc.origin_x,
-			origin_y: desc.origin_y,
-			scroll_x: desc.scroll_x,
-			scroll_y: desc.scroll_y,
-			z: desc.z,
-			layer: desc.layer,
-			resolveTileHandle: (index) => desc.payload_words[desc.payload_word_offset + index] >>> 0,
-			mismatchMessage: (source) => `VDP fault: enqueuePayloadTileRunWords tile size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`,
-		});
+	public enqueuePayloadTileRunWords(desc: VdpPayloadWordsTileRunInput): void {
+		this.requireTileRunCount('enqueuePayloadTileRunWords', desc.tile_count, desc.cols, desc.rows);
+		this.enqueueTileRunInternal(desc, VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS, 'VDP fault: enqueuePayloadTileRunWords tile size mismatch');
 	}
 
 	private resolveSurfaceStride(surfaceId: number): number {
