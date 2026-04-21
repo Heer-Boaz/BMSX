@@ -1196,29 +1196,23 @@ void CPU::setProgram(Program* program, ProgramMetadata* metadata) {
 }
 
 void CPU::initializeGlobalSlots(ProgramMetadata* metadata) {
-	const std::vector<std::string>* systemNames = metadata ? &metadata->systemGlobalNames : nullptr;
-	const std::vector<std::string>* globalNames = metadata ? &metadata->globalNames : nullptr;
-	const size_t systemCount = systemNames ? systemNames->size() : 0;
-	const size_t globalCount = globalNames ? globalNames->size() : 0;
-
-	m_systemGlobalNames.resize(systemCount);
-	m_systemGlobalValues.resize(systemCount);
-	m_systemGlobalSlotByKey.clear();
-	for (size_t index = 0; index < systemCount; ++index) {
-		const StringId key = m_stringPool.intern((*systemNames)[index]);
-		m_systemGlobalNames[index] = key;
-		m_systemGlobalSlotByKey.emplace(key, index);
-		m_systemGlobalValues[index] = globals->get(valueString(key));
+	clearGlobalSlots();
+	if (!metadata) {
+		return;
 	}
+	initializeGlobalSlotList(m_systemGlobalNames, m_systemGlobalValues, m_systemGlobalSlotByKey, metadata->systemGlobalNames);
+	initializeGlobalSlotList(m_globalNames, m_globalValues, m_globalSlotByKey, metadata->globalNames);
+}
 
-	m_globalNames.resize(globalCount);
-	m_globalValues.resize(globalCount);
-	m_globalSlotByKey.clear();
-	for (size_t index = 0; index < globalCount; ++index) {
-		const StringId key = m_stringPool.intern((*globalNames)[index]);
-		m_globalNames[index] = key;
-		m_globalSlotByKey.emplace(key, index);
-		m_globalValues[index] = globals->get(valueString(key));
+void CPU::initializeGlobalSlotList(std::vector<StringId>& names, std::vector<Value>& values, std::unordered_map<StringId, size_t>& slotByKey, const std::vector<std::string>& source) {
+	names.resize(source.size());
+	values.resize(source.size());
+	slotByKey.clear();
+	for (size_t index = 0; index < source.size(); ++index) {
+		const StringId key = m_stringPool.intern(source[index]);
+		names[index] = key;
+		slotByKey.emplace(key, index);
+		values[index] = globals->get(valueString(key));
 	}
 }
 

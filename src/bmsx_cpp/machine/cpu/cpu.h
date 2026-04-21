@@ -457,7 +457,7 @@ public:
 	bool empty() const noexcept { return m_size == 0; }
 	const Value* data() const noexcept { return m_data; }
 	const Value* begin() const noexcept { return m_data; }
-	const Value* end() const noexcept { return m_data ? (m_data + m_size) : nullptr; }
+	const Value* end() const noexcept { return m_size == 0 ? m_data : m_data + m_size; }
 	const Value& operator[](size_t index) const noexcept { return m_data[index]; }
 	const Value& at(size_t index) const {
 		if (index >= m_size) {
@@ -1047,6 +1047,7 @@ private:
 	void runHousekeeping();
 	void tickHotLoopHousekeeping();
 	void initializeGlobalSlots(ProgramMetadata* metadata);
+	void initializeGlobalSlotList(std::vector<StringId>& names, std::vector<Value>& values, std::unordered_map<StringId, size_t>& slotByKey, const std::vector<std::string>& source);
 	void pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
 	void pushFrame(Closure* closure, const Value* args, size_t argCount,

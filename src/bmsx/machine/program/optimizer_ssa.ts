@@ -503,6 +503,14 @@ const evaluateSccpDef = (
 	}
 };
 
+function blockForInstructionIndex(index: number, blockForIndex: readonly number[], instructionCount: number): number | null {
+	return index < instructionCount ? blockForIndex[index] : null;
+}
+
+function blockForJumpTarget(target: number | null, blockForIndex: readonly number[], instructionCount: number): number | null {
+	return target !== null && target < instructionCount ? blockForIndex[target] : null;
+}
+
 const runSccp = (
 	instructions: Instruction[],
 	blocks: Block[],
@@ -519,6 +527,7 @@ const runSccp = (
 	const valueKind = new Uint8Array(valueCount);
 	const valueConst: Array<ConstValue | null> = new Array(valueCount).fill(null);
 	const reachable = new Uint8Array(blocks.length);
+	const instructionCount = instructions.length;
 	reachable[0] = 1;
 
 	for (let valueId = 0; valueId < valueDef.length; valueId += 1) {
@@ -606,14 +615,15 @@ const runSccp = (
 			}
 
 			const lastIndex = block.end - 1;
-			if (lastIndex < 0 || lastIndex >= instructions.length) {
+			if (lastIndex < 0 || lastIndex >= instructionCount) {
 				continue;
 			}
 			const last = instructions[lastIndex];
 			const nextIndex = lastIndex + 1;
 			const nextNextIndex = lastIndex + 2;
-			const nextBlock = nextIndex < instructions.length ? blockForIndex[nextIndex] : null;
-			const nextNextBlock = nextNextIndex < instructions.length ? blockForIndex[nextNextIndex] : null;
+			const nextBlock = blockForInstructionIndex(nextIndex, blockForIndex, instructionCount);
+			const nextNextBlock = blockForInstructionIndex(nextNextIndex, blockForIndex, instructionCount);
+			const jumpBlock = blockForJumpTarget(last.target, blockForIndex, instructionCount);
 
 			const markReachable = (target: number | null): void => {
 				if (target === null) {
@@ -629,7 +639,7 @@ const runSccp = (
 				case OpCode.RET:
 					break;
 				case OpCode.JMP:
-					markReachable(last.target !== null && last.target < instructions.length ? blockForIndex[last.target] : null);
+					markReachable(jumpBlock);
 					break;
 				case OpCode.JMPIF:
 				case OpCode.JMPIFNOT: {
@@ -644,17 +654,17 @@ const runSccp = (
 						if (!constVal) {
 							throw new Error('[ProgramOptimizer] Missing SCCP constant.');
 						}
-						const truthy = isTruthy(constVal.value);
-						const takeJump = last.op === OpCode.JMPIF ? truthy : !truthy;
-						if (takeJump) {
-							markReachable(last.target !== null && last.target < instructions.length ? blockForIndex[last.target] : null);
+							const truthy = isTruthy(constVal.value);
+							const takeJump = last.op === OpCode.JMPIF ? truthy : !truthy;
+							if (takeJump) {
+								markReachable(jumpBlock);
+							} else {
+								markReachable(nextBlock);
+							}
 						} else {
 							markReachable(nextBlock);
+							markReachable(jumpBlock);
 						}
-					} else {
-						markReachable(nextBlock);
-						markReachable(last.target !== null && last.target < instructions.length ? blockForIndex[last.target] : null);
-					}
 					break;
 				}
 				case OpCode.BR_TRUE:
@@ -670,17 +680,17 @@ const runSccp = (
 						if (!constVal) {
 							throw new Error('[ProgramOptimizer] Missing SCCP constant.');
 						}
-						const truthy = isTruthy(constVal.value);
-						const takeJump = last.op === OpCode.BR_TRUE ? truthy : !truthy;
-						if (takeJump) {
-							markReachable(last.target !== null && last.target < instructions.length ? blockForIndex[last.target] : null);
+							const truthy = isTruthy(constVal.value);
+							const takeJump = last.op === OpCode.BR_TRUE ? truthy : !truthy;
+							if (takeJump) {
+								markReachable(jumpBlock);
+							} else {
+								markReachable(nextBlock);
+							}
 						} else {
 							markReachable(nextBlock);
+							markReachable(jumpBlock);
 						}
-					} else {
-						markReachable(nextBlock);
-						markReachable(last.target !== null && last.target < instructions.length ? blockForIndex[last.target] : null);
-					}
 					break;
 				}
 				case OpCode.TEST: {

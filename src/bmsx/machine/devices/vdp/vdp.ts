@@ -51,6 +51,7 @@ import {
 } from '../../bus/io';
 import { ASSET_FLAG_VIEW, type AssetEntry, type VramWriteSink } from '../../memory/memory';
 import { Memory } from '../../memory/memory';
+import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
 import { DEVICE_SERVICE_VDP, type DeviceScheduler } from '../../scheduler/device';
 import type { BFont } from '../../../render/shared/bitmap_font';
 import {
@@ -230,6 +231,10 @@ function makeBiasConfig(vramBytes: number): BiasConfig {
 		threshold1,
 		threshold2,
 	};
+}
+
+function frameBufferColorByte(value: number): number {
+	return Math.round(value * 255);
 }
 
 function initBlockGen(biasSeed: number, bootSeedMix: number, blockIndex: number, biasConfig: BiasConfig): BlockGen {
@@ -693,7 +698,11 @@ export class VDP implements VramWriteSink {
 	}
 
 	public setVblankStatus(active: boolean): void {
-		const nextStatus = active ? (this.vdpStatus | VDP_STATUS_VBLANK) : (this.vdpStatus & ~VDP_STATUS_VBLANK);
+		this.setStatusFlag(VDP_STATUS_VBLANK, active);
+	}
+
+	private setStatusFlag(mask: number, active: boolean): void {
+		const nextStatus = active ? (this.vdpStatus | mask) : (this.vdpStatus & ~mask);
 		if (nextStatus === this.vdpStatus) {
 			return;
 		}
@@ -761,12 +770,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	private setSubmitBusyStatus(active: boolean): void {
-		const nextStatus = active ? (this.vdpStatus | VDP_STATUS_SUBMIT_BUSY) : (this.vdpStatus & ~VDP_STATUS_SUBMIT_BUSY);
-		if (nextStatus === this.vdpStatus) {
-			return;
-		}
-		this.vdpStatus = nextStatus >>> 0;
-		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
+		this.setStatusFlag(VDP_STATUS_SUBMIT_BUSY, active);
 	}
 
 	private refreshSubmitBusyStatus(): void {
@@ -774,12 +778,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	private setSubmitRejectedStatus(active: boolean): void {
-		const nextStatus = active ? (this.vdpStatus | VDP_STATUS_SUBMIT_REJECTED) : (this.vdpStatus & ~VDP_STATUS_SUBMIT_REJECTED);
-		if (nextStatus === this.vdpStatus) {
-			return;
-		}
-		this.vdpStatus = nextStatus >>> 0;
-		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
+		this.setStatusFlag(VDP_STATUS_SUBMIT_REJECTED, active);
 	}
 
 	private pushVdpFifoWord(word: number): void {
@@ -984,10 +983,10 @@ export class VDP implements VramWriteSink {
 
 	private packFrameBufferColor(source: color): VdpFrameBufferColor {
 		return {
-			r: Math.round(source.r * 255),
-			g: Math.round(source.g * 255),
-			b: Math.round(source.b * 255),
-			a: Math.round(source.a * 255),
+			r: frameBufferColorByte(source.r),
+			g: frameBufferColorByte(source.g),
+			b: frameBufferColorByte(source.b),
+			a: frameBufferColorByte(source.a),
 		};
 	}
 
@@ -1318,19 +1317,7 @@ export class VDP implements VramWriteSink {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_VDP, nowCycles);
 			return;
 		}
-		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_VDP, nowCycles + this.cyclesUntilWorkUnits(targetUnits - this.availableWorkUnits));
-	}
-
-	private cyclesUntilWorkUnits(targetUnits: number): number {
-		const needed = BigInt(targetUnits) * this.cpuHz - this.workCarry;
-		if (needed <= 0n) {
-			return 1;
-		}
-		const cycles = (needed + this.workUnitsPerSec - 1n) / this.workUnitsPerSec;
-		const max = BigInt(Number.MAX_SAFE_INTEGER);
-		const clamped = cycles > max ? max : cycles;
-		const out = Number(clamped);
-		return out <= 0 ? 1 : out;
+		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_VDP, nowCycles + cyclesUntilBudgetUnits(this.cpuHz, this.workUnitsPerSec, this.workCarry, targetUnits - this.availableWorkUnits));
 	}
 
 	private clearActiveFrame(): void {

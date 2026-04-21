@@ -353,7 +353,7 @@ export class Runtime {
 		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
 		const cartRenderSize = resolveRuntimeRenderSize(cartLayer.index.machine);
 		const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, cartRenderSize.height);
-		let overlayRom: Uint8Array | null = null;
+		let overlayRom: Uint8Array | undefined;
 		if (overlayLayer) {
 			overlayRom = new Uint8Array(overlayLayer.payload);
 		}

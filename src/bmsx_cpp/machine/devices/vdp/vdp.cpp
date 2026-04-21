@@ -58,6 +58,10 @@ std::vector<T> acquireVectorFromPool(std::vector<std::vector<T>>& pool) {
 	return values;
 }
 
+u8 frameBufferColorByte(f32 value) {
+	return static_cast<u8>(std::round(value * 255.0f));
+}
+
 struct SkyboxPayloadBaseEntry {
 	const char* payload;
 	uint32_t base;
@@ -1629,10 +1633,10 @@ void VDP::beginFrame() {
 
 VDP::FrameBufferColor VDP::packFrameBufferColor(const Color& color) const {
 	return FrameBufferColor{
-		static_cast<u8>(std::round(color.r * 255.0f)),
-		static_cast<u8>(std::round(color.g * 255.0f)),
-		static_cast<u8>(std::round(color.b * 255.0f)),
-		static_cast<u8>(std::round(color.a * 255.0f)),
+		frameBufferColorByte(color.r),
+		frameBufferColorByte(color.g),
+		frameBufferColorByte(color.b),
+		frameBufferColorByte(color.a),
 	};
 }
 

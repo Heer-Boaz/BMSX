@@ -486,8 +486,8 @@ class FunctionBuilder {
 	private readonly frontend: LuaSemanticFrontend;
 	private readonly moduleId: string;
 	private readonly protoId: string;
-	private readonly moduleCompileContext: ModuleCompileContext | null;
-	private readonly moduleCompileInfo: ModuleCompileInfo | null;
+	private readonly moduleCompileContext?: ModuleCompileContext;
+	private readonly moduleCompileInfo?: ModuleCompileInfo;
 	private readonly code: Instruction[] = [];
 	private readonly ranges: Array<SourceRange | null> = [];
 	private finalizedCode: Uint8Array | null = null;
@@ -518,8 +518,8 @@ class FunctionBuilder {
 			protoId: string;
 			semantics: LuaSemanticFrontendFile;
 			frontend: LuaSemanticFrontend;
-			moduleCompileContext?: ModuleCompileContext | null;
-			moduleCompileInfo?: ModuleCompileInfo | null;
+			moduleCompileContext?: ModuleCompileContext;
+			moduleCompileInfo?: ModuleCompileInfo;
 		},
 	) {
 		this.program = program;
@@ -528,8 +528,8 @@ class FunctionBuilder {
 		this.frontend = params.frontend;
 		this.moduleId = params.moduleId;
 		this.protoId = params.protoId;
-		this.moduleCompileContext = params.moduleCompileContext ?? parent?.moduleCompileContext ?? null;
-		this.moduleCompileInfo = params.moduleCompileInfo ?? null;
+		this.moduleCompileContext = params.moduleCompileContext ?? parent?.moduleCompileContext;
+		this.moduleCompileInfo = params.moduleCompileInfo;
 	}
 
 	public compileChunk(chunk: LuaChunk): void {
@@ -1026,26 +1026,26 @@ class FunctionBuilder {
 		return this.resolveCompileTimeConstClosureBinding(symbolHandle);
 	}
 
-	private resolveRequiredModulePath(moduleName: string): string | null {
+	private resolveRequiredModulePath(moduleName: string): string | undefined {
 		if (!this.moduleCompileContext) {
-			return null;
+			return undefined;
 		}
-		return this.moduleCompileContext.moduleAliasMap.get(moduleName) ?? null;
+		return this.moduleCompileContext.moduleAliasMap.get(moduleName);
 	}
 
-	private resolveModuleCompileInfo(path: string): ModuleCompileInfo | null {
+	private resolveModuleCompileInfo(path: string): ModuleCompileInfo | undefined {
 		if (!this.moduleCompileContext) {
-			return null;
+			return undefined;
 		}
-		return this.moduleCompileContext.modulesByPath.get(path) ?? null;
+		return this.moduleCompileContext.modulesByPath.get(path);
 	}
 
-	private resolveModuleExportSlotName(modulePath: string, exportPath: ReadonlyArray<string>): string | null {
+	private resolveModuleExportSlotName(modulePath: string, exportPath: ReadonlyArray<string>): string | undefined {
 		const moduleInfo = this.resolveModuleCompileInfo(modulePath);
 		if (!moduleInfo) {
-			return null;
+			return undefined;
 		}
-		return moduleInfo.exportSlotsByPathKey.get(buildModuleExportPathKey(exportPath)) ?? null;
+		return moduleInfo.exportSlotsByPathKey.get(buildModuleExportPathKey(exportPath));
 	}
 
 	private tryResolveRequireModuleBinding(expression: LuaExpression): ModuleBinding | null {
@@ -1117,18 +1117,18 @@ class FunctionBuilder {
 		return extractTableKeyFromExpression(expression);
 	}
 
-	private tryResolveModuleExportSlotFromExpression(expression: LuaExpression): string | null {
+	private tryResolveModuleExportSlotFromExpression(expression: LuaExpression): string | undefined {
 		const binding = this.tryResolveStaticModuleBinding(expression, false);
 		if (!binding || binding.exportPath.length === 0) {
-			return null;
+			return undefined;
 		}
 		return this.resolveModuleExportSlotName(binding.modulePath, binding.exportPath);
 	}
 
-	private tryResolveModuleExportMethodSlot(baseExpression: LuaExpression, methodName: string): string | null {
+	private tryResolveModuleExportMethodSlot(baseExpression: LuaExpression, methodName: string): string | undefined {
 		const binding = this.tryResolveStaticModuleBinding(baseExpression, false);
 		if (!binding) {
-			return null;
+			return undefined;
 		}
 		return this.resolveModuleExportSlotName(binding.modulePath, binding.exportPath.concat(methodName));
 	}
@@ -2036,7 +2036,7 @@ class FunctionBuilder {
 		const wantsMulti = expressions.length === 1 && this.isMultiReturnExpression(expressions[0]);
 		if (expressions.length === 1) {
 			this.compileExpressionInto(expressions[0], base, wantsMulti ? 0 : 1);
-			if (!wantsMulti && this.moduleCompileInfo !== null && expressions[0] === this.moduleCompileInfo.returnExpression) {
+			if (!wantsMulti && this.moduleCompileInfo !== undefined && expressions[0] === this.moduleCompileInfo.returnExpression) {
 				this.emitModuleExportGlobalStores(base, this.moduleCompileInfo.exportRoot);
 			}
 			this.emitABC(OpCode.RET, base, wantsMulti ? 0 : 1, 0);
@@ -2372,7 +2372,7 @@ class FunctionBuilder {
 
 	private compileMemberExpression(expression: any, target: number): void {
 		const slotName = this.tryResolveModuleExportSlotFromExpression(expression as LuaMemberExpression);
-		if (slotName !== null) {
+		if (slotName !== undefined) {
 			this.emitModuleExportLoad(slotName, target);
 			return;
 		}
@@ -2384,7 +2384,7 @@ class FunctionBuilder {
 
 	private compileIndexExpression(expression: any, target: number): void {
 		const slotName = this.tryResolveModuleExportSlotFromExpression(expression as LuaIndexExpression);
-		if (slotName !== null) {
+		if (slotName !== undefined) {
 			this.emitModuleExportLoad(slotName, target);
 			return;
 		}
@@ -2782,9 +2782,9 @@ class FunctionBuilder {
 		if (this.tryCompileIntrinsicCall(expression, target, resultCount)) {
 			return;
 		}
-		const methodName = expression.methodName !== null ? expression.methodName : null;
-		const hasMethod = methodName && methodName.length > 0;
-		const moduleMethodSlot = hasMethod ? this.tryResolveModuleExportMethodSlot(expression.callee, methodName) : null;
+		const methodName = expression.methodName;
+		const hasMethod = methodName !== null && methodName.length > 0;
+		const moduleMethodSlot = hasMethod ? this.tryResolveModuleExportMethodSlot(expression.callee, methodName) : undefined;
 		const constClosureBinding = !hasMethod && expression.callee.kind === LuaSyntaxKind.IdentifierExpression
 			? this.resolveReferenceConstClosureBinding(this.getIdentifierReference(expression.callee as LuaIdentifierExpression))
 			: null;
@@ -2802,7 +2802,7 @@ class FunctionBuilder {
 		if (useTarget) {
 			this.reserveTempRange(callBase, requiredSlots);
 		}
-		if (moduleMethodSlot !== null) {
+		if (moduleMethodSlot !== undefined) {
 			this.emitModuleExportLoad(moduleMethodSlot, callBase);
 			const selfReg = this.allocTemp();
 			this.compileExpressionInto(expression.callee, selfReg, 1);
@@ -3435,7 +3435,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 			semantics: frontend.getFile(module.path),
 			frontend,
 			moduleCompileContext,
-			moduleCompileInfo: moduleCompileContext.modulesByPath.get(module.path) ?? null,
+			moduleCompileInfo: moduleCompileContext.modulesByPath.get(module.path),
 		});
 		try {
 			builder.compileChunk(module.chunk);

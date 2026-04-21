@@ -455,6 +455,12 @@ export const enum RunResult {
 
 const CEIL_DIV4 = (value: number) => (value + 3) >> 2;
 
+const enum TableIndexKeyKind {
+	Value,
+	Integer,
+	Field,
+}
+
 type Upvalue = {
 	open: boolean;
 	index: number;
@@ -1601,10 +1607,14 @@ export class CPU {
 		return null;
 	}
 
-	private resolveTableIndex(table: Table, key: Value): Value {
+	private resolveTableIndexChain(table: Table, key: Value, kind: TableIndexKeyKind): Value {
 		let current = table;
 		for (let depth = 0; depth < 32; depth += 1) {
-			const value = current.get(key);
+			const value = kind === TableIndexKeyKind.Integer
+				? current.getInteger(key as number)
+				: kind === TableIndexKeyKind.Field
+					? current.getStringKey(key as StringValue)
+					: current.get(key);
 			if (value !== null) {
 				return value;
 			}
@@ -1619,46 +1629,18 @@ export class CPU {
 			current = indexer;
 		}
 		throw new Error('Metatable __index loop detected.');
+	}
+
+	private resolveTableIndex(table: Table, key: Value): Value {
+		return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Value);
 	}
 
 	private resolveTableIntegerIndex(table: Table, index: number): Value {
-		let current = table;
-		for (let depth = 0; depth < 32; depth += 1) {
-			const value = current.getInteger(index);
-			if (value !== null) {
-				return value;
-			}
-			const metatable = current.getMetatable();
-			if (metatable === null) {
-				return null;
-			}
-			const indexer = metatable.getStringKey(this.indexKey);
-			if (!(indexer instanceof Table)) {
-				return null;
-			}
-			current = indexer;
-		}
-		throw new Error('Metatable __index loop detected.');
+		return this.resolveTableIndexChain(table, index, TableIndexKeyKind.Integer);
 	}
 
 	private resolveTableFieldIndex(table: Table, key: StringValue): Value {
-		let current = table;
-		for (let depth = 0; depth < 32; depth += 1) {
-			const value = current.getStringKey(key);
-			if (value !== null) {
-				return value;
-			}
-			const metatable = current.getMetatable();
-			if (metatable === null) {
-				return null;
-			}
-			const indexer = metatable.getStringKey(this.indexKey);
-			if (!(indexer instanceof Table)) {
-				return null;
-			}
-			current = indexer;
-		}
-		throw new Error('Metatable __index loop detected.');
+		return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Field);
 	}
 
 	private loadTableIndex(base: Value, key: Value): Value {

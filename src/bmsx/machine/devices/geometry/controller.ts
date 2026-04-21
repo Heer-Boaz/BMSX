@@ -70,6 +70,7 @@ import {
 	transformFixed16,
 } from '../../common/numeric';
 import type { IrqController } from '../irq/controller';
+import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
 import { DEVICE_SERVICE_GEO, type DeviceScheduler } from '../../scheduler/device';
 
 type GeoJob = {
@@ -353,19 +354,7 @@ export class GeometryController {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, nowCycles);
 			return;
 		}
-		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, nowCycles + this.cyclesUntilWorkUnits(targetUnits - this.availableWorkUnits));
-	}
-
-	private cyclesUntilWorkUnits(targetUnits: number): number {
-		const needed = BigInt(targetUnits) * this.cpuHz - this.workCarry;
-		if (needed <= 0n) {
-			return 1;
-		}
-		const cycles = (needed + this.workUnitsPerSec - 1n) / this.workUnitsPerSec;
-		const max = BigInt(Number.MAX_SAFE_INTEGER);
-		const clamped = cycles > max ? max : cycles;
-		const out = Number(clamped);
-		return out <= 0 ? 1 : out;
+		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, nowCycles + cyclesUntilBudgetUnits(this.cpuHz, this.workUnitsPerSec, this.workCarry, targetUnits - this.availableWorkUnits));
 	}
 
 	private validateXform2Submission(job: GeoJob): boolean {

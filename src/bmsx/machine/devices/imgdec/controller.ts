@@ -28,6 +28,7 @@ import { Memory } from '../../memory/memory';
 import type { DecodedImage } from '../../../common/image_decode';
 import { DmaController } from '../dma/controller';
 import type { IrqController } from '../irq/controller';
+import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
 import { DEVICE_SERVICE_IMG, type DeviceScheduler } from '../../scheduler/device';
 
 type ImgDecJob = {
@@ -388,21 +389,9 @@ export class ImgDecController {
 				this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMG, nowCycles);
 				return;
 			}
-			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMG, nowCycles + this.cyclesUntilDecodeBytes(targetBytes - this.availableDecodeBytes));
+			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMG, nowCycles + cyclesUntilBudgetUnits(this.cpuHz, this.decodeBytesPerSec, this.decodeCarry, targetBytes - this.availableDecodeBytes));
 			return;
 		}
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMG);
-	}
-
-	private cyclesUntilDecodeBytes(targetBytes: number): number {
-		const needed = BigInt(targetBytes) * this.cpuHz - this.decodeCarry;
-		if (needed <= 0n) {
-			return 1;
-		}
-		const cycles = (needed + this.decodeBytesPerSec - 1n) / this.decodeBytesPerSec;
-		const max = BigInt(Number.MAX_SAFE_INTEGER);
-		const clamped = cycles > max ? max : cycles;
-		const out = Number(clamped);
-		return out <= 0 ? 1 : out;
 	}
 }

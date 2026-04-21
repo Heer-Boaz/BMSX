@@ -38,6 +38,7 @@ import type { ImageWritePlan } from '../../memory/memory';
 import { Memory } from '../../memory/memory';
 import type { IrqController } from '../irq/controller';
 import type { VDP } from '../vdp/vdp';
+import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
 import { DEVICE_SERVICE_DMA, type DeviceScheduler } from '../../scheduler/device';
 
 type DmaChannelId = 0 | 1;
@@ -538,7 +539,7 @@ export class DmaController {
 				this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, nowCycles);
 				return;
 			}
-			nextDeadline = Math.min(nextDeadline, nowCycles + this.cyclesUntilBytes(this.isoBytesPerSec, this.isoCarry, targetBytes - this.channels[DMA_CH_ISO].budget));
+			nextDeadline = Math.min(nextDeadline, nowCycles + cyclesUntilBudgetUnits(this.cpuHz, this.isoBytesPerSec, this.isoCarry, targetBytes - this.channels[DMA_CH_ISO].budget));
 		}
 		if (pendingBulk) {
 			const pendingBytes = this.getPendingBytesForChannel(DMA_CH_BULK);
@@ -547,20 +548,8 @@ export class DmaController {
 				this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, nowCycles);
 				return;
 			}
-			nextDeadline = Math.min(nextDeadline, nowCycles + this.cyclesUntilBytes(this.bulkBytesPerSec, this.bulkCarry, targetBytes - this.channels[DMA_CH_BULK].budget));
+			nextDeadline = Math.min(nextDeadline, nowCycles + cyclesUntilBudgetUnits(this.cpuHz, this.bulkBytesPerSec, this.bulkCarry, targetBytes - this.channels[DMA_CH_BULK].budget));
 		}
 		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, nextDeadline);
-	}
-
-	private cyclesUntilBytes(bytesPerSec: bigint, carry: bigint, targetBytes: number): number {
-		const needed = BigInt(targetBytes) * this.cpuHz - carry;
-		if (needed <= 0n) {
-			return 1;
-		}
-		const cycles = (needed + bytesPerSec - 1n) / bytesPerSec;
-		const max = BigInt(Number.MAX_SAFE_INTEGER);
-		const clamped = cycles > max ? max : cycles;
-		const out = Number(clamped);
-		return out <= 0 ? 1 : out;
 	}
 }

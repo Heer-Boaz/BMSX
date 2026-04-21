@@ -905,6 +905,10 @@ function isNullishEqualityOperator(kind: ts.SyntaxKind): boolean {
 	return kind === ts.SyntaxKind.EqualsEqualsToken || kind === ts.SyntaxKind.EqualsEqualsEqualsToken;
 }
 
+function isNullishInequalityOperator(kind: ts.SyntaxKind): boolean {
+	return kind === ts.SyntaxKind.ExclamationEqualsToken || kind === ts.SyntaxKind.ExclamationEqualsEqualsToken;
+}
+
 function isPositiveEqualityOperator(kind: ts.SyntaxKind): boolean {
 	return kind === ts.SyntaxKind.EqualsEqualsToken || kind === ts.SyntaxKind.EqualsEqualsEqualsToken;
 }
@@ -994,7 +998,39 @@ function nullishGuardFingerprint(condition: ts.Expression): string | null {
 	return null;
 }
 
+function undefinedGuardFingerprint(condition: ts.Expression, positive: boolean): string | null {
+	const unwrapped = unwrapExpression(condition);
+	if (!ts.isBinaryExpression(unwrapped)) {
+		return null;
+	}
+	const operator = unwrapped.operatorToken.kind;
+	if (positive ? !isNullishEqualityOperator(operator) : !isNullishInequalityOperator(operator)) {
+		return null;
+	}
+	if (ts.isIdentifier(unwrapped.left) && unwrapped.left.text === 'undefined') {
+		return expressionAccessFingerprint(unwrapped.right);
+	}
+	if (ts.isIdentifier(unwrapped.right) && unwrapped.right.text === 'undefined') {
+		return expressionAccessFingerprint(unwrapped.left);
+	}
+	return null;
+}
+
+function isUndefinedToNullProjection(node: ts.ConditionalExpression): boolean {
+	const trueIsNull = node.whenTrue.kind === ts.SyntaxKind.NullKeyword;
+	const falseIsNull = node.whenFalse.kind === ts.SyntaxKind.NullKeyword;
+	if (trueIsNull === falseIsNull) {
+		return false;
+	}
+	const valueExpression = trueIsNull ? node.whenFalse : node.whenTrue;
+	const guarded = undefinedGuardFingerprint(node.condition, trueIsNull);
+	return guarded !== null && expressionUsesGuardedValue(valueExpression, guarded);
+}
+
 function isConditionalNullishNormalization(node: ts.ConditionalExpression): boolean {
+	if (isUndefinedToNullProjection(node)) {
+		return false;
+	}
 	const trueNullish = isNullOrUndefined(node.whenTrue);
 	const falseNullish = isNullOrUndefined(node.whenFalse);
 	if (trueNullish === falseNullish) {
@@ -2051,6 +2087,10 @@ function semanticOperationName(target: string): string {
 	return dotIndex >= 0 ? target.slice(dotIndex + 1) : target;
 }
 
+function isSemanticValidationPredicateTarget(target: string): boolean {
+	return target === 'Number.isFinite';
+}
+
 function semanticSignatureLabel(signature: string): string {
 	const separator = signature.indexOf('|');
 	return (separator >= 0 ? signature.slice(0, separator) : signature).replace(':', ' ');
@@ -2216,6 +2256,9 @@ function semanticRepeatedExpressionFingerprint(node: ts.Expression, sourceFile: 
 	}
 	const target = callTargetText(node);
 	if (target === null || (!isSemanticNormalizationCallTarget(target) && !isNumericDefensiveCall(node))) {
+		return null;
+	}
+	if (isSemanticValidationPredicateTarget(target)) {
 		return null;
 	}
 	const text = node.getText(sourceFile).replace(/\s+/g, ' ');

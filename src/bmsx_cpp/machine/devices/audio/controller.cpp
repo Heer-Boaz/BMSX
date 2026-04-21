@@ -99,14 +99,18 @@ void AudioController::reset() {
 	for (auto& queue : m_queuedByType) {
 		queue.clear();
 	}
-	resetCommandLatch();
-	m_memory.writeIoValue(IO_APU_CMD, valueNumber(static_cast<double>(APU_CMD_NONE)));
+	clearCommandLatch();
 	writeNumber(m_memory, IO_APU_STATUS, 0.0);
 	writeNumber(m_memory, IO_APU_EVENT_KIND, static_cast<double>(APU_EVENT_NONE));
 	writeNumber(m_memory, IO_APU_EVENT_CHANNEL, static_cast<double>(APU_CHANNEL_SFX));
 	writeNumber(m_memory, IO_APU_EVENT_HANDLE, 0.0);
 	writeNumber(m_memory, IO_APU_EVENT_VOICE, 0.0);
 	writeNumber(m_memory, IO_APU_EVENT_SEQ, 0.0);
+}
+
+void AudioController::clearCommandLatch() {
+	resetCommandLatch();
+	m_memory.writeIoValue(IO_APU_CMD, valueNumber(static_cast<double>(APU_CMD_NONE)));
 }
 
 void AudioController::resetCommandLatch() {
@@ -131,18 +135,15 @@ void AudioController::onCommandWrite() {
 	switch (m_memory.readIoU32(IO_APU_CMD)) {
 		case APU_CMD_PLAY:
 			play();
-			resetCommandLatch();
-			m_memory.writeIoValue(IO_APU_CMD, valueNumber(static_cast<double>(APU_CMD_NONE)));
+			clearCommandLatch();
 			return;
 		case APU_CMD_QUEUE_PLAY:
 			queuePlay();
-			resetCommandLatch();
-			m_memory.writeIoValue(IO_APU_CMD, valueNumber(static_cast<double>(APU_CMD_NONE)));
+			clearCommandLatch();
 			return;
 		case APU_CMD_STOP_CHANNEL:
 			stopChannel();
-			resetCommandLatch();
-			m_memory.writeIoValue(IO_APU_CMD, valueNumber(static_cast<double>(APU_CMD_NONE)));
+			clearCommandLatch();
 			return;
 		default:
 			return;

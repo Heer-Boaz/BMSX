@@ -358,8 +358,8 @@ const cloneUpvalueNamesByProto = (
 };
 
 const mergeMetadata = (
-	engine: ProgramMetadata | null,
-	cart: ProgramMetadata | null,
+	engine: ProgramMetadata | undefined,
+	cart: ProgramMetadata | undefined,
 	layout: ProgramLayout,
 	engineInstructionCount: number,
 	cartInstructionCount: number,
@@ -421,8 +421,10 @@ export const linkProgramAssets = (
 	const cartCode = cartAsset.program.code.slice();
 	rewriteClosureIndices(cartCode, baseProtoCount);
 	const mergedConsts = mergeConstPools(engineAsset.program.constPool, cartAsset.program.constPool);
-	const mergedSystemGlobals = mergeNamedSlots(engineSymbols ? engineSymbols.metadata.systemGlobalNames : [], cartSymbols ? cartSymbols.metadata.systemGlobalNames : []);
-	const mergedGlobals = mergeNamedSlots(engineSymbols ? engineSymbols.metadata.globalNames : [], cartSymbols ? cartSymbols.metadata.globalNames : []);
+	const engineMetadata = engineSymbols?.metadata;
+	const cartMetadata = cartSymbols?.metadata;
+	const mergedSystemGlobals = mergeNamedSlots(engineMetadata?.systemGlobalNames ?? [], cartMetadata?.systemGlobalNames ?? []);
+	const mergedGlobals = mergeNamedSlots(engineMetadata?.globalNames ?? [], cartMetadata?.globalNames ?? []);
 	rewriteConstRelocations(
 		cartCode,
 		cartAsset.link.constRelocs,
@@ -458,8 +460,8 @@ export const linkProgramAssets = (
 	const moduleAliases = cartAsset.moduleAliases.concat(engineAsset.moduleAliases);
 	const entryProtoIndex = cartAsset.entryProtoIndex + baseProtoCount;
 	const metadata = mergeMetadata(
-		engineSymbols ? engineSymbols.metadata : null,
-		cartSymbols ? cartSymbols.metadata : null,
+		engineMetadata,
+		cartMetadata,
 		resolvedLayout,
 		engineInstructionCount,
 		cartInstructionCount,

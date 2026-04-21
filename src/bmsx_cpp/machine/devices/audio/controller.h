@@ -44,6 +44,7 @@ private:
 	std::array<VoiceId, 3> m_activeVoiceByType{};
 	std::array<std::deque<QueuedAudioPlay>, 3> m_queuedByType;
 
+	void clearCommandLatch();
 	void resetCommandLatch();
 	void play();
 	void queuePlay();

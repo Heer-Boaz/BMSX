@@ -110,8 +110,8 @@ export type IoWriteHandler = (addr: number, value: Value) => void;
 
 export type MemoryInit = {
 	engineRom: Uint8Array;
-	cartRom?: Uint8Array | null;
-	overlayRom?: Uint8Array | null;
+	cartRom?: Uint8Array;
+	overlayRom?: Uint8Array;
 };
 
 const ASSET_TABLE_MAGIC = 0x32534d41; // 'AMS2'
@@ -130,8 +130,8 @@ export const ASSET_FLAG_VIEW = 1 << 1;
 
 export class Memory {
 	private readonly engineRom: Uint8Array;
-	private readonly cartRom: Uint8Array | null;
-	private readonly overlayRom: Uint8Array | null;
+	private readonly cartRom: Uint8Array | undefined;
+	private readonly overlayRom: Uint8Array | undefined;
 	private readonly ram: Uint8Array;
 	private readonly ramView: DataView;
 	private readonly ioSlots: Value[];
@@ -157,8 +157,8 @@ export class Memory {
 
 	public constructor(init: MemoryInit) {
 		this.engineRom = init.engineRom;
-		this.cartRom = init.cartRom ?? null;
-		this.overlayRom = init.overlayRom ?? null;
+		this.cartRom = init.cartRom;
+		this.overlayRom = init.overlayRom;
 		this.ram = new Uint8Array(RAM_USED_END - RAM_BASE);
 		this.ramView = new DataView(this.ram.buffer, this.ram.byteOffset, this.ram.byteLength);
 		this.ioSlots = new Array<Value>(IO_SLOT_COUNT);
@@ -1170,8 +1170,8 @@ export class Memory {
 
 	public isReadableMainMemoryRange(addr: number, length: number): boolean {
 		return this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.engineRom.byteLength)
-			|| (this.cartRom !== null && this.isRangeWithinRegion(addr, length, CART_ROM_BASE, this.cartRom.byteLength))
-			|| (this.overlayRom !== null && this.isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, this.overlayRom.byteLength))
+			|| (!!this.cartRom && this.isRangeWithinRegion(addr, length, CART_ROM_BASE, this.cartRom.byteLength))
+			|| (!!this.overlayRom && this.isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, this.overlayRom.byteLength))
 			|| this.isRangeWithinRegion(addr, length, RAM_BASE, RAM_USED_END - RAM_BASE);
 	}
 

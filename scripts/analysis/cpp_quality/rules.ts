@@ -358,6 +358,10 @@ function isSemanticNormalizationWrapperTarget(target: string): boolean {
 	return false;
 }
 
+function isSemanticValidationPredicateTarget(target: string): boolean {
+	return target === 'isfinite' || target === 'std::isfinite';
+}
+
 function semanticNormalizationFamily(target: string): string | null {
 	if (target === 'clamp' || target === 'max' || target === 'min' || target === 'std::clamp' || target === 'std::max' || target === 'std::min') {
 		return 'numeric:bounds';
@@ -1331,8 +1335,8 @@ function lintTernaryFallback(file: string, tokens: readonly CppToken[], question
 	if (trueHasEmpty || falseHasEmpty) {
 		pushLintIssue(issues, file, tokens[questionIndex], 'empty_string_fallback_pattern', 'Empty-string fallback through a conditional expression is forbidden. Do not use empty strings as default values.');
 	}
-	const trueHasNull = cppRangeHas(tokens, questionIndex + 1, colonIndex, isCppNullToken);
-	const falseHasNull = cppRangeHas(tokens, colonIndex + 1, statementEnd, isCppNullToken);
+	const trueHasNull = cppRangeIsNull(tokens, questionIndex + 1, colonIndex);
+	const falseHasNull = cppRangeIsNull(tokens, colonIndex + 1, statementEnd);
 	if (trueHasNull || falseHasNull) {
 		pushLintIssue(issues, file, tokens[questionIndex], 'or_nil_fallback_pattern', '`nullptr` fallback through a conditional expression is forbidden. Use direct ownership checks or optional state.');
 	}
@@ -1728,6 +1732,9 @@ export function lintCppSemanticRepeatedExpressions(file: string, tokens: readonl
 		}
 		const target = cppCallTarget(tokens, index);
 		if (target === null || (!isCppNumericSanitizationCall(tokens, index, target) && !isSemanticNormalizationWrapperTarget(target))) {
+			continue;
+		}
+		if (isSemanticValidationPredicateTarget(target)) {
 			continue;
 		}
 		if (activeSemanticCalls.length > 0) {

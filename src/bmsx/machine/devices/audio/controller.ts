@@ -149,8 +149,7 @@ export class AudioController {
 		this.queuedFirstByType.sfx = 0;
 		this.queuedFirstByType.music = 0;
 		this.queuedFirstByType.ui = 0;
-		this.resetCommandLatch();
-		this.memory.writeIoValue(IO_APU_CMD, APU_CMD_NONE);
+		this.clearCommandLatch();
 		this.memory.writeValue(IO_APU_STATUS, 0);
 		this.memory.writeValue(IO_APU_EVENT_KIND, APU_EVENT_NONE);
 		this.memory.writeValue(IO_APU_EVENT_CHANNEL, APU_CHANNEL_SFX);
@@ -177,22 +176,24 @@ export class AudioController {
 		this.memory.writeValue(IO_APU_START_FRESH, 0);
 	}
 
+	private clearCommandLatch(): void {
+		this.resetCommandLatch();
+		this.memory.writeIoValue(IO_APU_CMD, APU_CMD_NONE);
+	}
+
 	public onCommandWrite(): void {
 		switch (this.memory.readIoU32(IO_APU_CMD)) {
 			case APU_CMD_PLAY:
 				this.play();
-				this.resetCommandLatch();
-				this.memory.writeIoValue(IO_APU_CMD, APU_CMD_NONE);
+				this.clearCommandLatch();
 				return;
 			case APU_CMD_QUEUE_PLAY:
 				this.queuePlay();
-				this.resetCommandLatch();
-				this.memory.writeIoValue(IO_APU_CMD, APU_CMD_NONE);
+				this.clearCommandLatch();
 				return;
 			case APU_CMD_STOP_CHANNEL:
 				this.stopChannel();
-				this.resetCommandLatch();
-				this.memory.writeIoValue(IO_APU_CMD, APU_CMD_NONE);
+				this.clearCommandLatch();
 				return;
 		}
 	}
