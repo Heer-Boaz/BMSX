@@ -1055,6 +1055,7 @@ export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], 
 		}
 		if (!CPP_LOCAL_CONST_PATTERN_ENABLED && !binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
 			noteQualityLedger(ledger, 'skipped_cpp_local_const_disabled');
+			noteQualityLedger(ledger, `skipped_cpp_local_const_${cppLocalConstCandidateKind(file, info, binding)}`);
 		} else if (CPP_LOCAL_CONST_PATTERN_ENABLED && shouldReportCppLocalConst(binding)) {
 			pushLintIssue(issues, file, tokens[binding.nameToken], 'local_const_pattern', `Prefer "const" for "${binding.name}"; it is never reassigned.`);
 		} else if (!binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
@@ -1064,6 +1065,26 @@ export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], 
 			pushLintIssue(issues, file, tokens[binding.nameToken], 'single_use_local_pattern', `Local alias "${binding.name}" is read only once in this scope.`);
 		}
 	}
+}
+
+function cppLocalConstCandidateKind(file: string, info: CppFunctionInfo, binding: CppLocalBinding): string {
+	const normalized = normalizePathForAnalysis(file);
+	if (normalized.endsWith('/src/bmsx_cpp/machine/cpu/cpu.cpp') && /^[A-Z0-9_]+$/.test(binding.name)) {
+		return 'vm_specialization';
+	}
+	if (isHotPathFunction(file, info)) {
+		return 'hot_path';
+	}
+	if (binding.isReference || binding.isPointer) {
+		return 'handle';
+	}
+	if (binding.isSimpleAliasInitializer) {
+		return 'simple_alias';
+	}
+	if (binding.memberAccessCount > 0) {
+		return 'member_access';
+	}
+	return 'value';
 }
 
 export function lintCppSinglePropertyOptionsTypes(file: string, tokens: readonly CppToken[], classRanges: readonly CppClassRange[], issues: CppLintIssue[]): void {
@@ -1361,7 +1382,12 @@ export function lintCppSimpleTokenPatterns(file: string, tokens: readonly CppTok
 		if (token.text === '(') {
 			const target = cppCallTarget(tokens, index);
 			if (target !== null && (target === 'value_or' || target.endsWith('.value_or') || target.endsWith('::value_or'))) {
-				noteQualityLedger(ledger, 'cpp_optional_value_or_fallback');
+				const boundaryKind = cppValueOrBoundaryKind(file);
+				if (boundaryKind === null) {
+					pushLintIssue(issues, file, token, 'optional_value_or_fallback_pattern', 'std::optional::value_or fallback is only allowed at explicit manifest/input/optional-parameter boundaries. Branch or require the value instead of hiding missing internal state.');
+				} else {
+					noteQualityLedger(ledger, `cpp_optional_value_or_${boundaryKind}`);
+				}
 			}
 		}
 		if (token.text === '==' || token.text === '!=') {
@@ -1381,6 +1407,24 @@ export function lintCppSimpleTokenPatterns(file: string, tokens: readonly CppTok
 		}
 	}
 	lintStringOrChains(file, tokens, issues);
+}
+
+function cppValueOrBoundaryKind(file: string): string | null {
+	const normalized = normalizePathForAnalysis(file);
+	if (
+		normalized.endsWith('/src/bmsx_cpp/machine/specs.cpp')
+		|| normalized.endsWith('/src/bmsx_cpp/machine/runtime/timing_config.cpp')
+		|| normalized.endsWith('/src/bmsx_cpp/machine/firmware/globals.cpp')
+	) {
+		return 'manifest_default';
+	}
+	if (normalized.endsWith('/src/bmsx_cpp/machine/cpu/cpu.cpp')) {
+		return 'optional_parameter_default';
+	}
+	if (normalized.endsWith('/src/bmsx_cpp/machine/firmware/api.cpp')) {
+		return 'input_state_default';
+	}
+	return null;
 }
 
 function lintTernaryFallback(file: string, tokens: readonly CppToken[], questionIndex: number, issues: CppLintIssue[]): void {

@@ -73,13 +73,12 @@ export function tileRunCost(visibleRows: number, visibleNonEmptyTiles: number): 
 	return VDP_RENDER_TILE_RUN_SETUP_COST + visibleRows + Math.ceil(visibleNonEmptyTiles / VDP_RENDER_TILE_RUN_DENSITY_DIVISOR);
 }
 
-export function computeClippedRect(x0: number, y0: number, x1: number, y1: number, clipWidth: number, clipHeight: number, out?: VdpClippedRect): VdpClippedRect {
-	const target = out ?? { width: 0, height: 0, area: 0 };
+export function computeClippedRect(x0: number, y0: number, x1: number, y1: number, clipWidth: number, clipHeight: number, out: VdpClippedRect): VdpClippedRect {
 	if (clipWidth <= 0 || clipHeight <= 0) {
-		target.width = 0;
-		target.height = 0;
-		target.area = 0;
-		return target;
+		out.width = 0;
+		out.height = 0;
+		out.area = 0;
+		return out;
 	}
 	let left = x0;
 	let right = x1;
@@ -109,10 +108,10 @@ export function computeClippedRect(x0: number, y0: number, x1: number, y1: numbe
 	}
 	const width = right > left ? right - left : 0;
 	const height = bottom > top ? bottom - top : 0;
-	target.width = width;
-	target.height = height;
-	target.area = width * height;
-	return target;
+	out.width = width;
+	out.height = height;
+	out.area = width * height;
+	return out;
 }
 
 export function computeClippedLineSpan(x0: number, y0: number, x1: number, y1: number, clipWidth: number, clipHeight: number): number {

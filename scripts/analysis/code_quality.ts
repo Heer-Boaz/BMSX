@@ -183,6 +183,12 @@ const NUMERIC_SANITIZATION_PATH_SEGMENTS = [
 	'/src/bmsx/render/',
 ] as const;
 
+const HOT_ALLOCATION_FALLBACK_PATH_SEGMENTS = [
+	'/src/bmsx/machine/cpu/',
+	'/src/bmsx/machine/devices/geometry/',
+	'/src/bmsx/machine/devices/vdp/',
+] as const;
+
 const REQUIRED_STATE_ROOTS = new Set([
 	'$',
 	'editorDocumentState',
@@ -2078,6 +2084,37 @@ function isEmptyContainerLiteral(node: ts.Expression): boolean {
 		|| (ts.isObjectLiteralExpression(unwrapped) && unwrapped.properties.length === 0);
 }
 
+function isAllocationExpression(node: ts.Expression): boolean {
+	const unwrapped = unwrapExpression(node);
+	return ts.isObjectLiteralExpression(unwrapped)
+		|| ts.isArrayLiteralExpression(unwrapped)
+		|| ts.isNewExpression(unwrapped);
+}
+
+function isHotAllocationFallbackPath(fileName: string): boolean {
+	const normalized = normalizePathForAnalysis(fileName);
+	for (let index = 0; index < HOT_ALLOCATION_FALLBACK_PATH_SEGMENTS.length; index += 1) {
+		if (normalized.includes(HOT_ALLOCATION_FALLBACK_PATH_SEGMENTS[index])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function isInsideConstructor(node: ts.Node): boolean {
+	let current: ts.Node | undefined = node;
+	while (current !== undefined) {
+		if (ts.isConstructorDeclaration(current)) {
+			return true;
+		}
+		if (ts.isFunctionLike(current) || ts.isSourceFile(current)) {
+			return false;
+		}
+		current = current.parent;
+	}
+	return false;
+}
+
 function enclosingVariableDeclarationName(node: ts.Node): string | null {
 	let current: ts.Node | undefined = node;
 	while (current !== undefined) {
@@ -2113,7 +2150,63 @@ function optionalChainBoundaryKind(node: ts.Expression, sourceFile: ts.SourceFil
 	if (sourcePathIncludes(sourceFile, '/src/bmsx/machine/memory/asset_state.ts')) {
 		return 'asset-boundary';
 	}
+	if (isMapLookupProjectionOptionalChain(node)) {
+		return 'lookup-projection';
+	}
+	if (isValueTagGuardOptionalChain(node, sourceFile)) {
+		return 'value-tag-guard';
+	}
+	if (isOptionalCompileContextChain(node, sourceFile)) {
+		return 'compile-context';
+	}
+	if (isOptionalStringHandleChain(node, sourceFile)) {
+		return 'string-handle-table';
+	}
+	if (isNullableFrameStateSnapshot(node, sourceFile)) {
+		return 'frame-state-snapshot';
+	}
 	return null;
+}
+
+function isMapLookupProjectionOptionalChain(node: ts.Expression): boolean {
+	const unwrapped = unwrapExpression(node);
+	if (!ts.isPropertyAccessExpression(unwrapped)) {
+		return false;
+	}
+	const receiver = unwrapExpression(unwrapped.expression);
+	if (!ts.isCallExpression(receiver)) {
+		return false;
+	}
+	return getCallTargetLeafName(receiver.expression) === 'get';
+}
+
+function isValueTagGuardOptionalChain(node: ts.Expression, sourceFile: ts.SourceFile): boolean {
+	if (!sourcePathIncludes(sourceFile, '/src/bmsx/machine/cpu/cpu.ts')) {
+		return false;
+	}
+	const unwrapped = unwrapExpression(node);
+	return ts.isPropertyAccessExpression(unwrapped)
+		&& unwrapped.name.text === 'kind'
+		&& expressionRootName(unwrapped.expression) === 'value';
+}
+
+function isOptionalCompileContextChain(node: ts.Expression, sourceFile: ts.SourceFile): boolean {
+	if (!sourcePathIncludes(sourceFile, '/src/bmsx/machine/program/compiler.ts')) {
+		return false;
+	}
+	const text = node.getText(sourceFile);
+	return text.startsWith('parent?.moduleCompileContext')
+		|| text.startsWith('this.moduleCompileContext?.');
+}
+
+function isOptionalStringHandleChain(node: ts.Expression, sourceFile: ts.SourceFile): boolean {
+	return sourcePathIncludes(sourceFile, '/src/bmsx/machine/memory/string_pool.ts')
+		&& node.getText(sourceFile).startsWith('this.handleTable?.');
+}
+
+function isNullableFrameStateSnapshot(node: ts.Expression, sourceFile: ts.SourceFile): boolean {
+	return sourcePathIncludes(sourceFile, '/src/bmsx/machine/runtime/frame_loop.ts')
+		&& expressionRootName(node) === 'previousState';
 }
 
 function isTypeofFunctionComparison(node: ts.BinaryExpression): boolean {
@@ -2748,6 +2841,19 @@ function lintBinaryExpressionForCodeQuality(
 				'empty_string_fallback_pattern',
 				'Empty-string fallback via `??` is forbidden. Do not use empty strings as default values.',
 			);
+		}
+		if (isHotAllocationFallbackPath(sourceFile.fileName) && isAllocationExpression(node.right)) {
+			if (isInsideConstructor(node)) {
+				noteQualityLedger(ledger, 'allowed_allocation_fallback_constructor_default');
+			} else {
+				pushLintIssue(
+					issues,
+					sourceFile,
+					node.operatorToken,
+					'allocation_fallback_pattern',
+					'Allocation fallback via `??` is forbidden in machine hot paths. Require the scratch/output object at the call boundary.',
+				);
+			}
 		}
 	}
 	if (isTypeofFunctionComparison(node)) {

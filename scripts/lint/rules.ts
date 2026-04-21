@@ -27,6 +27,8 @@ export const CODE_QUALITY_ONLY_LINT_RULES = [
 	'lookup_alias_return_pattern',
 	'defensive_optional_chain_pattern',
 	'defensive_typeof_function_pattern',
+	'optional_value_or_fallback_pattern',
+	'allocation_fallback_pattern',
 	'numeric_defensive_sanitization_pattern',
 	'redundant_numeric_sanitization_pattern',
 	'repeated_expression_pattern',
