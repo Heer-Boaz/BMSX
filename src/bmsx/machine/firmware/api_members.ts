@@ -10,7 +10,7 @@ export type ApiMember = {
 };
 
 export function collectApiMembers(apiObject: object): ApiMember[] {
-	// @bmsx-analyse disable defensive_typeof_function_pattern -- API member discovery reflects JavaScript property descriptors.
+	// @code-quality disable defensive_typeof_function_pattern -- API member discovery reflects JavaScript property descriptors.
 	const map = new Map<string, ApiMemberValue>();
 	let prototype: object = Object.getPrototypeOf(apiObject);
 	while (prototype && prototype !== Object.prototype) {

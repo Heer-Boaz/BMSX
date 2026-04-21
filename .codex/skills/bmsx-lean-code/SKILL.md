@@ -49,7 +49,7 @@ Before finalizing a code-quality change, inspect your own diff specifically for 
 - Suppressions are allowed only when the exception is real and local. Use rule-specific comments with a short reason, for example:
 
 ```ts
-// @bmsx-analyse disable-next-line empty_catch_pattern -- browser API cleanup is best-effort here
+// @code-quality disable-next-line empty_catch_pattern -- browser API cleanup is best-effort here
 try {
     releaseExternalHandle();
 } catch {
@@ -59,17 +59,20 @@ try {
 Use region directives for scope-based analysis instead of hardcoded path exceptions:
 
 ```ts
-// @bmsx-analyse start hot-path -- caret/layout work runs during frame input/render
-// @bmsx-analyse end hot-path
+// @code-quality start hot-path -- caret/layout work runs during frame input/render
+// @code-quality end hot-path
 
-// @bmsx-analyse start ensure-acceptable -- explicit capacity helper, not lazy singleton ownership
-// @bmsx-analyse end ensure-acceptable
+// @code-quality start ensure-acceptable -- explicit capacity helper, not lazy singleton ownership
+// @code-quality end ensure-acceptable
 
-// @bmsx-analyse start required-state editorDocumentState,editorViewState -- owned state roots in this module
-// @bmsx-analyse end required-state
+// @code-quality start required-state editorDocumentState,editorViewState -- owned state roots in this module
+// @code-quality end required-state
 
-// @bmsx-analyse start value-or-boundary -- manifest default is resolved at this boundary
-// @bmsx-analyse end value-or-boundary
+// @code-quality start value-or-boundary -- manifest default is resolved at this boundary
+// @code-quality end value-or-boundary
+
+// @code-quality start fallible-boundary -- external parser/browser API can fail and maps failure to UI state
+// @code-quality end fallible-boundary
 ```
 
 ## Finish Line

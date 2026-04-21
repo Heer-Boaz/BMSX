@@ -8,7 +8,7 @@ import { Runtime } from '../runtime/runtime';
 import { LuaMarshalContext } from '../runtime/contracts';
 import { isStringValue, stringValueToString } from '../memory/string_pool';
 
-// @bmsx-analyse disable defensive_typeof_function_pattern -- JS bridge marshals arbitrary host values; callable probes are explicit interop boundaries.
+// @code-quality disable defensive_typeof_function_pattern -- JS bridge marshals arbitrary host values; callable probes are explicit interop boundaries.
 export type LuaSnapshotObjects = Record<number, unknown>;
 export type LuaSnapshotGraph = { root: unknown; objects: LuaSnapshotObjects };
 export type LuaEntrySnapshot = Record<string, unknown> | LuaSnapshotGraph;

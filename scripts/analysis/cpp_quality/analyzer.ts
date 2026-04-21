@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 
 import { collectAnalysisRegions, filterSuppressedLintIssues, type AnalysisRegion } from '../lint_suppressions';
+import { loadAnalysisConfig } from '../config';
 import { createQualityLedger } from '../quality_ledger';
 import {
 	addDuplicateExportedTypeIssues,
@@ -62,6 +63,7 @@ type CppFileAnalysis = {
 };
 
 export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
+	const config = loadAnalysisConfig();
 	const duplicateBuckets = new Map<string, CppDuplicateLocation[]>();
 	const lintIssues: CppLintIssue[] = [];
 	const exportedTypes: CppExportedTypeInfo[] = [];
@@ -73,7 +75,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
 		const file = files[fileIndex];
 		const source = readFileSync(file, 'utf8');
-		const regions = collectAnalysisRegions(source);
+		const regions = collectAnalysisRegions(source, config.directiveMarker);
 		const tokens = tokenizeCpp(source);
 		const pairs = buildCppPairMap(tokens);
 		const classRanges = collectCppClassRanges(tokens, pairs);
@@ -100,7 +102,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 		const facadeStats = createCppFacadeStats(functions, tokens);
 		lintCppSimpleTokenPatterns(file, tokens, pairs, regions, lintIssues, ledger);
 		lintCppSinglePropertyOptionsTypes(file, tokens, analysis.classRanges, lintIssues);
-		lintCppCrossLayerIncludes(file, source, lintIssues);
+		lintCppCrossLayerIncludes(file, source, config.architecture, lintIssues);
 		for (let functionIndex = 0; functionIndex < functions.length; functionIndex += 1) {
 			const info = functions[functionIndex];
 			if (facadeStats !== null) {
@@ -144,7 +146,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 					facadeStats.wrapperCount += 1;
 				}
 			}
-			lintCppCatchPatterns(file, tokens, pairs, info, lintIssues, ledger);
+			lintCppCatchPatterns(file, tokens, pairs, info, regions, lintIssues, ledger);
 			lintCppRedundantNumericSanitizationPattern(file, tokens, pairs, info, regions, lintIssues);
 			lintCppEnsureLazyInitPattern(file, tokens, pairs, info, regions, lintIssues);
 			lintCppTerminalReturnPaddingPattern(file, tokens, info, lintIssues);
@@ -171,7 +173,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 		const analysis = fileAnalyses[fileIndex];
 		sourceTextByFile.set(analysis.file, analysis.source);
 	}
-	const filteredLintIssues = filterSuppressedLintIssues(lintIssues, sourceTextByFile);
+	const filteredLintIssues = filterSuppressedLintIssues(lintIssues, sourceTextByFile, config.directiveMarker);
 	return relativeAnalysisResult({
 		duplicateGroups: buildDuplicateGroups(duplicateBuckets),
 		lintIssues: filteredLintIssues,

@@ -25,7 +25,7 @@ type AnalysisDirective = {
 	rest: string;
 };
 
-const ANALYSIS_SUPPRESSION_MARKER = '@bmsx-analyse';
+const DEFAULT_ANALYSIS_MARKER = '@code-quality';
 
 function markerIsInComment(lineText: string, markerIndex: number): boolean {
 	const lineCommentIndex = lineText.indexOf('//');
@@ -69,15 +69,15 @@ function parseDirectiveMode(text: string): { mode: LintSuppressionMode; rest: st
 	return { mode, rest };
 }
 
-function findAnalysisDirective(lineText: string, line: number): AnalysisDirective | null {
-	const analysisIndex = lineText.indexOf(ANALYSIS_SUPPRESSION_MARKER);
+function findAnalysisDirective(lineText: string, line: number, marker: string): AnalysisDirective | null {
+	const analysisIndex = lineText.indexOf(marker);
 	if (analysisIndex === -1) {
 		return null;
 	}
 	if (!markerIsInComment(lineText, analysisIndex)) {
 		return null;
 	}
-	const text = lineText.slice(analysisIndex + ANALYSIS_SUPPRESSION_MARKER.length).trimStart();
+	const text = lineText.slice(analysisIndex + marker.length).trimStart();
 	const commandEnd = text.search(/\s/);
 	const command = commandEnd === -1 ? text : text.slice(0, commandEnd);
 	const rest = commandEnd === -1 ? '' : text.slice(commandEnd + 1);
@@ -88,8 +88,8 @@ function findAnalysisDirective(lineText: string, line: number): AnalysisDirectiv
 	};
 }
 
-function parseSuppressionDirective(lineText: string, line: number): LintSuppressionDirective | null {
-	const directive = findAnalysisDirective(lineText, line);
+function parseSuppressionDirective(lineText: string, line: number, marker: string): LintSuppressionDirective | null {
+	const directive = findAnalysisDirective(lineText, line, marker);
 	if (directive === null || (directive.command !== 'disable' && !directive.command.startsWith('disable-'))) {
 		return null;
 	}
@@ -104,11 +104,11 @@ function parseSuppressionDirective(lineText: string, line: number): LintSuppress
 	};
 }
 
-function parseLintSuppressionDirectives(sourceText: string): LintSuppressionDirective[] {
+function parseLintSuppressionDirectives(sourceText: string, marker: string): LintSuppressionDirective[] {
 	const directives: LintSuppressionDirective[] = [];
 	const lines = sourceText.split(/\r\n|\r|\n/);
 	for (let index = 0; index < lines.length; index += 1) {
-		const directive = parseSuppressionDirective(lines[index], index + 1);
+		const directive = parseSuppressionDirective(lines[index], index + 1, marker);
 		if (directive !== null) {
 			directives.push(directive);
 		}
@@ -141,13 +141,13 @@ function parseRegionHeader(text: string): AnalysisRegionHeader | null {
 	return kind.length === 0 ? null : { kind, labels };
 }
 
-export function collectAnalysisRegions(sourceText: string): AnalysisRegion[] {
+export function collectAnalysisRegions(sourceText: string, marker = DEFAULT_ANALYSIS_MARKER): AnalysisRegion[] {
 	const regions: AnalysisRegion[] = [];
 	const activeStarts = new Map<string, Array<{ line: number; labels: readonly string[] }>>();
 	const lines = sourceText.split(/\r\n|\r|\n/);
 	for (let index = 0; index < lines.length; index += 1) {
 		const line = index + 1;
-		const directive = findAnalysisDirective(lines[index], line);
+		const directive = findAnalysisDirective(lines[index], line, marker);
 		if (directive === null || directive.command !== 'start' && directive.command !== 'end') {
 			continue;
 		}
@@ -243,6 +243,7 @@ function issueIsSuppressed(issue: SuppressibleLintIssue, directives: readonly Li
 export function filterSuppressedLintIssues<TIssue extends SuppressibleLintIssue>(
 	issues: readonly TIssue[],
 	sourceTextByFile: ReadonlyMap<string, string>,
+	marker = DEFAULT_ANALYSIS_MARKER,
 ): TIssue[] {
 	const directivesByFile = new Map<string, readonly LintSuppressionDirective[]>();
 	const result: TIssue[] = [];
@@ -251,7 +252,7 @@ export function filterSuppressedLintIssues<TIssue extends SuppressibleLintIssue>
 		let directives = directivesByFile.get(issue.file);
 		if (directives === undefined) {
 			const sourceText = sourceTextByFile.get(issue.file);
-			directives = sourceText === undefined ? [] : parseLintSuppressionDirectives(sourceText);
+			directives = sourceText === undefined ? [] : parseLintSuppressionDirectives(sourceText, marker);
 			directivesByFile.set(issue.file, directives);
 		}
 		if (!issueIsSuppressed(issue, directives)) {

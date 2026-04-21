@@ -1,7 +1,9 @@
-import { existsSync, readdirSync, statSync } from 'node:fs';
-import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { isAbsolute, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
+import { loadAnalysisConfig, type AnalysisConfig } from './config';
+import { collectSourceFiles } from './file_scan';
 import { analyzeCppFiles, type CppDuplicateGroup } from './code_quality_cpp_rules';
 import { qualityLedgerEntries, type QualityLedger } from './quality_ledger';
 
@@ -26,34 +28,11 @@ type CliOptions = {
 	configFile: string | null;
 };
 
-const DEFAULT_ROOTS = ['src'];
 const FILE_EXTENSIONS = new Set(['.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx']);
-const SKIP_DIRECTORIES = new Set([
-	'.git',
-	'.vscode',
-	'build',
-	'build-codex-check',
-	'build-debug',
-	'build-libretro',
-	'build-libretro-host',
-	'build-libretro-local',
-	'build-libretro-wsl',
-	'build-perf',
-	'build-release',
-	'build-snesmini',
-	'build-snesmini-host',
-	'build-snesmini-user',
-	'CMakeFiles',
-	'dist',
-	'node_modules',
-	'vendor',
-]);
-
-const HEADER_FILTER = '.*';
 const CLANG_TIDY_RE = /^(.*?):(\d+):(\d+):\s*(warning|error):\s*(.*?)\s*\[([^\]]+)\]\s*$/;
 const CPPCHECK_RE = /^(.*?):(\d+):(\d+):(warning|error|information|performance|portability|style):([^:]+):\s*(.*)$/;
 
-function printHelp(): void {
+function printHelp(config: AnalysisConfig): void {
 	console.log('Usage: npx tsx scripts/analysis/code_quality_cpp.ts [--csv] [--summary-only] [--fail-on-issues] [--compile-commands <path>] [--config <path>] [--root <path> ...]');
 	console.log('');
 	console.log('Options:');
@@ -62,11 +41,11 @@ function printHelp(): void {
 	console.log('  --fail-on-issues          Exit with code 1 when any issue is found');
 	console.log('  --compile-commands <path>  Path to compile_commands.json (clang-tidy)');
 	console.log('  --config <path>           Path to .clang-tidy config file (clang-tidy)');
-	console.log('  --root <path>             Extra root directory to scan (default: src)');
+	console.log(`  --root <path>             Extra root directory to scan (default: ${config.scan.cppRoots.join(', ')})`);
 	console.log('  --help                    Show this help message');
 }
 
-function parseArgs(argv: string[]): CliOptions {
+function parseArgs(argv: string[], config: AnalysisConfig): CliOptions {
 	let csv = false;
 	let summaryOnly = false;
 	let failOnIssues = false;
@@ -77,7 +56,7 @@ function parseArgs(argv: string[]): CliOptions {
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
 		if (arg === '--help') {
-			printHelp();
+			printHelp(config);
 			process.exit(0);
 		}
 		if (arg === '--csv') {
@@ -130,7 +109,7 @@ function parseArgs(argv: string[]): CliOptions {
 			csv,
 			summaryOnly,
 			failOnIssues,
-			roots: DEFAULT_ROOTS,
+			roots: [...config.scan.cppRoots],
 			compileCommands,
 			configFile,
 		};
@@ -146,44 +125,12 @@ function parseArgs(argv: string[]): CliOptions {
 	};
 }
 
-function shouldSkipDirectory(name: string): boolean {
-	return SKIP_DIRECTORIES.has(name) || name.startsWith('.') && name.length > 1;
-}
-
 function resolveInputPath(candidate: string): string {
 	return isAbsolute(candidate) ? candidate : resolve(process.cwd(), candidate);
 }
 
 function collectCppFiles(roots: readonly string[]): string[] {
-	const files: string[] = [];
-	const stack = roots.map(resolveInputPath);
-	while (stack.length > 0) {
-		const current = stack.pop();
-		if (current === undefined || !existsSync(current)) {
-			continue;
-		}
-		const stat = statSync(current);
-		if (stat.isFile()) {
-			const extension = extname(current);
-			if (FILE_EXTENSIONS.has(extension)) {
-				files.push(current);
-			}
-			continue;
-		}
-		if (!stat.isDirectory()) {
-			continue;
-		}
-		const directoryName = basename(current);
-		if (shouldSkipDirectory(directoryName)) {
-			continue;
-		}
-		const entries = readdirSync(current, { withFileTypes: true });
-		for (let i = 0; i < entries.length; i += 1) {
-			const entry = entries[i];
-			stack.push(join(current, entry.name));
-		}
-	}
-	return files;
+	return collectSourceFiles(roots, FILE_EXTENSIONS);
 }
 
 function hasCommand(command: string): boolean {
@@ -338,6 +285,7 @@ function runClangTidy(
 	_roots: readonly string[],
 	compileCommands: string | null,
 	configFile: string | null,
+	headerFilter: string,
 ): LintIssue[] {
 	if (!hasCommand('clang-tidy')) {
 		throw new Error('clang-tidy is not installed');
@@ -348,7 +296,7 @@ function runClangTidy(
 		const chunk = chunks[i];
 		const args = [
 			'--quiet',
-			`--header-filter=${HEADER_FILTER}`,
+			`--header-filter=${headerFilter}`,
 		];
 		if (compileCommands !== null && existsSync(compileCommands)) {
 			args.push('-p', compileCommands);
@@ -642,7 +590,8 @@ function printCsvReport(issues: readonly LintIssue[], duplicateGroups: readonly 
 }
 
 function run(): void {
-	const options = parseArgs(process.argv.slice(2));
+	const config = loadAnalysisConfig();
+	const options = parseArgs(process.argv.slice(2), config);
 	const files = collectCppFiles(options.roots);
 	if (files.length === 0) {
 		console.log('No C++ files found.');
@@ -653,7 +602,7 @@ function run(): void {
 	addCustomRuleIssues(issues, customAnalysis.lintIssues);
 	const compileCommands = resolveCompileCommands(options.roots, options.compileCommands);
 	if (hasCommand('clang-tidy')) {
-		issues.push(...runClangTidy(files, options.roots, compileCommands, options.configFile));
+		issues.push(...runClangTidy(files, options.roots, compileCommands, options.configFile, config.scan.cppHeaderFilter));
 	} else if (hasCommand('cppcheck')) {
 		issues.push(...runCppCheck(files, options.roots));
 	}

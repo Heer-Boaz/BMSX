@@ -27,6 +27,7 @@ import {
 import type { CppToken } from '../../../src/bmsx/language/cpp/syntax/tokens';
 import { cppTokenText, normalizedCppTokenText } from '../../../src/bmsx/language/cpp/syntax/tokens';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../lint_suppressions';
+import type { ArchitectureBoundaryConfig, ArchitectureBoundaryRule } from '../config';
 import { noteQualityLedger, type QualityLedger } from '../quality_ledger';
 
 const CPP_SINGLE_LINE_WRAPPER_NAME_WORDS: ReadonlySet<string> = new Set([
@@ -507,15 +508,6 @@ const HOT_PATH_TEMPORARY_TYPES = new Set([
 	'std::unordered_map',
 	'std::vector',
 ]);
-const ARCHITECTURE_LAYER_NAMES = new Set([
-	'common',
-	'editor',
-	'language',
-	'runtime',
-	'terminal',
-	'workbench',
-]);
-
 function normalizePathForAnalysis(path: string): string {
 	return path.replace(/\\/g, '/');
 }
@@ -1154,7 +1146,15 @@ function cppRangeHasBrace(tokens: readonly CppToken[], start: number, end: numbe
 	return false;
 }
 
-export function lintCppCatchPatterns(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[], ledger: QualityLedger): void {
+export function lintCppCatchPatterns(
+	file: string,
+	tokens: readonly CppToken[],
+	pairs: readonly number[],
+	info: CppFunctionInfo,
+	regions: readonly AnalysisRegion[],
+	issues: CppLintIssue[],
+	ledger: QualityLedger,
+): void {
 	for (let index = info.bodyStart + 1; index < info.bodyEnd; index += 1) {
 		if (tokens[index].text !== 'catch' || tokens[index + 1]?.text !== '(') {
 			continue;
@@ -1204,47 +1204,18 @@ export function lintCppCatchPatterns(file: string, tokens: readonly CppToken[], 
 		if (!cppRangeHas(tokens, blockOpen + 1, blockClose, token => token.text === 'return')) {
 			continue;
 		}
-		if (
-			cppCatchBlockStoresCurrentException(tokens, blockOpen + 1, blockClose)
-			|| cppCatchBlockFinishesError(tokens, blockOpen + 1, blockClose)
-		) {
-			noteQualityLedger(ledger, 'allowed_cpp_catch_fault_boundary');
+		if (lineInAnalysisRegion(regions, 'fallible-boundary', tokens[index].line)) {
+			noteQualityLedger(ledger, 'allowed_cpp_catch_fallible_boundary');
 		} else {
 			pushLintIssue(
 				issues,
 				file,
 				tokens[index],
 				'silent_catch_fallback_pattern',
-				'Catch clause swallows the error and returns a fallback. Trust the caller/callee or propagate the failure.',
+				'Catch clause swallows the error and returns a fallback. Trust the caller/callee or mark the fallible boundary explicitly.',
 			);
 		}
 	}
-}
-
-function cppCatchBlockStoresCurrentException(tokens: readonly CppToken[], start: number, end: number): boolean {
-	for (let index = start; index < end; index += 1) {
-		if (tokens[index].text !== '(') {
-			continue;
-		}
-		const target = cppCallTarget(tokens, index);
-		if (target === 'std::current_exception' || target === 'current_exception') {
-			return true;
-		}
-	}
-	return false;
-}
-
-function cppCatchBlockFinishesError(tokens: readonly CppToken[], start: number, end: number): boolean {
-	for (let index = start; index < end; index += 1) {
-		if (tokens[index].text !== '(') {
-			continue;
-		}
-		const target = cppCallTarget(tokens, index);
-		if (target !== null && /^finish[A-Za-z0-9]*Error$/.test(target)) {
-			return true;
-		}
-	}
-	return false;
 }
 
 export function lintCppRedundantNumericSanitizationPattern(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, regions: readonly AnalysisRegion[], issues: CppLintIssue[]): void {
@@ -2345,8 +2316,8 @@ function isCppCallIdentifier(tokens: readonly CppToken[], index: number): boolea
 	return tokens[index + 1]?.text === '(';
 }
 
-export function lintCppCrossLayerIncludes(file: string, source: string, issues: CppLintIssue[]): void {
-	const sourceLayer = architectureLayer(file);
+export function lintCppCrossLayerIncludes(file: string, source: string, config: ArchitectureBoundaryConfig | null, issues: CppLintIssue[]): void {
+	const sourceLayer = architectureLayer(file, config);
 	if (sourceLayer === null) {
 		return;
 	}
@@ -2356,11 +2327,11 @@ export function lintCppCrossLayerIncludes(file: string, source: string, issues: 
 		if (match === null || !match[1].startsWith('.')) {
 			continue;
 		}
-		const targetLayer = architectureLayer(resolve(dirname(file), match[1]));
+		const targetLayer = architectureLayer(resolve(dirname(file), match[1]), config);
 		if (targetLayer === null) {
 			continue;
 		}
-		const reason = forbiddenLayerImportReason(sourceLayer, targetLayer);
+		const reason = forbiddenLayerImportReason(config, sourceLayer, targetLayer);
 		if (reason === null) {
 			continue;
 		}
@@ -2375,37 +2346,44 @@ export function lintCppCrossLayerIncludes(file: string, source: string, issues: 
 	}
 }
 
-function architectureLayer(path: string): string | null {
+function architectureLayer(path: string, config: ArchitectureBoundaryConfig | null): string | null {
+	if (config === null) {
+		return null;
+	}
 	const parts = normalizePathForAnalysis(path).split('/');
+	const layers = new Set(config.layers);
 	for (let index = 0; index < parts.length - 1; index += 1) {
-		if (parts[index] === 'ide' && ARCHITECTURE_LAYER_NAMES.has(parts[index + 1])) {
+		if (parts[index] === config.rootSegment && layers.has(parts[index + 1])) {
 			return parts[index + 1];
 		}
 	}
 	return null;
 }
 
-function forbiddenLayerImportReason(sourceLayer: string, targetLayer: string): string | null {
-	if (sourceLayer === targetLayer) {
+function ruleTargetsLayer(rule: ArchitectureBoundaryRule, targetLayer: string): boolean {
+	if (rule.except?.includes(targetLayer)) {
+		return false;
+	}
+	if (rule.to === '*') {
+		return true;
+	}
+	return Array.isArray(rule.to) ? rule.to.includes(targetLayer) : rule.to === targetLayer;
+}
+
+function formatLayerRuleMessage(rule: ArchitectureBoundaryRule, sourceLayer: string, targetLayer: string): string {
+	const template = rule.message ?? 'Layer {from} must not include {to}.';
+	return template.replace(/\{from\}/g, sourceLayer).replace(/\{to\}/g, targetLayer);
+}
+
+function forbiddenLayerImportReason(config: ArchitectureBoundaryConfig | null, sourceLayer: string, targetLayer: string): string | null {
+	if (config === null || sourceLayer === targetLayer) {
 		return null;
 	}
-	if (sourceLayer === 'common') {
-		return `Layer common must not include ${targetLayer}; common code must stay below feature layers.`;
-	}
-	if (sourceLayer === 'language' && targetLayer !== 'common') {
-		return `Layer language must not include ${targetLayer}; language code must stay UI/workbench independent.`;
-	}
-	if (sourceLayer === 'terminal' && (targetLayer === 'editor' || targetLayer === 'workbench')) {
-		return `Layer terminal must not include ${targetLayer}; terminal code must not depend on editor/workbench internals.`;
-	}
-	if (sourceLayer === 'editor' && targetLayer === 'workbench') {
-		return 'Layer editor must not include workbench; workbench may compose editor, not the reverse.';
-	}
-	if (sourceLayer === 'workbench' && targetLayer === 'editor') {
-		return 'Layer workbench must not include deep editor internals directly; route shared contracts through common modules.';
-	}
-	if (sourceLayer === 'runtime' && (targetLayer === 'editor' || targetLayer === 'workbench')) {
-		return `Layer runtime must not include ${targetLayer}; runtime glue must not own UI feature internals.`;
+	for (let index = 0; index < config.rules.length; index += 1) {
+		const rule = config.rules[index];
+		if (rule.from === sourceLayer && ruleTargetsLayer(rule, targetLayer)) {
+			return formatLayerRuleMessage(rule, sourceLayer, targetLayer);
+		}
 	}
 	return null;
 }

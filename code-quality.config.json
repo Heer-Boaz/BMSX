@@ -1,0 +1,46 @@
+{
+	"directiveMarker": "@code-quality",
+	"scan": {
+		"roots": ["src", "scripts", "tests", "tools"],
+		"cppRoots": ["src"],
+		"cppHeaderFilter": ".*"
+	},
+	"architecture": {
+		"rootSegment": "ide",
+		"layers": ["common", "language", "runtime", "terminal", "editor", "workbench"],
+		"rules": [
+			{
+				"from": "common",
+				"to": "*",
+				"except": ["common"],
+				"message": "Layer {from} must not import {to}; common code must stay below feature layers."
+			},
+			{
+				"from": "language",
+				"to": "*",
+				"except": ["common", "language"],
+				"message": "Layer {from} must not import {to}; language code must stay UI/workbench independent."
+			},
+			{
+				"from": "terminal",
+				"to": ["editor", "workbench"],
+				"message": "Layer {from} must not import {to}; terminal code must not depend on editor/workbench internals."
+			},
+			{
+				"from": "editor",
+				"to": "workbench",
+				"message": "Layer editor must not import workbench; workbench may compose editor, not the reverse."
+			},
+			{
+				"from": "workbench",
+				"to": "editor",
+				"message": "Layer workbench must not import deep editor internals directly; route shared contracts through common modules."
+			},
+			{
+				"from": "runtime",
+				"to": ["editor", "workbench"],
+				"message": "Layer {from} must not import {to}; runtime glue must not own UI feature internals."
+			}
+		]
+	}
+}

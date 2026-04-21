@@ -1,4 +1,4 @@
-// @bmsx-analyse start hot-path -- VDP command processing, rasterization, and readback code runs on frame-critical paths.
+// @code-quality start hot-path -- VDP command processing, rasterization, and readback code runs on frame-critical paths.
 #include "machine/devices/vdp/vdp.h"
 #include "machine/devices/vdp/command_processor.h"
 #include "machine/devices/vdp/fault.h"
@@ -3872,4 +3872,4 @@ void VDP::commitViewSnapshot(GameView& view) {
 }
 
 } // namespace bmsx
-// @bmsx-analyse end hot-path
+// @code-quality end hot-path

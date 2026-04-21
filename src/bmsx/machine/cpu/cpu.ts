@@ -1470,7 +1470,7 @@ const nativeArgsProxyHandler: ProxyHandler<NativeArgsView> = {
 			return target.at(property.length === 1 ? (property.charCodeAt(0) - 48) : Number(property));
 		}
 		const value = Reflect.get(target, property, target);
-		// @bmsx-analyse disable-next-line defensive_typeof_function_pattern -- Proxy trap binds NativeArgsView methods returned by Reflect.get.
+		// @code-quality disable-next-line defensive_typeof_function_pattern -- Proxy trap binds NativeArgsView methods returned by Reflect.get.
 		return typeof value === 'function' ? value.bind(target) : value;
 	},
 };

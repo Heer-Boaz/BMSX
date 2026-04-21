@@ -1,8 +1,8 @@
 import ts from 'typescript';
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import {
 	collectAnalysisRegions,
 	filterSuppressedLintIssues,
@@ -10,6 +10,8 @@ import {
 	lineInAnalysisRegion,
 	type AnalysisRegion,
 } from './lint_suppressions';
+import { loadAnalysisConfig, type AnalysisConfig, type ArchitectureBoundaryConfig, type ArchitectureBoundaryRule } from './config';
+import { collectSourceFiles } from './file_scan';
 import { createQualityLedger, noteQualityLedger, qualityLedgerEntries, type QualityLedger } from './quality_ledger';
 import type { CodeQualityLintRule } from '../lint/rules';
 
@@ -109,29 +111,8 @@ type FunctionUsageInfo = {
 	referenceCounts: ReadonlyMap<string, number>;
 };
 
-const DEFAULT_ROOTS = ['src', 'scripts', 'tests', 'tools'];
 const FILE_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts']);
 const LINT_SUMMARY_MAX_FOLDER_SEGMENTS = 5;
-const SKIP_DIRECTORIES = new Set([
-	'.git',
-	'.vscode',
-	'.snesmini',
-	'build',
-	'build-codex-check',
-	'build-debug',
-	'build-libretro',
-	'build-libretro-host',
-	'build-libretro-local',
-	'build-libretro-wsl',
-	'build-perf',
-	'build-release',
-	'build-snesmini',
-	'build-snesmini-host',
-	'build-snesmini-user',
-	'CMakeFiles',
-	'dist',
-	'node_modules',
-]);
 
 const SEMANTIC_NORMALIZATION_CALL_SUFFIXES = [
 	'.endsWith',
@@ -194,15 +175,6 @@ const CONTRACT_NUMERIC_SANITIZERS = new Set([
 	'clamp',
 	'clamp_fallback',
 ]);
-const ARCHITECTURE_LAYER_NAMES = new Set([
-	'common',
-	'editor',
-	'language',
-	'runtime',
-	'terminal',
-	'workbench',
-]);
-
 type CliOptions = {
 	csv: boolean;
 	failOnIssues: boolean;
@@ -213,21 +185,21 @@ type CliOptions = {
 type ProjectLanguage = 'cpp' | 'ts' | 'mixed' | 'unknown';
 const CPP_FILE_EXTENSIONS = new Set(['.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx']);
 
-function printHelp(): void {
+function printHelp(config: AnalysisConfig): void {
 	console.log('Usage: npx tsx scripts/analysis/code_quality.ts [--csv] [--summary-only] [--fail-on-issues] [--root <path> ...]');
 	console.log('');
 	console.log('Options:');
 	console.log('  --csv                  Output CSV report');
 	console.log('  --fail-on-issues       Exit with code 1 when issues are found');
 	console.log('  --summary-only         Print only high-level summaries (no per-issue detail)');
-	console.log('  --root <path>          Extra root directory (default: src, scripts, tests, tools)');
+	console.log(`  --root <path>          Extra root directory (default: ${config.scan.roots.join(', ')})`);
 	console.log('  --help                 Show this help message');
 	console.log('');
 	console.log('When a C++ folder is detected, extra flags are passed directly to:');
 	console.log('  scripts/analysis/code_quality_cpp.ts');
 }
 
-function parseArgs(argv: string[]): CliOptions {
+function parseArgs(argv: string[], config: AnalysisConfig): CliOptions {
 	let failOnIssues = false;
 	let csv = false;
 	let summaryOnly = false;
@@ -235,7 +207,7 @@ function parseArgs(argv: string[]): CliOptions {
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
 		if (arg === '--help') {
-			printHelp();
+			printHelp(config);
 			process.exit(0);
 		}
 		if (arg === '--csv') {
@@ -269,7 +241,7 @@ function parseArgs(argv: string[]): CliOptions {
 			csv,
 			failOnIssues,
 			summaryOnly,
-			paths: DEFAULT_ROOTS,
+			paths: [...config.scan.roots],
 		};
 	}
 	return {
@@ -280,7 +252,7 @@ function parseArgs(argv: string[]): CliOptions {
 	};
 }
 
-function extractRootsForLanguageDetection(argv: string[]): string[] {
+function extractRootsForLanguageDetection(argv: string[], config: AnalysisConfig): string[] {
 	const paths: string[] = [];
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
@@ -308,7 +280,7 @@ function extractRootsForLanguageDetection(argv: string[]): string[] {
 		paths.push(arg);
 	}
 	if (paths.length === 0) {
-		return DEFAULT_ROOTS;
+		return [...config.scan.roots];
 	}
 	return paths;
 }
@@ -340,37 +312,17 @@ function runCppQuality(args: readonly string[]): number {
 function detectProjectLanguage(roots: readonly string[]): ProjectLanguage {
 	let hasTypeScript = false;
 	let hasCpp = false;
-	const stack = roots.map(resolveInputPath);
-	while (stack.length > 0) {
-		const current = stack.pop();
-		if (current === undefined || !existsSync(current)) {
-			continue;
+	const files = collectSourceFiles(roots, new Set([...FILE_EXTENSIONS, ...CPP_FILE_EXTENSIONS]));
+	for (let index = 0; index < files.length; index += 1) {
+		const extension = extname(files[index]);
+		if (FILE_EXTENSIONS.has(extension)) {
+			hasTypeScript = true;
 		}
-		const stats = statSync(current);
-		if (stats.isFile()) {
-			const extension = extname(current);
-			if (FILE_EXTENSIONS.has(extension)) {
-				hasTypeScript = true;
-			}
-			if (CPP_FILE_EXTENSIONS.has(extension)) {
-				hasCpp = true;
-			}
-			if (hasTypeScript && hasCpp) {
-				return 'mixed';
-			}
-			continue;
+		if (CPP_FILE_EXTENSIONS.has(extension)) {
+			hasCpp = true;
 		}
-		if (!stats.isDirectory()) {
-			continue;
-		}
-		const directoryName = basename(current);
-		if (shouldSkipDirectory(directoryName)) {
-			continue;
-		}
-		const entries = readdirSync(current, { withFileTypes: true });
-		for (let index = 0; index < entries.length; index += 1) {
-			const entry = entries[index];
-			stack.push(join(current, entry.name));
+		if (hasTypeScript && hasCpp) {
+			return 'mixed';
 		}
 	}
 	if (hasTypeScript && !hasCpp) {
@@ -380,14 +332,6 @@ function detectProjectLanguage(roots: readonly string[]): ProjectLanguage {
 		return 'cpp';
 	}
 	return 'unknown';
-}
-
-function resolveInputPath(candidate: string): string {
-	return isAbsolute(candidate) ? candidate : resolve(process.cwd(), candidate);
-}
-
-function shouldSkipDirectory(name: string): boolean {
-	return SKIP_DIRECTORIES.has(name) || (name.length > 0 && name[0] === '.');
 }
 
 function normalizePathForAnalysis(path: string): string {
@@ -429,36 +373,6 @@ function nodeHasAnalysisRegionLabel(
 	label: string,
 ): boolean {
 	return lineHasAnalysisRegionLabel(regions, kind, nodeStartLine(sourceFile, node), label);
-}
-
-function collectTypeScriptFiles(pathCandidates: ReadonlyArray<string>): string[] {
-	const files: string[] = [];
-	const stack = pathCandidates.map(resolveInputPath);
-	while (stack.length > 0) {
-		const current = stack.pop();
-		if (!existsSync(current)) continue;
-		const stat = statSync(current);
-		if (stat.isFile()) {
-			const extension = extname(current);
-			if (FILE_EXTENSIONS.has(extension)) {
-				files.push(current);
-			}
-			continue;
-		}
-		if (!stat.isDirectory()) {
-			continue;
-		}
-		const directoryName = basename(current);
-		if (shouldSkipDirectory(directoryName)) {
-			continue;
-		}
-		const entries = readdirSync(current, { withFileTypes: true });
-		for (let i = 0; i < entries.length; i += 1) {
-			const entry = entries[i];
-			stack.push(join(current, entry.name));
-		}
-	}
-	return files;
 }
 
 function isFunctionLikeValue(node: ts.Expression | undefined): node is ts.ArrowFunction | ts.FunctionExpression {
@@ -1653,7 +1567,13 @@ function isNormalizedColorBytePackingCall(node: ts.CallExpression): boolean {
 		&& isNumericLiteralText(normalized.arguments[2], '1');
 }
 
-function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile, issues: LintIssue[], ledger: QualityLedger): void {
+function lintCatchClausePatterns(
+	node: ts.CatchClause,
+	sourceFile: ts.SourceFile,
+	regions: readonly AnalysisRegion[],
+	issues: LintIssue[],
+	ledger: QualityLedger,
+): void {
 	const statements = node.block.statements;
 	if (statements.length === 0) {
 		pushLintIssue(
@@ -1689,146 +1609,19 @@ function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile
 		if (!ts.isReturnStatement(statement)) {
 			continue;
 		}
-		if (catchBlockHandlesAsyncError(node)) {
-			noteQualityLedger(ledger, 'allowed_catch_async_fault_boundary');
-		} else if (catchBlockHandlesRecordedFaultBoundary(node, sourceFile)) {
-			noteQualityLedger(ledger, 'allowed_catch_recorded_fault_boundary');
-		} else if (catchBlockReportsCaughtError(node)) {
-			noteQualityLedger(ledger, 'allowed_catch_reported_fallback');
-		} else {
-			pushLintIssue(
-				issues,
-				sourceFile,
-				node,
-				'silent_catch_fallback_pattern',
-				'Catch clause swallows the error and returns a fallback. Trust the caller/callee or propagate the failure.',
-			);
+		if (nodeIsInAnalysisRegion(sourceFile, regions, 'fallible-boundary', node)) {
+			noteQualityLedger(ledger, 'allowed_catch_fallible_boundary');
 			return;
 		}
+		pushLintIssue(
+			issues,
+			sourceFile,
+			node,
+			'silent_catch_fallback_pattern',
+			'Catch clause swallows the error and returns a fallback. Trust the caller/callee or mark the fallible boundary explicitly.',
+		);
+		return;
 	}
-}
-
-function catchBlockHandlesRecordedFaultBoundary(node: ts.CatchClause, sourceFile: ts.SourceFile): boolean {
-	let handled = false;
-	const visit = (current: ts.Node): void => {
-		if (handled) {
-			return;
-		}
-		if (ts.isPropertyAccessExpression(current) && current.getText(sourceFile) === 'SliceResult.Fault') {
-			handled = true;
-			return;
-		}
-		if (
-			ts.isCallExpression(current)
-			&& ts.isPropertyAccessExpression(current.expression)
-			&& current.expression.name.text === 'push'
-			&& current.arguments.length > 0
-			&& current.arguments[0].kind === ts.SyntaxKind.FalseKeyword
-		) {
-			handled = true;
-			return;
-		}
-		ts.forEachChild(current, visit);
-	};
-	visit(node.block);
-	return handled;
-}
-
-function expressionReferencesAnyName(node: ts.Node, names: ReadonlySet<string>): boolean {
-	let references = false;
-	const visit = (current: ts.Node): void => {
-		if (references) {
-			return;
-		}
-		if (ts.isIdentifier(current) && names.has(current.text)) {
-			references = true;
-			return;
-		}
-		ts.forEachChild(current, visit);
-	};
-	visit(node);
-	return references;
-}
-
-function isErrorReportingTarget(target: string | null): boolean {
-	if (target === null) {
-		return false;
-	}
-	return /(?:^|\.)(?:show|tryShow|report|record)[A-Za-z0-9]*Error[A-Za-z0-9]*$/.test(target)
-		|| target === 'showEditorMessage'
-		|| target === 'console.error'
-		|| target === 'console.warn';
-}
-
-function collectCatchReportValueNames(node: ts.CatchClause, caughtName: string | null): Set<string> {
-	const names = new Set<string>();
-	if (caughtName !== null) {
-		names.add(caughtName);
-	}
-	const visit = (current: ts.Node): void => {
-		if (
-			ts.isVariableDeclaration(current)
-			&& ts.isIdentifier(current.name)
-			&& current.initializer !== undefined
-			&& expressionReferencesAnyName(current.initializer, names)
-		) {
-			names.add(current.name.text);
-		}
-		ts.forEachChild(current, visit);
-	};
-	visit(node.block);
-	return names;
-}
-
-function catchBlockReportsCaughtError(node: ts.CatchClause): boolean {
-	const declaration = node.variableDeclaration;
-	const caughtName = declaration !== undefined && ts.isIdentifier(declaration.name) ? declaration.name.text : null;
-	const reportValueNames = collectCatchReportValueNames(node, caughtName);
-	let reports = false;
-	const visit = (current: ts.Node): void => {
-		if (reports) {
-			return;
-		}
-		if (ts.isCallExpression(current)) {
-			const target = getExpressionText(current.expression);
-			if (isErrorReportingTarget(target) && current.arguments.some(arg => expressionReferencesAnyName(arg, reportValueNames))) {
-				reports = true;
-				return;
-			}
-		}
-		ts.forEachChild(current, visit);
-	};
-	visit(node.block);
-	return reports;
-}
-
-function catchBlockHandlesAsyncError(node: ts.CatchClause): boolean {
-	const declaration = node.variableDeclaration;
-	const caughtName = declaration !== undefined && ts.isIdentifier(declaration.name) ? declaration.name.text : null;
-	let handles = false;
-	const visit = (current: ts.Node): void => {
-		if (handles) {
-			return;
-		}
-		if (ts.isBinaryExpression(current) && current.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
-			const left = getExpressionText(current.left);
-			const right = getExpressionText(current.right);
-			if (left !== null && left.endsWith('.fault') && (caughtName === null || right === caughtName)) {
-				handles = true;
-				return;
-			}
-		}
-		if (ts.isCallExpression(current)) {
-			const target = getCallTargetLeafName(current.expression);
-			if (target !== null && /^finish[A-Za-z0-9]*Error$/.test(target)) {
-				handles = true;
-				return;
-			}
-		}
-		ts.forEachChild(current, visit);
-	};
-	visit(node.block);
-	return handles;
 }
 
 function lintSplitJoinRoundtripPattern(
@@ -3724,43 +3517,50 @@ function lintFacadeModuleDensity(sourceFile: ts.SourceFile, issues: LintIssue[])
 	}
 }
 
-function architectureLayer(path: string): string | null {
+function architectureLayer(path: string, config: ArchitectureBoundaryConfig | null): string | null {
+	if (config === null) {
+		return null;
+	}
 	const parts = normalizePathForAnalysis(path).split('/');
+	const layers = new Set(config.layers);
 	for (let index = 0; index < parts.length - 1; index += 1) {
-		if (parts[index] === 'ide' && ARCHITECTURE_LAYER_NAMES.has(parts[index + 1])) {
+		if (parts[index] === config.rootSegment && layers.has(parts[index + 1])) {
 			return parts[index + 1];
 		}
 	}
 	return null;
 }
 
-function forbiddenLayerImportReason(sourceLayer: string, targetLayer: string): string | null {
-	if (sourceLayer === targetLayer) {
+function ruleTargetsLayer(rule: ArchitectureBoundaryRule, targetLayer: string): boolean {
+	if (rule.except?.includes(targetLayer)) {
+		return false;
+	}
+	if (rule.to === '*') {
+		return true;
+	}
+	return Array.isArray(rule.to) ? rule.to.includes(targetLayer) : rule.to === targetLayer;
+}
+
+function formatLayerRuleMessage(rule: ArchitectureBoundaryRule, sourceLayer: string, targetLayer: string): string {
+	const template = rule.message ?? 'Layer {from} must not import {to}.';
+	return template.replace(/\{from\}/g, sourceLayer).replace(/\{to\}/g, targetLayer);
+}
+
+function forbiddenLayerImportReason(config: ArchitectureBoundaryConfig | null, sourceLayer: string, targetLayer: string): string | null {
+	if (config === null || sourceLayer === targetLayer) {
 		return null;
 	}
-	if (sourceLayer === 'common') {
-		return `Layer common must not import ${targetLayer}; common code must stay below feature layers.`;
-	}
-	if (sourceLayer === 'language' && targetLayer !== 'common') {
-		return `Layer language must not import ${targetLayer}; language code must stay UI/workbench independent.`;
-	}
-	if (sourceLayer === 'terminal' && (targetLayer === 'editor' || targetLayer === 'workbench')) {
-		return `Layer terminal must not import ${targetLayer}; terminal code must not depend on editor/workbench internals.`;
-	}
-	if (sourceLayer === 'editor' && targetLayer === 'workbench') {
-		return 'Layer editor must not import workbench; workbench may compose editor, not the reverse.';
-	}
-	if (sourceLayer === 'workbench' && targetLayer === 'editor') {
-		return 'Layer workbench must not import deep editor internals directly; route shared contracts through common modules.';
-	}
-	if (sourceLayer === 'runtime' && (targetLayer === 'editor' || targetLayer === 'workbench')) {
-		return `Layer runtime must not import ${targetLayer}; runtime glue must not own UI feature internals.`;
+	for (let index = 0; index < config.rules.length; index += 1) {
+		const rule = config.rules[index];
+		if (rule.from === sourceLayer && ruleTargetsLayer(rule, targetLayer)) {
+			return formatLayerRuleMessage(rule, sourceLayer, targetLayer);
+		}
 	}
 	return null;
 }
 
-function lintCrossLayerImports(sourceFile: ts.SourceFile, issues: LintIssue[]): void {
-	const sourceLayer = architectureLayer(sourceFile.fileName);
+function lintCrossLayerImports(sourceFile: ts.SourceFile, config: ArchitectureBoundaryConfig | null, issues: LintIssue[]): void {
+	const sourceLayer = architectureLayer(sourceFile.fileName, config);
 	if (sourceLayer === null) {
 		return;
 	}
@@ -3774,11 +3574,11 @@ function lintCrossLayerImports(sourceFile: ts.SourceFile, issues: LintIssue[]): 
 			continue;
 		}
 		const targetPath = resolve(dirname(sourceFile.fileName), specifier);
-		const targetLayer = architectureLayer(targetPath);
+		const targetLayer = architectureLayer(targetPath, config);
 		if (targetLayer === null) {
 			continue;
 		}
-		const reason = forbiddenLayerImportReason(sourceLayer, targetLayer);
+		const reason = forbiddenLayerImportReason(config, sourceLayer, targetLayer);
 		if (reason === null) {
 			continue;
 		}
@@ -3898,8 +3698,8 @@ function collectNormalizedBody(
 	});
 }
 
-function collectNormalizedBodies(sourceFile: ts.SourceFile, normalizedBodies: NormalizedBodyInfo[], ledger: QualityLedger): void {
-	const regions = collectAnalysisRegions(sourceFile.text);
+function collectNormalizedBodies(sourceFile: ts.SourceFile, config: AnalysisConfig, normalizedBodies: NormalizedBodyInfo[], ledger: QualityLedger): void {
+	const regions = collectAnalysisRegions(sourceFile.text, config.directiveMarker);
 	const visit = (node: ts.Node): void => {
 		if (ts.isFunctionDeclaration(node) && node.name !== undefined) {
 			collectNormalizedBody(sourceFile, regions, node.name.text, node, normalizedBodies, ledger);
@@ -4090,12 +3890,13 @@ function statementSequenceOverlapsReportedRange(entry: StatementSequenceInfo, ra
 
 function collectLintIssues(
 	sourceFile: ts.SourceFile,
+	config: AnalysisConfig,
 	issues: LintIssue[],
 	statementSequences: StatementSequenceInfo[],
 	functionUsageInfo: FunctionUsageInfo,
 	ledger: QualityLedger,
 ): void {
-	const regions = collectAnalysisRegions(sourceFile.text);
+	const regions = collectAnalysisRegions(sourceFile.text, config.directiveMarker);
 	const isHotPathNode = (node: ts.Node): boolean => nodeIsInAnalysisRegion(sourceFile, regions, 'hot-path', node);
 	const scopes: Array<Map<string, LintBinding[]>> = [];
 	const repeatedScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
@@ -4436,7 +4237,7 @@ function collectLintIssues(
 			);
 		}
 		if (ts.isCatchClause(node)) {
-			lintCatchClausePatterns(node, sourceFile, issues, ledger);
+			lintCatchClausePatterns(node, sourceFile, regions, issues, ledger);
 		}
 		if (ts.isSourceFile(node) || ts.isBlock(node) || ts.isCaseClause(node) || ts.isDefaultClause(node)) {
 			lintConsecutiveDuplicateStatements(node.statements, sourceFile, issues);
@@ -4586,7 +4387,7 @@ function collectLintIssues(
 	};
 	visit(sourceFile, undefined);
 	lintFacadeModuleDensity(sourceFile, issues);
-	lintCrossLayerImports(sourceFile, issues);
+	lintCrossLayerImports(sourceFile, config.architecture, issues);
 }
 
 function collectClassInfos(
@@ -5406,12 +5207,13 @@ function toRelativePath(path: string): string {
 }
 
 function run(): void {
+	const config = loadAnalysisConfig();
 	const argv = process.argv.slice(2);
 	if (argv.includes('--help')) {
-		parseArgs(argv);
+		parseArgs(argv, config);
 		return;
 	}
-	const inferredRoots = extractRootsForLanguageDetection(argv);
+	const inferredRoots = extractRootsForLanguageDetection(argv, config);
 	const language = detectProjectLanguage(inferredRoots);
 	if (language === 'cpp') {
 		const exitCode = runCppQuality(argv);
@@ -5420,7 +5222,7 @@ function run(): void {
 		}
 		return;
 	}
-	const options = parseArgs(argv);
+	const options = parseArgs(argv, config);
 	if (language === 'mixed') {
 		throw new Error('Mixed TypeScript and C++ sources detected. Run the analyzer on one language folder at a time.');
 	}
@@ -5428,7 +5230,7 @@ function run(): void {
 		console.log('No TypeScript or C++ files found in the provided roots.');
 		return;
 	}
-	const fileList = collectTypeScriptFiles(options.paths);
+	const fileList = collectSourceFiles(options.paths, FILE_EXTENSIONS);
 	const buckets = new Map<string, DuplicateLocation[]>();
 	const classInfosByKey = new Map<string, ClassInfo>();
 	const classInfosByName = new Map<string, ClassInfo[]>();
@@ -5448,11 +5250,11 @@ function run(): void {
 		sourceTextByFile.set(filePath, sourceText);
 		collectClassInfos(sourceFile, classInfosByKey, classInfosByName, classInfosByFileName);
 		collectExportedTypes(sourceFile, exportedTypes);
-		collectNormalizedBodies(sourceFile, normalizedBodies, ledger);
+		collectNormalizedBodies(sourceFile, config, normalizedBodies, ledger);
 	}
 	const functionUsageInfo = collectFunctionUsageCounts(sourceFiles);
 	for (const sourceFile of sourceFiles) {
-		collectLintIssues(sourceFile, lintIssues, statementSequences, functionUsageInfo, ledger);
+		collectLintIssues(sourceFile, config, lintIssues, statementSequences, functionUsageInfo, ledger);
 	}
 	addDuplicateExportedTypeIssues(exportedTypes, lintIssues);
 	addNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
@@ -5468,7 +5270,7 @@ function run(): void {
 			file: toRelativePath(location.file),
 		})),
 	}));
-	const filteredLintIssues = filterSuppressedLintIssues(lintIssues, sourceTextByFile);
+	const filteredLintIssues = filterSuppressedLintIssues(lintIssues, sourceTextByFile, config.directiveMarker);
 	const normalizedLintIssues = filteredLintIssues.map(issue => ({
 		...issue,
 		file: toRelativePath(issue.file),

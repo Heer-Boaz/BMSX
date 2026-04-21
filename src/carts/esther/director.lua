@@ -1,4 +1,4 @@
--- @bmsx-analyse disable
+-- @code-quality disable
 local constants = require('constants')
 
 local director = {}

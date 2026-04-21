@@ -22,7 +22,7 @@ Use this when adding or fixing BMSX quality rules.
 Suppressions must be local, rule-specific when possible, and include a reason.
 
 ```ts
-// @bmsx-analyse disable-next-line empty_catch_pattern -- browser cleanup callback may throw during teardown
+// @code-quality disable-next-line empty_catch_pattern -- browser cleanup callback may throw during teardown
 try {
     cleanupExternalHandle();
 } catch {
@@ -32,28 +32,30 @@ try {
 Allowed forms:
 
 ```ts
-// @bmsx-analyse disable-next-line rule_name -- reason
-// @bmsx-analyse disable-line rule_name -- reason
-// @bmsx-analyse disable rule_name -- reason
-// @bmsx-analyse disable -- rare file-level exception with reason
-// @bmsx-analyse start hot-path -- reason
-// @bmsx-analyse end hot-path
-// @bmsx-analyse start ensure-acceptable -- reason
-// @bmsx-analyse end ensure-acceptable
-// @bmsx-analyse start required-state editorDocumentState,editorViewState -- reason
-// @bmsx-analyse end required-state
-// @bmsx-analyse start repeated-sequence-acceptable -- reason
-// @bmsx-analyse end repeated-sequence-acceptable
-// @bmsx-analyse start normalized-body-acceptable -- reason
-// @bmsx-analyse end normalized-body-acceptable
-// @bmsx-analyse start value-or-boundary -- reason
-// @bmsx-analyse end value-or-boundary
-// @bmsx-analyse start numeric-sanitization-acceptable -- reason
-// @bmsx-analyse end numeric-sanitization-acceptable
-// @bmsx-analyse start allocation-fallback-acceptable -- reason
-// @bmsx-analyse end allocation-fallback-acceptable
-// @bmsx-analyse start optional-chain-acceptable -- reason
-// @bmsx-analyse end optional-chain-acceptable
+// @code-quality disable-next-line rule_name -- reason
+// @code-quality disable-line rule_name -- reason
+// @code-quality disable rule_name -- reason
+// @code-quality disable -- rare file-level exception with reason
+// @code-quality start hot-path -- reason
+// @code-quality end hot-path
+// @code-quality start ensure-acceptable -- reason
+// @code-quality end ensure-acceptable
+// @code-quality start required-state editorDocumentState,editorViewState -- reason
+// @code-quality end required-state
+// @code-quality start repeated-sequence-acceptable -- reason
+// @code-quality end repeated-sequence-acceptable
+// @code-quality start normalized-body-acceptable -- reason
+// @code-quality end normalized-body-acceptable
+// @code-quality start value-or-boundary -- reason
+// @code-quality end value-or-boundary
+// @code-quality start fallible-boundary -- reason
+// @code-quality end fallible-boundary
+// @code-quality start numeric-sanitization-acceptable -- reason
+// @code-quality end numeric-sanitization-acceptable
+// @code-quality start allocation-fallback-acceptable -- reason
+// @code-quality end allocation-fallback-acceptable
+// @code-quality start optional-chain-acceptable -- reason
+// @code-quality end optional-chain-acceptable
 ```
 
 Region starts may carry comma- or whitespace-separated labels after the region kind. Use those labels for local contracts such as required state roots instead of baking project-specific symbol names into the analyzer.
