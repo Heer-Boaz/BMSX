@@ -11,6 +11,44 @@
 #include <cmath>
 
 namespace bmsx {
+namespace {
+
+struct ActionAggregation {
+	bool anyPressed = false;
+	bool anyJustPressed = false;
+	bool anyJustReleased = false;
+	bool anyWasPressed = false;
+	bool anyWasReleased = false;
+	bool anyConsumed = false;
+	bool allJustPressed = true;
+	bool allJustReleased = true;
+	i32 bindingCount = 0;
+	f64 latestPressedAt = 0.0;
+	f64 latestTimestamp = 0.0;
+	std::optional<i32> latestPressId;
+	std::optional<i32> bufferedPressId;
+};
+
+void addActionBindingState(ActionAggregation& aggregation, const ButtonState& state) {
+	aggregation.anyPressed = aggregation.anyPressed || state.pressed;
+	aggregation.anyJustPressed = aggregation.anyJustPressed || state.justpressed;
+	aggregation.anyJustReleased = aggregation.anyJustReleased || state.justreleased;
+	aggregation.anyWasPressed = aggregation.anyWasPressed || state.waspressed;
+	aggregation.anyWasReleased = aggregation.anyWasReleased || state.wasreleased;
+	aggregation.anyConsumed = aggregation.anyConsumed || state.consumed;
+	aggregation.allJustPressed = aggregation.allJustPressed && state.justpressed;
+	aggregation.allJustReleased = aggregation.allJustReleased && state.justreleased;
+	if (state.pressedAtMs.has_value() && state.pressedAtMs.value() > aggregation.latestPressedAt) {
+		aggregation.latestPressedAt = state.pressedAtMs.value();
+	}
+	if (state.timestamp.has_value() && state.timestamp.value() > aggregation.latestTimestamp) {
+		aggregation.latestTimestamp = state.timestamp.value();
+		aggregation.latestPressId = state.pressId;
+	}
+	aggregation.bindingCount++;
+}
+
+} // namespace
 
 /* ============================================================================
  * Constructor / Destructor
@@ -116,27 +154,15 @@ void PlayerInput::trackInputMapBindings(const InputMap& map) {
 ActionState PlayerInput::getActionState(const std::string& action, std::optional<f64> windowFrames) {
 	// Result state - aggregate from all sources
 	ActionState result(action);
-	bool anyPressed = false;
-	bool anyJustPressed = false;
-	bool anyJustReleased = false;
-	bool anyWasPressed = false;
-	bool anyWasReleased = false;
-	bool anyConsumed = false;
-	bool allJustPressed = true;
-	bool allJustReleased = true;
-	i32 bindingCount = 0;
-	f64 latestPressedAt = 0.0;
-	f64 latestTimestamp = 0.0;
-	std::optional<i32> latestPressId;
-	std::optional<i32> bufferedPressId;
+	ActionAggregation aggregation;
 
 	const auto updateBufferedIds = [&](InputSource source, const std::string& id) {
 		auto pressId = stateManager(source).getLatestUnconsumedPressId(id);
-		if (pressId.has_value() && (!bufferedPressId.has_value() || pressId.value() > bufferedPressId.value())) {
-			bufferedPressId = pressId;
+		if (pressId.has_value() && (!aggregation.bufferedPressId.has_value() || pressId.value() > aggregation.bufferedPressId.value())) {
+			aggregation.bufferedPressId = pressId;
 		}
 	};
-	
+
 	// Check keyboard bindings
 	{
 		auto* handler = m_handlers[sourceIndex(InputSource::Keyboard)];
@@ -156,38 +182,20 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 				}
 				if (!found) bindings.push_back(b);
 			}
-			
+
 			for (const auto& binding : bindings) {
-				ButtonState state = getSimButtonState(
-					binding.id,
-					InputSource::Keyboard,
-					windowFrames.has_value() ? std::optional<i32>(static_cast<i32>(windowFrames.value())) : std::nullopt
-				);
-				
-				if (state.pressed) anyPressed = true;
-				if (state.justpressed) anyJustPressed = true;
-				if (state.justreleased) anyJustReleased = true;
-				if (state.waspressed) anyWasPressed = true;
-				if (state.wasreleased) anyWasReleased = true;
-				if (state.consumed) anyConsumed = true;
-				
-				if (!state.justpressed) allJustPressed = false;
-				if (!state.justreleased) allJustReleased = false;
-				
-				if (state.pressedAtMs.has_value() && state.pressedAtMs.value() > latestPressedAt) {
-					latestPressedAt = state.pressedAtMs.value();
+					ButtonState state = getSimButtonState(
+						binding.id,
+						InputSource::Keyboard,
+						windowFrames.has_value() ? std::optional<i32>(static_cast<i32>(windowFrames.value())) : std::nullopt
+					);
+
+					addActionBindingState(aggregation, state);
+					updateBufferedIds(InputSource::Keyboard, binding.id);
 				}
-				if (state.timestamp.has_value() && state.timestamp.value() > latestTimestamp) {
-					latestTimestamp = state.timestamp.value();
-					latestPressId = state.pressId;
-				}
-				updateBufferedIds(InputSource::Keyboard, binding.id);
-				
-				bindingCount++;
 			}
 		}
-	}
-	
+
 	// Check gamepad bindings
 	{
 		auto* handler = m_handlers[sourceIndex(InputSource::Gamepad)];
@@ -205,38 +213,20 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 				}
 				if (!found) bindings.push_back(b);
 			}
-			
+
 			for (const auto& binding : bindings) {
-				ButtonState state = getSimButtonState(
-					binding.id,
-					InputSource::Gamepad,
-					windowFrames.has_value() ? std::optional<i32>(static_cast<i32>(windowFrames.value())) : std::nullopt
-				);
-				
-				if (state.pressed) anyPressed = true;
-				if (state.justpressed) anyJustPressed = true;
-				if (state.justreleased) anyJustReleased = true;
-				if (state.waspressed) anyWasPressed = true;
-				if (state.wasreleased) anyWasReleased = true;
-				if (state.consumed) anyConsumed = true;
-				
-				if (!state.justpressed) allJustPressed = false;
-				if (!state.justreleased) allJustReleased = false;
-				
-				if (state.pressedAtMs.has_value() && state.pressedAtMs.value() > latestPressedAt) {
-					latestPressedAt = state.pressedAtMs.value();
+					ButtonState state = getSimButtonState(
+						binding.id,
+						InputSource::Gamepad,
+						windowFrames.has_value() ? std::optional<i32>(static_cast<i32>(windowFrames.value())) : std::nullopt
+					);
+
+					addActionBindingState(aggregation, state);
+					updateBufferedIds(InputSource::Gamepad, binding.id);
 				}
-				if (state.timestamp.has_value() && state.timestamp.value() > latestTimestamp) {
-					latestTimestamp = state.timestamp.value();
-					latestPressId = state.pressId;
-				}
-				updateBufferedIds(InputSource::Gamepad, binding.id);
-				
-				bindingCount++;
 			}
 		}
-	}
-	
+
 	// Check pointer bindings
 	{
 		auto* handler = m_handlers[sourceIndex(InputSource::Pointer)];
@@ -254,78 +244,60 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 				}
 				if (!found) bindings.push_back(b);
 			}
-			
+
 			for (const auto& binding : bindings) {
-				ButtonState state = getSimButtonState(
-					binding.id,
-					InputSource::Pointer,
-					windowFrames.has_value() ? std::optional<i32>(static_cast<i32>(windowFrames.value())) : std::nullopt
-				);
-				
-				if (state.pressed) anyPressed = true;
-				if (state.justpressed) anyJustPressed = true;
-				if (state.justreleased) anyJustReleased = true;
-				if (state.waspressed) anyWasPressed = true;
-				if (state.wasreleased) anyWasReleased = true;
-				if (state.consumed) anyConsumed = true;
-				
-				if (!state.justpressed) allJustPressed = false;
-				if (!state.justreleased) allJustReleased = false;
-				
-				if (state.pressedAtMs.has_value() && state.pressedAtMs.value() > latestPressedAt) {
-					latestPressedAt = state.pressedAtMs.value();
+					ButtonState state = getSimButtonState(
+						binding.id,
+						InputSource::Pointer,
+						windowFrames.has_value() ? std::optional<i32>(static_cast<i32>(windowFrames.value())) : std::nullopt
+					);
+
+					addActionBindingState(aggregation, state);
+					updateBufferedIds(InputSource::Pointer, binding.id);
 				}
-				if (state.timestamp.has_value() && state.timestamp.value() > latestTimestamp) {
-					latestTimestamp = state.timestamp.value();
-					latestPressId = state.pressId;
-				}
-				updateBufferedIds(InputSource::Pointer, binding.id);
-				
-				bindingCount++;
 			}
 		}
-	}
-	
+
 	// If no bindings, return empty state
-	if (bindingCount == 0) {
+	if (aggregation.bindingCount == 0) {
 		return result;
 	}
-	
+
 	// Parity with TS: don't treat as just released while any binding is still pressed
-	if (anyPressed) {
-		anyJustReleased = false;
+	if (aggregation.anyPressed) {
+		aggregation.anyJustReleased = false;
 	}
 
 	// Aggregate results
-	result.pressed = anyPressed;
+	result.pressed = aggregation.anyPressed;
 	// Keep jp/jr sourced directly from the button-level simframe buffer.
 	// Re-surfacing edges at action level lets host-side reads steal a future simframe edge during slowdown.
-	if (anyJustPressed && bufferedPressId.has_value() && (!latestPressId.has_value() || bufferedPressId.value() > latestPressId.value())) {
-		latestPressId = bufferedPressId;
+	if (aggregation.anyJustPressed && aggregation.bufferedPressId.has_value() && (!aggregation.latestPressId.has_value() || aggregation.bufferedPressId.value() > aggregation.latestPressId.value())) {
+		aggregation.latestPressId = aggregation.bufferedPressId;
 	}
 
-	result.justpressed = anyJustPressed;
-	result.justreleased = anyJustReleased && !anyPressed;
-	result.waspressed = anyWasPressed;
-	result.wasreleased = anyWasReleased;
-	result.alljustpressed = allJustPressed && anyJustPressed;
-	result.alljustreleased = allJustReleased && anyJustReleased;
-	result.allwaspressed = anyWasPressed;  // Simplified from TS
-	result.consumed = anyConsumed;
-	
-	if (latestPressedAt > 0.0) {
-		result.pressedAtMs = latestPressedAt;
+	result.justpressed = aggregation.anyJustPressed;
+	result.justreleased = aggregation.anyJustReleased && !aggregation.anyPressed;
+	result.waspressed = aggregation.anyWasPressed;
+	result.wasreleased = aggregation.anyWasReleased;
+	result.alljustpressed = aggregation.allJustPressed && aggregation.anyJustPressed;
+	result.alljustreleased = aggregation.allJustReleased && aggregation.anyJustReleased;
+	result.allwaspressed = aggregation.anyWasPressed;  // Simplified from TS
+	result.consumed = aggregation.anyConsumed;
+
+	if (aggregation.latestPressedAt > 0.0) {
+		result.pressedAtMs = aggregation.latestPressedAt;
 	}
-	if (latestTimestamp > 0.0) {
-		result.timestamp = latestTimestamp;
+	if (aggregation.latestTimestamp > 0.0) {
+		result.timestamp = aggregation.latestTimestamp;
 	}
-	result.pressId = latestPressId;
-	
+	result.pressId = aggregation.latestPressId;
+
 	// Calculate press time
 	if (result.pressed && result.pressedAtMs.has_value() && m_lastPollTimestampMs.has_value()) {
 		result.presstime = m_lastPollTimestampMs.value() - result.pressedAtMs.value();
 	}
-	
+
 	// Evaluate guard and repeat
 	result.guardedjustpressed = evaluateActionGuard(action, result);
 	auto repeat = evaluateActionRepeat(action, result, simFrame());
@@ -338,7 +310,7 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 std::vector<ActionState> PlayerInput::getPressedActions(const PressedActionsQuery* query) {
 	std::vector<ActionState> pressedActions;
 	std::set<std::string> checkedActions;
-	
+
 	// Collect all action names from input map
 	for (const auto& [action, _] : m_inputMap.keyboard) {
 		if (checkedActions.find(action) == checkedActions.end()) {
@@ -367,7 +339,7 @@ std::vector<ActionState> PlayerInput::getPressedActions(const PressedActionsQuer
 			checkedActions.insert(action);
 		}
 	}
-	
+
 	// Filter by priority if query provided
 	if (query && !query->actionsByPriority.empty()) {
 		std::vector<ActionState> priorityActions;
@@ -380,7 +352,7 @@ std::vector<ActionState> PlayerInput::getPressedActions(const PressedActionsQuer
 		}
 		return priorityActions;
 	}
-	
+
 	return pressedActions;
 }
 
@@ -416,13 +388,13 @@ ActionState PlayerInput::getButtonRepeatState(const std::string& button, InputSo
 
 ButtonState PlayerInput::getKeyState(const std::string& key, KeyModifier modifiers) {
 	auto state = getSimButtonState(key, InputSource::Keyboard);
-	
+
 	// If no modifiers required, return as is
 	if (modifiers == KeyModifier::None) return state;
-	
+
 	// Check current modifier states
 	auto modState = getModifiersState();
-	
+
 	// Verify required modifiers are active
 	if ((hasModifier(modifiers, KeyModifier::Shift) && !modState.shift) ||
 		(hasModifier(modifiers, KeyModifier::Ctrl) && !modState.ctrl) ||
@@ -430,7 +402,7 @@ ButtonState PlayerInput::getKeyState(const std::string& key, KeyModifier modifie
 		(hasModifier(modifiers, KeyModifier::Meta) && !modState.meta)) {
 		return ButtonState{};  // Required modifier not active
 	}
-	
+
 	return state;
 }
 
@@ -445,7 +417,7 @@ ButtonState PlayerInput::getSimButtonState(const std::string& button, InputSourc
 PlayerInput::ModifierState PlayerInput::getModifiersState() {
 	auto* keyboard = m_handlers[sourceIndex(InputSource::Keyboard)];
 	if (!keyboard) return {};
-	
+
 	ModifierState state;
 	state.ctrl = keyboard->getButtonState("ControlLeft").pressed ||
 					keyboard->getButtonState("ControlRight").pressed;
@@ -497,7 +469,7 @@ void PlayerInput::consumeAction(const std::string& action) {
 			}
 		}
 	}
-	
+
 	// Consume gamepad bindings
 	{
 		auto* handler = m_handlers[sourceIndex(InputSource::Gamepad)];
@@ -513,7 +485,7 @@ void PlayerInput::consumeAction(const std::string& action) {
 			}
 		}
 	}
-	
+
 	// Consume pointer bindings
 	{
 		auto* handler = m_handlers[sourceIndex(InputSource::Pointer)];
@@ -558,7 +530,7 @@ void PlayerInput::consumeGameplayButton(const std::string& button, InputSource s
 void PlayerInput::pollInput(f64 currentTimeMs) {
 	m_frameCounter++;
 	m_lastPollTimestampMs = currentTimeMs;
-	
+
 	// Poll all handlers (they read their internal state from device input)
 	for (size_t i = 0; i < INPUT_SOURCE_COUNT; i++) {
 		if (m_handlers[i]) {
@@ -606,13 +578,13 @@ void PlayerInput::update(f64 currentTimeMs) {
 
 void PlayerInput::reset(const std::vector<std::string>* except) {
 	clearEdgeState();
-	
+
 	for (size_t i = 0; i < INPUT_SOURCE_COUNT; i++) {
 		if (m_handlers[i]) {
 			m_handlers[i]->reset(except);
 		}
 	}
-	
+
 	m_actionGuardRecords.clear();
 	m_simActionRepeatRecords.clear();
 	m_rawActionRepeatRecords.clear();
@@ -635,13 +607,13 @@ void PlayerInput::clearEdgeState() {
 bool PlayerInput::evaluateActionGuard(const std::string& action, const ActionState& state,
 										std::optional<f64> windowOverride) {
 	if (!state.justpressed) return false;
-	
+
 	const i64 frameId = simFrame();
 	const i64 guardFrames = normalizeGuardWindow(windowOverride);
-	
+
 	auto it = m_actionGuardRecords.find(action);
 	auto pressId = state.pressId;
-	
+
 	if (it != m_actionGuardRecords.end()) {
 		const auto& existing = it->second;
 		if (existing.lastPressId.has_value() && pressId.has_value() &&
@@ -652,10 +624,10 @@ bool PlayerInput::evaluateActionGuard(const std::string& action, const ActionSta
 			return existing.lastResultAccepted;
 		}
 	}
-	
+
 	i64 previousAcceptedFrame = (it != m_actionGuardRecords.end())
 		? it->second.lastAcceptedFrame : -1;
-	
+
 	bool accepted = true;
 	if (previousAcceptedFrame >= 0) {
 		const i64 delta = frameId - previousAcceptedFrame;
@@ -663,7 +635,7 @@ bool PlayerInput::evaluateActionGuard(const std::string& action, const ActionSta
 			accepted = false;
 		}
 	}
-	
+
 	ActionGuardRecord record;
 	record.lastAcceptedFrame = accepted ? frameId : previousAcceptedFrame;
 	record.lastObservedFrame = frameId;
@@ -671,7 +643,7 @@ bool PlayerInput::evaluateActionGuard(const std::string& action, const ActionSta
 	record.lastWindowFrames = guardFrames;
 	record.lastPressId = pressId;
 	m_actionGuardRecords[action] = record;
-	
+
 	return accepted;
 }
 
@@ -679,21 +651,19 @@ PlayerInput::RepeatResult PlayerInput::evaluateActionRepeat(const std::string& a
 																const ActionState& state,
 																i64 frameId) {
 	auto& repeat = ensureSimRepeatState(action);
-	
+
 	if (repeat.lastFrameEvaluated == frameId) {
 		return {repeat.lastResult, repeat.repeatCount};
 	}
-	
+
 	bool result = false;
-	bool pressed = state.pressed;
-	bool justpressed = state.justpressed;
-	
-	if (justpressed) {
+
+	if (state.justpressed) {
 		repeat.active = true;
 		repeat.repeatCount = 0;
 		repeat.pressStartFrame = frameId;
 		repeat.lastRepeatFrame = frameId;
-	} else if (!pressed) {
+	} else if (!state.pressed) {
 		repeat.active = false;
 		repeat.repeatCount = 0;
 		repeat.pressStartFrame = -1;
@@ -708,21 +678,21 @@ PlayerInput::RepeatResult PlayerInput::evaluateActionRepeat(const std::string& a
 		if (repeat.pressStartFrame < 0) {
 			repeat.pressStartFrame = frameId;
 		}
-		
+
 		i64 nextFrame = (repeat.repeatCount == 0)
 			? repeat.pressStartFrame + INITIAL_REPEAT_DELAY_FRAMES
 			: repeat.lastRepeatFrame + REPEAT_INTERVAL_FRAMES;
-		
+
 		if (frameId >= nextFrame) {
 			repeat.repeatCount++;
 			repeat.lastRepeatFrame = nextFrame;
 			result = true;
 		}
 	}
-	
+
 	repeat.lastFrameEvaluated = frameId;
 	repeat.lastResult = result;
-	
+
 	return {result, repeat.repeatCount};
 }
 
@@ -741,24 +711,22 @@ PlayerInput::RepeatResult PlayerInput::evaluateRawActionRepeat(const std::string
 		return { repeat.lastResult, repeat.repeatCount };
 	}
 
-	bool result = false;
-	const bool pressed = state.pressed;
-	const bool justpressed = state.justpressed;
-	const f64 now = m_lastPollTimestampMs.value_or(0.0);
-	const f64 startMs = state.pressedAtMs.value_or(state.timestamp.value_or(now));
-	const f64 frameMs = Runtime::instance().timing.frameDurationMs;
-	const f64 initialDelayMs = INITIAL_REPEAT_DELAY_FRAMES * frameMs;
-	const f64 repeatIntervalMs = REPEAT_INTERVAL_FRAMES * frameMs;
+		bool result = false;
+		const f64 now = m_lastPollTimestampMs.value();
+		const f64 startMs = buttonPressedAtOr(state, now);
+		const f64 frameMs = Runtime::instance().timing.frameDurationMs;
+		const f64 initialDelayMs = INITIAL_REPEAT_DELAY_FRAMES * frameMs;
+		const f64 repeatIntervalMs = REPEAT_INTERVAL_FRAMES * frameMs;
 
-	if (justpressed) {
-		repeat.active = true;
-		repeat.repeatCount = 0;
-		repeat.pressStartMs = startMs;
-		repeat.lastRepeatAtMs = startMs;
-	} else if (!pressed) {
-		repeat.active = false;
-		repeat.repeatCount = 0;
-		repeat.pressStartMs = -1.0;
+		if (state.justpressed) {
+			repeat.active = true;
+			repeat.repeatCount = 0;
+			repeat.pressStartMs = startMs;
+			repeat.lastRepeatAtMs = startMs;
+		} else if (!state.pressed) {
+			repeat.active = false;
+			repeat.repeatCount = 0;
+			repeat.pressStartMs = -1.0;
 		repeat.lastRepeatAtMs = -1.0;
 	} else {
 		if (!repeat.active) {
@@ -784,38 +752,14 @@ PlayerInput::RepeatResult PlayerInput::evaluateRawActionRepeat(const std::string
 	repeat.lastFrameEvaluated = frameId;
 	repeat.lastResult = result;
 	return { result, repeat.repeatCount };
-}
-
-SimActionRepeatRecord& PlayerInput::ensureSimRepeatState(const std::string& action) {
-	auto it = m_simActionRepeatRecords.find(action);
-	if (it == m_simActionRepeatRecords.end()) {
-		SimActionRepeatRecord record;
-		record.active = false;
-		record.repeatCount = 0;
-		record.pressStartFrame = -1;
-		record.lastFrameEvaluated = -1;
-		record.lastResult = false;
-		record.lastRepeatFrame = -1;
-		m_simActionRepeatRecords[action] = record;
-		return m_simActionRepeatRecords[action];
 	}
-	return it->second;
-}
 
-RawActionRepeatRecord& PlayerInput::ensureRawRepeatState(const std::string& action) {
-	auto it = m_rawActionRepeatRecords.find(action);
-	if (it == m_rawActionRepeatRecords.end()) {
-		RawActionRepeatRecord record;
-		record.active = false;
-		record.repeatCount = 0;
-		record.pressStartMs = -1.0;
-		record.lastFrameEvaluated = -1;
-		record.lastResult = false;
-		record.lastRepeatAtMs = -1.0;
-		m_rawActionRepeatRecords[action] = record;
-		return m_rawActionRepeatRecords[action];
+	SimActionRepeatRecord& PlayerInput::ensureSimRepeatState(const std::string& action) {
+		return m_simActionRepeatRecords.try_emplace(action).first->second;
 	}
-	return it->second;
-}
+
+	RawActionRepeatRecord& PlayerInput::ensureRawRepeatState(const std::string& action) {
+		return m_rawActionRepeatRecords.try_emplace(action).first->second;
+	}
 
 } // namespace bmsx

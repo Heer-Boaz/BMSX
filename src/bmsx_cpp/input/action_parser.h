@@ -46,7 +46,7 @@ enum class TokenType {
 struct Token {
 	TokenType kind = TokenType::End;
 	std::string value;
-	
+
 	Token() = default;
 	Token(TokenType k, std::string v) : kind(k), value(std::move(v)) {}
 };
@@ -68,17 +68,17 @@ struct FunNode;
 struct AstNode {
 	NodeType type;
 	EvalFn eval;
-	
+
 	virtual ~AstNode() = default;
-	
+
 	// Check if this is an action node
 	ActNode* asAction();
 	const ActNode* asAction() const;
-	
+
 	// Check if this is an operation node
 	OpNode* asOperation();
 	const OpNode* asOperation() const;
-	
+
 	// Check if this is a function node
 	FunNode* asFunction();
 	const FunNode* asFunction() const;
@@ -88,7 +88,7 @@ struct AstNode {
 struct ActNode : AstNode {
 	std::string name;
 	std::vector<std::string> mods;
-	
+
 	// Edge tracking flags (for jp/jr/gp/rp edge detection)
 	bool edgeForJP = false;
 	bool edgeForJR = false;
@@ -96,7 +96,7 @@ struct ActNode : AstNode {
 	bool edgeForWR = false;
 	bool edgeForGP = false;
 	bool edgeForRP = false;
-	
+
 	ActNode() { type = NodeType::Action; }
 };
 
@@ -106,7 +106,7 @@ struct OpNode : AstNode {
 	Op op;
 	std::unique_ptr<AstNode> left;
 	std::unique_ptr<AstNode> right;  // nullptr for NOT
-	
+
 	OpNode() { type = NodeType::Operation; }
 };
 
@@ -115,7 +115,7 @@ struct FunNode : AstNode {
 	std::string fname;
 	std::vector<std::unique_ptr<AstNode>> args;
 	std::optional<i32> window;
-	
+
 	FunNode() { type = NodeType::Function; }
 };
 
@@ -126,19 +126,20 @@ struct FunNode : AstNode {
 class Tokenizer {
 public:
 	explicit Tokenizer(std::string_view input);
-	
+
 	Token next();
 	Token preview();
 	bool hasMore() const;
-	
+
 private:
 	std::string_view m_input;
 	size_t m_pos = 0;
-	std::optional<Token> m_bufferedToken;
-	
-	void skipWhitespace();
-	Token scanToken();
-};
+		std::optional<Token> m_bufferedToken;
+
+		void skipWhitespace();
+		std::string tokenText(size_t start) const;
+		Token scanToken();
+	};
 
 /* ============================================================================
  * InputActionParser
@@ -158,23 +159,23 @@ class InputActionParser {
 public:
 	// Parse an action definition string into an AST
 	static std::unique_ptr<AstNode> parse(const std::string& def);
-	
+
 private:
 	Tokenizer m_tokenizer;
-	
+
 	explicit InputActionParser(std::string_view input);
-	
+
 	std::unique_ptr<AstNode> expr();
 	std::unique_ptr<AstNode> term();
 	std::unique_ptr<AstNode> factor();
 	std::unique_ptr<AstNode> func();
 	std::unique_ptr<AstNode> action();
 	std::vector<std::string> parseModifierList();
-	
+
 	Token current();
 	Token eat();
 	Token take(TokenType expected, const std::string& expectedValue = "");
-	
+
 	void annotateActNode(ActNode& node);
 	void applyModifiersInPlace(AstNode* node, const std::vector<std::string>& mods);
 };
@@ -193,8 +194,8 @@ ModFn makeModPred(const std::string& tok);
 EvalFn compileAction(const std::string& name, const std::vector<std::string>& mods);
 
 // Compile function into evaluation function
-EvalFn compileFunction(const std::string& fname, 
-						const std::vector<std::unique_ptr<AstNode>>& args, 
+EvalFn compileFunction(const std::string& fname,
+						const std::vector<std::unique_ptr<AstNode>>& args,
 						std::optional<i32> window);
 
 /* ============================================================================
@@ -207,16 +208,16 @@ class ActionDefinitionEvaluator {
 public:
 	// Clear the parse cache
 	static void clearCache();
-	
+
 	// Check if action definition is triggered
 	static bool checkActionTriggered(const std::string& def, const GetterFn& get);
-	
+
 	// Get all action names referenced by a definition
 	static std::vector<std::string> getReferencedActions(const std::string& def);
-	
+
 private:
 	static std::unordered_map<std::string, std::unique_ptr<AstNode>> s_cache;
-	
+
 	static AstNode* getCachedOrParse(const std::string& def);
 };
 

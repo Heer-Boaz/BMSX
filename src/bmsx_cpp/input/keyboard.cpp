@@ -38,19 +38,18 @@ void KeyboardInput::pollInput() {
 		const bool justPressed = m_pendingPresses.contains(keyCode);
 		const bool justReleased = m_pendingReleases.contains(keyCode);
 		
-		i32 pressId = keyState.pressId.value_or(prev.pressId.value_or(0));
+		i32 pressId = buttonPressIdOr(keyState, buttonPressIdOr(prev, 0));
 		if ((isDown || justPressed || justReleased) && !pressId) {
 			pressId = m_nextPressId++;
 			keyState.pressId = pressId;
 		}
 		
 		const std::optional<f64> pressedAt = isDown
-			? std::optional<f64>(keyState.pressedAtMs.value_or(prev.pressedAtMs.value_or(prev.timestamp.value_or(m_currentTimeMs))))
+			? std::optional<f64>(keyState.pressedAtMs.has_value() ? keyState.pressedAtMs.value() : buttonPressedAtOr(prev, m_currentTimeMs))
 			: std::nullopt;
 		
 		ButtonState state;
 		if (isDown) {
-			const bool stickyConsumed = prev.consumed;
 			state.pressed = true;
 			state.justpressed = justPressed;
 			state.justreleased = false;
@@ -60,11 +59,11 @@ void KeyboardInput::pollInput() {
 			state.pressedAtMs = pressedAt;
 			state.releasedAtMs = std::nullopt;
 			state.timestamp = justPressed
-				? keyState.timestamp.value_or(m_currentTimeMs)
-				: prev.timestamp.value_or(pressedAt.value());
+				? buttonTimestampOr(keyState, m_currentTimeMs)
+				: buttonTimestampOr(prev, pressedAt.value());
 			state.pressId = pressId;
 			state.value = 1.0f;
-			state.consumed = stickyConsumed;
+			state.consumed = prev.consumed;
 		} else {
 			state.pressed = false;
 			state.justpressed = justPressed;
@@ -74,11 +73,11 @@ void KeyboardInput::pollInput() {
 			state.presstime = std::nullopt;
 			state.pressedAtMs = std::nullopt;
 			state.releasedAtMs = justReleased
-				? std::optional<f64>(keyState.releasedAtMs.value_or(keyState.timestamp.value_or(m_currentTimeMs)))
+				? std::optional<f64>(buttonReleasedAtOr(keyState, m_currentTimeMs))
 				: prev.releasedAtMs;
 			state.timestamp = (justReleased || justPressed)
-				? keyState.timestamp.value_or(m_currentTimeMs)
-				: prev.timestamp.value_or(m_currentTimeMs);
+				? buttonTimestampOr(keyState, m_currentTimeMs)
+				: buttonTimestampOr(prev, m_currentTimeMs);
 			state.pressId = (justPressed || justReleased || wasDown)
 				? std::optional<i32>(pressId)
 				: std::nullopt;

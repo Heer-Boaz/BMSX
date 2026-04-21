@@ -3,6 +3,7 @@
 #include "machine/common/align.h"
 #include "rompack/assets.h"
 #include "common/byte_hex_string.h"
+#include "common/endian.h"
 
 #include <algorithm>
 #include <cstring>
@@ -19,17 +20,11 @@ constexpr uint32_t ASSET_TYPE_IMAGE = 1;
 constexpr uint32_t ASSET_TYPE_AUDIO = 2;
 
 inline void writeU32LE(u8* dst, uint32_t value) {
-	dst[0] = static_cast<u8>(value & 0xffu);
-	dst[1] = static_cast<u8>((value >> 8) & 0xffu);
-	dst[2] = static_cast<u8>((value >> 16) & 0xffu);
-	dst[3] = static_cast<u8>((value >> 24) & 0xffu);
+	writeLE32(dst, value);
 }
 
 inline uint32_t readU32LE(const u8* src) {
-	return static_cast<uint32_t>(src[0])
-		| (static_cast<uint32_t>(src[1]) << 8)
-		| (static_cast<uint32_t>(src[2]) << 16)
-		| (static_cast<uint32_t>(src[3]) << 24);
+	return readLE32(src);
 }
 
 bool rangeOverlaps(uint32_t addr, size_t length, uint32_t base, uint32_t size) {

@@ -151,14 +151,14 @@ public:
 		if (it == map_.end()) {
 			throw BMSX_RUNTIME_ERROR("[AssetBarrier] replaceValue called for unknown key \"" + key + "\".");
 		}
-		Entry& entry = it->second;
-		const bool oldWasFallback = entry.isFallback;
-		const std::optional<T> oldValue = entry.value;
-		entry.value = value;
-		entry.isFallback = false;
-		if (oldValue.has_value() && !oldWasFallback) {
-			auto callDisposer = disposer ? disposer : entry.disposer;
-			if (callDisposer) {
+			Entry& entry = it->second;
+			const std::optional<T> oldValue = entry.value;
+			const bool disposeOldValue = oldValue.has_value() && !entry.isFallback;
+			entry.value = value;
+			entry.isFallback = false;
+			if (disposeOldValue) {
+				auto callDisposer = disposer ? disposer : entry.disposer;
+				if (callDisposer) {
 				try { callDisposer(*oldValue); }
 				catch (const std::exception& e) {
 					std::cerr << "[AssetBarrier] disposer threw on replaceValue: " << e.what() << std::endl;

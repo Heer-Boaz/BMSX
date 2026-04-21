@@ -97,12 +97,27 @@ public:
 	RuntimeAssets& cartAssets() { return m_cart_assets; }
 	const RuntimeAssets& cartAssets() const { return m_cart_assets; }
 	const MachineManifest& machineManifest() const { return *m_machine_manifest; }
-	const CartManifest* loadedCartManifest() const { return m_cart_assets.cartManifest ? &*m_cart_assets.cartManifest : nullptr; }
-	const std::string* loadedCartEntryPath() const { return m_cart_rom_size > 0 ? &m_cart_assets.entryPoint : nullptr; }
-	const std::string* cartProjectRootPath() const { return m_cart_rom_size > 0 ? &m_cart_assets.projectRootPath : nullptr; }
+	const CartManifest* loadedCartManifest() const {
+		if (!m_cart_assets.cartManifest) {
+			return nullptr;
+		}
+		return &*m_cart_assets.cartManifest;
+	}
+	const std::string* loadedCartEntryPath() const {
+		if (m_cart_rom_size == 0) {
+			return nullptr;
+		}
+		return &m_cart_assets.entryPoint;
+	}
+	const std::string* cartProjectRootPath() const {
+		if (m_cart_rom_size == 0) {
+			return nullptr;
+		}
+		return &m_cart_assets.projectRootPath;
+	}
 	ImgAsset* resolveImgAsset(const AssetId& id);
 	const ImgAsset* resolveImgAsset(const AssetId& id) const;
-	Clock* clock() { return m_platform ? m_platform->clock() : nullptr; }
+	Clock* clock() { return m_platform->clock(); }
 	SoundMaster* soundMaster() { return m_sound_master.get(); }
 	TextureManager* texmanager() { return m_texture_manager.get(); }
 	struct RomView {

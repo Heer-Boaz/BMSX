@@ -175,16 +175,21 @@ export function collectCppClassRanges(
 			continue;
 		}
 		const nameIndex = index + 1;
-		if (nameIndex >= tokens.length || tokens[nameIndex].kind !== 'id') {
-			continue;
-		}
-		let cursor = nameIndex + 1;
-		while (cursor < tokens.length && tokens[cursor].text !== ';' && tokens[cursor].text !== '{') {
-			cursor += 1;
-		}
-		if (cursor >= tokens.length || tokens[cursor].text !== '{' || pairs[cursor] < 0) {
-			continue;
-		}
+			if (nameIndex >= tokens.length || tokens[nameIndex].kind !== 'id') {
+				continue;
+			}
+			let cursor = nameIndex + 1;
+			let hasDeclaratorNoise = false;
+			while (cursor < tokens.length && tokens[cursor].text !== ';' && tokens[cursor].text !== '{') {
+				if (isCppTypeUseToken(tokens[cursor].text)) {
+					hasDeclaratorNoise = true;
+					break;
+				}
+				cursor += 1;
+			}
+			if (hasDeclaratorNoise || cursor >= tokens.length || tokens[cursor].text !== '{' || pairs[cursor] < 0) {
+				continue;
+			}
 		const name = tokens[nameIndex].text;
 		ranges.push({ name, nameToken: nameIndex, start: cursor, end: pairs[cursor] });
 	}
@@ -204,16 +209,21 @@ export function collectCppTypeDeclarations(tokens: readonly CppToken[], classRan
 			if (tokens[nameIndex]?.text === 'class' || tokens[nameIndex]?.text === 'struct') {
 				nameIndex += 1;
 			}
-			if (nameIndex >= tokens.length || tokens[nameIndex].kind !== 'id') {
-				continue;
-			}
-			let cursor = nameIndex + 1;
-			while (cursor < tokens.length && tokens[cursor].text !== ';' && tokens[cursor].text !== '{') {
-				cursor += 1;
-			}
-			if (cursor >= tokens.length || tokens[cursor].text !== '{') {
-				continue;
-			}
+				if (nameIndex >= tokens.length || tokens[nameIndex].kind !== 'id') {
+					continue;
+				}
+				let cursor = nameIndex + 1;
+				let hasDeclaratorNoise = false;
+				while (cursor < tokens.length && tokens[cursor].text !== ';' && tokens[cursor].text !== '{') {
+					if (isCppTypeUseToken(tokens[cursor].text)) {
+						hasDeclaratorNoise = true;
+						break;
+					}
+					cursor += 1;
+				}
+				if (hasDeclaratorNoise || cursor >= tokens.length || tokens[cursor].text !== '{') {
+					continue;
+				}
 			const name = tokens[nameIndex].text;
 			declarations.push({ kind: 'enum', name, nameToken: nameIndex, context: classContextAt(classRanges, index) });
 			continue;
@@ -222,23 +232,112 @@ export function collectCppTypeDeclarations(tokens: readonly CppToken[], classRan
 			declarations.push({ kind: 'type', name: tokens[index + 1].text, nameToken: index + 1, context: classContextAt(classRanges, index) });
 			continue;
 		}
-		if (token.text !== 'typedef') {
-			continue;
-		}
-		let cursor = index + 1;
-		let nameIndex = -1;
-		while (cursor < tokens.length && tokens[cursor].text !== ';') {
-			if (tokens[cursor].kind === 'id') {
-				nameIndex = cursor;
+			if (token.text !== 'typedef') {
+				continue;
 			}
-			cursor += 1;
+			const statementEnd = findCppTypedefStatementEnd(tokens, index + 1);
+			const nameIndex = findCppTypedefNameToken(tokens, index + 1, statementEnd);
+			if (nameIndex < 0) {
+				continue;
+			}
+			if (isCppNamedTagTypedefAlias(tokens, index + 1, statementEnd, nameIndex)) {
+				continue;
+			}
+			declarations.push({ kind: 'type', name: tokens[nameIndex].text, nameToken: nameIndex, context: classContextAt(classRanges, index) });
 		}
-		if (nameIndex < 0) {
+	return declarations;
+}
+
+function isCppTypeUseToken(text: string): boolean {
+	return text === '(' || text === ')' || text === '[' || text === '=' || text === '*' || text === '&' || text === '&&';
+}
+
+function findCppTypedefStatementEnd(tokens: readonly CppToken[], start: number): number {
+	let parenDepth = 0;
+	let bracketDepth = 0;
+	let braceDepth = 0;
+	for (let index = start; index < tokens.length; index += 1) {
+		const text = tokens[index].text;
+		if (text === '(') parenDepth += 1;
+		else if (text === ')') parenDepth -= 1;
+		else if (text === '[') bracketDepth += 1;
+		else if (text === ']') bracketDepth -= 1;
+		else if (text === '{') braceDepth += 1;
+		else if (text === '}') braceDepth -= 1;
+		else if (text === ';' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+			return index;
+		}
+	}
+	return tokens.length;
+}
+
+function findCppTypedefNameToken(tokens: readonly CppToken[], start: number, end: number): number {
+	const functionPointerName = findCppFunctionPointerTypedefName(tokens, start, end);
+	if (functionPointerName >= 0) {
+		return functionPointerName;
+	}
+	let nameIndex = -1;
+	let parenDepth = 0;
+	let bracketDepth = 0;
+	let braceDepth = 0;
+	for (let index = start; index < end; index += 1) {
+		const text = tokens[index].text;
+		if (text === '(') parenDepth += 1;
+		else if (text === ')') parenDepth -= 1;
+		else if (text === '[') bracketDepth += 1;
+		else if (text === ']') bracketDepth -= 1;
+		else if (text === '{') braceDepth += 1;
+		else if (text === '}') braceDepth -= 1;
+		else if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0 && tokens[index].kind === 'id') {
+			nameIndex = index;
+		}
+	}
+	return nameIndex;
+}
+
+function findCppFunctionPointerTypedefName(tokens: readonly CppToken[], start: number, end: number): number {
+	for (let closeIndex = start + 1; closeIndex < end - 1; closeIndex += 1) {
+		if (tokens[closeIndex].text !== ')' || tokens[closeIndex + 1].text !== '(') {
 			continue;
 		}
-		declarations.push({ kind: 'type', name: tokens[nameIndex].text, nameToken: nameIndex, context: classContextAt(classRanges, index) });
+		let depth = 0;
+		let openIndex = -1;
+		for (let index = closeIndex; index >= start; index -= 1) {
+			const text = tokens[index].text;
+			if (text === ')') depth += 1;
+			else if (text === '(') {
+				depth -= 1;
+				if (depth === 0) {
+					openIndex = index;
+					break;
+				}
+			}
+		}
+		if (openIndex < 0) {
+			continue;
+		}
+		let nameIndex = -1;
+		for (let index = openIndex + 1; index < closeIndex; index += 1) {
+			if (tokens[index].kind === 'id') {
+				nameIndex = index;
+			}
+		}
+		if (nameIndex >= 0) {
+			return nameIndex;
+		}
 	}
-	return declarations;
+	return -1;
+}
+
+function isCppNamedTagTypedefAlias(tokens: readonly CppToken[], start: number, end: number, nameIndex: number): boolean {
+	if (start >= end || tokens[start + 1]?.kind !== 'id') {
+		return false;
+	}
+	const tagKind = tokens[start].text;
+	if (tagKind !== 'struct' && tagKind !== 'class' && tagKind !== 'enum') {
+		return false;
+	}
+	return tokens[start + 1].text === tokens[nameIndex].text;
 }
 
 function cppFunctionSignature(tokens: readonly CppToken[], openParen: number, closeParen: number, bodyStart: number, name: string): string {
@@ -265,6 +364,9 @@ export function collectCppFunctionDefinitions(
 		}
 		const openParen = findCppFunctionDeclaratorOpenParen(tokens, pairs, index);
 		if (openParen < 1 || !isCppFunctionBodyAfterDeclarator(tokens, pairs, openParen, index)) {
+			continue;
+		}
+		if (isCppPreprocessorLine(tokens, openParen)) {
 			continue;
 		}
 		const nameIndex = openParen - 1;
@@ -300,6 +402,16 @@ export function collectCppFunctionDefinitions(
 		index = closeBrace;
 	}
 	return functions;
+}
+
+function isCppPreprocessorLine(tokens: readonly CppToken[], index: number): boolean {
+	const line = tokens[index].line;
+	for (let cursor = index; cursor >= 0 && tokens[cursor].line === line; cursor -= 1) {
+		if (tokens[cursor].text === '#') {
+			return true;
+		}
+	}
+	return false;
 }
 
 function classContextAt(classRanges: readonly CppClassRange[], bodyStart: number): string | undefined {

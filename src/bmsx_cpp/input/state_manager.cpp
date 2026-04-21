@@ -33,7 +33,7 @@ void InputStateManager::beginFrame(f64 currentTimeMs) {
 		state.justpressed = false;
 		state.justreleased = false;
 		if (state.pressed) {
-			const f64 pressedAt = state.pressedAtMs.value_or(state.timestamp.value_or(currentTimeMs));
+			const f64 pressedAt = buttonPressedAtOr(state, currentTimeMs);
 			state.presstime = std::max(0.0, currentTimeMs - pressedAt);
 		} else {
 			state.presstime = std::nullopt;
@@ -118,7 +118,9 @@ void InputStateManager::recordAxis1Sample(const std::string& button, f32 value, 
 void InputStateManager::recordAxis2Sample(const std::string& button, f32 x, f32 y, f64 timestamp) {
 	auto& state = m_pendingFrameStates[button];
 	if (button == "pointer_delta") {
-		const Vec2 previous = state.value2d.value_or(Vec2(0.0f, 0.0f));
+		const Vec2 previous = state.value2d.has_value()
+			? state.value2d.value()
+			: Vec2(0.0f, 0.0f);
 		const f32 nextX = previous.x + x;
 		const f32 nextY = previous.y + y;
 		state.value2d = Vec2(nextX, nextY);
@@ -150,27 +152,48 @@ void InputStateManager::recordAxis2Sample(const std::string& button, f32 x, f32 
 void InputStateManager::latchButtonState(const std::string& button, const ButtonState& rawState, f64 currentTimeMs) {
 	auto& state = m_buttonStates[button];
 	auto pendingIt = m_pendingFrameStates.find(button);
-	ButtonState* pending = pendingIt != m_pendingFrameStates.end() ? &pendingIt->second : nullptr;
+	ButtonState* pending = nullptr;
+	if (pendingIt != m_pendingFrameStates.end()) {
+		pending = &pendingIt->second;
+	}
 	const auto bufferedPress = getBufferedEdgeRecord(m_bufferedPressEdges, button, 1);
 	const auto bufferedRelease = getBufferedEdgeRecord(m_bufferedReleaseEdges, button, 1);
 	const bool previousPressed = state.pressed;
-	const bool nextPressed = pending && pending->pressed ? true : rawState.pressed;
-	const f64 nextTimestamp = pending && pending->timestamp.has_value()
-		? pending->timestamp.value()
-		: rawState.timestamp.value_or(state.timestamp.value_or(currentTimeMs));
-	const std::optional<i32> nextPressId = rawState.pressId.has_value()
-		? rawState.pressId
-		: (state.pressId.has_value() ? state.pressId : (pending && pending->pressId.has_value() ? pending->pressId : std::nullopt));
-	const std::optional<f64> nextPressedAtMs = nextPressed
-		? std::optional<f64>(rawState.pressedAtMs.value_or(pending && pending->pressedAtMs.has_value()
-			? pending->pressedAtMs.value()
-			: state.pressedAtMs.value_or(nextTimestamp)))
-		: std::nullopt;
-	const std::optional<f64> nextReleasedAtMs = nextPressed
-		? std::nullopt
-		: (rawState.releasedAtMs.has_value()
-			? rawState.releasedAtMs
-			: (state.releasedAtMs.has_value() ? state.releasedAtMs : (bufferedRelease.has_value() ? std::optional<f64>(nextTimestamp) : std::nullopt)));
+	const bool nextPressed = (pending && pending->pressed) || rawState.pressed;
+	f64 nextTimestamp = buttonTimestampOr(rawState, buttonTimestampOr(state, currentTimeMs));
+	if (pending && pending->timestamp.has_value()) {
+		nextTimestamp = pending->timestamp.value();
+	}
+	std::optional<i32> nextPressId;
+	if (rawState.pressId.has_value()) {
+		nextPressId = rawState.pressId;
+	} else if (state.pressId.has_value()) {
+		nextPressId = state.pressId;
+	} else if (pending && pending->pressId.has_value()) {
+		nextPressId = pending->pressId;
+	}
+	std::optional<f64> nextPressedAtMs;
+	if (nextPressed) {
+		if (rawState.pressedAtMs.has_value()) {
+			nextPressedAtMs = rawState.pressedAtMs;
+		} else if (pending && pending->pressedAtMs.has_value()) {
+			nextPressedAtMs = pending->pressedAtMs;
+		} else if (state.pressedAtMs.has_value()) {
+			nextPressedAtMs = state.pressedAtMs;
+		} else {
+			nextPressedAtMs = nextTimestamp;
+		}
+	}
+	std::optional<f64> nextReleasedAtMs;
+	if (!nextPressed) {
+		if (rawState.releasedAtMs.has_value()) {
+			nextReleasedAtMs = rawState.releasedAtMs;
+		} else if (state.releasedAtMs.has_value()) {
+			nextReleasedAtMs = state.releasedAtMs;
+		} else if (bufferedRelease.has_value()) {
+			nextReleasedAtMs = nextTimestamp;
+		}
+	}
 	state.pressed = nextPressed;
 	state.justpressed = bufferedPress.has_value() || (pending && pending->justpressed && !previousPressed);
 	state.justreleased = bufferedRelease.has_value() || (pending && pending->justreleased && previousPressed);
@@ -186,7 +209,7 @@ void InputStateManager::latchButtonState(const std::string& button, const Button
 		state.value2d = pending->value2d.has_value() ? pending->value2d : rawState.value2d;
 	}
 	state.presstime = nextPressed
-		? std::optional<f64>(std::max(0.0, currentTimeMs - nextPressedAtMs.value_or(nextTimestamp)))
+		? std::optional<f64>(std::max(0.0, currentTimeMs - nextPressedAtMs.value()))
 		: std::nullopt;
 	if (pendingIt != m_pendingFrameStates.end()) {
 		m_pendingFrameStates.erase(pendingIt);
@@ -229,7 +252,10 @@ ButtonState InputStateManager::getButtonState(const std::string& button, std::op
 		state = it->second;
 	}
 	
-	const i32 effectiveWindow = windowFrames.value_or(BUFFER_FRAME_RETENTION);
+	i32 effectiveWindow = BUFFER_FRAME_RETENTION;
+	if (windowFrames.has_value()) {
+		effectiveWindow = windowFrames.value();
+	}
 	state.justpressed = state.justpressed || getBufferedEdgeRecord(m_bufferedPressEdges, button, 1).has_value();
 	state.justreleased = state.justreleased || getBufferedEdgeRecord(m_bufferedReleaseEdges, button, 1).has_value();
 	state.waspressed = state.pressed || wasPressedInWindow(button, effectiveWindow);

@@ -323,8 +323,8 @@ private:
 	retro_input_poll_t m_input_poll_cb = nullptr;
 	retro_input_state_t m_input_state_cb = nullptr;
 	std::vector<InputEvt> m_event_queue;
-	std::vector<std::function<void(const InputEvt&)>> m_handlers;
-	int m_next_handle_id = 1;
+	std::vector<SubscriptionEntry<std::function<void(const InputEvt&)>>> m_handlers;
+	uint32_t m_next_handler_id = 1;
 
 	// Previous state for edge detection
 	InputState m_prev_state;

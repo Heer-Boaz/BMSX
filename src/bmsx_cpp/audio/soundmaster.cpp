@@ -38,6 +38,65 @@ static inline u16 readLE16Audio(const u8* data) {
 	return static_cast<u16>(data[0]) | (static_cast<u16>(data[1]) << 8);
 }
 
+static inline bool consumeStopTimer(f64& stopAfter, f64 invOutputRate) {
+	if (stopAfter < 0.0) {
+		return false;
+	}
+	stopAfter -= invOutputRate;
+	return stopAfter <= 0.0;
+}
+
+static inline f32 lerpAudioSample(f32 from, f32 to, f64 frac) {
+	return from + (to - from) * static_cast<f32>(frac);
+}
+
+static inline void audioSamplePosition(f64 position, i64& index, f64& frac, size_t& index0) {
+	index = static_cast<i64>(position);
+	frac = position - static_cast<f64>(index);
+	index0 = static_cast<size_t>(index);
+}
+
+static inline i64 wrappedAudioIndex(i64 index, f64 loopStart, f64 loopEnd) {
+	if (static_cast<f64>(index) < loopEnd) {
+		return index;
+	}
+	const f64 wrapped = loopStart + (static_cast<f64>(index) - loopEnd);
+	return static_cast<i64>(wrapped);
+}
+
+static inline void wrapAudioPosition(f64& position, f64 loopStart, f64 loopEnd, f64 loopLen) {
+	if (position >= loopEnd) {
+		position = loopStart + std::fmod(position - loopStart, loopLen);
+	}
+}
+
+static inline void advanceGainRamp(f32& gain, f64& remaining, f64 gainStep, f64 invOutputRate) {
+	if (remaining <= 0.0) {
+		return;
+	}
+	gain += static_cast<f32>(gainStep);
+	remaining -= invOutputRate;
+}
+
+static inline void advanceLinearAudioFrame(f64& position, f64 step, f32& gain, f64& rampRemaining, f64 gainStep, f64 invOutputRate) {
+	position += step;
+	advanceGainRamp(gain, rampRemaining, gainStep, invOutputRate);
+}
+
+static inline void advanceLoopedAudioFrame(f64& position,
+											f64 step,
+											f64 loopStart,
+											f64 loopEnd,
+											f64 loopLen,
+											f32& gain,
+											f64& rampRemaining,
+											f64 gainStep,
+											f64 invOutputRate) {
+	position += step;
+	wrapAudioPosition(position, loopStart, loopEnd, loopLen);
+	advanceGainRamp(gain, rampRemaining, gainStep, invOutputRate);
+}
+
 SoundMaster::SoundMaster()
 	: m_rng(std::random_device{}()),
 		m_unitDist(0.0f, 1.0f) {
@@ -460,7 +519,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 				continue;
 			}
 			const bool is16Bit = asset.bitsPerSample == 16;
-			const i16* samples16 = is16Bit ? reinterpret_cast<const i16*>(data) : nullptr;
+			const i16* samples16 = reinterpret_cast<const i16*>(data);
 			const u8* samples8 = data;
 			const auto readSample = [&](size_t sampleIndex) -> i16 {
 				if (is16Bit) {
@@ -470,21 +529,21 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 			};
 
 			const f64 loopStart = record.meta.loopStart.has_value() ? record.meta.loopStart.value() * asset.sampleRate : 0.0;
-			const f64 loopEnd = record.meta.loopEnd.has_value() ? record.meta.loopEnd.value() * asset.sampleRate : static_cast<f64>(framesInAsset);
-			const bool hasLoop = record.meta.loopStart.has_value() && loopEnd > loopStart;
-			const f64 loopLen = loopEnd - loopStart;
+				const f64 loopEnd = record.meta.loopEnd.has_value() ? record.meta.loopEnd.value() * asset.sampleRate : static_cast<f64>(framesInAsset);
+				const bool hasLoop = record.meta.loopStart.has_value() && loopEnd > loopStart;
+				const f64 loopLen = loopEnd - loopStart;
+				const f64 framesInAssetF = static_cast<f64>(framesInAsset);
 
 			const f64 step = record.step * (static_cast<f64>(asset.sampleRate) * invOutputRate);
 
 			f64 position = record.position;
 			f32 gain = record.gain;
-			const f32 target = record.targetGain;
 			f64 rampRemaining = record.gainRampRemaining;
 			f64 stopAfter = record.stopAfter;
 			f64 gainStep = 0.0;
 			if (rampRemaining > 0.0) {
 				const f64 rampFrames = rampRemaining * static_cast<f64>(outputSampleRate);
-				gainStep = (target - gain) / rampFrames;
+				gainStep = (record.targetGain - gain) / rampFrames;
 			}
 			if (record.params.filter.has_value()) {
 				if (record.filterSampleRate != outputSampleRate) {
@@ -504,27 +563,26 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 				record.filterSampleRate = 0;
 			}
 
-			auto mixVoiceSample = [&](size_t& outIndex, f32 left, f32 right) {
-				if (record.filter.enabled) {
-					record.filter.processStereo(left, right);
-				}
-				mix[outIndex] += left * gain;
-				mix[outIndex + 1] += right * gain;
-				outIndex += 2;
-			};
+				auto mixVoiceSample = [&](size_t& outIndex, f32 left, f32 right) {
+					if (record.filter.enabled) {
+						record.filter.processStereo(left, right);
+					}
+					mix[outIndex] += left * gain;
+					mix[outIndex + 1] += right * gain;
+					outIndex += 2;
+				};
+				auto mixInterpolatedStereo = [&](size_t& outIndex, f32 left0, f32 right0, f32 left1, f32 right1, f64 frac) {
+					mixVoiceSample(outIndex, lerpAudioSample(left0, left1, frac), lerpAudioSample(right0, right1, frac));
+				};
 
-			bool ended = false;
-			if (record.usesBadp) {
-				const f64 framesInAssetF = static_cast<f64>(framesInAsset);
-				size_t outIndex = 0;
-				for (size_t frame = 0; frame < frameCount; ++frame) {
-					if (stopAfter >= 0.0) {
-						stopAfter -= invOutputRate;
-						if (stopAfter <= 0.0) {
+				bool ended = false;
+				if (record.usesBadp) {
+					size_t outIndex = 0;
+					for (size_t frame = 0; frame < frameCount; ++frame) {
+						if (consumeStopTimer(stopAfter, invOutputRate)) {
 							ended = true;
 							break;
 						}
-					}
 					if (hasLoop) {
 						if (position < loopStart || position >= loopEnd) {
 							position = loopStart + std::fmod(position - loopStart, loopLen);
@@ -537,18 +595,17 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 						break;
 					}
 
-					const i64 idx = static_cast<i64>(position);
-					const f64 frac = position - static_cast<f64>(idx);
-					const size_t idx0 = static_cast<size_t>(idx);
-					size_t idx1 = idx0 + 1;
-					if (hasLoop) {
-						if (static_cast<f64>(idx1) >= loopEnd) {
-							const f64 wrapped = loopStart + (static_cast<f64>(idx1) - loopEnd);
-							idx1 = static_cast<size_t>(static_cast<i64>(wrapped));
+						i64 idx = 0;
+						f64 frac = 0.0;
+						size_t idx0 = 0;
+						audioSamplePosition(position, idx, frac, idx0);
+						i64 idx1 = idx + 1;
+						if (hasLoop) {
+							idx1 = wrappedAudioIndex(idx1, loopStart, loopEnd);
+						} else if (static_cast<size_t>(idx1) >= framesInAsset) {
+							idx1 = idx;
 						}
-					} else if (idx1 >= framesInAsset) {
-						idx1 = idx0;
-					}
+						const size_t nextIndex = static_cast<size_t>(idx1);
 
 					i16 left0i = 0;
 					i16 right0i = 0;
@@ -558,28 +615,23 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 					}
 					i16 left1i = left0i;
 					i16 right1i = right0i;
-					if (idx1 != idx0 && !badpReadFrameAt(record, idx1, left1i, right1i)) {
-						ended = true;
-						break;
-					}
+						if (nextIndex != idx0 && !badpReadFrameAt(record, nextIndex, left1i, right1i)) {
+							ended = true;
+							break;
+						}
 
 					const f32 left0 = static_cast<f32>(left0i) * sampleScale;
 					const f32 right0 = static_cast<f32>(right0i) * sampleScale;
 					const f32 left1 = static_cast<f32>(left1i) * sampleScale;
 					const f32 right1 = static_cast<f32>(right1i) * sampleScale;
-					const f32 left = left0 + (left1 - left0) * static_cast<f32>(frac);
-					const f32 right = right0 + (right1 - right0) * static_cast<f32>(frac);
-					mixVoiceSample(outIndex, left, right);
+							mixInterpolatedStereo(outIndex, left0, right0, left1, right1, frac);
 
-					position += step;
-					if (hasLoop && position >= loopEnd) {
-						position = loopStart + std::fmod(position - loopStart, loopLen);
+						if (hasLoop) {
+							advanceLoopedAudioFrame(position, step, loopStart, loopEnd, loopLen, gain, rampRemaining, gainStep, invOutputRate);
+						} else {
+							advanceLinearAudioFrame(position, step, gain, rampRemaining, gainStep, invOutputRate);
+						}
 					}
-					if (rampRemaining > 0.0) {
-						gain += static_cast<f32>(gainStep);
-						rampRemaining -= invOutputRate;
-					}
-				}
 			} else {
 				const bool integerPos = position == std::floor(position);
 				const bool loopAligned = !hasLoop || (loopStart == std::floor(loopStart) && loopEnd == std::floor(loopEnd));
@@ -655,130 +707,92 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 
 				if (channels == 1) {
 					if (hasLoop) {
-						for (size_t frame = 0; frame < frameCount; ++frame) {
-							if (stopAfter >= 0.0) {
-								stopAfter -= invOutputRate;
-								if (stopAfter <= 0.0) {
+							for (size_t frame = 0; frame < frameCount; ++frame) {
+								if (consumeStopTimer(stopAfter, invOutputRate)) {
 									ended = true;
 									break;
 								}
-							}
 
-							const i64 idx = static_cast<i64>(position);
-							const f64 frac = position - static_cast<f64>(idx);
-							i64 idx1 = idx + 1;
-							if (static_cast<f64>(idx1) >= loopEnd) {
-								const f64 wrapped = loopStart + (static_cast<f64>(idx1) - loopEnd);
-								idx1 = static_cast<i64>(wrapped);
-							}
+								i64 idx = 0;
+								f64 frac = 0.0;
+								size_t idx0 = 0;
+								audioSamplePosition(position, idx, frac, idx0);
+								const i64 idx1 = wrappedAudioIndex(idx + 1, loopStart, loopEnd);
 
-							const f32 s0 = static_cast<f32>(readSample(static_cast<size_t>(idx))) * sampleScale;
-							const f32 s1 = static_cast<f32>(readSample(static_cast<size_t>(idx1))) * sampleScale;
-							const f32 sample = s0 + (s1 - s0) * static_cast<f32>(frac);
-							mixVoiceSample(outIndex, sample, sample);
+								const f32 s0 = static_cast<f32>(readSample(idx0)) * sampleScale;
+								const f32 s1 = static_cast<f32>(readSample(static_cast<size_t>(idx1))) * sampleScale;
+								const f32 sample = lerpAudioSample(s0, s1, frac);
+								mixVoiceSample(outIndex, sample, sample);
 
-							position += step;
-							if (position >= loopEnd) {
-								position = loopStart + std::fmod(position - loopStart, loopLen);
+									advanceLoopedAudioFrame(position, step, loopStart, loopEnd, loopLen, gain, rampRemaining, gainStep, invOutputRate);
 							}
-
-							if (rampRemaining > 0.0) {
-								gain += static_cast<f32>(gainStep);
-								rampRemaining -= invOutputRate;
-							}
-						}
-					} else {
-						const f64 framesInAssetF = static_cast<f64>(framesInAsset);
-						for (size_t frame = 0; frame < frameCount; ++frame) {
-							if (stopAfter >= 0.0) {
-								stopAfter -= invOutputRate;
-								if (stopAfter <= 0.0) {
+						} else {
+							for (size_t frame = 0; frame < frameCount; ++frame) {
+								if (consumeStopTimer(stopAfter, invOutputRate)) {
 									ended = true;
 									break;
 								}
-							}
 							if (position >= framesInAssetF) {
 								ended = true;
 								break;
 							}
 
-							const i64 idx = static_cast<i64>(position);
-							const f64 frac = position - static_cast<f64>(idx);
-							const size_t idx0 = static_cast<size_t>(idx);
+							i64 idx = 0;
+							f64 frac = 0.0;
+							size_t idx0 = 0;
+							audioSamplePosition(position, idx, frac, idx0);
 							const f32 s0 = static_cast<f32>(readSample(idx0)) * sampleScale;
 							f32 s1 = 0.0f;
 							const size_t idx1 = idx0 + 1;
 							if (idx1 < framesInAsset) {
 								s1 = static_cast<f32>(readSample(idx1)) * sampleScale;
 							}
-							const f32 sample = s0 + (s1 - s0) * static_cast<f32>(frac);
-							mixVoiceSample(outIndex, sample, sample);
+								const f32 sample = lerpAudioSample(s0, s1, frac);
+								mixVoiceSample(outIndex, sample, sample);
 
-							position += step;
-							if (rampRemaining > 0.0) {
-								gain += static_cast<f32>(gainStep);
-								rampRemaining -= invOutputRate;
+									advanceLinearAudioFrame(position, step, gain, rampRemaining, gainStep, invOutputRate);
 							}
 						}
-					}
 				} else {
-					if (hasLoop) {
-						for (size_t frame = 0; frame < frameCount; ++frame) {
-							if (stopAfter >= 0.0) {
-								stopAfter -= invOutputRate;
-								if (stopAfter <= 0.0) {
+						if (hasLoop) {
+							for (size_t frame = 0; frame < frameCount; ++frame) {
+								if (consumeStopTimer(stopAfter, invOutputRate)) {
 									ended = true;
 									break;
 								}
-							}
 
-							const i64 idx = static_cast<i64>(position);
-							const f64 frac = position - static_cast<f64>(idx);
-							i64 idx1 = idx + 1;
-							if (static_cast<f64>(idx1) >= loopEnd) {
-								const f64 wrapped = loopStart + (static_cast<f64>(idx1) - loopEnd);
-								idx1 = static_cast<i64>(wrapped);
-							}
+								i64 idx = 0;
+								f64 frac = 0.0;
+								size_t idx0 = 0;
+								audioSamplePosition(position, idx, frac, idx0);
+								const i64 idx1 = wrappedAudioIndex(idx + 1, loopStart, loopEnd);
 
-							const size_t base0 = static_cast<size_t>(idx) * static_cast<size_t>(channels);
+							const size_t base0 = idx0 * static_cast<size_t>(channels);
 							const size_t base1 = static_cast<size_t>(idx1) * static_cast<size_t>(channels);
 							const f32 left0 = static_cast<f32>(readSample(base0)) * sampleScale;
 							const f32 right0 = static_cast<f32>(readSample(base0 + 1)) * sampleScale;
 							const f32 left1 = static_cast<f32>(readSample(base1)) * sampleScale;
 							const f32 right1 = static_cast<f32>(readSample(base1 + 1)) * sampleScale;
 
-							const f32 left = left0 + (left1 - left0) * static_cast<f32>(frac);
-							const f32 right = right0 + (right1 - right0) * static_cast<f32>(frac);
-							mixVoiceSample(outIndex, left, right);
+									mixInterpolatedStereo(outIndex, left0, right0, left1, right1, frac);
 
-							position += step;
-							if (position >= loopEnd) {
-								position = loopStart + std::fmod(position - loopStart, loopLen);
+									advanceLoopedAudioFrame(position, step, loopStart, loopEnd, loopLen, gain, rampRemaining, gainStep, invOutputRate);
 							}
-
-							if (rampRemaining > 0.0) {
-								gain += static_cast<f32>(gainStep);
-								rampRemaining -= invOutputRate;
-							}
-						}
-					} else {
-						const f64 framesInAssetF = static_cast<f64>(framesInAsset);
-						for (size_t frame = 0; frame < frameCount; ++frame) {
-							if (stopAfter >= 0.0) {
-								stopAfter -= invOutputRate;
-								if (stopAfter <= 0.0) {
+						} else {
+							for (size_t frame = 0; frame < frameCount; ++frame) {
+								if (consumeStopTimer(stopAfter, invOutputRate)) {
 									ended = true;
 									break;
 								}
-							}
 							if (position >= framesInAssetF) {
 								ended = true;
 								break;
 							}
 
-							const i64 idx = static_cast<i64>(position);
-							const f64 frac = position - static_cast<f64>(idx);
-							const size_t idx0 = static_cast<size_t>(idx);
+							i64 idx = 0;
+							f64 frac = 0.0;
+							size_t idx0 = 0;
+							audioSamplePosition(position, idx, frac, idx0);
 							const size_t base0 = idx0 * static_cast<size_t>(channels);
 							const f32 left0 = static_cast<f32>(readSample(base0)) * sampleScale;
 							const f32 right0 = static_cast<f32>(readSample(base0 + 1)) * sampleScale;
@@ -791,17 +805,11 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 								right1 = static_cast<f32>(readSample(base1 + 1)) * sampleScale;
 							}
 
-							const f32 left = left0 + (left1 - left0) * static_cast<f32>(frac);
-							const f32 right = right0 + (right1 - right0) * static_cast<f32>(frac);
-							mixVoiceSample(outIndex, left, right);
+									mixInterpolatedStereo(outIndex, left0, right0, left1, right1, frac);
 
-							position += step;
-							if (rampRemaining > 0.0) {
-								gain += static_cast<f32>(gainStep);
-								rampRemaining -= invOutputRate;
+									advanceLinearAudioFrame(position, step, gain, rampRemaining, gainStep, invOutputRate);
 							}
 						}
-					}
 				}
 			}
 			}
@@ -822,9 +830,8 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 		}
 	}
 
-	const f32 master = m_masterVolume;
 	for (size_t i = 0; i < totalSamples; ++i) {
-		f32 v = mix[i] * master;
+		f32 v = mix[i] * m_masterVolume;
 		if (v > 1.0f) v = 1.0f;
 		if (v < -1.0f) v = -1.0f;
 		output[i] = static_cast<i16>(std::lrint(v * 32767.0f));
@@ -980,7 +987,7 @@ ModulationInput SoundMaster::parseModulationInput(const BinValue& value) const {
 }
 
 const AudioAsset& SoundMaster::getAudioOrThrow(const AssetId& id) const {
-	const AudioAsset* asset = m_assets ? m_assets->getAudio(id) : nullptr;
+	const AudioAsset* asset = m_assets->getAudio(id);
 	if (!asset) {
 		throw BMSX_RUNTIME_ERROR("Audio asset not found: " + id);
 	}
@@ -1259,10 +1266,6 @@ void SoundMaster::finalizeVoiceEnd(AudioType type, const VoiceRecord& record) {
 	}
 }
 
-void SoundMaster::stopVoice(AudioType type, size_t index) {
-	removeVoice(type, index);
-}
-
 int SoundMaster::selectVoiceDropIndex(const std::vector<VoiceRecord>& pool) const {
 	if (pool.empty()) return -1;
 	size_t index = 0;
@@ -1396,8 +1399,7 @@ void SoundMaster::processPendingTransitions(f64 dt) {
 	if (pending.remainingSec > 0.0) return;
 	const PendingTransition due = pending;
 	m_pendingTransition.reset();
-	const auto startAt = due.startAtSeconds;
-	startMusicTransition(due.request.to, due.request.fadeMs, due.request.crossfadeMs, due.request.startAtLoopStart, startAt);
+	startMusicTransition(due.request.to, due.request.fadeMs, due.request.crossfadeMs, due.request.startAtLoopStart, due.startAtSeconds);
 }
 
 void SoundMaster::rampVoiceGain(VoiceRecord& record, f32 target, f64 durationSec) {
@@ -1412,9 +1414,7 @@ f32 SoundMaster::clampVolume(f32 value) const {
 }
 
 f64 SoundMaster::effectivePlaybackRate(const ModulationParams& params) const {
-	const f64 base = params.playbackRate;
-	const f64 pitch = params.pitchDelta;
-	return base * std::pow(2.0, pitch / 12.0);
+	return params.playbackRate * std::pow(2.0, params.pitchDelta / 12.0);
 }
 
 size_t SoundMaster::typeIndex(AudioType type) {

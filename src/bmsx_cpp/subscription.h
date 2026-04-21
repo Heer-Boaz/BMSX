@@ -4,8 +4,12 @@
 
 #pragma once
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <utility>
+#include <vector>
 
 namespace bmsx {
 
@@ -29,6 +33,29 @@ struct SubscriptionHandle {
 private:
 	std::function<void()> cleanup_;
 };
+
+template <typename Handler>
+struct SubscriptionEntry {
+	uint32_t id;
+	Handler handler;
+};
+
+template <typename Handler>
+SubscriptionHandle addSubscriptionHandler(
+		std::vector<SubscriptionEntry<Handler>>& handlers,
+		uint32_t& nextId,
+		Handler handler) {
+	const uint32_t id = nextId++;
+	handlers.push_back({ id, std::move(handler) });
+	return SubscriptionHandle::create([&handlers, id]() {
+		const auto it = std::find_if(handlers.begin(), handlers.end(), [id](const auto& entry) {
+			return entry.id == id;
+		});
+		if (it != handlers.end()) {
+			handlers.erase(it);
+		}
+	});
+}
 
 /**
  * RAII wrapper for automatic unsubscription.

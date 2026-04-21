@@ -39,6 +39,13 @@ constexpr size_t kAudioRequestAheadFrames = 256;
 constexpr size_t kAudioTargetMinFrames = 384;
 constexpr size_t kAudioTargetMaxFrames = 4096;
 
+static void installBuiltinRenderPipeline(GameView* view, GPUBackend* backend) {
+	auto registry = std::make_unique<RenderPassLibrary>(backend);
+	registry->registerBuiltin();
+	view->setPipelineRegistry(std::move(registry));
+	view->rebuildGraph();
+}
+
 class LibretroVoice final : public Voice {
 public:
 	void play() override { m_playing = true; }
@@ -128,10 +135,7 @@ LibretroPlatform::LibretroPlatform(BackendType backend_type)
 	if (m_backend_type == BackendType::Software) {
 		auto* view = m_engine->view();
 		auto* backend = view->backend();
-		auto registry = std::make_unique<RenderPassLibrary>(backend);
-		registry->registerBuiltin();
-		view->setPipelineRegistry(std::move(registry));
-		view->rebuildGraph();
+		installBuiltinRenderPipeline(view, backend);
 	}
 
 	m_keyboard_input = std::make_unique<KeyboardInput>("keyboard:0");
@@ -216,10 +220,7 @@ void LibretroPlatform::onContextReset() {
 	static_cast<LibretroGameViewHost*>(m_gameview_host.get())->updateBackend(backend);
 
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: rebuild render graph\n");
-	auto registry = std::make_unique<RenderPassLibrary>(backend);
-	registry->registerBuiltin();
-	view->setPipelineRegistry(std::move(registry));
-	view->rebuildGraph();
+	installBuiltinRenderPipeline(view, backend);
 	if (m_render_assets_need_refresh) {
 		log(RETRO_LOG_INFO, "[BMSX] onContextReset: refresh assets\n");
 		m_engine->refreshRenderAssets();
@@ -799,7 +800,10 @@ void LibretroPlatform::setCheat(unsigned index, bool enabled, const char* code) 
 }
 
 void* LibretroPlatform::getSaveRAM() {
-	return m_save_ram.empty() ? nullptr : m_save_ram.data();
+	if (m_save_ram.empty()) {
+		return nullptr;
+	}
+	return m_save_ram.data();
 }
 
 size_t LibretroPlatform::getSaveRAMSize() const {
@@ -807,7 +811,10 @@ size_t LibretroPlatform::getSaveRAMSize() const {
 }
 
 void* LibretroPlatform::getSystemRAM() {
-	return m_system_ram.empty() ? nullptr : m_system_ram.data();
+	if (m_system_ram.empty()) {
+		return nullptr;
+	}
+	return m_system_ram.data();
 }
 
 size_t LibretroPlatform::getSystemRAMSize() const {
@@ -933,14 +940,14 @@ void LibretroInputHub::poll() {
 				evt.code = kLibretroButtonIds[btn];
 				evt.value = pressed ? 1.0f : 0.0f;
 
-				m_event_queue.push_back(evt);
+					m_event_queue.push_back(evt);
 
-				// Notify handlers
-				for (const auto& handler : m_handlers) {
-					handler(evt);
+					// Notify handlers
+					for (const auto& entry : m_handlers) {
+						entry.handler(evt);
+					}
 				}
 			}
-		}
 
 		const size_t analogBase = player * 4;
 		bool leftChanged = new_state.analog[analogBase] != m_prev_state.analog[analogBase] ||
@@ -951,12 +958,12 @@ void LibretroInputHub::poll() {
 			evt.deviceId = deviceId;
 			evt.code = "ls";
 			evt.x = normalizeAxis(new_state.analog[analogBase]);
-			evt.y = normalizeAxis(new_state.analog[analogBase + 1]);
-			m_event_queue.push_back(evt);
-			for (const auto& handler : m_handlers) {
-				handler(evt);
+				evt.y = normalizeAxis(new_state.analog[analogBase + 1]);
+				m_event_queue.push_back(evt);
+				for (const auto& entry : m_handlers) {
+					entry.handler(evt);
+				}
 			}
-		}
 
 		bool rightChanged = new_state.analog[analogBase + 2] != m_prev_state.analog[analogBase + 2] ||
 			new_state.analog[analogBase + 3] != m_prev_state.analog[analogBase + 3];
@@ -966,21 +973,21 @@ void LibretroInputHub::poll() {
 			evt.deviceId = deviceId;
 			evt.code = "rs";
 			evt.x = normalizeAxis(new_state.analog[analogBase + 2]);
-			evt.y = normalizeAxis(new_state.analog[analogBase + 3]);
-			m_event_queue.push_back(evt);
-			for (const auto& handler : m_handlers) {
-				handler(evt);
+				evt.y = normalizeAxis(new_state.analog[analogBase + 3]);
+				m_event_queue.push_back(evt);
+				for (const auto& entry : m_handlers) {
+					entry.handler(evt);
+				}
 			}
-		}
 	}
 
 	const char* pointerDeviceId = "pointer:0"; // TODO: UGLY STRING INSTANTIATION IN POLL LOOP, FIX
-	auto emitPointerEvent = [this](const InputEvt& evt) {
-		m_event_queue.push_back(evt);
-		for (const auto& handler : m_handlers) {
-			handler(evt);
-		}
-	};
+		auto emitPointerEvent = [this](const InputEvt& evt) {
+			m_event_queue.push_back(evt);
+			for (const auto& entry : m_handlers) {
+				entry.handler(evt);
+			}
+		};
 
 	const i16 mouseDeltaX = m_input_state_cb(0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdX);
 	const i16 mouseDeltaY = m_input_state_cb(0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdY);
@@ -1027,8 +1034,8 @@ void LibretroInputHub::poll() {
 			pointerY = 0;
 			pointerPositionValid = true;
 		}
-		pointerX = std::clamp(pointerX + static_cast<i32>(mouseDeltaX), 0, std::max(0, viewportWidth - 1));
-		pointerY = std::clamp(pointerY + static_cast<i32>(mouseDeltaY), 0, std::max(0, viewportHeight - 1));
+		pointerX = std::clamp(pointerX + static_cast<i32>(mouseDeltaX), 0, viewportWidth - 1);
+		pointerY = std::clamp(pointerY + static_cast<i32>(mouseDeltaY), 0, viewportHeight - 1);
 	}
 
 	if (pointerPositionValid &&
@@ -1075,8 +1082,8 @@ void LibretroInputHub::postKeyboardEvent(std::string_view code, bool down) {
 	evt.deviceId = "keyboard:0"; // TODO: UGLY STRING INSTANTIATION IN POST KEYBOARD EVENT, FIX
 	evt.code = std::move(key);
 	m_event_queue.push_back(evt);
-	for (const auto& handler : m_handlers) {
-		handler(evt);
+	for (const auto& entry : m_handlers) {
+		entry.handler(evt);
 	}
 }
 
@@ -1096,8 +1103,8 @@ void LibretroInputHub::clearKeyboardState() {
 		evt.deviceId = "keyboard:0"; // TODO: UGLY STRING INSTANTIATION IN CLEAR KEYBOARD STATE, FIX
 		evt.code = code;
 		m_event_queue.push_back(evt);
-		for (const auto& handler : m_handlers) {
-			handler(evt);
+		for (const auto& entry : m_handlers) {
+			entry.handler(evt);
 		}
 	}
 }
@@ -1113,14 +1120,7 @@ void LibretroInputHub::resetFocusState() {
 }
 
 SubscriptionHandle LibretroInputHub::subscribe(std::function<void(const InputEvt&)> handler) {
-	m_handlers.push_back(handler);
-	size_t idx = m_handlers.size() - 1;
-
-	return SubscriptionHandle::create([this, idx]() {
-		if (idx < m_handlers.size()) {
-			m_handlers.erase(m_handlers.begin() + static_cast<ptrdiff_t>(idx));
-		}
-	});
+	return addSubscriptionHandler(m_handlers, m_next_handler_id, std::move(handler));
 }
 
 std::optional<InputEvt> LibretroInputHub::nextEvt() {

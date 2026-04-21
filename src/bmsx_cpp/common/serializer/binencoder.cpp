@@ -99,20 +99,21 @@ i64 BinDecoder::readVarInt() {
 	return static_cast<i64>((raw >> 1) ^ (~(raw & 1) + 1));
 }
 
-f32 BinDecoder::readF32() {
-	if (m_pos + 4 > m_size) throw BMSX_RUNTIME_ERROR("BinDecoder: not enough data for f32");
-	f32 result;
-	std::memcpy(&result, m_data + m_pos, sizeof(f32));
-	m_pos += sizeof(f32);
+template<typename T>
+T BinDecoder::readScalar(const char* typeName) {
+	if (m_pos + sizeof(T) > m_size) throw BMSX_RUNTIME_ERROR(std::string("BinDecoder: not enough data for ") + typeName);
+	T result;
+	std::memcpy(&result, m_data + m_pos, sizeof(T));
+	m_pos += sizeof(T);
 	return result;
 }
 
+f32 BinDecoder::readF32() {
+	return readScalar<f32>("f32");
+}
+
 f64 BinDecoder::readF64() {
-	if (m_pos + 8 > m_size) throw BMSX_RUNTIME_ERROR("BinDecoder: not enough data for f64");
-	f64 result;
-	std::memcpy(&result, m_data + m_pos, sizeof(f64));
-	m_pos += sizeof(f64);
-	return result;
+	return readScalar<f64>("f64");
 }
 
 std::string BinDecoder::readString() {

@@ -222,7 +222,6 @@ private:
 	VoiceId startVoice(AudioType type, const AssetId& id, const AudioAsset& asset, const ModulationParams& params, i32 priority, f32 initialGain);
 	void removeVoice(AudioType type, size_t index);
 	void finalizeVoiceEnd(AudioType type, const VoiceRecord& record);
-	void stopVoice(AudioType type, size_t index);
 	int selectVoiceDropIndex(const std::vector<VoiceRecord>& pool) const;
 
 	void startMusicNow(const AssetId& target, bool startAtLoopStart, std::optional<f64> startAtSeconds);

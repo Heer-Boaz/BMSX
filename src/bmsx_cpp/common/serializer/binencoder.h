@@ -135,6 +135,8 @@ private:
 	u8 readU8();
 	u32 readVarUint();
 	i64 readVarInt();
+	template<typename T>
+	T readScalar(const char* typeName);
 	f32 readF32();
 	f64 readF64();
 	std::string readString();

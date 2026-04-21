@@ -57,23 +57,11 @@ public:
 		m_back.clear();
 	}
 
-	template<typename Fn>
-	void forEachFront(Fn&& fn) { m_front.forEach(std::forward<Fn>(fn)); }
-	template<typename Fn>
-	void forEachFront(Fn&& fn) const { m_front.forEach(std::forward<Fn>(fn)); }
-	template<typename Fn>
-	void forEachBack(Fn&& fn) { m_back.forEach(std::forward<Fn>(fn)); }
-	template<typename Fn>
-	void forEachBack(Fn&& fn) const { m_back.forEach(std::forward<Fn>(fn)); }
-
-	template<typename Compare>
-	void sortFront(Compare&& compare) { m_front.sort(std::forward<Compare>(compare)); }
-	template<typename Compare>
-	void sortBack(Compare&& compare) { m_back.sort(std::forward<Compare>(compare)); }
-
 	// Direct access to front buffer for iteration
 	ScratchBatch<T>& front() { return m_front; }
 	const ScratchBatch<T>& front() const { return m_front; }
+	ScratchBatch<T>& back() { return m_back; }
+	const ScratchBatch<T>& back() const { return m_back; }
 
 	// Debug-only: return counts without exposing internal storage
 	struct DebugCounts { size_t front; size_t back; };

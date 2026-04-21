@@ -10,7 +10,6 @@
 #ifndef BMSX_SCRATCHBUFFER_H
 #define BMSX_SCRATCHBUFFER_H
 
-#include <algorithm>
 #include <cstddef>
 #include <deque>
 #include <utility>
@@ -102,11 +101,6 @@ public:
 		for (size_t i = 0; i < m_size; ++i) {
 			fn(m_items[i], i);
 		}
-	}
-
-	template<typename CompareFn>
-	void sort(CompareFn compareFn) {
-		std::sort(m_items.begin(), m_items.begin() + m_size, compareFn);
 	}
 
 	void replaceInto(std::vector<T>& target, size_t startIndex, size_t deleteCount) const {

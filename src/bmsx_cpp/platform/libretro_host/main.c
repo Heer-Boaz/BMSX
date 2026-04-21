@@ -483,10 +483,9 @@ static void crash_handler(int sig, siginfo_t* si, void* ctx_) {
 #if defined(__arm__)
 	ucontext_t* uc = (ucontext_t*)ctx_;
 	unsigned long pc = uc->uc_mcontext.arm_pc;
-	unsigned long lr = uc->uc_mcontext.arm_lr;
 	unsigned long sp = uc->uc_mcontext.arm_sp;
 	fprintf(stderr, "\nCRASH sig=%d addr=%p pc=%08lx lr=%08lx sp=%08lx\n",
-			sig, si->si_addr, pc, lr, sp);
+			sig, si->si_addr, pc, (unsigned long)uc->uc_mcontext.arm_lr, sp);
 #elif defined(__aarch64__)
 	ucontext_t* uc = (ucontext_t*)ctx_;
 	unsigned long pc = uc->uc_mcontext.pc;
@@ -721,6 +720,13 @@ static bool gl_load(void) {
 	return true;
 }
 
+static void gl_set_nearest_clamp_texture_2d(void) {
+	glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+}
+
 static GLuint compile_shader(GLenum type, const char* src) {
 	GLuint shader = glCreateShader_ptr(type);
 	if (!shader) {
@@ -833,10 +839,7 @@ static bool hw_ensure_fbo(unsigned width, unsigned height) {
 	}
 	glGenTextures_ptr(1, &g_hw_tex);
 	glBindTexture_ptr(GL_TEXTURE_2D, g_hw_tex);
-	glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	gl_set_nearest_clamp_texture_2d();
 	glTexImage2D_ptr(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)width, (GLsizei)height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
 	glGenFramebuffers_ptr(1, &g_hw_fbo);
@@ -1009,40 +1012,52 @@ static bool menu_is_crt_detail_key(const char* key) {
 			strcmp(key, kMenuKeyCrtAperture) == 0;
 }
 
-static const char* menu_known_label(const char* key) {
+typedef struct MenuKnownOption {
+	const char* key;
+	const char* label;
+	const char* info;
+} MenuKnownOption;
+
+static const MenuKnownOption kMenuKnownOptions[] = {
+	{ kMenuKeyRenderBackend, "Render Backend", "Switch renderer backend (restart required)." },
+	{ kMenuKeyCrtPostprocessing, "CRT Post-processing", "Enable CRT post-processing." },
+	{ kMenuKeyPostprocessDetail, "Post-processing Detail", "Increase post-processing detail (higher offscreen scale)." },
+	{ kMenuKeyCrtNoise, "CRT Noise", "Toggle CRT noise/grain." },
+	{ kMenuKeyCrtColorBleed, "CRT Color Bleed", "Toggle CRT color bleed." },
+	{ kMenuKeyCrtScanlines, "CRT Scanlines", "Toggle CRT scanlines." },
+	{ kMenuKeyCrtBlur, "CRT Blur", "Toggle CRT blur." },
+	{ kMenuKeyCrtGlow, "CRT Glow", "Toggle CRT glow." },
+	{ kMenuKeyCrtFringing, "CRT Fringing", "Toggle CRT fringing." },
+	{ kMenuKeyCrtAperture, "CRT Aperture", "Toggle CRT aperture grille." },
+	{ kMenuKeyDither, "Dither", "Select dithering mode." },
+	{ kMenuKeyFrameSkip, "Frame Skip", "Skip frames when rendering exceeds frame budget." },
+	{ kMenuKeyHostShowFps, "Show FPS", "Toggle FPS overlay." },
+};
+
+static const MenuKnownOption* menu_find_known_option(const char* key) {
 	if (!key) return NULL;
-	if (strcmp(key, kMenuKeyRenderBackend) == 0) return "Render Backend";
-	if (strcmp(key, kMenuKeyCrtPostprocessing) == 0) return "CRT Post-processing";
-	if (strcmp(key, kMenuKeyPostprocessDetail) == 0) return "Post-processing Detail";
-	if (strcmp(key, kMenuKeyCrtNoise) == 0) return "CRT Noise";
-	if (strcmp(key, kMenuKeyCrtColorBleed) == 0) return "CRT Color Bleed";
-	if (strcmp(key, kMenuKeyCrtScanlines) == 0) return "CRT Scanlines";
-	if (strcmp(key, kMenuKeyCrtBlur) == 0) return "CRT Blur";
-	if (strcmp(key, kMenuKeyCrtGlow) == 0) return "CRT Glow";
-	if (strcmp(key, kMenuKeyCrtFringing) == 0) return "CRT Fringing";
-	if (strcmp(key, kMenuKeyCrtAperture) == 0) return "CRT Aperture";
-	if (strcmp(key, kMenuKeyDither) == 0) return "Dither";
-	if (strcmp(key, kMenuKeyFrameSkip) == 0) return "Frame Skip";
-	if (strcmp(key, kMenuKeyHostShowFps) == 0) return "Show FPS";
+	for (size_t i = 0; i < sizeof(kMenuKnownOptions) / sizeof(kMenuKnownOptions[0]); ++i) {
+		if (strcmp(key, kMenuKnownOptions[i].key) == 0) {
+			return &kMenuKnownOptions[i];
+		}
+	}
 	return NULL;
 }
 
+static const char* menu_known_label(const char* key) {
+	const MenuKnownOption* option = menu_find_known_option(key);
+	if (!option) {
+		return NULL;
+	}
+	return option->label;
+}
+
 static const char* menu_known_info(const char* key) {
-	if (!key) return NULL;
-	if (strcmp(key, kMenuKeyRenderBackend) == 0) return "Switch renderer backend (restart required).";
-	if (strcmp(key, kMenuKeyCrtPostprocessing) == 0) return "Enable CRT post-processing.";
-	if (strcmp(key, kMenuKeyPostprocessDetail) == 0) return "Increase post-processing detail (higher offscreen scale).";
-	if (strcmp(key, kMenuKeyCrtNoise) == 0) return "Toggle CRT noise/grain.";
-	if (strcmp(key, kMenuKeyCrtColorBleed) == 0) return "Toggle CRT color bleed.";
-	if (strcmp(key, kMenuKeyCrtScanlines) == 0) return "Toggle CRT scanlines.";
-	if (strcmp(key, kMenuKeyCrtBlur) == 0) return "Toggle CRT blur.";
-	if (strcmp(key, kMenuKeyCrtGlow) == 0) return "Toggle CRT glow.";
-	if (strcmp(key, kMenuKeyCrtFringing) == 0) return "Toggle CRT fringing.";
-	if (strcmp(key, kMenuKeyCrtAperture) == 0) return "Toggle CRT aperture grille.";
-	if (strcmp(key, kMenuKeyDither) == 0) return "Select dithering mode.";
-	if (strcmp(key, kMenuKeyFrameSkip) == 0) return "Skip frames when rendering exceeds frame budget.";
-	if (strcmp(key, kMenuKeyHostShowFps) == 0) return "Toggle FPS overlay.";
-	return NULL;
+	const MenuKnownOption* option = menu_find_known_option(key);
+	if (!option) {
+		return NULL;
+	}
+	return option->info;
 }
 
 static const char* menu_resolve_label(const char* key, const char* preferred) {
@@ -1053,7 +1068,10 @@ static const char* menu_resolve_label(const char* key, const char* preferred) {
 	if (known && known[0]) {
 		return known;
 	}
-	return key ? key : "";
+	if (key) {
+		return key;
+	}
+	return "";
 }
 
 static const char* menu_resolve_info(const char* key, const char* preferred) {
@@ -1061,6 +1079,38 @@ static const char* menu_resolve_info(const char* key, const char* preferred) {
 		return preferred;
 	}
 	return menu_known_info(key);
+}
+
+static size_t menu_copy_option_values(MenuOptionValue* values, const struct retro_core_option_value* source) {
+	size_t count = 0;
+	for (size_t i = 0; source[i].value && count < MENU_MAX_VALUES; ++i) {
+		const char* label = source[i].label;
+		if (!label) {
+			label = source[i].value;
+		}
+		menu_copy_str(values[count].value, sizeof(values[count].value), source[i].value);
+		menu_copy_str(values[count].label, sizeof(values[count].label), label);
+		++count;
+	}
+	return count;
+}
+
+static void menu_apply_core_option_values(
+		MenuOption* opt,
+		const char* key,
+		const char* label,
+		const char* info,
+		const struct retro_core_option_value* source,
+		const char* default_value) {
+	MenuOptionValue values[MENU_MAX_VALUES];
+	const size_t count = menu_copy_option_values(values, source);
+	menu_set_option_values(
+			opt,
+			menu_resolve_label(key, label),
+			menu_resolve_info(key, info),
+			values,
+			count,
+			default_value);
 }
 
 static const struct retro_core_option_v2_category* menu_find_v2_category(
@@ -1308,17 +1358,7 @@ static void menu_ingest_options_v2(const struct retro_core_options_v2* opts) {
 		if ((!info || !info[0]) && category && category->info && category->info[0]) {
 			info = category->info;
 		}
-		label = menu_resolve_label(def->key, label);
-		info = menu_resolve_info(def->key, info);
-		MenuOptionValue values[MENU_MAX_VALUES];
-		size_t count = 0;
-		for (size_t i = 0; def->values[i].value && count < MENU_MAX_VALUES; ++i) {
-			menu_copy_str(values[count].value, sizeof(values[count].value), def->values[i].value);
-			menu_copy_str(values[count].label, sizeof(values[count].label),
-					def->values[i].label ? def->values[i].label : def->values[i].value);
-			++count;
-		}
-		menu_set_option_values(opt, label, info, values, count, def->default_value);
+		menu_apply_core_option_values(opt, def->key, label, info, def->values, def->default_value);
 	}
 	menu_append_host_options();
 	menu_append_actions();
@@ -1329,17 +1369,7 @@ static void menu_ingest_options_v1(const struct retro_core_option_definition* de
 	for (const struct retro_core_option_definition* def = defs; def->key; ++def) {
 		MenuOption* opt = menu_get_option(def->key);
 		if (!opt) continue;
-		const char* label = menu_resolve_label(def->key, def->desc);
-		const char* info = menu_resolve_info(def->key, def->info);
-		MenuOptionValue values[MENU_MAX_VALUES];
-		size_t count = 0;
-		for (size_t i = 0; def->values[i].value && count < MENU_MAX_VALUES; ++i) {
-			menu_copy_str(values[count].value, sizeof(values[count].value), def->values[i].value);
-			menu_copy_str(values[count].label, sizeof(values[count].label),
-					def->values[i].label ? def->values[i].label : def->values[i].value);
-			++count;
-		}
-		menu_set_option_values(opt, label, info, values, count, def->default_value);
+		menu_apply_core_option_values(opt, def->key, def->desc, def->info, def->values, def->default_value);
 	}
 	menu_append_host_options();
 	menu_append_actions();
@@ -1378,8 +1408,15 @@ static void menu_ingest_variables(const struct retro_variable* vars) {
 			menu_copy_str(values[count].label, sizeof(values[count].label), tok);
 			++count;
 		}
-		const char* default_value = count > 0 ? values[0].value : NULL;
-		const char* info = menu_resolve_info(var->key, opt->info[0] ? opt->info : NULL);
+			const char* default_value = NULL;
+			if (count > 0) {
+				default_value = values[0].value;
+			}
+			const char* info = NULL;
+			if (opt->info[0]) {
+				info = opt->info;
+			}
+			info = menu_resolve_info(var->key, info);
 		menu_set_option_values(opt, label_buf, info, values, count, default_value);
 	}
 	menu_append_host_options();
@@ -1468,6 +1505,99 @@ static void surface_draw_text(uint8_t* surface, int surface_w, int surface_h, in
 	}
 }
 
+static inline uint8_t blend_channel_u8(uint8_t src, uint8_t dst, uint8_t alpha) {
+	return (uint8_t)((src * alpha + dst * (255 - alpha) + 127) / 255);
+}
+
+static inline uint32_t pack_xrgb8888(uint8_t r, uint8_t g, uint8_t b) {
+	return (uint32_t)((r << 16) | (g << 8) | b);
+}
+
+static inline uint32_t blend_rgba_over_xrgb8888(uint32_t dst, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+	if (a == 255) {
+		return pack_xrgb8888(r, g, b);
+	}
+	const uint8_t dst_r = (uint8_t)((dst >> 16) & 0xFF);
+	const uint8_t dst_g = (uint8_t)((dst >> 8) & 0xFF);
+	const uint8_t dst_b = (uint8_t)(dst & 0xFF);
+	return pack_xrgb8888(
+			blend_channel_u8(r, dst_r, a),
+			blend_channel_u8(g, dst_g, a),
+			blend_channel_u8(b, dst_b, a));
+}
+
+static inline uint16_t blend_rgba_over_rgb565(uint16_t dst, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+	if (a == 255) {
+		return rgb888_to_rgb565(r, g, b);
+	}
+	const uint32_t expanded = rgb565_to_xrgb8888(dst);
+	const uint8_t dst_r = (uint8_t)((expanded >> 16) & 0xFF);
+	const uint8_t dst_g = (uint8_t)((expanded >> 8) & 0xFF);
+	const uint8_t dst_b = (uint8_t)(expanded & 0xFF);
+	return rgb888_to_rgb565(
+			blend_channel_u8(r, dst_r, a),
+			blend_channel_u8(g, dst_g, a),
+			blend_channel_u8(b, dst_b, a));
+}
+
+static void blit_rgba_line_xrgb8888(uint32_t* dst, const uint8_t* src, int width) {
+	for (int x = 0; x < width; ++x) {
+		const uint8_t* rgba = src + (size_t)x * 4u;
+		const uint8_t a = rgba[3];
+		if (a) {
+			dst[x] = blend_rgba_over_xrgb8888(dst[x], rgba[0], rgba[1], rgba[2], a);
+		}
+	}
+}
+
+static void blit_rgba_line_rgb565(uint16_t* dst, const uint8_t* src, int width) {
+	for (int x = 0; x < width; ++x) {
+		const uint8_t* rgba = src + (size_t)x * 4u;
+		const uint8_t a = rgba[3];
+		if (a) {
+			dst[x] = blend_rgba_over_rgb565(dst[x], rgba[0], rgba[1], rgba[2], a);
+		}
+	}
+}
+
+static void blit_rgba_surface_software(
+		const uint8_t* surface,
+		int surface_w,
+		int surface_h,
+		int surface_stride,
+		int dst_x,
+		int dst_y) {
+	int x0 = 0;
+	int y0 = 0;
+	int x1 = surface_w;
+	int y1 = surface_h;
+	if (dst_x < 0) x0 = -dst_x;
+	if (dst_y < 0) y0 = -dst_y;
+	if (dst_x + x1 > g_fb.width) x1 = g_fb.width - dst_x;
+	if (dst_y + y1 > g_fb.height) y1 = g_fb.height - dst_y;
+	if (x0 >= x1 || y0 >= y1) return;
+
+	const int clipped_w = x1 - x0;
+	switch (g_fb.bpp) {
+		case 32:
+			for (int y = y0; y < y1; ++y) {
+				uint8_t* dst_line = g_fb.map + (size_t)(dst_y + y) * (size_t)g_fb.stride + (size_t)(dst_x + x0) * 4u;
+				const uint8_t* src_line = surface + (size_t)y * (size_t)surface_stride + (size_t)x0 * 4u;
+				blit_rgba_line_xrgb8888((uint32_t*)dst_line, src_line, clipped_w);
+			}
+			break;
+		case 16:
+			for (int y = y0; y < y1; ++y) {
+				uint8_t* dst_line = g_fb.map + (size_t)(dst_y + y) * (size_t)g_fb.stride + (size_t)(dst_x + x0) * 2u;
+				const uint8_t* src_line = surface + (size_t)y * (size_t)surface_stride + (size_t)x0 * 4u;
+				blit_rgba_line_rgb565((uint16_t*)dst_line, src_line, clipped_w);
+			}
+			break;
+		default:
+			break;
+	}
+}
+
 static int menu_text_width(const char* text, int scale) {
 	if (!text) return 0;
 	return (int)strlen(text) * (5 + 1) * scale;
@@ -1551,117 +1681,22 @@ static void fps_render_software(void) {
 	if (g_fps_dirty) fps_rebuild_surface();
 	if (!g_fps_surface) return;
 
-	for (int y = 0; y < g_fps_surface_h; ++y) {
-		int fb_y = g_fps_y + y;
-		if (fb_y < 0 || fb_y >= g_fb.height) continue;
-		uint8_t* dst_line = g_fb.map + (size_t)fb_y * (size_t)g_fb.stride + (size_t)g_fps_x * (size_t)(g_fb.bpp / 8);
-		const uint8_t* src_line = g_fps_surface + (size_t)y * (size_t)g_fps_surface_stride;
-		for (int x = 0; x < g_fps_surface_w; ++x) {
-			int fb_x = g_fps_x + x;
-			if (fb_x < 0 || fb_x >= g_fb.width) continue;
-			const uint8_t* src = src_line + (size_t)x * 4u;
-			uint8_t a = src[3];
-			if (a == 0) continue;
-			uint8_t r = src[0];
-			uint8_t g = src[1];
-			uint8_t b = src[2];
-			if (g_fb.bpp == 32) {
-				uint32_t* dst = (uint32_t*)dst_line;
-				uint32_t d = dst[x];
-				uint8_t dr = (uint8_t)((d >> 16) & 0xFF);
-				uint8_t dg = (uint8_t)((d >> 8) & 0xFF);
-				uint8_t db = (uint8_t)(d & 0xFF);
-				if (a != 255) {
-					dr = (uint8_t)((r * a + dr * (255 - a) + 127) / 255);
-					dg = (uint8_t)((g * a + dg * (255 - a) + 127) / 255);
-					db = (uint8_t)((b * a + db * (255 - a) + 127) / 255);
-				} else {
-					dr = r;
-					dg = g;
-					db = b;
-				}
-				dst[x] = (uint32_t)((dr << 16) | (dg << 8) | db);
-			} else if (g_fb.bpp == 16) {
-				uint16_t* dst = (uint16_t*)dst_line;
-				uint32_t d = rgb565_to_xrgb8888(dst[x]);
-				uint8_t dr = (uint8_t)((d >> 16) & 0xFF);
-				uint8_t dg = (uint8_t)((d >> 8) & 0xFF);
-				uint8_t db = (uint8_t)(d & 0xFF);
-				if (a != 255) {
-					dr = (uint8_t)((r * a + dr * (255 - a) + 127) / 255);
-					dg = (uint8_t)((g * a + dg * (255 - a) + 127) / 255);
-					db = (uint8_t)((b * a + db * (255 - a) + 127) / 255);
-				} else {
-					dr = r;
-					dg = g;
-					db = b;
-				}
-				dst[x] = rgb888_to_rgb565(dr, dg, db);
-			}
-		}
-	}
+	blit_rgba_surface_software(g_fps_surface, g_fps_surface_w, g_fps_surface_h, g_fps_surface_stride, g_fps_x, g_fps_y);
 }
 
-static void fps_render_hw(void) {
-	if (!g_show_fps || g_menu_active) return;
-	if (g_fps_dirty) fps_rebuild_surface();
-	if (!g_fps_surface) return;
-	if (!hw_init_blitter()) return;
-
-	if (!g_fps_tex || g_fps_tex_w != g_fps_surface_w || g_fps_tex_h != g_fps_surface_h) {
-		if (g_fps_tex) {
-			glDeleteTextures_ptr(1, &g_fps_tex);
-			g_fps_tex = 0;
-		}
-		glGenTextures_ptr(1, &g_fps_tex);
-		glBindTexture_ptr(GL_TEXTURE_2D, g_fps_tex);
-		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		glTexImage2D_ptr(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)g_fps_surface_w, (GLsizei)g_fps_surface_h,
-			0, GL_RGBA, GL_UNSIGNED_BYTE, g_fps_surface);
-		g_fps_tex_w = g_fps_surface_w;
-		g_fps_tex_h = g_fps_surface_h;
-		g_fps_gl_dirty = false;
-	} else if (g_fps_gl_dirty) {
-		glBindTexture_ptr(GL_TEXTURE_2D, g_fps_tex);
-		glTexImage2D_ptr(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)g_fps_surface_w, (GLsizei)g_fps_surface_h,
-			0, GL_RGBA, GL_UNSIGNED_BYTE, g_fps_surface);
-		g_fps_gl_dirty = false;
-	}
-
-	if (!g_fps_vbo) {
-		glGenBuffers_ptr(1, &g_fps_vbo);
-	}
-
-	const float left = ((float)g_fps_x / (float)g_fb.width) * 2.0f - 1.0f;
-	const float right = ((float)(g_fps_x + g_fps_surface_w) / (float)g_fb.width) * 2.0f - 1.0f;
-	const float top = 1.0f - ((float)g_fps_y / (float)g_fb.height) * 2.0f;
-	const float bottom = 1.0f - ((float)(g_fps_y + g_fps_surface_h) / (float)g_fb.height) * 2.0f;
-	const float quad[] = {
-		left,  bottom, 0.0f, 0.0f,
-		right, bottom, 1.0f, 0.0f,
-		left,  top,    0.0f, 1.0f,
-		right, top,    1.0f, 1.0f,
-	};
-
-	glViewport_ptr(0, 0, g_fb.width, g_fb.height);
-	glDisable_ptr(GL_DEPTH_TEST);
-	glDisable_ptr(GL_CULL_FACE);
-	glEnable_ptr(GL_BLEND);
-	glBlendFunc_ptr(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+static void hw_begin_blit(GLuint tex, float flip_y) {
 	glUseProgram_ptr(g_blit_program);
 	glActiveTexture_ptr(GL_TEXTURE0);
-	glBindTexture_ptr(GL_TEXTURE_2D, g_fps_tex);
+	glBindTexture_ptr(GL_TEXTURE_2D, tex);
 	if (g_blit_uniform_tex >= 0) {
 		glUniform1i_ptr(g_blit_uniform_tex, 0);
 	}
 	if (g_blit_uniform_flip >= 0) {
-		glUniform1f_ptr(g_blit_uniform_flip, 1.0f);
+		glUniform1f_ptr(g_blit_uniform_flip, flip_y);
 	}
-	glBindBuffer_ptr(GL_ARRAY_BUFFER, g_fps_vbo);
-	glBufferData_ptr(GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(quad), quad, GL_DYNAMIC_DRAW);
+}
+
+static void hw_enable_blit_attributes(void) {
 	if (g_blit_attr_pos >= 0) {
 		glEnableVertexAttribArray_ptr((GLuint)g_blit_attr_pos);
 		glVertexAttribPointer_ptr((GLuint)g_blit_attr_pos, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)0);
@@ -1670,8 +1705,79 @@ static void fps_render_hw(void) {
 		glEnableVertexAttribArray_ptr((GLuint)g_blit_attr_uv);
 		glVertexAttribPointer_ptr((GLuint)g_blit_attr_uv, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)(2 * sizeof(float)));
 	}
+}
+
+static void hw_bind_static_blit_vbo(GLuint vbo) {
+	glBindBuffer_ptr(GL_ARRAY_BUFFER, vbo);
+	hw_enable_blit_attributes();
+}
+
+static void hw_upload_dynamic_blit_vbo(GLuint vbo, const float* quad) {
+	glBindBuffer_ptr(GL_ARRAY_BUFFER, vbo);
+	glBufferData_ptr(GL_ARRAY_BUFFER, (GLsizeiptr)(16 * sizeof(float)), quad, GL_DYNAMIC_DRAW);
+	hw_enable_blit_attributes();
+}
+
+static void hw_update_rgba_overlay_texture(
+		GLuint* tex,
+		int* tex_w,
+		int* tex_h,
+		bool* dirty,
+		int width,
+		int height,
+		const uint8_t* pixels) {
+	if (!*tex || *tex_w != width || *tex_h != height) {
+		if (*tex) {
+			glDeleteTextures_ptr(1, tex);
+			*tex = 0;
+		}
+		glGenTextures_ptr(1, tex);
+		glBindTexture_ptr(GL_TEXTURE_2D, *tex);
+		gl_set_nearest_clamp_texture_2d();
+		glTexImage2D_ptr(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)width, (GLsizei)height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+		*tex_w = width;
+		*tex_h = height;
+		*dirty = false;
+	} else if (*dirty) {
+		glBindTexture_ptr(GL_TEXTURE_2D, *tex);
+		glTexImage2D_ptr(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)width, (GLsizei)height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+		*dirty = false;
+	}
+}
+
+static void hw_draw_rgba_overlay(GLuint tex, GLuint* vbo, int x, int y, int width, int height) {
+	if (!*vbo) {
+		glGenBuffers_ptr(1, vbo);
+	}
+	const float left = ((float)x / (float)g_fb.width) * 2.0f - 1.0f;
+	const float right = ((float)(x + width) / (float)g_fb.width) * 2.0f - 1.0f;
+	const float top = 1.0f - ((float)y / (float)g_fb.height) * 2.0f;
+	const float bottom = 1.0f - ((float)(y + height) / (float)g_fb.height) * 2.0f;
+	const float quad[] = {
+		left,  bottom, 0.0f, 0.0f,
+		right, bottom, 1.0f, 0.0f,
+		left,  top,    0.0f, 1.0f,
+		right, top,    1.0f, 1.0f,
+	};
+	glViewport_ptr(0, 0, g_fb.width, g_fb.height);
+	glDisable_ptr(GL_DEPTH_TEST);
+	glDisable_ptr(GL_CULL_FACE);
+	glEnable_ptr(GL_BLEND);
+	glBlendFunc_ptr(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	hw_begin_blit(tex, 1.0f);
+	hw_upload_dynamic_blit_vbo(*vbo, quad);
 	glDrawArrays_ptr(GL_TRIANGLE_STRIP, 0, 4);
 	glDisable_ptr(GL_BLEND);
+}
+
+static void fps_render_hw(void) {
+	if (!g_show_fps || g_menu_active) return;
+	if (g_fps_dirty) fps_rebuild_surface();
+	if (!g_fps_surface) return;
+	if (!hw_init_blitter()) return;
+
+	hw_update_rgba_overlay_texture(&g_fps_tex, &g_fps_tex_w, &g_fps_tex_h, &g_fps_gl_dirty, g_fps_surface_w, g_fps_surface_h, g_fps_surface);
+	hw_draw_rgba_overlay(g_fps_tex, &g_fps_vbo, g_fps_x, g_fps_y, g_fps_surface_w, g_fps_surface_h);
 }
 
 static void fps_update(void) {
@@ -1877,55 +1983,7 @@ static void msg_render_software(void) {
 	if (g_msg_dirty) msg_rebuild_surface();
 	if (!g_msg_surface) return;
 
-	for (int y = 0; y < g_msg_surface_h; ++y) {
-		int fb_y = g_msg_y + y;
-		if (fb_y < 0 || fb_y >= g_fb.height) continue;
-		uint8_t* dst_line = g_fb.map + (size_t)fb_y * (size_t)g_fb.stride + (size_t)g_msg_x * (size_t)(g_fb.bpp / 8);
-		const uint8_t* src_line = g_msg_surface + (size_t)y * (size_t)g_msg_surface_stride;
-		for (int x = 0; x < g_msg_surface_w; ++x) {
-			int fb_x = g_msg_x + x;
-			if (fb_x < 0 || fb_x >= g_fb.width) continue;
-			const uint8_t* src = src_line + (size_t)x * 4u;
-			uint8_t a = src[3];
-			if (a == 0) continue;
-			uint8_t r = src[0];
-			uint8_t g = src[1];
-			uint8_t b = src[2];
-			if (g_fb.bpp == 32) {
-				uint32_t* dst = (uint32_t*)dst_line;
-				uint32_t d = dst[x];
-				uint8_t dr = (uint8_t)((d >> 16) & 0xFF);
-				uint8_t dg = (uint8_t)((d >> 8) & 0xFF);
-				uint8_t db = (uint8_t)(d & 0xFF);
-				if (a != 255) {
-					dr = (uint8_t)((r * a + dr * (255 - a) + 127) / 255);
-					dg = (uint8_t)((g * a + dg * (255 - a) + 127) / 255);
-					db = (uint8_t)((b * a + db * (255 - a) + 127) / 255);
-				} else {
-					dr = r;
-					dg = g;
-					db = b;
-				}
-				dst[x] = (uint32_t)((dr << 16) | (dg << 8) | db);
-			} else if (g_fb.bpp == 16) {
-				uint16_t* dst = (uint16_t*)dst_line;
-				uint32_t d = rgb565_to_xrgb8888(dst[x]);
-				uint8_t dr = (uint8_t)((d >> 16) & 0xFF);
-				uint8_t dg = (uint8_t)((d >> 8) & 0xFF);
-				uint8_t db = (uint8_t)(d & 0xFF);
-				if (a != 255) {
-					dr = (uint8_t)((r * a + dr * (255 - a) + 127) / 255);
-					dg = (uint8_t)((g * a + dg * (255 - a) + 127) / 255);
-					db = (uint8_t)((b * a + db * (255 - a) + 127) / 255);
-				} else {
-					dr = r;
-					dg = g;
-					db = b;
-				}
-				dst[x] = rgb888_to_rgb565(dr, dg, db);
-			}
-		}
-	}
+	blit_rgba_surface_software(g_msg_surface, g_msg_surface_w, g_msg_surface_h, g_msg_surface_stride, g_msg_x, g_msg_y);
 }
 
 static void msg_render_hw(void) {
@@ -1934,70 +1992,8 @@ static void msg_render_hw(void) {
 	if (!g_msg_surface) return;
 	if (!hw_init_blitter()) return;
 
-	if (!g_msg_tex || g_msg_tex_w != g_msg_surface_w || g_msg_tex_h != g_msg_surface_h) {
-		if (g_msg_tex) {
-			glDeleteTextures_ptr(1, &g_msg_tex);
-			g_msg_tex = 0;
-		}
-		glGenTextures_ptr(1, &g_msg_tex);
-		glBindTexture_ptr(GL_TEXTURE_2D, g_msg_tex);
-		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		glTexImage2D_ptr(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)g_msg_surface_w, (GLsizei)g_msg_surface_h,
-			0, GL_RGBA, GL_UNSIGNED_BYTE, g_msg_surface);
-		g_msg_tex_w = g_msg_surface_w;
-		g_msg_tex_h = g_msg_surface_h;
-		g_msg_gl_dirty = false;
-	} else if (g_msg_gl_dirty) {
-		glBindTexture_ptr(GL_TEXTURE_2D, g_msg_tex);
-		glTexImage2D_ptr(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)g_msg_surface_w, (GLsizei)g_msg_surface_h,
-			0, GL_RGBA, GL_UNSIGNED_BYTE, g_msg_surface);
-		g_msg_gl_dirty = false;
-	}
-
-	if (!g_msg_vbo) {
-		glGenBuffers_ptr(1, &g_msg_vbo);
-	}
-
-	const float left = ((float)g_msg_x / (float)g_fb.width) * 2.0f - 1.0f;
-	const float right = ((float)(g_msg_x + g_msg_surface_w) / (float)g_fb.width) * 2.0f - 1.0f;
-	const float top = 1.0f - ((float)g_msg_y / (float)g_fb.height) * 2.0f;
-	const float bottom = 1.0f - ((float)(g_msg_y + g_msg_surface_h) / (float)g_fb.height) * 2.0f;
-	const float quad[] = {
-		left,  bottom, 0.0f, 0.0f,
-		right, bottom, 1.0f, 0.0f,
-		left,  top,    0.0f, 1.0f,
-		right, top,    1.0f, 1.0f,
-	};
-
-	glViewport_ptr(0, 0, g_fb.width, g_fb.height);
-	glDisable_ptr(GL_DEPTH_TEST);
-	glDisable_ptr(GL_CULL_FACE);
-	glEnable_ptr(GL_BLEND);
-	glBlendFunc_ptr(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glUseProgram_ptr(g_blit_program);
-	glActiveTexture_ptr(GL_TEXTURE0);
-	glBindTexture_ptr(GL_TEXTURE_2D, g_msg_tex);
-	if (g_blit_uniform_tex >= 0) {
-		glUniform1i_ptr(g_blit_uniform_tex, 0);
-	}
-	if (g_blit_uniform_flip >= 0) {
-		glUniform1f_ptr(g_blit_uniform_flip, 1.0f);
-	}
-	glBindBuffer_ptr(GL_ARRAY_BUFFER, g_msg_vbo);
-	glBufferData_ptr(GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(quad), quad, GL_DYNAMIC_DRAW);
-	if (g_blit_attr_pos >= 0) {
-		glEnableVertexAttribArray_ptr((GLuint)g_blit_attr_pos);
-		glVertexAttribPointer_ptr((GLuint)g_blit_attr_pos, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)0);
-	}
-	if (g_blit_attr_uv >= 0) {
-		glEnableVertexAttribArray_ptr((GLuint)g_blit_attr_uv);
-		glVertexAttribPointer_ptr((GLuint)g_blit_attr_uv, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)(2 * sizeof(float)));
-	}
-	glDrawArrays_ptr(GL_TRIANGLE_STRIP, 0, 4);
-	glDisable_ptr(GL_BLEND);
+	hw_update_rgba_overlay_texture(&g_msg_tex, &g_msg_tex_w, &g_msg_tex_h, &g_msg_gl_dirty, g_msg_surface_w, g_msg_surface_h, g_msg_surface);
+	hw_draw_rgba_overlay(g_msg_tex, &g_msg_vbo, g_msg_x, g_msg_y, g_msg_surface_w, g_msg_surface_h);
 }
 
 static void menu_rebuild_surface(void) {
@@ -2138,55 +2134,7 @@ static void menu_render_software(void) {
 	if (g_menu_dirty) menu_rebuild_surface();
 	if (!g_menu_surface) return;
 
-	for (int y = 0; y < g_menu_surface_h; ++y) {
-		int fb_y = g_menu_y + y;
-		if (fb_y < 0 || fb_y >= g_fb.height) continue;
-		uint8_t* dst_line = g_fb.map + (size_t)fb_y * (size_t)g_fb.stride + (size_t)g_menu_x * (size_t)(g_fb.bpp / 8);
-		const uint8_t* src_line = g_menu_surface + (size_t)y * (size_t)g_menu_surface_stride;
-		for (int x = 0; x < g_menu_surface_w; ++x) {
-			int fb_x = g_menu_x + x;
-			if (fb_x < 0 || fb_x >= g_fb.width) continue;
-			const uint8_t* src = src_line + (size_t)x * 4u;
-			uint8_t a = src[3];
-			if (a == 0) continue;
-			uint8_t r = src[0];
-			uint8_t g = src[1];
-			uint8_t b = src[2];
-			if (g_fb.bpp == 32) {
-				uint32_t* dst = (uint32_t*)dst_line;
-				uint32_t d = dst[x];
-				uint8_t dr = (uint8_t)((d >> 16) & 0xFF);
-				uint8_t dg = (uint8_t)((d >> 8) & 0xFF);
-				uint8_t db = (uint8_t)(d & 0xFF);
-				if (a != 255) {
-					dr = (uint8_t)((r * a + dr * (255 - a) + 127) / 255);
-					dg = (uint8_t)((g * a + dg * (255 - a) + 127) / 255);
-					db = (uint8_t)((b * a + db * (255 - a) + 127) / 255);
-				} else {
-					dr = r;
-					dg = g;
-					db = b;
-				}
-				dst[x] = (uint32_t)((dr << 16) | (dg << 8) | db);
-			} else if (g_fb.bpp == 16) {
-				uint16_t* dst = (uint16_t*)dst_line;
-				uint32_t d = rgb565_to_xrgb8888(dst[x]);
-				uint8_t dr = (uint8_t)((d >> 16) & 0xFF);
-				uint8_t dg = (uint8_t)((d >> 8) & 0xFF);
-				uint8_t db = (uint8_t)(d & 0xFF);
-				if (a != 255) {
-					dr = (uint8_t)((r * a + dr * (255 - a) + 127) / 255);
-					dg = (uint8_t)((g * a + dg * (255 - a) + 127) / 255);
-					db = (uint8_t)((b * a + db * (255 - a) + 127) / 255);
-				} else {
-					dr = r;
-					dg = g;
-					db = b;
-				}
-				dst[x] = rgb888_to_rgb565(dr, dg, db);
-			}
-		}
-	}
+	blit_rgba_surface_software(g_menu_surface, g_menu_surface_w, g_menu_surface_h, g_menu_surface_stride, g_menu_x, g_menu_y);
 }
 
 static void menu_render_hw(void) {
@@ -2195,70 +2143,8 @@ static void menu_render_hw(void) {
 	if (!g_menu_surface) return;
 	if (!hw_init_blitter()) return;
 
-	if (!g_menu_tex || g_menu_tex_w != g_menu_surface_w || g_menu_tex_h != g_menu_surface_h) {
-		if (g_menu_tex) {
-			glDeleteTextures_ptr(1, &g_menu_tex);
-			g_menu_tex = 0;
-		}
-		glGenTextures_ptr(1, &g_menu_tex);
-		glBindTexture_ptr(GL_TEXTURE_2D, g_menu_tex);
-		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		glTexImage2D_ptr(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)g_menu_surface_w, (GLsizei)g_menu_surface_h,
-			0, GL_RGBA, GL_UNSIGNED_BYTE, g_menu_surface);
-		g_menu_tex_w = g_menu_surface_w;
-		g_menu_tex_h = g_menu_surface_h;
-		g_menu_gl_dirty = false;
-	} else if (g_menu_gl_dirty) {
-		glBindTexture_ptr(GL_TEXTURE_2D, g_menu_tex);
-		glTexImage2D_ptr(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)g_menu_surface_w, (GLsizei)g_menu_surface_h,
-			0, GL_RGBA, GL_UNSIGNED_BYTE, g_menu_surface);
-		g_menu_gl_dirty = false;
-	}
-
-	if (!g_menu_vbo) {
-		glGenBuffers_ptr(1, &g_menu_vbo);
-	}
-
-	const float left = ((float)g_menu_x / (float)g_fb.width) * 2.0f - 1.0f;
-	const float right = ((float)(g_menu_x + g_menu_surface_w) / (float)g_fb.width) * 2.0f - 1.0f;
-	const float top = 1.0f - ((float)g_menu_y / (float)g_fb.height) * 2.0f;
-	const float bottom = 1.0f - ((float)(g_menu_y + g_menu_surface_h) / (float)g_fb.height) * 2.0f;
-	const float quad[] = {
-		left,  bottom, 0.0f, 0.0f,
-		right, bottom, 1.0f, 0.0f,
-		left,  top,    0.0f, 1.0f,
-		right, top,    1.0f, 1.0f,
-	};
-
-	glViewport_ptr(0, 0, g_fb.width, g_fb.height);
-	glDisable_ptr(GL_DEPTH_TEST);
-	glDisable_ptr(GL_CULL_FACE);
-	glEnable_ptr(GL_BLEND);
-	glBlendFunc_ptr(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glUseProgram_ptr(g_blit_program);
-	glActiveTexture_ptr(GL_TEXTURE0);
-	glBindTexture_ptr(GL_TEXTURE_2D, g_menu_tex);
-	if (g_blit_uniform_tex >= 0) {
-		glUniform1i_ptr(g_blit_uniform_tex, 0);
-	}
-	if (g_blit_uniform_flip >= 0) {
-		glUniform1f_ptr(g_blit_uniform_flip, 1.0f);
-	}
-	glBindBuffer_ptr(GL_ARRAY_BUFFER, g_menu_vbo);
-	glBufferData_ptr(GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(quad), quad, GL_DYNAMIC_DRAW);
-	if (g_blit_attr_pos >= 0) {
-		glEnableVertexAttribArray_ptr((GLuint)g_blit_attr_pos);
-		glVertexAttribPointer_ptr((GLuint)g_blit_attr_pos, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)0);
-	}
-	if (g_blit_attr_uv >= 0) {
-		glEnableVertexAttribArray_ptr((GLuint)g_blit_attr_uv);
-		glVertexAttribPointer_ptr((GLuint)g_blit_attr_uv, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)(2 * sizeof(float)));
-	}
-	glDrawArrays_ptr(GL_TRIANGLE_STRIP, 0, 4);
-	glDisable_ptr(GL_BLEND);
+	hw_update_rgba_overlay_texture(&g_menu_tex, &g_menu_tex_w, &g_menu_tex_h, &g_menu_gl_dirty, g_menu_surface_w, g_menu_surface_h, g_menu_surface);
+	hw_draw_rgba_overlay(g_menu_tex, &g_menu_vbo, g_menu_x, g_menu_y, g_menu_surface_w, g_menu_surface_h);
 }
 
 static bool hw_present_frame(unsigned src_w, unsigned src_h) {
@@ -2291,24 +2177,8 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 	glDisable_ptr(GL_BLEND);
 	glDisable_ptr(GL_DEPTH_TEST);
 	glDisable_ptr(GL_CULL_FACE);
-	glUseProgram_ptr(g_blit_program);
-	glActiveTexture_ptr(GL_TEXTURE0);
-	glBindTexture_ptr(GL_TEXTURE_2D, g_hw_tex);
-	if (g_blit_uniform_tex >= 0) {
-		glUniform1i_ptr(g_blit_uniform_tex, 0);
-	}
-	if (g_blit_uniform_flip >= 0) {
-		glUniform1f_ptr(g_blit_uniform_flip, g_hw_render.bottom_left_origin ? 0.0f : 1.0f);
-	}
-	glBindBuffer_ptr(GL_ARRAY_BUFFER, g_blit_vbo);
-	if (g_blit_attr_pos >= 0) {
-		glEnableVertexAttribArray_ptr((GLuint)g_blit_attr_pos);
-		glVertexAttribPointer_ptr((GLuint)g_blit_attr_pos, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)0);
-	}
-	if (g_blit_attr_uv >= 0) {
-		glEnableVertexAttribArray_ptr((GLuint)g_blit_attr_uv);
-		glVertexAttribPointer_ptr((GLuint)g_blit_attr_uv, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)(2 * sizeof(float)));
-	}
+	hw_begin_blit(g_hw_tex, g_hw_render.bottom_left_origin ? 0.0f : 1.0f);
+	hw_bind_static_blit_vbo(g_blit_vbo);
 	glDrawArrays_ptr(GL_TRIANGLE_STRIP, 0, 4);
 	msg_render_hw();
 	fps_render_hw();
@@ -2333,6 +2203,34 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 	return true;
 }
 
+static inline void write_xrgb8888_as_rgba(uint8_t* dst, uint32_t p) {
+	dst[0] = (uint8_t)((p >> 16) & 0xFF);
+	dst[1] = (uint8_t)((p >> 8) & 0xFF);
+	dst[2] = (uint8_t)(p & 0xFF);
+	dst[3] = 255;
+}
+
+static void copy_framebuffer_row_to_rgba(uint8_t* dst_line, const uint8_t* src_line, int width) {
+	switch (g_fb.bpp) {
+		case 32: {
+			const uint32_t* src = (const uint32_t*)src_line;
+			for (int x = 0; x < width; ++x) {
+				write_xrgb8888_as_rgba(dst_line + (size_t)x * 4u, src[x]);
+			}
+			break;
+		}
+		case 16: {
+			const uint16_t* src = (const uint16_t*)src_line;
+			for (int x = 0; x < width; ++x) {
+				write_xrgb8888_as_rgba(dst_line + (size_t)x * 4u, rgb565_to_xrgb8888(src[x]));
+			}
+			break;
+		}
+		default:
+			break;
+	}
+}
+
 static void step_software_frame_capture(void) {
 	if (!core_cart_program_active()) {
 		return;
@@ -2346,30 +2244,12 @@ static void step_software_frame_capture(void) {
 	uint8_t* pixels = (uint8_t*)malloc(pixel_count * 4u);
 	if (pixels) {
 		for (int y = 0; y < g_fb.height; ++y) {
-			const int src_y = g_fb.height - 1 - y;
-			const uint8_t* src_line = g_fb.map + (size_t)src_y * (size_t)g_fb.stride;
-			uint8_t* dst_line = pixels + (size_t)y * (size_t)g_fb.width * 4u;
-			if (g_fb.bpp == 32) {
-				const uint32_t* src = (const uint32_t*)src_line;
-				for (int x = 0; x < g_fb.width; ++x) {
-					const uint32_t p = src[x];
-					dst_line[(size_t)x * 4u + 0] = (uint8_t)((p >> 16) & 0xFF);
-					dst_line[(size_t)x * 4u + 1] = (uint8_t)((p >> 8) & 0xFF);
-					dst_line[(size_t)x * 4u + 2] = (uint8_t)(p & 0xFF);
-					dst_line[(size_t)x * 4u + 3] = 255;
-				}
-			} else if (g_fb.bpp == 16) {
-				const uint16_t* src = (const uint16_t*)src_line;
-				for (int x = 0; x < g_fb.width; ++x) {
-					const uint32_t p = rgb565_to_xrgb8888(src[x]);
-					dst_line[(size_t)x * 4u + 0] = (uint8_t)((p >> 16) & 0xFF);
-					dst_line[(size_t)x * 4u + 1] = (uint8_t)((p >> 8) & 0xFF);
-					dst_line[(size_t)x * 4u + 2] = (uint8_t)(p & 0xFF);
-					dst_line[(size_t)x * 4u + 3] = 255;
-				}
+				const int src_y = g_fb.height - 1 - y;
+				const uint8_t* src_line = g_fb.map + (size_t)src_y * (size_t)g_fb.stride;
+				uint8_t* dst_line = pixels + (size_t)y * (size_t)g_fb.width * 4u;
+				copy_framebuffer_row_to_rgba(dst_line, src_line, g_fb.width);
 			}
-		}
-		char filename[128];
+			char filename[128];
 		snprintf(filename, sizeof(filename), "frame_%05u.png", g_frame_number);
 		screenshot_save_png(filename, (uint32_t)g_fb.width, (uint32_t)g_fb.height, pixels);
 		free(pixels);
@@ -3771,95 +3651,134 @@ static uint8_t map_ev_key_to_mouse(uint16_t code) {
 	}
 }
 
-static const char* map_ev_key_to_dom_code(uint16_t code) {
-	switch (code) {
-		case KEY_F1: return "F1";
-		case KEY_F2: return "F2";
-		case KEY_F3: return "F3";
-		case KEY_F4: return "F4";
-		case KEY_F5: return "F5";
-		case KEY_F6: return "F6";
-		case KEY_F7: return "F7";
-		case KEY_F8: return "F8";
-		case KEY_F9: return "F9";
-		case KEY_F10: return "F10";
-		case KEY_F11: return "F11";
-		case KEY_F12: return "F12";
-		case KEY_UP: return "ArrowUp";
-		case KEY_DOWN: return "ArrowDown";
-		case KEY_LEFT: return "ArrowLeft";
-		case KEY_RIGHT: return "ArrowRight";
-		case KEY_PAGEUP: return "PageUp";
-		case KEY_PAGEDOWN: return "PageDown";
-		case KEY_HOME: return "Home";
-		case KEY_END: return "End";
-		case KEY_INSERT: return "Insert";
-		case KEY_DELETE: return "Delete";
-		case KEY_BACKSPACE: return "Backspace";
-		case KEY_ENTER:
-		case KEY_KPENTER:
-			return "Enter";
-		case KEY_TAB: return "Tab";
-		case KEY_ESC: return "Escape";
-		case KEY_SPACE: return "Space";
-		case KEY_LEFTSHIFT: return "ShiftLeft";
-		case KEY_RIGHTSHIFT: return "ShiftRight";
-		case KEY_LEFTCTRL: return "ControlLeft";
-		case KEY_RIGHTCTRL: return "ControlRight";
-		case KEY_LEFTALT: return "AltLeft";
-		case KEY_RIGHTALT: return "AltRight";
-		case KEY_LEFTMETA: return "MetaLeft";
-		case KEY_RIGHTMETA: return "MetaRight";
-		case KEY_A: return "KeyA";
-		case KEY_B: return "KeyB";
-		case KEY_C: return "KeyC";
-		case KEY_D: return "KeyD";
-		case KEY_E: return "KeyE";
-		case KEY_F: return "KeyF";
-		case KEY_G: return "KeyG";
-		case KEY_H: return "KeyH";
-		case KEY_I: return "KeyI";
-		case KEY_J: return "KeyJ";
-		case KEY_K: return "KeyK";
-		case KEY_L: return "KeyL";
-		case KEY_M: return "KeyM";
-		case KEY_N: return "KeyN";
-		case KEY_O: return "KeyO";
-		case KEY_P: return "KeyP";
-		case KEY_Q: return "KeyQ";
-		case KEY_R: return "KeyR";
-		case KEY_S: return "KeyS";
-		case KEY_T: return "KeyT";
-		case KEY_U: return "KeyU";
-		case KEY_V: return "KeyV";
-		case KEY_W: return "KeyW";
-		case KEY_X: return "KeyX";
-		case KEY_Y: return "KeyY";
-		case KEY_Z: return "KeyZ";
-		case KEY_0: return "Digit0";
-		case KEY_1: return "Digit1";
-		case KEY_2: return "Digit2";
-		case KEY_3: return "Digit3";
-		case KEY_4: return "Digit4";
-		case KEY_5: return "Digit5";
-		case KEY_6: return "Digit6";
-		case KEY_7: return "Digit7";
-		case KEY_8: return "Digit8";
-		case KEY_9: return "Digit9";
-		case KEY_MINUS: return "Minus";
-		case KEY_EQUAL: return "Equal";
-		case KEY_LEFTBRACE: return "BracketLeft";
-		case KEY_RIGHTBRACE: return "BracketRight";
-		case KEY_BACKSLASH: return "Backslash";
-		case KEY_SEMICOLON: return "Semicolon";
-		case KEY_APOSTROPHE: return "Quote";
-		case KEY_COMMA: return "Comma";
-		case KEY_DOT: return "Period";
-		case KEY_SLASH: return "Slash";
-		case KEY_GRAVE: return "Backquote";
-		default:
-			return NULL;
+typedef enum HostDomCodeSource {
+	kHostDomCodeEvdev,
+#ifdef BMSX_LIBRETRO_HOST_SDL
+	kHostDomCodeSdl,
+#endif
+} HostDomCodeSource;
+
+typedef struct HostDomCodeMapping {
+	uint16_t ev_key;
+#ifdef BMSX_LIBRETRO_HOST_SDL
+	SDL_Scancode sdl_scancode;
+#endif
+	const char* dom_code;
+} HostDomCodeMapping;
+
+#ifdef BMSX_LIBRETRO_HOST_SDL
+#define HOST_DOM_CODE(ev, sdl, dom) { ev, sdl, dom }
+#else
+#define HOST_DOM_CODE(ev, sdl, dom) { ev, dom }
+#endif
+
+static const HostDomCodeMapping kHostDomCodeMap[] = {
+	HOST_DOM_CODE(KEY_F1, SDL_SCANCODE_F1, "F1"),
+	HOST_DOM_CODE(KEY_F2, SDL_SCANCODE_F2, "F2"),
+	HOST_DOM_CODE(KEY_F3, SDL_SCANCODE_F3, "F3"),
+	HOST_DOM_CODE(KEY_F4, SDL_SCANCODE_F4, "F4"),
+	HOST_DOM_CODE(KEY_F5, SDL_SCANCODE_F5, "F5"),
+	HOST_DOM_CODE(KEY_F6, SDL_SCANCODE_F6, "F6"),
+	HOST_DOM_CODE(KEY_F7, SDL_SCANCODE_F7, "F7"),
+	HOST_DOM_CODE(KEY_F8, SDL_SCANCODE_F8, "F8"),
+	HOST_DOM_CODE(KEY_F9, SDL_SCANCODE_F9, "F9"),
+	HOST_DOM_CODE(KEY_F10, SDL_SCANCODE_F10, "F10"),
+	HOST_DOM_CODE(KEY_F11, SDL_SCANCODE_F11, "F11"),
+	HOST_DOM_CODE(KEY_F12, SDL_SCANCODE_F12, "F12"),
+	HOST_DOM_CODE(KEY_UP, SDL_SCANCODE_UP, "ArrowUp"),
+	HOST_DOM_CODE(KEY_DOWN, SDL_SCANCODE_DOWN, "ArrowDown"),
+	HOST_DOM_CODE(KEY_LEFT, SDL_SCANCODE_LEFT, "ArrowLeft"),
+	HOST_DOM_CODE(KEY_RIGHT, SDL_SCANCODE_RIGHT, "ArrowRight"),
+	HOST_DOM_CODE(KEY_PAGEUP, SDL_SCANCODE_PAGEUP, "PageUp"),
+	HOST_DOM_CODE(KEY_PAGEDOWN, SDL_SCANCODE_PAGEDOWN, "PageDown"),
+	HOST_DOM_CODE(KEY_HOME, SDL_SCANCODE_HOME, "Home"),
+	HOST_DOM_CODE(KEY_END, SDL_SCANCODE_END, "End"),
+	HOST_DOM_CODE(KEY_INSERT, SDL_SCANCODE_INSERT, "Insert"),
+	HOST_DOM_CODE(KEY_DELETE, SDL_SCANCODE_DELETE, "Delete"),
+	HOST_DOM_CODE(KEY_BACKSPACE, SDL_SCANCODE_BACKSPACE, "Backspace"),
+	HOST_DOM_CODE(KEY_ENTER, SDL_SCANCODE_RETURN, "Enter"),
+	HOST_DOM_CODE(KEY_KPENTER, SDL_SCANCODE_KP_ENTER, "Enter"),
+	HOST_DOM_CODE(KEY_TAB, SDL_SCANCODE_TAB, "Tab"),
+	HOST_DOM_CODE(KEY_ESC, SDL_SCANCODE_ESCAPE, "Escape"),
+	HOST_DOM_CODE(KEY_SPACE, SDL_SCANCODE_SPACE, "Space"),
+	HOST_DOM_CODE(KEY_LEFTSHIFT, SDL_SCANCODE_LSHIFT, "ShiftLeft"),
+	HOST_DOM_CODE(KEY_RIGHTSHIFT, SDL_SCANCODE_RSHIFT, "ShiftRight"),
+	HOST_DOM_CODE(KEY_LEFTCTRL, SDL_SCANCODE_LCTRL, "ControlLeft"),
+	HOST_DOM_CODE(KEY_RIGHTCTRL, SDL_SCANCODE_RCTRL, "ControlRight"),
+	HOST_DOM_CODE(KEY_LEFTALT, SDL_SCANCODE_LALT, "AltLeft"),
+	HOST_DOM_CODE(KEY_RIGHTALT, SDL_SCANCODE_RALT, "AltRight"),
+	HOST_DOM_CODE(KEY_LEFTMETA, SDL_SCANCODE_LGUI, "MetaLeft"),
+	HOST_DOM_CODE(KEY_RIGHTMETA, SDL_SCANCODE_RGUI, "MetaRight"),
+	HOST_DOM_CODE(KEY_A, SDL_SCANCODE_A, "KeyA"),
+	HOST_DOM_CODE(KEY_B, SDL_SCANCODE_B, "KeyB"),
+	HOST_DOM_CODE(KEY_C, SDL_SCANCODE_C, "KeyC"),
+	HOST_DOM_CODE(KEY_D, SDL_SCANCODE_D, "KeyD"),
+	HOST_DOM_CODE(KEY_E, SDL_SCANCODE_E, "KeyE"),
+	HOST_DOM_CODE(KEY_F, SDL_SCANCODE_F, "KeyF"),
+	HOST_DOM_CODE(KEY_G, SDL_SCANCODE_G, "KeyG"),
+	HOST_DOM_CODE(KEY_H, SDL_SCANCODE_H, "KeyH"),
+	HOST_DOM_CODE(KEY_I, SDL_SCANCODE_I, "KeyI"),
+	HOST_DOM_CODE(KEY_J, SDL_SCANCODE_J, "KeyJ"),
+	HOST_DOM_CODE(KEY_K, SDL_SCANCODE_K, "KeyK"),
+	HOST_DOM_CODE(KEY_L, SDL_SCANCODE_L, "KeyL"),
+	HOST_DOM_CODE(KEY_M, SDL_SCANCODE_M, "KeyM"),
+	HOST_DOM_CODE(KEY_N, SDL_SCANCODE_N, "KeyN"),
+	HOST_DOM_CODE(KEY_O, SDL_SCANCODE_O, "KeyO"),
+	HOST_DOM_CODE(KEY_P, SDL_SCANCODE_P, "KeyP"),
+	HOST_DOM_CODE(KEY_Q, SDL_SCANCODE_Q, "KeyQ"),
+	HOST_DOM_CODE(KEY_R, SDL_SCANCODE_R, "KeyR"),
+	HOST_DOM_CODE(KEY_S, SDL_SCANCODE_S, "KeyS"),
+	HOST_DOM_CODE(KEY_T, SDL_SCANCODE_T, "KeyT"),
+	HOST_DOM_CODE(KEY_U, SDL_SCANCODE_U, "KeyU"),
+	HOST_DOM_CODE(KEY_V, SDL_SCANCODE_V, "KeyV"),
+	HOST_DOM_CODE(KEY_W, SDL_SCANCODE_W, "KeyW"),
+	HOST_DOM_CODE(KEY_X, SDL_SCANCODE_X, "KeyX"),
+	HOST_DOM_CODE(KEY_Y, SDL_SCANCODE_Y, "KeyY"),
+	HOST_DOM_CODE(KEY_Z, SDL_SCANCODE_Z, "KeyZ"),
+	HOST_DOM_CODE(KEY_0, SDL_SCANCODE_0, "Digit0"),
+	HOST_DOM_CODE(KEY_1, SDL_SCANCODE_1, "Digit1"),
+	HOST_DOM_CODE(KEY_2, SDL_SCANCODE_2, "Digit2"),
+	HOST_DOM_CODE(KEY_3, SDL_SCANCODE_3, "Digit3"),
+	HOST_DOM_CODE(KEY_4, SDL_SCANCODE_4, "Digit4"),
+	HOST_DOM_CODE(KEY_5, SDL_SCANCODE_5, "Digit5"),
+	HOST_DOM_CODE(KEY_6, SDL_SCANCODE_6, "Digit6"),
+	HOST_DOM_CODE(KEY_7, SDL_SCANCODE_7, "Digit7"),
+	HOST_DOM_CODE(KEY_8, SDL_SCANCODE_8, "Digit8"),
+	HOST_DOM_CODE(KEY_9, SDL_SCANCODE_9, "Digit9"),
+	HOST_DOM_CODE(KEY_MINUS, SDL_SCANCODE_MINUS, "Minus"),
+	HOST_DOM_CODE(KEY_EQUAL, SDL_SCANCODE_EQUALS, "Equal"),
+	HOST_DOM_CODE(KEY_LEFTBRACE, SDL_SCANCODE_LEFTBRACKET, "BracketLeft"),
+	HOST_DOM_CODE(KEY_RIGHTBRACE, SDL_SCANCODE_RIGHTBRACKET, "BracketRight"),
+	HOST_DOM_CODE(KEY_BACKSLASH, SDL_SCANCODE_BACKSLASH, "Backslash"),
+	HOST_DOM_CODE(KEY_SEMICOLON, SDL_SCANCODE_SEMICOLON, "Semicolon"),
+	HOST_DOM_CODE(KEY_APOSTROPHE, SDL_SCANCODE_APOSTROPHE, "Quote"),
+	HOST_DOM_CODE(KEY_COMMA, SDL_SCANCODE_COMMA, "Comma"),
+	HOST_DOM_CODE(KEY_DOT, SDL_SCANCODE_PERIOD, "Period"),
+	HOST_DOM_CODE(KEY_SLASH, SDL_SCANCODE_SLASH, "Slash"),
+	HOST_DOM_CODE(KEY_GRAVE, SDL_SCANCODE_GRAVE, "Backquote"),
+};
+
+#undef HOST_DOM_CODE
+
+static const char* map_host_key_to_dom_code(HostDomCodeSource source, int code) {
+	for (size_t i = 0; i < sizeof(kHostDomCodeMap) / sizeof(kHostDomCodeMap[0]); ++i) {
+		const HostDomCodeMapping* mapping = &kHostDomCodeMap[i];
+		switch (source) {
+			case kHostDomCodeEvdev:
+				if ((int)mapping->ev_key == code) return mapping->dom_code;
+				break;
+#ifdef BMSX_LIBRETRO_HOST_SDL
+			case kHostDomCodeSdl:
+				if ((int)mapping->sdl_scancode == code) return mapping->dom_code;
+				break;
+#endif
+		}
 	}
+	return NULL;
+}
+
+static const char* map_ev_key_to_dom_code(uint16_t code) {
+	return map_host_key_to_dom_code(kHostDomCodeEvdev, code);
 }
 
 static uint16_t map_ev_key_to_pad(uint16_t code) {
@@ -3949,94 +3868,7 @@ static uint16_t map_ev_key_to_pad(uint16_t code) {
 
 #ifdef BMSX_LIBRETRO_HOST_SDL
 static const char* map_sdl_scancode_to_dom_code(SDL_Scancode scancode) {
-	switch (scancode) {
-		case SDL_SCANCODE_F1: return "F1";
-		case SDL_SCANCODE_F2: return "F2";
-		case SDL_SCANCODE_F3: return "F3";
-		case SDL_SCANCODE_F4: return "F4";
-		case SDL_SCANCODE_F5: return "F5";
-		case SDL_SCANCODE_F6: return "F6";
-		case SDL_SCANCODE_F7: return "F7";
-		case SDL_SCANCODE_F8: return "F8";
-		case SDL_SCANCODE_F9: return "F9";
-		case SDL_SCANCODE_F10: return "F10";
-		case SDL_SCANCODE_F11: return "F11";
-		case SDL_SCANCODE_F12: return "F12";
-		case SDL_SCANCODE_UP: return "ArrowUp";
-		case SDL_SCANCODE_DOWN: return "ArrowDown";
-		case SDL_SCANCODE_LEFT: return "ArrowLeft";
-		case SDL_SCANCODE_RIGHT: return "ArrowRight";
-		case SDL_SCANCODE_PAGEUP: return "PageUp";
-		case SDL_SCANCODE_PAGEDOWN: return "PageDown";
-		case SDL_SCANCODE_HOME: return "Home";
-		case SDL_SCANCODE_END: return "End";
-		case SDL_SCANCODE_INSERT: return "Insert";
-		case SDL_SCANCODE_DELETE: return "Delete";
-		case SDL_SCANCODE_BACKSPACE: return "Backspace";
-		case SDL_SCANCODE_RETURN:
-		case SDL_SCANCODE_KP_ENTER:
-			return "Enter";
-		case SDL_SCANCODE_TAB: return "Tab";
-		case SDL_SCANCODE_ESCAPE: return "Escape";
-		case SDL_SCANCODE_SPACE: return "Space";
-		case SDL_SCANCODE_LSHIFT: return "ShiftLeft";
-		case SDL_SCANCODE_RSHIFT: return "ShiftRight";
-		case SDL_SCANCODE_LCTRL: return "ControlLeft";
-		case SDL_SCANCODE_RCTRL: return "ControlRight";
-		case SDL_SCANCODE_LALT: return "AltLeft";
-		case SDL_SCANCODE_RALT: return "AltRight";
-		case SDL_SCANCODE_LGUI: return "MetaLeft";
-		case SDL_SCANCODE_RGUI: return "MetaRight";
-		case SDL_SCANCODE_A: return "KeyA";
-		case SDL_SCANCODE_B: return "KeyB";
-		case SDL_SCANCODE_C: return "KeyC";
-		case SDL_SCANCODE_D: return "KeyD";
-		case SDL_SCANCODE_E: return "KeyE";
-		case SDL_SCANCODE_F: return "KeyF";
-		case SDL_SCANCODE_G: return "KeyG";
-		case SDL_SCANCODE_H: return "KeyH";
-		case SDL_SCANCODE_I: return "KeyI";
-		case SDL_SCANCODE_J: return "KeyJ";
-		case SDL_SCANCODE_K: return "KeyK";
-		case SDL_SCANCODE_L: return "KeyL";
-		case SDL_SCANCODE_M: return "KeyM";
-		case SDL_SCANCODE_N: return "KeyN";
-		case SDL_SCANCODE_O: return "KeyO";
-		case SDL_SCANCODE_P: return "KeyP";
-		case SDL_SCANCODE_Q: return "KeyQ";
-		case SDL_SCANCODE_R: return "KeyR";
-		case SDL_SCANCODE_S: return "KeyS";
-		case SDL_SCANCODE_T: return "KeyT";
-		case SDL_SCANCODE_U: return "KeyU";
-		case SDL_SCANCODE_V: return "KeyV";
-		case SDL_SCANCODE_W: return "KeyW";
-		case SDL_SCANCODE_X: return "KeyX";
-		case SDL_SCANCODE_Y: return "KeyY";
-		case SDL_SCANCODE_Z: return "KeyZ";
-		case SDL_SCANCODE_0: return "Digit0";
-		case SDL_SCANCODE_1: return "Digit1";
-		case SDL_SCANCODE_2: return "Digit2";
-		case SDL_SCANCODE_3: return "Digit3";
-		case SDL_SCANCODE_4: return "Digit4";
-		case SDL_SCANCODE_5: return "Digit5";
-		case SDL_SCANCODE_6: return "Digit6";
-		case SDL_SCANCODE_7: return "Digit7";
-		case SDL_SCANCODE_8: return "Digit8";
-		case SDL_SCANCODE_9: return "Digit9";
-		case SDL_SCANCODE_MINUS: return "Minus";
-		case SDL_SCANCODE_EQUALS: return "Equal";
-		case SDL_SCANCODE_LEFTBRACKET: return "BracketLeft";
-		case SDL_SCANCODE_RIGHTBRACKET: return "BracketRight";
-		case SDL_SCANCODE_BACKSLASH: return "Backslash";
-		case SDL_SCANCODE_SEMICOLON: return "Semicolon";
-		case SDL_SCANCODE_APOSTROPHE: return "Quote";
-		case SDL_SCANCODE_COMMA: return "Comma";
-		case SDL_SCANCODE_PERIOD: return "Period";
-		case SDL_SCANCODE_SLASH: return "Slash";
-		case SDL_SCANCODE_GRAVE: return "Backquote";
-		default:
-			return NULL;
-	}
+	return map_host_key_to_dom_code(kHostDomCodeSdl, scancode);
 }
 
 static uint16_t map_sdl_key_to_pad(SDL_Keycode code) {
@@ -4264,7 +4096,10 @@ static void menu_handle_input(uint16_t state, uint16_t prev, bool skip_nav) {
 		return;
 	}
 
-	MenuOption* selected = g_menu_option_count ? &g_menu_options[g_menu_selected] : NULL;
+		MenuOption* selected = NULL;
+		if (g_menu_option_count) {
+			selected = &g_menu_options[g_menu_selected];
+		}
 	const bool is_action = menu_option_is_action(selected);
 	if (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_B)) {
 		menu_toggle();
@@ -4450,11 +4285,9 @@ static void poll_input_devices(void) {
 			}
 		} else if (dev->has_abs_xy) {
 			int32_t x_min = dev->abs_x_min;
-			int32_t x_max = dev->abs_x_max;
 			int32_t y_min = dev->abs_y_min;
-			int32_t y_max = dev->abs_y_max;
-			int32_t x_range = x_max - x_min;
-			int32_t y_range = y_max - y_min;
+			int32_t x_range = dev->abs_x_max - x_min;
+			int32_t y_range = dev->abs_y_max - y_min;
 			if (x_range <= 0 || y_range <= 0) {
 				continue;
 			}
@@ -4610,16 +4443,18 @@ static uint64_t monotonic_ms(void) {
 	return (uint64_t)ts.tv_sec * 1000ull + (uint64_t)ts.tv_nsec / 1000000ull;
 }
 
-static uint64_t frame_time_usec_from_scaled(int64_t hz_scaled) {
-	const uint64_t numerator = (uint64_t)kHzScale * 1000000ull;
+static uint64_t frame_time_from_scaled(int64_t hz_scaled, uint64_t units_per_second) {
+	const uint64_t numerator = (uint64_t)kHzScale * units_per_second;
 	const uint64_t hz = (uint64_t)hz_scaled;
 	return (numerator + hz / 2u) / hz;
 }
 
+static uint64_t frame_time_usec_from_scaled(int64_t hz_scaled) {
+	return frame_time_from_scaled(hz_scaled, 1000000ull);
+}
+
 static uint64_t frame_time_ns_from_scaled(int64_t hz_scaled) {
-	const uint64_t numerator = (uint64_t)kHzScale * 1000000000ull;
-	const uint64_t hz = (uint64_t)hz_scaled;
-	return (numerator + hz / 2u) / hz;
+	return frame_time_from_scaled(hz_scaled, 1000000000ull);
 }
 
 static int16_t input_state_cb(unsigned port, unsigned device, unsigned index, unsigned id) {

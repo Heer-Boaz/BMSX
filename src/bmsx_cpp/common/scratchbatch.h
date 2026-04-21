@@ -11,7 +11,6 @@
 
 #include "core/primitives.h"
 #include <vector>
-#include <algorithm>
 #include <utility>
 
 namespace bmsx {
@@ -70,12 +69,6 @@ public:
 		for (size_t i = 0; i < m_size; ++i) {
 			fn(m_items[i], i);
 		}
-	}
-
-	// Sort only the active window; avoids copying.
-	template<typename Compare>
-	void sort(Compare&& compareFn) {
-		std::sort(m_items.begin(), m_items.begin() + m_size, std::forward<Compare>(compareFn));
 	}
 
 	// Iterator support

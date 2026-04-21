@@ -173,6 +173,51 @@ struct ButtonState {
 	}
 };
 
+inline f64 buttonTimestampOr(const ButtonState& state, f64 fallback) {
+	if (state.timestamp.has_value()) {
+		return state.timestamp.value();
+	}
+	return fallback;
+}
+
+inline f64 buttonPressedAtOr(const ButtonState& state, f64 fallback) {
+	if (state.pressedAtMs.has_value()) {
+		return state.pressedAtMs.value();
+	}
+	return buttonTimestampOr(state, fallback);
+}
+
+inline f64 buttonReleasedAtOr(const ButtonState& state, f64 fallback) {
+	if (state.releasedAtMs.has_value()) {
+		return state.releasedAtMs.value();
+	}
+	return buttonTimestampOr(state, fallback);
+}
+
+inline i32 buttonPressIdOr(const ButtonState& state, i32 fallback) {
+	if (state.pressId.has_value()) {
+		return state.pressId.value();
+	}
+	return fallback;
+}
+
+inline i32 resolveButtonPressId(const std::optional<i32>& incoming, const ButtonState& state, i32& nextPressId) {
+	if (incoming.has_value()) {
+		return incoming.value();
+	}
+	if (state.pressId.has_value()) {
+		return state.pressId.value();
+	}
+	return nextPressId++;
+}
+
+inline f64 buttonPressTimeOrZero(const ButtonState& state) {
+	if (state.presstime.has_value()) {
+		return state.presstime.value();
+	}
+	return 0.0;
+}
+
 /* ============================================================================
  * Action state
  *
@@ -196,6 +241,17 @@ struct ActionState : ButtonState {
 	ActionState(const std::string& actionName, const ButtonState& state)
 		: ButtonState(state), action(actionName) {}
 };
+
+inline bool actionFlag(const std::optional<bool>& flag) {
+	return flag.has_value() && flag.value();
+}
+
+inline i32 actionRepeatCount(const ActionState& state) {
+	if (state.repeatcount.has_value()) {
+		return state.repeatcount.value();
+	}
+	return 0;
+}
 
 /* ============================================================================
  * Vibration parameters

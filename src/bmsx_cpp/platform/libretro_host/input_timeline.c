@@ -99,16 +99,12 @@ static int compare_frame_values(uint64_t lhs, uint64_t rhs) {
 	return 0;
 }
 
-static int compare_test_input_events(const void* a, const void* b) {
-	const TestInputEvent* lhs = (const TestInputEvent*)a;
-	const TestInputEvent* rhs = (const TestInputEvent*)b;
-	return compare_frame_values(lhs->frame, rhs->frame);
+static int compare_timeline_frame_prefix(const void* a, const void* b) {
+	return compare_frame_values(*(const uint64_t*)a, *(const uint64_t*)b);
 }
 
-static int compare_test_capture_events(const void* a, const void* b) {
-	const TimelineCaptureEvent* lhs = (const TimelineCaptureEvent*)a;
-	const TimelineCaptureEvent* rhs = (const TimelineCaptureEvent*)b;
-	return compare_frame_values(lhs->frame, rhs->frame);
+static bool snprintf_wrote_buffer(int written, size_t out_size) {
+	return written > 0 && (size_t)written < out_size;
 }
 
 static void* read_file_bytes(const char* path, size_t* out_size) {
@@ -194,7 +190,7 @@ static void timeline_parse_errorf(const JsonCursor* cursor, const char* format, 
 
 static void sort_test_input_events(void) {
 	if (g_test_input_event_count > 1) {
-		qsort(g_test_input_events, g_test_input_event_count, sizeof(g_test_input_events[0]), compare_test_input_events);
+		qsort(g_test_input_events, g_test_input_event_count, sizeof(g_test_input_events[0]), compare_timeline_frame_prefix);
 	}
 }
 
@@ -760,7 +756,7 @@ static void parse_input_timeline_file(const char* timeline_path, uint64_t frame_
 	}
 	sort_test_input_events();
 	if (g_test_capture_event_count > 1) {
-		qsort(g_test_capture_events, g_test_capture_event_count, sizeof(g_test_capture_events[0]), compare_test_capture_events);
+		qsort(g_test_capture_events, g_test_capture_event_count, sizeof(g_test_capture_events[0]), compare_timeline_frame_prefix);
 	}
 	if (g_test_input_event_count > 0) {
 		g_timeline_last_frame = g_test_input_events[g_test_input_event_count - 1].frame;
@@ -788,21 +784,21 @@ static bool derive_input_timeline_path(const char* rom_folder, char* out, size_t
 		return false;
 	}
 	int written = snprintf(out, out_size, "src/carts/%s/test/%s_demo.json", rom_folder, rom_folder);
-	return written > 0 && (size_t)written < out_size && access(out, F_OK) == 0;
+	return snprintf_wrote_buffer(written, out_size) && access(out, F_OK) == 0;
 }
 
 static bool derive_screenshot_output_dir(const char* timeline_path, char* out, size_t out_size) {
 	const char* slash = strrchr(timeline_path, '/');
 	if (!slash) {
 		int written = snprintf(out, out_size, "./screenshots");
-		return written > 0 && (size_t)written < out_size;
+		return snprintf_wrote_buffer(written, out_size);
 	}
 	if (slash == timeline_path) {
 		int written = snprintf(out, out_size, "/screenshots");
-		return written > 0 && (size_t)written < out_size;
+		return snprintf_wrote_buffer(written, out_size);
 	}
 	int written = snprintf(out, out_size, "%.*s/screenshots", (int)(slash - timeline_path), timeline_path);
-	return written > 0 && (size_t)written < out_size;
+	return snprintf_wrote_buffer(written, out_size);
 }
 
 static bool extract_rom_folder_from_path(const char* game_path, char* out, size_t out_size) {

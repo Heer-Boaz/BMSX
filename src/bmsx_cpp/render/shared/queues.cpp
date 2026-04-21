@@ -79,10 +79,10 @@ static bool hasCommittedFrontQueueContent() {
 template<typename T, typename Fn>
 static void forEachActiveQueue(FeatureQueue<T>& queue, Fn&& fn) {
 	if (s_activeQueueSource == QueueSource::Back) {
-		queue.forEachBack(std::forward<Fn>(fn));
+		queue.back().forEach(std::forward<Fn>(fn));
 		return;
 	}
-	queue.forEachFront(std::forward<Fn>(fn));
+	queue.front().forEach(std::forward<Fn>(fn));
 }
 
 // --- 2D framebuffer API ---

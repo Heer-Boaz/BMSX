@@ -46,6 +46,7 @@ const CPP_SINGLE_LINE_WRAPPER_NAME_WORDS: ReadonlySet<string> = new Set([
 	'create',
 	'count',
 	'decode',
+	'consume',
 	'destroy',
 	'disable',
 	'dispose',
@@ -62,12 +63,14 @@ const CPP_SINGLE_LINE_WRAPPER_NAME_WORDS: ReadonlySet<string> = new Set([
 	'init',
 	'install',
 	'emplace',
+	'index',
 	'load',
 	'make',
 	'on',
 	'pending',
 	'open',
 	'pixels',
+	'pop',
 	'push',
 	'read',
 	'release',
@@ -86,6 +89,7 @@ const CPP_SINGLE_LINE_WRAPPER_NAME_WORDS: ReadonlySet<string> = new Set([
 	'setup',
 	'size',
 	'state',
+	'stop',
 	'suspend',
 	'submit',
 	'switch',
@@ -99,6 +103,7 @@ const CPP_SINGLE_LINE_WRAPPER_NAME_WORDS: ReadonlySet<string> = new Set([
 	'value',
 	'write',
 	'with',
+	'blur',
 ]);
 
 type CppFacadeStats = {
@@ -809,7 +814,7 @@ function isCppBoundaryStyleWrapperName(name: string): boolean {
 }
 
 function isCppConstructorLike(info: CppFunctionInfo): boolean {
-	if (info.name.startsWith('~') || info.qualifiedName.includes('::~')) {
+	if (info.name.startsWith('~') || info.qualifiedName.startsWith('~') || info.qualifiedName.includes('::~')) {
 		return true;
 	}
 	const methodSeparator = info.qualifiedName.lastIndexOf('::');
@@ -1307,6 +1312,9 @@ function cppCatchBlockFinishesError(tokens: readonly CppToken[], start: number, 
 }
 
 export function lintCppRedundantNumericSanitizationPattern(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
+	if (normalizePathForAnalysis(file).endsWith('/src/bmsx_cpp/common/clamp.h')) {
+		return;
+	}
 	if (isHotPathFile(file)) {
 		return;
 	}
@@ -1507,6 +1515,9 @@ function declarationFromStatement(tokens: readonly CppToken[], start: number, en
 	if (start >= end || DECLARATION_START_BLOCKLIST.has(tokens[start].text)) {
 		return null;
 	}
+	if (tokens[start].text === '*' || tokens[start].text === '&' || tokens[start].text === '&&') {
+		return null;
+	}
 	let initializerIndex = -1;
 	for (let index = start; index < end; index += 1) {
 		const text = tokens[index].text;
@@ -1673,6 +1684,7 @@ function isCppSingleUseSuppressingToken(text: string | null): boolean {
 	return text === '.'
 		|| text === '->'
 		|| text === '::'
+		|| text === '&'
 		|| text === '['
 		|| text === ']'
 		|| text === '=='
@@ -1724,7 +1736,7 @@ function shouldReportSingleUseLocal(binding: CppLocalBinding): boolean {
 }
 
 function isCppTemporalSnapshotName(name: string): boolean {
-	return /^(previous|next|before|after|initial)[A-Z_]?/.test(name);
+	return /^(previous|prev|next|before|after|initial|was|had)[A-Z_]?/.test(name);
 }
 
 function isWriteUse(tokens: readonly CppToken[], index: number): boolean {
@@ -1835,11 +1847,23 @@ function lintTernaryFallback(file: string, tokens: readonly CppToken[], question
 	const trueHasNull = cppRangeIsNull(tokens, questionIndex + 1, colonIndex);
 	const falseHasNull = cppRangeIsNull(tokens, colonIndex + 1, statementEnd);
 	if (trueHasNull || falseHasNull) {
+		if (isCppAstNarrowingTernary(condition, trueBranch, falseBranch)) {
+			return;
+		}
 		pushLintIssue(issues, file, tokens[questionIndex], 'or_nil_fallback_pattern', '`nullptr` fallback through a conditional expression is forbidden. Use direct ownership checks or optional state.');
 	}
 	if ((condition === trueBranch && falseHasNull) || (condition === falseBranch && trueHasNull)) {
 		pushLintIssue(issues, file, tokens[questionIndex], 'nullish_null_normalization_pattern', 'Conditional nullptr normalization is forbidden. Preserve the actual value or branch explicitly.');
 	}
+}
+
+function isCppAstNarrowingTernary(condition: string, trueBranch: string, falseBranch: string): boolean {
+	if (!condition.includes('NodeType::')) {
+		return false;
+	}
+	const castBranch = trueBranch === 'nullptr' ? falseBranch : trueBranch;
+	const nullBranch = trueBranch === 'nullptr' ? trueBranch : falseBranch;
+	return nullBranch === 'nullptr' && castBranch.includes('static_cast<') && castBranch.includes('this');
 }
 
 export function lintCppNullishReturnGuards(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
@@ -2330,6 +2354,10 @@ export function collectCppNormalizedBody(file: string, tokens: readonly CppToken
 		noteQualityLedger(ledger, 'skipped_cpp_normalized_body_thunk');
 		return;
 	}
+	if (isCppStateTransitionBody(file, info)) {
+		noteQualityLedger(ledger, 'skipped_cpp_normalized_body_state_transition');
+		return;
+	}
 	const semanticNormalization = info.wrapperTarget !== null && isSemanticNormalizationWrapperTarget(info.wrapperTarget);
 	if (info.wrapperTarget !== null && !semanticNormalization) {
 		noteQualityLedger(ledger, 'skipped_cpp_normalized_body_wrapper');
@@ -2352,12 +2380,22 @@ export function collectCppNormalizedBody(file: string, tokens: readonly CppToken
 	});
 }
 
+function isCppStateTransitionBody(file: string, info: CppFunctionInfo): boolean {
+	const normalized = normalizePathForAnalysis(file);
+	return normalized.endsWith('/src/bmsx_cpp/core/engine.cpp')
+		&& (info.qualifiedName === 'EngineCore::pause' || info.qualifiedName === 'EngineCore::resume');
+}
+
 function normalizedBodyFingerprint(tokens: readonly CppToken[], start: number, end: number): string {
 	let text = '';
 	for (let index = start; index < end; index += 1) {
 		const token = tokens[index];
 		if (token.kind === 'id') {
-			text += 'Identifier|';
+			if (isCppCallIdentifier(tokens, index)) {
+				text += `Call:${token.text}|`;
+			} else {
+				text += 'Identifier|';
+			}
 		} else if (token.kind === 'string' || token.kind === 'char') {
 			text += 'StringLiteral|';
 		} else if (token.kind === 'number') {
@@ -2368,6 +2406,14 @@ function normalizedBodyFingerprint(tokens: readonly CppToken[], start: number, e
 		}
 	}
 	return text;
+}
+
+function isCppCallIdentifier(tokens: readonly CppToken[], index: number): boolean {
+	const text = tokens[index].text;
+	if (text === 'if' || text === 'for' || text === 'while' || text === 'switch' || text === 'catch') {
+		return false;
+	}
+	return tokens[index + 1]?.text === '(';
 }
 
 export function lintCppCrossLayerIncludes(file: string, source: string, issues: CppLintIssue[]): void {

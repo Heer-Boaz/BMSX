@@ -39,12 +39,12 @@ void GamepadInput::pollInput() {
 	for (auto& [key, state] : m_buttonStates) {
 		if (state.pressed) {
 			// Update press time
-			f64 pressedAt = state.pressedAtMs.value_or(state.timestamp.value_or(now));
+			f64 pressedAt = buttonPressedAtOr(state, now);
 			state.presstime = std::max(0.0, now - pressedAt);
 			
 			// Clear edge flags if they've been processed
 			if (prevPollTime > 0 && state.justpressed && 
-				state.timestamp.value_or(0) <= prevPollTime) {
+				buttonTimestampOr(state, 0.0) <= prevPollTime) {
 				state.justpressed = false;
 			}
 			state.justreleased = false;
@@ -53,15 +53,10 @@ void GamepadInput::pollInput() {
 			
 			// Clear edge flags if they've been processed
 			if (prevPollTime > 0 && state.justreleased &&
-				state.timestamp.value_or(0) <= prevPollTime) {
+				buttonTimestampOr(state, 0.0) <= prevPollTime) {
 				state.justreleased = false;
 			}
 			state.justpressed = false;
-		}
-		
-		// Ensure consumed flag is properly initialized
-		if (state.consumed != true) {
-			state.consumed = false;
 		}
 	}
 }
@@ -93,14 +88,19 @@ void GamepadInput::reset(const std::vector<std::string>* except) {
 i32 GamepadInput::gamepadIndex() const {
 	// Extract index from device ID (format: "gamepad:N")
 	size_t colonPos = m_deviceId.find(':');
-	if (colonPos != std::string::npos && colonPos + 1 < m_deviceId.size()) {
-		try {
-			return std::stoi(m_deviceId.substr(colonPos + 1));
-		} catch (...) {
+	if (colonPos == std::string::npos || colonPos + 1 >= m_deviceId.size()) {
+		return -1;
+	}
+
+	i32 index = 0;
+	for (size_t i = colonPos + 1; i < m_deviceId.size(); i++) {
+		const char ch = m_deviceId[i];
+		if (ch < '0' || ch > '9') {
 			return -1;
 		}
+		index = index * 10 + static_cast<i32>(ch - '0');
 	}
-	return -1;
+	return index;
 }
 
 bool GamepadInput::supportsVibrationEffect() const {
@@ -109,10 +109,7 @@ bool GamepadInput::supportsVibrationEffect() const {
 
 void GamepadInput::applyVibrationEffect(const VibrationParams& params) {
 	if (!supportsVibrationEffect()) return;
-	
-	if (m_vibrationCallback) {
-		m_vibrationCallback(params.intensity, params.duration);
-	}
+	m_vibrationCallback(params.intensity, params.duration);
 }
 
 void GamepadInput::dispose() {
@@ -128,7 +125,7 @@ void GamepadInput::ingestButton(const std::string& code, bool down, f32 value,
 	auto& state = m_buttonStates[code];
 	
 	if (down) {
-		i32 existingPressId = pressId.value_or(state.pressId.value_or(m_nextPressId++));
+		i32 existingPressId = resolveButtonPressId(pressId, state, m_nextPressId);
 		state.pressed = true;
 		state.justpressed = true;
 		state.justreleased = false;

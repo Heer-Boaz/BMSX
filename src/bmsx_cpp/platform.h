@@ -224,8 +224,8 @@ public:
 	void triggerExit();
 
 private:
-	std::vector<std::function<void()>> m_handlers;
-	int m_next_handle_id = 1;
+	std::vector<SubscriptionEntry<std::function<void()>>> m_handlers;
+	uint32_t m_next_handler_id = 1;
 };
 
 } // namespace bmsx

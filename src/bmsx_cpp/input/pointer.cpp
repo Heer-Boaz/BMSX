@@ -44,20 +44,20 @@ void PointerInput::pollInput() {
 
 	for (auto& [key, state] : m_buttonStates) {
 		if (state.pressed) {
-			const f64 pressedAt = state.pressedAtMs.value_or(state.timestamp.value_or(now));
+			const f64 pressedAt = buttonPressedAtOr(state, now);
 			state.presstime = std::max(0.0, now - pressedAt);
-			if (prevPollTime > 0.0 && state.justpressed && state.timestamp.value_or(0.0) <= prevPollTime) {
+			if (prevPollTime > 0.0 && state.justpressed && buttonTimestampOr(state, 0.0) <= prevPollTime) {
 				state.justpressed = false;
 			}
 		} else {
 			state.presstime = std::nullopt;
-			if (prevPollTime > 0.0 && state.justreleased && state.timestamp.value_or(0.0) <= prevPollTime) {
+			if (prevPollTime > 0.0 && state.justreleased && buttonTimestampOr(state, 0.0) <= prevPollTime) {
 				state.justreleased = false;
 			}
 		}
 
 		if (key == kPointerDelta) {
-			const f64 timestamp = state.timestamp.value_or(0.0);
+			const f64 timestamp = buttonTimestampOr(state, 0.0);
 			if (timestamp == m_lastDeltaTimestamp) {
 				state.value2d = Vec2(0.0f, 0.0f);
 				state.value = 0.0f;
@@ -68,13 +68,12 @@ void PointerInput::pollInput() {
 				m_lastDeltaTimestamp = timestamp;
 			}
 		} else if (key == kPointerWheel) {
-			const f64 timestamp = state.timestamp.value_or(0.0);
+			const f64 timestamp = buttonTimestampOr(state, 0.0);
 			if (timestamp == m_lastWheelTimestamp) {
-				const bool wasPressed = state.pressed;
+				state.justreleased = state.pressed;
 				state.value = 0.0f;
 				state.pressed = false;
 				state.justpressed = false;
-				state.justreleased = wasPressed;
 			} else {
 				m_lastWheelTimestamp = timestamp;
 				state.justreleased = false;
@@ -83,9 +82,6 @@ void PointerInput::pollInput() {
 
 		state.waspressed = state.waspressed || state.pressed;
 		state.wasreleased = state.wasreleased || !state.pressed;
-		if (state.consumed != true) {
-			state.consumed = false;
-		}
 	}
 }
 
@@ -136,7 +132,7 @@ void PointerInput::ingestButton(const std::string& code, bool down, f32 value,
 									f64 timestamp, std::optional<i32> pressId) {
 	auto& state = m_buttonStates[code];
 	if (down) {
-		const i32 resolvedPressId = pressId.value_or(state.pressId.value_or(m_nextPressId++));
+		const i32 resolvedPressId = resolveButtonPressId(pressId, state, m_nextPressId);
 		state.pressed = true;
 		state.justpressed = true;
 		state.justreleased = false;

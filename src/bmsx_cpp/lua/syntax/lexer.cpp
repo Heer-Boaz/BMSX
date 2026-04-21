@@ -2,6 +2,7 @@
 #include "core/primitives.h"
 #include <cmath>
 #include <cstdlib>
+#include <utility>
 
 namespace bmsx {
 
@@ -118,12 +119,12 @@ void LuaLexer::scanToken(std::vector<LuaToken>& tokens) {
 			pushToken(tokens, LuaTokenType::RightBrace);
 			return;
 		case '[': {
-			const int level = determineLongBracketLevelAt(m_currentIndex - 1);
-			if (level >= 0) {
-				consumeLongBracketOpening(level);
-				pushStringToken(tokens, readLongString(level));
-				return;
-			}
+				const int level = determineLongBracketLevelAt(m_currentIndex - 1);
+				if (level >= 0) {
+					consumeLongBracketDelimiter(level, '[');
+					pushLiteralToken(tokens, LuaTokenType::String, readLongString(level));
+					return;
+				}
 			pushToken(tokens, LuaTokenType::LeftBracket);
 			return;
 		}
@@ -231,13 +232,13 @@ void LuaLexer::scanToken(std::vector<LuaToken>& tokens) {
 
 void LuaLexer::skipComment() {
 	if (currentChar() == '[') {
-		const int level = determineLongBracketLevelAt(m_currentIndex);
-		if (level >= 0) {
-			advance();
-			consumeLongBracketOpening(level);
-			skipLongBracketContent(level);
-			return;
-		}
+			const int level = determineLongBracketLevelAt(m_currentIndex);
+			if (level >= 0) {
+				advance();
+				consumeLongBracketDelimiter(level, '[');
+				skipLongBracketContent(level);
+				return;
+			}
 	}
 	skipLineComment();
 }
@@ -288,7 +289,7 @@ void LuaLexer::scanNumber(std::vector<LuaToken>& tokens, bool startedWithDot) {
 	if (!std::isfinite(parsed)) {
 		fail("Numeric literal is not finite.");
 	}
-	pushNumberToken(tokens, parsed);
+	pushLiteralToken(tokens, LuaTokenType::Number, parsed);
 }
 
 void LuaLexer::scanString(std::vector<LuaToken>& tokens, char delimiter) {
@@ -312,7 +313,7 @@ void LuaLexer::scanString(std::vector<LuaToken>& tokens, char delimiter) {
 	if (!terminated) {
 		fail("Unterminated string literal.");
 	}
-	pushStringToken(tokens, value);
+	pushLiteralToken(tokens, LuaTokenType::String, value);
 }
 
 std::string LuaLexer::translateEscape() {
@@ -403,7 +404,7 @@ void LuaLexer::scanHexadecimalLiteral(std::vector<LuaToken>& tokens) {
 	if (!std::isfinite(parsed)) {
 		fail("Numeric literal is not finite.");
 	}
-	pushNumberToken(tokens, parsed);
+	pushLiteralToken(tokens, LuaTokenType::Number, parsed);
 }
 
 void LuaLexer::skipWhitespaceSequence() {
@@ -437,13 +438,13 @@ int LuaLexer::determineLongBracketLevelAt(size_t index) const {
 	return (cursor < m_source.size() && charAtIndex(cursor) == '[') ? level : -1;
 }
 
-void LuaLexer::consumeLongBracketOpening(int level) {
+void LuaLexer::consumeLongBracketDelimiter(int level, char edge) {
 	for (int index = 0; index < level; index += 1) {
 		if (advance() != '=') {
 			fail("Malformed long string delimiter.");
 		}
 	}
-	if (advance() != '[') {
+	if (advance() != edge) {
 		fail("Malformed long string delimiter.");
 	}
 }
@@ -454,7 +455,7 @@ std::string LuaLexer::readLongString(int level) {
 	while (!isAtEnd()) {
 		const char ch = advance();
 		if (ch == ']' && checkLongBracketClose(level)) {
-			consumeLongBracketClose(level);
+			consumeLongBracketDelimiter(level, ']');
 			return value;
 		}
 		value.push_back(ch);
@@ -467,7 +468,7 @@ void LuaLexer::skipLongBracketContent(int level) {
 	while (!isAtEnd()) {
 		const char ch = advance();
 		if (ch == ']' && checkLongBracketClose(level)) {
-			consumeLongBracketClose(level);
+			consumeLongBracketDelimiter(level, ']');
 			return;
 		}
 	}
@@ -483,17 +484,6 @@ bool LuaLexer::checkLongBracketClose(int level) const {
 		index += 1;
 	}
 	return charAtIndex(index) == ']';
-}
-
-void LuaLexer::consumeLongBracketClose(int level) {
-	for (int count = 0; count < level; count += 1) {
-		if (advance() != '=') {
-			fail("Malformed long string delimiter.");
-		}
-	}
-	if (advance() != ']') {
-		fail("Malformed long string delimiter.");
-	}
 }
 
 void LuaLexer::consumeOptionalLineBreak() {
@@ -559,23 +549,13 @@ void LuaLexer::pushToken(std::vector<LuaToken>& tokens, LuaTokenType type) {
 	});
 }
 
-void LuaLexer::pushNumberToken(std::vector<LuaToken>& tokens, double value) {
+void LuaLexer::pushLiteralToken(std::vector<LuaToken>& tokens, LuaTokenType type, LuaTokenLiteral literal) {
 	tokens.push_back({
-		.type = LuaTokenType::Number,
+		.type = type,
 		.lexeme = currentLexeme(),
 		.line = m_tokenStartLine,
 		.column = m_tokenStartColumn,
-		.literal = value,
-	});
-}
-
-void LuaLexer::pushStringToken(std::vector<LuaToken>& tokens, const std::string& value) {
-	tokens.push_back({
-		.type = LuaTokenType::String,
-		.lexeme = currentLexeme(),
-		.line = m_tokenStartLine,
-		.column = m_tokenStartColumn,
-		.literal = value,
+		.literal = std::move(literal),
 	});
 }
 

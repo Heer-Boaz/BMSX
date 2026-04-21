@@ -411,13 +411,13 @@ void Input::handlePointerMoveEvent(const std::string& deviceId, f32 x, f32 y) {
 	auto* handler = static_cast<PointerInput*>(binding->handler);
 	handler->ingestAxis2("pointer_position", x, y, m_currentTimeMs);
 	if (binding->assignedPlayer.has_value()) {
-		auto* player = getPlayerInput(binding->assignedPlayer.value());
-		player->recordAxis2Input(InputSource::Pointer, "pointer_position", x, y, m_currentTimeMs);
-		const ButtonState delta = handler->getButtonState("pointer_delta");
-		const Vec2 value = delta.value2d.value_or(Vec2(0.0f, 0.0f));
-		player->recordAxis2Input(InputSource::Pointer, "pointer_delta", value.x, value.y, m_currentTimeMs);
+			auto* player = getPlayerInput(binding->assignedPlayer.value());
+			player->recordAxis2Input(InputSource::Pointer, "pointer_position", x, y, m_currentTimeMs);
+			const ButtonState delta = handler->getButtonState("pointer_delta");
+			const Vec2 value = delta.value2d.value();
+			player->recordAxis2Input(InputSource::Pointer, "pointer_delta", value.x, value.y, m_currentTimeMs);
+		}
 	}
-}
 
 void Input::handlePointerWheelEvent(const std::string& deviceId, f32 value) {
 	auto* binding = getDeviceBinding(deviceId);

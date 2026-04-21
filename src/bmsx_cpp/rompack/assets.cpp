@@ -5,6 +5,7 @@
 #include "assets.h"
 #include "common/serializer/binencoder.h"
 #include "../machine/program/loader.h"
+#include "common/endian.h"
 #include "common/mem_snapshot.h"
 #include <cstring>
 #include <stdexcept>
@@ -29,19 +30,17 @@ static void updateFlippedTexcoords(ImgMeta& meta) {
 }
 
 static void updateFlippedBoundingBox(ImgMeta& meta) {
-	const i32 left = meta.boundingbox.original.x;
-	const i32 top = meta.boundingbox.original.y;
 	const i32 right = meta.boundingbox.original.x + meta.boundingbox.original.width;
 	const i32 bottom = meta.boundingbox.original.y + meta.boundingbox.original.height;
 	const i32 width = meta.width;
 	const i32 height = meta.height;
 
 	meta.boundingbox.fliph.x = width - right;
-	meta.boundingbox.fliph.y = top;
+	meta.boundingbox.fliph.y = meta.boundingbox.original.y;
 	meta.boundingbox.fliph.width = meta.boundingbox.original.width;
 	meta.boundingbox.fliph.height = meta.boundingbox.original.height;
 
-	meta.boundingbox.flipv.x = left;
+	meta.boundingbox.flipv.x = meta.boundingbox.original.x;
 	meta.boundingbox.flipv.y = height - bottom;
 	meta.boundingbox.flipv.width = meta.boundingbox.original.width;
 	meta.boundingbox.flipv.height = meta.boundingbox.original.height;
@@ -1055,8 +1054,6 @@ struct RomMetadataSection {
 	size_t payloadOffset = 0;
 };
 
-static u32 readLE32(const u8* data);
-
 static u32 readVarUint(const u8* data, size_t size, size_t& pos) {
 	u32 value = 0;
 	u32 shift = 0;
@@ -1204,17 +1201,6 @@ static bool looksZlibCompressed(const u8* data, size_t size) {
 		return ((cmf << 8) + flg) % 31 == 0;
 	}
 	return false;
-}
-
-static u16 readLE16(const u8* data) {
-	return static_cast<u16>(data[0]) | (static_cast<u16>(data[1]) << 8);
-}
-
-static u32 readLE32(const u8* data) {
-	return static_cast<u32>(data[0])
-		| (static_cast<u32>(data[1]) << 8)
-		| (static_cast<u32>(data[2]) << 16)
-		| (static_cast<u32>(data[3]) << 24);
 }
 
 static constexpr size_t BADP_HEADER_SIZE = 48;
@@ -1787,33 +1773,39 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 	return true;
 }
 
-bool loadCartAssetsFromRom(const u8* buffer,
-						size_t size,
-						RuntimeAssets& assets,
-						const AssetLoadCallbacks* callbacks,
-						const char* payloadId) {
+static bool loadAssetsFromRom(const u8* buffer,
+							size_t size,
+							RuntimeAssets& assets,
+							const AssetLoadCallbacks* callbacks,
+							const char* payloadId,
+							bool decodeMetadata,
+							bool cartPayload) {
 	assets.clear();
 	const u8* romData = nullptr;
 	size_t romSize = 0;
 	std::vector<u8> decompressed;
 	normalizeRomPayload(buffer, size, romData, romSize, decompressed);
 	const CartRomHeader header = parseCartHeader(romData, romSize);
-	decodeCartridgeMetadata(romData, header, assets);
-	return loadRomAssetPayloadInternal(romData, romSize, header, assets, callbacks, payloadId, true);
+	if (decodeMetadata) {
+		decodeCartridgeMetadata(romData, header, assets);
+	}
+	return loadRomAssetPayloadInternal(romData, romSize, header, assets, callbacks, payloadId, cartPayload);
+}
+
+bool loadCartAssetsFromRom(const u8* buffer,
+							size_t size,
+							RuntimeAssets& assets,
+							const AssetLoadCallbacks* callbacks,
+							const char* payloadId) {
+	return loadAssetsFromRom(buffer, size, assets, callbacks, payloadId, true, true);
 }
 
 bool loadSystemAssetsFromRom(const u8* buffer,
-						size_t size,
-						RuntimeAssets& assets,
-						const AssetLoadCallbacks* callbacks,
-						const char* payloadId) {
-	assets.clear();
-	const u8* romData = nullptr;
-	size_t romSize = 0;
-	std::vector<u8> decompressed;
-	normalizeRomPayload(buffer, size, romData, romSize, decompressed);
-	const CartRomHeader header = parseCartHeader(romData, romSize);
-	return loadRomAssetPayloadInternal(romData, romSize, header, assets, callbacks, payloadId, false);
+							size_t size,
+							RuntimeAssets& assets,
+							const AssetLoadCallbacks* callbacks,
+							const char* payloadId) {
+	return loadAssetsFromRom(buffer, size, assets, callbacks, payloadId, false, false);
 }
 
 } // namespace bmsx

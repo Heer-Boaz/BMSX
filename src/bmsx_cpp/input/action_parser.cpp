@@ -54,6 +54,13 @@ bool resolveStaticModifierKind(const std::string& raw, StaticModifierKind& kind)
 	return false;
 }
 
+std::optional<f64> actionWindow(std::optional<i32> window) {
+	if (window.has_value()) {
+		return static_cast<f64>(window.value());
+	}
+	return std::nullopt;
+}
+
 } // namespace
 
 /* ============================================================================
@@ -102,73 +109,75 @@ void Tokenizer::skipWhitespace() {
 	}
 }
 
+std::string Tokenizer::tokenText(size_t start) const {
+	return std::string(m_input.substr(start, m_pos - start));
+}
+
 Token Tokenizer::scanToken() {
 	skipWhitespace();
-	
+
 	if (m_pos >= m_input.size()) {
 		return {TokenType::End, ""};
 	}
-	
+
 	char c = m_input[m_pos];
-	
+
 	// Two-character operators
 	if (m_pos + 1 < m_input.size()) {
 		std::string_view two = m_input.substr(m_pos, 2);
-		if (two == "&&" || two == "||" || two == "<=" || two == ">=" || 
+		if (two == "&&" || two == "||" || two == "<=" || two == ">=" ||
 			two == "==" || two == "!=") {
 			m_pos += 2;
-			return {two[0] == '&' || two[0] == '|' ? TokenType::Sym : TokenType::Cmp, 
+			return {two[0] == '&' || two[0] == '|' ? TokenType::Sym : TokenType::Cmp,
 					std::string(two)};
 		}
 	}
-	
+
 	// Single-character symbols
 	if (c == '(' || c == ')' || c == '[' || c == ']' || c == ',' || c == '!') {
 		m_pos++;
 		return {TokenType::Sym, std::string(1, c)};
 	}
-	
+
 	// Single-character comparators
 	if (c == '<' || c == '>') {
 		m_pos++;
 		return {TokenType::Cmp, std::string(1, c)};
 	}
-	
+
 	// Function identifiers: &, ?, &jp, ?jp, &wp{n}, ?wp{n}, etc.
 	if (c == '&' || c == '?') {
 		size_t start = m_pos;
 		m_pos++;
-		
+
 		// Check for function name after & or ?
 		while (m_pos < m_input.size() && std::isalpha(m_input[m_pos])) {
 			m_pos++;
 		}
-		
+
 		// Check for windowed function: &wp{n} or ?wp{n}
 		if (m_pos < m_input.size() && m_input[m_pos] == '{') {
 			m_pos++;  // Skip '{'
 			while (m_pos < m_input.size() && std::isdigit(m_input[m_pos])) {
 				m_pos++;
 			}
-			if (m_pos < m_input.size() && m_input[m_pos] == '}') {
-				m_pos++;  // Skip '}'
-				std::string value(m_input.substr(start, m_pos - start));
-				return {TokenType::FuncWin, value};
+				if (m_pos < m_input.size() && m_input[m_pos] == '}') {
+					m_pos++;  // Skip '}'
+					return {TokenType::FuncWin, tokenText(start)};
+				}
 			}
+
+			return {TokenType::Func, tokenText(start)};
 		}
-		
-		std::string value(m_input.substr(start, m_pos - start));
-		return {TokenType::Func, value};
-	}
-	
+
 	// Identifiers and modifier tokens
 	if (std::isalpha(c) || c == '_') {
 		size_t start = m_pos;
-		while (m_pos < m_input.size() && 
+		while (m_pos < m_input.size() &&
 				(std::isalnum(m_input[m_pos]) || m_input[m_pos] == '_')) {
 			m_pos++;
 		}
-		
+
 		// Check for windowed modifiers: wp{n}, wr{n}, t{...}, rc{...}
 		if (m_pos < m_input.size() && m_input[m_pos] == '{') {
 			m_pos++;  // Skip '{'
@@ -177,26 +186,24 @@ Token Tokenizer::scanToken() {
 				if (m_input[m_pos] == '{') braceDepth++;
 				else if (m_input[m_pos] == '}') braceDepth--;
 				m_pos++;
+				}
+				return {TokenType::ModTok, tokenText(start)};
 			}
-			std::string value(m_input.substr(start, m_pos - start));
-			return {TokenType::ModTok, value};
+
+			return {TokenType::Ident, tokenText(start)};
 		}
-		
-		std::string value(m_input.substr(start, m_pos - start));
-		return {TokenType::Ident, value};
-	}
-	
+
 	// Digits (for modifiers and comparisons)
-	if (std::isdigit(c) || (c == '.' && m_pos + 1 < m_input.size() && 
+	if (std::isdigit(c) || (c == '.' && m_pos + 1 < m_input.size() &&
 							std::isdigit(m_input[m_pos + 1]))) {
 		size_t start = m_pos;
-		while (m_pos < m_input.size() && 
+		while (m_pos < m_input.size() &&
 				(std::isdigit(m_input[m_pos]) || m_input[m_pos] == '.')) {
 			m_pos++;
 		}
-		return {TokenType::Ident, std::string(m_input.substr(start, m_pos - start))};
-	}
-	
+			return {TokenType::Ident, tokenText(start)};
+		}
+
 	throw BMSX_RUNTIME_ERROR("[Action Parser] Unexpected character: " + std::string(1, c));
 }
 
@@ -229,13 +236,13 @@ InputActionParser::InputActionParser(std::string_view input) : m_tokenizer(input
 std::unique_ptr<AstNode> InputActionParser::parse(const std::string& def) {
 	InputActionParser parser(def);
 	auto ast = parser.expr();
-	
+
 	// Verify end of input
 	Token end = parser.current();
 	if (end.kind != TokenType::End) {
 		throw BMSX_RUNTIME_ERROR("[Action Parser] Unexpected token at end: " + end.value);
 	}
-	
+
 	return ast;
 }
 
@@ -250,12 +257,12 @@ Token InputActionParser::eat() {
 Token InputActionParser::take(TokenType expected, const std::string& expectedValue) {
 	Token t = eat();
 	if (t.kind != expected) {
-		throw BMSX_RUNTIME_ERROR("[Action Parser] Expected token type " + 
+		throw BMSX_RUNTIME_ERROR("[Action Parser] Expected token type " +
 									std::to_string(static_cast<int>(expected)) +
 									" but got " + std::to_string(static_cast<int>(t.kind)));
 	}
 	if (!expectedValue.empty() && t.value != expectedValue) {
-		throw BMSX_RUNTIME_ERROR("[Action Parser] Expected '" + expectedValue + 
+		throw BMSX_RUNTIME_ERROR("[Action Parser] Expected '" + expectedValue +
 									"' but got '" + t.value + "'");
 	}
 	return t;
@@ -264,18 +271,18 @@ Token InputActionParser::take(TokenType expected, const std::string& expectedVal
 // expr -> term (('&&' | '||') term)*
 std::unique_ptr<AstNode> InputActionParser::expr() {
 	auto left = term();
-	
+
 	while (true) {
 		Token t = current();
 		if (t.kind == TokenType::Sym && (t.value == "&&" || t.value == "||")) {
 			eat();
 			auto right = term();
-			
+
 			auto op = std::make_unique<OpNode>();
 			op->op = (t.value == "&&") ? OpNode::Op::AND : OpNode::Op::OR;
 			op->left = std::move(left);
 			op->right = std::move(right);
-			
+
 			// Set up evaluation function
 			if (op->op == OpNode::Op::AND) {
 				AstNode* l = op->left.get();
@@ -290,68 +297,68 @@ std::unique_ptr<AstNode> InputActionParser::expr() {
 					return l->eval(gs) || r->eval(gs);
 				};
 			}
-			
+
 			left = std::move(op);
 		} else {
 			break;
 		}
 	}
-	
+
 	return left;
 }
 
 // term -> factor | '!' factor
 std::unique_ptr<AstNode> InputActionParser::term() {
 	Token t = current();
-	
+
 	if (t.kind == TokenType::Sym && t.value == "!") {
 		eat();
 		auto operand = factor();
-		
+
 		auto op = std::make_unique<OpNode>();
 		op->op = OpNode::Op::NOT;
 		op->left = std::move(operand);
-		
+
 		AstNode* l = op->left.get();
 		op->eval = [l](const GetterFn& gs) {
 			return !l->eval(gs);
 		};
-		
+
 		return op;
 	}
-	
+
 	return factor();
 }
 
 // factor -> func | action | '(' expr ')'
 std::unique_ptr<AstNode> InputActionParser::factor() {
 	Token t = current();
-	
+
 	// Parenthesized expression
 	if (t.kind == TokenType::Sym && t.value == "(") {
 		eat();
 		auto inner = expr();
 		take(TokenType::Sym, ")");
-		
+
 		// Check for trailing modifiers: (a || b)[jp]
 		if (current().value == "[") {
 			auto mods = parseModifierList();
 			applyModifiersInPlace(inner.get(), mods);
 		}
-		
+
 		return inner;
 	}
-	
+
 	// Function call
 	if (t.kind == TokenType::Func || t.kind == TokenType::FuncWin) {
 		return func();
 	}
-	
+
 	// Action identifier
 	if (t.kind == TokenType::Ident) {
 		return action();
 	}
-	
+
 	throw BMSX_RUNTIME_ERROR("[Action Parser] Unexpected token: " + t.value);
 }
 
@@ -360,7 +367,7 @@ std::unique_ptr<AstNode> InputActionParser::func() {
 	Token tok = eat();
 	std::string base = tok.value;
 	std::optional<i32> win;
-	
+
 	// Extract window for windowed functions
 	if (tok.kind == TokenType::FuncWin) {
 		static const std::regex winRe(R"(^([?&]\w+)\{(\d+)\})");
@@ -370,9 +377,9 @@ std::unique_ptr<AstNode> InputActionParser::func() {
 			win = std::stoi(m[2].str());
 		}
 	}
-	
+
 	take(TokenType::Sym, "(");
-	
+
 	std::vector<std::unique_ptr<AstNode>> args;
 	if (current().value != ")") {
 		args.push_back(expr());
@@ -381,40 +388,40 @@ std::unique_ptr<AstNode> InputActionParser::func() {
 			args.push_back(expr());
 		}
 	}
-	
+
 	take(TokenType::Sym, ")");
-	
+
 	auto node = std::make_unique<FunNode>();
 	node->fname = base;
 	node->window = win;
 	node->args = std::move(args);
 	node->eval = compileFunction(base, node->args, win);
-	
+
 	return node;
 }
 
 // action -> IDENT ('[' mods ']')?
 std::unique_ptr<AstNode> InputActionParser::action() {
 	std::string name = take(TokenType::Ident).value;
-	
+
 	std::vector<std::string> mods;
 	if (current().value == "[") {
 		mods = parseModifierList();
 	}
-	
+
 	auto node = std::make_unique<ActNode>();
 	node->name = name;
 	node->mods = mods;
 	annotateActNode(*node);
 	node->eval = compileAction(name, mods);
-	
+
 	return node;
 }
 
 std::vector<std::string> InputActionParser::parseModifierList() {
 	std::vector<std::string> mods;
 	take(TokenType::Sym, "[");
-	
+
 	while (current().kind != TokenType::End && current().value != "]") {
 		Token t = eat();
 		if (t.value == ",") continue;
@@ -425,7 +432,7 @@ std::vector<std::string> InputActionParser::parseModifierList() {
 		}
 		mods.push_back(t.value);
 	}
-	
+
 	take(TokenType::Sym, "]");
 	return mods;
 }
@@ -437,21 +444,21 @@ void InputActionParser::annotateActNode(ActNode& n) {
 		n.edgeForJR = n.edgeForWR = false;
 		return;
 	}
-	
+
 	bool pressPos = false;
 	bool releasePos = false;
 	bool guardPos = false;
 	bool repeatPos = false;
 	bool guardExplicit = false;
 	bool repeatExplicit = false;
-	
+
 	static const std::regex wpRe(R"(^wp\{\d+\})");
 	static const std::regex wrRe(R"(^wr\{\d+\})");
-	
+
 	for (const auto& m : n.mods) {
 		bool neg = !m.empty() && m[0] == '!';
 		std::string raw = neg ? m.substr(1) : m;
-		
+
 		if (raw == "gp") {
 			guardExplicit = true;
 			if (!neg) guardPos = true;
@@ -462,17 +469,17 @@ void InputActionParser::annotateActNode(ActNode& n) {
 			if (!neg) repeatPos = true;
 			continue;
 		}
-		
+
 		bool pressish = (raw == "p" || raw == "jp" || std::regex_match(raw, wpRe));
 		bool releaseish = (raw == "jr" || std::regex_match(raw, wrRe));
-		
+
 		if (pressish && !neg) pressPos = true;
 		if (releaseish && !neg) releasePos = true;
 	}
-	
+
 	if (!guardExplicit) guardPos = pressPos;
 	if (!repeatExplicit) repeatPos = pressPos;
-	
+
 	n.edgeForJP = n.edgeForWP = pressPos;
 	n.edgeForJR = n.edgeForWR = releasePos;
 	n.edgeForGP = guardPos;
@@ -481,7 +488,7 @@ void InputActionParser::annotateActNode(ActNode& n) {
 
 void InputActionParser::applyModifiersInPlace(AstNode* node, const std::vector<std::string>& mods) {
 	if (mods.empty()) return;
-	
+
 	if (auto* act = node->asAction()) {
 		for (const auto& m : mods) {
 			act->mods.push_back(m);
@@ -490,13 +497,13 @@ void InputActionParser::applyModifiersInPlace(AstNode* node, const std::vector<s
 		act->eval = compileAction(act->name, act->mods);
 		return;
 	}
-	
+
 	if (auto* op = node->asOperation()) {
 		if (op->left) applyModifiersInPlace(op->left.get(), mods);
 		if (op->right) applyModifiersInPlace(op->right.get(), mods);
 		return;
 	}
-	
+
 	if (auto* fn = node->asFunction()) {
 		for (auto& arg : fn->args) {
 			applyModifiersInPlace(arg.get(), mods);
@@ -512,7 +519,7 @@ ModFn makeModPred(const std::string& tok) {
 	bool neg = !tok.empty() && tok[0] == '!';
 	std::string raw = neg ? tok.substr(1) : tok;
 	ModFn fn;
-	
+
 	StaticModifierKind staticKind;
 	if (resolveStaticModifierKind(raw, staticKind)) {
 		switch (staticKind) {
@@ -546,27 +553,27 @@ ModFn makeModPred(const std::string& tok) {
 					return get(n, win).alljustreleased;
 				};
 				break;
-			case StaticModifierKind::Gp:
-				fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
-					return get(n, win).guardedjustpressed.value_or(false);
-				};
-				break;
-			case StaticModifierKind::Rp:
-				fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
-					return get(n, win).repeatpressed.value_or(false);
-				};
-				break;
+				case StaticModifierKind::Gp:
+					fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
+						return actionFlag(get(n, win).guardedjustpressed);
+					};
+					break;
+				case StaticModifierKind::Rp:
+					fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
+						return actionFlag(get(n, win).repeatpressed);
+					};
+					break;
 			case StaticModifierKind::C:
 				fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
 					return get(n, win).consumed;
 				};
 				break;
-			case StaticModifierKind::H:
-				// Hold: pressed for more than 1 frame
-				fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
-					return get(n, win).presstime.value_or(0.0) >= 1.0;
-				};
-				break;
+				case StaticModifierKind::H:
+					// Hold: pressed for more than 1 frame
+					fn = [](const GetterFn& get, const std::string& n, std::optional<f64> win) {
+						return buttonPressTimeOrZero(get(n, win)) >= 1.0;
+					};
+					break;
 		}
 	} else {
 		// Windowed modifiers
@@ -575,9 +582,9 @@ ModFn makeModPred(const std::string& tok) {
 		static const std::regex tRe(R"(^t\{([^}]+)\})");
 		static const std::regex rcRe(R"(^rc\{([^}]+)\})");
 		static const std::regex numRe(R"(^(<|>|<=|>=|==|!=)\s*(\d+(?:\.\d+)?))");
-		
+
 		std::smatch m;
-		
+
 		if (std::regex_match(raw, m, wpRe)) {
 			f64 ms = std::stod(m[1].str());
 			fn = [ms](const GetterFn& get, const std::string& n, std::optional<f64>) {
@@ -592,7 +599,7 @@ ModFn makeModPred(const std::string& tok) {
 			std::string cmpRaw = m[1].str();
 			std::string op;
 			f64 val;
-			
+
 			std::smatch numMatch;
 			if (std::regex_match(cmpRaw, numMatch, numRe)) {
 				op = numMatch[1].str();
@@ -602,12 +609,12 @@ ModFn makeModPred(const std::string& tok) {
 				op = ">=";
 				val = std::stod(cmpRaw);
 			}
-			
-			fn = [op, val](const GetterFn& get, const std::string& n, std::optional<f64> win) {
-				f64 pt = get(n, win).presstime.value_or(0.0);
-				if (op == "<") return pt < val;
-				if (op == ">") return pt > val;
-				if (op == "<=") return pt <= val;
+
+				fn = [op, val](const GetterFn& get, const std::string& n, std::optional<f64> win) {
+					f64 pt = buttonPressTimeOrZero(get(n, win));
+					if (op == "<") return pt < val;
+					if (op == ">") return pt > val;
+					if (op == "<=") return pt <= val;
 				if (op == ">=") return pt >= val;
 				if (op == "==") return pt == val;
 				if (op == "!=") return pt != val;
@@ -617,7 +624,7 @@ ModFn makeModPred(const std::string& tok) {
 			std::string cmpRaw = m[1].str();
 			std::string op;
 			i32 val;
-			
+
 			std::smatch numMatch;
 			if (std::regex_match(cmpRaw, numMatch, numRe)) {
 				op = numMatch[1].str();
@@ -626,12 +633,12 @@ ModFn makeModPred(const std::string& tok) {
 				op = ">=";
 				val = std::stoi(cmpRaw);
 			}
-			
-			fn = [op, val](const GetterFn& get, const std::string& n, std::optional<f64> win) {
-				i32 count = get(n, win).repeatcount.value_or(0);
-				if (op == "<") return count < val;
-				if (op == ">") return count > val;
-				if (op == "<=") return count <= val;
+
+				fn = [op, val](const GetterFn& get, const std::string& n, std::optional<f64> win) {
+					i32 count = actionRepeatCount(get(n, win));
+					if (op == "<") return count < val;
+					if (op == ">") return count > val;
+					if (op == "<=") return count <= val;
 				if (op == ">=") return count >= val;
 				if (op == "==") return count == val;
 				if (op == "!=") return count != val;
@@ -641,7 +648,7 @@ ModFn makeModPred(const std::string& tok) {
 			throw BMSX_RUNTIME_ERROR("[Action Parser] Unknown modifier '" + raw + "'");
 		}
 	}
-	
+
 	// Apply negation if needed
 	if (neg) {
 		return [fn](const GetterFn& get, const std::string& n, std::optional<f64> win) {
@@ -660,7 +667,7 @@ EvalFn compileAction(const std::string& name, const std::vector<std::string>& mo
 	for (const auto& m : mods) {
 		modPreds.push_back(makeModPred(m));
 	}
-	
+
 	// If no 'c' or '!c' modifier, add implicit not-consumed check
 	bool hasConsumedMod = false;
 	for (const auto& m : mods) {
@@ -674,7 +681,7 @@ EvalFn compileAction(const std::string& name, const std::vector<std::string>& mo
 			return !get(n, win).consumed;
 		});
 	}
-	
+
 	return [name, modPreds](const GetterFn& get) {
 		for (const auto& pred : modPreds) {
 			if (!pred(get, name, std::nullopt)) return false;
@@ -687,15 +694,15 @@ EvalFn compileAction(const std::string& name, const std::vector<std::string>& mo
  * Compile function
  * ============================================================================ */
 
-EvalFn compileFunction(const std::string& fname, 
-						const std::vector<std::unique_ptr<AstNode>>& args, 
+EvalFn compileFunction(const std::string& fname,
+						const std::vector<std::unique_ptr<AstNode>>& args,
 						std::optional<i32> window) {
 	// Get raw pointers for lambda capture (nodes are owned by FunNode)
 	std::vector<AstNode*> argPtrs;
 	for (const auto& arg : args) {
 		argPtrs.push_back(arg.get());
 	}
-	
+
 	// Plain logical helpers
 	if (fname == "&") {
 		return [argPtrs](const GetterFn& gs) {
@@ -705,7 +712,7 @@ EvalFn compileFunction(const std::string& fname,
 			return true;
 		};
 	}
-	
+
 	if (fname == "?") {
 		return [argPtrs](const GetterFn& gs) {
 			for (auto* arg : argPtrs) {
@@ -714,7 +721,7 @@ EvalFn compileFunction(const std::string& fname,
 			return false;
 		};
 	}
-	
+
 	// Just-pressed helpers
 	if (fname == "?jp") {
 		return [argPtrs](const GetterFn& gs) {
@@ -730,7 +737,7 @@ EvalFn compileFunction(const std::string& fname,
 			return false;
 		};
 	}
-	
+
 	if (fname == "&jp") {
 		return [argPtrs](const GetterFn& gs) {
 			for (auto* arg : argPtrs) {
@@ -744,71 +751,71 @@ EvalFn compileFunction(const std::string& fname,
 			return true;
 		};
 	}
-	
+
 	// Guarded press helpers
 	if (fname == "?gp") {
 		return [argPtrs](const GetterFn& gs) {
 			for (auto* arg : argPtrs) {
 				if (arg->eval(gs)) {
-					if (auto* act = arg->asAction()) {
-						if (act->edgeForGP && 
-							gs(act->name, std::nullopt).guardedjustpressed.value_or(false)) {
-							return true;
+						if (auto* act = arg->asAction()) {
+							if (act->edgeForGP &&
+								actionFlag(gs(act->name, std::nullopt).guardedjustpressed)) {
+								return true;
+							}
 						}
-					}
 				}
 			}
 			return false;
 		};
 	}
-	
+
 	if (fname == "&gp") {
 		return [argPtrs](const GetterFn& gs) {
 			for (auto* arg : argPtrs) {
 				if (!arg->eval(gs)) return false;
-				if (auto* act = arg->asAction()) {
-					if (act->edgeForGP && 
-						!gs(act->name, std::nullopt).guardedjustpressed.value_or(false)) {
-						return false;
+					if (auto* act = arg->asAction()) {
+						if (act->edgeForGP &&
+							!actionFlag(gs(act->name, std::nullopt).guardedjustpressed)) {
+							return false;
+						}
 					}
-				}
 			}
 			return true;
 		};
 	}
-	
+
 	// Repeat press helpers
 	if (fname == "?rp") {
 		return [argPtrs](const GetterFn& gs) {
 			for (auto* arg : argPtrs) {
 				if (arg->eval(gs)) {
-					if (auto* act = arg->asAction()) {
-						if (act->edgeForRP && 
-							gs(act->name, std::nullopt).repeatpressed.value_or(false)) {
-							return true;
+						if (auto* act = arg->asAction()) {
+							if (act->edgeForRP &&
+								actionFlag(gs(act->name, std::nullopt).repeatpressed)) {
+								return true;
+							}
 						}
-					}
 				}
 			}
 			return false;
 		};
 	}
-	
+
 	if (fname == "&rp") {
 		return [argPtrs](const GetterFn& gs) {
 			for (auto* arg : argPtrs) {
 				if (!arg->eval(gs)) return false;
-				if (auto* act = arg->asAction()) {
-					if (act->edgeForRP && 
-						!gs(act->name, std::nullopt).repeatpressed.value_or(false)) {
-						return false;
+					if (auto* act = arg->asAction()) {
+						if (act->edgeForRP &&
+							!actionFlag(gs(act->name, std::nullopt).repeatpressed)) {
+							return false;
+						}
 					}
-				}
 			}
 			return true;
 		};
 	}
-	
+
 	// Just-released helpers
 	if (fname == "?jr") {
 		return [argPtrs](const GetterFn& gs) {
@@ -824,7 +831,7 @@ EvalFn compileFunction(const std::string& fname,
 			return false;
 		};
 	}
-	
+
 	if (fname == "&jr") {
 		return [argPtrs](const GetterFn& gs) {
 			for (auto* arg : argPtrs) {
@@ -838,14 +845,14 @@ EvalFn compileFunction(const std::string& fname,
 			return true;
 		};
 	}
-	
-	// Windowed press helpers
-	if (fname == "?wp") {
-		return [argPtrs, window](const GetterFn& gs) {
-			GetterFn g = [&gs, window](const std::string& n, std::optional<f64>) -> ActionState {
-				return gs(n, window ? std::make_optional(static_cast<f64>(*window)) : std::nullopt);
-			};
-			for (auto* arg : argPtrs) {
+
+		// Windowed press helpers
+		if (fname == "?wp") {
+			return [argPtrs, windowValue = actionWindow(window)](const GetterFn& gs) {
+				GetterFn g = [&gs, windowValue](const std::string& n, std::optional<f64>) -> ActionState {
+					return gs(n, windowValue);
+				};
+				for (auto* arg : argPtrs) {
 				if (arg->eval(g)) {
 					if (auto* act = arg->asAction()) {
 						if (act->edgeForWP && g(act->name, std::nullopt).waspressed) {
@@ -856,14 +863,14 @@ EvalFn compileFunction(const std::string& fname,
 			}
 			return false;
 		};
-	}
-	
-	if (fname == "&wp") {
-		return [argPtrs, window](const GetterFn& gs) {
-			GetterFn g = [&gs, window](const std::string& n, std::optional<f64>) -> ActionState {
-				return gs(n, window ? std::make_optional(static_cast<f64>(*window)) : std::nullopt);
-			};
-			for (auto* arg : argPtrs) {
+		}
+
+		if (fname == "&wp") {
+			return [argPtrs, windowValue = actionWindow(window)](const GetterFn& gs) {
+				GetterFn g = [&gs, windowValue](const std::string& n, std::optional<f64>) -> ActionState {
+					return gs(n, windowValue);
+				};
+				for (auto* arg : argPtrs) {
 				if (!arg->eval(g)) return false;
 				if (auto* act = arg->asAction()) {
 					if (act->edgeForWP && !g(act->name, std::nullopt).waspressed) {
@@ -874,14 +881,14 @@ EvalFn compileFunction(const std::string& fname,
 			return true;
 		};
 	}
-	
-	// Windowed release helpers
-	if (fname == "?wr") {
-		return [argPtrs, window](const GetterFn& gs) {
-			GetterFn g = [&gs, window](const std::string& n, std::optional<f64>) -> ActionState {
-				return gs(n, window ? std::make_optional(static_cast<f64>(*window)) : std::nullopt);
-			};
-			for (auto* arg : argPtrs) {
+
+		// Windowed release helpers
+		if (fname == "?wr") {
+			return [argPtrs, windowValue = actionWindow(window)](const GetterFn& gs) {
+				GetterFn g = [&gs, windowValue](const std::string& n, std::optional<f64>) -> ActionState {
+					return gs(n, windowValue);
+				};
+				for (auto* arg : argPtrs) {
 				if (arg->eval(g)) {
 					if (auto* act = arg->asAction()) {
 						if (act->edgeForWR && g(act->name, std::nullopt).wasreleased) {
@@ -892,14 +899,14 @@ EvalFn compileFunction(const std::string& fname,
 			}
 			return false;
 		};
-	}
-	
-	if (fname == "&wr") {
-		return [argPtrs, window](const GetterFn& gs) {
-			GetterFn g = [&gs, window](const std::string& n, std::optional<f64>) -> ActionState {
-				return gs(n, window ? std::make_optional(static_cast<f64>(*window)) : std::nullopt);
-			};
-			for (auto* arg : argPtrs) {
+		}
+
+		if (fname == "&wr") {
+			return [argPtrs, windowValue = actionWindow(window)](const GetterFn& gs) {
+				GetterFn g = [&gs, windowValue](const std::string& n, std::optional<f64>) -> ActionState {
+					return gs(n, windowValue);
+				};
+				for (auto* arg : argPtrs) {
 				if (!arg->eval(g)) return false;
 				if (auto* act = arg->asAction()) {
 					if (act->edgeForWR && !g(act->name, std::nullopt).wasreleased) {
@@ -910,7 +917,7 @@ EvalFn compileFunction(const std::string& fname,
 			return true;
 		};
 	}
-	
+
 	throw BMSX_RUNTIME_ERROR("[Action Parser] Unknown function helper '" + fname + "'");
 }
 
@@ -927,7 +934,7 @@ AstNode* ActionDefinitionEvaluator::getCachedOrParse(const std::string& def) {
 	if (it != s_cache.end()) {
 		return it->second.get();
 	}
-	
+
 	auto ast = InputActionParser::parse(def);
 	AstNode* ptr = ast.get();
 	s_cache[def] = std::move(ast);
@@ -942,7 +949,7 @@ bool ActionDefinitionEvaluator::checkActionTriggered(const std::string& def, con
 std::vector<std::string> ActionDefinitionEvaluator::getReferencedActions(const std::string& def) {
 	AstNode* ast = getCachedOrParse(def);
 	std::vector<std::string> out;
-	
+
 	std::function<void(AstNode*)> walk = [&walk, &out](AstNode* node) {
 		if (auto* act = node->asAction()) {
 			out.push_back(act->name);
@@ -959,7 +966,7 @@ std::vector<std::string> ActionDefinitionEvaluator::getReferencedActions(const s
 			if (op->right) walk(op->right.get());
 		}
 	};
-	
+
 	walk(ast);
 	return out;
 }
