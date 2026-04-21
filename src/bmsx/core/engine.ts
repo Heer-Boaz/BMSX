@@ -100,19 +100,18 @@ export class EngineCore {
 	/**
 	 * Indicates whether the game is currently paused (by the debugger).
 	 */
-	private _paused!: boolean;
+		private _paused!: boolean;
 
-	public get paused(): boolean { return this._paused; }
-	public set paused(value: boolean) {
-		if (this._paused === value) return; // No change
-		this._paused = value;
-		if (this._paused === true) {
-			this.sndmaster.pause();
+		public get paused(): boolean { return this._paused; }
+		public set paused(value: boolean) {
+			if (this._paused === value) return; // No change
+			this._paused = value;
+			if (this._paused) {
+				this.sndmaster.pause();
+			} else {
+				this.sndmaster.resume();
+			}
 		}
-		else if (this._paused === false) {
-			this.sndmaster.resume();
-		}
-	}
 
 	private _debuggerControlsVisible: boolean = false;
 
@@ -419,12 +418,11 @@ export class EngineCore {
 		e.setReturnMessage('Are you sure you want to exit this awesome game?');
 	};
 
-	public async resetRuntime(options?: { preserve_textures?: boolean }): Promise<void> {
-		if (!this.initialized) {
-			throw new Error('[EngineCore] Cannot reset runtime before initialization.');
-		}
-		const preserveTextures = options?.preserve_textures === true;
-		const gateToken = renderGate.begin({ blocking: true, tag: 'runtime-reset' });
+		public async resetRuntime(preserveTextures = false): Promise<void> {
+			if (!this.initialized) {
+				throw new Error('[EngineCore] Cannot reset runtime before initialization.');
+			}
+			const gateToken = renderGate.begin({ blocking: true, tag: 'runtime-reset' });
 		const runToken = runGate.begin({ blocking: true, tag: 'runtime-reset' });
 		try {
 			this.sndmaster.resetPlaybackState();

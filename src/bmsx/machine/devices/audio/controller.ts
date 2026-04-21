@@ -243,15 +243,19 @@ export class AudioController {
 		}
 		this.activeVoiceByType[channel] = ACTIVE_VOICE_PENDING;
 		const playSequence = this.playSequenceByType[channel];
-		void this.soundMaster.playResolved(id, request).then((voiceId) => {
-			if (this.playSequenceByType[channel] !== playSequence) {
-				return;
-			}
-			this.activeVoiceByType[channel] = voiceId || 0;
-			if (!voiceId) {
+			void this.soundMaster.playResolved(id, request).then((voiceId) => {
+				if (this.playSequenceByType[channel] !== playSequence) {
+					return;
+				}
+				this.activeVoiceByType[channel] = voiceId;
+			}, error => {
+				if (this.playSequenceByType[channel] !== playSequence) {
+					return;
+				}
+				this.activeVoiceByType[channel] = 0;
 				this.activeHandleByType[channel] = 0;
-			}
-		});
+				console.error(error);
+			});
 	}
 
 	private startMusicTransitionFromApu(id: string): void {
@@ -281,7 +285,7 @@ export class AudioController {
 		if (channel === 'music') {
 			const fadeSamples = this.memory.readIoU32(IO_APU_FADE_SAMPLES);
 			if (fadeSamples > 0) {
-				this.soundMaster.stopMusic({ fade_ms: apuSamplesToMilliseconds(fadeSamples) });
+				this.soundMaster.stopMusic(apuSamplesToMilliseconds(fadeSamples));
 				return;
 			}
 			this.soundMaster.stopMusic();

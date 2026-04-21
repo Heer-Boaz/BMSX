@@ -22,6 +22,28 @@ function isDigit(ch: string): boolean {
 	return code >= 48 && code <= 57;
 }
 
+const CPP_WHITESPACE = new Set([' ', '\t', '\r', '\n']);
+const CPP_TWO_CHAR_OPERATORS = new Set([
+	'::',
+	'->',
+	'==',
+	'!=',
+	'<=',
+	'>=',
+	'&&',
+	'||',
+	'+=',
+	'-=',
+	'*=',
+	'/=',
+	'%=',
+	'++',
+	'--',
+	'<<',
+	'>>',
+]);
+const CPP_THREE_CHAR_OPERATORS = new Set(['...', '>>=', '<<=']);
+
 export function tokenizeCpp(source: string): CppToken[] {
 	const tokens: CppToken[] = [];
 	let index = 0;
@@ -45,7 +67,7 @@ export function tokenizeCpp(source: string): CppToken[] {
 	};
 	while (index < source.length) {
 		const ch = source[index];
-		if (ch === ' ' || ch === '\t' || ch === '\r' || ch === '\n') {
+		if (CPP_WHITESPACE.has(ch)) {
 			advance(1);
 			continue;
 		}
@@ -107,16 +129,12 @@ export function tokenizeCpp(source: string): CppToken[] {
 		const tokenLine = line;
 		const tokenColumn = column;
 		const three = source.slice(index, index + 3);
-		if (three === '...' || three === '>>=' || three === '<<=') {
+		if (CPP_THREE_CHAR_OPERATORS.has(three)) {
 			push('op', advance(3), tokenLine, tokenColumn);
 			continue;
 		}
 		const two = source.slice(index, index + 2);
-		if (
-			two === '::' || two === '->' || two === '==' || two === '!=' || two === '<=' || two === '>=' ||
-			two === '&&' || two === '||' || two === '+=' || two === '-=' || two === '*=' || two === '/=' ||
-			two === '%=' || two === '++' || two === '--' || two === '<<' || two === '>>'
-		) {
+		if (CPP_TWO_CHAR_OPERATORS.has(two)) {
 			push('op', advance(2), tokenLine, tokenColumn);
 			continue;
 		}
@@ -131,14 +149,25 @@ export function buildCppPairMap(tokens: readonly CppToken[]): number[] {
 	const stack: number[] = [];
 	for (let index = 0; index < tokens.length; index += 1) {
 		const text = tokens[index].text;
-		if (text === '(' || text === '[' || text === '{') {
-			stack.push(index);
-			continue;
+		let open: string;
+		switch (text) {
+			case '(':
+			case '[':
+			case '{':
+				stack.push(index);
+				continue;
+			case ')':
+				open = '(';
+				break;
+			case ']':
+				open = '[';
+				break;
+			case '}':
+				open = '{';
+				break;
+			default:
+				continue;
 		}
-		if (text !== ')' && text !== ']' && text !== '}') {
-			continue;
-		}
-		const open = text === ')' ? '(' : text === ']' ? '[' : '{';
 		for (let stackIndex = stack.length - 1; stackIndex >= 0; stackIndex -= 1) {
 			if (tokens[stack[stackIndex]].text !== open) {
 				continue;

@@ -39,8 +39,24 @@ type RawActionRepeatRecord = {
 	lastRepeatAtMs: number;
 };
 
+type RebindBinding = ButtonId | { id: ButtonId };
+type RebindMapping = Record<string, RebindBinding[]>;
+
 export const INPUT_SOURCES = ['keyboard', 'gamepad', 'pointer'] as const;
 export type InputSource = typeof INPUT_SOURCES[number];
+
+function bindingId(binding: ButtonId | { id: ButtonId }): ButtonId {
+	return typeof binding === 'string' ? binding : binding.id;
+}
+
+function getOrCreateMapValue<K, V>(map: Map<K, V>, key: K, create: () => V): V {
+	let value = map.get(key);
+	if (value === undefined) {
+		value = create();
+		map.set(key, value);
+	}
+	return value;
+}
 
 /** Bitwise flags representing keyboard modifier keys. */
 export enum KeyModifier {
@@ -164,9 +180,21 @@ export class PlayerInput {
 	 */
 	public setInputMap(inputMap: InputMap): void {
 		if (!inputMap) throw new Error('[PlayerInput] Null or undefined input map provided.');
-		inputMap.keyboard = inputMap.keyboard ?? this.inputMap?.keyboard ?? (this.playerIndex === 1 ? deep_clone(Input.DEFAULT_INPUT_MAPPING.keyboard) : {});
-		inputMap.gamepad = inputMap.gamepad ?? this.inputMap?.gamepad ?? deep_clone(Input.DEFAULT_INPUT_MAPPING.gamepad);
-		inputMap.pointer = inputMap.pointer ?? this.inputMap?.pointer ?? deep_clone(Input.DEFAULT_INPUT_MAPPING.pointer);
+		if (!inputMap.keyboard) {
+			if (this.inputMap?.keyboard) {
+				inputMap.keyboard = this.inputMap.keyboard;
+			} else if (this.playerIndex === 1) {
+				inputMap.keyboard = deep_clone(Input.DEFAULT_INPUT_MAPPING.keyboard);
+			} else {
+				inputMap.keyboard = {};
+			}
+		}
+		if (!inputMap.gamepad) {
+			inputMap.gamepad = this.inputMap?.gamepad ?? deep_clone(Input.DEFAULT_INPUT_MAPPING.gamepad);
+		}
+		if (!inputMap.pointer) {
+			inputMap.pointer = this.inputMap?.pointer ?? deep_clone(Input.DEFAULT_INPUT_MAPPING.pointer);
+		}
 		this.inputMap = inputMap;
 		this.trackInputMapBindings(inputMap);
 
@@ -182,33 +210,52 @@ export class PlayerInput {
 		return this._stateManagers[source];
 	}
 
+	private getContextBindingIds(action: string, source: InputSource): ButtonId[] | null {
+		const bindings = this.contexts.getBindings(action, source);
+		if (bindings.length === 0) {
+			return null;
+		}
+		const ids: ButtonId[] = [];
+		for (let i = 0; i < bindings.length; i += 1) {
+			ids.push(bindingId(bindings[i]));
+		}
+		return ids;
+	}
+
+	private inputMapBindings(inputMap: InputMap, action: string, source: InputSource): Array<KeyboardBinding | GamepadBinding | PointerBinding> | undefined {
+		switch (source) {
+			case 'keyboard': return inputMap.keyboard[action];
+			case 'gamepad': return inputMap.gamepad[action];
+			case 'pointer': return inputMap.pointer?.[action];
+		}
+	}
+
 	private trackButton(source: InputSource, button: ButtonId): void {
 		this.trackedButtons[source].add(button);
 	}
 
 	private trackBindings(source: InputSource, bindings: Array<ButtonId | { id: ButtonId }>): void {
 		for (let i = 0; i < bindings.length; i += 1) {
-			const binding = bindings[i];
-			this.trackButton(source, typeof binding === 'string' ? binding : binding.id);
+			this.trackButton(source, bindingId(bindings[i]));
 		}
 	}
 
 	private trackInputMapBindings(inputMap: InputMap): void {
-		for (const action of Object.keys(inputMap.keyboard ?? {})) {
+		if (inputMap.keyboard) for (const action of Object.keys(inputMap.keyboard)) {
 			this.trackBindings('keyboard', inputMap.keyboard[action]);
 		}
-		for (const action of Object.keys(inputMap.gamepad ?? {})) {
+		if (inputMap.gamepad) for (const action of Object.keys(inputMap.gamepad)) {
 			this.trackBindings('gamepad', inputMap.gamepad[action]);
 		}
-		for (const action of Object.keys(inputMap.pointer ?? {})) {
+		if (inputMap.pointer) for (const action of Object.keys(inputMap.pointer)) {
 			this.trackBindings('pointer', inputMap.pointer[action]);
 		}
 	}
 
 	/** Add a higher-priority mapping context */
 	public pushContext(id: string, keyboard: KeyboardInputMapping, gamepad: GamepadInputMapping, pointer: PointerInputMapping, priority = 100, enabled = true): void {
-		this.trackInputMapBindings({ keyboard: keyboard ?? {}, gamepad: gamepad ?? {}, pointer: pointer ?? {} });
-		this.contexts.push(new MappingContext(id, priority, enabled, keyboard ?? {}, gamepad ?? {}, pointer ?? {}));
+		this.trackInputMapBindings({ keyboard, gamepad, pointer });
+		this.contexts.push(new MappingContext(id, priority, enabled, keyboard, gamepad, pointer));
 	}
 
 	public popContext(id?: string): void {
@@ -248,18 +295,9 @@ export class PlayerInput {
 		const inputMap = this.inputMap;
 		if (!inputMap) return makeActionState(action);
 
-		const keyboardKeysRaw = this.contexts.getBindings(action, 'keyboard');
-		const gamepadButtonsRaw = this.contexts.getBindings(action, 'gamepad');
-		const keyboardKeys: ButtonId[] = (keyboardKeysRaw && keyboardKeysRaw.length > 0)
-			? keyboardKeysRaw.map(k => (typeof k === 'string' ? k : k.id))
-			: null;
-		const gamepadButtons: ButtonId[] = (gamepadButtonsRaw && gamepadButtonsRaw.length > 0)
-			? gamepadButtonsRaw.map(b => (typeof b === 'string' ? b : b.id))
-			: null;
-		const pointerBindingsRaw = this.contexts.getBindings(action, 'pointer') as PointerBinding[];
-		const pointerButtons: ButtonId[] = (pointerBindingsRaw && pointerBindingsRaw.length > 0)
-			? pointerBindingsRaw.map(b => (typeof b === 'string' ? b : b.id))
-			: null;
+		const keyboardKeys = this.getContextBindingIds(action, 'keyboard');
+		const gamepadButtons = this.getContextBindingIds(action, 'gamepad');
+		const pointerButtons = this.getContextBindingIds(action, 'pointer');
 
 		/**
 		 * Retrieves the state of the specified action, which can be a combination of keyboard keys or gamepad buttons or a single key/button.
@@ -374,9 +412,9 @@ export class PlayerInput {
 		);
 		const deviceStates = [keyboardState, gamepadState, pointerState];
 		const pressed = deviceStates.some(state => state.anyPressed);
-		let justpressed = deviceStates.some(state => state.anyJustPressed);
+		const justpressed = deviceStates.some(state => state.anyJustPressed);
 		const alljustpressed = deviceStates.some(state => state.allJustPressed);
-		let justreleased = deviceStates.some(state => state.anyJustReleased);
+		const justreleased = deviceStates.some(state => state.anyJustReleased);
 		const alljustreleased = deviceStates.some(state => state.allJustReleased);
 		const waspressed = deviceStates.some(state => state.anyWasPressed);
 		const wasreleased = deviceStates.some(state => state.anyWasReleased);
@@ -488,14 +526,16 @@ export class PlayerInput {
 				if (query?.filter && !query.filter.includes(action)) continue; // Skip actions that are not in the filter
 				const actionState = this.getActionState(action);
 				// Check if the just pressed state matches the query, but only if the query explicitly specifies that justPressed should be true
-				const justPressedMatches = (query?.justPressed === true)
-					? actionState.justpressed === true
-					: true;
+				const justPressedMatches = !query?.justPressed || actionState.justpressed;
 				// Check if the consumed state matches the query, but only if the query explicitly specifies that consumed should be false
-				const consumedMatches = (query?.consumed === false)
-					? actionState.consumed === false
-					: true;
-				if (actionState.pressed === (query?.pressed ?? true) &&
+				let consumedMatches = true;
+				if (query && 'consumed' in query) {
+					consumedMatches = query.consumed ? actionState.consumed : !actionState.consumed;
+				}
+				const pressedMatches = query && 'pressed' in query
+					? query.pressed ? actionState.pressed : !actionState.pressed
+					: actionState.pressed;
+				if (pressedMatches &&
 					justPressedMatches &&
 					consumedMatches &&
 					((actionState.presstime ?? 0) >= (query?.pressTime ?? 0))) {
@@ -532,32 +572,13 @@ export class PlayerInput {
 		const action: string = (typeof actionToConsume === 'string') ? actionToConsume : actionToConsume.action;
 
 		for (const source of INPUT_SOURCES) {
-			if (source === 'keyboard') {
-				const keysOrButtons: KeyboardBinding[] = inputMap.keyboard?.[action] ?? [];
-				for (const binding of keysOrButtons) {
-					const key = typeof binding === 'string' ? binding : binding.id;
-					const buttonState = this.getButtonState(key, 'keyboard');
-					if (buttonState.pressed && !buttonState.consumed) {
-						this.consumeGameplayButton(key, 'keyboard');
-					}
-				}
-			} else if (source === 'gamepad') {
-				const keysOrButtons: GamepadBinding[] = inputMap.gamepad?.[action] ?? [];
-				for (const binding of keysOrButtons) {
-					const key = typeof binding === 'string' ? binding : binding.id;
-					const buttonState = this.getButtonState(key, 'gamepad');
-					if (buttonState?.pressed && !buttonState.consumed) {
-						this.consumeGameplayButton(key, 'gamepad');
-					}
-				}
-			} else if (source === 'pointer') {
-				const keysOrButtons: PointerBinding[] = inputMap.pointer?.[action] ?? [];
-				for (const binding of keysOrButtons) {
-					const key = typeof binding === 'string' ? binding : binding.id;
-					const buttonState = this.getButtonState(key, 'pointer');
-					if (buttonState?.pressed && !buttonState.consumed) {
-						this.consumeGameplayButton(key, 'pointer');
-					}
+			const bindings = this.inputMapBindings(inputMap, action, source);
+			if (!bindings) continue;
+			for (const binding of bindings) {
+				const key = bindingId(binding);
+				const buttonState = this.getButtonState(key, source);
+				if (buttonState.pressed && !buttonState.consumed) {
+					this.consumeGameplayButton(key, source);
 				}
 			}
 		}
@@ -586,10 +607,10 @@ export class PlayerInput {
 		const keyboardHandler = this.inputHandlers['keyboard'];
 		if (!keyboardHandler) return { shift: false, ctrl: false, alt: false, meta: false };
 
-		const ctrl = keyboardHandler.getButtonState('ControlLeft')?.pressed === true || keyboardHandler.getButtonState('ControlRight')?.pressed === true;
-		const alt = keyboardHandler.getButtonState('AltLeft')?.pressed === true || keyboardHandler.getButtonState('AltRight')?.pressed === true;
-		const shift = keyboardHandler.getButtonState('ShiftLeft')?.pressed === true || keyboardHandler.getButtonState('ShiftRight')?.pressed === true;
-		const meta = keyboardHandler.getButtonState('MetaLeft')?.pressed === true || keyboardHandler.getButtonState('MetaRight')?.pressed === true;
+		const ctrl = keyboardHandler.getButtonState('ControlLeft')?.pressed || keyboardHandler.getButtonState('ControlRight')?.pressed;
+		const alt = keyboardHandler.getButtonState('AltLeft')?.pressed || keyboardHandler.getButtonState('AltRight')?.pressed;
+		const shift = keyboardHandler.getButtonState('ShiftLeft')?.pressed || keyboardHandler.getButtonState('ShiftRight')?.pressed;
+		const meta = keyboardHandler.getButtonState('MetaLeft')?.pressed || keyboardHandler.getButtonState('MetaRight')?.pressed;
 		return { shift, ctrl, alt, meta };
 	}
 
@@ -748,46 +769,37 @@ export class PlayerInput {
 		}
 		if (capturedKb === null && capturedGp === null) return;
 		if (capturedKb !== null) {
-			const id = capturedKb;
-			this.trackButton('keyboard', id);
-			const arr = this.inputMap.keyboard[action] ?? [];
-			const exists = arr.some(b => (typeof b === 'string' ? b : b.id) === id);
-			const base = mode === 'replace'
-				? []
-				: exists
-					? arr.filter(b => (typeof b === 'string' ? b : b.id) !== id)
-					: arr.slice();
-			base.push(id);
-			this.inputMap.keyboard[action] = base;
-			for (const act of Object.keys(this.inputMap.keyboard)) {
-				if (act === action) continue;
-				const list = this.inputMap.keyboard[act] ?? [];
-				this.inputMap.keyboard[act] = list.filter(b => (typeof b === 'string' ? b : b.id) !== id);
-			}
+			this.applyCapturedRebind('keyboard', capturedKb, action, mode);
 		}
 		if (capturedGp !== null) {
-			const id = capturedGp;
-			this.trackButton('gamepad', id);
-			const arr = this.inputMap.gamepad[action] ?? [];
-			const exists = arr.some(b => (typeof b === 'string' ? b : b.id) === id);
-			const base = mode === 'replace'
-				? []
-				: exists
-					? arr.filter(b => (typeof b === 'string' ? b : b.id) !== id)
-					: arr.slice();
-			base.push(id);
-			this.inputMap.gamepad[action] = base;
-			for (const act of Object.keys(this.inputMap.gamepad)) {
-				if (act === action) continue;
-				const list = this.inputMap.gamepad[act] ?? [];
-				this.inputMap.gamepad[act] = list.filter(b => (typeof b === 'string' ? b : b.id) !== id);
-			}
+			this.applyCapturedRebind('gamepad', capturedGp, action, mode);
 		}
 		this.pendingRebind = null;
 	}
 
+	private applyCapturedRebind(source: 'keyboard' | 'gamepad', id: ButtonId, action: string, mode: 'append' | 'replace'): void {
+		this.trackButton(source, id);
+		const map = (source === 'keyboard' ? this.inputMap.keyboard : this.inputMap.gamepad) as RebindMapping;
+		const arr = map[action];
+		let base: RebindBinding[];
+		if (mode === 'replace' || !arr) {
+			base = [];
+		} else if (arr.some(binding => bindingId(binding) === id)) {
+			base = arr.filter(binding => bindingId(binding) !== id);
+		} else {
+			base = arr.slice();
+		}
+		base.push(id);
+		map[action] = base;
+		for (const act of Object.keys(map)) {
+			if (act === action) continue;
+			const list = map[act];
+			if (list) map[act] = list.filter(binding => bindingId(binding) !== id);
+		}
+	}
+
 	private evaluateActionGuard(action: string, state: ActionState, windowOverride?: number): boolean {
-		if (state.justpressed !== true) {
+		if (!state.justpressed) {
 			return false;
 		}
 
@@ -804,9 +816,9 @@ export class PlayerInput {
 			}
 		}
 
-		const previousAcceptedFrame = existing?.lastAcceptedFrame ?? null;
+		const previousAcceptedFrame = existing?.lastAcceptedFrame;
 		let accepted = true;
-		if (previousAcceptedFrame !== null) {
+		if (previousAcceptedFrame !== undefined) {
 			const delta = frameId - previousAcceptedFrame;
 			if (delta <= guardFrames) {
 				accepted = false;
@@ -837,13 +849,12 @@ export class PlayerInput {
 
 	private evaluateActionRepeat(action: string, state: ActionState, frameId: number): { triggered: boolean; count: number } {
 		const repeat = this.ensureSimRepeatState(action);
-		if (repeat.lastFrameEvaluated === frameId) {
-			return { triggered: repeat.lastResult, count: repeat.repeatCount };
-		}
+		const cached = this.cachedRepeatResult(repeat, frameId);
+		if (cached) return cached;
 
 		let result = false;
-		const pressed = state.pressed === true;
-		const justpressed = state.justpressed === true;
+		const pressed = state.pressed;
+		const justpressed = state.justpressed;
 
 		if (justpressed) {
 			repeat.active = true;
@@ -875,20 +886,17 @@ export class PlayerInput {
 			}
 		}
 
-		repeat.lastFrameEvaluated = frameId;
-		repeat.lastResult = result;
-		return { triggered: result, count: repeat.repeatCount };
+		return this.finishRepeatResult(repeat, frameId, result);
 	}
 
 	private evaluateRawActionRepeat(action: string, state: ButtonState, frameId: number): { triggered: boolean; count: number } {
 		const repeat = this.ensureRawRepeatState(action);
-		if (repeat.lastFrameEvaluated === frameId) {
-			return { triggered: repeat.lastResult, count: repeat.repeatCount };
-		}
+		const cached = this.cachedRepeatResult(repeat, frameId);
+		if (cached) return cached;
 
 		let result = false;
-		const pressed = state.pressed === true;
-		const justpressed = state.justpressed === true;
+		const pressed = state.pressed;
+		const justpressed = state.justpressed;
 		const now = this.lastPollTimestampMs ?? $.platform.clock.now();
 		const startMs = state.pressedAtMs ?? state.timestamp ?? now;
 		const frameMs = Runtime.instance.timing.frameDurationMs;
@@ -925,41 +933,42 @@ export class PlayerInput {
 			}
 		}
 
+		return this.finishRepeatResult(repeat, frameId, result);
+	}
+
+	private cachedRepeatResult(repeat: { lastFrameEvaluated: number; lastResult: boolean; repeatCount: number }, frameId: number): { triggered: boolean; count: number } | null {
+		if (repeat.lastFrameEvaluated !== frameId) {
+			return null;
+		}
+		return { triggered: repeat.lastResult, count: repeat.repeatCount };
+	}
+
+	private finishRepeatResult(repeat: { lastFrameEvaluated: number; lastResult: boolean; repeatCount: number }, frameId: number, result: boolean): { triggered: boolean; count: number } {
 		repeat.lastFrameEvaluated = frameId;
 		repeat.lastResult = result;
 		return { triggered: result, count: repeat.repeatCount };
 	}
 
 	private ensureSimRepeatState(action: string): SimActionRepeatRecord {
-		let entry = this.simActionRepeatRecords.get(action);
-		if (!entry) {
-			entry = {
-				active: false,
-				repeatCount: 0,
-				pressStartFrame: -1,
-				lastFrameEvaluated: -1,
-				lastResult: false,
-				lastRepeatFrame: -1,
-			};
-			this.simActionRepeatRecords.set(action, entry);
-		}
-		return entry;
+		return getOrCreateMapValue(this.simActionRepeatRecords, action, () => ({
+			active: false,
+			repeatCount: 0,
+			pressStartFrame: -1,
+			lastFrameEvaluated: -1,
+			lastResult: false,
+			lastRepeatFrame: -1,
+		}));
 	}
 
 	private ensureRawRepeatState(action: string): RawActionRepeatRecord {
-		let entry = this.rawActionRepeatRecords.get(action);
-		if (!entry) {
-			entry = {
-				active: false,
-				repeatCount: 0,
-				pressStartMs: -1,
-				lastFrameEvaluated: -1,
-				lastResult: false,
-				lastRepeatAtMs: -1,
-			};
-			this.rawActionRepeatRecords.set(action, entry);
-		}
-		return entry;
+		return getOrCreateMapValue(this.rawActionRepeatRecords, action, () => ({
+			active: false,
+			repeatCount: 0,
+			pressStartMs: -1,
+			lastFrameEvaluated: -1,
+			lastResult: false,
+			lastRepeatAtMs: -1,
+		}));
 	}
 
 	/** Updates aggregated button states and cleans up stale events. */

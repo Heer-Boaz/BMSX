@@ -107,7 +107,7 @@ export function encodeRomToc(params: { assets: RomAsset[]; projectRootPath?: str
 		return ref;
 	};
 
-	const projectRootRef = intern(params.projectRootPath ?? '');
+	const projectRootRef = intern(params.projectRootPath);
 	const entryBuffer = new Uint8Array(assets.length * ROM_TOC_ENTRY_SIZE);
 	const entryView = new DataView(entryBuffer.buffer, entryBuffer.byteOffset, entryBuffer.byteLength);
 

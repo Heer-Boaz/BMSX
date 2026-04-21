@@ -113,8 +113,8 @@ export class KeyboardInput implements InputHandler {
 		Object.keys(this.keyStates).forEach(buttonId => {
 			const prev = this.gamepadButtonStates[buttonId] ?? makeButtonState();
 			const current = this.keyStates[buttonId];
-			const isDown = current.pressed === true;
-			const wasDown = prev.pressed === true;
+			const isDown = current.pressed;
+			const wasDown = prev.pressed;
 			const justpressed = this.pendingPresses.has(buttonId);
 			const justreleased = this.pendingReleases.has(buttonId);
 
@@ -129,7 +129,7 @@ export class KeyboardInput implements InputHandler {
 
 			let state: ButtonState;
 			if (isDown) {
-				const stickyConsumed = prev.consumed === true;
+				const stickyConsumed = prev.consumed;
 				state = {
 					...prev,
 					pressed: true,

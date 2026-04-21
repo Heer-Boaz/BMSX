@@ -637,6 +637,9 @@ export class WebGLBackend implements GPUBackend {
 	setUniform1f(name: string, v: number): void {
 		const loc = this.getUniformLocationCached(name); if (loc) this.gl.uniform1f(loc, v);
 	}
+	setUniform2f(name: string, x: number, y: number): void {
+		const loc = this.getUniformLocationCached(name); if (loc) this.gl.uniform2f(loc, x, y);
+	}
 	setUniform1fv(name: string, data: Float32Array): void {
 		const loc = this.getUniformLocationCached(name); if (loc) this.gl.uniform1fv(loc, data);
 	}
@@ -645,6 +648,9 @@ export class WebGLBackend implements GPUBackend {
 	}
 	setUniform1i(name: string, v: number): void {
 		const loc = this.getUniformLocationCached(name); if (loc) this.gl.uniform1i(loc, v);
+	}
+	setUniform1ui(name: string, v: number): void {
+		const loc = this.getUniformLocationCached(name); if (loc) this.gl.uniform1ui(loc, v);
 	}
 	setUniform3fv(name: string, data: Float32Array): void {
 		const loc = this.getUniformLocationCached(name); if (loc) this.gl.uniform3fv(loc, data);

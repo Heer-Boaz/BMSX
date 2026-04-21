@@ -104,15 +104,15 @@ export class DualSenseHID {
 
 		const vendorMatch = vendorReg.exec(id);
 		const productMatch = productReg.exec(id);
-		let vendorStr = vendorMatch ? vendorMatch[2] : null;
-		let productStr = productMatch ? productMatch[2] : null;
+		let vendorStr = vendorMatch?.[2];
+		let productStr = productMatch?.[2];
 
 		if (!vendorStr || !productStr) {
 			// Broader fallback: capture any two hex groups separated by non-hex
 			const alt = /([0-9a-f]{4})[^0-9a-f]+([0-9a-f]{4})/i.exec(id);
 			if (alt) {
-				vendorStr ??= alt[1];
-				productStr ??= alt[2];
+				vendorStr = vendorStr ?? alt[1];
+				productStr = productStr ?? alt[2];
 			}
 		}
 
@@ -174,15 +174,14 @@ export class DualSenseHID {
 
 		if (candidates.length === 1) {
 			this.device = candidates[0];
-		} else {
-			// For multiple or zero candidates, prompt the user with appropriate filters
-			const promptFilters = ids ? ids : undefined;
-			if (candidates.length > 1) {
-				console.info(`Multiple HID devices match ${ids ? `VID/PID (${formatNumberAsHex(ids.vendorId)}:${formatNumberAsHex(ids.productId)})` : 'accepted Sony devices'}. Prompting user to select.`);
 			} else {
-				console.info(`No matching HID device found in known devices. Prompting user to select.`);
-			}
-			const requested = await DualSenseHID.requestHidPermission(promptFilters);
+				// For multiple or zero candidates, prompt the user with appropriate filters
+				if (candidates.length > 1) {
+					console.info(`Multiple HID devices match ${ids ? `VID/PID (${formatNumberAsHex(ids.vendorId)}:${formatNumberAsHex(ids.productId)})` : 'accepted Sony devices'}. Prompting user to select.`);
+				} else {
+					console.info(`No matching HID device found in known devices. Prompting user to select.`);
+				}
+				const requested = await DualSenseHID.requestHidPermission(ids);
 			if (requested.length) {
 				// Prefer a matching unused device, or the first one
 				this.device = requested.find(d => !used.has(d) && (ids ? this.matchIds(d, ids) : true)) ?? requested[0];
@@ -230,9 +229,9 @@ export class DualSenseHID {
 
 	private detectPadKind(dev: PlatformHIDDevice): HidPadKind {
 		const collectionHasReport = (reportId: number): boolean => {
-			return dev.collections.some((collection: any) => {
-				const reports = collection.outputReports ?? [];
-				return reports.some((report: any) => report.reportId === reportId);
+			return dev.collections.some(collection => {
+				const reports = collection.outputReports;
+				return !!reports && reports.some(report => report.reportId === reportId);
 			});
 		};
 		const has05 = collectionHasReport(0x05); // DS4-USB
@@ -272,15 +271,11 @@ export class DualSenseHID {
 		const hidInputPromises = candidates.map(device => new Promise<{ device: PlatformHIDDevice; changed: boolean }>((resolve) => {
 			const onInput = (_event: PlatformHIDInputReportEvent) => {
 				const listener = listeners.get(device);
-				if (listener && typeof device.removeEventListener === 'function') {
-					device.removeEventListener('inputreport', listener);
-				}
+				if (listener) device.removeEventListener?.('inputreport', listener);
 				resolve({ device, changed: true });
 			};
 			listeners.set(device, onInput);
-			if (typeof device.addEventListener === 'function') {
-				device.addEventListener('inputreport', onInput);
-			}
+			device.addEventListener?.('inputreport', onInput);
 		}));
 
 		const timeout = new Promise<null>(resolve => setTimeout(() => resolve(null), timeoutMs));
@@ -301,9 +296,7 @@ export class DualSenseHID {
 		const result = await Promise.race([...hidInputPromises, timeout]);
 		clearInterval(pollInterval);
 		for (const [device, listener] of listeners) {
-			if (typeof device.removeEventListener === 'function') {
-				device.removeEventListener('inputreport', listener);
-			}
+			device.removeEventListener?.('inputreport', listener);
 		}
 
 		if (result && result.changed) {
@@ -410,25 +403,20 @@ export class DualSenseHID {
 
 	/** DualSense USB – report 0x02 (48 B) */
 	private buildDualSenseReport(strong: number, weak: number): Uint8Array {
-		const r = new Uint8Array(48);
-		r[0] = 0x02;
-		r[1] = 0x03; // valid_flag0: bit0 (compatible vibration), bit1 (haptics select for rumble)
-		r[2] = 0x00; // valid_flag1: no other features
-		r[3] = weak & 0xFF; // right motor (weak, high-freq)
-		r[4] = strong & 0xFF; // left motor (strong, low-freq)
-		// Remaining bytes zero-initialized
-		return r;
+		return this.buildUsbRumbleReport(48, 0x02, 0x03, 3, 4, strong, weak);
 	}
 
 	/** DualShock 4 USB – report 0x05 (32 B) */
 	private buildDs4Report(strong: number, weak: number): Uint8Array {
-		const r = new Uint8Array(32);
-		r[0] = 0x05;          // Report-ID
-		r[1] = 0x01;          // Enable rumble only
-		r[2] = 0x00;
-		r[4] = weak & 0xFF;   // right motor (weak, high-freq)
-		r[5] = strong & 0xFF; // left motor (strong, low-freq)
-		// Remaining bytes zero-initialized
+		return this.buildUsbRumbleReport(32, 0x05, 0x01, 4, 5, strong, weak);
+	}
+
+	private buildUsbRumbleReport(size: number, reportId: number, flags: number, weakOffset: number, strongOffset: number, strong: number, weak: number): Uint8Array {
+		const r = new Uint8Array(size);
+		r[0] = reportId;
+		r[1] = flags;
+		r[weakOffset] = weak & 0xFF;
+		r[strongOffset] = strong & 0xFF;
 		return r;
 	}
 

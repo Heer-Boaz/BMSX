@@ -986,7 +986,7 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, options?: { r
 		if (reloadPlan.sealSystemAssets) {
 			runtime.machine.memory.sealEngineAssets();
 		}
-		await $.resetRuntime(reloadPlan.resetFreshWorldOptions);
+		await $.resetRuntime(reloadPlan.resetFreshWorldOptions.preserve_textures);
 		await $.refresh_audio_assets();
 		try {
 			runtime.activateCartProgramAssets();

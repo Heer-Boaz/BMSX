@@ -451,14 +451,15 @@ function validateActionSpec(
 	}
 	const stopMusic = actionObject.stop_music;
 	if (stopMusic !== undefined) {
-		if (stopMusic !== true) {
-			if (!stopMusic || typeof stopMusic !== 'object' || Array.isArray(stopMusic)) {
-				errors.push(`Invalid stop_music at ${where}: expected true or object`);
-				return;
-			}
-			checkUnknownKeys(stopMusic as Record<string, unknown>, STOP_MUSIC_KEYS, `${where}.stop_music`, errors);
-			checkOptionalNumber((stopMusic as { fade_ms?: unknown }).fade_ms, 'stop_music.fade_ms', where, errors);
+		if (stopMusic && typeof stopMusic === 'boolean') {
+			return;
 		}
+		if (!stopMusic || typeof stopMusic !== 'object' || Array.isArray(stopMusic)) {
+			errors.push(`Invalid stop_music at ${where}: expected true or object`);
+			return;
+		}
+		checkUnknownKeys(stopMusic as Record<string, unknown>, STOP_MUSIC_KEYS, `${where}.stop_music`, errors);
+		checkOptionalNumber((stopMusic as { fade_ms?: unknown }).fade_ms, 'stop_music.fade_ms', where, errors);
 		return;
 	}
 	const sequence = actionObject.sequence;
@@ -587,22 +588,23 @@ function validateRules(
 	warnings: string[],
 	musicTransitionsWithFallback: Set<string>,
 ): void {
+	const eventLabel = `${file}${eventName ? `:${eventName}` : ''}`;
 	if (!Array.isArray(rules)) {
-		errors.push(`Rules for ${file}${eventName ? `:${eventName}` : ''} must be an array.`);
+		errors.push(`Rules for ${eventLabel} must be an array.`);
 		return;
 	}
 	if (rules.length === 0) {
-		errors.push(`Rules for ${file}${eventName ? `:${eventName}` : ''} must contain at least one rule.`);
+		errors.push(`Rules for ${eventLabel} must contain at least one rule.`);
 		return;
 	}
 	for (let index = 0; index < rules.length; index += 1) {
 		const rule = rules[index];
 		if (!rule || typeof rule !== 'object') {
-			errors.push(`Rule ${index} for ${file}${eventName ? `:${eventName}` : ''} must be an object.`);
+			errors.push(`Rule ${index} for ${eventLabel} must be an object.`);
 			continue;
 		}
-		checkUnknownKeys(rule as Record<string, unknown>, RULE_KEYS, `${file}${eventName ? `:${eventName}` : ''}#rule${index}`, errors);
-		validateMatcher((rule as { when?: unknown }).when, `${file}${eventName ? `:${eventName}` : ''}#rule${index}.when`, errors);
+		checkUnknownKeys(rule as Record<string, unknown>, RULE_KEYS, `${eventLabel}#rule${index}`, errors);
+		validateMatcher((rule as { when?: unknown }).when, `${eventLabel}#rule${index}.when`, errors);
 		validateActionSpec(rule.go, file, eventName, eventChannel, index, lookup, errors, warnings, musicTransitionsWithFallback);
 	}
 }

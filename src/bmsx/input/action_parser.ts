@@ -56,24 +56,36 @@ function lex(src: string): Token[] {
 		// If the token value is undefined, skip to the next iteration
 		if (v === undefined) continue;
 		// Classify the token based on its value and add it to the output array
-		if (v === '||' || v === '&&' || v === '|' || v === '!' || v === '(' || v === ')' || v === '[' || v === ']' || v === ',') {
-			// These are symbols used in logical expressions and function calls
-			out.push({ kind: Tokens.Sym, value: v });
-		} else if (/^[?&]wp\{\d+}$/.test(v) || /^[?&]wr\{\d+}$/.test(v)) {
-			// Windowed function tokens, e.g., `?wp{6}`, `&wp{12}`, `?wr{6}`, `&wr{12}`
-			out.push({ kind: Tokens.FuncWin, value: v });
-		} else if (v === '&' || v === '?' || v === '?jp' || v === '&jp' || v === '?jr' || v === '&jr') {
-			// Function tokens, e.g., `&`, `?`, `?jp`, `&jp`, `?jr`, `&jr`
-			out.push({ kind: Tokens.Func, value: v });
-		} else if (/^[<>!=]=?$/.test(v)) {
-			// Comparison operators, e.g., `<`, `>`, `<=`, `>=`, `==`, `!=`
-			out.push({ kind: Tokens.Cmp, value: v });
-		} else if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(v)) {
-			// Action identifiers, e.g., `actionName`
-			out.push({ kind: Tokens.Ident, value: v });
-		} else {
-			// Raw tokens inside `[ ... ]`, e.g., `t{…}`, `wp{…}`, `wr{…}`, `pr{…}`
-			out.push({ kind: Tokens.ModTok, value: v });
+		switch (v) {
+			case '||':
+			case '&&':
+			case '|':
+			case '!':
+			case '(':
+			case ')':
+			case '[':
+			case ']':
+			case ',':
+				out.push({ kind: Tokens.Sym, value: v });
+				break;
+			case '&':
+			case '?':
+			case '?jp':
+			case '&jp':
+			case '?jr':
+			case '&jr':
+				out.push({ kind: Tokens.Func, value: v });
+				break;
+			default:
+				if (/^[?&]wp\{\d+}$/.test(v) || /^[?&]wr\{\d+}$/.test(v)) {
+					out.push({ kind: Tokens.FuncWin, value: v });
+				} else if (/^[<>!=]=?$/.test(v)) {
+					out.push({ kind: Tokens.Cmp, value: v });
+				} else if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(v)) {
+					out.push({ kind: Tokens.Ident, value: v });
+				} else {
+					out.push({ kind: Tokens.ModTok, value: v });
+				}
 		}
 	}
 	// Return the array of tokens representing the parsed components of the input string
@@ -154,6 +166,26 @@ interface FunNode extends NodeBase { fname: string; args: Node[]; window?: numbe
  */
 type Node = OpNode | ActNode | FunNode;
 
+function evalOr(left: Node, right: Node, get: GetterFn): boolean {
+	return left.eval(get) || right.eval(get);
+}
+
+function evalAnd(left: Node, right: Node, get: GetterFn): boolean {
+	return left.eval(get) && right.eval(get);
+}
+
+function evalNot(node: Node, get: GetterFn): boolean {
+	return !node.eval(get);
+}
+
+function makeBinaryOpNode(op: 'AND' | 'OR', left: Node, right: Node, evalFn: (left: Node, right: Node, get: GetterFn) => boolean): OpNode {
+	return { op, left, right, eval: get => evalFn(left, right, get) };
+}
+
+function makeNotNode(left: Node): OpNode {
+	return { op: 'NOT', left, eval: get => evalNot(left, get) };
+}
+
 /**
  * A recursive descent parser for action definitions.
  * Converts a tokenized input string into an abstract syntax tree (AST).
@@ -222,18 +254,10 @@ class InputActionParser {
 	 * @returns A `Node` representing the parsed expression.
 	 */
 	private expr(): Node {
-		let n = this.term(); // Start parsing a term node
-		while (this.isOrOperator(this.current()?.value)) {
-			this.eat();
-			const r = this.term(); // Parse the right-hand side of the OR operation
-			const l = n; // Store the left-hand side of the OR operation
-			// Create a new OpNode for the OR operation
-			n = { op: 'OR', left: l, right: r, eval: g => l.eval(g) || r.eval(g) };
-		}
-		return n; // Return the constructed expression node
+		return this.binary(() => this.term(), value => this.isOrOperator(value), 'OR', evalOr);
 	}
 
-	private isOrOperator(value: string): boolean {
+	private isOrOperator(value: string | undefined): boolean {
 		return value === '||' || value === '|';
 	}
 
@@ -246,19 +270,20 @@ class InputActionParser {
 	 * @returns A `Node` representing the parsed term.
 	 */
 	private term(): Node {
-		let n = this.factor(); // Start parsing a factor node
-		while (this.isAndOperator(this.current()?.value)) {
-			this.eat();
-			const r = this.factor(); // Parse the right-hand side of the AND operation
-			const l = n; // Store the left-hand side of the AND operation
-			// Create a new OpNode for the AND operation
-			n = { op: 'AND', left: l, right: r, eval: g => l.eval(g) && r.eval(g) };
-		}
-		return n; // Return the constructed term node
+		return this.binary(() => this.factor(), value => this.isAndOperator(value), 'AND', evalAnd);
 	}
 
-	private isAndOperator(value: string): boolean {
+	private isAndOperator(value: string | undefined): boolean {
 		return value === '&&';
+	}
+
+	private binary(parseOperand: () => Node, isOperator: (value: string | undefined) => boolean, op: 'AND' | 'OR', evalFn: (left: Node, right: Node, get: GetterFn) => boolean): Node {
+		let node = parseOperand();
+		while (isOperator(this.current()?.value)) {
+			this.eat();
+			node = makeBinaryOpNode(op, node, parseOperand(), evalFn);
+		}
+		return node;
 	}
 
 	/**
@@ -278,7 +303,7 @@ class InputActionParser {
 			this.eat();
 			const o = this.factor(); // Parse the operand of the negation
 			// Create a new OpNode for the NOT operation
-			return { op: 'NOT', left: o, eval: g => !o.eval(g) };
+			return makeNotNode(o);
 		}
 	if (c.value === '(') { // Handle grouped expressions
 		this.eat();
@@ -466,23 +491,28 @@ function enforceRootModifiers(n: Node) {
 }
 
 type EvalResult = { truth: boolean; leaves: ActNode[] };
+const EMPTY_ACT_LEAVES: ActNode[] = [];
 
 function evalAndCollect(node: Node, gs: GetterFn, win?: number, out?: ActNode[]): EvalResult {
-	const leaves = out ?? []; // allow reuse of a scratch array
+	let leaves = out;
 
 	if ((node as ActNode).name !== undefined) {
 		const ok = node.eval(gs); // uses compileAction predicates
-		if (ok) leaves.push(node as ActNode);
-		return { truth: ok, leaves };
+		if (ok) {
+			if (leaves === undefined) leaves = [];
+			leaves.push(node as ActNode);
+		}
+		return { truth: ok, leaves: leaves ?? EMPTY_ACT_LEAVES };
 	}
 
 	if ((node as OpNode).op) {
 		const o = node as OpNode;
 		if (o.op === 'NOT') {
 			const r = evalAndCollect(o.left!, gs, win);
-			return { truth: !r.truth, leaves }; // guards only; do not carry leaves
+			return { truth: !r.truth, leaves: leaves ?? EMPTY_ACT_LEAVES }; // guards only; do not carry leaves
 		}
 		if (o.op === 'AND') {
+			if (leaves === undefined) leaves = [];
 			const l = evalAndCollect(o.left!, gs, win, leaves);
 			if (!l.truth) return { truth: false, leaves };
 			const r = evalAndCollect(o.right!, gs, win, leaves);
@@ -498,23 +528,24 @@ function evalAndCollect(node: Node, gs: GetterFn, win?: number, out?: ActNode[])
 	const f = node as FunNode;
 	if (f.fname === '&') {
 		let all = true;
-		const acc = out ?? [];
+		let acc = out;
+		if (acc === undefined) acc = [];
 		for (const a of f.args) {
 			const r = evalAndCollect(a, gs, win, acc);
 			if (!r.truth) { all = false; break; }
 		}
-		return { truth: all, leaves: all ? acc : (out ?? []) };
+		return { truth: all, leaves: all ? acc : (out ?? EMPTY_ACT_LEAVES) };
 	}
 	if (f.fname === '?') {
 		for (const a of f.args) {
 			const r = evalAndCollect(a, gs, win);
 			if (r.truth) return r; // first winning branch
 		}
-		return { truth: false, leaves: out ?? [] };
+		return { truth: false, leaves: out ?? EMPTY_ACT_LEAVES };
 	}
 
 	// For jp/jr/wp/wr, evaluate in helper using evalAndCollect again with proper window
-	return { truth: node.eval(gs), leaves: out ?? [] };
+	return { truth: node.eval(gs), leaves: out ?? EMPTY_ACT_LEAVES };
 }
 
 /**
@@ -543,8 +574,8 @@ const STATIC: Record<string, ModFn> = {
 	'&jp': (get, n, win) => get(n, win).alljustpressed,
 	'jr': (get, n, win) => get(n, win).justreleased,
 	'&jr': (get, n, win) => get(n, win).alljustreleased,
-	'gp': (get, n, win) => get(n, win).guardedjustpressed === true,
-	'rp': (get, n, win) => get(n, win).repeatpressed === true,
+	'gp': (get, n, win) => get(n, win).guardedjustpressed,
+	'rp': (get, n, win) => get(n, win).repeatpressed,
 	'c': (get, n, win) => get(n, win).consumed,
 	// 'h' (hold) == held for more than 1 frame (equivalent to t{>=1})
 	'h': (get, n, win) => (get(n, win).presstime ?? 0) >= 1,
@@ -595,6 +626,44 @@ const R_T = /^t\{([^}]+)}/;
  * - `rc{==0}`
  */
 const R_RC = /^rc\{([^}]+)}/;
+
+type EdgeFlag = '_edgeForJP' | '_edgeForJR' | '_edgeForWP' | '_edgeForWR' | '_edgeForGP' | '_edgeForRP';
+type StatePredicate = (state: ActionState) => boolean;
+
+function windowGetter(gs: GetterFn, win?: number): GetterFn {
+	return (name, requestedWin) => gs(name, win ?? requestedWin);
+}
+
+function anyWindowedEdge(args: Node[], gs: GetterFn, win: number | undefined, flag: EdgeFlag, accepts: StatePredicate): boolean {
+	const get = windowGetter(gs, win);
+	for (let i = 0; i < args.length; i++) {
+		const { truth, leaves } = evalAndCollect(args[i], get, win, []);
+		if (!truth) continue;
+		for (let j = 0; j < leaves.length; j++) {
+			const action = leaves[j] as ActNode;
+			if (action[flag] && accepts(get(action.name, win))) return true;
+		}
+	}
+	return false;
+}
+
+function allWindowedEdges(args: Node[], gs: GetterFn, win: number | undefined, flag: EdgeFlag, accepts: StatePredicate): boolean {
+	const get = windowGetter(gs, win);
+	for (let i = 0; i < args.length; i++) {
+		const { truth, leaves } = evalAndCollect(args[i], get, win, []);
+		if (!truth) return false;
+		let hasEligible = false;
+		for (let j = 0; j < leaves.length; j++) {
+			const action = leaves[j] as ActNode;
+			if (action[flag]) {
+				hasEligible = true;
+				if (!accepts(get(action.name, win))) return false;
+			}
+		}
+		if (!hasEligible) return false;
+	}
+	return true;
+}
 
 /**
 * Creates a modifier predicate function based on the given token.
@@ -740,18 +809,16 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 	// --- Just-pressed (edge from positive press-like leaves) ---
 
 	'?jp': (args) => (gs) => {
-		let any = false;
 		for (let i = 0; i < args.length; i++) {
 			const { truth, leaves } = evalAndCollect(args[i], gs, /*win*/ undefined, []);
 			if (!truth) continue;
-			any = true;
 			// At least one eligible contributing leaf is just-pressed
 			for (let j = 0; j < leaves.length; j++) {
 				const a = leaves[j] as ActNode;
 				if (a._edgeForJP && gs(a.name).justpressed) return true;
 			}
 		}
-		return false && any; // if no eligible leaf matched
+		return false; // if no eligible leaf matched
 	},
 
 	'&jp': (args) => (gs) => {
@@ -776,17 +843,15 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 	// --- Guarded press (edge requiring guard acceptance) ---
 
 	'?gp': (args) => (gs) => {
-		let any = false;
 		for (let i = 0; i < args.length; i++) {
 			const { truth, leaves } = evalAndCollect(args[i], gs, /*win*/ undefined, []);
 			if (!truth) continue;
-			any = true;
 			for (let j = 0; j < leaves.length; j++) {
 				const a = leaves[j] as ActNode;
-				if (a._edgeForGP && gs(a.name).guardedjustpressed === true) return true;
+				if (a._edgeForGP && gs(a.name).guardedjustpressed) return true;
 			}
 		}
-		return false && any;
+		return false;
 	},
 
 	'&gp': (args) => (gs) => {
@@ -798,7 +863,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 				const a = leaves[j] as ActNode;
 				if (a._edgeForGP) {
 					hasEligible = true;
-					if (gs(a.name).guardedjustpressed !== true) return false;
+					if (!gs(a.name).guardedjustpressed) return false;
 				}
 			}
 			if (!hasEligible) return false;
@@ -809,17 +874,15 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 	// --- Repeat press pulses (edge from repeat handler) ---
 
 	'?rp': (args) => (gs) => {
-		let any = false;
 		for (let i = 0; i < args.length; i++) {
 			const { truth, leaves } = evalAndCollect(args[i], gs, /*win*/ undefined, []);
 			if (!truth) continue;
-			any = true;
 			for (let j = 0; j < leaves.length; j++) {
 				const a = leaves[j] as ActNode;
-				if (a._edgeForRP && gs(a.name).repeatpressed === true) return true;
+				if (a._edgeForRP && gs(a.name).repeatpressed) return true;
 			}
 		}
-		return false && any;
+		return false;
 	},
 
 	'&rp': (args) => (gs) => {
@@ -831,7 +894,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 				const a = leaves[j] as ActNode;
 				if (a._edgeForRP) {
 					hasEligible = true;
-					if (gs(a.name).repeatpressed !== true) return false;
+					if (!gs(a.name).repeatpressed) return false;
 				}
 			}
 			if (!hasEligible) return false;
@@ -842,17 +905,15 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 	// --- Just-released (edge from positive release-like leaves) ---
 
 	'?jr': (args) => (gs) => {
-		let any = false;
 		for (let i = 0; i < args.length; i++) {
 			const { truth, leaves } = evalAndCollect(args[i], gs, /*win*/ undefined, []);
 			if (!truth) continue;
-			any = true;
 			for (let j = 0; j < leaves.length; j++) {
 				const a = leaves[j] as ActNode;
 				if (a._edgeForJR && gs(a.name).justreleased) return true;
 			}
 		}
-		return false && any;
+		return false;
 	},
 
 	'&jr': (args) => (gs) => {
@@ -874,73 +935,15 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 
 	// --- Windowed press (edge from positive press-like leaves within 'win') ---
 
-	'?wp': (args, win) => (gs) => {
-		const g = (n: string, w?: number) => gs(n, win ?? w);
-		let any = false;
-		for (let i = 0; i < args.length; i++) {
-			const { truth, leaves } = evalAndCollect(args[i], g, win, []);
-			if (!truth) continue;
-			any = true;
-			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode;
-				if (a._edgeForWP && g(a.name, win).waspressed) return true;
-			}
-		}
-		return false && any;
-	},
+	'?wp': (args, win) => (gs) => anyWindowedEdge(args, gs, win, '_edgeForWP', state => state.waspressed),
 
-	'&wp': (args, win) => (gs) => {
-		const g = (n: string, w?: number) => gs(n, win ?? w);
-		for (let i = 0; i < args.length; i++) {
-			const { truth, leaves } = evalAndCollect(args[i], g, win, []);
-			if (!truth) return false;
-			let hasEligible = false;
-			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode;
-				if (a._edgeForWP) {
-					hasEligible = true;
-					if (!g(a.name, win).waspressed) return false; // strict: all eligible leaves inside arg within window
-				}
-			}
-			if (!hasEligible) return false;
-		}
-		return true;
-	},
+	'&wp': (args, win) => (gs) => allWindowedEdges(args, gs, win, '_edgeForWP', state => state.waspressed),
 
 	// --- Windowed release (edge from positive release-like leaves within 'win') ---
 
-	'?wr': (args, win) => (gs) => {
-		const g = (n: string, w?: number) => gs(n, win ?? w);
-		let any = false;
-		for (let i = 0; i < args.length; i++) {
-			const { truth, leaves } = evalAndCollect(args[i], g, win, []);
-			if (!truth) continue;
-			any = true;
-			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode;
-				if (a._edgeForWR && g(a.name, win).wasreleased) return true;
-			}
-		}
-		return false && any;
-	},
+	'?wr': (args, win) => (gs) => anyWindowedEdge(args, gs, win, '_edgeForWR', state => state.wasreleased),
 
-	'&wr': (args, win) => (gs) => {
-		const g = (n: string, w?: number) => gs(n, win ?? w);
-		for (let i = 0; i < args.length; i++) {
-			const { truth, leaves } = evalAndCollect(args[i], g, win, []);
-			if (!truth) return false;
-			let hasEligible = false;
-			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode;
-				if (a._edgeForWR) {
-					hasEligible = true;
-					if (!g(a.name, win).wasreleased) return false;
-				}
-			}
-			if (!hasEligible) return false;
-		}
-		return true;
-	},
+	'&wr': (args, win) => (gs) => allWindowedEdges(args, gs, win, '_edgeForWR', state => state.wasreleased),
 };
 
 /**

@@ -62,7 +62,7 @@ export class PointerInput implements InputHandler {
 			} else if (key === 'pointer_wheel') {
 				const ts = state.timestamp ?? 0;
 				if (ts === this.lastWheelTimestamp) {
-					const wasPressed = state.pressed === true;
+					const wasPressed = state.pressed;
 					state.value = 0;
 					state.pressed = false;
 					state.justpressed = false;
@@ -105,7 +105,7 @@ export class PointerInput implements InputHandler {
 
 		const delta = this.buttonStates['pointer_delta'] ?? makeButtonState();
 		const moved = dx !== 0 || dy !== 0;
-		const wasPressed = delta.pressed === true;
+		const wasPressed = delta.pressed;
 		delta.value2d = [dx, dy] as readonly [number, number];
 		delta.value = Math.hypot(dx, dy);
 		delta.timestamp = timestamp;

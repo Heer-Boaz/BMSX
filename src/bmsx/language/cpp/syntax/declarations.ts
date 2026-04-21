@@ -81,6 +81,59 @@ const CPP_BOUNDARY_STYLE_FUNCTION_NAME_WORDS: ReadonlySet<string> = new Set([
 	'thunk',
 ]);
 
+const CPP_TOP_LEVEL_DECLARATOR_BREAK_TOKENS = new Set([';', '{', '}']);
+const CPP_BRACE_TOKENS = new Set(['{', '}']);
+const CPP_WRAPPER_BLOCK_KEYWORDS = new Set([
+	'break',
+	'catch',
+	'co_return',
+	'continue',
+	'do',
+	'for',
+	'goto',
+	'if',
+	'return',
+	'switch',
+	'throw',
+	'try',
+	'while',
+]);
+
+type CppNestingDepth = {
+	paren: number;
+	bracket: number;
+	brace: number;
+};
+
+function applyCppNestingDelta(text: string, depth: CppNestingDepth): boolean {
+	switch (text) {
+		case '(':
+			depth.paren += 1;
+			return true;
+		case ')':
+			depth.paren -= 1;
+			return true;
+		case '[':
+			depth.bracket += 1;
+			return true;
+		case ']':
+			depth.bracket -= 1;
+			return true;
+		case '{':
+			depth.brace += 1;
+			return true;
+		case '}':
+			depth.brace -= 1;
+			return true;
+		default:
+			return false;
+	}
+}
+
+function isCppTopLevel(depth: CppNestingDepth): boolean {
+	return depth.paren === 0 && depth.bracket === 0 && depth.brace === 0;
+}
+
 export type CppClassRange = {
 	name: string;
 	nameToken: number;
@@ -94,13 +147,13 @@ export type CppTypeDeclarationInfo = {
 	kind: CppTypeDeclarationKind;
 	name: string;
 	nameToken: number;
-	context: string | null;
+	context: string | undefined;
 };
 
 export type CppFunctionInfo = {
 	name: string;
 	qualifiedName: string;
-	context: string | null;
+	context: string | undefined;
 	signature: string;
 	nameToken: number;
 	bodyStart: number;
@@ -233,7 +286,7 @@ export function collectCppFunctionDefinitions(
 		const context = target.includes('::') ? target.slice(0, target.lastIndexOf('::')) : classContextAt(classRanges, index);
 		const closeParen = pairs[openParen];
 		const signature = cppFunctionSignature(tokens, openParen, closeParen, index, name);
-		const isConstructorLike = context !== null && (name === context || name === `~${context}`);
+		const isConstructorLike = context !== undefined && (name === context || name === `~${context}`);
 		functions.push({
 			name,
 			qualifiedName: target,
@@ -249,7 +302,7 @@ export function collectCppFunctionDefinitions(
 	return functions;
 }
 
-function classContextAt(classRanges: readonly CppClassRange[], bodyStart: number): string | null {
+function classContextAt(classRanges: readonly CppClassRange[], bodyStart: number): string | undefined {
 	let best: CppClassRange | null = null;
 	for (let index = 0; index < classRanges.length; index += 1) {
 		const range = classRanges[index];
@@ -260,7 +313,7 @@ function classContextAt(classRanges: readonly CppClassRange[], bodyStart: number
 			best = range;
 		}
 	}
-	return best === null ? null : best.name;
+	return best?.name;
 }
 
 function findCppFunctionDeclaratorOpenParen(tokens: readonly CppToken[], pairs: readonly number[], bodyStart: number): number {
@@ -324,37 +377,14 @@ function isCppFunctionBodyAfterDeclarator(tokens: readonly CppToken[], pairs: re
 	if (closeParen < 0 || bodyStart <= closeParen) {
 		return false;
 	}
-	let parenDepth = 0;
-	let bracketDepth = 0;
-	let braceDepth = 0;
+	const depth = { paren: 0, bracket: 0, brace: 0 };
 	for (let index = closeParen + 1; index < bodyStart; index += 1) {
 		const text = tokens[index].text;
-		if (text === '(') {
-			parenDepth += 1;
+		if (applyCppNestingDelta(text, depth)) {
 			continue;
 		}
-		if (text === ')') {
-			parenDepth -= 1;
-			continue;
-		}
-		if (text === '[') {
-			bracketDepth += 1;
-			continue;
-		}
-		if (text === ']') {
-			bracketDepth -= 1;
-			continue;
-		}
-		if (text === '{') {
-			braceDepth += 1;
-			continue;
-		}
-		if (text === '}') {
-			braceDepth -= 1;
-			continue;
-		}
-		if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
-			if (text === ';' || text === '{' || text === '}') {
+		if (isCppTopLevel(depth)) {
+			if (CPP_TOP_LEVEL_DECLARATOR_BREAK_TOKENS.has(text)) {
 				return false;
 			}
 		}
@@ -369,31 +399,16 @@ function cppWrapperTarget(tokens: readonly CppToken[], pairs: readonly number[],
 	}
 	if (tokens[statementStart]?.text === 'if') {
 		let guardEnd = -1;
-		let parenDepth = 0;
-		let bracketDepth = 0;
-		let braceDepth = 0;
+		const depth = { paren: 0, bracket: 0, brace: 0 };
 		for (let index = statementStart; index < bodyEnd; index += 1) {
 			const text = tokens[index].text;
-			if (text === '(') {
-				parenDepth += 1;
-				continue;
-			}
-			if (text === ')') {
-				parenDepth -= 1;
-				continue;
-			}
-			if (text === '[') {
-				bracketDepth += 1;
-				continue;
-			}
-			if (text === ']') {
-				bracketDepth -= 1;
-				continue;
-			}
-			if (text === '{' || text === '}') {
+			if (CPP_BRACE_TOKENS.has(text)) {
 				return null;
 			}
-			if (text === ';' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+			if (applyCppNestingDelta(text, depth)) {
+				continue;
+			}
+			if (text === ';' && isCppTopLevel(depth)) {
 				guardEnd = index;
 				break;
 			}
@@ -407,30 +422,16 @@ function cppWrapperTarget(tokens: readonly CppToken[], pairs: readonly number[],
 		}
 	}
 	let semicolonIndex = -1;
-	let parenDepth = 0;
-	let bracketDepth = 0;
+	const depth = { paren: 0, bracket: 0, brace: 0 };
 	for (let index = statementStart; index < bodyEnd; index += 1) {
 		const text = tokens[index].text;
-		if (text === '(') {
-			parenDepth += 1;
-			continue;
-		}
-		if (text === ')') {
-			parenDepth -= 1;
-			continue;
-		}
-		if (text === '[') {
-			bracketDepth += 1;
-			continue;
-		}
-		if (text === ']') {
-			bracketDepth -= 1;
-			continue;
-		}
-		if (text === '{' || text === '}') {
+		if (CPP_BRACE_TOKENS.has(text)) {
 			return null;
 		}
-		if (parenDepth === 0 && bracketDepth === 0) {
+		if (applyCppNestingDelta(text, depth)) {
+			continue;
+		}
+		if (depth.paren === 0 && depth.bracket === 0) {
 			if (text === ';') {
 				if (semicolonIndex >= 0) {
 					return null;
@@ -438,21 +439,7 @@ function cppWrapperTarget(tokens: readonly CppToken[], pairs: readonly number[],
 				semicolonIndex = index;
 				continue;
 			}
-			if (
-				text === 'break'
-				|| text === 'catch'
-				|| text === 'co_return'
-				|| text === 'continue'
-				|| text === 'do'
-				|| text === 'for'
-				|| text === 'goto'
-				|| text === 'if'
-				|| text === 'return'
-				|| text === 'switch'
-				|| text === 'throw'
-				|| text === 'try'
-				|| text === 'while'
-			) {
+			if (CPP_WRAPPER_BLOCK_KEYWORDS.has(text)) {
 				return null;
 			}
 		}

@@ -229,11 +229,7 @@ export class SoundMaster {
 		this.modulationResolver = null;
 		this.audioResolver = null;
 		this.modulationPresetCache = new Map();
-		this.voicesByType = { sfx: [], music: [], ui: [] };
-		this.currentVoiceByType = { sfx: null, music: null, ui: null };
-		this.currentPlayParamsByType = { sfx: null, music: null, ui: null };
-		this.currentAudioByType = { sfx: null, music: null, ui: null };
-		this.pausedByType = { sfx: [], music: [], ui: [] };
+		this.clearVoiceCollections();
 		this.endedListenersByType = { sfx: new Set(), music: new Set(), ui: new Set() };
 		this.nextVoiceId = 1;
 		this.musicTransitionTimer = null;
@@ -262,6 +258,14 @@ export class SoundMaster {
 
 	private isRuntimeAudioAvailable(): boolean {
 		return !!this.audio && this.audio.available;
+	}
+
+	private clearVoiceCollections(): void {
+		this.voicesByType = { sfx: [], music: [], ui: [] };
+		this.currentVoiceByType = { sfx: null, music: null, ui: null };
+		this.currentPlayParamsByType = { sfx: null, music: null, ui: null };
+		this.currentAudioByType = { sfx: null, music: null, ui: null };
+		this.pausedByType = { sfx: [], music: [], ui: [] };
 	}
 
 	public bootstrapRuntimeAudio(startingVolume: number): void {
@@ -323,11 +327,7 @@ export class SoundMaster {
 	public resetPlaybackState(): void {
 		this.beginMusicTransition();
 		this.stopAllVoices();
-		this.voicesByType = { sfx: [], music: [], ui: [] };
-		this.currentVoiceByType = { sfx: null, music: null, ui: null };
-		this.currentPlayParamsByType = { sfx: null, music: null, ui: null };
-		this.currentAudioByType = { sfx: null, music: null, ui: null };
-		this.pausedByType = { sfx: [], music: [], ui: [] };
+		this.clearVoiceCollections();
 		this.nextVoiceId = 1;
 		this.voiceRecordByHandle = new WeakMap();
 	}
@@ -532,51 +532,39 @@ export class SoundMaster {
 		return (params.playbackRate ?? 1) * Math.pow(2, (params.pitchDelta ?? 0) / 12);
 	}
 
+	private currentOffset(record: ActiveVoiceRecord): number {
+		return record.startOffset + (this.A.currentTime() - record.startedAt) * this.effectivePlaybackRate(record.params);
+	}
+
 	public async play(id: asset_id, options?: SoundMasterPlayRequest | ModulationParams | RandomModulationParams): Promise<VoiceId> {
-		try {
-			const request = this.normalizePlayRequest(options);
-			const modulationPreset = request.modulation_preset;
-			let sourceParams = request.params;
-			if (!sourceParams && modulationPreset !== undefined) {
-				sourceParams = this.resolveModulationPreset(modulationPreset);
-				if (!sourceParams) {
-					console.warn(`SoundMaster: Missing modulation preset '${String(modulationPreset)}' for ${String(id)}`);
-				}
+		const request = this.normalizePlayRequest(options);
+		const modulationPreset = request.modulation_preset;
+		let sourceParams = request.params;
+		if (!sourceParams && modulationPreset !== undefined) {
+			sourceParams = this.resolveModulationPreset(modulationPreset);
+			if (!sourceParams) {
+				console.warn(`SoundMaster: Missing modulation preset '${String(modulationPreset)}' for ${String(id)}`);
 			}
-			const params = this.resolvePlayParams(sourceParams);
-			const meta = this.getAudioMetaOrThrow(id);
-			const typeCandidate = meta.audiotype;
-			if (!this.isAudioType(typeCandidate)) {
-				throw new Error(`[SoundMaster] Audio asset '${String(id)}' has unknown audio type '${String(typeCandidate)}'.`);
-			}
-			const priority = request.priority ?? meta.priority ?? 0;
-			const clip = await this.clipFor(id);
-			const playback = this.createVoiceParams(meta, params, clip);
-			const voiceId = this.startVoice(typeCandidate, id, meta, clip, params, priority, playback);
-			return voiceId;
-		} catch (error) {
-			console.error(error);
-			return null;
 		}
+		const params = this.resolvePlayParams(sourceParams);
+		return this.playWithParams(id, params, request.priority);
 	}
 
 	public async playResolved(id: asset_id, request: SoundMasterResolvedPlayRequest): Promise<VoiceId> {
-		try {
-			const params = this.resolveResolvedPlayParams(request);
-			const meta = this.getAudioMetaOrThrow(id);
-			const typeCandidate = meta.audiotype;
-			if (!this.isAudioType(typeCandidate)) {
-				throw new Error(`[SoundMaster] Audio asset '${String(id)}' has unknown audio type '${String(typeCandidate)}'.`);
-			}
-			const priority = request.priority ?? meta.priority ?? 0;
-			const clip = await this.clipFor(id);
-			const playback = this.createVoiceParams(meta, params, clip);
-			const voiceId = this.startVoice(typeCandidate, id, meta, clip, params, priority, playback);
-			return voiceId;
-		} catch (error) {
-			console.error(error);
-			return null;
+		const params = this.resolveResolvedPlayParams(request);
+		return this.playWithParams(id, params, request.priority);
+	}
+
+	private async playWithParams(id: asset_id, params: ModulationParams, requestedPriority: number | undefined): Promise<VoiceId> {
+		const meta = this.getAudioMetaOrThrow(id);
+		const typeCandidate = meta.audiotype;
+		if (!this.isAudioType(typeCandidate)) {
+			throw new Error(`[SoundMaster] Audio asset '${String(id)}' has unknown audio type '${String(typeCandidate)}'.`);
 		}
+		const priority = requestedPriority ?? meta.priority ?? 0;
+		const clip = await this.clipFor(id);
+		const playback = this.createVoiceParams(meta, params, clip);
+		return this.startVoice(typeCandidate, id, meta, clip, params, priority, playback);
 	}
 
 	private startVoice(
@@ -925,12 +913,11 @@ export class SoundMaster {
 		this.stop('sfx', 'all');
 	}
 
-	public stopMusic(opts?: { fade_ms?: number; }): void {
+	public stopMusic(fade_ms?: number): void {
 		if (!this.isRuntimeAudioAvailable()) {
 			return;
 		}
 		const transitionId = this.beginMusicTransition();
-		const fade_ms = opts?.fade_ms;
 		if (fade_ms !== undefined && fade_ms > 0) {
 			this.stopMusicAfterFadeOut(transitionId, fade_ms);
 			return;
@@ -1109,26 +1096,18 @@ export class SoundMaster {
 			const previousId = currentRecord?.id;
 			let returnOffset: number | undefined;
 			if (sync.return_to_previous && currentRecord) {
-				returnOffset = currentRecord.startOffset + (this.A.currentTime() - currentRecord.startedAt) * this.effectivePlaybackRate(currentRecord.params);
+				returnOffset = this.currentOffset(currentRecord);
 			}
 			const returnTarget = sync.return_to_previous ? (previousId ?? opts.to) : (sync.return_to ?? opts.to);
 			this.pendingStingerReturnTo = returnTarget;
 			this.stop('music', 'all');
-			this.play(sync.stinger).then(voiceId => {
-				if (transitionId !== this.musicTransitionRequestId) {
-					if (voiceId !== null) {
+				this.play(sync.stinger).then(voiceId => {
+					if (transitionId !== this.musicTransitionRequestId) {
 						this.stop(stingerType, 'byvoice', voiceId);
+						return;
 					}
-					return;
-				}
-				if (voiceId === null) {
-					this.pendingStingerReturnTo = null;
-					this.pendingStingerType = null;
-					this.pendingStingerVoice = null;
-					return;
-				}
-				this.pendingStingerType = stingerType;
-				this.pendingStingerVoice = voiceId;
+					this.pendingStingerType = stingerType;
+					this.pendingStingerVoice = voiceId;
 					const listener = (info: ActiveVoiceInfo): void => {
 						if (info.voiceId !== voiceId) {
 							return;
@@ -1139,18 +1118,26 @@ export class SoundMaster {
 						}
 						if (this.pendingStingerReturnUnsub === unsub) {
 							this.pendingStingerReturnUnsub = null;
-					}
-					const target = this.pendingStingerReturnTo;
-					this.pendingStingerReturnTo = null;
-					this.pendingStingerType = null;
-					this.pendingStingerVoice = null;
+						}
+						const target = this.pendingStingerReturnTo;
+						this.pendingStingerReturnTo = null;
+						this.pendingStingerType = null;
+						this.pendingStingerVoice = null;
 						if (target !== null) {
 							runTransition(target, returnOffset);
 						}
 					};
 					const unsub = this.addEndedListener(stingerType, listener);
 					this.pendingStingerReturnUnsub = unsub;
-				}).catch(() => {});
+				}, error => {
+					if (transitionId !== this.musicTransitionRequestId) {
+						return;
+					}
+					this.pendingStingerReturnTo = null;
+					this.pendingStingerType = null;
+					this.pendingStingerVoice = null;
+					console.error(error);
+				});
 			return;
 		}
 

@@ -402,7 +402,7 @@ class BinReader {
 				case Tag.Str: return this.readString();
 				case Tag.Arr: {
 					const len = this.readVarUint();
-					if (len > this.maxContainerEntries) throw new Error(`decodeBinary: array too large (${len}/${this.maxContainerEntries})`);
+					this.checkContainerLength('array', len);
 					const arr = new Array(len);
 					for (let i = 0; i < len; i++) arr[i] = this.readValue();
 					return arr;
@@ -413,7 +413,7 @@ class BinReader {
 				}
 				case Tag.Obj: {
 					const len = this.readVarUint();
-					if (len > this.maxContainerEntries) throw new Error(`decodeBinary: object too large (${len}/${this.maxContainerEntries})`);
+					this.checkContainerLength('object', len);
 					const obj: Record<string, any> = {};
 					for (let i = 0; i < len; i++) {
 						const propId = this.readVarUint();
@@ -439,7 +439,7 @@ class BinReader {
 				}
 				case Tag.Set: {
 					const len = this.readVarUint();
-					if (len > this.maxContainerEntries) throw new Error(`decodeBinary: set too large (${len}/${this.maxContainerEntries})`);
+					this.checkContainerLength('set', len);
 					const set = new Set<any>();
 					for (let i = 0; i < len; i++) set.add(this.readValue());
 					return set;
@@ -452,9 +452,13 @@ class BinReader {
 		}
 	}
 
-	private need(n: number): void {
-		if (this.offset + n > this.buf.length) throw new Error('decodeBinary: truncated');
-	}
+		private need(n: number): void {
+			if (this.offset + n > this.buf.length) throw new Error('decodeBinary: truncated');
+		}
+
+		private checkContainerLength(kind: string, len: number): void {
+			if (len > this.maxContainerEntries) throw new Error(`decodeBinary: ${kind} too large (${len}/${this.maxContainerEntries})`);
+		}
 
 	private readUint8(): number {
 		this.need(1);
@@ -507,31 +511,29 @@ export interface DecodeOptions {
 	maxDepth?: number;
 }
 
-/** Decode a buffer produced by this module (BREAKING vs legacy A1 semantics). */
-export function decodeBinary(buf: Uint8Array, opts: DecodeOptions = {}) {
-	const reader = new BinReader(buf, opts);
-	const version = reader.readVersion();
-	if (version !== VERSION) {
-		throw new Error(`decodeBinary: unknown version ${formatNumberAsHex(version)} (expected ${formatNumberAsHex(VERSION)})`);
-	}
-	const propNames = reader.readPropNames();
-	reader.setPropNames(propNames);
-	const value = reader.readValue();
-	if (reader.getOffset() !== buf.length) {
+	function readBinaryPayloadWithPropNames(reader: BinReader, buf: Uint8Array, propNames: readonly string[]) {
+		reader.setPropNames(propNames);
+		const value = reader.readValue();
+		if (reader.getOffset() !== buf.length) {
 		throw new Error(`decodeBinary: trailing ${buf.length - reader.getOffset()} bytes`);
+		}
+		return value;
 	}
-	return value;
-}
 
-export function decodeBinaryWithPropTable(buf: Uint8Array, propNames: readonly string[], opts: DecodeOptions = {}) {
-	const reader = new BinReader(buf, opts);
-	reader.setPropNames(propNames);
-	const value = reader.readValue();
-	if (reader.getOffset() !== buf.length) {
-		throw new Error(`decodeBinary: trailing ${buf.length - reader.getOffset()} bytes`);
+	/** Decode a buffer produced by this module (BREAKING vs legacy A1 semantics). */
+	export function decodeBinary(buf: Uint8Array, opts: DecodeOptions = {}) {
+		const reader = new BinReader(buf, opts);
+		const version = reader.readVersion();
+		if (version !== VERSION) {
+			throw new Error(`decodeBinary: unknown version ${formatNumberAsHex(version)} (expected ${formatNumberAsHex(VERSION)})`);
+		}
+		return readBinaryPayloadWithPropNames(reader, buf, reader.readPropNames());
 	}
-	return value;
-}
+
+	export function decodeBinaryWithPropTable(buf: Uint8Array, propNames: readonly string[], opts: DecodeOptions = {}) {
+		const reader = new BinReader(buf, opts);
+		return readBinaryPayloadWithPropNames(reader, buf, propNames);
+	}
 
 export function requireObject(value: unknown, label: string): Record<string, unknown> {
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) {

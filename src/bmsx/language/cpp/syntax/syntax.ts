@@ -20,21 +20,29 @@ export const CPP_POST_FUNCTION_QUALIFIERS = new Set([
 	'volatile',
 ]);
 
+const CPP_BOOLEAN_LITERALS = new Set(['true', 'false']);
+const CPP_NULL_LITERALS = new Set(['nullptr', 'NULL']);
+const CPP_ASSIGNMENT_OPERATORS = new Set(['=', '+=', '-=', '*=', '/=', '%=', '<<=', '>>=', '&=', '|=', '^=']);
+const CPP_DECLARATOR_SKIP_TOKENS = new Set(['*', '&', '&&', 'const']);
+const CPP_ACCESS_CHAIN_SEPARATORS = new Set(['::', '.', '->']);
+const CPP_MEMBER_ACCESS_SEPARATORS = new Set(['.', '->']);
+const CPP_DELIMITERS = new Set([';', '{', '}']);
+const CPP_DECLARATOR_FOLLOW_TOKENS = new Set(['{', ';']);
+
 export function isCppEmptyStringToken(token: CppToken): boolean {
 	return token.kind === 'string' && token.text === '""';
 }
 
 export function isCppBooleanToken(token: CppToken): boolean {
-	return token.kind === 'id' && (token.text === 'true' || token.text === 'false');
+	return token.kind === 'id' && CPP_BOOLEAN_LITERALS.has(token.text);
 }
 
 export function isCppNullToken(token: CppToken): boolean {
-	return token.kind === 'id' && (token.text === 'nullptr' || token.text === 'NULL');
+	return token.kind === 'id' && CPP_NULL_LITERALS.has(token.text);
 }
 
 export function isCppAssignmentOperator(text: string): boolean {
-	return text === '=' || text === '+=' || text === '-=' || text === '*=' || text === '/=' || text === '%=' ||
-		text === '<<=' || text === '>>=' || text === '&=' || text === '|=' || text === '^=';
+	return CPP_ASSIGNMENT_OPERATORS.has(text);
 }
 
 export function previousCppIdentifier(tokens: readonly CppToken[], index: number): number {
@@ -42,7 +50,7 @@ export function previousCppIdentifier(tokens: readonly CppToken[], index: number
 		if (tokens[current].kind === 'id') {
 			return current;
 		}
-		if (tokens[current].text !== '*' && tokens[current].text !== '&' && tokens[current].text !== '&&' && tokens[current].text !== 'const') {
+		if (!CPP_DECLARATOR_SKIP_TOKENS.has(tokens[current].text)) {
 			break;
 		}
 	}
@@ -53,7 +61,7 @@ export function findCppAccessChainStart(tokens: readonly CppToken[], nameIndex: 
 	let start = nameIndex;
 	while (start >= 2) {
 		const separator = tokens[start - 1].text;
-		if (separator !== '::' && separator !== '.' && separator !== '->') {
+		if (!CPP_ACCESS_CHAIN_SEPARATORS.has(separator)) {
 			break;
 		}
 		if (tokens[start - 2].kind !== 'id' && tokens[start - 2].text !== 'this') {
@@ -168,17 +176,17 @@ export function hasCppDeclarationPrefix(tokens: readonly CppToken[], start: numb
 	}
 	for (let index = start; index < nameIndex; index += 1) {
 		const text = tokens[index].text;
-		if (text === '.' || text === '->' || text === ';') {
+		if (CPP_MEMBER_ACCESS_SEPARATORS.has(text) || text === ';') {
 			return false;
 		}
 	}
-	return tokens[nameIndex - 1].text !== '.' && tokens[nameIndex - 1].text !== '->';
+	return !CPP_MEMBER_ACCESS_SEPARATORS.has(tokens[nameIndex - 1].text);
 }
 
 export function findPreviousCppDelimiter(tokens: readonly CppToken[], index: number): number {
 	for (let current = index - 1; current >= 0; current -= 1) {
 		const text = tokens[current].text;
-		if (text === ';' || text === '{' || text === '}') {
+		if (CPP_DELIMITERS.has(text)) {
 			return current;
 		}
 	}
@@ -188,7 +196,7 @@ export function findPreviousCppDelimiter(tokens: readonly CppToken[], index: num
 export function findNextCppDelimiter(tokens: readonly CppToken[], index: number): number {
 	for (let current = index + 1; current < tokens.length; current += 1) {
 		const text = tokens[current].text;
-		if (text === ';' || text === '{' || text === '}') {
+		if (CPP_DELIMITERS.has(text)) {
 			return current;
 		}
 	}
@@ -253,12 +261,26 @@ export function splitCppArgumentRanges(tokens: readonly CppToken[], start: numbe
 			continue;
 		}
 		const text = tokens[index].text;
-		if (text === '(') parenDepth += 1;
-		else if (text === ')') parenDepth -= 1;
-		else if (text === '[') bracketDepth += 1;
-		else if (text === ']') bracketDepth -= 1;
-		else if (text === '{') braceDepth += 1;
-		else if (text === '}') braceDepth -= 1;
+		switch (text) {
+			case '(':
+				parenDepth += 1;
+				break;
+			case ')':
+				parenDepth -= 1;
+				break;
+			case '[':
+				bracketDepth += 1;
+				break;
+			case ']':
+				bracketDepth -= 1;
+				break;
+			case '{':
+				braceDepth += 1;
+				break;
+			case '}':
+				braceDepth -= 1;
+				break;
+		}
 	}
 	return result;
 }
@@ -278,7 +300,7 @@ export function isCppFunctionDeclaratorParen(tokens: readonly CppToken[], pairs:
 	while (cursor < tokens.length && CPP_POST_FUNCTION_QUALIFIERS.has(tokens[cursor].text)) {
 		cursor += 1;
 	}
-	if (tokens[cursor]?.text !== '{' && tokens[cursor]?.text !== ';') {
+	if (!CPP_DECLARATOR_FOLLOW_TOKENS.has(tokens[cursor]?.text)) {
 		return false;
 	}
 	const nameIndex = openParen - 1;

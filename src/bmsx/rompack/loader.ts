@@ -118,6 +118,10 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 }
 
 // TODO: DUPLICATE CODE WITH `bootrom.ts`!!!
+function readU32BE(blob: Uint8Array, offset: number): number {
+	return (blob[offset] << 24) | (blob[offset + 1] << 16) | (blob[offset + 2] << 8) | blob[offset + 3];
+}
+
 function splitPng(blob: Uint8Array): { png?: Uint8Array; rest: Uint8Array } {
 	if (
 		blob[0] !== 0x89 || blob[1] !== 0x50 || blob[2] !== 0x4E || blob[3] !== 0x47 ||
@@ -127,9 +131,9 @@ function splitPng(blob: Uint8Array): { png?: Uint8Array; rest: Uint8Array } {
 	}
 	let p = 8;
 	while (p + 8 <= blob.length) {
-		const len = (blob[p] << 24) | (blob[p + 1] << 16) | (blob[p + 2] << 8) | blob[p + 3];
+		const len = readU32BE(blob, p);
 		p += 4;
-		const type = (blob[p] << 24) | (blob[p + 1] << 16) | (blob[p + 2] << 8) | blob[p + 3];
+		const type = readU32BE(blob, p);
 		p += 4;
 		const end = p + len + 4;
 		if (type === 0x49454E44) {
@@ -172,8 +176,7 @@ export function getZippedRomAndRomLabelFromBlob(blob_buffer: Uint8Array): { zipp
 }
 
 export function normalizeCartridgeBlob(blob: Uint8Array): { payload: Uint8Array; romlabel?: Uint8Array } {
-	const input = blob;
-	const { zipped_rom, romlabel } = getZippedRomAndRomLabelFromBlob(input);
+	const { zipped_rom, romlabel } = getZippedRomAndRomLabelFromBlob(blob);
 	let payload: Uint8Array;
 	if (hasCartHeader(zipped_rom)) {
 		payload = zipped_rom;
@@ -190,6 +193,10 @@ type RomAssetList = {
 	assets: RomAsset[];
 	projectRootPath: string;
 };
+
+function decodedProjectRootPath(path: string | null): string {
+	return path === null ? '' : path;
+}
 
 type CartridgeMetadata = {
 	cart_manifest: CartManifest;
@@ -216,7 +223,7 @@ async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader
 	const sliced = rom.subarray(header.tocOffset, header.tocOffset + header.tocLength);
 	const decoded = decodeRomToc(sliced);
 	const assetList = decoded.assets;
-	const projectRootPath = decoded.projectRootPath ?? '';
+	const projectRootPath = decodedProjectRootPath(decoded.projectRootPath);
 	const sharedMetadata = header.metadataLength > 0
 		? parseRomMetadataSection(rom.subarray(header.metadataOffset, header.metadataOffset + header.metadataLength))
 		: null;
@@ -422,17 +429,17 @@ export async function loadModelFromBuffer(asset_id: string, buffer: Uint8Array, 
 		indices: toIndices(m.indices, m.indexComponentType),
 		indexComponentType: m.indexComponentType,
 		materialIndex: m.materialIndex,
-		imageURIs: m.imageURIs ? m.imageURIs.map((uri: any) => {
-			if (typeof uri === 'string') return uri;
-			if (ArrayBuffer.isView(uri)) {
-				const u8 = new Uint8Array(uri.buffer, uri.byteOffset, uri.byteLength);
-				return utf8Decoder.decode(u8);
-			}
-			return undefined;
-		}) : undefined,
-		morphPositions: m.morphPositions ? m.morphPositions.map((mt: any) => toF32(mt)) : undefined,
-		morphNormals: m.morphNormals ? m.morphNormals.map((mt: any) => toF32(mt)) : undefined,
-		morphTangents: m.morphTangents ? m.morphTangents.map((mt: any) => toF32(mt)) : undefined,
+			imageURIs: m.imageURIs?.map((uri: any) => {
+				if (typeof uri === 'string') return uri;
+				if (ArrayBuffer.isView(uri)) {
+					const u8 = new Uint8Array(uri.buffer, uri.byteOffset, uri.byteLength);
+					return utf8Decoder.decode(u8);
+				}
+				return undefined;
+			}),
+			morphPositions: m.morphPositions?.map((mt: any) => toF32(mt)),
+			morphNormals: m.morphNormals?.map((mt: any) => toF32(mt)),
+			morphTangents: m.morphTangents?.map((mt: any) => toF32(mt)),
 		weights: m.weights ? Array.from(m.weights) : undefined,
 		jointIndices: m.jointIndices ? toIndices(m.jointIndices, 5123) as Uint16Array : undefined,
 		jointWeights: m.jointWeights ? toF32(m.jointWeights) : undefined,
@@ -493,7 +500,7 @@ export async function loadModelFromBuffer(asset_id: string, buffer: Uint8Array, 
 	const scene = obj.scene;
 	const skins = (obj.skins || []).map((s: any) => ({
 		joints: s.joints,
-		inverseBindMatrices: s.inverseBindMatrices ? s.inverseBindMatrices.map((m: any) => toF32(m)!) : undefined,
+		inverseBindMatrices: s.inverseBindMatrices?.map((m: any) => toF32(m)!),
 	}));
 
 	if (textures && Array.isArray(materials)) {

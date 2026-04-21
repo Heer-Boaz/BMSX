@@ -26,13 +26,19 @@ function readTag(dv: DataView, offset: number): string {
 	);
 }
 
-export function parseWavInfo(buffer: Uint8Array): WavInfo {
-	const dv = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+function readWavChunks(dv: DataView, label: string): {
+	audioFormat: number;
+	channels: number;
+	sampleRate: number;
+	bitsPerSample: number;
+	dataOffset: number;
+	dataLength: number;
+} {
 	if (dv.byteLength < 12) {
-		throw new Error('[parseWavInfo] WAV data too small.');
+		throw new Error(`[${label}] WAV data too small.`);
 	}
 	if (readTag(dv, 0) !== 'RIFF' || readTag(dv, 8) !== 'WAVE') {
-		throw new Error('[parseWavInfo] Invalid WAV header.');
+		throw new Error(`[${label}] Invalid WAV header.`);
 	}
 
 	let offset = 12;
@@ -49,11 +55,11 @@ export function parseWavInfo(buffer: Uint8Array): WavInfo {
 		offset += 8;
 		const chunkEnd = offset + chunkSize;
 		if (chunkEnd > dv.byteLength) {
-			throw new Error('[parseWavInfo] Invalid WAV chunk size.');
+			throw new Error(`[${label}] Invalid WAV chunk size.`);
 		}
 		if (chunkId === 'fmt ') {
 			if (chunkSize < 16) {
-				throw new Error('[parseWavInfo] Invalid WAV fmt chunk size.');
+				throw new Error(`[${label}] Invalid WAV fmt chunk size.`);
 			}
 			audioFormat = dv.getUint16(offset + 0, true);
 			channels = dv.getUint16(offset + 2, true);
@@ -67,13 +73,35 @@ export function parseWavInfo(buffer: Uint8Array): WavInfo {
 	}
 
 	if (dataOffset === 0 || dataLength === 0) {
-		throw new Error('[parseWavInfo] WAV file missing data chunk.');
-	}
-	if (audioFormat !== 1) {
-		throw new Error(`[parseWavInfo] Unsupported WAV encoding ${audioFormat}.`);
+		throw new Error(`[${label}] WAV file missing data chunk.`);
 	}
 	if (channels <= 0 || sampleRate <= 0) {
-		throw new Error('[parseWavInfo] Invalid WAV channels or sample rate.');
+		throw new Error(`[${label}] Invalid WAV channels or sample rate.`);
+	}
+
+	return {
+		audioFormat,
+		channels,
+		sampleRate,
+		bitsPerSample,
+		dataOffset,
+		dataLength,
+	};
+}
+
+export function parseWavInfo(buffer: Uint8Array): WavInfo {
+	const dv = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+	const {
+		audioFormat,
+		channels,
+		sampleRate,
+		bitsPerSample,
+		dataOffset,
+		dataLength,
+	} = readWavChunks(dv, 'parseWavInfo');
+
+	if (audioFormat !== 1) {
+		throw new Error(`[parseWavInfo] Unsupported WAV encoding ${audioFormat}.`);
 	}
 	if (bitsPerSample !== 8 && bitsPerSample !== 16) {
 		throw new Error('[parseWavInfo] Unsupported WAV bit depth.');
@@ -95,52 +123,16 @@ export function parseWavInfo(buffer: Uint8Array): WavInfo {
 
 export function decodeWavToPcm(buffer: ArrayBuffer): DecodedWavPcm {
 	const dv = new DataView(buffer);
-	if (dv.byteLength < 12) {
-		throw new Error('[decodeWavToPcm] WAV data too small.');
-	}
-	if (readTag(dv, 0) !== 'RIFF' || readTag(dv, 8) !== 'WAVE') {
-		throw new Error('[decodeWavToPcm] Invalid WAV header.');
-	}
-
-	let offset = 12;
-	let audioFormat = 0;
-	let channels = 0;
-	let sampleRate = 0;
-	let bitsPerSample = 0;
-	let dataOffset = 0;
-	let dataLength = 0;
-
-	while (offset + 8 <= dv.byteLength) {
-		const chunkId = readTag(dv, offset);
-		const chunkSize = dv.getUint32(offset + 4, true);
-		offset += 8;
-		const chunkEnd = offset + chunkSize;
-		if (chunkEnd > dv.byteLength) {
-			throw new Error('[decodeWavToPcm] Invalid WAV chunk size.');
-		}
-		if (chunkId === 'fmt ') {
-			if (chunkSize < 16) {
-				throw new Error('[decodeWavToPcm] Invalid WAV fmt chunk size.');
-			}
-			audioFormat = dv.getUint16(offset + 0, true);
-			channels = dv.getUint16(offset + 2, true);
-			sampleRate = dv.getUint32(offset + 4, true);
-			bitsPerSample = dv.getUint16(offset + 14, true);
-		} else if (chunkId === 'data') {
-			dataOffset = offset;
-			dataLength = chunkSize;
-		}
-		offset = chunkEnd + (chunkSize & 1);
-	}
-
-	if (dataOffset === 0 || dataLength === 0) {
-		throw new Error('[decodeWavToPcm] WAV file missing data chunk.');
-	}
+	const {
+		audioFormat,
+		channels,
+		sampleRate,
+		bitsPerSample,
+		dataOffset,
+		dataLength,
+	} = readWavChunks(dv, 'decodeWavToPcm');
 	if (audioFormat !== 1 && audioFormat !== 3) {
 		throw new Error(`[decodeWavToPcm] Unsupported WAV encoding ${audioFormat}.`);
-	}
-	if (channels <= 0 || sampleRate <= 0) {
-		throw new Error('[decodeWavToPcm] Invalid WAV channels or sample rate.');
 	}
 	if (bitsPerSample <= 0 || (bitsPerSample % 8) !== 0) {
 		throw new Error('[decodeWavToPcm] Invalid WAV bit depth.');

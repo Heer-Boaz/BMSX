@@ -32,35 +32,21 @@ export class ContextStack {
 		const out: (KeyboardBinding | GamepadBinding | PointerBinding)[] = [];
 		const seen = new Set<string>();
 		for (const c of active) {
-			if (device === 'keyboard') {
-				if (!c.keyboard) {
-					throw new Error(`[ContextStack] Mapping context '${c.id}' is missing keyboard bindings.`);
-				}
-				const arr = c.keyboard[action] ?? [];
-				for (const b of arr) {
-					const id = typeof b === 'string' ? b : b.id;
-					if (!seen.has(id)) { out.push(b); seen.add(id); }
-				}
-			} else if (device === 'gamepad') {
-				if (!c.gamepad) {
-					throw new Error(`[ContextStack] Mapping context '${c.id}' is missing gamepad bindings.`);
-				}
-				const arr = c.gamepad[action] ?? [];
-				for (const b of arr) {
-					const id = typeof b === 'string' ? b : b.id;
-					if (!seen.has(id)) { out.push(b); seen.add(id); }
-				}
-			} else if (device === 'pointer') {
-				if (!c.pointer) {
-					throw new Error(`[ContextStack] Mapping context '${c.id}' is missing pointer bindings.`);
-				}
-				const arr = c.pointer[action] ?? [];
-				for (const b of arr) {
-					const id = typeof b === 'string' ? b : b.id;
-					if (!seen.has(id)) { out.push(b); seen.add(id); }
-				}
+			const arr = this.bindingsFor(c, device, action);
+			if (!arr) continue;
+			for (const b of arr) {
+				const id = typeof b === 'string' ? b : b.id;
+				if (!seen.has(id)) { out.push(b); seen.add(id); }
 			}
 		}
 		return out;
+	}
+
+	private bindingsFor(ctx: MappingContext, device: Device, action: string): (KeyboardBinding | GamepadBinding | PointerBinding)[] {
+		switch (device) {
+			case 'keyboard': return ctx.keyboard[action];
+			case 'gamepad': return ctx.gamepad[action];
+			case 'pointer': return ctx.pointer[action];
+		}
 	}
 }

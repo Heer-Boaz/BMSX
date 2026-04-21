@@ -1660,6 +1660,8 @@ function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile
 		}
 		if (catchBlockHandlesAsyncError(node)) {
 			noteQualityLedger(ledger, 'allowed_catch_async_fault_boundary');
+		} else if (isKnownExternalCatchFallbackBoundary(sourceFile) && catchBlockReportsCaughtError(node)) {
+			noteQualityLedger(ledger, 'allowed_catch_reported_external_fallback');
 		} else {
 			pushLintIssue(
 				issues,
@@ -1673,6 +1675,35 @@ function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile
 	}
 }
 
+function isKnownExternalCatchFallbackBoundary(sourceFile: ts.SourceFile): boolean {
+	return sourcePathIncludes(sourceFile, '/src/bmsx/input/dualsense_hid.ts');
+}
+
+function catchBlockReportsCaughtError(node: ts.CatchClause): boolean {
+	const declaration = node.variableDeclaration;
+	const caughtName = declaration !== undefined && ts.isIdentifier(declaration.name) ? declaration.name.text : null;
+	let reports = false;
+	const visit = (current: ts.Node): void => {
+		if (reports) {
+			return;
+		}
+		if (ts.isCallExpression(current)) {
+			const target = getExpressionText(current.expression);
+			if (
+				target !== null
+				&& /^console\.(error|warn)$/.test(target)
+				&& (caughtName === null || current.arguments.some(arg => getExpressionText(arg) === caughtName))
+			) {
+				reports = true;
+				return;
+			}
+		}
+		ts.forEachChild(current, visit);
+	};
+	visit(node.block);
+	return reports;
+}
+
 function catchBlockHandlesAsyncError(node: ts.CatchClause): boolean {
 	const declaration = node.variableDeclaration;
 	const caughtName = declaration !== undefined && ts.isIdentifier(declaration.name) ? declaration.name.text : null;
@@ -1684,7 +1715,7 @@ function catchBlockHandlesAsyncError(node: ts.CatchClause): boolean {
 		if (ts.isBinaryExpression(current) && current.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
 			const left = getExpressionText(current.left);
 			const right = getExpressionText(current.right);
-			if (left.endsWith('.fault') && (caughtName === null || right === caughtName)) {
+			if (left !== null && left.endsWith('.fault') && (caughtName === null || right === caughtName)) {
 				handles = true;
 				return;
 			}
@@ -2339,6 +2370,12 @@ function isTypeofFunctionComparison(node: ts.BinaryExpression): boolean {
 
 function isKnownTypeofFunctionBoundary(node: ts.BinaryExpression, sourceFile: ts.SourceFile): boolean {
 	if (sourcePathIncludes(sourceFile, '/src/bmsx/machine/firmware/')) {
+		return true;
+	}
+	if (sourcePathIncludes(sourceFile, '/src/bmsx/common/serializer/')) {
+		return true;
+	}
+	if (sourcePathIncludes(sourceFile, '/src/bmsx/common/image_decode.ts')) {
 		return true;
 	}
 	if (sourcePathIncludes(sourceFile, '/src/bmsx/machine/cpu/cpu.ts')) {

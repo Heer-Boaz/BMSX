@@ -85,8 +85,11 @@ export class OnscreenGamepad implements InputHandler {
 			const count = typeof countValue === 'number' ? countValue : 0;
 			const isDown = count > 0;
 			if (isDown) {
-				const wasPressed = previous.pressed === true;
-				const previousPressId = typeof previous.pressId === 'number' ? previous.pressId : null;
+				const wasPressed = previous.pressed;
+				let previousPressId: number | undefined;
+				if (typeof previous.pressId === 'number') {
+					previousPressId = previous.pressId;
+				}
 				const pressedAt = wasPressed
 					? (typeof previous.pressedAtMs === 'number' ? previous.pressedAtMs : previous.timestamp ?? now)
 					: now;
@@ -105,7 +108,7 @@ export class OnscreenGamepad implements InputHandler {
 					value: 1,
 				};
 			} else {
-				const was = previous.pressed === true;
+				const was = previous.pressed;
 				newStates[button] = {
 					...previous,
 					pressed: false,
@@ -220,24 +223,14 @@ export class OnscreenGamepad implements InputHandler {
 		if (prevButtons) {
 			const iterator = prevButtons.values();
 			for (let current = iterator.next(); !current.done; current = iterator.next()) {
-				const button = current.value;
-				const countValue = this.activeCounts[button];
-				const nextCount = typeof countValue === 'number' ? countValue - 1 : -1;
-				this.activeCounts[button] = nextCount > 0 ? nextCount : 0;
+				this.decrementButtonCount(current.value);
 			}
 		}
 		const prevElements = this.pointer2Elements.get(event.pointerId);
 		if (prevElements) {
 			const iterator = prevElements.values();
 			for (let current = iterator.next(); !current.done; current = iterator.next()) {
-				const id = current.value;
-				const countValue = this.elementActiveCount.get(id);
-				const nextCount = typeof countValue === 'number' ? countValue - 1 : -1;
-				const clamped = nextCount > 0 ? nextCount : 0;
-				this.elementActiveCount.set(id, clamped);
-				if (clamped === 0) {
-					this.platform.setElementActive(id, false);
-				}
+				this.decrementElementCount(current.value);
 			}
 		}
 		this.updateDpadRing();
@@ -307,9 +300,7 @@ export class OnscreenGamepad implements InputHandler {
 			if (newButtonSet.has(button)) {
 				continue;
 			}
-			const countValue = this.activeCounts[button];
-			const nextCount = typeof countValue === 'number' ? countValue - 1 : -1;
-			this.activeCounts[button] = nextCount > 0 ? nextCount : 0;
+			this.decrementButtonCount(button);
 		}
 		const newButtonIterator = newButtonSet.values();
 		for (let current = newButtonIterator.next(); !current.done; current = newButtonIterator.next()) {
@@ -317,9 +308,7 @@ export class OnscreenGamepad implements InputHandler {
 			if (previousButtons.has(button)) {
 				continue;
 			}
-			const countValue = this.activeCounts[button];
-			const nextCount = typeof countValue === 'number' ? countValue + 1 : 1;
-			this.activeCounts[button] = nextCount;
+			this.incrementButtonCount(button);
 		}
 
 		const prevElementIterator = previousElements.values();
@@ -328,13 +317,7 @@ export class OnscreenGamepad implements InputHandler {
 			if (newElementSet.has(id)) {
 				continue;
 			}
-			const countValue = this.elementActiveCount.get(id);
-			const nextCount = typeof countValue === 'number' ? countValue - 1 : -1;
-			const clamped = nextCount > 0 ? nextCount : 0;
-			this.elementActiveCount.set(id, clamped);
-			if (clamped === 0) {
-				this.platform.setElementActive(id, false);
-			}
+			this.decrementElementCount(id);
 		}
 		const newElementIterator = newElementSet.values();
 		for (let current = newElementIterator.next(); !current.done; current = newElementIterator.next()) {
@@ -342,18 +325,43 @@ export class OnscreenGamepad implements InputHandler {
 			if (previousElements.has(id)) {
 				continue;
 			}
-			const countValue = this.elementActiveCount.get(id);
-			const nextCount = typeof countValue === 'number' ? countValue + 1 : 1;
-			this.elementActiveCount.set(id, nextCount);
-			if (nextCount === 1) {
-				this.platform.setElementActive(id, true);
-			}
+			this.incrementElementCount(id);
 		}
 
 		this.updateDpadRing();
 		this.pointer2Buttons.set(pointerId, newButtonSet);
 		this.pointer2Elements.set(pointerId, newElementSet);
 		event.capture();
+	}
+
+	private decrementButtonCount(button: string): void {
+		const count = this.activeCounts[button];
+		const next = typeof count === 'number' ? count - 1 : -1;
+		this.activeCounts[button] = next > 0 ? next : 0;
+	}
+
+	private incrementButtonCount(button: string): void {
+		const count = this.activeCounts[button];
+		this.activeCounts[button] = typeof count === 'number' ? count + 1 : 1;
+	}
+
+	private decrementElementCount(id: string): void {
+		const count = this.elementActiveCount.get(id);
+		const next = typeof count === 'number' ? count - 1 : -1;
+		const clamped = next > 0 ? next : 0;
+		this.elementActiveCount.set(id, clamped);
+		if (clamped === 0) {
+			this.platform.setElementActive(id, false);
+		}
+	}
+
+	private incrementElementCount(id: string): void {
+		const count = this.elementActiveCount.get(id);
+		const next = typeof count === 'number' ? count + 1 : 1;
+		this.elementActiveCount.set(id, next);
+		if (next === 1) {
+			this.platform.setElementActive(id, true);
+		}
 	}
 
 	private baseId(id: string): string {

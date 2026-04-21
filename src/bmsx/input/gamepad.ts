@@ -24,8 +24,7 @@ export class GamepadInput implements InputHandler {
 	}
 
 	public get supportsVibrationEffect(): boolean {
-		if (this.device && this.device.supportsVibration) return true;
-		return this.hidPad.isConnected;
+		return !!this.device?.supportsVibration || this.hidPad.isConnected;
 	}
 
 	public setDevice(device: InputDevice): void {
@@ -77,7 +76,7 @@ export class GamepadInput implements InputHandler {
 			state.value = value;
 			state.pressId = existingPressId;
 		} else {
-			const wasPressed = state.pressed === true;
+			const wasPressed = state.pressed;
 			state.justreleased = wasPressed;
 			state.pressed = false;
 			state.justpressed = false;
@@ -123,14 +122,8 @@ export class GamepadInput implements InputHandler {
 			return;
 		}
 		if (!this.hidPad.isConnected) {
-			try {
-				const nav = navigator as Navigator & { vibrate?: (pattern: number | number[]) => boolean };
-				if (typeof nav.vibrate === 'function') {
-					nav.vibrate(Math.max(0, params.duration * params.intensity));
-				}
-			} catch {
-				// Ignore fallback errors
-			}
+			const nav = globalThis.navigator as (Navigator & { vibrate?: (pattern: number | number[]) => boolean }) | undefined;
+			nav?.vibrate?.(Math.max(0, params.duration * params.intensity));
 			return;
 		}
 		const strongMagnitude = ~~(params.intensity > 0.5 ? params.intensity * 255 : 0);

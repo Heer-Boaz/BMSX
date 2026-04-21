@@ -14,12 +14,13 @@ type KeyboardShortcutEntry = {
 export class GlobalShortcutRegistry {
 	private readonly keyboardShortcuts = new Map<number, KeyboardShortcutEntry[]>();
 	private readonly gamepadChords = new Map<number, Array<{ buttons: string[]; handler: () => void; latchKeys: string[] }>>();
-	private readonly latch = new Map<string, number>();
+	private readonly latch = new Map<string, number | null>();
 
 	public registerKeyboardShortcut(playerIndex: number, key: string, handler: () => void, modifiers: KeyModifier = KeyModifier.none): ShortcutDisposer {
 		Input.instance.setKeyboardCapture(key, true);
-		const shortcuts = this.keyboardShortcuts.get(playerIndex) ?? [];
-		if (!this.keyboardShortcuts.has(playerIndex)) {
+		let shortcuts = this.keyboardShortcuts.get(playerIndex);
+		if (!shortcuts) {
+			shortcuts = [];
 			this.keyboardShortcuts.set(playerIndex, shortcuts);
 		}
 		const latchKey = `keyboard:${playerIndex}:${key}:${modifiers}`;
@@ -49,8 +50,9 @@ export class GlobalShortcutRegistry {
 			}
 			return button;
 		});
-		const entries = this.gamepadChords.get(playerIndex) ?? [];
-		if (!this.gamepadChords.has(playerIndex)) {
+		let entries = this.gamepadChords.get(playerIndex);
+		if (!entries) {
+			entries = [];
 			this.gamepadChords.set(playerIndex, entries);
 		}
 		const latchKeys = normalized.map((button, index) => `gamepad:${playerIndex}:${button}:${index}`);
@@ -79,15 +81,15 @@ export class GlobalShortcutRegistry {
 		if (keyboardEntries && keyboard) {
 			for (let i = 0; i < keyboardEntries.length; i++) {
 				const entry = keyboardEntries[i];
-				const shift = keyboard.getButtonState('ShiftLeft').pressed === true || keyboard.getButtonState('ShiftRight').pressed === true;
-				const ctrl = keyboard.getButtonState('ControlLeft').pressed === true || keyboard.getButtonState('ControlRight').pressed === true;
-				const alt = keyboard.getButtonState('AltLeft').pressed === true || keyboard.getButtonState('AltRight').pressed === true;
-				const meta = keyboard.getButtonState('MetaLeft').pressed === true || keyboard.getButtonState('MetaRight').pressed === true;
+				const shift = keyboard.getButtonState('ShiftLeft').pressed || keyboard.getButtonState('ShiftRight').pressed;
+				const ctrl = keyboard.getButtonState('ControlLeft').pressed || keyboard.getButtonState('ControlRight').pressed;
+				const alt = keyboard.getButtonState('AltLeft').pressed || keyboard.getButtonState('AltRight').pressed;
+				const meta = keyboard.getButtonState('MetaLeft').pressed || keyboard.getButtonState('MetaRight').pressed;
 				if (((entry.modifiers & KeyModifier.shift) !== 0 && !shift)
 					|| ((entry.modifiers & KeyModifier.ctrl) !== 0 && !ctrl)
 					|| ((entry.modifiers & KeyModifier.alt) !== 0 && !alt)
 					|| ((entry.modifiers & KeyModifier.meta) !== 0 && !meta)) {
-					this.release(entry.latchKey, null);
+					this.release(entry.latchKey);
 					continue;
 				}
 				const state = keyboard.getButtonState(entry.key);
@@ -107,11 +109,14 @@ export class GlobalShortcutRegistry {
 
 	private pollGamepadChord(gamepad: PlayerInput['inputHandlers']['gamepad'], entry: { buttons: string[]; handler: () => void; latchKeys: string[] }): void {
 		let allPressed = true;
-		const states: Array<ButtonState | null> = [];
+		const states: Array<ButtonState | undefined> = [];
 		for (let i = 0; i < entry.buttons.length; i++) {
-			const state = gamepad?.getButtonState(entry.buttons[i]) ?? null;
+			let state: ButtonState | undefined;
+			if (gamepad) {
+				state = gamepad.getButtonState(entry.buttons[i]);
+			}
 			states.push(state);
-			if (!state || state.pressed !== true) {
+			if (!state?.pressed) {
 				allPressed = false;
 			}
 		}
@@ -129,29 +134,28 @@ export class GlobalShortcutRegistry {
 		}
 	}
 
-	private shouldAccept(code: string, state: ButtonState | null): boolean {
-		if (!state || state.pressed !== true) {
+	private shouldAccept(code: string, state?: ButtonState): boolean {
+		if (!state?.pressed) {
 			this.latch.delete(code);
 			return false;
 		}
-		const pressId = typeof state.pressId === 'number' ? state.pressId : null;
 		const existing = this.latch.get(code) ;
-		if (pressId !== null) {
-			if (existing === pressId) {
+		if (typeof state.pressId === 'number') {
+			if (existing === state.pressId) {
 				return false;
 			}
-			this.latch.set(code, pressId);
+			this.latch.set(code, state.pressId);
 			return true;
 		}
-		if (state.justpressed !== true) {
+		if (!state.justpressed) {
 			return false;
 		}
 		this.latch.set(code, null);
 		return true;
 	}
 
-	private release(code: string, state: ButtonState | null): void {
-		if (state && state.pressed === true) {
+	private release(code: string, state?: ButtonState): void {
+		if (state?.pressed) {
 			return;
 		}
 		this.latch.delete(code);

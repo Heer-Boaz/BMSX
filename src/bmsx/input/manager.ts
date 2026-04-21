@@ -10,6 +10,10 @@ import { PendingAssignmentProcessor } from './assignment_processor';
 import { PlayerInput, InputSource } from './player';
 import { PointerInput } from './pointer';
 import type { DeviceKind, InputDevice, InputEvt, SubscriptionHandle, GameViewCanvas } from '../platform';
+
+const EMPTY_BUTTON_STATE_PATCH: Readonly<Partial<ButtonState>> = Object.freeze({});
+const EMPTY_ACTION_STATE_PATCH: Readonly<Partial<ActionState>> = Object.freeze({});
+
 /**
  * Resets the properties of an object by deleting all keys except for the ones specified in the `except` array.
  * If no `except` array is provided, all keys will be deleted.
@@ -75,7 +79,7 @@ export function makeButtonState(partialState?: Partial<ButtonState>): ButtonStat
 		pressId = null,
 		value = null,
 		value2d = null,
-	} = partialState ?? {};
+	} = partialState ?? EMPTY_BUTTON_STATE_PATCH;
 	return { pressed, justpressed, justreleased, waspressed, wasreleased, repeatpressed, repeatcount, consumed, presstime, timestamp, pressedAtMs, releasedAtMs, pressId, value, value2d };
 }
 
@@ -89,7 +93,7 @@ export function makeActionState(actionname: string, partialState?: Partial<Actio
 		repeatpressed = false,
 		repeatcount = 0,
 		...buttonState
-	} = partialState ?? {};
+	} = partialState ?? EMPTY_ACTION_STATE_PATCH;
 	return {
 		action,
 		alljustpressed,
@@ -176,7 +180,14 @@ export class InputStateManager {
 	 * Cleans up old events from the input buffer used for windowed queries.
 	 */
 	update(_currentTime: number): void {
-		this.inputBuffer = this.inputBuffer.filter(event => this.isBufferedEventInWindow(event, this.bufferframeDuration));
+		let write = 0;
+		for (let read = 0; read < this.inputBuffer.length; read += 1) {
+			const event = this.inputBuffer[read];
+			if (this.isBufferedEventInWindow(event, this.bufferframeDuration)) {
+				this.inputBuffer[write++] = event;
+			}
+		}
+		this.inputBuffer.length = write;
 		this.pruneBufferedEdges(this.bufferedPressEdges);
 		this.pruneBufferedEdges(this.bufferedReleaseEdges);
 	}
@@ -265,27 +276,27 @@ export class InputStateManager {
 		const pending = this.pendingFrameStates.get(identifier);
 		const bufferedPress = this.getBufferedEdgeRecord(this.bufferedPressEdges, identifier, 1);
 		const bufferedRelease = this.getBufferedEdgeRecord(this.bufferedReleaseEdges, identifier, 1);
-		const previousPressed = state.pressed === true;
+		const previousPressed = state.pressed;
 		const nextPressed = pending?.pressed ?? rawState.pressed ?? false;
 		const nextTimestamp = pending?.timestamp ?? rawState.timestamp ?? state.timestamp ?? currentTime;
-		const nextPressId = rawState.pressId ?? state.pressId ?? pending?.pressId ?? null;
+		const nextPressId = rawState.pressId ?? state.pressId ?? pending?.pressId;
 		const nextPressedAtMs = nextPressed
 			? (rawState.pressedAtMs ?? pending?.pressedAtMs ?? state.pressedAtMs ?? nextTimestamp)
 			: null;
 		const nextReleasedAtMs = nextPressed
 			? null
 			: (rawState.releasedAtMs ?? state.releasedAtMs ?? (bufferedRelease ? nextTimestamp : null));
-		const nextConsumed = nextPressed ? state.consumed === true : false;
+		const nextConsumed = nextPressed && state.consumed;
 		state.pressed = nextPressed;
-		state.justpressed = bufferedPress != null || pending?.justpressed === true && !previousPressed;
-		state.justreleased = bufferedRelease != null || pending?.justreleased === true && previousPressed;
+		state.justpressed = bufferedPress != null || !!pending?.justpressed && !previousPressed;
+		state.justreleased = bufferedRelease != null || !!pending?.justreleased && previousPressed;
 		state.consumed = nextConsumed;
 		state.timestamp = nextTimestamp;
 		state.pressedAtMs = nextPressedAtMs;
 		state.releasedAtMs = nextReleasedAtMs;
 		state.pressId = nextPressId;
 		state.value = pending?.value ?? rawState.value ?? (nextPressed ? 1 : 0);
-		state.value2d = pending?.value2d ?? rawState.value2d ?? null;
+		state.value2d = pending?.value2d ?? rawState.value2d;
 		state.presstime = nextPressed
 			? Math.max(0, currentTime - (nextPressedAtMs ?? nextTimestamp))
 			: null;
@@ -306,9 +317,9 @@ export class InputStateManager {
 		const currentTime = $.platform.clock.now();
 		const baseState = this.buttonStates.get(identifier);
 		const pressed = baseState?.pressed ?? false;
-		const justpressed = baseState?.justpressed === true || this.getBufferedEdgeRecord(this.bufferedPressEdges, identifier, 1) != null;
-		const justreleased = baseState?.justreleased === true || this.getBufferedEdgeRecord(this.bufferedReleaseEdges, identifier, 1) != null;
-		let presstime = baseState?.presstime ?? (pressed && baseState?.pressedAtMs != null ? Math.max(0, currentTime - baseState.pressedAtMs) : null);
+		const justpressed = !!baseState?.justpressed || this.getBufferedEdgeRecord(this.bufferedPressEdges, identifier, 1) != null;
+		const justreleased = !!baseState?.justreleased || this.getBufferedEdgeRecord(this.bufferedReleaseEdges, identifier, 1) != null;
+		const presstime = baseState?.presstime ?? (pressed && baseState?.pressedAtMs != null ? Math.max(0, currentTime - baseState.pressedAtMs) : null);
 		let consumed = baseState?.consumed ?? false;
 		const pressedAtMs = baseState?.pressedAtMs;
 		const releasedAtMs = baseState?.releasedAtMs;
@@ -361,7 +372,7 @@ export class InputStateManager {
 			if (event.identifier !== identifier) {
 				continue;
 			}
-			if (event.eventType === 'press' && event.consumed !== true) {
+			if (event.eventType === 'press' && !event.consumed) {
 				return true;
 			}
 		}
@@ -371,11 +382,11 @@ export class InputStateManager {
 	private getLatestUnconsumedEdgeId(
 		identifier: ButtonId,
 		eventType: 'press' | 'release'
-	): number | null {
+	): number | undefined {
 		const edgeMap = eventType === 'press'
 			? this.bufferedPressEdges
 			: this.bufferedReleaseEdges;
-		return this.getBufferedEdgeRecord(edgeMap, identifier, RECENT_BUFFERED_EDGE_FRAMES)?.edgeId ?? null;
+		return this.getBufferedEdgeRecord(edgeMap, identifier, RECENT_BUFFERED_EDGE_FRAMES)?.edgeId;
 	}
 
 	private isBufferedEventInWindow(event: BufferedInputEvent, windowFrames: number): boolean {
@@ -396,7 +407,7 @@ export class InputStateManager {
 		edgeMap.set(event.identifier, {
 			edgeId: event.pressId,
 			frame: event.frame,
-			consumed: event.consumed === true,
+			consumed: event.consumed,
 		});
 	}
 
@@ -409,7 +420,7 @@ export class InputStateManager {
 		if (!edge) {
 			return null;
 		}
-		if (edge.consumed === true) {
+		if (edge.consumed) {
 			return null;
 		}
 		if (edge.frame > this.currentFrame) {
@@ -439,11 +450,11 @@ export class InputStateManager {
 		}
 	}
 
-	public getLatestUnconsumedPressId(identifier: ButtonId): number | null | undefined {
+	public getLatestUnconsumedPressId(identifier: ButtonId): number | undefined {
 		return this.getLatestUnconsumedEdgeId(identifier, 'press');
 	}
 
-	public getLatestUnconsumedReleaseId(identifier: ButtonId): number | null {
+	public getLatestUnconsumedReleaseId(identifier: ButtonId): number | undefined {
 		return this.getLatestUnconsumedEdgeId(identifier, 'release');
 	}
 
@@ -825,13 +836,14 @@ export class Input implements RegisterablePersistent {
 	}
 
 	public bind(): void {
-		const player = this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX);
+		const defaultPlayerIndex = Input.DEFAULT_KEYBOARD_PLAYER_INDEX;
+		const player = this.getPlayerInput(defaultPlayerIndex);
 		const keyboard = new KeyboardInput('keyboard:0');
 		const pointer = new PointerInput('pointer:0');
 		player.inputHandlers['keyboard'] = keyboard;
 		player.inputHandlers['pointer'] = pointer;
-		this.deviceBindings.set('keyboard:0', { handler: keyboard, source: 'keyboard', assignedPlayer: Input.DEFAULT_KEYBOARD_PLAYER_INDEX, device: null });
-		this.deviceBindings.set('pointer:0', { handler: pointer, source: 'pointer', assignedPlayer: Input.DEFAULT_KEYBOARD_PLAYER_INDEX, device: null });
+		this.deviceBindings.set('keyboard:0', { handler: keyboard, source: 'keyboard', assignedPlayer: defaultPlayerIndex, device: null });
+		this.deviceBindings.set('pointer:0', { handler: pointer, source: 'pointer', assignedPlayer: defaultPlayerIndex, device: null });
 		$.platform.input.setKeyboardCapture(this.shouldCaptureKey.bind(this));
 		this.attachToPlatformInput();
 		this.focusChangeUnsubscribe = $.platform.gameviewHost.onFocusChange(this.handleFocusChange);
@@ -917,24 +929,31 @@ export class Input implements RegisterablePersistent {
 
 	private routeButtonEvent(binding: DeviceBinding, evt: Extract<InputEvt, { type: 'button' }>): void {
 		const pressId = this.resolvePlatformPressId(evt);
-		if (binding.source === 'keyboard') {
-			const handler = binding.handler as KeyboardInput;
-			if (evt.down) handler.keydown(evt.code); else handler.keyup(evt.code);
-		} else if (binding.source === 'pointer') {
-			const value = evt.value ?? (evt.down ? 1 : 0);
-			const handler = binding.handler as PointerInput;
-			handler.ingestButton(evt.code, makeButtonState({
-				pressed: evt.down,
-				justpressed: evt.down,
-				justreleased: !evt.down,
-				timestamp: evt.timestamp,
-				pressId,
-				value,
-			}));
-		} else if (binding.source === 'gamepad') {
-			const value = evt.value ?? (evt.down ? 1 : 0);
-			const handler = binding.handler as GamepadInput;
-			handler.ingestButton(evt.code, evt.down, value, evt.timestamp, pressId);
+		switch (binding.source) {
+			case 'keyboard': {
+				const handler = binding.handler as KeyboardInput;
+				if (evt.down) handler.keydown(evt.code); else handler.keyup(evt.code);
+				break;
+			}
+			case 'pointer': {
+				const value = evt.value ?? (evt.down ? 1 : 0);
+				const handler = binding.handler as PointerInput;
+				handler.ingestButton(evt.code, makeButtonState({
+					pressed: evt.down,
+					justpressed: evt.down,
+					justreleased: !evt.down,
+					timestamp: evt.timestamp,
+					pressId,
+					value,
+				}));
+				break;
+			}
+			case 'gamepad': {
+				const value = evt.value ?? (evt.down ? 1 : 0);
+				const handler = binding.handler as GamepadInput;
+				handler.ingestButton(evt.code, evt.down, value, evt.timestamp, pressId);
+				break;
+			}
 		}
 		if (this.gameplayCaptureEnabled && binding.assignedPlayer !== null) {
 			this.enqueueButtonEvent(binding.assignedPlayer, binding.source, evt.code, evt.down ? 'press' : 'release', evt.timestamp, pressId);
@@ -999,6 +1018,7 @@ export class Input implements RegisterablePersistent {
 	}
 
 	private onDeviceConnected(device: InputDevice): void {
+		const defaultPlayerIndex = Input.DEFAULT_KEYBOARD_PLAYER_INDEX;
 		if (device.kind === 'gamepad') {
 			const handler = new GamepadInput(device.id, device.description, device);
 			handler.setDevice(device);
@@ -1007,7 +1027,7 @@ export class Input implements RegisterablePersistent {
 			const autoAssign = this.startupGamepadIndex !== null && device.id === `gamepad:${this.startupGamepadIndex}`;
 			if (autoAssign) {
 				this.startupGamepadIndex = null;
-				this.assignGamepadToPlayer(handler, Input.DEFAULT_KEYBOARD_PLAYER_INDEX);
+				this.assignGamepadToPlayer(handler, defaultPlayerIndex);
 				void handler.init();
 			} else {
 				this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(handler, null));
@@ -1018,18 +1038,21 @@ export class Input implements RegisterablePersistent {
 			const source = this.inferSourceFromKind(device.kind);
 			if (source === 'keyboard') {
 				const handler = new KeyboardInput(device.id);
-				this.deviceBindings.set(device.id, { handler, source: 'keyboard', assignedPlayer: Input.DEFAULT_KEYBOARD_PLAYER_INDEX, device });
+				this.deviceBindings.set(device.id, { handler, source: 'keyboard', assignedPlayer: defaultPlayerIndex, device });
 			} else if (source === 'pointer') {
 				const handler = new PointerInput(device.id);
-				this.deviceBindings.set(device.id, { handler, source: 'pointer', assignedPlayer: Input.DEFAULT_KEYBOARD_PLAYER_INDEX, device });
+				this.deviceBindings.set(device.id, { handler, source: 'pointer', assignedPlayer: defaultPlayerIndex, device });
 			}
 		}
 	}
 
 	private inferSourceFromKind(kind: DeviceKind): InputSource {
-		if (kind === 'keyboard') return 'keyboard';
-		if (kind === 'pointer' || kind === 'touch') return 'pointer';
-		return 'gamepad';
+		switch (kind) {
+			case 'keyboard': return 'keyboard';
+			case 'pointer':
+			case 'touch': return 'pointer';
+			default: return 'gamepad';
+		}
 	}
 
 	private onDeviceDisconnected(deviceId: string): void {
