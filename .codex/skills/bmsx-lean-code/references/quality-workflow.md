@@ -22,7 +22,7 @@ Use this when adding or fixing BMSX quality rules.
 Suppressions must be local, rule-specific when possible, and include a reason.
 
 ```ts
-// bmsx-lint:disable-next-line empty_catch_pattern -- browser cleanup callback may throw during teardown
+// @bmsx-analyse disable-next-line empty_catch_pattern -- browser cleanup callback may throw during teardown
 try {
     cleanupExternalHandle();
 } catch {
@@ -32,10 +32,14 @@ try {
 Allowed forms:
 
 ```ts
-// bmsx-lint:disable-next-line rule_name -- reason
-// bmsx-lint:disable-line rule_name -- reason
-// bmsx-lint:disable rule_name -- reason
-// bmsx-lint:disable -- rare file-level exception with reason
+// @bmsx-analyse disable-next-line rule_name -- reason
+// @bmsx-analyse disable-line rule_name -- reason
+// @bmsx-analyse disable rule_name -- reason
+// @bmsx-analyse disable -- rare file-level exception with reason
+// @bmsx-analyse start hot-path -- reason
+// @bmsx-analyse end hot-path
+// @bmsx-analyse start ensure-acceptable -- reason
+// @bmsx-analyse end ensure-acceptable
 ```
 
 ## Final Audit

@@ -1,4 +1,4 @@
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 
 import type { CppClassRange, CppFunctionInfo } from '../../../src/bmsx/language/cpp/syntax/declarations';
 import type { CppLintIssue, CppNormalizedBodyInfo } from './diagnostics';
@@ -26,6 +26,7 @@ import {
 } from '../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppToken } from '../../../src/bmsx/language/cpp/syntax/tokens';
 import { cppTokenText, normalizedCppTokenText } from '../../../src/bmsx/language/cpp/syntax/tokens';
+import { lineInAnalysisRegion, type AnalysisRegion } from '../lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../quality_ledger';
 
 const CPP_SINGLE_LINE_WRAPPER_NAME_WORDS: ReadonlySet<string> = new Set([
@@ -146,14 +147,6 @@ export type CppFunctionUsageInfo = {
 	totalCounts: ReadonlyMap<string, number>;
 	referenceCounts: ReadonlyMap<string, number>;
 };
-
-const HOT_PATH_SEGMENTS = [
-	'/src/bmsx_cpp/audio/',
-	'/src/bmsx_cpp/machine/cpu/',
-	'/src/bmsx_cpp/machine/devices/vdp/',
-	'/src/bmsx_cpp/machine/runtime/',
-	'/src/bmsx_cpp/render/',
-] as const;
 
 const DECLARATION_START_BLOCKLIST = new Set([
 	'break',
@@ -625,18 +618,8 @@ function collectSemanticNormalizationCallSignatures(tokens: readonly CppToken[],
 	return signatures;
 }
 
-function isHotPathFile(fileName: string): boolean {
-	const normalized = normalizePathForAnalysis(isAbsolute(fileName) ? fileName : resolve(process.cwd(), fileName));
-	for (let index = 0; index < HOT_PATH_SEGMENTS.length; index += 1) {
-		if (normalized.includes(HOT_PATH_SEGMENTS[index])) {
-			return true;
-		}
-	}
-	return false;
-}
-
-function isHotPathFunction(fileName: string, info: CppFunctionInfo): boolean {
-	if (!isHotPathFile(fileName)) {
+function isHotPathFunction(info: CppFunctionInfo, regions: readonly AnalysisRegion[], tokens: readonly CppToken[]): boolean {
+	if (!lineInAnalysisRegion(regions, 'hot-path', tokens[info.nameToken].line)) {
 		return false;
 	}
 	if (info.context !== null && info.name === info.context) {
@@ -857,8 +840,11 @@ export function lintCppFacadeStats(file: string, stats: CppFacadeStats, issues: 
 	);
 }
 
-export function lintCppEnsureLazyInitPattern(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
+export function lintCppEnsureLazyInitPattern(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, regions: readonly AnalysisRegion[], issues: CppLintIssue[]): void {
 	if (!info.name.startsWith('ensure')) {
+		return;
+	}
+	if (lineInAnalysisRegion(regions, 'ensure-acceptable', tokens[info.nameToken].line)) {
 		return;
 	}
 	const bodyStart = info.bodyStart + 1;
@@ -1311,11 +1297,11 @@ function cppCatchBlockFinishesError(tokens: readonly CppToken[], start: number, 
 	return false;
 }
 
-export function lintCppRedundantNumericSanitizationPattern(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
+export function lintCppRedundantNumericSanitizationPattern(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, regions: readonly AnalysisRegion[], issues: CppLintIssue[]): void {
 	if (normalizePathForAnalysis(file).endsWith('/src/bmsx_cpp/common/clamp.h')) {
 		return;
 	}
-	if (isHotPathFile(file)) {
+	if (lineInAnalysisRegion(regions, 'hot-path', tokens[info.nameToken].line)) {
 		return;
 	}
 	const activeNumericCalls: number[] = [];
@@ -1352,7 +1338,7 @@ export function lintCppRedundantNumericSanitizationPattern(file: string, tokens:
 	}
 }
 
-export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], info: CppFunctionInfo, issues: CppLintIssue[], ledger: QualityLedger): void {
+export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], info: CppFunctionInfo, regions: readonly AnalysisRegion[], issues: CppLintIssue[], ledger: QualityLedger): void {
 	const ranges = collectCppStatementRanges(tokens, info.bodyStart + 1, info.bodyEnd);
 	for (let index = 0; index < ranges.length; index += 1) {
 		const binding = declarationFromStatement(tokens, ranges[index][0], ranges[index][1]);
@@ -1365,7 +1351,7 @@ export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], 
 		}
 		if (!CPP_LOCAL_CONST_PATTERN_ENABLED && !binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
 			noteQualityLedger(ledger, 'skipped_cpp_local_const_disabled');
-			noteQualityLedger(ledger, `skipped_cpp_local_const_${cppLocalConstCandidateKind(file, info, binding)}`);
+			noteQualityLedger(ledger, `skipped_cpp_local_const_${cppLocalConstCandidateKind(file, info, regions, tokens, binding)}`);
 		} else if (CPP_LOCAL_CONST_PATTERN_ENABLED && shouldReportCppLocalConst(binding)) {
 			pushLintIssue(issues, file, tokens[binding.nameToken], 'local_const_pattern', `Prefer "const" for "${binding.name}"; it is never reassigned.`);
 		} else if (!binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
@@ -1377,12 +1363,12 @@ export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], 
 	}
 }
 
-function cppLocalConstCandidateKind(file: string, info: CppFunctionInfo, binding: CppLocalBinding): string {
+function cppLocalConstCandidateKind(file: string, info: CppFunctionInfo, regions: readonly AnalysisRegion[], tokens: readonly CppToken[], binding: CppLocalBinding): string {
 	const normalized = normalizePathForAnalysis(file);
 	if (normalized.endsWith('/src/bmsx_cpp/machine/cpu/cpu.cpp') && /^[A-Z0-9_]+$/.test(binding.name)) {
 		return 'vm_specialization';
 	}
-	const prefix = isHotPathFunction(file, info) ? 'hot_path_' : '';
+	const prefix = isHotPathFunction(info, regions, tokens) ? 'hot_path_' : '';
 	const valueKind = cppLocalBindingValueKind(binding);
 	if (valueKind === 'handle' || valueKind === 'simple_alias') {
 		return `${prefix}${valueKind}`;
@@ -2117,8 +2103,8 @@ function stringComparisonSubject(tokens: readonly CppToken[], start: number, end
 	return null;
 }
 
-export function lintCppHotPathCalls(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
-	if (!isHotPathFunction(file, info)) {
+export function lintCppHotPathCalls(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, regions: readonly AnalysisRegion[], issues: CppLintIssue[]): void {
+	if (!isHotPathFunction(info, regions, tokens)) {
 		return;
 	}
 	for (let index = info.bodyStart + 1; index < info.bodyEnd; index += 1) {

@@ -1,3 +1,4 @@
+// @bmsx-analyse start hot-path -- editor text measurement/layout helpers run during render and caret updates.
 import { getCodeAreaBounds } from '../ui/view/view';
 import { rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/overlay';
 import { runtimeErrorState } from '../contrib/runtime_error/state';
@@ -126,3 +127,4 @@ export function currentLine(): string {
 	}
 	return editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
 }
+// @bmsx-analyse end hot-path

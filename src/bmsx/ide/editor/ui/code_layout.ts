@@ -1,3 +1,4 @@
+// @bmsx-analyse start hot-path -- visual line layout and syntax highlight caching are editor-frame hot paths.
 import type { TimerHandle } from '../../../platform/platform';
 import { clamp } from '../../../common/clamp';
 import { ScratchBuffer } from '../../../common/scratchbuffer';
@@ -1091,3 +1092,4 @@ export class CodeLayout {
 		return low;
 	}
 }
+// @bmsx-analyse end hot-path

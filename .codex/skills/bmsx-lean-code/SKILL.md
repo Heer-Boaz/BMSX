@@ -56,6 +56,16 @@ try {
 }
 ```
 
+Use region directives for scope-based analysis instead of hardcoded path exceptions:
+
+```ts
+// @bmsx-analyse start hot-path -- caret/layout work runs during frame input/render
+// @bmsx-analyse end hot-path
+
+// @bmsx-analyse start ensure-acceptable -- explicit capacity helper, not lazy singleton ownership
+// @bmsx-analyse end ensure-acceptable
+```
+
 ## Finish Line
 Run checks that match the touched area. Prefer these when relevant:
 

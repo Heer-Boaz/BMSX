@@ -12,6 +12,18 @@ type LintSuppressionDirective = {
 	rules: ReadonlySet<string> | null;
 };
 
+export type AnalysisRegion = {
+	kind: string;
+	startLine: number;
+	endLine: number;
+};
+
+type AnalysisDirective = {
+	line: number;
+	command: string;
+	rest: string;
+};
+
 const ANALYSIS_SUPPRESSION_MARKER = '@bmsx-analyse';
 
 function markerIsInComment(lineText: string, markerIndex: number): boolean {
@@ -56,32 +68,34 @@ function parseDirectiveMode(text: string): { mode: LintSuppressionMode; rest: st
 	return { mode, rest };
 }
 
-function findSuppressionDirectiveText(lineText: string): { markerIndex: number; rest: string } | null {
+function findAnalysisDirective(lineText: string, line: number): AnalysisDirective | null {
 	const analysisIndex = lineText.indexOf(ANALYSIS_SUPPRESSION_MARKER);
 	if (analysisIndex === -1) {
 		return null;
 	}
-	let rest = lineText.slice(analysisIndex + ANALYSIS_SUPPRESSION_MARKER.length).trimStart();
-	if (!rest.startsWith('disable')) {
+	if (!markerIsInComment(lineText, analysisIndex)) {
 		return null;
 	}
-	rest = rest.slice('disable'.length);
+	const text = lineText.slice(analysisIndex + ANALYSIS_SUPPRESSION_MARKER.length).trimStart();
+	const commandEnd = text.search(/\s/);
+	const command = commandEnd === -1 ? text : text.slice(0, commandEnd);
+	const rest = commandEnd === -1 ? '' : text.slice(commandEnd + 1);
 	return {
-		markerIndex: analysisIndex,
+		line,
+		command,
 		rest,
 	};
 }
 
 function parseSuppressionDirective(lineText: string, line: number): LintSuppressionDirective | null {
-	const directiveText = findSuppressionDirectiveText(lineText);
-	if (directiveText === null) {
+	const directive = findAnalysisDirective(lineText, line);
+	if (directive === null || (directive.command !== 'disable' && !directive.command.startsWith('disable-'))) {
 		return null;
 	}
-	const markerIndex = directiveText.markerIndex;
-	if (markerIndex === -1 || !markerIsInComment(lineText, markerIndex)) {
-		return null;
-	}
-	const { mode, rest } = parseDirectiveMode(directiveText.rest);
+	const modeText = directive.command === 'disable'
+		? directive.rest
+		: `${directive.command.slice('disable'.length)} ${directive.rest}`;
+	const { mode, rest } = parseDirectiveMode(modeText);
 	return {
 		line,
 		mode,
@@ -99,6 +113,67 @@ function parseLintSuppressionDirectives(sourceText: string): LintSuppressionDire
 		}
 	}
 	return directives;
+}
+
+function parseRegionKind(text: string): string | null {
+	const descriptionStart = text.search(/\s--(?:\s|$)/);
+	const kindText = descriptionStart === -1 ? text : text.slice(0, descriptionStart);
+	const kind = kindText.trim().split(/\s+/)[0] ?? '';
+	return kind.length === 0 ? null : kind;
+}
+
+export function collectAnalysisRegions(sourceText: string): AnalysisRegion[] {
+	const regions: AnalysisRegion[] = [];
+	const activeStarts = new Map<string, number[]>();
+	const lines = sourceText.split(/\r\n|\r|\n/);
+	for (let index = 0; index < lines.length; index += 1) {
+		const line = index + 1;
+		const directive = findAnalysisDirective(lines[index], line);
+		if (directive === null || directive.command !== 'start' && directive.command !== 'end') {
+			continue;
+		}
+		const kind = parseRegionKind(directive.rest);
+		if (kind === null) {
+			continue;
+		}
+		if (directive.command === 'start') {
+			let starts = activeStarts.get(kind);
+			if (starts === undefined) {
+				starts = [];
+				activeStarts.set(kind, starts);
+			}
+			starts.push(line + 1);
+			continue;
+		}
+		const starts = activeStarts.get(kind);
+		if (starts === undefined || starts.length === 0) {
+			continue;
+		}
+		const startLine = starts.pop()!;
+		if (startLine <= line - 1) {
+			regions.push({ kind, startLine, endLine: line - 1 });
+		}
+	}
+	for (const [kind, starts] of activeStarts) {
+		for (let index = 0; index < starts.length; index += 1) {
+			regions.push({ kind, startLine: starts[index], endLine: lines.length });
+		}
+	}
+	regions.sort((a, b) => a.startLine - b.startLine || a.endLine - b.endLine || a.kind.localeCompare(b.kind));
+	return regions;
+}
+
+export function lineInAnalysisRegion(regions: readonly AnalysisRegion[], kind: string, line: number): boolean {
+	for (let index = 0; index < regions.length; index += 1) {
+		const region = regions[index];
+		if (line < region.startLine) {
+			return false;
+		}
+		if (region.kind === kind && line <= region.endLine) {
+			return true;
+		}
+	}
+	return false;
 }
 
 function directiveSuppressesIssue(directive: LintSuppressionDirective, issue: SuppressibleLintIssue): boolean {

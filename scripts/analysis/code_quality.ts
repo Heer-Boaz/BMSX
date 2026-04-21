@@ -3,7 +3,7 @@ import ts from 'typescript';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
-import { filterSuppressedLintIssues } from './lint_suppressions';
+import { collectAnalysisRegions, filterSuppressedLintIssues, lineInAnalysisRegion, type AnalysisRegion } from './lint_suppressions';
 import { createQualityLedger, noteQualityLedger, qualityLedgerEntries, type QualityLedger } from './quality_ledger';
 import type { CodeQualityLintRule } from '../lint/rules';
 
@@ -126,26 +126,6 @@ const SKIP_DIRECTORIES = new Set([
 	'dist',
 	'node_modules',
 ]);
-
-const HOT_PATH_SEGMENTS = [
-	'/src/bmsx/ide/editor/input/',
-	'/src/bmsx/ide/editor/render/',
-	'/src/bmsx/ide/editor/ui/',
-	'/src/bmsx/ide/terminal/ui/',
-	'/src/bmsx/ide/workbench/input/',
-	'/src/bmsx/ide/workbench/render/',
-] as const;
-
-const HOT_PATH_FILES = [
-	'/src/bmsx/ide/editor/common/text_layout.ts',
-	'/src/bmsx/ide/editor/ui/code_layout.ts',
-] as const;
-
-const ENSURE_PATTERN_PATH_SEGMENTS = [
-	'/src/bmsx/machine/runtime/',
-	'/src/bmsx/render/editor/',
-	'/src/bmsx/render/vdp/',
-] as const;
 
 const SEMANTIC_NORMALIZATION_CALL_SUFFIXES = [
 	'.endsWith',
@@ -430,31 +410,6 @@ function normalizePathForAnalysis(path: string): string {
 	return path.replace(/\\/g, '/');
 }
 
-function isHotPathFile(fileName: string): boolean {
-	const normalized = normalizePathForAnalysis(fileName);
-	for (let index = 0; index < HOT_PATH_SEGMENTS.length; index += 1) {
-		if (normalized.includes(HOT_PATH_SEGMENTS[index])) {
-			return true;
-		}
-	}
-	for (let index = 0; index < HOT_PATH_FILES.length; index += 1) {
-		if (normalized.endsWith(HOT_PATH_FILES[index])) {
-			return true;
-		}
-	}
-	return false;
-}
-
-function isEnsurePatternHotPathFile(fileName: string): boolean {
-	const normalized = normalizePathForAnalysis(fileName);
-	for (let index = 0; index < ENSURE_PATTERN_PATH_SEGMENTS.length; index += 1) {
-		if (normalized.includes(ENSURE_PATTERN_PATH_SEGMENTS[index])) {
-			return true;
-		}
-	}
-	return false;
-}
-
 function pushLintIssue(
 	issues: LintIssue[],
 	sourceFile: ts.SourceFile,
@@ -472,6 +427,14 @@ function pushLintIssue(
 		name,
 		message,
 	});
+}
+
+function nodeStartLine(sourceFile: ts.SourceFile, node: ts.Node): number {
+	return sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+}
+
+function nodeIsInAnalysisRegion(sourceFile: ts.SourceFile, regions: readonly AnalysisRegion[], kind: string, node: ts.Node): boolean {
+	return lineInAnalysisRegion(regions, kind, nodeStartLine(sourceFile, node));
 }
 
 function collectTypeScriptFiles(pathCandidates: ReadonlyArray<string>): string[] {
@@ -1408,9 +1371,10 @@ function functionBodyContainsLazyInitAssignment(root: ts.Node, targetFingerprint
 function lintEnsurePattern(
 	node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
 	sourceFile: ts.SourceFile,
+	regions: readonly AnalysisRegion[],
 	issues: LintIssue[],
 ): void {
-	if (!isEnsurePatternHotPathFile(sourceFile.fileName)) {
+	if (nodeIsInAnalysisRegion(sourceFile, regions, 'ensure-acceptable', node)) {
 		return;
 	}
 	const names = getFunctionNodeUsageNames(node);
@@ -1920,9 +1884,10 @@ function lintSplitJoinRoundtripPattern(
 function lintRedundantNumericSanitizationPattern(
 	node: ts.CallExpression,
 	sourceFile: ts.SourceFile,
+	regions: readonly AnalysisRegion[],
 	issues: LintIssue[],
 ): void {
-	if (!isProductionCodePath(sourceFile.fileName) || isHotPathFile(sourceFile.fileName) || !isNumericDefensiveCall(node)) {
+	if (!isProductionCodePath(sourceFile.fileName) || nodeIsInAnalysisRegion(sourceFile, regions, 'hot-path', node) || !isNumericDefensiveCall(node)) {
 		return;
 	}
 	if (isNestedInsideNumericSanitizationCall(node, node.parent)) {
@@ -4355,7 +4320,8 @@ function collectLintIssues(
 	functionUsageInfo: FunctionUsageInfo,
 	ledger: QualityLedger,
 ): void {
-	const hotPath = isHotPathFile(sourceFile.fileName);
+	const regions = collectAnalysisRegions(sourceFile.text);
+	const isHotPathNode = (node: ts.Node): boolean => nodeIsInAnalysisRegion(sourceFile, regions, 'hot-path', node);
 	const scopes: Array<Map<string, LintBinding[]>> = [];
 	const repeatedScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
 	const semanticRepeatedScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
@@ -4624,7 +4590,7 @@ function collectLintIssues(
 		});
 	};
 	const lintHotPathCallArguments = (node: ts.CallExpression | ts.NewExpression): void => {
-		if (!hotPath) {
+		if (!isHotPathNode(node)) {
 			return;
 		}
 		const args = node.arguments;
@@ -4706,6 +4672,7 @@ function collectLintIssues(
 			lintEnsurePattern(
 				node as ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
 				sourceFile,
+				regions,
 				issues,
 			);
 			lintTerminalReturnPaddingPattern(
@@ -4735,7 +4702,7 @@ function collectLintIssues(
 		if (ts.isCallExpression(node)) {
 			lintContractNumericDefensiveSanitizationPattern(node, sourceFile, issues);
 			lintHotPathCallArguments(node);
-			if (hotPath && isNumericDefensiveCall(node)) {
+			if (isHotPathNode(node) && isNumericDefensiveCall(node)) {
 				pushLintIssue(
 					issues,
 					sourceFile,
@@ -4745,7 +4712,7 @@ function collectLintIssues(
 				);
 			}
 			lintSplitJoinRoundtripPattern(node, sourceFile, issues, scopes);
-			lintRedundantNumericSanitizationPattern(node, sourceFile, issues);
+			lintRedundantNumericSanitizationPattern(node, sourceFile, regions, issues);
 			recordSemanticRepeatedExpression(node, parent);
 		}
 		if (ts.isNewExpression(node)) {

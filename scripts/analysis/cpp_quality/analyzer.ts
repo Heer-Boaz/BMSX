@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 
-import { filterSuppressedLintIssues } from '../lint_suppressions';
+import { collectAnalysisRegions, filterSuppressedLintIssues, type AnalysisRegion } from '../lint_suppressions';
 import { createQualityLedger } from '../quality_ledger';
 import {
 	addDuplicateExportedTypeIssues,
@@ -53,6 +53,7 @@ import type { CppClassRange, CppFunctionInfo, CppTypeDeclarationInfo } from '../
 type CppFileAnalysis = {
 	file: string;
 	source: string;
+	regions: readonly AnalysisRegion[];
 	tokens: ReturnType<typeof tokenizeCpp>;
 	pairs: number[];
 	classRanges: CppClassRange[];
@@ -72,18 +73,20 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
 		const file = files[fileIndex];
 		const source = readFileSync(file, 'utf8');
+		const regions = collectAnalysisRegions(source);
 		const tokens = tokenizeCpp(source);
 		const pairs = buildCppPairMap(tokens);
 		const classRanges = collectCppClassRanges(tokens, pairs);
 		const typeDeclarations = collectCppTypeDeclarations(tokens, classRanges);
 		const functions = collectCppFunctionDefinitions(tokens, pairs, classRanges);
 		collectCppFunctionUsageCounts(tokens, pairs, functionUsageInfo);
-		fileAnalyses.push({ file, source, tokens, pairs, classRanges, typeDeclarations, functions });
+		fileAnalyses.push({ file, source, regions, tokens, pairs, classRanges, typeDeclarations, functions });
 	}
 	for (let fileIndex = 0; fileIndex < fileAnalyses.length; fileIndex += 1) {
 		const analysis = fileAnalyses[fileIndex];
 		const file = analysis.file;
 		const source = analysis.source;
+		const regions = analysis.regions;
 		const tokens = analysis.tokens;
 		const pairs = analysis.pairs;
 		const typeDeclarations = analysis.typeDeclarations;
@@ -142,12 +145,12 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 				}
 			}
 			lintCppCatchPatterns(file, tokens, pairs, info, lintIssues, ledger);
-			lintCppRedundantNumericSanitizationPattern(file, tokens, pairs, info, lintIssues);
-			lintCppEnsureLazyInitPattern(file, tokens, pairs, info, lintIssues);
+			lintCppRedundantNumericSanitizationPattern(file, tokens, pairs, info, regions, lintIssues);
+			lintCppEnsureLazyInitPattern(file, tokens, pairs, info, regions, lintIssues);
 			lintCppTerminalReturnPaddingPattern(file, tokens, info, lintIssues);
 			lintCppConsecutiveDuplicateStatements(file, tokens, pairs, info, lintIssues);
-			lintCppHotPathCalls(file, tokens, pairs, info, lintIssues);
-			lintCppLocalBindings(file, tokens, info, lintIssues, ledger);
+			lintCppHotPathCalls(file, tokens, pairs, info, regions, lintIssues);
+			lintCppLocalBindings(file, tokens, info, regions, lintIssues, ledger);
 			lintCppNullishReturnGuards(file, tokens, pairs, info, lintIssues);
 			lintCppStringSwitchChains(file, tokens, pairs, info, lintIssues);
 			lintCppRepeatedExpressions(file, tokens, pairs, info, lintIssues);
