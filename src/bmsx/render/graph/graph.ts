@@ -149,6 +149,7 @@ export interface RenderPass<SetupOut = unknown> {
 }
 
 type FramebufferHandle = unknown; // Opaque backend-specific framebuffer handle
+const EMPTY_PASS_READS: Array<{ tex: RGTexHandle }> = [];
 
 interface InternalTexResource {
 	desc: TexDesc;
@@ -165,6 +166,10 @@ interface InternalTexResource {
 	physicalId?: number;
 	clearOnWrite?: { color?: color_arr; depth?: number };
 	state?: { layout: string };
+}
+
+function textureBytesPerPixel(resource: InternalTexResource): number {
+	return resource.desc.depth ? 2 : 4;
 }
 
 interface InternalValueResource<T = unknown> {
@@ -387,18 +392,25 @@ export class RenderGraphRuntime {
 		checkWebGLError('After compile');
 		const setupData: unknown[] = this._setupData;
 
-		const ctx: PassContext = {
-			getTex: (h) => {
-				const resource = this.texResources[h];
-				return resource ? (resource.tex as TextureHandle) : null;
-			},
-			getFBO: (color, depth) => {
-				const colorRes = this.texResources[color];
-				if (!colorRes) return null;
-				if (!depth) return colorRes.fboColorOnly;
-				const depthRes = this.texResources[depth];
-				if (!depthRes) return null;
-				if (colorRes.fboWithDepth && colorRes.fboWithDepth.depth === depth) return colorRes.fboWithDepth.fbo;
+			const ctx: PassContext = {
+				getTex: (h) => {
+					const resource = this.texResources[h];
+					if (!resource) {
+						throw new Error(`[RenderGraph] Texture handle ${h} is not registered.`);
+					}
+					return resource.tex as TextureHandle;
+				},
+				getFBO: (color, depth) => {
+					const colorRes = this.texResources[color];
+					if (!colorRes) {
+						throw new Error(`[RenderGraph] Color attachment ${color} is not registered.`);
+					}
+					if (!depth) return colorRes.fboColorOnly;
+					const depthRes = this.texResources[depth];
+					if (!depthRes) {
+						throw new Error(`[RenderGraph] Depth attachment ${depth} is not registered.`);
+					}
+					if (colorRes.fboWithDepth && colorRes.fboWithDepth.depth === depth) return colorRes.fboWithDepth.fbo;
 				// Lazy allocate FBOs on demand
 				return this.ensureFBO(color, depth);
 			},
@@ -420,9 +432,9 @@ export class RenderGraphRuntime {
 			const i = order[oi];
 			if (this.reachable.length && !this.reachable[i]) continue; // skip culled
 			const pass = this.passes[i];
-			const data = setupData[i];
-			// Begin implicit render pass if this pass writes any textures
-			let rp: { end: () => void } = null;
+				const data = setupData[i];
+				// Begin implicit render pass if this pass writes any textures
+				let rp: { end: () => void } | undefined;
 			const writes: RGTexHandle[] = [];
 			if (this._passWrites[i]) {
 				for (const w of this._passWrites[i]) writes.push(w.tex);
@@ -445,11 +457,10 @@ export class RenderGraphRuntime {
 				//  * Reads -> shaderRead
 				//  * Color attachment writes -> colorAttachment
 				//  * Depth attachment writes -> depthAttachment
-				const transitionTexture = this.backend.transitionTexture;
-				const backendTransition = transitionTexture ? transitionTexture.bind(this.backend) : undefined;
-				if (backendTransition) {
-					const desiredLayouts = new Map<number, string>();
-					const passReads = this._passReads[i] ?? [];
+					const backendTransition = this.backend.transitionTexture?.bind(this.backend);
+					if (backendTransition) {
+						const desiredLayouts = new Map<number, string>();
+						const passReads = this._passReads[i] ?? EMPTY_PASS_READS;
 					for (const r of passReads) {
 						const texRes = this.texResources[r.tex];
 						if (!texRes) continue;
@@ -461,7 +472,7 @@ export class RenderGraphRuntime {
 					for (const [handle, layout] of desiredLayouts) {
 						const texRes = this.texResources[handle];
 						if (!texRes) continue;
-						const prev = texRes.state ? texRes.state.layout : undefined;
+							const prev = texRes.state?.layout;
 						if (prev !== layout) {
 							backendTransition(texRes.tex as TextureHandle, prev, layout);
 							texRes.state = { layout };
@@ -473,13 +484,14 @@ export class RenderGraphRuntime {
 				const isFirstColorWriter = colorRes ? colorRes.writerPasses[0] === i : false;
 				const isFirstDepthWriter = depthRes ? depthRes.writerPasses[0] === i : false;
 				const builder = new RenderPassBuilder(this.backend).label(this.passes[i].name);
-				if (colorTargets.length) {
-					for (let idx = 0; idx < colorTargets.length; idx++) {
-						const ct = colorTargets[idx];
-						const clear = (idx === 0 && ct === colorRes && isFirstColorWriter)
-							? (ct.clearOnWrite ? ct.clearOnWrite.color : undefined)
-							: undefined;
-						builder.addColor(ct.tex as TextureHandle, clear, !!ct.desc.transient);
+					if (colorTargets.length) {
+						for (let idx = 0; idx < colorTargets.length; idx++) {
+							const ct = colorTargets[idx];
+							let clear: color_arr | undefined;
+							if (idx === 0 && ct === colorRes && isFirstColorWriter) {
+								clear = ct.clearOnWrite?.color;
+							}
+							builder.addColor(ct.tex as TextureHandle, clear, !!ct.desc.transient);
 					}
 				}
 				if (depthRes) {
@@ -523,29 +535,27 @@ export class RenderGraphRuntime {
 		return list;
 	}
 	/** Total texture memory (unique physical textures) and breakdown by color/depth. */
-	getTotalTextureMemoryInfo(): { total: number; color: number; depth: number } {
-		const seen = new Set<number>();
-		let color = 0, depth = 0;
-		const bpp = (r: InternalTexResource) => (r.desc.depth ? 2 : 4);
-		for (let i = 0; i < this.texResources.length; i++) {
-			const r = this.texResources[i]; if (!r) continue;
-			const pid = r.physicalId ?? i;
-			if (seen.has(pid)) continue;
-			seen.add(pid);
-			const bytes = (r.desc.width * r.desc.height * bpp(r)) | 0;
-			if (r.desc.depth) depth += bytes; else color += bytes;
-		}
+		getTotalTextureMemoryInfo(): { total: number; color: number; depth: number } {
+			const seen = new Set<number>();
+			let color = 0, depth = 0;
+			for (let i = 0; i < this.texResources.length; i++) {
+				const r = this.texResources[i]; if (!r) continue;
+				const pid = r.physicalId ?? i;
+				if (seen.has(pid)) continue;
+				seen.add(pid);
+				const bytes = (r.desc.width * r.desc.height * textureBytesPerPixel(r)) | 0;
+				if (r.desc.depth) depth += bytes; else color += bytes;
+			}
 		return { total: color + depth, color, depth };
 	}
 	/** Rough per-pass texture memory footprint (bytes) based on logical resources (color=4Bpp, depth16=2Bpp). */
 	getPassTextureMemoryInfo(): { name: string; bytes: number }[] {
-		// Aggregate bytes of textures read or written by each pass
-		const names = this.getPassNames();
-		const mem = new Array<number>(names.length).fill(0);
-		const bpp = (r: InternalTexResource) => (r.desc.depth ? 2 : 4);
-		for (let i = 0; i < this.texResources.length; i++) {
-			const r = this.texResources[i]; if (!r) continue;
-			const bytes = (r.desc.width * r.desc.height * bpp(r)) | 0;
+			// Aggregate bytes of textures read or written by each pass
+			const names = this.getPassNames();
+			const mem = new Array<number>(names.length).fill(0);
+			for (let i = 0; i < this.texResources.length; i++) {
+				const r = this.texResources[i]; if (!r) continue;
+				const bytes = (r.desc.width * r.desc.height * textureBytesPerPixel(r)) | 0;
 			// Writers
 			for (const p of r.writerPasses) mem[p] += bytes;
 			// Readers
@@ -577,7 +587,9 @@ export class RenderGraphRuntime {
 	private ensureFBO(color: RGTexHandle, depth: RGTexHandle): FramebufferHandle {
 		const cRes = this.texResources[color];
 		const dRes = this.texResources[depth];
-		if (!cRes || !dRes) return null;
+		if (!cRes || !dRes) {
+			throw new Error(`[RenderGraph] Cannot create FBO for color=${color}, depth=${depth}.`);
+		}
 		if (cRes.fboWithDepth && cRes.fboWithDepth.depth === depth) return cRes.fboWithDepth.fbo as FramebufferHandle;
 		// Delegate FBO creation to backend abstraction (opaque handle)
 		const fbo = this.backend.createRenderTarget(cRes.tex, dRes.tex) as FramebufferHandle;

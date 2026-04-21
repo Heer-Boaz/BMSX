@@ -188,7 +188,7 @@ function player:draw_lasers()
 			memwrite(
 				vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 				sys_vdp_cmd_blit,
-				 13,
+					13,
 				0,
 				laser_handle,
 				x,
@@ -215,7 +215,7 @@ function player:draw_missiles()
 		memwrite(
 			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 			sys_vdp_cmd_blit,
-			 13,
+				13,
 			0,
 			assets.img[missile.sprite_imgid].handle,
 			missile.x,
@@ -244,7 +244,7 @@ function player:draw_uplasers()
 			memwrite(
 				vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 				sys_vdp_cmd_blit,
-				 13,
+					13,
 				0,
 				laser_handle,
 				base_x + (tile_index * constants.weapons.uplaser.tile_width),
@@ -272,7 +272,7 @@ function player:draw_visual()
 		memwrite(
 			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 			sys_vdp_cmd_blit,
-			 13,
+				13,
 			0,
 			option_handle,
 			option.x,
@@ -292,7 +292,7 @@ function player:draw_visual()
 	memwrite(
 		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 		sys_vdp_cmd_blit,
-		 13,
+			13,
 		0,
 		assets.img[self.sprite_imgid].handle,
 		self.x,

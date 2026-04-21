@@ -564,7 +564,7 @@ function director:draw_player(player, draw_shadow)
 	memwrite(
 		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 		sys_vdp_cmd_blit,
-		 13,
+			13,
 		0,
 		assets.img[frame_id].handle,
 		draw_x,

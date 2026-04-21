@@ -24,7 +24,7 @@ Suppressions must be local, rule-specific when possible, and include a reason.
 ```ts
 // bmsx-lint:disable-next-line empty_catch_pattern -- browser cleanup callback may throw during teardown
 try {
-	cleanupExternalHandle();
+    cleanupExternalHandle();
 } catch {
 }
 ```

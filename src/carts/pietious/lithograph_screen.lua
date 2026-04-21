@@ -28,7 +28,7 @@ function lithograph_screen:draw_screen()
 	memwrite(
 		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 		sys_vdp_cmd_blit,
-		 13,
+			13,
 		0,
 		assets.img[lithograph_mode_sprite_id].handle,
 		constants.room.tile_size4,

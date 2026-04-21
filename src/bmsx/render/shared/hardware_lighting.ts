@@ -62,9 +62,11 @@ export function clearHardwareLighting(): void {
 }
 
 export function consumeHardwareLightingDirty(): boolean {
-	const dirty = hardwareLightingDirty;
+	if (!hardwareLightingDirty) {
+		return false;
+	}
 	hardwareLightingDirty = false;
-	return dirty;
+	return true;
 }
 
 export function getHardwareDirectionalLights(): ReadonlyMap<string, DirectionalLight> {

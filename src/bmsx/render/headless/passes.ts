@@ -266,16 +266,15 @@ function emitDiff(label: string, previous: Snapshot, current: Snapshot): Snapsho
 		if (!HEADLESS_VERBOSE_DIFF && label === 'sprites' && diff.length <= 2) {
 			return current;
 		}
-		if (HEADLESS_VERBOSE_DIFF) {
-			console.log(`[headless:${label}] diff`);
-			for (const line of diff) console.log(`  ${line}`);
-		} else {
-			const prevHeadline = previous[0] ?? '';
-			const headline = current[0] ?? 'changed';
-			if (headline === prevHeadline) {
-				return current;
-			}
-			console.log(`[headless:${label}] ${headline} (${diff.length} changes)`);
+			if (HEADLESS_VERBOSE_DIFF) {
+				console.log(`[headless:${label}] diff`);
+				for (const line of diff) console.log(`  ${line}`);
+			} else {
+				const headline = current[0];
+				if (headline === previous[0]) {
+					return current;
+				}
+				console.log(`[headless:${label}] ${headline} (${diff.length} changes)`);
 		}
 	}
 	return current;
@@ -432,8 +431,8 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 						if (morphWeights.length > MAX_MORPH_TARGETS) {
 							throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' morph count ${morphWeights.length} exceeds MAX_MORPH_TARGETS (${MAX_MORPH_TARGETS}).`);
 						}
-					}
-					const translation = translationFromMatrix(submission.matrix);
+						}
+						const translation = translationFromMatrix(submission.matrix);
 						const shadow = submission.receive_shadow ? 'yes' : 'no';
 					const morphCount = submission.morph_weights ? submission.morph_weights.length : 0;
 					snapshot.push(`[mesh#${index}] mesh=${submission.mesh.name} translate=${translation} shadow=${shadow} morphs=${morphCount}`);

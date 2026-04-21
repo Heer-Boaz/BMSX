@@ -93,7 +93,7 @@ function ui:draw_ui()
 	memwrite(
 		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 		sys_vdp_cmd_blit,
-		 13,
+			13,
 		0,
 		assets.img['game_header'].handle,
 		0,
@@ -114,7 +114,7 @@ function ui:draw_ui()
 		memwrite(
 			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 			sys_vdp_cmd_blit,
-			 13,
+				13,
 			0,
 			assets.img[equipped_sprite_id].handle,
 			constants.hud.equipped_item_x * constants.room.tile_size,
@@ -136,7 +136,7 @@ function ui:draw_ui()
 		memwrite(
 			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 			sys_vdp_cmd_blit,
-			 13,
+				13,
 			0,
 			blue_handle,
 			constants.hud.health_bar_x + i,
@@ -158,7 +158,7 @@ function ui:draw_ui()
 		memwrite(
 			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 			sys_vdp_cmd_blit,
-			 13,
+				13,
 			0,
 			red_handle,
 			constants.hud.weapon_bar_x + i,

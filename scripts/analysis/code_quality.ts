@@ -1622,6 +1622,52 @@ function isSemanticFloorDivisionCall(node: ts.CallExpression): boolean {
 	return ts.isBinaryExpression(argument) && argument.operatorToken.kind === ts.SyntaxKind.SlashToken;
 }
 
+function isMinimumRasterPixelSizeCall(node: ts.CallExpression, sourceFile: ts.SourceFile): boolean {
+	if (!sourcePathIncludes(sourceFile, '/src/bmsx/render/vdp/') || callTargetText(node) !== 'Math.max' || node.arguments.length !== 2) {
+		return false;
+	}
+	let roundedArgument: ts.Expression | null = null;
+	if (isNumericLiteralText(node.arguments[0], '1')) {
+		roundedArgument = node.arguments[1];
+	} else if (isNumericLiteralText(node.arguments[1], '1')) {
+		roundedArgument = node.arguments[0];
+	}
+	if (roundedArgument === null) {
+		return false;
+	}
+	const roundedCall = unwrapExpression(roundedArgument);
+	if (!ts.isCallExpression(roundedCall) || callTargetText(roundedCall) !== 'Math.round' || roundedCall.arguments.length !== 1) {
+		return false;
+	}
+	const roundedText = roundedCall.arguments[0].getText(sourceFile).replace(/\s+/g, ' ');
+	if (/\bthickness(?:Value)?\b/.test(roundedText)) {
+		return true;
+	}
+	return /\b(?:width|height)\b.*\bscale[XY]\b/i.test(roundedText)
+		|| /\bscale[XY]\b.*\b(?:width|height)\b/i.test(roundedText);
+}
+
+function isNormalizedColorBytePackingCall(node: ts.CallExpression): boolean {
+	if (callTargetText(node) !== 'Math.round' || node.arguments.length !== 1) {
+		return false;
+	}
+	const arg = unwrapExpression(node.arguments[0]);
+	if (!ts.isBinaryExpression(arg) || arg.operatorToken.kind !== ts.SyntaxKind.AsteriskToken) {
+		return false;
+	}
+	const leftIsScale = isNumericLiteralText(arg.left, '255');
+	const rightIsScale = isNumericLiteralText(arg.right, '255');
+	if (leftIsScale === rightIsScale) {
+		return false;
+	}
+	const normalized = unwrapExpression(leftIsScale ? arg.right : arg.left);
+	if (!ts.isCallExpression(normalized) || callTargetText(normalized) !== 'clamp' || normalized.arguments.length !== 3) {
+		return false;
+	}
+	return isNumericLiteralText(normalized.arguments[1], '0')
+		&& isNumericLiteralText(normalized.arguments[2], '1');
+}
+
 function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile, issues: LintIssue[], ledger: QualityLedger): void {
 	const statements = node.block.statements;
 	if (statements.length === 0) {
@@ -1787,6 +1833,12 @@ function lintRedundantNumericSanitizationPattern(
 		return;
 	}
 	if (isSemanticFloorDivisionCall(node)) {
+		return;
+	}
+	if (isMinimumRasterPixelSizeCall(node, sourceFile)) {
+		return;
+	}
+	if (isNormalizedColorBytePackingCall(node)) {
 		return;
 	}
 	if (!containsNestedNumericSanitizationCall(node)) {

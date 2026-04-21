@@ -91,7 +91,7 @@ function item_screen:draw_inventory_items()
 				memwrite(
 					vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 					sys_vdp_cmd_blit,
-					 13,
+						13,
 					0,
 					handle,
 					x,
@@ -121,7 +121,7 @@ function item_screen:draw_secondary_weapon_selector()
 	memwrite(
 		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 		sys_vdp_cmd_blit,
-		 13,
+			13,
 		0,
 		assets.img['f1_selector_white'].handle,
 		x,
@@ -155,7 +155,7 @@ function item_screen:draw_map()
 	memwrite(
 		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 		sys_vdp_cmd_blit,
-		 13,
+			13,
 		0,
 		assets.img['f1_map_title'].handle,
 		map_title_x,
@@ -187,7 +187,7 @@ function item_screen:draw_map()
 		memwrite(
 			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 			sys_vdp_cmd_blit,
-			 13,
+				13,
 			0,
 			assets.img[sprite_id].handle,
 			proxy_x,
@@ -242,7 +242,7 @@ function item_screen:draw_screen()
 	memwrite(
 		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 		sys_vdp_cmd_blit,
-		 13,
+			13,
 		0,
 		assets.img['f1_screen'].handle,
 		0,

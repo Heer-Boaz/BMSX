@@ -68,10 +68,28 @@ function textureByteLength(width: number, height: number): number {
 	return width * height * 4;
 }
 
+function colorChannelToByte(value: number): number {
+	return Math.round(clamp(value, 0, 1) * 255);
+}
+
+function createSolidPixels(width: number, height: number, rgba: color_arr): Uint8Array {
+	const pixels = new Uint8Array(textureByteLength(width, height));
+	const r = colorChannelToByte(rgba[0]);
+	const g = colorChannelToByte(rgba[1]);
+	const b = colorChannelToByte(rgba[2]);
+	const a = colorChannelToByte(rgba[3]);
+	for (let i = 0; i < pixels.byteLength; i += 4) {
+		pixels[i] = r;
+		pixels[i + 1] = g;
+		pixels[i + 2] = b;
+		pixels[i + 3] = a;
+	}
+	return pixels;
+}
+
 function asTextureSourcePromise(src: TextureSource | Promise<TextureSource>): Promise<TextureSource> | null {
-	const thenable = src as Promise<TextureSource>;
-	if (typeof thenable.then === 'function') {
-		return thenable;
+	if (src instanceof Promise) {
+		return src;
 	}
 	return null;
 }
@@ -233,17 +251,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	createSolidTexture2D(width: number, height: number, rgba: color_arr, _desc: TextureParams = {}): TextureHandle {
-		const pixels = new Uint8Array(textureByteLength(width, height));
-		const r = Math.round(clamp(rgba[0], 0, 1) * 255);
-		const g = Math.round(clamp(rgba[1], 0, 1) * 255);
-		const b = Math.round(clamp(rgba[2], 0, 1) * 255);
-		const a = Math.round(clamp(rgba[3], 0, 1) * 255);
-		for (let i = 0; i < pixels.byteLength; i += 4) {
-			pixels[i] = r;
-			pixels[i + 1] = g;
-			pixels[i + 2] = b;
-			pixels[i + 3] = a;
-		}
+		const pixels = createSolidPixels(width, height, rgba);
 		this.accountUpload('texture', pixels.byteLength);
 		return this.createTextureRecord('solid2d', width, height, pixels, null);
 	}
@@ -263,17 +271,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	createSolidCubemap(size: number, rgba: color_arr, _desc: TextureParams): TextureHandle {
-		const face = new Uint8Array(textureByteLength(size, size));
-		const r = Math.round(clamp(rgba[0], 0, 1) * 255);
-		const g = Math.round(clamp(rgba[1], 0, 1) * 255);
-		const b = Math.round(clamp(rgba[2], 0, 1) * 255);
-		const a = Math.round(clamp(rgba[3], 0, 1) * 255);
-		for (let i = 0; i < face.byteLength; i += 4) {
-			face[i] = r;
-			face[i + 1] = g;
-			face[i + 2] = b;
-			face[i + 3] = a;
-		}
+		const face = createSolidPixels(size, size, rgba);
 		const faces: Array<Uint8Array> = [];
 		for (let i = 0; i < 6; i += 1) {
 			faces.push(new Uint8Array(face));

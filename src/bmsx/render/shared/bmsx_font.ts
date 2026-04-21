@@ -9,9 +9,31 @@ const FONT_PRESETS: Record<FontVariant, GlyphMap> = {
 	tiny: buildTinyCharMap(),
 } as const;
 
+function fontAssetPrefix(prefix: string): (suffix: string) => string {
+	return (suffix: string): string => `${prefix}_${suffix}`;
+}
+
+function addAsciiAlphaNumericGlyphs(map: GlyphMap, withPrefix: (suffix: string) => string): void {
+	for (let i = 0; i < 10; i += 1) {
+		const digit = String.fromCharCode(48 + i);
+		map[digit] = withPrefix(digit);
+	}
+	const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+	for (let i = 0; i < lowercase.length; i += 1) {
+		const ch = lowercase.charAt(i);
+		map[ch] = withPrefix(`low_${ch}`);
+	}
+	const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+	for (let i = 0; i < uppercase.length; i += 1) {
+		const upper = uppercase.charAt(i);
+		const lower = upper.toLowerCase();
+		map[upper] = withPrefix(lower);
+	}
+}
+
 function buildMsxCharMap(): GlyphMap {
 	const prefix = 'msx_6b_font';
-	const withPrefix = (suffix: string): string => `${prefix}_${suffix}`;
+	const withPrefix = fontAssetPrefix(prefix);
 	const map: GlyphMap = {
 		' ': withPrefix('space'),
 		'!': withPrefix('exclamation'),
@@ -61,27 +83,13 @@ function buildMsxCharMap(): GlyphMap {
 		'█': withPrefix('code_0xc8'),
 		'—': withPrefix('ctrl_etb'), // etb = "extended dash/break" and the associated ASCII control code is 0x17
 	};
-	for (let i = 0; i < 10; i += 1) {
-		const digit = String.fromCharCode(48 + i);
-		map[digit] = withPrefix(digit);
-	}
-	const lowercase = 'abcdefghijklmnopqrstuvwxyz';
-	for (let i = 0; i < lowercase.length; i += 1) {
-		const ch = lowercase.charAt(i);
-		map[ch] = withPrefix(`low_${ch}`);
-	}
-	const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-	for (let i = 0; i < uppercase.length; i += 1) {
-		const upper = uppercase.charAt(i);
-		const lower = upper.toLowerCase();
-		map[upper] = withPrefix(lower);
-	}
+	addAsciiAlphaNumericGlyphs(map, withPrefix);
 	return map;
 }
 
 function buildTinyCharMap(): GlyphMap {
 	const prefix = 'tiny_3b_font';
-	const withPrefix = (suffix: string): string => `${prefix}_${suffix}`;
+	const withPrefix = fontAssetPrefix(prefix);
 	const map: GlyphMap = {
 		' ': withPrefix('space'),
 		'!': withPrefix('exclamation'),
@@ -131,21 +139,7 @@ function buildTinyCharMap(): GlyphMap {
 		'ĳ': withPrefix('low_ij'),
 		'Ĳ': withPrefix('ij'),
 	};
-	for (let i = 0; i < 10; i += 1) {
-		const digit = String.fromCharCode(48 + i);
-		map[digit] = withPrefix(digit);
-	}
-	const lowercase = 'abcdefghijklmnopqrstuvwxyz';
-	for (let i = 0; i < lowercase.length; i += 1) {
-		const ch = lowercase.charAt(i);
-		map[ch] = withPrefix(`low_${ch}`);
-	}
-	const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-	for (let i = 0; i < uppercase.length; i += 1) {
-		const upper = uppercase.charAt(i);
-		const lower = upper.toLowerCase();
-		map[upper] = withPrefix(lower);
-	}
+	addAsciiAlphaNumericGlyphs(map, withPrefix);
 	return map;
 }
 

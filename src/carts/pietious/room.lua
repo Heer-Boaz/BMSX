@@ -546,7 +546,7 @@ The VDP packet memory is different:
 	- every game tick, the cart resets vdp_stream_cursor back to sys_vdp_stream_base
 	- draw code then claims packet space again in the same tick order
 	- the stream is therefore a transient submission buffer, not a stable object
-	  store owned by this room
+		store owned by this room
 
 However, resetting the cursor does NOT zero the underlying RAM. That gives us a
 useful optimization:
@@ -554,7 +554,7 @@ useful optimization:
 	1. claim the same amount of stream space every game tick
 	2. remember the previously claimed packet_base
 	3. if the new claim returns the same packet_base and our cached tile data is
-	   still valid, do not rewrite the packet payload
+		still valid, do not rewrite the packet payload
 	4. if the base moved, or the tile data changed, rewrite the packet
 
 So the trick is:
@@ -572,9 +572,9 @@ This is why we keep:
 This also explains why hide_room_tiles() invalidates the remembered packet base:
 
 	- once the room stops submitting those packets, other draw code is free to
-	  claim that part of the stream
+		claim that part of the stream
 	- so when the room becomes visible again, we must assume nothing about the old
-	  address and force a fresh write if needed
+		address and force a fresh write if needed
 
 The important consequence is that we no longer pay the expensive per-frame work
 that the old code did:
@@ -593,7 +593,7 @@ The only always-on work left in the hot path is:
 For water animation we go even smaller:
 
 	- rebuild_room_tiles() precalculates exactly which tile indices are water
-	  surface tiles
+		surface tiles
 	- sync_water_surface_frame() only updates those cached handles in Lua
 	- render_water() then patches only those payload words when the frame changed
 

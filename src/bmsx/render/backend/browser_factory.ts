@@ -16,7 +16,7 @@ function installFactory(factory: (host: GameViewHost) => Promise<GPUBackend>): v
 
 function hasFactory(): boolean {
 	const globalScope = globalThis as BackendFactoryHolder;
-	return typeof globalScope[FACTORY_KEY] === 'function';
+	return globalScope[FACTORY_KEY] !== undefined;
 }
 
 async function createWebGPUBackend(canvas: HTMLCanvasElement): Promise<GPUBackend> {
@@ -27,15 +27,8 @@ async function createWebGPUBackend(canvas: HTMLCanvasElement): Promise<GPUBacken
 	const device = await adapter.requestDevice();
 	const context = canvas.getContext('webgpu');
 	if (!context) return null;
-	const format = typeof navigator.gpu.getPreferredCanvasFormat === 'function'
-		? navigator.gpu.getPreferredCanvasFormat()
-		: 'bgra8unorm';
-	try {
-		context.configure({ device, format, alphaMode: 'premultiplied' });
-	} catch (error) {
-		console.error('[BrowserBackendFactory] Failed to configure WebGPU canvas context:', error);
-		return null;
-	}
+	const format = navigator.gpu.getPreferredCanvasFormat();
+	context.configure({ device, format, alphaMode: 'premultiplied' });
 	return new WebGPUBackend(device, context);
 }
 

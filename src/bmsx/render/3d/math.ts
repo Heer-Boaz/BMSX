@@ -1,4 +1,5 @@
 import type { vec3, vec3arr, vec4, vec4arr } from '../../rompack/format';
+import { clamp } from '../../common/clamp';
 
 export type Mat4Float32 = Float32Array;
 
@@ -10,6 +11,32 @@ export type Mat4Float32 = Float32Array;
 // Reusable scratch matrices to reduce allocations in compound M4 builders
 const _M4TMP_A = new Float32Array(16);
 const _M4TMP_B = new Float32Array(16);
+const _M3TMP_A = new Float32Array(9);
+
+function invertUpperLeft3Into(out: Float32Array, m: Mat4Float32): boolean {
+	const a00 = m[0], a01 = m[1], a02 = m[2];
+	const a10 = m[4], a11 = m[5], a12 = m[6];
+	const a20 = m[8], a21 = m[9], a22 = m[10];
+	const b01 = a22 * a11 - a12 * a21;
+	const b11 = -a22 * a10 + a12 * a20;
+	const b21 = a21 * a10 - a11 * a20;
+	let det = a00 * b01 + a01 * b11 + a02 * b21;
+	if (!det) {
+		out.fill(0);
+		return false;
+	}
+	det = 1 / det;
+	out[0] = b01 * det;
+	out[1] = (-a22 * a01 + a02 * a21) * det;
+	out[2] = (a12 * a01 - a02 * a11) * det;
+	out[3] = b11 * det;
+	out[4] = (a22 * a00 - a02 * a20) * det;
+	out[5] = (-a12 * a00 + a02 * a10) * det;
+	out[6] = b21 * det;
+	out[7] = (-a21 * a00 + a01 * a20) * det;
+	out[8] = (a11 * a00 - a01 * a10) * det;
+	return true;
+}
 
 export const M4 = {
 	// ----- creation -----
@@ -244,21 +271,12 @@ export const M4 = {
 	},
 	maxScale(m: Mat4Float32): number { const [sx, sy, sz] = M4.extractScale(m); return Math.max(sx, sy, sz) || 1; },
 
-	// Inverse for general affine transform (upper-left 3x3 invertible)
-	invertAffineInto(out: Mat4Float32, m: Mat4Float32): Mat4Float32 {
-		// Invert 3x3
-		const a00 = m[0], a01 = m[1], a02 = m[2];
-		const a10 = m[4], a11 = m[5], a12 = m[6];
-		const a20 = m[8], a21 = m[9], a22 = m[10];
-		const b01 = a22 * a11 - a12 * a21;
-		const b11 = -a22 * a10 + a12 * a20;
-		const b21 = a21 * a10 - a11 * a20;
-		let det = a00 * b01 + a01 * b11 + a02 * b21;
-		if (!det) { out.fill(0); return out; }
-		det = 1 / det;
-		const m00 = b01 * det, m01 = (-a22 * a01 + a02 * a21) * det, m02 = (a12 * a01 - a02 * a11) * det;
-		const m10 = b11 * det, m11 = (a22 * a00 - a02 * a20) * det, m12 = (-a12 * a00 + a02 * a10) * det;
-		const m20 = b21 * det, m21 = (-a21 * a00 + a01 * a20) * det, m22 = (a11 * a00 - a01 * a10) * det;
+		// Inverse for general affine transform (upper-left 3x3 invertible)
+		invertAffineInto(out: Mat4Float32, m: Mat4Float32): Mat4Float32 {
+			if (!invertUpperLeft3Into(_M3TMP_A, m)) { out.fill(0); return out; }
+			const m00 = _M3TMP_A[0], m01 = _M3TMP_A[1], m02 = _M3TMP_A[2];
+			const m10 = _M3TMP_A[3], m11 = _M3TMP_A[4], m12 = _M3TMP_A[5];
+			const m20 = _M3TMP_A[6], m21 = _M3TMP_A[7], m22 = _M3TMP_A[8];
 		out[0] = m00; out[1] = m01; out[2] = m02; out[3] = 0;
 		out[4] = m10; out[5] = m11; out[6] = m12; out[7] = 0;
 		out[8] = m20; out[9] = m21; out[10] = m22; out[11] = 0;
@@ -394,25 +412,14 @@ export const M4 = {
 		outUp[0] = view[1]; outUp[1] = view[5]; outUp[2] = view[9];
 	},
 
-	// 3x3 normal matrix (inverse-transpose)
-	normal3Into(out: Float32Array, model: Mat4Float32): Float32Array {
-		const a00 = model[0], a01 = model[1], a02 = model[2];
-		const a10 = model[4], a11 = model[5], a12 = model[6];
-		const a20 = model[8], a21 = model[9], a22 = model[10];
-		const b01 = a22 * a11 - a12 * a21;
-		const b11 = -a22 * a10 + a12 * a20;
-		const b21 = a21 * a10 - a11 * a20;
-		let det = a00 * b01 + a01 * b11 + a02 * b21;
-		if (!det) { out.fill(0); return out; }
-		det = 1 / det;
-		const m00 = b01 * det, m01 = (-a22 * a01 + a02 * a21) * det, m02 = (a12 * a01 - a02 * a11) * det;
-		const m10 = b11 * det, m11 = (a22 * a00 - a02 * a20) * det, m12 = (-a12 * a00 + a02 * a10) * det;
-		const m20 = b21 * det, m21 = (-a21 * a00 + a01 * a20) * det, m22 = (a11 * a00 - a01 * a10) * det;
-		out[0] = m00; out[1] = m10; out[2] = m20;
-		out[3] = m01; out[4] = m11; out[5] = m21;
-		out[6] = m02; out[7] = m12; out[8] = m22;
-		return out;
-	},
+		// 3x3 normal matrix (inverse-transpose)
+		normal3Into(out: Float32Array, model: Mat4Float32): Float32Array {
+			if (!invertUpperLeft3Into(_M3TMP_A, model)) { out.fill(0); return out; }
+			out[0] = _M3TMP_A[0]; out[1] = _M3TMP_A[3]; out[2] = _M3TMP_A[6];
+			out[3] = _M3TMP_A[1]; out[4] = _M3TMP_A[4]; out[5] = _M3TMP_A[7];
+			out[6] = _M3TMP_A[2]; out[7] = _M3TMP_A[5]; out[8] = _M3TMP_A[8];
+			return out;
+		},
 
 	// Transform helpers
 	transformPoint3(out: Float32Array, m: Mat4Float32, x: number, y: number, z: number): Float32Array {
@@ -742,7 +749,7 @@ export const Q = {
 		if (cos > 0.9995) { // near linear
 			const x = a.x + (bx - a.x) * t; const y = a.y + (by - a.y) * t; const z = a.z + (bz - a.z) * t; const w = a.w + (bw - a.w) * t; return Q.norm({ x, y, z, w });
 		}
-		const theta = Math.acos(Math.min(Math.max(cos, -1), 1));
+			const theta = Math.acos(clamp(cos, -1, 1));
 		const s = Math.sin(theta);
 		const w1 = Math.sin((1 - t) * theta) / s;
 		const w2 = Math.sin(t * theta) / s;

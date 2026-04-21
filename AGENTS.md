@@ -22,7 +22,7 @@
 * To force-rebuild the headless platform, BIOS, and a game rom before running, use:
    ```bash
    npm run headless:forcebuildallrun -- <gameromname> # Example: npm run headless:forcebuildallrun -- pietous
-	# N.B. `--debug` flag is implicit for headless mode and cli mode!
+    # N.B. `--debug` flag is implicit for headless mode and cli mode!
    ```
    This command does a forced debug rebuild of the headless platform, engine BIOS assets, and the specified rompack, then runs it in headless mode.
 * To run an already-built rompack in headless mode (without forcing rebuild), use:

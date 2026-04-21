@@ -38,6 +38,9 @@ export interface MaterialOptions {
 	unlit?: boolean;
 }
 
+const EMPTY_MATERIAL_TEXTURES: MaterialTextures = {};
+const EMPTY_MATERIAL_TEXTURE_UVS: MaterialTextureUVs = {};
+
 export class Material {
 	public textures: MaterialTextures;
 	public gpuTextures: MaterialGPUTextures = {};
@@ -57,8 +60,8 @@ export class Material {
 	public alphaCutoff: number;
 	public doubleSided: boolean;
 	constructor(opts: MaterialOptions = {}) {
-		this.textures = opts.textures ?? {};
-		this.textureUVs = opts.textureUVs ?? {};
+		this.textures = opts.textures ?? EMPTY_MATERIAL_TEXTURES;
+		this.textureUVs = opts.textureUVs ?? EMPTY_MATERIAL_TEXTURE_UVS;
 		this.color = opts.color ?? [1, 1, 1, 1];
 		this.metallicFactor = opts.metallicFactor ?? 1.0;
 		this.roughnessFactor = opts.roughnessFactor ?? 1.0;

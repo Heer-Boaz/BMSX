@@ -36,6 +36,7 @@ const INSTANCE_STRIDE_BYTES = INSTANCE_COLOR_OFFSET_BYTES + 4; // 68 bytes
 const INSTANCE_STRIDE_FLOATS = INSTANCE_STRIDE_BYTES / 4;
 const INSTANCE_STRIDE_NORMAL9 = 9;
 const MAT4_FLOATS = 16;
+const EMPTY_MORPH_BUFFERS: Float32Array[] = [];
 
 type TextureContext = RenderContext & { textures: { [k: string]: unknown } };
 
@@ -287,7 +288,7 @@ function getMeshBuffers(runtime: MeshPassRuntime, m: Mesh): MeshBuffers {
 	if (m.hasSkinning) { buffers.joint = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.joint); gl.bufferData(gl.ARRAY_BUFFER, m.jointIndices!, gl.STATIC_DRAW); backend.accountUpload('vertex', m.jointIndices!.byteLength); buffers.weight = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.weight); gl.bufferData(gl.ARRAY_BUFFER, m.jointWeights!, gl.STATIC_DRAW); backend.accountUpload('vertex', m.jointWeights!.byteLength); }
 	if (m.hasMorphTargets) {
 		// Build morph position texture (up to 4 targets), layout: width=vertexCount, height=targetCount, RGBA32F xyz delta + pad
-		const morphPositions = m.morphPositions ?? [];
+			const morphPositions = m.morphPositions ?? EMPTY_MORPH_BUFFERS;
 		const targetCount = Math.min(morphPositions.length, MAX_MORPH_TARGETS);
 		if (targetCount > 0) {
 			const width = m.vertexCount;
@@ -316,10 +317,7 @@ function getMeshBuffers(runtime: MeshPassRuntime, m: Mesh): MeshBuffers {
 			}
 			const tex = gl.createTexture()!;
 			gl.bindTexture(gl.TEXTURE_2D, tex);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+				GLR.glSetTexture2DParams(gl);
 			// WebGL2: RGBA16F for positions + per-target scale in A
 			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, height, 0, gl.RGBA, gl.HALF_FLOAT, texels);
 			gl.bindTexture(gl.TEXTURE_2D, null);
@@ -329,7 +327,7 @@ function getMeshBuffers(runtime: MeshPassRuntime, m: Mesh): MeshBuffers {
 			buffers.morphCount = targetCount;
 		}
 		// Build morph normal texture (up to 4 targets) if normals present
-		const morphNormals = m.morphNormals ?? [];
+			const morphNormals = m.morphNormals ?? EMPTY_MORPH_BUFFERS;
 		const nCount = Math.min(morphNormals.length, MAX_MORPH_TARGETS);
 		if (nCount > 0) {
 			const width = m.vertexCount;
@@ -368,10 +366,7 @@ function getMeshBuffers(runtime: MeshPassRuntime, m: Mesh): MeshBuffers {
 			}
 			const tex = gl.createTexture()!;
 			gl.bindTexture(gl.TEXTURE_2D, tex);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+				GLR.glSetTexture2DParams(gl);
 			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG16F, width, height, 0, gl.RG, gl.HALF_FLOAT, texels);
 			gl.bindTexture(gl.TEXTURE_2D, null);
 			backend.accountUpload('texture', texels.byteLength);
@@ -776,7 +771,7 @@ function renderInstancedMeshes(runtime: MeshPassRuntime, instancedGroups: Map<st
 	checkWebGLError('mesh.instanced: after uploadJointPalette');
 		for (const { mesh: m, instances } of instancedGroups.values()) {
 			const buffers = getMeshBuffers(runtime, m);
-			const morphWeights = m.morphWeights ?? [];
+				const morphWeights = m.morphWeights;
 			const hasMorph = m.hasMorphTargets && morphWeights.some(w => w !== 0);
 			const sig = getVAOSignature(m, true, hasMorph);
 			checkWebGLError('mesh.instanced: before getVAOSignature');
@@ -811,7 +806,7 @@ function renderInstancedMeshes(runtime: MeshPassRuntime, instancedGroups: Map<st
 			setMeshTextures(runtime, m, buffers, true);
 			checkWebGLError('mesh.instanced: after setMeshTextures');
 			if (hasMorph) {
-				const src = m.morphWeights ?? [];
+					const src = m.morphWeights;
 				morphWeightScratch.fill(0);
 				for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, src.length); i++) morphWeightScratch[i] = src[i] ?? 0;
 				uploadMorphWeights(gl, morphWeightScratch);
@@ -905,7 +900,7 @@ function renderSingleMeshes(runtime: MeshPassRuntime, singles: MeshRenderSubmiss
 	setUseInstancing(gl, false);
 		for (const { mesh: m, matrix, joint_matrices: jointMatrices, morph_weights: morphWeights, receive_shadow: receiveShadow } of singles) {
 			const buffers = getMeshBuffers(runtime, m);
-			const srcWeights = morphWeights ?? m.morphWeights ?? [];
+			const srcWeights = morphWeights ?? m.morphWeights;
 			const hasMorph = m.hasMorphTargets && srcWeights.some(w => w !== 0);
 			const sig = getVAOSignature(m, false, hasMorph);
 			let vao: WebGLVertexArrayObject;

@@ -4,6 +4,43 @@ import { M4 } from '../../3d/math';
 // Global toggle for WebGL error checking. Disable in normal builds for performance.
 export const CATCH_WEBGL_ERROR = false;
 
+function readFramebufferPixels(gl: WebGLRenderingContext, width: number, height: number): Uint8Array {
+	const pixels = new Uint8Array(width * height * 4);
+	gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+	return pixels;
+}
+
+function createPixelCanvas(pixels: Uint8Array, width: number, height: number): HTMLCanvasElement {
+	const canvas = document.createElement('canvas');
+	canvas.width = width;
+	canvas.height = height;
+	const context = canvas.getContext('2d');
+	const clampedPixels = new Uint8ClampedArray(pixels.buffer as ArrayBuffer, pixels.byteOffset, pixels.byteLength);
+	context.putImageData(new ImageData(clampedPixels, width, height), 0, 0);
+	return canvas;
+}
+
+function flipCanvasY(canvas: HTMLCanvasElement, width: number, height: number): void {
+	const context = canvas.getContext('2d');
+	const tempCanvas = document.createElement('canvas');
+	tempCanvas.width = width;
+	tempCanvas.height = height;
+	const tempContext = tempCanvas.getContext('2d');
+	tempContext.putImageData(context.getImageData(0, 0, width, height), 0, 0);
+	context.clearRect(0, 0, width, height);
+	context.save();
+	context.scale(1, -1);
+	context.drawImage(tempCanvas, 0, -height);
+	context.restore();
+}
+
+function downloadCanvasAsPng(canvas: HTMLCanvasElement): void {
+	const a = document.createElement('a');
+	a.download = 'image.png';
+	a.href = canvas.toDataURL();
+	a.click();
+}
+
 export function saveTextureToFile(): void {
 	const view = $.view;
 	const gl = view.nativeCtx as WebGLRenderingContext;
@@ -17,38 +54,9 @@ export function saveTextureToFile(): void {
 	// 2. Read the pixels from the framebuffer into an array
 	const width = view.canvasSize.x;
 	const height = view.canvasSize.y;
-	const pixels = new Uint8Array(width * height * 4);
-	gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-
-	// 3. Create a new canvas and context
-	const canvas = document.createElement('canvas');
-	canvas.width = width;
-	canvas.height = height;
-	const context = canvas.getContext('2d');
-
-	// 4. Put the pixel data into an ImageData object
-	const imageData = new ImageData(new Uint8ClampedArray(pixels), width, height);
-
-	// Draw the image data to the canvas
-	context.putImageData(imageData, 0, 0);
-
-	// 5. Flip the canvas vertically
-	const tempCanvas = document.createElement('canvas');
-	tempCanvas.width = width;
-	tempCanvas.height = height;
-	const tempContext = tempCanvas.getContext('2d');
-	tempContext.putImageData(context.getImageData(0, 0, width, height), 0, 0);
-	context.clearRect(0, 0, width, height);
-	context.save();
-	context.scale(1, -1);
-	context.drawImage(tempCanvas, 0, -height);
-	context.restore();
-
-	// 6. Convert the canvas to a data URL and download it as an image
-	const a = document.createElement('a');
-	a.download = 'image.png';
-	a.href = canvas.toDataURL();
-	a.click();
+	const canvas = createPixelCanvas(readFramebufferPixels(gl, width, height), width, height);
+	flipCanvasY(canvas, width, height);
+	downloadCanvasAsPng(canvas);
 
 	// 7. Unbind the framebuffer to return to default rendering to the screen
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -61,43 +69,19 @@ export function saveFramebufferToFile(): void {
 	// 2. Read the pixels from the framebuffer into an array
 	const width = gl.drawingBufferWidth;
 	const height = gl.drawingBufferHeight;
-	const pixels = new Uint8Array(width * height * 4);
-	gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-
-	// 3. Create a new canvas and context
-	const canvas = document.createElement('canvas');
-	canvas.width = width;
-	canvas.height = height;
-	const context = canvas.getContext('2d');
-
-	// 4. Put the pixel data into an ImageData object and draw it to the canvas
-	const imageData = new ImageData(new Uint8ClampedArray(pixels), width, height);
-	context.putImageData(imageData, 0, 0);
-
-	// Flip the context vertically
-	context.scale(1, -1);
-	context.translate(0, -height);
-
-	// 5. Convert the canvas to a data URL and download it as an image
-	const a = document.createElement('a');
-	a.download = 'image.png';
-	a.href = canvas.toDataURL();
-	a.click();
+	const canvas = createPixelCanvas(readFramebufferPixels(gl, width, height), width, height);
+	flipCanvasY(canvas, width, height);
+	downloadCanvasAsPng(canvas);
 }
 
 export function checkWebGLError(_infoText: string): number {
 	if (!CATCH_WEBGL_ERROR) return 0;
-	try {
-		const gl = $.view.nativeCtx as WebGLRenderingContext;
-		const err = gl.getError();
-		if (err !== gl.NO_ERROR) {
-			// Surface in console during debug but do not throw to avoid breaking the frame
-			console.error(`WebGL error: ${getWebGLErrorString(gl, err)}: ${_infoText}`);
-		}
-		return err;
-	} catch {
-		return 0;
+	const gl = $.view.nativeCtx as WebGLRenderingContext;
+	const err = gl.getError();
+	if (err !== gl.NO_ERROR) {
+		console.error(`WebGL error: ${getWebGLErrorString(gl, err)}: ${_infoText}`);
 	}
+	return err;
 }
 
 export function catchWebGLError(_target: any, propertyKey: string, descriptor: PropertyDescriptor): PropertyDescriptor {
@@ -243,12 +227,13 @@ export function generateDetailedDrawError(
 	// Read the data from the buffers for debugging
 	const bytesPerFloat = Float32Array.BYTES_PER_ELEMENT;
 	const bytesPerUint16 = Uint16Array.BYTES_PER_ELEMENT;
-	const positionBytes = vertexCount * 3 * bytesPerFloat;
+	const vertexVec3Bytes = vertexCount * 3 * bytesPerFloat;
+	const positionBytes = vertexVec3Bytes;
 	const texcoordBytes = vertexCount * 2 * bytesPerFloat;
-	const normalBytes = vertexCount * 3 * bytesPerFloat;
+	const normalBytes = vertexVec3Bytes;
 	const tangentBytes = vertexCount * 4 * bytesPerFloat;
 	const jointBytes = vertexCount * 4 * bytesPerUint16;
-	const morphBytes = vertexCount * 3 * bytesPerFloat;
+	const morphBytes = vertexVec3Bytes;
 	const jointData = getBufferData(jointBuffer3D, gl.UNSIGNED_SHORT, vertexCount * 4);
 	const weightData = getBufferData(weightBuffer3D, gl.FLOAT, vertexCount * 4);
 	const morphPositionData = morphPositionBuffers3D.map(b => b ? getBufferData(b, gl.FLOAT, vertexCount * 3) : undefined);
@@ -316,6 +301,7 @@ export function generateDetailedDrawError(
 	const matColor = material && material.color ? material.color : [1, 1, 1, 1];
 	const metallicFactor = material && material.metallicFactor !== undefined ? material.metallicFactor : 'none';
 	const roughnessFactor = material && material.roughnessFactor !== undefined ? material.roughnessFactor : 'none';
+	const metallicRoughnessTexture = m.gpuTextureMetallicRoughness;
 	const shadowData = m.shadow;
 	const shadowMapTexture = shadowData ? shadowData.map.texture : 'none';
 	const shadowStrength = shadowData ? shadowData.strength : 'none';
@@ -341,7 +327,7 @@ export function generateDetailedDrawError(
 		Max index: ${maxIndex} (must be < ${vertexCount})
 
 		Indices-type: ${vertexType2String(type)} (${typeToByteSize[type]} bytes per index)
-		Vertex Buffer Size: ${bufferSize.vertexBuffer3D} bytes (${vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} expected)
+		Vertex Buffer Size: ${bufferSize.vertexBuffer3D} bytes (${positionBytes} expected)
 		Index Buffer Size: ${bufferSize.indexBuffer3D} bytes (${m.indices!.length * typeToByteSize[type]} expected)
 		Valid indices: ${m.indices!.every((i: number) => i >= 0 && i < vertexCount)}
 		Buffer size correctness checks:
@@ -365,7 +351,7 @@ ${Object.entries(bufferSizeCorrectnessReasons).map(([buffer, result]) => `\t\t${
 		Material Color: ${JSON.stringify(matColor)}, Metallic Factor: ${metallicFactor}, Roughness Factor: ${roughnessFactor}
 		Texture Albedo: ${m.gpuTextureAlbedo ? `'${m.gpuTextureAlbedo}'` : 'none'}
 		Texture Normal: ${m.gpuTextureNormal ? `'${m.gpuTextureNormal}'` : 'none'}
-		Texture MetallicRoughness: ${m.gpuTextureMetallicRoughness ? `'${m.gpuTextureMetallicRoughness}'` : 'none'}
+		Texture MetallicRoughness: ${metallicRoughnessTexture ? `'${metallicRoughnessTexture}'` : 'none'}
 		_________________________________________________________________
 		Has normals: ${m.hasNormals}
 		Has tangents: ${m.hasTangents}
@@ -397,7 +383,7 @@ ${Object.entries(bufferSizeCorrectnessReasons).map(([buffer, result]) => `\t\t${
 		Use Albedo Texture uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), useAlbedoTextureLocation3D)}
 		Has Normal Texture: ${m.gpuTextureNormal ? 'yes' : 'no'}
 		Use Normal Texture uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), useNormalTextureLocation3D)}
-		Has Metallic Roughness Texture: ${m.gpuTextureMetallicRoughness ? 'yes' : 'no'}
+		Has Metallic Roughness Texture: ${metallicRoughnessTexture ? 'yes' : 'no'}
 		Use Metallic Roughness Texture uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), useMetallicRoughnessTextureLocation3D)}
 		Has Shadow Map: ${m.shadow ? 'yes' : 'no'}
 		Use Shadow Map uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), useShadowMapLocation3D)}

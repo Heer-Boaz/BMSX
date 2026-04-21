@@ -71,12 +71,7 @@ export class Camera implements Oriented {
 		this.position = V3.of(eyeX, eyeY, eyeZ);
 		this._view.set(view);
 		this._proj.set(proj);
-		M4.mulInto(this._vp, this._proj, this._view);
-		M4.invertRigidInto(this._invView, this._view);
-		M4.invertInto(this._invProj, this._proj);
-		M4.mulInto(this._invVP, this._invProj, this._invView);
-		extractFrustumPlanesInto(this._planesPacked, this._vp);
-		this._dirty = false;
+		this.updateMatrixCaches();
 	}
 
 	// --- basis zonder direct Euler te gebruiken (exposed for read-only access)
@@ -207,14 +202,8 @@ export class Camera implements Oriented {
 				break;
 		}
 
-		M4.mulInto(this._vp, this._proj, this._view);
-		// Update inverse caches for reprojection
-		M4.invertRigidInto(this._invView, this._view);
-		M4.invertInto(this._invProj, this._proj);
-		M4.mulInto(this._invVP, this._invProj, this._invView);
-		extractFrustumPlanesInto(this._planesPacked, this._vp);
-		this._dirty = false;
-	}
+			this.updateMatrixCaches();
+		}
 
 	get view(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._view; }
 	get projection(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._proj; }
@@ -261,7 +250,7 @@ export class Camera implements Oriented {
 
 		// 1) Yaw/Pitch uit forward vector
 		const newYaw = Math.atan2(f.x, -f.z);
-		const newPitch = Math.asin(Math.max(-1, Math.min(1, f.y)));
+		const newPitch = Math.asin(clamp(f.y, -1, 1));
 
 		const yawUnwrapped = unwrapAngle(this.yaw, newYaw);
 		const pitchClamped = clamp(newPitch, -Camera.MAX_PITCH, Camera.MAX_PITCH);
@@ -284,6 +273,15 @@ export class Camera implements Oriented {
 		const newRoll = Math.atan2(s, dot);
 
 		this.roll = unwrapAngle(this.roll, newRoll);
+	}
+
+	private updateMatrixCaches(): void {
+		M4.mulInto(this._vp, this._proj, this._view);
+		M4.invertRigidInto(this._invView, this._view);
+		M4.invertInto(this._invProj, this._proj);
+		M4.mulInto(this._invVP, this._invProj, this._invView);
+		extractFrustumPlanesInto(this._planesPacked, this._vp);
+		this._dirty = false;
 	}
 }
 

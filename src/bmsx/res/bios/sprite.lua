@@ -117,7 +117,7 @@ function spriteobject:draw()
 	memwrite(
 		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 		sys_vdp_cmd_blit,
-		 13,
+			13,
 		0,
 		sc.image_handle,
 		self.x + offset.x,

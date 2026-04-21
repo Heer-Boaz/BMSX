@@ -20,6 +20,7 @@ import type { ParticleRenderSubmission } from '../shared/submissions';
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
 import { ENGINE_ATLAS_INDEX, ENGINE_ATLAS_TEXTURE_KEY } from '../../rompack/format';
 import { resolveActiveCamera3D } from '../shared/hardware_camera';
+import { clamp } from '../../common/clamp';
 
 const camRight = new Float32Array(3);
 const camUp = new Float32Array(3);
@@ -138,7 +139,7 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 			needsSecondaryAtlas = true;
 		}
 		const mode = (p.ambient_mode ?? particleAmbientModeDefault) | 0;
-		const factor = Math.max(0, Math.min(1, p.ambient_factor ?? particleAmbientFactorDefault));
+			const factor = clamp(p.ambient_factor ?? particleAmbientFactorDefault, 0, 1);
 		const key = mode + ':' + factor.toFixed(2);
 		let arr = batches.get(key);
 		if (!arr) { arr = []; batches.set(key, arr); }
@@ -259,19 +260,13 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 			}
 			const atlasSecondaryTex = gv.textures['_atlas_secondary'];
 			const atlasEngineTex = gv.textures[ENGINE_ATLAS_TEXTURE_KEY];
-			if (!cam) {
-				const state = updateOrthographicParticleState(width, height);
+				const state = cam
+					? updateCameraParticleState(width, height, cam)
+					: updateOrthographicParticleState(width, height);
 				state.atlasPrimaryTex = atlasPrimaryTex;
 				state.atlasSecondaryTex = atlasSecondaryTex;
 				state.atlasEngineTex = atlasEngineTex;
 				registry.setState('particles', state);
-			} else {
-				const state = updateCameraParticleState(width, height, cam);
-				state.atlasPrimaryTex = atlasPrimaryTex;
-				state.atlasSecondaryTex = atlasSecondaryTex;
-				state.atlasEngineTex = atlasEngineTex;
-				registry.setState('particles', state);
-			}
-		},
-	});
-}
+			},
+		});
+	}

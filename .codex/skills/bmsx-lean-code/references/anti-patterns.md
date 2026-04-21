@@ -77,9 +77,9 @@ Avoid:
 
 ```ts
 try {
-	return buildInternalState();
+    return buildInternalState();
 } catch {
-	return null;
+    return null;
 }
 ```
 
@@ -99,18 +99,18 @@ Prefer:
 
 ```ts
 switch (kind) {
-	case 'vertex':
-		...
-		break;
-	case 'index':
-		...
-		break;
-	case 'uniform':
-		...
-		break;
-	case 'texture':
-		...
-		break;
+    case 'vertex':
+        ...
+        break;
+    case 'index':
+        ...
+        break;
+    case 'uniform':
+        ...
+        break;
+    case 'texture':
+        ...
+        break;
 }
 ```
 

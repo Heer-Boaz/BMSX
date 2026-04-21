@@ -1,6 +1,7 @@
 /// <reference types="@webgpu/types" />
 import { color_arr, type TextureSource } from '../../../rompack/format';
 import { BackendCaps, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureFormat, TextureHandle, TextureParams } from '../interfaces';
+import { createSolidRgba8Pixels } from '../solid_pixels';
 
 export type WebGPUPassEncoder = PassEncoder & { encoder: GPURenderPassEncoder };
 
@@ -20,7 +21,7 @@ export class WebGPUBackend implements GPUBackend {
 	private textureBindings: Map<number, GPUTextureView> = new Map();
 	private samplerBindings: Map<number, GPUSampler> = new Map();
 	private bindGroupCache: Map<number, GPUBindGroup> = new Map();
-	private _activePassEncoder: GPURenderPassEncoder = null;
+	private _activePassEncoder: GPURenderPassEncoder | undefined;
 
 	private _context: GPUCanvasContext = null;
 	public get context(): GPUCanvasContext {
@@ -141,14 +142,7 @@ export class WebGPUBackend implements GPUBackend {
 			mipLevelCount: 1,
 			dimension: '2d',
 		});
-		const pixelCount = width * height;
-		const data = new Uint8Array(pixelCount * 4);
-		for (let i = 0; i < pixelCount; i++) {
-			data[i * 4 + 0] = ~~(rgba[0] * 255);
-			data[i * 4 + 1] = ~~(rgba[1] * 255);
-			data[i * 4 + 2] = ~~(rgba[2] * 255);
-			data[i * 4 + 3] = ~~(rgba[3] * 255);
-		}
+			const data = createSolidRgba8Pixels(width, height, rgba);
 		this.device.queue.writeTexture(
 			{ texture },
 			data,
@@ -182,13 +176,12 @@ export class WebGPUBackend implements GPUBackend {
 					{ bytesPerRow: src.width * 4 },
 					{ width: src.width, height: src.height, depthOrArrayLayers: 1 },
 				);
-			} else {
-				const img = src as ImageBitmap;
-				this.device.queue.copyExternalImageToTexture(
-					{ source: img, flipY: false },
-					{ texture, origin: { x: 0, y: 0, z: faceIndex } },
-					{ width: size, height: size }
-				);
+				} else {
+					this.device.queue.copyExternalImageToTexture(
+						{ source: src as ImageBitmap, flipY: false },
+						{ texture, origin: { x: 0, y: 0, z: faceIndex } },
+						{ width: size, height: size }
+					);
 			}
 		});
 
@@ -448,18 +441,21 @@ export class WebGPUBackend implements GPUBackend {
 
 		const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts });
 
-		const pipeline = this.device.createRenderPipeline({
-			label: desc.label,
-			layout: pipelineLayout,
-			vertex: {
-				module: this.device.createShaderModule({ code: desc.vsCode ?? '' }),
-				entryPoint: 'main',
-				// Add buffers if needed
-			},
-			fragment: {
-				module: this.device.createShaderModule({ code: desc.fsCode ?? '' }),
-				entryPoint: 'main',
-				targets: [{ format: 'bgra8unorm' }],
+			if (desc.vsCode === undefined || desc.fsCode === undefined) {
+				throw new Error(`[WebGPUBackend] Pipeline '${desc.label}' requires both vertex and fragment shader code.`);
+			}
+			const pipeline = this.device.createRenderPipeline({
+				label: desc.label,
+				layout: pipelineLayout,
+				vertex: {
+					module: this.device.createShaderModule({ code: desc.vsCode }),
+					entryPoint: 'main',
+					// Add buffers if needed
+				},
+				fragment: {
+					module: this.device.createShaderModule({ code: desc.fsCode }),
+					entryPoint: 'main',
+					targets: [{ format: 'bgra8unorm' }],
 			},
 			primitive: { topology: 'triangle-list' }, // Customize as needed
 			depthStencil: (desc.usesDepth || desc.depthTest) ? {
@@ -491,10 +487,10 @@ export class WebGPUBackend implements GPUBackend {
 		if (!enc) return;
 		enc.setPipeline(pipeline);
 		// Bind group 0 using only entries expected by this pipeline
-		const expectedCount = this.pipelineBindingEntryCount.get(pipelineHandle.id) ?? 0;
-		if (expectedCount === 0) return;
-		const expectList = this.pipelineExpected.get(pipelineHandle.id) ?? [];
-		let bg = this.bindGroupCache.get(pipelineHandle.id);
+			const expectedCount = this.pipelineBindingEntryCount.get(pipelineHandle.id) ?? 0;
+			if (expectedCount === 0) return;
+			const expectList = this.pipelineExpected.get(pipelineHandle.id)!;
+			let bg = this.bindGroupCache.get(pipelineHandle.id);
 		const layout = (pipeline as GPURenderPipeline).getBindGroupLayout(0);
 			if (!bg) {
 				const entries: GPUBindGroupEntry[] = [];
@@ -560,9 +556,9 @@ export class WebGPUBackend implements GPUBackend {
 		const view = texture.createView();
 		const mag = samplerDesc && samplerDesc.mag === 'linear' ? 'linear' : 'nearest';
 		const min = samplerDesc && samplerDesc.min === 'linear' ? 'linear' : 'nearest';
-		const address = (wrap: 'clamp' | 'repeat'): GPUAddressMode => wrap === 'repeat' ? 'repeat' : 'clamp-to-edge';
-		const wrapS = samplerDesc ? samplerDesc.wrapS : undefined;
-		const wrapT = samplerDesc ? samplerDesc.wrapT : undefined;
+		const address = (wrap?: 'clamp' | 'repeat'): GPUAddressMode => wrap === 'repeat' ? 'repeat' : 'clamp-to-edge';
+		const wrapS = samplerDesc?.wrapS;
+		const wrapT = samplerDesc?.wrapT;
 		const sampler = this.device.createSampler({ magFilter: mag, minFilter: min, addressModeU: address(wrapS), addressModeV: address(wrapT) });
 		this.textureBindings.set(texBinding, view);
 		this.samplerBindings.set(samplerBinding, sampler);
@@ -570,7 +566,7 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	// Optional hook for RenderGraphRuntime to provide the active GPURenderPassEncoder
-	setActivePassEncoder(pass: (WebGPUPassEncoder)): void {
-		this._activePassEncoder = pass ? pass.encoder : null;
+	setActivePassEncoder(pass: WebGPUPassEncoder | null): void {
+		this._activePassEncoder = pass?.encoder;
 	}
 }

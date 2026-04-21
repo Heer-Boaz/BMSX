@@ -5,7 +5,7 @@ import { RenderPassLibrary } from '../backend/pass_library';
 import type { color } from '../shared/submissions';
 import { M4 } from './math';
 import { WebGLBackend } from '../backend/webgl/backend';
-import { clamp } from '../../common/clamp';;
+import { clamp } from '../../common/clamp';
 import { resolveActiveCamera3D } from '../shared/hardware_camera';
 
 let vao: WebGLVertexArrayObject = null;
@@ -129,32 +129,29 @@ export function registerAxisGizmoPass_WebGL(registry: RenderPassLibrary): void {
 			gl.uniform2f(uOffsetLoc, offset2X, offset2Y);
 			gl.drawArrays(gl.LINES, 0, 6);
 
-			// Label endpoints using the 2D glyph system (drawn in Sprites pass)
-			// w,h already computed above
-			const toPixel = (ndc: { x: number; y: number }) => ({
-				x: (ndc.x + 1) * 0.5 * w,
-				y: (1 - ndc.y) * 0.5 * h,
-			});
-			const originNDC = { x: offsetX, y: offsetY };
-			const endpointNDC = (vx: number, vy: number, ox = offsetX, oy = offsetY) => ({ x: ox + (vx / aspect) * size, y: oy + vy * size });
-			const drawLetter = (px: number, py: number, letter: string, col: color, scale: number) => {
-				const font = gv.default_font;
-				const imgid = font.char_to_img(letter);
-				$.view.renderer.submit.sprite({ imgid, pos: { x: Math.round(px), y: Math.round(py), z: 999 }, scale: { x: scale, y: scale }, flip: { flip_h: false, flip_v: false }, colorize: col, layer: 'ui' });
-			};
-			const placeLabel = (vx: number, vy: number, letter: string, col: color, scale: number) => {
-				const a = originNDC; const b = endpointNDC(vx, vy, originNDC.x, originNDC.y);
-				const pa = toPixel(a); const pb = toPixel(b);
-				let dx = pb.x - pa.x, dy = pb.y - pa.y;
-				const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
-				const pad = 8; // pixels past tip (slightly tighter)
-				let lx = pb.x + dx * pad; let ly = pb.y + dy * pad;
-				// Clamp labels to screen bounds with a small inset to avoid clipping
-				const inset = 6;
-				const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
-				lx = clamp(lx, inset, w - inset);
-				ly = clamp(ly, inset, h - inset);
-				drawLetter(lx, ly, letter, col, scale);
+				const toPixelX = (x: number) => (x + 1) * 0.5 * w;
+				const toPixelY = (y: number) => (1 - y) * 0.5 * h;
+				const drawLetter = (px: number, py: number, letter: string, col: color, scale: number) => {
+					const font = gv.default_font;
+					const imgid = font.char_to_img(letter);
+					$.view.renderer.submit.sprite({ imgid, pos: { x: Math.round(px), y: Math.round(py), z: 999 }, scale: { x: scale, y: scale }, flip: { flip_h: false, flip_v: false }, colorize: col, layer: 'ui' });
+				};
+				const placeLabel = (originX: number, originY: number, vx: number, vy: number, letter: string, col: color, scale: number) => {
+					const tipX = originX + (vx / aspect) * size;
+					const tipY = originY + vy * size;
+					const originPixelX = toPixelX(originX);
+					const originPixelY = toPixelY(originY);
+					const tipPixelX = toPixelX(tipX);
+					const tipPixelY = toPixelY(tipY);
+					let dx = tipPixelX - originPixelX, dy = tipPixelY - originPixelY;
+					const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
+					const pad = 8; // pixels past tip (slightly tighter)
+					let lx = tipPixelX + dx * pad; let ly = tipPixelY + dy * pad;
+					// Clamp labels to screen bounds with a small inset to avoid clipping
+					const inset = 6;
+					lx = clamp(lx, inset, w - inset);
+					ly = clamp(ly, inset, h - inset);
+					drawLetter(lx, ly, letter, col, scale);
 			};
 			// Use first two rows of view's rotation columns for 2D projection (same as shader)
 			// Subtle depth cue: scale letters based on whether that world axis points toward camera
@@ -163,33 +160,19 @@ export function registerAxisGizmoPass_WebGL(registry: RenderPassLibrary): void {
 			const scaleFor = (d: number) => {
 				// clamp d to [-1, 1] then map linearly to [0.5, 1.0]:
 				// scale = 0.75 + 0.25 * d  -> d=-1 => 0.5, d=1 => 1.0
-				const cd = clamp(d, -1, 1);
-				return 0.70 + 0.30 * cd;
-			};
-			placeLabel(view[0], view[1], 'X', { r: 1, g: 0, b: 0, a: 1 }, scaleFor(fwd.x));
-			placeLabel(view[4], view[5], 'Y', { r: 0, g: 1, b: 0, a: 1 }, scaleFor(fwd.y));
-			placeLabel(view[8], view[9], 'Z', { r: 0, g: 0, b: 1, a: 1 }, scaleFor(fwd.z));
+					const cd = clamp(d, -1, 1);
+					return 0.70 + 0.30 * cd;
+				};
+				placeLabel(offsetX, offsetY, view[0], view[1], 'X', { r: 1, g: 0, b: 0, a: 1 }, scaleFor(fwd.x));
+				placeLabel(offsetX, offsetY, view[4], view[5], 'Y', { r: 0, g: 1, b: 0, a: 1 }, scaleFor(fwd.y));
+				placeLabel(offsetX, offsetY, view[8], view[9], 'Z', { r: 0, g: 0, b: 1, a: 1 }, scaleFor(fwd.z));
 
-			// Camera axes labels (R, U, F) at the second gizmo origin
-			const origin2NDC = { x: offset2X, y: offset2Y };
-			const placeLabel2 = (vx: number, vy: number, letter: string, col: color, scale: number) => {
-				const a = origin2NDC; const b = endpointNDC(vx, vy, origin2NDC.x, origin2NDC.y);
-				const pa = toPixel(a); const pb = toPixel(b);
-				let dx = pb.x - pa.x, dy = pb.y - pa.y;
-				const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
-				const pad = 8;
-				let lx = pb.x + dx * pad; let ly = pb.y + dy * pad;
-				const inset = 6;
-				const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
-				lx = clamp(lx, inset, w - inset);
-				ly = clamp(ly, inset, h - inset);
-				drawLetter(lx, ly, letter, col, scale);
-			};
-			// invRot columns after flip: [right, up, forward]
-			const fwd2 = { x: invRot[8], y: invRot[9], z: invRot[10] };
-			placeLabel2(invRot[0], invRot[1], 'R', { r: 1, g: 0.5, b: 0.5, a: 1 }, scaleFor(fwd2.x));
-			placeLabel2(invRot[4], invRot[5], 'U', { r: 0.5, g: 1, b: 0.5, a: 1 }, scaleFor(fwd2.y));
-			placeLabel2(invRot[8], invRot[9], 'F', { r: 0.5, g: 0.5, b: 1, a: 1 }, scaleFor(fwd2.z));
+				// Camera axes labels (R, U, F) at the second gizmo origin
+				// invRot columns after flip: [right, up, forward]
+				const fwd2 = { x: invRot[8], y: invRot[9], z: invRot[10] };
+				placeLabel(offset2X, offset2Y, invRot[0], invRot[1], 'R', { r: 1, g: 0.5, b: 0.5, a: 1 }, scaleFor(fwd2.x));
+				placeLabel(offset2X, offset2Y, invRot[4], invRot[5], 'U', { r: 0.5, g: 1, b: 0.5, a: 1 }, scaleFor(fwd2.y));
+				placeLabel(offset2X, offset2Y, invRot[8], invRot[9], 'F', { r: 0.5, g: 0.5, b: 1, a: 1 }, scaleFor(fwd2.z));
 
 			// Restore state
 			if (prevCull) gl.enable(gl.CULL_FACE); else gl.disable(gl.CULL_FACE);
