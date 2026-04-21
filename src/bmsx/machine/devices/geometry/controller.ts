@@ -87,9 +87,9 @@ type GeoJob = {
 	stride1: number;
 	stride2: number;
 	processed: number;
-	resultCount?: number;
-	exactPairCount?: number;
-	broadphasePairCount?: number;
+	resultCount: number;
+	exactPairCount: number;
+	broadphasePairCount: number;
 };
 
 const GEO_RECORD_INDEX_NONE = 0xffff;
@@ -301,6 +301,9 @@ export class GeometryController {
 			stride1: this.memory.readIoU32(IO_GEO_STRIDE1),
 			stride2: this.memory.readIoU32(IO_GEO_STRIDE2),
 			processed: 0,
+			resultCount: 0,
+			exactPairCount: 0,
+			broadphasePairCount: 0,
 		};
 		switch (job.cmd) {
 			case IO_CMD_GEO_XFORM2_BATCH:
@@ -326,9 +329,6 @@ export class GeometryController {
 		this.memory.writeValue(IO_GEO_PROCESSED, 0);
 		this.memory.writeValue(IO_GEO_FAULT, 0);
 		if (job.cmd === IO_CMD_GEO_OVERLAP2D_PASS) {
-			job.resultCount = 0;
-			job.exactPairCount = 0;
-			job.broadphasePairCount = 0;
 			this.writeOverlap2dSummary(job, 0);
 		}
 		if (job.count === 0) {
@@ -582,7 +582,7 @@ export class GeometryController {
 		if ((maskA & layerB) === 0 || (maskB & layerA) === 0) {
 			return true;
 		}
-		job.broadphasePairCount = (job.broadphasePairCount ?? 0) + 1;
+		job.broadphasePairCount += 1;
 		if (!this.readPieceBounds(shapeAAddr, txA, tyA, this.overlapBoundsA)
 			|| !this.readPieceBounds(shapeBAddr, txB, tyB, this.overlapBoundsB)) {
 			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
@@ -607,7 +607,7 @@ export class GeometryController {
 			this.finishError(GEO_FAULT_DESCRIPTOR_KIND, recordIndex);
 			return false;
 		}
-		job.exactPairCount = (job.exactPairCount ?? 0) + 1;
+		job.exactPairCount += 1;
 		let bestHit = false;
 		let bestDepth = Number.POSITIVE_INFINITY;
 		let bestPieceA = 0;
@@ -670,7 +670,7 @@ export class GeometryController {
 		if (!bestHit) {
 			return true;
 		}
-		const resultCount = job.resultCount ?? 0;
+		const resultCount = job.resultCount;
 		if (resultCount >= job.param1) {
 			this.writeOverlap2dSummary(job, GEO_OVERLAP2D_SUMMARY_FLAG_OVERFLOW);
 			this.finishError(GEO_FAULT_RESULT_CAPACITY, recordIndex);
@@ -1206,9 +1206,9 @@ export class GeometryController {
 	}
 
 	private writeOverlap2dSummary(job: GeoJob, flags: number): void {
-		this.memory.writeU32(job.dst1 + 0, (job.resultCount ?? 0) >>> 0);
-		this.memory.writeU32(job.dst1 + 4, (job.exactPairCount ?? 0) >>> 0);
-		this.memory.writeU32(job.dst1 + 8, (job.broadphasePairCount ?? 0) >>> 0);
+		this.memory.writeU32(job.dst1 + 0, job.resultCount >>> 0);
+		this.memory.writeU32(job.dst1 + 4, job.exactPairCount >>> 0);
+		this.memory.writeU32(job.dst1 + 8, job.broadphasePairCount >>> 0);
 		this.memory.writeU32(job.dst1 + 12, flags >>> 0);
 	}
 

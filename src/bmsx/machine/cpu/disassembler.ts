@@ -72,7 +72,7 @@ const normalizeOptions = (options: DisassemblyOptions): ResolvedOptions => {
 	const assembly = formatStyle === 'assembly';
 	const showPc = options.showPc ?? !assembly;
 	const pcRadix = options.pcRadix ?? (assembly ? 16 : 10);
-	const pcPrefix = options.pcPrefix ?? (assembly ? '' : '');
+	const pcPrefix = options.pcPrefix === undefined ? '' : options.pcPrefix;
 	const pcSuffix = options.pcSuffix ?? (assembly ? 'h' : '');
 	const protoAddressOp = options.protoAddressOp ?? (assembly ? '.ORG' : undefined);
 	return {

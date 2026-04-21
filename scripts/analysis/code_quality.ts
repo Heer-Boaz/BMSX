@@ -183,10 +183,8 @@ const NUMERIC_SANITIZATION_PATH_SEGMENTS = [
 	'/src/bmsx/render/',
 ] as const;
 
-const HOT_ALLOCATION_FALLBACK_PATH_SEGMENTS = [
-	'/src/bmsx/machine/cpu/',
-	'/src/bmsx/machine/devices/geometry/',
-	'/src/bmsx/machine/devices/vdp/',
+const ALLOCATION_FALLBACK_PATH_SEGMENTS = [
+	'/src/bmsx/machine/',
 ] as const;
 
 const REQUIRED_STATE_ROOTS = new Set([
@@ -1079,6 +1077,14 @@ function isConditionalNullishNormalization(node: ts.ConditionalExpression): bool
 	}
 	const truthyGuard = truthyGuardFingerprint(node.condition);
 	return truthyGuard !== null && expressionUsesGuardedValue(valueExpression, truthyGuard);
+}
+
+function compactExpressionText(node: ts.Expression, sourceFile: ts.SourceFile): string {
+	return node.getText(sourceFile).replace(/\s+/g, ' ').trim();
+}
+
+function isRedundantConditionalExpression(node: ts.ConditionalExpression, sourceFile: ts.SourceFile): boolean {
+	return compactExpressionText(node.whenTrue, sourceFile) === compactExpressionText(node.whenFalse, sourceFile);
 }
 
 function nullishReturnKind(statement: ts.Statement): NullishLiteralKind | null {
@@ -2091,10 +2097,10 @@ function isAllocationExpression(node: ts.Expression): boolean {
 		|| ts.isNewExpression(unwrapped);
 }
 
-function isHotAllocationFallbackPath(fileName: string): boolean {
+function isAllocationFallbackPath(fileName: string): boolean {
 	const normalized = normalizePathForAnalysis(fileName);
-	for (let index = 0; index < HOT_ALLOCATION_FALLBACK_PATH_SEGMENTS.length; index += 1) {
-		if (normalized.includes(HOT_ALLOCATION_FALLBACK_PATH_SEGMENTS[index])) {
+	for (let index = 0; index < ALLOCATION_FALLBACK_PATH_SEGMENTS.length; index += 1) {
+		if (normalized.includes(ALLOCATION_FALLBACK_PATH_SEGMENTS[index])) {
 			return true;
 		}
 	}
@@ -2821,6 +2827,82 @@ function isExplicitNonJsTruthinessPair(node: ts.BinaryExpression): boolean {
 	return pairOperatorKind === ts.SyntaxKind.AmpersandAmpersandToken;
 }
 
+function isNumericLiteralText(node: ts.Expression, value: string): boolean {
+	const unwrapped = unwrapExpression(node);
+	return ts.isNumericLiteral(unwrapped) && unwrapped.text === value;
+}
+
+function nullishZeroOperandFingerprint(node: ts.Expression): string | null {
+	const unwrapped = unwrapExpression(node);
+	if (!ts.isBinaryExpression(unwrapped) || unwrapped.operatorToken.kind !== ts.SyntaxKind.QuestionQuestionToken) {
+		return null;
+	}
+	if (!isNumericLiteralText(unwrapped.right, '0')) {
+		return null;
+	}
+	return expressionAccessFingerprint(unwrapped.left);
+}
+
+function isNullishCounterIncrement(node: ts.BinaryExpression): boolean {
+	if (node.operatorToken.kind !== ts.SyntaxKind.EqualsToken) {
+		return false;
+	}
+	const target = expressionAccessFingerprint(node.left);
+	if (target === null) {
+		return false;
+	}
+	const rhs = unwrapExpression(node.right);
+	if (!ts.isBinaryExpression(rhs) || rhs.operatorToken.kind !== ts.SyntaxKind.PlusToken) {
+		return false;
+	}
+	const leftCounter = nullishZeroOperandFingerprint(rhs.left);
+	const rightCounter = nullishZeroOperandFingerprint(rhs.right);
+	return (leftCounter === target && isNumericLiteralText(rhs.right, '1'))
+		|| (rightCounter === target && isNumericLiteralText(rhs.left, '1'));
+}
+
+function nullishFallbackLedgerKind(node: ts.BinaryExpression): string {
+	if (isAllocationExpression(node.right)) {
+		return 'allocation';
+	}
+	if (isEmptyContainerLiteral(node.right)) {
+		return 'empty_container';
+	}
+	if (isEmptyStringLiteral(unwrapExpression(node.right))) {
+		return 'empty_string';
+	}
+	if (isNullOrUndefined(node.right)) {
+		return 'nullish';
+	}
+	const root = expressionRootName(node.left);
+	if (root === 'options' || root === 'opts' || root === 'params') {
+		return 'option_default';
+	}
+	if (root === 'manifest' || root === 'specs' || root === 'layout' || root === 'memorySpecs' || root === 'engineMemorySpecs') {
+		return 'data_default';
+	}
+	if (root === 'metadata' || root === 'engineMetadata' || root === 'cartMetadata' || root === 'runtime') {
+		return 'metadata_default';
+	}
+	const right = unwrapExpression(node.right);
+	if (ts.isIdentifier(right) && right.text.startsWith('EMPTY_')) {
+		return 'shared_empty';
+	}
+	if (ts.isCallExpression(right)) {
+		return 'lazy_call';
+	}
+	if (ts.isNumericLiteral(right)) {
+		return 'numeric_literal';
+	}
+	if (ts.isStringLiteral(right)) {
+		return 'string_literal';
+	}
+	if (right.kind === ts.SyntaxKind.TrueKeyword || right.kind === ts.SyntaxKind.FalseKeyword) {
+		return 'boolean_literal';
+	}
+	return 'other';
+}
+
 function lintBinaryExpressionForCodeQuality(
 	node: ts.BinaryExpression,
 	sourceFile: ts.SourceFile,
@@ -2829,6 +2911,7 @@ function lintBinaryExpressionForCodeQuality(
 	void {
 	if (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
 		noteQualityLedger(ledger, 'nullish_fallback_checked');
+		noteQualityLedger(ledger, `nullish_fallback_${nullishFallbackLedgerKind(node)}`);
 		if (isNullOrUndefined(node.right)) {
 			pushLintIssue(
 				issues,
@@ -2856,7 +2939,7 @@ function lintBinaryExpressionForCodeQuality(
 				'Empty-string fallback via `??` is forbidden. Do not use empty strings as default values.',
 			);
 		}
-		if (isHotAllocationFallbackPath(sourceFile.fileName) && isAllocationExpression(node.right)) {
+		if (isAllocationFallbackPath(sourceFile.fileName) && isAllocationExpression(node.right)) {
 			if (isInsideConstructor(node)) {
 				noteQualityLedger(ledger, 'allowed_allocation_fallback_constructor_default');
 			} else {
@@ -2865,10 +2948,19 @@ function lintBinaryExpressionForCodeQuality(
 					sourceFile,
 					node.operatorToken,
 					'allocation_fallback_pattern',
-					'Allocation fallback via `??` is forbidden in machine hot paths. Require the scratch/output object at the call boundary.',
+					'Allocation fallback via `??` is forbidden in machine runtime code. Use shared defaults, explicit branches, or require ownership at the call boundary.',
 				);
 			}
 		}
+	}
+	if (isNullishCounterIncrement(node)) {
+		pushLintIssue(
+			issues,
+			sourceFile,
+			node.operatorToken,
+			'nullish_counter_increment_pattern',
+			'Counter increment through `?? 0` is forbidden. Initialize the counter at the owner boundary and increment directly.',
+		);
 	}
 	if (isTypeofFunctionComparison(node)) {
 		if (isKnownTypeofFunctionBoundary(node, sourceFile)) {
@@ -3954,6 +4046,15 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 				node,
 				'nullish_null_normalization_pattern',
 				'Conditional null/undefined normalization is forbidden. Preserve the actual value or branch explicitly.',
+			);
+		}
+		if (ts.isConditionalExpression(node) && isRedundantConditionalExpression(node, sourceFile)) {
+			pushLintIssue(
+				issues,
+				sourceFile,
+				node,
+				'redundant_conditional_pattern',
+				'Conditional expression has identical true/false branches. Keep the value directly.',
 			);
 		}
 		if (ts.isCallExpression(node)) {

@@ -735,7 +735,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 	const nilConst: ConstValue = { value: null, constIndex: context.constIndex(null) };
 	const trueConst: ConstValue = { value: true, constIndex: context.constIndex(true) };
 	const falseConst: ConstValue = { value: false, constIndex: context.constIndex(false) };
-	let changed = false;
 
 	const invalidateCopiesUsing = (copies: Map<number, number>, register: number): void => {
 		let updated = true;
@@ -829,12 +828,10 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const resolved = resolveCopy(instruction.b, copies);
 					if (resolved !== instruction.b) {
 						instruction.b = resolved;
-						changed = true;
 					}
 					const constant = constants.get(instruction.b);
 					if (constant && isConstPoolValue(constant.value) && !isStringValue(constant.value)) {
 						replaceWithConst(instruction, instruction.a, constant.value, context);
-						changed = true;
 					}
 					break;
 				}
@@ -842,12 +839,10 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const nextB = resolveCopy(instruction.b, copies);
 					if (nextB !== instruction.b) {
 						instruction.b = nextB;
-						changed = true;
 					}
 					const nextC = rewriteRkOperand(instruction, instruction.c, RK_C, constants, copies);
 					if (nextC !== instruction.c) {
 						instruction.c = nextC;
-						changed = true;
 					}
 					break;
 				}
@@ -857,7 +852,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const nextB = resolveCopy(instruction.b, copies);
 					if (nextB !== instruction.b) {
 						instruction.b = nextB;
-						changed = true;
 					}
 					break;
 				}
@@ -865,17 +859,14 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const nextA = resolveCopy(instruction.a, copies);
 					if (nextA !== instruction.a) {
 						instruction.a = nextA;
-						changed = true;
 					}
 					const nextB = rewriteRkOperand(instruction, instruction.b, RK_B, constants, copies);
 					if (nextB !== instruction.b) {
 						instruction.b = nextB;
-						changed = true;
 					}
 					const nextC = rewriteRkOperand(instruction, instruction.c, RK_C, constants, copies);
 					if (nextC !== instruction.c) {
 						instruction.c = nextC;
-						changed = true;
 					}
 					break;
 				}
@@ -884,12 +875,10 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const nextA = resolveCopy(instruction.a, copies);
 					if (nextA !== instruction.a) {
 						instruction.a = nextA;
-						changed = true;
 					}
 					const nextC = rewriteRkOperand(instruction, instruction.c, RK_C, constants, copies);
 					if (nextC !== instruction.c) {
 						instruction.c = nextC;
-						changed = true;
 					}
 					break;
 				}
@@ -912,12 +901,10 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const nextB = rewriteRkOperand(instruction, instruction.b, RK_B, constants, copies);
 					if (nextB !== instruction.b) {
 						instruction.b = nextB;
-						changed = true;
 					}
 					const nextC = rewriteRkOperand(instruction, instruction.c, RK_C, constants, copies);
 					if (nextC !== instruction.c) {
 						instruction.c = nextC;
-						changed = true;
 					}
 					break;
 				}
@@ -928,7 +915,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const nextB = resolveCopy(instruction.b, copies);
 					if (nextB !== instruction.b) {
 						instruction.b = nextB;
-						changed = true;
 					}
 					break;
 				}
@@ -938,7 +924,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const nextA = resolveCopy(instruction.a, copies);
 					if (nextA !== instruction.a) {
 						instruction.a = nextA;
-						changed = true;
 					}
 					break;
 				}
@@ -947,7 +932,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const nextA = resolveCopy(instruction.a, copies);
 					if (nextA !== instruction.a) {
 						instruction.a = nextA;
-						changed = true;
 					}
 					break;
 				}
@@ -955,7 +939,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const nextB = resolveCopy(instruction.b, copies);
 					if (nextB !== instruction.b) {
 						instruction.b = nextB;
-						changed = true;
 					}
 					break;
 				}
@@ -967,13 +950,11 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const nextA = resolveCopy(instruction.a, copies);
 					if (nextA !== instruction.a) {
 						instruction.a = nextA;
-						changed = true;
 					}
 					if (instruction.op === OpCode.STORE_MEM) {
 						const nextB = rewriteRkOperand(instruction, instruction.b, RK_B, constants, copies);
 						if (nextB !== instruction.b) {
 							instruction.b = nextB;
-							changed = true;
 						}
 					}
 					break;
@@ -982,7 +963,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const nextB = rewriteRkOperand(instruction, instruction.b, RK_B, constants, copies);
 					if (nextB !== instruction.b) {
 						instruction.b = nextB;
-						changed = true;
 					}
 					break;
 				}
@@ -990,7 +970,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const nextB = rewriteRkOperand(instruction, instruction.b, RK_B, constants, copies);
 					if (nextB !== instruction.b) {
 						instruction.b = nextB;
-						changed = true;
 					}
 					break;
 				}
@@ -1114,7 +1093,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 		}
 	}
 
-	return changed ? set : set;
+	return set;
 };
 
 const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext): InstructionSet => {

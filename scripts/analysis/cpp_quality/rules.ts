@@ -1465,6 +1465,9 @@ function lintTernaryFallback(file: string, tokens: readonly CppToken[], question
 	const condition = trimmedCppExpressionText(tokens, statementStart, questionIndex);
 	const trueBranch = trimmedCppExpressionText(tokens, questionIndex + 1, colonIndex);
 	const falseBranch = trimmedCppExpressionText(tokens, colonIndex + 1, statementEnd);
+	if (trueBranch === falseBranch) {
+		pushLintIssue(issues, file, tokens[questionIndex], 'redundant_conditional_pattern', 'Conditional expression has identical true/false branches. Keep the value directly.');
+	}
 	const trueHasEmpty = cppRangeHas(tokens, questionIndex + 1, colonIndex, isCppEmptyStringToken);
 	const falseHasEmpty = cppRangeHas(tokens, colonIndex + 1, statementEnd, isCppEmptyStringToken);
 	if ((condition === trueBranch && falseHasEmpty) || (condition === falseBranch && trueHasEmpty)) {

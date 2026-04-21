@@ -1,7 +1,6 @@
 import { $ } from '../../core/engine';
 import { taskGate } from '../../core/taskgate';
 import { Input } from '../../input/manager';
-import type { InputMap } from '../../input/models';
 import type { LuaDefinitionInfo } from '../../lua/syntax/ast';
 import type { LuaEnvironment } from '../../lua/environment';
 import { LuaRuntimeError } from '../../lua/errors';
@@ -329,11 +328,15 @@ export class Runtime {
 			allowedPayloadIds: overlayLayer ? ['overlay', 'cart'] : ['cart'],
 		});
 
-		const inputMappingPerPlayer = cartLayer.index.input ?? { 1: { keyboard: null, gamepad: null, pointer: null } as InputMap };
-		for (const playerIndexStr of Object.keys(inputMappingPerPlayer)) {
-			const mappedIndex = parseInt(playerIndexStr, 10);
-			const inputMapping = inputMappingPerPlayer[mappedIndex];
-			$.set_inputmap(mappedIndex, inputMapping);
+		const inputMappingPerPlayer = cartLayer.index.input;
+		if (inputMappingPerPlayer) {
+			for (const playerIndexStr of Object.keys(inputMappingPerPlayer)) {
+				const mappedIndex = parseInt(playerIndexStr, 10);
+				const inputMapping = inputMappingPerPlayer[mappedIndex];
+				$.set_inputmap(mappedIndex, inputMapping);
+			}
+		} else {
+			$.set_inputmap(1, Input.DEFAULT_INPUT_MAPPING);
 		}
 
 		await applyWorkspaceOverridesToCart({ cart: cartLuaSources, storage: $.platform.storage, includeServer: true });
