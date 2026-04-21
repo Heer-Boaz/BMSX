@@ -375,6 +375,14 @@ const updateSccpValue = (
 	return true;
 };
 
+const requireSccpConstValue = (valueConst: Array<ConstValue | null>, slot: UseSlot): ConstValue => {
+	const constVal = valueConst[slot.valueId];
+	if (!constVal) {
+		throw new Error('[ProgramOptimizer] Missing SCCP constant.');
+	}
+	return constVal;
+};
+
 const getSccpOperand = (
 	instruction: Instruction,
 	field: 'b' | 'c',
@@ -397,11 +405,7 @@ const getSccpOperand = (
 	}
 	const kind = valueKind[slot.valueId];
 	if (kind === SCCP_CONST) {
-		const constVal = valueConst[slot.valueId];
-		if (!constVal) {
-			throw new Error('[ProgramOptimizer] Missing SCCP constant.');
-		}
-		return { kind, constVal };
+		return { kind, constVal: requireSccpConstValue(valueConst, slot) };
 	}
 	return { kind, constVal: null };
 };
@@ -634,6 +638,7 @@ const runSccp = (
 					changed = true;
 				}
 			};
+			const lastUses = instrUses[lastIndex] ?? [];
 
 			switch (last.op) {
 				case OpCode.RET:
@@ -643,68 +648,56 @@ const runSccp = (
 					break;
 				case OpCode.JMPIF:
 				case OpCode.JMPIFNOT: {
-					const uses = instrUses[lastIndex] ?? [];
-					const slot = uses.find(entry => entry.field === 'a');
+					const slot = lastUses.find(entry => entry.field === 'a');
 					if (!slot) {
 						throw new Error('[ProgramOptimizer] Missing JMPIF operand.');
 					}
 					const kind = valueKind[slot.valueId];
 					if (kind === SCCP_CONST) {
-						const constVal = valueConst[slot.valueId];
-						if (!constVal) {
-							throw new Error('[ProgramOptimizer] Missing SCCP constant.');
-						}
-							const truthy = isTruthy(constVal.value);
-							const takeJump = last.op === OpCode.JMPIF ? truthy : !truthy;
-							if (takeJump) {
-								markReachable(jumpBlock);
-							} else {
-								markReachable(nextBlock);
-							}
+						const constVal = requireSccpConstValue(valueConst, slot);
+						const truthy = isTruthy(constVal.value);
+						const takeJump = last.op === OpCode.JMPIF ? truthy : !truthy;
+						if (takeJump) {
+							markReachable(jumpBlock);
 						} else {
 							markReachable(nextBlock);
-							markReachable(jumpBlock);
 						}
+					} else {
+						markReachable(nextBlock);
+						markReachable(jumpBlock);
+					}
 					break;
 				}
 				case OpCode.BR_TRUE:
 				case OpCode.BR_FALSE: {
-					const uses = instrUses[lastIndex] ?? [];
-					const slot = uses.find(entry => entry.field === 'a');
+					const slot = lastUses.find(entry => entry.field === 'a');
 					if (!slot) {
 						throw new Error('[ProgramOptimizer] Missing BR operand.');
 					}
 					const kind = valueKind[slot.valueId];
 					if (kind === SCCP_CONST) {
-						const constVal = valueConst[slot.valueId];
-						if (!constVal) {
-							throw new Error('[ProgramOptimizer] Missing SCCP constant.');
-						}
-							const truthy = isTruthy(constVal.value);
-							const takeJump = last.op === OpCode.BR_TRUE ? truthy : !truthy;
-							if (takeJump) {
-								markReachable(jumpBlock);
-							} else {
-								markReachable(nextBlock);
-							}
+						const constVal = requireSccpConstValue(valueConst, slot);
+						const truthy = isTruthy(constVal.value);
+						const takeJump = last.op === OpCode.BR_TRUE ? truthy : !truthy;
+						if (takeJump) {
+							markReachable(jumpBlock);
 						} else {
 							markReachable(nextBlock);
-							markReachable(jumpBlock);
 						}
+					} else {
+						markReachable(nextBlock);
+						markReachable(jumpBlock);
+					}
 					break;
 				}
 				case OpCode.TEST: {
-					const uses = instrUses[lastIndex] ?? [];
-					const slot = uses.find(entry => entry.field === 'a');
+					const slot = lastUses.find(entry => entry.field === 'a');
 					if (!slot) {
 						throw new Error('[ProgramOptimizer] Missing TEST operand.');
 					}
 					const kind = valueKind[slot.valueId];
 					if (kind === SCCP_CONST) {
-						const constVal = valueConst[slot.valueId];
-						if (!constVal) {
-							throw new Error('[ProgramOptimizer] Missing SCCP constant.');
-						}
+						const constVal = requireSccpConstValue(valueConst, slot);
 						const expected = last.c !== 0;
 						const shouldSkip = isTruthy(constVal.value) !== expected;
 						if (shouldSkip) {
@@ -721,14 +714,13 @@ const runSccp = (
 				case OpCode.EQ:
 				case OpCode.LT:
 				case OpCode.LE: {
-					const uses = instrUses[lastIndex] ?? [];
 					let slotB: UseSlot | null = null;
 					let slotC: UseSlot | null = null;
-					for (let s = 0; s < uses.length; s += 1) {
-						if (uses[s].field === 'b') {
-							slotB = uses[s];
-						} else if (uses[s].field === 'c') {
-							slotC = uses[s];
+					for (let s = 0; s < lastUses.length; s += 1) {
+						if (lastUses[s].field === 'b') {
+							slotB = lastUses[s];
+						} else if (lastUses[s].field === 'c') {
+							slotC = lastUses[s];
 						}
 					}
 					const left = getSccpOperand(last, 'b', slotB, context, valueKind, valueConst);
@@ -1047,35 +1039,17 @@ const computeValueNumbers = (
 	const uniqueVN = new Array<number>(valueReg.length).fill(-1);
 	let nextVN = 1;
 
-	const getConstVN = (constIndex: number): number => {
-		let vn = constVN.get(constIndex);
+	const getMapVN = <K>(map: Map<K, number>, key: K): number => {
+		let vn = map.get(key);
 		if (vn === undefined) {
 			vn = nextVN;
 			nextVN += 1;
-			constVN.set(constIndex, vn);
+			map.set(key, vn);
 		}
 		return vn;
 	};
 
-	const getExprVN = (key: string): number => {
-		let vn = exprVN.get(key);
-		if (vn === undefined) {
-			vn = nextVN;
-			nextVN += 1;
-			exprVN.set(key, vn);
-		}
-		return vn;
-	};
-
-	const getPhiVN = (key: string): number => {
-		let vn = phiVN.get(key);
-		if (vn === undefined) {
-			vn = nextVN;
-			nextVN += 1;
-			phiVN.set(key, vn);
-		}
-		return vn;
-	};
+	const usesForInstruction = (index: number): UseSlot[] => instrUses[index] ?? [];
 
 	const getUniqueVN = (valueId: number): number => {
 		let vn = uniqueVN[valueId];
@@ -1091,7 +1065,7 @@ const computeValueNumbers = (
 		const rkMaskBit = field === 'b' ? RK_B : RK_C;
 		const operand = field === 'b' ? instruction.b : instruction.c;
 		if ((instruction.rkMask & rkMaskBit) !== 0 && operand < 0) {
-			return getConstVN(-1 - operand);
+			return getMapVN(constVN, -1 - operand);
 		}
 		if (!slot) {
 			return -1;
@@ -1108,7 +1082,7 @@ const computeValueNumbers = (
 			let next = -1;
 			const constVal = valueConst[valueId];
 			if (constVal) {
-				next = getConstVN(constVal.constIndex);
+				next = getMapVN(constVN, constVal.constIndex);
 			} else if (def.kind === 'phi') {
 				const phi = phiByBlock[def.index].get(valueReg[valueId]);
 				if (!phi) {
@@ -1139,13 +1113,13 @@ const computeValueNumbers = (
 				if (allSame && firstVN >= 0) {
 					next = firstVN;
 				} else if (argVN.length === phi.args.length) {
-					next = getPhiVN(`phi|${argVN.join(',')}`);
+					next = getMapVN(phiVN, `phi|${argVN.join(',')}`);
 				}
 			} else if (def.index >= 0) {
 				const instruction = instructions[def.index];
 				switch (instruction.op) {
 					case OpCode.MOV: {
-						const uses = instrUses[def.index] ?? [];
+						const uses = usesForInstruction(def.index);
 						if (uses.length === 0) {
 							throw new Error('[ProgramOptimizer] Missing MOV operand.');
 						}
@@ -1157,19 +1131,19 @@ const computeValueNumbers = (
 					case OpCode.BNOT:
 					case OpCode.NOT:
 					case OpCode.LEN: {
-						const uses = instrUses[def.index] ?? [];
+						const uses = usesForInstruction(def.index);
 						if (uses.length === 0) {
 							throw new Error('[ProgramOptimizer] Missing unary operand.');
 						}
 						const operandVN = getOperandVN(instruction, 'b', uses[0]);
 						if (operandVN >= 0) {
-							next = getExprVN(`${instruction.op}|${operandVN}`);
+							next = getMapVN(exprVN, `${instruction.op}|${operandVN}`);
 						}
 						break;
 					}
 					default:
 						if (isValueNumberable(instruction.op)) {
-							const uses = instrUses[def.index] ?? [];
+							const uses = usesForInstruction(def.index);
 							let slotB: UseSlot | null = null;
 							let slotC: UseSlot | null = null;
 							for (let s = 0; s < uses.length; s += 1) {
@@ -1189,7 +1163,7 @@ const computeValueNumbers = (
 									leftKey = rightKey;
 									rightKey = temp;
 								}
-								next = getExprVN(`${instruction.op}|${leftKey}|${rightKey}`);
+								next = getMapVN(exprVN, `${instruction.op}|${leftKey}|${rightKey}`);
 							}
 						} else if (instruction.op !== OpCode.WIDE) {
 							next = getUniqueVN(valueId);
@@ -1642,6 +1616,8 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet): InstructionSet => {
 	const pinnedTargets = new Set<number>();
 	for (let i = 0; i < instructions.length; i += 1) {
 		const instruction = instructions[i];
+		const nextIndex = i + 1;
+		const hasNext = nextIndex < instructions.length;
 		if (isJump(instruction)) {
 			const target = getJumpTarget(instruction);
 			if (target >= 0 && target < instructions.length) {
@@ -1653,8 +1629,8 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet): InstructionSet => {
 			case OpCode.JMPIFNOT:
 			case OpCode.BR_TRUE:
 			case OpCode.BR_FALSE:
-				if (i + 1 < instructions.length) {
-					pinnedTargets.add(i + 1);
+				if (hasNext) {
+					pinnedTargets.add(nextIndex);
 				}
 				break;
 			case OpCode.TEST:
@@ -1662,21 +1638,21 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet): InstructionSet => {
 			case OpCode.EQ:
 			case OpCode.LT:
 			case OpCode.LE:
-				if (i + 1 < instructions.length) {
-					pinnedTargets.add(i + 1);
+				if (hasNext) {
+					pinnedTargets.add(nextIndex);
 				}
 				if (i + 2 < instructions.length) {
 					pinnedTargets.add(i + 2);
 				}
 				break;
 			case OpCode.LOADBOOL:
-				if (instruction.c !== 0 && i + 1 < instructions.length) {
-					pinnedTargets.add(i + 1);
+				if (instruction.c !== 0 && hasNext) {
+					pinnedTargets.add(nextIndex);
 				}
 				break;
 			case OpCode.WIDE:
-				if (i + 1 < instructions.length) {
-					pinnedTargets.add(i + 1);
+				if (hasNext) {
+					pinnedTargets.add(nextIndex);
 				}
 				break;
 			default:

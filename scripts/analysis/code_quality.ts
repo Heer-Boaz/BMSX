@@ -80,6 +80,11 @@ type NormalizedBodyInfo = {
 	semanticSignatures: string[] | null;
 };
 
+type SemanticBodyCallSignature = {
+	key: string;
+	hasLiteralAnchor: boolean;
+};
+
 type FunctionUsageInfo = {
 	totalCounts: ReadonlyMap<string, number>;
 	referenceCounts: ReadonlyMap<string, number>;
@@ -168,6 +173,7 @@ const SEMANTIC_NORMALIZATION_CALL_TARGETS = new Set([
 
 const NORMALIZED_BODY_MIN_LENGTH = 120;
 const COMPACT_SAMPLE_TEXT_LENGTH = 180;
+const REPEATED_EXPRESSION_PAIR_MIN_LENGTH = 48;
 const SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT = 2;
 const LOCAL_CONST_PATTERN_ENABLED = false;
 const NUMERIC_SANITIZATION_PATH_SEGMENTS = [
@@ -2167,6 +2173,49 @@ function isSemanticBodySignatureFamily(family: string): boolean {
 	return family.startsWith('text:');
 }
 
+function semanticLiteralSignature(node: ts.Expression): string | null {
+	if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+		return JSON.stringify(node.text);
+	}
+	if (ts.isNumericLiteral(node)) {
+		return node.text;
+	}
+	if (node.kind === ts.SyntaxKind.TrueKeyword) {
+		return 'true';
+	}
+	if (node.kind === ts.SyntaxKind.FalseKeyword) {
+		return 'false';
+	}
+	if (node.kind === ts.SyntaxKind.NullKeyword) {
+		return 'null';
+	}
+	if (ts.isRegularExpressionLiteral(node)) {
+		return node.getText();
+	}
+	if (ts.isPrefixUnaryExpression(node) && ts.isNumericLiteral(node.operand)) {
+		return `${ts.SyntaxKind[node.operator]}${node.operand.text}`;
+	}
+	return null;
+}
+
+function semanticBodyCallSignature(node: ts.CallExpression, target: string): SemanticBodyCallSignature {
+	const args: string[] = [];
+	let hasLiteralAnchor = false;
+	for (let index = 0; index < node.arguments.length && index < 3; index += 1) {
+		const literal = semanticLiteralSignature(node.arguments[index]);
+		if (literal === null) {
+			args.push('*');
+		} else {
+			hasLiteralAnchor = true;
+			args.push(literal);
+		}
+	}
+	return {
+		key: `${semanticOperationName(target)}(${args.join(',')})`,
+		hasLiteralAnchor,
+	};
+}
+
 function compactSampleText(text: string): string {
 	if (text.length <= COMPACT_SAMPLE_TEXT_LENGTH) {
 		return text;
@@ -2175,20 +2224,23 @@ function compactSampleText(text: string): string {
 }
 
 function collectSemanticBodySignatures(node: ts.Node): string[] {
-	const callsByFamily = new Map<string, Map<string, number>>();
+	const callsByFamily = new Map<string, { calls: Map<string, number>; literalAnchorCount: number }>();
 	const visit = (current: ts.Node): void => {
 		if (ts.isCallExpression(current)) {
 			const target = callTargetText(current);
 			if (target !== null && (isSemanticNormalizationCallTarget(target) || isNumericDefensiveCall(current))) {
 				const family = semanticNormalizationFamily(target);
 				if (family !== null && isSemanticBodySignatureFamily(family)) {
-					let calls = callsByFamily.get(family);
-					if (calls === undefined) {
-						calls = new Map<string, number>();
-						callsByFamily.set(family, calls);
+					let group = callsByFamily.get(family);
+					if (group === undefined) {
+						group = { calls: new Map<string, number>(), literalAnchorCount: 0 };
+						callsByFamily.set(family, group);
 					}
-					const operation = semanticOperationName(target);
-					calls.set(operation, (calls.get(operation) ?? 0) + 1);
+					const signature = semanticBodyCallSignature(current, target);
+					group.calls.set(signature.key, (group.calls.get(signature.key) ?? 0) + 1);
+					if (signature.hasLiteralAnchor) {
+						group.literalAnchorCount += 1;
+					}
 				}
 			}
 		}
@@ -2196,14 +2248,14 @@ function collectSemanticBodySignatures(node: ts.Node): string[] {
 	};
 	visit(node);
 	const signatures: string[] = [];
-	for (const [family, calls] of callsByFamily) {
+	for (const [family, group] of callsByFamily) {
 		let count = 0;
 		const parts: string[] = [];
-		for (const [operation, operationCount] of calls) {
+		for (const [operation, operationCount] of group.calls) {
 			count += operationCount;
 			parts.push(`${operation}x${operationCount}`);
 		}
-		if (count < 2) {
+		if (count < 2 || group.literalAnchorCount === 0) {
 			continue;
 		}
 		parts.sort((left, right) => left.localeCompare(right));
@@ -2699,6 +2751,33 @@ function isPublicContractMethod(functionNode: ts.Node): boolean {
 	return ts.isMethodDeclaration(functionNode) && !hasPrivateOrProtectedModifier(functionNode);
 }
 
+function isBytecodeSpecializationBody(sourceFile: ts.SourceFile, name: string): boolean {
+	const fileName = sourceFile.fileName;
+	if (fileName.endsWith('/src/bmsx/machine/cpu/cpu.ts')) {
+		return /^(load|store)Table[A-Za-z]*Index(Cached)?$/.test(name);
+	}
+	if (fileName.endsWith('/src/bmsx/machine/program/compiler.ts')) {
+		return /^(emitModuleExport(?:Load|Store)|emitMemory(?:Load|Store)|compile(?:And|Or)Expression|resolveReference[A-Za-z]+)$/.test(name)
+			|| /^resolve(?:System)?GlobalSlot$/.test(name);
+	}
+	if (fileName.endsWith('/src/bmsx/machine/firmware/api.ts')) {
+		return name === 'registerFont';
+	}
+	if (fileName.endsWith('/src/bmsx/machine/program/load_compiler.ts')) {
+		return name === 'compileChunk' || name === 'compileReturnedFunction';
+	}
+	if (fileName.endsWith('/src/bmsx/machine/program/optimizer.ts')) {
+		return /^clear(?:Closure|Const)Range$/.test(name);
+	}
+	if (
+		fileName.endsWith('/src/bmsx/machine/program/optimizer_ssa.ts')
+		|| fileName.endsWith('/src/bmsx/machine/program/optimizer_values.ts')
+	) {
+		return /^replaceWith(?:Mov|Unm)$/.test(name);
+	}
+	return false;
+}
+
 function isTrivialDelegationCallExpression(callExpression: ts.CallExpression): boolean {
 	return !isDirectMutationCallExpression(callExpression) && !containsClosureExpression(callExpression);
 }
@@ -3098,7 +3177,7 @@ function collectNormalizedBody(
 	if (name.endsWith('Thunk')) {
 		return;
 	}
-	if (hasExportModifier(node) || isPublicContractMethod(node)) {
+	if (hasExportModifier(node) || isPublicContractMethod(node) || isBytecodeSpecializationBody(sourceFile, name)) {
 		return;
 	}
 	const body = node.body;
@@ -3285,6 +3364,9 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 		}
 		for (const info of scope.values()) {
 			if (info.count < SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT) {
+				continue;
+			}
+			if (info.count === 2 && info.sampleText.length < REPEATED_EXPRESSION_PAIR_MIN_LENGTH) {
 				continue;
 			}
 			issues.push({

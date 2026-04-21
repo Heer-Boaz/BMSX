@@ -1031,17 +1031,11 @@ class FunctionBuilder {
 	}
 
 	private resolveRequiredModulePath(moduleName: string): string | undefined {
-		if (!this.moduleCompileContext) {
-			return undefined;
-		}
-		return this.moduleCompileContext.moduleAliasMap.get(moduleName);
+		return this.moduleCompileContext?.moduleAliasMap.get(moduleName);
 	}
 
 	private resolveModuleCompileInfo(path: string): ModuleCompileInfo | undefined {
-		if (!this.moduleCompileContext) {
-			return undefined;
-		}
-		return this.moduleCompileContext.modulesByPath.get(path);
+		return this.moduleCompileContext?.modulesByPath.get(path);
 	}
 
 	private resolveModuleExportSlotName(modulePath: string, exportPath: ReadonlyArray<string>): string | undefined {
@@ -1094,14 +1088,15 @@ class FunctionBuilder {
 		if (expression.kind !== LuaSyntaxKind.MemberExpression && expression.kind !== LuaSyntaxKind.IndexExpression) {
 			return null;
 		}
-		const baseExpression = expression.kind === LuaSyntaxKind.MemberExpression
+		const isMemberExpression = expression.kind === LuaSyntaxKind.MemberExpression;
+		const baseExpression = isMemberExpression
 			? (expression as LuaMemberExpression).base
 			: (expression as LuaIndexExpression).base;
 		const baseBinding = this.tryResolveStaticModuleBinding(baseExpression, allowRequireRoot);
 		if (!baseBinding) {
 			return null;
 		}
-		const key = expression.kind === LuaSyntaxKind.MemberExpression
+		const key = isMemberExpression
 			? (expression as LuaMemberExpression).identifier
 			: this.tryGetModuleExportStaticKey((expression as LuaIndexExpression).index);
 		if (!key) {
@@ -1749,7 +1744,8 @@ class FunctionBuilder {
 			const lastExpr = values[lastIndex];
 			const remaining = names.length - lastIndex;
 			const wantsMulti = remaining > 1 && this.isMultiReturnExpression(lastExpr);
-			if (lastIndex < names.length && attributes[lastIndex] === 'const' && !wantsMulti) {
+			const lastHasName = lastIndex < names.length;
+			if (lastHasName && attributes[lastIndex] === 'const' && !wantsMulti) {
 				const moduleBinding = this.tryResolveStaticModuleBinding(lastExpr, true);
 				if (moduleBinding !== null) {
 					initializerModuleBindings[lastIndex] = moduleBinding;
@@ -1757,20 +1753,20 @@ class FunctionBuilder {
 			}
 			const constantValue = this.evaluateCompileTimeExpression(lastExpr);
 			if (constantValue !== undefined && !wantsMulti) {
-				if (lastIndex < names.length) {
+				if (lastHasName) {
 					initializerValues[lastIndex] = constantValue;
 				}
 			} else {
 				const lastReg = this.allocTemp();
-				const lastName = lastIndex < names.length
+				const lastName = lastHasName
 					? this.requireBoundDeclaration(names[lastIndex].range, `local '${names[lastIndex].name}'`).name
 					: '';
 				const resultCount = wantsMulti ? remaining : 1;
-				const lastHint = lastExpr.kind === LuaSyntaxKind.FunctionExpression && lastIndex < names.length
+				const lastHint = lastExpr.kind === LuaSyntaxKind.FunctionExpression && lastHasName
 					? this.createLocalFunctionHint(lastName)
 					: null;
 				const closureProtoIndex = this.compileExpressionWithStaticClosureProto(lastExpr, lastReg, resultCount, lastHint);
-				if (lastIndex < names.length) {
+				if (lastHasName) {
 					valueRegs[lastIndex] = lastReg;
 					if (attributes[lastIndex] === 'const' && closureProtoIndex !== null) {
 						initializerClosureProtoIndices[lastIndex] = closureProtoIndex;

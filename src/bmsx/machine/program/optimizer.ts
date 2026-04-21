@@ -761,6 +761,19 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 		invalidateCopiesUsing(copies, register);
 	};
 
+	const clearCopiesTouchingOpenRange = (copies: Map<number, number>, start: number): void => {
+		const toDelete: number[] = [];
+		for (const [dst, src] of copies) {
+			const resolved = resolveCopy(src, copies);
+			if (dst >= start || resolved >= start) {
+				toDelete.push(dst);
+			}
+		}
+		for (let i = 0; i < toDelete.length; i += 1) {
+			copies.delete(toDelete[i]);
+		}
+	};
+
 	const setConst = (constants: Map<number, ConstValue>, copies: Map<number, number>, register: number, value: ConstValue): void => {
 		killRegister(constants, copies, register);
 		constants.set(register, value);
@@ -1072,16 +1085,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const countValue = instruction.b === 0 ? null : instruction.b;
 					if (countValue === null) {
 						clearConstRange(constants, instruction.a, null);
-						const toDelete: number[] = [];
-						for (const [dst, src] of copies) {
-							const resolved = resolveCopy(src, copies);
-							if (dst >= instruction.a || resolved >= instruction.a) {
-								toDelete.push(dst);
-							}
-						}
-						for (let i = 0; i < toDelete.length; i += 1) {
-							copies.delete(toDelete[i]);
-						}
+						clearCopiesTouchingOpenRange(copies, instruction.a);
 						break;
 					}
 					for (let offset = 0; offset < countValue; offset += 1) {
@@ -1093,16 +1097,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const countValue = instruction.c === 0 ? null : instruction.c;
 					if (countValue === null) {
 						clearConstRange(constants, instruction.a, null);
-						const toDelete: number[] = [];
-						for (const [dst, src] of copies) {
-							const resolved = resolveCopy(src, copies);
-							if (dst >= instruction.a || resolved >= instruction.a) {
-								toDelete.push(dst);
-							}
-						}
-						for (let i = 0; i < toDelete.length; i += 1) {
-							copies.delete(toDelete[i]);
-						}
+						clearCopiesTouchingOpenRange(copies, instruction.a);
 						break;
 					}
 					for (let offset = 0; offset < countValue; offset += 1) {
@@ -1842,10 +1837,16 @@ const buildInlineExpansion = (
 	const oldToNewStart = new Array<number>(calleeCount);
 	const pendingCalleeJumps: Array<{ localIndex: number; target: number }> = [];
 	const pendingExitJumps: number[] = [];
+	const appendInstruction = (instruction: Instruction, range: SourceRange | null): number => {
+		const index = generatedInstructions.length;
+		generatedInstructions.push(instruction);
+		generatedRanges.push(range);
+		return index;
+	};
 
 	const copiedParams = Math.min(argCount, callee.meta.numParams);
 	for (let index = 0; index < copiedParams; index += 1) {
-		generatedInstructions.push({
+		appendInstruction({
 			op: OpCode.MOV,
 			a: mapRegister(index),
 			b: callBase + 1 + index,
@@ -1853,12 +1854,11 @@ const buildInlineExpansion = (
 			format: 'ABC',
 			rkMask: 0,
 			target: null,
-		});
-		generatedRanges.push(callRange);
+		}, callRange);
 	}
 
 	if (callee.meta.numParams > argCount) {
-		generatedInstructions.push({
+		appendInstruction({
 			op: OpCode.LOADNIL,
 			a: mapRegister(argCount),
 			b: callee.meta.numParams - argCount,
@@ -1866,19 +1866,19 @@ const buildInlineExpansion = (
 			format: 'ABC',
 			rkMask: 0,
 			target: null,
-		});
-		generatedRanges.push(callRange);
+		}, callRange);
 	}
 
 	for (let i = 0; i < calleeCount; i += 1) {
-		oldToNewStart[i] = generatedInstructions.length;
+		const mappedStart = generatedInstructions.length;
+		oldToNewStart[i] = mappedStart;
 		const instruction = instructions[i];
 		const range = ranges[i] ?? callRange;
 		if (instruction.op === OpCode.RET) {
 			const copied = Math.min(instruction.b, resultCount);
 			const retBase = mapRegister(instruction.a);
 			for (let offset = 0; offset < copied; offset += 1) {
-				generatedInstructions.push({
+				appendInstruction({
 					op: OpCode.MOV,
 					a: callBase + offset,
 					b: retBase + offset,
@@ -1886,11 +1886,10 @@ const buildInlineExpansion = (
 					format: 'ABC',
 					rkMask: 0,
 					target: null,
-				});
-				generatedRanges.push(range);
+				}, range);
 			}
 			if (resultCount > copied) {
-				generatedInstructions.push({
+				appendInstruction({
 					op: OpCode.LOADNIL,
 					a: callBase + copied,
 					b: resultCount - copied,
@@ -1898,11 +1897,9 @@ const buildInlineExpansion = (
 					format: 'ABC',
 					rkMask: 0,
 					target: null,
-				});
-				generatedRanges.push(range);
+				}, range);
 			}
-			const jumpIndex = generatedInstructions.length;
-			generatedInstructions.push({
+			const jumpIndex = appendInstruction({
 				op: OpCode.JMP,
 				a: 0,
 				b: 0,
@@ -1910,8 +1907,7 @@ const buildInlineExpansion = (
 				format: 'AsBx',
 				rkMask: 0,
 				target: null,
-			});
-			generatedRanges.push(range);
+			}, range);
 			pendingExitJumps.push(jumpIndex);
 			continue;
 		}
@@ -2066,13 +2062,12 @@ const buildInlineExpansion = (
 				break;
 			default:
 				break;
+			}
+			const mappedIndex = appendInstruction(mapped, range);
+			if (isJump(mapped)) {
+				pendingCalleeJumps.push({ localIndex: mappedIndex, target: getJumpTarget(instruction) });
+			}
 		}
-		if (isJump(mapped)) {
-			pendingCalleeJumps.push({ localIndex: generatedInstructions.length, target: getJumpTarget(instruction) });
-		}
-		generatedInstructions.push(mapped);
-		generatedRanges.push(range);
-	}
 
 	const exitIndex = generatedInstructions.length;
 	for (let i = 0; i < pendingExitJumps.length; i += 1) {

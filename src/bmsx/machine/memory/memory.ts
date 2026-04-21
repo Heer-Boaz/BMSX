@@ -706,14 +706,15 @@ export class Memory {
 		if (sourceStride <= 0 || sourceHeight <= 0 || maxPixels <= 0) {
 			writeWidth = 0;
 			writeHeight = 0;
-		} else if (sourceWidth > maxPixels) {
-			const maxRowsByPixels = Math.floor(params.pixels.byteLength / sourceStride);
-			writeWidth = Math.min(sourceWidth, maxPixels);
-			writeHeight = Math.min(1, maxRowsByPixels);
 		} else {
-			const maxRowsByCapacity = Math.floor(capacity / sourceStride);
 			const maxRowsByPixels = Math.floor(params.pixels.byteLength / sourceStride);
-			writeHeight = Math.min(sourceHeight, maxRowsByCapacity, maxRowsByPixels);
+			if (sourceWidth > maxPixels) {
+				writeWidth = Math.min(sourceWidth, maxPixels);
+				writeHeight = Math.min(1, maxRowsByPixels);
+			} else {
+				const maxRowsByCapacity = Math.floor(capacity / sourceStride);
+				writeHeight = Math.min(sourceHeight, maxRowsByCapacity, maxRowsByPixels);
+			}
 		}
 		const writeStride = writeWidth * 4;
 		const writeSize = writeStride * writeHeight;

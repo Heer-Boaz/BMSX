@@ -868,23 +868,25 @@ export class GeometryController {
 		}
 		let centerAX = 0;
 		let centerAY = 0;
+		let vertexAddr = shapeAVertexAddr;
 		for (let vertexIndex = 0; vertexIndex < shapeAVertexCount; vertexIndex += 1) {
-			const vertexAddr = shapeAVertexAddr + vertexIndex * XFORM2_VERTEX_BYTES;
 			centerAX += toSignedWord(this.memory.readU32(vertexAddr + 0));
 			centerAY += toSignedWord(this.memory.readU32(vertexAddr + 4));
+			vertexAddr += XFORM2_VERTEX_BYTES;
 		}
 		let centerBX = 0;
 		let centerBY = 0;
+		vertexAddr = shapeBVertexAddr;
 		for (let vertexIndex = 0; vertexIndex < shapeBVertexCount; vertexIndex += 1) {
-			const vertexAddr = shapeBVertexAddr + vertexIndex * XFORM2_VERTEX_BYTES;
 			centerBX += toSignedWord(this.memory.readU32(vertexAddr + 0));
 			centerBY += toSignedWord(this.memory.readU32(vertexAddr + 4));
+			vertexAddr += XFORM2_VERTEX_BYTES;
 		}
 		centerAX /= shapeAVertexCount;
 		centerAY /= shapeAVertexCount;
 		centerBX /= shapeBVertexCount;
 		centerBY /= shapeBVertexCount;
-		let bestOverlap = Number.POSITIVE_INFINITY;
+		let bestOverlap = Infinity;
 		let bestAxisX = 0;
 		let bestAxisY = 0;
 		let bestAxisIndex = 0;
@@ -910,8 +912,8 @@ export class GeometryController {
 				sawAxis = true;
 				const ax = nx / axisLength;
 				const ay = ny / axisLength;
-				let minA = Number.POSITIVE_INFINITY;
-				let maxA = Number.NEGATIVE_INFINITY;
+				let minA = Infinity;
+				let maxA = -Infinity;
 				for (let vertexIndex = 0; vertexIndex < shapeAVertexCount; vertexIndex += 1) {
 					const vertexAddr = shapeAVertexAddr + vertexIndex * XFORM2_VERTEX_BYTES;
 					const px = toSignedWord(this.memory.readU32(vertexAddr + 0));
@@ -924,8 +926,8 @@ export class GeometryController {
 						maxA = projection;
 					}
 				}
-				let minB = Number.POSITIVE_INFINITY;
-				let maxB = Number.NEGATIVE_INFINITY;
+				let minB = Infinity;
+				let maxB = -Infinity;
 				for (let vertexIndex = 0; vertexIndex < shapeBVertexCount; vertexIndex += 1) {
 					const vertexAddr = shapeBVertexAddr + vertexIndex * XFORM2_VERTEX_BYTES;
 					const px = toSignedWord(this.memory.readU32(vertexAddr + 0));

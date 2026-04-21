@@ -1,4 +1,4 @@
-import { OpCode, Table, isNativeFunction, isNativeObject, type Program, type ProgramMetadata, type SourceRange, type Value } from './cpu';
+import { OpCode, Table, isNativeFunction, isNativeObject, type Program, type ProgramMetadata, type Proto, type SourceRange, type Value } from './cpu';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
 import { formatNumber } from '../common/number_format';
 import { isStringValue, stringValueToString } from '../memory/string_pool';
@@ -241,6 +241,38 @@ const formatJump = (pc: number, sbx: number, pcWidth: number, options: ResolvedO
 	const offsetText = formatSignedOffset(offset, pcWidth, options);
 	const targetText = formatPc(target, pcWidth, options);
 	return `${offsetText} -> ${targetText}`;
+};
+
+const requireSourceCommentInputs = (metadata: ProgramMetadata | null, options: ResolvedOptions): void => {
+	if (!options.showSourceComments) {
+		return;
+	}
+	if (!metadata) {
+		throw new Error('[Disassembler] Source comments require program metadata.');
+	}
+	if (!options.sourceTextForPath) {
+		throw new Error('[Disassembler] sourceTextForPath is required when showSourceComments is enabled.');
+	}
+};
+
+const appendProtoHeader = (lines: string[], proto: Proto, protoIndex: number, metadata: ProgramMetadata | null): void => {
+	const headerParts = [`proto=${protoIndex}`];
+	if (metadata) {
+		const protoId = metadata.protoIds[protoIndex];
+		if (protoId === undefined) {
+			throw new Error(`[Disassembler] Missing proto id for index ${protoIndex}.`);
+		}
+		headerParts.push(`id=${protoId}`);
+	}
+	headerParts.push(
+		`entry=${proto.entryPC}`,
+		`len=${proto.codeLen}`,
+		`params=${proto.numParams}`,
+		`vararg=${proto.isVararg ? 1 : 0}`,
+		`stack=${proto.maxStack}`,
+		`upvalues=${proto.upvalueDescs.length}`,
+	);
+	lines.push(`; ${headerParts.join(' ')}`);
 };
 
 const formatPc = (pc: number, width: number, options: ResolvedOptions, applyBias = true): string => {
@@ -832,14 +864,7 @@ export const disassembleProto = (
 	options: DisassemblyOptions = {},
 ): string => {
 	const opts = normalizeOptions(options);
-	if (opts.showSourceComments) {
-		if (!metadata) {
-			throw new Error('[Disassembler] Source comments require program metadata.');
-		}
-		if (!opts.sourceTextForPath) {
-			throw new Error('[Disassembler] sourceTextForPath is required when showSourceComments is enabled.');
-		}
-	}
+	requireSourceCommentInputs(metadata, opts);
 	const proto = program.protos[protoIndex];
 	const start = proto.entryPC;
 	const end = start + proto.codeLen;
@@ -848,23 +873,7 @@ export const disassembleProto = (
 	const lines: string[] = [];
 	const sourceCache = new Map<string, string[]>();
 	if (opts.showProtoHeaders) {
-		const headerParts = [`proto=${protoIndex}`];
-		if (metadata) {
-			const protoId = metadata.protoIds[protoIndex];
-			if (protoId === undefined) {
-				throw new Error(`[Disassembler] Missing proto id for index ${protoIndex}.`);
-			}
-			headerParts.push(`id=${protoId}`);
-		}
-		headerParts.push(
-			`entry=${proto.entryPC}`,
-			`len=${proto.codeLen}`,
-			`params=${proto.numParams}`,
-			`vararg=${proto.isVararg ? 1 : 0}`,
-			`stack=${proto.maxStack}`,
-			`upvalues=${proto.upvalueDescs.length}`,
-		);
-		lines.push(`; ${headerParts.join(' ')}`);
+		appendProtoHeader(lines, proto, protoIndex, metadata);
 	}
 	if (opts.protoAddressOp) {
 		lines.push(`${opts.protoAddressOp} ${formatPc(proto.entryPC, pcWidth, opts)}`);
@@ -875,14 +884,7 @@ export const disassembleProto = (
 
 export const disassembleProgram = (program: Program, metadata: ProgramMetadata | null = null, options: DisassemblyOptions = {}): string => {
 	const opts = normalizeOptions(options);
-	if (opts.showSourceComments) {
-		if (!metadata) {
-			throw new Error('[Disassembler] Source comments require program metadata.');
-		}
-		if (!opts.sourceTextForPath) {
-			throw new Error('[Disassembler] sourceTextForPath is required when showSourceComments is enabled.');
-		}
-	}
+	requireSourceCommentInputs(metadata, opts);
 	const lastPc = Math.max(0, program.code.length - INSTRUCTION_BYTES);
 	const maxPc = lastPc + opts.pcBias;
 	const pcWidth = Math.max(1, maxPc.toString(opts.pcRadix).length);
@@ -891,23 +893,7 @@ export const disassembleProgram = (program: Program, metadata: ProgramMetadata |
 	for (let index = 0; index < program.protos.length; index += 1) {
 		const proto = program.protos[index];
 		if (opts.showProtoHeaders) {
-			const headerParts = [`proto=${index}`];
-			if (metadata) {
-				const protoId = metadata.protoIds[index];
-				if (protoId === undefined) {
-					throw new Error(`[Disassembler] Missing proto id for index ${index}.`);
-				}
-				headerParts.push(`id=${protoId}`);
-			}
-			headerParts.push(
-				`entry=${proto.entryPC}`,
-				`len=${proto.codeLen}`,
-				`params=${proto.numParams}`,
-				`vararg=${proto.isVararg ? 1 : 0}`,
-				`stack=${proto.maxStack}`,
-				`upvalues=${proto.upvalueDescs.length}`,
-			);
-			lines.push(`; ${headerParts.join(' ')}`);
+			appendProtoHeader(lines, proto, index, metadata);
 		}
 		if (opts.protoAddressOp) {
 			lines.push(`${opts.protoAddressOp} ${formatPc(proto.entryPC, pcWidth, opts)}`);

@@ -1786,31 +1786,33 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			return { lines, lineMap };
 		}
 		const logicalLines = text.split('\n');
-		let isFirstOutputLine = true;
+		let outputPrefix = firstPrefix;
+		let outputPrefixLength = firstPrefixLength;
 		for (let logicalLineIndex = 0; logicalLineIndex < logicalLines.length; logicalLineIndex += 1) {
 			const codepoints = Array.from(logicalLines[logicalLineIndex]);
 			if (codepoints.length === 0) {
-				const prefix = isFirstOutputLine ? firstPrefix : nextPrefix;
-				const available = maxChars - (isFirstOutputLine ? firstPrefixLength : nextPrefixLength);
+				const available = maxChars - outputPrefixLength;
 				if (available <= 0) {
 					throw runtime.createApiRuntimeError('wrap_text_lines prefix exceeds max_chars.');
 				}
-				lines.push(prefix);
+				lines.push(outputPrefix);
 				lineMap.push(logicalLineIndex + 1);
-				isFirstOutputLine = false;
+				outputPrefix = nextPrefix;
+				outputPrefixLength = nextPrefixLength;
 				continue;
 			}
 			let startIndex = 0;
 			while (startIndex < codepoints.length) {
-				const prefix = isFirstOutputLine ? firstPrefix : nextPrefix;
-				const available = maxChars - (isFirstOutputLine ? firstPrefixLength : nextPrefixLength);
+				const prefix = outputPrefix;
+				const available = maxChars - outputPrefixLength;
 				if (available <= 0) {
 					throw runtime.createApiRuntimeError('wrap_text_lines prefix exceeds max_chars.');
 				}
 				if (codepoints.length - startIndex <= available) {
 					lines.push(prefix + codepoints.slice(startIndex).join(''));
 					lineMap.push(logicalLineIndex + 1);
-					isFirstOutputLine = false;
+					outputPrefix = nextPrefix;
+					outputPrefixLength = nextPrefixLength;
 					break;
 				}
 				let breakIndex = -1;
@@ -1827,17 +1829,19 @@ export function seedLuaGlobals(runtime: Runtime): void {
 					}
 					lines.push(prefix + codepoints.slice(startIndex, endIndex).join(''));
 					lineMap.push(logicalLineIndex + 1);
+					outputPrefix = nextPrefix;
+					outputPrefixLength = nextPrefixLength;
 					startIndex = breakIndex + 1;
 					while (startIndex < codepoints.length && isWrapWhitespace(codepoints[startIndex])) {
 						startIndex += 1;
 					}
-					isFirstOutputLine = false;
 					continue;
 				}
 				lines.push(prefix + codepoints.slice(startIndex, limit).join(''));
 				lineMap.push(logicalLineIndex + 1);
+				outputPrefix = nextPrefix;
+				outputPrefixLength = nextPrefixLength;
 				startIndex = limit;
-				isFirstOutputLine = false;
 			}
 		}
 		return { lines, lineMap };

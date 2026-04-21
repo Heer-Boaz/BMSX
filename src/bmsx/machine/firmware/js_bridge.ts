@@ -604,14 +604,14 @@ export class LuaJsBridge implements LuaInteropAdapter {
 		}
 		let owner: LuaTable | LuaEnvironment = root;
 		for (let index = 0; index < segments.length - 1; index += 1) {
-			const nextValue = owner instanceof LuaEnvironment ? owner.get(segments[index]) : owner.get(segments[index]);
+			const nextValue = owner.get(segments[index]);
 			if (!isLuaTable(nextValue)) {
 				return;
 			}
 			owner = nextValue;
 		}
 		const leafKey = segments[segments.length - 1];
-		const currentValue = owner instanceof LuaEnvironment ? owner.get(leafKey) : owner.get(leafKey);
+		const currentValue = owner.get(leafKey);
 		const visited = new WeakSet<LuaTable>();
 		const wrapped = this.wrapFunctionsInValue(moduleId, currentValue, segments, visited);
 		if (wrapped === currentValue) {
@@ -644,20 +644,20 @@ export class LuaJsBridge implements LuaInteropAdapter {
 		}
 		if (!isLuaTable(value)) {
 			return value;
-			}
-			if (visited.has(value)) {
-				return value;
-			}
-			visited.add(value);
-			value.forEachEntry((rawKey, entry) => {
-				const segment = typeof rawKey === 'string' ? rawKey : String(rawKey);
-				const wrapped = this.wrapFunctionsInValue(moduleId, entry, [...path, segment], visited, filter);
-				if (wrapped !== entry) {
-					value.set(rawKey, wrapped);
-				}
-			});
+		}
+		if (visited.has(value)) {
 			return value;
 		}
+		visited.add(value);
+		value.forEachEntry((rawKey, entry) => {
+			const segment = typeof rawKey === 'string' ? rawKey : String(rawKey);
+			const wrapped = this.wrapFunctionsInValue(moduleId, entry, [...path, segment], visited, filter);
+			if (wrapped !== entry) {
+				value.set(rawKey, wrapped);
+			}
+		});
+		return value;
+	}
 
 	public isFunctionFromChunk(fn: LuaFunctionValue, path: string): boolean {
 		const candidate = fn as { getSourceRange?: () => LuaSourceRange };
@@ -761,7 +761,7 @@ function collectNativeKeys(runtime: Runtime, raw: object): Value[] {
 		const arrRecord = arr as unknown as Record<string, unknown>;
 		for (let index = 0; index < arr.length; index += 1) {
 			const value = arr[index];
-			if (value === undefined || value === null) {
+			if (value == null) {
 				continue;
 			}
 			keys.push(index + 1);
@@ -774,7 +774,7 @@ function collectNativeKeys(runtime: Runtime, raw: object): Value[] {
 				continue;
 			}
 			const value = arrRecord[key];
-			if (value === undefined || value === null) {
+			if (value == null) {
 				continue;
 			}
 			keys.push(parseNativeKeyFromString(runtime, key));
@@ -787,7 +787,7 @@ function collectNativeKeys(runtime: Runtime, raw: object): Value[] {
 			continue;
 		}
 		const value = obj[key];
-		if (value === undefined || value === null) {
+		if (value == null) {
 			continue;
 		}
 		keys.push(parseNativeKeyFromString(runtime, key));
@@ -805,7 +805,7 @@ function findNativePropertyAfter(runtime: Runtime, raw: Record<string, unknown>,
 			continue;
 		}
 		const value = raw[prop];
-		if (value === undefined || value === null) {
+		if (value == null) {
 			continue;
 		}
 		const key = parseNativeKeyFromString(runtime, prop);

@@ -291,9 +291,10 @@ export function collectCpuProfilerHotPaths(snapshot: CpuProfilerSnapshot, limit 
 }
 
 export function collectCpuProfilerHotProtos(snapshot: CpuProfilerSnapshot, limit = 16): CpuProfilerHotProto[] {
-	const counts = new Int32Array(snapshot.protoIds.length);
-	const cycles = new Int32Array(snapshot.protoIds.length);
-	const paths = new Array<string>(snapshot.protoIds.length).fill('<unknown>');
+	const protoCount = snapshot.protoIds.length;
+	const counts = new Int32Array(protoCount);
+	const cycles = new Int32Array(protoCount);
+	const paths = new Array<string>(protoCount).fill('<unknown>');
 	for (let wordIndex = 0; wordIndex < snapshot.pcCounts.length; wordIndex += 1) {
 		const count = snapshot.pcCounts[wordIndex];
 		if (count === 0) {
@@ -485,9 +486,10 @@ export function collectCpuProfilerProtoOpcodePressure(snapshot: CpuProfilerSnaps
 }
 
 export function collectCpuProfilerOpcodeGroupProtos(snapshot: CpuProfilerSnapshot, predicate: (opcode: number) => boolean, limit = 8): CpuProfilerOpcodeGroupProto[] {
-	const countsByProto = new Array<Uint32Array | null>(snapshot.protoIds.length).fill(null);
-	const paths = new Array<string>(snapshot.protoIds.length).fill('<unknown>');
-	const totalCyclesByProto = new Uint32Array(snapshot.protoIds.length);
+	const protoCount = snapshot.protoIds.length;
+	const countsByProto = new Array<Uint32Array | null>(protoCount).fill(null);
+	const paths = new Array<string>(protoCount).fill('<unknown>');
+	const totalCyclesByProto = new Uint32Array(protoCount);
 	for (let wordIndex = 0; wordIndex < snapshot.pcCounts.length; wordIndex += 1) {
 		const count = snapshot.pcCounts[wordIndex];
 		if (count === 0) {

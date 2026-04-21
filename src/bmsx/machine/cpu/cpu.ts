@@ -6,7 +6,7 @@ import { formatNumber } from '../common/number_format';
 import { BASE_CYCLES, OpCode } from './opcode_info';
 import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions, type CpuProfilerSnapshot } from './profiler';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
-import { MemoryAccessKind } from '../memory/access_kind';
+import { MEMORY_ACCESS_KIND_NAMES, MemoryAccessKind } from '../memory/access_kind';
 import { findVdpPacketSchema, getVdpPacketArgKind, VdpPacketWordKind } from '../devices/vdp/packet_schema';
 import {
 	VDP_STREAM_BUFFER_BASE,
@@ -1929,18 +1929,18 @@ export class CPU {
 			const bShift = MAX_OPERAND_BITS + EXT_B_BITS;
 			const cShift = MAX_OPERAND_BITS + EXT_C_BITS;
 			const bxLow = (bLow << MAX_OPERAND_BITS) | cLow;
-			const rkRawB = (wideB << bShift) | (extB << MAX_OPERAND_BITS) | bLow;
-			const rkRawC = (wideC << cShift) | (extC << MAX_OPERAND_BITS) | cLow;
+			const rawB = (wideB << bShift) | (extB << MAX_OPERAND_BITS) | bLow;
+			const rawC = (wideC << cShift) | (extC << MAX_OPERAND_BITS) | cLow;
 			decodedWidths[wordIndex] = width;
 			decodedWords[wordIndex] = instr;
 			decodedOps[wordIndex] = op;
 			decodedA[wordIndex] = (wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow;
-			decodedB[wordIndex] = (wideB << bShift) | (extB << MAX_OPERAND_BITS) | bLow;
-			decodedC[wordIndex] = (wideC << cShift) | (extC << MAX_OPERAND_BITS) | cLow;
+			decodedB[wordIndex] = rawB;
+			decodedC[wordIndex] = rawC;
 			decodedBx[wordIndex] = (wideB << (MAX_BX_BITS + EXT_BX_BITS)) | ((usesBx ? ext : 0) << MAX_BX_BITS) | bxLow;
 			decodedSbx[wordIndex] = signExtend(decodedBx[wordIndex], MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
-			decodedRkB[wordIndex] = signExtend(rkRawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
-			decodedRkC[wordIndex] = signExtend(rkRawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
+			decodedRkB[wordIndex] = signExtend(rawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
+			decodedRkC[wordIndex] = signExtend(rawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
 		}
 		this.decodedWidths = decodedWidths;
 		this.decodedOps = decodedOps;
@@ -2113,6 +2113,23 @@ export class CPU {
 
 	private charge(cycles: number): void {
 		this.instructionBudgetRemaining -= cycles;
+	}
+
+	private skipNextInstruction(frame: CallFrame): void {
+		const decodedWidths = this.decodedWidths!;
+		const wordIndex = frame.pc / INSTRUCTION_BYTES;
+		// if (wordIndex >= decodedWidths.length) {
+		// 	throw new Error('Attempted to skip beyond end of program.');
+		// }
+		frame.pc += decodedWidths[wordIndex] * INSTRUCTION_BYTES;
+	}
+
+	private formatSourceLocation(range: SourceRange | null): string {
+		return range ? `${range.path}:${range.start.line}:${range.start.column}` : 'unknown';
+	}
+
+	private formatLastSourceLocation(): string {
+		return this.formatSourceLocation(this.metadata ? this.getDebugRange(this.lastPc) : null);
 	}
 
 	public step(): void {
@@ -2338,8 +2355,7 @@ export class CPU {
 		rkC: number,
 	): void {
 		const registers = frame.registers;
-		const decodedWidths = this.decodedWidths!;
-			switch (op) {
+		switch (op) {
 				case OpCode.WIDE:
 					throw new Error('Unknown opcode.');
 				case OpCode.MOV:
@@ -2378,11 +2394,7 @@ export class CPU {
 				case OpCode.LOADBOOL:
 					this.setRegisterBoolFast(frame, registers, a, b !== 0);
 					if (c !== 0) {
-						const wordIndex = frame.pc / INSTRUCTION_BYTES;
-						if (wordIndex >= decodedWidths.length) {
-							throw new Error('Attempted to skip beyond end of program.');
-						}
-						frame.pc += decodedWidths[wordIndex] * INSTRUCTION_BYTES;
+						this.skipNextInstruction(frame);
 					}
 					return;
 				case OpCode.GETG: {
@@ -2553,10 +2565,10 @@ export class CPU {
 							.map(entry => {
 								const range = this.getDebugRange(entry.pc);
 								if (!range) return '<unknown>';
-								return `${range.path}:${range.start.line}:${range.start.column}`;
+								return this.formatSourceLocation(range);
 							})
-						.reverse()
-						.join(' <- ');
+							.reverse()
+							.join(' <- ');
 						throw new Error(`Length operator expects a native object with a length. stack=${stack}`);
 					}
 					this.setRegisterNumberFast(frame, registers, a, value.len());
@@ -2582,11 +2594,7 @@ export class CPU {
 					const right = this.readRK(frame, rkC);
 					const eq = left === right;
 					if (eq !== (a !== 0)) {
-						const wordIndex = frame.pc / INSTRUCTION_BYTES;
-						if (wordIndex >= decodedWidths.length) {
-							throw new Error('Attempted to skip beyond end of program.');
-						}
-						frame.pc += decodedWidths[wordIndex] * INSTRUCTION_BYTES;
+						this.skipNextInstruction(frame);
 					}
 					return;
 				}
@@ -2597,11 +2605,7 @@ export class CPU {
 						? stringValueToString(left) < stringValueToString(right)
 						: (left as number) < (right as number);
 					if (ok !== (a !== 0)) {
-						const wordIndex = frame.pc / INSTRUCTION_BYTES;
-						if (wordIndex >= decodedWidths.length) {
-							throw new Error('Attempted to skip beyond end of program.');
-						}
-						frame.pc += decodedWidths[wordIndex] * INSTRUCTION_BYTES;
+						this.skipNextInstruction(frame);
 					}
 					return;
 				}
@@ -2612,22 +2616,14 @@ export class CPU {
 						? stringValueToString(left) <= stringValueToString(right)
 						: (left as number) <= (right as number);
 					if (ok !== (a !== 0)) {
-						const wordIndex = frame.pc / INSTRUCTION_BYTES;
-						if (wordIndex >= decodedWidths.length) {
-							throw new Error('Attempted to skip beyond end of program.');
-						}
-						frame.pc += decodedWidths[wordIndex] * INSTRUCTION_BYTES;
+						this.skipNextInstruction(frame);
 					}
 					return;
 				}
 				case OpCode.TEST: {
 					const ok = registers.isTruthy(a);
 					if (ok !== (c !== 0)) {
-						const wordIndex = frame.pc / INSTRUCTION_BYTES;
-						if (wordIndex >= decodedWidths.length) {
-							throw new Error('Attempted to skip beyond end of program.');
-						}
-						frame.pc += decodedWidths[wordIndex] * INSTRUCTION_BYTES;
+						this.skipNextInstruction(frame);
 					}
 					return;
 				}
@@ -2637,11 +2633,7 @@ export class CPU {
 						this.copyRegisterFast(frame, registers, a, b);
 						return;
 					}
-					const wordIndex = frame.pc / INSTRUCTION_BYTES;
-					if (wordIndex >= decodedWidths.length) {
-						throw new Error('Attempted to skip beyond end of program.');
-					}
-					frame.pc += decodedWidths[wordIndex] * INSTRUCTION_BYTES;
+					this.skipNextInstruction(frame);
 					return;
 				}
 				case OpCode.JMP: {
@@ -2698,9 +2690,7 @@ export class CPU {
 					const callee = registers.get(a);
 					const argCount = b === 0 ? Math.max(frame.top - a - 1, 0) : b;
 					if (callee === null) {
-						const range = this.metadata ? this.getDebugRange(this.lastPc) : null;
-						const location = range ? `${range.path}:${range.start.line}:${range.start.column}` : 'unknown';
-						throw new Error(`Attempted to call a nil value. at ${location}`);
+						throw new Error(`Attempted to call a nil value. at ${this.formatLastSourceLocation()}`);
 					}
 					if (isNativeFunction(callee)) {
 						const cost = callee.cost ?? DEFAULT_NATIVE_COST;
@@ -2720,15 +2710,13 @@ export class CPU {
 						return;
 					}
 					if (typeof (callee as Closure).protoIndex !== 'number') {
-						const range = this.metadata ? this.getDebugRange(this.lastPc) : null;
-						const location = range ? `${range.path}:${range.start.line}:${range.start.column}` : 'unknown';
 						const calleeType = valueTypeName(callee as Value);
 						const calleeValue = isStringValue(callee)
 							? ` value=${stringValueToString(callee)}`
 							: (typeof callee === 'number' || typeof callee === 'boolean')
 								? ` value=${String(callee)}`
 								: '';
-						throw new Error(`Attempted to call a non-function value (${calleeType}${calleeValue}). at ${location}`);
+						throw new Error(`Attempted to call a non-function value (${calleeType}${calleeValue}). at ${this.formatLastSourceLocation()}`);
 					}
 					this.pushFrameFromCaller(frame, callee as Closure, a + 1, argCount, a, c, false, frame.pc - INSTRUCTION_BYTES);
 					return;
@@ -3079,38 +3067,30 @@ export class CPU {
 	}
 
 	private writeMappedMemoryValue(addr: number, accessKind: number, value: Value): void {
+		if (accessKind === MemoryAccessKind.Word) {
+			this.memory.writeMappedValue(addr, value);
+			return;
+		}
+		if (accessKind < MemoryAccessKind.U8 || accessKind > MemoryAccessKind.F64LE) {
+			throw new Error(`[CPU] Unknown memory access kind: ${accessKind}.`);
+		}
+		if (typeof value !== 'number') {
+			throw new Error(`[Memory] ${MEMORY_ACCESS_KIND_NAMES[accessKind]}[addr] expects a number. Got ${typeof value}.`);
+		}
 		switch (accessKind) {
-			case MemoryAccessKind.Word:
-				this.memory.writeMappedValue(addr, value);
-				return;
 			case MemoryAccessKind.U8:
-				if (typeof value !== 'number') {
-					throw new Error(`[Memory] mem8[addr] expects a number. Got ${typeof value}.`);
-				}
 				this.memory.writeMappedU8(addr, value);
 				return;
 			case MemoryAccessKind.U16LE:
-				if (typeof value !== 'number') {
-					throw new Error(`[Memory] mem16le[addr] expects a number. Got ${typeof value}.`);
-				}
 				this.memory.writeMappedU16LE(addr, value);
 				return;
 			case MemoryAccessKind.U32LE:
-				if (typeof value !== 'number') {
-					throw new Error(`[Memory] mem32le[addr] expects a number. Got ${typeof value}.`);
-				}
 				this.memory.writeMappedU32LE(addr, value);
 				return;
 			case MemoryAccessKind.F32LE:
-				if (typeof value !== 'number') {
-					throw new Error(`[Memory] memf32le[addr] expects a number. Got ${typeof value}.`);
-				}
 				this.memory.writeMappedF32LE(addr, value);
 				return;
 			case MemoryAccessKind.F64LE:
-				if (typeof value !== 'number') {
-					throw new Error(`[Memory] memf64le[addr] expects a number. Got ${typeof value}.`);
-				}
 				this.memory.writeMappedF64LE(addr, value);
 				return;
 			default:
