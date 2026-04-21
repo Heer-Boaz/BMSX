@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 
+import { filterSuppressedLintIssues } from '../lint_suppressions';
 import {
 	addDuplicateExportedTypeIssues,
 	addNormalizedBodyDuplicateIssues,
@@ -25,19 +26,21 @@ import {
 	collectCppNormalizedBody,
 	createCppFunctionUsageInfo,
 	createCppFacadeStats,
-		lintCppEnsureLazyInitPattern,
-		lintCppTerminalReturnPaddingPattern,
-		isCppSingleLineWrapperAllowedByUsage,
-		lintCppCrossLayerIncludes,
-		lintCppFacadeStats,
-		lintCppHotPathCalls,
-		lintCppLocalBindings,
-		lintCppNullishReturnGuards,
-		lintCppStringSwitchChains,
-		lintCppRepeatedExpressions,
-		lintCppSemanticRepeatedExpressions,
-		lintCppSimpleTokenPatterns,
-	} from './rules';
+	lintCppCatchPatterns,
+	lintCppEnsureLazyInitPattern,
+	lintCppRedundantNumericSanitizationPattern,
+	lintCppTerminalReturnPaddingPattern,
+	isCppSingleLineWrapperAllowedByUsage,
+	lintCppCrossLayerIncludes,
+	lintCppFacadeStats,
+	lintCppHotPathCalls,
+	lintCppLocalBindings,
+	lintCppNullishReturnGuards,
+	lintCppRepeatedExpressions,
+	lintCppSemanticRepeatedExpressions,
+	lintCppSimpleTokenPatterns,
+	lintCppStringSwitchChains,
+} from './rules';
 import { buildCppPairMap, tokenizeCpp } from '../../../src/bmsx/language/cpp/syntax/tokens';
 import type { CppClassRange, CppFunctionInfo, CppTypeDeclarationInfo } from '../../../src/bmsx/language/cpp/syntax/declarations';
 
@@ -85,10 +88,10 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 		const functions = analysis.functions;
 		const facadeStats = createCppFacadeStats(functions, tokens);
 		lintCppSimpleTokenPatterns(file, tokens, lintIssues);
-				lintCppHotPathCalls(file, tokens, pairs, lintIssues);
-				lintCppCrossLayerIncludes(file, source, lintIssues);
-				for (let functionIndex = 0; functionIndex < functions.length; functionIndex += 1) {
-					const info = functions[functionIndex];
+		lintCppHotPathCalls(file, tokens, pairs, lintIssues);
+		lintCppCrossLayerIncludes(file, source, lintIssues);
+		for (let functionIndex = 0; functionIndex < functions.length; functionIndex += 1) {
+			const info = functions[functionIndex];
 			if (facadeStats !== null) {
 				facadeStats.callableCount += 1;
 			}
@@ -130,15 +133,17 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 					facadeStats.wrapperCount += 1;
 				}
 			}
+			lintCppCatchPatterns(file, tokens, pairs, info, lintIssues);
+			lintCppRedundantNumericSanitizationPattern(file, tokens, pairs, info, lintIssues);
 			lintCppEnsureLazyInitPattern(file, tokens, pairs, info, lintIssues);
 			lintCppTerminalReturnPaddingPattern(file, tokens, info, lintIssues);
-				lintCppLocalBindings(file, tokens, info, lintIssues);
-				lintCppNullishReturnGuards(file, tokens, pairs, info, lintIssues);
-				lintCppStringSwitchChains(file, tokens, pairs, info, lintIssues);
-				lintCppRepeatedExpressions(file, tokens, pairs, info, lintIssues);
-				lintCppSemanticRepeatedExpressions(file, tokens, pairs, info, lintIssues);
-				collectCppNormalizedBody(file, tokens, pairs, info, normalizedBodies);
-			}
+			lintCppLocalBindings(file, tokens, info, lintIssues);
+			lintCppNullishReturnGuards(file, tokens, pairs, info, lintIssues);
+			lintCppStringSwitchChains(file, tokens, pairs, info, lintIssues);
+			lintCppRepeatedExpressions(file, tokens, pairs, info, lintIssues);
+			lintCppSemanticRepeatedExpressions(file, tokens, pairs, info, lintIssues);
+			collectCppNormalizedBody(file, tokens, pairs, info, normalizedBodies);
+		}
 		if (facadeStats !== null) {
 			lintCppFacadeStats(file, facadeStats, lintIssues);
 		}
@@ -146,8 +151,14 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 	addDuplicateExportedTypeIssues(exportedTypes, lintIssues);
 	addNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
 	addSemanticNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
+	const sourceTextByFile = new Map<string, string>();
+	for (let fileIndex = 0; fileIndex < fileAnalyses.length; fileIndex += 1) {
+		const analysis = fileAnalyses[fileIndex];
+		sourceTextByFile.set(analysis.file, analysis.source);
+	}
+	const filteredLintIssues = filterSuppressedLintIssues(lintIssues, sourceTextByFile);
 	return relativeAnalysisResult({
 		duplicateGroups: buildDuplicateGroups(duplicateBuckets),
-		lintIssues,
+		lintIssues: filteredLintIssues,
 	});
 }

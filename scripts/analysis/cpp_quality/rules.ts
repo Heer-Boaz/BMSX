@@ -190,6 +190,23 @@ const NUMERIC_DEFENSIVE_CALLS = new Set([
 	'trunc',
 ]);
 
+const CPP_BOUNDED_NUMERIC_HINT_WORDS = new Set([
+	'caret',
+	'cursor',
+	'end',
+	'index',
+	'left',
+	'line',
+	'offset',
+	'page',
+	'position',
+	'right',
+	'row',
+	'scroll',
+	'start',
+	'top',
+]);
+
 const SEMANTIC_NORMALIZATION_WRAPPER_SUFFIXES = [
 	'.join',
 	'.contains',
@@ -394,6 +411,47 @@ function compactSampleText(text: string): string {
 		return text;
 	}
 	return `${text.slice(0, COMPACT_SAMPLE_TEXT_LENGTH - 3)}...`;
+}
+
+function cppWordSegments(text: string): string[] {
+	const words = text.match(/[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z0-9])/g);
+	return words === null ? [text.toLowerCase()] : words.map(word => word.toLowerCase());
+}
+
+function containsCppBoundedNumericHint(tokens: readonly CppToken[], start: number, end: number): boolean {
+	for (let index = start; index < end; index += 1) {
+		if (tokens[index].kind !== 'id') {
+			continue;
+		}
+		const segments = cppWordSegments(tokens[index].text);
+		for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+			if (CPP_BOUNDED_NUMERIC_HINT_WORDS.has(segments[segmentIndex])) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+function rangeContainsNestedCppNumericSanitization(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number): boolean {
+	const activeCalls: number[] = [];
+	for (let index = start; index < end; index += 1) {
+		while (activeCalls.length > 0 && activeCalls[activeCalls.length - 1] <= index) {
+			activeCalls.pop();
+		}
+		if (tokens[index].text !== '(' || pairs[index] < 0 || pairs[index] > end) {
+			continue;
+		}
+		const target = cppCallTarget(tokens, index);
+		if (target === null || !NUMERIC_DEFENSIVE_CALLS.has(target)) {
+			continue;
+		}
+		if (activeCalls.length > 0) {
+			return true;
+		}
+		activeCalls.push(pairs[index]);
+	}
+	return false;
 }
 
 function collectSemanticNormalizationFamilies(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number): string[] {
@@ -664,6 +722,99 @@ export function lintCppTerminalReturnPaddingPattern(file: string, tokens: readon
 		'useless_terminal_return_pattern',
 		'Terminal `return;` is forbidden. Remove no-op returns instead of padding the body.',
 	);
+}
+
+export function lintCppCatchPatterns(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
+	for (let index = info.bodyStart + 1; index < info.bodyEnd; index += 1) {
+		if (tokens[index].text !== 'catch' || tokens[index + 1]?.text !== '(') {
+			continue;
+		}
+		const declarationClose = pairs[index + 1];
+		if (declarationClose < 0 || declarationClose >= info.bodyEnd) {
+			continue;
+		}
+		const blockOpen = declarationClose + 1;
+		if (tokens[blockOpen]?.text !== '{' || pairs[blockOpen] < 0 || pairs[blockOpen] > info.bodyEnd) {
+			continue;
+		}
+		const blockClose = pairs[blockOpen];
+		const statements = collectCppStatementRanges(tokens, blockOpen + 1, blockClose);
+		if (statements.length === 0) {
+			pushLintIssue(
+				issues,
+				file,
+				tokens[index],
+				'empty_catch_pattern',
+				'Empty catch block is forbidden. Catch only when you can handle or rethrow the error.',
+			);
+			continue;
+		}
+		const declarationNameIndex = previousCppIdentifier(tokens, declarationClose);
+		const declarationName = declarationNameIndex >= 0 && tokens[declarationNameIndex + 1]?.text === ')' ? tokens[declarationNameIndex].text : null;
+		if (statements.length === 1) {
+			const [statementStart, statementEnd] = statements[0];
+			if (
+				tokens[statementStart]?.text === 'throw'
+				&& (
+					statementEnd === statementStart + 1
+					|| (declarationName !== null && trimmedCppExpressionText(tokens, statementStart + 1, statementEnd) === declarationName)
+				)
+			) {
+				pushLintIssue(
+					issues,
+					file,
+					tokens[index],
+					'useless_catch_pattern',
+					'Catch clause only rethrows the caught error. Remove the wrapper and let the exception propagate.',
+				);
+				continue;
+			}
+		}
+		if (cppRangeHas(tokens, blockOpen + 1, blockClose, token => token.text === 'return')) {
+			pushLintIssue(
+				issues,
+				file,
+				tokens[index],
+				'silent_catch_fallback_pattern',
+				'Catch clause swallows the error and returns a fallback. Trust the caller/callee or propagate the failure.',
+			);
+		}
+	}
+}
+
+export function lintCppRedundantNumericSanitizationPattern(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
+	if (isHotPathFile(file)) {
+		return;
+	}
+	const activeNumericCalls: number[] = [];
+	for (let index = info.bodyStart + 1; index < info.bodyEnd; index += 1) {
+		while (activeNumericCalls.length > 0 && activeNumericCalls[activeNumericCalls.length - 1] <= index) {
+			activeNumericCalls.pop();
+		}
+		if (tokens[index].text !== '(' || pairs[index] < 0 || pairs[index] > info.bodyEnd) {
+			continue;
+		}
+		const target = cppCallTarget(tokens, index);
+		if (target === null || !NUMERIC_DEFENSIVE_CALLS.has(target)) {
+			continue;
+		}
+		if (activeNumericCalls.length > 0) {
+			continue;
+		}
+		const callStart = findCppAccessChainStart(tokens, index - 1);
+		const callEnd = pairs[index] + 1;
+		if (!rangeContainsNestedCppNumericSanitization(tokens, pairs, callStart, callEnd) && !containsCppBoundedNumericHint(tokens, callStart, callEnd)) {
+			continue;
+		}
+		pushLintIssue(
+			issues,
+			file,
+			tokens[index],
+			'redundant_numeric_sanitization_pattern',
+			'Redundant numeric sanitization is forbidden. Bound values once at the boundary instead of clamping or flooring them repeatedly.',
+		);
+		activeNumericCalls.push(callEnd);
+	}
 }
 
 export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], info: CppFunctionInfo, issues: CppLintIssue[]): void {

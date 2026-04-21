@@ -3,6 +3,7 @@ import ts from 'typescript';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { filterSuppressedLintIssues } from './lint_suppressions';
 import type { CodeQualityLintRule } from '../lint/rules';
 
 type DuplicateKind = 'class' | 'enum' | 'function' | 'interface' | 'method' | 'namespace' | 'type' | 'wrapper';
@@ -50,6 +51,7 @@ type LintBinding = {
 	isTopLevel: boolean;
 	initializerTextLength: number;
 	isSimpleAliasInitializer: boolean;
+	splitJoinDelimiterFingerprint: string | null;
 	firstReadParentKind: ts.SyntaxKind | null;
 	firstReadParentOperatorKind: ts.SyntaxKind | null;
 };
@@ -166,6 +168,27 @@ const SEMANTIC_NORMALIZATION_CALL_TARGETS = new Set([
 const NORMALIZED_BODY_MIN_LENGTH = 120;
 const COMPACT_SAMPLE_TEXT_LENGTH = 180;
 const SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT = 2;
+const BOUNDED_NUMERIC_HINT_WORDS = new Set([
+	'caret',
+	'cursor',
+	'end',
+	'index',
+	'left',
+	'line',
+	'offset',
+	'page',
+	'position',
+	'right',
+	'row',
+	'scroll',
+	'start',
+	'top',
+]);
+const NUMERIC_SANITIZATION_PATH_SEGMENTS = [
+	'/src/bmsx/ide/',
+	'/src/bmsx/machine/',
+	'/src/bmsx/render/',
+] as const;
 
 const REQUIRED_STATE_ROOTS = new Set([
 	'$',
@@ -1197,6 +1220,273 @@ function isSimpleAliasExpression(node: ts.Expression | undefined): boolean {
 	}
 	const unwrapped = unwrapExpression(node);
 	return ts.isIdentifier(unwrapped) || ts.isPropertyAccessExpression(unwrapped);
+}
+
+function splitIdentifierWords(text: string): string[] {
+	const words = text.match(/[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z0-9])/g);
+	return words === null ? [text.toLowerCase()] : words.map(word => word.toLowerCase());
+}
+
+function isProductionCodePath(fileName: string): boolean {
+	const normalized = normalizePathForAnalysis(fileName);
+	for (let index = 0; index < NUMERIC_SANITIZATION_PATH_SEGMENTS.length; index += 1) {
+		if (normalized.includes(NUMERIC_SANITIZATION_PATH_SEGMENTS[index])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function splitJoinDelimiterFingerprint(expression: ts.Expression | undefined): string | null {
+	if (expression === undefined) {
+		return null;
+	}
+	const unwrapped = unwrapExpression(expression);
+	if (ts.isStringLiteralLike(unwrapped)) {
+		if (unwrapped.text === '\n' || unwrapped.text === '\r' || unwrapped.text === '\r\n') {
+			return 'linebreak';
+		}
+		return `text:${unwrapped.text}`;
+	}
+	if (unwrapped.kind === ts.SyntaxKind.RegularExpressionLiteral) {
+		const text = unwrapped.getText();
+		if (text.includes('\\n')) {
+			return 'linebreak';
+		}
+		return `regex:${text}`;
+	}
+	return null;
+}
+
+function findSplitLikeDelimiterInExpression(expression: ts.Expression): string | null {
+	const unwrapped = unwrapExpression(expression);
+	if (ts.isCallExpression(unwrapped)) {
+		const target = getCallTargetLeafName(unwrapped.expression);
+		if (target !== null && isSplitLikeCallTarget(target)) {
+			return splitJoinDelimiterFingerprint(unwrapped.arguments[0]);
+		}
+		return findSplitLikeDelimiterInExpression(unwrapped.expression);
+	}
+	if (ts.isPropertyAccessExpression(unwrapped) || ts.isElementAccessExpression(unwrapped)) {
+		return findSplitLikeDelimiterInExpression(unwrapped.expression);
+	}
+	return null;
+}
+
+function getCallTargetLeafName(expression: ts.Expression): string | null {
+	const unwrapped = unwrapExpression(expression);
+	if (ts.isIdentifier(unwrapped)) {
+		return unwrapped.text;
+	}
+	if (ts.isPropertyAccessExpression(unwrapped)) {
+		return unwrapped.name.text;
+	}
+	if (ts.isElementAccessExpression(unwrapped)) {
+		const argument = unwrapExpression(unwrapped.argumentExpression);
+		if (ts.isStringLiteralLike(argument)) {
+			return argument.text;
+		}
+	}
+	return getExpressionText(unwrapped);
+}
+
+function isSplitLikeCallTarget(target: string): boolean {
+	return target === 'split'
+		|| target === 'splitText'
+		|| target === 'splitLines'
+		|| target.endsWith('.split')
+		|| target.endsWith('.splitText')
+		|| target.endsWith('.splitLines');
+}
+
+function isJoinLikeCallTarget(target: string): boolean {
+	return target === 'join'
+		|| target === 'joinLines'
+		|| target.endsWith('.join')
+		|| target.endsWith('.joinLines');
+}
+
+function getActiveBinding(scopes: Array<Map<string, LintBinding[]>>, name: string): LintBinding | null {
+	for (let index = scopes.length - 1; index >= 0; index -= 1) {
+		const scope = scopes[index];
+		const bindings = scope.get(name);
+		if (bindings === undefined || bindings.length === 0) {
+			continue;
+		}
+		return bindings[bindings.length - 1];
+	}
+	return null;
+}
+
+function hasBoundedNumericHint(node: ts.Node): boolean {
+	let found = false;
+	const visit = (current: ts.Node): void => {
+		if (found) {
+			return;
+		}
+		if (
+			ts.isIdentifier(current)
+			|| ts.isPrivateIdentifier(current)
+			|| ts.isStringLiteral(current)
+			|| ts.isNoSubstitutionTemplateLiteral(current)
+		) {
+			const words = splitIdentifierWords(current.text);
+			for (let index = 0; index < words.length; index += 1) {
+				if (BOUNDED_NUMERIC_HINT_WORDS.has(words[index])) {
+					found = true;
+					return;
+				}
+			}
+			return;
+		}
+		ts.forEachChild(current, visit);
+	};
+	visit(node);
+	return found;
+}
+
+function containsNestedNumericSanitizationCall(node: ts.Node): boolean {
+	let found = false;
+	const visit = (current: ts.Node): void => {
+		if (found) {
+			return;
+		}
+		if (current !== node && ts.isCallExpression(current) && isNumericDefensiveCall(current)) {
+			found = true;
+			return;
+		}
+		ts.forEachChild(current, visit);
+	};
+	visit(node);
+	return found;
+}
+
+function isNestedInsideNumericSanitizationCall(node: ts.CallExpression, parent: ts.Node | undefined): boolean {
+	let current = parent;
+	while (
+		current !== undefined
+		&& (ts.isParenthesizedExpression(current) || ts.isAsExpression(current) || ts.isNonNullExpression(current))
+	) {
+		current = current.parent;
+	}
+	while (current !== undefined) {
+		if (ts.isCallExpression(current) && current !== node && isNumericDefensiveCall(current)) {
+			return true;
+		}
+		current = current.parent;
+	}
+	return false;
+}
+
+function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
+	const statements = node.block.statements;
+	if (statements.length === 0) {
+		pushLintIssue(
+			issues,
+			sourceFile,
+			node,
+			'empty_catch_pattern',
+			'Empty catch block is forbidden. Catch only when you can handle or rethrow the error.',
+		);
+		return;
+	}
+	const declaration = node.variableDeclaration;
+	if (declaration !== undefined && ts.isIdentifier(declaration.name) && statements.length === 1) {
+		const onlyStatement = statements[0];
+		if (
+			ts.isThrowStatement(onlyStatement)
+			&& onlyStatement.expression !== undefined
+			&& ts.isIdentifier(onlyStatement.expression)
+			&& onlyStatement.expression.text === declaration.name.text
+		) {
+			pushLintIssue(
+				issues,
+				sourceFile,
+				node,
+				'useless_catch_pattern',
+				'Catch clause only rethrows the caught error. Remove the wrapper and let the exception propagate.',
+			);
+			return;
+		}
+	}
+	for (let index = 0; index < statements.length; index += 1) {
+		const statement = statements[index];
+		if (ts.isReturnStatement(statement)) {
+			pushLintIssue(
+				issues,
+				sourceFile,
+				node,
+				'silent_catch_fallback_pattern',
+				'Catch clause swallows the error and returns a fallback. Trust the caller/callee or propagate the failure.',
+			);
+			return;
+		}
+	}
+}
+
+function lintSplitJoinRoundtripPattern(
+	node: ts.CallExpression,
+	sourceFile: ts.SourceFile,
+	issues: LintIssue[],
+	scopes: Array<Map<string, LintBinding[]>>,
+): void {
+	if (!isProductionCodePath(sourceFile.fileName)) {
+		return;
+	}
+	const outerTarget = getCallTargetLeafName(node.expression);
+	if (outerTarget === null || !isJoinLikeCallTarget(outerTarget)) {
+		return;
+	}
+	const outerExpression = unwrapExpression(node.expression);
+	if (!ts.isPropertyAccessExpression(outerExpression)) {
+		return;
+	}
+	const receiver = unwrapExpression(outerExpression.expression);
+	let splitFingerprint = findSplitLikeDelimiterInExpression(receiver);
+	if (splitFingerprint === null) {
+		if (!ts.isIdentifier(receiver)) {
+			return;
+		}
+		const binding = getActiveBinding(scopes, receiver.text);
+		if (binding === null || binding.splitJoinDelimiterFingerprint === null || binding.readCount !== 0) {
+			return;
+		}
+		splitFingerprint = binding.splitJoinDelimiterFingerprint;
+	}
+	const joinFingerprint = splitJoinDelimiterFingerprint(node.arguments[0]);
+	if (joinFingerprint === null || splitFingerprint !== joinFingerprint) {
+		return;
+	}
+	pushLintIssue(
+		issues,
+		sourceFile,
+		node,
+		'split_join_roundtrip_pattern',
+		'Split/join roundtrip is forbidden. Keep the text in one shape instead of splitting and rejoining it.',
+	);
+}
+
+function lintRedundantNumericSanitizationPattern(
+	node: ts.CallExpression,
+	sourceFile: ts.SourceFile,
+	issues: LintIssue[],
+): void {
+	if (!isProductionCodePath(sourceFile.fileName) || isHotPathFile(sourceFile.fileName) || !isNumericDefensiveCall(node)) {
+		return;
+	}
+	if (isNestedInsideNumericSanitizationCall(node, node.parent)) {
+		return;
+	}
+	if (!containsNestedNumericSanitizationCall(node) && !hasBoundedNumericHint(node)) {
+		return;
+	}
+	pushLintIssue(
+		issues,
+		sourceFile,
+		node,
+		'redundant_numeric_sanitization_pattern',
+		'Redundant numeric sanitization is forbidden. Bound values once at the boundary instead of clamping or flooring them repeatedly.',
+	);
 }
 
 function normalizeSingleUseContext(node: ts.Node): { kind: ts.SyntaxKind; operatorKind: ts.SyntaxKind | null } {
@@ -2597,6 +2887,17 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 			isTopLevel,
 			initializerTextLength: initializer === undefined ? 0 : initializer.getText(sourceFile).replace(/\s+/g, ' ').trim().length,
 			isSimpleAliasInitializer: isSimpleAliasExpression(initializer),
+			splitJoinDelimiterFingerprint: initializer === undefined ? null : ((): string | null => {
+				const unwrapped = unwrapExpression(initializer);
+				if (!ts.isCallExpression(unwrapped)) {
+					return null;
+				}
+				const target = getCallTargetLeafName(unwrapped.expression);
+				if (target === null || !isSplitLikeCallTarget(target)) {
+					return null;
+				}
+				return splitJoinDelimiterFingerprint(unwrapped.arguments[0]);
+			})(),
 			firstReadParentKind: null,
 			firstReadParentOperatorKind: null,
 		};
@@ -2727,6 +3028,9 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 		if (ts.isBinaryExpression(node)) {
 			lintBinaryExpressionForCodeQuality(node, sourceFile, issues);
 		}
+		if (ts.isCatchClause(node)) {
+			lintCatchClausePatterns(node, sourceFile, issues);
+		}
 			if (ts.isIfStatement(node)) {
 				lintNullishReturnGuard(node, sourceFile, issues);
 				lintLookupAliasOptionalChain(node, sourceFile, issues);
@@ -2772,6 +3076,8 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 					'Defensive numeric sanitization in IDE hot paths is forbidden. Coordinates and layout values must already be valid integers.',
 				);
 			}
+			lintSplitJoinRoundtripPattern(node, sourceFile, issues, scopes);
+			lintRedundantNumericSanitizationPattern(node, sourceFile, issues);
 			recordSemanticRepeatedExpression(node, parent);
 		}
 		if (ts.isNewExpression(node)) {
@@ -3615,6 +3921,7 @@ function run(): void {
 	const classInfosByFileName = new Map<string, Map<string, ClassInfo[]>>();
 	const lintIssues: LintIssue[] = [];
 	const sourceFiles: ts.SourceFile[] = [];
+	const sourceTextByFile = new Map<string, string>();
 	const exportedTypes: ExportedTypeInfo[] = [];
 	const normalizedBodies: NormalizedBodyInfo[] = [];
 	for (const filePath of fileList) {
@@ -3622,6 +3929,7 @@ function run(): void {
 		const kind = filePath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
 		const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, kind);
 		sourceFiles.push(sourceFile);
+		sourceTextByFile.set(filePath, sourceText);
 		collectClassInfos(sourceFile, classInfosByKey, classInfosByName, classInfosByFileName);
 		collectExportedTypes(sourceFile, exportedTypes);
 		collectNormalizedBodies(sourceFile, normalizedBodies);
@@ -3643,7 +3951,8 @@ function run(): void {
 			file: toRelativePath(location.file),
 		})),
 	}));
-	const normalizedLintIssues = lintIssues.map(issue => ({
+	const filteredLintIssues = filterSuppressedLintIssues(lintIssues, sourceTextByFile);
+	const normalizedLintIssues = filteredLintIssues.map(issue => ({
 		...issue,
 		file: toRelativePath(issue.file),
 	}));
