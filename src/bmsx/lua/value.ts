@@ -27,11 +27,11 @@ export class LuaNativeMemberHandle implements LuaFunctionValue {
 	public readonly path: ReadonlyArray<string>;
 	private readonly callImpl: (args: ReadonlyArray<LuaValue>) => LuaCallResult;
 
-	constructor(params: { name?: string; target?: object | Function; path?: ReadonlyArray<string>; callImpl?: (args: ReadonlyArray<LuaValue>) => LuaCallResult }) {
-		this.name = (params as { name?: string }).name ?? 'native_member_handle';
-		this.target = (params as { target: object | Function }).target;
-		this.path = Array.from((params as { path?: ReadonlyArray<string> }).path ?? []);
-		this.callImpl = (params as { callImpl?: (args: ReadonlyArray<LuaValue>) => LuaCallResult }).callImpl ?? (() => { throw new Error('Native member handle not bound.'); });
+	constructor(params: { name: string; target: object | Function; path: ReadonlyArray<string>; callImpl: (args: ReadonlyArray<LuaValue>) => LuaCallResult }) {
+		this.name = params.name;
+		this.target = params.target;
+		this.path = Array.from(params.path);
+		this.callImpl = params.callImpl;
 	}
 
 	public call(args: ReadonlyArray<LuaValue>): LuaCallResult {
@@ -106,6 +106,10 @@ const tableState = new WeakMap<LuaTable, TableState>();
 
 const luaTablePrototype = Object.create(null) as LuaTableMethods & { [LUA_TABLE_BRAND]?: true };
 
+function luaValueOrNil(value: LuaValue | undefined): LuaValue {
+	return value === undefined ? null : value;
+}
+
 export function createLuaTable(): LuaTable {
 	const table = Object.create(luaTablePrototype) as LuaTable;
 	Object.defineProperty(table, LUA_TABLE_BRAND, {
@@ -125,7 +129,7 @@ export function createLuaTable(): LuaTable {
 }
 
 export function isLuaTable(value: unknown): value is LuaTable {
-	return (value as LuaTable)?.[LUA_TABLE_BRAND] === true;
+	return Boolean((value as LuaTable)?.[LUA_TABLE_BRAND]);
 }
 
 function getState(table: LuaTable): TableState {
@@ -168,21 +172,18 @@ function tableGet(this: LuaTable, key: LuaValue): LuaValue {
 	if (typeof key === 'number' && Number.isInteger(key)) {
 		const property = String(key);
 		if (Object.prototype.hasOwnProperty.call(this, property)) {
-			const value = this[property];
-			return value === undefined ? null : value;
+			return luaValueOrNil(this[property]);
 		}
 		return null;
 	}
 	if (typeof key === 'string') {
-		const value = state.stringValues.get(key);
-		return value === undefined ? null : value;
+		return luaValueOrNil(state.stringValues.get(key));
 	}
 	const map = state.nonPrimitiveKeys;
 	if (!map) {
 		return null;
 	}
-	const value = map.get(key);
-	return value === undefined ? null : value;
+	return luaValueOrNil(map.get(key));
 }
 
 function tableDelete(this: LuaTable, key: LuaValue): void {

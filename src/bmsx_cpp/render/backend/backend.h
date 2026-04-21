@@ -164,9 +164,9 @@ public:
  * ============================================================================ */
 
 class SoftwareBackend : public GPUBackend {
-public:
+	public:
 	SoftwareBackend(u32* framebuffer, i32 width, i32 height, i32 pitch);
-	~SoftwareBackend() override;
+	~SoftwareBackend() override = default;
 
 	BackendType type() const override { return BackendType::Software; }
 

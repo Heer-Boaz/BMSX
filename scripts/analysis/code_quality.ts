@@ -50,12 +50,14 @@ type LintBinding = {
 	writeCount: number;
 	isExported: boolean;
 	isTopLevel: boolean;
+	initializerText: string | null;
 	initializerTextLength: number;
 	isSimpleAliasInitializer: boolean;
 	splitJoinDelimiterFingerprint: string | null;
 	firstReadParentKind: ts.SyntaxKind | null;
 	firstReadParentOperatorKind: ts.SyntaxKind | null;
 	readInsideLoop: boolean;
+	consumeBeforeClearSnapshot: boolean;
 };
 
 type RepeatedExpressionInfo = {
@@ -579,6 +581,9 @@ function getExtendsExpression(node: ts.ClassDeclaration, importAliases: Map<stri
 }
 
 function getExpressionText(node: ts.Expression, aliases?: Map<string, string>): string | null {
+	if (node.kind === ts.SyntaxKind.ThisKeyword) {
+		return 'this';
+	}
 	if (ts.isIdentifier(node)) {
 		const alias = aliases?.get(node.text);
 		return alias ?? node.text;
@@ -1144,7 +1149,7 @@ function collectRepeatedStatementSequences(
 	const statementTexts: string[] = [];
 	for (let index = 0; index < statements.length; index += 1) {
 		const statement = statements[index];
-		statementTexts.push(ts.isEmptyStatement(statement) ? '' : compactStatementText(statement, sourceFile));
+		statementTexts.push(ts.isEmptyStatement(statement) || ts.isImportDeclaration(statement) ? '' : compactStatementText(statement, sourceFile));
 	}
 	for (let index = 0; index <= statements.length - REPEATED_STATEMENT_SEQUENCE_MIN_COUNT; index += 1) {
 		let textLength = 0;
@@ -1623,7 +1628,7 @@ function isSemanticFloorDivisionCall(node: ts.CallExpression): boolean {
 }
 
 function isMinimumRasterPixelSizeCall(node: ts.CallExpression, sourceFile: ts.SourceFile): boolean {
-	if (!sourcePathIncludes(sourceFile, '/src/bmsx/render/vdp/') || callTargetText(node) !== 'Math.max' || node.arguments.length !== 2) {
+	if (!sourcePathIncludes(sourceFile, '/src/bmsx/render/') || callTargetText(node) !== 'Math.max' || node.arguments.length !== 2) {
 		return false;
 	}
 	let roundedArgument: ts.Expression | null = null;
@@ -1644,7 +1649,9 @@ function isMinimumRasterPixelSizeCall(node: ts.CallExpression, sourceFile: ts.So
 		return true;
 	}
 	return /\b(?:width|height)\b.*\bscale[XY]\b/i.test(roundedText)
-		|| /\bscale[XY]\b.*\b(?:width|height)\b/i.test(roundedText);
+		|| /\bscale[XY]\b.*\b(?:width|height)\b/i.test(roundedText)
+		|| /\b(?:width|height)\b.*\bscale\s*(?:!|\?)?\.\s*[xy]\b/i.test(roundedText)
+		|| /\bscale\s*(?:!|\?)?\.\s*[xy]\b.*\b(?:width|height)\b/i.test(roundedText);
 }
 
 function isNormalizedColorBytePackingCall(node: ts.CallExpression): boolean {
@@ -1704,10 +1711,12 @@ function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile
 		if (!ts.isReturnStatement(statement)) {
 			continue;
 		}
-		if (catchBlockHandlesAsyncError(node)) {
-			noteQualityLedger(ledger, 'allowed_catch_async_fault_boundary');
-		} else if (isKnownExternalCatchFallbackBoundary(sourceFile) && catchBlockReportsCaughtError(node)) {
-			noteQualityLedger(ledger, 'allowed_catch_reported_external_fallback');
+			if (catchBlockHandlesAsyncError(node)) {
+				noteQualityLedger(ledger, 'allowed_catch_async_fault_boundary');
+			} else if (catchBlockHandlesLuaFaultBoundary(node, sourceFile)) {
+				noteQualityLedger(ledger, 'allowed_catch_lua_fault_boundary');
+			} else if (isKnownExternalCatchFallbackBoundary(sourceFile) && catchBlockReportsCaughtError(node)) {
+				noteQualityLedger(ledger, 'allowed_catch_reported_external_fallback');
 		} else {
 			pushLintIssue(
 				issues,
@@ -1723,6 +1732,35 @@ function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile
 
 function isKnownExternalCatchFallbackBoundary(sourceFile: ts.SourceFile): boolean {
 	return sourcePathIncludes(sourceFile, '/src/bmsx/input/dualsense_hid.ts');
+}
+
+function catchBlockHandlesLuaFaultBoundary(node: ts.CatchClause, sourceFile: ts.SourceFile): boolean {
+	if (!sourcePathIncludes(sourceFile, '/src/bmsx/lua/runtime.ts')) {
+		return false;
+	}
+	let handled = false;
+	const visit = (current: ts.Node): void => {
+		if (handled) {
+			return;
+		}
+		if (ts.isPropertyAccessExpression(current) && current.getText(sourceFile) === 'SliceResult.Fault') {
+			handled = true;
+			return;
+		}
+		if (
+			ts.isCallExpression(current)
+			&& ts.isPropertyAccessExpression(current.expression)
+			&& current.expression.name.text === 'push'
+			&& current.arguments.length > 0
+			&& current.arguments[0].kind === ts.SyntaxKind.FalseKeyword
+		) {
+			handled = true;
+			return;
+		}
+		ts.forEachChild(current, visit);
+	};
+	visit(node.block);
+	return handled;
 }
 
 function catchBlockReportsCaughtError(node: ts.CatchClause): boolean {
@@ -1899,6 +1937,9 @@ function shouldReportSingleUseLocal(binding: LintBinding): boolean {
 	if (binding.readInsideLoop || isSnapshotLocalName(binding.name)) {
 		return false;
 	}
+	if (binding.consumeBeforeClearSnapshot) {
+		return false;
+	}
 	if (binding.initializerTextLength > 32) {
 		return false;
 	}
@@ -1916,6 +1957,37 @@ function shouldReportSingleUseLocal(binding: LintBinding): boolean {
 		return false;
 	}
 	return true;
+}
+
+function isConsumeBeforeClearSnapshotRead(node: ts.Identifier, parent: ts.Node, binding: LintBinding, sourceFile: ts.SourceFile): boolean {
+	if (binding.initializerText === null || !ts.isReturnStatement(parent)) {
+		return false;
+	}
+	const block = parent.parent;
+	if (!ts.isBlock(block) && !ts.isCaseClause(block) && !ts.isDefaultClause(block) && !ts.isSourceFile(block)) {
+		return false;
+	}
+	const statements = block.statements;
+	let statementIndex = -1;
+	for (let index = 0; index < statements.length; index += 1) {
+		if (statements[index] === parent) {
+			statementIndex = index;
+			break;
+		}
+	}
+	if (statementIndex < 1 || parent.expression !== node) {
+		return false;
+	}
+	const previous = statements[statementIndex - 1];
+	if (!ts.isExpressionStatement(previous)) {
+		return false;
+	}
+	const expression = unwrapExpression(previous.expression);
+	if (!ts.isBinaryExpression(expression) || expression.operatorToken.kind !== ts.SyntaxKind.EqualsToken) {
+		return false;
+	}
+	return expression.left.getText(sourceFile).replace(/\s+/g, ' ').trim() === binding.initializerText
+		&& nullishLiteralKind(expression.right) !== null;
 }
 
 function shouldReportLocalConst(binding: LintBinding): boolean {
@@ -2429,6 +2501,22 @@ function isKnownTypeofFunctionBoundary(node: ts.BinaryExpression, sourceFile: ts
 	}
 	if (sourcePathIncludes(sourceFile, '/src/bmsx/common/image_decode.ts')) {
 		return true;
+	}
+	if (sourcePathIncludes(sourceFile, '/src/bmsx/lua/value.ts')) {
+		const functionName = getEnclosingFunctionName(node);
+		return functionName === 'resolveNativeTypeName'
+			|| functionName === 'isLuaDebuggerPauseSignal'
+			|| functionName === 'isLuaFunctionValue';
+	}
+	if (sourcePathIncludes(sourceFile, '/src/bmsx/lua/handler_cache.ts')) {
+		return getEnclosingFunctionName(node) === 'isLuaHandlerFunction';
+	}
+	if (sourcePathIncludes(sourceFile, '/src/bmsx/lua/runtime.ts')) {
+		const functionName = getEnclosingFunctionName(node);
+		return functionName === 'bindNativeFunction'
+			|| functionName === 'callImpl'
+			|| functionName === 'makeNativeMemberHandle'
+			|| functionName === 'getNativePropertyValue';
 	}
 	if (sourcePathIncludes(sourceFile, '/src/bmsx/machine/cpu/cpu.ts')) {
 		return enclosingVariableDeclarationName(node) === 'nativeArgsProxyHandler';
@@ -4238,20 +4326,22 @@ function collectLintIssues(
 		if (!scope) {
 			return;
 		}
-		const initializer = declaration.initializer;
-		const position = sourceFile.getLineAndCharacterOfPosition(declaration.name.getStart());
-		const binding: LintBinding = {
+			const initializer = declaration.initializer;
+			const initializerText = initializer === undefined ? null : initializer.getText(sourceFile).replace(/\s+/g, ' ').trim();
+			const position = sourceFile.getLineAndCharacterOfPosition(declaration.name.getStart());
+			const binding: LintBinding = {
 			name,
 			line: position.line + 1,
 			column: position.character + 1,
 			isConst,
 			hasInitializer: initializer !== undefined,
 			readCount: 0,
-			writeCount: 0,
-			isExported: isTopLevel && isExportedVariableDeclaration(declaration),
-			isTopLevel,
-			initializerTextLength: initializer === undefined ? 0 : initializer.getText(sourceFile).replace(/\s+/g, ' ').trim().length,
-			isSimpleAliasInitializer: isSimpleAliasExpression(initializer),
+				writeCount: 0,
+				isExported: isTopLevel && isExportedVariableDeclaration(declaration),
+				isTopLevel,
+				initializerText,
+				initializerTextLength: initializerText === null ? 0 : initializerText.length,
+				isSimpleAliasInitializer: isSimpleAliasExpression(initializer),
 			splitJoinDelimiterFingerprint: initializer === undefined ? null : ((): string | null => {
 				const unwrapped = unwrapExpression(initializer);
 				if (!ts.isCallExpression(unwrapped)) {
@@ -4263,10 +4353,11 @@ function collectLintIssues(
 				}
 				return splitJoinDelimiterFingerprint(unwrapped.arguments[0]);
 			})(),
-			firstReadParentKind: null,
-			firstReadParentOperatorKind: null,
-			readInsideLoop: false,
-		};
+				firstReadParentKind: null,
+				firstReadParentOperatorKind: null,
+				readInsideLoop: false,
+				consumeBeforeClearSnapshot: false,
+			};
 		let list = scope.get(name);
 		if (list === undefined) {
 			list = [];
@@ -4294,11 +4385,12 @@ function collectLintIssues(
 				if (isInsideLoop(parent)) {
 					binding.readInsideLoop = true;
 				}
-				if (binding.readCount === 0) {
-					const useContext = normalizeSingleUseContext(parent);
-					binding.firstReadParentKind = useContext.kind;
-					binding.firstReadParentOperatorKind = useContext.operatorKind;
-				}
+					if (binding.readCount === 0) {
+						const useContext = normalizeSingleUseContext(parent);
+						binding.firstReadParentKind = useContext.kind;
+						binding.firstReadParentOperatorKind = useContext.operatorKind;
+						binding.consumeBeforeClearSnapshot = isConsumeBeforeClearSnapshotRead(node, parent, binding, sourceFile);
+					}
 				binding.readCount += 1;
 			}
 			return;
@@ -4796,11 +4888,18 @@ function getObjectLiteralCallContext(node: ts.ObjectLiteralExpression): string |
 function getOwningObjectName(node: ts.ObjectLiteralExpression | ts.PropertyAssignment): string | null {
 	let current = node.parent;
 	while (current) {
+		if (ts.isBinaryExpression(current) && current.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+			return getExpressionText(current.left);
+		}
 		if (ts.isVariableDeclaration(current) && current.name && ts.isIdentifier(current.name)) {
 			return current.name.text;
 		}
 		if (ts.isPropertyAssignment(current) && ts.isIdentifier(current.name)) {
 			return current.name.text;
+		}
+		if (ts.isMethodDeclaration(current) && current.name !== undefined) {
+			const name = getPropertyName(current.name);
+			return name === null ? null : `${name} result`;
 		}
 		if (ts.isClassDeclaration(current) && current.name !== undefined) {
 			return current.name.text;
@@ -4913,32 +5012,11 @@ function walkDeclarations(
 					);
 			}
 		}
-		if (ts.isMethodDeclaration(node) && node.body !== undefined && !isIgnoredMethod(node)) {
-			const name = getPropertyName(node.name);
-			if (name !== null) {
-				const position = sourceFile.getLineAndCharacterOfPosition(node.name.getStart());
-				const container = node.parent;
-				const classScope = ts.isClassDeclaration(container) && container.name !== undefined ? getClassScopePath(container) : null;
-				const classInfo = classScope === null ? null : classInfosByKey.get(classScope);
-				if (isInheritedMethod(node, classInfo, classInfosByKey, classInfosByName, classInfosByFileName)) {
-					return;
-				}
-				recordDeclaration(
-					buckets,
-					'method',
-					name,
-					sourceFile.fileName,
-					position.line + 1,
-					position.character + 1,
-					getMethodContext(node),
-					getMethodDiscriminator(node),
-				);
-			}
-		}
 		if (
-			(ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) &&
+			ts.isMethodDeclaration(node) &&
 			node.body !== undefined &&
-			!isIgnoredMethod(node)
+			!isIgnoredMethod(node) &&
+			!ts.isObjectLiteralExpression(node.parent)
 		) {
 			const name = getPropertyName(node.name);
 			if (name !== null) {
@@ -4961,23 +5039,35 @@ function walkDeclarations(
 				);
 			}
 		}
-		if (ts.isPropertyAssignment(node) && isFunctionLikeValue(node.initializer) && getPropertyName(node.name) !== null) {
-			const position = sourceFile.getLineAndCharacterOfPosition(node.name.getStart());
-			const methodName = getPropertyName(node.name);
-			if (methodName === null) return;
-			const callContext = ts.isObjectLiteralExpression(node.parent) ? getObjectLiteralCallContext(node.parent) : null;
-			recordDeclaration(
-				buckets,
-				'method',
-				methodName,
-				sourceFile.fileName,
-				position.line + 1,
-				position.character + 1,
-				callContext ?? getOwningObjectName(node),
-			);
+			if (
+				(ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) &&
+				node.body !== undefined &&
+				!isIgnoredMethod(node) &&
+				!ts.isObjectLiteralExpression(node.parent)
+			) {
+			const name = getPropertyName(node.name);
+			if (name !== null) {
+				const position = sourceFile.getLineAndCharacterOfPosition(node.name.getStart());
+				const container = node.parent;
+				const classScope = ts.isClassDeclaration(container) && container.name !== undefined ? getClassScopePath(container) : null;
+				const classInfo = classScope === null ? null : classInfosByKey.get(classScope);
+				if (isInheritedMethod(node, classInfo, classInfosByKey, classInfosByName, classInfosByFileName)) {
+					return;
+				}
+				recordDeclaration(
+					buckets,
+					'method',
+					name,
+					sourceFile.fileName,
+					position.line + 1,
+					position.character + 1,
+					getMethodContext(node),
+					getMethodDiscriminator(node),
+				);
+			}
 		}
-		ts.forEachChild(node, visit);
-	};
+			ts.forEachChild(node, visit);
+		};
 	visit(sourceFile);
 }
 

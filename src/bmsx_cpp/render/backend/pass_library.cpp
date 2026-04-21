@@ -32,10 +32,11 @@ CRTPipelineState buildCRTPipelineState(const RenderPassDef::RenderGraphPassConte
 	const bool allowDevice = presentInput == RenderPassDef::RenderPassGraphDef::PresentInput::Auto
 		|| presentInput == RenderPassDef::RenderPassGraphDef::PresentInput::DeviceColor;
 	const bool useDither = allowDevice && ctx.deviceColorEnabled && static_cast<i32>(view->dither_type) != 0;
-	TextureHandle baseTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
-	TextureHandle deviceTex = ctx.deviceColorEnabled
-		? ctx.getTexture(RenderPassDef::RenderGraphSlot::DeviceColor)
-		: nullptr;
+		TextureHandle baseTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
+		TextureHandle deviceTex = nullptr;
+		if (ctx.deviceColorEnabled) {
+			deviceTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::DeviceColor);
+		}
 	crtState.colorTex = useDither ? deviceTex : baseTex;
 
 	if (view->crt_postprocessing_enabled) {
@@ -556,7 +557,10 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 		const bool depthTest = desc.depthTest;
 		const auto shouldExecute = desc.shouldExecute;
 
-		const auto* graph = desc.graph ? &desc.graph.value() : nullptr;
+			const RenderPassDef::RenderPassGraphDef* graph = nullptr;
+			if (desc.graph) {
+				graph = &desc.graph.value();
+			}
 		auto getHandle = [handles](RenderPassDef::RenderGraphSlot slot) -> RenderGraphTexHandle {
 			if (slot == RenderPassDef::RenderGraphSlot::FrameColor) return handles->color;
 			if (slot == RenderPassDef::RenderGraphSlot::FrameDepth) return handles->depth;

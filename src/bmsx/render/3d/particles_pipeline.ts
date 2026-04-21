@@ -75,7 +75,7 @@ function resolveParticleState(state: ParticlePipelineState, context: RenderConte
 	return state;
 }
 
-export function init(backend: WebGLBackend): void {
+export function initParticlePipeline(backend: WebGLBackend): void {
 	vao = backend.createVertexArray() as WebGLVertexArrayObject;
 	const quad = new Float32Array([-0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5]);
 	quadBuffer = backend.createVertexBuffer(quad, 'static') as WebGLBuffer;
@@ -239,7 +239,7 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 		},
 		bootstrap: (backend) => {
 			const webglBackend = backend as WebGLBackend;
-			init(webglBackend);
+			initParticlePipeline(webglBackend);
 			setupParticleLocations(webglBackend);
 			setupParticleUniforms(webglBackend);
 		},

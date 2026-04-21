@@ -21,6 +21,14 @@ import {
 	TEXTURE_UNIT_ATLAS_PRIMARY,
 	TEXTURE_UNIT_ATLAS_SECONDARY,
 } from '../backend/webgl/constants';
+import {
+	bindWebGLInstancedQuadVertexArray,
+	createWebGLInstancedQuadRuntime,
+	ensureWebGLInstanceBufferCapacity,
+	flushWebGLInstanceBatch,
+	type WebGLInstancedFloatAttribute,
+	type WebGLSpriteQuadUniforms,
+} from '../backend/webgl/instanced_buffers';
 import { spriteParallaxRig } from '../2d/sprite_parallax_rig';
 import fragmentShaderCode from './shaders/vdp_2d.frag.glsl';
 import vertexShaderCode from './shaders/vdp_2d.vert.glsl';
@@ -44,14 +52,8 @@ type WebGLVdpBlitterRuntime = {
 	copySnapshotTexture: WebGLTexture | null;
 	copySnapshotWidth: number;
 	copySnapshotHeight: number;
-	uScale: WebGLUniformLocation;
 	drawTargetHeight: number;
-	uTexture0: WebGLUniformLocation;
-	uTexture1: WebGLUniformLocation;
-	uTexture2: WebGLUniformLocation;
-	uParallaxRig: WebGLUniformLocation;
-	uParallaxRig2: WebGLUniformLocation;
-	uParallaxFlipWindow: WebGLUniformLocation;
+	uniforms: WebGLSpriteQuadUniforms;
 	sortedCommands: VdpWebGLBlitterCommand[];
 	rankedCommands: VdpWebGLBlitterCommand[];
 	priorityDepthBySeq: Map<number, number>;
@@ -63,6 +65,17 @@ const INITIAL_BATCH_CAPACITY = 256;
 const SOLID_TEXCOORD_0 = 0;
 const SOLID_TEXCOORD_1 = 1;
 const WHITE_COLOR: FrameBufferColor = { r: 255, g: 255, b: 255, a: 255 };
+const INSTANCE_FLOAT_ATTRIBUTES: readonly WebGLInstancedFloatAttribute[] = [
+	['i_origin', 2, 0],
+	['i_axis_x', 2, 2 * 4],
+	['i_axis_y', 2, 4 * 4],
+	['i_uv0', 2, 6 * 4],
+	['i_uv1', 2, 8 * 4],
+	['i_z', 1, 10 * 4],
+	['i_fx', 1, 11 * 4],
+	['i_priority', 1, 12 * 4],
+	['i_color', 4, 13 * 4],
+];
 
 function createRuntime(backend: WebGLBackend): WebGLVdpBlitterRuntime {
 	const gl = backend.gl as WebGL2RenderingContext;
@@ -72,64 +85,18 @@ function createRuntime(backend: WebGLBackend): WebGLVdpBlitterRuntime {
 		fsCode: fragmentShaderCode,
 	});
 	const vao = backend.createVertexArray() as WebGLVertexArrayObject;
-	const cornerBuffer = backend.createVertexBuffer(new Float32Array([
-		0, 0,
-		0, 1,
-		1, 0,
-		1, 0,
-		0, 1,
-		1, 1,
-	]), 'static') as WebGLBuffer;
-	const instanceFloatBuffer = backend.createVertexBuffer(new Float32Array(INITIAL_BATCH_CAPACITY * INSTANCE_FLOATS), 'dynamic') as WebGLBuffer;
-	const instanceAtlasBuffer = backend.createVertexBuffer(new Uint8Array(INITIAL_BATCH_CAPACITY), 'dynamic') as WebGLBuffer;
-	const whiteTexture = backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]) as WebGLTexture;
 	const passStub: PassEncoder = { fbo: null, desc: { label: 'blitter_setup' } };
 	backend.setGraphicsPipeline(passStub, pipeline);
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
 	const program = pipeline.backendData as WebGLProgram;
-	const uScale = gl.getUniformLocation(program, 'u_scale')!;
-	const uTexture0 = gl.getUniformLocation(program, 'u_texture0')!;
-	const uTexture1 = gl.getUniformLocation(program, 'u_texture1')!;
-	const uTexture2 = gl.getUniformLocation(program, 'u_texture2')!;
-	const uParallaxRig = gl.getUniformLocation(program, 'u_parallax_rig')!;
-	const uParallaxRig2 = gl.getUniformLocation(program, 'u_parallax_rig2')!;
-	const uParallaxFlipWindow = gl.getUniformLocation(program, 'u_parallax_flip_window')!;
-	gl.uniform1f(uScale, 1);
-	gl.uniform1i(uTexture0, TEXTURE_UNIT_ATLAS_PRIMARY);
-	gl.uniform1i(uTexture1, TEXTURE_UNIT_ATLAS_SECONDARY);
-	gl.uniform1i(uTexture2, TEXTURE_UNIT_ATLAS_ENGINE);
-	backend.bindVertexArray(vao);
-	backend.bindArrayBuffer(cornerBuffer);
-	const aCorner = gl.getAttribLocation(program, 'a_corner');
-	backend.enableVertexAttrib(aCorner);
-	backend.vertexAttribPointer(aCorner, 2, gl.FLOAT, false, 0, 0);
-	backend.bindArrayBuffer(instanceFloatBuffer);
-	bindFloatAttribute(backend, gl.getAttribLocation(program, 'i_origin'), 2, 0);
-	bindFloatAttribute(backend, gl.getAttribLocation(program, 'i_axis_x'), 2, 2 * 4);
-	bindFloatAttribute(backend, gl.getAttribLocation(program, 'i_axis_y'), 2, 4 * 4);
-	bindFloatAttribute(backend, gl.getAttribLocation(program, 'i_uv0'), 2, 6 * 4);
-	bindFloatAttribute(backend, gl.getAttribLocation(program, 'i_uv1'), 2, 8 * 4);
-	bindFloatAttribute(backend, gl.getAttribLocation(program, 'i_z'), 1, 10 * 4);
-	bindFloatAttribute(backend, gl.getAttribLocation(program, 'i_fx'), 1, 11 * 4);
-	bindFloatAttribute(backend, gl.getAttribLocation(program, 'i_priority'), 1, 12 * 4);
-	bindFloatAttribute(backend, gl.getAttribLocation(program, 'i_color'), 4, 13 * 4);
-	backend.bindArrayBuffer(instanceAtlasBuffer);
-	const atlasLocation = gl.getAttribLocation(program, 'i_atlas_id');
-	backend.enableVertexAttrib(atlasLocation);
-	backend.vertexAttribIPointer(atlasLocation, 1, gl.UNSIGNED_BYTE, 1, 0);
-	backend.vertexAttribDivisor(atlasLocation, 1);
-	backend.bindVertexArray(null);
-	backend.bindArrayBuffer(null);
+	const quad = createWebGLInstancedQuadRuntime(backend, gl, program, INITIAL_BATCH_CAPACITY, INSTANCE_FLOATS);
+	const whiteTexture = backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]) as WebGLTexture;
+	bindWebGLInstancedQuadVertexArray(backend, vao, program, quad, INSTANCE_STRIDE_BYTES, INSTANCE_FLOAT_ATTRIBUTES);
 	return {
 		gl,
 		pipeline,
 		vao,
-		cornerBuffer,
-		instanceFloatBuffer,
-		instanceAtlasBuffer,
-		floatData: new Float32Array(INITIAL_BATCH_CAPACITY * INSTANCE_FLOATS),
-		atlasData: new Uint8Array(INITIAL_BATCH_CAPACITY),
-		capacity: INITIAL_BATCH_CAPACITY,
+		...quad,
 		whiteTexture,
 		priorityDepthTexture: null,
 		priorityDepthWidth: 0,
@@ -137,42 +104,11 @@ function createRuntime(backend: WebGLBackend): WebGLVdpBlitterRuntime {
 		copySnapshotTexture: null,
 		copySnapshotWidth: 0,
 		copySnapshotHeight: 0,
-		uScale,
 		drawTargetHeight: 0,
-		uTexture0,
-		uTexture1,
-		uTexture2,
-		uParallaxRig,
-		uParallaxRig2,
-		uParallaxFlipWindow,
 		sortedCommands: [],
 		rankedCommands: [],
 		priorityDepthBySeq: new Map(),
 	};
-}
-
-function bindFloatAttribute(backend: WebGLBackend, location: number, size: number, offset: number): void {
-	backend.enableVertexAttrib(location);
-	backend.vertexAttribPointer(location, size, backend.gl.FLOAT, false, INSTANCE_STRIDE_BYTES, offset);
-	backend.vertexAttribDivisor(location, 1);
-}
-
-function ensureCapacity(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, count: number): void {
-	if (count <= state.capacity) {
-		return;
-	}
-	let capacity = state.capacity;
-	while (capacity < count) {
-		capacity <<= 1;
-	}
-	state.capacity = capacity;
-	state.floatData = new Float32Array(capacity * INSTANCE_FLOATS);
-	state.atlasData = new Uint8Array(capacity);
-	backend.bindArrayBuffer(state.instanceFloatBuffer);
-	backend.updateVertexBuffer(state.instanceFloatBuffer, state.floatData, 0);
-	backend.bindArrayBuffer(state.instanceAtlasBuffer);
-	backend.updateVertexBuffer(state.instanceAtlasBuffer, state.atlasData, 0);
-	backend.bindArrayBuffer(null);
 }
 
 function preparePriorityDepthTexture(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, width: number, height: number): WebGLTexture {
@@ -231,11 +167,11 @@ function bindPassState(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, pas
 		time: Runtime.instance.frameLoop.currentTimeMs / 1000,
 		delta: $.deltatime_seconds,
 	});
-	gl.uniform1f(state.uScale, 1);
+	gl.uniform1f(state.uniforms.scale, 1);
 	state.drawTargetHeight = host.height;
-	gl.uniform4f(state.uParallaxRig, spriteParallaxRig.vy, spriteParallaxRig.scale, spriteParallaxRig.impact, spriteParallaxRig.impact_t);
-	gl.uniform4f(state.uParallaxRig2, spriteParallaxRig.bias_px, spriteParallaxRig.parallax_strength, spriteParallaxRig.scale_strength, spriteParallaxRig.flip_strength);
-	gl.uniform1f(state.uParallaxFlipWindow, spriteParallaxRig.flip_window);
+	gl.uniform4f(state.uniforms.parallaxRig, spriteParallaxRig.vy, spriteParallaxRig.scale, spriteParallaxRig.impact, spriteParallaxRig.impact_t);
+	gl.uniform4f(state.uniforms.parallaxRig2, spriteParallaxRig.bias_px, spriteParallaxRig.parallax_strength, spriteParallaxRig.scale_strength, spriteParallaxRig.flip_strength);
+	gl.uniform1f(state.uniforms.parallaxFlipWindow, spriteParallaxRig.flip_window);
 	backend.setViewport({ x: 0, y: 0, w: host.width, h: host.height });
 	backend.setCullEnabled(false);
 	backend.setDepthTestEnabled(true);
@@ -263,17 +199,9 @@ function bindTexturesForMode(host: VdpWebGLBlitterHost, state: WebGLVdpBlitterRu
 	$.view.bind2DTex(engine);
 }
 
-function flushBatch(backend: WebGLBackend, pass: PassEncoder, state: WebGLVdpBlitterRuntime, count: number): void {
-	backend.bindArrayBuffer(state.instanceFloatBuffer);
-	backend.updateVertexBuffer(state.instanceFloatBuffer, state.floatData.subarray(0, count * INSTANCE_FLOATS), 0);
-	backend.bindArrayBuffer(state.instanceAtlasBuffer);
-	backend.updateVertexBuffer(state.instanceAtlasBuffer, state.atlasData.subarray(0, count), 0);
-	backend.drawInstanced(pass, 6, count, 0, 0);
-}
-
 function flushPendingBatch(backend: WebGLBackend, pass: PassEncoder, state: WebGLVdpBlitterRuntime, count: number): number {
 	if (count !== 0) {
-		flushBatch(backend, pass, state, count);
+		flushWebGLInstanceBatch(backend, pass, state, count, INSTANCE_FLOATS);
 	}
 	return 0;
 }
@@ -326,7 +254,7 @@ function appendFillCommand(backend: WebGLBackend, state: WebGLVdpBlitterRuntime,
 	if (left === right || top === bottom) {
 		return 0;
 	}
-	ensureCapacity(backend, state, index + 1);
+	ensureWebGLInstanceBufferCapacity(backend, state, index + 1, INSTANCE_FLOATS);
 	writeAxisAlignedQuad(state, index, left, top, right - left, bottom - top, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, command.z, 0, priorityDepth, command.color, 0);
 	return 1;
 }
@@ -338,7 +266,7 @@ function appendLineCommand(backend: WebGLBackend, state: WebGLVdpBlitterRuntime,
 	const length = Math.hypot(dx, dy);
 	if (length === 0) {
 		const half = thickness * 0.5;
-		ensureCapacity(backend, state, index + 1);
+		ensureWebGLInstanceBufferCapacity(backend, state, index + 1, INSTANCE_FLOATS);
 		writeAxisAlignedQuad(state, index, command.x0 - half, command.y0 - half, thickness, thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, command.z, 0, priorityDepth, command.color, 0);
 		return 1;
 	}
@@ -349,7 +277,7 @@ function appendLineCommand(backend: WebGLBackend, state: WebGLVdpBlitterRuntime,
 	const half = thickness * 0.5;
 	const originX = command.x0 - tangentX * half - normalX * half;
 	const originY = command.y0 - tangentY * half - normalY * half;
-	ensureCapacity(backend, state, index + 1);
+	ensureWebGLInstanceBufferCapacity(backend, state, index + 1, INSTANCE_FLOATS);
 	writeQuad(state, index, originX, originY, dx + tangentX * thickness, dy + tangentY * thickness, normalX * thickness, normalY * thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, command.z, 0, priorityDepth, command.color, 0);
 	return 1;
 }
@@ -372,7 +300,7 @@ function appendBlitCommand(host: VdpWebGLBlitterHost, backend: WebGLBackend, sta
 		v0 = v1;
 		v1 = swap;
 	}
-	ensureCapacity(backend, state, index + 1);
+	ensureWebGLInstanceBufferCapacity(backend, state, index + 1, INSTANCE_FLOATS);
 	writeAxisAlignedQuad(
 		state,
 		index,
@@ -397,7 +325,7 @@ function appendGlyphRunBackground(backend: WebGLBackend, state: WebGLVdpBlitterR
 	if (command.backgroundColor === null || command.glyphs.length === 0) {
 		return 0;
 	}
-	ensureCapacity(backend, state, index + command.glyphs.length);
+	ensureWebGLInstanceBufferCapacity(backend, state, index + command.glyphs.length, INSTANCE_FLOATS);
 	for (let i = 0; i < command.glyphs.length; i += 1) {
 		const glyph = command.glyphs[i];
 		writeAxisAlignedQuad(
@@ -425,7 +353,7 @@ function appendGlyphRunGlyphs(host: VdpWebGLBlitterHost, backend: WebGLBackend, 
 	if (command.glyphs.length === 0) {
 		return 0;
 	}
-	ensureCapacity(backend, state, index + command.glyphs.length);
+	ensureWebGLInstanceBufferCapacity(backend, state, index + command.glyphs.length, INSTANCE_FLOATS);
 	for (let i = 0; i < command.glyphs.length; i += 1) {
 		const glyph = command.glyphs[i];
 		const surface = host.getSurface(glyph.surfaceId);
@@ -442,7 +370,7 @@ function appendTileRunCommand(host: VdpWebGLBlitterHost, backend: WebGLBackend, 
 	if (command.tiles.length === 0) {
 		return 0;
 	}
-	ensureCapacity(backend, state, index + command.tiles.length);
+	ensureWebGLInstanceBufferCapacity(backend, state, index + command.tiles.length, INSTANCE_FLOATS);
 	for (let i = 0; i < command.tiles.length; i += 1) {
 		const tile = command.tiles[i];
 		const surface = host.getSurface(tile.surfaceId);
@@ -610,7 +538,7 @@ function copyFrameBufferRect(host: VdpWebGLBlitterHost, backend: WebGLBackend, s
 		WHITE_COLOR,
 		0,
 	);
-	flushBatch(backend, pass, state, 1);
+	flushWebGLInstanceBatch(backend, pass, state, 1, INSTANCE_FLOATS);
 	backend.bindVertexArray(null);
 	backend.endRenderPass(pass);
 	backend.setBlendEnabled(false);

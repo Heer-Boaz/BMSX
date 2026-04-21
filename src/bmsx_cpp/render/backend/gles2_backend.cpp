@@ -208,7 +208,6 @@ void OpenGLES2Backend::readTextureRegion(TextureHandle handle, u8* out, i32 widt
 	if (x < 0 || y < 0 || x + width > tex->width || y + height > tex->height) {
 		throw std::runtime_error("[GLES2] Readback out of bounds.");
 	}
-	const GLuint prevFbo = m_current_fbo;
 	glBindFramebuffer(GL_FRAMEBUFFER, m_readback_fbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex->id, 0);
 	const GLint glY = tex->height - y - height;
@@ -223,7 +222,7 @@ void OpenGLES2Backend::readTextureRegion(TextureHandle handle, u8* out, i32 widt
 	}
 	glPixelStorei(GL_PACK_ALIGNMENT, 1);
 	glReadPixels(x, glY, width, height, GL_RGBA, GL_UNSIGNED_BYTE, readTarget);
-	glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
 	if (readTarget != out) {
 		std::vector<u8> encoded;
 		convertLinearToSrgb(readTarget, static_cast<size_t>(width) * static_cast<size_t>(height), encoded);
@@ -267,7 +266,6 @@ void OpenGLES2Backend::copyTexture(TextureHandle source, TextureHandle destinati
 void OpenGLES2Backend::copyTextureRegion(TextureHandle source, TextureHandle destination, i32 srcX, i32 srcY, i32 dstX, i32 dstY, i32 width, i32 height) {
 	auto* src = static_cast<GLES2Texture*>(source);
 	auto* dst = static_cast<GLES2Texture*>(destination);
-	const GLuint prevFbo = m_current_fbo;
 	const i32 prevActiveUnit = m_active_texture_unit;
 	const GLuint prevUploadBinding = m_bound_texture_2d_by_unit[0];
 	glBindFramebuffer(GL_FRAMEBUFFER, m_readback_fbo);
@@ -277,7 +275,7 @@ void OpenGLES2Backend::copyTextureRegion(TextureHandle source, TextureHandle des
 	m_active_texture_unit = 0;
 	m_bound_texture_2d_by_unit[0] = dst->id;
 	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, dstX, dstY, srcX, srcY, width, height);
-	glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
 	glBindTexture(GL_TEXTURE_2D, prevUploadBinding);
 	m_bound_texture_2d_by_unit[0] = prevUploadBinding;
 	if (prevActiveUnit >= 0) {

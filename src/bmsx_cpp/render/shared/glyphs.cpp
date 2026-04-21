@@ -88,7 +88,6 @@ void renderGlyphs(GameView* view,
 	if (!font) {
 		throw BMSX_RUNTIME_ERROR("No font or default font available for renderGlyphs");
 	}
-	const f32 startX = x;
 	f32 stepY = 0.0f;
 	for (const auto& line : lines) {
 		if (line.empty()) {
@@ -98,7 +97,7 @@ void renderGlyphs(GameView* view,
 			}
 			continue;
 		}
-		renderGlyphSpan(view, line, start, end, x, y, startX, stepY,
+		renderGlyphSpan(view, line, start, end, x, y, x, stepY,
 						z, font, color, backgroundColor, layer);
 		if (y >= view->canvasSize.y) {
 			return;

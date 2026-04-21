@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <utility>
 
 namespace bmsx {
 namespace RenderQueues {
@@ -73,6 +74,15 @@ static void submitResolvedSprite(Runtime& runtime,
 static bool hasCommittedFrontQueueContent() {
 	return s_meshQueue.sizeFront() > 0
 		|| s_particleQueue.sizeFront() > 0;
+}
+
+template<typename T, typename Fn>
+static void forEachActiveQueue(FeatureQueue<T>& queue, Fn&& fn) {
+	if (s_activeQueueSource == QueueSource::Back) {
+		queue.forEachBack(std::forward<Fn>(fn));
+		return;
+	}
+	queue.forEachFront(std::forward<Fn>(fn));
 }
 
 // --- 2D framebuffer API ---
@@ -203,13 +213,13 @@ void submitGlyphs(const GlyphRenderSubmission& options) {
 	const std::vector<std::string>* lines = &options.glyphs;
 	std::vector<std::string> wrapped;
 	if (options.wrap_chars && *options.wrap_chars > 0 && options.glyphs.size() == 1) {
-		wrapped = wrapGlyphs(options.glyphs[0], *options.wrap_chars);
+		wrapped = ::bmsx::wrapGlyphs(options.glyphs[0], *options.wrap_chars);
 		lines = &wrapped;
 	}
 
 	f32 x = options.x;
 	if (options.center_block_width && *options.center_block_width > 0) {
-		x += calculateCenteredBlockX(*lines, options.font->char_width('a'),
+		x += ::bmsx::calculateCenteredBlockX(*lines, options.font->char_width('a'),
 										*options.center_block_width);
 	}
 
@@ -230,14 +240,6 @@ void renderGlyphs(f32 x,
 	Runtime::instance().machine().vdp().enqueueGlyphRun(lines, x, y, z, font, color, backgroundColor, start, end, renderLayerTo2dLayer(layer));
 }
 
-f32 calculateCenteredBlockX(const std::vector<std::string>& lines, i32 charWidth, i32 blockWidth) {
-	return ::bmsx::calculateCenteredBlockX(lines, charWidth, blockWidth);
-}
-
-std::vector<std::string> wrapGlyphs(const std::string& text, i32 maxLineLength) {
-	return ::bmsx::wrapGlyphs(text, maxLineLength);
-}
-
 // --- Mesh queue API ---
 
 void submitMesh(const MeshRenderSubmission& item) {
@@ -249,13 +251,7 @@ i32 beginMeshQueue() {
 }
 
 void forEachMeshQueue(const std::function<void(const MeshRenderSubmission&, size_t)>& fn) {
-	if (s_activeQueueSource == QueueSource::Back) {
-		s_meshQueue.forEachBack([&fn](const MeshRenderSubmission& item, size_t index) {
-			fn(item, index);
-		});
-		return;
-	}
-	s_meshQueue.forEachFront([&fn](const MeshRenderSubmission& item, size_t index) {
+	forEachActiveQueue(s_meshQueue, [&fn](const MeshRenderSubmission& item, size_t index) {
 		fn(item, index);
 	});
 }
@@ -274,13 +270,7 @@ i32 beginParticleQueue() {
 }
 
 void forEachParticleQueue(const std::function<void(const ParticleRenderSubmission&, size_t)>& fn) {
-	if (s_activeQueueSource == QueueSource::Back) {
-		s_particleQueue.forEachBack([&fn](const ParticleRenderSubmission& item, size_t index) {
-			fn(item, index);
-		});
-		return;
-	}
-	s_particleQueue.forEachFront([&fn](const ParticleRenderSubmission& item, size_t index) {
+	forEachActiveQueue(s_particleQueue, [&fn](const ParticleRenderSubmission& item, size_t index) {
 		fn(item, index);
 	});
 }

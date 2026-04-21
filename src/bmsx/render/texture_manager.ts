@@ -206,6 +206,7 @@
 
 import { AssetBarrier } from '../core/assetbarrier';
 import { GateGroup, taskGate } from '../core/taskgate';
+import { clamp01 } from '../common/clamp';
 import { color_arr, GLTFModel, Index2GpuTexture, type RomImgAsset, type TextureSource } from '../rompack/format';
 import { GPUBackend, TextureHandle, TextureParams } from './backend/interfaces';
 
@@ -632,7 +633,7 @@ export class TextureManager {
 		return this.imageCache.get(key)?.bitmap;
 	}
 
-	async fromBuffer(uri: string, buffer?: ArrayBuffer, options?: { flipY?: boolean; }): Promise<TextureSource> {
+	async fromBuffer(uri: string, buffer?: ArrayBuffer, flipY = false): Promise<TextureSource> {
 		let entry = this.imageCache.get(uri);
 		if (entry) {
 			if (entry.bitmap) {
@@ -655,7 +656,7 @@ export class TextureManager {
 				if (!buffer) throw new Error(`No buffer provided to load image '${uri}'`);
 				const blob = new Blob([buffer]);
 				const img = await createImageBitmap(blob, {
-					imageOrientation: options?.flipY ? 'flipY' : 'none',
+					imageOrientation: flipY ? 'flipY' : 'none',
 					premultiplyAlpha: 'none',
 					colorSpaceConversion: 'none',
 				});
@@ -671,7 +672,7 @@ export class TextureManager {
 	private async createSolid(size: number, color: color_arr): Promise<TextureSource> {
 		const [r, g, b, a] = color;
 		const toUint8 = (v: number) => (v <= 1 ? Math.round(v * 255) : Math.round(v));
-		const alpha = a <= 1 ? a : Math.max(0, Math.min(1, a / 255));
+		const alpha = a <= 1 ? a : clamp01(a / 255);
 		const cssColor = `rgba(${toUint8(r)}, ${toUint8(g)}, ${toUint8(b)}, ${alpha})`;
 		const dimension = Math.max(1, size);
 

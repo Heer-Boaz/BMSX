@@ -21,23 +21,69 @@ let vbo: WebGLBuffer = null;
 let enabled = true;
 export function setAxisGizmoEnabled(v: boolean) { enabled = v; }
 
-function init(gl: WebGL2RenderingContext): void {
+const AXIS_VERTEX_COUNT = 6;
+const AXIS_GIZMO_SIZE = 0.15;
+const AXIS_LABEL_MARGIN_PX = 24;
+const AXIS_LABEL_SPACING_PX = 56;
+const AXIS_LABEL_PAD_PX = 8;
+const AXIS_LABEL_INSET_PX = 6;
+const AXIS_VERTEX_STRIDE = 6 * 4;
+const AXIS_VERTEX_DATA = new Float32Array([
+	0, 0, 0, 1, 0, 0,
+	1, 0, 0, 1, 0, 0,
+	0, 0, 0, 0, 1, 0,
+	0, 1, 0, 0, 1, 0,
+	0, 0, 0, 0, 0, 1,
+	0, 0, 1, 0, 0, 1,
+]);
+const axisInvRot = new Float32Array(16);
+const AXIS_LABEL_X_COLOR: color = { r: 1, g: 0, b: 0, a: 1 };
+const AXIS_LABEL_Y_COLOR: color = { r: 0, g: 1, b: 0, a: 1 };
+const AXIS_LABEL_Z_COLOR: color = { r: 0, g: 0, b: 1, a: 1 };
+const AXIS_LABEL_R_COLOR: color = { r: 1, g: 0.5, b: 0.5, a: 1 };
+const AXIS_LABEL_U_COLOR: color = { r: 0.5, g: 1, b: 0.5, a: 1 };
+const AXIS_LABEL_F_COLOR: color = { r: 0.5, g: 0.5, b: 1, a: 1 };
+
+function axisLabelScale(depth: number): number {
+	return 0.70 + 0.30 * clamp(depth, -1, 1);
+}
+
+function axisNdcToPixelX(x: number, width: number): number {
+	return (x + 1) * 0.5 * width;
+}
+
+function axisNdcToPixelY(y: number, height: number): number {
+	return (1 - y) * 0.5 * height;
+}
+
+function drawAxisLabel(px: number, py: number, letter: string, col: color, scale: number): void {
+	const font = $.view.default_font;
+	const imgid = font.char_to_img(letter);
+	$.view.renderer.submit.sprite({ imgid, pos: { x: Math.round(px), y: Math.round(py), z: 999 }, scale: { x: scale, y: scale }, flip: { flip_h: false, flip_v: false }, colorize: col, layer: 'ui' });
+}
+
+function placeAxisLabel(originX: number, originY: number, vx: number, vy: number, letter: string, col: color, scale: number, aspect: number, width: number, height: number): void {
+	const tipX = originX + (vx / aspect) * AXIS_GIZMO_SIZE;
+	const tipY = originY + vy * AXIS_GIZMO_SIZE;
+	const originPixelX = axisNdcToPixelX(originX, width);
+	const originPixelY = axisNdcToPixelY(originY, height);
+	const tipPixelX = axisNdcToPixelX(tipX, width);
+	const tipPixelY = axisNdcToPixelY(tipY, height);
+	let dx = tipPixelX - originPixelX;
+	let dy = tipPixelY - originPixelY;
+	const length = Math.hypot(dx, dy) || 1;
+	dx /= length;
+	dy /= length;
+	const x = clamp(tipPixelX + dx * AXIS_LABEL_PAD_PX, AXIS_LABEL_INSET_PX, width - AXIS_LABEL_INSET_PX);
+	const y = clamp(tipPixelY + dy * AXIS_LABEL_PAD_PX, AXIS_LABEL_INSET_PX, height - AXIS_LABEL_INSET_PX);
+	drawAxisLabel(x, y, letter, col, scale);
+}
+
+function initAxisGizmoPipeline(gl: WebGL2RenderingContext): void {
 	vao = gl.createVertexArray();
-	// 6 vertices: origin->+X, origin->+Y, origin->+Z with colors
-	const data = new Float32Array([
-		// x axis (red)
-		0, 0, 0, 1, 0, 0,
-		1, 0, 0, 1, 0, 0,
-		// y axis (green)
-		0, 0, 0, 0, 1, 0,
-		0, 1, 0, 0, 1, 0,
-		// z axis (blue)
-		0, 0, 0, 0, 0, 1,
-		0, 0, 1, 0, 0, 1,
-	]);
 	vbo = gl.createBuffer();
 	gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-	gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+	gl.bufferData(gl.ARRAY_BUFFER, AXIS_VERTEX_DATA, gl.STATIC_DRAW);
 
 	const backend = $.view.backend as WebGLBackend;
 	const prog = backend.buildProgram(axisVS, axisFS, 'axis_gizmo');
@@ -54,11 +100,10 @@ function init(gl: WebGL2RenderingContext): void {
 
 	gl.bindVertexArray(vao);
 	gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-	const stride = 6 * 4; // 6 floats per vertex
 	gl.enableVertexAttribArray(posLoc);
-	gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, stride, 0);
+	gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, AXIS_VERTEX_STRIDE, 0);
 	gl.enableVertexAttribArray(colLoc);
-	gl.vertexAttribPointer(colLoc, 3, gl.FLOAT, false, stride, 3 * 4);
+	gl.vertexAttribPointer(colLoc, 3, gl.FLOAT, false, AXIS_VERTEX_STRIDE, 3 * 4);
 	gl.bindVertexArray(null);
 }
 
@@ -73,12 +118,11 @@ export function registerAxisGizmoPass_WebGL(registry: RenderPassLibrary): void {
 		depthWrite: false,
 		bootstrap: (backend) => {
 			const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
-			init(gl);
+			initAxisGizmoPipeline(gl);
 		},
 		shouldExecute: () => enabled && !!resolveActiveCamera3D(),
 		exec: (backend, _fbo, _s) => {
 			const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
-			if (!program || !vao) return;
 			const cam = resolveActiveCamera3D()!;
 			const view = cam.view; // full view; translation ignored via w=0
 			const gv = $.view;
@@ -98,81 +142,40 @@ export function registerAxisGizmoPass_WebGL(registry: RenderPassLibrary): void {
 			// Uniforms
 			gl.uniformMatrix4fv(uViewLoc, false, view);
 			gl.uniform1f(uAspectLoc, aspect);
-			const size = 0.15; // NDC length
-			gl.uniform1f(uSizeLoc, size);
+			gl.uniform1f(uSizeLoc, AXIS_GIZMO_SIZE);
 			// Screen size in pixels
 			const w = gv.viewportSize.x; const h = gv.viewportSize.y;
 			// Place gizmo with pixel-based margin to keep labels visible
-			const marginPx = 24; // pixels from right/top edges (tighter to corner)
-			const dxNDC = (marginPx / Math.max(1, w)) * 2.0;
-			const dyNDC = (marginPx / Math.max(1, h)) * 2.0;
+			const dxNDC = (AXIS_LABEL_MARGIN_PX / Math.max(1, w)) * 2.0;
+			const dyNDC = (AXIS_LABEL_MARGIN_PX / Math.max(1, h)) * 2.0;
 			// Top-right corner, moved inward by pixel margin
 			const offsetX = 1.0 - dxNDC;
 			const offsetY = 1.0 - dyNDC;
 			gl.uniform2f(uOffsetLoc, offsetX, offsetY);
 
-			gl.drawArrays(gl.LINES, 0, 6);
+			gl.drawArrays(gl.LINES, 0, AXIS_VERTEX_COUNT);
 
 			// --- Camera-axes gizmo (R/U/F) next to world gizmo ---
 			// Compute a leftward offset in NDC so gizmos sit side-by-side
-			const spacingPx = 56;
-			const spacingNDC = (spacingPx / Math.max(1, w)) * 2.0;
+			const spacingNDC = (AXIS_LABEL_SPACING_PX / Math.max(1, w)) * 2.0;
 			const offset2X = offsetX - spacingNDC;
 			const offset2Y = offsetY;
 
 			// Inverse rotation (transpose of view's 3x3) to express camera axes in world frame
-			const invRot = new Float32Array(16);
-			M4.skyboxFromViewInto(invRot, view);
+			M4.skyboxFromViewInto(axisInvRot, view);
 			// Flip third column so Z axis represents camera Forward (+Z_cam)
-			invRot[8] = -invRot[8]; invRot[9] = -invRot[9]; invRot[10] = -invRot[10];
-			gl.uniformMatrix4fv(uViewLoc, false, invRot);
+			axisInvRot[8] = -axisInvRot[8]; axisInvRot[9] = -axisInvRot[9]; axisInvRot[10] = -axisInvRot[10];
+			gl.uniformMatrix4fv(uViewLoc, false, axisInvRot);
 			gl.uniform2f(uOffsetLoc, offset2X, offset2Y);
-			gl.drawArrays(gl.LINES, 0, 6);
+			gl.drawArrays(gl.LINES, 0, AXIS_VERTEX_COUNT);
 
-				const toPixelX = (x: number) => (x + 1) * 0.5 * w;
-				const toPixelY = (y: number) => (1 - y) * 0.5 * h;
-				const drawLetter = (px: number, py: number, letter: string, col: color, scale: number) => {
-					const font = gv.default_font;
-					const imgid = font.char_to_img(letter);
-					$.view.renderer.submit.sprite({ imgid, pos: { x: Math.round(px), y: Math.round(py), z: 999 }, scale: { x: scale, y: scale }, flip: { flip_h: false, flip_v: false }, colorize: col, layer: 'ui' });
-				};
-				const placeLabel = (originX: number, originY: number, vx: number, vy: number, letter: string, col: color, scale: number) => {
-					const tipX = originX + (vx / aspect) * size;
-					const tipY = originY + vy * size;
-					const originPixelX = toPixelX(originX);
-					const originPixelY = toPixelY(originY);
-					const tipPixelX = toPixelX(tipX);
-					const tipPixelY = toPixelY(tipY);
-					let dx = tipPixelX - originPixelX, dy = tipPixelY - originPixelY;
-					const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
-					const pad = 8; // pixels past tip (slightly tighter)
-					let lx = tipPixelX + dx * pad; let ly = tipPixelY + dy * pad;
-					// Clamp labels to screen bounds with a small inset to avoid clipping
-					const inset = 6;
-					lx = clamp(lx, inset, w - inset);
-					ly = clamp(ly, inset, h - inset);
-					drawLetter(lx, ly, letter, col, scale);
-			};
-			// Use first two rows of view's rotation columns for 2D projection (same as shader)
-			// Subtle depth cue: scale letters based on whether that world axis points toward camera
-			// Camera forward in world (from invRot after flip):
-			const fwd = { x: invRot[8], y: invRot[9], z: invRot[10] };
-			const scaleFor = (d: number) => {
-				// clamp d to [-1, 1] then map linearly to [0.5, 1.0]:
-				// scale = 0.75 + 0.25 * d  -> d=-1 => 0.5, d=1 => 1.0
-					const cd = clamp(d, -1, 1);
-					return 0.70 + 0.30 * cd;
-				};
-				placeLabel(offsetX, offsetY, view[0], view[1], 'X', { r: 1, g: 0, b: 0, a: 1 }, scaleFor(fwd.x));
-				placeLabel(offsetX, offsetY, view[4], view[5], 'Y', { r: 0, g: 1, b: 0, a: 1 }, scaleFor(fwd.y));
-				placeLabel(offsetX, offsetY, view[8], view[9], 'Z', { r: 0, g: 0, b: 1, a: 1 }, scaleFor(fwd.z));
+			placeAxisLabel(offsetX, offsetY, view[0], view[1], 'X', AXIS_LABEL_X_COLOR, axisLabelScale(axisInvRot[8]), aspect, w, h);
+			placeAxisLabel(offsetX, offsetY, view[4], view[5], 'Y', AXIS_LABEL_Y_COLOR, axisLabelScale(axisInvRot[9]), aspect, w, h);
+			placeAxisLabel(offsetX, offsetY, view[8], view[9], 'Z', AXIS_LABEL_Z_COLOR, axisLabelScale(axisInvRot[10]), aspect, w, h);
 
-				// Camera axes labels (R, U, F) at the second gizmo origin
-				// invRot columns after flip: [right, up, forward]
-				const fwd2 = { x: invRot[8], y: invRot[9], z: invRot[10] };
-				placeLabel(offset2X, offset2Y, invRot[0], invRot[1], 'R', { r: 1, g: 0.5, b: 0.5, a: 1 }, scaleFor(fwd2.x));
-				placeLabel(offset2X, offset2Y, invRot[4], invRot[5], 'U', { r: 0.5, g: 1, b: 0.5, a: 1 }, scaleFor(fwd2.y));
-				placeLabel(offset2X, offset2Y, invRot[8], invRot[9], 'F', { r: 0.5, g: 0.5, b: 1, a: 1 }, scaleFor(fwd2.z));
+			placeAxisLabel(offset2X, offset2Y, axisInvRot[0], axisInvRot[1], 'R', AXIS_LABEL_R_COLOR, axisLabelScale(axisInvRot[8]), aspect, w, h);
+			placeAxisLabel(offset2X, offset2Y, axisInvRot[4], axisInvRot[5], 'U', AXIS_LABEL_U_COLOR, axisLabelScale(axisInvRot[9]), aspect, w, h);
+			placeAxisLabel(offset2X, offset2Y, axisInvRot[8], axisInvRot[9], 'F', AXIS_LABEL_F_COLOR, axisLabelScale(axisInvRot[10]), aspect, w, h);
 
 			// Restore state
 			if (prevCull) gl.enable(gl.CULL_FACE); else gl.disable(gl.CULL_FACE);

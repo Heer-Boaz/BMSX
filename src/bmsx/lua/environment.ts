@@ -50,18 +50,24 @@ export class LuaEnvironment {
 		return accessRange.start.column >= definition.start.column;
 	}
 
-	public set(_name: string, value: LuaValue, range?: LuaSourceRange, isConst = false): void {
-		const name = _name;
+	public set(name: string, value: LuaValue, range?: LuaSourceRange, isConst = false): void {
 		const existing = this.bindings.get(name);
+		let definition: LuaSourceRange | null;
+		if (range !== undefined) {
+			definition = range;
+		} else if (existing) {
+			definition = existing.definition;
+		} else {
+			definition = null;
+		}
 		this.bindings.set(name, {
 			value,
-			definition: range ?? (existing ? existing.definition : null),
+			definition,
 			isConst,
 		});
 	}
 
-	public assignExisting(_name: string, value: LuaValue, isConst?: boolean): void {
-		const name = _name;
+	public assignExisting(name: string, value: LuaValue, isConst?: boolean): void {
 		const resolved = this.resolve(name);
 		if (resolved === null) {
 			throw new LuaRuntimeError(`[LuaEnvironment] Attempted to assign to undefined variable '${name}'.`, '<environment>', 0, 0);
@@ -77,8 +83,7 @@ export class LuaEnvironment {
 		}
 	}
 
-	public get(_name: string, accessRange: LuaSourceRange | null = null): LuaValue {
-		const name = _name;
+	public get(name: string, accessRange: LuaSourceRange | null = null): LuaValue {
 		const binding = this.bindings.get(name);
 		if (binding && this.isBindingVisible(binding, accessRange)) {
 			return binding.value;
@@ -89,8 +94,7 @@ export class LuaEnvironment {
 		return null;
 	}
 
-	public getDefinition(_name: string): LuaSourceRange {
-		const name = _name;
+	public getDefinition(name: string): LuaSourceRange {
 		const local = this.bindings.get(name);
 		if (local && local.definition) {
 			return local.definition;
@@ -101,13 +105,11 @@ export class LuaEnvironment {
 		return null;
 	}
 
-	public hasLocal(_name: string): boolean {
-		const name = _name;
+	public hasLocal(name: string): boolean {
 		return this.bindings.has(name);
 	}
 
-	public resolve(_name: string, accessRange: LuaSourceRange | null = null): LuaEnvironment {
-		const name = _name;
+	public resolve(name: string, accessRange: LuaSourceRange | null = null): LuaEnvironment {
 		const binding = this.bindings.get(name);
 		if (binding && this.isBindingVisible(binding, accessRange)) {
 			return this;

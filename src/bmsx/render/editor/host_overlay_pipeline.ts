@@ -13,6 +13,14 @@ import {
 	TEXTURE_UNIT_ATLAS_PRIMARY,
 	TEXTURE_UNIT_ATLAS_SECONDARY,
 } from '../backend/webgl/constants';
+import {
+	bindWebGLInstancedQuadVertexArray,
+	createWebGLInstancedQuadRuntime,
+	ensureWebGLInstanceBufferCapacity,
+	flushWebGLInstanceBatch,
+	type WebGLInstancedFloatAttribute,
+	type WebGLSpriteQuadUniforms,
+} from '../backend/webgl/instanced_buffers';
 import { $ } from '../../core/engine';
 import { Runtime } from '../../machine/runtime/runtime';
 import { TAB_SPACES } from '../shared/bitmap_font';
@@ -55,13 +63,7 @@ type HostOverlayRuntime = {
 	atlasData: Uint8Array;
 	capacity: number;
 	whiteTexture: WebGLTexture;
-	uScale: WebGLUniformLocation;
-	uTexture0: WebGLUniformLocation;
-	uTexture1: WebGLUniformLocation;
-	uTexture2: WebGLUniformLocation;
-	uParallaxRig: WebGLUniformLocation;
-	uParallaxRig2: WebGLUniformLocation;
-	uParallaxFlipWindow: WebGLUniformLocation;
+	uniforms: WebGLSpriteQuadUniforms;
 };
 
 const INSTANCE_FLOATS = 16;
@@ -70,79 +72,31 @@ const INITIAL_BATCH_CAPACITY = 256;
 const SOLID_TEXCOORD_0 = 0;
 const SOLID_TEXCOORD_1 = 1;
 const HOST_OVERLAY_DRAW_PASS: PassEncoder = { fbo: null, desc: { label: 'host_overlay' } as RenderPassDesc };
+const INSTANCE_FLOAT_ATTRIBUTES: readonly WebGLInstancedFloatAttribute[] = [
+	['i_origin', 2, 0],
+	['i_axis_x', 2, 2 * 4],
+	['i_axis_y', 2, 4 * 4],
+	['i_uv0', 2, 6 * 4],
+	['i_uv1', 2, 8 * 4],
+	['i_z', 1, 10 * 4],
+	['i_fx', 1, 11 * 4],
+	['i_color', 4, 12 * 4],
+];
 
 let runtime: HostOverlayRuntime | null = null;
-
-function bindFloatAttribute(backend: WebGLBackend, location: number, size: number, offset: number): void {
-	backend.enableVertexAttrib(location);
-	backend.vertexAttribPointer(location, size, backend.gl.FLOAT, false, INSTANCE_STRIDE_BYTES, offset);
-	backend.vertexAttribDivisor(location, 1);
-}
 
 function createRuntime(backend: WebGLBackend, program: WebGLProgram): HostOverlayRuntime {
 	const gl = backend.gl as WebGL2RenderingContext;
 	const vao = backend.createVertexArray() as WebGLVertexArrayObject;
-	const cornerBuffer = backend.createVertexBuffer(new Float32Array([
-		0, 0,
-		0, 1,
-		1, 0,
-		1, 0,
-		0, 1,
-		1, 1,
-	]), 'static') as WebGLBuffer;
-	const instanceFloatBuffer = backend.createVertexBuffer(new Float32Array(INITIAL_BATCH_CAPACITY * INSTANCE_FLOATS), 'dynamic') as WebGLBuffer;
-	const instanceAtlasBuffer = backend.createVertexBuffer(new Uint8Array(INITIAL_BATCH_CAPACITY), 'dynamic') as WebGLBuffer;
+	const quad = createWebGLInstancedQuadRuntime(backend, gl, program, INITIAL_BATCH_CAPACITY, INSTANCE_FLOATS);
 	const whiteTexture = backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]) as WebGLTexture;
-	const uScale = gl.getUniformLocation(program, 'u_scale')!;
-	const uTexture0 = gl.getUniformLocation(program, 'u_texture0')!;
-	const uTexture1 = gl.getUniformLocation(program, 'u_texture1')!;
-	const uTexture2 = gl.getUniformLocation(program, 'u_texture2')!;
-	const uParallaxRig = gl.getUniformLocation(program, 'u_parallax_rig')!;
-	const uParallaxRig2 = gl.getUniformLocation(program, 'u_parallax_rig2')!;
-	const uParallaxFlipWindow = gl.getUniformLocation(program, 'u_parallax_flip_window')!;
-	gl.uniform1f(uScale, 1);
-	gl.uniform1i(uTexture0, TEXTURE_UNIT_ATLAS_PRIMARY);
-	gl.uniform1i(uTexture1, TEXTURE_UNIT_ATLAS_SECONDARY);
-	gl.uniform1i(uTexture2, TEXTURE_UNIT_ATLAS_ENGINE);
-	backend.bindVertexArray(vao);
-	backend.bindArrayBuffer(cornerBuffer);
-	const aCorner = gl.getAttribLocation(program, 'a_corner');
-	backend.enableVertexAttrib(aCorner);
-	backend.vertexAttribPointer(aCorner, 2, gl.FLOAT, false, 0, 0);
-	backend.bindArrayBuffer(instanceFloatBuffer);
-	bindFloatAttribute(backend, gl.getAttribLocation(program, 'i_origin'), 2, 0);
-	bindFloatAttribute(backend, gl.getAttribLocation(program, 'i_axis_x'), 2, 2 * 4);
-	bindFloatAttribute(backend, gl.getAttribLocation(program, 'i_axis_y'), 2, 4 * 4);
-	bindFloatAttribute(backend, gl.getAttribLocation(program, 'i_uv0'), 2, 6 * 4);
-	bindFloatAttribute(backend, gl.getAttribLocation(program, 'i_uv1'), 2, 8 * 4);
-	bindFloatAttribute(backend, gl.getAttribLocation(program, 'i_z'), 1, 10 * 4);
-	bindFloatAttribute(backend, gl.getAttribLocation(program, 'i_fx'), 1, 11 * 4);
-	bindFloatAttribute(backend, gl.getAttribLocation(program, 'i_color'), 4, 12 * 4);
-	backend.bindArrayBuffer(instanceAtlasBuffer);
-	const atlasLocation = gl.getAttribLocation(program, 'i_atlas_id');
-	backend.enableVertexAttrib(atlasLocation);
-	backend.vertexAttribIPointer(atlasLocation, 1, gl.UNSIGNED_BYTE, 1, 0);
-	backend.vertexAttribDivisor(atlasLocation, 1);
-	backend.bindVertexArray(null);
-	backend.bindArrayBuffer(null);
+	bindWebGLInstancedQuadVertexArray(backend, vao, program, quad, INSTANCE_STRIDE_BYTES, INSTANCE_FLOAT_ATTRIBUTES);
 	return {
 		gl,
 		program,
 		vao,
-		cornerBuffer,
-		instanceFloatBuffer,
-		instanceAtlasBuffer,
-		floatData: new Float32Array(INITIAL_BATCH_CAPACITY * INSTANCE_FLOATS),
-		atlasData: new Uint8Array(INITIAL_BATCH_CAPACITY),
-		capacity: INITIAL_BATCH_CAPACITY,
+		...quad,
 		whiteTexture,
-		uScale,
-		uTexture0,
-		uTexture1,
-		uTexture2,
-		uParallaxRig,
-		uParallaxRig2,
-		uParallaxFlipWindow,
 	};
 }
 
@@ -163,32 +117,6 @@ function bootstrapRuntime(backend: WebGLBackend): HostOverlayRuntime {
 	}
 	runtime = createRuntime(backend, program);
 	return runtime;
-}
-
-function ensureCapacity(backend: WebGLBackend, state: HostOverlayRuntime, count: number): void {
-	if (count <= state.capacity) {
-		return;
-	}
-	let capacity = state.capacity;
-	while (capacity < count) {
-		capacity <<= 1;
-	}
-	state.capacity = capacity;
-	state.floatData = new Float32Array(capacity * INSTANCE_FLOATS);
-	state.atlasData = new Uint8Array(capacity);
-	backend.bindArrayBuffer(state.instanceFloatBuffer);
-	backend.updateVertexBuffer(state.instanceFloatBuffer, state.floatData, 0);
-	backend.bindArrayBuffer(state.instanceAtlasBuffer);
-	backend.updateVertexBuffer(state.instanceAtlasBuffer, state.atlasData, 0);
-	backend.bindArrayBuffer(null);
-}
-
-function flushBatch(backend: WebGLBackend, state: HostOverlayRuntime, count: number): void {
-	backend.bindArrayBuffer(state.instanceFloatBuffer);
-	backend.updateVertexBuffer(state.instanceFloatBuffer, state.floatData.subarray(0, count * INSTANCE_FLOATS), 0);
-	backend.bindArrayBuffer(state.instanceAtlasBuffer);
-	backend.updateVertexBuffer(state.instanceAtlasBuffer, state.atlasData.subarray(0, count), 0);
-	backend.drawInstanced(HOST_OVERLAY_DRAW_PASS, 6, count, 0, 0);
 }
 
 function writeQuad(state: HostOverlayRuntime, index: number, originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, z: number, colorValue: color, atlasId: number): void {
@@ -375,7 +303,7 @@ function drawRectCommand(backend: WebGLBackend, state: HostOverlayRuntime, comma
 	if (command.kind === 'fill') {
 		const written = pushFillRect(state, 0, command.area.left, command.area.top, command.area.right, command.area.bottom, command.area.z, command.color);
 		if (written !== 0) {
-			flushBatch(backend, state, written);
+			flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, written, INSTANCE_FLOATS);
 		}
 		return nextBoundTextures;
 	}
@@ -385,7 +313,7 @@ function drawRectCommand(backend: WebGLBackend, state: HostOverlayRuntime, comma
 	count += pushFillRect(state, count, command.area.left, command.area.top, command.area.left + 1, command.area.bottom, command.area.z, command.color);
 	count += pushFillRect(state, count, command.area.right - 1, command.area.top, command.area.right, command.area.bottom, command.area.z, command.color);
 	if (count !== 0) {
-		flushBatch(backend, state, count);
+		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
 	}
 	return nextBoundTextures;
 }
@@ -411,7 +339,7 @@ function drawImageCommand(backend: WebGLBackend, state: HostOverlayRuntime, cach
 		command.colorize!,
 		source.atlasId,
 	);
-	flushBatch(backend, state, 1);
+	flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, 1, INSTANCE_FLOATS);
 	return nextBoundTextures;
 }
 
@@ -422,7 +350,7 @@ function drawGlyphRunBackgrounds(backend: WebGLBackend, state: HostOverlayRuntim
 	const font = command.font!;
 	const lineHeight = font.lineHeight;
 	const nextBoundTextures = bindSolidTexture(state, boundTextures);
-	ensureCapacity(backend, state, glyphCount);
+	ensureWebGLInstanceBufferCapacity(backend, state, glyphCount, INSTANCE_FLOATS);
 	let count = 0;
 	let originY = Math.round(command.y);
 	for (let lineIndex = 0; lineIndex < fontLineCount; lineIndex += 1) {
@@ -448,7 +376,7 @@ function drawGlyphRunBackgrounds(backend: WebGLBackend, state: HostOverlayRuntim
 		originY += lineHeight;
 	}
 	if (count !== 0) {
-		flushBatch(backend, state, count);
+		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
 	}
 	return nextBoundTextures;
 }
@@ -463,7 +391,7 @@ function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, ca
 		if (count === 0) {
 			return;
 		}
-		flushBatch(backend, state, count);
+		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
 		count = 0;
 	};
 	let originY = Math.round(command.y);
@@ -493,7 +421,7 @@ function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, ca
 				currentBoundTextures = bindSourceTexture(source, currentBoundTextures);
 				batchSource = source;
 			}
-			ensureCapacity(backend, state, count + 1);
+			ensureWebGLInstanceBufferCapacity(backend, state, count + 1, INSTANCE_FLOATS);
 			writeAxisAlignedQuad(
 				state,
 				count,
@@ -546,10 +474,10 @@ function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passSta
 		delta: $.deltatime_seconds,
 	});
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
-	gl.uniform1f(state.uScale, 1);
-	gl.uniform4f(state.uParallaxRig, 0, 1, 0, 0);
-	gl.uniform4f(state.uParallaxRig2, 0, 0, 0, 0);
-	gl.uniform1f(state.uParallaxFlipWindow, 0);
+	gl.uniform1f(state.uniforms.scale, 1);
+	gl.uniform4f(state.uniforms.parallaxRig, 0, 1, 0, 0);
+	gl.uniform4f(state.uniforms.parallaxRig2, 0, 0, 0, 0);
+	gl.uniform1f(state.uniforms.parallaxFlipWindow, 0);
 	backend.setViewport({ x: 0, y: 0, w: passState.width, h: passState.height });
 	backend.setCullEnabled(false);
 	backend.setDepthTestEnabled(false);

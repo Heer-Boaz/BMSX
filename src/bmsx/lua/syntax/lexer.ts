@@ -89,7 +89,7 @@ export class LuaLexer {
 			case '[': {
 				const level = this.determineLongBracketLevelAt(this.currentIndex - 1);
 				if (level >= 0) {
-					this.consumeLongBracketOpening(level);
+					this.consumeLongBracketDelimiterTail(level, '[');
 					const value = this.readLongString(level);
 					this.pushToken(tokens, LuaTokenType.String, value);
 					return;
@@ -204,7 +204,7 @@ export class LuaLexer {
 			const level = this.determineLongBracketLevelAt(this.currentIndex);
 			if (level >= 0) {
 				this.advance();
-				this.consumeLongBracketOpening(level);
+				this.consumeLongBracketDelimiterTail(level, '[');
 				this.skipLongBracketContent(level);
 				return;
 			}
@@ -426,28 +426,28 @@ export class LuaLexer {
 		return (cursor < this.source.length && this.source.charAt(cursor) === '[') ? level : -1;
 	}
 
-	private consumeLongBracketOpening(level: number): void {
-		for (let index = 0; index < level; index += 1) {
-			const char = this.advance();
-			if (char !== '=') {
+		private consumeLongBracketDelimiterTail(level: number, finalExpected: '[' | ']'): void {
+			for (let index = 0; index < level; index += 1) {
+				const char = this.advance();
+				if (char !== '=') {
+					throw new LuaSyntaxError('[LuaLexer] Malformed long string delimiter.', this.path, this.tokenStartLine, this.tokenStartColumn);
+				}
+			}
+			const finalChar = this.advance();
+			if (finalChar !== finalExpected) {
 				throw new LuaSyntaxError('[LuaLexer] Malformed long string delimiter.', this.path, this.tokenStartLine, this.tokenStartColumn);
 			}
 		}
-		const finalChar = this.advance();
-		if (finalChar !== '[') {
-			throw new LuaSyntaxError('[LuaLexer] Malformed long string delimiter.', this.path, this.tokenStartLine, this.tokenStartColumn);
-		}
-	}
 
 	private readLongString(level: number): string {
 		this.consumeOptionalLineBreak();
 		let value = '';
 		while (!this.isAtEnd()) {
-			const char = this.advance();
-			if (char === ']' && this.checkLongBracketClose(level)) {
-				this.consumeLongBracketClose(level);
-				return value;
-			}
+				const char = this.advance();
+				if (char === ']' && this.checkLongBracketClose(level)) {
+					this.consumeLongBracketDelimiterTail(level, ']');
+					return value;
+				}
 			value += char;
 		}
 		throw new LuaSyntaxError('[LuaLexer] Unterminated long string literal.', this.path, this.tokenStartLine, this.tokenStartColumn);
@@ -456,11 +456,11 @@ export class LuaLexer {
 	private skipLongBracketContent(level: number): void {
 		this.consumeOptionalLineBreak();
 		while (!this.isAtEnd()) {
-			const char = this.advance();
-			if (char === ']' && this.checkLongBracketClose(level)) {
-				this.consumeLongBracketClose(level);
-				return;
-			}
+				const char = this.advance();
+				if (char === ']' && this.checkLongBracketClose(level)) {
+					this.consumeLongBracketDelimiterTail(level, ']');
+					return;
+				}
 		}
 		throw new LuaSyntaxError('[LuaLexer] Unterminated block comment.', this.path, this.tokenStartLine, this.tokenStartColumn);
 	}
@@ -476,20 +476,7 @@ export class LuaLexer {
 		return this.charAtIndex(index) === ']';
 	}
 
-	private consumeLongBracketClose(level: number): void {
-		for (let count = 0; count < level; count += 1) {
-			const char = this.advance();
-			if (char !== '=') {
-				throw new LuaSyntaxError('[LuaLexer] Malformed long string delimiter.', this.path, this.tokenStartLine, this.tokenStartColumn);
-			}
-		}
-		const closing = this.advance();
-		if (closing !== ']') {
-			throw new LuaSyntaxError('[LuaLexer] Malformed long string delimiter.', this.path, this.tokenStartLine, this.tokenStartColumn);
-		}
-	}
-
-	private consumeOptionalLineBreak(): void {
+		private consumeOptionalLineBreak(): void {
 		const next = this.currentChar();
 		if (next === '\r') {
 			this.advance();
@@ -505,24 +492,26 @@ export class LuaLexer {
 		return this.source.charAt(index) || '\0';
 	}
 
-	private parseHexLiteral(lexeme: string): number {
-		const match = /^0[xX]([0-9A-Fa-f]*)(?:\.([0-9A-Fa-f]*))?(?:[pP]([+-]?[0-9]+))?$/.exec(lexeme);
-		const integerPart = match[1] ?? '';
-		const fractionalPart = match[2] ?? '';
-		const exponentPart = match[3] ?? '0';
-		if (integerPart.length === 0 && fractionalPart.length === 0) {
-			throw new LuaSyntaxError('[LuaLexer] Hexadecimal literal requires digits.', this.path, this.tokenStartLine, this.tokenStartColumn);
-		}
+		private parseHexLiteral(lexeme: string): number {
+			const match = /^0[xX]([0-9A-Fa-f]*)(?:\.([0-9A-Fa-f]*))?(?:[pP]([+-]?[0-9]+))?$/.exec(lexeme);
+			const integerPart = match[1];
+			const fractionalPart = match[2];
+			const exponentPart = match[3];
+			if (integerPart.length === 0 && (fractionalPart === undefined || fractionalPart.length === 0)) {
+				throw new LuaSyntaxError('[LuaLexer] Hexadecimal literal requires digits.', this.path, this.tokenStartLine, this.tokenStartColumn);
+			}
 		let value = 0;
 		for (let index = 0; index < integerPart.length; index += 1) {
 			value = value * 16 + Number.parseInt(integerPart.charAt(index), 16);
 		}
 		let fraction = 0;
-		for (let index = 0; index < fractionalPart.length; index += 1) {
-			const digit = Number.parseInt(fractionalPart.charAt(index), 16);
-			fraction += digit / Math.pow(16, index + 1);
-		}
-		const exponent = Number.parseInt(exponentPart, 10);
+			if (fractionalPart !== undefined) {
+				for (let index = 0; index < fractionalPart.length; index += 1) {
+					const digit = Number.parseInt(fractionalPart.charAt(index), 16);
+					fraction += digit / Math.pow(16, index + 1);
+				}
+			}
+			const exponent = exponentPart === undefined ? 0 : Number.parseInt(exponentPart, 10);
 		return (value + fraction) * Math.pow(2, exponent);
 	}
 

@@ -77,6 +77,19 @@ export class RenderPresentationState {
 		this.debugPresentHoldPresents += 1;
 	}
 
+	private resetDebugCounters(reportAtMs: number): void {
+		this.debugPresentReportAtMs = reportAtMs;
+		this.debugPresentHostFrames = 0;
+		this.debugPresentTickCompleted = 0;
+		this.debugPresentTickCommitted = 0;
+		this.debugPresentTickDeferred = 0;
+		this.debugPresentTickHeld = 0;
+		this.debugPresentPartialPresents = 0;
+		this.debugPresentCommitPresents = 0;
+		this.debugPresentHoldPresents = 0;
+		this.debugPresentPausedPresents = 0;
+	}
+
 	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
 		$.deltatime = hostDeltaMs;
 		$.view.configurePresentation(mode, commitFrame);
@@ -135,16 +148,7 @@ export class RenderPresentationState {
 
 	public reset(): void {
 		this.clearPresentation();
-		this.debugPresentReportAtMs = 0;
-		this.debugPresentHostFrames = 0;
-		this.debugPresentTickCompleted = 0;
-		this.debugPresentTickCommitted = 0;
-		this.debugPresentTickDeferred = 0;
-		this.debugPresentTickHeld = 0;
-		this.debugPresentPartialPresents = 0;
-		this.debugPresentCommitPresents = 0;
-		this.debugPresentHoldPresents = 0;
-		this.debugPresentPausedPresents = 0;
+		this.resetDebugCounters(0);
 	}
 
 	public runOverlay(runtime: Runtime): void {
@@ -223,15 +227,6 @@ export class RenderPresentationState {
 			+ `present_hold=${this.debugPresentHoldPresents} present_paused=${this.debugPresentPausedPresents} `
 				+ `draw_pending=${runtime.isDrawPending ? 1 : 0} active_tick=${runtime.frameLoop.currentFrameState !== null ? 1 : 0}`
 			);
-		this.debugPresentReportAtMs = currentTime;
-		this.debugPresentHostFrames = 0;
-		this.debugPresentTickCompleted = 0;
-		this.debugPresentTickCommitted = 0;
-		this.debugPresentTickDeferred = 0;
-		this.debugPresentTickHeld = 0;
-		this.debugPresentPartialPresents = 0;
-		this.debugPresentCommitPresents = 0;
-		this.debugPresentHoldPresents = 0;
-		this.debugPresentPausedPresents = 0;
+		this.resetDebugCounters(currentTime);
 	}
 }

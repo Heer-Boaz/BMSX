@@ -22,7 +22,7 @@ let skyboxFaceAtlasLocation: WebGLUniformLocation;
 let skyboxTintLocation: WebGLUniformLocation;
 let skyboxExposureLocation: WebGLUniformLocation;
 export let skyboxBuffer: WebGLBuffer;
-export function init(backend: WebGLBackend): void {
+export function initSkyboxPipeline(backend: WebGLBackend): void {
 	const gl = backend.gl as WebGL2RenderingContext;
 	vaoSkybox = gl.createVertexArray()!;
 	createSkyboxProgram(backend);
@@ -128,7 +128,7 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			samplers: [{ name: 's_atlas_primary' }, { name: 's_atlas_secondary' }],
 		},
 		bootstrap: (backend) => {
-			init(backend as WebGLBackend);
+			initSkyboxPipeline(backend as WebGLBackend);
 		},
 		writesDepth: false,
 		shouldExecute: () => !!resolveActiveCamera3D() && !!$.view.skyboxFaceUvRects,

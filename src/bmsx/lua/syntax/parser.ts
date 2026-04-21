@@ -63,6 +63,37 @@ type ParsedArguments = {
 	readonly endToken: LuaToken;
 };
 
+type LuaBinaryOperatorSpec = readonly [LuaTokenType, LuaBinaryOperator];
+type LuaOperandParser = (this: LuaParser) => LuaExpression;
+
+const OR_BINARY_OPERATORS: readonly LuaBinaryOperatorSpec[] = [[LuaTokenType.Or, LuaBinaryOperator.Or]];
+const AND_BINARY_OPERATORS: readonly LuaBinaryOperatorSpec[] = [[LuaTokenType.And, LuaBinaryOperator.And]];
+const COMPARISON_BINARY_OPERATORS: readonly LuaBinaryOperatorSpec[] = [
+	[LuaTokenType.EqualEqual, LuaBinaryOperator.Equal],
+	[LuaTokenType.TildeEqual, LuaBinaryOperator.NotEqual],
+	[LuaTokenType.Less, LuaBinaryOperator.LessThan],
+	[LuaTokenType.LessEqual, LuaBinaryOperator.LessEqual],
+	[LuaTokenType.Greater, LuaBinaryOperator.GreaterThan],
+	[LuaTokenType.GreaterEqual, LuaBinaryOperator.GreaterEqual],
+];
+const BITWISE_OR_BINARY_OPERATORS: readonly LuaBinaryOperatorSpec[] = [[LuaTokenType.Pipe, LuaBinaryOperator.BitwiseOr]];
+const BITWISE_XOR_BINARY_OPERATORS: readonly LuaBinaryOperatorSpec[] = [[LuaTokenType.Tilde, LuaBinaryOperator.BitwiseXor]];
+const BITWISE_AND_BINARY_OPERATORS: readonly LuaBinaryOperatorSpec[] = [[LuaTokenType.Ampersand, LuaBinaryOperator.BitwiseAnd]];
+const SHIFT_BINARY_OPERATORS: readonly LuaBinaryOperatorSpec[] = [
+	[LuaTokenType.ShiftLeft, LuaBinaryOperator.ShiftLeft],
+	[LuaTokenType.ShiftRight, LuaBinaryOperator.ShiftRight],
+];
+const ADDITIVE_BINARY_OPERATORS: readonly LuaBinaryOperatorSpec[] = [
+	[LuaTokenType.Plus, LuaBinaryOperator.Add],
+	[LuaTokenType.Minus, LuaBinaryOperator.Subtract],
+];
+const MULTIPLICATIVE_BINARY_OPERATORS: readonly LuaBinaryOperatorSpec[] = [
+	[LuaTokenType.Star, LuaBinaryOperator.Multiply],
+	[LuaTokenType.Slash, LuaBinaryOperator.Divide],
+	[LuaTokenType.FloorDivide, LuaBinaryOperator.FloorDivide],
+	[LuaTokenType.Percent, LuaBinaryOperator.Modulus],
+];
+
 export class LuaParser {
 	private readonly tokens: ReadonlyArray<LuaToken>;
 	private readonly path: string;
@@ -176,10 +207,10 @@ export class LuaParser {
 				return this.parseLocalStatement();
 			case LuaTokenType.Function:
 				return this.parseFunctionDeclaration();
-			case LuaTokenType.Return:
-				return this.parseReturnStatement();
-			case LuaTokenType.Break:
-				return this.parseBreakStatement();
+				case LuaTokenType.Return:
+					return this.parseReturnStatement();
+				case LuaTokenType.Break:
+					return this.parseTokenStatement(LuaSyntaxKind.BreakStatement);
 			case LuaTokenType.If:
 				return this.parseIfStatement();
 			case LuaTokenType.While:
@@ -190,8 +221,8 @@ export class LuaParser {
 				return this.parseForStatement();
 			case LuaTokenType.Do:
 				return this.parseDoStatement();
-			case LuaTokenType.HaltUntilIrq:
-				return this.parseHaltUntilIrqStatement();
+				case LuaTokenType.HaltUntilIrq:
+					return this.parseTokenStatement(LuaSyntaxKind.HaltUntilIrqStatement);
 			case LuaTokenType.Goto:
 				return this.parseGotoStatement();
 			default:
@@ -242,18 +273,13 @@ export class LuaParser {
 		};
 	}
 
-	private parseHaltUntilIrqStatement(): LuaHaltUntilIrqStatement {
-		const haltToken = this.advance();
-		if (this.match(LuaTokenType.Semicolon)) {
-			// Semicolon is optional and ignored.
-		}
+	private parseTokenStatement(kind: LuaSyntaxKind.BreakStatement): LuaBreakStatement;
+	private parseTokenStatement(kind: LuaSyntaxKind.HaltUntilIrqStatement): LuaHaltUntilIrqStatement;
+	private parseTokenStatement(kind: LuaSyntaxKind.BreakStatement | LuaSyntaxKind.HaltUntilIrqStatement): LuaBreakStatement | LuaHaltUntilIrqStatement {
+		const token = this.advance();
 		return {
-			kind: LuaSyntaxKind.HaltUntilIrqStatement,
-			range: {
-				path: this.path,
-				start: this.positionFromToken(haltToken),
-				end: this.positionFromToken(this.previous()),
-			},
+			kind,
+			range: this.finishOptionalSemicolonStatementRange(token),
 		};
 	}
 
@@ -402,18 +428,14 @@ export class LuaParser {
 		};
 	}
 
-	private parseBreakStatement(): LuaBreakStatement {
-		const breakToken = this.advance();
+	private finishOptionalSemicolonStatementRange(firstToken: LuaToken): LuaSourceRange {
 		if (this.match(LuaTokenType.Semicolon)) {
 			// Semicolon is optional and ignored.
 		}
 		return {
-			kind: LuaSyntaxKind.BreakStatement,
-			range: {
-				path: this.path,
-				start: this.positionFromToken(breakToken),
-				end: this.positionFromToken(this.previous()),
-			},
+			path: this.path,
+			start: this.positionFromToken(firstToken),
+			end: this.positionFromToken(this.previous()),
 		};
 	}
 
@@ -642,163 +664,43 @@ export class LuaParser {
 	}
 
 	private parseExpression(): LuaExpression {
-		return this.parseOrExpression();
-	}
-
-	private parseOrExpression(): LuaExpression {
-		let expression = this.parseAndExpression();
-		while (this.match(LuaTokenType.Or)) {
-			const right = this.parseAndExpression();
-			expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.Or);
-		}
-		return expression;
+		return this.parseLeftAssociativeExpression(this.parseAndExpression, OR_BINARY_OPERATORS);
 	}
 
 	private parseAndExpression(): LuaExpression {
-		let expression = this.parseComparisonExpression();
-		while (this.match(LuaTokenType.And)) {
-			const right = this.parseComparisonExpression();
-			expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.And);
-		}
-		return expression;
+		return this.parseLeftAssociativeExpression(this.parseComparisonExpression, AND_BINARY_OPERATORS);
 	}
 
 	private parseComparisonExpression(): LuaExpression {
-		let expression = this.parseBitwiseOrExpression();
-		while (true) {
-			if (this.match(LuaTokenType.EqualEqual)) {
-				const right = this.parseBitwiseOrExpression();
-				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.Equal);
-				continue;
-			}
-			if (this.match(LuaTokenType.TildeEqual)) {
-				const right = this.parseBitwiseOrExpression();
-				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.NotEqual);
-				continue;
-			}
-			if (this.match(LuaTokenType.Less)) {
-				const right = this.parseBitwiseOrExpression();
-				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.LessThan);
-				continue;
-			}
-			if (this.match(LuaTokenType.LessEqual)) {
-				const right = this.parseBitwiseOrExpression();
-				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.LessEqual);
-				continue;
-			}
-			if (this.match(LuaTokenType.Greater)) {
-				const right = this.parseBitwiseOrExpression();
-				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.GreaterThan);
-				continue;
-			}
-			if (this.match(LuaTokenType.GreaterEqual)) {
-				const right = this.parseBitwiseOrExpression();
-				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.GreaterEqual);
-				continue;
-			}
-			break;
-		}
-		return expression;
+		return this.parseLeftAssociativeExpression(this.parseBitwiseOrExpression, COMPARISON_BINARY_OPERATORS);
 	}
 
 	private parseBitwiseOrExpression(): LuaExpression {
-		let expression = this.parseBitwiseXorExpression();
-		while (this.match(LuaTokenType.Pipe)) {
-			const right = this.parseBitwiseXorExpression();
-			expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.BitwiseOr);
-		}
-		return expression;
+		return this.parseLeftAssociativeExpression(this.parseBitwiseXorExpression, BITWISE_OR_BINARY_OPERATORS);
 	}
 
 	private parseBitwiseXorExpression(): LuaExpression {
-		let expression = this.parseBitwiseAndExpression();
-		while (this.match(LuaTokenType.Tilde)) {
-			const right = this.parseBitwiseAndExpression();
-			expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.BitwiseXor);
-		}
-		return expression;
+		return this.parseLeftAssociativeExpression(this.parseBitwiseAndExpression, BITWISE_XOR_BINARY_OPERATORS);
 	}
 
 	private parseBitwiseAndExpression(): LuaExpression {
-		let expression = this.parseShiftExpression();
-		while (this.match(LuaTokenType.Ampersand)) {
-			const right = this.parseShiftExpression();
-			expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.BitwiseAnd);
-		}
-		return expression;
+		return this.parseLeftAssociativeExpression(this.parseShiftExpression, BITWISE_AND_BINARY_OPERATORS);
 	}
 
 	private parseShiftExpression(): LuaExpression {
-		let expression = this.parseConcatenationExpression();
-		while (true) {
-			if (this.match(LuaTokenType.ShiftLeft)) {
-				const right = this.parseConcatenationExpression();
-				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.ShiftLeft);
-				continue;
-			}
-			if (this.match(LuaTokenType.ShiftRight)) {
-				const right = this.parseConcatenationExpression();
-				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.ShiftRight);
-				continue;
-			}
-			break;
-		}
-		return expression;
+		return this.parseLeftAssociativeExpression(this.parseConcatenationExpression, SHIFT_BINARY_OPERATORS);
 	}
 
 	private parseConcatenationExpression(): LuaExpression {
-		const expression = this.parseAdditiveExpression();
-		if (this.match(LuaTokenType.DotDot)) {
-			const right = this.parseConcatenationExpression();
-			return this.createBinaryExpression(expression, right, LuaBinaryOperator.Concat);
-		}
-		return expression;
+		return this.parseRightAssociativeExpression(this.parseAdditiveExpression, LuaTokenType.DotDot, this.parseConcatenationExpression, LuaBinaryOperator.Concat);
 	}
 
 	private parseAdditiveExpression(): LuaExpression {
-		let expression = this.parseMultiplicativeExpression();
-		while (true) {
-			if (this.match(LuaTokenType.Plus)) {
-				const right = this.parseMultiplicativeExpression();
-				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.Add);
-				continue;
-			}
-			if (this.match(LuaTokenType.Minus)) {
-				const right = this.parseMultiplicativeExpression();
-				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.Subtract);
-				continue;
-			}
-			break;
-		}
-		return expression;
+		return this.parseLeftAssociativeExpression(this.parseMultiplicativeExpression, ADDITIVE_BINARY_OPERATORS);
 	}
 
 	private parseMultiplicativeExpression(): LuaExpression {
-		let expression = this.parseUnaryExpression();
-		while (true) {
-			if (this.match(LuaTokenType.Star)) {
-				const right = this.parseUnaryExpression();
-				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.Multiply);
-				continue;
-			}
-			if (this.match(LuaTokenType.Slash)) {
-				const right = this.parseUnaryExpression();
-				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.Divide);
-				continue;
-			}
-			if (this.match(LuaTokenType.FloorDivide)) {
-				const right = this.parseUnaryExpression();
-				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.FloorDivide);
-				continue;
-			}
-			if (this.match(LuaTokenType.Percent)) {
-				const right = this.parseUnaryExpression();
-				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.Modulus);
-				continue;
-			}
-			break;
-		}
-		return expression;
+		return this.parseLeftAssociativeExpression(this.parseUnaryExpression, MULTIPLICATIVE_BINARY_OPERATORS);
 	}
 
 	private parseUnaryExpression(): LuaExpression {
@@ -827,16 +729,38 @@ export class LuaParser {
 			const operand = this.parseUnaryExpression();
 			return this.createUnaryExpression(operatorToken, operand, LuaUnaryOperator.BitwiseNot);
 		}
-		return this.parseExponentExpression();
+		return this.parseRightAssociativeExpression(this.parsePrefixExpression, LuaTokenType.Caret, this.parseUnaryExpression, LuaBinaryOperator.Exponent);
 	}
 
-	private parseExponentExpression(): LuaExpression {
-		const baseExpression = this.parsePrefixExpression();
-		if (this.match(LuaTokenType.Caret)) {
-			const right = this.parseUnaryExpression();
-			return this.createBinaryExpression(baseExpression, right, LuaBinaryOperator.Exponent);
+	private parseLeftAssociativeExpression(parseOperand: LuaOperandParser, operators: readonly LuaBinaryOperatorSpec[]): LuaExpression {
+		let expression = parseOperand.call(this);
+		while (true) {
+			const operator = this.matchBinaryOperator(operators);
+			if (operator === null) {
+				return expression;
+			}
+			const right = parseOperand.call(this);
+			expression = this.createBinaryExpression(expression, right, operator);
 		}
-		return baseExpression;
+	}
+
+	private parseRightAssociativeExpression(parseLeft: LuaOperandParser, tokenType: LuaTokenType, parseRight: LuaOperandParser, operator: LuaBinaryOperator): LuaExpression {
+		const expression = parseLeft.call(this);
+		if (!this.match(tokenType)) {
+			return expression;
+		}
+		const right = parseRight.call(this);
+		return this.createBinaryExpression(expression, right, operator);
+	}
+
+	private matchBinaryOperator(operators: readonly LuaBinaryOperatorSpec[]): LuaBinaryOperator | null {
+		for (let index = 0; index < operators.length; index += 1) {
+			const [tokenType, operator] = operators[index];
+			if (this.match(tokenType)) {
+				return operator;
+			}
+		}
+		return null;
 	}
 
 	private parsePrefixExpression(): LuaExpression {
@@ -936,8 +860,8 @@ export class LuaParser {
 	private parsePrimaryExpression(): LuaExpression {
 		const token = this.current();
 		switch (token.type) {
-			case LuaTokenType.Nil:
-				return this.parseNilLiteral();
+				case LuaTokenType.Nil:
+					return this.createTokenOnlyExpression(this.advance(), LuaSyntaxKind.NilLiteralExpression);
 			case LuaTokenType.True:
 				return this.parseBooleanLiteral(true);
 			case LuaTokenType.False:
@@ -948,8 +872,8 @@ export class LuaParser {
 				return this.parseStringLiteral();
 			case LuaTokenType.Identifier:
 				return this.parseIdentifier();
-			case LuaTokenType.Vararg:
-				return this.parseVararg();
+				case LuaTokenType.Vararg:
+					return this.createTokenOnlyExpression(this.advance(), LuaSyntaxKind.VarargExpression);
 			case LuaTokenType.Function:
 				return this.parseFunctionExpression(this.advance());
 			case LuaTokenType.LeftBrace:
@@ -965,13 +889,14 @@ export class LuaParser {
 		}
 	}
 
-	private parseNilLiteral(): LuaNilLiteralExpression {
-		const token = this.advance();
-		return {
-			kind: LuaSyntaxKind.NilLiteralExpression,
-			range: this.rangeFromTokenAndToken(token, token),
-		};
-	}
+		private createTokenOnlyExpression(token: LuaToken, kind: LuaSyntaxKind.NilLiteralExpression): LuaNilLiteralExpression;
+		private createTokenOnlyExpression(token: LuaToken, kind: LuaSyntaxKind.VarargExpression): LuaVarargExpression;
+		private createTokenOnlyExpression(token: LuaToken, kind: LuaSyntaxKind.NilLiteralExpression | LuaSyntaxKind.VarargExpression): LuaNilLiteralExpression | LuaVarargExpression {
+			return {
+				kind,
+				range: this.rangeFromTokenAndToken(token, token),
+			};
+		}
 
 	private parseBooleanLiteral(value: boolean): LuaBooleanLiteralExpression {
 		const token = this.advance();
@@ -1002,14 +927,6 @@ export class LuaParser {
 	private parseIdentifier(): LuaIdentifierExpression {
 		const token = this.advance();
 		return this.createIdentifierExpression(token);
-	}
-
-	private parseVararg(): LuaVarargExpression {
-		const token = this.advance();
-		return {
-			kind: LuaSyntaxKind.VarargExpression,
-			range: this.rangeFromTokenAndToken(token, token),
-		};
 	}
 
 	private parseTableConstructorExpression(leftBrace: LuaToken): LuaTableConstructorExpression {
@@ -1459,25 +1376,26 @@ export class LuaParser {
 	}
 
 	private createStringLiteralExpression(token: LuaToken): LuaStringLiteralExpression {
-		if (typeof token.literal !== 'string') {
-			throw this.error(token, 'Expected string literal.');
-		}
 		return {
 			kind: LuaSyntaxKind.StringLiteralExpression,
 			range: this.rangeFromTokenAndToken(token, token),
-			value: token.literal,
+			value: this.stringLiteralValue(token, 'Expected string literal.'),
 		};
 	}
 
 	private createStringRefLiteralExpression(ampersandToken: LuaToken, stringToken: LuaToken): LuaStringRefLiteralExpression {
-		if (typeof stringToken.literal !== 'string') {
-			throw this.error(stringToken, 'Expected string literal after "&".');
-		}
 		return {
 			kind: LuaSyntaxKind.StringRefLiteralExpression,
 			range: this.rangeFromTokenAndToken(ampersandToken, stringToken),
-			value: stringToken.literal,
+			value: this.stringLiteralValue(stringToken, 'Expected string literal after "&".'),
 		};
+	}
+
+	private stringLiteralValue(token: LuaToken, message: string): string {
+		if (typeof token.literal !== 'string') {
+			throw this.error(token, message);
+		}
+		return token.literal;
 	}
 
 	private requireAssignable(expression: LuaExpression): LuaAssignableExpression {
@@ -1591,7 +1509,7 @@ export class LuaParser {
 	}
 
 	private error(token: LuaToken, message: string): LuaSyntaxError {
-		const payload = this.formatError(token.line, token.column, message, token.lexeme ?? '');
+		const payload = this.formatError(token.line, token.column, message, token.lexeme);
 		return new LuaSyntaxError(payload, this.path, token.line, token.column);
 	}
 
@@ -1601,9 +1519,13 @@ export class LuaParser {
 		return new LuaSyntaxError(payload, this.path, range.start.line, range.start.column);
 	}
 
-	private formatError(line: number, column: number, message: string, lexeme: string): string {
-		const near = lexeme.length > 0 ? ` near '${lexeme}'` : '';
-		const lineText = this.sourceLines[line - 1] ?? '';
+	private formatError(line: number, column: number, message: string, lexeme?: string): string {
+		const near = lexeme && lexeme.length > 0 ? ` near '${lexeme}'` : '';
+		let lineText = '';
+		const lineIndex = line - 1;
+		if (lineIndex >= 0 && lineIndex < this.sourceLines.length) {
+			lineText = this.sourceLines[lineIndex];
+		}
 		const pointer = ' '.repeat(Math.max(column - 1, 0)) + '^';
 		return `[line ${line}, column ${column}] ${message}${near}\n${lineText}\n${pointer}`;
 	}
