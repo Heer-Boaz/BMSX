@@ -2,6 +2,7 @@ import { relative } from 'node:path';
 
 import type { CppToken } from '../../../src/bmsx/language/cpp/syntax/tokens';
 import type { CodeQualityLintRule } from '../../lint/rules';
+import type { QualityLedger } from '../quality_ledger';
 
 export type CppDuplicateKind = 'class' | 'enum' | 'function' | 'interface' | 'method' | 'namespace' | 'type' | 'wrapper';
 
@@ -31,6 +32,7 @@ export type CppLintIssue = {
 export type CppAnalysisResult = {
 	duplicateGroups: CppDuplicateGroup[];
 	lintIssues: CppLintIssue[];
+	ledger: QualityLedger;
 };
 
 export type CppExportedTypeInfo = {
@@ -270,5 +272,6 @@ export function relativeAnalysisResult(result: CppAnalysisResult): CppAnalysisRe
 			...issue,
 			file: relative(process.cwd(), issue.file),
 		})),
+		ledger: result.ledger,
 	};
 }

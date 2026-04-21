@@ -92,6 +92,9 @@ type CompileOptions = {
 	entrySource?: string;
 };
 
+const EMPTY_LOCAL_SLOTS: ReadonlyArray<LocalSlotDebug> = [];
+const EMPTY_UPVALUE_NAMES: ReadonlyArray<string> = [];
+
 type LoopContext = {
 	breakJumps: number[];
 };
@@ -3370,8 +3373,8 @@ function createProgramBuilderFromProgram(
 		const localSlotsByProto = metadata.localSlotsByProto;
 		const localSlots = localSlotsByProto && localSlotsByProto[index]
 			? localSlotsByProto[index]
-			: [];
-		const upvalueNames = metadata.upvalueNamesByProto?.[index] ?? [];
+			: EMPTY_LOCAL_SLOTS;
+		const upvalueNames = metadata.upvalueNamesByProto?.[index] ?? EMPTY_UPVALUE_NAMES;
 		builder.seedProto(cloneProto(proto), code, ranges, [], localSlots, upvalueNames, protoIds[index]);
 	}
 	return builder;

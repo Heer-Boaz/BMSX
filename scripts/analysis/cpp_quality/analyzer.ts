@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 
 import { filterSuppressedLintIssues } from '../lint_suppressions';
+import { createQualityLedger } from '../quality_ledger';
 import {
 	addDuplicateExportedTypeIssues,
 	addNormalizedBodyDuplicateIssues,
@@ -62,6 +63,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 	const normalizedBodies: CppNormalizedBodyInfo[] = [];
 	const fileAnalyses: CppFileAnalysis[] = [];
 	const functionUsageInfo = createCppFunctionUsageInfo();
+	const ledger = createQualityLedger();
 	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
 		const file = files[fileIndex];
 		const source = readFileSync(file, 'utf8');
@@ -88,7 +90,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 		}
 		const functions = analysis.functions;
 		const facadeStats = createCppFacadeStats(functions, tokens);
-		lintCppSimpleTokenPatterns(file, tokens, lintIssues);
+		lintCppSimpleTokenPatterns(file, tokens, lintIssues, ledger);
 		lintCppSinglePropertyOptionsTypes(file, tokens, analysis.classRanges, lintIssues);
 		lintCppCrossLayerIncludes(file, source, lintIssues);
 		for (let functionIndex = 0; functionIndex < functions.length; functionIndex += 1) {
@@ -134,17 +136,17 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 					facadeStats.wrapperCount += 1;
 				}
 			}
-			lintCppCatchPatterns(file, tokens, pairs, info, lintIssues);
+			lintCppCatchPatterns(file, tokens, pairs, info, lintIssues, ledger);
 			lintCppRedundantNumericSanitizationPattern(file, tokens, pairs, info, lintIssues);
 			lintCppEnsureLazyInitPattern(file, tokens, pairs, info, lintIssues);
 			lintCppTerminalReturnPaddingPattern(file, tokens, info, lintIssues);
 			lintCppHotPathCalls(file, tokens, pairs, info, lintIssues);
-			lintCppLocalBindings(file, tokens, info, lintIssues);
+			lintCppLocalBindings(file, tokens, info, lintIssues, ledger);
 			lintCppNullishReturnGuards(file, tokens, pairs, info, lintIssues);
 			lintCppStringSwitchChains(file, tokens, pairs, info, lintIssues);
 			lintCppRepeatedExpressions(file, tokens, pairs, info, lintIssues);
 			lintCppSemanticRepeatedExpressions(file, tokens, pairs, info, lintIssues);
-			collectCppNormalizedBody(file, tokens, pairs, info, normalizedBodies);
+			collectCppNormalizedBody(file, tokens, pairs, info, normalizedBodies, ledger);
 		}
 		if (facadeStats !== null) {
 			lintCppFacadeStats(file, facadeStats, lintIssues);
@@ -162,5 +164,6 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 	return relativeAnalysisResult({
 		duplicateGroups: buildDuplicateGroups(duplicateBuckets),
 		lintIssues: filteredLintIssues,
+		ledger,
 	});
 }

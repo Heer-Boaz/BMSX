@@ -338,7 +338,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 	public deserializeLuaSnapshotGraph(graph: LuaSnapshotGraph): Array<[string, LuaValue]> {
 		const tableMap = new Map<number, LuaTable>();
 		const ensureTable = (id: number): LuaTable => {
-			let table = tableMap.get(id);
+			const table = tableMap.get(id);
 			if (table) {
 				return table;
 			}

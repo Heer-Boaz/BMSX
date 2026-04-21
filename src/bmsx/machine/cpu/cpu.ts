@@ -2137,7 +2137,7 @@ export class CPU {
 			return;
 		}
 		const frame = this.frames[this.frames.length - 1];
-		let pc = frame.pc;
+		const pc = frame.pc;
 		let wordIndex = pc / INSTRUCTION_BYTES;
 		const profiler = this.profilerEnabled ? this.profiler : null;
 		const decodedWidths = this.decodedWidths!;

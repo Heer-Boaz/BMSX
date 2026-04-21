@@ -89,7 +89,7 @@ export function formatNumber(value: number): string {
 	}
 
 	const { exp10, norm } = normalize10(absValue);
-	let scaled = norm * 100000.0;
+	const scaled = norm * 100000.0;
 	let digits = roundToEven(scaled);
 	let adjustedExp = exp10;
 	if (digits === 1000000) {

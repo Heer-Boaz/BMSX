@@ -29,6 +29,7 @@ type LinkedProgramAsset = {
 const NUMBER_KEY_BUFFER = new ArrayBuffer(8);
 const NUMBER_KEY_VIEW = new DataView(NUMBER_KEY_BUFFER);
 const NAN_KEY = 'n:0x7ff8000000000000';
+const EMPTY_SLOT_NAMES: ReadonlyArray<string> = [];
 
 const makeNumberKey = (value: number): string => {
 	if (Number.isNaN(value)) {
@@ -423,8 +424,8 @@ export const linkProgramAssets = (
 	const mergedConsts = mergeConstPools(engineAsset.program.constPool, cartAsset.program.constPool);
 	const engineMetadata = engineSymbols?.metadata;
 	const cartMetadata = cartSymbols?.metadata;
-	const mergedSystemGlobals = mergeNamedSlots(engineMetadata?.systemGlobalNames ?? [], cartMetadata?.systemGlobalNames ?? []);
-	const mergedGlobals = mergeNamedSlots(engineMetadata?.globalNames ?? [], cartMetadata?.globalNames ?? []);
+	const mergedSystemGlobals = mergeNamedSlots(engineMetadata?.systemGlobalNames ?? EMPTY_SLOT_NAMES, cartMetadata?.systemGlobalNames ?? EMPTY_SLOT_NAMES);
+	const mergedGlobals = mergeNamedSlots(engineMetadata?.globalNames ?? EMPTY_SLOT_NAMES, cartMetadata?.globalNames ?? EMPTY_SLOT_NAMES);
 	rewriteConstRelocations(
 		cartCode,
 		cartAsset.link.constRelocs,

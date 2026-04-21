@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { filterSuppressedLintIssues } from './lint_suppressions';
+import { createQualityLedger, noteQualityLedger, qualityLedgerEntries, type QualityLedger } from './quality_ledger';
 import type { CodeQualityLintRule } from '../lint/rules';
 
 type DuplicateKind = 'class' | 'enum' | 'function' | 'interface' | 'method' | 'namespace' | 'type' | 'wrapper';
@@ -175,7 +176,7 @@ const NORMALIZED_BODY_MIN_LENGTH = 120;
 const COMPACT_SAMPLE_TEXT_LENGTH = 180;
 const REPEATED_EXPRESSION_PAIR_MIN_LENGTH = 48;
 const SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT = 2;
-const LOCAL_CONST_PATTERN_ENABLED = false;
+const LOCAL_CONST_PATTERN_ENABLED = true;
 const NUMERIC_SANITIZATION_PATH_SEGMENTS = [
 	'/src/bmsx/ide/',
 	'/src/bmsx/machine/',
@@ -1518,7 +1519,7 @@ function isSemanticFloorDivisionCall(node: ts.CallExpression): boolean {
 	return ts.isBinaryExpression(argument) && argument.operatorToken.kind === ts.SyntaxKind.SlashToken;
 }
 
-function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
+function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile, issues: LintIssue[], ledger: QualityLedger): void {
 	const statements = node.block.statements;
 	if (statements.length === 0) {
 		pushLintIssue(
@@ -1551,7 +1552,12 @@ function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile
 	}
 	for (let index = 0; index < statements.length; index += 1) {
 		const statement = statements[index];
-		if (ts.isReturnStatement(statement) && !catchBlockHandlesAsyncError(node)) {
+		if (!ts.isReturnStatement(statement)) {
+			continue;
+		}
+		if (catchBlockHandlesAsyncError(node)) {
+			noteQualityLedger(ledger, 'allowed_catch_async_fault_boundary');
+		} else {
 			pushLintIssue(
 				issues,
 				sourceFile,
@@ -1721,6 +1727,22 @@ function shouldReportSingleUseLocal(binding: LintBinding): boolean {
 		&& binding.firstReadParentOperatorKind !== null
 		&& isSingleUseSuppressingBinaryOperator(binding.firstReadParentOperatorKind)
 	) {
+		return false;
+	}
+	return true;
+}
+
+function shouldReportLocalConst(binding: LintBinding): boolean {
+	if (binding.isConst || !binding.hasInitializer || binding.writeCount !== 0) {
+		return false;
+	}
+	if (binding.readCount === 0 || binding.readInsideLoop) {
+		return false;
+	}
+	if (isSnapshotLocalName(binding.name)) {
+		return false;
+	}
+	if (binding.isSimpleAliasInitializer && binding.initializerTextLength <= 32) {
 		return false;
 	}
 	return true;
@@ -2048,6 +2070,77 @@ function expressionRootName(node: ts.Expression): string | null {
 
 function hasQuestionDotToken(node: ts.Node): boolean {
 	return (node as { questionDotToken?: ts.QuestionDotToken }).questionDotToken !== undefined;
+}
+
+function isEmptyContainerLiteral(node: ts.Expression): boolean {
+	const unwrapped = unwrapExpression(node);
+	return (ts.isArrayLiteralExpression(unwrapped) && unwrapped.elements.length === 0)
+		|| (ts.isObjectLiteralExpression(unwrapped) && unwrapped.properties.length === 0);
+}
+
+function enclosingVariableDeclarationName(node: ts.Node): string | null {
+	let current: ts.Node | undefined = node;
+	while (current !== undefined) {
+		if (ts.isVariableDeclaration(current) && ts.isIdentifier(current.name)) {
+			return current.name.text;
+		}
+		current = current.parent;
+	}
+	return null;
+}
+
+function sourcePathIncludes(sourceFile: ts.SourceFile, segment: string): boolean {
+	return normalizePathForAnalysis(sourceFile.fileName).includes(segment);
+}
+
+function optionalChainBoundaryKind(node: ts.Expression, sourceFile: ts.SourceFile): string | null {
+	const root = expressionRootName(node);
+	if (root === 'options' || root === 'opts' || root === 'params') {
+		return 'optional-parameter';
+	}
+	if (root === 'metadata' || root === 'manifest' || root === 'layout' || root === 'specs') {
+		return 'data-contract';
+	}
+	if (sourcePathIncludes(sourceFile, '/src/bmsx/machine/firmware/')) {
+		return 'firmware-boundary';
+	}
+	if (sourcePathIncludes(sourceFile, '/src/bmsx/machine/runtime/debug.ts')) {
+		return 'debug-boundary';
+	}
+	if (sourcePathIncludes(sourceFile, '/src/bmsx/machine/program/linker.ts')) {
+		return 'linker-boundary';
+	}
+	if (sourcePathIncludes(sourceFile, '/src/bmsx/machine/memory/asset_state.ts')) {
+		return 'asset-boundary';
+	}
+	return null;
+}
+
+function isTypeofFunctionComparison(node: ts.BinaryExpression): boolean {
+	if (!isEqualityOperator(node.operatorToken.kind)) {
+		return false;
+	}
+	const left = unwrapExpression(node.left);
+	const right = unwrapExpression(node.right);
+	return (
+		ts.isTypeOfExpression(left)
+		&& ts.isStringLiteralLike(right)
+		&& right.text === 'function'
+	) || (
+		ts.isTypeOfExpression(right)
+		&& ts.isStringLiteralLike(left)
+		&& left.text === 'function'
+	);
+}
+
+function isKnownTypeofFunctionBoundary(node: ts.BinaryExpression, sourceFile: ts.SourceFile): boolean {
+	if (sourcePathIncludes(sourceFile, '/src/bmsx/machine/firmware/')) {
+		return true;
+	}
+	if (sourcePathIncludes(sourceFile, '/src/bmsx/machine/cpu/cpu.ts')) {
+		return enclosingVariableDeclarationName(node) === 'nativeArgsProxyHandler';
+	}
+	return false;
 }
 
 function containsClosureExpression(node: ts.Node): boolean {
@@ -2624,9 +2717,11 @@ function isExplicitNonJsTruthinessPair(node: ts.BinaryExpression): boolean {
 function lintBinaryExpressionForCodeQuality(
 	node: ts.BinaryExpression,
 	sourceFile: ts.SourceFile,
-	issues: LintIssue[]):
+	issues: LintIssue[],
+	ledger: QualityLedger):
 	void {
 	if (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
+		noteQualityLedger(ledger, 'nullish_fallback_checked');
 		if (isNullOrUndefined(node.right)) {
 			pushLintIssue(
 				issues,
@@ -2634,6 +2729,37 @@ function lintBinaryExpressionForCodeQuality(
 				node.operatorToken,
 				'nullish_null_normalization_pattern',
 				'`?? null`/`?? undefined` normalization is forbidden. Preserve undefined/null directly or handle the case explicitly.',
+			);
+		}
+		if (isEmptyContainerLiteral(node.right)) {
+			pushLintIssue(
+				issues,
+				sourceFile,
+				node.operatorToken,
+				'empty_container_fallback_pattern',
+				'`?? []`/`?? {}` fallback allocation is forbidden. Use a shared empty value, a direct branch, or keep ownership explicit.',
+			);
+		}
+		if (isEmptyStringLiteral(unwrapExpression(node.right))) {
+			pushLintIssue(
+				issues,
+				sourceFile,
+				node.operatorToken,
+				'empty_string_fallback_pattern',
+				'Empty-string fallback via `??` is forbidden. Do not use empty strings as default values.',
+			);
+		}
+	}
+	if (isTypeofFunctionComparison(node)) {
+		if (isKnownTypeofFunctionBoundary(node, sourceFile)) {
+			noteQualityLedger(ledger, 'allowed_typeof_function_boundary');
+		} else {
+			pushLintIssue(
+				issues,
+				sourceFile,
+				node.operatorToken,
+				'defensive_typeof_function_pattern',
+				'`typeof x === "function"` is only allowed at JS interop/reflection boundaries. Trust internal callable contracts.',
 			);
 		}
 	}
@@ -3173,11 +3299,22 @@ function collectNormalizedBody(
 	name: string,
 	node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
 	normalizedBodies: NormalizedBodyInfo[],
+	ledger: QualityLedger,
 ): void {
 	if (name.endsWith('Thunk')) {
+		noteQualityLedger(ledger, 'skipped_normalized_body_thunk');
 		return;
 	}
-	if (hasExportModifier(node) || isPublicContractMethod(node) || isBytecodeSpecializationBody(sourceFile, name)) {
+	if (hasExportModifier(node)) {
+		noteQualityLedger(ledger, 'skipped_normalized_body_exported');
+		return;
+	}
+	if (isPublicContractMethod(node)) {
+		noteQualityLedger(ledger, 'skipped_normalized_body_public_contract');
+		return;
+	}
+	if (isBytecodeSpecializationBody(sourceFile, name)) {
+		noteQualityLedger(ledger, 'skipped_normalized_body_bytecode_specialization');
 		return;
 	}
 	const body = node.body;
@@ -3190,13 +3327,16 @@ function collectNormalizedBody(
 	if (ts.isBlock(body)) {
 		if (!semanticBody) {
 			if (body.statements.length < 2 || isSingleLineWrapperCandidate(node, sourceFile)) {
+				noteQualityLedger(ledger, 'skipped_normalized_body_too_small_or_wrapper');
 				return;
 			}
 			if (text.length < NORMALIZED_BODY_MIN_LENGTH) {
+				noteQualityLedger(ledger, 'skipped_normalized_body_short_text');
 				return;
 			}
 		}
 	} else if (!semanticBody) {
+		noteQualityLedger(ledger, 'skipped_normalized_body_expression_without_semantic_work');
 		return;
 	}
 	const locationNode = (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isFunctionExpression(node)) && node.name
@@ -3213,17 +3353,17 @@ function collectNormalizedBody(
 	});
 }
 
-function collectNormalizedBodies(sourceFile: ts.SourceFile, normalizedBodies: NormalizedBodyInfo[]): void {
+function collectNormalizedBodies(sourceFile: ts.SourceFile, normalizedBodies: NormalizedBodyInfo[], ledger: QualityLedger): void {
 	const visit = (node: ts.Node): void => {
 		if (ts.isFunctionDeclaration(node) && node.name !== undefined) {
-			collectNormalizedBody(sourceFile, node.name.text, node, normalizedBodies);
+			collectNormalizedBody(sourceFile, node.name.text, node, normalizedBodies, ledger);
 		} else if (ts.isMethodDeclaration(node) && node.body !== undefined) {
 			const name = getPropertyName(node.name);
 			if (name !== null) {
-				collectNormalizedBody(sourceFile, name, node, normalizedBodies);
+				collectNormalizedBody(sourceFile, name, node, normalizedBodies, ledger);
 			}
 		} else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && isFunctionLikeValue(node.initializer)) {
-			collectNormalizedBody(sourceFile, node.name.text, node.initializer, normalizedBodies);
+			collectNormalizedBody(sourceFile, node.name.text, node.initializer, normalizedBodies, ledger);
 		}
 		ts.forEachChild(node, visit);
 	};
@@ -3345,7 +3485,7 @@ function addSemanticNormalizedBodyDuplicateIssues(normalizedBodies: readonly Nor
 	}
 }
 
-function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], functionUsageInfo: FunctionUsageInfo): void {
+function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], functionUsageInfo: FunctionUsageInfo, ledger: QualityLedger): void {
 	const hotPath = isHotPathFile(sourceFile.fileName);
 	const scopes: Array<Map<string, LintBinding[]>> = [];
 	const repeatedScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
@@ -3392,7 +3532,10 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 				if (binding.isTopLevel || binding.isExported || shouldIgnoreLintName(binding.name)) {
 					continue;
 				}
-				if (LOCAL_CONST_PATTERN_ENABLED && !binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
+				if (!binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
+					noteQualityLedger(ledger, 'local_const_candidate');
+				}
+				if (LOCAL_CONST_PATTERN_ENABLED && shouldReportLocalConst(binding)) {
 					issues.push({
 						kind: 'local_const_pattern',
 						file: sourceFile.fileName,
@@ -3401,6 +3544,8 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 						name: 'local_const_pattern',
 						message: `Prefer "const" for "${binding.name}"; it is never reassigned.`,
 					});
+				} else if (!binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
+					noteQualityLedger(ledger, 'skipped_local_const_heuristic');
 				}
 				if (binding.readCount === 1 && shouldReportSingleUseLocal(binding)) {
 					issues.push({
@@ -3609,10 +3754,10 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 			markIdentifier(node, parent);
 		}
 		if (ts.isBinaryExpression(node)) {
-			lintBinaryExpressionForCodeQuality(node, sourceFile, issues);
+			lintBinaryExpressionForCodeQuality(node, sourceFile, issues, ledger);
 		}
 		if (ts.isCatchClause(node)) {
-			lintCatchClausePatterns(node, sourceFile, issues);
+			lintCatchClausePatterns(node, sourceFile, issues, ledger);
 		}
 			if (ts.isIfStatement(node)) {
 				lintNullishReturnGuard(node, sourceFile, issues);
@@ -3691,6 +3836,13 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 						'defensive_optional_chain_pattern',
 						`Optional chaining on required IDE/runtime root "${root}" is forbidden.`,
 					);
+				} else {
+					const boundaryKind = optionalChainBoundaryKind(node as ts.Expression, sourceFile);
+					if (boundaryKind === null) {
+						noteQualityLedger(ledger, 'unclassified_optional_chain');
+					} else {
+						noteQualityLedger(ledger, `allowed_optional_chain_${boundaryKind}`);
+					}
 				}
 			}
 		}
@@ -4418,10 +4570,41 @@ function printDuplicateSummary(groups: readonly DuplicateGroup[]): void {
 	console.log('');
 }
 
-function printTextReport(groups: DuplicateGroup[], lintIssues: LintIssue[], scannedFiles: number, summaryOnly: boolean): void {
+function printQualityLedger(ledger: QualityLedger): void {
+	const entries = qualityLedgerEntries(ledger);
+	if (entries.length === 0) {
+		return;
+	}
+	console.log('Quality exception ledger:');
+	for (let index = 0; index < entries.length; index += 1) {
+		const entry = entries[index];
+		console.log(`  ${entry.name}: ${entry.count}`);
+	}
+	console.log('');
+}
+
+function printCsvQualityLedgerRows(ledger: QualityLedger): void {
+	const entries = qualityLedgerEntries(ledger);
+	for (let index = 0; index < entries.length; index += 1) {
+		const entry = entries[index];
+		console.log([
+			quoteCsv('summary'),
+			quoteCsv(`ledger:${entry.name}`),
+			quoteCsv(entry.count),
+			quoteCsv(''),
+			quoteCsv(''),
+			quoteCsv(''),
+			quoteCsv(''),
+			quoteCsv(`Quality exception ledger "${entry.name}" count`),
+		].join(','));
+	}
+}
+
+function printTextReport(groups: DuplicateGroup[], lintIssues: LintIssue[], scannedFiles: number, summaryOnly: boolean, ledger: QualityLedger): void {
 	if (groups.length === 0 && lintIssues.length === 0) {
 		console.log('No duplicates or lint issues found.');
 		console.log(`Scanned ${scannedFiles} TypeScript files.`);
+		printQualityLedger(ledger);
 		return;
 	}
 	console.log(`Scanned ${scannedFiles} TypeScript files.\n`);
@@ -4463,6 +4646,7 @@ function printTextReport(groups: DuplicateGroup[], lintIssues: LintIssue[], scan
 	}
 	printDuplicateSummary(groups);
 	printLintSummary(lintIssues);
+	printQualityLedger(ledger);
 }
 
 function quoteCsv(value: string | number | undefined): string {
@@ -4473,7 +4657,7 @@ function quoteCsv(value: string | number | undefined): string {
 	return text;
 }
 
-function printCsvReport(groups: DuplicateGroup[], lintIssues: LintIssue[], scannedFiles: number, summaryOnly: boolean): void {
+function printCsvReport(groups: DuplicateGroup[], lintIssues: LintIssue[], scannedFiles: number, summaryOnly: boolean, ledger: QualityLedger): void {
 	console.log('kind,name_or_rule,count,file,line,column,context,message');
 	if (!summaryOnly) {
 		for (const group of groups) {
@@ -4515,6 +4699,7 @@ function printCsvReport(groups: DuplicateGroup[], lintIssues: LintIssue[], scann
 	].join(','));
 	printCsvDuplicateSummaryRows(groups);
 	printCsvLintSummaryRows(lintIssues);
+	printCsvQualityLedgerRows(ledger);
 }
 
 function toRelativePath(path: string): string {
@@ -4554,6 +4739,7 @@ function run(): void {
 	const sourceTextByFile = new Map<string, string>();
 	const exportedTypes: ExportedTypeInfo[] = [];
 	const normalizedBodies: NormalizedBodyInfo[] = [];
+	const ledger = createQualityLedger();
 	for (const filePath of fileList) {
 		const sourceText = readFileSync(filePath, 'utf8');
 		const kind = filePath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
@@ -4562,11 +4748,11 @@ function run(): void {
 		sourceTextByFile.set(filePath, sourceText);
 		collectClassInfos(sourceFile, classInfosByKey, classInfosByName, classInfosByFileName);
 		collectExportedTypes(sourceFile, exportedTypes);
-		collectNormalizedBodies(sourceFile, normalizedBodies);
+		collectNormalizedBodies(sourceFile, normalizedBodies, ledger);
 	}
 	const functionUsageInfo = collectFunctionUsageCounts(sourceFiles);
 	for (const sourceFile of sourceFiles) {
-		collectLintIssues(sourceFile, lintIssues, functionUsageInfo);
+		collectLintIssues(sourceFile, lintIssues, functionUsageInfo, ledger);
 	}
 	addDuplicateExportedTypeIssues(exportedTypes, lintIssues);
 	addNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
@@ -4587,7 +4773,7 @@ function run(): void {
 		file: toRelativePath(issue.file),
 	}));
 	if (options.csv) {
-		printCsvReport(groups, normalizedLintIssues, fileList.length, options.summaryOnly);
+		printCsvReport(groups, normalizedLintIssues, fileList.length, options.summaryOnly, ledger);
 	} else {
 		const sortedIssues = [...normalizedLintIssues].sort((left, right) => {
 			if (left.file !== right.file) {
@@ -4601,7 +4787,7 @@ function run(): void {
 			}
 			return left.kind.localeCompare(right.kind);
 		});
-		printTextReport(groups, sortedIssues, fileList.length, options.summaryOnly);
+		printTextReport(groups, sortedIssues, fileList.length, options.summaryOnly, ledger);
 	}
 	if (options.failOnIssues && (groups.length > 0 || normalizedLintIssues.length > 0)) {
 		process.exit(1);

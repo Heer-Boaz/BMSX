@@ -2501,8 +2501,8 @@ export class VDP implements VramWriteSink {
 	private registerVramSlot(entry: AssetEntry, textureKey: string, surfaceId: number): void {
 		let handle = $.texmanager.getTextureByUri(textureKey);
 		const isEngineAtlas = textureKey === ENGINE_ATLAS_TEXTURE_KEY;
-		let textureWidth = entry.regionW;
-		let textureHeight = entry.regionH;
+		const textureWidth = entry.regionW;
+		const textureHeight = entry.regionH;
 		if (!handle) {
 			const stream = this.makeVramGarbageStream(entry.baseAddr >>> 0);
 			fillVramGarbageScratch(this.vramSeedPixel, stream);

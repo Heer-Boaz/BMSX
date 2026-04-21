@@ -44,6 +44,9 @@ type DefSlot = {
 	valueId: number;
 };
 
+const EMPTY_USE_SLOTS: UseSlot[] = [];
+const EMPTY_DEF_SLOTS: DefSlot[] = [];
+
 const RK_B = 1;
 const RK_C = 2;
 const SCCP_UNDEF = 0;
@@ -475,7 +478,7 @@ const evaluateSccpDef = (
 		case OpCode.BXOR:
 		case OpCode.SHL:
 		case OpCode.SHR: {
-			const slots = uses ?? [];
+			const slots = uses ?? EMPTY_USE_SLOTS;
 			let slotB: UseSlot | null = null;
 			let slotC: UseSlot | null = null;
 			for (let i = 0; i < slots.length; i += 1) {
@@ -638,7 +641,7 @@ const runSccp = (
 					changed = true;
 				}
 			};
-			const lastUses = instrUses[lastIndex] ?? [];
+			const lastUses = instrUses[lastIndex] ?? EMPTY_USE_SLOTS;
 
 			switch (last.op) {
 				case OpCode.RET:
@@ -1049,7 +1052,7 @@ const computeValueNumbers = (
 		return vn;
 	};
 
-	const usesForInstruction = (index: number): UseSlot[] => instrUses[index] ?? [];
+	const usesForInstruction = (index: number): UseSlot[] => instrUses[index] ?? EMPTY_USE_SLOTS;
 
 	const getUniqueVN = (valueId: number): number => {
 		let vn = uniqueVN[valueId];
@@ -1250,7 +1253,7 @@ const applyAvailableValueNumbering = (
 					}
 				}
 			}
-			const defs = instrDefs[index] ?? [];
+			const defs = instrDefs[index] ?? EMPTY_DEF_SLOTS;
 			for (let d = 0; d < defs.length; d += 1) {
 				const { reg, valueId } = defs[d];
 				const oldValue = currentValues[reg];
@@ -2623,7 +2626,7 @@ export const applyGlobalOptimizations = (
 					const instruction = instructions[def.index];
 					switch (instruction.op) {
 						case OpCode.MOV: {
-							const slots = instrUses[def.index] ?? [];
+							const slots = instrUses[def.index] ?? EMPTY_USE_SLOTS;
 							if (slots.length === 0) {
 								throw new Error('[ProgramOptimizer] Missing MOV operand.');
 							}
@@ -2659,7 +2662,7 @@ export const applyGlobalOptimizations = (
 			if (!isValueNumberable(instruction.op)) {
 				continue;
 			}
-			const uses = instrUses[i] ?? [];
+			const uses = instrUses[i] ?? EMPTY_USE_SLOTS;
 			let key = `${instruction.op}`;
 			const operandKey = (field: 'b' | 'c', slot: UseSlot | null): string => {
 				const constant = getOperandConst(instruction, field, slot, context, valueConst, valueCopy);

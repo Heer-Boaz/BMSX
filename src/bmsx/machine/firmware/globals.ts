@@ -2025,7 +2025,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 							return token;
 						}
 						if (index === 0) {
-							return match[0] ?? '';
+							return match[0];
 						}
 						const value = match[index];
 						return value === undefined ? '' : value;

@@ -3,6 +3,7 @@ import { basename, extname, isAbsolute, join, relative, resolve } from 'node:pat
 import { spawnSync } from 'node:child_process';
 
 import { analyzeCppFiles, type CppDuplicateGroup } from './code_quality_cpp_rules';
+import { qualityLedgerEntries, type QualityLedger } from './quality_ledger';
 
 type LintIssueSeverity = 'error' | 'warning' | 'information' | 'performance' | 'portability' | 'style' | string;
 type LintTool = 'bmsx-cpp' | 'clang-tidy' | 'cppcheck';
@@ -438,10 +439,24 @@ function printDuplicateSummary(groups: readonly CppDuplicateGroup[]): void {
 	console.log('');
 }
 
-function printTextSummary(issues: readonly LintIssue[], duplicateGroups: readonly CppDuplicateGroup[], scannedFiles: number, summaryOnly: boolean): void {
+function printQualityLedger(ledger: QualityLedger): void {
+	const entries = qualityLedgerEntries(ledger);
+	if (entries.length === 0) {
+		return;
+	}
+	console.log('Quality exception ledger:');
+	for (let index = 0; index < entries.length; index += 1) {
+		const entry = entries[index];
+		console.log(`  ${entry.name}: ${entry.count}`);
+	}
+	console.log('');
+}
+
+function printTextSummary(issues: readonly LintIssue[], duplicateGroups: readonly CppDuplicateGroup[], scannedFiles: number, summaryOnly: boolean, ledger: QualityLedger): void {
 	if (issues.length === 0 && duplicateGroups.length === 0) {
 		console.log('No C++ duplicates or lint issues found.');
 		console.log(`Scanned ${scannedFiles} C++ files.`);
+		printQualityLedger(ledger);
 		return;
 	}
 	console.log(`Scanned ${scannedFiles} C++ files.\n`);
@@ -459,6 +474,7 @@ function printTextSummary(issues: readonly LintIssue[], duplicateGroups: readonl
 	}
 	if (issues.length === 0) {
 		printDuplicateSummary(duplicateGroups);
+		printQualityLedger(ledger);
 		return;
 	}
 	const byCheck = new Map<string, number>();
@@ -504,6 +520,7 @@ function printTextSummary(issues: readonly LintIssue[], duplicateGroups: readonl
 	}
 	console.log('');
 	printDuplicateSummary(duplicateGroups);
+	printQualityLedger(ledger);
 	if (summaryOnly) {
 		return;
 	}
@@ -572,7 +589,15 @@ function printCsvRow(fields: readonly (string | number | undefined)[]): void {
 	console.log(fields.map(quoteCsv).join(','));
 }
 
-function printCsvReport(issues: readonly LintIssue[], duplicateGroups: readonly CppDuplicateGroup[], scannedFiles: number, summaryOnly: boolean): void {
+function printCsvQualityLedgerRows(ledger: QualityLedger): void {
+	const entries = qualityLedgerEntries(ledger);
+	for (let index = 0; index < entries.length; index += 1) {
+		const entry = entries[index];
+		printCsvRow(['summary', `ledger:${entry.name}`, '', '', entry.count, '', `Quality exception ledger "${entry.name}" count`]);
+	}
+}
+
+function printCsvReport(issues: readonly LintIssue[], duplicateGroups: readonly CppDuplicateGroup[], scannedFiles: number, summaryOnly: boolean, ledger: QualityLedger): void {
 	console.log('file,line,column,tool,check,severity,message');
 	if (!summaryOnly) {
 		for (let groupIndex = 0; groupIndex < duplicateGroups.length; groupIndex += 1) {
@@ -614,6 +639,7 @@ function printCsvReport(issues: readonly LintIssue[], duplicateGroups: readonly 
 	for (const [check, count] of Array.from(byCheck.entries()).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))) {
 		printCsvRow(['summary', 'by_check', check, '', count, '', '']);
 	}
+	printCsvQualityLedgerRows(ledger);
 }
 
 function run(): void {
@@ -649,9 +675,9 @@ function run(): void {
 	});
 
 	if (options.csv) {
-		printCsvReport(sortedIssues, customAnalysis.duplicateGroups, files.length, options.summaryOnly);
+		printCsvReport(sortedIssues, customAnalysis.duplicateGroups, files.length, options.summaryOnly, customAnalysis.ledger);
 	} else {
-		printTextSummary(sortedIssues, customAnalysis.duplicateGroups, files.length, options.summaryOnly);
+		printTextSummary(sortedIssues, customAnalysis.duplicateGroups, files.length, options.summaryOnly, customAnalysis.ledger);
 	}
 	if (options.failOnIssues && (sortedIssues.length > 0 || customAnalysis.duplicateGroups.length > 0)) {
 		process.exit(1);

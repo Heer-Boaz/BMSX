@@ -26,6 +26,7 @@ import {
 } from '../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppToken } from '../../../src/bmsx/language/cpp/syntax/tokens';
 import { cppTokenText, normalizedCppTokenText } from '../../../src/bmsx/language/cpp/syntax/tokens';
+import { noteQualityLedger, type QualityLedger } from '../quality_ledger';
 
 const CPP_SINGLE_LINE_WRAPPER_NAME_WORDS: ReadonlySet<string> = new Set([
 	'acquire',
@@ -910,11 +911,12 @@ export function lintCppTerminalReturnPaddingPattern(file: string, tokens: readon
 	);
 }
 
-export function lintCppCatchPatterns(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
+export function lintCppCatchPatterns(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[], ledger: QualityLedger): void {
 	for (let index = info.bodyStart + 1; index < info.bodyEnd; index += 1) {
 		if (tokens[index].text !== 'catch' || tokens[index + 1]?.text !== '(') {
 			continue;
 		}
+		noteQualityLedger(ledger, 'cpp_catch_boundary_checked');
 		const declarationClose = pairs[index + 1];
 		if (declarationClose < 0 || declarationClose >= info.bodyEnd) {
 			continue;
@@ -956,11 +958,15 @@ export function lintCppCatchPatterns(file: string, tokens: readonly CppToken[], 
 				continue;
 			}
 		}
+		if (!cppRangeHas(tokens, blockOpen + 1, blockClose, token => token.text === 'return')) {
+			continue;
+		}
 		if (
-			cppRangeHas(tokens, blockOpen + 1, blockClose, token => token.text === 'return')
-			&& !cppCatchBlockStoresCurrentException(tokens, blockOpen + 1, blockClose)
-			&& !cppCatchBlockFinishesError(tokens, blockOpen + 1, blockClose)
+			cppCatchBlockStoresCurrentException(tokens, blockOpen + 1, blockClose)
+			|| cppCatchBlockFinishesError(tokens, blockOpen + 1, blockClose)
 		) {
+			noteQualityLedger(ledger, 'allowed_cpp_catch_fault_boundary');
+		} else {
 			pushLintIssue(
 				issues,
 				file,
@@ -1036,7 +1042,7 @@ export function lintCppRedundantNumericSanitizationPattern(file: string, tokens:
 	}
 }
 
-export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
+export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], info: CppFunctionInfo, issues: CppLintIssue[], ledger: QualityLedger): void {
 	const ranges = collectCppStatementRanges(tokens, info.bodyStart + 1, info.bodyEnd);
 	for (let index = 0; index < ranges.length; index += 1) {
 		const binding = declarationFromStatement(tokens, ranges[index][0], ranges[index][1]);
@@ -1044,8 +1050,15 @@ export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], 
 			continue;
 		}
 		markBindingUses(binding, tokens, info.bodyStart, info.bodyEnd);
-		if (CPP_LOCAL_CONST_PATTERN_ENABLED && shouldReportCppLocalConst(binding)) {
+		if (!binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
+			noteQualityLedger(ledger, 'cpp_local_const_candidate');
+		}
+		if (!CPP_LOCAL_CONST_PATTERN_ENABLED && !binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
+			noteQualityLedger(ledger, 'skipped_cpp_local_const_disabled');
+		} else if (CPP_LOCAL_CONST_PATTERN_ENABLED && shouldReportCppLocalConst(binding)) {
 			pushLintIssue(issues, file, tokens[binding.nameToken], 'local_const_pattern', `Prefer "const" for "${binding.name}"; it is never reassigned.`);
+		} else if (!binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
+			noteQualityLedger(ledger, 'skipped_cpp_local_const_heuristic');
 		}
 		if (binding.readCount === 1 && shouldReportSingleUseLocal(binding)) {
 			pushLintIssue(issues, file, tokens[binding.nameToken], 'single_use_local_pattern', `Local alias "${binding.name}" is read only once in this scope.`);
@@ -1342,9 +1355,15 @@ function isWriteUse(tokens: readonly CppToken[], index: number): boolean {
 		tokens[index - 1]?.text === '++' || tokens[index - 1]?.text === '--';
 }
 
-export function lintCppSimpleTokenPatterns(file: string, tokens: readonly CppToken[], issues: CppLintIssue[]): void {
+export function lintCppSimpleTokenPatterns(file: string, tokens: readonly CppToken[], issues: CppLintIssue[], ledger: QualityLedger): void {
 	for (let index = 0; index < tokens.length; index += 1) {
 		const token = tokens[index];
+		if (token.text === '(') {
+			const target = cppCallTarget(tokens, index);
+			if (target !== null && (target === 'value_or' || target.endsWith('.value_or') || target.endsWith('::value_or'))) {
+				noteQualityLedger(ledger, 'cpp_optional_value_or_fallback');
+			}
+		}
 		if (token.text === '==' || token.text === '!=') {
 			const left = tokens[index - 1];
 			const right = tokens[index + 1];
@@ -1826,18 +1845,21 @@ export function lintCppSemanticRepeatedExpressions(file: string, tokens: readonl
 	}
 }
 
-export function collectCppNormalizedBody(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, normalizedBodies: CppNormalizedBodyInfo[]): void {
+export function collectCppNormalizedBody(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, normalizedBodies: CppNormalizedBodyInfo[], ledger: QualityLedger): void {
 	if (info.name.endsWith('Thunk')) {
+		noteQualityLedger(ledger, 'skipped_cpp_normalized_body_thunk');
 		return;
 	}
 	const semanticNormalization = info.wrapperTarget !== null && isSemanticNormalizationWrapperTarget(info.wrapperTarget);
 	if (info.wrapperTarget !== null && !semanticNormalization) {
+		noteQualityLedger(ledger, 'skipped_cpp_normalized_body_wrapper');
 		return;
 	}
 	const bodyText = normalizedCppTokenText(tokens, info.bodyStart + 1, info.bodyEnd);
 	const semanticSignatures = collectSemanticBodySignatures(tokens, pairs, info.bodyStart + 1, info.bodyEnd);
 	const semanticBody = semanticSignatures.length > 0;
 	if (!semanticBody && bodyText.length < CPP_NORMALIZED_BODY_MIN_LENGTH) {
+		noteQualityLedger(ledger, 'skipped_cpp_normalized_body_short_text');
 		return;
 	}
 	normalizedBodies.push({
