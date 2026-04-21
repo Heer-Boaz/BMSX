@@ -52,39 +52,42 @@ export function installNativeGlobal(runtime: Runtime, name: string, value: unkno
 }
 
 export function callClosureInto(runtime: Runtime, fn: Closure, args: Value[], out: Value[]): void {
-	const depth = runtime.machine.cpu.getFrameDepth();
-	const previousBudget = runtime.machine.cpu.instructionBudgetRemaining;
+	const cpu = runtime.machine.cpu;
+	const depth = cpu.getFrameDepth();
+	const previousBudget = cpu.instructionBudgetRemaining;
 	const budgetSentinel = Number.MAX_SAFE_INTEGER;
-	const previousSink = runtime.machine.cpu.swapExternalReturnSink(out);
+	const previousSink = cpu.swapExternalReturnSink(out);
 	out.length = 0;
 	try {
-		runtime.machine.cpu.callExternal(fn, args);
-		runtime.machine.cpu.runUntilDepth(depth, budgetSentinel);
+		cpu.callExternal(fn, args);
+		cpu.runUntilDepth(depth, budgetSentinel);
 	} catch (error) {
-		runtime.machine.cpu.unwindToDepth(depth);
+		cpu.unwindToDepth(depth);
 		throw error;
 	} finally {
-		runtime.machine.cpu.swapExternalReturnSink(previousSink);
-		const remaining = runtime.machine.cpu.instructionBudgetRemaining;
-		runtime.machine.cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
+		cpu.swapExternalReturnSink(previousSink);
+		const remaining = cpu.instructionBudgetRemaining;
+		cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
 	}
 }
 
 export function callClosureIntoWithScheduler(runtime: Runtime, fn: Closure, args: Value[], out: Value[]): void {
-	const depth = runtime.machine.cpu.getFrameDepth();
-	const previousBudget = runtime.machine.cpu.instructionBudgetRemaining;
+	const cpu = runtime.machine.cpu;
+	const scheduler = runtime.machine.scheduler;
+	const depth = cpu.getFrameDepth();
+	const previousBudget = cpu.instructionBudgetRemaining;
 	const budgetSentinel = Number.MAX_SAFE_INTEGER;
-	const previousSink = runtime.machine.cpu.swapExternalReturnSink(out);
+	const previousSink = cpu.swapExternalReturnSink(out);
 	out.length = 0;
 	try {
-		runtime.machine.cpu.callExternal(fn, args);
+		cpu.callExternal(fn, args);
 		let remaining = budgetSentinel;
 		runDueRuntimeTimers(runtime);
-		while (runtime.machine.cpu.getFrameDepth() > depth) {
+		while (cpu.getFrameDepth() > depth) {
 			let sliceBudget = remaining;
-			const nextDeadline = runtime.machine.scheduler.nextDeadline();
+			const nextDeadline = scheduler.nextDeadline();
 			if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
-				const deadlineBudget = nextDeadline - runtime.machine.scheduler.nowCycles;
+				const deadlineBudget = nextDeadline - scheduler.nowCycles;
 				if (deadlineBudget <= 0) {
 					runDueRuntimeTimers(runtime);
 					continue;
@@ -93,16 +96,15 @@ export function callClosureIntoWithScheduler(runtime: Runtime, fn: Closure, args
 					sliceBudget = deadlineBudget;
 				}
 			}
-			runtime.machine.scheduler.beginCpuSlice(sliceBudget);
-			const result = runtime.machine.cpu.runUntilDepth(depth, sliceBudget);
-			runtime.machine.scheduler.endCpuSlice();
-			const sliceRemaining = runtime.machine.cpu.instructionBudgetRemaining;
-			const consumed = sliceBudget - sliceRemaining;
+			scheduler.beginCpuSlice(sliceBudget);
+			const result = cpu.runUntilDepth(depth, sliceBudget);
+			scheduler.endCpuSlice();
+			const consumed = sliceBudget - cpu.instructionBudgetRemaining;
 			if (consumed > 0) {
 				remaining -= consumed;
 				advanceRuntimeTime(runtime, consumed);
 			}
-			if (runtime.machine.cpu.getFrameDepth() <= depth) {
+			if (cpu.getFrameDepth() <= depth) {
 				break;
 			}
 			if (result === RunResult.Halted) {
@@ -113,12 +115,12 @@ export function callClosureIntoWithScheduler(runtime: Runtime, fn: Closure, args
 			}
 		}
 	} catch (error) {
-		runtime.machine.cpu.unwindToDepth(depth);
+		cpu.unwindToDepth(depth);
 		throw error;
 	} finally {
-		runtime.machine.cpu.swapExternalReturnSink(previousSink);
-		const remaining = runtime.machine.cpu.instructionBudgetRemaining;
-		runtime.machine.cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
+		cpu.swapExternalReturnSink(previousSink);
+		const remaining = cpu.instructionBudgetRemaining;
+		cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
 	}
 }
 

@@ -2135,20 +2135,14 @@ function optionalChainBoundaryKind(node: ts.Expression, sourceFile: ts.SourceFil
 	if (root === 'options' || root === 'opts' || root === 'params') {
 		return 'optional-parameter';
 	}
-	if (root === 'metadata' || root === 'manifest' || root === 'layout' || root === 'specs') {
+	if (root === 'metadata' || root === 'apiMetadata' || root === 'manifest' || root === 'layout' || root === 'specs' || root === 'ram') {
 		return 'data-contract';
 	}
-	if (sourcePathIncludes(sourceFile, '/src/bmsx/machine/firmware/')) {
-		return 'firmware-boundary';
+	if (isDebugLuaSourceOptionalChain(node, sourceFile)) {
+		return 'debug-lua-source';
 	}
-	if (sourcePathIncludes(sourceFile, '/src/bmsx/machine/runtime/debug.ts')) {
-		return 'debug-boundary';
-	}
-	if (sourcePathIncludes(sourceFile, '/src/bmsx/machine/program/linker.ts')) {
-		return 'linker-boundary';
-	}
-	if (sourcePathIncludes(sourceFile, '/src/bmsx/machine/memory/asset_state.ts')) {
-		return 'asset-boundary';
+	if (isLinkerMetadataOptionalChain(node, sourceFile)) {
+		return 'linker-metadata';
 	}
 	if (isMapLookupProjectionOptionalChain(node)) {
 		return 'lookup-projection';
@@ -2178,6 +2172,26 @@ function isMapLookupProjectionOptionalChain(node: ts.Expression): boolean {
 		return false;
 	}
 	return getCallTargetLeafName(receiver.expression) === 'get';
+}
+
+function isLinkerMetadataOptionalChain(node: ts.Expression, sourceFile: ts.SourceFile): boolean {
+	if (!sourcePathIncludes(sourceFile, '/src/bmsx/machine/program/linker.ts')) {
+		return false;
+	}
+	const root = expressionRootName(node);
+	return root === 'engineSymbols'
+		|| root === 'cartSymbols'
+		|| root === 'engineMetadata'
+		|| root === 'cartMetadata';
+}
+
+function isDebugLuaSourceOptionalChain(node: ts.Expression, sourceFile: ts.SourceFile): boolean {
+	if (!sourcePathIncludes(sourceFile, '/src/bmsx/machine/runtime/debug.ts')) {
+		return false;
+	}
+	const text = node.getText(sourceFile);
+	return text.startsWith('runtime.cartLuaSources?.')
+		|| text.startsWith('runtime.engineLuaSources?.');
 }
 
 function isValueTagGuardOptionalChain(node: ts.Expression, sourceFile: ts.SourceFile): boolean {
@@ -3596,12 +3610,14 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 	const scopes: Array<Map<string, LintBinding[]>> = [];
 	const repeatedScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
 	const semanticRepeatedScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
+	const machineDeviceScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
 	const enterScope = (): void => {
 		scopes.push(new Map<string, LintBinding[]>());
 	};
 	const enterRepeatedScope = (): void => {
 		repeatedScopes.push(new Map<string, RepeatedExpressionInfo>());
 		semanticRepeatedScopes.push(new Map<string, RepeatedExpressionInfo>());
+		machineDeviceScopes.push(new Map<string, RepeatedExpressionInfo>());
 	};
 	const leaveRepeatedScope = (): void => {
 		const scope = repeatedScopes.pop();
@@ -3682,6 +3698,25 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 				column: info.column,
 				name: 'semantic_repeated_expression_pattern',
 				message: `Semantic transform call is repeated ${info.count} times in the same scope: ${info.sampleText}`,
+			});
+		}
+	};
+	const leaveMachineDeviceScope = (): void => {
+		const scope = machineDeviceScopes.pop();
+		if (!scope) {
+			return;
+		}
+		for (const info of scope.values()) {
+			if (info.count <= 2) {
+				continue;
+			}
+			issues.push({
+				kind: 'repeated_machine_device_chain_pattern',
+				file: sourceFile.fileName,
+				line: info.line,
+				column: info.column,
+				name: 'repeated_machine_device_chain_pattern',
+				message: `Machine device chain is repeated ${info.count} times in the same function: ${info.sampleText}`,
 			});
 		}
 	};
@@ -3813,6 +3848,28 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 			sampleText: compactSampleText(node.getText(sourceFile).replace(/\s+/g, ' ')),
 		});
 	};
+	const recordMachineDeviceChain = (node: ts.PropertyAccessExpression): void => {
+		if (node.expression.getText(sourceFile) !== 'runtime.machine') {
+			return;
+		}
+		const scope = machineDeviceScopes[machineDeviceScopes.length - 1];
+		if (!scope) {
+			return;
+		}
+		const text = `runtime.machine.${node.name.text}`;
+		const existing = scope.get(text);
+		if (existing) {
+			existing.count += 1;
+			return;
+		}
+		const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+		scope.set(text, {
+			line: position.line + 1,
+			column: position.character + 1,
+			count: 1,
+			sampleText: text,
+		});
+	};
 	const lintHotPathCallArguments = (node: ts.CallExpression | ts.NewExpression): void => {
 		if (!hotPath) {
 			return;
@@ -3932,6 +3989,9 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 			);
 		}
 		if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node) || ts.isCallExpression(node)) {
+			if (ts.isPropertyAccessExpression(node)) {
+				recordMachineDeviceChain(node);
+			}
 			if (hasQuestionDotToken(node)) {
 				const root = expressionRootName(node as ts.Expression);
 				if (root !== null && REQUIRED_STATE_ROOTS.has(root)) {
@@ -3982,6 +4042,7 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 		}
 		ts.forEachChild(node, child => visit(child, node));
 		if (repeatedEntered) {
+			leaveMachineDeviceScope();
 			leaveSemanticRepeatedScope();
 			leaveRepeatedScope();
 		}

@@ -160,11 +160,12 @@ export class FrameSchedulerState {
 		const remaining = frameState.cycleBudgetRemaining;
 		const granted = frameState.cycleBudgetGranted;
 		const cpuUsed = frameState.activeCpuUsedCycles;
+		const vdp = runtime.machine.vdp;
 		slot.sequence = sequence;
 		slot.remaining = remaining;
-		slot.visualCommitted = runtime.machine.vdp.lastFrameCommitted;
-		slot.vdpFrameCost = runtime.machine.vdp.lastFrameCost;
-		slot.vdpFrameHeld = runtime.machine.vdp.lastFrameHeld;
+		slot.visualCommitted = vdp.lastFrameCommitted;
+		slot.vdpFrameCost = vdp.lastFrameCost;
+		slot.vdpFrameHeld = vdp.lastFrameHeld;
 		this.tickCompletionWriteIndex = (this.tickCompletionWriteIndex + 1) % TICK_COMPLETION_QUEUE_CAPACITY;
 		this.tickCompletionCount += 1;
 		this.lastTickBudgetGranted = granted;

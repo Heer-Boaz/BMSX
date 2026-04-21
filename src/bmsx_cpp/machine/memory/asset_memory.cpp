@@ -9,12 +9,14 @@
 namespace bmsx {
 
 void buildAssetMemory(Runtime& runtime, RuntimeAssets& assets, bool keepDecodedData, RuntimeAssetBuildMode mode) {
+	auto& machine = runtime.machine();
+	auto& memory = machine.memory();
 	if (mode == RuntimeAssetBuildMode::Cart) {
-		runtime.machine().memory().resetCartAssets();
+		memory.resetCartAssets();
 	} else {
-		runtime.machine().memory().resetAssetMemory();
+		memory.resetAssetMemory();
 	}
-	runtime.machine().vdp().registerImageAssets(assets, keepDecodedData);
+	machine.vdp().registerImageAssets(assets, keepDecodedData);
 	std::vector<const AudioAsset*> audioAssets;
 	audioAssets.reserve(assets.audio.size());
 	for (const auto& entry : assets.audio) {
@@ -26,10 +28,10 @@ void buildAssetMemory(Runtime& runtime, RuntimeAssets& assets, bool keepDecodedD
 	});
 	for (const auto* audioAsset : audioAssets) {
 		const std::string& id = audioAsset->id;
-		if (runtime.machine().memory().hasAsset(id)) {
+		if (memory.hasAsset(id)) {
 			continue;
 		}
-		runtime.machine().memory().registerAudioMeta(
+		memory.registerAudioMeta(
 			id,
 			static_cast<uint32_t>(audioAsset->sampleRate),
 			static_cast<uint32_t>(audioAsset->channels),
@@ -40,8 +42,8 @@ void buildAssetMemory(Runtime& runtime, RuntimeAssets& assets, bool keepDecodedD
 		);
 	}
 
-	runtime.machine().memory().finalizeAssetTable();
-	runtime.machine().memory().markAllAssetsDirty();
+	memory.finalizeAssetTable();
+	memory.markAllAssetsDirty();
 }
 
 } // namespace bmsx

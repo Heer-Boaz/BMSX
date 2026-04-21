@@ -1117,7 +1117,7 @@ CPU::CPU(Memory& memory, StringHandleTable* handleTable)
 }
 
 Value CPU::createNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost) {
-	const NativeFnCost resolvedCost = cost.value_or(resolveNativeFunctionCost(name));
+	const NativeFnCost resolvedCost = cost ? *cost : resolveNativeFunctionCost(name);
 	auto* native = m_heap.allocate<NativeFunction>(ObjType::NativeFunction);
 	addTrackedLuaHeapBytes(16);
 	native->name = std::string(name);

@@ -1376,17 +1376,21 @@ function isWriteUse(tokens: readonly CppToken[], index: number): boolean {
 		tokens[index - 1]?.text === '++' || tokens[index - 1]?.text === '--';
 }
 
-export function lintCppSimpleTokenPatterns(file: string, tokens: readonly CppToken[], issues: CppLintIssue[], ledger: QualityLedger): void {
+export function lintCppSimpleTokenPatterns(file: string, tokens: readonly CppToken[], pairs: readonly number[], issues: CppLintIssue[], ledger: QualityLedger): void {
 	for (let index = 0; index < tokens.length; index += 1) {
 		const token = tokens[index];
 		if (token.text === '(') {
 			const target = cppCallTarget(tokens, index);
 			if (target !== null && (target === 'value_or' || target.endsWith('.value_or') || target.endsWith('::value_or'))) {
-				const boundaryKind = cppValueOrBoundaryKind(file);
-				if (boundaryKind === null) {
-					pushLintIssue(issues, file, token, 'optional_value_or_fallback_pattern', 'std::optional::value_or fallback is only allowed at explicit manifest/input/optional-parameter boundaries. Branch or require the value instead of hiding missing internal state.');
+				if (cppValueOrHasEagerFallbackWork(tokens, pairs, index)) {
+					pushLintIssue(issues, file, token, 'eager_value_or_fallback_pattern', 'std::optional::value_or eagerly evaluates its fallback. Use an explicit branch when the fallback does work.');
 				} else {
-					noteQualityLedger(ledger, `cpp_optional_value_or_${boundaryKind}`);
+					const boundaryKind = cppValueOrBoundaryKind(file, target);
+					if (boundaryKind === null) {
+						pushLintIssue(issues, file, token, 'optional_value_or_fallback_pattern', 'std::optional::value_or fallback is only allowed at explicit manifest/input/optional-parameter boundaries. Branch or require the value instead of hiding missing internal state.');
+					} else {
+						noteQualityLedger(ledger, `cpp_optional_value_or_${boundaryKind}`);
+					}
 				}
 			}
 		}
@@ -1409,19 +1413,43 @@ export function lintCppSimpleTokenPatterns(file: string, tokens: readonly CppTok
 	lintStringOrChains(file, tokens, issues);
 }
 
-function cppValueOrBoundaryKind(file: string): string | null {
+function cppValueOrHasEagerFallbackWork(tokens: readonly CppToken[], pairs: readonly number[], openParen: number): boolean {
+	const closeParen = pairs[openParen];
+	if (closeParen <= openParen) {
+		return false;
+	}
+	const args = splitCppArgumentRanges(tokens, openParen + 1, closeParen);
+	if (args.length !== 1) {
+		return true;
+	}
+	const [start, end] = args[0];
+	for (let index = start; index < end; index += 1) {
+		const text = tokens[index].text;
+		if (text === 'new' || text === '{' || text === '[') {
+			return true;
+		}
+		if (text === '(' && pairs[index] > index && pairs[index] < end) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function cppValueOrBoundaryKind(file: string, target: string): string | null {
 	const normalized = normalizePathForAnalysis(file);
+	if (normalized.endsWith('/src/bmsx_cpp/machine/specs.cpp') && target === 'value.value_or') {
+		return 'manifest_default';
+	}
 	if (
-		normalized.endsWith('/src/bmsx_cpp/machine/specs.cpp')
-		|| normalized.endsWith('/src/bmsx_cpp/machine/runtime/timing_config.cpp')
-		|| normalized.endsWith('/src/bmsx_cpp/machine/firmware/globals.cpp')
+		(normalized.endsWith('/src/bmsx_cpp/machine/runtime/timing_config.cpp') || normalized.endsWith('/src/bmsx_cpp/machine/firmware/globals.cpp'))
+		&& (target.endsWith('.vdpWorkUnitsPerSec.value_or') || target.endsWith('.geoWorkUnitsPerSec.value_or'))
 	) {
 		return 'manifest_default';
 	}
-	if (normalized.endsWith('/src/bmsx_cpp/machine/cpu/cpu.cpp')) {
-		return 'optional_parameter_default';
-	}
-	if (normalized.endsWith('/src/bmsx_cpp/machine/firmware/api.cpp')) {
+	if (
+		normalized.endsWith('/src/bmsx_cpp/machine/firmware/api.cpp')
+		&& (target.endsWith('.repeatpressed.value_or') || target.endsWith('.repeatcount.value_or'))
+	) {
 		return 'input_state_default';
 	}
 	return null;
@@ -1767,8 +1795,9 @@ function rangeContainsTemporaryAllocation(tokens: readonly CppToken[], start: nu
 	return false;
 }
 
-export function lintCppRepeatedExpressions(file: string, tokens: readonly CppToken[], _pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
+export function lintCppRepeatedExpressions(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
 	const expressions = new Map<string, { token: CppToken; count: number }>();
+	const machineDeviceChains = new Map<string, { token: CppToken; count: number }>();
 	const record = (start: number, end: number): void => {
 		const text = normalizedCppTokenText(tokens, start, end);
 		if (text.length < 24 || text.startsWith('this.') || text.startsWith('this->')) {
@@ -1781,6 +1810,18 @@ export function lintCppRepeatedExpressions(file: string, tokens: readonly CppTok
 		}
 		expressions.set(text, { token: tokens[start], count: 1 });
 	};
+	const recordMachineDeviceChain = (index: number): void => {
+		const text = cppRuntimeMachineDeviceChain(tokens, pairs, index);
+		if (text === null) {
+			return;
+		}
+		const existing = machineDeviceChains.get(text);
+		if (existing !== undefined) {
+			existing.count += 1;
+			return;
+		}
+		machineDeviceChains.set(text, { token: tokens[index], count: 1 });
+	};
 	const ranges = collectCppStatementRanges(tokens, info.bodyStart + 1, info.bodyEnd);
 	for (let index = 0; index < ranges.length; index += 1) {
 		const start = ranges[index][0];
@@ -1788,6 +1829,9 @@ export function lintCppRepeatedExpressions(file: string, tokens: readonly CppTok
 		if (cppRangeHas(tokens, start, end, token => token.text === '==' || token.text === '!=' || token.text === '<' || token.text === '>')) {
 			record(start, end);
 		}
+	}
+	for (let index = info.bodyStart + 1; index < info.bodyEnd; index += 1) {
+		recordMachineDeviceChain(index);
 	}
 	for (const [text, value] of expressions) {
 		if (value.count <= 2) {
@@ -1802,6 +1846,36 @@ export function lintCppRepeatedExpressions(file: string, tokens: readonly CppTok
 			message: `Expression is repeated ${value.count} times in the same scope: ${compactSampleText(text)}`,
 		});
 	}
+	for (const [text, value] of machineDeviceChains) {
+		if (value.count <= 2) {
+			continue;
+		}
+		issues.push({
+			kind: 'repeated_machine_device_chain_pattern',
+			file,
+			line: value.token.line,
+			column: value.token.column,
+			name: 'repeated_machine_device_chain_pattern',
+			message: `Machine device chain is repeated ${value.count} times in the same function: ${text}`,
+		});
+	}
+}
+
+function cppRuntimeMachineDeviceChain(tokens: readonly CppToken[], pairs: readonly number[], start: number): string | null {
+	if (
+		tokens[start]?.text !== 'runtime'
+		|| tokens[start + 1]?.text !== '.'
+		|| tokens[start + 2]?.text !== 'machine'
+		|| tokens[start + 3]?.text !== '('
+		|| pairs[start + 3] !== start + 4
+		|| tokens[start + 5]?.text !== '.'
+		|| tokens[start + 6]?.kind !== 'id'
+		|| tokens[start + 7]?.text !== '('
+		|| pairs[start + 7] !== start + 8
+	) {
+		return null;
+	}
+	return `runtime.machine().${tokens[start + 6].text}()`;
 }
 
 function semanticCppExpressionFingerprint(target: string, tokens: readonly CppToken[], start: number, end: number): string {

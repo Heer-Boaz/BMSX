@@ -148,6 +148,7 @@ function resolveRootExpressionValue(
 	registers: ReadonlyArray<Value>,
 	rootName: string,
 ): { found: boolean; value: Value } {
+	const cpu = runtime.machine.cpu;
 	const metadata = runtime.programMetadata;
 	const slots = metadata?.localSlotsByProto?.[protoIndex];
 	if (slots && slots.length > 0) {
@@ -155,18 +156,18 @@ function resolveRootExpressionValue(
 		if (slot) {
 			return {
 				found: true,
-				value: slot.register < registers.length ? registers[slot.register] : runtime.machine.cpu.readFrameRegister(frameIndex, slot.register),
+				value: slot.register < registers.length ? registers[slot.register] : cpu.readFrameRegister(frameIndex, slot.register),
 			};
 		}
 	}
 	const upvalueNames = metadata?.upvalueNamesByProto?.[protoIndex];
 	if (upvalueNames) {
 		const upvalueIndex = upvalueNames.indexOf(rootName);
-		if (upvalueIndex >= 0 && runtime.machine.cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
-			return { found: true, value: runtime.machine.cpu.readFrameUpvalue(frameIndex, upvalueIndex) };
+		if (upvalueIndex >= 0 && cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
+			return { found: true, value: cpu.readFrameUpvalue(frameIndex, upvalueIndex) };
 		}
 	}
-	const globalValue = runtime.machine.cpu.getGlobalByKey(runtime.luaKey(rootName));
+	const globalValue = cpu.getGlobalByKey(runtime.luaKey(rootName));
 	if (globalValue !== null) {
 		return { found: true, value: globalValue };
 	}

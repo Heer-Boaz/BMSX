@@ -218,11 +218,12 @@ std::optional<Value> resolveRootExpressionValue(
 	const SourceRange& range,
 	const std::string& rootName
 ) {
-	const std::string rootKeyName = runtime.machine().cpu().stringPool().toString(asStringId(debugKey(runtime, rootName)));
+	const auto& cpu = runtime.machine().cpu();
+	const std::string rootKeyName = cpu.stringPool().toString(asStringId(debugKey(runtime, rootName)));
 	if (metadata && protoIndex >= 0 && protoIndex < static_cast<int>(metadata->localSlotsByProto.size())) {
 		const std::vector<LocalSlotDebug>& slots = metadata->localSlotsByProto[static_cast<size_t>(protoIndex)];
 		if (const LocalSlotDebug* slot = selectLocalSlot(slots, rootKeyName, range)) {
-			return runtime.machine().cpu().readFrameRegister(frameIndex, slot->reg);
+			return cpu.readFrameRegister(frameIndex, slot->reg);
 		}
 	}
 	if (metadata && protoIndex >= 0 && protoIndex < static_cast<int>(metadata->upvalueNamesByProto.size())) {
@@ -234,13 +235,13 @@ std::optional<Value> resolveRootExpressionValue(
 			if (upvalueNames[index] != rootKeyName) {
 				continue;
 			}
-			if (runtime.machine().cpu().hasFrameUpvalue(frameIndex, static_cast<int>(index))) {
-				return runtime.machine().cpu().readFrameUpvalue(frameIndex, static_cast<int>(index));
+			if (cpu.hasFrameUpvalue(frameIndex, static_cast<int>(index))) {
+				return cpu.readFrameUpvalue(frameIndex, static_cast<int>(index));
 			}
 			break;
 		}
 	}
-	const Value globalValue = runtime.machine().cpu().getGlobalByKey(debugKey(runtime, rootName));
+	const Value globalValue = cpu.getGlobalByKey(debugKey(runtime, rootName));
 	if (!isNil(globalValue)) {
 		return globalValue;
 	}

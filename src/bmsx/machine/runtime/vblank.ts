@@ -239,9 +239,10 @@ export class VblankState {
 	}
 
 	private commitFrameOnVblankEdge(runtime: Runtime): void {
-		runtime.machine.vdp.syncRegisters();
-		runtime.machine.vdp.presentReadyFrameOnVblankEdge();
-		runtime.machine.vdp.commitViewSnapshot();
+		const vdp = runtime.machine.vdp;
+		vdp.syncRegisters();
+		vdp.presentReadyFrameOnVblankEdge();
+		vdp.commitViewSnapshot();
 	}
 
 	private completeTickIfPending(runtime: Runtime, frameState: FrameState, vblankSequence: number): void {

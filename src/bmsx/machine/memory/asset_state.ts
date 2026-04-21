@@ -140,17 +140,18 @@ export class RuntimeAssetState {
 			if (!assetSource) {
 				throw runtimeFault('asset source not configured.');
 			}
+			const memory = runtime.machine.memory;
 			if (mode === 'cart') {
-				runtime.machine.memory.resetCartAssets();
+				memory.resetCartAssets();
 			} else {
-				runtime.machine.memory.resetAssetMemory();
+				memory.resetAssetMemory();
 			}
 			await runtime.machine.vdp.registerImageAssets(assetSource);
-			this.registerAudioAssets(assetSource, runtime.machine.memory);
-			this.rebuildMetaCaches(assetSource, runtime.machine.memory);
-			runtime.machine.memory.finalizeAssetTable();
+			this.registerAudioAssets(assetSource, memory);
+			this.rebuildMetaCaches(assetSource, memory);
+			memory.finalizeAssetTable();
 			this.applyHandlesToActiveLayers(runtime);
-			runtime.machine.memory.markAllAssetsDirty();
+			memory.markAllAssetsDirty();
 		} finally {
 			runGate.end(runToken);
 			renderGate.end(renderToken);

@@ -94,15 +94,16 @@ function processVdpCommandCore(runtime: Runtime, params: {
 	payloadReader: PacketWordReader;
 	payloadWords: number;
 }): void {
+	const vdp = runtime.machine.vdp;
 	switch (params.cmd) {
 		case IO_CMD_VDP_CLEAR: {
 			assertVdpPacketArgWords(params.cmd, params.argWords);
-			runtime.machine.vdp.enqueueClear(readPacketColor(params.argReader, params.cmd, 0));
+			vdp.enqueueClear(readPacketColor(params.argReader, params.cmd, 0));
 			break;
 		}
 		case IO_CMD_VDP_FILL_RECT: {
 			assertVdpPacketArgWords(params.cmd, params.argWords);
-			runtime.machine.vdp.enqueueFillRect(
+			vdp.enqueueFillRect(
 				readPacketArgF32(params.argReader, params.cmd, 0),
 				readPacketArgF32(params.argReader, params.cmd, 1),
 				readPacketArgF32(params.argReader, params.cmd, 2),
@@ -115,7 +116,7 @@ function processVdpCommandCore(runtime: Runtime, params: {
 		}
 		case IO_CMD_VDP_DRAW_LINE: {
 			assertVdpPacketArgWords(params.cmd, params.argWords);
-			runtime.machine.vdp.enqueueDrawLine(
+			vdp.enqueueDrawLine(
 				readPacketArgF32(params.argReader, params.cmd, 0),
 				readPacketArgF32(params.argReader, params.cmd, 1),
 				readPacketArgF32(params.argReader, params.cmd, 2),
@@ -130,7 +131,7 @@ function processVdpCommandCore(runtime: Runtime, params: {
 		case IO_CMD_VDP_BLIT: {
 			assertVdpPacketArgWords(params.cmd, params.argWords);
 			const flipFlags = readPacketArgU32(params.argReader, params.cmd, 7);
-			runtime.machine.vdp.enqueueBlit(
+			vdp.enqueueBlit(
 				readPacketArgU32(params.argReader, params.cmd, 0),
 				readPacketArgF32(params.argReader, params.cmd, 1),
 				readPacketArgF32(params.argReader, params.cmd, 2),
@@ -149,7 +150,7 @@ function processVdpCommandCore(runtime: Runtime, params: {
 			assertVdpPacketArgWords(params.cmd, params.argWords);
 			const text = runtime.machine.cpu.getStringPool().getById(readPacketArgU32(params.argReader, params.cmd, 0)).text;
 			const backgroundEnabled = readPacketArgU32(params.argReader, params.cmd, 12) !== 0;
-			runtime.machine.vdp.enqueueGlyphRun(
+			vdp.enqueueGlyphRun(
 				text,
 				readPacketArgF32(params.argReader, params.cmd, 1),
 				readPacketArgF32(params.argReader, params.cmd, 2),
@@ -176,7 +177,7 @@ function processVdpCommandCore(runtime: Runtime, params: {
 			}
 			if (params.payloadReader.kind === 'memory') {
 				const payloadReader = params.payloadReader as MemoryPacketWordReader;
-				runtime.machine.vdp.enqueuePayloadTileRun({
+				vdp.enqueuePayloadTileRun({
 					payload_base: payloadReader.base,
 					tile_count: tileCount,
 					cols,
@@ -193,7 +194,7 @@ function processVdpCommandCore(runtime: Runtime, params: {
 				break;
 			}
 			const payloadReader = params.payloadReader as BufferPacketWordReader;
-			runtime.machine.vdp.enqueuePayloadTileRunWords({
+			vdp.enqueuePayloadTileRunWords({
 				payload_words: payloadReader.words,
 				payload_word_offset: payloadReader.wordOffset,
 				tile_count: tileCount,

@@ -77,11 +77,12 @@ void FrameSchedulerState::enqueueTickCompletion(Runtime& runtime, FrameState& fr
 	const i64 sequence = lastTickSequence + 1;
 	const int remaining = frameState.cycleBudgetRemaining;
 	const int granted = frameState.cycleBudgetGranted;
+	const auto& vdp = runtime.machine().vdp();
 	slot.sequence = sequence;
 	slot.remaining = remaining;
-	slot.visualCommitted = runtime.machine().vdp().lastFrameCommitted();
-	slot.vdpFrameCost = runtime.machine().vdp().lastFrameCost();
-	slot.vdpFrameHeld = runtime.machine().vdp().lastFrameHeld();
+	slot.visualCommitted = vdp.lastFrameCommitted();
+	slot.vdpFrameCost = vdp.lastFrameCost();
+	slot.vdpFrameHeld = vdp.lastFrameHeld();
 	m_tickCompletionWriteIndex = (m_tickCompletionWriteIndex + 1) % TICK_COMPLETION_QUEUE_CAPACITY;
 	m_tickCompletionCount += 1;
 	lastTickBudgetGranted = granted;

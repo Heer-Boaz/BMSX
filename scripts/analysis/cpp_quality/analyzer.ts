@@ -90,7 +90,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 		}
 		const functions = analysis.functions;
 		const facadeStats = createCppFacadeStats(functions, tokens);
-		lintCppSimpleTokenPatterns(file, tokens, lintIssues, ledger);
+		lintCppSimpleTokenPatterns(file, tokens, pairs, lintIssues, ledger);
 		lintCppSinglePropertyOptionsTypes(file, tokens, analysis.classRanges, lintIssues);
 		lintCppCrossLayerIncludes(file, source, lintIssues);
 		for (let functionIndex = 0; functionIndex < functions.length; functionIndex += 1) {
