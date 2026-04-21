@@ -6,6 +6,7 @@
 #include "rompack/assets.h"
 #include "core/engine.h"
 #include "core/font.h"
+#include "core/utf8.h"
 #if BMSX_ENABLE_GLES2
 #include "render/backend/gles2_backend.h"
 #endif
@@ -1002,49 +1003,6 @@ uint32_t skyboxFaceBaseByIndex(size_t index) {
 bool isAtlasName(const std::string& name) {
 	static constexpr const char* kPrefix = "_atlas_";
 	return name.rfind(kPrefix, 0) == 0;
-}
-
-u32 readUtf8Codepoint(const std::string& text, size_t& index) {
-	const size_t size = text.size();
-	u8 c0 = static_cast<u8>(text[index]);
-	index += 1u;
-	if (c0 < 0x80u) {
-		return c0;
-	}
-	if ((c0 & 0xE0u) == 0xC0u) {
-		if (index >= size) {
-			return static_cast<u32>('?');
-		}
-		u8 c1 = static_cast<u8>(text[index]);
-		index += 1u;
-		if ((c1 & 0xC0u) != 0x80u) {
-			return static_cast<u32>('?');
-		}
-		return ((c0 & 0x1Fu) << 6u) | (c1 & 0x3Fu);
-	}
-	if ((c0 & 0xF0u) == 0xE0u) {
-		if (index + 1u >= size) {
-			return static_cast<u32>('?');
-		}
-		u8 c1 = static_cast<u8>(text[index]);
-		u8 c2 = static_cast<u8>(text[index + 1u]);
-		index += 2u;
-		if ((c1 & 0xC0u) != 0x80u || (c2 & 0xC0u) != 0x80u) {
-			return static_cast<u32>('?');
-		}
-		return ((c0 & 0x0Fu) << 12u) | ((c1 & 0x3Fu) << 6u) | (c2 & 0x3Fu);
-	}
-	if (index + 2u >= size) {
-		return static_cast<u32>('?');
-	}
-	u8 c1 = static_cast<u8>(text[index]);
-	u8 c2 = static_cast<u8>(text[index + 1u]);
-	u8 c3 = static_cast<u8>(text[index + 2u]);
-	index += 3u;
-	if ((c1 & 0xC0u) != 0x80u || (c2 & 0xC0u) != 0x80u || (c3 & 0xC0u) != 0x80u) {
-		return static_cast<u32>('?');
-	}
-	return ((c0 & 0x07u) << 18u) | ((c1 & 0x3Fu) << 12u) | ((c2 & 0x3Fu) << 6u) | (c3 & 0x3Fu);
 }
 
 uint32_t fmix32(uint32_t h) {

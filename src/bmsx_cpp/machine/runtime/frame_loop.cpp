@@ -1,5 +1,6 @@
 #include "machine/runtime/frame_loop.h"
 #include "core/engine.h"
+#include "core/time.h"
 #include "input/manager.h"
 #include "machine/runtime/cart_boot.h"
 #include "machine/runtime/cpu_executor.h"
@@ -9,10 +10,6 @@
 namespace bmsx {
 namespace {
 constexpr double MAX_FRAME_DELTA_MS = 250.0;
-
-inline double to_ms(std::chrono::steady_clock::duration duration) {
-	return std::chrono::duration<double, std::milli>(duration).count();
-}
 }
 
 void FrameLoopState::reset() {

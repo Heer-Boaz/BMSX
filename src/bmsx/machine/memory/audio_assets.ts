@@ -39,7 +39,7 @@ function isBadpBuffer(buffer: Uint8Array): boolean {
 	);
 }
 
-function parseBadpInfo(buffer: Uint8Array): RuntimeAudioInfo {
+export function parseAudioInfo(buffer: Uint8Array): RuntimeAudioInfo {
 	if (!isBadpBuffer(buffer)) {
 		throw new Error('[RuntimeAssets] Unsupported audio format.');
 	}
@@ -74,10 +74,6 @@ function parseBadpInfo(buffer: Uint8Array): RuntimeAudioInfo {
 		dataLength: buffer.byteLength - dataOffset,
 		frames,
 	};
-}
-
-export function parseAudioInfo(buffer: Uint8Array): RuntimeAudioInfo {
-	return parseBadpInfo(buffer);
 }
 
 export function registerAudioAssets(source: RawAssetSource, registry: RuntimeAudioRegistry): void {

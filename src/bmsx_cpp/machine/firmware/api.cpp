@@ -3,6 +3,7 @@
 #include "machine/firmware/input_state_tables.h"
 
 #include "core/engine.h"
+#include "core/utf8.h"
 #include "input/manager.h"
 #include "machine/runtime/runtime.h"
 #include <algorithm>
@@ -95,49 +96,6 @@ InputSource parseInputSource(const std::string& source) {
 	if (source == "gamepad") return InputSource::Gamepad;
 	if (source == "pointer") return InputSource::Pointer;
 	throw BMSX_RUNTIME_ERROR("Unknown input source '" + source + "'.");
-}
-
-static u32 readUtf8Codepoint(const std::string& text, size_t& index) {
-	const size_t size = text.size();
-	u8 c0 = static_cast<u8>(text[index]);
-	index += 1u;
-	if (c0 < 0x80) {
-		return c0;
-	}
-	if ((c0 & 0xE0) == 0xC0) {
-		if (index >= size) {
-			return static_cast<u32>('?');
-		}
-		u8 c1 = static_cast<u8>(text[index]);
-		index += 1u;
-		if ((c1 & 0xC0u) != 0x80u) {
-			return static_cast<u32>('?');
-		}
-		return ((c0 & 0x1F) << 6) | (c1 & 0x3F);
-	}
-	if ((c0 & 0xF0) == 0xE0) {
-		if (index + 1u >= size) {
-			return static_cast<u32>('?');
-		}
-		u8 c1 = static_cast<u8>(text[index]);
-		u8 c2 = static_cast<u8>(text[index + 1u]);
-		index += 2u;
-		if ((c1 & 0xC0u) != 0x80u || (c2 & 0xC0u) != 0x80u) {
-			return static_cast<u32>('?');
-		}
-		return ((c0 & 0x0F) << 12) | ((c1 & 0x3F) << 6) | (c2 & 0x3F);
-	}
-	if (index + 2u >= size) {
-		return static_cast<u32>('?');
-	}
-	u8 c1 = static_cast<u8>(text[index]);
-	u8 c2 = static_cast<u8>(text[index + 1u]);
-	u8 c3 = static_cast<u8>(text[index + 2u]);
-	index += 3u;
-	if ((c1 & 0xC0u) != 0x80u || (c2 & 0xC0u) != 0x80u || (c3 & 0xC0u) != 0x80u) {
-		return static_cast<u32>('?');
-	}
-	return ((c0 & 0x07) << 18) | ((c1 & 0x3F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
 }
 
 static u32 utf8SingleCodepoint(const std::string& text) {

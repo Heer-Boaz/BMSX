@@ -3,6 +3,7 @@ import { extractErrorMessage, type StackTraceFrame } from '../../lua/value';
 import { clamp01 } from '../../common/clamp';
 import {
 	createNativeFunction,
+	isTruthyValue,
 	isNativeFunction,
 	isNativeObject,
 	Table,
@@ -291,99 +292,97 @@ export function valueToStringValue(runtime: Runtime, value: Value): StringValue 
 }
 
 function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest): Table {
-	const key = (name: string) => runtime.luaKey(name);
 	const table = new Table(0, 5);
 	if (manifest.namespace.length > 0) {
-		table.set(key('namespace'), runtime.internString(manifest.namespace));
+		table.set(runtime.luaKey('namespace'), runtime.internString(manifest.namespace));
 	}
 	if (manifest.ufps) {
-		table.set(key('ufps'), manifest.ufps);
+		table.set(runtime.luaKey('ufps'), manifest.ufps);
 	}
 	if (manifest.render_size.width > 0 && manifest.render_size.height > 0) {
 		const renderSize = new Table(0, 2);
-		renderSize.set(key('width'), manifest.render_size.width);
-		renderSize.set(key('height'), manifest.render_size.height);
-		table.set(key('render_size'), renderSize);
+		renderSize.set(runtime.luaKey('width'), manifest.render_size.width);
+		renderSize.set(runtime.luaKey('height'), manifest.render_size.height);
+		table.set(runtime.luaKey('render_size'), renderSize);
 	}
 	const specs = new Table(0, 5);
 	const cpu = new Table(0, 2);
 	if (manifest.specs.cpu.cpu_freq_hz) {
-		cpu.set(key('cpu_freq_hz'), manifest.specs.cpu.cpu_freq_hz);
+		cpu.set(runtime.luaKey('cpu_freq_hz'), manifest.specs.cpu.cpu_freq_hz);
 	}
 	if (manifest.specs.cpu.imgdec_bytes_per_sec) {
-		cpu.set(key('imgdec_bytes_per_sec'), manifest.specs.cpu.imgdec_bytes_per_sec);
+		cpu.set(runtime.luaKey('imgdec_bytes_per_sec'), manifest.specs.cpu.imgdec_bytes_per_sec);
 	}
-	specs.set(key('cpu'), cpu);
+	specs.set(runtime.luaKey('cpu'), cpu);
 	const dma = new Table(0, 2);
 	if (manifest.specs.dma.dma_bytes_per_sec_iso) {
-		dma.set(key('dma_bytes_per_sec_iso'), manifest.specs.dma.dma_bytes_per_sec_iso);
+		dma.set(runtime.luaKey('dma_bytes_per_sec_iso'), manifest.specs.dma.dma_bytes_per_sec_iso);
 	}
 	if (manifest.specs.dma.dma_bytes_per_sec_bulk) {
-		dma.set(key('dma_bytes_per_sec_bulk'), manifest.specs.dma.dma_bytes_per_sec_bulk);
+		dma.set(runtime.luaKey('dma_bytes_per_sec_bulk'), manifest.specs.dma.dma_bytes_per_sec_bulk);
 	}
-	specs.set(key('dma'), dma);
+	specs.set(runtime.luaKey('dma'), dma);
 	const vdp = new Table(0, 1);
-	vdp.set(key('work_units_per_sec'), manifest.specs.vdp?.work_units_per_sec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC);
-	specs.set(key('vdp'), vdp);
+	vdp.set(runtime.luaKey('work_units_per_sec'), manifest.specs.vdp?.work_units_per_sec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC);
+	specs.set(runtime.luaKey('vdp'), vdp);
 	const geo = new Table(0, 1);
-	geo.set(key('work_units_per_sec'), manifest.specs.geo?.work_units_per_sec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC);
-	specs.set(key('geo'), geo);
+	geo.set(runtime.luaKey('work_units_per_sec'), manifest.specs.geo?.work_units_per_sec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC);
+	specs.set(runtime.luaKey('geo'), geo);
 	const ram = manifest.specs.ram;
 	if (ram?.ram_bytes) {
 		const ramTable = new Table(0, 1);
-		ramTable.set(key('ram_bytes'), ram.ram_bytes);
-		specs.set(key('ram'), ramTable);
+		ramTable.set(runtime.luaKey('ram_bytes'), ram.ram_bytes);
+		specs.set(runtime.luaKey('ram'), ramTable);
 	}
 	const vram = manifest.specs.vram;
 	if (vram && (vram.atlas_slot_bytes || vram.system_atlas_slot_bytes || vram.staging_bytes)) {
 		const vramTable = new Table(0, 3);
 		if (vram.atlas_slot_bytes) {
-			vramTable.set(key('atlas_slot_bytes'), vram.atlas_slot_bytes);
+			vramTable.set(runtime.luaKey('atlas_slot_bytes'), vram.atlas_slot_bytes);
 		}
 		if (vram.system_atlas_slot_bytes) {
-			vramTable.set(key('system_atlas_slot_bytes'), vram.system_atlas_slot_bytes);
+			vramTable.set(runtime.luaKey('system_atlas_slot_bytes'), vram.system_atlas_slot_bytes);
 		}
 		if (vram.staging_bytes) {
-			vramTable.set(key('staging_bytes'), vram.staging_bytes);
+			vramTable.set(runtime.luaKey('staging_bytes'), vram.staging_bytes);
 		}
-		specs.set(key('vram'), vramTable);
+		specs.set(runtime.luaKey('vram'), vramTable);
 	}
 	const voices = manifest.specs.audio?.max_voices;
 	if (voices && (voices.sfx || voices.music || voices.ui)) {
 		const audio = new Table(0, 1);
 		const maxVoices = new Table(0, 3);
 		if (voices.sfx) {
-			maxVoices.set(key('sfx'), voices.sfx);
+			maxVoices.set(runtime.luaKey('sfx'), voices.sfx);
 		}
 		if (voices.music) {
-			maxVoices.set(key('music'), voices.music);
+			maxVoices.set(runtime.luaKey('music'), voices.music);
 		}
 		if (voices.ui) {
-			maxVoices.set(key('ui'), voices.ui);
+			maxVoices.set(runtime.luaKey('ui'), voices.ui);
 		}
-		audio.set(key('max_voices'), maxVoices);
-		specs.set(key('audio'), audio);
+		audio.set(runtime.luaKey('max_voices'), maxVoices);
+		specs.set(runtime.luaKey('audio'), audio);
 	}
-	table.set(key('specs'), specs);
+	table.set(runtime.luaKey('specs'), specs);
 	return table;
 }
 
 function buildCartManifestTable(runtime: Runtime, manifest: CartManifest, machine: MachineManifest, entryPath: string): Table {
-	const key = (name: string) => runtime.luaKey(name);
 	const table = new Table(0, 4);
 	if (manifest.title !== undefined && manifest.title.length > 0) {
-		table.set(key('title'), runtime.internString(manifest.title));
+		table.set(runtime.luaKey('title'), runtime.internString(manifest.title));
 	}
 	if (manifest.short_name !== undefined && manifest.short_name.length > 0) {
-		table.set(key('short_name'), runtime.internString(manifest.short_name));
+		table.set(runtime.luaKey('short_name'), runtime.internString(manifest.short_name));
 	}
 	if (manifest.rom_name !== undefined && manifest.rom_name.length > 0) {
-		table.set(key('rom_name'), runtime.internString(manifest.rom_name));
+		table.set(runtime.luaKey('rom_name'), runtime.internString(manifest.rom_name));
 	}
-	table.set(key('machine'), buildMachineManifestTable(runtime, machine));
+	table.set(runtime.luaKey('machine'), buildMachineManifestTable(runtime, machine));
 	const lua = new Table(0, 1);
-	lua.set(key('entry_path'), runtime.internString(entryPath));
-	table.set(key('lua'), lua);
+	lua.set(runtime.luaKey('entry_path'), runtime.internString(entryPath));
+	table.set(runtime.luaKey('lua'), lua);
 	return table;
 }
 
@@ -776,8 +775,18 @@ export function buildLuaStackFrames(runtime: Runtime): StackTraceFrame[] {
 	return frames;
 }
 
+function normalizeLuaIndex(valueNumber: number, length: number, zeroFallback: number): number {
+	const integer = Math.floor(valueNumber);
+	if (integer > 0) {
+		return integer;
+	}
+	if (integer < 0) {
+		return length + integer + 1;
+	}
+	return zeroFallback;
+}
+
 export function seedLuaGlobals(runtime: Runtime): void {
-	const isTruthy = (value: Value): boolean => value !== null && value !== false;
 	const prependValue = (out: Value[], value: Value): void => {
 		const length = out.length;
 		out.length = length + 1;
@@ -1540,7 +1549,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'assert', createNativeFunction('assert', (args, out) => {
 		void out;
 		const condition = args.length > 0 ? args[0] : null;
-		if (!isTruthy(condition)) {
+		if (!isTruthyValue(condition)) {
 			const message = args.length > 1 ? args[1] : runtime.internString('assertion failed!');
 			throw new LuaThrownValueError(message);
 		}
@@ -1886,20 +1895,10 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const value = args[0] as StringValue;
 		const text = stringValueToString(value);
 		const length = runtime.machine.cpu.getStringPool().codepointCount(value);
-		const normalizeIndex = (valueNumber: number): number => {
-			const integer = Math.floor(valueNumber);
-			if (integer > 0) {
-				return integer;
-			}
-			if (integer < 0) {
-				return length + integer + 1;
-			}
-			return 1;
-		};
 		const startArg = args.length > 1 ? (args[1] as number) : 1;
 		const endArg = args.length > 2 ? (args[2] as number) : length;
-		let startIndex = normalizeIndex(startArg);
-		let endIndex = normalizeIndex(endArg);
+		let startIndex = normalizeLuaIndex(startArg, length, 1);
+		let endIndex = normalizeLuaIndex(endArg, length, 1);
 		if (startIndex < 1) {
 			startIndex = 1;
 		}
@@ -1919,17 +1918,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const source = stringValueToString(sourceValue);
 		const pattern = args.length > 1 ? stringValueToString(args[1] as StringValue) : '';
 		const length = runtime.machine.cpu.getStringPool().codepointCount(sourceValue);
-		const normalizeIndex = (valueNumber: number): number => {
-			const integer = Math.floor(valueNumber);
-			if (integer > 0) {
-				return integer;
-			}
-			if (integer < 0) {
-				return length + integer + 1;
-			}
-			return 1;
-		};
-		const startIndex = args.length > 2 ? normalizeIndex(args[2] as number) : 1;
+		const startIndex = args.length > 2 ? normalizeLuaIndex(args[2] as number, length, 1) : 1;
 		if (startIndex > length) {
 			out.push(null);
 			return;
@@ -1973,17 +1962,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const source = stringValueToString(sourceValue);
 		const pattern = args.length > 1 ? stringValueToString(args[1] as StringValue) : '';
 		const length = runtime.machine.cpu.getStringPool().codepointCount(sourceValue);
-		const normalizeIndex = (valueNumber: number): number => {
-			const integer = Math.floor(valueNumber);
-			if (integer > 0) {
-				return integer;
-			}
-			if (integer < 0) {
-				return length + integer + 1;
-			}
-			return 1;
-		};
-		const startIndex = args.length > 2 ? normalizeIndex(args[2] as number) : 1;
+		const startIndex = args.length > 2 ? normalizeLuaIndex(args[2] as number, length, 1) : 1;
 		if (startIndex > length) {
 			out.push(null);
 			return;
@@ -2209,18 +2188,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const target = args[0] as Table;
 		const separator = args.length > 1 ? luaPipeline.requireString(args[1]) : '';
 		const length = target.length();
-		const normalizeIndex = (valueNumber: number, fallback: number): number => {
-			const integer = Math.floor(valueNumber);
-			if (integer > 0) {
-				return integer;
-			}
-			if (integer < 0) {
-				return length + integer + 1;
-			}
-			return fallback;
-		};
-		const startIndex = args.length > 2 ? normalizeIndex(args[2] as number, 1) : 1;
-		const endIndex = args.length > 3 ? normalizeIndex(args[3] as number, length) : length;
+		const startIndex = args.length > 2 ? normalizeLuaIndex(args[2] as number, length, 1) : 1;
+		const endIndex = args.length > 3 ? normalizeLuaIndex(args[3] as number, length, length) : length;
 		if (endIndex < startIndex) {
 			out.push(runtime.internString(''));
 			return;
@@ -2247,18 +2216,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	setKey(tableLibrary, 'unpack', createNativeFunction('table.unpack', (args, out) => {
 		const target = args[0] as Table;
 		const length = target.length();
-		const normalizeIndex = (valueNumber: number, fallback: number): number => {
-			const integer = Math.floor(valueNumber);
-			if (integer > 0) {
-				return integer;
-			}
-			if (integer < 0) {
-				return length + integer + 1;
-			}
-			return fallback;
-		};
-		const startIndex = args.length > 1 ? normalizeIndex(args[1] as number, 1) : 1;
-		const endIndex = args.length > 2 ? normalizeIndex(args[2] as number, length) : length;
+		const startIndex = args.length > 1 ? normalizeLuaIndex(args[1] as number, length, 1) : 1;
+		const endIndex = args.length > 2 ? normalizeLuaIndex(args[2] as number, length, length) : length;
 		if (endIndex < startIndex) {
 			return;
 		}

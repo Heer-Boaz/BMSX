@@ -1,16 +1,10 @@
 #include "machine/memory/map.h"
 
+#include "machine/common/align.h"
 #include "rompack/format.h"
 #include <stdexcept>
 
 namespace bmsx {
-
-namespace {
-inline uint32_t alignUp(uint32_t value, uint32_t alignment) {
-	const uint32_t mask = alignment - 1u;
-	return (value + mask) & ~mask;
-}
-}
 
 uint32_t RAM_SIZE = DEFAULT_RAM_SIZE;
 uint32_t STRING_HANDLE_COUNT = DEFAULT_STRING_HANDLE_COUNT;

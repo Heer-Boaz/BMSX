@@ -83,8 +83,8 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 		for (let typeIndex = 0; typeIndex < typeDeclarations.length; typeIndex += 1) {
 			const declaration = typeDeclarations[typeIndex];
 			const nameToken = tokens[declaration.nameToken];
-			recordDeclaration(duplicateBuckets, declaration.kind, declaration.name, file, nameToken.line, nameToken.column);
-			exportedTypes.push({ name: declaration.name, file, line: nameToken.line, column: nameToken.column });
+			recordDeclaration(duplicateBuckets, declaration.kind, declaration.name, file, nameToken.line, nameToken.column, declaration.context ?? undefined);
+			exportedTypes.push({ name: declaration.name, file, line: nameToken.line, column: nameToken.column, context: declaration.context });
 		}
 		const functions = analysis.functions;
 		const facadeStats = createCppFacadeStats(functions, tokens);

@@ -31,7 +31,7 @@ private:
 	void recordPresentation(GameView::PresentationMode mode, bool commitFrame, bool paused);
 	void flushDebugReport(const Runtime& runtime);
 	void markPresentation(GameView::PresentationMode mode, bool commitFrame);
-	bool consumePresentation(Runtime& runtime, RenderPresentation& outPresentation);
+	bool consumePresentation(RenderPresentation& outPresentation);
 
 	bool m_pendingPresentation = false;
 	GameView::PresentationMode m_presentationMode = GameView::PresentationMode::Completed;

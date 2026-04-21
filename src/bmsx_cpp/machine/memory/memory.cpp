@@ -1,5 +1,6 @@
 #include "machine/memory/memory.h"
 #include "machine/memory/lua_heap_usage.h"
+#include "machine/common/align.h"
 #include "rompack/assets.h"
 #include "common/byte_hex_string.h"
 
@@ -16,11 +17,6 @@ constexpr uint32_t ASSET_PAGE_SHIFT = 12;
 constexpr uint32_t ASSET_PAGE_SIZE = 1u << ASSET_PAGE_SHIFT;
 constexpr uint32_t ASSET_TYPE_IMAGE = 1;
 constexpr uint32_t ASSET_TYPE_AUDIO = 2;
-
-inline uint32_t alignUp(uint32_t value, uint32_t alignment) {
-	const uint32_t mask = alignment - 1;
-	return (value + mask) & ~mask;
-}
 
 inline void writeU32LE(u8* dst, uint32_t value) {
 	dst[0] = static_cast<u8>(value & 0xffu);

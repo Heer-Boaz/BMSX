@@ -94,6 +94,7 @@ export type CppTypeDeclarationInfo = {
 	kind: CppTypeDeclarationKind;
 	name: string;
 	nameToken: number;
+	context: string | null;
 };
 
 export type CppFunctionInfo = {
@@ -138,7 +139,7 @@ export function collectCppTypeDeclarations(tokens: readonly CppToken[], classRan
 	const declarations: CppTypeDeclarationInfo[] = [];
 	for (let index = 0; index < classRanges.length; index += 1) {
 		const range = classRanges[index];
-		declarations.push({ kind: 'class', name: range.name, nameToken: range.nameToken });
+		declarations.push({ kind: 'class', name: range.name, nameToken: range.nameToken, context: classContextAt(classRanges, range.nameToken) });
 	}
 	for (let index = 0; index < tokens.length; index += 1) {
 		const token = tokens[index];
@@ -158,11 +159,11 @@ export function collectCppTypeDeclarations(tokens: readonly CppToken[], classRan
 				continue;
 			}
 			const name = tokens[nameIndex].text;
-			declarations.push({ kind: 'enum', name, nameToken: nameIndex });
+			declarations.push({ kind: 'enum', name, nameToken: nameIndex, context: classContextAt(classRanges, index) });
 			continue;
 		}
 		if (token.text === 'using' && tokens[index + 1]?.kind === 'id' && tokens[index + 2]?.text === '=') {
-			declarations.push({ kind: 'type', name: tokens[index + 1].text, nameToken: index + 1 });
+			declarations.push({ kind: 'type', name: tokens[index + 1].text, nameToken: index + 1, context: classContextAt(classRanges, index) });
 			continue;
 		}
 		if (token.text !== 'typedef') {
@@ -179,7 +180,7 @@ export function collectCppTypeDeclarations(tokens: readonly CppToken[], classRan
 		if (nameIndex < 0) {
 			continue;
 		}
-		declarations.push({ kind: 'type', name: tokens[nameIndex].text, nameToken: nameIndex });
+		declarations.push({ kind: 'type', name: tokens[nameIndex].text, nameToken: nameIndex, context: classContextAt(classRanges, index) });
 	}
 	return declarations;
 }

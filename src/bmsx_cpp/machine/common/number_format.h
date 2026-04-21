@@ -61,7 +61,7 @@ inline void writeDigits6(uint64_t value, char* out) {
 	}
 }
 
-inline std::string formatNumber(double value) {
+inline std::string formatNumberCore(double value) {
 	if (value == 0.0) {
 		return std::signbit(value) ? "-0" : "0";
 	}
@@ -174,6 +174,6 @@ inline std::string formatNumber(double value) {
 } // namespace number_format_detail
 
 inline std::string formatNumber(double value) {
-	return number_format_detail::formatNumber(value);
+	return number_format_detail::formatNumberCore(value);
 }
 } // namespace bmsx

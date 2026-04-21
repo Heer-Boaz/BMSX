@@ -250,10 +250,6 @@ export class CpuExecutionProfiler {
 	}
 }
 
-export function collectCpuProfilerHotOpcodes(snapshot: CpuProfilerSnapshot, limit = 16): CpuProfilerHotOpcode[] {
-	return collectTopOpcodesFromCounts(snapshot.opcodeCounts, snapshot.totalInstructions, snapshot.totalBaseCycles, limit);
-}
-
 export function collectCpuProfilerHotPaths(snapshot: CpuProfilerSnapshot, limit = 16): CpuProfilerHotPath[] {
 	const counts = new Map<string, { count: number; cycles: number }>();
 	for (let wordIndex = 0; wordIndex < snapshot.pcCounts.length; wordIndex += 1) {
@@ -566,7 +562,7 @@ export function formatCpuProfilerReport(snapshot: CpuProfilerSnapshot, options: 
 		opcode === OpCode.LOAD_MEM || opcode === OpCode.STORE_MEM || opcode === OpCode.STORE_MEM_WORDS
 	);
 	const concatGroupRows = collectCpuProfilerOpcodeGroupProtos(snapshot, opcode => opcode === OpCode.CONCAT || opcode === OpCode.CONCATN);
-	const opcodeRows = collectCpuProfilerHotOpcodes(snapshot, topOpcodes);
+	const opcodeRows = collectTopOpcodesFromCounts(snapshot.opcodeCounts, snapshot.totalInstructions, snapshot.totalBaseCycles, topOpcodes);
 	const pcRows = collectCpuProfilerHotPcs(snapshot, topPcs);
 	const lines: string[] = [];
 	lines.push('Fantasy CPU Runtime Profile');

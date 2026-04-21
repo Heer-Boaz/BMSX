@@ -5,6 +5,7 @@
 #include "machine/common/number_format.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "core/engine.h"
+#include "core/time.h"
 #include "rompack/format.h"
 #include "rompack/assets.h"
 #include "common/serializer/binencoder.h"
@@ -26,10 +27,6 @@
 
 namespace bmsx {
 namespace {
-inline double to_ms(std::chrono::steady_clock::duration duration) {
-	return std::chrono::duration<double, std::milli>(duration).count();
-}
-
 constexpr uint32_t CART_ROM_MAGIC = 0x58534D42u;
 
 struct LuaPcallError final : std::exception {

@@ -1,5 +1,6 @@
 #include "render/presentation_state.h"
 #include "core/engine.h"
+#include "core/time.h"
 #include "machine/runtime/runtime.h"
 #include "render/shared/queues.h"
 #include "render/test_pattern.h"
@@ -8,10 +9,6 @@
 
 namespace bmsx {
 namespace {
-
-inline double to_ms(std::chrono::steady_clock::duration duration) {
-	return std::chrono::duration<double, std::milli>(duration).count();
-}
 
 bool isPresentRateDebugEnabled() {
 	static int cached = -1;
@@ -140,7 +137,7 @@ void RenderPresentationState::markPresentation(GameView::PresentationMode mode, 
 	m_presentationCommitFrame = commitFrame;
 }
 
-bool RenderPresentationState::consumePresentation(Runtime& runtime, RenderPresentation& outPresentation) {
+bool RenderPresentationState::consumePresentation(RenderPresentation& outPresentation) {
 	if (!m_pendingPresentation) {
 		return false;
 	}
@@ -175,7 +172,7 @@ void RenderPresentationState::render(EngineCore& engine, Runtime& runtime) {
 	}
 
 	const bool pausedPresent = engine.m_state == EngineState::Paused;
-	const bool runtimePresentPending = !pausedPresent && consumePresentation(runtime, m_presentationScratch);
+	const bool runtimePresentPending = !pausedPresent && consumePresentation(m_presentationScratch);
 	const bool shouldPresent = pausedPresent || runtimePresentPending;
 	if (!shouldPresent) {
 		return;

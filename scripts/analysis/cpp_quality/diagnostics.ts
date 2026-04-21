@@ -38,6 +38,7 @@ export type CppExportedTypeInfo = {
 	file: string;
 	line: number;
 	column: number;
+	context: string | null;
 };
 
 export type CppNormalizedBodyInfo = {
@@ -83,6 +84,8 @@ export function recordDeclaration(
 			? `function\u0000${name}\u0000${keyHint ?? 'default'}`
 			: kind === 'wrapper'
 				? `wrapper\u0000${name}\u0000${context ?? 'delegate'}`
+				: context !== undefined
+					? `${kind}\u0000${context}\u0000${name}`
 				: `${kind}\u0000${name}`;
 	let list = buckets.get(key);
 	if (list === undefined) {
@@ -100,7 +103,7 @@ export function buildDuplicateGroups(buckets: Map<string, CppDuplicateLocation[]
 			continue;
 		}
 		const kind = key.slice(0, split) as CppDuplicateKind;
-		if (kind !== 'wrapper' && locations.length <= 1) {
+		if (locations.length <= 1) {
 			continue;
 		}
 		let name = key.slice(split + 1);
@@ -114,6 +117,11 @@ export function buildDuplicateGroups(buckets: Map<string, CppDuplicateLocation[]
 			if (firstSep !== -1) {
 				name = name.slice(0, firstSep);
 			}
+		} else if (kind === 'class' || kind === 'enum' || kind === 'type') {
+			const lastSep = name.lastIndexOf('\u0000');
+			if (lastSep !== -1) {
+				name = name.slice(lastSep + 1);
+			}
 		}
 		result.push({ kind, name, count: locations.length, locations });
 	}
@@ -125,17 +133,19 @@ export function addDuplicateExportedTypeIssues(exportedTypes: readonly CppExport
 	const byName = new Map<string, CppExportedTypeInfo[]>();
 	for (let index = 0; index < exportedTypes.length; index += 1) {
 		const entry = exportedTypes[index];
-		let list = byName.get(entry.name);
+		const key = `${entry.context ?? ''}\u0000${entry.name}`;
+		let list = byName.get(key);
 		if (list === undefined) {
 			list = [];
-			byName.set(entry.name, list);
+			byName.set(key, list);
 		}
 		list.push(entry);
 	}
-	for (const [name, list] of byName) {
+	for (const [, list] of byName) {
 		if (list.length <= 1) {
 			continue;
 		}
+		const name = list[0].name;
 		for (let index = 0; index < list.length; index += 1) {
 			const entry = list[index];
 			issues.push({

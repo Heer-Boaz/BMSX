@@ -1,4 +1,4 @@
-import { OpCode, type Value } from '../cpu/cpu';
+import { isTruthyValue, OpCode, type Value } from '../cpu/cpu';
 import { MAX_SIGNED_BX, MIN_SIGNED_BX } from '../cpu/instruction_format';
 import { isStringValue, stringValueToString } from '../memory/string_pool';
 import type { Instruction, OptimizationContext } from './optimizer';
@@ -8,7 +8,7 @@ export type ConstValue = {
 	constIndex: number;
 };
 
-export const isTruthy = (value: Value): boolean => value !== null && value !== false;
+export { isTruthyValue as isTruthy };
 
 export const isConstPoolValue = (value: Value): boolean =>
 	value === null || typeof value === 'boolean' || typeof value === 'number' || isStringValue(value);
@@ -126,7 +126,7 @@ export const evaluateUnary = (op: OpCode, value: Value): Value | null => {
 		case OpCode.BNOT:
 			return ~(value as number);
 		case OpCode.NOT:
-			return !isTruthy(value);
+			return !isTruthyValue(value);
 		case OpCode.LEN:
 			if (isStringValue(value)) {
 				return value.codepointCount;

@@ -18,6 +18,8 @@ export { OpCode } from './opcode_info';
 
 export type Value = null | boolean | number | StringValue | Table | Closure | NativeFunction | NativeObject;
 
+export const isTruthyValue = (value: Value): boolean => value !== null && value !== false;
+
 export type SourcePosition = {
 	line: number;
 	column: number;

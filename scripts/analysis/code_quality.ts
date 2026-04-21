@@ -3621,10 +3621,42 @@ function getMethodContext(
 	if (ts.isTypeLiteralNode(container)) return 'type literal';
 	if (ts.isInterfaceDeclaration(container) && container.name) return `interface ${container.name.text}`;
 	if (ts.isObjectLiteralExpression(container)) {
+		const callContext = getObjectLiteralCallContext(container);
+		if (callContext !== null) return callContext;
 		const objectName = getOwningObjectName(container);
 		return objectName === null ? 'object literal' : objectName;
 	}
 	return null;
+}
+
+function getEnclosingFunctionName(node: ts.Node): string | null {
+	let current = node.parent;
+	while (current) {
+		if (ts.isFunctionDeclaration(current) && current.name !== undefined) {
+			return current.name.text;
+		}
+		if (ts.isMethodDeclaration(current) && current.name !== undefined) {
+			return getPropertyName(current.name);
+		}
+		if ((ts.isFunctionExpression(current) || ts.isArrowFunction(current)) && ts.isVariableDeclaration(current.parent) && ts.isIdentifier(current.parent.name)) {
+			return current.parent.name.text;
+		}
+		current = current.parent;
+	}
+	return null;
+}
+
+function getObjectLiteralCallContext(node: ts.ObjectLiteralExpression): string | null {
+	const parent = node.parent;
+	if (!ts.isCallExpression(parent)) {
+		return null;
+	}
+	const callName = getExpressionText(parent.expression);
+	if (callName === null) {
+		return null;
+	}
+	const functionName = getEnclosingFunctionName(node);
+	return functionName === null ? `call ${callName}` : `${functionName} ${callName}`;
 }
 
 function getOwningObjectName(node: ts.ObjectLiteralExpression | ts.PropertyAssignment): string | null {
@@ -3799,6 +3831,7 @@ function walkDeclarations(
 			const position = sourceFile.getLineAndCharacterOfPosition(node.name.getStart());
 			const methodName = getPropertyName(node.name);
 			if (methodName === null) return;
+			const callContext = ts.isObjectLiteralExpression(node.parent) ? getObjectLiteralCallContext(node.parent) : null;
 			recordDeclaration(
 				buckets,
 				'method',
@@ -3806,7 +3839,7 @@ function walkDeclarations(
 				sourceFile.fileName,
 				position.line + 1,
 				position.character + 1,
-				getOwningObjectName(node),
+				callContext ?? getOwningObjectName(node),
 			);
 		}
 		ts.forEachChild(node, visit);
@@ -3824,7 +3857,7 @@ function buildDuplicateGroups(
 			continue;
 		}
 		const kind = key.slice(0, split) as DuplicateKind;
-		if (kind !== 'wrapper' && locations.length <= 1) {
+		if (locations.length <= 1) {
 			continue;
 		}
 		let name = key.slice(split + 1);
