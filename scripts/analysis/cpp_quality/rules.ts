@@ -507,6 +507,14 @@ const HOT_PATH_TEMPORARY_TYPES = new Set([
 	'std::unordered_map',
 	'std::vector',
 ]);
+const ARCHITECTURE_LAYER_NAMES = new Set([
+	'common',
+	'editor',
+	'language',
+	'runtime',
+	'terminal',
+	'workbench',
+]);
 
 function normalizePathForAnalysis(path: string): string {
 	return path.replace(/\\/g, '/');
@@ -1550,9 +1558,6 @@ function cppLocalBindingValueKind(binding: CppLocalBinding): string {
 	if (/\b(?:string|string_view|span|array|vector|map|unordered_map|set|unordered_set|optional|variant|function)\b/.test(typeText)) {
 		return 'library_value';
 	}
-	if (/\b(?:Runtime|Machine|VDP|CPU|Memory|Scheduler|Device|Program|Instruction|Table|Value|Closure|Function|Frame|State|Result|SourceRange|Token)\b/.test(typeText)) {
-		return 'runtime_value';
-	}
 	if (/[A-Z]/.test(typeText[0] ?? '')) {
 		return 'domain_value';
 	}
@@ -1671,11 +1676,15 @@ function isWriteUse(tokens: readonly CppToken[], index: number): boolean {
 		tokens[index - 1]?.text === '++' || tokens[index - 1]?.text === '--';
 }
 
+function isLegacySentinelString(text: string): boolean {
+	return /^__[A-Za-z0-9_]+__$/.test(text);
+}
+
 export function lintCppSimpleTokenPatterns(file: string, tokens: readonly CppToken[], pairs: readonly number[], regions: readonly AnalysisRegion[], issues: CppLintIssue[], ledger: QualityLedger): void {
 	for (let index = 0; index < tokens.length; index += 1) {
 		const token = tokens[index];
-		if (token.kind === 'string' && token.text.includes('__native__')) {
-			pushLintIssue(issues, file, token, 'legacy_native_bridge_key_pattern', 'Legacy native bridge key "__native__" is forbidden. Use the current "__native" key instead of adding alias fallbacks.');
+		if (token.kind === 'string' && isLegacySentinelString(token.text)) {
+			pushLintIssue(issues, file, token, 'legacy_sentinel_string_pattern', 'Double-underscore sentinel string is forbidden. Use the current contract key instead of adding alias fallbacks.');
 		}
 		if (token.text === '(') {
 			const target = cppCallTarget(tokens, index);
@@ -2094,7 +2103,7 @@ function rangeContainsTemporaryAllocation(tokens: readonly CppToken[], start: nu
 
 export function lintCppRepeatedExpressions(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
 	const expressions = new Map<string, { token: CppToken; count: number }>();
-	const machineDeviceChains = new Map<string, { token: CppToken; count: number }>();
+	const repeatedAccessChains = new Map<string, { token: CppToken; count: number }>();
 	const record = (start: number, end: number): void => {
 		const text = normalizedCppTokenText(tokens, start, end);
 		if (text.length < 24 || text.startsWith('this.') || text.startsWith('this->')) {
@@ -2107,17 +2116,17 @@ export function lintCppRepeatedExpressions(file: string, tokens: readonly CppTok
 		}
 		expressions.set(text, { token: tokens[start], count: 1 });
 	};
-	const recordMachineDeviceChain = (index: number): void => {
-		const text = cppRuntimeMachineDeviceChain(tokens, pairs, index);
+	const recordAccessChain = (index: number): void => {
+		const text = cppRepeatedAccessChain(tokens, pairs, index);
 		if (text === null) {
 			return;
 		}
-		const existing = machineDeviceChains.get(text);
+		const existing = repeatedAccessChains.get(text);
 		if (existing !== undefined) {
 			existing.count += 1;
 			return;
 		}
-		machineDeviceChains.set(text, { token: tokens[index], count: 1 });
+		repeatedAccessChains.set(text, { token: tokens[index], count: 1 });
 	};
 	const ranges = collectCppStatementRanges(tokens, info.bodyStart + 1, info.bodyEnd);
 	for (let index = 0; index < ranges.length; index += 1) {
@@ -2128,7 +2137,7 @@ export function lintCppRepeatedExpressions(file: string, tokens: readonly CppTok
 		}
 	}
 	for (let index = info.bodyStart + 1; index < info.bodyEnd; index += 1) {
-		recordMachineDeviceChain(index);
+		recordAccessChain(index);
 	}
 	for (const [text, value] of expressions) {
 		if (value.count <= 2) {
@@ -2143,36 +2152,51 @@ export function lintCppRepeatedExpressions(file: string, tokens: readonly CppTok
 			message: `Expression is repeated ${value.count} times in the same scope: ${compactSampleText(text)}`,
 		});
 	}
-	for (const [text, value] of machineDeviceChains) {
+	for (const [text, value] of repeatedAccessChains) {
 		if (value.count <= 2) {
 			continue;
 		}
 		issues.push({
-			kind: 'repeated_machine_device_chain_pattern',
+			kind: 'repeated_access_chain_pattern',
 			file,
 			line: value.token.line,
 			column: value.token.column,
-			name: 'repeated_machine_device_chain_pattern',
-			message: `Machine device chain is repeated ${value.count} times in the same function: ${text}`,
+			name: 'repeated_access_chain_pattern',
+			message: `Access/call chain is repeated ${value.count} times in the same function: ${text}`,
 		});
 	}
 }
 
-function cppRuntimeMachineDeviceChain(tokens: readonly CppToken[], pairs: readonly number[], start: number): string | null {
-	if (
-		tokens[start]?.text !== 'runtime'
-		|| tokens[start + 1]?.text !== '.'
-		|| tokens[start + 2]?.text !== 'machine'
-		|| tokens[start + 3]?.text !== '('
-		|| pairs[start + 3] !== start + 4
-		|| tokens[start + 5]?.text !== '.'
-		|| tokens[start + 6]?.kind !== 'id'
-		|| tokens[start + 7]?.text !== '('
-		|| pairs[start + 7] !== start + 8
-	) {
+function cppRepeatedAccessChain(tokens: readonly CppToken[], pairs: readonly number[], start: number): string | null {
+	if (tokens[start]?.kind !== 'id') {
 		return null;
 	}
-	return `runtime.machine().${tokens[start + 6].text}()`;
+	const previous = tokens[start - 1]?.text;
+	if (previous === '.' || previous === '->' || previous === '::') {
+		return null;
+	}
+	let index = start + 1;
+	let segmentCount = 0;
+	while (index < tokens.length) {
+		if (tokens[index]?.text === '(' && pairs[index] > index) {
+			index = pairs[index] + 1;
+			continue;
+		}
+		const separator = tokens[index]?.text;
+		if ((separator !== '.' && separator !== '->' && separator !== '::') || tokens[index + 1]?.kind !== 'id') {
+			break;
+		}
+		segmentCount += 1;
+		index += 2;
+	}
+	if (segmentCount < 2) {
+		return null;
+	}
+	const text = cppTokenText(tokens, start, index);
+	if (text.length < 24 || text.startsWith('this.') || text.startsWith('this->')) {
+		return null;
+	}
+	return compactSampleText(text);
 }
 
 function semanticCppExpressionFingerprint(target: string, tokens: readonly CppToken[], start: number, end: number): string {
@@ -2322,7 +2346,7 @@ function isCppCallIdentifier(tokens: readonly CppToken[], index: number): boolea
 }
 
 export function lintCppCrossLayerIncludes(file: string, source: string, issues: CppLintIssue[]): void {
-	const sourceLayer = ideLayer(file);
+	const sourceLayer = architectureLayer(file);
 	if (sourceLayer === null) {
 		return;
 	}
@@ -2332,7 +2356,7 @@ export function lintCppCrossLayerIncludes(file: string, source: string, issues: 
 		if (match === null || !match[1].startsWith('.')) {
 			continue;
 		}
-		const targetLayer = ideLayer(resolve(dirname(file), match[1]));
+		const targetLayer = architectureLayer(resolve(dirname(file), match[1]));
 		if (targetLayer === null) {
 			continue;
 		}
@@ -2351,16 +2375,14 @@ export function lintCppCrossLayerIncludes(file: string, source: string, issues: 
 	}
 }
 
-function ideLayer(path: string): string | null {
-	const normalized = normalizePathForAnalysis(path);
-	const marker = '/src/bmsx_cpp/ide/';
-	const index = normalized.indexOf(marker);
-	if (index === -1) {
-		return null;
+function architectureLayer(path: string): string | null {
+	const parts = normalizePathForAnalysis(path).split('/');
+	for (let index = 0; index < parts.length - 1; index += 1) {
+		if (parts[index] === 'ide' && ARCHITECTURE_LAYER_NAMES.has(parts[index + 1])) {
+			return parts[index + 1];
+		}
 	}
-	const rest = normalized.slice(index + marker.length);
-	const slash = rest.indexOf('/');
-	return slash === -1 ? rest : rest.slice(0, slash);
+	return null;
 }
 
 function forbiddenLayerImportReason(sourceLayer: string, targetLayer: string): string | null {
@@ -2368,22 +2390,22 @@ function forbiddenLayerImportReason(sourceLayer: string, targetLayer: string): s
 		return null;
 	}
 	if (sourceLayer === 'common') {
-		return `ide/common must not include ${targetLayer}; common code must stay below feature layers.`;
+		return `Layer common must not include ${targetLayer}; common code must stay below feature layers.`;
 	}
 	if (sourceLayer === 'language' && targetLayer !== 'common') {
-		return `ide/language must not include ${targetLayer}; language code must stay UI/workbench independent.`;
+		return `Layer language must not include ${targetLayer}; language code must stay UI/workbench independent.`;
 	}
 	if (sourceLayer === 'terminal' && (targetLayer === 'editor' || targetLayer === 'workbench')) {
-		return `ide/terminal must not include ${targetLayer}; terminal code must not depend on editor/workbench internals.`;
+		return `Layer terminal must not include ${targetLayer}; terminal code must not depend on editor/workbench internals.`;
 	}
 	if (sourceLayer === 'editor' && targetLayer === 'workbench') {
-		return 'ide/editor must not include ide/workbench; workbench may compose editor, not the reverse.';
+		return 'Layer editor must not include workbench; workbench may compose editor, not the reverse.';
 	}
 	if (sourceLayer === 'workbench' && targetLayer === 'editor') {
-		return 'ide/workbench must not include deep editor internals directly; route shared contracts through common modules.';
+		return 'Layer workbench must not include deep editor internals directly; route shared contracts through common modules.';
 	}
 	if (sourceLayer === 'runtime' && (targetLayer === 'editor' || targetLayer === 'workbench')) {
-		return `ide/runtime must not include ${targetLayer}; runtime glue must not own UI feature internals.`;
+		return `Layer runtime must not include ${targetLayer}; runtime glue must not own UI feature internals.`;
 	}
 	return null;
 }

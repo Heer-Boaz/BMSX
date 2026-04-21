@@ -6,7 +6,7 @@ import { analyzeCppFiles, type CppDuplicateGroup } from './code_quality_cpp_rule
 import { qualityLedgerEntries, type QualityLedger } from './quality_ledger';
 
 type LintIssueSeverity = 'error' | 'warning' | 'information' | 'performance' | 'portability' | 'style' | string;
-type LintTool = 'bmsx-cpp' | 'clang-tidy' | 'cppcheck';
+type LintTool = 'custom-cpp' | 'clang-tidy' | 'cppcheck';
 type LintIssue = {
 	file: string;
 	line: number;
@@ -26,7 +26,7 @@ type CliOptions = {
 	configFile: string | null;
 };
 
-const DEFAULT_ROOTS = ['src/bmsx_cpp'];
+const DEFAULT_ROOTS = ['src'];
 const FILE_EXTENSIONS = new Set(['.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx']);
 const SKIP_DIRECTORIES = new Set([
 	'.git',
@@ -49,7 +49,7 @@ const SKIP_DIRECTORIES = new Set([
 	'vendor',
 ]);
 
-const HEADER_FILTER = 'src/bmsx_cpp/.*';
+const HEADER_FILTER = '.*';
 const CLANG_TIDY_RE = /^(.*?):(\d+):(\d+):\s*(warning|error):\s*(.*?)\s*\[([^\]]+)\]\s*$/;
 const CPPCHECK_RE = /^(.*?):(\d+):(\d+):(warning|error|information|performance|portability|style):([^:]+):\s*(.*)$/;
 
@@ -62,7 +62,7 @@ function printHelp(): void {
 	console.log('  --fail-on-issues          Exit with code 1 when any issue is found');
 	console.log('  --compile-commands <path>  Path to compile_commands.json (clang-tidy)');
 	console.log('  --config <path>           Path to .clang-tidy config file (clang-tidy)');
-	console.log('  --root <path>             Extra root directory to scan (default: src/bmsx_cpp)');
+	console.log('  --root <path>             Extra root directory to scan (default: src)');
 	console.log('  --help                    Show this help message');
 }
 
@@ -279,7 +279,7 @@ function parseCppCheckOutput(output: string, issues: LintIssue[]): void {
 	}
 }
 
-function addBmsxRuleIssues(issues: LintIssue[], analysisIssues: ReturnType<typeof analyzeCppFiles>['lintIssues']): void {
+function addCustomRuleIssues(issues: LintIssue[], analysisIssues: ReturnType<typeof analyzeCppFiles>['lintIssues']): void {
 	for (let index = 0; index < analysisIssues.length; index += 1) {
 		const issue = analysisIssues[index];
 		issues.push({
@@ -289,7 +289,7 @@ function addBmsxRuleIssues(issues: LintIssue[], analysisIssues: ReturnType<typeo
 			severity: 'style',
 			check: issue.kind,
 			message: issue.message,
-			tool: 'bmsx-cpp',
+			tool: 'custom-cpp',
 		});
 	}
 }
@@ -375,7 +375,6 @@ function runCppCheck(files: readonly string[], roots: readonly string[]): LintIs
 	for (let rootIndex = 0; rootIndex < roots.length; rootIndex += 1) {
 		includeRoots.add(resolveInputPath(roots[rootIndex]));
 	}
-	includeRoots.add(resolve(process.cwd(), 'src/bmsx_cpp'));
 	for (let i = 0; i < chunks.length; i += 1) {
 		const chunk = chunks[i];
 		const args = [
@@ -536,7 +535,7 @@ function printTextSummary(issues: readonly LintIssue[], duplicateGroups: readonl
 		list.push(issue);
 	}
 
-	for (const tool of ['bmsx-cpp', 'clang-tidy', 'cppcheck']) {
+	for (const tool of ['custom-cpp', 'clang-tidy', 'cppcheck']) {
 		const list = byToolIssues.get(tool);
 		if (list === undefined || list.length === 0) {
 			continue;
@@ -608,7 +607,7 @@ function printCsvReport(issues: readonly LintIssue[], duplicateGroups: readonly 
 					quoteCsv(location.file),
 					quoteCsv(location.line),
 					quoteCsv(location.column),
-					quoteCsv('bmsx-cpp'),
+					quoteCsv('custom-cpp'),
 					quoteCsv(`duplicate:${group.kind}`),
 					quoteCsv('style'),
 					quoteCsv(`Duplicate ${group.kind} declaration "${group.name}" appears ${group.count} times${location.context ? ` (${location.context})` : ''}.`),
@@ -651,7 +650,7 @@ function run(): void {
 	}
 	let issues: LintIssue[] = [];
 	const customAnalysis = analyzeCppFiles(files);
-	addBmsxRuleIssues(issues, customAnalysis.lintIssues);
+	addCustomRuleIssues(issues, customAnalysis.lintIssues);
 	const compileCommands = resolveCompileCommands(options.roots, options.compileCommands);
 	if (hasCommand('clang-tidy')) {
 		issues.push(...runClangTidy(files, options.roots, compileCommands, options.configFile));

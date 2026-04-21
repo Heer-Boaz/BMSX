@@ -194,6 +194,14 @@ const CONTRACT_NUMERIC_SANITIZERS = new Set([
 	'clamp',
 	'clamp_fallback',
 ]);
+const ARCHITECTURE_LAYER_NAMES = new Set([
+	'common',
+	'editor',
+	'language',
+	'runtime',
+	'terminal',
+	'workbench',
+]);
 
 type CliOptions = {
 	csv: boolean;
@@ -876,6 +884,10 @@ function isBooleanLiteralComparisonSmell(node: ts.BinaryExpression, leftBoolean:
 
 function isEmptyStringLiteral(node: ts.Expression): node is ts.StringLiteral {
 	return ts.isStringLiteral(node) && node.text === '';
+}
+
+function isLegacySentinelString(text: string): boolean {
+	return /^__[A-Za-z0-9_]+__$/.test(text);
 }
 
 function isStringLiteralLike(node: ts.Expression): boolean {
@@ -1679,8 +1691,8 @@ function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile
 		}
 		if (catchBlockHandlesAsyncError(node)) {
 			noteQualityLedger(ledger, 'allowed_catch_async_fault_boundary');
-		} else if (catchBlockHandlesLuaFaultBoundary(node, sourceFile)) {
-			noteQualityLedger(ledger, 'allowed_catch_lua_fault_boundary');
+		} else if (catchBlockHandlesRecordedFaultBoundary(node, sourceFile)) {
+			noteQualityLedger(ledger, 'allowed_catch_recorded_fault_boundary');
 		} else if (catchBlockReportsCaughtError(node)) {
 			noteQualityLedger(ledger, 'allowed_catch_reported_fallback');
 		} else {
@@ -1696,7 +1708,7 @@ function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile
 	}
 }
 
-function catchBlockHandlesLuaFaultBoundary(node: ts.CatchClause, sourceFile: ts.SourceFile): boolean {
+function catchBlockHandlesRecordedFaultBoundary(node: ts.CatchClause, sourceFile: ts.SourceFile): boolean {
 	let handled = false;
 	const visit = (current: ts.Node): void => {
 		if (handled) {
@@ -1739,8 +1751,11 @@ function expressionReferencesAnyName(node: ts.Node, names: ReadonlySet<string>):
 }
 
 function isErrorReportingTarget(target: string | null): boolean {
-	return target === 'showEditorMessage'
-		|| target === 'tryShowLuaErrorOverlay'
+	if (target === null) {
+		return false;
+	}
+	return /(?:^|\.)(?:show|tryShow|report|record)[A-Za-z0-9]*Error[A-Za-z0-9]*$/.test(target)
+		|| target === 'showEditorMessage'
 		|| target === 'console.error'
 		|| target === 'console.warn';
 }
@@ -3112,27 +3127,6 @@ function isLookupFallbackExpression(node: ts.Expression): boolean {
 	return ts.isPropertyAccessExpression(target) && target.name.text === 'get';
 }
 
-function isLuaSourceLookupExpression(node: ts.Expression): boolean {
-	const unwrapped = unwrapExpression(node);
-	if (ts.isBinaryExpression(unwrapped) && unwrapped.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
-		return isLuaSourceLookupExpression(unwrapped.left) || isLuaSourceLookupExpression(unwrapped.right);
-	}
-	if (!ts.isElementAccessExpression(unwrapped)) {
-		return false;
-	}
-	const target = unwrapExpression(unwrapped.expression);
-	return ts.isPropertyAccessExpression(target) && target.name.text === 'path2lua';
-}
-
-function isLuaSourceLookupFallback(node: ts.BinaryExpression): boolean {
-	return isLuaSourceLookupExpression(node.left) && isLuaSourceLookupExpression(node.right);
-}
-
-function isRuntimeAssetLayerFallback(node: ts.BinaryExpression): boolean {
-	return expressionAccessFingerprint(node.left) === 'this.assets.overlayLayer'
-		&& expressionAccessFingerprint(node.right) === 'this.assets.cartLayer';
-}
-
 function isSharedConstantFallbackExpression(node: ts.Expression): boolean {
 	const unwrapped = unwrapExpression(node);
 	return ts.isIdentifier(unwrapped) && /^[A-Z][A-Z0-9_]*$/.test(unwrapped.text);
@@ -3219,20 +3213,14 @@ function nullishFallbackLedgerKind(node: ts.BinaryExpression): string {
 	if (isOptionalParameterFallback(node)) {
 		return 'optional_parameter_default';
 	}
-	if (isLuaSourceLookupFallback(node)) {
-		return 'lua_source_lookup';
-	}
-	if (isRuntimeAssetLayerFallback(node)) {
-		return 'runtime_asset_layer';
-	}
 	const root = expressionRootName(node.left);
 	if (root === 'options' || root === 'opts' || root === 'params') {
 		return 'option_default';
 	}
-	if (root === 'manifest' || root === 'specs' || root === 'layout' || root === 'memorySpecs' || root === 'engineMemorySpecs') {
+	if (root !== null && /(?:config|layout|manifest|options|settings|specs)$/i.test(root)) {
 		return 'data_default';
 	}
-	if (root === 'metadata' || root === 'engineMetadata' || root === 'cartMetadata' || root === 'runtime') {
+	if (root !== null && /metadata$/i.test(root)) {
 		return 'metadata_default';
 	}
 	const right = unwrapExpression(node.right);
@@ -3736,16 +3724,14 @@ function lintFacadeModuleDensity(sourceFile: ts.SourceFile, issues: LintIssue[])
 	}
 }
 
-function ideLayer(path: string): string | null {
-	const normalized = normalizePathForAnalysis(path);
-	const marker = '/src/bmsx/ide/';
-	const index = normalized.indexOf(marker);
-	if (index === -1) {
-		return null;
+function architectureLayer(path: string): string | null {
+	const parts = normalizePathForAnalysis(path).split('/');
+	for (let index = 0; index < parts.length - 1; index += 1) {
+		if (parts[index] === 'ide' && ARCHITECTURE_LAYER_NAMES.has(parts[index + 1])) {
+			return parts[index + 1];
+		}
 	}
-	const rest = normalized.slice(index + marker.length);
-	const slash = rest.indexOf('/');
-	return slash === -1 ? rest : rest.slice(0, slash);
+	return null;
 }
 
 function forbiddenLayerImportReason(sourceLayer: string, targetLayer: string): string | null {
@@ -3753,28 +3739,28 @@ function forbiddenLayerImportReason(sourceLayer: string, targetLayer: string): s
 		return null;
 	}
 	if (sourceLayer === 'common') {
-		return `ide/common must not import ${targetLayer}; common code must stay below feature layers.`;
+		return `Layer common must not import ${targetLayer}; common code must stay below feature layers.`;
 	}
 	if (sourceLayer === 'language' && targetLayer !== 'common') {
-		return `ide/language must not import ${targetLayer}; language code must stay UI/workbench independent.`;
+		return `Layer language must not import ${targetLayer}; language code must stay UI/workbench independent.`;
 	}
 	if (sourceLayer === 'terminal' && (targetLayer === 'editor' || targetLayer === 'workbench')) {
-		return `ide/terminal must not import ${targetLayer}; terminal code must not depend on editor/workbench internals.`;
+		return `Layer terminal must not import ${targetLayer}; terminal code must not depend on editor/workbench internals.`;
 	}
 	if (sourceLayer === 'editor' && targetLayer === 'workbench') {
-		return 'ide/editor must not import ide/workbench; workbench may compose editor, not the reverse.';
+		return 'Layer editor must not import workbench; workbench may compose editor, not the reverse.';
 	}
 	if (sourceLayer === 'workbench' && targetLayer === 'editor') {
-		return 'ide/workbench must not import deep editor internals directly; route shared contracts through common modules.';
+		return 'Layer workbench must not import deep editor internals directly; route shared contracts through common modules.';
 	}
 	if (sourceLayer === 'runtime' && (targetLayer === 'editor' || targetLayer === 'workbench')) {
-		return `ide/runtime must not import ${targetLayer}; runtime glue must not own UI feature internals.`;
+		return `Layer runtime must not import ${targetLayer}; runtime glue must not own UI feature internals.`;
 	}
 	return null;
 }
 
 function lintCrossLayerImports(sourceFile: ts.SourceFile, issues: LintIssue[]): void {
-	const sourceLayer = ideLayer(sourceFile.fileName);
+	const sourceLayer = architectureLayer(sourceFile.fileName);
 	if (sourceLayer === null) {
 		return;
 	}
@@ -3788,7 +3774,7 @@ function lintCrossLayerImports(sourceFile: ts.SourceFile, issues: LintIssue[]): 
 			continue;
 		}
 		const targetPath = resolve(dirname(sourceFile.fileName), specifier);
-		const targetLayer = ideLayer(targetPath);
+		const targetLayer = architectureLayer(targetPath);
 		if (targetLayer === null) {
 			continue;
 		}
@@ -4114,14 +4100,14 @@ function collectLintIssues(
 	const scopes: Array<Map<string, LintBinding[]>> = [];
 	const repeatedScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
 	const semanticRepeatedScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
-	const machineDeviceScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
+	const repeatedAccessChainScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
 	const enterScope = (): void => {
 		scopes.push(new Map<string, LintBinding[]>());
 	};
 	const enterRepeatedScope = (): void => {
 		repeatedScopes.push(new Map<string, RepeatedExpressionInfo>());
 		semanticRepeatedScopes.push(new Map<string, RepeatedExpressionInfo>());
-		machineDeviceScopes.push(new Map<string, RepeatedExpressionInfo>());
+		repeatedAccessChainScopes.push(new Map<string, RepeatedExpressionInfo>());
 	};
 	const leaveRepeatedScope = (): void => {
 		const scope = repeatedScopes.pop();
@@ -4205,8 +4191,8 @@ function collectLintIssues(
 			});
 		}
 	};
-	const leaveMachineDeviceScope = (): void => {
-		const scope = machineDeviceScopes.pop();
+	const leaveRepeatedAccessChainScope = (): void => {
+		const scope = repeatedAccessChainScopes.pop();
 		if (!scope) {
 			return;
 		}
@@ -4215,12 +4201,12 @@ function collectLintIssues(
 				continue;
 			}
 			issues.push({
-				kind: 'repeated_machine_device_chain_pattern',
+				kind: 'repeated_access_chain_pattern',
 				file: sourceFile.fileName,
 				line: info.line,
 				column: info.column,
-				name: 'repeated_machine_device_chain_pattern',
-				message: `Machine device chain is repeated ${info.count} times in the same function: ${info.sampleText}`,
+				name: 'repeated_access_chain_pattern',
+				message: `Access/call chain is repeated ${info.count} times in the same function: ${info.sampleText}`,
 			});
 		}
 	};
@@ -4356,15 +4342,27 @@ function collectLintIssues(
 			sampleText: compactSampleText(node.getText(sourceFile).replace(/\s+/g, ' ')),
 		});
 	};
-	const recordMachineDeviceChain = (node: ts.PropertyAccessExpression): void => {
-		if (node.expression.getText(sourceFile) !== 'runtime.machine') {
+	const recordRepeatedAccessChain = (node: ts.PropertyAccessExpression, parent: ts.Node | undefined): void => {
+		if (parent !== undefined && (ts.isPropertyAccessExpression(parent) && parent.expression === node || ts.isCallExpression(parent) && parent.expression === node)) {
 			return;
 		}
-		const scope = machineDeviceScopes[machineDeviceScopes.length - 1];
+		const text = node.getText(sourceFile).replace(/\s+/g, ' ');
+		if (text.length < 24 || text.startsWith('this.')) {
+			return;
+		}
+		let segmentCount = 0;
+		for (let index = 0; index < text.length; index += 1) {
+			if (text[index] === '.' || text[index] === '[') {
+				segmentCount += 1;
+			}
+		}
+		if (segmentCount < 2) {
+			return;
+		}
+		const scope = repeatedAccessChainScopes[repeatedAccessChainScopes.length - 1];
 		if (!scope) {
 			return;
 		}
-		const text = `runtime.machine.${node.name.text}`;
 		const existing = scope.get(text);
 		if (existing) {
 			existing.count += 1;
@@ -4375,7 +4373,7 @@ function collectLintIssues(
 			line: position.line + 1,
 			column: position.character + 1,
 			count: 1,
-			sampleText: text,
+			sampleText: compactSampleText(text),
 		});
 	};
 	const lintHotPathCallArguments = (node: ts.CallExpression | ts.NewExpression): void => {
@@ -4428,13 +4426,13 @@ function collectLintIssues(
 			lintContractNumericDefensiveSanitizationPattern(node, sourceFile, issues);
 			lintBinaryExpressionForCodeQuality(node, sourceFile, regions, issues, ledger);
 		}
-		if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && node.text === '__native__') {
+		if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && isLegacySentinelString(node.text)) {
 			pushLintIssue(
 				issues,
 				sourceFile,
 				node,
-				'legacy_native_bridge_key_pattern',
-				'Legacy native bridge key "__native__" is forbidden. Use the current "__native" key instead of adding alias fallbacks.',
+				'legacy_sentinel_string_pattern',
+				'Double-underscore sentinel string is forbidden. Use the current contract key instead of adding alias fallbacks.',
 			);
 		}
 		if (ts.isCatchClause(node)) {
@@ -4497,7 +4495,7 @@ function collectLintIssues(
 					sourceFile,
 					node,
 					'numeric_defensive_sanitization_pattern',
-					'Defensive numeric sanitization in IDE hot paths is forbidden. Coordinates and layout values must already be valid integers.',
+					'Defensive numeric sanitization in hot paths is forbidden. Coordinates and layout values must already be valid integers.',
 				);
 			}
 			lintSplitJoinRoundtripPattern(node, sourceFile, issues, scopes);
@@ -4526,7 +4524,7 @@ function collectLintIssues(
 		}
 		if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node) || ts.isCallExpression(node)) {
 			if (ts.isPropertyAccessExpression(node)) {
-				recordMachineDeviceChain(node);
+				recordRepeatedAccessChain(node, parent);
 			}
 			if (hasQuestionDotToken(node)) {
 				const root = expressionRootName(node as ts.Expression);
@@ -4536,7 +4534,7 @@ function collectLintIssues(
 						sourceFile,
 						node,
 						'defensive_optional_chain_pattern',
-						`Optional chaining on required IDE/runtime root "${root}" is forbidden.`,
+						`Optional chaining on required state root "${root}" is forbidden.`,
 					);
 				} else {
 					const boundaryKind = optionalChainBoundaryKind(node as ts.Expression, sourceFile, regions);
@@ -4578,7 +4576,7 @@ function collectLintIssues(
 		}
 		ts.forEachChild(node, child => visit(child, node));
 		if (repeatedEntered) {
-			leaveMachineDeviceScope();
+			leaveRepeatedAccessChainScope();
 			leaveSemanticRepeatedScope();
 			leaveRepeatedScope();
 		}
