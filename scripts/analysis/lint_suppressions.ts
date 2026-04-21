@@ -12,7 +12,7 @@ type LintSuppressionDirective = {
 	rules: ReadonlySet<string> | null;
 };
 
-const LINT_SUPPRESSION_MARKER = 'bmsx-lint:disable';
+const ANALYSIS_SUPPRESSION_MARKER = '@bmsx-analyse';
 
 function markerIsInComment(lineText: string, markerIndex: number): boolean {
 	const lineCommentIndex = lineText.indexOf('//');
@@ -37,20 +37,51 @@ function parseSuppressedRules(text: string): ReadonlySet<string> | null {
 	return rules.size === 0 ? null : rules;
 }
 
-function parseSuppressionDirective(lineText: string, line: number): LintSuppressionDirective | null {
-	const markerIndex = lineText.indexOf(LINT_SUPPRESSION_MARKER);
-	if (markerIndex === -1 || !markerIsInComment(lineText, markerIndex)) {
-		return null;
-	}
-	let rest = lineText.slice(markerIndex + LINT_SUPPRESSION_MARKER.length);
+function parseDirectiveMode(text: string): { mode: LintSuppressionMode; rest: string } {
+	let rest = text.trimStart();
 	let mode: LintSuppressionMode = 'file';
 	if (rest.startsWith('-next-line')) {
 		mode = 'next-line';
 		rest = rest.slice('-next-line'.length);
+	} else if (rest.startsWith('next-line')) {
+		mode = 'next-line';
+		rest = rest.slice('next-line'.length);
 	} else if (rest.startsWith('-line')) {
 		mode = 'line';
 		rest = rest.slice('-line'.length);
+	} else if (rest.startsWith('line')) {
+		mode = 'line';
+		rest = rest.slice('line'.length);
 	}
+	return { mode, rest };
+}
+
+function findSuppressionDirectiveText(lineText: string): { markerIndex: number; rest: string } | null {
+	const analysisIndex = lineText.indexOf(ANALYSIS_SUPPRESSION_MARKER);
+	if (analysisIndex === -1) {
+		return null;
+	}
+	let rest = lineText.slice(analysisIndex + ANALYSIS_SUPPRESSION_MARKER.length).trimStart();
+	if (!rest.startsWith('disable')) {
+		return null;
+	}
+	rest = rest.slice('disable'.length);
+	return {
+		markerIndex: analysisIndex,
+		rest,
+	};
+}
+
+function parseSuppressionDirective(lineText: string, line: number): LintSuppressionDirective | null {
+	const directiveText = findSuppressionDirectiveText(lineText);
+	if (directiveText === null) {
+		return null;
+	}
+	const markerIndex = directiveText.markerIndex;
+	if (markerIndex === -1 || !markerIsInComment(lineText, markerIndex)) {
+		return null;
+	}
+	const { mode, rest } = parseDirectiveMode(directiveText.rest);
 	return {
 		line,
 		mode,

@@ -59,6 +59,67 @@ export const PREVIEW_MAX_DEPTH = 2;
 const SYMBOL_PRIORITY_ORDER: LuaDefinitionKind[] = ['table_field', 'function', 'constant', 'parameter', 'variable', 'assignment'];
 const LOCAL_DEFINITION_PRIORITY_ORDER: LuaDefinitionKind[] = ['parameter', 'table_field', 'function', 'constant', 'variable', 'assignment'];
 
+function isHiddenNativeMemberName(name: string): boolean {
+	switch (name) {
+		case '':
+		case 'constructor':
+		case '__proto__':
+		case 'prototype':
+		case 'caller':
+		case 'callee':
+			return true;
+		default:
+			return false;
+	}
+}
+
+function isFunctionPrototypeMemberName(name: string): boolean {
+	switch (name) {
+		case 'call':
+		case 'apply':
+		case 'bind':
+			return true;
+		default:
+			return false;
+	}
+}
+
+function isFunctionOwnMemberName(name: string): boolean {
+	switch (name) {
+		case 'length':
+		case 'name':
+		case 'arguments':
+			return true;
+		default:
+			return false;
+	}
+}
+
+function formatApiReturnTypeSuffix(returnType: string | undefined): string {
+	if (returnType && returnType !== 'void') {
+		return ` -> ${returnType}`;
+	}
+	return '';
+}
+
+function formatHoverValueTypeSuffix(valueType: string): string {
+	if (valueType && valueType !== 'unknown') {
+		return ` (${valueType})`;
+	}
+	return '';
+}
+
+function definitionSymbolPath(info: LuaDefinitionInfo): string {
+	if (info.namePath.length > 0) {
+		return info.namePath.join('.');
+	}
+	return info.name;
+}
+
+function isFrameRangeForPath(range: SourceRange | null, path: string): range is SourceRange {
+	return range !== null && range.path === path;
+}
+
 function resolveTableChain(table: LuaTable): LuaTable[] {
 	const chain: LuaTable[] = [];
 	let current: LuaTable = table;
@@ -185,8 +246,9 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 			if (!descriptor) {
 				continue;
 			}
-			if (typeof descriptor.value === 'function') {
-				const params = extractFunctionParameters(descriptor.value as (...args: unknown[]) => unknown);
+			const method = descriptor.value as ((...args: unknown[]) => unknown) | undefined;
+			if (method) {
+				const params = extractFunctionParameters(method);
 				const metadata = API_METHOD_METADATA[name];
 				const optionalSources = new Set<string>();
 				const parameterDescriptionMap: Map<string, string> = new Map();
@@ -207,9 +269,7 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 				const optionalParams = optionalSources.size > 0 ? Array.from(optionalSources) : [];
 				const parameterDescriptions = params.map(param => parameterDescriptionMap.get(param));
 				const displayParams = params.map(param => (optionalSources.has(param) ? `${param}?` : param));
-				const returnTypeSuffix = metadata?.returnType && metadata.returnType !== 'void'
-					? ` -> ${metadata.returnType}`
-					: '';
+				const returnTypeSuffix = formatApiReturnTypeSuffix(metadata?.returnType);
 				const baseDetail = displayParams.length > 0
 					? `api.${name}(${displayParams.join(', ')})${returnTypeSuffix}`
 					: `api.${name}()${returnTypeSuffix}`;
@@ -240,9 +300,7 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 			}
 			if (descriptor.get) {
 				const metadata = API_METHOD_METADATA[name];
-				const returnTypeSuffix = metadata?.returnType && metadata.returnType !== 'void'
-					? ` -> ${metadata.returnType}`
-					: '';
+				const returnTypeSuffix = formatApiReturnTypeSuffix(metadata?.returnType);
 				const baseDetail = `api.${name}${returnTypeSuffix}`;
 				const description = metadata?.description;
 				const detail = description && description.length > 0 ? `${baseDetail} • ${description}` : baseDetail;
@@ -432,7 +490,7 @@ function pushSyntaxErrorDiagnostic(error: LuaSyntaxError): void {
 }
 
 function resolveSemanticDataForDiagnostics(input: SemanticResolutionInput): FileSemanticData {
-	const pathKey = input.path ?? '';
+	const pathKey = input.path;
 	const runtime = Runtime.instance;
 	const cached = runtime.pathSemanticCache.get(pathKey);
 	if (cached && cached.source === input.source) {
@@ -525,11 +583,11 @@ export function buildHoverContentLines(result: LuaHoverResult): string[] {
 	}
 	const valueLines = result.lines.length > 0 ? result.lines : [''];
 	if (valueLines.length === 1) {
-		const suffix = result.valueType && result.valueType !== 'unknown' ? ` (${result.valueType})` : '';
+		const suffix = formatHoverValueTypeSuffix(result.valueType);
 		push(`${result.expression} = ${valueLines[0]}${suffix}`);
 		return wrapHoverLines(lines);
 	}
-	const suffix = result.valueType && result.valueType !== 'unknown' ? ` (${result.valueType})` : '';
+	const suffix = formatHoverValueTypeSuffix(result.valueType);
 	push(`${result.expression}${suffix}`);
 	for (const line of valueLines) push(`  ${line}`);
 	return wrapHoverLines(lines);
@@ -606,7 +664,8 @@ export function shouldAutoTriggerCompletions(): boolean {
 			existing.scrollOffset = 0;
 			existing.visibleLineCount = 0;
 		}
-		const maxOffset = Math.max(0, contentLines.length - Math.max(1, existing.visibleLineCount));
+		const visibleLineCount = existing.visibleLineCount || 1;
+		const maxOffset = contentLines.length > visibleLineCount ? contentLines.length - visibleLineCount : 0;
 		if (existing.scrollOffset > maxOffset) {
 			existing.scrollOffset = maxOffset;
 		}
@@ -1260,7 +1319,7 @@ export function listLuaObjectMembers(request: LuaMemberCompletionRequest): LuaMe
 	}
 	if (isLuaTable(value)) {
 		const typeName = resolveTableTypeName(value);
-		return buildTableMemberCompletionEntries(value, request.operator, { typeName });
+		return buildTableMemberCompletionEntries(value, request.operator, typeName);
 	}
 	return [];
 }
@@ -1269,9 +1328,7 @@ export function resolveLuaDefinitionMetadata(value: LuaValue, definitionRange: L
 	let range: LuaSourceRange = definitionRange;
 	if (!range && value && typeof value === 'object') {
 		const candidate = value as { getSourceRange?: () => LuaSourceRange };
-		if (typeof candidate.getSourceRange === 'function') {
-			range = candidate.getSourceRange();
-		}
+		range = candidate.getSourceRange?.();
 	}
 	if (!range) {
 		return null;
@@ -1302,9 +1359,8 @@ export function listLuaSymbols(path: string): LuaSymbolEntry[] {
 	const entries = new Map<string, { info: LuaDefinitionInfo; location: LuaDefinitionLocation; priority: number }>();
 	for (const info of definitions) {
 		const location = buildDefinitionLocationFromRange(info.definition);
-		const path = info.namePath.length > 0 ? info.namePath.join('.') : info.name;
-		const keyPath = path.length > 0 ? path : info.name;
-		const key = `${location.path ?? ''}::${keyPath}@${location.range.startLine}:${location.range.startColumn}`;
+		const keyPath = definitionSymbolPath(info);
+		const key = `${location.path}::${keyPath}@${location.range.startLine}:${location.range.startColumn}`;
 		const priority = definitionPriorityForSymbols(info.kind);
 		const existing = entries.get(key);
 		if (!existing || priority > existing.priority || (priority === existing.priority && info.definition.start.line < existing.info.definition.start.line)) {
@@ -1313,7 +1369,7 @@ export function listLuaSymbols(path: string): LuaSymbolEntry[] {
 	}
 	const symbols: LuaSymbolEntry[] = [];
 	for (const { info, location } of entries.values()) {
-		const path = info.namePath.length > 0 ? info.namePath.join('.') : info.name;
+		const path = definitionSymbolPath(info);
 		symbols.push({
 			name: info.name,
 			path,
@@ -1345,23 +1401,23 @@ export function listLuaBuiltinFunctions(): LuaBuiltinDescriptor[] {
 	const descriptors = new Map<string, LuaBuiltinDescriptor>();
 	for (let index = 0; index < DEFAULT_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
 		const descriptor = DEFAULT_LUA_BUILTIN_FUNCTIONS[index];
-		descriptors.set(descriptor.name, {
-			name: descriptor.name,
-			params: descriptor.params.slice(),
-			signature: descriptor.signature,
-			optionalParams: descriptor.optionalParams ? descriptor.optionalParams.slice() : undefined,
-			parameterDescriptions: descriptor.parameterDescriptions ? descriptor.parameterDescriptions.slice() : undefined,
-			description: descriptor.description,
-		});
-	}
-	for (const metadata of Runtime.instance.luaBuiltinMetadata.values()) {
-		const optionalParams = metadata.optionalParams ?? [];
-		const optionalSet = optionalParams.length > 0 ? new Set(optionalParams) : null;
-		const params = metadata.params.map(param => (optionalSet && optionalSet.has(param) ? `${param}?` : param));
-		const parameterDescriptions = metadata.parameterDescriptions ? metadata.parameterDescriptions.slice() : undefined;
-		descriptors.set(metadata.name, {
-			name: metadata.name,
-			params,
+			descriptors.set(descriptor.name, {
+				name: descriptor.name,
+				params: descriptor.params.slice(),
+				signature: descriptor.signature,
+				optionalParams: descriptor.optionalParams?.slice(),
+				parameterDescriptions: descriptor.parameterDescriptions?.slice(),
+				description: descriptor.description,
+			});
+		}
+		for (const metadata of Runtime.instance.luaBuiltinMetadata.values()) {
+			const optionalParams = metadata.optionalParams;
+			const optionalSet = optionalParams && optionalParams.length > 0 ? new Set(optionalParams) : undefined;
+			const params = optionalSet ? metadata.params.map(param => (optionalSet.has(param) ? `${param}?` : param)) : metadata.params.slice();
+			const parameterDescriptions = metadata.parameterDescriptions?.slice();
+			descriptors.set(metadata.name, {
+				name: metadata.name,
+				params,
 			signature: metadata.signature,
 			optionalParams,
 			parameterDescriptions,
@@ -1394,8 +1450,8 @@ export function listGlobalLuaSymbols(): LuaSymbolEntry[] {
 		});
 	}
 	entries.sort((a, b) => {
-		const pathA = a.location.path ??'';
-		const pathB = b.location.path ?? '';
+		const pathA = a.location.path;
+		const pathB = b.location.path;
 		if (pathA !== pathB) {
 			return pathA.localeCompare(pathB);
 		}
@@ -1635,8 +1691,8 @@ function positionAfterOrEqual(
 }
 
 function rangeArea(range: SourceRange): number {
-	const lineSpan = Math.max(0, range.end.line - range.start.line);
-	const columnSpan = Math.max(0, range.end.column - range.start.column);
+	const lineSpan = range.end.line - range.start.line;
+	const columnSpan = range.end.column - range.start.column;
 	return (lineSpan * 100000) + columnSpan;
 }
 
@@ -1683,7 +1739,7 @@ function wrapHostValueForIntellisense(value: unknown): LuaValue {
 	if (isLuaTable(value) || isLuaFunctionValue(value) || value instanceof LuaNativeValue) {
 		return value;
 	}
-	if (typeof value === 'object' || typeof value === 'function') {
+	if (typeof value === 'object' || value instanceof Function) {
 		const native = value as object | Function;
 		const runtime = Runtime.instance;
 		return runtime.interpreter.getOrCreateNativeValue(native, resolveNativeTypeName(native));
@@ -1810,10 +1866,11 @@ function resolveRuntimeLocalChainValue(
 	}
 	const requestedRecord = luaPipeline.resolveLuaSourceRecord(runtime, path);
 	const requestedPath = requestedRecord ? requestedRecord.source_path : path;
+	const cpu = runtime.machine.cpu;
 	// Use the fault snapshot when the fault overlay is active — by hover time, the crash
 	// frame has been popped from the live CPU stack, so we must use the saved registers.
 	const faultSnapshot = runtime.faultSnapshot ? runtime.lastCpuFaultSnapshot : null;
-	const callStack = faultSnapshot ?? runtime.machine.cpu.getCallStack();
+	const callStack = faultSnapshot ?? cpu.getCallStack();
 	if (callStack.length === 0) {
 		return null;
 	}
@@ -1822,8 +1879,8 @@ function resolveRuntimeLocalChainValue(
 	let selectedSlot: LocalSlotDebug = null;
 	for (let frameIndex = callStack.length - 1; frameIndex >= 0; frameIndex -= 1) {
 		const frame = callStack[frameIndex];
-		const frameRange = runtime.machine.cpu.getDebugRange(frame.pc);
-		if (!frameRange || frameRange.path !== requestedPath) {
+		const frameRange = cpu.getDebugRange(frame.pc);
+		if (!isFrameRangeForPath(frameRange, requestedPath)) {
 			continue;
 		}
 		const slots = metadata.localSlotsByProto[frame.protoIndex];
@@ -1862,8 +1919,8 @@ function resolveRuntimeLocalChainValue(
 		if (upvalueNamesByProto) {
 			for (let frameIndex = callStack.length - 1; frameIndex >= 0; frameIndex -= 1) {
 				const frame = callStack[frameIndex];
-				const frameRange = runtime.machine.cpu.getDebugRange(frame.pc);
-				if (!frameRange || frameRange.path !== requestedPath) {
+				const frameRange = cpu.getDebugRange(frame.pc);
+				if (!isFrameRangeForPath(frameRange, requestedPath)) {
 					continue;
 				}
 				const frameUpvalueNames = upvalueNamesByProto[frame.protoIndex];
@@ -1871,10 +1928,10 @@ function resolveRuntimeLocalChainValue(
 					continue;
 				}
 				const upvalueIndex = frameUpvalueNames.indexOf(rootName);
-				if (upvalueIndex === -1 || !runtime.machine.cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
+				if (upvalueIndex === -1 || !cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
 					continue;
 				}
-				const chained = walkValueChain(wrapRuntimeValueForIntellisense(runtime.machine.cpu.readFrameUpvalue(frameIndex, upvalueIndex)), parts, 1);
+				const chained = walkValueChain(wrapRuntimeValueForIntellisense(cpu.readFrameUpvalue(frameIndex, upvalueIndex)), parts, 1);
 				if (chained === null) {
 					return { kind: 'not_defined' };
 				}
@@ -1885,7 +1942,7 @@ function resolveRuntimeLocalChainValue(
 	}
 	const rawRegValue = faultSnapshot
 		? faultSnapshot[selectedFrameIndex].registers[selectedSlot.register]
-		: runtime.machine.cpu.readFrameRegister(selectedFrameIndex, selectedSlot.register);
+		: cpu.readFrameRegister(selectedFrameIndex, selectedSlot.register);
 	const chained = walkValueChain(wrapRuntimeValueForIntellisense(rawRegValue), parts, 1);
 	if (chained === null) {
 		return { kind: 'not_defined' };
@@ -1899,7 +1956,8 @@ function resolveRuntimeLocalChainValue(
 
 function resolveRuntimeGlobalChainValue(parts: ReadonlyArray<string>): ({ kind: 'value'; value: LuaValue } | { kind: 'not_defined' }) | null {
 	const runtime = Runtime.instance;
-	const rootRaw = runtime.machine.cpu.getGlobalByKey(runtime.luaKey(parts[0]));
+	const cpu = runtime.machine.cpu;
+	const rootRaw = cpu.getGlobalByKey(runtime.luaKey(parts[0]));
 	if (rootRaw === null) {
 		return null;
 	}
@@ -2045,7 +2103,7 @@ export function describeLuaValueForInspector(value: LuaValue): { lines: string[]
 		const native = value.native;
 		const typeName = value.typeName && value.typeName.length > 0 ? value.typeName : resolveNativeTypeName(native);
 		const labelName = resolvedName ?? typeName;
-		if (typeof native === 'function') {
+		if (native instanceof Function) {
 			const params = extractFunctionParameters(native as (...args: unknown[]) => unknown);
 			const paramSegment = params.length > 0 ? params.join(', ') : '';
 			const signature = paramSegment.length > 0 ? `(${paramSegment})` : '()';
@@ -2079,17 +2137,13 @@ export function getNativeMemberCompletionEntries(value: LuaNativeValue, operator
 	if (metatable) {
 		const indexValue = metatable.get('__index');
 		if (isLuaTable(indexValue)) {
-			const luaEntries = buildTableMemberCompletionEntries(indexValue, operator, { typeName: resolveTableTypeName(indexValue) });
+			const luaEntries = buildTableMemberCompletionEntries(indexValue, operator, resolveTableTypeName(indexValue));
 			for (let index = 0; index < luaEntries.length; index += 1) {
 				registerNativeCompletion(registry, luaEntries[index]);
 			}
 		}
 	}
-	if (typeof native === 'object' && native !== null) {
-		populateNativeMembersFromTarget(native, operator, typeName, registry, includeProperties);
-	} else if (typeof native === 'function' && operator === '.') {
-		populateNativeMembersFromTarget(native, operator, typeName, registry, includeProperties);
-	}
+	populateNativeMembersFromTarget(native, operator, typeName, registry, includeProperties);
 	const prototypeEntries = getCachedPrototypeNativeEntries(native, operator, typeName);
 	for (let index = 0; index < prototypeEntries.length; index += 1) {
 		registerNativeCompletion(registry, prototypeEntries[index]);
@@ -2140,9 +2194,10 @@ export function buildNativePrototypeMemberEntries(native: object | Function, ope
 			current = Object.getPrototypeOf(current);
 		}
 	};
-	if (typeof native === 'function') {
-		const prototype = native.prototype && typeof native.prototype === 'object' ? native.prototype : null;
-		traverse(prototype);
+	if (native instanceof Function) {
+		if (native.prototype) {
+			traverse(native.prototype);
+		}
 		if (operator === '.') {
 			const functionPrototype = Object.getPrototypeOf(native);
 			traverse(functionPrototype);
@@ -2158,10 +2213,9 @@ export function buildNativePrototypeMemberEntries(native: object | Function, ope
 	return entries;
 }
 
-export function buildTableMemberCompletionEntries(table: LuaTable, operator: '.' | ':', options?: { typeName?: string }): LuaMemberCompletion[] {
+export function buildTableMemberCompletionEntries(table: LuaTable, operator: '.' | ':', typeName?: string): LuaMemberCompletion[] {
 	const registry = new Map<string, LuaMemberCompletion>();
 	const includeProperties = operator === '.';
-	const typeName = options?.typeName;
 
 	const appendFromTable = (target: LuaTable) => {
 		const entries = target.entriesArray();
@@ -2205,7 +2259,7 @@ export function buildTableMemberCompletionEntries(table: LuaTable, operator: '.'
 }
 
 export function resolveNativeCompletionCacheKey(native: object | Function): object {
-	if (typeof native === 'function') {
+	if (native instanceof Function) {
 		return native;
 	}
 	const prototype = Object.getPrototypeOf(native);
@@ -2215,34 +2269,34 @@ export function resolveNativeCompletionCacheKey(native: object | Function): obje
 	return native;
 }
 
-export function populateNativeMembersFromTarget(target: object, operator: '.' | ':', typeName: string, registry: Map<string, LuaMemberCompletion>, includeProperties: boolean): void {
+export function populateNativeMembersFromTarget(target: object | Function, operator: '.' | ':', typeName: string, registry: Map<string, LuaMemberCompletion>, includeProperties: boolean): void {
 	const propertyNames = Object.getOwnPropertyNames(target);
-	const isFunctionTarget = typeof target === 'function';
+	const isFunctionTarget = target instanceof Function;
 	const skipFunctionPrototypeMembers = target === Function.prototype;
 	for (let index = 0; index < propertyNames.length; index += 1) {
 		const name = propertyNames[index];
-		if (!name || name === 'constructor' || name === '__proto__' || name === 'prototype' || name === 'caller' || name === 'callee') {
+		if (isHiddenNativeMemberName(name)) {
 			continue;
 		}
-		if (skipFunctionPrototypeMembers && (name === 'call' || name === 'apply' || name === 'bind')) {
+		if (skipFunctionPrototypeMembers && isFunctionPrototypeMemberName(name)) {
 			continue;
 		}
-		if (isFunctionTarget && (name === 'length' || name === 'name' || name === 'arguments')) {
+		if (isFunctionTarget && isFunctionOwnMemberName(name)) {
 			continue;
 		}
 		const descriptor = Object.getOwnPropertyDescriptor(target, name);
 		if (!descriptor) {
 			continue;
 		}
-		if (typeof descriptor.value === 'function') {
-			const rawParams = extractFunctionParameters(descriptor.value as (...args: unknown[]) => unknown);
+		if (descriptor.value instanceof Function) {
+			const rawParams = extractFunctionParameters(descriptor.value);
 			const params = operator === ':' ? adjustMethodParametersForColon(rawParams) : rawParams.slice();
 			const detail = formatNativeMethodDetail(typeName, name, params, operator);
 			registerNativeCompletion(registry, { name, kind: 'method', detail, parameters: params });
 			continue;
 		}
-		const hasGetter = typeof descriptor.get === 'function';
-		const hasSetter = typeof descriptor.set === 'function';
+		const hasGetter = descriptor.get !== undefined;
+		const hasSetter = descriptor.set !== undefined;
 		if (includeProperties && (hasGetter || 'value' in descriptor)) {
 			const detail = formatNativePropertyDetail(typeName, name, hasGetter, hasSetter);
 			registerNativeCompletion(registry, { name, kind: 'property', detail, parameters: [] });
@@ -2266,7 +2320,7 @@ export function adjustMethodParametersForColon(params: string[]): string[] {
 	if (!params || params.length === 0) {
 		return [];
 	}
-	const first = params[0] ?? '';
+	const first = params[0];
 	const normalized = first.trim();
 	if (normalized === 'self' || normalized === 'this') {
 		return params.slice(1);
@@ -2411,7 +2465,7 @@ export function describeLuaNativeValue(value: LuaNativeValue, depth: number, vis
 		const preview = formatArrayPreview(native, depth + 1, visited);
 		return `${typeName ?? 'array'} [${preview}]`;
 	}
-	if (typeof native === 'function') {
+	if (native instanceof Function) {
 		const label = native.name && native.name.length > 0 ? native.name : '<anonymous>';
 		return `[native function ${label}]`;
 	}

@@ -1,4 +1,4 @@
--- bmsx-lint:disable
+-- @bmsx-analyse disable
 local constants = {}
 
 constants.ids = {

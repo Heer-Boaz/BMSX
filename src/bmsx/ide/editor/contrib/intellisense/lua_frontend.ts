@@ -184,11 +184,10 @@ export function buildLuaSemanticFrontend(
 				}
 			}
 			return matches;
-		},
-		getNavigationTargetAt(path: string, line: number, column: number): LuaSemanticNavigationTarget {
-			const file = files.get(path);
-			return file ? file.getNavigationTargetAt(line, column) : null;
-		},
+			},
+			getNavigationTargetAt(path: string, line: number, column: number): LuaSemanticNavigationTarget {
+				return files.get(path)?.getNavigationTargetAt(line, column);
+			},
 		findReferencesByPosition(path: string, line: number, column: number): LuaSemanticResolution {
 			const source = sourcesByPath.get(path);
 			if (!source) {
@@ -244,7 +243,7 @@ export function buildLuaSemanticFrontend(
 				visited,
 				depth: 0,
 				maxDepth,
-				allowedPaths: options?.allowedPaths ?? null,
+				allowedPaths: options?.allowedPaths,
 			});
 		},
 	};
@@ -269,7 +268,7 @@ function buildIncomingCallHierarchyNodes(options: {
 	visited: Set<SymbolID>;
 	depth: number;
 	maxDepth: number;
-	allowedPaths: ReadonlySet<string> | null;
+	allowedPaths?: ReadonlySet<string>;
 }): readonly LuaIncomingCallHierarchyNode[] {
 	if (options.depth >= options.maxDepth) {
 		return [];
@@ -303,7 +302,7 @@ function collectIncomingCallerGroups(options: {
 	getReferences: (symbolId: SymbolID) => readonly Ref[];
 	getDecl: (symbolId: SymbolID) => Decl;
 	pathCache: Map<string, CallHierarchyPathIndex>;
-	allowedPaths: ReadonlySet<string> | null;
+	allowedPaths?: ReadonlySet<string>;
 }): IncomingCallerGroup[] {
 	const grouped = new Map<string, IncomingCallerGroup>();
 	const references = options.getReferences(options.symbolId);
@@ -526,16 +525,14 @@ function createBoundFile(
 	}
 	return {
 		diagnostics,
-		getDeclaration(range: LuaSourceRange): Decl {
-			return declarationsByRange.get(sourceRangeKey(range))
-				?? declarationsByStart.get(sourceRangeStartKey(range))
-				?? null;
-		},
-		getReference(range: LuaSourceRange): LuaBoundReference {
-			return referencesByRange.get(sourceRangeKey(range))
-				?? referencesByStart.get(sourceRangeStartKey(range))
-				?? null;
-		},
+			getDeclaration(range: LuaSourceRange): Decl {
+				return declarationsByRange.get(sourceRangeKey(range))
+					?? declarationsByStart.get(sourceRangeStartKey(range));
+			},
+			getReference(range: LuaSourceRange): LuaBoundReference {
+				return referencesByRange.get(sourceRangeKey(range))
+					?? referencesByStart.get(sourceRangeStartKey(range));
+			},
 		getNavigationTargetAt(line: number, column: number): LuaSemanticNavigationTarget {
 			for (let index = 0; index < decls.length; index += 1) {
 				const decl = decls[index];

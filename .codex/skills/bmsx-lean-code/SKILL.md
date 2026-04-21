@@ -49,7 +49,7 @@ Before finalizing a code-quality change, inspect your own diff specifically for 
 - Suppressions are allowed only when the exception is real and local. Use rule-specific comments with a short reason, for example:
 
 ```ts
-// bmsx-lint:disable-next-line empty_catch_pattern -- browser API cleanup is best-effort here
+// @bmsx-analyse disable-next-line empty_catch_pattern -- browser API cleanup is best-effort here
 try {
     releaseExternalHandle();
 } catch {

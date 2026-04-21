@@ -125,6 +125,13 @@ export type FileSemanticData = {
 	objectBindings: readonly ObjectBindingEntry[];
 };
 
+const EMPTY_REFS: readonly Ref[] = [];
+const EMPTY_CALL_EXPRESSIONS: readonly LuaCallExpression[] = [];
+const EMPTY_DECL_VALUE_HINTS: readonly DeclValueHintEntry[] = [];
+const EMPTY_PREFAB_CLASSES: readonly PrefabClassEntry[] = [];
+const EMPTY_OBJECT_BINDINGS: readonly ObjectBindingEntry[] = [];
+const EMPTY_FUNCTION_SIGNATURES = new Map<string, FunctionSignatureInfo>();
+
 export type SerializedFileSemanticData = {
 	file: string;
 	source: string;
@@ -159,6 +166,15 @@ export type LuaSemanticWorkspaceSnapshotInput = {
 	chunk?: LuaChunk;
 	analysis?: FileSemanticData;
 };
+
+function getOrCreateRefSet(buckets: Map<string, Set<Ref>>, key: string): Set<Ref> {
+	let bucket = buckets.get(key);
+	if (!bucket) {
+		bucket = new Set<Ref>();
+		buckets.set(key, bucket);
+	}
+	return bucket;
+}
 
 export class LuaSemanticWorkspaceSnapshot {
 	public readonly version: number;
@@ -207,15 +223,15 @@ export class LuaSemanticWorkspaceSnapshot {
 	}
 
 	public getFileData(path: string): FileSemanticData {
-		return this.dataByPath.get(path) ?? null;
+		return this.dataByPath.get(path);
 	}
 
 	public getDecl(symbolId: SymbolID): Decl {
-		return this.declById.get(symbolId) ?? null;
+		return this.declById.get(symbolId);
 	}
 
 	public getReferences(symbolId: SymbolID): readonly Ref[] {
-		return this.refsBySymbol.get(symbolId) ?? [];
+		return this.refsBySymbol.get(symbolId) ?? EMPTY_REFS;
 	}
 
 	public listGlobalDecls(): readonly Decl[] {
@@ -318,7 +334,7 @@ export function hydrateFileSemanticData(data: SerializedFileSemanticData): FileS
 		definitions: data.definitions,
 		refs,
 		annotations: data.annotations,
-		callExpressions: data.callExpressions ?? [],
+			callExpressions: data.callExpressions ?? EMPTY_CALL_EXPRESSIONS,
 		functionSignatures: signatureEntries,
 	});
 	return {
@@ -331,11 +347,11 @@ export function hydrateFileSemanticData(data: SerializedFileSemanticData): FileS
 		decls: data.decls,
 		refs,
 		moduleAliases,
-		callExpressions: data.callExpressions ?? [],
-		functionSignatures: signatureEntries,
-		declValueHints: data.declValueHints ?? [],
-		prefabClasses: data.prefabClasses ?? [],
-		objectBindings: data.objectBindings ?? [],
+			callExpressions: data.callExpressions ?? EMPTY_CALL_EXPRESSIONS,
+			functionSignatures: signatureEntries,
+			declValueHints: data.declValueHints ?? EMPTY_DECL_VALUE_HINTS,
+			prefabClasses: data.prefabClasses ?? EMPTY_PREFAB_CLASSES,
+			objectBindings: data.objectBindings ?? EMPTY_OBJECT_BINDINGS,
 	};
 }
 
@@ -616,8 +632,7 @@ export class LuaProjectIndex {
 	}
 
 	public getFileModel(file: string): LuaSemanticModel {
-		const record = this.files.get(file);
-		return record ? record.data.model : null;
+		return this.files.get(file)?.data.model;
 	}
 
 	public getVersion(): number {
@@ -643,8 +658,7 @@ export class LuaProjectIndex {
 	}
 
 	public getFileData(file: string): FileSemanticData {
-		const record = this.files.get(file);
-		return record ? record.data : null;
+		return this.files.get(file)?.data;
 	}
 
 	public listGlobalDecls(): Decl[] {
@@ -800,39 +814,12 @@ export class LuaProjectIndex {
 		return selected;
 	}
 
-	private getOrCreateGlobalRefSet(key: string): Set<Ref> {
-		let bucket = this.refsByGlobalKey.get(key);
-		if (!bucket) {
-			bucket = new Set<Ref>();
-			this.refsByGlobalKey.set(key, bucket);
-		}
-		return bucket;
-	}
-
-	private getOrCreateReceiverSymbolRefSet(key: string): Set<Ref> {
-		let bucket = this.refsByReceiverSymbolKey.get(key);
-		if (!bucket) {
-			bucket = new Set<Ref>();
-			this.refsByReceiverSymbolKey.set(key, bucket);
-		}
-		return bucket;
-	}
-
-	private getOrCreateReceiverHintRefSet(key: string): Set<Ref> {
-		let bucket = this.refsByReceiverHintKey.get(key);
-		if (!bucket) {
-			bucket = new Set<Ref>();
-			this.refsByReceiverHintKey.set(key, bucket);
-		}
-		return bucket;
-	}
-
 	private indexReferenceDependencies(ref: Ref): void {
 		if (ref.receiverSymbolKey && ref.receiverSymbolKey.length > 0) {
-			this.getOrCreateReceiverSymbolRefSet(ref.receiverSymbolKey).add(ref);
+			getOrCreateRefSet(this.refsByReceiverSymbolKey, ref.receiverSymbolKey).add(ref);
 		}
 		if (ref.receiverHintKey && ref.receiverHintKey.length > 0) {
-			this.getOrCreateReceiverHintRefSet(ref.receiverHintKey).add(ref);
+			getOrCreateRefSet(this.refsByReceiverHintKey, ref.receiverHintKey).add(ref);
 		}
 	}
 
@@ -860,7 +847,7 @@ export class LuaProjectIndex {
 	private addReference(ref: Ref): void {
 		this.indexReferenceDependencies(ref);
 		if (ref.symbolKey.length > 0) {
-			this.getOrCreateGlobalRefSet(ref.symbolKey).add(ref);
+			getOrCreateRefSet(this.refsByGlobalKey, ref.symbolKey).add(ref);
 		}
 		if (ref.target) {
 			this.registerReference(ref.target, ref);
@@ -952,11 +939,10 @@ export class LuaProjectIndex {
 	}
 
 	private resolveReferenceTarget(file: string, ref: Ref): SymbolID {
-		let targetId = ref.lexicalTarget ?? null;
+		let targetId = ref.lexicalTarget;
 		if (!targetId && ref.symbolKey.length > 0) {
 			targetId = this.declByFileAndKey.get(fileSymbolKey(file, ref.symbolKey))
-				?? this.globalsByKey.get(ref.symbolKey)
-				?? null;
+				?? this.globalsByKey.get(ref.symbolKey);
 		}
 		if (targetId) {
 			return targetId;
@@ -974,7 +960,7 @@ export class LuaProjectIndex {
 			return null;
 		}
 		const targetKey = appendSymbolKey(getPathHintSymbolKey(receiverPathHintKey), ref.name);
-		return this.declByFileAndKey.get(fileSymbolKey(getPathHintFile(receiverPathHintKey), targetKey)) ?? null;
+			return this.declByFileAndKey.get(fileSymbolKey(getPathHintFile(receiverPathHintKey), targetKey));
 	}
 
 	private refreshResolvedHintMaps(
@@ -1274,8 +1260,8 @@ function createSemanticModel(options: {
 		decls,
 		refs,
 		definitions,
-		callExpressions: callExpressions ?? [],
-		functionSignatures: functionSignatures ?? new Map(),
+		callExpressions: callExpressions ?? EMPTY_CALL_EXPRESSIONS,
+		functionSignatures: functionSignatures ?? EMPTY_FUNCTION_SIGNATURES,
 		lookupIdentifier(row: number, column: number, namePath: readonly string[]): LuaDefinitionInfo {
 			return lookupDefinition(row, column, namePath);
 		},
@@ -1359,7 +1345,7 @@ class SemanticBuilder {
 	private readonly refs: Ref[] = [];
 	private readonly callExpressions: LuaCallExpression[] = [];
 	private readonly functionSignatures: Map<string, FunctionSignatureInfo> = new Map();
-	private readonly methodSelfPathStack: (readonly string[] | null)[] = [];
+	private readonly methodSelfPathStack: (readonly string[] | undefined)[] = [];
 	private readonly declValueHints: Map<SymbolID, SemanticHintKey> = new Map();
 	private readonly prefabClasses: PrefabClassEntry[] = [];
 	private readonly objectBindings: ObjectBindingEntry[] = [];
@@ -1410,18 +1396,18 @@ class SemanticBuilder {
 				const valueLimit = localAssignment.values.length;
 				for (let index = 0; index < valueLimit; index += 1) {
 					const valueExpression = localAssignment.values[index];
-					const targetDecl = index < pending.length ? pending[index] : pending[pending.length - 1] ;
+					const targetDecl = index < pending.length ? pending[index] : pending[pending.length - 1];
 					if (valueExpression.kind === LuaSyntaxKind.FunctionExpression) {
 						const nameIndex = index < localAssignment.names.length ? index : localAssignment.names.length - 1;
 						const binding = localAssignment.names[nameIndex];
-						const bindingName = binding ? binding.name : null;
+						const bindingName = binding?.name;
 						if (bindingName) {
 							this.recordFunctionSignature(bindingName, valueExpression as LuaFunctionExpression, 'function');
 						}
 					}
 					const context: ExpressionContext = {
 						tableBaseDecl: targetDecl,
-						tableBasePath: targetDecl ? targetDecl.namePath : null,
+						tableBasePath: targetDecl?.namePath,
 					};
 					const valueInfo = this.visitExpression(valueExpression, context);
 					if (targetDecl && valueInfo?.hintKey) {
@@ -1476,7 +1462,7 @@ class SemanticBuilder {
 					? (basePath.length > 0 ? `${basePath}:${methodName}` : methodName)
 					: basePath;
 				this.recordFunctionSignature(declarationPath, functionDeclaration.functionExpression, methodName ? 'method' : 'function');
-				const methodSelfPath = methodName ? functionDeclaration.name.identifiers.slice() : null;
+				const methodSelfPath = methodName ? functionDeclaration.name.identifiers.slice() : undefined;
 				this.visitFunctionExpression(functionDeclaration.functionExpression, methodSelfPath);
 				break;
 			}
@@ -1685,13 +1671,13 @@ class SemanticBuilder {
 		}
 	}
 
-	private visitFunctionExpression(expression: LuaFunctionExpression, methodSelfPath: readonly string[] = null): void {
+	private visitFunctionExpression(expression: LuaFunctionExpression, methodSelfPath?: readonly string[]): void {
 		const block = expression.body;
 		const scopeRange = block.range;
 		this.enterScope(scopeRange, 'function');
 		const inheritedMethodSelfPath = this.currentMethodSelfPath();
 		const effectiveMethodSelfPath = methodSelfPath ?? inheritedMethodSelfPath;
-		this.methodSelfPathStack.push(effectiveMethodSelfPath ? effectiveMethodSelfPath.slice() : null);
+		this.methodSelfPathStack.push(effectiveMethodSelfPath?.slice());
 		for (let index = 0; index < expression.parameters.length; index += 1) {
 			this.declareParameter(expression.parameters[index], expression.range);
 		}
@@ -1700,9 +1686,9 @@ class SemanticBuilder {
 		this.leaveScope();
 	}
 
-	private currentMethodSelfPath(): readonly string[] {
+	private currentMethodSelfPath(): readonly string[] | undefined {
 		if (this.methodSelfPathStack.length === 0) {
-			return null;
+			return undefined;
 		}
 		return this.methodSelfPathStack[this.methodSelfPathStack.length - 1];
 	}
@@ -1753,7 +1739,7 @@ class SemanticBuilder {
 	private assignMember(member: LuaMemberExpression): AssignmentTargetInfo {
 		const baseInfo = this.visitExpression(member.base, { tableBaseDecl: null, tableBasePath: null });
 		const basePath = resolveReferencedBasePath(baseInfo, member.base);
-		const baseDecl = baseInfo ? baseInfo.decl : null;
+		const baseDecl = baseInfo?.decl;
 		const namePath = basePath ? appendToNamePath(basePath, member.identifier) : [member.identifier];
 		const range = buildPropertyRange(member, this.tokenMap, this.path);
 		const decl = this.ensureTableField(namePath, range.start, member.identifier.length, baseDecl);
@@ -1773,9 +1759,9 @@ class SemanticBuilder {
 		this.visitExpression(indexExpression.index, { tableBaseDecl: null, tableBasePath: null });
 		const namePath = resolveReferencedBasePath(baseInfo, indexExpression.base);
 		return {
-			decl: baseInfo ? baseInfo.decl : null,
+			decl: baseInfo?.decl,
 			namePath,
-			path: namePath ? joinNamePath(namePath) : null,
+			path: namePath && joinNamePath(namePath),
 		};
 	}
 
@@ -1790,21 +1776,20 @@ class SemanticBuilder {
 				basePath = methodSelfPath.slice();
 			}
 		}
-		const receiverSymbolKey = calleeInfo?.decl
-			? calleeInfo.decl.symbolKey
-			: (calleeInfo?.namePath ? joinNamePath(calleeInfo.namePath) : null);
-		const receiverHintKey = calleeInfo ? calleeInfo.hintKey : null;
-		const namePath = basePath ? appendToNamePath(basePath, callExpression.methodName!) : [callExpression.methodName!];
+		const receiverSymbolKey = calleeInfo?.decl?.symbolKey || (calleeInfo?.namePath && joinNamePath(calleeInfo.namePath));
+		const receiverHintKey = calleeInfo?.hintKey;
+		const methodName = callExpression.methodName!;
+		const namePath = basePath ? appendToNamePath(basePath, methodName) : [methodName];
 		const tokenInfo = findMethodToken(callExpression, this.tokens, this.tokenMap);
 		const range = tokenInfo ? buildRangeFromToken(tokenInfo, this.path) : callExpression.range;
 		const key = joinNamePath(namePath);
 		const decl = receiverHintKey && isPathHintKey(receiverHintKey) && getPathHintFile(receiverHintKey) !== this.path
 			? null
 			: this.properties.get(key);
-		const targetId = decl ? decl.id : null;
+		const targetId = decl?.id;
 		this.recordReference({
 			namePath,
-			name: callExpression.methodName!,
+			name: methodName,
 			range,
 			target: targetId,
 			isWrite: false,
@@ -1832,14 +1817,14 @@ class SemanticBuilder {
 					namePath,
 					name: identifier.name,
 					range,
-					target: null,
+					target: undefined,
 					isWrite,
 					referenceKind: 'identifier',
 				});
 				return { namePath, decl: null, hintKey: buildPathHintKey(this.path, joinNamePath(methodSelfPath)) };
 			}
 		}
-		const targetId = resolved ? resolved.id : null;
+		const targetId = resolved?.id;
 		if (resolved) {
 			this.recordReference({
 				namePath,
@@ -1852,7 +1837,7 @@ class SemanticBuilder {
 			return { namePath, decl: resolved, hintKey: this.getDeclValueHint(resolved) };
 		}
 		const globalDecl = this.globalsByKey.get(identifier.name);
-		const target = globalDecl ? globalDecl.id : null;
+		const target = globalDecl?.id;
 		if (target) {
 			this.recordReference({
 				namePath,
@@ -1867,12 +1852,12 @@ class SemanticBuilder {
 				namePath,
 				name: identifier.name,
 				range,
-				target: null,
+				target: undefined,
 				isWrite,
 				referenceKind: 'identifier',
 			});
 		}
-		return { namePath, decl: globalDecl, hintKey: globalDecl ? this.getDeclValueHint(globalDecl) : null };
+		return { namePath, decl: globalDecl, hintKey: globalDecl && this.getDeclValueHint(globalDecl) };
 	}
 
 	private handleMemberExpression(member: LuaMemberExpression, context: ExpressionContext, isWrite: boolean): ResolvedNamePath {
@@ -1884,7 +1869,7 @@ class SemanticBuilder {
 		const decl = baseInfo?.hintKey && isPathHintKey(baseInfo.hintKey) && getPathHintFile(baseInfo.hintKey) !== this.path
 			? null
 			: this.properties.get(key);
-		const targetId = decl ? decl.id : null;
+		const targetId = decl?.id;
 		this.recordReference({
 			namePath,
 			name: member.identifier,
@@ -1892,10 +1877,10 @@ class SemanticBuilder {
 			target: targetId,
 			isWrite,
 			referenceKind: 'member',
-			receiverSymbolKey: baseInfo?.decl ? baseInfo.decl.symbolKey : (baseInfo?.namePath ? joinNamePath(baseInfo.namePath) : null),
-			receiverHintKey: baseInfo ? baseInfo.hintKey : null,
+			receiverSymbolKey: baseInfo?.decl?.symbolKey || (baseInfo?.namePath && joinNamePath(baseInfo.namePath)),
+			receiverHintKey: baseInfo?.hintKey,
 		});
-		return { namePath, decl, hintKey: decl ? this.getDeclValueHint(decl) : null };
+		return { namePath, decl, hintKey: decl && this.getDeclValueHint(decl) };
 	}
 
 	private handleIndexExpression(indexExpression: LuaIndexExpression, context: ExpressionContext): ResolvedNamePath {
@@ -2077,7 +2062,7 @@ class SemanticBuilder {
 				namePath,
 				name: identifier,
 				range,
-				target: targetDecl ? targetDecl.id : null,
+				target: targetDecl?.id,
 				isWrite: false,
 				referenceKind: index === 0 ? 'identifier' : 'member',
 			});
@@ -2100,7 +2085,7 @@ class SemanticBuilder {
 			namePath: decl.namePath,
 			name: decl.name,
 			range: buildRangeFromToken(tokenInfo, this.path),
-			target: targetDecl ? targetDecl.id : null,
+			target: targetDecl?.id,
 			isWrite: true,
 			referenceKind: statement.name.methodName ? 'method' : (decl.namePath.length === 1 ? 'identifier' : 'member'),
 		});
@@ -2111,8 +2096,7 @@ class SemanticBuilder {
 	}
 
 	private getDeclValueHint(decl: InternalDecl): SemanticHintKey {
-		const hintKey = this.declValueHints.get(decl.id);
-		return hintKey ? hintKey : null;
+		return this.declValueHints.get(decl.id);
 	}
 
 	private resolveCallHintKey(callExpression: LuaCallExpression): SemanticHintKey {
@@ -2391,12 +2375,10 @@ function resolveHintKeyToPathHintKey(
 		return hintKey;
 	}
 	if (isPrefabHintKey(hintKey)) {
-		const pathHintKey = prefabClasses.get(getHintPayload(hintKey));
-		return pathHintKey ? pathHintKey : null;
+		return prefabClasses.get(getHintPayload(hintKey));
 	}
 	if (isObjectHintKey(hintKey)) {
-		const pathHintKey = objectClasses.get(getHintPayload(hintKey));
-		return pathHintKey ? pathHintKey : null;
+		return objectClasses.get(getHintPayload(hintKey));
 	}
 	return null;
 }
@@ -2431,7 +2413,7 @@ function resolveReferenceReceiverPathHintKey(
 		return null;
 	}
 	const hintKey = declHints.get(globalDeclId);
-	return hintKey ? hintKey : null;
+	return hintKey;
 }
 
 function definitionLookupKey(range: LuaSourceRange, namePath: readonly string[]): string {
@@ -2857,6 +2839,16 @@ function parameterHasExplicitOptionalPattern(
 	return false;
 }
 
+function expressionPairHasUnsafeParameterUse(
+	left: LuaExpression,
+	right: LuaExpression,
+	parameterName: string,
+	signatures: ReadonlyMap<string, FunctionSignatureInfo>,
+): boolean {
+	return expressionHasUnsafeParameterUse(left, parameterName, signatures, false)
+		|| expressionHasUnsafeParameterUse(right, parameterName, signatures, false);
+}
+
 function expressionHasUnsafeParameterUse(
 	expression: LuaExpression,
 	parameterName: string,
@@ -2889,8 +2881,7 @@ function expressionHasUnsafeParameterUse(
 						return expressionHasUnsafeParameterUse(expression.left, parameterName, signatures, false)
 							|| expressionHasUnsafeParameterUse(expression.right, parameterName, signatures, true);
 					}
-					return expressionHasUnsafeParameterUse(expression.left, parameterName, signatures, false)
-						|| expressionHasUnsafeParameterUse(expression.right, parameterName, signatures, false);
+					return expressionPairHasUnsafeParameterUse(expression.left, expression.right, parameterName, signatures);
 				case LuaBinaryOperator.Or:
 					if (expressionContainsParameter(expression.left, parameterName)
 						&& !expressionHasUnsafeParameterUse(expression.left, parameterName, signatures, false)) {
@@ -2900,8 +2891,7 @@ function expressionHasUnsafeParameterUse(
 						|| expressionHasUnsafeParameterUse(expression.right, parameterName, signatures, false);
 				case LuaBinaryOperator.Equal:
 				case LuaBinaryOperator.NotEqual:
-					return expressionHasUnsafeParameterUse(expression.left, parameterName, signatures, false)
-						|| expressionHasUnsafeParameterUse(expression.right, parameterName, signatures, false);
+					return expressionPairHasUnsafeParameterUse(expression.left, expression.right, parameterName, signatures);
 				default:
 					return expressionContainsParameter(expression.left, parameterName)
 						|| expressionContainsParameter(expression.right, parameterName);

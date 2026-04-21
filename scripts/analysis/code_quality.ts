@@ -1733,12 +1733,12 @@ function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile
 		if (!ts.isReturnStatement(statement)) {
 			continue;
 		}
-			if (catchBlockHandlesAsyncError(node)) {
-				noteQualityLedger(ledger, 'allowed_catch_async_fault_boundary');
-			} else if (catchBlockHandlesLuaFaultBoundary(node, sourceFile)) {
-				noteQualityLedger(ledger, 'allowed_catch_lua_fault_boundary');
-			} else if (isKnownExternalCatchFallbackBoundary(sourceFile) && catchBlockReportsCaughtError(node)) {
-				noteQualityLedger(ledger, 'allowed_catch_reported_external_fallback');
+		if (catchBlockHandlesAsyncError(node)) {
+			noteQualityLedger(ledger, 'allowed_catch_async_fault_boundary');
+		} else if (catchBlockHandlesLuaFaultBoundary(node, sourceFile)) {
+			noteQualityLedger(ledger, 'allowed_catch_lua_fault_boundary');
+		} else if (catchBlockReportsCaughtError(node)) {
+			noteQualityLedger(ledger, 'allowed_catch_reported_fallback');
 		} else {
 			pushLintIssue(
 				issues,
@@ -1750,10 +1750,6 @@ function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile
 			return;
 		}
 	}
-}
-
-function isKnownExternalCatchFallbackBoundary(sourceFile: ts.SourceFile): boolean {
-	return sourcePathIncludes(sourceFile, '/src/bmsx/input/dualsense_hid.ts');
 }
 
 function catchBlockHandlesLuaFaultBoundary(node: ts.CatchClause, sourceFile: ts.SourceFile): boolean {
@@ -1785,9 +1781,53 @@ function catchBlockHandlesLuaFaultBoundary(node: ts.CatchClause, sourceFile: ts.
 	return handled;
 }
 
+function expressionReferencesAnyName(node: ts.Node, names: ReadonlySet<string>): boolean {
+	let references = false;
+	const visit = (current: ts.Node): void => {
+		if (references) {
+			return;
+		}
+		if (ts.isIdentifier(current) && names.has(current.text)) {
+			references = true;
+			return;
+		}
+		ts.forEachChild(current, visit);
+	};
+	visit(node);
+	return references;
+}
+
+function isErrorReportingTarget(target: string | null): boolean {
+	return target === 'showEditorMessage'
+		|| target === 'tryShowLuaErrorOverlay'
+		|| target === 'console.error'
+		|| target === 'console.warn';
+}
+
+function collectCatchReportValueNames(node: ts.CatchClause, caughtName: string | null): Set<string> {
+	const names = new Set<string>();
+	if (caughtName !== null) {
+		names.add(caughtName);
+	}
+	const visit = (current: ts.Node): void => {
+		if (
+			ts.isVariableDeclaration(current)
+			&& ts.isIdentifier(current.name)
+			&& current.initializer !== undefined
+			&& expressionReferencesAnyName(current.initializer, names)
+		) {
+			names.add(current.name.text);
+		}
+		ts.forEachChild(current, visit);
+	};
+	visit(node.block);
+	return names;
+}
+
 function catchBlockReportsCaughtError(node: ts.CatchClause): boolean {
 	const declaration = node.variableDeclaration;
 	const caughtName = declaration !== undefined && ts.isIdentifier(declaration.name) ? declaration.name.text : null;
+	const reportValueNames = collectCatchReportValueNames(node, caughtName);
 	let reports = false;
 	const visit = (current: ts.Node): void => {
 		if (reports) {
@@ -1795,11 +1835,7 @@ function catchBlockReportsCaughtError(node: ts.CatchClause): boolean {
 		}
 		if (ts.isCallExpression(current)) {
 			const target = getExpressionText(current.expression);
-			if (
-				target !== null
-				&& /^console\.(error|warn)$/.test(target)
-				&& (caughtName === null || current.arguments.some(arg => getExpressionText(arg) === caughtName))
-			) {
+			if (isErrorReportingTarget(target) && current.arguments.some(arg => expressionReferencesAnyName(arg, reportValueNames))) {
 				reports = true;
 				return;
 			}
@@ -2514,38 +2550,6 @@ function isTypeofFunctionComparison(node: ts.BinaryExpression): boolean {
 	);
 }
 
-function isKnownTypeofFunctionBoundary(node: ts.BinaryExpression, sourceFile: ts.SourceFile): boolean {
-	if (sourcePathIncludes(sourceFile, '/src/bmsx/machine/firmware/')) {
-		return true;
-	}
-	if (sourcePathIncludes(sourceFile, '/src/bmsx/common/serializer/')) {
-		return true;
-	}
-	if (sourcePathIncludes(sourceFile, '/src/bmsx/common/image_decode.ts')) {
-		return true;
-	}
-	if (sourcePathIncludes(sourceFile, '/src/bmsx/lua/value.ts')) {
-		const functionName = getEnclosingFunctionName(node);
-		return functionName === 'resolveNativeTypeName'
-			|| functionName === 'isLuaDebuggerPauseSignal'
-			|| functionName === 'isLuaFunctionValue';
-	}
-	if (sourcePathIncludes(sourceFile, '/src/bmsx/lua/handler_cache.ts')) {
-		return getEnclosingFunctionName(node) === 'isLuaHandlerFunction';
-	}
-	if (sourcePathIncludes(sourceFile, '/src/bmsx/lua/runtime.ts')) {
-		const functionName = getEnclosingFunctionName(node);
-		return functionName === 'bindNativeFunction'
-			|| functionName === 'callImpl'
-			|| functionName === 'makeNativeMemberHandle'
-			|| functionName === 'getNativePropertyValue';
-	}
-	if (sourcePathIncludes(sourceFile, '/src/bmsx/machine/cpu/cpu.ts')) {
-		return enclosingVariableDeclarationName(node) === 'nativeArgsProxyHandler';
-	}
-	return false;
-}
-
 function containsClosureExpression(node: ts.Node): boolean {
 	let found = false;
 	const visit = (current: ts.Node): void => {
@@ -2815,10 +2819,7 @@ function expressionContainsContractNumeric(node: ts.Expression): boolean {
 		if (found) {
 			return;
 		}
-		if (
-			(ts.isIdentifier(current) && CONTRACT_NUMERIC_NAMES.has(current.text))
-			|| (ts.isPropertyAccessExpression(current) && isContractNumericPropertyAccess(current))
-		) {
+		if (ts.isPropertyAccessExpression(current) && isContractNumericPropertyAccess(current)) {
 			found = true;
 			return;
 		}
@@ -2857,8 +2858,8 @@ function isContractNumericDefensiveComparison(node: ts.BinaryExpression): boolea
 	if (!isEqualityOperator(operator) && !isOrderingComparisonOperator(operator)) {
 		return false;
 	}
-	return (expressionContainsContractNumeric(node.left) && isContractNumericSentinelExpression(node.right))
-		|| (expressionContainsContractNumeric(node.right) && isContractNumericSentinelExpression(node.left));
+	return (isContractNumericPropertyAccess(node.left) && isContractNumericSentinelExpression(node.right))
+		|| (isContractNumericPropertyAccess(node.right) && isContractNumericSentinelExpression(node.left));
 }
 
 function isContractNumericSanitizerCall(node: ts.CallExpression): boolean {
@@ -3470,17 +3471,13 @@ function lintBinaryExpressionForCodeQuality(
 		);
 	}
 	if (isTypeofFunctionComparison(node)) {
-		if (isKnownTypeofFunctionBoundary(node, sourceFile)) {
-			noteQualityLedger(ledger, 'allowed_typeof_function_boundary');
-		} else {
-			pushLintIssue(
-				issues,
-				sourceFile,
-				node.operatorToken,
-				'defensive_typeof_function_pattern',
-				'`typeof x === "function"` is only allowed at JS interop/reflection boundaries. Trust internal callable contracts.',
-			);
-		}
+		pushLintIssue(
+			issues,
+			sourceFile,
+			node.operatorToken,
+			'defensive_typeof_function_pattern',
+			'`typeof x === "function"` is forbidden. Trust callable contracts, use optional calls for optional members, or suppress a proven external boundary locally.',
+		);
 	}
 		if (node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
 			const subjects: string[] = [];
@@ -3627,6 +3624,30 @@ function isTrivialDelegationCallExpression(callExpression: ts.CallExpression): b
 	return !isDirectMutationCallExpression(callExpression) && !containsClosureExpression(callExpression);
 }
 
+function isSemanticPredicateFunctionName(name: string | undefined): boolean {
+	return name !== undefined && /^(is|has|can|should)[A-Z]/.test(name);
+}
+
+function isPrimitivePredicateMethodCall(callExpression: ts.CallExpression): boolean {
+	const target = unwrapExpression(callExpression.expression);
+	if (!ts.isPropertyAccessExpression(target)) {
+		return false;
+	}
+	switch (target.name.text) {
+		case 'startsWith':
+		case 'endsWith':
+		case 'includes':
+		case 'has':
+			return true;
+		default:
+			return false;
+	}
+}
+
+function isNamedPrimitivePredicate(functionNode: ts.FunctionDeclaration | ts.MethodDeclaration, callExpression: ts.CallExpression): boolean {
+	return isSemanticPredicateFunctionName(functionNode.name?.getText()) && isPrimitivePredicateMethodCall(callExpression);
+}
+
 function isSingleLineWrapperCandidate(functionNode: ts.Node, sourceFile: ts.SourceFile): boolean {
 	if (!ts.isFunctionDeclaration(functionNode) && !ts.isMethodDeclaration(functionNode)) {
 		return false;
@@ -3652,6 +3673,7 @@ function isSingleLineWrapperCandidate(functionNode: ts.Node, sourceFile: ts.Sour
 	if (ts.isReturnStatement(statement)) {
 		return statement.expression !== undefined
 			&& ts.isCallExpression(statement.expression)
+			&& !isNamedPrimitivePredicate(functionNode, statement.expression)
 			&& isTrivialDelegationCallExpression(statement.expression);
 	}
 	if (ts.isExpressionStatement(statement)) {

@@ -259,8 +259,8 @@ const FORBIDDEN_STATE_CALL_RECEIVERS = new Set<string>([
 	'worldobject',
 ]);
 const SINGLE_USE_LOCAL_SMALL_HELPER_MAX_LINES = 7;
-const LINT_SUPPRESSION_OPEN_MARKER = '-- bmsx-lint:disable';
-const LINT_SUPPRESSION_CLOSE_MARKER = '-- bmsx-lint:enable';
+const LINT_SUPPRESSION_OPEN_MARKER = '-- @bmsx-analyse disable';
+const LINT_SUPPRESSION_CLOSE_MARKER = '-- @bmsx-analyse enable';
 const suppressedLineRangesByPath = new Map<string, ReadonlyArray<LuaLintSuppressionRange>>();
 const BIOS_PROFILE_DISABLED_RULES = new Set<LuaCartLintRule>([
 	'visual_update_pattern',

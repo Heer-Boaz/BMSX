@@ -84,6 +84,47 @@ type MutableProjectSource = {
 	analysis: FileSemanticData;
 };
 
+function walkLuaStatementTree(statements: readonly LuaStatement[], visitStatement: (statement: LuaStatement) => void): void {
+	for (let index = 0; index < statements.length; index += 1) {
+		const statement = statements[index];
+		visitStatement(statement);
+		walkLuaStatementChildren(statement, visitStatement);
+	}
+}
+
+function walkLuaStatementChildren(statement: LuaStatement, visitStatement: (statement: LuaStatement) => void): void {
+	switch (statement.kind) {
+		case LuaSyntaxKind.LocalFunctionStatement:
+			walkLuaStatementTree(statement.functionExpression.body.body, visitStatement);
+			return;
+		case LuaSyntaxKind.FunctionDeclarationStatement:
+			walkLuaStatementTree(statement.functionExpression.body.body, visitStatement);
+			return;
+		case LuaSyntaxKind.IfStatement:
+			for (let index = 0; index < statement.clauses.length; index += 1) {
+				walkLuaStatementTree(statement.clauses[index].block.body, visitStatement);
+			}
+			return;
+		case LuaSyntaxKind.WhileStatement:
+			walkLuaStatementTree(statement.block.body, visitStatement);
+			return;
+		case LuaSyntaxKind.RepeatStatement:
+			walkLuaStatementTree(statement.block.body, visitStatement);
+			return;
+		case LuaSyntaxKind.ForNumericStatement:
+			walkLuaStatementTree(statement.block.body, visitStatement);
+			return;
+		case LuaSyntaxKind.ForGenericStatement:
+			walkLuaStatementTree(statement.block.body, visitStatement);
+			return;
+		case LuaSyntaxKind.DoStatement:
+			walkLuaStatementTree(statement.block.body, visitStatement);
+			return;
+		default:
+			return;
+	}
+}
+
 const DEFAULT_LUA_BUILTIN_DESCRIPTORS = DEFAULT_LUA_BUILTIN_FUNCTIONS as readonly LuaBuiltinDescriptor[];
 const cachedStaticApiSignatureMap = new Map<string, LuaApiSignatureMetadata>();
 
@@ -96,7 +137,7 @@ export function getStaticLuaApiSignatureMap(): ReadonlyMap<string, LuaApiSignatu
 		return cachedStaticApiSignatureMap;
 	}
 	for (const [name, metadata] of Object.entries(API_METHOD_METADATA)) {
-		const parameters = 'parameters' in metadata ? (metadata.parameters ?? []) : [];
+		const parameters = 'parameters' in metadata && metadata.parameters ? metadata.parameters : [];
 		const params = parameters.map(parameter => parameter.name);
 		const optionalParams = parameters.filter(parameter => parameter.optional).map(parameter => parameter.name);
 		const optionalList = optionalParams.length > 0 ? optionalParams : undefined;
@@ -303,11 +344,6 @@ function addConstLocalWriteDiagnosticsFromSemantic(diagnostics: LuaStaticDiagnos
 }
 
 function addConstLocalInitializerDiagnostics(diagnostics: LuaStaticDiagnostic[], chunk: LuaChunk): void {
-	const visitBlock = (statements: readonly LuaStatement[]): void => {
-		for (let index = 0; index < statements.length; index += 1) {
-			visitStatement(statements[index]);
-		}
-	};
 	const isExplicitInitializer = (statement: LuaLocalAssignmentStatement, nameIndex: number): boolean => {
 		if (statement.values.length === 0) {
 			return false;
@@ -320,53 +356,23 @@ function addConstLocalInitializerDiagnostics(diagnostics: LuaStaticDiagnostic[],
 		}
 		return isMultiReturnExpression(statement.values[statement.values.length - 1]);
 	};
-	const visitStatement = (statement: LuaStatement): void => {
-		switch (statement.kind) {
-			case LuaSyntaxKind.LocalAssignmentStatement: {
-				const localAssignment = statement as LuaLocalAssignmentStatement;
-				for (let index = 0; index < localAssignment.names.length; index += 1) {
-					if (localAssignment.attributes[index] !== 'const') {
-						continue;
-					}
-					if (isExplicitInitializer(localAssignment, index)) {
-						continue;
-					}
-					const identifier = localAssignment.names[index];
-					pushRangeDiagnostic(diagnostics, identifier.range, `Constant local '${identifier.name}' must have an initializer.`, 'error');
-				}
-				return;
+	const checkStatement = (statement: LuaStatement): void => {
+		if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
+			return;
+		}
+		const localAssignment = statement as LuaLocalAssignmentStatement;
+		for (let index = 0; index < localAssignment.names.length; index += 1) {
+			if (localAssignment.attributes[index] !== 'const') {
+				continue;
 			}
-			case LuaSyntaxKind.LocalFunctionStatement:
-				visitBlock(statement.functionExpression.body.body);
-				return;
-			case LuaSyntaxKind.FunctionDeclarationStatement:
-				visitBlock(statement.functionExpression.body.body);
-				return;
-			case LuaSyntaxKind.IfStatement:
-				for (let index = 0; index < statement.clauses.length; index += 1) {
-					visitBlock(statement.clauses[index].block.body);
-				}
-				return;
-			case LuaSyntaxKind.WhileStatement:
-				visitBlock(statement.block.body);
-				return;
-			case LuaSyntaxKind.RepeatStatement:
-				visitBlock(statement.block.body);
-				return;
-			case LuaSyntaxKind.ForNumericStatement:
-				visitBlock(statement.block.body);
-				return;
-			case LuaSyntaxKind.ForGenericStatement:
-				visitBlock(statement.block.body);
-				return;
-			case LuaSyntaxKind.DoStatement:
-				visitBlock(statement.block.body);
-				return;
-			default:
-				return;
+			if (isExplicitInitializer(localAssignment, index)) {
+				continue;
+			}
+			const identifier = localAssignment.names[index];
+			pushRangeDiagnostic(diagnostics, identifier.range, `Constant local '${identifier.name}' must have an initializer.`, 'error');
 		}
 	};
-	visitBlock(chunk.body);
+	walkLuaStatementTree(chunk.body, checkStatement);
 }
 
 function addCallDiagnosticsFromSemantic(
@@ -614,23 +620,12 @@ function isMultiReturnExpression(expression: LuaExpression): boolean {
 
 function collectAllowedReservedMemoryRanges(chunk: LuaChunk): Set<string> {
 	const allowed = new Set<string>();
-	const visitBlock = (statements: readonly LuaStatement[]): void => {
-		for (let index = 0; index < statements.length; index += 1) {
-			visitStatement(statements[index]);
-		}
-	};
-	const visitStatement = (statement: LuaStatement): void => {
+	const collectStatement = (statement: LuaStatement): void => {
 		switch (statement.kind) {
 			case LuaSyntaxKind.LocalAssignmentStatement:
 				for (let index = 0; index < statement.values.length; index += 1) {
 					visitExpression(statement.values[index]);
 				}
-				return;
-			case LuaSyntaxKind.LocalFunctionStatement:
-				visitBlock(statement.functionExpression.body.body);
-				return;
-			case LuaSyntaxKind.FunctionDeclarationStatement:
-				visitBlock(statement.functionExpression.body.body);
 				return;
 			case LuaSyntaxKind.AssignmentStatement:
 				for (let index = 0; index < statement.left.length; index += 1) {
@@ -651,15 +646,12 @@ function collectAllowedReservedMemoryRanges(chunk: LuaChunk): Set<string> {
 					if (clause.condition) {
 						visitExpression(clause.condition);
 					}
-					visitBlock(clause.block.body);
 				}
 				return;
 			case LuaSyntaxKind.WhileStatement:
 				visitExpression(statement.condition);
-				visitBlock(statement.block.body);
 				return;
 			case LuaSyntaxKind.RepeatStatement:
-				visitBlock(statement.block.body);
 				visitExpression(statement.condition);
 				return;
 			case LuaSyntaxKind.ForNumericStatement:
@@ -668,16 +660,11 @@ function collectAllowedReservedMemoryRanges(chunk: LuaChunk): Set<string> {
 				if (statement.step) {
 					visitExpression(statement.step);
 				}
-				visitBlock(statement.block.body);
 				return;
 			case LuaSyntaxKind.ForGenericStatement:
 				for (let index = 0; index < statement.iterators.length; index += 1) {
 					visitExpression(statement.iterators[index]);
 				}
-				visitBlock(statement.block.body);
-				return;
-			case LuaSyntaxKind.DoStatement:
-				visitBlock(statement.block.body);
 				return;
 			case LuaSyntaxKind.CallStatement:
 				visitExpression(statement.expression);
@@ -702,11 +689,11 @@ function collectAllowedReservedMemoryRanges(chunk: LuaChunk): Set<string> {
 				visitExpression(expression.callee);
 				for (let index = 0; index < expression.arguments.length; index += 1) {
 					visitExpression(expression.arguments[index]);
-				}
-				return;
-			case LuaSyntaxKind.FunctionExpression:
-				visitBlock(expression.body.body);
-				return;
+					}
+					return;
+				case LuaSyntaxKind.FunctionExpression:
+					walkLuaStatementTree(expression.body.body, collectStatement);
+					return;
 			case LuaSyntaxKind.TableConstructorExpression:
 				for (let index = 0; index < expression.fields.length; index += 1) {
 					const field = expression.fields[index];
@@ -733,7 +720,7 @@ function collectAllowedReservedMemoryRanges(chunk: LuaChunk): Set<string> {
 				return;
 		}
 	};
-	visitBlock(chunk.body);
+	walkLuaStatementTree(chunk.body, collectStatement);
 	return allowed;
 }
 
@@ -748,12 +735,16 @@ function addReservedMemoryDiagnosticsFromSemantic(
 		if (!isReservedMemoryMapName(decl.name)) {
 			continue;
 		}
-		if (decl.kind === 'local' || decl.kind === 'constant' || decl.kind === 'parameter') {
-			pushRangeDiagnostic(diagnostics, decl.range, `'${decl.name}' is a reserved memory map name and cannot be used as a local, constant, or parameter.`, 'error');
-			continue;
-		}
-		if (decl.kind === 'function' || decl.kind === 'global') {
-			pushRangeDiagnostic(diagnostics, decl.range, `'${decl.name}' is a reserved memory map. Use direct indexing syntax like ${decl.name}[addr].`, 'error');
+		switch (decl.kind) {
+			case 'local':
+			case 'constant':
+			case 'parameter':
+				pushRangeDiagnostic(diagnostics, decl.range, `'${decl.name}' is a reserved memory map name and cannot be used as a local, constant, or parameter.`, 'error');
+				continue;
+			case 'function':
+			case 'global':
+				pushRangeDiagnostic(diagnostics, decl.range, `'${decl.name}' is a reserved memory map. Use direct indexing syntax like ${decl.name}[addr].`, 'error');
+				continue;
 		}
 	}
 	for (let index = 0; index < analysis.refs.length; index += 1) {

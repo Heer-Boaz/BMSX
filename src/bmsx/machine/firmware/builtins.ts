@@ -68,11 +68,8 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 			continue;
 		}
 		if (kind === 'method') {
-				const callable = descriptor.value;
-				if (typeof callable !== 'function') {
-					throw interpreter.runtimeError(`API method '${name}' is not callable.`);
-			}
-			const params = extractFunctionParameters(callable as (...args: unknown[]) => unknown);
+			const callable = descriptor.value as (...args: unknown[]) => unknown;
+			const params = extractFunctionParameters(callable);
 			const apiMetadata = API_METHOD_METADATA[name];
 			const optionalSet: Set<string> = new Set();
 			const parameterDescriptionMap: Map<string, string> = new Map();
@@ -115,12 +112,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 				const baseCtx = { moduleId, path: [] };
 				const jsArgs = Array.from(args, (arg, index) => runtime.luaJsBridge.convertFromLua(arg, extendMarshalContext(baseCtx, `arg${index}`)));
 				try {
-					const target = api;
-					const method = target[name];
-					if (typeof method !== 'function') {
-						throw new Error(`Method '${name}' is not callable.`);
-					}
-					const result = (method as (...inner: unknown[]) => unknown).apply(api, jsArgs);
+					const result = (api[name] as (...inner: unknown[]) => unknown).apply(api, jsArgs);
 					return wrapResultValue(result);
 				} catch (error) {
 					if (isLuaScriptError(error)) {
@@ -346,6 +338,7 @@ function isLuaValue(value: unknown): value is LuaValue {
 	}
 	if (value && typeof value === 'object' && 'call' in (value as Record<string, unknown>)) {
 		const candidate = value as { call?: unknown };
+		// @bmsx-analyse disable-next-line defensive_typeof_function_pattern -- LuaFunctionValue guard validates arbitrary script-thrown values.
 		return typeof candidate.call === 'function';
 	}
 	return false;
