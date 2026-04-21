@@ -81,6 +81,16 @@ type NormalizedBodyInfo = {
 	semanticSignatures: string[] | null;
 };
 
+type StatementSequenceInfo = {
+	file: string;
+	line: number;
+	column: number;
+	endLine: number;
+	statementCount: number;
+	textLength: number;
+	fingerprint: string;
+};
+
 type SemanticBodyCallSignature = {
 	key: string;
 	hasLiteralAnchor: boolean;
@@ -176,6 +186,8 @@ const NORMALIZED_BODY_MIN_LENGTH = 120;
 const COMPACT_SAMPLE_TEXT_LENGTH = 180;
 const REPEATED_EXPRESSION_PAIR_MIN_LENGTH = 48;
 const SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT = 2;
+const REPEATED_STATEMENT_SEQUENCE_MIN_COUNT = 5;
+const REPEATED_STATEMENT_SEQUENCE_MIN_TEXT_LENGTH = 160;
 const LOCAL_CONST_PATTERN_ENABLED = true;
 const NUMERIC_SANITIZATION_PATH_SEGMENTS = [
 	'/src/bmsx/ide/',
@@ -1083,8 +1095,87 @@ function compactExpressionText(node: ts.Expression, sourceFile: ts.SourceFile): 
 	return node.getText(sourceFile).replace(/\s+/g, ' ').trim();
 }
 
+function compactStatementText(node: ts.Statement, sourceFile: ts.SourceFile): string {
+	return node.getText(sourceFile).replace(/\s+/g, ' ').trim();
+}
+
 function isRedundantConditionalExpression(node: ts.ConditionalExpression, sourceFile: ts.SourceFile): boolean {
 	return compactExpressionText(node.whenTrue, sourceFile) === compactExpressionText(node.whenFalse, sourceFile);
+}
+
+function lintConsecutiveDuplicateStatements(
+	statements: ts.NodeArray<ts.Statement>,
+	sourceFile: ts.SourceFile,
+	issues: LintIssue[],
+): void {
+	let previousText: string | null = null;
+	for (let index = 0; index < statements.length; index += 1) {
+		const statement = statements[index];
+		if (ts.isEmptyStatement(statement)) {
+			previousText = null;
+			continue;
+		}
+		const text = compactStatementText(statement, sourceFile);
+		if (text.length === 0) {
+			previousText = null;
+			continue;
+		}
+		if (text === previousText) {
+			pushLintIssue(
+				issues,
+				sourceFile,
+				statement,
+				'consecutive_duplicate_statement_pattern',
+				'Consecutive duplicate statement is forbidden. Remove the duplicate or replace intentional repetition with a named loop/helper.',
+			);
+		}
+		previousText = text;
+	}
+}
+
+function collectRepeatedStatementSequences(
+	statements: ts.NodeArray<ts.Statement>,
+	sourceFile: ts.SourceFile,
+	sequences: StatementSequenceInfo[],
+): void {
+	if (statements.length < REPEATED_STATEMENT_SEQUENCE_MIN_COUNT) {
+		return;
+	}
+	const statementTexts: string[] = [];
+	for (let index = 0; index < statements.length; index += 1) {
+		const statement = statements[index];
+		statementTexts.push(ts.isEmptyStatement(statement) ? '' : compactStatementText(statement, sourceFile));
+	}
+	for (let index = 0; index <= statements.length - REPEATED_STATEMENT_SEQUENCE_MIN_COUNT; index += 1) {
+		let textLength = 0;
+		let usable = true;
+		const parts: string[] = [];
+		for (let offset = 0; offset < REPEATED_STATEMENT_SEQUENCE_MIN_COUNT; offset += 1) {
+			const text = statementTexts[index + offset];
+			if (text.length === 0) {
+				usable = false;
+				break;
+			}
+			textLength += text.length;
+			parts.push(text);
+		}
+		if (!usable || textLength < REPEATED_STATEMENT_SEQUENCE_MIN_TEXT_LENGTH) {
+			continue;
+		}
+		const first = statements[index];
+		const last = statements[index + REPEATED_STATEMENT_SEQUENCE_MIN_COUNT - 1];
+		const start = sourceFile.getLineAndCharacterOfPosition(first.getStart(sourceFile));
+		const end = sourceFile.getLineAndCharacterOfPosition(last.getEnd());
+		sequences.push({
+			file: sourceFile.fileName,
+			line: start.line + 1,
+			column: start.character + 1,
+			endLine: end.line + 1,
+			statementCount: REPEATED_STATEMENT_SEQUENCE_MIN_COUNT,
+			textLength,
+			fingerprint: parts.join('\u0000'),
+		});
+	}
 }
 
 function nullishReturnKind(statement: ts.Statement): NullishLiteralKind | null {
@@ -3697,7 +3788,116 @@ function addSemanticNormalizedBodyDuplicateIssues(normalizedBodies: readonly Nor
 	}
 }
 
-function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], functionUsageInfo: FunctionUsageInfo, ledger: QualityLedger): void {
+function addRepeatedStatementSequenceIssues(sequences: readonly StatementSequenceInfo[], issues: LintIssue[], ledger: QualityLedger): void {
+	const byFingerprint = new Map<string, StatementSequenceInfo[]>();
+	for (let index = 0; index < sequences.length; index += 1) {
+		const entry = sequences[index];
+		let list = byFingerprint.get(entry.fingerprint);
+		if (list === undefined) {
+			list = [];
+			byFingerprint.set(entry.fingerprint, list);
+		}
+		list.push(entry);
+	}
+	const reportedRanges = new Map<string, Array<{ start: number; end: number }>>();
+	const duplicateGroups = Array.from(byFingerprint.values())
+		.filter(list => list.length > 1)
+		.sort((left, right) => {
+			const leftTextLength = Math.max(...left.map(entry => entry.textLength));
+			const rightTextLength = Math.max(...right.map(entry => entry.textLength));
+			return rightTextLength - leftTextLength || right.length - left.length;
+		});
+	for (let groupIndex = 0; groupIndex < duplicateGroups.length; groupIndex += 1) {
+		const list = duplicateGroups[groupIndex];
+		const reportable: StatementSequenceInfo[] = [];
+		for (let entryIndex = 0; entryIndex < list.length; entryIndex += 1) {
+			const entry = list[entryIndex];
+			const skipKind = repeatedStatementSequenceSkipKind(entry);
+			if (skipKind !== null) {
+				noteQualityLedger(ledger, `skipped_repeated_statement_sequence_${skipKind}`);
+			} else {
+				reportable.push(entry);
+			}
+		}
+		if (reportable.length <= 1) {
+			continue;
+		}
+		for (let entryIndex = 0; entryIndex < reportable.length; entryIndex += 1) {
+			const entry = reportable[entryIndex];
+			let ranges = reportedRanges.get(entry.file);
+			if (ranges === undefined) {
+				ranges = [];
+				reportedRanges.set(entry.file, ranges);
+			}
+			if (statementSequenceOverlapsReportedRange(entry, ranges)) {
+				continue;
+			}
+			ranges.push({ start: entry.line, end: entry.endLine });
+			issues.push({
+				kind: 'repeated_statement_sequence_pattern',
+				file: entry.file,
+				line: entry.line,
+				column: entry.column,
+				name: 'repeated_statement_sequence_pattern',
+				message: `${entry.statementCount} consecutive statements are copied in ${reportable.length} reportable places. Extract the shared operation or collapse the duplicated lifecycle block.`,
+			});
+		}
+	}
+}
+
+function repeatedStatementSequenceSkipKind(entry: StatementSequenceInfo): string | null {
+	const normalized = normalizePathForAnalysis(entry.file);
+	if (normalized.endsWith('/src/bmsx/machine/cpu/cpu.ts')) {
+		return 'cpu_specialization';
+	}
+	if (
+		normalized.endsWith('/src/bmsx/machine/program/compiler.ts')
+		|| normalized.endsWith('/src/bmsx/machine/program/optimizer.ts')
+		|| normalized.endsWith('/src/bmsx/machine/program/optimizer_ssa.ts')
+	) {
+		return 'compiler_specialization';
+	}
+	if (normalized.endsWith('/src/bmsx/machine/devices/vdp/vdp.ts')) {
+		return 'render_specialization';
+	}
+	if (normalized.endsWith('/src/bmsx/machine/firmware/input_state_tables.ts')) {
+		return 'input_state_table';
+	}
+	if (normalized.endsWith('/src/bmsx/machine/cpu/profiler.ts')) {
+		return 'profiler_aggregation';
+	}
+	if (normalized.endsWith('/src/bmsx/machine/program/executor.ts')) {
+		return 'external_call_frame';
+	}
+	if (normalized.endsWith('/src/bmsx/machine/program/linker.ts')) {
+		return 'relocation_encoding';
+	}
+	if (normalized.endsWith('/src/bmsx/machine/firmware/js_bridge.ts') && entry.fingerprint.includes('table.forEachEntry')) {
+		return 'table_shape_scan';
+	}
+	if (normalized.endsWith('/src/bmsx/machine/firmware/globals.ts') && entry.fingerprint.includes('normalizeLuaIndex')) {
+		return 'lua_string_pattern';
+	}
+	return null;
+}
+
+function statementSequenceOverlapsReportedRange(entry: StatementSequenceInfo, ranges: readonly { start: number; end: number }[]): boolean {
+	for (let index = 0; index < ranges.length; index += 1) {
+		const range = ranges[index];
+		if (entry.line <= range.end && entry.endLine >= range.start) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function collectLintIssues(
+	sourceFile: ts.SourceFile,
+	issues: LintIssue[],
+	statementSequences: StatementSequenceInfo[],
+	functionUsageInfo: FunctionUsageInfo,
+	ledger: QualityLedger,
+): void {
 	const hotPath = isHotPathFile(sourceFile.fileName);
 	const scopes: Array<Map<string, LintBinding[]>> = [];
 	const repeatedScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
@@ -4013,6 +4213,10 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 		}
 		if (ts.isCatchClause(node)) {
 			lintCatchClausePatterns(node, sourceFile, issues, ledger);
+		}
+		if (ts.isSourceFile(node) || ts.isBlock(node) || ts.isCaseClause(node) || ts.isDefaultClause(node)) {
+			lintConsecutiveDuplicateStatements(node.statements, sourceFile, issues);
+			collectRepeatedStatementSequences(node.statements, sourceFile, statementSequences);
 		}
 			if (ts.isIfStatement(node)) {
 				lintNullishReturnGuard(node, sourceFile, issues);
@@ -5007,6 +5211,7 @@ function run(): void {
 	const sourceTextByFile = new Map<string, string>();
 	const exportedTypes: ExportedTypeInfo[] = [];
 	const normalizedBodies: NormalizedBodyInfo[] = [];
+	const statementSequences: StatementSequenceInfo[] = [];
 	const ledger = createQualityLedger();
 	for (const filePath of fileList) {
 		const sourceText = readFileSync(filePath, 'utf8');
@@ -5020,11 +5225,12 @@ function run(): void {
 	}
 	const functionUsageInfo = collectFunctionUsageCounts(sourceFiles);
 	for (const sourceFile of sourceFiles) {
-		collectLintIssues(sourceFile, lintIssues, functionUsageInfo, ledger);
+		collectLintIssues(sourceFile, lintIssues, statementSequences, functionUsageInfo, ledger);
 	}
 	addDuplicateExportedTypeIssues(exportedTypes, lintIssues);
 	addNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
 	addSemanticNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
+	addRepeatedStatementSequenceIssues(statementSequences, lintIssues, ledger);
 	for (const sourceFile of sourceFiles) {
 		walkDeclarations(sourceFile, buckets, classInfosByKey, classInfosByName, classInfosByFileName);
 	}

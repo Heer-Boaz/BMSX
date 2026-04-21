@@ -52,12 +52,7 @@ export class InputController {
 		this.sampleArmed = false;
 		for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
 			const state = this.playerStates[playerIndex - 1]!;
-			if (state.contextPushed) {
-				this.input.getPlayerInput(playerIndex).popContext(INP_CONTEXT_ID);
-			}
-			state.keyboard = {};
-			state.gamepad = {};
-			state.contextPushed = false;
+			this.clearPlayerActions(playerIndex, state);
 		}
 		this.memory.writeValue(IO_INP_PLAYER, 1);
 		this.memory.writeIoValue(IO_INP_CTRL, 0);
@@ -139,14 +134,18 @@ export class InputController {
 	private resetActions(): void {
 		const playerIndex = this.memory.readIoU32(IO_INP_PLAYER);
 		const state = this.playerStates[playerIndex - 1]!;
+		this.clearPlayerActions(playerIndex, state);
+		this.memory.writeValue(IO_INP_STATUS, 0);
+		this.memory.writeValue(IO_INP_VALUE, 0);
+	}
+
+	private clearPlayerActions(playerIndex: number, state: PlayerChipState): void {
 		if (state.contextPushed) {
 			this.input.getPlayerInput(playerIndex).popContext(INP_CONTEXT_ID);
 		}
 		state.keyboard = {};
 		state.gamepad = {};
 		state.contextPushed = false;
-		this.memory.writeValue(IO_INP_STATUS, 0);
-		this.memory.writeValue(IO_INP_VALUE, 0);
 	}
 
 	private appendBindings(bindingsText: string, keyboardBindings: KeyboardBinding[], gamepadBindings: GamepadBinding[]): void {

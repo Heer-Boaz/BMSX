@@ -641,25 +641,7 @@ export class Memory {
 			this.ramView.setUint32(entryOffset + 20, entry.baseAddr, true);
 			this.ramView.setUint32(entryOffset + 24, entry.baseSize, true);
 			this.ramView.setUint32(entryOffset + 28, entry.capacity, true);
-			switch (entry.type) {
-				case 'image':
-					this.ramView.setUint32(entryOffset + 32, entry.baseStride, true);
-					this.ramView.setUint32(entryOffset + 36, entry.regionX, true);
-					this.ramView.setUint32(entryOffset + 40, entry.regionY, true);
-					this.ramView.setUint32(entryOffset + 44, entry.regionW, true);
-					this.ramView.setUint32(entryOffset + 48, entry.regionH, true);
-					break;
-				case 'audio':
-					this.ramView.setUint32(entryOffset + 32, entry.sampleRate, true);
-					this.ramView.setUint32(entryOffset + 36, entry.channels, true);
-					this.ramView.setUint32(entryOffset + 40, entry.frames, true);
-					this.ramView.setUint32(entryOffset + 44, entry.bitsPerSample, true);
-					this.ramView.setUint32(entryOffset + 48, entry.audioDataOffset, true);
-					this.ramView.setUint32(entryOffset + 52, entry.audioDataSize, true);
-					break;
-				default:
-					throw new Error(`[Memory] Asset entry has unknown type: ${entry.type}.`);
-			}
+			this.writeAssetEntryPayload(entryOffset, entry);
 		}
 
 		const stringOffset = stringTableAddr - RAM_BASE;
@@ -1378,6 +1360,10 @@ export class Memory {
 		this.ramView.setUint32(entryOffset + 20, entry.baseAddr, true);
 		this.ramView.setUint32(entryOffset + 24, entry.baseSize, true);
 		this.ramView.setUint32(entryOffset + 28, entry.capacity, true);
+		this.writeAssetEntryPayload(entryOffset, entry);
+	}
+
+	private writeAssetEntryPayload(entryOffset: number, entry: AssetEntry): void {
 		switch (entry.type) {
 			case 'image':
 				this.ramView.setUint32(entryOffset + 32, entry.baseStride, true);

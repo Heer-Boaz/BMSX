@@ -110,6 +110,7 @@ type CppFacadeStats = {
 type CppLocalBinding = {
 	name: string;
 	nameToken: number;
+	typeText: string;
 	line: number;
 	column: number;
 	isConst: boolean;
@@ -186,6 +187,20 @@ const DECLARATION_NAME_BLOCKLIST = new Set([
 	'struct',
 	'unsigned',
 	'void',
+]);
+
+const DECLARATION_PREFIX_ALLOWED_OPERATORS = new Set([
+	'::',
+	'*',
+	'&',
+	'&&',
+	'<',
+	'>',
+	'>>',
+]);
+
+const DECLARATION_PREFIX_ALLOWED_PUNCTUATION = new Set([
+	',',
 ]);
 
 const NUMERIC_DEFENSIVE_CALLS = new Set([
@@ -911,6 +926,60 @@ export function lintCppTerminalReturnPaddingPattern(file: string, tokens: readon
 	);
 }
 
+export function lintCppConsecutiveDuplicateStatements(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
+	const ranges = collectCppStatementRanges(tokens, info.bodyStart + 1, info.bodyEnd);
+	let previousText: string | null = null;
+	let previousEnd = -1;
+	for (let index = 0; index < ranges.length; index += 1) {
+		const start = ranges[index][0];
+		const end = ranges[index][1];
+		if (isCppDuplicateStatementBoundary(tokens, start, end) || cppRangeHasBrace(tokens, previousEnd, start)) {
+			previousText = null;
+		}
+		const text = normalizedCppTokenText(tokens, start, end);
+		if (text.length === 0) {
+			previousText = null;
+			previousEnd = end;
+			continue;
+		}
+		if (text === previousText && !isAllowedCppConsecutiveDuplicateStatement(tokens, pairs, info, start, end)) {
+			pushLintIssue(
+				issues,
+				file,
+				tokens[start],
+				'consecutive_duplicate_statement_pattern',
+				'Consecutive duplicate statement is forbidden. Remove the duplicate or replace intentional repetition with a named loop/helper.',
+			);
+		}
+		previousText = text;
+		previousEnd = end;
+	}
+}
+
+function isAllowedCppConsecutiveDuplicateStatement(tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, start: number, end: number): boolean {
+	const target = cppCallTargetFromStatement(tokens, pairs, start, end);
+	return target !== null
+		&& /Vertices?$/.test(info.name)
+		&& /(?:^|::)(?:push|append)[A-Za-z0-9_]*Vertex$/.test(target);
+}
+
+function isCppDuplicateStatementBoundary(tokens: readonly CppToken[], start: number, end: number): boolean {
+	if (start >= end) {
+		return true;
+	}
+	const first = tokens[start].text;
+	return first === 'case' || first === 'default' || first === 'public' || first === 'private' || first === 'protected';
+}
+
+function cppRangeHasBrace(tokens: readonly CppToken[], start: number, end: number): boolean {
+	for (let index = Math.max(0, start); index < end; index += 1) {
+		if (tokens[index].text === '{' || tokens[index].text === '}') {
+			return true;
+		}
+	}
+	return false;
+}
+
 export function lintCppCatchPatterns(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[], ledger: QualityLedger): void {
 	for (let index = info.bodyStart + 1; index < info.bodyEnd; index += 1) {
 		if (tokens[index].text !== 'catch' || tokens[index + 1]?.text !== '(') {
@@ -1072,19 +1141,15 @@ function cppLocalConstCandidateKind(file: string, info: CppFunctionInfo, binding
 	if (normalized.endsWith('/src/bmsx_cpp/machine/cpu/cpu.cpp') && /^[A-Z0-9_]+$/.test(binding.name)) {
 		return 'vm_specialization';
 	}
-	if (isHotPathFunction(file, info)) {
-		return 'hot_path';
-	}
-	if (binding.isReference || binding.isPointer) {
-		return 'handle';
-	}
-	if (binding.isSimpleAliasInitializer) {
-		return 'simple_alias';
+	const prefix = isHotPathFunction(file, info) ? 'hot_path_' : '';
+	const valueKind = cppLocalBindingValueKind(binding);
+	if (valueKind === 'handle' || valueKind === 'simple_alias') {
+		return `${prefix}${valueKind}`;
 	}
 	if (binding.memberAccessCount > 0) {
-		return 'member_access';
+		return `${prefix}${valueKind}_member_access`;
 	}
-	return 'value';
+	return `${prefix}${valueKind}_${cppLocalBindingReadBucket(binding)}`;
 }
 
 export function lintCppSinglePropertyOptionsTypes(file: string, tokens: readonly CppToken[], classRanges: readonly CppClassRange[], issues: CppLintIssue[]): void {
@@ -1231,6 +1296,9 @@ function declarationFromStatement(tokens: readonly CppToken[], start: number, en
 	if (nameIndex < 0 || nameIndex <= start || !hasCppDeclarationPrefix(tokens, start, nameIndex)) {
 		return null;
 	}
+	if (hasCppDeclarationPrefixNoise(tokens, declarationStart, nameIndex)) {
+		return null;
+	}
 	if (DECLARATION_NAME_PREFIX_BLOCKLIST.has(tokens[nameIndex - 1]?.text ?? '')) {
 		return null;
 	}
@@ -1238,6 +1306,7 @@ function declarationFromStatement(tokens: readonly CppToken[], start: number, en
 	if (DECLARATION_NAME_BLOCKLIST.has(nameToken.text) || isIgnoredName(nameToken.text)) {
 		return null;
 	}
+	const typeText = cppTokenText(tokens, declarationStart, nameIndex).replace(/\s+/g, ' ').trim();
 	const initializerText = trimmedCppExpressionText(tokens, initializerIndex + 1, end);
 	let isConst = isLeadingConst;
 	let isReference = false;
@@ -1257,6 +1326,7 @@ function declarationFromStatement(tokens: readonly CppToken[], start: number, en
 	return {
 		name: nameToken.text,
 		nameToken: nameIndex,
+		typeText,
 		line: nameToken.line,
 		column: nameToken.column,
 		isConst,
@@ -1271,6 +1341,59 @@ function declarationFromStatement(tokens: readonly CppToken[], start: number, en
 		firstReadLeftText: null,
 		firstReadRightText: null,
 	};
+}
+
+function hasCppDeclarationPrefixNoise(tokens: readonly CppToken[], start: number, nameIndex: number): boolean {
+	for (let index = start; index < nameIndex; index += 1) {
+		const token = tokens[index];
+		if (token.text === '#') {
+			return true;
+		}
+		if (isCppAssignmentOperator(token.text)) {
+			return true;
+		}
+		if (token.kind === 'op' && !DECLARATION_PREFIX_ALLOWED_OPERATORS.has(token.text)) {
+			return true;
+		}
+		if (token.kind === 'punct' && !DECLARATION_PREFIX_ALLOWED_PUNCTUATION.has(token.text)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function cppLocalBindingValueKind(binding: CppLocalBinding): string {
+	if (binding.isReference || binding.isPointer) {
+		return 'handle';
+	}
+	if (binding.isSimpleAliasInitializer) {
+		return 'simple_alias';
+	}
+	const typeText = binding.typeText.replace(/\b(?:const|constexpr|static|volatile|mutable)\b/g, '').replace(/\s+/g, ' ').trim();
+	if (isCppScalarLocalType(typeText)) {
+		return 'scalar';
+	}
+	if (/^(?:auto|decltype\b)/.test(typeText)) {
+		return 'auto_value';
+	}
+	if (/\b(?:string|string_view|span|array|vector|map|unordered_map|set|unordered_set|optional|variant|function)\b/.test(typeText)) {
+		return 'library_value';
+	}
+	if (/\b(?:Runtime|Machine|VDP|CPU|Memory|Scheduler|Device|Program|Instruction|Table|Value|Closure|Function|Frame|State|Result|SourceRange|Token)\b/.test(typeText)) {
+		return 'runtime_value';
+	}
+	if (/[A-Z]/.test(typeText[0] ?? '')) {
+		return 'domain_value';
+	}
+	return 'value';
+}
+
+function isCppScalarLocalType(typeText: string): boolean {
+	return /^(?:u?int(?:8|16|32|64)?_t|[ui](?:8|16|32|64)|size_t|std::size_t|ptrdiff_t|std::ptrdiff_t|float|double|f32|f64|bool|char|unsigned char|signed char|short|unsigned short|int|unsigned int|long|unsigned long|long long|unsigned long long)\b/.test(typeText);
+}
+
+function cppLocalBindingReadBucket(binding: CppLocalBinding): string {
+	return binding.readCount >= 2 ? 'reused' : 'single_read';
 }
 
 function markBindingUses(binding: CppLocalBinding, tokens: readonly CppToken[], bodyStart: number, bodyEnd: number): void {

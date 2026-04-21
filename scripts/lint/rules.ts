@@ -15,6 +15,8 @@ export const COMMON_LANGUAGE_LINT_RULES = [
 	'single_property_options_parameter_pattern',
 	'single_line_method_pattern',
 	'useless_terminal_return_pattern',
+	'consecutive_duplicate_statement_pattern',
+	'repeated_statement_sequence_pattern',
 ] as const;
 
 export const CODE_QUALITY_ONLY_LINT_RULES = [

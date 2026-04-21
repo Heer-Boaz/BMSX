@@ -28,6 +28,7 @@ import {
 	createCppFunctionUsageInfo,
 	createCppFacadeStats,
 	lintCppCatchPatterns,
+	lintCppConsecutiveDuplicateStatements,
 	lintCppEnsureLazyInitPattern,
 	lintCppRedundantNumericSanitizationPattern,
 	lintCppTerminalReturnPaddingPattern,
@@ -140,6 +141,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 			lintCppRedundantNumericSanitizationPattern(file, tokens, pairs, info, lintIssues);
 			lintCppEnsureLazyInitPattern(file, tokens, pairs, info, lintIssues);
 			lintCppTerminalReturnPaddingPattern(file, tokens, info, lintIssues);
+			lintCppConsecutiveDuplicateStatements(file, tokens, pairs, info, lintIssues);
 			lintCppHotPathCalls(file, tokens, pairs, info, lintIssues);
 			lintCppLocalBindings(file, tokens, info, lintIssues, ledger);
 			lintCppNullishReturnGuards(file, tokens, pairs, info, lintIssues);

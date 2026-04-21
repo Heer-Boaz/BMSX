@@ -288,16 +288,7 @@ export class Runtime {
 					engineSources: engineLuaSources,
 					engineAssetSource: engineSource,
 			});
-			await applyWorkspaceOverridesToRegistry({
-					registry: engineLuaSources,
-					storage: $.platform.storage,
-					includeServer: true,
-					projectRootPath: engineProjectRootPath,
-				});
-			await runtime.prepareBootRomStartupState();
-			$.view.default_font = new Font();
-			await runtime.boot();
-			startEngineWithDeferredStartupAudioRefresh(runtime);
+			await Runtime.startPreparedRuntime(runtime, engineLuaSources, engineProjectRootPath);
 			return;
 		}
 
@@ -388,12 +379,16 @@ export class Runtime {
 			engineAssetSource: engineSource,
 			cartAssetSource: cartSource,
 		});
+		await Runtime.startPreparedRuntime(runtime, engineLuaSources, engineProjectRootPath);
+	}
+
+	private static async startPreparedRuntime(runtime: Runtime, engineLuaSources: LuaSourceRegistry, engineProjectRootPath: string): Promise<void> {
 		await applyWorkspaceOverridesToRegistry({
-					registry: engineLuaSources,
-					storage: $.platform.storage,
-					includeServer: true,
-					projectRootPath: engineProjectRootPath,
-				});
+			registry: engineLuaSources,
+			storage: $.platform.storage,
+			includeServer: true,
+			projectRootPath: engineProjectRootPath,
+		});
 		await runtime.prepareBootRomStartupState();
 		$.view.default_font = new Font();
 		await runtime.boot();
@@ -524,16 +519,8 @@ export class Runtime {
 		const gateToken = this.luaGate.begin({ blocking: true, tag: 'new_game' });
 		try {
 			this.hostFault.clear(this);
-			workbenchMode.clearActiveDebuggerPause(this);
-			workbenchMode.clearRuntimeFault(this);
-			this.luaInitialized = false;
-			luaPipeline.invalidateModuleAliases(this);
-			this.luaChunkEnvironmentsByPath.clear();
-			this.luaChunkEnvironmentsByPath.clear();
-			this.luaGenericChunksExecuted.clear();
-			if (this.editor !== null) {
-				this.editor.clearRuntimeErrorOverlay();
-			}
+			this.clearBootFaults();
+			this.clearLuaBootState();
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset the runtime state
 				await $.resetRuntime();
 				await $.refresh_audio_assets();
@@ -550,32 +537,40 @@ export class Runtime {
 		}
 	}
 
-	private async prepareBootRomStartupState(options?: { resetRuntime?: boolean; refreshAudio?: boolean }): Promise<void> {
-		if (options?.resetRuntime) {
-			await $.resetRuntime();
+	private clearBootFaults(): void {
+		workbenchMode.clearActiveDebuggerPause(this);
+		workbenchMode.clearRuntimeFault(this);
+	}
+
+	private clearLuaBootState(): void {
+		this.luaInitialized = false;
+		luaPipeline.invalidateModuleAliases(this);
+		this.luaChunkEnvironmentsByPath.clear();
+		this.luaGenericChunksExecuted.clear();
+		if (this.editor !== null) {
+			this.editor.clearRuntimeErrorOverlay();
 		}
+	}
+
+	private async prepareBootRomStartupState(): Promise<void> {
 		await this.assets.buildMemory(this, { source: this.engineAssetSource, mode: 'full' });
 		this.machine.memory.sealEngineAssets();
 		this.activateEngineProgramAssets();
-		if (options?.refreshAudio) {
-			await $.refresh_audio_assets();
-		}
+	}
+
+	private async restartBootRomStartupState(): Promise<void> {
+		await $.resetRuntime();
+		await this.prepareBootRomStartupState();
+		await $.refresh_audio_assets();
 	}
 
 	public async rebootToBootRom(): Promise<void> {
 		const gateToken = this.luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
 		try {
-			workbenchMode.clearActiveDebuggerPause(this);
-			workbenchMode.clearRuntimeFault(this);
+			this.clearBootFaults();
 			workbenchMode.deactivateTerminalMode(this);
 			workbenchMode.deactivateEditor(this);
-			this.luaInitialized = false;
-			luaPipeline.invalidateModuleAliases(this);
-			this.luaChunkEnvironmentsByPath.clear();
-			this.luaGenericChunksExecuted.clear();
-			if (this.editor !== null) {
-				this.editor.clearRuntimeErrorOverlay();
-			}
+			this.clearLuaBootState();
 			this.cartBoot.reset(this);
 			await applyWorkspaceOverridesToRegistry({
 				registry: this.engineLuaSources,
@@ -583,7 +578,7 @@ export class Runtime {
 				includeServer: true,
 				projectRootPath: $.engine_layer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH,
 			});
-			await this.prepareBootRomStartupState({ resetRuntime: true, refreshAudio: true });
+			await this.restartBootRomStartupState();
 			api.cartdata($.sources.namespace);
 			luaPipeline.bootActiveProgram(this);
 		}

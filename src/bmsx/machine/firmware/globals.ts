@@ -790,6 +790,14 @@ function normalizeLuaIndex(valueNumber: number, length: number, zeroFallback: nu
 	return zeroFallback;
 }
 
+function pushResolvedRomAssetRange(runtime: Runtime, args: ReadonlyArray<Value>, out: Value[], scope: 'cart' | 'sys'): void {
+	const assetId = stringValueToString(args[0] as StringValue);
+	const range = runtime.assets.resolveRomAssetRange(assetId, scope);
+	out.push(range.romBase);
+	out.push(range.start);
+	out.push(range.end);
+}
+
 export function seedLuaGlobals(runtime: Runtime): void {
 	const prependValue = (out: Value[], value: Value): void => {
 		const length = out.length;
@@ -1358,25 +1366,13 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_rom_overlay_base', OVERLAY_ROM_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_rom_overlay_size', runtime.machine.memory.getOverlayRomSize());
 	luaPipeline.registerGlobal(runtime, 'resolve_cart_rom_asset_range', createNativeFunction('resolve_cart_rom_asset_range', (args, out) => {
-		const assetId = stringValueToString(args[0] as StringValue);
-		const range = runtime.assets.resolveRomAssetRange(assetId, 'cart');
-		out.push(range.romBase);
-		out.push(range.start);
-		out.push(range.end);
+		pushResolvedRomAssetRange(runtime, args, out, 'cart');
 	}));
 	luaPipeline.registerGlobal(runtime, 'resolve_sys_rom_asset_range', createNativeFunction('resolve_sys_rom_asset_range', (args, out) => {
-		const assetId = stringValueToString(args[0] as StringValue);
-		const range = runtime.assets.resolveRomAssetRange(assetId, 'sys');
-		out.push(range.romBase);
-		out.push(range.start);
-		out.push(range.end);
+		pushResolvedRomAssetRange(runtime, args, out, 'sys');
 	}));
 	luaPipeline.registerGlobal(runtime, 'resolve_rom_asset_range', createNativeFunction('resolve_rom_asset_range', (args, out) => {
-		const assetId = stringValueToString(args[0] as StringValue);
-		const range = runtime.assets.resolveRomAssetRange(assetId, 'sys');
-		out.push(range.romBase);
-		out.push(range.start);
-		out.push(range.end);
+		pushResolvedRomAssetRange(runtime, args, out, 'sys');
 	}));
 	luaPipeline.registerGlobal(runtime, 'sys_vram_system_atlas_base', VRAM_SYSTEM_ATLAS_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_primary_atlas_base', VRAM_PRIMARY_ATLAS_BASE);

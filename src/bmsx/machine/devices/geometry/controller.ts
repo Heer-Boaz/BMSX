@@ -1285,18 +1285,7 @@ export class GeometryController {
 
 	private resolveIndexedSpan(base: number, index: number, stride: number, byteLength: number): number | null {
 		const offset = index * stride;
-		if (!Number.isSafeInteger(offset) || offset > 0xffff_ffff) {
-			return null;
-		}
-		const addr = base + offset;
-		if (!Number.isSafeInteger(addr) || addr > 0xffff_ffff) {
-			return null;
-		}
-		const end = addr + byteLength;
-		if (!Number.isSafeInteger(end) || end > 0x1_0000_0000) {
-			return null;
-		}
-		return addr >>> 0;
+		return this.resolveByteOffset(base, offset, byteLength);
 	}
 
 	private writeSat2Result(addr: number, hit: number, nx: number, ny: number, depth: number, meta: number): void {
