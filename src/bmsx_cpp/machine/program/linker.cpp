@@ -79,6 +79,49 @@ bool fitsSignedRaw(int value, int bits) {
 	return value >= min && value <= max;
 }
 
+void writeBcRelocatedInstruction(
+	std::vector<uint8_t>& code,
+	int wordIndex,
+	uint8_t op,
+	uint8_t aLow,
+	uint8_t bLow,
+	uint8_t cLow,
+	uint8_t ext,
+	bool hasWide,
+	uint8_t wideA,
+	uint8_t wideB,
+	uint8_t wideC,
+	bool relocOnB,
+	uint32_t raw,
+	int extBits
+) {
+	const uint8_t low = static_cast<uint8_t>(raw & 0x3f);
+	const uint32_t extMask = static_cast<uint32_t>((1 << extBits) - 1);
+	const uint8_t extPart = static_cast<uint8_t>((raw >> MAX_OPERAND_BITS) & extMask);
+	const uint32_t widePart = raw >> (MAX_OPERAND_BITS + extBits);
+	const uint8_t extA = static_cast<uint8_t>((ext >> 6) & 0x3);
+	uint8_t extB = static_cast<uint8_t>((ext >> 3) & 0x7);
+	uint8_t extC = static_cast<uint8_t>(ext & 0x7);
+	if (relocOnB) {
+		bLow = low;
+		extB = extPart;
+		if (hasWide) {
+			wideB = static_cast<uint8_t>(widePart & 0x3f);
+		}
+	} else {
+		cLow = low;
+		extC = extPart;
+		if (hasWide) {
+			wideC = static_cast<uint8_t>(widePart & 0x3f);
+		}
+	}
+	ext = static_cast<uint8_t>((extA << 6) | (extB << 3) | extC);
+	if (hasWide) {
+		writeWideInstruction(code, wordIndex - 1, wideA, wideB, wideC);
+	}
+	writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
+}
+
 std::string makeConstKey(const StringPool& strings, Value value) {
 	if (isNil(value)) {
 		return "nil";
@@ -312,33 +355,23 @@ void rewriteConstRelocations(
 			if (static_cast<uint32_t>(mappedIndex) > maxValue) {
 				throw std::runtime_error("[ProgramLinker] Const reloc exceeds operand range.");
 			}
-			const uint8_t low = static_cast<uint8_t>(mappedIndex & 0x3f);
-			const uint32_t extMask = static_cast<uint32_t>((1 << extBits) - 1);
-			const uint8_t extPart = static_cast<uint8_t>((static_cast<uint32_t>(mappedIndex) >> MAX_OPERAND_BITS) & extMask);
-			const uint32_t widePart = static_cast<uint32_t>(mappedIndex) >> (MAX_OPERAND_BITS + extBits);
-
-			const uint8_t extA = static_cast<uint8_t>((ext >> 6) & 0x3);
-			uint8_t extB = static_cast<uint8_t>((ext >> 3) & 0x7);
-			uint8_t extC = static_cast<uint8_t>(ext & 0x7);
-			if (relocOnB) {
-				bLow = low;
-				extB = extPart;
-				if (hasWide) {
-					wideB = static_cast<uint8_t>(widePart & 0x3f);
-				}
-			} else {
-				cLow = low;
-				extC = extPart;
-				if (hasWide) {
-					wideC = static_cast<uint8_t>(widePart & 0x3f);
-				}
-				}
-				ext = static_cast<uint8_t>((extA << 6) | (extB << 3) | extC);
-				if (hasWide) {
-					writeWideInstruction(code, wordIndex - 1, wideA, wideB, wideC);
-				}
-				writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
-				continue;
+			writeBcRelocatedInstruction(
+				code,
+				wordIndex,
+				op,
+				aLow,
+				bLow,
+				cLow,
+				ext,
+				hasWide,
+				wideA,
+				wideB,
+				wideC,
+				relocOnB,
+				static_cast<uint32_t>(mappedIndex),
+				extBits
+			);
+			continue;
 		}
 
 		const bool relocOnB = reloc.kind == ProgramAsset::ConstRelocKind::RkB;
@@ -350,32 +383,22 @@ void rewriteConstRelocations(
 		}
 		const int totalBits = MAX_OPERAND_BITS + extBits + (hasWide ? MAX_OPERAND_BITS : 0);
 		const uint32_t raw = encodeSignedRaw(rkValue, totalBits);
-		const uint8_t low = static_cast<uint8_t>(raw & 0x3f);
-		const uint32_t extMask = static_cast<uint32_t>((1 << extBits) - 1);
-		const uint8_t extPart = static_cast<uint8_t>((raw >> MAX_OPERAND_BITS) & extMask);
-		const uint32_t widePart = raw >> (MAX_OPERAND_BITS + extBits);
-
-		const uint8_t extA = static_cast<uint8_t>((ext >> 6) & 0x3);
-		uint8_t extB = static_cast<uint8_t>((ext >> 3) & 0x7);
-		uint8_t extC = static_cast<uint8_t>(ext & 0x7);
-		if (relocOnB) {
-			bLow = low;
-			extB = extPart;
-			if (hasWide) {
-				wideB = static_cast<uint8_t>(widePart & 0x3f);
-			}
-		} else {
-			cLow = low;
-			extC = extPart;
-			if (hasWide) {
-				wideC = static_cast<uint8_t>(widePart & 0x3f);
-			}
-			}
-			ext = static_cast<uint8_t>((extA << 6) | (extB << 3) | extC);
-			if (hasWide) {
-				writeWideInstruction(code, wordIndex - 1, wideA, wideB, wideC);
-			}
-		writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
+		writeBcRelocatedInstruction(
+			code,
+			wordIndex,
+			op,
+			aLow,
+			bLow,
+			cLow,
+			ext,
+			hasWide,
+			wideA,
+			wideB,
+			wideC,
+			relocOnB,
+			raw,
+			extBits
+		);
 	}
 }
 

@@ -7,6 +7,23 @@
 namespace bmsx {
 namespace {
 
+void addDigitAndLetterGlyphs(GlyphMap& map, const std::string& prefix) {
+	auto withPrefix = [&](const std::string& suffix) {
+		return prefix + "_" + suffix;
+	};
+	for (int i = 0; i < 10; ++i) {
+		char digit = static_cast<char>('0' + i);
+		map[static_cast<u32>(digit)] = withPrefix(std::string(1, digit));
+	}
+	for (char c = 'a'; c <= 'z'; ++c) {
+		map[static_cast<u32>(c)] = withPrefix(std::string("low_") + c);
+	}
+	for (char c = 'A'; c <= 'Z'; ++c) {
+		char lower = static_cast<char>(c - 'A' + 'a');
+		map[static_cast<u32>(c)] = withPrefix(std::string(1, lower));
+	}
+}
+
 GlyphMap buildMsxCharMap() {
 	const std::string prefix = "msx_6b_font";
 	auto withPrefix = [&](const std::string& suffix) {
@@ -54,18 +71,7 @@ GlyphMap buildMsxCharMap() {
     // map[0x2022] = withPrefix("ctrl_bel");
     map[0x00A1] = withPrefix("code_0x80");
 
-    for (int i = 0; i < 10; ++i) {
-        char digit = static_cast<char>('0' + i);
-        map[static_cast<u32>(digit)] = withPrefix(std::string(1, digit));
-    }
-
-    for (char c = 'a'; c <= 'z'; ++c) {
-        map[static_cast<u32>(c)] = withPrefix(std::string("low_") + c);
-    }
-    for (char c = 'A'; c <= 'Z'; ++c) {
-        char lower = static_cast<char>(c - 'A' + 'a');
-        map[static_cast<u32>(c)] = withPrefix(std::string(1, lower));
-    }
+	addDigitAndLetterGlyphs(map, prefix);
 
     return map;
 }
@@ -125,18 +131,7 @@ GlyphMap buildTinyCharMap() {
 	map[0x0133] = withPrefix("low_ij");
 	map[0x0132] = withPrefix("ij");
 
-	for (int i = 0; i < 10; ++i) {
-		char digit = static_cast<char>('0' + i);
-		map[static_cast<u32>(digit)] = withPrefix(std::string(1, digit));
-	}
-
-	for (char c = 'a'; c <= 'z'; ++c) {
-		map[static_cast<u32>(c)] = withPrefix(std::string("low_") + c);
-	}
-	for (char c = 'A'; c <= 'Z'; ++c) {
-		char lower = static_cast<char>(c - 'A' + 'a');
-		map[static_cast<u32>(c)] = withPrefix(std::string(1, lower));
-	}
+	addDigitAndLetterGlyphs(map, prefix);
 
 	return map;
 }

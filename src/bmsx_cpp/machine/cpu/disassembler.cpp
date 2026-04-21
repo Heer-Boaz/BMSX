@@ -1,4 +1,5 @@
 #include "machine/cpu/disassembler.h"
+#include "machine/cpu/source_text.h"
 #include "machine/common/number_format.h"
 
 #include <algorithm>
@@ -578,31 +579,9 @@ InstructionDebugInfo describeInstructionAtPc(const Program& program, const Progr
 }
 
 std::string formatSourceSnippet(const SourceRange& range, const std::string& source) {
-	std::vector<std::string_view> lines;
-	lines.reserve(128);
-	size_t lineStart = 0;
-	for (size_t index = 0; index <= source.size(); ++index) {
-		if (index < source.size() && source[index] != '\n') {
-			continue;
-		}
-		size_t lineEnd = index;
-		if (lineEnd > lineStart && source[lineEnd - 1] == '\r') {
-			lineEnd -= 1;
-		}
-		lines.emplace_back(source.data() + lineStart, lineEnd - lineStart);
-		lineStart = index + 1;
-	}
-	const int startLineIndex = range.startLine - 1;
-	const int endLineIndex = range.endLine - 1;
-	if (startLineIndex < 0 || endLineIndex < startLineIndex || endLineIndex >= static_cast<int>(lines.size())) {
-		return {};
-	}
 	std::string snippet;
-	for (int index = startLineIndex; index <= endLineIndex; ++index) {
-		if (!snippet.empty()) {
-			snippet.push_back(' ');
-		}
-		snippet.append(lines[static_cast<size_t>(index)].data(), lines[static_cast<size_t>(index)].size());
+	if (!extractSourceRangeText(range, source, snippet)) {
+		return {};
 	}
 	std::string compact = compactWhitespace(snippet);
 	if (compact.empty()) {

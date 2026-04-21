@@ -50,6 +50,75 @@ bool isVramRangeLocal(uint32_t addr, size_t length) {
 		|| rangeOverlaps(addr, length, VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
 }
 
+template <typename Entry>
+Memory::ImageWritePlan planImageWriteEntry(Entry& entry, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacityOverride) {
+	const uint32_t capacity = std::min(entry.capacity, capacityOverride);
+	const uint32_t sourceWidth = width;
+	const uint32_t sourceHeight = height;
+	const uint32_t sourceStride = sourceWidth * 4u;
+	const uint32_t maxPixels = capacity / 4u;
+	uint32_t writeWidth = sourceWidth;
+	uint32_t writeHeight = sourceHeight;
+	if (sourceStride == 0 || sourceHeight == 0 || maxPixels == 0) {
+		writeWidth = 0;
+		writeHeight = 0;
+	} else if (sourceWidth > maxPixels) {
+		const uint32_t maxRowsByPixels = static_cast<uint32_t>(pixelBytes / sourceStride);
+		writeWidth = std::min(sourceWidth, maxPixels);
+		writeHeight = std::min<uint32_t>(1, maxRowsByPixels);
+	} else {
+		const uint32_t maxRowsByCapacity = capacity / sourceStride;
+		const uint32_t maxRowsByPixels = static_cast<uint32_t>(pixelBytes / sourceStride);
+		writeHeight = std::min({sourceHeight, maxRowsByCapacity, maxRowsByPixels});
+	}
+	const uint32_t writeStride = writeWidth * 4u;
+	const uint32_t size = writeStride * writeHeight;
+	const size_t writeLen = std::min(static_cast<size_t>(size), static_cast<size_t>(capacity));
+	entry.baseSize = size;
+	entry.baseStride = writeStride;
+	entry.regionX = 0;
+	entry.regionY = 0;
+	entry.regionW = writeWidth;
+	entry.regionH = writeHeight;
+	Memory::ImageWritePlan plan;
+	plan.baseAddr = entry.baseAddr;
+	plan.writeWidth = writeWidth;
+	plan.writeHeight = writeHeight;
+	plan.writeStride = writeStride;
+	plan.targetStride = writeStride;
+	plan.sourceStride = sourceStride;
+	plan.writeLen = writeLen;
+	plan.clipped = (writeWidth != sourceWidth) || (writeHeight != sourceHeight);
+	return plan;
+}
+
+Memory::AssetEntry makeAudioAssetEntry(
+	const std::string& id,
+	uint32_t baseAddr,
+	uint32_t baseSize,
+	uint32_t capacity,
+	uint32_t sampleRate,
+	uint32_t channels,
+	uint32_t bitsPerSample,
+	uint32_t frames,
+	uint32_t dataOffset,
+	uint32_t dataSize
+) {
+	Memory::AssetEntry entry;
+	entry.id = id;
+	entry.type = Memory::AssetType::Audio;
+	entry.baseAddr = baseAddr;
+	entry.baseSize = baseSize;
+	entry.capacity = capacity;
+	entry.sampleRate = sampleRate;
+	entry.channels = channels;
+	entry.frames = frames;
+	entry.bitsPerSample = bitsPerSample;
+	entry.audioDataOffset = dataOffset;
+	entry.audioDataSize = dataSize;
+	return entry;
+}
+
 }
 
 Memory::Memory()
@@ -298,18 +367,7 @@ Memory::AssetEntry& Memory::registerAudioBuffer(
 	const uint32_t addr = allocateAssetData(size, 2);
 	const size_t offset = static_cast<size_t>(addr - RAM_BASE);
 	std::memcpy(m_ram.data() + offset, bytes, size);
-	AssetEntry entry;
-	entry.id = id;
-	entry.type = AssetType::Audio;
-	entry.baseAddr = addr;
-	entry.baseSize = size;
-	entry.capacity = size;
-	entry.sampleRate = sampleRate;
-	entry.channels = channels;
-	entry.frames = frames;
-	entry.bitsPerSample = bitsPerSample;
-	entry.audioDataOffset = dataOffset;
-	entry.audioDataSize = dataSize;
+	AssetEntry entry = makeAudioAssetEntry(id, addr, size, size, sampleRate, channels, bitsPerSample, frames, dataOffset, dataSize);
 	const size_t index = addAssetEntry(std::move(entry));
 	m_assetEntries[index].ownerIndex = index;
 	mapAssetPages(index, addr, size);
@@ -325,18 +383,7 @@ Memory::AssetEntry& Memory::registerAudioMeta(
 	uint32_t dataOffset,
 	uint32_t dataSize
 ) {
-	AssetEntry entry;
-	entry.id = id;
-	entry.type = AssetType::Audio;
-	entry.baseAddr = 0;
-	entry.baseSize = 0;
-	entry.capacity = 0;
-	entry.sampleRate = sampleRate;
-	entry.channels = channels;
-	entry.frames = frames;
-	entry.bitsPerSample = bitsPerSample;
-	entry.audioDataOffset = dataOffset;
-	entry.audioDataSize = dataSize;
+	AssetEntry entry = makeAudioAssetEntry(id, 0, 0, 0, sampleRate, channels, bitsPerSample, frames, dataOffset, dataSize);
 	const size_t index = addAssetEntry(std::move(entry));
 	m_assetEntries[index].ownerIndex = index;
 	return m_assetEntries[index];
@@ -403,25 +450,7 @@ void Memory::finalizeAssetTable() {
 		writeU32LE(base + entryOffset + 20, entry.baseAddr);
 		writeU32LE(base + entryOffset + 24, entry.baseSize);
 		writeU32LE(base + entryOffset + 28, entry.capacity);
-		switch (entry.type) {
-			case AssetType::Image:
-				writeU32LE(base + entryOffset + 32, entry.baseStride);
-				writeU32LE(base + entryOffset + 36, entry.regionX);
-				writeU32LE(base + entryOffset + 40, entry.regionY);
-				writeU32LE(base + entryOffset + 44, entry.regionW);
-				writeU32LE(base + entryOffset + 48, entry.regionH);
-				break;
-			case AssetType::Audio:
-				writeU32LE(base + entryOffset + 32, entry.sampleRate);
-				writeU32LE(base + entryOffset + 36, entry.channels);
-				writeU32LE(base + entryOffset + 40, entry.frames);
-				writeU32LE(base + entryOffset + 44, entry.bitsPerSample);
-				writeU32LE(base + entryOffset + 48, entry.audioDataOffset);
-				writeU32LE(base + entryOffset + 52, entry.audioDataSize);
-				break;
-			default:
-				throw std::runtime_error("[Memory] Asset entry has unknown type.");
-		}
+		writeAssetEntryPayload(base, entryOffset, entry);
 	}
 
 	const uint32_t stringOffset = stringTableAddr - RAM_BASE;
@@ -543,43 +572,7 @@ const u8* Memory::getAudioData(const AssetEntry& entry) const {
 
 Memory::ImageWritePlan Memory::planImageSlotWrite(AssetEntry& entry, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacityOverride) {
 	const size_t index = m_assetIndexById.at(entry.id);
-	const uint32_t capacity = std::min(entry.capacity, capacityOverride);
-	const uint32_t sourceWidth = width;
-	const uint32_t sourceHeight = height;
-	const uint32_t sourceStride = sourceWidth * 4u;
-	const uint32_t maxPixels = capacity / 4u;
-	uint32_t writeWidth = sourceWidth;
-	uint32_t writeHeight = sourceHeight;
-	if (sourceStride == 0 || sourceHeight == 0 || maxPixels == 0) {
-		writeWidth = 0;
-		writeHeight = 0;
-	} else if (sourceWidth > maxPixels) {
-		const uint32_t maxRowsByPixels = static_cast<uint32_t>(pixelBytes / sourceStride);
-		writeWidth = std::min(sourceWidth, maxPixels);
-		writeHeight = std::min<uint32_t>(1, maxRowsByPixels);
-	} else {
-		const uint32_t maxRowsByCapacity = capacity / sourceStride;
-		const uint32_t maxRowsByPixels = static_cast<uint32_t>(pixelBytes / sourceStride);
-		writeHeight = std::min({sourceHeight, maxRowsByCapacity, maxRowsByPixels});
-	}
-	const uint32_t writeStride = writeWidth * 4u;
-	const uint32_t size = writeStride * writeHeight;
-	const size_t writeLen = std::min(static_cast<size_t>(size), static_cast<size_t>(capacity));
-	entry.baseSize = size;
-	entry.baseStride = writeStride;
-	entry.regionX = 0;
-	entry.regionY = 0;
-	entry.regionW = writeWidth;
-	entry.regionH = writeHeight;
-	ImageWritePlan plan;
-	plan.baseAddr = entry.baseAddr;
-	plan.writeWidth = writeWidth;
-	plan.writeHeight = writeHeight;
-	plan.writeStride = writeStride;
-	plan.targetStride = writeStride;
-	plan.sourceStride = sourceStride;
-	plan.writeLen = writeLen;
-	plan.clipped = (writeWidth != sourceWidth) || (writeHeight != sourceHeight);
+	const ImageWritePlan plan = planImageWriteEntry(entry, pixelBytes, width, height, capacityOverride);
 	if (m_assetTableFinalized) {
 		updateAssetEntryData(index, entry);
 	}
@@ -587,44 +580,7 @@ Memory::ImageWritePlan Memory::planImageSlotWrite(AssetEntry& entry, size_t pixe
 }
 
 Memory::ImageWritePlan Memory::planImageWrite(ImageWriteEntry& entry, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacityOverride) {
-	const uint32_t capacity = std::min(entry.capacity, capacityOverride);
-	const uint32_t sourceWidth = width;
-	const uint32_t sourceHeight = height;
-	const uint32_t sourceStride = sourceWidth * 4u;
-	const uint32_t maxPixels = capacity / 4u;
-	uint32_t writeWidth = sourceWidth;
-	uint32_t writeHeight = sourceHeight;
-	if (sourceStride == 0 || sourceHeight == 0 || maxPixels == 0) {
-		writeWidth = 0;
-		writeHeight = 0;
-	} else if (sourceWidth > maxPixels) {
-		const uint32_t maxRowsByPixels = static_cast<uint32_t>(pixelBytes / sourceStride);
-		writeWidth = std::min(sourceWidth, maxPixels);
-		writeHeight = std::min<uint32_t>(1, maxRowsByPixels);
-	} else {
-		const uint32_t maxRowsByCapacity = capacity / sourceStride;
-		const uint32_t maxRowsByPixels = static_cast<uint32_t>(pixelBytes / sourceStride);
-		writeHeight = std::min({sourceHeight, maxRowsByCapacity, maxRowsByPixels});
-	}
-	const uint32_t writeStride = writeWidth * 4u;
-	const uint32_t size = writeStride * writeHeight;
-	const size_t writeLen = std::min(static_cast<size_t>(size), static_cast<size_t>(capacity));
-	entry.baseSize = size;
-	entry.baseStride = writeStride;
-	entry.regionX = 0;
-	entry.regionY = 0;
-	entry.regionW = writeWidth;
-	entry.regionH = writeHeight;
-	ImageWritePlan plan;
-	plan.baseAddr = entry.baseAddr;
-	plan.writeWidth = writeWidth;
-	plan.writeHeight = writeHeight;
-	plan.writeStride = writeStride;
-	plan.targetStride = writeStride;
-	plan.sourceStride = sourceStride;
-	plan.writeLen = writeLen;
-	plan.clipped = (writeWidth != sourceWidth) || (writeHeight != sourceHeight);
-	return plan;
+	return planImageWriteEntry(entry, pixelBytes, width, height, capacityOverride);
 }
 
 void Memory::writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacityOverride) {
@@ -1112,31 +1068,36 @@ size_t Memory::addAssetEntry(AssetEntry entry) {
 	return index;
 }
 
-void Memory::updateAssetEntryData(size_t index, const AssetEntry& entry) {
-	const uint32_t entryAddr = ASSET_TABLE_BASE + ASSET_TABLE_HEADER_SIZE + static_cast<uint32_t>(index * ASSET_TABLE_ENTRY_SIZE);
-	const uint32_t entryOffset = entryAddr - RAM_BASE;
-	writeU32LE(m_ram.data() + entryOffset + 20, entry.baseAddr);
-	writeU32LE(m_ram.data() + entryOffset + 24, entry.baseSize);
-	writeU32LE(m_ram.data() + entryOffset + 28, entry.capacity);
+void Memory::writeAssetEntryPayload(u8* base, uint32_t entryOffset, const AssetEntry& entry) {
 	switch (entry.type) {
 		case AssetType::Image:
-			writeU32LE(m_ram.data() + entryOffset + 32, entry.baseStride);
-			writeU32LE(m_ram.data() + entryOffset + 36, entry.regionX);
-			writeU32LE(m_ram.data() + entryOffset + 40, entry.regionY);
-			writeU32LE(m_ram.data() + entryOffset + 44, entry.regionW);
-			writeU32LE(m_ram.data() + entryOffset + 48, entry.regionH);
+			writeU32LE(base + entryOffset + 32, entry.baseStride);
+			writeU32LE(base + entryOffset + 36, entry.regionX);
+			writeU32LE(base + entryOffset + 40, entry.regionY);
+			writeU32LE(base + entryOffset + 44, entry.regionW);
+			writeU32LE(base + entryOffset + 48, entry.regionH);
 			break;
 		case AssetType::Audio:
-			writeU32LE(m_ram.data() + entryOffset + 32, entry.sampleRate);
-			writeU32LE(m_ram.data() + entryOffset + 36, entry.channels);
-			writeU32LE(m_ram.data() + entryOffset + 40, entry.frames);
-			writeU32LE(m_ram.data() + entryOffset + 44, entry.bitsPerSample);
-			writeU32LE(m_ram.data() + entryOffset + 48, entry.audioDataOffset);
-			writeU32LE(m_ram.data() + entryOffset + 52, entry.audioDataSize);
+			writeU32LE(base + entryOffset + 32, entry.sampleRate);
+			writeU32LE(base + entryOffset + 36, entry.channels);
+			writeU32LE(base + entryOffset + 40, entry.frames);
+			writeU32LE(base + entryOffset + 44, entry.bitsPerSample);
+			writeU32LE(base + entryOffset + 48, entry.audioDataOffset);
+			writeU32LE(base + entryOffset + 52, entry.audioDataSize);
 			break;
 		default:
 			throw std::runtime_error("[Memory] Asset entry has unknown type.");
 	}
+}
+
+void Memory::updateAssetEntryData(size_t index, const AssetEntry& entry) {
+	const uint32_t entryAddr = ASSET_TABLE_BASE + ASSET_TABLE_HEADER_SIZE + static_cast<uint32_t>(index * ASSET_TABLE_ENTRY_SIZE);
+	const uint32_t entryOffset = entryAddr - RAM_BASE;
+	u8* base = m_ram.data();
+	writeU32LE(base + entryOffset + 20, entry.baseAddr);
+	writeU32LE(base + entryOffset + 24, entry.baseSize);
+	writeU32LE(base + entryOffset + 28, entry.capacity);
+	writeAssetEntryPayload(base, entryOffset, entry);
 }
 
 } // namespace bmsx

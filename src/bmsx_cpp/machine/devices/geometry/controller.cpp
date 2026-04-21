@@ -289,6 +289,28 @@ void GeometryController::scheduleNextService(int64_t nowCycles) {
 	m_scheduler.scheduleDeviceService(DeviceServiceGeo, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, m_workUnitsPerSec, m_workCarry, targetUnits - m_availableWorkUnits));
 }
 
+bool GeometryController::validateSourceTriplet(const GeoJob& job) {
+	if (!m_memory.isReadableMainMemoryRange(job.src0, job.stride0)
+		|| !m_memory.isReadableMainMemoryRange(job.src1, job.stride1)
+		|| !m_memory.isReadableMainMemoryRange(job.src2, job.stride2)) {
+		finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
+		return false;
+	}
+	return true;
+}
+
+bool GeometryController::validateWordAlignedJobRegisters(const GeoJob& job, bool includeDst1) {
+	if ((job.src0 & WORD_ALIGN_MASK) != 0u
+		|| (job.src1 & WORD_ALIGN_MASK) != 0u
+		|| (job.src2 & WORD_ALIGN_MASK) != 0u
+		|| (job.dst0 & WORD_ALIGN_MASK) != 0u
+		|| (includeDst1 && (job.dst1 & WORD_ALIGN_MASK) != 0u)) {
+		finishRejected(GEO_FAULT_REJECT_MISALIGNED_REGS);
+		return false;
+	}
+	return true;
+}
+
 bool GeometryController::validateXform2Submission(const GeoJob& job) {
 	if (job.param0 != 0u || job.param1 != 0u) {
 		finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
@@ -298,21 +320,13 @@ bool GeometryController::validateXform2Submission(const GeoJob& job) {
 		finishRejected(GEO_FAULT_REJECT_BAD_STRIDE);
 		return false;
 	}
-	if ((job.src0 & WORD_ALIGN_MASK) != 0u
-		|| (job.src1 & WORD_ALIGN_MASK) != 0u
-		|| (job.src2 & WORD_ALIGN_MASK) != 0u
-		|| (job.dst0 & WORD_ALIGN_MASK) != 0u
-		|| (job.dst1 & WORD_ALIGN_MASK) != 0u) {
-		finishRejected(GEO_FAULT_REJECT_MISALIGNED_REGS);
+	if (!validateWordAlignedJobRegisters(job, true)) {
 		return false;
 	}
 	if (job.count == 0u) {
 		return true;
 	}
-	if (!m_memory.isReadableMainMemoryRange(job.src0, job.stride0)
-		|| !m_memory.isReadableMainMemoryRange(job.src1, job.stride1)
-		|| !m_memory.isReadableMainMemoryRange(job.src2, job.stride2)) {
-		finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
+	if (!validateSourceTriplet(job)) {
 		return false;
 	}
 	if (!m_memory.isRamRange(job.dst0, XFORM2_VERTEX_BYTES)) {
@@ -335,20 +349,13 @@ bool GeometryController::validateSat2Submission(const GeoJob& job) {
 		finishRejected(GEO_FAULT_REJECT_BAD_STRIDE);
 		return false;
 	}
-	if ((job.src0 & WORD_ALIGN_MASK) != 0u
-		|| (job.src1 & WORD_ALIGN_MASK) != 0u
-		|| (job.src2 & WORD_ALIGN_MASK) != 0u
-		|| (job.dst0 & WORD_ALIGN_MASK) != 0u) {
-		finishRejected(GEO_FAULT_REJECT_MISALIGNED_REGS);
+	if (!validateWordAlignedJobRegisters(job, false)) {
 		return false;
 	}
 	if (job.count == 0u) {
 		return true;
 	}
-	if (!m_memory.isReadableMainMemoryRange(job.src0, job.stride0)
-		|| !m_memory.isReadableMainMemoryRange(job.src1, job.stride1)
-		|| !m_memory.isReadableMainMemoryRange(job.src2, job.stride2)) {
-		finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
+	if (!validateSourceTriplet(job)) {
 		return false;
 	}
 	if (!m_memory.isRamRange(job.dst0, SAT2_RESULT_BYTES)) {

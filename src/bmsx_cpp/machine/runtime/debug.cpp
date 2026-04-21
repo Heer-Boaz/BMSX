@@ -1,6 +1,7 @@
 #include "machine/runtime/runtime.h"
 
 #include "machine/cpu/disassembler.h"
+#include "machine/cpu/source_text.h"
 #include "core/engine.h"
 
 #include <cctype>
@@ -104,38 +105,11 @@ bool isIdentifierChar(char ch) {
 	return std::isalnum(byte) != 0 || ch == '_';
 }
 
-std::string extractRawSourceFragment(const SourceRange& range, const std::string& source) {
-	std::vector<std::string_view> lines;
-	lines.reserve(128);
-	size_t lineStart = 0;
-	for (size_t index = 0; index <= source.size(); ++index) {
-		if (index < source.size() && source[index] != '\n') {
-			continue;
-		}
-		size_t lineEnd = index;
-		if (lineEnd > lineStart && source[lineEnd - 1] == '\r') {
-			lineEnd -= 1;
-		}
-		lines.emplace_back(source.data() + lineStart, lineEnd - lineStart);
-		lineStart = index + 1;
-	}
-	const int startLineIndex = range.startLine - 1;
-	const int endLineIndex = range.endLine - 1;
-	if (startLineIndex < 0 || endLineIndex < startLineIndex || endLineIndex >= static_cast<int>(lines.size())) {
+std::vector<std::string> extractExpressionCandidates(const SourceRange& range, const std::string& source) {
+	std::string fragment;
+	if (!extractSourceRangeText(range, source, fragment)) {
 		return {};
 	}
-	std::string fragment;
-	for (int index = startLineIndex; index <= endLineIndex; ++index) {
-		if (!fragment.empty()) {
-			fragment.push_back(' ');
-		}
-		fragment.append(lines[static_cast<size_t>(index)].data(), lines[static_cast<size_t>(index)].size());
-	}
-	return fragment;
-}
-
-std::vector<std::string> extractExpressionCandidates(const SourceRange& range, const std::string& source) {
-	const std::string fragment = extractRawSourceFragment(range, source);
 	std::unordered_set<std::string> seen;
 	std::vector<std::string> result;
 	result.reserve(MAX_DEBUG_EXPRESSIONS);

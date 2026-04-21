@@ -126,6 +126,17 @@ type CppLocalBinding = {
 	firstReadRightText: string | null;
 };
 
+export type CppStatementSequenceInfo = {
+	file: string;
+	line: number;
+	column: number;
+	endLine: number;
+	functionName: string;
+	statementCount: number;
+	textLength: number;
+	fingerprint: string;
+};
+
 export type CppFunctionUsageInfo = {
 	totalCounts: ReadonlyMap<string, number>;
 	referenceCounts: ReadonlyMap<string, number>;
@@ -361,6 +372,9 @@ const SEMANTIC_NORMALIZATION_WRAPPER_TARGETS = new Set([
 const CPP_NORMALIZED_BODY_MIN_LENGTH = 120;
 const COMPACT_SAMPLE_TEXT_LENGTH = 180;
 const CPP_SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT = 2;
+const CPP_REPEATED_STATEMENT_SEQUENCE_MIN_COUNT = 5;
+const CPP_REPEATED_STATEMENT_SEQUENCE_MIN_TEXT_LENGTH = 160;
+const CPP_REPEATED_STATEMENT_SEQUENCE_PATTERN_ENABLED = true;
 const CPP_LOCAL_CONST_PATTERN_ENABLED = false;
 
 function isSemanticNormalizationWrapperTarget(target: string): boolean {
@@ -954,6 +968,206 @@ export function lintCppConsecutiveDuplicateStatements(file: string, tokens: read
 		previousText = text;
 		previousEnd = end;
 	}
+}
+
+export function collectCppRepeatedStatementSequences(
+	file: string,
+	tokens: readonly CppToken[],
+	pairs: readonly number[],
+	info: CppFunctionInfo,
+	sequences: CppStatementSequenceInfo[],
+): void {
+	for (let index = info.bodyStart; index < info.bodyEnd; index += 1) {
+		if (tokens[index].text !== '{') {
+			continue;
+		}
+		const close = pairs[index];
+		if (close < 0 || close > info.bodyEnd) {
+			continue;
+		}
+		collectCppRepeatedStatementSequencesInBlock(file, tokens, index + 1, close, info.name, sequences);
+	}
+}
+
+function collectCppRepeatedStatementSequencesInBlock(
+	file: string,
+	tokens: readonly CppToken[],
+	blockStart: number,
+	blockEnd: number,
+	functionName: string,
+	sequences: CppStatementSequenceInfo[],
+): void {
+	const ranges = collectCppStatementRanges(tokens, blockStart, blockEnd);
+	if (ranges.length < CPP_REPEATED_STATEMENT_SEQUENCE_MIN_COUNT) {
+		return;
+	}
+	const statementTexts: string[] = [];
+	for (let index = 0; index < ranges.length; index += 1) {
+		statementTexts.push(normalizedCppTokenText(tokens, ranges[index][0], ranges[index][1]));
+	}
+	for (let index = 0; index <= ranges.length - CPP_REPEATED_STATEMENT_SEQUENCE_MIN_COUNT; index += 1) {
+		let textLength = 0;
+		let usable = true;
+		const parts: string[] = [];
+		for (let offset = 0; offset < CPP_REPEATED_STATEMENT_SEQUENCE_MIN_COUNT; offset += 1) {
+			const text = statementTexts[index + offset];
+			if (text.length === 0) {
+				usable = false;
+				break;
+			}
+			textLength += text.length;
+			parts.push(text);
+		}
+		if (!usable || textLength < CPP_REPEATED_STATEMENT_SEQUENCE_MIN_TEXT_LENGTH) {
+			continue;
+		}
+		const first = ranges[index][0];
+		const last = ranges[index + CPP_REPEATED_STATEMENT_SEQUENCE_MIN_COUNT - 1][1] - 1;
+		sequences.push({
+			file,
+			line: tokens[first].line,
+			column: tokens[first].column,
+			endLine: tokens[last].line,
+			functionName,
+			statementCount: CPP_REPEATED_STATEMENT_SEQUENCE_MIN_COUNT,
+			textLength,
+			fingerprint: parts.join('\u0000'),
+		});
+	}
+}
+
+export function addCppRepeatedStatementSequenceIssues(
+	sequences: readonly CppStatementSequenceInfo[],
+	issues: CppLintIssue[],
+	ledger: QualityLedger,
+): void {
+	const byFingerprint = new Map<string, CppStatementSequenceInfo[]>();
+	const seenRanges = new Set<string>();
+	for (let index = 0; index < sequences.length; index += 1) {
+		const entry = sequences[index];
+		const key = `${entry.file}:${entry.line}:${entry.endLine}:${entry.fingerprint}`;
+		if (seenRanges.has(key)) {
+			continue;
+		}
+		seenRanges.add(key);
+		let list = byFingerprint.get(entry.fingerprint);
+		if (list === undefined) {
+			list = [];
+			byFingerprint.set(entry.fingerprint, list);
+		}
+		list.push(entry);
+	}
+	const reportedRanges = new Map<string, Array<{ start: number; end: number }>>();
+	const ledgerRanges = new Map<string, Array<{ start: number; end: number }>>();
+	const duplicateGroups = Array.from(byFingerprint.values())
+		.filter(list => list.length > 1)
+		.sort((left, right) => {
+			const leftTextLength = Math.max(...left.map(entry => entry.textLength));
+			const rightTextLength = Math.max(...right.map(entry => entry.textLength));
+			return rightTextLength - leftTextLength || right.length - left.length;
+		});
+	for (let groupIndex = 0; groupIndex < duplicateGroups.length; groupIndex += 1) {
+		const list = duplicateGroups[groupIndex];
+		const reportable: CppStatementSequenceInfo[] = [];
+		for (let entryIndex = 0; entryIndex < list.length; entryIndex += 1) {
+			const entry = list[entryIndex];
+			const skipKind = cppRepeatedStatementSequenceSkipKind(entry);
+			if (skipKind !== null) {
+				if (cppStatementSequenceOverlapsLedgerRange(entry, ledgerRanges)) {
+					continue;
+				}
+				noteQualityLedger(ledger, `skipped_cpp_repeated_statement_sequence_${skipKind}`);
+			} else {
+				reportable.push(entry);
+			}
+		}
+		if (reportable.length <= 1) {
+			continue;
+		}
+		for (let entryIndex = 0; entryIndex < reportable.length; entryIndex += 1) {
+			const entry = reportable[entryIndex];
+			let ranges = reportedRanges.get(entry.file);
+			if (ranges === undefined) {
+				ranges = [];
+				reportedRanges.set(entry.file, ranges);
+			}
+			if (cppStatementSequenceOverlapsReportedRange(entry, ranges)) {
+				continue;
+			}
+			ranges.push({ start: entry.line, end: entry.endLine });
+			noteQualityLedger(ledger, 'cpp_repeated_statement_sequence_candidate');
+			if (!CPP_REPEATED_STATEMENT_SEQUENCE_PATTERN_ENABLED) {
+				noteQualityLedger(ledger, 'skipped_cpp_repeated_statement_sequence_disabled');
+				noteQualityLedger(ledger, `skipped_cpp_repeated_statement_sequence_${cppReportableStatementSequenceKind(entry)}`);
+				continue;
+			}
+			issues.push({
+				kind: 'repeated_statement_sequence_pattern',
+				file: entry.file,
+				line: entry.line,
+				column: entry.column,
+				name: 'repeated_statement_sequence_pattern',
+				message: `${entry.statementCount} consecutive C++ statements are copied in ${reportable.length} reportable places. Extract the shared operation or collapse the duplicated lifecycle block.`,
+			});
+		}
+	}
+}
+
+function cppStatementSequenceOverlapsLedgerRange(entry: CppStatementSequenceInfo, rangesByFile: Map<string, Array<{ start: number; end: number }>>): boolean {
+	let ranges = rangesByFile.get(entry.file);
+	if (ranges === undefined) {
+		ranges = [];
+		rangesByFile.set(entry.file, ranges);
+	}
+	if (cppStatementSequenceOverlapsReportedRange(entry, ranges)) {
+		return true;
+	}
+	ranges.push({ start: entry.line, end: entry.endLine });
+	return false;
+}
+
+function cppReportableStatementSequenceKind(entry: CppStatementSequenceInfo): string {
+	const normalized = normalizePathForAnalysis(entry.file);
+	if (normalized.includes('/src/bmsx_cpp/machine/program/')) {
+		return 'program_pipeline';
+	}
+	if (normalized.includes('/src/bmsx_cpp/machine/memory/')) {
+		return 'memory_map';
+	}
+	if (normalized.includes('/src/bmsx_cpp/machine/runtime/')) {
+		return 'runtime_loop';
+	}
+	if (normalized.includes('/src/bmsx_cpp/machine/devices/')) {
+		return 'device_logic';
+	}
+	if (normalized.includes('/src/bmsx_cpp/machine/scheduler/')) {
+		return 'scheduler';
+	}
+	return 'machine_core';
+}
+
+function cppRepeatedStatementSequenceSkipKind(entry: CppStatementSequenceInfo): string | null {
+	const normalized = normalizePathForAnalysis(entry.file);
+	if (normalized.endsWith('/src/bmsx_cpp/machine/cpu/cpu.cpp')) {
+		return 'cpu_specialization';
+	}
+	if (normalized.includes('/src/bmsx_cpp/machine/devices/vdp/')) {
+		return 'render_specialization';
+	}
+	if (normalized.endsWith('/src/bmsx_cpp/machine/firmware/globals.cpp')) {
+		return 'lua_library_surface';
+	}
+	return null;
+}
+
+function cppStatementSequenceOverlapsReportedRange(entry: CppStatementSequenceInfo, ranges: readonly { start: number; end: number }[]): boolean {
+	for (let index = 0; index < ranges.length; index += 1) {
+		const range = ranges[index];
+		if (entry.line <= range.end && entry.endLine >= range.start) {
+			return true;
+		}
+	}
+	return false;
 }
 
 function isAllowedCppConsecutiveDuplicateStatement(tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, start: number, end: number): boolean {

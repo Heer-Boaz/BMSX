@@ -23,8 +23,10 @@ import {
 	collectCppTypeDeclarations,
 } from '../../../src/bmsx/language/cpp/syntax/declarations';
 import {
+	addCppRepeatedStatementSequenceIssues,
 	collectCppFunctionUsageCounts,
 	collectCppNormalizedBody,
+	collectCppRepeatedStatementSequences,
 	createCppFunctionUsageInfo,
 	createCppFacadeStats,
 	lintCppCatchPatterns,
@@ -43,6 +45,7 @@ import {
 	lintCppSinglePropertyOptionsTypes,
 	lintCppSimpleTokenPatterns,
 	lintCppStringSwitchChains,
+	type CppStatementSequenceInfo,
 } from './rules';
 import { buildCppPairMap, tokenizeCpp } from '../../../src/bmsx/language/cpp/syntax/tokens';
 import type { CppClassRange, CppFunctionInfo, CppTypeDeclarationInfo } from '../../../src/bmsx/language/cpp/syntax/declarations';
@@ -62,6 +65,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 	const lintIssues: CppLintIssue[] = [];
 	const exportedTypes: CppExportedTypeInfo[] = [];
 	const normalizedBodies: CppNormalizedBodyInfo[] = [];
+	const statementSequences: CppStatementSequenceInfo[] = [];
 	const fileAnalyses: CppFileAnalysis[] = [];
 	const functionUsageInfo = createCppFunctionUsageInfo();
 	const ledger = createQualityLedger();
@@ -148,6 +152,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 			lintCppStringSwitchChains(file, tokens, pairs, info, lintIssues);
 			lintCppRepeatedExpressions(file, tokens, pairs, info, lintIssues);
 			lintCppSemanticRepeatedExpressions(file, tokens, pairs, info, lintIssues);
+			collectCppRepeatedStatementSequences(file, tokens, pairs, info, statementSequences);
 			collectCppNormalizedBody(file, tokens, pairs, info, normalizedBodies, ledger);
 		}
 		if (facadeStats !== null) {
@@ -157,6 +162,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 	addDuplicateExportedTypeIssues(exportedTypes, lintIssues);
 	addNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
 	addSemanticNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
+	addCppRepeatedStatementSequenceIssues(statementSequences, lintIssues, ledger);
 	const sourceTextByFile = new Map<string, string>();
 	for (let fileIndex = 0; fileIndex < fileAnalyses.length; fileIndex += 1) {
 		const analysis = fileAnalyses[fileIndex];

@@ -134,6 +134,7 @@ add_library(bmsx_core STATIC
 	# Machine runtime (Lua bytecode interpreter)
 	machine/cpu/cpu.cpp
 	machine/firmware/font.cpp
+	machine/cpu/source_text.cpp
 	lua/syntax/lexer.cpp
 	lua/syntax/parser.cpp
 	machine/devices/dma/controller.cpp

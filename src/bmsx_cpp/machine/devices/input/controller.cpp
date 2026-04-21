@@ -33,12 +33,7 @@ void InputController::reset() {
 	m_sampleArmed = false;
 	for (i32 playerIndex = 1; playerIndex <= PLAYERS_MAX; playerIndex += 1) {
 		PlayerChipState& state = playerState(playerIndex);
-		if (state.contextPushed) {
-			m_input.getPlayerInput(playerIndex)->popContext(INP_CONTEXT_ID);
-		}
-		state.keyboard.clear();
-		state.gamepad.clear();
-		state.contextPushed = false;
+		clearPlayerActions(playerIndex, state);
 	}
 	m_memory.writeValue(IO_INP_PLAYER, valueNumber(1.0));
 	m_memory.writeIoValue(IO_INP_CTRL, valueNumber(0.0));
@@ -136,14 +131,18 @@ void InputController::commitAction() {
 void InputController::resetActions() {
 	const i32 playerIndex = currentPlayerIndex();
 	PlayerChipState& state = playerState(playerIndex);
+	clearPlayerActions(playerIndex, state);
+	m_memory.writeValue(IO_INP_STATUS, valueNumber(0.0));
+	m_memory.writeValue(IO_INP_VALUE, valueNumber(0.0));
+}
+
+void InputController::clearPlayerActions(i32 playerIndex, PlayerChipState& state) {
 	if (state.contextPushed) {
 		m_input.getPlayerInput(playerIndex)->popContext(INP_CONTEXT_ID);
 	}
 	state.keyboard.clear();
 	state.gamepad.clear();
 	state.contextPushed = false;
-	m_memory.writeValue(IO_INP_STATUS, valueNumber(0.0));
-	m_memory.writeValue(IO_INP_VALUE, valueNumber(0.0));
 }
 
 void InputController::appendBindings(

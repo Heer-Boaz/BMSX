@@ -53,6 +53,8 @@ public:
 
 	void tryStart(int64_t nowCycles);
 	void scheduleNextService(int64_t nowCycles);
+	bool validateWordAlignedJobRegisters(const GeoJob& job, bool includeDst1);
+	bool validateSourceTriplet(const GeoJob& job);
 	bool validateXform2Submission(const GeoJob& job);
 	bool validateSat2Submission(const GeoJob& job);
 	bool validateOverlap2dSubmission(const GeoJob& job);

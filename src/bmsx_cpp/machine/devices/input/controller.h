@@ -48,6 +48,7 @@ private:
 	i32 currentPlayerIndex() const;
 	void commitAction();
 	void resetActions();
+	void clearPlayerActions(i32 playerIndex, PlayerChipState& state);
 	void appendBindings(const std::string& bindingsText, std::vector<KeyboardBinding>& keyboardBindings, std::vector<GamepadBinding>& gamepadBindings) const;
 };
 
