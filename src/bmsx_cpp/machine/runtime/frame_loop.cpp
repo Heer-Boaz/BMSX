@@ -5,7 +5,6 @@
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/runtime.h"
 #include "render/shared/queues.h"
-#include <algorithm>
 
 namespace bmsx {
 namespace {
@@ -42,24 +41,21 @@ void FrameLoopState::beginFrameState(Runtime& runtime) {
 	frameState.cycleCarryGranted = 0;
 	frameDeltaMs = runtime.timing.frameDurationMs;
 	runtime.machine().vdp().beginFrame();
-	auto key = [&runtime](std::string_view text) {
-		return valueString(runtime.machine().cpu().internString(text));
-	};
-	auto* const gameTable = asTable(runtime.machine().cpu().getGlobalByKey(key("game")));
-	auto* const viewportTable = asTable(gameTable->get(key("viewportsize")));
-	const auto viewSize = EngineCore::instance().view()->viewportSize;
-	viewportTable->set(key("x"), valueNumber(static_cast<double>(viewSize.x)));
-	viewportTable->set(key("y"), valueNumber(static_cast<double>(viewSize.y)));
-	auto* const viewTable = asTable(gameTable->get(key("view")));
 	auto* const view = EngineCore::instance().view();
-	viewTable->set(key("crt_postprocessing_enabled"), valueBool(view->crt_postprocessing_enabled));
-	viewTable->set(key("enable_noise"), valueBool(view->applyNoise));
-	viewTable->set(key("enable_colorbleed"), valueBool(view->applyColorBleed));
-	viewTable->set(key("enable_scanlines"), valueBool(view->applyScanlines));
-	viewTable->set(key("enable_blur"), valueBool(view->applyBlur));
-	viewTable->set(key("enable_glow"), valueBool(view->applyGlow));
-	viewTable->set(key("enable_fringing"), valueBool(view->applyFringing));
-	viewTable->set(key("enable_aperture"), valueBool(view->applyAperture));
+	auto* const gameTable = asTable(runtime.machine().cpu().getGlobalByKey(runtime.luaKey("game")));
+	auto* const viewportTable = asTable(gameTable->get(runtime.luaKey("viewportsize")));
+	const auto viewSize = view->viewportSize;
+	viewportTable->set(runtime.luaKey("x"), valueNumber(static_cast<double>(viewSize.x)));
+	viewportTable->set(runtime.luaKey("y"), valueNumber(static_cast<double>(viewSize.y)));
+	auto* const viewTable = asTable(gameTable->get(runtime.luaKey("view")));
+	viewTable->set(runtime.luaKey("crt_postprocessing_enabled"), valueBool(view->crt_postprocessing_enabled));
+	viewTable->set(runtime.luaKey("enable_noise"), valueBool(view->applyNoise));
+	viewTable->set(runtime.luaKey("enable_colorbleed"), valueBool(view->applyColorBleed));
+	viewTable->set(runtime.luaKey("enable_scanlines"), valueBool(view->applyScanlines));
+	viewTable->set(runtime.luaKey("enable_blur"), valueBool(view->applyBlur));
+	viewTable->set(runtime.luaKey("enable_glow"), valueBool(view->applyGlow));
+	viewTable->set(runtime.luaKey("enable_fringing"), valueBool(view->applyFringing));
+	viewTable->set(runtime.luaKey("enable_aperture"), valueBool(view->applyAperture));
 }
 
 bool FrameLoopState::hasActiveTick(const Runtime& runtime) const {
@@ -148,11 +144,8 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	}
 
 	if (startedFrame) {
-		auto key = [&runtime](std::string_view text) {
-			return valueString(runtime.machine().cpu().internString(text));
-		};
-		auto* const gameTable = asTable(runtime.machine().cpu().getGlobalByKey(key("game")));
-		auto* const viewTable = asTable(gameTable->get(key("view")));
+		auto* const gameTable = asTable(runtime.machine().cpu().getGlobalByKey(runtime.luaKey("game")));
+		auto* const viewTable = asTable(gameTable->get(runtime.luaKey("view")));
 		auto* const view = EngineCore::instance().view();
 		auto readViewBool = [](Value value, const char* field) -> bool {
 			if (!valueIsBool(value)) {
@@ -160,20 +153,20 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 			}
 			return valueToBool(value);
 		};
-		view->crt_postprocessing_enabled = readViewBool(viewTable->get(key("crt_postprocessing_enabled")), "crt_postprocessing_enabled");
-		view->applyNoise = readViewBool(viewTable->get(key("enable_noise")), "enable_noise");
-		view->applyColorBleed = readViewBool(viewTable->get(key("enable_colorbleed")), "enable_colorbleed");
-		view->applyScanlines = readViewBool(viewTable->get(key("enable_scanlines")), "enable_scanlines");
-		view->applyBlur = readViewBool(viewTable->get(key("enable_blur")), "enable_blur");
-		view->applyGlow = readViewBool(viewTable->get(key("enable_glow")), "enable_glow");
-		view->applyFringing = readViewBool(viewTable->get(key("enable_fringing")), "enable_fringing");
-		view->applyAperture = readViewBool(viewTable->get(key("enable_aperture")), "enable_aperture");
+		view->crt_postprocessing_enabled = readViewBool(viewTable->get(runtime.luaKey("crt_postprocessing_enabled")), "crt_postprocessing_enabled");
+		view->applyNoise = readViewBool(viewTable->get(runtime.luaKey("enable_noise")), "enable_noise");
+		view->applyColorBleed = readViewBool(viewTable->get(runtime.luaKey("enable_colorbleed")), "enable_colorbleed");
+		view->applyScanlines = readViewBool(viewTable->get(runtime.luaKey("enable_scanlines")), "enable_scanlines");
+		view->applyBlur = readViewBool(viewTable->get(runtime.luaKey("enable_blur")), "enable_blur");
+		view->applyGlow = readViewBool(viewTable->get(runtime.luaKey("enable_glow")), "enable_glow");
+		view->applyFringing = readViewBool(viewTable->get(runtime.luaKey("enable_fringing")), "enable_fringing");
+		view->applyAperture = readViewBool(viewTable->get(runtime.luaKey("enable_aperture")), "enable_aperture");
 		runtime.m_debugUpdateCountTotal += 1;
 	}
 
-		frameState.updateExecuted = runtime.m_pendingCall != Runtime::PendingCall::Entry;
-		runtime.machine().vdp().flushAssetEdits();
-		finalizeUpdateSlice(runtime);
+	frameState.updateExecuted = runtime.m_pendingCall != Runtime::PendingCall::Entry;
+	runtime.machine().vdp().flushAssetEdits();
+	finalizeUpdateSlice(runtime);
 	const bool nextFrameActive = frameActive;
 	if (nextFrameActive != previousFrameActive) {
 		return true;
@@ -181,9 +174,9 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	if (nextFrameActive && frameState.cycleBudgetRemaining != previousRemaining) {
 		return true;
 	}
-		if ((runtime.m_pendingCall == Runtime::PendingCall::Entry) != previousPending) {
-			return true;
-		}
+	if ((runtime.m_pendingCall == Runtime::PendingCall::Entry) != previousPending) {
+		return true;
+	}
 	return runtime.frameScheduler.lastTickSequence != previousSequence;
 }
 
@@ -203,7 +196,10 @@ void FrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platform
 		engine.m_last_tick_timing.runtimeTerminalMs = 0.0;
 		engine.m_last_tick_timing.microtaskMs = 0.0;
 
-		const double hostDeltaMs = std::min(deltaTime * 1000.0, MAX_FRAME_DELTA_MS);
+		double hostDeltaMs = deltaTime * 1000.0;
+		if (hostDeltaMs > MAX_FRAME_DELTA_MS) {
+			hostDeltaMs = MAX_FRAME_DELTA_MS;
+		}
 		const double hostDeltaSeconds = hostDeltaMs / 1000.0;
 		engine.m_delta_time = hostDeltaSeconds;
 		engine.m_total_time += hostDeltaSeconds;
@@ -212,26 +208,26 @@ void FrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platform
 			engine.m_fps = 1.0 / hostDeltaSeconds;
 		}
 
-			const auto inputStart = std::chrono::steady_clock::now();
-			Input::instance().pollInput();
-			const auto inputEnd = std::chrono::steady_clock::now();
-			engine.m_last_tick_timing.inputMs = to_ms(inputEnd - inputStart);
+		const auto inputStart = std::chrono::steady_clock::now();
+		Input::instance().pollInput();
+		const auto inputEnd = std::chrono::steady_clock::now();
+		engine.m_last_tick_timing.inputMs = to_ms(inputEnd - inputStart);
 
-			runtime.screen.clearPresentation();
-			if (!platformPaused) {
-				const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
-				const auto updateStart = std::chrono::steady_clock::now();
-				engine.m_delta_time = runtime.timing.frameDurationMs / 1000.0;
-				runtime.frameScheduler.run(runtime, hostDeltaMs);
-				runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
-				const auto updateEnd = std::chrono::steady_clock::now();
-				engine.m_last_tick_timing.runtimeUpdateMs = to_ms(updateEnd - updateStart);
+		runtime.screen.clearPresentation();
+		if (!platformPaused) {
+			const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
+			const auto updateStart = std::chrono::steady_clock::now();
+			engine.m_delta_time = runtime.timing.frameDurationMs / 1000.0;
+			runtime.frameScheduler.run(runtime, hostDeltaMs);
+			runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
+			const auto updateEnd = std::chrono::steady_clock::now();
+			engine.m_last_tick_timing.runtimeUpdateMs = to_ms(updateEnd - updateStart);
 
-				const auto terminalStart = std::chrono::steady_clock::now();
-				runtime.machine().vdp().flushAssetEdits();
-				const auto terminalEnd = std::chrono::steady_clock::now();
-				engine.m_last_tick_timing.runtimeTerminalMs = to_ms(terminalEnd - terminalStart);
-			}
+			const auto terminalStart = std::chrono::steady_clock::now();
+			runtime.machine().vdp().flushAssetEdits();
+			const auto terminalEnd = std::chrono::steady_clock::now();
+			engine.m_last_tick_timing.runtimeTerminalMs = to_ms(terminalEnd - terminalStart);
+		}
 		engine.m_delta_time = hostDeltaSeconds;
 
 		if (engine.m_platform && engine.m_platform->microtaskQueue()) {

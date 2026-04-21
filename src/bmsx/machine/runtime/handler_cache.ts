@@ -17,7 +17,7 @@ export type HandlerCallFn = (
 export type HandlerErrorReporter = (
 	error: unknown,
 	meta: { hid: string; moduleId: string; path?: string },
-) => void;
+) => never;
 
 type HandlerRecord = {
 	handler: HandlerFn;
@@ -48,9 +48,6 @@ export class HandlerCache {
 		const moduleId = this.normalizeModuleId(ctx.moduleId);
 		const pathText = this.pathToText(ctx.path);
 		const key = this.resolveKey(moduleId, ctx.path);
-		if (!key) {
-			throw new Error(`[HandlerCache] Unable to resolve handler key for module '${moduleId}'.`);
-		}
 		const hid = this.buildHid(moduleId, key);
 		const existing = this.byHid.get(hid);
 		if (existing) {
@@ -77,7 +74,7 @@ export class HandlerCache {
 
 	public rebind(moduleId: string, path: ReadonlyArray<string>, fn: Closure): void {
 		const normalizedModule = this.normalizeModuleId(moduleId);
-		const key = this.resolveKey(normalizedModule, path, { reuseOnly: true });
+		const key = this.resolveReusableKey(normalizedModule, path);
 		if (!key) {
 			return;
 		}
@@ -126,20 +123,17 @@ export class HandlerCache {
 	private createHandler(
 		hid: string,
 		moduleId: string,
-		path: string,
+		path: string | undefined,
 		fn: Closure,
 	): HandlerFn {
 		let currentFn = fn;
 		const cache = this;
-		const callClosure = this.callClosure;
-		const reportError = this.reportError;
 
 		const handler = function handler(this: unknown, ...args: unknown[]) {
 			try {
-				return callClosure(currentFn, this, args);
+				return cache.callClosure(currentFn, this, args);
 			} catch (error) {
-				reportError(error, { hid, moduleId, path });
-				return undefined;
+				cache.reportError(error, { hid, moduleId, path });
 			}
 		} as unknown as HandlerFn;
 
@@ -161,28 +155,32 @@ export class HandlerCache {
 		return handler;
 	}
 
-	private resolveKey(moduleId: string, path: ReadonlyArray<string>, opts?: { reuseOnly?: boolean }): string {
+	private resolveKey(moduleId: string, path: ReadonlyArray<string> | undefined): string {
 		const normalizedPath = this.pathToText(path);
 		if (normalizedPath) {
 			return normalizedPath;
 		}
 
-		if (opts?.reuseOnly) {
-			const bucket = this.byModule.get(moduleId);
-			if (!bucket) {
-				return null;
-			}
-			for (const [key, record] of bucket.entries()) {
-				if (!record.path) {
-					return key;
-				}
-			}
-			return null;
-		}
-
 		const next = (this.anonCounters.get(moduleId) ?? 0) + 1;
 		this.anonCounters.set(moduleId, next);
 		return `anon::${next}`;
+	}
+
+	private resolveReusableKey(moduleId: string, path: ReadonlyArray<string> | undefined): string | undefined {
+		const normalizedPath = this.pathToText(path);
+		if (normalizedPath) {
+			return normalizedPath;
+		}
+		const bucket = this.byModule.get(moduleId);
+		if (!bucket) {
+			return undefined;
+		}
+		for (const [key, record] of bucket.entries()) {
+			if (!record.path) {
+				return key;
+			}
+		}
+		return undefined;
 	}
 
 	private index(moduleId: string, key: string, record: HandlerRecord): void {
@@ -201,9 +199,9 @@ export class HandlerCache {
 		return moduleId;
 	}
 
-	private pathToText(path: ReadonlyArray<string>): string {
+	private pathToText(path: ReadonlyArray<string> | undefined): string | undefined {
 		if (!path || path.length === 0) {
-			return null;
+			return undefined;
 		}
 		let result = '';
 		for (let index = 0; index < path.length; index += 1) {

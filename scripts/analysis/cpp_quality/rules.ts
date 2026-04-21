@@ -1,10 +1,11 @@
 import { dirname, isAbsolute, resolve } from 'node:path';
 
-import type { CppFunctionInfo } from '../../../src/bmsx/language/cpp/syntax/declarations';
+import type { CppClassRange, CppFunctionInfo } from '../../../src/bmsx/language/cpp/syntax/declarations';
 import type { CppLintIssue, CppNormalizedBodyInfo } from './diagnostics';
 import { pushLintIssue } from './diagnostics';
 import {
 	collectCppStatementRanges,
+	cppCallTargetFromStatement,
 	cppCallTarget,
 	cppRangeHas,
 	findCppAccessChainStart,
@@ -151,6 +152,20 @@ const DECLARATION_START_BLOCKLIST = new Set([
 	'while',
 ]);
 
+const DECLARATION_NAME_PREFIX_BLOCKLIST = new Set([
+	',',
+	'.',
+	'->',
+	'::',
+	':',
+	'?',
+	'(',
+	'return',
+	'throw',
+	'<<',
+	'>>',
+]);
+
 const DECLARATION_NAME_BLOCKLIST = new Set([
 	'auto',
 	'bool',
@@ -188,6 +203,28 @@ const NUMERIC_DEFENSIVE_CALLS = new Set([
 	'tolower',
 	'std::tolower',
 	'trunc',
+]);
+
+const HOT_PATH_FUNCTION_NAME_WORDS = new Set([
+	'advance',
+	'begin',
+	'consume',
+	'draw',
+	'execute',
+	'flush',
+	'frame',
+	'halt',
+	'irq',
+	'poll',
+	'render',
+	'run',
+	'schedule',
+	'service',
+	'sync',
+	'tick',
+	'timer',
+	'update',
+	'vblank',
 ]);
 
 const CPP_BOUNDED_NUMERIC_HINT_WORDS = new Set([
@@ -443,7 +480,7 @@ function rangeContainsNestedCppNumericSanitization(tokens: readonly CppToken[], 
 			continue;
 		}
 		const target = cppCallTarget(tokens, index);
-		if (target === null || !NUMERIC_DEFENSIVE_CALLS.has(target)) {
+		if (!isCppNumericSanitizationCall(tokens, index, target)) {
 			continue;
 		}
 		if (activeCalls.length > 0) {
@@ -469,7 +506,7 @@ function collectSemanticNormalizationFamilies(tokens: readonly CppToken[], pairs
 			continue;
 		}
 		const target = cppCallTarget(tokens, index);
-		if (target === null || (!NUMERIC_DEFENSIVE_CALLS.has(target) && !isSemanticNormalizationWrapperTarget(target))) {
+		if (target === null || (!isCppNumericSanitizationCall(tokens, index, target) && !isSemanticNormalizationWrapperTarget(target))) {
 			continue;
 		}
 		const family = semanticNormalizationFamily(target);
@@ -488,7 +525,7 @@ function collectSemanticNormalizationCallSignatures(tokens: readonly CppToken[],
 			continue;
 		}
 		const target = cppCallTarget(tokens, index);
-		if (target !== null && (NUMERIC_DEFENSIVE_CALLS.has(target) || isSemanticNormalizationWrapperTarget(target))) {
+		if (target !== null && (isCppNumericSanitizationCall(tokens, index, target) || isSemanticNormalizationWrapperTarget(target))) {
 			const callEnd = pairs[index] + 1;
 			signatures.push(`${target}:${semanticCppExpressionFingerprint(target, tokens, findCppAccessChainStart(tokens, index - 1), callEnd)}`);
 		}
@@ -504,6 +541,53 @@ function isHotPathFile(fileName: string): boolean {
 		}
 	}
 	return false;
+}
+
+function isHotPathFunction(fileName: string, info: CppFunctionInfo): boolean {
+	if (!isHotPathFile(fileName)) {
+		return false;
+	}
+	if (info.context !== null && info.name === info.context) {
+		return false;
+	}
+	if (info.name.startsWith('~')) {
+		return false;
+	}
+	const segments = cppWordSegments(info.name);
+	for (let index = 0; index < segments.length; index += 1) {
+		if (HOT_PATH_FUNCTION_NAME_WORDS.has(segments[index])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function isCppNumericLimitsMemberCall(tokens: readonly CppToken[], openParen: number): boolean {
+	const nameIndex = openParen - 1;
+	if (nameIndex < 2) {
+		return false;
+	}
+	const name = tokens[nameIndex].text;
+	if (name !== 'min' && name !== 'max' && name !== 'lowest') {
+		return false;
+	}
+	if (tokens[nameIndex - 1].text !== '::') {
+		return false;
+	}
+	for (let index = nameIndex - 2; index >= 0; index -= 1) {
+		const text = tokens[index].text;
+		if (text === ';' || text === '{' || text === '}' || text === '(' || text === ',' || text === '=') {
+			return false;
+		}
+		if (text === 'numeric_limits') {
+			return true;
+		}
+	}
+	return false;
+}
+
+function isCppNumericSanitizationCall(tokens: readonly CppToken[], openParen: number, target: string | null): boolean {
+	return target !== null && NUMERIC_DEFENSIVE_CALLS.has(target) && !isCppNumericLimitsMemberCall(tokens, openParen);
 }
 
 function isIgnoredName(name: string): boolean {
@@ -794,10 +878,10 @@ export function lintCppRedundantNumericSanitizationPattern(file: string, tokens:
 		if (tokens[index].text !== '(' || pairs[index] < 0 || pairs[index] > info.bodyEnd) {
 			continue;
 		}
-		const target = cppCallTarget(tokens, index);
-		if (target === null || !NUMERIC_DEFENSIVE_CALLS.has(target)) {
-			continue;
-		}
+			const target = cppCallTarget(tokens, index);
+			if (!isCppNumericSanitizationCall(tokens, index, target)) {
+				continue;
+			}
 		if (activeNumericCalls.length > 0) {
 			continue;
 		}
@@ -834,6 +918,118 @@ export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], 
 	}
 }
 
+export function lintCppSinglePropertyOptionsTypes(file: string, tokens: readonly CppToken[], classRanges: readonly CppClassRange[], issues: CppLintIssue[]): void {
+	for (let index = 0; index < classRanges.length; index += 1) {
+		const range = classRanges[index];
+		if (!/(?:Options|Opts)$/.test(range.name)) {
+			continue;
+		}
+		const memberCount = countCppTopLevelDataMembers(tokens, range.start + 1, range.end);
+		if (memberCount !== 1) {
+			continue;
+		}
+		pushLintIssue(
+			issues,
+			file,
+			tokens[range.nameToken],
+			'single_property_options_parameter_pattern',
+			`Single-property options type "${range.name}" is forbidden. Use a direct parameter or split the operation instead of implying future extensibility.`,
+		);
+	}
+}
+
+function countCppTopLevelDataMembers(tokens: readonly CppToken[], start: number, end: number): number {
+	const ranges = collectCppClassMemberStatementRanges(tokens, start, end);
+	let count = 0;
+	for (let rangeIndex = 0; rangeIndex < ranges.length; rangeIndex += 1) {
+		const statementStart = ranges[rangeIndex][0];
+		const statementEnd = ranges[rangeIndex][1];
+		if (statementStart >= statementEnd) {
+			continue;
+		}
+		const first = tokens[statementStart].text;
+		if (first === 'public' || first === 'private' || first === 'protected') {
+			continue;
+		}
+		if (cppRangeHas(tokens, statementStart, statementEnd, token =>
+			token.text === 'class'
+			|| token.text === 'struct'
+			|| token.text === 'union'
+			|| token.text === 'namespace'
+			|| token.text === 'template'
+			|| token.text === 'using'
+			|| token.text === 'typedef'
+			|| token.text === 'enum'
+			|| token.text === 'friend'
+			|| token.text === 'static'
+		)) {
+			continue;
+		}
+		if (cppRangeHas(tokens, statementStart, statementEnd, token => token.text === '(')) {
+			continue;
+		}
+		if (cppRangeHas(tokens, statementStart, statementEnd, token => token.kind === 'id')) {
+			count += countCppDataMemberDeclarators(tokens, statementStart, statementEnd);
+		}
+	}
+	return count;
+}
+
+function collectCppClassMemberStatementRanges(tokens: readonly CppToken[], start: number, end: number): Array<[number, number]> {
+	const ranges: Array<[number, number]> = [];
+	let statementStart = start;
+	let parenDepth = 0;
+	let bracketDepth = 0;
+	let braceDepth = 0;
+	for (let index = start; index < end; index += 1) {
+		const text = tokens[index].text;
+		if (text === '(') parenDepth += 1;
+		else if (text === ')') parenDepth -= 1;
+		else if (text === '[') bracketDepth += 1;
+		else if (text === ']') bracketDepth -= 1;
+		else if (text === '{') braceDepth += 1;
+		else if (text === '}') braceDepth -= 1;
+		else if (
+			text === ':'
+			&& parenDepth === 0
+			&& bracketDepth === 0
+			&& braceDepth === 0
+			&& index === statementStart + 1
+			&& (tokens[statementStart].text === 'public' || tokens[statementStart].text === 'private' || tokens[statementStart].text === 'protected')
+		) {
+			statementStart = index + 1;
+		} else if (text === ';' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+			if (statementStart < index) {
+				ranges.push([statementStart, index]);
+			}
+			statementStart = index + 1;
+		}
+	}
+	return ranges;
+}
+
+function countCppDataMemberDeclarators(tokens: readonly CppToken[], start: number, end: number): number {
+	let count = 1;
+	let parenDepth = 0;
+	let bracketDepth = 0;
+	let braceDepth = 0;
+	let angleDepth = 0;
+	for (let index = start; index < end; index += 1) {
+		const text = tokens[index].text;
+		if (text === '(') parenDepth += 1;
+		else if (text === ')') parenDepth -= 1;
+		else if (text === '[') bracketDepth += 1;
+		else if (text === ']') bracketDepth -= 1;
+		else if (text === '{') braceDepth += 1;
+		else if (text === '}') braceDepth -= 1;
+		else if (text === '<' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) angleDepth += 1;
+		else if (text === '>' && angleDepth > 0 && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) angleDepth -= 1;
+		else if (text === '>>' && angleDepth > 0 && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) angleDepth = angleDepth > 1 ? angleDepth - 2 : 0;
+		else if (text === ',' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0 && angleDepth === 0) count += 1;
+	}
+	return count;
+}
+
 function declarationFromStatement(tokens: readonly CppToken[], start: number, end: number): CppLocalBinding | null {
 	const declarationStart = start;
 	let isLeadingConst = false;
@@ -864,6 +1060,9 @@ function declarationFromStatement(tokens: readonly CppToken[], start: number, en
 	}
 	const nameIndex = previousCppIdentifier(tokens, initializerIndex);
 	if (nameIndex < 0 || nameIndex <= start || !hasCppDeclarationPrefix(tokens, start, nameIndex)) {
+		return null;
+	}
+	if (DECLARATION_NAME_PREFIX_BLOCKLIST.has(tokens[nameIndex - 1]?.text ?? '')) {
 		return null;
 	}
 	const nameToken = tokens[nameIndex];
@@ -1271,12 +1470,12 @@ function stringComparisonSubject(tokens: readonly CppToken[], start: number, end
 	return null;
 }
 
-export function lintCppHotPathCalls(file: string, tokens: readonly CppToken[], pairs: readonly number[], issues: CppLintIssue[]): void {
-	if (!isHotPathFile(file)) {
+export function lintCppHotPathCalls(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
+	if (!isHotPathFunction(file, info)) {
 		return;
 	}
-	for (let index = 0; index < tokens.length; index += 1) {
-		if (tokens[index].text !== '(' || pairs[index] < 0) {
+	for (let index = info.bodyStart + 1; index < info.bodyEnd; index += 1) {
+		if (tokens[index].text !== '(' || pairs[index] < 0 || pairs[index] >= info.bodyEnd) {
 			continue;
 		}
 		if (isCppFunctionDeclaratorParen(tokens, pairs, index)) {
@@ -1286,7 +1485,7 @@ export function lintCppHotPathCalls(file: string, tokens: readonly CppToken[], p
 		if (target === null) {
 			continue;
 		}
-		if (NUMERIC_DEFENSIVE_CALLS.has(target)) {
+		if (isCppNumericSanitizationCall(tokens, index, target)) {
 			pushLintIssue(issues, file, tokens[index - 1], 'numeric_defensive_sanitization_pattern', 'Defensive numeric sanitization in hot paths is forbidden. Coordinates, cycles, and layout values must already be valid.');
 		}
 		const args = splitCppArgumentRanges(tokens, index + 1, pairs[index]);
@@ -1402,10 +1601,10 @@ export function lintCppSemanticRepeatedExpressions(file: string, tokens: readonl
 		if (tokens[index].text !== '(' || pairs[index] < 0 || pairs[index] >= info.bodyEnd) {
 			continue;
 		}
-		const target = cppCallTarget(tokens, index);
-		if (target === null || (!NUMERIC_DEFENSIVE_CALLS.has(target) && !isSemanticNormalizationWrapperTarget(target))) {
-			continue;
-		}
+			const target = cppCallTarget(tokens, index);
+			if (target === null || (!isCppNumericSanitizationCall(tokens, index, target) && !isSemanticNormalizationWrapperTarget(target))) {
+				continue;
+			}
 		if (activeSemanticCalls.length > 0) {
 			continue;
 		}

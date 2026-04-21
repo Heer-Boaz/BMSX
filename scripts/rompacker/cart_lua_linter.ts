@@ -5410,6 +5410,161 @@ function lintUnusedInitValuesInFunctionBody(
 	}
 }
 
+type LuaOptionsParameterUse = {
+	readonly fields: Set<string>;
+	bareReads: number;
+	dynamicReads: number;
+};
+
+function lintSinglePropertyOptionsParameter(functionExpression: LuaFunctionExpression, issues: LuaLintIssue[]): void {
+	for (const parameter of functionExpression.parameters) {
+		if (parameter.name !== 'opts' && parameter.name !== 'options') {
+			continue;
+		}
+		const use: LuaOptionsParameterUse = {
+			fields: new Set<string>(),
+			bareReads: 0,
+			dynamicReads: 0,
+		};
+		collectLuaOptionsParameterUseInStatements(functionExpression.body.body, parameter.name, use);
+		if (use.fields.size !== 1 || use.bareReads !== 0 || use.dynamicReads !== 0) {
+			continue;
+		}
+		pushIssue(
+			issues,
+			'single_property_options_parameter_pattern',
+			parameter,
+			`Single-property options parameter "${parameter.name}" is forbidden. Use a direct parameter or split the operation instead of implying future extensibility.`,
+		);
+	}
+}
+
+function collectLuaOptionsParameterUseInStatements(statements: ReadonlyArray<LuaStatement>, parameterName: string, use: LuaOptionsParameterUse): void {
+	for (const statement of statements) {
+		switch (statement.kind) {
+			case LuaSyntaxKind.LocalAssignmentStatement:
+				for (const value of statement.values) {
+					collectLuaOptionsParameterUseInExpression(value, parameterName, use);
+				}
+				break;
+			case LuaSyntaxKind.AssignmentStatement:
+				for (const left of statement.left) {
+					collectLuaOptionsParameterUseInExpression(left, parameterName, use);
+				}
+				for (const right of statement.right) {
+					collectLuaOptionsParameterUseInExpression(right, parameterName, use);
+				}
+				break;
+			case LuaSyntaxKind.ReturnStatement:
+				for (const expression of statement.expressions) {
+					collectLuaOptionsParameterUseInExpression(expression, parameterName, use);
+				}
+				break;
+			case LuaSyntaxKind.IfStatement:
+				for (const clause of statement.clauses) {
+					if (clause.condition) {
+						collectLuaOptionsParameterUseInExpression(clause.condition, parameterName, use);
+					}
+					collectLuaOptionsParameterUseInStatements(clause.block.body, parameterName, use);
+				}
+				break;
+			case LuaSyntaxKind.WhileStatement:
+				collectLuaOptionsParameterUseInExpression(statement.condition, parameterName, use);
+				collectLuaOptionsParameterUseInStatements(statement.block.body, parameterName, use);
+				break;
+			case LuaSyntaxKind.RepeatStatement:
+				collectLuaOptionsParameterUseInStatements(statement.block.body, parameterName, use);
+				collectLuaOptionsParameterUseInExpression(statement.condition, parameterName, use);
+				break;
+			case LuaSyntaxKind.ForNumericStatement:
+				collectLuaOptionsParameterUseInExpression(statement.start, parameterName, use);
+				collectLuaOptionsParameterUseInExpression(statement.limit, parameterName, use);
+				if (statement.step) {
+					collectLuaOptionsParameterUseInExpression(statement.step, parameterName, use);
+				}
+				collectLuaOptionsParameterUseInStatements(statement.block.body, parameterName, use);
+				break;
+			case LuaSyntaxKind.ForGenericStatement:
+				for (const iterator of statement.iterators) {
+					collectLuaOptionsParameterUseInExpression(iterator, parameterName, use);
+				}
+				collectLuaOptionsParameterUseInStatements(statement.block.body, parameterName, use);
+				break;
+			case LuaSyntaxKind.DoStatement:
+				collectLuaOptionsParameterUseInStatements(statement.block.body, parameterName, use);
+				break;
+			case LuaSyntaxKind.CallStatement:
+				collectLuaOptionsParameterUseInExpression(statement.expression, parameterName, use);
+				break;
+			case LuaSyntaxKind.LocalFunctionStatement:
+			case LuaSyntaxKind.FunctionDeclarationStatement:
+			case LuaSyntaxKind.BreakStatement:
+			case LuaSyntaxKind.HaltUntilIrqStatement:
+			case LuaSyntaxKind.GotoStatement:
+			case LuaSyntaxKind.LabelStatement:
+				break;
+		}
+	}
+}
+
+function collectLuaOptionsParameterUseInExpression(expression: LuaExpression, parameterName: string, use: LuaOptionsParameterUse): void {
+	switch (expression.kind) {
+		case LuaSyntaxKind.IdentifierExpression:
+			if (expression.name === parameterName) {
+				use.bareReads += 1;
+			}
+			return;
+		case LuaSyntaxKind.MemberExpression:
+			if (expression.base.kind === LuaSyntaxKind.IdentifierExpression && expression.base.name === parameterName) {
+				use.fields.add(expression.identifier);
+				return;
+			}
+			collectLuaOptionsParameterUseInExpression(expression.base, parameterName, use);
+			return;
+		case LuaSyntaxKind.IndexExpression:
+			if (expression.base.kind === LuaSyntaxKind.IdentifierExpression && expression.base.name === parameterName) {
+				if (expression.index.kind === LuaSyntaxKind.StringLiteralExpression || expression.index.kind === LuaSyntaxKind.StringRefLiteralExpression) {
+					use.fields.add(expression.index.value);
+				} else {
+					use.dynamicReads += 1;
+				}
+				return;
+			}
+			collectLuaOptionsParameterUseInExpression(expression.base, parameterName, use);
+			collectLuaOptionsParameterUseInExpression(expression.index, parameterName, use);
+			return;
+		case LuaSyntaxKind.CallExpression:
+			collectLuaOptionsParameterUseInExpression(expression.callee, parameterName, use);
+			for (const argument of expression.arguments) {
+				collectLuaOptionsParameterUseInExpression(argument, parameterName, use);
+			}
+			return;
+		case LuaSyntaxKind.BinaryExpression:
+			collectLuaOptionsParameterUseInExpression(expression.left, parameterName, use);
+			collectLuaOptionsParameterUseInExpression(expression.right, parameterName, use);
+			return;
+		case LuaSyntaxKind.UnaryExpression:
+			collectLuaOptionsParameterUseInExpression(expression.operand, parameterName, use);
+			return;
+		case LuaSyntaxKind.TableConstructorExpression:
+			for (const field of expression.fields) {
+				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+					collectLuaOptionsParameterUseInExpression(field.key, parameterName, use);
+				}
+				collectLuaOptionsParameterUseInExpression(field.value, parameterName, use);
+			}
+			return;
+		case LuaSyntaxKind.FunctionExpression:
+		case LuaSyntaxKind.NumericLiteralExpression:
+		case LuaSyntaxKind.StringLiteralExpression:
+		case LuaSyntaxKind.StringRefLiteralExpression:
+		case LuaSyntaxKind.BooleanLiteralExpression:
+		case LuaSyntaxKind.NilLiteralExpression:
+		case LuaSyntaxKind.VarargExpression:
+			return;
+	}
+}
+
 function lintFunctionBody(
 	functionName: string,
 	functionExpression: LuaFunctionExpression,
@@ -5418,6 +5573,7 @@ function lintFunctionBody(
 ): void {
 	const isNamedFunction = functionName !== '<anonymous>';
 	const isVisualUpdateLike = isNamedFunction && isVisualUpdateLikeFunctionName(functionName);
+	lintSinglePropertyOptionsParameter(functionExpression, issues);
 	if (isVisualUpdateLike) {
 		pushIssue(
 			issues,

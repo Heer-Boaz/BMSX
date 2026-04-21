@@ -249,11 +249,18 @@ function classContextAt(classRanges: readonly CppClassRange[], bodyStart: number
 
 function findCppFunctionDeclaratorOpenParen(tokens: readonly CppToken[], pairs: readonly number[], bodyStart: number): number {
 	let cursor = bodyStart - 1;
+	while (cursor >= 0 && CPP_POST_FUNCTION_QUALIFIERS.has(tokens[cursor].text)) {
+		cursor -= 1;
+	}
+	const directDeclaratorCursor = cursor;
 	let parenDepth = 0;
 	let bracketDepth = 0;
 	let braceDepth = 0;
-	for (let index = bodyStart - 1; index >= 0; index -= 1) {
+	for (let index = directDeclaratorCursor; index >= 0; index -= 1) {
 		const text = tokens[index].text;
+		if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0 && (text === ';' || text === '}')) {
+			break;
+		}
 		if (text === ')') {
 			parenDepth += 1;
 			continue;

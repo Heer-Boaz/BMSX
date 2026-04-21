@@ -1,7 +1,5 @@
 #include "machine/scheduler/frame.h"
 #include "machine/runtime/runtime.h"
-#include "common/clamp.h"
-#include <algorithm>
 #include <stdexcept>
 
 namespace bmsx {
@@ -16,7 +14,10 @@ inline std::runtime_error runtimeFault(const std::string& message) {
 
 void FrameSchedulerState::accumulateHostTime(const Runtime& runtime, f64 deltaMs) {
 	const f64 maxAccumulatedMs = runtime.timing.frameDurationMs * static_cast<f64>(MAX_CATCH_UP_FRAMES);
-	m_accumulatedHostTimeMs = clamp(m_accumulatedHostTimeMs + deltaMs, 0.0, maxAccumulatedMs);
+	m_accumulatedHostTimeMs += deltaMs;
+	if (m_accumulatedHostTimeMs > maxAccumulatedMs) {
+		m_accumulatedHostTimeMs = maxAccumulatedMs;
+	}
 }
 
 bool FrameSchedulerState::hasScheduledFrame(const Runtime& runtime) const {
@@ -27,17 +28,18 @@ bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
 	if (!runtime.m_luaInitialized || !runtime.m_tickEnabled || runtime.m_runtimeFailed) {
 		return false;
 	}
-	if (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0) {
-		return true;
-	}
-	return hasScheduledFrame(runtime);
+	return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
+		|| hasScheduledFrame(runtime);
 }
 
 bool FrameSchedulerState::consumeScheduledFrame(const Runtime& runtime) {
 	if (!hasScheduledFrame(runtime)) {
 		return false;
 	}
-	m_accumulatedHostTimeMs = std::max(m_accumulatedHostTimeMs - runtime.timing.frameDurationMs, 0.0);
+	m_accumulatedHostTimeMs -= runtime.timing.frameDurationMs;
+	if (m_accumulatedHostTimeMs < 0.0) {
+		m_accumulatedHostTimeMs = 0.0;
+	}
 	return true;
 }
 
@@ -76,17 +78,19 @@ void FrameSchedulerState::enqueueTickCompletion(Runtime& runtime, FrameState& fr
 	}
 	TickCompletion& slot = m_tickCompletionQueue[m_tickCompletionWriteIndex];
 	const i64 sequence = lastTickSequence + 1;
+	const int remaining = frameState.cycleBudgetRemaining;
+	const int granted = frameState.cycleBudgetGranted;
 	slot.sequence = sequence;
-	slot.remaining = frameState.cycleBudgetRemaining;
+	slot.remaining = remaining;
 	slot.visualCommitted = runtime.machine().vdp().lastFrameCommitted();
 	slot.vdpFrameCost = runtime.machine().vdp().lastFrameCost();
 	slot.vdpFrameHeld = runtime.machine().vdp().lastFrameHeld();
 	m_tickCompletionWriteIndex = (m_tickCompletionWriteIndex + 1) % TICK_COMPLETION_QUEUE_CAPACITY;
 	m_tickCompletionCount += 1;
-	lastTickBudgetGranted = frameState.cycleBudgetGranted;
-	lastTickCpuBudgetGranted = frameState.cycleBudgetGranted;
+	lastTickBudgetGranted = granted;
+	lastTickCpuBudgetGranted = granted;
 	lastTickCpuUsedCycles = frameState.activeCpuUsedCycles;
-	lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
+	lastTickBudgetRemaining = remaining;
 	lastTickVisualFrameCommitted = slot.visualCommitted;
 	lastTickVdpFrameCost = slot.vdpFrameCost;
 	lastTickVdpFrameHeld = slot.vdpFrameHeld;
@@ -109,8 +113,9 @@ bool FrameSchedulerState::refillFrameBudget(Runtime& runtime, FrameState& frameS
 	if (!consumeScheduledFrame(runtime)) {
 		return false;
 	}
-	frameState.cycleBudgetRemaining += runtime.timing.cycleBudgetPerFrame;
-	frameState.cycleBudgetGranted += runtime.timing.cycleBudgetPerFrame;
+	const int budget = runtime.timing.cycleBudgetPerFrame;
+	frameState.cycleBudgetRemaining += budget;
+	frameState.cycleBudgetGranted += budget;
 	return true;
 }
 

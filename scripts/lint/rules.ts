@@ -11,6 +11,7 @@ export const COMMON_LANGUAGE_LINT_RULES = [
 	'string_or_chain_comparison_pattern',
 	'string_switch_chain_pattern',
 	'split_join_roundtrip_pattern',
+	'single_property_options_parameter_pattern',
 	'single_line_method_pattern',
 	'useless_terminal_return_pattern',
 ] as const;

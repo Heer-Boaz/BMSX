@@ -24,10 +24,11 @@ export function refreshDeviceTimings(runtime: Runtime, nowCycles: number): void 
 }
 
 export function setCycleBudgetPerFrame(runtime: Runtime, value: number): void {
-	if (value === runtime.timing.cycleBudgetPerFrame) {
+	const timing = runtime.timing;
+	if (value === timing.cycleBudgetPerFrame) {
 		return;
 	}
-	runtime.timing.cycleBudgetPerFrame = value;
+	timing.cycleBudgetPerFrame = value;
 	runtime.machine.cpu.setGlobalByKey(runtime.luaKey('sys_max_cycles_per_frame'), value);
 	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
 	runtime.vblank.configureCycleBudget(runtime);
@@ -39,20 +40,23 @@ export function setCpuHz(runtime: Runtime, value: number): void {
 }
 
 export function setVdpWorkUnitsPerSec(runtime: Runtime, value: number): void {
-	runtime.timing.vdpWorkUnitsPerSec = resolveVdpWorkUnitsPerSec(value);
-	runtime.machine.vdp.setTiming(runtime.timing.cpuHz, runtime.timing.vdpWorkUnitsPerSec, runtime.machine.scheduler.currentNowCycles());
+	const workUnitsPerSec = resolveVdpWorkUnitsPerSec(value);
+	runtime.timing.vdpWorkUnitsPerSec = workUnitsPerSec;
+	runtime.machine.vdp.setTiming(runtime.timing.cpuHz, workUnitsPerSec, runtime.machine.scheduler.currentNowCycles());
 }
 
 export function setGeoWorkUnitsPerSec(runtime: Runtime, value: number): void {
-	runtime.timing.geoWorkUnitsPerSec = resolveGeoWorkUnitsPerSec(value);
-	runtime.machine.geometryController.setTiming(runtime.timing.cpuHz, runtime.timing.geoWorkUnitsPerSec, runtime.machine.scheduler.currentNowCycles());
+	const workUnitsPerSec = resolveGeoWorkUnitsPerSec(value);
+	runtime.timing.geoWorkUnitsPerSec = workUnitsPerSec;
+	runtime.machine.geometryController.setTiming(runtime.timing.cpuHz, workUnitsPerSec, runtime.machine.scheduler.currentNowCycles());
 }
 
 export function applyActiveMachineTiming(runtime: Runtime, cpuHz: number): void {
 	const perfSpecs = getMachinePerfSpecs($.machine_manifest);
-	const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, runtime.timing.ufpsScaled);
+	const ufpsScaled = runtime.timing.ufpsScaled;
+	const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
 	const renderSize = resolveRuntimeRenderSize($.machine_manifest);
-	const vblankCycles = resolveVblankCycles(cpuHz, runtime.timing.ufpsScaled, renderSize.height);
+	const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, renderSize.height);
 	setCpuHz(runtime, cpuHz);
 	setCycleBudgetPerFrame(runtime, cycleBudgetPerFrame);
 	runtime.vblank.setVblankCycles(runtime, vblankCycles);

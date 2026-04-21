@@ -38,6 +38,7 @@ import {
 	lintCppNullishReturnGuards,
 	lintCppRepeatedExpressions,
 	lintCppSemanticRepeatedExpressions,
+	lintCppSinglePropertyOptionsTypes,
 	lintCppSimpleTokenPatterns,
 	lintCppStringSwitchChains,
 } from './rules';
@@ -88,7 +89,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 		const functions = analysis.functions;
 		const facadeStats = createCppFacadeStats(functions, tokens);
 		lintCppSimpleTokenPatterns(file, tokens, lintIssues);
-		lintCppHotPathCalls(file, tokens, pairs, lintIssues);
+		lintCppSinglePropertyOptionsTypes(file, tokens, analysis.classRanges, lintIssues);
 		lintCppCrossLayerIncludes(file, source, lintIssues);
 		for (let functionIndex = 0; functionIndex < functions.length; functionIndex += 1) {
 			const info = functions[functionIndex];
@@ -137,6 +138,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 			lintCppRedundantNumericSanitizationPattern(file, tokens, pairs, info, lintIssues);
 			lintCppEnsureLazyInitPattern(file, tokens, pairs, info, lintIssues);
 			lintCppTerminalReturnPaddingPattern(file, tokens, info, lintIssues);
+			lintCppHotPathCalls(file, tokens, pairs, info, lintIssues);
 			lintCppLocalBindings(file, tokens, info, lintIssues);
 			lintCppNullishReturnGuards(file, tokens, pairs, info, lintIssues);
 			lintCppStringSwitchChains(file, tokens, pairs, info, lintIssues);

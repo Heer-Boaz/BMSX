@@ -71,11 +71,12 @@ export class CartBootState {
 		if (!runtime.luaGate.ready) {
 			return;
 		}
-		if (runtime.frameLoop.currentFrameState !== null) {
+		const frameLoop = runtime.frameLoop;
+		if (frameLoop.currentFrameState !== null) {
 			luaPipeline.resetFrameState(runtime);
 		}
 		if (runtime.pendingCall !== null) {
-			if (runtime.frameLoop.currentFrameState === null) {
+			if (frameLoop.currentFrameState === null) {
 				luaPipeline.resetFrameState(runtime);
 			}
 			runtime.pendingCall = null;

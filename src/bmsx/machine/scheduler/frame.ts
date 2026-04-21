@@ -1,5 +1,4 @@
 import { $ } from '../../core/engine';
-import { clamp } from '../../common/clamp';
 import type { Runtime } from '../runtime/runtime';
 
 export type TickCompletion = {
@@ -59,7 +58,10 @@ export class FrameSchedulerState {
 
 	private accumulateHostTime(runtime: Runtime, deltaMs: number): void {
 		const maxAccumulatedMs = runtime.timing.frameDurationMs * MAX_CATCH_UP_FRAMES;
-		this.accumulatedHostTimeMs = clamp(this.accumulatedHostTimeMs + deltaMs, 0, maxAccumulatedMs);
+		this.accumulatedHostTimeMs += deltaMs;
+		if (this.accumulatedHostTimeMs > maxAccumulatedMs) {
+			this.accumulatedHostTimeMs = maxAccumulatedMs;
+		}
 	}
 
 	private hasScheduledFrame(runtime: Runtime): boolean {
@@ -71,17 +73,17 @@ export class FrameSchedulerState {
 			return false;
 		}
 		const state = runtime.frameLoop.currentFrameState;
-		if (state !== null && state.cycleBudgetRemaining > 0) {
-			return true;
-		}
-		return this.hasScheduledFrame(runtime);
+		return (state !== null && state.cycleBudgetRemaining > 0) || this.hasScheduledFrame(runtime);
 	}
 
 	private consumeScheduledFrame(runtime: Runtime): boolean {
 		if (!this.hasScheduledFrame(runtime)) {
 			return false;
 		}
-		this.accumulatedHostTimeMs = Math.max(this.accumulatedHostTimeMs - runtime.timing.frameDurationMs, 0);
+		this.accumulatedHostTimeMs -= runtime.timing.frameDurationMs;
+		if (this.accumulatedHostTimeMs < 0) {
+			this.accumulatedHostTimeMs = 0;
+		}
 		return true;
 	}
 
@@ -155,17 +157,20 @@ export class FrameSchedulerState {
 		}
 		const slot = this.tickCompletionQueue[this.tickCompletionWriteIndex]!;
 		const sequence = this.lastTickSequence + 1;
+		const remaining = frameState.cycleBudgetRemaining;
+		const granted = frameState.cycleBudgetGranted;
+		const cpuUsed = frameState.activeCpuUsedCycles;
 		slot.sequence = sequence;
-		slot.remaining = frameState.cycleBudgetRemaining;
+		slot.remaining = remaining;
 		slot.visualCommitted = runtime.machine.vdp.lastFrameCommitted;
 		slot.vdpFrameCost = runtime.machine.vdp.lastFrameCost;
 		slot.vdpFrameHeld = runtime.machine.vdp.lastFrameHeld;
 		this.tickCompletionWriteIndex = (this.tickCompletionWriteIndex + 1) % TICK_COMPLETION_QUEUE_CAPACITY;
 		this.tickCompletionCount += 1;
-		this.lastTickBudgetGranted = frameState.cycleBudgetGranted;
-		this.lastTickCpuBudgetGranted = frameState.cycleBudgetGranted;
-		this.lastTickCpuUsedCycles = frameState.activeCpuUsedCycles;
-		this.lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
+		this.lastTickBudgetGranted = granted;
+		this.lastTickCpuBudgetGranted = granted;
+		this.lastTickCpuUsedCycles = cpuUsed;
+		this.lastTickBudgetRemaining = remaining;
 		this.lastTickVisualFrameCommitted = slot.visualCommitted;
 		this.lastTickVdpFrameCost = slot.vdpFrameCost;
 		this.lastTickVdpFrameHeld = slot.vdpFrameHeld;
@@ -173,13 +178,12 @@ export class FrameSchedulerState {
 		this.lastTickSequence = sequence;
 		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
 		if (debugTickRate) {
-			const cyclesUsed = frameState.activeCpuUsedCycles;
 			const yieldsThisFrame = runtime.cpuExecution.debugCycleYieldsTotal - this.debugTickYieldsBefore;
 			this.debugFrameCount += 1;
-			this.debugFrameCyclesUsedAcc += cyclesUsed;
-			this.debugFrameRemainingAcc += frameState.cycleBudgetRemaining;
+			this.debugFrameCyclesUsedAcc += cpuUsed;
+			this.debugFrameRemainingAcc += remaining;
 			this.debugFrameYieldsAcc += yieldsThisFrame;
-			this.debugFrameGrantedAcc += frameState.cycleBudgetGranted;
+			this.debugFrameGrantedAcc += granted;
 			this.debugFrameCarryAcc += frameState.cycleCarryGranted;
 			const now = $.platform.clock.now();
 			const elapsedMs = now - this.debugFrameReportAtMs;
@@ -207,8 +211,9 @@ export class FrameSchedulerState {
 		if (!this.consumeScheduledFrame(runtime)) {
 			return false;
 		}
-		frameState.cycleBudgetRemaining += runtime.timing.cycleBudgetPerFrame;
-		frameState.cycleBudgetGranted += runtime.timing.cycleBudgetPerFrame;
+		const budget = runtime.timing.cycleBudgetPerFrame;
+		frameState.cycleBudgetRemaining += budget;
+		frameState.cycleBudgetGranted += budget;
 		return true;
 	}
 

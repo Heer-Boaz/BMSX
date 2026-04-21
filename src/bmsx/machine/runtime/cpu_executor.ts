@@ -85,9 +85,6 @@ export class CpuExecutionState {
 }
 
 export function advanceRuntimeTime(runtime: Runtime, cycles: number): void {
-	if (cycles <= 0) {
-		return;
-	}
 	runtime.machine.advanceDevices(cycles);
 	runDueRuntimeTimers(runtime);
 }

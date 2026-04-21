@@ -240,10 +240,11 @@ export class Runtime {
 			assetSource: engineSource,
 			index: engineLayer.index,
 			allowedPayloadIds: ['system'],
-		});
-		const engineMachine = engineLayer.index.machine;
+			});
+			const engineMachine = engineLayer.index.machine;
+			const engineProjectRootPath = engineLayer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH;
 
-		if (!cartridge) {
+			if (!cartridge) {
 			$.set_source(engineSource);
 			$.set_cart_manifest(null);
 			$.set_machine_manifest(engineMachine);
@@ -277,22 +278,23 @@ export class Runtime {
 				cpuHz,
 				cycleBudgetPerFrame,
 				vblankCycles,
-				vdpWorkUnitsPerSec: enginePerfSpecs.work_units_per_sec,
-				geoWorkUnitsPerSec: enginePerfSpecs.geo_work_units_per_sec,
-			});
+					vdpWorkUnitsPerSec: enginePerfSpecs.work_units_per_sec,
+					geoWorkUnitsPerSec: enginePerfSpecs.geo_work_units_per_sec,
+				});
 				setTransferRatesFromManifest(runtime, enginePerfSpecs);
-				runtime.assets.biosLayer = engineLayer;
-				runtime.assets.setLayers([engineLayer]);
-			runtime.configureProgramSources({
-				engineSources: engineLuaSources,
-				engineAssetSource: engineSource,
+				const runtimeAssets = runtime.assets;
+				runtimeAssets.biosLayer = engineLayer;
+				runtimeAssets.setLayers([engineLayer]);
+				runtime.configureProgramSources({
+					engineSources: engineLuaSources,
+					engineAssetSource: engineSource,
 			});
 			await applyWorkspaceOverridesToRegistry({
-				registry: engineLuaSources,
-				storage: $.platform.storage,
-				includeServer: true,
-				projectRootPath: engineLayer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH,
-			});
+					registry: engineLuaSources,
+					storage: $.platform.storage,
+					includeServer: true,
+					projectRootPath: engineProjectRootPath,
+				});
 			await runtime.prepareBootRomStartupState();
 			$.view.default_font = new Font();
 			await runtime.boot();
@@ -303,11 +305,12 @@ export class Runtime {
 		const cartLayer = await buildRuntimeAssetLayer({ blob: cartridge, id: 'cart' });
 		const overlayBlob = $.workspace_overlay;
 		let overlayLayer: RuntimeAssetLayer | null = null;
-		if (overlayBlob) {
-			overlayLayer = await buildRuntimeAssetLayer({ blob: overlayBlob, id: 'overlay' });
-		}
-		const layers = [];
-		if (overlayLayer) {
+			if (overlayBlob) {
+				overlayLayer = await buildRuntimeAssetLayer({ blob: overlayBlob, id: 'overlay' });
+			}
+			const runtimeAssetLayers = overlayLayer ? [engineLayer, cartLayer, overlayLayer] : [engineLayer, cartLayer];
+			const layers = [];
+			if (overlayLayer) {
 			layers.push({ id: overlayLayer.id, index: overlayLayer.index, payload: overlayLayer.payload });
 		}
 		layers.push({ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload });
@@ -338,11 +341,11 @@ export class Runtime {
 
 		const memoryLimits = resolveRuntimeMemoryMapSpecs({
 			machine: cartLayer.index.machine,
-			engineMachine,
-			engineSource,
-			assetSource,
-			assetLayers: overlayLayer ? [engineLayer, cartLayer, overlayLayer] : [engineLayer, cartLayer],
-		});
+				engineMachine,
+				engineSource,
+				assetSource,
+				assetLayers: runtimeAssetLayers,
+			});
 		configureMemoryMap(memoryLimits);
 		const cartPerfSpecs = getMachinePerfSpecs(cartLayer.index.machine);
 		const ufpsScaled = resolveUfpsScaled(cartPerfSpecs.ufps);
@@ -367,26 +370,27 @@ export class Runtime {
 			cpuHz,
 			cycleBudgetPerFrame,
 			vblankCycles,
-			vdpWorkUnitsPerSec: cartPerfSpecs.work_units_per_sec,
-			geoWorkUnitsPerSec: cartPerfSpecs.geo_work_units_per_sec,
-		});
+				vdpWorkUnitsPerSec: cartPerfSpecs.work_units_per_sec,
+				geoWorkUnitsPerSec: cartPerfSpecs.geo_work_units_per_sec,
+			});
 			setTransferRatesFromManifest(runtime, cartPerfSpecs);
-			runtime.assets.biosLayer = engineLayer;
-			runtime.assets.setLayers(overlayLayer ? [engineLayer, cartLayer, overlayLayer] : [engineLayer, cartLayer]);
-			runtime.assets.cartLayer = cartLayer;
-			runtime.assets.overlayLayer = overlayLayer;
-		runtime.configureProgramSources({
+			const runtimeAssets = runtime.assets;
+			runtimeAssets.biosLayer = engineLayer;
+			runtimeAssets.setLayers(runtimeAssetLayers);
+			runtimeAssets.cartLayer = cartLayer;
+			runtimeAssets.overlayLayer = overlayLayer;
+			runtime.configureProgramSources({
 			engineSources: engineLuaSources,
 			cartSources: cartLuaSources,
 			engineAssetSource: engineSource,
 			cartAssetSource: cartSource,
 		});
 		await applyWorkspaceOverridesToRegistry({
-			registry: engineLuaSources,
-			storage: $.platform.storage,
-			includeServer: true,
-			projectRootPath: engineLayer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH,
-		});
+					registry: engineLuaSources,
+					storage: $.platform.storage,
+					includeServer: true,
+					projectRootPath: engineProjectRootPath,
+				});
 		await runtime.prepareBootRomStartupState();
 		$.view.default_font = new Font();
 		await runtime.boot();
@@ -629,7 +633,7 @@ export class Runtime {
 		return this.internString(name);
 	}
 
-	private handleClosureHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): void {
+	private handleClosureHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): never {
 		const wrappedError = convertToError(error);
 		if (meta && meta.hid && !wrappedError.message.startsWith(`[${meta.hid}]`)) {
 			wrappedError.message = `[${meta.hid}] ${wrappedError.message}`;
@@ -638,15 +642,14 @@ export class Runtime {
 		throw wrappedError;
 	}
 
-	private handleLuaHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): void {
-		// Annotate the error message with the handler ID if not already present
+	private handleLuaHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): never {
 		const wrappedError = convertToError(error);
 		if (meta && meta.hid && !wrappedError.message.startsWith(`[${meta.hid}]`)) {
 			wrappedError.message = `[${meta.hid}] ${wrappedError.message}`;
 		}
 		this.luaInterpreter.recordFaultCallStack();
 		workbenchMode.handleLuaError(this, wrappedError);
-		throw wrappedError; // Rethrow for higher-level handling
+		throw wrappedError;
 	}
 
 }

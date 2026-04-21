@@ -601,7 +601,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 		const entries = environment.entries();
 		for (let index = 0; index < entries.length; index += 1) {
 			const [name, value] = entries[index];
-			const wrapped = this.wrapFunctionsInValue(moduleId, value, [name], visited, { filter });
+			const wrapped = this.wrapFunctionsInValue(moduleId, value, [name], visited, filter);
 			if (wrapped !== value) {
 				const resolved = environment.resolve(name);
 				if (resolved !== null) {
@@ -653,10 +653,10 @@ export class LuaJsBridge implements LuaInteropAdapter {
 		value: LuaValue,
 		path: ReadonlyArray<string>,
 		visited: WeakSet<LuaTable>,
-		options?: { filter?: (fn: LuaFunctionValue) => boolean },
+		filter?: (fn: LuaFunctionValue) => boolean,
 	): LuaValue {
 		if (isLuaFunctionValue(value)) {
-			if (options?.filter && !options.filter(value)) {
+			if (filter && !filter(value)) {
 				return value;
 			}
 			return this.runtime.luaFunctionRedirectCache.getOrCreate(moduleId, path, value);
@@ -670,7 +670,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 			visited.add(value);
 			value.forEachEntry((rawKey, entry) => {
 				const segment = typeof rawKey === 'string' ? rawKey : String(rawKey);
-				const wrapped = this.wrapFunctionsInValue(moduleId, entry, [...path, segment], visited, options);
+				const wrapped = this.wrapFunctionsInValue(moduleId, entry, [...path, segment], visited, filter);
 				if (wrapped !== entry) {
 					value.set(rawKey, wrapped);
 				}

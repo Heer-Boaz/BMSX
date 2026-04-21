@@ -1523,6 +1523,9 @@ function shouldReportSingleUseLocal(binding: LintBinding): boolean {
 	if (!binding.hasInitializer || !binding.isSimpleAliasInitializer) {
 		return false;
 	}
+	if (binding.writeCount > 0) {
+		return false;
+	}
 	if (binding.initializerTextLength > 32) {
 		return false;
 	}
@@ -2030,6 +2033,9 @@ function repeatedExpressionFingerprint(node: ts.Expression, sourceFile: ts.Sourc
 	if (isExpressionChildOfLargerExpression(node, parent)) {
 		return null;
 	}
+	if (parent !== undefined && ts.isBinaryExpression(parent) && isTsAssignmentOperator(parent.operatorToken.kind) && parent.left === node) {
+		return null;
+	}
 	if (ts.isCallExpression(node)) {
 		return null;
 	}
@@ -2310,6 +2316,53 @@ function reportSingleLineMethodIssue(
 	});
 }
 
+function isSinglePropertyOptionsType(type: ts.TypeNode | undefined): boolean {
+	if (type === undefined || !ts.isTypeLiteralNode(type)) {
+		return false;
+	}
+	let propertyCount = 0;
+	for (let index = 0; index < type.members.length; index += 1) {
+		if (!ts.isPropertySignature(type.members[index])) {
+			return false;
+		}
+		propertyCount += 1;
+	}
+	return propertyCount === 1;
+}
+
+function lintSinglePropertyOptionsParameter(
+	node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
+	sourceFile: ts.SourceFile,
+	issues: LintIssue[],
+): void {
+	if (ts.isMethodDeclaration(node) && (node.body === undefined || isIgnoredMethod(node))) {
+		return;
+	}
+	if (ts.isFunctionDeclaration(node) && node.body === undefined) {
+		return;
+	}
+	for (let index = 0; index < node.parameters.length; index += 1) {
+		const parameter = node.parameters[index];
+		if (!ts.isIdentifier(parameter.name)) {
+			continue;
+		}
+		const name = parameter.name.text;
+		if (name !== 'opts' && name !== 'options') {
+			continue;
+		}
+		if (!isSinglePropertyOptionsType(parameter.type)) {
+			continue;
+		}
+		pushLintIssue(
+			issues,
+			sourceFile,
+			parameter.name,
+			'single_property_options_parameter_pattern',
+			'Single-property opts/options parameters are forbidden. Use a direct parameter or split the operation instead of implying future extensibility.',
+		);
+	}
+}
+
 // Direct mutations on owned containers are real setters, not delegation wrappers.
 const DIRECT_MUTATION_METHOD_NAMES = new Set([
 	'add',
@@ -2355,6 +2408,7 @@ const BOUNDARY_WRAPPER_NAME_WORDS: ReadonlySet<string> = new Set([
 	'ident',
 	'init',
 	'install',
+	'intern',
 	'launch',
 	'load',
 	'make',
@@ -3082,6 +3136,20 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 		}
 		if (ts.isNewExpression(node)) {
 			lintHotPathCallArguments(node);
+		}
+		if (
+			(
+				ts.isFunctionDeclaration(node)
+				|| ts.isMethodDeclaration(node)
+				|| ts.isFunctionExpression(node)
+				|| ts.isArrowFunction(node)
+			) && !ts.isConstructorDeclaration(node)
+		) {
+			lintSinglePropertyOptionsParameter(
+				node as ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
+				sourceFile,
+				issues,
+			);
 		}
 		if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node) || ts.isCallExpression(node)) {
 			if (hasQuestionDotToken(node)) {

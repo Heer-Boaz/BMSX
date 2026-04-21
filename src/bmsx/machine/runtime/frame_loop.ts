@@ -52,20 +52,21 @@ export class FrameLoopState {
 				return true;
 			}
 			return false;
-		}
-		const previousState = this.currentFrameState;
-		const previousRemaining = previousState?.cycleBudgetRemaining ?? -1;
-		const previousPending = runtime.pendingCall === 'entry';
-		const previousSequence = runtime.frameScheduler.lastTickSequence;
-		if (this.currentFrameState === null) {
-			if (!runtime.frameScheduler.startScheduledFrame(runtime)) {
-				return false;
 			}
-		} else if (this.currentFrameState.cycleBudgetRemaining <= 0) {
-			if (!runtime.frameScheduler.refillFrameBudget(runtime, this.currentFrameState)) {
-				return false;
+			const previousState = this.currentFrameState;
+			const previousRemaining = previousState?.cycleBudgetRemaining ?? -1;
+			const frameScheduler = runtime.frameScheduler;
+			const previousPendingEntry = runtime.pendingCall === 'entry';
+			const previousSequence = frameScheduler.lastTickSequence;
+			if (this.currentFrameState === null) {
+				if (!frameScheduler.startScheduledFrame(runtime)) {
+					return false;
+				}
+			} else if (this.currentFrameState.cycleBudgetRemaining <= 0) {
+				if (!frameScheduler.refillFrameBudget(runtime, this.currentFrameState)) {
+					return false;
+				}
 			}
-		}
 		this.runActiveFrameState(runtime, this.currentFrameState);
 		const nextState = this.currentFrameState;
 		if (nextState !== previousState) {
@@ -74,11 +75,12 @@ export class FrameLoopState {
 		if (nextState !== null && nextState.cycleBudgetRemaining !== previousRemaining) {
 			return true;
 		}
-		if ((runtime.pendingCall === 'entry') !== previousPending) {
-			return true;
+			const nextPendingEntry = runtime.pendingCall === 'entry';
+			if (nextPendingEntry !== previousPendingEntry) {
+				return true;
+			}
+			return frameScheduler.lastTickSequence !== previousSequence;
 		}
-		return runtime.frameScheduler.lastTickSequence !== previousSequence;
-	}
 
 	public abandonFrameState(runtime: Runtime): void {
 		this.currentFrameState = null;

@@ -18,7 +18,7 @@ export type LuaHandlerCallFn = (
 export type LuaHandlerErrorReporter = (
 	error: unknown,
 	meta: { hid: string; moduleId: string; path?: string },
-) => void;
+) => never;
 
 export type LuaHandlerContext = {
 	moduleId: string;
@@ -53,9 +53,6 @@ export class LuaHandlerCache {
 
 		const moduleId = ctx.moduleId;
 		const key = this.resolveKey(moduleId, ctx.path);
-		if (!key) {
-			throw new Error(`[LuaHandlerCache] Unable to resolve handler key for module '${moduleId}'.`);
-		}
 		const hid = this.buildHid(moduleId, key);
 		const existing = this.byHid.get(hid);
 		if (existing) {
@@ -67,13 +64,13 @@ export class LuaHandlerCache {
 
 		const pathText = this.pathToText(ctx.path);
 		const handler = this.createHandler(hid, moduleId, pathText, fn);
-		const record: HandlerRecord = {
-			handler,
-			moduleId,
-			key,
-			path: pathText ,
-			current: { fn },
-		};
+			const record: HandlerRecord = {
+				handler,
+				moduleId,
+				key,
+				path: pathText,
+				current: { fn },
+			};
 		this.byLuaFn.set(fn, handler);
 		this.byHid.set(hid, record);
 		this.index(moduleId, key, record);
@@ -82,7 +79,7 @@ export class LuaHandlerCache {
 	}
 
 	public rebind(moduleId: string, path: ReadonlyArray<string>, fn: LuaFunctionValue): void {
-		const key = this.resolveKey(moduleId, path, { reuseOnly: true });
+		const key = this.resolveReusableKey(moduleId, path);
 		if (!key) {
 			return;
 		}
@@ -129,23 +126,20 @@ export class LuaHandlerCache {
 	private createHandler(
 		hid: string,
 		moduleId: string,
-		path: string,
+		path: string | undefined,
 		fn: LuaFunctionValue,
 	): LuaHandlerFn {
 		let currentFn = fn;
 		const cache = this;
-		const callLua = this.callLua;
-		const reportError = this.reportError;
 
 		const handler = function luaHandler(this: unknown, ...args: unknown[]) {
 			try {
-				return callLua(currentFn, this, args);
+				return cache.callLua(currentFn, this, args);
 			} catch (error) {
 				if (isLuaDebuggerPauseSignal(error)) {
 					throw error;
 				}
-				reportError(error, { hid, moduleId, path });
-				return undefined;
+				cache.reportError(error, { hid, moduleId, path });
 			}
 		} as unknown as LuaHandlerFn;
 
@@ -167,28 +161,32 @@ export class LuaHandlerCache {
 		return handler;
 	}
 
-	private resolveKey(moduleId: string, path: ReadonlyArray<string>, opts?: { reuseOnly?: boolean }): string {
+	private resolveKey(moduleId: string, path: ReadonlyArray<string> | undefined): string {
 		const normalizedPath = this.pathToText(path);
 		if (normalizedPath) {
 			return normalizedPath;
 		}
 
-		if (opts?.reuseOnly) {
-			const bucket = this.byModule.get(moduleId);
-			if (!bucket) {
-				return null;
-			}
-			for (const [key, record] of bucket.entries()) {
-				if (!record.path) {
-					return key;
-				}
-			}
-			return null;
-		}
-
 		const next = (this.anonCounters.get(moduleId) ?? 0) + 1;
 		this.anonCounters.set(moduleId, next);
 		return `anon::${next}`;
+	}
+
+	private resolveReusableKey(moduleId: string, path: ReadonlyArray<string> | undefined): string | undefined {
+		const normalizedPath = this.pathToText(path);
+		if (normalizedPath) {
+			return normalizedPath;
+		}
+		const bucket = this.byModule.get(moduleId);
+		if (!bucket) {
+			return undefined;
+		}
+		for (const [key, record] of bucket.entries()) {
+			if (!record.path) {
+				return key;
+			}
+		}
+		return undefined;
 	}
 
 	private index(moduleId: string, key: string, record: HandlerRecord): void {
@@ -204,13 +202,13 @@ export class LuaHandlerCache {
 		return `mod:${moduleId}#${key}`;
 	}
 
-	private pathToText(path: ReadonlyArray<string>): string {
+	private pathToText(path: ReadonlyArray<string> | undefined): string | undefined {
 		if (!path || path.length === 0) {
-			return null;
+			return undefined;
 		}
 		const segments = path.map(segment => segment?.trim()).filter(segment => segment && segment.length > 0) as string[];
 		if (segments.length === 0) {
-			return null;
+			return undefined;
 		}
 		return segments.join('.');
 	}
