@@ -110,28 +110,6 @@ static u32 utf8SingleCodepoint(const std::string& text) {
 	return codepoint;
 }
 
-static void utf8AppendCodepoint(std::string& out, u32 codepoint) {
-	if (codepoint <= 0x7Fu) {
-		out.push_back(static_cast<char>(codepoint));
-		return;
-	}
-	if (codepoint <= 0x7FFu) {
-		out.push_back(static_cast<char>(0xC0u | ((codepoint >> 6) & 0x1Fu)));
-		out.push_back(static_cast<char>(0x80u | (codepoint & 0x3Fu)));
-		return;
-	}
-	if (codepoint <= 0xFFFFu) {
-		out.push_back(static_cast<char>(0xE0u | ((codepoint >> 12) & 0x0Fu)));
-		out.push_back(static_cast<char>(0x80u | ((codepoint >> 6) & 0x3Fu)));
-		out.push_back(static_cast<char>(0x80u | (codepoint & 0x3Fu)));
-		return;
-	}
-	out.push_back(static_cast<char>(0xF0u | ((codepoint >> 18) & 0x07u)));
-	out.push_back(static_cast<char>(0x80u | ((codepoint >> 12) & 0x3Fu)));
-	out.push_back(static_cast<char>(0x80u | ((codepoint >> 6) & 0x3Fu)));
-	out.push_back(static_cast<char>(0x80u | (codepoint & 0x3Fu)));
-}
-
 } // namespace
 
 Api::Api(Runtime& runtime)
@@ -513,7 +491,7 @@ Value Api::build_font_descriptor(BFont* font) {
 	Table* glyphs = m_runtime.machine().cpu().createTable(0, static_cast<int>(font->glyphMap().size()));
 	for (const auto& [codepoint, _imgid] : font->glyphMap()) {
 		std::string glyphKey;
-		utf8AppendCodepoint(glyphKey, codepoint);
+		appendUtf8Codepoint(glyphKey, codepoint);
 		const FontGlyph& glyph = font->getGlyph(codepoint);
 		Table* glyphEntry = m_runtime.machine().cpu().createTable(0, 4);
 		glyphEntry->set(key("imgid"), str(glyph.imgid));

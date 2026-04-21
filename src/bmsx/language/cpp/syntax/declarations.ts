@@ -118,6 +118,9 @@ export function collectCppClassRanges(
 		if (token.text !== 'class' && token.text !== 'struct') {
 			continue;
 		}
+		if (index > 0 && tokens[index - 1].text === 'enum') {
+			continue;
+		}
 		const nameIndex = index + 1;
 		if (nameIndex >= tokens.length || tokens[nameIndex].kind !== 'id') {
 			continue;

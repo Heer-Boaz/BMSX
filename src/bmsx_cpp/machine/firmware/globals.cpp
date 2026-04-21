@@ -6,6 +6,7 @@
 #include "machine/memory/lua_heap_usage.h"
 #include "core/engine.h"
 #include "core/time.h"
+#include "core/utf8.h"
 #include "rompack/format.h"
 #include "rompack/assets.h"
 #include "common/serializer/binencoder.h"
@@ -52,20 +53,6 @@ std::string formatNonFunctionCallError(Value callee, const CPU& cpu) {
 	return message;
 }
 
-size_t utf8_next_index(const std::string& text, size_t index) {
-	unsigned char c0 = static_cast<unsigned char>(text[index]);
-	if (c0 < 0x80) {
-		return index + 1;
-	}
-	if ((c0 & 0xE0) == 0xC0) {
-		return index + 2;
-	}
-	if ((c0 & 0xF0) == 0xE0) {
-		return index + 3;
-	}
-	return index + 4;
-}
-
 size_t utf8_byte_index_from_codepoint(const std::string& text, int codepointIndex) {
 	if (codepointIndex <= 1) {
 		return 0;
@@ -76,7 +63,7 @@ size_t utf8_byte_index_from_codepoint(const std::string& text, int codepointInde
 		if (current == codepointIndex) {
 			return index;
 		}
-		index = utf8_next_index(text, index);
+		index = nextUtf8Index(text, index);
 		current += 1;
 	}
 	return index;
@@ -89,7 +76,7 @@ int utf8_codepoint_index_from_byte(const std::string& text, size_t byteIndex) {
 		if (index >= byteIndex) {
 			return current;
 		}
-		index = utf8_next_index(text, index);
+		index = nextUtf8Index(text, index);
 		current += 1;
 	}
 	return current;
@@ -99,7 +86,7 @@ int utf8_codepoint_count(const std::string& text) {
 	int count = 0;
 	size_t index = 0;
 	while (index < text.size()) {
-		index = utf8_next_index(text, index);
+		index = nextUtf8Index(text, index);
 		count += 1;
 	}
 	return count;
@@ -125,70 +112,33 @@ uint32_t utf8_codepoint_at(const std::string& text, size_t index) {
 	return ((c0 & 0x07) << 18) | ((c1 & 0x3F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
 }
 
-void utf8_append_codepoint(std::string& out, uint32_t codepoint) {
-	if (codepoint <= 0x7F) {
-		out.push_back(static_cast<char>(codepoint));
-		return;
+template <typename MapAscii>
+std::string mapUtf8Ascii(const std::string& text, MapAscii mapAscii) {
+	std::string out;
+	out.reserve(text.size());
+	size_t index = 0;
+	while (index < text.size()) {
+		uint32_t codepoint = utf8_codepoint_at(text, index);
+		if (codepoint < 0x80) {
+			out.push_back(static_cast<char>(mapAscii(static_cast<unsigned char>(codepoint))));
+		} else {
+			appendUtf8Codepoint(out, codepoint);
+		}
+		index = nextUtf8Index(text, index);
 	}
-	if (codepoint <= 0x7FF) {
-		out.push_back(static_cast<char>(0xC0 | ((codepoint >> 6) & 0x1F)));
-		out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
-		return;
-	}
-	if (codepoint <= 0xFFFF) {
-		out.push_back(static_cast<char>(0xE0 | ((codepoint >> 12) & 0x0F)));
-		out.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
-		out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
-		return;
-	}
-	out.push_back(static_cast<char>(0xF0 | ((codepoint >> 18) & 0x07)));
-	out.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
-	out.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
-	out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+	return out;
 }
 
 std::string utf8_to_upper(const std::string& text) {
-	std::string out;
-	out.reserve(text.size());
-	size_t index = 0;
-	while (index < text.size()) {
-		uint32_t codepoint = utf8_codepoint_at(text, index);
-		if (codepoint < 0x80) {
-			char c = static_cast<char>(codepoint);
-			char mapped = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-			out.push_back(mapped);
-		} else {
-			utf8_append_codepoint(out, codepoint);
-		}
-		index = utf8_next_index(text, index);
-	}
-	return out;
+	return mapUtf8Ascii(text, [](unsigned char c) {
+		return std::toupper(c);
+	});
 }
 
 std::string utf8_to_lower(const std::string& text) {
-	std::string out;
-	out.reserve(text.size());
-	size_t index = 0;
-	while (index < text.size()) {
-		uint32_t codepoint = utf8_codepoint_at(text, index);
-		if (codepoint < 0x80) {
-			char c = static_cast<char>(codepoint);
-			char mapped = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-			out.push_back(mapped);
-		} else {
-			utf8_append_codepoint(out, codepoint);
-		}
-		index = utf8_next_index(text, index);
-	}
-	return out;
-}
-
-Table* buildArrayTable(CPU& cpu, const std::array<f32, 12>& values) {
-	auto* table = cpu.createTable(static_cast<int>(values.size()), 0);
-	for (size_t index = 0; index < values.size(); ++index) {
-		table->set(valueNumber(static_cast<double>(index + 1)), valueNumber(static_cast<double>(values[index])));
-	}
-	return table;
+	return mapUtf8Ascii(text, [](unsigned char c) {
+		return std::tolower(c);
+	});
 }
 
 template <typename KeyFn>
@@ -253,10 +203,10 @@ Table* buildImgMetaTable(CPU& cpu, const ImgMeta& meta, const KeyFn& key) {
 	}
 	table->set(key("width"), valueNumber(static_cast<double>(meta.width)));
 	table->set(key("height"), valueNumber(static_cast<double>(meta.height)));
-	table->set(key("texcoords"), valueTable(buildArrayTable(cpu, meta.texcoords)));
-	table->set(key("texcoords_fliph"), valueTable(buildArrayTable(cpu, meta.texcoords_fliph)));
-	table->set(key("texcoords_flipv"), valueTable(buildArrayTable(cpu, meta.texcoords_flipv)));
-	table->set(key("texcoords_fliphv"), valueTable(buildArrayTable(cpu, meta.texcoords_fliphv)));
+	table->set(key("texcoords"), valueTable(buildNumericArrayTable(cpu, meta.texcoords)));
+	table->set(key("texcoords_fliph"), valueTable(buildNumericArrayTable(cpu, meta.texcoords_fliph)));
+	table->set(key("texcoords_flipv"), valueTable(buildNumericArrayTable(cpu, meta.texcoords_flipv)));
+	table->set(key("texcoords_fliphv"), valueTable(buildNumericArrayTable(cpu, meta.texcoords_fliphv)));
 	table->set(key("boundingbox"), valueTable(buildBoundingBoxTable(cpu, meta, key)));
 
 	if (meta.hasCenterpoint) {
@@ -2223,7 +2173,7 @@ void Runtime::setupBuiltins() {
 				codepoints.reserve(static_cast<size_t>(utf8_codepoint_count(value)));
 				size_t index = 0;
 				while (index < value.size()) {
-					const size_t next = utf8_next_index(value, index);
+					const size_t next = nextUtf8Index(value, index);
 					codepoints.push_back(value.substr(index, next - index));
 					index = next;
 				}
@@ -2999,7 +2949,7 @@ stringTable->set(key("char"), m_machine.cpu().createNativeFunction("string.char"
 	result.reserve(args.size());
 	for (const auto& arg : args) {
 		uint32_t codepoint = static_cast<uint32_t>(std::floor(asNumber(arg)));
-		utf8_append_codepoint(result, codepoint);
+		appendUtf8Codepoint(result, codepoint);
 	}
 	out.push_back(str(result));
 }));

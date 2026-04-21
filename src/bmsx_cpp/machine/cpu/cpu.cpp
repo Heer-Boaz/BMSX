@@ -2174,10 +2174,11 @@ const Value& CPU::readRK(CallFrame& frame, int rk) {
 	return frame.registers[static_cast<size_t>(rk)];
 }
 
-Value CPU::resolveTableIndex(Table* table, const Value& key) {
+template <typename Getter>
+Value CPU::resolveTableIndexChain(Table* table, Getter get) {
 	Table* current = table;
 	for (int depth = 0; depth < 32; depth += 1) {
-		Value value = current->get(key);
+		const Value value = get(current);
 		if (!isNil(value)) {
 			return value;
 		}
@@ -2185,53 +2186,31 @@ Value CPU::resolveTableIndex(Table* table, const Value& key) {
 		if (!metatable) {
 			return valueNil();
 		}
-		Value indexerValue = metatable->getStringKey(asStringId(m_indexKey));
+		const Value indexerValue = metatable->getStringKey(asStringId(m_indexKey));
 		if (!valueIsTable(indexerValue)) {
 			return valueNil();
 		}
 		current = asTable(indexerValue);
 	}
 	throw BMSX_RUNTIME_ERROR("Metatable __index loop detected.");
+}
+
+Value CPU::resolveTableIndex(Table* table, const Value& key) {
+	return resolveTableIndexChain(table, [&](Table* current) {
+		return current->get(key);
+	});
 }
 
 Value CPU::resolveTableIntegerIndex(Table* table, int index) {
-	Table* current = table;
-	for (int depth = 0; depth < 32; depth += 1) {
-		Value value = current->getInteger(index);
-		if (!isNil(value)) {
-			return value;
-		}
-		Table* metatable = current->getMetatable();
-		if (!metatable) {
-			return valueNil();
-		}
-		Value indexerValue = metatable->getStringKey(asStringId(m_indexKey));
-		if (!valueIsTable(indexerValue)) {
-			return valueNil();
-		}
-		current = asTable(indexerValue);
-	}
-	throw BMSX_RUNTIME_ERROR("Metatable __index loop detected.");
+	return resolveTableIndexChain(table, [index](Table* current) {
+		return current->getInteger(index);
+	});
 }
 
 Value CPU::resolveTableFieldIndex(Table* table, StringId key) {
-	Table* current = table;
-	for (int depth = 0; depth < 32; depth += 1) {
-		Value value = current->getStringKey(key);
-		if (!isNil(value)) {
-			return value;
-		}
-		Table* metatable = current->getMetatable();
-		if (!metatable) {
-			return valueNil();
-		}
-		Value indexerValue = metatable->getStringKey(asStringId(m_indexKey));
-		if (!valueIsTable(indexerValue)) {
-			return valueNil();
-		}
-		current = asTable(indexerValue);
-	}
-	throw BMSX_RUNTIME_ERROR("Metatable __index loop detected.");
+	return resolveTableIndexChain(table, [key](Table* current) {
+		return current->getStringKey(key);
+	});
 }
 
 Value CPU::loadTableIndex(const Value& base, const Value& key) {

@@ -48,6 +48,16 @@ constexpr int VRAM_GARBAGE_FORCE_T2 = 480;
 constexpr int VRAM_GARBAGE_FORCE_T_DEN = 1000;
 constexpr u8 IMPLICIT_FRAME_CLEAR_RGBA[4] = {0u, 0u, 0u, 255u};
 
+template <typename T>
+std::vector<T> acquireVectorFromPool(std::vector<std::vector<T>>& pool) {
+	if (pool.empty()) {
+		return {};
+	}
+	std::vector<T> values = std::move(pool.back());
+	pool.pop_back();
+	return values;
+}
+
 struct SkyboxPayloadBaseEntry {
 	const char* payload;
 	uint32_t base;
@@ -1191,7 +1201,11 @@ void VDP::resetStatus() {
 }
 
 void VDP::setVblankStatus(bool active) {
-	const uint32_t nextStatus = active ? (m_vdpStatus | VDP_STATUS_VBLANK) : (m_vdpStatus & ~VDP_STATUS_VBLANK);
+	setStatusFlag(VDP_STATUS_VBLANK, active);
+}
+
+void VDP::setStatusFlag(uint32_t mask, bool active) {
+	const uint32_t nextStatus = active ? (m_vdpStatus | mask) : (m_vdpStatus & ~mask);
 	if (nextStatus == m_vdpStatus) {
 		return;
 	}
@@ -1259,12 +1273,7 @@ bool VDP::hasBlockedSubmitPath() const {
 }
 
 void VDP::setSubmitBusyStatus(bool active) {
-	const uint32_t nextStatus = active ? (m_vdpStatus | VDP_STATUS_SUBMIT_BUSY) : (m_vdpStatus & ~VDP_STATUS_SUBMIT_BUSY);
-	if (nextStatus == m_vdpStatus) {
-		return;
-	}
-	m_vdpStatus = nextStatus;
-	m_memory.writeValue(IO_VDP_STATUS, valueNumber(static_cast<double>(m_vdpStatus)));
+	setStatusFlag(VDP_STATUS_SUBMIT_BUSY, active);
 }
 
 void VDP::refreshSubmitBusyStatus() {
@@ -1272,12 +1281,7 @@ void VDP::refreshSubmitBusyStatus() {
 }
 
 void VDP::setSubmitRejectedStatus(bool active) {
-	const uint32_t nextStatus = active ? (m_vdpStatus | VDP_STATUS_SUBMIT_REJECTED) : (m_vdpStatus & ~VDP_STATUS_SUBMIT_REJECTED);
-	if (nextStatus == m_vdpStatus) {
-		return;
-	}
-	m_vdpStatus = nextStatus;
-	m_memory.writeValue(IO_VDP_STATUS, valueNumber(static_cast<double>(m_vdpStatus)));
+	setStatusFlag(VDP_STATUS_SUBMIT_REJECTED, active);
 }
 
 void VDP::pushVdpFifoWord(u32 word) {
@@ -1639,21 +1643,11 @@ u32 VDP::nextBlitterSequence() {
 }
 
 std::vector<VDP::GlyphRunGlyph> VDP::acquireGlyphBuffer() {
-	if (m_glyphBufferPool.empty()) {
-		return {};
-	}
-	std::vector<GlyphRunGlyph> glyphs = std::move(m_glyphBufferPool.back());
-	m_glyphBufferPool.pop_back();
-	return glyphs;
+	return acquireVectorFromPool(m_glyphBufferPool);
 }
 
 std::vector<VDP::TileRunBlit> VDP::acquireTileBuffer() {
-	if (m_tileBufferPool.empty()) {
-		return {};
-	}
-	std::vector<TileRunBlit> tiles = std::move(m_tileBufferPool.back());
-	m_tileBufferPool.pop_back();
-	return tiles;
+	return acquireVectorFromPool(m_tileBufferPool);
 }
 
 void VDP::recycleBlitterBuffers(std::vector<BlitterCommand>& queue) {

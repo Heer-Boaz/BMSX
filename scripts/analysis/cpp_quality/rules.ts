@@ -113,9 +113,11 @@ type CppLocalBinding = {
 	column: number;
 	isConst: boolean;
 	isReference: boolean;
+	isPointer: boolean;
 	hasInitializer: boolean;
 	readCount: number;
 	writeCount: number;
+	memberAccessCount: number;
 	initializerTextLength: number;
 	isSimpleAliasInitializer: boolean;
 	firstReadLeftText: string | null;
@@ -226,6 +228,29 @@ const HOT_PATH_FUNCTION_NAME_WORDS = new Set([
 	'timer',
 	'update',
 	'vblank',
+]);
+
+const NUMERIC_BOUNDARY_FUNCTION_NAME_WORDS = new Set([
+	'append',
+	'blit',
+	'bucket',
+	'clip',
+	'clipped',
+	'copy',
+	'cost',
+	'draw',
+	'fill',
+	'frame',
+	'glyph',
+	'line',
+	'pack',
+	'rasterize',
+	'rect',
+	'register',
+	'render',
+	'span',
+	'tile',
+	'vertices',
 ]);
 
 const CPP_BOUNDED_NUMERIC_HINT_WORDS = new Set([
@@ -513,7 +538,7 @@ function collectSemanticBodySignatures(tokens: readonly CppToken[], pairs: reado
 			continue;
 		}
 		const family = semanticNormalizationFamily(target);
-		if (family !== null) {
+		if (family !== null && isSemanticBodySignatureFamily(family)) {
 			let calls = callsByFamily.get(family);
 			if (calls === undefined) {
 				calls = new Map<string, number>();
@@ -539,6 +564,10 @@ function collectSemanticBodySignatures(tokens: readonly CppToken[], pairs: reado
 	}
 	signatures.sort((left, right) => left.localeCompare(right));
 	return signatures;
+}
+
+function isSemanticBodySignatureFamily(family: string): boolean {
+	return family.startsWith('text:');
 }
 
 function collectSemanticNormalizationCallSignatures(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number): string[] {
@@ -585,6 +614,16 @@ function isHotPathFunction(fileName: string, info: CppFunctionInfo): boolean {
 	return false;
 }
 
+function isNumericBoundaryFunction(info: CppFunctionInfo): boolean {
+	const segments = cppWordSegments(info.name);
+	for (let index = 0; index < segments.length; index += 1) {
+		if (NUMERIC_BOUNDARY_FUNCTION_NAME_WORDS.has(segments[index])) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function isCppNumericLimitsMemberCall(tokens: readonly CppToken[], openParen: number): boolean {
 	const nameIndex = openParen - 1;
 	if (nameIndex < 2) {
@@ -611,6 +650,21 @@ function isCppNumericLimitsMemberCall(tokens: readonly CppToken[], openParen: nu
 
 function isCppNumericSanitizationCall(tokens: readonly CppToken[], openParen: number, target: string | null): boolean {
 	return target !== null && NUMERIC_DEFENSIVE_CALLS.has(target) && !isCppNumericLimitsMemberCall(tokens, openParen);
+}
+
+function shouldReportCppHotPathNumericSanitization(tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, openParen: number, target: string | null): boolean {
+	if (!isCppNumericSanitizationCall(tokens, openParen, target)) {
+		return false;
+	}
+	if (isCppSemanticFloorDivisionCall(tokens, pairs, openParen, target)) {
+		return false;
+	}
+	if (isNumericBoundaryFunction(info)) {
+		return false;
+	}
+	const callStart = findCppAccessChainStart(tokens, openParen - 1);
+	const callEnd = pairs[openParen] + 1;
+	return rangeContainsNestedCppNumericSanitization(tokens, pairs, callStart, callEnd) || containsCppBoundedNumericHint(tokens, callStart, callEnd);
 }
 
 function isCppSemanticFloorDivisionCall(tokens: readonly CppToken[], pairs: readonly number[], openParen: number, target: string | null): boolean {
@@ -955,7 +1009,7 @@ export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], 
 			continue;
 		}
 		markBindingUses(binding, tokens, info.bodyStart, info.bodyEnd);
-		if (!binding.isConst && !binding.isReference && binding.hasInitializer && binding.writeCount === 0) {
+		if (shouldReportCppLocalConst(binding)) {
 			pushLintIssue(issues, file, tokens[binding.nameToken], 'local_const_pattern', `Prefer "const" for "${binding.name}"; it is never reassigned.`);
 		}
 		if (binding.readCount === 1 && shouldReportSingleUseLocal(binding)) {
@@ -1118,6 +1172,7 @@ function declarationFromStatement(tokens: readonly CppToken[], start: number, en
 	const initializerText = trimmedCppExpressionText(tokens, initializerIndex + 1, end);
 	let isConst = isLeadingConst;
 	let isReference = false;
+	let isPointer = false;
 	for (let index = declarationStart; index < nameIndex; index += 1) {
 		if (tokens[index].text === 'const' || tokens[index].text === 'constexpr') {
 			isConst = true;
@@ -1125,6 +1180,9 @@ function declarationFromStatement(tokens: readonly CppToken[], start: number, en
 		}
 		if (tokens[index].text === '&' || tokens[index].text === '&&') {
 			isReference = true;
+		}
+		if (tokens[index].text === '*') {
+			isPointer = true;
 		}
 	}
 	return {
@@ -1134,9 +1192,11 @@ function declarationFromStatement(tokens: readonly CppToken[], start: number, en
 		column: nameToken.column,
 		isConst,
 		isReference,
+		isPointer,
 		hasInitializer: true,
 		readCount: 0,
 		writeCount: 0,
+		memberAccessCount: 0,
 		initializerTextLength: initializerText.length,
 		isSimpleAliasInitializer: isCppSimpleAliasInitializer(tokens, initializerIndex + 1, end),
 		firstReadLeftText: null,
@@ -1152,6 +1212,9 @@ function markBindingUses(binding: CppLocalBinding, tokens: readonly CppToken[], 
 		}
 		if (tokens[index - 1]?.text === '.' || tokens[index - 1]?.text === '->' || tokens[index - 1]?.text === '::') {
 			continue;
+		}
+		if (tokens[index + 1]?.text === '.' || tokens[index + 1]?.text === '->') {
+			binding.memberAccessCount += 1;
 		}
 		if (isWriteUse(tokens, index)) {
 			binding.writeCount += 1;
@@ -1198,6 +1261,22 @@ function isCppSingleUseSuppressingToken(text: string | null): boolean {
 		|| text === '&&'
 		|| text === '||'
 		|| text === '??';
+}
+
+function shouldReportCppLocalConst(binding: CppLocalBinding): boolean {
+	if (binding.isConst || binding.isReference || binding.isPointer || !binding.hasInitializer || binding.writeCount !== 0) {
+		return false;
+	}
+	if (binding.memberAccessCount > 0) {
+		return false;
+	}
+	if (binding.readCount < 2) {
+		return false;
+	}
+	if (binding.isSimpleAliasInitializer && binding.initializerTextLength <= 32) {
+		return false;
+	}
+	return true;
 }
 
 function shouldReportSingleUseLocal(binding: CppLocalBinding): boolean {
@@ -1531,7 +1610,7 @@ export function lintCppHotPathCalls(file: string, tokens: readonly CppToken[], p
 		if (target === null) {
 			continue;
 		}
-		if (isCppNumericSanitizationCall(tokens, index, target)) {
+		if (shouldReportCppHotPathNumericSanitization(tokens, pairs, info, index, target)) {
 			pushLintIssue(issues, file, tokens[index - 1], 'numeric_defensive_sanitization_pattern', 'Defensive numeric sanitization in hot paths is forbidden. Coordinates, cycles, and layout values must already be valid.');
 		}
 		const args = splitCppArgumentRanges(tokens, index + 1, pairs[index]);
@@ -1691,6 +1770,9 @@ export function lintCppSemanticRepeatedExpressions(file: string, tokens: readonl
 }
 
 export function collectCppNormalizedBody(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, normalizedBodies: CppNormalizedBodyInfo[]): void {
+	if (info.name.endsWith('Thunk')) {
+		return;
+	}
 	const semanticNormalization = info.wrapperTarget !== null && isSemanticNormalizationWrapperTarget(info.wrapperTarget);
 	if (info.wrapperTarget !== null && !semanticNormalization) {
 		return;

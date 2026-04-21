@@ -13,6 +13,7 @@ import {
 	VDP_STREAM_BUFFER_SIZE,
 } from '../memory/map';
 import { ScratchBuffer } from '../../common/scratchbuffer';
+import { ScratchArrayStack } from '../../common/scratchstack';
 
 export { OpCode } from './opcode_info';
 
@@ -1513,8 +1514,7 @@ export class CPU {
 	});
 	private nativeArgsScratchIndex = 0;
 	private readonly debugRegistersScratch: Value[] = [];
-	private readonly nativeReturnScratch = new ScratchBuffer<Value[]>(() => []);
-	private nativeReturnScratchIndex = 0;
+	private readonly nativeReturnScratch = new ScratchArrayStack<Value>();
 	private readonly profiler = new CpuExecutionProfiler();
 	private profilerEnabled = false;
 	private externalReturnSink: Value[] | null = null;
@@ -1583,15 +1583,11 @@ export class CPU {
 	}
 
 	private acquireNativeReturnScratch(): Value[] {
-		const out = this.nativeReturnScratch.get(this.nativeReturnScratchIndex);
-		this.nativeReturnScratchIndex += 1;
-		out.length = 0;
-		return out;
+		return this.nativeReturnScratch.acquire();
 	}
 
 	private releaseNativeReturnScratch(out: Value[]): void {
-		out.length = 0;
-		this.nativeReturnScratchIndex -= 1;
+		this.nativeReturnScratch.release(out);
 	}
 
 	private findOpenUpvalue(frame: CallFrame, index: number): Upvalue | null {

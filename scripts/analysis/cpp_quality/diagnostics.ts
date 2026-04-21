@@ -131,8 +131,14 @@ export function buildDuplicateGroups(buckets: Map<string, CppDuplicateLocation[]
 
 export function addDuplicateExportedTypeIssues(exportedTypes: readonly CppExportedTypeInfo[], issues: CppLintIssue[]): void {
 	const byName = new Map<string, CppExportedTypeInfo[]>();
+	const seenLocations = new Set<string>();
 	for (let index = 0; index < exportedTypes.length; index += 1) {
 		const entry = exportedTypes[index];
+		const locationKey = `${entry.context ?? ''}\u0000${entry.name}\u0000${entry.file}\u0000${entry.line}\u0000${entry.column}`;
+		if (seenLocations.has(locationKey)) {
+			continue;
+		}
+		seenLocations.add(locationKey);
 		const key = `${entry.context ?? ''}\u0000${entry.name}`;
 		let list = byName.get(key);
 		if (list === undefined) {

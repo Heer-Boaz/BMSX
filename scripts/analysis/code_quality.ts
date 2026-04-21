@@ -964,6 +964,14 @@ function expressionUsesGuardedValue(expression: ts.Expression, guardFingerprint:
 	);
 }
 
+function truthyGuardFingerprint(condition: ts.Expression): string | null {
+	const unwrapped = unwrapExpression(condition);
+	if (ts.isPrefixUnaryExpression(unwrapped) && unwrapped.operator === ts.SyntaxKind.ExclamationToken) {
+		return expressionAccessFingerprint(unwrapped.operand);
+	}
+	return expressionAccessFingerprint(unwrapped);
+}
+
 function nullishGuardFingerprint(condition: ts.Expression): string | null {
 	const unwrapped = unwrapExpression(condition);
 	if (!ts.isBinaryExpression(unwrapped)) {
@@ -984,6 +992,21 @@ function nullishGuardFingerprint(condition: ts.Expression): string | null {
 		return expressionAccessFingerprint(unwrapped.left);
 	}
 	return null;
+}
+
+function isConditionalNullishNormalization(node: ts.ConditionalExpression): boolean {
+	const trueNullish = isNullOrUndefined(node.whenTrue);
+	const falseNullish = isNullOrUndefined(node.whenFalse);
+	if (trueNullish === falseNullish) {
+		return false;
+	}
+	const valueExpression = trueNullish ? node.whenFalse : node.whenTrue;
+	const nullishGuard = nullishGuardFingerprint(node.condition);
+	if (nullishGuard !== null) {
+		return expressionUsesGuardedValue(valueExpression, nullishGuard);
+	}
+	const truthyGuard = truthyGuardFingerprint(node.condition);
+	return truthyGuard !== null && expressionUsesGuardedValue(valueExpression, truthyGuard);
 }
 
 function isNullishReturnStatement(statement: ts.Statement): boolean {
@@ -2033,6 +2056,10 @@ function semanticSignatureLabel(signature: string): string {
 	return (separator >= 0 ? signature.slice(0, separator) : signature).replace(':', ' ');
 }
 
+function isSemanticBodySignatureFamily(family: string): boolean {
+	return family.startsWith('text:');
+}
+
 function compactSampleText(text: string): string {
 	if (text.length <= COMPACT_SAMPLE_TEXT_LENGTH) {
 		return text;
@@ -2047,7 +2074,7 @@ function collectSemanticBodySignatures(node: ts.Node): string[] {
 			const target = callTargetText(current);
 			if (target !== null && (isSemanticNormalizationCallTarget(target) || isNumericDefensiveCall(current))) {
 				const family = semanticNormalizationFamily(target);
-				if (family !== null) {
+				if (family !== null && isSemanticBodySignatureFamily(family)) {
 					let calls = callsByFamily.get(family);
 					if (calls === undefined) {
 						calls = new Map<string, number>();
@@ -2894,6 +2921,9 @@ function collectNormalizedBody(
 	node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
 	normalizedBodies: NormalizedBodyInfo[],
 ): void {
+	if (name.endsWith('Thunk')) {
+		return;
+	}
 	const body = node.body;
 	if (body === undefined) {
 		return;
@@ -3346,7 +3376,7 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 				issues,
 			);
 		}
-		if (ts.isConditionalExpression(node) && (isNullOrUndefined(node.whenTrue) || isNullOrUndefined(node.whenFalse))) {
+		if (ts.isConditionalExpression(node) && isConditionalNullishNormalization(node)) {
 			pushLintIssue(
 				issues,
 				sourceFile,

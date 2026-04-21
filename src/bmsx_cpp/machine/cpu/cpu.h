@@ -17,6 +17,7 @@
 
 #include "common/scratchbuffer.h"
 #include "core/primitives.h"
+#include "core/utf8.h"
 #include "machine/memory/string_memory.h"
 
 namespace bmsx {
@@ -116,19 +117,11 @@ public:
 	}
 
 	const std::string& toString(StringId id) const {
-		const auto* entry = m_entries.at(static_cast<size_t>(id)).get();
-		if (!entry) {
-			throw std::runtime_error("StringPool: missing string entry.");
-		}
-		return entry->value;
+		return entry(id).value;
 	}
 
 	int codepointCount(StringId id) const {
-		const auto* entry = m_entries.at(static_cast<size_t>(id)).get();
-		if (!entry) {
-			throw std::runtime_error("StringPool: missing string entry.");
-		}
-		return entry->codepointCount;
+		return entry(id).codepointCount;
 	}
 
 	void reserveHandles(StringId minHandle) {
@@ -174,25 +167,19 @@ public:
 	}
 
 private:
-	static size_t utf8NextIndex(std::string_view text, size_t index) {
-		unsigned char c0 = static_cast<unsigned char>(text[index]);
-		if (c0 < 0x80) {
-			return index + 1;
+	const InternedString& entry(StringId id) const {
+		const auto* entry = m_entries.at(static_cast<size_t>(id)).get();
+		if (!entry) {
+			throw std::runtime_error("StringPool: missing string entry.");
 		}
-		if ((c0 & 0xE0) == 0xC0) {
-			return index + 2;
-		}
-		if ((c0 & 0xF0) == 0xE0) {
-			return index + 3;
-		}
-		return index + 4;
+		return *entry;
 	}
 
 	static int countCodepoints(std::string_view text) {
 		int count = 0;
 		size_t index = 0;
 		while (index < text.size()) {
-			index = utf8NextIndex(text, index);
+			index = nextUtf8Index(text, index);
 			count += 1;
 		}
 		return count;
@@ -1081,6 +1068,8 @@ private:
 	double requireRegisterNumber(CallFrame& frame, int index) const;
 	double requireRKNumber(CallFrame& frame, int rk) const;
 	const Value& readRK(CallFrame& frame, int rk);
+	template <typename Getter>
+	Value resolveTableIndexChain(Table* table, Getter get);
 	Value resolveTableIndex(Table* table, const Value& key);
 	Value resolveTableIntegerIndex(Table* table, int index);
 	Value resolveTableFieldIndex(Table* table, StringId key);

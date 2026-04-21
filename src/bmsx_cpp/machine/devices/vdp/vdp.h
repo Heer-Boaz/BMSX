@@ -311,6 +311,7 @@ public:
 		void scheduleNextService(int64_t nowCycles);
 		bool hasOpenDirectVdpFifoIngress() const;
 		bool hasBlockedSubmitPath() const;
+		void setStatusFlag(uint32_t mask, bool active);
 		void setSubmitBusyStatus(bool active);
 		void refreshSubmitBusyStatus();
 		void setSubmitRejectedStatus(bool active);
