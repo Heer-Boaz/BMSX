@@ -103,7 +103,7 @@ public:
 	int getPendingRenderWorkUnits() const;
 
 		private:
-	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
+	void applyAtlasSlotMapping(i32 primaryAtlasId, i32 secondaryAtlasId);
 			static Value readVdpStatusThunk(void* context, uint32_t addr);
 		static Value readVdpDataThunk(void* context, uint32_t addr);
 		static void onFifoWriteThunk(void* context, uint32_t addr, Value value);

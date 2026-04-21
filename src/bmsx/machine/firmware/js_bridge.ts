@@ -251,7 +251,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 		if (raw === null || typeof raw === 'boolean' || typeof raw === 'number' || typeof raw === 'string') {
 			return raw as LuaValue;
 		}
-		if (raw && typeof raw === 'object' && (raw as { __native_member_handle__?: boolean }).__native_member_handle__ === true) {
+		if (raw && typeof raw === 'object' && (raw as { __native_member_handle__?: boolean }).__native_member_handle__) {
 			const handleTarget = (raw as { target: object | Function }).target;
 			const path = (raw as { path: ReadonlyArray<string> }).path;
 			return this.runtime.interpreter.createNativeMemberHandle(handleTarget, path);
@@ -303,7 +303,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 				this.applyLuaSnapshotPayload(table, record, value => this.deserializeLuaSnapshotValue(value, resolveRef));
 				return table;
 			}
-			if (record.__native_member_handle__ === true) {
+				if (record.__native_member_handle__) {
 				const handleTarget = (record as { target: object | Function }).target;
 				const path = (record as { path: ReadonlyArray<string> }).path;
 				return this.runtime.interpreter.createNativeMemberHandle(handleTarget, path);
@@ -524,35 +524,16 @@ export class LuaJsBridge implements LuaInteropAdapter {
 				if (typeof key === 'string' && key.toLowerCase() === '__index') {
 					return;
 				}
-				let serializedEntry: unknown;
-				try {
-				if (entryValue instanceof LuaNativeValue) {
-					serializedEntry = entryValue.native;
-				} else {
-					serializedEntry = this.serializeLuaValueForSnapshot(entryValue, ctx);
-				}
-			}
-			catch (error) {
-					if ($.debug) {
-						console.warn(`Skipping Lua table entry '${String(key)}' during snapshot:`, error);
-					}
-					return;
-				}
-				let serializedKey: unknown;
-				try {
-				serializedKey = this.serializeLuaSnapshotKey(key, ctx);
-			} catch (error) {
-					if ($.debug) {
-						console.warn(`Skipping Lua table key '${String(key)}' during snapshot:`, error);
-					}
-					return;
-				}
+				const serializedEntry = entryValue instanceof LuaNativeValue
+					? entryValue.native
+					: this.serializeLuaValueForSnapshot(entryValue, ctx);
+				const serializedKey = this.serializeLuaSnapshotKey(key, ctx);
 				if (serializedKey === undefined) {
 					return;
 				}
 				complexEntries.push({ key: serializedKey, value: serializedEntry });
 				if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
-				numericEntries.set(key, serializedEntry);
+					numericEntries.set(key, serializedEntry);
 					if (key > maxNumericIndex) {
 						maxNumericIndex = key;
 					}
@@ -683,16 +664,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 		if (typeof candidate.getSourceRange !== 'function') {
 			return false;
 		}
-		try {
-			const range = candidate.getSourceRange();
-			if (!range || typeof range.path !== 'string') {
-				return false;
-			}
-			return range.path === path;
-		}
-		catch {
-			return false;
-		}
+		return candidate.getSourceRange().path === path;
 	}
 
 	public wrapLuaExecutionResults(moduleId: string, results: LuaValue[]): void {

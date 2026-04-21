@@ -345,6 +345,7 @@ const SEMANTIC_NORMALIZATION_WRAPPER_TARGETS = new Set([
 const CPP_NORMALIZED_BODY_MIN_LENGTH = 120;
 const COMPACT_SAMPLE_TEXT_LENGTH = 180;
 const CPP_SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT = 2;
+const CPP_LOCAL_CONST_PATTERN_ENABLED = false;
 
 function isSemanticNormalizationWrapperTarget(target: string): boolean {
 	if (SEMANTIC_NORMALIZATION_WRAPPER_TARGETS.has(target)) {
@@ -955,7 +956,11 @@ export function lintCppCatchPatterns(file: string, tokens: readonly CppToken[], 
 				continue;
 			}
 		}
-		if (cppRangeHas(tokens, blockOpen + 1, blockClose, token => token.text === 'return')) {
+		if (
+			cppRangeHas(tokens, blockOpen + 1, blockClose, token => token.text === 'return')
+			&& !cppCatchBlockStoresCurrentException(tokens, blockOpen + 1, blockClose)
+			&& !cppCatchBlockFinishesError(tokens, blockOpen + 1, blockClose)
+		) {
 			pushLintIssue(
 				issues,
 				file,
@@ -965,6 +970,32 @@ export function lintCppCatchPatterns(file: string, tokens: readonly CppToken[], 
 			);
 		}
 	}
+}
+
+function cppCatchBlockStoresCurrentException(tokens: readonly CppToken[], start: number, end: number): boolean {
+	for (let index = start; index < end; index += 1) {
+		if (tokens[index].text !== '(') {
+			continue;
+		}
+		const target = cppCallTarget(tokens, index);
+		if (target === 'std::current_exception' || target === 'current_exception') {
+			return true;
+		}
+	}
+	return false;
+}
+
+function cppCatchBlockFinishesError(tokens: readonly CppToken[], start: number, end: number): boolean {
+	for (let index = start; index < end; index += 1) {
+		if (tokens[index].text !== '(') {
+			continue;
+		}
+		const target = cppCallTarget(tokens, index);
+		if (target !== null && /^finish[A-Za-z0-9]*Error$/.test(target)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 export function lintCppRedundantNumericSanitizationPattern(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
@@ -991,7 +1022,7 @@ export function lintCppRedundantNumericSanitizationPattern(file: string, tokens:
 		}
 		const callStart = findCppAccessChainStart(tokens, index - 1);
 		const callEnd = pairs[index] + 1;
-		if (!rangeContainsNestedCppNumericSanitization(tokens, pairs, callStart, callEnd) && !containsCppBoundedNumericHint(tokens, callStart, callEnd)) {
+		if (!rangeContainsNestedCppNumericSanitization(tokens, pairs, callStart, callEnd)) {
 			continue;
 		}
 		pushLintIssue(
@@ -1013,7 +1044,7 @@ export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], 
 			continue;
 		}
 		markBindingUses(binding, tokens, info.bodyStart, info.bodyEnd);
-		if (shouldReportCppLocalConst(binding)) {
+		if (CPP_LOCAL_CONST_PATTERN_ENABLED && shouldReportCppLocalConst(binding)) {
 			pushLintIssue(issues, file, tokens[binding.nameToken], 'local_const_pattern', `Prefer "const" for "${binding.name}"; it is never reassigned.`);
 		}
 		if (binding.readCount === 1 && shouldReportSingleUseLocal(binding)) {
@@ -1287,6 +1318,12 @@ function shouldReportSingleUseLocal(binding: CppLocalBinding): boolean {
 	if (!binding.hasInitializer || !binding.isSimpleAliasInitializer) {
 		return false;
 	}
+	if (isCppTemporalSnapshotName(binding.name)) {
+		return false;
+	}
+	if (binding.writeCount > 0) {
+		return false;
+	}
 	if (binding.initializerTextLength > 32) {
 		return false;
 	}
@@ -1294,6 +1331,10 @@ function shouldReportSingleUseLocal(binding: CppLocalBinding): boolean {
 		return false;
 	}
 	return true;
+}
+
+function isCppTemporalSnapshotName(name: string): boolean {
+	return /^(previous|next|before|after|initial)[A-Z_]?/.test(name);
 }
 
 function isWriteUse(tokens: readonly CppToken[], index: number): boolean {
@@ -1330,9 +1371,12 @@ function lintTernaryFallback(file: string, tokens: readonly CppToken[], question
 	if (colonIndex < 0) {
 		return;
 	}
+	const condition = trimmedCppExpressionText(tokens, statementStart, questionIndex);
+	const trueBranch = trimmedCppExpressionText(tokens, questionIndex + 1, colonIndex);
+	const falseBranch = trimmedCppExpressionText(tokens, colonIndex + 1, statementEnd);
 	const trueHasEmpty = cppRangeHas(tokens, questionIndex + 1, colonIndex, isCppEmptyStringToken);
 	const falseHasEmpty = cppRangeHas(tokens, colonIndex + 1, statementEnd, isCppEmptyStringToken);
-	if (trueHasEmpty || falseHasEmpty) {
+	if ((condition === trueBranch && falseHasEmpty) || (condition === falseBranch && trueHasEmpty)) {
 		pushLintIssue(issues, file, tokens[questionIndex], 'empty_string_fallback_pattern', 'Empty-string fallback through a conditional expression is forbidden. Do not use empty strings as default values.');
 	}
 	const trueHasNull = cppRangeIsNull(tokens, questionIndex + 1, colonIndex);
@@ -1340,9 +1384,6 @@ function lintTernaryFallback(file: string, tokens: readonly CppToken[], question
 	if (trueHasNull || falseHasNull) {
 		pushLintIssue(issues, file, tokens[questionIndex], 'or_nil_fallback_pattern', '`nullptr` fallback through a conditional expression is forbidden. Use direct ownership checks or optional state.');
 	}
-	const condition = trimmedCppExpressionText(tokens, statementStart, questionIndex);
-	const trueBranch = trimmedCppExpressionText(tokens, questionIndex + 1, colonIndex);
-	const falseBranch = trimmedCppExpressionText(tokens, colonIndex + 1, statementEnd);
 	if ((condition === trueBranch && falseHasNull) || (condition === falseBranch && trueHasNull)) {
 		pushLintIssue(issues, file, tokens[questionIndex], 'nullish_null_normalization_pattern', 'Conditional nullptr normalization is forbidden. Preserve the actual value or branch explicitly.');
 	}
@@ -1621,7 +1662,7 @@ export function lintCppHotPathCalls(file: string, tokens: readonly CppToken[], p
 		for (let argIndex = 0; argIndex < args.length; argIndex += 1) {
 			const argStart = args[argIndex][0];
 			const argEnd = args[argIndex][1];
-			if (rangeContainsLambda(tokens, argStart, argEnd)) {
+			if (rangeContainsCapturingLambda(tokens, argStart, argEnd)) {
 				pushLintIssue(issues, file, tokens[argStart], 'hot_path_closure_argument_pattern', 'Lambda/closure argument allocation in hot-path calls is forbidden. Move ownership to direct methods or stable state.');
 			}
 			if (rangeContainsTemporaryAllocation(tokens, argStart, argEnd)) {
@@ -1631,11 +1672,11 @@ export function lintCppHotPathCalls(file: string, tokens: readonly CppToken[], p
 	}
 }
 
-function rangeContainsLambda(tokens: readonly CppToken[], start: number, end: number): boolean {
+function rangeContainsCapturingLambda(tokens: readonly CppToken[], start: number, end: number): boolean {
 	for (let index = start; index < end; index += 1) {
 		if (tokens[index].text === '[') {
 			const close = findNextCppTokenText(tokens, index + 1, end, ']');
-			if (close >= 0 && findNextCppTokenText(tokens, close + 1, end, '{') >= 0) {
+			if (close > index + 1 && findNextCppTokenText(tokens, close + 1, end, '{') >= 0) {
 				return true;
 			}
 		}
@@ -1718,8 +1759,16 @@ function semanticCppExpressionFingerprint(target: string, tokens: readonly CppTo
 	return text;
 }
 
+function cppSemanticRepeatedExpressionMinCount(target: string): number {
+	const family = semanticNormalizationFamily(target);
+	if (family === 'numeric:bounds' || family === 'numeric:rounding') {
+		return 3;
+	}
+	return CPP_SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT;
+}
+
 export function lintCppSemanticRepeatedExpressions(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
-	const expressions = new Map<string, { token: CppToken; count: number; sampleText: string }>();
+	const expressions = new Map<string, { token: CppToken; count: number; sampleText: string; target: string }>();
 	const semanticCallSignatures = collectSemanticNormalizationCallSignatures(tokens, pairs, info.bodyStart + 1, info.bodyEnd);
 	const semanticTargetPrefix = semanticCallSignatures.join('|');
 	const activeSemanticCalls: number[] = [];
@@ -1758,11 +1807,12 @@ export function lintCppSemanticRepeatedExpressions(file: string, tokens: readonl
 			token: tokens[callStart],
 			count: 1,
 			sampleText: compactSampleText(text),
+			target,
 		});
 		activeSemanticCalls.push(callEnd);
 	}
 	for (const value of expressions.values()) {
-		if (value.count < CPP_SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT) {
+		if (value.count < cppSemanticRepeatedExpressionMinCount(value.target)) {
 			continue;
 		}
 		issues.push({

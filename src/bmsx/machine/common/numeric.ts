@@ -25,10 +25,10 @@ export function numberToF32Bits(value: number): number {
 
 export function saturateI32(value: bigint): number {
 	if (value < I32_MIN) {
-		return -0x8000_0000;
+		return I32_MIN_NUMBER;
 	}
 	if (value > I32_MAX) {
-		return 0x7fff_ffff;
+		return I32_MAX_NUMBER;
 	}
 	return Number(value);
 }

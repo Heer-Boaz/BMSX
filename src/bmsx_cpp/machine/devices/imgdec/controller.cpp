@@ -172,9 +172,7 @@ void ImgDecController::onService(int64_t nowCycles) {
 		return;
 	}
 	if (m_pendingError) {
-		auto error = m_pendingError;
-		m_pendingError = nullptr;
-		finishError(error);
+		finishError(std::exchange(m_pendingError, nullptr));
 		scheduleNextService(nowCycles);
 		return;
 	}
@@ -359,10 +357,9 @@ void ImgDecController::advanceDecode() {
 		return;
 	}
 	m_decodeQueued = true;
-	const auto plan = m_decodePlan;
 	auto pixels = std::move(m_decodePixels);
 	m_decodePixels.clear();
-	m_dma.enqueueImageCopy(plan, std::move(pixels), [this](bool error, bool clipped, std::exception_ptr fault) {
+	m_dma.enqueueImageCopy(m_decodePlan, std::move(pixels), [this](bool error, bool clipped, std::exception_ptr fault) {
 		if (error) {
 			finishError(fault);
 			return;

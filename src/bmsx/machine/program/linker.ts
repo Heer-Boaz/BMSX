@@ -1,6 +1,6 @@
 import { OpCode, type ProgramMetadata, type Proto, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
 import {
-	EXT_BX_BITS,
+	BASE_BX_BITS,
 	EXT_B_BITS,
 	EXT_C_BITS,
 	INSTRUCTION_BYTES,
@@ -157,7 +157,7 @@ const rewriteConstRelocations = (
 			case 'bx':
 			case 'gl':
 			case 'sys': {
-			const nextWide = mappedIndex >> (MAX_BX_BITS + EXT_BX_BITS);
+			const nextWide = mappedIndex >> BASE_BX_BITS;
 			if (!hasWide && nextWide !== 0) {
 				throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} requires WIDE prefix.`);
 			}
@@ -182,7 +182,7 @@ const rewriteConstRelocations = (
 			if (!hasWide && mappedIndex > maxBase) {
 				throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} requires WIDE prefix.`);
 			}
-			const totalBits = MAX_OPERAND_BITS + extBits + (hasWide ? MAX_OPERAND_BITS : 0);
+			const totalBits = baseBits + (hasWide ? MAX_OPERAND_BITS : 0);
 			const maxValue = (1 << totalBits) - 1;
 			if (mappedIndex > maxValue) {
 				throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} exceeds operand range.`);
@@ -190,7 +190,7 @@ const rewriteConstRelocations = (
 			const low = mappedIndex & 0x3f;
 			const extPartMask = (1 << extBits) - 1;
 			const extPart = (mappedIndex >> MAX_OPERAND_BITS) & extPartMask;
-			const widePart = mappedIndex >> (MAX_OPERAND_BITS + extBits);
+			const widePart = mappedIndex >> baseBits;
 
 			const extA = (ext >>> 6) & 0x3;
 			let extB = (ext >>> 3) & 0x7;
@@ -224,12 +224,12 @@ const rewriteConstRelocations = (
 		if (!hasWide && !fitsSignedRaw(rkValue, baseBits)) {
 			throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} requires WIDE prefix.`);
 		}
-		const totalBits = MAX_OPERAND_BITS + extBits + (hasWide ? MAX_OPERAND_BITS : 0);
+		const totalBits = baseBits + (hasWide ? MAX_OPERAND_BITS : 0);
 		const raw = encodeSignedRaw(rkValue, totalBits);
 		const low = raw & 0x3f;
 		const extPartMask = (1 << extBits) - 1;
 		const extPart = (raw >> MAX_OPERAND_BITS) & extPartMask;
-		const widePart = raw >> (MAX_OPERAND_BITS + extBits);
+		const widePart = raw >> baseBits;
 
 		const extA = (ext >>> 6) & 0x3;
 		let extB = (ext >>> 3) & 0x7;
@@ -286,12 +286,12 @@ const rewriteClosureIndices = (code: Uint8Array, protoOffset: number): void => {
 		const bLow = (word >>> 6) & 0x3f;
 		const cLow = word & 0x3f;
 		const bxLow = (bLow << 6) | cLow;
-		const bx = (wideB << (MAX_BX_BITS + EXT_BX_BITS)) | (ext << MAX_BX_BITS) | bxLow;
+		const bx = (wideB << BASE_BX_BITS) | (ext << MAX_BX_BITS) | bxLow;
 		const nextBx = bx + protoOffset;
 		if (nextBx > MAX_EXT_BX) {
 			throw new Error(`[ProgramLinker] Proto index exceeds range: ${nextBx}.`);
 		}
-		const nextWide = nextBx >> (MAX_BX_BITS + EXT_BX_BITS);
+		const nextWide = nextBx >> BASE_BX_BITS;
 		if (nextWide !== 0 && wideIndex < 0) {
 			throw new Error(`[ProgramLinker] Proto index ${nextBx} requires WIDE prefix.`);
 		}

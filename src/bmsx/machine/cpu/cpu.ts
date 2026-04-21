@@ -64,7 +64,7 @@ export type NativeObject = {
 	set(key: Value, value: Value): void;
 	len?: () => number;
 	nextEntry?: (after: Value) => [Value, Value] | null;
-	metatable?: Table | null;
+	metatable: Table | null;
 };
 
 function valueTypeName(value: Value): string {
@@ -1662,7 +1662,7 @@ export class CPU {
 		}
 		if (isNativeObject(base)) {
 			const directValue = base.get(key);
-			const metatable = base.metatable ?? null;
+			const metatable = base.metatable;
 			if (directValue !== null || metatable === null) {
 				return directValue;
 			}

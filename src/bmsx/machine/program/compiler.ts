@@ -13,7 +13,6 @@ import {
 	type LuaForGenericStatement,
 	type LuaFunctionDeclarationStatement,
 	type LuaFunctionExpression,
-	type LuaHaltUntilIrqStatement,
 	type LuaIdentifierExpression,
 	type LuaIfStatement,
 	type LuaIndexExpression,
@@ -548,7 +547,7 @@ class FunctionBuilder {
 		this.flowAnalysis = new ValueKindFlowAnalyzer(expression.body.body, this.semantics);
 		this.pushScope(expression.body.range);
 		if (implicitSelf) {
-			this.declareImplicitSelf(expression.range, expression.range);
+			this.declareLocal(IMPLICIT_SELF_SYMBOL_HANDLE, 'self', expression.range, expression.range, 'parameter');
 		}
 		for (let i = 0; i < expression.parameters.length; i += 1) {
 			const parameter = expression.parameters[i];
@@ -609,7 +608,13 @@ class FunctionBuilder {
 					}
 					return proto;
 				},
-				getProtoInstructionSet: (protoIndex: number) => this.program.protoInstructionSets[protoIndex] ?? null,
+					getProtoInstructionSet: (protoIndex: number) => {
+						const instructionSet = this.program.protoInstructionSets[protoIndex];
+						if (instructionSet === undefined) {
+							return null;
+						}
+						return instructionSet;
+					},
 			});
 			if (optimized.instructions !== this.code) {
 				this.code.length = 0;
@@ -903,17 +908,16 @@ class FunctionBuilder {
 		return this.declareLocal(decl.id, decl.name, definitionRange, scopeRange, kind, constValue, hasConstValue, constClosureProtoIndex, moduleBinding);
 	}
 
-	private declareImplicitSelf(definitionRange: LuaSourceRange, scopeRange?: LuaSourceRange): number {
-		return this.declareLocal(IMPLICIT_SELF_SYMBOL_HANDLE, 'self', definitionRange, scopeRange, 'parameter');
-	}
-
-	private resolveLocalBinding(symbolHandle: string): LocalBinding | null {
-		return this.localBindings.get(symbolHandle) ?? null;
+	private resolveLocalBinding(symbolHandle: string): LocalBinding | undefined {
+		return this.localBindings.get(symbolHandle);
 	}
 
 	private resolveLocal(symbolHandle: string): number | null {
 		const binding = this.resolveLocalBinding(symbolHandle);
-		return binding ? binding.reg : null;
+		if (binding === undefined) {
+			return null;
+		}
+		return binding.reg;
 	}
 
 	private resolveUpvalue(symbolHandle: string, name: string): number | null {
@@ -925,7 +929,7 @@ class FunctionBuilder {
 			return null;
 		}
 		const parentLocal = this.parent.resolveLocalBinding(symbolHandle);
-		if (parentLocal !== null) {
+		if (parentLocal !== undefined) {
 			const index = this.upvalueDescs.length;
 			this.upvalueDescs.push({ inStack: true, index: parentLocal.reg });
 			this.upvalueNames.push(name);
@@ -1198,8 +1202,8 @@ class FunctionBuilder {
 	private emitReferenceStore(reference: LuaBoundReference, valueReg: number): void {
 		const name = this.getReferenceName(reference);
 		const symbolHandle = this.getReferenceSymbolHandle(reference);
-		const localBinding = symbolHandle ? this.resolveLocalBinding(symbolHandle) : null;
-		if (localBinding !== null) {
+		const localBinding = symbolHandle ? this.resolveLocalBinding(symbolHandle) : undefined;
+		if (localBinding !== undefined) {
 			if (localBinding.kind === 'const') {
 				throw new Error(`[Compiler] '${name}' is a constant local and cannot be assigned.`);
 			}
@@ -1394,14 +1398,10 @@ class FunctionBuilder {
 			this.emitABC(OpCode.KNIL, target, 0, 0);
 			return;
 		}
-		if (normalizedValue === false) {
-			this.emitABC(OpCode.KFALSE, target, 0, 0);
-			return;
-		}
-		if (normalizedValue === true) {
-			this.emitABC(OpCode.KTRUE, target, 0, 0);
-			return;
-		}
+			if (typeof normalizedValue === 'boolean') {
+				this.emitABC(normalizedValue ? OpCode.KTRUE : OpCode.KFALSE, target, 0, 0);
+				return;
+			}
 		if (typeof normalizedValue === 'number') {
 			if (normalizedValue === 0) {
 				this.emitABC(OpCode.K0, target, 0, 0);
@@ -1458,7 +1458,10 @@ class FunctionBuilder {
 				return null;
 			case LuaSyntaxKind.IdentifierExpression: {
 				const binding = this.resolveReferenceConstBinding(this.getIdentifierReference(expression as LuaIdentifierExpression));
-				return binding ? binding.constValue : undefined;
+					if (!binding) {
+						return undefined;
+					}
+					return binding.constValue;
 			}
 			case LuaSyntaxKind.UnaryExpression:
 				return this.evaluateCompileTimeUnaryExpression(expression as LuaUnaryExpression);
@@ -1666,7 +1669,7 @@ class FunctionBuilder {
 					this.popScope();
 					return;
 				case LuaSyntaxKind.HaltUntilIrqStatement:
-					this.compileHaltUntilIrq(statement as LuaHaltUntilIrqStatement);
+					this.emitABC(OpCode.HALT, 0, 0, 0);
 					return;
 				case LuaSyntaxKind.BreakStatement:
 					this.compileBreak();
@@ -1701,7 +1704,7 @@ class FunctionBuilder {
 			const hint = this.createLocalFunctionHint(name);
 			const closureProtoIndex = this.compileExpressionWithStaticClosureProto(values[0], target, 1, hint);
 			const binding = this.resolveLocalBinding(decl.id);
-			if (binding !== null) {
+			if (binding !== undefined) {
 				binding.constClosureProtoIndex = closureProtoIndex;
 			}
 			this.tempTop = Math.max(this.tempTop, tempsBase);
@@ -1791,15 +1794,29 @@ class FunctionBuilder {
 				throw new Error(`[Compiler] Constant local '${name}' must have an initializer.`);
 			}
 			const initializerValue = initializerValues[i];
-			const initializerClosureProtoIndex = attribute === 'const' ? initializerClosureProtoIndices[i] ?? null : null;
-			const initializerModuleBinding = attribute === 'const' ? initializerModuleBindings[i] ?? null : null;
+			let initializerClosureProtoIndex: number | null = null;
+			let initializerModuleBinding: ModuleBinding | null = null;
+			if (attribute === 'const') {
+				const closureProtoIndex = initializerClosureProtoIndices[i];
+				if (closureProtoIndex !== undefined) {
+					initializerClosureProtoIndex = closureProtoIndex;
+				}
+				const moduleBinding = initializerModuleBindings[i];
+				if (moduleBinding !== undefined) {
+					initializerModuleBinding = moduleBinding;
+				}
+			}
+			let constValue: Value | null = null;
+			if (initializerValue !== undefined) {
+				constValue = initializerValue;
+			}
 			const target = this.declareLocal(
 				decl.id,
 				decl.name,
 				names[i].range,
 				undefined,
 				attribute === 'const' ? 'const' : 'local',
-				initializerValue ?? null,
+				constValue,
 				initializerValue !== undefined && attribute === 'const',
 				initializerClosureProtoIndex,
 				initializerModuleBinding,
@@ -1816,10 +1833,6 @@ class FunctionBuilder {
 			}
 		}
 		this.tempTop = Math.max(this.tempTop, tempsBase);
-	}
-
-	private compileHaltUntilIrq(_statement: LuaHaltUntilIrqStatement): void {
-		this.emitABC(OpCode.HALT, 0, 0, 0);
 	}
 
 	private compileAssignment(statement: LuaAssignmentStatement): void {
@@ -1855,8 +1868,8 @@ class FunctionBuilder {
 				const reference = this.getIdentifierWriteReference(identifier);
 				const symbolHandle = this.getReferenceSymbolHandle(reference);
 				const name = this.getReferenceName(reference);
-				const localBinding = symbolHandle ? this.resolveLocalBinding(symbolHandle) : null;
-				if (localBinding !== null) {
+				const localBinding = symbolHandle ? this.resolveLocalBinding(symbolHandle) : undefined;
+				if (localBinding !== undefined) {
 					if (localBinding.kind === 'const') {
 						throw new Error(`[Compiler] '${name}' is a constant local and cannot be assigned.`);
 					}
@@ -1980,19 +1993,20 @@ class FunctionBuilder {
 		valueReg: number,
 	): void {
 		const temp = this.allocTemp();
+		const op = opForAssignment(operator);
 		switch (target.kind) {
 			case 'local':
-				this.emitArithmetic(opForAssignment(operator), temp, target.reg, valueReg);
+				this.emitABC(op, temp, target.reg, valueReg, RK_B | RK_C);
 				this.emitABC(OpCode.MOV, target.reg, temp, 0);
 				return;
 			case 'upvalue':
 				this.emitABC(OpCode.GETUP, temp, target.upvalue, 0);
-				this.emitArithmetic(opForAssignment(operator), temp, temp, valueReg);
+				this.emitABC(op, temp, temp, valueReg, RK_B | RK_C);
 				this.emitABC(OpCode.SETUP, temp, target.upvalue, 0);
 				return;
 			case 'global': {
 				this.emitABx(target.system ? OpCode.GETSYS : OpCode.GETGL, temp, target.slot);
-				this.emitArithmetic(opForAssignment(operator), temp, temp, valueReg);
+				this.emitABC(op, temp, temp, valueReg, RK_B | RK_C);
 				this.emitABx(target.system ? OpCode.SETSYS : OpCode.SETGL, temp, target.slot);
 				return;
 			}
@@ -2002,7 +2016,7 @@ class FunctionBuilder {
 				} else {
 					this.emitABC(OpCode.GETT, temp, target.tableReg, target.keyReg, RK_C);
 				}
-				this.emitArithmetic(opForAssignment(operator), temp, temp, valueReg);
+				this.emitABC(op, temp, temp, valueReg, RK_B | RK_C);
 				if (target.keyConst !== undefined) {
 					this.emitTableSetConst(target.tableReg, target.keyConst, temp);
 					return;
@@ -2012,7 +2026,7 @@ class FunctionBuilder {
 			}
 			case 'memory':
 				this.emitMemoryLoad(temp, target.accessKind, target.addrConst, target.addrReg);
-				this.emitArithmetic(opForAssignment(operator), temp, temp, valueReg);
+				this.emitABC(op, temp, temp, valueReg, RK_B | RK_C);
 				this.emitMemoryStore(target.accessKind, target.addrConst, target.addrReg, temp);
 				return;
 			default:
@@ -2329,7 +2343,7 @@ class FunctionBuilder {
 					this.emitLoadNil(target, 1);
 					return;
 				case LuaSyntaxKind.IdentifierExpression:
-					this.compileIdentifier(expression as LuaIdentifierExpression, target);
+					this.emitReferenceLoad(this.getIdentifierReference(expression as LuaIdentifierExpression), target);
 					return;
 				case LuaSyntaxKind.TableConstructorExpression:
 					this.compileTableConstructor(expression as LuaTableConstructorExpression, target);
@@ -2364,10 +2378,6 @@ class FunctionBuilder {
 				}
 			}
 		});
-	}
-
-	private compileIdentifier(expression: LuaIdentifierExpression, target: number): void {
-		this.emitReferenceLoad(this.getIdentifierReference(expression), target);
 	}
 
 	private compileMemberExpression(expression: any, target: number): void {
@@ -2714,10 +2724,6 @@ class FunctionBuilder {
 		const leftOperand = this.compileRKOperand(left);
 		const rightOperand = this.compileRKOperand(right);
 		this.emitABC(op, target, leftOperand, rightOperand, RK_B | RK_C);
-	}
-
-	private emitArithmetic(op: OpCode, target: number, leftReg: number, rightReg: number): void {
-		this.emitABC(op, target, leftReg, rightReg, RK_B | RK_C);
 	}
 
 	private compileComparison(op: OpCode, left: LuaExpression, right: LuaExpression, target: number): void {

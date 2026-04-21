@@ -97,19 +97,26 @@ uint32_t utf8_codepoint_at(const std::string& text, size_t index) {
 	if (c0 < 0x80) {
 		return c0;
 	}
+	unsigned char c1 = static_cast<unsigned char>(text[index + 1]);
 	if ((c0 & 0xE0) == 0xC0) {
-		unsigned char c1 = static_cast<unsigned char>(text[index + 1]);
 		return ((c0 & 0x1F) << 6) | (c1 & 0x3F);
 	}
+	unsigned char c2 = static_cast<unsigned char>(text[index + 2]);
 	if ((c0 & 0xF0) == 0xE0) {
-		unsigned char c1 = static_cast<unsigned char>(text[index + 1]);
-		unsigned char c2 = static_cast<unsigned char>(text[index + 2]);
 		return ((c0 & 0x0F) << 12) | ((c1 & 0x3F) << 6) | (c2 & 0x3F);
 	}
-	unsigned char c1 = static_cast<unsigned char>(text[index + 1]);
-	unsigned char c2 = static_cast<unsigned char>(text[index + 2]);
 	unsigned char c3 = static_cast<unsigned char>(text[index + 3]);
 	return ((c0 & 0x07) << 18) | ((c1 & 0x3F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
+}
+
+int floorIntArg(NativeArgsView args, size_t index) {
+	return static_cast<int>(std::floor(asNumber(args.at(index))));
+}
+
+void uppercaseAsciiInPlace(std::string& text) {
+	for (char& c : text) {
+		c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+	}
 }
 
 template <typename MapAscii>
@@ -766,7 +773,7 @@ std::string Runtime::formatLuaString(const std::string& templateStr, NativeArgsV
 			}
 			case 'c': {
 				double value = asNumber(takeArgument());
-				char character = static_cast<char>(static_cast<int>(std::floor(value)));
+					char character = static_cast<char>(std::floor(value));
 				output += applyPadding(std::string(1, character), "", "", false);
 				break;
 			}
@@ -790,7 +797,7 @@ std::string Runtime::formatLuaString(const std::string& templateStr, NativeArgsV
 				if (specifier == 'x' || specifier == 'X') base = 16;
 				std::string digits = toBase(magnitude, base);
 				if (specifier == 'X') {
-					for (char& c : digits) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+						uppercaseAsciiInPlace(digits);
 				}
 				if (precision.has_value()) {
 					const int required = std::max(0, *precision);
@@ -842,7 +849,7 @@ std::string Runtime::formatLuaString(const std::string& templateStr, NativeArgsV
 				stream << std::scientific << std::setprecision(fractionDigits) << std::abs(number);
 				std::string text = stream.str();
 				if (specifier == 'E') {
-					for (char& c : text) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+						uppercaseAsciiInPlace(text);
 				}
 				const bool allowZeroPad = flags.zeroPad && !flags.leftAlign;
 				output += applyPadding(text, sign, "", allowZeroPad);
@@ -881,7 +888,7 @@ std::string Runtime::formatLuaString(const std::string& templateStr, NativeArgsV
 					}
 				}
 				if (specifier == 'G') {
-					for (char& c : text) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+						uppercaseAsciiInPlace(text);
 				}
 				const bool allowZeroPad = flags.zeroPad && !flags.leftAlign;
 				output += applyPadding(text, sign, "", allowZeroPad);
@@ -1256,10 +1263,8 @@ void Runtime::setupBuiltins() {
 		out.push_back(str("float"));
 	}));
 	mathTable->set(key("ult"), m_machine.cpu().createNativeFunction("math.ult", [](NativeArgsView args, NativeResults& out) {
-		double leftValue = asNumber(args.at(0));
-		double rightValue = asNumber(args.at(1));
-		uint32_t left = static_cast<uint32_t>(static_cast<int64_t>(std::trunc(leftValue)));
-		uint32_t right = static_cast<uint32_t>(static_cast<int64_t>(std::trunc(rightValue)));
+		uint32_t left = toU32(asNumber(args.at(0)));
+		uint32_t right = toU32(asNumber(args.at(1)));
 		out.push_back(valueBool(left < right));
 	}));
 	mathTable->set(key("random"), m_machine.cpu().createNativeFunction("math.random", [this](NativeArgsView args, NativeResults& out) {
@@ -1269,15 +1274,15 @@ void Runtime::setupBuiltins() {
 			return;
 		}
 		if (args.size() == 1) {
-			int upper = static_cast<int>(std::floor(asNumber(args.at(0))));
+			int upper = floorIntArg(args, 0);
 			if (upper < 1) {
 				throw BMSX_RUNTIME_ERROR("math.random upper bound must be positive.");
 			}
 			out.push_back(valueNumber(static_cast<double>(static_cast<int>(randomValue * upper) + 1)));
 			return;
 		}
-		int lower = static_cast<int>(std::floor(asNumber(args.at(0))));
-		int upper = static_cast<int>(std::floor(asNumber(args.at(1))));
+		int lower = floorIntArg(args, 0);
+		int upper = floorIntArg(args, 1);
 		if (upper < lower) {
 			throw BMSX_RUNTIME_ERROR("math.random upper bound must be greater than or equal to lower bound.");
 		}
@@ -1476,7 +1481,7 @@ void Runtime::setupBuiltins() {
 		key("a"),
 	};
 	registerNativeFunction("sys_palette_color", [this, paletteKeys](NativeArgsView args, NativeResults& out) {
-		const int index = static_cast<int>(std::floor(asNumber(args.at(0))));
+		const int index = floorIntArg(args, 0);
 		const Color color = api().palette_color(index);
 		Table* table = m_machine.cpu().createTable(0, 4);
 		table->set(paletteKeys.r, valueNumber(static_cast<double>(color.r)));
@@ -1747,7 +1752,7 @@ void Runtime::setupBuiltins() {
 		if (valueIsString(v)) {
 			const std::string& text = m_machine.cpu().stringPool().toString(asStringId(v));
 			if (args.size() >= 2) {
-				int base = static_cast<int>(std::floor(asNumber(args.at(1))));
+				int base = floorIntArg(args, 1);
 				if (base >= 2 && base <= 36) {
 					std::string trimmed = text;
 					size_t start = trimmed.find_first_not_of(" \t\n\r");
@@ -2148,7 +2153,7 @@ void Runtime::setupBuiltins() {
 
 	registerNativeFunction("wrap_text_lines", [this](NativeArgsView args, NativeResults& out) {
 		const std::string text = m_machine.cpu().stringPool().toString(asStringId(args.at(0)));
-		const int maxChars = static_cast<int>(std::floor(asNumber(args.at(1))));
+		const int maxChars = floorIntArg(args, 1);
 		const std::string firstPrefix = args.size() > 2 && !isNil(args.at(2)) ? m_machine.cpu().stringPool().toString(asStringId(args.at(2))) : std::string();
 		const std::string nextPrefix = args.size() > 3 && !isNil(args.at(3)) ? m_machine.cpu().stringPool().toString(asStringId(args.at(3))) : firstPrefix;
 		const int firstPrefixLength = utf8_codepoint_count(firstPrefix);
@@ -2181,13 +2186,12 @@ void Runtime::setupBuiltins() {
 			};
 			size_t lineStart = 0;
 			int logicalLineIndex = 1;
-			bool isFirstOutputLine = true;
-			while (lineStart <= text.size()) {
-				const size_t newline = text.find('\n', lineStart);
-				const std::string logicalLine = newline == std::string::npos
-					? text.substr(lineStart)
-					: text.substr(lineStart, newline - lineStart);
-				const std::vector<std::string> codepoints = splitCodepoints(logicalLine);
+				bool isFirstOutputLine = true;
+				while (lineStart <= text.size()) {
+					const size_t newline = text.find('\n', lineStart);
+					const size_t lineLength = newline == std::string::npos ? std::string::npos : newline - lineStart;
+					const std::string logicalLine = text.substr(lineStart, lineLength);
+					const std::vector<std::string> codepoints = splitCodepoints(logicalLine);
 				if (codepoints.empty()) {
 					const std::string& prefix = isFirstOutputLine ? firstPrefix : nextPrefix;
 					const int available = maxChars - (isFirstOutputLine ? firstPrefixLength : nextPrefixLength);
@@ -2639,7 +2643,7 @@ stringTable->set(key("lower"), m_machine.cpu().createNativeFunction("string.lowe
 }));
 stringTable->set(key("rep"), m_machine.cpu().createNativeFunction("string.rep", [str, asText](NativeArgsView args, NativeResults& out) {
 	const std::string& text = asText(args.at(0));
-	int count = args.size() > 1 ? static_cast<int>(std::floor(asNumber(args.at(1)))) : 1;
+	int count = args.size() > 1 ? floorIntArg(args, 1) : 1;
 	if (count <= 0) {
 		out.push_back(str(""));
 		return;
@@ -2684,10 +2688,10 @@ stringTable->set(key("sub"), m_machine.cpu().createNativeFunction("string.sub", 
 	size_t endByte = utf8_byte_index_from_codepoint(text, endIndex + 1);
 	out.push_back(str(text.substr(startByte, endByte - startByte)));
 }));
-stringTable->set(key("find"), m_machine.cpu().createNativeFunction("string.find", [this, str, asText](NativeArgsView args, NativeResults& out) {
-	StringId sourceId = asStringId(args.at(0));
-	const std::string& source = m_machine.cpu().stringPool().toString(sourceId);
-	const std::string& pattern = args.size() > 1 ? asText(args.at(1)) : std::string("");
+	stringTable->set(key("find"), m_machine.cpu().createNativeFunction("string.find", [this, str, asText](NativeArgsView args, NativeResults& out) {
+		StringId sourceId = asStringId(args.at(0));
+		const std::string& source = m_machine.cpu().stringPool().toString(sourceId);
+		const std::string& pattern = asText(args.at(1));
 	int length = m_machine.cpu().stringPool().codepointCount(sourceId);
 		auto normalizeIndex = [length](double value) -> int {
 			int integer = static_cast<int>(std::floor(value));
@@ -2701,7 +2705,7 @@ stringTable->set(key("find"), m_machine.cpu().createNativeFunction("string.find"
 		return;
 	}
 	size_t startByte = utf8_byte_index_from_codepoint(source, startIndex);
-	bool plain = args.size() > 3 && valueIsBool(args.at(3)) && valueToBool(args.at(3)) == true;
+	bool plain = args.size() > 3 && valueIsBool(args.at(3)) && valueToBool(args.at(3));
 	if (plain) {
 		size_t position = source.find(pattern, startByte);
 		if (position == std::string::npos) {
@@ -2740,10 +2744,10 @@ stringTable->set(key("find"), m_machine.cpu().createNativeFunction("string.find"
 	out.push_back(valueNumber(static_cast<double>(first)));
 	out.push_back(valueNumber(static_cast<double>(last)));
 }));
-stringTable->set(key("match"), m_machine.cpu().createNativeFunction("string.match", [this, str, asText](NativeArgsView args, NativeResults& out) {
-	StringId sourceId = asStringId(args.at(0));
-	const std::string& source = m_machine.cpu().stringPool().toString(sourceId);
-	const std::string& pattern = args.size() > 1 ? asText(args.at(1)) : std::string("");
+	stringTable->set(key("match"), m_machine.cpu().createNativeFunction("string.match", [this, str, asText](NativeArgsView args, NativeResults& out) {
+		StringId sourceId = asStringId(args.at(0));
+		const std::string& source = m_machine.cpu().stringPool().toString(sourceId);
+		const std::string& pattern = asText(args.at(1));
 	int length = m_machine.cpu().stringPool().codepointCount(sourceId);
 	auto normalizeIndex = [length](double value) -> int {
 			int integer = static_cast<int>(std::floor(value));
@@ -2776,11 +2780,17 @@ stringTable->set(key("match"), m_machine.cpu().createNativeFunction("string.matc
 	}
 	out.push_back(str(match[0].str()));
 }));
-stringTable->set(key("gsub"), m_machine.cpu().createNativeFunction("string.gsub", [this, callClosureValue, str, asText](NativeArgsView args, NativeResults& out) {
-	const std::string& source = asText(args.at(0));
-	const std::string& pattern = args.size() > 1 ? asText(args.at(1)) : std::string("");
-	const Value replacement = args.size() > 2 ? args.at(2) : str("");
-	int maxReplacements = args.size() > 3 && !isNil(args.at(3)) ? std::max(0, static_cast<int>(std::floor(asNumber(args.at(3))))) : std::numeric_limits<int>::max();
+	stringTable->set(key("gsub"), m_machine.cpu().createNativeFunction("string.gsub", [this, callClosureValue, str, asText](NativeArgsView args, NativeResults& out) {
+		const std::string& source = asText(args.at(0));
+		const std::string& pattern = asText(args.at(1));
+		const Value replacement = args.at(2);
+	int maxReplacements = std::numeric_limits<int>::max();
+	if (args.size() > 3 && !isNil(args.at(3))) {
+		maxReplacements = floorIntArg(args, 3);
+		if (maxReplacements < 0) {
+			maxReplacements = 0;
+		}
+	}
 
 	const std::regex& regex = buildLuaPatternRegex(pattern);
 	size_t count = 0;
@@ -2879,14 +2889,14 @@ stringTable->set(key("gsub"), m_machine.cpu().createNativeFunction("string.gsub"
 	out.push_back(str(result));
 	out.push_back(valueNumber(static_cast<double>(count)));
 }));
-stringTable->set(key("gmatch"), m_machine.cpu().createNativeFunction("string.gmatch", [this, str, asText](NativeArgsView args, NativeResults& out) {
+	stringTable->set(key("gmatch"), m_machine.cpu().createNativeFunction("string.gmatch", [this, str, asText](NativeArgsView args, NativeResults& out) {
 	struct GMatchState {
 		const std::regex* regex = nullptr;
 		std::string source;
 		size_t index = 0;
-	};
-	const std::string& source = asText(args.at(0));
-	const std::string& pattern = args.size() > 1 ? asText(args.at(1)) : std::string("");
+		};
+		const std::string& source = asText(args.at(0));
+		const std::string& pattern = asText(args.at(1));
 	const std::regex& regex = buildLuaPatternRegex(pattern);
 	auto state = std::make_shared<GMatchState>();
 	state->regex = &regex;
@@ -2927,7 +2937,7 @@ stringTable->set(key("gmatch"), m_machine.cpu().createNativeFunction("string.gma
 	}));
 stringTable->set(key("byte"), m_machine.cpu().createNativeFunction("string.byte", [asText](NativeArgsView args, NativeResults& out) {
 	const std::string& source = asText(args.at(0));
-	int position = args.size() > 1 ? static_cast<int>(std::floor(asNumber(args.at(1)))) : 1;
+	int position = args.size() > 1 ? floorIntArg(args, 1) : 1;
 	if (position < 1) {
 		out.push_back(valueNil());
 		return;
@@ -3185,7 +3195,7 @@ tableLib->set(key("insert"), m_machine.cpu().createNativeFunction("table.insert"
 			value = args.at(1);
 			position = tbl->length() + 1;
 		} else {
-			position = static_cast<int>(std::floor(asNumber(args.at(1))));
+			position = floorIntArg(args, 1);
 			value = args.at(2);
 		}
 		int length = tbl->length();
@@ -3197,7 +3207,7 @@ tableLib->set(key("insert"), m_machine.cpu().createNativeFunction("table.insert"
 }));
 tableLib->set(key("remove"), m_machine.cpu().createNativeFunction("table.remove", [](NativeArgsView args, NativeResults& out) {
 	auto* tbl = asTable(args.at(0));
-	int position = args.size() > 1 ? static_cast<int>(std::floor(asNumber(args.at(1)))) : tbl->length();
+	int position = args.size() > 1 ? floorIntArg(args, 1) : tbl->length();
 	int length = tbl->length();
 	Value removed = tbl->get(valueNumber(static_cast<double>(position)));
 		for (int i = position; i < length; ++i) {
@@ -3284,7 +3294,7 @@ tableLib->set(key("sort"), m_machine.cpu().createNativeFunction("table.sort", [t
 			comparatorArgs[1] = right;
 			comparatorResults.clear();
 			callClosureValue(comparator, comparatorArgs, comparatorResults);
-			return !comparatorResults.empty() && valueIsBool(comparatorResults[0]) && valueToBool(comparatorResults[0]) == true;
+			return !comparatorResults.empty() && valueIsBool(comparatorResults[0]) && valueToBool(comparatorResults[0]);
 		}
 		if (valueIsNumber(left) && valueIsNumber(right)) {
 			return valueToNumber(left) < valueToNumber(right);
@@ -3840,7 +3850,7 @@ auto clockPerfNowFn = m_machine.cpu().createNativeFunction("platform.clock.perf_
 		if (args.size() == 1) {
 			action = m_machine.cpu().stringPool().toString(asStringId(args.at(0)));
 		} else {
-			playerIndex = static_cast<int>(std::floor(asNumber(args.at(0))));
+			playerIndex = floorIntArg(args, 0);
 			action = m_machine.cpu().stringPool().toString(asStringId(args.at(1)));
 			if (args.size() > 2 && !isNil(args.at(2))) {
 				windowFrames = asNumber(args.at(2));

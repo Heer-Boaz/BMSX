@@ -398,7 +398,7 @@ export function collectCpuProfilerHotPcs(snapshot: CpuProfilerSnapshot, limit = 
 			percent: percent(count, snapshot.totalInstructions),
 			protoIndex,
 			protoId: protoIndex >= 0 ? snapshot.protoIds[protoIndex] : '<unknown>',
-			range: snapshot.debugRanges[wordIndex] ?? null,
+			range: snapshot.debugRanges[wordIndex],
 		});
 	}
 	rows.sort((left, right) => {

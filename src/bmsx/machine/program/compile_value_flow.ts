@@ -355,10 +355,9 @@ function resolveDeclarationHandle(
 function resolveReferenceHandle(
 	identifier: LuaIdentifierExpression,
 	semantics: LuaSemanticFrontendFile,
-): string | undefined {
+): string | null {
 	const reference = getBoundIdentifierReference(semantics, identifier);
-	const handle = getReferenceSymbolHandle(reference);
-	return handle === null ? undefined : handle;
+	return getReferenceSymbolHandle(reference);
 }
 
 // ---------------------------------------------------------------------------
@@ -515,7 +514,7 @@ function collectLexicalWritesInStatement(
 				const target = assignment.left[index];
 				if (target.kind === LuaSyntaxKind.IdentifierExpression) {
 					const handle = resolveReferenceHandle(target as LuaIdentifierExpression, semantics);
-					if (handle !== undefined) out.add(handle);
+				if (handle !== undefined) out.add(handle);
 				}
 				collectNestedClosureWritesFromExpression(target, semantics, out);
 			}
@@ -527,7 +526,7 @@ function collectLexicalWritesInStatement(
 		case LuaSyntaxKind.LocalFunctionStatement: {
 			const localFunction = statement as LuaLocalFunctionStatement;
 			const handle = resolveDeclarationHandle(localFunction.name, semantics);
-			if (handle !== undefined) out.add(handle);
+						if (handle !== null) out.add(handle);
 			collectLexicalWritesInFunctionBody(localFunction.functionExpression.body.body, semantics, out);
 			return;
 		}
@@ -882,7 +881,7 @@ export class ValueKindFlowAnalyzer {
 			const target = statement.left[index];
 			if (target.kind !== LuaSyntaxKind.IdentifierExpression) continue;
 			const handle = this.resolveReferenceHandle(target as LuaIdentifierExpression);
-			if (handle === undefined || !this.state.has(handle)) continue;
+				if (handle === null || !this.state.has(handle)) continue;
 			this.state.set(
 				handle,
 				this.resolveAssignedFact(index, statement.left.length, statement.right, facts),
@@ -1021,16 +1020,16 @@ export class ValueKindFlowAnalyzer {
 	private degradeLocalTarget(expression: LuaExpression): void {
 		if (expression.kind !== LuaSyntaxKind.IdentifierExpression) return;
 		const handle = this.resolveReferenceHandle(expression as LuaIdentifierExpression);
-		if (handle !== undefined) {
-			setUnknown(this.state, handle);
-		}
+			if (handle !== null) {
+				setUnknown(this.state, handle);
+			}
 	}
 
 	private resolveDeclarationHandle(identifier: LuaIdentifierExpression): string | undefined {
 		return resolveDeclarationHandle(identifier, this.semantics);
 	}
 
-	private resolveReferenceHandle(identifier: LuaIdentifierExpression): string | undefined {
+	private resolveReferenceHandle(identifier: LuaIdentifierExpression): string | null {
 		return resolveReferenceHandle(identifier, this.semantics);
 	}
 }

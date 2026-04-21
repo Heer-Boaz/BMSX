@@ -1641,9 +1641,7 @@ VDP::FrameBufferColor VDP::packFrameBufferColor(const Color& color) const {
 }
 
 u32 VDP::nextBlitterSequence() {
-	const u32 seq = m_blitterSequence;
-	m_blitterSequence += 1u;
-	return seq;
+	return m_blitterSequence++;
 }
 
 std::vector<VDP::GlyphRunGlyph> VDP::acquireGlyphBuffer() {
@@ -3026,7 +3024,7 @@ void VDP::syncRegisters() {
 	const i32 primary = primaryRaw == VDP_ATLAS_ID_NONE ? -1 : static_cast<i32>(primaryRaw);
 	const i32 secondary = secondaryRaw == VDP_ATLAS_ID_NONE ? -1 : static_cast<i32>(secondaryRaw);
 	if (primary != m_slotAtlasIds[0] || secondary != m_slotAtlasIds[1]) {
-		applyAtlasSlotMapping({{primary, secondary}});
+		applyAtlasSlotMapping(primary, secondary);
 	}
 }
 
@@ -3143,11 +3141,10 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	setAtlasEntryDimensions(engineEntry, static_cast<uint32_t>(engineAtlasAsset->meta.width), static_cast<uint32_t>(engineAtlasAsset->meta.height));
 	registerVramSlot(engineEntry, ENGINE_ATLAS_TEXTURE_KEY, VDP_RD_SURFACE_ENGINE);
 
-	const uint32_t skyboxBytes = VRAM_SKYBOX_FACE_BYTES;
 	for (size_t index = 0; index < m_skyboxSlots.size(); ++index) {
 		auto& slot = m_skyboxSlots[index];
 		slot.baseAddr = skyboxFaceBaseByIndex(index);
-		slot.capacity = skyboxBytes;
+		slot.capacity = VRAM_SKYBOX_FACE_BYTES;
 		slot.baseSize = 0;
 		slot.baseStride = 0;
 		slot.regionX = 0;
@@ -3375,7 +3372,7 @@ uint32_t VDP::trackedTotalVramBytes() const {
 	return VRAM_SYSTEM_ATLAS_SIZE + VRAM_PRIMARY_ATLAS_SIZE + VRAM_SECONDARY_ATLAS_SIZE + VRAM_FRAMEBUFFER_SIZE + VRAM_STAGING_SIZE;
 }
 
-void VDP::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
+void VDP::applyAtlasSlotMapping(i32 primaryAtlasId, i32 secondaryAtlasId) {
 	auto configureSlotEntry = [this](Memory::AssetEntry& slotEntry, i32 atlasId) {
 		if (atlasId < 0) {
 			const uint32_t maxPixels = slotEntry.capacity / 4u;
@@ -3408,20 +3405,21 @@ void VDP::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
 	};
 	auto& primaryEntryForMetrics = m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
 	auto& secondaryEntryForMetrics = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
-	configureSlotEntry(primaryEntryForMetrics, slots[0]);
-	configureSlotEntry(secondaryEntryForMetrics, slots[1]);
+	configureSlotEntry(primaryEntryForMetrics, primaryAtlasId);
+	configureSlotEntry(secondaryEntryForMetrics, secondaryAtlasId);
 	m_atlasSlotById.clear();
-	m_slotAtlasIds = slots;
-	if (slots[0] >= 0) {
-		m_atlasSlotById[slots[0]] = 0;
+	m_slotAtlasIds[0] = primaryAtlasId;
+	m_slotAtlasIds[1] = secondaryAtlasId;
+	if (primaryAtlasId >= 0) {
+		m_atlasSlotById[primaryAtlasId] = 0;
 	}
-	if (slots[1] >= 0) {
-		m_atlasSlotById[slots[1]] = 1;
+	if (secondaryAtlasId >= 0) {
+		m_atlasSlotById[secondaryAtlasId] = 1;
 	}
 	auto& primaryEntry = m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
 	auto& secondaryEntry = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
-	if (slots[0] >= 0) {
-		const auto viewIt = m_atlasViewIdsById.find(slots[0]);
+	if (primaryAtlasId >= 0) {
+		const auto viewIt = m_atlasViewIdsById.find(primaryAtlasId);
 		if (viewIt != m_atlasViewIdsById.end()) {
 			for (const auto& viewId : viewIt->second) {
 				auto& viewEntry = m_memory.getAssetEntry(viewId);
@@ -3429,8 +3427,8 @@ void VDP::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
 			}
 		}
 	}
-	if (slots[1] >= 0) {
-		const auto viewIt = m_atlasViewIdsById.find(slots[1]);
+	if (secondaryAtlasId >= 0) {
+		const auto viewIt = m_atlasViewIdsById.find(secondaryAtlasId);
 		if (viewIt != m_atlasViewIdsById.end()) {
 			for (const auto& viewId : viewIt->second) {
 				auto& viewEntry = m_memory.getAssetEntry(viewId);
@@ -3486,7 +3484,7 @@ VdpState VDP::captureState() const {
 void VDP::restoreState(const VdpState& state) {
 	m_memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(state.atlasSlots[0] < 0 ? VDP_ATLAS_ID_NONE : state.atlasSlots[0])));
 	m_memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, valueNumber(static_cast<double>(state.atlasSlots[1] < 0 ? VDP_ATLAS_ID_NONE : state.atlasSlots[1])));
-	applyAtlasSlotMapping(state.atlasSlots);
+	applyAtlasSlotMapping(state.atlasSlots[0], state.atlasSlots[1]);
 	if (state.skyboxFaceIds.has_value()) {
 		setSkyboxImages(*state.skyboxFaceIds);
 	} else {
@@ -3844,14 +3842,13 @@ VDP::ReadCache& VDP::getReadCache(uint32_t surfaceId, const ReadSurface& surface
 
 void VDP::prefetchReadCache(uint32_t surfaceId, const ReadSurface& surface, uint32_t x, uint32_t y) {
 	auto& entry = m_memory.getAssetEntry(surface.assetId);
-	const uint32_t width = entry.regionW;
 	const uint32_t maxPixelsByBudget = m_readBudgetBytes / 4u;
 	if (maxPixelsByBudget == 0) {
 		m_readOverflow = true;
 		m_readCaches[surfaceId].width = 0;
 		return;
 	}
-	const uint32_t chunkW = std::min(VDP_RD_MAX_CHUNK_PIXELS, std::min(width - x, maxPixelsByBudget));
+	const uint32_t chunkW = std::min(VDP_RD_MAX_CHUNK_PIXELS, std::min(entry.regionW - x, maxPixelsByBudget));
 	auto& cache = m_readCaches[surfaceId];
 	readSurfacePixels(surface, x, y, chunkW, 1, cache.data);
 	cache.x0 = x;

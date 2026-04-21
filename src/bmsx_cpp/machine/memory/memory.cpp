@@ -265,18 +265,15 @@ Memory::AssetEntry& Memory::registerImageSlotAt(const std::string& id, uint32_t 
 
 Memory::AssetEntry& Memory::registerImageView(const std::string& id, const AssetEntry& base, uint32_t regionX, uint32_t regionY, uint32_t regionW, uint32_t regionH, uint32_t flags) {
 	const size_t ownerIndex = base.ownerIndex;
-	const uint32_t baseAddr = base.baseAddr;
-	const uint32_t baseSize = base.baseSize;
-	const uint32_t baseStride = base.baseStride;
 	AssetEntry entry;
 	entry.id = id;
 	entry.type = AssetType::Image;
 	entry.flags = flags | ASSET_FLAG_VIEW;
 	entry.ownerIndex = ownerIndex;
-	entry.baseAddr = baseAddr;
-	entry.baseSize = baseSize;
+	entry.baseAddr = base.baseAddr;
+	entry.baseSize = base.baseSize;
 	entry.capacity = 0;
-	entry.baseStride = baseStride;
+	entry.baseStride = base.baseStride;
 	entry.regionX = regionX;
 	entry.regionY = regionY;
 	entry.regionW = regionW;

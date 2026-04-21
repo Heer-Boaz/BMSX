@@ -9,22 +9,27 @@ export const EXT_B_BITS = 3;
 export const EXT_C_BITS = 3;
 export const EXT_BX_BITS = 8;
 
+export const BASE_OPERAND_A_BITS = MAX_OPERAND_BITS + EXT_A_BITS;
+export const BASE_OPERAND_BC_BITS = MAX_OPERAND_BITS + EXT_B_BITS;
+export const BASE_BX_BITS = MAX_BX_BITS + EXT_BX_BITS;
+
 export const MAX_LOW_OPERAND = (1 << MAX_OPERAND_BITS) - 1;
 export const MAX_LOW_BX = (1 << MAX_BX_BITS) - 1;
-export const MAX_WIDE = (1 << MAX_OPERAND_BITS) - 1;
+export const MAX_WIDE = MAX_LOW_OPERAND;
 
-export const MAX_BASE_OPERAND_A = (1 << (MAX_OPERAND_BITS + EXT_A_BITS)) - 1;
-export const MAX_BASE_OPERAND_BC = (1 << (MAX_OPERAND_BITS + EXT_B_BITS)) - 1;
-export const MAX_BASE_BX = (1 << (MAX_BX_BITS + EXT_BX_BITS)) - 1;
-export const MAX_SIGNED_BX_BITS = MAX_BX_BITS + EXT_BX_BITS + MAX_OPERAND_BITS;
-export const MAX_SIGNED_BX = (1 << (MAX_SIGNED_BX_BITS - 1)) - 1;
-export const MIN_SIGNED_BX = -(1 << (MAX_SIGNED_BX_BITS - 1));
+export const MAX_BASE_OPERAND_A = (1 << BASE_OPERAND_A_BITS) - 1;
+export const MAX_BASE_OPERAND_BC = (1 << BASE_OPERAND_BC_BITS) - 1;
+export const MAX_BASE_BX = (1 << BASE_BX_BITS) - 1;
+export const MAX_SIGNED_BX_BITS = BASE_BX_BITS + MAX_OPERAND_BITS;
+export const SIGNED_BX_SIGN_BIT = 1 << (MAX_SIGNED_BX_BITS - 1);
+export const MAX_SIGNED_BX = SIGNED_BX_SIGN_BIT - 1;
+export const MIN_SIGNED_BX = -SIGNED_BX_SIGN_BIT;
 
-export const MAX_EXT_REGISTER_A = (MAX_WIDE << (MAX_OPERAND_BITS + EXT_A_BITS)) | MAX_BASE_OPERAND_A;
-export const MAX_EXT_REGISTER_BC = (MAX_WIDE << (MAX_OPERAND_BITS + EXT_B_BITS)) | MAX_BASE_OPERAND_BC;
+export const MAX_EXT_REGISTER_A = (MAX_WIDE << BASE_OPERAND_A_BITS) | MAX_BASE_OPERAND_A;
+export const MAX_EXT_REGISTER_BC = (MAX_WIDE << BASE_OPERAND_BC_BITS) | MAX_BASE_OPERAND_BC;
 export const MAX_EXT_REGISTER = MAX_EXT_REGISTER_BC;
 export const MAX_EXT_CONST = (1 << (MAX_OPERAND_BITS + EXT_B_BITS - 1)) - 1;
-export const MAX_EXT_BX = (MAX_WIDE << (MAX_BX_BITS + EXT_BX_BITS)) | MAX_BASE_BX;
+export const MAX_EXT_BX = (MAX_WIDE << BASE_BX_BITS) | MAX_BASE_BX;
 
 
 export function signExtend(value: number, bits: number): number {

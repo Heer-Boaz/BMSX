@@ -306,20 +306,22 @@ function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest):
 		table.set(runtime.luaKey('render_size'), renderSize);
 	}
 	const specs = new Table(0, 5);
+	const specCpu = manifest.specs.cpu;
 	const cpu = new Table(0, 2);
-	if (manifest.specs.cpu.cpu_freq_hz) {
-		cpu.set(runtime.luaKey('cpu_freq_hz'), manifest.specs.cpu.cpu_freq_hz);
+	if (specCpu.cpu_freq_hz) {
+		cpu.set(runtime.luaKey('cpu_freq_hz'), specCpu.cpu_freq_hz);
 	}
-	if (manifest.specs.cpu.imgdec_bytes_per_sec) {
-		cpu.set(runtime.luaKey('imgdec_bytes_per_sec'), manifest.specs.cpu.imgdec_bytes_per_sec);
+	if (specCpu.imgdec_bytes_per_sec) {
+		cpu.set(runtime.luaKey('imgdec_bytes_per_sec'), specCpu.imgdec_bytes_per_sec);
 	}
 	specs.set(runtime.luaKey('cpu'), cpu);
+	const specDma = manifest.specs.dma;
 	const dma = new Table(0, 2);
-	if (manifest.specs.dma.dma_bytes_per_sec_iso) {
-		dma.set(runtime.luaKey('dma_bytes_per_sec_iso'), manifest.specs.dma.dma_bytes_per_sec_iso);
+	if (specDma.dma_bytes_per_sec_iso) {
+		dma.set(runtime.luaKey('dma_bytes_per_sec_iso'), specDma.dma_bytes_per_sec_iso);
 	}
-	if (manifest.specs.dma.dma_bytes_per_sec_bulk) {
-		dma.set(runtime.luaKey('dma_bytes_per_sec_bulk'), manifest.specs.dma.dma_bytes_per_sec_bulk);
+	if (specDma.dma_bytes_per_sec_bulk) {
+		dma.set(runtime.luaKey('dma_bytes_per_sec_bulk'), specDma.dma_bytes_per_sec_bulk);
 	}
 	specs.set(runtime.luaKey('dma'), dma);
 	const vdp = new Table(0, 1);
@@ -508,6 +510,7 @@ export function formatLuaString(runtime: Runtime, template: string, args: Readon
 		if (specifier.length === 0) {
 			throw runtime.createApiRuntimeError('string.format incomplete format specifier.');
 		}
+		const zeroPad = flags.zeroPad && !flags.leftAlign;
 
 		const signPrefix = (value: number): string => {
 			if (value < 0) {
@@ -619,7 +622,7 @@ export function formatLuaString(runtime: Runtime, template: string, args: Readon
 						}
 					}
 				}
-				const allowZeroPad = flags.zeroPad && !flags.leftAlign && precision === null;
+				const allowZeroPad = zeroPad && precision === null;
 				output += applyPadding(digits, sign, prefix, allowZeroPad);
 				break;
 			}
@@ -630,8 +633,7 @@ export function formatLuaString(runtime: Runtime, template: string, args: Readon
 				const fractionDigits = precision !== null ? Math.max(0, precision) : 6;
 				const text = Math.abs(number).toFixed(fractionDigits);
 				const formatted = flags.alternate && fractionDigits === 0 && text.indexOf('.') === -1 ? `${text}.` : text;
-				const allowZeroPad = flags.zeroPad && !flags.leftAlign;
-				output += applyPadding(formatted, sign, '', allowZeroPad);
+				output += applyPadding(formatted, sign, '', zeroPad);
 				break;
 			}
 			case 'e':
@@ -643,8 +645,7 @@ export function formatLuaString(runtime: Runtime, template: string, args: Readon
 				if (specifier === 'E') {
 					text = text.toUpperCase();
 				}
-				const allowZeroPad = flags.zeroPad && !flags.leftAlign;
-				output += applyPadding(text, sign, '', allowZeroPad);
+				output += applyPadding(text, sign, '', zeroPad);
 				break;
 			}
 			case 'g':
@@ -679,8 +680,7 @@ export function formatLuaString(runtime: Runtime, template: string, args: Readon
 				if (specifier === 'G') {
 					text = text.toUpperCase();
 				}
-				const allowZeroPad = flags.zeroPad && !flags.leftAlign;
-				output += applyPadding(text, sign, '', allowZeroPad);
+				output += applyPadding(text, sign, '', zeroPad);
 				break;
 			}
 			case 'q': {
@@ -736,21 +736,25 @@ function resolveLuaFunctionName(runtime: Runtime, protoIndex: number): string {
 	const protoId = runtime.programMetadata.protoIds[protoIndex];
 	const slashIndex = protoId.lastIndexOf('/');
 	const hint = slashIndex >= 0 ? protoId.slice(slashIndex + 1) : protoId;
-	if (hint.startsWith('decl:')) {
-		return hint.slice(5);
+	const colonIndex = hint.indexOf(':');
+	if (colonIndex < 0) {
+		return hint;
 	}
-	if (hint.startsWith('assign:')) {
-		return hint.slice(7);
+	const kind = hint.slice(0, colonIndex);
+	const name = hint.slice(colonIndex + 1);
+	switch (kind) {
+		case 'decl':
+		case 'assign':
+			return name;
+		case 'local': {
+			const hashIndex = name.indexOf('#');
+			return hashIndex >= 0 ? name.slice(0, hashIndex) : name;
+		}
+		case 'anon':
+			return 'anonymous';
+		default:
+			return hint;
 	}
-	if (hint.startsWith('local:')) {
-		const rawName = hint.slice(6);
-		const hashIndex = rawName.indexOf('#');
-		return hashIndex >= 0 ? rawName.slice(0, hashIndex) : rawName;
-	}
-	if (hint.startsWith('anon:')) {
-		return 'anonymous';
-	}
-	return hint;
 }
 
 export function buildLuaStackFrames(runtime: Runtime): StackTraceFrame[] {
@@ -760,8 +764,8 @@ export function buildLuaStackFrames(runtime: Runtime): StackTraceFrame[] {
 		const entry = callStack[index];
 		const range = runtime.machine.cpu.getDebugRange(entry.pc);
 		const source = range ? range.path : runtime.currentPath;
-		const line = range ? range.start.line : null;
-		const column = range ? range.start.column : null;
+		const line = range ? range.start.line : 0;
+		const column = range ? range.start.column : 0;
 		const functionName = resolveLuaFunctionName(runtime, entry.protoIndex);
 		frames.push({
 			origin: 'lua',
@@ -1591,7 +1595,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			out.push(target.getMetatable());
 			return;
 		}
-		out.push(target.metatable ?? null);
+		out.push(target.metatable);
 	}));
 	luaPipeline.registerGlobal(runtime, 'rawequal', createNativeFunction('rawequal', (args, out) => {
 		out.push(args[0] === args[1]);
@@ -1924,7 +1928,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			return;
 		}
 		const startUnit = utf8CodepointIndexToUnitIndex(source, startIndex);
-		const plain = args.length > 3 && args[3] === true;
+			const plain = args.length > 3 && isTruthyValue(args[3]);
 		if (plain) {
 			const position = source.indexOf(pattern, Math.max(0, startUnit));
 			if (position === -1) {
@@ -1988,9 +1992,13 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const source = luaPipeline.requireString(args[0]);
 		const pattern = args.length > 1 ? luaPipeline.requireString(args[1]) : '';
 		const replacement = args.length > 2 ? args[2] : runtime.internString('');
-		const maxReplacements = args.length > 3 && args[3] !== null
-			? Math.max(0, Math.floor(args[3] as number))
-			: Number.POSITIVE_INFINITY;
+			let maxReplacements = Number.POSITIVE_INFINITY;
+			if (args.length > 3 && args[3] !== null) {
+				maxReplacements = Math.floor(args[3] as number);
+				if (maxReplacements < 0) {
+					maxReplacements = 0;
+				}
+			}
 
 		const regex = getLuaPatternRegex(pattern);
 
@@ -2246,7 +2254,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 					comparatorArgs[1] = right;
 					comparatorResults.length = 0;
 					callClosureValue(comparator, comparatorArgs, comparatorResults);
-					return comparatorResults[0] === true ? -1 : 1;
+						return comparatorResults.length > 0 && isTruthyValue(comparatorResults[0]!) ? -1 : 1;
 				}
 				if (typeof left === 'number' && typeof right === 'number') {
 					return left - right;

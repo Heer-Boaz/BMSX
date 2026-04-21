@@ -38,13 +38,13 @@ type ResolvedOptions = {
 	showConsts: boolean;
 	showProtoHeaders: boolean;
 	showSourceComments: boolean;
-	sourceTextForPath: ((path: string) => string) | null;
+	sourceTextForPath?: (path: string) => string;
 	formatStyle: 'default' | 'assembly';
 	pcPrefix: string;
 	pcSuffix: string;
 	pcRadix: 10 | 16;
-	pcFormatter: ((pc: number, width: number) => string) | null;
-	protoAddressOp: string | null;
+	pcFormatter?: (pc: number, width: number) => string;
+	protoAddressOp?: string;
 	pcBias: number;
 };
 
@@ -69,23 +69,24 @@ export type InstructionDebugInfo = {
 
 const normalizeOptions = (options: DisassemblyOptions): ResolvedOptions => {
 	const formatStyle = options.formatStyle ?? 'default';
-	const showPc = options.showPc ?? (formatStyle !== 'assembly');
-	const pcRadix = options.pcRadix ?? (formatStyle === 'assembly' ? 16 : 10);
-	const pcPrefix = options.pcPrefix ?? (formatStyle === 'assembly' ? '' : '');
-	const pcSuffix = options.pcSuffix ?? (formatStyle === 'assembly' ? 'h' : '');
-	const protoAddressOp = options.protoAddressOp ?? (formatStyle === 'assembly' ? '.ORG' : null);
+	const assembly = formatStyle === 'assembly';
+	const showPc = options.showPc ?? !assembly;
+	const pcRadix = options.pcRadix ?? (assembly ? 16 : 10);
+	const pcPrefix = options.pcPrefix ?? (assembly ? '' : '');
+	const pcSuffix = options.pcSuffix ?? (assembly ? 'h' : '');
+	const protoAddressOp = options.protoAddressOp ?? (assembly ? '.ORG' : undefined);
 	return {
 		showPc,
-		showRaw: options.showRaw === true,
+		showRaw: !!options.showRaw,
 		showConsts: options.showConsts !== false,
 		showProtoHeaders: options.showProtoHeaders !== false,
-		showSourceComments: options.showSourceComments === true,
-		sourceTextForPath: options.sourceTextForPath ?? null,
+		showSourceComments: !!options.showSourceComments,
+		sourceTextForPath: options.sourceTextForPath,
 		formatStyle,
 		pcPrefix,
 		pcSuffix,
 		pcRadix,
-		pcFormatter: options.pcFormatter ?? null,
+		pcFormatter: options.pcFormatter,
 		protoAddressOp,
 		pcBias: options.pcBias ?? 0,
 	};
@@ -93,9 +94,10 @@ const normalizeOptions = (options: DisassemblyOptions): ResolvedOptions => {
 
 const formatHexWord = (word: number, options: ResolvedOptions): string => {
 	const hex = word.toString(16);
-	const upper = options.formatStyle === 'assembly' ? hex.toUpperCase() : hex;
-	const prefix = options.formatStyle === 'assembly' ? options.pcPrefix : '0x';
-	const suffix = options.formatStyle === 'assembly' ? options.pcSuffix : '';
+	const assembly = options.formatStyle === 'assembly';
+	const upper = assembly ? hex.toUpperCase() : hex;
+	const prefix = assembly ? options.pcPrefix : '0x';
+	const suffix = assembly ? options.pcSuffix : '';
 	return `${prefix}${upper.padStart(INSTRUCTION_BYTES * 2, '0')}${suffix}`;
 };
 
@@ -242,12 +244,11 @@ const formatJump = (pc: number, sbx: number, pcWidth: number, options: ResolvedO
 };
 
 const formatPc = (pc: number, width: number, options: ResolvedOptions, applyBias = true): string => {
+	const value = applyBias ? pc + options.pcBias : pc;
 	const formatter = options.pcFormatter;
 	if (formatter) {
-		const value = applyBias ? pc + options.pcBias : pc;
 		return formatter(value, width);
 	}
-	const value = applyBias ? pc + options.pcBias : pc;
 	let text = value.toString(options.pcRadix);
 	if (options.pcRadix === 16) {
 		text = text.toUpperCase();
@@ -319,9 +320,7 @@ const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => 
 	const bLow = (word >>> 6) & 0x3f;
 	const cLow = word & 0x3f;
 	if (op === OpCode.WIDE) {
-		const wideA = aLow;
 		const wideB = bLow;
-		const wideC = cLow;
 		const hasWide = true;
 		const nextWord = readInstructionWord(code, wordIndex + 1);
 		const nextExt = nextWord >>> 24;
@@ -346,9 +345,9 @@ const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => 
 		const extB = usesBx ? 0 : (nextExt >>> 3) & 0x7;
 		const extC = usesBx ? 0 : (nextExt & 0x7);
 		const aShift = MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
-		const a = (wideA << aShift) | (extA << MAX_OPERAND_BITS) | nextA;
+		const a = (aLow << aShift) | (extA << MAX_OPERAND_BITS) | nextA;
 		const b = (wideB << (MAX_OPERAND_BITS + EXT_B_BITS)) | (extB << MAX_OPERAND_BITS) | nextB;
-		const c = (wideC << (MAX_OPERAND_BITS + EXT_C_BITS)) | (extC << MAX_OPERAND_BITS) | nextC;
+		const c = (cLow << (MAX_OPERAND_BITS + EXT_C_BITS)) | (extC << MAX_OPERAND_BITS) | nextC;
 		const bxLow = (nextB << 6) | nextC;
 		const bxExt = usesBx ? nextExt : 0;
 		const bx = (wideB << (MAX_BX_BITS + EXT_BX_BITS)) | (bxExt << MAX_BX_BITS) | bxLow;

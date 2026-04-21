@@ -208,6 +208,10 @@ type BiasConfig = {
 	threshold2: number;
 };
 
+function garbageForceThreshold(maxBias: number, threshold: number): number {
+	return Math.floor((maxBias * threshold) / VRAM_GARBAGE_FORCE_T_DEN);
+}
+
 function makeBiasConfig(vramBytes: number): BiasConfig {
 	const maxOctaveBytes = vramBytes >>> 1;
 	let weightSum = VRAM_GARBAGE_WEIGHT_BLOCK + VRAM_GARBAGE_WEIGHT_ROW + VRAM_GARBAGE_WEIGHT_PAGE;
@@ -222,9 +226,9 @@ function makeBiasConfig(vramBytes: number): BiasConfig {
 		activeOctaves = i + 1;
 	}
 	const maxBias = weightSum * 127;
-	const threshold0 = Math.floor((maxBias * VRAM_GARBAGE_FORCE_T0) / VRAM_GARBAGE_FORCE_T_DEN);
-	const threshold1 = Math.floor((maxBias * VRAM_GARBAGE_FORCE_T1) / VRAM_GARBAGE_FORCE_T_DEN);
-	const threshold2 = Math.floor((maxBias * VRAM_GARBAGE_FORCE_T2) / VRAM_GARBAGE_FORCE_T_DEN);
+	const threshold0 = garbageForceThreshold(maxBias, VRAM_GARBAGE_FORCE_T0);
+	const threshold1 = garbageForceThreshold(maxBias, VRAM_GARBAGE_FORCE_T1);
+	const threshold2 = garbageForceThreshold(maxBias, VRAM_GARBAGE_FORCE_T2);
 	return {
 		activeOctaves,
 		threshold0,
@@ -235,6 +239,15 @@ function makeBiasConfig(vramBytes: number): BiasConfig {
 
 function frameBufferColorByte(value: number): number {
 	return Math.round(value * 255);
+}
+
+function atlasTexcoordRegionSize(atlasSize: number, offset: number, minCoord: number, maxCoord: number): number {
+	const texels = Math.round((maxCoord - minCoord) * atlasSize);
+	if (texels < 1) {
+		return 1;
+	}
+	const remaining = atlasSize - offset;
+	return texels < remaining ? texels : remaining;
 }
 
 function initBlockGen(biasSeed: number, bootSeedMix: number, blockIndex: number, biasConfig: BiasConfig): BlockGen {
@@ -991,9 +1004,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	private nextBlitterSequence(): number {
-		const seq = this.blitterSequence;
-		this.blitterSequence += 1;
-		return seq;
+		return this.blitterSequence++;
 	}
 
 	private acquireGlyphBuffer(): VdpGlyphRunGlyph[] {
@@ -2324,8 +2335,8 @@ export class VDP implements VramWriteSink {
 			// Texcoords are serialized as float32, so round back to the source texel grid.
 			const offsetX = Math.round(minU * atlasWidth);
 			const offsetY = Math.round(minV * atlasHeight);
-			const regionW = Math.max(1, Math.min(atlasWidth - offsetX, Math.round((maxU - minU) * atlasWidth)));
-			const regionH = Math.max(1, Math.min(atlasHeight - offsetY, Math.round((maxV - minV) * atlasHeight)));
+			const regionW = atlasTexcoordRegionSize(atlasWidth, offsetX, minU, maxU);
+			const regionH = atlasTexcoordRegionSize(atlasHeight, offsetY, minV, maxV);
 			const viewEntry = this.memory.hasAsset(entry.resid)
 				? this.memory.getAssetEntry(entry.resid)
 				: this.memory.registerImageView({
@@ -2549,16 +2560,20 @@ export class VDP implements VramWriteSink {
 		};
 	}
 
+	private randomU32(): number {
+		return Math.floor(Math.random() * 0xffffffff) >>> 0;
+	}
+
 	private nextVramMachineSeed(): number {
 		const time = Date.now() >>> 0;
-		const rand = Math.floor(Math.random() * 0xffffffff) >>> 0;
+		const rand = this.randomU32();
 		return (time ^ rand) >>> 0;
 	}
 
 	private nextVramBootSeed(): number {
 		const time = Date.now() >>> 0;
-		const rand = Math.floor(Math.random() * 0xffffffff) >>> 0;
-		const jitter = Math.floor(Math.random() * 0xffffffff) >>> 0;
+		const rand = this.randomU32();
+		const jitter = this.randomU32();
 		return (time ^ rand ^ jitter) >>> 0;
 	}
 
@@ -2574,7 +2589,7 @@ export class VDP implements VramWriteSink {
 		const maxPixels = Math.floor(this.vramGarbageScratch.byteLength / 4);
 		const stream = this.makeVramGarbageStream(slot.baseAddr >>> 0);
 		if (rowPixels <= maxPixels) {
-			const rowsPerChunk = Math.max(1, Math.floor(maxPixels / rowPixels));
+			const rowsPerChunk = Math.floor(maxPixels / rowPixels);
 			for (let y = 0; y < height; ) {
 					const rows = Math.min(rowsPerChunk, height - y);
 					const chunkBytes = rowPixels * rows * 4;

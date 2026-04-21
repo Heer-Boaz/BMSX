@@ -64,6 +64,10 @@ void writeInstruction(std::vector<uint8_t>& code, int index, uint8_t op, uint8_t
 	code[offset + 3] = static_cast<uint8_t>(word & 0xff);
 }
 
+void writeWideInstruction(std::vector<uint8_t>& code, int index, uint8_t a, uint8_t b, uint8_t c) {
+	writeInstruction(code, index, static_cast<uint8_t>(OpCode::WIDE), a, b, c);
+}
+
 uint32_t encodeSignedRaw(int value, int bits) {
 	const uint32_t mask = static_cast<uint32_t>((1 << bits) - 1);
 	return static_cast<uint32_t>(value) & mask;
@@ -282,13 +286,13 @@ void rewriteConstRelocations(
 			const uint16_t nextLow = static_cast<uint16_t>(static_cast<uint32_t>(mappedIndex) & MAX_LOW_BX);
 			bLow = static_cast<uint8_t>((nextLow >> 6) & 0x3f);
 			cLow = static_cast<uint8_t>(nextLow & 0x3f);
-			ext = nextExt;
-			if (hasWide) {
-				wideB = static_cast<uint8_t>(nextWide & 0x3f);
-				writeInstruction(code, wordIndex - 1, static_cast<uint8_t>(OpCode::WIDE), wideA, wideB, wideC);
-			}
-			writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
-			continue;
+				ext = nextExt;
+				if (hasWide) {
+					wideB = static_cast<uint8_t>(nextWide & 0x3f);
+					writeWideInstruction(code, wordIndex - 1, wideA, wideB, wideC);
+				}
+				writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
+				continue;
 		}
 
 		if (reloc.kind == ProgramAsset::ConstRelocKind::ConstB
@@ -328,13 +332,13 @@ void rewriteConstRelocations(
 				if (hasWide) {
 					wideC = static_cast<uint8_t>(widePart & 0x3f);
 				}
-			}
-			ext = static_cast<uint8_t>((extA << 6) | (extB << 3) | extC);
-			if (hasWide) {
-				writeInstruction(code, wordIndex - 1, static_cast<uint8_t>(OpCode::WIDE), wideA, wideB, wideC);
-			}
-			writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
-			continue;
+				}
+				ext = static_cast<uint8_t>((extA << 6) | (extB << 3) | extC);
+				if (hasWide) {
+					writeWideInstruction(code, wordIndex - 1, wideA, wideB, wideC);
+				}
+				writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
+				continue;
 		}
 
 		const bool relocOnB = reloc.kind == ProgramAsset::ConstRelocKind::RkB;
@@ -366,11 +370,11 @@ void rewriteConstRelocations(
 			if (hasWide) {
 				wideC = static_cast<uint8_t>(widePart & 0x3f);
 			}
-		}
-		ext = static_cast<uint8_t>((extA << 6) | (extB << 3) | extC);
-		if (hasWide) {
-			writeInstruction(code, wordIndex - 1, static_cast<uint8_t>(OpCode::WIDE), wideA, wideB, wideC);
-		}
+			}
+			ext = static_cast<uint8_t>((extA << 6) | (extB << 3) | extC);
+			if (hasWide) {
+				writeWideInstruction(code, wordIndex - 1, wideA, wideB, wideC);
+			}
 		writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
 	}
 }

@@ -54,6 +54,7 @@ type LintBinding = {
 	splitJoinDelimiterFingerprint: string | null;
 	firstReadParentKind: ts.SyntaxKind | null;
 	firstReadParentOperatorKind: ts.SyntaxKind | null;
+	readInsideLoop: boolean;
 };
 
 type RepeatedExpressionInfo = {
@@ -168,22 +169,7 @@ const SEMANTIC_NORMALIZATION_CALL_TARGETS = new Set([
 const NORMALIZED_BODY_MIN_LENGTH = 120;
 const COMPACT_SAMPLE_TEXT_LENGTH = 180;
 const SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT = 2;
-const BOUNDED_NUMERIC_HINT_WORDS = new Set([
-	'caret',
-	'cursor',
-	'end',
-	'index',
-	'left',
-	'line',
-	'offset',
-	'page',
-	'position',
-	'right',
-	'row',
-	'scroll',
-	'start',
-	'top',
-]);
+const LOCAL_CONST_PATTERN_ENABLED = false;
 const NUMERIC_SANITIZATION_PATH_SEGMENTS = [
 	'/src/bmsx/ide/',
 	'/src/bmsx/machine/',
@@ -897,8 +883,20 @@ function isStringLiteralLike(node: ts.Expression): boolean {
 	return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
 }
 
+type NullishLiteralKind = 'null' | 'undefined';
+
+function nullishLiteralKind(node: ts.Expression): NullishLiteralKind | null {
+	if (node.kind === ts.SyntaxKind.NullKeyword) {
+		return 'null';
+	}
+	if (ts.isIdentifier(node) && node.text === 'undefined') {
+		return 'undefined';
+	}
+	return null;
+}
+
 function isNullOrUndefined(node: ts.Expression): boolean {
-	return node.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(node) && node.text === 'undefined');
+	return nullishLiteralKind(node) !== null;
 }
 
 function isNullishEqualityOperator(kind: ts.SyntaxKind): boolean {
@@ -1016,19 +1014,44 @@ function undefinedGuardFingerprint(condition: ts.Expression, positive: boolean):
 	return null;
 }
 
-function isUndefinedToNullProjection(node: ts.ConditionalExpression): boolean {
-	const trueIsNull = node.whenTrue.kind === ts.SyntaxKind.NullKeyword;
-	const falseIsNull = node.whenFalse.kind === ts.SyntaxKind.NullKeyword;
-	if (trueIsNull === falseIsNull) {
+function strictNullishEqualityGuard(condition: ts.Expression): { kind: NullishLiteralKind; fingerprint: string } | null {
+	const unwrapped = unwrapExpression(condition);
+	if (!ts.isBinaryExpression(unwrapped) || unwrapped.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken) {
+		return null;
+	}
+	const leftKind = nullishLiteralKind(unwrapped.left);
+	const rightKind = nullishLiteralKind(unwrapped.right);
+	if (leftKind !== null && rightKind === null) {
+		const fingerprint = expressionAccessFingerprint(unwrapped.right);
+		return fingerprint === null ? null : { kind: leftKind, fingerprint };
+	}
+	if (rightKind !== null && leftKind === null) {
+		const fingerprint = expressionAccessFingerprint(unwrapped.left);
+		return fingerprint === null ? null : { kind: rightKind, fingerprint };
+	}
+	return null;
+}
+
+function isCrossNullishProjection(condition: ts.Expression, nullishKind: NullishLiteralKind, valueExpression: ts.Expression): boolean {
+	const guard = strictNullishEqualityGuard(condition);
+	return guard !== null
+		&& guard.kind !== nullishKind
+		&& expressionUsesGuardedValue(valueExpression, guard.fingerprint);
+}
+
+function isCrossNullishConditionalProjection(node: ts.ConditionalExpression): boolean {
+	const trueKind = nullishLiteralKind(node.whenTrue);
+	const falseKind = nullishLiteralKind(node.whenFalse);
+	if (trueKind === falseKind || (trueKind !== null && falseKind !== null)) {
 		return false;
 	}
-	const valueExpression = trueIsNull ? node.whenFalse : node.whenTrue;
-	const guarded = undefinedGuardFingerprint(node.condition, trueIsNull);
-	return guarded !== null && expressionUsesGuardedValue(valueExpression, guarded);
+	const nullishKind = trueKind ?? falseKind;
+	const valueExpression = trueKind !== null ? node.whenFalse : node.whenTrue;
+	return nullishKind !== null && isCrossNullishProjection(node.condition, nullishKind, valueExpression);
 }
 
 function isConditionalNullishNormalization(node: ts.ConditionalExpression): boolean {
-	if (isUndefinedToNullProjection(node)) {
+	if (isCrossNullishConditionalProjection(node)) {
 		return false;
 	}
 	const trueNullish = isNullOrUndefined(node.whenTrue);
@@ -1045,15 +1068,21 @@ function isConditionalNullishNormalization(node: ts.ConditionalExpression): bool
 	return truthyGuard !== null && expressionUsesGuardedValue(valueExpression, truthyGuard);
 }
 
-function isNullishReturnStatement(statement: ts.Statement): boolean {
+function nullishReturnKind(statement: ts.Statement): NullishLiteralKind | null {
 	if (ts.isReturnStatement(statement)) {
-		return statement.expression !== undefined && isNullOrUndefined(statement.expression);
+		return statement.expression === undefined ? null : nullishLiteralKind(statement.expression);
 	}
 	if (!ts.isBlock(statement) || statement.statements.length !== 1) {
-		return false;
+		return null;
 	}
 	const onlyStatement = statement.statements[0];
-	return ts.isReturnStatement(onlyStatement) && onlyStatement.expression !== undefined && isNullOrUndefined(onlyStatement.expression);
+	return ts.isReturnStatement(onlyStatement) && onlyStatement.expression !== undefined
+		? nullishLiteralKind(onlyStatement.expression)
+		: null;
+}
+
+function isNullishReturnStatement(statement: ts.Statement): boolean {
+	return nullishReturnKind(statement) !== null;
 }
 
 function nextStatementAfter(statement: ts.Statement): ts.Statement | null {
@@ -1085,7 +1114,11 @@ function previousStatementBefore(statement: ts.Statement): ts.Statement | null {
 }
 
 function lintNullishReturnGuard(node: ts.IfStatement, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
-	if (node.elseStatement !== undefined || !isNullishReturnStatement(node.thenStatement)) {
+	if (node.elseStatement !== undefined) {
+		return;
+	}
+	const returnedKind = nullishReturnKind(node.thenStatement);
+	if (returnedKind === null) {
 		return;
 	}
 	const guardFingerprint = nullishGuardFingerprint(node.expression);
@@ -1097,6 +1130,9 @@ function lintNullishReturnGuard(node: ts.IfStatement, sourceFile: ts.SourceFile,
 		return;
 	}
 	if (!expressionUsesGuardedValue(next.expression, guardFingerprint)) {
+		return;
+	}
+	if (isCrossNullishProjection(node.expression, returnedKind, next.expression)) {
 		return;
 	}
 	pushLintIssue(
@@ -1336,7 +1372,7 @@ function isSimpleAliasExpression(node: ts.Expression | undefined): boolean {
 		return false;
 	}
 	const unwrapped = unwrapExpression(node);
-	return ts.isIdentifier(unwrapped) || ts.isPropertyAccessExpression(unwrapped);
+	return ts.isIdentifier(unwrapped);
 }
 
 function splitIdentifierWords(text: string): string[] {
@@ -1435,33 +1471,6 @@ function getActiveBinding(scopes: Array<Map<string, LintBinding[]>>, name: strin
 	return null;
 }
 
-function hasBoundedNumericHint(node: ts.Node): boolean {
-	let found = false;
-	const visit = (current: ts.Node): void => {
-		if (found) {
-			return;
-		}
-		if (
-			ts.isIdentifier(current)
-			|| ts.isPrivateIdentifier(current)
-			|| ts.isStringLiteral(current)
-			|| ts.isNoSubstitutionTemplateLiteral(current)
-		) {
-			const words = splitIdentifierWords(current.text);
-			for (let index = 0; index < words.length; index += 1) {
-				if (BOUNDED_NUMERIC_HINT_WORDS.has(words[index])) {
-					found = true;
-					return;
-				}
-			}
-			return;
-		}
-		ts.forEachChild(current, visit);
-	};
-	visit(node);
-	return found;
-}
-
 function containsNestedNumericSanitizationCall(node: ts.Node): boolean {
 	let found = false;
 	const visit = (current: ts.Node): void => {
@@ -1536,7 +1545,7 @@ function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile
 	}
 	for (let index = 0; index < statements.length; index += 1) {
 		const statement = statements[index];
-		if (ts.isReturnStatement(statement)) {
+		if (ts.isReturnStatement(statement) && !catchBlockHandlesAsyncError(node)) {
 			pushLintIssue(
 				issues,
 				sourceFile,
@@ -1547,6 +1556,35 @@ function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile
 			return;
 		}
 	}
+}
+
+function catchBlockHandlesAsyncError(node: ts.CatchClause): boolean {
+	const declaration = node.variableDeclaration;
+	const caughtName = declaration !== undefined && ts.isIdentifier(declaration.name) ? declaration.name.text : null;
+	let handles = false;
+	const visit = (current: ts.Node): void => {
+		if (handles) {
+			return;
+		}
+		if (ts.isBinaryExpression(current) && current.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+			const left = getExpressionText(current.left);
+			const right = getExpressionText(current.right);
+			if (left.endsWith('.fault') && (caughtName === null || right === caughtName)) {
+				handles = true;
+				return;
+			}
+		}
+		if (ts.isCallExpression(current)) {
+			const target = getCallTargetLeafName(current.expression);
+			if (target !== null && /^finish[A-Za-z0-9]*Error$/.test(target)) {
+				handles = true;
+				return;
+			}
+		}
+		ts.forEachChild(current, visit);
+	};
+	visit(node.block);
+	return handles;
 }
 
 function lintSplitJoinRoundtripPattern(
@@ -1605,7 +1643,7 @@ function lintRedundantNumericSanitizationPattern(
 	if (isSemanticFloorDivisionCall(node)) {
 		return;
 	}
-	if (!containsNestedNumericSanitizationCall(node) && !hasBoundedNumericHint(node)) {
+	if (!containsNestedNumericSanitizationCall(node)) {
 		return;
 	}
 	pushLintIssue(
@@ -1647,11 +1685,20 @@ function isSingleUseSuppressingBinaryOperator(kind: ts.SyntaxKind): boolean {
 		|| kind === ts.SyntaxKind.QuestionQuestionToken;
 }
 
+function isSnapshotLocalName(name: string): boolean {
+	return name === 'swap'
+		|| isTemporalSnapshotName(name)
+		|| /(?:Base|Offset|Index|Pos|Position|Start|End|Length|Size|Count|Reg|Addr|Slot|Key|Id)$/.test(name);
+}
+
 function shouldReportSingleUseLocal(binding: LintBinding): boolean {
 	if (!binding.hasInitializer || !binding.isSimpleAliasInitializer) {
 		return false;
 	}
 	if (binding.writeCount > 0) {
+		return false;
+	}
+	if (binding.readInsideLoop || isSnapshotLocalName(binding.name)) {
 		return false;
 	}
 	if (binding.initializerTextLength > 32) {
@@ -1675,6 +1722,26 @@ function shouldReportSingleUseLocal(binding: LintBinding): boolean {
 
 function isFunctionExpressionLike(node: ts.Node): node is ts.ArrowFunction | ts.FunctionExpression {
 	return ts.isArrowFunction(node) || ts.isFunctionExpression(node);
+}
+
+function isInsideLoop(node: ts.Node): boolean {
+	let current: ts.Node | undefined = node;
+	while (current !== undefined) {
+		if (
+			ts.isForStatement(current)
+			|| ts.isForInStatement(current)
+			|| ts.isForOfStatement(current)
+			|| ts.isWhileStatement(current)
+			|| ts.isDoStatement(current)
+		) {
+			return true;
+		}
+		if (ts.isFunctionLike(current) || ts.isSourceFile(current)) {
+			return false;
+		}
+		current = current.parent;
+	}
+	return false;
 }
 
 function incrementUsageCount(counts: Map<string, number>, name: string | null): void {
@@ -2181,23 +2248,43 @@ function isExpressionChildOfLargerExpression(node: ts.Expression, parent: ts.Nod
 	if (parent === undefined) {
 		return false;
 	}
-	if (ts.isPropertyAccessExpression(parent) && parent.expression === node) {
+	let child: ts.Node = node;
+	while (
+		ts.isParenthesizedExpression(parent)
+		|| ts.isAsExpression(parent)
+		|| ts.isNonNullExpression(parent)
+		|| ((ts as unknown as { isTypeAssertionExpression?: (node: ts.Node) => node is ts.TypeAssertion }).isTypeAssertionExpression?.(parent) ?? false)
+	) {
+		child = parent;
+		parent = parent.parent;
+		if (parent === undefined) {
+			return false;
+		}
+	}
+	if (ts.isPropertyAccessExpression(parent) && parent.expression === child) {
 		return true;
 	}
-	if (ts.isElementAccessExpression(parent) && parent.expression === node) {
+	if (ts.isElementAccessExpression(parent) && parent.expression === child) {
 		return true;
 	}
-	if (ts.isCallExpression(parent) && parent.expression === node) {
+	if (ts.isCallExpression(parent) && parent.expression === child) {
 		return true;
 	}
-	if (ts.isNewExpression(parent) && parent.expression === node) {
+	if (ts.isNewExpression(parent) && parent.expression === child) {
+		return true;
+	}
+	if (
+		ts.isBinaryExpression(parent)
+		&& (parent.left === child || parent.right === child)
+		&& !isTsAssignmentOperator(parent.operatorToken.kind)
+	) {
 		return true;
 	}
 	return false;
 }
 
 function isTemporalSnapshotName(name: string): boolean {
-	return /^(previous|next|before|after|initial)[A-Z_]/.test(name);
+	return /^(previous|next|before|after|initial)(?:$|[A-Z_])/.test(name);
 }
 
 function isTemporalSnapshotInitializer(node: ts.Expression, parent: ts.Node | undefined): boolean {
@@ -2210,8 +2297,17 @@ function isTemporalSnapshotInitializer(node: ts.Expression, parent: ts.Node | un
 	return ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node);
 }
 
+function isLoopConditionExpression(node: ts.Expression, parent: ts.Node | undefined): boolean {
+	return (parent !== undefined && ts.isForStatement(parent) && parent.condition === node)
+		|| (parent !== undefined && ts.isWhileStatement(parent) && parent.expression === node)
+		|| (parent !== undefined && ts.isDoStatement(parent) && parent.expression === node);
+}
+
 function repeatedExpressionFingerprint(node: ts.Expression, sourceFile: ts.SourceFile, parent: ts.Node | undefined): string | null {
 	if (isExpressionChildOfLargerExpression(node, parent)) {
+		return null;
+	}
+	if (isLoopConditionExpression(node, parent)) {
 		return null;
 	}
 	if (parent !== undefined && ts.isBinaryExpression(parent) && isTsAssignmentOperator(parent.operatorToken.kind) && parent.left === node) {
@@ -2267,6 +2363,10 @@ function semanticRepeatedExpressionFingerprint(node: ts.Expression, sourceFile: 
 	}
 	if (text.startsWith('this.')) {
 		return null;
+	}
+	const family = semanticNormalizationFamily(target);
+	if (family !== null && family.startsWith('numeric:')) {
+		return `${target}|${node.arguments.map(arg => arg.getText(sourceFile).replace(/\s+/g, ' ')).join(',')}`;
 	}
 	return `${target}|${normalizedAstFingerprint(node)}`;
 }
@@ -2575,8 +2675,39 @@ function lintBinaryExpressionForCodeQuality(
 	}
 }
 
-function isSingleLineWrapperCandidate(functionNode: ts.Node): boolean {
+function hasPrivateOrProtectedModifier(node: ts.Node): boolean {
+	const modifiers = (node as { modifiers?: ts.NodeArray<ts.Modifier> }).modifiers;
+	if (!modifiers) {
+		return false;
+	}
+	for (let index = 0; index < modifiers.length; index += 1) {
+		const kind = modifiers[index].kind;
+		if (kind === ts.SyntaxKind.PrivateKeyword || kind === ts.SyntaxKind.ProtectedKeyword) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function isFirmwareCartApiMethod(functionNode: ts.Node, sourceFile: ts.SourceFile): boolean {
+	return sourceFile.fileName.endsWith('/src/bmsx/machine/firmware/api.ts')
+		&& ts.isMethodDeclaration(functionNode)
+		&& !hasPrivateOrProtectedModifier(functionNode);
+}
+
+function isPublicContractMethod(functionNode: ts.Node): boolean {
+	return ts.isMethodDeclaration(functionNode) && !hasPrivateOrProtectedModifier(functionNode);
+}
+
+function isTrivialDelegationCallExpression(callExpression: ts.CallExpression): boolean {
+	return !isDirectMutationCallExpression(callExpression) && !containsClosureExpression(callExpression);
+}
+
+function isSingleLineWrapperCandidate(functionNode: ts.Node, sourceFile: ts.SourceFile): boolean {
 	if (!ts.isFunctionDeclaration(functionNode) && !ts.isMethodDeclaration(functionNode)) {
+		return false;
+	}
+	if (hasExportModifier(functionNode) || isPublicContractMethod(functionNode) || isFirmwareCartApiMethod(functionNode, sourceFile)) {
 		return false;
 	}
 	const name = functionNode.name?.getText();
@@ -2588,7 +2719,7 @@ function isSingleLineWrapperCandidate(functionNode: ts.Node): boolean {
 		return false;
 	}
 	if (!ts.isBlock(body)) {
-		return ts.isCallExpression(body) && !isDirectMutationCallExpression(body);
+		return ts.isCallExpression(body) && isTrivialDelegationCallExpression(body);
 	}
 	if (body.statements.length !== 1) {
 		return false;
@@ -2597,10 +2728,10 @@ function isSingleLineWrapperCandidate(functionNode: ts.Node): boolean {
 	if (ts.isReturnStatement(statement)) {
 		return statement.expression !== undefined
 			&& ts.isCallExpression(statement.expression)
-			&& !isDirectMutationCallExpression(statement.expression);
+			&& isTrivialDelegationCallExpression(statement.expression);
 	}
 	if (ts.isExpressionStatement(statement)) {
-		return ts.isCallExpression(statement.expression) && !isDirectMutationCallExpression(statement.expression);
+		return ts.isCallExpression(statement.expression) && isTrivialDelegationCallExpression(statement.expression);
 	}
 	return false;
 }
@@ -2967,6 +3098,9 @@ function collectNormalizedBody(
 	if (name.endsWith('Thunk')) {
 		return;
 	}
+	if (hasExportModifier(node) || isPublicContractMethod(node)) {
+		return;
+	}
 	const body = node.body;
 	if (body === undefined) {
 		return;
@@ -2976,7 +3110,7 @@ function collectNormalizedBody(
 	const semanticBody = semanticSignatures.length > 0;
 	if (ts.isBlock(body)) {
 		if (!semanticBody) {
-			if (body.statements.length < 2 || isSingleLineWrapperCandidate(node)) {
+			if (body.statements.length < 2 || isSingleLineWrapperCandidate(node, sourceFile)) {
 				return;
 			}
 			if (text.length < NORMALIZED_BODY_MIN_LENGTH) {
@@ -3176,7 +3310,7 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 				if (binding.isTopLevel || binding.isExported || shouldIgnoreLintName(binding.name)) {
 					continue;
 				}
-				if (!binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
+				if (LOCAL_CONST_PATTERN_ENABLED && !binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
 					issues.push({
 						kind: 'local_const_pattern',
 						file: sourceFile.fileName,
@@ -3263,6 +3397,7 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 			})(),
 			firstReadParentKind: null,
 			firstReadParentOperatorKind: null,
+			readInsideLoop: false,
 		};
 		let list = scope.get(name);
 		if (list === undefined) {
@@ -3288,6 +3423,9 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 			if (isWriteIdentifier(node, parent)) {
 				binding.writeCount += 1;
 			} else {
+				if (isInsideLoop(parent)) {
+					binding.readInsideLoop = true;
+				}
 				if (binding.readCount === 0) {
 					const useContext = normalizeSingleUseContext(parent);
 					binding.firstReadParentKind = useContext.kind;
@@ -3490,7 +3628,7 @@ function collectLintIssues(sourceFile: ts.SourceFile, issues: LintIssue[], funct
 				|| ts.isFunctionExpression(node)
 				|| ts.isArrowFunction(node)
 			) && !ts.isConstructorDeclaration(node)
-			&& isSingleLineWrapperCandidate(node)
+			&& isSingleLineWrapperCandidate(node, sourceFile)
 			&& !isAllowedBySingleLineFunctionUsage(
 				node as ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
 				functionUsageInfo,

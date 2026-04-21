@@ -692,7 +692,11 @@ export class Memory {
 	}
 
 	public planImageWrite(entry: ImageWriteEntry, params: { pixels: Uint8Array; width: number; height: number; capacity?: number }): ImageWritePlan {
-		const capacity = params.capacity === undefined ? entry.capacity : Math.min(entry.capacity, Math.floor(params.capacity));
+		let capacity = entry.capacity;
+		if (params.capacity !== undefined) {
+			const requestedCapacity = Math.floor(params.capacity);
+			capacity = requestedCapacity < entry.capacity ? requestedCapacity : entry.capacity;
+		}
 		const sourceWidth = Math.floor(params.width);
 		const sourceHeight = Math.floor(params.height);
 		const sourceStride = sourceWidth * 4;

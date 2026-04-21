@@ -534,7 +534,7 @@ export class DmaController {
 		let nextDeadline = Number.MAX_SAFE_INTEGER;
 		if (pendingIso) {
 			const pendingBytes = this.getPendingBytesForChannel(DMA_CH_ISO);
-			const targetBytes = pendingBytes < DMA_SERVICE_BATCH_BYTES ? pendingBytes : DMA_SERVICE_BATCH_BYTES;
+			const targetBytes = Math.min(pendingBytes, DMA_SERVICE_BATCH_BYTES);
 			if (this.channels[DMA_CH_ISO].budget >= targetBytes) {
 				this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, nowCycles);
 				return;
@@ -543,7 +543,7 @@ export class DmaController {
 		}
 		if (pendingBulk) {
 			const pendingBytes = this.getPendingBytesForChannel(DMA_CH_BULK);
-			const targetBytes = pendingBytes < DMA_SERVICE_BATCH_BYTES ? pendingBytes : DMA_SERVICE_BATCH_BYTES;
+			const targetBytes = Math.min(pendingBytes, DMA_SERVICE_BATCH_BYTES);
 			if (this.channels[DMA_CH_BULK].budget >= targetBytes) {
 				this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, nowCycles);
 				return;

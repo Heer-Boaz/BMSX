@@ -227,9 +227,7 @@ DecodedDebugInstruction decodeInstructionFromStart(const Program& program, int p
 	const int bLow = static_cast<int>((word >> 6) & 0x3f);
 	const int cLow = static_cast<int>(word & 0x3f);
 	if (op == OpCode::WIDE) {
-		const int wideA = aLow;
 		const int wideB = bLow;
-		const int wideC = cLow;
 		const uint32_t nextWord = readInstructionWordAt(code, wordIndex + 1);
 		const uint32_t nextExt = nextWord >> 24;
 		const auto nextOp = static_cast<OpCode>((nextWord >> 18) & 0x3f);
@@ -241,9 +239,9 @@ DecodedDebugInstruction decodeInstructionFromStart(const Program& program, int p
 		const int extB = usesBx ? 0 : static_cast<int>((nextExt >> 3) & 0x7);
 		const int extC = usesBx ? 0 : static_cast<int>(nextExt & 0x7);
 		const int aShift = MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
-		const int a = (wideA << aShift) | (extA << MAX_OPERAND_BITS) | nextA;
+		const int a = (aLow << aShift) | (extA << MAX_OPERAND_BITS) | nextA;
 		const int b = (wideB << (MAX_OPERAND_BITS + EXT_B_BITS)) | (extB << MAX_OPERAND_BITS) | nextB;
-		const int c = (wideC << (MAX_OPERAND_BITS + EXT_C_BITS)) | (extC << MAX_OPERAND_BITS) | nextC;
+		const int c = (cLow << (MAX_OPERAND_BITS + EXT_C_BITS)) | (extC << MAX_OPERAND_BITS) | nextC;
 		const uint32_t bxLow = (static_cast<uint32_t>(nextB) << 6U) | static_cast<uint32_t>(nextC);
 		const uint32_t bxExt = usesBx ? nextExt : 0U;
 		const uint32_t bx = (static_cast<uint32_t>(wideB) << (MAX_BX_BITS + EXT_BX_BITS)) | (bxExt << MAX_BX_BITS) | bxLow;
