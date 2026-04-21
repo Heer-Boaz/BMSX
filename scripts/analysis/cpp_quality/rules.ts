@@ -809,10 +809,23 @@ function isCppBoundaryStyleWrapperName(name: string): boolean {
 }
 
 function isCppConstructorLike(info: CppFunctionInfo): boolean {
-	if (info.context === null) {
+	if (info.name.startsWith('~') || info.qualifiedName.includes('::~')) {
+		return true;
+	}
+	const methodSeparator = info.qualifiedName.lastIndexOf('::');
+	if (methodSeparator !== -1) {
+		const ownerNameEnd = methodSeparator;
+		const ownerNameStart = info.qualifiedName.lastIndexOf('::', ownerNameEnd - 1) + 2;
+		const ownerName = info.qualifiedName.slice(ownerNameStart, ownerNameEnd);
+		const methodName = info.qualifiedName.slice(methodSeparator + 2);
+		if (methodName === ownerName || methodName === `~${ownerName}`) {
+			return true;
+		}
+	}
+	if (info.context === undefined) {
 		return false;
 	}
-	return info.name === info.context || info.name === `~${info.context}`;
+	return info.name === info.context;
 }
 
 export function createCppFacadeStats(functions: readonly CppFunctionInfo[], tokens: readonly CppToken[]): CppFacadeStats | null {
@@ -1153,6 +1166,12 @@ function cppRepeatedStatementSequenceSkipKind(entry: CppStatementSequenceInfo): 
 	}
 	if (normalized.includes('/src/bmsx_cpp/machine/devices/vdp/')) {
 		return 'render_specialization';
+	}
+	if (
+		normalized.endsWith('/src/bmsx_cpp/render/backend/backend.cpp') &&
+		entry.fingerprint.includes('shadeBlitPixel')
+	) {
+		return 'render_blit_depth_specialization';
 	}
 	if (normalized.endsWith('/src/bmsx_cpp/machine/firmware/globals.cpp')) {
 		return 'lua_library_surface';

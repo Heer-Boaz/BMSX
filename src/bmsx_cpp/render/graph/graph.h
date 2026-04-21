@@ -144,6 +144,18 @@ private:
 		i32 lastUse = -1;
 	};
 
+	struct WriteTargets {
+		RenderGraphTexHandle color = -1;
+		RenderGraphTexHandle depth = -1;
+	};
+
+	struct ExecutablePass {
+		i32 index = -1;
+		RenderGraphPass* pass = nullptr;
+		const std::any* data = nullptr;
+		WriteTargets targets;
+	};
+
 	RenderGraphTexHandle allocTex(const TexDesc& desc, i32 passIndex);
 	void readTex(RenderGraphTexHandle handle, i32 passIndex);
 	void writeTex(RenderGraphTexHandle handle, i32 passIndex, const std::array<f32, 4>* clearColor, const f32* clearDepth);
@@ -158,6 +170,9 @@ private:
 	void realizeAll();
 	void destroyResources();
 	void* ensureFBO(RenderGraphTexHandle color, RenderGraphTexHandle depth);
+	bool resolveExecutablePass(i32 orderIndex, bool hasOrder, ExecutablePass& out);
+	WriteTargets writeTargetsForPass(i32 passIndex) const;
+	bool beginClearPass(RenderGraphTexHandle color, RenderGraphTexHandle depth, i32 passIndex, const std::string& label, PassEncoder& passEnc);
 
 	GPUBackend* m_backend;
 	std::vector<RenderGraphPass> m_passes;

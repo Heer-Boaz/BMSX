@@ -126,6 +126,74 @@ static void uploadRgba8ToSoftwareTexture(SoftwareTexture& texture, const u8* dat
 	}
 }
 
+inline i32 clampBlitByte(i32 value) {
+	if (value < 0) return 0;
+	if (value > 255) return 255;
+	return value;
+}
+
+inline void ditherBlitRgb(i32& r, i32& g, i32& b, i32 ditherRow, i32 x, i32 ditherJitter, i32 ditherIntensity) {
+	const i32 lum = (r * 77 + g * 150 + b * 29) >> 8;
+	const i32 guard = (static_cast<i32>(kDitherGuardLut[lum]) * ditherIntensity + 127) / 255;
+	const i32 threshold = (static_cast<i32>(kBayerThreshold[ditherRow | ((x + ditherJitter) & 3)]) * guard + 127) / 255;
+	r = quantize5Bit(r, threshold);
+	g = quantize5Bit(g, threshold);
+	b = quantize5Bit(b, threshold);
+}
+
+inline u32 blendBlitRgb(u32 dst, i32 r, i32 g, i32 b, i32 a) {
+	const u32 invA = 255 - static_cast<u32>(a);
+	const u32 dr = (dst >> 16) & 0xFF;
+	const u32 dg = (dst >> 8) & 0xFF;
+	const u32 db = dst & 0xFF;
+	const u32 outR = (static_cast<u32>(r) * a + dr * invA + 127) / 255;
+	const u32 outG = (static_cast<u32>(g) * a + dg * invA + 127) / 255;
+	const u32 outB = (static_cast<u32>(b) * a + db * invA + 127) / 255;
+	return 0xFF000000 | (outR << 16) | (outG << 8) | outB;
+}
+
+inline bool shadeBlitPixel(u32 srcPixel,
+							u32 dstPixel,
+							i32 tintR,
+							i32 tintG,
+							i32 tintB,
+							i32 tintA,
+							bool applyDither,
+							i32 ditherRow,
+							i32 x,
+							i32 ditherJitter,
+							i32 ditherIntensity,
+							u32& outPixel) {
+	const i32 srcA = (srcPixel >> 24) & 0xFF;
+	if (srcA == 0) return false;
+
+	i32 r = (((srcPixel >> 16) & 0xFF) * tintR + 127) / 255;
+	i32 g = (((srcPixel >> 8) & 0xFF) * tintG + 127) / 255;
+	i32 b = ((srcPixel & 0xFF) * tintB + 127) / 255;
+	i32 a = (srcA * tintA + 127) / 255;
+
+	r = clampBlitByte(r);
+	g = clampBlitByte(g);
+	b = clampBlitByte(b);
+	if (a <= 0) return false;
+	a = clampBlitByte(a);
+
+	if (applyDither) {
+		ditherBlitRgb(r, g, b, ditherRow, x, ditherJitter, ditherIntensity);
+	}
+
+	if (a >= 255) {
+		outPixel = 0xFF000000 |
+					(static_cast<u32>(r) << 16) |
+					(static_cast<u32>(g) << 8) |
+					static_cast<u32>(b);
+		return true;
+	}
+
+	outPixel = blendBlitRgb(dstPixel, r, g, b, a);
+	return true;
+}
+
 template<bool EncodeSrgb>
 static void readSoftwareTextureRegionPixels(const SoftwareTexture& texture, u8* out, i32 width, i32 height, i32 x, i32 y, const std::array<u8, 256>* lut) {
 	const size_t rowStride = static_cast<size_t>(width) * 4u;
@@ -532,56 +600,9 @@ void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 src
 				const i32 sx = sx_fp >> 16;
 				sx_fp += xStep;
 
-				const u32 srcPixel = srcRow[sx];
-				const i32 srcA = (srcPixel >> 24) & 0xFF;
-				if (srcA == 0) continue;
-
-				const i32 srcR = (srcPixel >> 16) & 0xFF;
-				const i32 srcG = (srcPixel >> 8) & 0xFF;
-				const i32 srcB = srcPixel & 0xFF;
-
-				i32 r = (srcR * tintR + 127) / 255;
-				i32 g = (srcG * tintG + 127) / 255;
-				i32 b = (srcB * tintB + 127) / 255;
-				i32 a = (srcA * tintA + 127) / 255;
-
-				if (r < 0) r = 0;
-				if (r > 255) r = 255;
-				if (g < 0) g = 0;
-				if (g > 255) g = 255;
-				if (b < 0) b = 0;
-				if (b > 255) b = 255;
-				if (a <= 0) continue;
-				if (a > 255) a = 255;
-
-				if (applyDither) {
-					const i32 lum = (r * 77 + g * 150 + b * 29) >> 8;
-					const i32 guard = (static_cast<i32>(kDitherGuardLut[lum]) * ditherIntensity + 127) / 255;
-					const i32 threshold = (static_cast<i32>(kBayerThreshold[ditherRow | ((dx + ditherJitter) & 3)]) * guard + 127) / 255;
-					r = quantize5Bit(r, threshold);
-					g = quantize5Bit(g, threshold);
-					b = quantize5Bit(b, threshold);
-				}
-
-				if (a >= 255) {
-					dstRow[dx] = (0xFF << 24) |
-									(static_cast<u32>(r) << 16) |
-									(static_cast<u32>(g) << 8) |
-									static_cast<u32>(b);
-				} else {
-					const u32 dst = dstRow[dx];
-					const u32 invA = 255 - static_cast<u32>(a);
-
-					const u32 dr = (dst >> 16) & 0xFF;
-					const u32 dg = (dst >> 8) & 0xFF;
-					const u32 db = dst & 0xFF;
-
-					const u32 or_ = (static_cast<u32>(r) * a + dr * invA + 127) / 255;
-					const u32 og = (static_cast<u32>(g) * a + dg * invA + 127) / 255;
-					const u32 ob = (static_cast<u32>(b) * a + db * invA + 127) / 255;
-
-					dstRow[dx] = 0xFF000000 | (or_ << 16) | (og << 8) | ob;
-				}
+				u32 outPixel = 0;
+				if (!shadeBlitPixel(srcRow[sx], dstRow[dx], tintR, tintG, tintB, tintA, applyDither, ditherRow, dx, ditherJitter, ditherIntensity, outPixel)) continue;
+				dstRow[dx] = outPixel;
 
 				m_depthBuffer[depthIndex] = depth;
 			}
@@ -601,56 +622,9 @@ void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 src
 			const i32 sx = sx_fp >> 16;
 			sx_fp += xStep;
 
-			const u32 srcPixel = srcRow[sx];
-			const i32 srcA = (srcPixel >> 24) & 0xFF;
-			if (srcA == 0) continue;
-
-			const i32 srcR = (srcPixel >> 16) & 0xFF;
-			const i32 srcG = (srcPixel >> 8) & 0xFF;
-			const i32 srcB = srcPixel & 0xFF;
-
-			i32 r = (srcR * tintR + 127) / 255;
-			i32 g = (srcG * tintG + 127) / 255;
-			i32 b = (srcB * tintB + 127) / 255;
-			i32 a = (srcA * tintA + 127) / 255;
-
-			if (r < 0) r = 0;
-			if (r > 255) r = 255;
-			if (g < 0) g = 0;
-			if (g > 255) g = 255;
-			if (b < 0) b = 0;
-			if (b > 255) b = 255;
-			if (a <= 0) continue;
-			if (a > 255) a = 255;
-
-			if (applyDither) {
-				const i32 lum = (r * 77 + g * 150 + b * 29) >> 8;
-				const i32 guard = (static_cast<i32>(kDitherGuardLut[lum]) * ditherIntensity + 127) / 255;
-				const i32 threshold = (static_cast<i32>(kBayerThreshold[ditherRow | ((dx + ditherJitter) & 3)]) * guard + 127) / 255;
-				r = quantize5Bit(r, threshold);
-				g = quantize5Bit(g, threshold);
-				b = quantize5Bit(b, threshold);
-			}
-
-			if (a >= 255) {
-				dstRow[dx] = (0xFF << 24) |
-								(static_cast<u32>(r) << 16) |
-								(static_cast<u32>(g) << 8) |
-								static_cast<u32>(b);
-			} else {
-				const u32 dst = dstRow[dx];
-				const u32 invA = 255 - static_cast<u32>(a);
-
-				const u32 dr = (dst >> 16) & 0xFF;
-				const u32 dg = (dst >> 8) & 0xFF;
-				const u32 db = dst & 0xFF;
-
-				const u32 or_ = (static_cast<u32>(r) * a + dr * invA + 127) / 255;
-				const u32 og = (static_cast<u32>(g) * a + dg * invA + 127) / 255;
-				const u32 ob = (static_cast<u32>(b) * a + db * invA + 127) / 255;
-
-				dstRow[dx] = 0xFF000000 | (or_ << 16) | (og << 8) | ob;
-			}
+			u32 outPixel = 0;
+			if (!shadeBlitPixel(srcRow[sx], dstRow[dx], tintR, tintG, tintB, tintA, applyDither, ditherRow, dx, ditherJitter, ditherIntensity, outPixel)) continue;
+			dstRow[dx] = outPixel;
 		}
 		sy_fp += yStep;
 	}

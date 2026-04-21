@@ -327,7 +327,15 @@ function findCppFunctionDeclaratorOpenParen(tokens: readonly CppToken[], pairs: 
 	let braceDepth = 0;
 	for (let index = directDeclaratorCursor; index >= 0; index -= 1) {
 		const text = tokens[index].text;
-		if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0 && (text === ';' || text === '}')) {
+		if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0 && text === '}') {
+			const openBrace = pairs[index];
+			if (openBrace > 0 && tokens[openBrace - 1].kind === 'id') {
+				braceDepth += 1;
+				continue;
+			}
+			break;
+		}
+		if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0 && text === ';') {
 			break;
 		}
 		if (text === ')') {
@@ -375,6 +383,9 @@ function findCppFunctionDeclaratorOpenParen(tokens: readonly CppToken[], pairs: 
 function isCppFunctionBodyAfterDeclarator(tokens: readonly CppToken[], pairs: readonly number[], openParen: number, bodyStart: number): boolean {
 	const closeParen = pairs[openParen];
 	if (closeParen < 0 || bodyStart <= closeParen) {
+		return false;
+	}
+	if (bodyStart > 0 && tokens[bodyStart - 1].kind === 'id' && !CPP_POST_FUNCTION_QUALIFIERS.has(tokens[bodyStart - 1].text)) {
 		return false;
 	}
 	const depth = { paren: 0, bracket: 0, brace: 0 };

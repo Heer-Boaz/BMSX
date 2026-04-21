@@ -59,7 +59,6 @@ public:
 	bool isRegistryPersistent() const override { return true; }
 
 	void bind();
-	void unbind();
 
 	void setBackend(GPUBackend* backend);
 	GPUBackend* backend() const { return m_backend; }

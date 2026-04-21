@@ -626,11 +626,12 @@ void main(){
 		return program;
 	}
 
-void updateFullscreenQuad(i32 width, i32 height) {
-	if (g_crt.width == width && g_crt.height == height) return;
+template<typename State>
+void updatePostProcessQuad(State& state, i32 width, i32 height) {
+	if (state.width == width && state.height == height) return;
 
-	g_crt.width = width;
-	g_crt.height = height;
+	state.width = width;
+	state.height = height;
 
 	const float w = static_cast<float>(width);
 	const float h = static_cast<float>(height);
@@ -651,43 +652,19 @@ void updateFullscreenQuad(i32 width, i32 height) {
 		1.0f, 0.0f
 	};
 
-	glBindBuffer(GL_ARRAY_BUFFER, g_crt.vbo_pos);
+	glBindBuffer(GL_ARRAY_BUFFER, state.vbo_pos);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(positions), positions, GL_STATIC_DRAW);
 
-	glBindBuffer(GL_ARRAY_BUFFER, g_crt.vbo_uv);
+	glBindBuffer(GL_ARRAY_BUFFER, state.vbo_uv);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(texcoords), texcoords, GL_STATIC_DRAW);
 }
 
+void updateFullscreenQuad(i32 width, i32 height) {
+	updatePostProcessQuad(g_crt, width, height);
+}
+
 void updateDeviceQuad(i32 width, i32 height) {
-	if (g_device.width == width && g_device.height == height) return;
-
-	g_device.width = width;
-	g_device.height = height;
-
-	const float w = static_cast<float>(width);
-	const float h = static_cast<float>(height);
-	const float positions[12] = {
-		0.0f, 0.0f,
-		0.0f, h,
-		w, 0.0f,
-		w, 0.0f,
-		0.0f, h,
-		w, h
-	};
-	const float texcoords[12] = {
-		0.0f, 1.0f,
-		0.0f, 0.0f,
-		1.0f, 1.0f,
-		1.0f, 1.0f,
-		0.0f, 0.0f,
-		1.0f, 0.0f
-	};
-
-	glBindBuffer(GL_ARRAY_BUFFER, g_device.vbo_pos);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(positions), positions, GL_STATIC_DRAW);
-
-	glBindBuffer(GL_ARRAY_BUFFER, g_device.vbo_uv);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(texcoords), texcoords, GL_STATIC_DRAW);
+	updatePostProcessQuad(g_device, width, height);
 }
 
 } // namespace

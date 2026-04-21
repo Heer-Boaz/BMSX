@@ -203,7 +203,6 @@ public:
 	// Lifecycle
 	// ─────────────────────────────────────────────────────────────────────────
 	void bind();
-	void unbind();
 	void dispose();
 	void reset();
 

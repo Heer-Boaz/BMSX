@@ -1,4 +1,5 @@
 #include "texture_manager.h"
+#include "shared/solid_pixels.h"
 #include <algorithm>
 #include <cstring>
 #include <iomanip>
@@ -72,10 +73,6 @@ const Identifier& TextureManager::registryId() const {
 
 void TextureManager::bind() {
 	Registry::instance().registerObject(this);
-}
-
-void TextureManager::unbind() {
-	Registry::instance().deregister(this, true);
 }
 
 void TextureManager::setBackend(GPUBackend* backend) {
@@ -157,7 +154,10 @@ TextureSource TextureManager::getImage(const ImageKey& key) const {
 
 TextureHandle TextureManager::getTexture(const TextureKey& key) const {
 	auto it = m_gpuCache.find(key);
-	return it != m_gpuCache.end() ? it->second.handle : nullptr;
+	if (it == m_gpuCache.end()) {
+		return nullptr;
+	}
+	return it->second.handle;
 }
 
 TextureHandle TextureManager::getTextureByUri(const std::string& uri,
@@ -385,17 +385,7 @@ TextureSource TextureManager::fromBuffer(const ImageKey& key,
 
 
 TextureSource TextureManager::createSolid(i32 size, const Color& color) {
-	const u8 r = static_cast<u8>(color.r * 255.0f);
-	const u8 g = static_cast<u8>(color.g * 255.0f);
-	const u8 b = static_cast<u8>(color.b * 255.0f);
-	const u8 a = static_cast<u8>(color.a * 255.0f);
-	std::vector<u8> pixels(static_cast<size_t>(size) * size * 4);
-	for (size_t i = 0; i < pixels.size(); i += 4) {
-		pixels[i + 0] = r;
-		pixels[i + 1] = g;
-		pixels[i + 2] = b;
-		pixels[i + 3] = a;
-	}
+	auto pixels = createSolidRgba8Pixels(size, size, color);
 	return TextureSource::fromOwned(std::move(pixels), size, size);
 }
 
@@ -443,7 +433,7 @@ void TextureManager::clear() {
 
 void TextureManager::dispose() {
 	clear();
-	unbind();
+	Registry::instance().deregister(this, true);
 }
 
 } // namespace bmsx

@@ -22,6 +22,23 @@
 
 namespace bmsx {
 
+namespace {
+
+void submitRectPrimitive(GameView::Renderer& renderer,
+							RectRenderSubmission::Kind kind,
+							const RectBounds& area,
+							const Color& color,
+							RenderLayer layer) {
+	RectRenderSubmission submission;
+	submission.kind = kind;
+	submission.area = area;
+	submission.color = color;
+	submission.layer = layer;
+	renderer.submit.rect(submission);
+}
+
+} // namespace
+
 /* ============================================================================
  * GameView implementation
  * ============================================================================ */
@@ -292,21 +309,11 @@ void GameView::setSpriteParallaxRig(f32 vy, f32 scale, f32 impact, f32 impact_t,
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::fillRectangle(const RectBounds& area, const Color& color, RenderLayer layer) {
-	RectRenderSubmission submission;
-	submission.kind = RectRenderSubmission::Kind::Fill;
-	submission.area = area;
-	submission.color = color;
-	submission.layer = layer;
-	renderer.submit.rect(submission);
+	submitRectPrimitive(renderer, RectRenderSubmission::Kind::Fill, area, color, layer);
 }
 
 void GameView::drawRectangle(const RectBounds& area, const Color& color, RenderLayer layer) {
-	RectRenderSubmission submission;
-	submission.kind = RectRenderSubmission::Kind::Rect;
-	submission.area = area;
-	submission.color = color;
-	submission.layer = layer;
-	renderer.submit.rect(submission);
+	submitRectPrimitive(renderer, RectRenderSubmission::Kind::Rect, area, color, layer);
 }
 
 void GameView::drawLine(i32 x0, i32 y0, i32 x1, i32 y1, const Color& color, RenderLayer layer) {
@@ -753,12 +760,8 @@ void GameView::bind() {
 	Registry::instance().registerObject(this);
 }
 
-void GameView::unbind() {
-	Registry::instance().deregister(this);
-}
-
 void GameView::dispose() {
-	unbind();
+	Registry::instance().deregister(this);
 	m_renderGraph.reset();
 	m_pipelineRegistry.reset();
 	m_backend.reset();
