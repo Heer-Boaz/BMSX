@@ -7,6 +7,18 @@ import type { PointerSnapshot } from '../../../../common/models';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
 import { editorViewState } from '../../../ui/view/state';
 import { editorSearchState } from '../../../contrib/find/widget_state';
+import { openGlobalSearchMatch } from '../../../../workbench/contrib/find/global_search_navigation';
+
+function applySearchPointerSelection(index: number, preview?: boolean): void {
+	applySearchSelection(index, { preview });
+	if (editorSearchState.scope !== 'global' || preview) {
+		return;
+	}
+	const match = editorSearchState.globalMatches[editorSearchState.currentIndex];
+	if (match) {
+		openGlobalSearchMatch(match);
+	}
+}
 
 export function handleSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const bounds = getSearchBarBounds();
@@ -43,10 +55,10 @@ export function handleSearchPointer(snapshot: PointerSnapshot, justPressed: bool
 			editorSearchState.currentIndex = hoverIndex;
 			ensureSearchSelectionVisible();
 			if (editorSearchState.scope === 'local') {
-				applySearchSelection(hoverIndex, { preview: true });
+				applySearchPointerSelection(hoverIndex, true);
 			}
 		}
-		applySearchSelection(hoverIndex);
+		applySearchPointerSelection(hoverIndex);
 		finishQuickInputPointer(snapshot);
 		return true;
 	}

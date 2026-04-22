@@ -2,6 +2,7 @@ import { showEditorMessage, showEditorWarningBanner } from '../../../common/feed
 import { editorDocumentState } from '../../../editor/editing/document_state';
 import type { CodeTabContext, CodeTabMode, ResourceDescriptor } from '../../../common/models';
 import * as constants from '../../../common/constants';
+import { clamp } from '../../../../common/clamp';
 import { beginNavigationCapture, completeNavigation } from '../../../editor/navigation/navigation_history';
 import { tryShowLuaErrorOverlay } from '../../../runtime/error/navigation';
 import { getTextSnapshot } from '../../../editor/text/source_text';
@@ -9,7 +10,11 @@ import { saveLuaResourceSource } from '../../../workspace/workspace';
 import { buildDirtyFilePath } from '../../workspace/io';
 import { setWorkspaceCachedSources } from '../../../workspace/cache';
 import { breakUndoSequence } from '../../../editor/editing/undo_controller';
+import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor_state';
+import { ensureCursorVisible } from '../../../editor/ui/view/caret/caret';
+import { resetBlink } from '../../../editor/render/caret';
 import { applyAemSourceToRuntime, loadAemResourceSource, saveAemResourceSource } from '../../../language/aem/editor';
+import { scheduleMicrotask } from '../../../../platform/index';
 import { extractErrorMessage } from '../../../../lua/value';
 import { computeResourceTabTitle } from '../tab/titles';
 import { setActiveTab } from '../tabs';
@@ -26,12 +31,18 @@ import { codeTabSessionState } from './session_state';
 
 function applyCodeTabDescriptor(context: CodeTabContext, descriptor: ResourceDescriptor, mode: CodeTabMode): void {
 	context.descriptor = descriptor;
-	context.readOnly = descriptor.readOnly === true;
+	context.readOnly = !!descriptor.readOnly;
 	context.mode = mode;
 	context.title = computeResourceTabTitle(descriptor);
 }
 
-export function openLuaCodeTab(descriptor: ResourceDescriptor): void {
+type CodeTabSelection = {
+	row: number;
+	startColumn: number;
+	endColumn: number;
+};
+
+export function openLuaCodeTab(descriptor: ResourceDescriptor, selection?: CodeTabSelection): void {
 	const navigationCheckpoint = beginNavigationCapture();
 	const tabId = buildCodeTabId(descriptor);
 	if (!codeTabSessionState.contexts.has(tabId)) {
@@ -41,7 +52,21 @@ export function openLuaCodeTab(descriptor: ResourceDescriptor): void {
 	applyCodeTabDescriptor(context, descriptor, 'lua');
 	upsertCodeEditorTab(context);
 	setActiveTab(tabId);
-	completeNavigation(navigationCheckpoint);
+	if (!selection) {
+		completeNavigation(navigationCheckpoint);
+		return;
+	}
+	scheduleMicrotask(() => {
+		const row = clamp(selection.row, 0, editorDocumentState.buffer.getLineCount() - 1);
+		const line = editorDocumentState.buffer.getLineContent(row);
+		const startColumn = clamp(selection.startColumn, 0, line.length);
+		const endColumn = clamp(selection.endColumn, 0, line.length);
+		setSingleCursorPosition(editorDocumentState, row, startColumn);
+		setSingleCursorSelectionAnchor(editorDocumentState, row, endColumn);
+		ensureCursorVisible();
+		resetBlink();
+		completeNavigation(navigationCheckpoint);
+	});
 }
 
 export async function openAemCodeTab(descriptor: ResourceDescriptor): Promise<void> {

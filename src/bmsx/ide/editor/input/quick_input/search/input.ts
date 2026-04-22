@@ -3,7 +3,33 @@ import { applyInlineFieldEditing } from '../../../ui/inline_text_field';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../keyboard/key_input';
 import { redo, undo } from '../../../editing/undo_controller';
 import { save } from '../../../../workbench/ui/code_tab/io';
+import { openGlobalSearchMatch } from '../../../../workbench/contrib/find/global_search_navigation';
 import { editorSearchState } from '../../../contrib/find/widget_state';
+
+type SearchSelectionOptions = {
+	preview?: boolean;
+	keepSearchActive?: boolean;
+};
+
+function openSelectedGlobalMatch(options?: SearchSelectionOptions): void {
+	if (editorSearchState.scope !== 'global' || options?.preview) {
+		return;
+	}
+	const match = editorSearchState.globalMatches[editorSearchState.currentIndex];
+	if (match) {
+		openGlobalSearchMatch(match);
+	}
+}
+
+function applySearchSelectionFromInput(index: number, options?: SearchSelectionOptions): void {
+	applySearchSelection(index, options);
+	openSelectedGlobalMatch(options);
+}
+
+function stepSearchSelectionFromInput(delta: number, options?: SearchSelectionOptions & { wrap?: boolean }): void {
+	stepSearchSelection(delta, options);
+	openSelectedGlobalMatch(options);
+}
 
 export function handleSearchInput(): void {
 	const shiftDown = isShiftDown();
@@ -44,7 +70,7 @@ export function handleSearchInput(): void {
 	if (isKeyJustPressed('Enter')) {
 		consumeIdeKey('Enter');
 		if (hasResults) {
-			stepSearchSelection(shiftDown ? -1 : 1, { wrap: true, keepSearchActive: true });
+			stepSearchSelectionFromInput(shiftDown ? -1 : 1, { wrap: true, keepSearchActive: true });
 		} else if (shiftDown) {
 			jumpToPreviousMatch();
 		} else {
@@ -64,32 +90,32 @@ export function handleSearchInput(): void {
 	if (hasResults) {
 		if (shouldRepeatKeyFromPlayer('ArrowUp')) {
 			consumeIdeKey('ArrowUp');
-			stepSearchSelection(-1, { preview: previewLocal });
+			stepSearchSelectionFromInput(-1, { preview: previewLocal });
 			return;
 		}
 		if (shouldRepeatKeyFromPlayer('ArrowDown')) {
 			consumeIdeKey('ArrowDown');
-			stepSearchSelection(1, { preview: previewLocal });
+			stepSearchSelectionFromInput(1, { preview: previewLocal });
 			return;
 		}
 		if (shouldRepeatKeyFromPlayer('PageUp')) {
 			consumeIdeKey('PageUp');
-			stepSearchSelection(-searchPageSize(), { preview: previewLocal });
+			stepSearchSelectionFromInput(-searchPageSize(), { preview: previewLocal });
 			return;
 		}
 		if (shouldRepeatKeyFromPlayer('PageDown')) {
 			consumeIdeKey('PageDown');
-			stepSearchSelection(searchPageSize(), { preview: previewLocal });
+			stepSearchSelectionFromInput(searchPageSize(), { preview: previewLocal });
 			return;
 		}
 		if (isKeyJustPressed('Home')) {
 			consumeIdeKey('Home');
-			applySearchSelection(0, { preview: true, keepSearchActive: true });
+			applySearchSelectionFromInput(0, { preview: true, keepSearchActive: true });
 			return;
 		}
 		if (isKeyJustPressed('End')) {
 			consumeIdeKey('End');
-			applySearchSelection(activeSearchMatchCount() - 1, { preview: true, keepSearchActive: true });
+			applySearchSelectionFromInput(activeSearchMatchCount() - 1, { preview: true, keepSearchActive: true });
 			return;
 		}
 	}

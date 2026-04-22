@@ -10,14 +10,11 @@ import { enqueueBackgroundTask } from '../../../common/background_tasks';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { updateDesiredColumn } from '../../ui/view/caret/caret';
 import { listResources } from '../../../workspace/workspace';
-import { openLuaCodeTab } from '../../../workbench/ui/code_tab/io';
-import { closeResourceSearch } from '../../../workbench/contrib/resources/search';
 import { closeLineJump } from './line_jump';
 import { closeSymbolSearch } from '../symbols/shared';
 import { clearReferenceHighlights } from '../intellisense/engine';
-import { ensureCursorVisible, revealCursor } from '../../ui/view/caret/caret';
+import { revealCursor } from '../../ui/view/caret/caret';
 import { resetBlink } from '../../render/caret';
-import { scheduleMicrotask } from '../../../../platform/index';
 import { applyInlineFieldPointer, setFieldText } from '../../ui/inline_text_field';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { editorDocumentState } from '../../editing/document_state';
@@ -67,7 +64,6 @@ export function activeSearchMatchCount(): number {
 export function openSearch(useSelection: boolean, scope: 'local' | 'global' = 'local'): void {
 	clearReferenceHighlights();
 	closeSymbolSearch(false);
-	closeResourceSearch(false);
 	closeLineJump(false);
 	renameController.cancel();
 
@@ -383,23 +379,6 @@ function focusLocalMatch(index: number, recordNavigation: boolean): void {
 	}
 }
 
-function focusGlobalMatch(index: number): void {
-	const match = editorSearchState.globalMatches[index];
-	const navigationCheckpoint = beginNavigationCapture();
-	openLuaCodeTab(match.descriptor);
-	scheduleMicrotask(() => {
-		const row = clamp(match.row, 0, editorDocumentState.buffer.getLineCount() - 1);
-		const line = editorDocumentState.buffer.getLineContent(row);
-		const startColumn = clamp(match.start, 0, line.length);
-		const endColumn = clamp(match.end, 0, line.length);
-		setSingleCursorPosition(editorDocumentState, row, startColumn);
-		setSingleCursorSelectionAnchor(editorDocumentState, row, endColumn);
-		ensureCursorVisible();
-		resetBlink();
-		completeNavigation(navigationCheckpoint);
-	});
-}
-
 function nextSearchIndex(delta: number, wrap?: boolean): number {
 	const total = activeSearchMatchCount();
 	let next = editorSearchState.currentIndex;
@@ -441,8 +420,6 @@ export function applySearchSelection(index: number, options?: { preview?: boolea
 
 	if (editorSearchState.scope === 'local') {
 		focusLocalMatch(targetIndex, !options?.preview);
-	} else if (!options?.preview) {
-		focusGlobalMatch(targetIndex);
 	}
 
 	if (!options?.preview && !options?.keepSearchActive) {
