@@ -5,12 +5,8 @@ local enemy_base<const> = require('enemies/enemy_base')
 local stafffoe<const> = {}
 stafffoe.__index = stafffoe
 
-local speed_components_from_angle<const> = function(speed_num, angle_degrees)
-	local radians<const> = math.rad(angle_degrees)
-	local speed_x_num<const> = round_to_nearest(math.cos(radians) * speed_num)
-	local speed_y_num<const> = round_to_nearest(math.sin(radians) * speed_num)
-	return speed_x_num, speed_y_num
-end
+local staff_shot_speed_x<const> = { 16, 15, 11, 6, 0, -6, -11, -15, -16, -15, -11, -6, 0, 6, 11, 15 }
+local staff_shot_speed_y<const> = { 0, 6, 11, 15, 16, 15, 11, 6, 0, -6, -11, -15, -16, -15, -11, -6 }
 
 function stafffoe:ctor()
 	self.staff_state = 'default'
@@ -48,10 +44,11 @@ function stafffoe.bt_tick(self, blackboard)
 
 	local player<const> = oget('pietolon')
 	local bullets_dangerous<const> = not player.inventory_items.greenvase
-	local base_angle<const> = math.random(0, 359)
+	local base_vector_index<const> = math.random(0, 15)
 	for i = 0, 3 do
-		local angle<const> = (base_angle + (i * 90)) % 360
-		local speed_x_num<const>, speed_y_num<const> = speed_components_from_angle(constants.enemy.staff_bullet_speed_num, angle)
+		local vector_index<const> = ((base_vector_index + (i * 4)) % 16) + 1
+		local speed_x_num<const> = staff_shot_speed_x[vector_index]
+		local speed_y_num<const> = staff_shot_speed_y[vector_index]
 		inst('enemy.staffspawn', {
 			direction = speed_x_num < 0 and 'left' or 'right',
 			speed_x_num = speed_x_num,

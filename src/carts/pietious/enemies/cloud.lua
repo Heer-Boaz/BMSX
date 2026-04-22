@@ -6,6 +6,14 @@ local cloud<const> = {}
 cloud.__index = cloud
 
 local full_circle_milliradians<const> = 6283
+local cloud_wave_pos_start_millirad<const> = 253
+local cloud_wave_peak_start_millirad<const> = 848
+local cloud_wave_peak_end_millirad<const> = 2294
+local cloud_wave_pos_end_millirad<const> = 2889
+local cloud_wave_neg_start_millirad<const> = 3394
+local cloud_wave_trough_start_millirad<const> = 3990
+local cloud_wave_trough_end_millirad<const> = 5435
+local cloud_wave_neg_end_millirad<const> = 6030
 
 function cloud:ctor()
 	self.cloud_anim_frame = 1
@@ -44,7 +52,20 @@ function cloud.bt_tick(self, blackboard)
 
 	local wave_accum<const> = node.cloud_wave_accum or 0
 	local wave_phase = node.cloud_wave_phase_millirad or 0
-	local wave_speed_num<const> = round_to_nearest(math.sin(wave_phase / constants.enemy.cloud_wave_phase_denominator) * constants.enemy.cloud_wave_speed_num)
+	local wave_speed_num = 0
+	if wave_phase >= cloud_wave_pos_start_millirad and wave_phase < cloud_wave_pos_end_millirad then
+		if wave_phase >= cloud_wave_peak_start_millirad and wave_phase < cloud_wave_peak_end_millirad then
+			wave_speed_num = 2
+		else
+			wave_speed_num = 1
+		end
+	elseif wave_phase >= cloud_wave_neg_start_millirad and wave_phase < cloud_wave_neg_end_millirad then
+		if wave_phase >= cloud_wave_trough_start_millirad and wave_phase < cloud_wave_trough_end_millirad then
+			wave_speed_num = -2
+		else
+			wave_speed_num = -1
+		end
+	end
 	local wave_dy<const>, next_wave_accum<const> = consume_axis_accum(wave_accum, wave_speed_num, constants.enemy.cloud_wave_speed_den)
 	self.y = self.y + wave_dy
 	wave_phase = wave_phase + constants.enemy.cloud_wave_phase_step_millirad
