@@ -224,7 +224,7 @@ export function isErrorReportingTarget(target: string | null): boolean {
 	}
 	const dot = target.lastIndexOf('.');
 	const leaf = dot === -1 ? target : target.slice(dot + 1);
-	return /^(report|show|emit|record|log)[A-Za-z0-9]*Error$/.test(leaf)
+	return /^(report|show|emit|record|log)[A-Za-z0-9]*(Error|Message)$/.test(leaf)
 		|| /^(warn|report|show|emit|record|log)[A-Za-z0-9]*Warning$/.test(leaf);
 }
 

@@ -52,7 +52,7 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 	if (lineIndex < start.row || lineIndex > end.row) {
 		return null;
 	}
-	let selectionStartColumn = lineIndex === start.row ? start.column : 0;
+	const selectionStartColumn = lineIndex === start.row ? start.column : 0;
 	const lineLength = editorDocumentState.buffer.getLineEndOffset(lineIndex) - editorDocumentState.buffer.getLineStartOffset(lineIndex);
 	let selectionEndColumn = lineIndex === end.row ? end.column : lineLength;
 	if (lineIndex === end.row && end.column === 0 && end.row > start.row) {
@@ -109,9 +109,10 @@ function rewrapRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void {
 
 export function rewrapRuntimeErrorOverlays(): void {
 	const visited = new Set<RuntimeErrorOverlay>();
-	if (runtimeErrorState.activeOverlay) {
-		visited.add(runtimeErrorState.activeOverlay);
-		rewrapRuntimeErrorOverlay(runtimeErrorState.activeOverlay);
+	const activeOverlay = runtimeErrorState.activeOverlay;
+	if (activeOverlay) {
+		visited.add(activeOverlay);
+		rewrapRuntimeErrorOverlay(activeOverlay);
 	}
 	for (const context of getCodeTabContexts()) {
 		const overlay = context.runtimeErrorOverlay;

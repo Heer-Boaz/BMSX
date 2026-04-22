@@ -26,7 +26,7 @@ import {
 } from '../editor/contrib/runtime_error/format';
 import { logDebugState } from '../../machine/runtime/debug';
 import { TerminalMode } from '../terminal/ui/mode';
-import type { Runtime } from '../../machine/runtime/runtime';
+import type { FrameState, Runtime } from '../../machine/runtime/runtime';
 import type { RuntimeOptions } from '../../machine/runtime/contracts';
 import { resolveWorkspacePath } from '../workspace/path';
 import { shallowcopy } from '../../common/shallowcopy';
@@ -681,18 +681,13 @@ export function tickTerminalMode(runtime: Runtime): void {
 	if (!runtime.terminal.isActive) {
 		return;
 	}
-	if (!runtime.tickEnabled) {
+	const state = beginOverlayUpdateFrame(runtime);
+	if (state === null) {
 		return;
 	}
-	if (runtime.frameLoop.currentFrameState !== null || runtime.frameLoop.drawFrameState !== null) {
-		return;
-	}
-	const state = runtime.frameLoop.beginFrameState(runtime);
 	const deltaSeconds = runtime.frameLoop.frameDeltaMs / 1000;
 	runtime.terminal.update(deltaSeconds);
-	runtime.machine.vdp.flushAssetEdits();
-	runtime.frameLoop.drawFrameState = state;
-	runtime.frameLoop.abandonFrameState(runtime);
+	finishOverlayUpdateFrame(runtime, state);
 }
 
 export function tickTerminalModeDraw(runtime: Runtime): void {
@@ -720,15 +715,26 @@ export function tickIDE(runtime: Runtime): void {
 	if (!editorBlocksRuntimePipeline(runtime) || !runtime.editor!.isActive) {
 		return;
 	}
-	if (!runtime.tickEnabled) {
+	const state = beginOverlayUpdateFrame(runtime);
+	if (state === null) {
 		return;
 	}
-	if (runtime.frameLoop.currentFrameState !== null || runtime.frameLoop.drawFrameState !== null) {
-		return;
-	}
-	const state = runtime.frameLoop.beginFrameState(runtime);
 	const deltaSeconds = runtime.frameLoop.frameDeltaMs / 1000;
 	runtime.editor!.update(deltaSeconds);
+	finishOverlayUpdateFrame(runtime, state);
+}
+
+function beginOverlayUpdateFrame(runtime: Runtime): FrameState | null {
+	if (!runtime.tickEnabled) {
+		return null;
+	}
+	if (runtime.frameLoop.currentFrameState !== null || runtime.frameLoop.drawFrameState !== null) {
+		return null;
+	}
+	return runtime.frameLoop.beginFrameState(runtime);
+}
+
+function finishOverlayUpdateFrame(runtime: Runtime, state: FrameState): void {
 	runtime.machine.vdp.flushAssetEdits();
 	runtime.frameLoop.drawFrameState = state;
 	runtime.frameLoop.abandonFrameState(runtime);

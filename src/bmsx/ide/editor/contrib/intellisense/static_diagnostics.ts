@@ -386,7 +386,7 @@ function addCallDiagnosticsFromSemantic(
 	if (calls.length === 0) {
 		return;
 	}
-	const signatures = analysis.functionSignatures ?? new Map<string, FunctionSignatureInfo>();
+	const signatures = analysis.functionSignatures;
 	for (let index = 0; index < calls.length; index += 1) {
 		const call = calls[index];
 		const metadata = resolveCallSignature(call, builtinLookup, apiSignatures, apiRoot);
@@ -394,9 +394,11 @@ function addCallDiagnosticsFromSemantic(
 			validateCallArity(diagnostics, call, metadata);
 			continue;
 		}
-		const userMetadata = resolveUserFunctionSignature(call, signatures);
-		if (userMetadata) {
-			validateCallArity(diagnostics, call, userMetadata);
+		if (signatures) {
+			const userMetadata = resolveUserFunctionSignature(call, signatures);
+			if (userMetadata) {
+				validateCallArity(diagnostics, call, userMetadata);
+			}
 		}
 	}
 }

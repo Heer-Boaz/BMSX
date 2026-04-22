@@ -18,6 +18,7 @@ import {
 import { Viewport } from '../rompack/format';
 import { clearRuntimeErrorOverlay, clearAllRuntimeErrorOverlays } from './editor/contrib/runtime_error/navigation';
 import { getSourceForChunk } from './editor/common/text_runtime';
+import { clearNativeMemberCompletionCache } from './editor/contrib/intellisense/engine';
 
 export { activate, deactivate, draw, shutdown, tickInput, update };
 
@@ -40,6 +41,7 @@ export type CartEditor = {
 	clearWorkspaceDirtyBuffers: typeof clearWorkspaceDirtyBuffers;
 	renderFaultOverlay: typeof renderFaultOverlay;
 	renderRuntimeFaultOverlay: typeof renderRuntimeFaultOverlay;
+	clearNativeMemberCompletionCache: typeof clearNativeMemberCompletionCache;
 };
 
 const editorRuntimeApi: CartEditor = {
@@ -61,6 +63,7 @@ const editorRuntimeApi: CartEditor = {
 	clearWorkspaceDirtyBuffers,
 	renderFaultOverlay,
 	renderRuntimeFaultOverlay,
+	clearNativeMemberCompletionCache,
 };
 
 export function createCartEditor(viewport: Viewport): CartEditor {
