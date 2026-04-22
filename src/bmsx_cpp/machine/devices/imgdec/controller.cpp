@@ -135,7 +135,7 @@ void ImgDecController::reset() {
 	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
 }
 
-// @code-quality start fallible-boundary -- IMGDEC maps source-read faults to device status so carts can observe the failed transfer.
+// start fallible-boundary -- IMGDEC maps source-read faults to device status so carts can observe the failed transfer.
 void ImgDecController::onCtrlWrite(int64_t nowCycles) {
 	const uint32_t ctrlValue = m_memory.readIoU32(IO_IMG_CTRL);
 	const uint32_t ctrl = ctrlValue;
@@ -165,7 +165,7 @@ void ImgDecController::onCtrlWrite(int64_t nowCycles) {
 	startJob(std::move(buffer), dst, cap, src, len, std::nullopt, true);
 	scheduleNextService(nowCycles);
 }
-// @code-quality end fallible-boundary
+// end fallible-boundary
 
 void ImgDecController::onService(int64_t nowCycles) {
 	tryStartQueued();
@@ -204,7 +204,7 @@ void ImgDecController::tryStartQueued() {
 	startJob(std::move(job.buffer), job.dst, job.cap, 0u, len, std::move(job), false);
 }
 
-// @code-quality start fallible-boundary -- IMGDEC validates destination ownership at the device boundary and reports errors through IMG status.
+// start fallible-boundary -- IMGDEC validates destination ownership at the device boundary and reports errors through IMG status.
 void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uint32_t cap, uint32_t src, uint32_t len, std::optional<ImgDecJob> job, bool signalIrq) {
 	m_pendingResult.reset();
 	m_pendingError = nullptr;
@@ -294,7 +294,7 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 		m_gate.end(m_gateToken);
 	});
 }
-// @code-quality end fallible-boundary
+// end fallible-boundary
 
 ImgDecController::ImgDecEntry ImgDecController::resolveSlotEntry(uint32_t dst) {
 	const auto externalIt = m_externalSlots.find(dst);

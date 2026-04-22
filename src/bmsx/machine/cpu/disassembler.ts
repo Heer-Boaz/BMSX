@@ -178,7 +178,7 @@ const formatBool = (value: number): string => (value !== 0 ? 'true' : 'false');
 
 const formatCount = (value: number): string => (value === 0 ? '*' : value.toString());
 
-// @code-quality start repeated-sequence-acceptable -- Disassembly constants quote strings, unlike Lua tostring; keep formatter local to avoid firmware dependency.
+// start repeated-sequence-acceptable -- Disassembly constants quote strings, unlike Lua tostring; keep formatter local to avoid firmware dependency.
 const formatValue = (value: Value): string => {
 	if (value === undefined) {
 		throw new Error('[Disassembler] Unexpected undefined value.');
@@ -209,7 +209,7 @@ const formatValue = (value: Value): string => {
 	}
 	return 'function';
 };
-// @code-quality end repeated-sequence-acceptable
+// end repeated-sequence-acceptable
 
 const formatConst = (program: Program, index: number, options: ResolvedOptions): string => {
 	const base = `k${index}`;
@@ -303,7 +303,7 @@ const getSourceLines = (path: string, options: ResolvedOptions, cache: Map<strin
 	if (typeof text !== 'string') {
 		throw new Error(`[Disassembler] Source text lookup returned invalid data for '${path}'.`);
 	}
-	// @code-quality disable-next-line newline_normalization_pattern -- disassembler source comments cache source text by logical lines.
+	// disable-next-line newline_normalization_pattern -- disassembler source comments cache source text by logical lines.
 	const lines = text.split(/\r?\n/);
 	cache.set(path, lines);
 	return lines;
@@ -330,7 +330,7 @@ const extractSourceSnippet = (range: SourceRange, lines: readonly string[]): str
 };
 
 export const formatSourceSnippet = (range: SourceRange, sourceText: string, maxChars = SOURCE_COMMENT_MAX_CHARS): string => {
-	// @code-quality disable-next-line newline_normalization_pattern -- standalone snippet formatting maps source ranges to logical lines.
+	// disable-next-line newline_normalization_pattern -- standalone snippet formatting maps source ranges to logical lines.
 	const snippet = extractSourceSnippet(range, sourceText.split(/\r?\n/));
 	const compact = snippet.replace(/\s+/g, ' ').trim();
 	if (compact.length === 0) {

@@ -195,7 +195,7 @@ void DmaController::tickChannel(Channel channel, bool& ioWrittenDirty, bool& img
 	state.budget = budget;
 }
 
-// @code-quality start fallible-boundary -- DMA stores bus/write faults in the hardware job status instead of throwing through the scheduler.
+// start fallible-boundary -- DMA stores bus/write faults in the hardware job status instead of throwing through the scheduler.
 uint32_t DmaController::processJob(DmaJob& job, uint32_t budget) {
 	if (job.error) {
 		return 0;
@@ -370,7 +370,7 @@ void DmaController::finishIoJob(DmaJob& job) {
 	}
 	finishIoSuccess(job.clipped);
 }
-// @code-quality end fallible-boundary
+// end fallible-boundary
 
 void DmaController::finishIoSuccess(bool clipped) {
 	uint32_t status = DMA_STATUS_DONE;

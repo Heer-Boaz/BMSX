@@ -315,7 +315,7 @@ function runGlobalSearchSlice(job: GlobalSearchJob): boolean {
 			if (job.currentLines === null) {
 				const descriptor = job.descriptors[job.descriptorIndex];
 				const source = luaPipeline.resourceSourceForChunk(Runtime.instance, descriptor.path);
-				// @code-quality disable-next-line newline_normalization_pattern -- global search indexes Lua source by logical editor lines.
+				// disable-next-line newline_normalization_pattern -- global search indexes Lua source by logical editor lines.
 				job.currentLines = source.split(/\r?\n/);
 				job.nextRow = 0;
 			}

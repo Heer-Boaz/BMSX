@@ -9,12 +9,12 @@
 
 namespace bmsx {
 
-// @code-quality start numeric-sanitization-acceptable -- clamp implementation is the primitive that owns this bounds operation.
+// start numeric-sanitization-acceptable -- clamp implementation is the primitive that owns this bounds operation.
 template<typename T>
 constexpr T clamp(T value, T min, T max) {
 	return std::max(min, std::min(value, max));
 }
-// @code-quality end numeric-sanitization-acceptable
+// end numeric-sanitization-acceptable
 
 } // namespace bmsx
 

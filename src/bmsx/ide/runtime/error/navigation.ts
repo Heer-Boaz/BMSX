@@ -1,4 +1,4 @@
-// @code-quality disable cross_layer_import_pattern -- runtime/error owns IDE runtime-error integration between editor state and workbench tab context.
+// disable cross_layer_import_pattern -- runtime/error owns IDE runtime-error integration between editor state and workbench tab context.
 import { centerCursorVertically, setCursorPosition } from '../../editor/ui/view/caret/caret';
 import { beginNavigationCapture, completeNavigation } from '../../editor/navigation/navigation_history';
 import { activateCodeTab, isTabActive, setActiveTab } from '../../workbench/ui/tabs';

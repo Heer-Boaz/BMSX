@@ -78,7 +78,7 @@ export function analyzeFiles(files: readonly string[]): AnalysisResult {
 	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
 		const file = files[fileIndex];
 		const source = readFileSync(file, 'utf8');
-		const regions = collectAnalysisRegions(source, config.directiveMarker);
+		const regions = collectAnalysisRegions(source);
 		const tokens = tokenize(source);
 		const pairs = buildPairMap(tokens);
 		const classRanges = collectClassRanges(tokens, pairs);
@@ -181,7 +181,7 @@ export function analyzeFiles(files: readonly string[]): AnalysisResult {
 		const analysis = fileAnalyses[fileIndex];
 		sourceTextByFile.set(analysis.file, analysis.source);
 	}
-	const filteredLintIssues = filterSuppressedLintIssues(lintIssues, sourceTextByFile, config.directiveMarker);
+	const filteredLintIssues = filterSuppressedLintIssues(lintIssues, sourceTextByFile);
 	return relativeAnalysisResult({
 		duplicateGroups: buildTokenDuplicateGroups(duplicateBuckets),
 		lintIssues: filteredLintIssues,

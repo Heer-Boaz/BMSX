@@ -31,7 +31,6 @@ type AnalysisDirective = {
 	rest: string;
 };
 
-const DEFAULT_ANALYSIS_MARKER = '@code-quality';
 const SUPPRESSION_MODE_PREFIXES: ReadonlyArray<{ prefix: string; mode: LintSuppressionMode }> = [
 	{ prefix: '-next-line', mode: 'next-line' },
 	{ prefix: 'next-line', mode: 'next-line' },
@@ -39,13 +38,19 @@ const SUPPRESSION_MODE_PREFIXES: ReadonlyArray<{ prefix: string; mode: LintSuppr
 	{ prefix: 'line', mode: 'line' },
 ];
 
-function markerIsInComment(lineText: string, markerIndex: number): boolean {
+function commentText(lineText: string): string | null {
 	const lineCommentIndex = lineText.indexOf('//');
-	if (lineCommentIndex !== -1 && lineCommentIndex < markerIndex) {
-		return true;
-	}
 	const blockCommentIndex = lineText.indexOf('/*');
-	return blockCommentIndex !== -1 && blockCommentIndex < markerIndex;
+	if (lineCommentIndex === -1 && blockCommentIndex === -1) {
+		return null;
+	}
+	const commentIndex = lineCommentIndex === -1
+		? blockCommentIndex
+		: blockCommentIndex === -1
+			? lineCommentIndex
+			: Math.min(lineCommentIndex, blockCommentIndex);
+	const text = lineText.slice(commentIndex + 2).replace(/\*\/\s*$/, '').trimStart();
+	return text.length === 0 ? null : text;
 }
 
 function parseSuppressedRules(text: string): ReadonlySet<string> | null {
@@ -76,27 +81,21 @@ function parseDirectiveMode(text: string): { mode: LintSuppressionMode; rest: st
 	return { mode: 'file', rest };
 }
 
-function findAnalysisDirective(lineText: string, line: number, marker: string): AnalysisDirective | null {
-	const analysisIndex = lineText.indexOf(marker);
-	if (analysisIndex === -1) {
+function findAnalysisDirective(lineText: string, line: number): AnalysisDirective | null {
+	const text = commentText(lineText);
+	if (text === null) {
 		return null;
 	}
-	if (!markerIsInComment(lineText, analysisIndex)) {
-		return null;
-	}
-	const text = lineText.slice(analysisIndex + marker.length).trimStart();
-	const commandEnd = text.search(/\s/);
-	const command = commandEnd === -1 ? text : text.slice(0, commandEnd);
-	const rest = commandEnd === -1 ? '' : text.slice(commandEnd + 1);
+	const match = /^(\S+)(?:\s+([\s\S]*))?$/.exec(text)!;
 	return {
 		line,
-		command,
-		rest,
+		command: match[1],
+		rest: match[2] === undefined ? '' : match[2],
 	};
 }
 
-function parseSuppressionDirective(lineText: string, line: number, marker: string): LintSuppressionDirective | null {
-	const directive = findAnalysisDirective(lineText, line, marker);
+function parseSuppressionDirective(lineText: string, line: number): LintSuppressionDirective | null {
+	const directive = findAnalysisDirective(lineText, line);
 	if (directive === null || (directive.command !== 'disable' && !directive.command.startsWith('disable-'))) {
 		return null;
 	}
@@ -111,12 +110,12 @@ function parseSuppressionDirective(lineText: string, line: number, marker: strin
 	};
 }
 
-function parseLintSuppressionDirectives(sourceText: string, marker: string): LintSuppressionDirective[] {
+function parseLintSuppressionDirectives(sourceText: string): LintSuppressionDirective[] {
 	const directives: LintSuppressionDirective[] = [];
-	// @code-quality disable-next-line newline_normalization_pattern -- directive parser must accept source files with any line ending.
+	// disable-next-line newline_normalization_pattern -- directive parser must accept source files with any line ending.
 	const lines = sourceText.split(/\r\n|\r|\n/);
 	for (let index = 0; index < lines.length; index += 1) {
-		const directive = parseSuppressionDirective(lines[index], index + 1, marker);
+		const directive = parseSuppressionDirective(lines[index], index + 1);
 		if (directive !== null) {
 			directives.push(directive);
 		}
@@ -160,12 +159,12 @@ function directiveIsReservedForSuppressionOrRegion(directive: AnalysisDirective)
 	}
 }
 
-export function collectAnalysisStatements(sourceText: string, marker = DEFAULT_ANALYSIS_MARKER): AnalysisStatement[] {
+export function collectAnalysisStatements(sourceText: string): AnalysisStatement[] {
 	const statements: AnalysisStatement[] = [];
-	// @code-quality disable-next-line newline_normalization_pattern -- directive parser must accept source files with any line ending.
+	// disable-next-line newline_normalization_pattern -- directive parser must accept source files with any line ending.
 	const lines = sourceText.split(/\r\n|\r|\n/);
 	for (let index = 0; index < lines.length; index += 1) {
-		const directive = findAnalysisDirective(lines[index], index + 1, marker);
+		const directive = findAnalysisDirective(lines[index], index + 1);
 		if (directive === null || directiveIsReservedForSuppressionOrRegion(directive)) {
 			continue;
 		}
@@ -186,14 +185,14 @@ export function hasAnalysisStatement(statements: readonly AnalysisStatement[], k
 	return false;
 }
 
-export function collectAnalysisRegions(sourceText: string, marker = DEFAULT_ANALYSIS_MARKER): AnalysisRegion[] {
+export function collectAnalysisRegions(sourceText: string): AnalysisRegion[] {
 	const regions: AnalysisRegion[] = [];
 	const activeStarts = new Map<string, Array<{ line: number; labels: readonly string[] }>>();
-	// @code-quality disable-next-line newline_normalization_pattern -- directive parser must accept source files with any line ending.
+	// disable-next-line newline_normalization_pattern -- directive parser must accept source files with any line ending.
 	const lines = sourceText.split(/\r\n|\r|\n/);
 	for (let index = 0; index < lines.length; index += 1) {
 		const line = index + 1;
-		const directive = findAnalysisDirective(lines[index], line, marker);
+		const directive = findAnalysisDirective(lines[index], line);
 		if (directive === null || directive.command !== 'start' && directive.command !== 'end') {
 			continue;
 		}
@@ -265,7 +264,7 @@ export function lineHasAnalysisRegionLabel(
 }
 
 function directiveSuppressesIssue(directive: LintSuppressionDirective, issue: SuppressibleLintIssue): boolean {
-	if (directive.rules !== null && !directive.rules.has('*') && !directive.rules.has(issue.kind)) {
+	if (directive.rules === null || directive.rules.has('*') || !directive.rules.has(issue.kind)) {
 		return false;
 	}
 	if (directive.mode === 'file') {
@@ -289,7 +288,6 @@ function issueIsSuppressed(issue: SuppressibleLintIssue, directives: readonly Li
 export function filterSuppressedLintIssues<TIssue extends SuppressibleLintIssue>(
 	issues: readonly TIssue[],
 	sourceTextByFile: ReadonlyMap<string, string>,
-	marker = DEFAULT_ANALYSIS_MARKER,
 ): TIssue[] {
 	const directivesByFile = new Map<string, readonly LintSuppressionDirective[]>();
 	const result: TIssue[] = [];
@@ -298,7 +296,7 @@ export function filterSuppressedLintIssues<TIssue extends SuppressibleLintIssue>
 		let directives = directivesByFile.get(issue.file);
 		if (directives === undefined) {
 			const sourceText = sourceTextByFile.get(issue.file);
-			directives = sourceText === undefined ? [] : parseLintSuppressionDirectives(sourceText, marker);
+			directives = sourceText === undefined ? [] : parseLintSuppressionDirectives(sourceText);
 			directivesByFile.set(issue.file, directives);
 		}
 		if (!issueIsSuppressed(issue, directives)) {

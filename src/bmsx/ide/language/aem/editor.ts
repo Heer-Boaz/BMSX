@@ -78,7 +78,7 @@ export function formatAemDocument(source: string, path: string): string {
 	const formatted = JSON.stringify(doc, null, 2);
 	const normalized = newline === '\n'
 		? formatted
-		// @code-quality disable-next-line newline_normalization_pattern -- JSON formatting preserves the document's existing line-ending convention.
+		// disable-next-line newline_normalization_pattern -- JSON formatting preserves the document's existing line-ending convention.
 		: formatted.replace(/\n/g, '\r\n');
 	if (hadTrailingNewline) {
 		return normalized.endsWith(newline) ? normalized : `${normalized}${newline}`;

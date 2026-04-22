@@ -1,5 +1,5 @@
-// @code-quality start hot-path -- visual line layout and syntax highlight caching are editor-frame hot paths.
-// @code-quality start required-state editorDocumentState,editorViewState -- editor layout state roots are owned singletons in this module.
+// start hot-path -- visual line layout and syntax highlight caching are editor-frame hot paths.
+// start required-state editorDocumentState,editorViewState -- editor layout state roots are owned singletons in this module.
 import type { TimerHandle } from '../../../platform/platform';
 import { clamp } from '../../../common/clamp';
 import { ScratchBuffer } from '../../../common/scratchbuffer';
@@ -1093,5 +1093,5 @@ export class CodeLayout {
 		return low;
 	}
 }
-// @code-quality end required-state
-// @code-quality end hot-path
+// end required-state
+// end hot-path

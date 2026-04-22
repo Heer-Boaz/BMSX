@@ -1,5 +1,5 @@
-// @code-quality start repeated-sequence-acceptable -- SSA optimizer keeps instruction rewrites inline for compile-time throughput and readable opcode cases.
-// @code-quality start normalized-body-acceptable -- SSA value rewrites intentionally mirror non-SSA rewrites without sharing mutable pass internals.
+// start repeated-sequence-acceptable -- SSA optimizer keeps instruction rewrites inline for compile-time throughput and readable opcode cases.
+// start normalized-body-acceptable -- SSA value rewrites intentionally mirror non-SSA rewrites without sharing mutable pass internals.
 import { OpCode, type SourceRange, type Value } from '../cpu/cpu';
 import { MAX_EXT_CONST } from '../cpu/instruction_format';
 import { isStringValue } from '../memory/string_pool';
@@ -2810,5 +2810,5 @@ export const applyGlobalOptimizations = (
 	current = eliminateDeadStoresGlobal(current, context);
 	return current;
 };
-// @code-quality end normalized-body-acceptable
-// @code-quality end repeated-sequence-acceptable
+// end normalized-body-acceptable
+// end repeated-sequence-acceptable

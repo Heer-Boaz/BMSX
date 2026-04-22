@@ -741,7 +741,7 @@ export function zip(content: Buffer): Uint8Array {
 }
 
 function formatLuaCompileError(error: { path: string; message: string; line: number; column: number }, source: string): string {
-	// @code-quality disable-next-line newline_normalization_pattern -- compiler diagnostics map a source location to one logical source line.
+	// disable-next-line newline_normalization_pattern -- compiler diagnostics map a source location to one logical source line.
 	const lines = source.split(/\r\n|\r|\n/);
 	const sourceLine = lines[error.line - 1];
 	const gutter = `${error.line} | `;

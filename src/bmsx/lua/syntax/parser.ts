@@ -107,7 +107,7 @@ export class LuaParser {
 		if (lines) {
 			this.sourceLines = lines as readonly string[] as string[];
 		} else {
-			// @code-quality disable-next-line newline_normalization_pattern -- parser diagnostics need source text indexed by lexer line numbers.
+			// disable-next-line newline_normalization_pattern -- parser diagnostics need source text indexed by lexer line numbers.
 			this.sourceLines = source.split('\n');
 		}
 		this.index = 0;

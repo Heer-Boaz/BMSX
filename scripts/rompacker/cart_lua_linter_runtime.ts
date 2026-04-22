@@ -168,9 +168,9 @@ const CART_LINT_RULES: readonly LintRuleName[] = [
 
 setActiveLintRules(new Set(CART_LINT_RULES));
 
-export const LINT_SUPPRESSION_OPEN_MARKER = '-- @code-quality disable';
+export const LINT_SUPPRESSION_DISABLE = 'disable';
 
-export const LINT_SUPPRESSION_CLOSE_MARKER = '-- @code-quality enable';
+export const LINT_SUPPRESSION_ENABLE = 'enable';
 
 export const BIOS_PROFILE_DISABLED_RULES = new Set<LintRuleName>([
 	'visual_update_pattern',
@@ -230,7 +230,7 @@ export function resolveEnabledRules(profile: CartLintProfile): ReadonlySet<LintR
 
 export function collectSuppressedLineRanges(source: string): CartLintSuppressionRange[] {
 	const ranges: CartLintSuppressionRange[] = [];
-	// @code-quality disable-next-line newline_normalization_pattern -- cart Lua suppression comments are parsed by logical source line.
+	// disable-next-line newline_normalization_pattern -- cart Lua suppression comments are parsed by logical source line.
 	const lines = source.split(/\r?\n/);
 	let activeStartLine = 0;
 	for (let index = 0; index < lines.length; index += 1) {
@@ -239,9 +239,11 @@ export function collectSuppressedLineRanges(source: string): CartLintSuppression
 		if (commentStart < 0) {
 			continue;
 		}
-		const commentPart = lines[index].slice(commentStart);
-		const hasOpen = commentPart.includes(LINT_SUPPRESSION_OPEN_MARKER);
-		const hasClose = commentPart.includes(LINT_SUPPRESSION_CLOSE_MARKER);
+		const commentText = lines[index].slice(commentStart + 2).trimStart();
+		const commandEnd = commentText.search(/\s/);
+		const command = commandEnd === -1 ? commentText : commentText.slice(0, commandEnd);
+		const hasOpen = command === LINT_SUPPRESSION_DISABLE;
+		const hasClose = command === LINT_SUPPRESSION_ENABLE;
 		if (activeStartLine === 0) {
 			if (!hasOpen) {
 				continue;

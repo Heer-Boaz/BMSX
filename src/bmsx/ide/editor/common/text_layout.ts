@@ -1,5 +1,5 @@
-// @code-quality start hot-path -- editor text measurement/layout helpers run during render and caret updates.
-// @code-quality start required-state editorDocumentState,editorViewState -- editor state roots are owned singletons in this module.
+// start hot-path -- editor text measurement/layout helpers run during render and caret updates.
+// start required-state editorDocumentState,editorViewState -- editor state roots are owned singletons in this module.
 import { getCodeAreaBounds } from '../ui/view/view';
 import * as TextEditing from '../editing/text_editing_and_selection';
 import type { HighlightLine } from '../../common/models';
@@ -104,5 +104,5 @@ export function currentLine(): string {
 	}
 	return editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
 }
-// @code-quality end required-state
-// @code-quality end hot-path
+// end required-state
+// end hot-path

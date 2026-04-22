@@ -21,7 +21,6 @@ export type AnalysisScanConfig = {
 };
 
 export type AnalysisConfig = {
-	directiveMarker: string;
 	scan: AnalysisScanConfig;
 	architecture: ArchitectureBoundaryConfig | null;
 };
@@ -33,7 +32,6 @@ const DEFAULT_SCAN_CONFIG: AnalysisScanConfig = {
 };
 
 const DEFAULT_CONFIG: AnalysisConfig = {
-	directiveMarker: '@code-quality',
 	scan: DEFAULT_SCAN_CONFIG,
 	architecture: null,
 };
@@ -129,12 +127,10 @@ export function loadAnalysisConfig(): AnalysisConfig {
 			continue;
 		}
 		const raw = JSON.parse(readFileSync(candidate, 'utf8')) as {
-			directiveMarker?: unknown;
 			scan?: unknown;
 			architecture?: unknown;
 		};
 		return {
-			directiveMarker: typeof raw.directiveMarker === 'string' ? raw.directiveMarker : DEFAULT_CONFIG.directiveMarker,
 			scan: scanConfig(raw.scan),
 			architecture: architectureConfig(raw.architecture),
 		};

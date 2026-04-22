@@ -1,5 +1,4 @@
 {
-	"directiveMarker": "@code-quality",
 	"scan": {
 		"roots": ["src", "scripts", "tests", "tools"],
 		"cppRoots": ["src"],

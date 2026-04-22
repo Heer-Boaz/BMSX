@@ -51,7 +51,7 @@ export function installNativeGlobal(runtime: Runtime, name: string, value: unkno
 	}
 }
 
-// @code-quality start repeated-sequence-acceptable -- External closure calls keep frame/budget restore code direct instead of routing through callback plumbing.
+// start repeated-sequence-acceptable -- External closure calls keep frame/budget restore code direct instead of routing through callback plumbing.
 export function callClosureInto(runtime: Runtime, fn: Closure, args: Value[], out: Value[]): void {
 	const cpu = runtime.machine.cpu;
 	const depth = cpu.getFrameDepth();
@@ -124,7 +124,7 @@ export function callClosureIntoWithScheduler(runtime: Runtime, fn: Closure, args
 		cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
 	}
 }
-// @code-quality end repeated-sequence-acceptable
+// end repeated-sequence-acceptable
 
 export function callClosure(runtime: Runtime, fn: Closure, args: Value[]): Value[] {
 	callClosureInto(runtime, fn, args, runtime.machine.cpu.lastReturnValues);

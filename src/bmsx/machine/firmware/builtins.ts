@@ -338,7 +338,7 @@ function isLuaValue(value: unknown): value is LuaValue {
 	}
 	if (value && typeof value === 'object' && 'call' in (value as Record<string, unknown>)) {
 		const candidate = value as { call?: unknown };
-		// @code-quality disable-next-line defensive_typeof_function_pattern -- LuaFunctionValue guard validates arbitrary script-thrown values.
+		// disable-next-line defensive_typeof_function_pattern -- LuaFunctionValue guard validates arbitrary script-thrown values.
 		return typeof candidate.call === 'function';
 	}
 	return false;

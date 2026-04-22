@@ -30,7 +30,7 @@ export class CpuExecutionState {
 		const scheduler = runtime.machine.scheduler;
 		const cpu = runtime.machine.cpu;
 		runDueRuntimeTimers(runtime);
-		// @code-quality start repeated-sequence-acceptable -- CPU scheduler loop mirrors external-call scheduling without extracting a callback-heavy helper.
+		// start repeated-sequence-acceptable -- CPU scheduler loop mirrors external-call scheduling without extracting a callback-heavy helper.
 		while (remaining > 0) {
 			let sliceBudget = remaining;
 			const nextDeadline = scheduler.nextDeadline();
@@ -60,7 +60,7 @@ export class CpuExecutionState {
 				throw runtimeFault('CPU yielded without consuming cycles.');
 			}
 		}
-		// @code-quality end repeated-sequence-acceptable
+		// end repeated-sequence-acceptable
 		state.cycleBudgetRemaining = remaining;
 		if (debugCycle) {
 			if (result === RunResult.Yielded) {

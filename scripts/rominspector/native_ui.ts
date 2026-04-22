@@ -1396,7 +1396,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			return content;
 			}
 			const activeText = tabIndex === 0 ? modalView.preview : tabIndex === 1 ? modalView.details : modalView.hex;
-			// @code-quality disable-next-line newline_normalization_pattern -- rominspector modal text is rendered as LF-delimited terminal rows.
+			// disable-next-line newline_normalization_pattern -- rominspector modal text is rendered as LF-delimited terminal rows.
 			const lines = activeText.split('\n');
 		let maxWidth = 0;
 		for (const line of lines) {

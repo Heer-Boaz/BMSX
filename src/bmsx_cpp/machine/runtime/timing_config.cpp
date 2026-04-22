@@ -75,13 +75,13 @@ void applyActiveMachineTiming(Runtime& runtime, i64 cpuHz) {
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, runtime.timing.ufpsScaled);
 	const i64 vblankCycles = resolveVblankCycles(cpuHz, runtime.timing.ufpsScaled, manifest.viewportHeight);
 	setFrameTiming(runtime, cpuHz, cycleBudget, static_cast<int>(vblankCycles));
-	// @code-quality start value-or-boundary -- manifest render defaults are resolved at timing activation.
+	// start value-or-boundary -- manifest render defaults are resolved at timing activation.
 	setRenderWorkUnitsPerSec(
 		runtime,
 		manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC),
 		manifest.geoWorkUnitsPerSec.value_or(DEFAULT_GEO_WORK_UNITS_PER_SEC)
 	);
-	// @code-quality end value-or-boundary
+	// end value-or-boundary
 }
 
 } // namespace bmsx

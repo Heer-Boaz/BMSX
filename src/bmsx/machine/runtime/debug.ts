@@ -41,7 +41,7 @@ function rangeArea(range: SourceRange): number {
 }
 
 function extractRawSourceFragment(range: SourceRange, sourceText: string): string {
-	// @code-quality disable-next-line newline_normalization_pattern -- debugger maps source ranges to logical source lines.
+	// disable-next-line newline_normalization_pattern -- debugger maps source ranges to logical source lines.
 	const lines = sourceText.split(/\r?\n/);
 	const startLineIndex = range.start.line - 1;
 	const endLineIndex = range.end.line - 1;

@@ -582,7 +582,7 @@ void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 src
 
 	i32 sy_fp = (srcY << 16) + baseY * stepY;
 
-	// @code-quality start repeated-sequence-acceptable -- Software blit is a per-pixel hot path; depth/no-depth loops stay direct instead of dispatching through a callback.
+	// start repeated-sequence-acceptable -- Software blit is a per-pixel hot path; depth/no-depth loops stay direct instead of dispatching through a callback.
 	if (useDepth) {
 		for (i32 dy = clipY0; dy < clipY1; ++dy) {
 			const i32 sy = sy_fp >> 16;
@@ -630,7 +630,7 @@ void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 src
 		}
 		sy_fp += yStep;
 	}
-	// @code-quality end repeated-sequence-acceptable
+	// end repeated-sequence-acceptable
 }
 
 } // namespace bmsx

@@ -39,7 +39,7 @@ export function lintCrossLayerIncludes(file: string, source: string, config: Arc
 	if (sourceLayer === null) {
 		return;
 	}
-	// @code-quality disable-next-line newline_normalization_pattern -- C++ include scanning is a line-oriented source parser boundary.
+	// disable-next-line newline_normalization_pattern -- C++ include scanning is a line-oriented source parser boundary.
 	const lines = source.split('\n');
 	for (let index = 0; index < lines.length; index += 1) {
 		const match = /^\s*#\s*include\s+"([^"]+)"/.exec(lines[index]);

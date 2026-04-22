@@ -145,7 +145,7 @@ void EngineCore::start() {
 	}
 }
 
-// @code-quality start normalized-body-acceptable -- pause/resume deliberately mirror state-transition symmetry.
+// start normalized-body-acceptable -- pause/resume deliberately mirror state-transition symmetry.
 void EngineCore::pause() {
 	if (m_state == EngineState::Running) {
 		m_state = EngineState::Paused;
@@ -163,7 +163,7 @@ void EngineCore::resume() {
 		}
 	}
 }
-// @code-quality end normalized-body-acceptable
+// end normalized-body-acceptable
 
 void EngineCore::stop() {
 	if (m_state == EngineState::Running || m_state == EngineState::Paused) {

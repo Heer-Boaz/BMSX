@@ -129,7 +129,7 @@ export class DeviceScheduler {
 		this.timerGenerations.length = 0;
 	}
 
-	// @code-quality start repeated-sequence-acceptable -- Scheduler heap moves four parallel timer columns inline; helper calls would sit on the timer hot path.
+	// start repeated-sequence-acceptable -- Scheduler heap moves four parallel timer columns inline; helper calls would sit on the timer hot path.
 	private pushTimer(deadline: number, kind: number, payload: number, generation: number): void {
 		let index = this.timerCount;
 		this.timerCount += 1;
@@ -191,7 +191,7 @@ export class DeviceScheduler {
 		this.timerPayloads[index] = payload;
 		this.timerGenerations[index] = generation;
 	}
-	// @code-quality end repeated-sequence-acceptable
+	// end repeated-sequence-acceptable
 
 	private isTimerCurrent(kind: number, payload: number, generation: number): boolean {
 		switch (kind) {

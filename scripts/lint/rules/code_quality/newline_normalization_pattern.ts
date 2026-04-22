@@ -45,7 +45,7 @@ export function lintNewlineNormalizationPattern(
 	if (!callNormalizesNewlines(node)) {
 		return;
 	}
-	if (lineInAnalysisRegion(regions, 'newline-normalization-acceptable', nodeStartLine(sourceFile, node))) {
+	if (lineInAnalysisRegion(regions, newlineNormalizationPatternRule.name, nodeStartLine(sourceFile, node))) {
 		return;
 	}
 	pushLintIssue(
@@ -53,6 +53,6 @@ export function lintNewlineNormalizationPattern(
 		sourceFile,
 		node,
 		newlineNormalizationPatternRule.name,
-		'Newline normalization is forbidden unless this boundary is explicitly marked with @code-quality newline-normalization-acceptable.',
+		'Newline normalization is forbidden unless this boundary is explicitly marked with newline_normalization_pattern.',
 	);
 }

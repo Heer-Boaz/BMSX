@@ -3715,14 +3715,14 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 			dmaTable->set(key("dma_bytes_per_sec_bulk"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecBulk)));
 		}
 		specsTable->set(key("dma"), valueTable(dmaTable));
-		// @code-quality start value-or-boundary -- firmware exposes manifest defaults after manifest validation.
+		// start value-or-boundary -- firmware exposes manifest defaults after manifest validation.
 		auto* vdpTable = cpu.createTable(0, 1);
 		vdpTable->set(key("work_units_per_sec"), valueNumber(static_cast<double>(manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC))));
 		specsTable->set(key("vdp"), valueTable(vdpTable));
 		auto* geoTable = cpu.createTable(0, 1);
 		geoTable->set(key("work_units_per_sec"), valueNumber(static_cast<double>(manifest.geoWorkUnitsPerSec.value_or(DEFAULT_GEO_WORK_UNITS_PER_SEC))));
 		specsTable->set(key("geo"), valueTable(geoTable));
-		// @code-quality end value-or-boundary
+		// end value-or-boundary
 		if (manifest.ramBytes) {
 			auto* ramTable = cpu.createTable(0, 1);
 			ramTable->set(key("ram_bytes"), valueNumber(static_cast<double>(*manifest.ramBytes)));

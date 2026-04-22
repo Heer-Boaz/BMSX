@@ -72,7 +72,7 @@ export class Api {
 		this.registerFont(this.font);
 	}
 
-	// @code-quality start normalized-body-acceptable -- Font ids and compiler slots share a cache-insert shape but not ownership.
+	// start normalized-body-acceptable -- Font ids and compiler slots share a cache-insert shape but not ownership.
 	private registerFont(font: BFont): number {
 		const existing = this.fontIds.get(font);
 		if (existing !== undefined) {
@@ -83,7 +83,7 @@ export class Api {
 		this.fontIds.set(font, id);
 		return id;
 	}
-	// @code-quality end normalized-body-acceptable
+	// end normalized-body-acceptable
 
 	public resolveFontId(id: number): BFont {
 		const font = this.runtimeFonts[id];

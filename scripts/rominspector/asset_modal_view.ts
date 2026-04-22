@@ -225,7 +225,7 @@ function cropRgba(data: Uint8Array, width: number, startX: number, startY: numbe
 }
 
 function splitAsciiArtLines(text: string): string[] {
-	// @code-quality disable-next-line newline_normalization_pattern -- rominspector ASCII previews are rendered as LF-delimited logical rows.
+	// disable-next-line newline_normalization_pattern -- rominspector ASCII previews are rendered as LF-delimited logical rows.
 	const lines = text.split('\n');
 	if (lines.length > 0 && lines[lines.length - 1] === '') {
 		lines.pop();
@@ -460,7 +460,7 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 		if (hasMetabuffer) {
 			regions.push({ start: selected.metabuffer_start, end: selected.metabuffer_end, colorTag: '{light-blue-fg}', label: 'metabuffer' });
 		}
-		// @code-quality disable-next-line newline_normalization_pattern -- buffer bar renderer returns LF-delimited terminal rows.
+		// disable-next-line newline_normalization_pattern -- buffer bar renderer returns LF-delimited terminal rows.
 		const renderedBarLines = renderBufferBar(regions, ctx.rombin.byteLength, Math.max(16, modalWidth - 2), undefined, { forceVisibleTinyRegions: true }).split('\n');
 		bufferLines.push(`Buffer: ${renderedBarLines[0]}`);
 		if (renderedBarLines[1]) bufferLines.push(renderedBarLines[1]);

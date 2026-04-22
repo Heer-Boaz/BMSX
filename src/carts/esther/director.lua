@@ -1,4 +1,4 @@
--- @code-quality disable
+-- disable
 local constants = require('constants')
 
 local director = {}

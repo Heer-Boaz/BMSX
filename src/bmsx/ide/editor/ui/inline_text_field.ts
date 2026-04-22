@@ -79,7 +79,7 @@ const writeInlineFieldClipboard = (payload: string): void => {
 	editorDocumentState.customClipboard = payload;
 	try {
 		void $.platform.clipboard.writeText(payload);
-	// @code-quality disable-next-line empty_catch_pattern -- System clipboard write is best-effort; the editor clipboard already has the payload.
+	// disable-next-line empty_catch_pattern -- System clipboard write is best-effort; the editor clipboard already has the payload.
 	} catch {
 	}
 };

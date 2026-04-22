@@ -1,4 +1,4 @@
-// @code-quality start repeated-sequence-acceptable -- Program linker rewrites packed instruction fields directly to preserve bit-level clarity.
+// start repeated-sequence-acceptable -- Program linker rewrites packed instruction fields directly to preserve bit-level clarity.
 import { OpCode, type ProgramMetadata, type Proto, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
 import {
 	BASE_BX_BITS,
@@ -480,4 +480,4 @@ export const linkProgramAssets = (
 		metadata,
 	};
 };
-// @code-quality end repeated-sequence-acceptable
+// end repeated-sequence-acceptable

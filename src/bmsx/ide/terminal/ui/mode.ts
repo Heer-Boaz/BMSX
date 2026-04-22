@@ -419,7 +419,7 @@ export class TerminalMode {
 		const stackText = typeof error.stack === 'string' && error.stack.length > 0
 			? error.stack
 			: (error.message ?? String(error));
-		// @code-quality disable-next-line newline_normalization_pattern -- terminal errors are appended one stack/message line at a time.
+		// disable-next-line newline_normalization_pattern -- terminal errors are appended one stack/message line at a time.
 		const lines = stackText.split('\n');
 		for (let index = 0; index < lines.length; index += 1) {
 			this.appendStderr(lines[index]);

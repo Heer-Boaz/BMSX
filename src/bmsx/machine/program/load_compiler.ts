@@ -1,4 +1,4 @@
-// @code-quality start normalized-body-acceptable -- Chunk and returned-function compilation intentionally share setup shape but produce different entry contracts.
+// start normalized-body-acceptable -- Chunk and returned-function compilation intentionally share setup shape but produce different entry contracts.
 import { LuaParser } from '../../lua/syntax/parser';
 import {
 	LuaSyntaxKind,
@@ -340,4 +340,4 @@ export function compileLoadChunk(runtime: Runtime, source: string, chunkName: st
 		out.push(compiledFunction);
 	});
 }
-// @code-quality end normalized-body-acceptable
+// end normalized-body-acceptable

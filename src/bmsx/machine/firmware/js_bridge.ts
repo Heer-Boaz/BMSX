@@ -8,7 +8,7 @@ import { Runtime } from '../runtime/runtime';
 import { LuaMarshalContext } from '../runtime/contracts';
 import { isStringValue, stringValueToString } from '../memory/string_pool';
 
-// @code-quality disable defensive_typeof_function_pattern -- JS bridge marshals arbitrary host values; callable probes are explicit interop boundaries.
+// disable defensive_typeof_function_pattern -- JS bridge marshals arbitrary host values; callable probes are explicit interop boundaries.
 export type LuaSnapshotObjects = Record<number, unknown>;
 export type LuaSnapshotGraph = { root: unknown; objects: LuaSnapshotObjects };
 export type LuaEntrySnapshot = Record<string, unknown> | LuaSnapshotGraph;
@@ -100,7 +100,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 			}
 			return nativeRef;
 		}
-		// @code-quality start repeated-sequence-acceptable -- Table marshaling keeps the shape scan inline to avoid per-table shape objects.
+		// start repeated-sequence-acceptable -- Table marshaling keeps the shape scan inline to avoid per-table shape objects.
 		let entryCount = 0;
 		let numericCount = 0;
 		let hasOtherEntries = false;
@@ -116,7 +116,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 			}
 			hasOtherEntries = true;
 		});
-		// @code-quality end repeated-sequence-acceptable
+		// end repeated-sequence-acceptable
 			if (entryCount === 0) {
 				const empty: Record<string, unknown> = {};
 				visited.set(table, empty);
@@ -861,7 +861,7 @@ function tableToNative(runtime: Runtime, table: Table, context: LuaMarshalContex
 	let numericCount = 0;
 	let hasOtherEntries = false;
 	let maxNumericIndex = 0;
-	// @code-quality start repeated-sequence-acceptable -- Runtime table marshaling keeps this scan direct and allocation-free.
+	// start repeated-sequence-acceptable -- Runtime table marshaling keeps this scan direct and allocation-free.
 	table.forEachEntry((key) => {
 		entryCount += 1;
 		if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
@@ -873,7 +873,7 @@ function tableToNative(runtime: Runtime, table: Table, context: LuaMarshalContex
 		}
 		hasOtherEntries = true;
 	});
-	// @code-quality end repeated-sequence-acceptable
+	// end repeated-sequence-acceptable
 	if (entryCount === 0) {
 		const empty: Record<string, unknown> = {};
 		visited.set(table, empty);

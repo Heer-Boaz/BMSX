@@ -311,7 +311,7 @@ function formatLuaBuildError(err: LuaError, virtualRoots: ReadonlyArray<string>)
 
 	try {
 		const source = readFileSync(resolvedPath, 'utf8');
-		// @code-quality disable-next-line newline_normalization_pattern -- Lua build diagnostics map file text to one logical source line.
+		// disable-next-line newline_normalization_pattern -- Lua build diagnostics map file text to one logical source line.
 		const sourceLines = source.split(/\r\n|\r|\n/);
 		const sourceLine = sourceLines[err.line - 1];
 		if (sourceLine === undefined) {
@@ -733,7 +733,7 @@ async function main() {
 			const message = e instanceof Error ? e.message : String(e);
 			const isCompilationFailureReport = typeof message === 'string'
 				&& /^Compilation failed with \d+ (?:Lua )?error\(s\):/.test(message);
-			// @code-quality disable-next-line newline_normalization_pattern -- rompacker failure output is presented one diagnostic line at a time.
+			// disable-next-line newline_normalization_pattern -- rompacker failure output is presented one diagnostic line at a time.
 			const detailLines = typeof message === 'string' ? message.split('\n') : [String(message)];
 		if (progress) {
 			progress.stop();
@@ -771,7 +771,7 @@ async function main() {
 				// Only add main error message if no esbuild errors were extracted
 				const mainMessage = (e as any)?.message as string;
 				if (mainMessage && mainMessage.trim().length > 0) {
-					// @code-quality disable-next-line newline_normalization_pattern -- multi-line tool errors are flattened into rompacker diagnostic lines.
+					// disable-next-line newline_normalization_pattern -- multi-line tool errors are flattened into rompacker diagnostic lines.
 					const lines = mainMessage.split('\n').map(l => l.trimEnd()).filter(l => l.length > 0);
 				if (isCompilationFailureReport && lines.length > 0) {
 					prettyErrors.push(...lines.slice(1));

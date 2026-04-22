@@ -63,7 +63,7 @@ function isHiddenNativeMemberName(name: string): boolean {
 	switch (name) {
 		case '':
 		case 'constructor':
-		// @code-quality disable-next-line legacy_sentinel_string_pattern -- JavaScript intrinsic native member, not a legacy BMSX sentinel key.
+		// disable-next-line legacy_sentinel_string_pattern -- JavaScript intrinsic native member, not a legacy BMSX sentinel key.
 		case '__proto__':
 		case 'prototype':
 		case 'caller':
