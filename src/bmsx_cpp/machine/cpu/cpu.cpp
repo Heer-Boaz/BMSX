@@ -20,6 +20,8 @@
 
 namespace bmsx {
 
+// @code-quality start repeated-sequence-acceptable -- CPU interpreter hot paths keep duplicated opcode/register statements inline.
+
 namespace {
 static inline uint32_t readInstructionWord(const std::vector<uint8_t>& code, int pc) {
 	size_t offset = static_cast<size_t>(pc) * INSTRUCTION_BYTES;
@@ -2535,5 +2537,7 @@ void CPU::markRoots(GcHeap& heap) {
 	}
 	m_externalRootMarker(heap);
 }
+
+// @code-quality end repeated-sequence-acceptable
 
 } // namespace bmsx

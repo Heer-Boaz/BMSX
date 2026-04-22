@@ -100,21 +100,23 @@ export class LuaJsBridge implements LuaInteropAdapter {
 			}
 			return nativeRef;
 		}
-			let entryCount = 0;
-			let numericCount = 0;
-			let hasOtherEntries = false;
-			let maxNumericIndex = 0;
-			table.forEachEntry((key) => {
-				entryCount += 1;
-				if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
-					numericCount += 1;
-					if (key > maxNumericIndex) {
-						maxNumericIndex = key;
-					}
-					return;
+		// @code-quality start repeated-sequence-acceptable -- Table marshaling keeps the shape scan inline to avoid per-table shape objects.
+		let entryCount = 0;
+		let numericCount = 0;
+		let hasOtherEntries = false;
+		let maxNumericIndex = 0;
+		table.forEachEntry((key) => {
+			entryCount += 1;
+			if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+				numericCount += 1;
+				if (key > maxNumericIndex) {
+					maxNumericIndex = key;
 				}
-				hasOtherEntries = true;
-			});
+				return;
+			}
+			hasOtherEntries = true;
+		});
+		// @code-quality end repeated-sequence-acceptable
 			if (entryCount === 0) {
 				const empty: Record<string, unknown> = {};
 				visited.set(table, empty);
@@ -172,7 +174,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 		if (typeof value === 'object') {
 			if (isPlainObject(value)) {
 				const record = value as Record<string, unknown>;
-				if (record.__bmsx_table__ === 'map' && Array.isArray(record.entries)) {
+				if (record.bmsxTable === 'map' && Array.isArray(record.entries)) {
 					const entries = record.entries as Array<{ key: unknown; value: unknown }>;
 					const table = createLuaTable();
 					for (const entry of entries) {
@@ -299,7 +301,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 		}
 		if (raw && typeof raw === 'object') {
 			const record = raw as Record<string, unknown>;
-			if (record.__bmsx_table__ === 'map' && Array.isArray((record as { entries?: unknown }).entries)) {
+			if (record.bmsxTable === 'map' && Array.isArray((record as { entries?: unknown }).entries)) {
 				const table = createLuaTable();
 				this.applyLuaSnapshotPayload(table, record, value => this.deserializeLuaSnapshotValue(value, resolveRef));
 				return table;
@@ -391,8 +393,8 @@ export class LuaJsBridge implements LuaInteropAdapter {
 		if (!payload || typeof payload !== 'object') {
 			return;
 		}
-		const record = payload as { __bmsx_table__?: unknown; entries?: Array<{ key: unknown; value: unknown }> } & Record<string, unknown>;
-		if (record.__bmsx_table__ === 'map' && Array.isArray(record.entries)) {
+		const record = payload as { bmsxTable?: unknown; entries?: Array<{ key: unknown; value: unknown }> } & Record<string, unknown>;
+		if (record.bmsxTable === 'map' && Array.isArray(record.entries)) {
 			for (const entry of record.entries) {
 				const keyValue = this.deserializeLuaSnapshotKey(entry.key, resolve);
 				if (keyValue === undefined || keyValue === null) {
@@ -404,7 +406,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 			return;
 		}
 		for (const [prop, entry] of Object.entries(record)) {
-			if (prop === '__bmsx_table__') {
+			if (prop === 'bmsxTable') {
 				continue;
 			}
 			const numericKey = Number.parseInt(prop, 10);
@@ -555,7 +557,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 		const needsMap = hasComplexKeys || (numericCount > 0 && (!isSequential || hasStringKey));
 		if (needsMap) {
 			return {
-				__bmsx_table__: 'map',
+				bmsxTable: 'map',
 				entries: complexEntries,
 			};
 		}
@@ -859,6 +861,7 @@ function tableToNative(runtime: Runtime, table: Table, context: LuaMarshalContex
 	let numericCount = 0;
 	let hasOtherEntries = false;
 	let maxNumericIndex = 0;
+	// @code-quality start repeated-sequence-acceptable -- Runtime table marshaling keeps this scan direct and allocation-free.
 	table.forEachEntry((key) => {
 		entryCount += 1;
 		if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
@@ -870,6 +873,7 @@ function tableToNative(runtime: Runtime, table: Table, context: LuaMarshalContex
 		}
 		hasOtherEntries = true;
 	});
+	// @code-quality end repeated-sequence-acceptable
 	if (entryCount === 0) {
 		const empty: Record<string, unknown> = {};
 		visited.set(table, empty);

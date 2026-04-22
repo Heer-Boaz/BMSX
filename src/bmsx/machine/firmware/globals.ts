@@ -257,6 +257,7 @@ const ACTION_STATE_FLAG_CONSUMED = 1 << 5;
 const ACTION_STATE_FLAG_GUARDEDJUSTPRESSED = 1 << 9;
 const ACTION_STATE_FLAG_REPEATPRESSED = 1 << 10;
 
+// @code-quality start repeated-sequence-acceptable -- Lua tostring semantics live in firmware; disassembler formatting is intentionally separate.
 export function valueToString(value: Value): string {
 	if (value === null) {
 		return 'nil';
@@ -286,6 +287,7 @@ export function valueToString(value: Value): string {
 	}
 	return 'function';
 }
+// @code-quality end repeated-sequence-acceptable
 
 export function valueToStringValue(runtime: Runtime, value: Value): StringValue {
 	return runtime.internString(valueToString(value));
@@ -1917,6 +1919,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const endUnit = utf8CodepointIndexToUnitIndex(text, endIndex + 1);
 		out.push(runtime.internString(text.slice(startUnit, endUnit)));
 	}));
+	// @code-quality start repeated-sequence-acceptable -- Lua string find/match keep argument decoding inline to avoid allocation in string-library calls.
 	setKey(stringTable, 'find', createNativeFunction('string.find', (args, out) => {
 		const sourceValue = args[0] as StringValue;
 		const source = stringValueToString(sourceValue);
@@ -1988,6 +1991,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		}
 		out.push(runtime.internString(match[0]));
 	}));
+	// @code-quality end repeated-sequence-acceptable
 	setKey(stringTable, 'gsub', createNativeFunction('string.gsub', (args, out) => {
 		const source = luaPipeline.requireString(args[0]);
 		const pattern = args.length > 1 ? luaPipeline.requireString(args[1]) : '';

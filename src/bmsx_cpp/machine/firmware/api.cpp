@@ -215,8 +215,9 @@ Value Api::get_player_input_handle(int playerIndex) {
 	auto exactString = [&cpu](std::string_view text) {
 		return valueString(cpu.internString(text));
 	};
-	auto makeModifierStateTable = [this, key](const PlayerInput::ModifierState& state) -> Value {
-		Table* table = m_runtime.machine().cpu().createTable(0, 4);
+	PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
+	auto makeModifierStateTable = [&cpu, key](const PlayerInput::ModifierState& state) -> Value {
+		Table* table = cpu.createTable(0, 4);
 		table->set(key("shift"), valueBool(state.shift));
 		table->set(key("ctrl"), valueBool(state.ctrl));
 		table->set(key("alt"), valueBool(state.alt));
@@ -224,26 +225,23 @@ Value Api::get_player_input_handle(int playerIndex) {
 		return valueTable(table);
 	};
 
-	const Value getModifiersStateFn = cpu.createNativeFunction("player_input.getModifiersState", [this, playerIndex, makeModifierStateTable](NativeArgsView args, NativeResults& out) {
+	const Value getModifiersStateFn = cpu.createNativeFunction("player_input.getModifiersState", [input, makeModifierStateTable](NativeArgsView args, NativeResults& out) {
 		(void)args;
-		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
 		out.push_back(makeModifierStateTable(input->getModifiersState()));
 	});
-	const Value getButtonStateFn = cpu.createNativeFunction("player_input.getButtonState", [this, playerIndex](NativeArgsView args, NativeResults& out) {
+	const Value getButtonStateFn = cpu.createNativeFunction("player_input.getButtonState", [this, input](NativeArgsView args, NativeResults& out) {
 		const ButtonInputRequest request = readButtonInputRequest(m_runtime, args);
-		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
 		const ButtonState state = input->getButtonState(request.button, request.source);
 		out.push_back(buildButtonStateTable(m_runtime, m_inputStateKeys, state, false, 0));
 	});
-	const Value getButtonRepeatStateFn = cpu.createNativeFunction("player_input.getButtonRepeatState", [this, playerIndex](NativeArgsView args, NativeResults& out) {
+	const Value getButtonRepeatStateFn = cpu.createNativeFunction("player_input.getButtonRepeatState", [this, input](NativeArgsView args, NativeResults& out) {
 		const ButtonInputRequest request = readButtonInputRequest(m_runtime, args);
-		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
 		const ActionState state = input->getButtonRepeatState(request.button, request.source);
 		out.push_back(buildButtonStateTable(m_runtime, m_inputStateKeys, state, *state.repeatpressed, *state.repeatcount));
 	});
-	const Value consumeButtonFn = cpu.createNativeFunction("player_input.consumeButton", [this, playerIndex](NativeArgsView args, NativeResults& out) {
+	const Value consumeButtonFn = cpu.createNativeFunction("player_input.consumeButton", [this, input](NativeArgsView args, NativeResults& out) {
 		const ButtonInputRequest request = readButtonInputRequest(m_runtime, args);
-		Input::instance().getPlayerInput(playerIndex)->consumeRawButton(request.button, request.source);
+		input->consumeRawButton(request.button, request.source);
 		(void)out;
 	});
 	const Value getModifiersStateKey = exactString("getModifiersState");
@@ -490,18 +488,19 @@ void Api::reboot() {
 }
 
 Value Api::build_font_descriptor(BFont* font) {
+	CPU& cpu = m_runtime.machine().cpu();
 	auto key = [this](std::string_view name) {
 		return m_runtime.luaKey(name);
 	};
-	auto str = [this](const std::string& value) {
-		return valueString(m_runtime.machine().cpu().internString(value));
+	auto str = [&cpu](const std::string& value) {
+		return valueString(cpu.internString(value));
 	};
-	Table* glyphs = m_runtime.machine().cpu().createTable(0, static_cast<int>(font->glyphMap().size()));
+	Table* glyphs = cpu.createTable(0, static_cast<int>(font->glyphMap().size()));
 	for (const auto& [codepoint, _imgid] : font->glyphMap()) {
 		std::string glyphKey;
 		appendUtf8Codepoint(glyphKey, codepoint);
 		const FontGlyph& glyph = font->getGlyph(codepoint);
-		Table* glyphEntry = m_runtime.machine().cpu().createTable(0, 4);
+		Table* glyphEntry = cpu.createTable(0, 4);
 		glyphEntry->set(key("imgid"), str(glyph.imgid));
 		glyphEntry->set(key("width"), valueNumber(static_cast<double>(glyph.width)));
 		glyphEntry->set(key("height"), valueNumber(static_cast<double>(glyph.height)));
@@ -510,14 +509,14 @@ Value Api::build_font_descriptor(BFont* font) {
 	}
 	{
 		const FontGlyph& tabGlyph = font->getGlyph(static_cast<u32>('\t'));
-		Table* glyphEntry = m_runtime.machine().cpu().createTable(0, 4);
+		Table* glyphEntry = cpu.createTable(0, 4);
 		glyphEntry->set(key("imgid"), str(tabGlyph.imgid));
 		glyphEntry->set(key("width"), valueNumber(static_cast<double>(tabGlyph.width)));
 		glyphEntry->set(key("height"), valueNumber(static_cast<double>(tabGlyph.height)));
 		glyphEntry->set(key("advance"), valueNumber(static_cast<double>(tabGlyph.advance)));
 		glyphs->set(str("\t"), valueTable(glyphEntry));
 	}
-	Table* descriptor = m_runtime.machine().cpu().createTable(0, 4);
+	Table* descriptor = cpu.createTable(0, 4);
 	descriptor->set(key("id"), valueNumber(static_cast<double>(fontId(font))));
 	descriptor->set(key("line_height"), valueNumber(static_cast<double>(font->lineHeight())));
 	descriptor->set(key("advance_padding"), valueNumber(static_cast<double>(font->advancePadding())));

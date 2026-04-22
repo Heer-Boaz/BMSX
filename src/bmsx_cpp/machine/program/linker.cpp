@@ -195,14 +195,16 @@ MergedConstPool mergeConstPools(
 ) {
 	const StringPool& engineStrings = *engineProgram.constPoolStringPool;
 	const StringPool& cartStrings = *cartProgram.constPoolStringPool;
+	const size_t engineConstCount = engineProgram.constPool.size();
+	const size_t cartConstCount = cartProgram.constPool.size();
 	MergedConstPool merged;
-	merged.values.reserve(engineProgram.constPool.size() + cartProgram.constPool.size());
-	merged.cartRemap.resize(cartProgram.constPool.size(), -1);
+	merged.values.reserve(engineConstCount + cartConstCount);
+	merged.cartRemap.resize(cartConstCount, -1);
 
 	std::unordered_map<std::string, int> keyToIndex;
-	keyToIndex.reserve(engineProgram.constPool.size() + cartProgram.constPool.size());
+	keyToIndex.reserve(engineConstCount + cartConstCount);
 
-	for (size_t i = 0; i < engineProgram.constPool.size(); ++i) {
+	for (size_t i = 0; i < engineConstCount; ++i) {
 		const Value value = engineProgram.constPool[i];
 		const Value copied = copyConstValue(engineStrings, value, outPool);
 		merged.values.push_back(copied);
@@ -212,7 +214,7 @@ MergedConstPool mergeConstPools(
 		}
 	}
 
-	for (size_t i = 0; i < cartProgram.constPool.size(); ++i) {
+	for (size_t i = 0; i < cartConstCount; ++i) {
 		const Value value = cartProgram.constPool[i];
 		const std::string key = makeConstKey(cartStrings, value);
 		const auto existing = keyToIndex.find(key);
@@ -488,10 +490,12 @@ LinkedProgramAsset linkProgramAssets(
 	const Program& cartProgram = *cartAsset.program;
 	const int engineCodeBytes = static_cast<int>(engineProgram.code.size());
 	const int cartCodeBytes = static_cast<int>(cartProgram.code.size());
+	const size_t engineProtoSize = engineProgram.protos.size();
+	const int engineProtoCount = static_cast<int>(engineProtoSize);
 	ProgramLayout layout = resolveProgramLayout(engineCodeBytes, engineBasePc, cartBasePc);
 
 	std::vector<uint8_t> cartCode = cartProgram.code;
-	rewriteClosureIndices(cartCode, static_cast<int>(engineProgram.protos.size()));
+	rewriteClosureIndices(cartCode, engineProtoCount);
 
 	auto linkedProgram = std::make_unique<Program>();
 	linkedProgram->constPoolStringPool = &linkedProgram->stringPool;
@@ -513,7 +517,7 @@ LinkedProgramAsset linkProgramAssets(
 	);
 	linkedProgram->constPool = std::move(merged.values);
 
-	linkedProgram->protos.reserve(engineProgram.protos.size() + cartProgram.protos.size());
+	linkedProgram->protos.reserve(engineProtoSize + cartProgram.protos.size());
 	for (const auto& proto : engineProgram.protos) {
 		linkedProgram->protos.push_back(cloneProto(proto, layout.engineBasePc));
 	}
@@ -528,11 +532,11 @@ LinkedProgramAsset linkProgramAssets(
 	linkedProgram->constPoolCanonicalized = false;
 
 	auto linkedAsset = std::make_unique<ProgramAsset>();
-	linkedAsset->entryProtoIndex = cartAsset.entryProtoIndex + static_cast<int>(engineProgram.protos.size());
+	linkedAsset->entryProtoIndex = cartAsset.entryProtoIndex + engineProtoCount;
 	linkedAsset->program = std::move(linkedProgram);
 	linkedAsset->moduleProtos.reserve(cartAsset.moduleProtos.size() + engineAsset.moduleProtos.size());
 	for (const auto& entry : cartAsset.moduleProtos) {
-		linkedAsset->moduleProtos.emplace_back(entry.first, entry.second + static_cast<int>(engineProgram.protos.size()));
+		linkedAsset->moduleProtos.emplace_back(entry.first, entry.second + engineProtoCount);
 	}
 	for (const auto& entry : engineAsset.moduleProtos) {
 		linkedAsset->moduleProtos.emplace_back(entry.first, entry.second);

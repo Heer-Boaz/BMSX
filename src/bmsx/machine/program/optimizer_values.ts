@@ -1,3 +1,4 @@
+// @code-quality start normalized-body-acceptable -- Value-folding helpers mirror opcode cases; sharing them would hide the rewrite intent.
 import { isTruthyValue, OpCode, type Value } from '../cpu/cpu';
 import { MAX_SIGNED_BX, MIN_SIGNED_BX } from '../cpu/instruction_format';
 import { isStringValue, stringValueToString } from '../memory/string_pool';
@@ -33,6 +34,7 @@ export const getImmediateConstValue = (instruction: Instruction, context: Optimi
 			return null;
 	}
 };
+// @code-quality end normalized-body-acceptable
 
 export const replaceWithJump = (instruction: Instruction, target: number): void => {
 	instruction.op = OpCode.JMP;

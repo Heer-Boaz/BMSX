@@ -298,6 +298,7 @@ public:
 	std::vector<TileRunBlit> acquireTileBuffer();
 	void recycleBlitterBuffers(std::vector<BlitterCommand>& queue);
 	void resetBuildFrameState();
+	void resetQueuedFrameState();
 	void enqueueBlitterCommand(BlitterCommand&& command);
 	int calculateVisibleRectCost(double width, double height) const;
 	int calculateAlphaMultiplier(const FrameBufferColor& color) const;
@@ -328,6 +329,7 @@ public:
 	void commitActiveVisualState();
 	void initializeFrameBufferSurface();
 	void resetFrameBufferPriority();
+	ImgAsset& resolveSkyboxImageAsset(const std::string& assetId) const;
 	BlitterSource resolveBlitterSource(u32 handle) const;
 	void blendFrameBufferPixel(std::vector<u8>& pixels, size_t index, u8 r, u8 g, u8 b, u8 a, Layer2D layer, f32 z, u32 seq);
 	void rasterizeFrameBufferFill(std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, const FrameBufferColor& color, Layer2D layer, f32 z, u32 seq);

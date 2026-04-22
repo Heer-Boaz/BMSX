@@ -30,6 +30,18 @@ Use this skill whenever working in the BMSX repo or discussing BMSX code quality
 - Treat serialization as part of feature design. Registry/persistent runtime objects and host-only state should not leak into saved game state.
 - Do not hand-fix indentation. Make the code change, then run `npm run fix:indent -- <touched paths>` for formatting/indent cleanup. If that tool cannot handle the touched language well enough, improve the tool or call out the limitation instead of committing manual whitespace churn.
 
+## Hot-Path Duplication Discipline
+For CPU/program, scheduler, VDP, render, and other tight emulator/runtime paths, the correct answer is often not a helper. Do not extract repeated opcode/register/timer/state statements just to satisfy a quality rule when the duplication keeps the hot path direct, predictable, allocation-free, and easy for the compiler/JIT to optimize.
+
+When repeated code in these paths is intentional and performance-sensitive, mark the smallest practical section with a local quality region and explain the reason:
+
+```ts
+// @code-quality start repeated-sequence-acceptable -- CPU opcode fast path keeps register updates inline; helper dispatch would add overhead.
+// @code-quality end repeated-sequence-acceptable
+```
+
+Use real cleanup for non-hot code, setup/init code, firmware table construction, asset metadata assembly, manifest shaping, and other places where extracting a concept improves ownership without adding dispatch, allocation, or abstraction cost. In short: no helper fetish in CPU/program hot paths; no duplicated sludge outside them.
+
 ## Anti-Workaround Rule
 Do not satisfy a quality rule by producing worse code. If a rule pushes toward worse code, fix the rule first.
 

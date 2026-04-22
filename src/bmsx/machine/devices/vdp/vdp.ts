@@ -1082,6 +1082,23 @@ export class VDP implements VramWriteSink {
 		this.buildFrameOpen = false;
 	}
 
+	private resetQueuedFrameState(): void {
+		this.resetBuildFrameState();
+		this.clearActiveFrame();
+		this.recycleBlitterBuffers(this.pendingBlitterQueue);
+		this.workCarry = 0n;
+		this.availableWorkUnits = 0;
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
+		this.pendingFrameOccupied = false;
+		this.pendingFrameCost = 0;
+		this.pendingDitherType = 0;
+		this.pendingSlotAtlasIds[0] = null;
+		this.pendingSlotAtlasIds[1] = null;
+		this.pendingSkyboxFaceIds = null;
+		this.slotAtlasIds[0] = null;
+		this.slotAtlasIds[1] = null;
+	}
+
 	private enqueueBlitterCommand(command: VdpBlitterCommand): void {
 		if (!this.buildFrameOpen) {
 			throw vdpFault('no submitted frame is open.');
@@ -1985,20 +2002,7 @@ export class VDP implements VramWriteSink {
 			this._frameBufferWidth = $.view.viewportSize.x;
 			this._frameBufferHeight = $.view.viewportSize.y;
 		}
-		this.resetBuildFrameState();
-		this.clearActiveFrame();
-		this.recycleBlitterBuffers(this.pendingBlitterQueue);
-		this.workCarry = 0n;
-		this.availableWorkUnits = 0;
-		this.scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
-		this.pendingFrameOccupied = false;
-		this.pendingFrameCost = 0;
-		this.pendingDitherType = 0;
-		this.pendingSlotAtlasIds[0] = null;
-		this.pendingSlotAtlasIds[1] = null;
-		this.pendingSkyboxFaceIds = null;
-		this.slotAtlasIds[0] = null;
-		this.slotAtlasIds[1] = null;
+		this.resetQueuedFrameState();
 		this.blitterSequence = 0;
 		this.resetIngressState();
 		this.resetStatus();
@@ -2215,20 +2219,7 @@ export class VDP implements VramWriteSink {
 		this.atlasResourcesById.clear();
 		this.atlasViewsById.clear();
 		this.atlasSlotById.clear();
-		this.resetBuildFrameState();
-		this.clearActiveFrame();
-		this.recycleBlitterBuffers(this.pendingBlitterQueue);
-		this.workCarry = 0n;
-		this.availableWorkUnits = 0;
-		this.scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
-		this.pendingFrameOccupied = false;
-		this.pendingFrameCost = 0;
-		this.pendingDitherType = 0;
-		this.pendingSlotAtlasIds[0] = null;
-		this.pendingSlotAtlasIds[1] = null;
-		this.pendingSkyboxFaceIds = null;
-		this.slotAtlasIds[0] = null;
-		this.slotAtlasIds[1] = null;
+		this.resetQueuedFrameState();
 		this.vramSlots = [];
 		this.readSurfaces = [null, null, null, null];
 		for (let index = 0; index < this.readCaches.length; index += 1) {

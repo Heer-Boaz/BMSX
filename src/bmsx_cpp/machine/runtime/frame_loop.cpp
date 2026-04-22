@@ -101,6 +101,7 @@ void FrameLoopState::executeUpdateCallback(Runtime& runtime) {
 }
 
 bool FrameLoopState::tickUpdate(Runtime& runtime) {
+	using PendingCall = Runtime::PendingCall;
 	if (runtime.m_rebootRequested) {
 		runtime.m_rebootRequested = false;
 		runtime.frameScheduler.clearQueuedTime();
@@ -123,7 +124,7 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 
 	const bool previousFrameActive = frameActive;
 	const int previousRemaining = previousFrameActive ? frameState.cycleBudgetRemaining : -1;
-	const bool previousPending = runtime.m_pendingCall == Runtime::PendingCall::Entry;
+	const bool previousPending = runtime.m_pendingCall == PendingCall::Entry;
 	const i64 previousSequence = runtime.frameScheduler.lastTickSequence;
 	const bool startedFrame = !frameActive;
 	if (frameActive) {
@@ -136,7 +137,7 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 		}
 	}
 
-	if (runtime.m_pendingCall == Runtime::PendingCall::Entry) {
+	if (runtime.m_pendingCall == PendingCall::Entry) {
 		executeUpdateCallback(runtime);
 	}
 
@@ -161,7 +162,7 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 		runtime.m_debugUpdateCountTotal += 1;
 	}
 
-	frameState.updateExecuted = runtime.m_pendingCall != Runtime::PendingCall::Entry;
+	frameState.updateExecuted = runtime.m_pendingCall != PendingCall::Entry;
 	runtime.machine().vdp().flushAssetEdits();
 	finalizeUpdateSlice(runtime);
 	const bool nextFrameActive = frameActive;
@@ -171,19 +172,20 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	if (nextFrameActive && frameState.cycleBudgetRemaining != previousRemaining) {
 		return true;
 	}
-	if ((runtime.m_pendingCall == Runtime::PendingCall::Entry) != previousPending) {
+	if ((runtime.m_pendingCall == PendingCall::Entry) != previousPending) {
 		return true;
 	}
 	return runtime.frameScheduler.lastTickSequence != previousSequence;
 }
 
 void FrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platformPaused, bool skipRender) {
+	using Clock = std::chrono::steady_clock;
 	EngineCore& engine = EngineCore::instance();
 	if (engine.m_state != EngineState::Running && engine.m_state != EngineState::Paused) {
 		return;
 	}
 	try {
-		const auto tickStart = std::chrono::steady_clock::now();
+		const auto tickStart = Clock::now();
 		runtime.screen.recordHostFrame();
 		engine.m_last_tick_timing.inputMs = 0.0;
 		engine.m_last_tick_timing.workbenchModeInputMs = 0.0;
@@ -205,36 +207,36 @@ void FrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platform
 			engine.m_fps = 1.0 / hostDeltaSeconds;
 		}
 
-		const auto inputStart = std::chrono::steady_clock::now();
+		const auto inputStart = Clock::now();
 		Input::instance().pollInput();
-		const auto inputEnd = std::chrono::steady_clock::now();
+		const auto inputEnd = Clock::now();
 		engine.m_last_tick_timing.inputMs = to_ms(inputEnd - inputStart);
 
 		runtime.screen.clearPresentation();
 		if (!platformPaused) {
 			const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
-			const auto updateStart = std::chrono::steady_clock::now();
+			const auto updateStart = Clock::now();
 			engine.m_delta_time = runtime.timing.frameDurationMs / 1000.0;
 			runtime.frameScheduler.run(runtime, hostDeltaMs);
 			runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
-			const auto updateEnd = std::chrono::steady_clock::now();
+			const auto updateEnd = Clock::now();
 			engine.m_last_tick_timing.runtimeUpdateMs = to_ms(updateEnd - updateStart);
 
-			const auto terminalStart = std::chrono::steady_clock::now();
+			const auto terminalStart = Clock::now();
 			runtime.machine().vdp().flushAssetEdits();
-			const auto terminalEnd = std::chrono::steady_clock::now();
+			const auto terminalEnd = Clock::now();
 			engine.m_last_tick_timing.runtimeTerminalMs = to_ms(terminalEnd - terminalStart);
 		}
 		engine.m_delta_time = hostDeltaSeconds;
 
 		if (engine.m_platform && engine.m_platform->microtaskQueue()) {
-			const auto microtaskStart = std::chrono::steady_clock::now();
+			const auto microtaskStart = Clock::now();
 			engine.m_platform->microtaskQueue()->flush();
-			const auto microtaskEnd = std::chrono::steady_clock::now();
+			const auto microtaskEnd = Clock::now();
 			engine.m_last_tick_timing.microtaskMs = to_ms(microtaskEnd - microtaskStart);
 		}
 
-		engine.m_last_tick_timing.totalMs = to_ms(std::chrono::steady_clock::now() - tickStart);
+		engine.m_last_tick_timing.totalMs = to_ms(Clock::now() - tickStart);
 		if (!skipRender) {
 			runtime.screen.render(engine, runtime);
 		}

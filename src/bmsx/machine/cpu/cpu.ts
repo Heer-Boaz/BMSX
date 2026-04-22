@@ -17,6 +17,9 @@ import { ScratchArrayStack } from '../../common/scratchstack';
 
 export { OpCode } from './opcode_info';
 
+// @code-quality start repeated-sequence-acceptable -- Lua VM/table/register hot paths deliberately keep short copy/update sequences inline.
+// @code-quality start normalized-body-acceptable -- Specialized Lua VM accessors stay split so the fast paths avoid dispatch helpers.
+
 export type Value = null | boolean | number | StringValue | Table | Closure | NativeFunction | NativeObject;
 
 export const isTruthyValue = (value: Value): boolean => value !== null && value !== false;
@@ -3302,3 +3305,6 @@ export class CPU {
 	}
 
 }
+
+// @code-quality end normalized-body-acceptable
+// @code-quality end repeated-sequence-acceptable

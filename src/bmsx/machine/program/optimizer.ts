@@ -47,6 +47,8 @@ export type InstructionSet = {
 	ranges: Array<SourceRange | null>;
 };
 
+type InstructionRegisterOperand = 'a' | 'b' | 'c';
+
 const RK_B = 1;
 const RK_C = 2;
 
@@ -126,7 +128,6 @@ const resolveJumpTarget = (target: number, instructions: Instruction[]): number 
 	}
 	return current;
 };
-
 const threadJumps = (set: InstructionSet): InstructionSet => {
 	const { instructions } = set;
 	for (let i = 0; i < instructions.length; i += 1) {
@@ -144,6 +145,12 @@ const threadJumps = (set: InstructionSet): InstructionSet => {
 		}
 	}
 	return set;
+};
+
+const pushWorklistCandidate = (worklist: number[], target: number, instructionCount: number): void => {
+	if (target < instructionCount) {
+		worklist.push(target);
+	}
 };
 
 const removeUnreachable = (set: InstructionSet): InstructionSet => {
@@ -165,38 +172,23 @@ const removeUnreachable = (set: InstructionSet): InstructionSet => {
 			case OpCode.RET:
 				break;
 			case OpCode.JMP: {
-				const target = getJumpTarget(instruction);
-				if (target < count) {
-					worklist.push(target);
-				}
+				pushWorklistCandidate(worklist, getJumpTarget(instruction), count);
 				break;
 			}
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT: {
-				const target = getJumpTarget(instruction);
-				if (target < count) {
-					worklist.push(target);
-				}
-				if (index + 1 < count) {
-					worklist.push(index + 1);
-				}
+				pushWorklistCandidate(worklist, getJumpTarget(instruction), count);
+				pushWorklistCandidate(worklist, index + 1, count);
 				break;
 			}
 			case OpCode.BR_TRUE:
 			case OpCode.BR_FALSE: {
-				const target = getJumpTarget(instruction);
-				if (target < count) {
-					worklist.push(target);
-				}
-				if (index + 1 < count) {
-					worklist.push(index + 1);
-				}
+				pushWorklistCandidate(worklist, getJumpTarget(instruction), count);
+				pushWorklistCandidate(worklist, index + 1, count);
 				break;
 			}
 			case OpCode.LOADBOOL: {
-				if (index + 1 < count) {
-					worklist.push(index + 1);
-				}
+				pushWorklistCandidate(worklist, index + 1, count);
 				if (instruction.c !== 0 && index + 2 < count) {
 					worklist.push(index + 2);
 				}
@@ -293,17 +285,17 @@ const simplifyCompareBool = (set: InstructionSet): InstructionSet => {
 	return remapInstructions(instructions, ranges, keep, true);
 };
 
-const clearConstRange = (constants: Map<number, ConstValue>, start: number, countValue: number | null): void => {
+const clearRegisterRange = <T>(values: Map<number, T>, start: number, countValue: number | null): void => {
 	if (countValue === null) {
-		for (const reg of Array.from(constants.keys())) {
+		for (const reg of Array.from(values.keys())) {
 			if (reg >= start) {
-				constants.delete(reg);
+				values.delete(reg);
 			}
 		}
 		return;
 	}
 	for (let offset = 0; offset < countValue; offset += 1) {
-		constants.delete(start + offset);
+		values.delete(start + offset);
 	}
 };
 
@@ -340,6 +332,31 @@ const intersectConstMaps = (maps: Map<number, ConstValue>[]): Map<number, ConstV
 		}
 	}
 	return result;
+};
+
+const markCapturedClosureRegisters = (
+	captured: Uint8Array,
+	instructions: readonly Instruction[],
+	context: OptimizationContext,
+	registerCount: number,
+): void => {
+	for (let i = 0; i < instructions.length; i += 1) {
+		const instruction = instructions[i];
+		if (instruction.op !== OpCode.CLOSURE) {
+			continue;
+		}
+		const upvalues = context.getClosureUpvalues(instruction.b);
+		for (let u = 0; u < upvalues.length; u += 1) {
+			const desc = upvalues[u];
+			if (!desc.inStack) {
+				continue;
+			}
+			if (desc.index >= registerCount) {
+				throw new Error(`[ProgramOptimizer] Closure upvalue register out of range: r${desc.index}.`);
+			}
+			captured[desc.index] = 1;
+		}
+	}
 };
 
 const computeBlockConstantIn = (
@@ -464,12 +481,12 @@ const computeBlockConstantIn = (
 						break;
 					case OpCode.VARARG: {
 						const countValue = instruction.b === 0 ? null : instruction.b;
-						clearConstRange(constants, instruction.a, countValue);
+						clearRegisterRange(constants, instruction.a, countValue);
 						break;
 					}
 					case OpCode.CALL: {
 						const countValue = instruction.c === 0 ? null : instruction.c;
-						clearConstRange(constants, instruction.a, countValue);
+						clearRegisterRange(constants, instruction.a, countValue);
 						break;
 					}
 					case OpCode.TESTSET:
@@ -653,12 +670,12 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				}
 				case OpCode.VARARG: {
 					const countValue = instruction.b === 0 ? null : instruction.b;
-					clearConstRange(constants, instruction.a, countValue);
+					clearRegisterRange(constants, instruction.a, countValue);
 					break;
 				}
 				case OpCode.CALL: {
 					const countValue = instruction.c === 0 ? null : instruction.c;
-					clearConstRange(constants, instruction.a, countValue);
+					clearRegisterRange(constants, instruction.a, countValue);
 					break;
 				}
 				case OpCode.TESTSET:
@@ -810,6 +827,26 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 		return resolveCopy(operand, copies);
 	};
 
+	const rewriteCopyInstructionOperand = (instruction: Instruction, operand: InstructionRegisterOperand, copies: Map<number, number>): void => {
+		const next = resolveCopy(instruction[operand], copies);
+		if (next !== instruction[operand]) {
+			instruction[operand] = next;
+		}
+	};
+
+	const rewriteRkInstructionOperand = (
+		instruction: Instruction,
+		operand: InstructionRegisterOperand,
+		maskBit: number,
+		constants: Map<number, ConstValue>,
+		copies: Map<number, number>,
+	): void => {
+		const next = rewriteRkOperand(instruction, instruction[operand], maskBit, constants, copies);
+		if (next !== instruction[operand]) {
+			instruction[operand] = next;
+		}
+	};
+
 	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
 		const block = blocks[blockIndex];
 		const constants = new Map(blockConstIn[blockIndex]);
@@ -823,65 +860,38 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				continue;
 			}
 
-			switch (instruction.op) {
-				case OpCode.MOV: {
-					const resolved = resolveCopy(instruction.b, copies);
-					if (resolved !== instruction.b) {
-						instruction.b = resolved;
+				switch (instruction.op) {
+					case OpCode.MOV: {
+						rewriteCopyInstructionOperand(instruction, 'b', copies);
+						const constant = constants.get(instruction.b);
+						if (constant && isConstPoolValue(constant.value) && !isStringValue(constant.value)) {
+							replaceWithConst(instruction, instruction.a, constant.value, context);
+						}
+						break;
 					}
-					const constant = constants.get(instruction.b);
-					if (constant && isConstPoolValue(constant.value) && !isStringValue(constant.value)) {
-						replaceWithConst(instruction, instruction.a, constant.value, context);
+					case OpCode.GETT: {
+						rewriteCopyInstructionOperand(instruction, 'b', copies);
+						rewriteRkInstructionOperand(instruction, 'c', RK_C, constants, copies);
+						break;
 					}
-					break;
-				}
-				case OpCode.GETT: {
-					const nextB = resolveCopy(instruction.b, copies);
-					if (nextB !== instruction.b) {
-						instruction.b = nextB;
+					case OpCode.GETI:
+					case OpCode.GETFIELD:
+					case OpCode.SELF: {
+						rewriteCopyInstructionOperand(instruction, 'b', copies);
+						break;
 					}
-					const nextC = rewriteRkOperand(instruction, instruction.c, RK_C, constants, copies);
-					if (nextC !== instruction.c) {
-						instruction.c = nextC;
+					case OpCode.SETT: {
+						rewriteCopyInstructionOperand(instruction, 'a', copies);
+						rewriteRkInstructionOperand(instruction, 'b', RK_B, constants, copies);
+						rewriteRkInstructionOperand(instruction, 'c', RK_C, constants, copies);
+						break;
 					}
-					break;
-				}
-				case OpCode.GETI:
-				case OpCode.GETFIELD:
-				case OpCode.SELF: {
-					const nextB = resolveCopy(instruction.b, copies);
-					if (nextB !== instruction.b) {
-						instruction.b = nextB;
+					case OpCode.SETI:
+					case OpCode.SETFIELD: {
+						rewriteCopyInstructionOperand(instruction, 'a', copies);
+						rewriteRkInstructionOperand(instruction, 'c', RK_C, constants, copies);
+						break;
 					}
-					break;
-				}
-				case OpCode.SETT: {
-					const nextA = resolveCopy(instruction.a, copies);
-					if (nextA !== instruction.a) {
-						instruction.a = nextA;
-					}
-					const nextB = rewriteRkOperand(instruction, instruction.b, RK_B, constants, copies);
-					if (nextB !== instruction.b) {
-						instruction.b = nextB;
-					}
-					const nextC = rewriteRkOperand(instruction, instruction.c, RK_C, constants, copies);
-					if (nextC !== instruction.c) {
-						instruction.c = nextC;
-					}
-					break;
-				}
-				case OpCode.SETI:
-				case OpCode.SETFIELD: {
-					const nextA = resolveCopy(instruction.a, copies);
-					if (nextA !== instruction.a) {
-						instruction.a = nextA;
-					}
-					const nextC = rewriteRkOperand(instruction, instruction.c, RK_C, constants, copies);
-					if (nextC !== instruction.c) {
-						instruction.c = nextC;
-					}
-					break;
-				}
 				case OpCode.ADD:
 				case OpCode.SUB:
 				case OpCode.MUL:
@@ -895,84 +905,54 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.SHL:
 				case OpCode.SHR:
 				case OpCode.CONCAT:
-				case OpCode.EQ:
-				case OpCode.LT:
-				case OpCode.LE: {
-					const nextB = rewriteRkOperand(instruction, instruction.b, RK_B, constants, copies);
-					if (nextB !== instruction.b) {
-						instruction.b = nextB;
+					case OpCode.EQ:
+					case OpCode.LT:
+					case OpCode.LE: {
+						rewriteRkInstructionOperand(instruction, 'b', RK_B, constants, copies);
+						rewriteRkInstructionOperand(instruction, 'c', RK_C, constants, copies);
+						break;
 					}
-					const nextC = rewriteRkOperand(instruction, instruction.c, RK_C, constants, copies);
-					if (nextC !== instruction.c) {
-						instruction.c = nextC;
-					}
-					break;
-				}
 				case OpCode.UNM:
 				case OpCode.NOT:
-				case OpCode.LEN:
-				case OpCode.BNOT: {
-					const nextB = resolveCopy(instruction.b, copies);
-					if (nextB !== instruction.b) {
-						instruction.b = nextB;
+					case OpCode.LEN:
+					case OpCode.BNOT: {
+						rewriteCopyInstructionOperand(instruction, 'b', copies);
+						break;
 					}
-					break;
-				}
-				case OpCode.TEST:
-				case OpCode.JMPIF:
-				case OpCode.JMPIFNOT: {
-					const nextA = resolveCopy(instruction.a, copies);
-					if (nextA !== instruction.a) {
-						instruction.a = nextA;
+					case OpCode.TEST:
+					case OpCode.JMPIF:
+					case OpCode.JMPIFNOT: {
+						rewriteCopyInstructionOperand(instruction, 'a', copies);
+						break;
 					}
-					break;
-				}
-				case OpCode.BR_TRUE:
-				case OpCode.BR_FALSE: {
-					const nextA = resolveCopy(instruction.a, copies);
-					if (nextA !== instruction.a) {
-						instruction.a = nextA;
+					case OpCode.BR_TRUE:
+					case OpCode.BR_FALSE: {
+						rewriteCopyInstructionOperand(instruction, 'a', copies);
+						break;
 					}
-					break;
-				}
-				case OpCode.TESTSET: {
-					const nextB = resolveCopy(instruction.b, copies);
-					if (nextB !== instruction.b) {
-						instruction.b = nextB;
+					case OpCode.TESTSET: {
+						rewriteCopyInstructionOperand(instruction, 'b', copies);
+						break;
 					}
-					break;
-				}
 				case OpCode.SETG:
 				case OpCode.SETSYS:
 				case OpCode.SETGL:
-				case OpCode.SETUP:
-				case OpCode.STORE_MEM: {
-					const nextA = resolveCopy(instruction.a, copies);
-					if (nextA !== instruction.a) {
-						instruction.a = nextA;
-					}
-					if (instruction.op === OpCode.STORE_MEM) {
-						const nextB = rewriteRkOperand(instruction, instruction.b, RK_B, constants, copies);
-						if (nextB !== instruction.b) {
-							instruction.b = nextB;
+					case OpCode.SETUP:
+					case OpCode.STORE_MEM: {
+						rewriteCopyInstructionOperand(instruction, 'a', copies);
+						if (instruction.op === OpCode.STORE_MEM) {
+							rewriteRkInstructionOperand(instruction, 'b', RK_B, constants, copies);
 						}
+						break;
 					}
-					break;
-				}
-				case OpCode.STORE_MEM_WORDS: {
-					const nextB = rewriteRkOperand(instruction, instruction.b, RK_B, constants, copies);
-					if (nextB !== instruction.b) {
-						instruction.b = nextB;
+					case OpCode.STORE_MEM_WORDS: {
+						rewriteRkInstructionOperand(instruction, 'b', RK_B, constants, copies);
+						break;
 					}
-					break;
-				}
-				case OpCode.LOAD_MEM: {
-					const nextB = rewriteRkOperand(instruction, instruction.b, RK_B, constants, copies);
-					if (nextB !== instruction.b) {
-						instruction.b = nextB;
+					case OpCode.LOAD_MEM: {
+						rewriteRkInstructionOperand(instruction, 'b', RK_B, constants, copies);
+						break;
 					}
-					break;
-				}
 				default:
 					break;
 			}
@@ -1063,7 +1043,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.VARARG: {
 					const countValue = instruction.b === 0 ? null : instruction.b;
 					if (countValue === null) {
-						clearConstRange(constants, instruction.a, null);
+						clearRegisterRange(constants, instruction.a, null);
 						clearCopiesTouchingOpenRange(copies, instruction.a);
 						break;
 					}
@@ -1075,7 +1055,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.CALL: {
 					const countValue = instruction.c === 0 ? null : instruction.c;
 					if (countValue === null) {
-						clearConstRange(constants, instruction.a, null);
+						clearRegisterRange(constants, instruction.a, null);
 						clearCopiesTouchingOpenRange(copies, instruction.a);
 						break;
 					}
@@ -1113,23 +1093,7 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 		}
 	}
 	const captured = new Uint8Array(registerCount);
-	for (let i = 0; i < count; i += 1) {
-		const instruction = instructions[i];
-		if (instruction.op !== OpCode.CLOSURE) {
-			continue;
-		}
-		const upvalues = context.getClosureUpvalues(instruction.b);
-		for (let u = 0; u < upvalues.length; u += 1) {
-			const desc = upvalues[u];
-			if (!desc.inStack) {
-				continue;
-			}
-			if (desc.index >= registerCount) {
-				throw new Error(`[ProgramOptimizer] Closure upvalue register out of range: r${desc.index}.`);
-			}
-			captured[desc.index] = 1;
-		}
-	}
+	markCapturedClosureRegisters(captured, instructions, context, registerCount);
 	const blockUse: Uint8Array[] = new Array(blocks.length);
 	const blockDef: Uint8Array[] = new Array(blocks.length);
 	const liveIn: Uint8Array[] = new Array(blocks.length);
@@ -1578,6 +1542,13 @@ const reorderSegments = (set: InstructionSet): InstructionSet => {
 	return { instructions: nextInstructions, ranges: nextRanges };
 };
 
+const cleanupControlFlow = (set: InstructionSet): InstructionSet => {
+	let current = removeNoOps(set);
+	current = threadJumps(current);
+	current = removeUnreachable(current);
+	return removeNoOps(current);
+};
+
 type InlineCallee = {
 	meta: OptimizationProtoMeta;
 	set: InstructionSet;
@@ -1633,20 +1604,6 @@ const intersectClosureMaps = (maps: Array<Map<number, number>>): Map<number, num
 	return result;
 };
 
-const clearClosureRange = (closures: Map<number, number>, start: number, countValue: number | null): void => {
-	if (countValue === null) {
-		for (const reg of Array.from(closures.keys())) {
-			if (reg >= start) {
-				closures.delete(reg);
-			}
-		}
-		return;
-	}
-	for (let offset = 0; offset < countValue; offset += 1) {
-		closures.delete(start + offset);
-	}
-};
-
 const computeCapturedRegistersForInlining = (instructions: Instruction[], context: OptimizationContext): number[] => {
 	if (instructions.length === 0) {
 		return [];
@@ -1654,23 +1611,7 @@ const computeCapturedRegistersForInlining = (instructions: Instruction[], contex
 	const maxRegister = computeMaxRegister(instructions);
 	const registerCount = maxRegister + 1;
 	const captured = new Uint8Array(registerCount);
-	for (let i = 0; i < instructions.length; i += 1) {
-		const instruction = instructions[i];
-		if (instruction.op !== OpCode.CLOSURE) {
-			continue;
-		}
-		const upvalues = context.getClosureUpvalues(instruction.b);
-		for (let u = 0; u < upvalues.length; u += 1) {
-			const desc = upvalues[u];
-			if (!desc.inStack) {
-				continue;
-			}
-			if (desc.index >= registerCount) {
-				throw new Error(`[ProgramOptimizer] Closure upvalue register out of range: r${desc.index}.`);
-			}
-			captured[desc.index] = 1;
-		}
-	}
+	markCapturedClosureRegisters(captured, instructions, context, registerCount);
 	const capturedRegisters: number[] = [];
 	for (let reg = 0; reg < registerCount; reg += 1) {
 		if (captured[reg] !== 0) {
@@ -1699,16 +1640,16 @@ const applyClosureTransferForInlining = (
 			closures.set(instruction.a, instruction.b);
 			return;
 		case OpCode.LOADNIL:
-			clearClosureRange(closures, instruction.a, instruction.b);
+			clearRegisterRange(closures, instruction.a, instruction.b);
 			return;
 		case OpCode.VARARG: {
 			const countValue = instruction.b === 0 ? null : instruction.b;
-			clearClosureRange(closures, instruction.a, countValue);
+			clearRegisterRange(closures, instruction.a, countValue);
 			return;
 		}
 		case OpCode.CALL: {
 			const countValue = instruction.c === 0 ? null : instruction.c;
-			clearClosureRange(closures, instruction.a, countValue);
+			clearRegisterRange(closures, instruction.a, countValue);
 			for (let i = 0; i < capturedRegisters.length; i += 1) {
 				closures.delete(capturedRegisters[i]);
 			}
@@ -2227,22 +2168,13 @@ const runMidLevelOptimizations = (
 	let current = simplifyCompareBool(set);
 	current = propagateValues(current, context);
 	current = eliminateDeadStores(current, context);
-	current = removeNoOps(current);
-	current = threadJumps(current);
-	current = removeUnreachable(current);
-	current = removeNoOps(current);
+	current = cleanupControlFlow(current);
 	current = foldConstants(current, context);
 	current = propagateValues(current, context);
 	current = eliminateDeadStores(current, context);
-	current = removeNoOps(current);
-	current = threadJumps(current);
-	current = removeUnreachable(current);
-	current = removeNoOps(current);
+	current = cleanupControlFlow(current);
 	current = reorderSegments(current);
-	current = removeNoOps(current);
-	current = threadJumps(current);
-	current = removeUnreachable(current);
-	current = removeNoOps(current);
+	current = cleanupControlFlow(current);
 	return current;
 };
 
@@ -2256,10 +2188,7 @@ export const optimizeInstructions = (
 		return { instructions, ranges };
 	}
 	let current: InstructionSet = { instructions, ranges };
-	current = removeNoOps(current);
-	current = threadJumps(current);
-	current = removeUnreachable(current);
-	current = removeNoOps(current);
+	current = cleanupControlFlow(current);
 	if (level >= 2) {
 		if (!context) {
 			throw new Error('[ProgramOptimizer] Optimization context is required for level 2+.');
@@ -2271,15 +2200,9 @@ export const optimizeInstructions = (
 			throw new Error('[ProgramOptimizer] Optimization context is required for level 3.');
 		}
 		current = inlineFunctionCalls(current, context);
-		current = removeNoOps(current);
-		current = threadJumps(current);
-		current = removeUnreachable(current);
-		current = removeNoOps(current);
+		current = cleanupControlFlow(current);
 		current = applyGlobalOptimizations(current, context);
-		current = removeNoOps(current);
-		current = threadJumps(current);
-		current = removeUnreachable(current);
-		current = removeNoOps(current);
+		current = cleanupControlFlow(current);
 		current = runMidLevelOptimizations(current, context);
 	}
 	return current;

@@ -178,6 +178,7 @@ const formatBool = (value: number): string => (value !== 0 ? 'true' : 'false');
 
 const formatCount = (value: number): string => (value === 0 ? '*' : value.toString());
 
+// @code-quality start repeated-sequence-acceptable -- Disassembly constants quote strings, unlike Lua tostring; keep formatter local to avoid firmware dependency.
 const formatValue = (value: Value): string => {
 	if (value === undefined) {
 		throw new Error('[Disassembler] Unexpected undefined value.');
@@ -208,6 +209,7 @@ const formatValue = (value: Value): string => {
 	}
 	return 'function';
 };
+// @code-quality end repeated-sequence-acceptable
 
 const formatConst = (program: Program, index: number, options: ResolvedOptions): string => {
 	const base = `k${index}`;

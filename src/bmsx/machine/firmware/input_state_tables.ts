@@ -28,6 +28,24 @@ type ActionStateTableKeys = {
 	y: StringValue;
 };
 
+type SharedInputStateFields = Pick<ButtonState,
+	| 'pressed'
+	| 'justpressed'
+	| 'justreleased'
+	| 'waspressed'
+	| 'wasreleased'
+	| 'repeatpressed'
+	| 'repeatcount'
+	| 'consumed'
+	| 'presstime'
+	| 'timestamp'
+	| 'pressedAtMs'
+	| 'releasedAtMs'
+	| 'pressId'
+	| 'value'
+	| 'value2d'
+>;
+
 const ACTION_STATE_FLAG_PRESSED = 1 << 0;
 const ACTION_STATE_FLAG_JUSTPRESSED = 1 << 1;
 const ACTION_STATE_FLAG_JUSTRELEASED = 1 << 2;
@@ -91,6 +109,41 @@ export function packActionStateFlags(state: ActionState): number {
 	return flags;
 }
 
+function setSharedInputStateFields(table: Table, keys: ActionStateTableKeys, state: SharedInputStateFields): void {
+	table.set(keys.pressed, state.pressed);
+	table.set(keys.justpressed, state.justpressed);
+	table.set(keys.justreleased, state.justreleased);
+	table.set(keys.waspressed, state.waspressed);
+	table.set(keys.wasreleased, state.wasreleased);
+	table.set(keys.repeatpressed, state.repeatpressed);
+	table.set(keys.repeatcount, state.repeatcount);
+	table.set(keys.consumed, state.consumed);
+	if (state.presstime !== null) {
+		table.set(keys.presstime, state.presstime);
+	}
+	if (state.timestamp !== null) {
+		table.set(keys.timestamp, state.timestamp);
+	}
+	if (state.pressedAtMs !== null) {
+		table.set(keys.pressedAtMs, state.pressedAtMs);
+	}
+	if (state.releasedAtMs !== null) {
+		table.set(keys.releasedAtMs, state.releasedAtMs);
+	}
+	if (state.pressId !== null) {
+		table.set(keys.pressId, state.pressId);
+	}
+	if (state.value !== null) {
+		table.set(keys.value, state.value);
+	}
+	if (state.value2d !== null) {
+		const value2d = new Table(0, 2);
+		value2d.set(keys.x, state.value2d[0]);
+		value2d.set(keys.y, state.value2d[1]);
+		table.set(keys.value2d, value2d);
+	}
+}
+
 export function buildActionStateTable(runtime: Runtime, state: ActionState): Table {
 	const keys = getActionStateTableKeys(runtime);
 	const table = new Table(0, 18);
@@ -99,75 +152,13 @@ export function buildActionStateTable(runtime: Runtime, state: ActionState): Tab
 	table.set(keys.allwaspressed, state.allwaspressed);
 	table.set(keys.alljustreleased, state.alljustreleased);
 	table.set(keys.guardedjustpressed, state.guardedjustpressed);
-	table.set(keys.repeatpressed, state.repeatpressed);
-	table.set(keys.repeatcount, state.repeatcount);
-	table.set(keys.pressed, state.pressed);
-	table.set(keys.justpressed, state.justpressed);
-	table.set(keys.justreleased, state.justreleased);
-	table.set(keys.waspressed, state.waspressed);
-	table.set(keys.wasreleased, state.wasreleased);
-	table.set(keys.consumed, state.consumed);
-	if (state.presstime !== null) {
-		table.set(keys.presstime, state.presstime);
-	}
-	if (state.timestamp !== null) {
-		table.set(keys.timestamp, state.timestamp);
-	}
-	if (state.pressedAtMs !== null) {
-		table.set(keys.pressedAtMs, state.pressedAtMs);
-	}
-	if (state.releasedAtMs !== null) {
-		table.set(keys.releasedAtMs, state.releasedAtMs);
-	}
-	if (state.pressId !== null) {
-		table.set(keys.pressId, state.pressId);
-	}
-	if (state.value !== null) {
-		table.set(keys.value, state.value);
-	}
-	if (state.value2d !== null) {
-		const value2d = new Table(0, 2);
-		value2d.set(keys.x, state.value2d[0]);
-		value2d.set(keys.y, state.value2d[1]);
-		table.set(keys.value2d, value2d);
-	}
+	setSharedInputStateFields(table, keys, state);
 	return table;
 }
 
 export function buildButtonStateTable(runtime: Runtime, state: ButtonState): Table {
 	const keys = getActionStateTableKeys(runtime);
 	const table = new Table(0, 11);
-	table.set(keys.pressed, state.pressed);
-	table.set(keys.justpressed, state.justpressed);
-	table.set(keys.justreleased, state.justreleased);
-	table.set(keys.waspressed, state.waspressed);
-	table.set(keys.wasreleased, state.wasreleased);
-	table.set(keys.repeatpressed, state.repeatpressed);
-	table.set(keys.repeatcount, state.repeatcount);
-	table.set(keys.consumed, state.consumed);
-	if (state.presstime !== null) {
-		table.set(keys.presstime, state.presstime);
-	}
-	if (state.timestamp !== null) {
-		table.set(keys.timestamp, state.timestamp);
-	}
-	if (state.pressedAtMs !== null) {
-		table.set(keys.pressedAtMs, state.pressedAtMs);
-	}
-	if (state.releasedAtMs !== null) {
-		table.set(keys.releasedAtMs, state.releasedAtMs);
-	}
-	if (state.pressId !== null) {
-		table.set(keys.pressId, state.pressId);
-	}
-	if (state.value !== null) {
-		table.set(keys.value, state.value);
-	}
-	if (state.value2d !== null) {
-		const value2d = new Table(0, 2);
-		value2d.set(keys.x, state.value2d[0]);
-		value2d.set(keys.y, state.value2d[1]);
-		table.set(keys.value2d, value2d);
-	}
+	setSharedInputStateFields(table, keys, state);
 	return table;
 }

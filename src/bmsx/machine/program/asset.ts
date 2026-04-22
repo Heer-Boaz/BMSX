@@ -2,7 +2,9 @@ import { decodeBinary, encodeBinary, requireObject, requireObjectKey } from '../
 import type { Program, ProgramMetadata, Proto, Value } from '../cpu/cpu';
 import { StringPool, isStringValue, stringValueToString } from '../memory/string_pool';
 
+// @code-quality disable-next-line legacy_sentinel_string_pattern -- Program asset id is a TS/C++/bootrom binary contract, not an alias fallback.
 export const PROGRAM_ASSET_ID = '__program__';
+// @code-quality disable-next-line legacy_sentinel_string_pattern -- Program symbols asset id is a TS/C++/bootrom binary contract, not an alias fallback.
 export const PROGRAM_SYMBOLS_ASSET_ID = '__program_symbols__';
 export const PROGRAM_BOOT_HEADER_VERSION = 1;
 export const PROGRAM_BOOT_FLAG_HAS_BIOS_ENGINE_ALIAS = 1 << 0;

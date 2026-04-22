@@ -122,6 +122,20 @@ function percent(count: number, total: number): number {
 	return total === 0 ? 0 : ((count / total) * 100);
 }
 
+function visitCountedProtoWords(snapshot: CpuProfilerSnapshot, visit: (wordIndex: number, protoIndex: number, count: number) => void): void {
+	for (let wordIndex = 0; wordIndex < snapshot.pcCounts.length; wordIndex += 1) {
+		const count = snapshot.pcCounts[wordIndex];
+		if (count === 0) {
+			continue;
+		}
+		const protoIndex = snapshot.protoByWord[wordIndex];
+		if (protoIndex < 0) {
+			continue;
+		}
+		visit(wordIndex, protoIndex, count);
+	}
+}
+
 function formatLocation(range: CpuProfilerSourceRange | null, protoId: string, pc: number): string {
 	if (range === null) {
 		return `${protoId} @ pc=${pc}`;
@@ -295,15 +309,7 @@ export function collectCpuProfilerHotProtos(snapshot: CpuProfilerSnapshot, limit
 	const counts = new Int32Array(protoCount);
 	const cycles = new Int32Array(protoCount);
 	const paths = new Array<string>(protoCount).fill('<unknown>');
-	for (let wordIndex = 0; wordIndex < snapshot.pcCounts.length; wordIndex += 1) {
-		const count = snapshot.pcCounts[wordIndex];
-		if (count === 0) {
-			continue;
-		}
-		const protoIndex = snapshot.protoByWord[wordIndex];
-		if (protoIndex < 0) {
-			continue;
-		}
+	visitCountedProtoWords(snapshot, (wordIndex, protoIndex, count) => {
 		counts[protoIndex] += count;
 		cycles[protoIndex] += count * BASE_CYCLES[snapshot.opcodeByWord[wordIndex]];
 		if (paths[protoIndex] === '<unknown>') {
@@ -312,7 +318,7 @@ export function collectCpuProfilerHotProtos(snapshot: CpuProfilerSnapshot, limit
 				paths[protoIndex] = range.path;
 			}
 		}
-	}
+	});
 	const rows: CpuProfilerHotProto[] = [];
 	for (let protoIndex = 0; protoIndex < counts.length; protoIndex += 1) {
 		const count = counts[protoIndex];
@@ -450,22 +456,14 @@ export function collectCpuProfilerPathOpcodePressure(snapshot: CpuProfilerSnapsh
 export function collectCpuProfilerProtoOpcodePressure(snapshot: CpuProfilerSnapshot, protoLimit = 8, opcodeLimit = 5): CpuProfilerOpcodePressure[] {
 	const protoRows = collectCpuProfilerHotProtos(snapshot, protoLimit);
 	const countsByProto = new Array<Uint32Array | null>(snapshot.protoIds.length).fill(null);
-	for (let wordIndex = 0; wordIndex < snapshot.pcCounts.length; wordIndex += 1) {
-		const count = snapshot.pcCounts[wordIndex];
-		if (count === 0) {
-			continue;
-		}
-		const protoIndex = snapshot.protoByWord[wordIndex];
-		if (protoIndex < 0) {
-			continue;
-		}
+	visitCountedProtoWords(snapshot, (wordIndex, protoIndex, count) => {
 		let counts = countsByProto[protoIndex];
 		if (counts === null) {
 			counts = new Uint32Array(OPCODE_COUNT);
 			countsByProto[protoIndex] = counts;
 		}
 		counts[snapshot.opcodeByWord[wordIndex]] += count;
-	}
+	});
 	const rows: CpuProfilerOpcodePressure[] = [];
 	for (let index = 0; index < protoRows.length; index += 1) {
 		const protoRow = protoRows[index];
@@ -490,15 +488,7 @@ export function collectCpuProfilerOpcodeGroupProtos(snapshot: CpuProfilerSnapsho
 	const countsByProto = new Array<Uint32Array | null>(protoCount).fill(null);
 	const paths = new Array<string>(protoCount).fill('<unknown>');
 	const totalCyclesByProto = new Uint32Array(protoCount);
-	for (let wordIndex = 0; wordIndex < snapshot.pcCounts.length; wordIndex += 1) {
-		const count = snapshot.pcCounts[wordIndex];
-		if (count === 0) {
-			continue;
-		}
-		const protoIndex = snapshot.protoByWord[wordIndex];
-		if (protoIndex < 0) {
-			continue;
-		}
+	visitCountedProtoWords(snapshot, (wordIndex, protoIndex, count) => {
 		let counts = countsByProto[protoIndex];
 		if (counts === null) {
 			counts = new Uint32Array(OPCODE_COUNT);
@@ -513,7 +503,7 @@ export function collectCpuProfilerOpcodeGroupProtos(snapshot: CpuProfilerSnapsho
 				paths[protoIndex] = range.path;
 			}
 		}
-	}
+	});
 	const rows: CpuProfilerOpcodeGroupProto[] = [];
 	for (let protoIndex = 0; protoIndex < countsByProto.length; protoIndex += 1) {
 		const counts = countsByProto[protoIndex];

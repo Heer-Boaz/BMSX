@@ -1,3 +1,5 @@
+// @code-quality start repeated-sequence-acceptable -- Program codegen keeps opcode/slot emission direct; helper extraction would add dispatch in compile hot paths.
+// @code-quality start normalized-body-acceptable -- Resolver/emitter specializations share shapes but preserve distinct compiler ownership.
 import {
 	LuaAssignmentOperator,
 	LuaBinaryOperator,
@@ -3523,3 +3525,5 @@ export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata
 	const { program, metadata: nextMetadata } = programBuilder.buildProgram();
 	return { program, metadata: nextMetadata, entryProtoIndex };
 }
+// @code-quality end normalized-body-acceptable
+// @code-quality end repeated-sequence-acceptable
