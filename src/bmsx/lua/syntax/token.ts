@@ -74,6 +74,8 @@ export type LuaToken = {
 	readonly lexeme: string;
 	readonly line: number;
 	readonly column: number;
+	readonly endLine: number;
+	readonly endColumn: number;
 	readonly literal: LuaTokenLiteral;
 };
 

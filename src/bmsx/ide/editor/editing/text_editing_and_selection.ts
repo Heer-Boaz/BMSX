@@ -26,7 +26,7 @@ import { resetBlink } from '../render/caret';
 import * as constants from '../../common/constants';
 import { formatLuaDocument } from '../../language/lua/formatter';
 import { extractErrorMessage } from '../../../lua/value';
-import { getTextSnapshot } from '../text/source_text';
+import { getLinesSnapshot, getTextSnapshot } from '../text/source_text';
 import type { MutableTextPosition, TextBuffer } from '../text/text_buffer';
 import { prepareUndo, applyUndoableReplace, recordEditContext } from './undo_controller';
 import { formatAemDocument } from '../../language/aem/editor';
@@ -990,11 +990,12 @@ export async function writeClipboard(text: string, successMessage: string): Prom
 export function applyDocumentFormatting(): void {
 	const buffer = editorDocumentState.buffer;
 	const originalSource = getTextSnapshot(buffer);
+	const originalLines = getLinesSnapshot(buffer);
 	const context = getActiveCodeTabContext();
 	try {
 		const formatted = context.mode === 'lua'
-			? formatLuaDocument(originalSource)
-			: formatAemDocument(originalSource, context.descriptor.path);
+			? formatLuaDocument(originalSource, originalLines)
+			: formatAemDocument(originalSource, context.descriptor.path, originalLines);
 		if (formatted === originalSource) {
 			showEditorMessage('Document already formatted', constants.COLOR_STATUS_TEXT, 1.5);
 			return;

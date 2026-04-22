@@ -22,6 +22,7 @@ import { scheduleMicrotask } from '../../../../platform/index';
 import { applyInlineFieldPointer, setFieldText } from '../../ui/inline_text_field';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { editorDocumentState } from '../../editing/document_state';
+import { splitText } from '../../text/source_text';
 import { editorViewState } from '../../ui/view/state';
 import { renameController } from '../rename/controller';
 import { editorSearchState } from './widget_state';
@@ -315,8 +316,7 @@ function runGlobalSearchSlice(job: GlobalSearchJob): boolean {
 			if (job.currentLines === null) {
 				const descriptor = job.descriptors[job.descriptorIndex];
 				const source = luaPipeline.resourceSourceForChunk(Runtime.instance, descriptor.path);
-				// disable-next-line newline_normalization_pattern -- global search indexes Lua source by logical editor lines.
-				job.currentLines = source.split(/\r?\n/);
+				job.currentLines = splitText(source);
 				job.nextRow = 0;
 			}
 

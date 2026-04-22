@@ -24,17 +24,14 @@ const CLOSING_TOKENS = new Set<LuaTokenType>([
 	LuaTokenType.RightBrace,
 ]);
 
-export function formatLuaDocument(source: string): string {
+export function formatLuaDocument(source: string, lines: readonly string[]): string {
 	if (source.length === 0) {
 		return '';
 	}
-	const newline = source.indexOf('\r\n') >= 0 ? '\r\n' : '\n';
-	// disable-next-line newline_normalization_pattern -- formatter works on logical lines and writes back with the original line-ending convention.
-	const lines = source.split(/\r?\n/);
 	const lexer = new LuaLexer(source, 'console-editor');
 	const tokens = lexer.scanTokens();
 	const tokensByLine = buildTokensByLine(tokens);
-	const preservedLines = determinePreservedLines(source, tokens, lines.length);
+	const preservedLines = determinePreservedLines(source, tokens, lines);
 	const metadata = computeLineMetadata(lines.length, tokensByLine);
 	const formatted: string[] = [];
 	let indentLevel = 0;
@@ -68,7 +65,7 @@ export function formatLuaDocument(source: string): string {
 			}
 		}
 	}
-	return formatted.join(newline);
+	return formatted.join('\n');
 }
 
 function buildTokensByLine(tokens: readonly LuaToken[]): Map<number, LuaToken[]> {
@@ -88,8 +85,9 @@ function buildTokensByLine(tokens: readonly LuaToken[]): Map<number, LuaToken[]>
 	return map;
 }
 
-function determinePreservedLines(source: string, tokens: readonly LuaToken[], lineCount: number): Set<number> {
+function determinePreservedLines(source: string, tokens: readonly LuaToken[], lines: readonly string[]): Set<number> {
 	const preserved = new Set<number>();
+	const lineCount = lines.length;
 	for (let index = 0; index < tokens.length; index += 1) {
 		const token = tokens[index];
 		if (token.type !== LuaTokenType.String) {
@@ -98,29 +96,25 @@ function determinePreservedLines(source: string, tokens: readonly LuaToken[], li
 		if (!token.lexeme.startsWith('[')) {
 			continue;
 		}
-		// disable-next-line newline_normalization_pattern -- long-bracket string preservation needs the token's internal logical line count.
-		const segments = token.lexeme.split(/\r?\n/);
-		if (segments.length <= 2) {
+		if (token.endLine - token.line < 2) {
 			continue;
 		}
-		for (let offset = 1; offset < segments.length - 1; offset += 1) {
-			preserved.add(token.line + offset);
+		for (let line = token.line + 1; line < token.endLine; line += 1) {
+			preserved.add(line);
 		}
 	}
 	const pattern = /--\[(=*)\[(?:[\s\S]*?)\]\1\]/g;
-	const lineStarts = buildLineStartIndices(source);
+	const lineStarts = buildLineStartIndices(lines);
 	let match: RegExpExecArray;
 	while ((match = pattern.exec(source)) !== null) {
 		const startIndex = match.index;
 		const block = match[0];
 		const startLine = lineNumberForIndex(lineStarts, startIndex);
-		// disable-next-line newline_normalization_pattern -- block-comment preservation needs the matched block's internal logical line count.
-		const segments = block.split(/\r?\n/);
-		if (segments.length <= 2) {
+		const endLine = lineNumberForIndex(lineStarts, startIndex + block.length - 1);
+		if (endLine - startLine < 2) {
 			continue;
 		}
-		for (let offset = 1; offset < segments.length - 1; offset += 1) {
-			const lineNumber = startLine + offset;
+		for (let lineNumber = startLine + 1; lineNumber < endLine; lineNumber += 1) {
 			if (lineNumber > lineCount) {
 				break;
 			}
@@ -130,18 +124,12 @@ function determinePreservedLines(source: string, tokens: readonly LuaToken[], li
 	return preserved;
 }
 
-function buildLineStartIndices(text: string): number[] {
+function buildLineStartIndices(lines: readonly string[]): number[] {
 	const starts: number[] = [0];
-	for (let index = 0; index < text.length; index += 1) {
-		const char = text.charCodeAt(index);
-		if (char === 13 /* \r */) {
-			if (text.charCodeAt(index + 1) === 10 /* \n */) {
-				index += 1;
-			}
-			starts.push(index + 1);
-		} else if (char === 10 /* \n */) {
-			starts.push(index + 1);
-		}
+	let offset = 0;
+	for (let index = 0; index < lines.length - 1; index += 1) {
+		offset += lines[index].length + 1;
+		starts.push(offset);
 	}
 	return starts;
 }
@@ -163,8 +151,8 @@ function lineNumberForIndex(starts: readonly number[], index: number): number {
 function computeLineMetadata(lineCount: number, tokensByLine: ReadonlyMap<number, LuaToken[]>): LineMetadata[] {
 	const metadata: LineMetadata[] = new Array(lineCount);
 	for (let index = 0; index < lineCount; index += 1) {
-		const tokens = tokensByLine.get(index + 1) ?? [];
-		if (tokens.length === 0) {
+		const tokens = tokensByLine.get(index + 1);
+		if (!tokens || tokens.length === 0) {
 			metadata[index] = { decreaseBefore: 0, increaseAfter: 0 };
 			continue;
 		}

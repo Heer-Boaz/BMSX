@@ -376,14 +376,11 @@ function findPreviousIndent(indents: Array<number | null>, startIndex: number): 
 	return null;
 }
 
-export function formatAemYamlDocument(source: string): string {
+export function formatAemYamlDocument(source: string, lines: readonly string[]): string {
 	if (source.length === 0) {
 		return '';
 	}
-	const newline = source.indexOf('\r\n') >= 0 ? '\r\n' : '\n';
 	const hadTrailingNewline = source.endsWith('\n');
-	// disable-next-line newline_normalization_pattern -- formatter parses source text by logical lines and restores the original line-ending convention.
-	const lines = source.split(/\r?\n/);
 	const tokens = lines.map(tokenizeYamlStructureLine);
 	const indents: Array<number | null> = new Array(lines.length);
 	const stack: Context[] = [{ kind: 'root', mode: 'unknown' }];
@@ -435,9 +432,9 @@ export function formatAemYamlDocument(source: string): string {
 		formattedLines[index] = `${' '.repeat(indents[index] ?? 0)}${token.text}`;
 	}
 
-	let formatted = formattedLines.join(newline);
+	let formatted = formattedLines.join('\n');
 	if (hadTrailingNewline) {
-		formatted += newline;
+		formatted += '\n';
 	}
 	return formatted;
 }

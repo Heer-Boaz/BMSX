@@ -34,6 +34,8 @@ export class LuaLexer {
 			lexeme: '',
 			line: this.line,
 			column: this.column,
+			endLine: this.line,
+			endColumn: this.column,
 			literal: null,
 		});
 		return tokens;
@@ -60,6 +62,8 @@ export class LuaLexer {
 			lexeme: '',
 			line: eofLine,
 			column: eofColumn,
+			endLine: eofLine,
+			endColumn: eofColumn,
 			literal: null,
 		});
 		return { tokens, syntaxError };
@@ -521,6 +525,8 @@ export class LuaLexer {
 			lexeme: this.currentLexeme(),
 			line: this.tokenStartLine,
 			column: this.tokenStartColumn,
+			endLine: this.line,
+			endColumn: this.column - 1,
 			literal,
 		});
 	}
@@ -531,6 +537,8 @@ export class LuaLexer {
 			lexeme,
 			line: this.tokenStartLine,
 			column: this.tokenStartColumn,
+			endLine: this.line,
+			endColumn: this.column - 1,
 			literal,
 		});
 	}

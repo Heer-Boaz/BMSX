@@ -57,7 +57,7 @@ export async function saveAemResourceSource(path: string, source: string): Promi
 	await persistWorkspaceSourceFile(path, source);
 }
 
-export function formatAemDocument(source: string, path: string): string {
+export function formatAemDocument(source: string, path: string, lines: readonly string[]): string {
 	if (source.length === 0) {
 		return '';
 	}
@@ -67,26 +67,21 @@ export function formatAemDocument(source: string, path: string): string {
 			parseStructuredTextDocument(source, format, `AEM file '${path}'`);
 			return source;
 		} catch {
-			const repaired = formatAemYamlDocument(source);
+			const repaired = formatAemYamlDocument(source, lines);
 			parseStructuredTextDocument(repaired, format, `AEM file '${path}'`);
 			return repaired;
 		}
 	}
 	const doc = parseStructuredTextDocument(source, format, `AEM file '${path}'`);
-	const newline = source.indexOf('\r\n') >= 0 ? '\r\n' : '\n';
 	const hadTrailingNewline = source.endsWith('\n');
 	const formatted = JSON.stringify(doc, null, 2);
-	const normalized = newline === '\n'
-		? formatted
-		// disable-next-line newline_normalization_pattern -- JSON formatting preserves the document's existing line-ending convention.
-		: formatted.replace(/\n/g, '\r\n');
 	if (hadTrailingNewline) {
-		return normalized.endsWith(newline) ? normalized : `${normalized}${newline}`;
+		return formatted.endsWith('\n') ? formatted : `${formatted}\n`;
 	}
-	if (normalized.endsWith(newline)) {
-		return normalized.slice(0, normalized.length - newline.length);
+	if (formatted.endsWith('\n')) {
+		return formatted.slice(0, formatted.length - 1);
 	}
-	return normalized;
+	return formatted;
 }
 
 export function applyAemSourceToRuntime(descriptor: ResourceDescriptor, source: string): void {
