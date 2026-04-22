@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
-import { type LuaStatement, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { findCallExpressionInStatements, isGlobalCall, visitCallExpressionsInStatements } from '../../../../src/bmsx/lua/syntax/calls';
 import { getStateNameFromStateField } from './impl/support/fsm_labels';
 import { collectPrefabVisualDefaultsById, getSelfGfxStringLiteralArgument, isSelfGfxCallExpression, stateTimelinesDriveSelfGfx } from './impl/support/fsm_visual';
@@ -8,11 +8,11 @@ import { findSelfBooleanPropertyAssignmentInStatements } from './impl/support/se
 import { findTableFieldByKey } from './impl/support/table_fields';
 import { pushIssue } from './impl/support/lint_context';
 
-export const fsmEnteringStateVisualSetupPatternRule = defineLintRule('lua_cart', 'fsm_entering_state_visual_setup_pattern');
+export const fsmEnteringStateVisualSetupPatternRule = defineLintRule('cart', 'fsm_entering_state_visual_setup_pattern');
 
 export function lintFsmEnteringStateVisualSetupPattern(
-	statements: ReadonlyArray<LuaStatement>,
-	issues: LuaLintIssue[],
+	statements: ReadonlyArray<Statement>,
+	issues: CartLintIssue[],
 ): void {
 	const ruleName = fsmEnteringStateVisualSetupPatternRule.name;
 	const prefabDefaultsById = collectPrefabVisualDefaultsById(statements);
@@ -21,22 +21,22 @@ export function lintFsmEnteringStateVisualSetupPattern(
 			return;
 		}
 		const fsmIdArgument = expression.arguments[0];
-		if (!fsmIdArgument || fsmIdArgument.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		if (!fsmIdArgument || fsmIdArgument.kind !== SyntaxKind.StringLiteralExpression) {
 			return;
 		}
 		const definition = expression.arguments[1];
 		const statesField = findTableFieldByKey(definition, 'states');
-		if (!statesField || statesField.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		if (!statesField || statesField.value.kind !== SyntaxKind.TableConstructorExpression) {
 			return;
 		}
 		const prefabDefaults = prefabDefaultsById.get(fsmIdArgument.value);
 		for (const stateField of statesField.value.fields) {
 			const stateName = getStateNameFromStateField(stateField);
-			if (!stateName || stateField.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+			if (!stateName || stateField.value.kind !== SyntaxKind.TableConstructorExpression) {
 				continue;
 			}
 			const enteringStateField = findTableFieldByKey(stateField.value, 'entering_state');
-			if (!enteringStateField || enteringStateField.value.kind !== LuaSyntaxKind.FunctionExpression) {
+			if (!enteringStateField || enteringStateField.value.kind !== SyntaxKind.FunctionExpression) {
 				continue;
 			}
 			const body = enteringStateField.value.body.body;

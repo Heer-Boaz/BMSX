@@ -1,12 +1,12 @@
 import { defineLintRule } from '../../rule';
 import { SingleUseHasTagContext } from './impl/support/types';
 import { pushIssue } from './impl/support/lint_context';
-import { leaveLuaBindingScope } from './impl/support/bindings';
+import { leaveBindingScope } from './impl/support/bindings';
 
-export const singleUseHasTagPatternRule = defineLintRule('lua_cart', 'single_use_has_tag_pattern');
+export const singleUseHasTagPatternRule = defineLintRule('cart', 'single_use_has_tag_pattern');
 
 export function leaveSingleUseHasTagScope(context: SingleUseHasTagContext): void {
-	leaveLuaBindingScope(context.scopeStack, context.bindingStacksByName, binding => {
+	leaveBindingScope(context.scopeStack, context.bindingStacksByName, binding => {
 		if (binding.pendingReadCount === 1) {
 			pushIssue(
 				context.issues,

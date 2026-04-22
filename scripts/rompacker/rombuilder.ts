@@ -12,6 +12,7 @@ import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
 import type { AtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './formater.rompack';
 import { collectSourceFiles } from '../analysis/file_scan';
+import { collectCartSourceFiles } from './cart_source_files';
 // @ts-ignore
 const { build } = require('esbuild');
 // @ts-ignore
@@ -891,7 +892,7 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 
 	for (const luaRoot of extraLuaRoots) {
 		if (!luaRoot || luaRoot.length === 0) continue;
-		for (const file of collectSourceFiles([luaRoot], new Set(['.lua']))) {
+		for (const file of collectCartSourceFiles([luaRoot])) {
 			pushFile(file);
 		}
 	}
@@ -1835,10 +1836,52 @@ export async function buildBootromScriptIfNewer(options: BootromBuildOptions): P
 const codeFileExtensions = ['.ts', '.glsl', '.js', '.jsx', '.tsx', '.html', '.css', '.json', '.xml', '.lua'];
 const CODE_FILE_EXTENSION_SET = new Set(codeFileExtensions);
 
+function isCodeFile(filename: string): boolean {
+	return CODE_FILE_EXTENSION_SET.has(parse(filename).ext.toLowerCase());
+}
+
+function shouldCheckRebuildFile(filename: string, checkCodeFiles: boolean, checkAssets: boolean): boolean {
+	return (checkCodeFiles && isCodeFile(filename)) || checkAssets;
+}
+
+function shouldSkipRebuildDirectory(name: string, skipTestDirs: boolean): boolean {
+	return name === '_ignore' || isWorkspaceStateDirectory(name) || (skipTestDirs && name === 'test');
+}
+
 async function anyFileNewerThan(files: readonly string[], mtimeMs: number): Promise<boolean> {
 	for (const file of files) {
 		const fileStats = await stat(file);
 		if (fileStats.mtimeMs > mtimeMs) {
+			return true;
+		}
+	}
+	return false;
+}
+
+async function directoryHasRebuildInputNewerThan(dir: string, mtimeMs: number, checkCodeFiles: boolean, checkAssets: boolean, skipTestDirs = false): Promise<boolean> {
+	try {
+		await access(dir);
+	} catch {
+		throw new Error(`Directory "${dir}" can't be accessed!`);
+	}
+
+	const entries = await readdir(dir, { withFileTypes: true });
+	for (const entry of entries) {
+		const entryPath = join(dir, entry.name);
+		if (entry.isDirectory()) {
+			if (shouldSkipRebuildDirectory(entry.name, skipTestDirs)) {
+				continue;
+			}
+			if (await directoryHasRebuildInputNewerThan(entryPath, mtimeMs, checkCodeFiles, checkAssets, skipTestDirs)) {
+				return true;
+			}
+			continue;
+		}
+		if (!shouldCheckRebuildFile(entry.name, checkCodeFiles, checkAssets)) {
+			continue;
+		}
+		const entryStats = await stat(entryPath);
+		if (entryStats.mtimeMs > mtimeMs) {
 			return true;
 		}
 	}
@@ -1886,15 +1929,17 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 
 	const normalizedBoot = resolve(bootloaderPath);
 	const normalizedRes = resolve(resPath);
-	const extraLuaFiles: string[] = [];
+	let extraNeedsRebuild = false;
 	for (const root of extraLuaRoots) {
 		if (!root || root.length === 0) continue;
 		const normalized = resolve(root);
-		if (normalized === normalizedBoot || normalized === normalizedRes) continue;
-		extraLuaFiles.push(...collectSourceFiles([root], new Set(['.lua'])));
+		if (normalized === normalizedRes || (!cartProject && normalized === normalizedBoot)) continue;
+		if (await directoryHasRebuildInputNewerThan(root, romMtimeMs, true, cartProject, true)) {
+			extraNeedsRebuild = true;
+			break;
+		}
 	}
 
-	const extraNeedsRebuild = await anyFileNewerThan(extraLuaFiles, romMtimeMs);
 	const bootloaderNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles([bootloaderPath], CODE_FILE_EXTENSION_SET), romMtimeMs);
 	const resNeedsRebuild = await anyFileNewerThan(await getFiles(resPath), romMtimeMs);
 	const engineNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles(['src/bmsx'], CODE_FILE_EXTENSION_SET), romMtimeMs);

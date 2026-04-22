@@ -1,5 +1,5 @@
-import { type LuaCallExpression, type LuaExpression, type LuaFunctionExpression, LuaSyntaxKind, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../../../lua_rule';
+import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../../../lua_rule';
 import { lintFsmEventReemitHandlerPatternInMap } from '../../fsm_event_reemit_handler_pattern';
 import { lintFsmLifecycleWrapperPatternInTable } from '../../fsm_lifecycle_wrapper_pattern';
 import { getCallMethodName, getCallReceiverExpression, isGlobalCall } from '../../../../../../src/bmsx/lua/syntax/calls';
@@ -7,34 +7,34 @@ import { FSM_STATE_HANDLER_MAP_KEYS } from './fsm_transitions';
 import { isSelfExpressionRoot } from './self_properties';
 import { findTableFieldByKey, getTableFieldKey } from './table_fields';
 
-export function isEventsContainerExpression(expression: LuaExpression): boolean {
-	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+export function isEventsContainerExpression(expression: Expression): boolean {
+	if (expression.kind === SyntaxKind.IdentifierExpression) {
 		return expression.name === 'events';
 	}
-	if (expression.kind === LuaSyntaxKind.MemberExpression) {
+	if (expression.kind === SyntaxKind.MemberExpression) {
 		return expression.identifier === 'events';
 	}
-	if (expression.kind !== LuaSyntaxKind.IndexExpression) {
+	if (expression.kind !== SyntaxKind.IndexExpression) {
 		return false;
 	}
-	if (expression.index.kind === LuaSyntaxKind.StringLiteralExpression) {
+	if (expression.index.kind === SyntaxKind.StringLiteralExpression) {
 		return expression.index.value === 'events';
 	}
-	if (expression.index.kind === LuaSyntaxKind.IdentifierExpression) {
+	if (expression.index.kind === SyntaxKind.IdentifierExpression) {
 		return expression.index.name === 'events';
 	}
 	return false;
 }
 
-export function isEventsOnCallExpression(expression: LuaCallExpression): boolean {
+export function isEventsOnCallExpression(expression: CallExpression): boolean {
 	const methodName = getCallMethodName(expression);
 	if (methodName !== 'on') {
 		return false;
 	}
-	let receiver: LuaExpression;
+	let receiver: Expression;
 	if (expression.methodName && expression.methodName.length > 0) {
 		receiver = expression.callee;
-	} else if (expression.callee.kind === LuaSyntaxKind.MemberExpression) {
+	} else if (expression.callee.kind === SyntaxKind.MemberExpression) {
 		receiver = expression.callee.base;
 	} else {
 		return false;
@@ -42,8 +42,8 @@ export function isEventsOnCallExpression(expression: LuaCallExpression): boolean
 	return isEventsContainerExpression(receiver);
 }
 
-export function isEventsEmitCallExpression(expression: LuaExpression): expression is LuaCallExpression {
-	if (expression.kind !== LuaSyntaxKind.CallExpression) {
+export function isEventsEmitCallExpression(expression: Expression): expression is CallExpression {
+	if (expression.kind !== SyntaxKind.CallExpression) {
 		return false;
 	}
 	if (getCallMethodName(expression) !== 'emit') {
@@ -56,7 +56,7 @@ export function isEventsEmitCallExpression(expression: LuaExpression): expressio
 	return isEventsContainerExpression(receiver);
 }
 
-export function isSelfEventsEmitCallExpression(expression: LuaCallExpression): boolean {
+export function isSelfEventsEmitCallExpression(expression: CallExpression): boolean {
 	if (getCallMethodName(expression) !== 'emit') {
 		return false;
 	}
@@ -67,19 +67,19 @@ export function isSelfEventsEmitCallExpression(expression: LuaCallExpression): b
 	return isEventsContainerExpression(receiver) && isSelfExpressionRoot(receiver);
 }
 
-export function getGoFunctionFromHandlerEntryValue(value: LuaExpression): LuaFunctionExpression | undefined {
-	if (value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+export function getGoFunctionFromHandlerEntryValue(value: Expression): CartFunctionExpression | undefined {
+	if (value.kind !== SyntaxKind.TableConstructorExpression) {
 		return undefined;
 	}
 	const goField = findTableFieldByKey(value, 'go');
-	if (!goField || goField.value.kind !== LuaSyntaxKind.FunctionExpression) {
+	if (!goField || goField.value.kind !== SyntaxKind.FunctionExpression) {
 		return undefined;
 	}
 	return goField.value;
 }
 
-export function lintFsmEventReemitHandlerPatternInTable(expression: LuaExpression, issues: LuaLintIssue[]): void {
-	if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+export function lintFsmEventReemitHandlerPatternInTable(expression: Expression, issues: CartLintIssue[]): void {
+	if (expression.kind !== SyntaxKind.TableConstructorExpression) {
 		return;
 	}
 	for (const field of expression.fields) {
@@ -87,14 +87,14 @@ export function lintFsmEventReemitHandlerPatternInTable(expression: LuaExpressio
 		if (key && FSM_STATE_HANDLER_MAP_KEYS.has(key)) {
 			lintFsmEventReemitHandlerPatternInMap(field.value, issues);
 		}
-		if (field.kind === LuaTableFieldKind.ExpressionKey) {
+		if (field.kind === TableFieldKind.ExpressionKey) {
 			lintFsmEventReemitHandlerPatternInTable(field.key, issues);
 		}
 		lintFsmEventReemitHandlerPatternInTable(field.value, issues);
 	}
 }
 
-export function lintFsmEventReemitHandlerPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+export function lintFsmEventReemitHandlerPattern(expression: CallExpression, issues: CartLintIssue[]): void {
 	if (!isGlobalCall(expression, 'define_fsm')) {
 		return;
 	}
@@ -105,7 +105,7 @@ export function lintFsmEventReemitHandlerPattern(expression: LuaCallExpression, 
 	lintFsmEventReemitHandlerPatternInTable(definition, issues);
 }
 
-export function getLifecycleWrapperCallExpression(functionExpression: LuaFunctionExpression): LuaCallExpression | undefined {
+export function getLifecycleWrapperCallExpression(functionExpression: CartFunctionExpression): CallExpression | undefined {
 	if (functionExpression.parameters.length === 0 || functionExpression.hasVararg) {
 		return undefined;
 	}
@@ -113,17 +113,17 @@ export function getLifecycleWrapperCallExpression(functionExpression: LuaFunctio
 		return undefined;
 	}
 	const onlyStatement = functionExpression.body.body[0];
-	let expression: LuaExpression | undefined;
-	if (onlyStatement.kind === LuaSyntaxKind.CallStatement) {
+	let expression: Expression | undefined;
+	if (onlyStatement.kind === SyntaxKind.CallStatement) {
 		expression = onlyStatement.expression;
-	} else if (onlyStatement.kind === LuaSyntaxKind.ReturnStatement && onlyStatement.expressions.length === 1) {
+	} else if (onlyStatement.kind === SyntaxKind.ReturnStatement && onlyStatement.expressions.length === 1) {
 		expression = onlyStatement.expressions[0];
 	}
-	if (!expression || expression.kind !== LuaSyntaxKind.CallExpression) {
+	if (!expression || expression.kind !== SyntaxKind.CallExpression) {
 		return undefined;
 	}
 	const receiver = getCallReceiverExpression(expression);
-	if (!receiver || receiver.kind !== LuaSyntaxKind.IdentifierExpression) {
+	if (!receiver || receiver.kind !== SyntaxKind.IdentifierExpression) {
 		return undefined;
 	}
 	const firstParamName = functionExpression.parameters[0].name;
@@ -136,7 +136,7 @@ export function getLifecycleWrapperCallExpression(functionExpression: LuaFunctio
 	}
 	for (let index = 0; index < expression.arguments.length; index += 1) {
 		const argument = expression.arguments[index];
-		if (argument.kind !== LuaSyntaxKind.IdentifierExpression) {
+		if (argument.kind !== SyntaxKind.IdentifierExpression) {
 			return undefined;
 		}
 		const expectedParamName = functionExpression.parameters[index + 1].name;
@@ -147,7 +147,7 @@ export function getLifecycleWrapperCallExpression(functionExpression: LuaFunctio
 	return expression;
 }
 
-export function lintFsmLifecycleWrapperPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+export function lintFsmLifecycleWrapperPattern(expression: CallExpression, issues: CartLintIssue[]): void {
 	if (!isGlobalCall(expression, 'define_fsm')) {
 		return;
 	}

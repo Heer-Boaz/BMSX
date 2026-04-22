@@ -1,8 +1,8 @@
-import { LuaSyntaxKind, LuaTableFieldKind, type LuaTableField } from '../../../../src/bmsx/lua/syntax/ast';
-import type { LuaLintIssue, LuaLintIssuePusher } from '../../lua_rule';
+import { LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind, type LuaTableField as TableField } from '../../../../src/bmsx/lua/syntax/ast';
+import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 
-export const forbiddenRenderLayerStringPatternRule = defineLintRule('lua_cart', 'forbidden_render_layer_string_pattern');
+export const forbiddenRenderLayerStringPatternRule = defineLintRule('cart', 'forbidden_render_layer_string_pattern');
 
 const FORBIDDEN_RENDER_LAYER_STRINGS = new Set<string>([
 	'world',
@@ -10,11 +10,11 @@ const FORBIDDEN_RENDER_LAYER_STRINGS = new Set<string>([
 	'ide',
 ]);
 
-export function lintForbiddenRenderLayerString(field: LuaTableField, issues: LuaLintIssue[], pushIssue: LuaLintIssuePusher): void {
-	if (field.kind !== LuaTableFieldKind.IdentifierKey || field.name !== 'layer') {
+export function lintForbiddenRenderLayerString(field: TableField, issues: CartLintIssue[], pushIssue: CartLintIssuePusher): void {
+	if (field.kind !== TableFieldKind.IdentifierKey || field.name !== 'layer') {
 		return;
 	}
-	if (field.value.kind !== LuaSyntaxKind.StringLiteralExpression) {
+	if (field.value.kind !== SyntaxKind.StringLiteralExpression) {
 		return;
 	}
 	if (!FORBIDDEN_RENDER_LAYER_STRINGS.has(field.value.value)) {

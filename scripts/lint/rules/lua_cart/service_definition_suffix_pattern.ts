@@ -1,15 +1,15 @@
 import { defineLintRule } from '../../rule';
-import { type LuaCallExpression, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { isGlobalCall } from '../../../../src/bmsx/lua/syntax/calls';
 import { containsServiceLabel } from './impl/support/fsm_labels';
 import { appendSuggestionMessage } from './impl/support/general';
 import { readStringFieldValueFromTable } from './impl/support/table_fields';
 import { pushIssue } from './impl/support/lint_context';
 
-export const serviceDefinitionSuffixPatternRule = defineLintRule('lua_cart', 'service_definition_suffix_pattern');
+export const serviceDefinitionSuffixPatternRule = defineLintRule('cart', 'service_definition_suffix_pattern');
 
-export function lintServiceDefinitionSuffixPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+export function lintServiceDefinitionSuffixPattern(expression: CallExpression, issues: CartLintIssue[]): void {
 	if (isGlobalCall(expression, 'define_service')) {
 		const definitionId = readStringFieldValueFromTable(expression.arguments[0], 'def_id');
 		if (definitionId && containsServiceLabel(definitionId)) {
@@ -30,7 +30,7 @@ export function lintServiceDefinitionSuffixPattern(expression: LuaCallExpression
 		return;
 	}
 	const definitionArgument = expression.arguments[0];
-	if (!definitionArgument || definitionArgument.kind !== LuaSyntaxKind.StringLiteralExpression) {
+	if (!definitionArgument || definitionArgument.kind !== SyntaxKind.StringLiteralExpression) {
 		return;
 	}
 	const definitionId = definitionArgument.value;

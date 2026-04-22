@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LintIssue as LintIssue, pushLintIssue } from '../../ts_rule';
+import { type LintIssue, pushLintIssue } from '../ts/support/ast';
 import ts from 'typescript';
 import { getCallTargetLeafName, unwrapExpression } from '../../../../src/bmsx/language/ts/ast/expressions';
 import { getActiveBinding } from '../ts/support/ast';

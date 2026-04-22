@@ -3,11 +3,11 @@ import { countTopLevelDataMembers, type ClassRange } from '../../../../src/bmsx/
 import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
-import { pushLintIssue, type LintIssue } from '../../ts_rule';
-import { type LuaFunctionExpression } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
-import { collectLuaOptionsParameterUseInStatements } from '../lua_cart/impl/support/functions';
-import { LuaOptionsParameterUse } from '../lua_cart/impl/support/types';
+import { pushLintIssue, type LintIssue } from '../ts/support/ast';
+import { type LuaFunctionExpression as CartFunctionExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
+import { collectOptionsParameterUseInStatements } from '../lua_cart/impl/support/functions';
+import { OptionsParameterUse } from '../lua_cart/impl/support/types';
 import { pushIssue } from '../lua_cart/impl/support/lint_context';
 
 export const singlePropertyOptionsParameterPatternRule = defineLintRule('common', 'single_property_options_parameter_pattern');
@@ -86,17 +86,17 @@ export function lintSinglePropertyOptionsTypes(file: string, tokens: readonly To
 	}
 }
 
-export function lintSinglePropertyOptionsParameter(functionExpression: LuaFunctionExpression, issues: LuaLintIssue[]): void {
+export function lintSinglePropertyOptionsParameter(functionExpression: CartFunctionExpression, issues: CartLintIssue[]): void {
 	for (const parameter of functionExpression.parameters) {
 		if (!isOptionsParameterName(parameter.name)) {
 			continue;
 		}
-		const use: LuaOptionsParameterUse = {
+		const use: OptionsParameterUse = {
 			fields: new Set<string>(),
 			bareReads: 0,
 			dynamicReads: 0,
 		};
-		collectLuaOptionsParameterUseInStatements(functionExpression.body.body, parameter.name, use);
+		collectOptionsParameterUseInStatements(functionExpression.body.body, parameter.name, use);
 		if (use.fields.size !== 1 || use.bareReads !== 0 || use.dynamicReads !== 0) {
 			continue;
 		}

@@ -1,12 +1,12 @@
-import { LuaBinaryOperator, type LuaExpression } from '../../../../src/bmsx/lua/syntax/ast';
-import { isLuaNilLiteral, luaBinaryExpressionHasOperand } from '../../../../src/bmsx/lua/syntax/literals';
-import type { LuaLintIssue, LuaLintIssuePusher } from '../../lua_rule';
+import { LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression } from '../../../../src/bmsx/lua/syntax/ast';
+import { isLuaNilLiteral as isNilLiteral, luaBinaryExpressionHasOperand } from '../../../../src/bmsx/lua/syntax/literals';
+import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 
 export const orNilFallbackPatternRule = defineLintRule('common', 'or_nil_fallback_pattern');
 
-export function lintLuaOrNilFallbackPattern(expression: LuaExpression, issues: LuaLintIssue[], pushIssue: LuaLintIssuePusher): void {
-	if (!luaBinaryExpressionHasOperand(expression, LuaBinaryOperator.Or, isLuaNilLiteral)) {
+export function lintAstOrNilFallbackPattern(expression: Expression, issues: CartLintIssue[], pushIssue: CartLintIssuePusher): void {
+	if (!luaBinaryExpressionHasOperand(expression, BinaryOperator.Or, isNilLiteral)) {
 		return;
 	}
 	pushIssue(

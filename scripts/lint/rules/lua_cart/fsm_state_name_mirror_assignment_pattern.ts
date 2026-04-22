@@ -1,25 +1,25 @@
 import { defineLintRule } from '../../rule';
-import { type LuaCallExpression, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { isGlobalCall } from '../../../../src/bmsx/lua/syntax/calls';
 import { findStateNameMirrorAssignmentInExpression, getStateNameFromStateField, normalizeStateNameToken } from './impl/support/fsm_labels';
 import { findTableFieldByKey } from './impl/support/table_fields';
 import { pushIssue } from './impl/support/lint_context';
 
-export const fsmStateNameMirrorAssignmentPatternRule = defineLintRule('lua_cart', 'fsm_state_name_mirror_assignment_pattern');
+export const fsmStateNameMirrorAssignmentPatternRule = defineLintRule('cart', 'fsm_state_name_mirror_assignment_pattern');
 
-export function lintFsmStateNameMirrorAssignmentPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+export function lintFsmStateNameMirrorAssignmentPattern(expression: CallExpression, issues: CartLintIssue[]): void {
 	if (!isGlobalCall(expression, 'define_fsm')) {
 		return;
 	}
 	const definition = expression.arguments[1];
 	const statesField = findTableFieldByKey(definition, 'states');
-	if (!statesField || statesField.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+	if (!statesField || statesField.value.kind !== SyntaxKind.TableConstructorExpression) {
 		return;
 	}
 	for (const stateField of statesField.value.fields) {
 		const stateNameRaw = getStateNameFromStateField(stateField);
-		if (!stateNameRaw || stateField.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		if (!stateNameRaw || stateField.value.kind !== SyntaxKind.TableConstructorExpression) {
 			continue;
 		}
 		const stateName = normalizeStateNameToken(stateNameRaw);

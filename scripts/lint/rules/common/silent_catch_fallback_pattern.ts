@@ -6,7 +6,7 @@ import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../../../analysis/quality_ledger';
 import { defineLintRule } from '../../rule';
-import { pushLintIssue, tsNodeStartLine, type LintIssue } from '../../ts_rule';
+import { nodeStartLine, pushLintIssue, type LintIssue } from '../ts/support/ast';
 import { lintTokenEmptyCatchPattern, type CatchBlockInfo } from './empty_catch_pattern';
 import { lintTokenUselessCatchPattern } from './useless_catch_pattern';
 
@@ -25,7 +25,7 @@ export function lintSilentCatchFallbackPattern(
 		if (!ts.isReturnStatement(statement)) {
 			continue;
 		}
-		if (lineInAnalysisRegion(regions, 'fallible-boundary', tsNodeStartLine(sourceFile, node))) {
+		if (lineInAnalysisRegion(regions, 'fallible-boundary', nodeStartLine(sourceFile, node))) {
 			noteQualityLedger(ledger, 'allowed_catch_fallible_boundary');
 			return true;
 		}

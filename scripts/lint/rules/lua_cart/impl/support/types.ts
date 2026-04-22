@@ -1,15 +1,15 @@
-import { type LuaExpression, type LuaIdentifierExpression } from '../../../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../../../lua_rule';
+import { type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../../../lua_rule';
 
-export type LuaLintProfile = 'cart' | 'bios';
+export type CartLintProfile = 'cart' | 'bios';
 
-export type LuaLintSuppressionRange = {
+export type CartLintSuppressionRange = {
 	readonly startLine: number;
 	readonly endLine: number;
 };
 
 export type UnusedInitValueBinding = {
-	readonly declaration: LuaIdentifierExpression;
+	readonly declaration: IdentifierExpression;
 	pendingInitValue: boolean;
 };
 
@@ -18,18 +18,18 @@ export type UnusedInitValueScope = {
 };
 
 export type UnusedInitValueContext = {
-	readonly issues: LuaLintIssue[];
+	readonly issues: CartLintIssue[];
 	readonly bindingStacksByName: Map<string, UnusedInitValueBinding[]>;
 	readonly scopeStack: UnusedInitValueScope[];
 };
 
 export type SingleUseHasTagBinding = {
-	readonly declaration: LuaIdentifierExpression;
+	readonly declaration: IdentifierExpression;
 	pendingReadCount: number;
 };
 
 export type SingleUseHasTagContext = {
-	readonly issues: LuaLintIssue[];
+	readonly issues: CartLintIssue[];
 	readonly bindingStacksByName: Map<string, SingleUseHasTagBinding[]>;
 	readonly scopeStack: UnusedInitValueScope[];
 };
@@ -39,20 +39,20 @@ export type SingleUseLocalReportKind =
 	'small_helper';
 
 export type SingleUseLocalBinding = {
-	readonly declaration: LuaIdentifierExpression;
+	readonly declaration: IdentifierExpression;
 	readonly reportKind: SingleUseLocalReportKind | null;
 	readCount: number;
 	callReadCount: number;
 };
 
 export type SingleUseLocalContext = {
-	readonly issues: LuaLintIssue[];
+	readonly issues: CartLintIssue[];
 	readonly bindingStacksByName: Map<string, SingleUseLocalBinding[]>;
 	readonly scopeStack: UnusedInitValueScope[];
 };
 
 export type ConstLocalBinding = {
-	readonly declaration: LuaIdentifierExpression;
+	readonly declaration: IdentifierExpression;
 	shouldReport: boolean;
 	writeCountAfterDeclaration: number;
 };
@@ -62,7 +62,7 @@ export type ConstLocalScope = {
 };
 
 export type ConstLocalContext = {
-	readonly issues: LuaLintIssue[];
+	readonly issues: CartLintIssue[];
 	readonly bindingStacksByName: Map<string, ConstLocalBinding[]>;
 	readonly scopeStack: ConstLocalScope[];
 };
@@ -76,13 +76,13 @@ export type ConstantCopyScope = {
 };
 
 export type ConstantCopyContext = {
-	readonly issues: LuaLintIssue[];
+	readonly issues: CartLintIssue[];
 	readonly bindingStacksByName: Map<string, ConstantCopyBinding[]>;
 	readonly scopeStack: ConstantCopyScope[];
 };
 
 export type ShadowedRequireAliasBinding = {
-	readonly declaration: LuaIdentifierExpression;
+	readonly declaration: IdentifierExpression;
 	readonly requiredModulePath: string | undefined;
 };
 
@@ -91,13 +91,13 @@ export type ShadowedRequireAliasScope = {
 };
 
 export type ShadowedRequireAliasContext = {
-	readonly issues: LuaLintIssue[];
+	readonly issues: CartLintIssue[];
 	readonly bindingStacksByName: Map<string, ShadowedRequireAliasBinding[]>;
 	readonly scopeStack: ShadowedRequireAliasScope[];
 };
 
 export type DuplicateInitializerBinding = {
-	readonly declaration: LuaIdentifierExpression;
+	readonly declaration: IdentifierExpression;
 	initializerSignature: string;
 };
 
@@ -106,13 +106,13 @@ export type DuplicateInitializerScope = {
 };
 
 export type DuplicateInitializerContext = {
-	readonly issues: LuaLintIssue[];
+	readonly issues: CartLintIssue[];
 	readonly bindingStacksByName: Map<string, DuplicateInitializerBinding[]>;
 	readonly scopeStack: DuplicateInitializerScope[];
 };
 
 export type ForeignObjectAliasBinding = {
-	readonly declaration: LuaIdentifierExpression;
+	readonly declaration: IdentifierExpression;
 };
 
 export type ForeignObjectAliasScope = {
@@ -120,13 +120,13 @@ export type ForeignObjectAliasScope = {
 };
 
 export type ForeignObjectMutationContext = {
-	readonly issues: LuaLintIssue[];
+	readonly issues: CartLintIssue[];
 	readonly bindingStacksByName: Map<string, Array<ForeignObjectAliasBinding | null>>;
 	readonly scopeStack: ForeignObjectAliasScope[];
 };
 
 export type RuntimeTagLookupBinding = {
-	readonly declaration: LuaIdentifierExpression;
+	readonly declaration: IdentifierExpression;
 };
 
 export type RuntimeTagLookupScope = {
@@ -134,26 +134,26 @@ export type RuntimeTagLookupScope = {
 };
 
 export type RuntimeTagLookupContext = {
-	readonly issues: LuaLintIssue[];
+	readonly issues: CartLintIssue[];
 	readonly bindingStacksByName: Map<string, Array<RuntimeTagLookupBinding | null>>;
 	readonly scopeStack: RuntimeTagLookupScope[];
 };
 
-export type LuaCartLintOptions = {
+export type CartLintOptions = {
 	readonly roots: ReadonlyArray<string>;
-	readonly profile?: LuaLintProfile;
+	readonly profile?: CartLintProfile;
 };
 
 export type TopLevelLocalStringConstant = {
 	readonly path: string;
 	readonly name: string;
 	readonly value: string;
-	readonly declaration: LuaIdentifierExpression;
+	readonly declaration: IdentifierExpression;
 };
 
 export type SelfPropertyAssignmentMatch = {
 	readonly propertyName: string;
-	readonly target: LuaExpression;
+	readonly target: Expression;
 };
 
 export type AssignmentTargetInfo = {
@@ -162,7 +162,7 @@ export type AssignmentTargetInfo = {
 	terminalPropertyName?: string;
 };
 
-export type LuaOptionsParameterUse = {
+export type OptionsParameterUse = {
 	readonly fields: Set<string>;
 	bareReads: number;
 	dynamicReads: number;
@@ -175,6 +175,6 @@ export type FsmVisualPrefabDefaults = {
 
 export type SelfBooleanPropertyAssignmentMatch = {
 	readonly propertyName: string;
-	readonly target: LuaExpression;
-	readonly value: LuaExpression;
+	readonly target: Expression;
+	readonly value: Expression;
 };

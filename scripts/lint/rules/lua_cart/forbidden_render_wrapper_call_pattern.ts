@@ -1,8 +1,8 @@
-import { LuaSyntaxKind, type LuaCallExpression } from '../../../../src/bmsx/lua/syntax/ast';
-import type { LuaLintIssue, LuaLintIssuePusher } from '../../lua_rule';
+import { LuaSyntaxKind as SyntaxKind, type LuaCallExpression as CallExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 
-export const forbiddenRenderWrapperCallPatternRule = defineLintRule('lua_cart', 'forbidden_render_wrapper_call_pattern');
+export const forbiddenRenderWrapperCallPatternRule = defineLintRule('cart', 'forbidden_render_wrapper_call_pattern');
 
 const FORBIDDEN_RENDER_WRAPPER_CALLS = new Set<string>([
 	'cls',
@@ -18,8 +18,8 @@ const FORBIDDEN_RENDER_WRAPPER_CALLS = new Set<string>([
 	'blit_text_inline_span_with_font',
 ]);
 
-export function lintForbiddenRenderWrapperCall(expression: LuaCallExpression, issues: LuaLintIssue[], pushIssue: LuaLintIssuePusher): void {
-	if (expression.callee.kind !== LuaSyntaxKind.IdentifierExpression) {
+export function lintForbiddenRenderWrapperCall(expression: CallExpression, issues: CartLintIssue[], pushIssue: CartLintIssuePusher): void {
+	if (expression.callee.kind !== SyntaxKind.IdentifierExpression) {
 		return;
 	}
 	const calleeName = expression.callee.name;

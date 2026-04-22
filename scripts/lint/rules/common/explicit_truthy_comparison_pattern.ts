@@ -1,15 +1,15 @@
-import { LuaBinaryOperator, LuaSyntaxKind, type LuaExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { LuaBinaryOperator as BinaryOperator, LuaSyntaxKind as SyntaxKind, type LuaExpression as Expression } from '../../../../src/bmsx/lua/syntax/ast';
 import { isBooleanToken } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { lintAdjacentEqualityComparison } from '../cpp/support/comparison';
 import type { LintIssue } from '../cpp/support/diagnostics';
-import type { LuaLintIssue, LuaLintIssuePusher } from '../../lua_rule';
+import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 
 export const explicitTruthyComparisonPatternRule = defineLintRule('common', 'explicit_truthy_comparison_pattern');
 
-export function lintLuaExplicitTruthyComparisonPattern(expression: LuaExpression, issues: LuaLintIssue[], pushIssue: LuaLintIssuePusher): void {
-	if (!matchesLuaExplicitTruthyComparisonPattern(expression)) {
+export function lintAstExplicitTruthyComparisonPattern(expression: Expression, issues: CartLintIssue[], pushIssue: CartLintIssuePusher): void {
+	if (!matchesAstExplicitTruthyComparisonPattern(expression)) {
 		return;
 	}
 	pushIssue(
@@ -20,23 +20,23 @@ export function lintLuaExplicitTruthyComparisonPattern(expression: LuaExpression
 	);
 }
 
-function matchesLuaExplicitTruthyComparisonPattern(expression: LuaExpression): boolean {
-	if (expression.kind !== LuaSyntaxKind.BinaryExpression) {
+function matchesAstExplicitTruthyComparisonPattern(expression: Expression): boolean {
+	if (expression.kind !== SyntaxKind.BinaryExpression) {
 		return false;
 	}
-	if (expression.operator !== LuaBinaryOperator.Equal && expression.operator !== LuaBinaryOperator.NotEqual) {
+	if (expression.operator !== BinaryOperator.Equal && expression.operator !== BinaryOperator.NotEqual) {
 		return false;
 	}
-	const leftBoolean = isLuaBooleanLiteralExpression(expression.left);
-	const rightBoolean = isLuaBooleanLiteralExpression(expression.right);
+	const leftBoolean = isBooleanLiteralExpression(expression.left);
+	const rightBoolean = isBooleanLiteralExpression(expression.right);
 	if (!leftBoolean && !rightBoolean) {
 		return false;
 	}
 	return !(leftBoolean && rightBoolean);
 }
 
-function isLuaBooleanLiteralExpression(expression: LuaExpression): boolean {
-	return expression.kind === LuaSyntaxKind.BooleanLiteralExpression;
+function isBooleanLiteralExpression(expression: Expression): boolean {
+	return expression.kind === SyntaxKind.BooleanLiteralExpression;
 }
 
 export function lintExplicitTruthyComparisonPattern(file: string, tokens: readonly Token[], issues: LintIssue[]): void {

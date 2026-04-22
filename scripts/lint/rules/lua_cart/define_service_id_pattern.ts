@@ -1,25 +1,25 @@
 import { defineLintRule } from '../../rule';
-import { type LuaCallExpression, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { isGlobalCall } from '../../../../src/bmsx/lua/syntax/calls';
 import { containsServiceLabel } from './impl/support/fsm_labels';
 import { appendSuggestionMessage } from './impl/support/general';
 import { findTableFieldByKey } from './impl/support/table_fields';
 import { pushIssue } from './impl/support/lint_context';
 
-export const defineServiceIdPatternRule = defineLintRule('lua_cart', 'define_service_id_pattern');
+export const defineServiceIdPatternRule = defineLintRule('cart', 'define_service_id_pattern');
 
-export function lintDefineServiceIdPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+export function lintDefineServiceIdPattern(expression: CallExpression, issues: CartLintIssue[]): void {
 	const ruleName = defineServiceIdPatternRule.name;
 	if (!isGlobalCall(expression, 'define_service')) {
 		return;
 	}
 	const definition = expression.arguments[0];
-	if (!definition || definition.kind !== LuaSyntaxKind.TableConstructorExpression) {
+	if (!definition || definition.kind !== SyntaxKind.TableConstructorExpression) {
 		return;
 	}
 	const defaultsField = findTableFieldByKey(definition, 'defaults');
-	if (!defaultsField || defaultsField.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+	if (!defaultsField || defaultsField.value.kind !== SyntaxKind.TableConstructorExpression) {
 		pushIssue(
 			issues,
 			ruleName,
@@ -38,7 +38,7 @@ export function lintDefineServiceIdPattern(expression: LuaCallExpression, issues
 		);
 		return;
 	}
-	if (idField.value.kind !== LuaSyntaxKind.StringLiteralExpression) {
+	if (idField.value.kind !== SyntaxKind.StringLiteralExpression) {
 		pushIssue(
 			issues,
 			ruleName,

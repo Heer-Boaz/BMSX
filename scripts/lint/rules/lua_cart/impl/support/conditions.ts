@@ -1,28 +1,28 @@
-import { LuaBinaryOperator, type LuaExpression, type LuaFunctionExpression, type LuaStatement, LuaSyntaxKind, LuaUnaryOperator } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaUnaryOperator as UnaryOperator } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { isBuiltinCallExpression } from './calls';
 import { isDelegationCallCandidate, isDirectValueGetterExpression } from './functions';
 import { getFunctionSingleReturnExpression } from './function_shapes';
 import { expressionsEquivalentForLint } from './general';
 
-export function isNilExpression(expression: LuaExpression): boolean {
-	return expression.kind === LuaSyntaxKind.NilLiteralExpression;
+export function isNilExpression(expression: Expression): boolean {
+	return expression.kind === SyntaxKind.NilLiteralExpression;
 }
 
-export function getStringComparisonOperand(expression: LuaExpression): LuaExpression | undefined {
-	if (expression.kind !== LuaSyntaxKind.BinaryExpression || expression.operator !== LuaBinaryOperator.Equal) {
+export function getStringComparisonOperand(expression: Expression): Expression | undefined {
+	if (expression.kind !== SyntaxKind.BinaryExpression || expression.operator !== BinaryOperator.Equal) {
 		return undefined;
 	}
-	if (expression.left.kind === LuaSyntaxKind.StringLiteralExpression && expression.right.kind !== LuaSyntaxKind.StringLiteralExpression) {
+	if (expression.left.kind === SyntaxKind.StringLiteralExpression && expression.right.kind !== SyntaxKind.StringLiteralExpression) {
 		return expression.right;
 	}
-	if (expression.right.kind === LuaSyntaxKind.StringLiteralExpression && expression.left.kind !== LuaSyntaxKind.StringLiteralExpression) {
+	if (expression.right.kind === SyntaxKind.StringLiteralExpression && expression.left.kind !== SyntaxKind.StringLiteralExpression) {
 		return expression.left;
 	}
 	return undefined;
 }
 
-export function collectStringOrChainOperands(expression: LuaExpression, operands: LuaExpression[]): boolean {
-	if (expression.kind === LuaSyntaxKind.BinaryExpression && expression.operator === LuaBinaryOperator.Or) {
+export function collectStringOrChainOperands(expression: Expression, operands: Expression[]): boolean {
+	if (expression.kind === SyntaxKind.BinaryExpression && expression.operator === BinaryOperator.Or) {
 		return collectStringOrChainOperands(expression.left, operands) && collectStringOrChainOperands(expression.right, operands);
 	}
 	const operand = getStringComparisonOperand(expression);
@@ -33,8 +33,8 @@ export function collectStringOrChainOperands(expression: LuaExpression, operands
 	return true;
 }
 
-export function matchesStringOrChainComparisonPattern(expression: LuaExpression): boolean {
-	const operands: LuaExpression[] = [];
+export function matchesStringOrChainComparisonPattern(expression: Expression): boolean {
+	const operands: Expression[] = [];
 	if (!collectStringOrChainOperands(expression, operands)) {
 		return false;
 	}
@@ -50,16 +50,16 @@ export function matchesStringOrChainComparisonPattern(expression: LuaExpression)
 }
 
 export function evaluateTopLevelStringConstantExpression(
-	expression: LuaExpression,
+	expression: Expression,
 	knownValues: ReadonlyMap<string, string>,
 ): string | undefined {
-	if (expression.kind === LuaSyntaxKind.StringLiteralExpression) {
+	if (expression.kind === SyntaxKind.StringLiteralExpression) {
 		return expression.value;
 	}
-	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+	if (expression.kind === SyntaxKind.IdentifierExpression) {
 		return knownValues.get(expression.name);
 	}
-	if (expression.kind === LuaSyntaxKind.BinaryExpression && expression.operator === LuaBinaryOperator.Concat) {
+	if (expression.kind === SyntaxKind.BinaryExpression && expression.operator === BinaryOperator.Concat) {
 		const left = evaluateTopLevelStringConstantExpression(expression.left, knownValues);
 		if (left === undefined) {
 			return undefined;
@@ -73,20 +73,20 @@ export function evaluateTopLevelStringConstantExpression(
 	return undefined;
 }
 
-export function isComparisonOperator(operator: LuaBinaryOperator): boolean {
-	return operator === LuaBinaryOperator.Equal
-		|| operator === LuaBinaryOperator.NotEqual
-		|| operator === LuaBinaryOperator.LessThan
-		|| operator === LuaBinaryOperator.LessEqual
-		|| operator === LuaBinaryOperator.GreaterThan
-		|| operator === LuaBinaryOperator.GreaterEqual;
+export function isComparisonOperator(operator: BinaryOperator): boolean {
+	return operator === BinaryOperator.Equal
+		|| operator === BinaryOperator.NotEqual
+		|| operator === BinaryOperator.LessThan
+		|| operator === BinaryOperator.LessEqual
+		|| operator === BinaryOperator.GreaterThan
+		|| operator === BinaryOperator.GreaterEqual;
 }
 
-export function isComparisonWrapperProbeExpression(expression: LuaExpression): boolean {
+export function isComparisonWrapperProbeExpression(expression: Expression): boolean {
 	if (isDirectValueGetterExpression(expression)) {
 		return true;
 	}
-	if (expression.kind !== LuaSyntaxKind.CallExpression) {
+	if (expression.kind !== SyntaxKind.CallExpression) {
 		return false;
 	}
 	if (isBuiltinCallExpression(expression)) {
@@ -95,8 +95,8 @@ export function isComparisonWrapperProbeExpression(expression: LuaExpression): b
 	return isDelegationCallCandidate(expression);
 }
 
-export function isSingleValueComparisonWrapperExpression(expression: LuaExpression): boolean {
-	if (expression.kind !== LuaSyntaxKind.BinaryExpression || !isComparisonOperator(expression.operator)) {
+export function isSingleValueComparisonWrapperExpression(expression: Expression): boolean {
+	if (expression.kind !== SyntaxKind.BinaryExpression || !isComparisonOperator(expression.operator)) {
 		return false;
 	}
 	const leftLiteral = isPrimitiveLiteralExpression(expression.left);
@@ -108,7 +108,7 @@ export function isSingleValueComparisonWrapperExpression(expression: LuaExpressi
 	return isComparisonWrapperProbeExpression(probe);
 }
 
-export function matchesComparisonWrapperGetterPattern(functionExpression: LuaFunctionExpression): boolean {
+export function matchesComparisonWrapperGetterPattern(functionExpression: CartFunctionExpression): boolean {
 	if (functionExpression.parameters.length !== 0 || functionExpression.hasVararg) {
 		return false;
 	}
@@ -116,25 +116,25 @@ export function matchesComparisonWrapperGetterPattern(functionExpression: LuaFun
 	return expression !== undefined && isSingleValueComparisonWrapperExpression(expression);
 }
 
-export function getSingleReturnedStringValue(statement: LuaStatement): string {
-	if (statement.kind !== LuaSyntaxKind.ReturnStatement || statement.expressions.length !== 1) {
+export function getSingleReturnedStringValue(statement: Statement): string {
+	if (statement.kind !== SyntaxKind.ReturnStatement || statement.expressions.length !== 1) {
 		return undefined;
 	}
 	const returned = statement.expressions[0];
-	if (returned.kind !== LuaSyntaxKind.StringLiteralExpression) {
+	if (returned.kind !== SyntaxKind.StringLiteralExpression) {
 		return undefined;
 	}
 	return returned.value;
 }
 
-export function isTruthyParamCondition(expression: LuaExpression, parameterName: string): boolean {
-	return expression.kind === LuaSyntaxKind.IdentifierExpression && expression.name === parameterName;
+export function isTruthyParamCondition(expression: Expression, parameterName: string): boolean {
+	return expression.kind === SyntaxKind.IdentifierExpression && expression.name === parameterName;
 }
 
-export function isFalsyParamCondition(expression: LuaExpression, parameterName: string): boolean {
-	return expression.kind === LuaSyntaxKind.UnaryExpression
-		&& expression.operator === LuaUnaryOperator.Not
-		&& expression.operand.kind === LuaSyntaxKind.IdentifierExpression
+export function isFalsyParamCondition(expression: Expression, parameterName: string): boolean {
+	return expression.kind === SyntaxKind.UnaryExpression
+		&& expression.operator === UnaryOperator.Not
+		&& expression.operand.kind === SyntaxKind.IdentifierExpression
 		&& expression.operand.name === parameterName;
 }
 
@@ -142,7 +142,7 @@ export function returnsBool01Pair(whenTrue: string, whenFalse: string): boolean 
 	return whenTrue === '1' && whenFalse === '0';
 }
 
-export function matchesBool01DuplicatePattern(functionExpression: LuaFunctionExpression): boolean {
+export function matchesBool01DuplicatePattern(functionExpression: CartFunctionExpression): boolean {
 	if (functionExpression.parameters.length !== 1 || functionExpression.hasVararg) {
 		return false;
 	}
@@ -151,7 +151,7 @@ export function matchesBool01DuplicatePattern(functionExpression: LuaFunctionExp
 	if (body.length === 2) {
 		const firstStatement = body[0];
 		const fallback = getSingleReturnedStringValue(body[1]);
-		if (firstStatement.kind !== LuaSyntaxKind.IfStatement || !fallback || firstStatement.clauses.length !== 1) {
+		if (firstStatement.kind !== SyntaxKind.IfStatement || !fallback || firstStatement.clauses.length !== 1) {
 			return false;
 		}
 		const onlyClause = firstStatement.clauses[0];
@@ -172,7 +172,7 @@ export function matchesBool01DuplicatePattern(functionExpression: LuaFunctionExp
 	}
 	if (body.length === 1) {
 		const onlyIf = body[0];
-		if (onlyIf.kind !== LuaSyntaxKind.IfStatement || onlyIf.clauses.length !== 2) {
+		if (onlyIf.kind !== SyntaxKind.IfStatement || onlyIf.clauses.length !== 2) {
 			return false;
 		}
 		const first = onlyIf.clauses[0];
@@ -195,14 +195,14 @@ export function matchesBool01DuplicatePattern(functionExpression: LuaFunctionExp
 	return false;
 }
 
-export function isFalseOrNilExpression(expression: LuaExpression): boolean {
-	return expression.kind === LuaSyntaxKind.NilLiteralExpression
-		|| (expression.kind === LuaSyntaxKind.BooleanLiteralExpression && expression.value === false);
+export function isFalseOrNilExpression(expression: Expression): boolean {
+	return expression.kind === SyntaxKind.NilLiteralExpression
+		|| (expression.kind === SyntaxKind.BooleanLiteralExpression && expression.value === false);
 }
 
-export function isPrimitiveLiteralExpression(expression: LuaExpression): boolean {
-	return expression.kind === LuaSyntaxKind.StringLiteralExpression
-		|| expression.kind === LuaSyntaxKind.NumericLiteralExpression
-		|| expression.kind === LuaSyntaxKind.BooleanLiteralExpression
-		|| expression.kind === LuaSyntaxKind.NilLiteralExpression;
+export function isPrimitiveLiteralExpression(expression: Expression): boolean {
+	return expression.kind === SyntaxKind.StringLiteralExpression
+		|| expression.kind === SyntaxKind.NumericLiteralExpression
+		|| expression.kind === SyntaxKind.BooleanLiteralExpression
+		|| expression.kind === SyntaxKind.NilLiteralExpression;
 }

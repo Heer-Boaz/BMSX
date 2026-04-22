@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import type { LintIssue } from '../../ts_rule';
+import type { LintIssue } from '../ts/support/ast';
 import type { NormalizedBodyInfo } from '../ts/support/declarations';
 import { semanticSignatureLabel } from '../ts/support/semantic';
 

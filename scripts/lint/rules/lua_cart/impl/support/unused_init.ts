@@ -1,18 +1,18 @@
-import { LuaAssignmentOperator, type LuaExpression, type LuaIdentifierExpression, type LuaLocalFunctionStatement, type LuaStatement, LuaSyntaxKind, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../../../lua_rule';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../../../lua_rule';
 import { markUnusedInitValueWrite } from '../../unused_init_value_pattern';
-import { declareLuaBinding, discardLuaBindingScope, enterLuaBindingScope, resolveLuaBinding } from './bindings';
+import { declareBinding, discardBindingScope, enterBindingScope, resolveBinding } from './bindings';
 import { UnusedInitValueBinding, UnusedInitValueContext } from './types';
 
 export function enterUnusedInitValueScope(context: UnusedInitValueContext): void {
-	enterLuaBindingScope(context);
+	enterBindingScope(context);
 }
 
 export function leaveUnusedInitValueScope(context: UnusedInitValueContext): void {
-	discardLuaBindingScope(context);
+	discardBindingScope(context);
 }
 
-export function createUnusedInitValueContext(issues: LuaLintIssue[]): UnusedInitValueContext {
+export function createUnusedInitValueContext(issues: CartLintIssue[]): UnusedInitValueContext {
 	const context: UnusedInitValueContext = {
 		issues,
 		bindingStacksByName: new Map<string, UnusedInitValueBinding[]>(),
@@ -23,11 +23,11 @@ export function createUnusedInitValueContext(issues: LuaLintIssue[]): UnusedInit
 }
 
 export function resolveUnusedInitValueBinding(context: UnusedInitValueContext, name: string): UnusedInitValueBinding | undefined {
-	return resolveLuaBinding(context, name);
+	return resolveBinding(context, name);
 }
 
-export function declareUnusedInitValueBinding(context: UnusedInitValueContext, declaration: LuaIdentifierExpression, pendingInitValue: boolean): void {
-	declareLuaBinding(context, declaration, {
+export function declareUnusedInitValueBinding(context: UnusedInitValueContext, declaration: IdentifierExpression, pendingInitValue: boolean): void {
+	declareBinding(context, declaration, {
 		declaration,
 		pendingInitValue,
 	});
@@ -41,43 +41,43 @@ export function markUnusedInitValueRead(context: UnusedInitValueContext, name: s
 	binding.pendingInitValue = false;
 }
 
-export function lintUnusedInitValuesInExpression(expression: LuaExpression | null, context: UnusedInitValueContext): void {
+export function lintUnusedInitValuesInExpression(expression: Expression | null, context: UnusedInitValueContext): void {
 	if (!expression) {
 		return;
 	}
 	switch (expression.kind) {
-		case LuaSyntaxKind.IdentifierExpression:
+		case SyntaxKind.IdentifierExpression:
 			markUnusedInitValueRead(context, expression.name);
 			return;
-		case LuaSyntaxKind.MemberExpression:
+		case SyntaxKind.MemberExpression:
 			lintUnusedInitValuesInExpression(expression.base, context);
 			return;
-		case LuaSyntaxKind.IndexExpression:
+		case SyntaxKind.IndexExpression:
 			lintUnusedInitValuesInExpression(expression.base, context);
 			lintUnusedInitValuesInExpression(expression.index, context);
 			return;
-		case LuaSyntaxKind.BinaryExpression:
+		case SyntaxKind.BinaryExpression:
 			lintUnusedInitValuesInExpression(expression.left, context);
 			lintUnusedInitValuesInExpression(expression.right, context);
 			return;
-		case LuaSyntaxKind.UnaryExpression:
+		case SyntaxKind.UnaryExpression:
 			lintUnusedInitValuesInExpression(expression.operand, context);
 			return;
-		case LuaSyntaxKind.CallExpression:
+		case SyntaxKind.CallExpression:
 			lintUnusedInitValuesInExpression(expression.callee, context);
 			for (const argument of expression.arguments) {
 				lintUnusedInitValuesInExpression(argument, context);
 			}
 			return;
-		case LuaSyntaxKind.TableConstructorExpression:
+		case SyntaxKind.TableConstructorExpression:
 			for (const field of expression.fields) {
-				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+				if (field.kind === TableFieldKind.ExpressionKey) {
 					lintUnusedInitValuesInExpression(field.key, context);
 				}
 				lintUnusedInitValuesInExpression(field.value, context);
 			}
 			return;
-		case LuaSyntaxKind.FunctionExpression:
+		case SyntaxKind.FunctionExpression:
 			lintUnusedInitValuesInFunctionBody(expression.body.body, context.issues, expression.parameters);
 			return;
 		default:
@@ -86,34 +86,34 @@ export function lintUnusedInitValuesInExpression(expression: LuaExpression | nul
 }
 
 export function lintUnusedInitValuesInAssignmentTarget(
-	target: LuaExpression,
-	operator: LuaAssignmentOperator,
+	target: Expression,
+	operator: AssignmentOperator,
 	context: UnusedInitValueContext,
 ): void {
-	if (target.kind === LuaSyntaxKind.IdentifierExpression) {
-		if (operator !== LuaAssignmentOperator.Assign) {
+	if (target.kind === SyntaxKind.IdentifierExpression) {
+		if (operator !== AssignmentOperator.Assign) {
 			markUnusedInitValueRead(context, target.name);
 		}
 		return;
 	}
-	if (target.kind === LuaSyntaxKind.MemberExpression) {
+	if (target.kind === SyntaxKind.MemberExpression) {
 		lintUnusedInitValuesInExpression(target.base, context);
 		return;
 	}
-	if (target.kind === LuaSyntaxKind.IndexExpression) {
+	if (target.kind === SyntaxKind.IndexExpression) {
 		lintUnusedInitValuesInExpression(target.base, context);
 		lintUnusedInitValuesInExpression(target.index, context);
 	}
 }
 
 export function lintUnusedInitValuesInStatements(
-	statements: ReadonlyArray<LuaStatement>,
+	statements: ReadonlyArray<Statement>,
 	context: UnusedInitValueContext,
 	isGuaranteedPath: boolean,
 ): void {
 	for (const statement of statements) {
 		switch (statement.kind) {
-			case LuaSyntaxKind.LocalAssignmentStatement:
+			case SyntaxKind.LocalAssignmentStatement:
 				for (const value of statement.values) {
 					lintUnusedInitValuesInExpression(value, context);
 				}
@@ -121,7 +121,7 @@ export function lintUnusedInitValuesInStatements(
 					declareUnusedInitValueBinding(context, statement.names[index], index < statement.values.length);
 				}
 				break;
-			case LuaSyntaxKind.AssignmentStatement:
+			case SyntaxKind.AssignmentStatement:
 				for (const right of statement.right) {
 					lintUnusedInitValuesInExpression(right, context);
 				}
@@ -129,13 +129,13 @@ export function lintUnusedInitValuesInStatements(
 					lintUnusedInitValuesInAssignmentTarget(left, statement.operator, context);
 				}
 				for (const left of statement.left) {
-					if (left.kind === LuaSyntaxKind.IdentifierExpression) {
+					if (left.kind === SyntaxKind.IdentifierExpression) {
 						markUnusedInitValueWrite(context, left, isGuaranteedPath);
 					}
 				}
 				break;
-			case LuaSyntaxKind.LocalFunctionStatement: {
-				const localFunction = statement as LuaLocalFunctionStatement;
+			case SyntaxKind.LocalFunctionStatement: {
+				const localFunction = statement as LocalFunctionStatement;
 				declareUnusedInitValueBinding(context, localFunction.name, false);
 				lintUnusedInitValuesInFunctionBody(
 					localFunction.functionExpression.body.body,
@@ -144,19 +144,19 @@ export function lintUnusedInitValuesInStatements(
 				);
 				break;
 			}
-			case LuaSyntaxKind.FunctionDeclarationStatement:
+			case SyntaxKind.FunctionDeclarationStatement:
 				lintUnusedInitValuesInFunctionBody(
 					statement.functionExpression.body.body,
 					context.issues,
 					statement.functionExpression.parameters,
 				);
 				break;
-			case LuaSyntaxKind.ReturnStatement:
+			case SyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
 					lintUnusedInitValuesInExpression(expression, context);
 				}
 				break;
-			case LuaSyntaxKind.IfStatement:
+			case SyntaxKind.IfStatement:
 				for (const clause of statement.clauses) {
 					if (clause.condition) {
 						lintUnusedInitValuesInExpression(clause.condition, context);
@@ -166,19 +166,19 @@ export function lintUnusedInitValuesInStatements(
 					leaveUnusedInitValueScope(context);
 				}
 				break;
-			case LuaSyntaxKind.WhileStatement:
+			case SyntaxKind.WhileStatement:
 				lintUnusedInitValuesInExpression(statement.condition, context);
 				enterUnusedInitValueScope(context);
 				lintUnusedInitValuesInStatements(statement.block.body, context, false);
 				leaveUnusedInitValueScope(context);
 				break;
-			case LuaSyntaxKind.RepeatStatement:
+			case SyntaxKind.RepeatStatement:
 				enterUnusedInitValueScope(context);
 				lintUnusedInitValuesInStatements(statement.block.body, context, false);
 				lintUnusedInitValuesInExpression(statement.condition, context);
 				leaveUnusedInitValueScope(context);
 				break;
-			case LuaSyntaxKind.ForNumericStatement:
+			case SyntaxKind.ForNumericStatement:
 				lintUnusedInitValuesInExpression(statement.start, context);
 				lintUnusedInitValuesInExpression(statement.limit, context);
 				lintUnusedInitValuesInExpression(statement.step, context);
@@ -187,7 +187,7 @@ export function lintUnusedInitValuesInStatements(
 				lintUnusedInitValuesInStatements(statement.block.body, context, false);
 				leaveUnusedInitValueScope(context);
 				break;
-			case LuaSyntaxKind.ForGenericStatement:
+			case SyntaxKind.ForGenericStatement:
 				for (const iterator of statement.iterators) {
 					lintUnusedInitValuesInExpression(iterator, context);
 				}
@@ -198,17 +198,17 @@ export function lintUnusedInitValuesInStatements(
 				lintUnusedInitValuesInStatements(statement.block.body, context, false);
 				leaveUnusedInitValueScope(context);
 				break;
-			case LuaSyntaxKind.DoStatement:
+			case SyntaxKind.DoStatement:
 				enterUnusedInitValueScope(context);
 				lintUnusedInitValuesInStatements(statement.block.body, context, isGuaranteedPath);
 				leaveUnusedInitValueScope(context);
 				break;
-			case LuaSyntaxKind.CallStatement:
+			case SyntaxKind.CallStatement:
 				lintUnusedInitValuesInExpression(statement.expression, context);
 				break;
-			case LuaSyntaxKind.BreakStatement:
-			case LuaSyntaxKind.GotoStatement:
-			case LuaSyntaxKind.LabelStatement:
+			case SyntaxKind.BreakStatement:
+			case SyntaxKind.GotoStatement:
+			case SyntaxKind.LabelStatement:
 				break;
 			default:
 				break;
@@ -217,9 +217,9 @@ export function lintUnusedInitValuesInStatements(
 }
 
 export function lintUnusedInitValuesInFunctionBody(
-	statements: ReadonlyArray<LuaStatement>,
-	issues: LuaLintIssue[],
-	parameters: ReadonlyArray<LuaIdentifierExpression>,
+	statements: ReadonlyArray<Statement>,
+	issues: CartLintIssue[],
+	parameters: ReadonlyArray<IdentifierExpression>,
 ): void {
 	const context = createUnusedInitValueContext(issues);
 	try {

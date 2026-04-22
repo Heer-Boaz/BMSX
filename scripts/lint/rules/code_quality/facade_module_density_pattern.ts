@@ -2,7 +2,7 @@ import type { FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/decl
 import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
-import { type LintIssue as LintIssue, pushLintIssue } from '../../ts_rule';
+import { type LintIssue, pushLintIssue } from '../ts/support/ast';
 import ts from 'typescript';
 import { isFunctionLikeValue } from '../../../../src/bmsx/language/ts/ast/functions';
 import { hasExportModifier } from '../../../../src/bmsx/language/ts/ast/expressions';

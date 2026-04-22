@@ -9,7 +9,7 @@ import {
 import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
-import { type LintIssue as LintIssue, pushLintIssue } from '../../ts_rule';
+import { type LintIssue, pushLintIssue } from '../ts/support/ast';
 import ts from 'typescript';
 import { expressionUsesGuardedValue, isCrossNullishProjection, nullishGuardFingerprint, nullishReturnKind } from '../ts/support/nullish';
 import { nextStatementAfter } from '../ts/support/statements';

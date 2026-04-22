@@ -61,7 +61,7 @@ import { injectedServiceIdPropertyPatternRule } from './injected_service_id_prop
 import { inlineStaticLookupTablePatternRule } from './inline_static_lookup_table_pattern';
 import { stagedExportLocalCallPatternRule } from './staged_export_local_call_pattern';
 import { stagedExportLocalTablePatternRule } from './staged_export_local_table_pattern';
-import { requireLuaExtensionPatternRule } from './require_lua_extension_pattern';
+import { requireExtensionPatternRule } from './require_lua_extension_pattern';
 import { branchUninitializedLocalPatternRule } from './branch_uninitialized_local_pattern';
 import { forbiddenRenderWrapperCallPatternRule } from './forbidden_render_wrapper_call_pattern';
 import { forbiddenRenderModuleRequirePatternRule } from './forbidden_render_module_require_pattern';
@@ -129,13 +129,13 @@ export { injectedServiceIdPropertyPatternRule };
 export { inlineStaticLookupTablePatternRule };
 export { stagedExportLocalCallPatternRule };
 export { stagedExportLocalTablePatternRule };
-export { requireLuaExtensionPatternRule };
+export { requireExtensionPatternRule };
 export { branchUninitializedLocalPatternRule };
 export { forbiddenRenderWrapperCallPatternRule };
 export { forbiddenRenderModuleRequirePatternRule };
 export { forbiddenRenderLayerStringPatternRule };
 
-export const LUA_CART_ONLY_LINT_RULES_DEFINITIONS = [
+export const CART_ONLY_LINT_RULE_DEFINITIONS = [
 	ensurePatternRule,
 	syntaxErrorPatternRule,
 	uppercaseCodePatternRule,
@@ -198,10 +198,10 @@ export const LUA_CART_ONLY_LINT_RULES_DEFINITIONS = [
 	inlineStaticLookupTablePatternRule,
 	stagedExportLocalCallPatternRule,
 	stagedExportLocalTablePatternRule,
-	requireLuaExtensionPatternRule,
+	requireExtensionPatternRule,
 	branchUninitializedLocalPatternRule,
 	forbiddenRenderWrapperCallPatternRule,
 	forbiddenRenderModuleRequirePatternRule,
 	forbiddenRenderLayerStringPatternRule,
 ] as const;
-export const LUA_CART_ONLY_LINT_RULES = ruleNames(LUA_CART_ONLY_LINT_RULES_DEFINITIONS);
+export const CART_ONLY_LINT_RULES = ruleNames(CART_ONLY_LINT_RULE_DEFINITIONS);

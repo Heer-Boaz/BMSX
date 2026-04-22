@@ -1,12 +1,12 @@
 import { defineLintRule } from '../../rule';
-import { type LuaIfStatement } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type LuaIfStatement as IfStatement } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { matchesUselessAssertPattern } from './impl/support/general';
 import { pushIssue } from './impl/support/lint_context';
 
-export const uselessAssertPatternRule = defineLintRule('lua_cart', 'useless_assert_pattern');
+export const uselessAssertPatternRule = defineLintRule('cart', 'useless_assert_pattern');
 
-export function lintUselessAssertPattern(statement: LuaIfStatement, issues: LuaLintIssue[]): void {
+export function lintUselessAssertPattern(statement: IfStatement, issues: CartLintIssue[]): void {
 	if (!matchesUselessAssertPattern(statement)) {
 		return;
 	}

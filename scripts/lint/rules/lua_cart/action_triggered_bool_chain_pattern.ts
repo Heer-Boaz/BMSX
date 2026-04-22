@@ -1,16 +1,16 @@
 import { defineLintRule } from '../../rule';
-import { LuaBinaryOperator, type LuaExpression, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { isDirectActionTriggeredCallExpression } from './impl/support/calls';
 import { pushIssue } from './impl/support/lint_context';
 
-export const actionTriggeredBoolChainPatternRule = defineLintRule('lua_cart', 'action_triggered_bool_chain_pattern');
+export const actionTriggeredBoolChainPatternRule = defineLintRule('cart', 'action_triggered_bool_chain_pattern');
 
-export function lintActionTriggeredBoolChainPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
-	if (expression.kind !== LuaSyntaxKind.BinaryExpression) {
+export function lintActionTriggeredBoolChainPattern(expression: Expression, issues: CartLintIssue[]): void {
+	if (expression.kind !== SyntaxKind.BinaryExpression) {
 		return;
 	}
-	if (expression.operator !== LuaBinaryOperator.Or && expression.operator !== LuaBinaryOperator.And) {
+	if (expression.operator !== BinaryOperator.Or && expression.operator !== BinaryOperator.And) {
 		return;
 	}
 	if (!isDirectActionTriggeredCallExpression(expression.left) || !isDirectActionTriggeredCallExpression(expression.right)) {

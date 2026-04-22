@@ -1,14 +1,14 @@
 import { defineLintRule } from '../../rule';
-import { type LuaIdentifierExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { type LuaIdentifierExpression as IdentifierExpression } from '../../../../src/bmsx/lua/syntax/ast';
 import { ShadowedRequireAliasContext } from './impl/support/types';
 import { pushIssue } from './impl/support/lint_context';
-import { declareLuaBinding } from './impl/support/bindings';
+import { declareBinding } from './impl/support/bindings';
 
-export const shadowedRequireAliasPatternRule = defineLintRule('lua_cart', 'shadowed_require_alias_pattern');
+export const shadowedRequireAliasPatternRule = defineLintRule('cart', 'shadowed_require_alias_pattern');
 
 export function declareShadowedRequireAliasBinding(
 	context: ShadowedRequireAliasContext,
-	declaration: LuaIdentifierExpression,
+	declaration: IdentifierExpression,
 	requiredModulePath: string | undefined,
 ): void {
 	const name = declaration.name;
@@ -29,7 +29,7 @@ export function declareShadowedRequireAliasBinding(
 			}
 		}
 	}
-	declareLuaBinding(context, declaration, {
+	declareBinding(context, declaration, {
 		declaration,
 		requiredModulePath,
 	});

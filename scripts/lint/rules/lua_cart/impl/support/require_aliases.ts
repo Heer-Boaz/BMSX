@@ -1,33 +1,33 @@
-import { type LuaExpression, type LuaFunctionExpression, type LuaStatement, LuaSyntaxKind, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../../../lua_rule';
+import { type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../../../lua_rule';
 import { declareShadowedRequireAliasBinding } from '../../shadowed_require_alias_pattern';
-import { discardLuaBindingScope, enterLuaBindingScope, lintScopedBindingStatements } from './bindings';
+import { discardBindingScope, enterBindingScope, lintScopedBindingStatements } from './bindings';
 import { isConstantModulePath } from './object_ownership';
 import { ShadowedRequireAliasBinding, ShadowedRequireAliasContext } from './types';
 
-export function getRequiredModulePath(expression: LuaExpression): string | undefined {
-	if (expression.kind !== LuaSyntaxKind.CallExpression) {
+export function getRequiredModulePath(expression: Expression): string | undefined {
+	if (expression.kind !== SyntaxKind.CallExpression) {
 		return undefined;
 	}
-	if (expression.callee.kind !== LuaSyntaxKind.IdentifierExpression || expression.callee.name !== 'require') {
+	if (expression.callee.kind !== SyntaxKind.IdentifierExpression || expression.callee.name !== 'require') {
 		return undefined;
 	}
 	if (expression.arguments.length === 0) {
 		return undefined;
 	}
 	const firstArgument = expression.arguments[0];
-	if (firstArgument.kind !== LuaSyntaxKind.StringLiteralExpression) {
+	if (firstArgument.kind !== SyntaxKind.StringLiteralExpression) {
 		return undefined;
 	}
 	return firstArgument.value;
 }
 
-export function isConstantModuleRequireExpression(expression: LuaExpression): boolean {
+export function isConstantModuleRequireExpression(expression: Expression): boolean {
 	const requiredModulePath = getRequiredModulePath(expression);
 	return requiredModulePath !== undefined && isConstantModulePath(requiredModulePath);
 }
 
-export function createShadowedRequireAliasContext(issues: LuaLintIssue[]): ShadowedRequireAliasContext {
+export function createShadowedRequireAliasContext(issues: CartLintIssue[]): ShadowedRequireAliasContext {
 	return {
 		issues,
 		bindingStacksByName: new Map<string, ShadowedRequireAliasBinding[]>(),
@@ -36,47 +36,47 @@ export function createShadowedRequireAliasContext(issues: LuaLintIssue[]): Shado
 }
 
 export function enterShadowedRequireAliasScope(context: ShadowedRequireAliasContext): void {
-	enterLuaBindingScope(context);
+	enterBindingScope(context);
 }
 
 export function leaveShadowedRequireAliasScope(context: ShadowedRequireAliasContext): void {
-	discardLuaBindingScope(context);
+	discardBindingScope(context);
 }
 
-export function lintShadowedRequireAliasExpression(expression: LuaExpression | null, context: ShadowedRequireAliasContext): void {
+export function lintShadowedRequireAliasExpression(expression: Expression | null, context: ShadowedRequireAliasContext): void {
 	if (!expression) {
 		return;
 	}
 	switch (expression.kind) {
-		case LuaSyntaxKind.CallExpression:
+		case SyntaxKind.CallExpression:
 			lintShadowedRequireAliasExpression(expression.callee, context);
 			for (const argument of expression.arguments) {
 				lintShadowedRequireAliasExpression(argument, context);
 			}
 			return;
-		case LuaSyntaxKind.MemberExpression:
+		case SyntaxKind.MemberExpression:
 			lintShadowedRequireAliasExpression(expression.base, context);
 			return;
-		case LuaSyntaxKind.IndexExpression:
+		case SyntaxKind.IndexExpression:
 			lintShadowedRequireAliasExpression(expression.base, context);
 			lintShadowedRequireAliasExpression(expression.index, context);
 			return;
-		case LuaSyntaxKind.BinaryExpression:
+		case SyntaxKind.BinaryExpression:
 			lintShadowedRequireAliasExpression(expression.left, context);
 			lintShadowedRequireAliasExpression(expression.right, context);
 			return;
-		case LuaSyntaxKind.UnaryExpression:
+		case SyntaxKind.UnaryExpression:
 			lintShadowedRequireAliasExpression(expression.operand, context);
 			return;
-		case LuaSyntaxKind.TableConstructorExpression:
+		case SyntaxKind.TableConstructorExpression:
 			for (const field of expression.fields) {
-				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+				if (field.kind === TableFieldKind.ExpressionKey) {
 					lintShadowedRequireAliasExpression(field.key, context);
 				}
 				lintShadowedRequireAliasExpression(field.value, context);
 			}
 			return;
-		case LuaSyntaxKind.FunctionExpression:
+		case SyntaxKind.FunctionExpression:
 			lintShadowedRequireAliasFunctionExpression(expression, context);
 			return;
 		default:
@@ -85,12 +85,12 @@ export function lintShadowedRequireAliasExpression(expression: LuaExpression | n
 }
 
 export function lintShadowedRequireAliasStatements(
-	statements: ReadonlyArray<LuaStatement>,
+	statements: ReadonlyArray<Statement>,
 	context: ShadowedRequireAliasContext,
 ): void {
 	for (const statement of statements) {
 		switch (statement.kind) {
-			case LuaSyntaxKind.LocalAssignmentStatement: {
+			case SyntaxKind.LocalAssignmentStatement: {
 				const valueCount = Math.min(statement.names.length, statement.values.length);
 				for (let index = 0; index < statement.names.length; index += 1) {
 					const requiredModulePath = index < valueCount ? getRequiredModulePath(statement.values[index]) : undefined;
@@ -101,14 +101,14 @@ export function lintShadowedRequireAliasStatements(
 				}
 				break;
 			}
-			case LuaSyntaxKind.LocalFunctionStatement:
+			case SyntaxKind.LocalFunctionStatement:
 				declareShadowedRequireAliasBinding(context, statement.name, undefined);
 				lintShadowedRequireAliasFunctionExpression(statement.functionExpression, context);
 				break;
-			case LuaSyntaxKind.FunctionDeclarationStatement:
+			case SyntaxKind.FunctionDeclarationStatement:
 				lintShadowedRequireAliasFunctionExpression(statement.functionExpression, context);
 				break;
-			case LuaSyntaxKind.AssignmentStatement:
+			case SyntaxKind.AssignmentStatement:
 				for (const left of statement.left) {
 					lintShadowedRequireAliasExpression(left, context);
 				}
@@ -116,12 +116,12 @@ export function lintShadowedRequireAliasStatements(
 					lintShadowedRequireAliasExpression(right, context);
 				}
 				break;
-			case LuaSyntaxKind.ReturnStatement:
+			case SyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
 					lintShadowedRequireAliasExpression(expression, context);
 				}
 				break;
-			case LuaSyntaxKind.IfStatement:
+			case SyntaxKind.IfStatement:
 				for (const clause of statement.clauses) {
 					if (clause.condition) {
 						lintShadowedRequireAliasExpression(clause.condition, context);
@@ -129,17 +129,17 @@ export function lintShadowedRequireAliasStatements(
 					lintScopedBindingStatements(context, clause.block.body, lintShadowedRequireAliasStatements);
 				}
 				break;
-			case LuaSyntaxKind.WhileStatement:
+			case SyntaxKind.WhileStatement:
 				lintShadowedRequireAliasExpression(statement.condition, context);
 				lintScopedBindingStatements(context, statement.block.body, lintShadowedRequireAliasStatements);
 				break;
-			case LuaSyntaxKind.RepeatStatement:
+			case SyntaxKind.RepeatStatement:
 				enterShadowedRequireAliasScope(context);
 				lintShadowedRequireAliasStatements(statement.block.body, context);
 				lintShadowedRequireAliasExpression(statement.condition, context);
 				leaveShadowedRequireAliasScope(context);
 				break;
-			case LuaSyntaxKind.ForNumericStatement:
+			case SyntaxKind.ForNumericStatement:
 				lintShadowedRequireAliasExpression(statement.start, context);
 				lintShadowedRequireAliasExpression(statement.limit, context);
 				lintShadowedRequireAliasExpression(statement.step, context);
@@ -148,7 +148,7 @@ export function lintShadowedRequireAliasStatements(
 				lintShadowedRequireAliasStatements(statement.block.body, context);
 				leaveShadowedRequireAliasScope(context);
 				break;
-			case LuaSyntaxKind.ForGenericStatement:
+			case SyntaxKind.ForGenericStatement:
 				for (const iterator of statement.iterators) {
 					lintShadowedRequireAliasExpression(iterator, context);
 				}
@@ -159,10 +159,10 @@ export function lintShadowedRequireAliasStatements(
 				lintShadowedRequireAliasStatements(statement.block.body, context);
 				leaveShadowedRequireAliasScope(context);
 				break;
-			case LuaSyntaxKind.DoStatement:
+			case SyntaxKind.DoStatement:
 				lintScopedBindingStatements(context, statement.block.body, lintShadowedRequireAliasStatements);
 				break;
-			case LuaSyntaxKind.CallStatement:
+			case SyntaxKind.CallStatement:
 				lintShadowedRequireAliasExpression(statement.expression, context);
 				break;
 			default:
@@ -171,7 +171,7 @@ export function lintShadowedRequireAliasStatements(
 	}
 }
 
-function lintShadowedRequireAliasFunctionExpression(functionExpression: LuaFunctionExpression, context: ShadowedRequireAliasContext): void {
+function lintShadowedRequireAliasFunctionExpression(functionExpression: CartFunctionExpression, context: ShadowedRequireAliasContext): void {
 	enterShadowedRequireAliasScope(context);
 	for (const parameter of functionExpression.parameters) {
 		declareShadowedRequireAliasBinding(context, parameter, undefined);
@@ -180,16 +180,16 @@ function lintShadowedRequireAliasFunctionExpression(functionExpression: LuaFunct
 	leaveShadowedRequireAliasScope(context);
 }
 
-export function lintShadowedRequireAliasPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+export function lintShadowedRequireAliasPattern(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
 	const context = createShadowedRequireAliasContext(issues);
 	enterShadowedRequireAliasScope(context);
 	lintShadowedRequireAliasStatements(statements, context);
 	leaveShadowedRequireAliasScope(context);
 }
 
-export function isRequireCallExpression(expression: LuaExpression | undefined): boolean {
-	if (!expression || expression.kind !== LuaSyntaxKind.CallExpression) {
+export function isRequireCallExpression(expression: Expression | undefined): boolean {
+	if (!expression || expression.kind !== SyntaxKind.CallExpression) {
 		return false;
 	}
-	return expression.callee.kind === LuaSyntaxKind.IdentifierExpression && expression.callee.name === 'require';
+	return expression.callee.kind === SyntaxKind.IdentifierExpression && expression.callee.name === 'require';
 }

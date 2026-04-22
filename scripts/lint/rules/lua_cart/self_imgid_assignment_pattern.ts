@@ -1,22 +1,22 @@
 import { defineLintRule } from '../../rule';
-import { type LuaExpression, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { isSelfImageIdAssignmentTarget, isSpriteComponentImageIdAssignmentTarget } from './impl/support/self_properties';
 import { pushIssue } from './impl/support/lint_context';
 
-export const selfImgidAssignmentPatternRule = defineLintRule('lua_cart', 'self_imgid_assignment_pattern');
+export const selfImgidAssignmentPatternRule = defineLintRule('cart', 'self_imgid_assignment_pattern');
 
-export function lintSelfImgIdAssignmentPattern(target: LuaExpression, value: LuaExpression | undefined, issues: LuaLintIssue[]): void {
+export function lintSelfImgIdAssignmentPattern(target: Expression, value: Expression | undefined, issues: CartLintIssue[]): void {
 	if (!isSelfImageIdAssignmentTarget(target) || !value) {
 		return;
 	}
 	if (isSpriteComponentImageIdAssignmentTarget(target)) {
 		return;
 	}
-	if (value.kind !== LuaSyntaxKind.StringLiteralExpression && value.kind !== LuaSyntaxKind.NilLiteralExpression) {
+	if (value.kind !== SyntaxKind.StringLiteralExpression && value.kind !== SyntaxKind.NilLiteralExpression) {
 		return;
 	}
-	if (value.kind === LuaSyntaxKind.StringLiteralExpression && value.value) {
+	if (value.kind === SyntaxKind.StringLiteralExpression && value.value) {
 		return;
 	}
 	pushIssue(

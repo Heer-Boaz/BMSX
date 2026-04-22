@@ -6,7 +6,7 @@ import { collectStatementRanges } from '../../../../src/bmsx/language/cpp/syntax
 import { normalizedTokenText, type Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { defineLintRule } from '../../rule';
 import { compactStatementText } from '../../ts_node';
-import type { LintIssue } from '../../ts_rule';
+import type { LintIssue } from '../ts/support/ast';
 
 export const repeatedStatementSequencePatternRule = defineLintRule('common', 'repeated_statement_sequence_pattern');
 

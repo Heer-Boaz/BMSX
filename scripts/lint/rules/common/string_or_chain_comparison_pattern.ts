@@ -7,8 +7,8 @@ import {
 import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { pushTokenLintIssue, type LintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
-import { type LuaExpression } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type LuaExpression as Expression } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { matchesStringOrChainComparisonPattern } from '../lua_cart/impl/support/conditions';
 import { pushIssue } from '../lua_cart/impl/support/lint_context';
 
@@ -69,7 +69,7 @@ function stringComparisonSubject(tokens: readonly Token[], start: number, end: n
 	return null;
 }
 
-export function lintStringOrChainComparisonPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
+export function lintStringOrChainComparisonPattern(expression: Expression, issues: CartLintIssue[]): void {
 	if (!matchesStringOrChainComparisonPattern(expression)) {
 		return;
 	}

@@ -1,56 +1,56 @@
-import { type LuaExpression, LuaSyntaxKind, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 
-export function getExpressionSignature(expression: LuaExpression): string {
+export function getExpressionSignature(expression: Expression): string {
 	switch (expression.kind) {
-		case LuaSyntaxKind.NumericLiteralExpression:
+		case SyntaxKind.NumericLiteralExpression:
 			return `n:${String(expression.value)}`;
-		case LuaSyntaxKind.StringLiteralExpression:
+		case SyntaxKind.StringLiteralExpression:
 			return `s:${JSON.stringify(expression.value)}`;
-		case LuaSyntaxKind.BooleanLiteralExpression:
+		case SyntaxKind.BooleanLiteralExpression:
 			return expression.value ? 'b:1' : 'b:0';
-		case LuaSyntaxKind.NilLiteralExpression:
+		case SyntaxKind.NilLiteralExpression:
 			return 'nil';
-		case LuaSyntaxKind.VarargExpression:
+		case SyntaxKind.VarargExpression:
 			return 'vararg';
-		case LuaSyntaxKind.IdentifierExpression:
+		case SyntaxKind.IdentifierExpression:
 			return `id:${expression.name}`;
-		case LuaSyntaxKind.MemberExpression:
+		case SyntaxKind.MemberExpression:
 			return `member:${getExpressionSignature(expression.base)}.${expression.identifier}`;
-		case LuaSyntaxKind.IndexExpression:
+		case SyntaxKind.IndexExpression:
 			return `index:${getExpressionSignature(expression.base)}[${getExpressionSignature(expression.index)}]`;
-		case LuaSyntaxKind.UnaryExpression:
+		case SyntaxKind.UnaryExpression:
 			return `unary:${expression.operator}:${getExpressionSignature(expression.operand)}`;
-			case LuaSyntaxKind.BinaryExpression:
+			case SyntaxKind.BinaryExpression:
 				return `binary:${expression.operator}:${getExpressionSignature(expression.left)}:${getExpressionSignature(expression.right)}`;
-			case LuaSyntaxKind.CallExpression: {
+			case SyntaxKind.CallExpression: {
 				const argumentSignatures = expression.arguments.map(getExpressionSignature);
 				const callKind = expression.methodName === undefined ? 'call' : `method:${expression.methodName}`;
 				return `${callKind}:${getExpressionSignature(expression.callee)}(${argumentSignatures.join(',')})`;
 			}
-		case LuaSyntaxKind.TableConstructorExpression: {
+		case SyntaxKind.TableConstructorExpression: {
 			const fieldSignatures = expression.fields.map(field => {
-				if (field.kind === LuaTableFieldKind.Array) {
+				if (field.kind === TableFieldKind.Array) {
 					return `a:${getExpressionSignature(field.value)}`;
 				}
-				if (field.kind === LuaTableFieldKind.IdentifierKey) {
+				if (field.kind === TableFieldKind.IdentifierKey) {
 					return `k:${field.name}:${getExpressionSignature(field.value)}`;
 				}
 				return `e:${getExpressionSignature(field.key)}:${getExpressionSignature(field.value)}`;
 			});
 			return `table:{${fieldSignatures.join('|')}}`;
 		}
-		case LuaSyntaxKind.FunctionExpression:
+		case SyntaxKind.FunctionExpression:
 			return '';
 		default:
 			return '';
 	}
 }
 
-export function getExpressionKeyName(expression: LuaExpression): string | undefined {
-	if (expression.kind === LuaSyntaxKind.StringLiteralExpression) {
+export function getExpressionKeyName(expression: Expression): string | undefined {
+	if (expression.kind === SyntaxKind.StringLiteralExpression) {
 		return expression.value;
 	}
-	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+	if (expression.kind === SyntaxKind.IdentifierExpression) {
 		return expression.name;
 	}
 	return undefined;

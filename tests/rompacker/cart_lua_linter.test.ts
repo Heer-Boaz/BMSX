@@ -3,10 +3,10 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { lintCartLuaSources } from '../../scripts/rompacker/cart_lua_linter';
+import { lintCartSources } from '../../scripts/rompacker/cart_lua_linter_runtime';
 
-async function withLuaLintFixture(name: string, source: string, run: (root: string) => Promise<void>): Promise<void> {
-	const root = join(process.cwd(), 'tests', '.tmp', name);
+async function withCartLintFixture(name: string, source: string, run: (root: string) => Promise<void>): Promise<void> {
+	const root = join(process.cwd(), 'tmp', 'tests', 'rompacker', name);
 	const filePath = join(root, 'sample.lua');
 	try {
 		await rm(root, { recursive: true, force: true });
@@ -19,7 +19,7 @@ async function withLuaLintFixture(name: string, source: string, run: (root: stri
 }
 
 test('cart lua linter rejects const copies from globals module aliases', async () => {
-	await withLuaLintFixture(
+	await withCartLintFixture(
 		'cart_lua_linter_globals_const_copy',
 		[
 			"local globals<const> = require('globals')",
@@ -27,7 +27,7 @@ test('cart lua linter rejects const copies from globals module aliases', async (
 		].join('\n'),
 		async root => {
 			await assert.rejects(
-				lintCartLuaSources({ roots: [root], profile: 'cart' }),
+				lintCartSources({ roots: [root], profile: 'cart' }),
 				/Local copies of constants are forbidden \("bg_id"\)\./,
 			);
 		},
@@ -35,7 +35,7 @@ test('cart lua linter rejects const copies from globals module aliases', async (
 });
 
 test('cart lua linter rejects math.floor references in cart and bios profiles', async () => {
-	await withLuaLintFixture(
+	await withCartLintFixture(
 		'cart_lua_linter_math_floor_reference',
 		[
 			'local floor<const> = math.floor',
@@ -44,7 +44,7 @@ test('cart lua linter rejects math.floor references in cart and bios profiles', 
 		async root => {
 			for (const profile of ['cart', 'bios'] as const) {
 				await assert.rejects(
-					lintCartLuaSources({ roots: [root], profile }),
+					lintCartSources({ roots: [root], profile }),
 					/math\.floor is forbidden\. Use \/\/ instead of floor-based rounding or truncation\./,
 				);
 			}
@@ -53,7 +53,7 @@ test('cart lua linter rejects math.floor references in cart and bios profiles', 
 });
 
 test('cart lua linter rejects custom random helpers in cart and bios profiles', async () => {
-	await withLuaLintFixture(
+	await withCartLintFixture(
 		'cart_lua_linter_random_helper',
 		[
 			'local random_int<const> = function(min, max)',
@@ -63,7 +63,7 @@ test('cart lua linter rejects custom random helpers in cart and bios profiles', 
 		async root => {
 			for (const profile of ['cart', 'bios'] as const) {
 				await assert.rejects(
-					lintCartLuaSources({ roots: [root], profile }),
+					lintCartSources({ roots: [root], profile }),
 					/Custom random helper "random_int" is forbidden\. Use math\.random directly instead of inventing a random_int-style wrapper\./,
 				);
 			}
@@ -72,7 +72,7 @@ test('cart lua linter rejects custom random helpers in cart and bios profiles', 
 });
 
 test('cart lua linter rejects chained const copies from constants module aliases', async () => {
-	await withLuaLintFixture(
+	await withCartLintFixture(
 		'cart_lua_linter_chained_const_copy',
 		[
 			"local constants<const> = require('constants')",
@@ -81,7 +81,7 @@ test('cart lua linter rejects chained const copies from constants module aliases
 		].join('\n'),
 		async root => {
 			await assert.rejects(
-				lintCartLuaSources({ roots: [root], profile: 'cart' }),
+				lintCartSources({ roots: [root], profile: 'cart' }),
 				error => {
 					assert.match(String(error), /Local copies of constants are forbidden \("room"\)\./);
 					assert.match(String(error), /Local copies of constants are forbidden \("tile_size"\)\./);
@@ -93,11 +93,11 @@ test('cart lua linter rejects chained const copies from constants module aliases
 });
 
 test('cart lua linter allows const module imports without member copies', async () => {
-	await withLuaLintFixture(
+	await withCartLintFixture(
 		'cart_lua_linter_const_module_import',
 		"local globals<const> = require('globals')\nreturn globals",
 		async root => {
-			await lintCartLuaSources({ roots: [root], profile: 'cart' });
+			await lintCartSources({ roots: [root], profile: 'cart' });
 		},
 	);
 });
@@ -186,12 +186,12 @@ test('cart lua linter treats local const function expressions as named functions
 	] as const;
 
 	for (const testCase of cases) {
-		await withLuaLintFixture(
+		await withCartLintFixture(
 			`cart_lua_linter_named_local_const_function_${testCase.name}`,
 			testCase.source,
 			async root => {
 				await assert.rejects(
-					lintCartLuaSources({ roots: [root], profile: 'cart' }),
+					lintCartSources({ roots: [root], profile: 'cart' }),
 					testCase.expected,
 				);
 			},
@@ -200,7 +200,7 @@ test('cart lua linter treats local const function expressions as named functions
 });
 
 test('cart lua linter explains direct guard alternative for or-nil fallback pattern', async () => {
-	await withLuaLintFixture(
+	await withCartLintFixture(
 		'cart_lua_linter_or_nil_message',
 		[
 			'local result<const> = source ~= nil and build(source) or nil',
@@ -208,7 +208,7 @@ test('cart lua linter explains direct guard alternative for or-nil fallback patt
 		].join('\n'),
 		async root => {
 			await assert.rejects(
-				lintCartLuaSources({ roots: [root], profile: 'cart' }),
+				lintCartSources({ roots: [root], profile: 'cart' }),
 				/"or nil" fallback pattern is forbidden[\s\S]*guard on that value directly[\s\S]*tracks and compile_tracks\(tracks\)[\s\S]*real if\/else/,
 			);
 		},
@@ -216,7 +216,7 @@ test('cart lua linter explains direct guard alternative for or-nil fallback patt
 });
 
 test('cart lua linter rejects locals that shadow outer require aliases', async () => {
-	await withLuaLintFixture(
+	await withCartLintFixture(
 		'cart_lua_linter_shadowed_require_alias',
 		[
 			"local font<const> = require('font')",
@@ -228,7 +228,7 @@ test('cart lua linter rejects locals that shadow outer require aliases', async (
 		].join('\n'),
 		async root => {
 			await assert.rejects(
-				lintCartLuaSources({ roots: [root], profile: 'cart' }),
+				lintCartSources({ roots: [root], profile: 'cart' }),
 				/Local "font" shadows outer module alias from require\('font'\)/,
 			);
 		},
@@ -236,7 +236,7 @@ test('cart lua linter rejects locals that shadow outer require aliases', async (
 });
 
 test('cart lua linter allows renamed local handles next to require aliases', async () => {
-	await withLuaLintFixture(
+	await withCartLintFixture(
 		'cart_lua_linter_shadowed_require_alias_allowed',
 		[
 			"local font<const> = require('font')",
@@ -247,7 +247,7 @@ test('cart lua linter allows renamed local handles next to require aliases', asy
 			'end',
 		].join('\n'),
 		async root => {
-			await lintCartLuaSources({ roots: [root], profile: 'cart' });
+			await lintCartSources({ roots: [root], profile: 'cart' });
 		},
 	);
 });

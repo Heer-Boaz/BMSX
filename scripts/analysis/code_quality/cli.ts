@@ -135,7 +135,7 @@ export function extractRootsForLanguageDetection(argv: string[], defaultRoots: r
 	return paths;
 }
 
-export function runCppQuality(args: readonly string[]): number {
+export function runNativeQuality(args: readonly string[]): number {
 	if (!commandExists('npx')) {
 		throw new Error('npx is required to run C++ quality checks');
 	}
@@ -152,7 +152,7 @@ export function runCppQuality(args: readonly string[]): number {
 
 export function detectProjectLanguage(roots: readonly string[]): ProjectLanguage {
 	let hasTypeScript = false;
-	let hasCpp = false;
+	let hasNativeSources = false;
 	const files = collectSourceFiles(roots, new Set([...FILE_EXTENSIONS, ...CPP_FILE_EXTENSIONS]));
 	for (let index = 0; index < files.length; index += 1) {
 		const extension = extname(files[index]);
@@ -160,16 +160,16 @@ export function detectProjectLanguage(roots: readonly string[]): ProjectLanguage
 			hasTypeScript = true;
 		}
 		if (CPP_FILE_EXTENSIONS.has(extension)) {
-			hasCpp = true;
+			hasNativeSources = true;
 		}
-		if (hasTypeScript && hasCpp) {
+		if (hasTypeScript && hasNativeSources) {
 			return 'mixed';
 		}
 	}
-	if (hasTypeScript && !hasCpp) {
+	if (hasTypeScript && !hasNativeSources) {
 		return 'ts';
 	}
-	if (!hasTypeScript && hasCpp) {
+	if (!hasTypeScript && hasNativeSources) {
 		return 'cpp';
 	}
 	return 'unknown';
@@ -522,7 +522,7 @@ export function run(): void {
 	const inferredRoots = extractRootsForLanguageDetection(argv, config.scan.roots);
 	const language = detectProjectLanguage(inferredRoots);
 	if (language === 'cpp') {
-		const exitCode = runCppQuality(argv);
+		const exitCode = runNativeQuality(argv);
 		if (exitCode !== 0) {
 			process.exit(exitCode);
 		}

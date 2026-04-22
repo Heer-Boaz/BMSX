@@ -1,6 +1,6 @@
 import ts from 'typescript';
 import { defineLintRule } from '../../rule';
-import { pushLintIssue, type LintIssue } from '../../ts_rule';
+import { pushLintIssue, type LintIssue } from '../ts/support/ast';
 
 export const redundantConditionalPatternRule = defineLintRule('code_quality', 'redundant_conditional_pattern');
 

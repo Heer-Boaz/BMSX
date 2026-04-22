@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import type { LintIssue } from '../../ts_rule';
+import type { LintIssue } from '../ts/support/ast';
 import { type FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import { type Token, normalizedTokenText } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { type NormalizedBodyInfo } from '../ts/support/declarations';

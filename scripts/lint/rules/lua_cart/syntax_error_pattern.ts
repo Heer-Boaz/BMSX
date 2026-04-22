@@ -1,10 +1,10 @@
 import { defineLintRule } from '../../rule';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type CartLintIssue } from '../../lua_rule';
 import { pushIssueAt } from './impl/support/lint_context';
 
-export const syntaxErrorPatternRule = defineLintRule('lua_cart', 'syntax_error_pattern');
+export const syntaxErrorPatternRule = defineLintRule('cart', 'syntax_error_pattern');
 
-export type LuaLintSyntaxError = {
+export type CartLintSyntaxError = {
 	readonly path: string;
 	readonly line: number;
 	readonly column: number;
@@ -12,8 +12,8 @@ export type LuaLintSyntaxError = {
 };
 
 export function lintSyntaxError(
-	error: LuaLintSyntaxError | null,
-	issues: LuaLintIssue[],
+	error: CartLintSyntaxError | null,
+	issues: CartLintIssue[],
 ): boolean {
 	if (!error) {
 		return false;

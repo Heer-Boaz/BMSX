@@ -46,6 +46,15 @@ void setCycleBudgetPerFrame(Runtime& runtime, int value) {
 	runtime.vblank.configureCycleBudget(runtime);
 }
 
+void setFrameTiming(Runtime& runtime, i64 cpuHz, int cycleBudgetPerFrame, int vblankCycles) {
+	runtime.timing.cpuHz = cpuHz;
+	if (cycleBudgetPerFrame != runtime.timing.cycleBudgetPerFrame) {
+		runtime.timing.cycleBudgetPerFrame = cycleBudgetPerFrame;
+		runtime.setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(cycleBudgetPerFrame)));
+	}
+	runtime.vblank.setVblankCycles(runtime, vblankCycles);
+}
+
 void setRenderWorkUnitsPerSec(Runtime& runtime, int vdpValue, int geoValue) {
 	runtime.timing.vdpWorkUnitsPerSec = resolvePositiveWorkUnits(vdpValue, "work_units_per_sec");
 	runtime.timing.geoWorkUnitsPerSec = resolvePositiveWorkUnits(geoValue, "geo_work_units_per_sec");
@@ -65,9 +74,7 @@ void applyActiveMachineTiming(Runtime& runtime, i64 cpuHz) {
 	const MachineManifest& manifest = EngineCore::instance().machineManifest();
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, runtime.timing.ufpsScaled);
 	const i64 vblankCycles = resolveVblankCycles(cpuHz, runtime.timing.ufpsScaled, manifest.viewportHeight);
-	setCpuHz(runtime, cpuHz);
-	setCycleBudgetPerFrame(runtime, cycleBudget);
-	runtime.vblank.setVblankCycles(runtime, static_cast<int>(vblankCycles));
+	setFrameTiming(runtime, cpuHz, cycleBudget, static_cast<int>(vblankCycles));
 	// @code-quality start value-or-boundary -- manifest render defaults are resolved at timing activation.
 	setRenderWorkUnitsPerSec(
 		runtime,

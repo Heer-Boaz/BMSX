@@ -1,14 +1,14 @@
 import { defineLintRule } from '../../rule';
-import { type LuaIdentifierExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { type LuaIdentifierExpression as IdentifierExpression } from '../../../../src/bmsx/lua/syntax/ast';
 import { UnusedInitValueContext } from './impl/support/types';
 import { resolveUnusedInitValueBinding } from './impl/support/unused_init';
 import { pushIssue } from './impl/support/lint_context';
 
-export const unusedInitValuePatternRule = defineLintRule('lua_cart', 'unused_init_value_pattern');
+export const unusedInitValuePatternRule = defineLintRule('cart', 'unused_init_value_pattern');
 
 export function markUnusedInitValueWrite(
 	context: UnusedInitValueContext,
-	identifier: LuaIdentifierExpression,
+	identifier: IdentifierExpression,
 	isGuaranteedWrite: boolean,
 ): void {
 	if (!isGuaranteedWrite) {

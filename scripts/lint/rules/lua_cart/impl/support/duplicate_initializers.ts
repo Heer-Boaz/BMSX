@@ -1,10 +1,10 @@
-import { type LuaExpression, type LuaIdentifierExpression, type LuaStatement, LuaSyntaxKind, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../../../lua_rule';
+import { type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../../../lua_rule';
 import { lintDuplicateInitializerInStatements } from '../../duplicate_initializer_pattern';
-import { declareLuaBinding, discardLuaBindingScope, enterLuaBindingScope, resolveLuaBinding } from './bindings';
+import { declareBinding, discardBindingScope, enterBindingScope, resolveBinding } from './bindings';
 import { DuplicateInitializerBinding, DuplicateInitializerContext } from './types';
 
-export function createDuplicateInitializerContext(issues: LuaLintIssue[]): DuplicateInitializerContext {
+export function createDuplicateInitializerContext(issues: CartLintIssue[]): DuplicateInitializerContext {
 	const context: DuplicateInitializerContext = {
 		issues,
 		bindingStacksByName: new Map<string, DuplicateInitializerBinding[]>(),
@@ -15,62 +15,62 @@ export function createDuplicateInitializerContext(issues: LuaLintIssue[]): Dupli
 }
 
 export function resolveDuplicateInitializerBinding(context: DuplicateInitializerContext, name: string): DuplicateInitializerBinding | undefined {
-	return resolveLuaBinding(context, name);
+	return resolveBinding(context, name);
 }
 
 export function enterDuplicateInitializerScope(context: DuplicateInitializerContext): void {
-	enterLuaBindingScope(context);
+	enterBindingScope(context);
 }
 
 export function leaveDuplicateInitializerScope(context: DuplicateInitializerContext): void {
-	discardLuaBindingScope(context);
+	discardBindingScope(context);
 }
 
 export function declareDuplicateInitializerBinding(
 	context: DuplicateInitializerContext,
-	declaration: LuaIdentifierExpression,
+	declaration: IdentifierExpression,
 	initializerSignature: string,
 ): void {
-	declareLuaBinding(context, declaration, {
+	declareBinding(context, declaration, {
 		declaration,
 		initializerSignature,
 	});
 }
 
-export function lintDuplicateInitializerInExpression(expression: LuaExpression | null, context: DuplicateInitializerContext): void {
+export function lintDuplicateInitializerInExpression(expression: Expression | null, context: DuplicateInitializerContext): void {
 	if (!expression) {
 		return;
 	}
 	switch (expression.kind) {
-		case LuaSyntaxKind.MemberExpression:
+		case SyntaxKind.MemberExpression:
 			lintDuplicateInitializerInExpression(expression.base, context);
 			return;
-		case LuaSyntaxKind.IndexExpression:
+		case SyntaxKind.IndexExpression:
 			lintDuplicateInitializerInExpression(expression.base, context);
 			lintDuplicateInitializerInExpression(expression.index, context);
 			return;
-		case LuaSyntaxKind.BinaryExpression:
+		case SyntaxKind.BinaryExpression:
 			lintDuplicateInitializerInExpression(expression.left, context);
 			lintDuplicateInitializerInExpression(expression.right, context);
 			return;
-		case LuaSyntaxKind.UnaryExpression:
+		case SyntaxKind.UnaryExpression:
 			lintDuplicateInitializerInExpression(expression.operand, context);
 			return;
-		case LuaSyntaxKind.CallExpression:
+		case SyntaxKind.CallExpression:
 			lintDuplicateInitializerInExpression(expression.callee, context);
 			for (const argument of expression.arguments) {
 				lintDuplicateInitializerInExpression(argument, context);
 			}
 			return;
-		case LuaSyntaxKind.TableConstructorExpression:
+		case SyntaxKind.TableConstructorExpression:
 			for (const field of expression.fields) {
-				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+				if (field.kind === TableFieldKind.ExpressionKey) {
 					lintDuplicateInitializerInExpression(field.key, context);
 				}
 				lintDuplicateInitializerInExpression(field.value, context);
 			}
 			return;
-		case LuaSyntaxKind.FunctionExpression:
+		case SyntaxKind.FunctionExpression:
 			enterDuplicateInitializerScope(context);
 			for (const parameter of expression.parameters) {
 				declareDuplicateInitializerBinding(context, parameter, '');
@@ -83,7 +83,7 @@ export function lintDuplicateInitializerInExpression(expression: LuaExpression |
 	}
 }
 
-export function lintDuplicateInitializerPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+export function lintDuplicateInitializerPattern(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
 	const context = createDuplicateInitializerContext(issues);
 	try {
 		lintDuplicateInitializerInStatements(statements, context);

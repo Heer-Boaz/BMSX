@@ -1,5 +1,5 @@
-import { LuaBinaryOperator, type LuaExpression } from '../../../../src/bmsx/lua/syntax/ast';
-import { isLuaEmptyStringLiteral, luaBinaryExpressionHasOperand } from '../../../../src/bmsx/lua/syntax/literals';
+import { LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression } from '../../../../src/bmsx/lua/syntax/ast';
+import { isLuaEmptyStringLiteral as isEmptyStringLiteral, luaBinaryExpressionHasOperand } from '../../../../src/bmsx/lua/syntax/literals';
 import {
 	cppRangeIsNull,
 	cppRangeHas,
@@ -13,14 +13,14 @@ import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { pushTokenLintIssue, type LintIssue } from '../cpp/support/diagnostics';
 import { nullishNullNormalizationPatternRule } from '../code_quality/nullish_null_normalization_pattern';
 import { redundantConditionalPatternRule } from '../code_quality/redundant_conditional_pattern';
-import type { LuaLintIssue, LuaLintIssuePusher } from '../../lua_rule';
+import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 import { orNilFallbackPatternRule } from './or_nil_fallback_pattern';
 
 export const emptyStringFallbackPatternRule = defineLintRule('common', 'empty_string_fallback_pattern');
 
-export function lintLuaEmptyStringFallbackPattern(expression: LuaExpression, issues: LuaLintIssue[], pushIssue: LuaLintIssuePusher): void {
-	if (!luaBinaryExpressionHasOperand(expression, LuaBinaryOperator.Or, isLuaEmptyStringLiteral)) {
+export function lintAstEmptyStringFallbackPattern(expression: Expression, issues: CartLintIssue[], pushIssue: CartLintIssuePusher): void {
+	if (!luaBinaryExpressionHasOperand(expression, BinaryOperator.Or, isEmptyStringLiteral)) {
 		return;
 	}
 	pushIssue(

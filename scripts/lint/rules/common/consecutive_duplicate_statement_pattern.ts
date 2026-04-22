@@ -5,7 +5,7 @@ import { normalizedTokenText, type Token } from '../../../../src/bmsx/language/c
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { compactStatementText } from '../../ts_node';
-import { pushLintIssue, type LintIssue } from '../../ts_rule';
+import { pushLintIssue, type LintIssue } from '../ts/support/ast';
 
 export const consecutiveDuplicateStatementPatternRule = defineLintRule('common', 'consecutive_duplicate_statement_pattern');
 

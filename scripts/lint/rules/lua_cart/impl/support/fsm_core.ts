@@ -1,31 +1,31 @@
-import { type LuaCallExpression, type LuaExpression, LuaSyntaxKind, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../../../lua_rule';
+import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../../../lua_rule';
 import { lintFsmDirectStateHandlerMapValue } from '../../fsm_direct_state_handler_shorthand_pattern';
 import { getCallMethodName, getCallReceiverExpression, isGlobalCall } from '../../../../../../src/bmsx/lua/syntax/calls';
 import { FSM_STATE_HANDLER_MAP_KEYS } from './fsm_transitions';
 import { isSelfExpressionRoot } from './self_properties';
 import { getTableFieldKey } from './table_fields';
 
-export function isStateControllerExpression(expression: LuaExpression): boolean {
-	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+export function isStateControllerExpression(expression: Expression): boolean {
+	if (expression.kind === SyntaxKind.IdentifierExpression) {
 		return expression.name === 'sc';
 	}
-	if (expression.kind === LuaSyntaxKind.MemberExpression) {
+	if (expression.kind === SyntaxKind.MemberExpression) {
 		return expression.identifier === 'sc';
 	}
-	if (expression.kind !== LuaSyntaxKind.IndexExpression) {
+	if (expression.kind !== SyntaxKind.IndexExpression) {
 		return false;
 	}
-	if (expression.index.kind === LuaSyntaxKind.StringLiteralExpression) {
+	if (expression.index.kind === SyntaxKind.StringLiteralExpression) {
 		return expression.index.value === 'sc';
 	}
-	if (expression.index.kind === LuaSyntaxKind.IdentifierExpression) {
+	if (expression.index.kind === SyntaxKind.IdentifierExpression) {
 		return expression.index.name === 'sc';
 	}
 	return false;
 }
 
-export function isStateControllerDispatchCallExpression(expression: LuaCallExpression): boolean {
+export function isStateControllerDispatchCallExpression(expression: CallExpression): boolean {
 	const methodName = getCallMethodName(expression);
 	if (methodName !== 'dispatch') {
 		return false;
@@ -37,8 +37,8 @@ export function isStateControllerDispatchCallExpression(expression: LuaCallExpre
 	return isStateControllerExpression(receiver);
 }
 
-export function isTickInputCheckCallExpression(expression: LuaCallExpression): boolean {
-	if (expression.callee.kind === LuaSyntaxKind.IdentifierExpression) {
+export function isTickInputCheckCallExpression(expression: CallExpression): boolean {
+	if (expression.callee.kind === SyntaxKind.IdentifierExpression) {
 		if (isActionInputCallName(expression.callee.name.toLowerCase())) {
 			return true;
 		}
@@ -68,10 +68,10 @@ function isActionInputCallName(name: string): boolean {
 }
 
 export function lintFsmDirectStateHandlerShorthandPatternInTable(
-	expression: LuaExpression,
-	issues: LuaLintIssue[],
+	expression: Expression,
+	issues: CartLintIssue[],
 ): void {
-	if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+	if (expression.kind !== SyntaxKind.TableConstructorExpression) {
 		return;
 	}
 	for (const field of expression.fields) {
@@ -79,14 +79,14 @@ export function lintFsmDirectStateHandlerShorthandPatternInTable(
 		if (key && FSM_STATE_HANDLER_MAP_KEYS.has(key)) {
 			lintFsmDirectStateHandlerMapValue(field.value, issues);
 		}
-		if (field.kind === LuaTableFieldKind.ExpressionKey) {
+		if (field.kind === TableFieldKind.ExpressionKey) {
 			lintFsmDirectStateHandlerShorthandPatternInTable(field.key, issues);
 		}
 		lintFsmDirectStateHandlerShorthandPatternInTable(field.value, issues);
 	}
 }
 
-export function lintFsmDirectStateHandlerShorthandPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+export function lintFsmDirectStateHandlerShorthandPattern(expression: CallExpression, issues: CartLintIssue[]): void {
 	if (!isGlobalCall(expression, 'define_fsm')) {
 		return;
 	}

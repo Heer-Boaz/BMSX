@@ -1,13 +1,13 @@
 import { defineLintRule } from '../../rule';
-import { type LuaExpression, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { getGoFunctionFromHandlerEntryValue, isSelfEventsEmitCallExpression } from './impl/support/fsm_events';
 import { pushIssue } from './impl/support/lint_context';
 
-export const fsmEventReemitHandlerPatternRule = defineLintRule('lua_cart', 'fsm_event_reemit_handler_pattern');
+export const fsmEventReemitHandlerPatternRule = defineLintRule('cart', 'fsm_event_reemit_handler_pattern');
 
-export function lintFsmEventReemitHandlerPatternInMap(mapExpression: LuaExpression, issues: LuaLintIssue[]): void {
-	if (mapExpression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+export function lintFsmEventReemitHandlerPatternInMap(mapExpression: Expression, issues: CartLintIssue[]): void {
+	if (mapExpression.kind !== SyntaxKind.TableConstructorExpression) {
 		return;
 	}
 	for (const entry of mapExpression.fields) {
@@ -19,7 +19,7 @@ export function lintFsmEventReemitHandlerPatternInMap(mapExpression: LuaExpressi
 			continue;
 		}
 		const onlyStatement = goFunction.body.body[0];
-		if (onlyStatement.kind !== LuaSyntaxKind.CallStatement) {
+		if (onlyStatement.kind !== SyntaxKind.CallStatement) {
 			continue;
 		}
 		if (!isSelfEventsEmitCallExpression(onlyStatement.expression)) {

@@ -1,10 +1,10 @@
-import { type LuaExpression, type LuaFunctionDeclarationStatement, type LuaIdentifierExpression, type LuaLocalFunctionStatement, type LuaStatement, LuaSyntaxKind, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../../../lua_rule';
+import { type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaIdentifierExpression as IdentifierExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../../../lua_rule';
 import { leaveConstLocalScope } from '../../../common/local_const_pattern';
-import { declareLuaBinding, enterLuaBindingScope } from './bindings';
+import { declareBinding, enterBindingScope } from './bindings';
 import { ConstLocalBinding, ConstLocalContext } from './types';
 
-export function createConstLocalContext(issues: LuaLintIssue[]): ConstLocalContext {
+export function createConstLocalContext(issues: CartLintIssue[]): ConstLocalContext {
 	return {
 		issues,
 		bindingStacksByName: new Map<string, ConstLocalBinding[]>(),
@@ -13,15 +13,15 @@ export function createConstLocalContext(issues: LuaLintIssue[]): ConstLocalConte
 }
 
 export function enterConstLocalScope(context: ConstLocalContext): void {
-	enterLuaBindingScope(context);
+	enterBindingScope(context);
 }
 
 export function declareConstLocalBinding(
 	context: ConstLocalContext,
-	declaration: LuaIdentifierExpression,
+	declaration: IdentifierExpression,
 	shouldReport: boolean,
 ): void {
-	declareLuaBinding(context, declaration, {
+	declareBinding(context, declaration, {
 		declaration,
 		shouldReport,
 		writeCountAfterDeclaration: 0,
@@ -40,44 +40,44 @@ export function markConstLocalWriteByName(context: ConstLocalContext, name: stri
 	binding.writeCountAfterDeclaration += 1;
 }
 
-export function markConstLocalWrite(context: ConstLocalContext, identifier: LuaIdentifierExpression): void {
+export function markConstLocalWrite(context: ConstLocalContext, identifier: IdentifierExpression): void {
 	markConstLocalWriteByName(context, identifier.name);
 }
 
-export function lintConstLocalInExpression(expression: LuaExpression | null, context: ConstLocalContext): void {
+export function lintConstLocalInExpression(expression: Expression | null, context: ConstLocalContext): void {
 	if (!expression) {
 		return;
 	}
 	switch (expression.kind) {
-		case LuaSyntaxKind.MemberExpression:
+		case SyntaxKind.MemberExpression:
 			lintConstLocalInExpression(expression.base, context);
 			return;
-		case LuaSyntaxKind.IndexExpression:
+		case SyntaxKind.IndexExpression:
 			lintConstLocalInExpression(expression.base, context);
 			lintConstLocalInExpression(expression.index, context);
 			return;
-		case LuaSyntaxKind.BinaryExpression:
+		case SyntaxKind.BinaryExpression:
 			lintConstLocalInExpression(expression.left, context);
 			lintConstLocalInExpression(expression.right, context);
 			return;
-		case LuaSyntaxKind.UnaryExpression:
+		case SyntaxKind.UnaryExpression:
 			lintConstLocalInExpression(expression.operand, context);
 			return;
-		case LuaSyntaxKind.CallExpression:
+		case SyntaxKind.CallExpression:
 			lintConstLocalInExpression(expression.callee, context);
 			for (const argument of expression.arguments) {
 				lintConstLocalInExpression(argument, context);
 			}
 			return;
-		case LuaSyntaxKind.TableConstructorExpression:
+		case SyntaxKind.TableConstructorExpression:
 			for (const field of expression.fields) {
-				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+				if (field.kind === TableFieldKind.ExpressionKey) {
 					lintConstLocalInExpression(field.key, context);
 				}
 				lintConstLocalInExpression(field.value, context);
 			}
 			return;
-		case LuaSyntaxKind.FunctionExpression:
+		case SyntaxKind.FunctionExpression:
 			enterConstLocalScope(context);
 			for (const parameter of expression.parameters) {
 				declareConstLocalBinding(context, parameter, false);
@@ -90,28 +90,28 @@ export function lintConstLocalInExpression(expression: LuaExpression | null, con
 	}
 }
 
-export function lintConstLocalInAssignmentTarget(target: LuaExpression | null, context: ConstLocalContext): void {
+export function lintConstLocalInAssignmentTarget(target: Expression | null, context: ConstLocalContext): void {
 	if (!target) {
 		return;
 	}
-	if (target.kind === LuaSyntaxKind.IdentifierExpression) {
+	if (target.kind === SyntaxKind.IdentifierExpression) {
 		markConstLocalWrite(context, target);
 		return;
 	}
-	if (target.kind === LuaSyntaxKind.MemberExpression) {
+	if (target.kind === SyntaxKind.MemberExpression) {
 		lintConstLocalInExpression(target.base, context);
 		return;
 	}
-	if (target.kind === LuaSyntaxKind.IndexExpression) {
+	if (target.kind === SyntaxKind.IndexExpression) {
 		lintConstLocalInExpression(target.base, context);
 		lintConstLocalInExpression(target.index, context);
 	}
 }
 
-export function lintConstLocalInStatements(statements: ReadonlyArray<LuaStatement>, context: ConstLocalContext): void {
+export function lintConstLocalInStatements(statements: ReadonlyArray<Statement>, context: ConstLocalContext): void {
 	for (const statement of statements) {
 		switch (statement.kind) {
-			case LuaSyntaxKind.LocalAssignmentStatement: {
+			case SyntaxKind.LocalAssignmentStatement: {
 				const hasInitializer = statement.values.length > 0;
 				for (const value of statement.values) {
 					lintConstLocalInExpression(value, context);
@@ -125,8 +125,8 @@ export function lintConstLocalInStatements(statements: ReadonlyArray<LuaStatemen
 				}
 				break;
 			}
-			case LuaSyntaxKind.LocalFunctionStatement: {
-				const localFunction = statement as LuaLocalFunctionStatement;
+			case SyntaxKind.LocalFunctionStatement: {
+				const localFunction = statement as LocalFunctionStatement;
 				declareConstLocalBinding(context, localFunction.name, false);
 				enterConstLocalScope(context);
 				for (const parameter of localFunction.functionExpression.parameters) {
@@ -136,8 +136,8 @@ export function lintConstLocalInStatements(statements: ReadonlyArray<LuaStatemen
 				leaveConstLocalScope(context);
 				break;
 			}
-			case LuaSyntaxKind.FunctionDeclarationStatement: {
-				const declaration = statement as LuaFunctionDeclarationStatement;
+			case SyntaxKind.FunctionDeclarationStatement: {
+				const declaration = statement as FunctionDeclarationStatement;
 				if (declaration.name.identifiers.length === 1 && declaration.name.methodName === null) {
 					markConstLocalWriteByName(context, declaration.name.identifiers[0]);
 				}
@@ -149,7 +149,7 @@ export function lintConstLocalInStatements(statements: ReadonlyArray<LuaStatemen
 				leaveConstLocalScope(context);
 				break;
 			}
-			case LuaSyntaxKind.AssignmentStatement:
+			case SyntaxKind.AssignmentStatement:
 				for (const right of statement.right) {
 					lintConstLocalInExpression(right, context);
 				}
@@ -157,12 +157,12 @@ export function lintConstLocalInStatements(statements: ReadonlyArray<LuaStatemen
 					lintConstLocalInAssignmentTarget(left, context);
 				}
 				break;
-			case LuaSyntaxKind.ReturnStatement:
+			case SyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
 					lintConstLocalInExpression(expression, context);
 				}
 				break;
-			case LuaSyntaxKind.IfStatement:
+			case SyntaxKind.IfStatement:
 				for (const clause of statement.clauses) {
 					if (clause.condition) {
 						lintConstLocalInExpression(clause.condition, context);
@@ -172,19 +172,19 @@ export function lintConstLocalInStatements(statements: ReadonlyArray<LuaStatemen
 					leaveConstLocalScope(context);
 				}
 				break;
-			case LuaSyntaxKind.WhileStatement:
+			case SyntaxKind.WhileStatement:
 				lintConstLocalInExpression(statement.condition, context);
 				enterConstLocalScope(context);
 				lintConstLocalInStatements(statement.block.body, context);
 				leaveConstLocalScope(context);
 				break;
-			case LuaSyntaxKind.RepeatStatement:
+			case SyntaxKind.RepeatStatement:
 				enterConstLocalScope(context);
 				lintConstLocalInStatements(statement.block.body, context);
 				leaveConstLocalScope(context);
 				lintConstLocalInExpression(statement.condition, context);
 				break;
-			case LuaSyntaxKind.ForNumericStatement:
+			case SyntaxKind.ForNumericStatement:
 				lintConstLocalInExpression(statement.start, context);
 				lintConstLocalInExpression(statement.limit, context);
 				lintConstLocalInExpression(statement.step, context);
@@ -193,7 +193,7 @@ export function lintConstLocalInStatements(statements: ReadonlyArray<LuaStatemen
 				lintConstLocalInStatements(statement.block.body, context);
 				leaveConstLocalScope(context);
 				break;
-			case LuaSyntaxKind.ForGenericStatement:
+			case SyntaxKind.ForGenericStatement:
 				for (const iterator of statement.iterators) {
 					lintConstLocalInExpression(iterator, context);
 				}
@@ -204,17 +204,17 @@ export function lintConstLocalInStatements(statements: ReadonlyArray<LuaStatemen
 				lintConstLocalInStatements(statement.block.body, context);
 				leaveConstLocalScope(context);
 				break;
-			case LuaSyntaxKind.DoStatement:
+			case SyntaxKind.DoStatement:
 				enterConstLocalScope(context);
 				lintConstLocalInStatements(statement.block.body, context);
 				leaveConstLocalScope(context);
 				break;
-			case LuaSyntaxKind.CallStatement:
+			case SyntaxKind.CallStatement:
 				lintConstLocalInExpression(statement.expression, context);
 				break;
-			case LuaSyntaxKind.BreakStatement:
-			case LuaSyntaxKind.GotoStatement:
-			case LuaSyntaxKind.LabelStatement:
+			case SyntaxKind.BreakStatement:
+			case SyntaxKind.GotoStatement:
+			case SyntaxKind.LabelStatement:
 				break;
 			default:
 				break;
@@ -222,7 +222,7 @@ export function lintConstLocalInStatements(statements: ReadonlyArray<LuaStatemen
 	}
 }
 
-export function lintConstLocalPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+export function lintConstLocalPattern(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
 	const context = createConstLocalContext(issues);
 	enterConstLocalScope(context);
 	try {

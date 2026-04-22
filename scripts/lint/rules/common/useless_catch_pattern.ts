@@ -3,7 +3,7 @@ import { previousIdentifier, trimmedExpressionText } from '../../../../src/bmsx/
 import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
-import { pushLintIssue, type LintIssue } from '../../ts_rule';
+import { pushLintIssue, type LintIssue } from '../ts/support/ast';
 import type { CatchBlockInfo } from './empty_catch_pattern';
 
 export const uselessCatchPatternRule = defineLintRule('common', 'useless_catch_pattern');

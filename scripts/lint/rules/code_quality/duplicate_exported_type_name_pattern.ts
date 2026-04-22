@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import type { LintIssue } from '../../ts_rule';
+import type { LintIssue } from '../ts/support/ast';
 
 export const duplicateExportedTypeNamePatternRule = defineLintRule('code_quality', 'duplicate_exported_type_name_pattern');
 

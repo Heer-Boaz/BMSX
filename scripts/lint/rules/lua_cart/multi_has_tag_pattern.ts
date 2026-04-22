@@ -1,12 +1,12 @@
 import { defineLintRule } from '../../rule';
-import { type LuaExpression, type LuaIfStatement } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type LuaExpression as Expression, type LuaIfStatement as IfStatement } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { countHasTagCalls, countSplitNestedIfHasTagCalls } from './impl/support/tags';
 import { pushIssue } from './impl/support/lint_context';
 
-export const multiHasTagPatternRule = defineLintRule('lua_cart', 'multi_has_tag_pattern');
+export const multiHasTagPatternRule = defineLintRule('cart', 'multi_has_tag_pattern');
 
-export function lintSplitNestedIfHasTagPattern(statement: LuaIfStatement, issues: LuaLintIssue[]): void {
+export function lintSplitNestedIfHasTagPattern(statement: IfStatement, issues: CartLintIssue[]): void {
 	const hasTagCheckCount = countSplitNestedIfHasTagCalls(statement);
 	if (hasTagCheckCount <= 1) {
 		return;
@@ -19,7 +19,7 @@ export function lintSplitNestedIfHasTagPattern(statement: LuaIfStatement, issues
 	);
 }
 
-export function lintMultiHasTagPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
+export function lintMultiHasTagPattern(expression: Expression, issues: CartLintIssue[]): void {
 	const hasTagCheckCount = countHasTagCalls(expression);
 	if (hasTagCheckCount <= 1) {
 		return;

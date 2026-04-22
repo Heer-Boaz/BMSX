@@ -1,5 +1,5 @@
-import { LuaAssignmentOperator, type LuaAssignmentStatement, LuaBinaryOperator, type LuaCallExpression, type LuaExpression, type LuaStatement, LuaSyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../../../lua_rule';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaAssignmentStatement as AssignmentStatement, LuaBinaryOperator as BinaryOperator, type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../../../lua_rule';
 import { lintFsmForbiddenLegacyFieldsInTable } from '../../fsm_forbidden_legacy_fields_pattern';
 import { lintFsmProcessInputPollingTransitionPatternInTable } from '../../fsm_process_input_polling_transition_pattern';
 import { lintFsmRunChecksInputTransitionPatternInTable } from '../../fsm_run_checks_input_transition_pattern';
@@ -7,44 +7,44 @@ import { lintFsmTickCounterTransitionPatternInTable } from '../../fsm_tick_count
 import { isGlobalCall } from '../../../../../../src/bmsx/lua/syntax/calls';
 import { getSelfAssignedPropertyNameFromTarget, isSelfPropertyReferenceByName } from './self_properties';
 
-export function hasTransitionReturnInStatements(statements: ReadonlyArray<LuaStatement>): boolean {
+export function hasTransitionReturnInStatements(statements: ReadonlyArray<Statement>): boolean {
 	for (const statement of statements) {
 		switch (statement.kind) {
-			case LuaSyntaxKind.ReturnStatement:
+			case SyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
-					if (expression.kind === LuaSyntaxKind.StringLiteralExpression && expression.value.startsWith('/')) {
+					if (expression.kind === SyntaxKind.StringLiteralExpression && expression.value.startsWith('/')) {
 						return true;
 					}
 				}
 				break;
-			case LuaSyntaxKind.IfStatement:
+			case SyntaxKind.IfStatement:
 				for (const clause of statement.clauses) {
 					if (hasTransitionReturnInStatements(clause.block.body)) {
 						return true;
 					}
 				}
 				break;
-			case LuaSyntaxKind.WhileStatement:
+			case SyntaxKind.WhileStatement:
 				if (hasTransitionReturnInStatements(statement.block.body)) {
 					return true;
 				}
 				break;
-			case LuaSyntaxKind.RepeatStatement:
+			case SyntaxKind.RepeatStatement:
 				if (hasTransitionReturnInStatements(statement.block.body)) {
 					return true;
 				}
 				break;
-			case LuaSyntaxKind.ForNumericStatement:
+			case SyntaxKind.ForNumericStatement:
 				if (hasTransitionReturnInStatements(statement.block.body)) {
 					return true;
 				}
 				break;
-			case LuaSyntaxKind.ForGenericStatement:
+			case SyntaxKind.ForGenericStatement:
 				if (hasTransitionReturnInStatements(statement.block.body)) {
 					return true;
 				}
 				break;
-			case LuaSyntaxKind.DoStatement:
+			case SyntaxKind.DoStatement:
 				if (hasTransitionReturnInStatements(statement.block.body)) {
 					return true;
 				}
@@ -68,7 +68,7 @@ export const FORBIDDEN_FSM_LEGACY_FIELDS = new Set<string>([
 	'run_checks',
 ]);
 
-export function lintFsmForbiddenLegacyFieldsPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+export function lintFsmForbiddenLegacyFieldsPattern(expression: CallExpression, issues: CartLintIssue[]): void {
 	if (!isGlobalCall(expression, 'define_fsm')) {
 		return;
 	}
@@ -79,7 +79,7 @@ export function lintFsmForbiddenLegacyFieldsPattern(expression: LuaCallExpressio
 	lintFsmForbiddenLegacyFieldsInTable(definition, issues);
 }
 
-export function lintFsmProcessInputPollingTransitionPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+export function lintFsmProcessInputPollingTransitionPattern(expression: CallExpression, issues: CartLintIssue[]): void {
 	if (!isGlobalCall(expression, 'define_fsm')) {
 		return;
 	}
@@ -90,7 +90,7 @@ export function lintFsmProcessInputPollingTransitionPattern(expression: LuaCallE
 	lintFsmProcessInputPollingTransitionPatternInTable(definition, issues);
 }
 
-export function lintFsmRunChecksInputTransitionPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+export function lintFsmRunChecksInputTransitionPattern(expression: CallExpression, issues: CartLintIssue[]): void {
 	if (!isGlobalCall(expression, 'define_fsm')) {
 		return;
 	}
@@ -101,8 +101,8 @@ export function lintFsmRunChecksInputTransitionPattern(expression: LuaCallExpres
 	lintFsmRunChecksInputTransitionPatternInTable(definition, issues);
 }
 
-export function findTickCounterMutationInAssignment(statement: LuaAssignmentStatement): LuaExpression | undefined {
-	if (statement.operator !== LuaAssignmentOperator.Assign) {
+export function findTickCounterMutationInAssignment(statement: AssignmentStatement): Expression | undefined {
+	if (statement.operator !== AssignmentOperator.Assign) {
 		return undefined;
 	}
 	for (let index = 0; index < statement.left.length && index < statement.right.length; index += 1) {
@@ -112,10 +112,10 @@ export function findTickCounterMutationInAssignment(statement: LuaAssignmentStat
 			continue;
 		}
 		const right = statement.right[index];
-		if (right.kind !== LuaSyntaxKind.BinaryExpression) {
+		if (right.kind !== SyntaxKind.BinaryExpression) {
 			continue;
 		}
-		if (right.operator !== LuaBinaryOperator.Add && right.operator !== LuaBinaryOperator.Subtract) {
+		if (right.operator !== BinaryOperator.Add && right.operator !== BinaryOperator.Subtract) {
 			continue;
 		}
 		const leftHasCounter = isSelfPropertyReferenceByName(right.left, propertyName);
@@ -126,7 +126,7 @@ export function findTickCounterMutationInAssignment(statement: LuaAssignmentStat
 		if (leftHasCounter && rightHasCounter) {
 			continue;
 		}
-		if (!leftHasCounter && rightHasCounter && right.operator !== LuaBinaryOperator.Add) {
+		if (!leftHasCounter && rightHasCounter && right.operator !== BinaryOperator.Add) {
 			continue;
 		}
 		return right;
@@ -134,17 +134,17 @@ export function findTickCounterMutationInAssignment(statement: LuaAssignmentStat
 	return undefined;
 }
 
-export function findTickCounterMutationInStatements(statements: ReadonlyArray<LuaStatement>): LuaExpression | undefined {
+export function findTickCounterMutationInStatements(statements: ReadonlyArray<Statement>): Expression | undefined {
 	for (const statement of statements) {
 		switch (statement.kind) {
-			case LuaSyntaxKind.AssignmentStatement: {
+			case SyntaxKind.AssignmentStatement: {
 				const found = findTickCounterMutationInAssignment(statement);
 				if (found) {
 					return found;
 				}
 				break;
 			}
-			case LuaSyntaxKind.IfStatement:
+			case SyntaxKind.IfStatement:
 				for (const clause of statement.clauses) {
 					const found = findTickCounterMutationInStatements(clause.block.body);
 					if (found) {
@@ -152,35 +152,35 @@ export function findTickCounterMutationInStatements(statements: ReadonlyArray<Lu
 					}
 				}
 				break;
-			case LuaSyntaxKind.WhileStatement: {
+			case SyntaxKind.WhileStatement: {
 				const found = findTickCounterMutationInStatements(statement.block.body);
 				if (found) {
 					return found;
 				}
 				break;
 			}
-			case LuaSyntaxKind.RepeatStatement: {
+			case SyntaxKind.RepeatStatement: {
 				const found = findTickCounterMutationInStatements(statement.block.body);
 				if (found) {
 					return found;
 				}
 				break;
 			}
-			case LuaSyntaxKind.ForNumericStatement: {
+			case SyntaxKind.ForNumericStatement: {
 				const found = findTickCounterMutationInStatements(statement.block.body);
 				if (found) {
 					return found;
 				}
 				break;
 			}
-			case LuaSyntaxKind.ForGenericStatement: {
+			case SyntaxKind.ForGenericStatement: {
 				const found = findTickCounterMutationInStatements(statement.block.body);
 				if (found) {
 					return found;
 				}
 				break;
 			}
-			case LuaSyntaxKind.DoStatement: {
+			case SyntaxKind.DoStatement: {
 				const found = findTickCounterMutationInStatements(statement.block.body);
 				if (found) {
 					return found;
@@ -194,7 +194,7 @@ export function findTickCounterMutationInStatements(statements: ReadonlyArray<Lu
 	return undefined;
 }
 
-export function lintFsmTickCounterTransitionPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+export function lintFsmTickCounterTransitionPattern(expression: CallExpression, issues: CartLintIssue[]): void {
 	if (!isGlobalCall(expression, 'define_fsm')) {
 		return;
 	}

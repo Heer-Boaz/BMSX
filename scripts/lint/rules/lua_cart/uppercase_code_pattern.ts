@@ -1,12 +1,12 @@
-import { LuaTokenType, type LuaToken } from '../../../../src/bmsx/lua/syntax/token';
-import type { LuaLintIssue, LuaLintLocationPusher } from '../../lua_rule';
+import { LuaTokenType as TokenType, type LuaToken as Token } from '../../../../src/bmsx/lua/syntax/token';
+import type { CartLintIssue, CartLintLocationPusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 
-export const uppercaseCodePatternRule = defineLintRule('lua_cart', 'uppercase_code_pattern');
+export const uppercaseCodePatternRule = defineLintRule('cart', 'uppercase_code_pattern');
 
-export function lintUppercaseCode(path: string, tokens: ReadonlyArray<LuaToken>, issues: LuaLintIssue[], pushIssueAt: LuaLintLocationPusher): void {
+export function lintUppercaseCode(path: string, tokens: ReadonlyArray<Token>, issues: CartLintIssue[], pushIssueAt: CartLintLocationPusher): void {
 	for (const token of tokens) {
-		if (token.type === LuaTokenType.String || token.type === LuaTokenType.Eof) {
+		if (token.type === TokenType.String || token.type === TokenType.Eof) {
 			continue;
 		}
 		const uppercaseIndex = firstUppercaseIndex(token.lexeme);

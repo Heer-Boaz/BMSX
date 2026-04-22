@@ -10,7 +10,7 @@ import { CPP_LOCAL_CONST_PATTERN_ENABLED, declarationFromStatement } from '../cp
 import { cppLocalConstCandidateKind, markBindingUses, shouldReportTokenLocalConst, shouldReportTokenSingleUseLocal } from '../cpp/support/bindings';
 import { ConstLocalContext } from '../lua_cart/impl/support/types';
 import { pushIssue } from '../lua_cart/impl/support/lint_context';
-import { leaveLuaBindingScope } from '../lua_cart/impl/support/bindings';
+import { leaveBindingScope } from '../lua_cart/impl/support/bindings';
 
 export const localConstPatternRule = defineLintRule('common', 'local_const_pattern');
 
@@ -41,7 +41,7 @@ export function lintLocalBindings(file: string, tokens: readonly Token[], info: 
 }
 
 export function leaveConstLocalScope(context: ConstLocalContext): void {
-	leaveLuaBindingScope(context.scopeStack, context.bindingStacksByName, binding => {
+	leaveBindingScope(context.scopeStack, context.bindingStacksByName, binding => {
 		if (binding.shouldReport && binding.writeCountAfterDeclaration === 0) {
 			pushIssue(
 				context.issues,

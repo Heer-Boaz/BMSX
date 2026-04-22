@@ -1,12 +1,12 @@
 import { defineLintRule } from '../../rule';
-import { type LuaFunctionExpression } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type LuaFunctionExpression as CartFunctionExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { matchesComparisonWrapperGetterPattern } from './impl/support/conditions';
 import { pushIssue } from './impl/support/lint_context';
 
-export const comparisonWrapperGetterPatternRule = defineLintRule('lua_cart', 'comparison_wrapper_getter_pattern');
+export const comparisonWrapperGetterPatternRule = defineLintRule('cart', 'comparison_wrapper_getter_pattern');
 
-export function lintComparisonWrapperGetterPattern(functionName: string, functionExpression: LuaFunctionExpression, issues: LuaLintIssue[]): void {
+export function lintComparisonWrapperGetterPattern(functionName: string, functionExpression: CartFunctionExpression, issues: CartLintIssue[]): void {
 	if (functionName === '<anonymous>' || !matchesComparisonWrapperGetterPattern(functionExpression)) {
 		return;
 	}

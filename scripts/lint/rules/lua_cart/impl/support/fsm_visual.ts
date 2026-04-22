@@ -1,4 +1,4 @@
-import { type LuaCallExpression, type LuaExpression, type LuaStatement, LuaSyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { findCallExpressionInStatements, getCallMethodName, getCallReceiverExpression, isGlobalCall, visitCallExpressionsInStatements } from '../../../../../../src/bmsx/lua/syntax/calls';
 import { getFunctionLeafName } from './functions';
 import { isSelfExpressionRoot } from './self_properties';
@@ -16,7 +16,7 @@ export function isVisualUpdateLikeFunctionName(functionName: string): boolean {
 		|| /^refresh(?:_[a-z0-9]+)*_presentation(?:_[a-z0-9]+)*(?:_if_changed)?$/.test(leaf);
 }
 
-export function isSelfGfxCallExpression(expression: LuaCallExpression): boolean {
+export function isSelfGfxCallExpression(expression: CallExpression): boolean {
 	if (getCallMethodName(expression) !== 'gfx') {
 		return false;
 	}
@@ -24,28 +24,28 @@ export function isSelfGfxCallExpression(expression: LuaCallExpression): boolean 
 	return !!receiver && isSelfExpressionRoot(receiver);
 }
 
-export function getSelfGfxStringLiteralArgument(expression: LuaCallExpression): string | undefined {
+export function getSelfGfxStringLiteralArgument(expression: CallExpression): string | undefined {
 	if (!isSelfGfxCallExpression(expression) || expression.arguments.length !== 1) {
 		return undefined;
 	}
 	const argument = expression.arguments[0];
-	if (argument.kind !== LuaSyntaxKind.StringLiteralExpression) {
+	if (argument.kind !== SyntaxKind.StringLiteralExpression) {
 		return undefined;
 	}
 	return argument.value;
 }
 
-export function stateTimelinesDriveSelfGfx(stateExpression: LuaExpression): boolean {
+export function stateTimelinesDriveSelfGfx(stateExpression: Expression): boolean {
 	const timelinesField = findTableFieldByKey(stateExpression, 'timelines');
-	if (!timelinesField || timelinesField.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+	if (!timelinesField || timelinesField.value.kind !== SyntaxKind.TableConstructorExpression) {
 		return false;
 	}
 	for (const timelineField of timelinesField.value.fields) {
-		if (timelineField.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		if (timelineField.value.kind !== SyntaxKind.TableConstructorExpression) {
 			continue;
 		}
 		const onFrameField = findTableFieldByKey(timelineField.value, 'on_frame');
-		if (!onFrameField || onFrameField.value.kind !== LuaSyntaxKind.FunctionExpression) {
+		if (!onFrameField || onFrameField.value.kind !== SyntaxKind.FunctionExpression) {
 			continue;
 		}
 		if (findCallExpressionInStatements(onFrameField.value.body.body, isSelfGfxCallExpression)) {
@@ -55,7 +55,7 @@ export function stateTimelinesDriveSelfGfx(stateExpression: LuaExpression): bool
 	return false;
 }
 
-export function collectPrefabVisualDefaultsById(statements: ReadonlyArray<LuaStatement>): ReadonlyMap<string, FsmVisualPrefabDefaults> {
+export function collectPrefabVisualDefaultsById(statements: ReadonlyArray<Statement>): ReadonlyMap<string, FsmVisualPrefabDefaults> {
 	const prefabs = new Map<string, FsmVisualPrefabDefaults>();
 	visitCallExpressionsInStatements(statements, (expression) => {
 		if (!isGlobalCall(expression, 'define_prefab')) {

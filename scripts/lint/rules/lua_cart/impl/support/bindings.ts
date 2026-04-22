@@ -1,25 +1,25 @@
-import { LuaAssignmentOperator, LuaBinaryOperator, type LuaCallExpression, type LuaExpression, type LuaFunctionExpression, type LuaIdentifierExpression, type LuaStatement, LuaSyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, LuaBinaryOperator as BinaryOperator, type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { evaluateTopLevelStringConstantExpression } from './conditions';
 import { getConstantCopyBinding } from './constant_copy';
 import { getExpressionKeyName } from './expression_signatures';
 import { AssignmentTargetInfo, ConstantCopyContext, SingleUseLocalBinding, TopLevelLocalStringConstant } from './types';
 
-export type NamedLuaBindingScope = {
+export type NamedBindingScope = {
 	readonly names: string[];
 };
 
-export type LuaBindingContext<TBinding> = {
+export type BindingContext<TBinding> = {
 	readonly bindingStacksByName: Map<string, TBinding[]>;
-	readonly scopeStack: NamedLuaBindingScope[];
+	readonly scopeStack: NamedBindingScope[];
 };
 
-export function enterLuaBindingScope(context: { readonly scopeStack: NamedLuaBindingScope[] }): void {
+export function enterBindingScope(context: { readonly scopeStack: NamedBindingScope[] }): void {
 	context.scopeStack.push({ names: [] });
 }
 
-export function declareLuaBinding<TBinding>(
-	context: LuaBindingContext<TBinding>,
-	declaration: LuaIdentifierExpression,
+export function declareBinding<TBinding>(
+	context: BindingContext<TBinding>,
+	declaration: IdentifierExpression,
 	binding: TBinding,
 ): void {
 	const scope = context.scopeStack[context.scopeStack.length - 1];
@@ -32,7 +32,7 @@ export function declareLuaBinding<TBinding>(
 	stack.push(binding);
 }
 
-export function resolveLuaBinding<TBinding>(context: LuaBindingContext<TBinding>, name: string): TBinding | undefined {
+export function resolveBinding<TBinding>(context: BindingContext<TBinding>, name: string): TBinding | undefined {
 	const stack = context.bindingStacksByName.get(name);
 	if (!stack || stack.length === 0) {
 		return undefined;
@@ -40,7 +40,7 @@ export function resolveLuaBinding<TBinding>(context: LuaBindingContext<TBinding>
 	return stack[stack.length - 1];
 }
 
-export function setLuaBinding<TBinding>(context: LuaBindingContext<TBinding>, name: string, binding: TBinding): void {
+export function setBinding<TBinding>(context: BindingContext<TBinding>, name: string, binding: TBinding): void {
 	const stack = context.bindingStacksByName.get(name);
 	if (!stack || stack.length === 0) {
 		return;
@@ -48,8 +48,8 @@ export function setLuaBinding<TBinding>(context: LuaBindingContext<TBinding>, na
 	stack[stack.length - 1] = binding;
 }
 
-export function leaveLuaBindingScope<TBinding>(
-	scopeStack: NamedLuaBindingScope[],
+export function leaveBindingScope<TBinding>(
+	scopeStack: NamedBindingScope[],
 	bindingStacksByName: Map<string, TBinding[]>,
 	visitBinding: (binding: TBinding) => void,
 ): void {
@@ -73,39 +73,39 @@ export function leaveLuaBindingScope<TBinding>(
 	}
 }
 
-export function discardLuaBindingScope<TBinding>(context: LuaBindingContext<TBinding>): void {
-	leaveLuaBindingScope(context.scopeStack, context.bindingStacksByName, () => {});
+export function discardBindingScope<TBinding>(context: BindingContext<TBinding>): void {
+	leaveBindingScope(context.scopeStack, context.bindingStacksByName, () => {});
 }
 
-export function lintScopedBindingStatements<TBinding, TContext extends LuaBindingContext<TBinding>>(
+export function lintScopedBindingStatements<TBinding, TContext extends BindingContext<TBinding>>(
 	context: TContext,
-	statements: ReadonlyArray<LuaStatement>,
-	lintStatements: (statements: ReadonlyArray<LuaStatement>, context: TContext) => void,
+	statements: ReadonlyArray<Statement>,
+	lintStatements: (statements: ReadonlyArray<Statement>, context: TContext) => void,
 ): void {
-	enterLuaBindingScope(context);
+	enterBindingScope(context);
 	lintStatements(statements, context);
-	discardLuaBindingScope(context);
+	discardBindingScope(context);
 }
 
-export function lintNullBindingFunctionScope<TBinding, TContext extends LuaBindingContext<TBinding | null>>(
+export function lintNullBindingFunctionScope<TBinding, TContext extends BindingContext<TBinding | null>>(
 	context: TContext,
-	functionExpression: LuaFunctionExpression,
-	lintStatements: (statements: ReadonlyArray<LuaStatement>, context: TContext) => void,
+	functionExpression: CartFunctionExpression,
+	lintStatements: (statements: ReadonlyArray<Statement>, context: TContext) => void,
 ): void {
-	enterLuaBindingScope(context);
+	enterBindingScope(context);
 	for (const parameter of functionExpression.parameters) {
-		declareLuaBinding(context, parameter, null);
+		declareBinding(context, parameter, null);
 	}
 	lintStatements(functionExpression.body.body, context);
-	discardLuaBindingScope(context);
+	discardBindingScope(context);
 }
 
-export function isIdentifier(expression: LuaExpression, name: string): boolean {
-	return expression.kind === LuaSyntaxKind.IdentifierExpression && expression.name === name;
+export function isIdentifier(expression: Expression, name: string): boolean {
+	return expression.kind === SyntaxKind.IdentifierExpression && expression.name === name;
 }
 
-export function isIdentifierExpression(expression: LuaExpression): expression is LuaIdentifierExpression {
-	return expression.kind === LuaSyntaxKind.IdentifierExpression;
+export function isIdentifierExpression(expression: Expression): expression is IdentifierExpression {
+	return expression.kind === SyntaxKind.IdentifierExpression;
 }
 
 export function isConstantSourceIdentifierName(name: string, context: ConstantCopyContext): boolean {
@@ -118,12 +118,12 @@ export function isConstantSourceIdentifierName(name: string, context: ConstantCo
 
 export function collectTopLevelLocalStringConstants(
 	path: string,
-	statements: ReadonlyArray<LuaStatement>,
+	statements: ReadonlyArray<Statement>,
 ): TopLevelLocalStringConstant[] {
 	const constants: TopLevelLocalStringConstant[] = [];
 	const knownValues = new Map<string, string>();
 	for (const statement of statements) {
-		if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
+		if (statement.kind !== SyntaxKind.LocalAssignmentStatement) {
 			continue;
 		}
 		const valueCount = Math.min(statement.names.length, statement.values.length);
@@ -149,24 +149,24 @@ export function collectTopLevelLocalStringConstants(
 	return constants;
 }
 
-export function getRootIdentifier(expression: LuaExpression): string | undefined {
-	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+export function getRootIdentifier(expression: Expression): string | undefined {
+	if (expression.kind === SyntaxKind.IdentifierExpression) {
 		return expression.name;
 	}
-	if (expression.kind === LuaSyntaxKind.MemberExpression || expression.kind === LuaSyntaxKind.IndexExpression) {
+	if (expression.kind === SyntaxKind.MemberExpression || expression.kind === SyntaxKind.IndexExpression) {
 		return getRootIdentifier(expression.base);
 	}
 	return undefined;
 }
 
-export function getAssignmentTargetInfo(target: LuaExpression): AssignmentTargetInfo | undefined {
-	if (target.kind === LuaSyntaxKind.IdentifierExpression) {
+export function getAssignmentTargetInfo(target: Expression): AssignmentTargetInfo | undefined {
+	if (target.kind === SyntaxKind.IdentifierExpression) {
 		return {
 			depth: 0,
 			rootName: target.name,
 		};
 	}
-	if (target.kind === LuaSyntaxKind.MemberExpression) {
+	if (target.kind === SyntaxKind.MemberExpression) {
 		const baseInfo = getAssignmentTargetInfo(target.base);
 		if (!baseInfo) {
 			return undefined;
@@ -177,7 +177,7 @@ export function getAssignmentTargetInfo(target: LuaExpression): AssignmentTarget
 			terminalPropertyName: target.identifier,
 		};
 	}
-	if (target.kind === LuaSyntaxKind.IndexExpression) {
+	if (target.kind === SyntaxKind.IndexExpression) {
 		const baseInfo = getAssignmentTargetInfo(target.base);
 		if (!baseInfo) {
 			return undefined;
@@ -191,22 +191,22 @@ export function getAssignmentTargetInfo(target: LuaExpression): AssignmentTarget
 	return undefined;
 }
 
-export function getReturnedCallToIdentifier(statement: LuaStatement, name: string): LuaCallExpression | undefined {
-	if (statement.kind !== LuaSyntaxKind.ReturnStatement || statement.expressions.length !== 1) {
+export function getReturnedCallToIdentifier(statement: Statement, name: string): CallExpression | undefined {
+	if (statement.kind !== SyntaxKind.ReturnStatement || statement.expressions.length !== 1) {
 		return undefined;
 	}
 	const expression = statement.expressions[0];
-	if (expression.kind !== LuaSyntaxKind.CallExpression) {
+	if (expression.kind !== SyntaxKind.CallExpression) {
 		return undefined;
 	}
-	if (expression.callee.kind !== LuaSyntaxKind.IdentifierExpression || expression.callee.name !== name) {
+	if (expression.callee.kind !== SyntaxKind.IdentifierExpression || expression.callee.name !== name) {
 		return undefined;
 	}
 	return expression;
 }
 
-export function conditionComparesIdentifierWithValue(condition: LuaExpression, name: string): boolean {
-	if (condition.kind !== LuaSyntaxKind.BinaryExpression || condition.operator !== LuaBinaryOperator.Equal) {
+export function conditionComparesIdentifierWithValue(condition: Expression, name: string): boolean {
+	if (condition.kind !== SyntaxKind.BinaryExpression || condition.operator !== BinaryOperator.Equal) {
 		return false;
 	}
 	return isIdentifier(condition.left, name) || isIdentifier(condition.right, name);
@@ -219,12 +219,12 @@ export function singleUseLocalMessage(binding: SingleUseLocalBinding): string {
 	return `One-off cached call-result local "${binding.declaration.name}" is forbidden. Inline the call/value instead.`;
 }
 
-export function assignmentDirectlyTargetsIdentifier(statement: LuaStatement, name: string): boolean {
-	if (statement.kind !== LuaSyntaxKind.AssignmentStatement || statement.operator !== LuaAssignmentOperator.Assign) {
+export function assignmentDirectlyTargetsIdentifier(statement: Statement, name: string): boolean {
+	if (statement.kind !== SyntaxKind.AssignmentStatement || statement.operator !== AssignmentOperator.Assign) {
 		return false;
 	}
 	for (const left of statement.left) {
-		if (left.kind === LuaSyntaxKind.IdentifierExpression && left.name === name) {
+		if (left.kind === SyntaxKind.IdentifierExpression && left.name === name) {
 			return true;
 		}
 	}

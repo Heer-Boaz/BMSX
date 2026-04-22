@@ -6,9 +6,9 @@ local behaviourtree<const> = {}
 local blackboard<const> = {}
 blackboard.__index = blackboard
 
-function blackboard.new(opts)
+function blackboard.new(id)
 	local self<const> = setmetatable({}, blackboard)
-	self.id = opts.id
+	self.id = id
 	self:clear_node_data()
 	return self
 end

@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
-import { type LintIssue as LintIssue, pushLintIssue } from '../../ts_rule';
+import { type LintIssue, pushLintIssue } from '../ts/support/ast';
 import ts from 'typescript';
 import { isNumericSanitizerCall, isSemanticFloorDivisionCall as isAstSemanticFloorDivisionCall } from '../../../../src/bmsx/language/ts/ast/semantic';
 import { containsDescendantCallExpression, parentChainContainsCallExpression } from '../../../../src/bmsx/language/ts/ast/expressions';

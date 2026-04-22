@@ -1,14 +1,14 @@
-import { type LuaExpression, type LuaFunctionDeclarationStatement, type LuaFunctionExpression, type LuaLocalFunctionStatement, type LuaStatement, LuaSyntaxKind } from '../../src/bmsx/lua/syntax/ast';
-import { LuaSyntaxError } from '../../src/bmsx/lua/errors';
-import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
-import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
+import { type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaFunctionExpression as CartFunctionExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../src/bmsx/lua/syntax/ast';
+import { LuaSyntaxError as ParserSyntaxError } from '../../src/bmsx/lua/errors';
+import { LuaLexer as Lexer } from '../../src/bmsx/lua/syntax/lexer';
+import { LuaParser as Parser } from '../../src/bmsx/lua/syntax/parser';
 import { type FunctionUsageInfo } from '../lint/function_usage';
 import { type LintRuleName } from '../lint/rule';
-import { type LuaLintIssue } from '../lint/lua_rule';
-import { lintLuaEmptyStringConditionPattern } from '../lint/rules/common/empty_string_condition_pattern';
-import { lintLuaEmptyStringFallbackPattern } from '../lint/rules/common/empty_string_fallback_pattern';
-import { lintLuaExplicitTruthyComparisonPattern } from '../lint/rules/common/explicit_truthy_comparison_pattern';
-import { lintLuaOrNilFallbackPattern } from '../lint/rules/common/or_nil_fallback_pattern';
+import { type CartLintIssue } from '../lint/lua_rule';
+import { lintAstEmptyStringConditionPattern } from '../lint/rules/common/empty_string_condition_pattern';
+import { lintAstEmptyStringFallbackPattern } from '../lint/rules/common/empty_string_fallback_pattern';
+import { lintAstExplicitTruthyComparisonPattern } from '../lint/rules/common/explicit_truthy_comparison_pattern';
+import { lintAstOrNilFallbackPattern } from '../lint/rules/common/or_nil_fallback_pattern';
 import { lintForbiddenMathFloorPattern } from '../lint/rules/lua_cart/forbidden_math_floor_pattern';
 import { lintForbiddenRenderWrapperCall } from '../lint/rules/lua_cart/forbidden_render_wrapper_call_pattern';
 import { lintLocalFunctionConstPattern } from '../lint/rules/lua_cart/local_function_const_pattern';
@@ -16,7 +16,7 @@ import { lintRequireCall } from '../lint/rules/lua_cart/require_lua_extension_pa
 import { lintUppercaseCode } from '../lint/rules/lua_cart/uppercase_code_pattern';
 import { readFile } from 'node:fs/promises';
 import { relative, sep } from 'node:path';
-import { collectSourceFiles } from '../analysis/file_scan';
+import { collectCartSourceFiles } from './cart_source_files';
 import { lintActionTriggeredBoolChainPattern } from '../lint/rules/lua_cart/action_triggered_bool_chain_pattern';
 import { lintBool01DuplicatePattern } from '../lint/rules/lua_cart/bool01_duplicate_pattern';
 import { lintBranchUninitializedLocalPattern } from '../lint/rules/lua_cart/branch_uninitialized_local_pattern';
@@ -74,11 +74,11 @@ import { lintRuntimeTagTableAccessPattern } from '../lint/rules/lua_cart/impl/su
 import { lintSingleUseHasTagPattern } from '../lint/rules/lua_cart/impl/support/single_use_has_tag';
 import { lintSingleUseLocalPattern } from '../lint/rules/lua_cart/impl/support/single_use_local';
 import { lintInlineStaticLookupTablePattern, lintTableField } from '../lint/rules/lua_cart/impl/support/table_fields';
-import { LuaCartLintOptions, LuaLintProfile, LuaLintSuppressionRange, TopLevelLocalStringConstant } from '../lint/rules/lua_cart/impl/support/types';
+import { CartLintOptions, CartLintProfile, CartLintSuppressionRange, TopLevelLocalStringConstant } from '../lint/rules/lua_cart/impl/support/types';
 import { lintUnusedInitValuesInFunctionBody } from '../lint/rules/lua_cart/impl/support/unused_init';
 import { clearSuppressedLineRanges, pushIssue, pushIssueAt, setActiveLintRules, setSuppressedLineRanges } from '../lint/rules/lua_cart/impl/support/lint_context';
 
-const LUA_CART_LINT_RULES: readonly LintRuleName[] = [
+const CART_LINT_RULES: readonly LintRuleName[] = [
 	'action_triggered_bool_chain_pattern',
 	'bool01_duplicate_pattern',
 	'branch_uninitialized_local_pattern',
@@ -166,7 +166,7 @@ const LUA_CART_LINT_RULES: readonly LintRuleName[] = [
 	'visual_update_pattern',
 ];
 
-setActiveLintRules(new Set(LUA_CART_LINT_RULES));
+setActiveLintRules(new Set(CART_LINT_RULES));
 
 export const LINT_SUPPRESSION_OPEN_MARKER = '-- @code-quality disable';
 
@@ -217,19 +217,19 @@ export const BIOS_PROFILE_DISABLED_RULES = new Set<LintRuleName>([
 	'injected_service_id_property_pattern',
 ]);
 
-export function resolveEnabledRules(profile: LuaLintProfile): ReadonlySet<LintRuleName> {
+export function resolveEnabledRules(profile: CartLintProfile): ReadonlySet<LintRuleName> {
 	if (profile === 'cart') {
-		return new Set(LUA_CART_LINT_RULES);
+		return new Set(CART_LINT_RULES);
 	}
-	const enabled = new Set(LUA_CART_LINT_RULES);
+	const enabled = new Set(CART_LINT_RULES);
 	for (const rule of BIOS_PROFILE_DISABLED_RULES) {
 		enabled.delete(rule);
 	}
 	return enabled;
 }
 
-export function collectSuppressedLineRanges(source: string): LuaLintSuppressionRange[] {
-	const ranges: LuaLintSuppressionRange[] = [];
+export function collectSuppressedLineRanges(source: string): CartLintSuppressionRange[] {
+	const ranges: CartLintSuppressionRange[] = [];
 	const lines = source.split(/\r?\n/);
 	let activeStartLine = 0;
 	for (let index = 0; index < lines.length; index += 1) {
@@ -291,14 +291,14 @@ export function toWorkspaceRelativePath(absolutePath: string): string {
 	return normalizeWorkspacePath(rel.split(sep).join('/'));
 }
 
-export async function collectLuaFiles(roots: ReadonlyArray<string>): Promise<string[]> {
-	return collectSourceFiles(roots, new Set(['.lua'])).sort();
+export async function collectCartFiles(roots: ReadonlyArray<string>): Promise<string[]> {
+	return collectCartSourceFiles(roots);
 }
 
 export function lintFunctionBody(
 	functionName: string,
-	functionExpression: LuaFunctionExpression,
-	issues: LuaLintIssue[],
+	functionExpression: CartFunctionExpression,
+	issues: CartLintIssue[],
 	options: { readonly isMethodDeclaration: boolean; readonly usageInfo?: FunctionUsageInfo; },
 ): void {
 	const isNamedFunction = functionName !== '<anonymous>';
@@ -341,14 +341,14 @@ export function lintFunctionBody(
 	lintHandlerIdentityDispatchPattern(functionName, functionExpression, issues);
 }
 
-export function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[], topLevel = true): void {
+export function lintExpression(expression: Expression | null, issues: CartLintIssue[], topLevel = true): void {
 	if (!expression) {
 		return;
 	}
-	lintLuaEmptyStringConditionPattern(expression, issues, pushIssue);
-	lintLuaEmptyStringFallbackPattern(expression, issues, pushIssue);
-	lintLuaOrNilFallbackPattern(expression, issues, pushIssue);
-	lintLuaExplicitTruthyComparisonPattern(expression, issues, pushIssue);
+	lintAstEmptyStringConditionPattern(expression, issues, pushIssue);
+	lintAstEmptyStringFallbackPattern(expression, issues, pushIssue);
+	lintAstOrNilFallbackPattern(expression, issues, pushIssue);
+	lintAstExplicitTruthyComparisonPattern(expression, issues, pushIssue);
 	lintForbiddenMathFloorPattern(expression, issues, pushIssue);
 	lintStringOrChainComparisonPattern(expression, issues);
 	lintActionTriggeredBoolChainPattern(expression, issues);
@@ -356,7 +356,7 @@ export function lintExpression(expression: LuaExpression | null, issues: LuaLint
 		lintMultiHasTagPattern(expression, issues);
 	}
 	switch (expression.kind) {
-		case LuaSyntaxKind.CallExpression:
+		case SyntaxKind.CallExpression:
 			lintRequireCall(expression, issues, pushIssue);
 			lintForbiddenRenderWrapperCall(expression, issues, pushIssue);
 			lintForbiddenStateCalls(expression, issues);
@@ -383,26 +383,26 @@ export function lintExpression(expression: LuaExpression | null, issues: LuaLint
 				lintExpression(arg, issues, false);
 			}
 			return;
-		case LuaSyntaxKind.MemberExpression:
+		case SyntaxKind.MemberExpression:
 			lintExpression(expression.base, issues, false);
 			return;
-		case LuaSyntaxKind.IndexExpression:
+		case SyntaxKind.IndexExpression:
 			lintExpression(expression.base, issues, false);
 			lintExpression(expression.index, issues, false);
 			return;
-		case LuaSyntaxKind.BinaryExpression:
+		case SyntaxKind.BinaryExpression:
 			lintExpression(expression.left, issues, false);
 			lintExpression(expression.right, issues, false);
 			return;
-		case LuaSyntaxKind.UnaryExpression:
+		case SyntaxKind.UnaryExpression:
 			lintExpression(expression.operand, issues, false);
 			return;
-		case LuaSyntaxKind.TableConstructorExpression:
+		case SyntaxKind.TableConstructorExpression:
 			for (const field of expression.fields) {
 				lintTableField(field, issues);
 			}
 			return;
-		case LuaSyntaxKind.FunctionExpression:
+		case SyntaxKind.FunctionExpression:
 			lintFunctionBody('<anonymous>', expression, issues, { isMethodDeclaration: false });
 			lintStatements(expression.body.body, issues);
 			return;
@@ -411,17 +411,17 @@ export function lintExpression(expression: LuaExpression | null, issues: LuaLint
 	}
 }
 
-export function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+export function lintStatements(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
 	lintBranchUninitializedLocalPattern(statements, issues);
 	lintContiguousMultiEmitPattern(statements, issues);
 	const functionUsageInfo = collectCartFunctionUsageCounts(statements);
 	for (const statement of statements) {
 		switch (statement.kind) {
-			case LuaSyntaxKind.LocalAssignmentStatement:
+			case SyntaxKind.LocalAssignmentStatement:
 				lintLocalAssignment(statement, issues);
 				for (let index = 0; index < statement.values.length; index += 1) {
 					const value = statement.values[index];
-					if (index < statement.names.length && value.kind === LuaSyntaxKind.FunctionExpression) {
+					if (index < statement.names.length && value.kind === SyntaxKind.FunctionExpression) {
 						lintFunctionBody(statement.names[index].name, value, issues, {
 							isMethodDeclaration: false,
 							usageInfo: functionUsageInfo,
@@ -432,7 +432,7 @@ export function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: 
 					lintExpression(value, issues);
 				}
 				break;
-			case LuaSyntaxKind.AssignmentStatement:
+			case SyntaxKind.AssignmentStatement:
 				for (const left of statement.left) {
 					lintExpression(left, issues);
 				}
@@ -447,8 +447,8 @@ export function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: 
 					lintExpression(right, issues);
 				}
 				break;
-			case LuaSyntaxKind.LocalFunctionStatement: {
-				const localFunction = statement as LuaLocalFunctionStatement;
+			case SyntaxKind.LocalFunctionStatement: {
+				const localFunction = statement as LocalFunctionStatement;
 				lintLocalFunctionConstPattern(localFunction, issues, pushIssue);
 				lintFunctionBody(getFunctionDisplayName(localFunction), localFunction.functionExpression, issues, {
 					isMethodDeclaration: false,
@@ -457,8 +457,8 @@ export function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: 
 				lintStatements(localFunction.functionExpression.body.body, issues);
 				break;
 			}
-			case LuaSyntaxKind.FunctionDeclarationStatement: {
-				const declaration = statement as LuaFunctionDeclarationStatement;
+			case SyntaxKind.FunctionDeclarationStatement: {
+				const declaration = statement as FunctionDeclarationStatement;
 				lintFunctionBody(
 					getFunctionDisplayName(declaration),
 					declaration.functionExpression,
@@ -471,12 +471,12 @@ export function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: 
 				lintStatements(declaration.functionExpression.body.body, issues);
 				break;
 			}
-			case LuaSyntaxKind.ReturnStatement:
+			case SyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
 					lintExpression(expression, issues);
 				}
 				break;
-			case LuaSyntaxKind.IfStatement:
+			case SyntaxKind.IfStatement:
 				lintUselessAssertPattern(statement, issues);
 				lintImgIdFallbackPattern(statement, issues);
 				lintSplitNestedIfHasTagPattern(statement, issues);
@@ -487,37 +487,37 @@ export function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: 
 					lintStatements(clause.block.body, issues);
 				}
 				break;
-			case LuaSyntaxKind.WhileStatement:
+			case SyntaxKind.WhileStatement:
 				lintExpression(statement.condition, issues);
 				lintStatements(statement.block.body, issues);
 				break;
-			case LuaSyntaxKind.RepeatStatement:
+			case SyntaxKind.RepeatStatement:
 				lintStatements(statement.block.body, issues);
 				lintExpression(statement.condition, issues);
 				break;
-			case LuaSyntaxKind.ForNumericStatement:
+			case SyntaxKind.ForNumericStatement:
 				lintDispatchFanoutLoopPattern(statement, issues);
 				lintExpression(statement.start, issues);
 				lintExpression(statement.limit, issues);
 				lintExpression(statement.step, issues);
 				lintStatements(statement.block.body, issues);
 				break;
-			case LuaSyntaxKind.ForGenericStatement:
+			case SyntaxKind.ForGenericStatement:
 				lintDispatchFanoutLoopPattern(statement, issues);
 				for (const iterator of statement.iterators) {
 					lintExpression(iterator, issues);
 				}
 				lintStatements(statement.block.body, issues);
 				break;
-			case LuaSyntaxKind.DoStatement:
+			case SyntaxKind.DoStatement:
 				lintStatements(statement.block.body, issues);
 				break;
-			case LuaSyntaxKind.CallStatement:
+			case SyntaxKind.CallStatement:
 				lintExpression(statement.expression, issues);
 				break;
-			case LuaSyntaxKind.BreakStatement:
-			case LuaSyntaxKind.GotoStatement:
-			case LuaSyntaxKind.LabelStatement:
+			case SyntaxKind.BreakStatement:
+			case SyntaxKind.GotoStatement:
+			case SyntaxKind.LabelStatement:
 				break;
 			default:
 				break;
@@ -525,7 +525,7 @@ export function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: 
 	}
 }
 
-export function formatIssues(issues: LuaLintIssue[], profile: LuaLintProfile): string {
+export function formatIssues(issues: CartLintIssue[], profile: CartLintProfile): string {
 	const sorted = [...issues].sort((a, b) => {
 		if (a.path !== b.path) return a.path.localeCompare(b.path);
 		if (a.line !== b.line) return a.line - b.line;
@@ -537,16 +537,16 @@ export function formatIssues(issues: LuaLintIssue[], profile: LuaLintProfile): s
 	return `[${profileLabel}] ${sorted.length} violation(s):\n${lines.join('\n')}`;
 }
 
-export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<void> {
+export async function lintCartSources(options: CartLintOptions): Promise<void> {
 	const profile = options.profile ?? 'cart';
 	setActiveLintRules(resolveEnabledRules(profile));
-	const files = await collectLuaFiles(options.roots);
+	const files = await collectCartFiles(options.roots);
 	if (files.length === 0) {
-		setActiveLintRules(new Set(LUA_CART_LINT_RULES));
+		setActiveLintRules(new Set(CART_LINT_RULES));
 		return;
 	}
 
-	const issues: LuaLintIssue[] = [];
+	const issues: CartLintIssue[] = [];
 	const topLevelLocalStringConstants: TopLevelLocalStringConstant[] = [];
 	clearSuppressedLineRanges();
 	try {
@@ -554,19 +554,19 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 			const source = await readFile(absolutePath, 'utf8');
 			const workspacePath = toWorkspaceRelativePath(absolutePath);
 			setSuppressedLineRanges(workspacePath, collectSuppressedLineRanges(source));
-			const lexer = new LuaLexer(source, workspacePath);
+			const lexer = new Lexer(source, workspacePath);
 			const lexed = lexer.scanTokensWithRecovery();
 			const tokens = lexed.tokens;
 			lintUppercaseCode(workspacePath, tokens, issues, pushIssueAt);
 			if (lintSyntaxError(lexed.syntaxError, issues)) {
 				continue;
 			}
-			const parser = new LuaParser(tokens, workspacePath, source);
-			let parsed: ReturnType<LuaParser['parseChunkWithRecovery']>;
+			const parser = new Parser(tokens, workspacePath, source);
+			let parsed: ReturnType<Parser['parseChunkWithRecovery']>;
 			try {
 				parsed = parser.parseChunkWithRecovery();
 			} catch (error) {
-				if (error instanceof LuaSyntaxError) {
+				if (error instanceof ParserSyntaxError) {
 					lintSyntaxError(error, issues);
 					continue;
 				}
@@ -594,7 +594,7 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 		}
 		lintCrossFileLocalGlobalConstantPattern(topLevelLocalStringConstants, issues);
 	} finally {
-		setActiveLintRules(new Set(LUA_CART_LINT_RULES));
+		setActiveLintRules(new Set(CART_LINT_RULES));
 		clearSuppressedLineRanges();
 	}
 

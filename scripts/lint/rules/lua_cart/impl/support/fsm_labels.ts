@@ -1,6 +1,6 @@
-import { type LuaExpression, type LuaStatement, LuaSyntaxKind, type LuaTableField, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, type LuaTableField as TableField, LuaTableFieldKind as TableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { type LintRuleName } from '../../../../rule';
-import { type LuaLintIssue } from '../../../../lua_rule';
+import { type CartLintIssue } from '../../../../lua_rule';
 import { getExpressionKeyName } from './expression_signatures';
 import { appendSuggestionMessage } from './general';
 import { getSelfAssignedPropertyNameFromTarget } from './self_properties';
@@ -36,35 +36,35 @@ export function normalizeStateNameToken(stateName: string): string {
 	return stateName;
 }
 
-export function getStateNameFromStateField(field: LuaTableField): string | undefined {
-	if (field.kind === LuaTableFieldKind.IdentifierKey) {
+export function getStateNameFromStateField(field: TableField): string | undefined {
+	if (field.kind === TableFieldKind.IdentifierKey) {
 		return field.name;
 	}
-	if (field.kind === LuaTableFieldKind.ExpressionKey) {
+	if (field.kind === TableFieldKind.ExpressionKey) {
 		return getExpressionKeyName(field.key);
 	}
 	return undefined;
 }
 
 export function findStateNameMirrorAssignmentInExpression(
-	expression: LuaExpression | null,
+	expression: Expression | null,
 	stateName: string,
-): { readonly propertyName: string; readonly valueNode: LuaExpression; } | undefined {
+): { readonly propertyName: string; readonly valueNode: Expression; } | undefined {
 	if (!expression) {
 		return undefined;
 	}
 	switch (expression.kind) {
-		case LuaSyntaxKind.MemberExpression:
+		case SyntaxKind.MemberExpression:
 			return findStateNameMirrorAssignmentInExpression(expression.base, stateName);
-		case LuaSyntaxKind.IndexExpression:
+		case SyntaxKind.IndexExpression:
 			return findStateNameMirrorAssignmentInExpression(expression.base, stateName)
 				|| findStateNameMirrorAssignmentInExpression(expression.index, stateName);
-		case LuaSyntaxKind.BinaryExpression:
+		case SyntaxKind.BinaryExpression:
 			return findStateNameMirrorAssignmentInExpression(expression.left, stateName)
 				|| findStateNameMirrorAssignmentInExpression(expression.right, stateName);
-		case LuaSyntaxKind.UnaryExpression:
+		case SyntaxKind.UnaryExpression:
 			return findStateNameMirrorAssignmentInExpression(expression.operand, stateName);
-		case LuaSyntaxKind.CallExpression: {
+		case SyntaxKind.CallExpression: {
 			const fromCallee = findStateNameMirrorAssignmentInExpression(expression.callee, stateName);
 			if (fromCallee) {
 				return fromCallee;
@@ -77,9 +77,9 @@ export function findStateNameMirrorAssignmentInExpression(
 			}
 			return undefined;
 		}
-		case LuaSyntaxKind.TableConstructorExpression:
+		case SyntaxKind.TableConstructorExpression:
 			for (const field of expression.fields) {
-				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+				if (field.kind === TableFieldKind.ExpressionKey) {
 					const fromKey = findStateNameMirrorAssignmentInExpression(field.key, stateName);
 					if (fromKey) {
 						return fromKey;
@@ -91,7 +91,7 @@ export function findStateNameMirrorAssignmentInExpression(
 				}
 			}
 			return undefined;
-		case LuaSyntaxKind.FunctionExpression:
+		case SyntaxKind.FunctionExpression:
 			return findStateNameMirrorAssignmentInStatements(expression.body.body, stateName);
 		default:
 			return undefined;
@@ -99,12 +99,12 @@ export function findStateNameMirrorAssignmentInExpression(
 }
 
 export function findStateNameMirrorAssignmentInStatements(
-	statements: ReadonlyArray<LuaStatement>,
+	statements: ReadonlyArray<Statement>,
 	stateName: string,
-): { readonly propertyName: string; readonly valueNode: LuaExpression; } | undefined {
+): { readonly propertyName: string; readonly valueNode: Expression; } | undefined {
 	for (const statement of statements) {
 		switch (statement.kind) {
-			case LuaSyntaxKind.LocalAssignmentStatement:
+			case SyntaxKind.LocalAssignmentStatement:
 				for (const value of statement.values) {
 					const fromValue = findStateNameMirrorAssignmentInExpression(value, stateName);
 					if (fromValue) {
@@ -112,14 +112,14 @@ export function findStateNameMirrorAssignmentInStatements(
 					}
 				}
 				break;
-			case LuaSyntaxKind.AssignmentStatement: {
+			case SyntaxKind.AssignmentStatement: {
 				for (let index = 0; index < statement.left.length && index < statement.right.length; index += 1) {
 					const propertyName = getSelfAssignedPropertyNameFromTarget(statement.left[index]);
 					if (!propertyName) {
 						continue;
 					}
 					const right = statement.right[index];
-					if (right.kind !== LuaSyntaxKind.StringLiteralExpression) {
+					if (right.kind !== SyntaxKind.StringLiteralExpression) {
 						continue;
 					}
 					if (normalizeStateNameToken(right.value) !== stateName) {
@@ -141,21 +141,21 @@ export function findStateNameMirrorAssignmentInStatements(
 				}
 				break;
 			}
-			case LuaSyntaxKind.LocalFunctionStatement: {
+			case SyntaxKind.LocalFunctionStatement: {
 				const fromFunction = findStateNameMirrorAssignmentInStatements(statement.functionExpression.body.body, stateName);
 				if (fromFunction) {
 					return fromFunction;
 				}
 				break;
 			}
-			case LuaSyntaxKind.FunctionDeclarationStatement: {
+			case SyntaxKind.FunctionDeclarationStatement: {
 				const fromFunction = findStateNameMirrorAssignmentInStatements(statement.functionExpression.body.body, stateName);
 				if (fromFunction) {
 					return fromFunction;
 				}
 				break;
 			}
-			case LuaSyntaxKind.ReturnStatement:
+			case SyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
 					const fromExpression = findStateNameMirrorAssignmentInExpression(expression, stateName);
 					if (fromExpression) {
@@ -163,7 +163,7 @@ export function findStateNameMirrorAssignmentInStatements(
 					}
 				}
 				break;
-			case LuaSyntaxKind.IfStatement:
+			case SyntaxKind.IfStatement:
 				for (const clause of statement.clauses) {
 					const fromCondition = findStateNameMirrorAssignmentInExpression(clause.condition, stateName);
 					if (fromCondition) {
@@ -175,7 +175,7 @@ export function findStateNameMirrorAssignmentInStatements(
 					}
 				}
 				break;
-			case LuaSyntaxKind.WhileStatement: {
+			case SyntaxKind.WhileStatement: {
 				const fromCondition = findStateNameMirrorAssignmentInExpression(statement.condition, stateName);
 				if (fromCondition) {
 					return fromCondition;
@@ -186,7 +186,7 @@ export function findStateNameMirrorAssignmentInStatements(
 				}
 				break;
 			}
-			case LuaSyntaxKind.RepeatStatement: {
+			case SyntaxKind.RepeatStatement: {
 				const fromBlock = findStateNameMirrorAssignmentInStatements(statement.block.body, stateName);
 				if (fromBlock) {
 					return fromBlock;
@@ -197,7 +197,7 @@ export function findStateNameMirrorAssignmentInStatements(
 				}
 				break;
 			}
-			case LuaSyntaxKind.ForNumericStatement: {
+			case SyntaxKind.ForNumericStatement: {
 				const fromStart = findStateNameMirrorAssignmentInExpression(statement.start, stateName);
 				if (fromStart) {
 					return fromStart;
@@ -216,7 +216,7 @@ export function findStateNameMirrorAssignmentInStatements(
 				}
 				break;
 			}
-			case LuaSyntaxKind.ForGenericStatement:
+			case SyntaxKind.ForGenericStatement:
 				for (const iterator of statement.iterators) {
 					const fromIterator = findStateNameMirrorAssignmentInExpression(iterator, stateName);
 					if (fromIterator) {
@@ -230,23 +230,23 @@ export function findStateNameMirrorAssignmentInStatements(
 					}
 				}
 				break;
-			case LuaSyntaxKind.DoStatement: {
+			case SyntaxKind.DoStatement: {
 				const fromBlock = findStateNameMirrorAssignmentInStatements(statement.block.body, stateName);
 				if (fromBlock) {
 					return fromBlock;
 				}
 				break;
 			}
-			case LuaSyntaxKind.CallStatement: {
+			case SyntaxKind.CallStatement: {
 				const fromCall = findStateNameMirrorAssignmentInExpression(statement.expression, stateName);
 				if (fromCall) {
 					return fromCall;
 				}
 				break;
 			}
-			case LuaSyntaxKind.BreakStatement:
-			case LuaSyntaxKind.GotoStatement:
-			case LuaSyntaxKind.LabelStatement:
+			case SyntaxKind.BreakStatement:
+			case SyntaxKind.GotoStatement:
+			case SyntaxKind.LabelStatement:
 				break;
 			default:
 				break;
@@ -256,13 +256,13 @@ export function findStateNameMirrorAssignmentInStatements(
 }
 
 export function lintCollectionStringValuesForLabel(
-	expression: LuaExpression,
+	expression: Expression,
 	label: string,
 	rule: LintRuleName,
-	issues: LuaLintIssue[],
+	issues: CartLintIssue[],
 	messagePrefix: string,
 ): void {
-	if (expression.kind === LuaSyntaxKind.StringLiteralExpression) {
+	if (expression.kind === SyntaxKind.StringLiteralExpression) {
 		if (!containsLabel(expression.value, label)) {
 			return;
 		}
@@ -278,11 +278,11 @@ export function lintCollectionStringValuesForLabel(
 		);
 		return;
 	}
-	if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+	if (expression.kind !== SyntaxKind.TableConstructorExpression) {
 		return;
 	}
 	for (const field of expression.fields) {
-		if (field.kind !== LuaTableFieldKind.Array || field.value.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		if (field.kind !== TableFieldKind.Array || field.value.kind !== SyntaxKind.StringLiteralExpression) {
 			continue;
 		}
 		const value = field.value.value;

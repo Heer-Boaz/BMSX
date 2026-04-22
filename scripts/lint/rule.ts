@@ -1,4 +1,4 @@
-export type LintRuleDomain = 'code_quality' | 'common' | 'lua_cart' | 'shared';
+export type LintRuleDomain = 'code_quality' | 'common' | 'cart' | 'shared';
 
 export type LintRuleName = string;
 

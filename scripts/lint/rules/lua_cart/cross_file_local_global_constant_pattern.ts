@@ -1,13 +1,13 @@
 import { defineLintRule } from '../../rule';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type CartLintIssue } from '../../lua_rule';
 import { TopLevelLocalStringConstant } from './impl/support/types';
 import { pushIssue } from './impl/support/lint_context';
 
-export const crossFileLocalGlobalConstantPatternRule = defineLintRule('lua_cart', 'cross_file_local_global_constant_pattern');
+export const crossFileLocalGlobalConstantPatternRule = defineLintRule('cart', 'cross_file_local_global_constant_pattern');
 
 export function lintCrossFileLocalGlobalConstantPattern(
 	constants: ReadonlyArray<TopLevelLocalStringConstant>,
-	issues: LuaLintIssue[],
+	issues: CartLintIssue[],
 ): void {
 	const constantsByName = new Map<string, TopLevelLocalStringConstant[]>();
 	for (const constant of constants) {

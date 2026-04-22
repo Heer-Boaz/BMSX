@@ -1,16 +1,16 @@
-import { LuaBinaryOperator, LuaSyntaxKind, type LuaExpression } from '../../../../src/bmsx/lua/syntax/ast';
-import { isLuaEmptyStringLiteral } from '../../../../src/bmsx/lua/syntax/literals';
+import { LuaBinaryOperator as BinaryOperator, LuaSyntaxKind as SyntaxKind, type LuaExpression as Expression } from '../../../../src/bmsx/lua/syntax/ast';
+import { isLuaEmptyStringLiteral as isEmptyStringLiteral } from '../../../../src/bmsx/lua/syntax/literals';
 import { isEmptyStringToken } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { lintAdjacentEqualityComparison } from '../cpp/support/comparison';
 import type { LintIssue } from '../cpp/support/diagnostics';
-import type { LuaLintIssue, LuaLintIssuePusher } from '../../lua_rule';
+import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 
 export const emptyStringConditionPatternRule = defineLintRule('common', 'empty_string_condition_pattern');
 
-export function lintLuaEmptyStringConditionPattern(expression: LuaExpression, issues: LuaLintIssue[], pushIssue: LuaLintIssuePusher): void {
-	if (!matchesLuaEmptyStringConditionPattern(expression)) {
+export function lintAstEmptyStringConditionPattern(expression: Expression, issues: CartLintIssue[], pushIssue: CartLintIssuePusher): void {
+	if (!matchesAstEmptyStringConditionPattern(expression)) {
 		return;
 	}
 	pushIssue(
@@ -21,14 +21,14 @@ export function lintLuaEmptyStringConditionPattern(expression: LuaExpression, is
 	);
 }
 
-function matchesLuaEmptyStringConditionPattern(expression: LuaExpression): boolean {
-	if (expression.kind !== LuaSyntaxKind.BinaryExpression) {
+function matchesAstEmptyStringConditionPattern(expression: Expression): boolean {
+	if (expression.kind !== SyntaxKind.BinaryExpression) {
 		return false;
 	}
-	if (expression.operator !== LuaBinaryOperator.Equal && expression.operator !== LuaBinaryOperator.NotEqual) {
+	if (expression.operator !== BinaryOperator.Equal && expression.operator !== BinaryOperator.NotEqual) {
 		return false;
 	}
-	return isLuaEmptyStringLiteral(expression.left) || isLuaEmptyStringLiteral(expression.right);
+	return isEmptyStringLiteral(expression.left) || isEmptyStringLiteral(expression.right);
 }
 
 export function lintEmptyStringConditionPattern(file: string, tokens: readonly Token[], issues: LintIssue[]): void {

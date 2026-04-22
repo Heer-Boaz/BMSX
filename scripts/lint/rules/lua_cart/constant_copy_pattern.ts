@@ -1,16 +1,16 @@
 import { defineLintRule } from '../../rule';
-import { LuaAssignmentOperator, type LuaExpression, type LuaFunctionDeclarationStatement, type LuaLocalFunctionStatement, type LuaStatement, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
 import { declareConstantCopyBinding, enterConstantCopyScope, isForbiddenConstantCopyExpression, leaveConstantCopyScope, lintConstantCopyInAssignmentTarget, lintConstantCopyInExpression, setConstantCopyBindingByName } from './impl/support/constant_copy';
 import { isConstantSourceExpression } from './impl/support/expressions';
 import { ConstantCopyContext } from './impl/support/types';
 import { pushIssue } from './impl/support/lint_context';
 
-export const constantCopyPatternRule = defineLintRule('lua_cart', 'constant_copy_pattern');
+export const constantCopyPatternRule = defineLintRule('cart', 'constant_copy_pattern');
 
-export function lintConstantCopyInStatements(statements: ReadonlyArray<LuaStatement>, context: ConstantCopyContext): void {
+export function lintConstantCopyInStatements(statements: ReadonlyArray<Statement>, context: ConstantCopyContext): void {
 	for (const statement of statements) {
 		switch (statement.kind) {
-			case LuaSyntaxKind.LocalAssignmentStatement: {
+			case SyntaxKind.LocalAssignmentStatement: {
 				const valueCount = Math.min(statement.names.length, statement.values.length);
 				const isConstantSourceByValue: boolean[] = [];
 				const isForbiddenCopyByValue: boolean[] = [];
@@ -33,8 +33,8 @@ export function lintConstantCopyInStatements(statements: ReadonlyArray<LuaStatem
 				}
 				break;
 			}
-			case LuaSyntaxKind.LocalFunctionStatement: {
-				const localFunction = statement as LuaLocalFunctionStatement;
+			case SyntaxKind.LocalFunctionStatement: {
+				const localFunction = statement as LocalFunctionStatement;
 				declareConstantCopyBinding(context, localFunction.name, false);
 				enterConstantCopyScope(context);
 				for (const parameter of localFunction.functionExpression.parameters) {
@@ -44,8 +44,8 @@ export function lintConstantCopyInStatements(statements: ReadonlyArray<LuaStatem
 				leaveConstantCopyScope(context);
 				break;
 			}
-			case LuaSyntaxKind.FunctionDeclarationStatement: {
-				const declaration = statement as LuaFunctionDeclarationStatement;
+			case SyntaxKind.FunctionDeclarationStatement: {
+				const declaration = statement as FunctionDeclarationStatement;
 				if (declaration.name.identifiers.length === 1 && declaration.name.methodName === null) {
 					setConstantCopyBindingByName(context, declaration.name.identifiers[0], false);
 				}
@@ -57,11 +57,11 @@ export function lintConstantCopyInStatements(statements: ReadonlyArray<LuaStatem
 				leaveConstantCopyScope(context);
 				break;
 			}
-			case LuaSyntaxKind.AssignmentStatement: {
+			case SyntaxKind.AssignmentStatement: {
 				for (const right of statement.right) {
 					lintConstantCopyInExpression(right, context);
 				}
-				if (statement.operator === LuaAssignmentOperator.Assign) {
+				if (statement.operator === AssignmentOperator.Assign) {
 					const assignedConstantSources: boolean[] = [];
 					for (let index = 0; index < statement.left.length; index += 1) {
 						const right = index < statement.right.length ? statement.right[index] : null;
@@ -77,12 +77,12 @@ export function lintConstantCopyInStatements(statements: ReadonlyArray<LuaStatem
 				}
 				break;
 			}
-			case LuaSyntaxKind.ReturnStatement:
+			case SyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
 					lintConstantCopyInExpression(expression, context);
 				}
 				break;
-			case LuaSyntaxKind.IfStatement:
+			case SyntaxKind.IfStatement:
 				for (const clause of statement.clauses) {
 					if (clause.condition) {
 						lintConstantCopyInExpression(clause.condition, context);
@@ -92,19 +92,19 @@ export function lintConstantCopyInStatements(statements: ReadonlyArray<LuaStatem
 					leaveConstantCopyScope(context);
 				}
 				break;
-			case LuaSyntaxKind.WhileStatement:
+			case SyntaxKind.WhileStatement:
 				lintConstantCopyInExpression(statement.condition, context);
 				enterConstantCopyScope(context);
 				lintConstantCopyInStatements(statement.block.body, context);
 				leaveConstantCopyScope(context);
 				break;
-			case LuaSyntaxKind.RepeatStatement:
+			case SyntaxKind.RepeatStatement:
 				enterConstantCopyScope(context);
 				lintConstantCopyInStatements(statement.block.body, context);
 				leaveConstantCopyScope(context);
 				lintConstantCopyInExpression(statement.condition, context);
 				break;
-			case LuaSyntaxKind.ForNumericStatement:
+			case SyntaxKind.ForNumericStatement:
 				lintConstantCopyInExpression(statement.start, context);
 				lintConstantCopyInExpression(statement.limit, context);
 				lintConstantCopyInExpression(statement.step, context);
@@ -113,7 +113,7 @@ export function lintConstantCopyInStatements(statements: ReadonlyArray<LuaStatem
 				lintConstantCopyInStatements(statement.block.body, context);
 				leaveConstantCopyScope(context);
 				break;
-			case LuaSyntaxKind.ForGenericStatement:
+			case SyntaxKind.ForGenericStatement:
 				for (const iterator of statement.iterators) {
 					lintConstantCopyInExpression(iterator, context);
 				}
@@ -124,17 +124,17 @@ export function lintConstantCopyInStatements(statements: ReadonlyArray<LuaStatem
 				lintConstantCopyInStatements(statement.block.body, context);
 				leaveConstantCopyScope(context);
 				break;
-			case LuaSyntaxKind.DoStatement:
+			case SyntaxKind.DoStatement:
 				enterConstantCopyScope(context);
 				lintConstantCopyInStatements(statement.block.body, context);
 				leaveConstantCopyScope(context);
 				break;
-			case LuaSyntaxKind.CallStatement:
+			case SyntaxKind.CallStatement:
 				lintConstantCopyInExpression(statement.expression, context);
 				break;
-			case LuaSyntaxKind.BreakStatement:
-			case LuaSyntaxKind.GotoStatement:
-			case LuaSyntaxKind.LabelStatement:
+			case SyntaxKind.BreakStatement:
+			case SyntaxKind.GotoStatement:
+			case SyntaxKind.LabelStatement:
 				break;
 			default:
 				break;
@@ -142,8 +142,8 @@ export function lintConstantCopyInStatements(statements: ReadonlyArray<LuaStatem
 	}
 }
 
-function updateConstantCopyAssignmentTarget(context: ConstantCopyContext, left: LuaExpression, isConstantSource: boolean): void {
-	if (left.kind === LuaSyntaxKind.IdentifierExpression) {
+function updateConstantCopyAssignmentTarget(context: ConstantCopyContext, left: Expression, isConstantSource: boolean): void {
+	if (left.kind === SyntaxKind.IdentifierExpression) {
 		setConstantCopyBindingByName(context, left.name, isConstantSource);
 		return;
 	}

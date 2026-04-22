@@ -2,7 +2,7 @@ import ts from 'typescript';
 import { architectureBoundaryLayer, relativeArchitectureBoundaryViolationReason } from '../../../analysis/architecture_boundary';
 import type { ArchitectureBoundaryConfig } from '../../../analysis/config';
 import { defineLintRule } from '../../rule';
-import { pushLintIssue, type LintIssue } from '../../ts_rule';
+import { pushLintIssue, type LintIssue } from '../ts/support/ast';
 
 export const crossLayerImportPatternRule = defineLintRule('code_quality', 'cross_layer_import_pattern');
 

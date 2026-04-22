@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LintIssue as LintIssue, pushLintIssue } from '../../ts_rule';
+import { type LintIssue, pushLintIssue } from '../ts/support/ast';
 import ts from 'typescript';
 import { lineHasAnalysisRegionLabel, type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import { callTargetText, expressionContainsPropertyAccess, getPropertyAccessName } from '../../../../src/bmsx/language/ts/ast/expressions';

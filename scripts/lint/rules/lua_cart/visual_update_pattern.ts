@@ -1,12 +1,12 @@
 import { defineLintRule } from '../../rule';
-import { type LuaFunctionExpression } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type LuaFunctionExpression as CartFunctionExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { isVisualUpdateLikeFunctionName } from './impl/support/fsm_visual';
 import { pushIssue } from './impl/support/lint_context';
 
-export const visualUpdatePatternRule = defineLintRule('lua_cart', 'visual_update_pattern');
+export const visualUpdatePatternRule = defineLintRule('cart', 'visual_update_pattern');
 
-export function lintVisualUpdatePattern(functionName: string, functionExpression: LuaFunctionExpression, issues: LuaLintIssue[]): boolean {
+export function lintVisualUpdatePattern(functionName: string, functionExpression: CartFunctionExpression, issues: CartLintIssue[]): boolean {
 	if (functionName === '<anonymous>' || !isVisualUpdateLikeFunctionName(functionName)) {
 		return false;
 	}

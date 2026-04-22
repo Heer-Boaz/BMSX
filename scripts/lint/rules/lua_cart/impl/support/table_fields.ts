@@ -1,5 +1,5 @@
-import { type LuaExpression, type LuaFunctionExpression, type LuaStatement, LuaSyntaxKind, type LuaTableField, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../../../lua_rule';
+import { type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, type LuaTableField as TableField, LuaTableFieldKind as TableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../../../lua_rule';
 import { lintForbiddenRenderLayerString } from '../../forbidden_render_layer_string_pattern';
 import { lintExpression } from '../../../../../rompacker/cart_lua_linter_runtime';
 import { lintCollectionLabelPatterns } from '../../fsm_id_label_pattern';
@@ -10,38 +10,38 @@ import { lintTickInputCheckPattern } from '../../tick_input_check_pattern';
 import { isPrimitiveLiteralExpression } from './conditions';
 import { pushIssue } from './lint_context';
 
-export function getTableFieldKey(field: LuaTableField): string {
-	if (field.kind === LuaTableFieldKind.IdentifierKey) {
+export function getTableFieldKey(field: TableField): string {
+	if (field.kind === TableFieldKind.IdentifierKey) {
 		return field.name;
 	}
-	if (field.kind !== LuaTableFieldKind.ExpressionKey) {
+	if (field.kind !== TableFieldKind.ExpressionKey) {
 		return undefined;
 	}
-	if (field.key.kind === LuaSyntaxKind.StringLiteralExpression) {
+	if (field.key.kind === SyntaxKind.StringLiteralExpression) {
 		return field.key.value;
 	}
-	if (field.key.kind === LuaSyntaxKind.IdentifierExpression) {
+	if (field.key.kind === SyntaxKind.IdentifierExpression) {
 		return field.key.name;
 	}
 	return undefined;
 }
 
-export function expressionContainsInlineTableOrFunction(expression: LuaExpression): boolean {
+export function expressionContainsInlineTableOrFunction(expression: Expression): boolean {
 	switch (expression.kind) {
-		case LuaSyntaxKind.TableConstructorExpression:
-		case LuaSyntaxKind.FunctionExpression:
+		case SyntaxKind.TableConstructorExpression:
+		case SyntaxKind.FunctionExpression:
 			return true;
-		case LuaSyntaxKind.MemberExpression:
+		case SyntaxKind.MemberExpression:
 			return expressionContainsInlineTableOrFunction(expression.base);
-		case LuaSyntaxKind.IndexExpression:
+		case SyntaxKind.IndexExpression:
 			return expressionContainsInlineTableOrFunction(expression.base)
 				|| expressionContainsInlineTableOrFunction(expression.index);
-		case LuaSyntaxKind.BinaryExpression:
+		case SyntaxKind.BinaryExpression:
 			return expressionContainsInlineTableOrFunction(expression.left)
 				|| expressionContainsInlineTableOrFunction(expression.right);
-		case LuaSyntaxKind.UnaryExpression:
+		case SyntaxKind.UnaryExpression:
 			return expressionContainsInlineTableOrFunction(expression.operand);
-		case LuaSyntaxKind.CallExpression:
+		case SyntaxKind.CallExpression:
 			if (expressionContainsInlineTableOrFunction(expression.callee)) {
 				return true;
 			}
@@ -56,13 +56,13 @@ export function expressionContainsInlineTableOrFunction(expression: LuaExpressio
 	}
 }
 
-export function isStaticLookupTableConstructor(expression: LuaExpression): boolean {
-	if (expression.kind !== LuaSyntaxKind.TableConstructorExpression || expression.fields.length === 0) {
+export function isStaticLookupTableConstructor(expression: Expression): boolean {
+	if (expression.kind !== SyntaxKind.TableConstructorExpression || expression.fields.length === 0) {
 		return false;
 	}
 	for (const field of expression.fields) {
-		if (field.kind === LuaTableFieldKind.ExpressionKey) {
-			if (!isPrimitiveLiteralExpression(field.key) && field.key.kind !== LuaSyntaxKind.IdentifierExpression) {
+		if (field.kind === TableFieldKind.ExpressionKey) {
+			if (!isPrimitiveLiteralExpression(field.key) && field.key.kind !== SyntaxKind.IdentifierExpression) {
 				return false;
 			}
 		}
@@ -74,18 +74,18 @@ export function isStaticLookupTableConstructor(expression: LuaExpression): boole
 }
 
 export function lintInlineStaticLookupTableStatements(
-	statements: ReadonlyArray<LuaStatement>,
+	statements: ReadonlyArray<Statement>,
 	functionName: string,
-	issues: LuaLintIssue[],
+	issues: CartLintIssue[],
 ): void {
 	for (const statement of statements) {
 		switch (statement.kind) {
-			case LuaSyntaxKind.LocalAssignmentStatement:
+			case SyntaxKind.LocalAssignmentStatement:
 				for (const value of statement.values) {
 					lintInlineStaticLookupTableExpression(value, functionName, issues);
 				}
 				break;
-			case LuaSyntaxKind.AssignmentStatement:
+			case SyntaxKind.AssignmentStatement:
 				for (const left of statement.left) {
 					lintInlineStaticLookupTableExpression(left, functionName, issues);
 				}
@@ -93,12 +93,12 @@ export function lintInlineStaticLookupTableStatements(
 					lintInlineStaticLookupTableExpression(right, functionName, issues);
 				}
 				break;
-			case LuaSyntaxKind.ReturnStatement:
+			case SyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
 					lintInlineStaticLookupTableExpression(expression, functionName, issues);
 				}
 				break;
-			case LuaSyntaxKind.IfStatement:
+			case SyntaxKind.IfStatement:
 				for (const clause of statement.clauses) {
 					if (clause.condition) {
 						lintInlineStaticLookupTableExpression(clause.condition, functionName, issues);
@@ -106,37 +106,37 @@ export function lintInlineStaticLookupTableStatements(
 					lintInlineStaticLookupTableStatements(clause.block.body, functionName, issues);
 				}
 				break;
-			case LuaSyntaxKind.WhileStatement:
+			case SyntaxKind.WhileStatement:
 				lintInlineStaticLookupTableExpression(statement.condition, functionName, issues);
 				lintInlineStaticLookupTableStatements(statement.block.body, functionName, issues);
 				break;
-			case LuaSyntaxKind.RepeatStatement:
+			case SyntaxKind.RepeatStatement:
 				lintInlineStaticLookupTableStatements(statement.block.body, functionName, issues);
 				lintInlineStaticLookupTableExpression(statement.condition, functionName, issues);
 				break;
-			case LuaSyntaxKind.ForNumericStatement:
+			case SyntaxKind.ForNumericStatement:
 				lintInlineStaticLookupTableExpression(statement.start, functionName, issues);
 				lintInlineStaticLookupTableExpression(statement.limit, functionName, issues);
 				lintInlineStaticLookupTableExpression(statement.step, functionName, issues);
 				lintInlineStaticLookupTableStatements(statement.block.body, functionName, issues);
 				break;
-			case LuaSyntaxKind.ForGenericStatement:
+			case SyntaxKind.ForGenericStatement:
 				for (const iterator of statement.iterators) {
 					lintInlineStaticLookupTableExpression(iterator, functionName, issues);
 				}
 				lintInlineStaticLookupTableStatements(statement.block.body, functionName, issues);
 				break;
-			case LuaSyntaxKind.DoStatement:
+			case SyntaxKind.DoStatement:
 				lintInlineStaticLookupTableStatements(statement.block.body, functionName, issues);
 				break;
-			case LuaSyntaxKind.CallStatement:
+			case SyntaxKind.CallStatement:
 				lintInlineStaticLookupTableExpression(statement.expression, functionName, issues);
 				break;
-			case LuaSyntaxKind.LocalFunctionStatement:
-			case LuaSyntaxKind.FunctionDeclarationStatement:
-			case LuaSyntaxKind.BreakStatement:
-			case LuaSyntaxKind.GotoStatement:
-			case LuaSyntaxKind.LabelStatement:
+			case SyntaxKind.LocalFunctionStatement:
+			case SyntaxKind.FunctionDeclarationStatement:
+			case SyntaxKind.BreakStatement:
+			case SyntaxKind.GotoStatement:
+			case SyntaxKind.LabelStatement:
 				break;
 			default:
 				break;
@@ -146,21 +146,21 @@ export function lintInlineStaticLookupTableStatements(
 
 export function lintInlineStaticLookupTablePattern(
 	functionName: string,
-	functionExpression: LuaFunctionExpression,
-	issues: LuaLintIssue[],
+	functionExpression: CartFunctionExpression,
+	issues: CartLintIssue[],
 ): void {
 	lintInlineStaticLookupTableStatements(functionExpression.body.body, functionName, issues);
 }
 
-export function readStringFieldValueFromTable(expression: LuaExpression | undefined, fieldName: string): string | undefined {
-	if (!expression || expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+export function readStringFieldValueFromTable(expression: Expression | undefined, fieldName: string): string | undefined {
+	if (!expression || expression.kind !== SyntaxKind.TableConstructorExpression) {
 		return undefined;
 	}
 	for (const field of expression.fields) {
 		if (getTableFieldKey(field) !== fieldName) {
 			continue;
 		}
-		if (field.value.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		if (field.value.kind !== SyntaxKind.StringLiteralExpression) {
 			return undefined;
 		}
 		return field.value.value;
@@ -168,15 +168,15 @@ export function readStringFieldValueFromTable(expression: LuaExpression | undefi
 	return undefined;
 }
 
-export function readBooleanFieldValueFromTable(expression: LuaExpression | undefined, fieldName: string): boolean | undefined {
-	if (!expression || expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+export function readBooleanFieldValueFromTable(expression: Expression | undefined, fieldName: string): boolean | undefined {
+	if (!expression || expression.kind !== SyntaxKind.TableConstructorExpression) {
 		return undefined;
 	}
 	for (const field of expression.fields) {
 		if (getTableFieldKey(field) !== fieldName) {
 			continue;
 		}
-		if (field.value.kind !== LuaSyntaxKind.BooleanLiteralExpression) {
+		if (field.value.kind !== SyntaxKind.BooleanLiteralExpression) {
 			return undefined;
 		}
 		return field.value.value;
@@ -184,8 +184,8 @@ export function readBooleanFieldValueFromTable(expression: LuaExpression | undef
 	return undefined;
 }
 
-export function findTableFieldByKey(expression: LuaExpression | undefined, fieldName: string): LuaTableField | undefined {
-	if (!expression || expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+export function findTableFieldByKey(expression: Expression | undefined, fieldName: string): TableField | undefined {
+	if (!expression || expression.kind !== SyntaxKind.TableConstructorExpression) {
 		return undefined;
 	}
 	for (const field of expression.fields) {
@@ -197,39 +197,39 @@ export function findTableFieldByKey(expression: LuaExpression | undefined, field
 }
 
 export function visitTableFieldsRecursively(
-	expression: LuaExpression | undefined,
-	onField: (field: LuaTableField) => void,
+	expression: Expression | undefined,
+	onField: (field: TableField) => void,
 ): void {
-	if (!expression || expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+	if (!expression || expression.kind !== SyntaxKind.TableConstructorExpression) {
 		return;
 	}
 	for (const field of expression.fields) {
 		onField(field);
-		if (field.kind === LuaTableFieldKind.ExpressionKey) {
+		if (field.kind === TableFieldKind.ExpressionKey) {
 			visitTableFieldsRecursively(field.key, onField);
 		}
 		visitTableFieldsRecursively(field.value, onField);
 	}
 }
 
-export function lintTableField(field: LuaTableField, issues: LuaLintIssue[]): void {
+export function lintTableField(field: TableField, issues: CartLintIssue[]): void {
 	lintCollectionLabelPatterns(field, issues);
 	lintInjectedServiceIdPropertyTableField(field, issues);
 	lintForbiddenRenderLayerString(field, issues, pushIssue);
-	if (field.kind === LuaTableFieldKind.IdentifierKey
+	if (field.kind === TableFieldKind.IdentifierKey
 		&& field.name === 'tick'
-		&& field.value.kind === LuaSyntaxKind.FunctionExpression) {
+		&& field.value.kind === SyntaxKind.FunctionExpression) {
 		lintTickFlagPollingPattern(field.value, issues);
 		lintTickInputCheckPattern(field.value, issues);
 	}
 	switch (field.kind) {
-		case LuaTableFieldKind.Array:
+		case TableFieldKind.Array:
 			lintExpression(field.value, issues, false);
 			return;
-		case LuaTableFieldKind.IdentifierKey:
+		case TableFieldKind.IdentifierKey:
 			lintExpression(field.value, issues, false);
 			return;
-		case LuaTableFieldKind.ExpressionKey:
+		case TableFieldKind.ExpressionKey:
 			lintExpression(field.key, issues, false);
 			lintExpression(field.value, issues, false);
 			return;

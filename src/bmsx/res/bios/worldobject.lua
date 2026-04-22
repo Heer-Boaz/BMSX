@@ -546,7 +546,7 @@ end
 function worldobject:add_btree(bt_id)
 	local index<const> = #self.btree_ids + 1
 	self.btree_ids[index] = bt_id
-	local blackboard<const> = behaviourtree.blackboard.new({ id = bt_id })
+	local blackboard<const> = behaviourtree.blackboard.new(bt_id)
 	self.btreecontexts[bt_id] = {
 		tree_id = bt_id,
 		running = true,

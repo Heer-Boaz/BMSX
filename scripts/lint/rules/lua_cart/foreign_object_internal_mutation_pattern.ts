@@ -1,19 +1,19 @@
 import { defineLintRule } from '../../rule';
-import { LuaAssignmentOperator, type LuaStatement, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
 import { getAssignmentTargetInfo, lintNullBindingFunctionScope, lintScopedBindingStatements } from './impl/support/bindings';
 import { declareForeignObjectBinding, enterForeignObjectMutationScope, isForeignObjectAliasInitializer, leaveForeignObjectMutationScope, lintForeignObjectMutationInExpression, resolveForeignObjectBinding, setForeignObjectBinding } from './impl/support/foreign_object';
 import { ForeignObjectMutationContext } from './impl/support/types';
 import { pushIssue } from './impl/support/lint_context';
 
-export const foreignObjectInternalMutationPatternRule = defineLintRule('lua_cart', 'foreign_object_internal_mutation_pattern');
+export const foreignObjectInternalMutationPatternRule = defineLintRule('cart', 'foreign_object_internal_mutation_pattern');
 
 export function lintForeignObjectMutationInStatements(
-	statements: ReadonlyArray<LuaStatement>,
+	statements: ReadonlyArray<Statement>,
 	context: ForeignObjectMutationContext,
 ): void {
 	for (const statement of statements) {
 		switch (statement.kind) {
-			case LuaSyntaxKind.LocalAssignmentStatement:
+			case SyntaxKind.LocalAssignmentStatement:
 				for (const value of statement.values) {
 					lintForeignObjectMutationInExpression(value, context);
 				}
@@ -26,7 +26,7 @@ export function lintForeignObjectMutationInStatements(
 					declareForeignObjectBinding(context, declaration, binding);
 				}
 				break;
-			case LuaSyntaxKind.AssignmentStatement: {
+			case SyntaxKind.AssignmentStatement: {
 				for (const left of statement.left) {
 					const targetInfo = getAssignmentTargetInfo(left);
 					if (!targetInfo || targetInfo.depth < 1) {
@@ -54,11 +54,11 @@ export function lintForeignObjectMutationInStatements(
 				for (const right of statement.right) {
 					lintForeignObjectMutationInExpression(right, context);
 				}
-				if (statement.operator === LuaAssignmentOperator.Assign) {
+				if (statement.operator === AssignmentOperator.Assign) {
 					const pairCount = Math.min(statement.left.length, statement.right.length);
 					for (let index = 0; index < pairCount; index += 1) {
 						const left = statement.left[index];
-						if (left.kind !== LuaSyntaxKind.IdentifierExpression) {
+						if (left.kind !== SyntaxKind.IdentifierExpression) {
 							continue;
 						}
 						const right = statement.right[index];
@@ -70,19 +70,19 @@ export function lintForeignObjectMutationInStatements(
 				}
 				break;
 			}
-			case LuaSyntaxKind.LocalFunctionStatement:
+			case SyntaxKind.LocalFunctionStatement:
 				declareForeignObjectBinding(context, statement.name, null);
 				lintNullBindingFunctionScope(context, statement.functionExpression, lintForeignObjectMutationInStatements);
 				break;
-			case LuaSyntaxKind.FunctionDeclarationStatement:
+			case SyntaxKind.FunctionDeclarationStatement:
 				lintNullBindingFunctionScope(context, statement.functionExpression, lintForeignObjectMutationInStatements);
 				break;
-			case LuaSyntaxKind.ReturnStatement:
+			case SyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
 					lintForeignObjectMutationInExpression(expression, context);
 				}
 				break;
-			case LuaSyntaxKind.IfStatement:
+			case SyntaxKind.IfStatement:
 				for (const clause of statement.clauses) {
 					if (clause.condition) {
 						lintForeignObjectMutationInExpression(clause.condition, context);
@@ -90,17 +90,17 @@ export function lintForeignObjectMutationInStatements(
 					lintScopedBindingStatements(context, clause.block.body, lintForeignObjectMutationInStatements);
 				}
 				break;
-			case LuaSyntaxKind.WhileStatement:
+			case SyntaxKind.WhileStatement:
 				lintForeignObjectMutationInExpression(statement.condition, context);
 				lintScopedBindingStatements(context, statement.block.body, lintForeignObjectMutationInStatements);
 				break;
-			case LuaSyntaxKind.RepeatStatement:
+			case SyntaxKind.RepeatStatement:
 				enterForeignObjectMutationScope(context);
 				lintForeignObjectMutationInStatements(statement.block.body, context);
 				lintForeignObjectMutationInExpression(statement.condition, context);
 				leaveForeignObjectMutationScope(context);
 				break;
-			case LuaSyntaxKind.ForNumericStatement:
+			case SyntaxKind.ForNumericStatement:
 				lintForeignObjectMutationInExpression(statement.start, context);
 				lintForeignObjectMutationInExpression(statement.limit, context);
 				lintForeignObjectMutationInExpression(statement.step, context);
@@ -109,7 +109,7 @@ export function lintForeignObjectMutationInStatements(
 				lintForeignObjectMutationInStatements(statement.block.body, context);
 				leaveForeignObjectMutationScope(context);
 				break;
-			case LuaSyntaxKind.ForGenericStatement:
+			case SyntaxKind.ForGenericStatement:
 				for (const iterator of statement.iterators) {
 					lintForeignObjectMutationInExpression(iterator, context);
 				}
@@ -120,15 +120,15 @@ export function lintForeignObjectMutationInStatements(
 				lintForeignObjectMutationInStatements(statement.block.body, context);
 				leaveForeignObjectMutationScope(context);
 				break;
-			case LuaSyntaxKind.DoStatement:
+			case SyntaxKind.DoStatement:
 				lintScopedBindingStatements(context, statement.block.body, lintForeignObjectMutationInStatements);
 				break;
-			case LuaSyntaxKind.CallStatement:
+			case SyntaxKind.CallStatement:
 				lintForeignObjectMutationInExpression(statement.expression, context);
 				break;
-			case LuaSyntaxKind.BreakStatement:
-			case LuaSyntaxKind.GotoStatement:
-			case LuaSyntaxKind.LabelStatement:
+			case SyntaxKind.BreakStatement:
+			case SyntaxKind.GotoStatement:
+			case SyntaxKind.LabelStatement:
 				break;
 			default:
 				break;

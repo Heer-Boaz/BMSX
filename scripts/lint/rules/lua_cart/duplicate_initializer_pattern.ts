@@ -1,20 +1,20 @@
 import { defineLintRule } from '../../rule';
-import { type LuaFunctionExpression, type LuaStatement, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
 import { lintScopedBindingStatements } from './impl/support/bindings';
 import { declareDuplicateInitializerBinding, enterDuplicateInitializerScope, leaveDuplicateInitializerScope, lintDuplicateInitializerInExpression, resolveDuplicateInitializerBinding } from './impl/support/duplicate_initializers';
 import { getExpressionSignature } from './impl/support/expression_signatures';
 import { DuplicateInitializerContext } from './impl/support/types';
 import { pushIssue } from './impl/support/lint_context';
 
-export const duplicateInitializerPatternRule = defineLintRule('lua_cart', 'duplicate_initializer_pattern');
+export const duplicateInitializerPatternRule = defineLintRule('cart', 'duplicate_initializer_pattern');
 
 export function lintDuplicateInitializerInStatements(
-	statements: ReadonlyArray<LuaStatement>,
+	statements: ReadonlyArray<Statement>,
 	context: DuplicateInitializerContext,
 ): void {
 	for (const statement of statements) {
 		switch (statement.kind) {
-			case LuaSyntaxKind.LocalAssignmentStatement: {
+			case SyntaxKind.LocalAssignmentStatement: {
 				for (const value of statement.values) {
 					lintDuplicateInitializerInExpression(value, context);
 				}
@@ -28,7 +28,7 @@ export function lintDuplicateInitializerInStatements(
 				}
 				break;
 			}
-			case LuaSyntaxKind.AssignmentStatement: {
+			case SyntaxKind.AssignmentStatement: {
 				for (const left of statement.left) {
 					lintDuplicateInitializerInExpression(left, context);
 				}
@@ -38,7 +38,7 @@ export function lintDuplicateInitializerInStatements(
 				const pairCount = Math.min(statement.left.length, statement.right.length);
 				for (let index = 0; index < pairCount; index += 1) {
 					const left = statement.left[index];
-					if (left.kind !== LuaSyntaxKind.IdentifierExpression) {
+					if (left.kind !== SyntaxKind.IdentifierExpression) {
 						continue;
 					}
 					const binding = resolveDuplicateInitializerBinding(context, left.name);
@@ -58,19 +58,19 @@ export function lintDuplicateInitializerInStatements(
 				}
 				break;
 			}
-			case LuaSyntaxKind.LocalFunctionStatement:
+			case SyntaxKind.LocalFunctionStatement:
 				declareDuplicateInitializerBinding(context, statement.name, '');
 				lintDuplicateInitializerFunctionExpression(statement.functionExpression, context);
 				break;
-			case LuaSyntaxKind.FunctionDeclarationStatement:
+			case SyntaxKind.FunctionDeclarationStatement:
 				lintDuplicateInitializerFunctionExpression(statement.functionExpression, context);
 				break;
-			case LuaSyntaxKind.ReturnStatement:
+			case SyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
 					lintDuplicateInitializerInExpression(expression, context);
 				}
 				break;
-			case LuaSyntaxKind.IfStatement:
+			case SyntaxKind.IfStatement:
 				for (const clause of statement.clauses) {
 					if (clause.condition) {
 						lintDuplicateInitializerInExpression(clause.condition, context);
@@ -78,17 +78,17 @@ export function lintDuplicateInitializerInStatements(
 					lintScopedBindingStatements(context, clause.block.body, lintDuplicateInitializerInStatements);
 				}
 				break;
-			case LuaSyntaxKind.WhileStatement:
+			case SyntaxKind.WhileStatement:
 				lintDuplicateInitializerInExpression(statement.condition, context);
 				lintScopedBindingStatements(context, statement.block.body, lintDuplicateInitializerInStatements);
 				break;
-			case LuaSyntaxKind.RepeatStatement:
+			case SyntaxKind.RepeatStatement:
 				enterDuplicateInitializerScope(context);
 				lintDuplicateInitializerInStatements(statement.block.body, context);
 				lintDuplicateInitializerInExpression(statement.condition, context);
 				leaveDuplicateInitializerScope(context);
 				break;
-			case LuaSyntaxKind.ForNumericStatement:
+			case SyntaxKind.ForNumericStatement:
 				lintDuplicateInitializerInExpression(statement.start, context);
 				lintDuplicateInitializerInExpression(statement.limit, context);
 				lintDuplicateInitializerInExpression(statement.step, context);
@@ -97,7 +97,7 @@ export function lintDuplicateInitializerInStatements(
 				lintDuplicateInitializerInStatements(statement.block.body, context);
 				leaveDuplicateInitializerScope(context);
 				break;
-			case LuaSyntaxKind.ForGenericStatement:
+			case SyntaxKind.ForGenericStatement:
 				for (const iterator of statement.iterators) {
 					lintDuplicateInitializerInExpression(iterator, context);
 				}
@@ -108,15 +108,15 @@ export function lintDuplicateInitializerInStatements(
 				lintDuplicateInitializerInStatements(statement.block.body, context);
 				leaveDuplicateInitializerScope(context);
 				break;
-			case LuaSyntaxKind.DoStatement:
+			case SyntaxKind.DoStatement:
 				lintScopedBindingStatements(context, statement.block.body, lintDuplicateInitializerInStatements);
 				break;
-			case LuaSyntaxKind.CallStatement:
+			case SyntaxKind.CallStatement:
 				lintDuplicateInitializerInExpression(statement.expression, context);
 				break;
-			case LuaSyntaxKind.BreakStatement:
-			case LuaSyntaxKind.GotoStatement:
-			case LuaSyntaxKind.LabelStatement:
+			case SyntaxKind.BreakStatement:
+			case SyntaxKind.GotoStatement:
+			case SyntaxKind.LabelStatement:
 				break;
 			default:
 				break;
@@ -124,7 +124,7 @@ export function lintDuplicateInitializerInStatements(
 	}
 }
 
-function lintDuplicateInitializerFunctionExpression(functionExpression: LuaFunctionExpression, context: DuplicateInitializerContext): void {
+function lintDuplicateInitializerFunctionExpression(functionExpression: CartFunctionExpression, context: DuplicateInitializerContext): void {
 	enterDuplicateInitializerScope(context);
 	for (const parameter of functionExpression.parameters) {
 		declareDuplicateInitializerBinding(context, parameter, '');

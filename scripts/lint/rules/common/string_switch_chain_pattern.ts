@@ -7,7 +7,7 @@ import {
 import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
-import { type LintIssue as LintIssue } from '../../ts_rule';
+import { type LintIssue } from '../ts/support/ast';
 import ts from 'typescript';
 import { stringSwitchComparisonSubject } from '../ts/support/conditions';
 

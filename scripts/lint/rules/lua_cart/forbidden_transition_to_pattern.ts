@@ -1,14 +1,14 @@
 import { defineLintRule } from '../../rule';
-import { type LuaCallExpression } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type LuaCallExpression as CallExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { lintForbiddenMatchesStatePathPattern } from './forbidden_matches_state_path_pattern';
 import { getCallMethodName, getCallReceiverName } from '../../../../src/bmsx/lua/syntax/calls';
 import { FORBIDDEN_STATE_CALL_RECEIVERS } from './impl/support/general';
 import { pushIssue } from './impl/support/lint_context';
 
-export const forbiddenTransitionToPatternRule = defineLintRule('lua_cart', 'forbidden_transition_to_pattern');
+export const forbiddenTransitionToPatternRule = defineLintRule('cart', 'forbidden_transition_to_pattern');
 
-export function lintForbiddenStateCalls(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+export function lintForbiddenStateCalls(expression: CallExpression, issues: CartLintIssue[]): void {
 	const receiverName = getCallReceiverName(expression);
 	if (!receiverName || !FORBIDDEN_STATE_CALL_RECEIVERS.has(receiverName)) {
 		return;

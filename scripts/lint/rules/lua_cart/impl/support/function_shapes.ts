@@ -1,20 +1,20 @@
-import { type LuaExpression, type LuaFunctionExpression, type LuaIfClause, type LuaIfStatement, type LuaLocalAssignmentStatement, type LuaStatement, LuaSyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaIfClause as IfClause, type LuaIfStatement as IfStatement, type LuaLocalAssignmentStatement as LocalAssignmentStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 
 export type ThreeStatementFunctionBody = {
-	readonly first: LuaStatement;
-	readonly second: LuaStatement;
-	readonly third: LuaStatement;
+	readonly first: Statement;
+	readonly second: Statement;
+	readonly third: Statement;
 };
 
 export type LocalAssignmentIfFunctionBody = {
-	readonly localAssignment: LuaLocalAssignmentStatement;
-	readonly ifStatement: LuaIfStatement;
-	readonly onlyClause: LuaIfClause;
-	readonly third: LuaStatement;
+	readonly localAssignment: LocalAssignmentStatement;
+	readonly ifStatement: IfStatement;
+	readonly onlyClause: IfClause;
+	readonly third: Statement;
 	readonly localName: string;
 };
 
-export function getThreeStatementFunctionBody(functionExpression: LuaFunctionExpression): ThreeStatementFunctionBody | undefined {
+export function getThreeStatementFunctionBody(functionExpression: CartFunctionExpression): ThreeStatementFunctionBody | undefined {
 	const body = functionExpression.body.body;
 	if (body.length !== 3) {
 		return undefined;
@@ -26,20 +26,20 @@ export function getThreeStatementFunctionBody(functionExpression: LuaFunctionExp
 	};
 }
 
-export function getLocalAssignmentIfFunctionBody(functionExpression: LuaFunctionExpression): LocalAssignmentIfFunctionBody | undefined {
+export function getLocalAssignmentIfFunctionBody(functionExpression: CartFunctionExpression): LocalAssignmentIfFunctionBody | undefined {
 	const body = getThreeStatementFunctionBody(functionExpression);
 	if (!body) {
 		return undefined;
 	}
 	const localAssignment = body.first;
-	if (localAssignment.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
+	if (localAssignment.kind !== SyntaxKind.LocalAssignmentStatement) {
 		return undefined;
 	}
 	if (localAssignment.names.length !== 1 || localAssignment.values.length !== 1) {
 		return undefined;
 	}
 	const ifStatement = body.second;
-	if (ifStatement.kind !== LuaSyntaxKind.IfStatement || ifStatement.clauses.length !== 1) {
+	if (ifStatement.kind !== SyntaxKind.IfStatement || ifStatement.clauses.length !== 1) {
 		return undefined;
 	}
 	return {
@@ -51,13 +51,13 @@ export function getLocalAssignmentIfFunctionBody(functionExpression: LuaFunction
 	};
 }
 
-export function getFunctionSingleReturnExpression(functionExpression: LuaFunctionExpression): LuaExpression | undefined {
+export function getFunctionSingleReturnExpression(functionExpression: CartFunctionExpression): Expression | undefined {
 	const body = functionExpression.body.body;
 	if (body.length !== 1) {
 		return undefined;
 	}
 	const statement = body[0];
-	if (statement.kind !== LuaSyntaxKind.ReturnStatement || statement.expressions.length !== 1) {
+	if (statement.kind !== SyntaxKind.ReturnStatement || statement.expressions.length !== 1) {
 		return undefined;
 	}
 	return statement.expressions[0];

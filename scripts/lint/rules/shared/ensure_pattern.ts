@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
 import { type AnalysisRegion } from '../../../analysis/lint_suppressions';
-import { type LintIssue as LintIssue, pushLintIssue } from '../../ts_rule';
+import { type LintIssue, pushLintIssue } from '../ts/support/ast';
 import ts from 'typescript';
 import { nodeIsInAnalysisRegion } from '../../../analysis/code_quality/source_scan';
 import { functionBodyContainsLazyInitAssignment, getSingleReturnExpression } from '../ts/support/ast';

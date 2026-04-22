@@ -1,12 +1,12 @@
 import { defineLintRule } from '../../rule';
-import { type LuaFunctionExpression } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type LuaFunctionExpression as CartFunctionExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { matchesHandlerIdentityDispatchPattern } from './impl/support/general';
 import { pushIssue } from './impl/support/lint_context';
 
-export const handlerIdentityDispatchPatternRule = defineLintRule('lua_cart', 'handler_identity_dispatch_pattern');
+export const handlerIdentityDispatchPatternRule = defineLintRule('cart', 'handler_identity_dispatch_pattern');
 
-export function lintHandlerIdentityDispatchPattern(functionName: string, functionExpression: LuaFunctionExpression, issues: LuaLintIssue[]): void {
+export function lintHandlerIdentityDispatchPattern(functionName: string, functionExpression: CartFunctionExpression, issues: CartLintIssue[]): void {
 	if (functionName === '<anonymous>' || !matchesHandlerIdentityDispatchPattern(functionExpression)) {
 		return;
 	}

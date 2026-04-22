@@ -1,11 +1,11 @@
-import { type LuaExpression, type LuaIdentifierExpression, type LuaStatement, LuaSyntaxKind, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../../../lua_rule';
+import { type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../../../lua_rule';
 import { lintConstantCopyInStatements } from '../../constant_copy_pattern';
-import { declareLuaBinding, discardLuaBindingScope, enterLuaBindingScope, resolveLuaBinding, setLuaBinding } from './bindings';
+import { declareBinding, discardBindingScope, enterBindingScope, resolveBinding, setBinding } from './bindings';
 import { isConstantBindingPathExpression, isConstantSourceExpression } from './expressions';
 import { ConstantCopyBinding, ConstantCopyContext } from './types';
 
-export function createConstantCopyContext(issues: LuaLintIssue[]): ConstantCopyContext {
+export function createConstantCopyContext(issues: CartLintIssue[]): ConstantCopyContext {
 	return {
 		issues,
 		bindingStacksByName: new Map<string, ConstantCopyBinding[]>(),
@@ -14,67 +14,67 @@ export function createConstantCopyContext(issues: LuaLintIssue[]): ConstantCopyC
 }
 
 export function enterConstantCopyScope(context: ConstantCopyContext): void {
-	enterLuaBindingScope(context);
+	enterBindingScope(context);
 }
 
 export function leaveConstantCopyScope(context: ConstantCopyContext): void {
-	discardLuaBindingScope(context);
+	discardBindingScope(context);
 }
 
 export function declareConstantCopyBinding(
 	context: ConstantCopyContext,
-	declaration: LuaIdentifierExpression,
+	declaration: IdentifierExpression,
 	isConstantSource: boolean,
 ): void {
-	declareLuaBinding(context, declaration, { isConstantSource });
+	declareBinding(context, declaration, { isConstantSource });
 }
 
 export function setConstantCopyBindingByName(context: ConstantCopyContext, name: string, isConstantSource: boolean): void {
-	setLuaBinding(context, name, { isConstantSource });
+	setBinding(context, name, { isConstantSource });
 }
 
 export function getConstantCopyBinding(context: ConstantCopyContext, name: string): ConstantCopyBinding | undefined {
-	return resolveLuaBinding(context, name);
+	return resolveBinding(context, name);
 }
 
-export function isForbiddenConstantCopyExpression(expression: LuaExpression, context: ConstantCopyContext): boolean {
+export function isForbiddenConstantCopyExpression(expression: Expression, context: ConstantCopyContext): boolean {
 	return isConstantBindingPathExpression(expression, context);
 }
 
-export function lintConstantCopyInExpression(expression: LuaExpression | null, context: ConstantCopyContext): void {
+export function lintConstantCopyInExpression(expression: Expression | null, context: ConstantCopyContext): void {
 	if (!expression) {
 		return;
 	}
 	switch (expression.kind) {
-		case LuaSyntaxKind.MemberExpression:
+		case SyntaxKind.MemberExpression:
 			lintConstantCopyInExpression(expression.base, context);
 			return;
-		case LuaSyntaxKind.IndexExpression:
+		case SyntaxKind.IndexExpression:
 			lintConstantCopyInExpression(expression.base, context);
 			lintConstantCopyInExpression(expression.index, context);
 			return;
-		case LuaSyntaxKind.BinaryExpression:
+		case SyntaxKind.BinaryExpression:
 			lintConstantCopyInExpression(expression.left, context);
 			lintConstantCopyInExpression(expression.right, context);
 			return;
-		case LuaSyntaxKind.UnaryExpression:
+		case SyntaxKind.UnaryExpression:
 			lintConstantCopyInExpression(expression.operand, context);
 			return;
-		case LuaSyntaxKind.CallExpression:
+		case SyntaxKind.CallExpression:
 			lintConstantCopyInExpression(expression.callee, context);
 			for (const argument of expression.arguments) {
 				lintConstantCopyInExpression(argument, context);
 			}
 			return;
-		case LuaSyntaxKind.TableConstructorExpression:
+		case SyntaxKind.TableConstructorExpression:
 			for (const field of expression.fields) {
-				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+				if (field.kind === TableFieldKind.ExpressionKey) {
 					lintConstantCopyInExpression(field.key, context);
 				}
 				lintConstantCopyInExpression(field.value, context);
 			}
 			return;
-		case LuaSyntaxKind.FunctionExpression:
+		case SyntaxKind.FunctionExpression:
 			enterConstantCopyScope(context);
 			for (const parameter of expression.parameters) {
 				declareConstantCopyBinding(context, parameter, false);
@@ -87,21 +87,21 @@ export function lintConstantCopyInExpression(expression: LuaExpression | null, c
 	}
 }
 
-export function lintConstantCopyInAssignmentTarget(target: LuaExpression | null, context: ConstantCopyContext): void {
+export function lintConstantCopyInAssignmentTarget(target: Expression | null, context: ConstantCopyContext): void {
 	if (!target) {
 		return;
 	}
-	if (target.kind === LuaSyntaxKind.MemberExpression) {
+	if (target.kind === SyntaxKind.MemberExpression) {
 		lintConstantCopyInExpression(target.base, context);
 		return;
 	}
-	if (target.kind === LuaSyntaxKind.IndexExpression) {
+	if (target.kind === SyntaxKind.IndexExpression) {
 		lintConstantCopyInExpression(target.base, context);
 		lintConstantCopyInExpression(target.index, context);
 	}
 }
 
-export function lintConstantCopyPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+export function lintConstantCopyPattern(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
 	const context = createConstantCopyContext(issues);
 	enterConstantCopyScope(context);
 	try {

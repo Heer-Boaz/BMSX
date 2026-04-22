@@ -1,68 +1,68 @@
-import { type LuaExpression, type LuaIfStatement, LuaSyntaxKind, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type LuaExpression as Expression, type LuaIfStatement as IfStatement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { getCallMethodName } from '../../../../../../src/bmsx/lua/syntax/calls';
 import { getExpressionKeyName } from './expression_signatures';
 import { isSelfExpressionRoot } from './self_properties';
 
-export function isHasTagCall(expression: LuaExpression): boolean {
-	if (expression.kind !== LuaSyntaxKind.CallExpression) {
+export function isHasTagCall(expression: Expression): boolean {
+	if (expression.kind !== SyntaxKind.CallExpression) {
 		return false;
 	}
 	return getCallMethodName(expression) === 'has_tag';
 }
 
-export function isTagsContainerExpression(expression: LuaExpression): boolean {
-	if (expression.kind === LuaSyntaxKind.MemberExpression) {
+export function isTagsContainerExpression(expression: Expression): boolean {
+	if (expression.kind === SyntaxKind.MemberExpression) {
 		return expression.identifier === 'tags';
 	}
-	if (expression.kind !== LuaSyntaxKind.IndexExpression) {
+	if (expression.kind !== SyntaxKind.IndexExpression) {
 		return false;
 	}
 	const keyName = getExpressionKeyName(expression.index);
 	return keyName === 'tags';
 }
 
-export function countHasTagCalls(expression: LuaExpression): number {
+export function countHasTagCalls(expression: Expression): number {
 	if (!expression) {
 		return 0;
 	}
 	switch (expression.kind) {
-		case LuaSyntaxKind.CallExpression: {
+		case SyntaxKind.CallExpression: {
 			let count = isHasTagCall(expression) ? 1 : 0;
 			for (const argument of expression.arguments) {
 				count += countHasTagCalls(argument);
 			}
-			count += countHasTagCalls(expression.callee as LuaExpression);
+			count += countHasTagCalls(expression.callee as Expression);
 			return count;
 		}
-		case LuaSyntaxKind.MemberExpression:
+		case SyntaxKind.MemberExpression:
 			return countHasTagCalls(expression.base);
-		case LuaSyntaxKind.IndexExpression:
+		case SyntaxKind.IndexExpression:
 			return countHasTagCalls(expression.base) + countHasTagCalls(expression.index);
-		case LuaSyntaxKind.BinaryExpression:
+		case SyntaxKind.BinaryExpression:
 			return countHasTagCalls(expression.left) + countHasTagCalls(expression.right);
-		case LuaSyntaxKind.UnaryExpression:
+		case SyntaxKind.UnaryExpression:
 			return countHasTagCalls(expression.operand);
-		case LuaSyntaxKind.TableConstructorExpression: {
+		case SyntaxKind.TableConstructorExpression: {
 			let count = 0;
 			for (const field of expression.fields) {
-				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+				if (field.kind === TableFieldKind.ExpressionKey) {
 					count += countHasTagCalls(field.key);
 				}
 				count += countHasTagCalls(field.value);
 			}
 			return count;
 		}
-		case LuaSyntaxKind.FunctionExpression:
+		case SyntaxKind.FunctionExpression:
 			return 0;
 		default:
 			return 0;
 	}
 }
 
-export function countSplitNestedIfHasTagCalls(statement: LuaIfStatement): number {
+export function countSplitNestedIfHasTagCalls(statement: IfStatement): number {
 	let total = 0;
 	let depth = 0;
-	let current: LuaIfStatement | null = statement;
+	let current: IfStatement | null = statement;
 	while (current) {
 		if (current.clauses.length !== 1) {
 			return 0;
@@ -81,7 +81,7 @@ export function countSplitNestedIfHasTagCalls(statement: LuaIfStatement): number
 			break;
 		}
 		const nested = clause.block.body[0];
-		if (nested.kind !== LuaSyntaxKind.IfStatement) {
+		if (nested.kind !== SyntaxKind.IfStatement) {
 			break;
 		}
 		current = nested;
@@ -92,17 +92,17 @@ export function countSplitNestedIfHasTagCalls(statement: LuaIfStatement): number
 	return total;
 }
 
-export function isSelfHasTagCall(expression: LuaExpression): boolean {
-	if (expression.kind !== LuaSyntaxKind.CallExpression) {
+export function isSelfHasTagCall(expression: Expression): boolean {
+	if (expression.kind !== SyntaxKind.CallExpression) {
 		return false;
 	}
 	if (getCallMethodName(expression) !== 'has_tag') {
 		return false;
 	}
-	if (expression.callee.kind === LuaSyntaxKind.MemberExpression) {
+	if (expression.callee.kind === SyntaxKind.MemberExpression) {
 		return isSelfExpressionRoot(expression.callee.base);
 	}
-	if (expression.callee.kind === LuaSyntaxKind.IdentifierExpression) {
+	if (expression.callee.kind === SyntaxKind.IdentifierExpression) {
 		return expression.callee.name === 'self';
 	}
 	return false;

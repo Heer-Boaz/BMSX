@@ -1,13 +1,13 @@
 import { defineLintRule } from '../../rule';
-import { type LuaExpression, type LuaTableField, LuaTableFieldKind } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type LuaExpression as Expression, type LuaTableField as TableField, LuaTableFieldKind as TableFieldKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { getExpressionKeyName } from './impl/support/expression_signatures';
 import { getInjectedServiceIdPropertyNameFromTarget, isInjectedServiceIdPropertyName } from './impl/support/injected_service';
 import { pushIssue } from './impl/support/lint_context';
 
-export const injectedServiceIdPropertyPatternRule = defineLintRule('lua_cart', 'injected_service_id_property_pattern');
+export const injectedServiceIdPropertyPatternRule = defineLintRule('cart', 'injected_service_id_property_pattern');
 
-export function lintInjectedServiceIdPropertyAssignmentTarget(target: LuaExpression, issues: LuaLintIssue[]): void {
+export function lintInjectedServiceIdPropertyAssignmentTarget(target: Expression, issues: CartLintIssue[]): void {
 	const propertyName = getInjectedServiceIdPropertyNameFromTarget(target);
 	if (!propertyName || !isInjectedServiceIdPropertyName(propertyName)) {
 		return;
@@ -20,11 +20,11 @@ export function lintInjectedServiceIdPropertyAssignmentTarget(target: LuaExpress
 	);
 }
 
-export function lintInjectedServiceIdPropertyTableField(field: LuaTableField, issues: LuaLintIssue[]): void {
+export function lintInjectedServiceIdPropertyTableField(field: TableField, issues: CartLintIssue[]): void {
 	let propertyName: string | undefined;
-	if (field.kind === LuaTableFieldKind.IdentifierKey) {
+	if (field.kind === TableFieldKind.IdentifierKey) {
 		propertyName = field.name;
-	} else if (field.kind === LuaTableFieldKind.ExpressionKey) {
+	} else if (field.kind === TableFieldKind.ExpressionKey) {
 		propertyName = getExpressionKeyName(field.key);
 	}
 	if (!propertyName || !isInjectedServiceIdPropertyName(propertyName)) {

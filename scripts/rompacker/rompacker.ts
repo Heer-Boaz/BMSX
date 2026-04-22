@@ -6,7 +6,7 @@ import { Presets, SingleBar } from 'cli-progress';
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../src/bmsx/core/system';
 import { createCliUi, findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli';
 import { validateAudioEventReferences } from './audioeventvalidator';
-import { lintCartLuaSources } from './cart_lua_linter_runtime';
+import { lintCartSources } from './cart_lua_linter_runtime';
 import { appendProgramAsset, commonResPath, createAtlasses, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, setAtlasFlag } from './rombuilder';
 import type { RomPackerOptions } from './formater.rompack';
 import type { RomAsset } from '../../src/bmsx/rompack/format';
@@ -548,7 +548,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		return result;
 	};
 	const biosLuaRoots = [normalizePathKey(BIOSResPath)];
-	await runBIOSStep(TASK.BIOS_LINT, () => lintCartLuaSources({ roots: biosLuaRoots, profile: 'bios' }));
+	await runBIOSStep(TASK.BIOS_LINT, () => lintCartSources({ roots: biosLuaRoots, profile: 'bios' }));
 
 	const BIOSResMetaList = await runBIOSStep(TASK.MANIFEST_SCAN, () => getResMetaList([BIOSResPath], BIOSRomName, {
 		extraLuaPaths: [],
@@ -714,8 +714,8 @@ async function main() {
 				const cartLuaRoots = Array.from(extraLuaPathSet);
 				const biosLuaRoots = [normalizePathKey(commonResPath)];
 				await progress.runWithDetail('Lint cart + BIOS Lua', async () => {
-					await lintCartLuaSources({ roots: cartLuaRoots, profile: 'cart' });
-					await lintCartLuaSources({ roots: biosLuaRoots, profile: 'bios' });
+					await lintCartSources({ roots: cartLuaRoots, profile: 'cart' });
+					await lintCartSources({ roots: biosLuaRoots, profile: 'bios' });
 				});
 				await progress.taskCompleted();
 			}

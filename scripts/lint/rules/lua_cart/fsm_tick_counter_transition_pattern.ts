@@ -1,19 +1,19 @@
 import { defineLintRule } from '../../rule';
-import { type LuaExpression, LuaSyntaxKind, LuaTableFieldKind } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { findTickCounterMutationInStatements, hasTransitionReturnInStatements } from './impl/support/fsm_transitions';
 import { getTableFieldKey } from './impl/support/table_fields';
 import { pushIssue } from './impl/support/lint_context';
 
-export const fsmTickCounterTransitionPatternRule = defineLintRule('lua_cart', 'fsm_tick_counter_transition_pattern');
+export const fsmTickCounterTransitionPatternRule = defineLintRule('cart', 'fsm_tick_counter_transition_pattern');
 
-export function lintFsmTickCounterTransitionPatternInTable(expression: LuaExpression, issues: LuaLintIssue[]): void {
-	if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+export function lintFsmTickCounterTransitionPatternInTable(expression: Expression, issues: CartLintIssue[]): void {
+	if (expression.kind !== SyntaxKind.TableConstructorExpression) {
 		return;
 	}
 	for (const field of expression.fields) {
 		const key = getTableFieldKey(field);
-		if (key === 'tick' && field.value.kind === LuaSyntaxKind.FunctionExpression) {
+		if (key === 'tick' && field.value.kind === SyntaxKind.FunctionExpression) {
 			const body = field.value.body.body;
 			if (hasTransitionReturnInStatements(body)) {
 				const mutation = findTickCounterMutationInStatements(body);
@@ -27,7 +27,7 @@ export function lintFsmTickCounterTransitionPatternInTable(expression: LuaExpres
 				}
 			}
 		}
-		if (field.kind === LuaTableFieldKind.ExpressionKey) {
+		if (field.kind === TableFieldKind.ExpressionKey) {
 			lintFsmTickCounterTransitionPatternInTable(field.key, issues);
 		}
 		lintFsmTickCounterTransitionPatternInTable(field.value, issues);

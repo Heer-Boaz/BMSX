@@ -1,57 +1,57 @@
-import { LuaAssignmentOperator, LuaBinaryOperator, type LuaExpression, type LuaIfStatement, type LuaStatement, LuaSyntaxKind, LuaTableFieldKind, LuaUnaryOperator } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression, type LuaIfStatement as IfStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind, LuaUnaryOperator as UnaryOperator } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { assignmentDirectlyTargetsIdentifier } from './bindings';
 
-export function countIdentifierMentionsInExpression(expression: LuaExpression | null, identifierName: string): number {
+export function countIdentifierMentionsInExpression(expression: Expression | null, identifierName: string): number {
 	if (!expression) {
 		return 0;
 	}
 	switch (expression.kind) {
-		case LuaSyntaxKind.IdentifierExpression:
+		case SyntaxKind.IdentifierExpression:
 			return expression.name === identifierName ? 1 : 0;
-		case LuaSyntaxKind.MemberExpression:
+		case SyntaxKind.MemberExpression:
 			return countIdentifierMentionsInExpression(expression.base, identifierName);
-		case LuaSyntaxKind.IndexExpression:
+		case SyntaxKind.IndexExpression:
 			return countIdentifierMentionsInExpression(expression.base, identifierName)
 				+ countIdentifierMentionsInExpression(expression.index, identifierName);
-		case LuaSyntaxKind.BinaryExpression:
+		case SyntaxKind.BinaryExpression:
 			return countIdentifierMentionsInExpression(expression.left, identifierName)
 				+ countIdentifierMentionsInExpression(expression.right, identifierName);
-		case LuaSyntaxKind.UnaryExpression:
+		case SyntaxKind.UnaryExpression:
 			return countIdentifierMentionsInExpression(expression.operand, identifierName);
-		case LuaSyntaxKind.CallExpression: {
+		case SyntaxKind.CallExpression: {
 			let count = countIdentifierMentionsInExpression(expression.callee, identifierName);
 			for (const argument of expression.arguments) {
 				count += countIdentifierMentionsInExpression(argument, identifierName);
 			}
 			return count;
 		}
-		case LuaSyntaxKind.TableConstructorExpression: {
+		case SyntaxKind.TableConstructorExpression: {
 			let count = 0;
 			for (const field of expression.fields) {
-				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+				if (field.kind === TableFieldKind.ExpressionKey) {
 					count += countIdentifierMentionsInExpression(field.key, identifierName);
 				}
 				count += countIdentifierMentionsInExpression(field.value, identifierName);
 			}
 			return count;
 		}
-		case LuaSyntaxKind.FunctionExpression:
+		case SyntaxKind.FunctionExpression:
 			return countIdentifierMentionsInStatements(expression.body.body, identifierName);
 		default:
 			return 0;
 	}
 }
 
-export function countIdentifierMentionsInStatement(statement: LuaStatement, identifierName: string): number {
+export function countIdentifierMentionsInStatement(statement: Statement, identifierName: string): number {
 	switch (statement.kind) {
-		case LuaSyntaxKind.LocalAssignmentStatement: {
+		case SyntaxKind.LocalAssignmentStatement: {
 			let count = 0;
 			for (const value of statement.values) {
 				count += countIdentifierMentionsInExpression(value, identifierName);
 			}
 			return count;
 		}
-		case LuaSyntaxKind.AssignmentStatement: {
+		case SyntaxKind.AssignmentStatement: {
 			let count = 0;
 			for (const left of statement.left) {
 				count += countIdentifierMentionsInExpression(left, identifierName);
@@ -61,12 +61,12 @@ export function countIdentifierMentionsInStatement(statement: LuaStatement, iden
 			}
 			return count;
 		}
-		case LuaSyntaxKind.LocalFunctionStatement: {
+		case SyntaxKind.LocalFunctionStatement: {
 			let count = statement.name.name === identifierName ? 1 : 0;
 			count += countIdentifierMentionsInExpression(statement.functionExpression, identifierName);
 			return count;
 		}
-		case LuaSyntaxKind.FunctionDeclarationStatement: {
+		case SyntaxKind.FunctionDeclarationStatement: {
 			let count = 0;
 			for (const namePart of statement.name.identifiers) {
 				if (namePart === identifierName) {
@@ -79,14 +79,14 @@ export function countIdentifierMentionsInStatement(statement: LuaStatement, iden
 			count += countIdentifierMentionsInExpression(statement.functionExpression, identifierName);
 			return count;
 		}
-		case LuaSyntaxKind.ReturnStatement: {
+		case SyntaxKind.ReturnStatement: {
 			let count = 0;
 			for (const expression of statement.expressions) {
 				count += countIdentifierMentionsInExpression(expression, identifierName);
 			}
 			return count;
 		}
-		case LuaSyntaxKind.IfStatement: {
+		case SyntaxKind.IfStatement: {
 			let count = 0;
 			for (const clause of statement.clauses) {
 				if (clause.condition) {
@@ -96,18 +96,18 @@ export function countIdentifierMentionsInStatement(statement: LuaStatement, iden
 			}
 			return count;
 		}
-		case LuaSyntaxKind.WhileStatement:
+		case SyntaxKind.WhileStatement:
 			return countIdentifierMentionsInExpression(statement.condition, identifierName)
 				+ countIdentifierMentionsInStatements(statement.block.body, identifierName);
-		case LuaSyntaxKind.RepeatStatement:
+		case SyntaxKind.RepeatStatement:
 			return countIdentifierMentionsInStatements(statement.block.body, identifierName)
 				+ countIdentifierMentionsInExpression(statement.condition, identifierName);
-		case LuaSyntaxKind.ForNumericStatement:
+		case SyntaxKind.ForNumericStatement:
 			return countIdentifierMentionsInExpression(statement.start, identifierName)
 				+ countIdentifierMentionsInExpression(statement.limit, identifierName)
 				+ countIdentifierMentionsInExpression(statement.step, identifierName)
 				+ countIdentifierMentionsInStatements(statement.block.body, identifierName);
-		case LuaSyntaxKind.ForGenericStatement: {
+		case SyntaxKind.ForGenericStatement: {
 			let count = 0;
 			for (const iterator of statement.iterators) {
 				count += countIdentifierMentionsInExpression(iterator, identifierName);
@@ -115,20 +115,20 @@ export function countIdentifierMentionsInStatement(statement: LuaStatement, iden
 			count += countIdentifierMentionsInStatements(statement.block.body, identifierName);
 			return count;
 		}
-		case LuaSyntaxKind.DoStatement:
+		case SyntaxKind.DoStatement:
 			return countIdentifierMentionsInStatements(statement.block.body, identifierName);
-		case LuaSyntaxKind.CallStatement:
+		case SyntaxKind.CallStatement:
 			return countIdentifierMentionsInExpression(statement.expression, identifierName);
-		case LuaSyntaxKind.BreakStatement:
-		case LuaSyntaxKind.GotoStatement:
-		case LuaSyntaxKind.LabelStatement:
+		case SyntaxKind.BreakStatement:
+		case SyntaxKind.GotoStatement:
+		case SyntaxKind.LabelStatement:
 			return 0;
 		default:
 			return 0;
 	}
 }
 
-export function countIdentifierMentionsInStatements(statements: ReadonlyArray<LuaStatement>, identifierName: string): number {
+export function countIdentifierMentionsInStatements(statements: ReadonlyArray<Statement>, identifierName: string): number {
 	let count = 0;
 	for (const statement of statements) {
 		count += countIdentifierMentionsInStatement(statement, identifierName);
@@ -136,22 +136,22 @@ export function countIdentifierMentionsInStatements(statements: ReadonlyArray<Lu
 	return count;
 }
 
-export function expressionUsesIdentifier(expression: LuaExpression | null, name: string): boolean {
+export function expressionUsesIdentifier(expression: Expression | null, name: string): boolean {
 	if (!expression) {
 		return false;
 	}
 	switch (expression.kind) {
-		case LuaSyntaxKind.IdentifierExpression:
+		case SyntaxKind.IdentifierExpression:
 			return expression.name === name;
-		case LuaSyntaxKind.MemberExpression:
+		case SyntaxKind.MemberExpression:
 			return expressionUsesIdentifier(expression.base, name);
-		case LuaSyntaxKind.IndexExpression:
+		case SyntaxKind.IndexExpression:
 			return expressionUsesIdentifier(expression.base, name) || expressionUsesIdentifier(expression.index, name);
-		case LuaSyntaxKind.BinaryExpression:
+		case SyntaxKind.BinaryExpression:
 			return expressionUsesIdentifier(expression.left, name) || expressionUsesIdentifier(expression.right, name);
-		case LuaSyntaxKind.UnaryExpression:
+		case SyntaxKind.UnaryExpression:
 			return expressionUsesIdentifier(expression.operand, name);
-		case LuaSyntaxKind.CallExpression:
+		case SyntaxKind.CallExpression:
 			if (expressionUsesIdentifier(expression.callee, name)) {
 				return true;
 			}
@@ -161,9 +161,9 @@ export function expressionUsesIdentifier(expression: LuaExpression | null, name:
 				}
 			}
 			return false;
-		case LuaSyntaxKind.TableConstructorExpression:
+		case SyntaxKind.TableConstructorExpression:
 			for (const field of expression.fields) {
-				if (field.kind === LuaTableFieldKind.ExpressionKey && expressionUsesIdentifier(field.key, name)) {
+				if (field.kind === TableFieldKind.ExpressionKey && expressionUsesIdentifier(field.key, name)) {
 					return true;
 				}
 				if (expressionUsesIdentifier(field.value, name)) {
@@ -171,7 +171,7 @@ export function expressionUsesIdentifier(expression: LuaExpression | null, name:
 				}
 			}
 			return false;
-		case LuaSyntaxKind.FunctionExpression:
+		case SyntaxKind.FunctionExpression:
 			// Nested function bodies are intentionally excluded for this rule.
 			return false;
 		default:
@@ -179,50 +179,50 @@ export function expressionUsesIdentifier(expression: LuaExpression | null, name:
 	}
 }
 
-export function isUnsafeBinaryOperator(operator: LuaBinaryOperator): boolean {
-	return operator !== LuaBinaryOperator.Or
-		&& operator !== LuaBinaryOperator.And
-		&& operator !== LuaBinaryOperator.Equal
-		&& operator !== LuaBinaryOperator.NotEqual;
+export function isUnsafeBinaryOperator(operator: BinaryOperator): boolean {
+	return operator !== BinaryOperator.Or
+		&& operator !== BinaryOperator.And
+		&& operator !== BinaryOperator.Equal
+		&& operator !== BinaryOperator.NotEqual;
 }
 
-export function isUnsafeUnaryOperator(operator: LuaUnaryOperator): boolean {
-	return operator === LuaUnaryOperator.Negate
-		|| operator === LuaUnaryOperator.Length
-		|| operator === LuaUnaryOperator.BitwiseNot;
+export function isUnsafeUnaryOperator(operator: UnaryOperator): boolean {
+	return operator === UnaryOperator.Negate
+		|| operator === UnaryOperator.Length
+		|| operator === UnaryOperator.BitwiseNot;
 }
 
-export function expressionUsesIdentifierUnsafely(expression: LuaExpression | null, name: string): boolean {
+export function expressionUsesIdentifierUnsafely(expression: Expression | null, name: string): boolean {
 	if (!expression) {
 		return false;
 	}
 	switch (expression.kind) {
-		case LuaSyntaxKind.IdentifierExpression:
+		case SyntaxKind.IdentifierExpression:
 			return false;
-		case LuaSyntaxKind.MemberExpression:
+		case SyntaxKind.MemberExpression:
 			if (expressionUsesIdentifier(expression.base, name)) {
 				return true;
 			}
 			return expressionUsesIdentifierUnsafely(expression.base, name);
-		case LuaSyntaxKind.IndexExpression:
+		case SyntaxKind.IndexExpression:
 			if (expressionUsesIdentifier(expression.base, name) || expressionUsesIdentifier(expression.index, name)) {
 				return true;
 			}
 			return expressionUsesIdentifierUnsafely(expression.base, name)
 				|| expressionUsesIdentifierUnsafely(expression.index, name);
-		case LuaSyntaxKind.BinaryExpression:
+		case SyntaxKind.BinaryExpression:
 			if (isUnsafeBinaryOperator(expression.operator)
 				&& (expressionUsesIdentifier(expression.left, name) || expressionUsesIdentifier(expression.right, name))) {
 				return true;
 			}
 			return expressionUsesIdentifierUnsafely(expression.left, name)
 				|| expressionUsesIdentifierUnsafely(expression.right, name);
-		case LuaSyntaxKind.UnaryExpression:
+		case SyntaxKind.UnaryExpression:
 			if (isUnsafeUnaryOperator(expression.operator) && expressionUsesIdentifier(expression.operand, name)) {
 				return true;
 			}
 			return expressionUsesIdentifierUnsafely(expression.operand, name);
-		case LuaSyntaxKind.CallExpression:
+		case SyntaxKind.CallExpression:
 			if (expressionUsesIdentifier(expression.callee, name) || expressionUsesIdentifierUnsafely(expression.callee, name)) {
 				return true;
 			}
@@ -232,9 +232,9 @@ export function expressionUsesIdentifierUnsafely(expression: LuaExpression | nul
 				}
 			}
 			return false;
-		case LuaSyntaxKind.TableConstructorExpression:
+		case SyntaxKind.TableConstructorExpression:
 			for (const field of expression.fields) {
-				if (field.kind === LuaTableFieldKind.ExpressionKey && expressionUsesIdentifierUnsafely(field.key, name)) {
+				if (field.kind === TableFieldKind.ExpressionKey && expressionUsesIdentifierUnsafely(field.key, name)) {
 					return true;
 				}
 				if (expressionUsesIdentifierUnsafely(field.value, name)) {
@@ -242,7 +242,7 @@ export function expressionUsesIdentifierUnsafely(expression: LuaExpression | nul
 				}
 			}
 			return false;
-		case LuaSyntaxKind.FunctionExpression:
+		case SyntaxKind.FunctionExpression:
 			// Nested function bodies are intentionally excluded for this rule.
 			return false;
 		default:
@@ -250,7 +250,7 @@ export function expressionUsesIdentifierUnsafely(expression: LuaExpression | nul
 	}
 }
 
-export function blockDirectlyAssignsIdentifier(blockStatements: ReadonlyArray<LuaStatement>, name: string): boolean {
+export function blockDirectlyAssignsIdentifier(blockStatements: ReadonlyArray<Statement>, name: string): boolean {
 	for (const statement of blockStatements) {
 		if (assignmentDirectlyTargetsIdentifier(statement, name)) {
 			return true;
@@ -259,7 +259,7 @@ export function blockDirectlyAssignsIdentifier(blockStatements: ReadonlyArray<Lu
 	return false;
 }
 
-export function isSingleBranchConditionalAssignment(statement: LuaIfStatement, name: string): boolean {
+export function isSingleBranchConditionalAssignment(statement: IfStatement, name: string): boolean {
 	if (statement.clauses.length !== 1) {
 		return false;
 	}
@@ -270,19 +270,19 @@ export function isSingleBranchConditionalAssignment(statement: LuaIfStatement, n
 	return blockDirectlyAssignsIdentifier(onlyClause.block.body, name);
 }
 
-export function statementUsesIdentifierUnsafelyInCurrentScope(statement: LuaStatement, name: string): boolean {
+export function statementUsesIdentifierUnsafelyInCurrentScope(statement: Statement, name: string): boolean {
 	switch (statement.kind) {
-		case LuaSyntaxKind.LocalAssignmentStatement:
+		case SyntaxKind.LocalAssignmentStatement:
 			for (const value of statement.values) {
 				if (expressionUsesIdentifierUnsafely(value, name)) {
 					return true;
 				}
 			}
 			return false;
-		case LuaSyntaxKind.AssignmentStatement:
+		case SyntaxKind.AssignmentStatement:
 			for (const left of statement.left) {
-				if (left.kind === LuaSyntaxKind.IdentifierExpression && left.name === name) {
-					if (statement.operator !== LuaAssignmentOperator.Assign) {
+				if (left.kind === SyntaxKind.IdentifierExpression && left.name === name) {
+					if (statement.operator !== AssignmentOperator.Assign) {
 						return true;
 					}
 				} else if (expressionUsesIdentifierUnsafely(left, name)) {
@@ -295,17 +295,17 @@ export function statementUsesIdentifierUnsafelyInCurrentScope(statement: LuaStat
 				}
 			}
 			return false;
-		case LuaSyntaxKind.LocalFunctionStatement:
-		case LuaSyntaxKind.FunctionDeclarationStatement:
+		case SyntaxKind.LocalFunctionStatement:
+		case SyntaxKind.FunctionDeclarationStatement:
 			return false;
-			case LuaSyntaxKind.ReturnStatement:
+			case SyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
 					if (expressionUsesIdentifierUnsafely(expression, name)) {
 						return true;
 					}
 				}
 				return false;
-			case LuaSyntaxKind.IfStatement:
+			case SyntaxKind.IfStatement:
 				for (const clause of statement.clauses) {
 					if (clause.condition && expressionUsesIdentifierUnsafely(clause.condition, name)) {
 						return true;
@@ -317,7 +317,7 @@ export function statementUsesIdentifierUnsafelyInCurrentScope(statement: LuaStat
 					}
 				}
 				return false;
-			case LuaSyntaxKind.WhileStatement:
+			case SyntaxKind.WhileStatement:
 				if (expressionUsesIdentifierUnsafely(statement.condition, name)) {
 					return true;
 				}
@@ -327,14 +327,14 @@ export function statementUsesIdentifierUnsafelyInCurrentScope(statement: LuaStat
 					}
 				}
 				return false;
-			case LuaSyntaxKind.RepeatStatement:
+			case SyntaxKind.RepeatStatement:
 				for (const nested of statement.block.body) {
 					if (statementUsesIdentifierUnsafelyInCurrentScope(nested, name)) {
 						return true;
 					}
 				}
 				return expressionUsesIdentifierUnsafely(statement.condition, name);
-			case LuaSyntaxKind.ForNumericStatement:
+			case SyntaxKind.ForNumericStatement:
 				if (expressionUsesIdentifier(statement.start, name)
 					|| expressionUsesIdentifier(statement.limit, name)
 					|| expressionUsesIdentifier(statement.step, name)) {
@@ -346,7 +346,7 @@ export function statementUsesIdentifierUnsafelyInCurrentScope(statement: LuaStat
 					}
 				}
 				return false;
-			case LuaSyntaxKind.ForGenericStatement:
+			case SyntaxKind.ForGenericStatement:
 				for (const iterator of statement.iterators) {
 					if (expressionUsesIdentifierUnsafely(iterator, name)) {
 						return true;
@@ -358,18 +358,18 @@ export function statementUsesIdentifierUnsafelyInCurrentScope(statement: LuaStat
 					}
 				}
 				return false;
-			case LuaSyntaxKind.DoStatement:
+			case SyntaxKind.DoStatement:
 				for (const nested of statement.block.body) {
 					if (statementUsesIdentifierUnsafelyInCurrentScope(nested, name)) {
 						return true;
 					}
 				}
 				return false;
-			case LuaSyntaxKind.CallStatement:
+			case SyntaxKind.CallStatement:
 				return expressionUsesIdentifierUnsafely(statement.expression, name);
-			case LuaSyntaxKind.BreakStatement:
-			case LuaSyntaxKind.GotoStatement:
-			case LuaSyntaxKind.LabelStatement:
+			case SyntaxKind.BreakStatement:
+			case SyntaxKind.GotoStatement:
+			case SyntaxKind.LabelStatement:
 				return false;
 		default:
 			return false;

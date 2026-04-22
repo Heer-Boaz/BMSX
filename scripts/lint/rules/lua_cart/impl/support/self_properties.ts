@@ -1,27 +1,27 @@
-import { LuaAssignmentOperator, type LuaAssignmentStatement, LuaBinaryOperator, type LuaExpression, type LuaIfStatement, type LuaStatement, LuaSyntaxKind, LuaUnaryOperator } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaAssignmentStatement as AssignmentStatement, LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression, type LuaIfStatement as IfStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaUnaryOperator as UnaryOperator } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { getRootIdentifier, isIdentifier } from './bindings';
 import { isFalseOrNilExpression, isNilExpression } from './conditions';
 import { getExpressionKeyName } from './expression_signatures';
 import { SelfBooleanPropertyAssignmentMatch, SelfPropertyAssignmentMatch } from './types';
 
-export function isSelfExpressionRoot(expression: LuaExpression): boolean {
-	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+export function isSelfExpressionRoot(expression: Expression): boolean {
+	if (expression.kind === SyntaxKind.IdentifierExpression) {
 		return expression.name === 'self';
 	}
-	if (expression.kind === LuaSyntaxKind.MemberExpression || expression.kind === LuaSyntaxKind.IndexExpression) {
+	if (expression.kind === SyntaxKind.MemberExpression || expression.kind === SyntaxKind.IndexExpression) {
 		return isSelfExpressionRoot(expression.base);
 	}
 	return false;
 }
 
-export function getSelfPropertyNameFromAliasExpression(expression: LuaExpression): string | undefined {
-	if (expression.kind === LuaSyntaxKind.MemberExpression) {
+export function getSelfPropertyNameFromAliasExpression(expression: Expression): string | undefined {
+	if (expression.kind === SyntaxKind.MemberExpression) {
 		if (!isSelfExpressionRoot(expression.base)) {
 			return undefined;
 		}
 		return expression.identifier;
 	}
-	if (expression.kind === LuaSyntaxKind.IndexExpression) {
+	if (expression.kind === SyntaxKind.IndexExpression) {
 		if (!isSelfExpressionRoot(expression.base)) {
 			return undefined;
 		}
@@ -30,26 +30,26 @@ export function getSelfPropertyNameFromAliasExpression(expression: LuaExpression
 	return undefined;
 }
 
-export function isSelfImageIdAssignmentTarget(target: LuaExpression): boolean {
-	if (target.kind === LuaSyntaxKind.MemberExpression) {
+export function isSelfImageIdAssignmentTarget(target: Expression): boolean {
+	if (target.kind === SyntaxKind.MemberExpression) {
 		return target.identifier === 'imgid' && isSelfExpressionRoot(target.base);
 	}
-	if (target.kind !== LuaSyntaxKind.IndexExpression) {
+	if (target.kind !== SyntaxKind.IndexExpression) {
 		return false;
 	}
 	if (!isSelfExpressionRoot(target.base)) {
 		return false;
 	}
-	return (target.index.kind === LuaSyntaxKind.StringLiteralExpression && target.index.value === 'imgid')
-		|| (target.index.kind === LuaSyntaxKind.IdentifierExpression && target.index.name === 'imgid');
+	return (target.index.kind === SyntaxKind.StringLiteralExpression && target.index.value === 'imgid')
+		|| (target.index.kind === SyntaxKind.IdentifierExpression && target.index.name === 'imgid');
 }
 
-export function isImgIdIndex(index: LuaExpression): boolean {
-	return (index.kind === LuaSyntaxKind.StringLiteralExpression && index.value === 'imgid')
-		|| (index.kind === LuaSyntaxKind.IdentifierExpression && index.name === 'imgid');
+export function isImgIdIndex(index: Expression): boolean {
+	return (index.kind === SyntaxKind.StringLiteralExpression && index.value === 'imgid')
+		|| (index.kind === SyntaxKind.IdentifierExpression && index.name === 'imgid');
 }
 
-export function looksLikeSpriteLikeTarget(expression: LuaExpression): boolean {
+export function looksLikeSpriteLikeTarget(expression: Expression): boolean {
 	const root = getRootIdentifier(expression);
 	if (!root) {
 		return false;
@@ -61,14 +61,14 @@ export function looksLikeSpriteLikeTarget(expression: LuaExpression): boolean {
 	return loweredRoot.includes('sprite');
 }
 
-export function isSpriteComponentImageIdAssignmentTarget(target: LuaExpression): boolean {
-	if (target.kind === LuaSyntaxKind.MemberExpression) {
+export function isSpriteComponentImageIdAssignmentTarget(target: Expression): boolean {
+	if (target.kind === SyntaxKind.MemberExpression) {
 		if (target.identifier !== 'imgid') {
 			return false;
 		}
 		return looksLikeSpriteLikeTarget(target.base);
 	}
-	if (target.kind !== LuaSyntaxKind.IndexExpression) {
+	if (target.kind !== SyntaxKind.IndexExpression) {
 		return false;
 	}
 	if (!isImgIdIndex(target.index)) {
@@ -78,12 +78,12 @@ export function isSpriteComponentImageIdAssignmentTarget(target: LuaExpression):
 }
 
 export function findSelfPropertyAssignmentInStatements(
-	statements: ReadonlyArray<LuaStatement>,
+	statements: ReadonlyArray<Statement>,
 	propertyPredicate: (propertyName: string) => boolean,
 ): SelfPropertyAssignmentMatch | undefined {
 	for (const statement of statements) {
 		switch (statement.kind) {
-			case LuaSyntaxKind.AssignmentStatement:
+			case SyntaxKind.AssignmentStatement:
 				for (const target of statement.left) {
 					const propertyName = getSelfAssignedPropertyNameFromTarget(target);
 					if (!propertyName || !propertyPredicate(propertyName)) {
@@ -95,7 +95,7 @@ export function findSelfPropertyAssignmentInStatements(
 					};
 				}
 				break;
-			case LuaSyntaxKind.IfStatement:
+			case SyntaxKind.IfStatement:
 				for (const clause of statement.clauses) {
 					const nested = findSelfPropertyAssignmentInStatements(clause.block.body, propertyPredicate);
 					if (nested) {
@@ -103,49 +103,49 @@ export function findSelfPropertyAssignmentInStatements(
 					}
 				}
 				break;
-			case LuaSyntaxKind.WhileStatement: {
+			case SyntaxKind.WhileStatement: {
 				const nested = findSelfPropertyAssignmentInStatements(statement.block.body, propertyPredicate);
 				if (nested) {
 					return nested;
 				}
 				break;
 			}
-			case LuaSyntaxKind.RepeatStatement: {
+			case SyntaxKind.RepeatStatement: {
 				const nested = findSelfPropertyAssignmentInStatements(statement.block.body, propertyPredicate);
 				if (nested) {
 					return nested;
 				}
 				break;
 			}
-			case LuaSyntaxKind.ForNumericStatement: {
+			case SyntaxKind.ForNumericStatement: {
 				const nested = findSelfPropertyAssignmentInStatements(statement.block.body, propertyPredicate);
 				if (nested) {
 					return nested;
 				}
 				break;
 			}
-			case LuaSyntaxKind.ForGenericStatement: {
+			case SyntaxKind.ForGenericStatement: {
 				const nested = findSelfPropertyAssignmentInStatements(statement.block.body, propertyPredicate);
 				if (nested) {
 					return nested;
 				}
 				break;
 			}
-			case LuaSyntaxKind.DoStatement: {
+			case SyntaxKind.DoStatement: {
 				const nested = findSelfPropertyAssignmentInStatements(statement.block.body, propertyPredicate);
 				if (nested) {
 					return nested;
 				}
 				break;
 			}
-			case LuaSyntaxKind.LocalAssignmentStatement:
-			case LuaSyntaxKind.LocalFunctionStatement:
-			case LuaSyntaxKind.FunctionDeclarationStatement:
-			case LuaSyntaxKind.ReturnStatement:
-			case LuaSyntaxKind.CallStatement:
-			case LuaSyntaxKind.BreakStatement:
-			case LuaSyntaxKind.GotoStatement:
-			case LuaSyntaxKind.LabelStatement:
+			case SyntaxKind.LocalAssignmentStatement:
+			case SyntaxKind.LocalFunctionStatement:
+			case SyntaxKind.FunctionDeclarationStatement:
+			case SyntaxKind.ReturnStatement:
+			case SyntaxKind.CallStatement:
+			case SyntaxKind.BreakStatement:
+			case SyntaxKind.GotoStatement:
+			case SyntaxKind.LabelStatement:
 				break;
 			default:
 				break;
@@ -154,25 +154,25 @@ export function findSelfPropertyAssignmentInStatements(
 	return undefined;
 }
 
-export function getSelfPropertyNameFromConditionExpression(expression: LuaExpression | null): string | undefined {
+export function getSelfPropertyNameFromConditionExpression(expression: Expression | null): string | undefined {
 	if (!expression) {
 		return undefined;
 	}
-	if (expression.kind === LuaSyntaxKind.MemberExpression && isSelfExpressionRoot(expression.base)) {
+	if (expression.kind === SyntaxKind.MemberExpression && isSelfExpressionRoot(expression.base)) {
 		return expression.identifier;
 	}
-	if (expression.kind === LuaSyntaxKind.IndexExpression && isSelfExpressionRoot(expression.base)) {
+	if (expression.kind === SyntaxKind.IndexExpression && isSelfExpressionRoot(expression.base)) {
 		return getExpressionKeyName(expression.index);
 	}
-	if (expression.kind === LuaSyntaxKind.UnaryExpression && expression.operator === LuaUnaryOperator.Not) {
+	if (expression.kind === SyntaxKind.UnaryExpression && expression.operator === UnaryOperator.Not) {
 		return getSelfPropertyNameFromConditionExpression(expression.operand);
 	}
 	return undefined;
 }
 
-export function hasSelfPropertyResetInStatements(statements: ReadonlyArray<LuaStatement>, propertyName: string): boolean {
+export function hasSelfPropertyResetInStatements(statements: ReadonlyArray<Statement>, propertyName: string): boolean {
 	for (const statement of statements) {
-		if (statement.kind !== LuaSyntaxKind.AssignmentStatement || statement.operator !== LuaAssignmentOperator.Assign) {
+		if (statement.kind !== SyntaxKind.AssignmentStatement || statement.operator !== AssignmentOperator.Assign) {
 			continue;
 		}
 		for (let index = 0; index < statement.left.length && index < statement.right.length; index += 1) {
@@ -188,13 +188,13 @@ export function hasSelfPropertyResetInStatements(statements: ReadonlyArray<LuaSt
 	return false;
 }
 
-export function matchesImgIdNilFallbackPattern(statement: LuaIfStatement): boolean {
+export function matchesImgIdNilFallbackPattern(statement: IfStatement): boolean {
 	if (statement.clauses.length !== 1) {
 		return false;
 	}
 	const clause = statement.clauses[0];
 	const condition = clause.condition;
-	if (!condition || condition.kind !== LuaSyntaxKind.BinaryExpression || condition.operator !== LuaBinaryOperator.Equal) {
+	if (!condition || condition.kind !== SyntaxKind.BinaryExpression || condition.operator !== BinaryOperator.Equal) {
 		return false;
 	}
 	let variableName: string | undefined;
@@ -211,11 +211,11 @@ export function matchesImgIdNilFallbackPattern(statement: LuaIfStatement): boole
 		return false;
 	}
 	const clauseStatement = clause.block.body[0];
-	if (clauseStatement.kind !== LuaSyntaxKind.AssignmentStatement) {
+	if (clauseStatement.kind !== SyntaxKind.AssignmentStatement) {
 		return false;
 	}
-	const assignment = clauseStatement as LuaAssignmentStatement;
-	if (assignment.operator !== LuaAssignmentOperator.Assign || assignment.left.length !== 1 || assignment.right.length !== 1) {
+	const assignment = clauseStatement as AssignmentStatement;
+	if (assignment.operator !== AssignmentOperator.Assign || assignment.left.length !== 1 || assignment.right.length !== 1) {
 		return false;
 	}
 	const target = assignment.left[0];
@@ -223,13 +223,13 @@ export function matchesImgIdNilFallbackPattern(statement: LuaIfStatement): boole
 }
 
 export function findSelfBooleanPropertyAssignmentInStatements(
-	statements: ReadonlyArray<LuaStatement>,
+	statements: ReadonlyArray<Statement>,
 	propertyName: string,
 ): SelfBooleanPropertyAssignmentMatch | undefined {
 	for (const statement of statements) {
 		switch (statement.kind) {
-			case LuaSyntaxKind.AssignmentStatement:
-				if (statement.operator !== LuaAssignmentOperator.Assign) {
+			case SyntaxKind.AssignmentStatement:
+				if (statement.operator !== AssignmentOperator.Assign) {
 					break;
 				}
 				for (let index = 0; index < statement.left.length && index < statement.right.length; index += 1) {
@@ -239,7 +239,7 @@ export function findSelfBooleanPropertyAssignmentInStatements(
 						continue;
 					}
 					const value = statement.right[index];
-					if (value.kind !== LuaSyntaxKind.BooleanLiteralExpression) {
+					if (value.kind !== SyntaxKind.BooleanLiteralExpression) {
 						continue;
 					}
 					return {
@@ -249,7 +249,7 @@ export function findSelfBooleanPropertyAssignmentInStatements(
 					};
 				}
 				break;
-			case LuaSyntaxKind.IfStatement:
+			case SyntaxKind.IfStatement:
 				for (const clause of statement.clauses) {
 					const nested = findSelfBooleanPropertyAssignmentInStatements(clause.block.body, propertyName);
 					if (nested) {
@@ -257,49 +257,49 @@ export function findSelfBooleanPropertyAssignmentInStatements(
 					}
 				}
 				break;
-			case LuaSyntaxKind.WhileStatement: {
+			case SyntaxKind.WhileStatement: {
 				const nested = findSelfBooleanPropertyAssignmentInStatements(statement.block.body, propertyName);
 				if (nested) {
 					return nested;
 				}
 				break;
 			}
-			case LuaSyntaxKind.RepeatStatement: {
+			case SyntaxKind.RepeatStatement: {
 				const nested = findSelfBooleanPropertyAssignmentInStatements(statement.block.body, propertyName);
 				if (nested) {
 					return nested;
 				}
 				break;
 			}
-			case LuaSyntaxKind.ForNumericStatement: {
+			case SyntaxKind.ForNumericStatement: {
 				const nested = findSelfBooleanPropertyAssignmentInStatements(statement.block.body, propertyName);
 				if (nested) {
 					return nested;
 				}
 				break;
 			}
-			case LuaSyntaxKind.ForGenericStatement: {
+			case SyntaxKind.ForGenericStatement: {
 				const nested = findSelfBooleanPropertyAssignmentInStatements(statement.block.body, propertyName);
 				if (nested) {
 					return nested;
 				}
 				break;
 			}
-			case LuaSyntaxKind.DoStatement: {
+			case SyntaxKind.DoStatement: {
 				const nested = findSelfBooleanPropertyAssignmentInStatements(statement.block.body, propertyName);
 				if (nested) {
 					return nested;
 				}
 				break;
 			}
-			case LuaSyntaxKind.LocalAssignmentStatement:
-			case LuaSyntaxKind.LocalFunctionStatement:
-			case LuaSyntaxKind.FunctionDeclarationStatement:
-			case LuaSyntaxKind.ReturnStatement:
-			case LuaSyntaxKind.CallStatement:
-			case LuaSyntaxKind.BreakStatement:
-			case LuaSyntaxKind.GotoStatement:
-			case LuaSyntaxKind.LabelStatement:
+			case SyntaxKind.LocalAssignmentStatement:
+			case SyntaxKind.LocalFunctionStatement:
+			case SyntaxKind.FunctionDeclarationStatement:
+			case SyntaxKind.ReturnStatement:
+			case SyntaxKind.CallStatement:
+			case SyntaxKind.BreakStatement:
+			case SyntaxKind.GotoStatement:
+			case SyntaxKind.LabelStatement:
 				break;
 			default:
 				break;
@@ -308,21 +308,21 @@ export function findSelfBooleanPropertyAssignmentInStatements(
 	return undefined;
 }
 
-export function isSelfPropertyReferenceByName(expression: LuaExpression, propertyName: string): boolean {
-	if (expression.kind === LuaSyntaxKind.MemberExpression && isSelfExpressionRoot(expression.base)) {
+export function isSelfPropertyReferenceByName(expression: Expression, propertyName: string): boolean {
+	if (expression.kind === SyntaxKind.MemberExpression && isSelfExpressionRoot(expression.base)) {
 		return expression.identifier === propertyName;
 	}
-	if (expression.kind === LuaSyntaxKind.IndexExpression && isSelfExpressionRoot(expression.base)) {
+	if (expression.kind === SyntaxKind.IndexExpression && isSelfExpressionRoot(expression.base)) {
 		return getExpressionKeyName(expression.index) === propertyName;
 	}
 	return false;
 }
 
-export function getSelfAssignedPropertyNameFromTarget(target: LuaExpression): string | undefined {
-	if (target.kind === LuaSyntaxKind.MemberExpression && isSelfExpressionRoot(target.base)) {
+export function getSelfAssignedPropertyNameFromTarget(target: Expression): string | undefined {
+	if (target.kind === SyntaxKind.MemberExpression && isSelfExpressionRoot(target.base)) {
 		return target.identifier;
 	}
-	if (target.kind === LuaSyntaxKind.IndexExpression && isSelfExpressionRoot(target.base)) {
+	if (target.kind === SyntaxKind.IndexExpression && isSelfExpressionRoot(target.base)) {
 		return getExpressionKeyName(target.index);
 	}
 	return undefined;

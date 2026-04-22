@@ -1,13 +1,13 @@
 import { defineLintRule } from '../../rule';
-import { type LuaCallExpression } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type LuaCallExpression as CallExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { getCallMethodName } from '../../../../src/bmsx/lua/syntax/calls';
 import { isGetSpaceCallExpression } from './impl/support/calls';
 import { pushIssue } from './impl/support/lint_context';
 
-export const setSpaceRoundtripPatternRule = defineLintRule('lua_cart', 'set_space_roundtrip_pattern');
+export const setSpaceRoundtripPatternRule = defineLintRule('cart', 'set_space_roundtrip_pattern');
 
-export function lintSetSpaceRoundtripPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+export function lintSetSpaceRoundtripPattern(expression: CallExpression, issues: CartLintIssue[]): void {
 	if (getCallMethodName(expression) !== 'set_space' || expression.arguments.length !== 1) {
 		return;
 	}

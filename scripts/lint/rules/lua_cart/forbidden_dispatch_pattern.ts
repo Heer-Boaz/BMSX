@@ -1,13 +1,13 @@
 import { defineLintRule } from '../../rule';
-import { type LuaCallExpression } from '../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../lua_rule';
+import { type LuaCallExpression as CallExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../lua_rule';
 import { isDispatchStateEventCallExpression } from './impl/support/calls';
 import { isStateControllerDispatchCallExpression } from './impl/support/fsm_core';
 import { pushIssue } from './impl/support/lint_context';
 
-export const forbiddenDispatchPatternRule = defineLintRule('lua_cart', 'forbidden_dispatch_pattern');
+export const forbiddenDispatchPatternRule = defineLintRule('cart', 'forbidden_dispatch_pattern');
 
-export function lintForbiddenDispatchPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+export function lintForbiddenDispatchPattern(expression: CallExpression, issues: CartLintIssue[]): void {
 	const dispatchStateEventCall = isDispatchStateEventCallExpression(expression);
 	const stateControllerDispatchCall = isStateControllerDispatchCallExpression(expression);
 	if (!dispatchStateEventCall && !stateControllerDispatchCall) {

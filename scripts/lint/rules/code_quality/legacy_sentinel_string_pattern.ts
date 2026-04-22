@@ -2,7 +2,7 @@ import ts from 'typescript';
 import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
-import { pushLintIssue, type LintIssue } from '../../ts_rule';
+import { pushLintIssue, type LintIssue } from '../ts/support/ast';
 import { isDoubleUnderscoreSentinelString } from '../../../analysis/code_quality/string_contracts';
 
 export const legacySentinelStringPatternRule = defineLintRule('code_quality', 'legacy_sentinel_string_pattern');

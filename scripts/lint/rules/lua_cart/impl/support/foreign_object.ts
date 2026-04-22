@@ -1,11 +1,11 @@
-import { type LuaExpression, type LuaIdentifierExpression, type LuaStatement, LuaSyntaxKind, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
-import { type LuaLintIssue } from '../../../../lua_rule';
+import { type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type CartLintIssue } from '../../../../lua_rule';
 import { lintForeignObjectMutationInStatements } from '../../foreign_object_internal_mutation_pattern';
-import { declareLuaBinding, discardLuaBindingScope, enterLuaBindingScope, resolveLuaBinding, setLuaBinding } from './bindings';
+import { declareBinding, discardBindingScope, enterBindingScope, resolveBinding, setBinding } from './bindings';
 import { isServiceResolverCallExpression } from './object_ownership';
 import { ForeignObjectAliasBinding, ForeignObjectMutationContext } from './types';
 
-export function createForeignObjectMutationContext(issues: LuaLintIssue[]): ForeignObjectMutationContext {
+export function createForeignObjectMutationContext(issues: CartLintIssue[]): ForeignObjectMutationContext {
 	const context: ForeignObjectMutationContext = {
 		issues,
 		bindingStacksByName: new Map<string, Array<ForeignObjectAliasBinding | null>>(),
@@ -16,26 +16,26 @@ export function createForeignObjectMutationContext(issues: LuaLintIssue[]): Fore
 }
 
 export function enterForeignObjectMutationScope(context: ForeignObjectMutationContext): void {
-	enterLuaBindingScope(context);
+	enterBindingScope(context);
 }
 
 export function leaveForeignObjectMutationScope(context: ForeignObjectMutationContext): void {
-	discardLuaBindingScope(context);
+	discardBindingScope(context);
 }
 
 export function declareForeignObjectBinding(
 	context: ForeignObjectMutationContext,
-	declaration: LuaIdentifierExpression,
+	declaration: IdentifierExpression,
 	binding: ForeignObjectAliasBinding | null,
 ): void {
-	declareLuaBinding(context, declaration, binding);
+	declareBinding(context, declaration, binding);
 }
 
 export function resolveForeignObjectBinding(
 	context: ForeignObjectMutationContext,
 	name: string,
 ): ForeignObjectAliasBinding | null | undefined {
-	return resolveLuaBinding(context, name);
+	return resolveBinding(context, name);
 }
 
 export function setForeignObjectBinding(
@@ -43,50 +43,50 @@ export function setForeignObjectBinding(
 	name: string,
 	binding: ForeignObjectAliasBinding | null,
 ): void {
-	setLuaBinding(context, name, binding);
+	setBinding(context, name, binding);
 }
 
-export function isForeignObjectAliasInitializer(expression: LuaExpression | undefined): boolean {
+export function isForeignObjectAliasInitializer(expression: Expression | undefined): boolean {
 	return isServiceResolverCallExpression(expression);
 }
 
 export function lintForeignObjectMutationInExpression(
-	expression: LuaExpression | null,
+	expression: Expression | null,
 	context: ForeignObjectMutationContext,
 ): void {
 	if (!expression) {
 		return;
 	}
 	switch (expression.kind) {
-		case LuaSyntaxKind.MemberExpression:
+		case SyntaxKind.MemberExpression:
 			lintForeignObjectMutationInExpression(expression.base, context);
 			return;
-		case LuaSyntaxKind.IndexExpression:
+		case SyntaxKind.IndexExpression:
 			lintForeignObjectMutationInExpression(expression.base, context);
 			lintForeignObjectMutationInExpression(expression.index, context);
 			return;
-		case LuaSyntaxKind.BinaryExpression:
+		case SyntaxKind.BinaryExpression:
 			lintForeignObjectMutationInExpression(expression.left, context);
 			lintForeignObjectMutationInExpression(expression.right, context);
 			return;
-		case LuaSyntaxKind.UnaryExpression:
+		case SyntaxKind.UnaryExpression:
 			lintForeignObjectMutationInExpression(expression.operand, context);
 			return;
-		case LuaSyntaxKind.CallExpression:
+		case SyntaxKind.CallExpression:
 			lintForeignObjectMutationInExpression(expression.callee, context);
 			for (const argument of expression.arguments) {
 				lintForeignObjectMutationInExpression(argument, context);
 			}
 			return;
-		case LuaSyntaxKind.TableConstructorExpression:
+		case SyntaxKind.TableConstructorExpression:
 			for (const field of expression.fields) {
-				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+				if (field.kind === TableFieldKind.ExpressionKey) {
 					lintForeignObjectMutationInExpression(field.key, context);
 				}
 				lintForeignObjectMutationInExpression(field.value, context);
 			}
 			return;
-		case LuaSyntaxKind.FunctionExpression:
+		case SyntaxKind.FunctionExpression:
 			enterForeignObjectMutationScope(context);
 			for (const parameter of expression.parameters) {
 				declareForeignObjectBinding(context, parameter, null);
@@ -99,7 +99,7 @@ export function lintForeignObjectMutationInExpression(
 	}
 }
 
-export function lintForeignObjectInternalMutationPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+export function lintForeignObjectInternalMutationPattern(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
 	const context = createForeignObjectMutationContext(issues);
 	try {
 		lintForeignObjectMutationInStatements(statements, context);
