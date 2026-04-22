@@ -12,7 +12,7 @@ Use this skill whenever working in the BMSX repo or discussing BMSX code quality
 ## First Moves
 1. Read the nearest `AGENTS.md` and inspect the relevant current code before editing.
 2. If the change touches style, quality rules, architecture, fallbacks, hot paths, or analyzer behavior, read the relevant files in `references/`.
-3. Prefer local mature code and existing helpers over new abstractions. Before adding a helper, search for an equivalent helper with `rg`.
+3. Before writing a new helper, abstraction, parser/range utility, or repeated concept, run `rg` queries for the relevant names, nearby verbs, data shapes, and owning modules. Reuse or extend the owner you find; only introduce new code after the `rg` results show that no suitable owner/helper/pattern already exists.
 4. Before implementing product behavior, study a serious reference implementation matching the domain when useful: VS Code for IDE/editor work, MAME or emulator cores for machine/runtime discipline, VLC or mature media code for audio/video pipelines.
 
 ## Style Contract
