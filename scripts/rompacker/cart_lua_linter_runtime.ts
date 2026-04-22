@@ -11,8 +11,9 @@ import { lintForbiddenRenderWrapperCall } from '../lint/rules/lua_cart/forbidden
 import { lintLocalFunctionConstPattern } from '../lint/rules/lua_cart/local_function_const_pattern';
 import { lintRequireCall } from '../lint/rules/lua_cart/require_lua_extension_pattern';
 import { lintUppercaseCode } from '../lint/rules/lua_cart/uppercase_code_pattern';
-import { readdir, readFile } from 'node:fs/promises';
-import { extname, join, relative, resolve, sep } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { relative, sep } from 'node:path';
+import { collectSourceFiles } from '../analysis/file_scan';
 import { lintActionTriggeredBoolChainPattern } from '../lint/rules/lua_cart/action_triggered_bool_chain_pattern';
 import { lintBool01DuplicatePattern } from '../lint/rules/lua_cart/bool01_duplicate_pattern';
 import { lintBranchUninitializedLocalPattern } from '../lint/rules/lua_cart/branch_uninitialized_local_pattern';
@@ -164,16 +165,6 @@ const LUA_CART_LINT_RULES: readonly LuaCartLintRule[] = [
 
 setActiveLintRules(new Set(LUA_CART_LINT_RULES));
 
-export const SKIPPED_DIRECTORY_NAMES = new Set<string>([
-	'.git',
-	'.svn',
-	'.hg',
-	'.bmsx',
-	'node_modules',
-	'_ignore',
-	'test',
-]);
-
 export const LINT_SUPPRESSION_OPEN_MARKER = '-- @code-quality disable';
 
 export const LINT_SUPPRESSION_CLOSE_MARKER = '-- @code-quality enable';
@@ -297,42 +288,8 @@ export function toWorkspaceRelativePath(absolutePath: string): string {
 	return normalizeWorkspacePath(rel.split(sep).join('/'));
 }
 
-export async function collectLuaFilesFromRoot(rootPath: string, output: string[]): Promise<void> {
-	const entries = await readdir(rootPath, { withFileTypes: true });
-	for (const entry of entries) {
-		if (SKIPPED_DIRECTORY_NAMES.has(entry.name)) {
-			continue;
-		}
-		const absolutePath = resolve(join(rootPath, entry.name));
-		if (entry.isDirectory()) {
-			await collectLuaFilesFromRoot(absolutePath, output);
-			continue;
-		}
-		if (!entry.isFile()) {
-			continue;
-		}
-		if (extname(entry.name).toLowerCase() !== '.lua') {
-			continue;
-		}
-		output.push(absolutePath);
-	}
-}
-
 export async function collectLuaFiles(roots: ReadonlyArray<string>): Promise<string[]> {
-	const files: string[] = [];
-	const visited = new Set<string>();
-	for (const root of roots) {
-		if (!root || root.length === 0) {
-			continue;
-		}
-		const absoluteRoot = resolve(root);
-		if (visited.has(absoluteRoot)) {
-			continue;
-		}
-		visited.add(absoluteRoot);
-		await collectLuaFilesFromRoot(absoluteRoot, files);
-	}
-	return Array.from(new Set(files)).sort();
+	return collectSourceFiles(roots, new Set(['.lua'])).sort();
 }
 
 export function lintFunctionBody(

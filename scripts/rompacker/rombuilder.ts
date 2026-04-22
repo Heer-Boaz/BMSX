@@ -11,6 +11,7 @@ import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './a
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
 import type { AtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './formater.rompack';
+import { collectSourceFiles } from '../analysis/file_scan';
 // @ts-ignore
 const { build } = require('esbuild');
 // @ts-ignore
@@ -865,21 +866,6 @@ function isWorkspaceStateDirectory(name: string): boolean {
 }
 
 export async function getResMetaList(respaths: string[], _romname?: string, options: ResourceScanOptions = {}): Promise<Resource[]> {
-	const EXTRA_LUA_SCAN_SKIP = new Set<string>([
-		'.git',
-		'.svn',
-		'.hg',
-		'.cache',
-		'node_modules',
-		'dist',
-		'build',
-		'out',
-		'rom',
-		'res',
-		'test',
-	]);
-
-	EXTRA_LUA_SCAN_SKIP.add(WORKSPACE_STATE_DIR_NAME);
 	const arrayOfFiles: string[] = [];
 	const virtualRoot = normalizeVirtualRootPath(options.virtualRoot);
 	const cartProject = isCartPath(virtualRoot) || respaths.some(isCartPath);
@@ -903,27 +889,11 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 		}
 	}
 
-	async function appendLuaFilesFromRoot(root: string): Promise<void> {
-		let entries: import('fs').Dirent[];
-		try {
-			entries = await readdir(root, { withFileTypes: true });
-		} catch {
-			return;
-		}
-		for (const entry of entries) {
-			if (EXTRA_LUA_SCAN_SKIP.has(entry.name.toLowerCase()) || isWorkspaceStateDirectory(entry.name)) continue;
-			const entryPath = join(root, entry.name);
-			if (entry.isDirectory()) {
-				await appendLuaFilesFromRoot(entryPath);
-			} else if (entry.isFile() && entry.name.toLowerCase().endsWith('.lua')) {
-				pushFile(entryPath);
-			}
-		}
-	}
-
 	for (const luaRoot of extraLuaRoots) {
 		if (!luaRoot || luaRoot.length === 0) continue;
-		await appendLuaFilesFromRoot(luaRoot);
+		for (const file of collectSourceFiles([luaRoot], new Set(['.lua']))) {
+			pushFile(file);
+		}
 	}
 	arrayOfFiles.sort((a, b) => a.localeCompare(b));
 
@@ -1862,10 +1832,18 @@ export async function buildBootromScriptIfNewer(options: BootromBuildOptions): P
 	throw new Error(`Unsupported platform "${options.platform}" when building bootrom script.`);
 }
 
-export const codeFileExtensions = ['.ts', '.glsl', '.js', '.jsx', '.tsx', '.html', '.css', '.json', '.xml', '.lua'];
+const codeFileExtensions = ['.ts', '.glsl', '.js', '.jsx', '.tsx', '.html', '.css', '.json', '.xml', '.lua'];
+const CODE_FILE_EXTENSION_SET = new Set(codeFileExtensions);
 
-export const isCodeFile = (filename: string) => codeFileExtensions.some(extension => filename.endsWith(extension));
-export const shouldCheckFile = (filename: string, checkCodeFiles: boolean, checkAssets: boolean) => (checkCodeFiles && isCodeFile(filename)) || checkAssets;
+async function anyFileNewerThan(files: readonly string[], mtimeMs: number): Promise<boolean> {
+	for (const file of files) {
+		const fileStats = await stat(file);
+		if (fileStats.mtimeMs > mtimeMs) {
+			return true;
+		}
+	}
+	return false;
+}
 
 /**
  * Determines whether a rebuild of the ROM is required based on the modification times of the bootloader and resource files.
@@ -1893,7 +1871,7 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 	}
 
 	const romStats = await stat(romFilePath);
-	const romMtime = romStats.mtime;
+	const romMtimeMs = romStats.mtimeMs;
 	if (cartProject) {
 		let biosStats: Stats;
 		try {
@@ -1901,67 +1879,25 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 		} catch {
 			return true;
 		}
-		if (biosStats.mtime > romMtime) {
+		if (biosStats.mtimeMs > romMtimeMs) {
 			return true;
 		}
 	}
 
-	const shouldRebuild = async (dir: string, checkCodeFiles: boolean, checkAssets: boolean, skipTestDirs = false): Promise<boolean> => {
-		try {
-			await access(dir);
-		} catch {
-			throw new Error(`Directory "${dir}" can't be accessed!`);
-		}
-		const entries = await readdir(dir, { withFileTypes: true });
-
-		for (let entry of entries) {
-			const entryPath = join(dir, entry.name);
-
-			if (entry.isDirectory()) {
-				if (entry.name === '_ignore' || entry.name === 'node_modules' || isWorkspaceStateDirectory(entry.name) || (skipTestDirs && entry.name === 'test')) {
-					continue;
-				}
-				const rebuild = await shouldRebuild(entryPath, checkCodeFiles, checkAssets, skipTestDirs);
-				if (rebuild) {
-					return true;
-				}
-			} else {
-				if (shouldCheckFile(entry.name, checkCodeFiles, checkAssets)) {
-					try {
-						await access(entryPath);
-						const entryStats = await stat(entryPath);
-						const entryMtime = entryStats.mtime;
-
-						if (entryMtime > romMtime) {
-							return true;
-						}
-					} catch {
-						// File does not exist, ignore
-					}
-				}
-			}
-		}
-
-		return false;
-	};
-
-	const shouldCheckAssets = (dir: string) => dir.startsWith(resPath);
-
-	const extraChecks: Array<Promise<boolean>> = [];
 	const normalizedBoot = resolve(bootloaderPath);
 	const normalizedRes = resolve(resPath);
+	const extraLuaFiles: string[] = [];
 	for (const root of extraLuaRoots) {
 		if (!root || root.length === 0) continue;
 		const normalized = resolve(root);
 		if (normalized === normalizedBoot || normalized === normalizedRes) continue;
-		extraChecks.push(shouldRebuild(root, true, cartProject, true));
+		extraLuaFiles.push(...collectSourceFiles([root], new Set(['.lua'])));
 	}
 
-	const extraNeedsRebuild = extraChecks.length > 0 ? await Promise.all(extraChecks).then(results => results.some(Boolean)) : false;
-
-	const bootloaderNeedsRebuild = cartProject ? false : await shouldRebuild(bootloaderPath, true, false);
-	const resNeedsRebuild = await shouldRebuild(resPath, false, shouldCheckAssets(resPath));
-	const engineNeedsRebuild = cartProject ? false : await shouldRebuild('src/bmsx', true, false);
+	const extraNeedsRebuild = await anyFileNewerThan(extraLuaFiles, romMtimeMs);
+	const bootloaderNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles([bootloaderPath], CODE_FILE_EXTENSION_SET), romMtimeMs);
+	const resNeedsRebuild = await anyFileNewerThan(await getFiles(resPath), romMtimeMs);
+	const engineNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles(['src/bmsx'], CODE_FILE_EXTENSION_SET), romMtimeMs);
 
 	return extraNeedsRebuild ||
 		bootloaderNeedsRebuild ||
@@ -1977,38 +1913,7 @@ export async function isEngineRuntimeRebuildRequired(outFilePath: string = './di
 		return true;
 	}
 
-	const outputMtime = outputStats.mtime;
-
-	const shouldRebuild = async (dir: string): Promise<boolean> => {
-		try {
-			await access(dir);
-		} catch {
-			throw new Error(`Directory "${dir}" can't be accessed!`);
-		}
-		const entries = await readdir(dir, { withFileTypes: true });
-
-		for (const entry of entries) {
-			const entryPath = join(dir, entry.name);
-			if (entry.isDirectory()) {
-				if (entry.name === '_ignore' || entry.name === 'node_modules' || isWorkspaceStateDirectory(entry.name)) {
-					continue;
-				}
-				if (await shouldRebuild(entryPath)) {
-					return true;
-				}
-			} else {
-				if (shouldCheckFile(entry.name, true, false)) {
-					const entryStats = await stat(entryPath);
-					if (entryStats.mtime > outputMtime) {
-						return true;
-					}
-				}
-			}
-		}
-		return false;
-	};
-
-	return await shouldRebuild('src/bmsx');
+	return anyFileNewerThan(collectSourceFiles(['src/bmsx'], CODE_FILE_EXTENSION_SET), outputStats.mtimeMs);
 }
 export function setAtlasFlag(enabled: boolean): void {
 	GENERATE_AND_USE_TEXTURE_ATLAS = enabled;

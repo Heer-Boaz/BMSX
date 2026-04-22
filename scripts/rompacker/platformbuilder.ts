@@ -1,10 +1,12 @@
 import pc from 'picocolors';
-import { stat, readdir } from 'node:fs/promises';
-import { join, extname } from 'node:path';
+import { existsSync } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import { runPlatformBuild } from './platformbuild';
 import { getNodeLauncherFilename } from './rombuilder';
 import type { RomPackerTarget } from './formater.rompack';
+import { collectSourceFiles } from '../analysis/file_scan';
 
 import { createCliUi, getParamOrEnv, parseArgsVector } from './cli';
 
@@ -152,19 +154,6 @@ const PLATFORM_REBUILD_FILE_EXTENSIONS = new Set<string>([
 	'.lua',
 ]);
 
-const PLATFORM_REBUILD_SKIP_DIRS = new Set<string>([
-	'_ignore',
-	'node_modules',
-	'.git',
-	'.svn',
-	'.hg',
-	'dist',
-	'build',
-	'out',
-	'.cache',
-	'.bmsx',
-]);
-
 type ParsedPlatformOptions = {
 	platform: RomPackerTarget;
 	debug: boolean;
@@ -172,49 +161,15 @@ type ParsedPlatformOptions = {
 };
 
 async function getMtimeMs(path: string): Promise<number> {
-	try {
-		const fileStats = await stat(path);
-		return fileStats.mtimeMs;
-	} catch {
-		return 0;
-	}
+	const fileStats = await stat(path);
+	return fileStats.mtimeMs;
 }
 
 async function getNewestInputMtimeMs(path: string): Promise<number> {
-	let pathStats;
-	try {
-		pathStats = await stat(path);
-	} catch {
-		return 0;
-	}
-
-	if (pathStats.isFile()) {
-		const ext = extname(path).toLowerCase();
-		return PLATFORM_REBUILD_FILE_EXTENSIONS.has(ext) ? pathStats.mtimeMs : 0;
-	}
-	if (!pathStats.isDirectory()) {
-		return 0;
-	}
-
 	let newest = 0;
-	const entries = await readdir(path, { withFileTypes: true });
-	for (const entry of entries) {
-		if (entry.isDirectory() && PLATFORM_REBUILD_SKIP_DIRS.has(entry.name.toLowerCase())) {
-			continue;
-		}
-		const entryPath = join(path, entry.name);
-		if (entry.isDirectory()) {
-			const entryNewest = await getNewestInputMtimeMs(entryPath);
-			if (entryNewest > newest) {
-				newest = entryNewest;
-			}
-			continue;
-		}
-		const ext = extname(entry.name).toLowerCase();
-		if (!PLATFORM_REBUILD_FILE_EXTENSIONS.has(ext)) {
-			continue;
-		}
-		const entryMtime = await getMtimeMs(entryPath);
+	const files = collectSourceFiles([path], PLATFORM_REBUILD_FILE_EXTENSIONS);
+	for (const file of files) {
+		const entryMtime = await getMtimeMs(file);
 		if (entryMtime > newest) {
 			newest = entryMtime;
 		}
@@ -251,10 +206,10 @@ async function shouldForceRebuildForPlatformSources(options: ParsedPlatformOptio
 	if (!artifactPath) {
 		return false;
 	}
-	const artifactMtime = await getMtimeMs(artifactPath);
-	if (artifactMtime === 0) {
+	if (!existsSync(artifactPath)) {
 		return true;
 	}
+	const artifactMtime = await getMtimeMs(artifactPath);
 	const dependencyRoots = resolvePlatformDependencyRoots(options.platform);
 	let newestInputMtime = 0;
 	for (const root of dependencyRoots) {

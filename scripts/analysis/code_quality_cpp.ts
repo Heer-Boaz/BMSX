@@ -253,30 +253,13 @@ function splitIntoChunks<T>(items: readonly T[], chunkSize: number): T[][] {
 	return chunks;
 }
 
-function resolveCompileCommands(roots: readonly string[], explicit: string | null): string | null {
+function resolveCompileCommands(explicit: string | null): string | null {
 	if (explicit !== null) {
 		const candidate = resolveInputPath(explicit);
 		if (existsSync(candidate)) {
 			return candidate;
 		}
 		throw new Error(`Could not find compile_commands.json at "${candidate}"`);
-	}
-	const candidates = [
-		resolve(process.cwd(), 'compile_commands.json'),
-		resolve(process.cwd(), 'build', 'compile_commands.json'),
-		resolve(process.cwd(), 'build-debug', 'compile_commands.json'),
-		resolve(process.cwd(), 'build-release', 'compile_commands.json'),
-	];
-	for (let i = 0; i < roots.length; i += 1) {
-		const root = resolveInputPath(roots[i]);
-		candidates.push(resolve(root, 'build', 'compile_commands.json'));
-		candidates.push(resolve(root, 'build-debug', 'compile_commands.json'));
-	}
-	for (let i = 0; i < candidates.length; i += 1) {
-		const candidate = candidates[i];
-		if (existsSync(candidate)) {
-			return candidate;
-		}
 	}
 	return null;
 }
@@ -601,7 +584,7 @@ function run(): void {
 	let issues: LintIssue[] = [];
 	const customAnalysis = analyzeCppFiles(files);
 	addCustomRuleIssues(issues, customAnalysis.lintIssues);
-	const compileCommands = resolveCompileCommands(options.roots, options.compileCommands);
+	const compileCommands = resolveCompileCommands(options.compileCommands);
 	if (hasCommand('clang-tidy')) {
 		issues.push(...runClangTidy(files, options.roots, compileCommands, options.configFile, config.scan.cppHeaderFilter));
 	} else if (hasCommand('cppcheck')) {
