@@ -17,7 +17,7 @@ import { logDebugState } from '../../machine/runtime/debug';
 import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
 import * as workbenchMode from './workbench_mode';
 import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from '../../machine/runtime/timing';
-import { setCpuHz, setCycleBudgetPerFrame, setTransferRatesFromManifest } from '../../machine/runtime/timing_config';
+import { setFrameTiming, setTransferRatesFromManifest } from '../../machine/runtime/timing_config';
 import {
 	buildModuleAliasMap,
 	buildModuleAliasesFromPaths,
@@ -970,11 +970,10 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, runInit = tru
 			const perfSpecs = getMachinePerfSpecs(machine);
 			applyUfpsScaled(perfSpecs.ufps);
 			const cpuHz = resolveCpuHz(perfSpecs.cpu_freq_hz);
-			setCpuHz(runtime, cpuHz);
 			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, runtime.timing.ufpsScaled);
-			setCycleBudgetPerFrame(runtime, cycleBudgetPerFrame);
 			const renderHeight = resolveRenderHeight(machine.render_size.height);
-			runtime.vblank.setVblankCycles(runtime, resolveVblankCycles(cpuHz, runtime.timing.ufpsScaled, renderHeight));
+			const vblankCycles = resolveVblankCycles(cpuHz, runtime.timing.ufpsScaled, renderHeight);
+			setFrameTiming(runtime, cpuHz, cycleBudgetPerFrame, vblankCycles);
 			setTransferRatesFromManifest(runtime, perfSpecs);
 		} catch (error) {
 			workbenchMode.handleLuaError(runtime, error);

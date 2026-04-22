@@ -39,6 +39,16 @@ export function setCpuHz(runtime: Runtime, value: number): void {
 	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
 }
 
+export function setFrameTiming(runtime: Runtime, cpuHz: number, cycleBudgetPerFrame: number, vblankCycles: number): void {
+	const timing = runtime.timing;
+	timing.cpuHz = cpuHz;
+	if (cycleBudgetPerFrame !== timing.cycleBudgetPerFrame) {
+		timing.cycleBudgetPerFrame = cycleBudgetPerFrame;
+		runtime.machine.cpu.setGlobalByKey(runtime.luaKey('sys_max_cycles_per_frame'), cycleBudgetPerFrame);
+	}
+	runtime.vblank.setVblankCycles(runtime, vblankCycles);
+}
+
 function setRenderWorkUnitsPerSec(runtime: Runtime, vdpValue: number, geoValue: number): void {
 	runtime.timing.vdpWorkUnitsPerSec = resolveVdpWorkUnitsPerSec(vdpValue);
 	runtime.timing.geoWorkUnitsPerSec = resolveGeoWorkUnitsPerSec(geoValue);
@@ -51,9 +61,7 @@ export function applyActiveMachineTiming(runtime: Runtime, cpuHz: number): void 
 	const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
 	const renderSize = resolveRuntimeRenderSize($.machine_manifest);
 	const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, renderSize.height);
-	setCpuHz(runtime, cpuHz);
-	setCycleBudgetPerFrame(runtime, cycleBudgetPerFrame);
-	runtime.vblank.setVblankCycles(runtime, vblankCycles);
+	setFrameTiming(runtime, cpuHz, cycleBudgetPerFrame, vblankCycles);
 	setRenderWorkUnitsPerSec(runtime, perfSpecs.work_units_per_sec, perfSpecs.geo_work_units_per_sec);
 }
 
