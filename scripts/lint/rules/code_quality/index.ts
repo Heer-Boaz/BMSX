@@ -25,6 +25,7 @@ import { facadeModuleDensityPatternRule } from './facade_module_density_pattern'
 import { normalizedAstDuplicatePatternRule } from './normalized_ast_duplicate_pattern';
 import { crossLayerImportPatternRule } from './cross_layer_import_pattern';
 import { duplicateExportedTypeNamePatternRule } from './duplicate_exported_type_name_pattern';
+import { emptyLintRuleFilePatternRule } from './empty_lint_rule_file_pattern';
 import { thinLintReportWrapperPatternRule } from './thin_lint_report_wrapper_pattern';
 
 export { ensurePatternRule };
@@ -53,6 +54,7 @@ export { facadeModuleDensityPatternRule };
 export { normalizedAstDuplicatePatternRule };
 export { crossLayerImportPatternRule };
 export { duplicateExportedTypeNamePatternRule };
+export { emptyLintRuleFilePatternRule };
 export { thinLintReportWrapperPatternRule };
 
 export const CODE_QUALITY_ONLY_LINT_RULES_DEFINITIONS = [
@@ -82,6 +84,7 @@ export const CODE_QUALITY_ONLY_LINT_RULES_DEFINITIONS = [
 	normalizedAstDuplicatePatternRule,
 	crossLayerImportPatternRule,
 	duplicateExportedTypeNamePatternRule,
+	emptyLintRuleFilePatternRule,
 	thinLintReportWrapperPatternRule,
 ] as const;
 export const CODE_QUALITY_ONLY_LINT_RULES = ruleNames(CODE_QUALITY_ONLY_LINT_RULES_DEFINITIONS);

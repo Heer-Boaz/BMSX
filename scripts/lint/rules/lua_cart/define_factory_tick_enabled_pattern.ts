@@ -30,9 +30,6 @@ export function lintDefineFactoryTickEnabledAndSpaceIdPattern(expression: LuaCal
 			);
 			return;
 		}
-		if (key !== 'space_id') {
-			return;
-		}
-		lintDefineFactorySpaceIdPattern(factoryName, field.value, issues);
+		lintDefineFactorySpaceIdPattern(factoryName, field, issues);
 	});
 }

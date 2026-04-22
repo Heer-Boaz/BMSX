@@ -3,6 +3,7 @@ import { noteQualityLedger, type QualityLedger } from '../quality_ledger';
 import ts from 'typescript';
 import { lintContractNumericDefensiveSanitizationPattern } from '../../lint/rules/code_quality/contract_numeric_defensive_sanitization_pattern';
 import { lintRequiredStateOptionalChainPattern } from '../../lint/rules/code_quality/defensive_optional_chain_pattern';
+import { lintEmptyLintRuleFilePattern } from '../../lint/rules/code_quality/empty_lint_rule_file_pattern';
 import { lintHotPathClosureArgument } from '../../lint/rules/code_quality/hot_path_closure_argument_pattern';
 import { lintHotPathObjectLiteralArgument } from '../../lint/rules/code_quality/hot_path_object_literal_pattern';
 import { lintNumericDefensiveSanitizationPattern } from '../../lint/rules/code_quality/numeric_defensive_sanitization_pattern';
@@ -523,6 +524,7 @@ export function collectLintIssues(
 		}
 	};
 	visit(sourceFile, undefined);
+	lintEmptyLintRuleFilePattern(sourceFile, issues);
 	lintFacadeModuleDensity(sourceFile, issues);
 	lintCrossLayerImports(sourceFile, issues);
 }

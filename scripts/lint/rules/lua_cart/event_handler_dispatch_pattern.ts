@@ -7,9 +7,6 @@ import { forbiddenDispatchPatternRule } from './forbidden_dispatch_pattern';
 import { findCallExpressionInStatements } from './impl/support/calls';
 import { isStateControllerDispatchCallExpression } from './impl/support/fsm_core';
 import { isEventsOnCallExpression } from './impl/support/fsm_events';
-import { isEventProxyFlagPropertyName } from './impl/support/general';
-import { isCrossObjectDispatchStateEventCallExpression } from './impl/support/object_ownership';
-import { findSelfPropertyAssignmentInStatements } from './impl/support/self_properties';
 import { findTableFieldByKey } from './impl/support/table_fields';
 import { activeLintRules, pushIssue } from './impl/support/lint_context';
 
@@ -38,20 +35,8 @@ export function lintEventHandlerDispatchPattern(expression: LuaCallExpression, i
 					'Event handler callbacks must not call sc:dispatch(...). Route event-driven transitions via FSM definitions instead of manual dispatch inside events:on handlers.',
 				);
 			}
-			const crossObjectStateDispatchCall = findCallExpressionInStatements(
-				handlerField.value.body.body,
-				isCrossObjectDispatchStateEventCallExpression,
-			);
-			if (crossObjectStateDispatchCall) {
-				lintEventHandlerStateDispatchPattern(crossObjectStateDispatchCall, issues);
-			}
+			lintEventHandlerStateDispatchPattern(handlerField.value.body.body, issues);
 		}
-		const proxyFlagAssignment = findSelfPropertyAssignmentInStatements(
-			handlerField.value.body.body,
-			isEventProxyFlagPropertyName,
-		);
-		if (proxyFlagAssignment) {
-			lintEventHandlerFlagProxyPattern(proxyFlagAssignment, issues);
-		}
+		lintEventHandlerFlagProxyPattern(handlerField.value.body.body, issues);
 	}
 }

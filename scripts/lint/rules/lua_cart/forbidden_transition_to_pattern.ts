@@ -23,7 +23,5 @@ export function lintForbiddenStateCalls(expression: LuaCallExpression, issues: L
 		);
 		return;
 	}
-	if (methodName === 'matches_state_path') {
-		lintForbiddenMatchesStatePathPattern(expression, receiverName, issues);
-	}
+	lintForbiddenMatchesStatePathPattern(expression, issues);
 }
