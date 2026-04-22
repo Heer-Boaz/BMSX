@@ -1,34 +1,12 @@
 import ts from 'typescript';
-import { LintIssue, pushLintIssue, unwrapExpression } from './ast';
+import { unwrapExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
+import { isEmptyStringLiteral, isNullOrUndefined, isNumericLiteralLike, isNumericLiteralText, nullishLiteralKind } from '../../../../../src/bmsx/language/ts/ast/literals';
+import { isEqualityOperator, isNullishEqualityOperator, isNullishInequalityOperator, isPositiveEqualityOperator } from '../../../../../src/bmsx/language/ts/ast/operators';
 import { isExpressionInScopeFingerprint } from './bindings';
-import { isEmptyContainerLiteral, isEmptyStringLiteral, isEqualityOperator, isLookupFallbackExpression, isOptionalParameterFallback, isPositiveEqualityOperator, isSharedConstantFallbackExpression } from './conditions';
+import { isEmptyContainerLiteral, isLookupFallbackExpression, isOptionalParameterFallback, isSharedConstantFallbackExpression, singleLiteralComparison } from './conditions';
 import { expressionAccessFingerprint } from './declarations';
-import { isNumericLiteralLike, isNumericLiteralText } from './numeric';
 import { isAllocationExpression } from './runtime_patterns';
-import { nextStatementAfter } from './statements';
 import { ExplicitValueCheck, NullishLiteralKind } from './types';
-
-export function nullishLiteralKind(node: ts.Expression): NullishLiteralKind | null {
-	if (node.kind === ts.SyntaxKind.NullKeyword) {
-		return 'null';
-	}
-	if (ts.isIdentifier(node) && node.text === 'undefined') {
-		return 'undefined';
-	}
-	return null;
-}
-
-export function isNullOrUndefined(node: ts.Expression): boolean {
-	return nullishLiteralKind(node) !== null;
-}
-
-export function isNullishEqualityOperator(kind: ts.SyntaxKind): boolean {
-	return kind === ts.SyntaxKind.EqualsEqualsToken || kind === ts.SyntaxKind.EqualsEqualsEqualsToken;
-}
-
-export function isNullishInequalityOperator(kind: ts.SyntaxKind): boolean {
-	return kind === ts.SyntaxKind.ExclamationEqualsToken || kind === ts.SyntaxKind.ExclamationEqualsEqualsToken;
-}
 
 export function expressionUsesGuardedValue(expression: ts.Expression, guardFingerprint: string): boolean {
 	const expressionFingerprint = expressionAccessFingerprint(expression);
@@ -158,58 +136,14 @@ export function isNullishReturnStatement(statement: ts.Statement): boolean {
 	return nullishReturnKind(statement) !== null;
 }
 
-export function lintNullishReturnGuard(node: ts.IfStatement, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
-	if (node.elseStatement !== undefined) {
-		return;
-	}
-	const returnedKind = nullishReturnKind(node.thenStatement);
-	if (returnedKind === null) {
-		return;
-	}
-	const guardFingerprint = nullishGuardFingerprint(node.expression);
-	if (guardFingerprint === null) {
-		return;
-	}
-	const next = nextStatementAfter(node);
-	if (next === null || !ts.isReturnStatement(next) || next.expression === undefined) {
-		return;
-	}
-	if (!expressionUsesGuardedValue(next.expression, guardFingerprint)) {
-		return;
-	}
-	if (isCrossNullishProjection(node.expression, returnedKind, next.expression)) {
-		return;
-	}
-	pushLintIssue(
-		issues,
-		sourceFile,
-		node,
-		'nullish_return_guard_pattern',
-		'Nullish guard that only returns null/undefined before returning the guarded value is forbidden. Keep the compact expression form instead of expanding it into a branch.',
-	);
-}
-
 export function nullishLiteralComparison(node: ts.Expression): ExplicitValueCheck | null {
-	const unwrapped = unwrapExpression(node);
-	if (!ts.isBinaryExpression(unwrapped)) {
-		return null;
-	}
-	const operatorKind = unwrapped.operatorToken.kind;
-	if (!isEqualityOperator(operatorKind)) {
-		return null;
-	}
-	let subject: string | null = null;
-	if (isNullOrUndefined(unwrapped.left)) {
-		subject = isExpressionInScopeFingerprint(unwrapped.right);
-	} else if (isNullOrUndefined(unwrapped.right)) {
-		subject = isExpressionInScopeFingerprint(unwrapped.left);
-	}
-	if (subject === null) {
+	const comparison = singleLiteralComparison(node, expression => isNullOrUndefined(expression) ? true : null);
+	if (comparison === null) {
 		return null;
 	}
 	return {
-		subject,
-		isPositive: isPositiveEqualityOperator(operatorKind),
+		subject: comparison.subject,
+		isPositive: isPositiveEqualityOperator(comparison.operatorKind),
 	};
 }
 

@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { extname, isAbsolute, relative, resolve } from 'node:path';
 
 function resolveInputPath(candidate: string): string {
@@ -62,7 +63,10 @@ export function collectSourceFiles(roots: readonly string[], extensions: Readonl
 			continue;
 		}
 		if (extensions.has(extname(candidate))) {
-			files.push(resolve(process.cwd(), candidate));
+			const absolute = resolve(process.cwd(), candidate);
+			if (existsSync(absolute)) {
+				files.push(absolute);
+			}
 		}
 	}
 	return files;

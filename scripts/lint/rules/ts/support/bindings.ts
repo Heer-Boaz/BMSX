@@ -1,5 +1,6 @@
 import ts from 'typescript';
-import { getPropertyName, isVariableImportExportName } from './ast';
+import { getPropertyName, isVariableImportExportName } from '../../../../../src/bmsx/language/ts/ast/expressions';
+import { isAssignmentOperator } from '../../../../../src/bmsx/language/ts/ast/operators';
 
 export function getClassScopePath(node: ts.Node): string | null {
 	const parts: string[] = [];
@@ -61,12 +62,8 @@ export function isIdentifierPropertyName(node: ts.Identifier, parent: ts.Node): 
 	return false;
 }
 
-export function isTsAssignmentOperator(kind: ts.SyntaxKind): boolean {
-	return kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment;
-}
-
 export function isWriteIdentifier(node: ts.Identifier, parent: ts.Node): boolean {
-	if (ts.isBinaryExpression(parent) && isTsAssignmentOperator(parent.operatorToken.kind) && parent.left === node) {
+	if (ts.isBinaryExpression(parent) && isAssignmentOperator(parent.operatorToken.kind) && parent.left === node) {
 		return true;
 	}
 	if (ts.isPrefixUnaryExpression(parent) && (parent.operator === ts.SyntaxKind.PlusPlusToken || parent.operator === ts.SyntaxKind.MinusMinusToken)) {
@@ -119,12 +116,7 @@ export function isExpressionInScopeFingerprint(node: ts.Expression): string | nu
 		return null;
 	}
 	if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isNonNullExpression(node)) {
-		const inner = ts.isParenthesizedExpression(node)
-			? node.expression
-			: ts.isAsExpression(node)
-				? node.expression
-				: node.expression;
-		return isExpressionInScopeFingerprint(inner);
+		return isExpressionInScopeFingerprint(node.expression);
 	}
 	return null;
 }

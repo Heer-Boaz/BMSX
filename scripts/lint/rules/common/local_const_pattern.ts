@@ -10,6 +10,7 @@ import { CPP_LOCAL_CONST_PATTERN_ENABLED, declarationFromStatement } from '../cp
 import { cppLocalConstCandidateKind, markBindingUses, shouldReportCppLocalConst, shouldReportSingleUseLocal } from '../cpp/support/bindings';
 import { ConstLocalContext } from '../lua_cart/impl/support/types';
 import { pushIssue } from '../lua_cart/impl/support/lint_context';
+import { leaveLuaBindingScope } from '../lua_cart/impl/support/bindings';
 
 export const localConstPatternRule = defineLintRule('common', 'local_const_pattern');
 
@@ -21,15 +22,16 @@ export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], 
 			continue;
 		}
 		markBindingUses(binding, tokens, info.bodyStart, info.bodyEnd);
-		if (!binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
+		const couldBeConst = !binding.isConst && binding.hasInitializer && binding.writeCount === 0;
+		if (couldBeConst) {
 			noteQualityLedger(ledger, 'cpp_local_const_candidate');
 		}
-		if (!CPP_LOCAL_CONST_PATTERN_ENABLED && !binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
+		if (!CPP_LOCAL_CONST_PATTERN_ENABLED && couldBeConst) {
 			noteQualityLedger(ledger, 'skipped_cpp_local_const_disabled');
 			noteQualityLedger(ledger, `skipped_cpp_local_const_${cppLocalConstCandidateKind(info, regions, tokens, binding)}`);
 		} else if (CPP_LOCAL_CONST_PATTERN_ENABLED && shouldReportCppLocalConst(binding)) {
 			pushLintIssue(issues, file, tokens[binding.nameToken], localConstPatternRule.name, `Prefer "const" for "${binding.name}"; it is never reassigned.`);
-		} else if (!binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
+		} else if (couldBeConst) {
 			noteQualityLedger(ledger, 'skipped_cpp_local_const_heuristic');
 		}
 		if (binding.readCount === 1 && shouldReportSingleUseLocal(binding)) {
@@ -39,17 +41,7 @@ export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], 
 }
 
 export function leaveConstLocalScope(context: ConstLocalContext): void {
-	const scope = context.scopeStack.pop();
-	if (!scope) {
-		return;
-	}
-	for (let index = scope.names.length - 1; index >= 0; index -= 1) {
-		const name = scope.names[index];
-		const stack = context.bindingStacksByName.get(name);
-		if (!stack || stack.length === 0) {
-			continue;
-		}
-		const binding = stack.pop();
+	leaveLuaBindingScope(context.scopeStack, context.bindingStacksByName, binding => {
 		if (binding.shouldReport && binding.writeCountAfterDeclaration === 0) {
 			pushIssue(
 				context.issues,
@@ -58,8 +50,5 @@ export function leaveConstLocalScope(context: ConstLocalContext): void {
 				`Local "${binding.declaration.name}" is never reassigned. Mark it <const>.`,
 			);
 		}
-		if (stack.length === 0) {
-			context.bindingStacksByName.delete(name);
-		}
-	}
+	});
 }

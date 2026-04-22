@@ -1,7 +1,8 @@
 import { defineLintRule } from '../../rule';
 import ts from 'typescript';
+import { isNullOrUndefined } from '../../../../src/bmsx/language/ts/ast/literals';
 import { LintIssue, pushLintIssue } from '../ts/support/ast';
-import { isConditionalNullishNormalization, isNullOrUndefined } from '../ts/support/nullish';
+import { isConditionalNullishNormalization } from '../ts/support/nullish';
 
 export const nullishNullNormalizationPatternRule = defineLintRule('code_quality', 'nullish_null_normalization_pattern');
 

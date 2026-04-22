@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
 import { type LuaStatement } from '../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../lua_rule';
-import { findCallExpressionInStatements } from './impl/support/calls';
+import { findCallExpressionInStatements } from '../../../../src/bmsx/lua/syntax/calls';
 import { isCrossObjectDispatchStateEventCallExpression } from './impl/support/object_ownership';
 import { pushIssue } from './impl/support/lint_context';
 

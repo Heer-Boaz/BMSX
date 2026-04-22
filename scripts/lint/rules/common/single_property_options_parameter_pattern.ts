@@ -1,6 +1,5 @@
 import ts from 'typescript';
-import type { CppClassRange } from '../../../../src/bmsx/language/cpp/syntax/declarations';
-import { cppRangeHas } from '../../../../src/bmsx/language/cpp/syntax/syntax';
+import { countCppTopLevelDataMembers, type CppClassRange } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
@@ -51,7 +50,7 @@ export function lintSinglePropertyOptionsParameterPattern(
 			continue;
 		}
 		const name = parameter.name.text;
-		if (name !== 'opts' && name !== 'options') {
+		if (!isOptionsParameterName(name)) {
 			continue;
 		}
 		if (!isSinglePropertyOptionsType(parameter.type)) {
@@ -87,101 +86,9 @@ export function lintCppSinglePropertyOptionsTypes(file: string, tokens: readonly
 	}
 }
 
-function countCppTopLevelDataMembers(tokens: readonly CppToken[], start: number, end: number): number {
-	const ranges = collectCppClassMemberStatementRanges(tokens, start, end);
-	let count = 0;
-	for (let rangeIndex = 0; rangeIndex < ranges.length; rangeIndex += 1) {
-		const statementStart = ranges[rangeIndex][0];
-		const statementEnd = ranges[rangeIndex][1];
-		if (statementStart >= statementEnd) {
-			continue;
-		}
-		const first = tokens[statementStart].text;
-		if (first === 'public' || first === 'private' || first === 'protected') {
-			continue;
-		}
-		if (cppRangeHas(tokens, statementStart, statementEnd, token =>
-			token.text === 'class'
-			|| token.text === 'struct'
-			|| token.text === 'union'
-			|| token.text === 'namespace'
-			|| token.text === 'template'
-			|| token.text === 'using'
-			|| token.text === 'typedef'
-			|| token.text === 'enum'
-			|| token.text === 'friend'
-			|| token.text === 'static'
-		)) {
-			continue;
-		}
-		if (cppRangeHas(tokens, statementStart, statementEnd, token => token.text === '(')) {
-			continue;
-		}
-		if (cppRangeHas(tokens, statementStart, statementEnd, token => token.kind === 'id')) {
-			count += countCppDataMemberDeclarators(tokens, statementStart, statementEnd);
-		}
-	}
-	return count;
-}
-
-function collectCppClassMemberStatementRanges(tokens: readonly CppToken[], start: number, end: number): Array<[number, number]> {
-	const ranges: Array<[number, number]> = [];
-	let statementStart = start;
-	let parenDepth = 0;
-	let bracketDepth = 0;
-	let braceDepth = 0;
-	for (let index = start; index < end; index += 1) {
-		const text = tokens[index].text;
-		if (text === '(') parenDepth += 1;
-		else if (text === ')') parenDepth -= 1;
-		else if (text === '[') bracketDepth += 1;
-		else if (text === ']') bracketDepth -= 1;
-		else if (text === '{') braceDepth += 1;
-		else if (text === '}') braceDepth -= 1;
-		else if (
-			text === ':'
-			&& parenDepth === 0
-			&& bracketDepth === 0
-			&& braceDepth === 0
-			&& index === statementStart + 1
-			&& (tokens[statementStart].text === 'public' || tokens[statementStart].text === 'private' || tokens[statementStart].text === 'protected')
-		) {
-			statementStart = index + 1;
-		} else if (text === ';' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
-			if (statementStart < index) {
-				ranges.push([statementStart, index]);
-			}
-			statementStart = index + 1;
-		}
-	}
-	return ranges;
-}
-
-function countCppDataMemberDeclarators(tokens: readonly CppToken[], start: number, end: number): number {
-	let count = 1;
-	let parenDepth = 0;
-	let bracketDepth = 0;
-	let braceDepth = 0;
-	let angleDepth = 0;
-	for (let index = start; index < end; index += 1) {
-		const text = tokens[index].text;
-		if (text === '(') parenDepth += 1;
-		else if (text === ')') parenDepth -= 1;
-		else if (text === '[') bracketDepth += 1;
-		else if (text === ']') bracketDepth -= 1;
-		else if (text === '{') braceDepth += 1;
-		else if (text === '}') braceDepth -= 1;
-		else if (text === '<' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) angleDepth += 1;
-		else if (text === '>' && angleDepth > 0 && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) angleDepth -= 1;
-		else if (text === '>>' && angleDepth > 0 && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) angleDepth = angleDepth > 1 ? angleDepth - 2 : 0;
-		else if (text === ',' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0 && angleDepth === 0) count += 1;
-	}
-	return count;
-}
-
 export function lintSinglePropertyOptionsParameter(functionExpression: LuaFunctionExpression, issues: LuaLintIssue[]): void {
 	for (const parameter of functionExpression.parameters) {
-		if (parameter.name !== 'opts' && parameter.name !== 'options') {
+		if (!isOptionsParameterName(parameter.name)) {
 			continue;
 		}
 		const use: LuaOptionsParameterUse = {
@@ -199,5 +106,15 @@ export function lintSinglePropertyOptionsParameter(functionExpression: LuaFuncti
 			parameter,
 			`Single-property options parameter "${parameter.name}" is forbidden. Use a direct parameter or split the operation instead of implying future extensibility.`,
 		);
+	}
+}
+
+function isOptionsParameterName(name: string): boolean {
+	switch (name) {
+		case 'opts':
+		case 'options':
+			return true;
+		default:
+			return false;
 	}
 }

@@ -1,5 +1,6 @@
 import { type LuaCallExpression, type LuaExpression, LuaSyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
-import { getCallReceiverExpression, isDispatchStateEventCallExpression } from './calls';
+import { getCallReceiverExpression } from '../../../../../../src/bmsx/lua/syntax/calls';
+import { isDispatchStateEventCallExpression } from './calls';
 import { isSelfExpressionRoot } from './self_properties';
 
 export function isConstantModulePath(path: string): boolean {

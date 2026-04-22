@@ -1,7 +1,9 @@
 import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import {
+	cppExpressionUsesAccessedValue,
+	cppNullishGuardExpression,
+	cppStatementReturnsNull,
 	findTopLevelCppSemicolon,
-	isCppNullToken,
 	trimmedCppExpressionText,
 } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
@@ -42,7 +44,7 @@ export function lintCppNullishReturnGuards(file: string, tokens: readonly CppTok
 			continue;
 		}
 		const returnedExpression = trimmedCppExpressionText(tokens, returnStart + 1, returnEnd);
-		if (!cppExpressionUsesGuardedValue(returnedExpression, guardedExpression)) {
+		if (!cppExpressionUsesAccessedValue(returnedExpression, guardedExpression)) {
 			continue;
 		}
 		pushLintIssue(
@@ -72,62 +74,6 @@ function cppNullishReturnConsequentEnd(tokens: readonly CppToken[], pairs: reado
 		return -1;
 	}
 	return returnEnd;
-}
-
-function cppStatementReturnsNull(tokens: readonly CppToken[], start: number, end: number): boolean {
-	return tokens[start]?.text === 'return' && end === start + 2 && cppRangeIsNull(tokens, start + 1, end);
-}
-
-function cppNullishGuardExpression(tokens: readonly CppToken[], start: number, end: number): string | null {
-	const orIndex = findTopLevelCppOperator(tokens, start, end, '||');
-	if (orIndex >= 0) {
-		const left = cppNullishGuardExpression(tokens, start, orIndex);
-		const right = cppNullishGuardExpression(tokens, orIndex + 1, end);
-		return left !== null && left === right ? left : null;
-	}
-	const equalsIndex = findTopLevelCppOperator(tokens, start, end, '==');
-	if (equalsIndex < 0) {
-		return null;
-	}
-	if (cppRangeIsNull(tokens, start, equalsIndex)) {
-		return trimmedCppExpressionText(tokens, equalsIndex + 1, end);
-	}
-	if (cppRangeIsNull(tokens, equalsIndex + 1, end)) {
-		return trimmedCppExpressionText(tokens, start, equalsIndex);
-	}
-	return null;
-}
-
-function findTopLevelCppOperator(tokens: readonly CppToken[], start: number, end: number, operator: string): number {
-	let parenDepth = 0;
-	let bracketDepth = 0;
-	let braceDepth = 0;
-	for (let index = start; index < end; index += 1) {
-		const text = tokens[index].text;
-		if (text === '(') parenDepth += 1;
-		else if (text === ')') parenDepth -= 1;
-		else if (text === '[') bracketDepth += 1;
-		else if (text === ']') bracketDepth -= 1;
-		else if (text === '{') braceDepth += 1;
-		else if (text === '}') braceDepth -= 1;
-		else if (text === operator && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) return index;
-	}
-	return -1;
-}
-
-export function cppRangeIsNull(tokens: readonly CppToken[], start: number, end: number): boolean {
-	while (start < end && tokens[start].text === '(' && tokens[end - 1]?.text === ')') {
-		start += 1;
-		end -= 1;
-	}
-	return end === start + 1 && isCppNullToken(tokens[start]);
-}
-
-function cppExpressionUsesGuardedValue(expression: string, guardedExpression: string): boolean {
-	return expression === guardedExpression
-		|| expression.startsWith(`${guardedExpression}.`)
-		|| expression.startsWith(`${guardedExpression}->`)
-		|| expression.startsWith(`${guardedExpression}[`);
 }
 
 export function lintNullishReturnGuard(node: ts.IfStatement, sourceFile: ts.SourceFile, issues: LintIssue[]): void {

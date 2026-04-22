@@ -19,6 +19,12 @@ export type AnalysisRegion = {
 	endLine: number;
 };
 
+export type AnalysisStatement = {
+	kind: string;
+	labels: readonly string[];
+	line: number;
+};
+
 type AnalysisDirective = {
 	line: number;
 	command: string;
@@ -26,6 +32,12 @@ type AnalysisDirective = {
 };
 
 const DEFAULT_ANALYSIS_MARKER = '@code-quality';
+const SUPPRESSION_MODE_PREFIXES: ReadonlyArray<{ prefix: string; mode: LintSuppressionMode }> = [
+	{ prefix: '-next-line', mode: 'next-line' },
+	{ prefix: 'next-line', mode: 'next-line' },
+	{ prefix: '-line', mode: 'line' },
+	{ prefix: 'line', mode: 'line' },
+];
 
 function markerIsInComment(lineText: string, markerIndex: number): boolean {
 	const lineCommentIndex = lineText.indexOf('//');
@@ -52,21 +64,16 @@ function parseSuppressedRules(text: string): ReadonlySet<string> | null {
 
 function parseDirectiveMode(text: string): { mode: LintSuppressionMode; rest: string } {
 	let rest = text.trimStart();
-	let mode: LintSuppressionMode = 'file';
-	if (rest.startsWith('-next-line')) {
-		mode = 'next-line';
-		rest = rest.slice('-next-line'.length);
-	} else if (rest.startsWith('next-line')) {
-		mode = 'next-line';
-		rest = rest.slice('next-line'.length);
-	} else if (rest.startsWith('-line')) {
-		mode = 'line';
-		rest = rest.slice('-line'.length);
-	} else if (rest.startsWith('line')) {
-		mode = 'line';
-		rest = rest.slice('line'.length);
+	for (let index = 0; index < SUPPRESSION_MODE_PREFIXES.length; index += 1) {
+		const prefix = SUPPRESSION_MODE_PREFIXES[index];
+		if (rest.startsWith(prefix.prefix)) {
+			return {
+				mode: prefix.mode,
+				rest: rest.slice(prefix.prefix.length),
+			};
+		}
 	}
-	return { mode, rest };
+	return { mode: 'file', rest };
 }
 
 function findAnalysisDirective(lineText: string, line: number, marker: string): AnalysisDirective | null {
@@ -139,6 +146,42 @@ function parseRegionHeader(text: string): AnalysisRegionHeader | null {
 		}
 	}
 	return kind.length === 0 ? null : { kind, labels };
+}
+
+function directiveIsReservedForSuppressionOrRegion(directive: AnalysisDirective): boolean {
+	switch (directive.command) {
+		case 'start':
+		case 'end':
+		case 'disable':
+			return true;
+		default:
+			return directive.command.startsWith('disable-');
+	}
+}
+
+export function collectAnalysisStatements(sourceText: string, marker = DEFAULT_ANALYSIS_MARKER): AnalysisStatement[] {
+	const statements: AnalysisStatement[] = [];
+	const lines = sourceText.split(/\r\n|\r|\n/);
+	for (let index = 0; index < lines.length; index += 1) {
+		const directive = findAnalysisDirective(lines[index], index + 1, marker);
+		if (directive === null || directiveIsReservedForSuppressionOrRegion(directive)) {
+			continue;
+		}
+		const header = parseRegionHeader(`${directive.command} ${directive.rest}`);
+		if (header !== null) {
+			statements.push({ kind: header.kind, labels: header.labels, line: directive.line });
+		}
+	}
+	return statements;
+}
+
+export function hasAnalysisStatement(statements: readonly AnalysisStatement[], kind: string): boolean {
+	for (let index = 0; index < statements.length; index += 1) {
+		if (statements[index].kind === kind) {
+			return true;
+		}
+	}
+	return false;
 }
 
 export function collectAnalysisRegions(sourceText: string, marker = DEFAULT_ANALYSIS_MARKER): AnalysisRegion[] {

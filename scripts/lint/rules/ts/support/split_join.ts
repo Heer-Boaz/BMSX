@@ -1,7 +1,5 @@
 import ts from 'typescript';
-import { LintIssue, getActiveBinding, pushLintIssue, unwrapExpression } from './ast';
-import { getCallTargetLeafName } from './calls';
-import { LintBinding } from './types';
+import { getCallTargetLeafName, unwrapExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
 
 export function splitJoinDelimiterFingerprint(expression: ts.Expression | undefined): string | null {
 	if (expression === undefined) {
@@ -9,10 +7,14 @@ export function splitJoinDelimiterFingerprint(expression: ts.Expression | undefi
 	}
 	const unwrapped = unwrapExpression(expression);
 	if (ts.isStringLiteralLike(unwrapped)) {
-		if (unwrapped.text === '\n' || unwrapped.text === '\r' || unwrapped.text === '\r\n') {
-			return 'linebreak';
+		switch (unwrapped.text) {
+			case '\n':
+			case '\r':
+			case '\r\n':
+				return 'linebreak';
+			default:
+				return `text:${unwrapped.text}`;
 		}
-		return `text:${unwrapped.text}`;
 	}
 	if (unwrapped.kind === ts.SyntaxKind.RegularExpressionLiteral) {
 		const text = unwrapped.getText();
@@ -40,56 +42,27 @@ export function findSplitLikeDelimiterInExpression(expression: ts.Expression): s
 }
 
 export function isSplitLikeCallTarget(target: string): boolean {
-	return target === 'split'
-		|| target === 'splitText'
-		|| target === 'splitLines'
-		|| target.endsWith('.split')
-		|| target.endsWith('.splitText')
-		|| target.endsWith('.splitLines');
+	switch (getCallTargetLeaf(target)) {
+		case 'split':
+		case 'splitText':
+		case 'splitLines':
+			return true;
+		default:
+			return false;
+	}
 }
 
 export function isJoinLikeCallTarget(target: string): boolean {
-	return target === 'join'
-		|| target === 'joinLines'
-		|| target.endsWith('.join')
-		|| target.endsWith('.joinLines');
+	switch (getCallTargetLeaf(target)) {
+		case 'join':
+		case 'joinLines':
+			return true;
+		default:
+			return false;
+	}
 }
 
-export function lintSplitJoinRoundtripPattern(
-	node: ts.CallExpression,
-	sourceFile: ts.SourceFile,
-	issues: LintIssue[],
-	scopes: Array<Map<string, LintBinding[]>>,
-): void {
-	const outerTarget = getCallTargetLeafName(node.expression);
-	if (outerTarget === null || !isJoinLikeCallTarget(outerTarget)) {
-		return;
-	}
-	const outerExpression = unwrapExpression(node.expression);
-	if (!ts.isPropertyAccessExpression(outerExpression)) {
-		return;
-	}
-	const receiver = unwrapExpression(outerExpression.expression);
-	let splitFingerprint = findSplitLikeDelimiterInExpression(receiver);
-	if (splitFingerprint === null) {
-		if (!ts.isIdentifier(receiver)) {
-			return;
-		}
-		const binding = getActiveBinding(scopes, receiver.text);
-		if (binding === null || binding.splitJoinDelimiterFingerprint === null || binding.readCount !== 0) {
-			return;
-		}
-		splitFingerprint = binding.splitJoinDelimiterFingerprint;
-	}
-	const joinFingerprint = splitJoinDelimiterFingerprint(node.arguments[0]);
-	if (joinFingerprint === null || splitFingerprint !== joinFingerprint) {
-		return;
-	}
-	pushLintIssue(
-		issues,
-		sourceFile,
-		node,
-		'split_join_roundtrip_pattern',
-		'Split/join roundtrip is forbidden. Keep the text in one shape instead of splitting and rejoining it.',
-	);
+function getCallTargetLeaf(target: string): string {
+	const dotIndex = target.lastIndexOf('.');
+	return dotIndex === -1 ? target : target.slice(dotIndex + 1);
 }

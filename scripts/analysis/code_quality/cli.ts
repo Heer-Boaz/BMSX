@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { extname, isAbsolute, relative, resolve } from 'node:path';
 import ts from 'typescript';
 import { collectSourceFiles } from '../file_scan';
-import { addDuplicateExportedTypeIssues, collectExportedTypes, type ExportedTypeInfo } from '../../lint/rules/code_quality/duplicate_exported_type_name_pattern';
+import { addDuplicateExportedTypeIssues, type ExportedTypeInfo } from '../../lint/rules/code_quality/duplicate_exported_type_name_pattern';
 import { addNormalizedBodyDuplicateIssues } from '../../lint/rules/code_quality/normalized_ast_duplicate_pattern';
 import { addSemanticNormalizedBodyDuplicateIssues } from '../../lint/rules/code_quality/semantic_normalized_body_duplicate_pattern';
 import { LintIssue } from '../../lint/rules/ts/support/ast';
@@ -14,7 +14,7 @@ import { type NormalizedBodyInfo } from '../../lint/rules/ts/support/declaration
 import { collectFunctionUsageCounts } from '../../lint/rules/ts/support/function_usage';
 import { addRepeatedStatementSequenceIssues, type StatementSequenceInfo } from '../../lint/rules/common/repeated_statement_sequence_pattern';
 import { ClassInfo, CliOptions, DuplicateGroup, DuplicateKind, DuplicateLocation, FolderLintSummary, ProjectLanguage } from '../../lint/rules/ts/support/types';
-import { buildDuplicateGroups, walkDeclarations } from './declarations';
+import { buildDuplicateGroups, collectExportedTypes, walkDeclarations } from './declarations';
 import { collectClassInfos, collectLintIssues, collectNormalizedBodies } from './source_scan';
 
 export const FILE_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts']);
@@ -22,6 +22,16 @@ export const FILE_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts']);
 export const LINT_SUMMARY_MAX_FOLDER_SEGMENTS = 5;
 
 export const CPP_FILE_EXTENSIONS = new Set(['.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx']);
+
+type LintSummary = {
+	sortedRules: Array<[string, number]>;
+	sortedFolders: FolderLintSummary[];
+};
+
+type DuplicateSummary = {
+	totalDeclarations: number;
+	sortedKinds: Array<[DuplicateKind, number]>;
+};
 
 export function printHelp(): void {
 	console.log('Usage: npx tsx scripts/analysis/code_quality.ts [--csv] [--summary-only] [--fail-on-issues] [--root <path> ...]');
@@ -211,13 +221,7 @@ export function formatPercent(numerator: number, denominator: number): string {
 	return `${((numerator / denominator) * 100).toFixed(1)}%`;
 }
 
-export function printLintSummary(lintIssues: readonly LintIssue[]): void {
-	if (lintIssues.length === 0) {
-		console.log('No lint issues found.');
-		console.log('');
-		return;
-	}
-
+function buildLintSummary(lintIssues: readonly LintIssue[]): LintSummary {
 	const byRule = new Map<string, number>();
 	const byFolder = new Map<string, FolderLintSummary>();
 	for (let issueIndex = 0; issueIndex < lintIssues.length; issueIndex += 1) {
@@ -234,9 +238,34 @@ export function printLintSummary(lintIssues: readonly LintIssue[]): void {
 		folderSummary.total += 1;
 		folderSummary.byRule.set(rule, (folderSummary.byRule.get(rule) ?? 0) + 1);
 	}
+	return {
+		sortedRules: Array.from(byRule.entries()).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0])),
+		sortedFolders: Array.from(byFolder.values()).sort((left, right) => right.total - left.total || left.folder.localeCompare(right.folder)),
+	};
+}
 
-	const sortedRules = Array.from(byRule.entries()).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
-	const sortedFolders = Array.from(byFolder.values()).sort((left, right) => right.total - left.total || left.folder.localeCompare(right.folder));
+function buildDuplicateSummary(groups: readonly DuplicateGroup[]): DuplicateSummary {
+	const byKind = new Map<DuplicateKind, number>();
+	let totalDeclarations = 0;
+	for (let index = 0; index < groups.length; index += 1) {
+		const group = groups[index];
+		totalDeclarations += group.count;
+		byKind.set(group.kind, (byKind.get(group.kind) ?? 0) + group.count);
+	}
+	return {
+		totalDeclarations,
+		sortedKinds: Array.from(byKind.entries()).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0])),
+	};
+}
+
+export function printLintSummary(lintIssues: readonly LintIssue[]): void {
+	if (lintIssues.length === 0) {
+		console.log('No lint issues found.');
+		console.log('');
+		return;
+	}
+
+	const { sortedRules, sortedFolders } = buildLintSummary(lintIssues);
 
 	console.log('High-level lint summary:');
 	console.log(`  Total lint issue(s): ${lintIssues.length}`);
@@ -263,22 +292,7 @@ export function printLintSummary(lintIssues: readonly LintIssue[]): void {
 }
 
 export function printCsvLintSummaryRows(lintIssues: readonly LintIssue[]): void {
-	const byRule = new Map<string, number>();
-	const byFolder = new Map<string, FolderLintSummary>();
-	for (let issueIndex = 0; issueIndex < lintIssues.length; issueIndex += 1) {
-		const issue = lintIssues[issueIndex];
-		const rule = issue.kind;
-		byRule.set(rule, (byRule.get(rule) ?? 0) + 1);
-
-		const folder = getLintSummaryFolder(issue.file);
-		let folderSummary = byFolder.get(folder);
-		if (folderSummary === undefined) {
-			folderSummary = { folder, total: 0, byRule: new Map<string, number>() };
-			byFolder.set(folder, folderSummary);
-		}
-		folderSummary.total += 1;
-		folderSummary.byRule.set(rule, (folderSummary.byRule.get(rule) ?? 0) + 1);
-	}
+	const { sortedRules, sortedFolders } = buildLintSummary(lintIssues);
 
 	console.log([
 		quoteCsv('summary'),
@@ -290,7 +304,7 @@ export function printCsvLintSummaryRows(lintIssues: readonly LintIssue[]): void 
 		quoteCsv(''),
 		quoteCsv(`Total lint issues (${formatPercent(lintIssues.length, lintIssues.length)})`),
 	].join(','));
-	for (const [rule, count] of Array.from(byRule.entries()).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))) {
+	for (const [rule, count] of sortedRules) {
 		const percent = formatPercent(count, lintIssues.length);
 		console.log([
 			quoteCsv('summary'),
@@ -303,7 +317,7 @@ export function printCsvLintSummaryRows(lintIssues: readonly LintIssue[]): void 
 			quoteCsv(`Lint rule "${rule}" count (${percent})`),
 		].join(','));
 	}
-	for (const folderSummary of Array.from(byFolder.values()).sort((left, right) => right.total - left.total || left.folder.localeCompare(right.folder))) {
+	for (const folderSummary of sortedFolders) {
 		const folderPercent = formatPercent(folderSummary.total, lintIssues.length);
 		console.log([
 			quoteCsv('summary'),
@@ -335,13 +349,9 @@ export function printCsvDuplicateSummaryRows(groups: readonly DuplicateGroup[]):
 	if (groups.length === 0) {
 		return;
 	}
-	const totalDuplicateDeclarations = groups.reduce((sum, group) => sum + group.count, 0);
-	const byKind = new Map<DuplicateKind, number>();
-	for (let i = 0; i < groups.length; i += 1) {
-		const group = groups[i];
-		byKind.set(group.kind, (byKind.get(group.kind) ?? 0) + group.count);
-	}
-	const totalPercent = formatPercent(totalDuplicateDeclarations, totalDuplicateDeclarations);
+	const duplicateSummary = buildDuplicateSummary(groups);
+	const totalDeclarations = duplicateSummary.totalDeclarations;
+	const totalPercent = formatPercent(totalDeclarations, totalDeclarations);
 	console.log([
 		quoteCsv('summary'),
 		quoteCsv('duplicate_total_groups'),
@@ -355,15 +365,15 @@ export function printCsvDuplicateSummaryRows(groups: readonly DuplicateGroup[]):
 	console.log([
 		quoteCsv('summary'),
 		quoteCsv('duplicate_total_declarations'),
-		quoteCsv(totalDuplicateDeclarations),
+		quoteCsv(totalDeclarations),
 		quoteCsv(''),
 		quoteCsv(totalPercent),
 		quoteCsv(''),
 		quoteCsv(''),
-		quoteCsv(`Total duplicated declarations: ${totalDuplicateDeclarations} (${totalPercent})`),
+		quoteCsv(`Total duplicated declarations: ${totalDeclarations} (${totalPercent})`),
 	].join(','));
-	for (const [kind, count] of Array.from(byKind.entries()).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))) {
-		const percent = formatPercent(count, totalDuplicateDeclarations);
+	for (const [kind, count] of duplicateSummary.sortedKinds) {
+		const percent = formatPercent(count, totalDeclarations);
 		console.log([
 			quoteCsv('summary'),
 			quoteCsv(`duplicate_kind:${kind}`),
@@ -381,20 +391,14 @@ export function printDuplicateSummary(groups: readonly DuplicateGroup[]): void {
 	if (groups.length === 0) {
 		return;
 	}
-	const totalDuplicateDeclarations = groups.reduce((sum, group) => sum + group.count, 0);
-	const byKind = new Map<DuplicateKind, number>();
-	for (let i = 0; i < groups.length; i += 1) {
-		const group = groups[i];
-		byKind.set(group.kind, (byKind.get(group.kind) ?? 0) + group.count);
-	}
-	const sortedKinds = Array.from(byKind.entries()).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+	const duplicateSummary = buildDuplicateSummary(groups);
 	console.log('High-level duplicate summary:');
 	console.log(`  Total duplicate declaration groups: ${groups.length}`);
-	console.log(`  Total duplicated declarations: ${totalDuplicateDeclarations}`);
+	console.log(`  Total duplicated declarations: ${duplicateSummary.totalDeclarations}`);
 	console.log('  By kind:');
-	for (let i = 0; i < sortedKinds.length; i += 1) {
-		const kind = sortedKinds[i];
-		const percent = formatPercent(kind[1], totalDuplicateDeclarations);
+	for (let i = 0; i < duplicateSummary.sortedKinds.length; i += 1) {
+		const kind = duplicateSummary.sortedKinds[i];
+		const percent = formatPercent(kind[1], duplicateSummary.totalDeclarations);
 		console.log(`    ${kind[0]}: ${kind[1]} (${percent})`);
 	}
 	console.log('');
@@ -480,7 +484,7 @@ export function printTextReport(groups: DuplicateGroup[], lintIssues: LintIssue[
 }
 
 export function quoteCsv(value: string | number | undefined): string {
-	const text = `${value ?? ''}`;
+	const text = value === undefined ? '' : `${value}`;
 	if (text.includes('"') || text.includes(',') || text.includes('\n') || text.includes('\r') || text.includes('\t')) {
 		return `"${text.replace(/"/g, '""')}"`;
 	}
@@ -499,7 +503,7 @@ export function printCsvReport(groups: DuplicateGroup[], lintIssues: LintIssue[]
 					quoteCsv(formatVscodeLocationLink(location.file, location.line, location.column)),
 					quoteCsv(location.line),
 					quoteCsv(location.column),
-					quoteCsv(location.context ?? ''),
+						quoteCsv(location.context === undefined ? '' : location.context),
 					quoteCsv(''),
 				].join(','));
 			}

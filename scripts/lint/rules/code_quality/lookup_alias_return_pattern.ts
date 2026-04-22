@@ -1,8 +1,7 @@
 import { defineLintRule } from '../../rule';
 import { type TsLintIssue as LintIssue, pushTsLintIssue } from '../../ts_rule';
 import ts from 'typescript';
-import { unwrapExpression } from '../ts/support/ast';
-import { isLookupCallExpression } from '../ts/support/calls';
+import { isLookupCallExpression, unwrapExpression } from '../../../../src/bmsx/language/ts/ast/expressions';
 import { expressionAccessFingerprint } from '../ts/support/declarations';
 import { isNullishReturnStatement } from '../ts/support/nullish';
 import { nextStatementAfter, previousStatementBefore } from '../ts/support/statements';
@@ -39,15 +38,7 @@ export function lintLookupAliasOptionalChain(node: ts.Statement, sourceFile: ts.
 		if (next === null || !ts.isReturnStatement(next) || next.expression === undefined) {
 			return;
 		}
-		const returnedFingerprint = expressionAccessFingerprint(next.expression);
-		if (
-			returnedFingerprint === null
-			|| returnedFingerprint === declarationFingerprint
-			|| (
-				!returnedFingerprint.startsWith(`${declarationFingerprint}.`)
-				&& !returnedFingerprint.startsWith(`${declarationFingerprint}[`)
-			)
-		) {
+		if (!isLookupProjectionFingerprint(expressionAccessFingerprint(next.expression), declarationFingerprint)) {
 			return;
 		}
 		pushTsLintIssue(
@@ -63,14 +54,7 @@ export function lintLookupAliasOptionalChain(node: ts.Statement, sourceFile: ts.
 		return;
 	}
 	const returnedFingerprint = expressionAccessFingerprint(node.expression);
-	if (
-		returnedFingerprint === null
-		|| returnedFingerprint === declarationFingerprint
-		|| (
-			!returnedFingerprint.startsWith(`${declarationFingerprint}.`)
-			&& !returnedFingerprint.startsWith(`${declarationFingerprint}[`)
-		)
-	) {
+	if (!isLookupProjectionFingerprint(returnedFingerprint, declarationFingerprint)) {
 		return;
 	}
 	pushTsLintIssue(
@@ -80,4 +64,13 @@ export function lintLookupAliasOptionalChain(node: ts.Statement, sourceFile: ts.
 		lookupAliasReturnPatternRule.name,
 		'Temporary lookup alias is forbidden. Inline the lookup expression directly and use optional chaining on it instead.',
 	);
+}
+
+function isLookupProjectionFingerprint(returnedFingerprint: string | null, declarationFingerprint: string): boolean {
+	return returnedFingerprint !== null
+		&& returnedFingerprint !== declarationFingerprint
+		&& (
+			returnedFingerprint.startsWith(`${declarationFingerprint}.`)
+			|| returnedFingerprint.startsWith(`${declarationFingerprint}[`)
+		);
 }

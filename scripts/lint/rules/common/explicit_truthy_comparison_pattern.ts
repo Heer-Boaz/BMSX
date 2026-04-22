@@ -1,7 +1,8 @@
 import { LuaBinaryOperator, LuaSyntaxKind, type LuaExpression } from '../../../../src/bmsx/lua/syntax/ast';
 import { isCppBooleanToken } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import { lintCppAdjacentEqualityComparison } from '../cpp/support/comparison';
+import type { CppLintIssue } from '../cpp/support/diagnostics';
 import type { LuaLintIssue, LuaLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 
@@ -39,18 +40,12 @@ function isLuaBooleanLiteralExpression(expression: LuaExpression): boolean {
 }
 
 export function lintCppExplicitTruthyComparisonPattern(file: string, tokens: readonly CppToken[], issues: CppLintIssue[]): void {
-	for (let index = 0; index < tokens.length; index += 1) {
-		const token = tokens[index];
-		if (token.text !== '==' && token.text !== '!=') {
-			continue;
-		}
-		const left = tokens[index - 1];
-		const right = tokens[index + 1];
-		if (left === undefined || right === undefined) {
-			continue;
-		}
-		if ((isCppBooleanToken(left) && !isCppBooleanToken(right)) || (isCppBooleanToken(right) && !isCppBooleanToken(left))) {
-			pushLintIssue(issues, file, token, explicitTruthyComparisonPatternRule.name, 'Explicit boolean literal comparison is forbidden. Use truthy/falsy checks instead.');
-		}
-	}
+	lintCppAdjacentEqualityComparison(
+		file,
+		tokens,
+		issues,
+		explicitTruthyComparisonPatternRule.name,
+		'Explicit boolean literal comparison is forbidden. Use truthy/falsy checks instead.',
+		(left, right) => (isCppBooleanToken(left) && !isCppBooleanToken(right)) || (isCppBooleanToken(right) && !isCppBooleanToken(left)),
+	);
 }

@@ -1,6 +1,6 @@
 import ts from 'typescript';
 import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
-import { collectCppStatementRanges, cppCallTargetFromStatement } from '../../../../src/bmsx/language/cpp/syntax/syntax';
+import { collectCppStatementRanges, cppCallTargetFromStatement, isCppAccessSpecifier } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import { normalizedCppTokenText, type CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
@@ -81,7 +81,13 @@ function isCppDuplicateStatementBoundary(tokens: readonly CppToken[], start: num
 		return true;
 	}
 	const first = tokens[start].text;
-	return first === 'case' || first === 'default' || first === 'public' || first === 'private' || first === 'protected';
+	switch (first) {
+		case 'case':
+		case 'default':
+			return true;
+		default:
+			return isCppAccessSpecifier(first);
+	}
 }
 
 function cppRangeHasBrace(tokens: readonly CppToken[], start: number, end: number): boolean {

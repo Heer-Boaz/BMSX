@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { cppCallTarget, splitCppArgumentRanges } from '../../../../src/bmsx/language/cpp/syntax/syntax';
+import { cppCallTarget, cppQualifiedNameHasLeaf, splitCppArgumentRanges } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import { type CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { type CppLintIssue, pushLintIssue } from '../cpp/support/diagnostics';
 
@@ -14,7 +14,7 @@ export function lintCppEagerValueOrFallbackPattern(
 ): boolean {
 	const token = tokens[openParen];
 	const target = cppCallTarget(tokens, openParen);
-	if (target === null || (target !== 'value_or' && !target.endsWith('.value_or') && !target.endsWith('::value_or'))) {
+	if (target === null || !cppQualifiedNameHasLeaf(target, 'value_or')) {
 		return false;
 	}
 	if (!cppValueOrHasEagerFallbackWork(tokens, pairs, openParen)) {
@@ -42,8 +42,11 @@ function cppValueOrHasEagerFallbackWork(tokens: readonly CppToken[], pairs: read
 	const [start, end] = args[0];
 	for (let index = start; index < end; index += 1) {
 		const text = tokens[index].text;
-		if (text === 'new' || text === '{' || text === '[') {
-			return true;
+		switch (text) {
+			case 'new':
+			case '{':
+			case '[':
+				return true;
 		}
 		if (text === '(' && pairs[index] > index && pairs[index] < end) {
 			return true;

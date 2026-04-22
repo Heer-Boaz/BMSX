@@ -1,4 +1,4 @@
-import { cppCallTarget } from '../../../../src/bmsx/language/cpp/syntax/syntax';
+import { cppCallTarget, cppQualifiedNameHasLeaf } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
@@ -22,7 +22,7 @@ export function lintCppOptionalValueOrFallbackPatterns(
 			continue;
 		}
 		const target = cppCallTarget(tokens, index);
-		if (target === null || (target !== 'value_or' && !target.endsWith('.value_or') && !target.endsWith('::value_or'))) {
+		if (target === null || !cppQualifiedNameHasLeaf(target, 'value_or')) {
 			continue;
 		}
 		if (lintCppEagerValueOrFallbackPattern(file, tokens, pairs, index, issues)) {

@@ -4,9 +4,9 @@ import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { type TsLintIssue as LintIssue, pushTsLintIssue } from '../../ts_rule';
 import ts from 'typescript';
+import { isFunctionLikeValue } from '../../../../src/bmsx/language/ts/ast/functions';
+import { hasExportModifier } from '../../../../src/bmsx/language/ts/ast/expressions';
 import { getFunctionWrapperTarget } from '../ts/support/declarations';
-import { isFunctionLikeValue } from '../ts/support/functions';
-import { hasExportModifier } from '../ts/support/runtime_patterns';
 
 export const facadeModuleDensityPatternRule = defineLintRule('code_quality', 'facade_module_density_pattern');
 

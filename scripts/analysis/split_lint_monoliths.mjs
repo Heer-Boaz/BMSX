@@ -690,8 +690,11 @@ function tsSupportModuleForName(name) {
 	if (/Semantic|semantic|SEMANTIC/.test(name)) {
 		return resolve(root, 'scripts/lint/rules/ts/support/semantic.ts');
 	}
-	if (/Numeric|numeric|CONTRACT|Contract|Raster|Color|Sanitiz/.test(name)) {
-		return resolve(root, 'scripts/lint/rules/ts/support/numeric.ts');
+	if (/NumericLiteral/.test(name)) {
+		return resolve(root, 'src/bmsx/language/ts/ast/literals.ts');
+	}
+	if (/Numeric|numeric|CONTRACT|Contract|Sanitiz/.test(name)) {
+		return resolve(root, 'src/bmsx/language/ts/ast/semantic.ts');
 	}
 	if (/Nullish|nullish|Undefined|undefined|Guard|guard/.test(name)) {
 		return resolve(root, 'scripts/lint/rules/ts/support/nullish.ts');
@@ -702,14 +705,17 @@ function tsSupportModuleForName(name) {
 	if (/SingleUse|LocalConst|Snapshot|Temporal|ConsumeBeforeClear|shouldReportLocal|shouldReportSingle/.test(name)) {
 		return resolve(root, 'scripts/lint/rules/ts/support/local_bindings.ts');
 	}
-	if (/DeclarationIdentifier|IdentifierProperty|AssignmentOperator|WriteIdentifier|ScopeBoundary|InsideLoop|ClassScope|ExpressionInScopeFingerprint/.test(name)) {
+	if (/DeclarationIdentifier|IdentifierProperty|WriteIdentifier|ScopeBoundary|InsideLoop|ClassScope|ExpressionInScopeFingerprint/.test(name)) {
 		return resolve(root, 'scripts/lint/rules/ts/support/bindings.ts');
+	}
+	if (/AssignmentOperator|BooleanProducingOperator|Comparison|Equality|Ordering|PositiveEquality|NullishEquality|NullishInequality/.test(name)) {
+		return resolve(root, 'src/bmsx/language/ts/ast/operators.ts');
 	}
 	if (/OptionalChain|Allocation|Closure|DirectMutation|PrimitivePredicate|TrivialDelegation|PrivateOrProtected|PublicContract|Boundary|WrapperName|ExportModifier/.test(name)) {
 		return resolve(root, 'scripts/lint/rules/ts/support/runtime_patterns.ts');
 	}
 	if (/FunctionLike|FunctionSignature|FunctionExpression|FunctionBody|FunctionUsageExpression|UsageCountForNames/.test(name)) {
-		return resolve(root, 'scripts/lint/rules/ts/support/functions.ts');
+		return resolve(root, 'src/bmsx/language/ts/ast/functions.ts');
 	}
 	if (/Statement|LoopCondition|ParentAndSibling/.test(name)) {
 		return resolve(root, 'scripts/lint/rules/ts/support/statements.ts');
@@ -718,7 +724,7 @@ function tsSupportModuleForName(name) {
 		return resolve(root, 'scripts/lint/rules/ts/support/split_join.ts');
 	}
 	if (/CallTarget|LookupCall|ExpressionRoot|QuestionDot|TargetLeaf|callTargetText/.test(name)) {
-		return resolve(root, 'scripts/lint/rules/ts/support/calls.ts');
+		return resolve(root, 'src/bmsx/language/ts/ast/expressions.ts');
 	}
 	if (/String|Switch|OrChain|Literal|truthy|Boolean|Comparison|Equality|Fallback|Container/.test(name)) {
 		return resolve(root, 'scripts/lint/rules/ts/support/conditions.ts');
@@ -894,11 +900,9 @@ const TS_TYPE_DECLARATIONS = new Set([
 	'DuplicateLocation',
 	'DuplicateGroup',
 	'LintBinding',
-	'SemanticBodyCallSignature',
 	'FunctionUsageInfo',
 	'CliOptions',
 	'ProjectLanguage',
-	'FunctionLikeWithSignature',
 	'NullishLiteralKind',
 	'ExplicitValueCheck',
 	'FolderLintSummary',

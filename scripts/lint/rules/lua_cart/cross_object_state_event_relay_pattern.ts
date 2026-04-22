@@ -2,7 +2,7 @@ import { defineLintRule } from '../../rule';
 import { type LuaCallExpression, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../lua_rule';
 import { forbiddenDispatchPatternRule } from './forbidden_dispatch_pattern';
-import { getCallReceiverExpression } from './impl/support/calls';
+import { getCallReceiverExpression } from '../../../../src/bmsx/lua/syntax/calls';
 import { isCrossObjectDispatchStateEventCallExpression, isObjectOrServiceResolverCallExpression } from './impl/support/object_ownership';
 import { activeLintRules, pushIssue } from './impl/support/lint_context';
 

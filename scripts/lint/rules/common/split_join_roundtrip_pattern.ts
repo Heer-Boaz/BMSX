@@ -1,8 +1,8 @@
 import { defineLintRule } from '../../rule';
 import { type TsLintIssue as LintIssue, pushTsLintIssue } from '../../ts_rule';
 import ts from 'typescript';
-import { getActiveBinding, unwrapExpression } from '../ts/support/ast';
-import { getCallTargetLeafName } from '../ts/support/calls';
+import { getCallTargetLeafName, unwrapExpression } from '../../../../src/bmsx/language/ts/ast/expressions';
+import { getActiveBinding } from '../ts/support/ast';
 import { findSplitLikeDelimiterInExpression, isJoinLikeCallTarget, splitJoinDelimiterFingerprint } from '../ts/support/split_join';
 import { LintBinding } from '../ts/support/types';
 

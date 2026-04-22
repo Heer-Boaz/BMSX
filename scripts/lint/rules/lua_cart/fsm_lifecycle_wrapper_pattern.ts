@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
 import { type LuaExpression, LuaSyntaxKind, LuaTableFieldKind } from '../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../lua_rule';
-import { getCallMethodName } from './impl/support/calls';
+import { getCallMethodName } from '../../../../src/bmsx/lua/syntax/calls';
 import { FSM_DELEGATE_HANDLER_KEYS } from './impl/support/fsm_core';
 import { getLifecycleWrapperCallExpression } from './impl/support/fsm_events';
 import { getTableFieldKey } from './impl/support/table_fields';

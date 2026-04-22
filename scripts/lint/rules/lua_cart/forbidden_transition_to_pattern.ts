@@ -2,7 +2,7 @@ import { defineLintRule } from '../../rule';
 import { type LuaCallExpression } from '../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../lua_rule';
 import { lintForbiddenMatchesStatePathPattern } from './forbidden_matches_state_path_pattern';
-import { getCallMethodName, getCallReceiverName } from './impl/support/calls';
+import { getCallMethodName, getCallReceiverName } from '../../../../src/bmsx/lua/syntax/calls';
 import { FORBIDDEN_STATE_CALL_RECEIVERS } from './impl/support/general';
 import { pushIssue } from './impl/support/lint_context';
 

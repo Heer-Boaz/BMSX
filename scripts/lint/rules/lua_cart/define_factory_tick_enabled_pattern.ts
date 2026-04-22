@@ -2,7 +2,7 @@ import { defineLintRule } from '../../rule';
 import { type LuaCallExpression, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../lua_rule';
 import { lintDefineFactorySpaceIdPattern } from './define_factory_space_id_pattern';
-import { isGlobalCall } from './impl/support/calls';
+import { isGlobalCall } from '../../../../src/bmsx/lua/syntax/calls';
 import { getTableFieldKey, visitTableFieldsRecursively } from './impl/support/table_fields';
 import { pushIssue } from './impl/support/lint_context';
 

@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
 import { type LuaFunctionExpression } from '../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../lua_rule';
-import { findCallExpressionInStatements } from './impl/support/calls';
+import { findCallExpressionInStatements } from '../../../../src/bmsx/lua/syntax/calls';
 import { isTickInputCheckCallExpression } from './impl/support/fsm_core';
 import { pushIssue } from './impl/support/lint_context';
 

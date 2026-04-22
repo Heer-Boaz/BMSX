@@ -3,19 +3,16 @@ import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { pushTsLintIssue, type TsLintIssue } from '../../ts_rule';
+import { isDoubleUnderscoreSentinelString } from '../../../analysis/code_quality/string_contracts';
 
 export const legacySentinelStringPatternRule = defineLintRule('code_quality', 'legacy_sentinel_string_pattern');
-
-export function isLegacySentinelString(text: string): boolean {
-	return /^__[A-Za-z0-9_]+__$/.test(text);
-}
 
 export function lintLegacySentinelStringPattern(
 	sourceFile: ts.SourceFile,
 	node: ts.StringLiteral | ts.NoSubstitutionTemplateLiteral,
 	issues: TsLintIssue[],
 ): void {
-	if (!isLegacySentinelString(node.text)) {
+	if (!isDoubleUnderscoreSentinelString(node.text)) {
 		return;
 	}
 	pushTsLintIssue(
@@ -30,7 +27,7 @@ export function lintLegacySentinelStringPattern(
 export function lintCppLegacySentinelStringPattern(file: string, tokens: readonly CppToken[], issues: CppLintIssue[]): void {
 	for (let index = 0; index < tokens.length; index += 1) {
 		const token = tokens[index];
-		if (token.kind !== 'string' || !isLegacySentinelString(token.text)) {
+		if (token.kind !== 'string' || !isDoubleUnderscoreSentinelString(token.text)) {
 			continue;
 		}
 		pushLintIssue(

@@ -4,6 +4,35 @@ import { getConstantCopyBinding } from './constant_copy';
 import { getExpressionKeyName } from './expression_signatures';
 import { AssignmentTargetInfo, ConstantCopyContext, SingleUseLocalBinding, TopLevelLocalStringConstant } from './types';
 
+export type NamedLuaBindingScope = {
+	readonly names: readonly string[];
+};
+
+export function leaveLuaBindingScope<TBinding>(
+	scopeStack: NamedLuaBindingScope[],
+	bindingStacksByName: Map<string, TBinding[]>,
+	visitBinding: (binding: TBinding) => void,
+): void {
+	const scope = scopeStack.pop();
+	if (!scope) {
+		return;
+	}
+	for (let index = scope.names.length - 1; index >= 0; index -= 1) {
+		const name = scope.names[index];
+		const stack = bindingStacksByName.get(name);
+		if (!stack || stack.length === 0) {
+			continue;
+		}
+		const binding = stack.pop();
+		if (binding !== undefined) {
+			visitBinding(binding);
+		}
+		if (stack.length === 0) {
+			bindingStacksByName.delete(name);
+		}
+	}
+}
+
 export function isIdentifier(expression: LuaExpression, name: string): boolean {
 	return expression.kind === LuaSyntaxKind.IdentifierExpression && expression.name === name;
 }

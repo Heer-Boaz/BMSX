@@ -1,7 +1,8 @@
 import { defineLintRule } from '../../rule';
 import ts from 'typescript';
-import { LintIssue, pushLintIssue, unwrapExpression } from '../ts/support/ast';
-import { isFunctionExpressionLike } from '../ts/support/functions';
+import { unwrapExpression } from '../../../../src/bmsx/language/ts/ast/expressions';
+import { isFunctionExpressionLike } from '../../../../src/bmsx/language/ts/ast/functions';
+import { LintIssue, pushLintIssue } from '../ts/support/ast';
 import { containsClosureExpression } from '../ts/support/runtime_patterns';
 
 export const hotPathClosureArgumentPatternRule = defineLintRule('code_quality', 'hot_path_closure_argument_pattern');

@@ -44,11 +44,6 @@ export type LintBinding = {
 	consumeBeforeClearSnapshot: boolean;
 };
 
-export type SemanticBodyCallSignature = {
-	key: string;
-	hasLiteralAnchor: boolean;
-};
-
 export type FunctionUsageInfo = {
 	totalCounts: ReadonlyMap<string, number>;
 	referenceCounts: ReadonlyMap<string, number>;
@@ -62,12 +57,6 @@ export type CliOptions = {
 };
 
 export type ProjectLanguage = 'cpp' | 'ts' | 'mixed' | 'unknown';
-
-export type FunctionLikeWithSignature = {
-	parameters?: ts.NodeArray<ts.ParameterDeclaration> | undefined;
-	typeParameters?: ts.NodeArray<ts.TypeParameterDeclaration>;
-	type?: ts.TypeNode;
-};
 
 export type NullishLiteralKind = 'null' | 'undefined';
 

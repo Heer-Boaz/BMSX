@@ -2,7 +2,7 @@ import { defineLintRule } from '../../rule';
 import { type LuaCallExpression, LuaSyntaxKind, type LuaTableField, LuaTableFieldKind } from '../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../lua_rule';
 import { btIdLabelPatternRule } from './bt_id_label_pattern';
-import { isGlobalCall } from './impl/support/calls';
+import { isGlobalCall } from '../../../../src/bmsx/lua/syntax/calls';
 import { containsLabel, lintCollectionStringValuesForLabel } from './impl/support/fsm_labels';
 import { appendSuggestionMessage } from './impl/support/general';
 import { pushIssue } from './impl/support/lint_context';

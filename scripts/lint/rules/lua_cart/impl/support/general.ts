@@ -1,6 +1,6 @@
 import { LuaBinaryOperator, type LuaBooleanLiteralExpression, type LuaExpression, type LuaFunctionExpression, type LuaIdentifierExpression, type LuaIfStatement, type LuaIndexExpression, type LuaMemberExpression, type LuaNumericLiteralExpression, type LuaStatement, type LuaStringLiteralExpression, LuaSyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { conditionComparesIdentifierWithValue, getReturnedCallToIdentifier } from './bindings';
-import { isErrorCallExpression } from './calls';
+import { isErrorCallExpression } from '../../../../../../src/bmsx/lua/syntax/calls';
 import { isNilExpression } from './conditions';
 import { removeLabel } from './fsm_labels';
 import { getFunctionLeafName, isDelegationCallCandidate } from './functions';

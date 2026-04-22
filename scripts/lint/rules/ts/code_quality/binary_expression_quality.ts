@@ -6,9 +6,12 @@ import { lintDefensiveTypeofFunctionPattern } from '../../code_quality/defensive
 import { lintNullishCounterIncrementPattern } from '../../code_quality/nullish_counter_increment_pattern';
 import { lintNullishNullNormalizationPattern } from '../../code_quality/nullish_null_normalization_pattern';
 import { lintEmptyContainerFallbackPattern } from '../../common/empty_container_fallback_pattern';
-import { LintIssue, isExplicitNonJsTruthinessPair, pushLintIssue, unwrapExpression } from '../support/ast';
-import { collectStringOrChainSubjects, isBooleanLiteral, isBooleanLiteralComparisonSmell, isEmptyStringLiteral, isEqualityOperator } from '../support/conditions';
-import { isNullOrUndefined, nullishFallbackLedgerKind } from '../support/nullish';
+import { unwrapExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
+import { isBooleanLiteral, isEmptyStringLiteral, isNullOrUndefined } from '../../../../../src/bmsx/language/ts/ast/literals';
+import { isEqualityOperator } from '../../../../../src/bmsx/language/ts/ast/operators';
+import { LintIssue, isExplicitNonJsTruthinessPair, pushLintIssue } from '../support/ast';
+import { collectStringOrChainSubjects, isBooleanLiteralComparisonSmell } from '../support/conditions';
+import { nullishFallbackLedgerKind } from '../support/nullish';
 
 export function lintBinaryExpressionForCodeQuality(
 	node: ts.BinaryExpression,

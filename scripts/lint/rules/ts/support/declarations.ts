@@ -2,12 +2,13 @@ import { type AnalysisRegion } from '../../../../analysis/lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../../../../analysis/quality_ledger';
 import ts from 'typescript';
 import { nodeIsInAnalysisRegion } from '../../../../analysis/code_quality/source_scan';
-import { LintIssue, NORMALIZED_BODY_MIN_LENGTH, getCallExpressionTarget, hasModifier, isExpressionChildOfLargerExpression, pushLintIssue, unwrapExpression } from './ast';
-import { isExpressionInScopeFingerprint, isTsAssignmentOperator } from './bindings';
-import { isFunctionLikeValue } from './functions';
+import { getCallExpressionTarget, hasExportModifier, hasModifier, isExpressionChildOfLargerExpression, unwrapExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
+import { isPublicMethodDeclaration } from '../../../../../src/bmsx/language/ts/ast/functions';
+import { isAssignmentOperator } from '../../../../../src/bmsx/language/ts/ast/operators';
+import { NORMALIZED_BODY_MIN_LENGTH } from './ast';
+import { isExpressionInScopeFingerprint } from './bindings';
 import { isTemporalSnapshotInitializer } from './local_bindings';
-import { isPublicContractMethod } from './numeric';
-import { hasExportModifier, isBoundaryStyleWrapperName, isNamedPrimitivePredicate, isTrivialDelegationCallExpression } from './runtime_patterns';
+import { isBoundaryStyleWrapperName, isNamedPrimitivePredicate, isTrivialDelegationCallExpression } from './runtime_patterns';
 import { collectSemanticBodySignatures } from './semantic';
 import { getSingleStatementWrapperTarget, isLoopConditionExpression } from './statements';
 
@@ -105,7 +106,7 @@ export function repeatedExpressionFingerprint(node: ts.Expression, sourceFile: t
 	if (isLoopConditionExpression(node, parent)) {
 		return null;
 	}
-	if (parent !== undefined && ts.isBinaryExpression(parent) && isTsAssignmentOperator(parent.operatorToken.kind) && parent.left === node) {
+	if (parent !== undefined && ts.isBinaryExpression(parent) && isAssignmentOperator(parent.operatorToken.kind) && parent.left === node) {
 		return null;
 	}
 	if (ts.isCallExpression(node)) {
@@ -119,7 +120,7 @@ export function repeatedExpressionFingerprint(node: ts.Expression, sourceFile: t
 	) {
 		return null;
 	}
-	if (ts.isBinaryExpression(node) && isTsAssignmentOperator(node.operatorToken.kind)) {
+	if (ts.isBinaryExpression(node) && isAssignmentOperator(node.operatorToken.kind)) {
 		return null;
 	}
 	if (isTemporalSnapshotInitializer(node, parent)) {
@@ -139,7 +140,7 @@ export function isSingleLineWrapperCandidate(functionNode: ts.Node, _sourceFile:
 	if (!ts.isFunctionDeclaration(functionNode) && !ts.isMethodDeclaration(functionNode)) {
 		return false;
 	}
-	if (hasExportModifier(functionNode) || isPublicContractMethod(functionNode)) {
+	if (hasExportModifier(functionNode) || isPublicMethodDeclaration(functionNode)) {
 		return false;
 	}
 	const name = functionNode.name?.getText();
@@ -251,47 +252,6 @@ export const BOUNDARY_WRAPPER_NAME_WORDS: ReadonlySet<string> = new Set([
 	'with',
 ]);
 
-export function lintFacadeModuleDensity(sourceFile: ts.SourceFile, issues: LintIssue[]): void {
-	let exportedCallableCount = 0;
-	let exportedWrapperCount = 0;
-	let firstWrapperNode: ts.Node | null = null;
-	for (let index = 0; index < sourceFile.statements.length; index += 1) {
-		const statement = sourceFile.statements[index];
-		if (ts.isFunctionDeclaration(statement) && statement.body !== undefined && hasExportModifier(statement)) {
-			exportedCallableCount += 1;
-			if (getFunctionWrapperTarget(statement) !== null) {
-				exportedWrapperCount += 1;
-				firstWrapperNode ??= statement.name ?? statement;
-			}
-			continue;
-		}
-		if (!ts.isVariableStatement(statement) || !hasExportModifier(statement)) {
-			continue;
-		}
-		const declarations = statement.declarationList.declarations;
-		for (let declarationIndex = 0; declarationIndex < declarations.length; declarationIndex += 1) {
-			const declaration = declarations[declarationIndex];
-			if (!isFunctionLikeValue(declaration.initializer)) {
-				continue;
-			}
-			exportedCallableCount += 1;
-			if (getFunctionWrapperTarget(declaration.initializer) !== null) {
-				exportedWrapperCount += 1;
-				firstWrapperNode ??= declaration.name;
-			}
-		}
-	}
-	if (exportedWrapperCount >= 3 && exportedWrapperCount * 10 >= exportedCallableCount * 6 && firstWrapperNode !== null) {
-		pushLintIssue(
-			issues,
-			sourceFile,
-			firstWrapperNode,
-			'facade_module_density_pattern',
-			`Module exports ${exportedWrapperCount}/${exportedCallableCount} callable wrappers. Facade modules are forbidden; move ownership to the real module.`,
-		);
-	}
-}
-
 export function normalizedAstFingerprint(node: ts.Node): string {
 	const parts: string[] = [];
 	const visit = (current: ts.Node): void => {
@@ -336,7 +296,7 @@ export function collectNormalizedBody(
 		noteQualityLedger(ledger, 'skipped_normalized_body_exported');
 		return;
 	}
-	if (isPublicContractMethod(node)) {
+	if (isPublicMethodDeclaration(node)) {
 		noteQualityLedger(ledger, 'skipped_normalized_body_public_contract');
 		return;
 	}

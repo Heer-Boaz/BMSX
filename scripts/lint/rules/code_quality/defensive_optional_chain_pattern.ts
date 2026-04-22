@@ -1,8 +1,8 @@
 import { defineLintRule } from '../../rule';
 import ts from 'typescript';
 import { lineHasAnalysisRegionLabel, type AnalysisRegion } from '../../../analysis/lint_suppressions';
-import { LintIssue, expressionRootName, nodeStartLine, pushLintIssue } from '../ts/support/ast';
-import { hasQuestionDotToken } from '../ts/support/calls';
+import { expressionRootName, hasQuestionDotToken } from '../../../../src/bmsx/language/ts/ast/expressions';
+import { LintIssue, nodeStartLine, pushLintIssue } from '../ts/support/ast';
 
 export const defensiveOptionalChainPatternRule = defineLintRule('code_quality', 'defensive_optional_chain_pattern');
 

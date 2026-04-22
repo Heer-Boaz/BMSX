@@ -1,5 +1,7 @@
-import { LuaBinaryOperator, LuaSyntaxKind, type LuaExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { LuaBinaryOperator, type LuaExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { isLuaEmptyStringLiteral, luaBinaryExpressionHasOperand } from '../../../../src/bmsx/lua/syntax/literals';
 import {
+	cppRangeIsNull,
 	cppRangeHas,
 	findCppTernaryColon,
 	findNextCppDelimiter,
@@ -11,7 +13,6 @@ import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { nullishNullNormalizationPatternRule } from '../code_quality/nullish_null_normalization_pattern';
 import { redundantConditionalPatternRule } from '../code_quality/redundant_conditional_pattern';
-import { cppRangeIsNull } from '../code_quality/nullish_return_guard_pattern';
 import type { LuaLintIssue, LuaLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 import { orNilFallbackPatternRule } from './or_nil_fallback_pattern';
@@ -19,7 +20,7 @@ import { orNilFallbackPatternRule } from './or_nil_fallback_pattern';
 export const emptyStringFallbackPatternRule = defineLintRule('common', 'empty_string_fallback_pattern');
 
 export function lintLuaEmptyStringFallbackPattern(expression: LuaExpression, issues: LuaLintIssue[], pushIssue: LuaLintIssuePusher): void {
-	if (!matchesLuaEmptyStringFallbackPattern(expression)) {
+	if (!luaBinaryExpressionHasOperand(expression, LuaBinaryOperator.Or, isLuaEmptyStringLiteral)) {
 		return;
 	}
 	pushIssue(
@@ -28,17 +29,6 @@ export function lintLuaEmptyStringFallbackPattern(expression: LuaExpression, iss
 		expression,
 		'Empty-string fallback via "or \'\'" is forbidden. Do not use empty strings as fallback/default values; keep string truthy-check semantics intact.',
 	);
-}
-
-function matchesLuaEmptyStringFallbackPattern(expression: LuaExpression): boolean {
-	if (expression.kind !== LuaSyntaxKind.BinaryExpression || expression.operator !== LuaBinaryOperator.Or) {
-		return false;
-	}
-	return isLuaEmptyStringLiteral(expression.left) || isLuaEmptyStringLiteral(expression.right);
-}
-
-function isLuaEmptyStringLiteral(expression: LuaExpression): boolean {
-	return expression.kind === LuaSyntaxKind.StringLiteralExpression && expression.value === '';
 }
 
 export function lintCppTernaryFallbackPatterns(file: string, tokens: readonly CppToken[], issues: CppLintIssue[]): void {

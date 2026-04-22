@@ -3,6 +3,8 @@ import {
 	CPP_POST_FUNCTION_QUALIFIERS,
 	cppCallTarget,
 	cppCallTargetFromStatement,
+	cppRangeHas,
+	isCppAccessSpecifier,
 } from './syntax';
 import { cppTokenText, type CppToken } from './tokens';
 
@@ -171,27 +173,16 @@ export function collectCppClassRanges(
 		if (token.text !== 'class' && token.text !== 'struct') {
 			continue;
 		}
-		if (index > 0 && tokens[index - 1].text === 'enum') {
-			continue;
-		}
-		const nameIndex = index + 1;
-			if (nameIndex >= tokens.length || tokens[nameIndex].kind !== 'id') {
+			if (index > 0 && tokens[index - 1].text === 'enum') {
 				continue;
 			}
-			let cursor = nameIndex + 1;
-			let hasDeclaratorNoise = false;
-			while (cursor < tokens.length && tokens[cursor].text !== ';' && tokens[cursor].text !== '{') {
-				if (isCppTypeUseToken(tokens[cursor].text)) {
-					hasDeclaratorNoise = true;
-					break;
-				}
-				cursor += 1;
-			}
-			if (hasDeclaratorNoise || cursor >= tokens.length || tokens[cursor].text !== '{' || pairs[cursor] < 0) {
+			const nameIndex = index + 1;
+			const bodyOpen = findCppNamedTypeBodyOpen(tokens, nameIndex);
+			if (bodyOpen < 0 || pairs[bodyOpen] < 0) {
 				continue;
 			}
-		const name = tokens[nameIndex].text;
-		ranges.push({ name, nameToken: nameIndex, start: cursor, end: pairs[cursor] });
+			const name = tokens[nameIndex].text;
+			ranges.push({ name, nameToken: nameIndex, start: bodyOpen, end: pairs[bodyOpen] });
 	}
 	return ranges;
 }
@@ -209,21 +200,9 @@ export function collectCppTypeDeclarations(tokens: readonly CppToken[], classRan
 			if (tokens[nameIndex]?.text === 'class' || tokens[nameIndex]?.text === 'struct') {
 				nameIndex += 1;
 			}
-				if (nameIndex >= tokens.length || tokens[nameIndex].kind !== 'id') {
-					continue;
-				}
-				let cursor = nameIndex + 1;
-				let hasDeclaratorNoise = false;
-				while (cursor < tokens.length && tokens[cursor].text !== ';' && tokens[cursor].text !== '{') {
-					if (isCppTypeUseToken(tokens[cursor].text)) {
-						hasDeclaratorNoise = true;
-						break;
-					}
-					cursor += 1;
-				}
-				if (hasDeclaratorNoise || cursor >= tokens.length || tokens[cursor].text !== '{') {
-					continue;
-				}
+			if (findCppNamedTypeBodyOpen(tokens, nameIndex) < 0) {
+				continue;
+			}
 			const name = tokens[nameIndex].text;
 			declarations.push({ kind: 'enum', name, nameToken: nameIndex, context: classContextAt(classRanges, index) });
 			continue;
@@ -232,24 +211,49 @@ export function collectCppTypeDeclarations(tokens: readonly CppToken[], classRan
 			declarations.push({ kind: 'type', name: tokens[index + 1].text, nameToken: index + 1, context: classContextAt(classRanges, index) });
 			continue;
 		}
-			if (token.text !== 'typedef') {
-				continue;
-			}
-			const statementEnd = findCppTypedefStatementEnd(tokens, index + 1);
-			const nameIndex = findCppTypedefNameToken(tokens, index + 1, statementEnd);
-			if (nameIndex < 0) {
-				continue;
-			}
-			if (isCppNamedTagTypedefAlias(tokens, index + 1, statementEnd, nameIndex)) {
-				continue;
-			}
-			declarations.push({ kind: 'type', name: tokens[nameIndex].text, nameToken: nameIndex, context: classContextAt(classRanges, index) });
+		if (token.text !== 'typedef') {
+			continue;
 		}
+		const statementEnd = findCppTypedefStatementEnd(tokens, index + 1);
+		const nameIndex = findCppTypedefNameToken(tokens, index + 1, statementEnd);
+		if (nameIndex < 0) {
+			continue;
+		}
+		if (isCppNamedTagTypedefAlias(tokens, index + 1, statementEnd, nameIndex)) {
+			continue;
+		}
+		declarations.push({ kind: 'type', name: tokens[nameIndex].text, nameToken: nameIndex, context: classContextAt(classRanges, index) });
+	}
 	return declarations;
 }
 
+function findCppNamedTypeBodyOpen(tokens: readonly CppToken[], nameIndex: number): number {
+	if (nameIndex >= tokens.length || tokens[nameIndex].kind !== 'id') {
+		return -1;
+	}
+	let cursor = nameIndex + 1;
+	while (cursor < tokens.length && tokens[cursor].text !== ';' && tokens[cursor].text !== '{') {
+		if (isCppTypeUseToken(tokens[cursor].text)) {
+			return -1;
+		}
+		cursor += 1;
+	}
+	return cursor < tokens.length && tokens[cursor].text === '{' ? cursor : -1;
+}
+
 function isCppTypeUseToken(text: string): boolean {
-	return text === '(' || text === ')' || text === '[' || text === '=' || text === '*' || text === '&' || text === '&&';
+	switch (text) {
+		case '(':
+		case ')':
+		case '[':
+		case '=':
+		case '*':
+		case '&':
+		case '&&':
+			return true;
+		default:
+			return false;
+	}
 }
 
 function findCppTypedefStatementEnd(tokens: readonly CppToken[], start: number): number {
@@ -269,6 +273,101 @@ function findCppTypedefStatementEnd(tokens: readonly CppToken[], start: number):
 		}
 	}
 	return tokens.length;
+}
+
+export function countCppTopLevelDataMembers(tokens: readonly CppToken[], start: number, end: number): number {
+	const ranges = collectCppClassMemberStatementRanges(tokens, start, end);
+	let count = 0;
+	for (let rangeIndex = 0; rangeIndex < ranges.length; rangeIndex += 1) {
+		const statementStart = ranges[rangeIndex][0];
+		const statementEnd = ranges[rangeIndex][1];
+		if (statementStart >= statementEnd || isCppAccessSpecifier(tokens[statementStart].text)) {
+			continue;
+		}
+		if (cppRangeHas(tokens, statementStart, statementEnd, token => isCppClassMemberDeclarationControlToken(token.text))) {
+			continue;
+		}
+		if (cppRangeHas(tokens, statementStart, statementEnd, token => token.text === '(')) {
+			continue;
+		}
+		if (cppRangeHas(tokens, statementStart, statementEnd, token => token.kind === 'id')) {
+			count += countCppDataMemberDeclarators(tokens, statementStart, statementEnd);
+		}
+	}
+	return count;
+}
+
+function isCppClassMemberDeclarationControlToken(text: string): boolean {
+	switch (text) {
+		case 'class':
+		case 'struct':
+		case 'union':
+		case 'namespace':
+		case 'template':
+		case 'using':
+		case 'typedef':
+		case 'enum':
+		case 'friend':
+		case 'static':
+			return true;
+		default:
+			return false;
+	}
+}
+
+function collectCppClassMemberStatementRanges(tokens: readonly CppToken[], start: number, end: number): Array<[number, number]> {
+	const ranges: Array<[number, number]> = [];
+	let statementStart = start;
+	let parenDepth = 0;
+	let bracketDepth = 0;
+	let braceDepth = 0;
+	for (let index = start; index < end; index += 1) {
+		const text = tokens[index].text;
+		if (text === '(') parenDepth += 1;
+		else if (text === ')') parenDepth -= 1;
+		else if (text === '[') bracketDepth += 1;
+		else if (text === ']') bracketDepth -= 1;
+		else if (text === '{') braceDepth += 1;
+		else if (text === '}') braceDepth -= 1;
+		else if (
+			text === ':'
+			&& parenDepth === 0
+			&& bracketDepth === 0
+			&& braceDepth === 0
+			&& index === statementStart + 1
+			&& isCppAccessSpecifier(tokens[statementStart].text)
+		) {
+			statementStart = index + 1;
+		} else if (text === ';' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+			if (statementStart < index) {
+				ranges.push([statementStart, index]);
+			}
+			statementStart = index + 1;
+		}
+	}
+	return ranges;
+}
+
+function countCppDataMemberDeclarators(tokens: readonly CppToken[], start: number, end: number): number {
+	let count = 1;
+	let parenDepth = 0;
+	let bracketDepth = 0;
+	let braceDepth = 0;
+	let angleDepth = 0;
+	for (let index = start; index < end; index += 1) {
+		const text = tokens[index].text;
+		if (text === '(') parenDepth += 1;
+		else if (text === ')') parenDepth -= 1;
+		else if (text === '[') bracketDepth += 1;
+		else if (text === ']') bracketDepth -= 1;
+		else if (text === '{') braceDepth += 1;
+		else if (text === '}') braceDepth -= 1;
+		else if (text === '<' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) angleDepth += 1;
+		else if (text === '>' && angleDepth > 0 && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) angleDepth -= 1;
+		else if (text === '>>' && angleDepth > 0 && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) angleDepth = angleDepth > 1 ? angleDepth - 2 : 0;
+		else if (text === ',' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0 && angleDepth === 0) count += 1;
+	}
+	return count;
 }
 
 function findCppTypedefNameToken(tokens: readonly CppToken[], start: number, end: number): number {

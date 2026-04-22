@@ -1,5 +1,5 @@
 import { type LuaCallExpression, type LuaExpression, type LuaStatement, LuaSyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
-import { findCallExpressionInStatements, getCallMethodName, getCallReceiverExpression, isGlobalCall, visitCallExpressionsInStatements } from './calls';
+import { findCallExpressionInStatements, getCallMethodName, getCallReceiverExpression, isGlobalCall, visitCallExpressionsInStatements } from '../../../../../../src/bmsx/lua/syntax/calls';
 import { getFunctionLeafName } from './functions';
 import { isSelfExpressionRoot } from './self_properties';
 import { findTableFieldByKey, readBooleanFieldValueFromTable, readStringFieldValueFromTable } from './table_fields';

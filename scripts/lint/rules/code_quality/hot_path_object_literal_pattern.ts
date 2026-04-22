@@ -1,6 +1,7 @@
 import { defineLintRule } from '../../rule';
 import ts from 'typescript';
-import { LintIssue, pushLintIssue, unwrapExpression } from '../ts/support/ast';
+import { unwrapExpression } from '../../../../src/bmsx/language/ts/ast/expressions';
+import { LintIssue, pushLintIssue } from '../ts/support/ast';
 
 export const hotPathObjectLiteralPatternRule = defineLintRule('code_quality', 'hot_path_object_literal_pattern');
 

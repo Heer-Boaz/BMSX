@@ -1,5 +1,6 @@
 import ts from 'typescript';
-import { functionUsageExpressionName, unwrapExpression, usageCountForNames } from './ast';
+import { unwrapExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
+import { functionUsageExpressionName, usageCountForNames } from './ast';
 import { FunctionUsageInfo } from './types';
 
 export function incrementUsageCount(counts: Map<string, number>, name: string | null): void {

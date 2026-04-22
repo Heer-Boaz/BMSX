@@ -3,8 +3,8 @@ import { noteQualityLedger, type QualityLedger } from '../../../../analysis/qual
 import { type CodeQualityLintRule } from '../../../ts_rule';
 import ts from 'typescript';
 import { nodeIsInAnalysisRegion } from '../../../../analysis/code_quality/source_scan';
-import { isTsAssignmentOperator } from './bindings';
-import { getCallTargetLeafName } from './calls';
+import { getCallTargetLeafName, getExpressionText, unwrapExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
+import { isAssignmentOperator } from '../../../../../src/bmsx/language/ts/ast/operators';
 import { falseLiteralComparison } from './conditions';
 import { expressionAccessFingerprint, isIgnoredMethod } from './declarations';
 import { getFunctionNodeUsageNames } from './function_usage';
@@ -63,29 +63,6 @@ export function nodeStartLine(sourceFile: ts.SourceFile, node: ts.Node): number 
 	return sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
 }
 
-export function getPropertyName(node: ts.PropertyName | ts.Expression): string | null {
-	if (ts.isIdentifier(node)) return node.text;
-	if (ts.isStringLiteral(node)) return node.text;
-	if (ts.isNumericLiteral(node)) return node.text;
-	if (ts.isComputedPropertyName(node)) return null;
-	if (ts.isPrivateIdentifier(node)) return node.text;
-	if (ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
-	return null;
-}
-
-export function hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {
-	const modifiers = (node as { modifiers?: ts.NodeArray<ts.Modifier> }).modifiers;
-	if (modifiers === undefined) {
-		return false;
-	}
-	for (let i = 0; i < modifiers.length; i += 1) {
-		if (modifiers[i].kind === kind) {
-			return true;
-		}
-	}
-	return false;
-}
-
 export function getExtendsExpression(node: ts.ClassDeclaration, importAliases: Map<string, string>): string | null {
 	const heritage = node.heritageClauses;
 	if (heritage === undefined) {
@@ -108,81 +85,13 @@ export function getExtendsExpression(node: ts.ClassDeclaration, importAliases: M
 	return null;
 }
 
-export function getExpressionText(node: ts.Expression, aliases?: Map<string, string>): string | null {
-	if (node.kind === ts.SyntaxKind.ThisKeyword) {
-		return 'this';
-	}
-	if (ts.isIdentifier(node)) {
-		const alias = aliases?.get(node.text);
-		return alias ?? node.text;
-	}
-	if (ts.isPropertyAccessExpression(node)) {
-		const left = getExpressionText(node.expression, aliases);
-		if (left === null) {
-			return null;
-		}
-		return `${left}.${node.name.text}`;
-	}
-	return null;
-}
-
-export function getCallExpressionTarget(node: ts.Expression): string | null {
-	let current: ts.Expression = node;
-	while (true) {
-		if (ts.isParenthesizedExpression(current)) {
-			current = current.expression;
-			continue;
-		}
-		if (ts.isAsExpression(current)) {
-			current = current.expression;
-			continue;
-		}
-		const isTypeAssertion = (ts as unknown as { isTypeAssertionExpression?: (node: ts.Node) => node is ts.TypeAssertion })
-			.isTypeAssertionExpression;
-		if (isTypeAssertion !== undefined && isTypeAssertion(current)) {
-			current = current.expression;
-			continue;
-		}
-		if (ts.isNonNullExpression(current)) {
-			current = current.expression;
-			continue;
-		}
-		break;
-	}
-	if (!ts.isCallExpression(current)) {
-		return null;
-	}
-	return getExpressionText(current.expression);
-}
-
-export function isVariableImportExportName(node: ts.Node): boolean {
-	if (
-		ts.isImportClause(node) ||
-		ts.isNamespaceImport(node) ||
-		ts.isImportSpecifier(node) ||
-		ts.isExportSpecifier(node) ||
-		ts.isImportEqualsDeclaration(node)
-	) {
-		return true;
-	}
-	return false;
-}
-
 export function shouldIgnoreLintName(name: string): boolean {
 	return name.length === 0 || name === '_' || name.startsWith('_');
 }
 
-export function compactExpressionText(node: ts.Expression, sourceFile: ts.SourceFile): string {
-	return node.getText(sourceFile).replace(/\s+/g, ' ').trim();
-}
-
-export function isRedundantConditionalExpression(node: ts.ConditionalExpression, sourceFile: ts.SourceFile): boolean {
-	return compactExpressionText(node.whenTrue, sourceFile) === compactExpressionText(node.whenFalse, sourceFile);
-}
-
 export function getSingleReturnExpression(statement: ts.Statement): ts.Expression | null {
 	if (ts.isReturnStatement(statement)) {
-		return statement.expression ?? null;
+		return statement.expression === undefined ? null : statement.expression;
 	}
 	if (!ts.isBlock(statement) || statement.statements.length !== 1) {
 		return null;
@@ -191,7 +100,7 @@ export function getSingleReturnExpression(statement: ts.Statement): ts.Expressio
 	if (!ts.isReturnStatement(onlyStatement)) {
 		return null;
 	}
-	return onlyStatement.expression ?? null;
+	return onlyStatement.expression === undefined ? null : onlyStatement.expression;
 }
 
 export function functionBodyContainsLazyInitAssignment(root: ts.Node, targetFingerprint: string): boolean {
@@ -203,7 +112,7 @@ export function functionBodyContainsLazyInitAssignment(root: ts.Node, targetFing
 		if (current !== root && ts.isFunctionLike(current)) {
 			return;
 		}
-		if (ts.isBinaryExpression(current) && isTsAssignmentOperator(current.operatorToken.kind)) {
+		if (ts.isBinaryExpression(current) && isAssignmentOperator(current.operatorToken.kind)) {
 			const assignmentTarget = expressionAccessFingerprint(current.left);
 			if (assignmentTarget === targetFingerprint) {
 				const assignedValue = unwrapExpression(current.right);
@@ -275,53 +184,6 @@ export function lintEnsurePattern(
 		'ensure_pattern',
 		'Lazy ensure/init wrapper is forbidden. Initialize the resource eagerly instead of guarding creation and returning the cached singleton.',
 	);
-}
-
-export function lintTerminalReturnPaddingPattern(
-	node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
-	sourceFile: ts.SourceFile,
-	issues: LintIssue[],
-): void {
-	const body = node.body;
-	if (body === undefined || !ts.isBlock(body) || body.statements.length === 0) {
-		return;
-	}
-	const lastStatement = body.statements[body.statements.length - 1];
-	if (!ts.isReturnStatement(lastStatement) || lastStatement.expression !== undefined) {
-		return;
-	}
-	pushLintIssue(
-		issues,
-		sourceFile,
-		lastStatement,
-		'useless_terminal_return_pattern',
-		'Terminal `return;` is forbidden. Remove no-op returns instead of padding the body.',
-	);
-}
-
-export function unwrapExpression(node: ts.Expression): ts.Expression {
-	let current = node;
-	while (true) {
-		if (ts.isParenthesizedExpression(current)) {
-			current = current.expression;
-			continue;
-		}
-		if (ts.isAsExpression(current)) {
-			current = current.expression;
-			continue;
-		}
-		const isTypeAssertion = (ts as unknown as { isTypeAssertionExpression?: (node: ts.Node) => node is ts.TypeAssertion })
-			.isTypeAssertionExpression;
-		if (isTypeAssertion !== undefined && isTypeAssertion(current)) {
-			current = current.expression;
-			continue;
-		}
-		if (ts.isNonNullExpression(current)) {
-			current = current.expression;
-			continue;
-		}
-		return current;
-	}
 }
 
 export function isSimpleAliasExpression(node: ts.Expression | undefined): boolean {
@@ -540,26 +402,6 @@ export function usageCountForNames(names: readonly string[], counts: ReadonlyMap
 	return total;
 }
 
-export function expressionRootName(node: ts.Expression): string | null {
-	const current = unwrapExpression(node);
-	if (ts.isIdentifier(current)) {
-		return current.text;
-	}
-	if (current.kind === ts.SyntaxKind.ThisKeyword) {
-		return 'this';
-	}
-	if (ts.isPropertyAccessExpression(current)) {
-		return expressionRootName(current.expression);
-	}
-	if (ts.isElementAccessExpression(current)) {
-		return expressionRootName(current.expression);
-	}
-	if (ts.isCallExpression(current)) {
-		return expressionRootName(current.expression);
-	}
-	return null;
-}
-
 export function isInsideConstructor(node: ts.Node): boolean {
 	let current: ts.Node | undefined = node;
 	while (current !== undefined) {
@@ -581,45 +423,6 @@ export function compactSampleText(text: string): string {
 	return `${text.slice(0, COMPACT_SAMPLE_TEXT_LENGTH - 3)}...`;
 }
 
-export function isExpressionChildOfLargerExpression(node: ts.Expression, parent: ts.Node | undefined): boolean {
-	if (parent === undefined) {
-		return false;
-	}
-	let child: ts.Node = node;
-	while (
-		ts.isParenthesizedExpression(parent)
-		|| ts.isAsExpression(parent)
-		|| ts.isNonNullExpression(parent)
-		|| ((ts as unknown as { isTypeAssertionExpression?: (node: ts.Node) => node is ts.TypeAssertion }).isTypeAssertionExpression?.(parent) ?? false)
-	) {
-		child = parent;
-		parent = parent.parent;
-		if (parent === undefined) {
-			return false;
-		}
-	}
-	if (ts.isPropertyAccessExpression(parent) && parent.expression === child) {
-		return true;
-	}
-	if (ts.isElementAccessExpression(parent) && parent.expression === child) {
-		return true;
-	}
-	if (ts.isCallExpression(parent) && parent.expression === child) {
-		return true;
-	}
-	if (ts.isNewExpression(parent) && parent.expression === child) {
-		return true;
-	}
-	if (
-		ts.isBinaryExpression(parent)
-		&& (parent.left === child || parent.right === child)
-		&& !isTsAssignmentOperator(parent.operatorToken.kind)
-	) {
-		return true;
-	}
-	return false;
-}
-
 export function isExplicitNonJsTruthinessPair(node: ts.BinaryExpression): boolean {
 	const falseCheck = falseLiteralComparison(node);
 	if (falseCheck === null) {
@@ -638,51 +441,4 @@ export function isExplicitNonJsTruthinessPair(node: ts.BinaryExpression): boolea
 		return pairOperatorKind === ts.SyntaxKind.BarBarToken;
 	}
 	return pairOperatorKind === ts.SyntaxKind.AmpersandAmpersandToken;
-}
-
-export function isSinglePropertyOptionsType(type: ts.TypeNode | undefined): boolean {
-	if (type === undefined || !ts.isTypeLiteralNode(type)) {
-		return false;
-	}
-	let propertyCount = 0;
-	for (let index = 0; index < type.members.length; index += 1) {
-		if (!ts.isPropertySignature(type.members[index])) {
-			return false;
-		}
-		propertyCount += 1;
-	}
-	return propertyCount === 1;
-}
-
-export function lintSinglePropertyOptionsParameter(
-	node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
-	sourceFile: ts.SourceFile,
-	issues: LintIssue[],
-): void {
-	if (ts.isMethodDeclaration(node) && (node.body === undefined || isIgnoredMethod(node))) {
-		return;
-	}
-	if (ts.isFunctionDeclaration(node) && node.body === undefined) {
-		return;
-	}
-	for (let index = 0; index < node.parameters.length; index += 1) {
-		const parameter = node.parameters[index];
-		if (!ts.isIdentifier(parameter.name)) {
-			continue;
-		}
-		const name = parameter.name.text;
-		if (name !== 'opts' && name !== 'options') {
-			continue;
-		}
-		if (!isSinglePropertyOptionsType(parameter.type)) {
-			continue;
-		}
-		pushLintIssue(
-			issues,
-			sourceFile,
-			parameter.name,
-			'single_property_options_parameter_pattern',
-			'Single-property opts/options parameters are forbidden. Use a direct parameter or split the operation instead of implying future extensibility.',
-		);
-	}
 }

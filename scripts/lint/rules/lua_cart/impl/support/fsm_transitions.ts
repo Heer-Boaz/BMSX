@@ -4,7 +4,7 @@ import { lintFsmForbiddenLegacyFieldsInTable } from '../../fsm_forbidden_legacy_
 import { lintFsmProcessInputPollingTransitionPatternInTable } from '../../fsm_process_input_polling_transition_pattern';
 import { lintFsmRunChecksInputTransitionPatternInTable } from '../../fsm_run_checks_input_transition_pattern';
 import { lintFsmTickCounterTransitionPatternInTable } from '../../fsm_tick_counter_transition_pattern';
-import { isGlobalCall } from './calls';
+import { isGlobalCall } from '../../../../../../src/bmsx/lua/syntax/calls';
 import { getSelfAssignedPropertyNameFromTarget, isSelfPropertyReferenceByName } from './self_properties';
 
 export function hasTransitionReturnInStatements(statements: ReadonlyArray<LuaStatement>): boolean {

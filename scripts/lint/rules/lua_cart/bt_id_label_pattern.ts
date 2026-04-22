@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
 import { type LuaCallExpression, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../lua_rule';
-import { getCallMethodName } from './impl/support/calls';
+import { getCallMethodName } from '../../../../src/bmsx/lua/syntax/calls';
 import { containsLabel } from './impl/support/fsm_labels';
 import { appendSuggestionMessage } from './impl/support/general';
 import { pushIssue } from './impl/support/lint_context';

@@ -1,9 +1,28 @@
 import ts from 'typescript';
-import { getExpressionText, getPropertyName } from '../../lint/rules/ts/support/ast';
+import { getExpressionText, getPropertyName, hasExportModifier } from '../../../src/bmsx/language/ts/ast/expressions';
+import { getFunctionSignature, isFunctionLikeValue } from '../../../src/bmsx/language/ts/ast/functions';
 import { getClassScopePath } from '../../lint/rules/ts/support/bindings';
 import { getFunctionWrapperTarget, isAbstractClass, isIgnoredMethod } from '../../lint/rules/ts/support/declarations';
-import { getFunctionSignature, isFunctionLikeValue } from '../../lint/rules/ts/support/functions';
+import { type ExportedTypeInfo } from '../../lint/rules/code_quality/duplicate_exported_type_name_pattern';
 import { ClassInfo, DuplicateGroup, DuplicateKind, DuplicateLocation } from '../../lint/rules/ts/support/types';
+
+export function collectExportedTypes(sourceFile: ts.SourceFile, exportedTypes: ExportedTypeInfo[]): void {
+	for (let index = 0; index < sourceFile.statements.length; index += 1) {
+		const statement = sourceFile.statements[index];
+		if (!hasExportModifier(statement)) {
+			continue;
+		}
+		if (ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) {
+			const position = sourceFile.getLineAndCharacterOfPosition(statement.name.getStart(sourceFile));
+			exportedTypes.push({
+				name: statement.name.text,
+				file: sourceFile.fileName,
+				line: position.line + 1,
+				column: position.character + 1,
+			});
+		}
+	}
+}
 
 export function resolveParentClassInfo(
 	info: ClassInfo,
@@ -188,6 +207,70 @@ export function getOwningObjectName(node: ts.ObjectLiteralExpression | ts.Proper
 	return null;
 }
 
+function isRecordableClassMemberMethod(node: ts.Node): node is ts.MethodDeclaration | ts.GetAccessorDeclaration | ts.SetAccessorDeclaration {
+	return (ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node))
+		&& node.body !== undefined
+		&& !isIgnoredMethod(node)
+		&& !ts.isObjectLiteralExpression(node.parent);
+}
+
+function classInfoForMember(
+	node: ts.MethodDeclaration | ts.GetAccessorDeclaration | ts.SetAccessorDeclaration,
+	classInfosByKey: Map<string, ClassInfo>,
+): ClassInfo | null {
+	const container = node.parent;
+	if (!ts.isClassDeclaration(container) || container.name === undefined) {
+		return null;
+	}
+	const classScope = getClassScopePath(container);
+	if (classScope === null) {
+		return null;
+	}
+	const classInfo = classInfosByKey.get(classScope);
+	return classInfo === undefined ? null : classInfo;
+}
+
+function recordClassMemberMethodDeclaration(
+	node: ts.MethodDeclaration | ts.GetAccessorDeclaration | ts.SetAccessorDeclaration,
+	sourceFile: ts.SourceFile,
+	buckets: Map<string, DuplicateLocation[]>,
+	classInfosByKey: Map<string, ClassInfo>,
+	classInfosByName: Map<string, ClassInfo[]>,
+	classInfosByFileName: Map<string, Map<string, ClassInfo[]>>,
+): boolean {
+	const name = getPropertyName(node.name);
+	if (name === null) {
+		return false;
+	}
+	const classInfo = classInfoForMember(node, classInfosByKey);
+	if (isInheritedMethod(node, classInfo, classInfosByKey, classInfosByName, classInfosByFileName)) {
+		return true;
+	}
+	const position = sourceFile.getLineAndCharacterOfPosition(node.name.getStart());
+	recordDeclaration(
+		buckets,
+		'method',
+		name,
+		sourceFile.fileName,
+		position.line + 1,
+		position.character + 1,
+		getMethodContext(node),
+		getMethodDiscriminator(node),
+	);
+	return false;
+}
+
+function isFileOrModuleScope(node: ts.Node | undefined): boolean {
+	return node !== undefined && (ts.isSourceFile(node) || ts.isModuleBlock(node));
+}
+
+function isFileOrModuleScopedVariableDeclaration(node: ts.VariableDeclaration): boolean {
+	const list = node.parent;
+	return ts.isVariableDeclarationList(list)
+		&& ts.isVariableStatement(list.parent)
+		&& isFileOrModuleScope(list.parent.parent);
+}
+
 export function walkDeclarations(
 	sourceFile: ts.SourceFile,
 	buckets: Map<string, DuplicateLocation[]>,
@@ -196,7 +279,7 @@ export function walkDeclarations(
 	classInfosByFileName: Map<string, Map<string, ClassInfo[]>>,
 ): void {
 	const visit = (node: ts.Node): void => {
-		if (ts.isFunctionDeclaration(node) && node.name !== undefined && node.body !== undefined) {
+		if (ts.isFunctionDeclaration(node) && node.name !== undefined && node.body !== undefined && isFileOrModuleScope(node.parent)) {
 			const name = getPropertyName(node.name);
 			if (name !== null) {
 				const position = sourceFile.getLineAndCharacterOfPosition(node.name.getStart());
@@ -261,7 +344,7 @@ export function walkDeclarations(
 				recordDeclaration(buckets, 'namespace', name, sourceFile.fileName, position.line + 1, position.character + 1);
 			}
 		}
-		if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && isFunctionLikeValue(node.initializer)) {
+		if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && isFunctionLikeValue(node.initializer) && isFileOrModuleScopedVariableDeclaration(node)) {
 			const position = sourceFile.getLineAndCharacterOfPosition(node.name.getStart());
 			const signature = getFunctionSignature(node.initializer);
 			const wrapperTarget = getFunctionWrapperTarget(node.initializer);
@@ -288,62 +371,11 @@ export function walkDeclarations(
 					);
 			}
 		}
-		if (
-			ts.isMethodDeclaration(node) &&
-			node.body !== undefined &&
-			!isIgnoredMethod(node) &&
-			!ts.isObjectLiteralExpression(node.parent)
-		) {
-			const name = getPropertyName(node.name);
-			if (name !== null) {
-				const position = sourceFile.getLineAndCharacterOfPosition(node.name.getStart());
-				const container = node.parent;
-				const classScope = ts.isClassDeclaration(container) && container.name !== undefined ? getClassScopePath(container) : null;
-				const classInfo = classScope === null ? null : classInfosByKey.get(classScope);
-				if (isInheritedMethod(node, classInfo, classInfosByKey, classInfosByName, classInfosByFileName)) {
-					return;
-				}
-				recordDeclaration(
-					buckets,
-					'method',
-					name,
-					sourceFile.fileName,
-					position.line + 1,
-					position.character + 1,
-					getMethodContext(node),
-					getMethodDiscriminator(node),
-				);
-			}
+		if (isRecordableClassMemberMethod(node) && recordClassMemberMethodDeclaration(node, sourceFile, buckets, classInfosByKey, classInfosByName, classInfosByFileName)) {
+			return;
 		}
-			if (
-				(ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) &&
-				node.body !== undefined &&
-				!isIgnoredMethod(node) &&
-				!ts.isObjectLiteralExpression(node.parent)
-			) {
-			const name = getPropertyName(node.name);
-			if (name !== null) {
-				const position = sourceFile.getLineAndCharacterOfPosition(node.name.getStart());
-				const container = node.parent;
-				const classScope = ts.isClassDeclaration(container) && container.name !== undefined ? getClassScopePath(container) : null;
-				const classInfo = classScope === null ? null : classInfosByKey.get(classScope);
-				if (isInheritedMethod(node, classInfo, classInfosByKey, classInfosByName, classInfosByFileName)) {
-					return;
-				}
-				recordDeclaration(
-					buckets,
-					'method',
-					name,
-					sourceFile.fileName,
-					position.line + 1,
-					position.character + 1,
-					getMethodContext(node),
-					getMethodDiscriminator(node),
-				);
-			}
-		}
-			ts.forEachChild(node, visit);
-		};
+		ts.forEachChild(node, visit);
+	};
 	visit(sourceFile);
 }
 

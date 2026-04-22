@@ -2,7 +2,7 @@ import { type LuaCallExpression, type LuaExpression, type LuaFunctionExpression,
 import { type LuaLintIssue } from '../../../../lua_rule';
 import { lintFsmEventReemitHandlerPatternInMap } from '../../fsm_event_reemit_handler_pattern';
 import { lintFsmLifecycleWrapperPatternInTable } from '../../fsm_lifecycle_wrapper_pattern';
-import { getCallMethodName, getCallReceiverExpression, isGlobalCall } from './calls';
+import { getCallMethodName, getCallReceiverExpression, isGlobalCall } from '../../../../../../src/bmsx/lua/syntax/calls';
 import { FSM_STATE_HANDLER_MAP_KEYS } from './fsm_transitions';
 import { isSelfExpressionRoot } from './self_properties';
 import { findTableFieldByKey, getTableFieldKey } from './table_fields';

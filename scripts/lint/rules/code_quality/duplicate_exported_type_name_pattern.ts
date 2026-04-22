@@ -1,4 +1,3 @@
-import ts from 'typescript';
 import { defineLintRule } from '../../rule';
 import type { TsLintIssue } from '../../ts_rule';
 
@@ -10,24 +9,6 @@ export type ExportedTypeInfo = {
 	line: number;
 	column: number;
 };
-
-export function collectExportedTypes(sourceFile: ts.SourceFile, exportedTypes: ExportedTypeInfo[]): void {
-	for (let index = 0; index < sourceFile.statements.length; index += 1) {
-		const statement = sourceFile.statements[index];
-		if (!hasExportModifier(statement)) {
-			continue;
-		}
-		if (ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) {
-			const position = sourceFile.getLineAndCharacterOfPosition(statement.name.getStart(sourceFile));
-			exportedTypes.push({
-				name: statement.name.text,
-				file: sourceFile.fileName,
-				line: position.line + 1,
-				column: position.character + 1,
-			});
-		}
-	}
-}
 
 export function addDuplicateExportedTypeIssues(exportedTypes: readonly ExportedTypeInfo[], issues: TsLintIssue[]): void {
 	const byName = new Map<string, ExportedTypeInfo[]>();
@@ -56,8 +37,4 @@ export function addDuplicateExportedTypeIssues(exportedTypes: readonly ExportedT
 			});
 		}
 	}
-}
-
-function hasExportModifier(node: ts.Node): boolean {
-	return ts.canHaveModifiers(node) && (ts.getModifiers(node)?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword) ?? false);
 }

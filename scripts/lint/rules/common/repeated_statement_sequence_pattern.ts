@@ -17,6 +17,24 @@ const CPP_REPEATED_STATEMENT_SEQUENCE_MIN_COUNT = 4;
 const CPP_REPEATED_STATEMENT_SEQUENCE_MIN_TEXT_LENGTH = 140;
 const CPP_REPEATED_STATEMENT_SEQUENCE_PATTERN_ENABLED = true;
 
+type ReportedLineRange = {
+	start: number;
+	end: number;
+};
+
+type StatementLineRange = {
+	line: number;
+	endLine: number;
+};
+
+type StatementSequenceEntry = StatementLineRange & {
+	file: string;
+	column: number;
+	statementCount: number;
+	textLength: number;
+	fingerprint: string;
+};
+
 export type StatementSequenceInfo = {
 	file: string;
 	line: number;
@@ -88,53 +106,19 @@ export function collectRepeatedStatementSequences(
 }
 
 export function addRepeatedStatementSequenceIssues(sequences: readonly StatementSequenceInfo[], issues: TsLintIssue[]): void {
-	const byFingerprint = new Map<string, StatementSequenceInfo[]>();
-	for (let index = 0; index < sequences.length; index += 1) {
-		const entry = sequences[index];
-		let list = byFingerprint.get(entry.fingerprint);
-		if (list === undefined) {
-			list = [];
-			byFingerprint.set(entry.fingerprint, list);
-		}
-		list.push(entry);
-	}
-	const reportedRanges = new Map<string, Array<{ start: number; end: number }>>();
-	const duplicateGroups = Array.from(byFingerprint.values())
-		.filter(list => list.length > 1)
-		.sort((left, right) => {
-			const leftTextLength = Math.max(...left.map(entry => entry.textLength));
-			const rightTextLength = Math.max(...right.map(entry => entry.textLength));
-			return rightTextLength - leftTextLength || right.length - left.length;
+	forEachUnreportedDuplicateSequence(duplicateStatementSequenceGroups(sequences), (entry, list) => {
+		issues.push({
+			kind: repeatedStatementSequencePatternRule.name,
+			file: entry.file,
+			line: entry.line,
+			column: entry.column,
+			name: repeatedStatementSequencePatternRule.name,
+			message: `${entry.statementCount} consecutive statements are copied in ${list.length} reportable places. Extract the shared operation or collapse the duplicated lifecycle block.`,
 		});
-	for (let groupIndex = 0; groupIndex < duplicateGroups.length; groupIndex += 1) {
-		const list = duplicateGroups[groupIndex];
-		if (list.length <= 1) {
-			continue;
-		}
-		for (let entryIndex = 0; entryIndex < list.length; entryIndex += 1) {
-			const entry = list[entryIndex];
-			let ranges = reportedRanges.get(entry.file);
-			if (ranges === undefined) {
-				ranges = [];
-				reportedRanges.set(entry.file, ranges);
-			}
-			if (statementSequenceOverlapsReportedRange(entry, ranges)) {
-				continue;
-			}
-			ranges.push({ start: entry.line, end: entry.endLine });
-			issues.push({
-				kind: repeatedStatementSequencePatternRule.name,
-				file: entry.file,
-				line: entry.line,
-				column: entry.column,
-				name: repeatedStatementSequencePatternRule.name,
-				message: `${entry.statementCount} consecutive statements are copied in ${list.length} reportable places. Extract the shared operation or collapse the duplicated lifecycle block.`,
-			});
-		}
-	}
+	});
 }
 
-function statementSequenceOverlapsReportedRange(entry: StatementSequenceInfo, ranges: readonly { start: number; end: number }[]): boolean {
+function sequenceOverlapsReportedRange(entry: StatementLineRange, ranges: readonly ReportedLineRange[]): boolean {
 	for (let index = 0; index < ranges.length; index += 1) {
 		const range = ranges[index];
 		if (entry.line <= range.end && entry.endLine >= range.start) {
@@ -142,6 +126,65 @@ function statementSequenceOverlapsReportedRange(entry: StatementSequenceInfo, ra
 		}
 	}
 	return false;
+}
+
+function reportedRangesForFile(reportedRanges: Map<string, ReportedLineRange[]>, file: string): ReportedLineRange[] {
+	let ranges = reportedRanges.get(file);
+	if (ranges === undefined) {
+		ranges = [];
+		reportedRanges.set(file, ranges);
+	}
+	return ranges;
+}
+
+function duplicateStatementSequenceGroups<TEntry extends StatementSequenceEntry>(
+	sequences: readonly TEntry[],
+	uniqueKey?: (entry: TEntry) => string,
+): TEntry[][] {
+	const byFingerprint = new Map<string, TEntry[]>();
+	const seenRanges = new Set<string>();
+	for (let index = 0; index < sequences.length; index += 1) {
+		const entry = sequences[index];
+		if (uniqueKey !== undefined) {
+			const key = uniqueKey(entry);
+			if (seenRanges.has(key)) {
+				continue;
+			}
+			seenRanges.add(key);
+		}
+		let list = byFingerprint.get(entry.fingerprint);
+		if (list === undefined) {
+			list = [];
+			byFingerprint.set(entry.fingerprint, list);
+		}
+		list.push(entry);
+	}
+	return Array.from(byFingerprint.values())
+		.filter(list => list.length > 1)
+		.sort((left, right) => {
+			const leftTextLength = Math.max(...left.map(entry => entry.textLength));
+			const rightTextLength = Math.max(...right.map(entry => entry.textLength));
+			return rightTextLength - leftTextLength || right.length - left.length;
+		});
+}
+
+function forEachUnreportedDuplicateSequence<TEntry extends StatementSequenceEntry>(
+	duplicateGroups: readonly TEntry[][],
+	visit: (entry: TEntry, list: readonly TEntry[]) => void,
+): void {
+	const reportedRanges = new Map<string, ReportedLineRange[]>();
+	for (let groupIndex = 0; groupIndex < duplicateGroups.length; groupIndex += 1) {
+		const list = duplicateGroups[groupIndex];
+		for (let entryIndex = 0; entryIndex < list.length; entryIndex += 1) {
+			const entry = list[entryIndex];
+			const ranges = reportedRangesForFile(reportedRanges, entry.file);
+			if (sequenceOverlapsReportedRange(entry, ranges)) {
+				continue;
+			}
+			ranges.push({ start: entry.line, end: entry.endLine });
+			visit(entry, list);
+		}
+	}
 }
 
 export function collectCppRepeatedStatementSequences(
@@ -220,74 +263,28 @@ export function addCppRepeatedStatementSequenceIssues(
 	issues: CppLintIssue[],
 	ledger: QualityLedger,
 ): void {
-	const byFingerprint = new Map<string, CppStatementSequenceInfo[]>();
-	const seenRanges = new Set<string>();
-	for (let index = 0; index < sequences.length; index += 1) {
-		const entry = sequences[index];
-		const key = `${entry.file}:${entry.line}:${entry.endLine}:${entry.fingerprint}`;
-		if (seenRanges.has(key)) {
-			continue;
+	forEachUnreportedDuplicateSequence(duplicateStatementSequenceGroups(sequences, cppSequenceRangeKey), (entry, list) => {
+		noteQualityLedger(ledger, 'cpp_repeated_statement_sequence_candidate');
+		if (!CPP_REPEATED_STATEMENT_SEQUENCE_PATTERN_ENABLED) {
+			noteQualityLedger(ledger, 'skipped_cpp_repeated_statement_sequence_disabled');
+			noteQualityLedger(ledger, `skipped_cpp_repeated_statement_sequence_${cppReportableStatementSequenceKind(entry)}`);
+			return;
 		}
-		seenRanges.add(key);
-		let list = byFingerprint.get(entry.fingerprint);
-		if (list === undefined) {
-			list = [];
-			byFingerprint.set(entry.fingerprint, list);
-		}
-		list.push(entry);
-	}
-	const reportedRanges = new Map<string, Array<{ start: number; end: number }>>();
-	const duplicateGroups = Array.from(byFingerprint.values())
-		.filter(list => list.length > 1)
-		.sort((left, right) => {
-			const leftTextLength = Math.max(...left.map(entry => entry.textLength));
-			const rightTextLength = Math.max(...right.map(entry => entry.textLength));
-			return rightTextLength - leftTextLength || right.length - left.length;
+		issues.push({
+			kind: repeatedStatementSequencePatternRule.name,
+			file: entry.file,
+			line: entry.line,
+			column: entry.column,
+			name: repeatedStatementSequencePatternRule.name,
+			message: `${entry.statementCount} consecutive C++ statements are copied in ${list.length} reportable places. Extract the shared operation or collapse the duplicated lifecycle block.`,
 		});
-	for (let groupIndex = 0; groupIndex < duplicateGroups.length; groupIndex += 1) {
-		const list = duplicateGroups[groupIndex];
-		if (list.length <= 1) {
-			continue;
-		}
-		for (let entryIndex = 0; entryIndex < list.length; entryIndex += 1) {
-			const entry = list[entryIndex];
-			let ranges = reportedRanges.get(entry.file);
-			if (ranges === undefined) {
-				ranges = [];
-				reportedRanges.set(entry.file, ranges);
-			}
-			if (cppStatementSequenceOverlapsReportedRange(entry, ranges)) {
-				continue;
-			}
-			ranges.push({ start: entry.line, end: entry.endLine });
-			noteQualityLedger(ledger, 'cpp_repeated_statement_sequence_candidate');
-			if (!CPP_REPEATED_STATEMENT_SEQUENCE_PATTERN_ENABLED) {
-				noteQualityLedger(ledger, 'skipped_cpp_repeated_statement_sequence_disabled');
-				noteQualityLedger(ledger, `skipped_cpp_repeated_statement_sequence_${cppReportableStatementSequenceKind(entry)}`);
-				continue;
-			}
-			issues.push({
-				kind: repeatedStatementSequencePatternRule.name,
-				file: entry.file,
-				line: entry.line,
-				column: entry.column,
-				name: repeatedStatementSequencePatternRule.name,
-				message: `${entry.statementCount} consecutive C++ statements are copied in ${list.length} reportable places. Extract the shared operation or collapse the duplicated lifecycle block.`,
-			});
-		}
-	}
+	});
+}
+
+function cppSequenceRangeKey(entry: CppStatementSequenceInfo): string {
+	return `${entry.file}:${entry.line}:${entry.endLine}:${entry.fingerprint}`;
 }
 
 function cppReportableStatementSequenceKind(entry: CppStatementSequenceInfo): string {
 	return entry.functionName.length === 0 ? 'disabled' : 'disabled_function_body';
-}
-
-function cppStatementSequenceOverlapsReportedRange(entry: CppStatementSequenceInfo, ranges: readonly { start: number; end: number }[]): boolean {
-	for (let index = 0; index < ranges.length; index += 1) {
-		const range = ranges[index];
-		if (entry.line <= range.end && entry.endLine >= range.start) {
-			return true;
-		}
-	}
-	return false;
 }

@@ -1,6 +1,6 @@
 import ts from 'typescript';
-import { unwrapExpression } from './ast';
-import { nullishLiteralKind } from './nullish';
+import { unwrapExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
+import { nullishLiteralKind } from '../../../../../src/bmsx/language/ts/ast/literals';
 import { LintBinding } from './types';
 
 export function normalizeSingleUseContext(node: ts.Node): { kind: ts.SyntaxKind; operatorKind: ts.SyntaxKind | null } {

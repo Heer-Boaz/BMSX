@@ -1,33 +1,21 @@
 import ts from 'typescript';
-import { LintIssue, unwrapExpression } from './ast';
+import { unwrapExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
+import { isBooleanLiteral, isEmptyStringLiteral, isStringLiteralLike } from '../../../../../src/bmsx/language/ts/ast/literals';
+import { isBooleanProducingOperator, isEqualityOperator, isPositiveEqualityOperator } from '../../../../../src/bmsx/language/ts/ast/operators';
 import { isExpressionInScopeFingerprint } from './bindings';
-import { isFunctionLikeWithParameters } from './functions';
+import { isFunctionLikeWithParameters } from '../../../../../src/bmsx/language/ts/ast/functions';
 import { ExplicitValueCheck } from './types';
 
-export function isBooleanLiteral(node: ts.Expression): boolean | null {
-	if (node.kind === ts.SyntaxKind.TrueKeyword) {
-		return true;
-	}
-	if (node.kind === ts.SyntaxKind.FalseKeyword) {
-		return false;
-	}
-	return null;
-}
+export type SingleLiteralComparison<T> = {
+	subject: string;
+	literal: T;
+	operatorKind: ts.SyntaxKind;
+};
 
 export function isLikelyBooleanName(name: string): boolean {
 	return /^(is|has|can|should|would|could|did|does|will|was|were|needs|uses)[A-Z_]/.test(name)
 		|| /(Active|Available|Blocked|Checked|Closed|Dirty|Disabled|Done|Empty|Enabled|Handled|Invalid|Loaded|Ok|OK|Open|Pending|Ready|Rejected|Selected|Success|Valid|Visible)$/.test(name)
 		|| /^(active|available|blocked|checked|closed|dirty|disabled|done|empty|enabled|handled|invalid|loaded|ok|open|pending|ready|rejected|selected|success|valid|visible)$/.test(name);
-}
-
-export function isBooleanProducingOperator(kind: ts.SyntaxKind): boolean {
-	return isEqualityOperator(kind)
-		|| kind === ts.SyntaxKind.LessThanToken
-		|| kind === ts.SyntaxKind.LessThanEqualsToken
-		|| kind === ts.SyntaxKind.GreaterThanToken
-		|| kind === ts.SyntaxKind.GreaterThanEqualsToken
-		|| kind === ts.SyntaxKind.InKeyword
-		|| kind === ts.SyntaxKind.InstanceOfKeyword;
 }
 
 export function isLikelyBooleanExpression(node: ts.Expression): boolean {
@@ -68,18 +56,6 @@ export function isBooleanLiteralComparisonSmell(node: ts.BinaryExpression, leftB
 	return isLikelyBooleanExpression(subject);
 }
 
-export function isEmptyStringLiteral(node: ts.Expression): node is ts.StringLiteral {
-	return ts.isStringLiteral(node) && node.text === '';
-}
-
-export function isStringLiteralLike(node: ts.Expression): boolean {
-	return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
-}
-
-export function isPositiveEqualityOperator(kind: ts.SyntaxKind): boolean {
-	return kind === ts.SyntaxKind.EqualsEqualsToken || kind === ts.SyntaxKind.EqualsEqualsEqualsToken;
-}
-
 export function isEmptyContainerLiteral(node: ts.Expression): boolean {
 	const unwrapped = unwrapExpression(node);
 	return (ts.isArrayLiteralExpression(unwrapped) && unwrapped.elements.length === 0)
@@ -101,20 +77,6 @@ export function isTypeofFunctionComparison(node: ts.BinaryExpression): boolean {
 		&& ts.isStringLiteralLike(left)
 		&& left.text === 'function'
 	);
-}
-
-export function isOrderingComparisonOperator(kind: ts.SyntaxKind): boolean {
-	return kind === ts.SyntaxKind.GreaterThanToken
-		|| kind === ts.SyntaxKind.GreaterThanEqualsToken
-		|| kind === ts.SyntaxKind.LessThanToken
-		|| kind === ts.SyntaxKind.LessThanEqualsToken;
-}
-
-export function isEqualityOperator(kind: ts.SyntaxKind): boolean {
-	return kind === ts.SyntaxKind.EqualsEqualsToken
-		|| kind === ts.SyntaxKind.EqualsEqualsEqualsToken
-		|| kind === ts.SyntaxKind.ExclamationEqualsToken
-		|| kind === ts.SyntaxKind.ExclamationEqualsEqualsToken;
 }
 
 export function collectStringOrChainSubjects(node: ts.Expression, subjects: string[]): boolean {
@@ -156,46 +118,10 @@ export function stringSwitchComparisonSubject(node: ts.Expression): string | nul
 	return isExpressionInScopeFingerprint(subject);
 }
 
-export function lintStringSwitchChain(node: ts.IfStatement, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
-	const parent = node.parent;
-	if (ts.isIfStatement(parent) && parent.elseStatement === node) {
-		return;
-	}
-	const subjects: string[] = [];
-	let current: ts.IfStatement | undefined = node;
-	while (current !== undefined) {
-		const subject = stringSwitchComparisonSubject(current.expression);
-		if (subject === null) {
-			return;
-		}
-		subjects.push(subject);
-		const elseStatement = current.elseStatement;
-		if (elseStatement === undefined || !ts.isIfStatement(elseStatement)) {
-			break;
-		}
-		current = elseStatement;
-	}
-	if (subjects.length < 3) {
-		return;
-	}
-	const first = subjects[0];
-	for (let index = 1; index < subjects.length; index += 1) {
-		if (subjects[index] !== first) {
-			return;
-		}
-	}
-	const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-	issues.push({
-		kind: 'string_switch_chain_pattern',
-		file: sourceFile.fileName,
-		line: position.line + 1,
-		column: position.character + 1,
-		name: 'string_switch_chain_pattern',
-		message: 'Multiple string comparisons against the same expression are forbidden. Use `switch`-statement or lookup table instead.',
-	});
-}
-
-export function falseLiteralComparison(node: ts.Expression): ExplicitValueCheck | null {
+export function singleLiteralComparison<T>(
+	node: ts.Expression,
+	literalValue: (expression: ts.Expression) => T | null,
+): SingleLiteralComparison<T> | null {
 	const unwrapped = unwrapExpression(node);
 	if (!ts.isBinaryExpression(unwrapped)) {
 		return null;
@@ -204,36 +130,34 @@ export function falseLiteralComparison(node: ts.Expression): ExplicitValueCheck 
 	if (!isEqualityOperator(operatorKind)) {
 		return null;
 	}
-	const leftBoolean = isBooleanLiteral(unwrapped.left);
-	const rightBoolean = isBooleanLiteral(unwrapped.right);
-	const leftHasBoolean = leftBoolean !== null;
-	const rightHasBoolean = rightBoolean !== null;
-	if (leftHasBoolean === rightHasBoolean) {
+	const leftLiteral = literalValue(unwrapped.left);
+	const rightLiteral = literalValue(unwrapped.right);
+	if ((leftLiteral !== null) === (rightLiteral !== null)) {
 		return null;
 	}
-	if (leftHasBoolean) {
-		if (leftBoolean) {
-			return null;
-		}
-		const subject = isExpressionInScopeFingerprint(unwrapped.right);
-		if (subject === null) {
-			return null;
-		}
-		return {
-			subject,
-			isPositive: isPositiveEqualityOperator(operatorKind),
-		};
-	}
-	if (rightBoolean) {
-		return null;
-	}
-	const subject = isExpressionInScopeFingerprint(unwrapped.left);
+	const subject = isExpressionInScopeFingerprint(leftLiteral !== null ? unwrapped.right : unwrapped.left);
 	if (subject === null) {
+		return null;
+	}
+	const literal = leftLiteral !== null ? leftLiteral : rightLiteral;
+	if (literal === null) {
 		return null;
 	}
 	return {
 		subject,
-		isPositive: isPositiveEqualityOperator(operatorKind),
+		literal,
+		operatorKind,
+	};
+}
+
+export function falseLiteralComparison(node: ts.Expression): ExplicitValueCheck | null {
+	const comparison = singleLiteralComparison(node, isBooleanLiteral);
+	if (comparison === null || comparison.literal) {
+		return null;
+	}
+	return {
+		subject: comparison.subject,
+		isPositive: isPositiveEqualityOperator(comparison.operatorKind),
 	};
 }
 

@@ -1,7 +1,9 @@
 import { LuaBinaryOperator, LuaSyntaxKind, type LuaExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { isLuaEmptyStringLiteral } from '../../../../src/bmsx/lua/syntax/literals';
 import { isCppEmptyStringToken } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import { lintCppAdjacentEqualityComparison } from '../cpp/support/comparison';
+import type { CppLintIssue } from '../cpp/support/diagnostics';
 import type { LuaLintIssue, LuaLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 
@@ -29,23 +31,13 @@ function matchesLuaEmptyStringConditionPattern(expression: LuaExpression): boole
 	return isLuaEmptyStringLiteral(expression.left) || isLuaEmptyStringLiteral(expression.right);
 }
 
-function isLuaEmptyStringLiteral(expression: LuaExpression): boolean {
-	return expression.kind === LuaSyntaxKind.StringLiteralExpression && expression.value === '';
-}
-
 export function lintCppEmptyStringConditionPattern(file: string, tokens: readonly CppToken[], issues: CppLintIssue[]): void {
-	for (let index = 0; index < tokens.length; index += 1) {
-		const token = tokens[index];
-		if (token.text !== '==' && token.text !== '!=') {
-			continue;
-		}
-		const left = tokens[index - 1];
-		const right = tokens[index + 1];
-		if (left === undefined || right === undefined) {
-			continue;
-		}
-		if ((isCppEmptyStringToken(left) && right.kind !== 'string') || (isCppEmptyStringToken(right) && left.kind !== 'string')) {
-			pushLintIssue(issues, file, token, emptyStringConditionPatternRule.name, 'Empty-string condition checks are forbidden. Prefer explicit truthy/falsy checks.');
-		}
-	}
+	lintCppAdjacentEqualityComparison(
+		file,
+		tokens,
+		issues,
+		emptyStringConditionPatternRule.name,
+		'Empty-string condition checks are forbidden. Prefer explicit truthy/falsy checks.',
+		(left, right) => (isCppEmptyStringToken(left) && right.kind !== 'string') || (isCppEmptyStringToken(right) && left.kind !== 'string'),
+	);
 }
