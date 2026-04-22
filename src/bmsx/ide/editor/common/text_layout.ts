@@ -1,13 +1,9 @@
 // @code-quality start hot-path -- editor text measurement/layout helpers run during render and caret updates.
-// @code-quality start required-state editorDocumentState,editorViewState,runtimeErrorState -- editor state roots are owned singletons in this module.
+// @code-quality start required-state editorDocumentState,editorViewState -- editor state roots are owned singletons in this module.
 import { getCodeAreaBounds } from '../ui/view/view';
-import { rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/overlay';
-import { runtimeErrorState } from '../contrib/runtime_error/state';
 import * as TextEditing from '../editing/text_editing_and_selection';
-import type { HighlightLine, RuntimeErrorOverlay } from '../../common/models';
-import { splitText } from '../text/source_text';
+import type { HighlightLine } from '../../common/models';
 import { truncateMeasuredText, writeWrappedMeasuredLine } from '../../common/text';
-import { getCodeTabContexts } from '../../workbench/ui/code_tab/contexts';
 import { editorViewState } from '../ui/view/state';
 import { editorDocumentState } from '../editing/document_state';
 import * as constants from '../../common/constants';
@@ -100,27 +96,6 @@ export function wrapOverlayLine(line: string, maxWidth: number): string[] {
 
 export function writeWrappedOverlayLine(segments: string[], line: string, maxWidth: number): void {
 	writeWrappedMeasuredLine(segments, line, maxWidth, measureTextRange);
-}
-
-function rewrapRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void {
-	overlay.messageLines = splitText(overlay.message);
-	rebuildRuntimeErrorOverlayView(overlay);
-}
-
-export function rewrapRuntimeErrorOverlays(): void {
-	const visited = new Set<RuntimeErrorOverlay>();
-	const activeOverlay = runtimeErrorState.activeOverlay;
-	if (activeOverlay) {
-		visited.add(activeOverlay);
-		rewrapRuntimeErrorOverlay(activeOverlay);
-	}
-	for (const context of getCodeTabContexts()) {
-		const overlay = context.runtimeErrorOverlay;
-		if (overlay && !visited.has(overlay)) {
-			visited.add(overlay);
-			rewrapRuntimeErrorOverlay(overlay);
-		}
-	}
 }
 
 export function currentLine(): string {

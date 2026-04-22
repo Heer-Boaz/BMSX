@@ -1,14 +1,10 @@
 import { startSearchJob } from '../contrib/find/search';
-import { findCodeTabContext, getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../../workbench/ui/code_tab/contexts';
+import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../../workbench/ui/code_tab/contexts';
 import { clearForwardNavigationHistory } from '../navigation/navigation_history';
 import { handlePostEditMutation } from '../editing/text_editing_and_selection';
 import { markDiagnosticsDirty } from '../contrib/diagnostics/analysis';
 import { requestSemanticRefresh, clearReferenceHighlights } from '../contrib/intellisense/engine';
 import { getTextSnapshot } from '../text/source_text';
-import * as luaPipeline from '../../runtime/lua_pipeline';
-import { Runtime } from '../../../machine/runtime/runtime';
-import { buildDirtyFilePath } from '../../workbench/workspace/io';
-import { getWorkspaceCachedSource } from '../../workspace/cache';
 import { editorDocumentState } from '../editing/document_state';
 import { editorViewState } from '../ui/view/state';
 import { editorRuntimeState } from './runtime_state';
@@ -55,23 +51,6 @@ export function markTextMutated(): void {
 	clearForwardNavigationHistory();
 	handlePostEditMutation();
 	if (editorSearchState.query.length > 0) startSearchJob();
-}
-
-export function getSourceForChunk(path: string): string {
-	const asset = luaPipeline.resolveLuaSourceRecord(Runtime.instance, path);
-	const context = findCodeTabContext(path);
-	if (context) {
-		if (context.id === getActiveCodeTabContext().id) {
-			return getTextSnapshot(editorDocumentState.buffer);
-		}
-		return getTextSnapshot(context.buffer);
-	}
-	const dirtyPath = buildDirtyFilePath(asset.source_path);
-	const cached = getWorkspaceCachedSource(asset.source_path) ?? getWorkspaceCachedSource(dirtyPath);
-	if (cached !== null) {
-		return cached;
-	}
-	return asset.src;
 }
 
 export function invalidateLineRange(startRow: number, endRow: number): void {

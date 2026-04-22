@@ -279,9 +279,10 @@ export function formatRuntimeStackFrame(frame: StackTraceFrame): string {
 		}
 	}
 	if (frame.origin === 'js') {
-		if (frame.functionName && frame.functionName.length > 0) {
+		const functionName = frame.functionName;
+		if (functionName && functionName.length > 0) {
 			const suffix = location.length > 0 ? `(${location})` : '';
-			return originLabel.length > 0 ? `[${originLabel}] ${frame.functionName}${suffix}` : `${frame.functionName}${suffix}`;
+			return originLabel.length > 0 ? `[${originLabel}] ${functionName}${suffix}` : `${functionName}${suffix}`;
 		}
 		if (location.length > 0) {
 			return originLabel.length > 0 ? `[${originLabel}] ${location}` : location;

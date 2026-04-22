@@ -6,12 +6,14 @@ import { showEditorMessage } from '../../../workbench/common/feedback_state';
 import type { CodeTabContext, RuntimeErrorOverlay } from '../../../common/models';
 import { resetBlink } from '../../render/caret';
 import { showRuntimeErrorInChunk } from '../../render/error_overlay';
+import { rebuildRuntimeErrorOverlayView } from './overlay';
 import * as constants from '../../../common/constants';
 import { editorPointerState } from '../../input/pointer/state';
 import { editorCaretState } from '../../ui/view/caret/state';
 import { runtimeErrorState } from './state';
 import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from '../../ui/view/state';
+import { splitText } from '../../text/source_text';
 
 type RuntimeErrorOverlayTarget = { context: CodeTabContext; overlay: RuntimeErrorOverlay };
 
@@ -76,6 +78,27 @@ export function clearRuntimeErrorOverlay(): void {
 	setActiveRuntimeErrorOverlay(null);
 }
 
+function rewrapRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void {
+	overlay.messageLines = splitText(overlay.message);
+	rebuildRuntimeErrorOverlayView(overlay);
+}
+
+export function rewrapRuntimeErrorOverlays(): void {
+	const visited = new Set<RuntimeErrorOverlay>();
+	const activeOverlay = runtimeErrorState.activeOverlay;
+	if (activeOverlay) {
+		visited.add(activeOverlay);
+		rewrapRuntimeErrorOverlay(activeOverlay);
+	}
+	for (const context of getCodeTabContexts()) {
+		const overlay = context.runtimeErrorOverlay;
+		if (overlay && !visited.has(overlay)) {
+			visited.add(overlay);
+			rewrapRuntimeErrorOverlay(overlay);
+		}
+	}
+}
+
 export function clearAllRuntimeErrorOverlays(): void {
 	runtimeErrorState.activeOverlay = null;
 	for (const context of getCodeTabContexts()) {
@@ -117,8 +140,13 @@ export function clearExecutionStopHighlights(): void {
 }
 
 export function syncRuntimeErrorOverlayFromContext(context: CodeTabContext): void {
-	runtimeErrorState.activeOverlay = context ? context.runtimeErrorOverlay : null;
-	runtimeErrorState.executionStopRow = context ? context.executionStopRow : null;
+	if (context) {
+		runtimeErrorState.activeOverlay = context.runtimeErrorOverlay;
+		runtimeErrorState.executionStopRow = context.executionStopRow;
+		return;
+	}
+	runtimeErrorState.activeOverlay = null;
+	runtimeErrorState.executionStopRow = null;
 }
 
 export function tryShowLuaErrorOverlay(error: unknown): boolean {
