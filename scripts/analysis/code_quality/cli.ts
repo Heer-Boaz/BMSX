@@ -1,17 +1,16 @@
-import { addDuplicateExportedTypeIssues, collectExportedTypes, type ExportedTypeInfo } from '../../lint/rules/code_quality/duplicate_exported_type_name_pattern';
-import { addNormalizedBodyDuplicateIssues, type NormalizedBodyInfo } from '../../lint/rules/code_quality/normalized_ast_duplicate_pattern';
-import { addSemanticNormalizedBodyDuplicateIssues } from '../../lint/rules/code_quality/semantic_normalized_body_duplicate_pattern';
-import { addRepeatedStatementSequenceIssues, type StatementSequenceInfo } from '../../lint/rules/common/repeated_statement_sequence_pattern';
-import { type TsLintIssue as LintIssue } from '../../lint/ts_rule';
-import { type AnalysisConfig, loadAnalysisConfig } from '../config';
-import { collectSourceFiles } from '../file_scan';
 import { filterSuppressedLintIssues } from '../lint_suppressions';
 import { createQualityLedger, type QualityLedger, qualityLedgerEntries } from '../quality_ledger';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { extname, isAbsolute, relative, resolve } from 'node:path';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import ts from 'typescript';
+import { addDuplicateExportedTypeIssues, collectExportedTypes, type ExportedTypeInfo } from '../../lint/rules/code_quality/duplicate_exported_type_name_pattern';
+import { addNormalizedBodyDuplicateIssues } from '../../lint/rules/code_quality/normalized_ast_duplicate_pattern';
+import { addSemanticNormalizedBodyDuplicateIssues } from '../../lint/rules/code_quality/semantic_normalized_body_duplicate_pattern';
+import { DEFAULT_ROOTS, LintIssue, collectTypeScriptFiles, resolveInputPath, shouldSkipDirectory } from '../../lint/rules/ts/support/ast';
+import { type NormalizedBodyInfo } from '../../lint/rules/ts/support/declarations';
 import { collectFunctionUsageCounts } from '../../lint/rules/ts/support/function_usage';
+import { addRepeatedStatementSequenceIssues, type StatementSequenceInfo } from '../../lint/rules/common/repeated_statement_sequence_pattern';
 import { ClassInfo, CliOptions, DuplicateGroup, DuplicateKind, DuplicateLocation, FolderLintSummary, ProjectLanguage } from '../../lint/rules/ts/support/types';
 import { buildDuplicateGroups, walkDeclarations } from './declarations';
 import { collectClassInfos, collectLintIssues, collectNormalizedBodies } from './source_scan';
@@ -22,21 +21,21 @@ export const LINT_SUMMARY_MAX_FOLDER_SEGMENTS = 5;
 
 export const CPP_FILE_EXTENSIONS = new Set(['.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx']);
 
-export function printHelp(config: AnalysisConfig): void {
+export function printHelp(): void {
 	console.log('Usage: npx tsx scripts/analysis/code_quality.ts [--csv] [--summary-only] [--fail-on-issues] [--root <path> ...]');
 	console.log('');
 	console.log('Options:');
 	console.log('  --csv                  Output CSV report');
 	console.log('  --fail-on-issues       Exit with code 1 when issues are found');
 	console.log('  --summary-only         Print only high-level summaries (no per-issue detail)');
-	console.log(`  --root <path>          Extra root directory (default: ${config.scan.roots.join(', ')})`);
+	console.log('  --root <path>          Extra root directory (default: src, scripts, tests, tools)');
 	console.log('  --help                 Show this help message');
 	console.log('');
 	console.log('When a C++ folder is detected, extra flags are passed directly to:');
 	console.log('  scripts/analysis/code_quality_cpp.ts');
 }
 
-export function parseArgs(argv: string[], config: AnalysisConfig): CliOptions {
+export function parseArgs(argv: string[]): CliOptions {
 	let failOnIssues = false;
 	let csv = false;
 	let summaryOnly = false;
@@ -44,7 +43,7 @@ export function parseArgs(argv: string[], config: AnalysisConfig): CliOptions {
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
 		if (arg === '--help') {
-			printHelp(config);
+			printHelp();
 			process.exit(0);
 		}
 		if (arg === '--csv') {
@@ -78,7 +77,7 @@ export function parseArgs(argv: string[], config: AnalysisConfig): CliOptions {
 			csv,
 			failOnIssues,
 			summaryOnly,
-			paths: [...config.scan.roots],
+			paths: DEFAULT_ROOTS,
 		};
 	}
 	return {
@@ -89,7 +88,7 @@ export function parseArgs(argv: string[], config: AnalysisConfig): CliOptions {
 	};
 }
 
-export function extractRootsForLanguageDetection(argv: string[], config: AnalysisConfig): string[] {
+export function extractRootsForLanguageDetection(argv: string[]): string[] {
 	const paths: string[] = [];
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
@@ -117,7 +116,7 @@ export function extractRootsForLanguageDetection(argv: string[], config: Analysi
 		paths.push(arg);
 	}
 	if (paths.length === 0) {
-		return [...config.scan.roots];
+		return DEFAULT_ROOTS;
 	}
 	return paths;
 }
@@ -149,17 +148,37 @@ export function runCppQuality(args: readonly string[]): number {
 export function detectProjectLanguage(roots: readonly string[]): ProjectLanguage {
 	let hasTypeScript = false;
 	let hasCpp = false;
-	const files = collectSourceFiles(roots, new Set([...FILE_EXTENSIONS, ...CPP_FILE_EXTENSIONS]));
-	for (let index = 0; index < files.length; index += 1) {
-		const extension = extname(files[index]);
-		if (FILE_EXTENSIONS.has(extension)) {
-			hasTypeScript = true;
+	const stack = roots.map(resolveInputPath);
+	while (stack.length > 0) {
+		const current = stack.pop();
+		if (current === undefined || !existsSync(current)) {
+			continue;
 		}
-		if (CPP_FILE_EXTENSIONS.has(extension)) {
-			hasCpp = true;
+		const stats = statSync(current);
+		if (stats.isFile()) {
+			const extension = extname(current);
+			if (FILE_EXTENSIONS.has(extension)) {
+				hasTypeScript = true;
+			}
+			if (CPP_FILE_EXTENSIONS.has(extension)) {
+				hasCpp = true;
+			}
+			if (hasTypeScript && hasCpp) {
+				return 'mixed';
+			}
+			continue;
 		}
-		if (hasTypeScript && hasCpp) {
-			return 'mixed';
+		if (!stats.isDirectory()) {
+			continue;
+		}
+		const directoryName = basename(current);
+		if (shouldSkipDirectory(directoryName)) {
+			continue;
+		}
+		const entries = readdirSync(current, { withFileTypes: true });
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			stack.push(join(current, entry.name));
 		}
 	}
 	if (hasTypeScript && !hasCpp) {
@@ -536,13 +555,12 @@ export function toRelativePath(path: string): string {
 }
 
 export function run(): void {
-	const config = loadAnalysisConfig();
 	const argv = process.argv.slice(2);
 	if (argv.includes('--help')) {
-		parseArgs(argv, config);
+		parseArgs(argv);
 		return;
 	}
-	const inferredRoots = extractRootsForLanguageDetection(argv, config);
+	const inferredRoots = extractRootsForLanguageDetection(argv);
 	const language = detectProjectLanguage(inferredRoots);
 	if (language === 'cpp') {
 		const exitCode = runCppQuality(argv);
@@ -551,7 +569,7 @@ export function run(): void {
 		}
 		return;
 	}
-	const options = parseArgs(argv, config);
+	const options = parseArgs(argv);
 	if (language === 'mixed') {
 		throw new Error('Mixed TypeScript and C++ sources detected. Run the analyzer on one language folder at a time.');
 	}
@@ -559,7 +577,7 @@ export function run(): void {
 		console.log('No TypeScript or C++ files found in the provided roots.');
 		return;
 	}
-	const fileList = collectSourceFiles(options.paths, FILE_EXTENSIONS);
+	const fileList = collectTypeScriptFiles(options.paths);
 	const buckets = new Map<string, DuplicateLocation[]>();
 	const classInfosByKey = new Map<string, ClassInfo>();
 	const classInfosByName = new Map<string, ClassInfo[]>();
@@ -579,11 +597,11 @@ export function run(): void {
 		sourceTextByFile.set(filePath, sourceText);
 		collectClassInfos(sourceFile, classInfosByKey, classInfosByName, classInfosByFileName);
 		collectExportedTypes(sourceFile, exportedTypes);
-		collectNormalizedBodies(sourceFile, config, normalizedBodies, ledger);
+		collectNormalizedBodies(sourceFile, normalizedBodies, ledger);
 	}
 	const functionUsageInfo = collectFunctionUsageCounts(sourceFiles);
 	for (const sourceFile of sourceFiles) {
-		collectLintIssues(sourceFile, config, lintIssues, statementSequences, functionUsageInfo, ledger);
+		collectLintIssues(sourceFile, lintIssues, statementSequences, functionUsageInfo, ledger);
 	}
 	addDuplicateExportedTypeIssues(exportedTypes, lintIssues);
 	addNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
@@ -599,7 +617,7 @@ export function run(): void {
 			file: toRelativePath(location.file),
 		})),
 	}));
-	const filteredLintIssues = filterSuppressedLintIssues(lintIssues, sourceTextByFile, config.directiveMarker);
+	const filteredLintIssues = filterSuppressedLintIssues(lintIssues, sourceTextByFile);
 	const normalizedLintIssues = filteredLintIssues.map(issue => ({
 		...issue,
 		file: toRelativePath(issue.file),

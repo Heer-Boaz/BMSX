@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
 import { type LuaCallExpression, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../lua_rule';
-import { defineFactorySpaceIdPatternRule } from './define_factory_space_id_pattern';
+import { lintDefineFactorySpaceIdPattern } from './define_factory_space_id_pattern';
 import { isGlobalCall } from './impl/support/calls';
 import { getTableFieldKey, visitTableFieldsRecursively } from './impl/support/table_fields';
 import { pushIssue } from './impl/support/lint_context';
@@ -33,11 +33,6 @@ export function lintDefineFactoryTickEnabledAndSpaceIdPattern(expression: LuaCal
 		if (key !== 'space_id') {
 			return;
 		}
-		pushIssue(
-			issues,
-			defineFactorySpaceIdPatternRule.name,
-			field.value,
-			`${factoryName}: space_id is forbidden. Services must not carry space_id, and prefab/object space must be assigned at inst(..., { space_id = ... }).`,
-		);
+		lintDefineFactorySpaceIdPattern(factoryName, field.value, issues);
 	});
 }

@@ -87,18 +87,7 @@ function splitCppQualityRules() {
 			return cppSupportModuleForName(name);
 		},
 	});
-	writeFile(
-		resolve(root, 'scripts/analysis/cpp_quality/rules.ts'),
-		[
-			"export { collectCppFunctionUsageCounts, createCppFunctionUsageInfo, isCppSingleLineWrapperAllowedByUsage } from '../../lint/rules/cpp/support/function_usage';",
-			"export { lintCppHotPathCalls } from '../../lint/rules/cpp/code_quality/hot_path_calls';",
-			"export { lintCppLocalBindings } from '../../lint/rules/common/local_const_pattern';",
-			"export { lintCppRedundantNumericSanitizationPattern } from '../../lint/rules/code_quality/redundant_numeric_sanitization_pattern';",
-			"export { lintCppSemanticRepeatedExpressions } from '../../lint/rules/code_quality/semantic_repeated_expression_pattern';",
-			"export { collectCppNormalizedBody } from '../../lint/rules/code_quality/normalized_ast_duplicate_pattern';",
-			'',
-		].join('\n'),
-	);
+	rmSync(resolve(root, 'scripts/analysis/cpp_quality/rules.ts'), { force: true });
 }
 
 function splitLuaCartLinter() {
@@ -134,13 +123,7 @@ function splitLuaCartLinter() {
 			return luaSupportModuleForName(name);
 		},
 	});
-	writeFile(
-		resolve(root, 'scripts/rompacker/cart_lua_linter.ts'),
-		[
-			"export { lintCartLuaSources } from './cart_lua_linter_runtime';",
-			'',
-		].join('\n'),
-	);
+	rmSync(resolve(root, 'scripts/rompacker/cart_lua_linter.ts'), { force: true });
 }
 
 function rewriteEntrypoints() {
@@ -150,13 +133,6 @@ function rewriteEntrypoints() {
 			"import { run } from './code_quality/cli';",
 			'',
 			'run();',
-			'',
-		].join('\n'),
-	);
-	writeFile(
-		resolve(root, 'scripts/lint/rules/code_quality/typescript_code_quality_pipeline.ts'),
-		[
-			"export { run as runCodeQualityCli } from '../../../analysis/code_quality/cli';",
 			'',
 		].join('\n'),
 	);
@@ -1094,6 +1070,7 @@ function stripRuntimeOnlyRuleBarrelTypes() {
 	text = text.replace("import { type CodeQualityLintRule } from '../../lint/rules';\n", '');
 	text = text.replace(/\bCodeQualityLintRule\b/g, "LintIssue['kind']");
 	text = text.replace("import { type LintIssue['kind'], type TsLintIssue as LintIssue } from '../../lint/ts_rule';", "import { type TsLintIssue as LintIssue } from '../../lint/ts_rule';");
+	text = text.replace("import { type LintIssue['kind'] } from '../../lint/ts_rule';\n", '');
 	writeFile(path, text);
 
 	const luaRuntimePath = resolve(root, 'scripts/rompacker/cart_lua_linter_runtime.ts');

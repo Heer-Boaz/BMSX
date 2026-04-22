@@ -42,6 +42,8 @@ export const SEMANTIC_NORMALIZATION_CALL_TARGETS = new Set([
 	'replaceAll',
 ]);
 
+export const SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT = 2;
+
 export function isSemanticFloorDivisionCall(node: ts.CallExpression): boolean {
 	if (callTargetText(node) !== 'Math.floor' || node.arguments.length !== 1) {
 		return false;
@@ -146,6 +148,11 @@ export function semanticOperationName(target: string): string {
 
 export function isSemanticValidationPredicateTarget(target: string): boolean {
 	return target === 'Number.isFinite';
+}
+
+export function semanticSignatureLabel(signature: string): string {
+	const separator = signature.indexOf('|');
+	return (separator >= 0 ? signature.slice(0, separator) : signature).replace(':', ' ');
 }
 
 export function isSemanticBodySignatureFamily(family: string): boolean {

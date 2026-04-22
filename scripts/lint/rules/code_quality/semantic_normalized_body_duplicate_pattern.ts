@@ -1,6 +1,7 @@
 import { defineLintRule } from '../../rule';
 import type { TsLintIssue } from '../../ts_rule';
-import type { NormalizedBodyInfo } from './normalized_ast_duplicate_pattern';
+import type { NormalizedBodyInfo } from '../ts/support/declarations';
+import { semanticSignatureLabel } from '../ts/support/semantic';
 
 export const semanticNormalizedBodyDuplicatePatternRule = defineLintRule('code_quality', 'semantic_normalized_body_duplicate_pattern');
 
@@ -49,9 +50,4 @@ export function addSemanticNormalizedBodyDuplicateIssues(normalizedBodies: reado
 			});
 		}
 	}
-}
-
-function semanticSignatureLabel(signature: string): string {
-	const separator = signature.indexOf('|');
-	return (separator >= 0 ? signature.slice(0, separator) : signature).replace(':', ' ');
 }

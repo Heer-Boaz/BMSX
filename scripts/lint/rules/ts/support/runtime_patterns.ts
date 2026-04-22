@@ -1,11 +1,112 @@
 import { type AnalysisRegion } from '../../../../analysis/lint_suppressions';
 import ts from 'typescript';
 import { nodeIsInAnalysisRegion } from '../../../../analysis/code_quality/source_scan';
-import { expressionRootName, unwrapExpression } from './ast';
-import { getCallTargetLeafName } from './calls';
-import { BOUNDARY_WRAPPER_NAME_WORDS, DIRECT_MUTATION_METHOD_NAMES } from './declarations';
+import { LintIssue, expressionRootName, pushLintIssue, unwrapExpression } from './ast';
+import { getCallTargetLeafName, isLookupCallExpression } from './calls';
+import { BOUNDARY_WRAPPER_NAME_WORDS, DIRECT_MUTATION_METHOD_NAMES, expressionAccessFingerprint } from './declarations';
 import { isFunctionExpressionLike } from './functions';
+import { isNullishReturnStatement } from './nullish';
 import { isSemanticPredicateFunctionName } from './semantic';
+import { nextStatementAfter, previousStatementBefore } from './statements';
+
+export function lintLookupAliasOptionalChain(node: ts.Statement, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
+	const previous = previousStatementBefore(node);
+	if (previous === null || !ts.isVariableStatement(previous)) {
+		return;
+	}
+	const declarations = previous.declarationList.declarations;
+	if (declarations.length !== 1) {
+		return;
+	}
+	const declaration = declarations[0];
+	if (!ts.isIdentifier(declaration.name) || declaration.initializer === undefined || !isLookupCallExpression(declaration.initializer)) {
+		return;
+	}
+	const declarationFingerprint = `id:${declaration.name.text}`;
+	if (ts.isIfStatement(node)) {
+		if (node.elseStatement !== undefined || !isNullishReturnStatement(node.thenStatement)) {
+			return;
+		}
+		const guardExpression = unwrapExpression(node.expression);
+		if (!ts.isPrefixUnaryExpression(guardExpression) || guardExpression.operator !== ts.SyntaxKind.ExclamationToken) {
+			return;
+		}
+		const guardFingerprintText = expressionAccessFingerprint(guardExpression.operand);
+		if (guardFingerprintText !== declarationFingerprint) {
+			return;
+		}
+		const next = nextStatementAfter(node);
+		if (next === null || !ts.isReturnStatement(next) || next.expression === undefined) {
+			return;
+		}
+		const returnedFingerprint = expressionAccessFingerprint(next.expression);
+		if (
+			returnedFingerprint === null
+			|| returnedFingerprint === declarationFingerprint
+			|| (
+				!returnedFingerprint.startsWith(`${declarationFingerprint}.`)
+				&& !returnedFingerprint.startsWith(`${declarationFingerprint}[`)
+			)
+		) {
+			return;
+		}
+		pushLintIssue(
+			issues,
+			sourceFile,
+			node,
+			'lookup_alias_return_pattern',
+			'Temporary lookup alias is forbidden. Inline the lookup expression directly and use optional chaining on it instead.',
+		);
+		return;
+	}
+	if (!ts.isReturnStatement(node) || node.expression === undefined) {
+		return;
+	}
+	const returnedFingerprint = expressionAccessFingerprint(node.expression);
+	if (
+		returnedFingerprint === null
+		|| returnedFingerprint === declarationFingerprint
+		|| (
+			!returnedFingerprint.startsWith(`${declarationFingerprint}.`)
+			&& !returnedFingerprint.startsWith(`${declarationFingerprint}[`)
+		)
+	) {
+		return;
+	}
+	pushLintIssue(
+		issues,
+		sourceFile,
+		node,
+		'lookup_alias_return_pattern',
+		'Temporary lookup alias is forbidden. Inline the lookup expression directly and use optional chaining on it instead.',
+	);
+}
+
+export function catchBlockHandlesLuaFaultBoundary(node: ts.CatchClause, sourceFile: ts.SourceFile): boolean {
+	let handled = false;
+	const visit = (current: ts.Node): void => {
+		if (handled) {
+			return;
+		}
+		if (ts.isPropertyAccessExpression(current) && current.getText(sourceFile) === 'SliceResult.Fault') {
+			handled = true;
+			return;
+		}
+		if (
+			ts.isCallExpression(current)
+			&& ts.isPropertyAccessExpression(current.expression)
+			&& current.expression.name.text === 'push'
+			&& current.arguments.length > 0
+			&& current.arguments[0].kind === ts.SyntaxKind.FalseKeyword
+		) {
+			handled = true;
+			return;
+		}
+		ts.forEachChild(current, visit);
+	};
+	visit(node.block);
+	return handled;
+}
 
 export function isAllocationExpression(node: ts.Expression): boolean {
 	const unwrapped = unwrapExpression(node);

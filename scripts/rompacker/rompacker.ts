@@ -6,7 +6,7 @@ import { Presets, SingleBar } from 'cli-progress';
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../src/bmsx/core/system';
 import { createCliUi, findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli';
 import { validateAudioEventReferences } from './audioeventvalidator';
-import { lintCartLuaSources } from './cart_lua_linter';
+import { lintCartLuaSources } from './cart_lua_linter_runtime';
 import { appendProgramAsset, commonResPath, createAtlasses, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, setAtlasFlag } from './rombuilder';
 import type { RomPackerOptions } from './formater.rompack';
 import type { RomAsset } from '../../src/bmsx/rompack/format';

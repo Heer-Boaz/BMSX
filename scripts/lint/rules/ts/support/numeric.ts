@@ -1,8 +1,11 @@
+import { type AnalysisRegion } from '../../../../analysis/lint_suppressions';
 import ts from 'typescript';
-import { unwrapExpression } from './ast';
+import { nodeIsInAnalysisRegion } from '../../../../analysis/code_quality/source_scan';
+import { LintIssue, pushLintIssue, unwrapExpression } from './ast';
 import { callTargetText } from './calls';
 import { isEqualityOperator, isOrderingComparisonOperator } from './conditions';
 import { hasPrivateOrProtectedModifier } from './runtime_patterns';
+import { isSemanticFloorDivisionCall } from './semantic';
 
 export const CONTRACT_NUMERIC_NAMES = new Set([
 	'column',
@@ -104,6 +107,39 @@ export function isNormalizedColorBytePackingCall(node: ts.CallExpression): boole
 		&& isNumericLiteralText(normalized.arguments[2], '1');
 }
 
+export function lintRedundantNumericSanitizationPattern(
+	node: ts.CallExpression,
+	sourceFile: ts.SourceFile,
+	regions: readonly AnalysisRegion[],
+	issues: LintIssue[],
+): void {
+	if (nodeIsInAnalysisRegion(sourceFile, regions, 'hot-path', node) || !isNumericDefensiveCall(node)) {
+		return;
+	}
+	if (isNestedInsideNumericSanitizationCall(node, node.parent)) {
+		return;
+	}
+	if (isSemanticFloorDivisionCall(node)) {
+		return;
+	}
+	if (isMinimumRasterPixelSizeCall(node, sourceFile)) {
+		return;
+	}
+	if (isNormalizedColorBytePackingCall(node)) {
+		return;
+	}
+	if (!containsNestedNumericSanitizationCall(node)) {
+		return;
+	}
+	pushLintIssue(
+		issues,
+		sourceFile,
+		node,
+		'redundant_numeric_sanitization_pattern',
+		'Redundant numeric sanitization is forbidden. Bound values once at the boundary instead of clamping or flooring them repeatedly.',
+	);
+}
+
 export function isNumericDefensiveCall(node: ts.CallExpression): boolean {
 	const target = callTargetText(node);
 	return target === 'Math.floor'
@@ -177,6 +213,38 @@ export function isContractNumericSanitizerCall(node: ts.CallExpression): boolean
 		}
 	}
 	return false;
+}
+
+export function lintContractNumericDefensiveSanitizationPattern(node: ts.Node, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
+	if (ts.isCallExpression(node) && isContractNumericSanitizerCall(node)) {
+		pushLintIssue(
+			issues,
+			sourceFile,
+			node,
+			'contract_numeric_defensive_sanitization_pattern',
+			'Defensive contract-number sanitization is forbidden. Internal line/column/row values must be bounded once at their owner, not finite/floor/clamp/null-normalized at every use.',
+		);
+		return;
+	}
+	if (ts.isBinaryExpression(node) && isContractNumericDefensiveComparison(node)) {
+		pushLintIssue(
+			issues,
+			sourceFile,
+			node,
+			'contract_numeric_defensive_sanitization_pattern',
+			'Defensive contract-number sentinel checks are forbidden. Internal line/column/row values must stay in their contract domain instead of being normalized to null or fallback coordinates.',
+		);
+		return;
+	}
+	if (ts.isTypeOfExpression(node) && expressionContainsContractNumeric(node.expression)) {
+		pushLintIssue(
+			issues,
+			sourceFile,
+			node,
+			'contract_numeric_defensive_sanitization_pattern',
+			'Defensive contract-number type checks are forbidden. Internal line/column/row values are typed contracts, not untrusted payloads.',
+		);
+	}
 }
 
 export function isNumericLiteralText(node: ts.Expression, value: string): boolean {

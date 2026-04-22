@@ -1,22 +1,14 @@
 import { type AnalysisRegion } from '../../../../analysis/lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../../../../analysis/quality_ledger';
-import { type TsLintIssue as LintIssue, pushTsLintIssue as pushLintIssue } from '../../../ts_rule';
-import { allocationFallbackPatternRule } from '../../code_quality/allocation_fallback_pattern';
-import { defensiveTypeofFunctionPatternRule } from '../../code_quality/defensive_typeof_function_pattern';
-import { nullishCounterIncrementPatternRule } from '../../code_quality/nullish_counter_increment_pattern';
-import { nullishNullNormalizationPatternRule } from '../../code_quality/nullish_null_normalization_pattern';
-import { emptyContainerFallbackPatternRule } from '../../common/empty_container_fallback_pattern';
-import { emptyStringConditionPatternRule } from '../../common/empty_string_condition_pattern';
-import { emptyStringFallbackPatternRule } from '../../common/empty_string_fallback_pattern';
-import { explicitTruthyComparisonPatternRule } from '../../common/explicit_truthy_comparison_pattern';
-import { orNilFallbackPatternRule } from '../../common/or_nil_fallback_pattern';
-import { stringOrChainComparisonPatternRule } from '../../common/string_or_chain_comparison_pattern';
 import ts from 'typescript';
-import { nodeIsInAnalysisRegion } from '../../../../analysis/code_quality/source_scan';
-import { isExplicitNonJsTruthinessPair, isInsideConstructor, unwrapExpression } from '../support/ast';
-import { collectStringOrChainSubjects, isBooleanLiteral, isBooleanLiteralComparisonSmell, isEmptyContainerLiteral, isEmptyStringLiteral, isEqualityOperator, isTypeofFunctionComparison } from '../support/conditions';
-import { isNullOrUndefined, isNullishCounterIncrement, nullishFallbackLedgerKind } from '../support/nullish';
-import { isAllocationExpression } from '../support/runtime_patterns';
+import { lintAllocationFallbackPattern } from '../../code_quality/allocation_fallback_pattern';
+import { lintDefensiveTypeofFunctionPattern } from '../../code_quality/defensive_typeof_function_pattern';
+import { lintNullishCounterIncrementPattern } from '../../code_quality/nullish_counter_increment_pattern';
+import { lintNullishNullNormalizationPattern } from '../../code_quality/nullish_null_normalization_pattern';
+import { lintEmptyContainerFallbackPattern } from '../../common/empty_container_fallback_pattern';
+import { LintIssue, isExplicitNonJsTruthinessPair, pushLintIssue, unwrapExpression } from '../support/ast';
+import { collectStringOrChainSubjects, isBooleanLiteral, isBooleanLiteralComparisonSmell, isEmptyStringLiteral, isEqualityOperator } from '../support/conditions';
+import { isNullOrUndefined, nullishFallbackLedgerKind } from '../support/nullish';
 
 export function lintBinaryExpressionForCodeQuality(
 	node: ts.BinaryExpression,
@@ -28,68 +20,24 @@ export function lintBinaryExpressionForCodeQuality(
 	if (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
 		noteQualityLedger(ledger, 'nullish_fallback_checked');
 		noteQualityLedger(ledger, `nullish_fallback_${nullishFallbackLedgerKind(node)}`);
-		if (isNullOrUndefined(node.right)) {
-			pushLintIssue(
-				issues,
-				sourceFile,
-				node.operatorToken,
-				nullishNullNormalizationPatternRule.name,
-				'`?? null`/`?? undefined` normalization is forbidden. Preserve undefined/null directly or handle the case explicitly.',
-			);
-		}
-		if (isEmptyContainerLiteral(node.right)) {
-			pushLintIssue(
-				issues,
-				sourceFile,
-				node.operatorToken,
-				emptyContainerFallbackPatternRule.name,
-				'`?? []`/`?? {}` fallback allocation is forbidden. Use a shared empty value, a direct branch, or keep ownership explicit.',
-			);
-		}
+		lintNullishNullNormalizationPattern(node, sourceFile, issues);
+		lintEmptyContainerFallbackPattern(node, sourceFile, issues);
 		if (isEmptyStringLiteral(unwrapExpression(node.right))) {
 			pushLintIssue(
 				issues,
 				sourceFile,
 				node.operatorToken,
-				emptyStringFallbackPatternRule.name,
+				'empty_string_fallback_pattern',
 				'Empty-string fallback via `??` is forbidden. Do not use empty strings as default values.',
 			);
 		}
-		if (isAllocationExpression(node.right) && !nodeIsInAnalysisRegion(sourceFile, regions, 'allocation-fallback-acceptable', node)) {
-			if (isInsideConstructor(node)) {
-				noteQualityLedger(ledger, 'allowed_allocation_fallback_constructor_default');
-			} else {
-				pushLintIssue(
-					issues,
-					sourceFile,
-					node.operatorToken,
-					allocationFallbackPatternRule.name,
-					'Allocation fallback via `??` is forbidden. Use shared defaults, explicit branches, or require ownership at the call boundary.',
-				);
-			}
-		}
+		lintAllocationFallbackPattern(node, sourceFile, regions, issues, ledger);
 	}
-	if (isNullishCounterIncrement(node)) {
-		pushLintIssue(
-			issues,
-			sourceFile,
-			node.operatorToken,
-			nullishCounterIncrementPatternRule.name,
-			'Counter increment through `?? 0` is forbidden. Initialize the counter at the owner boundary and increment directly.',
-		);
-	}
-	if (isTypeofFunctionComparison(node)) {
-		pushLintIssue(
-			issues,
-			sourceFile,
-			node.operatorToken,
-			defensiveTypeofFunctionPatternRule.name,
-			'`typeof x === "function"` is forbidden. Trust callable contracts, use optional calls for optional members, or suppress a proven external boundary locally.',
-		);
-	}
-		if (node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
-			const subjects: string[] = [];
-			if (collectStringOrChainSubjects(node, subjects) && subjects.length > 2) {
+	lintNullishCounterIncrementPattern(node, sourceFile, issues);
+	lintDefensiveTypeofFunctionPattern(node, sourceFile, issues);
+	if (node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
+		const subjects: string[] = [];
+		if (collectStringOrChainSubjects(node, subjects) && subjects.length > 2) {
 			const first = subjects[0];
 			let sameSubject = true;
 			for (let index = 1; index < subjects.length; index += 1) {
@@ -101,11 +49,11 @@ export function lintBinaryExpressionForCodeQuality(
 			if (sameSubject) {
 				const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
 				issues.push({
-					kind: stringOrChainComparisonPatternRule.name,
+					kind: 'string_or_chain_comparison_pattern',
 					file: sourceFile.fileName,
 					line: position.line + 1,
 					column: position.character + 1,
-					name: stringOrChainComparisonPatternRule.name,
+					name: 'string_or_chain_comparison_pattern',
 					message: 'Multiple OR-comparisons against the same expression with string literals are forbidden. Use `switch`-statement or set-like lookups instead.',
 				});
 			}
@@ -118,11 +66,11 @@ export function lintBinaryExpressionForCodeQuality(
 		) {
 			const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
 			issues.push({
-				kind: emptyStringConditionPatternRule.name,
+				kind: 'empty_string_condition_pattern',
 				file: sourceFile.fileName,
 				line: position.line + 1,
 				column: position.character + 1,
-				name: emptyStringConditionPatternRule.name,
+				name: 'empty_string_condition_pattern',
 				message: 'Empty-string condition checks are forbidden. Prefer explicit truthy/falsy checks.',
 			});
 		}
@@ -136,11 +84,11 @@ export function lintBinaryExpressionForCodeQuality(
 		) {
 			const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
 			issues.push({
-				kind: explicitTruthyComparisonPatternRule.name,
+				kind: 'explicit_truthy_comparison_pattern',
 				file: sourceFile.fileName,
 				line: position.line + 1,
 				column: position.character + 1,
-				name: explicitTruthyComparisonPatternRule.name,
+				name: 'explicit_truthy_comparison_pattern',
 				message: 'Explicit boolean literal comparison is forbidden. Use truthy/falsy checks instead.',
 			});
 		}
@@ -152,11 +100,11 @@ export function lintBinaryExpressionForCodeQuality(
 		) {
 			const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
 			issues.push({
-				kind: emptyStringFallbackPatternRule.name,
+				kind: 'empty_string_fallback_pattern',
 				file: sourceFile.fileName,
 				line: position.line + 1,
 				column: position.character + 1,
-				name: emptyStringFallbackPatternRule.name,
+				name: 'empty_string_fallback_pattern',
 				message: 'Empty-string fallback via `||` is forbidden. Do not use empty strings as default values.',
 			});
 		}
@@ -166,11 +114,11 @@ export function lintBinaryExpressionForCodeQuality(
 		) {
 			const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
 			issues.push({
-				kind: orNilFallbackPatternRule.name,
+				kind: 'or_nil_fallback_pattern',
 				file: sourceFile.fileName,
 				line: position.line + 1,
 				column: position.character + 1,
-				name: orNilFallbackPatternRule.name,
+				name: 'or_nil_fallback_pattern',
 				message: '`|| null`/`|| undefined` fallback is forbidden. Use direct checks or nullish coalescing.',
 			});
 		}

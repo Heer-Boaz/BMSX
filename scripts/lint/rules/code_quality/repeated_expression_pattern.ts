@@ -5,18 +5,12 @@ import { collectCppStatementRanges, cppRangeHas } from '../../../../src/bmsx/lan
 import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import type { TsLintIssue } from '../../ts_rule';
 import { defineLintRule } from '../../rule';
+import { type RepeatedExpressionInfo } from '../ts/support/ast';
 
 export const repeatedExpressionPatternRule = defineLintRule('code_quality', 'repeated_expression_pattern');
 
 const MIN_REPEATED_EXPRESSION_COUNT = 2;
 const REPEATED_EXPRESSION_PAIR_MIN_LENGTH = 48;
-
-export type RepeatedExpressionInfo = {
-	line: number;
-	column: number;
-	count: number;
-	sampleText: string;
-};
 
 export function addRepeatedExpressionIssues(
 	scope: ReadonlyMap<string, RepeatedExpressionInfo>,

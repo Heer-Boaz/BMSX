@@ -1,6 +1,7 @@
 import ts from 'typescript';
-import { unwrapExpression } from './ast';
+import { LintIssue, isLuaSourceLookupExpression, unwrapExpression } from './ast';
 import { isExpressionInScopeFingerprint } from './bindings';
+import { expressionAccessFingerprint } from './declarations';
 import { isFunctionLikeWithParameters } from './functions';
 import { ExplicitValueCheck } from './types';
 
@@ -156,6 +157,45 @@ export function stringSwitchComparisonSubject(node: ts.Expression): string | nul
 	return isExpressionInScopeFingerprint(subject);
 }
 
+export function lintStringSwitchChain(node: ts.IfStatement, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
+	const parent = node.parent;
+	if (ts.isIfStatement(parent) && parent.elseStatement === node) {
+		return;
+	}
+	const subjects: string[] = [];
+	let current: ts.IfStatement | undefined = node;
+	while (current !== undefined) {
+		const subject = stringSwitchComparisonSubject(current.expression);
+		if (subject === null) {
+			return;
+		}
+		subjects.push(subject);
+		const elseStatement = current.elseStatement;
+		if (elseStatement === undefined || !ts.isIfStatement(elseStatement)) {
+			break;
+		}
+		current = elseStatement;
+	}
+	if (subjects.length < 3) {
+		return;
+	}
+	const first = subjects[0];
+	for (let index = 1; index < subjects.length; index += 1) {
+		if (subjects[index] !== first) {
+			return;
+		}
+	}
+	const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+	issues.push({
+		kind: 'string_switch_chain_pattern',
+		file: sourceFile.fileName,
+		line: position.line + 1,
+		column: position.character + 1,
+		name: 'string_switch_chain_pattern',
+		message: 'Multiple string comparisons against the same expression are forbidden. Use `switch`-statement or lookup table instead.',
+	});
+}
+
 export function falseLiteralComparison(node: ts.Expression): ExplicitValueCheck | null {
 	const unwrapped = unwrapExpression(node);
 	if (!ts.isBinaryExpression(unwrapped)) {
@@ -208,6 +248,15 @@ export function isLookupFallbackExpression(node: ts.Expression): boolean {
 	}
 	const target = unwrapExpression(unwrapped.expression);
 	return ts.isPropertyAccessExpression(target) && target.name.text === 'get';
+}
+
+export function isLuaSourceLookupFallback(node: ts.BinaryExpression): boolean {
+	return isLuaSourceLookupExpression(node.left) && isLuaSourceLookupExpression(node.right);
+}
+
+export function isRuntimeAssetLayerFallback(node: ts.BinaryExpression): boolean {
+	return expressionAccessFingerprint(node.left) === 'this.assets.overlayLayer'
+		&& expressionAccessFingerprint(node.right) === 'this.assets.cartLayer';
 }
 
 export function isSharedConstantFallbackExpression(node: ts.Expression): boolean {

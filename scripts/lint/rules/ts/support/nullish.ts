@@ -1,10 +1,11 @@
 import ts from 'typescript';
-import { expressionRootName, unwrapExpression } from './ast';
+import { LintIssue, expressionRootName, pushLintIssue, unwrapExpression } from './ast';
 import { isExpressionInScopeFingerprint } from './bindings';
-import { isEmptyContainerLiteral, isEmptyStringLiteral, isEqualityOperator, isLookupFallbackExpression, isOptionalParameterFallback, isPositiveEqualityOperator, isSharedConstantFallbackExpression } from './conditions';
+import { isEmptyContainerLiteral, isEmptyStringLiteral, isEqualityOperator, isLookupFallbackExpression, isLuaSourceLookupFallback, isOptionalParameterFallback, isPositiveEqualityOperator, isRuntimeAssetLayerFallback, isSharedConstantFallbackExpression } from './conditions';
 import { expressionAccessFingerprint } from './declarations';
 import { isNumericLiteralLike, isNumericLiteralText } from './numeric';
 import { isAllocationExpression } from './runtime_patterns';
+import { nextStatementAfter } from './statements';
 import { ExplicitValueCheck, NullishLiteralKind } from './types';
 
 export function nullishLiteralKind(node: ts.Expression): NullishLiteralKind | null {
@@ -157,6 +158,37 @@ export function isNullishReturnStatement(statement: ts.Statement): boolean {
 	return nullishReturnKind(statement) !== null;
 }
 
+export function lintNullishReturnGuard(node: ts.IfStatement, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
+	if (node.elseStatement !== undefined) {
+		return;
+	}
+	const returnedKind = nullishReturnKind(node.thenStatement);
+	if (returnedKind === null) {
+		return;
+	}
+	const guardFingerprint = nullishGuardFingerprint(node.expression);
+	if (guardFingerprint === null) {
+		return;
+	}
+	const next = nextStatementAfter(node);
+	if (next === null || !ts.isReturnStatement(next) || next.expression === undefined) {
+		return;
+	}
+	if (!expressionUsesGuardedValue(next.expression, guardFingerprint)) {
+		return;
+	}
+	if (isCrossNullishProjection(node.expression, returnedKind, next.expression)) {
+		return;
+	}
+	pushLintIssue(
+		issues,
+		sourceFile,
+		node,
+		'nullish_return_guard_pattern',
+		'Nullish guard that only returns null/undefined before returning the guarded value is forbidden. Keep the compact expression form instead of expanding it into a branch.',
+	);
+}
+
 export function nullishLiteralComparison(node: ts.Expression): ExplicitValueCheck | null {
 	const unwrapped = unwrapExpression(node);
 	if (!ts.isBinaryExpression(unwrapped)) {
@@ -226,14 +258,20 @@ export function nullishFallbackLedgerKind(node: ts.BinaryExpression): string {
 	if (isOptionalParameterFallback(node)) {
 		return 'optional_parameter_default';
 	}
+	if (isLuaSourceLookupFallback(node)) {
+		return 'lua_source_lookup';
+	}
+	if (isRuntimeAssetLayerFallback(node)) {
+		return 'runtime_asset_layer';
+	}
 	const root = expressionRootName(node.left);
 	if (root === 'options' || root === 'opts' || root === 'params') {
 		return 'option_default';
 	}
-	if (root !== null && /(?:config|layout|manifest|options|settings|specs)$/i.test(root)) {
+	if (root === 'manifest' || root === 'specs' || root === 'layout' || root === 'memorySpecs' || root === 'engineMemorySpecs') {
 		return 'data_default';
 	}
-	if (root !== null && /metadata$/i.test(root)) {
+	if (root === 'metadata' || root === 'engineMetadata' || root === 'cartMetadata' || root === 'runtime') {
 		return 'metadata_default';
 	}
 	const right = unwrapExpression(node.right);

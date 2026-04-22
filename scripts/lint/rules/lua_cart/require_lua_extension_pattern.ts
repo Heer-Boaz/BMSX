@@ -1,11 +1,7 @@
 import { LuaSyntaxKind, type LuaCallExpression } from '../../../../src/bmsx/lua/syntax/ast';
 import type { LuaLintIssue, LuaLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
-import {
-	forbiddenRenderModuleRequireMessage,
-	forbiddenRenderModuleRequirePatternRule,
-	isForbiddenRenderModuleRequire,
-} from './forbidden_render_module_require_pattern';
+import { lintForbiddenRenderModuleRequirePattern } from './forbidden_render_module_require_pattern';
 
 export const requireLuaExtensionPatternRule = defineLintRule('lua_cart', 'require_lua_extension_pattern');
 
@@ -20,13 +16,7 @@ export function lintRequireCall(expression: LuaCallExpression, issues: LuaLintIs
 	if (firstArgument.kind !== LuaSyntaxKind.StringLiteralExpression) {
 		return;
 	}
-	if (isForbiddenRenderModuleRequire(firstArgument.value)) {
-		pushIssue(
-			issues,
-			forbiddenRenderModuleRequirePatternRule.name,
-			firstArgument,
-			forbiddenRenderModuleRequireMessage(firstArgument.value),
-		);
+	if (lintForbiddenRenderModuleRequirePattern(firstArgument, issues, pushIssue)) {
 		return;
 	}
 	if (!firstArgument.value.toLowerCase().endsWith('.lua')) {

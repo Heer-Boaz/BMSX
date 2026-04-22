@@ -35,21 +35,21 @@ import {
 	type CppLintIssue,
 	type CppNormalizedBodyInfo,
 } from './diagnostics';
+import { collectCppNormalizedBody } from '../../lint/rules/code_quality/normalized_ast_duplicate_pattern';
+import { lintCppRedundantNumericSanitizationPattern } from '../../lint/rules/code_quality/redundant_numeric_sanitization_pattern';
+import { lintCppSemanticRepeatedExpressions } from '../../lint/rules/code_quality/semantic_repeated_expression_pattern';
+import { lintCppLocalBindings } from '../../lint/rules/common/local_const_pattern';
+import { lintCppHotPathCalls } from '../../lint/rules/cpp/code_quality/hot_path_calls';
+import {
+	collectCppFunctionUsageCounts,
+	createCppFunctionUsageInfo,
+	isCppSingleLineWrapperAllowedByUsage,
+} from '../../lint/rules/cpp/support/function_usage';
 import {
 	collectCppClassRanges,
 	collectCppFunctionDefinitions,
 	collectCppTypeDeclarations,
 } from '../../../src/bmsx/language/cpp/syntax/declarations';
-import {
-	collectCppFunctionUsageCounts,
-	collectCppNormalizedBody,
-	createCppFunctionUsageInfo,
-	lintCppRedundantNumericSanitizationPattern,
-	isCppSingleLineWrapperAllowedByUsage,
-	lintCppHotPathCalls,
-	lintCppLocalBindings,
-	lintCppSemanticRepeatedExpressions,
-} from './rules';
 import { addCppRepeatedStatementSequenceIssues, collectCppRepeatedStatementSequences, type CppStatementSequenceInfo } from '../../lint/rules/common/repeated_statement_sequence_pattern';
 import { buildCppPairMap, tokenizeCpp } from '../../../src/bmsx/language/cpp/syntax/tokens';
 import type { CppClassRange, CppFunctionInfo, CppTypeDeclarationInfo } from '../../../src/bmsx/language/cpp/syntax/declarations';

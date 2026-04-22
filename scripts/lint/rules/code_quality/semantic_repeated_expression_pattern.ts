@@ -1,5 +1,5 @@
 import type { TsLintIssue } from '../../ts_rule';
-import type { RepeatedExpressionInfo } from './repeated_expression_pattern';
+import type { RepeatedExpressionInfo } from '../ts/support/ast';
 import { defineLintRule } from '../../rule';
 import { type CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import { cppCallTarget, findCppAccessChainStart } from '../../../../src/bmsx/language/cpp/syntax/syntax';

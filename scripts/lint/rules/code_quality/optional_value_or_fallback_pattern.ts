@@ -1,10 +1,10 @@
-import { cppCallTarget, splitCppArgumentRanges } from '../../../../src/bmsx/language/cpp/syntax/syntax';
+import { cppCallTarget } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../../../analysis/quality_ledger';
 import { defineLintRule } from '../../rule';
-import { eagerValueOrFallbackPatternRule } from './eager_value_or_fallback_pattern';
+import { lintCppEagerValueOrFallbackPattern } from './eager_value_or_fallback_pattern';
 
 export const optionalValueOrFallbackPatternRule = defineLintRule('code_quality', 'optional_value_or_fallback_pattern');
 
@@ -25,8 +25,7 @@ export function lintCppOptionalValueOrFallbackPatterns(
 		if (target === null || (target !== 'value_or' && !target.endsWith('.value_or') && !target.endsWith('::value_or'))) {
 			continue;
 		}
-		if (cppValueOrHasEagerFallbackWork(tokens, pairs, index)) {
-			pushLintIssue(issues, file, token, eagerValueOrFallbackPatternRule.name, 'std::optional::value_or eagerly evaluates its fallback. Use an explicit branch when the fallback does work.');
+		if (lintCppEagerValueOrFallbackPattern(file, tokens, pairs, index, issues)) {
 			continue;
 		}
 		const boundaryKind = cppValueOrBoundaryKind(regions, token.line);
@@ -36,28 +35,6 @@ export function lintCppOptionalValueOrFallbackPatterns(
 			noteQualityLedger(ledger, `cpp_optional_value_or_${boundaryKind}`);
 		}
 	}
-}
-
-function cppValueOrHasEagerFallbackWork(tokens: readonly CppToken[], pairs: readonly number[], openParen: number): boolean {
-	const closeParen = pairs[openParen];
-	if (closeParen <= openParen) {
-		return false;
-	}
-	const args = splitCppArgumentRanges(tokens, openParen + 1, closeParen);
-	if (args.length !== 1) {
-		return true;
-	}
-	const [start, end] = args[0];
-	for (let index = start; index < end; index += 1) {
-		const text = tokens[index].text;
-		if (text === 'new' || text === '{' || text === '[') {
-			return true;
-		}
-		if (text === '(' && pairs[index] > index && pairs[index] < end) {
-			return true;
-		}
-	}
-	return false;
 }
 
 function cppValueOrBoundaryKind(regions: readonly AnalysisRegion[], line: number): string | null {

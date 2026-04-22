@@ -1,6 +1,7 @@
 import ts from 'typescript';
-import { unwrapExpression } from './ast';
+import { LintIssue, getActiveBinding, pushLintIssue, unwrapExpression } from './ast';
 import { getCallTargetLeafName } from './calls';
+import { LintBinding } from './types';
 
 export function splitJoinDelimiterFingerprint(expression: ts.Expression | undefined): string | null {
 	if (expression === undefined) {
@@ -52,4 +53,43 @@ export function isJoinLikeCallTarget(target: string): boolean {
 		|| target === 'joinLines'
 		|| target.endsWith('.join')
 		|| target.endsWith('.joinLines');
+}
+
+export function lintSplitJoinRoundtripPattern(
+	node: ts.CallExpression,
+	sourceFile: ts.SourceFile,
+	issues: LintIssue[],
+	scopes: Array<Map<string, LintBinding[]>>,
+): void {
+	const outerTarget = getCallTargetLeafName(node.expression);
+	if (outerTarget === null || !isJoinLikeCallTarget(outerTarget)) {
+		return;
+	}
+	const outerExpression = unwrapExpression(node.expression);
+	if (!ts.isPropertyAccessExpression(outerExpression)) {
+		return;
+	}
+	const receiver = unwrapExpression(outerExpression.expression);
+	let splitFingerprint = findSplitLikeDelimiterInExpression(receiver);
+	if (splitFingerprint === null) {
+		if (!ts.isIdentifier(receiver)) {
+			return;
+		}
+		const binding = getActiveBinding(scopes, receiver.text);
+		if (binding === null || binding.splitJoinDelimiterFingerprint === null || binding.readCount !== 0) {
+			return;
+		}
+		splitFingerprint = binding.splitJoinDelimiterFingerprint;
+	}
+	const joinFingerprint = splitJoinDelimiterFingerprint(node.arguments[0]);
+	if (joinFingerprint === null || splitFingerprint !== joinFingerprint) {
+		return;
+	}
+	pushLintIssue(
+		issues,
+		sourceFile,
+		node,
+		'split_join_roundtrip_pattern',
+		'Split/join roundtrip is forbidden. Keep the text in one shape instead of splitting and rejoining it.',
+	);
 }

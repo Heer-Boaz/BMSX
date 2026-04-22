@@ -1,15 +1,45 @@
 import { type AnalysisRegion } from '../../../../analysis/lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../../../../analysis/quality_ledger';
-import { type NormalizedBodyInfo } from '../../code_quality/normalized_ast_duplicate_pattern';
 import ts from 'typescript';
 import { nodeIsInAnalysisRegion } from '../../../../analysis/code_quality/source_scan';
-import { NORMALIZED_BODY_MIN_LENGTH, getCallExpressionTarget, hasModifier, isExpressionChildOfLargerExpression, unwrapExpression } from './ast';
+import { LintIssue, NORMALIZED_BODY_MIN_LENGTH, getCallExpressionTarget, hasModifier, isExpressionChildOfLargerExpression, pushLintIssue, unwrapExpression } from './ast';
 import { isExpressionInScopeFingerprint, isTsAssignmentOperator } from './bindings';
+import { isFunctionLikeValue } from './functions';
 import { isTemporalSnapshotInitializer } from './local_bindings';
 import { isPublicContractMethod } from './numeric';
 import { hasExportModifier, isBoundaryStyleWrapperName, isNamedPrimitivePredicate, isTrivialDelegationCallExpression } from './runtime_patterns';
 import { collectSemanticBodySignatures } from './semantic';
 import { getSingleStatementWrapperTarget, isLoopConditionExpression } from './statements';
+
+export type NormalizedBodyInfo = {
+	name: string;
+	file: string;
+	line: number;
+	column: number;
+	fingerprint: string;
+	semanticSignatures: string[] | null;
+};
+
+export const SKIP_DIRECTORIES = new Set([
+	'.git',
+	'.vscode',
+	'.snesmini',
+	'build',
+	'build-codex-check',
+	'build-debug',
+	'build-libretro',
+	'build-libretro-host',
+	'build-libretro-local',
+	'build-libretro-wsl',
+	'build-perf',
+	'build-release',
+	'build-snesmini',
+	'build-snesmini-host',
+	'build-snesmini-user',
+	'CMakeFiles',
+	'dist',
+	'node_modules',
+]);
 
 export function isAbstractClass(node: ts.ClassDeclaration): boolean {
 	return hasModifier(node, ts.SyntaxKind.AbstractKeyword);
@@ -241,6 +271,47 @@ export const BOUNDARY_WRAPPER_NAME_WORDS: ReadonlySet<string> = new Set([
 	'write',
 	'with',
 ]);
+
+export function lintFacadeModuleDensity(sourceFile: ts.SourceFile, issues: LintIssue[]): void {
+	let exportedCallableCount = 0;
+	let exportedWrapperCount = 0;
+	let firstWrapperNode: ts.Node | null = null;
+	for (let index = 0; index < sourceFile.statements.length; index += 1) {
+		const statement = sourceFile.statements[index];
+		if (ts.isFunctionDeclaration(statement) && statement.body !== undefined && hasExportModifier(statement)) {
+			exportedCallableCount += 1;
+			if (getFunctionWrapperTarget(statement) !== null) {
+				exportedWrapperCount += 1;
+				firstWrapperNode ??= statement.name ?? statement;
+			}
+			continue;
+		}
+		if (!ts.isVariableStatement(statement) || !hasExportModifier(statement)) {
+			continue;
+		}
+		const declarations = statement.declarationList.declarations;
+		for (let declarationIndex = 0; declarationIndex < declarations.length; declarationIndex += 1) {
+			const declaration = declarations[declarationIndex];
+			if (!isFunctionLikeValue(declaration.initializer)) {
+				continue;
+			}
+			exportedCallableCount += 1;
+			if (getFunctionWrapperTarget(declaration.initializer) !== null) {
+				exportedWrapperCount += 1;
+				firstWrapperNode ??= declaration.name;
+			}
+		}
+	}
+	if (exportedWrapperCount >= 3 && exportedWrapperCount * 10 >= exportedCallableCount * 6 && firstWrapperNode !== null) {
+		pushLintIssue(
+			issues,
+			sourceFile,
+			firstWrapperNode,
+			'facade_module_density_pattern',
+			`Module exports ${exportedWrapperCount}/${exportedCallableCount} callable wrappers. Facade modules are forbidden; move ownership to the real module.`,
+		);
+	}
+}
 
 export function normalizedAstFingerprint(node: ts.Node): string {
 	const parts: string[] = [];

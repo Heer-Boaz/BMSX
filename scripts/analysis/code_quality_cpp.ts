@@ -4,7 +4,8 @@ import { spawnSync } from 'node:child_process';
 
 import { loadAnalysisConfig, type AnalysisConfig } from './config';
 import { collectSourceFiles } from './file_scan';
-import { analyzeCppFiles, type CppDuplicateGroup } from './code_quality_cpp_rules';
+import { analyzeCppFiles } from './cpp_quality/analyzer';
+import { type CppDuplicateGroup } from './cpp_quality/diagnostics';
 import { qualityLedgerEntries, type QualityLedger } from './quality_ledger';
 
 type LintIssueSeverity = 'error' | 'warning' | 'information' | 'performance' | 'portability' | 'style' | string;

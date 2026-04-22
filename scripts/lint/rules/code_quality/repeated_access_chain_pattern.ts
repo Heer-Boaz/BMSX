@@ -1,5 +1,5 @@
 import type { TsLintIssue } from '../../ts_rule';
-import type { RepeatedExpressionInfo } from './repeated_expression_pattern';
+import type { RepeatedExpressionInfo } from '../ts/support/ast';
 import { defineLintRule } from '../../rule';
 
 export const repeatedAccessChainPatternRule = defineLintRule('code_quality', 'repeated_access_chain_pattern');

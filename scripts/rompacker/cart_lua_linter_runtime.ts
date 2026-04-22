@@ -14,8 +14,11 @@ import { lintUppercaseCode } from '../lint/rules/lua_cart/uppercase_code_pattern
 import { readdir, readFile } from 'node:fs/promises';
 import { extname, join, relative, resolve, sep } from 'node:path';
 import { lintActionTriggeredBoolChainPattern } from '../lint/rules/lua_cart/action_triggered_bool_chain_pattern';
+import { lintBool01DuplicatePattern } from '../lint/rules/lua_cart/bool01_duplicate_pattern';
 import { lintBranchUninitializedLocalPattern } from '../lint/rules/lua_cart/branch_uninitialized_local_pattern';
 import { lintBtIdLabelPattern } from '../lint/rules/lua_cart/bt_id_label_pattern';
+import { lintBuiltinRecreationPattern } from '../lint/rules/lua_cart/builtin_recreation_pattern';
+import { lintComparisonWrapperGetterPattern } from '../lint/rules/lua_cart/comparison_wrapper_getter_pattern';
 import { lintContiguousMultiEmitPattern } from '../lint/rules/lua_cart/contiguous_multi_emit_pattern';
 import { lintCreateServiceIdAddonPattern } from '../lint/rules/lua_cart/create_service_id_addon_pattern';
 import { lintCrossFileLocalGlobalConstantPattern } from '../lint/rules/lua_cart/cross_file_local_global_constant_pattern';
@@ -25,13 +28,18 @@ import { lintDefineServiceIdPattern } from '../lint/rules/lua_cart/define_servic
 import { lintDispatchFanoutLoopPattern } from '../lint/rules/lua_cart/dispatch_fanout_loop_pattern';
 import { lintEventHandlerDispatchPattern } from '../lint/rules/lua_cart/event_handler_dispatch_pattern';
 import { lintForbiddenDispatchPattern } from '../lint/rules/lua_cart/forbidden_dispatch_pattern';
+import { lintForbiddenRandomHelperPattern } from '../lint/rules/lua_cart/forbidden_random_helper_pattern';
 import { lintForbiddenStateCalls } from '../lint/rules/lua_cart/forbidden_transition_to_pattern';
+import { lintGetterSetterPattern } from '../lint/rules/lua_cart/getter_setter_pattern';
+import { lintHandlerIdentityDispatchPattern } from '../lint/rules/lua_cart/handler_identity_dispatch_pattern';
+import { lintImgIdFallbackPattern } from '../lint/rules/lua_cart/imgid_fallback_pattern';
 import { lintFsmEnteringStateVisualSetupPattern } from '../lint/rules/lua_cart/fsm_entering_state_visual_setup_pattern';
 import { lintFsmIdLabelPattern } from '../lint/rules/lua_cart/fsm_id_label_pattern';
 import { lintFsmStateNameMirrorAssignmentPattern } from '../lint/rules/lua_cart/fsm_state_name_mirror_assignment_pattern';
 import { lintSpriteImgIdAssignmentPattern } from '../lint/rules/lua_cart/imgid_assignment_pattern';
 import { lintInjectedServiceIdPropertyAssignmentTarget } from '../lint/rules/lua_cart/injected_service_id_property_pattern';
 import { lintMultiHasTagPattern, lintSplitNestedIfHasTagPattern } from '../lint/rules/lua_cart/multi_has_tag_pattern';
+import { lintPureCopyFunctionPattern } from '../lint/rules/lua_cart/pure_copy_function_pattern';
 import { lintSelfImgIdAssignmentPattern } from '../lint/rules/lua_cart/self_imgid_assignment_pattern';
 import { lintLocalAssignment } from '../lint/rules/lua_cart/self_property_local_alias_pattern';
 import { lintServiceDefinitionSuffixPattern } from '../lint/rules/lua_cart/service_definition_suffix_pattern';
@@ -40,10 +48,13 @@ import { lintSinglePropertyOptionsParameter } from '../lint/rules/common/single_
 import { lintSplitLocalTableInitPattern } from '../lint/rules/lua_cart/split_local_table_init_pattern';
 import { lintStagedExportLocalCallPattern } from '../lint/rules/lua_cart/staged_export_local_call_pattern';
 import { lintStagedExportLocalTablePattern } from '../lint/rules/lua_cart/staged_export_local_table_pattern';
+import { pushSyntaxErrorIssue } from '../lint/rules/lua_cart/syntax_error_pattern';
+import { lintUselessAssertPattern } from '../lint/rules/lua_cart/useless_assert_pattern';
+import { lintVisualUpdatePattern } from '../lint/rules/lua_cart/visual_update_pattern';
+import { lintEnsureLocalAliasPattern } from '../lint/rules/lua_cart/ensure_local_alias_pattern';
 import { lintStringOrChainComparisonPattern } from '../lint/rules/common/string_or_chain_comparison_pattern';
 import { collectTopLevelLocalStringConstants } from '../lint/rules/lua_cart/impl/support/bindings';
-import { matchesEnsureLocalAliasPattern, matchesEnsurePattern } from '../lint/rules/lua_cart/impl/support/cart_patterns';
-import { matchesBool01DuplicatePattern, matchesComparisonWrapperGetterPattern } from '../lint/rules/lua_cart/impl/support/conditions';
+import { matchesEnsurePattern } from '../lint/rules/lua_cart/impl/support/cart_patterns';
 import { lintConstLocalPattern } from '../lint/rules/lua_cart/impl/support/const_local';
 import { lintConstantCopyPattern } from '../lint/rules/lua_cart/impl/support/constant_copy';
 import { lintDuplicateInitializerPattern } from '../lint/rules/lua_cart/impl/support/duplicate_initializers';
@@ -51,13 +62,11 @@ import { lintForeignObjectInternalMutationPattern } from '../lint/rules/lua_cart
 import { lintFsmDirectStateHandlerShorthandPattern } from '../lint/rules/lua_cart/impl/support/fsm_core';
 import { lintFsmEventReemitHandlerPattern, lintFsmLifecycleWrapperPattern } from '../lint/rules/lua_cart/impl/support/fsm_events';
 import { lintFsmForbiddenLegacyFieldsPattern, lintFsmProcessInputPollingTransitionPattern, lintFsmRunChecksInputTransitionPattern, lintFsmTickCounterTransitionPattern } from '../lint/rules/lua_cart/impl/support/fsm_transitions';
-import { isVisualUpdateLikeFunctionName } from '../lint/rules/lua_cart/impl/support/fsm_visual';
 import { collectFunctionUsageCounts, isAllowedBySingleLineMethodUsage } from '../lint/rules/lua_cart/impl/support/function_usage';
-import { getFunctionDisplayName, isMethodLikeFunctionDeclaration, matchesBuiltinRecreationPattern, matchesGetterPattern, matchesPureCopyFunctionPattern, matchesSetterPattern } from '../lint/rules/lua_cart/impl/support/functions';
-import { isAllowedSingleLineMethodName, matchesForbiddenRandomHelperPattern, matchesHandlerIdentityDispatchPattern, matchesMeaninglessSingleLineMethodPattern, matchesUselessAssertPattern } from '../lint/rules/lua_cart/impl/support/general';
+import { getFunctionDisplayName, isMethodLikeFunctionDeclaration } from '../lint/rules/lua_cart/impl/support/functions';
+import { isAllowedSingleLineMethodName, matchesMeaninglessSingleLineMethodPattern } from '../lint/rules/lua_cart/impl/support/general';
 import { lintShadowedRequireAliasPattern } from '../lint/rules/lua_cart/impl/support/require_aliases';
 import { lintRuntimeTagTableAccessPattern } from '../lint/rules/lua_cart/impl/support/runtime_tag';
-import { matchesImgIdNilFallbackPattern } from '../lint/rules/lua_cart/impl/support/self_properties';
 import { lintSingleUseHasTagPattern } from '../lint/rules/lua_cart/impl/support/single_use_has_tag';
 import { lintSingleUseLocalPattern } from '../lint/rules/lua_cart/impl/support/single_use_local';
 import { lintInlineStaticLookupTablePattern, lintTableField } from '../lint/rules/lua_cart/impl/support/table_fields';
@@ -333,70 +342,14 @@ export function lintFunctionBody(
 	options: { readonly isMethodDeclaration: boolean; readonly usageInfo?: FunctionUsageInfo; },
 ): void {
 	const isNamedFunction = functionName !== '<anonymous>';
-	const isVisualUpdateLike = isNamedFunction && isVisualUpdateLikeFunctionName(functionName);
 	lintSinglePropertyOptionsParameter(functionExpression, issues);
-	if (isVisualUpdateLike) {
-		pushIssue(
-			issues,
-			'visual_update_pattern',
-			functionExpression,
-			`update_visual/sync_*_components/apply_pose/refresh_presentation_if_changed-style code is forbidden ("${functionName}"). This is an ugly workaround pattern (update_visual <-> sync_*_components <-> apply_pose <-> refresh_presentation_if_changed). Use deterministic initialization and on-change updates.`,
-		);
-	}
-	const isGetterOrSetter = isNamedFunction && (matchesGetterPattern(functionExpression) || matchesSetterPattern(functionExpression));
-	if (isGetterOrSetter) {
-		pushIssue(
-			issues,
-			'getter_setter_pattern',
-			functionExpression,
-			`Getter/setter wrapper pattern is forbidden ("${functionName}").`,
-		);
-	}
-	const isComparisonWrapperGetter = isNamedFunction && matchesComparisonWrapperGetterPattern(functionExpression);
-	if (isComparisonWrapperGetter) {
-		pushIssue(
-			issues,
-			'comparison_wrapper_getter_pattern',
-			functionExpression,
-			`Single-value comparison wrapper is forbidden ("${functionName}"). Inline the comparison or expose the original value source directly.`,
-		);
-	}
-	const isBuiltinRecreation = isNamedFunction && matchesBuiltinRecreationPattern(functionExpression);
-	if (isBuiltinRecreation) {
-		pushIssue(
-			issues,
-			'builtin_recreation_pattern',
-			functionExpression,
-			`Recreating existing built-in behavior is forbidden ("${functionName}").`,
-		);
-	}
-	const isForbiddenRandomHelper = isNamedFunction && !isBuiltinRecreation && matchesForbiddenRandomHelperPattern(functionName);
-	if (isForbiddenRandomHelper) {
-		pushIssue(
-			issues,
-			'forbidden_random_helper_pattern',
-			functionExpression,
-			`Custom random helper "${functionName}" is forbidden. Use math.random directly instead of inventing a random_int-style wrapper.`,
-		);
-	}
-	const isBool01Duplicate = isNamedFunction && matchesBool01DuplicatePattern(functionExpression);
-	if (isBool01Duplicate) {
-		pushIssue(
-			issues,
-			'bool01_duplicate_pattern',
-			functionExpression,
-			`Duplicate of global bool01 is forbidden ("${functionName}"). Use bool01(...) directly.`,
-		);
-	}
-	const isPureCopyFunction = isNamedFunction && matchesPureCopyFunctionPattern(functionExpression);
-	if (isPureCopyFunction) {
-		pushIssue(
-			issues,
-			'pure_copy_function_pattern',
-			functionExpression,
-			`Defensive pure-copy function is forbidden ("${functionName}"). Do not replace it with workaround wrappers/helpers; use original source values directly.`,
-		);
-	}
+	const isVisualUpdateLike = lintVisualUpdatePattern(functionName, functionExpression, issues);
+	const isGetterOrSetter = lintGetterSetterPattern(functionName, functionExpression, issues);
+	const isBuiltinRecreation = lintBuiltinRecreationPattern(functionName, functionExpression, issues);
+	lintComparisonWrapperGetterPattern(functionName, functionExpression, issues);
+	lintForbiddenRandomHelperPattern(functionName, functionExpression, isBuiltinRecreation, issues);
+	lintBool01DuplicatePattern(functionName, functionExpression, issues);
+	lintPureCopyFunctionPattern(functionName, functionExpression, issues);
 	if (
 		isNamedFunction
 		&& options.isMethodDeclaration
@@ -421,25 +374,11 @@ export function lintFunctionBody(
 			`Ensure-style lazy initialization pattern is forbidden ("${functionName}").`,
 		);
 	}
-	if (matchesEnsureLocalAliasPattern(functionExpression)) {
-		pushIssue(
-			issues,
-			'ensure_local_alias_pattern',
-			functionExpression,
-			`Ensure-style local alias lazy initialization is forbidden ("${functionName}").`,
-		);
-	}
+	lintEnsureLocalAliasPattern(functionName, functionExpression, issues);
 	if (isNamedFunction) {
 		lintInlineStaticLookupTablePattern(functionName, functionExpression, issues);
 	}
-	if (isNamedFunction && matchesHandlerIdentityDispatchPattern(functionExpression)) {
-		pushIssue(
-			issues,
-			'handler_identity_dispatch_pattern',
-			functionExpression,
-			`Handler-identity dispatch branching with mixed call signatures is forbidden ("${functionName}"). Use uniform handler signatures and direct dispatch without a cached handler local.`,
-		);
-	}
+	lintHandlerIdentityDispatchPattern(functionName, functionExpression, issues);
 }
 
 export function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[], topLevel = true): void {
@@ -456,29 +395,29 @@ export function lintExpression(expression: LuaExpression | null, issues: LuaLint
 	if (topLevel) {
 		lintMultiHasTagPattern(expression, issues);
 	}
-			switch (expression.kind) {
-				case LuaSyntaxKind.CallExpression:
-					lintRequireCall(expression, issues, pushIssue);
-					lintForbiddenRenderWrapperCall(expression, issues, pushIssue);
-					lintForbiddenStateCalls(expression, issues);
-					lintForbiddenDispatchPattern(expression, issues);
-					lintEventHandlerDispatchPattern(expression, issues);
-					lintCrossObjectStateEventRelayPattern(expression, issues);
-					lintSetSpaceRoundtripPattern(expression, issues);
-				lintServiceDefinitionSuffixPattern(expression, issues);
-				lintCreateServiceIdAddonPattern(expression, issues);
-				lintDefineServiceIdPattern(expression, issues);
-				lintDefineFactoryTickEnabledAndSpaceIdPattern(expression, issues);
-				lintFsmDirectStateHandlerShorthandPattern(expression, issues);
-				lintFsmEventReemitHandlerPattern(expression, issues);
-				lintFsmForbiddenLegacyFieldsPattern(expression, issues);
-				lintFsmProcessInputPollingTransitionPattern(expression, issues);
-				lintFsmRunChecksInputTransitionPattern(expression, issues);
-				lintFsmLifecycleWrapperPattern(expression, issues);
-				lintFsmTickCounterTransitionPattern(expression, issues);
-				lintFsmIdLabelPattern(expression, issues);
-				lintFsmStateNameMirrorAssignmentPattern(expression, issues);
-				lintBtIdLabelPattern(expression, issues);
+	switch (expression.kind) {
+		case LuaSyntaxKind.CallExpression:
+			lintRequireCall(expression, issues, pushIssue);
+			lintForbiddenRenderWrapperCall(expression, issues, pushIssue);
+			lintForbiddenStateCalls(expression, issues);
+			lintForbiddenDispatchPattern(expression, issues);
+			lintEventHandlerDispatchPattern(expression, issues);
+			lintCrossObjectStateEventRelayPattern(expression, issues);
+			lintSetSpaceRoundtripPattern(expression, issues);
+			lintServiceDefinitionSuffixPattern(expression, issues);
+			lintCreateServiceIdAddonPattern(expression, issues);
+			lintDefineServiceIdPattern(expression, issues);
+			lintDefineFactoryTickEnabledAndSpaceIdPattern(expression, issues);
+			lintFsmDirectStateHandlerShorthandPattern(expression, issues);
+			lintFsmEventReemitHandlerPattern(expression, issues);
+			lintFsmForbiddenLegacyFieldsPattern(expression, issues);
+			lintFsmProcessInputPollingTransitionPattern(expression, issues);
+			lintFsmRunChecksInputTransitionPattern(expression, issues);
+			lintFsmLifecycleWrapperPattern(expression, issues);
+			lintFsmTickCounterTransitionPattern(expression, issues);
+			lintFsmIdLabelPattern(expression, issues);
+			lintFsmStateNameMirrorAssignmentPattern(expression, issues);
+			lintBtIdLabelPattern(expression, issues);
 			lintExpression(expression.callee, issues, false);
 			for (const arg of expression.arguments) {
 				lintExpression(arg, issues, false);
@@ -578,22 +517,8 @@ export function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: 
 				}
 				break;
 			case LuaSyntaxKind.IfStatement:
-				if (matchesUselessAssertPattern(statement)) {
-					pushIssue(
-						issues,
-						'useless_assert_pattern',
-						statement,
-						'Useless assert-pattern is forbidden (if ... then error(...) end). Remove the check; do not replace it with another check/assert.',
-					);
-				}
-				if (matchesImgIdNilFallbackPattern(statement)) {
-					pushIssue(
-						issues,
-						'imgid_fallback_pattern',
-						statement,
-						'imgid fallback initialization is forbidden. Remove nil checks for imgid defaults; use deterministic setup.',
-					);
-				}
+				lintUselessAssertPattern(statement, issues);
+				lintImgIdFallbackPattern(statement, issues);
 				lintSplitNestedIfHasTagPattern(statement, issues);
 				for (const clause of statement.clauses) {
 					if (clause.condition) {
@@ -650,20 +575,6 @@ export function formatIssues(issues: LuaLintIssue[], profile: LuaLintProfile): s
 	const lines = sorted.map(issue => `${issue.path}:${issue.line}:${issue.column}: ${issue.message}`);
 	const profileLabel = profile === 'bios' ? 'Lua BIOS Lint' : 'Lua Cart Lint';
 	return `[${profileLabel}] ${sorted.length} violation(s):\n${lines.join('\n')}`;
-}
-
-export function pushSyntaxErrorIssue(
-	issues: LuaLintIssue[],
-	error: { readonly path: string; readonly line: number; readonly column: number; readonly message: string; },
-): void {
-	pushIssueAt(
-		issues,
-		'syntax_error_pattern',
-		error.path,
-		error.line,
-		error.column,
-		error.message,
-	);
 }
 
 export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<void> {

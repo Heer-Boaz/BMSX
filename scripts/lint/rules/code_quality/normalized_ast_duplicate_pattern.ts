@@ -3,6 +3,7 @@ import type { TsLintIssue } from '../../ts_rule';
 import { type CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import { type CppToken, normalizedCppTokenText } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { type CppNormalizedBodyInfo } from '../cpp/support/diagnostics';
+import { type NormalizedBodyInfo } from '../ts/support/declarations';
 import { type AnalysisRegion, lineInAnalysisRegion } from '../../../analysis/lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../../../analysis/quality_ledger';
 import { CPP_NORMALIZED_BODY_MIN_LENGTH } from '../cpp/support/ast';
@@ -10,15 +11,6 @@ import { normalizedBodyFingerprint } from '../cpp/support/normalization';
 import { collectSemanticBodySignatures, isSemanticNormalizationWrapperTarget } from '../cpp/support/semantic';
 
 export const normalizedAstDuplicatePatternRule = defineLintRule('code_quality', 'normalized_ast_duplicate_pattern');
-
-export type NormalizedBodyInfo = {
-	name: string;
-	file: string;
-	line: number;
-	column: number;
-	fingerprint: string;
-	semanticSignatures: string[] | null;
-};
 
 export function addNormalizedBodyDuplicateIssues(normalizedBodies: readonly NormalizedBodyInfo[], issues: TsLintIssue[]): void {
 	const byFingerprint = new Map<string, NormalizedBodyInfo[]>();
