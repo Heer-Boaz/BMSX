@@ -3,9 +3,81 @@ import { extname, join, relative, resolve, sep } from 'node:path';
 
 import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
 import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
-import type { LuaToken } from '../../src/bmsx/lua/syntax/token';
-import { LuaTokenType } from '../../src/bmsx/lua/syntax/token';
 import { LUA_CART_LINT_RULES, type LuaCartLintRule } from '../lint/rules';
+import {
+	localConstPatternRule,
+	singleLineMethodPatternRule,
+	singlePropertyOptionsParameterPatternRule,
+	singleUseLocalPatternRule,
+	stringOrChainComparisonPatternRule,
+} from '../lint/rules/common';
+import { lintLuaEmptyStringConditionPattern } from '../lint/rules/common/empty_string_condition_pattern';
+import { lintLuaEmptyStringFallbackPattern } from '../lint/rules/common/empty_string_fallback_pattern';
+import { lintLuaExplicitTruthyComparisonPattern } from '../lint/rules/common/explicit_truthy_comparison_pattern';
+import { lintLuaOrNilFallbackPattern } from '../lint/rules/common/or_nil_fallback_pattern';
+import {
+	actionTriggeredBoolChainPatternRule,
+	bool01DuplicatePatternRule,
+	branchUninitializedLocalPatternRule,
+	btIdLabelPatternRule,
+	builtinRecreationPatternRule,
+	comparisonWrapperGetterPatternRule,
+	constantCopyPatternRule,
+	contiguousMultiEmitPatternRule,
+	createServiceIdAddonPatternRule,
+	crossFileLocalGlobalConstantPatternRule,
+	crossObjectStateEventRelayPatternRule,
+	crossObjectStateEventRelayPatternMessage,
+	defineFactorySpaceIdPatternRule,
+	defineFactoryTickEnabledPatternRule,
+	defineServiceIdPatternRule,
+	dispatchFanoutLoopPatternRule,
+	duplicateInitializerPatternRule,
+	ensureLocalAliasPatternRule,
+	eventHandlerDispatchPatternRule,
+	eventHandlerFlagProxyPatternRule,
+	eventHandlerStateDispatchPatternRule,
+	forbiddenDispatchPatternRule,
+	forbiddenMatchesStatePathPatternRule,
+	forbiddenRandomHelperPatternRule,
+	forbiddenTransitionToPatternRule,
+	foreignObjectInternalMutationPatternRule,
+	fsmDirectStateHandlerShorthandPatternRule,
+	fsmEnteringStateVisualSetupPatternRule,
+	fsmEventReemitHandlerPatternRule,
+	fsmForbiddenLegacyFieldsPatternRule,
+	fsmIdLabelPatternRule,
+	fsmLifecycleWrapperPatternRule,
+	fsmProcessInputPollingTransitionPatternRule,
+	fsmRunChecksInputTransitionPatternRule,
+	fsmStateNameMirrorAssignmentPatternRule,
+	fsmTickCounterTransitionPatternRule,
+	getterSetterPatternRule,
+	handlerIdentityDispatchPatternRule,
+	imgidAssignmentPatternRule,
+	imgidFallbackPatternRule,
+	injectedServiceIdPropertyPatternRule,
+	inlineStaticLookupTablePatternRule,
+	multiHasTagPatternRule,
+	pureCopyFunctionPatternRule,
+	runtimeTagTableAccessPatternRule,
+	selfImgidAssignmentPatternRule,
+	selfPropertyLocalAliasPatternRule,
+	serviceDefinitionSuffixPatternRule,
+	setSpaceRoundtripPatternRule,
+	shadowedRequireAliasPatternRule,
+	singleUseHasTagPatternRule,
+	splitLocalTableInitPatternRule,
+	stagedExportLocalCallPatternRule,
+	stagedExportLocalTablePatternRule,
+	syntaxErrorPatternRule,
+	tickFlagPollingPatternRule,
+	tickInputCheckPatternRule,
+	unusedInitValuePatternRule,
+	uselessAssertPatternRule,
+	visualUpdatePatternRule,
+} from '../lint/rules/lua_cart';
+import { ensurePatternRule } from '../lint/rules/shared';
 import {
 	LuaAssignmentOperator,
 	LuaBinaryOperator,
@@ -13,6 +85,13 @@ import {
 	LuaTableFieldKind,
 	LuaUnaryOperator,
 } from '../../src/bmsx/lua/syntax/ast';
+import { pushLuaLintIssue, type LuaLintIssue, type LuaLintNode } from '../lint/lua_rule';
+import { lintForbiddenMathFloorPattern } from '../lint/rules/lua_cart/forbidden_math_floor_pattern';
+import { lintForbiddenRenderLayerString } from '../lint/rules/lua_cart/forbidden_render_layer_string_pattern';
+import { lintForbiddenRenderWrapperCall } from '../lint/rules/lua_cart/forbidden_render_wrapper_call_pattern';
+import { lintLocalFunctionConstPattern } from '../lint/rules/lua_cart/local_function_const_pattern';
+import { lintRequireCall } from '../lint/rules/lua_cart/require_lua_extension_pattern';
+import { lintUppercaseCode } from '../lint/rules/lua_cart/uppercase_code_pattern';
 import type {
 	LuaAssignmentStatement,
 	LuaBooleanLiteralExpression,
@@ -33,14 +112,6 @@ import type {
 } from '../../src/bmsx/lua/syntax/ast';
 
 type LuaLintProfile = 'cart' | 'bios';
-
-type LuaLintIssue = {
-	readonly rule: LuaCartLintRule;
-	readonly path: string;
-	readonly line: number;
-	readonly column: number;
-	readonly message: string;
-};
 
 type LuaLintSuppressionRange = {
 	readonly startLine: number;
@@ -231,28 +302,6 @@ const BUILTIN_TABLE_NAMES = new Set<string>([
 	'debug',
 	'package',
 ]);
-const FORBIDDEN_RENDER_WRAPPER_CALLS = new Set<string>([
-	'cls',
-	'blit_rect',
-	'fill_rect',
-	'fill_rect_color',
-	'blit_poly',
-	'blit_glyphs',
-	'blit_text',
-	'blit_text_color',
-	'blit_text_with_font',
-	'blit_text_inline_with_font',
-	'blit_text_inline_span_with_font',
-]);
-const FORBIDDEN_RENDER_MODULE_REQUIRES = new Set<string>([
-	'vdp_firmware',
-	'textflow',
-]);
-const FORBIDDEN_RENDER_LAYER_STRINGS = new Set<string>([
-	'world',
-	'ui',
-	'ide',
-]);
 const FORBIDDEN_RANDOM_HELPER_NAME_PATTERN = /^(?:random|rand)(?:[_-]?(?:int|integer|range|between|index|idx)\d*)?$/i;
 const FORBIDDEN_STATE_CALL_RECEIVERS = new Set<string>([
 	'sc',
@@ -263,48 +312,48 @@ const LINT_SUPPRESSION_OPEN_MARKER = '-- @code-quality disable';
 const LINT_SUPPRESSION_CLOSE_MARKER = '-- @code-quality enable';
 const suppressedLineRangesByPath = new Map<string, ReadonlyArray<LuaLintSuppressionRange>>();
 const BIOS_PROFILE_DISABLED_RULES = new Set<LuaCartLintRule>([
-	'visual_update_pattern',
-	'bool01_duplicate_pattern',
-	'pure_copy_function_pattern',
-	'imgid_assignment_pattern',
-	'self_imgid_assignment_pattern',
-	'imgid_fallback_pattern',
-	'forbidden_transition_to_pattern',
-	'forbidden_matches_state_path_pattern',
-	'forbidden_dispatch_pattern',
-	'event_handler_dispatch_pattern',
-	'event_handler_state_dispatch_pattern',
-	'event_handler_flag_proxy_pattern',
-	'contiguous_multi_emit_pattern',
-	'dispatch_fanout_loop_pattern',
-	'tick_flag_polling_pattern',
-	'tick_input_check_pattern',
-	'action_triggered_bool_chain_pattern',
-	'set_space_roundtrip_pattern',
-	'cross_object_state_event_relay_pattern',
-	'foreign_object_internal_mutation_pattern',
-	'runtime_tag_table_access_pattern',
-	'fsm_state_name_mirror_assignment_pattern',
-	'multi_has_tag_pattern',
-	'single_use_has_tag_pattern',
-	'self_property_local_alias_pattern',
-	'handler_identity_dispatch_pattern',
-	'getter_setter_pattern',
-	'single_line_method_pattern',
-	'useless_assert_pattern',
-	'define_service_id_pattern',
-	'define_factory_tick_enabled_pattern',
-	'define_factory_space_id_pattern',
-	'fsm_entering_state_visual_setup_pattern',
-	'fsm_direct_state_handler_shorthand_pattern',
-	'fsm_event_reemit_handler_pattern',
-	'fsm_process_input_polling_transition_pattern',
-	'fsm_run_checks_input_transition_pattern',
-	'fsm_lifecycle_wrapper_pattern',
-	'fsm_tick_counter_transition_pattern',
-	'fsm_id_label_pattern',
-	'bt_id_label_pattern',
-	'injected_service_id_property_pattern',
+	visualUpdatePatternRule.name,
+	bool01DuplicatePatternRule.name,
+	pureCopyFunctionPatternRule.name,
+	imgidAssignmentPatternRule.name,
+	selfImgidAssignmentPatternRule.name,
+	imgidFallbackPatternRule.name,
+	forbiddenTransitionToPatternRule.name,
+	forbiddenMatchesStatePathPatternRule.name,
+	forbiddenDispatchPatternRule.name,
+	eventHandlerDispatchPatternRule.name,
+	eventHandlerStateDispatchPatternRule.name,
+	eventHandlerFlagProxyPatternRule.name,
+	contiguousMultiEmitPatternRule.name,
+	dispatchFanoutLoopPatternRule.name,
+	tickFlagPollingPatternRule.name,
+	tickInputCheckPatternRule.name,
+	actionTriggeredBoolChainPatternRule.name,
+	setSpaceRoundtripPatternRule.name,
+	crossObjectStateEventRelayPatternRule.name,
+	foreignObjectInternalMutationPatternRule.name,
+	runtimeTagTableAccessPatternRule.name,
+	fsmStateNameMirrorAssignmentPatternRule.name,
+	multiHasTagPatternRule.name,
+	singleUseHasTagPatternRule.name,
+	selfPropertyLocalAliasPatternRule.name,
+	handlerIdentityDispatchPatternRule.name,
+	getterSetterPatternRule.name,
+	singleLineMethodPatternRule.name,
+	uselessAssertPatternRule.name,
+	defineServiceIdPatternRule.name,
+	defineFactoryTickEnabledPatternRule.name,
+	defineFactorySpaceIdPatternRule.name,
+	fsmEnteringStateVisualSetupPatternRule.name,
+	fsmDirectStateHandlerShorthandPatternRule.name,
+	fsmEventReemitHandlerPatternRule.name,
+	fsmProcessInputPollingTransitionPatternRule.name,
+	fsmRunChecksInputTransitionPatternRule.name,
+	fsmLifecycleWrapperPatternRule.name,
+	fsmTickCounterTransitionPatternRule.name,
+	fsmIdLabelPatternRule.name,
+	btIdLabelPatternRule.name,
+	injectedServiceIdPropertyPatternRule.name,
 ]);
 let activeLintRules: ReadonlySet<LuaCartLintRule> = new Set(LUA_CART_LINT_RULES);
 
@@ -437,20 +486,8 @@ async function collectLuaFiles(roots: ReadonlyArray<string>): Promise<string[]> 
 	return Array.from(new Set(files)).sort();
 }
 
-function pushIssue(issues: LuaLintIssue[], rule: LuaCartLintRule, node: { readonly range: { readonly path: string; readonly start: { readonly line: number; readonly column: number; }; }; }, message: string): void {
-	if (!activeLintRules.has(rule)) {
-		return;
-	}
-	if (isLineSuppressed(node.range.path, node.range.start.line)) {
-		return;
-	}
-	issues.push({
-		rule,
-		path: node.range.path,
-		line: node.range.start.line,
-		column: node.range.start.column,
-		message,
-	});
+function pushIssue(issues: LuaLintIssue[], rule: LuaCartLintRule, node: LuaLintNode, message: string): void {
+	pushLuaLintIssue(issues, activeLintRules, isLineSuppressed, rule, node, message);
 }
 
 function pushIssueAt(issues: LuaLintIssue[], rule: LuaCartLintRule, path: string, line: number, column: number, message: string): void {
@@ -469,149 +506,12 @@ function pushIssueAt(issues: LuaLintIssue[], rule: LuaCartLintRule, path: string
 	});
 }
 
-function findFirstUppercaseIndex(text: string): number {
-	for (let index = 0; index < text.length; index += 1) {
-		const code = text.charCodeAt(index);
-		if (code >= 65 && code <= 90) {
-			return index;
-		}
-	}
-	return -1;
-}
-
-function lintUppercaseCode(path: string, tokens: ReadonlyArray<LuaToken>, issues: LuaLintIssue[]): void {
-	for (const token of tokens) {
-		if (token.type === LuaTokenType.String || token.type === LuaTokenType.Eof) {
-			continue;
-		}
-		const uppercaseIndex = findFirstUppercaseIndex(token.lexeme);
-		if (uppercaseIndex === -1) {
-			continue;
-		}
-		pushIssueAt(
-			issues,
-			'uppercase_code_pattern',
-			path,
-			token.line,
-			token.column + uppercaseIndex,
-			'Upper-case code is forbidden outside strings/comments.',
-		);
-	}
-}
-
 function isIdentifier(expression: LuaExpression, name: string): boolean {
 	return expression.kind === LuaSyntaxKind.IdentifierExpression && expression.name === name;
 }
 
 function isNilExpression(expression: LuaExpression): boolean {
 	return expression.kind === LuaSyntaxKind.NilLiteralExpression;
-}
-
-function isEmptyStringLiteral(expression: LuaExpression): boolean {
-	return expression.kind === LuaSyntaxKind.StringLiteralExpression && expression.value === '';
-}
-
-function matchesEmptyStringConditionPattern(expression: LuaExpression): boolean {
-	if (expression.kind !== LuaSyntaxKind.BinaryExpression) {
-		return false;
-	}
-	if (expression.operator !== LuaBinaryOperator.Equal && expression.operator !== LuaBinaryOperator.NotEqual) {
-		return false;
-	}
-	return isEmptyStringLiteral(expression.left) || isEmptyStringLiteral(expression.right);
-}
-
-function lintEmptyStringConditionPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
-	if (!matchesEmptyStringConditionPattern(expression)) {
-		return;
-	}
-	pushIssue(
-		issues,
-		'empty_string_condition_pattern',
-		expression,
-		'Empty-string condition pattern is forbidden. Prefer truthy checks, and do not define empty strings as default/start/empty values.',
-	);
-}
-
-function matchesEmptyStringFallbackPattern(expression: LuaExpression): boolean {
-	if (expression.kind !== LuaSyntaxKind.BinaryExpression || expression.operator !== LuaBinaryOperator.Or) {
-		return false;
-	}
-	return isEmptyStringLiteral(expression.left) || isEmptyStringLiteral(expression.right);
-}
-
-function lintEmptyStringFallbackPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
-	if (!matchesEmptyStringFallbackPattern(expression)) {
-		return;
-	}
-	pushIssue(
-		issues,
-		'empty_string_fallback_pattern',
-		expression,
-		'Empty-string fallback via "or \'\'" is forbidden. Do not use empty strings as fallback/default values; keep string truthy-check semantics intact.',
-	);
-}
-
-function matchesOrNilFallbackPattern(expression: LuaExpression): boolean {
-	if (expression.kind !== LuaSyntaxKind.BinaryExpression || expression.operator !== LuaBinaryOperator.Or) {
-		return false;
-	}
-	return isNilExpression(expression.left) || isNilExpression(expression.right);
-}
-
-function lintOrNilFallbackPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
-	if (!matchesOrNilFallbackPattern(expression)) {
-		return;
-	}
-	pushIssue(
-		issues,
-		'or_nil_fallback_pattern',
-		expression,
-		'"or nil" fallback pattern is forbidden. Lua has no undefined; remove JS-style nil normalization. If you mean "only compute/use this when a source value exists", guard on that value directly (for example "tracks and compile_tracks(tracks)"). If you truly need an explicit nil branch, use a real if/else.',
-	);
-}
-
-function isBooleanLiteralExpression(expression: LuaExpression): boolean {
-	return expression.kind === LuaSyntaxKind.BooleanLiteralExpression;
-}
-
-function matchesExplicitTruthyComparisonPattern(expression: LuaExpression): boolean {
-	if (expression.kind !== LuaSyntaxKind.BinaryExpression) {
-		return false;
-	}
-	if (expression.operator !== LuaBinaryOperator.Equal && expression.operator !== LuaBinaryOperator.NotEqual) {
-		return false;
-	}
-	const leftBoolean = isBooleanLiteralExpression(expression.left);
-	const rightBoolean = isBooleanLiteralExpression(expression.right);
-	if (!leftBoolean && !rightBoolean) {
-		return false;
-	}
-	return !(leftBoolean && rightBoolean);
-}
-
-function lintExplicitTruthyComparisonPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
-	if (!matchesExplicitTruthyComparisonPattern(expression)) {
-		return;
-	}
-	pushIssue(
-		issues,
-		'explicit_truthy_comparison_pattern',
-		expression,
-		'Explicit boolean literal comparison is forbidden. Use truthy/falsy checks instead.',
-	);
-}
-
-function lintForbiddenMathFloorPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
-	if (getExpressionReferenceName(expression) !== 'math.floor') {
-		return;
-	}
-	pushIssue(
-		issues,
-		'forbidden_math_floor_pattern',
-		expression,
-		'math.floor is forbidden. Use // instead of floor-based rounding or truncation.',
-	);
 }
 
 function expressionsEquivalentForLint(left: LuaExpression, right: LuaExpression): boolean {
@@ -685,7 +585,7 @@ function lintStringOrChainComparisonPattern(expression: LuaExpression, issues: L
 	}
 	pushIssue(
 		issues,
-		'string_or_chain_comparison_pattern',
+		stringOrChainComparisonPatternRule.name,
 		expression,
 		'OR-chains that compare the same expression against multiple string literals are forbidden. Use lookup-based membership instead.',
 	);
@@ -769,7 +669,7 @@ function declareShadowedRequireAliasBinding(
 				if (outer.requiredModulePath !== null) {
 					pushIssue(
 						context.issues,
-						'shadowed_require_alias_pattern',
+						shadowedRequireAliasPatternRule.name,
 						declaration,
 						`Local "${name}" shadows outer module alias from require('${outer.requiredModulePath}'). Rename the local; do not shadow imported module aliases.`,
 					);
@@ -1118,7 +1018,7 @@ function lintCrossFileLocalGlobalConstantPattern(
 			const otherPaths = paths.filter(path => path !== entry.path);
 			pushIssue(
 				issues,
-				'cross_file_local_global_constant_pattern',
+				crossFileLocalGlobalConstantPatternRule.name,
 				entry.declaration,
 				`Cross-file duplicated local "global constant" is forbidden ("${name}"). Define it once and reuse it. Also defined in: ${otherPaths.join(', ')}.`,
 			);
@@ -1464,7 +1364,7 @@ function lintSplitNestedIfHasTagPattern(statement: LuaIfStatement, issues: LuaLi
 	}
 	pushIssue(
 		issues,
-		'multi_has_tag_pattern',
+		multiHasTagPatternRule.name,
 		statement,
 		`Nested if-chain splits ${hasTagCheckCount} has_tag checks across multiple statements. This is a forbidden workaround for the multi has_tag rule. Use tag_groups, tag_derivations, or derived_tags instead.`,
 	);
@@ -1482,7 +1382,7 @@ function lintContiguousMultiEmitPattern(statements: ReadonlyArray<LuaStatement>,
 		}
 		pushIssue(
 			issues,
-			'contiguous_multi_emit_pattern',
+			contiguousMultiEmitPatternRule.name,
 			firstEmitCall,
 			`${emitCount} consecutive events:emit(...) calls in one straight-line block are forbidden. Emit one canonical event and let other systems react to it instead of alias/fanout event chains.`,
 		);
@@ -1611,7 +1511,7 @@ function lintSpriteImgIdAssignmentPattern(target: LuaExpression, issues: LuaLint
 		: 'Direct imgid assignment on sprite component is forbidden. Use self.gfx(<img>) or <sprite_component>.gfx(<img>) instead.';
 	pushIssue(
 		issues,
-		'imgid_assignment_pattern',
+		imgidAssignmentPatternRule.name,
 		target,
 		`${message.replace('<sprite_component>', replacementBase)}`,
 	);
@@ -1707,7 +1607,7 @@ function lintSelfImgIdAssignmentPattern(target: LuaExpression, value: LuaExpress
 	}
 	pushIssue(
 		issues,
-		'self_imgid_assignment_pattern',
+		selfImgidAssignmentPatternRule.name,
 		target,
 		'Forbidden self.*imgid assignment variant. Use self.visible=false / self.<non_standard_sprite_component>.enabled=false instead of setting imgid to empty string or nil.',
 	);
@@ -1720,7 +1620,7 @@ function lintMultiHasTagPattern(expression: LuaExpression, issues: LuaLintIssue[
 	}
 	pushIssue(
 		issues,
-		'multi_has_tag_pattern',
+		multiHasTagPatternRule.name,
 		expression,
 		`Statement contains ${hasTagCheckCount} has_tag checks. Use tag_groups, tag_derivations, or derived_tags instead.`,
 	);
@@ -2213,7 +2113,7 @@ function lintForbiddenStateCalls(expression: LuaCallExpression, issues: LuaLintI
 	if (methodName === 'transition_to') {
 		pushIssue(
 			issues,
-			'forbidden_transition_to_pattern',
+			forbiddenTransitionToPatternRule.name,
 			expression,
 			`Use of "${receiverName}:transition_to" is forbidden.`,
 		);
@@ -2222,7 +2122,7 @@ function lintForbiddenStateCalls(expression: LuaCallExpression, issues: LuaLintI
 	if (methodName === 'matches_state_path') {
 		pushIssue(
 			issues,
-			'forbidden_matches_state_path_pattern',
+			forbiddenMatchesStatePathPatternRule.name,
 			expression,
 			`Use of "${receiverName}:matches_state_path" is forbidden.`,
 		);
@@ -2321,7 +2221,7 @@ function lintForbiddenDispatchPattern(expression: LuaCallExpression, issues: Lua
 	}
 	pushIssue(
 		issues,
-		'forbidden_dispatch_pattern',
+		forbiddenDispatchPatternRule.name,
 		expression,
 		'State dispatch APIs are forbidden in cart code (dispatch_state_event(...) and sc:dispatch(...)). Do not replace one with the other; model transitions directly in FSM definitions (on/input/process_input/timelines).',
 	);
@@ -2672,7 +2572,7 @@ function lintSetSpaceRoundtripPattern(expression: LuaCallExpression, issues: Lua
 	}
 	pushIssue(
 		issues,
-		'set_space_roundtrip_pattern',
+		setSpaceRoundtripPatternRule.name,
 		expression,
 		'set_space(get_space()) is forbidden. Set the target space directly instead of re-reading and re-applying the same space.',
 	);
@@ -2811,7 +2711,7 @@ function lintActionTriggeredBoolChainPattern(expression: LuaExpression, issues: 
 	}
 	pushIssue(
 		issues,
-		'action_triggered_bool_chain_pattern',
+		actionTriggeredBoolChainPatternRule.name,
 		expression,
 		'Combining multiple action_triggered(...) calls with and/or is forbidden. Use one action_triggered query with complex action-query syntax instead.',
 	);
@@ -2925,7 +2825,7 @@ function lintTickFlagPollingPattern(functionExpression: LuaFunctionExpression, i
 			}
 			pushIssue(
 				issues,
-				'tick_flag_polling_pattern',
+				tickFlagPollingPatternRule.name,
 				clause.condition ?? statement,
 				hasTransitionReturn
 					? `Delayed event-proxy transition via self.${propertyName} in tick is forbidden. Handle the transition directly via FSM events/on maps, input handlers, process_input, or timelines instead of flag polling + reset + return.`
@@ -2942,7 +2842,7 @@ function lintTickInputCheckPattern(functionExpression: LuaFunctionExpression, is
 	}
 	pushIssue(
 		issues,
-		'tick_input_check_pattern',
+		tickInputCheckPatternRule.name,
 		inputCheck,
 		'Input checks inside tick are forbidden. Use FSM input handlers (player-index based), the FSM process_input handler, or events/timelines instead of polling input in tick.',
 	);
@@ -2957,7 +2857,7 @@ function isObjectOrServiceResolverCallExpression(expression: LuaExpression | und
 }
 
 function lintCrossObjectStateEventRelayPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
-	if (activeLintRules.has('forbidden_dispatch_pattern')) {
+	if (activeLintRules.has(forbiddenDispatchPatternRule.name)) {
 		return;
 	}
 	if (!isCrossObjectDispatchStateEventCallExpression(expression)) {
@@ -2972,9 +2872,9 @@ function lintCrossObjectStateEventRelayPattern(expression: LuaCallExpression, is
 	}
 	pushIssue(
 		issues,
-		'cross_object_state_event_relay_pattern',
+		crossObjectStateEventRelayPatternRule.name,
 		expression,
-		'Cross-object dispatch_state_event relay with dynamic event names is forbidden. Keep event ownership local and model transitions via FSM events/on maps.',
+		crossObjectStateEventRelayPatternMessage,
 	);
 }
 
@@ -2982,7 +2882,7 @@ function lintEventHandlerDispatchPattern(expression: LuaCallExpression, issues: 
 	if (!isEventsOnCallExpression(expression)) {
 		return;
 	}
-	const globalDispatchBan = activeLintRules.has('forbidden_dispatch_pattern');
+	const globalDispatchBan = activeLintRules.has(forbiddenDispatchPatternRule.name);
 	for (const argument of expression.arguments) {
 		const handlerField = findTableFieldByKey(argument, 'handler');
 		if (!handlerField || handlerField.value.kind !== LuaSyntaxKind.FunctionExpression) {
@@ -2996,7 +2896,7 @@ function lintEventHandlerDispatchPattern(expression: LuaCallExpression, issues: 
 			if (scDispatchCall) {
 			pushIssue(
 				issues,
-				'event_handler_dispatch_pattern',
+				eventHandlerDispatchPatternRule.name,
 				scDispatchCall,
 				'Event handler callbacks must not call sc:dispatch(...). Route event-driven transitions via FSM definitions instead of manual dispatch inside events:on handlers.',
 			);
@@ -3008,7 +2908,7 @@ function lintEventHandlerDispatchPattern(expression: LuaCallExpression, issues: 
 				if (crossObjectStateDispatchCall) {
 				pushIssue(
 					issues,
-					'event_handler_state_dispatch_pattern',
+					eventHandlerStateDispatchPatternRule.name,
 					crossObjectStateDispatchCall,
 						'Event handler callbacks must not dispatch_state_event(...) on other objects/services. Keep transitions owned by each object/service FSM.',
 					);
@@ -3021,7 +2921,7 @@ function lintEventHandlerDispatchPattern(expression: LuaCallExpression, issues: 
 			if (proxyFlagAssignment) {
 				pushIssue(
 					issues,
-					'event_handler_flag_proxy_pattern',
+					eventHandlerFlagProxyPatternRule.name,
 					proxyFlagAssignment.target,
 					`Event handler flag-proxy pattern is forbidden (self.${proxyFlagAssignment.propertyName}). Do not stage FSM transitions through *_requested/*_pending/*_done flags; use FSM events/timelines/input handlers directly.`,
 				);
@@ -3030,7 +2930,7 @@ function lintEventHandlerDispatchPattern(expression: LuaCallExpression, issues: 
 }
 
 function lintDispatchFanoutLoopPattern(statement: LuaStatement, issues: LuaLintIssue[]): void {
-	if (activeLintRules.has('forbidden_dispatch_pattern')) {
+	if (activeLintRules.has(forbiddenDispatchPatternRule.name)) {
 		return;
 	}
 	if (statement.kind !== LuaSyntaxKind.ForNumericStatement && statement.kind !== LuaSyntaxKind.ForGenericStatement) {
@@ -3045,7 +2945,7 @@ function lintDispatchFanoutLoopPattern(statement: LuaStatement, issues: LuaLintI
 	}
 	pushIssue(
 		issues,
-		'dispatch_fanout_loop_pattern',
+		dispatchFanoutLoopPatternRule.name,
 		dispatchCall,
 		'Fan-out dispatch_state_event(...) loops are forbidden. Objects/services must own their own FSM/event handling instead of external manual dispatch loops.',
 	);
@@ -3235,7 +3135,7 @@ function lintInlineStaticLookupTableExpression(
 			if (isStaticLookupTableConstructor(expression.base)) {
 				pushIssue(
 					issues,
-					'inline_static_lookup_table_pattern',
+					inlineStaticLookupTablePatternRule.name,
 					expression.base,
 					`Inline static lookup table expression inside function is forbidden (in "${functionName}"). Hoist static lookup tables to file scope.`,
 				);
@@ -3376,7 +3276,7 @@ function lintSplitLocalTableInitPattern(statements: ReadonlyArray<LuaStatement>,
 			}
 			pushIssue(
 				issues,
-				'split_local_table_init_pattern',
+				splitLocalTableInitPatternRule.name,
 				statement.names[0],
 				`Split local declaration + table initialization is forbidden ("${localName}"). Initialize the table in the local declaration.`,
 			);
@@ -3576,7 +3476,7 @@ function lintDuplicateInitializerInStatements(
 					}
 					pushIssue(
 						context.issues,
-						'duplicate_initializer_pattern',
+						duplicateInitializerPatternRule.name,
 						left,
 						`Duplicate initializer pattern is forbidden ("${left.name}"). Do not initialize and later reassign the same value expression; keep one deterministic initialization point.`,
 					);
@@ -3882,7 +3782,7 @@ function lintForeignObjectMutationInStatements(
 						}
 							pushIssue(
 								context.issues,
-								'foreign_object_internal_mutation_pattern',
+								foreignObjectInternalMutationPatternRule.name,
 								left,
 								`Direct top-level mutation on service alias ${targetInfo.rootName}.${propertyName} is forbidden. Keep ownership in the target service implementation and call domain methods/events; do not add getter/setter wrappers as a workaround.`,
 							);
@@ -4115,7 +4015,7 @@ function lintRuntimeTagLookupInExpression(
 	if (isRuntimeTagLookupExpression(expression, context)) {
 		pushIssue(
 			context.issues,
-			'runtime_tag_table_access_pattern',
+			runtimeTagTableAccessPatternRule.name,
 			expression,
 			'Direct runtime .tags access is forbidden. Use :has_tag(...) and derived/group tags instead of reading internal tag tables to bypass linting.',
 		);
@@ -4492,7 +4392,7 @@ function lintStagedExportLocalCallPattern(statements: ReadonlyArray<LuaStatement
 			flagged.add(right.name);
 			pushIssue(
 				issues,
-				'staged_export_local_call_pattern',
+				stagedExportLocalCallPatternRule.name,
 				declaration,
 				`Staged local call-result export is forbidden ("${right.name}"). Assign call results directly to the module field and use that field directly.`,
 			);
@@ -4555,7 +4455,7 @@ function lintStagedExportLocalTablePattern(statements: ReadonlyArray<LuaStatemen
 				flagged.add(right.name);
 				pushIssue(
 					issues,
-					'staged_export_local_table_pattern',
+					stagedExportLocalTablePatternRule.name,
 					stagedDeclaration.declaration,
 					`Staged local table export is forbidden ("${right.name}"). Build table values directly on the destination module field instead.`,
 				);
@@ -4672,7 +4572,7 @@ function leaveSingleUseHasTagScope(context: SingleUseHasTagContext): void {
 		if (binding && binding.pendingReadCount === 1) {
 			pushIssue(
 				context.issues,
-				'single_use_has_tag_pattern',
+				singleUseHasTagPatternRule.name,
 				binding.declaration,
 				`Local has_tag result "${binding.declaration.name}" is read exactly once; inline self:has_tag(...) instead of caching it.`,
 			);
@@ -4920,7 +4820,7 @@ function leaveSingleUseLocalScope(context: SingleUseLocalContext): void {
 			if (shouldReport) {
 				pushIssue(
 					context.issues,
-					'single_use_local_pattern',
+					singleUseLocalPatternRule.name,
 					binding.declaration,
 					singleUseLocalMessage(binding),
 				);
@@ -5212,7 +5112,7 @@ function markUnusedInitValueWrite(
 	}
 	pushIssue(
 		context.issues,
-		'unused_init_value_pattern',
+		unusedInitValuePatternRule.name,
 		binding.declaration,
 		`Unused initial value is forbidden ("${binding.declaration.name}"). Remove the initializer and assign only when the value is actually known.`,
 	);
@@ -5432,7 +5332,7 @@ function lintSinglePropertyOptionsParameter(functionExpression: LuaFunctionExpre
 		}
 		pushIssue(
 			issues,
-			'single_property_options_parameter_pattern',
+			singlePropertyOptionsParameterPatternRule.name,
 			parameter,
 			`Single-property options parameter "${parameter.name}" is forbidden. Use a direct parameter or split the operation instead of implying future extensibility.`,
 		);
@@ -5577,7 +5477,7 @@ function lintFunctionBody(
 	if (isVisualUpdateLike) {
 		pushIssue(
 			issues,
-			'visual_update_pattern',
+			visualUpdatePatternRule.name,
 			functionExpression,
 			`update_visual/sync_*_components/apply_pose/refresh_presentation_if_changed-style code is forbidden ("${functionName}"). This is an ugly workaround pattern (update_visual <-> sync_*_components <-> apply_pose <-> refresh_presentation_if_changed). Use deterministic initialization and on-change updates.`,
 		);
@@ -5586,7 +5486,7 @@ function lintFunctionBody(
 	if (isGetterOrSetter) {
 		pushIssue(
 			issues,
-			'getter_setter_pattern',
+			getterSetterPatternRule.name,
 			functionExpression,
 			`Getter/setter wrapper pattern is forbidden ("${functionName}").`,
 		);
@@ -5595,7 +5495,7 @@ function lintFunctionBody(
 	if (isComparisonWrapperGetter) {
 		pushIssue(
 			issues,
-			'comparison_wrapper_getter_pattern',
+			comparisonWrapperGetterPatternRule.name,
 			functionExpression,
 			`Single-value comparison wrapper is forbidden ("${functionName}"). Inline the comparison or expose the original value source directly.`,
 		);
@@ -5604,7 +5504,7 @@ function lintFunctionBody(
 	if (isBuiltinRecreation) {
 		pushIssue(
 			issues,
-			'builtin_recreation_pattern',
+			builtinRecreationPatternRule.name,
 			functionExpression,
 			`Recreating existing built-in behavior is forbidden ("${functionName}").`,
 		);
@@ -5613,7 +5513,7 @@ function lintFunctionBody(
 	if (isForbiddenRandomHelper) {
 		pushIssue(
 			issues,
-			'forbidden_random_helper_pattern',
+			forbiddenRandomHelperPatternRule.name,
 			functionExpression,
 			`Custom random helper "${functionName}" is forbidden. Use math.random directly instead of inventing a random_int-style wrapper.`,
 		);
@@ -5622,7 +5522,7 @@ function lintFunctionBody(
 	if (isBool01Duplicate) {
 		pushIssue(
 			issues,
-			'bool01_duplicate_pattern',
+			bool01DuplicatePatternRule.name,
 			functionExpression,
 			`Duplicate of global bool01 is forbidden ("${functionName}"). Use bool01(...) directly.`,
 		);
@@ -5631,7 +5531,7 @@ function lintFunctionBody(
 	if (isPureCopyFunction) {
 		pushIssue(
 			issues,
-			'pure_copy_function_pattern',
+			pureCopyFunctionPatternRule.name,
 			functionExpression,
 			`Defensive pure-copy function is forbidden ("${functionName}"). Do not replace it with workaround wrappers/helpers; use original source values directly.`,
 		);
@@ -5647,7 +5547,7 @@ function lintFunctionBody(
 	) {
 		pushIssue(
 			issues,
-			'single_line_method_pattern',
+			singleLineMethodPatternRule.name,
 			functionExpression,
 			`Meaningless single-line method is forbidden ("${functionName}").`,
 		);
@@ -5655,7 +5555,7 @@ function lintFunctionBody(
 	if (matchesEnsurePattern(functionExpression)) {
 		pushIssue(
 			issues,
-			'ensure_pattern',
+			ensurePatternRule.name,
 			functionExpression,
 			`Ensure-style lazy initialization pattern is forbidden ("${functionName}").`,
 		);
@@ -5663,7 +5563,7 @@ function lintFunctionBody(
 	if (matchesEnsureLocalAliasPattern(functionExpression)) {
 		pushIssue(
 			issues,
-			'ensure_local_alias_pattern',
+			ensureLocalAliasPatternRule.name,
 			functionExpression,
 			`Ensure-style local alias lazy initialization is forbidden ("${functionName}").`,
 		);
@@ -5674,7 +5574,7 @@ function lintFunctionBody(
 	if (isNamedFunction && matchesHandlerIdentityDispatchPattern(functionExpression)) {
 		pushIssue(
 			issues,
-			'handler_identity_dispatch_pattern',
+			handlerIdentityDispatchPatternRule.name,
 			functionExpression,
 			`Handler-identity dispatch branching with mixed call signatures is forbidden ("${functionName}"). Use uniform handler signatures and direct dispatch without a cached handler local.`,
 		);
@@ -5690,7 +5590,7 @@ function lintLocalAssignment(statement: LuaLocalAssignmentStatement, issues: Lua
 		if (localName !== '_' && selfPropertyName && (isStateLikeAliasName(localName) || isStateLikeAliasName(selfPropertyName))) {
 			pushIssue(
 				issues,
-				'self_property_local_alias_pattern',
+				selfPropertyLocalAliasPatternRule.name,
 				statement.names[index],
 				`Local alias of self state-data is forbidden (${localName}). Read state values directly from self instead of caching them in locals.`,
 			);
@@ -5775,7 +5675,7 @@ function lintConstantCopyInStatements(statements: ReadonlyArray<LuaStatement>, c
 					if (index < valueCount && isForbiddenCopyByValue[index]) {
 						pushIssue(
 							context.issues,
-							'constant_copy_pattern',
+							constantCopyPatternRule.name,
 							statement.values[index],
 							`Local copies of constants are forbidden ("${statement.names[index].name}").`,
 						);
@@ -5939,7 +5839,7 @@ function leaveConstLocalScope(context: ConstLocalContext): void {
 		if (binding.shouldReport && binding.writeCountAfterDeclaration === 0) {
 			pushIssue(
 				context.issues,
-				'local_const_pattern',
+				localConstPatternRule.name,
 				binding.declaration,
 				`Local "${binding.declaration.name}" is never reassigned. Mark it <const>.`,
 			);
@@ -6173,82 +6073,8 @@ function lintConstLocalPattern(statements: ReadonlyArray<LuaStatement>, issues: 
 	}
 }
 
-function lintLocalFunctionConstPattern(statement: LuaLocalFunctionStatement, issues: LuaLintIssue[]): void {
-	pushIssue(
-		issues,
-		'local_function_const_pattern',
-		statement.name,
-		`Local function "${statement.name.name}" is forbidden. Use "local ${statement.name.name}<const> = function(...) ... end" instead.`,
-	);
-}
-
-function lintRequireCall(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
-	if (expression.callee.kind !== LuaSyntaxKind.IdentifierExpression || expression.callee.name !== 'require') {
-		return;
-	}
-	if (expression.arguments.length === 0) {
-		return;
-	}
-	const firstArgument = expression.arguments[0];
-	if (firstArgument.kind !== LuaSyntaxKind.StringLiteralExpression) {
-		return;
-	}
-	if (FORBIDDEN_RENDER_MODULE_REQUIRES.has(firstArgument.value)) {
-		pushIssue(
-			issues,
-			'forbidden_render_module_require_pattern',
-			firstArgument,
-			`require('${firstArgument.value}') is forbidden. The legacy Lua render wrapper modules are removed; submit VDP work through MMIO registers instead.`,
-		);
-		return;
-	}
-	if (!firstArgument.value.toLowerCase().endsWith('.lua')) {
-		return;
-	}
-	pushIssue(
-		issues,
-		'require_lua_extension_pattern',
-		firstArgument,
-		`require() must not include a ".lua" suffix ("${firstArgument.value}").`,
-	);
-}
-
 function isGlobalCall(expression: LuaCallExpression, name: string): boolean {
 	return expression.callee.kind === LuaSyntaxKind.IdentifierExpression && expression.callee.name === name;
-}
-
-function lintForbiddenRenderWrapperCall(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
-	if (expression.callee.kind !== LuaSyntaxKind.IdentifierExpression) {
-		return;
-	}
-	const calleeName = expression.callee.name;
-	if (!FORBIDDEN_RENDER_WRAPPER_CALLS.has(calleeName)) {
-		return;
-	}
-	pushIssue(
-		issues,
-		'forbidden_render_wrapper_call_pattern',
-		expression.callee,
-		`Legacy render wrapper "${calleeName}" is forbidden. Submit VDP work through MMIO registers instead of Lua draw-wrapper calls.`,
-	);
-}
-
-function lintForbiddenRenderLayerString(field: LuaTableField, issues: LuaLintIssue[]): void {
-	if (field.kind !== LuaTableFieldKind.IdentifierKey || field.name !== 'layer') {
-		return;
-	}
-	if (field.value.kind !== LuaSyntaxKind.StringLiteralExpression) {
-		return;
-	}
-	if (!FORBIDDEN_RENDER_LAYER_STRINGS.has(field.value.value)) {
-		return;
-	}
-	pushIssue(
-		issues,
-		'forbidden_render_layer_string_pattern',
-		field.value,
-		`Render layer "${field.value.value}" is forbidden here. Use the sys_vdp_layer_* enum constants instead of Lua strings.`,
-	);
 }
 
 function containsServiceLabel(value: string): boolean {
@@ -6336,7 +6162,7 @@ function lintServiceDefinitionSuffixPattern(expression: LuaCallExpression, issue
 				: '';
 			pushIssue(
 				issues,
-				'service_definition_suffix_pattern',
+				serviceDefinitionSuffixPatternRule.name,
 				expression.arguments[0],
 				`Service definition id must not contain "service" ("${definitionId}").${suggestion}`,
 			);
@@ -6360,7 +6186,7 @@ function lintServiceDefinitionSuffixPattern(expression: LuaCallExpression, issue
 		: '';
 	pushIssue(
 		issues,
-		'service_definition_suffix_pattern',
+		serviceDefinitionSuffixPatternRule.name,
 		definitionArgument,
 		`Service definition id must not contain "service" ("${definitionId}").${suggestion}`,
 	);
@@ -6380,7 +6206,7 @@ function lintCreateServiceIdAddonPattern(expression: LuaCallExpression, issues: 
 	}
 	pushIssue(
 		issues,
-		'create_service_id_addon_pattern',
+		createServiceIdAddonPatternRule.name,
 		idField.value,
 		'Passing "id" in create_service(...) addons is forbidden. Set the id in define_service.defaults.id.',
 	);
@@ -6398,7 +6224,7 @@ function lintDefineServiceIdPattern(expression: LuaCallExpression, issues: LuaLi
 	if (!defaultsField || defaultsField.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
 		pushIssue(
 			issues,
-			'define_service_id_pattern',
+			defineServiceIdPatternRule.name,
 			definition,
 			'Service id must be defined via define_service.defaults.id (string literal, no "_service" suffix).',
 		);
@@ -6408,7 +6234,7 @@ function lintDefineServiceIdPattern(expression: LuaCallExpression, issues: LuaLi
 	if (!idField) {
 		pushIssue(
 			issues,
-			'define_service_id_pattern',
+			defineServiceIdPatternRule.name,
 			defaultsField.value,
 			'Service id must be defined via define_service.defaults.id (string literal, no "_service" suffix).',
 		);
@@ -6417,7 +6243,7 @@ function lintDefineServiceIdPattern(expression: LuaCallExpression, issues: LuaLi
 	if (idField.value.kind !== LuaSyntaxKind.StringLiteralExpression) {
 		pushIssue(
 			issues,
-			'define_service_id_pattern',
+			defineServiceIdPatternRule.name,
 			idField.value,
 			'Service id in define_service.defaults.id must be a string literal and must not contain "service".',
 		);
@@ -6433,7 +6259,7 @@ function lintDefineServiceIdPattern(expression: LuaCallExpression, issues: LuaLi
 		: '';
 	pushIssue(
 		issues,
-		'define_service_id_pattern',
+		defineServiceIdPatternRule.name,
 		idField.value,
 		`Service id in define_service.defaults.id must not contain "service" ("${serviceId}").${suggestion}`,
 	);
@@ -6471,7 +6297,7 @@ function lintDefineFactoryTickEnabledAndSpaceIdPattern(expression: LuaCallExpres
 		if (key === 'tick_enabled' && field.value.kind === LuaSyntaxKind.BooleanLiteralExpression) {
 			pushIssue(
 				issues,
-				'define_factory_tick_enabled_pattern',
+				defineFactoryTickEnabledPatternRule.name,
 				field.value,
 				`${factoryName}: tick_enabled=true/false is forbidden. Remove it: true is redundant (default), and false is ineffective because ticking is enabled on activate.`,
 			);
@@ -6482,7 +6308,7 @@ function lintDefineFactoryTickEnabledAndSpaceIdPattern(expression: LuaCallExpres
 		}
 		pushIssue(
 			issues,
-			'define_factory_space_id_pattern',
+			defineFactorySpaceIdPatternRule.name,
 			field.value,
 			`${factoryName}: space_id is forbidden. Services must not carry space_id, and prefab/object space must be assigned at inst(..., { space_id = ... }).`,
 		);
@@ -6680,7 +6506,7 @@ function lintFsmEnteringStateVisualSetupPattern(
 			if (visibleAssignment) {
 				pushIssue(
 					issues,
-					'fsm_entering_state_visual_setup_pattern',
+					fsmEnteringStateVisualSetupPatternRule.name,
 					visibleAssignment.target,
 					`FSM state "${stateName}" must not set self.visible in entering_state. Move the object between spaces instead of hiding/showing it via visible; keep visual setup out of entering_state${gfxCall ? ', including self:gfx(...)' : ''}.`,
 				);
@@ -6693,7 +6519,7 @@ function lintFsmEnteringStateVisualSetupPattern(
 			if (gfxLiteral && prefabDefaults?.imgid === gfxLiteral) {
 				pushIssue(
 					issues,
-					'fsm_entering_state_visual_setup_pattern',
+					fsmEnteringStateVisualSetupPatternRule.name,
 					gfxCall,
 					`FSM state "${stateName}" must not call self:gfx('${gfxLiteral}') in entering_state when define_prefab already sets imgid='${gfxLiteral}'. Keep the default sprite in define_prefab defaults instead of reapplying it on state entry.`,
 				);
@@ -6704,7 +6530,7 @@ function lintFsmEnteringStateVisualSetupPattern(
 			}
 			pushIssue(
 				issues,
-				'fsm_entering_state_visual_setup_pattern',
+				fsmEnteringStateVisualSetupPatternRule.name,
 				gfxCall,
 				`FSM state "${stateName}" must not seed self:gfx(...) in entering_state when the same state's timeline already drives gfx in on_frame. Let the timeline produce the visual frame instead of pre-setting gfx on entry.`,
 			);
@@ -6746,7 +6572,7 @@ function lintFsmDirectStateHandlerMapValue(mapExpression: LuaExpression, issues:
 		if (goField.value.kind === LuaSyntaxKind.StringLiteralExpression) {
 			pushIssue(
 				issues,
-				'fsm_direct_state_handler_shorthand_pattern',
+				fsmDirectStateHandlerShorthandPatternRule.name,
 				goField.value,
 				`FSM direct state-id handlers must use shorthand. Replace "{ go = '${goField.value.value}' }" with "${goField.value.value}".`,
 			);
@@ -6754,7 +6580,7 @@ function lintFsmDirectStateHandlerMapValue(mapExpression: LuaExpression, issues:
 		}
 		pushIssue(
 			issues,
-			'fsm_direct_state_handler_shorthand_pattern',
+			fsmDirectStateHandlerShorthandPatternRule.name,
 			goField.value,
 			'FSM direct handler shorthand is required. Replace "{ go = <handler> }" with "<handler>".',
 		);
@@ -6834,7 +6660,7 @@ function lintFsmEventReemitHandlerPatternInMap(mapExpression: LuaExpression, iss
 		}
 		pushIssue(
 			issues,
-			'fsm_event_reemit_handler_pattern',
+			fsmEventReemitHandlerPatternRule.name,
 			onlyStatement.expression,
 			'FSM event handler that only re-emits another event is forbidden. Model the transition directly in FSM maps instead of event->event relay handlers.',
 		);
@@ -6883,7 +6709,7 @@ function lintFsmForbiddenLegacyFieldsInTable(expression: LuaExpression, issues: 
 		if (key && FORBIDDEN_FSM_LEGACY_FIELDS.has(key)) {
 			pushIssue(
 				issues,
-				'fsm_forbidden_legacy_fields_pattern',
+				fsmForbiddenLegacyFieldsPatternRule.name,
 				field.value,
 				`FSM field "${key}" is forbidden. Use state "update" and "input_event_handlers" only.`,
 			);
@@ -6917,7 +6743,7 @@ function lintFsmProcessInputPollingTransitionPatternInTable(expression: LuaExpre
 			if (inputCheck && hasTransitionReturnInStatements(field.value.body.body)) {
 				pushIssue(
 					issues,
-					'fsm_process_input_polling_transition_pattern',
+					fsmProcessInputPollingTransitionPatternRule.name,
 					inputCheck,
 					'FSM process_input polling that drives state transitions is forbidden. Use input_event_handlers with direct state-id mappings instead of action_triggered checks in process_input.',
 				);
@@ -6976,7 +6802,7 @@ function lintFsmRunChecksInputTransitionPatternInTable(expression: LuaExpression
 				}
 				pushIssue(
 					issues,
-					'fsm_run_checks_input_transition_pattern',
+					fsmRunChecksInputTransitionPatternRule.name,
 					inputCheck,
 					'FSM run_checks input polling with state-transition return is forbidden. Use input_event_handlers with direct state-id mappings instead of action_triggered checks in run_checks.',
 				);
@@ -7062,7 +6888,7 @@ function lintFsmLifecycleWrapperPatternInTable(expression: LuaExpression, issues
 				const methodName = getCallMethodName(callExpression) || 'handler';
 				pushIssue(
 					issues,
-					'fsm_lifecycle_wrapper_pattern',
+					fsmLifecycleWrapperPatternRule.name,
 					field.value,
 					`FSM handler wrapper for "${key}" is forbidden ("${methodName}"). Use a direct function reference (for example "<class>.${methodName}") instead of wrapper functions like "function(self) self:${methodName}(...) end".`,
 				);
@@ -7202,7 +7028,7 @@ function lintFsmTickCounterTransitionPatternInTable(expression: LuaExpression, i
 				if (mutation) {
 					pushIssue(
 						issues,
-						'fsm_tick_counter_transition_pattern',
+						fsmTickCounterTransitionPatternRule.name,
 						mutation,
 						'Tick-based countdown/countup transition pattern is forbidden. Model timed transitions with FSM timelines and timeline events instead of mutating self counters in tick.',
 					);
@@ -7241,7 +7067,7 @@ function lintFsmIdLabelPattern(expression: LuaCallExpression, issues: LuaLintIss
 	}
 	pushIssue(
 		issues,
-		'fsm_id_label_pattern',
+		fsmIdLabelPatternRule.name,
 		idArgument,
 		appendSuggestionMessage(
 			`FSM id must not contain "fsm" ("${fsmId}").`,
@@ -7511,7 +7337,7 @@ function lintFsmStateNameMirrorAssignmentPattern(expression: LuaCallExpression, 
 		}
 		pushIssue(
 			issues,
-			'fsm_state_name_mirror_assignment_pattern',
+			fsmStateNameMirrorAssignmentPatternRule.name,
 			mirror.valueNode,
 			`FSM state "${stateName}" must not be mirrored into self.${mirror.propertyName} using the same string literal. Derive behavior from the active state instead of duplicating state-name strings in properties.`,
 		);
@@ -7533,7 +7359,7 @@ function lintBtIdLabelPattern(expression: LuaCallExpression, issues: LuaLintIssu
 	}
 	pushIssue(
 		issues,
-		'bt_id_label_pattern',
+		btIdLabelPatternRule.name,
 		idArgument,
 		appendSuggestionMessage(
 			`Behavior-tree id must not contain "bt" ("${btId}").`,
@@ -7598,7 +7424,7 @@ function lintCollectionLabelPatterns(field: LuaTableField, issues: LuaLintIssue[
 		lintCollectionStringValuesForLabel(
 			field.value,
 			'fsm',
-			'fsm_id_label_pattern',
+			fsmIdLabelPatternRule.name,
 			issues,
 			'FSM id',
 		);
@@ -7608,7 +7434,7 @@ function lintCollectionLabelPatterns(field: LuaTableField, issues: LuaLintIssue[
 		lintCollectionStringValuesForLabel(
 			field.value,
 			'bt',
-			'bt_id_label_pattern',
+			btIdLabelPatternRule.name,
 			issues,
 			'Behavior-tree id',
 		);
@@ -7646,7 +7472,7 @@ function lintInjectedServiceIdPropertyAssignmentTarget(target: LuaExpression, is
 	}
 	pushIssue(
 		issues,
-		'injected_service_id_property_pattern',
+		injectedServiceIdPropertyPatternRule.name,
 		target,
 		`Injecting service ids via property "${propertyName}" is forbidden. Do not pass/store service ids on objects/services; resolve services directly via service('<id>').`,
 	);
@@ -7664,7 +7490,7 @@ function lintInjectedServiceIdPropertyTableField(field: LuaTableField, issues: L
 	}
 	pushIssue(
 		issues,
-		'injected_service_id_property_pattern',
+		injectedServiceIdPropertyPatternRule.name,
 		field,
 		`Injecting service ids via property "${propertyName}" is forbidden. Do not pass/store service ids on objects/services; resolve services directly via service('<id>').`,
 	);
@@ -7673,7 +7499,7 @@ function lintInjectedServiceIdPropertyTableField(field: LuaTableField, issues: L
 function lintTableField(field: LuaTableField, issues: LuaLintIssue[]): void {
 	lintCollectionLabelPatterns(field, issues);
 	lintInjectedServiceIdPropertyTableField(field, issues);
-	lintForbiddenRenderLayerString(field, issues);
+	lintForbiddenRenderLayerString(field, issues, pushIssue);
 	if (field.kind === LuaTableFieldKind.IdentifierKey
 		&& field.name === 'tick'
 		&& field.value.kind === LuaSyntaxKind.FunctionExpression) {
@@ -7977,7 +7803,7 @@ function lintBranchUninitializedLocalPattern(statements: ReadonlyArray<LuaStatem
 		}
 		pushIssue(
 			issues,
-			'branch_uninitialized_local_pattern',
+			branchUninitializedLocalPatternRule.name,
 			declaration.names[0],
 			`Local "${name}" is declared without initialization and only conditionally assigned before use. Assign deterministically or assign in all branches before use.`,
 		);
@@ -7988,11 +7814,11 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 	if (!expression) {
 		return;
 	}
-	lintEmptyStringConditionPattern(expression, issues);
-	lintEmptyStringFallbackPattern(expression, issues);
-	lintOrNilFallbackPattern(expression, issues);
-	lintExplicitTruthyComparisonPattern(expression, issues);
-	lintForbiddenMathFloorPattern(expression, issues);
+	lintLuaEmptyStringConditionPattern(expression, issues, pushIssue);
+	lintLuaEmptyStringFallbackPattern(expression, issues, pushIssue);
+	lintLuaOrNilFallbackPattern(expression, issues, pushIssue);
+	lintLuaExplicitTruthyComparisonPattern(expression, issues, pushIssue);
+	lintForbiddenMathFloorPattern(expression, issues, pushIssue);
 	lintStringOrChainComparisonPattern(expression, issues);
 	lintActionTriggeredBoolChainPattern(expression, issues);
 	if (topLevel) {
@@ -8000,8 +7826,8 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 	}
 			switch (expression.kind) {
 				case LuaSyntaxKind.CallExpression:
-					lintRequireCall(expression, issues);
-					lintForbiddenRenderWrapperCall(expression, issues);
+					lintRequireCall(expression, issues, pushIssue);
+					lintForbiddenRenderWrapperCall(expression, issues, pushIssue);
 					lintForbiddenStateCalls(expression, issues);
 					lintForbiddenDispatchPattern(expression, issues);
 					lintEventHandlerDispatchPattern(expression, issues);
@@ -8092,7 +7918,7 @@ function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: LuaLint
 				break;
 			case LuaSyntaxKind.LocalFunctionStatement: {
 				const localFunction = statement as LuaLocalFunctionStatement;
-				lintLocalFunctionConstPattern(localFunction, issues);
+				lintLocalFunctionConstPattern(localFunction, issues, pushIssue);
 				lintFunctionBody(getFunctionDisplayName(localFunction), localFunction.functionExpression, issues, {
 					isMethodDeclaration: false,
 					usageInfo: functionUsageInfo,
@@ -8123,7 +7949,7 @@ function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: LuaLint
 				if (matchesUselessAssertPattern(statement)) {
 					pushIssue(
 						issues,
-						'useless_assert_pattern',
+						uselessAssertPatternRule.name,
 						statement,
 						'Useless assert-pattern is forbidden (if ... then error(...) end). Remove the check; do not replace it with another check/assert.',
 					);
@@ -8131,7 +7957,7 @@ function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: LuaLint
 				if (matchesImgIdNilFallbackPattern(statement)) {
 					pushIssue(
 						issues,
-						'imgid_fallback_pattern',
+						imgidFallbackPatternRule.name,
 						statement,
 						'imgid fallback initialization is forbidden. Remove nil checks for imgid defaults; use deterministic setup.',
 					);
@@ -8200,7 +8026,7 @@ function pushSyntaxErrorIssue(
 ): void {
 	pushIssueAt(
 		issues,
-		'syntax_error_pattern',
+		syntaxErrorPatternRule.name,
 		error.path,
 		error.line,
 		error.column,
@@ -8228,7 +8054,7 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 			const lexer = new LuaLexer(source, workspacePath);
 			const lexed = lexer.scanTokensWithRecovery();
 			const tokens = lexed.tokens;
-			lintUppercaseCode(workspacePath, tokens, issues);
+			lintUppercaseCode(workspacePath, tokens, issues, pushIssueAt);
 			if (lexed.syntaxError) {
 				pushSyntaxErrorIssue(issues, lexed.syntaxError);
 				continue;

@@ -1,8 +1,37 @@
 import ts from 'typescript';
+import {
+	emptyContainerFallbackPatternRule,
+	emptyStringConditionPatternRule,
+	emptyStringFallbackPatternRule,
+	explicitTruthyComparisonPatternRule,
+	localConstPatternRule,
+	orNilFallbackPatternRule,
+	singleLineMethodPatternRule,
+	singleUseLocalPatternRule,
+	splitJoinRoundtripPatternRule,
+	stringOrChainComparisonPatternRule,
+	stringSwitchChainPatternRule,
+} from '../lint/rules/common';
+import {
+	allocationFallbackPatternRule,
+	contractNumericDefensiveSanitizationPatternRule,
+	defensiveOptionalChainPatternRule,
+	defensiveTypeofFunctionPatternRule,
+	facadeModuleDensityPatternRule,
+	hotPathClosureArgumentPatternRule,
+	hotPathObjectLiteralPatternRule,
+	lookupAliasReturnPatternRule,
+	nullishCounterIncrementPatternRule,
+	nullishNullNormalizationPatternRule,
+	nullishReturnGuardPatternRule,
+	numericDefensiveSanitizationPatternRule,
+	redundantNumericSanitizationPatternRule,
+} from '../lint/rules/code_quality';
+import { ensurePatternRule } from '../lint/rules/shared';
 
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
+import { extname, isAbsolute, relative, resolve } from 'node:path';
 import {
 	collectAnalysisRegions,
 	filterSuppressedLintIssues,
@@ -10,9 +39,26 @@ import {
 	lineInAnalysisRegion,
 	type AnalysisRegion,
 } from './lint_suppressions';
-import { loadAnalysisConfig, type AnalysisConfig, type ArchitectureBoundaryConfig, type ArchitectureBoundaryRule } from './config';
+import { loadAnalysisConfig, type AnalysisConfig } from './config';
 import { collectSourceFiles } from './file_scan';
 import { createQualityLedger, noteQualityLedger, qualityLedgerEntries, type QualityLedger } from './quality_ledger';
+import { pushTsLintIssue as pushLintIssue, tsNodeStartLine as nodeStartLine, type TsLintIssue as LintIssue } from '../lint/ts_rule';
+import { lintConsecutiveDuplicateStatementsPattern } from '../lint/rules/common/consecutive_duplicate_statement_pattern';
+import { lintEmptyCatchPattern } from '../lint/rules/common/empty_catch_pattern';
+import { lintSilentCatchFallbackPattern } from '../lint/rules/common/silent_catch_fallback_pattern';
+import { lintSinglePropertyOptionsParameterPattern } from '../lint/rules/common/single_property_options_parameter_pattern';
+import { lintUselessCatchPattern } from '../lint/rules/common/useless_catch_pattern';
+import { lintUselessTerminalReturnPattern } from '../lint/rules/common/useless_terminal_return_pattern';
+import { addRepeatedStatementSequenceIssues, collectRepeatedStatementSequences, type StatementSequenceInfo } from '../lint/rules/common/repeated_statement_sequence_pattern';
+import { lintCrossLayerImports } from '../lint/rules/code_quality/cross_layer_import_pattern';
+import { addDuplicateExportedTypeIssues, collectExportedTypes, type ExportedTypeInfo } from '../lint/rules/code_quality/duplicate_exported_type_name_pattern';
+import { lintLegacySentinelStringPattern } from '../lint/rules/code_quality/legacy_sentinel_string_pattern';
+import { addNormalizedBodyDuplicateIssues, type NormalizedBodyInfo } from '../lint/rules/code_quality/normalized_ast_duplicate_pattern';
+import { lintRedundantConditionalPattern } from '../lint/rules/code_quality/redundant_conditional_pattern';
+import { addRepeatedAccessChainIssues } from '../lint/rules/code_quality/repeated_access_chain_pattern';
+import { addRepeatedExpressionIssues, type RepeatedExpressionInfo } from '../lint/rules/code_quality/repeated_expression_pattern';
+import { addSemanticRepeatedExpressionIssues } from '../lint/rules/code_quality/semantic_repeated_expression_pattern';
+import { addSemanticNormalizedBodyDuplicateIssues } from '../lint/rules/code_quality/semantic_normalized_body_duplicate_pattern';
 import type { CodeQualityLintRule } from '../lint/rules';
 
 type DuplicateKind = 'class' | 'enum' | 'function' | 'interface' | 'method' | 'namespace' | 'type' | 'wrapper';
@@ -39,15 +85,6 @@ type DuplicateGroup = {
 	locations: DuplicateLocation[];
 };
 
-type LintIssue = {
-	kind: CodeQualityLintRule;
-	file: string;
-	line: number;
-	column: number;
-	name: string;
-	message: string;
-};
-
 type LintBinding = {
 	name: string;
 	line: number;
@@ -66,39 +103,6 @@ type LintBinding = {
 	firstReadParentOperatorKind: ts.SyntaxKind | null;
 	readInsideLoop: boolean;
 	consumeBeforeClearSnapshot: boolean;
-};
-
-type RepeatedExpressionInfo = {
-	line: number;
-	column: number;
-	count: number;
-	sampleText: string;
-};
-
-type ExportedTypeInfo = {
-	name: string;
-	file: string;
-	line: number;
-	column: number;
-};
-
-type NormalizedBodyInfo = {
-	name: string;
-	file: string;
-	line: number;
-	column: number;
-	fingerprint: string;
-	semanticSignatures: string[] | null;
-};
-
-type StatementSequenceInfo = {
-	file: string;
-	line: number;
-	column: number;
-	endLine: number;
-	statementCount: number;
-	textLength: number;
-	fingerprint: string;
 };
 
 type SemanticBodyCallSignature = {
@@ -153,10 +157,6 @@ const SEMANTIC_NORMALIZATION_CALL_TARGETS = new Set([
 
 const NORMALIZED_BODY_MIN_LENGTH = 120;
 const COMPACT_SAMPLE_TEXT_LENGTH = 180;
-const REPEATED_EXPRESSION_PAIR_MIN_LENGTH = 48;
-const SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT = 2;
-const REPEATED_STATEMENT_SEQUENCE_MIN_COUNT = 4;
-const REPEATED_STATEMENT_SEQUENCE_MIN_TEXT_LENGTH = 140;
 const LOCAL_CONST_PATTERN_ENABLED = true;
 const CONTRACT_NUMERIC_NAMES = new Set([
 	'column',
@@ -332,33 +332,6 @@ function detectProjectLanguage(roots: readonly string[]): ProjectLanguage {
 		return 'cpp';
 	}
 	return 'unknown';
-}
-
-function normalizePathForAnalysis(path: string): string {
-	return path.replace(/\\/g, '/');
-}
-
-function pushLintIssue(
-	issues: LintIssue[],
-	sourceFile: ts.SourceFile,
-	node: ts.Node,
-	kind: CodeQualityLintRule,
-	message: string,
-	name = kind,
-): void {
-	const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-	issues.push({
-		kind,
-		file: sourceFile.fileName,
-		line: position.line + 1,
-		column: position.character + 1,
-		name,
-		message,
-	});
-}
-
-function nodeStartLine(sourceFile: ts.SourceFile, node: ts.Node): number {
-	return sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
 }
 
 function nodeIsInAnalysisRegion(sourceFile: ts.SourceFile, regions: readonly AnalysisRegion[], kind: string, node: ts.Node): boolean {
@@ -800,10 +773,6 @@ function isEmptyStringLiteral(node: ts.Expression): node is ts.StringLiteral {
 	return ts.isStringLiteral(node) && node.text === '';
 }
 
-function isLegacySentinelString(text: string): boolean {
-	return /^__[A-Za-z0-9_]+__$/.test(text);
-}
-
 function isStringLiteralLike(node: ts.Expression): boolean {
 	return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
 }
@@ -993,97 +962,6 @@ function isConditionalNullishNormalization(node: ts.ConditionalExpression): bool
 	return truthyGuard !== null && expressionUsesGuardedValue(valueExpression, truthyGuard);
 }
 
-function compactExpressionText(node: ts.Expression, sourceFile: ts.SourceFile): string {
-	return node.getText(sourceFile).replace(/\s+/g, ' ').trim();
-}
-
-function compactStatementText(node: ts.Statement, sourceFile: ts.SourceFile): string {
-	return node.getText(sourceFile).replace(/\s+/g, ' ').trim();
-}
-
-function isRedundantConditionalExpression(node: ts.ConditionalExpression, sourceFile: ts.SourceFile): boolean {
-	return compactExpressionText(node.whenTrue, sourceFile) === compactExpressionText(node.whenFalse, sourceFile);
-}
-
-function lintConsecutiveDuplicateStatements(
-	statements: ts.NodeArray<ts.Statement>,
-	sourceFile: ts.SourceFile,
-	issues: LintIssue[],
-): void {
-	let previousText: string | null = null;
-	for (let index = 0; index < statements.length; index += 1) {
-		const statement = statements[index];
-		if (ts.isEmptyStatement(statement)) {
-			previousText = null;
-			continue;
-		}
-		const text = compactStatementText(statement, sourceFile);
-		if (text.length === 0) {
-			previousText = null;
-			continue;
-		}
-		if (text === previousText) {
-			pushLintIssue(
-				issues,
-				sourceFile,
-				statement,
-				'consecutive_duplicate_statement_pattern',
-				'Consecutive duplicate statement is forbidden. Remove the duplicate or replace intentional repetition with a named loop/helper.',
-			);
-		}
-		previousText = text;
-	}
-}
-
-function collectRepeatedStatementSequences(
-	statements: ts.NodeArray<ts.Statement>,
-	sourceFile: ts.SourceFile,
-	regions: readonly AnalysisRegion[],
-	sequences: StatementSequenceInfo[],
-): void {
-	if (statements.length < REPEATED_STATEMENT_SEQUENCE_MIN_COUNT) {
-		return;
-	}
-	const statementTexts: string[] = [];
-	for (let index = 0; index < statements.length; index += 1) {
-		const statement = statements[index];
-		statementTexts.push(ts.isEmptyStatement(statement) || ts.isImportDeclaration(statement) ? '' : compactStatementText(statement, sourceFile));
-	}
-	for (let index = 0; index <= statements.length - REPEATED_STATEMENT_SEQUENCE_MIN_COUNT; index += 1) {
-		let textLength = 0;
-		let usable = true;
-		const parts: string[] = [];
-		for (let offset = 0; offset < REPEATED_STATEMENT_SEQUENCE_MIN_COUNT; offset += 1) {
-			const text = statementTexts[index + offset];
-			if (text.length === 0) {
-				usable = false;
-				break;
-			}
-			textLength += text.length;
-			parts.push(text);
-		}
-		if (!usable || textLength < REPEATED_STATEMENT_SEQUENCE_MIN_TEXT_LENGTH) {
-			continue;
-		}
-		const first = statements[index];
-		const last = statements[index + REPEATED_STATEMENT_SEQUENCE_MIN_COUNT - 1];
-		const start = sourceFile.getLineAndCharacterOfPosition(first.getStart(sourceFile));
-		if (lineInAnalysisRegion(regions, 'repeated-sequence-acceptable', start.line + 1)) {
-			continue;
-		}
-		const end = sourceFile.getLineAndCharacterOfPosition(last.getEnd());
-		sequences.push({
-			file: sourceFile.fileName,
-			line: start.line + 1,
-			column: start.character + 1,
-			endLine: end.line + 1,
-			statementCount: REPEATED_STATEMENT_SEQUENCE_MIN_COUNT,
-			textLength,
-			fingerprint: parts.join('\u0000'),
-		});
-	}
-}
-
 function nullishReturnKind(statement: ts.Statement): NullishLiteralKind | null {
 	if (ts.isReturnStatement(statement)) {
 		return statement.expression === undefined ? null : nullishLiteralKind(statement.expression);
@@ -1155,7 +1033,7 @@ function lintNullishReturnGuard(node: ts.IfStatement, sourceFile: ts.SourceFile,
 		issues,
 		sourceFile,
 		node,
-		'nullish_return_guard_pattern',
+		nullishReturnGuardPatternRule.name,
 		'Nullish guard that only returns null/undefined before returning the guarded value is forbidden. Keep the compact expression form instead of expanding it into a branch.',
 	);
 }
@@ -1212,7 +1090,7 @@ function lintLookupAliasOptionalChain(node: ts.Statement, sourceFile: ts.SourceF
 			issues,
 			sourceFile,
 			node,
-			'lookup_alias_return_pattern',
+			lookupAliasReturnPatternRule.name,
 			'Temporary lookup alias is forbidden. Inline the lookup expression directly and use optional chaining on it instead.',
 		);
 		return;
@@ -1235,7 +1113,7 @@ function lintLookupAliasOptionalChain(node: ts.Statement, sourceFile: ts.SourceF
 		issues,
 		sourceFile,
 		node,
-		'lookup_alias_return_pattern',
+		lookupAliasReturnPatternRule.name,
 		'Temporary lookup alias is forbidden. Inline the lookup expression directly and use optional chaining on it instead.',
 	);
 }
@@ -1332,30 +1210,8 @@ function lintEnsurePattern(
 		issues,
 		sourceFile,
 		node.name ?? node,
-		'ensure_pattern',
+		ensurePatternRule.name,
 		'Lazy ensure/init wrapper is forbidden. Initialize the resource eagerly instead of guarding creation and returning the cached singleton.',
-	);
-}
-
-function lintTerminalReturnPaddingPattern(
-	node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
-	sourceFile: ts.SourceFile,
-	issues: LintIssue[],
-): void {
-	const body = node.body;
-	if (body === undefined || !ts.isBlock(body) || body.statements.length === 0) {
-		return;
-	}
-	const lastStatement = body.statements[body.statements.length - 1];
-	if (!ts.isReturnStatement(lastStatement) || lastStatement.expression !== undefined) {
-		return;
-	}
-	pushLintIssue(
-		issues,
-		sourceFile,
-		lastStatement,
-		'useless_terminal_return_pattern',
-		'Terminal `return;` is forbidden. Remove no-op returns instead of padding the body.',
 	);
 }
 
@@ -1567,63 +1423,6 @@ function isNormalizedColorBytePackingCall(node: ts.CallExpression): boolean {
 		&& isNumericLiteralText(normalized.arguments[2], '1');
 }
 
-function lintCatchClausePatterns(
-	node: ts.CatchClause,
-	sourceFile: ts.SourceFile,
-	regions: readonly AnalysisRegion[],
-	issues: LintIssue[],
-	ledger: QualityLedger,
-): void {
-	const statements = node.block.statements;
-	if (statements.length === 0) {
-		pushLintIssue(
-			issues,
-			sourceFile,
-			node,
-			'empty_catch_pattern',
-			'Empty catch block is forbidden. Catch only when you can handle or rethrow the error.',
-		);
-		return;
-	}
-	const declaration = node.variableDeclaration;
-	if (declaration !== undefined && ts.isIdentifier(declaration.name) && statements.length === 1) {
-		const onlyStatement = statements[0];
-		if (
-			ts.isThrowStatement(onlyStatement)
-			&& onlyStatement.expression !== undefined
-			&& ts.isIdentifier(onlyStatement.expression)
-			&& onlyStatement.expression.text === declaration.name.text
-		) {
-			pushLintIssue(
-				issues,
-				sourceFile,
-				node,
-				'useless_catch_pattern',
-				'Catch clause only rethrows the caught error. Remove the wrapper and let the exception propagate.',
-			);
-			return;
-		}
-	}
-	for (let index = 0; index < statements.length; index += 1) {
-		const statement = statements[index];
-		if (!ts.isReturnStatement(statement)) {
-			continue;
-		}
-		if (nodeIsInAnalysisRegion(sourceFile, regions, 'fallible-boundary', node)) {
-			noteQualityLedger(ledger, 'allowed_catch_fallible_boundary');
-			return;
-		}
-		pushLintIssue(
-			issues,
-			sourceFile,
-			node,
-			'silent_catch_fallback_pattern',
-			'Catch clause swallows the error and returns a fallback. Trust the caller/callee or mark the fallible boundary explicitly.',
-		);
-		return;
-	}
-}
-
 function lintSplitJoinRoundtripPattern(
 	node: ts.CallExpression,
 	sourceFile: ts.SourceFile,
@@ -1658,7 +1457,7 @@ function lintSplitJoinRoundtripPattern(
 		issues,
 		sourceFile,
 		node,
-		'split_join_roundtrip_pattern',
+		splitJoinRoundtripPatternRule.name,
 		'Split/join roundtrip is forbidden. Keep the text in one shape instead of splitting and rejoining it.',
 	);
 }
@@ -1691,7 +1490,7 @@ function lintRedundantNumericSanitizationPattern(
 		issues,
 		sourceFile,
 		node,
-		'redundant_numeric_sanitization_pattern',
+		redundantNumericSanitizationPatternRule.name,
 		'Redundant numeric sanitization is forbidden. Bound values once at the boundary instead of clamping or flooring them repeatedly.',
 	);
 }
@@ -2333,11 +2132,6 @@ function isSemanticValidationPredicateTarget(target: string): boolean {
 	return target === 'Number.isFinite';
 }
 
-function semanticSignatureLabel(signature: string): string {
-	const separator = signature.indexOf('|');
-	return (separator >= 0 ? signature.slice(0, separator) : signature).replace(':', ' ');
-}
-
 function isSemanticBodySignatureFamily(family: string): boolean {
 	return family.startsWith('text:');
 }
@@ -2541,7 +2335,7 @@ function lintContractNumericDefensiveSanitizationPattern(node: ts.Node, sourceFi
 			issues,
 			sourceFile,
 			node,
-			'contract_numeric_defensive_sanitization_pattern',
+			contractNumericDefensiveSanitizationPatternRule.name,
 			'Defensive contract-number sanitization is forbidden. Internal line/column/row values must be bounded once at their owner, not finite/floor/clamp/null-normalized at every use.',
 		);
 		return;
@@ -2551,7 +2345,7 @@ function lintContractNumericDefensiveSanitizationPattern(node: ts.Node, sourceFi
 			issues,
 			sourceFile,
 			node,
-			'contract_numeric_defensive_sanitization_pattern',
+			contractNumericDefensiveSanitizationPatternRule.name,
 			'Defensive contract-number sentinel checks are forbidden. Internal line/column/row values must stay in their contract domain instead of being normalized to null or fallback coordinates.',
 		);
 		return;
@@ -2561,7 +2355,7 @@ function lintContractNumericDefensiveSanitizationPattern(node: ts.Node, sourceFi
 			issues,
 			sourceFile,
 			node,
-			'contract_numeric_defensive_sanitization_pattern',
+			contractNumericDefensiveSanitizationPatternRule.name,
 			'Defensive contract-number type checks are forbidden. Internal line/column/row values are typed contracts, not untrusted payloads.',
 		);
 	}
@@ -2770,11 +2564,11 @@ function lintStringSwitchChain(node: ts.IfStatement, sourceFile: ts.SourceFile, 
 	}
 	const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
 	issues.push({
-		kind: 'string_switch_chain_pattern',
+		kind: stringSwitchChainPatternRule.name,
 		file: sourceFile.fileName,
 		line: position.line + 1,
 		column: position.character + 1,
-		name: 'string_switch_chain_pattern',
+		name: stringSwitchChainPatternRule.name,
 		message: 'Multiple string comparisons against the same expression are forbidden. Use `switch`-statement or lookup table instead.',
 	});
 }
@@ -3056,7 +2850,7 @@ function lintBinaryExpressionForCodeQuality(
 				issues,
 				sourceFile,
 				node.operatorToken,
-				'nullish_null_normalization_pattern',
+				nullishNullNormalizationPatternRule.name,
 				'`?? null`/`?? undefined` normalization is forbidden. Preserve undefined/null directly or handle the case explicitly.',
 			);
 		}
@@ -3065,7 +2859,7 @@ function lintBinaryExpressionForCodeQuality(
 				issues,
 				sourceFile,
 				node.operatorToken,
-				'empty_container_fallback_pattern',
+				emptyContainerFallbackPatternRule.name,
 				'`?? []`/`?? {}` fallback allocation is forbidden. Use a shared empty value, a direct branch, or keep ownership explicit.',
 			);
 		}
@@ -3074,7 +2868,7 @@ function lintBinaryExpressionForCodeQuality(
 				issues,
 				sourceFile,
 				node.operatorToken,
-				'empty_string_fallback_pattern',
+				emptyStringFallbackPatternRule.name,
 				'Empty-string fallback via `??` is forbidden. Do not use empty strings as default values.',
 			);
 		}
@@ -3086,7 +2880,7 @@ function lintBinaryExpressionForCodeQuality(
 					issues,
 					sourceFile,
 					node.operatorToken,
-					'allocation_fallback_pattern',
+					allocationFallbackPatternRule.name,
 					'Allocation fallback via `??` is forbidden. Use shared defaults, explicit branches, or require ownership at the call boundary.',
 				);
 			}
@@ -3097,7 +2891,7 @@ function lintBinaryExpressionForCodeQuality(
 			issues,
 			sourceFile,
 			node.operatorToken,
-			'nullish_counter_increment_pattern',
+			nullishCounterIncrementPatternRule.name,
 			'Counter increment through `?? 0` is forbidden. Initialize the counter at the owner boundary and increment directly.',
 		);
 	}
@@ -3106,7 +2900,7 @@ function lintBinaryExpressionForCodeQuality(
 			issues,
 			sourceFile,
 			node.operatorToken,
-			'defensive_typeof_function_pattern',
+			defensiveTypeofFunctionPatternRule.name,
 			'`typeof x === "function"` is forbidden. Trust callable contracts, use optional calls for optional members, or suppress a proven external boundary locally.',
 		);
 	}
@@ -3124,11 +2918,11 @@ function lintBinaryExpressionForCodeQuality(
 			if (sameSubject) {
 				const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
 				issues.push({
-					kind: 'string_or_chain_comparison_pattern',
+					kind: stringOrChainComparisonPatternRule.name,
 					file: sourceFile.fileName,
 					line: position.line + 1,
 					column: position.character + 1,
-					name: 'string_or_chain_comparison_pattern',
+					name: stringOrChainComparisonPatternRule.name,
 					message: 'Multiple OR-comparisons against the same expression with string literals are forbidden. Use `switch`-statement or set-like lookups instead.',
 				});
 			}
@@ -3141,11 +2935,11 @@ function lintBinaryExpressionForCodeQuality(
 		) {
 			const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
 			issues.push({
-				kind: 'empty_string_condition_pattern',
+				kind: emptyStringConditionPatternRule.name,
 				file: sourceFile.fileName,
 				line: position.line + 1,
 				column: position.character + 1,
-				name: 'empty_string_condition_pattern',
+				name: emptyStringConditionPatternRule.name,
 				message: 'Empty-string condition checks are forbidden. Prefer explicit truthy/falsy checks.',
 			});
 		}
@@ -3159,11 +2953,11 @@ function lintBinaryExpressionForCodeQuality(
 		) {
 			const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
 			issues.push({
-				kind: 'explicit_truthy_comparison_pattern',
+				kind: explicitTruthyComparisonPatternRule.name,
 				file: sourceFile.fileName,
 				line: position.line + 1,
 				column: position.character + 1,
-				name: 'explicit_truthy_comparison_pattern',
+				name: explicitTruthyComparisonPatternRule.name,
 				message: 'Explicit boolean literal comparison is forbidden. Use truthy/falsy checks instead.',
 			});
 		}
@@ -3175,11 +2969,11 @@ function lintBinaryExpressionForCodeQuality(
 		) {
 			const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
 			issues.push({
-				kind: 'empty_string_fallback_pattern',
+				kind: emptyStringFallbackPatternRule.name,
 				file: sourceFile.fileName,
 				line: position.line + 1,
 				column: position.character + 1,
-				name: 'empty_string_fallback_pattern',
+				name: emptyStringFallbackPatternRule.name,
 				message: 'Empty-string fallback via `||` is forbidden. Do not use empty strings as default values.',
 			});
 		}
@@ -3189,11 +2983,11 @@ function lintBinaryExpressionForCodeQuality(
 		) {
 			const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
 			issues.push({
-				kind: 'or_nil_fallback_pattern',
+				kind: orNilFallbackPatternRule.name,
 				file: sourceFile.fileName,
 				line: position.line + 1,
 				column: position.character + 1,
-				name: 'or_nil_fallback_pattern',
+				name: orNilFallbackPatternRule.name,
 				message: '`|| null`/`|| undefined` fallback is forbidden. Use direct checks or nullish coalescing.',
 			});
 		}
@@ -3287,60 +3081,13 @@ function reportSingleLineMethodIssue(
 ): void {
 	const position = sourceFile.getLineAndCharacterOfPosition(node.name?.getStart() ?? node.getStart());
 	issues.push({
-		kind: 'single_line_method_pattern',
+		kind: singleLineMethodPatternRule.name,
 		file: sourceFile.fileName,
 		line: position.line + 1,
 		column: position.character + 1,
-		name: 'single_line_method_pattern',
+		name: singleLineMethodPatternRule.name,
 		message: 'Single-line wrapper function/method is forbidden. Prefer direct logic over delegation wrappers.',
 	});
-}
-
-function isSinglePropertyOptionsType(type: ts.TypeNode | undefined): boolean {
-	if (type === undefined || !ts.isTypeLiteralNode(type)) {
-		return false;
-	}
-	let propertyCount = 0;
-	for (let index = 0; index < type.members.length; index += 1) {
-		if (!ts.isPropertySignature(type.members[index])) {
-			return false;
-		}
-		propertyCount += 1;
-	}
-	return propertyCount === 1;
-}
-
-function lintSinglePropertyOptionsParameter(
-	node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
-	sourceFile: ts.SourceFile,
-	issues: LintIssue[],
-): void {
-	if (ts.isMethodDeclaration(node) && (node.body === undefined || isIgnoredMethod(node))) {
-		return;
-	}
-	if (ts.isFunctionDeclaration(node) && node.body === undefined) {
-		return;
-	}
-	for (let index = 0; index < node.parameters.length; index += 1) {
-		const parameter = node.parameters[index];
-		if (!ts.isIdentifier(parameter.name)) {
-			continue;
-		}
-		const name = parameter.name.text;
-		if (name !== 'opts' && name !== 'options') {
-			continue;
-		}
-		if (!isSinglePropertyOptionsType(parameter.type)) {
-			continue;
-		}
-		pushLintIssue(
-			issues,
-			sourceFile,
-			parameter.name,
-			'single_property_options_parameter_pattern',
-			'Single-property opts/options parameters are forbidden. Use a direct parameter or split the operation instead of implying future extensibility.',
-		);
-	}
 }
 
 // Direct mutations on owned containers are real setters, not delegation wrappers.
@@ -3511,102 +3258,9 @@ function lintFacadeModuleDensity(sourceFile: ts.SourceFile, issues: LintIssue[])
 			issues,
 			sourceFile,
 			firstWrapperNode,
-			'facade_module_density_pattern',
+			facadeModuleDensityPatternRule.name,
 			`Module exports ${exportedWrapperCount}/${exportedCallableCount} callable wrappers. Facade modules are forbidden; move ownership to the real module.`,
 		);
-	}
-}
-
-function architectureLayer(path: string, config: ArchitectureBoundaryConfig | null): string | null {
-	if (config === null) {
-		return null;
-	}
-	const parts = normalizePathForAnalysis(path).split('/');
-	const layers = new Set(config.layers);
-	for (let index = 0; index < parts.length - 1; index += 1) {
-		if (parts[index] === config.rootSegment && layers.has(parts[index + 1])) {
-			return parts[index + 1];
-		}
-	}
-	return null;
-}
-
-function ruleTargetsLayer(rule: ArchitectureBoundaryRule, targetLayer: string): boolean {
-	if (rule.except?.includes(targetLayer)) {
-		return false;
-	}
-	if (rule.to === '*') {
-		return true;
-	}
-	return Array.isArray(rule.to) ? rule.to.includes(targetLayer) : rule.to === targetLayer;
-}
-
-function formatLayerRuleMessage(rule: ArchitectureBoundaryRule, sourceLayer: string, targetLayer: string): string {
-	const template = rule.message ?? 'Layer {from} must not import {to}.';
-	return template.replace(/\{from\}/g, sourceLayer).replace(/\{to\}/g, targetLayer);
-}
-
-function forbiddenLayerImportReason(config: ArchitectureBoundaryConfig | null, sourceLayer: string, targetLayer: string): string | null {
-	if (config === null || sourceLayer === targetLayer) {
-		return null;
-	}
-	for (let index = 0; index < config.rules.length; index += 1) {
-		const rule = config.rules[index];
-		if (rule.from === sourceLayer && ruleTargetsLayer(rule, targetLayer)) {
-			return formatLayerRuleMessage(rule, sourceLayer, targetLayer);
-		}
-	}
-	return null;
-}
-
-function lintCrossLayerImports(sourceFile: ts.SourceFile, config: ArchitectureBoundaryConfig | null, issues: LintIssue[]): void {
-	const sourceLayer = architectureLayer(sourceFile.fileName, config);
-	if (sourceLayer === null) {
-		return;
-	}
-	for (let index = 0; index < sourceFile.statements.length; index += 1) {
-		const statement = sourceFile.statements[index];
-		if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
-			continue;
-		}
-		const specifier = statement.moduleSpecifier.text;
-		if (!specifier.startsWith('.')) {
-			continue;
-		}
-		const targetPath = resolve(dirname(sourceFile.fileName), specifier);
-		const targetLayer = architectureLayer(targetPath, config);
-		if (targetLayer === null) {
-			continue;
-		}
-		const reason = forbiddenLayerImportReason(config, sourceLayer, targetLayer);
-		if (reason === null) {
-			continue;
-		}
-		pushLintIssue(
-			issues,
-			sourceFile,
-			statement.moduleSpecifier,
-			'cross_layer_import_pattern',
-			reason,
-		);
-	}
-}
-
-function collectExportedTypes(sourceFile: ts.SourceFile, exportedTypes: ExportedTypeInfo[]): void {
-	for (let index = 0; index < sourceFile.statements.length; index += 1) {
-		const statement = sourceFile.statements[index];
-		if (!hasExportModifier(statement)) {
-			continue;
-		}
-		if (ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) {
-			const position = sourceFile.getLineAndCharacterOfPosition(statement.name.getStart(sourceFile));
-			exportedTypes.push({
-				name: statement.name.text,
-				file: sourceFile.fileName,
-				line: position.line + 1,
-				column: position.character + 1,
-			});
-		}
 	}
 }
 
@@ -3716,178 +3370,6 @@ function collectNormalizedBodies(sourceFile: ts.SourceFile, config: AnalysisConf
 	visit(sourceFile);
 }
 
-function addDuplicateExportedTypeIssues(exportedTypes: readonly ExportedTypeInfo[], issues: LintIssue[]): void {
-	const byName = new Map<string, ExportedTypeInfo[]>();
-	for (let index = 0; index < exportedTypes.length; index += 1) {
-		const entry = exportedTypes[index];
-		let list = byName.get(entry.name);
-		if (list === undefined) {
-			list = [];
-			byName.set(entry.name, list);
-		}
-		list.push(entry);
-	}
-	for (const [name, list] of byName) {
-		if (list.length <= 1) {
-			continue;
-		}
-		for (let index = 0; index < list.length; index += 1) {
-			const entry = list[index];
-			issues.push({
-				kind: 'duplicate_exported_type_name_pattern',
-				file: entry.file,
-				line: entry.line,
-				column: entry.column,
-				name: 'duplicate_exported_type_name_pattern',
-				message: `Exported type/interface name "${name}" is declared ${list.length} times. Shared domain types must have one owner.`,
-			});
-		}
-	}
-}
-
-function addNormalizedBodyDuplicateIssues(normalizedBodies: readonly NormalizedBodyInfo[], issues: LintIssue[]): void {
-	const byFingerprint = new Map<string, NormalizedBodyInfo[]>();
-	for (let index = 0; index < normalizedBodies.length; index += 1) {
-		const entry = normalizedBodies[index];
-		let list = byFingerprint.get(entry.fingerprint);
-		if (list === undefined) {
-			list = [];
-			byFingerprint.set(entry.fingerprint, list);
-		}
-		list.push(entry);
-	}
-	for (const list of byFingerprint.values()) {
-		if (list.length <= 1) {
-			continue;
-		}
-		const names = new Set<string>();
-		for (let index = 0; index < list.length; index += 1) {
-			names.add(list[index].name);
-		}
-		if (names.size <= 1) {
-			continue;
-		}
-		const namePreview = Array.from(names).sort((left, right) => left.localeCompare(right)).slice(0, 4);
-		const nameSuffix = names.size > namePreview.length ? ' …' : '';
-		const nameSummary = namePreview.join(', ') + nameSuffix;
-		for (let index = 0; index < list.length; index += 1) {
-			const entry = list[index];
-			issues.push({
-				kind: 'normalized_ast_duplicate_pattern',
-				file: entry.file,
-				line: entry.line,
-				column: entry.column,
-				name: 'normalized_ast_duplicate_pattern',
-				message: `Function/method body duplicates ${list.length} normalized AST bodies with different names: ${nameSummary}. Extract shared ownership instead of copying logic.`,
-			});
-		}
-	}
-}
-
-function addSemanticNormalizedBodyDuplicateIssues(normalizedBodies: readonly NormalizedBodyInfo[], issues: LintIssue[]): void {
-	const bySignature = new Map<string, NormalizedBodyInfo[]>();
-	for (let index = 0; index < normalizedBodies.length; index += 1) {
-		const entry = normalizedBodies[index];
-		if (entry.semanticSignatures === null) {
-			continue;
-		}
-		for (let signatureIndex = 0; signatureIndex < entry.semanticSignatures.length; signatureIndex += 1) {
-			const signature = entry.semanticSignatures[signatureIndex];
-			let list = bySignature.get(signature);
-			if (list === undefined) {
-				list = [];
-				bySignature.set(signature, list);
-			}
-			list.push(entry);
-		}
-	}
-	for (const [signature, list] of bySignature) {
-		if (list.length <= 1) {
-			continue;
-		}
-		const fingerprints = new Set<string>();
-		const names = new Set<string>();
-		for (let index = 0; index < list.length; index += 1) {
-			fingerprints.add(list[index].fingerprint);
-			names.add(list[index].name);
-		}
-		if (names.size <= 1 || fingerprints.size <= 1) {
-			continue;
-		}
-		const namePreview = Array.from(names).sort((left, right) => left.localeCompare(right)).slice(0, 4);
-		const nameSuffix = names.size > namePreview.length ? ' …' : '';
-		const nameSummary = namePreview.join(', ') + nameSuffix;
-		for (let index = 0; index < list.length; index += 1) {
-			const entry = list[index];
-			issues.push({
-				kind: 'semantic_normalized_body_duplicate_pattern',
-				file: entry.file,
-				line: entry.line,
-				column: entry.column,
-				name: 'semantic_normalized_body_duplicate_pattern',
-				message: `Function/method body shares a semantic ${semanticSignatureLabel(signature)} operation signature with differently named bodies: ${nameSummary}. Extract shared ownership instead of copying logic.`,
-			});
-		}
-	}
-}
-
-function addRepeatedStatementSequenceIssues(sequences: readonly StatementSequenceInfo[], issues: LintIssue[]): void {
-	const byFingerprint = new Map<string, StatementSequenceInfo[]>();
-	for (let index = 0; index < sequences.length; index += 1) {
-		const entry = sequences[index];
-		let list = byFingerprint.get(entry.fingerprint);
-		if (list === undefined) {
-			list = [];
-			byFingerprint.set(entry.fingerprint, list);
-		}
-		list.push(entry);
-	}
-	const reportedRanges = new Map<string, Array<{ start: number; end: number }>>();
-	const duplicateGroups = Array.from(byFingerprint.values())
-		.filter(list => list.length > 1)
-		.sort((left, right) => {
-			const leftTextLength = Math.max(...left.map(entry => entry.textLength));
-			const rightTextLength = Math.max(...right.map(entry => entry.textLength));
-			return rightTextLength - leftTextLength || right.length - left.length;
-		});
-	for (let groupIndex = 0; groupIndex < duplicateGroups.length; groupIndex += 1) {
-		const list = duplicateGroups[groupIndex];
-		if (list.length <= 1) {
-			continue;
-		}
-		for (let entryIndex = 0; entryIndex < list.length; entryIndex += 1) {
-			const entry = list[entryIndex];
-			let ranges = reportedRanges.get(entry.file);
-			if (ranges === undefined) {
-				ranges = [];
-				reportedRanges.set(entry.file, ranges);
-			}
-			if (statementSequenceOverlapsReportedRange(entry, ranges)) {
-				continue;
-			}
-			ranges.push({ start: entry.line, end: entry.endLine });
-			issues.push({
-				kind: 'repeated_statement_sequence_pattern',
-				file: entry.file,
-				line: entry.line,
-				column: entry.column,
-				name: 'repeated_statement_sequence_pattern',
-				message: `${entry.statementCount} consecutive statements are copied in ${list.length} reportable places. Extract the shared operation or collapse the duplicated lifecycle block.`,
-			});
-		}
-	}
-}
-
-function statementSequenceOverlapsReportedRange(entry: StatementSequenceInfo, ranges: readonly { start: number; end: number }[]): boolean {
-	for (let index = 0; index < ranges.length; index += 1) {
-		const range = ranges[index];
-		if (entry.line <= range.end && entry.endLine >= range.start) {
-			return true;
-		}
-	}
-	return false;
-}
-
 function collectLintIssues(
 	sourceFile: ts.SourceFile,
 	config: AnalysisConfig,
@@ -3915,22 +3397,7 @@ function collectLintIssues(
 		if (!scope) {
 			return;
 		}
-		for (const info of scope.values()) {
-			if (info.count < SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT) {
-				continue;
-			}
-			if (info.count === 2 && info.sampleText.length < REPEATED_EXPRESSION_PAIR_MIN_LENGTH) {
-				continue;
-			}
-			issues.push({
-				kind: 'repeated_expression_pattern',
-				file: sourceFile.fileName,
-				line: info.line,
-				column: info.column,
-				name: 'repeated_expression_pattern',
-				message: `Expression is repeated ${info.count} times in the same scope: ${info.sampleText}`,
-			});
-		}
+		addRepeatedExpressionIssues(scope, sourceFile.fileName, issues);
 	};
 	const leaveScope = (): void => {
 		const scope = scopes.pop();
@@ -3950,11 +3417,11 @@ function collectLintIssues(
 				}
 				if (LOCAL_CONST_PATTERN_ENABLED && shouldReportLocalConst(binding)) {
 					issues.push({
-						kind: 'local_const_pattern',
+						kind: localConstPatternRule.name,
 						file: sourceFile.fileName,
 						line: binding.line,
 						column: binding.column,
-						name: 'local_const_pattern',
+						name: localConstPatternRule.name,
 						message: `Prefer "const" for "${binding.name}"; it is never reassigned.`,
 					});
 				} else if (!binding.isConst && binding.hasInitializer && binding.writeCount === 0) {
@@ -3962,11 +3429,11 @@ function collectLintIssues(
 				}
 				if (binding.readCount === 1 && shouldReportSingleUseLocal(binding)) {
 					issues.push({
-						kind: 'single_use_local_pattern',
+						kind: singleUseLocalPatternRule.name,
 						file: sourceFile.fileName,
 						line: binding.line,
 						column: binding.column,
-						name: 'single_use_local_pattern',
+						name: singleUseLocalPatternRule.name,
 						message: `Local alias "${binding.name}" is read only once in this scope.`,
 					});
 				}
@@ -3978,38 +3445,14 @@ function collectLintIssues(
 		if (!scope) {
 			return;
 		}
-		for (const info of scope.values()) {
-			if (info.count <= 2) {
-				continue;
-			}
-			issues.push({
-				kind: 'semantic_repeated_expression_pattern',
-				file: sourceFile.fileName,
-				line: info.line,
-				column: info.column,
-				name: 'semantic_repeated_expression_pattern',
-				message: `Semantic transform call is repeated ${info.count} times in the same scope: ${info.sampleText}`,
-			});
-		}
+		addSemanticRepeatedExpressionIssues(scope, sourceFile.fileName, issues);
 	};
 	const leaveRepeatedAccessChainScope = (): void => {
 		const scope = repeatedAccessChainScopes.pop();
 		if (!scope) {
 			return;
 		}
-		for (const info of scope.values()) {
-			if (info.count <= 2) {
-				continue;
-			}
-			issues.push({
-				kind: 'repeated_access_chain_pattern',
-				file: sourceFile.fileName,
-				line: info.line,
-				column: info.column,
-				name: 'repeated_access_chain_pattern',
-				message: `Access/call chain is repeated ${info.count} times in the same function: ${info.sampleText}`,
-			});
-		}
+		addRepeatedAccessChainIssues(scope, sourceFile.fileName, issues);
 	};
 	const declareBinding = (declaration: ts.VariableDeclaration, declarationList: ts.VariableDeclarationList): void => {
 		if (!ts.isIdentifier(declaration.name)) {
@@ -4193,7 +3636,7 @@ function collectLintIssues(
 					issues,
 					sourceFile,
 					unwrapped,
-					'hot_path_object_literal_pattern',
+					hotPathObjectLiteralPatternRule.name,
 					'Object/array literal payload allocation in hot-path calls is forbidden. Pass primitives or reuse state/scratch storage.',
 				);
 			}
@@ -4202,7 +3645,7 @@ function collectLintIssues(
 					issues,
 					sourceFile,
 					unwrapped,
-					'hot_path_closure_argument_pattern',
+					hotPathClosureArgumentPatternRule.name,
 					'Closure/function argument allocation in hot-path calls is forbidden. Move ownership to direct methods or stable state.',
 				);
 			}
@@ -4227,20 +3670,19 @@ function collectLintIssues(
 			lintContractNumericDefensiveSanitizationPattern(node, sourceFile, issues);
 			lintBinaryExpressionForCodeQuality(node, sourceFile, regions, issues, ledger);
 		}
-		if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && isLegacySentinelString(node.text)) {
-			pushLintIssue(
-				issues,
-				sourceFile,
-				node,
-				'legacy_sentinel_string_pattern',
-				'Double-underscore sentinel string is forbidden. Use the current contract key instead of adding alias fallbacks.',
-			);
+		if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+			lintLegacySentinelStringPattern(sourceFile, node, issues);
 		}
 		if (ts.isCatchClause(node)) {
-			lintCatchClausePatterns(node, sourceFile, regions, issues, ledger);
+			if (
+				!lintEmptyCatchPattern(node, sourceFile, issues)
+				&& !lintUselessCatchPattern(node, sourceFile, issues)
+			) {
+				lintSilentCatchFallbackPattern(node, sourceFile, regions, issues, ledger);
+			}
 		}
 		if (ts.isSourceFile(node) || ts.isBlock(node) || ts.isCaseClause(node) || ts.isDefaultClause(node)) {
-			lintConsecutiveDuplicateStatements(node.statements, sourceFile, issues);
+			lintConsecutiveDuplicateStatementsPattern(node.statements, sourceFile, issues);
 			collectRepeatedStatementSequences(node.statements, sourceFile, regions, statementSequences);
 		}
 			if (ts.isIfStatement(node)) {
@@ -4263,7 +3705,7 @@ function collectLintIssues(
 				regions,
 				issues,
 			);
-			lintTerminalReturnPaddingPattern(
+			lintUselessTerminalReturnPattern(
 				node as ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
 				sourceFile,
 				issues,
@@ -4274,18 +3716,12 @@ function collectLintIssues(
 				issues,
 				sourceFile,
 				node,
-				'nullish_null_normalization_pattern',
+				nullishNullNormalizationPatternRule.name,
 				'Conditional null/undefined normalization is forbidden. Preserve the actual value or branch explicitly.',
 			);
 		}
-		if (ts.isConditionalExpression(node) && isRedundantConditionalExpression(node, sourceFile)) {
-			pushLintIssue(
-				issues,
-				sourceFile,
-				node,
-				'redundant_conditional_pattern',
-				'Conditional expression has identical true/false branches. Keep the value directly.',
-			);
+		if (ts.isConditionalExpression(node)) {
+			lintRedundantConditionalPattern(sourceFile, node, issues);
 		}
 		if (ts.isCallExpression(node)) {
 			lintContractNumericDefensiveSanitizationPattern(node, sourceFile, issues);
@@ -4295,7 +3731,7 @@ function collectLintIssues(
 					issues,
 					sourceFile,
 					node,
-					'numeric_defensive_sanitization_pattern',
+					numericDefensiveSanitizationPatternRule.name,
 					'Defensive numeric sanitization in hot paths is forbidden. Coordinates and layout values must already be valid integers.',
 				);
 			}
@@ -4317,10 +3753,11 @@ function collectLintIssues(
 				|| ts.isArrowFunction(node)
 			) && !ts.isConstructorDeclaration(node)
 		) {
-			lintSinglePropertyOptionsParameter(
+			lintSinglePropertyOptionsParameterPattern(
 				node as ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
 				sourceFile,
 				issues,
+				isIgnoredMethod,
 			);
 		}
 		if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node) || ts.isCallExpression(node)) {
@@ -4334,7 +3771,7 @@ function collectLintIssues(
 						issues,
 						sourceFile,
 						node,
-						'defensive_optional_chain_pattern',
+						defensiveOptionalChainPatternRule.name,
 						`Optional chaining on required state root "${root}" is forbidden.`,
 					);
 				} else {

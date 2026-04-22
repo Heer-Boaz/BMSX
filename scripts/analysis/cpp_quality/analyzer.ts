@@ -1,4 +1,21 @@
+import { lintCppRepeatedExpressions } from '../../lint/rules/code_quality/repeated_expression_pattern';
 import { readFileSync } from 'node:fs';
+import { singleLineMethodPatternRule } from '../../lint/rules/common';
+import { lintCppConsecutiveDuplicateStatements } from '../../lint/rules/common/consecutive_duplicate_statement_pattern';
+import { lintCppEmptyStringConditionPattern } from '../../lint/rules/common/empty_string_condition_pattern';
+import { lintCppTernaryFallbackPatterns } from '../../lint/rules/common/empty_string_fallback_pattern';
+import { lintCppExplicitTruthyComparisonPattern } from '../../lint/rules/common/explicit_truthy_comparison_pattern';
+import { lintCppCatchPatterns } from '../../lint/rules/common/silent_catch_fallback_pattern';
+import { lintCppSinglePropertyOptionsTypes } from '../../lint/rules/common/single_property_options_parameter_pattern';
+import { lintCppStringSwitchChains } from '../../lint/rules/common/string_switch_chain_pattern';
+import { lintCppStringOrChains } from '../../lint/rules/common/string_or_chain_comparison_pattern';
+import { lintCppTerminalReturnPaddingPattern } from '../../lint/rules/common/useless_terminal_return_pattern';
+import { lintCppCrossLayerIncludes } from '../../lint/rules/code_quality/cross_layer_import_pattern';
+import { lintCppEnsureLazyInitPattern } from '../../lint/rules/code_quality/ensure_lazy_init_pattern';
+import { createCppFacadeStats, lintCppFacadeStats } from '../../lint/rules/code_quality/facade_module_density_pattern';
+import { lintCppLegacySentinelStringPattern } from '../../lint/rules/code_quality/legacy_sentinel_string_pattern';
+import { lintCppNullishReturnGuards } from '../../lint/rules/code_quality/nullish_return_guard_pattern';
+import { lintCppOptionalValueOrFallbackPatterns } from '../../lint/rules/code_quality/optional_value_or_fallback_pattern';
 
 import { collectAnalysisRegions, filterSuppressedLintIssues, type AnalysisRegion } from '../lint_suppressions';
 import { loadAnalysisConfig } from '../config';
@@ -24,30 +41,16 @@ import {
 	collectCppTypeDeclarations,
 } from '../../../src/bmsx/language/cpp/syntax/declarations';
 import {
-	addCppRepeatedStatementSequenceIssues,
 	collectCppFunctionUsageCounts,
 	collectCppNormalizedBody,
-	collectCppRepeatedStatementSequences,
 	createCppFunctionUsageInfo,
-	createCppFacadeStats,
-	lintCppCatchPatterns,
-	lintCppConsecutiveDuplicateStatements,
-	lintCppEnsureLazyInitPattern,
 	lintCppRedundantNumericSanitizationPattern,
-	lintCppTerminalReturnPaddingPattern,
 	isCppSingleLineWrapperAllowedByUsage,
-	lintCppCrossLayerIncludes,
-	lintCppFacadeStats,
 	lintCppHotPathCalls,
 	lintCppLocalBindings,
-	lintCppNullishReturnGuards,
-	lintCppRepeatedExpressions,
 	lintCppSemanticRepeatedExpressions,
-	lintCppSinglePropertyOptionsTypes,
-	lintCppSimpleTokenPatterns,
-	lintCppStringSwitchChains,
-	type CppStatementSequenceInfo,
 } from './rules';
+import { addCppRepeatedStatementSequenceIssues, collectCppRepeatedStatementSequences, type CppStatementSequenceInfo } from '../../lint/rules/common/repeated_statement_sequence_pattern';
 import { buildCppPairMap, tokenizeCpp } from '../../../src/bmsx/language/cpp/syntax/tokens';
 import type { CppClassRange, CppFunctionInfo, CppTypeDeclarationInfo } from '../../../src/bmsx/language/cpp/syntax/declarations';
 
@@ -100,7 +103,12 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 		}
 		const functions = analysis.functions;
 		const facadeStats = createCppFacadeStats(functions, tokens);
-		lintCppSimpleTokenPatterns(file, tokens, pairs, regions, lintIssues, ledger);
+		lintCppLegacySentinelStringPattern(file, tokens, lintIssues);
+		lintCppEmptyStringConditionPattern(file, tokens, lintIssues);
+		lintCppExplicitTruthyComparisonPattern(file, tokens, lintIssues);
+		lintCppTernaryFallbackPatterns(file, tokens, lintIssues);
+		lintCppOptionalValueOrFallbackPatterns(file, tokens, pairs, regions, lintIssues, ledger);
+		lintCppStringOrChains(file, tokens, lintIssues);
 		lintCppSinglePropertyOptionsTypes(file, tokens, analysis.classRanges, lintIssues);
 		lintCppCrossLayerIncludes(file, source, config.architecture, lintIssues);
 		for (let functionIndex = 0; functionIndex < functions.length; functionIndex += 1) {
@@ -135,7 +143,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 						lintIssues,
 						file,
 						tokens[info.nameToken],
-						'single_line_method_pattern',
+						singleLineMethodPatternRule.name,
 						'Single-line wrapper function/method is forbidden. Prefer direct logic over delegation wrappers.',
 					);
 				}

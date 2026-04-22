@@ -1,4 +1,9 @@
 import { relative } from 'node:path';
+import {
+	duplicateExportedTypeNamePatternRule,
+	normalizedAstDuplicatePatternRule,
+	semanticNormalizedBodyDuplicatePatternRule,
+} from '../../lint/rules/code_quality';
 
 import type { CppToken } from '../../../src/bmsx/language/cpp/syntax/tokens';
 import type { CodeQualityLintRule } from '../../lint/rules';
@@ -157,11 +162,11 @@ export function addDuplicateExportedTypeIssues(exportedTypes: readonly CppExport
 		for (let index = 0; index < list.length; index += 1) {
 			const entry = list[index];
 			issues.push({
-				kind: 'duplicate_exported_type_name_pattern',
+				kind: duplicateExportedTypeNamePatternRule.name,
 				file: entry.file,
 				line: entry.line,
 				column: entry.column,
-				name: 'duplicate_exported_type_name_pattern',
+				name: duplicateExportedTypeNamePatternRule.name,
 				message: `Exported C++ type name "${name}" is declared ${list.length} times. Shared domain types must have one owner.`,
 			});
 		}
@@ -196,11 +201,11 @@ export function addNormalizedBodyDuplicateIssues(normalizedBodies: readonly CppN
 		for (let index = 0; index < list.length; index += 1) {
 			const entry = list[index];
 			issues.push({
-				kind: 'normalized_ast_duplicate_pattern',
+				kind: normalizedAstDuplicatePatternRule.name,
 				file: entry.file,
 				line: entry.line,
 				column: entry.column,
-				name: 'normalized_ast_duplicate_pattern',
+				name: normalizedAstDuplicatePatternRule.name,
 				message: `Function/method body duplicates ${list.length} normalized token bodies with different names: ${nameSummary}. Extract shared ownership instead of copying logic.`,
 			});
 		}
@@ -243,11 +248,11 @@ export function addSemanticNormalizedBodyDuplicateIssues(normalizedBodies: reado
 		for (let index = 0; index < list.length; index += 1) {
 			const entry = list[index];
 			issues.push({
-				kind: 'semantic_normalized_body_duplicate_pattern',
+				kind: semanticNormalizedBodyDuplicatePatternRule.name,
 				file: entry.file,
 				line: entry.line,
 				column: entry.column,
-				name: 'semantic_normalized_body_duplicate_pattern',
+				name: semanticNormalizedBodyDuplicatePatternRule.name,
 				message: `Function/method body shares a semantic ${semanticSignatureLabel(signature)} operation signature with differently named bodies: ${nameSummary}. Extract shared ownership instead of copying logic.`,
 			});
 		}
