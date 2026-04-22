@@ -1,19 +1,19 @@
 import { cppCallTarget, cppQualifiedNameHasLeaf } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { pushTokenLintIssue, type LintIssue } from '../cpp/support/diagnostics';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../../../analysis/quality_ledger';
 import { defineLintRule } from '../../rule';
-import { lintCppEagerValueOrFallbackPattern } from './eager_value_or_fallback_pattern';
+import { lintEagerValueOrFallbackPattern } from './eager_value_or_fallback_pattern';
 
 export const optionalValueOrFallbackPatternRule = defineLintRule('code_quality', 'optional_value_or_fallback_pattern');
 
-export function lintCppOptionalValueOrFallbackPatterns(
+export function lintOptionalValueOrFallbackPatterns(
 	file: string,
-	tokens: readonly CppToken[],
+	tokens: readonly Token[],
 	pairs: readonly number[],
 	regions: readonly AnalysisRegion[],
-	issues: CppLintIssue[],
+	issues: LintIssue[],
 	ledger: QualityLedger,
 ): void {
 	for (let index = 0; index < tokens.length; index += 1) {
@@ -25,7 +25,7 @@ export function lintCppOptionalValueOrFallbackPatterns(
 		if (target === null || !cppQualifiedNameHasLeaf(target, 'value_or')) {
 			continue;
 		}
-		if (lintCppEagerValueOrFallbackPattern(file, tokens, pairs, index, issues)) {
+		if (lintEagerValueOrFallbackPattern(file, tokens, pairs, index, issues)) {
 			continue;
 		}
 		const boundaryKind = cppValueOrBoundaryKind(regions, token.line);

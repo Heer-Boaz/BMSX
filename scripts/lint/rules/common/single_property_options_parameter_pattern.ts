@@ -1,9 +1,9 @@
 import ts from 'typescript';
-import { countCppTopLevelDataMembers, type CppClassRange } from '../../../../src/bmsx/language/cpp/syntax/declarations';
-import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import { countTopLevelDataMembers, type ClassRange } from '../../../../src/bmsx/language/cpp/syntax/declarations';
+import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
-import { pushTsLintIssue, type TsLintIssue } from '../../ts_rule';
+import { pushLintIssue, type LintIssue } from '../../ts_rule';
 import { type LuaFunctionExpression } from '../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../lua_rule';
 import { collectLuaOptionsParameterUseInStatements } from '../lua_cart/impl/support/functions';
@@ -12,7 +12,7 @@ import { pushIssue } from '../lua_cart/impl/support/lint_context';
 
 export const singlePropertyOptionsParameterPatternRule = defineLintRule('common', 'single_property_options_parameter_pattern');
 
-export type TsFunctionWithParameters =
+export type FunctionWithParameters =
 	ts.FunctionDeclaration |
 	ts.MethodDeclaration |
 	ts.FunctionExpression |
@@ -33,9 +33,9 @@ export function isSinglePropertyOptionsType(type: ts.TypeNode | undefined): bool
 }
 
 export function lintSinglePropertyOptionsParameterPattern(
-	node: TsFunctionWithParameters,
+	node: FunctionWithParameters,
 	sourceFile: ts.SourceFile,
-	issues: TsLintIssue[],
+	issues: LintIssue[],
 	isIgnoredMethod: (node: ts.MethodDeclaration) => boolean,
 ): void {
 	if (ts.isMethodDeclaration(node) && (node.body === undefined || isIgnoredMethod(node))) {
@@ -56,7 +56,7 @@ export function lintSinglePropertyOptionsParameterPattern(
 		if (!isSinglePropertyOptionsType(parameter.type)) {
 			continue;
 		}
-		pushTsLintIssue(
+		pushLintIssue(
 			issues,
 			sourceFile,
 			parameter.name,
@@ -66,13 +66,13 @@ export function lintSinglePropertyOptionsParameterPattern(
 	}
 }
 
-export function lintCppSinglePropertyOptionsTypes(file: string, tokens: readonly CppToken[], classRanges: readonly CppClassRange[], issues: CppLintIssue[]): void {
+export function lintSinglePropertyOptionsTypes(file: string, tokens: readonly Token[], classRanges: readonly ClassRange[], issues: LintIssue[]): void {
 	for (let index = 0; index < classRanges.length; index += 1) {
 		const range = classRanges[index];
 		if (!/(?:Options|Opts)$/.test(range.name)) {
 			continue;
 		}
-		const memberCount = countCppTopLevelDataMembers(tokens, range.start + 1, range.end);
+		const memberCount = countTopLevelDataMembers(tokens, range.start + 1, range.end);
 		if (memberCount !== 1) {
 			continue;
 		}

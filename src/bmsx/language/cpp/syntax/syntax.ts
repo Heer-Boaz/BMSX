@@ -441,3 +441,28 @@ export function isCppFunctionDeclaratorParen(tokens: readonly CppToken[], pairs:
 	const declarationStart = findPreviousCppDelimiter(tokens, nameIndex) + 1;
 	return hasCppDeclarationPrefix(tokens, declarationStart, nameIndex);
 }
+
+export const isEmptyStringToken = isCppEmptyStringToken;
+export const isBooleanToken = isCppBooleanToken;
+export const isNullToken = isCppNullToken;
+export const isAssignmentOperator = isCppAssignmentOperator;
+export const isComparisonOperator = isCppComparisonOperator;
+export const isAccessSeparator = isCppAccessSeparator;
+export const isAccessSpecifier = isCppAccessSpecifier;
+export const isExpressionScanBoundary = isCppExpressionScanBoundary;
+export const isClockNowCallTarget = isCppClockNowCallTarget;
+export const previousIdentifier = previousCppIdentifier;
+export const findAccessChainStart = findCppAccessChainStart;
+export const countParameters = countCppParameters;
+export const findTopLevelSemicolon = findTopLevelCppSemicolon;
+export const findTopLevelOperator = findTopLevelCppOperator;
+export const callTargetFromStatement = cppCallTargetFromStatement;
+export const collectStatementRanges = collectCppStatementRanges;
+export const hasDeclarationPrefix = hasCppDeclarationPrefix;
+export const findPreviousDelimiter = findPreviousCppDelimiter;
+export const findNextDelimiter = findNextCppDelimiter;
+export const findTernaryColon = findCppTernaryColon;
+export const trimmedExpressionText = trimmedCppExpressionText;
+export const splitArgumentRanges = splitCppArgumentRanges;
+export const findNextTokenText = findNextCppTokenText;
+export const isFunctionDeclaratorParen = isCppFunctionDeclaratorParen;

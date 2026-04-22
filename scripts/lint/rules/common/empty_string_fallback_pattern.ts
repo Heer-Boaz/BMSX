@@ -3,14 +3,14 @@ import { isLuaEmptyStringLiteral, luaBinaryExpressionHasOperand } from '../../..
 import {
 	cppRangeIsNull,
 	cppRangeHas,
-	findCppTernaryColon,
-	findNextCppDelimiter,
-	findPreviousCppDelimiter,
-	isCppEmptyStringToken,
-	trimmedCppExpressionText,
+	findTernaryColon,
+	findNextDelimiter,
+	findPreviousDelimiter,
+	isEmptyStringToken,
+	trimmedExpressionText,
 } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { pushTokenLintIssue, type LintIssue } from '../cpp/support/diagnostics';
 import { nullishNullNormalizationPatternRule } from '../code_quality/nullish_null_normalization_pattern';
 import { redundantConditionalPatternRule } from '../code_quality/redundant_conditional_pattern';
 import type { LuaLintIssue, LuaLintIssuePusher } from '../../lua_rule';
@@ -31,36 +31,36 @@ export function lintLuaEmptyStringFallbackPattern(expression: LuaExpression, iss
 	);
 }
 
-export function lintCppTernaryFallbackPatterns(file: string, tokens: readonly CppToken[], issues: CppLintIssue[]): void {
+export function lintTernaryFallbackPatterns(file: string, tokens: readonly Token[], issues: LintIssue[]): void {
 	for (let index = 0; index < tokens.length; index += 1) {
 		if (tokens[index].text === '?') {
-			lintCppTernaryFallback(file, tokens, index, issues);
+			lintTernaryFallback(file, tokens, index, issues);
 		}
 	}
 }
 
-function lintCppTernaryFallback(file: string, tokens: readonly CppToken[], questionIndex: number, issues: CppLintIssue[]): void {
-	const statementStart = findPreviousCppDelimiter(tokens, questionIndex) + 1;
-	const statementEnd = findNextCppDelimiter(tokens, questionIndex);
-	const colonIndex = findCppTernaryColon(tokens, questionIndex, statementEnd);
+function lintTernaryFallback(file: string, tokens: readonly Token[], questionIndex: number, issues: LintIssue[]): void {
+	const statementStart = findPreviousDelimiter(tokens, questionIndex) + 1;
+	const statementEnd = findNextDelimiter(tokens, questionIndex);
+	const colonIndex = findTernaryColon(tokens, questionIndex, statementEnd);
 	if (colonIndex < 0) {
 		return;
 	}
-	const condition = trimmedCppExpressionText(tokens, statementStart, questionIndex);
-	const trueBranch = trimmedCppExpressionText(tokens, questionIndex + 1, colonIndex);
-	const falseBranch = trimmedCppExpressionText(tokens, colonIndex + 1, statementEnd);
+	const condition = trimmedExpressionText(tokens, statementStart, questionIndex);
+	const trueBranch = trimmedExpressionText(tokens, questionIndex + 1, colonIndex);
+	const falseBranch = trimmedExpressionText(tokens, colonIndex + 1, statementEnd);
 	if (trueBranch === falseBranch) {
 		pushTokenLintIssue(issues, file, tokens[questionIndex], redundantConditionalPatternRule.name, 'Conditional expression has identical true/false branches. Keep the value directly.');
 	}
-	const trueHasEmpty = cppRangeHas(tokens, questionIndex + 1, colonIndex, isCppEmptyStringToken);
-	const falseHasEmpty = cppRangeHas(tokens, colonIndex + 1, statementEnd, isCppEmptyStringToken);
+	const trueHasEmpty = cppRangeHas(tokens, questionIndex + 1, colonIndex, isEmptyStringToken);
+	const falseHasEmpty = cppRangeHas(tokens, colonIndex + 1, statementEnd, isEmptyStringToken);
 	if ((condition === trueBranch && falseHasEmpty) || (condition === falseBranch && trueHasEmpty)) {
 		pushTokenLintIssue(issues, file, tokens[questionIndex], emptyStringFallbackPatternRule.name, 'Empty-string fallback through a conditional expression is forbidden. Do not use empty strings as default values.');
 	}
 	const trueHasNull = cppRangeIsNull(tokens, questionIndex + 1, colonIndex);
 	const falseHasNull = cppRangeIsNull(tokens, colonIndex + 1, statementEnd);
 	if (trueHasNull || falseHasNull) {
-		if (isCppAstNarrowingTernary(condition, trueBranch, falseBranch)) {
+		if (isAstNarrowingTernary(condition, trueBranch, falseBranch)) {
 			return;
 		}
 		pushTokenLintIssue(issues, file, tokens[questionIndex], orNilFallbackPatternRule.name, '`nullptr` fallback through a conditional expression is forbidden. Use direct ownership checks or optional state.');
@@ -70,7 +70,7 @@ function lintCppTernaryFallback(file: string, tokens: readonly CppToken[], quest
 	}
 }
 
-function isCppAstNarrowingTernary(condition: string, trueBranch: string, falseBranch: string): boolean {
+function isAstNarrowingTernary(condition: string, trueBranch: string, falseBranch: string): boolean {
 	if (!condition.includes('NodeType::')) {
 		return false;
 	}

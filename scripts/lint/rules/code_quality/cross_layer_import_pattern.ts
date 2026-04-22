@@ -1,13 +1,12 @@
 import ts from 'typescript';
 import { architectureBoundaryLayer, relativeArchitectureBoundaryViolationReason } from '../../../analysis/architecture_boundary';
 import type { ArchitectureBoundaryConfig } from '../../../analysis/config';
-import type { CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
-import { pushTsLintIssue, type TsLintIssue } from '../../ts_rule';
+import { pushLintIssue, type LintIssue } from '../../ts_rule';
 
 export const crossLayerImportPatternRule = defineLintRule('code_quality', 'cross_layer_import_pattern');
 
-export function lintCrossLayerImports(sourceFile: ts.SourceFile, config: ArchitectureBoundaryConfig | null, issues: TsLintIssue[]): void {
+export function lintCrossLayerImports(sourceFile: ts.SourceFile, config: ArchitectureBoundaryConfig | null, issues: LintIssue[]): void {
 	const sourceLayer = architectureBoundaryLayer(sourceFile.fileName, config);
 	if (sourceLayer === null) {
 		return;
@@ -25,7 +24,7 @@ export function lintCrossLayerImports(sourceFile: ts.SourceFile, config: Archite
 		if (reason === null) {
 			continue;
 		}
-		pushTsLintIssue(
+		pushLintIssue(
 			issues,
 			sourceFile,
 			statement.moduleSpecifier,
@@ -35,7 +34,7 @@ export function lintCrossLayerImports(sourceFile: ts.SourceFile, config: Archite
 	}
 }
 
-export function lintCppCrossLayerIncludes(file: string, source: string, config: ArchitectureBoundaryConfig | null, issues: CppLintIssue[]): void {
+export function lintCrossLayerIncludes(file: string, source: string, config: ArchitectureBoundaryConfig | null, issues: LintIssue[]): void {
 	const sourceLayer = architectureBoundaryLayer(file, config);
 	if (sourceLayer === null) {
 		return;

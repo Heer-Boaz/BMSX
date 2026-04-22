@@ -3,34 +3,35 @@ import { duplicateExportedTypeNamePatternRule } from '../../lint/rules/code_qual
 import { normalizedAstDuplicatePatternRule } from '../../lint/rules/code_quality/normalized_ast_duplicate_pattern';
 import { semanticNormalizedBodyDuplicatePatternRule } from '../../lint/rules/code_quality/semantic_normalized_body_duplicate_pattern';
 
-import { type CppLintIssue, type CppNormalizedBodyInfo } from '../../lint/rules/cpp/support/diagnostics';
+import { type LintIssue, type NormalizedBodyInfo } from '../../lint/rules/cpp/support/diagnostics';
+import { buildDeclarationDuplicateGroups } from '../duplicate_groups';
 import type { QualityLedger } from '../quality_ledger';
 
-export { pushTokenLintIssue, type CppLintIssue, type CppNormalizedBodyInfo } from '../../lint/rules/cpp/support/diagnostics';
+export { pushTokenLintIssue, type LintIssue, type NormalizedBodyInfo } from '../../lint/rules/cpp/support/diagnostics';
 
-export type CppDuplicateKind = 'class' | 'enum' | 'function' | 'interface' | 'method' | 'namespace' | 'type' | 'wrapper';
+export type DuplicateKind = 'class' | 'enum' | 'function' | 'interface' | 'method' | 'namespace' | 'type' | 'wrapper';
 
-export type CppDuplicateLocation = {
+export type DuplicateLocation = {
 	file: string;
 	line: number;
 	column: number;
 	context?: string;
 };
 
-export type CppDuplicateGroup = {
-	kind: CppDuplicateKind;
+export type DuplicateGroup = {
+	kind: DuplicateKind;
 	name: string;
 	count: number;
-	locations: CppDuplicateLocation[];
+	locations: DuplicateLocation[];
 };
 
-export type CppAnalysisResult = {
-	duplicateGroups: CppDuplicateGroup[];
-	lintIssues: CppLintIssue[];
+export type AnalysisResult = {
+	duplicateGroups: DuplicateGroup[];
+	lintIssues: LintIssue[];
 	ledger: QualityLedger;
 };
 
-export type CppExportedTypeInfo = {
+export type ExportedTypeInfo = {
 	name: string;
 	file: string;
 	line: number;
@@ -39,8 +40,8 @@ export type CppExportedTypeInfo = {
 };
 
 export function recordDeclaration(
-	buckets: Map<string, CppDuplicateLocation[]>,
-	kind: CppDuplicateKind,
+	buckets: Map<string, DuplicateLocation[]>,
+	kind: DuplicateKind,
 	name: string,
 	file: string,
 	line: number,
@@ -65,27 +66,17 @@ export function recordDeclaration(
 	list.push({ file, line, column, context });
 }
 
-export function buildTokenDuplicateGroups(buckets: Map<string, CppDuplicateLocation[]>): CppDuplicateGroup[] {
-	const result: CppDuplicateGroup[] = [];
-	for (const [key, locations] of buckets) {
-		const split = key.indexOf('\u0000');
-		if (split === -1) {
-			continue;
-		}
-		const kind = key.slice(0, split) as CppDuplicateKind;
-		if (locations.length <= 1) {
-			continue;
-		}
-		let name = key.slice(split + 1);
+export function buildTokenDuplicateGroups(buckets: Map<string, DuplicateLocation[]>): DuplicateGroup[] {
+	return buildDeclarationDuplicateGroups<DuplicateKind, DuplicateLocation>(buckets, (kind, name) => {
 		if (kind === 'method') {
 			const firstSep = name.indexOf('\u0000');
 			if (firstSep !== -1) {
-				name = name.slice(name.indexOf('\u0000', firstSep + 1) + 1);
+				return name.slice(name.indexOf('\u0000', firstSep + 1) + 1);
 			}
 		} else if (kind === 'function' || kind === 'wrapper') {
 			const firstSep = name.indexOf('\u0000');
 			if (firstSep !== -1) {
-				name = name.slice(0, firstSep);
+				return name.slice(0, firstSep);
 			}
 		} else {
 			switch (kind) {
@@ -94,20 +85,18 @@ export function buildTokenDuplicateGroups(buckets: Map<string, CppDuplicateLocat
 				case 'type': {
 					const lastSep = name.lastIndexOf('\u0000');
 					if (lastSep !== -1) {
-						name = name.slice(lastSep + 1);
+						return name.slice(lastSep + 1);
 					}
 					break;
 				}
 			}
 		}
-		result.push({ kind, name, count: locations.length, locations });
-	}
-	result.sort((left, right) => right.count - left.count || left.kind.localeCompare(right.kind) || left.name.localeCompare(right.name));
-	return result;
+		return name;
+	});
 }
 
-export function addDuplicateExportedTypeIssues(exportedTypes: readonly CppExportedTypeInfo[], issues: CppLintIssue[]): void {
-	const byName = new Map<string, CppExportedTypeInfo[]>();
+export function addDuplicateExportedTypeIssues(exportedTypes: readonly ExportedTypeInfo[], issues: LintIssue[]): void {
+	const byName = new Map<string, ExportedTypeInfo[]>();
 	const seenLocations = new Set<string>();
 	for (let index = 0; index < exportedTypes.length; index += 1) {
 		const entry = exportedTypes[index];
@@ -144,8 +133,8 @@ export function addDuplicateExportedTypeIssues(exportedTypes: readonly CppExport
 	}
 }
 
-export function addNormalizedBodyDuplicateIssues(normalizedBodies: readonly CppNormalizedBodyInfo[], issues: CppLintIssue[]): void {
-	const byFingerprint = new Map<string, CppNormalizedBodyInfo[]>();
+export function addNormalizedBodyDuplicateIssues(normalizedBodies: readonly NormalizedBodyInfo[], issues: LintIssue[]): void {
+	const byFingerprint = new Map<string, NormalizedBodyInfo[]>();
 	for (let index = 0; index < normalizedBodies.length; index += 1) {
 		const entry = normalizedBodies[index];
 		let list = byFingerprint.get(entry.fingerprint);
@@ -183,8 +172,8 @@ export function addNormalizedBodyDuplicateIssues(normalizedBodies: readonly CppN
 	}
 }
 
-export function addSemanticNormalizedBodyDuplicateIssues(normalizedBodies: readonly CppNormalizedBodyInfo[], issues: CppLintIssue[]): void {
-	const bySignature = new Map<string, CppNormalizedBodyInfo[]>();
+export function addSemanticNormalizedBodyDuplicateIssues(normalizedBodies: readonly NormalizedBodyInfo[], issues: LintIssue[]): void {
+	const bySignature = new Map<string, NormalizedBodyInfo[]>();
 	for (let index = 0; index < normalizedBodies.length; index += 1) {
 		const entry = normalizedBodies[index];
 		if (entry.semanticSignatures === null) {
@@ -235,7 +224,7 @@ function semanticSignatureLabel(signature: string): string {
 	return (separator >= 0 ? signature.slice(0, separator) : signature).replace(':', ' ');
 }
 
-export function relativeAnalysisResult(result: CppAnalysisResult): CppAnalysisResult {
+export function relativeAnalysisResult(result: AnalysisResult): AnalysisResult {
 	return {
 		duplicateGroups: result.duplicateGroups.map(group => ({
 			...group,

@@ -1,8 +1,8 @@
 import ts from 'typescript';
-import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
-import { pushTsLintIssue, type TsLintIssue } from '../../ts_rule';
+import { pushLintIssue, type LintIssue } from '../../ts_rule';
 import { isDoubleUnderscoreSentinelString } from '../../../analysis/code_quality/string_contracts';
 
 export const legacySentinelStringPatternRule = defineLintRule('code_quality', 'legacy_sentinel_string_pattern');
@@ -10,12 +10,12 @@ export const legacySentinelStringPatternRule = defineLintRule('code_quality', 'l
 export function lintLegacySentinelStringPattern(
 	sourceFile: ts.SourceFile,
 	node: ts.StringLiteral | ts.NoSubstitutionTemplateLiteral,
-	issues: TsLintIssue[],
+	issues: LintIssue[],
 ): void {
 	if (!isDoubleUnderscoreSentinelString(node.text)) {
 		return;
 	}
-	pushTsLintIssue(
+	pushLintIssue(
 		issues,
 		sourceFile,
 		node,
@@ -24,7 +24,7 @@ export function lintLegacySentinelStringPattern(
 	);
 }
 
-export function lintCppLegacySentinelStringPattern(file: string, tokens: readonly CppToken[], issues: CppLintIssue[]): void {
+export function lintTokenLegacySentinelStringPattern(file: string, tokens: readonly Token[], issues: LintIssue[]): void {
 	for (let index = 0; index < tokens.length; index += 1) {
 		const token = tokens[index];
 		if (token.kind !== 'string' || !isDoubleUnderscoreSentinelString(token.text)) {

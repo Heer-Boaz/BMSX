@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type TsLintIssue as LintIssue, pushTsLintIssue } from '../../ts_rule';
+import { type LintIssue as LintIssue, pushLintIssue } from '../../ts_rule';
 import ts from 'typescript';
 import { isLookupCallExpression, unwrapExpression } from '../../../../src/bmsx/language/ts/ast/expressions';
 import { expressionAccessFingerprint } from '../ts/support/declarations';
@@ -41,7 +41,7 @@ export function lintLookupAliasOptionalChain(node: ts.Statement, sourceFile: ts.
 		if (!isLookupProjectionFingerprint(expressionAccessFingerprint(next.expression), declarationFingerprint)) {
 			return;
 		}
-		pushTsLintIssue(
+		pushLintIssue(
 			issues,
 			sourceFile,
 			node,
@@ -57,7 +57,7 @@ export function lintLookupAliasOptionalChain(node: ts.Statement, sourceFile: ts.
 	if (!isLookupProjectionFingerprint(returnedFingerprint, declarationFingerprint)) {
 		return;
 	}
-	pushTsLintIssue(
+	pushLintIssue(
 		issues,
 		sourceFile,
 		node,

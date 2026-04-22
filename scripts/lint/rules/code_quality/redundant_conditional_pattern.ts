@@ -1,6 +1,6 @@
 import ts from 'typescript';
 import { defineLintRule } from '../../rule';
-import { pushTsLintIssue, type TsLintIssue } from '../../ts_rule';
+import { pushLintIssue, type LintIssue } from '../../ts_rule';
 
 export const redundantConditionalPatternRule = defineLintRule('code_quality', 'redundant_conditional_pattern');
 
@@ -15,12 +15,12 @@ export function isRedundantConditionalExpression(node: ts.ConditionalExpression,
 export function lintRedundantConditionalPattern(
 	sourceFile: ts.SourceFile,
 	node: ts.ConditionalExpression,
-	issues: TsLintIssue[],
+	issues: LintIssue[],
 ): void {
 	if (!isRedundantConditionalExpression(node, sourceFile)) {
 		return;
 	}
-	pushTsLintIssue(
+	pushLintIssue(
 		issues,
 		sourceFile,
 		node,

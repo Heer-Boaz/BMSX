@@ -1,16 +1,16 @@
-import { type CppFunctionInfo } from '../../../../../src/bmsx/language/cpp/syntax/declarations';
-import { isCppAssignmentOperator } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
-import { type CppToken } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
+import { type FunctionInfo } from '../../../../../src/bmsx/language/cpp/syntax/declarations';
+import { isAssignmentOperator } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
+import { type Token } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
 import { type AnalysisRegion, lineInAnalysisRegion } from '../../../../analysis/lint_suppressions';
-import { DECLARATION_PREFIX_ALLOWED_OPERATORS, DECLARATION_PREFIX_ALLOWED_PUNCTUATION, isCppSingleUseSuppressingToken, isCppTemporalSnapshotName } from './ast';
+import { DECLARATION_PREFIX_ALLOWED_OPERATORS, DECLARATION_PREFIX_ALLOWED_PUNCTUATION, isSingleUseSuppressingToken, isTokenTemporalSnapshotName } from './ast';
 import { isHotPathFunction } from './numeric';
-import { CppLocalBinding } from './types';
+import { LocalBinding } from './types';
 
 export function isIgnoredName(name: string): boolean {
 	return name.length === 0 || name === '_' || name.startsWith('_');
 }
 
-export function isCppConstructorLike(info: CppFunctionInfo): boolean {
+export function isConstructorLike(info: FunctionInfo): boolean {
 	if (info.name.startsWith('~') || info.qualifiedName.startsWith('~') || info.qualifiedName.includes('::~')) {
 		return true;
 	}
@@ -30,7 +30,7 @@ export function isCppConstructorLike(info: CppFunctionInfo): boolean {
 	return info.name === info.context;
 }
 
-export function cppLocalConstCandidateKind(info: CppFunctionInfo, regions: readonly AnalysisRegion[], tokens: readonly CppToken[], binding: CppLocalBinding): string {
+export function cppLocalConstCandidateKind(info: FunctionInfo, regions: readonly AnalysisRegion[], tokens: readonly Token[], binding: LocalBinding): string {
 	if (lineInAnalysisRegion(regions, 'local-const-specialization', tokens[binding.nameToken].line) && /^[A-Z0-9_]+$/.test(binding.name)) {
 		return 'vm_specialization';
 	}
@@ -45,13 +45,13 @@ export function cppLocalConstCandidateKind(info: CppFunctionInfo, regions: reado
 	return `${prefix}${valueKind}_${cppLocalBindingReadBucket(binding)}`;
 }
 
-export function hasCppDeclarationPrefixNoise(tokens: readonly CppToken[], start: number, nameIndex: number): boolean {
+export function hasDeclarationPrefixNoise(tokens: readonly Token[], start: number, nameIndex: number): boolean {
 	for (let index = start; index < nameIndex; index += 1) {
 		const token = tokens[index];
 		if (token.text === '#') {
 			return true;
 		}
-		if (isCppAssignmentOperator(token.text)) {
+		if (isAssignmentOperator(token.text)) {
 			return true;
 		}
 		if (token.kind === 'op' && !DECLARATION_PREFIX_ALLOWED_OPERATORS.has(token.text)) {
@@ -64,7 +64,7 @@ export function hasCppDeclarationPrefixNoise(tokens: readonly CppToken[], start:
 	return false;
 }
 
-export function cppLocalBindingValueKind(binding: CppLocalBinding): string {
+export function cppLocalBindingValueKind(binding: LocalBinding): string {
 	if (binding.isReference || binding.isPointer) {
 		return 'handle';
 	}
@@ -72,7 +72,7 @@ export function cppLocalBindingValueKind(binding: CppLocalBinding): string {
 		return 'simple_alias';
 	}
 	const typeText = binding.typeText.replace(/\b(?:const|constexpr|static|volatile|mutable)\b/g, '').replace(/\s+/g, ' ').trim();
-	if (isCppScalarLocalType(typeText)) {
+	if (isScalarLocalType(typeText)) {
 		return 'scalar';
 	}
 	if (/^(?:auto|decltype\b)/.test(typeText)) {
@@ -87,15 +87,15 @@ export function cppLocalBindingValueKind(binding: CppLocalBinding): string {
 	return 'value';
 }
 
-export function isCppScalarLocalType(typeText: string): boolean {
+export function isScalarLocalType(typeText: string): boolean {
 	return /^(?:u?int(?:8|16|32|64)?_t|[ui](?:8|16|32|64)|size_t|std::size_t|ptrdiff_t|std::ptrdiff_t|float|double|f32|f64|bool|char|unsigned char|signed char|short|unsigned short|int|unsigned int|long|unsigned long|long long|unsigned long long)\b/.test(typeText);
 }
 
-export function cppLocalBindingReadBucket(binding: CppLocalBinding): string {
+export function cppLocalBindingReadBucket(binding: LocalBinding): string {
 	return binding.readCount >= 2 ? 'reused' : 'single_read';
 }
 
-export function markBindingUses(binding: CppLocalBinding, tokens: readonly CppToken[], bodyStart: number, bodyEnd: number): void {
+export function markBindingUses(binding: LocalBinding, tokens: readonly Token[], bodyStart: number, bodyEnd: number): void {
 	for (let index = bodyStart + 1; index < bodyEnd; index += 1) {
 		const token = tokens[index];
 		if (token.kind !== 'id' || token.text !== binding.name || index === binding.nameToken) {
@@ -119,7 +119,7 @@ export function markBindingUses(binding: CppLocalBinding, tokens: readonly CppTo
 	}
 }
 
-export function shouldReportCppLocalConst(binding: CppLocalBinding): boolean {
+export function shouldReportTokenLocalConst(binding: LocalBinding): boolean {
 	if (binding.isConst || binding.isReference || binding.isPointer || !binding.hasInitializer || binding.writeCount !== 0) {
 		return false;
 	}
@@ -135,11 +135,11 @@ export function shouldReportCppLocalConst(binding: CppLocalBinding): boolean {
 	return true;
 }
 
-export function shouldReportTokenSingleUseLocal(binding: CppLocalBinding): boolean {
+export function shouldReportTokenSingleUseLocal(binding: LocalBinding): boolean {
 	if (!binding.hasInitializer || !binding.isSimpleAliasInitializer) {
 		return false;
 	}
-	if (isCppTemporalSnapshotName(binding.name)) {
+	if (isTokenTemporalSnapshotName(binding.name)) {
 		return false;
 	}
 	if (binding.writeCount > 0) {
@@ -148,13 +148,13 @@ export function shouldReportTokenSingleUseLocal(binding: CppLocalBinding): boole
 	if (binding.initializerTextLength > 32) {
 		return false;
 	}
-	if (isCppSingleUseSuppressingToken(binding.firstReadLeftText) || isCppSingleUseSuppressingToken(binding.firstReadRightText)) {
+	if (isSingleUseSuppressingToken(binding.firstReadLeftText) || isSingleUseSuppressingToken(binding.firstReadRightText)) {
 		return false;
 	}
 	return true;
 }
 
-export function isWriteUse(tokens: readonly CppToken[], index: number): boolean {
-	return isCppAssignmentOperator(tokens[index + 1]?.text) || tokens[index + 1]?.text === '++' || tokens[index + 1]?.text === '--' ||
+export function isWriteUse(tokens: readonly Token[], index: number): boolean {
+	return isAssignmentOperator(tokens[index + 1]?.text) || tokens[index + 1]?.text === '++' || tokens[index + 1]?.text === '--' ||
 		tokens[index - 1]?.text === '++' || tokens[index - 1]?.text === '--';
 }

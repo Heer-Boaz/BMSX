@@ -163,6 +163,11 @@ export type CppFunctionInfo = {
 	wrapperTarget: string | null;
 };
 
+export type ClassRange = CppClassRange;
+export type TypeDeclarationKind = CppTypeDeclarationKind;
+export type TypeDeclarationInfo = CppTypeDeclarationInfo;
+export type FunctionInfo = CppFunctionInfo;
+
 export function collectCppClassRanges(
 	tokens: readonly CppToken[],
 	pairs: readonly number[],
@@ -502,6 +507,11 @@ export function collectCppFunctionDefinitions(
 	}
 	return functions;
 }
+
+export const collectClassRanges = collectCppClassRanges;
+export const collectTypeDeclarations = collectCppTypeDeclarations;
+export const collectFunctionDefinitions = collectCppFunctionDefinitions;
+export const countTopLevelDataMembers = countCppTopLevelDataMembers;
 
 function isCppPreprocessorLine(tokens: readonly CppToken[], index: number): boolean {
 	const line = tokens[index].line;

@@ -11,15 +11,9 @@ import { isTemporalSnapshotInitializer } from './local_bindings';
 import { isBoundaryStyleWrapperName, isNamedPrimitivePredicate, isTrivialDelegationCallExpression } from './runtime_patterns';
 import { collectSemanticBodySignatures } from './semantic';
 import { getSingleStatementWrapperTarget, isLoopConditionExpression } from './statements';
+import { type NormalizedBodyInfo } from '../../../normalized_body';
 
-export type NormalizedBodyInfo = {
-	name: string;
-	file: string;
-	line: number;
-	column: number;
-	fingerprint: string;
-	semanticSignatures: string[] | null;
-};
+export type { NormalizedBodyInfo };
 
 export function isAbstractClass(node: ts.ClassDeclaration): boolean {
 	return hasModifier(node, ts.SyntaxKind.AbstractKeyword);

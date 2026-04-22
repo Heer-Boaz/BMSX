@@ -1,4 +1,4 @@
-export type CppLocalBinding = {
+export type LocalBinding = {
 	name: string;
 	nameToken: number;
 	typeText: string;
@@ -15,9 +15,4 @@ export type CppLocalBinding = {
 	isSimpleAliasInitializer: boolean;
 	firstReadLeftText: string | null;
 	firstReadRightText: string | null;
-};
-
-export type CppFunctionUsageInfo = {
-	totalCounts: ReadonlyMap<string, number>;
-	referenceCounts: ReadonlyMap<string, number>;
 };

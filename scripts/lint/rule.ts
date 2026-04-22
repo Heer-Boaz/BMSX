@@ -2,6 +2,15 @@ export type LintRuleDomain = 'code_quality' | 'common' | 'lua_cart' | 'shared';
 
 export type LintRuleName = string;
 
+export type LintIssue = {
+	kind: LintRuleName;
+	file: string;
+	line: number;
+	column: number;
+	name: string;
+	message: string;
+};
+
 export type LintRuleDefinition<TName extends string = string> = {
 	readonly domain: LintRuleDomain;
 	readonly name: TName;

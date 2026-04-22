@@ -1,4 +1,4 @@
-import type { TsLintIssue } from '../../ts_rule';
+import type { LintIssue } from '../../ts_rule';
 import type { RepeatedExpressionInfo } from '../ts/support/ast';
 import { defineLintRule } from '../../rule';
 
@@ -9,7 +9,7 @@ const MIN_REPEATED_ACCESS_CHAIN_COUNT = 3;
 export function addRepeatedAccessChainIssues(
 	scope: ReadonlyMap<string, RepeatedExpressionInfo>,
 	fileName: string,
-	issues: TsLintIssue[],
+	issues: LintIssue[],
 ): void {
 	for (const info of scope.values()) {
 		if (info.count < MIN_REPEATED_ACCESS_CHAIN_COUNT) {

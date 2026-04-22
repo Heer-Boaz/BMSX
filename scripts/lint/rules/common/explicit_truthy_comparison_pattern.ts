@@ -1,8 +1,8 @@
 import { LuaBinaryOperator, LuaSyntaxKind, type LuaExpression } from '../../../../src/bmsx/lua/syntax/ast';
-import { isCppBooleanToken } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { lintCppAdjacentEqualityComparison } from '../cpp/support/comparison';
-import type { CppLintIssue } from '../cpp/support/diagnostics';
+import { isBooleanToken } from '../../../../src/bmsx/language/cpp/syntax/syntax';
+import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { lintAdjacentEqualityComparison } from '../cpp/support/comparison';
+import type { LintIssue } from '../cpp/support/diagnostics';
 import type { LuaLintIssue, LuaLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 
@@ -39,13 +39,13 @@ function isLuaBooleanLiteralExpression(expression: LuaExpression): boolean {
 	return expression.kind === LuaSyntaxKind.BooleanLiteralExpression;
 }
 
-export function lintCppExplicitTruthyComparisonPattern(file: string, tokens: readonly CppToken[], issues: CppLintIssue[]): void {
-	lintCppAdjacentEqualityComparison(
+export function lintExplicitTruthyComparisonPattern(file: string, tokens: readonly Token[], issues: LintIssue[]): void {
+	lintAdjacentEqualityComparison(
 		file,
 		tokens,
 		issues,
 		explicitTruthyComparisonPatternRule.name,
 		'Explicit boolean literal comparison is forbidden. Use truthy/falsy checks instead.',
-		(left, right) => (isCppBooleanToken(left) && !isCppBooleanToken(right)) || (isCppBooleanToken(right) && !isCppBooleanToken(left)),
+		(left, right) => (isBooleanToken(left) && !isBooleanToken(right)) || (isBooleanToken(right) && !isBooleanToken(left)),
 	);
 }

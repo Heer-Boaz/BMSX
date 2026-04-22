@@ -1,12 +1,12 @@
 import ts from 'typescript';
-import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
-import { pushTsLintIssue, type TsLintIssue } from '../../ts_rule';
+import { pushLintIssue, type LintIssue } from '../../ts_rule';
 
 export const emptyCatchPatternRule = defineLintRule('common', 'empty_catch_pattern');
 
-export type CppCatchBlockInfo = {
+export type CatchBlockInfo = {
 	catchToken: number;
 	declarationClose: number;
 	blockOpen: number;
@@ -17,12 +17,12 @@ export type CppCatchBlockInfo = {
 export function lintEmptyCatchPattern(
 	node: ts.CatchClause,
 	sourceFile: ts.SourceFile,
-	issues: TsLintIssue[],
+	issues: LintIssue[],
 ): boolean {
 	if (node.block.statements.length !== 0) {
 		return false;
 	}
-	pushTsLintIssue(
+	pushLintIssue(
 		issues,
 		sourceFile,
 		node,
@@ -32,11 +32,11 @@ export function lintEmptyCatchPattern(
 	return true;
 }
 
-export function lintCppEmptyCatchPattern(
+export function lintTokenEmptyCatchPattern(
 	file: string,
-	tokens: readonly CppToken[],
-	catchInfo: CppCatchBlockInfo,
-	issues: CppLintIssue[],
+	tokens: readonly Token[],
+	catchInfo: CatchBlockInfo,
+	issues: LintIssue[],
 ): boolean {
 	if (catchInfo.statements.length !== 0) {
 		return false;

@@ -1,13 +1,12 @@
 import ts from 'typescript';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
-import type { CppLintIssue } from '../cpp/support/diagnostics';
 import { noteQualityLedger, type QualityLedger } from '../../../analysis/quality_ledger';
-import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
-import { collectCppStatementRanges } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import { normalizedCppTokenText, type CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import type { FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
+import { collectStatementRanges } from '../../../../src/bmsx/language/cpp/syntax/syntax';
+import { normalizedTokenText, type Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { defineLintRule } from '../../rule';
 import { compactStatementText } from '../../ts_node';
-import type { TsLintIssue } from '../../ts_rule';
+import type { LintIssue } from '../../ts_rule';
 
 export const repeatedStatementSequencePatternRule = defineLintRule('common', 'repeated_statement_sequence_pattern');
 
@@ -35,7 +34,7 @@ type StatementSequenceEntry = StatementLineRange & {
 	fingerprint: string;
 };
 
-export type StatementSequenceInfo = {
+export type TokenStatementSequenceInfo = {
 	file: string;
 	line: number;
 	column: number;
@@ -45,7 +44,7 @@ export type StatementSequenceInfo = {
 	fingerprint: string;
 };
 
-export type CppStatementSequenceInfo = {
+export type StatementSequenceInfo = {
 	file: string;
 	line: number;
 	column: number;
@@ -105,7 +104,7 @@ export function collectRepeatedStatementSequences(
 	}
 }
 
-export function addRepeatedStatementSequenceIssues(sequences: readonly StatementSequenceInfo[], issues: TsLintIssue[]): void {
+export function addRepeatedStatementSequenceIssues(sequences: readonly StatementSequenceInfo[], issues: LintIssue[]): void {
 	forEachUnreportedDuplicateSequence(duplicateStatementSequenceGroups(sequences), (entry, list) => {
 		issues.push({
 			kind: repeatedStatementSequencePatternRule.name,
@@ -187,13 +186,13 @@ function forEachUnreportedDuplicateSequence<TEntry extends StatementSequenceEntr
 	}
 }
 
-export function collectCppRepeatedStatementSequences(
+export function collectTokenRepeatedStatementSequences(
 	file: string,
-	tokens: readonly CppToken[],
+	tokens: readonly Token[],
 	pairs: readonly number[],
-	info: CppFunctionInfo,
+	info: FunctionInfo,
 	regions: readonly AnalysisRegion[],
-	sequences: CppStatementSequenceInfo[],
+	sequences: TokenStatementSequenceInfo[],
 ): void {
 	for (let index = info.bodyStart; index < info.bodyEnd; index += 1) {
 		if (tokens[index].text !== '{') {
@@ -203,26 +202,26 @@ export function collectCppRepeatedStatementSequences(
 		if (close < 0 || close > info.bodyEnd) {
 			continue;
 		}
-		collectCppRepeatedStatementSequencesInBlock(file, tokens, index + 1, close, info.name, regions, sequences);
+		collectTokenRepeatedStatementSequencesInBlock(file, tokens, index + 1, close, info.name, regions, sequences);
 	}
 }
 
-function collectCppRepeatedStatementSequencesInBlock(
+function collectTokenRepeatedStatementSequencesInBlock(
 	file: string,
-	tokens: readonly CppToken[],
+	tokens: readonly Token[],
 	blockStart: number,
 	blockEnd: number,
 	functionName: string,
 	regions: readonly AnalysisRegion[],
-	sequences: CppStatementSequenceInfo[],
+	sequences: TokenStatementSequenceInfo[],
 ): void {
-	const ranges = collectCppStatementRanges(tokens, blockStart, blockEnd);
+	const ranges = collectStatementRanges(tokens, blockStart, blockEnd);
 	if (ranges.length < CPP_REPEATED_STATEMENT_SEQUENCE_MIN_COUNT) {
 		return;
 	}
 	const statementTexts: string[] = [];
 	for (let index = 0; index < ranges.length; index += 1) {
-		statementTexts.push(normalizedCppTokenText(tokens, ranges[index][0], ranges[index][1]));
+		statementTexts.push(normalizedTokenText(tokens, ranges[index][0], ranges[index][1]));
 	}
 	for (let index = 0; index <= ranges.length - CPP_REPEATED_STATEMENT_SEQUENCE_MIN_COUNT; index += 1) {
 		let textLength = 0;
@@ -258,9 +257,9 @@ function collectCppRepeatedStatementSequencesInBlock(
 	}
 }
 
-export function addCppRepeatedStatementSequenceIssues(
-	sequences: readonly CppStatementSequenceInfo[],
-	issues: CppLintIssue[],
+export function addTokenRepeatedStatementSequenceIssues(
+	sequences: readonly TokenStatementSequenceInfo[],
+	issues: LintIssue[],
 	ledger: QualityLedger,
 ): void {
 	forEachUnreportedDuplicateSequence(duplicateStatementSequenceGroups(sequences, cppSequenceRangeKey), (entry, list) => {
@@ -281,10 +280,10 @@ export function addCppRepeatedStatementSequenceIssues(
 	});
 }
 
-function cppSequenceRangeKey(entry: CppStatementSequenceInfo): string {
+function cppSequenceRangeKey(entry: TokenStatementSequenceInfo): string {
 	return `${entry.file}:${entry.line}:${entry.endLine}:${entry.fingerprint}`;
 }
 
-function cppReportableStatementSequenceKind(entry: CppStatementSequenceInfo): string {
+function cppReportableStatementSequenceKind(entry: TokenStatementSequenceInfo): string {
 	return entry.functionName.length === 0 ? 'disabled' : 'disabled_function_body';
 }

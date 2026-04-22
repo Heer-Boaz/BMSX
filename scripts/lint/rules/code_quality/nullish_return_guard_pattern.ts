@@ -1,22 +1,22 @@
-import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
+import type { FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import {
 	cppExpressionUsesAccessedValue,
 	cppNullishGuardExpression,
 	cppStatementReturnsNull,
-	findTopLevelCppSemicolon,
-	trimmedCppExpressionText,
+	findTopLevelSemicolon,
+	trimmedExpressionText,
 } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
-import { type TsLintIssue as LintIssue, pushTsLintIssue } from '../../ts_rule';
+import { type LintIssue as LintIssue, pushLintIssue } from '../../ts_rule';
 import ts from 'typescript';
 import { expressionUsesGuardedValue, isCrossNullishProjection, nullishGuardFingerprint, nullishReturnKind } from '../ts/support/nullish';
 import { nextStatementAfter } from '../ts/support/statements';
 
 export const nullishReturnGuardPatternRule = defineLintRule('code_quality', 'nullish_return_guard_pattern');
 
-export function lintCppNullishReturnGuards(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
+export function lintNullishReturnGuards(file: string, tokens: readonly Token[], pairs: readonly number[], info: FunctionInfo, issues: LintIssue[]): void {
 	for (let index = info.bodyStart + 1; index < info.bodyEnd; index += 1) {
 		if (tokens[index].text !== 'if' || tokens[index + 1]?.text !== '(') {
 			continue;
@@ -39,11 +39,11 @@ export function lintCppNullishReturnGuards(file: string, tokens: readonly CppTok
 		if (tokens[returnStart]?.text === 'else' || tokens[returnStart]?.text !== 'return') {
 			continue;
 		}
-		const returnEnd = findTopLevelCppSemicolon(tokens, returnStart, info.bodyEnd);
+		const returnEnd = findTopLevelSemicolon(tokens, returnStart, info.bodyEnd);
 		if (returnEnd < 0) {
 			continue;
 		}
-		const returnedExpression = trimmedCppExpressionText(tokens, returnStart + 1, returnEnd);
+		const returnedExpression = trimmedExpressionText(tokens, returnStart + 1, returnEnd);
 		if (!cppExpressionUsesAccessedValue(returnedExpression, guardedExpression)) {
 			continue;
 		}
@@ -57,19 +57,19 @@ export function lintCppNullishReturnGuards(file: string, tokens: readonly CppTok
 	}
 }
 
-function cppNullishReturnConsequentEnd(tokens: readonly CppToken[], pairs: readonly number[], start: number, bodyEnd: number): number {
+function cppNullishReturnConsequentEnd(tokens: readonly Token[], pairs: readonly number[], start: number, bodyEnd: number): number {
 	if (tokens[start]?.text === '{') {
 		const closeBrace = pairs[start];
 		if (closeBrace < 0 || closeBrace > bodyEnd) {
 			return -1;
 		}
-		const returnEnd = findTopLevelCppSemicolon(tokens, start + 1, closeBrace);
+		const returnEnd = findTopLevelSemicolon(tokens, start + 1, closeBrace);
 		if (returnEnd < 0 || returnEnd + 1 !== closeBrace || !cppStatementReturnsNull(tokens, start + 1, returnEnd)) {
 			return -1;
 		}
 		return closeBrace;
 	}
-	const returnEnd = findTopLevelCppSemicolon(tokens, start, bodyEnd);
+	const returnEnd = findTopLevelSemicolon(tokens, start, bodyEnd);
 	if (returnEnd < 0 || !cppStatementReturnsNull(tokens, start, returnEnd)) {
 		return -1;
 	}
@@ -98,7 +98,7 @@ export function lintNullishReturnGuard(node: ts.IfStatement, sourceFile: ts.Sour
 	if (isCrossNullishProjection(node.expression, returnedKind, next.expression)) {
 		return;
 	}
-	pushTsLintIssue(
+	pushLintIssue(
 		issues,
 		sourceFile,
 		node,

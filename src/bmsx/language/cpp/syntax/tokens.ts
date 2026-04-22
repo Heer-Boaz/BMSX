@@ -7,6 +7,9 @@ export type CppToken = {
 	column: number;
 };
 
+export type TokenKind = CppTokenKind;
+export type Token = CppToken;
+
 export function isCppIdentifierStart(ch: string): boolean {
 	const code = ch.charCodeAt(0);
 	return code === 95 || code >= 65 && code <= 90 || code >= 97 && code <= 122;
@@ -201,3 +204,7 @@ function needsTokenSpace(left: string, right: string): boolean {
 export function normalizedCppTokenText(tokens: readonly CppToken[], start: number, end: number): string {
 	return cppTokenText(tokens, start, end).replace(/\s+/g, ' ').trim();
 }
+
+export const tokenize = tokenizeCpp;
+export const buildPairMap = buildCppPairMap;
+export const normalizedTokenText = normalizedCppTokenText;

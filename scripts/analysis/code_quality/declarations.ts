@@ -5,6 +5,7 @@ import { getClassScopePath } from '../../lint/rules/ts/support/bindings';
 import { getFunctionWrapperTarget, isAbstractClass, isIgnoredMethod } from '../../lint/rules/ts/support/declarations';
 import { type ExportedTypeInfo } from '../../lint/rules/code_quality/duplicate_exported_type_name_pattern';
 import { ClassInfo, DuplicateGroup, DuplicateKind, DuplicateLocation } from '../../lint/rules/ts/support/types';
+import { buildDeclarationDuplicateGroups } from '../duplicate_groups';
 
 export function collectExportedTypes(sourceFile: ts.SourceFile, exportedTypes: ExportedTypeInfo[]): void {
 	for (let index = 0; index < sourceFile.statements.length; index += 1) {
@@ -382,43 +383,18 @@ export function walkDeclarations(
 export function buildDuplicateGroups(
 	buckets: Map<string, DuplicateLocation[]>,
 ): DuplicateGroup[] {
-	const result: DuplicateGroup[] = [];
-	for (const [key, locations] of buckets) {
-		const split = key.indexOf('\u0000');
-		if (split === -1) {
-			continue;
-		}
-		const kind = key.slice(0, split) as DuplicateKind;
-		if (locations.length <= 1) {
-			continue;
-		}
-		let name = key.slice(split + 1);
+	return buildDeclarationDuplicateGroups<DuplicateKind, DuplicateLocation>(buckets, (kind, name) => {
 		if (kind === 'method') {
 			const firstSep = name.indexOf('\u0000');
 			if (firstSep !== -1) {
-				name = name.slice(name.indexOf('\u0000', firstSep + 1) + 1);
+				return name.slice(name.indexOf('\u0000', firstSep + 1) + 1);
 			}
 		} else if (kind === 'function' || kind === 'wrapper') {
 			const firstSep = name.indexOf('\u0000');
 			if (firstSep !== -1) {
-				name = name.slice(0, firstSep);
+				return name.slice(0, firstSep);
 			}
 		}
-		result.push({
-			kind: kind as DuplicateKind,
-			name,
-			count: locations.length,
-			locations,
-		});
-	}
-	result.sort((left, right) => {
-		if (left.count !== right.count) {
-			return right.count - left.count;
-		}
-		if (left.kind !== right.kind) {
-			return left.kind < right.kind ? -1 : 1;
-		}
-		return left.name < right.name ? -1 : (left.name > right.name ? 1 : 0);
+		return name;
 	});
-	return result;
 }

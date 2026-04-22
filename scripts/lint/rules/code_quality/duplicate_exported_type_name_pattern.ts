@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import type { TsLintIssue } from '../../ts_rule';
+import type { LintIssue } from '../../ts_rule';
 
 export const duplicateExportedTypeNamePatternRule = defineLintRule('code_quality', 'duplicate_exported_type_name_pattern');
 
@@ -10,7 +10,7 @@ export type ExportedTypeInfo = {
 	column: number;
 };
 
-export function addDuplicateExportedTypeIssues(exportedTypes: readonly ExportedTypeInfo[], issues: TsLintIssue[]): void {
+export function addDuplicateExportedTypeIssues(exportedTypes: readonly ExportedTypeInfo[], issues: LintIssue[]): void {
 	const byName = new Map<string, ExportedTypeInfo[]>();
 	for (let index = 0; index < exportedTypes.length; index += 1) {
 		const entry = exportedTypes[index];

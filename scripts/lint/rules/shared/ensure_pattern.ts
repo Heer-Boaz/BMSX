@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
 import { type AnalysisRegion } from '../../../analysis/lint_suppressions';
-import { type TsLintIssue as LintIssue, pushTsLintIssue } from '../../ts_rule';
+import { type LintIssue as LintIssue, pushLintIssue } from '../../ts_rule';
 import ts from 'typescript';
 import { nodeIsInAnalysisRegion } from '../../../analysis/code_quality/source_scan';
 import { functionBodyContainsLazyInitAssignment, getSingleReturnExpression } from '../ts/support/ast';
@@ -53,7 +53,7 @@ export function lintEnsurePattern(
 	if (!hasGuardReturn || !functionBodyContainsLazyInitAssignment(body, targetFingerprint)) {
 		return;
 	}
-	pushTsLintIssue(
+	pushLintIssue(
 		issues,
 		sourceFile,
 		node.name ?? node,

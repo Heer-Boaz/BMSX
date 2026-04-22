@@ -1,11 +1,11 @@
 import {
 	cppRangeHas,
-	findNextCppDelimiter,
-	findPreviousCppDelimiter,
-	trimmedCppExpressionText,
+	findNextDelimiter,
+	findPreviousDelimiter,
+	trimmedExpressionText,
 } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { pushTokenLintIssue, type LintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { type LuaExpression } from '../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../lua_rule';
@@ -14,18 +14,18 @@ import { pushIssue } from '../lua_cart/impl/support/lint_context';
 
 export const stringOrChainComparisonPatternRule = defineLintRule('common', 'string_or_chain_comparison_pattern');
 
-export function lintCppStringOrChains(file: string, tokens: readonly CppToken[], issues: CppLintIssue[]): void {
+export function lintStringOrChains(file: string, tokens: readonly Token[], issues: LintIssue[]): void {
 	const visited = new Set<number>();
 	for (let index = 0; index < tokens.length; index += 1) {
 		if (tokens[index].text !== '||') {
 			continue;
 		}
-		const start = findPreviousCppDelimiter(tokens, index) + 1;
+		const start = findPreviousDelimiter(tokens, index) + 1;
 		if (visited.has(start)) {
 			continue;
 		}
 		visited.add(start);
-		const end = findNextCppDelimiter(tokens, index);
+		const end = findNextDelimiter(tokens, index);
 		const subjects: string[] = [];
 		let segmentStart = start;
 		for (let cursor = start; cursor <= end; cursor += 1) {
@@ -54,16 +54,16 @@ export function lintCppStringOrChains(file: string, tokens: readonly CppToken[],
 	}
 }
 
-function stringComparisonSubject(tokens: readonly CppToken[], start: number, end: number): string | null {
+function stringComparisonSubject(tokens: readonly Token[], start: number, end: number): string | null {
 	for (let index = start; index < end; index += 1) {
 		if (tokens[index].text !== '==' && tokens[index].text !== '!=') {
 			continue;
 		}
 		if (cppRangeHas(tokens, start, index, token => token.kind === 'string') && !cppRangeHas(tokens, index + 1, end, token => token.kind === 'string')) {
-			return trimmedCppExpressionText(tokens, index + 1, end);
+			return trimmedExpressionText(tokens, index + 1, end);
 		}
 		if (cppRangeHas(tokens, index + 1, end, token => token.kind === 'string') && !cppRangeHas(tokens, start, index, token => token.kind === 'string')) {
-			return trimmedCppExpressionText(tokens, start, index);
+			return trimmedExpressionText(tokens, start, index);
 		}
 	}
 	return null;

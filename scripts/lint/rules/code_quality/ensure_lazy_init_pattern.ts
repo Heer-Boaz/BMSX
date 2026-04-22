@@ -1,18 +1,18 @@
-import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
+import type { FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import {
-	collectCppStatementRanges,
+	collectStatementRanges,
 	cppCallTarget,
 	cppCallTargetFromStatement,
-	findTopLevelCppSemicolon,
+	findTopLevelSemicolon,
 } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { pushTokenLintIssue, type LintIssue } from '../cpp/support/diagnostics';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import { defineLintRule } from '../../rule';
 
 export const ensureLazyInitPatternRule = defineLintRule('code_quality', 'ensure_lazy_init_pattern');
 
-export function lintCppEnsureLazyInitPattern(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, regions: readonly AnalysisRegion[], issues: CppLintIssue[]): void {
+export function lintEnsureLazyInitPattern(file: string, tokens: readonly Token[], pairs: readonly number[], info: FunctionInfo, regions: readonly AnalysisRegion[], issues: LintIssue[]): void {
 	if (!info.name.startsWith('ensure')) {
 		return;
 	}
@@ -40,7 +40,7 @@ export function lintCppEnsureLazyInitPattern(file: string, tokens: readonly CppT
 		return;
 	}
 	const blockClose = pairs[blockOpen];
-	const blockStatements = collectCppStatementRanges(tokens, blockOpen + 1, blockClose);
+	const blockStatements = collectStatementRanges(tokens, blockOpen + 1, blockClose);
 	let createTarget: string | null = null;
 	for (let index = 0; index < blockStatements.length; index += 1) {
 		createTarget = cppCallTargetFromStatement(tokens, pairs, blockStatements[index][0], blockStatements[index][1]);
@@ -56,7 +56,7 @@ export function lintCppEnsureLazyInitPattern(file: string, tokens: readonly CppT
 	}
 	const targetPrefix = createTarget.slice(0, createTarget.lastIndexOf('::'));
 	const returnStart = blockClose + 1;
-	const returnEnd = findTopLevelCppSemicolon(tokens, returnStart, info.bodyEnd);
+	const returnEnd = findTopLevelSemicolon(tokens, returnStart, info.bodyEnd);
 	if (returnEnd < 0) {
 		return;
 	}

@@ -1,22 +1,22 @@
 import ts from 'typescript';
-import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
-import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import type { FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
+import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
-import { pushTsLintIssue, type TsLintIssue } from '../../ts_rule';
+import { pushLintIssue, type LintIssue } from '../../ts_rule';
 
 export const uselessTerminalReturnPatternRule = defineLintRule('common', 'useless_terminal_return_pattern');
 
-export type TsFunctionWithBlockBody =
+export type FunctionWithBlockBody =
 	ts.FunctionDeclaration |
 	ts.MethodDeclaration |
 	ts.FunctionExpression |
 	ts.ArrowFunction;
 
 export function lintUselessTerminalReturnPattern(
-	node: TsFunctionWithBlockBody,
+	node: FunctionWithBlockBody,
 	sourceFile: ts.SourceFile,
-	issues: TsLintIssue[],
+	issues: LintIssue[],
 ): void {
 	const body = node.body;
 	if (body === undefined || !ts.isBlock(body) || body.statements.length === 0) {
@@ -26,7 +26,7 @@ export function lintUselessTerminalReturnPattern(
 	if (!ts.isReturnStatement(lastStatement) || lastStatement.expression !== undefined) {
 		return;
 	}
-	pushTsLintIssue(
+	pushLintIssue(
 		issues,
 		sourceFile,
 		lastStatement,
@@ -35,7 +35,7 @@ export function lintUselessTerminalReturnPattern(
 	);
 }
 
-export function lintCppTerminalReturnPaddingPattern(file: string, tokens: readonly CppToken[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
+export function lintTerminalReturnPaddingPattern(file: string, tokens: readonly Token[], info: FunctionInfo, issues: LintIssue[]): void {
 	let statementStart = info.bodyStart + 1;
 	let parenDepth = 0;
 	let bracketDepth = 0;

@@ -4,8 +4,8 @@ import { spawnSync } from 'node:child_process';
 
 import { loadAnalysisConfig, type AnalysisConfig } from './config';
 import { collectSourceFiles, resolveInputPath } from './file_scan';
-import { analyzeCppFiles } from './cpp_quality/analyzer';
-import { type CppDuplicateGroup } from './cpp_quality/diagnostics';
+import { analyzeFiles } from './cpp_quality/analyzer';
+import { type DuplicateGroup } from './cpp_quality/diagnostics';
 import { printQualityLedger, qualityLedgerEntries, type QualityLedger } from './quality_ledger';
 import { quoteCsv } from './csv';
 import { commandExists } from './process';
@@ -197,7 +197,7 @@ function parseClangTidyOutput(output: string, issues: LintIssue[]): void {
 	}
 }
 
-function parseCppCheckOutput(output: string, issues: LintIssue[]): void {
+function parseCheckOutput(output: string, issues: LintIssue[]): void {
 	const lines = output.split('\n');
 	for (let i = 0; i < lines.length; i += 1) {
 		const line = lines[i];
@@ -221,7 +221,7 @@ function parseCppCheckOutput(output: string, issues: LintIssue[]): void {
 	}
 }
 
-function addCustomRuleIssues(issues: LintIssue[], analysisIssues: ReturnType<typeof analyzeCppFiles>['lintIssues']): void {
+function addCustomRuleIssues(issues: LintIssue[], analysisIssues: ReturnType<typeof analyzeFiles>['lintIssues']): void {
 	for (let index = 0; index < analysisIssues.length; index += 1) {
 		const issue = analysisIssues[index];
 		issues.push({
@@ -291,7 +291,7 @@ function runClangTidy(
 	return issues;
 }
 
-function runCppCheck(files: readonly string[], roots: readonly string[]): LintIssue[] {
+function runCheck(files: readonly string[], roots: readonly string[]): LintIssue[] {
 	if (!commandExists('cppcheck')) {
 		throw new Error('cppcheck is not installed');
 	}
@@ -319,7 +319,7 @@ function runCppCheck(files: readonly string[], roots: readonly string[]): LintIs
 			args.push(file);
 		}
 		const { output } = runProcess('cppcheck', args);
-		parseCppCheckOutput(output, issues);
+		parseCheckOutput(output, issues);
 	}
 	return issues;
 }
@@ -337,14 +337,14 @@ function getSummaryFolder(file: string): string {
 	return parts.slice(0, parts.length - 1).join('/');
 }
 
-function formatDuplicateLocation(location: CppDuplicateGroup['locations'][number]): string {
+function formatDuplicateLocation(location: DuplicateGroup['locations'][number]): string {
 	if (location.context) {
 		return `${location.file}:${location.line}:${location.column} (${location.context})`;
 	}
 	return `${location.file}:${location.line}:${location.column}`;
 }
 
-function printTokenDuplicateSummary(groups: readonly CppDuplicateGroup[]): void {
+function printTokenDuplicateSummary(groups: readonly DuplicateGroup[]): void {
 	if (groups.length === 0) {
 		return;
 	}
@@ -364,7 +364,7 @@ function printTokenDuplicateSummary(groups: readonly CppDuplicateGroup[]): void 
 	console.log('');
 }
 
-function printTextSummary(issues: readonly LintIssue[], duplicateGroups: readonly CppDuplicateGroup[], scannedFiles: number, summaryOnly: boolean, ledger: QualityLedger): void {
+function printTextSummary(issues: readonly LintIssue[], duplicateGroups: readonly DuplicateGroup[], scannedFiles: number, summaryOnly: boolean, ledger: QualityLedger): void {
 	if (issues.length === 0 && duplicateGroups.length === 0) {
 		console.log('No C++ duplicates or lint issues found.');
 		console.log(`Scanned ${scannedFiles} C++ files.`);
@@ -501,7 +501,7 @@ function printIssueCsvQualityLedgerRows(ledger: QualityLedger): void {
 	}
 }
 
-function printIssueCsvReport(issues: readonly LintIssue[], duplicateGroups: readonly CppDuplicateGroup[], scannedFiles: number, summaryOnly: boolean, ledger: QualityLedger): void {
+function printIssueCsvReport(issues: readonly LintIssue[], duplicateGroups: readonly DuplicateGroup[], scannedFiles: number, summaryOnly: boolean, ledger: QualityLedger): void {
 	console.log('file,line,column,tool,check,severity,message');
 	if (!summaryOnly) {
 		for (let groupIndex = 0; groupIndex < duplicateGroups.length; groupIndex += 1) {
@@ -555,13 +555,13 @@ function runStandaloneReport(): void {
 		return;
 	}
 	const issues: LintIssue[] = [];
-	const customAnalysis = analyzeCppFiles(files);
+	const customAnalysis = analyzeFiles(files);
 	addCustomRuleIssues(issues, customAnalysis.lintIssues);
 	const compileCommands = resolveCompileCommands(options.compileCommands);
 	if (commandExists('clang-tidy')) {
 		issues.push(...runClangTidy(files, options.roots, compileCommands, options.configFile, config.scan.cppHeaderFilter));
 	} else if (commandExists('cppcheck')) {
-		issues.push(...runCppCheck(files, options.roots));
+		issues.push(...runCheck(files, options.roots));
 	}
 	const sortedIssues = issues.sort((left, right) => {
 		if (left.tool !== right.tool) {

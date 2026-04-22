@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type TsLintIssue as LintIssue, pushTsLintIssue } from '../../ts_rule';
+import { type LintIssue as LintIssue, pushLintIssue } from '../../ts_rule';
 import ts from 'typescript';
 import { getCallTargetLeafName, unwrapExpression } from '../../../../src/bmsx/language/ts/ast/expressions';
 import { getActiveBinding } from '../ts/support/ast';
@@ -38,7 +38,7 @@ export function lintSplitJoinRoundtripPattern(
 	if (joinFingerprint === null || splitFingerprint !== joinFingerprint) {
 		return;
 	}
-	pushTsLintIssue(
+	pushLintIssue(
 		issues,
 		sourceFile,
 		node,

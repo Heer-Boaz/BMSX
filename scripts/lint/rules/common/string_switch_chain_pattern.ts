@@ -1,19 +1,19 @@
-import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
+import type { FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import {
 	cppRangeHas,
-	findTopLevelCppSemicolon,
-	trimmedCppExpressionText,
+	findTopLevelSemicolon,
+	trimmedExpressionText,
 } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
-import { type TsLintIssue as LintIssue } from '../../ts_rule';
+import { type LintIssue as LintIssue } from '../../ts_rule';
 import ts from 'typescript';
 import { stringSwitchComparisonSubject } from '../ts/support/conditions';
 
 export const stringSwitchChainPatternRule = defineLintRule('common', 'string_switch_chain_pattern');
 
-export function lintCppStringSwitchChains(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
+export function lintStringSwitchChains(file: string, tokens: readonly Token[], pairs: readonly number[], info: FunctionInfo, issues: LintIssue[]): void {
 	for (let index = info.bodyStart + 1; index < info.bodyEnd; index += 1) {
 		if (tokens[index].text !== 'if' || tokens[index - 1]?.text === 'else') {
 			continue;
@@ -67,7 +67,7 @@ export function lintCppStringSwitchChains(file: string, tokens: readonly CppToke
 	}
 }
 
-function cppIfBranchEnd(tokens: readonly CppToken[], pairs: readonly number[], start: number, bodyEnd: number): number {
+function cppIfBranchEnd(tokens: readonly Token[], pairs: readonly number[], start: number, bodyEnd: number): number {
 	if (tokens[start]?.text === '{') {
 		const closeBrace = pairs[start];
 		if (closeBrace < 0 || closeBrace > bodyEnd) {
@@ -75,19 +75,19 @@ function cppIfBranchEnd(tokens: readonly CppToken[], pairs: readonly number[], s
 		}
 		return closeBrace;
 	}
-	return findTopLevelCppSemicolon(tokens, start, bodyEnd);
+	return findTopLevelSemicolon(tokens, start, bodyEnd);
 }
 
-function cppStringSwitchComparisonSubject(tokens: readonly CppToken[], start: number, end: number): string | null {
+function cppStringSwitchComparisonSubject(tokens: readonly Token[], start: number, end: number): string | null {
 	for (let index = start; index < end; index += 1) {
 		if (tokens[index].text !== '==') {
 			continue;
 		}
 		if (cppRangeHas(tokens, start, index, token => token.kind === 'string') && !cppRangeHas(tokens, index + 1, end, token => token.kind === 'string')) {
-			return trimmedCppExpressionText(tokens, index + 1, end);
+			return trimmedExpressionText(tokens, index + 1, end);
 		}
 		if (cppRangeHas(tokens, index + 1, end, token => token.kind === 'string') && !cppRangeHas(tokens, start, index, token => token.kind === 'string')) {
-			return trimmedCppExpressionText(tokens, start, index);
+			return trimmedExpressionText(tokens, start, index);
 		}
 	}
 	return null;

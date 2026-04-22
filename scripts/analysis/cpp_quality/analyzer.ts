@@ -1,21 +1,21 @@
-import { lintCppRepeatedExpressions } from '../../lint/rules/code_quality/repeated_expression_pattern';
+import { lintRepeatedExpressions } from '../../lint/rules/code_quality/repeated_expression_pattern';
 import { readFileSync } from 'node:fs';
 import { singleLineMethodPatternRule } from '../../lint/rules/common';
-import { lintCppConsecutiveDuplicateStatements } from '../../lint/rules/common/consecutive_duplicate_statement_pattern';
-import { lintCppEmptyStringConditionPattern } from '../../lint/rules/common/empty_string_condition_pattern';
-import { lintCppTernaryFallbackPatterns } from '../../lint/rules/common/empty_string_fallback_pattern';
-import { lintCppExplicitTruthyComparisonPattern } from '../../lint/rules/common/explicit_truthy_comparison_pattern';
-import { lintCppCatchPatterns } from '../../lint/rules/common/silent_catch_fallback_pattern';
-import { lintCppSinglePropertyOptionsTypes } from '../../lint/rules/common/single_property_options_parameter_pattern';
-import { lintCppStringSwitchChains } from '../../lint/rules/common/string_switch_chain_pattern';
-import { lintCppStringOrChains } from '../../lint/rules/common/string_or_chain_comparison_pattern';
-import { lintCppTerminalReturnPaddingPattern } from '../../lint/rules/common/useless_terminal_return_pattern';
-import { lintCppCrossLayerIncludes } from '../../lint/rules/code_quality/cross_layer_import_pattern';
-import { lintCppEnsureLazyInitPattern } from '../../lint/rules/code_quality/ensure_lazy_init_pattern';
-import { createCppFacadeStats, lintCppFacadeStats } from '../../lint/rules/code_quality/facade_module_density_pattern';
-import { lintCppLegacySentinelStringPattern } from '../../lint/rules/code_quality/legacy_sentinel_string_pattern';
-import { lintCppNullishReturnGuards } from '../../lint/rules/code_quality/nullish_return_guard_pattern';
-import { lintCppOptionalValueOrFallbackPatterns } from '../../lint/rules/code_quality/optional_value_or_fallback_pattern';
+import { lintConsecutiveDuplicateStatements } from '../../lint/rules/common/consecutive_duplicate_statement_pattern';
+import { lintEmptyStringConditionPattern } from '../../lint/rules/common/empty_string_condition_pattern';
+import { lintTernaryFallbackPatterns } from '../../lint/rules/common/empty_string_fallback_pattern';
+import { lintExplicitTruthyComparisonPattern } from '../../lint/rules/common/explicit_truthy_comparison_pattern';
+import { lintCatchPatterns } from '../../lint/rules/common/silent_catch_fallback_pattern';
+import { lintSinglePropertyOptionsTypes } from '../../lint/rules/common/single_property_options_parameter_pattern';
+import { lintStringSwitchChains } from '../../lint/rules/common/string_switch_chain_pattern';
+import { lintStringOrChains } from '../../lint/rules/common/string_or_chain_comparison_pattern';
+import { lintTerminalReturnPaddingPattern } from '../../lint/rules/common/useless_terminal_return_pattern';
+import { lintCrossLayerIncludes } from '../../lint/rules/code_quality/cross_layer_import_pattern';
+import { lintEnsureLazyInitPattern } from '../../lint/rules/code_quality/ensure_lazy_init_pattern';
+import { createFacadeStats, lintFacadeStats } from '../../lint/rules/code_quality/facade_module_density_pattern';
+import { lintTokenLegacySentinelStringPattern } from '../../lint/rules/code_quality/legacy_sentinel_string_pattern';
+import { lintNullishReturnGuards } from '../../lint/rules/code_quality/nullish_return_guard_pattern';
+import { lintOptionalValueOrFallbackPatterns } from '../../lint/rules/code_quality/optional_value_or_fallback_pattern';
 
 import { collectAnalysisRegions, filterSuppressedLintIssues, type AnalysisRegion } from '../lint_suppressions';
 import { loadAnalysisConfig } from '../config';
@@ -28,63 +28,63 @@ import {
 	pushTokenLintIssue,
 	recordDeclaration,
 	relativeAnalysisResult,
-	type CppAnalysisResult,
-	type CppDuplicateKind,
-	type CppDuplicateLocation,
-	type CppExportedTypeInfo,
-	type CppLintIssue,
-	type CppNormalizedBodyInfo,
+	type AnalysisResult,
+	type DuplicateKind,
+	type DuplicateLocation,
+	type ExportedTypeInfo,
+	type LintIssue,
+	type NormalizedBodyInfo,
 } from './diagnostics';
-import { collectCppNormalizedBody } from '../../lint/rules/code_quality/normalized_ast_duplicate_pattern';
-import { lintCppRedundantNumericSanitizationPattern } from '../../lint/rules/code_quality/redundant_numeric_sanitization_pattern';
-import { lintCppSemanticRepeatedExpressions } from '../../lint/rules/code_quality/semantic_repeated_expression_pattern';
-import { lintCppLocalBindings } from '../../lint/rules/common/local_const_pattern';
-import { lintCppHotPathCalls } from '../../lint/rules/cpp/code_quality/hot_path_calls';
+import { collectNormalizedBody } from '../../lint/rules/code_quality/normalized_ast_duplicate_pattern';
+import { lintTokenRedundantNumericSanitizationPattern } from '../../lint/rules/code_quality/redundant_numeric_sanitization_pattern';
+import { lintSemanticRepeatedExpressions } from '../../lint/rules/code_quality/semantic_repeated_expression_pattern';
+import { lintLocalBindings } from '../../lint/rules/common/local_const_pattern';
+import { lintHotPathCalls } from '../../lint/rules/cpp/code_quality/hot_path_calls';
 import {
-	collectCppFunctionUsageCounts,
-	createCppFunctionUsageInfo,
-	isCppSingleLineWrapperAllowedByUsage,
+	collectFunctionUsageCounts,
+	createFunctionUsageInfo,
+	isSingleLineWrapperAllowedByUsage,
 } from '../../lint/rules/cpp/support/function_usage';
 import {
-	collectCppClassRanges,
-	collectCppFunctionDefinitions,
-	collectCppTypeDeclarations,
+	collectClassRanges,
+	collectFunctionDefinitions,
+	collectTypeDeclarations,
 } from '../../../src/bmsx/language/cpp/syntax/declarations';
-import { addCppRepeatedStatementSequenceIssues, collectCppRepeatedStatementSequences, type CppStatementSequenceInfo } from '../../lint/rules/common/repeated_statement_sequence_pattern';
-import { buildCppPairMap, tokenizeCpp } from '../../../src/bmsx/language/cpp/syntax/tokens';
-import type { CppClassRange, CppFunctionInfo, CppTypeDeclarationInfo } from '../../../src/bmsx/language/cpp/syntax/declarations';
+import { addTokenRepeatedStatementSequenceIssues, collectTokenRepeatedStatementSequences, type TokenStatementSequenceInfo } from '../../lint/rules/common/repeated_statement_sequence_pattern';
+import { buildPairMap, tokenize } from '../../../src/bmsx/language/cpp/syntax/tokens';
+import type { ClassRange, FunctionInfo, TypeDeclarationInfo } from '../../../src/bmsx/language/cpp/syntax/declarations';
 
-type CppFileAnalysis = {
+type FileAnalysis = {
 	file: string;
 	source: string;
 	regions: readonly AnalysisRegion[];
-	tokens: ReturnType<typeof tokenizeCpp>;
+	tokens: ReturnType<typeof tokenize>;
 	pairs: number[];
-	classRanges: CppClassRange[];
-	typeDeclarations: CppTypeDeclarationInfo[];
-	functions: CppFunctionInfo[];
+	classRanges: ClassRange[];
+	typeDeclarations: TypeDeclarationInfo[];
+	functions: FunctionInfo[];
 };
 
-export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
+export function analyzeFiles(files: readonly string[]): AnalysisResult {
 	const config = loadAnalysisConfig();
-	const duplicateBuckets = new Map<string, CppDuplicateLocation[]>();
-	const lintIssues: CppLintIssue[] = [];
-	const exportedTypes: CppExportedTypeInfo[] = [];
-	const normalizedBodies: CppNormalizedBodyInfo[] = [];
-	const statementSequences: CppStatementSequenceInfo[] = [];
-	const fileAnalyses: CppFileAnalysis[] = [];
-	const functionUsageInfo = createCppFunctionUsageInfo();
+	const duplicateBuckets = new Map<string, DuplicateLocation[]>();
+	const lintIssues: LintIssue[] = [];
+	const exportedTypes: ExportedTypeInfo[] = [];
+	const normalizedBodies: NormalizedBodyInfo[] = [];
+	const statementSequences: TokenStatementSequenceInfo[] = [];
+	const fileAnalyses: FileAnalysis[] = [];
+	const functionUsageInfo = createFunctionUsageInfo();
 	const ledger = createQualityLedger();
 	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
 		const file = files[fileIndex];
 		const source = readFileSync(file, 'utf8');
 		const regions = collectAnalysisRegions(source, config.directiveMarker);
-		const tokens = tokenizeCpp(source);
-		const pairs = buildCppPairMap(tokens);
-		const classRanges = collectCppClassRanges(tokens, pairs);
-		const typeDeclarations = collectCppTypeDeclarations(tokens, classRanges);
-		const functions = collectCppFunctionDefinitions(tokens, pairs, classRanges);
-		collectCppFunctionUsageCounts(tokens, pairs, functionUsageInfo);
+		const tokens = tokenize(source);
+		const pairs = buildPairMap(tokens);
+		const classRanges = collectClassRanges(tokens, pairs);
+		const typeDeclarations = collectTypeDeclarations(tokens, classRanges);
+		const functions = collectFunctionDefinitions(tokens, pairs, classRanges);
+		collectFunctionUsageCounts(tokens, pairs, functionUsageInfo);
 		fileAnalyses.push({ file, source, regions, tokens, pairs, classRanges, typeDeclarations, functions });
 	}
 	for (let fileIndex = 0; fileIndex < fileAnalyses.length; fileIndex += 1) {
@@ -102,22 +102,22 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 			exportedTypes.push({ name: declaration.name, file, line: nameToken.line, column: nameToken.column, context: declaration.context });
 		}
 		const functions = analysis.functions;
-		const facadeStats = createCppFacadeStats(functions, tokens);
-		lintCppLegacySentinelStringPattern(file, tokens, lintIssues);
-		lintCppEmptyStringConditionPattern(file, tokens, lintIssues);
-		lintCppExplicitTruthyComparisonPattern(file, tokens, lintIssues);
-		lintCppTernaryFallbackPatterns(file, tokens, lintIssues);
-		lintCppOptionalValueOrFallbackPatterns(file, tokens, pairs, regions, lintIssues, ledger);
-		lintCppStringOrChains(file, tokens, lintIssues);
-		lintCppSinglePropertyOptionsTypes(file, tokens, analysis.classRanges, lintIssues);
-		lintCppCrossLayerIncludes(file, source, config.architecture, lintIssues);
+		const facadeStats = createFacadeStats(functions, tokens);
+		lintTokenLegacySentinelStringPattern(file, tokens, lintIssues);
+		lintEmptyStringConditionPattern(file, tokens, lintIssues);
+		lintExplicitTruthyComparisonPattern(file, tokens, lintIssues);
+		lintTernaryFallbackPatterns(file, tokens, lintIssues);
+		lintOptionalValueOrFallbackPatterns(file, tokens, pairs, regions, lintIssues, ledger);
+		lintStringOrChains(file, tokens, lintIssues);
+		lintSinglePropertyOptionsTypes(file, tokens, analysis.classRanges, lintIssues);
+		lintCrossLayerIncludes(file, source, config.architecture, lintIssues);
 		for (let functionIndex = 0; functionIndex < functions.length; functionIndex += 1) {
 			const info = functions[functionIndex];
 			if (facadeStats !== null) {
 				facadeStats.callableCount += 1;
 			}
 			if (info.wrapperTarget === null) {
-				const kind: CppDuplicateKind = info.context === null ? 'function' : 'method';
+				const kind: DuplicateKind = info.context === null ? 'function' : 'method';
 				recordDeclaration(
 					duplicateBuckets,
 					kind,
@@ -138,7 +138,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 					tokens[info.nameToken].column,
 					info.wrapperTarget,
 				);
-				if (!isCppSingleLineWrapperAllowedByUsage(info, functionUsageInfo, regions, tokens)) {
+				if (!isSingleLineWrapperAllowedByUsage(info, functionUsageInfo, regions, tokens)) {
 					pushTokenLintIssue(
 						lintIssues,
 						file,
@@ -154,28 +154,28 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 					facadeStats.wrapperCount += 1;
 				}
 			}
-			lintCppCatchPatterns(file, tokens, pairs, info, regions, lintIssues, ledger);
-			lintCppRedundantNumericSanitizationPattern(file, tokens, pairs, info, regions, lintIssues);
-			lintCppEnsureLazyInitPattern(file, tokens, pairs, info, regions, lintIssues);
-			lintCppTerminalReturnPaddingPattern(file, tokens, info, lintIssues);
-			lintCppConsecutiveDuplicateStatements(file, tokens, pairs, info, lintIssues);
-			lintCppHotPathCalls(file, tokens, pairs, info, regions, lintIssues);
-			lintCppLocalBindings(file, tokens, info, regions, lintIssues, ledger);
-			lintCppNullishReturnGuards(file, tokens, pairs, info, lintIssues);
-			lintCppStringSwitchChains(file, tokens, pairs, info, lintIssues);
-			lintCppRepeatedExpressions(file, tokens, pairs, info, lintIssues);
-			lintCppSemanticRepeatedExpressions(file, tokens, pairs, info, lintIssues);
-			collectCppRepeatedStatementSequences(file, tokens, pairs, info, regions, statementSequences);
-			collectCppNormalizedBody(file, tokens, pairs, info, regions, normalizedBodies, ledger);
+			lintCatchPatterns(file, tokens, pairs, info, regions, lintIssues, ledger);
+			lintTokenRedundantNumericSanitizationPattern(file, tokens, pairs, info, regions, lintIssues);
+			lintEnsureLazyInitPattern(file, tokens, pairs, info, regions, lintIssues);
+			lintTerminalReturnPaddingPattern(file, tokens, info, lintIssues);
+			lintConsecutiveDuplicateStatements(file, tokens, pairs, info, lintIssues);
+			lintHotPathCalls(file, tokens, pairs, info, regions, lintIssues);
+			lintLocalBindings(file, tokens, info, regions, lintIssues, ledger);
+			lintNullishReturnGuards(file, tokens, pairs, info, lintIssues);
+			lintStringSwitchChains(file, tokens, pairs, info, lintIssues);
+			lintRepeatedExpressions(file, tokens, pairs, info, lintIssues);
+			lintSemanticRepeatedExpressions(file, tokens, pairs, info, lintIssues);
+			collectTokenRepeatedStatementSequences(file, tokens, pairs, info, regions, statementSequences);
+			collectNormalizedBody(file, tokens, pairs, info, regions, normalizedBodies, ledger);
 		}
 		if (facadeStats !== null) {
-			lintCppFacadeStats(file, facadeStats, lintIssues);
+			lintFacadeStats(file, facadeStats, lintIssues);
 		}
 	}
 	addDuplicateExportedTypeIssues(exportedTypes, lintIssues);
 	addNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
 	addSemanticNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);
-	addCppRepeatedStatementSequenceIssues(statementSequences, lintIssues, ledger);
+	addTokenRepeatedStatementSequenceIssues(statementSequences, lintIssues, ledger);
 	const sourceTextByFile = new Map<string, string>();
 	for (let fileIndex = 0; fileIndex < fileAnalyses.length; fileIndex += 1) {
 		const analysis = fileAnalyses[fileIndex];

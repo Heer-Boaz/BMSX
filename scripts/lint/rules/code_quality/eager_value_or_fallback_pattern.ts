@@ -1,16 +1,16 @@
 import { defineLintRule } from '../../rule';
-import { cppCallTarget, cppQualifiedNameHasLeaf, splitCppArgumentRanges } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import { type CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { type CppLintIssue, pushTokenLintIssue } from '../cpp/support/diagnostics';
+import { cppCallTarget, cppQualifiedNameHasLeaf, splitArgumentRanges } from '../../../../src/bmsx/language/cpp/syntax/syntax';
+import { type Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { type LintIssue, pushTokenLintIssue } from '../cpp/support/diagnostics';
 
 export const eagerValueOrFallbackPatternRule = defineLintRule('code_quality', 'eager_value_or_fallback_pattern');
 
-export function lintCppEagerValueOrFallbackPattern(
+export function lintEagerValueOrFallbackPattern(
 	file: string,
-	tokens: readonly CppToken[],
+	tokens: readonly Token[],
 	pairs: readonly number[],
 	openParen: number,
-	issues: CppLintIssue[],
+	issues: LintIssue[],
 ): boolean {
 	const token = tokens[openParen];
 	const target = cppCallTarget(tokens, openParen);
@@ -30,12 +30,12 @@ export function lintCppEagerValueOrFallbackPattern(
 	return true;
 }
 
-function cppValueOrHasEagerFallbackWork(tokens: readonly CppToken[], pairs: readonly number[], openParen: number): boolean {
+function cppValueOrHasEagerFallbackWork(tokens: readonly Token[], pairs: readonly number[], openParen: number): boolean {
 	const closeParen = pairs[openParen];
 	if (closeParen <= openParen) {
 		return false;
 	}
-	const args = splitCppArgumentRanges(tokens, openParen + 1, closeParen);
+	const args = splitArgumentRanges(tokens, openParen + 1, closeParen);
 	if (args.length !== 1) {
 		return true;
 	}

@@ -1,8 +1,8 @@
-import { CPP_CONTROL_CALL_KEYWORDS, findCppAccessChainStart, findNextCppTokenText, hasCppDeclarationPrefix, isCppAccessSeparator, isCppComparisonOperator, previousCppIdentifier, trimmedCppExpressionText } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
-import { type CppToken, cppTokenText } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
-import { hasCppDeclarationPrefixNoise, isIgnoredName } from './bindings';
+import { CPP_CONTROL_CALL_KEYWORDS, findAccessChainStart, findNextTokenText, hasDeclarationPrefix, isAccessSeparator, isComparisonOperator, previousIdentifier, trimmedExpressionText } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
+import { type Token, cppTokenText } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
+import { hasDeclarationPrefixNoise, isIgnoredName } from './bindings';
 import { HOT_PATH_TEMPORARY_TYPES } from './numeric';
-import { CppLocalBinding } from './types';
+import { LocalBinding } from './types';
 
 export const DECLARATION_START_BLOCKLIST = new Set([
 	'break',
@@ -98,7 +98,7 @@ export function cppWordSegments(text: string): string[] {
 	return words === null ? [text.toLowerCase()] : words.map(word => word.toLowerCase());
 }
 
-export function declarationFromStatement(tokens: readonly CppToken[], start: number, end: number): CppLocalBinding | null {
+export function declarationFromStatement(tokens: readonly Token[], start: number, end: number): LocalBinding | null {
 	const declarationStart = start;
 	let isLeadingConst = false;
 	while (start < end && (tokens[start].text === 'const' || tokens[start].text === 'constexpr')) {
@@ -119,8 +119,8 @@ export function declarationFromStatement(tokens: readonly CppToken[], start: num
 			break;
 		}
 		if (text === '(') {
-			const nameIndex = previousCppIdentifier(tokens, index);
-			if (nameIndex > start && hasCppDeclarationPrefix(tokens, start, nameIndex)) {
+			const nameIndex = previousIdentifier(tokens, index);
+			if (nameIndex > start && hasDeclarationPrefix(tokens, start, nameIndex)) {
 				initializerIndex = index;
 			}
 			break;
@@ -129,11 +129,11 @@ export function declarationFromStatement(tokens: readonly CppToken[], start: num
 	if (initializerIndex < 0) {
 		return null;
 	}
-	const nameIndex = previousCppIdentifier(tokens, initializerIndex);
-	if (nameIndex < 0 || nameIndex <= start || !hasCppDeclarationPrefix(tokens, start, nameIndex)) {
+	const nameIndex = previousIdentifier(tokens, initializerIndex);
+	if (nameIndex < 0 || nameIndex <= start || !hasDeclarationPrefix(tokens, start, nameIndex)) {
 		return null;
 	}
-	if (hasCppDeclarationPrefixNoise(tokens, declarationStart, nameIndex)) {
+	if (hasDeclarationPrefixNoise(tokens, declarationStart, nameIndex)) {
 		return null;
 	}
 	if (DECLARATION_NAME_PREFIX_BLOCKLIST.has(tokens[nameIndex - 1].text)) {
@@ -144,7 +144,7 @@ export function declarationFromStatement(tokens: readonly CppToken[], start: num
 		return null;
 	}
 	const typeText = cppTokenText(tokens, declarationStart, nameIndex).replace(/\s+/g, ' ').trim();
-	const initializerText = trimmedCppExpressionText(tokens, initializerIndex + 1, end);
+	const initializerText = trimmedExpressionText(tokens, initializerIndex + 1, end);
 	let isConst = isLeadingConst;
 	let isReference = false;
 	let isPointer = false;
@@ -174,13 +174,13 @@ export function declarationFromStatement(tokens: readonly CppToken[], start: num
 		writeCount: 0,
 		memberAccessCount: 0,
 		initializerTextLength: initializerText.length,
-		isSimpleAliasInitializer: isCppSimpleAliasInitializer(tokens, initializerIndex + 1, end),
+		isSimpleAliasInitializer: isSimpleAliasInitializer(tokens, initializerIndex + 1, end),
 		firstReadLeftText: null,
 		firstReadRightText: null,
 	};
 }
 
-export function isCppSimpleAliasInitializer(tokens: readonly CppToken[], start: number, end: number): boolean {
+export function isSimpleAliasInitializer(tokens: readonly Token[], start: number, end: number): boolean {
 	let seenToken = false;
 	for (let index = start; index < end; index += 1) {
 		const token = tokens[index];
@@ -188,7 +188,7 @@ export function isCppSimpleAliasInitializer(tokens: readonly CppToken[], start: 
 			seenToken = true;
 			continue;
 		}
-		if (isCppAccessSeparator(token.text)) {
+		if (isAccessSeparator(token.text)) {
 			continue;
 		}
 		return false;
@@ -196,11 +196,11 @@ export function isCppSimpleAliasInitializer(tokens: readonly CppToken[], start: 
 	return seenToken;
 }
 
-export function isCppSingleUseSuppressingToken(text: string | null): boolean {
+export function isSingleUseSuppressingToken(text: string | null): boolean {
 	if (text === null) {
 		return false;
 	}
-	if (isCppAccessSeparator(text) || isCppComparisonOperator(text)) {
+	if (isAccessSeparator(text) || isComparisonOperator(text)) {
 		return true;
 	}
 	switch (text) {
@@ -218,15 +218,15 @@ export function isCppSingleUseSuppressingToken(text: string | null): boolean {
 	}
 }
 
-export function isCppTemporalSnapshotName(name: string): boolean {
+export function isTokenTemporalSnapshotName(name: string): boolean {
 	return /^(previous|prev|next|before|after|initial|was|had)[A-Z_]?/.test(name);
 }
 
-export function rangeContainsCapturingLambda(tokens: readonly CppToken[], start: number, end: number): boolean {
+export function rangeContainsCapturingLambda(tokens: readonly Token[], start: number, end: number): boolean {
 	for (let index = start; index < end; index += 1) {
 		if (tokens[index].text === '[') {
-			const close = findNextCppTokenText(tokens, index + 1, end, ']');
-			if (close > index + 1 && findNextCppTokenText(tokens, close + 1, end, '{') >= 0) {
+			const close = findNextTokenText(tokens, index + 1, end, ']');
+			if (close > index + 1 && findNextTokenText(tokens, close + 1, end, '{') >= 0) {
 				return true;
 			}
 		}
@@ -234,7 +234,7 @@ export function rangeContainsCapturingLambda(tokens: readonly CppToken[], start:
 	return false;
 }
 
-export function rangeContainsTemporaryAllocation(tokens: readonly CppToken[], start: number, end: number): boolean {
+export function rangeContainsTemporaryAllocation(tokens: readonly Token[], start: number, end: number): boolean {
 	for (let index = start; index < end; index += 1) {
 		if (tokens[index].text === 'new') {
 			return true;
@@ -245,7 +245,7 @@ export function rangeContainsTemporaryAllocation(tokens: readonly CppToken[], st
 		if (tokens[index].kind !== 'id') {
 			continue;
 		}
-		const chainStart = findCppAccessChainStart(tokens, index);
+		const chainStart = findAccessChainStart(tokens, index);
 		const text = cppTokenText(tokens, chainStart, index + 1);
 		if (text === 'std::make_unique' || text === 'std::make_shared' || HOT_PATH_TEMPORARY_TYPES.has(text)) {
 			return true;
@@ -254,7 +254,7 @@ export function rangeContainsTemporaryAllocation(tokens: readonly CppToken[], st
 	return false;
 }
 
-export function isCppCallIdentifier(tokens: readonly CppToken[], index: number): boolean {
+export function isCallIdentifier(tokens: readonly Token[], index: number): boolean {
 	const text = tokens[index].text;
 	if (CPP_CONTROL_CALL_KEYWORDS.has(text)) {
 		return false;

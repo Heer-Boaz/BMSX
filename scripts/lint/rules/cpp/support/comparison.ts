@@ -1,13 +1,13 @@
-import type { CppToken } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushTokenLintIssue, type CppLintIssue } from './diagnostics';
+import type { Token } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
+import { pushTokenLintIssue, type LintIssue } from './diagnostics';
 
-export function lintCppAdjacentEqualityComparison(
+export function lintAdjacentEqualityComparison(
 	file: string,
-	tokens: readonly CppToken[],
-	issues: CppLintIssue[],
+	tokens: readonly Token[],
+	issues: LintIssue[],
 	rule: string,
 	message: string,
-	matches: (left: CppToken, right: CppToken) => boolean,
+	matches: (left: Token, right: Token) => boolean,
 ): void {
 	for (let index = 0; index < tokens.length; index += 1) {
 		const token = tokens[index];

@@ -1,7 +1,7 @@
-import { cppAccessChainLeafName, cppCallTarget, findCppAccessChainStart, splitCppArgumentRanges } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
-import { type CppToken } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
+import { cppAccessChainLeafName, cppCallTarget, findAccessChainStart, splitArgumentRanges } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
+import { type Token } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
 import { TEXT_SEMANTIC_SIGNATURE_PREFIX } from '../../common/semantic_signature';
-import { isCppNumericSanitizationCall } from './numeric';
+import { isNumericSanitizationCall } from './numeric';
 
 export const SEMANTIC_NORMALIZATION_WRAPPER_SUFFIXES = [
 	'.join',
@@ -139,14 +139,14 @@ export function semanticOperationName(target: string): string {
 	return cppAccessChainLeafName(target);
 }
 
-export function collectSemanticBodySignatures(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number): string[] {
+export function collectSemanticBodySignatures(tokens: readonly Token[], pairs: readonly number[], start: number, end: number): string[] {
 	const callsByFamily = new Map<string, Map<string, number>>();
 	for (let index = start; index < end; index += 1) {
 		if (tokens[index].text !== '(' || pairs[index] < 0 || pairs[index] > end) {
 			continue;
 		}
 		const target = cppCallTarget(tokens, index);
-		if (target === null || (!isCppNumericSanitizationCall(tokens, index, target) && !isSemanticNormalizationWrapperTarget(target))) {
+		if (target === null || (!isNumericSanitizationCall(tokens, index, target) && !isSemanticNormalizationWrapperTarget(target))) {
 			continue;
 		}
 		const family = semanticNormalizationFamily(target);
@@ -178,22 +178,22 @@ export function collectSemanticBodySignatures(tokens: readonly CppToken[], pairs
 	return signatures;
 }
 
-export function collectSemanticNormalizationCallSignatures(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number): string[] {
+export function collectSemanticNormalizationCallSignatures(tokens: readonly Token[], pairs: readonly number[], start: number, end: number): string[] {
 	const signatures: string[] = [];
 	for (let index = start; index < end; index += 1) {
 		if (tokens[index].text !== '(' || pairs[index] < 0 || pairs[index] > end) {
 			continue;
 		}
 		const target = cppCallTarget(tokens, index);
-		if (target !== null && (isCppNumericSanitizationCall(tokens, index, target) || isSemanticNormalizationWrapperTarget(target))) {
+		if (target !== null && (isNumericSanitizationCall(tokens, index, target) || isSemanticNormalizationWrapperTarget(target))) {
 			const callEnd = pairs[index] + 1;
-			signatures.push(`${target}:${semanticCppExpressionFingerprint(target, tokens, findCppAccessChainStart(tokens, index - 1), callEnd)}`);
+			signatures.push(`${target}:${semanticExpressionFingerprint(target, tokens, findAccessChainStart(tokens, index - 1), callEnd)}`);
 		}
 	}
 	return signatures;
 }
 
-export function isCppSemanticFloorDivisionCall(tokens: readonly CppToken[], pairs: readonly number[], openParen: number, target: string | null): boolean {
+export function isSemanticFloorDivisionCall(tokens: readonly Token[], pairs: readonly number[], openParen: number, target: string | null): boolean {
 	if (target !== 'floor' && target !== 'std::floor') {
 		return false;
 	}
@@ -201,7 +201,7 @@ export function isCppSemanticFloorDivisionCall(tokens: readonly CppToken[], pair
 	if (closeParen < 0) {
 		return false;
 	}
-	const args = splitCppArgumentRanges(tokens, openParen + 1, closeParen);
+	const args = splitArgumentRanges(tokens, openParen + 1, closeParen);
 	if (args.length !== 1) {
 		return false;
 	}
@@ -213,7 +213,7 @@ export function isCppSemanticFloorDivisionCall(tokens: readonly CppToken[], pair
 	return false;
 }
 
-export function semanticCppExpressionFingerprint(target: string, tokens: readonly CppToken[], start: number, end: number): string {
+export function semanticExpressionFingerprint(target: string, tokens: readonly Token[], start: number, end: number): string {
 	let text = `${target}|`;
 	for (let index = start; index < end; index += 1) {
 		const token = tokens[index];

@@ -1,9 +1,9 @@
 import { LuaBinaryOperator, LuaSyntaxKind, type LuaExpression } from '../../../../src/bmsx/lua/syntax/ast';
 import { isLuaEmptyStringLiteral } from '../../../../src/bmsx/lua/syntax/literals';
-import { isCppEmptyStringToken } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { lintCppAdjacentEqualityComparison } from '../cpp/support/comparison';
-import type { CppLintIssue } from '../cpp/support/diagnostics';
+import { isEmptyStringToken } from '../../../../src/bmsx/language/cpp/syntax/syntax';
+import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { lintAdjacentEqualityComparison } from '../cpp/support/comparison';
+import type { LintIssue } from '../cpp/support/diagnostics';
 import type { LuaLintIssue, LuaLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 
@@ -31,13 +31,13 @@ function matchesLuaEmptyStringConditionPattern(expression: LuaExpression): boole
 	return isLuaEmptyStringLiteral(expression.left) || isLuaEmptyStringLiteral(expression.right);
 }
 
-export function lintCppEmptyStringConditionPattern(file: string, tokens: readonly CppToken[], issues: CppLintIssue[]): void {
-	lintCppAdjacentEqualityComparison(
+export function lintEmptyStringConditionPattern(file: string, tokens: readonly Token[], issues: LintIssue[]): void {
+	lintAdjacentEqualityComparison(
 		file,
 		tokens,
 		issues,
 		emptyStringConditionPatternRule.name,
 		'Empty-string condition checks are forbidden. Prefer explicit truthy/falsy checks.',
-		(left, right) => (isCppEmptyStringToken(left) && right.kind !== 'string') || (isCppEmptyStringToken(right) && left.kind !== 'string'),
+		(left, right) => (isEmptyStringToken(left) && right.kind !== 'string') || (isEmptyStringToken(right) && left.kind !== 'string'),
 	);
 }

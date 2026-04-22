@@ -1,8 +1,7 @@
 import { defineLintRule } from '../../rule';
-import type { TsLintIssue } from '../../ts_rule';
-import { type CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
-import { type CppToken, normalizedCppTokenText } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { type CppNormalizedBodyInfo } from '../cpp/support/diagnostics';
+import type { LintIssue } from '../../ts_rule';
+import { type FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
+import { type Token, normalizedTokenText } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { type NormalizedBodyInfo } from '../ts/support/declarations';
 import { type AnalysisRegion, lineInAnalysisRegion } from '../../../analysis/lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../../../analysis/quality_ledger';
@@ -12,7 +11,7 @@ import { collectSemanticBodySignatures, isSemanticNormalizationWrapperTarget } f
 
 export const normalizedAstDuplicatePatternRule = defineLintRule('code_quality', 'normalized_ast_duplicate_pattern');
 
-export function addNormalizedBodyDuplicateIssues(normalizedBodies: readonly NormalizedBodyInfo[], issues: TsLintIssue[]): void {
+export function addNormalizedBodyDuplicateIssues(normalizedBodies: readonly NormalizedBodyInfo[], issues: LintIssue[]): void {
 	const byFingerprint = new Map<string, NormalizedBodyInfo[]>();
 	for (let index = 0; index < normalizedBodies.length; index += 1) {
 		const entry = normalizedBodies[index];
@@ -51,7 +50,7 @@ export function addNormalizedBodyDuplicateIssues(normalizedBodies: readonly Norm
 	}
 }
 
-export function collectCppNormalizedBody(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, regions: readonly AnalysisRegion[], normalizedBodies: CppNormalizedBodyInfo[], ledger: QualityLedger): void {
+export function collectNormalizedBody(file: string, tokens: readonly Token[], pairs: readonly number[], info: FunctionInfo, regions: readonly AnalysisRegion[], normalizedBodies: NormalizedBodyInfo[], ledger: QualityLedger): void {
 	if (info.name.endsWith('Thunk')) {
 		noteQualityLedger(ledger, 'skipped_cpp_normalized_body_thunk');
 		return;
@@ -65,7 +64,7 @@ export function collectCppNormalizedBody(file: string, tokens: readonly CppToken
 		noteQualityLedger(ledger, 'skipped_cpp_normalized_body_wrapper');
 		return;
 	}
-	const bodyText = normalizedCppTokenText(tokens, info.bodyStart + 1, info.bodyEnd);
+	const bodyText = normalizedTokenText(tokens, info.bodyStart + 1, info.bodyEnd);
 	const semanticSignatures = collectSemanticBodySignatures(tokens, pairs, info.bodyStart + 1, info.bodyEnd);
 	const semanticBody = semanticSignatures.length > 0;
 	if (!semanticBody && bodyText.length < CPP_NORMALIZED_BODY_MIN_LENGTH) {

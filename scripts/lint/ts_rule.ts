@@ -1,14 +1,9 @@
 import ts from 'typescript';
-import { type LintRuleName } from './rule';
+import { type LintIssue, type LintRuleName } from './rule';
 
-export type TsLintIssue = {
-	kind: LintRuleName;
-	file: string;
-	line: number;
-	column: number;
-	name: string;
-	message: string;
-};
+export type { LintIssue };
+
+export type TsLintIssue = LintIssue;
 
 export function pushTsLintIssue(
 	issues: TsLintIssue[],
@@ -32,3 +27,5 @@ export function pushTsLintIssue(
 export function tsNodeStartLine(sourceFile: ts.SourceFile, node: ts.Node): number {
 	return sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
 }
+
+export const pushLintIssue = pushTsLintIssue;

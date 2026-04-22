@@ -1,11 +1,11 @@
 import { defineLintRule } from '../../rule';
-import type { TsLintIssue } from '../../ts_rule';
+import type { LintIssue } from '../../ts_rule';
 import type { NormalizedBodyInfo } from '../ts/support/declarations';
 import { semanticSignatureLabel } from '../ts/support/semantic';
 
 export const semanticNormalizedBodyDuplicatePatternRule = defineLintRule('code_quality', 'semantic_normalized_body_duplicate_pattern');
 
-export function addSemanticNormalizedBodyDuplicateIssues(normalizedBodies: readonly NormalizedBodyInfo[], issues: TsLintIssue[]): void {
+export function addSemanticNormalizedBodyDuplicateIssues(normalizedBodies: readonly NormalizedBodyInfo[], issues: LintIssue[]): void {
 	const bySignature = new Map<string, NormalizedBodyInfo[]>();
 	for (let index = 0; index < normalizedBodies.length; index += 1) {
 		const entry = normalizedBodies[index];

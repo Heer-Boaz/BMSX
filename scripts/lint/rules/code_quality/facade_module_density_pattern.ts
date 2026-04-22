@@ -1,8 +1,8 @@
-import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
-import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import type { FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
+import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
-import { type TsLintIssue as LintIssue, pushTsLintIssue } from '../../ts_rule';
+import { type LintIssue as LintIssue, pushLintIssue } from '../../ts_rule';
 import ts from 'typescript';
 import { isFunctionLikeValue } from '../../../../src/bmsx/language/ts/ast/functions';
 import { hasExportModifier } from '../../../../src/bmsx/language/ts/ast/expressions';
@@ -10,13 +10,13 @@ import { getFunctionWrapperTarget } from '../ts/support/declarations';
 
 export const facadeModuleDensityPatternRule = defineLintRule('code_quality', 'facade_module_density_pattern');
 
-export type CppFacadeStats = {
+export type FacadeStats = {
 	callableCount: number;
 	wrapperCount: number;
-	firstWrapperToken: CppToken;
+	firstWrapperToken: Token;
 };
 
-export function createCppFacadeStats(functions: readonly CppFunctionInfo[], tokens: readonly CppToken[]): CppFacadeStats | null {
+export function createFacadeStats(functions: readonly FunctionInfo[], tokens: readonly Token[]): FacadeStats | null {
 	if (functions.length === 0) {
 		return null;
 	}
@@ -27,7 +27,7 @@ export function createCppFacadeStats(functions: readonly CppFunctionInfo[], toke
 	};
 }
 
-export function lintCppFacadeStats(file: string, stats: CppFacadeStats, issues: CppLintIssue[]): void {
+export function lintFacadeStats(file: string, stats: FacadeStats, issues: LintIssue[]): void {
 	if (stats.wrapperCount < 3 || stats.wrapperCount * 10 < stats.callableCount * 6) {
 		return;
 	}
@@ -71,7 +71,7 @@ export function lintFacadeModuleDensity(sourceFile: ts.SourceFile, issues: LintI
 		}
 	}
 	if (exportedWrapperCount >= 3 && exportedWrapperCount * 10 >= exportedCallableCount * 6 && firstWrapperNode !== null) {
-		pushTsLintIssue(
+		pushLintIssue(
 			issues,
 			sourceFile,
 			firstWrapperNode,

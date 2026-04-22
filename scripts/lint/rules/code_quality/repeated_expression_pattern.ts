@@ -1,10 +1,10 @@
 import { repeatedAccessChainPatternRule } from './repeated_access_chain_pattern';
-import type { CppLintIssue } from '../cpp/support/diagnostics';
-import { cppTokenText, normalizedCppTokenText, type CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { collectCppStatementRanges, cppRangeHas, isCppAccessSeparator, isCppClockNowCallTarget, isCppComparisonOperator } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
-import type { TsLintIssue } from '../../ts_rule';
+import { cppTokenText, normalizedTokenText, type Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { collectStatementRanges, cppRangeHas, isAccessSeparator, isClockNowCallTarget, isComparisonOperator } from '../../../../src/bmsx/language/cpp/syntax/syntax';
+import type { FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
+import type { LintIssue } from '../../ts_rule';
 import { defineLintRule } from '../../rule';
+import { compactSampleText } from '../../text';
 import { type RepeatedExpressionInfo } from '../ts/support/ast';
 
 export const repeatedExpressionPatternRule = defineLintRule('code_quality', 'repeated_expression_pattern');
@@ -15,7 +15,7 @@ const REPEATED_EXPRESSION_PAIR_MIN_LENGTH = 48;
 export function addRepeatedExpressionIssues(
 	scope: ReadonlyMap<string, RepeatedExpressionInfo>,
 	fileName: string,
-	issues: TsLintIssue[],
+	issues: LintIssue[],
 ): void {
 	for (const info of scope.values()) {
 		if (info.count < MIN_REPEATED_EXPRESSION_COUNT) {
@@ -35,16 +35,12 @@ export function addRepeatedExpressionIssues(
 	}
 }
 
-function compactCppSampleText(text: string): string {
-	return text.length <= 180 ? text : `${text.slice(0, 177)}...`;
-}
-
-export function lintCppRepeatedExpressions(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, issues: CppLintIssue[]): void {
-	const expressions = new Map<string, { token: CppToken; count: number }>();
-	const repeatedAccessChains = new Map<string, { token: CppToken; count: number }>();
+export function lintRepeatedExpressions(file: string, tokens: readonly Token[], pairs: readonly number[], info: FunctionInfo, issues: LintIssue[]): void {
+	const expressions = new Map<string, { token: Token; count: number }>();
+	const repeatedAccessChains = new Map<string, { token: Token; count: number }>();
 	const record = (start: number, end: number): void => {
-		const text = normalizedCppTokenText(tokens, start, end);
-		if (!shouldReportCppRepeatedText(text)) {
+		const text = normalizedTokenText(tokens, start, end);
+		if (!shouldReportRepeatedText(text)) {
 			return;
 		}
 		const existing = expressions.get(text);
@@ -66,11 +62,11 @@ export function lintCppRepeatedExpressions(file: string, tokens: readonly CppTok
 		}
 		repeatedAccessChains.set(text, { token: tokens[index], count: 1 });
 	};
-	const ranges = collectCppStatementRanges(tokens, info.bodyStart + 1, info.bodyEnd);
+	const ranges = collectStatementRanges(tokens, info.bodyStart + 1, info.bodyEnd);
 	for (let index = 0; index < ranges.length; index += 1) {
 		const start = ranges[index][0];
 		const end = ranges[index][1];
-		if (cppRangeHas(tokens, start, end, token => isCppComparisonOperator(token.text))) {
+		if (cppRangeHas(tokens, start, end, token => isComparisonOperator(token.text))) {
 			record(start, end);
 		}
 	}
@@ -87,7 +83,7 @@ export function lintCppRepeatedExpressions(file: string, tokens: readonly CppTok
 			line: value.token.line,
 			column: value.token.column,
 			name: repeatedExpressionPatternRule.name,
-			message: `Expression is repeated ${value.count} times in the same scope: ${compactCppSampleText(text)}`,
+			message: `Expression is repeated ${value.count} times in the same scope: ${compactSampleText(text)}`,
 		});
 	}
 	for (const [text, value] of repeatedAccessChains) {
@@ -105,12 +101,12 @@ export function lintCppRepeatedExpressions(file: string, tokens: readonly CppTok
 	}
 }
 
-function cppRepeatedAccessChain(tokens: readonly CppToken[], pairs: readonly number[], start: number): string | null {
+function cppRepeatedAccessChain(tokens: readonly Token[], pairs: readonly number[], start: number): string | null {
 	if (tokens[start]?.kind !== 'id') {
 		return null;
 	}
 	const previous = tokens[start - 1]?.text;
-	if (isCppAccessSeparator(previous)) {
+	if (isAccessSeparator(previous)) {
 		return null;
 	}
 	let index = start + 1;
@@ -121,7 +117,7 @@ function cppRepeatedAccessChain(tokens: readonly CppToken[], pairs: readonly num
 			continue;
 		}
 		const separator = tokens[index]?.text;
-		if (!isCppAccessSeparator(separator) || tokens[index + 1]?.kind !== 'id') {
+		if (!isAccessSeparator(separator) || tokens[index + 1]?.kind !== 'id') {
 			break;
 		}
 		segmentCount += 1;
@@ -131,12 +127,12 @@ function cppRepeatedAccessChain(tokens: readonly CppToken[], pairs: readonly num
 		return null;
 	}
 	const text = cppTokenText(tokens, start, index);
-	if (!shouldReportCppRepeatedText(text) || isCppClockNowCallTarget(text)) {
+	if (!shouldReportRepeatedText(text) || isClockNowCallTarget(text)) {
 		return null;
 	}
-	return compactCppSampleText(text);
+	return compactSampleText(text);
 }
 
-function shouldReportCppRepeatedText(text: string): boolean {
+function shouldReportRepeatedText(text: string): boolean {
 	return text.length >= 24 && !text.startsWith('this.') && !text.startsWith('this->');
 }

@@ -1,28 +1,14 @@
-import type { CppToken } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
-import { type LintRuleName } from '../../../rule';
+import type { Token } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
+import { type LintIssue, type LintRuleName } from '../../../rule';
+import { type NormalizedBodyInfo } from '../../../normalized_body';
 
-export type CppLintIssue = {
-	kind: LintRuleName;
-	file: string;
-	line: number;
-	column: number;
-	name: string;
-	message: string;
-};
-
-export type CppNormalizedBodyInfo = {
-	name: string;
-	file: string;
-	line: number;
-	column: number;
-	fingerprint: string;
-	semanticSignatures: string[] | null;
-};
+export type { LintIssue };
+export type { NormalizedBodyInfo };
 
 export function pushTokenLintIssue(
-	issues: CppLintIssue[],
+	issues: LintIssue[],
 	file: string,
-	token: CppToken,
+	token: Token,
 	kind: LintRuleName,
 	message: string,
 	name = kind,

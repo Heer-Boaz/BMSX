@@ -1,5 +1,5 @@
 import { noteQualityLedger, type QualityLedger } from '../../../../analysis/quality_ledger';
-import { type LintRuleName } from '../../../rule';
+import { type LintIssue, type LintRuleName } from '../../../rule';
 import ts from 'typescript';
 import { getCallTargetLeafName, getExpressionText, unwrapExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
 import { isAssignmentOperator } from '../../../../../src/bmsx/language/ts/ast/operators';
@@ -9,14 +9,7 @@ import { nullishLiteralComparison } from './nullish';
 import { binaryParentAndSibling } from './statements';
 import { LintBinding } from './types';
 
-export type LintIssue = {
-	kind: LintRuleName;
-	file: string;
-	line: number;
-	column: number;
-	name: string;
-	message: string;
-};
+export type { LintIssue };
 
 export type RepeatedExpressionInfo = {
 	line: number;

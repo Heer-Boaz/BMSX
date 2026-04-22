@@ -1,14 +1,14 @@
 import ts from 'typescript';
-import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
-import { collectCppStatementRanges, cppRangeHas } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import type { FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
+import { collectStatementRanges, cppRangeHas } from '../../../../src/bmsx/language/cpp/syntax/syntax';
+import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../../../analysis/quality_ledger';
 import { defineLintRule } from '../../rule';
-import { pushTsLintIssue, tsNodeStartLine, type TsLintIssue } from '../../ts_rule';
-import { lintCppEmptyCatchPattern, type CppCatchBlockInfo } from './empty_catch_pattern';
-import { lintCppUselessCatchPattern } from './useless_catch_pattern';
+import { pushLintIssue, tsNodeStartLine, type LintIssue } from '../../ts_rule';
+import { lintTokenEmptyCatchPattern, type CatchBlockInfo } from './empty_catch_pattern';
+import { lintTokenUselessCatchPattern } from './useless_catch_pattern';
 
 export const silentCatchFallbackPatternRule = defineLintRule('common', 'silent_catch_fallback_pattern');
 
@@ -16,7 +16,7 @@ export function lintSilentCatchFallbackPattern(
 	node: ts.CatchClause,
 	sourceFile: ts.SourceFile,
 	regions: readonly AnalysisRegion[],
-	issues: TsLintIssue[],
+	issues: LintIssue[],
 	ledger: QualityLedger,
 ): boolean {
 	const statements = node.block.statements;
@@ -29,7 +29,7 @@ export function lintSilentCatchFallbackPattern(
 			noteQualityLedger(ledger, 'allowed_catch_fallible_boundary');
 			return true;
 		}
-		pushTsLintIssue(
+		pushLintIssue(
 			issues,
 			sourceFile,
 			node,
@@ -41,13 +41,13 @@ export function lintSilentCatchFallbackPattern(
 	return false;
 }
 
-export function lintCppCatchPatterns(
+export function lintCatchPatterns(
 	file: string,
-	tokens: readonly CppToken[],
+	tokens: readonly Token[],
 	pairs: readonly number[],
-	info: CppFunctionInfo,
+	info: FunctionInfo,
 	regions: readonly AnalysisRegion[],
-	issues: CppLintIssue[],
+	issues: LintIssue[],
 	ledger: QualityLedger,
 ): void {
 	for (let index = info.bodyStart + 1; index < info.bodyEnd; index += 1) {
@@ -55,26 +55,26 @@ export function lintCppCatchPatterns(
 			continue;
 		}
 		noteQualityLedger(ledger, 'cpp_catch_boundary_checked');
-		const catchInfo = readCppCatchBlock(tokens, pairs, info, index);
+		const catchInfo = readCatchBlock(tokens, pairs, info, index);
 		if (catchInfo === null) {
 			continue;
 		}
-		if (lintCppEmptyCatchPattern(file, tokens, catchInfo, issues)) {
+		if (lintTokenEmptyCatchPattern(file, tokens, catchInfo, issues)) {
 			continue;
 		}
-		if (lintCppUselessCatchPattern(file, tokens, catchInfo, issues)) {
+		if (lintTokenUselessCatchPattern(file, tokens, catchInfo, issues)) {
 			continue;
 		}
-		lintCppSilentCatchFallbackPattern(file, tokens, catchInfo, regions, issues, ledger);
+		lintTokenSilentCatchFallbackPattern(file, tokens, catchInfo, regions, issues, ledger);
 	}
 }
 
-export function lintCppSilentCatchFallbackPattern(
+export function lintTokenSilentCatchFallbackPattern(
 	file: string,
-	tokens: readonly CppToken[],
-	catchInfo: CppCatchBlockInfo,
+	tokens: readonly Token[],
+	catchInfo: CatchBlockInfo,
 	regions: readonly AnalysisRegion[],
-	issues: CppLintIssue[],
+	issues: LintIssue[],
 	ledger: QualityLedger,
 ): boolean {
 	if (!cppRangeHas(tokens, catchInfo.blockOpen + 1, catchInfo.blockClose, token => token.text === 'return')) {
@@ -94,7 +94,7 @@ export function lintCppSilentCatchFallbackPattern(
 	return true;
 }
 
-function readCppCatchBlock(tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, catchToken: number): CppCatchBlockInfo | null {
+function readCatchBlock(tokens: readonly Token[], pairs: readonly number[], info: FunctionInfo, catchToken: number): CatchBlockInfo | null {
 	const declarationClose = pairs[catchToken + 1];
 	if (declarationClose < 0 || declarationClose >= info.bodyEnd) {
 		return null;
@@ -109,6 +109,6 @@ function readCppCatchBlock(tokens: readonly CppToken[], pairs: readonly number[]
 		declarationClose,
 		blockOpen,
 		blockClose,
-		statements: collectCppStatementRanges(tokens, blockOpen + 1, blockClose),
+		statements: collectStatementRanges(tokens, blockOpen + 1, blockClose),
 	};
 }

@@ -1,21 +1,21 @@
 import { defineLintRule } from '../../rule';
-import { type CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
-import { collectCppStatementRanges } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import { type CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { type CppLintIssue, pushTokenLintIssue } from '../cpp/support/diagnostics';
+import { type FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
+import { collectStatementRanges } from '../../../../src/bmsx/language/cpp/syntax/syntax';
+import { type Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { type LintIssue, pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../../../analysis/quality_ledger';
 import { singleUseLocalPatternRule } from './single_use_local_pattern';
 import { CPP_LOCAL_CONST_PATTERN_ENABLED, declarationFromStatement } from '../cpp/support/ast';
-import { cppLocalConstCandidateKind, markBindingUses, shouldReportCppLocalConst, shouldReportTokenSingleUseLocal } from '../cpp/support/bindings';
+import { cppLocalConstCandidateKind, markBindingUses, shouldReportTokenLocalConst, shouldReportTokenSingleUseLocal } from '../cpp/support/bindings';
 import { ConstLocalContext } from '../lua_cart/impl/support/types';
 import { pushIssue } from '../lua_cart/impl/support/lint_context';
 import { leaveLuaBindingScope } from '../lua_cart/impl/support/bindings';
 
 export const localConstPatternRule = defineLintRule('common', 'local_const_pattern');
 
-export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], info: CppFunctionInfo, regions: readonly AnalysisRegion[], issues: CppLintIssue[], ledger: QualityLedger): void {
-	const ranges = collectCppStatementRanges(tokens, info.bodyStart + 1, info.bodyEnd);
+export function lintLocalBindings(file: string, tokens: readonly Token[], info: FunctionInfo, regions: readonly AnalysisRegion[], issues: LintIssue[], ledger: QualityLedger): void {
+	const ranges = collectStatementRanges(tokens, info.bodyStart + 1, info.bodyEnd);
 	for (let index = 0; index < ranges.length; index += 1) {
 		const binding = declarationFromStatement(tokens, ranges[index][0], ranges[index][1]);
 		if (binding === null) {
@@ -29,7 +29,7 @@ export function lintCppLocalBindings(file: string, tokens: readonly CppToken[], 
 		if (!CPP_LOCAL_CONST_PATTERN_ENABLED && couldBeConst) {
 			noteQualityLedger(ledger, 'skipped_cpp_local_const_disabled');
 			noteQualityLedger(ledger, `skipped_cpp_local_const_${cppLocalConstCandidateKind(info, regions, tokens, binding)}`);
-		} else if (CPP_LOCAL_CONST_PATTERN_ENABLED && shouldReportCppLocalConst(binding)) {
+		} else if (CPP_LOCAL_CONST_PATTERN_ENABLED && shouldReportTokenLocalConst(binding)) {
 			pushTokenLintIssue(issues, file, tokens[binding.nameToken], localConstPatternRule.name, `Prefer "const" for "${binding.name}"; it is never reassigned.`);
 		} else if (couldBeConst) {
 			noteQualityLedger(ledger, 'skipped_cpp_local_const_heuristic');
