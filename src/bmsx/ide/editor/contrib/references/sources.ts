@@ -186,7 +186,9 @@ export function filterReferenceCatalog(options: {
 		selectionIndex = 0;
 	}
 	options.state.setActiveIndex(selectionIndex);
+	// start value-or-boundary -- reference result window offset is bounded once against the current filtered list.
 	let displayOffset = clamp(selectionIndex - Math.floor(options.pageSize / 2), 0, Math.max(0, matches.length - options.pageSize));
+	// end value-or-boundary
 	if (selectionIndex >= displayOffset + options.pageSize) {
 		displayOffset = selectionIndex - options.pageSize + 1;
 	}
@@ -294,9 +296,8 @@ function rangeToSearchMatch(
 	if (rowIndex < 0 || rowIndex >= lines.length) {
 		return null;
 	}
-	const line = lines[rowIndex] ?? '';
-	const start = clamp(range.start.column - 1, 0, line.length);
-	const end = clamp(Math.max(start, range.end.column - 1) + 1, start, line.length);
+	const start = range.start.column - 1;
+	const end = range.end.column;
 	return end > start ? { row: rowIndex, start, end } : null;
 }
 
@@ -328,7 +329,7 @@ function createCatalogEntry(args: {
 }
 
 function buildReferenceSnippet(lines: readonly string[], match: SearchMatch): string {
-	const line = lines[match.row] ?? '';
+	const line = lines[match.row];
 	const start = clamp(match.start - 20, 0, line.length);
 	const end = clamp(match.end + 20, start, line.length);
 	const snippet = line.slice(start, end).trim();

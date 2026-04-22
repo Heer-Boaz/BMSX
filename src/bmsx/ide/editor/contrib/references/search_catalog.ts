@@ -1,5 +1,5 @@
 import * as constants from '../../../common/constants';
-import { showEditorMessage } from '../../../workbench/common/feedback_state';
+import { showEditorMessage } from '../../../common/feedback_state';
 import type { ReferenceMatchInfo } from './state';
 import type { CodeTabContext } from '../../../common/models';
 import { symbolSearchPageSize } from '../../ui/view/view';

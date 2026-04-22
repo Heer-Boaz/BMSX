@@ -1,10 +1,9 @@
 import { editorRuntimeState } from '../../common/runtime_state';
-import { showEditorMessage } from '../../../workbench/common/feedback_state';
+import { showEditorMessage } from '../../../common/feedback_state';
 import * as constants from '../../../common/constants';
 import { clamp, clamp_wrap } from '../../../../common/clamp';
 import { getSelectionRange, getSelectionText } from '../../editing/text_editing_and_selection';
 import type { GlobalSearchJob, GlobalSearchMatch, SearchComputationJob, SearchMatch, TextField } from '../../../common/models';
-import type { ResourceDescriptor } from '../../../../rompack/resource';
 import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { enqueueBackgroundTask } from '../../../common/background_tasks';
@@ -57,14 +56,6 @@ function buildSnippet(line: string, start: number, end: number): string {
 	if (sliceStart > 0) snippet = `…${snippet}`;
 	if (sliceEnd < line.length) snippet = `${snippet}…`;
 	return snippet.length === 0 ? '<blank>' : snippet;
-}
-
-function descriptorLabel(descriptor: ResourceDescriptor): string {
-	return descriptor.path.replace(/\\\\/g, '/');
-}
-
-function showNoMatches(): void {
-	showEditorMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
 }
 
 export function activeSearchMatchCount(): number {
@@ -332,7 +323,7 @@ function runGlobalSearchSlice(job: GlobalSearchJob): boolean {
 				const descriptor = job.descriptors[job.descriptorIndex];
 				const match: GlobalSearchMatch = {
 					descriptor,
-					pathLabel: descriptorLabel(descriptor),
+					pathLabel: descriptor.path.replace(/\\\\/g, '/'),
 					row,
 					start,
 					end,
@@ -409,7 +400,7 @@ function focusGlobalMatch(index: number): void {
 	});
 }
 
-function nextSearchIndex(delta: number, wrap: boolean): number {
+function nextSearchIndex(delta: number, wrap?: boolean): number {
 	const total = activeSearchMatchCount();
 	let next = editorSearchState.currentIndex;
 	if (next < 0) {
@@ -430,14 +421,13 @@ export function stepSearchSelection(delta: number, options?: { wrap?: boolean; p
 	const total = activeSearchMatchCount();
 	if (total === 0) {
 		if (!options?.preview) {
-			showNoMatches();
+			showEditorMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
 		}
 		return;
 	}
-	const wrap = options?.wrap === true;
-	const preview = options?.preview === true;
-	const keepSearchActive = options?.keepSearchActive === true || editorSearchState.active;
-	const next = nextSearchIndex(delta, wrap);
+	const preview = options?.preview;
+	const keepSearchActive = options?.keepSearchActive || editorSearchState.active;
+	const next = nextSearchIndex(delta, options?.wrap);
 	applySearchSelection(next, { preview, keepSearchActive });
 }
 
@@ -450,7 +440,7 @@ export function applySearchSelection(index: number, options?: { preview?: boolea
 	ensureSearchSelectionVisible();
 
 	if (editorSearchState.scope === 'local') {
-		focusLocalMatch(targetIndex, options?.preview !== true);
+		focusLocalMatch(targetIndex, !options?.preview);
 	} else if (!options?.preview) {
 		focusGlobalMatch(targetIndex);
 	}

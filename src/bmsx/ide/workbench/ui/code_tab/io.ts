@@ -1,4 +1,4 @@
-import { showEditorMessage, showEditorWarningBanner } from '../../common/feedback_state';
+import { showEditorMessage, showEditorWarningBanner } from '../../../common/feedback_state';
 import { editorDocumentState } from '../../../editor/editing/document_state';
 import type { CodeTabContext, CodeTabMode, ResourceDescriptor } from '../../../common/models';
 import * as constants from '../../../common/constants';

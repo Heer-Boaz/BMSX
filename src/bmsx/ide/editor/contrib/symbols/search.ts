@@ -1,7 +1,7 @@
 import { scheduleMicrotask } from '../../../../platform/platform';
 import * as constants from '../../../common/constants';
 import { renameController } from '../rename/controller';
-import { showEditorMessage } from '../../../workbench/common/feedback_state';
+import { showEditorMessage } from '../../../common/feedback_state';
 import { clearReferenceHighlights, navigateToLuaDefinition } from '../intellisense/engine';
 import { closeSearch } from '../find/search';
 import { getActiveCodeTabContext } from '../../../workbench/ui/code_tab/contexts';

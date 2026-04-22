@@ -1,6 +1,6 @@
 import * as constants from '../../../common/constants';
 import { resourcePanel } from './panel/controller';
-import { showEditorMessage } from '../../common/feedback_state';
+import { showEditorMessage } from '../../../common/feedback_state';
 import { resetBlink } from '../../../editor/render/caret';
 import { refreshResourcePanelContents } from '../../../editor/ui/view/view';
 import { openLuaCodeTab } from '../../ui/code_tab/io';

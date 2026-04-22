@@ -8,7 +8,7 @@ import * as constants from '../../../common/constants';
 import { CodeLayout } from '../code_layout';
 import { markDiagnosticsDirty } from '../../contrib/diagnostics/analysis';
 import { computeSearchPageStats } from '../../contrib/find/search';
-import { showEditorMessage } from '../../../workbench/common/feedback_state';
+import { showEditorMessage } from '../../../common/feedback_state';
 import { editorChromeState } from '../../../workbench/ui/chrome_state';
 import { editorPointerState } from '../../input/pointer/state';
 import { editorCaretState } from './caret/state';

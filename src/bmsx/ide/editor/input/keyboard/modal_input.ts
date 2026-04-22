@@ -1,5 +1,5 @@
 import { closeSearch } from '../../contrib/find/search';
-import { editorFeedbackState } from '../../../workbench/common/feedback_state';
+import { editorFeedbackState } from '../../../common/feedback_state';
 import { closeBlockingWorkbenchModal, hasBlockingWorkbenchModal } from '../../../workbench/contrib/modal/blocking_modal';
 import { closeCreateResourcePrompt } from '../../../workbench/contrib/resources/create';
 import { closeResourceSearch } from '../../../workbench/contrib/resources/search';

@@ -1,5 +1,5 @@
 import * as constants from '../../../common/constants';
-import { showEditorMessage } from '../../common/feedback_state';
+import { showEditorMessage } from '../../../common/feedback_state';
 import { listResourcesStrict } from './catalog';
 import { clampQuickInputDisplayOffset, advanceQuickInputSelection } from '../../../editor/navigation/quick_input_navigation';
 import { resetBlink } from '../../../editor/render/caret';

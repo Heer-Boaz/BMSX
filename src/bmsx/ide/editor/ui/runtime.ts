@@ -8,7 +8,7 @@ import { getActiveCodeTabContext, getActiveCodeTabContextId } from '../../workbe
 import { storeActiveCodeTabContext } from '../../workbench/ui/code_tab/activation';
 import { cancelGlobalSearchJob, startSearchJob } from '../contrib/find/search';
 import { editorRuntimeState } from '../common/runtime_state';
-import { editorFeedbackState, setEditorFeedbackActive, showEditorMessage, updateEditorMessage } from '../../workbench/common/feedback_state';
+import { editorFeedbackState, setEditorFeedbackActive, showEditorMessage, updateEditorMessage } from '../../common/feedback_state';
 import { bumpTextVersion } from '../common/text_runtime';
 import { ensureCursorVisible } from './view/caret/caret';
 import { drawProblemsPanel } from '../../workbench/contrib/problems/panel/controller';

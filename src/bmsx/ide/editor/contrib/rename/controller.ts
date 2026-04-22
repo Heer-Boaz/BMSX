@@ -6,7 +6,7 @@ import * as constants from '../../../common/constants';
 import { clamp } from '../../../../common/clamp';
 import { LuaLexer } from '../../../../lua/syntax/lexer';
 import { focusEditorFromRename } from './prompt';
-import { showEditorMessage } from '../../../workbench/common/feedback_state';
+import { showEditorMessage } from '../../../common/feedback_state';
 import { setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { commitRename } from './operations';
 import { handleRenameControllerInput } from './input';

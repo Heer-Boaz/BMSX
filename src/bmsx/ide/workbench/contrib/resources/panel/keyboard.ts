@@ -1,5 +1,5 @@
 import * as constants from '../../../../common/constants';
-import { showEditorMessage } from '../../../common/feedback_state';
+import { showEditorMessage } from '../../../../common/feedback_state';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../../editor/input/keyboard/key_input';
 import { focusEditorFromResourcePanel } from '../navigation';
 import type { ResourcePanelController } from './controller';

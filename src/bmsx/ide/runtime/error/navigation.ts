@@ -3,7 +3,7 @@ import { centerCursorVertically, setCursorPosition } from '../../editor/ui/view/
 import { beginNavigationCapture, completeNavigation } from '../../editor/navigation/navigation_history';
 import { activateCodeTab, isTabActive, setActiveTab } from '../../workbench/ui/tabs';
 import { getActiveCodeTabContext, getCodeTabContexts } from '../../workbench/ui/code_tab/contexts';
-import { showEditorMessage } from '../../workbench/common/feedback_state';
+import { showEditorMessage } from '../../common/feedback_state';
 import type { CodeTabContext, RuntimeErrorOverlay } from '../../common/models';
 import { resetBlink } from '../../editor/render/caret';
 import { showRuntimeErrorInChunk } from '../../editor/render/error_overlay';

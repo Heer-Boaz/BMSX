@@ -3,7 +3,7 @@ import * as workbenchMode from '../../../runtime/workbench_mode';
 import { type LuaDebuggerSessionMetrics } from '../../../../lua/debugger';
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import { editorDebuggerState } from './state';
-import { showEditorMessage } from '../../common/feedback_state';
+import { showEditorMessage } from '../../../common/feedback_state';
 import { focusChunkSource } from '../resources/navigation';
 import { getActiveCodeTabContext } from '../../ui/code_tab/contexts';
 import { clamp, clamp_fallback } from '../../../../common/clamp';

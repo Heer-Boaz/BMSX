@@ -1,5 +1,5 @@
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
-import { showEditorMessage } from '../../common/feedback_state';
+import { showEditorMessage } from '../../../common/feedback_state';
 import * as constants from '../../../common/constants';
 import { Runtime } from '../../../../machine/runtime/runtime';
 import * as workbenchMode from '../../../runtime/workbench_mode';

@@ -6,7 +6,7 @@ import { Scrollbar } from '../../../../editor/ui/scrollbar';
 import { renderResourcePanel } from '../../../render/resource_panel';
 import type { ResourceBrowserItem } from '../../../../common/models';
 import type { RectBounds } from '../../../../../rompack/format';
-import { showEditorMessage } from '../../../common/feedback_state';
+import { showEditorMessage } from '../../../../common/feedback_state';
 import { measureTextRange } from '../../../../editor/common/text_layout';
 import type { CallHierarchyView } from '../../../../editor/contrib/call_hierarchy/view';
 import { editorViewState } from '../../../../editor/ui/view/state';

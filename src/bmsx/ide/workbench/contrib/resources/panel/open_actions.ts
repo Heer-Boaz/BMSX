@@ -1,6 +1,6 @@
 import type { ResourceBrowserItem } from '../../../../common/models';
 import * as constants from '../../../../common/constants';
-import { showEditorMessage } from '../../../common/feedback_state';
+import { showEditorMessage } from '../../../../common/feedback_state';
 import { focusEditorFromResourcePanel, openResourceDescriptor, focusChunkSource } from '../navigation';
 import { applyDefinitionSelection } from '../../../../editor/contrib/intellisense/engine';
 import { toggleSelectedCallHierarchyExpansion } from './navigation';

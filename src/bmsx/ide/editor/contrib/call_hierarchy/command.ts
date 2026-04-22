@@ -1,5 +1,5 @@
 import * as constants from '../../../common/constants';
-import { showEditorMessage } from '../../../workbench/common/feedback_state';
+import { showEditorMessage } from '../../../common/feedback_state';
 import { showCallHierarchyView } from './panel';
 import { resolveCallHierarchyViewAt } from './query';
 

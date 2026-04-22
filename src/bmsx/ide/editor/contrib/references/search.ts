@@ -1,6 +1,6 @@
 import * as constants from '../../../common/constants';
 import { renameController } from '../rename/controller';
-import { showEditorMessage } from '../../../workbench/common/feedback_state';
+import { showEditorMessage } from '../../../common/feedback_state';
 import { extractHoverExpression, navigateToLuaDefinition } from '../intellisense/engine';
 import { getActiveCodeTabContext } from '../../../workbench/ui/code_tab/contexts';
 import { resetBlink } from '../../render/caret';

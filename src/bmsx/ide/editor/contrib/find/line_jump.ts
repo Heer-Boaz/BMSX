@@ -1,6 +1,6 @@
 import * as constants from '../../../common/constants';
 import { renameController } from '../rename/controller';
-import { showEditorMessage } from '../../../workbench/common/feedback_state';
+import { showEditorMessage } from '../../../common/feedback_state';
 import { clearReferenceHighlights } from '../intellisense/engine';
 import { closeSearch } from './search';
 import { resetBlink } from '../../render/caret';

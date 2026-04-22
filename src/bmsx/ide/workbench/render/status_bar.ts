@@ -3,7 +3,7 @@ import { getActiveSymbolSearchMatch } from '../../editor/contrib/symbols/shared'
 import { statusAreaHeight, getStatusMessageLines } from '../common/layout';
 import { isResourceViewActive } from '../ui/tabs';
 import { getActiveCodeTabContext, isCodeTabActive } from '../ui/code_tab/contexts';
-import { editorFeedbackState } from '../common/feedback_state';
+import { editorFeedbackState } from '../../common/feedback_state';
 import { getActiveResourceViewer } from '../contrib/resources/view_tabs';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { measureText, truncateTextToWidth } from '../../editor/common/text_layout';

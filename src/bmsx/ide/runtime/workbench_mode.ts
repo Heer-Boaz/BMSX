@@ -13,7 +13,7 @@ import { publishOverlayFrame } from '../../render/editor/overlay_queue';
 import * as constants from '../common/constants';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../common/constants';
 import { editorDebuggerState } from '../workbench/contrib/debugger/state';
-import { showEditorWarningBanner } from '../workbench/common/feedback_state';
+import { showEditorWarningBanner } from '../common/feedback_state';
 import type { RuntimeErrorDetails } from '../common/models';
 import { buildLuaStackFrames } from '../../machine/firmware/globals';
 import { seedDefaultLuaBuiltins } from '../../machine/firmware/builtins';

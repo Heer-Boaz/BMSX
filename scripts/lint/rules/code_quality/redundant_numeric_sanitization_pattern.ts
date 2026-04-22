@@ -20,7 +20,13 @@ export function lintRedundantNumericSanitizationPattern(
 	regions: readonly AnalysisRegion[],
 	issues: LintIssue[],
 ): void {
-	if (lineInAnalysisRegion(regions, 'hot-path', nodeStartLine(sourceFile, node)) || !isNumericSanitizerCall(node)) {
+	const line = nodeStartLine(sourceFile, node);
+	if (
+		lineInAnalysisRegion(regions, 'hot-path', line)
+		|| lineInAnalysisRegion(regions, 'numeric-sanitization-acceptable', line)
+		|| lineInAnalysisRegion(regions, 'value-or-boundary', line)
+		|| !isNumericSanitizerCall(node)
+	) {
 		return;
 	}
 	if (parentChainContainsCallExpression(node.parent, call => call !== node && isNumericSanitizerCall(call))) {

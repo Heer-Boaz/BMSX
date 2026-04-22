@@ -1,5 +1,5 @@
 import * as constants from '../../common/constants';
-import { editorFeedbackState } from '../../workbench/common/feedback_state';
+import { editorFeedbackState } from '../../common/feedback_state';
 import { ensureVisualLines } from '../common/text_layout';
 import { getCodeAreaBounds, maximumLineLength } from './view/view';
 import { editorViewState } from './view/state';

@@ -1,5 +1,5 @@
 import * as constants from '../../../../common/constants';
-import { showEditorMessage } from '../../../../workbench/common/feedback_state';
+import { showEditorMessage } from '../../../../common/feedback_state';
 import { applyInlineFieldEditing } from '../../../ui/inline_text_field';
 import { applyResourceSearchSelection, closeResourceSearch, focusEditorFromResourceSearch } from '../../../../workbench/contrib/resources/search';
 import { applyLineJumpFieldText, openLineJump } from '../../../contrib/find/line_jump';

@@ -2,7 +2,7 @@ import type { LuaSymbolEntry } from '../../../../lua/semantic_contracts';
 import * as constants from '../../../common/constants';
 import { computeSourceLabel } from '../../../common/paths';
 import { getActiveCodeTabContext } from '../../../workbench/ui/code_tab/contexts';
-import { showEditorMessage } from '../../../workbench/common/feedback_state';
+import { showEditorMessage } from '../../../common/feedback_state';
 import { listGlobalLuaSymbols, listLuaSymbols } from '../intellisense/engine';
 import { symbolKindLabel } from '../intellisense/semantic_model';
 import { extractErrorMessage } from '../../../../lua/value';

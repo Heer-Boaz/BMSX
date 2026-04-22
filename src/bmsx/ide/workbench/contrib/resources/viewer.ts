@@ -104,8 +104,12 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 			}
 			const metadata = meta as unknown as Record<string, unknown>;
 			for (const key in metadata) {
-				if (key === 'width' || key === 'height' || key === 'atlassed' || key === 'atlasid') {
-					continue;
+				switch (key) {
+					case 'width':
+					case 'height':
+					case 'atlassed':
+					case 'atlasid':
+						continue;
 				}
 				appendResourceViewerLine(lines, `${key}: ${describeMetadataValue(metadata[key])}`);
 			}
@@ -122,9 +126,11 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 			if (typeof bufferSize === 'number') {
 				appendResourceViewerLine(lines, `Buffer Size: ${bufferSize} bytes`);
 			}
-			const audioMetadata = (audio.audiometa ?? {}) as Record<string, unknown>;
-			for (const key in audioMetadata) {
-				appendResourceViewerLine(lines, `${key}: ${describeMetadataValue(audioMetadata[key])}`);
+			if (audio.audiometa) {
+				const audioMetadata = audio.audiometa as unknown as Record<string, unknown>;
+				for (const key in audioMetadata) {
+					appendResourceViewerLine(lines, `${key}: ${describeMetadataValue(audioMetadata[key])}`);
+				}
 			}
 			break;
 		}

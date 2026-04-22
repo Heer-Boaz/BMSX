@@ -32,7 +32,7 @@ import { activateCodeTab, setActiveTab } from '../../../workbench/ui/tabs';
 import { findCodeTabContext, getActiveCodeTabContext, isActiveLuaCodeTab, isReadOnlyCodeTab } from '../../../workbench/ui/code_tab/contexts';
 import { buildEditorSemanticFrontend } from './frontend';
 import { editorRuntimeState } from '../../common/runtime_state';
-import { showEditorMessage } from '../../../workbench/common/feedback_state';
+import { showEditorMessage } from '../../../common/feedback_state';
 import { editorPointerState } from '../../input/pointer/state';
 import { editorSearchState, lineJumpState } from '../find/widget_state';
 import { symbolSearchState } from '../symbols/search_state';

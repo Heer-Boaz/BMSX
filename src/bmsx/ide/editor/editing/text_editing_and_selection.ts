@@ -13,7 +13,7 @@
 
 import { $ } from '../../../core/engine';
 import { editorRuntimeState } from '../common/runtime_state';
-import { showEditorMessage } from '../../workbench/common/feedback_state';
+import { showEditorMessage } from '../../common/feedback_state';
 import type { EditContext, Position } from '../../common/models';
 import { getActiveCodeTabContext } from '../../workbench/ui/code_tab/contexts';
 import { revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';

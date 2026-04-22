@@ -1,5 +1,5 @@
 import * as constants from '../../../../common/constants';
-import { showEditorMessage } from '../../../../workbench/common/feedback_state';
+import { showEditorMessage } from '../../../../common/feedback_state';
 import { applyInlineFieldEditing } from '../../../ui/inline_text_field';
 import { applySymbolSearchSelection } from '../../../contrib/symbols/search';
 import { moveSymbolSearchSelection, updateSymbolSearchMatches } from '../../../contrib/symbols/search_catalog';

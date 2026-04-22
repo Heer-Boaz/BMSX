@@ -1,7 +1,7 @@
 import { scheduleMicrotask } from '../../../../platform/platform';
 import * as constants from '../../../common/constants';
 import { renameController } from '../../../editor/contrib/rename/controller';
-import { showEditorMessage } from '../../common/feedback_state';
+import { showEditorMessage } from '../../../common/feedback_state';
 import { clearReferenceHighlights } from '../../../editor/contrib/intellisense/engine';
 import { closeSearch } from '../../../editor/contrib/find/search';
 import { openResourceDescriptor } from './navigation';
