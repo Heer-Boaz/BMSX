@@ -1,3 +1,4 @@
+// disable cross_layer_import_pattern -- workbench tabs own editor/resource tab activation lifecycle.
 import { editorRuntimeState } from '../../editor/common/runtime_state';
 import { editorChromeState } from './chrome_state';
 import { editorDiagnosticsState } from '../../editor/contrib/diagnostics/state';
@@ -16,7 +17,7 @@ import {
 	createEntryTabContext,
 	upsertCodeEditorTab,
 } from './code_tab/contexts';
-import { activateCodeEditorTab, storeActiveCodeTabContext } from './code_tab/activation';
+import { activateCodeEditorTab, applyActiveCodeTabSelection, storeActiveCodeTabContext, type CodeTabSelection } from './code_tab/activation';
 import { endTabDrag } from './tab/drag';
 import { codeTabSessionState } from './code_tab/session_state';
 import { tabSessionState } from './tab/session_state';
@@ -25,7 +26,10 @@ function activateResourceViewerTab(tab: EditorTabDescriptor): void {
 	closeSearch(false, true);
 	closeLineJump(false);
 	editorCaretState.cursorRevealSuspended = false;
+	codeTabSessionState.activeContextReadOnly = false;
 	tab.dirty = false;
+	runtimeErrorState.activeOverlay = null;
+	runtimeErrorState.executionStopRow = null;
 	if (!tab.resource) {
 		return;
 	}
@@ -55,10 +59,10 @@ export function isResourceViewActive(): boolean {
 	return getActiveTabKind() === 'resource_view';
 }
 
-export function setActiveTab(tabId: string): void {
+export function setActiveTab(tabId: string, selection?: CodeTabSelection): void {
 	const tab = tabSessionState.tabs.find(candidate => candidate.id === tabId)!;
 	const isSameTab = tabSessionState.activeTabId === tabId;
-	const navigationCheckpoint = !isSameTab && tab.kind === 'code_editor'
+	const navigationCheckpoint = tab.kind === 'code_editor' && (!isSameTab || selection)
 		? beginNavigationCapture()
 		: null;
 	closeSymbolSearch(true);
@@ -67,23 +71,21 @@ export function setActiveTab(tabId: string): void {
 	}
 	if (isSameTab) {
 		if (tab.kind === 'resource_view') {
-			codeTabSessionState.activeContextReadOnly = false;
 			activateResourceViewerTab(tab);
-			runtimeErrorState.activeOverlay = null;
-			runtimeErrorState.executionStopRow = null;
+		}
+		if (tab.kind === 'code_editor' && selection) {
+			applyActiveCodeTabSelection(selection);
+			completeNavigation(navigationCheckpoint);
 		}
 		return;
 	}
 	tabSessionState.activeTabId = tabId;
 	if (tab.kind === 'resource_view') {
-		codeTabSessionState.activeContextReadOnly = false;
 		activateResourceViewerTab(tab);
-		runtimeErrorState.activeOverlay = null;
-		runtimeErrorState.executionStopRow = null;
 		return;
 	}
 	hideResourcePanel();
-	activateCodeEditorTab(tab.id);
+	activateCodeEditorTab(tab.id, selection);
 	if (navigationCheckpoint) {
 		completeNavigation(navigationCheckpoint);
 	}

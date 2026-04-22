@@ -1,3 +1,4 @@
+// disable cross_layer_import_pattern -- code-tab contexts own editable buffer instances stored in workbench tab state.
 import { editorDocumentState } from '../../../editor/editing/document_state';
 import type {
 	CodeTabContext,
@@ -46,7 +47,7 @@ function createCodeTabContext(descriptor: ResourceDescriptor, initialSource: str
 		executionStopRow: null,
 		runtimeSyncState: 'synced',
 		runtimeSyncMessage: null,
-		readOnly: descriptor.readOnly === true,
+		readOnly: !!descriptor.readOnly,
 		textVersion: buffer.version,
 	};
 }
@@ -157,11 +158,11 @@ export function isActiveLuaCodeTab(): boolean {
 }
 
 export function isReadOnlyCodeTab(): boolean {
-	return isCodeTabActive() && codeTabSessionState.activeContextReadOnly === true;
+	return isCodeTabActive() && codeTabSessionState.activeContextReadOnly;
 }
 
 export function isEditableCodeTab(): boolean {
-	return isCodeTabActive() && codeTabSessionState.activeContextReadOnly !== true;
+	return isCodeTabActive() && !codeTabSessionState.activeContextReadOnly;
 }
 
 export function findCodeTabContext(path: string): CodeTabContext {
