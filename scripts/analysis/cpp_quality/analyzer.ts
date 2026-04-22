@@ -24,8 +24,8 @@ import {
 	addDuplicateExportedTypeIssues,
 	addNormalizedBodyDuplicateIssues,
 	addSemanticNormalizedBodyDuplicateIssues,
-	buildDuplicateGroups,
-	pushLintIssue,
+	buildTokenDuplicateGroups,
+	pushTokenLintIssue,
 	recordDeclaration,
 	relativeAnalysisResult,
 	type CppAnalysisResult,
@@ -139,7 +139,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 					info.wrapperTarget,
 				);
 				if (!isCppSingleLineWrapperAllowedByUsage(info, functionUsageInfo, regions, tokens)) {
-					pushLintIssue(
+					pushTokenLintIssue(
 						lintIssues,
 						file,
 						tokens[info.nameToken],
@@ -183,7 +183,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 	}
 	const filteredLintIssues = filterSuppressedLintIssues(lintIssues, sourceTextByFile, config.directiveMarker);
 	return relativeAnalysisResult({
-		duplicateGroups: buildDuplicateGroups(duplicateBuckets),
+		duplicateGroups: buildTokenDuplicateGroups(duplicateBuckets),
 		lintIssues: filteredLintIssues,
 		ledger,
 	});

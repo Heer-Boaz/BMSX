@@ -1,5 +1,6 @@
 import { type LuaExpression, type LuaStatement, LuaSyntaxKind, type LuaTableField, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
-import { type LuaCartLintRule, type LuaLintIssue } from '../../../../lua_rule';
+import { type LintRuleName } from '../../../../rule';
+import { type LuaLintIssue } from '../../../../lua_rule';
 import { getExpressionKeyName } from './expression_signatures';
 import { appendSuggestionMessage } from './general';
 import { getSelfAssignedPropertyNameFromTarget } from './self_properties';
@@ -257,7 +258,7 @@ export function findStateNameMirrorAssignmentInStatements(
 export function lintCollectionStringValuesForLabel(
 	expression: LuaExpression,
 	label: string,
-	rule: LuaCartLintRule,
+	rule: LintRuleName,
 	issues: LuaLintIssue[],
 	messagePrefix: string,
 ): void {

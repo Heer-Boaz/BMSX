@@ -20,7 +20,11 @@ export function lintBinaryExpressionForCodeQuality(
 	issues: LintIssue[],
 	ledger: QualityLedger):
 	void {
-	if (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
+	const operatorKind = node.operatorToken.kind;
+	const isLogicalOr = operatorKind === ts.SyntaxKind.BarBarToken;
+	const hasEmptyStringOperand = (isEmptyStringLiteral(node.left) && !ts.isStringLiteral(node.right))
+		|| (isEmptyStringLiteral(node.right) && !ts.isStringLiteral(node.left));
+	if (operatorKind === ts.SyntaxKind.QuestionQuestionToken) {
 		noteQualityLedger(ledger, 'nullish_fallback_checked');
 		noteQualityLedger(ledger, `nullish_fallback_${nullishFallbackLedgerKind(node)}`);
 		lintNullishNullNormalizationPattern(node, sourceFile, issues);
@@ -38,7 +42,7 @@ export function lintBinaryExpressionForCodeQuality(
 	}
 	lintNullishCounterIncrementPattern(node, sourceFile, issues);
 	lintDefensiveTypeofFunctionPattern(node, sourceFile, issues);
-	if (node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
+	if (isLogicalOr) {
 		const subjects: string[] = [];
 		if (collectStringOrChainSubjects(node, subjects) && subjects.length > 2) {
 			const first = subjects[0];
@@ -50,32 +54,25 @@ export function lintBinaryExpressionForCodeQuality(
 				}
 			}
 			if (sameSubject) {
-				const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
-				issues.push({
-					kind: 'string_or_chain_comparison_pattern',
-					file: sourceFile.fileName,
-					line: position.line + 1,
-					column: position.character + 1,
-					name: 'string_or_chain_comparison_pattern',
-					message: 'Multiple OR-comparisons against the same expression with string literals are forbidden. Use `switch`-statement or set-like lookups instead.',
-				});
+				pushLintIssue(
+					issues,
+					sourceFile,
+					node.operatorToken,
+					'string_or_chain_comparison_pattern',
+					'Multiple OR-comparisons against the same expression with string literals are forbidden. Use `switch`-statement or set-like lookups instead.',
+				);
 			}
 		}
 	}
-	if (isEqualityOperator(node.operatorToken.kind)) {
-		if (
-			(isEmptyStringLiteral(node.left) && !ts.isStringLiteral(node.right))
-			|| (isEmptyStringLiteral(node.right) && !ts.isStringLiteral(node.left))
-		) {
-			const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
-			issues.push({
-				kind: 'empty_string_condition_pattern',
-				file: sourceFile.fileName,
-				line: position.line + 1,
-				column: position.character + 1,
-				name: 'empty_string_condition_pattern',
-				message: 'Empty-string condition checks are forbidden. Prefer explicit truthy/falsy checks.',
-			});
+	if (isEqualityOperator(operatorKind)) {
+		if (hasEmptyStringOperand) {
+			pushLintIssue(
+				issues,
+				sourceFile,
+				node.operatorToken,
+				'empty_string_condition_pattern',
+				'Empty-string condition checks are forbidden. Prefer explicit truthy/falsy checks.',
+			);
 		}
 		const leftBoolean = isBooleanLiteral(node.left);
 		const rightBoolean = isBooleanLiteral(node.right);
@@ -85,45 +82,36 @@ export function lintBinaryExpressionForCodeQuality(
 			&& !isExplicitNonJsTruthinessPair(node)
 			&& isBooleanLiteralComparisonSmell(node, leftBoolean, rightBoolean)
 		) {
-			const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
-			issues.push({
-				kind: 'explicit_truthy_comparison_pattern',
-				file: sourceFile.fileName,
-				line: position.line + 1,
-				column: position.character + 1,
-				name: 'explicit_truthy_comparison_pattern',
-				message: 'Explicit boolean literal comparison is forbidden. Use truthy/falsy checks instead.',
-			});
+			pushLintIssue(
+				issues,
+				sourceFile,
+				node.operatorToken,
+				'explicit_truthy_comparison_pattern',
+				'Explicit boolean literal comparison is forbidden. Use truthy/falsy checks instead.',
+			);
 		}
 	}
-	if (node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
-		if (
-			(isEmptyStringLiteral(node.left) && !ts.isStringLiteral(node.right))
-			|| (isEmptyStringLiteral(node.right) && !ts.isStringLiteral(node.left))
-		) {
-			const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
-			issues.push({
-				kind: 'empty_string_fallback_pattern',
-				file: sourceFile.fileName,
-				line: position.line + 1,
-				column: position.character + 1,
-				name: 'empty_string_fallback_pattern',
-				message: 'Empty-string fallback via `||` is forbidden. Do not use empty strings as default values.',
-			});
+	if (isLogicalOr) {
+		if (hasEmptyStringOperand) {
+			pushLintIssue(
+				issues,
+				sourceFile,
+				node.operatorToken,
+				'empty_string_fallback_pattern',
+				'Empty-string fallback via `||` is forbidden. Do not use empty strings as default values.',
+			);
 		}
 		if (
 			(isNullOrUndefined(node.left) && !isNullOrUndefined(node.right))
 			|| (isNullOrUndefined(node.right) && !isNullOrUndefined(node.left))
 		) {
-			const position = sourceFile.getLineAndCharacterOfPosition(node.operatorToken.getStart());
-			issues.push({
-				kind: 'or_nil_fallback_pattern',
-				file: sourceFile.fileName,
-				line: position.line + 1,
-				column: position.character + 1,
-				name: 'or_nil_fallback_pattern',
-				message: '`|| null`/`|| undefined` fallback is forbidden. Use direct checks or nullish coalescing.',
-			});
+			pushLintIssue(
+				issues,
+				sourceFile,
+				node.operatorToken,
+				'or_nil_fallback_pattern',
+				'`|| null`/`|| undefined` fallback is forbidden. Use direct checks or nullish coalescing.',
+			);
 		}
 	}
 }

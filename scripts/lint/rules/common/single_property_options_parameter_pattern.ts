@@ -1,7 +1,7 @@
 import ts from 'typescript';
 import { countCppTopLevelDataMembers, type CppClassRange } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { pushTsLintIssue, type TsLintIssue } from '../../ts_rule';
 import { type LuaFunctionExpression } from '../../../../src/bmsx/lua/syntax/ast';
@@ -76,7 +76,7 @@ export function lintCppSinglePropertyOptionsTypes(file: string, tokens: readonly
 		if (memberCount !== 1) {
 			continue;
 		}
-		pushLintIssue(
+		pushTokenLintIssue(
 			issues,
 			file,
 			tokens[range.nameToken],

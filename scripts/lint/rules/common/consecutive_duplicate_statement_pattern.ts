@@ -2,7 +2,7 @@ import ts from 'typescript';
 import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import { collectCppStatementRanges, cppCallTargetFromStatement, isCppAccessSpecifier } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import { normalizedCppTokenText, type CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { compactStatementText } from '../../ts_node';
 import { pushTsLintIssue, type TsLintIssue } from '../../ts_rule';
@@ -56,7 +56,7 @@ export function lintCppConsecutiveDuplicateStatements(file: string, tokens: read
 			continue;
 		}
 		if (text === previousText && !isAllowedCppConsecutiveDuplicateStatement(tokens, pairs, info, start, end)) {
-			pushLintIssue(
+			pushTokenLintIssue(
 				issues,
 				file,
 				tokens[start],

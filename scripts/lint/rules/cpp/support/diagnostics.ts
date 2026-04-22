@@ -1,9 +1,8 @@
 import type { CppToken } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
-
-type CodeQualityLintRule = string;
+import { type LintRuleName } from '../../../rule';
 
 export type CppLintIssue = {
-	kind: CodeQualityLintRule;
+	kind: LintRuleName;
 	file: string;
 	line: number;
 	column: number;
@@ -20,11 +19,11 @@ export type CppNormalizedBodyInfo = {
 	semanticSignatures: string[] | null;
 };
 
-export function pushLintIssue(
+export function pushTokenLintIssue(
 	issues: CppLintIssue[],
 	file: string,
 	token: CppToken,
-	kind: CodeQualityLintRule,
+	kind: LintRuleName,
 	message: string,
 	name = kind,
 ): void {

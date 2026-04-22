@@ -1,5 +1,5 @@
 import type { CppToken } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushLintIssue, type CppLintIssue } from './diagnostics';
+import { pushTokenLintIssue, type CppLintIssue } from './diagnostics';
 
 export function lintCppAdjacentEqualityComparison(
 	file: string,
@@ -17,7 +17,7 @@ export function lintCppAdjacentEqualityComparison(
 		const left = tokens[index - 1];
 		const right = tokens[index + 1];
 		if (left !== undefined && right !== undefined && matches(left, right)) {
-			pushLintIssue(issues, file, token, rule, message);
+			pushTokenLintIssue(issues, file, token, rule, message);
 		}
 	}
 }

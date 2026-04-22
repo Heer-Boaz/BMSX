@@ -14,6 +14,7 @@ export function lintFsmEnteringStateVisualSetupPattern(
 	statements: ReadonlyArray<LuaStatement>,
 	issues: LuaLintIssue[],
 ): void {
+	const ruleName = fsmEnteringStateVisualSetupPatternRule.name;
 	const prefabDefaultsById = collectPrefabVisualDefaultsById(statements);
 	visitCallExpressionsInStatements(statements, (expression) => {
 		if (!isGlobalCall(expression, 'define_fsm')) {
@@ -44,7 +45,7 @@ export function lintFsmEnteringStateVisualSetupPattern(
 			if (visibleAssignment) {
 				pushIssue(
 					issues,
-					fsmEnteringStateVisualSetupPatternRule.name,
+					ruleName,
 					visibleAssignment.target,
 					`FSM state "${stateName}" must not set self.visible in entering_state. Move the object between spaces instead of hiding/showing it via visible; keep visual setup out of entering_state${gfxCall ? ', including self:gfx(...)' : ''}.`,
 				);
@@ -57,7 +58,7 @@ export function lintFsmEnteringStateVisualSetupPattern(
 			if (gfxLiteral && prefabDefaults?.imgid === gfxLiteral) {
 				pushIssue(
 					issues,
-					fsmEnteringStateVisualSetupPatternRule.name,
+					ruleName,
 					gfxCall,
 					`FSM state "${stateName}" must not call self:gfx('${gfxLiteral}') in entering_state when define_prefab already sets imgid='${gfxLiteral}'. Keep the default sprite in define_prefab defaults instead of reapplying it on state entry.`,
 				);
@@ -68,7 +69,7 @@ export function lintFsmEnteringStateVisualSetupPattern(
 			}
 			pushIssue(
 				issues,
-				fsmEnteringStateVisualSetupPatternRule.name,
+				ruleName,
 				gfxCall,
 				`FSM state "${stateName}" must not seed self:gfx(...) in entering_state when the same state's timeline already drives gfx in on_frame. Let the timeline produce the visual frame instead of pre-setting gfx on entry.`,
 			);

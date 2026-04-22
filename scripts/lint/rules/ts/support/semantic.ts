@@ -1,6 +1,7 @@
 import ts from 'typescript';
 import { callTargetText, isExpressionChildOfLargerExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
 import { isNumericSanitizerCall, isSemanticTransformTarget, isSemanticValidationPredicateTarget, semanticBodyCallSignature, semanticTransformFamily } from '../../../../../src/bmsx/language/ts/ast/semantic';
+import { TEXT_SEMANTIC_SIGNATURE_PREFIX } from '../../common/semantic_signature';
 import { normalizedAstFingerprint } from './declarations';
 
 export const SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT = 2;
@@ -10,10 +11,6 @@ export function semanticSignatureLabel(signature: string): string {
 	return (separator >= 0 ? signature.slice(0, separator) : signature).replace(':', ' ');
 }
 
-export function isSemanticBodySignatureFamily(family: string): boolean {
-	return family.startsWith('text:');
-}
-
 export function collectSemanticBodySignatures(node: ts.Node): string[] {
 	const callsByFamily = new Map<string, { calls: Map<string, number>; literalAnchorCount: number }>();
 	const visit = (current: ts.Node): void => {
@@ -21,7 +18,7 @@ export function collectSemanticBodySignatures(node: ts.Node): string[] {
 			const target = callTargetText(current);
 			if (target !== null && (isSemanticTransformTarget(target) || isNumericSanitizerCall(current))) {
 				const family = semanticTransformFamily(target);
-				if (family !== null && isSemanticBodySignatureFamily(family)) {
+				if (family !== null && family.startsWith(TEXT_SEMANTIC_SIGNATURE_PREFIX)) {
 					let group = callsByFamily.get(family);
 					if (group === undefined) {
 						group = { calls: new Map<string, number>(), literalAnchorCount: 0 };

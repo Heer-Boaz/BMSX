@@ -1,5 +1,6 @@
 import { defineLintRule } from '../../rule';
-import { type LuaStatement, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { type LuaFunctionExpression, type LuaStatement, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { lintScopedBindingStatements } from './impl/support/bindings';
 import { declareDuplicateInitializerBinding, enterDuplicateInitializerScope, leaveDuplicateInitializerScope, lintDuplicateInitializerInExpression, resolveDuplicateInitializerBinding } from './impl/support/duplicate_initializers';
 import { getExpressionSignature } from './impl/support/expression_signatures';
 import { DuplicateInitializerContext } from './impl/support/types';
@@ -59,20 +60,10 @@ export function lintDuplicateInitializerInStatements(
 			}
 			case LuaSyntaxKind.LocalFunctionStatement:
 				declareDuplicateInitializerBinding(context, statement.name, '');
-				enterDuplicateInitializerScope(context);
-				for (const parameter of statement.functionExpression.parameters) {
-					declareDuplicateInitializerBinding(context, parameter, '');
-				}
-				lintDuplicateInitializerInStatements(statement.functionExpression.body.body, context);
-				leaveDuplicateInitializerScope(context);
+				lintDuplicateInitializerFunctionExpression(statement.functionExpression, context);
 				break;
 			case LuaSyntaxKind.FunctionDeclarationStatement:
-				enterDuplicateInitializerScope(context);
-				for (const parameter of statement.functionExpression.parameters) {
-					declareDuplicateInitializerBinding(context, parameter, '');
-				}
-				lintDuplicateInitializerInStatements(statement.functionExpression.body.body, context);
-				leaveDuplicateInitializerScope(context);
+				lintDuplicateInitializerFunctionExpression(statement.functionExpression, context);
 				break;
 			case LuaSyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
@@ -84,16 +75,12 @@ export function lintDuplicateInitializerInStatements(
 					if (clause.condition) {
 						lintDuplicateInitializerInExpression(clause.condition, context);
 					}
-					enterDuplicateInitializerScope(context);
-					lintDuplicateInitializerInStatements(clause.block.body, context);
-					leaveDuplicateInitializerScope(context);
+					lintScopedBindingStatements(context, clause.block.body, lintDuplicateInitializerInStatements);
 				}
 				break;
 			case LuaSyntaxKind.WhileStatement:
 				lintDuplicateInitializerInExpression(statement.condition, context);
-				enterDuplicateInitializerScope(context);
-				lintDuplicateInitializerInStatements(statement.block.body, context);
-				leaveDuplicateInitializerScope(context);
+				lintScopedBindingStatements(context, statement.block.body, lintDuplicateInitializerInStatements);
 				break;
 			case LuaSyntaxKind.RepeatStatement:
 				enterDuplicateInitializerScope(context);
@@ -122,9 +109,7 @@ export function lintDuplicateInitializerInStatements(
 				leaveDuplicateInitializerScope(context);
 				break;
 			case LuaSyntaxKind.DoStatement:
-				enterDuplicateInitializerScope(context);
-				lintDuplicateInitializerInStatements(statement.block.body, context);
-				leaveDuplicateInitializerScope(context);
+				lintScopedBindingStatements(context, statement.block.body, lintDuplicateInitializerInStatements);
 				break;
 			case LuaSyntaxKind.CallStatement:
 				lintDuplicateInitializerInExpression(statement.expression, context);
@@ -137,4 +122,13 @@ export function lintDuplicateInitializerInStatements(
 				break;
 		}
 	}
+}
+
+function lintDuplicateInitializerFunctionExpression(functionExpression: LuaFunctionExpression, context: DuplicateInitializerContext): void {
+	enterDuplicateInitializerScope(context);
+	for (const parameter of functionExpression.parameters) {
+		declareDuplicateInitializerBinding(context, parameter, '');
+	}
+	lintDuplicateInitializerInStatements(functionExpression.body.body, context);
+	leaveDuplicateInitializerScope(context);
 }

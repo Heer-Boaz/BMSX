@@ -1,7 +1,7 @@
 import ts from 'typescript';
 import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { pushTsLintIssue, type TsLintIssue } from '../../ts_rule';
 
@@ -69,7 +69,7 @@ export function lintCppTerminalReturnPaddingPattern(file: string, tokens: readon
 	if (lastStart < 0 || tokens[lastStart]?.text !== 'return' || lastEnd !== lastStart + 1) {
 		return;
 	}
-	pushLintIssue(
+	pushTokenLintIssue(
 		issues,
 		file,
 		tokens[lastStart],

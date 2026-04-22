@@ -1,6 +1,6 @@
 import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { type TsLintIssue as LintIssue, pushTsLintIssue } from '../../ts_rule';
 import ts from 'typescript';
@@ -31,7 +31,7 @@ export function lintCppFacadeStats(file: string, stats: CppFacadeStats, issues: 
 	if (stats.wrapperCount < 3 || stats.wrapperCount * 10 < stats.callableCount * 6) {
 		return;
 	}
-	pushLintIssue(
+	pushTokenLintIssue(
 		issues,
 		file,
 		stats.firstWrapperToken,

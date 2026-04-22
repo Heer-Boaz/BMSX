@@ -1,6 +1,8 @@
 import { filterSuppressedLintIssues } from '../lint_suppressions';
 import { loadAnalysisConfig } from '../config';
-import { createQualityLedger, type QualityLedger, qualityLedgerEntries } from '../quality_ledger';
+import { createQualityLedger, printQualityLedger, type QualityLedger, qualityLedgerEntries } from '../quality_ledger';
+import { quoteCsv } from '../csv';
+import { commandExists } from '../process';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { extname, isAbsolute, relative, resolve } from 'node:path';
@@ -11,7 +13,7 @@ import { addNormalizedBodyDuplicateIssues } from '../../lint/rules/code_quality/
 import { addSemanticNormalizedBodyDuplicateIssues } from '../../lint/rules/code_quality/semantic_normalized_body_duplicate_pattern';
 import { LintIssue } from '../../lint/rules/ts/support/ast';
 import { type NormalizedBodyInfo } from '../../lint/rules/ts/support/declarations';
-import { collectFunctionUsageCounts } from '../../lint/rules/ts/support/function_usage';
+import { collectSourceFileFunctionUsageCounts } from '../../lint/rules/ts/support/function_usage';
 import { addRepeatedStatementSequenceIssues, type StatementSequenceInfo } from '../../lint/rules/common/repeated_statement_sequence_pattern';
 import { ClassInfo, CliOptions, DuplicateGroup, DuplicateKind, DuplicateLocation, FolderLintSummary, ProjectLanguage } from '../../lint/rules/ts/support/types';
 import { buildDuplicateGroups, collectExportedTypes, walkDeclarations } from './declarations';
@@ -133,17 +135,8 @@ export function extractRootsForLanguageDetection(argv: string[], defaultRoots: r
 	return paths;
 }
 
-export function hasCommand(command: string): boolean {
-	const result = spawnSync(command, ['--version'], {
-		encoding: 'utf8',
-		stdio: 'ignore',
-		maxBuffer: 1024 * 1024,
-	});
-	return result.error === undefined;
-}
-
 export function runCppQuality(args: readonly string[]): number {
-	if (!hasCommand('npx')) {
+	if (!commandExists('npx')) {
 		throw new Error('npx is required to run C++ quality checks');
 	}
 	const result = spawnSync('npx', ['tsx', 'scripts/analysis/code_quality_cpp.ts', ...args], {
@@ -404,19 +397,6 @@ export function printDuplicateSummary(groups: readonly DuplicateGroup[]): void {
 	console.log('');
 }
 
-export function printQualityLedger(ledger: QualityLedger): void {
-	const entries = qualityLedgerEntries(ledger);
-	if (entries.length === 0) {
-		return;
-	}
-	console.log('Quality exception ledger:');
-	for (let index = 0; index < entries.length; index += 1) {
-		const entry = entries[index];
-		console.log(`  ${entry.name}: ${entry.count}`);
-	}
-	console.log('');
-}
-
 export function printCsvQualityLedgerRows(ledger: QualityLedger): void {
 	const entries = qualityLedgerEntries(ledger);
 	for (let index = 0; index < entries.length; index += 1) {
@@ -481,14 +461,6 @@ export function printTextReport(groups: DuplicateGroup[], lintIssues: LintIssue[
 	printDuplicateSummary(groups);
 	printLintSummary(lintIssues);
 	printQualityLedger(ledger);
-}
-
-export function quoteCsv(value: string | number | undefined): string {
-	const text = value === undefined ? '' : `${value}`;
-	if (text.includes('"') || text.includes(',') || text.includes('\n') || text.includes('\r') || text.includes('\t')) {
-		return `"${text.replace(/"/g, '""')}"`;
-	}
-	return text;
 }
 
 export function printCsvReport(groups: DuplicateGroup[], lintIssues: LintIssue[], scannedFiles: number, summaryOnly: boolean, ledger: QualityLedger): void {
@@ -586,7 +558,7 @@ export function run(): void {
 		collectExportedTypes(sourceFile, exportedTypes);
 		collectNormalizedBodies(sourceFile, normalizedBodies, ledger);
 	}
-	const functionUsageInfo = collectFunctionUsageCounts(sourceFiles);
+	const functionUsageInfo = collectSourceFileFunctionUsageCounts(sourceFiles);
 	for (const sourceFile of sourceFiles) {
 		collectLintIssues(sourceFile, lintIssues, statementSequences, functionUsageInfo, ledger, config.architecture);
 	}

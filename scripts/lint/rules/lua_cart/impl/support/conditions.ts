@@ -1,6 +1,7 @@
 import { LuaBinaryOperator, type LuaExpression, type LuaFunctionExpression, type LuaStatement, LuaSyntaxKind, LuaUnaryOperator } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { isBuiltinCallExpression } from './calls';
 import { isDelegationCallCandidate, isDirectValueGetterExpression } from './functions';
+import { getFunctionSingleReturnExpression } from './function_shapes';
 import { expressionsEquivalentForLint } from './general';
 
 export function isNilExpression(expression: LuaExpression): boolean {
@@ -111,15 +112,8 @@ export function matchesComparisonWrapperGetterPattern(functionExpression: LuaFun
 	if (functionExpression.parameters.length !== 0 || functionExpression.hasVararg) {
 		return false;
 	}
-	const body = functionExpression.body.body;
-	if (body.length !== 1) {
-		return false;
-	}
-	const statement = body[0];
-	if (statement.kind !== LuaSyntaxKind.ReturnStatement || statement.expressions.length !== 1) {
-		return false;
-	}
-	return isSingleValueComparisonWrapperExpression(statement.expressions[0]);
+	const expression = getFunctionSingleReturnExpression(functionExpression);
+	return expression !== undefined && isSingleValueComparisonWrapperExpression(expression);
 }
 
 export function getSingleReturnedStringValue(statement: LuaStatement): string {

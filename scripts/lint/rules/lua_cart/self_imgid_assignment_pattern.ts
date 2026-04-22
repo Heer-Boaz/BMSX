@@ -16,7 +16,7 @@ export function lintSelfImgIdAssignmentPattern(target: LuaExpression, value: Lua
 	if (value.kind !== LuaSyntaxKind.StringLiteralExpression && value.kind !== LuaSyntaxKind.NilLiteralExpression) {
 		return;
 	}
-	if (value.kind === LuaSyntaxKind.StringLiteralExpression && value.value !== '') {
+	if (value.kind === LuaSyntaxKind.StringLiteralExpression && value.value) {
 		return;
 	}
 	pushIssue(

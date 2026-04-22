@@ -1,6 +1,7 @@
 import { LuaAssignmentOperator, type LuaExpression, type LuaFunctionDeclarationStatement, type LuaFunctionExpression, type LuaIdentifierExpression, type LuaLocalFunctionStatement, type LuaStatement, LuaSyntaxKind, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../../../lua_rule';
 import { leaveSingleUseLocalScope } from '../../../common/single_use_local_pattern';
+import { declareLuaBinding, enterLuaBindingScope } from './bindings';
 import { getRangeLineSpan } from './expressions';
 import { SINGLE_USE_LOCAL_SMALL_HELPER_MAX_LINES } from './general';
 import { isRequireCallExpression } from './require_aliases';
@@ -60,7 +61,7 @@ export function createSingleUseLocalContext(issues: LuaLintIssue[]): SingleUseLo
 }
 
 export function enterSingleUseLocalScope(context: SingleUseLocalContext): void {
-	context.scopeStack.push({ names: [] });
+	enterLuaBindingScope(context);
 }
 
 export function declareSingleUseLocalBinding(
@@ -69,14 +70,7 @@ export function declareSingleUseLocalBinding(
 	reportKind: SingleUseLocalReportKind | null,
 ): void {
 	const isTopLevelScope = context.scopeStack.length === 1;
-	const scope = context.scopeStack[context.scopeStack.length - 1];
-	scope.names.push(declaration.name);
-	let stack = context.bindingStacksByName.get(declaration.name);
-	if (!stack) {
-		stack = [];
-		context.bindingStacksByName.set(declaration.name, stack);
-	}
-	stack.push({
+	declareLuaBinding(context, declaration, {
 		declaration,
 		reportKind: isTopLevelScope && !declaration.name.startsWith('_') ? reportKind : null,
 		readCount: 0,

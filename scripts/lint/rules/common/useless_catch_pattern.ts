@@ -1,7 +1,7 @@
 import ts from 'typescript';
 import { previousCppIdentifier, trimmedCppExpressionText } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { pushTsLintIssue, type TsLintIssue } from '../../ts_rule';
 import type { CppCatchBlockInfo } from './empty_catch_pattern';
@@ -58,7 +58,7 @@ export function lintCppUselessCatchPattern(
 	) {
 		return false;
 	}
-	pushLintIssue(
+	pushTokenLintIssue(
 		issues,
 		file,
 		tokens[catchInfo.catchToken],

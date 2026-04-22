@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { extname, isAbsolute, relative, resolve } from 'node:path';
 
-function resolveInputPath(candidate: string): string {
+export function resolveInputPath(candidate: string): string {
 	return isAbsolute(candidate) ? candidate : resolve(process.cwd(), candidate);
 }
 

@@ -1,6 +1,6 @@
 import ts from 'typescript';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { pushTsLintIssue, type TsLintIssue } from '../../ts_rule';
 import { isDoubleUnderscoreSentinelString } from '../../../analysis/code_quality/string_contracts';
@@ -30,7 +30,7 @@ export function lintCppLegacySentinelStringPattern(file: string, tokens: readonl
 		if (token.kind !== 'string' || !isDoubleUnderscoreSentinelString(token.text)) {
 			continue;
 		}
-		pushLintIssue(
+		pushTokenLintIssue(
 			issues,
 			file,
 			token,

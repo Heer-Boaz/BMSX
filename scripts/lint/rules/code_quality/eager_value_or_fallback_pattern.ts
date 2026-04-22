@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
 import { cppCallTarget, cppQualifiedNameHasLeaf, splitCppArgumentRanges } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import { type CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { type CppLintIssue, pushLintIssue } from '../cpp/support/diagnostics';
+import { type CppLintIssue, pushTokenLintIssue } from '../cpp/support/diagnostics';
 
 export const eagerValueOrFallbackPatternRule = defineLintRule('code_quality', 'eager_value_or_fallback_pattern');
 
@@ -20,7 +20,7 @@ export function lintCppEagerValueOrFallbackPattern(
 	if (!cppValueOrHasEagerFallbackWork(tokens, pairs, openParen)) {
 		return false;
 	}
-	pushLintIssue(
+	pushTokenLintIssue(
 		issues,
 		file,
 		token,

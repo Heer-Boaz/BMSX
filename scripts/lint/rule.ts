@@ -1,5 +1,7 @@
 export type LintRuleDomain = 'code_quality' | 'common' | 'lua_cart' | 'shared';
 
+export type LintRuleName = string;
+
 export type LintRuleDefinition<TName extends string = string> = {
 	readonly domain: LintRuleDomain;
 	readonly name: TName;

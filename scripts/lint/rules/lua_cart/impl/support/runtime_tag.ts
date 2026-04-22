@@ -1,7 +1,7 @@
 import { LuaAssignmentOperator, type LuaExpression, type LuaIdentifierExpression, type LuaStatement, LuaSyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../../../lua_rule';
 import { lintRuntimeTagLookupInExpression } from '../../runtime_tag_table_access_pattern';
-import { declareLuaBinding, discardLuaBindingScope, enterLuaBindingScope, resolveLuaBinding, setLuaBinding } from './bindings';
+import { declareLuaBinding, discardLuaBindingScope, enterLuaBindingScope, lintNullBindingFunctionScope, lintScopedBindingStatements, resolveLuaBinding, setLuaBinding } from './bindings';
 import { isObjectOrServiceResolverCallExpression } from './object_ownership';
 import { isSelfExpressionRoot } from './self_properties';
 import { isTagsContainerExpression } from './tags';
@@ -130,20 +130,10 @@ export function lintRuntimeTagLookupInStatements(
 				break;
 			case LuaSyntaxKind.LocalFunctionStatement:
 				declareRuntimeTagLookupBinding(context, statement.name, null);
-				enterRuntimeTagLookupScope(context);
-				for (const parameter of statement.functionExpression.parameters) {
-					declareRuntimeTagLookupBinding(context, parameter, null);
-				}
-				lintRuntimeTagLookupInStatements(statement.functionExpression.body.body, context);
-				leaveRuntimeTagLookupScope(context);
+				lintNullBindingFunctionScope(context, statement.functionExpression, lintRuntimeTagLookupInStatements);
 				break;
 			case LuaSyntaxKind.FunctionDeclarationStatement:
-				enterRuntimeTagLookupScope(context);
-				for (const parameter of statement.functionExpression.parameters) {
-					declareRuntimeTagLookupBinding(context, parameter, null);
-				}
-				lintRuntimeTagLookupInStatements(statement.functionExpression.body.body, context);
-				leaveRuntimeTagLookupScope(context);
+				lintNullBindingFunctionScope(context, statement.functionExpression, lintRuntimeTagLookupInStatements);
 				break;
 			case LuaSyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
@@ -155,16 +145,12 @@ export function lintRuntimeTagLookupInStatements(
 					if (clause.condition) {
 						lintRuntimeTagLookupInExpression(clause.condition, context);
 					}
-					enterRuntimeTagLookupScope(context);
-					lintRuntimeTagLookupInStatements(clause.block.body, context);
-					leaveRuntimeTagLookupScope(context);
+					lintScopedBindingStatements(context, clause.block.body, lintRuntimeTagLookupInStatements);
 				}
 				break;
 			case LuaSyntaxKind.WhileStatement:
 				lintRuntimeTagLookupInExpression(statement.condition, context);
-				enterRuntimeTagLookupScope(context);
-				lintRuntimeTagLookupInStatements(statement.block.body, context);
-				leaveRuntimeTagLookupScope(context);
+				lintScopedBindingStatements(context, statement.block.body, lintRuntimeTagLookupInStatements);
 				break;
 			case LuaSyntaxKind.RepeatStatement:
 				enterRuntimeTagLookupScope(context);
@@ -193,9 +179,7 @@ export function lintRuntimeTagLookupInStatements(
 				leaveRuntimeTagLookupScope(context);
 				break;
 			case LuaSyntaxKind.DoStatement:
-				enterRuntimeTagLookupScope(context);
-				lintRuntimeTagLookupInStatements(statement.block.body, context);
-				leaveRuntimeTagLookupScope(context);
+				lintScopedBindingStatements(context, statement.block.body, lintRuntimeTagLookupInStatements);
 				break;
 			case LuaSyntaxKind.CallStatement:
 				lintRuntimeTagLookupInExpression(statement.expression, context);

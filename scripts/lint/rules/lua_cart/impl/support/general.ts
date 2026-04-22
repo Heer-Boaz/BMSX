@@ -2,6 +2,7 @@ import { LuaBinaryOperator, type LuaBooleanLiteralExpression, type LuaExpression
 import { conditionComparesIdentifierWithValue, getReturnedCallToIdentifier, isIdentifier } from './bindings';
 import { isErrorCallExpression } from '../../../../../../src/bmsx/lua/syntax/calls';
 import { isNilExpression } from './conditions';
+import { getLocalAssignmentIfFunctionBody } from './function_shapes';
 import { removeLabel } from './fsm_labels';
 import { getFunctionLeafName, isDelegationCallCandidate } from './functions';
 
@@ -175,27 +176,16 @@ export function getEnsureVariableName(statement: LuaIfStatement): string {
 }
 
 export function matchesHandlerIdentityDispatchPattern(functionExpression: LuaFunctionExpression): boolean {
-	const body = functionExpression.body.body;
-	if (body.length !== 3) {
+	const body = getLocalAssignmentIfFunctionBody(functionExpression);
+	if (!body) {
 		return false;
 	}
-	const localAssignment = body[0];
-	const ifStatement = body[1];
-	const fallbackReturn = body[2];
-	if (localAssignment.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
+	const fallbackReturn = body.third;
+	if (body.localAssignment.values[0].kind !== LuaSyntaxKind.IndexExpression) {
 		return false;
 	}
-	if (localAssignment.names.length !== 1 || localAssignment.values.length !== 1) {
-		return false;
-	}
-	if (localAssignment.values[0].kind !== LuaSyntaxKind.IndexExpression) {
-		return false;
-	}
-	const localName = localAssignment.names[0].name;
-	if (ifStatement.kind !== LuaSyntaxKind.IfStatement || ifStatement.clauses.length !== 1) {
-		return false;
-	}
-	const onlyClause = ifStatement.clauses[0];
+	const localName = body.localName;
+	const onlyClause = body.onlyClause;
 	if (!onlyClause.condition || !conditionComparesIdentifierWithValue(onlyClause.condition, localName)) {
 		return false;
 	}

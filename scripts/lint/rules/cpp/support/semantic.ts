@@ -1,5 +1,6 @@
 import { cppAccessChainLeafName, cppCallTarget, findCppAccessChainStart, splitCppArgumentRanges } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
 import { type CppToken } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
+import { TEXT_SEMANTIC_SIGNATURE_PREFIX } from '../../common/semantic_signature';
 import { isCppNumericSanitizationCall } from './numeric';
 
 export const SEMANTIC_NORMALIZATION_WRAPPER_SUFFIXES = [
@@ -149,7 +150,7 @@ export function collectSemanticBodySignatures(tokens: readonly CppToken[], pairs
 			continue;
 		}
 		const family = semanticNormalizationFamily(target);
-		if (family !== null && isSemanticBodySignatureFamily(family)) {
+		if (family !== null && family.startsWith(TEXT_SEMANTIC_SIGNATURE_PREFIX)) {
 			let calls = callsByFamily.get(family);
 			if (calls === undefined) {
 				calls = new Map<string, number>();
@@ -175,10 +176,6 @@ export function collectSemanticBodySignatures(tokens: readonly CppToken[], pairs
 	}
 	signatures.sort((left, right) => left.localeCompare(right));
 	return signatures;
-}
-
-export function isSemanticBodySignatureFamily(family: string): boolean {
-	return family.startsWith('text:');
 }
 
 export function collectSemanticNormalizationCallSignatures(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number): string[] {

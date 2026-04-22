@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { LuaAssignmentOperator, type LuaFunctionDeclarationStatement, type LuaLocalFunctionStatement, type LuaStatement, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { LuaAssignmentOperator, type LuaExpression, type LuaFunctionDeclarationStatement, type LuaLocalFunctionStatement, type LuaStatement, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
 import { declareConstantCopyBinding, enterConstantCopyScope, isForbiddenConstantCopyExpression, leaveConstantCopyScope, lintConstantCopyInAssignmentTarget, lintConstantCopyInExpression, setConstantCopyBindingByName } from './impl/support/constant_copy';
 import { isConstantSourceExpression } from './impl/support/expressions';
 import { ConstantCopyContext } from './impl/support/types';
@@ -68,21 +68,12 @@ export function lintConstantCopyInStatements(statements: ReadonlyArray<LuaStatem
 						assignedConstantSources[index] = right ? isConstantSourceExpression(right, context) : false;
 					}
 					for (let index = 0; index < statement.left.length; index += 1) {
-						const left = statement.left[index];
-						if (left.kind === LuaSyntaxKind.IdentifierExpression) {
-							setConstantCopyBindingByName(context, left.name, assignedConstantSources[index]);
-							continue;
-						}
-						lintConstantCopyInAssignmentTarget(left, context);
+						updateConstantCopyAssignmentTarget(context, statement.left[index], assignedConstantSources[index]);
 					}
 					break;
 				}
 				for (const left of statement.left) {
-					if (left.kind === LuaSyntaxKind.IdentifierExpression) {
-						setConstantCopyBindingByName(context, left.name, false);
-						continue;
-					}
-					lintConstantCopyInAssignmentTarget(left, context);
+					updateConstantCopyAssignmentTarget(context, left, false);
 				}
 				break;
 			}
@@ -149,4 +140,12 @@ export function lintConstantCopyInStatements(statements: ReadonlyArray<LuaStatem
 				break;
 		}
 	}
+}
+
+function updateConstantCopyAssignmentTarget(context: ConstantCopyContext, left: LuaExpression, isConstantSource: boolean): void {
+	if (left.kind === LuaSyntaxKind.IdentifierExpression) {
+		setConstantCopyBindingByName(context, left.name, isConstantSource);
+		return;
+	}
+	lintConstantCopyInAssignmentTarget(left, context);
 }

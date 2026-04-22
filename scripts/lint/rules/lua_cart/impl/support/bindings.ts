@@ -1,4 +1,4 @@
-import { LuaAssignmentOperator, LuaBinaryOperator, type LuaCallExpression, type LuaExpression, type LuaIdentifierExpression, type LuaStatement, LuaSyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { LuaAssignmentOperator, LuaBinaryOperator, type LuaCallExpression, type LuaExpression, type LuaFunctionExpression, type LuaIdentifierExpression, type LuaStatement, LuaSyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { evaluateTopLevelStringConstantExpression } from './conditions';
 import { getConstantCopyBinding } from './constant_copy';
 import { getExpressionKeyName } from './expression_signatures';
@@ -75,6 +75,29 @@ export function leaveLuaBindingScope<TBinding>(
 
 export function discardLuaBindingScope<TBinding>(context: LuaBindingContext<TBinding>): void {
 	leaveLuaBindingScope(context.scopeStack, context.bindingStacksByName, () => {});
+}
+
+export function lintScopedBindingStatements<TBinding, TContext extends LuaBindingContext<TBinding>>(
+	context: TContext,
+	statements: ReadonlyArray<LuaStatement>,
+	lintStatements: (statements: ReadonlyArray<LuaStatement>, context: TContext) => void,
+): void {
+	enterLuaBindingScope(context);
+	lintStatements(statements, context);
+	discardLuaBindingScope(context);
+}
+
+export function lintNullBindingFunctionScope<TBinding, TContext extends LuaBindingContext<TBinding | null>>(
+	context: TContext,
+	functionExpression: LuaFunctionExpression,
+	lintStatements: (statements: ReadonlyArray<LuaStatement>, context: TContext) => void,
+): void {
+	enterLuaBindingScope(context);
+	for (const parameter of functionExpression.parameters) {
+		declareLuaBinding(context, parameter, null);
+	}
+	lintStatements(functionExpression.body.body, context);
+	discardLuaBindingScope(context);
 }
 
 export function isIdentifier(expression: LuaExpression, name: string): boolean {

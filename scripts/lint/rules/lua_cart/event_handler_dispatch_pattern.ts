@@ -22,9 +22,10 @@ export function lintEventHandlerDispatchPattern(expression: LuaCallExpression, i
 		if (!handlerField || handlerField.value.kind !== LuaSyntaxKind.FunctionExpression) {
 			continue;
 		}
+		const handlerBody = handlerField.value.body.body;
 		if (!globalDispatchBan) {
 			const scDispatchCall = findCallExpressionInStatements(
-				handlerField.value.body.body,
+				handlerBody,
 				isStateControllerDispatchCallExpression,
 			);
 			if (scDispatchCall) {
@@ -35,8 +36,8 @@ export function lintEventHandlerDispatchPattern(expression: LuaCallExpression, i
 					'Event handler callbacks must not call sc:dispatch(...). Route event-driven transitions via FSM definitions instead of manual dispatch inside events:on handlers.',
 				);
 			}
-			lintEventHandlerStateDispatchPattern(handlerField.value.body.body, issues);
+			lintEventHandlerStateDispatchPattern(handlerBody, issues);
 		}
-		lintEventHandlerFlagProxyPattern(handlerField.value.body.body, issues);
+		lintEventHandlerFlagProxyPattern(handlerBody, issues);
 	}
 }

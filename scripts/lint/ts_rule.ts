@@ -1,9 +1,8 @@
 import ts from 'typescript';
-
-export type CodeQualityLintRule = string;
+import { type LintRuleName } from './rule';
 
 export type TsLintIssue = {
-	kind: CodeQualityLintRule;
+	kind: LintRuleName;
 	file: string;
 	line: number;
 	column: number;
@@ -15,7 +14,7 @@ export function pushTsLintIssue(
 	issues: TsLintIssue[],
 	sourceFile: ts.SourceFile,
 	node: ts.Node,
-	kind: CodeQualityLintRule,
+	kind: LintRuleName,
 	message: string,
 	name = kind,
 ): void {

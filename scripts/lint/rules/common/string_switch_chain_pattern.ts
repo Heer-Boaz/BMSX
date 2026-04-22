@@ -5,7 +5,7 @@ import {
 	trimmedCppExpressionText,
 } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { type TsLintIssue as LintIssue } from '../../ts_rule';
 import ts from 'typescript';
@@ -62,7 +62,7 @@ export function lintCppStringSwitchChains(file: string, tokens: readonly CppToke
 			}
 		}
 		if (sameSubject) {
-			pushLintIssue(issues, file, tokens[index], stringSwitchChainPatternRule.name, 'Multiple string comparisons against the same expression are forbidden. Use switch-statement or lookup table instead.');
+			pushTokenLintIssue(issues, file, tokens[index], stringSwitchChainPatternRule.name, 'Multiple string comparisons against the same expression are forbidden. Use switch-statement or lookup table instead.');
 		}
 	}
 }

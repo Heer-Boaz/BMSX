@@ -44,11 +44,6 @@ export type LintBinding = {
 	consumeBeforeClearSnapshot: boolean;
 };
 
-export type FunctionUsageInfo = {
-	totalCounts: ReadonlyMap<string, number>;
-	referenceCounts: ReadonlyMap<string, number>;
-};
-
 export type CliOptions = {
 	csv: boolean;
 	failOnIssues: boolean;

@@ -7,6 +7,10 @@ export function isConstantSourceExpression(expression: LuaExpression, context: C
 	if (isConstantModuleRequireExpression(expression)) {
 		return true;
 	}
+	return isConstantBindingPathExpression(expression, context);
+}
+
+export function isConstantBindingPathExpression(expression: LuaExpression, context: ConstantCopyContext): boolean {
 	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
 		return isConstantSourceIdentifierName(expression.name, context);
 	}

@@ -6,7 +6,7 @@ import { semanticNormalizedBodyDuplicatePatternRule } from '../../lint/rules/cod
 import { type CppLintIssue, type CppNormalizedBodyInfo } from '../../lint/rules/cpp/support/diagnostics';
 import type { QualityLedger } from '../quality_ledger';
 
-export { pushLintIssue, type CppLintIssue, type CppNormalizedBodyInfo } from '../../lint/rules/cpp/support/diagnostics';
+export { pushTokenLintIssue, type CppLintIssue, type CppNormalizedBodyInfo } from '../../lint/rules/cpp/support/diagnostics';
 
 export type CppDuplicateKind = 'class' | 'enum' | 'function' | 'interface' | 'method' | 'namespace' | 'type' | 'wrapper';
 
@@ -65,7 +65,7 @@ export function recordDeclaration(
 	list.push({ file, line, column, context });
 }
 
-export function buildDuplicateGroups(buckets: Map<string, CppDuplicateLocation[]>): CppDuplicateGroup[] {
+export function buildTokenDuplicateGroups(buckets: Map<string, CppDuplicateLocation[]>): CppDuplicateGroup[] {
 	const result: CppDuplicateGroup[] = [];
 	for (const [key, locations] of buckets) {
 		const split = key.indexOf('\u0000');

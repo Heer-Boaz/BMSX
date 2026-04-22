@@ -1,11 +1,12 @@
-import { type LuaCartLintRule, type LuaLintIssue, type LuaLintNode, pushLuaLintIssue } from '../../../../lua_rule';
+import { type LintRuleName } from '../../../../rule';
+import { type LuaLintIssue, type LuaLintNode, pushLuaLintIssue } from '../../../../lua_rule';
 import { type LuaLintSuppressionRange } from './types';
 
 export const suppressedLineRangesByPath = new Map<string, ReadonlyArray<LuaLintSuppressionRange>>();
 
-export let activeLintRules: ReadonlySet<LuaCartLintRule>;
+export let activeLintRules: ReadonlySet<LintRuleName>;
 
-export function setActiveLintRules(rules: ReadonlySet<LuaCartLintRule>): void {
+export function setActiveLintRules(rules: ReadonlySet<LintRuleName>): void {
 	activeLintRules = rules;
 }
 
@@ -33,11 +34,11 @@ export function isLineSuppressed(path: string, line: number): boolean {
 	return false;
 }
 
-export function pushIssue(issues: LuaLintIssue[], rule: LuaCartLintRule, node: LuaLintNode, message: string): void {
+export function pushIssue(issues: LuaLintIssue[], rule: LintRuleName, node: LuaLintNode, message: string): void {
 	pushLuaLintIssue(issues, activeLintRules, isLineSuppressed, rule, node, message);
 }
 
-export function pushIssueAt(issues: LuaLintIssue[], rule: LuaCartLintRule, path: string, line: number, column: number, message: string): void {
+export function pushIssueAt(issues: LuaLintIssue[], rule: LintRuleName, path: string, line: number, column: number, message: string): void {
 	if (!activeLintRules.has(rule)) {
 		return;
 	}

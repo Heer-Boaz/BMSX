@@ -1,6 +1,6 @@
 import ts from 'typescript';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { pushTsLintIssue, type TsLintIssue } from '../../ts_rule';
 
@@ -41,7 +41,7 @@ export function lintCppEmptyCatchPattern(
 	if (catchInfo.statements.length !== 0) {
 		return false;
 	}
-	pushLintIssue(
+	pushTokenLintIssue(
 		issues,
 		file,
 		tokens[catchInfo.catchToken],

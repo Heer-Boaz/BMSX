@@ -7,7 +7,7 @@ import {
 	trimmedCppExpressionText,
 } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { type TsLintIssue as LintIssue, pushTsLintIssue } from '../../ts_rule';
 import ts from 'typescript';
@@ -47,7 +47,7 @@ export function lintCppNullishReturnGuards(file: string, tokens: readonly CppTok
 		if (!cppExpressionUsesAccessedValue(returnedExpression, guardedExpression)) {
 			continue;
 		}
-		pushLintIssue(
+		pushTokenLintIssue(
 			issues,
 			file,
 			tokens[index],

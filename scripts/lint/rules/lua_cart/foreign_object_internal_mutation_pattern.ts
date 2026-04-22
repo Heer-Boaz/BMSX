@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
 import { LuaAssignmentOperator, type LuaStatement, LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
-import { getAssignmentTargetInfo } from './impl/support/bindings';
+import { getAssignmentTargetInfo, lintNullBindingFunctionScope, lintScopedBindingStatements } from './impl/support/bindings';
 import { declareForeignObjectBinding, enterForeignObjectMutationScope, isForeignObjectAliasInitializer, leaveForeignObjectMutationScope, lintForeignObjectMutationInExpression, resolveForeignObjectBinding, setForeignObjectBinding } from './impl/support/foreign_object';
 import { ForeignObjectMutationContext } from './impl/support/types';
 import { pushIssue } from './impl/support/lint_context';
@@ -26,31 +26,31 @@ export function lintForeignObjectMutationInStatements(
 					declareForeignObjectBinding(context, declaration, binding);
 				}
 				break;
-				case LuaSyntaxKind.AssignmentStatement: {
-					for (const left of statement.left) {
-						const targetInfo = getAssignmentTargetInfo(left);
-						if (!targetInfo || targetInfo.depth < 1) {
-							lintForeignObjectMutationInExpression(left, context);
-							continue;
-						}
-						const binding = resolveForeignObjectBinding(context, targetInfo.rootName);
-						if (!binding) {
-							continue;
-						}
-						if (targetInfo.depth !== 1) {
-							continue;
-						}
-						const propertyName = targetInfo.terminalPropertyName;
-						if (!propertyName) {
-							continue;
-						}
-							pushIssue(
-								context.issues,
-								foreignObjectInternalMutationPatternRule.name,
-								left,
-								`Direct top-level mutation on service alias ${targetInfo.rootName}.${propertyName} is forbidden. Keep ownership in the target service implementation and call domain methods/events; do not add getter/setter wrappers as a workaround.`,
-							);
+			case LuaSyntaxKind.AssignmentStatement: {
+				for (const left of statement.left) {
+					const targetInfo = getAssignmentTargetInfo(left);
+					if (!targetInfo || targetInfo.depth < 1) {
+						lintForeignObjectMutationInExpression(left, context);
+						continue;
 					}
+					const binding = resolveForeignObjectBinding(context, targetInfo.rootName);
+					if (!binding) {
+						continue;
+					}
+					if (targetInfo.depth !== 1) {
+						continue;
+					}
+					const propertyName = targetInfo.terminalPropertyName;
+					if (!propertyName) {
+						continue;
+					}
+					pushIssue(
+						context.issues,
+						foreignObjectInternalMutationPatternRule.name,
+						left,
+						`Direct top-level mutation on service alias ${targetInfo.rootName}.${propertyName} is forbidden. Keep ownership in the target service implementation and call domain methods/events; do not add getter/setter wrappers as a workaround.`,
+					);
+				}
 				for (const right of statement.right) {
 					lintForeignObjectMutationInExpression(right, context);
 				}
@@ -72,20 +72,10 @@ export function lintForeignObjectMutationInStatements(
 			}
 			case LuaSyntaxKind.LocalFunctionStatement:
 				declareForeignObjectBinding(context, statement.name, null);
-				enterForeignObjectMutationScope(context);
-				for (const parameter of statement.functionExpression.parameters) {
-					declareForeignObjectBinding(context, parameter, null);
-				}
-				lintForeignObjectMutationInStatements(statement.functionExpression.body.body, context);
-				leaveForeignObjectMutationScope(context);
+				lintNullBindingFunctionScope(context, statement.functionExpression, lintForeignObjectMutationInStatements);
 				break;
 			case LuaSyntaxKind.FunctionDeclarationStatement:
-				enterForeignObjectMutationScope(context);
-				for (const parameter of statement.functionExpression.parameters) {
-					declareForeignObjectBinding(context, parameter, null);
-				}
-				lintForeignObjectMutationInStatements(statement.functionExpression.body.body, context);
-				leaveForeignObjectMutationScope(context);
+				lintNullBindingFunctionScope(context, statement.functionExpression, lintForeignObjectMutationInStatements);
 				break;
 			case LuaSyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
@@ -97,16 +87,12 @@ export function lintForeignObjectMutationInStatements(
 					if (clause.condition) {
 						lintForeignObjectMutationInExpression(clause.condition, context);
 					}
-					enterForeignObjectMutationScope(context);
-					lintForeignObjectMutationInStatements(clause.block.body, context);
-					leaveForeignObjectMutationScope(context);
+					lintScopedBindingStatements(context, clause.block.body, lintForeignObjectMutationInStatements);
 				}
 				break;
 			case LuaSyntaxKind.WhileStatement:
 				lintForeignObjectMutationInExpression(statement.condition, context);
-				enterForeignObjectMutationScope(context);
-				lintForeignObjectMutationInStatements(statement.block.body, context);
-				leaveForeignObjectMutationScope(context);
+				lintScopedBindingStatements(context, statement.block.body, lintForeignObjectMutationInStatements);
 				break;
 			case LuaSyntaxKind.RepeatStatement:
 				enterForeignObjectMutationScope(context);
@@ -135,9 +121,7 @@ export function lintForeignObjectMutationInStatements(
 				leaveForeignObjectMutationScope(context);
 				break;
 			case LuaSyntaxKind.DoStatement:
-				enterForeignObjectMutationScope(context);
-				lintForeignObjectMutationInStatements(statement.block.body, context);
-				leaveForeignObjectMutationScope(context);
+				lintScopedBindingStatements(context, statement.block.body, lintForeignObjectMutationInStatements);
 				break;
 			case LuaSyntaxKind.CallStatement:
 				lintForeignObjectMutationInExpression(statement.expression, context);

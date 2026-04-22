@@ -151,11 +151,6 @@ export type TopLevelLocalStringConstant = {
 	readonly declaration: LuaIdentifierExpression;
 };
 
-export type FunctionUsageInfo = {
-	readonly totalCounts: ReadonlyMap<string, number>;
-	readonly referenceCounts: ReadonlyMap<string, number>;
-};
-
 export type SelfPropertyAssignmentMatch = {
 	readonly propertyName: string;
 	readonly target: LuaExpression;

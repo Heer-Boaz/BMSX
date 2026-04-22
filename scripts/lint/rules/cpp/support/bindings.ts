@@ -135,7 +135,7 @@ export function shouldReportCppLocalConst(binding: CppLocalBinding): boolean {
 	return true;
 }
 
-export function shouldReportSingleUseLocal(binding: CppLocalBinding): boolean {
+export function shouldReportTokenSingleUseLocal(binding: CppLocalBinding): boolean {
 	if (!binding.hasInitializer || !binding.isSimpleAliasInitializer) {
 		return false;
 	}

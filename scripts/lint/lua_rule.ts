@@ -1,7 +1,7 @@
-export type LuaCartLintRule = string;
+import { type LintRuleName } from './rule';
 
 export type LuaLintIssue = {
-	readonly rule: LuaCartLintRule;
+	readonly rule: LintRuleName;
 	readonly path: string;
 	readonly line: number;
 	readonly column: number;
@@ -18,13 +18,13 @@ export type LuaLintNode = {
 	};
 };
 
-export type LuaLintReporter = (rule: LuaCartLintRule, node: LuaLintNode, message: string) => void;
+export type LuaLintReporter = (rule: LintRuleName, node: LuaLintNode, message: string) => void;
 
-export type LuaLintIssuePusher = (issues: LuaLintIssue[], rule: LuaCartLintRule, node: LuaLintNode, message: string) => void;
+export type LuaLintIssuePusher = (issues: LuaLintIssue[], rule: LintRuleName, node: LuaLintNode, message: string) => void;
 
 export type LuaLintLocationPusher = (
 	issues: LuaLintIssue[],
-	rule: LuaCartLintRule,
+	rule: LintRuleName,
 	path: string,
 	line: number,
 	column: number,
@@ -33,9 +33,9 @@ export type LuaLintLocationPusher = (
 
 export function pushLuaLintIssue(
 	issues: LuaLintIssue[],
-	activeRules: ReadonlySet<LuaCartLintRule>,
+	activeRules: ReadonlySet<LintRuleName>,
 	isLineSuppressed: (path: string, line: number) => boolean,
-	rule: LuaCartLintRule,
+	rule: LintRuleName,
 	node: LuaLintNode,
 	message: string,
 ): void {

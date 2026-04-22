@@ -1,12 +1,14 @@
 import { existsSync } from 'node:fs';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { isAbsolute, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 import { loadAnalysisConfig, type AnalysisConfig } from './config';
-import { collectSourceFiles } from './file_scan';
+import { collectSourceFiles, resolveInputPath } from './file_scan';
 import { analyzeCppFiles } from './cpp_quality/analyzer';
 import { type CppDuplicateGroup } from './cpp_quality/diagnostics';
-import { qualityLedgerEntries, type QualityLedger } from './quality_ledger';
+import { printQualityLedger, qualityLedgerEntries, type QualityLedger } from './quality_ledger';
+import { quoteCsv } from './csv';
+import { commandExists } from './process';
 
 type LintIssueSeverity = 'error' | 'warning' | 'information' | 'performance' | 'portability' | 'style' | string;
 type LintTool = 'custom-cpp' | 'clang-tidy' | 'cppcheck';
@@ -46,7 +48,7 @@ function printHelp(config: AnalysisConfig): void {
 	console.log('  --help                    Show this help message');
 }
 
-function parseArgs(argv: string[], config: AnalysisConfig): CliOptions {
+function parseStandaloneArgs(argv: string[], config: AnalysisConfig): CliOptions {
 	let csv = false;
 	let summaryOnly = false;
 	let failOnIssues = false;
@@ -73,28 +75,19 @@ function parseArgs(argv: string[], config: AnalysisConfig): CliOptions {
 			continue;
 		}
 		if (arg === '--compile-commands') {
-			const value = argv[index + 1];
-			if (value === undefined || value.startsWith('-')) {
-				throw new Error('Missing value for --compile-commands');
-			}
+			const value = readRequiredOptionValue(argv, index, '--compile-commands');
 			compileCommands = value;
 			index += 1;
 			continue;
 		}
 		if (arg === '--config') {
-			const value = argv[index + 1];
-			if (value === undefined || value.startsWith('-')) {
-				throw new Error('Missing value for --config');
-			}
+			const value = readRequiredOptionValue(argv, index, '--config');
 			configFile = value;
 			index += 1;
 			continue;
 		}
 		if (arg === '--root') {
-			const value = argv[index + 1];
-			if (value === undefined || value.startsWith('-')) {
-				throw new Error('Missing value for --root');
-			}
+			const value = readRequiredOptionValue(argv, index, '--root');
 			roots.push(value);
 			index += 1;
 			continue;
@@ -126,17 +119,12 @@ function parseArgs(argv: string[], config: AnalysisConfig): CliOptions {
 	};
 }
 
-function resolveInputPath(candidate: string): string {
-	return isAbsolute(candidate) ? candidate : resolve(process.cwd(), candidate);
-}
-
-function collectCppFiles(roots: readonly string[]): string[] {
-	return collectSourceFiles(roots, FILE_EXTENSIONS);
-}
-
-function hasCommand(command: string): boolean {
-	const result = spawnSync(command, ['--version'], { encoding: 'utf8', maxBuffer: 1024 * 1024 });
-	return result.error === undefined;
+function readRequiredOptionValue(argv: readonly string[], index: number, flag: string): string {
+	const value = argv[index + 1];
+	if (value === undefined || value.startsWith('-')) {
+		throw new Error(`Missing value for ${flag}`);
+	}
+	return value;
 }
 
 function runProcess(command: string, args: string[]): { exitCode: number; output: string } {
@@ -144,7 +132,13 @@ function runProcess(command: string, args: string[]): { exitCode: number; output
 	if (result.error) {
 		throw result.error;
 	}
-	const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+	let output = '';
+	if (result.stdout) {
+		output += result.stdout;
+	}
+	if (result.stderr) {
+		output += result.stderr;
+	}
 	return {
 		exitCode: result.status ?? 0,
 		output,
@@ -271,7 +265,7 @@ function runClangTidy(
 	configFile: string | null,
 	headerFilter: string,
 ): LintIssue[] {
-	if (!hasCommand('clang-tidy')) {
+	if (!commandExists('clang-tidy')) {
 		throw new Error('clang-tidy is not installed');
 	}
 	const issues: LintIssue[] = [];
@@ -298,7 +292,7 @@ function runClangTidy(
 }
 
 function runCppCheck(files: readonly string[], roots: readonly string[]): LintIssue[] {
-	if (!hasCommand('cppcheck')) {
+	if (!commandExists('cppcheck')) {
 		throw new Error('cppcheck is not installed');
 	}
 	const issues: LintIssue[] = [];
@@ -350,7 +344,7 @@ function formatDuplicateLocation(location: CppDuplicateGroup['locations'][number
 	return `${location.file}:${location.line}:${location.column}`;
 }
 
-function printDuplicateSummary(groups: readonly CppDuplicateGroup[]): void {
+function printTokenDuplicateSummary(groups: readonly CppDuplicateGroup[]): void {
 	if (groups.length === 0) {
 		return;
 	}
@@ -366,19 +360,6 @@ function printDuplicateSummary(groups: readonly CppDuplicateGroup[]): void {
 	console.log('  By kind:');
 	for (const [kind, count] of Array.from(byKind.entries()).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))) {
 		console.log(`    ${kind}: ${count}`);
-	}
-	console.log('');
-}
-
-function printQualityLedger(ledger: QualityLedger): void {
-	const entries = qualityLedgerEntries(ledger);
-	if (entries.length === 0) {
-		return;
-	}
-	console.log('Quality exception ledger:');
-	for (let index = 0; index < entries.length; index += 1) {
-		const entry = entries[index];
-		console.log(`  ${entry.name}: ${entry.count}`);
 	}
 	console.log('');
 }
@@ -404,7 +385,7 @@ function printTextSummary(issues: readonly LintIssue[], duplicateGroups: readonl
 		}
 	}
 	if (issues.length === 0) {
-		printDuplicateSummary(duplicateGroups);
+		printTokenDuplicateSummary(duplicateGroups);
 		printQualityLedger(ledger);
 		return;
 	}
@@ -450,7 +431,7 @@ function printTextSummary(issues: readonly LintIssue[], duplicateGroups: readonl
 		console.log(`    ${folder[0]}: ${folder[1]}`);
 	}
 	console.log('');
-	printDuplicateSummary(duplicateGroups);
+	printTokenDuplicateSummary(duplicateGroups);
 	printQualityLedger(ledger);
 	if (summaryOnly) {
 		return;
@@ -508,19 +489,11 @@ function printTextSummary(issues: readonly LintIssue[], duplicateGroups: readonl
 	}
 }
 
-function quoteCsv(value: string | number | undefined): string {
-	const text = `${value ?? ''}`;
-	if (text.includes('"') || text.includes(',') || text.includes('\n') || text.includes('\r') || text.includes('\t')) {
-		return `"${text.replace(/\"/g, '""')}"`;
-	}
-	return text;
-}
-
 function printCsvRow(fields: readonly (string | number | undefined)[]): void {
 	console.log(fields.map(quoteCsv).join(','));
 }
 
-function printCsvQualityLedgerRows(ledger: QualityLedger): void {
+function printIssueCsvQualityLedgerRows(ledger: QualityLedger): void {
 	const entries = qualityLedgerEntries(ledger);
 	for (let index = 0; index < entries.length; index += 1) {
 		const entry = entries[index];
@@ -528,7 +501,7 @@ function printCsvQualityLedgerRows(ledger: QualityLedger): void {
 	}
 }
 
-function printCsvReport(issues: readonly LintIssue[], duplicateGroups: readonly CppDuplicateGroup[], scannedFiles: number, summaryOnly: boolean, ledger: QualityLedger): void {
+function printIssueCsvReport(issues: readonly LintIssue[], duplicateGroups: readonly CppDuplicateGroup[], scannedFiles: number, summaryOnly: boolean, ledger: QualityLedger): void {
 	console.log('file,line,column,tool,check,severity,message');
 	if (!summaryOnly) {
 		for (let groupIndex = 0; groupIndex < duplicateGroups.length; groupIndex += 1) {
@@ -570,24 +543,24 @@ function printCsvReport(issues: readonly LintIssue[], duplicateGroups: readonly 
 	for (const [check, count] of Array.from(byCheck.entries()).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))) {
 		printCsvRow(['summary', 'by_check', check, '', count, '', '']);
 	}
-	printCsvQualityLedgerRows(ledger);
+	printIssueCsvQualityLedgerRows(ledger);
 }
 
-function run(): void {
+function runStandaloneReport(): void {
 	const config = loadAnalysisConfig();
-	const options = parseArgs(process.argv.slice(2), config);
-	const files = collectCppFiles(options.roots);
+	const options = parseStandaloneArgs(process.argv.slice(2), config);
+	const files = collectSourceFiles(options.roots, FILE_EXTENSIONS);
 	if (files.length === 0) {
 		console.log('No C++ files found.');
 		return;
 	}
-	let issues: LintIssue[] = [];
+	const issues: LintIssue[] = [];
 	const customAnalysis = analyzeCppFiles(files);
 	addCustomRuleIssues(issues, customAnalysis.lintIssues);
 	const compileCommands = resolveCompileCommands(options.compileCommands);
-	if (hasCommand('clang-tidy')) {
+	if (commandExists('clang-tidy')) {
 		issues.push(...runClangTidy(files, options.roots, compileCommands, options.configFile, config.scan.cppHeaderFilter));
-	} else if (hasCommand('cppcheck')) {
+	} else if (commandExists('cppcheck')) {
 		issues.push(...runCppCheck(files, options.roots));
 	}
 	const sortedIssues = issues.sort((left, right) => {
@@ -607,7 +580,7 @@ function run(): void {
 	});
 
 	if (options.csv) {
-		printCsvReport(sortedIssues, customAnalysis.duplicateGroups, files.length, options.summaryOnly, customAnalysis.ledger);
+		printIssueCsvReport(sortedIssues, customAnalysis.duplicateGroups, files.length, options.summaryOnly, customAnalysis.ledger);
 	} else {
 		printTextSummary(sortedIssues, customAnalysis.duplicateGroups, files.length, options.summaryOnly, customAnalysis.ledger);
 	}
@@ -616,4 +589,4 @@ function run(): void {
 	}
 }
 
-run();
+runStandaloneReport();

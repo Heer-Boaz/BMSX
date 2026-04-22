@@ -1,7 +1,10 @@
 import { type LuaExpression, type LuaFunctionDeclarationStatement, type LuaFunctionExpression, type LuaLocalFunctionStatement, type LuaStatement, LuaSyntaxKind } from '../../src/bmsx/lua/syntax/ast';
+import { LuaSyntaxError } from '../../src/bmsx/lua/errors';
 import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
 import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
-import { type LuaCartLintRule, type LuaLintIssue } from '../lint/lua_rule';
+import { type FunctionUsageInfo } from '../lint/function_usage';
+import { type LintRuleName } from '../lint/rule';
+import { type LuaLintIssue } from '../lint/lua_rule';
 import { lintLuaEmptyStringConditionPattern } from '../lint/rules/common/empty_string_condition_pattern';
 import { lintLuaEmptyStringFallbackPattern } from '../lint/rules/common/empty_string_fallback_pattern';
 import { lintLuaExplicitTruthyComparisonPattern } from '../lint/rules/common/explicit_truthy_comparison_pattern';
@@ -49,7 +52,7 @@ import { lintSinglePropertyOptionsParameter } from '../lint/rules/common/single_
 import { lintSplitLocalTableInitPattern } from '../lint/rules/lua_cart/split_local_table_init_pattern';
 import { lintStagedExportLocalCallPattern } from '../lint/rules/lua_cart/staged_export_local_call_pattern';
 import { lintStagedExportLocalTablePattern } from '../lint/rules/lua_cart/staged_export_local_table_pattern';
-import { pushSyntaxErrorIssue } from '../lint/rules/lua_cart/syntax_error_pattern';
+import { lintSyntaxError } from '../lint/rules/lua_cart/syntax_error_pattern';
 import { lintUselessAssertPattern } from '../lint/rules/lua_cart/useless_assert_pattern';
 import { lintVisualUpdatePattern } from '../lint/rules/lua_cart/visual_update_pattern';
 import { lintEnsureLocalAliasPattern } from '../lint/rules/lua_cart/ensure_local_alias_pattern';
@@ -63,7 +66,7 @@ import { lintForeignObjectInternalMutationPattern } from '../lint/rules/lua_cart
 import { lintFsmDirectStateHandlerShorthandPattern } from '../lint/rules/lua_cart/impl/support/fsm_core';
 import { lintFsmEventReemitHandlerPattern, lintFsmLifecycleWrapperPattern } from '../lint/rules/lua_cart/impl/support/fsm_events';
 import { lintFsmForbiddenLegacyFieldsPattern, lintFsmProcessInputPollingTransitionPattern, lintFsmRunChecksInputTransitionPattern, lintFsmTickCounterTransitionPattern } from '../lint/rules/lua_cart/impl/support/fsm_transitions';
-import { collectFunctionUsageCounts, isAllowedBySingleLineMethodUsage } from '../lint/rules/lua_cart/impl/support/function_usage';
+import { collectCartFunctionUsageCounts, isAllowedBySingleLineMethodUsage } from '../lint/rules/lua_cart/impl/support/function_usage';
 import { getFunctionDisplayName, isMethodLikeFunctionDeclaration } from '../lint/rules/lua_cart/impl/support/functions';
 import { isAllowedSingleLineMethodName, matchesMeaninglessSingleLineMethodPattern } from '../lint/rules/lua_cart/impl/support/general';
 import { lintShadowedRequireAliasPattern } from '../lint/rules/lua_cart/impl/support/require_aliases';
@@ -71,11 +74,11 @@ import { lintRuntimeTagTableAccessPattern } from '../lint/rules/lua_cart/impl/su
 import { lintSingleUseHasTagPattern } from '../lint/rules/lua_cart/impl/support/single_use_has_tag';
 import { lintSingleUseLocalPattern } from '../lint/rules/lua_cart/impl/support/single_use_local';
 import { lintInlineStaticLookupTablePattern, lintTableField } from '../lint/rules/lua_cart/impl/support/table_fields';
-import { FunctionUsageInfo, LuaCartLintOptions, LuaLintProfile, LuaLintSuppressionRange, TopLevelLocalStringConstant } from '../lint/rules/lua_cart/impl/support/types';
+import { LuaCartLintOptions, LuaLintProfile, LuaLintSuppressionRange, TopLevelLocalStringConstant } from '../lint/rules/lua_cart/impl/support/types';
 import { lintUnusedInitValuesInFunctionBody } from '../lint/rules/lua_cart/impl/support/unused_init';
 import { clearSuppressedLineRanges, pushIssue, pushIssueAt, setActiveLintRules, setSuppressedLineRanges } from '../lint/rules/lua_cart/impl/support/lint_context';
 
-const LUA_CART_LINT_RULES: readonly LuaCartLintRule[] = [
+const LUA_CART_LINT_RULES: readonly LintRuleName[] = [
 	'action_triggered_bool_chain_pattern',
 	'bool01_duplicate_pattern',
 	'branch_uninitialized_local_pattern',
@@ -169,7 +172,7 @@ export const LINT_SUPPRESSION_OPEN_MARKER = '-- @code-quality disable';
 
 export const LINT_SUPPRESSION_CLOSE_MARKER = '-- @code-quality enable';
 
-export const BIOS_PROFILE_DISABLED_RULES = new Set<LuaCartLintRule>([
+export const BIOS_PROFILE_DISABLED_RULES = new Set<LintRuleName>([
 	'visual_update_pattern',
 	'bool01_duplicate_pattern',
 	'pure_copy_function_pattern',
@@ -214,7 +217,7 @@ export const BIOS_PROFILE_DISABLED_RULES = new Set<LuaCartLintRule>([
 	'injected_service_id_property_pattern',
 ]);
 
-export function resolveEnabledRules(profile: LuaLintProfile): ReadonlySet<LuaCartLintRule> {
+export function resolveEnabledRules(profile: LuaLintProfile): ReadonlySet<LintRuleName> {
 	if (profile === 'cart') {
 		return new Set(LUA_CART_LINT_RULES);
 	}
@@ -411,7 +414,7 @@ export function lintExpression(expression: LuaExpression | null, issues: LuaLint
 export function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
 	lintBranchUninitializedLocalPattern(statements, issues);
 	lintContiguousMultiEmitPattern(statements, issues);
-	const functionUsageInfo = collectFunctionUsageCounts(statements);
+	const functionUsageInfo = collectCartFunctionUsageCounts(statements);
 	for (const statement of statements) {
 		switch (statement.kind) {
 			case LuaSyntaxKind.LocalAssignmentStatement:
@@ -555,8 +558,7 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 			const lexed = lexer.scanTokensWithRecovery();
 			const tokens = lexed.tokens;
 			lintUppercaseCode(workspacePath, tokens, issues, pushIssueAt);
-			if (lexed.syntaxError) {
-				pushSyntaxErrorIssue(issues, lexed.syntaxError);
+			if (lintSyntaxError(lexed.syntaxError, issues)) {
 				continue;
 			}
 			const parser = new LuaParser(tokens, workspacePath, source);
@@ -564,17 +566,13 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 			try {
 				parsed = parser.parseChunkWithRecovery();
 			} catch (error) {
-				if ((error as { name?: string } | null)?.name === 'Syntax Error') {
-					pushSyntaxErrorIssue(
-						issues,
-						error as { readonly path: string; readonly line: number; readonly column: number; readonly message: string; },
-					);
+				if (error instanceof LuaSyntaxError) {
+					lintSyntaxError(error, issues);
 					continue;
 				}
 				throw error;
 			}
-			if (parsed.syntaxError) {
-				pushSyntaxErrorIssue(issues, parsed.syntaxError);
+			if (lintSyntaxError(parsed.syntaxError, issues)) {
 				continue;
 			}
 			const chunk = parsed.path;

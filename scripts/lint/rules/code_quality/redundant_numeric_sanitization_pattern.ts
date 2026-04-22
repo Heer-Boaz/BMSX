@@ -8,7 +8,7 @@ import { nodeStartLine } from '../ts/support/ast';
 import { type CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import { cppCallTarget, findCppAccessChainStart } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import { type CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { type CppLintIssue, pushLintIssue } from '../cpp/support/diagnostics';
+import { type CppLintIssue, pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { isCppNumericSanitizationCall, lineAllowsCppNumericSanitization, rangeContainsNestedCppNumericSanitization } from '../cpp/support/numeric';
 import { isCppSemanticFloorDivisionCall } from '../cpp/support/semantic';
 
@@ -74,7 +74,7 @@ export function lintCppRedundantNumericSanitizationPattern(file: string, tokens:
 		if (!rangeContainsNestedCppNumericSanitization(tokens, pairs, callStart, callEnd)) {
 			continue;
 		}
-		pushLintIssue(
+		pushTokenLintIssue(
 			issues,
 			file,
 			tokens[index],

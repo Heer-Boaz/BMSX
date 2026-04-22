@@ -3,7 +3,7 @@ import ts from 'typescript';
 import { LintIssue, pushLintIssue } from '../ts/support/ast';
 import { isSingleLineWrapperCandidate } from '../ts/support/declarations';
 import { isAllowedBySingleLineFunctionUsage } from '../ts/support/function_usage';
-import { type FunctionUsageInfo } from '../ts/support/types';
+import { type FunctionUsageInfo } from '../../function_usage';
 
 export const singleLineMethodPatternRule = defineLintRule('common', 'single_line_method_pattern');
 

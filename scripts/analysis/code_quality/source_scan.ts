@@ -25,17 +25,19 @@ import { lintSinglePropertyOptionsParameterPattern } from '../../lint/rules/comm
 import { lintSplitJoinRoundtripPattern } from '../../lint/rules/common/split_join_roundtrip_pattern';
 import { lintStringSwitchChain } from '../../lint/rules/common/string_switch_chain_pattern';
 import { lintUselessTerminalReturnPattern } from '../../lint/rules/common/useless_terminal_return_pattern';
+import { lintEnsurePattern } from '../../lint/rules/shared/ensure_pattern';
 import { compactSampleText } from '../../lint/text';
+import { type FunctionUsageInfo } from '../../lint/function_usage';
 import { getCallTargetLeafName, getPropertyName, hasQuestionDotToken, unwrapExpression } from '../../../src/bmsx/language/ts/ast/expressions';
 import { isFunctionLikeValue, isFunctionLikeWithParameters } from '../../../src/bmsx/language/ts/ast/functions';
-import { LOCAL_CONST_PATTERN_ENABLED, LintIssue, REPEATED_EXPRESSION_PAIR_MIN_LENGTH, RepeatedExpressionInfo, getExtendsExpression, isSimpleAliasExpression, lintCatchClausePatterns, lintEnsurePattern, nodeStartLine, pushLintIssue, shouldIgnoreLintName } from '../../lint/rules/ts/support/ast';
+import { LOCAL_CONST_PATTERN_ENABLED, LintIssue, REPEATED_EXPRESSION_PAIR_MIN_LENGTH, RepeatedExpressionInfo, getExtendsExpression, isSimpleAliasExpression, lintCatchClausePatterns, nodeStartLine, pushLintIssue, shouldIgnoreLintName } from '../../lint/rules/ts/support/ast';
 import { getClassScopePath, isDeclarationIdentifier, isIdentifierPropertyName, isInsideLoop, isScopeBoundary, isWriteIdentifier } from '../../lint/rules/ts/support/bindings';
 import { NormalizedBodyInfo, collectNormalizedBody, isExportedVariableDeclaration, isIgnoredMethod, repeatedExpressionFingerprint } from '../../lint/rules/ts/support/declarations';
 import { isConsumeBeforeClearSnapshotRead, normalizeSingleUseContext, shouldReportLocalConst, shouldReportSingleUseLocal } from '../../lint/rules/ts/support/local_bindings';
 import { optionalChainBoundaryKind } from '../../lint/rules/ts/support/runtime_patterns';
 import { SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT, semanticRepeatedExpressionFingerprint } from '../../lint/rules/ts/support/semantic';
 import { isSplitLikeCallTarget, splitJoinDelimiterFingerprint } from '../../lint/rules/ts/support/split_join';
-import { ClassInfo, FunctionUsageInfo, LintBinding } from '../../lint/rules/ts/support/types';
+import { ClassInfo, LintBinding } from '../../lint/rules/ts/support/types';
 import { getMethodDiscriminator } from './declarations';
 
 export function nodeIsInAnalysisRegion(sourceFile: ts.SourceFile, regions: readonly AnalysisRegion[], kind: string, node: ts.Node): boolean {

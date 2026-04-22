@@ -1,6 +1,6 @@
 import { cppCallTarget, cppQualifiedNameHasLeaf } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../../../analysis/quality_ledger';
 import { defineLintRule } from '../../rule';
@@ -30,7 +30,7 @@ export function lintCppOptionalValueOrFallbackPatterns(
 		}
 		const boundaryKind = cppValueOrBoundaryKind(regions, token.line);
 		if (boundaryKind === null) {
-			pushLintIssue(issues, file, token, optionalValueOrFallbackPatternRule.name, 'std::optional::value_or fallback is only allowed at an explicit value-or-boundary analysis region. Branch or require the value instead of hiding missing internal state.');
+			pushTokenLintIssue(issues, file, token, optionalValueOrFallbackPatternRule.name, 'std::optional::value_or fallback is only allowed at an explicit value-or-boundary analysis region. Branch or require the value instead of hiding missing internal state.');
 		} else {
 			noteQualityLedger(ledger, `cpp_optional_value_or_${boundaryKind}`);
 		}

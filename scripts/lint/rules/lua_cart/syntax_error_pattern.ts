@@ -4,10 +4,20 @@ import { pushIssueAt } from './impl/support/lint_context';
 
 export const syntaxErrorPatternRule = defineLintRule('lua_cart', 'syntax_error_pattern');
 
-export function pushSyntaxErrorIssue(
+export type LuaLintSyntaxError = {
+	readonly path: string;
+	readonly line: number;
+	readonly column: number;
+	readonly message: string;
+};
+
+export function lintSyntaxError(
+	error: LuaLintSyntaxError | null,
 	issues: LuaLintIssue[],
-	error: { readonly path: string; readonly line: number; readonly column: number; readonly message: string; },
-): void {
+): boolean {
+	if (!error) {
+		return false;
+	}
 	pushIssueAt(
 		issues,
 		syntaxErrorPatternRule.name,
@@ -16,4 +26,5 @@ export function pushSyntaxErrorIssue(
 		error.column,
 		error.message,
 	);
+	return true;
 }

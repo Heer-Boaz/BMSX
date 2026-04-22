@@ -2,6 +2,7 @@ import { LuaAssignmentOperator, type LuaAssignmentStatement, LuaBinaryOperator, 
 import { isIdentifier } from './bindings';
 import { isNilExpression } from './conditions';
 import { isAssignableStorageExpression } from './expressions';
+import { getLocalAssignmentIfFunctionBody } from './function_shapes';
 import { getEnsureVariableName } from './general';
 
 export function matchesLocalAliasReturnWrapperPattern(functionExpression: LuaFunctionExpression): boolean {
@@ -54,24 +55,13 @@ export function matchesEnsurePattern(functionExpression: LuaFunctionExpression):
 }
 
 export function matchesEnsureLocalAliasPattern(functionExpression: LuaFunctionExpression): boolean {
-	const body = functionExpression.body.body;
-	if (body.length !== 3) {
+	const body = getLocalAssignmentIfFunctionBody(functionExpression);
+	if (!body) {
 		return false;
 	}
-	const localAssignment = body[0];
-	const ifStatement = body[1];
-	const returnStatement = body[2];
-	if (localAssignment.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
-		return false;
-	}
-	if (localAssignment.names.length !== 1 || localAssignment.values.length !== 1) {
-		return false;
-	}
-	const localName = localAssignment.names[0].name;
-	if (ifStatement.kind !== LuaSyntaxKind.IfStatement || ifStatement.clauses.length !== 1) {
-		return false;
-	}
-	const onlyClause = ifStatement.clauses[0];
+	const returnStatement = body.third;
+	const localName = body.localName;
+	const onlyClause = body.onlyClause;
 	if (!onlyClause.condition || onlyClause.condition.kind !== LuaSyntaxKind.BinaryExpression || onlyClause.condition.operator !== LuaBinaryOperator.Equal) {
 		return false;
 	}

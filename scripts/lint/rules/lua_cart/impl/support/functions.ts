@@ -3,6 +3,7 @@ import { isIdentifier } from './bindings';
 import { isBuiltinCallExpression } from './calls';
 import { matchesLocalAliasReturnWrapperPattern } from './cart_patterns';
 import { isAssignableStorageExpression, isSimpleCallableExpression } from './expressions';
+import { getFunctionSingleReturnExpression } from './function_shapes';
 import { getCopiedSourceKey } from './general';
 import { expressionContainsInlineTableOrFunction, findTableFieldByKey, getTableFieldKey } from './table_fields';
 import { LuaOptionsParameterUse } from './types';
@@ -165,15 +166,10 @@ export function isDelegationCallCandidate(expression: LuaCallExpression): boolea
 }
 
 export function matchesBuiltinRecreationPattern(functionExpression: LuaFunctionExpression): boolean {
-	const body = functionExpression.body.body;
-	if (body.length !== 1) {
+	const expression = getFunctionSingleReturnExpression(functionExpression);
+	if (!expression) {
 		return false;
 	}
-	const statement = body[0];
-	if (statement.kind !== LuaSyntaxKind.ReturnStatement || statement.expressions.length !== 1) {
-		return false;
-	}
-	const expression = statement.expressions[0];
 	if (expression.kind !== LuaSyntaxKind.CallExpression) {
 		return false;
 	}

@@ -1,8 +1,8 @@
 import { type LuaExpression, type LuaIdentifierExpression, type LuaStatement, LuaSyntaxKind, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../../../lua_rule';
 import { lintConstantCopyInStatements } from '../../constant_copy_pattern';
-import { declareLuaBinding, discardLuaBindingScope, enterLuaBindingScope, resolveLuaBinding, setLuaBinding, isConstantSourceIdentifierName } from './bindings';
-import { isConstantSourceExpression } from './expressions';
+import { declareLuaBinding, discardLuaBindingScope, enterLuaBindingScope, resolveLuaBinding, setLuaBinding } from './bindings';
+import { isConstantBindingPathExpression, isConstantSourceExpression } from './expressions';
 import { ConstantCopyBinding, ConstantCopyContext } from './types';
 
 export function createConstantCopyContext(issues: LuaLintIssue[]): ConstantCopyContext {
@@ -38,16 +38,7 @@ export function getConstantCopyBinding(context: ConstantCopyContext, name: strin
 }
 
 export function isForbiddenConstantCopyExpression(expression: LuaExpression, context: ConstantCopyContext): boolean {
-	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
-		return isConstantSourceIdentifierName(expression.name, context);
-	}
-	if (expression.kind === LuaSyntaxKind.MemberExpression) {
-		return isConstantSourceExpression(expression.base, context);
-	}
-	if (expression.kind === LuaSyntaxKind.IndexExpression) {
-		return isConstantSourceExpression(expression.base, context);
-	}
-	return false;
+	return isConstantBindingPathExpression(expression, context);
 }
 
 export function lintConstantCopyInExpression(expression: LuaExpression | null, context: ConstantCopyContext): void {

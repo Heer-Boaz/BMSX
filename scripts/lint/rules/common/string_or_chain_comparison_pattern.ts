@@ -5,7 +5,7 @@ import {
 	trimmedCppExpressionText,
 } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { type LuaExpression } from '../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../lua_rule';
@@ -49,7 +49,7 @@ export function lintCppStringOrChains(file: string, tokens: readonly CppToken[],
 			}
 		}
 		if (sameSubject) {
-			pushLintIssue(issues, file, tokens[index], stringOrChainComparisonPatternRule.name, 'Multiple OR-comparisons against the same expression with string literals are forbidden. Use switch-statement or set-like lookups instead.');
+			pushTokenLintIssue(issues, file, tokens[index], stringOrChainComparisonPatternRule.name, 'Multiple OR-comparisons against the same expression with string literals are forbidden. Use switch-statement or set-like lookups instead.');
 		}
 	}
 }

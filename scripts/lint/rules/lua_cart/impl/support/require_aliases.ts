@@ -1,7 +1,7 @@
-import { type LuaExpression, type LuaLocalFunctionStatement, type LuaStatement, LuaSyntaxKind, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type LuaExpression, type LuaFunctionExpression, type LuaStatement, LuaSyntaxKind, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../../../lua_rule';
 import { declareShadowedRequireAliasBinding } from '../../shadowed_require_alias_pattern';
-import { discardLuaBindingScope, enterLuaBindingScope } from './bindings';
+import { discardLuaBindingScope, enterLuaBindingScope, lintScopedBindingStatements } from './bindings';
 import { isConstantModulePath } from './object_ownership';
 import { ShadowedRequireAliasBinding, ShadowedRequireAliasContext } from './types';
 
@@ -76,13 +76,8 @@ export function lintShadowedRequireAliasExpression(expression: LuaExpression | n
 				lintShadowedRequireAliasExpression(field.value, context);
 			}
 			return;
-			case LuaSyntaxKind.FunctionExpression:
-				enterShadowedRequireAliasScope(context);
-				for (const parameter of expression.parameters) {
-					declareShadowedRequireAliasBinding(context, parameter, undefined);
-				}
-			lintShadowedRequireAliasStatements(expression.body.body, context);
-			leaveShadowedRequireAliasScope(context);
+		case LuaSyntaxKind.FunctionExpression:
+			lintShadowedRequireAliasFunctionExpression(expression, context);
 			return;
 		default:
 			return;
@@ -95,35 +90,23 @@ export function lintShadowedRequireAliasStatements(
 ): void {
 	for (const statement of statements) {
 		switch (statement.kind) {
-				case LuaSyntaxKind.LocalAssignmentStatement: {
-					const valueCount = Math.min(statement.names.length, statement.values.length);
-					for (let index = 0; index < statement.names.length; index += 1) {
-						const requiredModulePath = index < valueCount ? getRequiredModulePath(statement.values[index]) : undefined;
-						declareShadowedRequireAliasBinding(context, statement.names[index], requiredModulePath);
-					}
+			case LuaSyntaxKind.LocalAssignmentStatement: {
+				const valueCount = Math.min(statement.names.length, statement.values.length);
+				for (let index = 0; index < statement.names.length; index += 1) {
+					const requiredModulePath = index < valueCount ? getRequiredModulePath(statement.values[index]) : undefined;
+					declareShadowedRequireAliasBinding(context, statement.names[index], requiredModulePath);
+				}
 				for (const value of statement.values) {
 					lintShadowedRequireAliasExpression(value, context);
 				}
 				break;
 			}
-				case LuaSyntaxKind.LocalFunctionStatement: {
-					const localFunction = statement as LuaLocalFunctionStatement;
-					declareShadowedRequireAliasBinding(context, localFunction.name, undefined);
-					enterShadowedRequireAliasScope(context);
-					for (const parameter of localFunction.functionExpression.parameters) {
-						declareShadowedRequireAliasBinding(context, parameter, undefined);
-					}
-				lintShadowedRequireAliasStatements(localFunction.functionExpression.body.body, context);
-				leaveShadowedRequireAliasScope(context);
+			case LuaSyntaxKind.LocalFunctionStatement:
+				declareShadowedRequireAliasBinding(context, statement.name, undefined);
+				lintShadowedRequireAliasFunctionExpression(statement.functionExpression, context);
 				break;
-			}
-				case LuaSyntaxKind.FunctionDeclarationStatement:
-					enterShadowedRequireAliasScope(context);
-					for (const parameter of statement.functionExpression.parameters) {
-						declareShadowedRequireAliasBinding(context, parameter, undefined);
-					}
-				lintShadowedRequireAliasStatements(statement.functionExpression.body.body, context);
-				leaveShadowedRequireAliasScope(context);
+			case LuaSyntaxKind.FunctionDeclarationStatement:
+				lintShadowedRequireAliasFunctionExpression(statement.functionExpression, context);
 				break;
 			case LuaSyntaxKind.AssignmentStatement:
 				for (const left of statement.left) {
@@ -143,16 +126,12 @@ export function lintShadowedRequireAliasStatements(
 					if (clause.condition) {
 						lintShadowedRequireAliasExpression(clause.condition, context);
 					}
-					enterShadowedRequireAliasScope(context);
-					lintShadowedRequireAliasStatements(clause.block.body, context);
-					leaveShadowedRequireAliasScope(context);
+					lintScopedBindingStatements(context, clause.block.body, lintShadowedRequireAliasStatements);
 				}
 				break;
 			case LuaSyntaxKind.WhileStatement:
 				lintShadowedRequireAliasExpression(statement.condition, context);
-				enterShadowedRequireAliasScope(context);
-				lintShadowedRequireAliasStatements(statement.block.body, context);
-				leaveShadowedRequireAliasScope(context);
+				lintScopedBindingStatements(context, statement.block.body, lintShadowedRequireAliasStatements);
 				break;
 			case LuaSyntaxKind.RepeatStatement:
 				enterShadowedRequireAliasScope(context);
@@ -160,12 +139,12 @@ export function lintShadowedRequireAliasStatements(
 				lintShadowedRequireAliasExpression(statement.condition, context);
 				leaveShadowedRequireAliasScope(context);
 				break;
-				case LuaSyntaxKind.ForNumericStatement:
+			case LuaSyntaxKind.ForNumericStatement:
 				lintShadowedRequireAliasExpression(statement.start, context);
 				lintShadowedRequireAliasExpression(statement.limit, context);
 				lintShadowedRequireAliasExpression(statement.step, context);
-					enterShadowedRequireAliasScope(context);
-					declareShadowedRequireAliasBinding(context, statement.variable, undefined);
+				enterShadowedRequireAliasScope(context);
+				declareShadowedRequireAliasBinding(context, statement.variable, undefined);
 				lintShadowedRequireAliasStatements(statement.block.body, context);
 				leaveShadowedRequireAliasScope(context);
 				break;
@@ -173,17 +152,15 @@ export function lintShadowedRequireAliasStatements(
 				for (const iterator of statement.iterators) {
 					lintShadowedRequireAliasExpression(iterator, context);
 				}
-					enterShadowedRequireAliasScope(context);
-					for (const variable of statement.variables) {
-						declareShadowedRequireAliasBinding(context, variable, undefined);
-					}
+				enterShadowedRequireAliasScope(context);
+				for (const variable of statement.variables) {
+					declareShadowedRequireAliasBinding(context, variable, undefined);
+				}
 				lintShadowedRequireAliasStatements(statement.block.body, context);
 				leaveShadowedRequireAliasScope(context);
 				break;
 			case LuaSyntaxKind.DoStatement:
-				enterShadowedRequireAliasScope(context);
-				lintShadowedRequireAliasStatements(statement.block.body, context);
-				leaveShadowedRequireAliasScope(context);
+				lintScopedBindingStatements(context, statement.block.body, lintShadowedRequireAliasStatements);
 				break;
 			case LuaSyntaxKind.CallStatement:
 				lintShadowedRequireAliasExpression(statement.expression, context);
@@ -192,6 +169,15 @@ export function lintShadowedRequireAliasStatements(
 				break;
 		}
 	}
+}
+
+function lintShadowedRequireAliasFunctionExpression(functionExpression: LuaFunctionExpression, context: ShadowedRequireAliasContext): void {
+	enterShadowedRequireAliasScope(context);
+	for (const parameter of functionExpression.parameters) {
+		declareShadowedRequireAliasBinding(context, parameter, undefined);
+	}
+	lintShadowedRequireAliasStatements(functionExpression.body.body, context);
+	leaveShadowedRequireAliasScope(context);
 }
 
 export function lintShadowedRequireAliasPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {

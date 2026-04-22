@@ -6,7 +6,7 @@ import {
 	findTopLevelCppSemicolon,
 } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
+import { pushTokenLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import { defineLintRule } from '../../rule';
 
@@ -64,7 +64,7 @@ export function lintCppEnsureLazyInitPattern(file: string, tokens: readonly CppT
 	if (returnTarget !== `${targetPrefix}::instance`) {
 		return;
 	}
-	pushLintIssue(
+	pushTokenLintIssue(
 		issues,
 		file,
 		tokens[info.nameToken],
