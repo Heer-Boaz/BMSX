@@ -372,7 +372,7 @@ constexpr f32 kKernel5x5[25] = {
 };
 
 inline f32 clamp01(f32 v) {
-	return std::min(1.0f, std::max(0.0f, v));
+	return clamp(v, 0.0f, 1.0f);
 }
 
 inline f32 smoothstep(f32 edge0, f32 edge1, f32 x) {
@@ -419,8 +419,8 @@ inline Color sampleLinear(const u32* src, i32 width, i32 height, f32 x, f32 y,
 							const std::array<f32, 256>& table) {
 	const i32 xi = static_cast<i32>(std::floor(x + 0.5f));
 	const i32 yi = static_cast<i32>(std::floor(y + 0.5f));
-	const i32 clampedX = std::min(width - 1, std::max(0, xi));
-	const i32 clampedY = std::min(height - 1, std::max(0, yi));
+	const i32 clampedX = clamp(xi, 0, width - 1);
+	const i32 clampedY = clamp(yi, 0, height - 1);
 	return unpackLinear(src[clampedY * width + clampedX], table);
 }
 
@@ -527,7 +527,7 @@ inline i32 psxDitherOffset4x4(i32 x, i32 y) {
 
 inline f32 quantizeRgb555PSX(f32 c, i32 ditherOffset) {
 	const f32 v8 = clamp01(c) * 255.0f + static_cast<f32>(ditherOffset);
-	const f32 v8clamped = std::min(255.0f, std::max(0.0f, v8));
+	const f32 v8clamped = clamp(v8, 0.0f, 255.0f);
 	const f32 v5 = std::floor(v8clamped / 8.0f);
 	return v5 / 31.0f;
 }
@@ -710,7 +710,7 @@ void GameView::applyCRTPostProcessing(const u32* src,
 			if (useGlow) {
 				const f32 lum = luminance(color);
 				const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
-				const f32 glow = std::min(kGlowBrightnessClamp, std::max(0.0f, lum)) * k;
+				const f32 glow = clamp(lum, 0.0f, kGlowBrightnessClamp) * k;
 				color.r += glowColor[0] * glow;
 				color.g += glowColor[1] * glow;
 				color.b += glowColor[2] * glow;

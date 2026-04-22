@@ -275,18 +275,21 @@ void LibretroPlatform::switchToSoftwareBackend() {
 void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 	m_av_info = info;
 	m_has_av_info = true;
+	const auto& geometry = info.geometry;
+	const unsigned baseWidth = geometry.base_width;
+	const unsigned baseHeight = geometry.base_height;
 
-	if (info.geometry.base_width == 0 || info.geometry.base_height == 0) {
-		log(RETRO_LOG_WARN, "[BMSX] Ignoring invalid geometry %ux%u\n", info.geometry.base_width, info.geometry.base_height);
+	if (baseWidth == 0 || baseHeight == 0) {
+		log(RETRO_LOG_WARN, "[BMSX] Ignoring invalid geometry %ux%u\n", baseWidth, baseHeight);
 		return;
 	}
 
 	m_frame_time_sec = 1.0 / info.timing.fps;
 	m_has_wall_frame_timestamp = false;
-	m_framebuffer.resize(info.geometry.base_width, info.geometry.base_height);
+	m_framebuffer.resize(baseWidth, baseHeight);
 	log(RETRO_LOG_INFO, "[BMSX] AV Info set: %ux%u @ %.2fHz, Sample Rate: %.2fHz\n",
-		info.geometry.base_width,
-		info.geometry.base_height,
+		baseWidth,
+		baseHeight,
 		info.timing.fps,
 		info.timing.sample_rate
 	);
@@ -297,8 +300,8 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 
 	auto* view = m_engine->view();
 	Vec2 renderTargetSize{
-		static_cast<f32>(info.geometry.base_width),
-		static_cast<f32>(info.geometry.base_height)
+		static_cast<f32>(baseWidth),
+		static_cast<f32>(baseHeight)
 	};
 	const f32 offscreenScale = static_cast<f32>(m_postprocess_scale);
 	Vec2 offscreenSize{
@@ -389,15 +392,16 @@ void LibretroPlatform::applyManifestViewport() {
 	}
 
 	retro_system_av_info nextInfo = m_av_info;
-	nextInfo.geometry.base_width = static_cast<unsigned>(m_pending_viewport.x);
-	nextInfo.geometry.base_height = static_cast<unsigned>(m_pending_viewport.y);
-	nextInfo.geometry.max_width = nextInfo.geometry.base_width;
-	nextInfo.geometry.max_height = nextInfo.geometry.base_height;
-	nextInfo.geometry.aspect_ratio = static_cast<float>(nextInfo.geometry.base_width)
-		/ static_cast<float>(nextInfo.geometry.base_height);
+	auto& geometry = nextInfo.geometry;
+	geometry.base_width = static_cast<unsigned>(m_pending_viewport.x);
+	geometry.base_height = static_cast<unsigned>(m_pending_viewport.y);
+	geometry.max_width = geometry.base_width;
+	geometry.max_height = geometry.base_height;
+	geometry.aspect_ratio = static_cast<float>(geometry.base_width)
+		/ static_cast<float>(geometry.base_height);
 
 	m_has_pending_viewport = false;
-	m_environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &nextInfo.geometry);
+	m_environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &geometry);
 	setAVInfo(nextInfo);
 }
 

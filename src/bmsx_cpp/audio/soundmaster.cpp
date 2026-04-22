@@ -1008,6 +1008,7 @@ AudioDataView SoundMaster::resolveAudioData(const AssetId& id) const {
 void SoundMaster::badpLoadBlock(VoiceRecord& record, size_t offset) {
 	const AudioAsset& asset = *record.asset;
 	const u8* data = record.data;
+	BadpDecoderState& badp = record.badp;
 	if (offset + 4 > asset.dataSize) {
 		throw BMSX_RUNTIME_ERROR("BADP block header exceeds data.");
 	}
@@ -1026,31 +1027,32 @@ void SoundMaster::badpLoadBlock(VoiceRecord& record, size_t offset) {
 	}
 	size_t cursor = offset + 4;
 	for (i32 channel = 0; channel < asset.channels; channel += 1) {
-		record.badp.predictors[channel] = static_cast<i16>(readLE16Audio(data + cursor));
+		badp.predictors[channel] = static_cast<i16>(readLE16Audio(data + cursor));
 		const i32 stepIndex = static_cast<i32>(data[cursor + 2]);
 		if (stepIndex < 0 || stepIndex > 88) {
 			throw BMSX_RUNTIME_ERROR("BADP step index out of range.");
 		}
-		record.badp.stepIndices[channel] = stepIndex;
+		badp.stepIndices[channel] = stepIndex;
 		cursor += 4;
 	}
-	record.badp.blockEnd = blockEnd;
-	record.badp.blockFrames = blockFrames;
-	record.badp.blockFrameIndex = 0;
-	record.badp.payloadOffset = offset + blockHeaderBytes;
-	record.badp.nibbleCursor = 0;
+	badp.blockEnd = blockEnd;
+	badp.blockFrames = blockFrames;
+	badp.blockFrameIndex = 0;
+	badp.payloadOffset = offset + blockHeaderBytes;
+	badp.nibbleCursor = 0;
 }
 
 void SoundMaster::badpSeekToFrame(VoiceRecord& record, size_t frame) {
 	const AudioAsset& asset = *record.asset;
+	BadpDecoderState& badp = record.badp;
 	if (frame > record.frames) {
 		throw BMSX_RUNTIME_ERROR("BADP seek frame out of range.");
 	}
 	if (frame == record.frames) {
-		record.badp.nextFrame = frame;
-		record.badp.decodedFrame = static_cast<i64>(frame) - 1;
-		record.badp.decodedLeft = 0;
-		record.badp.decodedRight = 0;
+		badp.nextFrame = frame;
+		badp.decodedFrame = static_cast<i64>(frame) - 1;
+		badp.decodedLeft = 0;
+		badp.decodedRight = 0;
 		return;
 	}
 
@@ -1073,14 +1075,14 @@ void SoundMaster::badpSeekToFrame(VoiceRecord& record, size_t frame) {
 	size_t currentFrame = static_cast<size_t>(asset.badpSeekFrames[seekIndex]);
 	size_t cursor = static_cast<size_t>(asset.badpSeekOffsets[seekIndex]);
 	badpLoadBlock(record, cursor);
-	while (currentFrame + record.badp.blockFrames <= frame) {
-		currentFrame += record.badp.blockFrames;
-		cursor = record.badp.blockEnd;
+	while (currentFrame + badp.blockFrames <= frame) {
+		currentFrame += badp.blockFrames;
+		cursor = badp.blockEnd;
 		badpLoadBlock(record, cursor);
 	}
-	record.badp.nextFrame = currentFrame;
-	record.badp.decodedFrame = static_cast<i64>(currentFrame) - 1;
-	while (record.badp.nextFrame <= frame) {
+	badp.nextFrame = currentFrame;
+	badp.decodedFrame = static_cast<i64>(currentFrame) - 1;
+	while (badp.nextFrame <= frame) {
 		badpDecodeNextFrame(record);
 	}
 }
@@ -1091,11 +1093,12 @@ void SoundMaster::badpResetDecoder(VoiceRecord& record, size_t frame) {
 }
 
 void SoundMaster::badpDecodeNextFrame(VoiceRecord& record) {
-	if (record.badp.nextFrame >= record.frames) {
+	BadpDecoderState& badp = record.badp;
+	if (badp.nextFrame >= record.frames) {
 		throw BMSX_RUNTIME_ERROR("BADP decode frame out of range.");
 	}
-	if (record.badp.blockFrameIndex >= record.badp.blockFrames) {
-		badpLoadBlock(record, record.badp.blockEnd);
+	if (badp.blockFrameIndex >= badp.blockFrames) {
+		badpLoadBlock(record, badp.blockEnd);
 	}
 
 	const AudioAsset& asset = *record.asset;
@@ -1103,63 +1106,66 @@ void SoundMaster::badpDecodeNextFrame(VoiceRecord& record) {
 	i32 left = 0;
 	i32 right = 0;
 	for (i32 channel = 0; channel < asset.channels; channel += 1) {
-		const size_t payloadIndex = record.badp.payloadOffset + (record.badp.nibbleCursor >> 1);
-		if (payloadIndex >= record.badp.blockEnd) {
+		i32& predictor = badp.predictors[channel];
+		i32& stepIndex = badp.stepIndices[channel];
+		const size_t payloadIndex = badp.payloadOffset + (badp.nibbleCursor >> 1);
+		if (payloadIndex >= badp.blockEnd) {
 			throw BMSX_RUNTIME_ERROR("BADP payload underrun.");
 		}
 		const u8 packed = data[payloadIndex];
-		const i32 code = (record.badp.nibbleCursor & 1) == 0 ? static_cast<i32>((packed >> 4) & 0x0f) : static_cast<i32>(packed & 0x0f);
-		record.badp.nibbleCursor += 1;
+		const i32 code = (badp.nibbleCursor & 1) == 0 ? static_cast<i32>((packed >> 4) & 0x0f) : static_cast<i32>(packed & 0x0f);
+		badp.nibbleCursor += 1;
 
-		const i32 step = BADP_STEP_TABLE[record.badp.stepIndices[channel]];
+		const i32 step = BADP_STEP_TABLE[stepIndex];
 		i32 diff = step >> 3;
 		if ((code & 4) != 0) diff += step;
 		if ((code & 2) != 0) diff += step >> 1;
 		if ((code & 1) != 0) diff += step >> 2;
 		if ((code & 8) != 0) {
-			record.badp.predictors[channel] -= diff;
+			predictor -= diff;
 		} else {
-			record.badp.predictors[channel] += diff;
+			predictor += diff;
 		}
-		if (record.badp.predictors[channel] < -32768) record.badp.predictors[channel] = -32768;
-		if (record.badp.predictors[channel] > 32767) record.badp.predictors[channel] = 32767;
-		record.badp.stepIndices[channel] += BADP_INDEX_TABLE[code];
-		if (record.badp.stepIndices[channel] < 0) record.badp.stepIndices[channel] = 0;
-		if (record.badp.stepIndices[channel] > 88) record.badp.stepIndices[channel] = 88;
+		if (predictor < -32768) predictor = -32768;
+		if (predictor > 32767) predictor = 32767;
+		stepIndex += BADP_INDEX_TABLE[code];
+		if (stepIndex < 0) stepIndex = 0;
+		if (stepIndex > 88) stepIndex = 88;
 
 		if (channel == 0) {
-			left = record.badp.predictors[channel];
+			left = predictor;
 		} else {
-			right = record.badp.predictors[channel];
+			right = predictor;
 		}
 	}
 	if (asset.channels == 1) {
 		right = left;
 	}
-	record.badp.blockFrameIndex += 1;
-	record.badp.nextFrame += 1;
-	record.badp.decodedFrame = static_cast<i64>(record.badp.nextFrame) - 1;
-	record.badp.decodedLeft = static_cast<i16>(left);
-	record.badp.decodedRight = static_cast<i16>(right);
+	badp.blockFrameIndex += 1;
+	badp.nextFrame += 1;
+	badp.decodedFrame = static_cast<i64>(badp.nextFrame) - 1;
+	badp.decodedLeft = static_cast<i16>(left);
+	badp.decodedRight = static_cast<i16>(right);
 }
 
 bool SoundMaster::badpReadFrameAt(VoiceRecord& record, size_t frame, i16& outLeft, i16& outRight) {
 	if (frame >= record.frames) {
 		return false;
 	}
-	if (record.badp.decodedFrame == static_cast<i64>(frame)) {
-		outLeft = record.badp.decodedLeft;
-		outRight = record.badp.decodedRight;
+	BadpDecoderState& badp = record.badp;
+	if (badp.decodedFrame == static_cast<i64>(frame)) {
+		outLeft = badp.decodedLeft;
+		outRight = badp.decodedRight;
 		return true;
 	}
-	if (frame < record.badp.nextFrame) {
+	if (frame < badp.nextFrame) {
 		badpSeekToFrame(record, frame);
 	}
-	while (record.badp.nextFrame <= frame) {
+	while (badp.nextFrame <= frame) {
 		badpDecodeNextFrame(record);
 	}
-	outLeft = record.badp.decodedLeft;
-	outRight = record.badp.decodedRight;
+	outLeft = badp.decodedLeft;
+	outRight = badp.decodedRight;
 	return true;
 }
 

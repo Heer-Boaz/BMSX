@@ -30,25 +30,29 @@ static void updateFlippedTexcoords(ImgMeta& meta) {
 }
 
 static void updateFlippedBoundingBox(ImgMeta& meta) {
-	const i32 right = meta.boundingbox.original.x + meta.boundingbox.original.width;
-	const i32 bottom = meta.boundingbox.original.y + meta.boundingbox.original.height;
+	const auto& original = meta.boundingbox.original;
+	auto& fliph = meta.boundingbox.fliph;
+	auto& flipv = meta.boundingbox.flipv;
+	auto& fliphv = meta.boundingbox.fliphv;
+	const i32 right = original.x + original.width;
+	const i32 bottom = original.y + original.height;
 	const i32 width = meta.width;
 	const i32 height = meta.height;
 
-	meta.boundingbox.fliph.x = width - right;
-	meta.boundingbox.fliph.y = meta.boundingbox.original.y;
-	meta.boundingbox.fliph.width = meta.boundingbox.original.width;
-	meta.boundingbox.fliph.height = meta.boundingbox.original.height;
+	fliph.x = width - right;
+	fliph.y = original.y;
+	fliph.width = original.width;
+	fliph.height = original.height;
 
-	meta.boundingbox.flipv.x = meta.boundingbox.original.x;
-	meta.boundingbox.flipv.y = height - bottom;
-	meta.boundingbox.flipv.width = meta.boundingbox.original.width;
-	meta.boundingbox.flipv.height = meta.boundingbox.original.height;
+	flipv.x = original.x;
+	flipv.y = height - bottom;
+	flipv.width = original.width;
+	flipv.height = original.height;
 
-	meta.boundingbox.fliphv.x = width - right;
-	meta.boundingbox.fliphv.y = height - bottom;
-	meta.boundingbox.fliphv.width = meta.boundingbox.original.width;
-	meta.boundingbox.fliphv.height = meta.boundingbox.original.height;
+	fliphv.x = width - right;
+	fliphv.y = height - bottom;
+	fliphv.width = original.width;
+	fliphv.height = original.height;
 }
 
 static const BinValue* findObjectField(const BinObject& obj, const char* key);

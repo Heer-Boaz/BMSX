@@ -3,6 +3,7 @@
  */
 
 #include "backend.h"
+#include "common/clamp.h"
 #include <array>
 #include <algorithm>
 #include <cstring>
@@ -37,7 +38,7 @@ static std::array<u8, 256> buildDitherGuardLut() {
 	for (i32 i = 0; i < 256; ++i) {
 		const f32 lum = static_cast<f32>(i) / 255.0f;
 		f32 t = (lum - kDitherGuardEdge0) / (kDitherGuardEdge1 - kDitherGuardEdge0);
-		t = std::min(1.0f, std::max(0.0f, t));
+		t = clamp(t, 0.0f, 1.0f);
 		const f32 smooth = t * t * (3.0f - 2.0f * t);
 		lut[i] = static_cast<u8>(smooth * 255.0f + 0.5f);
 	}
@@ -581,6 +582,7 @@ void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 src
 
 	i32 sy_fp = (srcY << 16) + baseY * stepY;
 
+	// @code-quality start repeated-sequence-acceptable -- Software blit is a per-pixel hot path; depth/no-depth loops stay direct instead of dispatching through a callback.
 	if (useDepth) {
 		for (i32 dy = clipY0; dy < clipY1; ++dy) {
 			const i32 sy = sy_fp >> 16;
@@ -628,6 +630,7 @@ void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 src
 		}
 		sy_fp += yStep;
 	}
+	// @code-quality end repeated-sequence-acceptable
 }
 
 } // namespace bmsx

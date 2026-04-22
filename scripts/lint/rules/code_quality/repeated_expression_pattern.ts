@@ -1,7 +1,7 @@
 import { repeatedAccessChainPatternRule } from './repeated_access_chain_pattern';
 import type { CppLintIssue } from '../cpp/support/diagnostics';
 import { cppTokenText, normalizedCppTokenText, type CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { collectCppStatementRanges, cppRangeHas } from '../../../../src/bmsx/language/cpp/syntax/syntax';
+import { collectCppStatementRanges, cppRangeHas, isCppAccessSeparator, isCppClockNowCallTarget, isCppComparisonOperator } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import type { TsLintIssue } from '../../ts_rule';
 import { defineLintRule } from '../../rule';
@@ -44,7 +44,7 @@ export function lintCppRepeatedExpressions(file: string, tokens: readonly CppTok
 	const repeatedAccessChains = new Map<string, { token: CppToken; count: number }>();
 	const record = (start: number, end: number): void => {
 		const text = normalizedCppTokenText(tokens, start, end);
-		if (text.length < 24 || text.startsWith('this.') || text.startsWith('this->')) {
+		if (!shouldReportCppRepeatedText(text)) {
 			return;
 		}
 		const existing = expressions.get(text);
@@ -70,7 +70,7 @@ export function lintCppRepeatedExpressions(file: string, tokens: readonly CppTok
 	for (let index = 0; index < ranges.length; index += 1) {
 		const start = ranges[index][0];
 		const end = ranges[index][1];
-		if (cppRangeHas(tokens, start, end, token => token.text === '==' || token.text === '!=' || token.text === '<' || token.text === '>')) {
+		if (cppRangeHas(tokens, start, end, token => isCppComparisonOperator(token.text))) {
 			record(start, end);
 		}
 	}
@@ -110,7 +110,7 @@ function cppRepeatedAccessChain(tokens: readonly CppToken[], pairs: readonly num
 		return null;
 	}
 	const previous = tokens[start - 1]?.text;
-	if (previous === '.' || previous === '->' || previous === '::') {
+	if (isCppAccessSeparator(previous)) {
 		return null;
 	}
 	let index = start + 1;
@@ -121,7 +121,7 @@ function cppRepeatedAccessChain(tokens: readonly CppToken[], pairs: readonly num
 			continue;
 		}
 		const separator = tokens[index]?.text;
-		if ((separator !== '.' && separator !== '->' && separator !== '::') || tokens[index + 1]?.kind !== 'id') {
+		if (!isCppAccessSeparator(separator) || tokens[index + 1]?.kind !== 'id') {
 			break;
 		}
 		segmentCount += 1;
@@ -131,8 +131,12 @@ function cppRepeatedAccessChain(tokens: readonly CppToken[], pairs: readonly num
 		return null;
 	}
 	const text = cppTokenText(tokens, start, index);
-	if (text.length < 24 || text.startsWith('this.') || text.startsWith('this->')) {
+	if (!shouldReportCppRepeatedText(text) || isCppClockNowCallTarget(text)) {
 		return null;
 	}
 	return compactCppSampleText(text);
+}
+
+function shouldReportCppRepeatedText(text: string): boolean {
+	return text.length >= 24 && !text.startsWith('this.') && !text.startsWith('this->');
 }

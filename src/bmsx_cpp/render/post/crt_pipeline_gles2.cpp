@@ -926,10 +926,12 @@ void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipel
 	glUniform1i(g_crt.uniform_apply_fringing, state.options.applyFringing ? 1 : 0);
 	glUniform1i(g_crt.uniform_apply_aperture, state.options.applyAperture ? 1 : 0);
 
+	const auto& colorBleed = state.options.colorBleed;
+	const auto& glowColor = state.options.glowColor;
 	glUniform1f(g_crt.uniform_noise_intensity, state.options.noiseIntensity);
-	glUniform3f(g_crt.uniform_color_bleed, state.options.colorBleed[0], state.options.colorBleed[1], state.options.colorBleed[2]);
+	glUniform3f(g_crt.uniform_color_bleed, colorBleed[0], colorBleed[1], colorBleed[2]);
 	glUniform1f(g_crt.uniform_blur_intensity, state.options.blurIntensity);
-	glUniform3f(g_crt.uniform_glow_color, state.options.glowColor[0], state.options.glowColor[1], state.options.glowColor[2]);
+	glUniform3f(g_crt.uniform_glow_color, glowColor[0], glowColor[1], glowColor[2]);
 
 	backend->setActiveTextureUnit(kTexUnitPostProcess);
 	backend->bindTexture2D(state.colorTex);

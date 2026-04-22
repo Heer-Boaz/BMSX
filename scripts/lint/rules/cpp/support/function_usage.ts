@@ -1,5 +1,5 @@
 import { type CppFunctionInfo } from '../../../../../src/bmsx/language/cpp/syntax/declarations';
-import { cppCallTarget, isCppFunctionDeclaratorParen } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
+import { cppAccessChainLeafName, cppCallTarget, isCppFunctionDeclaratorParen } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
 import { type CppToken } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
 import { isCppConstructorLike } from './bindings';
 import { isCppBoundaryStyleWrapperName } from './numeric';
@@ -13,17 +13,7 @@ export function incrementCppUsageCount(counts: Map<string, number>, name: string
 }
 
 export function cppUsageLeafName(name: string): string {
-	const arrowIndex = name.lastIndexOf('->');
-	const dotIndex = name.lastIndexOf('.');
-	const colonIndex = name.lastIndexOf('::');
-	const separatorIndex = Math.max(arrowIndex, dotIndex, colonIndex);
-	if (separatorIndex === -1) {
-		return name;
-	}
-	if (separatorIndex === arrowIndex) {
-		return name.slice(separatorIndex + 2);
-	}
-	return name.slice(separatorIndex + 1);
+	return cppAccessChainLeafName(name);
 }
 
 export function createCppFunctionUsageInfo(): { totalCounts: Map<string, number>; referenceCounts: Map<string, number>; } {

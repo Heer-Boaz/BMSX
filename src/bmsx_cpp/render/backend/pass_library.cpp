@@ -219,6 +219,8 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 #if !BMSX_ENABLE_GLES2
 	throw BMSX_RUNTIME_ERROR("[RenderPassLibrary] OpenGLES2 backend disabled at compile time.");
 #else
+	EngineCore* const engine = &EngineCore::instance();
+
 	// FrameResolve: per-frame state setup
 	{
 		RenderPassDef desc;
@@ -248,10 +250,9 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		desc.bootstrap = [](GPUBackend* backend) {
 			CRTPipeline::initPresentGLES2(static_cast<OpenGLES2Backend*>(backend));
 		};
-		desc.exec = [](GPUBackend* backend, void*, std::any& state) {
-			auto& engine = EngineCore::instance();
+		desc.exec = [engine](GPUBackend* backend, void*, std::any& state) {
 			auto& fbState = std::any_cast<Framebuffer2DPipelineState&>(state);
-			CRTPipeline::renderPresentToCurrentTargetGLES2(static_cast<OpenGLES2Backend*>(backend), engine.view(), fbState);
+			CRTPipeline::renderPresentToCurrentTargetGLES2(static_cast<OpenGLES2Backend*>(backend), engine->view(), fbState);
 		};
 		registerPass(desc);
 	}
@@ -270,14 +271,13 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		desc.bootstrap = [](GPUBackend* backend) {
 			CRTPipeline::initDeviceQuantizeGLES2(static_cast<OpenGLES2Backend*>(backend));
 		};
-		desc.exec = [](GPUBackend* backend, void* fbo, std::any& state) {
+		desc.exec = [engine](GPUBackend* backend, void* fbo, std::any& state) {
 			(void)fbo;
-			auto& engine = EngineCore::instance();
 			auto& deviceState = std::any_cast<DeviceQuantizePipelineState&>(state);
-			CRTPipeline::renderDeviceQuantizeGLES2(static_cast<OpenGLES2Backend*>(backend), engine.view(), deviceState);
+			CRTPipeline::renderDeviceQuantizeGLES2(static_cast<OpenGLES2Backend*>(backend), engine->view(), deviceState);
 		};
-		desc.shouldExecute = []() {
-			const auto* view = EngineCore::instance().view();
+		desc.shouldExecute = [engine]() {
+			const auto* view = engine->view();
 			return static_cast<i32>(view->dither_type) != 0;
 		};
 		desc.prepare = noopPreparePass;
@@ -290,13 +290,12 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		desc.id = "present";
 		desc.name = "Present";
 		setAutoPresentGraph(desc);
-		desc.exec = [](GPUBackend* backend, void*, std::any& state) {
-			auto& engine = EngineCore::instance();
+		desc.exec = [engine](GPUBackend* backend, void*, std::any& state) {
 			auto& crtState = std::any_cast<CRTPipelineState&>(state);
-			CRTPipeline::renderPresentGLES2(static_cast<OpenGLES2Backend*>(backend), engine.view(), crtState);
+			CRTPipeline::renderPresentGLES2(static_cast<OpenGLES2Backend*>(backend), engine->view(), crtState);
 		};
-		desc.shouldExecute = []() {
-			const auto* view = EngineCore::instance().view();
+		desc.shouldExecute = [engine]() {
+			const auto* view = engine->view();
 			return !view->crt_postprocessing_enabled;
 		};
 		desc.prepare = noopPreparePass;
@@ -312,13 +311,12 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		desc.bootstrap = [](GPUBackend* backend) {
 			CRTPipeline::initGLES2(static_cast<OpenGLES2Backend*>(backend));
 		};
-		desc.exec = [](GPUBackend* backend, void*, std::any& state) {
-			auto& engine = EngineCore::instance();
+		desc.exec = [engine](GPUBackend* backend, void*, std::any& state) {
 			auto& crtState = std::any_cast<CRTPipelineState&>(state);
-			CRTPipeline::renderCRTGLES2(static_cast<OpenGLES2Backend*>(backend), engine.view(), crtState);
+			CRTPipeline::renderCRTGLES2(static_cast<OpenGLES2Backend*>(backend), engine->view(), crtState);
 		};
-		desc.shouldExecute = []() {
-			const auto* view = EngineCore::instance().view();
+		desc.shouldExecute = [engine]() {
+			const auto* view = engine->view();
 			return view->crt_postprocessing_enabled;
 		};
 		desc.prepare = noopPreparePass;
@@ -441,14 +439,16 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 		RenderGraphPass pass;
 		pass.name = "FrameTargets";
 		pass.setup = [view, handles, deviceColorEnabled](RenderGraphIO& io, FrameData*) -> std::any {
+			const i32 width = static_cast<i32>(view->offscreenCanvasSize.x);
+			const i32 height = static_cast<i32>(view->offscreenCanvasSize.y);
 			TexDesc colorDesc;
-			colorDesc.width = static_cast<i32>(view->offscreenCanvasSize.x);
-			colorDesc.height = static_cast<i32>(view->offscreenCanvasSize.y);
+			colorDesc.width = width;
+			colorDesc.height = height;
 			colorDesc.name = "FrameColor";
 
 			TexDesc depthDesc;
-			depthDesc.width = static_cast<i32>(view->offscreenCanvasSize.x);
-			depthDesc.height = static_cast<i32>(view->offscreenCanvasSize.y);
+			depthDesc.width = width;
+			depthDesc.height = height;
 			depthDesc.name = "FrameDepth";
 			depthDesc.depth = true;
 
@@ -456,8 +456,8 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 			handles->depth = io.createTex(depthDesc);
 			if (deviceColorEnabled) {
 				TexDesc deviceDesc;
-				deviceDesc.width = static_cast<i32>(view->offscreenCanvasSize.x);
-				deviceDesc.height = static_cast<i32>(view->offscreenCanvasSize.y);
+				deviceDesc.width = width;
+				deviceDesc.height = height;
 				deviceDesc.name = "DeviceColor";
 				deviceDesc.transient = true;
 				handles->device = io.createTex(deviceDesc);

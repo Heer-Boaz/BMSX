@@ -1,4 +1,4 @@
-import { cppCallTarget, findCppAccessChainStart, splitCppArgumentRanges } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
+import { cppAccessChainLeafName, cppCallTarget, findCppAccessChainStart, splitCppArgumentRanges } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
 import { type CppToken } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
 import { isCppNumericSanitizationCall } from './numeric';
 
@@ -89,115 +89,53 @@ export function isSemanticNormalizationWrapperTarget(target: string): boolean {
 }
 
 export function isSemanticValidationPredicateTarget(target: string): boolean {
-	return target === 'isfinite' || target === 'std::isfinite';
+	return cppAccessChainLeafName(target) === 'isfinite';
 }
 
 export function semanticNormalizationFamily(target: string): string | null {
-	if (target === 'clamp' || target === 'max' || target === 'min' || target === 'std::clamp' || target === 'std::max' || target === 'std::min') {
-		return 'numeric:bounds';
+	switch (cppAccessChainLeafName(target)) {
+		case 'clamp':
+		case 'max':
+		case 'min':
+			return 'numeric:bounds';
+		case 'ceil':
+		case 'floor':
+		case 'round':
+		case 'trunc':
+			return 'numeric:rounding';
+		case 'isfinite':
+			return 'numeric:finite';
+		case 'replace':
+		case 'replaceAll':
+		case 'replace_all':
+			return 'text:replace';
+		case 'normalize':
+			return 'text:normalize';
+		case 'trim':
+		case 'trimStart':
+		case 'trimEnd':
+			return 'text:trim';
+		case 'tolower':
+		case 'toupper':
+		case 'toLower':
+		case 'toUpper':
+			return 'text:case';
+		case 'join':
+		case 'split':
+		case 'substr':
+		case 'substring':
+			return 'text:segment';
+		case 'contains':
+		case 'starts_with':
+		case 'ends_with':
+			return 'text:lookup';
+		default:
+			return null;
 	}
-	if (
-		target === 'ceil'
-		|| target === 'floor'
-		|| target === 'round'
-		|| target === 'trunc'
-		|| target === 'std::ceil'
-		|| target === 'std::floor'
-		|| target === 'std::round'
-		|| target === 'std::trunc'
-	) {
-		return 'numeric:rounding';
-	}
-	if (target === 'isfinite' || target === 'std::isfinite') {
-		return 'numeric:finite';
-	}
-	if (
-		target === 'replace'
-		|| target === 'replaceAll'
-		|| target === 'std::replace'
-		|| target === 'std::replace_all'
-		|| target.endsWith('.replace')
-		|| target.endsWith('::replace')
-		|| target.endsWith('.replaceAll')
-		|| target.endsWith('::replaceAll')
-	) {
-		return 'text:replace';
-	}
-	if (target === 'normalize' || target === 'std::normalize' || target.endsWith('.normalize') || target.endsWith('::normalize')) {
-		return 'text:normalize';
-	}
-	if (
-		target === 'trim'
-		|| target === 'std::trim'
-		|| target === 'trimStart'
-		|| target === 'trimEnd'
-		|| target === 'std::trimStart'
-		|| target === 'std::trimEnd'
-		|| target.endsWith('.trim')
-		|| target.endsWith('::trim')
-		|| target.endsWith('.trimStart')
-		|| target.endsWith('::trimStart')
-		|| target.endsWith('.trimEnd')
-		|| target.endsWith('::trimEnd')
-	) {
-		return 'text:trim';
-	}
-	if (
-		target === 'tolower'
-		|| target === 'toupper'
-		|| target === 'std::tolower'
-		|| target === 'std::toupper'
-		|| target.endsWith('.tolower')
-		|| target.endsWith('::tolower')
-		|| target.endsWith('.toupper')
-		|| target.endsWith('::toupper')
-		|| target.endsWith('.toLower')
-		|| target.endsWith('::toLower')
-		|| target.endsWith('.toUpper')
-		|| target.endsWith('::toUpper')
-	) {
-		return 'text:case';
-	}
-	if (
-		target === 'join'
-		|| target === 'split'
-		|| target === 'substr'
-		|| target === 'substring'
-		|| target.endsWith('.join')
-		|| target.endsWith('::join')
-		|| target.endsWith('.split')
-		|| target.endsWith('::split')
-		|| target.endsWith('.substr')
-		|| target.endsWith('::substr')
-		|| target.endsWith('.substring')
-		|| target.endsWith('::substring')
-	) {
-		return 'text:segment';
-	}
-	if (
-		target === 'contains'
-		|| target === 'starts_with'
-		|| target === 'ends_with'
-		|| target.endsWith('.contains')
-		|| target.endsWith('::contains')
-		|| target.endsWith('.starts_with')
-		|| target.endsWith('::starts_with')
-		|| target.endsWith('.ends_with')
-		|| target.endsWith('::ends_with')
-	) {
-		return 'text:lookup';
-	}
-	return null;
 }
 
 export function semanticOperationName(target: string): string {
-	const namespaceIndex = target.lastIndexOf('::');
-	const dotIndex = target.lastIndexOf('.');
-	const separatorIndex = Math.max(namespaceIndex, dotIndex);
-	if (separatorIndex < 0) {
-		return target;
-	}
-	return target.slice(separatorIndex + (separatorIndex === namespaceIndex ? 2 : 1));
+	return cppAccessChainLeafName(target);
 }
 
 export function collectSemanticBodySignatures(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number): string[] {

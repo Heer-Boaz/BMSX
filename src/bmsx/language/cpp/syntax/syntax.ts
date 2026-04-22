@@ -45,6 +45,53 @@ export function isCppAssignmentOperator(text: string): boolean {
 	return CPP_ASSIGNMENT_OPERATORS.has(text);
 }
 
+export function isCppComparisonOperator(text: string): boolean {
+	switch (text) {
+		case '==':
+		case '!=':
+		case '<':
+		case '<=':
+		case '>':
+		case '>=':
+		case '<=>':
+			return true;
+		default:
+			return false;
+	}
+}
+
+export function isCppAccessSeparator(text: string | undefined): boolean {
+	return text !== undefined && CPP_ACCESS_CHAIN_SEPARATORS.has(text);
+}
+
+export function cppAccessChainLeafName(name: string): string {
+	const arrowIndex = name.lastIndexOf('->');
+	const dotIndex = name.lastIndexOf('.');
+	const colonIndex = name.lastIndexOf('::');
+	const separatorIndex = Math.max(arrowIndex, dotIndex, colonIndex);
+	if (separatorIndex === -1) {
+		return name;
+	}
+	if (separatorIndex === arrowIndex || separatorIndex === colonIndex) {
+		return name.slice(separatorIndex + 2);
+	}
+	return name.slice(separatorIndex + 1);
+}
+
+export function isCppClockNowCallTarget(text: string): boolean {
+	const target = text.endsWith('()') ? text.slice(0, -2) : text;
+	switch (target) {
+		case 'std::chrono::steady_clock::now':
+		case 'std::chrono::system_clock::now':
+		case 'std::chrono::high_resolution_clock::now':
+		case 'Clock::now':
+		case 'FrameClock::now':
+			return true;
+		default:
+			return false;
+	}
+}
+
 export function previousCppIdentifier(tokens: readonly CppToken[], index: number): number {
 	for (let current = index - 1; current >= 0; current -= 1) {
 		if (tokens[current].kind === 'id') {
@@ -60,8 +107,7 @@ export function previousCppIdentifier(tokens: readonly CppToken[], index: number
 export function findCppAccessChainStart(tokens: readonly CppToken[], nameIndex: number): number {
 	let start = nameIndex;
 	while (start >= 2) {
-		const separator = tokens[start - 1].text;
-		if (!CPP_ACCESS_CHAIN_SEPARATORS.has(separator)) {
+		if (!isCppAccessSeparator(tokens[start - 1].text)) {
 			break;
 		}
 		if (tokens[start - 2].kind !== 'id' && tokens[start - 2].text !== 'this') {

@@ -151,19 +151,19 @@ static LibretroCore* g_core = NULL;
 
 static uint32_t g_frame_number = 0;
 
-static const char* kMenuKeyRenderBackend = "bmsx_render_backend";
-static const char* kMenuKeyCrtPostprocessing = "bmsx_crt_postprocessing";
-static const char* kMenuKeyPostprocessDetail = "bmsx_postprocess_detail";
-static const char* kMenuKeyCrtNoise = "bmsx_crt_noise";
-static const char* kMenuKeyCrtColorBleed = "bmsx_crt_color_bleed";
-static const char* kMenuKeyCrtScanlines = "bmsx_crt_scanlines";
-static const char* kMenuKeyCrtBlur = "bmsx_crt_blur";
-static const char* kMenuKeyCrtGlow = "bmsx_crt_glow";
-static const char* kMenuKeyCrtFringing = "bmsx_crt_fringing";
-static const char* kMenuKeyCrtAperture = "bmsx_crt_aperture";
-static const char* kMenuKeyDither = "bmsx_dither";
-static const char* kMenuKeyFrameSkip = "bmsx_frameskip";
-static const char* kMenuKeyHostShowFps = "bmsx_host_show_fps";
+#define kMenuKeyRenderBackend "bmsx_render_backend"
+#define kMenuKeyCrtPostprocessing "bmsx_crt_postprocessing"
+#define kMenuKeyPostprocessDetail "bmsx_postprocess_detail"
+#define kMenuKeyCrtNoise "bmsx_crt_noise"
+#define kMenuKeyCrtColorBleed "bmsx_crt_color_bleed"
+#define kMenuKeyCrtScanlines "bmsx_crt_scanlines"
+#define kMenuKeyCrtBlur "bmsx_crt_blur"
+#define kMenuKeyCrtGlow "bmsx_crt_glow"
+#define kMenuKeyCrtFringing "bmsx_crt_fringing"
+#define kMenuKeyCrtAperture "bmsx_crt_aperture"
+#define kMenuKeyDither "bmsx_dither"
+#define kMenuKeyFrameSkip "bmsx_frameskip"
+#define kMenuKeyHostShowFps "bmsx_host_show_fps"
 
 #ifdef BMSX_LIBRETRO_HOST_SDL
 static bool g_use_sdl = false;
@@ -1095,6 +1095,9 @@ static size_t menu_copy_option_values(MenuOptionValue* values, const struct retr
 	return count;
 }
 
+static void menu_set_option_values(MenuOption* opt, const char* label, const char* info,
+		const MenuOptionValue* values, size_t count, const char* default_value);
+
 static void menu_apply_core_option_values(
 		MenuOption* opt,
 		const char* key,
@@ -1245,9 +1248,6 @@ static void menu_append_action(const char* key, const char* label) {
 	opt->value_count = 0;
 	opt->current_index = 0;
 }
-
-static void menu_set_option_values(MenuOption* opt, const char* label, const char* info,
-		const MenuOptionValue* values, size_t count, const char* default_value);
 
 static void menu_append_host_options(void) {
 	MenuOption* opt = menu_get_option(kMenuKeyHostShowFps);
@@ -4596,6 +4596,13 @@ static void usage(const char* argv0) {
 	exit(2);
 }
 
+static const char* required_arg(int argc, char** argv, int* index) {
+	if (*index + 1 >= argc) {
+		usage(argv[0]);
+	}
+	return argv[++(*index)];
+}
+
 int main(int argc, char** argv) {
 	install_crash_handlers();
 	const char* core_path = "./bmsx_libretro.so";
@@ -4611,8 +4618,7 @@ int main(int argc, char** argv) {
 
 	for (int i = 1; i < argc; ++i) {
 		if (strcmp(argv[i], "--core") == 0) {
-			if (i + 1 >= argc) usage(argv[0]);
-			core_path = argv[++i];
+			core_path = required_arg(argc, argv, &i);
 			continue;
 		}
 		if (strcmp(argv[i], "--no-game") == 0) {
@@ -4620,23 +4626,19 @@ int main(int argc, char** argv) {
 			continue;
 		}
 		if (strcmp(argv[i], "--system-dir") == 0) {
-			if (i + 1 >= argc) usage(argv[0]);
-			system_dir = argv[++i];
+			system_dir = required_arg(argc, argv, &i);
 			continue;
 		}
 		if (strcmp(argv[i], "--save-dir") == 0) {
-			if (i + 1 >= argc) usage(argv[0]);
-			save_dir = argv[++i];
+			save_dir = required_arg(argc, argv, &i);
 			continue;
 		}
 		if (strcmp(argv[i], "--backend") == 0) {
-			if (i + 1 >= argc) usage(argv[0]);
-			backend = argv[++i];
+			backend = required_arg(argc, argv, &i);
 			continue;
 		}
 		if (strcmp(argv[i], "--video") == 0) {
-			if (i + 1 >= argc) usage(argv[0]);
-			video_backend = argv[++i];
+			video_backend = required_arg(argc, argv, &i);
 			continue;
 		}
 		if (strcmp(argv[i], "--input-debug") == 0) {
@@ -4644,14 +4646,12 @@ int main(int argc, char** argv) {
 			continue;
 		}
 		if (strcmp(argv[i], "--rom-folder") == 0) {
-			if (i + 1 >= argc) usage(argv[0]);
-			rom_folder = argv[++i];
+			rom_folder = required_arg(argc, argv, &i);
 			continue;
 		}
 		if (strcmp(argv[i], "--input-timeline") == 0) {
-			if (i + 1 >= argc) usage(argv[0]);
 			use_input_timeline = true;
-			input_timeline = argv[++i];
+			input_timeline = required_arg(argc, argv, &i);
 			continue;
 		}
 		if (argv[i][0] == '-') {

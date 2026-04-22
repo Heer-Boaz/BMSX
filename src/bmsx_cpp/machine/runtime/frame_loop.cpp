@@ -179,13 +179,12 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 }
 
 void FrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platformPaused, bool skipRender) {
-	using Clock = std::chrono::steady_clock;
 	EngineCore& engine = EngineCore::instance();
 	if (engine.m_state != EngineState::Running && engine.m_state != EngineState::Paused) {
 		return;
 	}
 	try {
-		const auto tickStart = Clock::now();
+		const auto tickStart = std::chrono::steady_clock::now();
 		runtime.screen.recordHostFrame();
 		engine.m_last_tick_timing.inputMs = 0.0;
 		engine.m_last_tick_timing.workbenchModeInputMs = 0.0;
@@ -207,36 +206,36 @@ void FrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platform
 			engine.m_fps = 1.0 / hostDeltaSeconds;
 		}
 
-		const auto inputStart = Clock::now();
+		const auto inputStart = std::chrono::steady_clock::now();
 		Input::instance().pollInput();
-		const auto inputEnd = Clock::now();
+		const auto inputEnd = std::chrono::steady_clock::now();
 		engine.m_last_tick_timing.inputMs = to_ms(inputEnd - inputStart);
 
 		runtime.screen.clearPresentation();
 		if (!platformPaused) {
 			const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
-			const auto updateStart = Clock::now();
+			const auto updateStart = std::chrono::steady_clock::now();
 			engine.m_delta_time = runtime.timing.frameDurationMs / 1000.0;
 			runtime.frameScheduler.run(runtime, hostDeltaMs);
 			runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
-			const auto updateEnd = Clock::now();
+			const auto updateEnd = std::chrono::steady_clock::now();
 			engine.m_last_tick_timing.runtimeUpdateMs = to_ms(updateEnd - updateStart);
 
-			const auto terminalStart = Clock::now();
+			const auto terminalStart = std::chrono::steady_clock::now();
 			runtime.machine().vdp().flushAssetEdits();
-			const auto terminalEnd = Clock::now();
+			const auto terminalEnd = std::chrono::steady_clock::now();
 			engine.m_last_tick_timing.runtimeTerminalMs = to_ms(terminalEnd - terminalStart);
 		}
 		engine.m_delta_time = hostDeltaSeconds;
 
 		if (engine.m_platform && engine.m_platform->microtaskQueue()) {
-			const auto microtaskStart = Clock::now();
+			const auto microtaskStart = std::chrono::steady_clock::now();
 			engine.m_platform->microtaskQueue()->flush();
-			const auto microtaskEnd = Clock::now();
+			const auto microtaskEnd = std::chrono::steady_clock::now();
 			engine.m_last_tick_timing.microtaskMs = to_ms(microtaskEnd - microtaskStart);
 		}
 
-		engine.m_last_tick_timing.totalMs = to_ms(Clock::now() - tickStart);
+		engine.m_last_tick_timing.totalMs = to_ms(std::chrono::steady_clock::now() - tickStart);
 		if (!skipRender) {
 			runtime.screen.render(engine, runtime);
 		}

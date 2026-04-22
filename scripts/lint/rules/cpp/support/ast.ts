@@ -1,4 +1,4 @@
-import { findCppAccessChainStart, findNextCppTokenText, hasCppDeclarationPrefix, previousCppIdentifier, trimmedCppExpressionText } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
+import { CPP_CONTROL_CALL_KEYWORDS, findCppAccessChainStart, findNextCppTokenText, hasCppDeclarationPrefix, isCppAccessSeparator, isCppComparisonOperator, previousCppIdentifier, trimmedCppExpressionText } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
 import { type CppToken, cppTokenText } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
 import { hasCppDeclarationPrefixNoise, isIgnoredName } from './bindings';
 import { HOT_PATH_TEMPORARY_TYPES } from './numeric';
@@ -263,7 +263,7 @@ export function declarationFromStatement(tokens: readonly CppToken[], start: num
 	if (hasCppDeclarationPrefixNoise(tokens, declarationStart, nameIndex)) {
 		return null;
 	}
-	if (DECLARATION_NAME_PREFIX_BLOCKLIST.has(tokens[nameIndex - 1]?.text ?? '')) {
+	if (DECLARATION_NAME_PREFIX_BLOCKLIST.has(tokens[nameIndex - 1].text)) {
 		return null;
 	}
 	const nameToken = tokens[nameIndex];
@@ -315,7 +315,7 @@ export function isCppSimpleAliasInitializer(tokens: readonly CppToken[], start: 
 			seenToken = true;
 			continue;
 		}
-		if (token.text === '.' || token.text === '->' || token.text === '::') {
+		if (isCppAccessSeparator(token.text)) {
 			continue;
 		}
 		return false;
@@ -324,23 +324,25 @@ export function isCppSimpleAliasInitializer(tokens: readonly CppToken[], start: 
 }
 
 export function isCppSingleUseSuppressingToken(text: string | null): boolean {
-	return text === '.'
-		|| text === '->'
-		|| text === '::'
-		|| text === '&'
-		|| text === '['
-		|| text === ']'
-		|| text === '=='
-		|| text === '==='
-		|| text === '!='
-		|| text === '!=='
-		|| text === '<'
-		|| text === '<='
-		|| text === '>'
-		|| text === '>='
-		|| text === '&&'
-		|| text === '||'
-		|| text === '??';
+	if (text === null) {
+		return false;
+	}
+	if (isCppAccessSeparator(text) || isCppComparisonOperator(text)) {
+		return true;
+	}
+	switch (text) {
+		case '&':
+		case '[':
+		case ']':
+		case '===':
+		case '!==':
+		case '&&':
+		case '||':
+		case '??':
+			return true;
+		default:
+			return false;
+	}
 }
 
 export function isCppTemporalSnapshotName(name: string): boolean {
@@ -381,7 +383,7 @@ export function rangeContainsTemporaryAllocation(tokens: readonly CppToken[], st
 
 export function isCppCallIdentifier(tokens: readonly CppToken[], index: number): boolean {
 	const text = tokens[index].text;
-	if (text === 'if' || text === 'for' || text === 'while' || text === 'switch' || text === 'catch') {
+	if (CPP_CONTROL_CALL_KEYWORDS.has(text)) {
 		return false;
 	}
 	return tokens[index + 1]?.text === '(';
