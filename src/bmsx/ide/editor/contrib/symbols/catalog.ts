@@ -4,7 +4,7 @@ import { computeSourceLabel } from '../../../common/paths';
 import { getActiveCodeTabContext } from '../../../workbench/ui/code_tab/contexts';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { listGlobalLuaSymbols, listLuaSymbols } from '../intellisense/engine';
-import { symbolKindLabel } from '../intellisense/semantic_model';
+import { symbolKindLabel } from '../../../../lua/semantic/model';
 import { extractErrorMessage } from '../../../../lua/value';
 import { symbolSearchState } from './search_state';
 

@@ -1,5 +1,5 @@
 import type { LuaFunctionDeclarationStatement, LuaIdentifierExpression } from '../../lua/syntax/ast';
-import type { LuaBoundReference, LuaSemanticFrontendFile } from '../../ide/editor/contrib/intellisense/lua_frontend';
+import type { LuaBoundReference, LuaSemanticFrontendFile } from '../../lua/semantic/frontend';
 
 export const IMPLICIT_SELF_SYMBOL_HANDLE = '$implicit:self';
 

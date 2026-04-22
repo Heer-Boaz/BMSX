@@ -53,7 +53,7 @@ import { $ } from '../core/engine';
 import { Runtime } from '../machine/runtime/runtime';
 import { isLuaHandlerFunction } from './handler_cache';
 import { LuaInteropAdapter } from '../machine/firmware/js_bridge';
-import { getCachedLuaParse } from '../ide/language/lua/analysis_cache';
+import { getCachedLuaParse } from './analysis/cache';
 import { ScratchBuffer } from '../common/scratchbuffer';
 
 type ExecutionFrame = any;

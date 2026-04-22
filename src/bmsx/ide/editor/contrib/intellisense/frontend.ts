@@ -1,6 +1,6 @@
 import { Runtime } from '../../../../machine/runtime/runtime';
 import { createLuaSemanticFrontendFromSnapshot } from './semantic_workspace';
-import type { LuaSemanticWorkspaceSnapshot } from './semantic_model';
+import type { LuaSemanticWorkspaceSnapshot } from '../../../../lua/semantic/model';
 import { prepareRuntimeSemanticWorkspaceForEditorBuffer } from './semantic_workspace_runtime';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import type { TextBuffer } from '../../text/text_buffer';

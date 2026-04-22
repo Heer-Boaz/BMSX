@@ -12,7 +12,7 @@ import { ReferenceState, type ReferenceMatchInfo } from './state';
 import { splitText } from '../../../../common/text_lines';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import { listResources } from '../../../workspace/workspace';
-import type { Decl, LuaSemanticWorkspaceSnapshot } from '../intellisense/semantic_model';
+import type { Decl, LuaSemanticWorkspaceSnapshot } from '../../../../lua/semantic/model';
 import { computeSourceLabel } from '../../../common/paths';
 
 export type ProjectReferenceEnvironment = {

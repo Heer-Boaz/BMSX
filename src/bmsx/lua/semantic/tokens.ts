@@ -1,4 +1,4 @@
-import type { SemanticSymbolKind } from './semantic_symbols';
+import type { SemanticSymbolKind } from './symbols';
 
 export type SemanticRole = 'definition' | 'usage';
 

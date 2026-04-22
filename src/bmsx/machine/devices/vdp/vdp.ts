@@ -587,7 +587,7 @@ export type VdpBlitterCommand =
 	| VdpBlitterGlyphRunCommand
 	| VdpBlitterTileRunCommand;
 
-export interface VdpBlitterHost {
+export interface VdpBlitterContext {
 	width: number;
 	height: number;
 	frameBufferTextureKey: string;
@@ -597,7 +597,7 @@ export interface VdpBlitterHost {
 
 export interface VdpBlitterExecutor {
 	readonly backendType: 'webgl2' | 'webgpu' | 'headless';
-	execute(host: VdpBlitterHost, commands: readonly VdpBlitterCommand[]): void;
+	execute(context: VdpBlitterContext, commands: readonly VdpBlitterCommand[]): void;
 }
 
 export const FRAMEBUFFER_TEXTURE_KEY = '_framebuffer_2d';
@@ -641,6 +641,13 @@ export class VDP implements VramWriteSink {
 	private readonly tileEntryPool: VdpTileRunBlit[] = [];
 	private readonly clippedRectScratchA = { width: 0, height: 0, area: 0 };
 	private readonly clippedRectScratchB = { width: 0, height: 0, area: 0 };
+	private readonly blitterContext: VdpBlitterContext = {
+		width: 0,
+		height: 0,
+		frameBufferTextureKey: FRAMEBUFFER_RENDER_TEXTURE_KEY,
+		getSurface: this.getBlitterSurface.bind(this),
+		getShaderAtlasId: this.getBlitterAtlasId.bind(this),
+	};
 	private readonly implicitClearCommand: VdpBlitterClearCommand = {
 		opcode: 'clear',
 		seq: 0,
@@ -1136,17 +1143,13 @@ export class VDP implements VramWriteSink {
 		if ($.view.backend.type !== this.blitterExecutor.backendType) {
 			throw vdpFault(`JS blitter executor mismatch (${this.blitterExecutor.backendType} != ${$.view.backend.type}).`);
 		}
-		const host: VdpBlitterHost = {
-			width: this._frameBufferWidth,
-			height: this._frameBufferHeight,
-			frameBufferTextureKey: FRAMEBUFFER_RENDER_TEXTURE_KEY,
-			getSurface: (surfaceId) => this.getBlitterSurface(surfaceId),
-			getShaderAtlasId: (surfaceId) => this.getBlitterAtlasId(surfaceId),
-		};
+		const context = this.blitterContext;
+		context.width = this._frameBufferWidth;
+		context.height = this._frameBufferHeight;
 		if (queue[0].opcode !== 'clear') {
-			this.blitterExecutor.execute(host, this.implicitClearQueue);
+			this.blitterExecutor.execute(context, this.implicitClearQueue);
 		}
-		this.blitterExecutor.execute(host, queue);
+		this.blitterExecutor.execute(context, queue);
 	}
 
 	private ensureDisplayFrameBufferTexture(): void {

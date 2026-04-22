@@ -1,6 +1,6 @@
-import { MEMORY_ACCESS_KIND_NAMES } from '../../../../machine/memory/access_kind';
-import type { LuaSymbolKind } from '../../../../lua/semantic_contracts';
-import type { SemanticSymbolKind } from '../../../common/semantic/semantic_symbols';
+import { MEMORY_ACCESS_KIND_NAMES } from '../../machine/memory/access_kind';
+import type { LuaSymbolKind } from '../semantic_contracts';
+import type { SemanticSymbolKind } from './symbols';
 
 export function semanticSymbolKindToLuaSymbolKind(kind: SemanticSymbolKind): LuaSymbolKind {
 	switch (kind) {

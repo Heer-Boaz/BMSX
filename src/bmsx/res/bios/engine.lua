@@ -58,7 +58,6 @@ local vdp_load_queue_head
 local vdp_load_queue_tail
 local vdp_active_job
 local vdp_load_handler
-local cart_irq_handler
 local cart_irq_handlers<const> = {}
 local sys_atlas_id<const> = 254
 vdp_stream_cursor = sys_vdp_stream_base
@@ -620,9 +619,6 @@ function engine.irq(flags)
 	end
 	ack = ack | (flags & ~(irq_img_done | irq_img_error))
 	if fatal == nil then
-		if cart_irq_handler ~= nil then
-			cart_irq_handler(flags)
-		end
 		for mask, handler in pairs(cart_irq_handlers) do
 			if mask ~= irq_reinit and mask ~= irq_newgame and (flags & mask) ~= 0 then
 				handler(flags & mask, flags)
@@ -654,27 +650,18 @@ function engine.irq(flags)
 	end
 end
 
-function engine.on_irq(mask_or_handler, handler)
-	if type(mask_or_handler) == 'number' then
-		local mask<const> = mask_or_handler
-		if handler == nil then
-			cart_irq_handlers[mask] = nil
-			return
-		end
-		if type(handler) ~= 'function' then
-			error('on_irq: handler must be a function')
-		end
-		cart_irq_handlers[mask] = handler
+function engine.on_irq(mask, handler)
+	if type(mask) ~= 'number' then
+		error('on_irq: mask must be a number')
+	end
+	if handler == nil then
+		cart_irq_handlers[mask] = nil
 		return
 	end
-	if mask_or_handler == nil then
-		cart_irq_handler = nil
-		return
-	end
-	if type(mask_or_handler) ~= 'function' then
+	if type(handler) ~= 'function' then
 		error('on_irq: handler must be a function')
 	end
-	cart_irq_handler = mask_or_handler
+	cart_irq_handlers[mask] = handler
 end
 
 function engine.on_vdp_load(handler)

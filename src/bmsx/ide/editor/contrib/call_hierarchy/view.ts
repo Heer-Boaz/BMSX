@@ -1,7 +1,7 @@
-import type { LuaIncomingCallHierarchyNode } from '../intellisense/lua_frontend';
+import type { LuaIncomingCallHierarchyNode } from '../../../../lua/semantic/frontend';
 import type { LuaDefinitionLocation } from '../../../../lua/semantic_contracts';
 import { createEditorSemanticFrontend } from '../intellisense/frontend';
-import type { LuaSemanticWorkspaceSnapshot, SymbolID } from '../intellisense/semantic_model';
+import type { LuaSemanticWorkspaceSnapshot, SymbolID } from '../../../../lua/semantic/model';
 import { computeSourceLabel } from '../../../common/paths';
 
 export type CallHierarchyViewNodeKind = 'root' | 'caller' | 'call';

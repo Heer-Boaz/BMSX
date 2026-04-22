@@ -1,8 +1,8 @@
-import { buildLuaSemanticFrontend, type LuaSemanticFrontend } from './lua_frontend';
+import { buildLuaSemanticFrontend, type LuaSemanticFrontend } from '../../../../lua/semantic/frontend';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
-import type { LuaSemanticWorkspaceSnapshot } from './semantic_model';
+import type { LuaSemanticWorkspaceSnapshot } from '../../../../lua/semantic/model';
 
-export { LuaSemanticWorkspace } from './semantic_model';
+export { LuaSemanticWorkspace } from '../../../../lua/semantic/model';
 
 export type LuaSemanticWorkspaceFrontendOptions = {
 	builtinDescriptors?: readonly LuaBuiltinDescriptor[];

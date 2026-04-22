@@ -64,7 +64,8 @@ export class ImgDecController {
 	private decodeResult: DecodedImage | null = null;
 	private decodeQueued = false;
 	private decodeToken = 0;
-	private readonly queuedJobs: ImgDecJob[] = [];
+	private readonly queuedJobs: Array<ImgDecJob | null> = [];
+	private queuedJobHead = 0;
 	private activeJob: ImgDecJob | null = null;
 	private signalIrq = false;
 
@@ -137,6 +138,7 @@ export class ImgDecController {
 		this.decodeQueued = false;
 		this.signalIrq = false;
 		this.queuedJobs.length = 0;
+		this.queuedJobHead = 0;
 		this.activeJob = null;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMG);
 		this.memory.writeValue(IO_IMG_SRC, 0);
@@ -209,10 +211,16 @@ export class ImgDecController {
 		if (this.active) {
 			return;
 		}
-		if (this.queuedJobs.length === 0) {
+		if (this.queuedJobHead === this.queuedJobs.length) {
 			return;
 		}
-		const job = this.queuedJobs.shift()!;
+		const job = this.queuedJobs[this.queuedJobHead]!;
+		this.queuedJobs[this.queuedJobHead] = null;
+		this.queuedJobHead += 1;
+		if (this.queuedJobHead === this.queuedJobs.length) {
+			this.queuedJobs.length = 0;
+			this.queuedJobHead = 0;
+		}
 		this.startJob({ buffer: job.buffer, dst: job.dst, cap: job.cap, src: 0, len: job.buffer.byteLength, job, signalIrq: false });
 	}
 
@@ -372,7 +380,7 @@ export class ImgDecController {
 
 	private scheduleNextService(nowCycles: number): void {
 		if (!this.active) {
-			if (this.queuedJobs.length !== 0) {
+			if (this.queuedJobHead !== this.queuedJobs.length) {
 				this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMG, nowCycles);
 				return;
 			}

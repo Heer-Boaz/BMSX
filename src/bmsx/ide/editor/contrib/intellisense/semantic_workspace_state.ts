@@ -1,6 +1,6 @@
-import type { ParsedLuaChunk } from '../../../language/lua/parse';
-import { getCachedLuaParse } from '../../../language/lua/analysis_cache';
-import { LuaSemanticWorkspace, type FileSemanticData, type LuaSemanticWorkspaceSnapshot } from './semantic_model';
+import type { ParsedLuaChunk } from '../../../../lua/analysis/parse';
+import { getCachedLuaParse } from '../../../../lua/analysis/cache';
+import { LuaSemanticWorkspace, type FileSemanticData, type LuaSemanticWorkspaceSnapshot } from '../../../../lua/semantic/model';
 
 export type SemanticWorkspacePathInput = {
 	path: string;

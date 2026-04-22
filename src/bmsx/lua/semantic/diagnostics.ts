@@ -11,29 +11,30 @@ import {
 	type LuaSourceRange,
 	type LuaStatement,
 	type LuaStringLiteralExpression,
-} from '../../../../lua/syntax/ast';
-import { API_METHOD_METADATA } from '../../../../machine/firmware/api_metadata';
-import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../../../../machine/firmware/builtin_descriptors';
-import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
+} from '../syntax/ast';
+import { API_METHOD_METADATA } from '../../machine/firmware/api_metadata';
+import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../../machine/firmware/builtin_descriptors';
+import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../semantic_contracts';
 import {
 	buildLuaSemanticWorkspaceSnapshot,
 	type Decl,
 	type FileSemanticData,
 	type FunctionSignatureInfo,
 	type LuaSemanticWorkspaceSnapshotInput,
-} from './semantic_model';
-import { getCachedLuaParse } from '../../../language/lua/analysis_cache';
-import { sourceRangeStartKey } from '../../../common/semantic/source_range';
-import { buildLuaKnownNameSet, isReservedMemoryMapName, methodPathToPropertyPath, semanticSymbolKindToLuaSymbolKind } from './lua_semantic_common';
-import type { EditorDiagnosticSeverity } from '../../../common/models';
+} from './model';
+import { getCachedLuaParse } from '../analysis/cache';
+import { sourceRangeStartKey } from './source_range';
+import { buildLuaKnownNameSet, isReservedMemoryMapName, methodPathToPropertyPath, semanticSymbolKindToLuaSymbolKind } from './common';
 
 export type LuaStaticDiagnostic = {
 	row: number;
 	startColumn: number;
 	endColumn: number;
 	message: string;
-	severity: EditorDiagnosticSeverity;
+	severity: LuaStaticDiagnosticSeverity;
 };
+
+export type LuaStaticDiagnosticSeverity = 'error' | 'warning';
 
 export type LuaApiSignatureMetadata = {
 	params: readonly string[];
@@ -268,7 +269,7 @@ function pushDiagnostic(
 	startColumn: number,
 	endColumn: number,
 	message: string,
-	severity: EditorDiagnosticSeverity,
+	severity: LuaStaticDiagnosticSeverity,
 ): void {
 	diagnostics.push({
 		row,
@@ -283,7 +284,7 @@ function pushRangeDiagnostic(
 	diagnostics: LuaStaticDiagnostic[],
 	range: LuaSourceRange,
 	message: string,
-	severity: EditorDiagnosticSeverity,
+	severity: LuaStaticDiagnosticSeverity,
 ): void {
 	const row = range.start.line - 1;
 	const startColumn = range.start.column - 1;

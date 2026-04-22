@@ -1,7 +1,7 @@
-import { LuaSyntaxKind, type LuaCallExpression, type LuaChunk, type LuaIdentifierExpression, type LuaSourceRange, type LuaStringLiteralExpression } from '../../../../lua/syntax/ast';
-import { LuaTokenType } from '../../../../lua/syntax/token';
-import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
-import type { ParsedLuaChunk } from '../../../language/lua/parse';
+import { LuaSyntaxKind, type LuaCallExpression, type LuaChunk, type LuaIdentifierExpression, type LuaSourceRange, type LuaStringLiteralExpression } from '../syntax/ast';
+import { LuaTokenType } from '../syntax/token';
+import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../semantic_contracts';
+import type { ParsedLuaChunk } from '../analysis/parse';
 import {
 	buildLuaSemanticWorkspaceSnapshot,
 	type Decl,
@@ -9,20 +9,20 @@ import {
 	type LuaSemanticWorkspaceSnapshot,
 	type Ref,
 	type SymbolID,
-} from './semantic_model';
-import { buildModuleAliasesFromPaths } from '../../../../machine/program/asset';
+} from './model';
+import { buildModuleAliasesFromPaths } from '../../machine/program/asset';
 import {
 	computeLuaDiagnosticsFromAnalysis,
 	getDefaultLuaBuiltinDescriptors,
 	getStaticLuaApiSignatureMap,
 	type LuaApiSignatureMetadata,
 	type LuaStaticDiagnostic,
-} from './static_diagnostics';
-import { sourcePositionInRange, sourceRangeKey, sourceRangeStartKey } from '../../../common/semantic/source_range';
-import { semanticNamePathMatches } from '../../../common/semantic/semantic_symbols';
-import { buildLuaKnownNameSet, isReservedMemoryMapName, semanticSymbolKindToLuaSymbolKind } from './lua_semantic_common';
+} from './diagnostics';
+import { compareSourcePosition, sourcePositionInRange, sourceRangeKey, sourceRangeStartKey } from './source_range';
+import { semanticNamePathMatches } from './symbols';
+import { buildLuaKnownNameSet, isReservedMemoryMapName, semanticSymbolKindToLuaSymbolKind } from './common';
 
-const RESERVED_INTRINSIC_NAMES = ['memwrite'] as const;
+const RESERVED_INTRINSIC_NAME = 'memwrite';
 
 export type LuaSemanticFrontendSource = {
 	path: string;
@@ -79,7 +79,7 @@ export type LuaSemanticFrontendFile = {
 	diagnostics: readonly LuaStaticDiagnostic[];
 	getDeclaration(range: LuaSourceRange): Decl;
 	getReference(range: LuaSourceRange): LuaBoundReference;
-	getNavigationTargetAt(line: number, column: number): LuaSemanticNavigationTarget;
+	getNavigationTargetAt(line: number, column: number): LuaSemanticNavigationTarget | null;
 	findFirstReferenceByStartRange(
 		start: LuaSourceRange['start'],
 		endExclusive: LuaSourceRange['start'],
@@ -98,7 +98,7 @@ export type LuaSemanticFrontend = {
 	getReferences(symbolId: SymbolID): readonly Ref[];
 	listGlobalDecls(): readonly Decl[];
 	findDeclarationsByNamePath(namePath: readonly string[]): readonly Decl[];
-	getNavigationTargetAt(path: string, line: number, column: number): LuaSemanticNavigationTarget;
+	getNavigationTargetAt(path: string, line: number, column: number): LuaSemanticNavigationTarget | null;
 	findReferencesByPosition(path: string, line: number, column: number): LuaSemanticResolution;
 	buildIncomingCallHierarchy(
 		rootSymbolId: SymbolID,
@@ -184,10 +184,14 @@ export function buildLuaSemanticFrontend(
 				}
 			}
 			return matches;
-			},
-			getNavigationTargetAt(path: string, line: number, column: number): LuaSemanticNavigationTarget {
-				return files.get(path)?.getNavigationTargetAt(line, column);
-			},
+		},
+		getNavigationTargetAt(path: string, line: number, column: number): LuaSemanticNavigationTarget | null {
+			const file = files.get(path);
+			if (!file) {
+				throw new Error(`[LuaSemanticFrontend] Missing semantic file '${path}'.`);
+			}
+			return file.getNavigationTargetAt(line, column);
+		},
 		findReferencesByPosition(path: string, line: number, column: number): LuaSemanticResolution {
 			const source = sourcesByPath.get(path);
 			if (!source) {
@@ -336,7 +340,7 @@ function collectIncomingCallerGroups(options: {
 	}
 	const groups = Array.from(grouped.values());
 	for (let index = 0; index < groups.length; index += 1) {
-		groups[index].calls.sort((left, right) => comparePosition(left.range.start.line, left.range.start.column, right.range.start.line, right.range.start.column));
+		groups[index].calls.sort((left, right) => compareSourcePosition(left.range.start.line, left.range.start.column, right.range.start.line, right.range.start.column));
 	}
 	groups.sort((left, right) => compareCallHierarchyCaller(left.caller, right.caller));
 	return groups;
@@ -426,7 +430,7 @@ function resolveCallerDeclaration(functionDecls: readonly Decl[], line: number, 
 	let best: Decl = null;
 	for (let index = 0; index < functionDecls.length; index += 1) {
 		const decl = functionDecls[index];
-		if (comparePosition(decl.range.start.line, decl.range.start.column, line, column) > 0) {
+		if (compareSourcePosition(decl.range.start.line, decl.range.start.column, line, column) > 0) {
 			continue;
 		}
 		if (!sourcePositionInRange(line, column, decl.scope)) {
@@ -436,7 +440,7 @@ function resolveCallerDeclaration(functionDecls: readonly Decl[], line: number, 
 			best = decl;
 			continue;
 		}
-		const startDiff = comparePosition(decl.range.start.line, decl.range.start.column, best.range.start.line, best.range.start.column);
+		const startDiff = compareSourcePosition(decl.range.start.line, decl.range.start.column, best.range.start.line, best.range.start.column);
 		if (startDiff > 0 || (startDiff === 0 && isRangeInside(decl.scope, best.scope))) {
 			best = decl;
 		}
@@ -487,8 +491,8 @@ function compareCallHierarchyCaller(left: LuaCallHierarchyCaller, right: LuaCall
 }
 
 function isRangeInside(inner: LuaSourceRange, outer: LuaSourceRange): boolean {
-	return comparePosition(inner.start.line, inner.start.column, outer.start.line, outer.start.column) >= 0
-		&& comparePosition(inner.end.line, inner.end.column, outer.end.line, outer.end.column) <= 0;
+	return compareSourcePosition(inner.start.line, inner.start.column, outer.start.line, outer.start.column) >= 0
+		&& compareSourcePosition(inner.end.line, inner.end.column, outer.end.line, outer.end.column) <= 0;
 }
 
 function createBoundFile(
@@ -501,7 +505,7 @@ function createBoundFile(
 ): LuaSemanticFrontendFile {
 	const decls = source.analysis.decls;
 	const refsByStart = source.analysis.refs.map(ref => classifyReference(ref, snapshot, knownGlobalNames));
-	refsByStart.sort((left, right) => comparePosition(left.ref.range.start.line, left.ref.range.start.column, right.ref.range.start.line, right.ref.range.start.column));
+	refsByStart.sort((left, right) => compareSourcePosition(left.ref.range.start.line, left.ref.range.start.column, right.ref.range.start.line, right.ref.range.start.column));
 	const requireTargetsByStart = collectRequireNavigationTargets(source, moduleTargetsByAlias, sourceByPath);
 	const declarationsByRange = new Map<string, Decl>();
 	const declarationsByStart = new Map<string, Decl>();
@@ -533,7 +537,7 @@ function createBoundFile(
 				return referencesByRange.get(sourceRangeKey(range))
 					?? referencesByStart.get(sourceRangeStartKey(range));
 			},
-		getNavigationTargetAt(line: number, column: number): LuaSemanticNavigationTarget {
+		getNavigationTargetAt(line: number, column: number): LuaSemanticNavigationTarget | null {
 			for (let index = 0; index < decls.length; index += 1) {
 				const decl = decls[index];
 				if (sourcePositionInRange(line, column, decl.range)) {
@@ -621,7 +625,7 @@ function collectRequireNavigationTargets(
 			target: targetSource.chunk.range,
 		});
 	}
-	targets.sort((left, right) => comparePosition(left.range.start.line, left.range.start.column, right.range.start.line, right.range.start.column));
+	targets.sort((left, right) => compareSourcePosition(left.range.start.line, left.range.start.column, right.range.start.line, right.range.start.column));
 	return targets;
 }
 
@@ -737,8 +741,8 @@ function isReferenceInsideDeclScope(ref: Ref, decl: Decl): boolean {
 	if (decl.file !== ref.file) {
 		return false;
 	}
-	return comparePosition(ref.range.start.line, ref.range.start.column, decl.scope.start.line, decl.scope.start.column) >= 0
-		&& comparePosition(ref.range.start.line, ref.range.start.column, decl.scope.end.line, decl.scope.end.column) <= 0;
+	return compareSourcePosition(ref.range.start.line, ref.range.start.column, decl.scope.start.line, decl.scope.start.column) >= 0
+		&& compareSourcePosition(ref.range.start.line, ref.range.start.column, decl.scope.end.line, decl.scope.end.column) <= 0;
 }
 
 function buildCombinedGlobalSymbols(decls: readonly Decl[], externalGlobalSymbols?: readonly LuaSymbolEntry[]): LuaSymbolEntry[] {
@@ -768,27 +772,6 @@ function buildCombinedGlobalSymbols(decls: readonly Decl[], externalGlobalSymbol
 	return symbols;
 }
 
-function comparePosition(
-	line: number,
-	column: number,
-	otherLine: number,
-	otherColumn: number,
-): number {
-	if (line < otherLine) {
-		return -1;
-	}
-	if (line > otherLine) {
-		return 1;
-	}
-	if (column < otherColumn) {
-		return -1;
-	}
-	if (column > otherColumn) {
-		return 1;
-	}
-	return 0;
-}
-
 function lowerBoundReferenceStart(
 	refs: readonly LuaBoundReference[],
 	line: number,
@@ -798,7 +781,7 @@ function lowerBoundReferenceStart(
 	let high = refs.length;
 	while (low < high) {
 		const mid = (low + high) >> 1;
-		if (comparePosition(refs[mid].ref.range.start.line, refs[mid].ref.range.start.column, line, column) < 0) {
+		if (compareSourcePosition(refs[mid].ref.range.start.line, refs[mid].ref.range.start.column, line, column) < 0) {
 			low = mid + 1;
 		} else {
 			high = mid;
@@ -808,10 +791,5 @@ function lowerBoundReferenceStart(
 }
 
 function isReservedIntrinsicName(name: string): boolean {
-	for (let index = 0; index < RESERVED_INTRINSIC_NAMES.length; index += 1) {
-		if (RESERVED_INTRINSIC_NAMES[index] === name) {
-			return true;
-		}
-	}
-	return false;
+	return name === RESERVED_INTRINSIC_NAME;
 }

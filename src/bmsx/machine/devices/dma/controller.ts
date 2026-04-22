@@ -77,14 +77,15 @@ type DmaJob = DmaIoJob | DmaImageJob;
 
 type DmaChannelState = {
 	budget: number;
-	queue: DmaJob[];
+	queue: Array<DmaJob | null>;
+	queueHead: number;
 	active: DmaJob | null;
 };
 
 export class DmaController {
 	private readonly channels: [DmaChannelState, DmaChannelState] = [
-		{ budget: 0, queue: [], active: null },
-		{ budget: 0, queue: [], active: null },
+		{ budget: 0, queue: [], queueHead: 0, active: null },
+		{ budget: 0, queue: [], queueHead: 0, active: null },
 	];
 	private cpuHz: bigint = 1n;
 	private isoBytesPerSec: bigint = 1n;
@@ -131,7 +132,7 @@ export class DmaController {
 			if (state.active !== null && state.active.kind === 'io' && state.active.dst === IO_VDP_FIFO) {
 				return true;
 			}
-			for (let queueIndex = 0; queueIndex < state.queue.length; queueIndex += 1) {
+			for (let queueIndex = state.queueHead; queueIndex < state.queue.length; queueIndex += 1) {
 				const job = state.queue[queueIndex]!;
 				if (job.kind === 'io' && job.dst === IO_VDP_FIFO) {
 					return true;
@@ -143,12 +144,12 @@ export class DmaController {
 
 	public hasPendingIsoTransfer(): boolean {
 		const state = this.channels[DMA_CH_ISO];
-		return state.active !== null || state.queue.length !== 0;
+		return state.active !== null || state.queueHead !== state.queue.length;
 	}
 
 	public hasPendingBulkTransfer(): boolean {
 		const state = this.channels[DMA_CH_BULK];
-		return state.active !== null || state.queue.length !== 0;
+		return state.active !== null || state.queueHead !== state.queue.length;
 	}
 
 	public getPendingIsoBytes(): number {
@@ -168,7 +169,7 @@ export class DmaController {
 				? activeJob.remaining
 				: activeJob.plan.writeSize - activeJob.written;
 		}
-		for (let index = 0; index < state.queue.length; index += 1) {
+		for (let index = state.queueHead; index < state.queue.length; index += 1) {
 			const job = state.queue[index]!;
 			pendingBytes += job.kind === 'io'
 				? job.remaining
@@ -181,9 +182,11 @@ export class DmaController {
 		this.isoCarry = 0n;
 		this.bulkCarry = 0n;
 		this.channels[DMA_CH_ISO].queue.length = 0;
+		this.channels[DMA_CH_ISO].queueHead = 0;
 		this.channels[DMA_CH_ISO].budget = 0;
 		this.channels[DMA_CH_ISO].active = null;
 		this.channels[DMA_CH_BULK].queue.length = 0;
+		this.channels[DMA_CH_BULK].queueHead = 0;
 		this.channels[DMA_CH_BULK].budget = 0;
 		this.channels[DMA_CH_BULK].active = null;
 		this.ioWrittenValue = 0;
@@ -309,11 +312,16 @@ export class DmaController {
 		let budget = state.budget;
 		while (budget > 0) {
 			if (!state.active) {
-				const next = state.queue.shift();
-				if (!next) {
+				if (state.queueHead === state.queue.length) {
 					return;
 				}
-				state.active = next;
+				state.active = state.queue[state.queueHead]!;
+				state.queue[state.queueHead] = null;
+				state.queueHead += 1;
+				if (state.queueHead === state.queue.length) {
+					state.queue.length = 0;
+					state.queueHead = 0;
+				}
 			}
 			const job = state.active;
 			const written = this.processJob(job, budget);

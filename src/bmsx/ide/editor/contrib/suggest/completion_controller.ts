@@ -13,7 +13,7 @@ import {
 	type LuaScopedSymbol,
 	shouldAutoTriggerCompletions,
 } from '../intellisense/engine';
-import { isReservedMemoryMapName } from '../intellisense/lua_semantic_common';
+import { isReservedMemoryMapName } from '../../../../lua/semantic/common';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../../../lua/syntax/ast';
 import {
 	CompletionContext,
@@ -36,7 +36,7 @@ import { getActiveCodeTabContext, isActiveLuaCodeTab } from '../../../workbench/
 import { prepareUndo } from '../../editing/undo_controller';
 import { updateDesiredColumn, revealCursor } from '../../ui/view/caret/caret';
 import { resetBlink } from '../../render/caret';
-import { ModuleAliasEntry } from '../intellisense/semantic_model';
+import { ModuleAliasEntry } from '../../../../lua/semantic/model';
 import { getActiveSemanticDefinitions, getLuaModuleAliases } from '../diagnostics/controller';
 import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 

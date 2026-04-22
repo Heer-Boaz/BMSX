@@ -4,7 +4,7 @@ import {
 	type LuaExpression,
 	type LuaFunctionDeclarationStatement,
 } from '../../lua/syntax/ast';
-import type { LuaBoundReference, LuaSemanticFrontendFile } from '../../ide/editor/contrib/intellisense/lua_frontend';
+import type { LuaBoundReference, LuaSemanticFrontendFile } from '../../lua/semantic/frontend';
 import { getMemoryAccessKindForName, MemoryAccessKind } from '../memory/access_kind';
 import {
 	getBoundIdentifierReference,

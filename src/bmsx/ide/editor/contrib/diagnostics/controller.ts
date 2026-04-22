@@ -16,7 +16,7 @@ import {
 } from '../../../workbench/ui/code_tab/contexts';
 import { getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace_state';
 import type { LuaDefinitionInfo } from '../../../../lua/syntax/ast';
-import type { ModuleAliasEntry } from '../intellisense/semantic_model';
+import type { ModuleAliasEntry } from '../../../../lua/semantic/model';
 import { diagnosticsDebounceMs, editorDiagnosticsState, EMPTY_DIAGNOSTICS } from './state';
 import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from '../../ui/view/state';

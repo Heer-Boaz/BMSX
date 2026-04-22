@@ -29,7 +29,7 @@ export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> =
 	{ name: 'vdp_load_sys_atlas', params: [], signature: 'vdp_load_sys_atlas()', description: 'Starts an async load of the system atlas into the system VRAM slot; returns a job id.' },
 	{ name: 'vdp_stream_claim_words', params: ['word_count'], signature: 'vdp_stream_claim_words(word_count)', description: 'Low-level software primitive that claims word_count words in the RAM-backed VDP command stream and returns the packet base address.' },
 	{ name: 'irq', params: ['flags'], signature: 'irq(flags)' },
-	{ name: 'on_irq', params: ['mask_or_handler', 'handler?'], signature: 'on_irq(mask_or_handler [, handler])', description: 'Registers a per-bit IRQ handler with on_irq(mask, fn), or a legacy full-flags handler with on_irq(fn).' },
+	{ name: 'on_irq', params: ['mask', 'handler?'], signature: 'on_irq(mask [, handler])', description: 'Registers a per-bit IRQ handler; pass nil as handler to clear it.' },
 	{ name: 'on_vdp_load', params: ['handler?'], signature: 'on_vdp_load(handler)', description: 'Registers a VDP load callback; return true to skip BIOS mapping.' },
 	{ name: 'bool01', params: ['value'], signature: 'bool01(value)', description: 'Converts a Lua value to 0 or 1; falsy values become 0, truthy values become 1.' },
 	{ name: 'clear_map', params: ['map'], signature: 'clear_map(map)', description: 'Clears all keys from a table-style map by setting each key to nil.' },

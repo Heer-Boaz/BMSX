@@ -63,7 +63,7 @@ local wait_for_vblank_set<const> = function()
 	return false
 end
 
-on_irq(function(flags)
+on_irq(irq_vblank, function(_, flags)
 	if (flags & irq_vblank) ~= 0 then
 		vblank_count = vblank_count + 1
 

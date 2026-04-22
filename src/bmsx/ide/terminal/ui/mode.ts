@@ -30,7 +30,7 @@ import {
 import { resolveSnapshotExpression, describeLuaValueForInspector } from '../../editor/contrib/intellisense/engine';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../../editor/input/keyboard/key_input';
 import { CompletionController } from '../../editor/contrib/suggest/completion_controller';
-import type { ModuleAliasEntry } from '../../editor/contrib/intellisense/semantic_model';
+import type { ModuleAliasEntry } from '../../../lua/semantic/model';
 import type { Viewport } from '../../../rompack/format';
 import { Runtime } from '../../../machine/runtime/runtime';
 import * as luaPipeline from '../../runtime/lua_pipeline';

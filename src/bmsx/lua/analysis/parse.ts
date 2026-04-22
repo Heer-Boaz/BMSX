@@ -1,8 +1,8 @@
-import type { LuaChunk } from '../../../lua/syntax/ast';
-import { LuaSyntaxError } from '../../../lua/errors';
-import { LuaLexer } from '../../../lua/syntax/lexer';
-import { LuaParser } from '../../../lua/syntax/parser';
-import type { LuaToken } from '../../../lua/syntax/token';
+import type { LuaChunk } from '../syntax/ast';
+import { LuaSyntaxError } from '../errors';
+import { LuaLexer } from '../syntax/lexer';
+import { LuaParser } from '../syntax/parser';
+import type { LuaToken } from '../syntax/token';
 
 export type ParsedLuaChunk = {
 	chunk: LuaChunk | null;

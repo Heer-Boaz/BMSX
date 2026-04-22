@@ -1,5 +1,5 @@
-import type { SemanticSymbolKind } from '../../common/semantic/semantic_symbols';
-import type { SemanticAnnotations } from '../../common/semantic/semantic_tokens';
+import type { SemanticSymbolKind } from '../../../lua/semantic/symbols';
+import type { SemanticAnnotations } from '../../../lua/semantic/tokens';
 import type { HighlightLine } from '../../common/models';
 import * as constants from '../../common/constants';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../machine/firmware/builtin_descriptors';

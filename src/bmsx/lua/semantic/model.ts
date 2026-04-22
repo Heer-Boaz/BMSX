@@ -20,16 +20,16 @@ import {
 	type LuaFunctionDeclarationStatement,
 	type LuaDefinitionInfo,
 	type LuaSourceRange,
-} from '../../../../lua/syntax/ast';
-import type { LuaToken } from '../../../../lua/syntax/token';
-import { LuaTokenType } from '../../../../lua/syntax/token';
-import type { LuaSymbolEntry } from '../../../../lua/semantic_contracts';
-import type { ParsedLuaChunk } from '../../../language/lua/parse';
-import { getCachedLuaParse } from '../../../language/lua/analysis_cache';
-import { sourcePositionInRange, type SourcePosition } from '../../../common/semantic/source_range';
-import { semanticNamePathMatches, type SemanticSymbolKind } from '../../../common/semantic/semantic_symbols';
-import type { SemanticAnnotations, SemanticRole } from '../../../common/semantic/semantic_tokens';
-import { methodPathToPropertyPath } from './lua_semantic_common';
+} from '../syntax/ast';
+import type { LuaToken } from '../syntax/token';
+import { LuaTokenType } from '../syntax/token';
+import type { LuaSymbolEntry } from '../semantic_contracts';
+import type { ParsedLuaChunk } from '../analysis/parse';
+import { getCachedLuaParse } from '../analysis/cache';
+import { sourcePositionInRange, type SourcePosition } from './source_range';
+import { semanticNamePathMatches, type SemanticSymbolKind } from './symbols';
+import type { SemanticAnnotations, SemanticRole } from './tokens';
+import { methodPathToPropertyPath } from './common';
 
 export type SymbolID = string;
 
