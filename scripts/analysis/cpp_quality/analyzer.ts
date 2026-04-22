@@ -14,6 +14,7 @@ import { lintCrossLayerIncludes } from '../../lint/rules/code_quality/cross_laye
 import { lintEnsureLazyInitPattern } from '../../lint/rules/code_quality/ensure_lazy_init_pattern';
 import { createFacadeStats, lintFacadeStats } from '../../lint/rules/code_quality/facade_module_density_pattern';
 import { lintTokenLegacySentinelStringPattern } from '../../lint/rules/code_quality/legacy_sentinel_string_pattern';
+import { lintTokenNewlineNormalizationPattern } from '../../lint/rules/code_quality/newline_normalization_pattern';
 import { lintNullishReturnGuards } from '../../lint/rules/code_quality/nullish_return_guard_pattern';
 import { lintOptionalValueOrFallbackPatterns } from '../../lint/rules/code_quality/optional_value_or_fallback_pattern';
 
@@ -104,6 +105,7 @@ export function analyzeFiles(files: readonly string[]): AnalysisResult {
 		const functions = analysis.functions;
 		const facadeStats = createFacadeStats(functions, tokens);
 		lintTokenLegacySentinelStringPattern(file, tokens, lintIssues);
+		lintTokenNewlineNormalizationPattern(file, tokens, pairs, regions, lintIssues);
 		lintEmptyStringConditionPattern(file, tokens, lintIssues);
 		lintExplicitTruthyComparisonPattern(file, tokens, lintIssues);
 		lintTernaryFallbackPatterns(file, tokens, lintIssues);

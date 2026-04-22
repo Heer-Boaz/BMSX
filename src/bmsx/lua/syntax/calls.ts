@@ -20,6 +20,17 @@ export function getCallMethodName(expression: LuaCallExpression): string | undef
 	return undefined;
 }
 
+export function getCallLeafName(expression: LuaCallExpression): string | undefined {
+	const methodName = getCallMethodName(expression);
+	if (methodName !== undefined) {
+		return methodName;
+	}
+	if (expression.callee.kind === LuaSyntaxKind.IdentifierExpression) {
+		return expression.callee.name;
+	}
+	return undefined;
+}
+
 export function getCallReceiverExpression(expression: LuaCallExpression): LuaExpression | undefined {
 	if (expression.methodName && expression.methodName.length > 0) {
 		return expression.callee;

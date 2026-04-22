@@ -8,6 +8,13 @@ export function isLuaNilLiteral(expression: LuaExpression): boolean {
 	return expression.kind === LuaSyntaxKind.NilLiteralExpression;
 }
 
+export function stringLiteralValue(expression: LuaExpression): string | undefined {
+	if (expression.kind === LuaSyntaxKind.StringLiteralExpression || expression.kind === LuaSyntaxKind.StringRefLiteralExpression) {
+		return expression.value;
+	}
+	return undefined;
+}
+
 export function luaBinaryExpressionHasOperand(
 	expression: LuaExpression,
 	operator: LuaBinaryOperator,

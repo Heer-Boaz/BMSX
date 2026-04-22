@@ -102,6 +102,19 @@ test('cart lua linter allows const module imports without member copies', async 
 	);
 });
 
+test('cart lua linter rejects newline normalization calls', async () => {
+	await withCartLintFixture(
+		'cart_lua_linter_newline_normalization',
+		'return text:split("\\n")',
+		async root => {
+			await assert.rejects(
+				lintCartSources({ roots: [root], profile: 'cart' }),
+				/Newline normalization is forbidden unless this boundary is explicitly marked with newline_normalization_pattern\./,
+			);
+		},
+	);
+});
+
 test('cart lua linter treats local const function expressions as named functions for named-function rules', async () => {
 	const cases = [
 		{

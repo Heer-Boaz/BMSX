@@ -186,6 +186,64 @@ export function countCppParameters(tokens: readonly CppToken[], openParen: numbe
 	return count;
 }
 
+export function callAnyArgumentHasToken(
+	tokens: readonly CppToken[],
+	openParen: number,
+	closeParen: number,
+	predicate: (token: CppToken) => boolean,
+): boolean {
+	for (let index = openParen + 1; index < closeParen; index += 1) {
+		if (predicate(tokens[index])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+export function callFirstArgumentHasToken(
+	tokens: readonly CppToken[],
+	openParen: number,
+	closeParen: number,
+	predicate: (token: CppToken) => boolean,
+): boolean {
+	let parenDepth = 0;
+	let bracketDepth = 0;
+	let braceDepth = 0;
+	for (let index = openParen + 1; index < closeParen; index += 1) {
+		const token = tokens[index];
+		const text = token.text;
+		if (text === ',' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+			return false;
+		}
+		if (predicate(token)) {
+			return true;
+		}
+		switch (text) {
+			case '(':
+				parenDepth += 1;
+				break;
+			case ')':
+				parenDepth -= 1;
+				break;
+			case '[':
+				bracketDepth += 1;
+				break;
+			case ']':
+				bracketDepth -= 1;
+				break;
+			case '{':
+				braceDepth += 1;
+				break;
+			case '}':
+				braceDepth -= 1;
+				break;
+			default:
+				break;
+		}
+	}
+	return false;
+}
+
 export function findTopLevelCppSemicolon(tokens: readonly CppToken[], start: number, end: number): number {
 	let parenDepth = 0;
 	let bracketDepth = 0;

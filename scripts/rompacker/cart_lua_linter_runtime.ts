@@ -9,6 +9,7 @@ import { lintAstEmptyStringConditionPattern } from '../lint/rules/common/empty_s
 import { lintAstEmptyStringFallbackPattern } from '../lint/rules/common/empty_string_fallback_pattern';
 import { lintAstExplicitTruthyComparisonPattern } from '../lint/rules/common/explicit_truthy_comparison_pattern';
 import { lintAstOrNilFallbackPattern } from '../lint/rules/common/or_nil_fallback_pattern';
+import { lintCallNewlineNormalizationPattern } from '../lint/rules/code_quality/newline_normalization_pattern';
 import { lintForbiddenMathFloorPattern } from '../lint/rules/lua_cart/forbidden_math_floor_pattern';
 import { lintForbiddenRenderWrapperCall } from '../lint/rules/lua_cart/forbidden_render_wrapper_call_pattern';
 import { lintLocalFunctionConstPattern } from '../lint/rules/lua_cart/local_function_const_pattern';
@@ -134,6 +135,7 @@ const CART_LINT_RULES: readonly LintRuleName[] = [
 	'local_const_pattern',
 	'local_function_const_pattern',
 	'multi_has_tag_pattern',
+	'newline_normalization_pattern',
 	'or_nil_fallback_pattern',
 	'pure_copy_function_pattern',
 	'repeated_statement_sequence_pattern',
@@ -371,6 +373,7 @@ export function lintExpression(expression: Expression | null, issues: CartLintIs
 			lintCreateServiceIdAddonPattern(expression, issues);
 			lintDefineServiceIdPattern(expression, issues);
 			lintDefineFactoryTickEnabledAndSpaceIdPattern(expression, issues);
+			lintCallNewlineNormalizationPattern(expression, issues, pushIssue);
 			lintFsmDirectStateHandlerShorthandPattern(expression, issues);
 			lintFsmEventReemitHandlerPattern(expression, issues);
 			lintFsmForbiddenLegacyFieldsPattern(expression, issues);
