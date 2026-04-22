@@ -6,7 +6,7 @@ import { getActiveCodeTabContext, isCodeTabActive } from '../ui/code_tab/context
 import { editorFeedbackState } from '../../common/feedback_state';
 import { getActiveResourceViewer } from '../contrib/resources/view_tabs';
 import { drawEditorText } from '../../editor/render/text_renderer';
-import { measureText, truncateTextToWidth } from '../../editor/common/text_layout';
+import { measureText, truncateTextToWidth } from '../../editor/common/text/layout';
 import { Runtime } from '../../../machine/runtime/runtime';
 import { api } from '../../editor/ui/view/overlay_api';
 import { workspaceState } from '../workspace/state';
@@ -14,7 +14,7 @@ import { editorDocumentState } from '../../editor/editing/document_state';
 import { editorViewState } from '../../editor/ui/view/state';
 import { problemsPanel } from '../contrib/problems/panel/controller';
 import { resourcePanel } from '../contrib/resources/panel/controller';
-import { symbolSearchState } from '../../editor/contrib/symbols/search_state';
+import { symbolSearchState } from '../../editor/contrib/symbols/search/state';
 
 export function renderStatusBar(): void {
 	const runtime = Runtime.instance;

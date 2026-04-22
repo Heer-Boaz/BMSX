@@ -1,4 +1,4 @@
-import { RenderPassLibrary } from '../../backend/pass_library';
+import { RenderPassLibrary } from '../../backend/pass/library';
 
 // WebGPU stub: registers the Particles pass for WebGPU builds.
 export function registerParticlesPass_WebGPU(library: RenderPassLibrary): void {

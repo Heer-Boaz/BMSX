@@ -83,7 +83,7 @@ const intellisenseModulePromise = import('../../src/bmsx/ide/intellisense');
 const luaStaticDiagnosticsModulePromise = import('../../src/bmsx/machine/static_diagnostics');
 const semanticModelModulePromise = import('../../src/bmsx/ide/editor/contrib/intellisense/semantic_model');
 const referenceSourcesModulePromise = import('../../src/bmsx/ide/sources');
-const workspaceModulePromise = import('../../src/bmsx/ide/editor/contrib/intellisense/semantic_workspace');
+const workspaceModulePromise = import('../../src/bmsx/ide/editor/contrib/intellisense/semantic/workspace');
 const referenceNavigationModulePromise = import('../../src/bmsx/ide/reference_navigation');
 
 function luaRangeToSearchMatch(range: { start: { line: number; column: number }; end: { line: number; column: number } }, lines: readonly string[]): { row: number; start: number; end: number } {

@@ -8,7 +8,7 @@ import { getActiveResourceViewer } from '../contrib/resources/view_tabs';
 import { resourcePanel } from '../contrib/resources/panel/controller';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { api } from '../../editor/ui/view/overlay_api';
-import { measureText, writeWrappedOverlayLine } from '../../editor/common/text_layout';
+import { measureText, writeWrappedOverlayLine } from '../../editor/common/text/layout';
 import * as constants from '../../common/constants';
 import { BmsxColors } from '../../../machine/devices/vdp/vdp';
 import { renderErrorOverlayText } from '../../editor/render/error_overlay';

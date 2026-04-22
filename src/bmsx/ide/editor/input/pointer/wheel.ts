@@ -9,7 +9,7 @@ import { isCodeTabActive } from '../../../workbench/ui/code_tab/contexts';
 import { getProblemsPanelBounds } from '../../../workbench/contrib/problems/panel/controller';
 import { isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll } from '../../ui/hover_tooltip';
 import { getCodeAreaBounds, getResourceSearchBarBounds, scrollResourceBrowser, scrollRows } from '../../ui/view/view';
-import { moveResourceSearchSelection } from '../../../workbench/contrib/resources/search_catalog';
+import { moveResourceSearchSelection } from '../../../workbench/contrib/resources/search/catalog';
 import { isShiftDown } from '../keyboard/key_input';
 import { scrollResourceBrowserHorizontal, scrollResourceViewer } from '../../../workbench/input/keyboard/resource_viewer_input';
 import { editorPointerState } from './state';

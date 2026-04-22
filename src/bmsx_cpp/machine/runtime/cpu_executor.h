@@ -1,7 +1,7 @@
 #pragma once
 
 #include "machine/cpu/cpu.h"
-#include "machine/runtime/frame_state.h"
+#include "machine/runtime/frame/state.h"
 
 namespace bmsx {
 

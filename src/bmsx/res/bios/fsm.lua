@@ -133,7 +133,7 @@
 --     entries provides per-handler emitter filtering, so a handler can
 --     restrict to events from a specific source object.
 
-local fsm_trace<const> = require('fsm_trace')
+local fsm_trace<const> = require('fsm/trace')
 local clear_map<const> = require('clear_map')
 local timeline_module<const> = require('timeline')
 

@@ -2,7 +2,7 @@ import { clamp } from '../../../common/clamp';
 import { api } from '../ui/view/overlay_api';
 import * as constants from '../../common/constants';
 import { truncateWithMeasure, wrapTextDynamic } from '../../common/text';
-import { measureText } from '../common/text_layout';
+import { measureText } from '../common/text/layout';
 import type { CompletionSession, CursorScreenInfo, ParameterHintState } from '../../common/models';
 import { drawEditorText } from './text_renderer';
 import { editorViewState } from '../ui/view/state';

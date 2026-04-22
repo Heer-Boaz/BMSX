@@ -13,7 +13,7 @@ import { getTextSnapshot } from '../../../editor/text/source_text';
 import { editorPointerState } from '../../../editor/input/pointer/state';
 import { runtimeErrorState } from '../../../editor/contrib/runtime_error/state';
 import { breakUndoSequence } from '../../../editor/editing/undo_controller';
-import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor_state';
+import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/state';
 import {
 	getActiveCodeTabContext,
 	setTabDirty,

@@ -6,7 +6,7 @@ import { LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFu
 import { Table, type Closure, type NativeFunction, type NativeObject, type Value, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject } from '../cpu/cpu';
 import { Runtime } from '../runtime/runtime';
 import { LuaMarshalContext } from '../runtime/contracts';
-import { isStringValue, stringValueToString } from '../memory/string_pool';
+import { isStringValue, stringValueToString } from '../memory/string/pool';
 
 // disable defensive_typeof_function_pattern -- JS bridge marshals arbitrary host values; callable probes are explicit interop boundaries.
 export type LuaSnapshotObjects = Record<number, unknown>;

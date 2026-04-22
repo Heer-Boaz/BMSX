@@ -8,7 +8,7 @@
 #include "input/gamepad.h"
 #include "input/keyboard.h"
 #include "input/pointer.h"
-#include "render/backend/pass_library.h"
+#include "render/backend/pass/library.h"
 #include "render/texture_manager.h"
 #include "common/mem_snapshot.h"
 #include "../../machine/runtime/runtime.h"

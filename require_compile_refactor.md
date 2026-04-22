@@ -46,11 +46,11 @@ Read [](file:///home/boaz/BMSX/src/carts/pietious/constants.lua#1-1), lines 1 to
 
 Now I understand the complete picture. Let me look at a typical module return pattern:
 
-Searched for regex `^return|^local function` (`**/src/carts/pietious/combat_overlap.lua`), 1 result
+Searched for regex `^return|^local function` (`**/src/carts/pietious/combat/overlap.lua`), 1 result
 
 Searched for regex `^return|^local function` (`**/src/carts/pietious/worldobject.lua`), no results
 
-Read [](file:///home/boaz/BMSX/src/carts/pietious/combat_overlap.lua#1-1), lines 1 to 18
+Read [](file:///home/boaz/BMSX/src/carts/pietious/combat/overlap.lua#1-1), lines 1 to 18
 
 Now I have a complete understanding. Here's the analysis:
 

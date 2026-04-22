@@ -10,11 +10,11 @@ import { $ } from '../../core/engine';
 import { taskGate } from '../../core/taskgate';
 import { color_arr } from '../../rompack/format';
 import { GPUBackend, TextureHandle } from '../backend/interfaces';
-import { RenderPassBuilder } from '../backend/pass_builder';
+import { RenderPassBuilder } from '../backend/pass/builder';
 import { checkWebGLError } from '../backend/webgl/helpers';
 import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu/backend';
 import { GameView } from '../gameview';
-import { resolveActiveCamera3D } from '../shared/hardware_camera';
+import { resolveActiveCamera3D } from '../shared/hardware/camera';
 
 // Internal graph texture handle. Named distinctly to avoid collision with existing TextureManager TextureHandle.
 export type RGTexHandle = number;

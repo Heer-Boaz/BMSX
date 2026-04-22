@@ -1,7 +1,7 @@
 import { IRQ_VBLANK } from '../bus/io';
 import type { FrameState, Runtime } from './runtime';
 import { advanceRuntimeTime, runDueRuntimeTimers } from './cpu_executor';
-import { refreshDeviceTimings } from './timing_config';
+import { refreshDeviceTimings } from './timing/config';
 import { TIMER_KIND_VBLANK_BEGIN, TIMER_KIND_VBLANK_END } from '../scheduler/device';
 
 export type RuntimeVblankSnapshot = {

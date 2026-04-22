@@ -4,7 +4,7 @@ import { computeLuaDiagnostics, getApiCompletionData } from '../intellisense/eng
 import { getCachedLuaParse } from '../../../../lua/analysis/cache';
 import { editorRuntimeState } from '../../common/runtime_state';
 import { diagnosticsDebounceMs, editorDiagnosticsState } from './state';
-import { cacheRuntimeSemanticParseState } from '../intellisense/semantic_workspace_runtime';
+import { cacheRuntimeSemanticParseState } from '../intellisense/semantic/workspace/runtime';
 import { getCodeTabContexts } from '../../../workbench/ui/code_tab/contexts';
 
 export type DiagnosticContextInput = {

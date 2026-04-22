@@ -38,7 +38,7 @@ import { updateDesiredColumn, revealCursor } from '../../ui/view/caret/caret';
 import { resetBlink } from '../../render/caret';
 import { ModuleAliasEntry } from '../../../../lua/semantic/model';
 import { getActiveSemanticDefinitions, getLuaModuleAliases } from '../diagnostics/controller';
-import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
+import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../editing/cursor/state';
 
 type LocalCompletionCacheEntry = {
 	parsedVersion: number;

@@ -14,7 +14,7 @@ import {
 } from '../../lua/syntax/ast';
 import { LuaLexer } from '../../lua/syntax/lexer';
 import { createNativeFunction, isNativeObject, Table, type NativeFunction, type Value } from '../cpu/cpu';
-import { isStringValue, type StringValue } from '../memory/string_pool';
+import { isStringValue, type StringValue } from '../memory/string/pool';
 import type { Runtime } from '../runtime/runtime';
 
 type LoadSubsetValueExpr =

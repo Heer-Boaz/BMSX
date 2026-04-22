@@ -126,7 +126,7 @@ add_library(bmsx_core STATIC
 	render/backend/frame_uniforms.cpp
 	render/shared/queues.cpp
 	render/texture_manager.cpp
-	render/backend/pass_library.cpp
+	render/backend/pass/library.cpp
 	render/graph/graph.cpp
 	render/shared/glyphs.cpp
 	render/test_pattern.cpp
@@ -159,7 +159,7 @@ add_library(bmsx_core STATIC
 	machine/runtime/cpu_executor.cpp
 	machine/runtime/engine_irq.cpp
 	machine/runtime/boot_timing.cpp
-	machine/runtime/frame_loop.cpp
+	machine/runtime/frame/loop.cpp
 	machine/program/executor.cpp
 	machine/program/scratch.cpp
 	machine/specs.cpp
@@ -167,7 +167,7 @@ add_library(bmsx_core STATIC
 	machine/memory/specs.cpp
 	render/presentation_state.cpp
 	machine/runtime/timing.cpp
-	machine/runtime/timing_config.cpp
+	machine/runtime/timing/config.cpp
 	machine/runtime/vblank.cpp
 	machine/runtime/debug.cpp
 	machine/memory/memory.cpp

@@ -3,7 +3,7 @@ import type { EditorFont } from '../ui/view/font';
 import { drawEditorText } from './text_renderer';
 import { bottomMargin } from '../../workbench/common/layout';
 import { showEditorMessage } from '../../common/feedback_state';
-import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, writeWrappedOverlayLine } from '../common/text_layout';
+import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, writeWrappedOverlayLine } from '../common/text/layout';
 import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../../common/models';
 import type { StackTraceFrame } from '../../../lua/value';
 import type { RectBounds } from '../../../rompack/format';

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { buildLuaSemanticFrontend } from '../../src/bmsx/ide/editor/contrib/intellisense/lua_frontend';
-import { createLuaSemanticFrontendFromSnapshot } from '../../src/bmsx/ide/editor/contrib/intellisense/semantic_workspace';
+import { createLuaSemanticFrontendFromSnapshot } from '../../src/bmsx/ide/editor/contrib/intellisense/semantic/workspace';
 import { LuaSemanticWorkspace } from '../../src/bmsx/ide/editor/contrib/intellisense/semantic_model';
 
 test('LuaSemanticFrontend accepts shared runtime globals without diagnostics', () => {

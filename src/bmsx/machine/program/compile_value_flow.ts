@@ -26,7 +26,7 @@ import {
 	type LuaStatement,
 	type LuaWhileStatement,
 } from '../../lua/syntax/ast';
-import { walkLuaExpressionTree } from '../../lua/syntax/ast_traversal';
+import { walkLuaExpressionTree } from '../../lua/syntax/ast/traversal';
 import type { LuaSemanticFrontendFile } from '../../lua/semantic/frontend';
 import {
 	getBoundIdentifierReference,

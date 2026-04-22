@@ -8,7 +8,7 @@
 #if BMSX_ENABLE_GLES2
 #include "backend/gles2_backend.h"
 #endif
-#include "backend/pass_library.h"
+#include "backend/pass/library.h"
 #include "graph/graph.h"
 #include "core/engine.h"
 #include "rompack/format.h"

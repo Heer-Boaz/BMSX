@@ -75,10 +75,10 @@
 --    exit animation timeline completes.
 
 local constants<const> = require('constants')
-local castle_map<const> = require('castle_map')
+local castle_map<const> = require('castle/map')
 local components<const> = require('components')
 local collision2d<const> = require('collision2d')
-local player_abilities<const> = require('player_abilities')
+local player_abilities<const> = require('player/abilities')
 
 local player<const> = {}
 player.__index = player

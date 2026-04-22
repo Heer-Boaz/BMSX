@@ -5,7 +5,7 @@ import { Table, isNativeObject, type LocalSlotDebug, type SourceRange, type Valu
 import type { LuaSourceRecord } from '../program/sources';
 import type { Runtime } from './runtime';
 import { getWorkspaceCachedSource } from '../../ide/workspace/cache';
-import { isStringValue, stringValueToString } from '../memory/string_pool';
+import { isStringValue, stringValueToString } from '../memory/string/pool';
 import { KEYWORDS } from '../../lua/syntax/token';
 
 const DEBUG_EXPR_PATTERN = /\b[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*\b/g;

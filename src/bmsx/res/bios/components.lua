@@ -3,7 +3,7 @@
 
 local eventemitter_module<const> = require('eventemitter')
 local timeline_module<const> = require('timeline')
-local timeline_dispatch<const> = require('timeline_dispatch')
+local timeline_dispatch<const> = require('timeline/dispatch')
 local collision_profiles<const> = require('collision_profiles')
 local scratchrecordbatch<const> = require('scratchrecordbatch')
 local font_module<const> = require('font')

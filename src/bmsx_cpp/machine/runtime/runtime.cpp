@@ -6,7 +6,7 @@
 #include "machine/runtime/resource_usage_detector.h"
 #include "machine/runtime/engine_irq.h"
 #include "machine/runtime/runtime_fault.h"
-#include "machine/runtime/timing_config.h"
+#include "machine/runtime/timing/config.h"
 #include "core/engine.h"
 #include "rompack/format.h"
 #include "input/manager.h"

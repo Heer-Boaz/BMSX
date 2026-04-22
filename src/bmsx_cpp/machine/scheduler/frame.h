@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/primitives.h"
-#include "machine/runtime/frame_state.h"
+#include "machine/runtime/frame/state.h"
 #include <array>
 
 namespace bmsx {

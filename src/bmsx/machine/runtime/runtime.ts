@@ -23,7 +23,7 @@ import { AssetSourceStack, type RawAssetSource } from '../../rompack/source';
 import { buildRuntimeAssetLayer } from '../../rompack/loader';
 import { Api } from '../firmware/api';
 import { Table, type Value, type ProgramMetadata, type NativeFunction, type NativeObject } from '../cpu/cpu';
-import { type StringValue } from '../memory/string_pool';
+import { type StringValue } from '../memory/string/pool';
 import type { TerminalMode } from '../../ide/terminal/ui/mode';
 import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 import { Font, type FontVariant } from '../../render/shared/bmsx_font';
@@ -48,7 +48,7 @@ import { FrameLoopState } from './frame_loop';
 import { FrameSchedulerState } from '../scheduler/frame';
 import { RenderPresentationState } from '../../render/presentation_state';
 import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from './timing';
-import { TimingState } from './timing_state';
+import { TimingState } from './timing/state';
 import { VblankState } from './vblank';
 import { CpuExecutionState } from './cpu_executor';
 import { CartBootState } from './cart_boot';
@@ -58,12 +58,12 @@ import { invokeClosureHandler, invokeLuaHandler } from '../program/executor';
 import { resolveCpuHz, resolveGeoWorkUnitsPerSec, resolveRuntimeRenderSize, resolveVdpWorkUnitsPerSec } from '../specs';
 import { resolveRuntimeMemoryMapSpecs } from '../memory/specs';
 import { startEngineWithDeferredStartupAudioRefresh } from '../../audio/startup';
-import { RuntimeAssetState } from '../memory/asset_state';
+import { RuntimeAssetState } from '../memory/asset/state';
 import {
 	applyActiveMachineTiming,
 	refreshDeviceTimings,
 	setTransferRatesFromManifest,
-} from './timing_config';
+} from './timing/config';
 import { HandlerCache } from './handler_cache';
 import { Machine } from '../machine';
 import { Memory } from '../memory/memory';

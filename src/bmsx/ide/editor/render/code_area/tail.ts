@@ -11,7 +11,7 @@ import type { RectBounds } from '../../../../rompack/format';
 import { editorCaretState } from '../../ui/view/caret/state';
 import { editorViewState } from '../../ui/view/state';
 import { completionController } from '../../contrib/suggest/completion_controller';
-import type { CodeAreaViewport } from '../../ui/code_area_viewport';
+import type { CodeAreaViewport } from '../../ui/code/area_viewport';
 
 const verticalTrackScratch: RectBounds = {
 	left: 0,

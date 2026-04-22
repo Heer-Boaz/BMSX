@@ -1,8 +1,8 @@
 import * as constants from '../../../../common/constants';
-import { applyInlineFieldEditing } from '../../../ui/inline_text_field';
+import { applyInlineFieldEditing } from '../../../ui/inline/text_field';
 import { resetBlink } from '../../../render/caret';
 import { closeCreateResourcePrompt } from '../../../../workbench/contrib/resources/create';
-import { confirmCreateResourcePrompt, isValidCreateResourceCharacter } from '../../../../workbench/contrib/resources/create_operation';
+import { confirmCreateResourcePrompt, isValidCreateResourceCharacter } from '../../../../workbench/contrib/resources/create/operation';
 import { consumeIdeKey, isKeyJustPressed } from '../../keyboard/key_input';
 import { createResourceState } from '../../../../workbench/contrib/resources/widget_state';
 

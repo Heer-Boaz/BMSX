@@ -1,6 +1,6 @@
 import { clamp } from '../../../../common/clamp';
 import { create_rect_bounds, point_in_rect } from '../../../../common/rect';
-import { measureText } from '../../../editor/common/text_layout';
+import { measureText } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { EditorContextMenuEntry, EditorContextToken } from '../../../common/models';
 import { editorContextMenuState, resetEditorContextMenuState } from './state';

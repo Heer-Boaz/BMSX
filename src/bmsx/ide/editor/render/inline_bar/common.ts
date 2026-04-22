@@ -1,10 +1,10 @@
 import * as constants from '../../../common/constants';
 import type { TextField } from '../../../common/models';
-import { measureInlineFieldDecoration } from '../../ui/inline_field_view';
+import { measureInlineFieldDecoration } from '../../ui/inline/field_view';
 import { api } from '../../ui/view/overlay_api';
 import { drawEditorText } from '../text_renderer';
 import { drawInlineCaret } from '../caret';
-import { measureText } from '../../common/text_layout';
+import { measureText } from '../../common/text/layout';
 import { editorViewState } from '../../ui/view/state';
 
 export type InlineBarFieldRenderState = {

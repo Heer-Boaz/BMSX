@@ -1,7 +1,7 @@
 import type { ActionState, ButtonState } from '../../input/models';
 import { Table } from '../cpu/cpu';
 import type { Runtime } from '../runtime/runtime';
-import type { StringValue } from '../memory/string_pool';
+import type { StringValue } from '../memory/string/pool';
 
 type ActionStateTableKeys = {
 	action: StringValue;

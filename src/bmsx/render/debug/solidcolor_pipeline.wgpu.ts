@@ -1,5 +1,5 @@
 import { GPUBackend } from '../backend/interfaces';
-import { RenderPassLibrary } from '../backend/pass_library';
+import { RenderPassLibrary } from '../backend/pass/library';
 import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu/backend';
 
 // Minimal solid-color writer for WebGPU. Uses a fullscreen triangle and emits a constant color.

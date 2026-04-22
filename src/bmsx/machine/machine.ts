@@ -1,8 +1,8 @@
 import type { SoundMaster } from '../audio/soundmaster';
 import type { Input } from '../input/manager';
 import { beginMeshQueue, beginParticleQueue, clearBackQueues } from '../render/shared/queues';
-import { clearHardwareCamera } from '../render/shared/hardware_camera';
-import { clearHardwareLighting } from '../render/shared/hardware_lighting';
+import { clearHardwareCamera } from '../render/shared/hardware/camera';
+import { clearHardwareLighting } from '../render/shared/hardware/lighting';
 import {
 	HOST_FAULT_STAGE_NONE,
 	IO_SYS_BOOT_CART,
@@ -19,8 +19,8 @@ import { InputController, type InputControllerState } from './devices/input/cont
 import { IrqController } from './devices/irq/controller';
 import { VDP, type VdpBlitterExecutor, type VdpState } from './devices/vdp/vdp';
 import { Memory } from './memory/memory';
-import { StringHandleTable } from './memory/string_memory';
-import { StringPool } from './memory/string_pool';
+import { StringHandleTable } from './memory/string/memory';
+import { StringPool } from './memory/string/pool';
 import { ResourceUsageDetector } from './runtime/resource_usage_detector';
 import {
 	DEVICE_SERVICE_DMA,

@@ -19,9 +19,9 @@ import { getActiveCodeTabContext } from '../../workbench/ui/code_tab/contexts';
 import { revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';
 import { markDiagnosticsDirty } from '../contrib/diagnostics/analysis';
 import { completionController } from '../contrib/suggest/completion_controller';
-import { currentLine } from '../common/text_layout';
-import { invalidateLineRange, markTextMutated } from '../common/text_runtime';
-import { capturePreMutationSource } from '../common/text_runtime';
+import { currentLine } from '../common/text/layout';
+import { invalidateLineRange, markTextMutated } from '../common/text/runtime';
+import { capturePreMutationSource } from '../common/text/runtime';
 import { resetBlink } from '../render/caret';
 import * as constants from '../../common/constants';
 import { formatLuaDocument } from '../../language/lua/formatter';
@@ -40,8 +40,8 @@ import {
 	getSingleCursorSelectionRange,
 	setSingleCursorPosition,
 	setSingleCursorSelectionAnchor,
-} from './cursor_state';
-import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from './cursor_words';
+} from './cursor/state';
+import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from './cursor/words';
 
 const tmpPosition: MutableTextPosition = { row: 0, column: 0 };
 const wordPositionScratch: MutableTextPosition = { row: 0, column: 0 };

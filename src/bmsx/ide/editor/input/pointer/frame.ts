@@ -7,7 +7,7 @@ import type { PointerSnapshot } from '../../../common/models';
 import { editorPointerState } from './state';
 import { editorViewState } from '../../ui/view/state';
 import { editorSearchState, lineJumpState } from '../../contrib/find/widget_state';
-import { symbolSearchState } from '../../contrib/symbols/search_state';
+import { symbolSearchState } from '../../contrib/symbols/search/state';
 import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
 
 export function readEditorPointerSnapshot(): PointerSnapshot {

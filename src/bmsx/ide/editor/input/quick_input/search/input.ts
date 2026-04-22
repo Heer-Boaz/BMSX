@@ -1,5 +1,5 @@
 import { activeSearchMatchCount, applySearchSelection, jumpToNextMatch, jumpToPreviousMatch, onSearchQueryChanged, openSearch, searchPageSize, stepSearchSelection } from '../../../contrib/find/search';
-import { applyInlineFieldEditing } from '../../../ui/inline_text_field';
+import { applyInlineFieldEditing } from '../../../ui/inline/text_field';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../keyboard/key_input';
 import { redo, undo } from '../../../editing/undo_controller';
 import { save } from '../../../../workbench/ui/code_tab/io';

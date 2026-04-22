@@ -5,7 +5,7 @@ import type { PointerSnapshot } from '../../../../common/models';
 import { closeTab, setActiveTab } from '../../../ui/tabs';
 import { beginTabDrag, endTabDrag } from '../../../ui/tab/drag';
 import { getTabBarTotalHeight } from '../../../common/layout';
-import { consumeChromePointerPress } from '../../../../editor/input/pointer/chrome_press';
+import { consumeChromePointerPress } from '../../../../editor/input/pointer/chrome/press';
 import { editorPointerState } from '../../../../editor/input/pointer/state';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import { tabSessionState } from '../../../ui/tab/session_state';

@@ -8,7 +8,7 @@ function __bmsx_host_test.ready()
 end
 
 function __bmsx_host_test.setup()
-	local castle_map<const> = require('castle_map')
+	local castle_map<const> = require('castle/map')
 	local world_transition<const> = castle_map.world_transitions.world_1
 	local castle<const> = oget('c')
 	local room<const> = oget('room')
@@ -47,7 +47,7 @@ end
 
 function __bmsx_host_test.update(_frame, _current_music)
 	local constants<const> = require('constants')
-	local castle_map<const> = require('castle_map')
+	local castle_map<const> = require('castle/map')
 	local world_transition<const> = castle_map.world_transitions.world_1
 	local castle<const> = oget('c')
 	local room<const> = oget('room')

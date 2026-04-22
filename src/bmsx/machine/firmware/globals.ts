@@ -239,11 +239,11 @@ import {
 	toRuntimeValue,
 	wrapNativeResult,
 } from './js_bridge';
-import { collectApiMembers } from './api_members';
+import { collectApiMembers } from './api/members';
 import { buildLuaFrameRawLabel } from '../../ide/editor/contrib/runtime_error/format';
-import { isStringValue, stringValueToString } from '../memory/string_pool';
+import { isStringValue, stringValueToString } from '../memory/string/pool';
 
-import type { StringValue } from '../memory/string_pool';
+import type { StringValue } from '../memory/string/pool';
 import type { LuaMarshalContext } from '../runtime/contracts';
 import type { Runtime } from '../runtime/runtime';
 import * as luaPipeline from '../../ide/runtime/lua_pipeline';

@@ -2,7 +2,7 @@
 -- timeline runtime for system rom
 --
 local clamp_int<const> = require('util/clamp_int')
-local timeline_apply<const> = require('timeline_apply')
+local timeline_apply<const> = require('timeline/apply')
 --
 -- DESIGN PRINCIPLES — timeline authoring
 --

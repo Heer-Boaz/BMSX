@@ -6,8 +6,8 @@ import { LuaInterpreter, LuaNativeFunction } from '../../lua/runtime';
 import { extractErrorMessage, isLuaCallSignal, LuaFunctionValue, LuaNativeValue, type LuaCallResult } from '../../lua/value';
 import { isLuaTable, LuaTable, LuaValue } from '../../lua/value';
 import { arrayify } from '../../common/arrayify';
-import { API_METHOD_METADATA } from './api_metadata';
-import { collectApiMembers } from './api_members';
+import { API_METHOD_METADATA } from './api/metadata';
+import { collectApiMembers } from './api/members';
 import {
 	DEFAULT_LUA_BUILTIN_FUNCTIONS,
 	ENGINE_LUA_BUILTIN_FUNCTIONS,

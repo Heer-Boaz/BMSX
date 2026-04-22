@@ -10,12 +10,12 @@ import { refreshSymbolCatalog } from './catalog';
 import { closeResourceSearch } from '../../../workbench/contrib/resources/search';
 import { closeLineJump } from '../find/line_jump';
 import { applyReferenceSearchSelection } from '../references/search';
-import { updateSymbolSearchMatches } from './search_catalog';
+import { updateSymbolSearchMatches } from './search/catalog';
 import {
 	applySymbolSearchFieldText,
 	closeSymbolSearch,
 } from './shared';
-import { symbolSearchState } from './search_state';
+import { symbolSearchState } from './search/state';
 
 export function openSymbolSearch(initialQuery: string = ''): void {
 	if (getActiveCodeTabContext().mode !== 'lua') {

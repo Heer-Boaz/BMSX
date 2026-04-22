@@ -10,7 +10,7 @@ import { appendLuaChunkToProgram, compileLuaChunkToProgram } from '../../src/bms
 import type { ProgramAsset, ProgramConstReloc } from '../../src/bmsx/machine/program/asset';
 import { linkProgramAssets } from '../../src/bmsx/machine/program/linker';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
-import { isStringValue, stringValueToString } from '../../src/bmsx/machine/memory/string_pool';
+import { isStringValue, stringValueToString } from '../../src/bmsx/machine/memory/string/pool';
 
 type EncodedWord = {
 	op: OpCode;

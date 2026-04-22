@@ -1,8 +1,8 @@
 import type { FontVariant } from '../../../../render/shared/bmsx_font';
 import type { ScrollbarKind } from '../../../common/models';
-import type { InlineFieldMetrics } from '../inline_text_field';
+import type { InlineFieldMetrics } from '../inline/text_field';
 import { Scrollbar, ScrollbarController } from '../scrollbar';
-import { CodeLayout } from '../code_layout';
+import { CodeLayout } from '../code/layout';
 import { EditorFont } from './font';
 
 export type EditorViewState = {

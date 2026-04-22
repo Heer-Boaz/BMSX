@@ -3,7 +3,7 @@ import { isTopBarCommandEnabled, MENU_COMMANDS, MENU_IDS, type MenuId, type TopB
 import { editorChromeState } from '../../../ui/chrome_state';
 import type { PointerSnapshot } from '../../../../common/models';
 import { executeTopBarCommand } from '../../../../editor/input/commands/dispatcher';
-import { consumeChromePointerPress } from '../../../../editor/input/pointer/chrome_press';
+import { consumeChromePointerPress } from '../../../../editor/input/pointer/chrome/press';
 import { editorViewState } from '../../../../editor/ui/view/state';
 
 export function handleTopBarPointer(snapshot: PointerSnapshot): boolean {

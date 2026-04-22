@@ -20,16 +20,9 @@ const fallbackCameraState: FallbackCameraState = {
 	camUp: fallbackCamUp,
 };
 
-function assertDimension(value: number, label: string): number {
-	if (!Number.isFinite(value) || value <= 0) {
-		throw new Error(`[FallbackCamera] Invalid ${label} (${value}). Ensure render sizes are wired during GameView initialization.`);
-	}
-	return value;
-}
-
 export function updateFallbackCamera(width: number, height: number): FallbackCameraState {
-	fallbackCameraState.width = assertDimension(width, 'width');
-	fallbackCameraState.height = assertDimension(height, 'height');
+	fallbackCameraState.width = width;
+	fallbackCameraState.height = height;
 	M4.orthographicInto(fallbackViewProj, 0, fallbackCameraState.width, fallbackCameraState.height, 0, -1, 1);
 	fallbackCamRight[0] = 1; fallbackCamRight[1] = 0; fallbackCamRight[2] = 0;
 	fallbackCamUp[0] = 0; fallbackCamUp[1] = -1; fallbackCamUp[2] = 0;

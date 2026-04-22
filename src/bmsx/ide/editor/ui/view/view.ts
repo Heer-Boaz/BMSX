@@ -5,7 +5,7 @@ import type { FontVariant } from '../../../../render/shared/bmsx_font';
 import type { Viewport } from '../../../../rompack/format';
 import type { ResourceDescriptor } from '../../../common/models';
 import * as constants from '../../../common/constants';
-import { CodeLayout } from '../code_layout';
+import { CodeLayout } from '../code/layout';
 import { markDiagnosticsDirty } from '../../contrib/diagnostics/analysis';
 import { computeSearchPageStats } from '../../contrib/find/search';
 import { showEditorMessage } from '../../../common/feedback_state';
@@ -17,18 +17,18 @@ import { ensureCursorVisible, updateDesiredColumn } from './caret/caret';
 import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from './state';
 import { editorSearchState, lineJumpState } from '../../contrib/find/widget_state';
-import { symbolSearchState } from '../../contrib/symbols/search_state';
+import { symbolSearchState } from '../../contrib/symbols/search/state';
 import { resourcePanel } from '../../../workbench/contrib/resources/panel/controller';
 import { getActiveCodeTabContext, getActiveCodeTabContextId } from '../../../workbench/ui/code_tab/contexts';
 import { renameController } from '../../contrib/rename/controller';
 import { editorRuntimeState } from '../../common/runtime_state';
 import {
 	ensureVisualLines,
-} from '../../common/text_layout';
+} from '../../common/text/layout';
 import { rewrapRuntimeErrorOverlays } from '../../../runtime/error/navigation';
 import { bottomMargin, topMargin } from '../../../workbench/common/layout';
 import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
-import type { InlineFieldMetrics } from '../inline_text_field';
+import type { InlineFieldMetrics } from '../inline/text_field';
 
 function advanceInlineFieldChar(ch: string): number {
 	return editorViewState.font.advance(ch);

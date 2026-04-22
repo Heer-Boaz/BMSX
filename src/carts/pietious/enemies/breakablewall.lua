@@ -1,6 +1,6 @@
 local constants<const> = require('constants')
-local combat_overlap<const> = require('combat_overlap')
-local combat_damage<const> = require('combat_damage')
+local combat_overlap<const> = require('combat/overlap')
+local combat_damage<const> = require('combat/damage')
 
 local breakablewall<const> = {}
 breakablewall.__index = breakablewall

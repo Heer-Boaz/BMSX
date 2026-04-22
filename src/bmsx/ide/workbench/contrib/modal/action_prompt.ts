@@ -1,6 +1,6 @@
 import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../../common/rect';
 import * as constants from '../../../common/constants';
-import { measureText } from '../../../editor/common/text_layout';
+import { measureText } from '../../../editor/common/text/layout';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { performEditorAction } from '../../../editor/input/commands/actions';
 import { consumeIdeKey, isKeyJustPressed } from '../../../editor/input/keyboard/key_input';

@@ -14,8 +14,8 @@
 -- This module is BIOS/runtime plumbing.
 
 local world_module<const> = require('world')
-local ecs_builtin<const> = require('ecs_builtin')
-local ecs_pipeline<const> = require('ecs_pipeline')
+local ecs_builtin<const> = require('ecs/builtin')
+local ecs_pipeline<const> = require('ecs/pipeline')
 local worldobject<const> = require('worldobject')
 local subsystem<const> = require('subsystem')
 local spriteobject<const> = require('sprite')

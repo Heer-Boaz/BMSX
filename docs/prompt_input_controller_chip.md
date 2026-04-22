@@ -585,7 +585,7 @@ end
 - Runtime IO dispatch: `src/bmsx/machine/runtime/runtime.ts` (`onIoWrite`)
 - Frame latch entry point: `src/bmsx/machine/runtime/runtime.ts` `beginGuestUpdatePhase()` (calls `Input.instance.beginFrame()` at `guestUpdatePhaseDepth === 0`)
 - Device examples: `src/bmsx/machine/devices/dma/controller.ts`, `src/bmsx/machine/devices/imgdec/controller.ts`
-- String pool: `src/bmsx/machine/memory/string_pool.ts` (`StringValue` class, `valueIsString()`)
+- String pool: `src/bmsx/machine/memory/string/pool.ts` (`StringValue` class, `valueIsString()`)
 - Compiler validation: `src/bmsx/machine/program/compiler.ts` (`validateMemoryStore`, `resolveMemoryStoreRequirement`)
 - Flow analysis: `src/bmsx/machine/program/compile_value_flow.ts` (`evaluateExpressionValueKind`)
 - Input system — frame sampling: `src/bmsx/input/manager.ts` `beginFrame()` → iterates players → `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()`

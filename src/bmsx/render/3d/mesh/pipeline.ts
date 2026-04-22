@@ -8,7 +8,7 @@ import { Identifier } from '../../../rompack/format';
 import meshFS from '../shaders/3d.frag.glsl';
 import meshVS from '../shaders/3d.vert.glsl';
 import * as GLR from '../../backend/webgl/gl_resources';
-import { RenderPassLibrary } from '../../backend/pass_library';
+import { RenderPassLibrary } from '../../backend/pass/library';
 import { MeshBatchPipelineState } from '../../backend/interfaces';
 import type { PassEncoder, RenderContext, RenderPassDef } from '../../backend/interfaces';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_MORPH_NORM, TEXTURE_UNIT_MORPH_POS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../../backend/webgl/constants';
@@ -24,7 +24,7 @@ import {
 	forEachMeshQueue,
 	meshQueueBackSize,
 } from '../../shared/queues';
-import { resolveActiveCamera3D } from '../../shared/hardware_camera';
+import { resolveActiveCamera3D } from '../../shared/hardware/camera';
 import { clamp } from '../../../common/clamp';
 
 const BYTES_PER_FLOAT = 4;

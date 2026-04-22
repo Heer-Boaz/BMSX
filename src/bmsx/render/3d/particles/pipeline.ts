@@ -3,7 +3,7 @@ import { $ } from '../../../core/engine';
 import particleFS from '../shaders/particle.frag.glsl';
 import particleVS from '../shaders/particle.vert.glsl';
 import type { PassEncoder, RenderContext, RenderPassStateRegistry } from '../../backend/interfaces';
-import { RenderPassLibrary } from '../../backend/pass_library';
+import { RenderPassLibrary } from '../../backend/pass/library';
 import { ParticlePipelineState } from '../../backend/interfaces';
 import { TEXTURE_UNIT_ATLAS_ENGINE, TEXTURE_UNIT_ATLAS_PRIMARY, TEXTURE_UNIT_ATLAS_SECONDARY } from '../../backend/webgl/constants';
 import { WebGLBackend } from '../../backend/webgl/backend';
@@ -19,7 +19,7 @@ import {
 import type { ParticleRenderSubmission } from '../../shared/submissions';
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../../shared/fallback_camera';
 import { ENGINE_ATLAS_INDEX, ENGINE_ATLAS_TEXTURE_KEY } from '../../../rompack/format';
-import { resolveActiveCamera3D } from '../../shared/hardware_camera';
+import { resolveActiveCamera3D } from '../../shared/hardware/camera';
 import { clamp } from '../../../common/clamp';
 
 const camRight = new Float32Array(3);

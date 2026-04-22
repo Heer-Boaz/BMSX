@@ -1,7 +1,7 @@
 import type { EditorDiagnostic, EditorDiagnosticSeverity } from '../../../../common/models';
 import type { RectBounds } from '../../../../../rompack/format';
 import type { EditorFont } from '../../../../editor/ui/view/font';
-import { measureText, measureTextRange } from '../../../../editor/common/text_layout';
+import { measureText, measureTextRange } from '../../../../editor/common/text/layout';
 import { writeWrappedMeasuredText } from '../../../../common/text';
 import { clamp } from '../../../../../common/clamp';
 import { create_rect_bounds, write_rect_bounds } from '../../../../../common/rect';

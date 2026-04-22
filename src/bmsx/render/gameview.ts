@@ -6,7 +6,7 @@ import { shallowcopy } from '../common/shallowcopy';
 import type { vec2 } from '../rompack/format';
 import * as queues from './shared/queues';
 import type { AtmosphereParams, BackendContext, GPUBackend, PresentationMode, RenderContext, RenderSubmission, RenderSubmitQueue, TextureHandle } from './backend/interfaces';
-import { RenderPassLibrary } from './backend/pass_library';
+import { RenderPassLibrary } from './backend/pass/library';
 import { CRTDitherType as DitherType } from './backend/interfaces';
 import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/graph';
 import { LightingSystem } from './lighting/system';

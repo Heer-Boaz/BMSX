@@ -1,9 +1,9 @@
 import { clamp } from '../../../../../common/clamp';
-import { ensureVisualLines } from '../../../common/text_layout';
+import { ensureVisualLines } from '../../../common/text/layout';
 import { editorCaretState } from './state';
 import { editorDocumentState } from '../../../editing/document_state';
 import { editorViewState } from '../state';
-import { resolveCodeAreaViewport, type CodeAreaViewport } from '../../code_area_viewport';
+import { resolveCodeAreaViewport, type CodeAreaViewport } from '../../code/area_viewport';
 import { caretNavigation } from './state';
 import { resolveCursorVisualIndex } from './visual_index';
 

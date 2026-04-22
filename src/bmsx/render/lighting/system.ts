@@ -6,7 +6,7 @@ import {
 	getHardwareDirectionalLights,
 	getHardwarePointLights,
 	resolveHardwareAmbientLight,
-} from '../shared/hardware_lighting';
+} from '../shared/hardware/lighting';
 // Avoid backend-specific imports here; use conservative defaults for pooled arrays
 const DEFAULT_MAX_DIR_LIGHTS = 4;
 const DEFAULT_MAX_POINT_LIGHTS = 4;

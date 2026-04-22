@@ -2,7 +2,7 @@
 // start normalized-body-acceptable -- SSA value rewrites intentionally mirror non-SSA rewrites without sharing mutable pass internals.
 import { OpCode, type SourceRange, type Value } from '../../cpu/cpu';
 import { MAX_EXT_CONST } from '../../cpu/instruction_format';
-import { isStringValue } from '../../memory/string_pool';
+import { isStringValue } from '../../memory/string/pool';
 import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
 import type { Instruction, InstructionSet, OptimizationContext } from './index';
 import { cloneInstruction, computeMaxRegister, isPureInstruction, isRegisterOperand, pushRegister, pushRegisterRange } from './instructions';

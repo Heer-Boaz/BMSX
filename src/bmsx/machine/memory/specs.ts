@@ -27,7 +27,7 @@ import {
 	buildRuntimeLayerLookup,
 	resolveRuntimeLayerAssetById,
 	resolveRuntimeLayerAssetFromEntry,
-} from './asset_layers';
+} from './asset/layers';
 import { resolvePositiveSafeInteger, resolveRuntimeRenderSize } from '../specs';
 
 const ASSET_DATA_ALIGNMENT_BYTES = 0x1000;

@@ -8,7 +8,7 @@ import { handleSearchInput } from '../../input/quick_input/search/input';
 import { handleSymbolSearchInput } from '../../input/quick_input/symbol_search/input';
 import { handleQuickInputPointer } from '../../input/quick_input/pointer/dispatch';
 import { editorSearchState, lineJumpState } from '../find/widget_state';
-import { symbolSearchState } from '../symbols/search_state';
+import { symbolSearchState } from '../symbols/search/state';
 import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
 import { refreshInlineBarLayout } from '../../ui/view/view';
 

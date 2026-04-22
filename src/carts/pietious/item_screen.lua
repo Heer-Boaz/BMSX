@@ -1,5 +1,5 @@
 local constants<const> = require('constants')
-local castle_map<const> = require('castle_map')
+local castle_map<const> = require('castle/map')
 
 local item_screen<const> = {}
 item_screen.__index = item_screen

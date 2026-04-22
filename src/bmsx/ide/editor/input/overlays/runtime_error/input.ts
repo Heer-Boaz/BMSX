@@ -1,7 +1,7 @@
 import { writeClipboard } from '../../../editing/text_editing_and_selection';
 import { buildRuntimeErrorOverlayCopyText } from '../../../contrib/runtime_error/overlay';
 import type { PointerSnapshot } from '../../../../common/models';
-import { collapseRuntimeErrorOverlay, handleRuntimeErrorOverlayPointerClick } from './pointer_actions';
+import { collapseRuntimeErrorOverlay, handleRuntimeErrorOverlayPointerClick } from './pointer/actions';
 import { editorPointerState, resetPointerClickTracking } from '../../pointer/state';
 import { runtimeErrorState } from '../../../contrib/runtime_error/state';
 import {
@@ -10,7 +10,7 @@ import {
 	RUNTIME_ERROR_OVERLAY_POINTER_NONE,
 	RUNTIME_ERROR_OVERLAY_POINTER_OUTSIDE,
 	updateRuntimeErrorOverlayPointerHover,
-} from './pointer_hover';
+} from './pointer/hover';
 
 export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, justPressed: boolean, codeTop: number, codeRight: number, textLeft: number): boolean {
 	const pointerHit = updateRuntimeErrorOverlayPointerHover(snapshot, codeTop, codeRight, textLeft);

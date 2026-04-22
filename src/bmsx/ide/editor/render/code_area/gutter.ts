@@ -2,7 +2,7 @@ import type { Font } from '../../../../render/shared/bmsx_font';
 import * as constants from '../../../common/constants';
 import { api } from '../../ui/view/overlay_api';
 import { editorViewState } from '../../ui/view/state';
-import type { CodeAreaViewport } from '../../ui/code_area_viewport';
+import type { CodeAreaViewport } from '../../ui/code/area_viewport';
 
 export function drawCodeAreaBackground(viewport: CodeAreaViewport): void {
 	api.fill_rect(viewport.codeLeft, viewport.codeTop, viewport.codeRight, viewport.codeBottom, undefined, constants.COLOR_CODE_BACKGROUND);

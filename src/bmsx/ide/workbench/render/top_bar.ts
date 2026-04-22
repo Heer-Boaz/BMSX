@@ -2,7 +2,7 @@ import * as constants from '../../common/constants';
 import type { RectBounds } from '../../../rompack/format';
 import { clear_rect_bounds, create_rect_bounds, write_rect_bounds } from '../../../common/rect';
 import { editorChromeState } from '../ui/chrome_state';
-import { measureText } from '../../editor/common/text_layout';
+import { measureText } from '../../editor/common/text/layout';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { api } from '../../editor/ui/view/overlay_api';
 import { buildTopBarMenuEntries, MENU_COMMANDS, MENU_IDS, TopBarMenuEntry } from '../ui/top_bar/menu';

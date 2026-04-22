@@ -9,7 +9,7 @@ import { storeActiveCodeTabContext } from '../../workbench/ui/code_tab/activatio
 import { cancelGlobalSearchJob, startSearchJob } from '../contrib/find/search';
 import { editorRuntimeState } from '../common/runtime_state';
 import { editorFeedbackState, setEditorFeedbackActive, showEditorMessage, updateEditorMessage } from '../../common/feedback_state';
-import { bumpTextVersion } from '../common/text_runtime';
+import { bumpTextVersion } from '../common/text/runtime';
 import { ensureCursorVisible } from './view/caret/caret';
 import { drawProblemsPanel } from '../../workbench/contrib/problems/panel/controller';
 import { renderTopBar, renderTopBarDropdown } from '../../workbench/render/top_bar';
@@ -26,7 +26,7 @@ import { handleEditorInput } from '../input/keyboard/dispatch';
 import { closeBlockingWorkbenchModal, drawBlockingWorkbenchModal, handleBlockingWorkbenchModalInput, hasBlockingWorkbenchModal } from '../../workbench/contrib/modal/blocking_modal';
 import { handleTextEditorPointerInput } from '../input/pointer/dispatch';
 import { handleEditorWheelInput } from '../input/pointer/wheel';
-import { updateBlink } from './inline_text_field';
+import { updateBlink } from './inline/text_field';
 import { stopWorkspaceAutosaveLoop, runWorkspaceAutosaveTick, initializeWorkspaceStorage } from '../../workbench/workspace/storage';
 import { workspaceState } from '../../workbench/workspace/state';
 import { clearWorkspaceCachedSources } from '../../workspace/cache';

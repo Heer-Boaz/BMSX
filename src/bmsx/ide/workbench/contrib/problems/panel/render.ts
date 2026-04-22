@@ -1,6 +1,6 @@
 import type { RectBounds } from '../../../../../rompack/format';
 import type { EditorFont } from '../../../../editor/ui/view/font';
-import { truncateTextToWidth } from '../../../../editor/common/text_layout';
+import { truncateTextToWidth } from '../../../../editor/common/text/layout';
 import * as constants from '../../../../common/constants';
 import { api } from '../../../../editor/ui/view/overlay_api';
 import { drawEditorText } from '../../../../editor/render/text_renderer';

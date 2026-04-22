@@ -21,11 +21,11 @@ import {
 	symbolSearchEntryHeight,
 	symbolSearchVisibleResultCount,
 } from '../../ui/view/view';
-import { measureText } from '../../common/text_layout';
+import { measureText } from '../../common/text/layout';
 import { renderInlineBarField, renderInlineBarFrame } from './common';
 import { problemsPanel } from '../../../workbench/contrib/problems/panel/controller';
 import { renameController } from '../../contrib/rename/controller';
-import { symbolSearchState } from '../../contrib/symbols/search_state';
+import { symbolSearchState } from '../../contrib/symbols/search/state';
 import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
 
 type InlineSearchResultEntry = {

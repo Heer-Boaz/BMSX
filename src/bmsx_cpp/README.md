@@ -40,9 +40,10 @@ bmsx_cpp/
 │   │   ├── frame_uniforms.cpp
 │   │   ├── gles2_backend.h
 │   │   ├── gles2_backend.cpp
-│   │   ├── pass_builder.h
-│   │   ├── pass_library.h
-│   │   └── pass_library.cpp
+│   │   └── pass/
+│   │       ├── builder.h
+│   │       ├── library.h
+│   │       └── library.cpp
 │   ├── graph/
 │   │   ├── graph.h
 │   │   └── graph.cpp

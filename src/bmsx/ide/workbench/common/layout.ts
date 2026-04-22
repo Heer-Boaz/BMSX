@@ -1,4 +1,4 @@
-import { writeWrappedOverlayLine } from '../../editor/common/text_layout';
+import { writeWrappedOverlayLine } from '../../editor/common/text/layout';
 import { editorViewState } from '../../editor/ui/view/state';
 import { editorFeedbackState } from '../../common/feedback_state';
 import { problemsPanel } from '../contrib/problems/panel/controller';

@@ -1,5 +1,5 @@
 local constants<const> = require('constants')
-local combat_overlap<const> = require('combat_overlap')
+local combat_overlap<const> = require('combat/overlap')
 local worldobject<const> = require('worldobject')
 
 local loot_drop<const> = {}

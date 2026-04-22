@@ -1,6 +1,6 @@
 import { decodeBinary, encodeBinary, requireObject, requireObjectKey } from '../../common/serializer/binencoder';
 import type { Program, ProgramMetadata, Proto, Value } from '../cpu/cpu';
-import { StringPool, isStringValue, stringValueToString } from '../memory/string_pool';
+import { StringPool, isStringValue, stringValueToString } from '../memory/string/pool';
 
 // disable-next-line legacy_sentinel_string_pattern -- Program asset id is a TS/C++/bootrom binary contract, not an alias fallback.
 export const PROGRAM_ASSET_ID = '__program__';

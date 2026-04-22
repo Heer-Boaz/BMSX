@@ -1,5 +1,5 @@
-import { StringPool, StringValue, isStringValue, stringValueToString } from '../memory/string_pool';
-import type { RuntimeStringPoolState } from '../memory/string_pool';
+import { StringPool, StringValue, isStringValue, stringValueToString } from '../memory/string/pool';
+import type { RuntimeStringPoolState } from '../memory/string/pool';
 import type { Memory } from '../memory/memory';
 import { addTrackedLuaHeapBytes, replaceTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
 import { formatNumber } from '../common/number_format';

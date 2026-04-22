@@ -1,7 +1,7 @@
 // start normalized-body-acceptable -- Value-folding helpers mirror opcode cases; sharing them would hide the rewrite intent.
 import { isTruthyValue, OpCode, type Value } from '../../cpu/cpu';
 import { MAX_SIGNED_BX, MIN_SIGNED_BX } from '../../cpu/instruction_format';
-import { isStringValue, stringValueToString } from '../../memory/string_pool';
+import { isStringValue, stringValueToString } from '../../memory/string/pool';
 import type { Instruction, OptimizationContext } from './index';
 
 export type ConstValue = {

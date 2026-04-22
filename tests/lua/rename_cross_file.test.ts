@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import type { CodeTabContext, SearchMatch } from '../../src/bmsx/ide/common/models';
 import type { ResourceDescriptor } from '../../src/bmsx/machine/runtime/contracts';
-import { createLuaSemanticFrontendFromSnapshot, LuaSemanticWorkspace } from '../../src/bmsx/ide/editor/contrib/intellisense/semantic_workspace';
+import { createLuaSemanticFrontendFromSnapshot, LuaSemanticWorkspace } from '../../src/bmsx/ide/editor/contrib/intellisense/semantic/workspace';
 import { CrossFileRenameManager, convertRangeToSearchMatch, type CrossFileRenameDependencies } from '../../src/bmsx/ide/editor/contrib/rename/operations';
 
 function normalizeSource(source: string): string[] {

@@ -6,7 +6,7 @@ import { showEditorMessage } from '../../../common/feedback_state';
 import { listGlobalLuaSymbols, listLuaSymbols } from '../intellisense/engine';
 import { symbolKindLabel } from '../../../../lua/semantic/model';
 import { extractErrorMessage } from '../../../../lua/value';
-import { symbolSearchState } from './search_state';
+import { symbolSearchState } from './search/state';
 
 export function symbolCatalogDedupKey(entry: LuaSymbolEntry): string {
 	const { location, kind, name } = entry;

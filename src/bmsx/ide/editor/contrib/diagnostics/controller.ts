@@ -14,7 +14,7 @@ import {
 	getCodeTabContexts,
 	hasCodeTabContext,
 } from '../../../workbench/ui/code_tab/contexts';
-import { getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace_state';
+import { getOrCreateSemanticWorkspace } from '../intellisense/semantic/workspace/state';
 import type { LuaDefinitionInfo } from '../../../../lua/syntax/ast';
 import type { ModuleAliasEntry } from '../../../../lua/semantic/model';
 import { diagnosticsDebounceMs, editorDiagnosticsState, EMPTY_DIAGNOSTICS } from './state';

@@ -6,7 +6,7 @@ import { isCtrlDown, isMetaDown } from '../keyboard/key_input';
 import { computeEditorPointerButtonMask, POINTER_AUX_JUST_PRESSED, POINTER_PRIMARY_JUST_PRESSED, POINTER_PRIMARY_JUST_RELEASED, POINTER_SECONDARY_JUST_PRESSED } from './buttons';
 import { handleCodeAreaPointerInput } from './code';
 import { handleEditorPanelPointer } from './panel';
-import { handleEditorChromePointerDispatch } from './chrome_dispatch';
+import { handleEditorChromePointerDispatch } from './chrome/dispatch';
 import { prepareEditorPointerFrame, readEditorPointerSnapshot } from './frame';
 import { handleEditorPointerGuards } from './guard_dispatch';
 import { editorPointerState } from './state';

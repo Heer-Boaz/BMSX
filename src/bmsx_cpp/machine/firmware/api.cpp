@@ -1,5 +1,5 @@
 #include "machine/firmware/api.h"
-#include "machine/runtime/timing_config.h"
+#include "machine/runtime/timing/config.h"
 #include "machine/firmware/input_state_tables.h"
 
 #include "core/engine.h"

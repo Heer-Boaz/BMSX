@@ -9,7 +9,7 @@ import { closeEditorContextMenu } from '../../../workbench/contrib/context_menu/
 import { editorContextMenuState } from '../../../workbench/contrib/context_menu/state';
 import { runtimeErrorState } from '../../contrib/runtime_error/state';
 import { editorSearchState, lineJumpState } from '../../contrib/find/widget_state';
-import { symbolSearchState } from '../../contrib/symbols/search_state';
+import { symbolSearchState } from '../../contrib/symbols/search/state';
 import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
 
 export function handleEscapeKey(): boolean {

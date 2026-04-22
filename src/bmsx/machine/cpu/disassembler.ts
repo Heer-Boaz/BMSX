@@ -1,7 +1,7 @@
 import { OpCode, Table, isNativeFunction, isNativeObject, type Program, type ProgramMetadata, type Proto, type SourceRange, type Value } from './cpu';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
 import { formatNumber } from '../common/number_format';
-import { isStringValue, stringValueToString } from '../memory/string_pool';
+import { isStringValue, stringValueToString } from '../memory/string/pool';
 
 export type DisassemblyOptions = {
 	showPc?: boolean;

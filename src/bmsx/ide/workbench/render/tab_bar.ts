@@ -6,7 +6,7 @@ import { clear_rect_bounds, create_rect_bounds, write_rect_bounds } from '../../
 import { TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../../common/constants';
 import { ScratchBuffer } from '../../../common/scratchbuffer';
 import { editorChromeState } from '../ui/chrome_state';
-import { measureText } from '../../editor/common/text_layout';
+import { measureText } from '../../editor/common/text/layout';
 import { editorPointerState } from '../../editor/input/pointer/state';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { editorViewState } from '../../editor/ui/view/state';

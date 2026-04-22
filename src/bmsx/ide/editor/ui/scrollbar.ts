@@ -3,7 +3,7 @@ import { SCROLLBAR_MIN_THUMB_HEIGHT } from '../../common/constants';
 import type { ScrollbarKind } from '../../common/models';
 import type { RectBounds } from '../../../rompack/format';
 import { getCodeAreaBounds } from './view/view';
-import { ensureVisualLines } from '../common/text_layout';
+import { ensureVisualLines } from '../common/text/layout';
 import { resourcePanel } from '../../workbench/contrib/resources/panel/controller';
 import { api } from './view/overlay_api';
 import { setResourceViewerScroll } from '../../workbench/contrib/resources/viewer';

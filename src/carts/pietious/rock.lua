@@ -1,6 +1,6 @@
 local constants<const> = require('constants')
-local combat_overlap<const> = require('combat_overlap')
-local combat_damage<const> = require('combat_damage')
+local combat_overlap<const> = require('combat/overlap')
+local combat_damage<const> = require('combat/damage')
 local rock<const> = {}
 rock.__index = rock
 local rock_break_timeline_id<const> = 'rock.tl.break'

@@ -16,7 +16,7 @@ import { logDebugState } from '../../machine/runtime/debug';
 import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
 import * as workbenchMode from './workbench_mode';
 import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from '../../machine/runtime/timing';
-import { setFrameTiming, setTransferRatesFromManifest } from '../../machine/runtime/timing_config';
+import { setFrameTiming, setTransferRatesFromManifest } from '../../machine/runtime/timing/config';
 import {
 	buildModuleAliasMap,
 	buildModuleAliasesFromPaths,
@@ -37,7 +37,7 @@ import {
 import { getMachinePerfSpecs } from '../../rompack/format';
 import type { RawAssetSource } from '../../rompack/source';
 import { Table, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from '../../machine/cpu/cpu';
-import { StringValue, isStringValue, stringValueToString } from '../../machine/memory/string_pool';
+import { StringValue, isStringValue, stringValueToString } from '../../machine/memory/string/pool';
 import { Runtime } from '../../machine/runtime/runtime';
 import { raiseEngineIrq } from '../../machine/runtime/engine_irq';
 import { callClosure, callClosureInto, callClosureIntoWithScheduler } from '../../machine/program/executor';

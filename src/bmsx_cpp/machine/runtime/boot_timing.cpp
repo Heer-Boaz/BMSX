@@ -2,7 +2,7 @@
 
 #include "machine/memory/specs.h"
 #include "machine/runtime/runtime.h"
-#include "machine/runtime/timing_config.h"
+#include "machine/runtime/timing/config.h"
 #include "machine/specs.h"
 #include "rompack/assets.h"
 

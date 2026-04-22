@@ -6,8 +6,8 @@ import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain'
 import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { createEditorSemanticFrontend } from '../intellisense/frontend';
-import { LuaSemanticWorkspace } from '../intellisense/semantic_workspace';
-import { syncSemanticWorkspacePaths, type SemanticWorkspacePathInput } from '../intellisense/semantic_workspace_state';
+import { LuaSemanticWorkspace } from '../intellisense/semantic/workspace';
+import { syncSemanticWorkspacePaths, type SemanticWorkspacePathInput } from '../intellisense/semantic/workspace/state';
 import { ReferenceState, type ReferenceMatchInfo } from './state';
 import { splitText } from '../../../../common/text_lines';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';

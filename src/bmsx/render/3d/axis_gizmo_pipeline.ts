@@ -1,12 +1,12 @@
 import { $ } from '../../core/engine';
 import axisFS from './shaders/axis_gizmo.frag.glsl';
 import axisVS from './shaders/axis_gizmo.vert.glsl';
-import { RenderPassLibrary } from '../backend/pass_library';
+import { RenderPassLibrary } from '../backend/pass/library';
 import type { color } from '../shared/submissions';
 import { M4 } from './math';
 import { WebGLBackend } from '../backend/webgl/backend';
 import { clamp } from '../../common/clamp';
-import { resolveActiveCamera3D } from '../shared/hardware_camera';
+import { resolveActiveCamera3D } from '../shared/hardware/camera';
 
 let vao: WebGLVertexArrayObject = null;
 let program: WebGLProgram = null;

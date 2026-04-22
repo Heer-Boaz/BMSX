@@ -4,7 +4,7 @@ import { closeSearch, processInlineFieldPointer } from '../../../contrib/find/se
 import { getResourceSearchBarBounds, resourceSearchEntryHeight, resourceSearchVisibleResultCount } from '../../../ui/view/view';
 import type { PointerSnapshot } from '../../../../common/models';
 import { applyResourceSearchSelection } from '../../../../workbench/contrib/resources/search';
-import { ensureResourceSearchSelectionVisible } from '../../../../workbench/contrib/resources/search_catalog';
+import { ensureResourceSearchSelectionVisible } from '../../../../workbench/contrib/resources/search/catalog';
 import { closeLineJump } from '../../../contrib/find/line_jump';
 import { closeSymbolSearch } from '../../../contrib/symbols/shared';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';

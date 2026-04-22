@@ -8,7 +8,7 @@ import { applySymbolSearchSelection } from '../../../contrib/symbols/search';
 import { ensureSymbolSearchSelectionVisible } from '../../../contrib/symbols/shared';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
 import { editorViewState } from '../../../ui/view/state';
-import { symbolSearchState } from '../../../contrib/symbols/search_state';
+import { symbolSearchState } from '../../../contrib/symbols/search/state';
 
 export function handleSymbolSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const bounds = getSymbolSearchBarBounds();

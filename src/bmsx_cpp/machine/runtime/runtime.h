@@ -17,7 +17,7 @@
 #include "machine/runtime/cart_boot.h"
 #include "machine/program/scratch.h"
 #include "machine/memory/memory.h"
-#include "machine/runtime/frame_loop.h"
+#include "machine/runtime/frame/loop.h"
 #include "machine/scheduler/frame.h"
 #include "machine/devices/vdp/vdp.h"
 #include "render/gameview.h"

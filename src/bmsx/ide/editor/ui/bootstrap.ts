@@ -2,21 +2,21 @@ import { $ } from '../../../core/engine';
 import { completionController } from '../contrib/suggest/completion_controller';
 import { initializeTabs } from '../../workbench/ui/tabs';
 import { createEntryTabContext } from '../../workbench/ui/code_tab/contexts';
-import { createInlineTextField } from './inline_text_field';
+import { createInlineTextField } from './inline/text_field';
 import { Scrollbar, ScrollbarController } from './scrollbar';
 import { initializeResourcePanel } from '../../workbench/contrib/resources/panel/controller';
 import { editorDiagnosticsState } from '../contrib/diagnostics/state';
 import { initializeDebuggerUiState } from '../../workbench/contrib/debugger/controller';
 import { initializeWorkspaceStorage } from '../../workbench/workspace/storage';
 import { Runtime } from '../../../machine/runtime/runtime';
-import { resetSemanticWorkspace } from '../contrib/intellisense/semantic_workspace_state';
-import { assertMonospace } from '../common/text_layout';
+import { resetSemanticWorkspace } from '../contrib/intellisense/semantic/workspace/state';
+import { assertMonospace } from '../common/text/layout';
 import * as constants from '../../common/constants';
 import type { Viewport } from '../../../rompack/format';
 import { editorDocumentState } from '../editing/document_state';
 import { editorViewState } from './view/state';
 import { editorSearchState, lineJumpState } from '../contrib/find/widget_state';
-import { symbolSearchState } from '../contrib/symbols/search_state';
+import { symbolSearchState } from '../contrib/symbols/search/state';
 import {
 	applyViewportSize,
 	configureFontVariant,

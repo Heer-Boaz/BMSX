@@ -1,5 +1,5 @@
 import type { vec3 } from '../../rompack/format';
-import { resolveActiveCamera3D } from './hardware_camera';
+import { resolveActiveCamera3D } from './hardware/camera';
 
 export type ResolvedCameraState = {
 	view: Float32Array;

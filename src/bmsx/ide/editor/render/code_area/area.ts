@@ -9,7 +9,7 @@ import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from '../../ui/view/state';
 import { editorRuntimeState } from '../../common/runtime_state';
 import { completionController } from '../../contrib/suggest/completion_controller';
-import { resolveCodeAreaViewport } from '../../ui/code_area_viewport';
+import { resolveCodeAreaViewport } from '../../ui/code/area_viewport';
 import { resolveCursorVisualIndex } from '../../ui/view/caret/visual_index';
 
 export function renderCodeArea(): void {

@@ -1,4 +1,4 @@
-import type { RenderPassLibrary } from '../backend/pass_library';
+import type { RenderPassLibrary } from '../backend/pass/library';
 import type { RenderContext, RenderPassStateRegistry } from '../backend/interfaces';
 import { WebGLBackend } from '../backend/webgl/backend';
 import { $ } from '../../core/engine';

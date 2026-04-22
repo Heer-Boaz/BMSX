@@ -1,6 +1,6 @@
 import type { ResourceDescriptor } from '../../../../../rompack/resource';
 import { Runtime } from '../../../../../machine/runtime/runtime';
-import { measureTextRange } from '../../../../editor/common/text_layout';
+import { measureTextRange } from '../../../../editor/common/text/layout';
 import type { ResourceBrowserItem } from '../../../../common/models';
 import { listResourcesStrict } from '../catalog';
 import type { CallHierarchyView, CallHierarchyViewNode } from '../../../../editor/contrib/call_hierarchy/view';

@@ -14,7 +14,7 @@ import {
 	IO_INP_VALUE,
 } from '../../bus/io';
 import { Memory } from '../../memory/memory';
-import type { StringValue } from '../../memory/string_pool';
+import type { StringValue } from '../../memory/string/pool';
 
 const INP_CONTEXT_ID = 'inp_chip';
 

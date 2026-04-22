@@ -4,7 +4,7 @@ import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import * as constants from '../../common/constants';
 import { editorRuntimeState } from '../common/runtime_state';
 import { invalidateLuaCommentContextFromRow } from '../../common/text';
-import { capturePreMutationSource } from '../common/text_runtime';
+import { capturePreMutationSource } from '../common/text/runtime';
 import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../../workbench/ui/code_tab/contexts';
 import { notifyReadOnlyEdit } from '../ui/view/view';
 import { updateDesiredColumn } from '../ui/view/caret/caret';

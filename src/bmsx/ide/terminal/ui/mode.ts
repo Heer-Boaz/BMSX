@@ -17,7 +17,7 @@ import {
 	setCursorFromOffset,
 	selectionAnchorOffset,
 	setSelectionAnchorPosition,
-} from '../../editor/ui/inline_text_field';
+} from '../../editor/ui/inline/text_field';
 import type { InlineInputOptions, TextField, CursorScreenInfo, EditContext } from '../../common/models';
 import * as constants from '../../common/constants';
 import { OverlayRenderer } from '../../runtime/overlay_renderer';
@@ -49,7 +49,7 @@ import type { MutableTextPosition, TextBuffer } from '../../editor/text/text_buf
 import { clamp } from '../../../common/clamp';
 import { COLOR_COMPLETION_PREVIEW_TEXT, TAB_SPACES } from '../../common/constants';
 import { advancePhaseBlink, resetBlinkState } from '../../editor/ui/view/caret/blink';
-import { measureWrappedInlineSegmentDecoration, resolveInlineFieldSelectionState } from '../../editor/ui/inline_field_view';
+import { measureWrappedInlineSegmentDecoration, resolveInlineFieldSelectionState } from '../../editor/ui/inline/field_view';
 
 type TerminalOutputKind =
 	| 'prompt'

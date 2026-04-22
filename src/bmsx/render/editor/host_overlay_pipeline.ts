@@ -1,4 +1,4 @@
-import type { RenderPassLibrary } from '../backend/pass_library';
+import type { RenderPassLibrary } from '../backend/pass/library';
 import type {
 	HostOverlayPipelineState,
 	PassEncoder,

@@ -1,5 +1,5 @@
 local constants<const> = require('constants')
-local player_abilities<const> = require('player_abilities')
+local player_abilities<const> = require('player/abilities')
 
 local player<const> = {}
 player.__index = player

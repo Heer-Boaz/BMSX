@@ -5,7 +5,7 @@ import type { VibrationParams } from "../platform";
 import type { ActionStateQuery } from '../input/models';
 import { GameView } from "../render/gameview";
 import { TextureManager } from "../render/texture_manager";
-import { RenderPassLibrary } from "../render/backend/pass_library";
+import { RenderPassLibrary } from "../render/backend/pass/library";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_factory";
 import type { SkyboxImageIds } from "../render/shared/submissions";
 import { HZ_SCALE as PLATFORM_HZ_SCALE, setMicrotaskQueue } from '../platform';

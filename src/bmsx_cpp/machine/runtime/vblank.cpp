@@ -4,7 +4,7 @@
 #include "machine/bus/io.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/cpu_executor.h"
-#include "machine/runtime/timing_config.h"
+#include "machine/runtime/timing/config.h"
 #include "machine/scheduler/device.h"
 #include <algorithm>
 #include <limits>

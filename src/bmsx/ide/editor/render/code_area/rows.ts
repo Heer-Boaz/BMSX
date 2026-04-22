@@ -2,7 +2,7 @@ import type { CursorScreenInfo } from '../../../common/models';
 import type { Font } from '../../../../render/shared/bmsx_font';
 import { drawEditorText } from '../text_renderer';
 import { api } from '../../ui/view/overlay_api';
-import { computeSelectionSlice } from '../../common/text_layout';
+import { computeSelectionSlice } from '../../common/text/layout';
 import * as constants from '../../../common/constants';
 import { runtimeErrorState } from '../../contrib/runtime_error/state';
 import { drawReferenceHighlightsForRow, drawSearchHighlightsForRow } from './highlights';
@@ -11,7 +11,7 @@ import { drawDiagnosticUnderlinesForRow, drawGotoUnderlineForRow } from './under
 import { drawCodeAreaRowChrome } from './gutter';
 import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from '../../ui/view/state';
-import type { CodeAreaViewport } from '../../ui/code_area_viewport';
+import type { CodeAreaViewport } from '../../ui/code/area_viewport';
 
 type ActiveGotoHighlight = {
 	row: number;

@@ -1,5 +1,5 @@
 import { $ } from '../../core/engine';
-import { RenderPassLibrary } from '../backend/pass_library';
+import { RenderPassLibrary } from '../backend/pass/library';
 import { Framebuffer2DPipelineState, MeshBatchPipelineState, ParticlePipelineState, type RenderPassDef } from '../backend/interfaces';
 import { M4 } from '../3d/math';
 import {
@@ -12,7 +12,7 @@ import {
 } from '../shared/queues';
 import { SKYBOX_FACE_KEYS, type MeshRenderSubmission, type ParticleRenderSubmission } from '../shared/submissions';
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
-import { resolveActiveCamera3D } from '../shared/hardware_camera';
+import { resolveActiveCamera3D } from '../shared/hardware/camera';
 import { ENGINE_ATLAS_INDEX } from '../../rompack/format';
 import { VRAM_ATLAS_SLOT_SIZE, VRAM_SYSTEM_ATLAS_SLOT_SIZE } from '../../machine/memory/map';
 import type { Mesh } from '../3d/mesh';

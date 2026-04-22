@@ -5,7 +5,7 @@ import {
 	STRING_HANDLE_COUNT,
 	STRING_HANDLE_ENTRY_SIZE,
 } from '../memory/map';
-import type { StringHandleTable } from '../memory/string_memory';
+import type { StringHandleTable } from '../memory/string/memory';
 import type { VDP } from '../devices/vdp/vdp';
 
 export class ResourceUsageDetector {

@@ -1,4 +1,4 @@
-import { applyInlineFieldEditing } from '../../../ui/inline_text_field';
+import { applyInlineFieldEditing } from '../../../ui/inline/text_field';
 import { applyLineJump, closeLineJump, openLineJump } from '../../../contrib/find/line_jump';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../keyboard/key_input';
 import { lineJumpState } from '../../../contrib/find/widget_state';
