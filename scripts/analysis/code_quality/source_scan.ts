@@ -25,9 +25,10 @@ import { lintSinglePropertyOptionsParameterPattern } from '../../lint/rules/comm
 import { lintSplitJoinRoundtripPattern } from '../../lint/rules/common/split_join_roundtrip_pattern';
 import { lintStringSwitchChain } from '../../lint/rules/common/string_switch_chain_pattern';
 import { lintUselessTerminalReturnPattern } from '../../lint/rules/common/useless_terminal_return_pattern';
+import { compactSampleText } from '../../lint/text';
 import { getCallTargetLeafName, getPropertyName, hasQuestionDotToken, unwrapExpression } from '../../../src/bmsx/language/ts/ast/expressions';
 import { isFunctionLikeValue, isFunctionLikeWithParameters } from '../../../src/bmsx/language/ts/ast/functions';
-import { LOCAL_CONST_PATTERN_ENABLED, LintIssue, REPEATED_EXPRESSION_PAIR_MIN_LENGTH, RepeatedExpressionInfo, compactSampleText, getExtendsExpression, isSimpleAliasExpression, lintCatchClausePatterns, lintEnsurePattern, nodeStartLine, pushLintIssue, shouldIgnoreLintName } from '../../lint/rules/ts/support/ast';
+import { LOCAL_CONST_PATTERN_ENABLED, LintIssue, REPEATED_EXPRESSION_PAIR_MIN_LENGTH, RepeatedExpressionInfo, getExtendsExpression, isSimpleAliasExpression, lintCatchClausePatterns, lintEnsurePattern, nodeStartLine, pushLintIssue, shouldIgnoreLintName } from '../../lint/rules/ts/support/ast';
 import { getClassScopePath, isDeclarationIdentifier, isIdentifierPropertyName, isInsideLoop, isScopeBoundary, isWriteIdentifier } from '../../lint/rules/ts/support/bindings';
 import { NormalizedBodyInfo, collectNormalizedBody, isExportedVariableDeclaration, isIgnoredMethod, repeatedExpressionFingerprint } from '../../lint/rules/ts/support/declarations';
 import { isConsumeBeforeClearSnapshotRead, normalizeSingleUseContext, shouldReportLocalConst, shouldReportSingleUseLocal } from '../../lint/rules/ts/support/local_bindings';

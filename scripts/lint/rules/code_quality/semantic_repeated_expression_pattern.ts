@@ -4,8 +4,8 @@ import { defineLintRule } from '../../rule';
 import { type CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import { cppCallTarget, findCppAccessChainStart } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import { type CppToken, normalizedCppTokenText } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { compactSampleText } from '../../text';
 import { type CppLintIssue } from '../cpp/support/diagnostics';
-import { compactSampleText } from '../cpp/support/ast';
 import { isCppNumericSanitizationCall } from '../cpp/support/numeric';
 import { collectSemanticNormalizationCallSignatures, cppSemanticRepeatedExpressionMinCount, isSemanticNormalizationWrapperTarget, isSemanticValidationPredicateTarget, semanticCppExpressionFingerprint } from '../cpp/support/semantic';
 

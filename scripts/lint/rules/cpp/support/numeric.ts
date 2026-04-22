@@ -1,31 +1,9 @@
 import { type CppFunctionInfo } from '../../../../../src/bmsx/language/cpp/syntax/declarations';
-import { cppCallTarget, findCppAccessChainStart } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
+import { cppCallTarget, findCppAccessChainStart, isCppExpressionScanBoundary } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
 import { type CppToken } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
 import { type AnalysisRegion, lineInAnalysisRegion } from '../../../../analysis/lint_suppressions';
-import { CPP_BOUNDED_NUMERIC_HINT_WORDS, CPP_SINGLE_LINE_WRAPPER_NAME_WORDS, NUMERIC_BOUNDARY_FUNCTION_NAME_WORDS, NUMERIC_DEFENSIVE_CALLS, cppWordSegments } from './ast';
+import { NUMERIC_DEFENSIVE_CALLS } from './ast';
 import { isCppSemanticFloorDivisionCall } from './semantic';
-
-export const HOT_PATH_FUNCTION_NAME_WORDS = new Set([
-	'advance',
-	'begin',
-	'consume',
-	'draw',
-	'execute',
-	'flush',
-	'frame',
-	'halt',
-	'irq',
-	'poll',
-	'render',
-	'run',
-	'schedule',
-	'service',
-	'sync',
-	'tick',
-	'timer',
-	'update',
-	'vblank',
-]);
 
 export const HOT_PATH_TEMPORARY_TYPES = new Set([
 	'std::function',
@@ -35,21 +13,6 @@ export const HOT_PATH_TEMPORARY_TYPES = new Set([
 	'std::unordered_map',
 	'std::vector',
 ]);
-
-export function containsCppBoundedNumericHint(tokens: readonly CppToken[], start: number, end: number): boolean {
-	for (let index = start; index < end; index += 1) {
-		if (tokens[index].kind !== 'id') {
-			continue;
-		}
-		const segments = cppWordSegments(tokens[index].text);
-		for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
-			if (CPP_BOUNDED_NUMERIC_HINT_WORDS.has(segments[segmentIndex])) {
-				return true;
-			}
-		}
-	}
-	return false;
-}
 
 export function rangeContainsNestedCppNumericSanitization(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number): boolean {
 	const activeCalls: number[] = [];
@@ -76,29 +39,13 @@ export function isHotPathFunction(info: CppFunctionInfo, regions: readonly Analy
 	if (!lineInAnalysisRegion(regions, 'hot-path', tokens[info.nameToken].line)) {
 		return false;
 	}
-	if (info.context !== null && info.name === info.context) {
+	if (info.context !== undefined && info.name === info.context) {
 		return false;
 	}
 	if (info.name.startsWith('~')) {
 		return false;
 	}
-	const segments = cppWordSegments(info.name);
-	for (let index = 0; index < segments.length; index += 1) {
-		if (HOT_PATH_FUNCTION_NAME_WORDS.has(segments[index])) {
-			return true;
-		}
-	}
-	return false;
-}
-
-export function isNumericBoundaryFunction(info: CppFunctionInfo): boolean {
-	const segments = cppWordSegments(info.name);
-	for (let index = 0; index < segments.length; index += 1) {
-		if (NUMERIC_BOUNDARY_FUNCTION_NAME_WORDS.has(segments[index])) {
-			return true;
-		}
-	}
-	return false;
+	return true;
 }
 
 export function isCppNumericLimitsMemberCall(tokens: readonly CppToken[], openParen: number): boolean {
@@ -115,7 +62,7 @@ export function isCppNumericLimitsMemberCall(tokens: readonly CppToken[], openPa
 	}
 	for (let index = nameIndex - 2; index >= 0; index -= 1) {
 		const text = tokens[index].text;
-		if (text === ';' || text === '{' || text === '}' || text === '(' || text === ',' || text === '=') {
+		if (isCppExpressionScanBoundary(text)) {
 			return false;
 		}
 		if (text === 'numeric_limits') {
@@ -129,31 +76,22 @@ export function isCppNumericSanitizationCall(tokens: readonly CppToken[], openPa
 	return target !== null && NUMERIC_DEFENSIVE_CALLS.has(target) && !isCppNumericLimitsMemberCall(tokens, openParen);
 }
 
-export function shouldReportCppHotPathNumericSanitization(tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, openParen: number, target: string | null): boolean {
+export function lineAllowsCppNumericSanitization(regions: readonly AnalysisRegion[], line: number): boolean {
+	return lineInAnalysisRegion(regions, 'numeric-sanitization-acceptable', line)
+		|| lineInAnalysisRegion(regions, 'value-or-boundary', line);
+}
+
+export function shouldReportCppHotPathNumericSanitization(tokens: readonly CppToken[], pairs: readonly number[], regions: readonly AnalysisRegion[], openParen: number, target: string | null): boolean {
 	if (!isCppNumericSanitizationCall(tokens, openParen, target)) {
+		return false;
+	}
+	if (lineAllowsCppNumericSanitization(regions, tokens[openParen].line)) {
 		return false;
 	}
 	if (isCppSemanticFloorDivisionCall(tokens, pairs, openParen, target)) {
 		return false;
 	}
-	if (isNumericBoundaryFunction(info)) {
-		return false;
-	}
 	const callStart = findCppAccessChainStart(tokens, openParen - 1);
 	const callEnd = pairs[openParen] + 1;
-	return rangeContainsNestedCppNumericSanitization(tokens, pairs, callStart, callEnd) || containsCppBoundedNumericHint(tokens, callStart, callEnd);
-}
-
-export function isCppBoundaryStyleWrapperName(name: string): boolean {
-	const words = name.match(/[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z0-9])/g);
-	if (words === null) {
-		return CPP_SINGLE_LINE_WRAPPER_NAME_WORDS.has(name.toLowerCase());
-	}
-	for (let index = 0; index < words.length; index += 1) {
-		if (CPP_SINGLE_LINE_WRAPPER_NAME_WORDS.has(words[index].toLowerCase())) {
-			return true;
-		}
-	}
-	const lower = name.toLowerCase();
-	return lower.endsWith('fault') || lower.endsWith('thunk');
+	return rangeContainsNestedCppNumericSanitization(tokens, pairs, callStart, callEnd);
 }

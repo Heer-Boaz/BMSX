@@ -1,8 +1,8 @@
 import { type CppFunctionInfo } from '../../../../../src/bmsx/language/cpp/syntax/declarations';
 import { cppAccessChainLeafName, cppCallTarget, isCppFunctionDeclaratorParen } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
 import { type CppToken } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
+import { type AnalysisRegion, lineInAnalysisRegion } from '../../../../analysis/lint_suppressions';
 import { isCppConstructorLike } from './bindings';
-import { isCppBoundaryStyleWrapperName } from './numeric';
 import { CppFunctionUsageInfo } from './types';
 
 export function incrementCppUsageCount(counts: Map<string, number>, name: string): void {
@@ -40,11 +40,11 @@ export function collectCppFunctionUsageCounts(tokens: readonly CppToken[], pairs
 	}
 }
 
-export function isCppSingleLineWrapperAllowedByUsage(info: CppFunctionInfo, usageInfo: CppFunctionUsageInfo): boolean {
+export function isCppSingleLineWrapperAllowedByUsage(info: CppFunctionInfo, usageInfo: CppFunctionUsageInfo, regions: readonly AnalysisRegion[], tokens: readonly CppToken[]): boolean {
 	if (isCppConstructorLike(info)) {
 		return true;
 	}
-	if (isCppBoundaryStyleWrapperName(info.name)) {
+	if (lineInAnalysisRegion(regions, 'single-line-wrapper-acceptable', tokens[info.nameToken].line)) {
 		return true;
 	}
 	const names = [info.qualifiedName, info.name, `leaf:${info.name}`];

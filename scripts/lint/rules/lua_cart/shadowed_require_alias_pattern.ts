@@ -2,13 +2,14 @@ import { defineLintRule } from '../../rule';
 import { type LuaIdentifierExpression } from '../../../../src/bmsx/lua/syntax/ast';
 import { ShadowedRequireAliasContext } from './impl/support/types';
 import { pushIssue } from './impl/support/lint_context';
+import { declareLuaBinding } from './impl/support/bindings';
 
 export const shadowedRequireAliasPatternRule = defineLintRule('lua_cart', 'shadowed_require_alias_pattern');
 
 export function declareShadowedRequireAliasBinding(
 	context: ShadowedRequireAliasContext,
 	declaration: LuaIdentifierExpression,
-	requiredModulePath: string | null,
+	requiredModulePath: string | undefined,
 ): void {
 	const name = declaration.name;
 	if (name !== '_') {
@@ -16,7 +17,7 @@ export function declareShadowedRequireAliasBinding(
 		if (stack) {
 			for (let index = stack.length - 1; index >= 0; index -= 1) {
 				const outer = stack[index];
-				if (outer.requiredModulePath !== null) {
+				if (outer.requiredModulePath !== undefined) {
 					pushIssue(
 						context.issues,
 						shadowedRequireAliasPatternRule.name,
@@ -28,14 +29,7 @@ export function declareShadowedRequireAliasBinding(
 			}
 		}
 	}
-	const scope = context.scopeStack[context.scopeStack.length - 1];
-	scope.names.push(name);
-	let stack = context.bindingStacksByName.get(name);
-	if (!stack) {
-		stack = [];
-		context.bindingStacksByName.set(name, stack);
-	}
-	stack.push({
+	declareLuaBinding(context, declaration, {
 		declaration,
 		requiredModulePath,
 	});

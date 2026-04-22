@@ -1,5 +1,6 @@
 import { type LuaCallExpression, type LuaExpression, LuaSyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { getCallReceiverExpression } from '../../../../../../src/bmsx/lua/syntax/calls';
+import { isIdentifierExpression } from './bindings';
 import { isDispatchStateEventCallExpression } from './calls';
 import { isSelfExpressionRoot } from './self_properties';
 
@@ -36,10 +37,10 @@ export function isServiceResolverCallExpression(expression: LuaExpression | unde
 
 export function isModuleFieldAssignmentTarget(expression: LuaExpression): boolean {
 	if (expression.kind === LuaSyntaxKind.MemberExpression) {
-		return expression.base.kind === LuaSyntaxKind.IdentifierExpression;
+		return isIdentifierExpression(expression.base);
 	}
 	if (expression.kind === LuaSyntaxKind.IndexExpression) {
-		return expression.base.kind === LuaSyntaxKind.IdentifierExpression;
+		return isIdentifierExpression(expression.base);
 	}
 	return false;
 }

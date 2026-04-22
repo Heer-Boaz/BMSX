@@ -1,6 +1,7 @@
 import { type LuaExpression, type LuaFunctionDeclarationStatement, type LuaIdentifierExpression, type LuaLocalFunctionStatement, type LuaStatement, LuaSyntaxKind, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../../../lua_rule';
 import { leaveConstLocalScope } from '../../../common/local_const_pattern';
+import { declareLuaBinding, enterLuaBindingScope } from './bindings';
 import { ConstLocalBinding, ConstLocalContext } from './types';
 
 export function createConstLocalContext(issues: LuaLintIssue[]): ConstLocalContext {
@@ -12,7 +13,7 @@ export function createConstLocalContext(issues: LuaLintIssue[]): ConstLocalConte
 }
 
 export function enterConstLocalScope(context: ConstLocalContext): void {
-	context.scopeStack.push({ names: [] });
+	enterLuaBindingScope(context);
 }
 
 export function declareConstLocalBinding(
@@ -20,14 +21,7 @@ export function declareConstLocalBinding(
 	declaration: LuaIdentifierExpression,
 	shouldReport: boolean,
 ): void {
-	const scope = context.scopeStack[context.scopeStack.length - 1];
-	scope.names.push(declaration.name);
-	let stack = context.bindingStacksByName.get(declaration.name);
-	if (!stack) {
-		stack = [];
-		context.bindingStacksByName.set(declaration.name, stack);
-	}
-	stack.push({
+	declareLuaBinding(context, declaration, {
 		declaration,
 		shouldReport,
 		writeCountAfterDeclaration: 0,

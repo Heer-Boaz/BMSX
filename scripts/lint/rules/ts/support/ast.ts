@@ -30,8 +30,6 @@ export type RepeatedExpressionInfo = {
 
 export const NORMALIZED_BODY_MIN_LENGTH = 120;
 
-export const COMPACT_SAMPLE_TEXT_LENGTH = 180;
-
 export const REPEATED_EXPRESSION_PAIR_MIN_LENGTH = 48;
 
 export const REPEATED_STATEMENT_SEQUENCE_MIN_COUNT = 4;
@@ -414,13 +412,6 @@ export function isInsideConstructor(node: ts.Node): boolean {
 		current = current.parent;
 	}
 	return false;
-}
-
-export function compactSampleText(text: string): string {
-	if (text.length <= COMPACT_SAMPLE_TEXT_LENGTH) {
-		return text;
-	}
-	return `${text.slice(0, COMPACT_SAMPLE_TEXT_LENGTH - 3)}...`;
 }
 
 export function isExplicitNonJsTruthinessPair(node: ts.BinaryExpression): boolean {

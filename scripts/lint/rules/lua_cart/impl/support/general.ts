@@ -1,5 +1,5 @@
 import { LuaBinaryOperator, type LuaBooleanLiteralExpression, type LuaExpression, type LuaFunctionExpression, type LuaIdentifierExpression, type LuaIfStatement, type LuaIndexExpression, type LuaMemberExpression, type LuaNumericLiteralExpression, type LuaStatement, type LuaStringLiteralExpression, LuaSyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
-import { conditionComparesIdentifierWithValue, getReturnedCallToIdentifier } from './bindings';
+import { conditionComparesIdentifierWithValue, getReturnedCallToIdentifier, isIdentifier } from './bindings';
 import { isErrorCallExpression } from '../../../../../../src/bmsx/lua/syntax/calls';
 import { isNilExpression } from './conditions';
 import { removeLabel } from './fsm_labels';
@@ -84,7 +84,7 @@ export function isStateLikeAliasName(name: string): boolean {
 
 export function getCopiedSourceKey(expression: LuaExpression, sourceIdentifier: string): string {
 	if (expression.kind === LuaSyntaxKind.MemberExpression) {
-		if (expression.base.kind !== LuaSyntaxKind.IdentifierExpression || expression.base.name !== sourceIdentifier) {
+		if (!isIdentifier(expression.base, sourceIdentifier)) {
 			return undefined;
 		}
 		return expression.identifier;

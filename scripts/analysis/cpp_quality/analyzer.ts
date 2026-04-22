@@ -98,7 +98,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 		for (let typeIndex = 0; typeIndex < typeDeclarations.length; typeIndex += 1) {
 			const declaration = typeDeclarations[typeIndex];
 			const nameToken = tokens[declaration.nameToken];
-			recordDeclaration(duplicateBuckets, declaration.kind, declaration.name, file, nameToken.line, nameToken.column, declaration.context ?? undefined);
+			recordDeclaration(duplicateBuckets, declaration.kind, declaration.name, file, nameToken.line, nameToken.column, declaration.context);
 			exportedTypes.push({ name: declaration.name, file, line: nameToken.line, column: nameToken.column, context: declaration.context });
 		}
 		const functions = analysis.functions;
@@ -125,7 +125,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 					file,
 					tokens[info.nameToken].line,
 					tokens[info.nameToken].column,
-					info.context ?? undefined,
+					info.context,
 					info.signature,
 				);
 			} else {
@@ -138,7 +138,7 @@ export function analyzeCppFiles(files: readonly string[]): CppAnalysisResult {
 					tokens[info.nameToken].column,
 					info.wrapperTarget,
 				);
-				if (!isCppSingleLineWrapperAllowedByUsage(info, functionUsageInfo)) {
+				if (!isCppSingleLineWrapperAllowedByUsage(info, functionUsageInfo, regions, tokens)) {
 					pushLintIssue(
 						lintIssues,
 						file,

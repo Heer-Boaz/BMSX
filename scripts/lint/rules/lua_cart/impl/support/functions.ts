@@ -259,14 +259,14 @@ export function collectLuaOptionsParameterUseInExpression(expression: LuaExpress
 			}
 			return;
 		case LuaSyntaxKind.MemberExpression:
-			if (expression.base.kind === LuaSyntaxKind.IdentifierExpression && expression.base.name === parameterName) {
+			if (isIdentifier(expression.base, parameterName)) {
 				use.fields.add(expression.identifier);
 				return;
 			}
 			collectLuaOptionsParameterUseInExpression(expression.base, parameterName, use);
 			return;
 		case LuaSyntaxKind.IndexExpression:
-			if (expression.base.kind === LuaSyntaxKind.IdentifierExpression && expression.base.name === parameterName) {
+			if (isIdentifier(expression.base, parameterName)) {
 				if (expression.index.kind === LuaSyntaxKind.StringLiteralExpression || expression.index.kind === LuaSyntaxKind.StringRefLiteralExpression) {
 					use.fields.add(expression.index.value);
 				} else {

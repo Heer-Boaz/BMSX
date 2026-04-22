@@ -1,4 +1,3 @@
-// @code-quality start hot-path -- VDP command processing, rasterization, and readback code runs on frame-critical paths.
 #include "machine/devices/vdp/vdp.h"
 #include "machine/devices/vdp/command_processor.h"
 #include "machine/devices/vdp/fault.h"
@@ -48,6 +47,7 @@ constexpr int VRAM_GARBAGE_FORCE_T1 = 280;
 constexpr int VRAM_GARBAGE_FORCE_T2 = 480;
 constexpr int VRAM_GARBAGE_FORCE_T_DEN = 1000;
 constexpr u8 IMPLICIT_FRAME_CLEAR_RGBA[4] = {0u, 0u, 0u, 255u};
+const TextureParams DEFAULT_TEXTURE_PARAMS{};
 
 template <typename T>
 std::vector<T> acquireVectorFromPool(std::vector<std::vector<T>>& pool) {
@@ -399,6 +399,8 @@ void bindVdpGles2Target(const VdpGles2Host& host) {
 	}
 }
 
+// @code-quality start hot-path -- GLES2 blitter emits per-frame vertex batches directly.
+// @code-quality start numeric-sanitization-acceptable -- GPU vertex generation owns its geometry rounding and bounds math at the raster boundary.
 void VdpGles2Blitter::pushVertex(
 	std::vector<VdpGles2Vertex>& vertices,
 	f32 x,
@@ -923,6 +925,8 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 void VdpGles2Blitter::shutdown() {
 	destroyVdpGles2Runtime();
 }
+// @code-quality end numeric-sanitization-acceptable
+// @code-quality end hot-path
 #endif
 
 namespace {
@@ -1206,6 +1210,7 @@ void VDP::resetStatus() {
 	refreshSubmitBusyStatus();
 }
 
+// @code-quality start hot-path -- VDP status, command ingress, scheduler service, and VRAM row access run on frame-critical paths.
 void VDP::setVblankStatus(bool active) {
 	setStatusFlag(VDP_STATUS_VBLANK, active);
 }
@@ -1629,7 +1634,9 @@ void VDP::readVram(uint32_t addr, u8* out, size_t length) const {
 	}
 }
 // @code-quality end repeated-sequence-acceptable
+// @code-quality end hot-path
 
+// @code-quality start hot-path -- frame scheduling and submitted-frame promotion run every visible frame.
 void VDP::beginFrame() {
 	m_readBudgetBytes = VDP_RD_BUDGET_BYTES;
 	m_readOverflow = false;
@@ -1933,6 +1940,7 @@ void VDP::presentReadyFrameOnVblankEdge() {
 	scheduleNextService(m_scheduler.currentNowCycles());
 	refreshSubmitBusyStatus();
 }
+// @code-quality end hot-path
 
 void VDP::initializeFrameBufferSurface() {
 	auto* backend = EngineCore::instance().view()->backend();
@@ -1976,6 +1984,8 @@ void VDP::initializeFrameBufferSurface() {
 	syncRenderFrameBufferToDisplayPage();
 }
 
+// @code-quality start hot-path -- blitter enqueue and software rasterization are direct frame render paths.
+// @code-quality start numeric-sanitization-acceptable -- raster code owns clipping, rounding, and pixel-boundary math for submitted draw commands.
 void VDP::resetFrameBufferPriority() {
 	std::fill(m_frameBufferPriorityLayer.begin(), m_frameBufferPriorityLayer.end(), static_cast<u8>(Layer2D::World));
 	std::fill(m_frameBufferPriorityZ.begin(), m_frameBufferPriorityZ.end(), -std::numeric_limits<f32>::infinity());
@@ -1987,37 +1997,32 @@ VDP::BlitterSource VDP::resolveBlitterSource(u32 handle) const {
 	if (entry.type != Memory::AssetType::Image) {
 		throw vdpFault("asset handle is not an image.");
 	}
+	size_t ownerIndex = entry.ownerIndex;
+	u32 srcX = 0u;
+	u32 srcY = 0u;
+	u32 width = entry.regionW;
+	u32 height = entry.regionH;
+	const bool viewAsset = (entry.flags & ASSET_FLAG_VIEW) != 0u;
 	if ((entry.flags & ASSET_FLAG_VIEW) != 0u) {
 		const auto& base = m_memory.getAssetEntryByHandle(entry.ownerIndex);
-		const auto slotIt = std::find_if(m_vramSlots.begin(), m_vramSlots.end(), [this, &base](const VramSlot& candidate) {
-			return candidate.kind == VramSlotKind::Asset && m_memory.getAssetEntry(candidate.assetId).ownerIndex == base.ownerIndex;
-		});
-		if (slotIt == m_vramSlots.end()) {
-			throw vdpFault("VIEW asset handle not found in VRAM slots.");
+		ownerIndex = base.ownerIndex;
+		srcX = entry.regionX;
+		srcY = entry.regionY;
+		width = entry.regionW;
+		height = entry.regionH;
+	}
+	for (const auto& slot : m_vramSlots) {
+		if (slot.kind == VramSlotKind::Asset && m_memory.getAssetEntry(slot.assetId).ownerIndex == ownerIndex) {
+			return BlitterSource{
+				slot.surfaceId,
+				srcX,
+				srcY,
+				width,
+				height,
+			};
 		}
-		const auto& slot = *slotIt;
-		return BlitterSource{
-			slot.surfaceId,
-			entry.regionX,
-			entry.regionY,
-			entry.regionW,
-			entry.regionH,
-		};
 	}
-	const auto slotIt = std::find_if(m_vramSlots.begin(), m_vramSlots.end(), [this, &entry](const VramSlot& candidate) {
-		return candidate.kind == VramSlotKind::Asset && m_memory.getAssetEntry(candidate.assetId).ownerIndex == entry.ownerIndex;
-	});
-	if (slotIt == m_vramSlots.end()) {
-		throw vdpFault("asset handle not found in VRAM slots.");
-	}
-	const auto& slot = *slotIt;
-	return BlitterSource{
-		slot.surfaceId,
-		0u,
-		0u,
-		entry.regionW,
-		entry.regionH,
-	};
+	throw vdpFault(viewAsset ? "VIEW asset handle not found in VRAM slots." : "asset handle not found in VRAM slots.");
 }
 
 void VDP::enqueueClear(const Color& color) {
@@ -2857,6 +2862,8 @@ void VDP::executeBlitterQueue(const std::vector<BlitterCommand>& queue) {
 	texmanager->updateTexture(handle, pixels.data(), static_cast<i32>(m_frameBufferWidth), static_cast<i32>(m_frameBufferHeight), params);
 	invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
 }
+// @code-quality end numeric-sanitization-acceptable
+// @code-quality end hot-path
 
 void VDP::shutdownBackendResources() {
 #if BMSX_ENABLE_GLES2
@@ -2919,6 +2926,7 @@ void VDP::commitLiveVisualState() {
 	m_committedHasSkybox = true;
 }
 
+// @code-quality start hot-path -- VDP readback registers are polled by the emulated CPU.
 uint32_t VDP::readVdpStatus() {
 	uint32_t status = 0;
 	if (m_readBudgetBytes >= 4u) {
@@ -2975,6 +2983,7 @@ uint32_t VDP::readVdpData() {
 Value VDP::readVdpDataThunk(void* context, uint32_t) {
 	return valueNumber(static_cast<double>(static_cast<VDP*>(context)->readVdpData()));
 }
+// @code-quality end hot-path
 
 void VDP::initializeRegisters() {
 	const i32 dither = 0;
@@ -3218,6 +3227,7 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 			}
 		}
 		baseEntry = &m_memory.getAssetEntry(baseEntryId);
+		// @code-quality start numeric-sanitization-acceptable -- atlas view bounds are reconstructed from float texcoords at the asset boundary.
 		// Texcoords are stored as float32, so round back to the source texel grid.
 		const i32 offsetX = static_cast<i32>(std::round(minU * static_cast<f32>(atlasWidth)));
 		const i32 offsetY = static_cast<i32>(std::round(minV * static_cast<f32>(atlasHeight)));
@@ -3225,6 +3235,7 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 			static_cast<i32>(std::round((maxU - minU) * static_cast<f32>(atlasWidth)))));
 		const i32 regionH = std::max(1, std::min(atlasHeight - offsetY,
 			static_cast<i32>(std::round((maxV - minV) * static_cast<f32>(atlasHeight)))));
+		// @code-quality end numeric-sanitization-acceptable
 		if (!m_memory.hasAsset(id)) {
 			m_memory.registerImageView(
 				id,
@@ -3831,6 +3842,7 @@ void VDP::invalidateReadCache(uint32_t surfaceId) {
 	m_readCaches[surfaceId].width = 0;
 }
 
+// @code-quality start hot-path -- VDP read cache feeds CPU-side MMIO readback one pixel at a time.
 VDP::ReadCache& VDP::getReadCache(uint32_t surfaceId, const ReadSurface& surface, uint32_t x, uint32_t y) {
 	auto& cache = m_readCaches[surfaceId];
 	if (cache.width == 0 || cache.y != y || x < cache.x0 || x >= cache.x0 + cache.width) {
@@ -3839,6 +3851,7 @@ VDP::ReadCache& VDP::getReadCache(uint32_t surfaceId, const ReadSurface& surface
 	return cache;
 }
 
+// @code-quality start numeric-sanitization-acceptable -- readback chunk width is the minimum of hardware cap, remaining surface span, and per-frame read budget.
 void VDP::prefetchReadCache(uint32_t surfaceId, const ReadSurface& surface, uint32_t x, uint32_t y) {
 	auto& entry = m_memory.getAssetEntry(surface.assetId);
 	const uint32_t maxPixelsByBudget = m_readBudgetBytes / 4u;
@@ -3854,13 +3867,15 @@ void VDP::prefetchReadCache(uint32_t surfaceId, const ReadSurface& surface, uint
 	cache.y = y;
 	cache.width = chunkW;
 }
+// @code-quality end numeric-sanitization-acceptable
 
 void VDP::readSurfacePixels(const ReadSurface& surface, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::vector<u8>& out) {
 	auto* texmanager = EngineCore::instance().texmanager();
 	out.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
 	texmanager->backend()->readTextureRegion(texmanager->getTextureByUri(surface.textureKey), out.data(), static_cast<i32>(width), static_cast<i32>(height),
-								static_cast<i32>(x), static_cast<i32>(y), {});
+								static_cast<i32>(x), static_cast<i32>(y), DEFAULT_TEXTURE_PARAMS);
 }
+// @code-quality end hot-path
 
 void VDP::commitViewSnapshot(GameView& view) {
 	view.dither_type = static_cast<GameView::DitherType>(m_committedDitherType);
@@ -3870,4 +3885,3 @@ void VDP::commitViewSnapshot(GameView& view) {
 }
 
 } // namespace bmsx
-// @code-quality end hot-path

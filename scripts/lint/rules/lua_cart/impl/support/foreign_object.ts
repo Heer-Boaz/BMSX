@@ -1,6 +1,7 @@
 import { type LuaExpression, type LuaIdentifierExpression, type LuaStatement, LuaSyntaxKind, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../../../lua_rule';
 import { lintForeignObjectMutationInStatements } from '../../foreign_object_internal_mutation_pattern';
+import { declareLuaBinding, discardLuaBindingScope, enterLuaBindingScope, resolveLuaBinding, setLuaBinding } from './bindings';
 import { isServiceResolverCallExpression } from './object_ownership';
 import { ForeignObjectAliasBinding, ForeignObjectMutationContext } from './types';
 
@@ -15,25 +16,11 @@ export function createForeignObjectMutationContext(issues: LuaLintIssue[]): Fore
 }
 
 export function enterForeignObjectMutationScope(context: ForeignObjectMutationContext): void {
-	context.scopeStack.push({ names: [] });
+	enterLuaBindingScope(context);
 }
 
 export function leaveForeignObjectMutationScope(context: ForeignObjectMutationContext): void {
-	const scope = context.scopeStack.pop();
-	if (!scope) {
-		return;
-	}
-	for (let index = scope.names.length - 1; index >= 0; index -= 1) {
-		const name = scope.names[index];
-		const stack = context.bindingStacksByName.get(name);
-		if (!stack || stack.length === 0) {
-			continue;
-		}
-		stack.pop();
-		if (stack.length === 0) {
-			context.bindingStacksByName.delete(name);
-		}
-	}
+	discardLuaBindingScope(context);
 }
 
 export function declareForeignObjectBinding(
@@ -41,25 +28,14 @@ export function declareForeignObjectBinding(
 	declaration: LuaIdentifierExpression,
 	binding: ForeignObjectAliasBinding | null,
 ): void {
-	const scope = context.scopeStack[context.scopeStack.length - 1];
-	scope.names.push(declaration.name);
-	let stack = context.bindingStacksByName.get(declaration.name);
-	if (!stack) {
-		stack = [];
-		context.bindingStacksByName.set(declaration.name, stack);
-	}
-	stack.push(binding);
+	declareLuaBinding(context, declaration, binding);
 }
 
 export function resolveForeignObjectBinding(
 	context: ForeignObjectMutationContext,
 	name: string,
 ): ForeignObjectAliasBinding | null | undefined {
-	const stack = context.bindingStacksByName.get(name);
-	if (!stack || stack.length === 0) {
-		return undefined;
-	}
-	return stack[stack.length - 1];
+	return resolveLuaBinding(context, name);
 }
 
 export function setForeignObjectBinding(
@@ -67,11 +43,7 @@ export function setForeignObjectBinding(
 	name: string,
 	binding: ForeignObjectAliasBinding | null,
 ): void {
-	const stack = context.bindingStacksByName.get(name);
-	if (!stack || stack.length === 0) {
-		return;
-	}
-	stack[stack.length - 1] = binding;
+	setLuaBinding(context, name, binding);
 }
 
 export function isForeignObjectAliasInitializer(expression: LuaExpression | undefined): boolean {

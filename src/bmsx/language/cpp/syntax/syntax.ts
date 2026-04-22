@@ -75,6 +75,20 @@ export function isCppAccessSpecifier(text: string): boolean {
 	}
 }
 
+export function isCppExpressionScanBoundary(text: string): boolean {
+	switch (text) {
+		case ';':
+		case '{':
+		case '}':
+		case '(':
+		case ',':
+		case '=':
+			return true;
+		default:
+			return false;
+	}
+}
+
 export function cppAccessChainLeafName(name: string): string {
 	const arrowIndex = name.lastIndexOf('->');
 	const dotIndex = name.lastIndexOf('.');

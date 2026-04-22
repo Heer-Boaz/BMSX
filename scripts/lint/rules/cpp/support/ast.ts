@@ -4,84 +4,6 @@ import { hasCppDeclarationPrefixNoise, isIgnoredName } from './bindings';
 import { HOT_PATH_TEMPORARY_TYPES } from './numeric';
 import { CppLocalBinding } from './types';
 
-export const CPP_SINGLE_LINE_WRAPPER_NAME_WORDS: ReadonlySet<string> = new Set([
-	'acquire',
-	'add',
-	'append',
-	'apply',
-	'attach',
-	'begin',
-	'bind',
-	'build',
-	'call',
-	'capture',
-	'change',
-	'clear',
-	'copy',
-	'configure',
-	'create',
-	'count',
-	'decode',
-	'consume',
-	'destroy',
-	'disable',
-	'dispose',
-	'detach',
-	'encode',
-	'enable',
-	'end',
-	'ensure',
-	'focus',
-	'format',
-	'get',
-	'has',
-	'ident',
-	'init',
-	'install',
-	'emplace',
-	'index',
-	'load',
-	'make',
-	'on',
-	'pending',
-	'open',
-	'pixels',
-	'pop',
-	'push',
-	'read',
-	'release',
-	'refresh',
-	'register',
-	'remove',
-	'replace',
-	'render',
-	'reset',
-	'resolve',
-	'resume',
-	'resize',
-	'snapshot',
-	'save',
-	'set',
-	'setup',
-	'size',
-	'state',
-	'stop',
-	'suspend',
-	'submit',
-	'switch',
-	'reserve',
-	'shutdown',
-	'start',
-	'to',
-	'try',
-	'update',
-	'use',
-	'value',
-	'write',
-	'with',
-	'blur',
-]);
-
 export const DECLARATION_START_BLOCKLIST = new Set([
 	'break',
 	'case',
@@ -167,58 +89,9 @@ export const NUMERIC_DEFENSIVE_CALLS = new Set([
 	'trunc',
 ]);
 
-export const NUMERIC_BOUNDARY_FUNCTION_NAME_WORDS = new Set([
-	'append',
-	'blit',
-	'bucket',
-	'clip',
-	'clipped',
-	'copy',
-	'cost',
-	'draw',
-	'fill',
-	'frame',
-	'glyph',
-	'line',
-	'pack',
-	'rasterize',
-	'rect',
-	'register',
-	'render',
-	'span',
-	'tile',
-	'vertices',
-]);
-
-export const CPP_BOUNDED_NUMERIC_HINT_WORDS = new Set([
-	'caret',
-	'cursor',
-	'end',
-	'index',
-	'left',
-	'line',
-	'offset',
-	'page',
-	'position',
-	'right',
-	'row',
-	'scroll',
-	'start',
-	'top',
-]);
-
 export const CPP_NORMALIZED_BODY_MIN_LENGTH = 120;
 
-export const COMPACT_SAMPLE_TEXT_LENGTH = 180;
-
 export const CPP_LOCAL_CONST_PATTERN_ENABLED = false;
-
-export function compactSampleText(text: string): string {
-	if (text.length <= COMPACT_SAMPLE_TEXT_LENGTH) {
-		return text;
-	}
-	return `${text.slice(0, COMPACT_SAMPLE_TEXT_LENGTH - 3)}...`;
-}
 
 export function cppWordSegments(text: string): string[] {
 	const words = text.match(/[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z0-9])/g);

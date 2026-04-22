@@ -1,12 +1,52 @@
-import { LuaAssignmentOperator, LuaBinaryOperator, type LuaCallExpression, type LuaExpression, type LuaStatement, LuaSyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { LuaAssignmentOperator, LuaBinaryOperator, type LuaCallExpression, type LuaExpression, type LuaIdentifierExpression, type LuaStatement, LuaSyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { evaluateTopLevelStringConstantExpression } from './conditions';
 import { getConstantCopyBinding } from './constant_copy';
 import { getExpressionKeyName } from './expression_signatures';
 import { AssignmentTargetInfo, ConstantCopyContext, SingleUseLocalBinding, TopLevelLocalStringConstant } from './types';
 
 export type NamedLuaBindingScope = {
-	readonly names: readonly string[];
+	readonly names: string[];
 };
+
+export type LuaBindingContext<TBinding> = {
+	readonly bindingStacksByName: Map<string, TBinding[]>;
+	readonly scopeStack: NamedLuaBindingScope[];
+};
+
+export function enterLuaBindingScope(context: { readonly scopeStack: NamedLuaBindingScope[] }): void {
+	context.scopeStack.push({ names: [] });
+}
+
+export function declareLuaBinding<TBinding>(
+	context: LuaBindingContext<TBinding>,
+	declaration: LuaIdentifierExpression,
+	binding: TBinding,
+): void {
+	const scope = context.scopeStack[context.scopeStack.length - 1];
+	scope.names.push(declaration.name);
+	let stack = context.bindingStacksByName.get(declaration.name);
+	if (!stack) {
+		stack = [];
+		context.bindingStacksByName.set(declaration.name, stack);
+	}
+	stack.push(binding);
+}
+
+export function resolveLuaBinding<TBinding>(context: LuaBindingContext<TBinding>, name: string): TBinding | undefined {
+	const stack = context.bindingStacksByName.get(name);
+	if (!stack || stack.length === 0) {
+		return undefined;
+	}
+	return stack[stack.length - 1];
+}
+
+export function setLuaBinding<TBinding>(context: LuaBindingContext<TBinding>, name: string, binding: TBinding): void {
+	const stack = context.bindingStacksByName.get(name);
+	if (!stack || stack.length === 0) {
+		return;
+	}
+	stack[stack.length - 1] = binding;
+}
 
 export function leaveLuaBindingScope<TBinding>(
 	scopeStack: NamedLuaBindingScope[],
@@ -33,8 +73,16 @@ export function leaveLuaBindingScope<TBinding>(
 	}
 }
 
+export function discardLuaBindingScope<TBinding>(context: LuaBindingContext<TBinding>): void {
+	leaveLuaBindingScope(context.scopeStack, context.bindingStacksByName, () => {});
+}
+
 export function isIdentifier(expression: LuaExpression, name: string): boolean {
 	return expression.kind === LuaSyntaxKind.IdentifierExpression && expression.name === name;
+}
+
+export function isIdentifierExpression(expression: LuaExpression): expression is LuaIdentifierExpression {
+	return expression.kind === LuaSyntaxKind.IdentifierExpression;
 }
 
 export function isConstantSourceIdentifierName(name: string, context: ConstantCopyContext): boolean {

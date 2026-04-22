@@ -1,6 +1,7 @@
 import { LuaAssignmentOperator, type LuaExpression, type LuaIdentifierExpression, type LuaStatement, LuaSyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../../../lua_rule';
 import { lintRuntimeTagLookupInExpression } from '../../runtime_tag_table_access_pattern';
+import { declareLuaBinding, discardLuaBindingScope, enterLuaBindingScope, resolveLuaBinding, setLuaBinding } from './bindings';
 import { isObjectOrServiceResolverCallExpression } from './object_ownership';
 import { isSelfExpressionRoot } from './self_properties';
 import { isTagsContainerExpression } from './tags';
@@ -17,24 +18,11 @@ export function createRuntimeTagLookupContext(issues: LuaLintIssue[]): RuntimeTa
 }
 
 export function enterRuntimeTagLookupScope(context: RuntimeTagLookupContext): void {
-	context.scopeStack.push({ names: [] });
+	enterLuaBindingScope(context);
 }
 
 export function leaveRuntimeTagLookupScope(context: RuntimeTagLookupContext): void {
-	const scope = context.scopeStack.pop();
-	if (!scope) {
-		return;
-	}
-	for (const name of scope.names) {
-		const stack = context.bindingStacksByName.get(name);
-		if (!stack || stack.length === 0) {
-			continue;
-		}
-		stack.pop();
-		if (stack.length === 0) {
-			context.bindingStacksByName.delete(name);
-		}
-	}
+	discardLuaBindingScope(context);
 }
 
 export function declareRuntimeTagLookupBinding(
@@ -42,25 +30,14 @@ export function declareRuntimeTagLookupBinding(
 	declaration: LuaIdentifierExpression,
 	binding: RuntimeTagLookupBinding | null,
 ): void {
-	const scope = context.scopeStack[context.scopeStack.length - 1];
-	scope.names.push(declaration.name);
-	let stack = context.bindingStacksByName.get(declaration.name);
-	if (!stack) {
-		stack = [];
-		context.bindingStacksByName.set(declaration.name, stack);
-	}
-	stack.push(binding);
+	declareLuaBinding(context, declaration, binding);
 }
 
 export function resolveRuntimeTagLookupBinding(
 	context: RuntimeTagLookupContext,
 	name: string,
 ): RuntimeTagLookupBinding | null | undefined {
-	const stack = context.bindingStacksByName.get(name);
-	if (!stack || stack.length === 0) {
-		return undefined;
-	}
-	return stack[stack.length - 1];
+	return resolveLuaBinding(context, name);
 }
 
 export function setRuntimeTagLookupBinding(
@@ -68,11 +45,7 @@ export function setRuntimeTagLookupBinding(
 	name: string,
 	binding: RuntimeTagLookupBinding | null,
 ): void {
-	const stack = context.bindingStacksByName.get(name);
-	if (!stack || stack.length === 0) {
-		return;
-	}
-	stack[stack.length - 1] = binding;
+	setLuaBinding(context, name, binding);
 }
 
 export function isRuntimeTagLookupAliasInitializer(expression: LuaExpression | undefined): boolean {

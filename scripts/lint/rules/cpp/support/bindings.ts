@@ -81,7 +81,7 @@ export function cppLocalBindingValueKind(binding: CppLocalBinding): string {
 	if (/\b(?:string|string_view|span|array|vector|map|unordered_map|set|unordered_set|optional|variant|function)\b/.test(typeText)) {
 		return 'library_value';
 	}
-	if (/[A-Z]/.test(typeText[0] ?? '')) {
+	if (typeText.length > 0 && /[A-Z]/.test(typeText[0])) {
 		return 'domain_value';
 	}
 	return 'value';
@@ -110,10 +110,10 @@ export function markBindingUses(binding: CppLocalBinding, tokens: readonly CppTo
 		if (isWriteUse(tokens, index)) {
 			binding.writeCount += 1;
 		} else {
-			if (binding.readCount === 0) {
-				binding.firstReadLeftText = tokens[index - 1]?.text ?? null;
-				binding.firstReadRightText = tokens[index + 1]?.text ?? null;
-			}
+				if (binding.readCount === 0) {
+					binding.firstReadLeftText = tokens[index - 1] === undefined ? null : tokens[index - 1].text;
+					binding.firstReadRightText = tokens[index + 1] === undefined ? null : tokens[index + 1].text;
+				}
 			binding.readCount += 1;
 		}
 	}

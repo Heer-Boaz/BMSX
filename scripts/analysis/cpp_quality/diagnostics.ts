@@ -45,7 +45,7 @@ export function recordDeclaration(
 	file: string,
 	line: number,
 	column: number,
-	context?: string,
+	context: string | null = null,
 	keyHint?: string,
 ): void {
 	const key = kind === 'method'
@@ -54,9 +54,9 @@ export function recordDeclaration(
 			? `function\u0000${name}\u0000${keyHint ?? 'default'}`
 			: kind === 'wrapper'
 				? `wrapper\u0000${name}\u0000${context ?? 'delegate'}`
-				: context !== undefined
+				: context !== null
 					? `${kind}\u0000${context}\u0000${name}`
-				: `${kind}\u0000${name}`;
+					: `${kind}\u0000${name}`;
 	let list = buckets.get(key);
 	if (list === undefined) {
 		list = [];
@@ -87,10 +87,17 @@ export function buildDuplicateGroups(buckets: Map<string, CppDuplicateLocation[]
 			if (firstSep !== -1) {
 				name = name.slice(0, firstSep);
 			}
-		} else if (kind === 'class' || kind === 'enum' || kind === 'type') {
-			const lastSep = name.lastIndexOf('\u0000');
-			if (lastSep !== -1) {
-				name = name.slice(lastSep + 1);
+		} else {
+			switch (kind) {
+				case 'class':
+				case 'enum':
+				case 'type': {
+					const lastSep = name.lastIndexOf('\u0000');
+					if (lastSep !== -1) {
+						name = name.slice(lastSep + 1);
+					}
+					break;
+				}
 			}
 		}
 		result.push({ kind, name, count: locations.length, locations });
@@ -104,12 +111,13 @@ export function addDuplicateExportedTypeIssues(exportedTypes: readonly CppExport
 	const seenLocations = new Set<string>();
 	for (let index = 0; index < exportedTypes.length; index += 1) {
 		const entry = exportedTypes[index];
-		const locationKey = `${entry.context ?? ''}\u0000${entry.name}\u0000${entry.file}\u0000${entry.line}\u0000${entry.column}`;
+		const contextKey = entry.context === null ? 'global' : `context:${entry.context}`;
+		const locationKey = `${contextKey}\u0000${entry.name}\u0000${entry.file}\u0000${entry.line}\u0000${entry.column}`;
 		if (seenLocations.has(locationKey)) {
 			continue;
 		}
 		seenLocations.add(locationKey);
-		const key = `${entry.context ?? ''}\u0000${entry.name}`;
+		const key = `${contextKey}\u0000${entry.name}`;
 		let list = byName.get(key);
 		if (list === undefined) {
 			list = [];

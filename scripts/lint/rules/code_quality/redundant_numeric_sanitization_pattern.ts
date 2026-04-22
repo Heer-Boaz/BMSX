@@ -9,7 +9,7 @@ import { type CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/d
 import { cppCallTarget, findCppAccessChainStart } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import { type CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { type CppLintIssue, pushLintIssue } from '../cpp/support/diagnostics';
-import { isCppNumericSanitizationCall, rangeContainsNestedCppNumericSanitization } from '../cpp/support/numeric';
+import { isCppNumericSanitizationCall, lineAllowsCppNumericSanitization, rangeContainsNestedCppNumericSanitization } from '../cpp/support/numeric';
 import { isCppSemanticFloorDivisionCall } from '../cpp/support/semantic';
 
 export const redundantNumericSanitizationPatternRule = defineLintRule('code_quality', 'redundant_numeric_sanitization_pattern');
@@ -42,7 +42,7 @@ export function lintRedundantNumericSanitizationPattern(
 }
 
 export function lintCppRedundantNumericSanitizationPattern(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, regions: readonly AnalysisRegion[], issues: CppLintIssue[]): void {
-	if (lineInAnalysisRegion(regions, 'numeric-sanitization-acceptable', tokens[info.nameToken].line)) {
+	if (lineAllowsCppNumericSanitization(regions, tokens[info.nameToken].line)) {
 		return;
 	}
 	if (lineInAnalysisRegion(regions, 'hot-path', tokens[info.nameToken].line)) {
@@ -61,6 +61,9 @@ export function lintCppRedundantNumericSanitizationPattern(file: string, tokens:
 			continue;
 		}
 		if (isCppSemanticFloorDivisionCall(tokens, pairs, index, target)) {
+			continue;
+		}
+		if (lineAllowsCppNumericSanitization(regions, tokens[index].line)) {
 			continue;
 		}
 		if (activeNumericCalls.length > 0) {

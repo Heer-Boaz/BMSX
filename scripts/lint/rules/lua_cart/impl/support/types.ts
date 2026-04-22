@@ -83,7 +83,7 @@ export type ConstantCopyContext = {
 
 export type ShadowedRequireAliasBinding = {
 	readonly declaration: LuaIdentifierExpression;
-	readonly requiredModulePath: string | null;
+	readonly requiredModulePath: string | undefined;
 };
 
 export type ShadowedRequireAliasScope = {

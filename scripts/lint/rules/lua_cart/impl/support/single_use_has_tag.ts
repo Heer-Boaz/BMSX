@@ -1,6 +1,7 @@
 import { type LuaExpression, type LuaFunctionDeclarationStatement, type LuaIdentifierExpression, type LuaLocalFunctionStatement, type LuaStatement, LuaSyntaxKind, LuaTableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { type LuaLintIssue } from '../../../../lua_rule';
 import { leaveSingleUseHasTagScope } from '../../single_use_has_tag_pattern';
+import { declareLuaBinding, enterLuaBindingScope } from './bindings';
 import { isSelfHasTagCall } from './tags';
 import { SingleUseHasTagBinding, SingleUseHasTagContext } from './types';
 
@@ -13,21 +14,14 @@ export function createSingleUseHasTagContext(issues: LuaLintIssue[]): SingleUseH
 }
 
 export function enterSingleUseHasTagScope(context: SingleUseHasTagContext): void {
-	context.scopeStack.push({ names: [] });
+	enterLuaBindingScope(context);
 }
 
 export function declareSingleUseHasTagBinding(
 	context: SingleUseHasTagContext,
 	declaration: LuaIdentifierExpression,
 ): void {
-	const scope = context.scopeStack[context.scopeStack.length - 1];
-	scope.names.push(declaration.name);
-	let stack = context.bindingStacksByName.get(declaration.name);
-	if (!stack) {
-		stack = [];
-		context.bindingStacksByName.set(declaration.name, stack);
-	}
-	stack.push({
+	declareLuaBinding(context, declaration, {
 		declaration,
 		pendingReadCount: 0,
 	});

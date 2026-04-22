@@ -39,11 +39,7 @@ export function isStateControllerDispatchCallExpression(expression: LuaCallExpre
 
 export function isTickInputCheckCallExpression(expression: LuaCallExpression): boolean {
 	if (expression.callee.kind === LuaSyntaxKind.IdentifierExpression) {
-		const calleeName = expression.callee.name.toLowerCase();
-		if (calleeName === 'action_triggered'
-			|| calleeName === 'action_pressed'
-			|| calleeName === 'action_released'
-			|| calleeName === 'action_held') {
+		if (isActionInputCallName(expression.callee.name.toLowerCase())) {
 			return true;
 		}
 	}
@@ -52,14 +48,23 @@ export function isTickInputCheckCallExpression(expression: LuaCallExpression): b
 		return false;
 	}
 	const loweredMethodName = methodName.toLowerCase();
-	if (!loweredMethodName.includes('pressed')
-		&& !loweredMethodName.includes('held')
-		&& !loweredMethodName.includes('triggered')
-		&& !loweredMethodName.includes('input')) {
+	if (!/(?:pressed|held|triggered|input)/.test(loweredMethodName)) {
 		return false;
 	}
 	const receiver = getCallReceiverExpression(expression);
 	return !!receiver && isSelfExpressionRoot(receiver);
+}
+
+function isActionInputCallName(name: string): boolean {
+	switch (name) {
+		case 'action_triggered':
+		case 'action_pressed':
+		case 'action_released':
+		case 'action_held':
+			return true;
+		default:
+			return false;
+	}
 }
 
 export function lintFsmDirectStateHandlerShorthandPatternInTable(

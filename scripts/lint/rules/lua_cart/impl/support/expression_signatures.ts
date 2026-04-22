@@ -20,12 +20,13 @@ export function getExpressionSignature(expression: LuaExpression): string {
 			return `index:${getExpressionSignature(expression.base)}[${getExpressionSignature(expression.index)}]`;
 		case LuaSyntaxKind.UnaryExpression:
 			return `unary:${expression.operator}:${getExpressionSignature(expression.operand)}`;
-		case LuaSyntaxKind.BinaryExpression:
-			return `binary:${expression.operator}:${getExpressionSignature(expression.left)}:${getExpressionSignature(expression.right)}`;
-		case LuaSyntaxKind.CallExpression: {
-			const argumentSignatures = expression.arguments.map(getExpressionSignature);
-			return `call:${expression.methodName ?? ''}:${getExpressionSignature(expression.callee)}(${argumentSignatures.join(',')})`;
-		}
+			case LuaSyntaxKind.BinaryExpression:
+				return `binary:${expression.operator}:${getExpressionSignature(expression.left)}:${getExpressionSignature(expression.right)}`;
+			case LuaSyntaxKind.CallExpression: {
+				const argumentSignatures = expression.arguments.map(getExpressionSignature);
+				const callKind = expression.methodName === undefined ? 'call' : `method:${expression.methodName}`;
+				return `${callKind}:${getExpressionSignature(expression.callee)}(${argumentSignatures.join(',')})`;
+			}
 		case LuaSyntaxKind.TableConstructorExpression: {
 			const fieldSignatures = expression.fields.map(field => {
 				if (field.kind === LuaTableFieldKind.Array) {
