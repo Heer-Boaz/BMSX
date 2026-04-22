@@ -1,11 +1,13 @@
 import { type AnalysisRegion, collectAnalysisRegions, lineInAnalysisRegion } from '../lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../quality_ledger';
 import ts from 'typescript';
+import { lintContractNumericDefensiveSanitizationPattern } from '../../lint/rules/code_quality/contract_numeric_defensive_sanitization_pattern';
 import { lintRequiredStateOptionalChainPattern } from '../../lint/rules/code_quality/defensive_optional_chain_pattern';
 import { lintHotPathClosureArgument } from '../../lint/rules/code_quality/hot_path_closure_argument_pattern';
 import { lintHotPathObjectLiteralArgument } from '../../lint/rules/code_quality/hot_path_object_literal_pattern';
 import { lintNumericDefensiveSanitizationPattern } from '../../lint/rules/code_quality/numeric_defensive_sanitization_pattern';
 import { lintNullishNullNormalizationPattern } from '../../lint/rules/code_quality/nullish_null_normalization_pattern';
+import { lintRedundantNumericSanitizationPattern } from '../../lint/rules/code_quality/redundant_numeric_sanitization_pattern';
 import { lintThinLintReportWrapperPattern } from '../../lint/rules/code_quality/thin_lint_report_wrapper_pattern';
 import { lintBinaryExpressionForCodeQuality } from '../../lint/rules/ts/code_quality/binary_expression_quality';
 import { collectRepeatedStatementSequences, type StatementSequenceInfo } from '../../lint/rules/common/repeated_statement_sequence_pattern';
@@ -18,7 +20,6 @@ import { NormalizedBodyInfo, collectNormalizedBody, isExportedVariableDeclaratio
 import { isFunctionLikeValue } from '../../lint/rules/ts/support/functions';
 import { isConsumeBeforeClearSnapshotRead, normalizeSingleUseContext, shouldReportLocalConst, shouldReportSingleUseLocal } from '../../lint/rules/ts/support/local_bindings';
 import { lintNullishReturnGuard } from '../../lint/rules/ts/support/nullish';
-import { lintContractNumericDefensiveSanitizationPattern, lintRedundantNumericSanitizationPattern } from '../../lint/rules/ts/support/numeric';
 import { lintLookupAliasOptionalChain, optionalChainBoundaryKind } from '../../lint/rules/ts/support/runtime_patterns';
 import { SEMANTIC_REPEATED_EXPRESSION_MIN_COUNT, semanticRepeatedExpressionFingerprint } from '../../lint/rules/ts/support/semantic';
 import { isSplitLikeCallTarget, lintSplitJoinRoundtripPattern, splitJoinDelimiterFingerprint } from '../../lint/rules/ts/support/split_join';

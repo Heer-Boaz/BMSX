@@ -2,7 +2,7 @@ import ts from 'typescript';
 import { isExpressionChildOfLargerExpression, unwrapExpression } from './ast';
 import { callTargetText } from './calls';
 import { normalizedAstFingerprint } from './declarations';
-import { isNumericDefensiveCall } from './numeric';
+import { isNumericDefensiveSanitizationCall } from '../../code_quality/numeric_defensive_sanitization_pattern';
 import { SemanticBodyCallSignature } from './types';
 
 export const SEMANTIC_NORMALIZATION_CALL_SUFFIXES = [
@@ -207,7 +207,7 @@ export function collectSemanticBodySignatures(node: ts.Node): string[] {
 	const visit = (current: ts.Node): void => {
 		if (ts.isCallExpression(current)) {
 			const target = callTargetText(current);
-			if (target !== null && (isSemanticNormalizationCallTarget(target) || isNumericDefensiveCall(current))) {
+			if (target !== null && (isSemanticNormalizationCallTarget(target) || isNumericDefensiveSanitizationCall(current))) {
 				const family = semanticNormalizationFamily(target);
 				if (family !== null && isSemanticBodySignatureFamily(family)) {
 					let group = callsByFamily.get(family);
@@ -269,7 +269,7 @@ export function semanticRepeatedExpressionFingerprint(node: ts.Expression, sourc
 		return null;
 	}
 	const target = callTargetText(node);
-	if (target === null || (!isSemanticNormalizationCallTarget(target) && !isNumericDefensiveCall(node))) {
+	if (target === null || (!isSemanticNormalizationCallTarget(target) && !isNumericDefensiveSanitizationCall(node))) {
 		return null;
 	}
 	if (isSemanticValidationPredicateTarget(target)) {
