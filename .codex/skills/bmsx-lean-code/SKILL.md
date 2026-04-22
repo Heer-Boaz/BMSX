@@ -53,6 +53,21 @@ Forbidden evasions include:
 
 Before finalizing a code-quality change, inspect your own diff specifically for these evasions.
 
+## Quality Rule Code Contract
+Treat analyzer and lint code as production code. The checker must model good engineering, not become a second trash pile next to the product code.
+
+- Keep rules project-agnostic by default. Do not bake BMSX paths, file names, root object names, function-name word lists, issue-pusher names, or rename-sensitive exceptions into generic rules.
+- Use `@code-quality` directives, analysis regions/statements, or explicit config for local contracts. A hot path, accepted numeric boundary, required state root, or intentional wrapper must be marked near the code that owns that exception.
+- Do not add fallback skip lists. Directory/file exclusion should come from source-control/project config such as `.gitignore` or a real analyzer config, not hardcoded guesses.
+- Put language parsing, token scanning, AST naming, call-target extraction, literal checks, operator searches, and range helpers in language/support modules. Pattern files should combine existing language helpers into one rule, not reimplement parsers.
+- Every rule file must contain real detection logic for that rule. Empty files, export-only shims, and thin wrappers that only call `pushLintIssue` are forbidden.
+- Keep one coherent rule per file and move shared mechanics into support modules. Do not grow monolithic analyzer files, but also do not split code into fake files without ownership.
+- Share generic logic across TS, C++, and Lua when the concept is the same. Do not copy/paste near-identical rules per language unless the language-specific parsing genuinely differs.
+- Prefer precise AST/token logic over text grep. Report the smallest meaningful construct and preserve semantic targets in fingerprints; `min` and `max`, `trim` and `slice`, `startsWith` and `includes` are different operations.
+- Avoid duplicate or noisy findings. Exact duplicates, semantic duplicates, normalized-body duplicates, and repeated-statement rules should not all report the same underlying issue.
+- Keep diagnostics actionable and bounded. Include a compact sample when useful, but do not dump giant expressions or vague “bad style” messages.
+- If a rule needs many hardcoded exceptions, the rule is probably wrong. Improve the rule shape before touching product code.
+
 ## Quality Workflow
 - For analyzer/rule work, read `references/quality-workflow.md`.
 - For style anchors from selected 2024 BMSX engine code, read `references/lean-history.md`.
