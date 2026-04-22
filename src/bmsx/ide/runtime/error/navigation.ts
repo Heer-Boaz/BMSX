@@ -14,7 +14,7 @@ import { editorCaretState } from '../../editor/ui/view/caret/state';
 import { runtimeErrorState } from '../../editor/contrib/runtime_error/state';
 import { editorDocumentState } from '../../editor/editing/document_state';
 import { editorViewState } from '../../editor/ui/view/state';
-import { splitText } from '../../editor/text/source_text';
+import { splitText } from '../../../common/text_lines';
 import {
 	clearExecutionStopHighlight,
 	clearRuntimeErrorOverlay,

@@ -1,6 +1,6 @@
 import { LuaCallFrame } from '../../../../lua/runtime';
 import { StackTraceFrame } from '../../../../lua/value';
-import { splitText } from '../../text/source_text';
+import { splitText } from '../../../../common/text_lines';
 import { RuntimeErrorDetails } from '../../../common/models';
 import { createMinimalSourceMapConsumer, InlineSourceMap, MinimalSourceMapConsumer, originalPositionFor } from '../../../../machine/program/sourcemap_minimal';
 

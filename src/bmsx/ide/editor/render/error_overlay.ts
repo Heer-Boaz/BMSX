@@ -15,7 +15,7 @@ import * as constants from '../../common/constants';
 import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/overlay';
 import { resetBlink } from './caret';
 import { formatRuntimeErrorLocation } from '../contrib/runtime_error/format';
-import { splitText } from '../text/source_text';
+import { splitText } from '../../../common/text_lines';
 import { BmsxColors } from '../../../machine/devices/vdp/vdp';
 import { editorRuntimeState } from '../common/runtime_state';
 import { activate } from '../../cart_editor';

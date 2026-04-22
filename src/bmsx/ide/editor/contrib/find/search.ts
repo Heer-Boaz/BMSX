@@ -22,7 +22,7 @@ import { scheduleMicrotask } from '../../../../platform/index';
 import { applyInlineFieldPointer, setFieldText } from '../../ui/inline_text_field';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { editorDocumentState } from '../../editing/document_state';
-import { splitText } from '../../text/source_text';
+import { splitText } from '../../../../common/text_lines';
 import { editorViewState } from '../../ui/view/state';
 import { renameController } from '../rename/controller';
 import { editorSearchState } from './widget_state';

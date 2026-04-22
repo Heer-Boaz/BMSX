@@ -49,8 +49,7 @@ export function formatLuaDocument(source: string, lines: readonly string[]): str
 		if (preservedLines.has(lineNumber)) {
 			formatted.push(originalLine);
 		} else {
-			const trimmedLeading = trimLeadingWhitespace(originalLine);
-			const content = trimmedLeading.replace(/\s+$/u, '');
+			const content = originalLine.replace(/^\s+/u, '').replace(/\s+$/u, '');
 			if (content.length === 0) {
 				formatted.push('');
 			} else {
@@ -182,10 +181,6 @@ function computeLineMetadata(lineCount: number, tokensByLine: ReadonlyMap<number
 		};
 	}
 	return metadata;
-}
-
-function trimLeadingWhitespace(line: string): string {
-	return line.replace(/^\s+/u, '');
 }
 
 function repeatIndent(count: number): string {

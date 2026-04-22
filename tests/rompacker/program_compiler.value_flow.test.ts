@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { splitText } from '../../src/bmsx/common/text_lines';
 import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
 import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
 import { IO_INP_QUERY } from '../../src/bmsx/machine/bus/io';
@@ -12,7 +13,7 @@ import {
 
 function parseChunk(source: string, path: string = 'value_flow.lua') {
 	const lexer = new LuaLexer(source, path);
-	const parser = new LuaParser(lexer.scanTokens(), path, source);
+	const parser = new LuaParser(lexer.scanTokens(), path, splitText(source));
 	return parser.parseChunk();
 }
 

@@ -5,7 +5,7 @@ import * as luaPipeline from '../../../runtime/lua_pipeline';
 import type { ResourceDescriptor } from '../../../../rompack/resource';
 import * as constants from '../../../common/constants';
 import { computeResourceTabTitle } from '../../ui/tab/titles';
-import { appendTextLines } from '../../../editor/text/source_text';
+import { appendTextLines } from '../../../../common/text_lines';
 import type { ResourceViewerState } from '../../../common/models';
 
 export type ResourceViewerBounds = {

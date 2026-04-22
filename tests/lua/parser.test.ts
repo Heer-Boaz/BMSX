@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { splitText } from '../../src/bmsx/common/text_lines';
 import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
 import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
 import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator, LuaUnaryOperator } from '../../src/bmsx/lua/ast';
@@ -27,7 +28,7 @@ import type {
 function parseChunk(source: string): LuaChunk {
 	const lexer = new LuaLexer(source, 'path');
 	const tokens = lexer.scanTokens();
-	const parser = new LuaParser(tokens, 'path', source);
+	const parser = new LuaParser(tokens, 'path', splitText(source));
 	return parser.parseChunk();
 }
 

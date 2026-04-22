@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { splitText } from '../../src/bmsx/common/text_lines';
 import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
 import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
 import { CPU, OpCode, RunResult, Table, createNativeFunction, type Proto } from '../../src/bmsx/machine/cpu/cpu';
@@ -21,7 +22,7 @@ type EncodedWord = {
 
 function parseChunk(source: string, path: string = 'test.lua') {
 	const lexer = new LuaLexer(source, path);
-	const parser = new LuaParser(lexer.scanTokens(), path, source);
+	const parser = new LuaParser(lexer.scanTokens(), path, splitText(source));
 	return parser.parseChunk();
 }
 

@@ -38,6 +38,8 @@ const { LuaLexer } = require('../../src/bmsx/lua/syntax/lexer');
 // @ts-ignore
 const { LuaParser } = require('../../src/bmsx/lua/syntax/parser');
 // @ts-ignore
+const { splitText } = require('../../src/bmsx/common/text_lines');
+// @ts-ignore
 const { compileLuaChunkToProgram, isLuaCompileError } = require('../../src/bmsx/machine/program/compiler');
 // @ts-ignore
 const {
@@ -264,8 +266,7 @@ export async function getRomManifest(dirPath: string): Promise<RomManifest> {
 	else return null;
 }
 
-export async function buildEngineRuntime(options: { debug: boolean }): Promise<void> {
-	const { debug } = options;
+export async function buildEngineRuntime(debug: boolean): Promise<void> {
 	await mkdir('./rom', { recursive: true });
 
 	const buildRuntime = async (outfile: string, buildDebug: boolean): Promise<void> => {
@@ -461,8 +462,7 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 export function parseAudioMeta(filename: string) {
 	const priorityregex = /@p\=\d+/;
 	const priorityresult = priorityregex.exec(filename);
-	const prioritystr = priorityresult ? priorityresult[0] : undefined;
-	const priority = prioritystr ? parseInt(prioritystr.slice(3)) : 0;
+	const priority = priorityresult ? parseInt(priorityresult[0].slice(3)) : 0;
 
 	const loopregex = /@l=([0-9]+(?:[.,][0-9]+)?)(?:,([0-9]+(?:[.,][0-9]+)?))?/i;
 	const loopresult = loopregex.exec(filename);
@@ -752,7 +752,7 @@ function formatLuaCompileError(error: { path: string; message: string; line: num
 function compileLuaChunkBuffer(source: string, path: string): Buffer {
 	const lexer = new LuaLexer(source, path);
 	const tokens = lexer.scanTokens();
-	const parser = new LuaParser(tokens, path, source);
+	const parser = new LuaParser(tokens, path, splitText(source));
 	const chunk = parser.parseChunk();
 	const encoded = encodeBinary(chunk);
 	return Buffer.from(encoded);
@@ -869,7 +869,7 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 	const scanRoots = cartProject
 		? respaths.filter(path => !isEngineResPath(path))
 		: respaths;
-	const extraLuaRoots = options.extraLuaPaths ?? [];
+	const extraLuaRoots = options.extraLuaPaths;
 	const seenPaths = new Set<string>();
 
 	const pushFile = (filepath: string) => {
@@ -880,16 +880,18 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 	};
 
 	for (const respath of scanRoots) {
-		const files = await getFiles(respath) ?? [];
+		const files = await getFiles(respath);
 		for (const file of files) {
 			pushFile(file);
 		}
 	}
 
-	for (const luaRoot of extraLuaRoots) {
-		if (!luaRoot || luaRoot.length === 0) continue;
-		for (const file of collectCartSourceFiles([luaRoot])) {
-			pushFile(file);
+	if (extraLuaRoots) {
+		for (const luaRoot of extraLuaRoots) {
+			if (!luaRoot || luaRoot.length === 0) continue;
+			for (const file of collectCartSourceFiles([luaRoot])) {
+				pushFile(file);
+			}
 		}
 	}
 	arrayOfFiles.sort((a, b) => a.localeCompare(b));
@@ -930,7 +932,7 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 					throw new Error(`[RomPacker] Duplicate image resource "${name}" defined by "${existingImage.filepath}" and "${filepath}".`);
 				}
 				let targetAtlasIndex = imgMeta.skipAtlas ? undefined : imgMeta.targetAtlas;
-				if (!imgMeta.skipAtlas && options.resolveAtlasIndex === true) {
+				if (!imgMeta.skipAtlas && options.resolveAtlasIndex) {
 					const resolvedIndex = atlasIndexResolver(filepath, targetAtlasIndex);
 					// Accept 0 as a valid atlas index;
 					if (typeof resolvedIndex === 'number') {
@@ -1245,7 +1247,7 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 			case 'model': {
 				const pathInfo = parse(res.filepath);
 				const dir = pathInfo.dir;
-				const ext = (pathInfo.ext || '').toLowerCase();
+				const ext = pathInfo.ext.toLowerCase();
 				let gltfSource: string | ArrayBuffer;
 				if (ext === '.glb') {
 					const bufView = res.buffer;
@@ -1342,14 +1344,14 @@ export function appendProgramAsset(
 } {
 	const hasProgramAsset = assetList.some(asset => asset.resid === PROGRAM_ASSET_ID);
 	const hasSymbolsAsset = assetList.some(asset => asset.resid === PROGRAM_SYMBOLS_ASSET_ID);
-	const includeSymbols = options.includeSymbols === true;
+	const includeSymbols = options.includeSymbols;
 	if (hasProgramAsset || hasSymbolsAsset) {
 		throw new Error('[RomPacker] appendProgramAsset() expects a fresh asset list without prebuilt program assets.');
 	}
 	const baseLuaAssets = assetList.filter(asset => asset.type === 'lua');
 	const luaAssets = baseLuaAssets.slice();
-	const extraLuaAssets = options.extraLuaAssets ?? [];
-	if (extraLuaAssets.length > 0) {
+	const extraLuaAssets = options.extraLuaAssets;
+	if (extraLuaAssets && extraLuaAssets.length > 0) {
 		const seenPaths = new Set<string>();
 		for (const asset of baseLuaAssets) {
 			const path = asset.source_path;
@@ -1782,11 +1784,7 @@ async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
 
 	if (!rebuild) return;
 
-	try {
-		await mkdir(join(process.cwd(), 'dist'), { recursive: true });
-	} catch {
-		// Ignore errors; directory may already exist or be created elsewhere
-	}
+	await mkdir(join(process.cwd(), 'dist'), { recursive: true });
 
 	const define = {
 		'__BOOTROM_TARGET__': JSON.stringify(options.platform),
@@ -1892,9 +1890,15 @@ async function directoryHasRebuildInputNewerThan(dir: string, mtimeMs: number, c
  * @returns {Promise<boolean>} A Promise that resolves with a boolean indicating whether a rebuild is required.
  */
 export async function isRebuildRequired(romname: string, bootloaderPath: string, resPath: string, options: ResourceScanOptions = {}): Promise<boolean> {
-	const romFilePath = options.romFilePath ?? `./dist/${romname}${options.debug ? '.debug' : ''}.rom`;
-	const biosRomFilePath = options.biosRomFilePath ?? `./dist/bmsx-bios${options.debug ? '.debug' : ''}.rom`;
-	const extraLuaRoots = options.extraLuaPaths ?? [];
+	let romFilePath = options.romFilePath;
+	if (romFilePath === undefined) {
+		romFilePath = `./dist/${romname}${options.debug ? '.debug' : ''}.rom`;
+	}
+	let biosRomFilePath = options.biosRomFilePath;
+	if (biosRomFilePath === undefined) {
+		biosRomFilePath = `./dist/bmsx-bios${options.debug ? '.debug' : ''}.rom`;
+	}
+	const extraLuaRoots = options.extraLuaPaths;
 	const cartProject = isCartPath(resPath) || isCartPath(bootloaderPath) || isDefaultCartBootloader(bootloaderPath);
 
 	async function checkPaths() {
@@ -1926,13 +1930,15 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 	const normalizedBoot = resolve(bootloaderPath);
 	const normalizedRes = resolve(resPath);
 	let extraNeedsRebuild = false;
-	for (const root of extraLuaRoots) {
-		if (!root || root.length === 0) continue;
-		const normalized = resolve(root);
-		if (normalized === normalizedRes || (!cartProject && normalized === normalizedBoot)) continue;
-		if (await directoryHasRebuildInputNewerThan(root, romMtimeMs, true, cartProject, true)) {
-			extraNeedsRebuild = true;
-			break;
+	if (extraLuaRoots) {
+		for (const root of extraLuaRoots) {
+			if (!root || root.length === 0) continue;
+			const normalized = resolve(root);
+			if (normalized === normalizedRes || (!cartProject && normalized === normalizedBoot)) continue;
+			if (await directoryHasRebuildInputNewerThan(root, romMtimeMs, true, cartProject, true)) {
+				extraNeedsRebuild = true;
+				break;
+			}
 		}
 	}
 

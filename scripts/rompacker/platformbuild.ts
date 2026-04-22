@@ -64,29 +64,24 @@ function getLibretroBuildOutputPath(platform: RomPackerTarget, debug: boolean): 
 }
 
 function findCMake(): string {
-	try {
-		const result = spawnSync('cmake', ['--version']);
-		if (result.status === 0) return 'cmake';
-	} catch { }
+	const cmakeResult = spawnSync('cmake', ['--version']);
+	if (cmakeResult.status === 0) return 'cmake';
 
-	try {
-		const vswhere = join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Microsoft Visual Studio', 'Installer', 'vswhere.exe');
-		const args = ['-latest', '-products', '*', '-requires', 'Microsoft.VisualStudio.Component.VC.CMake.Project', '-property', 'installationPath'];
-		const result = spawnSync(vswhere, args, { encoding: 'utf8' });
-		if (result.status === 0 && result.stdout) {
-			const installPath = result.stdout.trim();
-			if (installPath) {
-					try {
-						const { execSync } = require('child_process');
-						const stdout = execSync('dir /S /B cmake.exe', { cwd: installPath, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-						// disable-next-line newline_normalization_pattern -- Windows command output is a line-oriented tool boundary.
-						const lines = stdout.split(/\r?\n/);
-					const found = lines.find(line => line.trim().toLowerCase().endsWith('bin\\cmake.exe'));
-					if (found) return found.trim();
-				} catch { }
+	const vswhere = join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Microsoft Visual Studio', 'Installer', 'vswhere.exe');
+	const args = ['-latest', '-products', '*', '-requires', 'Microsoft.VisualStudio.Component.VC.CMake.Project', '-property', 'installationPath'];
+	const result = spawnSync(vswhere, args, { encoding: 'utf8' });
+	if (result.status === 0 && result.stdout) {
+		const installPath = result.stdout.trim();
+		if (installPath && existsSync(installPath)) {
+			const search = spawnSync('cmd.exe', ['/c', 'dir', '/S', '/B', 'cmake.exe'], { cwd: installPath, encoding: 'utf8' });
+			if (search.status === 0 && search.stdout) {
+				// disable-next-line newline_normalization_pattern -- Windows command output is a line-oriented tool boundary.
+				const lines = search.stdout.split(/\r?\n/);
+				const found = lines.find(line => line.trim().toLowerCase().endsWith('bin\\cmake.exe'));
+				if (found) return found.trim();
 			}
 		}
-	} catch { }
+	}
 
 	return 'cmake';
 }
@@ -179,7 +174,7 @@ export async function runPlatformBuild(options: PlatformBuildOptions, logger: Bu
 			const engineRuntimeOut = debug ? './dist/engine.debug.js' : './dist/engine.js';
 			const runtimeNeedsRebuild = force || await isEngineRuntimeRebuildRequired(engineRuntimeOut);
 			if (runtimeNeedsRebuild) {
-				await buildEngineRuntime({ debug });
+				await buildEngineRuntime(debug);
 				logger.ok(`Engine runtime ready → ${pc.white(engineRuntimeOut.replace('./dist/', 'dist/'))}`);
 			}
 			else {
@@ -239,7 +234,7 @@ export async function runBrowserDeploy(options: BrowserDeployOptions, logger: Bu
 	const runtimeNeedsRebuild = force || await isEngineRuntimeRebuildRequired(engineRuntimeOut);
 	if (runtimeNeedsRebuild) {
 		logger.info('Build engine runtime');
-		await buildEngineRuntime({ debug });
+		await buildEngineRuntime(debug);
 		logger.ok(`Engine runtime ready → ${pc.white(engineRuntimeOut.replace('./dist/', 'dist/'))}`);
 	}
 

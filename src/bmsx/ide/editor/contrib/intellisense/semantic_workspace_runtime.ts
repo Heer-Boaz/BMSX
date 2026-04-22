@@ -1,5 +1,5 @@
 import type { ParsedLuaChunk } from '../../../language/lua/parse';
-import { splitText } from '../../text/source_text';
+import { splitText } from '../../../../common/text_lines';
 import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import {

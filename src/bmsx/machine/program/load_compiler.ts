@@ -1,4 +1,5 @@
 // start normalized-body-acceptable -- Chunk and returned-function compilation intentionally share setup shape but produce different entry contracts.
+import { splitText } from '../../common/text_lines';
 import { LuaParser } from '../../lua/syntax/parser';
 import {
 	LuaSyntaxKind,
@@ -332,7 +333,7 @@ const compileChunk = (runtime: Runtime, chunkName: string, chunk: LuaChunk): Loa
 export function compileLoadChunk(runtime: Runtime, source: string, chunkName: string): NativeFunction {
 	const lexer = new LuaLexer(source, chunkName);
 	const tokens = lexer.scanTokens();
-	const parser = new LuaParser(tokens, chunkName, source);
+	const parser = new LuaParser(tokens, chunkName, splitText(source));
 	const chunk = parser.parseChunk();
 	const compiled = compileChunk(runtime, chunkName, chunk);
 	const compiledFunction = buildNativeFunction(runtime, compiled, `${chunkName}:inner`);

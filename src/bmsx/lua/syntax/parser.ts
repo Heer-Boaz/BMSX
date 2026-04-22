@@ -97,19 +97,14 @@ const MULTIPLICATIVE_BINARY_OPERATORS: readonly LuaBinaryOperatorSpec[] = [
 export class LuaParser {
 	private readonly tokens: ReadonlyArray<LuaToken>;
 	private readonly path: string;
-	private readonly sourceLines: string[];
+	private readonly sourceLines: readonly string[];
 	private index: number;
 	private previousToken: LuaToken;
 
-	constructor(tokens: ReadonlyArray<LuaToken>, path: string, source: string, lines?: readonly string[]) {
+	constructor(tokens: ReadonlyArray<LuaToken>, path: string, lines: readonly string[]) {
 		this.tokens = tokens;
 		this.path = path;
-		if (lines) {
-			this.sourceLines = lines as readonly string[] as string[];
-		} else {
-			// disable-next-line newline_normalization_pattern -- parser diagnostics need source text indexed by lexer line numbers.
-			this.sourceLines = source.split('\n');
-		}
+		this.sourceLines = lines;
 		this.index = 0;
 		this.previousToken = this.tokens[0];
 	}

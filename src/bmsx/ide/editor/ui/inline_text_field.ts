@@ -5,7 +5,7 @@ import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isS
 import type { InlineInputOptions, Position, TextField } from '../../common/models';
 import { clamp } from '../../../common/clamp';
 import { LuaLexer } from '../../../lua/syntax/lexer';
-import { splitText } from '../text/source_text';
+import { splitText } from '../../../common/text_lines';
 import { advanceToggleBlink } from './view/caret/blink';
 import { editorCaretState } from './view/caret/state';
 import { editorDocumentState } from '../editing/document_state';
