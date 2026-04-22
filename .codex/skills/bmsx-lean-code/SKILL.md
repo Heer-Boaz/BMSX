@@ -27,7 +27,7 @@ Use this skill whenever working in the BMSX repo or discussing BMSX code quality
 - Do not normalize values to `null` with `?? null`; preserve `undefined` unless the public contract explicitly requires `null`.
 - Use `switch` for multi-way closed-kind dispatch instead of `if/else if` chains.
 - Name concepts once. If an expression such as bounds, normalization, lookup, line splitting, keyword lowercasing, or caret math repeats, extract a real concept or shared helper.
-- Newline normalization is exceptional. Do not normalize `\r`/`\n` line endings with `split`, `replace`, or `replaceAll` unless the exact boundary has a local `@code-quality` comment such as `newline-normalization-acceptable` or a rule-specific disable comment with a reason.
+- Newline normalization is exceptional. Do not normalize `\r`/`\n` line endings with `split`, `replace`, or `replaceAll` unless that exact expression has the previous-line or same-line comment `@code-quality newline_normalization_pattern -- reason`.
 - In cart code, use cart-facing globals/helpers instead of `engine.*`, keep repeated string identifiers short, and read constants directly instead of aliasing global constant tables.
 - Treat serialization as part of feature design. Registry/persistent runtime objects and host-only state should not leak into saved game state.
 - Do not hand-fix indentation. Make the code change, then run `npm run fix:indent -- <touched paths>` for formatting/indent cleanup. If that tool cannot handle the touched language well enough, improve the tool or call out the limitation instead of committing manual whitespace churn.
@@ -60,6 +60,7 @@ Treat analyzer and lint code as production code. The checker must model good eng
 
 - Keep rules project-agnostic by default. Do not bake BMSX paths, file names, root object names, function-name word lists, issue-pusher names, or rename-sensitive exceptions into generic rules.
 - Use `@code-quality` directives, analysis regions/statements, or explicit config for local contracts. A hot path, accepted numeric boundary, required state root, or intentional wrapper must be marked near the code that owns that exception.
+- Generic `@code-quality disable`, `disable-line`, and `disable-next-line` directives are forbidden. Local exceptions must use the exact rule name as the statement or region kind, for example `@code-quality legacy_sentinel_string_pattern -- reason` or `@code-quality start cross_layer_import_pattern -- reason`.
 - Do not add fallback skip lists. Directory/file exclusion should come from source-control/project config such as `.gitignore` or a real analyzer config, not hardcoded guesses.
 - Put language parsing, token scanning, AST naming, call-target extraction, literal checks, operator searches, and range helpers in language/support modules. Pattern files should combine existing language helpers into one rule, not reimplement parsers.
 - Every rule file must contain real detection logic for that rule. Empty files, export-only shims, and thin wrappers that only call `pushLintIssue` are forbidden.
@@ -75,10 +76,10 @@ Treat analyzer and lint code as production code. The checker must model good eng
 - For style anchors from selected 2024 BMSX engine code, read `references/lean-history.md`.
 - For recurring bad patterns and preferred replacements, read `references/anti-patterns.md`.
 - For architecture, cart API, serialization, and runtime-performance rules distilled from `AGENTS.md`, read `references/project-rules.md`.
-- Suppressions are allowed only when the exception is real and local. Use rule-specific comments with a short reason, for example:
+- Rule exceptions are allowed only when the exception is real, local, and tagged with the exact rule name. Use rule-specific comments with a short reason, for example:
 
 ```ts
-// @code-quality disable-next-line empty_catch_pattern -- browser API cleanup is best-effort here
+// @code-quality empty_catch_pattern -- browser API cleanup is best-effort here
 try {
     releaseExternalHandle();
 } catch {
