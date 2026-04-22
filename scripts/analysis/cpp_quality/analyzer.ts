@@ -17,7 +17,7 @@ import { lintTokenLegacySentinelStringPattern } from '../../lint/rules/code_qual
 import { lintNullishReturnGuards } from '../../lint/rules/code_quality/nullish_return_guard_pattern';
 import { lintOptionalValueOrFallbackPatterns } from '../../lint/rules/code_quality/optional_value_or_fallback_pattern';
 
-import { collectAnalysisRegions, filterSuppressedLintIssues, type AnalysisRegion } from '../lint_suppressions';
+import { collectAnalysisRegions, createLintSuppressionSummary, filterSuppressedLintIssues, type AnalysisRegion } from '../lint_suppressions';
 import { loadAnalysisConfig } from '../config';
 import { createQualityLedger } from '../quality_ledger';
 import {
@@ -181,10 +181,12 @@ export function analyzeFiles(files: readonly string[]): AnalysisResult {
 		const analysis = fileAnalyses[fileIndex];
 		sourceTextByFile.set(analysis.file, analysis.source);
 	}
-	const filteredLintIssues = filterSuppressedLintIssues(lintIssues, sourceTextByFile);
+	const suppressionSummary = createLintSuppressionSummary();
+	const filteredLintIssues = filterSuppressedLintIssues(lintIssues, sourceTextByFile, suppressionSummary);
 	return relativeAnalysisResult({
 		duplicateGroups: buildTokenDuplicateGroups(duplicateBuckets),
 		lintIssues: filteredLintIssues,
 		ledger,
+		suppressionSummary,
 	});
 }

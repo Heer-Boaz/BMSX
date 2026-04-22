@@ -12,6 +12,15 @@ type LintSuppressionDirective = {
 	rules: ReadonlySet<string> | null;
 };
 
+export type LintSuppressionSummary = {
+	counters: Map<string, number>;
+};
+
+export type LintSuppressionSummaryEntry = {
+	rule: string;
+	count: number;
+};
+
 export type AnalysisRegion = {
 	kind: string;
 	labels: readonly string[];
@@ -37,6 +46,33 @@ const SUPPRESSION_MODE_PREFIXES: ReadonlyArray<{ prefix: string; mode: LintSuppr
 	{ prefix: '-line', mode: 'line' },
 	{ prefix: 'line', mode: 'line' },
 ];
+
+export function createLintSuppressionSummary(): LintSuppressionSummary {
+	return { counters: new Map<string, number>() };
+}
+
+export function noteLintSuppression(summary: LintSuppressionSummary, rule: string): void {
+	summary.counters.set(rule, (summary.counters.get(rule) ?? 0) + 1);
+}
+
+export function lintSuppressionSummaryEntries(summary: LintSuppressionSummary): LintSuppressionSummaryEntry[] {
+	return Array.from(summary.counters.entries())
+		.map(([rule, count]) => ({ rule, count }))
+		.sort((left, right) => right.count - left.count || left.rule.localeCompare(right.rule));
+}
+
+export function printLintSuppressionSummary(summary: LintSuppressionSummary): void {
+	const entries = lintSuppressionSummaryEntries(summary);
+	if (entries.length === 0) {
+		return;
+	}
+	console.log('Quality suppression summary:');
+	for (let index = 0; index < entries.length; index += 1) {
+		const entry = entries[index];
+		console.log(`  ${entry.rule}: ${entry.count}`);
+	}
+	console.log('');
+}
 
 function commentText(lineText: string): string | null {
 	const lineCommentIndex = lineText.indexOf('//');
@@ -276,9 +312,16 @@ function directiveSuppressesIssue(directive: LintSuppressionDirective, issue: Su
 	return issue.line === directive.line + 1;
 }
 
-function issueIsSuppressed(issue: SuppressibleLintIssue, directives: readonly LintSuppressionDirective[]): boolean {
+function issueIsSuppressed(
+	issue: SuppressibleLintIssue,
+	directives: readonly LintSuppressionDirective[],
+	summary: LintSuppressionSummary | null,
+): boolean {
 	for (let index = 0; index < directives.length; index += 1) {
 		if (directiveSuppressesIssue(directives[index], issue)) {
+			if (summary !== null) {
+				noteLintSuppression(summary, issue.kind);
+			}
 			return true;
 		}
 	}
@@ -288,6 +331,7 @@ function issueIsSuppressed(issue: SuppressibleLintIssue, directives: readonly Li
 export function filterSuppressedLintIssues<TIssue extends SuppressibleLintIssue>(
 	issues: readonly TIssue[],
 	sourceTextByFile: ReadonlyMap<string, string>,
+	summary: LintSuppressionSummary | null = null,
 ): TIssue[] {
 	const directivesByFile = new Map<string, readonly LintSuppressionDirective[]>();
 	const result: TIssue[] = [];
@@ -299,7 +343,7 @@ export function filterSuppressedLintIssues<TIssue extends SuppressibleLintIssue>
 			directives = sourceText === undefined ? [] : parseLintSuppressionDirectives(sourceText);
 			directivesByFile.set(issue.file, directives);
 		}
-		if (!issueIsSuppressed(issue, directives)) {
+		if (!issueIsSuppressed(issue, directives, summary)) {
 			result.push(issue);
 		}
 	}

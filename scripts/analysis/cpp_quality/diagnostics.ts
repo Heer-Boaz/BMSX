@@ -6,6 +6,7 @@ import { semanticNormalizedBodyDuplicatePatternRule } from '../../lint/rules/cod
 import { type LintIssue, type NormalizedBodyInfo } from '../../lint/rules/cpp/support/diagnostics';
 import { buildDeclarationDuplicateGroups } from '../duplicate_groups';
 import type { QualityLedger } from '../quality_ledger';
+import type { LintSuppressionSummary } from '../lint_suppressions';
 
 export { pushTokenLintIssue, type LintIssue, type NormalizedBodyInfo } from '../../lint/rules/cpp/support/diagnostics';
 
@@ -29,6 +30,7 @@ export type AnalysisResult = {
 	duplicateGroups: DuplicateGroup[];
 	lintIssues: LintIssue[];
 	ledger: QualityLedger;
+	suppressionSummary: LintSuppressionSummary;
 };
 
 export type ExportedTypeInfo = {
@@ -238,5 +240,6 @@ export function relativeAnalysisResult(result: AnalysisResult): AnalysisResult {
 			file: relative(process.cwd(), issue.file),
 		})),
 		ledger: result.ledger,
+		suppressionSummary: result.suppressionSummary,
 	};
 }

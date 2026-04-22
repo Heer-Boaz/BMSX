@@ -1,4 +1,4 @@
-import { filterSuppressedLintIssues } from '../lint_suppressions';
+import { createLintSuppressionSummary, filterSuppressedLintIssues, lintSuppressionSummaryEntries, printLintSuppressionSummary, type LintSuppressionSummary } from '../lint_suppressions';
 import { loadAnalysisConfig } from '../config';
 import { createQualityLedger, printQualityLedger, type QualityLedger, qualityLedgerEntries } from '../quality_ledger';
 import { quoteCsv } from '../csv';
@@ -414,11 +414,36 @@ export function printCsvQualityLedgerRows(ledger: QualityLedger): void {
 	}
 }
 
-export function printTextReport(groups: DuplicateGroup[], lintIssues: LintIssue[], scannedFiles: number, summaryOnly: boolean, ledger: QualityLedger): void {
+export function printCsvQualitySuppressionRows(summary: LintSuppressionSummary): void {
+	const entries = lintSuppressionSummaryEntries(summary);
+	for (let index = 0; index < entries.length; index += 1) {
+		const entry = entries[index];
+		console.log([
+			quoteCsv('summary'),
+			quoteCsv(`suppression:${entry.rule}`),
+			quoteCsv(entry.count),
+			quoteCsv(''),
+			quoteCsv(''),
+			quoteCsv(''),
+			quoteCsv(''),
+			quoteCsv(`Quality suppression "${entry.rule}" count`),
+		].join(','));
+	}
+}
+
+export function printTextReport(
+	groups: DuplicateGroup[],
+	lintIssues: LintIssue[],
+	scannedFiles: number,
+	summaryOnly: boolean,
+	ledger: QualityLedger,
+	suppressionSummary: LintSuppressionSummary,
+): void {
 	if (groups.length === 0 && lintIssues.length === 0) {
 		console.log('No duplicates or lint issues found.');
 		console.log(`Scanned ${scannedFiles} TypeScript files.`);
 		printQualityLedger(ledger);
+		printLintSuppressionSummary(suppressionSummary);
 		return;
 	}
 	console.log(`Scanned ${scannedFiles} TypeScript files.\n`);
@@ -461,9 +486,17 @@ export function printTextReport(groups: DuplicateGroup[], lintIssues: LintIssue[
 	printDuplicateSummary(groups);
 	printLintSummary(lintIssues);
 	printQualityLedger(ledger);
+	printLintSuppressionSummary(suppressionSummary);
 }
 
-export function printCsvReport(groups: DuplicateGroup[], lintIssues: LintIssue[], scannedFiles: number, summaryOnly: boolean, ledger: QualityLedger): void {
+export function printCsvReport(
+	groups: DuplicateGroup[],
+	lintIssues: LintIssue[],
+	scannedFiles: number,
+	summaryOnly: boolean,
+	ledger: QualityLedger,
+	suppressionSummary: LintSuppressionSummary,
+): void {
 	console.log('kind,name_or_rule,count,file,line,column,context,message');
 	if (!summaryOnly) {
 		for (const group of groups) {
@@ -506,6 +539,7 @@ export function printCsvReport(groups: DuplicateGroup[], lintIssues: LintIssue[]
 	printCsvDuplicateSummaryRows(groups);
 	printCsvLintSummaryRows(lintIssues);
 	printCsvQualityLedgerRows(ledger);
+	printCsvQualitySuppressionRows(suppressionSummary);
 }
 
 export function toRelativePath(path: string): string {
@@ -576,13 +610,14 @@ export function run(): void {
 			file: toRelativePath(location.file),
 		})),
 	}));
-	const filteredLintIssues = filterSuppressedLintIssues(lintIssues, sourceTextByFile);
+	const suppressionSummary = createLintSuppressionSummary();
+	const filteredLintIssues = filterSuppressedLintIssues(lintIssues, sourceTextByFile, suppressionSummary);
 	const normalizedLintIssues = filteredLintIssues.map(issue => ({
 		...issue,
 		file: toRelativePath(issue.file),
 	}));
 	if (options.csv) {
-		printCsvReport(groups, normalizedLintIssues, fileList.length, options.summaryOnly, ledger);
+		printCsvReport(groups, normalizedLintIssues, fileList.length, options.summaryOnly, ledger, suppressionSummary);
 	} else {
 		const sortedIssues = [...normalizedLintIssues].sort((left, right) => {
 			if (left.file !== right.file) {
@@ -596,7 +631,7 @@ export function run(): void {
 			}
 			return left.kind.localeCompare(right.kind);
 		});
-		printTextReport(groups, sortedIssues, fileList.length, options.summaryOnly, ledger);
+		printTextReport(groups, sortedIssues, fileList.length, options.summaryOnly, ledger, suppressionSummary);
 	}
 	if (options.failOnIssues && (groups.length > 0 || normalizedLintIssues.length > 0)) {
 		process.exit(1);

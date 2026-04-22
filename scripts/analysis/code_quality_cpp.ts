@@ -7,6 +7,7 @@ import { collectSourceFiles, resolveInputPath } from './file_scan';
 import { analyzeFiles } from './cpp_quality/analyzer';
 import { type DuplicateGroup } from './cpp_quality/diagnostics';
 import { printQualityLedger, qualityLedgerEntries, type QualityLedger } from './quality_ledger';
+import { lintSuppressionSummaryEntries, printLintSuppressionSummary, type LintSuppressionSummary } from './lint_suppressions';
 import { quoteCsv } from './csv';
 import { commandExists } from './process';
 
@@ -366,11 +367,19 @@ function printTokenDuplicateSummary(groups: readonly DuplicateGroup[]): void {
 	console.log('');
 }
 
-function printTextSummary(issues: readonly LintIssue[], duplicateGroups: readonly DuplicateGroup[], scannedFiles: number, summaryOnly: boolean, ledger: QualityLedger): void {
+function printTextSummary(
+	issues: readonly LintIssue[],
+	duplicateGroups: readonly DuplicateGroup[],
+	scannedFiles: number,
+	summaryOnly: boolean,
+	ledger: QualityLedger,
+	suppressionSummary: LintSuppressionSummary,
+): void {
 	if (issues.length === 0 && duplicateGroups.length === 0) {
 		console.log('No C++ duplicates or lint issues found.');
 		console.log(`Scanned ${scannedFiles} C++ files.`);
 		printQualityLedger(ledger);
+		printLintSuppressionSummary(suppressionSummary);
 		return;
 	}
 	console.log(`Scanned ${scannedFiles} C++ files.\n`);
@@ -389,6 +398,7 @@ function printTextSummary(issues: readonly LintIssue[], duplicateGroups: readonl
 	if (issues.length === 0) {
 		printTokenDuplicateSummary(duplicateGroups);
 		printQualityLedger(ledger);
+		printLintSuppressionSummary(suppressionSummary);
 		return;
 	}
 	const byCheck = new Map<string, number>();
@@ -435,6 +445,7 @@ function printTextSummary(issues: readonly LintIssue[], duplicateGroups: readonl
 	console.log('');
 	printTokenDuplicateSummary(duplicateGroups);
 	printQualityLedger(ledger);
+	printLintSuppressionSummary(suppressionSummary);
 	if (summaryOnly) {
 		return;
 	}
@@ -495,15 +506,44 @@ function printCsvRow(fields: readonly (string | number | undefined)[]): void {
 	console.log(fields.map(quoteCsv).join(','));
 }
 
-function printIssueCsvQualityLedgerRows(ledger: QualityLedger): void {
-	const entries = qualityLedgerEntries(ledger);
+function printIssueCsvNamedCountRows<T>(
+	entries: readonly T[],
+	nameForEntry: (entry: T) => string,
+	countForEntry: (entry: T) => number,
+	messageForEntry: (entry: T) => string,
+): void {
 	for (let index = 0; index < entries.length; index += 1) {
 		const entry = entries[index];
-		printCsvRow(['summary', `ledger:${entry.name}`, '', '', entry.count, '', `Quality exception ledger "${entry.name}" count`]);
+		printCsvRow(['summary', nameForEntry(entry), '', '', countForEntry(entry), '', messageForEntry(entry)]);
 	}
 }
 
-function printIssueCsvReport(issues: readonly LintIssue[], duplicateGroups: readonly DuplicateGroup[], scannedFiles: number, summaryOnly: boolean, ledger: QualityLedger): void {
+function printIssueCsvQualityLedgerRows(ledger: QualityLedger): void {
+	printIssueCsvNamedCountRows(
+		qualityLedgerEntries(ledger),
+		entry => `ledger:${entry.name}`,
+		entry => entry.count,
+		entry => `Quality exception ledger "${entry.name}" count`,
+	);
+}
+
+function printIssueCsvQualitySuppressionRows(summary: LintSuppressionSummary): void {
+	printIssueCsvNamedCountRows(
+		lintSuppressionSummaryEntries(summary),
+		entry => `suppression:${entry.rule}`,
+		entry => entry.count,
+		entry => `Quality suppression "${entry.rule}" count`,
+	);
+}
+
+function printIssueCsvReport(
+	issues: readonly LintIssue[],
+	duplicateGroups: readonly DuplicateGroup[],
+	scannedFiles: number,
+	summaryOnly: boolean,
+	ledger: QualityLedger,
+	suppressionSummary: LintSuppressionSummary,
+): void {
 	console.log('file,line,column,tool,check,severity,message');
 	if (!summaryOnly) {
 		for (let groupIndex = 0; groupIndex < duplicateGroups.length; groupIndex += 1) {
@@ -546,6 +586,7 @@ function printIssueCsvReport(issues: readonly LintIssue[], duplicateGroups: read
 		printCsvRow(['summary', 'by_check', check, '', count, '', '']);
 	}
 	printIssueCsvQualityLedgerRows(ledger);
+	printIssueCsvQualitySuppressionRows(suppressionSummary);
 }
 
 function runStandaloneReport(): void {
@@ -582,9 +623,9 @@ function runStandaloneReport(): void {
 	});
 
 	if (options.csv) {
-		printIssueCsvReport(sortedIssues, customAnalysis.duplicateGroups, files.length, options.summaryOnly, customAnalysis.ledger);
+		printIssueCsvReport(sortedIssues, customAnalysis.duplicateGroups, files.length, options.summaryOnly, customAnalysis.ledger, customAnalysis.suppressionSummary);
 	} else {
-		printTextSummary(sortedIssues, customAnalysis.duplicateGroups, files.length, options.summaryOnly, customAnalysis.ledger);
+		printTextSummary(sortedIssues, customAnalysis.duplicateGroups, files.length, options.summaryOnly, customAnalysis.ledger, customAnalysis.suppressionSummary);
 	}
 	if (options.failOnIssues && (sortedIssues.length > 0 || customAnalysis.duplicateGroups.length > 0)) {
 		process.exit(1);
