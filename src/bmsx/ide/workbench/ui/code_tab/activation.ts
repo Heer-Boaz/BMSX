@@ -1,7 +1,7 @@
 import { editorDocumentState, restoreDocumentStateFromContext, storeDocumentStateInContext } from '../../../editor/editing/document_state';
 import { editorDiagnosticsState } from '../../../editor/contrib/diagnostics/state';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { syncRuntimeErrorOverlayFromContext } from '../../../editor/contrib/runtime_error/navigation';
+import { syncRuntimeErrorOverlayFromContext } from '../../../runtime/error/navigation';
 import { updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
 import { refreshActiveDiagnostics } from '../../../editor/contrib/diagnostics/controller';
 import { markDiagnosticsDirty } from '../../../editor/contrib/diagnostics/analysis';

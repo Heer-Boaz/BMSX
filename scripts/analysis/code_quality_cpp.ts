@@ -174,6 +174,7 @@ function addIssue(
 }
 
 function parseClangTidyOutput(output: string, issues: LintIssue[]): void {
+	// @code-quality disable-next-line newline_normalization_pattern -- clang-tidy stdout is a line-oriented tool boundary.
 	const lines = output.split('\n');
 	for (let i = 0; i < lines.length; i += 1) {
 		const line = lines[i];
@@ -198,6 +199,7 @@ function parseClangTidyOutput(output: string, issues: LintIssue[]): void {
 }
 
 function parseCheckOutput(output: string, issues: LintIssue[]): void {
+	// @code-quality disable-next-line newline_normalization_pattern -- cppcheck stdout is a line-oriented tool boundary.
 	const lines = output.split('\n');
 	for (let i = 0; i < lines.length; i += 1) {
 		const line = lines[i];

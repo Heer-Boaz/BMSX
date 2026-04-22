@@ -76,10 +76,11 @@ function findCMake(): string {
 		if (result.status === 0 && result.stdout) {
 			const installPath = result.stdout.trim();
 			if (installPath) {
-				try {
-					const { execSync } = require('child_process');
-					const stdout = execSync('dir /S /B cmake.exe', { cwd: installPath, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-					const lines = stdout.split(/\r?\n/);
+					try {
+						const { execSync } = require('child_process');
+						const stdout = execSync('dir /S /B cmake.exe', { cwd: installPath, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+						// @code-quality disable-next-line newline_normalization_pattern -- Windows command output is a line-oriented tool boundary.
+						const lines = stdout.split(/\r?\n/);
 					const found = lines.find(line => line.trim().toLowerCase().endsWith('bin\\cmake.exe'));
 					if (found) return found.trim();
 				} catch { }

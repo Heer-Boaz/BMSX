@@ -113,6 +113,7 @@ function parseSuppressionDirective(lineText: string, line: number, marker: strin
 
 function parseLintSuppressionDirectives(sourceText: string, marker: string): LintSuppressionDirective[] {
 	const directives: LintSuppressionDirective[] = [];
+	// @code-quality disable-next-line newline_normalization_pattern -- directive parser must accept source files with any line ending.
 	const lines = sourceText.split(/\r\n|\r|\n/);
 	for (let index = 0; index < lines.length; index += 1) {
 		const directive = parseSuppressionDirective(lines[index], index + 1, marker);
@@ -161,6 +162,7 @@ function directiveIsReservedForSuppressionOrRegion(directive: AnalysisDirective)
 
 export function collectAnalysisStatements(sourceText: string, marker = DEFAULT_ANALYSIS_MARKER): AnalysisStatement[] {
 	const statements: AnalysisStatement[] = [];
+	// @code-quality disable-next-line newline_normalization_pattern -- directive parser must accept source files with any line ending.
 	const lines = sourceText.split(/\r\n|\r|\n/);
 	for (let index = 0; index < lines.length; index += 1) {
 		const directive = findAnalysisDirective(lines[index], index + 1, marker);
@@ -187,6 +189,7 @@ export function hasAnalysisStatement(statements: readonly AnalysisStatement[], k
 export function collectAnalysisRegions(sourceText: string, marker = DEFAULT_ANALYSIS_MARKER): AnalysisRegion[] {
 	const regions: AnalysisRegion[] = [];
 	const activeStarts = new Map<string, Array<{ line: number; labels: readonly string[] }>>();
+	// @code-quality disable-next-line newline_normalization_pattern -- directive parser must accept source files with any line ending.
 	const lines = sourceText.split(/\r\n|\r|\n/);
 	for (let index = 0; index < lines.length; index += 1) {
 		const line = index + 1;

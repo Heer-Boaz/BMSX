@@ -3,7 +3,7 @@ import { editorDocumentState } from '../../../editor/editing/document_state';
 import type { CodeTabContext, CodeTabMode, ResourceDescriptor } from '../../../common/models';
 import * as constants from '../../../common/constants';
 import { beginNavigationCapture, completeNavigation } from '../../../editor/navigation/navigation_history';
-import { tryShowLuaErrorOverlay } from '../../../editor/contrib/runtime_error/navigation';
+import { tryShowLuaErrorOverlay } from '../../../runtime/error/navigation';
 import { getTextSnapshot } from '../../../editor/text/source_text';
 import { saveLuaResourceSource } from '../../../workspace/workspace';
 import { buildDirtyFilePath } from '../../workspace/io';

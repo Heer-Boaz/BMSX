@@ -312,12 +312,13 @@ function runGlobalSearchSlice(job: GlobalSearchJob): boolean {
 
 	let processed = 0;
 	while (job.descriptorIndex < job.descriptors.length && processed < GLOBAL_ROWS_PER_SLICE && !job.limitHit) {
-		if (job.currentLines === null) {
-			const descriptor = job.descriptors[job.descriptorIndex];
-			const source = luaPipeline.resourceSourceForChunk(Runtime.instance, descriptor.path);
-			job.currentLines = source.split(/\r?\n/);
-			job.nextRow = 0;
-		}
+			if (job.currentLines === null) {
+				const descriptor = job.descriptors[job.descriptorIndex];
+				const source = luaPipeline.resourceSourceForChunk(Runtime.instance, descriptor.path);
+				// @code-quality disable-next-line newline_normalization_pattern -- global search indexes Lua source by logical editor lines.
+				job.currentLines = source.split(/\r?\n/);
+				job.nextRow = 0;
+			}
 
 		const lines = job.currentLines;
 		while (job.nextRow < lines.length && processed < GLOBAL_ROWS_PER_SLICE && !job.limitHit) {

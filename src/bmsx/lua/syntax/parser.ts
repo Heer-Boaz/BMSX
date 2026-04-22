@@ -104,7 +104,12 @@ export class LuaParser {
 	constructor(tokens: ReadonlyArray<LuaToken>, path: string, source: string, lines?: readonly string[]) {
 		this.tokens = tokens;
 		this.path = path;
-		this.sourceLines = lines ? (lines as readonly string[] as string[]) : source.split('\n');
+		if (lines) {
+			this.sourceLines = lines as readonly string[] as string[];
+		} else {
+			// @code-quality disable-next-line newline_normalization_pattern -- parser diagnostics need source text indexed by lexer line numbers.
+			this.sourceLines = source.split('\n');
+		}
 		this.index = 0;
 		this.previousToken = this.tokens[0];
 	}

@@ -27,6 +27,7 @@ import { crossLayerImportPatternRule } from './cross_layer_import_pattern';
 import { duplicateExportedTypeNamePatternRule } from './duplicate_exported_type_name_pattern';
 import { emptyLintRuleFilePatternRule } from './empty_lint_rule_file_pattern';
 import { thinLintReportWrapperPatternRule } from './thin_lint_report_wrapper_pattern';
+import { newlineNormalizationPatternRule } from './newline_normalization_pattern';
 
 export { ensurePatternRule };
 export { hotPathObjectLiteralPatternRule };
@@ -56,6 +57,7 @@ export { crossLayerImportPatternRule };
 export { duplicateExportedTypeNamePatternRule };
 export { emptyLintRuleFilePatternRule };
 export { thinLintReportWrapperPatternRule };
+export { newlineNormalizationPatternRule };
 
 export const CODE_QUALITY_ONLY_LINT_RULES_DEFINITIONS = [
 	ensurePatternRule,
@@ -86,5 +88,6 @@ export const CODE_QUALITY_ONLY_LINT_RULES_DEFINITIONS = [
 	duplicateExportedTypeNamePatternRule,
 	emptyLintRuleFilePatternRule,
 	thinLintReportWrapperPatternRule,
+	newlineNormalizationPatternRule,
 ] as const;
 export const CODE_QUALITY_ONLY_LINT_RULES = ruleNames(CODE_QUALITY_ONLY_LINT_RULES_DEFINITIONS);

@@ -25,7 +25,7 @@ import { editorRuntimeState } from '../../common/runtime_state';
 import {
 	ensureVisualLines,
 } from '../../common/text_layout';
-import { rewrapRuntimeErrorOverlays } from '../../contrib/runtime_error/navigation';
+import { rewrapRuntimeErrorOverlays } from '../../../runtime/error/navigation';
 import { bottomMargin, topMargin } from '../../../workbench/common/layout';
 import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
 import type { InlineFieldMetrics } from '../inline_text_field';

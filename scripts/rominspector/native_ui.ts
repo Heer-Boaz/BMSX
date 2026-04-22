@@ -1394,9 +1394,10 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			};
 			modalContentByTab[tabIndex] = content;
 			return content;
-		}
-		const activeText = tabIndex === 0 ? modalView.preview : tabIndex === 1 ? modalView.details : modalView.hex;
-		const lines = activeText.split('\n');
+			}
+			const activeText = tabIndex === 0 ? modalView.preview : tabIndex === 1 ? modalView.details : modalView.hex;
+			// @code-quality disable-next-line newline_normalization_pattern -- rominspector modal text is rendered as LF-delimited terminal rows.
+			const lines = activeText.split('\n');
 		let maxWidth = 0;
 		for (const line of lines) {
 			maxWidth = Math.max(maxWidth, screen.taggedTextWidth(line));

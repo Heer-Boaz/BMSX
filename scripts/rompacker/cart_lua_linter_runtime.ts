@@ -230,6 +230,7 @@ export function resolveEnabledRules(profile: CartLintProfile): ReadonlySet<LintR
 
 export function collectSuppressedLineRanges(source: string): CartLintSuppressionRange[] {
 	const ranges: CartLintSuppressionRange[] = [];
+	// @code-quality disable-next-line newline_normalization_pattern -- cart Lua suppression comments are parsed by logical source line.
 	const lines = source.split(/\r?\n/);
 	let activeStartLine = 0;
 	for (let index = 0; index < lines.length; index += 1) {

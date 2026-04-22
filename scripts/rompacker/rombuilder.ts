@@ -740,13 +740,9 @@ export function zip(content: Buffer): Uint8Array {
 	return pako.deflate(toCompress, { level: 9 });
 }
 
-function normalizeLineEndings(input: string): string {
-	// Normalize line endings to LF (handles CRLF and lone CR)
-	return input.replace(/\r\n|\r/g, '\n');
-}
-
 function formatLuaCompileError(error: { path: string; message: string; line: number; column: number }, source: string): string {
-	const lines = normalizeLineEndings(source).split('\n');
+	// @code-quality disable-next-line newline_normalization_pattern -- compiler diagnostics map a source location to one logical source line.
+	const lines = source.split(/\r\n|\r|\n/);
 	const sourceLine = lines[error.line - 1];
 	const gutter = `${error.line} | `;
 	const caret = Math.max(0, error.column - 1);

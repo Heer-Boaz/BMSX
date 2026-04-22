@@ -24,7 +24,7 @@ import { ensureCursorVisible, updateDesiredColumn } from '../../ui/view/caret/ca
 import { editorCaretState } from '../../ui/view/caret/state';
 import { intellisenseUiState } from './ui_state';
 import { resetBlink } from '../../render/caret';
-import { tryShowLuaErrorOverlay } from '../runtime_error/navigation';
+import { tryShowLuaErrorOverlay } from '../../../runtime/error/navigation';
 import { resolvePointerTextPosition } from '../../ui/view/view';
 import type { CodeAreaBounds } from '../../ui/view/view';
 import * as constants from '../../../common/constants';

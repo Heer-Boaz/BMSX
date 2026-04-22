@@ -1274,5 +1274,6 @@ export function asciiWaveBraille(
 			.join(''))
 		.join('\n');
 	// Remove trailing empty lines
+	// @code-quality disable-next-line newline_normalization_pattern -- generated ASCII art trims only terminal blank LF rows.
 	return art.replace(/(?:[^\S\r\n]*\n)+$/, '').trimEnd();
 }

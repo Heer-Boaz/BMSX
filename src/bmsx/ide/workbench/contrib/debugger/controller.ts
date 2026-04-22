@@ -14,7 +14,7 @@ import type { LuaCallFrame } from '../../../../lua/runtime';
 import { extractErrorMessage, type LuaDebuggerPauseSignal, type StackTraceFrame } from '../../../../lua/value';
 import * as constants from '../../../common/constants';
 import { findFunctionDefinitionRowInActiveFile } from '../../../editor/contrib/intellisense/engine';
-import { clearExecutionStopHighlights, setExecutionStopHighlight, clearRuntimeErrorOverlay } from '../../../editor/contrib/runtime_error/navigation';
+import { clearExecutionStopHighlights, setExecutionStopHighlight, clearRuntimeErrorOverlay } from '../../../runtime/error/navigation';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorDocumentState } from '../../../editor/editing/document_state';
 

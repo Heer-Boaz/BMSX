@@ -1783,6 +1783,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		if (text.length === 0) {
 			return { lines, lineMap };
 		}
+		// @code-quality disable-next-line newline_normalization_pattern -- firmware global text is packed into fixed-width logical display lines.
 		const logicalLines = text.split('\n');
 		let outputPrefix = firstPrefix;
 		let outputPrefixLength = firstPrefixLength;

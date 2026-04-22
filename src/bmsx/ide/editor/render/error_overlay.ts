@@ -20,7 +20,7 @@ import { BmsxColors } from '../../../machine/devices/vdp/vdp';
 import { editorRuntimeState } from '../common/runtime_state';
 import { activate } from '../../cart_editor';
 import { focusChunkSource } from '../../workbench/contrib/resources/navigation';
-import { setActiveRuntimeErrorOverlay, setExecutionStopHighlight } from '../contrib/runtime_error/navigation';
+import { setActiveRuntimeErrorOverlayForCurrentContext, setExecutionStopHighlightForCurrentContext } from '../../runtime/error/navigation';
 import { editorPointerState } from '../input/pointer/state';
 import { editorCaretState } from '../ui/view/caret/state';
 import { runtimeErrorState } from '../contrib/runtime_error/state';
@@ -599,8 +599,8 @@ export function showRuntimeError(
 		hidden: false,
 	};
 	rebuildRuntimeErrorOverlayView(overlay);
-	setActiveRuntimeErrorOverlay(overlay);
-	setExecutionStopHighlight(targetRow);
+	setActiveRuntimeErrorOverlayForCurrentContext(overlay);
+	setExecutionStopHighlightForCurrentContext(targetRow);
 	const statusLine = overlay.lines.length > 0 ? overlay.lines[0] : 'Runtime error';
 	showEditorMessage(statusLine, constants.COLOR_STATUS_ERROR, 2.0);
 }

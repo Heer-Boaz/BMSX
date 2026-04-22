@@ -12,6 +12,7 @@ import { lintLegacySentinelStringPattern } from '../../lint/rules/code_quality/l
 import { lintNumericDefensiveSanitizationPattern } from '../../lint/rules/code_quality/numeric_defensive_sanitization_pattern';
 import { lintNullishNullNormalizationPattern } from '../../lint/rules/code_quality/nullish_null_normalization_pattern';
 import { lintNullishReturnGuard } from '../../lint/rules/code_quality/nullish_return_guard_pattern';
+import { lintNewlineNormalizationPattern } from '../../lint/rules/code_quality/newline_normalization_pattern';
 import { lintRedundantNumericSanitizationPattern } from '../../lint/rules/code_quality/redundant_numeric_sanitization_pattern';
 import { lintRedundantConditionalPattern } from '../../lint/rules/code_quality/redundant_conditional_pattern';
 import { lintThinLintReportWrapperPattern } from '../../lint/rules/code_quality/thin_lint_report_wrapper_pattern';
@@ -416,6 +417,7 @@ export function collectLintIssues(
 			lintContractNumericDefensiveSanitizationPattern(node, sourceFile, regions, issues);
 			lintHotPathCallArguments(node);
 			lintNumericDefensiveSanitizationPattern(node, sourceFile, regions, issues);
+			lintNewlineNormalizationPattern(node, sourceFile, regions, issues);
 			lintSplitJoinRoundtripPattern(node, sourceFile, issues, scopes);
 			lintRedundantNumericSanitizationPattern(node, sourceFile, regions, issues);
 			recordRepeatedExpressionInScope(

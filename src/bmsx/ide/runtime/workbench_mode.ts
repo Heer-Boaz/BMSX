@@ -32,7 +32,7 @@ import { resolveWorkspacePath } from '../workspace/path';
 import { shallowcopy } from '../../common/shallowcopy';
 import { api as overlay_api } from '../editor/ui/view/overlay_api';
 import { createCartEditor } from '../cart_editor';
-import { clearExecutionStopHighlights, setExecutionStopHighlight } from '../editor/contrib/runtime_error/navigation';
+import { clearExecutionStopHighlights, setExecutionStopHighlight } from './error/navigation';
 
 class DebugPauseCoordinator {
 	private suspension: LuaDebuggerPauseSignal = null;

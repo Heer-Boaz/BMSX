@@ -29,6 +29,7 @@ export function formatLuaDocument(source: string): string {
 		return '';
 	}
 	const newline = source.indexOf('\r\n') >= 0 ? '\r\n' : '\n';
+	// @code-quality disable-next-line newline_normalization_pattern -- formatter works on logical lines and writes back with the original line-ending convention.
 	const lines = source.split(/\r?\n/);
 	const lexer = new LuaLexer(source, 'console-editor');
 	const tokens = lexer.scanTokens();
@@ -97,6 +98,7 @@ function determinePreservedLines(source: string, tokens: readonly LuaToken[], li
 		if (!token.lexeme.startsWith('[')) {
 			continue;
 		}
+		// @code-quality disable-next-line newline_normalization_pattern -- long-bracket string preservation needs the token's internal logical line count.
 		const segments = token.lexeme.split(/\r?\n/);
 		if (segments.length <= 2) {
 			continue;
@@ -112,6 +114,7 @@ function determinePreservedLines(source: string, tokens: readonly LuaToken[], li
 		const startIndex = match.index;
 		const block = match[0];
 		const startLine = lineNumberForIndex(lineStarts, startIndex);
+		// @code-quality disable-next-line newline_normalization_pattern -- block-comment preservation needs the matched block's internal logical line count.
 		const segments = block.split(/\r?\n/);
 		if (segments.length <= 2) {
 			continue;

@@ -38,7 +38,7 @@ import {
 	applySearchFieldText,
 	cancelSearchJob,
 } from '../contrib/find/search';
-import { clearExecutionStopHighlights, syncRuntimeErrorOverlayFromContext } from '../contrib/runtime_error/navigation';
+import { clearExecutionStopHighlights, syncRuntimeErrorOverlayFromContext } from '../../runtime/error/navigation';
 import { processDiagnosticsQueue } from '../contrib/diagnostics/controller';
 import { editorDiagnosticsState } from '../contrib/diagnostics/state';
 import { updateDesiredColumn } from './view/caret/caret';

@@ -7,7 +7,7 @@ import * as luaPipeline from '../../../runtime/lua_pipeline';
 import * as workbenchMode from '../../../runtime/workbench_mode';
 import type { ActionPromptAction } from '../../../common/models';
 import { handleRuntimeTaskError } from '../../ui/runtime';
-import { clearExecutionStopHighlights } from '../../contrib/runtime_error/navigation';
+import { clearExecutionStopHighlights } from '../../../runtime/error/navigation';
 import * as constants from '../../../common/constants';
 import { setEditorCaseInsensitivity } from '../../render/text_renderer';
 import { editorDocumentState } from '../../editing/document_state';

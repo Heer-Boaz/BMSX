@@ -382,6 +382,7 @@ export function formatAemYamlDocument(source: string): string {
 	}
 	const newline = source.indexOf('\r\n') >= 0 ? '\r\n' : '\n';
 	const hadTrailingNewline = source.endsWith('\n');
+	// @code-quality disable-next-line newline_normalization_pattern -- formatter parses source text by logical lines and restores the original line-ending convention.
 	const lines = source.split(/\r?\n/);
 	const tokens = lines.map(tokenizeYamlStructureLine);
 	const indents: Array<number | null> = new Array(lines.length);
