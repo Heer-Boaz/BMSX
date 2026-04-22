@@ -5,9 +5,11 @@ import {
 	trimmedCppExpressionText,
 } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import type { CppLintIssue } from '../../../analysis/cpp_quality/diagnostics';
-import { pushLintIssue } from '../../../analysis/cpp_quality/diagnostics';
+import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
+import { type TsLintIssue as LintIssue } from '../../ts_rule';
+import ts from 'typescript';
+import { stringSwitchComparisonSubject } from '../ts/support/conditions';
 
 export const stringSwitchChainPatternRule = defineLintRule('common', 'string_switch_chain_pattern');
 
@@ -29,7 +31,7 @@ export function lintCppStringSwitchChains(file: string, tokens: readonly CppToke
 				subjects.length = 0;
 				break;
 			}
-			const subject = stringSwitchComparisonSubject(tokens, conditionStart, conditionEnd);
+			const subject = cppStringSwitchComparisonSubject(tokens, conditionStart, conditionEnd);
 			if (subject === null) {
 				subjects.length = 0;
 				break;
@@ -76,7 +78,7 @@ function cppIfBranchEnd(tokens: readonly CppToken[], pairs: readonly number[], s
 	return findTopLevelCppSemicolon(tokens, start, bodyEnd);
 }
 
-function stringSwitchComparisonSubject(tokens: readonly CppToken[], start: number, end: number): string | null {
+function cppStringSwitchComparisonSubject(tokens: readonly CppToken[], start: number, end: number): string | null {
 	for (let index = start; index < end; index += 1) {
 		if (tokens[index].text !== '==') {
 			continue;
@@ -89,4 +91,43 @@ function stringSwitchComparisonSubject(tokens: readonly CppToken[], start: numbe
 		}
 	}
 	return null;
+}
+
+export function lintStringSwitchChain(node: ts.IfStatement, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
+	const parent = node.parent;
+	if (ts.isIfStatement(parent) && parent.elseStatement === node) {
+		return;
+	}
+	const subjects: string[] = [];
+	let current: ts.IfStatement | undefined = node;
+	while (current !== undefined) {
+		const subject = stringSwitchComparisonSubject(current.expression);
+		if (subject === null) {
+			return;
+		}
+		subjects.push(subject);
+		const elseStatement = current.elseStatement;
+		if (elseStatement === undefined || !ts.isIfStatement(elseStatement)) {
+			break;
+		}
+		current = elseStatement;
+	}
+	if (subjects.length < 3) {
+		return;
+	}
+	const first = subjects[0];
+	for (let index = 1; index < subjects.length; index += 1) {
+		if (subjects[index] !== first) {
+			return;
+		}
+	}
+	const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+	issues.push({
+		kind: stringSwitchChainPatternRule.name,
+		file: sourceFile.fileName,
+		line: position.line + 1,
+		column: position.character + 1,
+		name: stringSwitchChainPatternRule.name,
+		message: 'Multiple string comparisons against the same expression are forbidden. Use `switch`-statement or lookup table instead.',
+	});
 }

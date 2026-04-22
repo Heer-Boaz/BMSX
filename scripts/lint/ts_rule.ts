@@ -1,6 +1,6 @@
 import ts from 'typescript';
 
-import type { CodeQualityLintRule } from './rules';
+export type CodeQualityLintRule = string;
 
 export type TsLintIssue = {
 	kind: CodeQualityLintRule;

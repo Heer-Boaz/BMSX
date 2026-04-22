@@ -5,9 +5,12 @@ import {
 	trimmedCppExpressionText,
 } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import type { CppLintIssue } from '../../../analysis/cpp_quality/diagnostics';
-import { pushLintIssue } from '../../../analysis/cpp_quality/diagnostics';
+import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
+import { type TsLintIssue as LintIssue, pushTsLintIssue } from '../../ts_rule';
+import ts from 'typescript';
+import { expressionUsesGuardedValue, isCrossNullishProjection, nullishGuardFingerprint, nullishReturnKind } from '../ts/support/nullish';
+import { nextStatementAfter } from '../ts/support/statements';
 
 export const nullishReturnGuardPatternRule = defineLintRule('code_quality', 'nullish_return_guard_pattern');
 
@@ -125,4 +128,35 @@ function cppExpressionUsesGuardedValue(expression: string, guardedExpression: st
 		|| expression.startsWith(`${guardedExpression}.`)
 		|| expression.startsWith(`${guardedExpression}->`)
 		|| expression.startsWith(`${guardedExpression}[`);
+}
+
+export function lintNullishReturnGuard(node: ts.IfStatement, sourceFile: ts.SourceFile, issues: LintIssue[]): void {
+	if (node.elseStatement !== undefined) {
+		return;
+	}
+	const returnedKind = nullishReturnKind(node.thenStatement);
+	if (returnedKind === null) {
+		return;
+	}
+	const guardFingerprint = nullishGuardFingerprint(node.expression);
+	if (guardFingerprint === null) {
+		return;
+	}
+	const next = nextStatementAfter(node);
+	if (next === null || !ts.isReturnStatement(next) || next.expression === undefined) {
+		return;
+	}
+	if (!expressionUsesGuardedValue(next.expression, guardFingerprint)) {
+		return;
+	}
+	if (isCrossNullishProjection(node.expression, returnedKind, next.expression)) {
+		return;
+	}
+	pushTsLintIssue(
+		issues,
+		sourceFile,
+		node,
+		nullishReturnGuardPatternRule.name,
+		'Nullish guard that only returns null/undefined before returning the guarded value is forbidden. Keep the compact expression form instead of expanding it into a branch.',
+	);
 }

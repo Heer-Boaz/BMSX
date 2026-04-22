@@ -1,5 +1,4 @@
 import ts from 'typescript';
-
 import { defineLintRule } from '../../rule';
 import type { TsLintIssue } from '../../ts_rule';
 

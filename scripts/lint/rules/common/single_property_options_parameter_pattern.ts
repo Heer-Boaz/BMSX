@@ -1,12 +1,15 @@
 import ts from 'typescript';
-
 import type { CppClassRange } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import { cppRangeHas } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import type { CppLintIssue } from '../../../analysis/cpp_quality/diagnostics';
-import { pushLintIssue } from '../../../analysis/cpp_quality/diagnostics';
+import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { pushTsLintIssue, type TsLintIssue } from '../../ts_rule';
+import { type LuaFunctionExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { type LuaLintIssue } from '../../lua_rule';
+import { collectLuaOptionsParameterUseInStatements } from '../lua_cart/impl/support/functions';
+import { LuaOptionsParameterUse } from '../lua_cart/impl/support/types';
+import { pushIssue } from '../lua_cart/impl/support/lint_context';
 
 export const singlePropertyOptionsParameterPatternRule = defineLintRule('common', 'single_property_options_parameter_pattern');
 
@@ -174,4 +177,27 @@ function countCppDataMemberDeclarators(tokens: readonly CppToken[], start: numbe
 		else if (text === ',' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0 && angleDepth === 0) count += 1;
 	}
 	return count;
+}
+
+export function lintSinglePropertyOptionsParameter(functionExpression: LuaFunctionExpression, issues: LuaLintIssue[]): void {
+	for (const parameter of functionExpression.parameters) {
+		if (parameter.name !== 'opts' && parameter.name !== 'options') {
+			continue;
+		}
+		const use: LuaOptionsParameterUse = {
+			fields: new Set<string>(),
+			bareReads: 0,
+			dynamicReads: 0,
+		};
+		collectLuaOptionsParameterUseInStatements(functionExpression.body.body, parameter.name, use);
+		if (use.fields.size !== 1 || use.bareReads !== 0 || use.dynamicReads !== 0) {
+			continue;
+		}
+		pushIssue(
+			issues,
+			singlePropertyOptionsParameterPatternRule.name,
+			parameter,
+			`Single-property options parameter "${parameter.name}" is forbidden. Use a direct parameter or split the operation instead of implying future extensibility.`,
+		);
+	}
 }

@@ -5,9 +5,12 @@ import {
 	trimmedCppExpressionText,
 } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import type { CppLintIssue } from '../../../analysis/cpp_quality/diagnostics';
-import { pushLintIssue } from '../../../analysis/cpp_quality/diagnostics';
+import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
+import { type LuaExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { type LuaLintIssue } from '../../lua_rule';
+import { matchesStringOrChainComparisonPattern } from '../lua_cart/impl/support/conditions';
+import { pushIssue } from '../lua_cart/impl/support/lint_context';
 
 export const stringOrChainComparisonPatternRule = defineLintRule('common', 'string_or_chain_comparison_pattern');
 
@@ -64,4 +67,16 @@ function stringComparisonSubject(tokens: readonly CppToken[], start: number, end
 		}
 	}
 	return null;
+}
+
+export function lintStringOrChainComparisonPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
+	if (!matchesStringOrChainComparisonPattern(expression)) {
+		return;
+	}
+	pushIssue(
+		issues,
+		stringOrChainComparisonPatternRule.name,
+		expression,
+		'OR-chains that compare the same expression against multiple string literals are forbidden. Use lookup-based membership instead.',
+	);
 }

@@ -1,11 +1,8 @@
 import ts from 'typescript';
-
 import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import { collectCppStatementRanges, cppCallTargetFromStatement } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { normalizedCppTokenText } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import type { CppLintIssue } from '../../../analysis/cpp_quality/diagnostics';
-import { pushLintIssue } from '../../../analysis/cpp_quality/diagnostics';
+import { normalizedCppTokenText, type CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { pushLintIssue, type CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { compactStatementText } from '../../ts_node';
 import { pushTsLintIssue, type TsLintIssue } from '../../ts_rule';

@@ -1,13 +1,12 @@
 import { relative } from 'node:path';
-import {
-	duplicateExportedTypeNamePatternRule,
-	normalizedAstDuplicatePatternRule,
-	semanticNormalizedBodyDuplicatePatternRule,
-} from '../../lint/rules/code_quality';
+import { duplicateExportedTypeNamePatternRule } from '../../lint/rules/code_quality/duplicate_exported_type_name_pattern';
+import { normalizedAstDuplicatePatternRule } from '../../lint/rules/code_quality/normalized_ast_duplicate_pattern';
+import { semanticNormalizedBodyDuplicatePatternRule } from '../../lint/rules/code_quality/semantic_normalized_body_duplicate_pattern';
 
-import type { CppToken } from '../../../src/bmsx/language/cpp/syntax/tokens';
-import type { CodeQualityLintRule } from '../../lint/rules';
+import { type CppLintIssue, type CppNormalizedBodyInfo } from '../../lint/rules/cpp/support/diagnostics';
 import type { QualityLedger } from '../quality_ledger';
+
+export { pushLintIssue, type CppLintIssue, type CppNormalizedBodyInfo } from '../../lint/rules/cpp/support/diagnostics';
 
 export type CppDuplicateKind = 'class' | 'enum' | 'function' | 'interface' | 'method' | 'namespace' | 'type' | 'wrapper';
 
@@ -25,15 +24,6 @@ export type CppDuplicateGroup = {
 	locations: CppDuplicateLocation[];
 };
 
-export type CppLintIssue = {
-	kind: CodeQualityLintRule;
-	file: string;
-	line: number;
-	column: number;
-	name: string;
-	message: string;
-};
-
 export type CppAnalysisResult = {
 	duplicateGroups: CppDuplicateGroup[];
 	lintIssues: CppLintIssue[];
@@ -47,33 +37,6 @@ export type CppExportedTypeInfo = {
 	column: number;
 	context: string | null;
 };
-
-export type CppNormalizedBodyInfo = {
-	name: string;
-	file: string;
-	line: number;
-	column: number;
-	fingerprint: string;
-	semanticSignatures: string[] | null;
-};
-
-export function pushLintIssue(
-	issues: CppLintIssue[],
-	file: string,
-	token: CppToken,
-	kind: CodeQualityLintRule,
-	message: string,
-	name = kind,
-): void {
-	issues.push({
-		kind,
-		file,
-		line: token.line,
-		column: token.column,
-		name,
-		message,
-	});
-}
 
 export function recordDeclaration(
 	buckets: Map<string, CppDuplicateLocation[]>,

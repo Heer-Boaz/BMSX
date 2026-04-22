@@ -1,7 +1,6 @@
 import { repeatedAccessChainPatternRule } from './repeated_access_chain_pattern';
-import type { CppLintIssue } from '../../../analysis/cpp_quality/diagnostics';
-import { cppTokenText, normalizedCppTokenText } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import type { CppLintIssue } from '../cpp/support/diagnostics';
+import { cppTokenText, normalizedCppTokenText, type CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { collectCppStatementRanges, cppRangeHas } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import type { TsLintIssue } from '../../ts_rule';

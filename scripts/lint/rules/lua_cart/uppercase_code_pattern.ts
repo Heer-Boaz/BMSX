@@ -1,5 +1,4 @@
-import type { LuaToken } from '../../../../src/bmsx/lua/syntax/token';
-import { LuaTokenType } from '../../../../src/bmsx/lua/syntax/token';
+import { LuaTokenType, type LuaToken } from '../../../../src/bmsx/lua/syntax/token';
 import type { LuaLintIssue, LuaLintLocationPusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 

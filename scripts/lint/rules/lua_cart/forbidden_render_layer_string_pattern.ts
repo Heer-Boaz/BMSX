@@ -1,5 +1,4 @@
-import { LuaSyntaxKind, LuaTableFieldKind } from '../../../../src/bmsx/lua/syntax/ast';
-import type { LuaTableField } from '../../../../src/bmsx/lua/syntax/ast';
+import { LuaSyntaxKind, LuaTableFieldKind, type LuaTableField } from '../../../../src/bmsx/lua/syntax/ast';
 import type { LuaLintIssue, LuaLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 

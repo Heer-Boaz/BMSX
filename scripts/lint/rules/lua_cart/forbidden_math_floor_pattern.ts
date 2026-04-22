@@ -1,5 +1,4 @@
-import { LuaSyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
-import type { LuaExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { LuaSyntaxKind, type LuaExpression } from '../../../../src/bmsx/lua/syntax/ast';
 import type { LuaLintIssue, LuaLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 

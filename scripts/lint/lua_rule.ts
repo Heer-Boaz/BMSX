@@ -1,4 +1,4 @@
-import type { LuaCartLintRule } from './rules';
+export type LuaCartLintRule = string;
 
 export type LuaLintIssue = {
 	readonly rule: LuaCartLintRule;

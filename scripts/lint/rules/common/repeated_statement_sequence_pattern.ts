@@ -1,12 +1,10 @@
 import ts from 'typescript';
-
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
-import type { CppLintIssue } from '../../../analysis/cpp_quality/diagnostics';
+import type { CppLintIssue } from '../cpp/support/diagnostics';
 import { noteQualityLedger, type QualityLedger } from '../../../analysis/quality_ledger';
 import type { CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import { collectCppStatementRanges } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import type { CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { normalizedCppTokenText } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { normalizedCppTokenText, type CppToken } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { defineLintRule } from '../../rule';
 import { compactStatementText } from '../../ts_node';
 import type { TsLintIssue } from '../../ts_rule';

@@ -1,5 +1,13 @@
 import { defineLintRule } from '../../rule';
 import type { TsLintIssue } from '../../ts_rule';
+import { type CppFunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
+import { type CppToken, normalizedCppTokenText } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { type CppNormalizedBodyInfo } from '../cpp/support/diagnostics';
+import { type AnalysisRegion, lineInAnalysisRegion } from '../../../analysis/lint_suppressions';
+import { noteQualityLedger, type QualityLedger } from '../../../analysis/quality_ledger';
+import { CPP_NORMALIZED_BODY_MIN_LENGTH } from '../cpp/support/ast';
+import { normalizedBodyFingerprint } from '../cpp/support/normalization';
+import { collectSemanticBodySignatures, isSemanticNormalizationWrapperTarget } from '../cpp/support/semantic';
 
 export const normalizedAstDuplicatePatternRule = defineLintRule('code_quality', 'normalized_ast_duplicate_pattern');
 
@@ -49,4 +57,35 @@ export function addNormalizedBodyDuplicateIssues(normalizedBodies: readonly Norm
 			});
 		}
 	}
+}
+
+export function collectCppNormalizedBody(file: string, tokens: readonly CppToken[], pairs: readonly number[], info: CppFunctionInfo, regions: readonly AnalysisRegion[], normalizedBodies: CppNormalizedBodyInfo[], ledger: QualityLedger): void {
+	if (info.name.endsWith('Thunk')) {
+		noteQualityLedger(ledger, 'skipped_cpp_normalized_body_thunk');
+		return;
+	}
+	if (lineInAnalysisRegion(regions, 'normalized-body-acceptable', tokens[info.nameToken].line)) {
+		noteQualityLedger(ledger, 'skipped_cpp_normalized_body_analysis_region');
+		return;
+	}
+	const semanticNormalization = info.wrapperTarget !== null && isSemanticNormalizationWrapperTarget(info.wrapperTarget);
+	if (info.wrapperTarget !== null && !semanticNormalization) {
+		noteQualityLedger(ledger, 'skipped_cpp_normalized_body_wrapper');
+		return;
+	}
+	const bodyText = normalizedCppTokenText(tokens, info.bodyStart + 1, info.bodyEnd);
+	const semanticSignatures = collectSemanticBodySignatures(tokens, pairs, info.bodyStart + 1, info.bodyEnd);
+	const semanticBody = semanticSignatures.length > 0;
+	if (!semanticBody && bodyText.length < CPP_NORMALIZED_BODY_MIN_LENGTH) {
+		noteQualityLedger(ledger, 'skipped_cpp_normalized_body_short_text');
+		return;
+	}
+	normalizedBodies.push({
+		name: info.qualifiedName,
+		file,
+		line: tokens[info.nameToken].line,
+		column: tokens[info.nameToken].column,
+		fingerprint: normalizedBodyFingerprint(tokens, info.bodyStart + 1, info.bodyEnd),
+		semanticSignatures: semanticBody ? semanticSignatures : null,
+	});
 }

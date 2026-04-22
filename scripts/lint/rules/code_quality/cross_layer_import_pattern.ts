@@ -1,8 +1,7 @@
 import ts from 'typescript';
-
 import { architectureBoundaryLayer, relativeArchitectureBoundaryViolationReason } from '../../../analysis/architecture_boundary';
 import type { ArchitectureBoundaryConfig } from '../../../analysis/config';
-import type { CppLintIssue } from '../../../analysis/cpp_quality/diagnostics';
+import type { CppLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { pushTsLintIssue, type TsLintIssue } from '../../ts_rule';
 
