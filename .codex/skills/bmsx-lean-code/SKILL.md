@@ -22,14 +22,14 @@ Use this skill whenever working in the BMSX repo or discussing BMSX code quality
 - Legacy and compatibility code is forbidden. Do not add compatibility shims, migration aliases, old-name fallbacks, deprecated contract bridges, dual-key support, or "accept both old and new" paths. Fix the caller/config/data to the current contract instead of preserving the old one.
 - Keep ownership visible. Avoid facade, host, provider, service, descriptor, manager, registry, adapter, and broker layers unless they are already part of a proven subsystem boundary.
 - Prefer direct state and direct calls over wrapper functions that only rename or forward work.
-- Place files in the folder that owns the named concept. Do not put compound names as loose root-level files when the name already describes the hierarchy. A file named like `runtime_error_navigation.ts` belongs under `runtime/error/navigation.ts`; likewise prefer `cart/source/files.ts`, `runtime/boot/timing.ts`, or `editor/runtime/error.ts` over root grab-bag filenames. If the right folder does not exist yet, create it instead of flattening ownership into a top-level module. If a specific file is a legitimate local architecture boundary exception, mark that local contract with `@code-quality` analysis comments instead of adding rename-sensitive path config or moving the file to a root grab-bag.
+- Place files in the folder that owns the named concept. Do not put compound names as loose root-level files when the name already describes the hierarchy. A file named like `runtime_error_navigation.ts` belongs under `runtime/error/navigation.ts`; likewise prefer `cart/source/files.ts`, `runtime/boot/timing.ts`, or `editor/runtime/error.ts` over root grab-bag filenames. If the right folder does not exist yet, create it instead of flattening ownership into a top-level module. If a specific file is a legitimate local architecture boundary exception, mark that local contract with a local analysis comment instead of adding rename-sensitive path config or moving the file to a root grab-bag.
 - Keep loops, scheduler paths, render paths, CPU/runtime paths, editor text/layout paths, and cart hot paths allocation-aware. Avoid temporary arrays/objects/closures in hot paths.
 - Use existing BMSX primitives: `TaskGate` and `AssetBarrier` for async coordination, `clamp` from `src/bmsx/common/`, and scratch buffers/pools for temporary hot-path data.
 - Do not normalize values to `null` with `?? null`; preserve `undefined` unless the public contract explicitly requires `null`.
 - Use `switch` for multi-way closed-kind dispatch instead of `if/else if` chains.
 - Name concepts once. If an expression such as bounds, normalization, lookup, line splitting, keyword lowercasing, or caret math repeats, extract a real concept or shared helper.
 - Aliasing input contracts is forbidden. Do not alias CLI argument names, option payload entries, event handler names, event IDs, command IDs, manifest fields, or config keys. There must be one canonical name at the boundary; do not normalize multiple names into one internal value.
-- Newline normalization is exceptional. Do not normalize `\r`/`\n` line endings with `split`, `replace`, or `replaceAll` unless that exact expression has the previous-line or same-line comment `@code-quality newline_normalization_pattern -- reason`.
+- Newline normalization is exceptional. Do not normalize `\r`/`\n` line endings with `split`, `replace`, or `replaceAll` unless that exact expression has a previous-line or same-line suppressor with the exact rule name, for example `disable-next-line newline_normalization_pattern -- reason`.
 - In cart code, use cart-facing globals/helpers instead of `engine.*`, keep repeated string identifiers short, and read constants directly instead of aliasing global constant tables.
 - Treat serialization as part of feature design. Registry/persistent runtime objects and host-only state should not leak into saved game state.
 - Do not hand-fix indentation. Make the code change, then run `npm run fix:indent -- <touched paths>` for formatting/indent cleanup. If that tool cannot handle the touched language well enough, improve the tool or call out the limitation instead of committing manual whitespace churn.
@@ -40,8 +40,8 @@ For CPU/program, scheduler, VDP, render, and other tight emulator/runtime paths,
 When repeated code in these paths is intentional and performance-sensitive, mark the smallest practical section with a local quality region and explain the reason:
 
 ```ts
-// @code-quality start repeated-sequence-acceptable -- CPU opcode fast path keeps register updates inline; helper dispatch would add overhead.
-// @code-quality end repeated-sequence-acceptable
+// start repeated-sequence-acceptable -- CPU opcode fast path keeps register updates inline; helper dispatch would add overhead.
+// end repeated-sequence-acceptable
 ```
 
 Use real cleanup for non-hot code, setup/init code, firmware table construction, asset metadata assembly, manifest shaping, and other places where extracting a concept improves ownership without adding dispatch, allocation, or abstraction cost. In short: no helper fetish in CPU/program hot paths; no duplicated sludge outside them.
@@ -55,14 +55,14 @@ Forbidden evasions include:
 - Introducing useless constants, wrappers, helpers, aliases, or methods only to pacify a rule.
 - Splitting a compact expression into ceremonial enterprise flow without improving ownership, clarity, or performance.
 
-Before finalizing a code-quality change, inspect your own diff specifically for these evasions.
+Before finalizing a code change, inspect your own diff specifically for these evasions.
 
 ## Quality Rule Code Contract
 Treat analyzer and lint code as production code. The checker must model good engineering, not become a second trash pile next to the product code.
 
 - Keep rules project-agnostic by default. Do not bake BMSX paths, file names, root object names, function-name word lists, issue-pusher names, or rename-sensitive exceptions into generic rules.
-- Use `@code-quality` directives, analysis regions/statements, or explicit config for local contracts. A hot path, accepted numeric boundary, required state root, or intentional wrapper must be marked near the code that owns that exception.
-- Generic suppressor machinery is allowed, but every suppressor must require an explicit exact rule name. Broad disables, wildcard disables, unnamed `@code-quality disable`, and alias tags such as `legacy-sentinel-string-acceptable` are forbidden. A local exception must point at the concrete rule it suppresses, for example `@code-quality disable-next-line legacy_sentinel_string_pattern -- reason`.
+- Use local analysis comments, analysis regions/statements, or explicit config for local contracts. A hot path, accepted numeric boundary, required state root, or intentional wrapper must be marked near the code that owns that exception.
+- Analysis comments are markerless. Every suppressor or local analysis exception must use the exact rule id or analysis-region id it affects. Broad disables, wildcard disables, unnamed `disable`, and alias names are forbidden. A local exception for the legacy sentinel string rule must be spelled with the actual rule id, for example `disable-next-line legacy_sentinel_string_pattern -- reason`.
 - Do not add fallback skip lists. Directory/file exclusion should come from source-control/project config such as `.gitignore` or a real analyzer config, not hardcoded guesses.
 - Put language parsing, token scanning, AST naming, call-target extraction, literal checks, operator searches, and range helpers in language/support modules. Pattern files should combine existing language helpers into one rule, not reimplement parsers.
 - Every rule file must contain real detection logic for that rule. Empty files, export-only shims, and thin wrappers that only call `pushLintIssue` are forbidden.
@@ -81,7 +81,7 @@ Treat analyzer and lint code as production code. The checker must model good eng
 - Rule exceptions are allowed only when the exception is real, local, and tagged with the exact rule name. Use rule-specific comments with a short reason, for example:
 
 ```ts
-// @code-quality empty_catch_pattern -- browser API cleanup is best-effort here
+// empty_catch_pattern -- browser API cleanup is best-effort here
 try {
     releaseExternalHandle();
 } catch {
@@ -91,20 +91,20 @@ try {
 Use region directives for scope-based analysis instead of hardcoded path exceptions:
 
 ```ts
-// @code-quality start hot-path -- caret/layout work runs during frame input/render
-// @code-quality end hot-path
+// start hot-path -- caret/layout work runs during frame input/render
+// end hot-path
 
-// @code-quality start ensure-acceptable -- explicit capacity helper, not lazy singleton ownership
-// @code-quality end ensure-acceptable
+// start ensure-acceptable -- explicit capacity helper, not lazy singleton ownership
+// end ensure-acceptable
 
-// @code-quality start required-state editorDocumentState,editorViewState -- owned state roots in this module
-// @code-quality end required-state
+// start required-state editorDocumentState,editorViewState -- owned state roots in this module
+// end required-state
 
-// @code-quality start value-or-boundary -- manifest default is resolved at this boundary
-// @code-quality end value-or-boundary
+// start value-or-boundary -- manifest default is resolved at this boundary
+// end value-or-boundary
 
-// @code-quality start fallible-boundary -- external parser/browser API can fail and maps failure to UI state
-// @code-quality end fallible-boundary
+// start fallible-boundary -- external parser/browser API can fail and maps failure to UI state
+// end fallible-boundary
 ```
 
 ## Finish Line
