@@ -59,7 +59,7 @@ interface QueuedAudioPlay {
 const ACTIVE_VOICE_PENDING = -1;
 
 function apuSamplesToMilliseconds(samples: number): number {
-	return (samples * 1000) / APU_SAMPLE_RATE_HZ;
+	return Math.floor((samples * 1000) / APU_SAMPLE_RATE_HZ);
 }
 
 function decodeChannel(channel: number): AudioType {

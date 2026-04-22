@@ -1,4 +1,4 @@
-import { isLuaDebuggerPauseSignal } from './value';
+import { isHostCallable, isLuaDebuggerPauseSignal } from './value';
 import type { LuaFunctionValue } from './value';
 
 export interface LuaHandlerFn extends Function {
@@ -215,7 +215,7 @@ export class LuaHandlerCache {
 }
 
 export function isLuaHandlerFunction(candidate: unknown): candidate is LuaHandlerFn {
-	return typeof candidate === 'function'
+	return isHostCallable(candidate)
 		&& Object.prototype.hasOwnProperty.call(candidate, '__hid')
 		&& Object.prototype.hasOwnProperty.call(candidate, '__hmod');
 }

@@ -42,6 +42,7 @@ import {
 	createLuaNativeMemberHandle,
 	createLuaTable,
 	extractErrorMessage,
+	isHostCallable,
 	isLuaNativeMemberHandle,
 	isLuaTable,
 	resolveNativeTypeName,
@@ -145,6 +146,7 @@ export class LuaExecutionThread {
 		this.runImpl = runImpl;
 	}
 
+	// start fallible-boundary -- Lua thread slices report runtime faults through SliceResult.Fault.
 	public runSlice(instructionBudget: number | null): SliceResult {
 		try {
 			const signal = this.runImpl(instructionBudget);
@@ -154,7 +156,9 @@ export class LuaExecutionThread {
 			return SliceResult.Fault;
 		}
 	}
+	// end fallible-boundary
 
+	// start fallible-boundary -- Resuming a yielded Lua thread stores thrown faults in the thread state.
 	public resumeSlice(instructionBudget: number): SliceResult {
 		try {
 			const yielded = this.yielded;
@@ -166,6 +170,7 @@ export class LuaExecutionThread {
 			return SliceResult.Fault;
 		}
 	}
+	// end fallible-boundary
 
 	private consumeSignal(signal: ExecutionSignal): SliceResult {
 		if (!signal) {
@@ -2351,23 +2356,23 @@ export class LuaInterpreter {
 				let thisArg: unknown;
 				if (options.resolvedName !== null) {
 					callable = Reflect.get(native as Record<string, unknown>, options.resolvedName);
-					if (typeof callable !== 'function') {
+					if (!isHostCallable(callable)) {
 						throw new Error(`Property '${options.displayName}' is not callable.`);
 					}
 					thisArg = native;
 				} else {
 					callable = native;
-					if (typeof callable !== 'function') {
+					if (!isHostCallable(callable)) {
 						throw new Error('Native value is not callable.');
 					}
 					thisArg = undefined;
 				}
-					const result = Reflect.apply(callable as (...args: unknown[]) => unknown, thisArg, jsArgs);
-					return this.wrapHostInvocationResult(result);
-				} catch (error) {
-					this.throwNativeError(typeName, options.displayName, options.range, error);
-				}
-			});
+				const result = Reflect.apply(callable, thisArg, jsArgs);
+				return this.wrapHostInvocationResult(result);
+			} catch (error) {
+				this.throwNativeError(typeName, options.displayName, options.range, error);
+			}
+		});
 		this.storeNativeMethod(target, options.cacheKey, fn);
 		return fn;
 	}
@@ -2377,12 +2382,12 @@ export class LuaInterpreter {
 		const handleName = `${typeName}.${options.displayName}`;
 		const callImpl = (args: ReadonlyArray<LuaValue>): LuaValue[] => {
 			let member: unknown = target;
-				for (let index = 0; index < path.length; index += 1) {
-					member = Reflect.get(member as Record<string, unknown>, path[index]);
-				}
-				if (typeof member !== 'function') {
-					this.throwNativeError(typeName, options.displayName, options.range, new Error('Member is not callable.'));
-				}
+			for (let index = 0; index < path.length; index += 1) {
+				member = Reflect.get(member as Record<string, unknown>, path[index]);
+			}
+			if (!isHostCallable(member)) {
+				this.throwNativeError(typeName, options.displayName, options.range, new Error('Member is not callable.'));
+			}
 			const jsArgs: unknown[] = [];
 			let startIndex = 0;
 			if (options.bindInstance && args.length > 0) {
@@ -2395,12 +2400,12 @@ export class LuaInterpreter {
 				jsArgs.push(this.convertToHost(args[index]));
 			}
 			try {
-					const result = Reflect.apply(member as (...args: unknown[]) => unknown, options.bindInstance ? target : undefined, jsArgs);
-					return this.wrapHostInvocationResult(result);
-				} catch (error) {
-					this.throwNativeError(typeName, options.displayName, options.range, error);
-				}
-			};
+				const result = Reflect.apply(member, options.bindInstance ? target : undefined, jsArgs);
+				return this.wrapHostInvocationResult(result);
+			} catch (error) {
+				this.throwNativeError(typeName, options.displayName, options.range, error);
+			}
+		};
 		return createLuaNativeMemberHandle({ name: handleName, target, path, callImpl });
 	}
 
@@ -2469,7 +2474,7 @@ export class LuaInterpreter {
 		if (property === undefined && Array.isArray(target.native) && typeof key === 'number' && Number.isInteger(key)) {
 			return { found: true, value: null, resolvedName, displayName: normalized.displayName };
 		}
-		if (typeof property === 'function') { // Bind functions as native callables or member handles
+		if (isHostCallable(property)) { // Bind functions as native callables or member handles
 			if (isLuaHandlerFunction(property)) {
 				return { found: true, value: this.convertFromHost(property), resolvedName, displayName: normalized.displayName };
 			}
@@ -3118,17 +3123,17 @@ export class LuaInterpreter {
 			return [table];
 		}));
 
+		// start fallible-boundary -- Lua pcall converts protected-call failures into Lua return values.
 		this.globals.set('pcall', new LuaNativeFunction('pcall', (args) => {
 			const fn = this.expectFunction(args.length > 0 ? args[0] : null, 'pcall expects a function.', null);
 			const functionArgs = this.allocateValueList();
 			for (let index = 1; index < args.length; index += 1) {
 				functionArgs.push(args[index]);
 			}
-				try {
-					const result = fn.call(functionArgs);
-					return this.protectedCallSuccess(result);
-				}
-			catch (error) {
+			try {
+				const result = fn.call(functionArgs);
+				return this.protectedCallSuccess(result);
+			} catch (error) {
 				const message = extractErrorMessage(error);
 				const values = this.allocateValueList();
 				values.push(false);
@@ -3136,7 +3141,9 @@ export class LuaInterpreter {
 				return values;
 			}
 		}));
+		// end fallible-boundary
 
+		// start fallible-boundary -- Lua xpcall converts protected-call failures into Lua return values.
 		this.globals.set('xpcall', new LuaNativeFunction('xpcall', (args) => {
 			const fn = this.expectFunction(args.length > 0 ? args[0] : null, 'xpcall expects a function.', null);
 			const messageHandler = this.expectFunction(args.length > 1 ? args[1] : null, 'xpcall expects a message handler.', null);
@@ -3144,11 +3151,10 @@ export class LuaInterpreter {
 			for (let index = 2; index < args.length; index += 1) {
 				functionArgs.push(args[index]);
 			}
-				try {
-					const result = fn.call(functionArgs);
-					return this.protectedCallSuccess(result);
-				}
-			catch (error) {
+			try {
+				const result = fn.call(functionArgs);
+				return this.protectedCallSuccess(result);
+			} catch (error) {
 				const formatted = extractErrorMessage(error);
 				const handlerArgs = this.allocateValueList();
 				handlerArgs.push(formatted);
@@ -3163,6 +3169,7 @@ export class LuaInterpreter {
 				return values;
 			}
 		}));
+		// end fallible-boundary
 
 		this.globals.set('select', new LuaNativeFunction('select', (args) => {
 			if (args.length === 0) {
@@ -3784,7 +3791,14 @@ export class LuaInterpreter {
 			const pattern = args.length > 1 ? args[1] : '';
 			const str = this.expectString(source, 'string.find expects a string.', null);
 			const pat = this.expectString(pattern, 'string.find expects a pattern string.', null);
-			const startIndex = args.length > 2 ? Math.max(1, Math.floor(this.expectNumber(args[2], 'string.find expects numeric start index.', null))) - 1 : 0;
+			let startIndex = 0;
+			if (args.length > 2) {
+				startIndex = Math.floor(this.expectNumber(args[2], 'string.find expects numeric start index.', null));
+				if (startIndex < 1) {
+					startIndex = 1;
+				}
+				startIndex -= 1;
+			}
 			const position = str.indexOf(pat, startIndex);
 			if (position === -1) {
 				return [null];
@@ -4690,16 +4704,29 @@ export class LuaInterpreter {
 	}
 
 	private tableRangeStart(length: number, value: number): number {
-		return Math.max(1, Math.min(length, this.normalizeTableRangeIndex(length, value, 1)));
+		const index = this.normalizeTableRangeIndex(length, value, 1);
+		if (index < 1 || length < 1) {
+			return 1;
+		}
+		return index > length ? length : index;
 	}
 
 	private tableRangeEnd(length: number, value: number): number {
-		return Math.max(0, Math.min(length, this.normalizeTableRangeIndex(length, value, length)));
+		const index = this.normalizeTableRangeIndex(length, value, length);
+		if (index < 0) {
+			return 0;
+		}
+		return index > length ? length : index;
 	}
 
 	private tableInsert(table: LuaTable, value: LuaValue, position: number): void {
 		const length = table.numericLength();
-		let targetIndex = position === null ? length + 1 : Math.max(1, Math.min(length + 1, position));
+		let targetIndex = position === null ? length + 1 : position;
+		if (targetIndex < 1) {
+			targetIndex = 1;
+		} else if (targetIndex > length + 1) {
+			targetIndex = length + 1;
+		}
 		for (let index = length; index >= targetIndex; index -= 1) {
 			const current = table.get(index);
 			table.set(index + 1, current);

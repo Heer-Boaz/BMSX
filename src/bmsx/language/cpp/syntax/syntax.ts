@@ -29,6 +29,41 @@ const CPP_MEMBER_ACCESS_SEPARATORS = new Set(['.', '->']);
 const CPP_DELIMITERS = new Set([';', '{', '}']);
 const CPP_DECLARATOR_FOLLOW_TOKENS = new Set(['{', ';']);
 
+export type CppNestingDepth = {
+	paren: number;
+	bracket: number;
+	brace: number;
+};
+
+export function applyCppNestingToken(text: string, depth: CppNestingDepth): boolean {
+	switch (text) {
+		case '(':
+			depth.paren += 1;
+			return true;
+		case ')':
+			depth.paren -= 1;
+			return true;
+		case '[':
+			depth.bracket += 1;
+			return true;
+		case ']':
+			depth.bracket -= 1;
+			return true;
+		case '{':
+			depth.brace += 1;
+			return true;
+		case '}':
+			depth.brace -= 1;
+			return true;
+		default:
+			return false;
+	}
+}
+
+export function isCppTopLevel(depth: CppNestingDepth): boolean {
+	return depth.paren === 0 && depth.bracket === 0 && depth.brace === 0;
+}
+
 export function isCppEmptyStringToken(token: CppToken): boolean {
 	return token.kind === 'string' && token.text === '""';
 }
@@ -54,6 +89,18 @@ export function isCppComparisonOperator(text: string): boolean {
 		case '>':
 		case '>=':
 		case '<=>':
+			return true;
+		default:
+			return false;
+	}
+}
+
+export function isCppOrderingComparisonOperator(text: string): boolean {
+	switch (text) {
+		case '<':
+		case '<=':
+		case '>':
+		case '>=':
 			return true;
 		default:
 			return false;
@@ -245,35 +292,23 @@ export function callFirstArgumentHasToken(
 }
 
 export function findTopLevelCppSemicolon(tokens: readonly CppToken[], start: number, end: number): number {
-	let parenDepth = 0;
-	let bracketDepth = 0;
-	let braceDepth = 0;
-	for (let index = start; index < end; index += 1) {
-		const text = tokens[index].text;
-		if (text === '(') parenDepth += 1;
-		else if (text === ')') parenDepth -= 1;
-		else if (text === '[') bracketDepth += 1;
-		else if (text === ']') bracketDepth -= 1;
-		else if (text === '{') braceDepth += 1;
-		else if (text === '}') braceDepth -= 1;
-		else if (text === ';' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) return index;
-	}
-	return -1;
+	return findTopLevelCppToken(tokens, start, end, token => token.text === ';');
 }
 
 export function findTopLevelCppOperator(tokens: readonly CppToken[], start: number, end: number, operator: string): number {
-	let parenDepth = 0;
-	let bracketDepth = 0;
-	let braceDepth = 0;
+	return findTopLevelCppToken(tokens, start, end, token => token.text === operator);
+}
+
+export function findTopLevelCppToken(tokens: readonly CppToken[], start: number, end: number, predicate: (token: CppToken, index: number) => boolean): number {
+	const depth: CppNestingDepth = { paren: 0, bracket: 0, brace: 0 };
 	for (let index = start; index < end; index += 1) {
 		const text = tokens[index].text;
-		if (text === '(') parenDepth += 1;
-		else if (text === ')') parenDepth -= 1;
-		else if (text === '[') bracketDepth += 1;
-		else if (text === ']') bracketDepth -= 1;
-		else if (text === '{') braceDepth += 1;
-		else if (text === '}') braceDepth -= 1;
-		else if (text === operator && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) return index;
+		if (applyCppNestingToken(text, depth)) {
+			continue;
+		}
+		if (isCppTopLevel(depth) && predicate(tokens[index], index)) {
+			return index;
+		}
 	}
 	return -1;
 }
@@ -435,6 +470,66 @@ export function trimmedCppExpressionText(tokens: readonly CppToken[], start: num
 	return normalizedCppTokenText(tokens, start, end);
 }
 
+export function stripCppWrappingParens(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number): [number, number] {
+	while (start < end && tokens[start]?.text === '(' && pairs[start] === end - 1) {
+		start += 1;
+		end -= 1;
+	}
+	return [start, end];
+}
+
+export function cppRangeIsIdentifier(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number, name: string): boolean {
+	[start, end] = stripCppWrappingParens(tokens, pairs, start, end);
+	return end === start + 1 && tokens[start].text === name;
+}
+
+export function cppRangeIsNumericLiteral(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number): boolean {
+	[start, end] = stripCppWrappingParens(tokens, pairs, start, end);
+	if (tokens[start]?.text === '-' || tokens[start]?.text === '+') {
+		start += 1;
+	}
+	return end === start + 1 && tokens[start]?.kind === 'number';
+}
+
+export function cppRangeIsOrderingComparisonWithIdentifierAndNumericLiteral(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number, name: string): boolean {
+	[start, end] = stripCppWrappingParens(tokens, pairs, start, end);
+	const operatorIndex = findTopLevelCppToken(tokens, start, end, token => isCppOrderingComparisonOperator(token.text));
+	return operatorIndex >= 0 && (
+		cppRangeIsIdentifier(tokens, pairs, start, operatorIndex, name) && cppRangeIsNumericLiteral(tokens, pairs, operatorIndex + 1, end)
+		|| cppRangeIsIdentifier(tokens, pairs, operatorIndex + 1, end, name) && cppRangeIsNumericLiteral(tokens, pairs, start, operatorIndex)
+	);
+}
+
+export function cppStatementOrBlockEnd(tokens: readonly CppToken[], pairs: readonly number[], start: number, end: number): number {
+	if (start >= end) {
+		return -1;
+	}
+	if (tokens[start].text === '{') {
+		const close = pairs[start];
+		return close >= 0 && close < end ? close : -1;
+	}
+	return findTopLevelCppSemicolon(tokens, start, end);
+}
+
+export function cppStatementOrBlockAssignsIdentifier(tokens: readonly CppToken[], start: number, end: number, name: string): boolean {
+	if (end < start) {
+		return false;
+	}
+	if (tokens[start]?.text === '{') {
+		start += 1;
+	}
+	const ranges = collectCppStatementRanges(tokens, start, end);
+	for (let index = 0; index < ranges.length; index += 1) {
+		const statementStart = ranges[index][0];
+		const statementEnd = ranges[index][1];
+		const assignmentIndex = findTopLevelCppOperator(tokens, statementStart, statementEnd, '=');
+		if (assignmentIndex >= 0 && trimmedCppExpressionText(tokens, statementStart, assignmentIndex) === name) {
+			return true;
+		}
+	}
+	return false;
+}
+
 export function splitCppArgumentRanges(tokens: readonly CppToken[], start: number, end: number): Array<[number, number]> {
 	const result: Array<[number, number]> = [];
 	let argumentStart = start;
@@ -514,6 +609,7 @@ export const findAccessChainStart = findCppAccessChainStart;
 export const countParameters = countCppParameters;
 export const findTopLevelSemicolon = findTopLevelCppSemicolon;
 export const findTopLevelOperator = findTopLevelCppOperator;
+export const findTopLevelToken = findTopLevelCppToken;
 export const callTargetFromStatement = cppCallTargetFromStatement;
 export const collectStatementRanges = collectCppStatementRanges;
 export const hasDeclarationPrefix = hasCppDeclarationPrefix;
@@ -521,6 +617,7 @@ export const findPreviousDelimiter = findPreviousCppDelimiter;
 export const findNextDelimiter = findNextCppDelimiter;
 export const findTernaryColon = findCppTernaryColon;
 export const trimmedExpressionText = trimmedCppExpressionText;
+export const stripWrappingParens = stripCppWrappingParens;
 export const splitArgumentRanges = splitCppArgumentRanges;
 export const findNextTokenText = findNextCppTokenText;
 export const isFunctionDeclaratorParen = isCppFunctionDeclaratorParen;

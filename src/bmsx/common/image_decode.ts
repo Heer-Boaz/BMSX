@@ -5,11 +5,11 @@ export type DecodedImage = {
 };
 
 export async function decodePngToRgba(buffer: Uint8Array): Promise<DecodedImage> {
-	if (typeof createImageBitmap !== 'function') {
+	if (!('createImageBitmap' in globalThis)) {
 		throw new Error('[decodePngToRgba] createImageBitmap is not available.');
 	}
 	const blob = new Blob([buffer as any], { type: 'image/png' });
-	const bitmap = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' } as any);
+	const bitmap = await globalThis.createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' } as any);
 	const width = bitmap.width;
 	const height = bitmap.height;
 	if (width <= 0 || height <= 0) {

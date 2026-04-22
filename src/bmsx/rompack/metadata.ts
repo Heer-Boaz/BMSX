@@ -56,7 +56,7 @@ export function encodeRomMetadataSectionHeader(propNames: readonly string[]): Ui
 }
 
 export function buildRomMetadataSection(values: readonly any[]): { header: Uint8Array; propNames: string[]; payloads: Uint8Array[] } {
-	const propNames = buildBinaryPropTable(values);
+	const propNames = buildBinaryPropTable(values, true);
 	const payloads = new Array<Uint8Array>(values.length);
 	for (let i = 0; i < values.length; i++) {
 		payloads[i] = encodeBinaryWithPropTable(values[i], propNames);

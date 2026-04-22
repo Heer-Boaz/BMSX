@@ -238,10 +238,15 @@ export class InputStateManager {
 	recordAxis2Sample(identifier: ButtonId, x: number, y: number, timestamp: number): void {
 		const state = this.pendingFrameStates.get(identifier) ?? makeButtonState();
 		if (identifier === 'pointer_delta') {
-			const prev = state.value2d ?? [0, 0];
-			const nextX = prev[0] + x;
-			const nextY = prev[1] + y;
-			state.value2d = [nextX, nextY];
+			let value2d = state.value2d;
+			if (value2d === undefined || value2d === null) {
+				value2d = [0, 0];
+				state.value2d = value2d;
+			}
+			value2d[0] += x;
+			value2d[1] += y;
+			const nextX = value2d[0];
+			const nextY = value2d[1];
 			state.value = Math.hypot(nextX, nextY);
 			state.pressed = state.value > 0;
 			state.justpressed = state.justpressed || state.pressed;
@@ -998,8 +1003,12 @@ export class Input implements RegisterablePersistent {
 			if (this.gameplayCaptureEnabled && binding.assignedPlayer !== null) {
 				const player = this.getPlayerInput(binding.assignedPlayer);
 				player.recordAxis2Input('pointer', evt.code, evt.x, evt.y, evt.timestamp);
-				const delta = handler.getButtonState('pointer_delta').value2d ?? [0, 0];
-				player.recordAxis2Input('pointer', 'pointer_delta', delta[0], delta[1], evt.timestamp);
+				const delta = handler.getButtonState('pointer_delta').value2d;
+				if (delta === undefined || delta === null) {
+					player.recordAxis2Input('pointer', 'pointer_delta', 0, 0, evt.timestamp);
+				} else {
+					player.recordAxis2Input('pointer', 'pointer_delta', delta[0], delta[1], evt.timestamp);
+				}
 			}
 			return;
 		}

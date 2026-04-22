@@ -2,14 +2,14 @@ import { defineLintRule } from '../../rule';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import { type LintIssue, pushLintIssue } from '../ts/support/ast';
 import ts from 'typescript';
-import { isNumericSanitizerCall, isSemanticFloorDivisionCall as isAstSemanticFloorDivisionCall } from '../../../../src/bmsx/language/ts/ast/semantic';
+import { isNumericSanitizerCall, isSemanticFloorDivisionCall as isAstSemanticFloorDivisionCall, isSplitRoundingSanitizerThenBoundsCheck } from '../../../../src/bmsx/language/ts/ast/semantic';
 import { containsDescendantCallExpression, parentChainContainsCallExpression } from '../../../../src/bmsx/language/ts/ast/expressions';
 import { nodeStartLine } from '../ts/support/ast';
 import { type FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
 import { cppCallTarget, findAccessChainStart } from '../../../../src/bmsx/language/cpp/syntax/syntax';
 import { type Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
-import { isNumericSanitizationCall, lineAllowsNumericSanitization, rangeContainsNestedNumericSanitization } from '../cpp/support/numeric';
+import { isNumericSanitizationCall, isSplitRoundingThenBoundsCheck as isTokenSplitRoundingThenBoundsCheck, lineAllowsNumericSanitization, rangeContainsNestedNumericSanitization } from '../cpp/support/numeric';
 import { isSemanticFloorDivisionCall as isTokenSemanticFloorDivisionCall } from '../cpp/support/semantic';
 
 export const redundantNumericSanitizationPatternRule = defineLintRule('code_quality', 'redundant_numeric_sanitization_pattern');
@@ -35,7 +35,7 @@ export function lintRedundantNumericSanitizationPattern(
 	if (isAstSemanticFloorDivisionCall(node)) {
 		return;
 	}
-	if (!containsDescendantCallExpression(node, isNumericSanitizerCall)) {
+	if (!containsDescendantCallExpression(node, isNumericSanitizerCall) && !isSplitRoundingSanitizerThenBoundsCheck(node)) {
 		return;
 	}
 	pushLintIssue(
@@ -77,7 +77,7 @@ export function lintTokenRedundantNumericSanitizationPattern(file: string, token
 		}
 		const callStart = findAccessChainStart(tokens, index - 1);
 		const callEnd = pairs[index] + 1;
-		if (!rangeContainsNestedNumericSanitization(tokens, pairs, callStart, callEnd)) {
+		if (!rangeContainsNestedNumericSanitization(tokens, pairs, callStart, callEnd) && !isTokenSplitRoundingThenBoundsCheck(tokens, pairs, index, target, info.bodyEnd)) {
 			continue;
 		}
 		pushTokenLintIssue(

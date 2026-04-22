@@ -1,4 +1,5 @@
 import { noteQualityLedger, type QualityLedger } from '../../../../analysis/quality_ledger';
+import { lineInAnalysisRegion, type AnalysisRegion } from '../../../../analysis/lint_suppressions';
 import { type LintIssue, type LintRuleName } from '../../../rule';
 import ts from 'typescript';
 import { getCallTargetLeafName, getExpressionText, unwrapExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
@@ -146,7 +147,7 @@ export function getActiveBinding(scopes: Array<Map<string, LintBinding[]>>, name
 	return null;
 }
 
-export function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile, issues: LintIssue[], ledger: QualityLedger): void {
+export function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.SourceFile, regions: readonly AnalysisRegion[], issues: LintIssue[], ledger: QualityLedger): void {
 	const statements = node.block.statements;
 	if (statements.length === 0) {
 		pushLintIssue(
@@ -182,7 +183,9 @@ export function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.Sou
 		if (!ts.isReturnStatement(statement)) {
 			continue;
 		}
-		if (catchBlockHandlesAsyncError(node)) {
+		if (lineInAnalysisRegion(regions, 'fallible-boundary', nodeStartLine(sourceFile, node))) {
+			noteQualityLedger(ledger, 'allowed_catch_fallible_boundary');
+		} else if (catchBlockHandlesAsyncError(node)) {
 			noteQualityLedger(ledger, 'allowed_catch_async_fault_boundary');
 		} else if (catchBlockReportsCaughtError(node)) {
 			noteQualityLedger(ledger, 'allowed_catch_reported_fallback');

@@ -1,5 +1,6 @@
 import { getPressedState, Input, makeButtonState, resetObject } from './manager';
-import type { BGamepadButton, VibrationParams } from './models';
+import type { BGamepadButton } from './models';
+import type { VibrationParams } from '../platform';
 import { ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './models';
 
 import type {

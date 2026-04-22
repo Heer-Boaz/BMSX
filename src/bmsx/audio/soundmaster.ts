@@ -1220,7 +1220,7 @@ export class SoundMaster {
 	}
 
 	private startMusicAfterFadeOut(target: asset_id, fade_ms: number, start_at_loop_start: boolean, startAtSeconds?: number): void {
-		const fadeOutMs = Math.max(0, Math.floor(fade_ms));
+		const fadeOutMs = fade_ms;
 		const oldRecords = this.voicesByType.music.slice();
 		if (oldRecords.length === 0) {
 			this.startMusicNow(target, start_at_loop_start, startAtSeconds);
@@ -1255,7 +1255,7 @@ export class SoundMaster {
 	}
 
 	private stopMusicAfterFadeOut(transitionId: number, fade_ms: number): void {
-		const fadeOutMs = Math.max(0, Math.floor(fade_ms));
+		const fadeOutMs = fade_ms;
 		const oldRecords = this.voicesByType.music.slice();
 		if (oldRecords.length === 0) {
 			return;
@@ -1286,7 +1286,7 @@ export class SoundMaster {
 	}
 
 	private startMusicWithCrossfade(target: asset_id, crossfade_ms: number, start_at_loop_start: boolean, startAtSeconds?: number): void {
-		const crossfadeMs = Math.max(0, Math.floor(crossfade_ms));
+		const crossfadeMs = crossfade_ms;
 		const crossfadeSec = crossfadeMs / 1000;
 		const oldRecords = this.voicesByType.music.slice();
 		const meta = this.getAudioMetaOrThrow(target);

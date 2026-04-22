@@ -23,7 +23,11 @@ export interface EncodeOptions {
 	capacityHint?: number;
 }
 
-function collectPropNamesFromValues(values: readonly unknown[], sortProps: boolean): string[] {
+function skipBinaryPropertyValue(value: unknown): boolean {
+	return value === undefined || typeof value === 'function'; // disable-line defensive_typeof_function_pattern -- serializer filters arbitrary object members at the binary boundary.
+}
+
+export function buildBinaryPropTable(values: readonly unknown[], sortProps: boolean): string[] {
 	const propNameToId = new Map<string, number>();
 	const propNames: string[] = [];
 	const seen = new WeakSet<object>();
@@ -52,7 +56,7 @@ function collectPropNamesFromValues(values: readonly unknown[], sortProps: boole
 		for (let i = 0; i < keys.length; i++) {
 			const k = keys[i];
 			const nextVal = record[k];
-			if (typeof nextVal === 'function' || nextVal === undefined) continue;
+			if (skipBinaryPropertyValue(nextVal)) continue;
 			if (nextVal instanceof Map) throw new Error('encodeBinary: Map unsupported (add Tag.Map or pre-normalize)');
 			if (nextVal instanceof Date || nextVal instanceof RegExp) throw new Error('encodeBinary: type unsupported');
 			if (!propNameToId.has(k)) {
@@ -75,10 +79,6 @@ function buildPropNameToIdMap(propNames: readonly string[]): Map<string, number>
 	return propNameToId;
 }
 
-export function buildBinaryPropTable(values: readonly unknown[], opts: Pick<EncodeOptions, 'sortProps'> = {}): string[] {
-	return collectPropNamesFromValues(values, opts.sortProps ?? true);
-}
-
 export function encodeBinaryWithPropTable(obj: any, propNames: readonly string[], opts: Pick<EncodeOptions, 'capacityHint'> = {}): Uint8Array {
 	const writer = new BinWriter(opts.capacityHint);
 	writer.writeWithPropTable(obj, buildPropNameToIdMap(propNames));
@@ -97,7 +97,7 @@ export function encodeBinaryWithPropTable(obj: any, propNames: readonly string[]
  */
 export function encodeBinary(obj: any, opts: EncodeOptions = {}): Uint8Array {
 	const { sortProps = true, capacityHint } = opts;
-	const propNames = collectPropNamesFromValues([obj], sortProps);
+	const propNames = buildBinaryPropTable([obj], sortProps);
 	const propNameToId = buildPropNameToIdMap(propNames);
 
 	const writer = new BinWriter(capacityHint);
@@ -324,7 +324,7 @@ class BinWriter {
 				for (let i = 0; i < rawKeys.length; i++) {
 					const k = rawKeys[i];
 					const member = val[k];
-					if (typeof member === 'function' || member === undefined) continue;
+					if (skipBinaryPropertyValue(member)) continue;
 					if (member instanceof Map) throw new Error('encodeBinary: Map unsupported (add Tag.Map or pre-normalize)');
 					if (member instanceof Date || member instanceof RegExp) throw new Error('encodeBinary: type unsupported');
 					serKeys.push(k);

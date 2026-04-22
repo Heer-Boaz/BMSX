@@ -67,7 +67,7 @@ const char* decodeFilterKind(uint32_t kind) {
 }
 
 int32_t apuSamplesToMilliseconds(uint32_t samples) {
-	return static_cast<int32_t>((static_cast<double>(samples) * 1000.0) / static_cast<double>(APU_SAMPLE_RATE_HZ));
+	return static_cast<int32_t>((static_cast<uint64_t>(samples) * 1000ull) / APU_SAMPLE_RATE_HZ);
 }
 
 void writeNumber(Memory& memory, uint32_t addr, double value) {
@@ -210,7 +210,7 @@ void AudioController::startMusicTransitionFromApu(const std::string& id) {
 	const uint32_t crossfadeSamples = m_memory.readIoU32(IO_APU_CROSSFADE_SAMPLES);
 	const int32_t fadeMs = apuSamplesToMilliseconds(fadeSamples);
 	const int32_t crossfadeMs = apuSamplesToMilliseconds(crossfadeSamples);
-	request.fadeMs = fadeMs > 0 ? fadeMs : 0;
+	request.fadeMs = fadeMs;
 	if (crossfadeMs > 0) {
 		request.crossfadeMs = crossfadeMs;
 	}

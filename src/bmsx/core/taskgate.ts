@@ -7,7 +7,7 @@ export interface GateScope {
 }
 
 // internal owner branding to prevent cross-group misuse
-type Token = Readonly<{
+type TaskGateToken = Readonly<{
 	gen: number;
 	id: number;
 	blocking: boolean;
@@ -21,7 +21,7 @@ type Bucket = {
 	nextId: number;
 	blockingPending: number;
 	countsByCat: Map<GateCategory, number>; // all tokens, blocking or not
-	live: Map<number, Token>;
+	live: Map<number, TaskGateToken>;
 };
 
 export class TaskGate {
@@ -72,9 +72,9 @@ export class GateGroup {
 	}
 
 	/** Start scope in this group. */
-	begin(scope: GateScope = {}): Token {
+	begin(scope: GateScope = {}): TaskGateToken {
 		const b = this.gate._bucket(this.name);
-		const t: Token = Object.freeze({
+		const t: TaskGateToken = Object.freeze({
 			gen: b.gen,
 			id: b.nextId++,
 			blocking: !!scope.blocking,
@@ -89,7 +89,7 @@ export class GateGroup {
 	}
 
 	/** End of scope. Late/other gen or wrong group → ignored. */
-	end(token: Token): void {
+	end(token: TaskGateToken): void {
 		if (!token) {
 			throw new Error(`[GateGroup:${this.name}] end() called without token.`);
 		}

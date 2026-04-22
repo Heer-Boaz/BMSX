@@ -1,6 +1,7 @@
 import { ActionDefinitionEvaluator } from './action_parser';
 import { Input, InputStateManager, makeActionState, makeButtonState } from './manager';
-import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonState, GamepadBinding, GamepadInputMapping, InputEvent, InputHandler, InputMap, KeyboardBinding, KeyboardInputMapping, PointerBinding, PointerInputMapping, VibrationParams } from './models';
+import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonState, GamepadBinding, GamepadInputMapping, InputEvent, InputHandler, InputMap, KeyboardBinding, KeyboardInputMapping, PointerBinding, PointerInputMapping } from './models';
+import type { VibrationParams } from '../platform';
 import { KeyboardInput } from './keyboard';
 import { ContextStack, MappingContext } from './context';
 import { $ } from '../core/engine';
@@ -844,7 +845,8 @@ export class PlayerInput {
 		const guardMs = windowOverride >= 0
 			? clamp(windowOverride, ACTION_GUARD_MIN_MS, ACTION_GUARD_MAX_MS)
 			: ACTION_GUARD_MIN_MS;
-		return Math.max(1, Math.ceil(guardMs / Runtime.instance.timing.frameDurationMs));
+		const frames = Math.ceil(guardMs / Runtime.instance.timing.frameDurationMs);
+		return frames < 1 ? 1 : frames;
 	}
 
 	private evaluateActionRepeat(action: string, state: ActionState, frameId: number): { triggered: boolean; count: number } {

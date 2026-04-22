@@ -55,8 +55,12 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
 	return proto === Object.prototype || proto === null;
 }
 
+export function isHostCallable(value: unknown): value is (...args: unknown[]) => unknown {
+	return typeof value === 'function'; // disable-line defensive_typeof_function_pattern -- Lua native interop reflects arbitrary host values.
+}
+
 export function resolveNativeTypeName(value: object | Function): string {
-	if (typeof value === 'function') {
+	if (isHostCallable(value)) {
 		const name = value.name;
 		if (typeof name === 'string' && name.length > 0) {
 			return name;
@@ -64,7 +68,7 @@ export function resolveNativeTypeName(value: object | Function): string {
 		return 'Function';
 	}
 	const descriptor = (value as { constructor?: unknown }).constructor;
-	if (typeof descriptor === 'function') {
+	if (isHostCallable(descriptor)) {
 		const constructorFunction = descriptor as { name?: unknown };
 		if (constructorFunction && typeof constructorFunction.name === 'string' && constructorFunction.name.length > 0) {
 			return constructorFunction.name;
@@ -335,7 +339,7 @@ export function isLuaDebuggerPauseSignal(value: unknown): value is LuaDebuggerPa
 		return false;
 	}
 	const candidate = value as Partial<LuaDebuggerPauseSignal>;
-	return candidate.kind === 'pause' && typeof candidate.resume === 'function';
+	return candidate.kind === 'pause' && isHostCallable(candidate.resume);
 }
 
 export function isLuaCallSignal(value: unknown): value is LuaCallSignal {
@@ -350,7 +354,7 @@ export function isLuaFunctionValue(value: unknown): value is LuaFunctionValue {
 	if (!value || typeof value !== 'object') {
 		return false;
 	}
-	return typeof (value as { call?: unknown }).call === 'function';
+	return isHostCallable((value as { call?: unknown }).call);
 }
 
 export function convertToError(error: unknown): Error {

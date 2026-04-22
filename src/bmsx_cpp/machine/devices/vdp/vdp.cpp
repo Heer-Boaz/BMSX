@@ -469,32 +469,31 @@ void VdpGles2Blitter::appendLineQuadVertices(
 	const VDP::BlitterCommand& command,
 	const VDP::FrameBufferColor& color
 ) {
-	const f32 thickness = std::max(1.0f, std::round(command.thickness));
 	const f32 dx = command.x1 - command.x0;
 	const f32 dy = command.y1 - command.y0;
 	const f32 length = std::hypot(dx, dy);
 	if (length == 0.0f) {
-		const f32 half = thickness * 0.5f;
-		appendAxisAlignedQuadVertices(vertices, command.x0 - half, command.y0 - half, thickness, thickness, 0.0f, 0.0f, 1.0f, 1.0f, VDP_GLES2_PRIMARY_ATLAS_ID, color);
+		const f32 half = command.thickness * 0.5f;
+		appendAxisAlignedQuadVertices(vertices, command.x0 - half, command.y0 - half, command.thickness, command.thickness, 0.0f, 0.0f, 1.0f, 1.0f, VDP_GLES2_PRIMARY_ATLAS_ID, color);
 		return;
 	}
 	const f32 tangentX = dx / length;
 	const f32 tangentY = dy / length;
 	const f32 normalX = -tangentY;
 	const f32 normalY = tangentX;
-	const f32 half = thickness * 0.5f;
+	const f32 half = command.thickness * 0.5f;
 	const f32 originX = command.x0 - tangentX * half - normalX * half;
 	const f32 originY = command.y0 - tangentY * half - normalY * half;
 	appendQuadVertices(
 		vertices,
 		originX,
 		originY,
-		originX + normalX * thickness,
-		originY + normalY * thickness,
-		originX + dx + tangentX * thickness,
-		originY + dy + tangentY * thickness,
-		originX + dx + tangentX * thickness + normalX * thickness,
-		originY + dy + tangentY * thickness + normalY * thickness,
+		originX + normalX * command.thickness,
+		originY + normalY * command.thickness,
+		originX + dx + tangentX * command.thickness,
+		originY + dy + tangentY * command.thickness,
+		originX + dx + tangentX * command.thickness + normalX * command.thickness,
+		originY + dy + tangentY * command.thickness + normalY * command.thickness,
 		0.0f,
 		0.0f,
 		1.0f,
@@ -543,8 +542,8 @@ void VdpGles2Blitter::appendBlitVertices(
 	const VDP::FrameBufferColor& color
 ) {
 	const auto& surface = host.surfaces[source.surfaceId];
-	const f32 dstWidth = std::max(1.0f, std::round(static_cast<f32>(source.width) * command.scaleX));
-	const f32 dstHeight = std::max(1.0f, std::round(static_cast<f32>(source.height) * command.scaleY));
+	const f32 dstWidth = static_cast<f32>(source.width) * command.scaleX;
+	const f32 dstHeight = static_cast<f32>(source.height) * command.scaleY;
 	f32 u0 = static_cast<f32>(source.srcX) * surface.invWidth;
 	f32 v0 = static_cast<f32>(source.srcY) * surface.invHeight;
 	f32 u1 = static_cast<f32>(source.srcX + source.width) * surface.invWidth;
@@ -555,8 +554,8 @@ void VdpGles2Blitter::appendBlitVertices(
 	if (command.flipV) {
 		std::swap(v0, v1);
 	}
-	const f32 x0 = std::round(command.dstX);
-	const f32 y0 = std::round(command.dstY);
+	const f32 x0 = command.dstX;
+	const f32 y0 = command.dstY;
 	const f32 centerX = x0 + dstWidth * 0.5f;
 	const f32 centerY = y0 + dstHeight * 0.5f;
 	f32 scale = 1.0f;
@@ -818,8 +817,8 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 						const f32 v1 = static_cast<f32>(glyph.srcY + glyph.height) * surface.invHeight;
 						appendAxisAlignedQuadVertices(
 							state.vertices,
-							std::round(glyph.dstX),
-							std::round(glyph.dstY),
+							glyph.dstX,
+							glyph.dstY,
 							static_cast<f32>(glyph.width),
 							static_cast<f32>(glyph.height),
 							u0,
@@ -842,8 +841,8 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 						const f32 v1 = static_cast<f32>(tile.srcY + tile.height) * surface.invHeight;
 						appendAxisAlignedQuadVertices(
 							state.vertices,
-							std::round(tile.dstX),
-							std::round(tile.dstY),
+							tile.dstX,
+							tile.dstY,
 							static_cast<f32>(tile.width),
 							static_cast<f32>(tile.height),
 							u0,
@@ -871,8 +870,8 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 		state.vertices.reserve(6u);
 		appendAxisAlignedQuadVertices(
 			state.vertices,
-			std::round(command.dstX),
-			std::round(command.dstY),
+			command.dstX,
+			command.dstY,
 			static_cast<f32>(command.width),
 			static_cast<f32>(command.height),
 			static_cast<f32>(command.srcX) / static_cast<f32>(host.width),

@@ -1,6 +1,7 @@
 import { getPressedState, makeButtonState, resetObject } from './manager';
-import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState, VibrationParams } from './models';
+import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './models';
 import type { InputDevice } from '../platform';
+import type { VibrationParams } from '../platform';
 import { DualSenseHID } from './dualsense_hid';
 import { $ } from '../core/engine';
 

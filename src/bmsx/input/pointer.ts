@@ -1,6 +1,7 @@
 import { $ } from '../core/engine';
 import { getPressedState, makeButtonState, resetObject } from './manager';
-import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState, VibrationParams } from './models';
+import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './models';
+import type { VibrationParams } from '../platform';
 
 
 const POINTER_DEFAULT_CODES = [
@@ -83,7 +84,7 @@ export class PointerInput implements InputHandler {
 	}
 
 	public ingestButton(code: string, state: ButtonState): void {
-		const target = { ...state, value2d: state.value2d ? ([state.value2d[0], state.value2d[1]] as readonly [number, number]) : null };
+		const target = { ...state, value2d: state.value2d ? ([state.value2d[0], state.value2d[1]] as [number, number]) : null };
 		if (target.pressed) {
 			if (!target.pressId) target.pressId = this.nextPressId++;
 			if (!target.pressedAtMs) target.pressedAtMs = target.timestamp ?? $.platform.clock.now();
@@ -97,7 +98,8 @@ export class PointerInput implements InputHandler {
 		const current = this.buttonStates[code] ?? makeButtonState();
 		const dx = this.lastPositionValid ? (x - this.lastPosition.x) : 0;
 		const dy = this.lastPositionValid ? (y - this.lastPosition.y) : 0;
-		this.lastPosition = { x, y };
+		this.lastPosition.x = x;
+		this.lastPosition.y = y;
 		this.lastPositionValid = true;
 		current.value2d = [x, y];
 		current.timestamp = timestamp;
@@ -106,7 +108,7 @@ export class PointerInput implements InputHandler {
 		const delta = this.buttonStates['pointer_delta'] ?? makeButtonState();
 		const moved = dx !== 0 || dy !== 0;
 		const wasPressed = delta.pressed;
-		delta.value2d = [dx, dy] as readonly [number, number];
+		delta.value2d = [dx, dy];
 		delta.value = Math.hypot(dx, dy);
 		delta.timestamp = timestamp;
 		delta.justreleased = !moved && wasPressed;

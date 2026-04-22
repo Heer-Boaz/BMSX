@@ -1,10 +1,12 @@
 import {
 	CPP_CONTROL_CALL_KEYWORDS,
 	CPP_POST_FUNCTION_QUALIFIERS,
+	applyCppNestingToken as applyCppNestingDelta,
 	cppCallTarget,
 	cppCallTargetFromStatement,
 	cppRangeHas,
 	isCppAccessSpecifier,
+	isCppTopLevel,
 } from './syntax';
 import { cppTokenText, type CppToken } from './tokens';
 
@@ -100,41 +102,6 @@ const CPP_WRAPPER_BLOCK_KEYWORDS = new Set([
 	'try',
 	'while',
 ]);
-
-type CppNestingDepth = {
-	paren: number;
-	bracket: number;
-	brace: number;
-};
-
-function applyCppNestingDelta(text: string, depth: CppNestingDepth): boolean {
-	switch (text) {
-		case '(':
-			depth.paren += 1;
-			return true;
-		case ')':
-			depth.paren -= 1;
-			return true;
-		case '[':
-			depth.bracket += 1;
-			return true;
-		case ']':
-			depth.bracket -= 1;
-			return true;
-		case '{':
-			depth.brace += 1;
-			return true;
-		case '}':
-			depth.brace -= 1;
-			return true;
-		default:
-			return false;
-	}
-}
-
-function isCppTopLevel(depth: CppNestingDepth): boolean {
-	return depth.paren === 0 && depth.bracket === 0 && depth.brace === 0;
-}
 
 export type CppClassRange = {
 	name: string;

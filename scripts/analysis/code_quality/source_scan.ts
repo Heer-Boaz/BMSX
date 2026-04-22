@@ -369,7 +369,7 @@ export function collectLintIssues(
 			lintLegacySentinelStringPattern(sourceFile, node, issues);
 		}
 		if (ts.isCatchClause(node)) {
-			lintCatchClausePatterns(node, sourceFile, issues, ledger);
+			lintCatchClausePatterns(node, sourceFile, regions, issues, ledger);
 		}
 		if (ts.isSourceFile(node) || ts.isBlock(node) || ts.isCaseClause(node) || ts.isDefaultClause(node)) {
 			lintConsecutiveDuplicateStatementsPattern(node.statements, sourceFile, issues);

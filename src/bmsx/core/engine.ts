@@ -1,6 +1,7 @@
 import { ModulationParams, ModulationPresetResolver, RandomModulationParams, SoundMaster } from "../audio/soundmaster";
 import { Input } from "../input/manager";
-import type { InputMap, VibrationParams } from "../input/models";
+import type { InputMap } from "../input/models";
+import type { VibrationParams } from "../platform";
 import type { ActionStateQuery } from '../input/models';
 import { GameView } from "../render/gameview";
 import { TextureManager } from "../render/texture_manager";

@@ -1,6 +1,7 @@
 import { $ } from '../core/engine';
 import { getPressedState, Input, makeButtonState, resetObject } from './manager';
-import type { ButtonState, InputHandler, KeyboardButtonId, KeyOrButtonId2ButtonState, VibrationParams } from './models';
+import type { ButtonState, InputHandler, KeyboardButtonId, KeyOrButtonId2ButtonState } from './models';
+import type { VibrationParams } from '../platform';
 
 
 /**

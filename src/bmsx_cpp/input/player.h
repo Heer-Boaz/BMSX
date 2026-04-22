@@ -143,12 +143,6 @@ public:
 	void consumeButton(const std::string& button, InputSource source);
 	void consumeRawButton(const std::string& button, InputSource source);
 	
-	// Consume multiple actions
-	template<typename... Args>
-	void consumeActions(Args&&... actions) {
-		(consumeAction(std::forward<Args>(actions)), ...);
-	}
-	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Frame lifecycle
 	// ─────────────────────────────────────────────────────────────────────────
@@ -165,9 +159,6 @@ public:
 	
 	// Update state (called after polling)
 	void update(f64 currentTimeMs);
-	
-	// Current frame counter
-	i64 pollFrame() const { return m_frameCounter; }
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Reset

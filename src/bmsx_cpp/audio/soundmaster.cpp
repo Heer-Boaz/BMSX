@@ -400,10 +400,6 @@ void SoundMaster::cancelActiveMusicTransition() {
 
 void SoundMaster::requestMusicTransition(const MusicTransitionRequest& request) {
 	MusicTransitionRequest resolved = request;
-	if (resolved.fadeMs < 0) resolved.fadeMs = 0;
-	if (resolved.crossfadeMs.has_value() && resolved.crossfadeMs.value() < 0) {
-		resolved.crossfadeMs = 0;
-	}
 	cancelActiveMusicTransition();
 
 	if (resolved.sync.kind != MusicTransitionSync::Kind::Stinger && !resolved.startFresh) {
@@ -1304,7 +1300,6 @@ void SoundMaster::startMusicNow(const AssetId& target, bool startAtLoopStart, st
 }
 
 void SoundMaster::startMusicWithCrossfade(const AssetId& target, f64 crossfadeSec, bool startAtLoopStart, std::optional<f64> startAtSeconds) {
-	const f64 clampedCrossfadeSec = std::max(0.0, crossfadeSec);
 	const AudioAsset& asset = getAudioOrThrow(target);
 	const f64 baseOffset = startAtSeconds.has_value()
 		? startAtSeconds.value()
@@ -1320,14 +1315,14 @@ void SoundMaster::startMusicWithCrossfade(const AssetId& target, f64 crossfadeSe
 
 	ModulationParams params;
 	params.offset = static_cast<f32>(baseOffset);
-	const f32 initialGain = clampedCrossfadeSec > 0.0 ? MIN_GAIN : 1.0f;
+	const f32 initialGain = crossfadeSec > 0.0 ? MIN_GAIN : 1.0f;
 	const VoiceId newVoiceId = startVoice(AudioType::Music, target, asset, params, asset.meta.priority, initialGain);
 	if (newVoiceId == 0) return;
 
 	for (auto& record : pool) {
 		if (record.voiceId == newVoiceId) {
-			if (clampedCrossfadeSec > 0.0) {
-				rampVoiceGain(record, 1.0f, clampedCrossfadeSec);
+			if (crossfadeSec > 0.0) {
+				rampVoiceGain(record, 1.0f, crossfadeSec);
 			}
 			break;
 		}
@@ -1337,11 +1332,11 @@ void SoundMaster::startMusicWithCrossfade(const AssetId& target, f64 crossfadeSe
 		return;
 	}
 
-	if (clampedCrossfadeSec > 0.0) {
+	if (crossfadeSec > 0.0) {
 		for (auto& record : pool) {
 			if (record.voiceId != newVoiceId) {
-				rampVoiceGain(record, MIN_GAIN, clampedCrossfadeSec);
-				record.stopAfter = clampedCrossfadeSec;
+				rampVoiceGain(record, MIN_GAIN, crossfadeSec);
+				record.stopAfter = crossfadeSec;
 			}
 		}
 		return;
@@ -1356,21 +1351,20 @@ void SoundMaster::startMusicWithCrossfade(const AssetId& target, f64 crossfadeSe
 }
 
 void SoundMaster::startMusicAfterFadeOut(const AssetId& target, f64 fadeSec, bool startAtLoopStart, std::optional<f64> startAtSeconds) {
-	const f64 clampedFadeSec = std::max(0.0, fadeSec);
 	const size_t musicIdx = typeIndex(AudioType::Music);
 	auto& pool = m_voicesByType[musicIdx];
 	if (pool.empty()) {
 		startMusicNow(target, startAtLoopStart, startAtSeconds);
 		return;
 	}
-	if (clampedFadeSec <= 0.0) {
+	if (fadeSec <= 0.0) {
 		stopMusic();
 		startMusicNow(target, startAtLoopStart, startAtSeconds);
 		return;
 	}
 	for (auto& record : pool) {
-		rampVoiceGain(record, MIN_GAIN, clampedFadeSec);
-		record.stopAfter = clampedFadeSec;
+		rampVoiceGain(record, MIN_GAIN, fadeSec);
+		record.stopAfter = fadeSec;
 	}
 	MusicTransitionRequest follow;
 	follow.to = target;
@@ -1379,7 +1373,7 @@ void SoundMaster::startMusicAfterFadeOut(const AssetId& target, f64 fadeSec, boo
 	follow.crossfadeMs = std::nullopt;
 	follow.startAtLoopStart = startAtLoopStart;
 	follow.startFresh = false;
-	enqueueTransition(follow, clampedFadeSec, startAtSeconds);
+	enqueueTransition(follow, fadeSec, startAtSeconds);
 }
 
 void SoundMaster::startMusicTransition(const AssetId& target, i32 fadeMs, std::optional<i32> crossfadeMs, bool startAtLoopStart, std::optional<f64> startAtSeconds) {

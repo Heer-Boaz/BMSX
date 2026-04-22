@@ -5,6 +5,7 @@
  * @see PlayerInput.checkActionTriggered for the preferred way to evaluate action patterns.
  */
 
+import type { VibrationParams } from "../platform";
 import type { Input } from "./manager";
 
 export type ActionStateQuery = {
@@ -112,7 +113,7 @@ export type ButtonState = {
 	pressId?: number;
 	// Analog values
 	value?: number; // 1D analog value in [-1,1] or [0,1]
-	value2d?: readonly [number, number]; // 2D analog value
+	value2d?: [number, number] | null; // 2D analog value
 };
 
 /**
@@ -138,15 +139,6 @@ export type ActionState = {
 	repeatpressed: boolean;
 	repeatcount: number;
 } & ButtonState;
-
-/**
- * Represents the parameters for a vibration effect on the gamepad.
- */
-export interface VibrationParams {
-	effect: GamepadHapticEffectType;
-	duration: number;
-	intensity: number;
-};
 
 /**
  * Represents an input handler that provides methods for polling input, getting button states,

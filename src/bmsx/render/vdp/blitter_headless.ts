@@ -180,6 +180,7 @@ export class HeadlessVdpBlitterExecutor implements VdpBlitterExecutor {
 		}
 	}
 
+	// start numeric-sanitization-acceptable -- headless framebuffer rasterization maps float VDP geometry to integer pixel spans.
 	private rasterizeLine(pixels: Uint8Array, frameWidth: number, frameHeight: number, x0: number, y0: number, x1: number, y1: number, thicknessValue: number, color: VdpFrameBufferColor, layer: Layer2D, z: number, seq: number): void {
 		let currentX = Math.round(x0);
 		let currentY = Math.round(y0);
@@ -256,6 +257,7 @@ export class HeadlessVdpBlitterExecutor implements VdpBlitterExecutor {
 			}
 		}
 	}
+	// end numeric-sanitization-acceptable
 
 	private copyFrameBufferRect(pixels: Uint8Array, frameWidth: number, srcX: number, srcY: number, width: number, height: number, dstX: number, dstY: number, layer: Layer2D, z: number, seq: number): void {
 		const rowBytes = width * 4;

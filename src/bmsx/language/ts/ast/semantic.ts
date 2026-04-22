@@ -1,5 +1,6 @@
 import ts from 'typescript';
 import { callTargetText, unwrapExpression } from './expressions';
+import { expressionComparesIdentifierWithNumericLiteral, statementAssignsIdentifier } from './statements';
 
 export type SemanticBodyCallSignature = {
 	key: string;
@@ -64,8 +65,52 @@ export function isNumericSanitizerTarget(target: string | null): boolean {
 	}
 }
 
+export function isNumericRoundingSanitizerTarget(target: string | null): boolean {
+	switch (target) {
+		case 'Math.ceil':
+		case 'Math.floor':
+		case 'Math.round':
+		case 'Math.trunc':
+			return true;
+		default:
+			return false;
+	}
+}
+
 export function isNumericSanitizerCall(node: ts.CallExpression): boolean {
 	return isNumericSanitizerTarget(callTargetText(node));
+}
+
+export function isNumericRoundingSanitizerCall(node: ts.CallExpression): boolean {
+	return isNumericRoundingSanitizerTarget(callTargetText(node));
+}
+
+export function isSplitRoundingSanitizerThenBoundsCheck(node: ts.CallExpression): boolean {
+	if (!isNumericRoundingSanitizerCall(node)) {
+		return false;
+	}
+	const declaration = node.parent;
+	if (!ts.isVariableDeclaration(declaration) || declaration.initializer !== node || !ts.isIdentifier(declaration.name)) {
+		return false;
+	}
+	const declarationList = declaration.parent;
+	if (!ts.isVariableDeclarationList(declarationList)) {
+		return false;
+	}
+	const declarationStatement = declarationList.parent;
+	if (!ts.isVariableStatement(declarationStatement) || !ts.isBlock(declarationStatement.parent)) {
+		return false;
+	}
+	const statements = declarationStatement.parent.statements;
+	const statementIndex = statements.indexOf(declarationStatement);
+	if (statementIndex < 0 || statementIndex + 1 >= statements.length) {
+		return false;
+	}
+	const next = statements[statementIndex + 1];
+	return ts.isIfStatement(next)
+		&& expressionComparesIdentifierWithNumericLiteral(next.expression, declaration.name.text)
+		&& (statementAssignsIdentifier(next.thenStatement, declaration.name.text)
+			|| next.elseStatement !== undefined && statementAssignsIdentifier(next.elseStatement, declaration.name.text));
 }
 
 export function isSemanticFloorDivisionCall(node: ts.CallExpression): boolean {

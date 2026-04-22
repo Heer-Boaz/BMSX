@@ -260,32 +260,29 @@ function appendFillCommand(backend: WebGLBackend, state: WebGLVdpBlitterRuntime,
 }
 
 function appendLineCommand(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, index: number, command: BlitterDrawLineCommand, priorityDepth: number): number {
-	const thickness = Math.max(1, Math.round(command.thickness));
 	const dx = command.x1 - command.x0;
 	const dy = command.y1 - command.y0;
 	const length = Math.hypot(dx, dy);
 	if (length === 0) {
-		const half = thickness * 0.5;
+		const half = command.thickness * 0.5;
 		ensureWebGLInstanceBufferCapacity(backend, state, index + 1, INSTANCE_FLOATS);
-		writeAxisAlignedQuad(state, index, command.x0 - half, command.y0 - half, thickness, thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, command.z, 0, priorityDepth, command.color, 0);
+		writeAxisAlignedQuad(state, index, command.x0 - half, command.y0 - half, command.thickness, command.thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, command.z, 0, priorityDepth, command.color, 0);
 		return 1;
 	}
 	const tangentX = dx / length;
 	const tangentY = dy / length;
 	const normalX = -tangentY;
 	const normalY = tangentX;
-	const half = thickness * 0.5;
+	const half = command.thickness * 0.5;
 	const originX = command.x0 - tangentX * half - normalX * half;
 	const originY = command.y0 - tangentY * half - normalY * half;
 	ensureWebGLInstanceBufferCapacity(backend, state, index + 1, INSTANCE_FLOATS);
-	writeQuad(state, index, originX, originY, dx + tangentX * thickness, dy + tangentY * thickness, normalX * thickness, normalY * thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, command.z, 0, priorityDepth, command.color, 0);
+	writeQuad(state, index, originX, originY, dx + tangentX * command.thickness, dy + tangentY * command.thickness, normalX * command.thickness, normalY * command.thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, command.z, 0, priorityDepth, command.color, 0);
 	return 1;
 }
 
 function appendBlitCommand(host: VdpWebGLBlitterHost, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, index: number, command: BlitterBlitCommand, priorityDepth: number): number {
 	const surface = host.getSurface(command.source.surfaceId);
-	const dstWidth = Math.max(1, Math.round(command.source.width * command.scaleX));
-	const dstHeight = Math.max(1, Math.round(command.source.height * command.scaleY));
 	let u0 = command.source.srcX / surface.width;
 	let v0 = command.source.srcY / surface.height;
 	let u1 = (command.source.srcX + command.source.width) / surface.width;
@@ -304,20 +301,20 @@ function appendBlitCommand(host: VdpWebGLBlitterHost, backend: WebGLBackend, sta
 	writeAxisAlignedQuad(
 		state,
 		index,
-		Math.round(command.dstX),
-		Math.round(command.dstY),
-		dstWidth,
-		dstHeight,
+		command.dstX,
+		command.dstY,
+		command.source.width * command.scaleX,
+		command.source.height * command.scaleY,
 		u0,
 		v0,
 		u1,
-			v1,
-			command.z,
-			command.parallaxWeight,
-			priorityDepth,
-			command.color,
-			host.getShaderAtlasId(command.source.surfaceId),
-		);
+		v1,
+		command.z,
+		command.parallaxWeight,
+		priorityDepth,
+		command.color,
+		host.getShaderAtlasId(command.source.surfaceId),
+	);
 	return 1;
 }
 

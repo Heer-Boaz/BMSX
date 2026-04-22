@@ -24,7 +24,7 @@ export function lintHotPathCalls(file: string, tokens: readonly Token[], pairs: 
 		if (target === null) {
 			continue;
 		}
-		if (shouldReportHotPathNumericSanitization(tokens, pairs, regions, index, target)) {
+		if (shouldReportHotPathNumericSanitization(tokens, pairs, regions, index, target, info.bodyEnd)) {
 			pushTokenLintIssue(issues, file, tokens[index - 1], numericDefensiveSanitizationPatternRule.name, 'Defensive numeric sanitization in hot paths is forbidden. Coordinates, cycles, and layout values must already be valid.');
 		}
 		const args = splitArgumentRanges(tokens, index + 1, pairs[index]);
