@@ -1,9 +1,9 @@
-import { OpCode, type Proto, type SourceRange, type UpvalueDesc, type Value } from '../cpu/cpu';
-import { MAX_EXT_CONST } from '../cpu/instruction_format';
-import { isStringValue } from '../memory/string_pool';
-import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from './control_flow';
-import { cloneInstruction, computeMaxRegister, isPureInstruction, isRegisterOperand, pushRegister, pushRegisterRange } from './optimizer_instructions';
-import { applyGlobalOptimizations } from './optimizer_ssa';
+import { OpCode, type Proto, type SourceRange, type UpvalueDesc, type Value } from '../../cpu/cpu';
+import { MAX_EXT_CONST } from '../../cpu/instruction_format';
+import { isStringValue } from '../../memory/string_pool';
+import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
+import { cloneInstruction, computeMaxRegister, isPureInstruction, isRegisterOperand, pushRegister, pushRegisterRange } from './instructions';
+import { applyGlobalOptimizations } from './ssa';
 import {
 	evaluateBinary,
 	evaluateComparison,
@@ -15,7 +15,7 @@ import {
 	replaceWithJump,
 	replaceWithMov,
 	type ConstValue,
-} from './optimizer_values';
+} from './values';
 
 export type InstructionFormat = 'ABC' | 'ABx' | 'AsBx';
 

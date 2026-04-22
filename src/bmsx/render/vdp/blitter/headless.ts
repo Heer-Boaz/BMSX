@@ -1,13 +1,13 @@
-import { $ } from '../../core/engine';
+import { $ } from '../../../core/engine';
 import type {
 	VdpBlitterCommand,
 	VdpBlitterExecutor,
 	VdpBlitterContext,
 	VdpBlitterSource,
 	VdpFrameBufferColor,
-} from '../../machine/devices/vdp/vdp';
-import type { Layer2D } from '../shared/submissions';
-import { HeadlessGPUBackend } from '../headless/backend';
+} from '../../../machine/devices/vdp/vdp';
+import type { Layer2D } from '../../shared/submissions';
+import { HeadlessGPUBackend } from '../../headless/backend';
 
 const BLITTER_WHITE: VdpFrameBufferColor = { r: 255, g: 255, b: 255, a: 255 };
 

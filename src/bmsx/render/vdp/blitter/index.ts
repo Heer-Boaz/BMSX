@@ -1,10 +1,10 @@
-import type { VdpBlitterExecutor } from '../../machine/devices/vdp/vdp';
-import type { GPUBackend } from '../backend/interfaces';
-import { WebGLBackend } from '../backend/webgl/backend';
-import { HeadlessGPUBackend } from '../headless/backend';
-import { HeadlessVdpBlitterExecutor } from './blitter_headless';
-import { WebGLVdpBlitterExecutor } from './blitter_webgl';
-import { WebGPUVdpBlitterExecutor } from './blitter_webgpu';
+import type { VdpBlitterExecutor } from '../../../machine/devices/vdp/vdp';
+import type { GPUBackend } from '../../backend/interfaces';
+import { WebGLBackend } from '../../backend/webgl/backend';
+import { HeadlessGPUBackend } from '../../headless/backend';
+import { HeadlessVdpBlitterExecutor } from './headless';
+import { WebGLVdpBlitterExecutor } from './webgl';
+import { WebGPUVdpBlitterExecutor } from './webgpu';
 
 type VdpBlitterExecutorFactory = (backend: GPUBackend) => VdpBlitterExecutor | null;
 

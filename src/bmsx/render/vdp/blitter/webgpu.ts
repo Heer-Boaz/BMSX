@@ -1,4 +1,4 @@
-import type { VdpBlitterCommand, VdpBlitterExecutor, VdpBlitterContext } from '../../machine/devices/vdp/vdp';
+import type { VdpBlitterCommand, VdpBlitterExecutor, VdpBlitterContext } from '../../../machine/devices/vdp/vdp';
 
 export class WebGPUVdpBlitterExecutor implements VdpBlitterExecutor {
 	public readonly backendType = 'webgpu' as const;

@@ -1,31 +1,31 @@
 // Mesh pipeline (formerly glview.3d) inlined from legacy module.
 // Handles 3D mesh rendering, instancing, morph targets, skinning, fog, and lighting UBO management.
-import { $ } from '../../core/engine';
-import type { Mesh } from './mesh';
-import { Float32ArrayPool } from '../../common/pool';
-import type { vec3arr } from '../../rompack/format';
-import { Identifier } from '../../rompack/format';
-import meshFS from './shaders/3d.frag.glsl';
-import meshVS from './shaders/3d.vert.glsl';
-import * as GLR from '../backend/webgl/gl_resources';
-import { RenderPassLibrary } from '../backend/pass_library';
-import { MeshBatchPipelineState } from '../backend/interfaces';
-import type { PassEncoder, RenderContext, RenderPassDef } from '../backend/interfaces';
-import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_MORPH_NORM, TEXTURE_UNIT_MORPH_POS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../backend/webgl/constants';
-import { checkWebGLError } from '../backend/webgl/helpers';
-import { WebGLBackend } from '../backend/webgl/backend';
-import { MeshRenderSubmission } from '../shared/submissions';
-import type { DirectionalLight, PointLight } from './light';
-import { M4, V3, float32ToFloat16, isMatrixMirrored, sphereInFrustumPacked, transformBoundingSphereCenter, transformedBoundingSphereRadius, translationDistanceSquared } from './math';
-import { arrays_equal } from '../../common/arrays_equal';
-import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
+import { $ } from '../../../core/engine';
+import type { Mesh } from './index';
+import { Float32ArrayPool } from '../../../common/pool';
+import type { vec3arr } from '../../../rompack/format';
+import { Identifier } from '../../../rompack/format';
+import meshFS from '../shaders/3d.frag.glsl';
+import meshVS from '../shaders/3d.vert.glsl';
+import * as GLR from '../../backend/webgl/gl_resources';
+import { RenderPassLibrary } from '../../backend/pass_library';
+import { MeshBatchPipelineState } from '../../backend/interfaces';
+import type { PassEncoder, RenderContext, RenderPassDef } from '../../backend/interfaces';
+import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_MORPH_NORM, TEXTURE_UNIT_MORPH_POS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../../backend/webgl/constants';
+import { checkWebGLError } from '../../backend/webgl/helpers';
+import { WebGLBackend } from '../../backend/webgl/backend';
+import { MeshRenderSubmission } from '../../shared/submissions';
+import type { DirectionalLight, PointLight } from '../light';
+import { M4, V3, float32ToFloat16, isMatrixMirrored, sphereInFrustumPacked, transformBoundingSphereCenter, transformedBoundingSphereRadius, translationDistanceSquared } from '../math';
+import { arrays_equal } from '../../../common/arrays_equal';
+import { makePipelineBuildDesc, shaderModule } from '../../backend/shader_module';
 import {
 	beginMeshQueue,
 	forEachMeshQueue,
 	meshQueueBackSize,
-} from '../shared/queues';
-import { resolveActiveCamera3D } from '../shared/hardware_camera';
-import { clamp } from '../../common/clamp';
+} from '../../shared/queues';
+import { resolveActiveCamera3D } from '../../shared/hardware_camera';
+import { clamp } from '../../../common/clamp';
 
 const BYTES_PER_FLOAT = 4;
 const COLUMN_BYTES = 4 * BYTES_PER_FLOAT; // 4 floats per kolom = 16 bytes

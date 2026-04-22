@@ -1,5 +1,5 @@
-import { OpCode } from '../cpu/cpu';
-import type { Instruction } from './optimizer';
+import { OpCode } from '../../cpu/cpu';
+import type { Instruction } from './index';
 
 const RK_B = 1;
 

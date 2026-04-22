@@ -1,6 +1,6 @@
 import { Float32ArrayPool } from '../../common/pool';
 import type { AmbientLight } from '../3d/light';
-import { addDirectionalLight, addPointLight, clearLights, directionalLightList, pointLightList } from '../3d/mesh_pipeline';
+import { addDirectionalLight, addPointLight, clearLights, directionalLightList, pointLightList } from '../3d/mesh/pipeline';
 import {
 	consumeHardwareLightingDirty,
 	getHardwareDirectionalLights,

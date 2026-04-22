@@ -1,11 +1,11 @@
 // start repeated-sequence-acceptable -- SSA optimizer keeps instruction rewrites inline for compile-time throughput and readable opcode cases.
 // start normalized-body-acceptable -- SSA value rewrites intentionally mirror non-SSA rewrites without sharing mutable pass internals.
-import { OpCode, type SourceRange, type Value } from '../cpu/cpu';
-import { MAX_EXT_CONST } from '../cpu/instruction_format';
-import { isStringValue } from '../memory/string_pool';
-import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from './control_flow';
-import type { Instruction, InstructionSet, OptimizationContext } from './optimizer';
-import { cloneInstruction, computeMaxRegister, isPureInstruction, isRegisterOperand, pushRegister, pushRegisterRange } from './optimizer_instructions';
+import { OpCode, type SourceRange, type Value } from '../../cpu/cpu';
+import { MAX_EXT_CONST } from '../../cpu/instruction_format';
+import { isStringValue } from '../../memory/string_pool';
+import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
+import type { Instruction, InstructionSet, OptimizationContext } from './index';
+import { cloneInstruction, computeMaxRegister, isPureInstruction, isRegisterOperand, pushRegister, pushRegisterRange } from './instructions';
 import {
 	evaluateBinary,
 	evaluateComparison,
@@ -17,7 +17,7 @@ import {
 	replaceWithJump,
 	replaceWithMov,
 	type ConstValue,
-} from './optimizer_values';
+} from './values';
 
 type Phi = {
 	reg: number;

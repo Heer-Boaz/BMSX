@@ -1,5 +1,5 @@
-import { $ } from '../../core/engine';
-import { Runtime } from '../../machine/runtime/runtime';
+import { $ } from '../../../core/engine';
+import { Runtime } from '../../../machine/runtime/runtime';
 import type {
 	VdpBlitterBlitCommand as BlitterBlitCommand,
 	VdpBlitterClearCommand as BlitterClearCommand,
@@ -12,15 +12,15 @@ import type {
 	VdpBlitterContext as VdpWebGLBlitterContext,
 	VdpBlitterTileRunCommand as BlitterTileRunCommand,
 	VdpFrameBufferColor as FrameBufferColor,
-} from '../../machine/devices/vdp/vdp';
-import type { PassEncoder, RenderPassInstanceHandle } from '../backend/interfaces';
-import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../backend/frame_uniforms';
-import { WebGLBackend } from '../backend/webgl/backend';
+} from '../../../machine/devices/vdp/vdp';
+import type { PassEncoder, RenderPassInstanceHandle } from '../../backend/interfaces';
+import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../../backend/frame_uniforms';
+import { WebGLBackend } from '../../backend/webgl/backend';
 import {
 	TEXTURE_UNIT_ATLAS_ENGINE,
 	TEXTURE_UNIT_ATLAS_PRIMARY,
 	TEXTURE_UNIT_ATLAS_SECONDARY,
-} from '../backend/webgl/constants';
+} from '../../backend/webgl/constants';
 import {
 	bindWebGLInstancedQuadVertexArray,
 	createWebGLInstancedQuadRuntime,
@@ -28,10 +28,10 @@ import {
 	flushWebGLInstanceBatch,
 	type WebGLInstancedFloatAttribute,
 	type WebGLSpriteQuadUniforms,
-} from '../backend/webgl/instanced_buffers';
-import { spriteParallaxRig } from '../2d/sprite_parallax_rig';
-import fragmentShaderCode from './shaders/vdp_2d.frag.glsl';
-import vertexShaderCode from './shaders/vdp_2d.vert.glsl';
+} from '../../backend/webgl/instanced_buffers';
+import { spriteParallaxRig } from '../../2d/sprite_parallax_rig';
+import fragmentShaderCode from '../shaders/vdp_2d.frag.glsl';
+import vertexShaderCode from '../shaders/vdp_2d.vert.glsl';
 
 type DrawMode = 'atlas' | 'solid';
 
