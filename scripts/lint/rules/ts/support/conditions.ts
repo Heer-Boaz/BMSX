@@ -1,7 +1,6 @@
 import ts from 'typescript';
-import { LintIssue, isLuaSourceLookupExpression, unwrapExpression } from './ast';
+import { LintIssue, unwrapExpression } from './ast';
 import { isExpressionInScopeFingerprint } from './bindings';
-import { expressionAccessFingerprint } from './declarations';
 import { isFunctionLikeWithParameters } from './functions';
 import { ExplicitValueCheck } from './types';
 
@@ -248,15 +247,6 @@ export function isLookupFallbackExpression(node: ts.Expression): boolean {
 	}
 	const target = unwrapExpression(unwrapped.expression);
 	return ts.isPropertyAccessExpression(target) && target.name.text === 'get';
-}
-
-export function isLuaSourceLookupFallback(node: ts.BinaryExpression): boolean {
-	return isLuaSourceLookupExpression(node.left) && isLuaSourceLookupExpression(node.right);
-}
-
-export function isRuntimeAssetLayerFallback(node: ts.BinaryExpression): boolean {
-	return expressionAccessFingerprint(node.left) === 'this.assets.overlayLayer'
-		&& expressionAccessFingerprint(node.right) === 'this.assets.cartLayer';
 }
 
 export function isSharedConstantFallbackExpression(node: ts.Expression): boolean {

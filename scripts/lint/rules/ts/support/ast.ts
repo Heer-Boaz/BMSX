@@ -1,18 +1,14 @@
 import { type AnalysisRegion } from '../../../../analysis/lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../../../../analysis/quality_ledger';
 import { type CodeQualityLintRule } from '../../../ts_rule';
-import { existsSync, readdirSync, statSync } from 'node:fs';
-import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import ts from 'typescript';
-import { FILE_EXTENSIONS } from '../../../../analysis/code_quality/cli';
 import { nodeIsInAnalysisRegion } from '../../../../analysis/code_quality/source_scan';
 import { isTsAssignmentOperator } from './bindings';
 import { getCallTargetLeafName } from './calls';
 import { falseLiteralComparison } from './conditions';
-import { SKIP_DIRECTORIES, expressionAccessFingerprint, isIgnoredMethod } from './declarations';
+import { expressionAccessFingerprint, isIgnoredMethod } from './declarations';
 import { getFunctionNodeUsageNames } from './function_usage';
 import { nullishLiteralComparison } from './nullish';
-import { catchBlockHandlesLuaFaultBoundary } from './runtime_patterns';
 import { binaryParentAndSibling } from './statements';
 import { LintBinding } from './types';
 
@@ -32,8 +28,6 @@ export type RepeatedExpressionInfo = {
 	sampleText: string;
 };
 
-export const DEFAULT_ROOTS = ['src', 'scripts', 'tests', 'tools'];
-
 export const NORMALIZED_BODY_MIN_LENGTH = 120;
 
 export const COMPACT_SAMPLE_TEXT_LENGTH = 180;
@@ -45,18 +39,6 @@ export const REPEATED_STATEMENT_SEQUENCE_MIN_COUNT = 4;
 export const REPEATED_STATEMENT_SEQUENCE_MIN_TEXT_LENGTH = 140;
 
 export const LOCAL_CONST_PATTERN_ENABLED = true;
-
-export function resolveInputPath(candidate: string): string {
-	return isAbsolute(candidate) ? candidate : resolve(process.cwd(), candidate);
-}
-
-export function shouldSkipDirectory(name: string): boolean {
-	return SKIP_DIRECTORIES.has(name) || (name.length > 0 && name[0] === '.');
-}
-
-export function normalizePathForAnalysis(path: string): string {
-	return path.replace(/\\/g, '/');
-}
 
 export function pushLintIssue(
 	issues: LintIssue[],
@@ -79,36 +61,6 @@ export function pushLintIssue(
 
 export function nodeStartLine(sourceFile: ts.SourceFile, node: ts.Node): number {
 	return sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-}
-
-export function collectTypeScriptFiles(pathCandidates: ReadonlyArray<string>): string[] {
-	const files: string[] = [];
-	const stack = pathCandidates.map(resolveInputPath);
-	while (stack.length > 0) {
-		const current = stack.pop();
-		if (!existsSync(current)) continue;
-		const stat = statSync(current);
-		if (stat.isFile()) {
-			const extension = extname(current);
-			if (FILE_EXTENSIONS.has(extension)) {
-				files.push(current);
-			}
-			continue;
-		}
-		if (!stat.isDirectory()) {
-			continue;
-		}
-		const directoryName = basename(current);
-		if (shouldSkipDirectory(directoryName)) {
-			continue;
-		}
-		const entries = readdirSync(current, { withFileTypes: true });
-		for (let i = 0; i < entries.length; i += 1) {
-			const entry = entries[i];
-			stack.push(join(current, entry.name));
-		}
-	}
-	return files;
 }
 
 export function getPropertyName(node: ts.PropertyName | ts.Expression): string | null {
@@ -435,8 +387,6 @@ export function lintCatchClausePatterns(node: ts.CatchClause, sourceFile: ts.Sou
 		}
 		if (catchBlockHandlesAsyncError(node)) {
 			noteQualityLedger(ledger, 'allowed_catch_async_fault_boundary');
-		} else if (catchBlockHandlesLuaFaultBoundary(node, sourceFile)) {
-			noteQualityLedger(ledger, 'allowed_catch_lua_fault_boundary');
 		} else if (catchBlockReportsCaughtError(node)) {
 			noteQualityLedger(ledger, 'allowed_catch_reported_fallback');
 		} else {
@@ -469,10 +419,16 @@ export function expressionReferencesAnyName(node: ts.Node, names: ReadonlySet<st
 }
 
 export function isErrorReportingTarget(target: string | null): boolean {
-	return target === 'showEditorMessage'
-		|| target === 'tryShowLuaErrorOverlay'
-		|| target === 'console.error'
-		|| target === 'console.warn';
+	if (target === null) {
+		return false;
+	}
+	if (target === 'console.error' || target === 'console.warn') {
+		return true;
+	}
+	const dot = target.lastIndexOf('.');
+	const leaf = dot === -1 ? target : target.slice(dot + 1);
+	return /^(report|show|emit|record|log)[A-Za-z0-9]*Error$/.test(leaf)
+		|| /^(warn|report|show|emit|record|log)[A-Za-z0-9]*Warning$/.test(leaf);
 }
 
 export function collectCatchReportValueNames(node: ts.CatchClause, caughtName: string | null): Set<string> {
@@ -684,18 +640,6 @@ export function isExplicitNonJsTruthinessPair(node: ts.BinaryExpression): boolea
 	return pairOperatorKind === ts.SyntaxKind.AmpersandAmpersandToken;
 }
 
-export function isLuaSourceLookupExpression(node: ts.Expression): boolean {
-	const unwrapped = unwrapExpression(node);
-	if (ts.isBinaryExpression(unwrapped) && unwrapped.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
-		return isLuaSourceLookupExpression(unwrapped.left) || isLuaSourceLookupExpression(unwrapped.right);
-	}
-	if (!ts.isElementAccessExpression(unwrapped)) {
-		return false;
-	}
-	const target = unwrapExpression(unwrapped.expression);
-	return ts.isPropertyAccessExpression(target) && target.name.text === 'path2lua';
-}
-
 export function isSinglePropertyOptionsType(type: ts.TypeNode | undefined): boolean {
 	if (type === undefined || !ts.isTypeLiteralNode(type)) {
 		return false;
@@ -739,76 +683,6 @@ export function lintSinglePropertyOptionsParameter(
 			parameter.name,
 			'single_property_options_parameter_pattern',
 			'Single-property opts/options parameters are forbidden. Use a direct parameter or split the operation instead of implying future extensibility.',
-		);
-	}
-}
-
-export function ideLayer(path: string): string | null {
-	const normalized = normalizePathForAnalysis(path);
-	const marker = '/src/bmsx/ide/';
-	const index = normalized.indexOf(marker);
-	if (index === -1) {
-		return null;
-	}
-	const rest = normalized.slice(index + marker.length);
-	const slash = rest.indexOf('/');
-	return slash === -1 ? rest : rest.slice(0, slash);
-}
-
-export function forbiddenLayerImportReason(sourceLayer: string, targetLayer: string): string | null {
-	if (sourceLayer === targetLayer) {
-		return null;
-	}
-	if (sourceLayer === 'common') {
-		return `ide/common must not import ${targetLayer}; common code must stay below feature layers.`;
-	}
-	if (sourceLayer === 'language' && targetLayer !== 'common') {
-		return `ide/language must not import ${targetLayer}; language code must stay UI/workbench independent.`;
-	}
-	if (sourceLayer === 'terminal' && (targetLayer === 'editor' || targetLayer === 'workbench')) {
-		return `ide/terminal must not import ${targetLayer}; terminal code must not depend on editor/workbench internals.`;
-	}
-	if (sourceLayer === 'editor' && targetLayer === 'workbench') {
-		return 'ide/editor must not import ide/workbench; workbench may compose editor, not the reverse.';
-	}
-	if (sourceLayer === 'workbench' && targetLayer === 'editor') {
-		return 'ide/workbench must not import deep editor internals directly; route shared contracts through common modules.';
-	}
-	if (sourceLayer === 'runtime' && (targetLayer === 'editor' || targetLayer === 'workbench')) {
-		return `ide/runtime must not import ${targetLayer}; runtime glue must not own UI feature internals.`;
-	}
-	return null;
-}
-
-export function lintCrossLayerImports(sourceFile: ts.SourceFile, issues: LintIssue[]): void {
-	const sourceLayer = ideLayer(sourceFile.fileName);
-	if (sourceLayer === null) {
-		return;
-	}
-	for (let index = 0; index < sourceFile.statements.length; index += 1) {
-		const statement = sourceFile.statements[index];
-		if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
-			continue;
-		}
-		const specifier = statement.moduleSpecifier.text;
-		if (!specifier.startsWith('.')) {
-			continue;
-		}
-		const targetPath = resolve(dirname(sourceFile.fileName), specifier);
-		const targetLayer = ideLayer(targetPath);
-		if (targetLayer === null) {
-			continue;
-		}
-		const reason = forbiddenLayerImportReason(sourceLayer, targetLayer);
-		if (reason === null) {
-			continue;
-		}
-		pushLintIssue(
-			issues,
-			sourceFile,
-			statement.moduleSpecifier,
-			'cross_layer_import_pattern',
-			reason,
 		);
 	}
 }

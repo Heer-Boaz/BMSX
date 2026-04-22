@@ -30,7 +30,7 @@ export function lintCppOptionalValueOrFallbackPatterns(
 		}
 		const boundaryKind = cppValueOrBoundaryKind(regions, token.line);
 		if (boundaryKind === null) {
-			pushLintIssue(issues, file, token, optionalValueOrFallbackPatternRule.name, 'std::optional::value_or fallback is only allowed at explicit manifest/input/optional-parameter boundaries. Branch or require the value instead of hiding missing internal state.');
+			pushLintIssue(issues, file, token, optionalValueOrFallbackPatternRule.name, 'std::optional::value_or fallback is only allowed at an explicit value-or-boundary analysis region. Branch or require the value instead of hiding missing internal state.');
 		} else {
 			noteQualityLedger(ledger, `cpp_optional_value_or_${boundaryKind}`);
 		}

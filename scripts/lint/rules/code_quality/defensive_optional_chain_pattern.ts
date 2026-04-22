@@ -24,7 +24,7 @@ export function lintRequiredStateOptionalChainPattern(
 		sourceFile,
 		node,
 		defensiveOptionalChainPatternRule.name,
-		`Optional chaining on required IDE/runtime root "${root}" is forbidden.`,
+		`Optional chaining on required state root "${root}" is forbidden.`,
 	);
 	return true;
 }

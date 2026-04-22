@@ -1,13 +1,15 @@
 import { filterSuppressedLintIssues } from '../lint_suppressions';
+import { loadAnalysisConfig } from '../config';
 import { createQualityLedger, type QualityLedger, qualityLedgerEntries } from '../quality_ledger';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { extname, isAbsolute, relative, resolve } from 'node:path';
 import ts from 'typescript';
+import { collectSourceFiles } from '../file_scan';
 import { addDuplicateExportedTypeIssues, collectExportedTypes, type ExportedTypeInfo } from '../../lint/rules/code_quality/duplicate_exported_type_name_pattern';
 import { addNormalizedBodyDuplicateIssues } from '../../lint/rules/code_quality/normalized_ast_duplicate_pattern';
 import { addSemanticNormalizedBodyDuplicateIssues } from '../../lint/rules/code_quality/semantic_normalized_body_duplicate_pattern';
-import { DEFAULT_ROOTS, LintIssue, collectTypeScriptFiles, resolveInputPath, shouldSkipDirectory } from '../../lint/rules/ts/support/ast';
+import { LintIssue } from '../../lint/rules/ts/support/ast';
 import { type NormalizedBodyInfo } from '../../lint/rules/ts/support/declarations';
 import { collectFunctionUsageCounts } from '../../lint/rules/ts/support/function_usage';
 import { addRepeatedStatementSequenceIssues, type StatementSequenceInfo } from '../../lint/rules/common/repeated_statement_sequence_pattern';
@@ -35,7 +37,7 @@ export function printHelp(): void {
 	console.log('  scripts/analysis/code_quality_cpp.ts');
 }
 
-export function parseArgs(argv: string[]): CliOptions {
+export function parseArgs(argv: string[], defaultRoots: readonly string[]): CliOptions {
 	let failOnIssues = false;
 	let csv = false;
 	let summaryOnly = false;
@@ -77,7 +79,7 @@ export function parseArgs(argv: string[]): CliOptions {
 			csv,
 			failOnIssues,
 			summaryOnly,
-			paths: DEFAULT_ROOTS,
+			paths: [...defaultRoots],
 		};
 	}
 	return {
@@ -88,7 +90,7 @@ export function parseArgs(argv: string[]): CliOptions {
 	};
 }
 
-export function extractRootsForLanguageDetection(argv: string[]): string[] {
+export function extractRootsForLanguageDetection(argv: string[], defaultRoots: readonly string[]): string[] {
 	const paths: string[] = [];
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
@@ -116,7 +118,7 @@ export function extractRootsForLanguageDetection(argv: string[]): string[] {
 		paths.push(arg);
 	}
 	if (paths.length === 0) {
-		return DEFAULT_ROOTS;
+		return [...defaultRoots];
 	}
 	return paths;
 }
@@ -148,37 +150,17 @@ export function runCppQuality(args: readonly string[]): number {
 export function detectProjectLanguage(roots: readonly string[]): ProjectLanguage {
 	let hasTypeScript = false;
 	let hasCpp = false;
-	const stack = roots.map(resolveInputPath);
-	while (stack.length > 0) {
-		const current = stack.pop();
-		if (current === undefined || !existsSync(current)) {
-			continue;
+	const files = collectSourceFiles(roots, new Set([...FILE_EXTENSIONS, ...CPP_FILE_EXTENSIONS]));
+	for (let index = 0; index < files.length; index += 1) {
+		const extension = extname(files[index]);
+		if (FILE_EXTENSIONS.has(extension)) {
+			hasTypeScript = true;
 		}
-		const stats = statSync(current);
-		if (stats.isFile()) {
-			const extension = extname(current);
-			if (FILE_EXTENSIONS.has(extension)) {
-				hasTypeScript = true;
-			}
-			if (CPP_FILE_EXTENSIONS.has(extension)) {
-				hasCpp = true;
-			}
-			if (hasTypeScript && hasCpp) {
-				return 'mixed';
-			}
-			continue;
+		if (CPP_FILE_EXTENSIONS.has(extension)) {
+			hasCpp = true;
 		}
-		if (!stats.isDirectory()) {
-			continue;
-		}
-		const directoryName = basename(current);
-		if (shouldSkipDirectory(directoryName)) {
-			continue;
-		}
-		const entries = readdirSync(current, { withFileTypes: true });
-		for (let index = 0; index < entries.length; index += 1) {
-			const entry = entries[index];
-			stack.push(join(current, entry.name));
+		if (hasTypeScript && hasCpp) {
+			return 'mixed';
 		}
 	}
 	if (hasTypeScript && !hasCpp) {
@@ -556,11 +538,12 @@ export function toRelativePath(path: string): string {
 
 export function run(): void {
 	const argv = process.argv.slice(2);
+	const config = loadAnalysisConfig();
 	if (argv.includes('--help')) {
-		parseArgs(argv);
+		parseArgs(argv, config.scan.roots);
 		return;
 	}
-	const inferredRoots = extractRootsForLanguageDetection(argv);
+	const inferredRoots = extractRootsForLanguageDetection(argv, config.scan.roots);
 	const language = detectProjectLanguage(inferredRoots);
 	if (language === 'cpp') {
 		const exitCode = runCppQuality(argv);
@@ -569,7 +552,7 @@ export function run(): void {
 		}
 		return;
 	}
-	const options = parseArgs(argv);
+	const options = parseArgs(argv, config.scan.roots);
 	if (language === 'mixed') {
 		throw new Error('Mixed TypeScript and C++ sources detected. Run the analyzer on one language folder at a time.');
 	}
@@ -577,7 +560,7 @@ export function run(): void {
 		console.log('No TypeScript or C++ files found in the provided roots.');
 		return;
 	}
-	const fileList = collectTypeScriptFiles(options.paths);
+	const fileList = collectSourceFiles(options.paths, FILE_EXTENSIONS);
 	const buckets = new Map<string, DuplicateLocation[]>();
 	const classInfosByKey = new Map<string, ClassInfo>();
 	const classInfosByName = new Map<string, ClassInfo[]>();
@@ -601,7 +584,7 @@ export function run(): void {
 	}
 	const functionUsageInfo = collectFunctionUsageCounts(sourceFiles);
 	for (const sourceFile of sourceFiles) {
-		collectLintIssues(sourceFile, lintIssues, statementSequences, functionUsageInfo, ledger);
+		collectLintIssues(sourceFile, lintIssues, statementSequences, functionUsageInfo, ledger, config.architecture);
 	}
 	addDuplicateExportedTypeIssues(exportedTypes, lintIssues);
 	addNormalizedBodyDuplicateIssues(normalizedBodies, lintIssues);

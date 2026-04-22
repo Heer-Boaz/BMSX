@@ -4,7 +4,7 @@ import { nodeIsInAnalysisRegion } from '../../../../analysis/code_quality/source
 import { LintIssue, expressionRootName, pushLintIssue, unwrapExpression } from './ast';
 import { getCallTargetLeafName, isLookupCallExpression } from './calls';
 import { BOUNDARY_WRAPPER_NAME_WORDS, DIRECT_MUTATION_METHOD_NAMES, expressionAccessFingerprint } from './declarations';
-import { isFunctionExpressionLike } from './functions';
+import { isFunctionExpressionLike, isFunctionLikeWithParameters } from './functions';
 import { isNullishReturnStatement } from './nullish';
 import { isSemanticPredicateFunctionName } from './semantic';
 import { nextStatementAfter, previousStatementBefore } from './statements';
@@ -82,32 +82,6 @@ export function lintLookupAliasOptionalChain(node: ts.Statement, sourceFile: ts.
 	);
 }
 
-export function catchBlockHandlesLuaFaultBoundary(node: ts.CatchClause, sourceFile: ts.SourceFile): boolean {
-	let handled = false;
-	const visit = (current: ts.Node): void => {
-		if (handled) {
-			return;
-		}
-		if (ts.isPropertyAccessExpression(current) && current.getText(sourceFile) === 'SliceResult.Fault') {
-			handled = true;
-			return;
-		}
-		if (
-			ts.isCallExpression(current)
-			&& ts.isPropertyAccessExpression(current.expression)
-			&& current.expression.name.text === 'push'
-			&& current.arguments.length > 0
-			&& current.arguments[0].kind === ts.SyntaxKind.FalseKeyword
-		) {
-			handled = true;
-			return;
-		}
-		ts.forEachChild(current, visit);
-	};
-	visit(node.block);
-	return handled;
-}
-
 export function isAllocationExpression(node: ts.Expression): boolean {
 	const unwrapped = unwrapExpression(node);
 	return ts.isObjectLiteralExpression(unwrapped)
@@ -120,16 +94,29 @@ export function optionalChainBoundaryKind(node: ts.Expression, sourceFile: ts.So
 		return 'analysis-region';
 	}
 	const root = expressionRootName(node);
-	if (root === 'options' || root === 'opts' || root === 'params') {
+	if (root !== null && rootIsOptionalFunctionParameter(node, root)) {
 		return 'optional-parameter';
-	}
-	if (root === 'metadata' || root === 'apiMetadata' || root === 'manifest' || root === 'layout' || root === 'specs' || root === 'ram') {
-		return 'data-contract';
 	}
 	if (isMapLookupProjectionOptionalChain(node)) {
 		return 'lookup-projection';
 	}
 	return null;
+}
+
+export function rootIsOptionalFunctionParameter(node: ts.Node, root: string): boolean {
+	let current: ts.Node | undefined = node;
+	while (current !== undefined) {
+		if (isFunctionLikeWithParameters(current)) {
+			for (let index = 0; index < current.parameters.length; index += 1) {
+				const parameter = current.parameters[index];
+				if (ts.isIdentifier(parameter.name) && parameter.name.text === root) {
+					return parameter.questionToken !== undefined || parameter.initializer !== undefined;
+				}
+			}
+		}
+		current = current.parent;
+	}
+	return false;
 }
 
 export function isMapLookupProjectionOptionalChain(node: ts.Expression): boolean {

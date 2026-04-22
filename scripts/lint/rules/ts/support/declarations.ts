@@ -20,27 +20,6 @@ export type NormalizedBodyInfo = {
 	semanticSignatures: string[] | null;
 };
 
-export const SKIP_DIRECTORIES = new Set([
-	'.git',
-	'.vscode',
-	'.snesmini',
-	'build',
-	'build-codex-check',
-	'build-debug',
-	'build-libretro',
-	'build-libretro-host',
-	'build-libretro-local',
-	'build-libretro-wsl',
-	'build-perf',
-	'build-release',
-	'build-snesmini',
-	'build-snesmini-host',
-	'build-snesmini-user',
-	'CMakeFiles',
-	'dist',
-	'node_modules',
-]);
-
 export function isAbstractClass(node: ts.ClassDeclaration): boolean {
 	return hasModifier(node, ts.SyntaxKind.AbstractKeyword);
 }

@@ -1,7 +1,7 @@
 import ts from 'typescript';
-import { LintIssue, expressionRootName, pushLintIssue, unwrapExpression } from './ast';
+import { LintIssue, pushLintIssue, unwrapExpression } from './ast';
 import { isExpressionInScopeFingerprint } from './bindings';
-import { isEmptyContainerLiteral, isEmptyStringLiteral, isEqualityOperator, isLookupFallbackExpression, isLuaSourceLookupFallback, isOptionalParameterFallback, isPositiveEqualityOperator, isRuntimeAssetLayerFallback, isSharedConstantFallbackExpression } from './conditions';
+import { isEmptyContainerLiteral, isEmptyStringLiteral, isEqualityOperator, isLookupFallbackExpression, isOptionalParameterFallback, isPositiveEqualityOperator, isSharedConstantFallbackExpression } from './conditions';
 import { expressionAccessFingerprint } from './declarations';
 import { isNumericLiteralLike, isNumericLiteralText } from './numeric';
 import { isAllocationExpression } from './runtime_patterns';
@@ -257,22 +257,6 @@ export function nullishFallbackLedgerKind(node: ts.BinaryExpression): string {
 	}
 	if (isOptionalParameterFallback(node)) {
 		return 'optional_parameter_default';
-	}
-	if (isLuaSourceLookupFallback(node)) {
-		return 'lua_source_lookup';
-	}
-	if (isRuntimeAssetLayerFallback(node)) {
-		return 'runtime_asset_layer';
-	}
-	const root = expressionRootName(node.left);
-	if (root === 'options' || root === 'opts' || root === 'params') {
-		return 'option_default';
-	}
-	if (root === 'manifest' || root === 'specs' || root === 'layout' || root === 'memorySpecs' || root === 'engineMemorySpecs') {
-		return 'data_default';
-	}
-	if (root === 'metadata' || root === 'engineMetadata' || root === 'cartMetadata' || root === 'runtime') {
-		return 'metadata_default';
 	}
 	const right = unwrapExpression(node.right);
 	if (ts.isIdentifier(right) && right.text.startsWith('EMPTY_')) {

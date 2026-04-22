@@ -1,11 +1,14 @@
 import { type AnalysisRegion, collectAnalysisRegions, lineInAnalysisRegion } from '../lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../quality_ledger';
+import { type ArchitectureBoundaryConfig } from '../config';
 import ts from 'typescript';
+import { lintCrossLayerImports } from '../../lint/rules/code_quality/cross_layer_import_pattern';
 import { lintContractNumericDefensiveSanitizationPattern } from '../../lint/rules/code_quality/contract_numeric_defensive_sanitization_pattern';
 import { lintRequiredStateOptionalChainPattern } from '../../lint/rules/code_quality/defensive_optional_chain_pattern';
 import { lintEmptyLintRuleFilePattern } from '../../lint/rules/code_quality/empty_lint_rule_file_pattern';
 import { lintHotPathClosureArgument } from '../../lint/rules/code_quality/hot_path_closure_argument_pattern';
 import { lintHotPathObjectLiteralArgument } from '../../lint/rules/code_quality/hot_path_object_literal_pattern';
+import { lintLegacySentinelStringPattern } from '../../lint/rules/code_quality/legacy_sentinel_string_pattern';
 import { lintNumericDefensiveSanitizationPattern } from '../../lint/rules/code_quality/numeric_defensive_sanitization_pattern';
 import { lintNullishNullNormalizationPattern } from '../../lint/rules/code_quality/nullish_null_normalization_pattern';
 import { lintRedundantNumericSanitizationPattern } from '../../lint/rules/code_quality/redundant_numeric_sanitization_pattern';
@@ -13,7 +16,7 @@ import { lintThinLintReportWrapperPattern } from '../../lint/rules/code_quality/
 import { lintBinaryExpressionForCodeQuality } from '../../lint/rules/ts/code_quality/binary_expression_quality';
 import { collectRepeatedStatementSequences, type StatementSequenceInfo } from '../../lint/rules/common/repeated_statement_sequence_pattern';
 import { lintSingleLineMethodPattern } from '../../lint/rules/common/single_line_method_pattern';
-import { LOCAL_CONST_PATTERN_ENABLED, LintIssue, REPEATED_EXPRESSION_PAIR_MIN_LENGTH, RepeatedExpressionInfo, compactSampleText, getExtendsExpression, getPropertyName, isRedundantConditionalExpression, isSimpleAliasExpression, lintCatchClausePatterns, lintCrossLayerImports, lintEnsurePattern, lintSinglePropertyOptionsParameter, lintTerminalReturnPaddingPattern, nodeStartLine, pushLintIssue, shouldIgnoreLintName, unwrapExpression } from '../../lint/rules/ts/support/ast';
+import { LOCAL_CONST_PATTERN_ENABLED, LintIssue, REPEATED_EXPRESSION_PAIR_MIN_LENGTH, RepeatedExpressionInfo, compactSampleText, getExtendsExpression, getPropertyName, isRedundantConditionalExpression, isSimpleAliasExpression, lintCatchClausePatterns, lintEnsurePattern, lintSinglePropertyOptionsParameter, lintTerminalReturnPaddingPattern, nodeStartLine, pushLintIssue, shouldIgnoreLintName, unwrapExpression } from '../../lint/rules/ts/support/ast';
 import { getClassScopePath, isDeclarationIdentifier, isIdentifierPropertyName, isInsideLoop, isScopeBoundary, isWriteIdentifier } from '../../lint/rules/ts/support/bindings';
 import { getCallTargetLeafName, hasQuestionDotToken } from '../../lint/rules/ts/support/calls';
 import { lintStringSwitchChain } from '../../lint/rules/ts/support/conditions';
@@ -84,20 +87,19 @@ export function collectLintIssues(
 	statementSequences: StatementSequenceInfo[],
 	functionUsageInfo: FunctionUsageInfo,
 	ledger: QualityLedger,
+	architectureConfig: ArchitectureBoundaryConfig | null,
 ): void {
 	const regions = collectAnalysisRegions(sourceFile.text);
 	const isHotPathNode = (node: ts.Node): boolean => nodeIsInAnalysisRegion(sourceFile, regions, 'hot-path', node);
 	const scopes: Array<Map<string, LintBinding[]>> = [];
 	const repeatedScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
 	const semanticRepeatedScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
-	const machineDeviceScopes: Array<Map<string, RepeatedExpressionInfo>> = [];
 	const enterScope = (): void => {
 		scopes.push(new Map<string, LintBinding[]>());
 	};
 	const enterRepeatedScope = (): void => {
 		repeatedScopes.push(new Map<string, RepeatedExpressionInfo>());
 		semanticRepeatedScopes.push(new Map<string, RepeatedExpressionInfo>());
-		machineDeviceScopes.push(new Map<string, RepeatedExpressionInfo>());
 	};
 	const leaveRepeatedScope = (): void => {
 		const scope = repeatedScopes.pop();
@@ -178,25 +180,6 @@ export function collectLintIssues(
 				column: info.column,
 				name: 'semantic_repeated_expression_pattern',
 				message: `Semantic transform call is repeated ${info.count} times in the same scope: ${info.sampleText}`,
-			});
-		}
-	};
-	const leaveMachineDeviceScope = (): void => {
-		const scope = machineDeviceScopes.pop();
-		if (!scope) {
-			return;
-		}
-		for (const info of scope.values()) {
-			if (info.count <= 2) {
-				continue;
-			}
-			issues.push({
-				kind: 'repeated_machine_device_chain_pattern',
-				file: sourceFile.fileName,
-				line: info.line,
-				column: info.column,
-				name: 'repeated_machine_device_chain_pattern',
-				message: `Machine device chain is repeated ${info.count} times in the same function: ${info.sampleText}`,
 			});
 		}
 	};
@@ -332,28 +315,6 @@ export function collectLintIssues(
 			sampleText: compactSampleText(node.getText(sourceFile).replace(/\s+/g, ' ')),
 		});
 	};
-	const recordMachineDeviceChain = (node: ts.PropertyAccessExpression): void => {
-		if (node.expression.getText(sourceFile) !== 'runtime.machine') {
-			return;
-		}
-		const scope = machineDeviceScopes[machineDeviceScopes.length - 1];
-		if (!scope) {
-			return;
-		}
-		const text = `runtime.machine.${node.name.text}`;
-		const existing = scope.get(text);
-		if (existing) {
-			existing.count += 1;
-			return;
-		}
-		const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-		scope.set(text, {
-			line: position.line + 1,
-			column: position.character + 1,
-			count: 1,
-			sampleText: text,
-		});
-	};
 	const lintHotPathCallArguments = (node: ts.CallExpression | ts.NewExpression): void => {
 		if (!isHotPathNode(node)) {
 			return;
@@ -387,14 +348,8 @@ export function collectLintIssues(
 			lintContractNumericDefensiveSanitizationPattern(node, sourceFile, issues);
 			lintBinaryExpressionForCodeQuality(node, sourceFile, regions, issues, ledger);
 		}
-		if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && node.text === '__native__') {
-			pushLintIssue(
-				issues,
-				sourceFile,
-				node,
-				'legacy_native_bridge_key_pattern',
-				'Legacy native bridge key "__native__" is forbidden. Use the current "__native" key instead of adding alias fallbacks.',
-			);
+		if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+			lintLegacySentinelStringPattern(sourceFile, node, issues);
 		}
 		if (ts.isCatchClause(node)) {
 			lintCatchClausePatterns(node, sourceFile, issues, ledger);
@@ -475,9 +430,6 @@ export function collectLintIssues(
 			);
 		}
 		if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node) || ts.isCallExpression(node)) {
-			if (ts.isPropertyAccessExpression(node)) {
-				recordMachineDeviceChain(node);
-			}
 			if (hasQuestionDotToken(node)) {
 				if (!lintRequiredStateOptionalChainPattern(node as ts.Expression, sourceFile, regions, issues)) {
 					const boundaryKind = optionalChainBoundaryKind(node as ts.Expression, sourceFile, regions);
@@ -515,7 +467,6 @@ export function collectLintIssues(
 		}
 		ts.forEachChild(node, child => visit(child, node));
 		if (repeatedEntered) {
-			leaveMachineDeviceScope();
 			leaveSemanticRepeatedScope();
 			leaveRepeatedScope();
 		}
@@ -526,7 +477,7 @@ export function collectLintIssues(
 	visit(sourceFile, undefined);
 	lintEmptyLintRuleFilePattern(sourceFile, issues);
 	lintFacadeModuleDensity(sourceFile, issues);
-	lintCrossLayerImports(sourceFile, issues);
+	lintCrossLayerImports(sourceFile, architectureConfig, issues);
 }
 
 export function collectClassInfos(
