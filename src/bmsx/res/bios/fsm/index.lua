@@ -135,7 +135,7 @@
 
 local fsm_trace<const> = require('fsm/trace')
 local clear_map<const> = require('clear_map')
-local timeline_module<const> = require('timeline')
+local timeline_module<const> = require('timeline/index')
 
 local statedefinition<const> = {}
 statedefinition.__index = statedefinition

@@ -1,7 +1,7 @@
 -- ecs_builtin.lua
 -- built-in ecs pipeline registration for lua engine
 
-local ecs<const> = require('ecs')
+local ecs<const> = require('ecs/index')
 local ecs_pipeline<const> = require('ecs/pipeline')
 local ecs_systems<const> = require('ecs/systems')
 local input_action_effect_system<const> = require('input/action_effect/system')

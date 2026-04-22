@@ -1,4 +1,4 @@
-local timeline_module<const> = require("timeline")
+local timeline_module<const> = require("timeline/index")
 local timeline_dispatch<const> = require("timeline/dispatch")
 
 local subsystemtimelines<const> = {}

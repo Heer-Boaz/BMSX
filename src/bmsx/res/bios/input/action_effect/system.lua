@@ -1,12 +1,12 @@
 -- input_action_effect_system.lua
 -- input intent + input action effect ecs system
 
-local ecs<const> = require('ecs')
+local ecs<const> = require('ecs/index')
 local action_effects<const> = require('action_effects')
 local compiler<const> = require('input/action_effect/compiler')
 local dsl<const> = require('input/action_effect/dsl')
 local scratchbatch<const> = require('scratchbatch')
-local world_instance<const> = require('world').instance
+local world_instance<const> = require('world/index').instance
 local inputintentcomponent<const> = 'inputintentcomponent'
 local inputactioneffectcomponent<const> = 'inputactioneffectcomponent'
 local actioneffectcomponentid<const> = 'actioneffectcomponent'

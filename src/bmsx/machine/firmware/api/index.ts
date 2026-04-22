@@ -1,26 +1,26 @@
-import { $, runGate } from '../../core/engine';
+import { $, runGate } from '../../../core/engine';
 import {
 	color,
 	MeshRenderSubmission,
 	ParticleRenderSubmission,
-} from '../../render/shared/submissions';
-import { Font } from '../../render/shared/bmsx_font';
-import { BFont, GlyphMap } from '../../render/shared/bitmap_font';
-import { RuntimeStorage } from './cart_storage';
-import type { vec3arr } from '../../rompack/format';
-import { taskGate, GateGroup } from '../../core/taskgate';
-import { Runtime } from '../runtime/runtime';
-import { applyActiveMachineTiming } from '../runtime/timing/config';
-import * as luaPipeline from '../../ide/runtime/lua_pipeline';
-import { setHardwareCamera } from '../../render/shared/hardware/camera';
-import { putHardwareAmbientLight, putHardwareDirectionalLight, putHardwarePointLight } from '../../render/shared/hardware/lighting';
-import { setSpriteParallaxRig } from '../../render/shared/queues';
-import { listResources } from '../../ide/workspace/workspace';
-import { getWorkspaceCachedSource } from '../../ide/workspace/cache';
-import { buildDirtyFilePath, hasWorkspaceStorage } from '../../ide/workbench/workspace/io';
-import { DEFAULT_LUA_BUILTIN_NAMES } from './builtin_descriptors';
-import { createLuaTable, type LuaTable } from '../../lua/value';
-import { BmsxColors } from '../devices/vdp/vdp';
+} from '../../../render/shared/submissions';
+import { Font } from '../../../render/shared/bmsx_font';
+import { BFont, GlyphMap } from '../../../render/shared/bitmap_font';
+import { RuntimeStorage } from '../cart_storage';
+import type { vec3arr } from '../../../rompack/format';
+import { taskGate, GateGroup } from '../../../core/taskgate';
+import { Runtime } from '../../runtime/runtime';
+import { applyActiveMachineTiming } from '../../runtime/timing/config';
+import * as luaPipeline from '../../../ide/runtime/lua_pipeline';
+import { setHardwareCamera } from '../../../render/shared/hardware/camera';
+import { putHardwareAmbientLight, putHardwareDirectionalLight, putHardwarePointLight } from '../../../render/shared/hardware/lighting';
+import { setSpriteParallaxRig } from '../../../render/shared/queues';
+import { listResources } from '../../../ide/workspace/workspace';
+import { getWorkspaceCachedSource } from '../../../ide/workspace/cache';
+import { buildDirtyFilePath, hasWorkspaceStorage } from '../../../ide/workbench/workspace/io';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../builtin_descriptors';
+import { createLuaTable, type LuaTable } from '../../../lua/value';
+import { BmsxColors } from '../../devices/vdp/vdp';
 
 export type ApiOptions = {
 	storage: RuntimeStorage;

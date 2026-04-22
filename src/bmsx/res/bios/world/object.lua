@@ -59,11 +59,11 @@
 --    without destroying it (components, subscriptions, and FSM persist).
 --    Pattern: move enemies to 'transition' during screen transitions, not despawn.
 local eventemitter<const> = require('eventemitter')
-local fsm<const> = require('fsm')
-local fsmlibrary<const> = require('fsmlibrary')
+local fsm<const> = require('fsm/index')
+local fsmlibrary<const> = require('fsm/library')
 local components<const> = require('components')
 local behaviourtree<const> = require('behaviourtree')
-local world_instance<const> = require('world').instance
+local world_instance<const> = require('world/index').instance
 local registry_instance<const> = require('registry').instance
 
 local worldobject<const> = {}

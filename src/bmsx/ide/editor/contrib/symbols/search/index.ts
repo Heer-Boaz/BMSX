@@ -1,21 +1,21 @@
-import { scheduleMicrotask } from '../../../../platform/platform';
-import * as constants from '../../../common/constants';
-import { renameController } from '../rename/controller';
-import { showEditorMessage } from '../../../common/feedback_state';
-import { clearReferenceHighlights, navigateToLuaDefinition } from '../intellisense/engine';
-import { closeSearch } from '../find/search';
-import { getActiveCodeTabContext } from '../../../workbench/ui/code_tab/contexts';
-import { resetBlink } from '../../render/caret';
-import { refreshSymbolCatalog } from './catalog';
-import { closeResourceSearch } from '../../../workbench/contrib/resources/search';
-import { closeLineJump } from '../find/line_jump';
-import { applyReferenceSearchSelection } from '../references/search';
-import { updateSymbolSearchMatches } from './search/catalog';
+import { scheduleMicrotask } from '../../../../../platform/platform';
+import * as constants from '../../../../common/constants';
+import { renameController } from '../../rename/controller';
+import { showEditorMessage } from '../../../../common/feedback_state';
+import { clearReferenceHighlights, navigateToLuaDefinition } from '../../intellisense/engine';
+import { closeSearch } from '../../find/search';
+import { getActiveCodeTabContext } from '../../../../workbench/ui/code_tab/contexts';
+import { resetBlink } from '../../../render/caret';
+import { refreshSymbolCatalog } from '../catalog';
+import { closeResourceSearch } from '../../../../workbench/contrib/resources/search';
+import { closeLineJump } from '../../find/line_jump';
+import { applyReferenceSearchSelection } from '../../references/search';
+import { updateSymbolSearchMatches } from './catalog';
 import {
 	applySymbolSearchFieldText,
 	closeSymbolSearch,
-} from './shared';
-import { symbolSearchState } from './search/state';
+} from '../shared';
+import { symbolSearchState } from './state';
 
 export function openSymbolSearch(initialQuery: string = ''): void {
 	if (getActiveCodeTabContext().mode !== 'lua') {

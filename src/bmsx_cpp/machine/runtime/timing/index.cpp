@@ -1,4 +1,4 @@
-#include "machine/runtime/timing.h"
+#include "machine/runtime/timing/index.h"
 #include <stdexcept>
 
 namespace bmsx {

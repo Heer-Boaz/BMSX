@@ -166,7 +166,7 @@ add_library(bmsx_core STATIC
 	machine/scheduler/frame.cpp
 	machine/memory/specs.cpp
 	render/presentation_state.cpp
-	machine/runtime/timing.cpp
+	machine/runtime/timing/index.cpp
 	machine/runtime/timing/config.cpp
 	machine/runtime/vblank.cpp
 	machine/runtime/debug.cpp

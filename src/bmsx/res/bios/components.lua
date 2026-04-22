@@ -2,12 +2,12 @@
 -- base component primitives for system rom
 
 local eventemitter_module<const> = require('eventemitter')
-local timeline_module<const> = require('timeline')
+local timeline_module<const> = require('timeline/index')
 local timeline_dispatch<const> = require('timeline/dispatch')
 local collision_profiles<const> = require('collision_profiles')
 local scratchrecordbatch<const> = require('scratchrecordbatch')
 local font_module<const> = require('font')
-local world_instance<const> = require('world').instance
+local world_instance<const> = require('world/index').instance
 local eventemitter<const> = eventemitter_module.eventemitter
 local timeline<const> = timeline_module.timeline
 

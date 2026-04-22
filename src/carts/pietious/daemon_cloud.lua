@@ -1,4 +1,4 @@
-local timeline<const> = require('timeline')
+local timeline<const> = require('timeline/index')
 
 local daemon_cloud<const> = {}
 daemon_cloud.__index = daemon_cloud

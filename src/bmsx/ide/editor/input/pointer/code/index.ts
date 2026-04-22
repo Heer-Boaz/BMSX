@@ -1,12 +1,12 @@
-import { $ } from '../../../../core/engine';
-import type { CodeTabContext, PointerSnapshot } from '../../../common/models';
-import { getCodeAreaBounds } from '../../ui/view/view';
-import { handleCodeAreaPointerGuards } from './code/guard';
-import { handleCodeAreaPrimaryPressPointer } from './code/primary_press';
-import { handleCodeAreaGutterPointer, handleCodeAreaSecondaryPointer } from './code/secondary_actions';
-import { updateCodeAreaPointerFeedback } from './code/feedback';
-import { handleCodeAreaSelectionPointer } from './code/selection';
-import { editorPointerState } from './state';
+import { $ } from '../../../../../core/engine';
+import type { CodeTabContext, PointerSnapshot } from '../../../../common/models';
+import { getCodeAreaBounds } from '../../../ui/view/view';
+import { handleCodeAreaPointerGuards } from './guard';
+import { handleCodeAreaPrimaryPressPointer } from './primary_press';
+import { handleCodeAreaGutterPointer, handleCodeAreaSecondaryPointer } from './secondary_actions';
+import { updateCodeAreaPointerFeedback } from './feedback';
+import { handleCodeAreaSelectionPointer } from './selection';
+import { editorPointerState } from '../state';
 
 export function handleCodeAreaPointerInput(
 	snapshot: PointerSnapshot,

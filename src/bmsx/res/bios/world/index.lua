@@ -21,14 +21,14 @@
 --    Global/live queries use explicit all_* methods instead of options tables.
 --
 -- 4. world_instance IS THE GLOBAL SINGLETON.
---    Access via  require('world').instance. Do not create extra world.new().
+--    Access via  require('world/index').instance. Do not create extra world.new().
 --
 -- 5. NEVER ITERATE AND MUTATE at the same time.
 --    Do not spawn/despawn while iterating world:objects() or world:all_objects().
 --    If you need to
 --    defer a spawn/despawn, use a queue and process it after the loop.
 
-local ecs<const> = require('ecs')
+local ecs<const> = require('ecs/index')
 local registry<const> = require('registry')
 
 local tickgroup<const> = ecs.tickgroup
@@ -618,7 +618,7 @@ function world_class:rebind_subsystem_systems(subsys)
 	if self._subsystems_by_id[subsys.id] ~= subsys or subsys.dispose_flag then
 		return
 	end
-	local subsystem_module<const> = require('subsystem')
+	local subsystem_module<const> = require('subsystem/index')
 	local systems<const> = {
 		subsystem_module.create_update_system(subsys),
 		subsystem_module.create_animation_system(subsys),

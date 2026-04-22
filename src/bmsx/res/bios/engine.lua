@@ -13,14 +13,14 @@
 -- `local p = constants.physics`): read constants directly from their source table/global.
 -- This module is BIOS/runtime plumbing.
 
-local world_module<const> = require('world')
+local world_module<const> = require('world/index')
 local ecs_builtin<const> = require('ecs/builtin')
 local ecs_pipeline<const> = require('ecs/pipeline')
-local worldobject<const> = require('worldobject')
-local subsystem<const> = require('subsystem')
+local worldobject<const> = require('world/object')
+local subsystem<const> = require('subsystem/index')
 local spriteobject<const> = require('sprite')
-local textobject<const> = require('textobject')
-local fsmlibrary<const> = require('fsmlibrary')
+local textobject<const> = require('text/object')
+local fsmlibrary<const> = require('fsm/library')
 local action_effects<const> = require('action_effects')
 local components<const> = require('components')
 local registry<const> = require('registry')
@@ -43,7 +43,7 @@ local div_toward_zero<const> = require('div_toward_zero')
 local round_to_nearest<const> = require('round_to_nearest')
 local rol8<const> = require('rol8')
 local swap_remove<const> = require('swap_remove')
-local timeline<const> = require('timeline')
+local timeline<const> = require('timeline/index')
 local aem<const> = require('aem')
 local progression<const> = require('progression')
 

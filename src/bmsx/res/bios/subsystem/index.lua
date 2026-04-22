@@ -1,9 +1,9 @@
 local eventemitter<const> = require('eventemitter')
-local fsm<const> = require('fsm')
-local fsmlibrary<const> = require('fsmlibrary')
-local ecs<const> = require('ecs')
+local fsm<const> = require('fsm/index')
+local fsmlibrary<const> = require('fsm/library')
+local ecs<const> = require('ecs/index')
 local subsystem_timeline_module<const> = require('subsystem/timelines')
-local world_instance<const> = require('world').instance
+local world_instance<const> = require('world/index').instance
 
 local tickgroup<const> = ecs.tickgroup
 local ecsystem<const> = ecs.ecsystem

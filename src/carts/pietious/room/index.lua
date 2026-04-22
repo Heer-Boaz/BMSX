@@ -1,6 +1,6 @@
 local constants<const> = require('constants')
 local castle_map<const> = require('castle/map')
-local timeline<const> = require('timeline')
+local timeline<const> = require('timeline/index')
 
 local room<const> = {}
 local water_surface_timeline_id<const> = 'r.ws'

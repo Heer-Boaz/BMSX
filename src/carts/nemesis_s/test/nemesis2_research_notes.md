@@ -133,7 +133,7 @@
   - missile gravity/floor-crawl model,
   - option follow-delay queue.
 
-## ASM -> Lua mapping now applied (`src/carts/nemesis_s/player.lua`)
+## ASM -> Lua mapping now applied (`src/carts/nemesis_s/player/index.lua`)
 
 - `AEB7`:
   - `SUB 6` on `(IY+5)` -> `uplaser.y = uplaser.y - 6` every update tick.

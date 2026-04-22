@@ -54,11 +54,11 @@ local wrap_text_lines<const> = require('util/wrap_text_lines')
 --    Use collision_profiles to assign named layer+mask presets rather than
 --    setting layer/mask directly.
 
-local ecs<const> = require('ecs')
+local ecs<const> = require('ecs/index')
 local clear_map<const> = require('clear_map')
 local collision2d<const> = require('collision2d')
 local scratchrecordbatch<const> = require('scratchrecordbatch')
-local world_instance<const> = require('world').instance
+local world_instance<const> = require('world/index').instance
 
 local tickgroup<const> = ecs.tickgroup
 local ecsystem<const> = ecs.ecsystem

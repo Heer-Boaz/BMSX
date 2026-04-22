@@ -1,5 +1,5 @@
 import type { EngineCore } from '../../../core/engine';
-import type { Api } from '../api';
+import type { Api } from './index';
 
 export type ApiParameterMetadata = {
 	readonly name: string;

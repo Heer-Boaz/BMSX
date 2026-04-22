@@ -122,7 +122,7 @@ export default function schedule({ logger, test }) {
 			local combat_fade_frames = timeline_builders.build_combat_fade_frames()
 			local combat_fade_overlay = combat_fade_frames[1].overlay
 			local combat_fade_sprite_component = combat_fade_frames[1].sprite_component
-			local timeline = require('timeline')
+			local timeline = require('timeline/index')
 			local catchup = timeline.new({
 				id = 'catchup',
 				frames = timeline.range(4),

@@ -977,6 +977,7 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 				break;
 			case 'lua':
 				// For Lua files, we also determine the current datetime to allow the workspace to detect changes and choosing which source to regard as newer
+				name = sourcePath.replace(/\.lua$/i, '');
 				result.push({ filepath, name, ext, type, id: luaid, sourcePath, update_timestamp: meta.update_timestamp });
 				++luaid;
 				break;

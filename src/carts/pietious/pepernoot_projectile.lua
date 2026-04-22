@@ -12,7 +12,7 @@
 
 local constants<const> = require('constants')
 local components<const> = require('components')
-local worldobject<const> = require('worldobject')
+local worldobject<const> = require('world/object')
 
 local pepernoot_projectile<const> = {}
 pepernoot_projectile.__index = pepernoot_projectile

@@ -1,6 +1,6 @@
 import { $ } from '../../../core/engine';
 import { HZ_SCALE } from '../../../platform/platform';
-import { resolveUfpsScaled } from '../timing';
+import { resolveUfpsScaled } from './index';
 
 export class TimingState {
 	public ufps: number;

@@ -36,7 +36,7 @@
 --      self:gfx('enemy')
 --      self.collider:apply_collision_profile('enemy')  -- sets layer/mask
 
-local worldobject<const> = require('worldobject')
+local worldobject<const> = require('world/object')
 local components<const> = require('components')
 
 local spriteobject<const> = {}

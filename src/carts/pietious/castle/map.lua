@@ -1,5 +1,5 @@
 local constants<const> = require('constants')
-local text<const> = require('text')
+local text<const> = require('text/index')
 
 local castle_map<const> = {}
 local empty_conditions<const> = {}

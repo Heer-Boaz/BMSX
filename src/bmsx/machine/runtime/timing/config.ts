@@ -1,6 +1,6 @@
 import { $ } from '../../../core/engine';
 import { getMachinePerfSpecs } from '../../../rompack/format';
-import { calcCyclesPerFrameScaled, resolveVblankCycles } from '../timing';
+import { calcCyclesPerFrameScaled, resolveVblankCycles } from './index';
 import { resolveBytesPerSec, resolveGeoWorkUnitsPerSec, resolveRuntimeRenderSize, resolveVdpWorkUnitsPerSec } from '../../specs';
 import type { Runtime } from '../runtime';
 
