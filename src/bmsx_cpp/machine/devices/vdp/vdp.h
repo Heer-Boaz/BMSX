@@ -19,8 +19,11 @@ namespace bmsx {
 class ImgDecController;
 class BFont;
 class Api;
+class VDP;
 struct VdpGles2Blitter;
-
+void restoreVdpContextState(VDP& vdp);
+void captureVdpContextState(VDP& vdp);
+void syncVdpSlotTextures(VDP& vdp);
 struct VdpAtlasSize {
 	uint32_t width = 0;
 	uint32_t height = 0;
@@ -97,19 +100,15 @@ public:
 		void enqueuePayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer);
 	uint32_t frameBufferWidth() const { return m_frameBufferWidth; }
 	uint32_t frameBufferHeight() const { return m_frameBufferHeight; }
-		uint32_t readVdpStatus();
-		uint32_t readVdpData();
+	uint32_t readVdpStatus();
+	uint32_t readVdpData();
 
 	void registerVramAssets(VdpAtlasMemory atlasMemory);
-	void restoreVramSlotTextures();
-	void captureVramTextureSnapshots();
-	void shutdownBackendResources();
 	void attachImgDecController(ImgDecController& controller);
 	void setSkyboxImages(const SkyboxImageIds& ids);
 	void clearSkybox();
 	VdpState captureState() const;
 	void restoreState(const VdpState& state);
-	void commitLiveVisualState();
 	i32 committedDitherType() const { return m_committedDitherType; }
 	i32 committedPrimaryAtlasIdInSlot() const { return m_committedSlotAtlasIds[0]; }
 	i32 committedSecondaryAtlasIdInSlot() const { return m_committedSlotAtlasIds[1]; }
@@ -224,6 +223,8 @@ public:
 		uint32_t textureHeight = 0;
 		std::vector<u8> cpuReadback;
 		std::vector<u8> contextSnapshot;
+		uint32_t dirtyRowStart = 0;
+		uint32_t dirtyRowEnd = 0;
 	};
 	struct VramGarbageStream {
 		uint32_t machineSeed = 0;
@@ -315,6 +316,7 @@ public:
 	VramSlot& findVramSlot(uint32_t addr, size_t length);
 	const VramSlot& findVramSlot(uint32_t addr, size_t length) const;
 	void syncVramSlotTextureSize(VramSlot& slot);
+	void markVramSlotDirty(VramSlot& slot, uint32_t startRow, uint32_t rowCount);
 	VramSlot& getVramSlotByTextureKey(const std::string& textureKey);
 	const VramSlot& getVramSlotByTextureKey(const std::string& textureKey) const;
 		uint32_t nextVramMachineSeed() const;
@@ -371,7 +373,11 @@ public:
 	void copyFrameBufferRect(std::vector<u8>& pixels, i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, Layer2D layer, f32 z, u32 seq);
 
 	friend struct VdpGles2Blitter;
+	friend void restoreVdpContextState(VDP& vdp);
+	friend void captureVdpContextState(VDP& vdp);
+	friend void syncVdpSlotTextures(VDP& vdp);
 
+	void commitLiveVisualState();
 };
 
 } // namespace bmsx

@@ -5,6 +5,7 @@
 #include "machine/devices/vdp/fault.h"
 #include "render/backend/gles2_backend.h"
 #include "render/shared/queues.h"
+#include "render/vdp/slot_textures.h"
 #include "render/vdp/texture_transfer.h"
 #include "rompack/format.h"
 #include <algorithm>
@@ -501,9 +502,10 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 	if (view->backendType() != BackendType::OpenGLES2) {
 		return false;
 	}
-		auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
-		ensureVdpGles2Runtime(backend);
-		VdpGles2Host host;
+	syncVdpSlotTextures(vdp);
+	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
+	ensureVdpGles2Runtime(backend);
+	VdpGles2Host host;
 	host.backend = backend;
 	host.renderTexture = view->textures[FRAMEBUFFER_RENDER_TEXTURE_KEY];
 	host.width = static_cast<i32>(vdp.m_frameBufferWidth);
@@ -517,7 +519,7 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 		if (surface.textureKey.empty()) {
 			return;
 		}
-			info.texture = vdpTextureByUri(surface.textureKey);
+		info.texture = vdpTextureByUri(surface.textureKey);
 		const auto& entry = vdp.m_memory.getAssetEntry(surface.assetId);
 		info.invWidth = 1.0f / static_cast<f32>(entry.regionW);
 		info.invHeight = 1.0f / static_cast<f32>(entry.regionH);

@@ -127,7 +127,9 @@ add_library(bmsx_core STATIC
 	render/shared/queues.cpp
 	runtime/assets/edits.cpp
 	render/vdp/blitter/gles2.cpp
+	render/vdp/context_state.cpp
 	render/vdp/framebuffer.cpp
+	render/vdp/slot_textures.cpp
 	render/vdp/texture_transfer.cpp
 	render/vdp/view_snapshot.cpp
 	render/texture_manager.cpp

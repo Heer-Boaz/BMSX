@@ -633,14 +633,18 @@ void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
 		const uint32_t rowBytes = static_cast<uint32_t>(std::min<size_t>(remaining, rowAvailable));
 		const i32 x = static_cast<i32>(rowOffset / 4u);
 		const i32 width = static_cast<i32>(rowBytes / 4u);
-		updateVdpTextureRegion(
-			slot.textureKey,
-			data + cursor,
-			width,
-			1,
-			x,
-			static_cast<i32>(row)
-		);
+		if (slot.textureKey == FRAMEBUFFER_RENDER_TEXTURE_KEY) {
+			updateVdpTextureRegion(
+				slot.textureKey,
+				data + cursor,
+				width,
+				1,
+				x,
+				static_cast<i32>(row)
+			);
+		} else {
+			markVramSlotDirty(slot, row, 1u);
+		}
 		const size_t cpuOffset = static_cast<size_t>(row) * static_cast<size_t>(stride) + static_cast<size_t>(rowOffset);
 		std::memcpy(slot.cpuReadback.data() + cpuOffset, data + cursor, rowBytes);
 		invalidateReadCache(slot.surfaceId);
@@ -1941,12 +1945,6 @@ void VDP::executeBlitterQueue(const std::vector<BlitterCommand>& queue) {
 // end numeric-sanitization-acceptable
 // end hot-path
 
-void VDP::shutdownBackendResources() {
-#if BMSX_ENABLE_GLES2
-	VdpGles2Blitter::shutdown();
-#endif
-}
-
 void VDP::commitLiveVisualState() {
 	m_committedDitherType = m_lastDitherType;
 	m_committedSlotAtlasIds = m_slotAtlasIds;
@@ -2112,39 +2110,6 @@ void VDP::registerVramAssets(VdpAtlasMemory atlasMemory) {
 	syncRegisters();
 }
 
-void VDP::restoreVramSlotTextures() {
-	const auto& frameBufferEntry = m_memory.getAssetEntry(FRAMEBUFFER_RENDER_TEXTURE_KEY);
-	restoreVramSlotTexture(frameBufferEntry, FRAMEBUFFER_RENDER_TEXTURE_KEY);
-	ensureDisplayFrameBufferTexture();
-	syncRenderFrameBufferToDisplayPage();
-	const auto& engineEntry = m_memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
-	restoreVramSlotTexture(engineEntry, ENGINE_ATLAS_TEXTURE_KEY);
-	loadVdpEngineAtlasViewTexture();
-	const auto& primaryEntry = m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
-	const auto& secondaryEntry = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
-	restoreVramSlotTexture(primaryEntry, ATLAS_PRIMARY_SLOT_ID);
-	restoreVramSlotTexture(secondaryEntry, ATLAS_SECONDARY_SLOT_ID);
-}
-
-void VDP::captureVramTextureSnapshots() {
-	for (auto& slot : m_vramSlots) {
-		auto& entry = m_memory.getAssetEntry(slot.assetId);
-		if (slot.textureKey != FRAMEBUFFER_RENDER_TEXTURE_KEY) {
-			slot.contextSnapshot = slot.cpuReadback;
-			continue;
-		}
-		const size_t bytes = static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u;
-		slot.contextSnapshot.resize(bytes);
-		readVdpRenderFrameBufferTextureRegion(
-			slot.contextSnapshot.data(),
-			static_cast<i32>(entry.regionW),
-			static_cast<i32>(entry.regionH),
-			0,
-			0
-		);
-	}
-}
-
 uint32_t VDP::trackedUsedVramBytes() const {
 	uint32_t usedBytes = 0;
 	for (const auto& slot : m_vramSlots) {
@@ -2269,9 +2234,12 @@ void VDP::restoreState(const VdpState& state) {
 }
 
 void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId) {
+	const bool frameBufferSlot = textureKey == FRAMEBUFFER_RENDER_TEXTURE_KEY;
 	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, entry.baseAddr};
 	fillVramGarbageScratch(m_vramSeedPixel.data(), m_vramSeedPixel.size(), stream);
-	TextureHandle handle = ensureVdpTextureFromSeed(textureKey, m_vramSeedPixel.data(), entry.regionW, entry.regionH);
+	if (frameBufferSlot) {
+		ensureVdpTextureFromSeed(textureKey, m_vramSeedPixel.data(), entry.regionW, entry.regionH);
+	}
 	VramSlot slot;
 	slot.baseAddr = entry.baseAddr;
 	slot.capacity = entry.capacity;
@@ -2283,14 +2251,12 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& t
 	slot.cpuReadback.resize(static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u);
 	m_vramSlots.push_back(std::move(slot));
 	registerReadSurface(surfaceId, entry.id, textureKey);
-	if (handle) {
-		auto& slotRef = m_vramSlots.back();
-		if (textureKey == ENGINE_ATLAS_TEXTURE_KEY) {
-			invalidateReadCache(surfaceId);
-		} else {
-			seedVramSlotTexture(slotRef);
-		}
+	auto& slotRef = m_vramSlots.back();
+	if (textureKey == ENGINE_ATLAS_TEXTURE_KEY) {
+		invalidateReadCache(surfaceId);
+		return;
 	}
+	seedVramSlotTexture(slotRef);
 }
 
 VDP::VramSlot& VDP::findVramSlot(uint32_t addr, size_t length) {
@@ -2320,12 +2286,34 @@ void VDP::syncVramSlotTextureSize(VramSlot& slot) {
 	if (slot.textureWidth == width && slot.textureHeight == height) {
 		return;
 	}
-	resizeVdpTextureForKey(slot.textureKey, width, height);
 	slot.textureWidth = width;
 	slot.textureHeight = height;
 	slot.cpuReadback.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
+	if (slot.textureKey == FRAMEBUFFER_RENDER_TEXTURE_KEY) {
+		resizeVdpTextureForKey(slot.textureKey, width, height);
+	}
 	invalidateReadCache(slot.surfaceId);
+	if (slot.textureKey == ENGINE_ATLAS_TEXTURE_KEY) {
+		slot.dirtyRowStart = 0;
+		slot.dirtyRowEnd = 0;
+		return;
+	}
 	seedVramSlotTexture(slot);
+}
+
+void VDP::markVramSlotDirty(VramSlot& slot, uint32_t startRow, uint32_t rowCount) {
+	const uint32_t endRow = startRow + rowCount;
+	if (slot.dirtyRowStart >= slot.dirtyRowEnd) {
+		slot.dirtyRowStart = startRow;
+		slot.dirtyRowEnd = endRow;
+		return;
+	}
+	if (startRow < slot.dirtyRowStart) {
+		slot.dirtyRowStart = startRow;
+	}
+	if (endRow > slot.dirtyRowEnd) {
+		slot.dirtyRowEnd = endRow;
+	}
 }
 
 VDP::VramSlot& VDP::getVramSlotByTextureKey(const std::string& textureKey) {
@@ -2436,20 +2424,26 @@ void VDP::seedVramSlotTexture(VramSlot& slot) {
 	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, entry.baseAddr};
 	const size_t rowBytes = rowPixels * 4u;
 	const uint32_t height = entry.regionH;
+	const bool frameBufferSlot = slot.textureKey == FRAMEBUFFER_RENDER_TEXTURE_KEY
+		&& vdpTextureByUri(slot.textureKey) != nullptr;
 	if (rowBytes <= m_vramGarbageScratch.size()) {
 		const size_t rowsPerChunk = std::max<size_t>(1u, m_vramGarbageScratch.size() / rowBytes);
 		for (uint32_t y = 0; y < height; ) {
 			const size_t rows = std::min<size_t>(rowsPerChunk, height - y);
 			const size_t chunkBytes = rowBytes * rows;
 			fillVramGarbageScratch(m_vramGarbageScratch.data(), chunkBytes, stream);
-			updateVdpTextureRegion(
-				slot.textureKey,
-				m_vramGarbageScratch.data(),
-				static_cast<i32>(rowPixels),
-				static_cast<i32>(rows),
-				0,
-				static_cast<i32>(y)
-			);
+			if (frameBufferSlot) {
+				updateVdpTextureRegion(
+					slot.textureKey,
+					m_vramGarbageScratch.data(),
+					static_cast<i32>(rowPixels),
+					static_cast<i32>(rows),
+					0,
+					static_cast<i32>(y)
+				);
+			} else {
+				markVramSlotDirty(slot, y, static_cast<uint32_t>(rows));
+			}
 			std::memcpy(slot.cpuReadback.data() + static_cast<size_t>(y) * rowBytes, m_vramGarbageScratch.data(), chunkBytes);
 			y += static_cast<uint32_t>(rows);
 		}
@@ -2459,14 +2453,18 @@ void VDP::seedVramSlotTexture(VramSlot& slot) {
 				const size_t segmentWidth = std::min<size_t>(maxPixels, entry.regionW - x);
 				const size_t segmentBytes = segmentWidth * 4u;
 				fillVramGarbageScratch(m_vramGarbageScratch.data(), segmentBytes, stream);
-				updateVdpTextureRegion(
-					slot.textureKey,
-					m_vramGarbageScratch.data(),
-					static_cast<i32>(segmentWidth),
-					1,
-					static_cast<i32>(x),
-					static_cast<i32>(y)
-				);
+				if (frameBufferSlot) {
+					updateVdpTextureRegion(
+						slot.textureKey,
+						m_vramGarbageScratch.data(),
+						static_cast<i32>(segmentWidth),
+						1,
+						static_cast<i32>(x),
+						static_cast<i32>(y)
+					);
+				} else {
+					markVramSlotDirty(slot, y, 1u);
+				}
 				std::memcpy(
 					slot.cpuReadback.data() + static_cast<size_t>(y) * rowBytes + static_cast<size_t>(x) * 4u,
 					m_vramGarbageScratch.data(),

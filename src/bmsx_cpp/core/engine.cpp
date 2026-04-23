@@ -7,6 +7,7 @@
 #include "input/manager.h"
 #include "audio/resources.h"
 #include "render/texture_manager.h"
+#include "render/vdp/context_state.h"
 #include "../machine/runtime/runtime.h"
 #include "../machine/memory/asset_memory.h"
 #include "../machine/specs.h"
@@ -184,7 +185,7 @@ void EngineCore::refreshRenderAssets() {
 	}
 	m_view->initializeDefaultTextures();
 	if (Runtime::hasInstance()) {
-		Runtime::instance().machine().vdp().restoreVramSlotTextures();
+		restoreVdpContextState(Runtime::instance().machine().vdp());
 	}
 }
 

@@ -32,6 +32,7 @@ import {
 import { spriteParallaxRig } from '../../2d/sprite_parallax_rig';
 import fragmentShaderCode from '../shaders/vdp_2d.frag.glsl';
 import vertexShaderCode from '../shaders/vdp_2d.vert.glsl';
+import { syncVdpSlotTextures } from '../slot_textures';
 
 type DrawMode = 'atlas' | 'solid';
 
@@ -576,6 +577,7 @@ export class WebGLVdpBlitterExecutor implements VdpBlitterExecutor {
 		if (commands.length === 0) {
 			return;
 		}
+		syncVdpSlotTextures(Runtime.instance.machine.vdp);
 		const state = this.runtime;
 		const priorityDepthTexture = preparePriorityDepthTexture(this.backend, state, context.width, context.height);
 		const priorityDepthBySeq = buildPriorityDepthBySequence(state, commands);

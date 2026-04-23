@@ -1,4 +1,5 @@
 import { $ } from '../../../core/engine';
+import { Runtime } from '../../../machine/runtime/runtime';
 import type {
 	VdpBlitterCommand,
 	VdpBlitterExecutor,
@@ -8,6 +9,7 @@ import type {
 } from '../../../machine/devices/vdp/vdp';
 import type { Layer2D } from '../../shared/submissions';
 import { HeadlessGPUBackend } from '../../headless/backend';
+import { syncVdpSlotTextures } from '../slot_textures';
 
 const BLITTER_WHITE: VdpFrameBufferColor = { r: 255, g: 255, b: 255, a: 255 };
 
@@ -31,6 +33,7 @@ export class HeadlessVdpBlitterExecutor implements VdpBlitterExecutor {
 		if (commands.length === 0) {
 			return;
 		}
+		syncVdpSlotTextures(Runtime.instance.machine.vdp);
 		const frameBufferTexture = $.texmanager.getTextureByUri(context.frameBufferTextureKey);
 		const frameBufferPixels = this.backend.readTextureRegion(frameBufferTexture, 0, 0, context.width, context.height);
 		this.ensurePriorityCapacity(context.width * context.height);

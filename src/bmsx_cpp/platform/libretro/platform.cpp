@@ -10,6 +10,7 @@
 #include "input/pointer.h"
 #include "render/backend/pass/library.h"
 #include "render/texture_manager.h"
+#include "render/vdp/context_state.h"
 #include "common/mem_snapshot.h"
 #include "../../machine/runtime/runtime.h"
 #if BMSX_ENABLE_GLES2
@@ -239,9 +240,9 @@ void LibretroPlatform::onContextDestroy() {
 	if (Runtime::hasInstance()) {
 		auto& vdp = Runtime::instance().machine().vdp();
 		if (!m_render_assets_need_refresh) {
-			vdp.captureVramTextureSnapshots();
+			captureVdpContextState(vdp);
 		}
-		vdp.shutdownBackendResources();
+		shutdownVdpContextState();
 	}
 	m_engine->texmanager()->clear();
 	m_render_assets_need_refresh = true;
