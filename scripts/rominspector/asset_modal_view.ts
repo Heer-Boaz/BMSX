@@ -213,8 +213,8 @@ function buildPreviewSection(titleLine: string, rgba: Uint8Array, width: number,
 }
 
 function cropRgba(data: Uint8Array, width: number, startX: number, startY: number, endX: number, endY: number): Uint8Array {
-	const cropWidth = Math.max(0, endX - startX);
-	const cropHeight = Math.max(0, endY - startY);
+	const cropWidth = endX - startX;
+	const cropHeight = endY - startY;
 	const cropped = new Uint8Array(cropWidth * cropHeight * 4);
 	for (let y = 0; y < cropHeight; y += 1) {
 		const sourceRow = ((startY + y) * width + startX) << 2;

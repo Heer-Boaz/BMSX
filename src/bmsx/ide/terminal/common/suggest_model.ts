@@ -489,7 +489,7 @@ export class TerminalSuggestModel {
 			return;
 		}
 		const row = panel.selectionIndex % layout.rows;
-		const maxOffset = Math.max(0, layout.rows - layout.visibleRows);
+		const maxOffset = layout.rows - layout.visibleRows;
 		let offset = clamp(panel.displayRowOffset, 0, maxOffset);
 		if (row < offset) {
 			offset = row;
@@ -526,7 +526,7 @@ export class TerminalSuggestModel {
 		const current = panel.selectionIndex < 0 ? 0 : panel.selectionIndex;
 		const row = current % layout.rows;
 		const col = Math.floor(current / layout.rows);
-		const nextCol = clamp(col + delta, 0, Math.max(0, layout.columns - 1));
+		const nextCol = clamp(col + delta, 0, layout.columns - 1);
 		const columnStart = nextCol * layout.rows;
 		const columnEnd = Math.min(total - 1, columnStart + layout.rows - 1);
 		panel.selectionIndex = clamp(columnStart + row, columnStart, columnEnd);

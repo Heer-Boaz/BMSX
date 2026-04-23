@@ -19,7 +19,7 @@ export function gotoDiagnostic(diagnostic: EditorDiagnostic): void {
 	if (!isCodeTabActive()) {
 		return;
 	}
-	const targetRow = clamp(diagnostic.row, 0, Math.max(0, editorDocumentState.buffer.getLineCount() - 1));
+	const targetRow = clamp(diagnostic.row, 0, editorDocumentState.buffer.getLineCount() - 1);
 	const line = editorDocumentState.buffer.getLineContent(targetRow);
 	const targetColumn = clamp(diagnostic.startColumn, 0, line.length);
 	setCursorPosition(targetRow, targetColumn);

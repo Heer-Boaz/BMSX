@@ -18,8 +18,25 @@ import {
 	ATLAS_SECONDARY_SLOT_ID,
 	ENGINE_ATLAS_INDEX,
 	ENGINE_ATLAS_TEXTURE_KEY,
+	FRAMEBUFFER_RENDER_TEXTURE_KEY,
+	FRAMEBUFFER_TEXTURE_KEY,
 	generateAtlasName,
 } from '../../../rompack/format';
+import {
+	copyVdpRenderFrameBufferToDisplay,
+	currentVdpFrameBufferSize,
+	ensureVdpDisplayFrameBufferTexture,
+	swapVdpFrameBufferTexturePages,
+	vdpRenderFrameBufferTextureExists,
+} from '../../../render/vdp/framebuffer';
+import {
+	ensureVdpTextureFromSeed,
+	resizeVdpTextureForKey,
+	updateVdpAssetTexture,
+	updateVdpSlotTexture,
+	updateVdpTextureRegion,
+} from '../../../render/vdp/texture_transfer';
+import { readVdpTextureRegion, vdpTextureReadbackUsesCpuCopy } from '../../../render/vdp/readback';
 import type { RawAssetSource } from '../../../rompack/source';
 import {
 	IO_VDP_DITHER,
@@ -408,7 +425,6 @@ type VdpReadCache = {
 };
 
 type VramSlot = {
-	kind: 'asset';
 	baseAddr: number;
 	capacity: number;
 	entry: AssetEntry;
@@ -417,8 +433,6 @@ type VramSlot = {
 	textureWidth: number;
 	textureHeight: number;
 };
-
-type AssetVramSlot = VramSlot;
 
 export type VdpFrameBufferColor = {
 	r: number;
@@ -596,12 +610,9 @@ export interface VdpBlitterContext {
 }
 
 export interface VdpBlitterExecutor {
-	readonly backendType: 'webgl2' | 'webgpu' | 'headless';
 	execute(context: VdpBlitterContext, commands: readonly VdpBlitterCommand[]): void;
 }
 
-export const FRAMEBUFFER_TEXTURE_KEY = '_framebuffer_2d';
-export const FRAMEBUFFER_RENDER_TEXTURE_KEY = '_framebuffer_render_2d';
 const BLITTER_FIFO_CAPACITY = 4096;
 
 export class VDP implements VramWriteSink {
@@ -1138,10 +1149,7 @@ export class VDP implements VramWriteSink {
 			return;
 		}
 		if (this.blitterExecutor === null) {
-			throw vdpFault(`no JS blitter executor for backend ${$.view.backend.type}.`);
-		}
-		if ($.view.backend.type !== this.blitterExecutor.backendType) {
-			throw vdpFault(`JS blitter executor mismatch (${this.blitterExecutor.backendType} != ${$.view.backend.type}).`);
+			throw vdpFault('no JS blitter executor for current backend.');
 		}
 		const context = this.blitterContext;
 		context.width = this._frameBufferWidth;
@@ -1153,18 +1161,11 @@ export class VDP implements VramWriteSink {
 	}
 
 	private ensureDisplayFrameBufferTexture(): void {
-		let handle = $.texmanager.getTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
-		if (!handle) {
-			handle = $.texmanager.createTextureFromPixelsSync(FRAMEBUFFER_TEXTURE_KEY, this.vramSeedPixel, 1, 1);
-		}
-		handle = $.texmanager.resizeTextureForKey(FRAMEBUFFER_TEXTURE_KEY, this._frameBufferWidth, this._frameBufferHeight);
-		$.view.textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
+		ensureVdpDisplayFrameBufferTexture(this.vramSeedPixel, this._frameBufferWidth, this._frameBufferHeight);
 	}
 
 	private swapFrameBufferPages(): void {
-		$.texmanager.swapTextureHandlesByUri(FRAMEBUFFER_TEXTURE_KEY, FRAMEBUFFER_RENDER_TEXTURE_KEY);
-		$.view.textures[FRAMEBUFFER_TEXTURE_KEY] = $.texmanager.getTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
-		$.view.textures[FRAMEBUFFER_RENDER_TEXTURE_KEY] = $.texmanager.getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY);
+		swapVdpFrameBufferTexturePages();
 		const displayReadback = this.cpuReadbackByKey.get(FRAMEBUFFER_TEXTURE_KEY);
 		const renderReadback = this.cpuReadbackByKey.get(FRAMEBUFFER_RENDER_TEXTURE_KEY);
 		if (displayReadback || renderReadback) {
@@ -1183,7 +1184,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	private syncRenderFrameBufferToDisplayPage(): void {
-		$.texmanager.copyTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY, this._frameBufferWidth, this._frameBufferHeight);
+		copyVdpRenderFrameBufferToDisplay(this._frameBufferWidth, this._frameBufferHeight);
 		const renderReadback = this.cpuReadbackByKey.get(FRAMEBUFFER_RENDER_TEXTURE_KEY);
 		if (renderReadback) {
 			let displayReadback = this.cpuReadbackByKey.get(FRAMEBUFFER_TEXTURE_KEY);
@@ -1400,8 +1401,9 @@ export class VDP implements VramWriteSink {
 	}
 
 	private initializeFrameBufferSurface(): void {
-		const width = $.view.viewportSize.x;
-		const height = $.view.viewportSize.y;
+		const frameBufferSize = currentVdpFrameBufferSize();
+		const width = frameBufferSize.width;
+		const height = frameBufferSize.height;
 		const entry = this.memory.hasAsset(FRAMEBUFFER_RENDER_TEXTURE_KEY)
 			? this.memory.getAssetEntry(FRAMEBUFFER_RENDER_TEXTURE_KEY)
 			: this.memory.registerImageSlotAt({
@@ -1827,8 +1829,8 @@ export class VDP implements VramWriteSink {
 	public get frameBufferPixels(): Uint8Array {
 		const surface = this.getReadSurface(VDP_RD_SURFACE_FRAMEBUFFER);
 		const buffer = this.getCpuReadbackBuffer(surface);
-		if ($.view.backend.type !== 'webgpu') {
-			buffer.set($.view.backend.readTextureRegion($.texmanager.getTextureByUri(surface.textureKey), 0, 0, this._frameBufferWidth, this._frameBufferHeight));
+		if (!vdpTextureReadbackUsesCpuCopy()) {
+			buffer.set(readVdpTextureRegion(surface.textureKey, 0, 0, this._frameBufferWidth, this._frameBufferHeight));
 		}
 		return buffer;
 	}
@@ -1837,9 +1839,9 @@ export class VDP implements VramWriteSink {
 		const source = this.resolveBlitterSource(handle);
 		const surface = this.getReadSurface(source.surfaceId);
 		return {
-			pixels: $.view.backend.type === 'webgpu'
+			pixels: vdpTextureReadbackUsesCpuCopy()
 				? this.getCpuReadbackBuffer(surface)
-				: $.view.backend.readTextureRegion($.texmanager.getTextureByUri(surface.textureKey), 0, 0, surface.entry.regionW, surface.entry.regionH),
+				: readVdpTextureRegion(surface.textureKey, 0, 0, surface.entry.regionW, surface.entry.regionH),
 			regionX: source.srcX,
 			regionY: source.srcY,
 			stride: this.resolveSurfaceStride(source.surfaceId),
@@ -1848,6 +1850,7 @@ export class VDP implements VramWriteSink {
 		};
 	}
 
+	// start repeated-sequence-acceptable -- VRAM row streaming keeps read/write loops direct; callback helpers would add hot-path overhead.
 	public writeVram(addr: number, bytes: Uint8Array): void {
 		if (addr >= VRAM_STAGING_BASE && addr + bytes.byteLength <= VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
 			const offset = addr - VRAM_STAGING_BASE;
@@ -1859,9 +1862,7 @@ export class VDP implements VramWriteSink {
 		if (entry.baseStride === 0 || entry.regionW === 0 || entry.regionH === 0) {
 			throw vdpFault('VRAM slot is not initialized.');
 		}
-		if (slot.kind === 'asset') {
-			this.syncVramSlotTextureSize(slot);
-		}
+		this.syncVramSlotTextureSize(slot);
 		const offset = addr - slot.baseAddr;
 		const stride = entry.baseStride;
 		const rowCount = entry.regionH;
@@ -1877,16 +1878,14 @@ export class VDP implements VramWriteSink {
 		let row = Math.floor(offset / stride);
 		let rowOffset = offset - row * stride;
 		while (remaining > 0) {
-				const rowAvailable = stride - rowOffset;
-				const rowBytes = remaining < rowAvailable ? remaining : rowAvailable;
-				const x = rowOffset / 4;
-				const width = rowBytes / 4;
-				const slice = bytes.subarray(cursor, cursor + rowBytes);
-				if (slot.kind === 'asset') {
-					$.texmanager.updateTextureRegionForKey(slot.textureKey, slice, width, 1, x, row);
-					this.invalidateReadCache(slot.surfaceId);
-					this.updateCpuReadback(slot.surfaceId, slice, x, row);
-				}
+			const rowAvailable = stride - rowOffset;
+			const rowBytes = remaining < rowAvailable ? remaining : rowAvailable;
+			const x = rowOffset / 4;
+			const width = rowBytes / 4;
+			const slice = bytes.subarray(cursor, cursor + rowBytes);
+			updateVdpTextureRegion(slot.textureKey, slice, width, 1, x, row);
+			this.invalidateReadCache(slot.surfaceId);
+			this.updateCpuReadback(slot.surfaceId, slice, x, row);
 			remaining -= rowBytes;
 			cursor += rowBytes;
 			row += 1;
@@ -1916,23 +1915,20 @@ export class VDP implements VramWriteSink {
 		let cursor = 0;
 		let row = Math.floor(offset / stride);
 		let rowOffset = offset - row * stride;
+		const useCpuReadback = vdpTextureReadbackUsesCpuCopy();
 		while (remaining > 0) {
 			const rowAvailable = stride - rowOffset;
 			const rowBytes = remaining < rowAvailable ? remaining : rowAvailable;
-			if (slot.kind === 'asset') {
-				const x = rowOffset / 4;
-				const width = rowBytes / 4;
-				if ($.view.backend.type === 'webgpu') {
-					const surface = this.readSurfaces[slot.surfaceId]!;
-					const buffer = this.getCpuReadbackBuffer(surface);
-					const srcOffset = row * stride + rowOffset;
-					out.set(buffer.subarray(srcOffset, srcOffset + rowBytes), cursor);
-				} else {
-					const slice = $.view.backend.readTextureRegion($.texmanager.getTextureByUri(slot.textureKey), x, row, width, 1);
-					out.set(slice, cursor);
-				}
+			const x = rowOffset / 4;
+			const width = rowBytes / 4;
+			if (useCpuReadback) {
+				const surface = this.readSurfaces[slot.surfaceId]!;
+				const buffer = this.getCpuReadbackBuffer(surface);
+				const srcOffset = row * stride + rowOffset;
+				out.set(buffer.subarray(srcOffset, srcOffset + rowBytes), cursor);
 			} else {
-				out.fill(0, cursor, cursor + rowBytes);
+				const slice = readVdpTextureRegion(slot.textureKey, x, row, width, 1);
+				out.set(slice, cursor);
 			}
 			remaining -= rowBytes;
 			cursor += rowBytes;
@@ -1940,6 +1936,7 @@ export class VDP implements VramWriteSink {
 			rowOffset = 0;
 		}
 	}
+	// end repeated-sequence-acceptable
 
 	public beginFrame(): void {
 		this.readBudgetBytes = VDP_RD_BUDGET_BYTES;
@@ -2002,8 +1999,9 @@ export class VDP implements VramWriteSink {
 			this._frameBufferWidth = frameBufferSurface.entry.regionW;
 			this._frameBufferHeight = frameBufferSurface.entry.regionH;
 		} else {
-			this._frameBufferWidth = $.view.viewportSize.x;
-			this._frameBufferHeight = $.view.viewportSize.y;
+			const frameBufferSize = currentVdpFrameBufferSize();
+			this._frameBufferWidth = frameBufferSize.width;
+			this._frameBufferHeight = frameBufferSize.height;
 		}
 		this.resetQueuedFrameState();
 		this.blitterSequence = 0;
@@ -2030,10 +2028,9 @@ export class VDP implements VramWriteSink {
 		this.lastFrameCommitted = true;
 		this.lastFrameCost = 0;
 		this.lastFrameHeld = false;
-		if ($.texmanager.getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY)) {
+		if (vdpRenderFrameBufferTextureExists()) {
 			this.syncRenderFrameBufferToDisplayPage();
 		}
-		this.commitViewSnapshot();
 	}
 
 	public syncRegisters(): void {
@@ -2072,18 +2069,38 @@ export class VDP implements VramWriteSink {
 		}
 		this.setDitherType(state.ditherType);
 		this.commitLiveVisualState();
-		this.commitViewSnapshot();
 	}
 
-	public commitViewSnapshot(): void {
-		const view = $.view;
-		view.dither_type = this.committedDitherType;
-		view.primaryAtlasIdInSlot = this.committedSlotAtlasIds[0];
-		view.secondaryAtlasIdInSlot = this.committedSlotAtlasIds[1];
-		view.skyboxFaceIds = this.committedSkyboxFaceIds;
-		view.skyboxFaceUvRects = this.committedSkyboxRenderReady ? this.committedSkyboxFaceUvRects : null;
-		view.skyboxFaceAtlasBindings = this.committedSkyboxRenderReady ? this.committedSkyboxFaceAtlasBindings : null;
-		view.skyboxFaceSizes = this.committedSkyboxRenderReady ? this.committedSkyboxFaceSizes : null;
+	public get committedViewDitherType(): number {
+		return this.committedDitherType;
+	}
+
+	public get committedViewPrimaryAtlasIdInSlot(): number | null {
+		return this.committedSlotAtlasIds[0];
+	}
+
+	public get committedViewSecondaryAtlasIdInSlot(): number | null {
+		return this.committedSlotAtlasIds[1];
+	}
+
+	public get committedViewSkyboxFaceIds(): SkyboxImageIds | null {
+		return this.committedSkyboxFaceIds;
+	}
+
+	public get committedViewSkyboxRenderReady(): boolean {
+		return this.committedSkyboxRenderReady;
+	}
+
+	public get committedViewSkyboxFaceUvRects(): Float32Array {
+		return this.committedSkyboxFaceUvRects;
+	}
+
+	public get committedViewSkyboxFaceAtlasBindings(): Int32Array {
+		return this.committedSkyboxFaceAtlasBindings;
+	}
+
+	public get committedViewSkyboxFaceSizes(): Int32Array {
+		return this.committedSkyboxFaceSizes;
 	}
 
 	public commitLiveVisualState(): void {
@@ -2141,8 +2158,7 @@ export class VDP implements VramWriteSink {
 				return;
 			}
 			const atlasEntry = this.atlasResourcesById.get(atlasId)!;
-			const atlasAsset = Runtime.instance.assets.getImageAsset(atlasEntry.resid);
-			const { width, height } = atlasAsset.imgmeta!;
+			const { width, height } = atlasEntry.imgmeta!;
 			const size = width * height * 4;
 			if (size > slotEntry.capacity) {
 				throw vdpFault(`atlas ${atlasId} (${width}x${height}) exceeds slot capacity ${slotEntry.capacity}.`);
@@ -2198,7 +2214,7 @@ export class VDP implements VramWriteSink {
 		this._skyboxFaceIds = null;
 	}
 
-	public async registerImageAssets(source: RawAssetSource): Promise<void> {
+	public async registerImageAssets(engineSource: RawAssetSource, source: RawAssetSource): Promise<void> {
 		const entries = source.list();
 		const viewEntries: RomAsset[] = [];
 		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
@@ -2244,8 +2260,7 @@ export class VDP implements VramWriteSink {
 			if (entry.type !== 'image' && entry.type !== 'atlas') {
 				continue;
 			}
-			const imgAsset = Runtime.instance.assets.getImageAssetByEntry(entry);
-			const meta = imgAsset.imgmeta!;
+			const meta = entry.imgmeta!;
 			if (entry.type === 'atlas') {
 				const atlasId = meta.atlasid!;
 				if (meta.width <= 0 || meta.height <= 0) {
@@ -2260,7 +2275,7 @@ export class VDP implements VramWriteSink {
 			}
 		}
 
-		const engineAtlasAsset = Runtime.instance.assets.getImageAsset(engineAtlasName, source);
+		const engineAtlasAsset = engineSource.getEntry(engineAtlasName) as RomImgAsset;
 		const engineAtlasMeta = engineAtlasAsset.imgmeta!;
 		if (engineAtlasMeta.width <= 0 || engineAtlasMeta.height <= 0) {
 			throw vdpFault(`engine atlas '${engineAtlasName}' missing dimensions.`);
@@ -2275,7 +2290,7 @@ export class VDP implements VramWriteSink {
 			});
 		setAtlasEntryDimensions(engineEntryRecord, engineAtlasMeta.width, engineAtlasMeta.height);
 		this.registerVramSlot(engineEntryRecord, ENGINE_ATLAS_TEXTURE_KEY, VDP_RD_SURFACE_ENGINE);
-		await this.restoreEngineAtlasFromSource(engineEntryRecord, source, engineAtlasAsset);
+		await this.restoreEngineAtlasFromSource(engineEntryRecord, engineSource, engineAtlasAsset);
 
 		const primarySlotEntry = this.memory.hasAsset(ATLAS_PRIMARY_SLOT_ID)
 			? this.memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID)
@@ -2301,8 +2316,7 @@ export class VDP implements VramWriteSink {
 
 		for (let index = 0; index < viewEntries.length; index += 1) {
 			const entry = viewEntries[index];
-			const imgAsset = Runtime.instance.assets.getImageAssetByEntry(entry);
-			const meta = imgAsset.imgmeta!;
+			const meta = entry.imgmeta!;
 			const coords = meta.texcoords!;
 			const atlasId = meta.atlasid!;
 			let atlasWidth = 0;
@@ -2314,9 +2328,8 @@ export class VDP implements VramWriteSink {
 				atlasHeight = engineAtlasMeta.height;
 			} else {
 				const atlasEntry = this.atlasResourcesById.get(atlasId)!;
-				const atlasAsset = Runtime.instance.assets.getImageAssetByEntry(atlasEntry);
-				atlasWidth = atlasAsset.imgmeta.width;
-				atlasHeight = atlasAsset.imgmeta.height;
+				atlasWidth = atlasEntry.imgmeta!.width;
+				atlasHeight = atlasEntry.imgmeta!.height;
 				const mappedSlot = this.atlasSlotById.get(atlasId);
 				if (mappedSlot !== undefined) {
 					baseEntry = this.atlasSlotEntries[mappedSlot];
@@ -2350,7 +2363,6 @@ export class VDP implements VramWriteSink {
 		}
 
 		this.syncRegisters();
-		this.commitViewSnapshot();
 	}
 
 	private async restoreEngineAtlasFromSource(entry: AssetEntry, source: RawAssetSource, asset: RomImgAsset): Promise<void> {
@@ -2388,13 +2400,11 @@ export class VDP implements VramWriteSink {
 				const height = entry.regionH;
 				const token = this.assetUpdateGate.begin({ blocking: false, category: 'texture', tag: `asset:${entry.id}` });
 				const textureKey = entry.id === engineAtlasName ? ENGINE_ATLAS_TEXTURE_KEY : entry.id;
-				if ((entry.id === ATLAS_PRIMARY_SLOT_ID || entry.id === ATLAS_SECONDARY_SLOT_ID)
-					&& !$.texmanager.getTextureByUri(textureKey)) {
-					void $.texmanager.loadTextureFromPixels(textureKey, pixels, width, height)
-						.then((handle) => { $.view.textures[textureKey] = handle; })
+				if (entry.id === ATLAS_PRIMARY_SLOT_ID || entry.id === ATLAS_SECONDARY_SLOT_ID) {
+					void updateVdpSlotTexture(textureKey, pixels, width, height)
 						.finally(() => this.assetUpdateGate.end(token));
 				} else {
-					void $.texmanager.updateTexturesForKey(textureKey, pixels, width, height)
+					void updateVdpAssetTexture(textureKey, pixels, width, height)
 						.finally(() => this.assetUpdateGate.end(token));
 				}
 			} else if (entry.type === 'audio') {
@@ -2441,10 +2451,10 @@ export class VDP implements VramWriteSink {
 	}
 
 	private readSurfacePixels(cache: VdpReadCache, surface: VdpReadSurface, x: number, y: number, width: number, height: number): Uint8Array {
-		if ($.view.backend.type === 'webgpu') {
+		if (vdpTextureReadbackUsesCpuCopy()) {
 			return this.readCpuReadback(cache, surface, x, y, width, height);
 		}
-		return $.view.backend.readTextureRegion($.texmanager.getTextureByUri(surface.textureKey), x, y, width, height, cache.data);
+		return readVdpTextureRegion(surface.textureKey, x, y, width, height, cache.data);
 	}
 
 	private readCpuReadback(cache: VdpReadCache, surface: VdpReadSurface, x: number, y: number, width: number, height: number): Uint8Array {
@@ -2493,19 +2503,13 @@ export class VDP implements VramWriteSink {
 	}
 
 	private registerVramSlot(entry: AssetEntry, textureKey: string, surfaceId: number): void {
-		let handle = $.texmanager.getTextureByUri(textureKey);
 		const isEngineAtlas = textureKey === ENGINE_ATLAS_TEXTURE_KEY;
 		const textureWidth = entry.regionW;
 		const textureHeight = entry.regionH;
-		if (!handle) {
-			const stream = this.makeVramGarbageStream(entry.baseAddr >>> 0);
-			fillVramGarbageScratch(this.vramSeedPixel, stream);
-			handle = $.texmanager.createTextureFromPixelsSync(textureKey, this.vramSeedPixel, 1, 1);
-		}
-		handle = $.texmanager.resizeTextureForKey(textureKey, entry.regionW, entry.regionH);
-		$.view.textures[textureKey] = handle;
-		const slot: AssetVramSlot = {
-			kind: 'asset',
+		const stream = this.makeVramGarbageStream(entry.baseAddr >>> 0);
+		fillVramGarbageScratch(this.vramSeedPixel, stream);
+		ensureVdpTextureFromSeed(textureKey, this.vramSeedPixel, entry.regionW, entry.regionH);
+		const slot: VramSlot = {
 			baseAddr: entry.baseAddr,
 			capacity: entry.capacity,
 			entry,
@@ -2521,24 +2525,23 @@ export class VDP implements VramWriteSink {
 		}
 	}
 
-	private syncVramSlotTextureSize(slot: AssetVramSlot): void {
+	private syncVramSlotTextureSize(slot: VramSlot): void {
 		const width = slot.entry.regionW;
 		const height = slot.entry.regionH;
 		if (slot.textureWidth === width && slot.textureHeight === height) {
 			return;
 		}
-		const handle = $.texmanager.resizeTextureForKey(slot.textureKey, width, height);
-		$.view.textures[slot.textureKey] = handle;
+		resizeVdpTextureForKey(slot.textureKey, width, height);
 		slot.textureWidth = width;
 		slot.textureHeight = height;
 		this.invalidateReadCache(slot.surfaceId);
 		this.seedVramSlotTexture(slot);
 	}
 
-	private getVramSlotByTextureKey(textureKey: string): AssetVramSlot {
+	private getVramSlotByTextureKey(textureKey: string): VramSlot {
 		for (let index = 0; index < this.vramSlots.length; index += 1) {
 			const slot = this.vramSlots[index];
-			if (slot.kind === 'asset' && slot.textureKey === textureKey) {
+			if (slot.textureKey === textureKey) {
 				return slot;
 			}
 		}
@@ -2576,7 +2579,7 @@ export class VDP implements VramWriteSink {
 		fillVramGarbageScratch(this.vramStaging, stream);
 	}
 
-	private seedVramSlotTexture(slot: AssetVramSlot): void {
+	private seedVramSlotTexture(slot: VramSlot): void {
 		const width = slot.entry.regionW;
 		const height = slot.entry.regionH;
 		const rowPixels = width;
@@ -2589,7 +2592,7 @@ export class VDP implements VramWriteSink {
 					const chunkBytes = rowPixels * rows * 4;
 					const chunk = this.vramGarbageScratch.subarray(0, chunkBytes);
 					fillVramGarbageScratch(chunk, stream);
-					$.texmanager.updateTextureRegionForKey(slot.textureKey, chunk, rowPixels, rows, 0, y);
+					updateVdpTextureRegion(slot.textureKey, chunk, rowPixels, rows, 0, y);
 					for (let row = 0; row < rows; row += 1) {
 					const rowOffset = row * rowPixels * 4;
 					const slice = chunk.subarray(rowOffset, rowOffset + rowPixels * 4);
@@ -2604,7 +2607,7 @@ export class VDP implements VramWriteSink {
 						const segmentBytes = segmentWidth * 4;
 						const segment = this.vramGarbageScratch.subarray(0, segmentBytes);
 						fillVramGarbageScratch(segment, stream);
-						$.texmanager.updateTextureRegionForKey(slot.textureKey, segment, segmentWidth, 1, x, y);
+						updateVdpTextureRegion(slot.textureKey, segment, segmentWidth, 1, x, y);
 						this.updateCpuReadback(slot.surfaceId, segment, x, y);
 						x += segmentWidth;
 					}

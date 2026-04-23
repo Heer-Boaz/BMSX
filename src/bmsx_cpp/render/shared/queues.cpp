@@ -11,6 +11,7 @@
 #include "core/font.h"
 #include "../../machine/runtime/runtime.h"
 #include "common/clamp.h"
+#include "render/vdp/view_snapshot.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -150,7 +151,9 @@ void clearBackQueues() {
 }
 
 void clearAllQueues() {
-	Runtime::instance().machine().vdp().initializeRegisters();
+	auto& vdp = Runtime::instance().machine().vdp();
+	vdp.initializeRegisters();
+	commitVdpViewSnapshot(*EngineCore::instance().view(), vdp);
 	s_meshQueue.clearAll();
 	s_particleQueue.clearAll();
 	s_activeQueueSource = QueueSource::Front;

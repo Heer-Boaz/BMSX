@@ -4,6 +4,7 @@ import { LuaInterpreter } from '../../lua/runtime';
 import type { LuaValue } from '../../lua/value';
 import { convertToError, isLuaFunctionValue, isLuaTable } from '../../lua/value';
 import { publishOverlayFrame } from '../../render/editor/overlay_queue';
+import { commitVdpViewSnapshot } from '../../render/vdp/view_snapshot';
 import { ENGINE_LUA_BUILTIN_FUNCTIONS, ENGINE_LUA_BUILTIN_GLOBALS } from '../../machine/firmware/builtin_descriptors';
 import { seedLuaGlobals } from '../../machine/firmware/globals';
 import { ENGINE_SYSTEM_HELPER_NAMES } from '../../machine/firmware/system_globals';
@@ -184,6 +185,7 @@ export function captureCurrentState(runtime: Runtime): RuntimeState {
 
 export function restoreMachineSnapshot(runtime: Runtime, snapshot: RuntimeState): void {
 	runtime.machine.restoreState(snapshot.machine);
+	commitVdpViewSnapshot($.view, runtime.machine.vdp);
 }
 
 export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeState, preserveEngineModules?: boolean): Promise<void> {
@@ -539,6 +541,7 @@ export function resetFrameState(runtime: Runtime): void {
 
 export function resetHardwareState(runtime: Runtime): void {
 	runtime.machine.resetDevices();
+	commitVdpViewSnapshot($.view, runtime.machine.vdp);
 	runtime.vblank.reset(runtime);
 	runtime.machine.resetRenderBuffers();
 }

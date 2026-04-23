@@ -7,6 +7,7 @@
 #include "input/manager.h"
 #include "audio/resources.h"
 #include "render/texture_manager.h"
+#include "render/vdp/view_snapshot.h"
 #include "../machine/runtime/runtime.h"
 #include "../machine/memory/asset_memory.h"
 #include "../machine/specs.h"
@@ -337,10 +338,11 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 	applyRuntimeTiming(runtime, timing);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Engine);
-	buildAssetMemory(runtime, m_engine_assets, true);
+	buildAssetMemory(runtime, m_engine_assets, m_engine_assets, true);
 	runtime.machine().memory().sealEngineAssets();
 	refreshAudioResources(*m_sound_master, runtime, m_engine_assets, runtimeMachine, m_engine_rom_data, m_cart_rom_data);
 	runtime.resetRuntimeForProgramReload();
+	commitVdpViewSnapshot(*m_view, runtime.machine().vdp());
 	runtime.boot(*m_engine_assets.programAsset, m_engine_assets.programSymbols.get());
 	runtime.cartBoot.reset(runtime);
 	return true;
@@ -450,7 +452,8 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 			Runtime& runtime = Runtime::instance();
 		applyRuntimeTiming(runtime, timing);
 		runtime.refreshMemoryMap();
-		buildAssetMemory(runtime, assets(), false);
+		buildAssetMemory(runtime, m_engine_assets, assets(), false);
+		commitVdpViewSnapshot(*m_view, runtime.machine().vdp());
 		refreshAudioResources(*m_sound_master, runtime, assets(), assets().machine, m_engine_rom_data, m_cart_rom_data);
 		if (assets().hasProgram()) {
 			bootRuntimeFromProgram();
@@ -496,8 +499,9 @@ bool EngineCore::bootLoadedCart() {
 		Runtime& runtime = Runtime::instance();
 	applyRuntimeTiming(runtime, timing);
 	runtime.refreshMemoryMap();
-	buildAssetMemory(runtime, assets(), false, RuntimeAssetBuildMode::Cart);
+	buildAssetMemory(runtime, m_engine_assets, assets(), false, RuntimeAssetBuildMode::Cart);
 	runtime.resetRuntimeForProgramReload();
+	commitVdpViewSnapshot(*m_view, runtime.machine().vdp());
 	refreshAudioResources(*m_sound_master, runtime, assets(), assets().machine, m_engine_rom_data, m_cart_rom_data);
 	bootRuntimeFromProgram();
 	return true;
@@ -576,6 +580,7 @@ void EngineCore::bootRuntimeFromProgram() {
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Cart);
 	runtime.resetRuntimeForProgramReload();
+	commitVdpViewSnapshot(*m_view, runtime.machine().vdp());
 	if (m_engine_assets_loaded && m_engine_assets.programAsset && m_engine_assets.programAsset->program) {
 		auto linked = linkProgramAssets(
 			*m_engine_assets.programAsset,

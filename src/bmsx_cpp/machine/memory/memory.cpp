@@ -38,7 +38,6 @@ bool rangeOverlaps(uint32_t addr, size_t length, uint32_t base, uint32_t size) {
 
 bool isVramRangeLocal(uint32_t addr, size_t length) {
 	return rangeOverlaps(addr, length, VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
-		|| rangeOverlaps(addr, length, VRAM_SKYBOX_BASE, VRAM_SKYBOX_SIZE)
 		|| rangeOverlaps(addr, length, VRAM_SYSTEM_ATLAS_BASE, VRAM_SYSTEM_ATLAS_SIZE)
 		|| rangeOverlaps(addr, length, VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE)
 		|| rangeOverlaps(addr, length, VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE)

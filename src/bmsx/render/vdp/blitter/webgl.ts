@@ -563,7 +563,6 @@ function buildPriorityDepthBySequence(state: WebGLVdpBlitterRuntime, commands: r
 }
 
 export class WebGLVdpBlitterExecutor implements VdpBlitterExecutor {
-	public readonly backendType = 'webgl2' as const;
 	private readonly runtime: WebGLVdpBlitterRuntime;
 
 	public constructor(

@@ -125,7 +125,7 @@ export class CompletionController {
 	protected setCursorPosition(row: number, column: number): void {
 		const buffer = this.getBuffer();
 		const rowCount = buffer.getLineCount();
-		const clampedRow = clamp(row, 0, Math.max(0, rowCount - 1));
+		const clampedRow = clamp(row, 0, rowCount - 1);
 		const line = buffer.getLineContent(clampedRow);
 		setSingleCursorPosition(editorDocumentState, clampedRow, clamp(column, 0, line.length));
 	}
@@ -436,7 +436,7 @@ export class CompletionController {
 		const buffer = this.getBuffer();
 		const cursor = this.getCursorPosition();
 		const lineCount = buffer.getLineCount();
-		const row = clamp(cursor.row, 0, Math.max(0, lineCount - 1));
+		const row = clamp(cursor.row, 0, lineCount - 1);
 		const line = buffer.getLineContent(row);
 		const column = clamp(cursor.column, 0, line.length);
 		let start = column;
@@ -590,7 +590,7 @@ export class CompletionController {
 		const column = context.replaceToColumn;
 		const buffer = this.getBuffer();
 		const lineCount = buffer.getLineCount();
-		const lastLine = buffer.getLineContent(Math.max(0, lineCount - 1));
+		const lastLine = buffer.getLineContent(lineCount - 1);
 		const filtered = this.filterLocalSymbolsAtPosition(cached.symbols, lineCount, lastLine.length, context.row, column);
 		if (filtered.length === 0) {
 			return [];
@@ -1224,7 +1224,7 @@ export class CompletionController {
 		const upperBound = offset + visible - 1;
 		if (session.selectionIndex > upperBound) offset = session.selectionIndex - visible + 1;
 		if (offset < 0) offset = 0;
-		const maxOffset = Math.max(0, session.filteredItems.length - visible);
+		const maxOffset = session.filteredItems.length - visible;
 		if (offset > maxOffset) offset = maxOffset;
 		session.displayOffset = offset;
 	}
@@ -1255,7 +1255,7 @@ export class CompletionController {
 	private applyCompletionItemForContext(context: CompletionContext, item: LuaCompletionItem, addParentheses: boolean): void {
 		const buffer = this.getBuffer();
 		const lineCount = buffer.getLineCount();
-		const row = clamp(context.row, 0, Math.max(0, lineCount - 1));
+		const row = clamp(context.row, 0, lineCount - 1);
 		const line = buffer.getLineContent(row);
 		const replaceStart = clamp(context.replaceFromColumn, 0, line.length);
 		const replaceEnd = clamp(context.replaceToColumn, replaceStart, line.length);
@@ -1343,7 +1343,7 @@ export class CompletionController {
 		const buffer = this.getBuffer();
 		const cursor = this.getCursorPosition();
 		const lineCount = buffer.getLineCount();
-		const safeRow = clamp(cursor.row, 0, Math.max(0, lineCount - 1));
+		const safeRow = clamp(cursor.row, 0, lineCount - 1);
 		const line = buffer.getLineContent(safeRow);
 		if (line.length === 0) return null;
 		const safeColumn = clamp(cursor.column, 0, line.length);
@@ -1404,7 +1404,7 @@ export class CompletionController {
 					signatureLabel: apiMeta.signature,
 					anchorRow: safeRow,
 					anchorColumn: lastOpen,
-					argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)),
+					argumentIndex: clamp(argumentIndex, 0, params.length - 1),
 					paramDescriptions,
 					methodDescription: apiMeta.description ,
 					returnType: apiMeta.returnType,
@@ -1434,7 +1434,7 @@ export class CompletionController {
 				signatureLabel: builtin.signature,
 				anchorRow: safeRow,
 				anchorColumn: lastOpen,
-				argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)),
+				argumentIndex: clamp(argumentIndex, 0, params.length - 1),
 				paramDescriptions,
 				methodDescription,
 				returnType: apiMetaFallback?.returnType,
@@ -1453,7 +1453,7 @@ export class CompletionController {
 					signatureLabel: apiMetaGlobal.signature,
 					anchorRow: safeRow,
 					anchorColumn: lastOpen,
-					argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)),
+					argumentIndex: clamp(argumentIndex, 0, params.length - 1),
 					paramDescriptions,
 					methodDescription: apiMetaGlobal.description ,
 					returnType: apiMetaGlobal.returnType,

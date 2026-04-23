@@ -44,7 +44,7 @@ export class GamepadInput implements InputHandler {
 			if (!state) continue;
 			if (state.pressed) {
 				const pressedAt = state.pressedAtMs ?? state.timestamp ?? now; // TODO: USE resolveStateTimestamp
-				state.presstime = Math.max(0, now - pressedAt);
+				state.presstime = now - pressedAt;
 				if (prevPollTime > 0 && state.justpressed && state.timestamp <= prevPollTime) {
 					state.justpressed = false;
 				}
@@ -124,7 +124,7 @@ export class GamepadInput implements InputHandler {
 		}
 		if (!this.hidPad.isConnected) {
 			const nav = globalThis.navigator as (Navigator & { vibrate?: (pattern: number | number[]) => boolean }) | undefined;
-			nav?.vibrate?.(Math.max(0, params.duration * params.intensity));
+			nav?.vibrate?.(params.duration * params.intensity);
 			return;
 		}
 		const strongMagnitude = ~~(params.intensity > 0.5 ? params.intensity * 255 : 0);

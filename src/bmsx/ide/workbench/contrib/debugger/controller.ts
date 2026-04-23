@@ -282,7 +282,7 @@ export function prepareDebuggerStepOverlay(): void {
 }
 
 function updateDebuggerCaret(row: number, column: number): void {
-	const maxRow = Math.max(0, editorDocumentState.buffer.getLineCount() - 1);
+	const maxRow = editorDocumentState.buffer.getLineCount() - 1;
 	const clampedRow = clamp(row, 0, maxRow);
 	const lineText = editorDocumentState.buffer.getLineContent(clampedRow);
 	const clampedColumn = clamp(column, 0, lineText.length);
@@ -330,9 +330,9 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 		showEditorMessage('Unable to activate editor context for runtime frame.', constants.COLOR_STATUS_ERROR, 1.6);
 		return;
 	}
-	const lastRowIndex = Math.max(0, editorDocumentState.buffer.getLineCount() - 1);
+	const lastRowIndex = editorDocumentState.buffer.getLineCount() - 1;
 	let targetRow: number = null;
-	if (typeof frame.line === 'number' && frame.line > 0) {
+	if (frame.line > 0) {
 		targetRow = clamp(frame.line - 1, 0, lastRowIndex);
 	}
 	if (targetRow === null && frame.functionName) {
@@ -343,7 +343,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 	}
 	const targetLine = editorDocumentState.buffer.getLineContent(targetRow);
 	let targetColumn = 0;
-	if (typeof frame.column === 'number' && frame.column > 0) {
+	if (frame.column > 0) {
 		targetColumn = clamp(frame.column - 1, 0, targetLine.length);
 	}
 	if (targetColumn === 0 && frame.functionName && frame.functionName.length > 0) {

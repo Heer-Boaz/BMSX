@@ -1,5 +1,6 @@
 import { $, renderGate, runGate } from '../../../core/engine';
 import { taskGate } from '../../../core/taskgate';
+import { commitVdpViewSnapshot } from '../../../render/vdp/view_snapshot';
 import { decodeBinary, decodeBinaryWithPropTable } from '../../../common/serializer/binencoder';
 import { syncLuaAssetField } from '../../firmware/js_bridge';
 import {
@@ -137,8 +138,12 @@ export class RuntimeAssetState {
 		try {
 			const mode = params?.mode ?? 'full';
 			const assetSource = params?.source ?? $.source;
+			const engineSource = runtime.engineAssetSource;
 			if (!assetSource) {
 				throw runtimeFault('asset source not configured.');
+			}
+			if (!engineSource) {
+				throw runtimeFault('engine asset source not configured.');
 			}
 			const memory = runtime.machine.memory;
 			if (mode === 'cart') {
@@ -146,7 +151,8 @@ export class RuntimeAssetState {
 			} else {
 				memory.resetAssetMemory();
 			}
-			await runtime.machine.vdp.registerImageAssets(assetSource);
+			await runtime.machine.vdp.registerImageAssets(engineSource, assetSource);
+			commitVdpViewSnapshot($.view, runtime.machine.vdp);
 			this.registerAudioAssets(assetSource, memory);
 			this.rebuildMetaCaches(assetSource, memory);
 			memory.finalizeAssetTable();

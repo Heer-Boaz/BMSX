@@ -17,7 +17,6 @@ type HeadlessSurfacePixels = {
 };
 
 export class HeadlessVdpBlitterExecutor implements VdpBlitterExecutor {
-	public readonly backendType = 'headless' as const;
 	private frameBufferPriorityLayer = new Uint8Array(0);
 	private frameBufferPriorityZ = new Float32Array(0);
 	private frameBufferPrioritySeq = new Uint32Array(0);

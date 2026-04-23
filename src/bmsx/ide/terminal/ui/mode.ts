@@ -325,7 +325,7 @@ export class TerminalMode {
 
 			protected override clampBufferPosition(row: number, column: number): { row: number; column: number } {
 				const lines = owner.getLinesSnapshot();
-				const clampedRow = clamp(row, 0, Math.max(0, lines.length - 1));
+				const clampedRow = clamp(row, 0, lines.length - 1);
 				const lineLength = lines[clampedRow]?.length ?? 0;
 				this.clampScratch.row = clampedRow;
 				this.clampScratch.column = clamp(column, 0, lineLength);

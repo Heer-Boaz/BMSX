@@ -317,7 +317,7 @@ export function invalidateLuaCommentContextFromRow(buffer: LuaCommentTextBuffer,
 		luaCommentContextCache.set(buffer, cache);
 	}
 	const lineCount = buffer.getLineCount();
-	const clampedRow = Math.max(0, Math.min(row, lineCount));
+	const clampedRow = Math.min(row, lineCount);
 	if (cache.lineCount !== lineCount) {
 		const validThroughRow = Math.min(cache.validThroughRow, clampedRow);
 		const nextModeState = new Uint8Array(lineCount + 1);

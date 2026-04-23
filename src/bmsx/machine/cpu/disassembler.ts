@@ -642,7 +642,7 @@ const buildInstructionOperands = (
 };
 
 const getProgramPcWidth = (program: Program, options: ResolvedOptions): number => {
-	const lastPc = Math.max(0, program.code.length - INSTRUCTION_BYTES);
+	const lastPc = program.code.length - INSTRUCTION_BYTES;
 	const maxPc = lastPc + options.pcBias;
 	return Math.max(1, maxPc.toString(options.pcRadix).length);
 };
@@ -889,7 +889,7 @@ export const disassembleProto = (
 export const disassembleProgram = (program: Program, metadata: ProgramMetadata | null = null, options: DisassemblyOptions = {}): string => {
 	const opts = normalizeOptions(options);
 	requireSourceCommentInputs(metadata, opts);
-	const lastPc = Math.max(0, program.code.length - INSTRUCTION_BYTES);
+	const lastPc = program.code.length - INSTRUCTION_BYTES;
 	const maxPc = lastPc + opts.pcBias;
 	const pcWidth = Math.max(1, maxPc.toString(opts.pcRadix).length);
 	const lines: string[] = [];

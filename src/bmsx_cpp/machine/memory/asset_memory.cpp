@@ -8,7 +8,7 @@
 
 namespace bmsx {
 
-void buildAssetMemory(Runtime& runtime, RuntimeAssets& assets, bool keepDecodedData, RuntimeAssetBuildMode mode) {
+void buildAssetMemory(Runtime& runtime, RuntimeAssets& engineAssets, RuntimeAssets& assets, bool keepDecodedData, RuntimeAssetBuildMode mode) {
 	auto& machine = runtime.machine();
 	auto& memory = machine.memory();
 	if (mode == RuntimeAssetBuildMode::Cart) {
@@ -16,7 +16,7 @@ void buildAssetMemory(Runtime& runtime, RuntimeAssets& assets, bool keepDecodedD
 	} else {
 		memory.resetAssetMemory();
 	}
-	machine.vdp().registerImageAssets(assets, keepDecodedData);
+	machine.vdp().registerImageAssets(engineAssets, assets, keepDecodedData);
 	std::vector<const AudioAsset*> audioAssets;
 	audioAssets.reserve(assets.audio.size());
 	for (const auto& entry : assets.audio) {

@@ -32,7 +32,7 @@ export function applySourceToContext(context: CodeTabContext, source: string, me
 
 export function buildSnapshotFromBuffer(context: CodeTabContext, metadata?: SnapshotMetadata): EditorSnapshot {
 	const buffer = context.buffer;
-	const lastRow = Math.max(0, buffer.getLineCount() - 1);
+	const lastRow = buffer.getLineCount() - 1;
 	const cursorRow = clamp_safe(metadata?.cursorRow, 0, lastRow);
 	const cursorLen = buffer.getLineEndOffset(cursorRow) - buffer.getLineStartOffset(cursorRow);
 	const cursorColumn = clamp_safe(metadata?.cursorColumn, 0, cursorLen);
@@ -48,7 +48,7 @@ export function buildSnapshotFromBuffer(context: CodeTabContext, metadata?: Snap
 		cursorRow,
 		cursorColumn,
 		scrollRow: clamp_safe(metadata?.scrollRow, 0, lastRow),
-		scrollColumn: Math.max(0, metadata?.scrollColumn ?? 0),
+		scrollColumn: metadata?.scrollColumn ?? 0,
 		selectionAnchor,
 		textVersion: metadata?.textVersion ?? buffer.version,
 	};

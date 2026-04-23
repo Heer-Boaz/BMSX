@@ -100,7 +100,7 @@ export class OnscreenGamepad implements InputHandler {
 					pressed: true,
 					justpressed: !wasPressed,
 					justreleased: false,
-					presstime: Math.max(0, now - pressedAt),
+					presstime: now - pressedAt,
 					consumed: false,
 					timestamp: wasPressed ? (previous.timestamp ?? pressedAt) : now,
 					pressedAtMs: pressedAt,

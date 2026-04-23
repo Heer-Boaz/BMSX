@@ -125,6 +125,11 @@ add_library(bmsx_core STATIC
 	render/gameview.cpp
 	render/backend/frame_uniforms.cpp
 	render/shared/queues.cpp
+	render/vdp/blitter/gles2.cpp
+	render/vdp/framebuffer.cpp
+	render/vdp/readback.cpp
+	render/vdp/texture_transfer.cpp
+	render/vdp/view_snapshot.cpp
 	render/texture_manager.cpp
 	render/backend/pass/library.cpp
 	render/graph/graph.cpp

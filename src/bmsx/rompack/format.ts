@@ -169,6 +169,8 @@ export const ENGINE_ATLAS_INDEX = 254;
 export const ENGINE_ATLAS_TEXTURE_KEY = '_atlas_engine';
 export const ATLAS_PRIMARY_SLOT_ID = '_atlas_primary';
 export const ATLAS_SECONDARY_SLOT_ID = '_atlas_secondary';
+export const FRAMEBUFFER_TEXTURE_KEY = '_framebuffer_2d';
+export const FRAMEBUFFER_RENDER_TEXTURE_KEY = '_framebuffer_render_2d';
 
 const atlasNameCache = new Map<number, string>(); // Cache for atlas names to avoid regenerating them for each request
 

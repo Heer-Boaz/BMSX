@@ -2639,7 +2639,7 @@ export function safeInspectLuaExpression(request: LuaHoverRequest): LuaHoverResu
 }
 
 export function applyDefinitionSelection(range: LuaDefinitionLocation['range']): void {
-	const lastRowIndex = Math.max(0, editorDocumentState.buffer.getLineCount() - 1);
+	const lastRowIndex = editorDocumentState.buffer.getLineCount() - 1;
 	const startRow = clamp(range.startLine - 1, 0, lastRowIndex);
 	const startLine = editorDocumentState.buffer.getLineContent(startRow);
 	const startColumn = clamp(range.startColumn - 1, 0, startLine.length);

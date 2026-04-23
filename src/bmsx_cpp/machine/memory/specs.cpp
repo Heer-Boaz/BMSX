@@ -143,9 +143,6 @@ MemoryMapConfig resolveRuntimeMemoryMapConfig(const MachineManifest& machine, co
 	const uint32_t frameBufferWidth = static_cast<uint32_t>(machine.viewportWidth);
 	const uint32_t frameBufferHeight = static_cast<uint32_t>(machine.viewportHeight);
 	config.frameBufferBytes = frameBufferWidth * frameBufferHeight * 4u;
-	config.skyboxFaceBytes = static_cast<uint32_t>(SKYBOX_FACE_DEFAULT_SIZE)
-		* static_cast<uint32_t>(SKYBOX_FACE_DEFAULT_SIZE)
-		* 4u;
 
 	const uint32_t requiredAssetTableBytes = computeAssetTableBytes(engineAssets, assets);
 	config.assetTableBytes = requiredAssetTableBytes;

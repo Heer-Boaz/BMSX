@@ -13,9 +13,11 @@ import type {
 	RenderLayer,
 } from './submissions';
 import { Runtime } from '../../machine/runtime/runtime';
-import { clamp } from '../../common/clamp';
+import { $ } from '../../core/engine';
 import { BFont } from './bitmap_font';
 import { setSpriteParallaxRigValues } from '../2d/sprite_parallax_rig';
+import { commitVdpViewSnapshot } from '../vdp/view_snapshot';
+import { shallowcopy } from '../../common/shallowcopy';
 
 const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
 const particleQueue = new FeatureQueue<ParticleRenderSubmission>(1024);
@@ -79,7 +81,7 @@ export function submitSprite(options: ImgRenderSubmission): void {
 export function prepareCompletedRenderQueues(): void {
 	meshQueue.swap();
 	particleQueue.swap();
-	activeQueueSource = 'front';
+	prepareHeldRenderQueues();
 }
 
 function hasCommittedFrontQueueContent(): boolean {
@@ -109,14 +111,16 @@ export function hasPendingBackQueueContent(): boolean {
 export function clearBackQueues(): void {
 	meshQueue.clearBack();
 	particleQueue.clearBack();
-	activeQueueSource = 'front';
+	prepareHeldRenderQueues();
 }
 
 export function clearAllQueues(): void {
-	Runtime.instance.machine.vdp.initializeRegisters();
+	const vdp = Runtime.instance.machine.vdp;
+	vdp.initializeRegisters();
+	commitVdpViewSnapshot($.view, vdp);
 	meshQueue.clearAll();
 	particleQueue.clearAll();
-	activeQueueSource = 'front';
+	prepareHeldRenderQueues();
 }
 
 // --- Mesh queue helpers -----------------------------------------------------
@@ -267,7 +271,7 @@ export let particleAmbientFactorDefault = 1.0;
 
 export function setAmbientDefaults(mode: 0 | 1, factor = 1.0): void {
 	particleAmbientModeDefault = mode;
-	particleAmbientFactorDefault = clamp(factor, 0, 1);
+	particleAmbientFactorDefault = factor;
 }
 
 export function setSpriteParallaxRig(vy: number, scale: number, impact: number, impact_t: number, bias_px: number, parallax_strength: number, scale_strength: number, flip_strength: number, flip_window: number): void {
@@ -277,8 +281,8 @@ export function setSpriteParallaxRig(vy: number, scale: number, impact: number, 
 export let _skyTint: [number, number, number] = [1, 1, 1];
 export let _skyExposure = 1.0;
 export function setSkyboxTintExposure(tint: [number, number, number], exposure = 1.0): void {
-	_skyTint = [Math.max(0, tint[0]), Math.max(0, tint[1]), Math.max(0, tint[2])];
-	_skyExposure = Math.max(0, exposure);
+	_skyTint = shallowcopy(tint);
+	_skyExposure = exposure;
 }
 /**
  * Text rendering utility (engine-level). Preferred UE-style usage is via TextComponent + TextRenderSystem, which uses this internally.

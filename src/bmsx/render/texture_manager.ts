@@ -121,7 +121,6 @@
 // VramSlot struct (vdp.h):
 
 // struct VramSlot {
-//     VramSlotKind kind;       // Asset or Skybox
 //     uint32_t baseAddr;       // Base address in VRAM
 //     uint32_t capacity;       // Capacity in bytes
 //     std::string assetId;     // Memory asset entry id

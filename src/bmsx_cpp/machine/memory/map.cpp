@@ -1,7 +1,6 @@
 #include "machine/memory/map.h"
 
 #include "machine/common/align.h"
-#include "rompack/format.h"
 #include <stdexcept>
 
 namespace bmsx {
@@ -29,15 +28,6 @@ uint32_t VRAM_PRIMARY_ATLAS_BASE = 0;
 uint32_t VRAM_SYSTEM_ATLAS_BASE = 0;
 uint32_t VRAM_STAGING_BASE = 0;
 uint32_t VRAM_FRAMEBUFFER_BASE = 0;
-uint32_t VRAM_SKYBOX_BASE = 0;
-uint32_t VRAM_SKYBOX_FACE_BYTES = 0;
-uint32_t VRAM_SKYBOX_SIZE = 0;
-uint32_t VRAM_SKYBOX_POSX_BASE = 0;
-uint32_t VRAM_SKYBOX_NEGX_BASE = 0;
-uint32_t VRAM_SKYBOX_POSY_BASE = 0;
-uint32_t VRAM_SKYBOX_NEGY_BASE = 0;
-uint32_t VRAM_SKYBOX_POSZ_BASE = 0;
-uint32_t VRAM_SKYBOX_NEGZ_BASE = 0;
 uint32_t VRAM_SYSTEM_ATLAS_SIZE = 0;
 uint32_t VRAM_PRIMARY_ATLAS_SIZE = 0;
 uint32_t VRAM_SECONDARY_ATLAS_SIZE = 0;
@@ -66,16 +56,7 @@ static void recomputeMemoryLayout(const MemoryMapConfig& config) {
 	VDP_STREAM_BUFFER_BASE = GEO_SCRATCH_BASE + GEO_SCRATCH_SIZE;
 
 	VRAM_STAGING_BASE = VDP_STREAM_BUFFER_BASE + VDP_STREAM_BUFFER_SIZE;
-	VRAM_SKYBOX_FACE_BYTES = config.skyboxFaceBytes;
-	VRAM_SKYBOX_SIZE = VRAM_SKYBOX_FACE_BYTES * 6u;
-	VRAM_SKYBOX_BASE = VRAM_STAGING_BASE + VRAM_STAGING_SIZE;
-	VRAM_SKYBOX_POSX_BASE = VRAM_SKYBOX_BASE;
-	VRAM_SKYBOX_NEGX_BASE = VRAM_SKYBOX_POSX_BASE + VRAM_SKYBOX_FACE_BYTES;
-	VRAM_SKYBOX_POSY_BASE = VRAM_SKYBOX_NEGX_BASE + VRAM_SKYBOX_FACE_BYTES;
-	VRAM_SKYBOX_NEGY_BASE = VRAM_SKYBOX_POSY_BASE + VRAM_SKYBOX_FACE_BYTES;
-	VRAM_SKYBOX_POSZ_BASE = VRAM_SKYBOX_NEGY_BASE + VRAM_SKYBOX_FACE_BYTES;
-	VRAM_SKYBOX_NEGZ_BASE = VRAM_SKYBOX_POSZ_BASE + VRAM_SKYBOX_FACE_BYTES;
-	VRAM_SYSTEM_ATLAS_BASE = VRAM_SKYBOX_BASE + VRAM_SKYBOX_SIZE;
+	VRAM_SYSTEM_ATLAS_BASE = VRAM_STAGING_BASE + VRAM_STAGING_SIZE;
 	VRAM_PRIMARY_ATLAS_BASE = VRAM_SYSTEM_ATLAS_BASE + config.engineAtlasSlotBytes;
 	VRAM_SECONDARY_ATLAS_BASE = VRAM_PRIMARY_ATLAS_BASE + VRAM_ATLAS_SLOT_SIZE;
 	VRAM_FRAMEBUFFER_BASE = VRAM_SECONDARY_ATLAS_BASE + VRAM_ATLAS_SLOT_SIZE;
@@ -111,9 +92,6 @@ void configureMemoryMap(const MemoryMapConfig& config) {
 	if (config.frameBufferBytes == 0) {
 		throw std::runtime_error("[MemoryMap] framebuffer_bytes must be greater than 0.");
 	}
-		if (config.skyboxFaceBytes == 0) {
-			throw std::runtime_error("[MemoryMap] skyboxFaceBytes must be greater than 0.");
-		}
 	recomputeMemoryLayout(config);
 }
 
@@ -128,12 +106,8 @@ struct MemoryMapInitializer {
 		const uint32_t assetDataBasePadding = alignUp(assetDataBaseOffset, IO_WORD_SIZE) - assetDataBaseOffset;
 		const uint32_t assetDataBytes = DEFAULT_RAM_SIZE
 			- (assetDataBaseOffset + assetDataBasePadding + DEFAULT_GEO_SCRATCH_SIZE + VDP_STREAM_BUFFER_SIZE);
-		const uint32_t skyboxFaceBytes = static_cast<uint32_t>(SKYBOX_FACE_DEFAULT_SIZE)
-			* static_cast<uint32_t>(SKYBOX_FACE_DEFAULT_SIZE)
-			* 4u;
 		config.assetDataBytes = assetDataBytes;
 		config.ramBytes = DEFAULT_RAM_SIZE;
-		config.skyboxFaceBytes = skyboxFaceBytes;
 		recomputeMemoryLayout(config);
 	}
 };

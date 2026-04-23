@@ -73,7 +73,7 @@ function handleSelectAllBinding(): boolean {
 		return false;
 	}
 	consumeIdeKey('KeyA');
-	const lastRowIndex = Math.max(0, editorDocumentState.buffer.getLineCount() - 1);
+	const lastRowIndex = editorDocumentState.buffer.getLineCount() - 1;
 	const lastColumn = editorDocumentState.buffer.getLineEndOffset(lastRowIndex) - editorDocumentState.buffer.getLineStartOffset(lastRowIndex);
 	selectAllSingleCursor(editorDocumentState, lastRowIndex, lastColumn);
 	updateDesiredColumn();

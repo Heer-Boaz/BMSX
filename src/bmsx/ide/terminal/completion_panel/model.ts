@@ -70,8 +70,8 @@ export function matchesAnySymbolSegment(nameLower: string, needleSegments: strin
 }
 
 export function computePanelGridLayout(total: number, maxColumns: number, maxRows: number, maxLabelLength: number, minCellWidth: number, columnGap: number, paddingX: number, paddingY: number): TerminalPanelGridLayout {
-	const px = clamp(paddingX, 0, Math.max(0, Math.floor((maxColumns - 1) / 2)));
-	const py = clamp(paddingY, 0, Math.max(0, Math.floor((maxRows - 1) / 2)));
+	const px = clamp(paddingX, 0, Math.floor((maxColumns - 1) / 2));
+	const py = clamp(paddingY, 0, Math.floor((maxRows - 1) / 2));
 	const availableColumns = Math.max(1, maxColumns - px * 2);
 	const availableRows = Math.max(1, maxRows - py * 2);
 	const fullCell = clamp(Math.max(1, maxLabelLength), 1, availableColumns);

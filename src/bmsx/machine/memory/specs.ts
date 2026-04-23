@@ -4,11 +4,12 @@ import {
 	ATLAS_PRIMARY_SLOT_ID,
 	ATLAS_SECONDARY_SLOT_ID,
 	ENGINE_ATLAS_INDEX,
+	FRAMEBUFFER_RENDER_TEXTURE_KEY,
+	FRAMEBUFFER_TEXTURE_KEY,
 	getMachineMemorySpecs,
 	generateAtlasName,
 } from '../../rompack/format';
 import type { RuntimeAssetLayer } from '../../rompack/loader';
-import { FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY } from '../devices/vdp/vdp';
 import { ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE } from './memory';
 import {
 	DEFAULT_GEO_SCRATCH_SIZE,

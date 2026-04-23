@@ -138,7 +138,7 @@ export class KeyboardInput implements InputHandler {
 					justreleased: false,
 					waspressed: true,
 					wasreleased: prev.wasreleased,
-					presstime: Math.max(0, now - pressedAt),
+					presstime: now - pressedAt,
 					pressedAtMs: pressedAt,
 					releasedAtMs: null,
 					timestamp: justpressed ? (current.timestamp ?? now) : (prev.timestamp ?? pressedAt),

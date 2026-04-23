@@ -47,7 +47,7 @@ function forEachMatchInLine(line: string, query: string, cb: (start: number, end
 
 function buildSnippet(line: string, start: number, end: number): string {
 	const padding = 32;
-	const sliceStart = Math.max(0, start - padding);
+	const sliceStart = start - padding;
 	const sliceEnd = Math.min(line.length, end + padding);
 	let snippet = line.slice(sliceStart, sliceEnd).trim();
 	if (sliceStart > 0) snippet = `…${snippet}`;
@@ -466,7 +466,7 @@ export function ensureSearchSelectionVisible(): void {
 	} else if (editorSearchState.currentIndex >= editorSearchState.displayOffset + pageSize) {
 		editorSearchState.displayOffset = editorSearchState.currentIndex - pageSize + 1;
 	}
-	const maxOffset = Math.max(0, total - pageSize);
+	const maxOffset = total - pageSize;
 	editorSearchState.displayOffset = clamp(editorSearchState.displayOffset, 0, maxOffset);
 }
 
@@ -478,7 +478,7 @@ export function computeSearchPageStats(): { total: number; offset: number; visib
 	}
 
 	const pageSize = searchPageSize();
-	const maxOffset = Math.max(0, total - 1);
+	const maxOffset = total - pageSize;
 	editorSearchState.displayOffset = clamp(editorSearchState.displayOffset, 0, maxOffset);
 
 	const remaining = total - editorSearchState.displayOffset;

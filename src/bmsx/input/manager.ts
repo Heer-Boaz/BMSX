@@ -168,7 +168,7 @@ export class InputStateManager {
 			state.consumed = state.consumed ?? false;
 			if (state.pressed) {
 				const pressedAt = state.pressedAtMs ?? state.timestamp ?? currentTime;
-				state.presstime = Math.max(0, currentTime - pressedAt);
+				state.presstime = currentTime - pressedAt;
 			} else {
 				state.presstime = null;
 			}
@@ -303,7 +303,7 @@ export class InputStateManager {
 		state.value = pending?.value ?? rawState.value ?? (nextPressed ? 1 : 0);
 		state.value2d = pending?.value2d ?? rawState.value2d;
 		state.presstime = nextPressed
-			? Math.max(0, currentTime - (nextPressedAtMs ?? nextTimestamp))
+			? currentTime - (nextPressedAtMs ?? nextTimestamp)
 			: null;
 		this.pendingFrameStates.delete(identifier);
 	}
@@ -324,7 +324,7 @@ export class InputStateManager {
 		const pressed = baseState?.pressed ?? false;
 		const justpressed = !!baseState?.justpressed || this.getBufferedEdgeRecord(this.bufferedPressEdges, identifier, 1) != null;
 		const justreleased = !!baseState?.justreleased || this.getBufferedEdgeRecord(this.bufferedReleaseEdges, identifier, 1) != null;
-		const presstime = baseState?.presstime ?? (pressed && baseState?.pressedAtMs != null ? Math.max(0, currentTime - baseState.pressedAtMs) : null);
+		const presstime = baseState?.presstime ?? (pressed && baseState?.pressedAtMs != null ? currentTime - baseState.pressedAtMs : null);
 		let consumed = baseState?.consumed ?? false;
 		const pressedAtMs = baseState?.pressedAtMs;
 		const releasedAtMs = baseState?.releasedAtMs;

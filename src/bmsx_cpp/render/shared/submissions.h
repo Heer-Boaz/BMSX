@@ -196,6 +196,8 @@ struct SkyboxImageIds {
 	std::string negz;
 };
 
+constexpr size_t SKYBOX_FACE_COUNT = 6;
+
 } // namespace bmsx
 
 #endif // BMSX_RENDER_TYPES_H

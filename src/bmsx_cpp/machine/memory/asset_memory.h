@@ -10,6 +10,6 @@ enum class RuntimeAssetBuildMode {
 	Cart,
 };
 
-void buildAssetMemory(Runtime& runtime, RuntimeAssets& assets, bool keepDecodedData, RuntimeAssetBuildMode mode = RuntimeAssetBuildMode::Full);
+void buildAssetMemory(Runtime& runtime, RuntimeAssets& engineAssets, RuntimeAssets& assets, bool keepDecodedData, RuntimeAssetBuildMode mode = RuntimeAssetBuildMode::Full);
 
 } // namespace bmsx

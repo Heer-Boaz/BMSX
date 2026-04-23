@@ -35,7 +35,7 @@ type RenderedBufferBarCell = {
 
 const LEFT_BLOCKS = ['▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
 const SLIVER_THRESHOLD = 1 / 16;
-const quantizeCoverage = (value: number) => Math.min(8, Math.max(0, Math.round(value * 8 + 1e-7)));
+const quantizeCoverage = (value: number) => Math.min(8, Math.round(value * 8 + 1e-7));
 const GAP_FG_TAG = '{black-fg}';
 
 const HEX_TABLE = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));

@@ -51,7 +51,7 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 		}
 	}
 	const columnCount = editorViewState.wordWrapEnabled
-		? Math.max(0, segment.endColumn - columnStart)
+		? segment.endColumn - columnStart
 		: editorViewState.cachedVisibleColumnCount + 8;
 	const slice = editorViewState.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
 	const sliceStartDisplay = slice.startDisplay;

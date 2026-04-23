@@ -6,6 +6,7 @@
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/timing/config.h"
 #include "machine/scheduler/device.h"
+#include "render/vdp/view_snapshot.h"
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -228,7 +229,7 @@ bool VblankState::isFrameBoundaryHalt(Runtime& runtime) const {
 void VblankState::commitFrameOnVblankEdge(Runtime& runtime) {
 	runtime.m_machine.vdp().syncRegisters();
 	runtime.m_machine.vdp().presentReadyFrameOnVblankEdge();
-	runtime.m_machine.vdp().commitViewSnapshot(*EngineCore::instance().view());
+	commitVdpViewSnapshot(*EngineCore::instance().view(), runtime.m_machine.vdp());
 }
 
 void VblankState::completeTickIfPending(Runtime& runtime, FrameState& frameState, uint64_t vblankSequence) {
