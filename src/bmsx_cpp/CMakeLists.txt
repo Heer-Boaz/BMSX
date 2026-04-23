@@ -125,9 +125,9 @@ add_library(bmsx_core STATIC
 	render/gameview.cpp
 	render/backend/frame_uniforms.cpp
 	render/shared/queues.cpp
+	runtime/assets/edits.cpp
 	render/vdp/blitter/gles2.cpp
 	render/vdp/framebuffer.cpp
-	render/vdp/readback.cpp
 	render/vdp/texture_transfer.cpp
 	render/vdp/view_snapshot.cpp
 	render/texture_manager.cpp
@@ -160,6 +160,7 @@ add_library(bmsx_core STATIC
 	machine/runtime/resource_usage_detector.cpp
 	machine/runtime/runtime.cpp
 	machine/memory/asset_memory.cpp
+	machine/memory/asset_images.cpp
 	machine/runtime/cart_boot.cpp
 	machine/runtime/cpu_executor.cpp
 	machine/runtime/engine_irq.cpp

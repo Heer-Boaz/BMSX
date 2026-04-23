@@ -10,7 +10,7 @@
 #include "core/engine.h"
 #include "rompack/format.h"
 #include "input/manager.h"
-#include "render/texture_manager.h"
+#include "runtime/assets/edits.h"
 #include <array>
 #include <stdexcept>
 
@@ -50,7 +50,10 @@ void Runtime::destroy() {
 Runtime::Runtime(const RuntimeOptions& options)
 	: timing(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame)
 	, m_api(std::make_unique<Api>(*this))
-	, m_machine(*m_api, *EngineCore::instance().soundMaster())
+	, m_machine(*m_api, *EngineCore::instance().soundMaster(), VdpFrameBufferSize{
+		static_cast<uint32_t>(options.viewport.x),
+		static_cast<uint32_t>(options.viewport.y)
+	})
 	, m_viewport(options.viewport)
 	{
 	m_api->initializeRuntimeKeys();
@@ -190,7 +193,7 @@ void Runtime::applyState(const RuntimeState& state) {
 	for (const auto& [key, value] : state.globals) {
 		m_machine.cpu().setGlobalByKey(key, value);
 	}
-	m_machine.vdp().flushAssetEdits();
+	flushRuntimeAssetEdits(m_machine.memory());
 	m_machine.resetRenderBuffers();
 }
 

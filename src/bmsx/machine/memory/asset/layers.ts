@@ -1,6 +1,11 @@
 import type { RawAssetSource } from '../../../rompack/source';
 import type { CartridgeLayerId, RomAsset, RuntimeAssets } from '../../../rompack/format';
 import type { RuntimeAssetLayer } from '../../../rompack/loader';
+import {
+	CART_ROM_BASE,
+	OVERLAY_ROM_BASE,
+	SYSTEM_ROM_BASE,
+} from '../map';
 
 export type RuntimeAssetCollectionKey = 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents';
 export type RuntimeLayerLookup = Partial<Record<CartridgeLayerId, RuntimeAssetLayer>>;
@@ -35,6 +40,15 @@ export function resolveLayerForPayload(lookup: RuntimeLayerLookup, payloadId: Ca
 		throw runtimeAssetLayerFault(`asset layer '${payloadId}' not configured.`);
 	}
 	return layer;
+}
+
+export function romBaseForPayload(payloadId: CartridgeLayerId): number {
+	switch (payloadId) {
+		case 'system': return SYSTEM_ROM_BASE;
+		case 'overlay': return OVERLAY_ROM_BASE;
+		case 'cart': return CART_ROM_BASE;
+	}
+	throw runtimeAssetLayerFault(`asset layer '${payloadId}' has no ROM base.`);
 }
 
 export function resolveRuntimeLayerAssetFromEntry<T>(lookup: RuntimeLayerLookup, kind: RuntimeAssetCollectionKey, entry: RomAsset): T {

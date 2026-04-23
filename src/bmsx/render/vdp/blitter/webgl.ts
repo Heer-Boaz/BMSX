@@ -13,7 +13,7 @@ import type {
 	VdpBlitterTileRunCommand as BlitterTileRunCommand,
 	VdpFrameBufferColor as FrameBufferColor,
 } from '../../../machine/devices/vdp/vdp';
-import type { PassEncoder, RenderPassInstanceHandle } from '../../backend/interfaces';
+import type { PassEncoder, RenderPassInstanceHandle, TextureParams } from '../../backend/interfaces';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../../backend/frame_uniforms';
 import { WebGLBackend } from '../../backend/webgl/backend';
 import {
@@ -65,6 +65,7 @@ const INITIAL_BATCH_CAPACITY = 256;
 const SOLID_TEXCOORD_0 = 0;
 const SOLID_TEXCOORD_1 = 1;
 const WHITE_COLOR: FrameBufferColor = { r: 255, g: 255, b: 255, a: 255 };
+const DEFAULT_TEXTURE_PARAMS: TextureParams = {};
 const INSTANCE_FLOAT_ATTRIBUTES: readonly WebGLInstancedFloatAttribute[] = [
 	['i_origin', 2, 0],
 	['i_axis_x', 2, 2 * 4],
@@ -136,7 +137,7 @@ function prepareCopySnapshotTexture(backend: WebGLBackend, state: WebGLVdpBlitte
 		const currentWidth = state.copySnapshotWidth;
 		const currentHeight = state.copySnapshotHeight;
 		if (currentWidth !== width || currentHeight !== height) {
-			backend.resizeTexture(texture, width, height, {});
+			backend.resizeTexture(texture, width, height, DEFAULT_TEXTURE_PARAMS);
 		}
 	}
 	state.copySnapshotWidth = width;

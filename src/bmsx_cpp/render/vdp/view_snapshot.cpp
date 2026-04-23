@@ -15,6 +15,10 @@ void commitVdpViewSnapshot(GameView& view, const VDP& vdp) {
 		view.skyboxFaceUvRects = vdp.committedSkyboxFaceUvRects();
 		view.skyboxFaceAtlasBindings = vdp.committedSkyboxFaceAtlasBindings();
 		view.skyboxFaceSizes = vdp.committedSkyboxFaceSizes();
+	} else {
+		view.skyboxFaceUvRects = {};
+		view.skyboxFaceAtlasBindings = {};
+		view.skyboxFaceSizes = {};
 	}
 }
 

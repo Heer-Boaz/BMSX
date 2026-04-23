@@ -3,16 +3,11 @@
 #include "machine/devices/vdp/fault.h"
 #include "machine/devices/vdp/packet_schema.h"
 #include "machine/memory/map.h"
-#include "rompack/assets.h"
-#include "core/engine.h"
 #include "core/font.h"
 #include "core/utf8.h"
-#include "render/texture_manager.h"
 #include "render/vdp/blitter/gles2.h"
 #include "render/vdp/framebuffer.h"
-#include "render/vdp/readback.h"
 #include "render/vdp/texture_transfer.h"
-#include "vendor/stb_image.h"
 #include "machine/devices/imgdec/controller.h"
 #include "machine/scheduler/budget.h"
 #include <algorithm>
@@ -23,7 +18,6 @@
 #include <limits>
 #include <sstream>
 #include <string>
-#include <unordered_set>
 
 namespace bmsx {
 namespace {
@@ -73,67 +67,6 @@ std::string dumpStreamWords(const Memory& memory, uint32_t baseAddr, uint32_t wo
 
 namespace {
 
-EngineCore::RomView resolvePayloadRomView(const RomAssetInfo& romInfo) {
-	if (!romInfo.payloadId.has_value()) {
-		throw vdpFault("image asset missing payload id.");
-	}
-	const std::string& payloadId = *romInfo.payloadId;
-	if (payloadId == "system") {
-		return EngineCore::instance().engineRomView();
-	}
-	if (payloadId == "cart") {
-		return EngineCore::instance().cartRomView();
-	}
-	throw vdpFault("unsupported image payload id '" + payloadId + "'.");
-}
-
-void ensureDecodedPixels(ImgAsset& asset) {
-	if (!asset.pixels.empty()) {
-		return;
-	}
-	if (!asset.rom.start.has_value() || !asset.rom.end.has_value()) {
-		throw vdpFault("image asset '" + asset.id + "' missing ROM byte range.");
-	}
-	const EngineCore::RomView romView = resolvePayloadRomView(asset.rom);
-	const size_t start = static_cast<size_t>(*asset.rom.start);
-	const size_t end = static_cast<size_t>(*asset.rom.end);
-	if (end <= start || end > romView.size) {
-		throw vdpFault("image asset '" + asset.id + "' ROM byte range is invalid.");
-	}
-	int width = 0;
-	int height = 0;
-	int comp = 0;
-	unsigned char* decoded = stbi_load_from_memory(
-		romView.data + start,
-		static_cast<int>(end - start),
-		&width,
-		&height,
-		&comp,
-		4
-	);
-	if (!decoded) {
-		throw vdpFault("image asset '" + asset.id + "' decode failed.");
-	}
-	if (width != asset.meta.width || height != asset.meta.height) {
-		stbi_image_free(decoded);
-		throw vdpFault(
-			"image asset '" + asset.id + "' decoded dimensions "
-			+ std::to_string(width)
-			+ "x"
-			+ std::to_string(height)
-			+ " do not match metadata "
-			+ std::to_string(asset.meta.width)
-			+ "x"
-			+ std::to_string(asset.meta.height)
-			+ "."
-		);
-	}
-	const size_t pixelBytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
-	asset.pixels.resize(pixelBytes);
-	std::memcpy(asset.pixels.data(), decoded, pixelBytes);
-	stbi_image_free(decoded);
-}
-
 struct OctaveSpec {
 	uint32_t shift;
 	int weight;
@@ -148,11 +81,6 @@ constexpr OctaveSpec VRAM_GARBAGE_OCTAVES[] = {
 	{19u, 20, 0xa24baed5U, 0x9e3779b9U},
 	{21u, 24, 0x6a09e667U, 0xbb67ae85U},
 };
-
-bool isAtlasName(const std::string& name) {
-	static constexpr const char* kPrefix = "_atlas_";
-	return name.rfind(kPrefix, 0) == 0;
-}
 
 uint32_t fmix32(uint32_t h) {
 	h ^= h >> 16u;
@@ -302,13 +230,15 @@ VDP::VDP(
 	Memory& memory,
 	CPU& cpu,
 	Api& api,
-	DeviceScheduler& scheduler
+	DeviceScheduler& scheduler,
+	VdpFrameBufferSize frameBufferSize
 )
 	: m_memory(memory)
 	, m_cpu(cpu)
 	, m_api(api)
 	, m_vramStaging(VRAM_STAGING_SIZE)
 	, m_vramGarbageScratch(VRAM_GARBAGE_CHUNK_BYTES)
+	, m_configuredFrameBufferSize(frameBufferSize)
 	, m_scheduler(scheduler) {
 	m_memory.setVramWriter(this);
 	m_memory.mapIoRead(IO_VDP_RD_STATUS, this, &VDP::readVdpStatusThunk);
@@ -1047,9 +977,8 @@ void VDP::presentReadyFrameOnVblankEdge() {
 // end hot-path
 
 void VDP::initializeFrameBufferSurface() {
-	const auto frameBufferSize = currentVdpFrameBufferSize();
-	const uint32_t width = frameBufferSize.width;
-	const uint32_t height = frameBufferSize.height;
+	const uint32_t width = m_configuredFrameBufferSize.width;
+	const uint32_t height = m_configuredFrameBufferSize.height;
 	auto& entry = m_memory.hasAsset(FRAMEBUFFER_RENDER_TEXTURE_KEY)
 		? m_memory.getAssetEntry(FRAMEBUFFER_RENDER_TEXTURE_KEY)
 		: m_memory.registerImageSlotAt(
@@ -2098,9 +2027,8 @@ void VDP::initializeRegisters() {
 		m_frameBufferWidth = entry.regionW;
 		m_frameBufferHeight = entry.regionH;
 	} else {
-		const auto frameBufferSize = currentVdpFrameBufferSize();
-		m_frameBufferWidth = frameBufferSize.width;
-		m_frameBufferHeight = frameBufferSize.height;
+		m_frameBufferWidth = m_configuredFrameBufferSize.width;
+		m_frameBufferHeight = m_configuredFrameBufferSize.height;
 	}
 	resetQueuedFrameState();
 	resetIngressState();
@@ -2151,10 +2079,9 @@ void VDP::setDitherType(i32 type) {
 	syncRegisters();
 }
 
-void VDP::registerImageAssets(RuntimeAssets& engineAssets, RuntimeAssets& assets, bool keepDecodedData) {
-	m_atlasResourceById.clear();
-	m_atlasDimensionsById.clear();
-	m_atlasViewIdsById.clear();
+void VDP::registerVramAssets(VdpAtlasMemory atlasMemory) {
+	m_atlasSizesById = std::move(atlasMemory.atlasSizesById);
+	m_atlasViewIdsById = std::move(atlasMemory.atlasViewIdsById);
 	m_atlasSlotById.clear();
 	m_vramSlots.clear();
 	m_imgDecController->clearExternalSlots();
@@ -2175,199 +2102,14 @@ void VDP::registerImageAssets(RuntimeAssets& engineAssets, RuntimeAssets& assets
 	seedVramStaging();
 	initializeFrameBufferSurface();
 
-	std::vector<std::string> viewAssets;
-	viewAssets.reserve(assets.img.size());
-	std::unordered_set<std::string> viewAssetIds;
-	viewAssetIds.reserve(engineAssets.img.size() + assets.img.size());
-	std::unordered_map<std::string, ImgAsset*> viewAssetById;
-	viewAssetById.reserve(engineAssets.img.size() + assets.img.size());
-
 	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-	ImgAsset* engineAtlasAsset = engineAssets.getImg(engineAtlasName);
-	m_engineAtlasAsset = engineAtlasAsset;
-	ensureDecodedPixels(*engineAtlasAsset);
-
-	for (auto& entry : engineAssets.img) {
-		auto& imgAsset = entry.second;
-		if (!imgAsset.meta.atlassed || imgAsset.meta.atlasid != ENGINE_ATLAS_INDEX) {
-			continue;
-		}
-		if (viewAssetIds.insert(imgAsset.id).second) {
-			viewAssets.push_back(imgAsset.id);
-		}
-		viewAssetById[imgAsset.id] = &imgAsset;
-	}
-
-	for (auto& entry : assets.img) {
-		auto& imgAsset = entry.second;
-		const std::string& id = imgAsset.id;
-		if (imgAsset.meta.atlassed) {
-			if (viewAssetIds.insert(id).second) {
-				viewAssets.push_back(id);
-			}
-			viewAssetById[id] = &imgAsset;
-			continue;
-		}
-		if (id == engineAtlasName) {
-			continue;
-		}
-		if (!isAtlasName(id)) {
-			continue;
-		}
-		const i32 atlasId = imgAsset.meta.atlasid;
-		m_atlasResourceById[atlasId] = id;
-		m_atlasDimensionsById[atlasId] = AtlasDimensions{
-			static_cast<uint32_t>(imgAsset.meta.width),
-			static_cast<uint32_t>(imgAsset.meta.height),
-		};
-	}
-
-	const auto& engineAtlasMeta = engineAtlasAsset->meta;
-	if (engineAtlasMeta.width <= 0 || engineAtlasMeta.height <= 0) {
-		throw vdpFault("engine atlas missing dimensions.");
-	}
-	auto setAtlasEntryDimensions = [](Memory::AssetEntry& slotEntry, uint32_t width, uint32_t height) {
-		const uint32_t size = width * height * 4u;
-		if (size > slotEntry.capacity) {
-			throw vdpFault("atlas entry '" + slotEntry.id + "' exceeds capacity.");
-		}
-		slotEntry.baseSize = size;
-		slotEntry.baseStride = width * 4u;
-		slotEntry.regionX = 0;
-		slotEntry.regionY = 0;
-		slotEntry.regionW = width;
-		slotEntry.regionH = height;
-	};
-	auto seedAtlasSlot = [&](Memory::AssetEntry& slotEntry) {
-		const double maxPixels = static_cast<double>(slotEntry.capacity) / 4.0;
-		const uint32_t side = static_cast<uint32_t>(std::floor(std::sqrt(maxPixels)));
-		setAtlasEntryDimensions(slotEntry, side, side);
-	};
-	if (!m_memory.hasAsset(engineAtlasName)) {
-		m_memory.registerImageSlotAt(
-			engineAtlasName,
-			VRAM_SYSTEM_ATLAS_BASE,
-			VRAM_SYSTEM_ATLAS_SIZE,
-			0,
-			false
-		);
-	}
 	auto& engineEntry = m_memory.getAssetEntry(engineAtlasName);
-	setAtlasEntryDimensions(engineEntry, static_cast<uint32_t>(engineAtlasMeta.width), static_cast<uint32_t>(engineAtlasMeta.height));
-	registerVramSlot(engineEntry, ENGINE_ATLAS_TEXTURE_KEY, VDP_RD_SURFACE_ENGINE);
-
-	if (!m_memory.hasAsset(ATLAS_PRIMARY_SLOT_ID)) {
-		m_memory.registerImageSlotAt(
-			ATLAS_PRIMARY_SLOT_ID,
-			VRAM_PRIMARY_ATLAS_BASE,
-			VRAM_PRIMARY_ATLAS_SIZE,
-			0,
-			false
-		);
-	}
 	auto& primarySlotEntry = m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
-	seedAtlasSlot(primarySlotEntry);
-	if (!m_memory.hasAsset(ATLAS_SECONDARY_SLOT_ID)) {
-		m_memory.registerImageSlotAt(
-			ATLAS_SECONDARY_SLOT_ID,
-			VRAM_SECONDARY_ATLAS_BASE,
-			VRAM_SECONDARY_ATLAS_SIZE,
-			0,
-			false
-		);
-	}
 	auto& secondarySlotEntry = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
-	seedAtlasSlot(secondarySlotEntry);
+	registerVramSlot(engineEntry, ENGINE_ATLAS_TEXTURE_KEY, VDP_RD_SURFACE_ENGINE);
 	registerVramSlot(primarySlotEntry, ATLAS_PRIMARY_SLOT_ID, VDP_RD_SURFACE_PRIMARY);
 	registerVramSlot(secondarySlotEntry, ATLAS_SECONDARY_SLOT_ID, VDP_RD_SURFACE_SECONDARY);
-
-	std::sort(viewAssets.begin(), viewAssets.end());
-	for (const auto& id : viewAssets) {
-		const auto viewAssetIt = viewAssetById.find(id);
-		if (viewAssetIt == viewAssetById.end()) {
-			throw vdpFault("image asset '" + id + "' not found.");
-		}
-		ImgAsset* imgAsset = viewAssetIt->second;
-		if (!imgAsset->meta.atlassed) {
-			throw vdpFault("image asset '" + id + "' expected to be atlassed.");
-		}
-		const i32 atlasId = imgAsset->meta.atlasid;
-		const auto& tc = imgAsset->meta.texcoords;
-		const f32 minU = std::min({tc[0], tc[2], tc[4], tc[6], tc[8], tc[10]});
-		const f32 maxU = std::max({tc[0], tc[2], tc[4], tc[6], tc[8], tc[10]});
-		const f32 minV = std::min({tc[1], tc[3], tc[5], tc[7], tc[9], tc[11]});
-		const f32 maxV = std::max({tc[1], tc[3], tc[5], tc[7], tc[9], tc[11]});
-		const Memory::AssetEntry* baseEntry = nullptr;
-		std::string baseEntryId;
-		i32 atlasWidth = 0;
-		i32 atlasHeight = 0;
-		if (atlasId == ENGINE_ATLAS_INDEX) {
-			baseEntryId = engineAtlasName;
-			atlasWidth = engineAtlasAsset->meta.width;
-			atlasHeight = engineAtlasAsset->meta.height;
-		} else {
-			const auto atlasNameIt = m_atlasResourceById.find(atlasId);
-			if (atlasNameIt == m_atlasResourceById.end()) {
-				throw vdpFault("atlas " + std::to_string(atlasId) + " missing for image '" + id + "'.");
-			}
-			const auto* atlasAsset = assets.getImg(atlasNameIt->second);
-			atlasWidth = atlasAsset->meta.width;
-			atlasHeight = atlasAsset->meta.height;
-			baseEntryId = ATLAS_PRIMARY_SLOT_ID;
-			const auto slotIt = m_atlasSlotById.find(atlasId);
-			if (slotIt != m_atlasSlotById.end()) {
-				baseEntryId = slotIt->second == 1 ? ATLAS_SECONDARY_SLOT_ID : ATLAS_PRIMARY_SLOT_ID;
-			}
-		}
-		baseEntry = &m_memory.getAssetEntry(baseEntryId);
-		// start numeric-sanitization-acceptable -- atlas view bounds are reconstructed from float texcoords at the asset boundary.
-		// Texcoords are stored as float32, so round back to the source texel grid.
-		const i32 offsetX = static_cast<i32>(std::round(minU * static_cast<f32>(atlasWidth)));
-		const i32 offsetY = static_cast<i32>(std::round(minV * static_cast<f32>(atlasHeight)));
-		const i32 regionW = std::max(1, std::min(atlasWidth - offsetX,
-			static_cast<i32>(std::round((maxU - minU) * static_cast<f32>(atlasWidth)))));
-		const i32 regionH = std::max(1, std::min(atlasHeight - offsetY,
-			static_cast<i32>(std::round((maxV - minV) * static_cast<f32>(atlasHeight)))));
-		// end numeric-sanitization-acceptable
-		if (!m_memory.hasAsset(id)) {
-			m_memory.registerImageView(
-				id,
-				*baseEntry,
-				static_cast<uint32_t>(offsetX),
-				static_cast<uint32_t>(offsetY),
-				static_cast<uint32_t>(regionW),
-				static_cast<uint32_t>(regionH),
-				0
-			);
-		} else {
-			auto& viewEntry = m_memory.getAssetEntry(id);
-			m_memory.updateImageView(
-				viewEntry,
-				*baseEntry,
-				static_cast<uint32_t>(offsetX),
-				static_cast<uint32_t>(offsetY),
-				static_cast<uint32_t>(regionW),
-				static_cast<uint32_t>(regionH),
-				0
-			);
-		}
-		m_atlasViewIdsById[atlasId].push_back(id);
-	}
-
 	syncRegisters();
-
-	if (!keepDecodedData) {
-		for (auto& entry : assets.img) {
-			auto& imgAsset = entry.second;
-			const std::string& id = imgAsset.id;
-			if (id == engineAtlasName || isAtlasName(id)) {
-				continue;
-			}
-			if (!imgAsset.pixels.empty()) {
-				std::vector<u8>().swap(imgAsset.pixels);
-			}
-		}
-	}
 }
 
 void VDP::restoreVramSlotTextures() {
@@ -2387,50 +2129,19 @@ void VDP::restoreVramSlotTextures() {
 void VDP::captureVramTextureSnapshots() {
 	for (auto& slot : m_vramSlots) {
 		auto& entry = m_memory.getAssetEntry(slot.assetId);
+		if (slot.textureKey != FRAMEBUFFER_RENDER_TEXTURE_KEY) {
+			slot.contextSnapshot = slot.cpuReadback;
+			continue;
+		}
 		const size_t bytes = static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u;
 		slot.contextSnapshot.resize(bytes);
-			readVdpTextureRegion(
-				slot.textureKey,
-				slot.contextSnapshot.data(),
-				static_cast<i32>(entry.regionW),
-				static_cast<i32>(entry.regionH),
-				0,
-				0
-			);
-	}
-}
-
-void VDP::flushAssetEdits() {
-	if (!vdpTextureUploadReady()) {
-		return;
-	}
-	auto dirty = m_memory.consumeDirtyAssets();
-	if (dirty.empty()) {
-		return;
-	}
-	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-	for (const auto* entry : dirty) {
-		if (entry->type == Memory::AssetType::Image) {
-			const uint32_t span = entry->capacity > 0 ? entry->capacity : 1u;
-			if (m_memory.isVramRange(entry->baseAddr, span)) {
-				continue;
-			}
-			const u8* pixels = m_memory.getImagePixels(*entry);
-			const i32 width = static_cast<i32>(entry->regionW);
-			const i32 height = static_cast<i32>(entry->regionH);
-			const bool isEngineAtlas = entry->id == engineAtlasName;
-			const bool isAtlasSlot = (entry->id == ATLAS_PRIMARY_SLOT_ID || entry->id == ATLAS_SECONDARY_SLOT_ID);
-			const std::string& textureKey = isEngineAtlas ? ENGINE_ATLAS_TEXTURE_KEY : entry->id;
-			if (isAtlasSlot || isEngineAtlas) {
-				TextureHandle handle = updateVdpTexture(textureKey, pixels, width, height);
-				if (isEngineAtlas) {
-					m_engineAtlasAsset->textureHandle = reinterpret_cast<uintptr_t>(handle);
-					m_engineAtlasAsset->uploaded = true;
-				}
-			} else {
-				updateVdpTexturesForAsset(textureKey, pixels, width, height);
-			}
-		}
+		readVdpRenderFrameBufferTextureRegion(
+			slot.contextSnapshot.data(),
+			static_cast<i32>(entry.regionW),
+			static_cast<i32>(entry.regionH),
+			0,
+			0
+		);
 	}
 }
 
@@ -2460,12 +2171,12 @@ void VDP::applyAtlasSlotMapping(i32 primaryAtlasId, i32 secondaryAtlasId) {
 			slotEntry.regionH = side;
 			return;
 		}
-		if (m_atlasResourceById.find(atlasId) == m_atlasResourceById.end()) {
+		const auto atlasIt = m_atlasSizesById.find(atlasId);
+		if (atlasIt == m_atlasSizesById.end()) {
 			throw vdpFault("atlas " + std::to_string(atlasId) + " not registered.");
 		}
-		const AtlasDimensions& atlasDimensions = m_atlasDimensionsById.at(atlasId);
-		const uint32_t width = atlasDimensions.width;
-		const uint32_t height = atlasDimensions.height;
+		const uint32_t width = atlasIt->second.width;
+		const uint32_t height = atlasIt->second.height;
 		const uint32_t size = width * height * 4u;
 		if (size > slotEntry.capacity) {
 			throw vdpFault("atlas " + std::to_string(atlasId) + " exceeds slot capacity.");
@@ -2558,7 +2269,6 @@ void VDP::restoreState(const VdpState& state) {
 }
 
 void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId) {
-	const bool isEngineAtlas = textureKey == ENGINE_ATLAS_TEXTURE_KEY;
 	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, entry.baseAddr};
 	fillVramGarbageScratch(m_vramSeedPixel.data(), m_vramSeedPixel.size(), stream);
 	TextureHandle handle = ensureVdpTextureFromSeed(textureKey, m_vramSeedPixel.data(), entry.regionW, entry.regionH);
@@ -2573,26 +2283,13 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& t
 	slot.cpuReadback.resize(static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u);
 	m_vramSlots.push_back(std::move(slot));
 	registerReadSurface(surfaceId, entry.id, textureKey);
-	if (isEngineAtlas) {
-		auto& engineSlot = m_vramSlots.back();
-		const size_t expectedBytes = static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u;
-		if (m_engineAtlasAsset->pixels.size() != expectedBytes) {
-			throw vdpFault("engine atlas pixel buffer size mismatch.");
-		}
-		engineSlot.cpuReadback.assign(m_engineAtlasAsset->pixels.begin(), m_engineAtlasAsset->pixels.end());
-		if (handle) {
-			updateVdpTexture(
-				textureKey,
-				engineSlot.cpuReadback.data(),
-				static_cast<i32>(entry.regionW),
-				static_cast<i32>(entry.regionH)
-			);
-		}
-		invalidateReadCache(surfaceId);
-		return;
-	}
 	if (handle) {
-		seedVramSlotTexture(m_vramSlots.back());
+		auto& slotRef = m_vramSlots.back();
+		if (textureKey == ENGINE_ATLAS_TEXTURE_KEY) {
+			invalidateReadCache(surfaceId);
+		} else {
+			seedVramSlotTexture(slotRef);
+		}
 	}
 }
 
@@ -2809,8 +2506,6 @@ void VDP::restoreVramSlotTexture(const Memory::AssetEntry& entry, const std::str
 		return;
 	}
 	if (isEngineAtlas) {
-		ensureDecodedPixels(*m_engineAtlasAsset);
-		slot.cpuReadback.assign(m_engineAtlasAsset->pixels.begin(), m_engineAtlasAsset->pixels.end());
 		updateVdpTexture(
 			textureKey,
 			slot.cpuReadback.data(),
@@ -2878,8 +2573,20 @@ void VDP::prefetchReadCache(uint32_t surfaceId, const ReadSurface& surface, uint
 
 void VDP::readSurfacePixels(const ReadSurface& surface, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::vector<u8>& out) {
 	out.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
-	readVdpTextureRegion(surface.textureKey, out.data(), static_cast<i32>(width), static_cast<i32>(height),
-		static_cast<i32>(x), static_cast<i32>(y));
+	if (surface.textureKey == FRAMEBUFFER_RENDER_TEXTURE_KEY) {
+		readVdpRenderFrameBufferTextureRegion(out.data(), static_cast<i32>(width), static_cast<i32>(height),
+			static_cast<i32>(x), static_cast<i32>(y));
+		return;
+	}
+	const auto& slot = getVramSlotByTextureKey(surface.textureKey);
+	const auto& entry = m_memory.getAssetEntry(surface.assetId);
+	const uint32_t stride = entry.regionW * 4u;
+	const uint32_t rowBytes = width * 4u;
+	for (uint32_t row = 0; row < height; ++row) {
+		const size_t srcOffset = static_cast<size_t>(y + row) * static_cast<size_t>(stride) + static_cast<size_t>(x) * 4u;
+		const size_t dstOffset = static_cast<size_t>(row) * static_cast<size_t>(rowBytes);
+		std::memcpy(out.data() + dstOffset, slot.cpuReadback.data() + srcOffset, rowBytes);
+	}
 }
 // end hot-path
 

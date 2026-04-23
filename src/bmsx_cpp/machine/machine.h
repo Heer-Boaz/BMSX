@@ -35,7 +35,7 @@ struct MachineState {
 
 class Machine {
 public:
-	Machine(Api& api, SoundMaster& soundMaster);
+	Machine(Api& api, SoundMaster& soundMaster, VdpFrameBufferSize frameBufferSize);
 
 	Memory& memory() { return m_memory; }
 	const Memory& memory() const { return m_memory; }

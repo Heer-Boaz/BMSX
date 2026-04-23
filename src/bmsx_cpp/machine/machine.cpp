@@ -1,7 +1,6 @@
 #include "machine/machine.h"
 
 #include "audio/soundmaster.h"
-#include "core/engine.h"
 #include "input/manager.h"
 #include "machine/firmware/api.h"
 #include "machine/runtime/runtime_fault.h"
@@ -11,12 +10,12 @@
 #include <stdexcept>
 
 namespace bmsx {
-Machine::Machine(Api& api, SoundMaster& soundMaster)
+Machine::Machine(Api& api, SoundMaster& soundMaster, VdpFrameBufferSize frameBufferSize)
 	: m_memory()
 	, m_stringHandles(m_memory)
 	, m_cpu(m_memory, &m_stringHandles)
 	, m_deviceScheduler(m_cpu)
-	, m_vdp(m_memory, m_cpu, api, m_deviceScheduler)
+	, m_vdp(m_memory, m_cpu, api, m_deviceScheduler, frameBufferSize)
 	, m_irqController(m_memory)
 	, m_dmaController(m_memory, m_irqController, m_vdp, m_deviceScheduler)
 	, m_geometryController(m_memory, m_irqController, m_deviceScheduler)
@@ -98,7 +97,6 @@ void Machine::restoreState(const MachineState& state) {
 	m_irqController.postLoad();
 	m_inputController.restoreState(state.input);
 	m_vdp.restoreState(state.vdp);
-	m_vdp.flushAssetEdits();
 }
 
 } // namespace bmsx

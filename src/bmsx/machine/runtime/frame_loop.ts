@@ -1,6 +1,7 @@
 import { $ } from '../../core/engine';
 import type { FrameState, Runtime } from './runtime';
 import * as workbenchMode from '../../ide/runtime/workbench_mode';
+import { flushRuntimeAssetEdits } from '../../runtime/assets/edits';
 import { clearBackQueues } from '../../render/shared/queues';
 import { clearHardwareLighting } from '../../render/shared/hardware/lighting';
 import { RunResult } from '../cpu/cpu';
@@ -135,7 +136,7 @@ export class FrameLoopState {
 		try {
 			if (runtime.pendingCall === 'entry') {
 				this.runUpdatePhase(runtime, state);
-				runtime.machine.vdp.flushAssetEdits();
+				flushRuntimeAssetEdits(runtime.machine.memory);
 				state.updateExecuted = runtime.pendingCall !== 'entry';
 			}
 			this.finalizeUpdateSlice(runtime, state);

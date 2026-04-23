@@ -5,6 +5,11 @@
 #include "render/texture_manager.h"
 
 namespace bmsx {
+namespace {
+
+const TextureParams DEFAULT_TEXTURE_PARAMS{};
+
+} // namespace
 
 bool vdpTextureUploadReady() {
 	return EngineCore::instance().view()->backend()->readyForTextureUpload();
@@ -26,9 +31,8 @@ TextureHandle ensureVdpTextureFromSeed(const std::string& textureKey, const u8* 
 			EngineCore::instance().view()->textures[textureKey] = nullptr;
 			return nullptr;
 		}
-		TextureParams params;
-		const TextureKey key = texmanager->makeKey(textureKey, params);
-		handle = texmanager->getOrCreateTexture(key, seedPixel, 1, 1, params);
+		const TextureKey key = texmanager->makeKey(textureKey, DEFAULT_TEXTURE_PARAMS);
+		handle = texmanager->getOrCreateTexture(key, seedPixel, 1, 1, DEFAULT_TEXTURE_PARAMS);
 	}
 	handle = texmanager->resizeTextureForKey(textureKey, static_cast<i32>(width), static_cast<i32>(height));
 	EngineCore::instance().view()->textures[textureKey] = handle;
@@ -46,21 +50,16 @@ TextureHandle resizeVdpTextureForKey(const std::string& textureKey, u32 width, u
 }
 
 TextureHandle updateVdpTexture(const std::string& textureKey, const u8* pixels, i32 width, i32 height) {
-	TextureParams params;
 	auto* texmanager = EngineCore::instance().texmanager();
-	const TextureKey key = texmanager->makeKey(textureKey, params);
+	const TextureKey key = texmanager->makeKey(textureKey, DEFAULT_TEXTURE_PARAMS);
 	TextureHandle handle = texmanager->getTexture(key);
 	if (!handle) {
-		handle = texmanager->getOrCreateTexture(key, pixels, width, height, params);
+		handle = texmanager->getOrCreateTexture(key, pixels, width, height, DEFAULT_TEXTURE_PARAMS);
 	} else {
-		texmanager->updateTexture(handle, pixels, width, height, params);
+		texmanager->updateTexture(handle, pixels, width, height, DEFAULT_TEXTURE_PARAMS);
 	}
 	EngineCore::instance().view()->textures[textureKey] = handle;
 	return handle;
-}
-
-void updateVdpTexturesForAsset(const std::string& textureKey, const u8* pixels, i32 width, i32 height) {
-	EngineCore::instance().texmanager()->updateTexturesForAsset(textureKey, pixels, width, height);
 }
 
 void updateVdpTextureRegion(const std::string& textureKey, const u8* pixels, i32 width, i32 height, i32 x, i32 y) {

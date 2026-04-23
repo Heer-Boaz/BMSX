@@ -13,10 +13,8 @@ import type {
 	RenderLayer,
 } from './submissions';
 import { Runtime } from '../../machine/runtime/runtime';
-import { $ } from '../../core/engine';
 import { BFont } from './bitmap_font';
 import { setSpriteParallaxRigValues } from '../2d/sprite_parallax_rig';
-import { commitVdpViewSnapshot } from '../vdp/view_snapshot';
 import { shallowcopy } from '../../common/shallowcopy';
 
 const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
@@ -117,7 +115,6 @@ export function clearBackQueues(): void {
 export function clearAllQueues(): void {
 	const vdp = Runtime.instance.machine.vdp;
 	vdp.initializeRegisters();
-	commitVdpViewSnapshot($.view, vdp);
 	meshQueue.clearAll();
 	particleQueue.clearAll();
 	prepareHeldRenderQueues();

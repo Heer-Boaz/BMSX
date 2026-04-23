@@ -1,10 +1,8 @@
-import { $ } from '../../core/engine';
 import { IRQ_VBLANK } from '../bus/io';
 import type { FrameState, Runtime } from './runtime';
 import { advanceRuntimeTime, runDueRuntimeTimers } from './cpu_executor';
 import { refreshDeviceTimings } from './timing/config';
 import { TIMER_KIND_VBLANK_BEGIN, TIMER_KIND_VBLANK_END } from '../scheduler/device';
-import { commitVdpViewSnapshot } from '../../render/vdp/view_snapshot';
 
 export type RuntimeVblankSnapshot = {
 	cyclesIntoFrame: number;
@@ -244,7 +242,6 @@ export class VblankState {
 		const vdp = runtime.machine.vdp;
 		vdp.syncRegisters();
 		vdp.presentReadyFrameOnVblankEdge();
-		commitVdpViewSnapshot($.view, vdp);
 	}
 
 	private completeTickIfPending(runtime: Runtime, frameState: FrameState, vblankSequence: number): void {

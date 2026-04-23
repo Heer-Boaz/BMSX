@@ -72,6 +72,7 @@ struct VdpGles2Runtime {
 
 VdpGles2Runtime g_vdpGles2Runtime{};
 
+const TextureParams DEFAULT_TEXTURE_PARAMS{};
 
 constexpr const char* kVdpGles2VertexShader = R"(
 precision mediump float;
@@ -239,11 +240,10 @@ TextureHandle ensureVdpGles2CopySnapshot(OpenGLES2Backend* backend, i32 width, i
 	if (state.copySnapshotTexture && state.copySnapshotWidth == width && state.copySnapshotHeight == height) {
 		return state.copySnapshotTexture;
 	}
-	TextureParams params;
 	if (!state.copySnapshotTexture) {
-		state.copySnapshotTexture = backend->createTexture(nullptr, width, height, params);
+		state.copySnapshotTexture = backend->createTexture(nullptr, width, height, DEFAULT_TEXTURE_PARAMS);
 	} else {
-		state.copySnapshotTexture = backend->resizeTexture(state.copySnapshotTexture, width, height, params);
+		state.copySnapshotTexture = backend->resizeTexture(state.copySnapshotTexture, width, height, DEFAULT_TEXTURE_PARAMS);
 	}
 	state.copySnapshotWidth = width;
 	state.copySnapshotHeight = height;

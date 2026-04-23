@@ -4,6 +4,7 @@
 #include "machine/runtime/runtime.h"
 #include "render/shared/queues.h"
 #include "render/test_pattern.h"
+#include "render/vdp/view_snapshot.h"
 #include <cstdio>
 #include <cstdlib>
 
@@ -214,6 +215,7 @@ void RenderPresentationState::render(EngineCore& engine, Runtime& runtime) {
 		}
 
 		const auto drawGameStart = std::chrono::steady_clock::now();
+		commitVdpViewSnapshot(*engine.m_view, runtime.machine().vdp());
 		engine.m_view->configurePresentation(presentMode, commitFrame);
 		engine.m_view->drawGame();
 		const auto drawGameEnd = std::chrono::steady_clock::now();

@@ -24,15 +24,3 @@ export function resizeVdpTextureForKey(textureKey: string, width: number, height
 export function updateVdpTextureRegion(textureKey: string, pixels: Uint8Array, width: number, height: number, x: number, y: number): void {
 	$.texmanager.updateTextureRegionForKey(textureKey, pixels, width, height, x, y);
 }
-
-export function updateVdpSlotTexture(textureKey: string, pixels: Uint8Array, width: number, height: number): Promise<void> {
-	if (!$.texmanager.getTextureByUri(textureKey)) {
-		return $.texmanager.loadTextureFromPixels(textureKey, pixels, width, height)
-			.then((handle) => { $.view.textures[textureKey] = handle; });
-	}
-	return $.texmanager.updateTexturesForKey(textureKey, pixels, width, height);
-}
-
-export function updateVdpAssetTexture(textureKey: string, pixels: Uint8Array, width: number, height: number): Promise<void> {
-	return $.texmanager.updateTexturesForKey(textureKey, pixels, width, height);
-}

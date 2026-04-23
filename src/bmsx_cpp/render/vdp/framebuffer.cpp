@@ -7,14 +7,11 @@
 #include "rompack/format.h"
 
 namespace bmsx {
+namespace {
 
-VdpFrameBufferSize currentVdpFrameBufferSize() {
-	auto* view = EngineCore::instance().view();
-	return {
-		static_cast<u32>(view->viewportSize.x),
-		static_cast<u32>(view->viewportSize.y),
-	};
-}
+const TextureParams DEFAULT_TEXTURE_PARAMS{};
+
+} // namespace
 
 bool vdpRenderFrameBufferTextureExists() {
 	return EngineCore::instance().texmanager()->getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY) != nullptr;
@@ -24,9 +21,8 @@ void ensureVdpDisplayFrameBufferTexture(const u8* seedPixel, u32 width, u32 heig
 	auto* texmanager = EngineCore::instance().texmanager();
 	TextureHandle handle = texmanager->getTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
 	if (!handle) {
-		TextureParams params;
-		const TextureKey key = texmanager->makeKey(FRAMEBUFFER_TEXTURE_KEY, params);
-		handle = texmanager->getOrCreateTexture(key, seedPixel, 1, 1, params);
+		const TextureKey key = texmanager->makeKey(FRAMEBUFFER_TEXTURE_KEY, DEFAULT_TEXTURE_PARAMS);
+		handle = texmanager->getOrCreateTexture(key, seedPixel, 1, 1, DEFAULT_TEXTURE_PARAMS);
 	}
 	handle = texmanager->resizeTextureForKey(FRAMEBUFFER_TEXTURE_KEY, static_cast<i32>(width), static_cast<i32>(height));
 	EngineCore::instance().view()->textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
@@ -53,10 +49,22 @@ void copyVdpRenderFrameBufferToDisplay(u32 width, u32 height) {
 }
 
 void updateVdpRenderFrameBufferTexture(const u8* pixels, u32 width, u32 height) {
-	TextureParams params;
 	auto* view = EngineCore::instance().view();
 	TextureHandle handle = view->textures[FRAMEBUFFER_RENDER_TEXTURE_KEY];
-	EngineCore::instance().texmanager()->updateTexture(handle, pixels, static_cast<i32>(width), static_cast<i32>(height), params);
+	EngineCore::instance().texmanager()->updateTexture(handle, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
+}
+
+void readVdpRenderFrameBufferTextureRegion(u8* out, i32 width, i32 height, i32 x, i32 y) {
+	auto* texmanager = EngineCore::instance().texmanager();
+	texmanager->backend()->readTextureRegion(
+		texmanager->getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY),
+		out,
+		width,
+		height,
+		x,
+		y,
+		DEFAULT_TEXTURE_PARAMS
+	);
 }
 
 } // namespace bmsx

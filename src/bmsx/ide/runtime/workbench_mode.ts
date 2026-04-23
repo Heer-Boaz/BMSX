@@ -10,6 +10,7 @@ import {
 	type StackTraceFrame,
 } from '../../lua/value';
 import { publishOverlayFrame } from '../../render/editor/overlay_queue';
+import { flushRuntimeAssetEdits } from '../../runtime/assets/edits';
 import * as constants from '../common/constants';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../common/constants';
 import { editorDebuggerState } from '../workbench/contrib/debugger/state';
@@ -735,7 +736,7 @@ function beginOverlayUpdateFrame(runtime: Runtime): FrameState | null {
 }
 
 function finishOverlayUpdateFrame(runtime: Runtime, state: FrameState): void {
-	runtime.machine.vdp.flushAssetEdits();
+	flushRuntimeAssetEdits(runtime.machine.memory);
 	runtime.frameLoop.drawFrameState = state;
 	runtime.frameLoop.abandonFrameState(runtime);
 }

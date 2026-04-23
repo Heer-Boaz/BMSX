@@ -9,6 +9,7 @@ import {
 import type { Runtime } from '../machine/runtime/runtime';
 import type { TickCompletion } from '../machine/scheduler/frame';
 import * as workbenchMode from '../ide/runtime/workbench_mode';
+import { commitVdpViewSnapshot } from './vdp/view_snapshot';
 
 export type RenderPresentationMode = 'partial' | 'completed';
 
@@ -92,6 +93,7 @@ export class RenderPresentationState {
 
 	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
 		$.deltatime = hostDeltaMs;
+		commitVdpViewSnapshot($.view, runtime.machine.vdp);
 		$.view.configurePresentation(mode, commitFrame);
 		this.recordPresentation(mode, commitFrame);
 		$.sndmaster.finishFrame();

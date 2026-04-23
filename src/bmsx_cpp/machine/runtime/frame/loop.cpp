@@ -5,6 +5,7 @@
 #include "machine/runtime/cart_boot.h"
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/runtime.h"
+#include "runtime/assets/edits.h"
 #include "render/shared/queues.h"
 
 namespace bmsx {
@@ -163,7 +164,7 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	}
 
 	frameState.updateExecuted = runtime.m_pendingCall != PendingCall::Entry;
-	runtime.machine().vdp().flushAssetEdits();
+	flushRuntimeAssetEdits(runtime.machine().memory());
 	finalizeUpdateSlice(runtime);
 	const bool nextFrameActive = frameActive;
 	if (nextFrameActive != previousFrameActive) {
@@ -222,7 +223,7 @@ void FrameLoopState::runHostFrame(Runtime& runtime, f64 deltaTime, bool platform
 			engine.m_last_tick_timing.runtimeUpdateMs = to_ms(updateEnd - updateStart);
 
 			const auto terminalStart = std::chrono::steady_clock::now();
-			runtime.machine().vdp().flushAssetEdits();
+			flushRuntimeAssetEdits(runtime.machine().memory());
 			const auto terminalEnd = std::chrono::steady_clock::now();
 			engine.m_last_tick_timing.runtimeTerminalMs = to_ms(terminalEnd - terminalStart);
 		}

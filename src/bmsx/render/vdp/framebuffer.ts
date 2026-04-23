@@ -1,19 +1,6 @@
 import { $ } from '../../core/engine';
 import { FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY } from '../../rompack/format';
 
-export type VdpFrameBufferSize = {
-	width: number;
-	height: number;
-};
-
-export function currentVdpFrameBufferSize(): VdpFrameBufferSize {
-	const viewportSize = $.view.viewportSize;
-	return {
-		width: viewportSize.x,
-		height: viewportSize.y,
-	};
-}
-
 export function vdpRenderFrameBufferTextureExists(): boolean {
 	return !!$.texmanager.getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY);
 }
@@ -35,4 +22,8 @@ export function swapVdpFrameBufferTexturePages(): void {
 
 export function copyVdpRenderFrameBufferToDisplay(width: number, height: number): void {
 	$.texmanager.copyTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY, width, height);
+}
+
+export function readVdpRenderFrameBufferTextureRegion(x: number, y: number, width: number, height: number, out?: Uint8Array): Uint8Array {
+	return $.view.backend.readTextureRegion($.texmanager.getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY), x, y, width, height, out);
 }

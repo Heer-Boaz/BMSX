@@ -16,17 +16,30 @@
 
 namespace bmsx {
 
-class RuntimeAssets;
-struct ImgAsset;
 class ImgDecController;
 class BFont;
 class Api;
 struct VdpGles2Blitter;
 
+struct VdpAtlasSize {
+	uint32_t width = 0;
+	uint32_t height = 0;
+};
+
+struct VdpAtlasMemory {
+	std::unordered_map<i32, VdpAtlasSize> atlasSizesById;
+	std::unordered_map<i32, std::vector<std::string>> atlasViewIdsById;
+};
+
 struct VdpState {
 	std::array<i32, 2> atlasSlots{{-1, -1}};
 	std::optional<SkyboxImageIds> skyboxFaceIds;
 	i32 ditherType = 0;
+};
+
+struct VdpFrameBufferSize {
+	uint32_t width = 0;
+	uint32_t height = 0;
 };
 
 constexpr uint32_t VDP_RD_SURFACE_ENGINE = 0u;
@@ -41,7 +54,8 @@ public:
 			Memory& memory,
 			CPU& cpu,
 			Api& api,
-			DeviceScheduler& scheduler
+			DeviceScheduler& scheduler,
+			VdpFrameBufferSize frameBufferSize
 		);
 
 		void initializeRegisters();
@@ -86,11 +100,10 @@ public:
 		uint32_t readVdpStatus();
 		uint32_t readVdpData();
 
-	void registerImageAssets(RuntimeAssets& engineAssets, RuntimeAssets& assets, bool keepDecodedData);
+	void registerVramAssets(VdpAtlasMemory atlasMemory);
 	void restoreVramSlotTextures();
 	void captureVramTextureSnapshots();
 	void shutdownBackendResources();
-	void flushAssetEdits();
 	void attachImgDecController(ImgDecController& controller);
 	void setSkyboxImages(const SkyboxImageIds& ids);
 	void clearSkybox();
@@ -195,10 +208,6 @@ public:
 		uint32_t width = 0;
 		std::vector<u8> data;
 	};
-	struct AtlasDimensions {
-		uint32_t width = 0;
-		uint32_t height = 0;
-	};
 	struct ResolvedBlitterSample {
 		BlitterSource source{};
 		uint32_t surfaceWidth = 0;
@@ -226,9 +235,7 @@ public:
 		CPU& m_cpu;
 		Api& m_api;
 	ImgDecController* m_imgDecController = nullptr;
-	ImgAsset* m_engineAtlasAsset = nullptr;
-	std::unordered_map<i32, std::string> m_atlasResourceById;
-	std::unordered_map<i32, AtlasDimensions> m_atlasDimensionsById;
+	std::unordered_map<i32, VdpAtlasSize> m_atlasSizesById;
 	std::unordered_map<i32, std::vector<std::string>> m_atlasViewIdsById;
 	std::unordered_map<i32, i32> m_atlasSlotById;
 	std::array<i32, 2> m_slotAtlasIds{{-1, -1}};
@@ -295,6 +302,7 @@ public:
 	std::vector<u8> m_displayFrameBufferCpuReadback;
 	std::array<ReadSurface, 4> m_readSurfaces{};
 	std::array<ReadCache, 4> m_readCaches{};
+	VdpFrameBufferSize m_configuredFrameBufferSize;
 	DeviceScheduler& m_scheduler;
 
 	void registerVramSlot(const Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId);

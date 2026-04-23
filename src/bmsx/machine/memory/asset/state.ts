@@ -1,13 +1,7 @@
 import { $, renderGate, runGate } from '../../../core/engine';
 import { taskGate } from '../../../core/taskgate';
-import { commitVdpViewSnapshot } from '../../../render/vdp/view_snapshot';
 import { decodeBinary, decodeBinaryWithPropTable } from '../../../common/serializer/binencoder';
 import { syncLuaAssetField } from '../../firmware/js_bridge';
-import {
-	CART_ROM_BASE,
-	OVERLAY_ROM_BASE,
-	SYSTEM_ROM_BASE,
-} from '../map';
 import type { Memory } from '../memory';
 import {
 	ENGINE_ATLAS_INDEX,
@@ -26,11 +20,13 @@ import { parseRomMetadataSection } from '../../../rompack/metadata';
 import { registerAudioAssets as registerAudioAssetsFromSource } from '../audio_assets';
 import {
 	buildRuntimeLayerLookup,
+	romBaseForPayload,
 	resolveLayerForPayload,
 	resolveRuntimeLayerAssetById,
 	resolveRuntimeLayerAssetFromEntry,
 	type RuntimeLayerLookup,
 } from './layers';
+import { registerImageMemory, restoreEngineAtlas } from './images';
 import { runtimeFault } from '../../../ide/runtime/lua_pipeline';
 import type { Runtime } from '../../runtime/runtime';
 
@@ -148,11 +144,12 @@ export class RuntimeAssetState {
 			const memory = runtime.machine.memory;
 			if (mode === 'cart') {
 				memory.resetCartAssets();
-			} else {
-				memory.resetAssetMemory();
-			}
-			await runtime.machine.vdp.registerImageAssets(engineSource, assetSource);
-			commitVdpViewSnapshot($.view, runtime.machine.vdp);
+				} else {
+					memory.resetAssetMemory();
+				}
+				const imageMemory = registerImageMemory(memory, engineSource.list(), assetSource.list());
+				runtime.machine.vdp.registerVramAssets(imageMemory.atlasMemory);
+				await restoreEngineAtlas(memory, imageMemory.engineAtlasRecord);
 			this.registerAudioAssets(assetSource, memory);
 			this.rebuildMetaCaches(assetSource, memory);
 			memory.finalizeAssetTable();
@@ -309,18 +306,13 @@ function resolveRomAssetRangeFromLayer(layer: RuntimeAssetLayer | null, assetId:
 		if (entry.start === undefined || entry.end === undefined) {
 			throw runtimeFault(`asset '${assetId}' is missing ROM range.`);
 		}
-		const romBase = layer.id === 'system'
-			? SYSTEM_ROM_BASE
-			: layer.id === 'overlay'
-				? OVERLAY_ROM_BASE
-				: CART_ROM_BASE;
-		return {
-			found: true,
-			deleted: false,
-			romBase,
-			start: entry.start,
-			end: entry.end,
-		};
+			return {
+				found: true,
+				deleted: false,
+				romBase: romBaseForPayload(layer.id),
+				start: entry.start,
+				end: entry.end,
+			};
 	}
 	return { found: false, deleted: false, romBase: 0, start: 0, end: 0 };
 }

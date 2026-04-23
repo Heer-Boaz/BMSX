@@ -71,7 +71,6 @@ import {
 	configureMemoryMap,
 } from '../memory/map';
 import { createVdpBlitterExecutor } from '../../render/vdp/blitter';
-import { commitVdpViewSnapshot } from '../../render/vdp/view_snapshot';
 
 // Flip back to 'msx' to restore default font in machine/editor
 export const EDITOR_FONT_VARIANT: FontVariant = 'tiny';
@@ -443,12 +442,12 @@ export class Runtime {
 		this.machine = new Machine(
 			options.memory,
 			createVdpBlitterExecutor($.view.backend),
+			{ width: options.viewport.width, height: options.viewport.height },
 			Input.instance,
 			$.sndmaster,
 		);
 		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
-		commitVdpViewSnapshot($.view, this.machine.vdp);
 		configureLuaHeapUsage({
 			getBaseRamUsedBytes: () => this.machine.resourceUsageDetector.getBaseRamUsedBytes(),
 			collectTrackedHeapBytes: () => {

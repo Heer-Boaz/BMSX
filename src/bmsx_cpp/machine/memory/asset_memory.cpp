@@ -1,14 +1,32 @@
 #include "machine/memory/asset_memory.h"
 
+#include "core/primitives.h"
+#include "machine/memory/asset_images.h"
+#include "machine/memory/map.h"
 #include "machine/runtime/runtime.h"
 #include "rompack/assets.h"
 
 #include <algorithm>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace bmsx {
 
-void buildAssetMemory(Runtime& runtime, RuntimeAssets& engineAssets, RuntimeAssets& assets, bool keepDecodedData, RuntimeAssetBuildMode mode) {
+uint32_t romBaseForPayloadId(std::string_view payloadId) {
+	if (payloadId == "system") {
+		return SYSTEM_ROM_BASE;
+	}
+	if (payloadId == "overlay") {
+		return OVERLAY_ROM_BASE;
+	}
+	if (payloadId == "cart") {
+		return CART_ROM_BASE;
+	}
+	throw BMSX_RUNTIME_ERROR("Asset payload id '" + std::string(payloadId) + "' has no ROM base.");
+}
+
+void buildAssetMemory(Runtime& runtime, RuntimeAssets& engineAssets, RuntimeAssets& assets, RuntimeAssetBuildMode mode) {
 	auto& machine = runtime.machine();
 	auto& memory = machine.memory();
 	if (mode == RuntimeAssetBuildMode::Cart) {
@@ -16,7 +34,9 @@ void buildAssetMemory(Runtime& runtime, RuntimeAssets& engineAssets, RuntimeAsse
 	} else {
 		memory.resetAssetMemory();
 	}
-	machine.vdp().registerImageAssets(engineAssets, assets, keepDecodedData);
+	RegisteredImageMemory imageMemory = registerImageMemory(memory, engineAssets, assets);
+	machine.vdp().registerVramAssets(std::move(imageMemory.atlasMemory));
+	restoreEngineAtlas(memory, *imageMemory.engineAtlasAsset);
 	std::vector<const AudioAsset*> audioAssets;
 	audioAssets.reserve(assets.audio.size());
 	for (const auto& entry : assets.audio) {
