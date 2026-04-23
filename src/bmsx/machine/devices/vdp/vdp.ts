@@ -93,6 +93,20 @@ export type VdpFrameBufferSize = {
 	height: number;
 };
 
+type VdpSubmittedFrameState = {
+	queue: VdpBlitterCommand[];
+	occupied: boolean;
+	hasCommands: boolean;
+	ready: boolean;
+	executionPending: boolean;
+	executionTaken: boolean;
+	cost: number;
+	workRemaining: number;
+	slotAtlasIds: [number | null, number | null];
+	ditherType: number;
+	skyboxFaceIds: SkyboxImageIds | null;
+};
+
 const VDP_SERVICE_BATCH_WORK_UNITS = 128;
 const BMSX_BASE_COLORS: color[] = [
 	{ r: 0 / 255, g: 0 / 255, b: 0 / 255, a: 0 }, // 0 = Transparent
@@ -640,9 +654,33 @@ export class VDP implements VramWriteSink {
 	private _frameBufferWidth = 0;
 	private _frameBufferHeight = 0;
 	private buildBlitterQueue: VdpBlitterCommand[] = [];
-	private activeBlitterQueue: VdpBlitterCommand[] = [];
-	private pendingBlitterQueue: VdpBlitterCommand[] = [];
 	private executingBlitterQueue: VdpBlitterCommand[] = [];
+	private readonly activeFrame: VdpSubmittedFrameState = {
+		queue: [],
+		occupied: false,
+		hasCommands: false,
+		ready: false,
+		executionPending: false,
+		executionTaken: false,
+		cost: 0,
+		workRemaining: 0,
+		slotAtlasIds: [null, null],
+		ditherType: 0,
+		skyboxFaceIds: null,
+	};
+	private readonly pendingFrame: VdpSubmittedFrameState = {
+		queue: [],
+		occupied: false,
+		hasCommands: false,
+		ready: false,
+		executionPending: false,
+		executionTaken: false,
+		cost: 0,
+		workRemaining: 0,
+		slotAtlasIds: [null, null],
+		ditherType: 0,
+		skyboxFaceIds: null,
+	};
 	private readonly glyphBufferPool: VdpGlyphRunGlyph[][] = [];
 	private readonly tileBufferPool: VdpTileRunBlit[][] = [];
 	private readonly glyphEntryPool: VdpGlyphRunGlyph[] = [];
@@ -659,22 +697,6 @@ export class VDP implements VramWriteSink {
 	private blitterSequence = 0;
 	private buildFrameCost = 0;
 	private buildFrameOpen = false;
-	private activeFrameOccupied = false;
-	private activeFrameHasCommands = false;
-	private activeFrameReady = false;
-	private activeFrameExecutionPending = false;
-	private activeFrameExecutionTaken = false;
-	private activeFrameCost = 0;
-	private activeFrameWorkRemaining = 0;
-	private pendingFrameOccupied = false;
-	private pendingFrameHasCommands = false;
-	private pendingFrameCost = 0;
-	private readonly activeSlotAtlasIds: Array<number | null> = [null, null];
-	private readonly pendingSlotAtlasIds: Array<number | null> = [null, null];
-	private activeDitherType = 0;
-	private pendingDitherType = 0;
-	private activeSkyboxFaceIds: SkyboxImageIds | null = null;
-	private pendingSkyboxFaceIds: SkyboxImageIds | null = null;
 	private readonly committedSlotAtlasIds: Array<number | null> = [null, null];
 	private cpuHz: bigint = 1n;
 	private workUnitsPerSec: bigint = 1n;
@@ -1097,17 +1119,22 @@ export class VDP implements VramWriteSink {
 	private resetQueuedFrameState(): void {
 		this.resetBuildFrameState();
 		this.clearActiveFrame();
-		this.recycleBlitterBuffers(this.pendingBlitterQueue);
+		this.recycleBlitterBuffers(this.pendingFrame.queue);
 		this.workCarry = 0n;
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
-		this.pendingFrameOccupied = false;
-		this.pendingFrameHasCommands = false;
-		this.pendingFrameCost = 0;
-		this.pendingDitherType = 0;
-		this.pendingSlotAtlasIds[0] = null;
-		this.pendingSlotAtlasIds[1] = null;
-		this.pendingSkyboxFaceIds = null;
+		this.pendingFrame.queue.length = 0;
+		this.pendingFrame.occupied = false;
+		this.pendingFrame.hasCommands = false;
+		this.pendingFrame.ready = false;
+		this.pendingFrame.executionPending = false;
+		this.pendingFrame.executionTaken = false;
+		this.pendingFrame.cost = 0;
+		this.pendingFrame.workRemaining = 0;
+		this.pendingFrame.ditherType = 0;
+		this.pendingFrame.slotAtlasIds[0] = null;
+		this.pendingFrame.slotAtlasIds[1] = null;
+		this.pendingFrame.skyboxFaceIds = null;
 		this.slotAtlasIds[0] = null;
 		this.slotAtlasIds[1] = null;
 	}
@@ -1164,7 +1191,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	public canAcceptSubmittedFrame(): boolean {
-		return !this.pendingFrameOccupied;
+		return !this.pendingFrame.occupied;
 	}
 
 	public beginSubmittedFrame(): void {
@@ -1186,37 +1213,26 @@ export class VDP implements VramWriteSink {
 		if (!this.buildFrameOpen) {
 			throw vdpFault('no submitted frame is open.');
 		}
-		const queue = slot === 'active' ? this.activeBlitterQueue : this.pendingBlitterQueue;
-		if (queue.length !== 0) {
+		const frame = slot === 'active' ? this.activeFrame : this.pendingFrame;
+		if (frame.queue.length !== 0) {
 			throw vdpFault(`${slot} frame queue is not empty.`);
 		}
 		const buildQueue = this.buildBlitterQueue;
 		const frameHasCommands = buildQueue.length !== 0;
 		const frameCost = this.submittedFrameCost(buildQueue, this.buildFrameCost);
-		this.buildBlitterQueue = queue;
-		if (slot === 'active') {
-			this.activeBlitterQueue = buildQueue;
-			this.activeFrameOccupied = true;
-			this.activeFrameHasCommands = frameHasCommands;
-			this.activeFrameCost = frameCost;
-			this.activeFrameWorkRemaining = frameCost;
-			this.activeFrameReady = frameCost === 0;
-			this.activeFrameExecutionPending = false;
-			this.activeFrameExecutionTaken = false;
-			this.activeDitherType = this.lastDitherType;
-			this.activeSlotAtlasIds[0] = this.slotAtlasIds[0];
-			this.activeSlotAtlasIds[1] = this.slotAtlasIds[1];
-			this.activeSkyboxFaceIds = this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds };
-		} else {
-			this.pendingBlitterQueue = buildQueue;
-			this.pendingFrameOccupied = true;
-			this.pendingFrameHasCommands = frameHasCommands;
-			this.pendingFrameCost = frameCost;
-			this.pendingDitherType = this.lastDitherType;
-			this.pendingSlotAtlasIds[0] = this.slotAtlasIds[0];
-			this.pendingSlotAtlasIds[1] = this.slotAtlasIds[1];
-			this.pendingSkyboxFaceIds = this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds };
-		}
+		this.buildBlitterQueue = frame.queue;
+		frame.queue = buildQueue;
+		frame.occupied = true;
+		frame.hasCommands = frameHasCommands;
+		frame.ready = frameCost === 0;
+		frame.executionPending = false;
+		frame.executionTaken = false;
+		frame.cost = frameCost;
+		frame.workRemaining = frameCost;
+		frame.ditherType = this.lastDitherType;
+		frame.slotAtlasIds[0] = this.slotAtlasIds[0];
+		frame.slotAtlasIds[1] = this.slotAtlasIds[1];
+		frame.skyboxFaceIds = this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds };
 		this.buildBlitterQueue.length = 0;
 		this.buildFrameCost = 0;
 		this.buildFrameOpen = false;
@@ -1228,11 +1244,11 @@ export class VDP implements VramWriteSink {
 		if (!this.buildFrameOpen) {
 			throw vdpFault('no submitted frame is open.');
 		}
-		if (!this.activeFrameOccupied) {
+		if (!this.activeFrame.occupied) {
 			this.assignBuildToSlot('active');
 			return;
 		}
-		if (!this.pendingFrameOccupied) {
+		if (!this.pendingFrame.occupied) {
 			this.assignBuildToSlot('pending');
 			return;
 		}
@@ -1240,70 +1256,76 @@ export class VDP implements VramWriteSink {
 	}
 
 	private promotePendingFrame(): void {
-		if (this.activeFrameOccupied || !this.pendingFrameOccupied) {
+		if (this.activeFrame.occupied || !this.pendingFrame.occupied) {
 			return;
 		}
-		const activeQueue = this.activeBlitterQueue;
-		this.activeBlitterQueue = this.pendingBlitterQueue;
-		this.pendingBlitterQueue = activeQueue;
-		this.pendingBlitterQueue.length = 0;
-		this.activeFrameOccupied = true;
-		this.activeFrameHasCommands = this.pendingFrameHasCommands;
-		this.activeFrameReady = this.pendingFrameCost === 0;
-		this.activeFrameExecutionPending = false;
-		this.activeFrameExecutionTaken = false;
-		this.activeFrameCost = this.pendingFrameCost;
-		this.activeFrameWorkRemaining = this.pendingFrameCost;
-		this.activeDitherType = this.pendingDitherType;
-		this.activeSlotAtlasIds[0] = this.pendingSlotAtlasIds[0];
-		this.activeSlotAtlasIds[1] = this.pendingSlotAtlasIds[1];
-		this.activeSkyboxFaceIds = this.pendingSkyboxFaceIds;
-		this.pendingFrameOccupied = false;
-		this.pendingFrameHasCommands = false;
-		this.pendingFrameCost = 0;
-		this.pendingDitherType = 0;
-		this.pendingSlotAtlasIds[0] = null;
-		this.pendingSlotAtlasIds[1] = null;
-		this.pendingSkyboxFaceIds = null;
+		const activeFrame = this.activeFrame;
+		const pendingFrame = this.pendingFrame;
+		const activeQueue = activeFrame.queue;
+		activeFrame.queue = pendingFrame.queue;
+		pendingFrame.queue = activeQueue;
+		pendingFrame.queue.length = 0;
+		activeFrame.occupied = true;
+		activeFrame.hasCommands = pendingFrame.hasCommands;
+		activeFrame.ready = pendingFrame.cost === 0;
+		activeFrame.executionPending = false;
+		activeFrame.executionTaken = false;
+		activeFrame.cost = pendingFrame.cost;
+		activeFrame.workRemaining = pendingFrame.cost;
+		activeFrame.ditherType = pendingFrame.ditherType;
+		activeFrame.slotAtlasIds[0] = pendingFrame.slotAtlasIds[0];
+		activeFrame.slotAtlasIds[1] = pendingFrame.slotAtlasIds[1];
+		activeFrame.skyboxFaceIds = pendingFrame.skyboxFaceIds;
+		pendingFrame.occupied = false;
+		pendingFrame.hasCommands = false;
+		pendingFrame.ready = false;
+		pendingFrame.executionPending = false;
+		pendingFrame.executionTaken = false;
+		pendingFrame.cost = 0;
+		pendingFrame.workRemaining = 0;
+		pendingFrame.ditherType = 0;
+		pendingFrame.slotAtlasIds[0] = null;
+		pendingFrame.slotAtlasIds[1] = null;
+		pendingFrame.skyboxFaceIds = null;
 		this.scheduleNextService(this.scheduler.currentNowCycles());
 		this.refreshSubmitBusyStatus();
 	}
 
 	public advanceWork(workUnits: number): void {
-		if (!this.activeFrameOccupied) {
+		if (!this.activeFrame.occupied) {
 			this.promotePendingFrame();
 		}
-		if (!this.activeFrameOccupied || this.activeFrameReady || workUnits <= 0) {
+		if (!this.activeFrame.occupied || this.activeFrame.ready || workUnits <= 0) {
 			return;
 		}
-		if (workUnits >= this.activeFrameWorkRemaining) {
-			this.activeFrameWorkRemaining = 0;
-			this.activeFrameExecutionPending = true;
+		if (workUnits >= this.activeFrame.workRemaining) {
+			this.activeFrame.workRemaining = 0;
+			this.activeFrame.executionPending = true;
 			this.scheduleNextService(this.scheduler.currentNowCycles());
 			return;
 		}
-		this.activeFrameWorkRemaining -= workUnits;
+		this.activeFrame.workRemaining -= workUnits;
 	}
 
 	public needsImmediateSchedulerService(): boolean {
-		return !this.activeFrameOccupied && this.pendingFrameOccupied;
+		return !this.activeFrame.occupied && this.pendingFrame.occupied;
 	}
 
 	public hasPendingRenderWork(): boolean {
-		if (!this.activeFrameOccupied) {
-			return this.pendingFrameOccupied && this.pendingFrameCost > 0;
+		if (!this.activeFrame.occupied) {
+			return this.pendingFrame.occupied && this.pendingFrame.cost > 0;
 		}
-		return !this.activeFrameReady && !this.activeFrameExecutionPending;
+		return !this.activeFrame.ready && !this.activeFrame.executionPending;
 	}
 
 	public getPendingRenderWorkUnits(): number {
-		if (!this.activeFrameOccupied) {
-			return this.pendingFrameCost;
+		if (!this.activeFrame.occupied) {
+			return this.pendingFrame.cost;
 		}
-		if (this.activeFrameReady || this.activeFrameExecutionPending) {
+		if (this.activeFrame.ready || this.activeFrame.executionPending) {
 			return 0;
 		}
-		return this.activeFrameWorkRemaining;
+		return this.activeFrame.workRemaining;
 	}
 
 	private scheduleNextService(nowCycles: number): void {
@@ -1325,31 +1347,32 @@ export class VDP implements VramWriteSink {
 	}
 
 	private clearActiveFrame(): void {
-		this.recycleBlitterBuffers(this.activeBlitterQueue);
+		this.recycleBlitterBuffers(this.activeFrame.queue);
 		this.recycleBlitterBuffers(this.executingBlitterQueue);
-		this.activeFrameOccupied = false;
-		this.activeFrameHasCommands = false;
-		this.activeFrameReady = false;
-		this.activeFrameExecutionPending = false;
-		this.activeFrameExecutionTaken = false;
-		this.activeFrameCost = 0;
-		this.activeFrameWorkRemaining = 0;
-		this.activeDitherType = 0;
-		this.activeSlotAtlasIds[0] = null;
-		this.activeSlotAtlasIds[1] = null;
-		this.activeSkyboxFaceIds = null;
+		this.activeFrame.queue.length = 0;
+		this.activeFrame.occupied = false;
+		this.activeFrame.hasCommands = false;
+		this.activeFrame.ready = false;
+		this.activeFrame.executionPending = false;
+		this.activeFrame.executionTaken = false;
+		this.activeFrame.cost = 0;
+		this.activeFrame.workRemaining = 0;
+		this.activeFrame.ditherType = 0;
+		this.activeFrame.slotAtlasIds[0] = null;
+		this.activeFrame.slotAtlasIds[1] = null;
+		this.activeFrame.skyboxFaceIds = null;
 	}
 
 	private commitActiveVisualState(): void {
-		this.committedDitherType = this.activeDitherType;
-		this.committedSlotAtlasIds[0] = this.activeSlotAtlasIds[0];
-		this.committedSlotAtlasIds[1] = this.activeSlotAtlasIds[1];
-		this.committedSkyboxFaceIds = this.activeSkyboxFaceIds;
+		this.committedDitherType = this.activeFrame.ditherType;
+		this.committedSlotAtlasIds[0] = this.activeFrame.slotAtlasIds[0];
+		this.committedSlotAtlasIds[1] = this.activeFrame.slotAtlasIds[1];
+		this.committedSkyboxFaceIds = this.activeFrame.skyboxFaceIds;
 		this.commitSkyboxRenderState(this.committedSkyboxFaceIds);
 	}
 
 	public presentReadyFrameOnVblankEdge(): void {
-		if (!this.activeFrameOccupied) {
+		if (!this.activeFrame.occupied) {
 			this.lastFrameCommitted = false;
 			this.lastFrameCost = 0;
 			this.lastFrameHeld = false;
@@ -1358,13 +1381,13 @@ export class VDP implements VramWriteSink {
 			this.refreshSubmitBusyStatus();
 			return;
 		}
-		this.lastFrameCost = this.activeFrameCost;
-		if (!this.activeFrameReady) {
+		this.lastFrameCost = this.activeFrame.cost;
+		if (!this.activeFrame.ready) {
 			this.lastFrameCommitted = false;
 			this.lastFrameHeld = true;
 			return;
 		}
-		if (this.activeFrameHasCommands) {
+		if (this.activeFrame.hasCommands) {
 			this.swapFrameBufferPages();
 		}
 		this.commitActiveVisualState();
@@ -2074,14 +2097,14 @@ export class VDP implements VramWriteSink {
 	}
 
 	public takeReadyExecutionQueue(): readonly VdpBlitterCommand[] | null {
-		if (!this.activeFrameExecutionPending) {
+		if (!this.activeFrame.executionPending) {
 			return null;
 		}
-		if (!this.activeFrameExecutionTaken) {
+		if (!this.activeFrame.executionTaken) {
 			const executingQueue = this.executingBlitterQueue;
-			this.executingBlitterQueue = this.activeBlitterQueue;
-			this.activeBlitterQueue = executingQueue;
-			this.activeFrameExecutionTaken = true;
+			this.executingBlitterQueue = this.activeFrame.queue;
+			this.activeFrame.queue = executingQueue;
+			this.activeFrame.executionTaken = true;
 		}
 		return this.executingBlitterQueue;
 	}
@@ -2094,12 +2117,12 @@ export class VDP implements VramWriteSink {
 	}
 
 	public completeReadyExecution(): void {
-		if (!this.activeFrameExecutionPending || !this.activeFrameExecutionTaken) {
+		if (!this.activeFrame.executionPending || !this.activeFrame.executionTaken) {
 			throw vdpFault('no active frame execution pending.');
 		}
-		this.activeFrameExecutionPending = false;
-		this.activeFrameExecutionTaken = false;
-		this.activeFrameReady = true;
+		this.activeFrame.executionPending = false;
+		this.activeFrame.executionTaken = false;
+		this.activeFrame.ready = true;
 		this.recycleBlitterBuffers(this.executingBlitterQueue);
 	}
 

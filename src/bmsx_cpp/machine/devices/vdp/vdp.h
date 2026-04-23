@@ -62,23 +62,23 @@ public:
 			VdpFrameBufferSize frameBufferSize
 		);
 
-		void initializeRegisters();
-		void resetIngressState();
-		void resetStatus();
-		void setVblankStatus(bool active);
-		bool canAcceptVdpSubmit() const;
-		void acceptSubmitAttempt();
-		void rejectSubmitAttempt();
-		void beginDmaSubmit();
-		void endDmaSubmit();
-		void sealDmaTransfer(uint32_t src, size_t byteLength);
+	void initializeRegisters();
+	void resetIngressState();
+	void resetStatus();
+	void setVblankStatus(bool active);
+	bool canAcceptVdpSubmit() const;
+	void acceptSubmitAttempt();
+	void rejectSubmitAttempt();
+	void beginDmaSubmit();
+	void endDmaSubmit();
+	void sealDmaTransfer(uint32_t src, size_t byteLength);
 	void writeVdpFifoBytes(const u8* data, size_t length);
 	void syncRegisters();
 	void setDitherType(i32 type);
 	void writeVram(uint32_t addr, const u8* data, size_t length) override;
 	void readVram(uint32_t addr, u8* out, size_t length) const override;
 	void beginFrame();
-	bool canAcceptSubmittedFrame() const { return !m_pendingFrameOccupied; }
+	bool canAcceptSubmittedFrame() const { return !m_pendingFrame.occupied; }
 	void beginSubmittedFrame();
 	void cancelSubmittedFrame();
 	void sealSubmittedFrame();
@@ -91,14 +91,14 @@ public:
 	void enqueueBlit(u32 handle, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const Color& color, f32 parallaxWeight = 0.0f);
 	void enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 z, Layer2D layer);
 	void enqueueFillRect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color);
-		void enqueueDrawLine(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color, f32 thickness);
-		void enqueueDrawRect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color);
-		void enqueueDrawPoly(const std::vector<f32>& points, f32 z, const Color& color, f32 thickness, Layer2D layer);
-		void enqueueGlyphRun(const std::string& text, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, Layer2D layer);
-		void enqueueGlyphRun(const std::vector<std::string>& lines, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, Layer2D layer);
-		void enqueueTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer);
-		void enqueuePayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer);
-		void enqueuePayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer);
+	void enqueueDrawLine(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color, f32 thickness);
+	void enqueueDrawRect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color);
+	void enqueueDrawPoly(const std::vector<f32>& points, f32 z, const Color& color, f32 thickness, Layer2D layer);
+	void enqueueGlyphRun(const std::string& text, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, Layer2D layer);
+	void enqueueGlyphRun(const std::vector<std::string>& lines, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, Layer2D layer);
+	void enqueueTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer);
+	void enqueuePayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer);
+	void enqueuePayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer);
 	uint32_t frameBufferWidth() const { return m_frameBufferWidth; }
 	uint32_t frameBufferHeight() const { return m_frameBufferHeight; }
 	uint32_t readVdpStatus();
@@ -124,8 +124,8 @@ public:
 	bool lastFrameCommitted() const { return m_lastFrameCommitted; }
 	int lastFrameCost() const { return m_lastFrameCost; }
 	bool lastFrameHeld() const { return m_lastFrameHeld; }
-	bool needsImmediateSchedulerService() const { return !m_activeFrameOccupied && m_pendingFrameOccupied; }
-	bool hasPendingRenderWork() const { return m_activeFrameOccupied ? (!m_activeFrameReady && !m_activeFrameExecutionPending) : (m_pendingFrameOccupied && m_pendingFrameCost > 0); }
+	bool needsImmediateSchedulerService() const { return !m_activeFrame.occupied && m_pendingFrame.occupied; }
+	bool hasPendingRenderWork() const { return m_activeFrame.occupied ? (!m_activeFrame.ready && !m_activeFrame.executionPending) : (m_pendingFrame.occupied && m_pendingFrame.cost > 0); }
 	int getPendingRenderWorkUnits() const;
 
 	struct FrameBufferColor {
@@ -187,6 +187,20 @@ public:
 		u32 lineHeight = 0;
 		std::vector<GlyphRunGlyph> glyphs;
 		std::vector<TileRunBlit> tiles;
+	};
+	struct SubmittedFrame {
+		std::vector<BlitterCommand> queue;
+		bool occupied = false;
+		bool hasCommands = false;
+		bool ready = false;
+		bool executionPending = false;
+		bool executionTaken = false;
+		int cost = 0;
+		int workRemaining = 0;
+		std::array<i32, 2> slotAtlasIds{{-1, -1}};
+		i32 ditherType = 0;
+		SkyboxImageIds skyboxFaceIds;
+		bool hasSkybox = false;
 	};
 	const std::vector<BlitterCommand>* takeReadyExecutionQueue();
 	void completeReadyExecution();
@@ -272,33 +286,15 @@ public:
 		std::array<u32, VDP_STREAM_CAPACITY_WORDS> m_vdpFifoStreamWords{};
 		u32 m_vdpFifoStreamWordCount = 0;
 		std::vector<BlitterCommand> m_buildBlitterQueue;
-	std::vector<BlitterCommand> m_activeBlitterQueue;
-	std::vector<BlitterCommand> m_pendingBlitterQueue;
 	std::vector<BlitterCommand> m_executingBlitterQueue;
+	SubmittedFrame m_activeFrame;
+	SubmittedFrame m_pendingFrame;
 	std::vector<const BlitterCommand*> m_sortedBlitterCommandScratch;
 	std::vector<std::vector<GlyphRunGlyph>> m_glyphBufferPool;
 	std::vector<std::vector<TileRunBlit>> m_tileBufferPool;
 	u32 m_blitterSequence = 0;
 	int m_buildFrameCost = 0;
 	bool m_buildFrameOpen = false;
-	bool m_activeFrameOccupied = false;
-	bool m_activeFrameHasCommands = false;
-	bool m_activeFrameReady = false;
-	bool m_activeFrameExecutionPending = false;
-	bool m_activeFrameExecutionTaken = false;
-	int m_activeFrameCost = 0;
-	int m_activeFrameWorkRemaining = 0;
-	bool m_pendingFrameOccupied = false;
-	bool m_pendingFrameHasCommands = false;
-	int m_pendingFrameCost = 0;
-	std::array<i32, 2> m_activeSlotAtlasIds{{-1, -1}};
-	std::array<i32, 2> m_pendingSlotAtlasIds{{-1, -1}};
-	i32 m_activeDitherType = 0;
-	i32 m_pendingDitherType = 0;
-	SkyboxImageIds m_activeSkyboxFaceIds;
-	bool m_activeHasSkybox = false;
-	SkyboxImageIds m_pendingSkyboxFaceIds;
-	bool m_pendingHasSkybox = false;
 	std::array<i32, 2> m_committedSlotAtlasIds{{-1, -1}};
 	bool m_lastFrameCommitted = true;
 	int m_lastFrameCost = 0;
@@ -348,23 +344,23 @@ public:
 	void swapFrameBufferPages();
 	void syncRenderFrameBufferToDisplayPage();
 	void assignBuildToSlot(bool active);
-		void promotePendingFrame();
-		void scheduleNextService(int64_t nowCycles);
-		bool hasOpenDirectVdpFifoIngress() const;
-		bool hasBlockedSubmitPath() const;
-		void setStatusFlag(uint32_t mask, bool active);
-		void setSubmitBusyStatus(bool active);
-		void refreshSubmitBusyStatus();
-		void setSubmitRejectedStatus(bool active);
-		void pushVdpFifoWord(u32 word);
-		void consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
-		void consumeSealedVdpWordStream(u32 wordCount);
-		void sealVdpFifoTransfer();
-		void consumeDirectVdpCommand(u32 cmd);
-		void onVdpFifoWrite();
-		void onVdpFifoCtrlWrite();
-		void onObsoletePayloadIoWrite();
-		void onVdpCommandWrite();
+	void promotePendingFrame();
+	void scheduleNextService(int64_t nowCycles);
+	bool hasOpenDirectVdpFifoIngress() const;
+	bool hasBlockedSubmitPath() const;
+	void setStatusFlag(uint32_t mask, bool active);
+	void setSubmitBusyStatus(bool active);
+	void refreshSubmitBusyStatus();
+	void setSubmitRejectedStatus(bool active);
+	void pushVdpFifoWord(u32 word);
+	void consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
+	void consumeSealedVdpWordStream(u32 wordCount);
+	void sealVdpFifoTransfer();
+	void consumeDirectVdpCommand(u32 cmd);
+	void onVdpFifoWrite();
+	void onVdpFifoCtrlWrite();
+	void onObsoletePayloadIoWrite();
+	void onVdpCommandWrite();
 	void clearActiveFrame();
 	void commitActiveVisualState();
 	void commitSkyboxRenderState(const SkyboxImageIds* ids);

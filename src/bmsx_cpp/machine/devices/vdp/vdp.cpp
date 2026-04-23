@@ -247,8 +247,8 @@ VDP::VDP(
 	m_memory.mapIoWrite(IO_PAYLOAD_DATA_ADDR, this, &VDP::onObsoletePayloadWriteThunk);
 	m_memory.mapIoWrite(IO_VDP_CMD, this, &VDP::onCommandWriteThunk);
 	m_buildBlitterQueue.reserve(BLITTER_FIFO_CAPACITY);
-	m_activeBlitterQueue.reserve(BLITTER_FIFO_CAPACITY);
-	m_pendingBlitterQueue.reserve(BLITTER_FIFO_CAPACITY);
+	m_activeFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
+	m_pendingFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
 	m_executingBlitterQueue.reserve(BLITTER_FIFO_CAPACITY);
 	m_vramMachineSeed = nextVramMachineSeed();
 	m_vramBootSeed = nextVramBootSeed();
@@ -739,15 +739,19 @@ void VDP::resetBuildFrameState() {
 void VDP::resetQueuedFrameState() {
 	resetBuildFrameState();
 	clearActiveFrame();
-	recycleBlitterBuffers(m_pendingBlitterQueue);
-	m_pendingBlitterQueue.clear();
-	m_pendingFrameOccupied = false;
-	m_pendingFrameHasCommands = false;
-	m_pendingFrameCost = 0;
-	m_pendingDitherType = 0;
-	m_pendingSlotAtlasIds = {{-1, -1}};
-	m_pendingSkyboxFaceIds = {};
-	m_pendingHasSkybox = false;
+	recycleBlitterBuffers(m_pendingFrame.queue);
+	m_pendingFrame.queue.clear();
+	m_pendingFrame.occupied = false;
+	m_pendingFrame.hasCommands = false;
+	m_pendingFrame.ready = false;
+	m_pendingFrame.executionPending = false;
+	m_pendingFrame.executionTaken = false;
+	m_pendingFrame.cost = 0;
+	m_pendingFrame.workRemaining = 0;
+	m_pendingFrame.ditherType = 0;
+	m_pendingFrame.slotAtlasIds = {{-1, -1}};
+	m_pendingFrame.skyboxFaceIds = {};
+	m_pendingFrame.hasSkybox = false;
 	m_slotAtlasIds = {{-1, -1}};
 }
 
@@ -811,38 +815,28 @@ void VDP::assignBuildToSlot(bool active) {
 	if (!m_buildFrameOpen) {
 		throw vdpFault("no submitted frame is open.");
 	}
-	auto& targetQueue = active ? m_activeBlitterQueue : m_pendingBlitterQueue;
-	if (!targetQueue.empty()) {
+	auto& frame = active ? m_activeFrame : m_pendingFrame;
+	if (!frame.queue.empty()) {
 		throw vdpFault(active
 			? "active frame queue is not empty."
 			: "pending frame queue is not empty.");
 	}
-	targetQueue.swap(m_buildBlitterQueue);
-	const bool frameHasCommands = !targetQueue.empty();
-	const int frameCost = (!targetQueue.empty() && targetQueue.front().type != BlitterCommandType::Clear)
+	frame.queue.swap(m_buildBlitterQueue);
+	const bool frameHasCommands = !frame.queue.empty();
+	const int frameCost = (!frame.queue.empty() && frame.queue.front().type != BlitterCommandType::Clear)
 		? (m_buildFrameCost + VDP_RENDER_CLEAR_COST)
 		: m_buildFrameCost;
-	if (active) {
-		m_activeFrameOccupied = true;
-		m_activeFrameHasCommands = frameHasCommands;
-		m_activeFrameCost = frameCost;
-		m_activeFrameWorkRemaining = frameCost;
-		m_activeFrameReady = frameCost == 0;
-		m_activeFrameExecutionPending = false;
-		m_activeFrameExecutionTaken = false;
-		m_activeDitherType = m_lastDitherType;
-		m_activeSlotAtlasIds = m_slotAtlasIds;
-		m_activeSkyboxFaceIds = m_skyboxFaceIds;
-		m_activeHasSkybox = m_hasSkybox;
-	} else {
-		m_pendingFrameOccupied = true;
-		m_pendingFrameHasCommands = frameHasCommands;
-		m_pendingFrameCost = frameCost;
-		m_pendingDitherType = m_lastDitherType;
-		m_pendingSlotAtlasIds = m_slotAtlasIds;
-		m_pendingSkyboxFaceIds = m_skyboxFaceIds;
-		m_pendingHasSkybox = m_hasSkybox;
-	}
+	frame.occupied = true;
+	frame.hasCommands = frameHasCommands;
+	frame.ready = frameCost == 0;
+	frame.executionPending = false;
+	frame.executionTaken = false;
+	frame.cost = frameCost;
+	frame.workRemaining = frameCost;
+	frame.ditherType = m_lastDitherType;
+	frame.slotAtlasIds = m_slotAtlasIds;
+	frame.skyboxFaceIds = m_skyboxFaceIds;
+	frame.hasSkybox = m_hasSkybox;
 	m_buildFrameCost = 0;
 	m_buildFrameOpen = false;
 	scheduleNextService(m_scheduler.currentNowCycles());
@@ -853,11 +847,11 @@ void VDP::sealSubmittedFrame() {
 	if (!m_buildFrameOpen) {
 		throw vdpFault("no submitted frame is open.");
 	}
-	if (!m_activeFrameOccupied) {
+	if (!m_activeFrame.occupied) {
 		assignBuildToSlot(true);
 		return;
 	}
-	if (!m_pendingFrameOccupied) {
+	if (!m_pendingFrame.occupied) {
 		assignBuildToSlot(false);
 		return;
 	}
@@ -865,54 +859,60 @@ void VDP::sealSubmittedFrame() {
 }
 
 void VDP::promotePendingFrame() {
-	if (m_activeFrameOccupied || !m_pendingFrameOccupied) {
+	if (m_activeFrame.occupied || !m_pendingFrame.occupied) {
 		return;
 	}
-	m_activeBlitterQueue.swap(m_pendingBlitterQueue);
-	m_pendingBlitterQueue.clear();
-	m_activeFrameOccupied = true;
-	m_activeFrameHasCommands = m_pendingFrameHasCommands;
-	m_activeFrameReady = m_pendingFrameCost == 0;
-	m_activeFrameExecutionPending = false;
-	m_activeFrameExecutionTaken = false;
-	m_activeFrameCost = m_pendingFrameCost;
-	m_activeFrameWorkRemaining = m_pendingFrameCost;
-	m_activeDitherType = m_pendingDitherType;
-	m_activeSlotAtlasIds = m_pendingSlotAtlasIds;
-	m_activeSkyboxFaceIds = m_pendingSkyboxFaceIds;
-	m_activeHasSkybox = m_pendingHasSkybox;
-	m_pendingFrameOccupied = false;
-	m_pendingFrameHasCommands = false;
-	m_pendingFrameCost = 0;
-	m_pendingDitherType = 0;
-	m_pendingSlotAtlasIds = {{-1, -1}};
-	m_pendingSkyboxFaceIds = {};
-	m_pendingHasSkybox = false;
+	auto& activeFrame = m_activeFrame;
+	auto& pendingFrame = m_pendingFrame;
+	activeFrame.queue.swap(pendingFrame.queue);
+	pendingFrame.queue.clear();
+	activeFrame.occupied = true;
+	activeFrame.hasCommands = pendingFrame.hasCommands;
+	activeFrame.ready = pendingFrame.cost == 0;
+	activeFrame.executionPending = false;
+	activeFrame.executionTaken = false;
+	activeFrame.cost = pendingFrame.cost;
+	activeFrame.workRemaining = pendingFrame.cost;
+	activeFrame.ditherType = pendingFrame.ditherType;
+	activeFrame.slotAtlasIds = pendingFrame.slotAtlasIds;
+	activeFrame.skyboxFaceIds = pendingFrame.skyboxFaceIds;
+	activeFrame.hasSkybox = pendingFrame.hasSkybox;
+	pendingFrame.occupied = false;
+	pendingFrame.hasCommands = false;
+	pendingFrame.ready = false;
+	pendingFrame.executionPending = false;
+	pendingFrame.executionTaken = false;
+	pendingFrame.cost = 0;
+	pendingFrame.workRemaining = 0;
+	pendingFrame.ditherType = 0;
+	pendingFrame.slotAtlasIds = {{-1, -1}};
+	pendingFrame.skyboxFaceIds = {};
+	pendingFrame.hasSkybox = false;
 	scheduleNextService(m_scheduler.currentNowCycles());
 	refreshSubmitBusyStatus();
 }
 
 void VDP::advanceWork(int workUnits) {
-	if (!m_activeFrameOccupied) {
+	if (!m_activeFrame.occupied) {
 		promotePendingFrame();
 	}
-	if (!m_activeFrameOccupied || m_activeFrameReady || workUnits <= 0) {
+	if (!m_activeFrame.occupied || m_activeFrame.ready || workUnits <= 0) {
 		return;
 	}
-	if (workUnits >= m_activeFrameWorkRemaining) {
-		m_activeFrameWorkRemaining = 0;
-		m_activeFrameExecutionPending = true;
+	if (workUnits >= m_activeFrame.workRemaining) {
+		m_activeFrame.workRemaining = 0;
+		m_activeFrame.executionPending = true;
 		scheduleNextService(m_scheduler.currentNowCycles());
 		return;
 	}
-	m_activeFrameWorkRemaining -= workUnits;
+	m_activeFrame.workRemaining -= workUnits;
 }
 
 int VDP::getPendingRenderWorkUnits() const {
-	if (!m_activeFrameOccupied) {
-		return m_pendingFrameCost;
+	if (!m_activeFrame.occupied) {
+		return m_pendingFrame.cost;
 	}
-	return (m_activeFrameReady || m_activeFrameExecutionPending) ? 0 : m_activeFrameWorkRemaining;
+	return (m_activeFrame.ready || m_activeFrame.executionPending) ? 0 : m_activeFrame.workRemaining;
 }
 
 void VDP::scheduleNextService(int64_t nowCycles) {
@@ -934,60 +934,60 @@ void VDP::scheduleNextService(int64_t nowCycles) {
 }
 
 void VDP::clearActiveFrame() {
-	recycleBlitterBuffers(m_activeBlitterQueue);
+	recycleBlitterBuffers(m_activeFrame.queue);
 	recycleBlitterBuffers(m_executingBlitterQueue);
-	m_activeBlitterQueue.clear();
+	m_activeFrame.queue.clear();
 	m_executingBlitterQueue.clear();
-	m_activeFrameOccupied = false;
-	m_activeFrameHasCommands = false;
-	m_activeFrameReady = false;
-	m_activeFrameExecutionPending = false;
-	m_activeFrameExecutionTaken = false;
-	m_activeFrameCost = 0;
-	m_activeFrameWorkRemaining = 0;
-	m_activeDitherType = 0;
-	m_activeSlotAtlasIds = {{-1, -1}};
-	m_activeSkyboxFaceIds = {};
-	m_activeHasSkybox = false;
+	m_activeFrame.occupied = false;
+	m_activeFrame.hasCommands = false;
+	m_activeFrame.ready = false;
+	m_activeFrame.executionPending = false;
+	m_activeFrame.executionTaken = false;
+	m_activeFrame.cost = 0;
+	m_activeFrame.workRemaining = 0;
+	m_activeFrame.ditherType = 0;
+	m_activeFrame.slotAtlasIds = {{-1, -1}};
+	m_activeFrame.skyboxFaceIds = {};
+	m_activeFrame.hasSkybox = false;
 }
 
 const std::vector<VDP::BlitterCommand>* VDP::takeReadyExecutionQueue() {
-	if (!m_activeFrameExecutionPending) {
+	if (!m_activeFrame.executionPending) {
 		return nullptr;
 	}
-	if (!m_activeFrameExecutionTaken) {
-		m_executingBlitterQueue.swap(m_activeBlitterQueue);
-		m_activeFrameExecutionTaken = true;
+	if (!m_activeFrame.executionTaken) {
+		m_executingBlitterQueue.swap(m_activeFrame.queue);
+		m_activeFrame.executionTaken = true;
 	}
 	return &m_executingBlitterQueue;
 }
 
 void VDP::completeReadyExecution() {
-	if (!m_activeFrameExecutionPending || !m_activeFrameExecutionTaken) {
+	if (!m_activeFrame.executionPending || !m_activeFrame.executionTaken) {
 		throw vdpFault("no active frame execution pending.");
 	}
-	m_activeFrameExecutionPending = false;
-	m_activeFrameExecutionTaken = false;
-	m_activeFrameReady = true;
+	m_activeFrame.executionPending = false;
+	m_activeFrame.executionTaken = false;
+	m_activeFrame.ready = true;
 	recycleBlitterBuffers(m_executingBlitterQueue);
 	m_executingBlitterQueue.clear();
 }
 
 void VDP::commitActiveVisualState() {
-	m_committedDitherType = m_activeDitherType;
-	m_committedSlotAtlasIds = m_activeSlotAtlasIds;
-	if (!m_activeHasSkybox) {
+	m_committedDitherType = m_activeFrame.ditherType;
+	m_committedSlotAtlasIds = m_activeFrame.slotAtlasIds;
+	if (!m_activeFrame.hasSkybox) {
 		m_committedHasSkybox = false;
 		commitSkyboxRenderState(nullptr);
 	} else {
-		m_committedSkyboxFaceIds = m_activeSkyboxFaceIds;
+		m_committedSkyboxFaceIds = m_activeFrame.skyboxFaceIds;
 		commitSkyboxRenderState(&m_committedSkyboxFaceIds);
 		m_committedHasSkybox = true;
 	}
 }
 
 void VDP::presentReadyFrameOnVblankEdge() {
-	if (!m_activeFrameOccupied) {
+	if (!m_activeFrame.occupied) {
 		m_lastFrameCommitted = false;
 		m_lastFrameCost = 0;
 		m_lastFrameHeld = false;
@@ -996,13 +996,13 @@ void VDP::presentReadyFrameOnVblankEdge() {
 		refreshSubmitBusyStatus();
 		return;
 	}
-	m_lastFrameCost = m_activeFrameCost;
-	if (!m_activeFrameReady) {
+	m_lastFrameCost = m_activeFrame.cost;
+	if (!m_activeFrame.ready) {
 		m_lastFrameCommitted = false;
 		m_lastFrameHeld = true;
 		return;
 	}
-	if (m_activeFrameHasCommands) {
+	if (m_activeFrame.hasCommands) {
 		swapFrameBufferPages();
 	}
 	commitActiveVisualState();
