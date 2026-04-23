@@ -11,6 +11,7 @@ import { HeadlessGPUBackend } from '../../headless/backend';
 import { syncVdpSlotTextures } from '../slot_textures';
 
 const BLITTER_WHITE: VdpFrameBufferColor = { r: 255, g: 255, b: 255, a: 255 };
+const IMPLICIT_CLEAR_COLOR: VdpFrameBufferColor = { r: 0, g: 0, b: 0, a: 255 };
 
 type HeadlessSurfacePixels = {
 	pixels: Uint8Array;
@@ -36,6 +37,14 @@ export class HeadlessVdpBlitterExecutor {
 		const frameBufferTexture = $.texmanager.getTextureByUri(context.frameBufferTextureKey);
 		const frameBufferPixels = this.backend.readTextureRegion(frameBufferTexture, 0, 0, context.width, context.height);
 		this.ensurePriorityCapacity(context.width * context.height);
+		if (commands[0].opcode !== 'clear') {
+			for (let pixelIndex = 0; pixelIndex < frameBufferPixels.length; pixelIndex += 4) {
+				frameBufferPixels[pixelIndex + 0] = IMPLICIT_CLEAR_COLOR.r;
+				frameBufferPixels[pixelIndex + 1] = IMPLICIT_CLEAR_COLOR.g;
+				frameBufferPixels[pixelIndex + 2] = IMPLICIT_CLEAR_COLOR.b;
+				frameBufferPixels[pixelIndex + 3] = IMPLICIT_CLEAR_COLOR.a;
+			}
+		}
 		this.resetPriority();
 		this.surfacePixelsByTextureKey.clear();
 		for (let index = 0; index < commands.length; index += 1) {

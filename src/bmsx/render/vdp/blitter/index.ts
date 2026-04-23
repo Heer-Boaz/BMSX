@@ -16,7 +16,6 @@ let webglExecutor: WebGLVdpBlitterExecutor | null = null;
 let headlessExecutorBackend: HeadlessGPUBackend | null = null;
 let headlessExecutor: HeadlessVdpBlitterExecutor | null = null;
 let webgpuExecutor: WebGPUVdpBlitterExecutor | null = null;
-const IMPLICIT_CLEAR_QUEUE: readonly VdpBlitterCommand[] = [{ opcode: 'clear', seq: 0, renderCost: 0, color: { r: 0, g: 0, b: 0, a: 255 } }];
 
 function getVdpBlitterExecutor(backend: GPUBackend): VdpBlitterExecutorLike | null {
 	switch (backend.type) {
@@ -60,9 +59,6 @@ export function drainReadyVdpExecution(vdp: VDP): void {
 		return;
 	}
 	const context = vdp.prepareBlitterExecutionContext();
-	if (queue[0].opcode !== 'clear') {
-		executeVdpBlitterQueue(context, IMPLICIT_CLEAR_QUEUE);
-	}
 	executeVdpBlitterQueue(context, queue);
 	vdp.completeReadyExecution();
 }

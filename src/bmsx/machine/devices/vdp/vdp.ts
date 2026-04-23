@@ -107,6 +107,12 @@ type VdpSubmittedFrameState = {
 	skyboxFaceIds: SkyboxImageIds | null;
 };
 
+type VdpBuildingFrameState = {
+	queue: VdpBlitterCommand[];
+	open: boolean;
+	cost: number;
+};
+
 const VDP_SERVICE_BATCH_WORK_UNITS = 128;
 const BMSX_BASE_COLORS: color[] = [
 	{ r: 0 / 255, g: 0 / 255, b: 0 / 255, a: 0 }, // 0 = Transparent
@@ -653,8 +659,12 @@ export class VDP implements VramWriteSink {
 	private committedDitherType = 0;
 	private _frameBufferWidth = 0;
 	private _frameBufferHeight = 0;
-	private buildBlitterQueue: VdpBlitterCommand[] = [];
 	private executingBlitterQueue: VdpBlitterCommand[] = [];
+	private readonly buildFrame: VdpBuildingFrameState = {
+		queue: [],
+		open: false,
+		cost: 0,
+	};
 	private readonly activeFrame: VdpSubmittedFrameState = {
 		queue: [],
 		occupied: false,
@@ -695,8 +705,6 @@ export class VDP implements VramWriteSink {
 		getShaderAtlasId: this.getBlitterAtlasId.bind(this),
 	};
 	private blitterSequence = 0;
-	private buildFrameCost = 0;
-	private buildFrameOpen = false;
 	private readonly committedSlotAtlasIds: Array<number | null> = [null, null];
 	private cpuHz: bigint = 1n;
 	private workUnitsPerSec: bigint = 1n;
@@ -1111,9 +1119,9 @@ export class VDP implements VramWriteSink {
 	}
 
 	private resetBuildFrameState(): void {
-		this.recycleBlitterBuffers(this.buildBlitterQueue);
-		this.buildFrameCost = 0;
-		this.buildFrameOpen = false;
+		this.recycleBlitterBuffers(this.buildFrame.queue);
+		this.buildFrame.cost = 0;
+		this.buildFrame.open = false;
 	}
 
 	private resetQueuedFrameState(): void {
@@ -1140,14 +1148,14 @@ export class VDP implements VramWriteSink {
 	}
 
 	private enqueueBlitterCommand(command: VdpBlitterCommand): void {
-		if (!this.buildFrameOpen) {
+		if (!this.buildFrame.open) {
 			throw vdpFault('no submitted frame is open.');
 		}
-		if (this.buildBlitterQueue.length >= BLITTER_FIFO_CAPACITY) {
+		if (this.buildFrame.queue.length >= BLITTER_FIFO_CAPACITY) {
 			throw vdpFault(`blitter FIFO overflow (${BLITTER_FIFO_CAPACITY} commands).`);
 		}
-		this.buildFrameCost += command.renderCost;
-		this.buildBlitterQueue.push(command);
+		this.buildFrame.cost += command.renderCost;
+		this.buildFrame.queue.push(command);
 	}
 
 	private calculateVisibleRectCost(width: number, height: number): number {
@@ -1195,12 +1203,12 @@ export class VDP implements VramWriteSink {
 	}
 
 	public beginSubmittedFrame(): void {
-		if (this.buildFrameOpen) {
+		if (this.buildFrame.open) {
 			throw vdpFault('submitted frame already open.');
 		}
 		this.resetBuildFrameState();
 		this.blitterSequence = 0;
-		this.buildFrameOpen = true;
+		this.buildFrame.open = true;
 	}
 
 	public cancelSubmittedFrame(): void {
@@ -1210,17 +1218,17 @@ export class VDP implements VramWriteSink {
 	}
 
 	private assignBuildToSlot(slot: 'active' | 'pending'): void {
-		if (!this.buildFrameOpen) {
+		if (!this.buildFrame.open) {
 			throw vdpFault('no submitted frame is open.');
 		}
 		const frame = slot === 'active' ? this.activeFrame : this.pendingFrame;
 		if (frame.queue.length !== 0) {
 			throw vdpFault(`${slot} frame queue is not empty.`);
 		}
-		const buildQueue = this.buildBlitterQueue;
+		const buildQueue = this.buildFrame.queue;
 		const frameHasCommands = buildQueue.length !== 0;
-		const frameCost = this.submittedFrameCost(buildQueue, this.buildFrameCost);
-		this.buildBlitterQueue = frame.queue;
+		const frameCost = this.submittedFrameCost(buildQueue, this.buildFrame.cost);
+		this.buildFrame.queue = frame.queue;
 		frame.queue = buildQueue;
 		frame.occupied = true;
 		frame.hasCommands = frameHasCommands;
@@ -1233,15 +1241,15 @@ export class VDP implements VramWriteSink {
 		frame.slotAtlasIds[0] = this.slotAtlasIds[0];
 		frame.slotAtlasIds[1] = this.slotAtlasIds[1];
 		frame.skyboxFaceIds = this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds };
-		this.buildBlitterQueue.length = 0;
-		this.buildFrameCost = 0;
-		this.buildFrameOpen = false;
+		this.buildFrame.queue.length = 0;
+		this.buildFrame.cost = 0;
+		this.buildFrame.open = false;
 		this.scheduleNextService(this.scheduler.currentNowCycles());
 		this.refreshSubmitBusyStatus();
 	}
 
 	public sealSubmittedFrame(): void {
-		if (!this.buildFrameOpen) {
+		if (!this.buildFrame.open) {
 			throw vdpFault('no submitted frame is open.');
 		}
 		if (!this.activeFrame.occupied) {

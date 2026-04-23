@@ -202,6 +202,11 @@ public:
 		SkyboxImageIds skyboxFaceIds;
 		bool hasSkybox = false;
 	};
+	struct BuildingFrame {
+		std::vector<BlitterCommand> queue;
+		bool open = false;
+		int cost = 0;
+	};
 	const std::vector<BlitterCommand>* takeReadyExecutionQueue();
 	void completeReadyExecution();
 
@@ -285,7 +290,7 @@ public:
 		int m_vdpFifoWordByteCount = 0;
 		std::array<u32, VDP_STREAM_CAPACITY_WORDS> m_vdpFifoStreamWords{};
 		u32 m_vdpFifoStreamWordCount = 0;
-		std::vector<BlitterCommand> m_buildBlitterQueue;
+		BuildingFrame m_buildFrame;
 	std::vector<BlitterCommand> m_executingBlitterQueue;
 	SubmittedFrame m_activeFrame;
 	SubmittedFrame m_pendingFrame;
@@ -293,8 +298,6 @@ public:
 	std::vector<std::vector<GlyphRunGlyph>> m_glyphBufferPool;
 	std::vector<std::vector<TileRunBlit>> m_tileBufferPool;
 	u32 m_blitterSequence = 0;
-	int m_buildFrameCost = 0;
-	bool m_buildFrameOpen = false;
 	std::array<i32, 2> m_committedSlotAtlasIds{{-1, -1}};
 	bool m_lastFrameCommitted = true;
 	int m_lastFrameCost = 0;

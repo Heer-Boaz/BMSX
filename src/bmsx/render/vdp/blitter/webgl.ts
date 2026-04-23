@@ -65,6 +65,12 @@ const INITIAL_BATCH_CAPACITY = 256;
 const SOLID_TEXCOORD_0 = 0;
 const SOLID_TEXCOORD_1 = 1;
 const WHITE_COLOR: FrameBufferColor = { r: 255, g: 255, b: 255, a: 255 };
+const IMPLICIT_CLEAR_COMMAND: BlitterClearCommand = {
+	opcode: 'clear',
+	seq: 0,
+	renderCost: 0,
+	color: { r: 0, g: 0, b: 0, a: 255 },
+};
 const DEFAULT_TEXTURE_PARAMS: TextureParams = {};
 const INSTANCE_FLOAT_ATTRIBUTES: readonly WebGLInstancedFloatAttribute[] = [
 	['i_origin', 2, 0],
@@ -581,6 +587,9 @@ export class WebGLVdpBlitterExecutor {
 		const priorityDepthTexture = preparePriorityDepthTexture(this.backend, state, context.width, context.height);
 		const priorityDepthBySeq = buildPriorityDepthBySequence(state, commands);
 		resetPriorityDepthSurface(context, this.backend, priorityDepthTexture);
+		if (commands[0].opcode !== 'clear') {
+			clearFrameBuffer(context, this.backend, priorityDepthTexture, IMPLICIT_CLEAR_COMMAND);
+		}
 		let segmentStart = 0;
 		for (let i = 0; i < commands.length; i += 1) {
 			const command = commands[i];

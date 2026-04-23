@@ -246,7 +246,7 @@ VDP::VDP(
 	m_memory.mapIoWrite(IO_PAYLOAD_ALLOC_ADDR, this, &VDP::onObsoletePayloadWriteThunk);
 	m_memory.mapIoWrite(IO_PAYLOAD_DATA_ADDR, this, &VDP::onObsoletePayloadWriteThunk);
 	m_memory.mapIoWrite(IO_VDP_CMD, this, &VDP::onCommandWriteThunk);
-	m_buildBlitterQueue.reserve(BLITTER_FIFO_CAPACITY);
+	m_buildFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
 	m_activeFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
 	m_pendingFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
 	m_executingBlitterQueue.reserve(BLITTER_FIFO_CAPACITY);
@@ -730,10 +730,10 @@ void VDP::recycleBlitterBuffers(std::vector<BlitterCommand>& queue) {
 }
 
 void VDP::resetBuildFrameState() {
-	recycleBlitterBuffers(m_buildBlitterQueue);
-	m_buildBlitterQueue.clear();
-	m_buildFrameCost = 0;
-	m_buildFrameOpen = false;
+	recycleBlitterBuffers(m_buildFrame.queue);
+	m_buildFrame.queue.clear();
+	m_buildFrame.cost = 0;
+	m_buildFrame.open = false;
 }
 
 void VDP::resetQueuedFrameState() {
@@ -756,14 +756,14 @@ void VDP::resetQueuedFrameState() {
 }
 
 void VDP::enqueueBlitterCommand(BlitterCommand&& command) {
-	if (!m_buildFrameOpen) {
+	if (!m_buildFrame.open) {
 		throw vdpFault("no submitted frame is open.");
 	}
-	if (m_buildBlitterQueue.size() >= BLITTER_FIFO_CAPACITY) {
+	if (m_buildFrame.queue.size() >= BLITTER_FIFO_CAPACITY) {
 		throw vdpFault("blitter FIFO overflow (4096 commands).");
 	}
-	m_buildFrameCost += command.renderCost;
-	m_buildBlitterQueue.push_back(std::move(command));
+	m_buildFrame.cost += command.renderCost;
+	m_buildFrame.queue.push_back(std::move(command));
 }
 
 int VDP::calculateVisibleRectCost(double width, double height) const {
@@ -797,12 +797,12 @@ void VDP::syncRenderFrameBufferToDisplayPage() {
 }
 
 void VDP::beginSubmittedFrame() {
-	if (m_buildFrameOpen) {
+	if (m_buildFrame.open) {
 		throw vdpFault("submitted frame already open.");
 	}
 	resetBuildFrameState();
 	m_blitterSequence = 0u;
-	m_buildFrameOpen = true;
+	m_buildFrame.open = true;
 }
 
 void VDP::cancelSubmittedFrame() {
@@ -812,7 +812,7 @@ void VDP::cancelSubmittedFrame() {
 }
 
 void VDP::assignBuildToSlot(bool active) {
-	if (!m_buildFrameOpen) {
+	if (!m_buildFrame.open) {
 		throw vdpFault("no submitted frame is open.");
 	}
 	auto& frame = active ? m_activeFrame : m_pendingFrame;
@@ -821,11 +821,11 @@ void VDP::assignBuildToSlot(bool active) {
 			? "active frame queue is not empty."
 			: "pending frame queue is not empty.");
 	}
-	frame.queue.swap(m_buildBlitterQueue);
+	frame.queue.swap(m_buildFrame.queue);
 	const bool frameHasCommands = !frame.queue.empty();
 	const int frameCost = (!frame.queue.empty() && frame.queue.front().type != BlitterCommandType::Clear)
-		? (m_buildFrameCost + VDP_RENDER_CLEAR_COST)
-		: m_buildFrameCost;
+		? (m_buildFrame.cost + VDP_RENDER_CLEAR_COST)
+		: m_buildFrame.cost;
 	frame.occupied = true;
 	frame.hasCommands = frameHasCommands;
 	frame.ready = frameCost == 0;
@@ -837,14 +837,14 @@ void VDP::assignBuildToSlot(bool active) {
 	frame.slotAtlasIds = m_slotAtlasIds;
 	frame.skyboxFaceIds = m_skyboxFaceIds;
 	frame.hasSkybox = m_hasSkybox;
-	m_buildFrameCost = 0;
-	m_buildFrameOpen = false;
+	m_buildFrame.cost = 0;
+	m_buildFrame.open = false;
 	scheduleNextService(m_scheduler.currentNowCycles());
 	refreshSubmitBusyStatus();
 }
 
 void VDP::sealSubmittedFrame() {
-	if (!m_buildFrameOpen) {
+	if (!m_buildFrame.open) {
 		throw vdpFault("no submitted frame is open.");
 	}
 	if (!m_activeFrame.occupied) {
