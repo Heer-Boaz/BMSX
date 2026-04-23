@@ -114,7 +114,6 @@ type VdpBuildingFrameState = {
 type VdpExecutionState = {
 	queue: VdpBlitterCommand[];
 	pending: boolean;
-	taken: boolean;
 };
 
 const VDP_SERVICE_BATCH_WORK_UNITS = 128;
@@ -671,7 +670,6 @@ export class VDP implements VramWriteSink {
 	private readonly execution: VdpExecutionState = {
 		queue: [],
 		pending: false,
-		taken: false,
 	};
 	private readonly activeFrame: VdpSubmittedFrameState = {
 		queue: [],
@@ -1355,7 +1353,6 @@ export class VDP implements VramWriteSink {
 		this.recycleBlitterBuffers(this.execution.queue);
 		this.activeFrame.queue.length = 0;
 		this.execution.pending = false;
-		this.execution.taken = false;
 		this.activeFrame.occupied = false;
 		this.activeFrame.hasCommands = false;
 		this.activeFrame.ready = false;
@@ -2104,11 +2101,10 @@ export class VDP implements VramWriteSink {
 		if (!this.execution.pending) {
 			return null;
 		}
-		if (!this.execution.taken) {
+		if (this.execution.queue.length === 0) {
 			const executingQueue = this.execution.queue;
 			this.execution.queue = this.activeFrame.queue;
 			this.activeFrame.queue = executingQueue;
-			this.execution.taken = true;
 		}
 		return this.execution.queue;
 	}
@@ -2121,11 +2117,10 @@ export class VDP implements VramWriteSink {
 	}
 
 	public completeReadyExecution(): void {
-		if (!this.execution.pending || !this.execution.taken) {
+		if (!this.execution.pending || this.execution.queue.length === 0) {
 			throw vdpFault('no active frame execution pending.');
 		}
 		this.execution.pending = false;
-		this.execution.taken = false;
 		this.activeFrame.ready = true;
 		this.recycleBlitterBuffers(this.execution.queue);
 	}

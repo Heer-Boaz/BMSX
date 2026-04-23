@@ -10,10 +10,6 @@ void drainReadyVdpExecution(VDP& vdp) {
 	if (queue == nullptr) {
 		return;
 	}
-	if (queue->empty()) {
-		vdp.completeReadyExecution();
-		return;
-	}
 	executeVdpBlitterQueue(vdp, *queue);
 	vdp.completeReadyExecution();
 }

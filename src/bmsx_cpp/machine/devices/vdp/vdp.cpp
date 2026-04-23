@@ -931,7 +931,6 @@ void VDP::clearActiveFrame() {
 	m_activeFrame.queue.clear();
 	m_execution.queue.clear();
 	m_execution.pending = false;
-	m_execution.taken = false;
 	m_activeFrame.occupied = false;
 	m_activeFrame.hasCommands = false;
 	m_activeFrame.ready = false;
@@ -947,19 +946,17 @@ const std::vector<VDP::BlitterCommand>* VDP::takeReadyExecutionQueue() {
 	if (!m_execution.pending) {
 		return nullptr;
 	}
-	if (!m_execution.taken) {
+	if (m_execution.queue.empty()) {
 		m_execution.queue.swap(m_activeFrame.queue);
-		m_execution.taken = true;
 	}
 	return &m_execution.queue;
 }
 
 void VDP::completeReadyExecution() {
-	if (!m_execution.pending || !m_execution.taken) {
+	if (!m_execution.pending || m_execution.queue.empty()) {
 		throw vdpFault("no active frame execution pending.");
 	}
 	m_execution.pending = false;
-	m_execution.taken = false;
 	m_activeFrame.ready = true;
 	recycleBlitterBuffers(m_execution.queue);
 	m_execution.queue.clear();

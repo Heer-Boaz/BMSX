@@ -208,7 +208,6 @@ public:
 		struct ExecutionState {
 			std::vector<BlitterCommand> queue;
 			bool pending = false;
-			bool taken = false;
 		};
 		const std::vector<BlitterCommand>* takeReadyExecutionQueue();
 		void completeReadyExecution();

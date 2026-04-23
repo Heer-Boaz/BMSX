@@ -54,10 +54,6 @@ export function drainReadyVdpExecution(vdp: VDP): void {
 	if (queue === null) {
 		return;
 	}
-	if (queue.length === 0) {
-		vdp.completeReadyExecution();
-		return;
-	}
 	const context = vdp.prepareBlitterExecutionContext();
 	executeVdpBlitterQueue(context, queue);
 	vdp.completeReadyExecution();
