@@ -15,6 +15,13 @@ Use this skill whenever working in the BMSX repo or discussing BMSX code quality
 3. Before writing a new helper, abstraction, parser/range utility, or repeated concept, run `rg` queries for the relevant names, nearby verbs, data shapes, and owning modules. Reuse or extend the owner you find; only introduce new code after the `rg` results show that no suitable owner/helper/pattern already exists.
 4. Before implementing product behavior, study a serious reference implementation matching the domain when useful: VS Code for IDE/editor work, MAME or emulator cores for machine/runtime discipline, VLC or mature media code for audio/video pipelines.
 
+## Architecture Slice Discipline
+- Do not build temporary architecture you expect to undo in the next step. Provisional ownership shuffles, placeholder abstractions, and "we will clean this up right after" structures are usually a mistake.
+- Before changing a boundary, name the exact leak, mixed responsibility, or dishonest contract you are fixing.
+- Take the smallest end-to-end slice that removes that concrete leak. If a step does not eliminate a specific architectural problem, keep reading instead of refactoring speculatively.
+- Prefer one-way boundary improvements over broad reshuffles. The right slice should make the architecture truer immediately, not only after two more follow-up diffs.
+- In emulator/runtime/render work, "looks cleaner" is not enough. Avoid speculative refactors that are likely to be rolled back once the real ownership line becomes clearer.
+
 ## Style Contract
 - Preserve the fantasy-console contract. Cart-visible hardware belongs behind memory maps, MMIO registers, machine devices, and cart-facing helpers; host/platform conveniences must not become the hardware API.
 - Trust internal contracts. Do not add null checks, optional chaining, `typeof fn === 'function'`, catch fallbacks, or legacy fallbacks around values that the design says must exist.
