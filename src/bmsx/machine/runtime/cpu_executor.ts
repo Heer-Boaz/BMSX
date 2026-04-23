@@ -1,11 +1,13 @@
 import { $ } from '../../core/engine';
 import { RunResult } from '../cpu/cpu';
 import {
+	DEVICE_SERVICE_VDP,
 	TIMER_KIND_DEVICE_SERVICE,
 	TIMER_KIND_VBLANK_BEGIN,
 	TIMER_KIND_VBLANK_END,
 } from '../scheduler/device';
 import { runtimeFault } from '../../ide/runtime/lua_pipeline';
+import { drainReadyVdpExecution } from '../../render/vdp/blitter';
 import type { FrameState, Runtime } from './runtime';
 
 export class CpuExecutionState {
@@ -110,6 +112,9 @@ function dispatchRuntimeTimer(runtime: Runtime, kind: number, payload: number): 
 			return;
 		case TIMER_KIND_DEVICE_SERVICE:
 			runtime.machine.runDeviceService(payload);
+			if (payload === DEVICE_SERVICE_VDP) {
+				drainReadyVdpExecution(runtime.machine.vdp);
+			}
 			return;
 		default:
 			throw runtimeFault(`unknown timer kind ${kind}.`);

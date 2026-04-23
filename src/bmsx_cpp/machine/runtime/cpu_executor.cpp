@@ -3,6 +3,7 @@
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/runtime_fault.h"
 #include "machine/scheduler/device.h"
+#include "render/vdp/blitter/execute.h"
 
 #include <limits>
 #include <stdexcept>
@@ -20,6 +21,9 @@ void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
 			return;
 		case TimerKindDeviceService:
 			runtime.machine().runDeviceService(payload);
+			if (payload == DeviceServiceVdp) {
+				drainReadyVdpExecution(runtime.machine().vdp());
+			}
 			return;
 		default:
 			throw runtimeFault("unknown timer kind " + std::to_string(kind) + ".");

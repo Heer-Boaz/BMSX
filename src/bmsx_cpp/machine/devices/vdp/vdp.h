@@ -124,7 +124,7 @@ public:
 	int lastFrameCost() const { return m_lastFrameCost; }
 	bool lastFrameHeld() const { return m_lastFrameHeld; }
 	bool needsImmediateSchedulerService() const { return !m_activeFrameOccupied && m_pendingFrameOccupied; }
-	bool hasPendingRenderWork() const { return m_activeFrameOccupied ? !m_activeFrameReady : (m_pendingFrameOccupied && m_pendingFrameCost > 0); }
+	bool hasPendingRenderWork() const { return m_activeFrameOccupied ? (!m_activeFrameReady && !m_activeFrameExecutionPending) : (m_pendingFrameOccupied && m_pendingFrameCost > 0); }
 	int getPendingRenderWorkUnits() const;
 
 	struct FrameBufferColor {
@@ -279,6 +279,7 @@ public:
 	bool m_buildFrameOpen = false;
 	bool m_activeFrameOccupied = false;
 	bool m_activeFrameReady = false;
+	bool m_activeFrameExecutionPending = false;
 	int m_activeFrameCost = 0;
 	int m_activeFrameWorkRemaining = 0;
 	bool m_pendingFrameOccupied = false;
@@ -336,7 +337,6 @@ public:
 	void enqueueBlitterCommand(BlitterCommand&& command);
 	int calculateVisibleRectCost(double width, double height) const;
 	int calculateAlphaMultiplier(const FrameBufferColor& color) const;
-	void executeBlitterQueue(const std::vector<BlitterCommand>& queue);
 	void ensureDisplayFrameBufferTexture();
 	void swapFrameBufferPages();
 	void syncRenderFrameBufferToDisplayPage();
@@ -373,6 +373,8 @@ public:
 	void copyFrameBufferRect(std::vector<u8>& pixels, i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, Layer2D layer, f32 z, u32 seq);
 
 	friend struct VdpGles2Blitter;
+	friend void drainReadyVdpExecution(VDP& vdp);
+	friend void executeVdpBlitterQueue(VDP& vdp, const std::vector<BlitterCommand>& queue);
 	friend void restoreVdpContextState(VDP& vdp);
 	friend void captureVdpContextState(VDP& vdp);
 	friend void syncVdpSlotTextures(VDP& vdp);

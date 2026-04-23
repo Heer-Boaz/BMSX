@@ -5,7 +5,7 @@
 #include "machine/memory/map.h"
 #include "core/font.h"
 #include "core/utf8.h"
-#include "render/vdp/blitter/gles2.h"
+#include "render/vdp/blitter/execute.h"
 #include "render/vdp/framebuffer.h"
 #include "render/vdp/texture_transfer.h"
 #include "machine/devices/imgdec/controller.h"
@@ -35,8 +35,6 @@ constexpr int VRAM_GARBAGE_FORCE_T0 = 120;
 constexpr int VRAM_GARBAGE_FORCE_T1 = 280;
 constexpr int VRAM_GARBAGE_FORCE_T2 = 480;
 constexpr int VRAM_GARBAGE_FORCE_T_DEN = 1000;
-constexpr u8 IMPLICIT_FRAME_CLEAR_RGBA[4] = {0u, 0u, 0u, 255u};
-
 template <typename T>
 std::vector<T> acquireVectorFromPool(std::vector<std::vector<T>>& pool) {
 	if (pool.empty()) {
@@ -826,6 +824,7 @@ void VDP::assignBuildToSlot(bool active) {
 		m_activeFrameCost = frameCost;
 		m_activeFrameWorkRemaining = frameCost;
 		m_activeFrameReady = frameCost == 0;
+		m_activeFrameExecutionPending = false;
 		m_activeDitherType = m_lastDitherType;
 		m_activeSlotAtlasIds = m_slotAtlasIds;
 		m_activeSkyboxFaceIds = m_skyboxFaceIds;
@@ -867,6 +866,7 @@ void VDP::promotePendingFrame() {
 	m_pendingBlitterQueue.clear();
 	m_activeFrameOccupied = true;
 	m_activeFrameReady = m_pendingFrameCost == 0;
+	m_activeFrameExecutionPending = false;
 	m_activeFrameCost = m_pendingFrameCost;
 	m_activeFrameWorkRemaining = m_pendingFrameCost;
 	m_activeDitherType = m_pendingDitherType;
@@ -892,8 +892,7 @@ void VDP::advanceWork(int workUnits) {
 	}
 	if (workUnits >= m_activeFrameWorkRemaining) {
 		m_activeFrameWorkRemaining = 0;
-		executeBlitterQueue(m_activeBlitterQueue);
-		m_activeFrameReady = true;
+		m_activeFrameExecutionPending = true;
 		scheduleNextService(m_scheduler.currentNowCycles());
 		return;
 	}
@@ -904,7 +903,7 @@ int VDP::getPendingRenderWorkUnits() const {
 	if (!m_activeFrameOccupied) {
 		return m_pendingFrameCost;
 	}
-	return m_activeFrameReady ? 0 : m_activeFrameWorkRemaining;
+	return (m_activeFrameReady || m_activeFrameExecutionPending) ? 0 : m_activeFrameWorkRemaining;
 }
 
 void VDP::scheduleNextService(int64_t nowCycles) {
@@ -930,6 +929,7 @@ void VDP::clearActiveFrame() {
 	m_activeBlitterQueue.clear();
 	m_activeFrameOccupied = false;
 	m_activeFrameReady = false;
+	m_activeFrameExecutionPending = false;
 	m_activeFrameCost = 0;
 	m_activeFrameWorkRemaining = 0;
 	m_activeDitherType = 0;
@@ -1870,78 +1870,6 @@ void VDP::copyFrameBufferRect(std::vector<u8>& pixels, i32 srcX, i32 srcY, i32 w
 	}
 }
 
-void VDP::executeBlitterQueue(const std::vector<BlitterCommand>& queue) {
-	if (queue.empty()) {
-		return;
-	}
-#if BMSX_ENABLE_GLES2
-	if (VdpGles2Blitter::execute(*this, queue)) {
-		return;
-	}
-#endif
-	resetFrameBufferPriority();
-	auto& pixels = getVramSlotByTextureKey(FRAMEBUFFER_RENDER_TEXTURE_KEY).cpuReadback;
-	if (queue.front().type != BlitterCommandType::Clear) {
-		for (size_t index = 0; index < pixels.size(); index += 4u) {
-			pixels[index + 0u] = IMPLICIT_FRAME_CLEAR_RGBA[0];
-			pixels[index + 1u] = IMPLICIT_FRAME_CLEAR_RGBA[1];
-			pixels[index + 2u] = IMPLICIT_FRAME_CLEAR_RGBA[2];
-			pixels[index + 3u] = IMPLICIT_FRAME_CLEAR_RGBA[3];
-		}
-	}
-	for (const auto& command : queue) {
-		switch (command.type) {
-			case BlitterCommandType::Clear:
-				for (size_t index = 0; index < pixels.size(); index += 4u) {
-					pixels[index + 0u] = command.color.r;
-					pixels[index + 1u] = command.color.g;
-					pixels[index + 2u] = command.color.b;
-					pixels[index + 3u] = command.color.a;
-				}
-				resetFrameBufferPriority();
-				break;
-			case BlitterCommandType::FillRect:
-				rasterizeFrameBufferFill(pixels, command.x0, command.y0, command.x1, command.y1, command.color, command.layer, command.z, command.seq);
-				break;
-			case BlitterCommandType::DrawLine:
-				rasterizeFrameBufferLine(pixels, command.x0, command.y0, command.x1, command.y1, command.thickness, command.color, command.layer, command.z, command.seq);
-				break;
-			case BlitterCommandType::Blit:
-				rasterizeFrameBufferBlit(pixels, command.source, command.dstX, command.dstY, command.scaleX, command.scaleY, command.flipH, command.flipV, command.color, command.layer, command.z, command.seq);
-				break;
-			case BlitterCommandType::CopyRect:
-				copyFrameBufferRect(pixels, command.srcX, command.srcY, command.width, command.height, static_cast<i32>(std::round(command.dstX)), static_cast<i32>(std::round(command.dstY)), command.layer, command.z, command.seq);
-				break;
-			case BlitterCommandType::GlyphRun:
-				if (command.backgroundColor.has_value()) {
-					for (const auto& glyph : command.glyphs) {
-						rasterizeFrameBufferFill(
-							pixels,
-							glyph.dstX,
-							glyph.dstY,
-							glyph.dstX + static_cast<f32>(glyph.advance),
-							glyph.dstY + static_cast<f32>(command.lineHeight),
-							*command.backgroundColor,
-							command.layer,
-							command.z,
-							command.seq
-						);
-					}
-				}
-				for (const auto& glyph : command.glyphs) {
-					rasterizeFrameBufferBlit(pixels, glyph, glyph.dstX, glyph.dstY, 1.0f, 1.0f, false, false, command.color, command.layer, command.z, command.seq);
-				}
-				break;
-			case BlitterCommandType::TileRun:
-				for (const auto& tile : command.tiles) {
-					rasterizeFrameBufferBlit(pixels, tile, tile.dstX, tile.dstY, 1.0f, 1.0f, false, false, FrameBufferColor{255u, 255u, 255u, 255u}, command.layer, command.z, command.seq);
-				}
-				break;
-		}
-	}
-	updateVdpRenderFrameBufferTexture(pixels.data(), m_frameBufferWidth, m_frameBufferHeight);
-	invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
-}
 // end numeric-sanitization-acceptable
 // end hot-path
 

@@ -126,6 +126,7 @@ add_library(bmsx_core STATIC
 	render/backend/frame_uniforms.cpp
 	render/shared/queues.cpp
 	runtime/assets/edits.cpp
+	render/vdp/blitter/execute.cpp
 	render/vdp/blitter/gles2.cpp
 	render/vdp/context_state.cpp
 	render/vdp/framebuffer.cpp

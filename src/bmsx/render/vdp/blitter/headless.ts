@@ -2,7 +2,6 @@ import { $ } from '../../../core/engine';
 import { Runtime } from '../../../machine/runtime/runtime';
 import type {
 	VdpBlitterCommand,
-	VdpBlitterExecutor,
 	VdpBlitterContext,
 	VdpBlitterSource,
 	VdpFrameBufferColor,
@@ -18,7 +17,7 @@ type HeadlessSurfacePixels = {
 	stride: number;
 };
 
-export class HeadlessVdpBlitterExecutor implements VdpBlitterExecutor {
+export class HeadlessVdpBlitterExecutor {
 	private frameBufferPriorityLayer = new Uint8Array(0);
 	private frameBufferPriorityZ = new Float32Array(0);
 	private frameBufferPrioritySeq = new Uint32Array(0);

@@ -70,7 +70,6 @@ import { Memory } from '../memory/memory';
 import {
 	configureMemoryMap,
 } from '../memory/map';
-import { createVdpBlitterExecutor } from '../../render/vdp/blitter';
 
 // Flip back to 'msx' to restore default font in machine/editor
 export const EDITOR_FONT_VARIANT: FontVariant = 'tiny';
@@ -441,7 +440,6 @@ export class Runtime {
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.machine = new Machine(
 			options.memory,
-			createVdpBlitterExecutor($.view.backend),
 			{ width: options.viewport.width, height: options.viewport.height },
 			Input.instance,
 			$.sndmaster,

@@ -17,7 +17,7 @@ import { GeometryController } from './devices/geometry/controller';
 import { ImgDecController } from './devices/imgdec/controller';
 import { InputController, type InputControllerState } from './devices/input/controller';
 import { IrqController } from './devices/irq/controller';
-import { VDP, type VdpBlitterExecutor, type VdpFrameBufferSize, type VdpState } from './devices/vdp/vdp';
+import { VDP, type VdpFrameBufferSize, type VdpState } from './devices/vdp/vdp';
 import { Memory } from './memory/memory';
 import { StringHandleTable } from './memory/string/memory';
 import { StringPool } from './memory/string/pool';
@@ -60,7 +60,6 @@ export class Machine {
 
 	public constructor(
 		public readonly memory: Memory,
-		blitterExecutor: VdpBlitterExecutor | null,
 		frameBufferSize: VdpFrameBufferSize,
 		input: Input,
 		soundMaster: SoundMaster,
@@ -70,7 +69,7 @@ export class Machine {
 		this.cpu = new CPU(this.memory, this.stringPool);
 		this.scheduler = new DeviceScheduler(this.cpu);
 		this.irqController = new IrqController(this.memory);
-		this.vdp = new VDP(this.memory, blitterExecutor, this.scheduler, frameBufferSize);
+		this.vdp = new VDP(this.memory, this.scheduler, frameBufferSize);
 		this.audioController = new AudioController(this.memory, soundMaster, this.irqController);
 		this.dmaController = new DmaController(this.memory, this.irqController, this.vdp, this.scheduler);
 		this.imgDecController = new ImgDecController(this.memory, this.dmaController, this.irqController, this.scheduler);

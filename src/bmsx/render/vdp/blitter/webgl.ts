@@ -6,7 +6,6 @@ import type {
 	VdpBlitterCommand as VdpWebGLBlitterCommand,
 	VdpBlitterCopyRectCommand as BlitterCopyRectCommand,
 	VdpBlitterDrawLineCommand as BlitterDrawLineCommand,
-	VdpBlitterExecutor,
 	VdpBlitterFillRectCommand as BlitterFillRectCommand,
 	VdpBlitterGlyphRunCommand as BlitterGlyphRunCommand,
 	VdpBlitterContext as VdpWebGLBlitterContext,
@@ -564,7 +563,7 @@ function buildPriorityDepthBySequence(state: WebGLVdpBlitterRuntime, commands: r
 	return priorityDepthBySeq;
 }
 
-export class WebGLVdpBlitterExecutor implements VdpBlitterExecutor {
+export class WebGLVdpBlitterExecutor {
 	private readonly runtime: WebGLVdpBlitterRuntime;
 
 	public constructor(

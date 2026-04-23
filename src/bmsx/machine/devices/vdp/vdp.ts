@@ -610,10 +610,6 @@ export interface VdpBlitterContext {
 	getShaderAtlasId(surfaceId: number): number;
 }
 
-export interface VdpBlitterExecutor {
-	execute(context: VdpBlitterContext, commands: readonly VdpBlitterCommand[]): void;
-}
-
 const BLITTER_FIFO_CAPACITY = 4096;
 
 export class VDP implements VramWriteSink {
@@ -659,18 +655,12 @@ export class VDP implements VramWriteSink {
 		getSurface: this.getBlitterSurface.bind(this),
 		getShaderAtlasId: this.getBlitterAtlasId.bind(this),
 	};
-	private readonly implicitClearCommand: VdpBlitterClearCommand = {
-		opcode: 'clear',
-		seq: 0,
-		renderCost: VDP_RENDER_CLEAR_COST,
-		color: { r: 0, g: 0, b: 0, a: 255 },
-	};
-	private readonly implicitClearQueue: readonly VdpBlitterCommand[] = [this.implicitClearCommand];
 	private blitterSequence = 0;
 	private buildFrameCost = 0;
 	private buildFrameOpen = false;
 	private activeFrameOccupied = false;
 	private activeFrameReady = false;
+	private activeFrameExecutionPending = false;
 	private activeFrameCost = 0;
 	private activeFrameWorkRemaining = 0;
 	private pendingFrameOccupied = false;
@@ -697,19 +687,18 @@ export class VDP implements VramWriteSink {
 	public lastFrameHeld = false;
 	public constructor(
 		private readonly memory: Memory,
-		private readonly blitterExecutor: VdpBlitterExecutor | null,
 		private readonly scheduler: DeviceScheduler,
 		private readonly configuredFrameBufferSize: VdpFrameBufferSize,
-			) {
-				this.memory.setVramWriter(this);
-				this.memory.mapIoRead(IO_VDP_RD_STATUS, this.readVdpStatus.bind(this));
-				this.memory.mapIoRead(IO_VDP_RD_DATA, this.readVdpData.bind(this));
-				this.memory.mapIoWrite(IO_VDP_FIFO, this.onVdpFifoWrite.bind(this));
-				this.memory.mapIoWrite(IO_VDP_FIFO_CTRL, this.onVdpFifoCtrlWrite.bind(this));
-				this.memory.mapIoWrite(IO_PAYLOAD_ALLOC_ADDR, this.onObsoletePayloadIoWrite.bind(this));
-				this.memory.mapIoWrite(IO_PAYLOAD_DATA_ADDR, this.onObsoletePayloadIoWrite.bind(this));
-				this.memory.mapIoWrite(IO_VDP_CMD, this.onVdpCommandWrite.bind(this));
-				this.vramMachineSeed = this.nextVramMachineSeed();
+	) {
+		this.memory.setVramWriter(this);
+		this.memory.mapIoRead(IO_VDP_RD_STATUS, this.readVdpStatus.bind(this));
+		this.memory.mapIoRead(IO_VDP_RD_DATA, this.readVdpData.bind(this));
+		this.memory.mapIoWrite(IO_VDP_FIFO, this.onVdpFifoWrite.bind(this));
+		this.memory.mapIoWrite(IO_VDP_FIFO_CTRL, this.onVdpFifoCtrlWrite.bind(this));
+		this.memory.mapIoWrite(IO_PAYLOAD_ALLOC_ADDR, this.onObsoletePayloadIoWrite.bind(this));
+		this.memory.mapIoWrite(IO_PAYLOAD_DATA_ADDR, this.onObsoletePayloadIoWrite.bind(this));
+		this.memory.mapIoWrite(IO_VDP_CMD, this.onVdpCommandWrite.bind(this));
+		this.vramMachineSeed = this.nextVramMachineSeed();
 		this.vramBootSeed = this.nextVramBootSeed();
 		for (let index = 0; index < VDP_RD_SURFACE_COUNT; index += 1) {
 			this.readCaches.push({ x0: 0, y: 0, width: 0, data: new Uint8Array(0) });
@@ -1145,22 +1134,6 @@ export class VDP implements VramWriteSink {
 		return baseCost + VDP_RENDER_CLEAR_COST;
 	}
 
-	private executeBlitterQueue(queue: readonly VdpBlitterCommand[]): void {
-		if (queue.length === 0) {
-			return;
-		}
-		if (this.blitterExecutor === null) {
-			throw vdpFault('no JS blitter executor for current backend.');
-		}
-		const context = this.blitterContext;
-		context.width = this._frameBufferWidth;
-		context.height = this._frameBufferHeight;
-		if (queue[0].opcode !== 'clear') {
-			this.blitterExecutor.execute(context, this.implicitClearQueue);
-		}
-		this.blitterExecutor.execute(context, queue);
-	}
-
 	private ensureDisplayFrameBufferTexture(): void {
 		ensureVdpDisplayFrameBufferTexture(this.vramSeedPixel, this._frameBufferWidth, this._frameBufferHeight);
 	}
@@ -1221,6 +1194,7 @@ export class VDP implements VramWriteSink {
 			this.activeFrameCost = frameCost;
 			this.activeFrameWorkRemaining = frameCost;
 			this.activeFrameReady = frameCost === 0;
+			this.activeFrameExecutionPending = false;
 			this.activeDitherType = this.lastDitherType;
 			this.activeSlotAtlasIds[0] = this.slotAtlasIds[0];
 			this.activeSlotAtlasIds[1] = this.slotAtlasIds[1];
@@ -1266,6 +1240,7 @@ export class VDP implements VramWriteSink {
 		this.pendingBlitterQueue.length = 0;
 		this.activeFrameOccupied = true;
 		this.activeFrameReady = this.pendingFrameCost === 0;
+		this.activeFrameExecutionPending = false;
 		this.activeFrameCost = this.pendingFrameCost;
 		this.activeFrameWorkRemaining = this.pendingFrameCost;
 		this.activeDitherType = this.pendingDitherType;
@@ -1291,8 +1266,7 @@ export class VDP implements VramWriteSink {
 		}
 		if (workUnits >= this.activeFrameWorkRemaining) {
 			this.activeFrameWorkRemaining = 0;
-			this.executeBlitterQueue(this.activeBlitterQueue);
-			this.activeFrameReady = true;
+			this.activeFrameExecutionPending = true;
 			this.scheduleNextService(this.scheduler.currentNowCycles());
 			return;
 		}
@@ -1307,14 +1281,14 @@ export class VDP implements VramWriteSink {
 		if (!this.activeFrameOccupied) {
 			return this.pendingFrameOccupied && this.pendingFrameCost > 0;
 		}
-		return !this.activeFrameReady;
+		return !this.activeFrameReady && !this.activeFrameExecutionPending;
 	}
 
 	public getPendingRenderWorkUnits(): number {
 		if (!this.activeFrameOccupied) {
 			return this.pendingFrameCost;
 		}
-		if (this.activeFrameReady) {
+		if (this.activeFrameReady || this.activeFrameExecutionPending) {
 			return 0;
 		}
 		return this.activeFrameWorkRemaining;
@@ -1342,6 +1316,7 @@ export class VDP implements VramWriteSink {
 		this.recycleBlitterBuffers(this.activeBlitterQueue);
 		this.activeFrameOccupied = false;
 		this.activeFrameReady = false;
+		this.activeFrameExecutionPending = false;
 		this.activeFrameCost = 0;
 		this.activeFrameWorkRemaining = 0;
 		this.activeDitherType = 0;
@@ -2081,6 +2056,25 @@ export class VDP implements VramWriteSink {
 
 	public get committedViewSkyboxFaceSizes(): Int32Array {
 		return this.committedSkyboxFaceSizes;
+	}
+
+	public get readyExecutionQueue(): readonly VdpBlitterCommand[] | null {
+		return this.activeFrameExecutionPending ? this.activeBlitterQueue : null;
+	}
+
+	public prepareBlitterExecutionContext(): VdpBlitterContext {
+		const context = this.blitterContext;
+		context.width = this._frameBufferWidth;
+		context.height = this._frameBufferHeight;
+		return context;
+	}
+
+	public completeReadyExecution(): void {
+		if (!this.activeFrameExecutionPending) {
+			throw vdpFault('no active frame execution pending.');
+		}
+		this.activeFrameExecutionPending = false;
+		this.activeFrameReady = true;
 	}
 
 	public get renderTextureSlots(): readonly VdpRenderTextureSlot[] {
