@@ -642,6 +642,7 @@ export class VDP implements VramWriteSink {
 	private buildBlitterQueue: VdpBlitterCommand[] = [];
 	private activeBlitterQueue: VdpBlitterCommand[] = [];
 	private pendingBlitterQueue: VdpBlitterCommand[] = [];
+	private executingBlitterQueue: VdpBlitterCommand[] = [];
 	private readonly glyphBufferPool: VdpGlyphRunGlyph[][] = [];
 	private readonly tileBufferPool: VdpTileRunBlit[][] = [];
 	private readonly glyphEntryPool: VdpGlyphRunGlyph[] = [];
@@ -659,11 +660,14 @@ export class VDP implements VramWriteSink {
 	private buildFrameCost = 0;
 	private buildFrameOpen = false;
 	private activeFrameOccupied = false;
+	private activeFrameHasCommands = false;
 	private activeFrameReady = false;
 	private activeFrameExecutionPending = false;
+	private activeFrameExecutionTaken = false;
 	private activeFrameCost = 0;
 	private activeFrameWorkRemaining = 0;
 	private pendingFrameOccupied = false;
+	private pendingFrameHasCommands = false;
 	private pendingFrameCost = 0;
 	private readonly activeSlotAtlasIds: Array<number | null> = [null, null];
 	private readonly pendingSlotAtlasIds: Array<number | null> = [null, null];
@@ -1098,6 +1102,7 @@ export class VDP implements VramWriteSink {
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
 		this.pendingFrameOccupied = false;
+		this.pendingFrameHasCommands = false;
 		this.pendingFrameCost = 0;
 		this.pendingDitherType = 0;
 		this.pendingSlotAtlasIds[0] = null;
@@ -1186,15 +1191,18 @@ export class VDP implements VramWriteSink {
 			throw vdpFault(`${slot} frame queue is not empty.`);
 		}
 		const buildQueue = this.buildBlitterQueue;
+		const frameHasCommands = buildQueue.length !== 0;
 		const frameCost = this.submittedFrameCost(buildQueue, this.buildFrameCost);
 		this.buildBlitterQueue = queue;
 		if (slot === 'active') {
 			this.activeBlitterQueue = buildQueue;
 			this.activeFrameOccupied = true;
+			this.activeFrameHasCommands = frameHasCommands;
 			this.activeFrameCost = frameCost;
 			this.activeFrameWorkRemaining = frameCost;
 			this.activeFrameReady = frameCost === 0;
 			this.activeFrameExecutionPending = false;
+			this.activeFrameExecutionTaken = false;
 			this.activeDitherType = this.lastDitherType;
 			this.activeSlotAtlasIds[0] = this.slotAtlasIds[0];
 			this.activeSlotAtlasIds[1] = this.slotAtlasIds[1];
@@ -1202,6 +1210,7 @@ export class VDP implements VramWriteSink {
 		} else {
 			this.pendingBlitterQueue = buildQueue;
 			this.pendingFrameOccupied = true;
+			this.pendingFrameHasCommands = frameHasCommands;
 			this.pendingFrameCost = frameCost;
 			this.pendingDitherType = this.lastDitherType;
 			this.pendingSlotAtlasIds[0] = this.slotAtlasIds[0];
@@ -1239,8 +1248,10 @@ export class VDP implements VramWriteSink {
 		this.pendingBlitterQueue = activeQueue;
 		this.pendingBlitterQueue.length = 0;
 		this.activeFrameOccupied = true;
+		this.activeFrameHasCommands = this.pendingFrameHasCommands;
 		this.activeFrameReady = this.pendingFrameCost === 0;
 		this.activeFrameExecutionPending = false;
+		this.activeFrameExecutionTaken = false;
 		this.activeFrameCost = this.pendingFrameCost;
 		this.activeFrameWorkRemaining = this.pendingFrameCost;
 		this.activeDitherType = this.pendingDitherType;
@@ -1248,6 +1259,7 @@ export class VDP implements VramWriteSink {
 		this.activeSlotAtlasIds[1] = this.pendingSlotAtlasIds[1];
 		this.activeSkyboxFaceIds = this.pendingSkyboxFaceIds;
 		this.pendingFrameOccupied = false;
+		this.pendingFrameHasCommands = false;
 		this.pendingFrameCost = 0;
 		this.pendingDitherType = 0;
 		this.pendingSlotAtlasIds[0] = null;
@@ -1314,9 +1326,12 @@ export class VDP implements VramWriteSink {
 
 	private clearActiveFrame(): void {
 		this.recycleBlitterBuffers(this.activeBlitterQueue);
+		this.recycleBlitterBuffers(this.executingBlitterQueue);
 		this.activeFrameOccupied = false;
+		this.activeFrameHasCommands = false;
 		this.activeFrameReady = false;
 		this.activeFrameExecutionPending = false;
+		this.activeFrameExecutionTaken = false;
 		this.activeFrameCost = 0;
 		this.activeFrameWorkRemaining = 0;
 		this.activeDitherType = 0;
@@ -1349,7 +1364,7 @@ export class VDP implements VramWriteSink {
 			this.lastFrameHeld = true;
 			return;
 		}
-		if (this.activeBlitterQueue.length > 0) {
+		if (this.activeFrameHasCommands) {
 			this.swapFrameBufferPages();
 		}
 		this.commitActiveVisualState();
@@ -2058,8 +2073,17 @@ export class VDP implements VramWriteSink {
 		return this.committedSkyboxFaceSizes;
 	}
 
-	public get readyExecutionQueue(): readonly VdpBlitterCommand[] | null {
-		return this.activeFrameExecutionPending ? this.activeBlitterQueue : null;
+	public takeReadyExecutionQueue(): readonly VdpBlitterCommand[] | null {
+		if (!this.activeFrameExecutionPending) {
+			return null;
+		}
+		if (!this.activeFrameExecutionTaken) {
+			const executingQueue = this.executingBlitterQueue;
+			this.executingBlitterQueue = this.activeBlitterQueue;
+			this.activeBlitterQueue = executingQueue;
+			this.activeFrameExecutionTaken = true;
+		}
+		return this.executingBlitterQueue;
 	}
 
 	public prepareBlitterExecutionContext(): VdpBlitterContext {
@@ -2070,11 +2094,13 @@ export class VDP implements VramWriteSink {
 	}
 
 	public completeReadyExecution(): void {
-		if (!this.activeFrameExecutionPending) {
+		if (!this.activeFrameExecutionPending || !this.activeFrameExecutionTaken) {
 			throw vdpFault('no active frame execution pending.');
 		}
 		this.activeFrameExecutionPending = false;
+		this.activeFrameExecutionTaken = false;
 		this.activeFrameReady = true;
+		this.recycleBlitterBuffers(this.executingBlitterQueue);
 	}
 
 	public get renderTextureSlots(): readonly VdpRenderTextureSlot[] {

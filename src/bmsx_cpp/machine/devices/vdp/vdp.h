@@ -21,6 +21,7 @@ class BFont;
 class Api;
 class VDP;
 struct VdpGles2Blitter;
+struct VdpSoftwareBlitter;
 void restoreVdpContextState(VDP& vdp);
 void captureVdpContextState(VDP& vdp);
 void syncVdpSlotTextures(VDP& vdp);
@@ -187,6 +188,8 @@ public:
 		std::vector<GlyphRunGlyph> glyphs;
 		std::vector<TileRunBlit> tiles;
 	};
+	const std::vector<BlitterCommand>* takeReadyExecutionQueue();
+	void completeReadyExecution();
 
 			private:
 	void applyAtlasSlotMapping(i32 primaryAtlasId, i32 secondaryAtlasId);
@@ -271,6 +274,7 @@ public:
 		std::vector<BlitterCommand> m_buildBlitterQueue;
 	std::vector<BlitterCommand> m_activeBlitterQueue;
 	std::vector<BlitterCommand> m_pendingBlitterQueue;
+	std::vector<BlitterCommand> m_executingBlitterQueue;
 	std::vector<const BlitterCommand*> m_sortedBlitterCommandScratch;
 	std::vector<std::vector<GlyphRunGlyph>> m_glyphBufferPool;
 	std::vector<std::vector<TileRunBlit>> m_tileBufferPool;
@@ -278,11 +282,14 @@ public:
 	int m_buildFrameCost = 0;
 	bool m_buildFrameOpen = false;
 	bool m_activeFrameOccupied = false;
+	bool m_activeFrameHasCommands = false;
 	bool m_activeFrameReady = false;
 	bool m_activeFrameExecutionPending = false;
+	bool m_activeFrameExecutionTaken = false;
 	int m_activeFrameCost = 0;
 	int m_activeFrameWorkRemaining = 0;
 	bool m_pendingFrameOccupied = false;
+	bool m_pendingFrameHasCommands = false;
 	int m_pendingFrameCost = 0;
 	std::array<i32, 2> m_activeSlotAtlasIds{{-1, -1}};
 	std::array<i32, 2> m_pendingSlotAtlasIds{{-1, -1}};
@@ -362,19 +369,12 @@ public:
 	void commitActiveVisualState();
 	void commitSkyboxRenderState(const SkyboxImageIds* ids);
 	void initializeFrameBufferSurface();
-	void resetFrameBufferPriority();
 	i32 getBlitterAtlasId(uint32_t surfaceId) const;
 	ResolvedBlitterSample resolveBlitterSample(u32 handle) const;
 	BlitterSource resolveBlitterSource(u32 handle) const;
-	void blendFrameBufferPixel(std::vector<u8>& pixels, size_t index, u8 r, u8 g, u8 b, u8 a, Layer2D layer, f32 z, u32 seq);
-	void rasterizeFrameBufferFill(std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, const FrameBufferColor& color, Layer2D layer, f32 z, u32 seq);
-	void rasterizeFrameBufferLine(std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, const FrameBufferColor& color, Layer2D layer, f32 z, u32 seq);
-	void rasterizeFrameBufferBlit(std::vector<u8>& pixels, const BlitterSource& source, f32 dstX, f32 dstY, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const FrameBufferColor& color, Layer2D layer, f32 z, u32 seq);
-	void copyFrameBufferRect(std::vector<u8>& pixels, i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, Layer2D layer, f32 z, u32 seq);
 
 	friend struct VdpGles2Blitter;
-	friend void drainReadyVdpExecution(VDP& vdp);
-	friend void executeVdpBlitterQueue(VDP& vdp, const std::vector<BlitterCommand>& queue);
+	friend struct VdpSoftwareBlitter;
 	friend void restoreVdpContextState(VDP& vdp);
 	friend void captureVdpContextState(VDP& vdp);
 	friend void syncVdpSlotTextures(VDP& vdp);

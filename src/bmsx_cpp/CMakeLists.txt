@@ -128,6 +128,7 @@ add_library(bmsx_core STATIC
 	runtime/assets/edits.cpp
 	render/vdp/blitter/execute.cpp
 	render/vdp/blitter/gles2.cpp
+	render/vdp/blitter/software.cpp
 	render/vdp/context_state.cpp
 	render/vdp/framebuffer.cpp
 	render/vdp/slot_textures.cpp
