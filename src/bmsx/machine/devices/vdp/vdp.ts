@@ -98,8 +98,6 @@ type VdpSubmittedFrameState = {
 	occupied: boolean;
 	hasCommands: boolean;
 	ready: boolean;
-	executionPending: boolean;
-	executionTaken: boolean;
 	cost: number;
 	workRemaining: number;
 	slotAtlasIds: [number | null, number | null];
@@ -111,6 +109,12 @@ type VdpBuildingFrameState = {
 	queue: VdpBlitterCommand[];
 	open: boolean;
 	cost: number;
+};
+
+type VdpExecutionState = {
+	queue: VdpBlitterCommand[];
+	pending: boolean;
+	taken: boolean;
 };
 
 const VDP_SERVICE_BATCH_WORK_UNITS = 128;
@@ -659,19 +663,21 @@ export class VDP implements VramWriteSink {
 	private committedDitherType = 0;
 	private _frameBufferWidth = 0;
 	private _frameBufferHeight = 0;
-	private executingBlitterQueue: VdpBlitterCommand[] = [];
 	private readonly buildFrame: VdpBuildingFrameState = {
 		queue: [],
 		open: false,
 		cost: 0,
+	};
+	private readonly execution: VdpExecutionState = {
+		queue: [],
+		pending: false,
+		taken: false,
 	};
 	private readonly activeFrame: VdpSubmittedFrameState = {
 		queue: [],
 		occupied: false,
 		hasCommands: false,
 		ready: false,
-		executionPending: false,
-		executionTaken: false,
 		cost: 0,
 		workRemaining: 0,
 		slotAtlasIds: [null, null],
@@ -683,8 +689,6 @@ export class VDP implements VramWriteSink {
 		occupied: false,
 		hasCommands: false,
 		ready: false,
-		executionPending: false,
-		executionTaken: false,
 		cost: 0,
 		workRemaining: 0,
 		slotAtlasIds: [null, null],
@@ -1135,8 +1139,6 @@ export class VDP implements VramWriteSink {
 		this.pendingFrame.occupied = false;
 		this.pendingFrame.hasCommands = false;
 		this.pendingFrame.ready = false;
-		this.pendingFrame.executionPending = false;
-		this.pendingFrame.executionTaken = false;
 		this.pendingFrame.cost = 0;
 		this.pendingFrame.workRemaining = 0;
 		this.pendingFrame.ditherType = 0;
@@ -1233,8 +1235,6 @@ export class VDP implements VramWriteSink {
 		frame.occupied = true;
 		frame.hasCommands = frameHasCommands;
 		frame.ready = frameCost === 0;
-		frame.executionPending = false;
-		frame.executionTaken = false;
 		frame.cost = frameCost;
 		frame.workRemaining = frameCost;
 		frame.ditherType = this.lastDitherType;
@@ -1276,8 +1276,6 @@ export class VDP implements VramWriteSink {
 		activeFrame.occupied = true;
 		activeFrame.hasCommands = pendingFrame.hasCommands;
 		activeFrame.ready = pendingFrame.cost === 0;
-		activeFrame.executionPending = false;
-		activeFrame.executionTaken = false;
 		activeFrame.cost = pendingFrame.cost;
 		activeFrame.workRemaining = pendingFrame.cost;
 		activeFrame.ditherType = pendingFrame.ditherType;
@@ -1287,8 +1285,6 @@ export class VDP implements VramWriteSink {
 		pendingFrame.occupied = false;
 		pendingFrame.hasCommands = false;
 		pendingFrame.ready = false;
-		pendingFrame.executionPending = false;
-		pendingFrame.executionTaken = false;
 		pendingFrame.cost = 0;
 		pendingFrame.workRemaining = 0;
 		pendingFrame.ditherType = 0;
@@ -1308,7 +1304,7 @@ export class VDP implements VramWriteSink {
 		}
 		if (workUnits >= this.activeFrame.workRemaining) {
 			this.activeFrame.workRemaining = 0;
-			this.activeFrame.executionPending = true;
+			this.execution.pending = true;
 			this.scheduleNextService(this.scheduler.currentNowCycles());
 			return;
 		}
@@ -1323,14 +1319,14 @@ export class VDP implements VramWriteSink {
 		if (!this.activeFrame.occupied) {
 			return this.pendingFrame.occupied && this.pendingFrame.cost > 0;
 		}
-		return !this.activeFrame.ready && !this.activeFrame.executionPending;
+		return !this.activeFrame.ready && !this.execution.pending;
 	}
 
 	public getPendingRenderWorkUnits(): number {
 		if (!this.activeFrame.occupied) {
 			return this.pendingFrame.cost;
 		}
-		if (this.activeFrame.ready || this.activeFrame.executionPending) {
+		if (this.activeFrame.ready || this.execution.pending) {
 			return 0;
 		}
 		return this.activeFrame.workRemaining;
@@ -1356,13 +1352,13 @@ export class VDP implements VramWriteSink {
 
 	private clearActiveFrame(): void {
 		this.recycleBlitterBuffers(this.activeFrame.queue);
-		this.recycleBlitterBuffers(this.executingBlitterQueue);
+		this.recycleBlitterBuffers(this.execution.queue);
 		this.activeFrame.queue.length = 0;
+		this.execution.pending = false;
+		this.execution.taken = false;
 		this.activeFrame.occupied = false;
 		this.activeFrame.hasCommands = false;
 		this.activeFrame.ready = false;
-		this.activeFrame.executionPending = false;
-		this.activeFrame.executionTaken = false;
 		this.activeFrame.cost = 0;
 		this.activeFrame.workRemaining = 0;
 		this.activeFrame.ditherType = 0;
@@ -2105,16 +2101,16 @@ export class VDP implements VramWriteSink {
 	}
 
 	public takeReadyExecutionQueue(): readonly VdpBlitterCommand[] | null {
-		if (!this.activeFrame.executionPending) {
+		if (!this.execution.pending) {
 			return null;
 		}
-		if (!this.activeFrame.executionTaken) {
-			const executingQueue = this.executingBlitterQueue;
-			this.executingBlitterQueue = this.activeFrame.queue;
+		if (!this.execution.taken) {
+			const executingQueue = this.execution.queue;
+			this.execution.queue = this.activeFrame.queue;
 			this.activeFrame.queue = executingQueue;
-			this.activeFrame.executionTaken = true;
+			this.execution.taken = true;
 		}
-		return this.executingBlitterQueue;
+		return this.execution.queue;
 	}
 
 	public prepareBlitterExecutionContext(): VdpBlitterContext {
@@ -2125,13 +2121,13 @@ export class VDP implements VramWriteSink {
 	}
 
 	public completeReadyExecution(): void {
-		if (!this.activeFrame.executionPending || !this.activeFrame.executionTaken) {
+		if (!this.execution.pending || !this.execution.taken) {
 			throw vdpFault('no active frame execution pending.');
 		}
-		this.activeFrame.executionPending = false;
-		this.activeFrame.executionTaken = false;
+		this.execution.pending = false;
+		this.execution.taken = false;
 		this.activeFrame.ready = true;
-		this.recycleBlitterBuffers(this.executingBlitterQueue);
+		this.recycleBlitterBuffers(this.execution.queue);
 	}
 
 	public get renderTextureSlots(): readonly VdpRenderTextureSlot[] {

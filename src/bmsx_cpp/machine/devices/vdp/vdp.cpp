@@ -249,7 +249,7 @@ VDP::VDP(
 	m_buildFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
 	m_activeFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
 	m_pendingFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
-	m_executingBlitterQueue.reserve(BLITTER_FIFO_CAPACITY);
+	m_execution.queue.reserve(BLITTER_FIFO_CAPACITY);
 	m_vramMachineSeed = nextVramMachineSeed();
 	m_vramBootSeed = nextVramBootSeed();
 	m_readBudgetBytes = VDP_RD_BUDGET_BYTES;
@@ -744,8 +744,6 @@ void VDP::resetQueuedFrameState() {
 	m_pendingFrame.occupied = false;
 	m_pendingFrame.hasCommands = false;
 	m_pendingFrame.ready = false;
-	m_pendingFrame.executionPending = false;
-	m_pendingFrame.executionTaken = false;
 	m_pendingFrame.cost = 0;
 	m_pendingFrame.workRemaining = 0;
 	m_pendingFrame.ditherType = 0;
@@ -829,8 +827,6 @@ void VDP::assignBuildToSlot(bool active) {
 	frame.occupied = true;
 	frame.hasCommands = frameHasCommands;
 	frame.ready = frameCost == 0;
-	frame.executionPending = false;
-	frame.executionTaken = false;
 	frame.cost = frameCost;
 	frame.workRemaining = frameCost;
 	frame.ditherType = m_lastDitherType;
@@ -869,8 +865,6 @@ void VDP::promotePendingFrame() {
 	activeFrame.occupied = true;
 	activeFrame.hasCommands = pendingFrame.hasCommands;
 	activeFrame.ready = pendingFrame.cost == 0;
-	activeFrame.executionPending = false;
-	activeFrame.executionTaken = false;
 	activeFrame.cost = pendingFrame.cost;
 	activeFrame.workRemaining = pendingFrame.cost;
 	activeFrame.ditherType = pendingFrame.ditherType;
@@ -880,8 +874,6 @@ void VDP::promotePendingFrame() {
 	pendingFrame.occupied = false;
 	pendingFrame.hasCommands = false;
 	pendingFrame.ready = false;
-	pendingFrame.executionPending = false;
-	pendingFrame.executionTaken = false;
 	pendingFrame.cost = 0;
 	pendingFrame.workRemaining = 0;
 	pendingFrame.ditherType = 0;
@@ -901,7 +893,7 @@ void VDP::advanceWork(int workUnits) {
 	}
 	if (workUnits >= m_activeFrame.workRemaining) {
 		m_activeFrame.workRemaining = 0;
-		m_activeFrame.executionPending = true;
+		m_execution.pending = true;
 		scheduleNextService(m_scheduler.currentNowCycles());
 		return;
 	}
@@ -912,7 +904,7 @@ int VDP::getPendingRenderWorkUnits() const {
 	if (!m_activeFrame.occupied) {
 		return m_pendingFrame.cost;
 	}
-	return (m_activeFrame.ready || m_activeFrame.executionPending) ? 0 : m_activeFrame.workRemaining;
+	return (m_activeFrame.ready || m_execution.pending) ? 0 : m_activeFrame.workRemaining;
 }
 
 void VDP::scheduleNextService(int64_t nowCycles) {
@@ -935,14 +927,14 @@ void VDP::scheduleNextService(int64_t nowCycles) {
 
 void VDP::clearActiveFrame() {
 	recycleBlitterBuffers(m_activeFrame.queue);
-	recycleBlitterBuffers(m_executingBlitterQueue);
+	recycleBlitterBuffers(m_execution.queue);
 	m_activeFrame.queue.clear();
-	m_executingBlitterQueue.clear();
+	m_execution.queue.clear();
+	m_execution.pending = false;
+	m_execution.taken = false;
 	m_activeFrame.occupied = false;
 	m_activeFrame.hasCommands = false;
 	m_activeFrame.ready = false;
-	m_activeFrame.executionPending = false;
-	m_activeFrame.executionTaken = false;
 	m_activeFrame.cost = 0;
 	m_activeFrame.workRemaining = 0;
 	m_activeFrame.ditherType = 0;
@@ -952,25 +944,25 @@ void VDP::clearActiveFrame() {
 }
 
 const std::vector<VDP::BlitterCommand>* VDP::takeReadyExecutionQueue() {
-	if (!m_activeFrame.executionPending) {
+	if (!m_execution.pending) {
 		return nullptr;
 	}
-	if (!m_activeFrame.executionTaken) {
-		m_executingBlitterQueue.swap(m_activeFrame.queue);
-		m_activeFrame.executionTaken = true;
+	if (!m_execution.taken) {
+		m_execution.queue.swap(m_activeFrame.queue);
+		m_execution.taken = true;
 	}
-	return &m_executingBlitterQueue;
+	return &m_execution.queue;
 }
 
 void VDP::completeReadyExecution() {
-	if (!m_activeFrame.executionPending || !m_activeFrame.executionTaken) {
+	if (!m_execution.pending || !m_execution.taken) {
 		throw vdpFault("no active frame execution pending.");
 	}
-	m_activeFrame.executionPending = false;
-	m_activeFrame.executionTaken = false;
+	m_execution.pending = false;
+	m_execution.taken = false;
 	m_activeFrame.ready = true;
-	recycleBlitterBuffers(m_executingBlitterQueue);
-	m_executingBlitterQueue.clear();
+	recycleBlitterBuffers(m_execution.queue);
+	m_execution.queue.clear();
 }
 
 void VDP::commitActiveVisualState() {

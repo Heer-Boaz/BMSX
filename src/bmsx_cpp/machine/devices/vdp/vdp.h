@@ -125,7 +125,7 @@ public:
 	int lastFrameCost() const { return m_lastFrameCost; }
 	bool lastFrameHeld() const { return m_lastFrameHeld; }
 	bool needsImmediateSchedulerService() const { return !m_activeFrame.occupied && m_pendingFrame.occupied; }
-	bool hasPendingRenderWork() const { return m_activeFrame.occupied ? (!m_activeFrame.ready && !m_activeFrame.executionPending) : (m_pendingFrame.occupied && m_pendingFrame.cost > 0); }
+	bool hasPendingRenderWork() const { return m_activeFrame.occupied ? (!m_activeFrame.ready && !m_execution.pending) : (m_pendingFrame.occupied && m_pendingFrame.cost > 0); }
 	int getPendingRenderWorkUnits() const;
 
 	struct FrameBufferColor {
@@ -188,27 +188,30 @@ public:
 		std::vector<GlyphRunGlyph> glyphs;
 		std::vector<TileRunBlit> tiles;
 	};
-	struct SubmittedFrame {
-		std::vector<BlitterCommand> queue;
-		bool occupied = false;
-		bool hasCommands = false;
-		bool ready = false;
-		bool executionPending = false;
-		bool executionTaken = false;
-		int cost = 0;
-		int workRemaining = 0;
-		std::array<i32, 2> slotAtlasIds{{-1, -1}};
-		i32 ditherType = 0;
-		SkyboxImageIds skyboxFaceIds;
-		bool hasSkybox = false;
-	};
-	struct BuildingFrame {
-		std::vector<BlitterCommand> queue;
-		bool open = false;
-		int cost = 0;
-	};
-	const std::vector<BlitterCommand>* takeReadyExecutionQueue();
-	void completeReadyExecution();
+		struct SubmittedFrame {
+			std::vector<BlitterCommand> queue;
+			bool occupied = false;
+			bool hasCommands = false;
+			bool ready = false;
+			int cost = 0;
+			int workRemaining = 0;
+			std::array<i32, 2> slotAtlasIds{{-1, -1}};
+			i32 ditherType = 0;
+			SkyboxImageIds skyboxFaceIds;
+			bool hasSkybox = false;
+		};
+		struct BuildingFrame {
+			std::vector<BlitterCommand> queue;
+			bool open = false;
+			int cost = 0;
+		};
+		struct ExecutionState {
+			std::vector<BlitterCommand> queue;
+			bool pending = false;
+			bool taken = false;
+		};
+		const std::vector<BlitterCommand>* takeReadyExecutionQueue();
+		void completeReadyExecution();
 
 			private:
 	void applyAtlasSlotMapping(i32 primaryAtlasId, i32 secondaryAtlasId);
@@ -291,7 +294,7 @@ public:
 		std::array<u32, VDP_STREAM_CAPACITY_WORDS> m_vdpFifoStreamWords{};
 		u32 m_vdpFifoStreamWordCount = 0;
 		BuildingFrame m_buildFrame;
-	std::vector<BlitterCommand> m_executingBlitterQueue;
+		ExecutionState m_execution;
 	SubmittedFrame m_activeFrame;
 	SubmittedFrame m_pendingFrame;
 	std::vector<const BlitterCommand*> m_sortedBlitterCommandScratch;
