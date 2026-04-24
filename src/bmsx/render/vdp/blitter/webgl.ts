@@ -198,14 +198,14 @@ function bindVdpTexture(backend: WebGLBackend, unit: number, texture: WebGLTextu
 	backend.bindTexture2D(texture);
 }
 
-function bindTexturesForMode(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, mode: DrawMode): void {
+function bindTexturesForMode(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, mode: DrawMode): void {
 	if (mode === 'solid') {
 		bindVdpTexture(backend, TEXTURE_UNIT_ATLAS_PRIMARY, state.whiteTexture);
 		return;
 	}
-	const primary = getVdpRenderSurfaceTexture(vdp, 1)!;
-	const secondary = getVdpRenderSurfaceTexture(vdp, 2)!;
-	const engine = getVdpRenderSurfaceTexture(vdp, 0)!;
+	const primary = getVdpRenderSurfaceTexture(1)!;
+	const secondary = getVdpRenderSurfaceTexture(2)!;
+	const engine = getVdpRenderSurfaceTexture(0)!;
 	bindVdpTexture(backend, TEXTURE_UNIT_ATLAS_PRIMARY, primary);
 	bindVdpTexture(backend, TEXTURE_UNIT_ATLAS_SECONDARY, secondary);
 	bindVdpTexture(backend, TEXTURE_UNIT_ATLAS_ENGINE, engine);
@@ -448,7 +448,7 @@ function drawSortedSegment(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitt
 			}
 			if (boundMode !== nextMode) {
 				batchCount = flushPendingBatch(backend, pass, state, batchCount);
-				bindTexturesForMode(vdp, backend, state, nextMode);
+				bindTexturesForMode(backend, state, nextMode);
 				boundMode = nextMode;
 			}
 		}
@@ -467,14 +467,14 @@ function drawSortedSegment(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitt
 				if (command.backgroundColor !== null) {
 					if (boundMode !== 'solid') {
 						batchCount = flushPendingBatch(backend, pass, state, batchCount);
-						bindTexturesForMode(vdp, backend, state, 'solid');
+						bindTexturesForMode(backend, state, 'solid');
 						boundMode = 'solid';
 					}
 					batchCount += appendGlyphRunBackground(backend, state, batchCount, command, priorityDepth);
 				}
 				if (boundMode !== 'atlas') {
 					batchCount = flushPendingBatch(backend, pass, state, batchCount);
-					bindTexturesForMode(vdp, backend, state, 'atlas');
+					bindTexturesForMode(backend, state, 'atlas');
 					boundMode = 'atlas';
 				}
 				batchCount += appendGlyphRunGlyphs(vdp, backend, state, batchCount, command, priorityDepth);

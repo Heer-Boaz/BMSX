@@ -526,7 +526,7 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 		auto& info = host.surfaces[surfaceId];
 		info.atlasId = atlasId;
 		const auto surface = resolveVdpRenderSurface(vdp, surfaceId);
-		info.texture = getVdpRenderSurfaceTexture(vdp, surfaceId);
+		info.texture = getVdpRenderSurfaceTexture(surfaceId);
 		info.invWidth = 1.0f / static_cast<f32>(surface.width);
 		info.invHeight = 1.0f / static_cast<f32>(surface.height);
 	};

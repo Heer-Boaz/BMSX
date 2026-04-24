@@ -7,9 +7,12 @@ import {
 	IO_CMD_VDP_GLYPH_RUN,
 	IO_CMD_VDP_TILE_RUN,
 } from '../../bus/io';
-import type { Runtime } from '../../runtime/runtime';
+import type { CPU } from '../../cpu/cpu';
+import type { Api } from '../../firmware/api';
+import type { Memory } from '../../memory/memory';
 import { vdpFault } from './fault';
 import { assertVdpPacketArgWords, getVdpPacketArgKind, VdpPacketWordKind } from './packet_schema';
+import type { VDP } from './vdp';
 
 const VDP_PACKET_F32_BUFFER = new ArrayBuffer(4);
 const VDP_PACKET_F32_VIEW = new DataView(VDP_PACKET_F32_BUFFER);
@@ -23,17 +26,17 @@ type PacketWordReader = {
 
 class MemoryPacketWordReader implements PacketWordReader {
 	public readonly kind = 'memory';
-	public runtime!: Runtime;
+	public memory!: Memory;
 	public base = 0;
 
-	public set(runtime: Runtime, base: number): this {
-		this.runtime = runtime;
+	public set(memory: Memory, base: number): this {
+		this.memory = memory;
 		this.base = base;
 		return this;
 	}
 
 	public readU32(index: number): number {
-		return this.runtime.machine.memory.readU32(this.base + index * IO_ARG_STRIDE) >>> 0;
+		return this.memory.readU32(this.base + index * IO_ARG_STRIDE) >>> 0;
 	}
 }
 
@@ -88,14 +91,13 @@ function readPacketColor(reader: PacketWordReader, cmd: number, offset: number):
 	};
 }
 
-function processVdpCommandCore(runtime: Runtime, params: {
+function processVdpCommandCore(vdp: VDP, cpu: CPU, api: Api, params: {
 	cmd: number;
 	argWords: number;
 	argReader: PacketWordReader;
 	payloadReader: PacketWordReader;
 	payloadWords: number;
 }): void {
-	const vdp = runtime.machine.vdp;
 	switch (params.cmd) {
 		case IO_CMD_VDP_CLEAR: {
 			assertVdpPacketArgWords(params.cmd, params.argWords);
@@ -149,14 +151,14 @@ function processVdpCommandCore(runtime: Runtime, params: {
 		}
 		case IO_CMD_VDP_GLYPH_RUN: {
 			assertVdpPacketArgWords(params.cmd, params.argWords);
-			const text = runtime.machine.cpu.getStringPool().getById(readPacketArgU32(params.argReader, params.cmd, 0)).text;
+			const text = cpu.getStringPool().getById(readPacketArgU32(params.argReader, params.cmd, 0)).text;
 			const backgroundEnabled = readPacketArgU32(params.argReader, params.cmd, 12) !== 0;
 			vdp.enqueueGlyphRun(
 				text,
 				readPacketArgF32(params.argReader, params.cmd, 1),
 				readPacketArgF32(params.argReader, params.cmd, 2),
 				readPacketArgF32(params.argReader, params.cmd, 3),
-				runtime.api.resolveFontId(readPacketArgU32(params.argReader, params.cmd, 4)),
+				api.resolveFontId(readPacketArgU32(params.argReader, params.cmd, 4)),
 				readPacketColor(params.argReader, params.cmd, 8),
 				backgroundEnabled ? readPacketColor(params.argReader, params.cmd, 13) : undefined,
 				readPacketArgI32(params.argReader, params.cmd, 5),
@@ -217,23 +219,23 @@ function processVdpCommandCore(runtime: Runtime, params: {
 	}
 }
 
-export function processVdpCommand(runtime: Runtime, params: {
+export function processVdpCommand(vdp: VDP, cpu: CPU, api: Api, memory: Memory, params: {
 	cmd: number;
 	argWords: number;
 	argsBase: number;
 	payloadBase: number;
 	payloadWords: number;
 }): void {
-	processVdpCommandCore(runtime, {
+	processVdpCommandCore(vdp, cpu, api, {
 		cmd: params.cmd,
 		argWords: params.argWords,
-		argReader: VDP_PACKET_MEMORY_ARGS.set(runtime, params.argsBase),
-		payloadReader: VDP_PACKET_MEMORY_PAYLOAD.set(runtime, params.payloadBase),
+		argReader: VDP_PACKET_MEMORY_ARGS.set(memory, params.argsBase),
+		payloadReader: VDP_PACKET_MEMORY_PAYLOAD.set(memory, params.payloadBase),
 		payloadWords: params.payloadWords,
 	});
 }
 
-export function processVdpBufferedCommand(runtime: Runtime, params: {
+export function processVdpBufferedCommand(vdp: VDP, cpu: CPU, api: Api, params: {
 	cmd: number;
 	argWords: number;
 	argsWordOffset: number;
@@ -241,7 +243,7 @@ export function processVdpBufferedCommand(runtime: Runtime, params: {
 	payloadWords: number;
 	words: Uint32Array;
 }): void {
-	processVdpCommandCore(runtime, {
+	processVdpCommandCore(vdp, cpu, api, {
 		cmd: params.cmd,
 		argWords: params.argWords,
 		argReader: VDP_PACKET_BUFFER_ARGS.set(params.words, params.argsWordOffset),

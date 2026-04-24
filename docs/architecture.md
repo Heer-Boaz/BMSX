@@ -156,7 +156,7 @@ must reach the backend texture directly, without adding a mandatory CPU
 write-through pass, while still keeping the cart-visible contract as MMIO/VRAM
 instead of host texture APIs.
 
-Status: closed for the current singleton-discovery and framebuffer-page
+Status: complete for the VDP/render singleton-discovery and framebuffer-page
 ownership slice. `render/vdp` remains the VDP video-hardware implementation,
 but it no longer discovers host/runtime singletons from inside the VDP video
 path, and framebuffer texture pages are owned as concrete VDP video state
@@ -211,6 +211,13 @@ Current evidence:
 - TS and C++ VDP blitter execution receive frame timing explicitly from the
   runtime execution edge. They no longer import runtime singletons for frame
   time or backend discovery.
+- TS VDP command ingestion now mirrors the native command processor shape:
+  `Machine` constructs the VDP with the concrete CPU/API/memory owners, and
+  packet decoding receives those owners directly instead of looking up
+  `Runtime.instance` from inside the device hot path.
+- TS and C++ VDP render-surface texture binding no longer passes a fake VDP
+  object into texture lookup. Surface-size resolution still asks the VDP, while
+  texture-handle binding is an explicit render-side texture-memory operation.
 - `src/bmsx/render/vdp` and `src/bmsx_cpp/render/vdp` no longer contain
   `engineCore`, `Runtime.instance`, `EngineCore::instance()`,
   `Runtime::instance()`, `core/engine`, or `machine/runtime/runtime`

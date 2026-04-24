@@ -458,11 +458,16 @@ export class Runtime {
 		this.engineLuaSources = engineCore.sources;
 		this.activeLuaSources = engineCore.sources;
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
+		api = new Api({
+			storage: this.storage,
+			runtime: this,
+		});
 		this.machine = new Machine(
 			options.memory,
 			{ width: options.viewport.width, height: options.viewport.height },
 			Input.instance,
 			engineCore.sndmaster,
+			api,
 		);
 		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
@@ -488,10 +493,6 @@ export class Runtime {
 		this.vblank.setVblankCycles(this, options.vblankCycles);
 		this.randomSeedValue = engineCore.platform.clock.now();
 
-		api = new Api({
-			storage: this.storage,
-			runtime: this,
-		});
 		workbenchMode.initializeIdeFeatures(this, options);
 	}
 

@@ -14,6 +14,6 @@ struct VdpRenderSurfaceInfo {
 VdpRenderSurfaceInfo resolveVdpRenderSurface(const VDP& vdp, uint32_t surfaceId);
 i32 resolveVdpSurfaceAtlasBinding(uint32_t surfaceId);
 bool isVdpFrameBufferSurface(uint32_t surfaceId);
-TextureHandle getVdpRenderSurfaceTexture(const VDP& vdp, uint32_t surfaceId);
+TextureHandle getVdpRenderSurfaceTexture(uint32_t surfaceId);
 
 } // namespace bmsx

@@ -1,4 +1,3 @@
-import { Runtime } from '../../runtime/runtime';
 import type { color } from '../../../common/color';
 import { SKYBOX_FACE_KEYS, type Layer2D, type SkyboxImageIds } from './contracts';
 import {
@@ -55,6 +54,8 @@ import {
 } from '../../bus/io';
 import { ASSET_FLAG_VIEW, type AssetEntry, type VramWriteSink } from '../../memory/memory';
 import { Memory } from '../../memory/memory';
+import type { CPU } from '../../cpu/cpu';
+import type { Api } from '../../firmware/api';
 import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
 import { DEVICE_SERVICE_VDP, type DeviceScheduler } from '../../scheduler/device';
 import type { BFont } from '../../../render/shared/bitmap_font';
@@ -714,6 +715,8 @@ export class VDP implements VramWriteSink {
 	public lastFrameHeld = false;
 	public constructor(
 		private readonly memory: Memory,
+		private readonly cpu: CPU,
+		private readonly api: Api,
 		private readonly scheduler: DeviceScheduler,
 		private readonly configuredFrameBufferSize: VdpFrameBufferSize,
 	) {
@@ -858,7 +861,7 @@ export class VDP implements VramWriteSink {
 					throw vdpStreamFault('stream ended mid-packet payload.');
 				}
 				this.syncRegisters();
-				processVdpCommand(Runtime.instance, {
+				processVdpCommand(this, this.cpu, this.api, this.memory, {
 					cmd,
 					argWords,
 					argsBase: cursor + VDP_STREAM_PACKET_HEADER_WORDS * 4,
@@ -894,7 +897,7 @@ export class VDP implements VramWriteSink {
 					throw vdpStreamFault('stream ended mid-packet payload.');
 				}
 				this.syncRegisters();
-				processVdpBufferedCommand(Runtime.instance, {
+				processVdpBufferedCommand(this, this.cpu, this.api, {
 					cmd,
 					argWords,
 					argsWordOffset: cursor + VDP_STREAM_PACKET_HEADER_WORDS,
@@ -928,7 +931,7 @@ export class VDP implements VramWriteSink {
 		this.beginSubmittedFrame();
 		try {
 			this.syncRegisters();
-			processVdpCommand(Runtime.instance, {
+			processVdpCommand(this, this.cpu, this.api, this.memory, {
 				cmd,
 				argWords: schema.argWords,
 				argsBase: IO_VDP_CMD_ARG0,

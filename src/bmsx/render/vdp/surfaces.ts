@@ -58,7 +58,7 @@ export function isVdpFrameBufferSurface(surfaceId: number): boolean {
 	return surfaceId === VDP_RD_SURFACE_FRAMEBUFFER;
 }
 
-export function getVdpRenderSurfaceTexture(_vdp: VDP, surfaceId: number): TextureHandle {
+export function getVdpRenderSurfaceTexture(surfaceId: number): TextureHandle {
 	if (isVdpFrameBufferSurface(surfaceId)) {
 		return vdpRenderFrameBufferTexture();
 	}
