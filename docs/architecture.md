@@ -95,14 +95,17 @@ with host shell, IDE, and render-side transient state.
 Current evidence:
 
 - `src/bmsx_cpp/machine/runtime/frame/loop.cpp` includes `core/engine.h`,
-  `render/shared/hardware/lighting.h`, and `render/shared/queues.h`.
+  `machine/runtime/render/state.h`, and `render/shared/queues.h`.
 - The native frame loop still calls back to `EngineCore` for reboot handling.
-- Both TS and C++ frame loops clear hardware lighting at frame start, which is
-  semantically correct for current-frame light submissions but still shows that
-  render transient state is being managed from the machine loop.
+- Both TS and C++ frame loops now enter current-frame render transient reset
+  through `beginRuntimeRenderFrame()` in the runtime render-state owner. That
+  removes the direct hardware-lighting dependency from the frame loop, but the
+  machine tick still decides when render transient state begins.
 - `src/bmsx/machine/runtime/frame/loop.ts` imports IDE workbench mode, runtime
-  asset edit flushing, render queues, hardware lighting, and IDE Lua fault
-  handling.
+  asset edit flushing, render queues, runtime render-state begin-frame, and IDE
+  Lua fault handling.
+- TS and C++ save-machine-state restore now both flush runtime asset edits after
+  restoring machine/frame-scheduler/VBLANK state.
 
 Risk:
 
