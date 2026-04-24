@@ -66,7 +66,7 @@ public:
 	void resetDevices();
 	void refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles);
 	void advanceDevices(int cycles);
-	void runDeviceService(uint8_t deviceKind);
+	VDP* runDeviceService(uint8_t deviceKind);
 	void resetRenderBuffers();
 	MachineState captureState() const;
 	void restoreState(const MachineState& state);

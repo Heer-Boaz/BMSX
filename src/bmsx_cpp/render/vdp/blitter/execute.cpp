@@ -4,15 +4,7 @@
 #include "render/vdp/blitter/software.h"
 
 namespace bmsx {
-
-void drainReadyVdpExecution(VDP& vdp) {
-	const auto* queue = vdp.takeReadyExecutionQueue();
-	if (queue == nullptr) {
-		return;
-	}
-	executeVdpBlitterQueue(vdp, *queue);
-	vdp.completeReadyExecution();
-}
+namespace {
 
 void executeVdpBlitterQueue(VDP& vdp, const std::vector<VDP::BlitterCommand>& queue) {
 	if (queue.empty()) {
@@ -24,6 +16,17 @@ void executeVdpBlitterQueue(VDP& vdp, const std::vector<VDP::BlitterCommand>& qu
 	}
 #endif
 	VdpSoftwareBlitter::execute(vdp, queue);
+}
+
+} // namespace
+
+void drainReadyVdpExecution(VDP& vdp) {
+	const auto* queue = vdp.takeReadyExecutionQueue();
+	if (queue == nullptr) {
+		return;
+	}
+	executeVdpBlitterQueue(vdp, *queue);
+	vdp.completeReadyExecution(queue);
 }
 
 } // namespace bmsx

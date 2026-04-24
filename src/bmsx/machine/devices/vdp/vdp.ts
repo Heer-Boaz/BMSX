@@ -625,14 +625,6 @@ export type VdpBlitterCommand =
 	| VdpBlitterGlyphRunCommand
 	| VdpBlitterTileRunCommand;
 
-export interface VdpBlitterContext {
-	width: number;
-	height: number;
-	frameBufferTextureKey: string;
-	getSurface(surfaceId: number): { textureKey: string; width: number; height: number };
-	getShaderAtlasId(surfaceId: number): number;
-}
-
 const BLITTER_FIFO_CAPACITY = 4096;
 
 export class VDP implements VramWriteSink {
@@ -699,13 +691,6 @@ export class VDP implements VramWriteSink {
 	private readonly tileEntryPool: VdpTileRunBlit[] = [];
 	private readonly clippedRectScratchA = { width: 0, height: 0, area: 0 };
 	private readonly clippedRectScratchB = { width: 0, height: 0, area: 0 };
-	private readonly blitterContext: VdpBlitterContext = {
-		width: 0,
-		height: 0,
-		frameBufferTextureKey: FRAMEBUFFER_RENDER_TEXTURE_KEY,
-		getSurface: this.getBlitterSurface.bind(this),
-		getShaderAtlasId: this.getBlitterAtlasId.bind(this),
-	};
 	private blitterSequence = 0;
 	private readonly committedSlotAtlasIds: Array<number | null> = [null, null];
 	private cpuHz: bigint = 1n;
@@ -1302,6 +1287,10 @@ export class VDP implements VramWriteSink {
 		}
 		if (workUnits >= this.activeFrame.workRemaining) {
 			this.activeFrame.workRemaining = 0;
+			const activeQueue = this.activeFrame.queue;
+			this.activeFrame.queue = this.execution.queue;
+			this.execution.queue = activeQueue;
+			this.activeFrame.queue.length = 0;
 			this.execution.pending = true;
 			this.scheduleNextService(this.scheduler.currentNowCycles());
 			return;
@@ -1464,12 +1453,12 @@ export class VDP implements VramWriteSink {
 
 	public resolveBlitterSample(handle: number): VdpResolvedBlitterSample {
 		const source = this.resolveBlitterSource(handle);
-		const surface = this.getBlitterSurface(source.surfaceId);
+		const surface = this.resolveBlitterSurface(source.surfaceId);
 		return {
 			source,
 			surfaceWidth: surface.width,
 			surfaceHeight: surface.height,
-			atlasId: this.getBlitterAtlasId(source.surfaceId),
+			atlasId: this.resolveBlitterAtlasId(source.surfaceId),
 		};
 	}
 
@@ -1792,7 +1781,7 @@ export class VDP implements VramWriteSink {
 		return this.getReadSurface(surfaceId).entry.regionW * 4;
 	}
 
-	private getBlitterSurface(surfaceId: number): { textureKey: string; width: number; height: number } {
+	public resolveBlitterSurface(surfaceId: number): { textureKey: string; width: number; height: number } {
 		const surface = this.getReadSurface(surfaceId);
 		return {
 			textureKey: surface.textureKey,
@@ -1801,7 +1790,7 @@ export class VDP implements VramWriteSink {
 		};
 	}
 
-	private getBlitterAtlasId(surfaceId: number): number {
+	public resolveBlitterAtlasId(surfaceId: number): number {
 		if (surfaceId === VDP_RD_SURFACE_PRIMARY) {
 			return 0;
 		}
@@ -2101,23 +2090,11 @@ export class VDP implements VramWriteSink {
 		if (!this.execution.pending) {
 			return null;
 		}
-		if (this.execution.queue.length === 0) {
-			const executingQueue = this.execution.queue;
-			this.execution.queue = this.activeFrame.queue;
-			this.activeFrame.queue = executingQueue;
-		}
 		return this.execution.queue;
 	}
 
-	public prepareBlitterExecutionContext(): VdpBlitterContext {
-		const context = this.blitterContext;
-		context.width = this._frameBufferWidth;
-		context.height = this._frameBufferHeight;
-		return context;
-	}
-
-	public completeReadyExecution(): void {
-		if (!this.execution.pending || this.execution.queue.length === 0) {
+	public completeReadyExecution(queue: readonly VdpBlitterCommand[]): void {
+		if (!this.execution.pending || queue !== this.execution.queue || this.execution.queue.length === 0) {
 			throw vdpFault('no active frame execution pending.');
 		}
 		this.execution.pending = false;

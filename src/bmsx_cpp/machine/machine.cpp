@@ -59,21 +59,21 @@ void Machine::advanceDevices(int cycles) {
 	m_deviceScheduler.advanceTo(nextNow);
 }
 
-void Machine::runDeviceService(uint8_t deviceKind) {
+VDP* Machine::runDeviceService(uint8_t deviceKind) {
 	const i64 nowCycles = m_deviceScheduler.nowCycles();
 	switch (deviceKind) {
 		case DeviceServiceGeo:
 			m_geometryController.onService(nowCycles);
-			return;
+			return nullptr;
 		case DeviceServiceDma:
 			m_dmaController.onService(nowCycles);
-			return;
+			return nullptr;
 		case DeviceServiceImg:
 			m_imgDecController.onService(nowCycles);
-			return;
+			return nullptr;
 		case DeviceServiceVdp:
 			m_vdp.onService(nowCycles);
-			return;
+			return &m_vdp;
 		default:
 			throw runtimeFault("unknown device service kind " + std::to_string(deviceKind) + ".");
 	}

@@ -19,13 +19,12 @@ const std::array<u8, 4> EMPTY_TEXTURE_SEED{{0, 0, 0, 0}};
 } // namespace
 
 void syncVdpSlotTextures(VDP& vdp) {
-	for (auto& slot : vdp.m_vramSlots) {
+	for (const auto& slot : vdp.renderTextureSlots()) {
 		if (slot.textureKey == FRAMEBUFFER_RENDER_TEXTURE_KEY) {
 			continue;
 		}
-		const auto& entry = vdp.m_memory.getAssetEntry(slot.assetId);
-		const uint32_t width = entry.regionW;
-		const uint32_t height = entry.regionH;
+		const uint32_t width = slot.textureWidth;
+		const uint32_t height = slot.textureHeight;
 		const uint64_t packedSize = packTextureSize(width, height);
 		const auto sizeIt = g_syncedTextureSizesByKey.find(slot.textureKey);
 		const uint64_t syncedSize = sizeIt == g_syncedTextureSizesByKey.end() ? 0u : sizeIt->second;
@@ -69,8 +68,7 @@ void syncVdpSlotTextures(VDP& vdp) {
 			0,
 			static_cast<i32>(rowStart)
 		);
-		slot.dirtyRowStart = 0;
-		slot.dirtyRowEnd = 0;
+		vdp.clearRenderTextureSlotDirty(slot.textureKey);
 	}
 }
 

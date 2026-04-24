@@ -24,7 +24,6 @@ struct VdpGles2Blitter;
 struct VdpSoftwareBlitter;
 void restoreVdpContextState(VDP& vdp);
 void captureVdpContextState(VDP& vdp);
-void syncVdpSlotTextures(VDP& vdp);
 struct VdpAtlasSize {
 	uint32_t width = 0;
 	uint32_t height = 0;
@@ -150,6 +149,11 @@ public:
 		f32 dstX = 0.0f;
 		f32 dstY = 0.0f;
 	};
+	struct BlitterSurfaceInfo {
+		const std::string* textureKey = nullptr;
+		uint32_t width = 0;
+		uint32_t height = 0;
+	};
 	enum class BlitterCommandType : u8 {
 		Clear,
 		Blit,
@@ -205,12 +209,29 @@ public:
 			bool open = false;
 			int cost = 0;
 		};
-		struct ExecutionState {
-			std::vector<BlitterCommand> queue;
-			bool pending = false;
-		};
-		const std::vector<BlitterCommand>* takeReadyExecutionQueue();
-		void completeReadyExecution();
+	struct ExecutionState {
+		std::vector<BlitterCommand> queue;
+		bool pending = false;
+	};
+	const std::vector<BlitterCommand>* takeReadyExecutionQueue();
+	void completeReadyExecution(const std::vector<BlitterCommand>* queue);
+	BlitterSurfaceInfo resolveBlitterSurface(uint32_t surfaceId) const;
+	i32 resolveBlitterAtlasId(uint32_t surfaceId) const;
+	struct VramSlot {
+		uint32_t baseAddr = 0;
+		uint32_t capacity = 0;
+		std::string assetId;
+		std::string textureKey;
+		uint32_t surfaceId = 0;
+		uint32_t textureWidth = 0;
+		uint32_t textureHeight = 0;
+		std::vector<u8> cpuReadback;
+		std::vector<u8> contextSnapshot;
+		uint32_t dirtyRowStart = 0;
+		uint32_t dirtyRowEnd = 0;
+	};
+	const std::vector<VramSlot>& renderTextureSlots() const { return m_vramSlots; }
+	void clearRenderTextureSlotDirty(const std::string& textureKey);
 
 			private:
 	void applyAtlasSlotMapping(i32 primaryAtlasId, i32 secondaryAtlasId);
@@ -236,19 +257,6 @@ public:
 		uint32_t surfaceWidth = 0;
 		uint32_t surfaceHeight = 0;
 		i32 atlasId = 0;
-	};
-	struct VramSlot {
-		uint32_t baseAddr = 0;
-		uint32_t capacity = 0;
-		std::string assetId;
-		std::string textureKey;
-		uint32_t surfaceId = 0;
-		uint32_t textureWidth = 0;
-		uint32_t textureHeight = 0;
-		std::vector<u8> cpuReadback;
-		std::vector<u8> contextSnapshot;
-		uint32_t dirtyRowStart = 0;
-		uint32_t dirtyRowEnd = 0;
 	};
 	struct VramGarbageStream {
 		uint32_t machineSeed = 0;
@@ -293,10 +301,9 @@ public:
 		std::array<u32, VDP_STREAM_CAPACITY_WORDS> m_vdpFifoStreamWords{};
 		u32 m_vdpFifoStreamWordCount = 0;
 		BuildingFrame m_buildFrame;
-		ExecutionState m_execution;
+	ExecutionState m_execution;
 	SubmittedFrame m_activeFrame;
 	SubmittedFrame m_pendingFrame;
-	std::vector<const BlitterCommand*> m_sortedBlitterCommandScratch;
 	std::vector<std::vector<GlyphRunGlyph>> m_glyphBufferPool;
 	std::vector<std::vector<TileRunBlit>> m_tileBufferPool;
 	u32 m_blitterSequence = 0;
@@ -306,9 +313,6 @@ public:
 	bool m_lastFrameHeld = false;
 	uint32_t m_frameBufferWidth = 0;
 	uint32_t m_frameBufferHeight = 0;
-	std::vector<u8> m_frameBufferPriorityLayer;
-	std::vector<f32> m_frameBufferPriorityZ;
-	std::vector<u32> m_frameBufferPrioritySeq;
 	std::vector<u8> m_displayFrameBufferCpuReadback;
 	std::array<ReadSurface, 4> m_readSurfaces{};
 	std::array<ReadCache, 4> m_readCaches{};
@@ -378,7 +382,6 @@ public:
 	friend struct VdpSoftwareBlitter;
 	friend void restoreVdpContextState(VDP& vdp);
 	friend void captureVdpContextState(VDP& vdp);
-	friend void syncVdpSlotTextures(VDP& vdp);
 
 	void commitLiveVisualState();
 };

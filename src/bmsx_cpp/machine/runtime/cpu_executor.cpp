@@ -20,9 +20,8 @@ void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
 			runtime.vblank.handleEndTimer(runtime);
 			return;
 		case TimerKindDeviceService:
-			runtime.machine().runDeviceService(payload);
-			if (payload == DeviceServiceVdp) {
-				drainReadyVdpExecution(runtime.machine().vdp());
+			if (auto* renderVdp = runtime.machine().runDeviceService(payload); renderVdp != nullptr) {
+				drainReadyVdpExecution(*renderVdp);
 			}
 			return;
 		default:

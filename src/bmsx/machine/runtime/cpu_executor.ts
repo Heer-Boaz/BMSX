@@ -1,7 +1,6 @@
 import { $ } from '../../core/engine';
 import { RunResult } from '../cpu/cpu';
 import {
-	DEVICE_SERVICE_VDP,
 	TIMER_KIND_DEVICE_SERVICE,
 	TIMER_KIND_VBLANK_BEGIN,
 	TIMER_KIND_VBLANK_END,
@@ -111,9 +110,9 @@ function dispatchRuntimeTimer(runtime: Runtime, kind: number, payload: number): 
 			runtime.vblank.handleEndTimer(runtime);
 			return;
 		case TIMER_KIND_DEVICE_SERVICE:
-			runtime.machine.runDeviceService(payload);
-			if (payload === DEVICE_SERVICE_VDP) {
-				drainReadyVdpExecution(runtime.machine.vdp);
+			const renderVdp = runtime.machine.runDeviceService(payload);
+			if (renderVdp !== null) {
+				drainReadyVdpExecution(renderVdp);
 			}
 			return;
 		default:

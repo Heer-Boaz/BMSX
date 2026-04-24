@@ -68,6 +68,7 @@ struct VdpGles2Runtime {
 	TextureHandle copySnapshotTexture = nullptr;
 	i32 copySnapshotWidth = 0;
 	i32 copySnapshotHeight = 0;
+	std::vector<const VDP::BlitterCommand*> sortedCommands;
 	std::vector<VdpGles2Vertex> vertices;
 };
 
@@ -508,25 +509,24 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 	VdpGles2Host host;
 	host.backend = backend;
 	host.renderTexture = view->textures[FRAMEBUFFER_RENDER_TEXTURE_KEY];
-	host.width = static_cast<i32>(vdp.m_frameBufferWidth);
-	host.height = static_cast<i32>(vdp.m_frameBufferHeight);
+	host.width = static_cast<i32>(vdp.frameBufferWidth());
+	host.height = static_cast<i32>(vdp.frameBufferHeight());
 	host.parallaxRig = RenderQueues::spriteParallaxRig;
 	host.timeSeconds = EngineCore::instance().totalTime();
 	auto prepareSurface = [&](uint32_t surfaceId, f32 atlasId) {
 		auto& info = host.surfaces[surfaceId];
 		info.atlasId = atlasId;
-		const auto& surface = vdp.getReadSurface(surfaceId);
-		if (surface.textureKey.empty()) {
+		const auto surface = vdp.resolveBlitterSurface(surfaceId);
+		if (surface.textureKey->empty()) {
 			return;
 		}
-		info.texture = vdpTextureByUri(surface.textureKey);
-		const auto& entry = vdp.m_memory.getAssetEntry(surface.assetId);
-		info.invWidth = 1.0f / static_cast<f32>(entry.regionW);
-		info.invHeight = 1.0f / static_cast<f32>(entry.regionH);
+		info.texture = vdpTextureByUri(*surface.textureKey);
+		info.invWidth = 1.0f / static_cast<f32>(surface.width);
+		info.invHeight = 1.0f / static_cast<f32>(surface.height);
 	};
-	prepareSurface(VDP_RD_SURFACE_ENGINE, VDP_GLES2_ENGINE_ATLAS_ID);
-	prepareSurface(VDP_RD_SURFACE_PRIMARY, VDP_GLES2_PRIMARY_ATLAS_ID);
-	prepareSurface(VDP_RD_SURFACE_SECONDARY, VDP_GLES2_SECONDARY_ATLAS_ID);
+	prepareSurface(VDP_RD_SURFACE_ENGINE, static_cast<f32>(vdp.resolveBlitterAtlasId(VDP_RD_SURFACE_ENGINE)));
+	prepareSurface(VDP_RD_SURFACE_PRIMARY, static_cast<f32>(vdp.resolveBlitterAtlasId(VDP_RD_SURFACE_PRIMARY)));
+	prepareSurface(VDP_RD_SURFACE_SECONDARY, static_cast<f32>(vdp.resolveBlitterAtlasId(VDP_RD_SURFACE_SECONDARY)));
 	prepareSurface(VDP_RD_SURFACE_FRAMEBUFFER, VDP_GLES2_PRIMARY_ATLAS_ID);
 	if (!host.renderTexture) {
 		throw vdpBackendFault("missing framebuffer render texture.");
@@ -556,7 +556,7 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 		if (start >= end) {
 			return;
 		}
-		auto& sortedCommands = vdp.m_sortedBlitterCommandScratch;
+		auto& sortedCommands = state.sortedCommands;
 		sortedCommands.clear();
 		for (size_t index = start; index < end; ++index) {
 			const auto& command = queue[index];

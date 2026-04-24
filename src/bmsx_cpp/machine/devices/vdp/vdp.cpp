@@ -5,7 +5,6 @@
 #include "machine/memory/map.h"
 #include "core/font.h"
 #include "core/utf8.h"
-#include "render/vdp/blitter/execute.h"
 #include "render/vdp/framebuffer.h"
 #include "render/vdp/texture_transfer.h"
 #include "machine/devices/imgdec/controller.h"
@@ -893,6 +892,8 @@ void VDP::advanceWork(int workUnits) {
 	}
 	if (workUnits >= m_activeFrame.workRemaining) {
 		m_activeFrame.workRemaining = 0;
+		m_activeFrame.queue.swap(m_execution.queue);
+		m_activeFrame.queue.clear();
 		m_execution.pending = true;
 		scheduleNextService(m_scheduler.currentNowCycles());
 		return;
@@ -946,14 +947,11 @@ const std::vector<VDP::BlitterCommand>* VDP::takeReadyExecutionQueue() {
 	if (!m_execution.pending) {
 		return nullptr;
 	}
-	if (m_execution.queue.empty()) {
-		m_execution.queue.swap(m_activeFrame.queue);
-	}
 	return &m_execution.queue;
 }
 
-void VDP::completeReadyExecution() {
-	if (!m_execution.pending || m_execution.queue.empty()) {
+void VDP::completeReadyExecution(const std::vector<BlitterCommand>* queue) {
+	if (!m_execution.pending || queue != &m_execution.queue || m_execution.queue.empty()) {
 		throw vdpFault("no active frame execution pending.");
 	}
 	m_execution.pending = false;
@@ -1028,13 +1026,6 @@ void VDP::initializeFrameBufferSurface() {
 	entry.regionH = height;
 	m_frameBufferWidth = width;
 	m_frameBufferHeight = height;
-	const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
-	m_frameBufferPriorityLayer.resize(pixelCount);
-	m_frameBufferPriorityZ.resize(pixelCount);
-	m_frameBufferPrioritySeq.resize(pixelCount);
-	std::fill(m_frameBufferPriorityLayer.begin(), m_frameBufferPriorityLayer.end(), static_cast<u8>(Layer2D::World));
-	std::fill(m_frameBufferPriorityZ.begin(), m_frameBufferPriorityZ.end(), -std::numeric_limits<f32>::infinity());
-	std::fill(m_frameBufferPrioritySeq.begin(), m_frameBufferPrioritySeq.end(), 0u);
 	m_displayFrameBufferCpuReadback.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
 	registerVramSlot(entry, FRAMEBUFFER_RENDER_TEXTURE_KEY, VDP_RD_SURFACE_FRAMEBUFFER);
 	if (!vdpTextureUploadReady()) {
@@ -1087,15 +1078,28 @@ i32 VDP::getBlitterAtlasId(uint32_t surfaceId) const {
 	throw vdpFault("surface " + std::to_string(surfaceId) + " cannot be sampled by the GLES2 blitter.");
 }
 
-VDP::ResolvedBlitterSample VDP::resolveBlitterSample(u32 handle) const {
-	const BlitterSource source = resolveBlitterSource(handle);
-	const auto& surface = getReadSurface(source.surfaceId);
+VDP::BlitterSurfaceInfo VDP::resolveBlitterSurface(uint32_t surfaceId) const {
+	const auto& surface = getReadSurface(surfaceId);
 	const auto& entry = m_memory.getAssetEntry(surface.assetId);
-	return ResolvedBlitterSample{
-		source,
+	return BlitterSurfaceInfo{
+		&surface.textureKey,
 		entry.regionW,
 		entry.regionH,
-		getBlitterAtlasId(source.surfaceId),
+	};
+}
+
+i32 VDP::resolveBlitterAtlasId(uint32_t surfaceId) const {
+	return getBlitterAtlasId(surfaceId);
+}
+
+VDP::ResolvedBlitterSample VDP::resolveBlitterSample(u32 handle) const {
+	const BlitterSource source = resolveBlitterSource(handle);
+	const BlitterSurfaceInfo surface = resolveBlitterSurface(source.surfaceId);
+	return ResolvedBlitterSample{
+		source,
+		surface.width,
+		surface.height,
+		resolveBlitterAtlasId(source.surfaceId),
 	};
 }
 
@@ -2311,6 +2315,12 @@ void VDP::registerReadSurface(uint32_t surfaceId, const std::string& assetId, co
 
 const VDP::ReadSurface& VDP::getReadSurface(uint32_t surfaceId) const {
 	return m_readSurfaces[surfaceId];
+}
+
+void VDP::clearRenderTextureSlotDirty(const std::string& textureKey) {
+	auto& slot = getVramSlotByTextureKey(textureKey);
+	slot.dirtyRowStart = 0;
+	slot.dirtyRowEnd = 0;
 }
 
 void VDP::invalidateReadCache(uint32_t surfaceId) {

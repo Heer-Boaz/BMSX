@@ -1,8 +1,8 @@
 import { $ } from '../../../core/engine';
 import { Runtime } from '../../../machine/runtime/runtime';
 import type {
+	VDP,
 	VdpBlitterCommand,
-	VdpBlitterContext,
 	VdpBlitterSource,
 	VdpFrameBufferColor,
 } from '../../../machine/devices/vdp/vdp';
@@ -29,14 +29,16 @@ export class HeadlessVdpBlitterExecutor {
 	) {
 	}
 
-	public execute(context: VdpBlitterContext, commands: readonly VdpBlitterCommand[]): void {
+	public execute(vdp: VDP, commands: readonly VdpBlitterCommand[]): void {
 		if (commands.length === 0) {
 			return;
 		}
 		syncVdpSlotTextures(Runtime.instance.machine.vdp);
-		const frameBufferTexture = $.texmanager.getTextureByUri(context.frameBufferTextureKey);
-		const frameBufferPixels = this.backend.readTextureRegion(frameBufferTexture, 0, 0, context.width, context.height);
-		this.ensurePriorityCapacity(context.width * context.height);
+		const frameBufferTexture = $.texmanager.getTextureByUri(vdp.frameBufferTextureKey);
+		const frameBufferWidth = vdp.frameBufferWidth;
+		const frameBufferHeight = vdp.frameBufferHeight;
+		const frameBufferPixels = this.backend.readTextureRegion(frameBufferTexture, 0, 0, frameBufferWidth, frameBufferHeight);
+		this.ensurePriorityCapacity(frameBufferWidth * frameBufferHeight);
 		if (commands[0].opcode !== 'clear') {
 			for (let pixelIndex = 0; pixelIndex < frameBufferPixels.length; pixelIndex += 4) {
 				frameBufferPixels[pixelIndex + 0] = IMPLICIT_CLEAR_COLOR.r;
@@ -60,40 +62,40 @@ export class HeadlessVdpBlitterExecutor {
 				continue;
 			}
 			if (command.opcode === 'fill_rect') {
-				this.rasterizeFill(frameBufferPixels, context.width, context.height, command.x0, command.y0, command.x1, command.y1, command.color, command.layer, command.z, command.seq);
+				this.rasterizeFill(frameBufferPixels, frameBufferWidth, frameBufferHeight, command.x0, command.y0, command.x1, command.y1, command.color, command.layer, command.z, command.seq);
 				continue;
 			}
 			if (command.opcode === 'draw_line') {
-				this.rasterizeLine(frameBufferPixels, context.width, context.height, command.x0, command.y0, command.x1, command.y1, command.thickness, command.color, command.layer, command.z, command.seq);
+				this.rasterizeLine(frameBufferPixels, frameBufferWidth, frameBufferHeight, command.x0, command.y0, command.x1, command.y1, command.thickness, command.color, command.layer, command.z, command.seq);
 				continue;
 			}
 			if (command.opcode === 'blit') {
-				this.rasterizeBlit(context, frameBufferPixels, context.width, context.height, command.source, command.dstX, command.dstY, command.scaleX, command.scaleY, command.flipH, command.flipV, command.color, command.layer, command.z, command.seq);
+				this.rasterizeBlit(vdp, frameBufferPixels, frameBufferWidth, frameBufferHeight, command.source, command.dstX, command.dstY, command.scaleX, command.scaleY, command.flipH, command.flipV, command.color, command.layer, command.z, command.seq);
 				continue;
 			}
 			if (command.opcode === 'copy_rect') {
-				this.copyFrameBufferRect(frameBufferPixels, context.width, command.srcX, command.srcY, command.width, command.height, command.dstX, command.dstY, command.layer, command.z, command.seq);
+				this.copyFrameBufferRect(frameBufferPixels, frameBufferWidth, command.srcX, command.srcY, command.width, command.height, command.dstX, command.dstY, command.layer, command.z, command.seq);
 				continue;
 			}
 			if (command.opcode === 'glyph_run') {
 				if (command.backgroundColor !== null) {
 					for (let glyphIndex = 0; glyphIndex < command.glyphs.length; glyphIndex += 1) {
 						const glyph = command.glyphs[glyphIndex];
-						this.rasterizeFill(frameBufferPixels, context.width, context.height, glyph.dstX, glyph.dstY, glyph.dstX + glyph.advance, glyph.dstY + command.lineHeight, command.backgroundColor, command.layer, command.z, command.seq);
+						this.rasterizeFill(frameBufferPixels, frameBufferWidth, frameBufferHeight, glyph.dstX, glyph.dstY, glyph.dstX + glyph.advance, glyph.dstY + command.lineHeight, command.backgroundColor, command.layer, command.z, command.seq);
 					}
 				}
 				for (let glyphIndex = 0; glyphIndex < command.glyphs.length; glyphIndex += 1) {
 					const glyph = command.glyphs[glyphIndex];
-					this.rasterizeBlit(context, frameBufferPixels, context.width, context.height, glyph, glyph.dstX, glyph.dstY, 1, 1, false, false, command.color, command.layer, command.z, command.seq);
+					this.rasterizeBlit(vdp, frameBufferPixels, frameBufferWidth, frameBufferHeight, glyph, glyph.dstX, glyph.dstY, 1, 1, false, false, command.color, command.layer, command.z, command.seq);
 				}
 				continue;
 			}
 			for (let tileIndex = 0; tileIndex < command.tiles.length; tileIndex += 1) {
 				const tile = command.tiles[tileIndex];
-				this.rasterizeBlit(context, frameBufferPixels, context.width, context.height, tile, tile.dstX, tile.dstY, 1, 1, false, false, BLITTER_WHITE, command.layer, command.z, command.seq);
+				this.rasterizeBlit(vdp, frameBufferPixels, frameBufferWidth, frameBufferHeight, tile, tile.dstX, tile.dstY, 1, 1, false, false, BLITTER_WHITE, command.layer, command.z, command.seq);
 			}
 		}
-		this.backend.updateTexture(frameBufferTexture, { width: context.width, height: context.height, data: frameBufferPixels });
+		this.backend.updateTexture(frameBufferTexture, { width: frameBufferWidth, height: frameBufferHeight, data: frameBufferPixels });
 	}
 
 	private ensurePriorityCapacity(pixelCount: number): void {
@@ -111,8 +113,8 @@ export class HeadlessVdpBlitterExecutor {
 		this.frameBufferPrioritySeq.fill(0);
 	}
 
-	private getSourcePixels(context: VdpBlitterContext, source: VdpBlitterSource): HeadlessSurfacePixels {
-		const surface = context.getSurface(source.surfaceId);
+	private getSourcePixels(vdp: VDP, source: VdpBlitterSource): HeadlessSurfacePixels {
+		const surface = vdp.resolveBlitterSurface(source.surfaceId);
 		const cached = this.surfacePixelsByTextureKey.get(surface.textureKey);
 		if (cached) {
 			return cached;
@@ -231,8 +233,8 @@ export class HeadlessVdpBlitterExecutor {
 		}
 	}
 
-	private rasterizeBlit(context: VdpBlitterContext, pixels: Uint8Array, frameWidth: number, frameHeight: number, source: VdpBlitterSource, dstXValue: number, dstYValue: number, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, color: VdpFrameBufferColor, layer: Layer2D, z: number, seq: number): void {
-		const sourcePixels = this.getSourcePixels(context, source);
+	private rasterizeBlit(vdp: VDP, pixels: Uint8Array, frameWidth: number, frameHeight: number, source: VdpBlitterSource, dstXValue: number, dstYValue: number, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, color: VdpFrameBufferColor, layer: Layer2D, z: number, seq: number): void {
+		const sourcePixels = this.getSourcePixels(vdp, source);
 		const dstW = Math.max(1, Math.round(source.width * scaleX));
 		const dstH = Math.max(1, Math.round(source.height * scaleY));
 		const dstX = Math.round(dstXValue);
