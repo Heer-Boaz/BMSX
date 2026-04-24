@@ -516,12 +516,52 @@ VdpState decodeVdpState(const BinValue& value, const char* label) {
 	return state;
 }
 
+BinValue encodeVdpSurfacePixelsState(const VdpSurfacePixelsState& state) {
+	BinObject object;
+	object["surfaceId"] = static_cast<i64>(state.surfaceId);
+	object["pixels"] = BinBinary(state.pixels);
+	return BinValue(std::move(object));
+}
+
+VdpSurfacePixelsState decodeVdpSurfacePixelsState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	VdpSurfacePixelsState state;
+	state.surfaceId = requireU32(requireField(object, "surfaceId", label), "machine.vdp.surfacePixels.surfaceId");
+	state.pixels = requireBinary(requireField(object, "pixels", label), "machine.vdp.surfacePixels.pixels");
+	return state;
+}
+
+BinValue encodeVdpSaveState(const VdpSaveState& state) {
+	BinObject object = encodeVdpState(state).asObject();
+	object["vramStaging"] = BinBinary(state.vramStaging);
+	object["surfacePixels"] = encodeVector<VdpSurfacePixelsState>(state.surfacePixels, encodeVdpSurfacePixelsState);
+	object["displayFrameBufferPixels"] = BinBinary(state.displayFrameBufferPixels);
+	return BinValue(std::move(object));
+}
+
+VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	const VdpState base = decodeVdpState(value, label);
+	VdpSaveState state;
+	state.atlasSlots = base.atlasSlots;
+	state.skyboxFaceIds = base.skyboxFaceIds;
+	state.ditherType = base.ditherType;
+	state.vramStaging = requireBinary(requireField(object, "vramStaging", label), "machine.vdp.vramStaging");
+	state.surfacePixels = decodeVector<VdpSurfacePixelsState>(
+		requireField(object, "surfacePixels", label),
+		"machine.vdp.surfacePixels",
+		[](const BinValue& entry, size_t) { return decodeVdpSurfacePixelsState(entry, "machine.vdp.surfacePixels[]"); }
+	);
+	state.displayFrameBufferPixels = requireBinary(requireField(object, "displayFrameBufferPixels", label), "machine.vdp.displayFrameBufferPixels");
+	return state;
+}
+
 BinValue encodeMachineSaveState(const MachineSaveState& state) {
 	BinObject object;
 	object["memory"] = encodeMemorySaveState(state.memory);
 	object["stringHandles"] = encodeStringHandleTableState(state.stringHandles);
 	object["input"] = encodeInputControllerState(state.input);
-	object["vdp"] = encodeVdpState(state.vdp);
+	object["vdp"] = encodeVdpSaveState(state.vdp);
 	return BinValue(std::move(object));
 }
 
@@ -531,7 +571,7 @@ MachineSaveState decodeMachineSaveState(const BinValue& value, const char* label
 	state.memory = decodeMemorySaveState(requireField(object, "memory", label), "machineState.machine.memory");
 	state.stringHandles = decodeStringHandleTableState(requireField(object, "stringHandles", label), "machineState.machine.stringHandles");
 	state.input = decodeInputControllerState(requireField(object, "input", label), "machineState.machine.input");
-	state.vdp = decodeVdpState(requireField(object, "vdp", label), "machineState.machine.vdp");
+	state.vdp = decodeVdpSaveState(requireField(object, "vdp", label), "machineState.machine.vdp");
 	return state;
 }
 

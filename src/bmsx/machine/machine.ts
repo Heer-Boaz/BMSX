@@ -14,7 +14,7 @@ import { GeometryController } from './devices/geometry/controller';
 import { ImgDecController } from './devices/imgdec/controller';
 import { InputController, type InputControllerState } from './devices/input/controller';
 import { IrqController } from './devices/irq/controller';
-import { VDP, type VdpFrameBufferSize, type VdpState } from './devices/vdp/vdp';
+import { VDP, type VdpFrameBufferSize, type VdpSaveState, type VdpState } from './devices/vdp/vdp';
 import { Memory, type MemorySaveState, type MemoryState } from './memory/memory';
 import { StringHandleTable, type StringHandleTableState } from './memory/string/memory';
 import { StringPool } from './memory/string/pool';
@@ -46,7 +46,7 @@ export type MachineSaveState = {
 	memory: MemorySaveState;
 	stringHandles: StringHandleTableState;
 	input: InputControllerState;
-	vdp: VdpState;
+	vdp: VdpSaveState;
 };
 
 export class Machine {
@@ -157,7 +157,7 @@ export class Machine {
 			memory: this.memory.captureSaveState(),
 			stringHandles: this.stringHandles.captureState(),
 			input: this.inputController.captureState(),
-			vdp: this.vdp.captureState(),
+			vdp: this.vdp.captureSaveState(),
 		};
 	}
 
@@ -168,7 +168,7 @@ export class Machine {
 		this.geometryController.postLoad();
 		this.irqController.postLoad();
 		this.inputController.restoreState(state.input);
-		this.vdp.restoreState(state.vdp);
+		this.vdp.restoreSaveState(state.vdp);
 	}
 
 }

@@ -4,6 +4,7 @@
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/runtime.h"
 #include "runtime/assets/edits.h"
+#include "render/shared/hardware/lighting.h"
 #include "render/shared/queues.h"
 
 namespace bmsx {
@@ -32,6 +33,7 @@ void FrameLoopState::beginFrameState(Runtime& runtime) {
 	frameState.cycleBudgetGranted = runtime.timing.cycleBudgetPerFrame;
 	frameState.cycleCarryGranted = 0;
 	frameDeltaMs = runtime.timing.frameDurationMs;
+	clearHardwareLighting();
 	runtime.machine().vdp().beginFrame();
 }
 

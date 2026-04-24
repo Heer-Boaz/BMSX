@@ -1,4 +1,4 @@
-export const RUNTIME_SAVE_STATE_WIRE_VERSION = 3;
+export const RUNTIME_SAVE_STATE_WIRE_VERSION = 4;
 
 // Append only. Existing indices are part of the runtime save-state byte ABI.
 export const RUNTIME_SAVE_STATE_PROP_NAMES = [
@@ -127,4 +127,9 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'scale_strength',
 	'flip_strength',
 	'flip_window',
+	'vramStaging',
+	'surfacePixels',
+	'surfaceId',
+	'pixels',
+	'displayFrameBufferPixels',
 ] as const;

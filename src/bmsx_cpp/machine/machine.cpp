@@ -99,7 +99,7 @@ MachineSaveState Machine::captureSaveState() const {
 	state.memory = m_memory.captureSaveState();
 	state.stringHandles = m_stringHandles.captureState();
 	state.input = m_inputController.captureState();
-	state.vdp = m_vdp.captureState();
+	state.vdp = m_vdp.captureSaveState();
 	return state;
 }
 
@@ -110,7 +110,7 @@ void Machine::restoreSaveState(const MachineSaveState& state) {
 	m_geometryController.postLoad();
 	m_irqController.postLoad();
 	m_inputController.restoreState(state.input);
-	m_vdp.restoreState(state.vdp);
+	m_vdp.restoreSaveState(state.vdp);
 }
 
 } // namespace bmsx

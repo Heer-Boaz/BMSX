@@ -5,6 +5,8 @@ import type { ResourceDescriptor } from '../../rompack/resource';
 import type { Runtime } from '../runtime/runtime';
 import type { LuaSourceRecord, LuaSourceRegistry } from '../program/sources';
 import { StringValue } from '../memory/string/pool';
+import { getWorkspaceCachedSource } from '../../ide/workspace/cache';
+import { buildDirtyFilePath, hasWorkspaceStorage } from '../../ide/workbench/workspace/io';
 
 function matchesLuaPathAlias(path: string, alias: string): boolean {
 	if (path === alias) {
@@ -116,6 +118,16 @@ export function getRuntimeLuaResourceSource(runtime: Runtime, path: string): str
 	const record = resolveRuntimeLuaSourceRecord(runtime, path);
 	if (record === null) {
 		throw new Error(`[devtools.get_lua_resource_source] Missing Lua resource for path '${path}'. Available: ${summarizeLuaPaths(runtime, 16)}`);
+	}
+	const cached = getWorkspaceCachedSource(record.source_path);
+	if (cached !== null) {
+		return cached;
+	}
+	if (hasWorkspaceStorage()) {
+		const dirty = getWorkspaceCachedSource(buildDirtyFilePath(record.source_path));
+		if (dirty !== null) {
+			return dirty;
+		}
 	}
 	return record.src;
 }

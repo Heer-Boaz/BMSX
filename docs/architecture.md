@@ -1,21 +1,24 @@
 # BMSX Architecture Boundary Review
 
 Status: current architecture review, not a quality rule.
-Last checked: 2026-04-23.
+Last checked: 2026-04-24.
 
 BMSX is already usable as a quasi-professional fantasy-console codebase. The
 important remaining work is not broad cleanup for its own sake. The largest
 architecture pressure is that the top-level system still reads more like
 engine + firmware + host shell than a strict driver/device-tree model.
 
-That is not preferred for BMSX as Host/platform/render conveniences must not
-become the cart-facing hardware contract.
+That shape is not preferred for BMSX. Host, platform, render, IDE, and workspace
+conveniences must not become the cart-facing hardware contract.
 
 This review uses MAME's general posture as the reference point:
 https://github.com/mamedev/mame. MAME treats source code as hardware
 documentation, with machine state and devices owning emulated behavior. BMSX
 should not imitate MAME wholesale, but the same discipline applies to
-machine-vs-host ownership.
+machine-vs-host ownership. MAME save-state guidance is also a useful pressure
+test: a useful emulator save state must account for CPU state, device state,
+RAM including video/palette/sound RAM, timing state, peripheral state, and
+banking/driver-specific state.
 
 ## Healthy Baseline
 
@@ -33,73 +36,80 @@ cart Lua -> BIOS/firmware or cart library -> MMIO/RAM -> machine device -> host 
 - Recent hardware notes such as `docs/geo_overlap2d_pass_v1.md` show the right
   style: concrete MMIO contracts, memory formats, deterministic behavior, and
   explicit division between hardware work and gameplay work.
+- Runtime save-state plumbing now exists in both TS and C++, and libretro has
+  serialization entry points wired to it. The next question is proof and
+  completeness, not whether the platform functions are placeholders.
 
 The current state does not justify pausing feature work for a giant cleanup
 phase. It does justify doing the next architecture fixes in the right order,
 because new features will otherwise keep growing new direct edges into
-`EngineCore`, `GameView`, IDE state, or platform state.
+`EngineCore`, render helpers, IDE state, workspace state, or platform state.
 
 ## Largest Boundary Problems
 
-### 1. VDP Still Knows Too Much About Render And Host State
+### 1. VDP Still Knows Too Much About Render State
 
-The C++ VDP is the most important boundary to clean first. It is a machine
-device, but it still knows about host/render concepts such as `GameView`,
-`RuntimeAssets`, render submissions, the texture manager, and backend reads.
+The C++ VDP remains the most important boundary to clean first. Recent work has
+removed some of the older direct presentation shape: the VDP header no longer
+pulls in broad render submission types or exposes `GameView`-style commit APIs.
+The remaining leak is narrower and more concrete: the device still directly
+coordinates render-side texture/readback helpers.
 
 Current evidence:
 
-- `src/bmsx_cpp/machine/devices/vdp/vdp.h` includes `render/shared/submissions.h`
-  and forward-declares `RuntimeAssets` and `GameView`.
-- `VDP::registerImageAssets(...)` and `VDP::commitViewSnapshot(GameView&)` put
-  asset and presentation concepts directly on the device API.
-- `VDP::initializeFrameBufferSurface()` reaches
-  `EngineCore::instance().view()->backend()`.
-- `VDP::commitLiveVisualState()` checks `EngineCore::instance().texmanager()`
-  and commits straight into `EngineCore::instance().view()`.
-- `VDP::readSurfacePixels(...)` reads pixels through
-  `EngineCore::instance().texmanager()->backend()`.
+- `src/bmsx_cpp/machine/devices/vdp/vdp.cpp` includes
+  `render/vdp/framebuffer.h`, `render/vdp/slot_textures.h`,
+  `render/vdp/surfaces.h`, and `render/vdp/texture_transfer.h`.
+- `VDP::initializeFrameBufferSurface()` still creates a framebuffer-backed
+  image slot and initializes display readback state from inside the device.
+- `VDP::captureSaveState()` and `VDP::restoreSaveState()` now correctly include
+  VDP surface pixels, VRAM staging, render framebuffer pixels, and display
+  framebuffer pixels, but they do so by calling render-side framebuffer and
+  slot-texture helpers.
+- `VDP::readSurfacePixels(...)` still reads the framebuffer through
+  `readVdpFrameBufferPixels(...)` when the requested surface is the framebuffer.
 
 Risk:
 
 The VDP becomes a render coordinator instead of an emulated device. That makes
-save state, libretro portability, deterministic tests, and TS/C++ parity harder.
-It also makes new GPU features tempting to implement as host shortcuts instead
-of device-visible behavior.
+save-state determinism, libretro portability, headless tests, and TS/C++ parity
+harder. It also makes new GPU features tempting to implement as host shortcuts
+instead of device-visible behavior.
 
 Desired direction:
 
 - Keep VDP-owned state on the VDP side: registers, VRAM, DMA submit state,
-  frame timing, framebuffer identity, atlas slot ids, skybox ids, and committed
-  visual state.
+  frame timing, framebuffer identity, atlas slot ids, skybox ids, committed
+  visual state, and save-state pixel payloads.
 - Move backend ownership and host texture reads/writes to the render side.
-- Let the VDP publish an explicit committed state/output snapshot that render
-  consumes after the machine step.
+- Let the VDP publish explicit surface/readback state that render consumes after
+  the machine step.
 - Avoid solving this with a generic service/provider/facade layer. The boundary
   should be concrete and named after the data being handed over.
 
-### 2. Frame Loop Mixes Host Frame Pump With Machine Tick
+### 2. Frame Loop Still Mixes Host/IDE/Render Concerns With Machine Tick
 
-The frame loop currently mixes host scheduling, IDE/input presentation, render
-queue handling, and machine execution.
+The frame loop is narrower than it was, but it still mixes machine execution
+with host shell, IDE, and render-side transient state.
 
 Current evidence:
 
-- `src/bmsx_cpp/machine/runtime/frame/loop.cpp` includes `core/engine.h` and
-  `render/shared/queues.h`.
-- `FrameLoopState::beginFrameState(...)` reads
-  `EngineCore::instance().view()`, then writes viewport and post-processing
-  flags into Lua `game.viewportsize` and `game.view`.
-- `src/bmsx/machine/runtime/frame_loop.ts` imports `../../core/engine`,
-  IDE workbench mode, render queues, hardware lighting, and IDE Lua pipeline
-  fault handling from the machine runtime frame loop.
+- `src/bmsx_cpp/machine/runtime/frame/loop.cpp` includes `core/engine.h`,
+  `render/shared/hardware/lighting.h`, and `render/shared/queues.h`.
+- The native frame loop still calls back to `EngineCore` for reboot handling.
+- Both TS and C++ frame loops clear hardware lighting at frame start, which is
+  semantically correct for current-frame light submissions but still shows that
+  render transient state is being managed from the machine loop.
+- `src/bmsx/machine/runtime/frame/loop.ts` imports IDE workbench mode, runtime
+  asset edit flushing, render queues, hardware lighting, and IDE Lua fault
+  handling.
 
 Risk:
 
-The machine runtime is not just ticking the machine. It is also polling host
-input, coordinating IDE overlay behavior, managing presentation paths, and
-projecting host view state into guest-visible tables. That makes the runtime
-harder to reason about as deterministic emulated hardware.
+The machine runtime is not just ticking the machine. It is also coordinating
+IDE overlay behavior, render transient state, reboot routing, asset edit
+flushes, and fault presentation. That makes the runtime harder to reason about
+as deterministic emulated hardware.
 
 Desired direction:
 
@@ -109,12 +119,15 @@ Desired direction:
 - Machine runtime advances CPU/devices/VBLANK using explicit frame inputs.
 - Screen/render consumes committed machine output after the machine step.
 - IDE overlay and terminal input should stay outside the machine tick contract.
+- Keep current-frame render submissions explicit; do not make them persistent
+  just to avoid a frame-loop dependency.
 
-### 3. Firmware And Cart API Reach Directly Into Host Assets And Source State
+### 3. Firmware, Resource, And Devtool APIs Need Sharper Boundaries
 
 Firmware setup still reaches through `EngineCore` for cart/system assets,
-manifests, project roots, view settings, and clock functions. The TypeScript
-cart API also exposes Lua source/workspace mechanics.
+manifests, project roots, view settings, and clock functions. The Lua source
+inspection APIs are now split into `devtools`, which is the right direction,
+but that boundary must stay devtool-only.
 
 Current evidence:
 
@@ -123,37 +136,38 @@ Current evidence:
 - The same file builds globals from `loadedCartManifest()`,
   `loadedCartEntryPath()`, `cartAssets()`, `machineManifest()`,
   `cartProjectRootPath()`, and `view()`.
-- `src/bmsx/machine/firmware/api/index.ts` exposes `list_lua_resources()`,
-  `get_lua_entry_path()`, and `get_lua_resource_source(...)`, including
-  workspace/dirty-source lookup.
+- `src/bmsx/machine/firmware/devtools.ts` exposes source inspection APIs and
+  deliberately checks workspace cached source and dirty buffers before packed
+  source.
+- `src/bmsx_cpp/machine/firmware/devtools.cpp` mirrors the devtool source
+  inspection surface on the native side.
 
 Risk:
 
 Cart-visible API can silently become "whatever host/runtime data is convenient"
-instead of a stable console contract. That is the exact direction that would
-turn BMSX from fantasy console hardware into an engine API.
+instead of a stable console contract. Devtools need access to workspace source,
+but normal cart hardware should not gain that capability by accident.
 
 Desired direction:
 
 - Separate ROM/resource lookup as a firmware or machine resource contract, not
   a direct `EngineCore` query.
-- Decide which source/workspace APIs are devtool-only and keep them out of the
-  normal cart hardware contract.
+- Keep `devtools.*` as a deliberately isolated source/workspace API.
 - Keep presentation flags and viewport state behind a deliberate firmware or
   MMIO contract if carts are meant to observe them.
 - Preserve the rule that cart code does not call `engine.*` or host shortcuts.
 
 ### 4. EngineCore Is Still A Large Startup And Runtime Meeting Point
 
-`EngineCore.init(...)` currently performs system asset layer setup, workspace
-overlay assignment, platform/view host setup, input initialization, browser
-backend selection, cart index parsing, `GameView` construction, GPU backend
-creation, texture manager setup, render pass registration, resize wiring,
-initial render-target layout, default texture initialization, debug setup, exit
+`EngineCore.init(...)` performs system asset layer setup, workspace overlay
+assignment, platform/view host setup, input initialization, browser backend
+selection, cart index parsing, `GameView` construction, GPU backend creation,
+texture manager setup, render pass registration, resize wiring, initial
+render-target layout, default texture initialization, debug setup, exit
 handling, and runtime initialization.
 
-`EngineCore.start()` also owns platform frame scheduling and calls directly into
-`runtime.frameLoop.runHostFrame(...)`.
+`EngineCore.start()` still owns platform frame scheduling and the top-level
+runtime frame drive.
 
 Risk:
 
@@ -170,33 +184,44 @@ Desired direction:
 - Do not add compatibility bridges or host-provider abstractions while shrinking
   this surface.
 
-### 5. Libretro Save State Is Not End-To-End Complete
+### 5. Libretro Save State Is Wired, But Needs Proof
 
-The machine/runtime side has capture/restore-style pieces, but the libretro
-platform serialization entry points are still placeholders:
+The libretro platform serialization entry points are no longer placeholders:
 
-- `LibretroPlatform::getStateSize()` returns `0`.
-- `LibretroPlatform::saveState(...)` returns `false`.
-- `LibretroPlatform::loadState(...)` returns `false`.
+- `LibretroPlatform::getStateSize()` returns the encoded runtime save-state
+  byte size when a runtime is loaded and initialized.
+- `LibretroPlatform::saveState(...)` captures runtime bytes into the libretro
+  buffer.
+- `LibretroPlatform::loadState(...)` applies runtime bytes, reapplies host view
+  state, resets the libretro audio queue, and clears wall-frame timing state.
+
+Recent save-state work also includes CPU/runtime state, RAM/string handles,
+input, frame scheduler/VBLANK state, game-view state, render state, and VDP
+surface pixels.
 
 Risk:
 
-For an emulator-style runtime, save-state support is a concrete architecture
-test. If state cannot be serialized through the platform boundary, it usually
-means host-only and machine-owned state are not separated sharply enough.
+Save-state support can look wired while still missing deterministic behavior
+under real libretro save/load cycles. The highest-risk areas are VDP render
+surfaces, display/render framebuffer page state, scheduler/VBLANK timing,
+queued/transient render work, audio queue state, and source/runtime edge cases
+such as empty strings.
 
 Desired direction:
 
-- Wire libretro serialization to machine/runtime capture and restore.
-- Serialize machine state, firmware/runtime state, RAM/ROM-visible mutable
-  state, device state, scheduler/VBLANK state, and cart persistent state.
+- Add focused save/load tests that mutate RAM, string handles, VDP surfaces,
+  framebuffer pixels, atlas slots, input state, scheduler/VBLANK state, and cart
+  persistent state before restoring.
+- Exercise libretro serialization through the platform boundary, not only the
+  lower-level runtime codec.
 - Exclude host-only render backend handles, platform objects, transient queues,
   IDE/editor state, and cached presentation resources.
 - Treat serialization requirements as part of new device design.
 
 ### 6. TS/C++ Parity Is Selective, Not Systematic
 
-The C++ implementation mirrors important machine structure, but parity should be
+The C++ implementation mirrors important machine structure, and recent work has
+kept several runtime/save-state/render paths aligned. Parity should still be
 claimed subsystem by subsystem, not globally.
 
 Risk:
@@ -209,22 +234,16 @@ target instead of a parallel experiment.
 Desired direction:
 
 - Track parity at subsystem level: memory/MMIO, VDP, input, scheduler/VBLANK,
-  firmware globals, ROM/resource lookup, save state, and host test behavior.
+  firmware globals, devtools/source lookup, ROM/resource lookup, save state, and
+  host test behavior.
 - Prefer small deterministic parity tests over broad claims.
 - Do not add compatibility fallbacks to mask divergence.
 
 ### 7. IDE/Editor Layering Is Large Debt, But Not The First Console Blocker
 
-The current code-quality analyzer reports the IDE editor as a sizeable layering
-hotspot:
-
-```text
-root: src/bmsx/ide/editor
-files scanned: 137 TypeScript files
-total issues: 385
-top rule: cross_layer_import_pattern, 138 issues
-top folders: ui 125, input 108, contrib 72
-```
+The IDE/editor remains a sizeable layering hotspot, especially around UI,
+input, contrib features, render paths, runtime error support, workspace source,
+and semantic services.
 
 Risk:
 
@@ -236,14 +255,16 @@ Desired direction:
 
 - Clean IDE layering in focused slices.
 - Keep editor/runtime/debugger support out of cart-visible hardware contracts.
+- Keep workspace source ownership professional: dirty editor buffers are the
+  authoritative devtools source, but not a normal cart runtime capability.
 - Do not let IDE convenience APIs leak into firmware or runtime semantics.
 
 ## Recommended Work Order
 
-1. Clean the VDP/render boundary.
+1. Finish the VDP/render boundary cleanup.
 2. Split host frame pump from machine tick.
 3. Separate firmware/resource/devtool APIs from host `EngineCore` queries.
-4. Finish libretro save-state serialization end to end.
+4. Prove libretro save-state serialization end to end.
 5. Audit TS/C++ parity subsystem by subsystem.
 6. Clean IDE/editor layering after the machine boundaries are safer.
 

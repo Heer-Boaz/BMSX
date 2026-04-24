@@ -135,12 +135,6 @@ public:
 		}
 		for (StringId id = 0; id < state.nextHandle; ++id) {
 			const StringHandleEntry entry = m_handleTable->readEntry(id);
-			if (entry.len == 0) {
-				if (id >= m_entries.size()) {
-					m_entries.resize(static_cast<size_t>(id) + 1);
-				}
-				continue;
-			}
 			auto restored = std::make_unique<InternedString>();
 			restored->id = id;
 			restored->value = m_handleTable->readText(entry);

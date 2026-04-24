@@ -2,6 +2,7 @@ import type { FrameState, Runtime } from '../runtime';
 import * as workbenchMode from '../../../ide/runtime/workbench_mode';
 import { flushRuntimeAssetEdits } from '../../../runtime/assets/edits';
 import { clearBackQueues } from '../../../render/shared/queues';
+import { clearHardwareLighting } from '../../../render/shared/hardware/lighting';
 import { RunResult } from '../../cpu/cpu';
 import { runtimeFault } from '../../../ide/runtime/lua_pipeline';
 
@@ -31,6 +32,7 @@ export class FrameLoopState {
 			cycleCarryGranted: 0,
 			activeCpuUsedCycles: 0,
 		};
+		clearHardwareLighting();
 		runtime.machine.vdp.beginFrame();
 		runtime.vblank.beginTick();
 		this.currentFrameState = state;

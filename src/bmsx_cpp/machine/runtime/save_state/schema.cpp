@@ -130,6 +130,11 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"scale_strength",
 	"flip_strength",
 	"flip_window",
+	"vramStaging",
+	"surfacePixels",
+	"surfaceId",
+	"pixels",
+	"displayFrameBufferPixels",
 };
 
 } // namespace

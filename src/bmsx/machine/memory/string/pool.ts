@@ -79,10 +79,6 @@ export class StringPool {
 		this.nextId = 0;
 		for (let id = 0; id < state.nextHandle; id += 1) {
 			const entry = this.handleTable.readEntry(id);
-			if (entry.len === 0) {
-				this.byId[id] = null;
-				continue;
-			}
 			const text = this.handleTable.readText(entry);
 			const restored = StringValue.create(id, text);
 			this.byId[id] = restored;

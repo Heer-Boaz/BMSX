@@ -37,7 +37,7 @@ struct MachineSaveState {
 	MemorySaveState memory;
 	StringHandleTableState stringHandles;
 	InputControllerState input;
-	VdpState vdp;
+	VdpSaveState vdp;
 };
 
 class Machine {

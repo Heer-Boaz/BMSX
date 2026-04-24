@@ -50,6 +50,18 @@ export function uploadVdpFrameBufferPixels(pixels: Uint8Array, width: number, he
 	$.view.textures[FRAMEBUFFER_RENDER_TEXTURE_KEY] = handle;
 }
 
+export function uploadVdpDisplayFrameBufferPixels(pixels: Uint8Array, width: number, height: number): void {
+	let handle = getVdpDisplayFrameBufferTexture();
+	if (!handle) {
+		handle = $.texmanager.createTextureFromPixelsSync(FRAMEBUFFER_TEXTURE_KEY, pixels, width, height);
+		$.view.textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
+		return;
+	}
+	handle = $.texmanager.resizeTextureForKey(FRAMEBUFFER_TEXTURE_KEY, width, height);
+	$.view.backend.updateTexture(handle, { width, height, data: pixels });
+	$.view.textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
+}
+
 export function uploadVdpFrameBufferPixelRegion(pixels: Uint8Array, width: number, height: number, x: number, y: number): void {
 	$.texmanager.updateTextureRegionForKey(FRAMEBUFFER_RENDER_TEXTURE_KEY, pixels, width, height, x, y);
 }

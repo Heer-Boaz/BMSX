@@ -80,6 +80,21 @@ void uploadVdpFrameBufferPixels(const u8* pixels, u32 width, u32 height) {
 	view->textures[FRAMEBUFFER_RENDER_TEXTURE_KEY] = handle;
 }
 
+void uploadVdpDisplayFrameBufferPixels(const u8* pixels, u32 width, u32 height) {
+	auto* view = EngineCore::instance().view();
+	auto* texmanager = EngineCore::instance().texmanager();
+	TextureHandle handle = getVdpDisplayFrameBufferTexture();
+	if (!handle) {
+		const TextureKey key = texmanager->makeKey(FRAMEBUFFER_TEXTURE_KEY, DEFAULT_TEXTURE_PARAMS);
+		handle = texmanager->getOrCreateTexture(key, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
+		view->textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
+		return;
+	}
+	handle = texmanager->resizeTextureForKey(FRAMEBUFFER_TEXTURE_KEY, static_cast<i32>(width), static_cast<i32>(height));
+	texmanager->updateTexture(handle, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
+	view->textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
+}
+
 void uploadVdpFrameBufferPixelRegion(const u8* pixels, i32 width, i32 height, i32 x, i32 y) {
 	EngineCore::instance().texmanager()->updateTextureRegionForKey(FRAMEBUFFER_RENDER_TEXTURE_KEY, pixels, width, height, x, y);
 }

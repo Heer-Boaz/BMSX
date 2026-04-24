@@ -40,6 +40,17 @@ struct VdpState {
 	i32 ditherType = 0;
 };
 
+struct VdpSurfacePixelsState {
+	uint32_t surfaceId = 0;
+	std::vector<u8> pixels;
+};
+
+struct VdpSaveState : VdpState {
+	std::vector<u8> vramStaging;
+	std::vector<VdpSurfacePixelsState> surfacePixels;
+	std::vector<u8> displayFrameBufferPixels;
+};
+
 struct VdpFrameBufferSize {
 	uint32_t width = 0;
 	uint32_t height = 0;
@@ -120,6 +131,8 @@ public:
 	void clearSkybox();
 	VdpState captureState() const;
 	void restoreState(const VdpState& state);
+	VdpSaveState captureSaveState() const;
+	void restoreSaveState(const VdpSaveState& state);
 	i32 committedDitherType() const { return m_committedDitherType; }
 	i32 committedPrimaryAtlasIdInSlot() const { return m_committedSlotAtlasIds[0]; }
 	i32 committedSecondaryAtlasIdInSlot() const { return m_committedSlotAtlasIds[1]; }
@@ -315,6 +328,8 @@ public:
 	DeviceScheduler& m_scheduler;
 
 	void registerVramSlot(const Memory::AssetEntry& entry, uint32_t surfaceId);
+	std::vector<VdpSurfacePixelsState> captureSurfacePixels() const;
+	void restoreSurfacePixels(const VdpSurfacePixelsState& state);
 	void registerReadSurface(uint32_t surfaceId, const std::string& assetId);
 	const ReadSurface& getReadSurface(uint32_t surfaceId) const;
 	void invalidateReadCache(uint32_t surfaceId);

@@ -20,8 +20,10 @@ import {
 import {
 	hasVdpFrameBufferTexture,
 	presentVdpFrameBufferPages,
+	readVdpDisplayFrameBufferPixels,
 	readVdpFrameBufferPixels,
 	syncVdpDisplayFrameBuffer,
+	uploadVdpDisplayFrameBufferPixels,
 	uploadVdpFrameBufferPixels,
 	uploadVdpFrameBufferPixelRegion,
 } from '../../../render/vdp/framebuffer';
@@ -76,11 +78,23 @@ import { fmix32, scramble32, signed8FromHash, xorshift32 } from '../../common/ha
 import { processVdpBufferedCommand, processVdpCommand } from './command_processor';
 import { vdpFault, vdpStreamFault } from './fault';
 import { getVdpPacketSchema } from './packet_schema';
+import { syncVdpSlotTextures } from '../../../render/vdp/slot_textures';
 
 export type VdpState = {
 	atlasSlots: { primary: number | null; secondary: number | null };
 	skyboxFaceIds: SkyboxImageIds | null;
 	ditherType: number;
+};
+
+export type VdpSurfacePixelsState = {
+	surfaceId: number;
+	pixels: Uint8Array;
+};
+
+export type VdpSaveState = VdpState & {
+	vramStaging: Uint8Array;
+	surfacePixels: VdpSurfacePixelsState[];
+	displayFrameBufferPixels: Uint8Array;
 };
 
 export type VdpFrameBufferSize = {
@@ -2002,6 +2016,16 @@ export class VDP implements VramWriteSink {
 		};
 	}
 
+	public captureSaveState(): VdpSaveState {
+		const displayBytes = this._frameBufferWidth * this._frameBufferHeight * 4;
+		return {
+			...this.captureState(),
+			vramStaging: this.vramStaging.slice(),
+			surfacePixels: this.captureSurfacePixels(),
+			displayFrameBufferPixels: readVdpDisplayFrameBufferPixels(0, 0, this._frameBufferWidth, this._frameBufferHeight, new Uint8Array(displayBytes)),
+		};
+	}
+
 	public restoreState(state: VdpState): void {
 		this.restoreAtlasSlotMapping(state.atlasSlots);
 		if (state.skyboxFaceIds === null) {
@@ -2011,6 +2035,17 @@ export class VDP implements VramWriteSink {
 		}
 		this.setDitherType(state.ditherType);
 		this.commitLiveVisualState();
+	}
+
+	public restoreSaveState(state: VdpSaveState): void {
+		this.restoreState(state);
+		this.vramStaging.set(state.vramStaging);
+		for (let index = 0; index < state.surfacePixels.length; index += 1) {
+			this.restoreSurfacePixels(state.surfacePixels[index]);
+		}
+		syncVdpSlotTextures(this);
+		this.displayFrameBufferCpuReadback.set(state.displayFrameBufferPixels);
+		uploadVdpDisplayFrameBufferPixels(state.displayFrameBufferPixels, this._frameBufferWidth, this._frameBufferHeight);
 	}
 
 	public get committedViewDitherType(): number {
@@ -2060,6 +2095,32 @@ export class VDP implements VramWriteSink {
 		this.committedSlotAtlasIds[0] = this.slotAtlasIds[0];
 		this.committedSlotAtlasIds[1] = this.slotAtlasIds[1];
 		this.committedSkyboxFaceIds = this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds };
+	}
+
+	private captureSurfacePixels(): VdpSurfacePixelsState[] {
+		const surfaces = new Array<VdpSurfacePixelsState>(this.vramSlots.length);
+		for (let index = 0; index < this.vramSlots.length; index += 1) {
+			const slot = this.vramSlots[index];
+			const pixels = slot.surfaceId === VDP_RD_SURFACE_FRAMEBUFFER
+				? readVdpFrameBufferPixels(0, 0, slot.surfaceWidth, slot.surfaceHeight, new Uint8Array(slot.surfaceWidth * slot.surfaceHeight * 4))
+				: slot.cpuReadback.slice();
+			surfaces[index] = {
+				surfaceId: slot.surfaceId,
+				pixels,
+			};
+		}
+		return surfaces;
+	}
+
+	private restoreSurfacePixels(state: VdpSurfacePixelsState): void {
+		const slot = this.getVramSlotBySurfaceId(state.surfaceId);
+		slot.cpuReadback.set(state.pixels);
+		this.invalidateReadCache(state.surfaceId);
+		if (state.surfaceId === VDP_RD_SURFACE_FRAMEBUFFER) {
+			uploadVdpFrameBufferPixels(slot.cpuReadback, slot.surfaceWidth, slot.surfaceHeight);
+			return;
+		}
+		this.markVramSlotDirty(slot, 0, slot.surfaceHeight);
 	}
 
 	private restoreAtlasSlotMapping(mapping: { primary: number | null; secondary: number | null }): void {
