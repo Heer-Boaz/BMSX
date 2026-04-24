@@ -23,7 +23,7 @@ struct VdpSoftwareRuntime {
 
 VdpSoftwareRuntime g_vdpSoftwareRuntime{};
 
-void ensureVdpSoftwareRuntime(u32 width, u32 height) {
+void resizeVdpSoftwareRuntime(u32 width, u32 height) {
 	if (g_vdpSoftwareRuntime.width == width && g_vdpSoftwareRuntime.height == height) {
 		return;
 	}
@@ -45,7 +45,7 @@ void VdpSoftwareBlitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand
 	}
 	const u32 frameBufferWidth = vdp.frameBufferWidth();
 	const u32 frameBufferHeight = vdp.frameBufferHeight();
-	ensureVdpSoftwareRuntime(frameBufferWidth, frameBufferHeight);
+	resizeVdpSoftwareRuntime(frameBufferWidth, frameBufferHeight);
 	resetFrameBufferPriority();
 	auto& pixels = vdp.frameBufferRenderReadback();
 	if (queue.front().type != VDP::BlitterCommandType::Clear) {
@@ -108,6 +108,7 @@ void VdpSoftwareBlitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand
 		}
 	}
 	uploadVdpFrameBufferPixels(pixels.data(), frameBufferWidth, frameBufferHeight);
+	vdp.clearSurfaceUploadDirty(VDP_RD_SURFACE_FRAMEBUFFER);
 	vdp.invalidateFrameBufferReadCache();
 }
 

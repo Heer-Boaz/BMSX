@@ -950,7 +950,7 @@ RuntimeSaveState decodeRuntimeSaveState(const std::vector<u8>& data) {
 	return decodeRuntimeSaveState(data.data(), data.size());
 }
 
-std::vector<u8> captureRuntimeSaveStateBytes(const Runtime& runtime) {
+std::vector<u8> captureRuntimeSaveStateBytes(Runtime& runtime) {
 	return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 }
 

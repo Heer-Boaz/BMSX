@@ -781,7 +781,7 @@ size_t LibretroPlatform::getStateSize() const {
 	if (!m_rom_loaded || !Runtime::hasInstance()) {
 		return 0;
 	}
-	const Runtime& runtime = Runtime::instance();
+	Runtime& runtime = Runtime::instance();
 	if (!runtime.isInitialized()) {
 		return 0;
 	}
@@ -792,7 +792,7 @@ bool LibretroPlatform::saveState(void* data, size_t size) {
 	if (!m_rom_loaded || !Runtime::hasInstance()) {
 		return false;
 	}
-	const Runtime& runtime = Runtime::instance();
+	Runtime& runtime = Runtime::instance();
 	if (!runtime.isInitialized()) {
 		return false;
 	}

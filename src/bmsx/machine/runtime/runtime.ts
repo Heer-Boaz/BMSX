@@ -395,6 +395,7 @@ export class Runtime {
 			projectRootPath: engineProjectRootPath,
 		});
 		await runtime.prepareBootRomStartupState();
+		await $.refreshRenderAssets();
 		$.view.default_font = new Font();
 		await runtime.boot();
 		startEngineWithDeferredStartupAudioRefresh(runtime);
@@ -575,6 +576,7 @@ export class Runtime {
 	private async restartBootRomStartupState(): Promise<void> {
 		await $.resetRuntime();
 		await this.prepareBootRomStartupState();
+		await $.refreshRenderAssets();
 		await $.refresh_audio_assets();
 	}
 

@@ -7,10 +7,12 @@
 #include "machine/runtime/save_machine_state.h"
 #include "machine/runtime/runtime.h"
 #include "render/shared/queues.h"
+#include "render/vdp/context_state.h"
 
 namespace bmsx {
 
-RuntimeSaveState captureRuntimeSaveState(const Runtime& runtime) {
+RuntimeSaveState captureRuntimeSaveState(Runtime& runtime) {
+	captureVdpContextState(runtime.machine().vdp());
 	RuntimeSaveState state;
 	state.machineState = captureRuntimeSaveMachineState(runtime);
 	state.cpuState = captureRuntimeCpuState(runtime);
@@ -32,6 +34,7 @@ void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state) {
 	runtime.m_api->restoreStorageState(state.storageState);
 	runtime.m_gameViewState = state.gameViewState;
 	applyRuntimeRenderState(state.renderState);
+	restoreVdpContextState(runtime.machine().vdp());
 	runtime.m_randomSeedValue = state.randomSeed;
 	runtime.m_pendingCall = state.pendingEntryCall ? Runtime::PendingCall::Entry : Runtime::PendingCall::None;
 	runtime.m_runtimeFailed = state.runtimeFailed;

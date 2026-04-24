@@ -16,7 +16,41 @@ uint64_t packTextureSize(uint32_t width, uint32_t height) {
 std::unordered_map<std::string, uint64_t> g_syncedTextureSizesByKey;
 const std::array<u8, 4> EMPTY_TEXTURE_SEED{{0, 0, 0, 0}};
 
+void noteSyncedTextureSize(const std::string& textureKey, uint32_t width, uint32_t height) {
+	g_syncedTextureSizesByKey[textureKey] = packTextureSize(width, height);
+}
+
+void uploadVdpSlotRows(const std::string& textureKey, const VDP::VramSlot& slot, uint32_t rowStart, uint32_t rowEnd) {
+	const uint32_t rowBytes = slot.surfaceWidth * 4u;
+	const size_t byteOffset = static_cast<size_t>(rowStart) * static_cast<size_t>(rowBytes);
+	updateVdpTextureRegion(
+		textureKey,
+		slot.cpuReadback.data() + byteOffset,
+		static_cast<i32>(slot.surfaceWidth),
+		static_cast<i32>(rowEnd - rowStart),
+		0,
+		static_cast<i32>(rowStart)
+	);
+}
+
+void initializeVdpSlotTexture(VDP& vdp, const VDP::VramSlot& slot) {
+	const VdpRenderSurfaceInfo surface = resolveVdpRenderSurface(vdp, slot.surfaceId);
+	createVdpTextureFromSeed(surface.textureKey, EMPTY_TEXTURE_SEED.data(), slot.surfaceWidth, slot.surfaceHeight);
+	noteSyncedTextureSize(surface.textureKey, slot.surfaceWidth, slot.surfaceHeight);
+	uploadVdpSlotRows(surface.textureKey, slot, 0u, slot.surfaceHeight);
+	vdp.clearSurfaceUploadDirty(slot.surfaceId);
+}
+
 } // namespace
+
+void initializeVdpSlotTextures(VDP& vdp) {
+	for (const auto& slot : vdp.surfaceUploadSlots()) {
+		if (isVdpFrameBufferSurface(slot.surfaceId)) {
+			continue;
+		}
+		initializeVdpSlotTexture(vdp, slot);
+	}
+}
 
 void syncVdpSlotTextures(VDP& vdp) {
 	for (const auto& slot : vdp.surfaceUploadSlots()) {
@@ -29,35 +63,17 @@ void syncVdpSlotTextures(VDP& vdp) {
 		const uint64_t packedSize = packTextureSize(width, height);
 		const auto sizeIt = g_syncedTextureSizesByKey.find(surface.textureKey);
 		const uint64_t syncedSize = sizeIt == g_syncedTextureSizesByKey.end() ? 0u : sizeIt->second;
-		bool forceFullUpload = false;
-		TextureHandle handle = getVdpRenderSurfaceTexture(vdp, slot.surfaceId);
-		if (handle == nullptr) {
-			handle = ensureVdpTextureFromSeed(surface.textureKey, EMPTY_TEXTURE_SEED.data(), width, height);
-			if (handle == nullptr) {
-				continue;
-			}
-			g_syncedTextureSizesByKey[surface.textureKey] = packedSize;
-			forceFullUpload = true;
-		} else if (syncedSize != packedSize) {
-			handle = resizeVdpTextureForKey(surface.textureKey, width, height);
-			g_syncedTextureSizesByKey[surface.textureKey] = packedSize;
-			forceFullUpload = true;
+		const bool forceFullUpload = syncedSize != packedSize;
+		if (forceFullUpload) {
+			resizeVdpTextureForKey(surface.textureKey, width, height);
+			noteSyncedTextureSize(surface.textureKey, width, height);
 		}
 		if (!forceFullUpload && slot.dirtyRowStart >= slot.dirtyRowEnd) {
 			continue;
 		}
 		const uint32_t rowStart = forceFullUpload ? 0u : slot.dirtyRowStart;
 		const uint32_t rowEnd = forceFullUpload ? height : slot.dirtyRowEnd;
-		const uint32_t rowBytes = width * 4u;
-		const size_t byteOffset = static_cast<size_t>(rowStart) * static_cast<size_t>(rowBytes);
-		updateVdpTextureRegion(
-			surface.textureKey,
-			slot.cpuReadback.data() + byteOffset,
-			static_cast<i32>(width),
-			static_cast<i32>(rowEnd - rowStart),
-			0,
-			static_cast<i32>(rowStart)
-		);
+		uploadVdpSlotRows(surface.textureKey, slot, rowStart, rowEnd);
 		vdp.clearSurfaceUploadDirty(slot.surfaceId);
 	}
 }

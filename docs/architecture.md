@@ -47,34 +47,58 @@ because new features will otherwise keep growing new direct edges into
 
 ## Largest Boundary Problems
 
-### 1. VDP Still Knows Too Much About Render State
+### 1. VDP/Render Boundary Needs A Fast Explicit Write Contract
 
-The C++ VDP remains the most important boundary to clean first. Recent work has
-removed some of the older direct presentation shape: the VDP header no longer
-pulls in broad render submission types or exposes `GameView`-style commit APIs.
-The remaining leak is narrower and more concrete: the device still directly
-coordinates render-side texture/readback helpers.
+The VDP/render boundary remains the most important boundary to keep disciplined,
+but the main problem has shifted. The boundary now has to protect two things at
+once: cart-visible hardware still speaks MMIO/VRAM, and framebuffer VRAM writes
+must still hit the backend texture immediately.
+
+The important contract now is performance-sensitive: framebuffer VRAM writes
+must reach the backend texture directly, without adding a mandatory CPU
+write-through pass, while still keeping texture/backend ownership on the render
+side instead of exposing host shortcuts as cart-visible hardware.
 
 Current evidence:
 
-- `src/bmsx_cpp/machine/devices/vdp/vdp.cpp` includes
-  `render/vdp/framebuffer.h`, `render/vdp/slot_textures.h`,
-  `render/vdp/surfaces.h`, and `render/vdp/texture_transfer.h`.
 - `VDP::initializeFrameBufferSurface()` still creates a framebuffer-backed
-  image slot and initializes display readback state from inside the device.
+  image slot and initializes display readback state from inside the device, but
+  framebuffer texture creation and upload are now render-owned.
+- In the TS runtime, direct framebuffer VRAM writes call the render framebuffer
+  texture-region upload path immediately. The hot path does not probe for a
+  texture and does not write through a CPU framebuffer mirror first.
+- In the C++ runtime, render setup installs the concrete framebuffer
+  texture-region writer on the VDP. Direct framebuffer VRAM writes call that
+  writer immediately. The VDP does not include render headers or lazily discover
+  render state during the write.
+- Framebuffer texture creation is an explicit runtime/render initialization
+  step in both TS and C++. Render context restore creates/seeds render and
+  display framebuffer textures, then VDP execution/presentation paths assume
+  that contract.
+- VDP atlas/slot textures follow the same split: setup initializes the textures
+  and uploads full slot contents; render sync resizes only on surface-size
+  changes and otherwise uploads dirty rows directly to existing backend
+  textures.
 - `VDP::captureSaveState()` and `VDP::restoreSaveState()` now correctly include
   VDP surface pixels, VRAM staging, render framebuffer pixels, and display
-  framebuffer pixels, but they do so by calling render-side framebuffer and
-  slot-texture helpers.
-- `VDP::readSurfacePixels(...)` still reads the framebuffer through
-  `readVdpFrameBufferPixels(...)` when the requested surface is the framebuffer.
+  framebuffer pixels. Because direct framebuffer VRAM writes bypass the CPU
+  mirror, save/readback captures framebuffer pages from the backend texture at
+  the boundary where serialized state is requested.
+- The GLES2 blitter now syncs rendered framebuffer pixels back into VDP-owned
+  readback state after execution, so MMIO readback and save-state capture no
+  longer depend on render backend reads from inside the VDP device.
+- VBLANK frame commit now returns an explicit framebuffer-presentation signal
+  from the VDP, and the render-side VDP presentation helper performs the texture
+  page swap. The device no longer presents render framebuffer pages itself.
 
 Risk:
 
-The VDP becomes a render coordinator instead of an emulated device. That makes
-save-state determinism, libretro portability, headless tests, and TS/C++ parity
-harder. It also makes new GPU features tempting to implement as host shortcuts
-instead of device-visible behavior.
+The old risk was letting the VDP become a render coordinator instead of an
+emulated device. The current risk is the opposite failure mode: preserving a
+clean ownership diagram by forcing framebuffer writes through CPU shadow memory
+before the backend sees them. That is not acceptable for hot VRAM write paths.
+The clean boundary must preserve the fast texture-write path while keeping the
+cart-visible hardware contract as MMIO/VRAM, not host texture APIs.
 
 Desired direction:
 
@@ -82,8 +106,15 @@ Desired direction:
   frame timing, framebuffer identity, atlas slot ids, skybox ids, committed
   visual state, and save-state pixel payloads.
 - Move backend ownership and host texture reads/writes to the render side.
-- Let the VDP publish explicit surface/readback state that render consumes after
-  the machine step.
+- Let framebuffer VRAM writes use an explicit fast render write contract:
+  immediate backend subregion writes against textures that were created during
+  runtime/render setup.
+- Initialize framebuffer and VDP slot textures at runtime/render setup
+  boundaries. Do not hide first-use texture creation behind `ensure` helpers in
+  VDP execution, render sync, or presentation paths.
+- Preserve CPU framebuffer pixels only where they are semantically required:
+  software rendering, save-state capture/restore, and explicit readback. Do not
+  make CPU shadow writes mandatory for the normal backend-texture hot path.
 - Avoid solving this with a generic service/provider/facade layer. The boundary
   should be concrete and named after the data being handed over.
 

@@ -5,10 +5,6 @@
 #include "machine/memory/map.h"
 #include "core/font.h"
 #include "core/utf8.h"
-#include "render/vdp/framebuffer.h"
-#include "render/vdp/slot_textures.h"
-#include "render/vdp/surfaces.h"
-#include "render/vdp/texture_transfer.h"
 #include "machine/devices/imgdec/controller.h"
 #include "machine/scheduler/budget.h"
 #include <algorithm>
@@ -631,21 +627,15 @@ void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
 	while (remaining > 0) {
 		const uint32_t rowAvailable = stride - rowOffset;
 		const uint32_t rowBytes = static_cast<uint32_t>(std::min<size_t>(remaining, rowAvailable));
-		const i32 x = static_cast<i32>(rowOffset / 4u);
-		const i32 width = static_cast<i32>(rowBytes / 4u);
+		const uint32_t xStart = rowOffset / 4u;
+		const uint32_t xEnd = xStart + rowBytes / 4u;
 		if (slot.surfaceId == VDP_RD_SURFACE_FRAMEBUFFER) {
-			uploadVdpFrameBufferPixelRegion(
-				data + cursor,
-				width,
-				1,
-				x,
-				static_cast<i32>(row)
-			);
+			m_frameBufferTextureRegionWriter(data + cursor, static_cast<i32>(xEnd - xStart), 1, static_cast<i32>(xStart), static_cast<i32>(row));
 		} else {
-			markVramSlotDirty(slot, row, 1u);
+			markVramSlotDirtySpan(slot, row, xStart, xEnd);
+			const size_t cpuOffset = static_cast<size_t>(row) * static_cast<size_t>(stride) + static_cast<size_t>(rowOffset);
+			std::memcpy(slot.cpuReadback.data() + cpuOffset, data + cursor, rowBytes);
 		}
-		const size_t cpuOffset = static_cast<size_t>(row) * static_cast<size_t>(stride) + static_cast<size_t>(rowOffset);
-		std::memcpy(slot.cpuReadback.data() + cpuOffset, data + cursor, rowBytes);
 		invalidateReadCache(slot.surfaceId);
 		remaining -= rowBytes;
 		cursor += rowBytes;
@@ -775,17 +765,6 @@ int VDP::calculateAlphaMultiplier(const FrameBufferColor& color) const {
 void VDP::swapFrameBufferReadbackPages() {
 	auto& renderSlot = getVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER);
 	std::swap(renderSlot.cpuReadback, m_displayFrameBufferCpuReadback);
-	invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
-}
-
-void VDP::syncDisplayFrameBufferReadback() {
-	auto& renderSlot = getVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER);
-	auto& renderReadback = renderSlot.cpuReadback;
-	const size_t renderReadbackSize = renderReadback.size();
-	if (m_displayFrameBufferCpuReadback.size() != renderReadbackSize) {
-		m_displayFrameBufferCpuReadback.resize(renderReadbackSize);
-	}
-	std::memcpy(m_displayFrameBufferCpuReadback.data(), renderReadback.data(), renderReadbackSize);
 	invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
 }
 
@@ -972,25 +951,7 @@ void VDP::commitActiveVisualState() {
 	}
 }
 
-void VDP::presentReadyFrameOnVblankEdge() {
-	if (!m_activeFrame.occupied) {
-		m_lastFrameCommitted = false;
-		m_lastFrameCost = 0;
-		m_lastFrameHeld = false;
-		promotePendingFrame();
-		scheduleNextService(m_scheduler.currentNowCycles());
-		refreshSubmitBusyStatus();
-		return;
-	}
-	m_lastFrameCost = m_activeFrame.cost;
-	if (!m_activeFrame.ready) {
-		m_lastFrameCommitted = false;
-		m_lastFrameHeld = true;
-		return;
-	}
-	if (m_activeFrame.hasCommands) {
-		presentVdpFrameBufferPages(*this);
-	}
+void VDP::finishCommittedFrameOnVblankEdge() {
 	commitActiveVisualState();
 	m_lastFrameCommitted = true;
 	m_lastFrameHeld = false;
@@ -998,6 +959,30 @@ void VDP::presentReadyFrameOnVblankEdge() {
 	promotePendingFrame();
 	scheduleNextService(m_scheduler.currentNowCycles());
 	refreshSubmitBusyStatus();
+}
+
+bool VDP::commitReadyFrameOnVblankEdge() {
+	if (!m_activeFrame.occupied) {
+		m_lastFrameCommitted = false;
+		m_lastFrameCost = 0;
+		m_lastFrameHeld = false;
+		promotePendingFrame();
+		scheduleNextService(m_scheduler.currentNowCycles());
+		refreshSubmitBusyStatus();
+		return false;
+	}
+	m_lastFrameCost = m_activeFrame.cost;
+	if (!m_activeFrame.ready) {
+		m_lastFrameCommitted = false;
+		m_lastFrameHeld = true;
+		return false;
+	}
+	if (m_activeFrame.hasCommands) {
+		finishCommittedFrameOnVblankEdge();
+		return true;
+	}
+	finishCommittedFrameOnVblankEdge();
+	return false;
 }
 // end hot-path
 
@@ -1027,10 +1012,6 @@ void VDP::initializeFrameBufferSurface() {
 	m_frameBufferHeight = height;
 	m_displayFrameBufferCpuReadback.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
 	registerVramSlot(entry, VDP_RD_SURFACE_FRAMEBUFFER);
-	if (!vdpTextureUploadReady()) {
-		return;
-	}
-	syncVdpDisplayFrameBuffer(*this, m_vramSeedPixel.data());
 }
 
 VDP::BlitterSource VDP::resolveBlitterSource(u32 handle) const {
@@ -1798,9 +1779,6 @@ void VDP::initializeRegisters() {
 	m_lastFrameCommitted = true;
 	m_lastFrameCost = 0;
 	m_lastFrameHeld = false;
-	if (hasVdpFrameBufferTexture()) {
-		syncVdpDisplayFrameBuffer(*this, m_vramSeedPixel.data());
-	}
 }
 
 void VDP::syncRegisters() {
@@ -1930,10 +1908,8 @@ void VDP::applyAtlasSlotMapping(i32 primaryAtlasId, i32 secondaryAtlasId) {
 			}
 		}
 	}
-	if (vdpTextureUploadReady()) {
-		syncVramSlotSurfaceSize(getVramSlotBySurfaceId(VDP_RD_SURFACE_PRIMARY));
-		syncVramSlotSurfaceSize(getVramSlotBySurfaceId(VDP_RD_SURFACE_SECONDARY));
-	}
+	syncVramSlotSurfaceSize(getVramSlotBySurfaceId(VDP_RD_SURFACE_PRIMARY));
+	syncVramSlotSurfaceSize(getVramSlotBySurfaceId(VDP_RD_SURFACE_SECONDARY));
 }
 
 void VDP::attachImgDecController(ImgDecController& controller) {
@@ -1986,15 +1962,7 @@ VdpSaveState VDP::captureSaveState() const {
 	state.ditherType = m_lastDitherType;
 	state.vramStaging = m_vramStaging;
 	state.surfacePixels = captureSurfacePixels();
-	const size_t displayBytes = static_cast<size_t>(m_frameBufferWidth) * static_cast<size_t>(m_frameBufferHeight) * 4u;
-	state.displayFrameBufferPixels.resize(displayBytes);
-	readVdpDisplayFrameBufferPixels(
-		state.displayFrameBufferPixels.data(),
-		static_cast<i32>(m_frameBufferWidth),
-		static_cast<i32>(m_frameBufferHeight),
-		0,
-		0
-	);
+	state.displayFrameBufferPixels = m_displayFrameBufferCpuReadback;
 	return state;
 }
 
@@ -2004,9 +1972,7 @@ void VDP::restoreSaveState(const VdpSaveState& state) {
 	for (const VdpSurfacePixelsState& surface : state.surfacePixels) {
 		restoreSurfacePixels(surface);
 	}
-	syncVdpSlotTextures(*this);
 	m_displayFrameBufferCpuReadback = state.displayFrameBufferPixels;
-	uploadVdpDisplayFrameBufferPixels(m_displayFrameBufferCpuReadback.data(), m_frameBufferWidth, m_frameBufferHeight);
 }
 
 void VDP::registerVramSlot(const Memory::AssetEntry& entry, uint32_t surfaceId) {
@@ -2020,6 +1986,7 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, uint32_t surfaceId) 
 	slot.surfaceWidth = entry.regionW;
 	slot.surfaceHeight = entry.regionH;
 	slot.cpuReadback.resize(static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u);
+	slot.dirtySpansByRow.resize(entry.regionH);
 	m_vramSlots.push_back(std::move(slot));
 	registerReadSurface(surfaceId, entry.id);
 	auto& slotRef = m_vramSlots.back();
@@ -2027,7 +1994,7 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, uint32_t surfaceId) 
 		invalidateReadCache(surfaceId);
 		return;
 	}
-	seedVramSlotTexture(slotRef);
+	seedVramSlotPixels(slotRef);
 }
 
 std::vector<VdpSurfacePixelsState> VDP::captureSurfacePixels() const {
@@ -2036,19 +2003,7 @@ std::vector<VdpSurfacePixelsState> VDP::captureSurfacePixels() const {
 	for (const VramSlot& slot : m_vramSlots) {
 		VdpSurfacePixelsState state;
 		state.surfaceId = slot.surfaceId;
-		const size_t bytes = static_cast<size_t>(slot.surfaceWidth) * static_cast<size_t>(slot.surfaceHeight) * 4u;
-		if (slot.surfaceId == VDP_RD_SURFACE_FRAMEBUFFER) {
-			state.pixels.resize(bytes);
-			readVdpFrameBufferPixels(
-				state.pixels.data(),
-				static_cast<i32>(slot.surfaceWidth),
-				static_cast<i32>(slot.surfaceHeight),
-				0,
-				0
-			);
-		} else {
-			state.pixels = slot.cpuReadback;
-		}
+		state.pixels = slot.cpuReadback;
 		surfaces.push_back(std::move(state));
 	}
 	return surfaces;
@@ -2059,7 +2014,6 @@ void VDP::restoreSurfacePixels(const VdpSurfacePixelsState& state) {
 	slot.cpuReadback = state.pixels;
 	invalidateReadCache(state.surfaceId);
 	if (state.surfaceId == VDP_RD_SURFACE_FRAMEBUFFER) {
-		uploadVdpFrameBufferPixels(slot.cpuReadback.data(), slot.surfaceWidth, slot.surfaceHeight);
 		return;
 	}
 	markVramSlotDirty(slot, 0, slot.surfaceHeight);
@@ -2095,13 +2049,14 @@ void VDP::syncVramSlotSurfaceSize(VramSlot& slot) {
 	slot.surfaceWidth = width;
 	slot.surfaceHeight = height;
 	slot.cpuReadback.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
+	slot.dirtySpansByRow.assign(height, VramSlot::DirtySpan{});
 	invalidateReadCache(slot.surfaceId);
 	if (slot.surfaceId == VDP_RD_SURFACE_ENGINE) {
 		slot.dirtyRowStart = 0;
 		slot.dirtyRowEnd = 0;
 		return;
 	}
-	seedVramSlotTexture(slot);
+	seedVramSlotPixels(slot);
 }
 
 void VDP::markVramSlotDirty(VramSlot& slot, uint32_t startRow, uint32_t rowCount) {
@@ -2109,13 +2064,42 @@ void VDP::markVramSlotDirty(VramSlot& slot, uint32_t startRow, uint32_t rowCount
 	if (slot.dirtyRowStart >= slot.dirtyRowEnd) {
 		slot.dirtyRowStart = startRow;
 		slot.dirtyRowEnd = endRow;
-		return;
-	}
-	if (startRow < slot.dirtyRowStart) {
+	} else if (startRow < slot.dirtyRowStart) {
 		slot.dirtyRowStart = startRow;
 	}
 	if (endRow > slot.dirtyRowEnd) {
 		slot.dirtyRowEnd = endRow;
+	}
+	for (uint32_t row = startRow; row < endRow; ++row) {
+		slot.dirtySpansByRow[row].xStart = 0;
+		slot.dirtySpansByRow[row].xEnd = slot.surfaceWidth;
+	}
+}
+
+void VDP::markVramSlotDirtySpan(VramSlot& slot, uint32_t row, uint32_t xStart, uint32_t xEnd) {
+	const uint32_t endRow = row + 1u;
+	if (slot.dirtyRowStart >= slot.dirtyRowEnd) {
+		slot.dirtyRowStart = row;
+		slot.dirtyRowEnd = endRow;
+	} else {
+		if (row < slot.dirtyRowStart) {
+			slot.dirtyRowStart = row;
+		}
+		if (endRow > slot.dirtyRowEnd) {
+			slot.dirtyRowEnd = endRow;
+		}
+	}
+	auto& span = slot.dirtySpansByRow[row];
+	if (span.xStart >= span.xEnd) {
+		span.xStart = xStart;
+		span.xEnd = xEnd;
+		return;
+	}
+	if (xStart < span.xStart) {
+		span.xStart = xStart;
+	}
+	if (xEnd > span.xEnd) {
+		span.xEnd = xEnd;
 	}
 }
 
@@ -2219,7 +2203,7 @@ void VDP::seedVramStaging() {
 	fillVramGarbageScratch(m_vramStaging.data(), m_vramStaging.size(), stream);
 }
 
-void VDP::seedVramSlotTexture(VramSlot& slot) {
+void VDP::seedVramSlotPixels(VramSlot& slot) {
 	auto& entry = m_memory.getAssetEntry(slot.assetId);
 	const size_t rowPixels = static_cast<size_t>(entry.regionW);
 	const size_t maxPixels = m_vramGarbageScratch.size() / 4u;
@@ -2227,14 +2211,13 @@ void VDP::seedVramSlotTexture(VramSlot& slot) {
 	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, entry.baseAddr};
 	const size_t rowBytes = rowPixels * 4u;
 	const uint32_t height = entry.regionH;
-	const bool frameBufferSlot = slot.surfaceId == VDP_RD_SURFACE_FRAMEBUFFER;
 	if (rowBytes <= m_vramGarbageScratch.size()) {
 		const size_t rowsPerChunk = std::max<size_t>(1u, m_vramGarbageScratch.size() / rowBytes);
 		for (uint32_t y = 0; y < height; ) {
 			const size_t rows = std::min<size_t>(rowsPerChunk, height - y);
 			const size_t chunkBytes = rowBytes * rows;
 			fillVramGarbageScratch(m_vramGarbageScratch.data(), chunkBytes, stream);
-			if (!frameBufferSlot) {
+			if (slot.surfaceId != VDP_RD_SURFACE_ENGINE) {
 				markVramSlotDirty(slot, y, static_cast<uint32_t>(rows));
 			}
 			std::memcpy(slot.cpuReadback.data() + static_cast<size_t>(y) * rowBytes, m_vramGarbageScratch.data(), chunkBytes);
@@ -2246,7 +2229,7 @@ void VDP::seedVramSlotTexture(VramSlot& slot) {
 				const size_t segmentWidth = std::min<size_t>(maxPixels, entry.regionW - x);
 				const size_t segmentBytes = segmentWidth * 4u;
 				fillVramGarbageScratch(m_vramGarbageScratch.data(), segmentBytes, stream);
-				if (!frameBufferSlot) {
+				if (slot.surfaceId != VDP_RD_SURFACE_ENGINE) {
 					markVramSlotDirty(slot, y, 1u);
 				}
 				std::memcpy(
@@ -2258,74 +2241,7 @@ void VDP::seedVramSlotTexture(VramSlot& slot) {
 			}
 		}
 	}
-	if (frameBufferSlot) {
-		uploadVdpFrameBufferPixels(slot.cpuReadback.data(), entry.regionW, entry.regionH);
-	}
 	invalidateReadCache(slot.surfaceId);
-}
-
-void VDP::restoreVramSlotSurface(const Memory::AssetEntry& entry, uint32_t surfaceId) {
-	const bool isEngineAtlas = surfaceId == VDP_RD_SURFACE_ENGINE;
-	const bool isFrameBuffer = surfaceId == VDP_RD_SURFACE_FRAMEBUFFER;
-	const auto surface = resolveVdpRenderSurface(*this, surfaceId);
-	const char* textureKey = surface.textureKey;
-	auto& slot = getVramSlotBySurfaceId(surfaceId);
-	const size_t snapshotBytes = static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u;
-	const bool restoreSnapshot = slot.contextSnapshot.size() == snapshotBytes;
-	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, entry.baseAddr};
-	fillVramGarbageScratch(m_vramSeedPixel.data(), m_vramSeedPixel.size(), stream);
-	setSlotSurfaceSize(surfaceId, entry.regionW, entry.regionH);
-	if (restoreSnapshot) {
-		if (isFrameBuffer) {
-			uploadVdpFrameBufferPixels(slot.contextSnapshot.data(), entry.regionW, entry.regionH);
-		} else {
-			ensureVdpTextureFromSeed(
-				textureKey,
-				m_vramSeedPixel.data(),
-				entry.regionW,
-				entry.regionH
-			);
-			updateVdpTexture(
-				textureKey,
-				slot.contextSnapshot.data(),
-				static_cast<i32>(entry.regionW),
-				static_cast<i32>(entry.regionH)
-			);
-		}
-		slot.cpuReadback = slot.contextSnapshot;
-		slot.contextSnapshot.clear();
-		invalidateReadCache(slot.surfaceId);
-		return;
-	}
-	if (isEngineAtlas) {
-		ensureVdpTextureFromSeed(
-			textureKey,
-			m_vramSeedPixel.data(),
-			entry.regionW,
-			entry.regionH
-		);
-		updateVdpTexture(
-			textureKey,
-			slot.cpuReadback.data(),
-			static_cast<i32>(entry.regionW),
-			static_cast<i32>(entry.regionH)
-		);
-		invalidateReadCache(slot.surfaceId);
-		return;
-	}
-	if (!isEngineAtlas) {
-		seedVramSlotTexture(slot);
-	}
-}
-
-void VDP::setSlotSurfaceSize(uint32_t surfaceId, uint32_t width, uint32_t height) {
-	for (auto& slot : m_vramSlots) {
-		if (slot.surfaceId == surfaceId) {
-			slot.surfaceWidth = width;
-			slot.surfaceHeight = height;
-			return;
-		}
-	}
 }
 
 void VDP::registerReadSurface(uint32_t surfaceId, const std::string& assetId) {
@@ -2339,6 +2255,9 @@ const VDP::ReadSurface& VDP::getReadSurface(uint32_t surfaceId) const {
 
 void VDP::clearSurfaceUploadDirty(uint32_t surfaceId) {
 	auto& slot = getVramSlotBySurfaceId(surfaceId);
+	for (uint32_t row = slot.dirtyRowStart; row < slot.dirtyRowEnd; ++row) {
+		slot.dirtySpansByRow[row] = VramSlot::DirtySpan{};
+	}
 	slot.dirtyRowStart = 0;
 	slot.dirtyRowEnd = 0;
 }
@@ -2376,11 +2295,6 @@ void VDP::prefetchReadCache(uint32_t surfaceId, const ReadSurface& surface, uint
 
 void VDP::readSurfacePixels(uint32_t surfaceId, const ReadSurface& surface, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::vector<u8>& out) {
 	out.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
-	if (surfaceId == VDP_RD_SURFACE_FRAMEBUFFER) {
-		readVdpFrameBufferPixels(out.data(), static_cast<i32>(width), static_cast<i32>(height),
-			static_cast<i32>(x), static_cast<i32>(y));
-		return;
-	}
 	const auto& slot = getVramSlotBySurfaceId(surfaceId);
 	const auto& entry = m_memory.getAssetEntry(surface.assetId);
 	const uint32_t stride = entry.regionW * 4u;

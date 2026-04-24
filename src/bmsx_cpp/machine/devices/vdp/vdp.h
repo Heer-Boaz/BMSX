@@ -69,6 +69,8 @@ constexpr uint32_t VDP_RD_SURFACE_COUNT = 4u;
 
 	class VDP : public Memory::VramWriter {
 public:
+	using FrameBufferTextureRegionWriter = void (*)(const u8* pixels, i32 width, i32 height, i32 x, i32 y);
+
 		VDP(
 			Memory& memory,
 			CPU& cpu,
@@ -101,7 +103,7 @@ public:
 	void accrueCycles(int cycles, int64_t nowCycles);
 	void onService(int64_t nowCycles);
 	void advanceWork(int workUnits);
-	void presentReadyFrameOnVblankEdge();
+	bool commitReadyFrameOnVblankEdge();
 	void enqueueClear(const Color& color);
 	void enqueueBlit(u32 handle, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const Color& color, f32 parallaxWeight = 0.0f);
 	void enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 z, Layer2D layer);
@@ -118,8 +120,10 @@ public:
 	uint32_t frameBufferHeight() const { return m_frameBufferHeight; }
 	std::vector<u8>& frameBufferRenderReadback() { return getVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER).cpuReadback; }
 	const std::vector<u8>& frameBufferRenderReadback() const { return getVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER).cpuReadback; }
+	std::vector<u8>& frameBufferDisplayReadback() { return m_displayFrameBufferCpuReadback; }
+	const std::vector<u8>& frameBufferDisplayReadback() const { return m_displayFrameBufferCpuReadback; }
+	void setFrameBufferTextureRegionWriter(FrameBufferTextureRegionWriter writer) { m_frameBufferTextureRegionWriter = writer; }
 	void swapFrameBufferReadbackPages();
-	void syncDisplayFrameBufferReadback();
 	void invalidateFrameBufferReadCache();
 	VdpBlitterSurfaceSize resolveBlitterSurfaceSize(uint32_t surfaceId) const;
 	uint32_t readVdpStatus();
@@ -232,6 +236,10 @@ public:
 	const std::vector<BlitterCommand>* takeReadyExecutionQueue();
 	void completeReadyExecution(const std::vector<BlitterCommand>* queue);
 	struct VramSlot {
+		struct DirtySpan {
+			uint32_t xStart = 0;
+			uint32_t xEnd = 0;
+		};
 		uint32_t baseAddr = 0;
 		uint32_t capacity = 0;
 		std::string assetId;
@@ -242,6 +250,7 @@ public:
 		std::vector<u8> contextSnapshot;
 		uint32_t dirtyRowStart = 0;
 		uint32_t dirtyRowEnd = 0;
+		std::vector<DirtySpan> dirtySpansByRow;
 	};
 	const std::vector<VramSlot>& surfaceUploadSlots() const { return m_vramSlots; }
 	void clearSurfaceUploadDirty(uint32_t surfaceId);
@@ -321,6 +330,7 @@ public:
 	bool m_lastFrameHeld = false;
 	uint32_t m_frameBufferWidth = 0;
 	uint32_t m_frameBufferHeight = 0;
+	FrameBufferTextureRegionWriter m_frameBufferTextureRegionWriter = nullptr;
 	std::vector<u8> m_displayFrameBufferCpuReadback;
 	std::array<ReadSurface, 4> m_readSurfaces{};
 	std::array<ReadCache, 4> m_readCaches{};
@@ -340,15 +350,14 @@ public:
 	const VramSlot& findVramSlot(uint32_t addr, size_t length) const;
 	void syncVramSlotSurfaceSize(VramSlot& slot);
 	void markVramSlotDirty(VramSlot& slot, uint32_t startRow, uint32_t rowCount);
+	void markVramSlotDirtySpan(VramSlot& slot, uint32_t row, uint32_t xStart, uint32_t xEnd);
 	VramSlot& getVramSlotBySurfaceId(uint32_t surfaceId);
 	const VramSlot& getVramSlotBySurfaceId(uint32_t surfaceId) const;
 			uint32_t nextVramMachineSeed() const;
 	uint32_t nextVramBootSeed() const;
 	void fillVramGarbageScratch(u8* data, size_t length, VramGarbageStream& stream) const;
 	void seedVramStaging();
-	void seedVramSlotTexture(VramSlot& slot);
-	void setSlotSurfaceSize(uint32_t surfaceId, uint32_t width, uint32_t height);
-	void restoreVramSlotSurface(const Memory::AssetEntry& entry, uint32_t surfaceId);
+	void seedVramSlotPixels(VramSlot& slot);
 	FrameBufferColor packFrameBufferColor(const Color& color) const;
 	u32 nextBlitterSequence();
 	std::vector<GlyphRunGlyph> acquireGlyphBuffer();
@@ -379,6 +388,7 @@ public:
 	void onVdpCommandWrite();
 	void clearActiveFrame();
 	void commitActiveVisualState();
+	void finishCommittedFrameOnVblankEdge();
 	void initializeFrameBufferSurface();
 	i32 getBlitterAtlasId(uint32_t surfaceId) const;
 	ResolvedBlitterSample resolveBlitterSample(u32 handle) const;

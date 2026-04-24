@@ -18,11 +18,9 @@ import {
 	generateAtlasName,
 } from '../../../rompack/format';
 import {
-	hasVdpFrameBufferTexture,
 	presentVdpFrameBufferPages,
 	readVdpDisplayFrameBufferPixels,
 	readVdpFrameBufferPixels,
-	syncVdpDisplayFrameBuffer,
 	uploadVdpDisplayFrameBufferPixels,
 	uploadVdpFrameBufferPixels,
 	uploadVdpFrameBufferPixelRegion,
@@ -1175,16 +1173,6 @@ export class VDP implements VramWriteSink {
 		this.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
 	}
 
-	public syncDisplayFrameBufferReadback(): void {
-		const renderSlot = this.getVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER);
-		const renderReadback = renderSlot.cpuReadback;
-		if (this.displayFrameBufferCpuReadback.byteLength !== renderReadback.byteLength) {
-			this.displayFrameBufferCpuReadback = new Uint8Array(renderReadback.byteLength);
-		}
-		this.displayFrameBufferCpuReadback.set(renderReadback);
-		this.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
-	}
-
 	public invalidateFrameBufferReadCache(): void {
 		this.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
 	}
@@ -1419,7 +1407,6 @@ export class VDP implements VramWriteSink {
 		this._frameBufferHeight = height;
 		this.displayFrameBufferCpuReadback = new Uint8Array(size);
 		this.registerVramSlot(entry, VDP_RD_SURFACE_FRAMEBUFFER);
-		syncVdpDisplayFrameBuffer(this, this.vramSeedPixel);
 	}
 
 	public resolveBlitterSource(handle: number): VdpBlitterSource {
@@ -1813,6 +1800,10 @@ export class VDP implements VramWriteSink {
 		return this.getCpuReadbackBuffer(VDP_RD_SURFACE_FRAMEBUFFER);
 	}
 
+	public get frameBufferDisplayReadback(): Uint8Array {
+		return this.displayFrameBufferCpuReadback;
+	}
+
 	// start repeated-sequence-acceptable -- VRAM row streaming keeps read/write loops direct; callback helpers would add hot-path overhead.
 	public writeVram(addr: number, bytes: Uint8Array): void {
 		if (addr >= VRAM_STAGING_BASE && addr + bytes.byteLength <= VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
@@ -1850,9 +1841,9 @@ export class VDP implements VramWriteSink {
 				uploadVdpFrameBufferPixelRegion(slice, width, 1, x, row);
 			} else {
 				this.markVramSlotDirty(slot, row, 1);
+				this.updateCpuReadback(slot.surfaceId, slice, x, row);
 			}
 			this.invalidateReadCache(slot.surfaceId);
-			this.updateCpuReadback(slot.surfaceId, slice, x, row);
 			remaining -= rowBytes;
 			cursor += rowBytes;
 			row += 1;
@@ -1984,9 +1975,6 @@ export class VDP implements VramWriteSink {
 		this.lastFrameCommitted = true;
 		this.lastFrameCost = 0;
 		this.lastFrameHeld = false;
-		if (hasVdpFrameBufferTexture()) {
-			syncVdpDisplayFrameBuffer(this, this.vramSeedPixel);
-		}
 	}
 
 	public syncRegisters(): void {
@@ -2460,9 +2448,6 @@ export class VDP implements VramWriteSink {
 					x += segmentWidth;
 				}
 			}
-		}
-		if (frameBufferSlot) {
-			uploadVdpFrameBufferPixels(slot.cpuReadback, width, height);
 		}
 		this.invalidateReadCache(slot.surfaceId);
 	}

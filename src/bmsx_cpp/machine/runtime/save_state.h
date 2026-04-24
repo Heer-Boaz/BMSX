@@ -23,7 +23,7 @@ struct RuntimeSaveState {
 	bool engineProgramActive = false;
 };
 
-RuntimeSaveState captureRuntimeSaveState(const Runtime& runtime);
+RuntimeSaveState captureRuntimeSaveState(Runtime& runtime);
 void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state);
 
 } // namespace bmsx

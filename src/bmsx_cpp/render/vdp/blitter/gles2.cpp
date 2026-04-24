@@ -205,7 +205,7 @@ void destroyVdpGles2Runtime() {
 	state.vertices.clear();
 }
 
-void ensureVdpGles2Runtime(OpenGLES2Backend* backend) {
+void initializeVdpGles2Runtime(OpenGLES2Backend* backend) {
 	auto& state = g_vdpGles2Runtime;
 	if (state.backend == backend && state.program != 0) {
 		return;
@@ -238,7 +238,7 @@ void ensureVdpGles2Runtime(OpenGLES2Backend* backend) {
 	glUniform1i(state.uniformTexture2, 2);
 }
 
-TextureHandle ensureVdpGles2CopySnapshot(OpenGLES2Backend* backend, i32 width, i32 height) {
+TextureHandle resizeVdpGles2CopySnapshotTexture(OpenGLES2Backend* backend, i32 width, i32 height) {
 	auto& state = g_vdpGles2Runtime;
 	if (state.copySnapshotTexture && state.copySnapshotWidth == width && state.copySnapshotHeight == height) {
 		return state.copySnapshotTexture;
@@ -498,6 +498,14 @@ void setupVdpDrawState(const VdpGles2Host& host) {
 
 } // namespace
 
+void VdpGles2Blitter::initialize() {
+	auto* view = EngineCore::instance().view();
+	if (view->backendType() != BackendType::OpenGLES2) {
+		return;
+	}
+	initializeVdpGles2Runtime(static_cast<OpenGLES2Backend*>(view->backend()));
+}
+
 bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& queue) {
 	using CommandType = VDP::BlitterCommandType;
 	auto* view = EngineCore::instance().view();
@@ -506,7 +514,7 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 	}
 	syncVdpSlotTextures(vdp);
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
-	ensureVdpGles2Runtime(backend);
+	applyVdpFrameBufferTextureWrites(vdp);
 	VdpGles2Host host;
 	host.backend = backend;
 	host.renderTexture = getVdpRenderFrameBufferTexture();
@@ -731,7 +739,7 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 	};
 	auto drawCopyRect = [&](const VDP::BlitterCommand& command) {
 		const VDP::FrameBufferColor white{255u, 255u, 255u, 255u};
-		TextureHandle snapshot = ensureVdpGles2CopySnapshot(backend, host.width, host.height);
+		TextureHandle snapshot = resizeVdpGles2CopySnapshotTexture(backend, host.width, host.height);
 		backend->copyTextureRegion(host.renderTexture, snapshot, command.srcX, command.srcY, command.srcX, command.srcY, command.width, command.height);
 		state.vertices.clear();
 		state.vertices.reserve(6u);
@@ -784,7 +792,7 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 		}
 	}
 	drawSortedSegment(segmentStart, queue.size());
-	vdp.invalidateFrameBufferReadCache();
+	syncVdpRenderFrameBufferReadback(vdp);
 	return true;
 }
 

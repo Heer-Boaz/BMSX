@@ -77,7 +77,7 @@ public:
 	friend class FrameSchedulerState;
 	friend class VblankState;
 	friend class CartBootState;
-	friend RuntimeSaveState captureRuntimeSaveState(const Runtime& runtime);
+	friend RuntimeSaveState captureRuntimeSaveState(Runtime& runtime);
 	friend void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state);
 	friend RuntimeResumeSnapshot captureRuntimeResumeSnapshot(const Runtime& runtime);
 	friend void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& state);

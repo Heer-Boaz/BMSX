@@ -15,27 +15,12 @@ const TextureParams DEFAULT_TEXTURE_PARAMS{};
 
 } // namespace
 
-bool hasVdpFrameBufferTexture() {
-	return getVdpRenderFrameBufferTexture() != nullptr;
-}
-
 TextureHandle getVdpDisplayFrameBufferTexture() {
 	return EngineCore::instance().texmanager()->getTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
 }
 
 TextureHandle getVdpRenderFrameBufferTexture() {
 	return EngineCore::instance().texmanager()->getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY);
-}
-
-static void ensureVdpDisplayFrameBufferTexture(const u8* seedPixel, u32 width, u32 height) {
-	auto* texmanager = EngineCore::instance().texmanager();
-	TextureHandle handle = texmanager->getTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
-	if (!handle) {
-		const TextureKey key = texmanager->makeKey(FRAMEBUFFER_TEXTURE_KEY, DEFAULT_TEXTURE_PARAMS);
-		handle = texmanager->getOrCreateTexture(key, seedPixel, 1, 1, DEFAULT_TEXTURE_PARAMS);
-	}
-	handle = texmanager->resizeTextureForKey(FRAMEBUFFER_TEXTURE_KEY, static_cast<i32>(width), static_cast<i32>(height));
-	EngineCore::instance().view()->textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
 }
 
 static void swapVdpFrameBufferTexturePages() {
@@ -49,54 +34,81 @@ static void swapVdpFrameBufferTexturePages() {
 #endif
 }
 
-void syncVdpDisplayFrameBuffer(VDP& vdp, const u8* seedPixel) {
-	ensureVdpDisplayFrameBufferTexture(seedPixel, vdp.frameBufferWidth(), vdp.frameBufferHeight());
-	EngineCore::instance().texmanager()->copyTextureByUri(
-		FRAMEBUFFER_RENDER_TEXTURE_KEY,
-		FRAMEBUFFER_TEXTURE_KEY,
-		static_cast<i32>(vdp.frameBufferWidth()),
-		static_cast<i32>(vdp.frameBufferHeight())
-	);
-	vdp.syncDisplayFrameBufferReadback();
+static TextureHandle createVdpFrameBufferTexture(const char* textureKey, const u8* pixels, u32 width, u32 height) {
+	auto* texmanager = EngineCore::instance().texmanager();
+	const TextureKey key = texmanager->makeKey(textureKey, DEFAULT_TEXTURE_PARAMS);
+	TextureHandle handle = texmanager->getOrCreateTexture(key, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
+	handle = texmanager->resizeTextureForKey(textureKey, static_cast<i32>(width), static_cast<i32>(height));
+	texmanager->updateTexture(handle, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
+	EngineCore::instance().view()->textures[textureKey] = handle;
+	return handle;
+}
+
+static void uploadVdpFrameBufferTexturePixels(const char* textureKey, const u8* pixels, u32 width, u32 height) {
+	auto* texmanager = EngineCore::instance().texmanager();
+	TextureHandle handle = texmanager->resizeTextureForKey(textureKey, static_cast<i32>(width), static_cast<i32>(height));
+	texmanager->updateTexture(handle, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
+	EngineCore::instance().view()->textures[textureKey] = handle;
+}
+
+void initializeVdpFrameBufferTextures(VDP& vdp) {
+	vdp.setFrameBufferTextureRegionWriter(uploadVdpFrameBufferPixelRegion);
+	createVdpFrameBufferTexture(FRAMEBUFFER_RENDER_TEXTURE_KEY, vdp.frameBufferRenderReadback().data(), vdp.frameBufferWidth(), vdp.frameBufferHeight());
+	vdp.clearSurfaceUploadDirty(VDP_RD_SURFACE_FRAMEBUFFER);
+	createVdpFrameBufferTexture(FRAMEBUFFER_TEXTURE_KEY, vdp.frameBufferDisplayReadback().data(), vdp.frameBufferWidth(), vdp.frameBufferHeight());
+}
+
+void applyVdpFrameBufferTextureWrites(VDP& vdp) {
+	for (const auto& slot : vdp.surfaceUploadSlots()) {
+		if (!isVdpFrameBufferSurface(slot.surfaceId)) {
+			continue;
+		}
+		if (slot.dirtyRowStart < slot.dirtyRowEnd) {
+			const uint32_t rowBytes = slot.surfaceWidth * 4u;
+			for (uint32_t row = slot.dirtyRowStart; row < slot.dirtyRowEnd; ++row) {
+				const auto& span = slot.dirtySpansByRow[row];
+				if (span.xStart >= span.xEnd) {
+					continue;
+				}
+				const size_t byteOffset = static_cast<size_t>(row) * static_cast<size_t>(rowBytes) + static_cast<size_t>(span.xStart) * 4u;
+				uploadVdpFrameBufferPixelRegion(
+					slot.cpuReadback.data() + byteOffset,
+					static_cast<i32>(span.xEnd - span.xStart),
+					1,
+					static_cast<i32>(span.xStart),
+					static_cast<i32>(row)
+				);
+			}
+			vdp.clearSurfaceUploadDirty(slot.surfaceId);
+		}
+		break;
+	}
 }
 
 void presentVdpFrameBufferPages(VDP& vdp) {
+	applyVdpFrameBufferTextureWrites(vdp);
 	swapVdpFrameBufferTexturePages();
 	vdp.swapFrameBufferReadbackPages();
 }
 
 void uploadVdpFrameBufferPixels(const u8* pixels, u32 width, u32 height) {
-	auto* view = EngineCore::instance().view();
-	auto* texmanager = EngineCore::instance().texmanager();
-	TextureHandle handle = getVdpRenderFrameBufferTexture();
-	if (!handle) {
-		const TextureKey key = texmanager->makeKey(FRAMEBUFFER_RENDER_TEXTURE_KEY, DEFAULT_TEXTURE_PARAMS);
-		handle = texmanager->getOrCreateTexture(key, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
-		view->textures[FRAMEBUFFER_RENDER_TEXTURE_KEY] = handle;
-		return;
-	}
-	handle = texmanager->resizeTextureForKey(FRAMEBUFFER_RENDER_TEXTURE_KEY, static_cast<i32>(width), static_cast<i32>(height));
-	texmanager->updateTexture(handle, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
-	view->textures[FRAMEBUFFER_RENDER_TEXTURE_KEY] = handle;
+	uploadVdpFrameBufferTexturePixels(FRAMEBUFFER_RENDER_TEXTURE_KEY, pixels, width, height);
 }
 
 void uploadVdpDisplayFrameBufferPixels(const u8* pixels, u32 width, u32 height) {
-	auto* view = EngineCore::instance().view();
-	auto* texmanager = EngineCore::instance().texmanager();
-	TextureHandle handle = getVdpDisplayFrameBufferTexture();
-	if (!handle) {
-		const TextureKey key = texmanager->makeKey(FRAMEBUFFER_TEXTURE_KEY, DEFAULT_TEXTURE_PARAMS);
-		handle = texmanager->getOrCreateTexture(key, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
-		view->textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
-		return;
-	}
-	handle = texmanager->resizeTextureForKey(FRAMEBUFFER_TEXTURE_KEY, static_cast<i32>(width), static_cast<i32>(height));
-	texmanager->updateTexture(handle, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
-	view->textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
+	uploadVdpFrameBufferTexturePixels(FRAMEBUFFER_TEXTURE_KEY, pixels, width, height);
 }
 
 void uploadVdpFrameBufferPixelRegion(const u8* pixels, i32 width, i32 height, i32 x, i32 y) {
-	EngineCore::instance().texmanager()->updateTextureRegionForKey(FRAMEBUFFER_RENDER_TEXTURE_KEY, pixels, width, height, x, y);
+	EngineCore::instance().texmanager()->backend()->updateTextureRegion(
+		getVdpRenderFrameBufferTexture(),
+		pixels,
+		width,
+		height,
+		x,
+		y,
+		DEFAULT_TEXTURE_PARAMS
+	);
 }
 
 void readVdpFrameBufferPixels(u8* out, i32 width, i32 height, i32 x, i32 y) {
@@ -123,15 +135,19 @@ void readVdpDisplayFrameBufferPixels(u8* out, i32 width, i32 height, i32 x, i32 
 	);
 }
 
-void restoreVdpFrameBufferContext(VDP& vdp, const u8* seedPixel) {
-	for (const auto& slot : vdp.surfaceUploadSlots()) {
-		if (!isVdpFrameBufferSurface(slot.surfaceId)) {
-			continue;
-		}
-		uploadVdpFrameBufferPixels(slot.cpuReadback.data(), slot.surfaceWidth, slot.surfaceHeight);
-		break;
-	}
-	syncVdpDisplayFrameBuffer(vdp, seedPixel);
+void syncVdpRenderFrameBufferReadback(VDP& vdp) {
+	readVdpFrameBufferPixels(
+		vdp.frameBufferRenderReadback().data(),
+		static_cast<i32>(vdp.frameBufferWidth()),
+		static_cast<i32>(vdp.frameBufferHeight()),
+		0,
+		0
+	);
+	vdp.invalidateFrameBufferReadCache();
+}
+
+void restoreVdpFrameBufferContext(VDP& vdp) {
+	initializeVdpFrameBufferTextures(vdp);
 }
 
 } // namespace bmsx

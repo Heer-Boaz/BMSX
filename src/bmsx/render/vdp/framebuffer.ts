@@ -1,20 +1,29 @@
 import type { TextureHandle } from '../backend/interfaces';
 import type { VDP } from '../../machine/devices/vdp/vdp';
 import { $ } from '../../core/engine';
-import { FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY } from '../../rompack/format';
+import { FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY, type TextureSource } from '../../rompack/format';
 import { isVdpFrameBufferSurface } from './surfaces';
 
-function ensureDisplayTexture(seedPixel: Uint8Array, width: number, height: number): void {
-	let handle = $.texmanager.getTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
-	if (!handle) {
-		handle = $.texmanager.createTextureFromPixelsSync(FRAMEBUFFER_TEXTURE_KEY, seedPixel, 1, 1);
-	}
-	handle = $.texmanager.resizeTextureForKey(FRAMEBUFFER_TEXTURE_KEY, width, height);
-	$.view.textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
+const frameBufferRegionSource: TextureSource = { width: 0, height: 0, data: new Uint8Array(0) };
+
+function createVdpFrameBufferTexture(textureKey: string, pixels: Uint8Array, width: number, height: number): void {
+	$.texmanager.createTextureFromPixelsSync(textureKey, pixels, width, height);
+	const handle = $.texmanager.resizeTextureForKey(textureKey, width, height);
+	$.view.backend.updateTexture(handle, { width, height, data: pixels });
+	$.view.textures[textureKey] = handle;
 }
 
-export function hasVdpFrameBufferTexture(): boolean {
-	return !!getVdpRenderFrameBufferTexture();
+export function initializeVdpFrameBufferTextures(vdp: VDP): void {
+	const slots = vdp.surfaceUploadSlots;
+	for (let index = 0; index < slots.length; index += 1) {
+		const slot = slots[index];
+		if (!isVdpFrameBufferSurface(slot.surfaceId)) {
+			continue;
+		}
+		createVdpFrameBufferTexture(FRAMEBUFFER_RENDER_TEXTURE_KEY, slot.cpuReadback, slot.surfaceWidth, slot.surfaceHeight);
+		break;
+	}
+	createVdpFrameBufferTexture(FRAMEBUFFER_TEXTURE_KEY, vdp.frameBufferDisplayReadback, vdp.frameBufferWidth, vdp.frameBufferHeight);
 }
 
 export function getVdpDisplayFrameBufferTexture(): TextureHandle {
@@ -25,12 +34,6 @@ export function getVdpRenderFrameBufferTexture(): TextureHandle {
 	return $.texmanager.getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY);
 }
 
-export function syncVdpDisplayFrameBuffer(vdp: VDP, seedPixel: Uint8Array): void {
-	ensureDisplayTexture(seedPixel, vdp.frameBufferWidth, vdp.frameBufferHeight);
-	$.texmanager.copyTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY, vdp.frameBufferWidth, vdp.frameBufferHeight);
-	vdp.syncDisplayFrameBufferReadback();
-}
-
 export function presentVdpFrameBufferPages(vdp: VDP): void {
 	$.texmanager.swapTextureHandlesByUri(FRAMEBUFFER_TEXTURE_KEY, FRAMEBUFFER_RENDER_TEXTURE_KEY);
 	$.view.textures[FRAMEBUFFER_TEXTURE_KEY] = $.texmanager.getTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
@@ -39,31 +42,22 @@ export function presentVdpFrameBufferPages(vdp: VDP): void {
 }
 
 export function uploadVdpFrameBufferPixels(pixels: Uint8Array, width: number, height: number): void {
-	let handle = getVdpRenderFrameBufferTexture();
-	if (!handle) {
-		handle = $.texmanager.createTextureFromPixelsSync(FRAMEBUFFER_RENDER_TEXTURE_KEY, pixels, width, height);
-		$.view.textures[FRAMEBUFFER_RENDER_TEXTURE_KEY] = handle;
-		return;
-	}
-	handle = $.texmanager.resizeTextureForKey(FRAMEBUFFER_RENDER_TEXTURE_KEY, width, height);
+	const handle = $.texmanager.resizeTextureForKey(FRAMEBUFFER_RENDER_TEXTURE_KEY, width, height);
 	$.view.backend.updateTexture(handle, { width, height, data: pixels });
 	$.view.textures[FRAMEBUFFER_RENDER_TEXTURE_KEY] = handle;
 }
 
 export function uploadVdpDisplayFrameBufferPixels(pixels: Uint8Array, width: number, height: number): void {
-	let handle = getVdpDisplayFrameBufferTexture();
-	if (!handle) {
-		handle = $.texmanager.createTextureFromPixelsSync(FRAMEBUFFER_TEXTURE_KEY, pixels, width, height);
-		$.view.textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
-		return;
-	}
-	handle = $.texmanager.resizeTextureForKey(FRAMEBUFFER_TEXTURE_KEY, width, height);
+	const handle = $.texmanager.resizeTextureForKey(FRAMEBUFFER_TEXTURE_KEY, width, height);
 	$.view.backend.updateTexture(handle, { width, height, data: pixels });
 	$.view.textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
 }
 
 export function uploadVdpFrameBufferPixelRegion(pixels: Uint8Array, width: number, height: number, x: number, y: number): void {
-	$.texmanager.updateTextureRegionForKey(FRAMEBUFFER_RENDER_TEXTURE_KEY, pixels, width, height, x, y);
+	frameBufferRegionSource.width = width;
+	frameBufferRegionSource.height = height;
+	frameBufferRegionSource.data = pixels;
+	$.view.backend.updateTextureRegion(getVdpRenderFrameBufferTexture(), frameBufferRegionSource, x, y);
 }
 
 export function readVdpFrameBufferPixels(x: number, y: number, width: number, height: number, out?: Uint8Array): Uint8Array {
@@ -74,15 +68,6 @@ export function readVdpDisplayFrameBufferPixels(x: number, y: number, width: num
 	return $.view.backend.readTextureRegion(getVdpDisplayFrameBufferTexture(), x, y, width, height, out);
 }
 
-export function restoreVdpFrameBufferContext(vdp: VDP, seedPixel: Uint8Array): void {
-	const slots = vdp.surfaceUploadSlots;
-	for (let index = 0; index < slots.length; index += 1) {
-		const slot = slots[index];
-		if (!isVdpFrameBufferSurface(slot.surfaceId)) {
-			continue;
-		}
-		uploadVdpFrameBufferPixels(slot.cpuReadback, slot.surfaceWidth, slot.surfaceHeight);
-		break;
-	}
-	syncVdpDisplayFrameBuffer(vdp, seedPixel);
+export function restoreVdpFrameBufferContext(vdp: VDP): void {
+	initializeVdpFrameBufferTextures(vdp);
 }
