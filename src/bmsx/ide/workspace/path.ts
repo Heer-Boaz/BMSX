@@ -1,5 +1,3 @@
-import { engineCore } from '../../core/engine';
-
 export function joinWorkspacePaths(...segments: string[]): string {
 	return segments
 		.filter(segment => segment.length > 0)
@@ -20,8 +18,7 @@ export function stripProjectRootPrefix(resourcePath: string, projectRootPath: st
 	return normalizedPath;
 }
 
-export function resolveWorkspacePath(path: string, projectRootPath?: string): string {
-	const root = projectRootPath ?? engineCore.cart_project_root_path;
+export function resolveWorkspacePath(path: string, projectRootPath: string): string {
 	const normalizedPath = path.replace(/^\.?\//, '');
 	if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) {
 		return path;
@@ -29,12 +26,9 @@ export function resolveWorkspacePath(path: string, projectRootPath?: string): st
 	if (normalizedPath.startsWith('src/')) {
 		return normalizedPath;
 	}
-	if (!root) {
-		return path;
-	}
-	const normalizedRoot = root.replace(/^\.?\//, '');
+	const normalizedRoot = projectRootPath.replace(/^\.?\//, '');
 	if (normalizedPath.startsWith(normalizedRoot)) {
 		return normalizedPath;
 	}
-	return joinWorkspacePaths(root, path);
+	return joinWorkspacePaths(projectRootPath, path);
 }

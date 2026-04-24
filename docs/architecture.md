@@ -317,6 +317,17 @@ The IDE/editor remains a sizeable layering hotspot, especially around UI,
 input, contrib features, render paths, runtime error support, workspace source,
 and semantic services.
 
+Current evidence:
+
+- Workspace Lua override application now receives the cart project root
+  explicitly. Early cart boot no longer depends on `engineCore.cart_project_root_path`
+  having already been populated, and path joining remains strict about receiving
+  concrete string segments.
+- Workspace file/path/sync code now lives in `ide/workspace/files.ts` and
+  `ide/workspace/path.ts` without importing the runtime engine. The runtime-facing
+  `ide/workspace/workspace.ts` adapter applies those pure operations to Lua
+  registries and editor resource state.
+
 Risk:
 
 Editor feature work can slow down because UI, input, contrib, rendering, and

@@ -244,11 +244,11 @@ export class Runtime {
 			assetSource: engineSource,
 			index: engineLayer.index,
 			allowedPayloadIds: ['system'],
-			});
-			const engineMachine = engineLayer.index.machine;
-			const engineProjectRootPath = engineLayer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH;
+		});
+		const engineMachine = engineLayer.index.machine;
+		const engineProjectRootPath = engineLayer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH;
 
-			if (!cartridge) {
+		if (!cartridge) {
 			engineCore.set_source(engineSource);
 			engineCore.set_inputmap(1, { keyboard: null, gamepad: null, pointer: null }); // Default input mapping for player 1 is required even with no cart to prevent errors
 
@@ -282,16 +282,16 @@ export class Runtime {
 				cpuHz,
 				cycleBudgetPerFrame,
 				vblankCycles,
-					vdpWorkUnitsPerSec: enginePerfSpecs.work_units_per_sec,
-					geoWorkUnitsPerSec: enginePerfSpecs.geo_work_units_per_sec,
-				});
-				setTransferRatesFromManifest(runtime, enginePerfSpecs);
-				const runtimeAssets = runtime.assets;
-				runtimeAssets.biosLayer = engineLayer;
-				runtimeAssets.setLayers([engineLayer]);
-				runtime.configureProgramSources({
-					engineSources: engineLuaSources,
-					engineAssetSource: engineSource,
+				vdpWorkUnitsPerSec: enginePerfSpecs.work_units_per_sec,
+				geoWorkUnitsPerSec: enginePerfSpecs.geo_work_units_per_sec,
+			});
+			setTransferRatesFromManifest(runtime, enginePerfSpecs);
+			const runtimeAssets = runtime.assets;
+			runtimeAssets.biosLayer = engineLayer;
+			runtimeAssets.setLayers([engineLayer]);
+			runtime.configureProgramSources({
+				engineSources: engineLuaSources,
+				engineAssetSource: engineSource,
 			});
 			await Runtime.startPreparedRuntime(runtime, engineLuaSources, engineProjectRootPath);
 			return;
@@ -300,12 +300,12 @@ export class Runtime {
 		const cartLayer = await buildRuntimeAssetLayer({ blob: cartridge, id: 'cart' });
 		const overlayBlob = engineCore.workspace_overlay;
 		let overlayLayer: RuntimeAssetLayer | null = null;
-			if (overlayBlob) {
-				overlayLayer = await buildRuntimeAssetLayer({ blob: overlayBlob, id: 'overlay' });
-			}
-			const runtimeAssetLayers = overlayLayer ? [engineLayer, cartLayer, overlayLayer] : [engineLayer, cartLayer];
-			const layers = [];
-			if (overlayLayer) {
+		if (overlayBlob) {
+			overlayLayer = await buildRuntimeAssetLayer({ blob: overlayBlob, id: 'overlay' });
+		}
+		const runtimeAssetLayers = overlayLayer ? [engineLayer, cartLayer, overlayLayer] : [engineLayer, cartLayer];
+		const layers = [];
+		if (overlayLayer) {
 			layers.push({ id: overlayLayer.id, index: overlayLayer.index, payload: overlayLayer.payload });
 		}
 		layers.push({ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload });
@@ -332,16 +332,21 @@ export class Runtime {
 			engineCore.set_inputmap(1, Input.DEFAULT_INPUT_MAPPING);
 		}
 
-		await applyWorkspaceOverridesToCart({ cart: cartLuaSources, storage: engineCore.platform.storage, includeServer: true });
+		await applyWorkspaceOverridesToCart({
+			cart: cartLuaSources,
+			storage: engineCore.platform.storage,
+			includeServer: true,
+			projectRootPath: cartLayer.index.projectRootPath,
+		});
 		engineCore.set_sources(engineLuaSources);
 
 		const memoryLimits = resolveRuntimeMemoryMapSpecs({
 			machine: cartLayer.index.machine,
-				engineMachine,
-				engineSource,
-				assetSource,
-				assetLayers: runtimeAssetLayers,
-			});
+			engineMachine,
+			engineSource,
+			assetSource,
+			assetLayers: runtimeAssetLayers,
+		});
 		configureMemoryMap(memoryLimits);
 		const cartPerfSpecs = getMachinePerfSpecs(cartLayer.index.machine);
 		const ufpsScaled = resolveUfpsScaled(cartPerfSpecs.ufps);
@@ -369,16 +374,16 @@ export class Runtime {
 			cpuHz,
 			cycleBudgetPerFrame,
 			vblankCycles,
-				vdpWorkUnitsPerSec: cartPerfSpecs.work_units_per_sec,
-				geoWorkUnitsPerSec: cartPerfSpecs.geo_work_units_per_sec,
-			});
-			setTransferRatesFromManifest(runtime, cartPerfSpecs);
-			const runtimeAssets = runtime.assets;
-			runtimeAssets.biosLayer = engineLayer;
-			runtimeAssets.setLayers(runtimeAssetLayers);
-			runtimeAssets.cartLayer = cartLayer;
-			runtimeAssets.overlayLayer = overlayLayer;
-			runtime.configureProgramSources({
+			vdpWorkUnitsPerSec: cartPerfSpecs.work_units_per_sec,
+			geoWorkUnitsPerSec: cartPerfSpecs.geo_work_units_per_sec,
+		});
+		setTransferRatesFromManifest(runtime, cartPerfSpecs);
+		const runtimeAssets = runtime.assets;
+		runtimeAssets.biosLayer = engineLayer;
+		runtimeAssets.setLayers(runtimeAssetLayers);
+		runtimeAssets.cartLayer = cartLayer;
+		runtimeAssets.overlayLayer = overlayLayer;
+		runtime.configureProgramSources({
 			engineSources: engineLuaSources,
 			cartSources: cartLuaSources,
 			engineAssetSource: engineSource,
@@ -479,7 +484,7 @@ export class Runtime {
 				}
 			},
 		});
-			refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
+		refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
 		this.vblank.setVblankCycles(this, options.vblankCycles);
 		this.randomSeedValue = engineCore.platform.clock.now();
 

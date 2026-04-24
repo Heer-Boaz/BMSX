@@ -2,7 +2,7 @@ import { engineCore } from '../../../core/engine';
 import { extractErrorMessage } from '../../../lua/value';
 import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument, type StructuredTextDocumentFormat } from '../../../audio/aem';
 import type { ResourceDescriptor } from '../../../rompack/resource';
-import { loadWorkspaceSourceFile, persistWorkspaceSourceFile } from '../../workspace/workspace';
+import { loadWorkspaceSourceFile, persistWorkspaceSourceFile } from '../../workspace/files';
 import { formatAemYamlDocument } from './yaml_formatter';
 
 function resolveAemSourceFormat(path: string): StructuredTextDocumentFormat {
@@ -50,11 +50,11 @@ export function listAemResourceDescriptors(): ResourceDescriptor[] {
 }
 
 export async function loadAemResourceSource(path: string): Promise<string> {
-	return await loadWorkspaceSourceFile(path);
+	return await loadWorkspaceSourceFile(path, engineCore.cart_project_root_path);
 }
 
 export async function saveAemResourceSource(path: string, source: string): Promise<void> {
-	await persistWorkspaceSourceFile(path, source);
+	await persistWorkspaceSourceFile(path, source, engineCore.cart_project_root_path);
 }
 
 export function formatAemDocument(source: string, path: string, lines: readonly string[]): string {

@@ -60,7 +60,12 @@ export function performHotResume(): boolean {
 	scheduleRuntimeTask(async () => {
 		console.log('[IDE] Applying workspace overrides to cart before resume');
 		if (runtime.cartLuaSources) {
-			await applyWorkspaceOverridesToCart({ cart: runtime.cartLuaSources, storage: engineCore.platform.storage, includeServer: true });
+			await applyWorkspaceOverridesToCart({
+				cart: runtime.cartLuaSources,
+				storage: engineCore.platform.storage,
+				includeServer: true,
+				projectRootPath: runtime.cartProjectRootPath,
+			});
 		}
 		console.log('[IDE] Applying workspace overrides to BIOS before resume');
 		const engineChanged = await applyWorkspaceOverridesToRegistry({

@@ -11,7 +11,7 @@ import {
 	buildWorkspaceStateFilePath,
 	buildWorkspaceStorageKey,
 	joinWorkspacePaths,
-} from '../../workspace/workspace';
+} from '../../workspace/files';
 import { workspaceState } from './state';
 import type { WorkspaceStoragePaths } from './models';
 
