@@ -45,47 +45,44 @@ The code is a complete mess of bullshit and junk and crap. The majority of the c
 
 Examples of total bullshit and junk and crap:
 ```
-	if (engine.m_state != EngineState::Running && engine.m_state != EngineState::Paused) {
+    if (engine.m_state != EngineState::Running && engine.m_state != EngineState::Paused) {
+        return;
+    }
+
+    const bool pausedPresent = engine.m_state == EngineState::Paused;
+    const bool runtimePresentPending = !pausedPresent && consumePresentation(m_presentationScratch);
+    const bool shouldPresent = pausedPresent || runtimePresentPending;
+    if (!shouldPresent) {
+        return;
+    }
+```
+```
+void LibretroPlatform::setPlatformPaused(bool paused) {
+	if (paused == m_platform_paused) {
 		return;
 	}
-
-	const bool pausedPresent = engine.m_state == EngineState::Paused;
-	const bool runtimePresentPending = !pausedPresent && consumePresentation(m_presentationScratch);
-	const bool shouldPresent = pausedPresent || runtimePresentPending;
-	if (!shouldPresent) {
+	m_platform_paused = paused;
+	m_has_wall_frame_timestamp = false;
+	if (!m_engine) {
 		return;
 	}
-```
-Another example of total bullshit and junk and crap:
-```
-namespace bmsx {
-namespace {
-
-const TextureParams DEFAULT_TEXTURE_PARAMS{};
-
-} // namespace
-
-TextureHandle getVdpDisplayFrameBufferTexture() {
-	return vdpTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
-}
-
-TextureHandle getVdpRenderFrameBufferTexture() {
-	return vdpTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY);
-}
-
-static void swapVdpFrameBufferTexturePages() {
-	swapVdpTextureHandlesByUri(FRAMEBUFFER_TEXTURE_KEY, FRAMEBUFFER_RENDER_TEXTURE_KEY);
-#if BMSX_ENABLE_GLES2
-	VdpGles2Blitter::invalidateFrameBufferAttachment();
-#endif
-}
-
-void uploadVdpFrameBufferPixels(const u8* pixels, u32 width, u32 height) {
-	updateVdpTexturePixels(FRAMEBUFFER_RENDER_TEXTURE_KEY, pixels, width, height);
-}
-
-void uploadVdpDisplayFrameBufferPixels(const u8* pixels, u32 width, u32 height) {
-	updateVdpTexturePixels(FRAMEBUFFER_TEXTURE_KEY, pixels, width, height);
+	if (paused) {
+		if (m_engine->isRunning()) {
+			m_engine->pause();
+		}
+		if (auto* sound = m_engine->soundMaster()) {
+			sound->pauseAll();
+		}
+	} else {
+		if (m_engine->state() == EngineState::Paused) {
+			m_engine->resume();
+		} else if (m_engine->state() == EngineState::Initialized && m_rom_loaded) {
+			m_engine->start();
+		}
+		if (auto* sound = m_engine->soundMaster()) {
+			sound->resume();
+		}
+	}
 }
 ```
 
@@ -112,26 +109,32 @@ must reach the backend texture directly, without adding a mandatory CPU
 write-through pass, while still keeping the cart-visible contract as MMIO/VRAM
 instead of host texture APIs.
 
-Status: closed as an architecture boundary. `render/vdp` remains the VDP video
-hardware implementation, but it no longer discovers host/runtime singletons from
-inside the VDP video path.
+Status: closed for the current singleton-discovery and framebuffer-page
+ownership slice. `render/vdp` remains the VDP video-hardware implementation,
+but it no longer discovers host/runtime singletons from inside the VDP video
+path, and framebuffer texture pages are owned as concrete VDP video state
+rather than as string-key forwarding wrappers.
 
 Current evidence:
 
 - `VDP::initializeFrameBufferSurface()` still creates a framebuffer-backed
   image slot and initializes display readback state from inside the device, but
   framebuffer texture creation and upload are now render-owned.
-- In the TS runtime, direct framebuffer VRAM writes call the render framebuffer
-  texture-region upload path immediately. The hot path does not probe for a
-  texture and does not write through a CPU framebuffer mirror first.
-- In the C++ runtime, render setup installs the concrete framebuffer
-  texture-region writer on the VDP. Direct framebuffer VRAM writes call that
-  writer immediately. The VDP does not include render headers or lazily discover
-  render state during the write.
+- In the TS runtime, direct framebuffer VRAM writes call the owned render-page
+  texture-region write immediately. The hot path does not probe for a texture
+  and does not write through a CPU framebuffer mirror first.
+- In the C++ runtime, direct framebuffer VRAM writes call the native VDP
+  framebuffer texture-region write immediately. There is no installed callback,
+  service, provider, lazy initializer, or function-pointer facade on the write
+  path.
 - Framebuffer texture creation is an explicit runtime/render initialization
   step in both TS and C++. Render context restore creates/seeds render and
   display framebuffer textures, then VDP execution/presentation paths assume
   that contract.
+- Framebuffer render/display texture handles are concrete owned page state in
+  both TS and C++. Page presentation swaps those handles along with the
+  texture-manager entries; framebuffer read/write helpers hit the owned handles
+  directly instead of rediscovering them through a generic key lookup per call.
 - VDP atlas/slot textures follow the same split: setup initializes the textures
   and uploads full slot contents; render sync resizes only on surface-size
   changes and otherwise uploads dirty rows directly to existing backend
@@ -154,6 +157,10 @@ Current evidence:
   during render setup. Framebuffer and atlas upload/readback helpers use that
   texture memory directly instead of looking up `engineCore` or
   `EngineCore::instance()`.
+- The quality scanner no longer skips single-line wrappers because their names
+  look boundary-like or because call usage is high. Legitimate tiny boundary
+  functions now require explicit local `single_line_method_pattern` comments;
+  the VDP framebuffer/readback exceptions are visible in the owning files.
 - TS and C++ VDP blitter execution receive frame timing explicitly from the
   runtime execution edge. They no longer import runtime singletons for frame
   time or backend discovery.
