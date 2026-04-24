@@ -40,24 +40,81 @@ cart Lua -> BIOS/firmware or cart library -> MMIO/RAM -> machine device -> host 
   serialization entry points wired to it. The next question is proof and
   completeness, not whether the platform functions are placeholders.
 
-The current state does not justify pausing feature work for a giant cleanup
-phase. It does justify doing the next architecture fixes in the right order,
-because new features will otherwise keep growing new direct edges into
-`EngineCore`, render helpers, IDE state, workspace state, or platform state.
+The current state does not allow doing feature work and instead requires a giant cleanup.
+The code is a complete mess of bullshit and junk and crap. The majority of the code is a tangled web of dependencies and spaghetti code. The code is a nightmare to read and understand. The code is a disaster to maintain and debug. The code is a catastrophe to extend and improve. The code is a tragedy to work with and use. The code is a horror to look at and deal with. The code is a shame to the programming profession and the software industry. The code is a disgrace to the developers who wrote it and the users who rely on it. The code is a failure of engineering and design. The code is a waste of time and resources. The code is a burden on everyone involved with it.
+
+Examples of total bullshit and junk and crap:
+```
+	if (engine.m_state != EngineState::Running && engine.m_state != EngineState::Paused) {
+		return;
+	}
+
+	const bool pausedPresent = engine.m_state == EngineState::Paused;
+	const bool runtimePresentPending = !pausedPresent && consumePresentation(m_presentationScratch);
+	const bool shouldPresent = pausedPresent || runtimePresentPending;
+	if (!shouldPresent) {
+		return;
+	}
+```
+Another example of total bullshit and junk and crap:
+```
+namespace bmsx {
+namespace {
+
+const TextureParams DEFAULT_TEXTURE_PARAMS{};
+
+} // namespace
+
+TextureHandle getVdpDisplayFrameBufferTexture() {
+	return vdpTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
+}
+
+TextureHandle getVdpRenderFrameBufferTexture() {
+	return vdpTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY);
+}
+
+static void swapVdpFrameBufferTexturePages() {
+	swapVdpTextureHandlesByUri(FRAMEBUFFER_TEXTURE_KEY, FRAMEBUFFER_RENDER_TEXTURE_KEY);
+#if BMSX_ENABLE_GLES2
+	VdpGles2Blitter::invalidateFrameBufferAttachment();
+#endif
+}
+
+void uploadVdpFrameBufferPixels(const u8* pixels, u32 width, u32 height) {
+	updateVdpTexturePixels(FRAMEBUFFER_RENDER_TEXTURE_KEY, pixels, width, height);
+}
+
+void uploadVdpDisplayFrameBufferPixels(const u8* pixels, u32 width, u32 height) {
+	updateVdpTexturePixels(FRAMEBUFFER_TEXTURE_KEY, pixels, width, height);
+}
+```
 
 ## Largest Boundary Problems
 
-### 1. VDP/Render Boundary Needs A Fast Explicit Write Contract
+### 1. VDP/Render Boundary Needs A Native Video-Hardware Boundary
 
 The VDP/render boundary remains the most important boundary to keep disciplined,
-but the main problem has shifted. The boundary now has to protect two things at
-once: cart-visible hardware still speaks MMIO/VRAM, and framebuffer VRAM writes
-must still hit the backend texture immediately.
+but the main problem is not that `render/vdp` exists. Serious emulator code does
+not usually keep the video device pure by bouncing hot video writes through a
+host callback layer. MAME-style screen/update paths and Dolphin's
+VideoCommon-style consolidation both point to the same shape: graphics
+emulation is part of the video hardware subsystem, while thin backend-specific
+code sits underneath it.
+
+For BMSX, that means the VDP video subsystem may own accelerated backend
+textures and may write them directly from the VRAM/MMIO hot path. What must not
+survive is VDP/video code reaching through `engineCore`, `EngineCore::instance()`,
+`Runtime::instance()`, or generic host queues to discover the world at the moment
+it needs to render.
 
 The important contract now is performance-sensitive: framebuffer VRAM writes
 must reach the backend texture directly, without adding a mandatory CPU
-write-through pass, while still keeping texture/backend ownership on the render
-side instead of exposing host shortcuts as cart-visible hardware.
+write-through pass, while still keeping the cart-visible contract as MMIO/VRAM
+instead of host texture APIs.
+
+Status: closed as an architecture boundary. `render/vdp` remains the VDP video
+hardware implementation, but it no longer discovers host/runtime singletons from
+inside the VDP video path.
 
 Current evidence:
 
@@ -93,15 +150,26 @@ Current evidence:
 - The native VDP fault helper no longer includes `core/engine.h`; it depends on
   the shared primitive fault macro only, so device-side validation does not pull
   the host shell into VDP compilation.
+- `render/vdp/texture_transfer` now owns concrete VDP texture memory installed
+  during render setup. Framebuffer and atlas upload/readback helpers use that
+  texture memory directly instead of looking up `engineCore` or
+  `EngineCore::instance()`.
+- TS and C++ VDP blitter execution receive frame timing explicitly from the
+  runtime execution edge. They no longer import runtime singletons for frame
+  time or backend discovery.
+- `src/bmsx/render/vdp` and `src/bmsx_cpp/render/vdp` no longer contain
+  `engineCore`, `Runtime.instance`, `EngineCore::instance()`,
+  `Runtime::instance()`, `core/engine`, or `machine/runtime/runtime`
+  dependencies.
 
 Risk:
 
-The old risk was letting the VDP become a render coordinator instead of an
-emulated device. The current risk is the opposite failure mode: preserving a
-clean ownership diagram by forcing framebuffer writes through CPU shadow memory
-before the backend sees them. That is not acceptable for hot VRAM write paths.
-The clean boundary must preserve the fast texture-write path while keeping the
-cart-visible hardware contract as MMIO/VRAM, not host texture APIs.
+The easy wrong fix is a generic callback, service, host, provider, or facade
+layer that hides the dependency while keeping the same confused ownership. The
+other wrong fix is a pretty ownership diagram that forces framebuffer writes
+through CPU shadow memory before the backend sees them. Both are rejected. The
+clean boundary must preserve direct backend texture writes and move discovery
+to initialization time.
 
 Desired direction:
 
@@ -109,7 +177,9 @@ Desired direction:
   frame timing, framebuffer identity, atlas slot ids, skybox ids, committed
   visual state, and save-state pixel payloads.
 - Move backend ownership and host texture reads/writes to the render side.
-- Let framebuffer VRAM writes use an explicit fast render write contract:
+- Treat `render/vdp` as the native VDP video-hardware implementation, not as a
+  generic host renderer and not as a callback sink installed into the device.
+- Let framebuffer VRAM writes use an explicit fast texture-memory contract:
   immediate backend subregion writes against textures that were created during
   runtime/render setup.
 - Initialize framebuffer and VDP slot textures at runtime/render setup
@@ -119,7 +189,7 @@ Desired direction:
   software rendering, save-state capture/restore, and explicit readback. Do not
   make CPU shadow writes mandatory for the normal backend-texture hot path.
 - Avoid solving this with a generic service/provider/facade layer. The boundary
-  should be concrete and named after the data being handed over.
+  should be concrete and named after the data being owned.
 
 ### 2. Frame Loop Still Mixes Host/IDE/Render Concerns With Machine Tick
 
