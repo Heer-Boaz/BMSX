@@ -532,12 +532,20 @@ Desired direction:
 
 ## Recommended Work Order
 
-1. Finish the VDP/render boundary cleanup.
-2. Split host frame pump from machine tick.
-3. Separate firmware/resource/devtool APIs from host `EngineCore` queries.
-4. Prove libretro save-state serialization end to end.
-5. Audit TS/C++ parity subsystem by subsystem.
-6. Clean IDE/editor layering after the machine boundaries are safer.
+Completed foundation:
+
+1. VDP/render boundary cleanup for singleton discovery, framebuffer-page
+   ownership, and direct hot-path texture writes.
+2. Host frame pump split from machine tick for CPU/device/VBLANK advancement,
+   host input/timing, presentation, runtime asset flushing, and fault
+   surfacing.
+
+Next recommended work:
+
+1. Separate firmware/resource/devtool APIs from host `EngineCore` queries.
+2. Prove libretro save-state serialization end to end.
+3. Audit TS/C++ parity subsystem by subsystem.
+4. Clean IDE/editor layering after the machine boundaries are safer.
 
 This order protects future feature work. The goal is not to make the codebase
 look abstractly tidy. The goal is to keep BMSX's cart-visible machine contract
