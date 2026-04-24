@@ -1,4 +1,4 @@
-import { $ } from '../core/engine';
+import { engineCore } from '../core/engine';
 import { getPressedState, Input, makeButtonState, resetObject } from './manager';
 import type { ButtonState, InputHandler, KeyboardButtonId, KeyOrButtonId2ButtonState } from './models';
 import type { VibrationParams } from '../platform';
@@ -109,7 +109,7 @@ export class KeyboardInput implements InputHandler {
 	 * @returns void
 	 */
 	pollInput(): void {
-		const now = $.platform.clock.now();
+		const now = engineCore.platform.clock.now();
 		// Update existing keys in place, create states on demand
 		Object.keys(this.keyStates).forEach(buttonId => {
 			const prev = this.gamepadButtonStates[buttonId] ?? makeButtonState();
@@ -197,7 +197,7 @@ export class KeyboardInput implements InputHandler {
 	 * @param key_code - The button ID or string representing the key.
 	 */
 	keydown(key_code: KeyboardButtonId | string): void {
-		const now = $.platform.clock.now();
+		const now = engineCore.platform.clock.now();
 		const state = this.keyStates[key_code] ?? (this.keyStates[key_code] = makeButtonState());
 		if (!state.pressed) {
 			state.pressed = true;
@@ -217,7 +217,7 @@ export class KeyboardInput implements InputHandler {
 		const state = this.keyStates[key_code];
 		if (!state || (!state.pressed && !this.pendingPresses.has(key_code))) return;
 		state.pressed = false;
-		state.timestamp = $.platform.clock.now();
+		state.timestamp = engineCore.platform.clock.now();
 		state.releasedAtMs = state.timestamp;
 		this.pendingReleases.add(key_code);
 	}

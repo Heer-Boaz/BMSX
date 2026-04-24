@@ -1,4 +1,4 @@
-import { $ } from '../../../core/engine';
+import { engineCore } from '../../../core/engine';
 import type { Runtime } from '../runtime';
 import * as workbenchMode from '../../../ide/runtime/workbench_mode';
 import { applyRuntimeGameViewTableToState, syncRuntimeGameViewStateToTable } from '../game/table';
@@ -8,22 +8,22 @@ import { flushRuntimeAssetEdits } from '../../../runtime/assets/edits';
 const MAX_FRAME_DELTA = 250;
 
 export function runRuntimeHostFrame(runtime: Runtime, currentTime: number, runReady: boolean): void {
-	if (!$.running) {
+	if (!engineCore.running) {
 		return;
 	}
 	const screen = runtime.screen;
 	let hostDeltaMs = 0;
 	try {
-		$.input.pollInput();
+		engineCore.input.pollInput();
 		screen.beginHostFrame(currentTime);
 		workbenchMode.tickIdeInput(runtime);
 		workbenchMode.tickTerminalInput(runtime);
-		syncGameViewViewportSizeFromHost(runtime.gameViewState, $.view);
+		syncGameViewViewportSizeFromHost(runtime.gameViewState, engineCore.view);
 		syncRuntimeGameViewStateToTable(runtime);
 		hostDeltaMs = Math.min(currentTime - runtime.frameLoop.currentTimeMs, MAX_FRAME_DELTA);
 		runtime.frameLoop.currentTimeMs = currentTime;
 
-		if ($.paused) {
+		if (engineCore.paused) {
 			screen.presentPausedFrame(runtime, hostDeltaMs);
 		} else {
 			screen.clearPresentation();
@@ -33,10 +33,10 @@ export function runRuntimeHostFrame(runtime: Runtime, currentTime: number, runRe
 				runtime.frameScheduler.clearQueuedTime();
 				} else {
 					const previousTickSequence = runtime.frameScheduler.lastTickSequence;
-					$.deltatime = runtime.timing.frameDurationMs;
+					engineCore.deltatime = runtime.timing.frameDurationMs;
 					runtime.frameScheduler.run(runtime, hostDeltaMs);
 					applyRuntimeGameViewTableToState(runtime);
-					applyGameViewStateToHost(runtime.gameViewState, $.view);
+					applyGameViewStateToHost(runtime.gameViewState, engineCore.view);
 					screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 					flushRuntimeAssetEdits(runtime.machine.memory);
 				}

@@ -1,4 +1,4 @@
-import { $ } from '../../../core/engine';
+import { engineCore } from '../../../core/engine';
 import type { VDP, VdpBlitterCommand } from '../../../machine/devices/vdp/vdp';
 import type { GPUBackend } from '../../backend/interfaces';
 import { WebGLBackend } from '../../backend/webgl/backend';
@@ -39,9 +39,9 @@ function getVdpBlitterExecutor(backend: GPUBackend): VdpBlitterExecutorLike | nu
 }
 
 function executeVdpBlitterQueue(vdp: VDP, commands: readonly VdpBlitterCommand[]): void {
-	const executor = getVdpBlitterExecutor($.view.backend);
+	const executor = getVdpBlitterExecutor(engineCore.view.backend);
 	if (executor === null) {
-		throw new Error(`[VDP] No blitter executor for backend '${$.view.backend.type}'.`);
+		throw new Error(`[VDP] No blitter executor for backend '${engineCore.view.backend.type}'.`);
 	}
 	executor.execute(vdp, commands);
 }

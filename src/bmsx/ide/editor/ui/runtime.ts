@@ -1,6 +1,6 @@
 import { Runtime } from '../../../machine/runtime/runtime';
 import * as workbenchMode from '../../runtime/workbench_mode';
-import { $ } from '../../../core/engine';
+import { engineCore } from '../../../core/engine';
 import { api } from './view/overlay_api';
 import * as constants from '../../common/constants';
 import { activateCodeTab, findTabById, isResourceViewActive, setActiveTab } from '../../workbench/ui/tabs';
@@ -57,8 +57,8 @@ function disableCrtPostprocessingForEditor(): void {
 	if (crtPostprocessingEnabledBeforeEditor !== null) {
 		return;
 	}
-	crtPostprocessingEnabledBeforeEditor = $.view.crt_postprocessing_enabled;
-	$.view.crt_postprocessing_enabled = false;
+	crtPostprocessingEnabledBeforeEditor = engineCore.view.crt_postprocessing_enabled;
+	engineCore.view.crt_postprocessing_enabled = false;
 }
 
 function restoreCrtPostprocessingFromEditor(): void {
@@ -66,7 +66,7 @@ function restoreCrtPostprocessingFromEditor(): void {
 	if (enabled === null) {
 		return;
 	}
-	$.view.crt_postprocessing_enabled = enabled;
+	engineCore.view.crt_postprocessing_enabled = enabled;
 	crtPostprocessingEnabledBeforeEditor = null;
 }
 
@@ -267,7 +267,7 @@ export function deactivateRuntimeEditor(): void {
 
 export function handleRuntimeTaskError(error: unknown, fallbackMessage: string): void {
 	const errormsg = error instanceof Error ? error.message : String(error);
-	$.paused = true;
+	engineCore.paused = true;
 	workbenchMode.activateEditor(Runtime.instance);
 	const message = `${fallbackMessage}: ${errormsg}`;
 	Runtime.instance.terminal.appendStderr(message);

@@ -1,4 +1,4 @@
-import { $ } from '../../../../../core/engine';
+import { engineCore } from '../../../../../core/engine';
 import type { RectBounds } from '../../../../../rompack/format';
 import { clamp } from '../../../../../common/clamp';
 import { copy_rect_bounds, create_rect_bounds, write_rect_bounds } from '../../../../../common/rect';
@@ -8,7 +8,7 @@ import { bottomMargin } from '../../../common/layout';
 import { editorViewState } from '../../../../editor/ui/view/state';
 
 export function defaultResourcePanelRatio(): number {
-	const metrics = $.platform.gameviewHost.getCapability('viewport-metrics').getViewportMetrics();
+	const metrics = engineCore.platform.gameviewHost.getCapability('viewport-metrics').getViewportMetrics();
 	const screenRelativeWidth = metrics.windowInner.width / metrics.screen.width;
 	const relative = screenRelativeWidth < 1 ? screenRelativeWidth : 1;
 	const responsiveness = 1 - relative;

@@ -1,4 +1,4 @@
-import { $, renderGate, runGate } from '../../../core/engine';
+import { engineCore, renderGate, runGate } from '../../../core/engine';
 import { taskGate } from '../../../core/taskgate';
 import { decodeBinary, decodeBinaryWithPropTable } from '../../../common/serializer/binencoder';
 import { syncLuaAssetField } from '../../firmware/js_bridge';
@@ -64,7 +64,7 @@ export class RuntimeAssetState {
 		return resolveRuntimeLayerAssetFromEntry<RomImgAsset>(this.layerLookup, 'img', entry);
 	}
 
-	public getImageAsset(id: string, source: RawAssetSource = $.source): RomImgAsset {
+	public getImageAsset(id: string, source: RawAssetSource = engineCore.source): RomImgAsset {
 		return resolveRuntimeLayerAssetById<RomImgAsset>(this.layerLookup, source, 'img', id);
 	}
 
@@ -72,11 +72,11 @@ export class RuntimeAssetState {
 		return resolveRuntimeLayerAssetFromEntry<RomAsset>(this.layerLookup, 'audio', entry);
 	}
 
-	public getDataAsset(id: string, source: RawAssetSource = $.source): unknown {
+	public getDataAsset(id: string, source: RawAssetSource = engineCore.source): unknown {
 		return resolveRuntimeLayerAssetById<unknown>(this.layerLookup, source, 'data', id);
 	}
 
-	public listImageAssets(source: RawAssetSource = $.source): RomImgAsset[] {
+	public listImageAssets(source: RawAssetSource = engineCore.source): RomImgAsset[] {
 		const entries = source.list();
 		const assets: RomImgAsset[] = [];
 		for (let index = 0; index < entries.length; index += 1) {
@@ -133,7 +133,7 @@ export class RuntimeAssetState {
 		const runToken = runGate.begin({ blocking: true, category: 'asset', tag: 'asset_memory' });
 		try {
 			const mode = params?.mode ?? 'full';
-			const assetSource = params?.source ?? $.source;
+			const assetSource = params?.source ?? engineCore.source;
 			const engineSource = runtime.engineAssetSource;
 			if (!assetSource) {
 				throw runtimeFault('asset source not configured.');
@@ -209,7 +209,7 @@ export class RuntimeAssetState {
 
 	public buildAudioResourcesForSoundMaster(memory: Memory): id2res {
 		const resources: id2res = {};
-		const source = $.source;
+		const source = engineCore.source;
 		if (!source) {
 			throw runtimeFault('asset source not configured.');
 		}
@@ -275,7 +275,7 @@ export class RuntimeAssetState {
 				return memory.getAudioBytes(entry);
 			}
 		}
-		const source = $.source;
+		const source = engineCore.source;
 		if (!source) {
 			throw runtimeFault('asset source not configured.');
 		}

@@ -1,4 +1,4 @@
-import { $ } from '../../../core/engine';
+import { engineCore } from '../../../core/engine';
 import { Runtime } from '../../../machine/runtime/runtime';
 import * as workbenchMode from '../../runtime/workbench_mode';
 import { getTrackedLuaHeapBytes } from '../../../machine/memory/lua_heap_usage';
@@ -102,7 +102,7 @@ export class TerminalCommandDispatcher {
 			return true;
 		}
 		if (upper === 'EXIT' || upper === 'QUIT') {
-			$.request_shutdown();
+			engineCore.request_shutdown();
 			return true;
 		}
 		if (upper === 'IDE') {
@@ -263,9 +263,9 @@ export class TerminalCommandDispatcher {
 			: null;
 		const debuggerLabel = suspension ? `${suspension.reason} @ ${suspensionLocation ?? suspension.location.path}` : 'idle';
 		const faultLabel = this.runtime.hasRuntimeFailed ? 'FAULTED' : 'OK';
-		const root = $.cart_project_root_path;
+		const root = engineCore.cart_project_root_path;
 		const lines: string[] = [];
-		lines.push(`Cart: ${$.cart_project_root_path} (${$.sources.namespace})`);
+		lines.push(`Cart: ${engineCore.cart_project_root_path} (${engineCore.sources.namespace})`);
 		lines.push(`Lua runtime: ${runtimeState} | Entry: ${pathLabel}`);
 		lines.push(`Status: ${faultLabel} | Debugger: ${debuggerLabel}`);
 		lines.push(`Real-time compile opt: -O${this.runtime.realtimeCompileOptLevel}`);
@@ -406,8 +406,8 @@ export class TerminalCommandDispatcher {
 	}
 
 	private handleLsDebug(pathArg: string): void {
-		const root = $.cart_project_root_path;
-		const storage = $.platform.storage;
+		const root = engineCore.cart_project_root_path;
+		const storage = engineCore.platform.storage;
 		if (!root || !storage) {
 			this.runtime.terminal.appendStderr('Workspace unavailable');
 			return;
@@ -530,7 +530,7 @@ export class TerminalCommandDispatcher {
 			const cartPath = context.descriptor.path;
 			const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 			const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
-			if ($.platform.storage.getItem(storageKey) === null) {
+			if (engineCore.platform.storage.getItem(storageKey) === null) {
 				const normalizedPath = cartPath.startsWith('/') ? cartPath : `/${cartPath}`;
 				unsaved.add(normalizedPath);
 			}
@@ -540,8 +540,8 @@ export class TerminalCommandDispatcher {
 
 	private collectWorkspaceEntryFlags(luaAssets: Array<LuaSourceRecord>): Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }> {
 		const flags = new Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }>();
-		const root = $.cart_project_root_path;
-		const storage = $.platform.storage;
+		const root = engineCore.cart_project_root_path;
+		const storage = engineCore.platform.storage;
 		if (!root || !storage) {
 			return flags;
 		}
@@ -587,12 +587,12 @@ export class TerminalCommandDispatcher {
 	}
 
 	private getLuaAssetByPath(path: string): LuaSourceRecord | null {
-		const byNormalized = $.sources.path2lua[path];
+		const byNormalized = engineCore.sources.path2lua[path];
 		if (byNormalized) {
 			return byNormalized;
 		}
 		const trimmed = path.startsWith('/') ? path.slice(1) : path;
-		const bySource = $.sources.path2lua[trimmed];
+		const bySource = engineCore.sources.path2lua[trimmed];
 		if (bySource) {
 			return bySource;
 		}
@@ -640,7 +640,7 @@ export class TerminalCommandDispatcher {
 		const includeRom = mode === '-ROM' || mode === '-ALL' || !mode;
 		const includeSaved = mode === '-SAVED' || mode === '-ALL' || !mode;
 		const includeDirty = mode === '-DIRTY' || mode === '-ALL' || !mode;
-		const luaAssets = Object.values($.sources.path2lua);
+		const luaAssets = Object.values(engineCore.sources.path2lua);
 		if (includeRom) {
 			for (const asset of luaAssets) {
 				const path = asset.source_path ?? 'help!!';

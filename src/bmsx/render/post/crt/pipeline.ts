@@ -1,7 +1,7 @@
 import type { RenderPassLibrary } from '../../backend/pass/library';
 import type { RenderContext, RenderPassStateRegistry } from '../../backend/interfaces';
 import { WebGLBackend } from '../../backend/webgl/backend';
-import { $ } from '../../../core/engine';
+import { engineCore } from '../../../core/engine';
 import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../../backend/webgl/constants';
 import fragmentShaderCRTCode from '../shaders/crt.frag.glsl';
 import vertexShaderCRTCode from '../shaders/crt.vert.glsl';
@@ -32,7 +32,7 @@ export function registerCRT_WebGL(registry: RenderPassLibrary): void {
 		bindingLayout: { uniforms: ['FrameUniforms'] },
 		present: true,
 		exec: (be: WebGLBackend, _fbo, state: RenderPassStateRegistry['crt']) => {
-			const runtime: CRTRuntime = { backend: be, gl: be.gl as WebGL2RenderingContext, context: $.view };
+			const runtime: CRTRuntime = { backend: be, gl: be.gl as WebGL2RenderingContext, context: engineCore.view };
 			renderCRT(runtime, state);
 		},
 		prepare: (be: WebGLBackend, state: RenderPassStateRegistry['crt']) => {

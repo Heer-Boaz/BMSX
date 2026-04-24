@@ -1,4 +1,4 @@
-import { $ } from '../../core/engine';
+import { engineCore } from '../../core/engine';
 import { taskGate } from '../../core/taskgate';
 import type { Memory } from '../../machine/memory/memory';
 
@@ -17,10 +17,10 @@ export function flushRuntimeAssetEdits(memory: Memory): void {
 				continue;
 			}
 			const token = runtimeAssetEditGate.begin({ blocking: false, category: 'texture', tag: `asset:${entry.id}` });
-			void $.texmanager.updateTexturesForKey(entry.id, memory.getImagePixels(entry), entry.regionW, entry.regionH)
+			void engineCore.texmanager.updateTexturesForKey(entry.id, memory.getImagePixels(entry), entry.regionW, entry.regionH)
 				.finally(() => runtimeAssetEditGate.end(token));
 		} else if (entry.type === 'audio') {
-			$.sndmaster.invalidateClip(entry.id);
+			engineCore.sndmaster.invalidateClip(entry.id);
 		}
 	}
 }

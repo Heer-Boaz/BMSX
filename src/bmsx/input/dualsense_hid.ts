@@ -6,7 +6,7 @@
  * 0x0DF2 = DualSense Edge
  * 0x09cc = DualShock 4
  */
-import { $ } from '../core/engine';
+import { engineCore } from '../core/engine';
 import type { PlatformHIDDevice, PlatformHIDInputReportEvent } from '../platform';
 import { formatNumberAsHex } from '../common/byte_hex_string';
 
@@ -49,18 +49,18 @@ export class DualSenseHID {
 
 
 	private static async requestHidPermission(ids?: { vendorId: number; productId: number }): Promise<PlatformHIDDevice[]> {
-		const hid = $.platform.hid;
+		const hid = engineCore.platform.hid;
 		if (!hid?.isSupported()) {
 			throw new Error('[DualSenseHID] HID API not available on this platform.');
 		}
 		if (!DualSenseHID.pendingRequest) {
 			// Pause the game while the browser permission dialog is visible
-			if (!$) {
+			if (!engineCore) {
 				throw new Error('[DualSenseHID] Global game state not initialised when requesting HID permissions.');
 			}
-			const wasPaused = !!$.paused;
+			const wasPaused = !!engineCore.paused;
 			if (!wasPaused) {
-				$.paused = true;
+				engineCore.paused = true;
 			}
 
 			const filters = ids
@@ -71,7 +71,7 @@ export class DualSenseHID {
 				.finally(() => {
 					DualSenseHID.pendingRequest = null;
 					if (!wasPaused) {
-						$.paused = false;
+						engineCore.paused = false;
 					}
 				});
 		}
@@ -134,7 +134,7 @@ export class DualSenseHID {
 
 	/** Requests the Sony HID device and initializes it. */
 	public async initForDevice(gamepadIndex: number, description: string): Promise<void> {
-		const hid = $.platform.hid;
+		const hid = engineCore.platform.hid;
 		if (!hid?.isSupported()) {
 			console.warn("HID API not supported on this platform.");
 			return; // HID not supported (e.g. Safari)
@@ -390,9 +390,9 @@ export class DualSenseHID {
 
 	private scheduleRumbleStop(duration: number): void {
 		this.clearRumbleTimer();
-		const start = $.platform.clock.now();
-		const handle = $.platform.frames.start(() => {
-			if ($.platform.clock.now() - start >= duration) {
+		const start = engineCore.platform.clock.now();
+		const handle = engineCore.platform.frames.start(() => {
+			if (engineCore.platform.clock.now() - start >= duration) {
 				handle.stop();
 				this.rumbleTimer = null;
 				this.stop();

@@ -1,7 +1,7 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
 import type { RenderContext, RenderPassStateRegistry } from '../backend/interfaces';
 import { WebGLBackend } from '../backend/webgl/backend';
-import { $ } from '../../core/engine';
+import { engineCore } from '../../core/engine';
 import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl/constants';
 import vertexShaderCode from './shaders/framebuffer_2d.vert.glsl';
 import fragmentShaderCode from './shaders/framebuffer_2d.frag.glsl';
@@ -60,15 +60,15 @@ export function registerFramebuffer2DPass_WebGL(registry: RenderPassLibrary): vo
 		fsCode: fragmentShaderCode,
 		shouldExecute: () => true,
 		exec: (backend: WebGLBackend, fbo, state: RenderPassStateRegistry['framebuffer_2d']) => {
-			const runtime: FrameBuffer2DRuntime = { backend, gl: backend.gl as WebGL2RenderingContext, context: $.view };
+			const runtime: FrameBuffer2DRuntime = { backend, gl: backend.gl as WebGL2RenderingContext, context: engineCore.view };
 			renderFrameBuffer(runtime, fbo as WebGLFramebuffer, state);
 		},
 		prepare: (backend: WebGLBackend, _state: RenderPassStateRegistry['framebuffer_2d']) => {
 			const state: RenderPassStateRegistry['framebuffer_2d'] = {
-				width: $.view.offscreenCanvasSize.x,
-				height: $.view.offscreenCanvasSize.y,
-				baseWidth: $.view.viewportSize.x,
-				baseHeight: $.view.viewportSize.y,
+				width: engineCore.view.offscreenCanvasSize.x,
+				height: engineCore.view.offscreenCanvasSize.y,
+				baseWidth: engineCore.view.viewportSize.x,
+				baseHeight: engineCore.view.viewportSize.y,
 				colorTex: getVdpDisplayFrameBufferTexture(),
 			};
 			registry.setState('framebuffer_2d', state);

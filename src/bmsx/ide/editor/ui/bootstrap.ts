@@ -1,4 +1,4 @@
-import { $ } from '../../../core/engine';
+import { engineCore } from '../../../core/engine';
 import { completionController } from '../contrib/suggest/completion_controller';
 import { initializeTabs } from '../../workbench/ui/tabs';
 import { createEntryTabContext } from '../../workbench/ui/code_tab/contexts';
@@ -44,7 +44,7 @@ export function initializeCartEditor(viewport: Viewport): void {
 	setEditorCaseInsensitivity(editorRuntimeState.uppercaseDisplay);
 	editorDocumentState.preMutationSource = null;
 	applyViewportSize(viewport);
-	editorRuntimeState.clockNow = $.platform.clock.now;
+	editorRuntimeState.clockNow = engineCore.platform.clock.now;
 	resetSemanticWorkspace();
 	configureFontVariant(editorViewState.fontVariant);
 	editorSearchState.field = createInlineTextField();
@@ -52,7 +52,7 @@ export function initializeCartEditor(viewport: Viewport): void {
 	resourceSearchState.field = createInlineTextField();
 	lineJumpState.field = createInlineTextField();
 	createResourceState.field = createInlineTextField();
-	initializeWorkspaceStorage($.cart_project_root_path);
+	initializeWorkspaceStorage(engineCore.cart_project_root_path);
 	applySearchFieldText(editorSearchState.query, true);
 	applySymbolSearchFieldText(symbolSearchState.query, true);
 	applyResourceSearchFieldText(resourceSearchState.query, true);

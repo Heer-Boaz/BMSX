@@ -6,7 +6,7 @@
  * topological order. This file intentionally avoids touching existing pipeline
  * code so migration can be incremental.
  */
-import { $ } from '../../core/engine';
+import { engineCore } from '../../core/engine';
 import { taskGate } from '../../core/taskgate';
 import { color_arr } from '../../rompack/format';
 import { GPUBackend, TextureHandle } from '../backend/interfaces';
@@ -510,9 +510,9 @@ export class RenderGraphRuntime {
 					}
 				};
 			}
-			const t0 = $.platform.clock.now();
+			const t0 = engineCore.platform.clock.now();
 			pass.execute(ctx, frame, data);
-			const dt = $.platform.clock.now() - t0;
+			const dt = engineCore.platform.clock.now() - t0;
 			this.passStats.push({ name: pass.name, ms: dt });
 			if (rp) rp.end();
 			checkWebGLError(`After pass execution: ${i}: ${this.passes[i].name}`);

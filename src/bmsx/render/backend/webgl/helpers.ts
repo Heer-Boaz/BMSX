@@ -1,4 +1,4 @@
-import { $ } from '../../../core/engine';
+import { engineCore } from '../../../core/engine';
 import { M4 } from '../../3d/math';
 
 // Global toggle for WebGL error checking. Disable in normal builds for performance.
@@ -42,7 +42,7 @@ function downloadCanvasAsPng(canvas: HTMLCanvasElement): void {
 }
 
 export function saveTextureToFile(): void {
-	const view = $.view;
+	const view = engineCore.view;
 	const gl = view.nativeCtx as WebGLRenderingContext;
 
 	// 1. Bind the framebuffer that has the texture attached
@@ -64,7 +64,7 @@ export function saveTextureToFile(): void {
 
 
 export function saveFramebufferToFile(): void {
-	const view = $.view;
+	const view = engineCore.view;
 	const gl = view.nativeCtx as WebGLRenderingContext;
 	// 2. Read the pixels from the framebuffer into an array
 	const width = gl.drawingBufferWidth;
@@ -76,7 +76,7 @@ export function saveFramebufferToFile(): void {
 
 export function checkWebGLError(_infoText: string): number {
 	if (!CATCH_WEBGL_ERROR) return 0;
-	const gl = $.view.nativeCtx as WebGLRenderingContext;
+	const gl = engineCore.view.nativeCtx as WebGLRenderingContext;
 	const err = gl.getError();
 	if (err !== gl.NO_ERROR) {
 		console.error(`WebGL error: ${getWebGLErrorString(gl, err)}: ${_infoText}`);
@@ -92,7 +92,7 @@ export function catchWebGLError(_target: any, propertyKey: string, descriptor: P
 	const originalMethod = descriptor.value;
 	descriptor.value = function (...args: any[]) {
 		const returnValue = originalMethod.apply(this, args);
-		const gl = $.view.nativeCtx as WebGLRenderingContext;
+		const gl = engineCore.view.nativeCtx as WebGLRenderingContext;
 		if (gl) {
 			const error = gl.getError();
 			// Handle the error as needed

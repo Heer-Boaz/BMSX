@@ -1,4 +1,4 @@
-import { $ } from '../../../../core/engine';
+import { engineCore } from '../../../../core/engine';
 import { editorRuntimeState } from '../../common/runtime_state';
 import { scheduleRuntimeTask } from '../../../common/background_tasks';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_ENGINE_PROJECT_ROOT_PATH } from '../../../workspace/workspace';
@@ -60,17 +60,17 @@ export function performHotResume(): boolean {
 	scheduleRuntimeTask(async () => {
 		console.log('[IDE] Applying workspace overrides to cart before resume');
 		if (runtime.cartLuaSources) {
-			await applyWorkspaceOverridesToCart({ cart: runtime.cartLuaSources, storage: $.platform.storage, includeServer: true });
+			await applyWorkspaceOverridesToCart({ cart: runtime.cartLuaSources, storage: engineCore.platform.storage, includeServer: true });
 		}
 		console.log('[IDE] Applying workspace overrides to BIOS before resume');
 		const engineChanged = await applyWorkspaceOverridesToRegistry({
 			registry: runtime.engineLuaSources,
-			storage: $.platform.storage,
+			storage: engineCore.platform.storage,
 			includeServer: true,
-			projectRootPath: $.engine_layer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH,
+			projectRootPath: engineCore.engine_layer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH,
 		});
 		const preserveEngineModules =
-				$.sources !== runtime.engineLuaSources
+				engineCore.sources !== runtime.engineLuaSources
 			&& engineChanged.size === 0
 			&& !hasPendingEngineModuleReload(runtime);
 		console.log('[IDE] Capturing runtime snapshot for resume');
@@ -83,7 +83,7 @@ export function performHotResume(): boolean {
 			console.log('[IDE] Updating applied generation after resume');
 			editorDocumentState.appliedGeneration = targetGeneration;
 		}
-		$.paused = false;
+		engineCore.paused = false;
 	}, (error) => {
 		console.error(error);
 		handleRuntimeTaskError(error, 'Failed to resume game');
@@ -100,7 +100,7 @@ export function performReboot(): boolean {
 		console.info('[IDE] Performing cold reboot through bootrom');
 		await runtime.rebootToBootRom();
 		editorDocumentState.appliedGeneration = targetGeneration;
-		$.paused = false;
+		engineCore.paused = false;
 	}, (error) => {
 		handleRuntimeTaskError(error, 'Failed to reboot game');
 	});

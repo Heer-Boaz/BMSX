@@ -1,4 +1,4 @@
-import { $ } from '../../../core/engine';
+import { engineCore } from '../../../core/engine';
 import { scheduleIdeOnce } from '../../common/background_tasks';
 import { taskGate } from '../../../core/taskgate';
 import { clearWorkspaceCachedSources } from '../../workspace/cache';
@@ -22,7 +22,7 @@ function detachWorkspaceExitHandler(): void {
 
 function attachWorkspaceExitHandler(): void {
 	detachWorkspaceExitHandler();
-	workspaceState.disposeExitListener = $.platform.lifecycle.onWillExit(() => {
+	workspaceState.disposeExitListener = engineCore.platform.lifecycle.onWillExit(() => {
 		if (!workspaceState.autosaveEnabled) {
 			return;
 		}

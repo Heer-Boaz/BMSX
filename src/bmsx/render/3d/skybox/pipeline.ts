@@ -1,4 +1,4 @@
-import { $ } from '../../../core/engine';
+import { engineCore } from '../../../core/engine';
 import skyboxFS from '../shaders/skybox.frag.glsl';
 import skyboxVS from '../shaders/skybox.vert.glsl';
 import type { RenderContext } from '../../backend/interfaces';
@@ -131,14 +131,14 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			initSkyboxPipeline(backend as WebGLBackend);
 		},
 		writesDepth: false,
-		shouldExecute: () => !!resolveActiveCamera3D() && !!$.view.skyboxFaceUvRects,
+		shouldExecute: () => !!resolveActiveCamera3D() && !!engineCore.view.skyboxFaceUvRects,
 		exec: (backend, fbo, s) => {
 			const webglBackend = backend as WebGLBackend;
-			const runtime: SkyboxRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: $.view };
+			const runtime: SkyboxRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: engineCore.view };
 			drawSkybox(runtime, fbo as WebGLFramebuffer, s as SkyboxPipelineState);
 		},
 		prepare: (backend, _state) => {
-			const gv = $.view;
+			const gv = engineCore.view;
 			if (!gv.skyboxFaceUvRects || !gv.skyboxFaceAtlasBindings) return;
 			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
 			const cam = resolveActiveCamera3D();

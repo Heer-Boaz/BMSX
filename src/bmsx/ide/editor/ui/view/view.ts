@@ -1,4 +1,4 @@
-import { $ } from '../../../../core/engine';
+import { engineCore } from '../../../../core/engine';
 import { lower_bound } from '../../../../common/lower_bound';
 import { EditorFont } from './font';
 import type { FontVariant } from '../../../../render/shared/bmsx_font';
@@ -183,7 +183,7 @@ export function updateViewport(viewport: Viewport): void {
 }
 
 export function mapScreenPointToViewport(screenX: number, screenY: number): { x: number; y: number; inside: boolean; valid: boolean } {
-	const view = $.view;
+	const view = engineCore.view;
 	if (!view) {
 		return { x: 0, y: 0, inside: false, valid: false };
 	}

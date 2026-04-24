@@ -11,7 +11,7 @@
  * - Multi-line editing with selection support
  */
 
-import { $ } from '../../../core/engine';
+import { engineCore } from '../../../core/engine';
 import { editorRuntimeState } from '../common/runtime_state';
 import { showEditorMessage } from '../../common/feedback_state';
 import type { EditContext, Position } from '../../common/models';
@@ -972,7 +972,7 @@ export function pasteFromClipboard(): void {
  */
 export async function writeClipboard(text: string, successMessage: string): Promise<void> {
 	editorDocumentState.customClipboard = text;
-	const clipboard = $.platform.clipboard;
+	const clipboard = engineCore.platform.clipboard;
 	if (!clipboard.isSupported()) {
 		const message = successMessage + ' (Editor clipboard only)';
 		showEditorMessage(message, constants.COLOR_STATUS_SUCCESS, 1.5);

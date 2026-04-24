@@ -4,7 +4,7 @@ import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonSta
 import type { VibrationParams } from '../platform';
 import { KeyboardInput } from './keyboard';
 import { ContextStack, MappingContext } from './context';
-import { $ } from '../core/engine';
+import { engineCore } from '../core/engine';
 import { Runtime } from '../machine/runtime/runtime';
 import { clamp } from '../common/clamp';
 import { deep_clone } from '../common/deep_clone';
@@ -899,7 +899,7 @@ export class PlayerInput {
 		let result = false;
 		const pressed = state.pressed;
 		const justpressed = state.justpressed;
-		const now = this.lastPollTimestampMs ?? $.platform.clock.now();
+		const now = this.lastPollTimestampMs ?? engineCore.platform.clock.now();
 		const startMs = state.pressedAtMs ?? state.timestamp ?? now;
 		const frameMs = Runtime.instance.timing.frameDurationMs;
 		const initialDelayMs = INITIAL_REPEAT_DELAY_FRAMES * frameMs;

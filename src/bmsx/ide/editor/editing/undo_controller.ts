@@ -1,4 +1,4 @@
-import { $ } from '../../../core/engine';
+import { engineCore } from '../../../core/engine';
 import { EditorUndoRecord, TextUndoOp } from '../text/undo';
 import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import * as constants from '../../common/constants';
@@ -22,7 +22,7 @@ export function prepareUndo(key: string, allowMerge: boolean): void {
 		return;
 	}
 	capturePreMutationSource();
-	const now = $.platform.clock.now();
+	const now = engineCore.platform.clock.now();
 	const shouldMerge = allowMerge
 		&& editorDocumentState.lastHistoryKey === key
 		&& now - editorDocumentState.lastHistoryTimestamp <= constants.UNDO_COALESCE_INTERVAL_MS;

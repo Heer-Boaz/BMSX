@@ -1,4 +1,4 @@
-import { $ } from '../../../../../core/engine';
+import { engineCore } from '../../../../../core/engine';
 import type { CodeTabContext, PointerSnapshot } from '../../../../common/models';
 import { getCodeAreaBounds } from '../../../ui/view/view';
 import { handleCodeAreaPointerGuards } from './guard';
@@ -14,7 +14,7 @@ export function handleCodeAreaPointerInput(
 	gotoModifierActive: boolean,
 	activeContext: CodeTabContext,
 	pointerSecondaryJustPressed: boolean,
-	playerInput: ReturnType<typeof $.input.getPlayerInput>
+	playerInput: ReturnType<typeof engineCore.input.getPlayerInput>
 ): void {
 	const bounds = getCodeAreaBounds();
 	if (handleCodeAreaPointerGuards(snapshot, justPressed, bounds.codeTop, bounds.codeRight, bounds.textLeft)) {

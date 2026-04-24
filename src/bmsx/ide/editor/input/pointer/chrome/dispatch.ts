@@ -1,4 +1,4 @@
-import { $ } from '../../../../../core/engine';
+import { engineCore } from '../../../../../core/engine';
 import { handleEditorPanelResizePointer } from '../panel';
 import { handleInvalidEditorPointerSnapshot } from '../invalid_snapshot';
 import { handleEditorScrollbarPointer } from '../scrollbar';
@@ -11,7 +11,7 @@ export function handleEditorChromePointerDispatch(
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	pointerAuxJustPressed: boolean,
-	playerInput: ReturnType<typeof $.input.getPlayerInput>
+	playerInput: ReturnType<typeof engineCore.input.getPlayerInput>
 ): boolean {
 	if (handleEditorTabDragPointer(snapshot)) {
 		return true;

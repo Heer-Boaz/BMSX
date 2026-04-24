@@ -1,4 +1,4 @@
-import { $, runGate } from '../../../core/engine';
+import { engineCore, runGate } from '../../../core/engine';
 import {
 	color,
 	MeshRenderSubmission,
@@ -54,7 +54,7 @@ export class Api {
 	private _runtime: Runtime;
 
 	constructor(options: ApiOptions) {
-		const view = $.view;
+		const view = engineCore.view;
 		if (!view) {
 			throw new Error('Game view not initialised.');
 		}

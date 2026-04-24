@@ -1,17 +1,17 @@
-import { $ } from '../core/engine';
+import { engineCore } from '../core/engine';
 import type { Runtime } from '../machine/runtime/runtime';
 
 export function startEngineWithDeferredStartupAudioRefresh(runtime: Runtime): void {
-	$.bootstrapStartupAudio();
-	$.start();
-	if (!$.platform.audio.available) {
+	engineCore.bootstrapStartupAudio();
+	engineCore.start();
+	if (!engineCore.platform.audio.available) {
 		return;
 	}
-	const firstFrameHandle = $.platform.frames.start(() => {
+	const firstFrameHandle = engineCore.platform.frames.start(() => {
 		firstFrameHandle.stop();
-		const audioRefreshHandle = $.platform.frames.start(() => {
+		const audioRefreshHandle = engineCore.platform.frames.start(() => {
 			audioRefreshHandle.stop();
-			void $.refresh_audio_assets().catch((error: unknown) => {
+			void engineCore.refresh_audio_assets().catch((error: unknown) => {
 				runtime.hostFault.publishStartup(runtime, error);
 				console.error('Deferred startup audio refresh failed:', error);
 			});

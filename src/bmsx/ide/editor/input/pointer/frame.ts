@@ -1,4 +1,4 @@
-import { $ } from '../../../../core/engine';
+import { engineCore } from '../../../../core/engine';
 import { applyScrollbarScroll } from '../../ui/scrollbar';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/engine';
 import { mapScreenPointToViewport } from '../../ui/view/view';
@@ -11,7 +11,7 @@ import { symbolSearchState } from '../../contrib/symbols/search/state';
 import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
 
 export function readEditorPointerSnapshot(): PointerSnapshot {
-	const playerInput = $.input.getPlayerInput(1);
+	const playerInput = engineCore.input.getPlayerInput(1);
 	const primaryState = playerInput.getRawButtonState('pointer_primary', 'pointer');
 	const primaryPressed = primaryState.pressed === true && primaryState.consumed !== true;
 	const positionState = playerInput.getRawButtonState('pointer_position', 'pointer');

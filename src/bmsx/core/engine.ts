@@ -33,10 +33,6 @@ import { restoreVdpContextState } from '../render/vdp/context_state';
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined
 
-// Register global variables
-// Note that $ is defined at the bottom of the code file
-export var $debug: boolean;
-
 export interface EngineStartupOptions {
 	engineRom: Uint8Array;
 	cartridge?: Uint8Array;
@@ -120,22 +116,22 @@ export class EngineCore {
 
 	public toggleDebuggerControls(): void {
 		if (this._debuggerControlsVisible) {
-			$.paused = false;
+			engineCore.paused = false;
 			this.hideDebuggerControls();
 		} else {
-			$.paused = true;
+			engineCore.paused = true;
 			this.showDebuggerControls();
 		}
 	}
 
 	private showDebuggerControls(): void {
 		this._debuggerControlsVisible = true;
-		$.view.showFadingOverlay('⏸️');
+		engineCore.view.showFadingOverlay('⏸️');
 	}
 
 	private hideDebuggerControls(): void {
 		this._debuggerControlsVisible = false;
-		$.view.hideFadingOverlay();
+		engineCore.view.hideFadingOverlay();
 	}
 
 	/**
@@ -219,7 +215,7 @@ export class EngineCore {
 	}
 
 	public is_cart_program_active(): boolean {
-		return Runtime.hasInstance && $.sources !== Runtime.instance.engineLuaSources;
+		return Runtime.hasInstance && engineCore.sources !== Runtime.instance.engineLuaSources;
 	}
 
 	public request_new_game(): void {
@@ -354,7 +350,6 @@ export class EngineCore {
 		this.running = false;
 		this._paused = false;
 		this._debug = debug ?? this._debug;
-		$debug = this._debug;
 
 		Input.initialize(startingGamepadIndex); // Init input module
 		Input.instance.bind();
@@ -408,7 +403,7 @@ export class EngineCore {
 		}
 		else {
 			// Prevent the user from accidentally closing the game window if not in debug mode
-			this.removeWillExit = $.platform.lifecycle.onWillExit(this.onBeforeUnload);
+			this.removeWillExit = engineCore.platform.lifecycle.onWillExit(this.onBeforeUnload);
 		}
 		this.initialized = true; // Mark the game as initialized
 		await Runtime.init(cartridge);
@@ -520,9 +515,9 @@ export class EngineCore {
 	}
 }
 
-export var $: EngineCore = new EngineCore()!;
+export var engineCore: EngineCore = new EngineCore()!;
 
-// Expose legacy global `$` for scripts that expect a global symbol (e.g. bootrom/html glue)
+// Expose legacy global `engineCore` for scripts that expect a global symbol (e.g. bootrom/html glue)
 // We intentionally write to the global scope we resolved earlier so both browser and
 // node-headless runtimes have the same behaviour.
-(globalScope as any).$ = $;// Global gate used to coordinate rendering. When blocked, frames are skipped.
+(globalScope as any).engineCore = engineCore;

@@ -21,7 +21,7 @@ import {
 	type WebGLInstancedFloatAttribute,
 	type WebGLSpriteQuadUniforms,
 } from '../backend/webgl/instanced_buffers';
-import { $ } from '../../core/engine';
+import { engineCore } from '../../core/engine';
 import { Runtime } from '../../machine/runtime/runtime';
 import { TAB_SPACES } from '../shared/bitmap_font';
 import type { GlyphRenderSubmission, color } from '../shared/submissions';
@@ -182,10 +182,10 @@ function resolveShaderAtlasId(atlasId: number): number {
 	if (atlasId === ENGINE_ATLAS_INDEX) {
 		return ENGINE_ATLAS_INDEX;
 	}
-	if (atlasId === $.view.primaryAtlasIdInSlot) {
+	if (atlasId === engineCore.view.primaryAtlasIdInSlot) {
 		return 0;
 	}
-	if (atlasId === $.view.secondaryAtlasIdInSlot) {
+	if (atlasId === engineCore.view.secondaryAtlasIdInSlot) {
 		return 1;
 	}
 	throw new Error(`[HostOverlay] Atlas ${atlasId} is not mapped to an active slot.`);
@@ -214,7 +214,7 @@ function resolveImageSource(cache: Map<string, HostOverlayImageSource>, imgid: s
 			height: meta.height,
 		};
 	} else {
-		const texture = $.texmanager.getTextureByUri(imgid) as WebGLTexture;
+		const texture = engineCore.texmanager.getTextureByUri(imgid) as WebGLTexture;
 		if (!texture) {
 			throw new Error(`[HostOverlay] Texture '${imgid}' is not uploaded.`);
 		}
@@ -235,21 +235,21 @@ function resolveImageSource(cache: Map<string, HostOverlayImageSource>, imgid: s
 }
 
 function bindTextureTriple(texture0: WebGLTexture, texture1: WebGLTexture, texture2: WebGLTexture): void {
-	$.view.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
-	$.view.bind2DTex(texture0);
-	$.view.activeTexUnit = TEXTURE_UNIT_ATLAS_SECONDARY;
-	$.view.bind2DTex(texture1);
-	$.view.activeTexUnit = TEXTURE_UNIT_ATLAS_ENGINE;
-	$.view.bind2DTex(texture2);
+	engineCore.view.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
+	engineCore.view.bind2DTex(texture0);
+	engineCore.view.activeTexUnit = TEXTURE_UNIT_ATLAS_SECONDARY;
+	engineCore.view.bind2DTex(texture1);
+	engineCore.view.activeTexUnit = TEXTURE_UNIT_ATLAS_ENGINE;
+	engineCore.view.bind2DTex(texture2);
 }
 
 function bindAtlasTextures(boundTextures: BoundTextureState): BoundTextureState {
 	if (boundTextures.mode === 'atlas') {
 		return boundTextures;
 	}
-	const primary = $.texmanager.getTextureByUri(ATLAS_PRIMARY_SLOT_ID) as WebGLTexture;
-	const secondary = $.texmanager.getTextureByUri(ATLAS_SECONDARY_SLOT_ID) as WebGLTexture;
-	const engine = $.texmanager.getTextureByUri(ENGINE_ATLAS_TEXTURE_KEY) as WebGLTexture;
+	const primary = engineCore.texmanager.getTextureByUri(ATLAS_PRIMARY_SLOT_ID) as WebGLTexture;
+	const secondary = engineCore.texmanager.getTextureByUri(ATLAS_SECONDARY_SLOT_ID) as WebGLTexture;
+	const engine = engineCore.texmanager.getTextureByUri(ENGINE_ATLAS_TEXTURE_KEY) as WebGLTexture;
 	if (!primary || !secondary || !engine) {
 		throw new Error('[HostOverlay] Atlas textures are not initialized.');
 	}
@@ -490,7 +490,7 @@ function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passSta
 		offscreen: { x: passState.width, y: passState.height },
 		logical: { x: passState.overlayWidth, y: passState.overlayHeight },
 		time: Runtime.instance.frameLoop.currentTimeMs / 1000,
-		delta: $.deltatime_seconds,
+		delta: engineCore.deltatime_seconds,
 	});
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
 	gl.uniform1f(state.uniforms.scale, 1);
@@ -554,8 +554,8 @@ export function registerHostOverlayPass_WebGL(registry: RenderPassLibrary): void
 		prepare: () => {
 			const frame = consumeOverlayFrame()!;
 			const state: HostOverlayPipelineState = {
-				width: $.view.offscreenCanvasSize.x,
-				height: $.view.offscreenCanvasSize.y,
+				width: engineCore.view.offscreenCanvasSize.x,
+				height: engineCore.view.offscreenCanvasSize.y,
 				overlayWidth: frame.width,
 				overlayHeight: frame.height,
 				commands: frame.commands,

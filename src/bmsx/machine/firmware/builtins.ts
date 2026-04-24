@@ -1,4 +1,4 @@
-import { $ } from '../../core/engine';
+import { engineCore } from '../../core/engine';
 import { InputMap } from '../../input/models';
 import { LuaEnvironment } from '../../lua/environment';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../../lua/errors';
@@ -32,7 +32,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 		const targetPlayer = args.length >= 2
 			? Number(args[1])
 			: 1;
-		const moduleId = $.sources.path2lua[runtime.currentPath].source_path;
+		const moduleId = engineCore.sources.path2lua[runtime.currentPath].source_path;
 		const marshalCtx = { moduleId, path: [] };
 		const mappingValue = runtime.luaJsBridge.convertFromLua(mappingTable, marshalCtx) as InputMap;
 		if (!mappingValue || typeof mappingValue !== 'object') {
@@ -51,7 +51,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 			}
 		}
 
-		$.set_inputmap(targetPlayer, mappingValue as InputMap);
+		engineCore.set_inputmap(targetPlayer, mappingValue as InputMap);
 		return [];
 	});
 
@@ -110,7 +110,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 				continue;
 			}
 			const native = new LuaNativeFunction(`api.${name}`, (args) => {
-				const moduleId = $.sources.path2lua[runtime.currentPath].source_path;
+				const moduleId = engineCore.sources.path2lua[runtime.currentPath].source_path;
 				const baseCtx = { moduleId, path: [] };
 				const jsArgs = Array.from(args, (arg, index) => runtime.luaJsBridge.convertFromLua(arg, extendMarshalContext(baseCtx, `arg${index}`)));
 				try {
@@ -352,7 +352,7 @@ export function isLuaScriptError(error: unknown): error is LuaError | LuaRuntime
 
 function exposeEngineObjects(env: LuaEnvironment): void {
 	const entries: Array<[string, any]> = [
-		['$', $],
+		['$', engineCore],
 	];
 	for (const [name, object] of entries) {
 		registerLuaGlobal(env, name, new LuaNativeValue(object));

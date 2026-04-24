@@ -1,4 +1,4 @@
-import { $ } from '../../core/engine';
+import { engineCore } from '../../core/engine';
 import { describeInstructionAtPc, formatSourceSnippet, type InstructionOperandDebugInfo } from '../cpu/disassembler';
 import { valueToString } from '../firmware/globals';
 import { Table, isNativeObject, type LocalSlotDebug, type SourceRange, type Value } from '../cpu/cpu';
@@ -81,7 +81,7 @@ function extractExpressionCandidates(range: SourceRange, sourceText: string): st
 }
 
 function resolveLuaSourceRecord(runtime: Runtime, path: string): LuaSourceRecord | undefined {
-	return $.sources.path2lua[path]
+	return engineCore.sources.path2lua[path]
 		?? runtime.cartLuaSources?.path2lua[path]
 		?? runtime.engineLuaSources?.path2lua[path];
 }

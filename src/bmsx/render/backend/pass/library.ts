@@ -1,4 +1,4 @@
-import { $ } from '../../../core/engine';
+import { engineCore } from '../../../core/engine';
 import { registerFramebuffer2DPass_WebGL } from '../../2d/framebuffer_pipeline';
 import { registerHostOverlayPass_Headless, registerHostOverlayPass_WebGL, registerHostOverlayPass_WebGPU } from '../../editor/host_overlay_pipeline';
 import * as MeshPipeline from '../../3d/mesh/pipeline';
@@ -72,7 +72,7 @@ export class RenderPassLibrary {
 			graph: { skip: true },
 			exec: () => { /* state only */ },
 			prepare: (backend, _state) => {
-				const gv = $.view;
+				const gv = engineCore.view;
 				updateAndBindFrameUniforms(backend, {
 					offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
 					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
@@ -101,7 +101,7 @@ export class RenderPassLibrary {
 			exec: () => { /* state only */ },
 			prepare: (backend, _state) => {
 				// Upload minimal frame-shared values via a UBO foundation
-				const gv = $.view;
+				const gv = engineCore.view;
 				updateAndBindFrameUniforms(backend, {
 					offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
 					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
@@ -357,7 +357,7 @@ export class RenderPassLibrary {
 			execute: (_ctx, frame) => {
 				const frameTime = frame ? frame.time : 0;
 				const frameDelta = frame ? frame.delta : 0;
-				const gv = $.view;
+				const gv = engineCore.view;
 				updateAndBindFrameUniforms(gv.backend, {
 					offscreen: { x: offscreenWidth, y: offscreenHeight },
 					logical: { x: viewportWidth, y: viewportHeight },
@@ -435,7 +435,7 @@ export class RenderPassLibrary {
 					const graph = desc.graph;
 						if (graph?.buildState) {
 							const graphCtx = {
-								view: $.view,
+								view: engineCore.view,
 								getTex: (slot: RenderGraphSlot) => ctx.getTex(getHandle(slot)),
 							};
 						const builtState = graph.buildState(graphCtx) as RenderPassStateRegistry[RenderPassStateId];
@@ -444,7 +444,7 @@ export class RenderPassLibrary {
 					}
 						if (data.present) {
 							// Execute the pass; PipelineRegistry ensures the program/pipeline is bound.
-							const gv = $.view;
+							const gv = engineCore.view;
 							const presentInput = graph?.presentInput ?? 'auto';
 							const allowDevice = presentInput !== 'frame_color';
 							const useDither = allowDevice && deviceColorEnabled && gv.dither_type !== 0;

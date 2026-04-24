@@ -1,4 +1,4 @@
-import { $ } from '../../core/engine';
+import { engineCore } from '../../core/engine';
 
 export function joinWorkspacePaths(...segments: string[]): string {
 	return segments
@@ -21,7 +21,7 @@ export function stripProjectRootPrefix(resourcePath: string, projectRootPath: st
 }
 
 export function resolveWorkspacePath(path: string, projectRootPath?: string): string {
-	const root = projectRootPath ?? $.cart_project_root_path;
+	const root = projectRootPath ?? engineCore.cart_project_root_path;
 	const normalizedPath = path.replace(/^\.?\//, '');
 	if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) {
 		return path;

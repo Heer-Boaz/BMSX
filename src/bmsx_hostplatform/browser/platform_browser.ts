@@ -41,7 +41,7 @@ import { WorkerStreamingAudioService } from './worker_audio';
 import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from '../platform';
 import { type vec2 } from 'bmsx/rompack/format';
 
-declare const $: any; // avoid circular dependency issues
+declare const engineCore: any; // avoid circular dependency issues
 const ONSCREEN_LAYOUT_MODE: 'canvas' | 'gamepad' = 'canvas';
 
 /**
@@ -1457,7 +1457,7 @@ export class BrowserGameViewHost implements GameViewHost {
 		const viewportIsLandscape = viewportWidth > viewportHeight && viewportWidth !== 0 && viewportHeight !== 0;
 
 		let adjustedWidth = effectiveWidth;
-		const onscreenGamepadEnabled = $.input?.isOnscreenGamepadEnabled;
+		const onscreenGamepadEnabled = engineCore.input?.isOnscreenGamepadEnabled;
 		if (onscreenGamepadEnabled
 			&& ONSCREEN_LAYOUT_MODE === 'canvas'
 			&& viewportIsLandscape) {
@@ -1524,7 +1524,7 @@ export class BrowserGameViewHost implements GameViewHost {
 		if (displayLeft < 0) displayLeft = 0;
 
 		const isLandscape = size.width >= size.height;
-		const onscreenGamepadEnabled = $.input?.isOnscreenGamepadEnabled;
+		const onscreenGamepadEnabled = engineCore.input?.isOnscreenGamepadEnabled;
 		let displayTop = isLandscape || !onscreenGamepadEnabled
 			? ~~((verticalContainer - displayHeight) / 2)
 			: 0;

@@ -1,4 +1,4 @@
-import { $ } from '../../core/engine';
+import { engineCore } from '../../core/engine';
 import { Runtime } from '../../machine/runtime/runtime';
 
 export type GlyphMap = Record<string, string>;
@@ -148,7 +148,7 @@ export class BFont {
 			return computed;
 		}
 		const imgid = this.char_to_img(char);
-		const asset = $.assets.img[imgid] ?? $.system_assets.img[imgid] ?? Runtime.instance.assets.getImageAsset(imgid);
+		const asset = engineCore.assets.img[imgid] ?? engineCore.system_assets.img[imgid] ?? Runtime.instance.assets.getImageAsset(imgid);
 		const width = asset.imgmeta.width;
 		const height = asset.imgmeta.height;
 		const computed: FontGlyph = {

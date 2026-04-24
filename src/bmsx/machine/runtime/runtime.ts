@@ -1,4 +1,4 @@
-import { $ } from '../../core/engine';
+import { engineCore } from '../../core/engine';
 import { taskGate } from '../../core/taskgate';
 import { Input } from '../../input/manager';
 import type { LuaDefinitionInfo } from '../../lua/syntax/ast';
@@ -235,7 +235,7 @@ export class Runtime {
 	}
 
 	public static async init(cartridge?: Uint8Array): Promise<void> {
-		const engineLayer = $.engine_layer;
+		const engineLayer = engineCore.engine_layer;
 		const playerIndex = Input.instance.startupGamepadIndex ?? 1;
 
 		const engineSource = new AssetSourceStack([{ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload }]);
@@ -249,10 +249,10 @@ export class Runtime {
 			const engineProjectRootPath = engineLayer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH;
 
 			if (!cartridge) {
-			$.set_source(engineSource);
-			$.set_inputmap(1, { keyboard: null, gamepad: null, pointer: null }); // Default input mapping for player 1 is required even with no cart to prevent errors
+			engineCore.set_source(engineSource);
+			engineCore.set_inputmap(1, { keyboard: null, gamepad: null, pointer: null }); // Default input mapping for player 1 is required even with no cart to prevent errors
 
-			$.set_sources(engineLuaSources);
+			engineCore.set_sources(engineLuaSources);
 			const engineMemorySpecs = resolveRuntimeMemoryMapSpecs({
 				machine: engineMachine,
 				engineMachine,
@@ -298,7 +298,7 @@ export class Runtime {
 		}
 
 		const cartLayer = await buildRuntimeAssetLayer({ blob: cartridge, id: 'cart' });
-		const overlayBlob = $.workspace_overlay;
+		const overlayBlob = engineCore.workspace_overlay;
 		let overlayLayer: RuntimeAssetLayer | null = null;
 			if (overlayBlob) {
 				overlayLayer = await buildRuntimeAssetLayer({ blob: overlayBlob, id: 'overlay' });
@@ -311,7 +311,7 @@ export class Runtime {
 		layers.push({ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload });
 		layers.push({ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload });
 		const assetSource = new AssetSourceStack(layers);
-		$.set_source(assetSource);
+		engineCore.set_source(assetSource);
 
 		const cartSource = new AssetSourceStack([{ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload }]);
 		const cartLuaSources = buildLuaSources({
@@ -326,14 +326,14 @@ export class Runtime {
 			for (const playerIndexStr of Object.keys(inputMappingPerPlayer)) {
 				const mappedIndex = parseInt(playerIndexStr, 10);
 				const inputMapping = inputMappingPerPlayer[mappedIndex];
-				$.set_inputmap(mappedIndex, inputMapping);
+				engineCore.set_inputmap(mappedIndex, inputMapping);
 			}
 		} else {
-			$.set_inputmap(1, Input.DEFAULT_INPUT_MAPPING);
+			engineCore.set_inputmap(1, Input.DEFAULT_INPUT_MAPPING);
 		}
 
-		await applyWorkspaceOverridesToCart({ cart: cartLuaSources, storage: $.platform.storage, includeServer: true });
-		$.set_sources(engineLuaSources);
+		await applyWorkspaceOverridesToCart({ cart: cartLuaSources, storage: engineCore.platform.storage, includeServer: true });
+		engineCore.set_sources(engineLuaSources);
 
 		const memoryLimits = resolveRuntimeMemoryMapSpecs({
 			machine: cartLayer.index.machine,
@@ -390,13 +390,13 @@ export class Runtime {
 	private static async startPreparedRuntime(runtime: Runtime, engineLuaSources: LuaSourceRegistry, engineProjectRootPath: string): Promise<void> {
 		await applyWorkspaceOverridesToRegistry({
 			registry: engineLuaSources,
-			storage: $.platform.storage,
+			storage: engineCore.platform.storage,
 			includeServer: true,
 			projectRootPath: engineProjectRootPath,
 		});
 		await runtime.prepareBootRomStartupState();
-		await $.refreshRenderAssets();
-		$.view.default_font = new Font();
+		await engineCore.refreshRenderAssets();
+		engineCore.view.default_font = new Font();
 		await runtime.boot();
 		startEngineWithDeferredStartupAudioRefresh(runtime);
 	}
@@ -431,7 +431,7 @@ export class Runtime {
 	public activateProgramSource(source: ProgramSource): void {
 		const luaSources = source === 'engine' ? this.engineLuaSources : this.cartLuaSources;
 		this.activeLuaSources = luaSources;
-		$.set_sources(luaSources);
+		engineCore.set_sources(luaSources);
 		api.cartdata(luaSources.namespace);
 	}
 
@@ -442,26 +442,26 @@ export class Runtime {
 		const initialGeoWorkUnits = options.geoWorkUnitsPerSec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC;
 		this.timing.vdpWorkUnitsPerSec = resolveVdpWorkUnitsPerSec(initialVdpWorkUnits);
 		this.timing.geoWorkUnitsPerSec = resolveGeoWorkUnitsPerSec(initialGeoWorkUnits);
-		this.storageService = $.platform.storage;
-		this.storage = new RuntimeStorage(this.storageService, $.sources.namespace);
+		this.storageService = engineCore.platform.storage;
+		this.storage = new RuntimeStorage(this.storageService, engineCore.sources.namespace);
 		this.activeMachineManifest = options.activeMachineManifest;
 		this.cartManifest = options.cartManifest;
 		this.cartProjectRootPath = options.cartProjectRootPath;
-		$.set_machine_manifest(this.activeMachineManifest);
-		$.set_cart_manifest(this.cartManifest);
-		$.set_cart_project_root_path(this.cartProjectRootPath);
-		this.engineLuaSources = $.sources;
-		this.activeLuaSources = $.sources;
+		engineCore.set_machine_manifest(this.activeMachineManifest);
+		engineCore.set_cart_manifest(this.cartManifest);
+		engineCore.set_cart_project_root_path(this.cartProjectRootPath);
+		this.engineLuaSources = engineCore.sources;
+		this.activeLuaSources = engineCore.sources;
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.machine = new Machine(
 			options.memory,
 			{ width: options.viewport.width, height: options.viewport.height },
 			Input.instance,
-			$.sndmaster,
+			engineCore.sndmaster,
 		);
 		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
-		this.gameViewState = createGameViewState($.view);
+		this.gameViewState = createGameViewState(engineCore.view);
 		configureLuaHeapUsage({
 			getBaseRamUsedBytes: () => this.machine.resourceUsageDetector.getBaseRamUsedBytes(),
 			collectTrackedHeapBytes: () => {
@@ -481,7 +481,7 @@ export class Runtime {
 		});
 			refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
 		this.vblank.setVblankCycles(this, options.vblankCycles);
-		this.randomSeedValue = $.platform.clock.now();
+		this.randomSeedValue = engineCore.platform.clock.now();
 
 		api = new Api({
 			storage: this.storage,
@@ -537,10 +537,10 @@ export class Runtime {
 			this.clearBootFaults();
 			this.clearLuaBootState();
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset the runtime state
-				await $.resetRuntime();
-				await $.refresh_audio_assets();
+				await engineCore.resetRuntime();
+				await engineCore.refresh_audio_assets();
 			}
-			api.cartdata($.sources.namespace);
+			api.cartdata(engineCore.sources.namespace);
 			luaPipeline.bootActiveProgram(this);
 			this.hasCompletedInitialBoot = true;
 		}
@@ -574,10 +574,10 @@ export class Runtime {
 	}
 
 	private async restartBootRomStartupState(): Promise<void> {
-		await $.resetRuntime();
+		await engineCore.resetRuntime();
 		await this.prepareBootRomStartupState();
-		await $.refreshRenderAssets();
-		await $.refresh_audio_assets();
+		await engineCore.refreshRenderAssets();
+		await engineCore.refresh_audio_assets();
 	}
 
 	public async rebootToBootRom(): Promise<void> {
@@ -592,10 +592,10 @@ export class Runtime {
 				registry: this.engineLuaSources,
 				storage: this.storageService,
 				includeServer: true,
-				projectRootPath: $.engine_layer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH,
+				projectRootPath: engineCore.engine_layer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH,
 			});
 			await this.restartBootRomStartupState();
-			api.cartdata($.sources.namespace);
+			api.cartdata(engineCore.sources.namespace);
 			luaPipeline.bootActiveProgram(this);
 		}
 		finally {
@@ -604,12 +604,12 @@ export class Runtime {
 	}
 
 	private activateEngineProgramAssets(): void {
-		$.set_assets(this.assets.biosLayer.assets);
+		engineCore.set_assets(this.assets.biosLayer.assets);
 		this.activateProgramSource('engine');
 	}
 
 	public activateCartProgramAssets(): void {
-		$.set_assets((this.assets.overlayLayer ?? this.assets.cartLayer).assets);
+		engineCore.set_assets((this.assets.overlayLayer ?? this.assets.cartLayer).assets);
 		const perfSpecs = getMachinePerfSpecs(this.activeMachineManifest);
 		this.timing.applyUfpsScaled(resolveUfpsScaled(perfSpecs.ufps));
 		const cpuHz = resolveCpuHz(perfSpecs.cpu_freq_hz);

@@ -1,4 +1,4 @@
-import { $ } from '../../../../core/engine';
+import { engineCore } from '../../../../core/engine';
 import { point_in_rect } from '../../../../common/rect';
 import * as constants from '../../../common/constants';
 import { problemsPanel } from '../../../workbench/contrib/problems/panel/controller';
@@ -20,7 +20,7 @@ import { resourceSearchState } from '../../../workbench/contrib/resources/widget
 import { completionController } from '../../contrib/suggest/completion_controller';
 
 export function handleEditorWheelInput(): void {
-	const playerInput = $.input.getPlayerInput(1);
+	const playerInput = engineCore.input.getPlayerInput(1);
 	const wheelState = playerInput.getRawButtonState('pointer_wheel', 'pointer');
 	if (wheelState.consumed === true) {
 		return;
@@ -71,7 +71,7 @@ function handleHoverTooltipWheel(
 	direction: number,
 	steps: number,
 	activePointer: PointerSnapshot,
-	playerInput: ReturnType<typeof $.input.getPlayerInput>
+	playerInput: ReturnType<typeof engineCore.input.getPlayerInput>
 ): boolean {
 	if (!intellisenseUiState.hoverTooltip) {
 		return false;
@@ -95,7 +95,7 @@ function handleResourceSearchWheel(
 	direction: number,
 	steps: number,
 	activePointer: PointerSnapshot,
-	playerInput: ReturnType<typeof $.input.getPlayerInput>
+	playerInput: ReturnType<typeof engineCore.input.getPlayerInput>
 ): boolean {
 	if (!resourceSearchState.visible) {
 		return false;
@@ -116,7 +116,7 @@ function handleResourcePanelWheel(
 	direction: number,
 	steps: number,
 	activePointer: PointerSnapshot,
-	playerInput: ReturnType<typeof $.input.getPlayerInput>
+	playerInput: ReturnType<typeof engineCore.input.getPlayerInput>
 ): boolean {
 	const panelBounds = resourcePanel.getBounds();
 	const pointerInPanel = resourcePanel.isVisible()
@@ -141,7 +141,7 @@ function handleProblemsPanelWheel(
 	direction: number,
 	steps: number,
 	activePointer: PointerSnapshot,
-	playerInput: ReturnType<typeof $.input.getPlayerInput>
+	playerInput: ReturnType<typeof engineCore.input.getPlayerInput>
 ): boolean {
 	if (!problemsPanel.isVisible) {
 		return false;

@@ -1,4 +1,4 @@
-import { $ } from '../../../core/engine';
+import { engineCore } from '../../../core/engine';
 
 import particleFS from '../shaders/particle.frag.glsl';
 import particleVS from '../shaders/particle.vert.glsl';
@@ -247,11 +247,11 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 		shouldExecute: () => !!particleQueueBackSize(),
 		exec: (backend, fbo, s: RenderPassStateRegistry['particles']) => {
 			const webglBackend = backend as WebGLBackend;
-			const runtime: ParticleRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: $.view };
+			const runtime: ParticleRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: engineCore.view };
 			renderParticleBatch(runtime, fbo as WebGLFramebuffer, s as ParticlePipelineState);
 		},
 		prepare: (_backend, _state) => {
-			const gv = $.view;
+			const gv = engineCore.view;
 			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
 			const cam = resolveActiveCamera3D();
 			const atlasPrimaryTex = gv.textures['_atlas_primary'];

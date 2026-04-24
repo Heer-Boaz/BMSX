@@ -3,7 +3,7 @@ import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './mod
 import type { InputDevice } from '../platform';
 import type { VibrationParams } from '../platform';
 import { DualSenseHID } from './dualsense_hid';
-import { $ } from '../core/engine';
+import { engineCore } from '../core/engine';
 
 
 export class GamepadInput implements InputHandler {
@@ -33,7 +33,7 @@ export class GamepadInput implements InputHandler {
 	}
 
 	public pollInput(): void {
-		const now = $.platform.clock.now();
+		const now = engineCore.platform.clock.now();
 		const prevPollTime = this.lastPollTime;
 		this.lastPollTime = now;
 

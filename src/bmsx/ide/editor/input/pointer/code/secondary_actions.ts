@@ -1,4 +1,4 @@
-import { $ } from '../../../../../core/engine';
+import { engineCore } from '../../../../../core/engine';
 import { toggleBreakpointForEditorRow } from '../../../../workbench/contrib/debugger/controller';
 import { resolvePointerRow } from '../../../ui/view/view';
 import type { CodeAreaBounds } from '../../../ui/view/view';
@@ -11,7 +11,7 @@ export function handleCodeAreaSecondaryPointer(
 	insideCodeArea: boolean,
 	inGutter: boolean,
 	pointerSecondaryJustPressed: boolean,
-	playerInput: ReturnType<typeof $.input.getPlayerInput>
+	playerInput: ReturnType<typeof engineCore.input.getPlayerInput>
 ): boolean {
 	if (!pointerSecondaryJustPressed || !insideCodeArea || inGutter || !openEditorContextMenuFromPointer(snapshot, playerInput)) {
 		return false;

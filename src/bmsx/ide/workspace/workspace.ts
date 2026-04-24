@@ -3,7 +3,7 @@ import type { HttpResponse, StorageService } from '../../platform/index';
 import type { LuaSourceRecord, LuaSourceRegistry } from '../../machine/program/sources';
 import { Runtime } from '../../machine/runtime/runtime';
 import * as luaPipeline from '../runtime/lua_pipeline';
-import { $ } from '../../core/engine';
+import { engineCore } from '../../core/engine';
 import type { LuaResourceCreationRequest, ResourceDescriptor } from '../../rompack/resource';
 import { joinWorkspacePaths, resolveWorkspacePath, stripProjectRootPrefix } from './path';
 import { getWorkspaceCachedSource } from './cache';
@@ -23,11 +23,11 @@ type WorkspaceWinnerKind = 'override' | 'canonical' | 'rom';
 
 function resolveEditableCartLuaSources(): LuaSourceRegistry {
 	const runtime = Runtime.instance;
-	return runtime.cartLuaSources ? runtime.cartLuaSources : $.sources;
+	return runtime.cartLuaSources ? runtime.cartLuaSources : engineCore.sources;
 }
 
 function resolveEngineProjectRootPath(): string {
-	const engineRoot = $.engine_layer.index.projectRootPath;
+	const engineRoot = engineCore.engine_layer.index.projectRootPath;
 	return engineRoot && engineRoot.length > 0 ? engineRoot : DEFAULT_ENGINE_PROJECT_ROOT_PATH;
 }
 
@@ -52,13 +52,13 @@ export function resolveLuaSourceProjectRootPath(path: string): string {
 	const runtime = Runtime.instance;
 	const cart = runtime.cartLuaSources;
 	if (cart && cart.path2lua[path]) {
-		return $.cart_project_root_path;
+		return engineCore.cart_project_root_path;
 	}
 	const engine = runtime.engineLuaSources;
 	if (engine && engine.path2lua[path]) {
 		return resolveEngineProjectRootPath();
 	}
-	return $.cart_project_root_path;
+	return engineCore.cart_project_root_path;
 }
 
 export async function saveLuaResourceSource(path: string, source: string): Promise<void> {
@@ -67,7 +67,7 @@ export async function saveLuaResourceSource(path: string, source: string): Promi
 	const sourcePath = asset.source_path;
 	await persistWorkspaceSourceFile(sourcePath, source, resolveLuaSourceProjectRootPath(sourcePath));
 	asset.src = source;
-	asset.update_timestamp = $.platform.clock.dateNow();
+	asset.update_timestamp = engineCore.platform.clock.dateNow();
 	registry.path2lua[sourcePath] = asset;
 	luaPipeline.markSourceChunkAsDirty(Runtime.instance, sourcePath);
 }
@@ -85,7 +85,7 @@ export async function createLuaResource(request: LuaResourceCreationRequest): Pr
 		src: contents,
 		base_src: contents,
 		source_path: path,
-		update_timestamp: $.platform.clock.dateNow(),
+		update_timestamp: engineCore.platform.clock.dateNow(),
 	};
 	const registerAsset = (registry: LuaSourceRegistry): void => {
 		registry.path2lua[asset.source_path] = asset;
@@ -97,7 +97,7 @@ export async function createLuaResource(request: LuaResourceCreationRequest): Pr
 	registerAsset(registry);
 	luaPipeline.invalidateModuleAliases(Runtime.instance);
 	const filesystemPath = asset.source_path;
-	await persistWorkspaceSourceFile(filesystemPath, contents, isEngineLuaSourcePath(filesystemPath) ? resolveEngineProjectRootPath() : $.cart_project_root_path);
+	await persistWorkspaceSourceFile(filesystemPath, contents, isEngineLuaSourcePath(filesystemPath) ? resolveEngineProjectRootPath() : engineCore.cart_project_root_path);
 	luaPipeline.markSourceChunkAsDirty(Runtime.instance, asset.source_path);
 	const descriptor: ResourceDescriptor = { path: asset.source_path, type: 'lua' };
 	return descriptor;
@@ -481,7 +481,7 @@ export function persistWorkspaceOverridesToLocalStorage(storage: StorageService,
 		const storageKey = buildWorkspaceStorageKey(root, record.path);
 		const payload = {
 			contents: record.source,
-			updatedAt: record.updatedAt ?? $.platform.clock.dateNow(),
+			updatedAt: record.updatedAt ?? engineCore.platform.clock.dateNow(),
 		};
 		storage.setItem(storageKey, JSON.stringify(payload));
 	}
@@ -497,7 +497,7 @@ export async function applyWorkspaceOverridesToRegistry(params: { registry: LuaS
 	const { registry, storage } = params;
 	const includeServer = params.includeServer !== false;
 	const changed = new Set<string>();
-	const root = params.projectRootPath ?? $.cart_project_root_path;
+	const root = params.projectRootPath ?? engineCore.cart_project_root_path;
 
 	const localOverrides = collectWorkspaceOverrides({ cart: registry, projectRootPath: root, storage });
 	const serverOverrides = includeServer ? await fetchWorkspaceOverridesPriority(registry, root) : new Map<string, WorkspaceOverrideRecord>();
@@ -550,7 +550,7 @@ export async function applyWorkspaceOverridesToRegistry(params: { registry: LuaS
 		}
 		asset.src = nextSource;
 		pathBinding.src = nextSource;
-		const updatedAt = winner.updatedAt >= 0 ? winner.updatedAt : $.platform.clock.dateNow();
+		const updatedAt = winner.updatedAt >= 0 ? winner.updatedAt : engineCore.platform.clock.dateNow();
 		asset.update_timestamp = updatedAt;
 		pathBinding.update_timestamp = updatedAt;
 
@@ -584,12 +584,12 @@ export async function applyWorkspaceOverridesToCart(params: { cart: LuaSourceReg
 		registry: params.cart,
 		storage: params.storage,
 		includeServer: params.includeServer,
-		projectRootPath: $.cart_project_root_path,
+		projectRootPath: engineCore.cart_project_root_path,
 	});
 }
 
 export async function clearWorkspaceArtifacts(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
-	const root = $.cart_project_root_path;
+	const root = engineCore.cart_project_root_path;
 	for (const asset of Object.values(cart.path2lua)) {
 		const cartPath = asset.source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
@@ -604,7 +604,7 @@ export async function clearWorkspaceArtifacts(cart: LuaSourceRegistry, storage: 
 }
 
 async function clearWorkspaceDirtyFiles(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
-	const root = $.cart_project_root_path;
+	const root = engineCore.cart_project_root_path;
 	const scratchPaths = await collectScratchWorkspaceDirtyPaths(root);
 	for (const asset of Object.values(cart.path2lua)) {
 		const cartPath = asset.source_path;

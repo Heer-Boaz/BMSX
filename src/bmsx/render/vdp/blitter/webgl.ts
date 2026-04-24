@@ -1,4 +1,4 @@
-import { $ } from '../../../core/engine';
+import { engineCore } from '../../../core/engine';
 import { Runtime } from '../../../machine/runtime/runtime';
 import type {
 	VDP,
@@ -178,7 +178,7 @@ function bindPassState(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, pas
 		offscreen: { x: vdp.frameBufferWidth, y: vdp.frameBufferHeight },
 		logical: { x: vdp.frameBufferWidth, y: vdp.frameBufferHeight },
 		time: Runtime.instance.frameLoop.currentTimeMs / 1000,
-		delta: $.deltatime_seconds,
+		delta: engineCore.deltatime_seconds,
 	});
 	gl.uniform1f(state.uniforms.scale, 1);
 	state.drawTargetHeight = vdp.frameBufferHeight;
@@ -197,19 +197,19 @@ function bindPassState(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, pas
 
 function bindTexturesForMode(vdp: VDP, state: WebGLVdpBlitterRuntime, mode: DrawMode): void {
 	if (mode === 'solid') {
-		$.view.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
-		$.view.bind2DTex(state.whiteTexture);
+		engineCore.view.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
+		engineCore.view.bind2DTex(state.whiteTexture);
 		return;
 	}
 	const primary = getVdpRenderSurfaceTexture(vdp, 1)!;
 	const secondary = getVdpRenderSurfaceTexture(vdp, 2)!;
 	const engine = getVdpRenderSurfaceTexture(vdp, 0)!;
-	$.view.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
-	$.view.bind2DTex(primary);
-	$.view.activeTexUnit = TEXTURE_UNIT_ATLAS_SECONDARY;
-	$.view.bind2DTex(secondary);
-	$.view.activeTexUnit = TEXTURE_UNIT_ATLAS_ENGINE;
-	$.view.bind2DTex(engine);
+	engineCore.view.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
+	engineCore.view.bind2DTex(primary);
+	engineCore.view.activeTexUnit = TEXTURE_UNIT_ATLAS_SECONDARY;
+	engineCore.view.bind2DTex(secondary);
+	engineCore.view.activeTexUnit = TEXTURE_UNIT_ATLAS_ENGINE;
+	engineCore.view.bind2DTex(engine);
 }
 
 function flushPendingBatch(backend: WebGLBackend, pass: PassEncoder, state: WebGLVdpBlitterRuntime, count: number): number {
@@ -527,8 +527,8 @@ function copyFrameBufferRect(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBli
 		depth: { tex: priorityDepthTexture },
 	});
 	bindPassState(backend, state, pass, vdp);
-	$.view.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
-	$.view.bind2DTex(copySnapshotTexture);
+	engineCore.view.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
+	engineCore.view.bind2DTex(copySnapshotTexture);
 	backend.setDepthFunc(backend.gl.ALWAYS);
 	backend.setBlendEnabled(false);
 	writeAxisAlignedQuad(

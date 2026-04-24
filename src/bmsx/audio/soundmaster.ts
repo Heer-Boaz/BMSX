@@ -1,4 +1,4 @@
-import { $ } from '../core/engine';
+import { engineCore } from '../core/engine';
 import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, VoiceEndedEvent, AudioFilterParams, RngService, SubscriptionHandle, createSubscriptionHandle } from '../platform';
 import { asset_id, AudioMeta, AudioType, AudioTypes, CartridgeLayerId, DEFAULT_MACHINE_MAX_VOICES, id2res, RomAsset } from '../rompack/format';
 import { Runtime } from '../machine/runtime/runtime';
@@ -269,8 +269,8 @@ export class SoundMaster {
 	}
 
 	public bootstrapRuntimeAudio(startingVolume: number): void {
-		this.audio = $.platform.audio;
-		this.rng = $.platform.rng;
+		this.audio = engineCore.platform.audio;
+		this.rng = engineCore.platform.rng;
 		const sampleRate = this.A.sampleRate();
 		if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
 			throw new Error('[SoundMaster] Audio sample rate must be a positive finite value.');

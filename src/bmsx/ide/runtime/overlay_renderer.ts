@@ -7,7 +7,7 @@ import type {
 	RectRenderSubmission,
 	RenderLayer
 } from '../../render/shared/submissions';
-import { $ } from '../../core/engine';
+import { engineCore } from '../../core/engine';
 import { publishOverlayFrame, type EditorOverlayFrame } from '../../render/editor/overlay_queue';
 import type { Viewport } from '../../rompack/format';
 import { RenderSubmission } from '../../render/backend/interfaces';
@@ -36,13 +36,13 @@ export class OverlayRenderer {
 		let targetSize: Viewport;
 		switch (type) {
 			case 'viewport':
-				$.view.viewportTypeIde = 'viewport';
-				targetSize = { width: $.view.viewportSize.x, height: $.view.viewportSize.y };
+				engineCore.view.viewportTypeIde = 'viewport';
+				targetSize = { width: engineCore.view.viewportSize.x, height: engineCore.view.viewportSize.y };
 				break;
 			case 'offscreen':
-				$.view.viewportTypeIde = 'offscreen';
+				engineCore.view.viewportTypeIde = 'offscreen';
 			default:
-				targetSize = { width: $.view.offscreenCanvasSize.x, height: $.view.offscreenCanvasSize.y };
+				targetSize = { width: engineCore.view.offscreenCanvasSize.x, height: engineCore.view.offscreenCanvasSize.y };
 				break;
 		}
 		this.overrideSize = targetSize;
@@ -54,7 +54,7 @@ export class OverlayRenderer {
 
 	public beginFrame(): void {
 		this.capturingFrame = true;
-		const view = $.view;
+		const view = engineCore.view;
 		const offscreen = view.offscreenCanvasSize;
 		const logical = view.viewportSize;
 		const renderWidth = this.overrideSize ? this.overrideSize.width : offscreen.x;
@@ -146,7 +146,7 @@ export class OverlayRenderer {
 
 	private submit(submission: RenderSubmission): void {
 		if (!this.capturingFrame) {
-			$.view.renderer.submit.typed(submission);
+			engineCore.view.renderer.submit.typed(submission);
 			return;
 		}
 		this.commands.push(submission);

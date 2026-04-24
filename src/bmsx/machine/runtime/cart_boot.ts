@@ -1,4 +1,4 @@
-import { $ } from '../../core/engine';
+import { engineCore } from '../../core/engine';
 import type { Program, ProgramMetadata } from '../cpu/cpu';
 import { IO_SYS_BOOT_CART, IO_SYS_CART_BOOTREADY } from '../bus/io';
 import { PROGRAM_ASSET_ID } from '../program/asset';
@@ -45,7 +45,7 @@ export class CartBootState {
 			return;
 		}
 		this.deferredPreparationScheduled = true;
-		const handle = $.platform.frames.start(() => {
+		const handle = engineCore.platform.frames.start(() => {
 			handle.stop();
 			if (this.deferredPreparationHandle === handle) {
 				this.deferredPreparationHandle = null;
@@ -117,7 +117,7 @@ export class CartBootState {
 	}
 
 	private pollSystemBootRequest(runtime: Runtime): void {
-		if ($.sources !== runtime.engineLuaSources) {
+		if (engineCore.sources !== runtime.engineLuaSources) {
 			return;
 		}
 		if (runtime.machine.memory.readIoU32(IO_SYS_BOOT_CART) === 0) {

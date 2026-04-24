@@ -47,7 +47,7 @@ import { writeWrappedOverlayLine } from '../../common/text/layout';
 import type { ApiCompletionMetadata, CodeTabContext, EditorContextToken, EditorDiagnosticSeverity, LuaCompletionItem, PointerSnapshot } from '../../../common/models';
 import type { LuaSourceRecord } from '../../../../machine/program/sources';
 import { Pool } from '../../../../common/pool';
-import { $ } from '../../../../core/engine';
+import { engineCore } from '../../../../core/engine';
 import { KEYWORDS, LuaTokenType, type LuaToken } from '../../../../lua/syntax/token';
 import { splitText } from '../../../../common/text_lines';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
@@ -1575,7 +1575,7 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 export function getStaticDefinitions(preferredChunk: string): { definitions: ReadonlyArray<LuaDefinitionInfo>; paths: Array<{ path: string; info: { asset_id: string; path?: string } }>; models: Map<string, LuaSemanticModel> } {
 	const interpreter = Runtime.instance.interpreter;
 	const matchingChunks: Array<{ path: string; info: { asset_id: string; path?: string } }> = [];
-	const luaSources = Runtime.instance.cartLuaSources ? Runtime.instance.cartLuaSources : $.sources;
+	const luaSources = Runtime.instance.cartLuaSources ? Runtime.instance.cartLuaSources : engineCore.sources;
 	for (const asset of Object.values(luaSources.path2lua) as LuaSourceRecord[]) {
 		const path = asset.source_path;
 		const info: { asset_id: string; path?: string } = { asset_id: asset.resid, path: asset.source_path };

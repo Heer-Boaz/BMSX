@@ -1,4 +1,4 @@
-import { $ } from '../../../core/engine';
+import { engineCore } from '../../../core/engine';
 import { Table, createNativeFunction } from '../../cpu/cpu';
 
 import type { StringValue } from '../../memory/string/pool';
@@ -108,10 +108,10 @@ export function createRuntimeGameTable(runtime: Runtime): Table {
 	writeRuntimeViewTable(runtime, viewTable);
 
 	const clockNowFn = createNativeFunction('platform.clock.now', (_args, out) => {
-		out.push($.platform.clock.now());
+		out.push(engineCore.platform.clock.now());
 	});
 	const clockPerfNowFn = createNativeFunction('platform.clock.perf_now', (_args, out) => {
-		out.push($.platform.clock.perf_now());
+		out.push(engineCore.platform.clock.perf_now());
 	});
 	const clockTable = new Table(0, 2);
 	clockTable.set(keys.now, clockNowFn);
@@ -130,11 +130,11 @@ export function createRuntimeGameTable(runtime: Runtime): Table {
 		if (typeof playerOrAction === 'number') {
 			const action = args[1] as StringValue;
 			const windowFrames = args.length > 2 && args[2] !== null ? args[2] as number : undefined;
-			out.push($.get_action_state(playerOrAction, action.text, windowFrames));
+			out.push(engineCore.get_action_state(playerOrAction, action.text, windowFrames));
 			return;
 		}
 		const windowFrames = args.length > 1 && args[1] !== null ? args[1] as number : undefined;
-		out.push($.get_action_state(1, playerOrAction.text, windowFrames));
+		out.push(engineCore.get_action_state(1, playerOrAction.text, windowFrames));
 	});
 
 	const gameTable = new Table(0, 6);

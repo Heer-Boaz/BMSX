@@ -1,4 +1,4 @@
-import { $ } from '../../../../core/engine';
+import { engineCore } from '../../../../core/engine';
 import { getActiveCodeTabContext } from '../../../workbench/ui/code_tab/contexts';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/engine';
 import { handleEditorContextMenuPointer } from '../../../workbench/input/pointer/context_menu/input';
@@ -21,7 +21,7 @@ export function handleTextEditorPointerInput(): void {
 	if (prepareEditorPointerFrame(snapshot, gotoModifierActive)) {
 		return;
 	}
-	const playerInput = $.input.getPlayerInput(1);
+	const playerInput = engineCore.input.getPlayerInput(1);
 	const buttonMask = computeEditorPointerButtonMask(playerInput, snapshot.primaryPressed);
 	const justPressed = (buttonMask & POINTER_PRIMARY_JUST_PRESSED) !== 0;
 	const justReleased = (buttonMask & POINTER_PRIMARY_JUST_RELEASED) !== 0;

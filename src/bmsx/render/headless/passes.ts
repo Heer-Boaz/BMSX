@@ -1,4 +1,4 @@
-import { $ } from '../../core/engine';
+import { engineCore } from '../../core/engine';
 import { RenderPassLibrary } from '../backend/pass/library';
 import { Framebuffer2DPipelineState, MeshBatchPipelineState, ParticlePipelineState, type RenderPassDef } from '../backend/interfaces';
 import { M4 } from '../3d/math';
@@ -84,8 +84,8 @@ function ensureAtlasResource(atlasId: number, slotBytes: number, label: string):
 }
 
 function resolveHeadlessAtlasSlots(): { primary: number | null; secondary: number | null } {
-	const primaryFromView = $.view.primaryAtlasIdInSlot;
-	const secondaryFromView = $.view.secondaryAtlasIdInSlot;
+	const primaryFromView = engineCore.view.primaryAtlasIdInSlot;
+	const secondaryFromView = engineCore.view.secondaryAtlasIdInSlot;
 	if (primaryFromView !== null || secondaryFromView !== null) {
 		return { primary: primaryFromView, secondary: secondaryFromView };
 	}
@@ -178,7 +178,7 @@ function requireMaterialTexture(mesh: Mesh, slot: 'albedo' | 'normal' | 'metalli
 	if (!key) {
 		throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' material texture '${slot}' missing GPU binding.`);
 	}
-	const handle = $.texmanager.getTexture(key);
+	const handle = engineCore.texmanager.getTexture(key);
 	if (!handle) {
 		throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' material texture '${slot}' not loaded (key='${key}').`);
 	}
@@ -289,10 +289,10 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 		stateOnly: true,
 		prepare: () => {
 			registry.setState('framebuffer_2d', {
-				width: $.view.canvasSize.x,
-				height: $.view.canvasSize.y,
-				baseWidth: $.view.viewportSize.x,
-				baseHeight: $.view.viewportSize.y,
+				width: engineCore.view.canvasSize.x,
+				height: engineCore.view.canvasSize.y,
+				baseWidth: engineCore.view.viewportSize.x,
+				baseHeight: engineCore.view.viewportSize.y,
 				colorTex: getVdpDisplayFrameBufferTexture(),
 			} as Framebuffer2DPipelineState);
 		},
@@ -307,7 +307,7 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 			if (pixels.byteLength !== expectedByteLength) {
 				throw new Error(`[HeadlessFramebuffer2D] Framebuffer byte length mismatch (${pixels.byteLength} != ${expectedByteLength}).`);
 			}
-			const host = $.view.host as unknown as HeadlessPresentHost;
+			const host = engineCore.view.host as unknown as HeadlessPresentHost;
 			host.presentFrameBuffer({
 				pixels,
 				srcWidth: frameBufferWidth,
@@ -335,11 +335,11 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 		id: 'skybox',
 		name: 'HeadlessSkybox',
 		stateOnly: true,
-		shouldExecute: () => !!$.view.skyboxFaceIds,
+		shouldExecute: () => !!engineCore.view.skyboxFaceIds,
 		exec: () => {
-			const ids = $.view.skyboxFaceIds;
-			const sizes = $.view.skyboxFaceSizes;
-			const bindings = $.view.skyboxFaceAtlasBindings;
+			const ids = engineCore.view.skyboxFaceIds;
+			const sizes = engineCore.view.skyboxFaceSizes;
+			const bindings = engineCore.view.skyboxFaceAtlasBindings;
 			if (!ids || !sizes || !bindings) {
 				return;
 			}
@@ -358,7 +358,7 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 }
 
 function makeMeshState(registry: RenderPassLibrary): MeshBatchPipelineState {
-	const gv = $.view;
+	const gv = engineCore.view;
 	const cam = resolveActiveCamera3D();
 	if (!cam) {
 		throw new Error('[HeadlessMeshes] No active 3D camera found.');
@@ -445,7 +445,7 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 }
 
 function makeParticleState(): ParticlePipelineState {
-	const gv = $.view;
+	const gv = engineCore.view;
 	const width = gv.offscreenCanvasSize.x;
 	const height = gv.offscreenCanvasSize.y;
 	const cam = resolveActiveCamera3D();

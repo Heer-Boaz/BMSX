@@ -1,4 +1,4 @@
-import { $ } from '../../core/engine';
+import { engineCore } from '../../core/engine';
 import { Input } from '../../input/manager';
 import { KeyModifier } from '../../input/player';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../../lua/errors';
@@ -92,7 +92,7 @@ function getRenderTargetState(runtime: Runtime): RenderTargetState {
 }
 
 function captureCurrentTargets(): RenderTargetSnapshot {
-	const view = $.view;
+	const view = engineCore.view;
 	return {
 		viewportSize: shallowcopy(view.viewportSize),
 		canvasSize: shallowcopy(view.canvasSize),
@@ -101,7 +101,7 @@ function captureCurrentTargets(): RenderTargetSnapshot {
 }
 
 function applyFixedEditorTargets(runtime: Runtime): void {
-	$.view.configureRenderTargets({
+	engineCore.view.configureRenderTargets({
 		viewportSize: EDITOR_TARGET,
 		canvasSize: EDITOR_TARGET,
 		offscreenSize: EDITOR_TARGET,
@@ -110,7 +110,7 @@ function applyFixedEditorTargets(runtime: Runtime): void {
 }
 
 function restoreTargets(runtime: Runtime, snapshot: RenderTargetSnapshot): void {
-	$.view.configureRenderTargets({
+	engineCore.view.configureRenderTargets({
 		viewportSize: snapshot.viewportSize,
 		canvasSize: snapshot.canvasSize,
 		offscreenSize: snapshot.offscreenSize,
@@ -171,14 +171,14 @@ function isManagedOverlayEditorActive(runtime: Runtime): boolean {
 function resolveEditorSourceWorkspacePath(runtime: Runtime, source: string): string {
 	const cart = runtime.cartLuaSources;
 	if (cart && cart.path2lua[source]) {
-		return resolveWorkspacePath(source, $.cart_project_root_path);
+		return resolveWorkspacePath(source, engineCore.cart_project_root_path);
 	}
 	const engine = runtime.engineLuaSources;
 	if (engine && engine.path2lua[source]) {
-		const engineRoot = $.engine_layer.index.projectRootPath || 'src/bmsx';
+		const engineRoot = engineCore.engine_layer.index.projectRootPath || 'src/bmsx';
 		return resolveWorkspacePath(source, engineRoot);
 	}
-	return resolveWorkspacePath(source, $.cart_project_root_path);
+	return resolveWorkspacePath(source, engineCore.cart_project_root_path);
 }
 
 function luaErrorSourcePath(error: LuaError): string {
@@ -264,13 +264,13 @@ export function updateGamePipelineExts(runtime: Runtime): void {
 }
 
 export function updateOverlayAudioSuspension(runtime: Runtime): void {
-	if (!$.sndmaster.isRuntimeAudioReady()) {
+	if (!engineCore.sndmaster.isRuntimeAudioReady()) {
 		return;
 	}
 	if (isOverlayActive(runtime)) {
-		$.sndmaster.suspendAll('overlay');
+		engineCore.sndmaster.suspendAll('overlay');
 	} else {
-		$.sndmaster.resumeAll('overlay');
+		engineCore.sndmaster.resumeAll('overlay');
 	}
 }
 
@@ -353,19 +353,19 @@ export function registerRuntimeShortcuts(runtime: Runtime): void {
 	const registry = Input.instance.getGlobalShortcutRegistry();
 	const disposers: Array<() => void> = [];
 	disposers.push(registry.registerKeyboardShortcut(1, EDITOR_TOGGLE_KEY, () => {
-		$.consume_button(1, EDITOR_TOGGLE_KEY, 'keyboard');
+		engineCore.consume_button(1, EDITOR_TOGGLE_KEY, 'keyboard');
 		toggleEditor(runtime);
 	}));
 	disposers.push(registry.registerKeyboardShortcut(1, TERMINAL_TOGGLE_KEY, () => toggleTerminalMode(runtime)));
 	disposers.push(registry.registerGamepadChord(1, EDITOR_TOGGLE_GAMEPAD_BUTTONS, () => toggleEditor(runtime)));
-	disposers.push(registry.registerKeyboardShortcut(1, GAME_PAUSE_KEY, () => $.toggleDebuggerControls()));
+	disposers.push(registry.registerKeyboardShortcut(1, GAME_PAUSE_KEY, () => engineCore.toggleDebuggerControls()));
 	disposers.push(registry.registerKeyboardShortcut(1, 'KeyT', () => {
-		$.consume_button(1, 'KeyT', 'keyboard');
+		engineCore.consume_button(1, 'KeyT', 'keyboard');
 		const next = runtime._activeIdeFontVariant === 'tiny' ? 'msx' : 'tiny';
 		setActiveIdeFontVariant(runtime, next);
 	}, KeyModifier.ctrl | KeyModifier.shift));
 	disposers.push(registry.registerKeyboardShortcut(1, 'F8', () => {
-		const modifiers = $.input.getPlayerInput(1).getModifiersState();
+		const modifiers = engineCore.input.getPlayerInput(1).getModifiersState();
 		if (modifiers.ctrl) {
 			return;
 		}
@@ -392,7 +392,7 @@ export function tickIdeInput(runtime: Runtime): void {
 	if (!editorBlocksRuntimePipeline(runtime) || !runtime.editor!.isActive) {
 		return;
 	}
-	const pollFrame = $.input.getPlayerInput(1).pollFrame;
+	const pollFrame = engineCore.input.getPlayerInput(1).pollFrame;
 	if (pollFrame === runtime.lastIdeInputFrame) {
 		return;
 	}
@@ -404,7 +404,7 @@ export function tickTerminalInput(runtime: Runtime): void {
 	if (!runtime.terminal.isActive) {
 		return;
 	}
-	const pollFrame = $.input.getPlayerInput(1).pollFrame;
+	const pollFrame = engineCore.input.getPlayerInput(1).pollFrame;
 	if (pollFrame === runtime.lastTerminalInputFrame) {
 		return;
 	}
@@ -561,7 +561,7 @@ export function setRuntimeFault(runtime: Runtime, payload: {
 }): void {
 	runtime.luaRuntimeFailed = true;
 	runtime.faultSnapshot = payload;
-	runtime.faultSnapshot.timestampMs = $.platform.clock.dateNow();
+	runtime.faultSnapshot.timestampMs = engineCore.platform.clock.dateNow();
 	runtime.faultOverlayNeedsFlush = true;
 }
 

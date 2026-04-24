@@ -1,4 +1,4 @@
-import { $ } from '../../core/engine';
+import { engineCore } from '../../core/engine';
 import { LuaSourceRange } from '../../lua/syntax/ast';
 import { LuaEnvironment } from '../../lua/environment';
 import { LuaHandlerCache, isLuaHandlerFunction } from '../../lua/handler_cache';
@@ -52,7 +52,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 
 	public convertFromLua(value: LuaValue, context?: LuaMarshalContext): unknown {
 		if (!context) {
-			context = { moduleId: $.sources.path2lua[Runtime.instance.currentPath].source_path, path: [] };
+			context = { moduleId: engineCore.sources.path2lua[Runtime.instance.currentPath].source_path, path: [] };
 		}
 		return this.luaValueToJsWithVisited(value, context, new WeakMap<LuaTable, unknown>());
 	}
@@ -696,7 +696,7 @@ export function buildMarshalContext(runtime: Runtime): LuaMarshalContext {
 	let moduleId = 'runtime';
 	const currentPath = runtime.currentPath;
 	if (currentPath) {
-		const binding = $.sources.path2lua[currentPath];
+		const binding = engineCore.sources.path2lua[currentPath];
 		if (binding) {
 			moduleId = binding.source_path;
 		}
@@ -725,7 +725,7 @@ function resolveNativeKey(key: Value): string {
 }
 
 function isBlockedGameTimingProperty(target: object, key: string): boolean {
-	return target === $ && (key === 'deltatime' || key === 'deltatime_seconds');
+	return target === engineCore && (key === 'deltatime' || key === 'deltatime_seconds');
 }
 
 function parseNativeKeyFromString(runtime: Runtime, key: string): Value {
@@ -947,7 +947,7 @@ export function pushNativePairsIterator(runtime: Runtime, target: NativeObject, 
 }
 
 export function getOrCreateAssetsNativeObject(runtime: Runtime): NativeObject {
-	const assets = $.assets;
+	const assets = engineCore.assets;
 	const cached = runtime.nativeObjectCache.get(assets);
 	if (cached) {
 		return cached;

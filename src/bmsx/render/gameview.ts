@@ -1,5 +1,5 @@
 import { BFont } from './shared/bitmap_font';
-import { $ } from '../core/engine';
+import { engineCore } from '../core/engine';
 import { clamp01 } from '../common/clamp';
 import { multiply_vec2 } from '../common/vector';
 import { shallowcopy } from '../common/shallowcopy';
@@ -232,7 +232,7 @@ export class GameView implements RenderContext {
 		this.canvasSize = (shallowcopy(opts.canvasSize) ?? multiply_vec2(this.viewportSize, 1)) as vec2; // By default, the canvas is twice the size of the viewport!!
 		// Offscreen resolution for internal render graph targets (view-agnostic, but usually twice the viewport size to allow for effects like CRT post processing)
 		this.offscreenCanvasSize = shallowcopy(opts.offscreenSize ?? multiply_vec2(this.viewportSize, 1)) as vec2;
-		this.lastRenderTimeSeconds = $.platform.clock.now() / 1000;
+		this.lastRenderTimeSeconds = engineCore.platform.clock.now() / 1000;
 		renderGate.begin({ blocking: true, category: 'init', tag: 'init' }); // Note that we don't store the token; We can end the scope by calling renderGate.end() without a token, assuming that the category is unique fot init. It means that we can safely end the scope later without worrying about late resolves or lifecycle issues.
 	}
 
@@ -357,7 +357,7 @@ export class GameView implements RenderContext {
 		}
 		try {
 			backend.beginFrame();
-			const nowSeconds = $.platform.clock.now() / 1000;
+			const nowSeconds = engineCore.platform.clock.now() / 1000;
 			updateExternalFrameTiming(this.renderFrameIndex, nowSeconds, nowSeconds - this.lastRenderTimeSeconds);
 			this.renderFrameIndex += 1;
 			this.lastRenderTimeSeconds = nowSeconds;
@@ -394,7 +394,7 @@ export class GameView implements RenderContext {
 	}
 
 	public static get fullscreenEnabled(): boolean {
-		const view = $.view;
+		const view = engineCore.view;
 		if (!view) {
 			throw new Error('[GameView] View not available while checking fullscreen support.');
 		}
@@ -406,13 +406,13 @@ export class GameView implements RenderContext {
 	}
 
 	public static async triggerFullScreenOnFakeUserEvent(): Promise<void> {
-		const view = $.view;
+		const view = engineCore.view;
 		if (!view) {
 			throw new Error('[GameView] View not available while entering fullscreen.');
 		}
 		if (GameView.fullscreenEnabled) {
 			try {
-				$.paused = true;
+				engineCore.paused = true;
 				const controller = view.host.getCapability('display-mode')!;
 				await controller.setFullscreen(true);
 			}
@@ -420,7 +420,7 @@ export class GameView implements RenderContext {
 				console.error(error);
 			}
 			finally {
-				$.paused = false;
+				engineCore.paused = false;
 			}
 		}
 		if (GameView.fullscreenKeyListenerUnsub) {
@@ -442,13 +442,13 @@ export class GameView implements RenderContext {
 	}
 
 	public static async triggerWindowedOnFakeUserEvent(): Promise<void> {
-		const view = $.view;
+		const view = engineCore.view;
 		if (!view) {
 			throw new Error('[GameView] View not available while exiting fullscreen.');
 		}
 		if (GameView.fullscreenEnabled) {
 			try {
-				$.paused = true;
+				engineCore.paused = true;
 				const controller = view.host.getCapability('display-mode')!;
 				await controller.setFullscreen(false);
 			}
@@ -457,7 +457,7 @@ export class GameView implements RenderContext {
 				console.error(error);
 			}
 			finally {
-				$.paused = false;
+				engineCore.paused = false;
 			}
 		}
 		if (GameView.windowedKeyListenerUnsub) {

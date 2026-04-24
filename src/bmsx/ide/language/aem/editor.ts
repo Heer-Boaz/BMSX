@@ -1,4 +1,4 @@
-import { $ } from '../../../core/engine';
+import { engineCore } from '../../../core/engine';
 import { extractErrorMessage } from '../../../lua/value';
 import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument, type StructuredTextDocumentFormat } from '../../../audio/aem';
 import type { ResourceDescriptor } from '../../../rompack/resource';
@@ -10,12 +10,12 @@ function resolveAemSourceFormat(path: string): StructuredTextDocumentFormat {
 }
 
 function buildRuntimeAemValidationLookup() {
-	const audioIds = Object.keys($.assets.audio);
-	const dataAssetNames = Object.keys($.assets.data);
+	const audioIds = Object.keys(engineCore.assets.audio);
+	const dataAssetNames = Object.keys(engineCore.assets.data);
 	const dataAssets: Array<{ name: string; value: unknown }> = [];
 	for (let index = 0; index < dataAssetNames.length; index += 1) {
 		const name = dataAssetNames[index]!;
-		dataAssets.push({ name, value: $.assets.data[name] });
+		dataAssets.push({ name, value: engineCore.assets.data[name] });
 	}
 	return buildAemValidationLookup({
 		audioIds,
@@ -24,11 +24,11 @@ function buildRuntimeAemValidationLookup() {
 }
 
 function reloadAem(): void {
-	$.evaluate_lua(`rget('aem'):reload()`);
+	engineCore.evaluate_lua(`rget('aem'):reload()`);
 }
 
 export function listAemResourceDescriptors(): ResourceDescriptor[] {
-	const assetSource = $.source;
+	const assetSource = engineCore.source;
 	if (!assetSource) {
 		return [];
 	}
@@ -91,12 +91,12 @@ export function applyAemSourceToRuntime(descriptor: ResourceDescriptor, source: 
 	}
 	const doc = parseStructuredTextDocument(source, resolveAemSourceFormat(descriptor.path), `AEM file '${descriptor.path}'`);
 	assertValidAemDocument(doc, buildRuntimeAemValidationLookup(), descriptor.path);
-	const previousDoc = $.assets.audioevents[assetId];
+	const previousDoc = engineCore.assets.audioevents[assetId];
 	try {
-		$.assets.audioevents[assetId] = doc as Record<string, unknown>;
+		engineCore.assets.audioevents[assetId] = doc as Record<string, unknown>;
 		reloadAem();
 	} catch (error) {
-		$.assets.audioevents[assetId] = previousDoc;
+		engineCore.assets.audioevents[assetId] = previousDoc;
 		try {
 			reloadAem();
 		} catch (restoreError) {

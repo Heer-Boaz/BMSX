@@ -1,4 +1,4 @@
-import { $ } from '../../core/engine';
+import { engineCore } from '../../core/engine';
 import type { LuaChunk } from '../../lua/syntax/ast';
 import { LuaInterpreter } from '../../lua/runtime';
 import { convertToError } from '../../lua/value';
@@ -112,7 +112,7 @@ function resolveRuntimeMachineForPlan(runtime: Runtime, plan: RuntimeAssetReload
 	if (plan.machineSource === 'cart') {
 		return runtime.assets.cartLayer.index.machine;
 	}
-	return $.engine_layer.index.machine;
+	return engineCore.engine_layer.index.machine;
 }
 
 export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeSnapshot, preserveEngineModules?: boolean): Promise<void> {
@@ -135,7 +135,7 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeS
 	clearRuntimeRenderBackQueues();
 	runtime.luaInitialized = true;
 	syncRuntimeGameViewStateToTable(runtime);
-	applyGameViewStateToHost(runtime.gameViewState, $.view);
+	applyGameViewStateToHost(runtime.gameViewState, engineCore.view);
 }
 
 export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; source: string; preserveEngineModules?: boolean }): void {
@@ -263,7 +263,7 @@ function finishEntryBoot(runtime: Runtime, runInit: boolean | undefined): boolea
 }
 
 export function reloadLuaProgramState(runtime: Runtime, runInit = true): void {
-	const binding = $.sources.path2lua[$.sources.entry_path] as any;
+	const binding = engineCore.sources.path2lua[engineCore.sources.entry_path] as any;
 	if (!binding) {
 		console.info('No Lua entry point defined; cannot reload program. Please save the entry point and try again.');
 		return;
@@ -296,7 +296,7 @@ export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeResumeS
 	}
 	runtime._luaPath = binding;
 	try {
-		const shouldPreserveEngineModules = preserveEngineModules ?? $.sources !== runtime.engineLuaSources;
+		const shouldPreserveEngineModules = preserveEngineModules ?? engineCore.sources !== runtime.engineLuaSources;
 		hotResumeProgramEntry(runtime, { source, path: binding, preserveEngineModules: shouldPreserveEngineModules });
 	}
 	catch (error) {
@@ -313,7 +313,7 @@ export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeResumeS
 }
 
 export function refreshLuaModulesOnResume(runtime: Runtime, resumeModuleId: string): void {
-	const paths = Object.keys($.sources.path2lua);
+	const paths = Object.keys(engineCore.sources.path2lua);
 	for (let index = 0; index < paths.length; index += 1) {
 		const moduleId = paths[index];
 		if (resumeModuleId && moduleId === resumeModuleId) {
@@ -552,7 +552,7 @@ export function requireString(value: Value): string {
 }
 
 export function hasLuaAssets(runtime: Runtime): boolean {
-	const registry = $.sources === runtime.engineLuaSources ? runtime.engineLuaSources : runtime.cartLuaSources;
+	const registry = engineCore.sources === runtime.engineLuaSources ? runtime.engineLuaSources : runtime.cartLuaSources;
 	return registry.can_boot_from_source;
 }
 
@@ -586,7 +586,7 @@ export function loadProgramAssetsForSource(runtime: Runtime, source: 'engine' | 
 }
 
 export function loadProgramAssets(runtime: Runtime): { program: ProgramAsset; symbols: ProgramSymbolsAsset | null } {
-	const source = $.sources === runtime.engineLuaSources ? 'engine' : 'cart';
+	const source = engineCore.sources === runtime.engineLuaSources ? 'engine' : 'cart';
 	return loadProgramAssetsForSource(runtime, source);
 }
 
@@ -661,7 +661,7 @@ export function compileCartLuaProgramForBoot(runtime: Runtime): {
 
 export function bootProgramAsset(runtime: Runtime, options?: { preserveState?: boolean; runInit?: boolean }): boolean {
 	const { program, symbols } = loadProgramAssets(runtime);
-	const engineActive = $.sources === runtime.engineLuaSources;
+	const engineActive = engineCore.sources === runtime.engineLuaSources;
 	const engineAssets = engineActive ? null : loadProgramAssetsForSource(runtime, 'engine');
 	const linked = engineAssets ? linkProgramAssets(engineAssets.program, engineAssets.symbols, program, symbols) : null;
 	const programAsset = linked ? linked.programAsset : program;
@@ -674,7 +674,7 @@ export function bootProgramAsset(runtime: Runtime, options?: { preserveState?: b
 	runtime.cartEntryAvailable = true;
 	installFreshLuaInterpreter(runtime);
 
-	runtime._luaPath = $.sources.entry_path;
+	runtime._luaPath = engineCore.sources.entry_path;
 	if (!options?.preserveState) {
 		resetRuntimeState(runtime);
 	}
@@ -722,7 +722,7 @@ export function bootActiveProgram(runtime: Runtime, options?: { preserveState?: 
 }
 
 export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; sourceOverride?: { path: string; source: string } }): boolean {
-	const entryAsset = $.sources.path2lua[$.sources.entry_path];
+	const entryAsset = engineCore.sources.path2lua[engineCore.sources.entry_path];
 	runtime.cartEntryAvailable = !!entryAsset;
 
 	const interpreter = installFreshLuaInterpreter(runtime);
@@ -783,8 +783,8 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, runInit = tru
 		if (reloadPlan.sealSystemAssets) {
 			runtime.machine.memory.sealEngineAssets();
 		}
-		await $.resetRuntime(reloadPlan.resetFreshWorldOptions.preserve_textures);
-		await $.refresh_audio_assets();
+		await engineCore.resetRuntime(reloadPlan.resetFreshWorldOptions.preserve_textures);
+		await engineCore.refresh_audio_assets();
 		try {
 			runtime.activateCartProgramAssets();
 			resetRuntimeState(runtime);
@@ -838,7 +838,7 @@ export function listLuaSourceRegistries(runtime: Runtime): Array<{ registry: Lua
 }
 
 export function resolveLuaSourceRecord(runtime: Runtime, path: string): LuaSourceRecord | null {
-	const active = $.sources.path2lua[path];
+	const active = engineCore.sources.path2lua[path];
 	if (active) {
 		return active;
 	}
@@ -858,10 +858,10 @@ export function resolveLuaSourceRecord(runtime: Runtime, path: string): LuaSourc
 
 export function resolveModuleRegistries(runtime: Runtime): LuaSourceRegistry[] {
 	const registries: LuaSourceRegistry[] = [];
-	if ($.sources) {
-		registries.push($.sources);
+	if (engineCore.sources) {
+		registries.push(engineCore.sources);
 	}
-	if (runtime.engineLuaSources && runtime.engineLuaSources !== $.sources) {
+	if (runtime.engineLuaSources && runtime.engineLuaSources !== engineCore.sources) {
 		registries.push(runtime.engineLuaSources);
 	}
 	return registries;

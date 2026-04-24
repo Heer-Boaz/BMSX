@@ -1,4 +1,4 @@
-import { $ } from '../core/engine';
+import { engineCore } from '../core/engine';
 import {
 	clearBackQueues,
 	prepareCompletedRenderQueues,
@@ -63,7 +63,7 @@ export class RenderPresentationState {
 		if (!Boolean((globalThis as any).__bmsx_debug_presentrate)) {
 			return;
 		}
-		if ($.paused) {
+		if (engineCore.paused) {
 			this.debugPresentPausedPresents += 1;
 			return;
 		}
@@ -92,12 +92,12 @@ export class RenderPresentationState {
 	}
 
 	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
-		$.deltatime = hostDeltaMs;
-		commitVdpViewSnapshot($.view, runtime.machine.vdp, runtime.machine.memory);
-		$.view.configurePresentation(mode, commitFrame);
+		engineCore.deltatime = hostDeltaMs;
+		commitVdpViewSnapshot(engineCore.view, runtime.machine.vdp, runtime.machine.memory);
+		engineCore.view.configurePresentation(mode, commitFrame);
 		this.recordPresentation(mode, commitFrame);
-		$.sndmaster.finishFrame();
-		$.view.drawgame();
+		engineCore.sndmaster.finishFrame();
+		engineCore.view.drawgame();
 		runtime.cartBoot.scheduleDeferredPreparation(runtime);
 	}
 

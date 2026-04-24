@@ -1,4 +1,4 @@
-import { $ } from '../../core/engine';
+import { engineCore } from '../../core/engine';
 import axisFS from './shaders/axis_gizmo.frag.glsl';
 import axisVS from './shaders/axis_gizmo.vert.glsl';
 import { RenderPassLibrary } from '../backend/pass/library';
@@ -57,9 +57,9 @@ function axisNdcToPixelY(y: number, height: number): number {
 }
 
 function drawAxisLabel(px: number, py: number, letter: string, col: color, scale: number): void {
-	const font = $.view.default_font;
+	const font = engineCore.view.default_font;
 	const imgid = font.char_to_img(letter);
-	$.view.renderer.submit.sprite({ imgid, pos: { x: Math.round(px), y: Math.round(py), z: 999 }, scale: { x: scale, y: scale }, flip: { flip_h: false, flip_v: false }, colorize: col, layer: 'ui' });
+	engineCore.view.renderer.submit.sprite({ imgid, pos: { x: Math.round(px), y: Math.round(py), z: 999 }, scale: { x: scale, y: scale }, flip: { flip_h: false, flip_v: false }, colorize: col, layer: 'ui' });
 }
 
 function placeAxisLabel(originX: number, originY: number, vx: number, vy: number, letter: string, col: color, scale: number, aspect: number, width: number, height: number): void {
@@ -85,7 +85,7 @@ function initAxisGizmoPipeline(gl: WebGL2RenderingContext): void {
 	gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
 	gl.bufferData(gl.ARRAY_BUFFER, AXIS_VERTEX_DATA, gl.STATIC_DRAW);
 
-	const backend = $.view.backend as WebGLBackend;
+	const backend = engineCore.view.backend as WebGLBackend;
 	const prog = backend.buildProgram(axisVS, axisFS, 'axis_gizmo');
 	if (!prog) throw Error('Failed to build axis gizmo program');
 	program = prog;
@@ -125,7 +125,7 @@ export function registerAxisGizmoPass_WebGL(registry: RenderPassLibrary): void {
 			const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
 			const cam = resolveActiveCamera3D()!;
 			const view = cam.view; // full view; translation ignored via w=0
-			const gv = $.view;
+			const gv = engineCore.view;
 			const aspect = gv.offscreenCanvasSize.x / Math.max(1, gv.offscreenCanvasSize.y);
 
 			gl.useProgram(program);

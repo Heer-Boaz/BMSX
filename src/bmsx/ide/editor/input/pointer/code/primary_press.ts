@@ -1,4 +1,4 @@
-import { $ } from '../../../../../core/engine';
+import { engineCore } from '../../../../../core/engine';
 import { setCursorPosition } from '../../../ui/view/caret/caret';
 import { setSingleCursorSelectionAnchor } from '../../../editing/cursor/state';
 import { focusPrimaryEditorSurface } from '../../../../workbench/ui/focus';
@@ -43,7 +43,7 @@ export function handleCodeAreaPrimaryPressPointer(
 }
 
 function registerCodePointerClick(row: number, column: number): boolean {
-	const now = $.platform.clock.now();
+	const now = engineCore.platform.clock.now();
 	const interval = now - editorPointerState.lastPointerClickTimeMs;
 	const sameRow = row === editorPointerState.lastPointerClickRow;
 	const columnDelta = Math.abs(column - editorPointerState.lastPointerClickColumn);

@@ -1,4 +1,4 @@
-import { $ } from '../../../../core/engine';
+import { engineCore } from '../../../../core/engine';
 import { editorPointerState } from './state';
 
 export const POINTER_PRIMARY_JUST_PRESSED = 1;
@@ -7,7 +7,7 @@ export const POINTER_SECONDARY_JUST_PRESSED = 4;
 export const POINTER_AUX_JUST_PRESSED = 8;
 
 export function computeEditorPointerButtonMask(
-	playerInput: ReturnType<typeof $.input.getPlayerInput>,
+	playerInput: ReturnType<typeof engineCore.input.getPlayerInput>,
 	primaryPressed: boolean
 ): number {
 	const secondaryState = playerInput.getRawButtonState('pointer_secondary', 'pointer');

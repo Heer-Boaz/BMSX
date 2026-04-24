@@ -1,6 +1,6 @@
 // Mesh pipeline (formerly glview.3d) inlined from legacy module.
 // Handles 3D mesh rendering, instancing, morph targets, skinning, fog, and lighting UBO management.
-import { $ } from '../../../core/engine';
+import { engineCore } from '../../../core/engine';
 import type { Mesh } from './index';
 import { Float32ArrayPool } from '../../../common/pool';
 import type { vec3arr } from '../../../rompack/format';
@@ -693,7 +693,7 @@ function setMeshTextures(runtime: MeshPassRuntime, m: Mesh, buffers: MeshBuffers
 	const { context, gl } = runtime;
 	// Albedo: prefer mesh texture; otherwise use 1x1 white (no shared atlas fallback)
 	let tex = m.gpuTextureAlbedo
-		? $.texmanager.getTexture(m.gpuTextureAlbedo)
+		? engineCore.texmanager.getTexture(m.gpuTextureAlbedo)
 		: (context.textures['_default_albedo'] as WebGLTexture);
 	if (tex !== stateCache.albedo) {
 		context.activeTexUnit = TEXTURE_UNIT_ALBEDO;
@@ -703,7 +703,7 @@ function setMeshTextures(runtime: MeshPassRuntime, m: Mesh, buffers: MeshBuffers
 	}
 	stateCache.useAlbedo = tex ? 1 : 0;
 
-	tex = m.gpuTextureNormal ? $.texmanager.getTexture(m.gpuTextureNormal) : (context.textures['_default_normal'] as WebGLTexture);
+	tex = m.gpuTextureNormal ? engineCore.texmanager.getTexture(m.gpuTextureNormal) : (context.textures['_default_normal'] as WebGLTexture);
 	if (tex !== stateCache.normal) {
 		context.activeTexUnit = TEXTURE_UNIT_NORMAL;
 		context.bind2DTex(tex);
@@ -712,7 +712,7 @@ function setMeshTextures(runtime: MeshPassRuntime, m: Mesh, buffers: MeshBuffers
 	}
 	stateCache.useNormal = tex ? 1 : 0;
 
-	tex = m.gpuTextureMetallicRoughness ? $.texmanager.getTexture(m.gpuTextureMetallicRoughness) : (context.textures['_default_mr'] as WebGLTexture);
+	tex = m.gpuTextureMetallicRoughness ? engineCore.texmanager.getTexture(m.gpuTextureMetallicRoughness) : (context.textures['_default_mr'] as WebGLTexture);
 	if (tex !== stateCache.mr) {
 		context.activeTexUnit = TEXTURE_UNIT_METALLIC_ROUGHNESS;
 		context.bind2DTex(tex);
@@ -1018,10 +1018,10 @@ export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
 		exec: (backend, fbo, s) => {
 			const webglBackend = backend as WebGLBackend;
 			activeBackend = webglBackend;
-			renderMeshBatch(webglBackend, $.view, fbo as WebGLFramebuffer, s as MeshBatchPipelineState);
+			renderMeshBatch(webglBackend, engineCore.view, fbo as WebGLFramebuffer, s as MeshBatchPipelineState);
 		},
 		prepare: (backend, _state) => {
-			const ctx = $.view as RenderContext;
+			const ctx = engineCore.view as RenderContext;
 			const cam = resolveActiveCamera3D();
 			if (!cam) {
 				console.warn('[Draw Meshes] No active 3D camera found, skipping mesh draw');
