@@ -114,6 +114,10 @@ void applyRuntimeRenderState(const RuntimeRenderState& state) {
 		state.spriteParallaxRig.flip_window);
 }
 
+void beginRuntimeRenderFrame() {
+	clearHardwareLighting();
+}
+
 void resetRuntimeRenderState() {
 	clearHardwareCamera();
 	clearHardwareLighting();

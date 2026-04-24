@@ -45,6 +45,7 @@ struct RuntimeRenderState {
 
 RuntimeRenderState captureRuntimeRenderState();
 void applyRuntimeRenderState(const RuntimeRenderState& state);
+void beginRuntimeRenderFrame();
 void resetRuntimeRenderState();
 
 } // namespace bmsx

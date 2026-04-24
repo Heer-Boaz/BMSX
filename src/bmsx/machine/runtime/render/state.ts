@@ -121,6 +121,10 @@ export function applyRuntimeRenderState(state: RuntimeRenderState): void {
 	);
 }
 
+export function beginRuntimeRenderFrame(): void {
+	clearHardwareLighting();
+}
+
 export function resetRuntimeRenderState(): void {
 	clearHardwareCamera();
 	clearHardwareLighting();

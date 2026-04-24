@@ -1,5 +1,6 @@
 import type { RuntimeSaveMachineState } from './contracts';
 import type { Runtime } from './runtime';
+import { flushRuntimeAssetEdits } from '../../runtime/assets/edits';
 
 export function captureRuntimeSaveMachineState(runtime: Runtime): RuntimeSaveMachineState {
 	return {
@@ -13,4 +14,5 @@ export function applyRuntimeSaveMachineState(runtime: Runtime, state: RuntimeSav
 	runtime.machine.restoreSaveState(state.machine);
 	runtime.frameScheduler.restoreState(state.frameScheduler);
 	runtime.vblank.restore(runtime, state.vblank);
+	flushRuntimeAssetEdits(runtime.machine.memory);
 }
