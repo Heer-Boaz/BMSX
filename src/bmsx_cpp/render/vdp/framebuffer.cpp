@@ -1,61 +1,99 @@
 #include "render/vdp/framebuffer.h"
 
-#include "core/engine.h"
 #include "machine/devices/vdp/vdp.h"
-#include "render/gameview.h"
-#include "render/texture_manager.h"
 #include "render/vdp/blitter/gles2.h"
 #include "render/vdp/surfaces.h"
+#include "render/vdp/texture_transfer.h"
 #include "rompack/format.h"
+#include <utility>
 
 namespace bmsx {
 namespace {
 
 const TextureParams DEFAULT_TEXTURE_PARAMS{};
+TextureHandle renderFrameBufferTexture = nullptr;
+TextureHandle displayFrameBufferTexture = nullptr;
 
 } // namespace
 
-TextureHandle getVdpDisplayFrameBufferTexture() {
-	return EngineCore::instance().texmanager()->getTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
+TextureHandle vdpDisplayFrameBufferTexture() {
+	return displayFrameBufferTexture;
 }
 
-TextureHandle getVdpRenderFrameBufferTexture() {
-	return EngineCore::instance().texmanager()->getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY);
+TextureHandle vdpRenderFrameBufferTexture() {
+	return renderFrameBufferTexture;
 }
 
 static void swapVdpFrameBufferTexturePages() {
-	auto* texmanager = EngineCore::instance().texmanager();
-	texmanager->swapTextureHandlesByUri(FRAMEBUFFER_TEXTURE_KEY, FRAMEBUFFER_RENDER_TEXTURE_KEY);
-	auto* view = EngineCore::instance().view();
-	view->textures[FRAMEBUFFER_TEXTURE_KEY] = texmanager->getTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
-	view->textures[FRAMEBUFFER_RENDER_TEXTURE_KEY] = texmanager->getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY);
+	swapVdpTextureHandlesByUri(FRAMEBUFFER_TEXTURE_KEY, FRAMEBUFFER_RENDER_TEXTURE_KEY);
+	std::swap(renderFrameBufferTexture, displayFrameBufferTexture);
 #if BMSX_ENABLE_GLES2
 	VdpGles2Blitter::invalidateFrameBufferAttachment();
 #endif
 }
 
-static TextureHandle createVdpFrameBufferTexture(const char* textureKey, const u8* pixels, u32 width, u32 height) {
-	auto* texmanager = EngineCore::instance().texmanager();
-	const TextureKey key = texmanager->makeKey(textureKey, DEFAULT_TEXTURE_PARAMS);
-	TextureHandle handle = texmanager->getOrCreateTexture(key, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
-	handle = texmanager->resizeTextureForKey(textureKey, static_cast<i32>(width), static_cast<i32>(height));
-	texmanager->updateTexture(handle, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
-	EngineCore::instance().view()->textures[textureKey] = handle;
-	return handle;
+void writeVdpRenderFrameBufferPixels(const u8* pixels, u32 width, u32 height) {
+	renderFrameBufferTexture = updateVdpTexturePixels(FRAMEBUFFER_RENDER_TEXTURE_KEY, pixels, width, height);
 }
 
-static void uploadVdpFrameBufferTexturePixels(const char* textureKey, const u8* pixels, u32 width, u32 height) {
-	auto* texmanager = EngineCore::instance().texmanager();
-	TextureHandle handle = texmanager->resizeTextureForKey(textureKey, static_cast<i32>(width), static_cast<i32>(height));
-	texmanager->updateTexture(handle, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
-	EngineCore::instance().view()->textures[textureKey] = handle;
+void writeVdpDisplayFrameBufferPixels(const u8* pixels, u32 width, u32 height) {
+	displayFrameBufferTexture = updateVdpTexturePixels(FRAMEBUFFER_TEXTURE_KEY, pixels, width, height);
+}
+
+// disable-next-line single_line_method_pattern -- framebuffer VRAM writes hit the owned render texture directly on the hot path.
+void writeVdpRenderFrameBufferPixelRegion(const u8* pixels, i32 width, i32 height, i32 x, i32 y) {
+	vdpTextureBackend().updateTextureRegion(
+		renderFrameBufferTexture,
+		pixels,
+		width,
+		height,
+		x,
+		y,
+		DEFAULT_TEXTURE_PARAMS
+	);
+}
+
+// disable-next-line single_line_method_pattern -- framebuffer readback is the concrete VDP texture boundary for save-state and MMIO reads.
+void readVdpRenderFrameBufferPixels(u8* out, i32 width, i32 height, i32 x, i32 y) {
+	vdpTextureBackend().readTextureRegion(
+		renderFrameBufferTexture,
+		out,
+		width,
+		height,
+		x,
+		y,
+		DEFAULT_TEXTURE_PARAMS
+	);
+}
+
+// disable-next-line single_line_method_pattern -- display-page readback is the concrete VDP texture boundary for headless presentation and save-state.
+void readVdpDisplayFrameBufferPixels(u8* out, i32 width, i32 height, i32 x, i32 y) {
+	vdpTextureBackend().readTextureRegion(
+		displayFrameBufferTexture,
+		out,
+		width,
+		height,
+		x,
+		y,
+		DEFAULT_TEXTURE_PARAMS
+	);
+}
+
+void syncVdpRenderFrameBufferReadback(VDP& vdp) {
+	readVdpRenderFrameBufferPixels(
+		vdp.frameBufferRenderReadback().data(),
+		static_cast<i32>(vdp.frameBufferWidth()),
+		static_cast<i32>(vdp.frameBufferHeight()),
+		0,
+		0
+	);
+	vdp.invalidateFrameBufferReadCache();
 }
 
 void initializeVdpFrameBufferTextures(VDP& vdp) {
-	vdp.setFrameBufferTextureRegionWriter(uploadVdpFrameBufferPixelRegion);
-	createVdpFrameBufferTexture(FRAMEBUFFER_RENDER_TEXTURE_KEY, vdp.frameBufferRenderReadback().data(), vdp.frameBufferWidth(), vdp.frameBufferHeight());
+	renderFrameBufferTexture = createVdpTextureFromPixels(FRAMEBUFFER_RENDER_TEXTURE_KEY, vdp.frameBufferRenderReadback().data(), vdp.frameBufferWidth(), vdp.frameBufferHeight());
 	vdp.clearSurfaceUploadDirty(VDP_RD_SURFACE_FRAMEBUFFER);
-	createVdpFrameBufferTexture(FRAMEBUFFER_TEXTURE_KEY, vdp.frameBufferDisplayReadback().data(), vdp.frameBufferWidth(), vdp.frameBufferHeight());
+	displayFrameBufferTexture = createVdpTextureFromPixels(FRAMEBUFFER_TEXTURE_KEY, vdp.frameBufferDisplayReadback().data(), vdp.frameBufferWidth(), vdp.frameBufferHeight());
 }
 
 void applyVdpFrameBufferTextureWrites(VDP& vdp) {
@@ -71,7 +109,7 @@ void applyVdpFrameBufferTextureWrites(VDP& vdp) {
 					continue;
 				}
 				const size_t byteOffset = static_cast<size_t>(row) * static_cast<size_t>(rowBytes) + static_cast<size_t>(span.xStart) * 4u;
-				uploadVdpFrameBufferPixelRegion(
+				writeVdpRenderFrameBufferPixelRegion(
 					slot.cpuReadback.data() + byteOffset,
 					static_cast<i32>(span.xEnd - span.xStart),
 					1,
@@ -89,65 +127,6 @@ void presentVdpFrameBufferPages(VDP& vdp) {
 	applyVdpFrameBufferTextureWrites(vdp);
 	swapVdpFrameBufferTexturePages();
 	vdp.swapFrameBufferReadbackPages();
-}
-
-void uploadVdpFrameBufferPixels(const u8* pixels, u32 width, u32 height) {
-	uploadVdpFrameBufferTexturePixels(FRAMEBUFFER_RENDER_TEXTURE_KEY, pixels, width, height);
-}
-
-void uploadVdpDisplayFrameBufferPixels(const u8* pixels, u32 width, u32 height) {
-	uploadVdpFrameBufferTexturePixels(FRAMEBUFFER_TEXTURE_KEY, pixels, width, height);
-}
-
-void uploadVdpFrameBufferPixelRegion(const u8* pixels, i32 width, i32 height, i32 x, i32 y) {
-	EngineCore::instance().texmanager()->backend()->updateTextureRegion(
-		getVdpRenderFrameBufferTexture(),
-		pixels,
-		width,
-		height,
-		x,
-		y,
-		DEFAULT_TEXTURE_PARAMS
-	);
-}
-
-void readVdpFrameBufferPixels(u8* out, i32 width, i32 height, i32 x, i32 y) {
-	EngineCore::instance().texmanager()->backend()->readTextureRegion(
-		getVdpRenderFrameBufferTexture(),
-		out,
-		width,
-		height,
-		x,
-		y,
-		DEFAULT_TEXTURE_PARAMS
-	);
-}
-
-void readVdpDisplayFrameBufferPixels(u8* out, i32 width, i32 height, i32 x, i32 y) {
-	EngineCore::instance().texmanager()->backend()->readTextureRegion(
-		getVdpDisplayFrameBufferTexture(),
-		out,
-		width,
-		height,
-		x,
-		y,
-		DEFAULT_TEXTURE_PARAMS
-	);
-}
-
-void syncVdpRenderFrameBufferReadback(VDP& vdp) {
-	readVdpFrameBufferPixels(
-		vdp.frameBufferRenderReadback().data(),
-		static_cast<i32>(vdp.frameBufferWidth()),
-		static_cast<i32>(vdp.frameBufferHeight()),
-		0,
-		0
-	);
-	vdp.invalidateFrameBufferReadCache();
-}
-
-void restoreVdpFrameBufferContext(VDP& vdp) {
-	initializeVdpFrameBufferTextures(vdp);
 }
 
 } // namespace bmsx

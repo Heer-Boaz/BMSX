@@ -44,7 +44,7 @@ import { lintHotPathCalls } from '../../lint/rules/cpp/code_quality/hot_path_cal
 import {
 	collectFunctionUsageCounts,
 	createFunctionUsageInfo,
-	isSingleLineWrapperAllowedByUsage,
+	isSingleLineWrapperAllowed,
 } from '../../lint/rules/cpp/support/function_usage';
 import {
 	collectClassRanges,
@@ -140,7 +140,7 @@ export function analyzeFiles(files: readonly string[]): AnalysisResult {
 					tokens[info.nameToken].column,
 					info.wrapperTarget,
 				);
-				if (!isSingleLineWrapperAllowedByUsage(info, functionUsageInfo, regions, tokens)) {
+				if (!isSingleLineWrapperAllowed(info, regions, tokens)) {
 					pushTokenLintIssue(
 						lintIssues,
 						file,

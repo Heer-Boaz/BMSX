@@ -51,10 +51,6 @@ export function addNormalizedBodyDuplicateIssues(normalizedBodies: readonly Norm
 }
 
 export function collectNormalizedBody(file: string, tokens: readonly Token[], pairs: readonly number[], info: FunctionInfo, regions: readonly AnalysisRegion[], normalizedBodies: NormalizedBodyInfo[], ledger: QualityLedger): void {
-	if (info.name.endsWith('Thunk')) {
-		noteQualityLedger(ledger, 'skipped_cpp_normalized_body_thunk');
-		return;
-	}
 	if (lineInAnalysisRegion(regions, 'normalized-body-acceptable', tokens[info.nameToken].line)) {
 		noteQualityLedger(ledger, 'skipped_cpp_normalized_body_analysis_region');
 		return;

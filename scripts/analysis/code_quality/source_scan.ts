@@ -41,6 +41,7 @@ import { isSplitLikeCallTarget, splitJoinDelimiterFingerprint } from '../../lint
 import { ClassInfo, LintBinding } from '../../lint/rules/ts/support/types';
 import { getMethodDiscriminator } from './declarations';
 
+// disable-next-line single_line_method_pattern -- shared analysis-region probe keeps rule checks readable at call sites.
 export function nodeIsInAnalysisRegion(sourceFile: ts.SourceFile, regions: readonly AnalysisRegion[], kind: string, node: ts.Node): boolean {
 	return lineInAnalysisRegion(regions, kind, nodeStartLine(sourceFile, node));
 }
@@ -476,7 +477,7 @@ export function collectLintIssues(
 			lintSingleLineMethodPattern(
 				node as ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
 				sourceFile,
-				functionUsageInfo,
+				regions,
 				issues,
 			);
 		}

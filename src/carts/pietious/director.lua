@@ -104,6 +104,7 @@ function director:set_active_space(space_id)
 	oget('ui'):set_space(space_id)
 end
 
+-- disable-next-line single_line_method_pattern -- named director state hook enters this transition from data-driven flow.
 function director:begin_black_wait()
 	self:enter_transition('transition')
 end

@@ -65,6 +65,7 @@ function readPacketArgWord(reader: PacketWordReader, cmd: number, index: number,
 	return reader.readU32(index);
 }
 
+// disable-next-line single_line_method_pattern -- packet decoding keeps typed U32 reads named at every command-site.
 function readPacketArgU32(reader: PacketWordReader, cmd: number, index: number): number {
 	return readPacketArgWord(reader, cmd, index, VdpPacketWordKind.U32, 'u32');
 }

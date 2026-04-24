@@ -2,12 +2,8 @@ import { type FunctionInfo } from '../../../../../src/bmsx/language/cpp/syntax/d
 import { cppAccessChainLeafName, cppCallTarget, isFunctionDeclaratorParen } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
 import { type Token } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
 import { type AnalysisRegion, lineInAnalysisRegion } from '../../../../analysis/lint_suppressions';
-import { type FunctionUsageInfo, incrementUsageCount } from '../../../function_usage';
+import { incrementUsageCount } from '../../../function_usage';
 import { isConstructorLike } from './bindings';
-
-export function cppUsageLeafName(name: string): string {
-	return cppAccessChainLeafName(name);
-}
 
 export function createFunctionUsageInfo(): { totalCounts: Map<string, number>; referenceCounts: Map<string, number>; } {
 	return {
@@ -29,29 +25,16 @@ export function collectFunctionUsageCounts(tokens: readonly Token[], pairs: read
 			continue;
 		}
 		incrementUsageCount(usageInfo.totalCounts, target);
-		incrementUsageCount(usageInfo.totalCounts, `leaf:${cppUsageLeafName(target)}`);
+		incrementUsageCount(usageInfo.totalCounts, `leaf:${cppAccessChainLeafName(target)}`);
 	}
 }
 
-export function isSingleLineWrapperAllowedByUsage(info: FunctionInfo, usageInfo: FunctionUsageInfo, regions: readonly AnalysisRegion[], tokens: readonly Token[]): boolean {
+export function isSingleLineWrapperAllowed(info: FunctionInfo, regions: readonly AnalysisRegion[], tokens: readonly Token[]): boolean {
 	if (isConstructorLike(info)) {
 		return true;
 	}
-	if (lineInAnalysisRegion(regions, 'single-line-wrapper-acceptable', tokens[info.nameToken].line)) {
+	if (lineInAnalysisRegion(regions, 'single_line_method_pattern', tokens[info.nameToken].line)) {
 		return true;
-	}
-	const names = [info.qualifiedName, info.name, `leaf:${info.name}`];
-	let total = 0;
-	for (let index = 0; index < names.length; index += 1) {
-		total += usageInfo.totalCounts.get(names[index]) ?? 0;
-	}
-	if (total >= 2) {
-		return true;
-	}
-	for (let index = 0; index < names.length; index += 1) {
-		if ((usageInfo.referenceCounts.get(names[index]) ?? 0) >= 1) {
-			return true;
-		}
 	}
 	return false;
 }

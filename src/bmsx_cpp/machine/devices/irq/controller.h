@@ -19,7 +19,6 @@ public:
 
 private:
 	static void onAckWriteThunk(void* context, uint32_t addr, Value value);
-	void onAckWrite();
 
 	Memory& m_memory;
 	uint64_t m_signalSequence = 0;

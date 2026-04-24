@@ -21,7 +21,7 @@ void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
 			return;
 		case TimerKindDeviceService:
 			if (auto* renderVdp = runtime.machine().runDeviceService(payload); renderVdp != nullptr) {
-				drainReadyVdpExecution(*renderVdp);
+				drainReadyVdpExecution(*renderVdp, runtime.frameLoop.currentTimeSeconds);
 			}
 			return;
 		default:

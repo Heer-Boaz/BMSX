@@ -19,6 +19,7 @@ public:
 	FrameState frameState;
 	bool frameActive = false;
 	f64 frameDeltaMs = 0.0;
+	f64 currentTimeSeconds = 0.0;
 
 private:
 	void executeUpdateCallback(Runtime& runtime);

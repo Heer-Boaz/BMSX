@@ -67,10 +67,8 @@ constexpr uint32_t VDP_RD_SURFACE_SECONDARY = 2u;
 constexpr uint32_t VDP_RD_SURFACE_FRAMEBUFFER = 3u;
 constexpr uint32_t VDP_RD_SURFACE_COUNT = 4u;
 
-	class VDP : public Memory::VramWriter {
+class VDP : public Memory::VramWriter {
 public:
-	using FrameBufferTextureRegionWriter = void (*)(const u8* pixels, i32 width, i32 height, i32 x, i32 y);
-
 		VDP(
 			Memory& memory,
 			CPU& cpu,
@@ -122,7 +120,6 @@ public:
 	const std::vector<u8>& frameBufferRenderReadback() const { return getVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER).cpuReadback; }
 	std::vector<u8>& frameBufferDisplayReadback() { return m_displayFrameBufferCpuReadback; }
 	const std::vector<u8>& frameBufferDisplayReadback() const { return m_displayFrameBufferCpuReadback; }
-	void setFrameBufferTextureRegionWriter(FrameBufferTextureRegionWriter writer) { m_frameBufferTextureRegionWriter = writer; }
 	void swapFrameBufferReadbackPages();
 	void invalidateFrameBufferReadCache();
 	VdpBlitterSurfaceSize resolveBlitterSurfaceSize(uint32_t surfaceId) const;
@@ -330,7 +327,6 @@ public:
 	bool m_lastFrameHeld = false;
 	uint32_t m_frameBufferWidth = 0;
 	uint32_t m_frameBufferHeight = 0;
-	FrameBufferTextureRegionWriter m_frameBufferTextureRegionWriter = nullptr;
 	std::vector<u8> m_displayFrameBufferCpuReadback;
 	std::array<ReadSurface, 4> m_readSurfaces{};
 	std::array<ReadCache, 4> m_readCaches{};
@@ -374,9 +370,7 @@ public:
 	bool hasOpenDirectVdpFifoIngress() const;
 	bool hasBlockedSubmitPath() const;
 	void setStatusFlag(uint32_t mask, bool active);
-	void setSubmitBusyStatus(bool active);
 	void refreshSubmitBusyStatus();
-	void setSubmitRejectedStatus(bool active);
 	void pushVdpFifoWord(u32 word);
 	void consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
 	void consumeSealedVdpWordStream(u32 wordCount);
@@ -390,7 +384,6 @@ public:
 	void commitActiveVisualState();
 	void finishCommittedFrameOnVblankEdge();
 	void initializeFrameBufferSurface();
-	i32 getBlitterAtlasId(uint32_t surfaceId) const;
 	ResolvedBlitterSample resolveBlitterSample(u32 handle) const;
 
 	friend struct VdpGles2Blitter;

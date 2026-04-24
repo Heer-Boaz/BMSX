@@ -114,10 +114,12 @@ void applyRuntimeRenderState(const RuntimeRenderState& state) {
 		state.spriteParallaxRig.flip_window);
 }
 
+// disable-next-line single_line_method_pattern -- runtime render frame entry owns the hardware-lighting reset boundary.
 void beginRuntimeRenderFrame() {
 	clearHardwareLighting();
 }
 
+// disable-next-line single_line_method_pattern -- runtime reset/save paths clear render back queues through this owner.
 void clearRuntimeRenderBackQueues() {
 	RenderQueues::clearBackQueues();
 }

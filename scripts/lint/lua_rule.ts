@@ -30,26 +30,3 @@ export type CartLintLocationPusher = (
 	column: number,
 	message: string,
 ) => void;
-
-export function pushLintIssue(
-	issues: CartLintIssue[],
-	activeRules: ReadonlySet<LintRuleName>,
-	isLineSuppressed: (path: string, line: number) => boolean,
-	rule: LintRuleName,
-	node: CartLintNode,
-	message: string,
-): void {
-	if (!activeRules.has(rule)) {
-		return;
-	}
-	if (isLineSuppressed(node.range.path, node.range.start.line)) {
-		return;
-	}
-	issues.push({
-		rule,
-		path: node.range.path,
-		line: node.range.start.line,
-		column: node.range.start.column,
-		message,
-	});
-}

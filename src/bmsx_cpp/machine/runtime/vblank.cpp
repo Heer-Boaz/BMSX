@@ -225,6 +225,7 @@ bool VblankState::isFrameBoundaryHalt(Runtime& runtime) const {
 		&& runtime.m_machine.cpu().isHaltedUntilIrq();
 }
 
+// disable-next-line single_line_method_pattern -- VBLANK owns the frame-commit timing edge into the VDP.
 void VblankState::commitFrameOnVblankEdge(Runtime& runtime) {
 	commitVdpFrameOnVblankEdge(runtime.m_machine.vdp());
 }

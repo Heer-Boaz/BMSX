@@ -8,7 +8,7 @@
 namespace bmsx {
 
 void restoreVdpContextState(VDP& vdp) {
-	restoreVdpFrameBufferContext(vdp);
+	initializeVdpFrameBufferTextures(vdp);
 	initializeVdpSlotTextures(vdp);
 	VdpGles2Blitter::initialize();
 }
@@ -22,7 +22,7 @@ void captureVdpContextState(VDP& vdp) {
 		}
 		const size_t bytes = static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u;
 		slot.cpuReadback.resize(bytes);
-		readVdpFrameBufferPixels(
+		readVdpRenderFrameBufferPixels(
 			slot.cpuReadback.data(),
 			static_cast<i32>(entry.regionW),
 			static_cast<i32>(entry.regionH),

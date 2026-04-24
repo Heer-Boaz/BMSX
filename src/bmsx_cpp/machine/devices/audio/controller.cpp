@@ -70,6 +70,7 @@ int32_t apuSamplesToMilliseconds(uint32_t samples) {
 	return static_cast<int32_t>((static_cast<uint64_t>(samples) * 1000ull) / APU_SAMPLE_RATE_HZ);
 }
 
+// disable-next-line single_line_method_pattern -- APU register resets write numeric MMIO values repeatedly; this keeps the value conversion local.
 void writeNumber(Memory& memory, uint32_t addr, double value) {
 	memory.writeValue(addr, valueNumber(value));
 }
@@ -150,6 +151,7 @@ void AudioController::onCommandWrite() {
 	}
 }
 
+// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the APU device instance.
 void AudioController::onCommandWriteThunk(void* context, uint32_t, Value) {
 	static_cast<AudioController*>(context)->onCommandWrite();
 }

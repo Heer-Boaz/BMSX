@@ -950,14 +950,17 @@ RuntimeSaveState decodeRuntimeSaveState(const std::vector<u8>& data) {
 	return decodeRuntimeSaveState(data.data(), data.size());
 }
 
+// disable-next-line single_line_method_pattern -- byte save-state API composes capture and binary encoding at the public boundary.
 std::vector<u8> captureRuntimeSaveStateBytes(Runtime& runtime) {
 	return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 }
 
+// disable-next-line single_line_method_pattern -- byte save-state API composes binary decoding and runtime restore at the public boundary.
 void applyRuntimeSaveStateBytes(Runtime& runtime, const u8* data, size_t size) {
 	applyRuntimeSaveState(runtime, decodeRuntimeSaveState(data, size));
 }
 
+// disable-next-line single_line_method_pattern -- vector save-state input is the public owner overload for byte payload callers.
 void applyRuntimeSaveStateBytes(Runtime& runtime, const std::vector<u8>& data) {
 	applyRuntimeSaveStateBytes(runtime, data.data(), data.size());
 }

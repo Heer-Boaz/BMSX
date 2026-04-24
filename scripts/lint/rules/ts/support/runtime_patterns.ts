@@ -3,7 +3,7 @@ import ts from 'typescript';
 import { nodeIsInAnalysisRegion } from '../../../../analysis/code_quality/source_scan';
 import { expressionRootName, getCallTargetLeafName, unwrapExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
 import { isFunctionExpressionLike, isFunctionLikeWithParameters, isPredicateFunctionName } from '../../../../../src/bmsx/language/ts/ast/functions';
-import { BOUNDARY_WRAPPER_NAME_WORDS, DIRECT_MUTATION_METHOD_NAMES } from './declarations';
+import { DIRECT_MUTATION_METHOD_NAMES } from './declarations';
 
 export function isAllocationExpression(node: ts.Expression): boolean {
 	const unwrapped = unwrapExpression(node);
@@ -71,7 +71,41 @@ export function containsClosureExpression(node: ts.Node): boolean {
 }
 
 export function isTrivialDelegationCallExpression(callExpression: ts.CallExpression): boolean {
-	return !isDirectMutationCallExpression(callExpression) && !containsClosureExpression(callExpression);
+	return !isDirectMutationCallExpression(callExpression) && !containsClosureExpression(callExpression) && hasOnlyTrivialDelegationArguments(callExpression);
+}
+
+function hasOnlyTrivialDelegationArguments(callExpression: ts.CallExpression): boolean {
+	for (let index = 0; index < callExpression.arguments.length; index += 1) {
+		if (!isTrivialDelegationArgument(callExpression.arguments[index])) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function isTrivialDelegationArgument(expression: ts.Expression): boolean {
+	const unwrapped = unwrapExpression(expression);
+	if (
+		ts.isIdentifier(unwrapped)
+		|| unwrapped.kind === ts.SyntaxKind.ThisKeyword
+		|| ts.isNumericLiteral(unwrapped)
+		|| ts.isStringLiteral(unwrapped)
+		|| unwrapped.kind === ts.SyntaxKind.NullKeyword
+		|| unwrapped.kind === ts.SyntaxKind.TrueKeyword
+		|| unwrapped.kind === ts.SyntaxKind.FalseKeyword
+	) {
+		return true;
+	}
+	if (ts.isPropertyAccessExpression(unwrapped)) {
+		return isTrivialDelegationArgument(unwrapped.expression);
+	}
+	if (ts.isElementAccessExpression(unwrapped)) {
+		return isTrivialDelegationArgument(unwrapped.expression) && isTrivialDelegationArgument(unwrapped.argumentExpression);
+	}
+	if (ts.isPrefixUnaryExpression(unwrapped)) {
+		return isTrivialDelegationArgument(unwrapped.operand);
+	}
+	return false;
 }
 
 export function isPrimitivePredicateMethodCall(callExpression: ts.CallExpression): boolean {
@@ -92,19 +126,6 @@ export function isPrimitivePredicateMethodCall(callExpression: ts.CallExpression
 
 export function isNamedPrimitivePredicate(functionNode: ts.FunctionDeclaration | ts.MethodDeclaration, callExpression: ts.CallExpression): boolean {
 	return isPredicateFunctionName(functionNode.name?.getText()) && isPrimitivePredicateMethodCall(callExpression);
-}
-
-export function isBoundaryStyleWrapperName(name: string): boolean {
-	const words = name.match(/[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z0-9])/g);
-	if (words === null) {
-		return BOUNDARY_WRAPPER_NAME_WORDS.has(name.toLowerCase());
-	}
-	for (let index = 0; index < words.length; index += 1) {
-		if (BOUNDARY_WRAPPER_NAME_WORDS.has(words[index].toLowerCase())) {
-			return true;
-		}
-	}
-	return false;
 }
 
 export function isDirectMutationReceiver(expression: ts.Expression): boolean {

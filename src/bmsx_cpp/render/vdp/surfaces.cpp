@@ -47,7 +47,7 @@ bool isVdpFrameBufferSurface(uint32_t surfaceId) {
 
 TextureHandle getVdpRenderSurfaceTexture(const VDP&, uint32_t surfaceId) {
 	if (isVdpFrameBufferSurface(surfaceId)) {
-		return getVdpRenderFrameBufferTexture();
+		return vdpRenderFrameBufferTexture();
 	}
 	return vdpTextureByUri(resolveVdpSurfaceTextureKey(surfaceId));
 }

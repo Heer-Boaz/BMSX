@@ -29,6 +29,7 @@ import { clearOverlayFrame } from '../render/editor/overlay_queue';
 import type { Table } from '../machine/cpu/cpu';
 import { buildActionStateTable, buildButtonStateTable, packActionStateFlags } from '../machine/firmware/input_state_tables';
 import { restoreVdpContextState } from '../render/vdp/context_state';
+import { initializeVdpTextureTransfer } from '../render/vdp/texture_transfer';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined
@@ -99,18 +100,18 @@ export class EngineCore {
 	/**
 	 * Indicates whether the game is currently paused (by the debugger).
 	 */
-		private _paused!: boolean;
+	private _paused!: boolean;
 
-		public get paused(): boolean { return this._paused; }
-		public set paused(value: boolean) {
-			if (this._paused === value) return; // No change
-			this._paused = value;
-			if (this._paused) {
-				this.sndmaster.pause();
-			} else {
-				this.sndmaster.resume();
-			}
+	public get paused(): boolean { return this._paused; }
+	public set paused(value: boolean) {
+		if (this._paused === value) return; // No change
+		this._paused = value;
+		if (this._paused) {
+			this.sndmaster.pause();
+		} else {
+			this.sndmaster.resume();
 		}
+	}
 
 	private _debuggerControlsVisible: boolean = false;
 
@@ -261,9 +262,9 @@ export class EngineCore {
 				if (segments.length === 0) {
 					return undefined;
 				}
-					let cursor: unknown;
-					if (Runtime.hasInstance) {
-						cursor = Runtime.instance.assets.getDataAsset(segments[0]);
+				let cursor: unknown;
+				if (Runtime.hasInstance) {
+					cursor = Runtime.instance.assets.getDataAsset(segments[0]);
 				} else {
 					cursor = this._assets.data[segments[0]];
 				}
@@ -291,16 +292,16 @@ export class EngineCore {
 		if (!this.platform.audio.available) {
 			return;
 		}
-			this.sndmaster.bootstrapRuntimeAudio(DEFAULT_MASTER_VOLUME);
-			const resolver = this.buildModulationResolver();
-			const runtime = Runtime.instance;
-			const resources = runtime.assets.buildAudioResourcesForSoundMaster(runtime.machine.memory);
-			await SoundMaster.instance.init(
-				resources,
-				DEFAULT_MASTER_VOLUME,
-				resolver,
-				(id) => runtime.assets.getAudioBytesById(runtime.machine.memory, id)
-			);
+		this.sndmaster.bootstrapRuntimeAudio(DEFAULT_MASTER_VOLUME);
+		const resolver = this.buildModulationResolver();
+		const runtime = Runtime.instance;
+		const resources = runtime.assets.buildAudioResourcesForSoundMaster(runtime.machine.memory);
+		await SoundMaster.instance.init(
+			resources,
+			DEFAULT_MASTER_VOLUME,
+			resolver,
+			(id) => runtime.assets.getAudioBytesById(runtime.machine.memory, id)
+		);
 		SoundMaster.instance.setMaxVoicesByType(getMachineMaxVoices(this._machine_manifest));
 	}
 
@@ -375,7 +376,8 @@ export class EngineCore {
 		this._view = gview;
 		const gpuBackend = await resolvedViewHost.createBackend() as GPUBackend;
 		gview.backend = gpuBackend;
-		new TextureManager(gpuBackend);
+		const textureManager = new TextureManager(gpuBackend);
+		initializeVdpTextureTransfer(textureManager, gview);
 		const pipelineRegistry = new RenderPassLibrary(gpuBackend);
 		pipelineRegistry.registerBuiltin(gpuBackend);
 		gview.pipelineRegistry = pipelineRegistry;
@@ -418,11 +420,9 @@ export class EngineCore {
 
 	public async refreshRenderAssets(): Promise<void> {
 		this.texmanager.setBackend(this.view.backend);
+		initializeVdpTextureTransfer(this.texmanager, this.view);
 		await this.view.initializeDefaultTextures();
-		const runtime = Runtime.instance;
-		if (runtime) {
-			restoreVdpContextState(runtime.machine.vdp);
-		}
+		restoreVdpContextState(Runtime.instance.machine.vdp);
 	}
 
 	public async resetRuntime(preserveTextures = false): Promise<void> {

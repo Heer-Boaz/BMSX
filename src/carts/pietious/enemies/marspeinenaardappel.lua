@@ -5,6 +5,7 @@ local enemy_base<const> = require('enemies/enemy_base')
 local marspeinenaardappel<const> = {}
 marspeinenaardappel.__index = marspeinenaardappel
 
+-- disable-next-line single_line_method_pattern -- constructor owns the local enemy sprite id at the class boundary.
 function marspeinenaardappel:ctor()
 	self:gfx('marspeinenaardappel')
 end

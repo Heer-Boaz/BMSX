@@ -101,6 +101,7 @@ export class HandlerCache {
 		return Array.from(bucket.values(), record => record.handler);
 	}
 
+	// disable-next-line single_line_method_pattern -- module disposal is the public lifecycle term for unloading cached handlers.
 	public disposeByModule(moduleId: string): void {
 		this.unloadModule(moduleId);
 	}

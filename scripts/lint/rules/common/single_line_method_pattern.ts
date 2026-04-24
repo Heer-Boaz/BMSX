@@ -1,19 +1,19 @@
 import { defineLintRule } from '../../rule';
+import { type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import ts from 'typescript';
+import { nodeIsInAnalysisRegion } from '../../../analysis/code_quality/source_scan';
 import { LintIssue, pushLintIssue } from '../ts/support/ast';
 import { isSingleLineWrapperCandidate } from '../ts/support/declarations';
-import { isAllowedBySingleLineFunctionUsage } from '../ts/support/function_usage';
-import { type FunctionUsageInfo } from '../../function_usage';
 
 export const singleLineMethodPatternRule = defineLintRule('common', 'single_line_method_pattern');
 
 export function lintSingleLineMethodPattern(
 	node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
 	sourceFile: ts.SourceFile,
-	functionUsageInfo: FunctionUsageInfo,
+	regions: readonly AnalysisRegion[],
 	issues: LintIssue[],
 ): void {
-	if (!isSingleLineWrapperCandidate(node, sourceFile) || isAllowedBySingleLineFunctionUsage(node, functionUsageInfo)) {
+	if (!isSingleLineWrapperCandidate(node, sourceFile) || nodeIsInAnalysisRegion(sourceFile, regions, singleLineMethodPatternRule.name, node)) {
 		return;
 	}
 	pushLintIssue(

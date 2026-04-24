@@ -73,11 +73,6 @@ export function expressionsEquivalentForLint(left: Expression, right: Expression
 	}
 }
 
-export function isAllowedSingleLineMethodName(functionName: string): boolean {
-	const leaf = getFunctionLeafName(functionName).toLowerCase();
-	return leaf === 'ctor';
-}
-
 export function isStateLikeAliasName(name: string): boolean {
 	const lowered = name.toLowerCase();
 	return lowered.includes('state') || lowered.includes('substate');

@@ -1,73 +1,60 @@
 import type { TextureHandle } from '../backend/interfaces';
 import type { VDP } from '../../machine/devices/vdp/vdp';
-import { engineCore } from '../../core/engine';
 import { FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY, type TextureSource } from '../../rompack/format';
-import { isVdpFrameBufferSurface } from './surfaces';
+import {
+	createVdpTextureFromPixels,
+	swapVdpTextureHandlesByUri,
+	updateVdpTexturePixels,
+	vdpTextureBackend,
+} from './texture_transfer';
 
 const frameBufferRegionSource: TextureSource = { width: 0, height: 0, data: new Uint8Array(0) };
-
-function createVdpFrameBufferTexture(textureKey: string, pixels: Uint8Array, width: number, height: number): void {
-	engineCore.texmanager.createTextureFromPixelsSync(textureKey, pixels, width, height);
-	const handle = engineCore.texmanager.resizeTextureForKey(textureKey, width, height);
-	engineCore.view.backend.updateTexture(handle, { width, height, data: pixels });
-	engineCore.view.textures[textureKey] = handle;
-}
+let renderFrameBufferTexture: TextureHandle;
+let displayFrameBufferTexture: TextureHandle;
 
 export function initializeVdpFrameBufferTextures(vdp: VDP): void {
-	const slots = vdp.surfaceUploadSlots;
-	for (let index = 0; index < slots.length; index += 1) {
-		const slot = slots[index];
-		if (!isVdpFrameBufferSurface(slot.surfaceId)) {
-			continue;
-		}
-		createVdpFrameBufferTexture(FRAMEBUFFER_RENDER_TEXTURE_KEY, slot.cpuReadback, slot.surfaceWidth, slot.surfaceHeight);
-		break;
-	}
-	createVdpFrameBufferTexture(FRAMEBUFFER_TEXTURE_KEY, vdp.frameBufferDisplayReadback, vdp.frameBufferWidth, vdp.frameBufferHeight);
+	renderFrameBufferTexture = createVdpTextureFromPixels(FRAMEBUFFER_RENDER_TEXTURE_KEY, vdp.frameBufferRenderReadback, vdp.frameBufferWidth, vdp.frameBufferHeight);
+	displayFrameBufferTexture = createVdpTextureFromPixels(FRAMEBUFFER_TEXTURE_KEY, vdp.frameBufferDisplayReadback, vdp.frameBufferWidth, vdp.frameBufferHeight);
 }
 
-export function getVdpDisplayFrameBufferTexture(): TextureHandle {
-	return engineCore.texmanager.getTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
+export function vdpDisplayFrameBufferTexture(): TextureHandle {
+	return displayFrameBufferTexture;
 }
 
-export function getVdpRenderFrameBufferTexture(): TextureHandle {
-	return engineCore.texmanager.getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY);
+export function vdpRenderFrameBufferTexture(): TextureHandle {
+	return renderFrameBufferTexture;
 }
 
 export function presentVdpFrameBufferPages(vdp: VDP): void {
-	engineCore.texmanager.swapTextureHandlesByUri(FRAMEBUFFER_TEXTURE_KEY, FRAMEBUFFER_RENDER_TEXTURE_KEY);
-	engineCore.view.textures[FRAMEBUFFER_TEXTURE_KEY] = engineCore.texmanager.getTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
-	engineCore.view.textures[FRAMEBUFFER_RENDER_TEXTURE_KEY] = engineCore.texmanager.getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY);
+	swapVdpTextureHandlesByUri(FRAMEBUFFER_TEXTURE_KEY, FRAMEBUFFER_RENDER_TEXTURE_KEY);
+	// disable-next-line single_use_local_pattern -- texture page swap needs one temporary handle without allocating a pair object.
+	const renderTexture = renderFrameBufferTexture;
+	renderFrameBufferTexture = displayFrameBufferTexture;
+	displayFrameBufferTexture = renderTexture;
 	vdp.swapFrameBufferReadbackPages();
 }
 
-export function uploadVdpFrameBufferPixels(pixels: Uint8Array, width: number, height: number): void {
-	const handle = engineCore.texmanager.resizeTextureForKey(FRAMEBUFFER_RENDER_TEXTURE_KEY, width, height);
-	engineCore.view.backend.updateTexture(handle, { width, height, data: pixels });
-	engineCore.view.textures[FRAMEBUFFER_RENDER_TEXTURE_KEY] = handle;
+export function writeVdpRenderFrameBufferPixels(pixels: Uint8Array, width: number, height: number): void {
+	renderFrameBufferTexture = updateVdpTexturePixels(FRAMEBUFFER_RENDER_TEXTURE_KEY, pixels, width, height);
 }
 
-export function uploadVdpDisplayFrameBufferPixels(pixels: Uint8Array, width: number, height: number): void {
-	const handle = engineCore.texmanager.resizeTextureForKey(FRAMEBUFFER_TEXTURE_KEY, width, height);
-	engineCore.view.backend.updateTexture(handle, { width, height, data: pixels });
-	engineCore.view.textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
+export function writeVdpDisplayFrameBufferPixels(pixels: Uint8Array, width: number, height: number): void {
+	displayFrameBufferTexture = updateVdpTexturePixels(FRAMEBUFFER_TEXTURE_KEY, pixels, width, height);
 }
 
-export function uploadVdpFrameBufferPixelRegion(pixels: Uint8Array, width: number, height: number, x: number, y: number): void {
+export function writeVdpRenderFrameBufferPixelRegion(pixels: Uint8Array, width: number, height: number, x: number, y: number): void {
 	frameBufferRegionSource.width = width;
 	frameBufferRegionSource.height = height;
 	frameBufferRegionSource.data = pixels;
-	engineCore.view.backend.updateTextureRegion(getVdpRenderFrameBufferTexture(), frameBufferRegionSource, x, y);
+	vdpTextureBackend().updateTextureRegion(renderFrameBufferTexture, frameBufferRegionSource, x, y);
 }
 
-export function readVdpFrameBufferPixels(x: number, y: number, width: number, height: number, out?: Uint8Array): Uint8Array {
-	return engineCore.view.backend.readTextureRegion(getVdpRenderFrameBufferTexture(), x, y, width, height, out);
+// disable-next-line single_line_method_pattern -- framebuffer readback is the concrete VDP texture boundary for save-state and MMIO reads.
+export function readVdpRenderFrameBufferPixels(x: number, y: number, width: number, height: number, out?: Uint8Array): Uint8Array {
+	return vdpTextureBackend().readTextureRegion(renderFrameBufferTexture, x, y, width, height, out);
 }
 
+// disable-next-line single_line_method_pattern -- display-page readback is the concrete VDP texture boundary for headless presentation and save-state.
 export function readVdpDisplayFrameBufferPixels(x: number, y: number, width: number, height: number, out?: Uint8Array): Uint8Array {
-	return engineCore.view.backend.readTextureRegion(getVdpDisplayFrameBufferTexture(), x, y, width, height, out);
-}
-
-export function restoreVdpFrameBufferContext(vdp: VDP): void {
-	initializeVdpFrameBufferTextures(vdp);
+	return vdpTextureBackend().readTextureRegion(displayFrameBufferTexture, x, y, width, height, out);
 }

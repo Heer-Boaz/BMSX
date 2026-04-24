@@ -357,6 +357,16 @@ export function cppCallTargetFromStatement(tokens: readonly CppToken[], pairs: r
 	if (tokens[expressionStart]?.text === 'return') {
 		expressionStart += 1;
 	}
+	const depth = { paren: 0, bracket: 0, brace: 0 };
+	for (let index = expressionStart; index < end; index += 1) {
+		const text = tokens[index].text;
+		if (applyCppNestingToken(text, depth)) {
+			continue;
+		}
+		if (isCppTopLevel(depth) && isCppAssignmentOperator(text)) {
+			return null;
+		}
+	}
 	for (let index = expressionStart; index < end; index += 1) {
 		if (tokens[index].text !== '(' || pairs[index] < 0 || pairs[index] > end) {
 			continue;

@@ -48,6 +48,7 @@ ImgDecController::ImgDecController(
 	m_memory.mapIoWrite(IO_IMG_CTRL, this, &ImgDecController::onCtrlWriteThunk);
 }
 
+// disable-next-line normalized_ast_duplicate_pattern -- device MMIO thunks share callback shape while each device owns its scheduler timing.
 void ImgDecController::onCtrlWriteThunk(void* context, uint32_t, Value) {
 	auto* controller = static_cast<ImgDecController*>(context);
 	controller->onCtrlWrite(controller->m_scheduler.currentNowCycles());
@@ -82,10 +83,12 @@ uint32_t ImgDecController::getPendingDecodeBytes() const {
 	return static_cast<uint32_t>(m_decodeRemaining);
 }
 
+// disable-next-line single_line_method_pattern -- external image-write slots stay owned behind ImgDecController's public device API.
 void ImgDecController::registerExternalSlot(uint32_t baseAddr, Memory::ImageWriteEntry* entry) {
 	m_externalSlots[baseAddr] = entry;
 }
 
+// disable-next-line single_line_method_pattern -- VDP reset clears image-write slots through the image decoder owner.
 void ImgDecController::clearExternalSlots() {
 	m_externalSlots.clear();
 }

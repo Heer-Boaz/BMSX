@@ -17,14 +17,17 @@ InputController::InputController(Memory& memory, Input& input, const StringPool&
 	m_memory.mapIoWrite(IO_INP_CONSUME, this, &InputController::onConsumeWriteThunk);
 }
 
+// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the input device instance.
 void InputController::onCtrlWriteThunk(void* context, uint32_t, Value) {
 	static_cast<InputController*>(context)->onCtrlWrite();
 }
 
+// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the input device instance.
 void InputController::onQueryWriteThunk(void* context, uint32_t, Value) {
 	static_cast<InputController*>(context)->onQueryWrite();
 }
 
+// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the input device instance.
 void InputController::onConsumeWriteThunk(void* context, uint32_t, Value) {
 	static_cast<InputController*>(context)->onConsumeWrite();
 }

@@ -41,11 +41,8 @@ void IrqController::acknowledge(uint32_t mask) {
 }
 
 void IrqController::onAckWriteThunk(void* context, uint32_t, Value) {
-	static_cast<IrqController*>(context)->onAckWrite();
-}
-
-void IrqController::onAckWrite() {
-	acknowledge(m_memory.readIoU32(IO_IRQ_ACK));
+	auto* controller = static_cast<IrqController*>(context);
+	controller->acknowledge(controller->m_memory.readIoU32(IO_IRQ_ACK));
 }
 
 } // namespace bmsx

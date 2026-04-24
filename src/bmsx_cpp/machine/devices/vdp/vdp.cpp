@@ -7,6 +7,8 @@
 #include "core/utf8.h"
 #include "machine/devices/imgdec/controller.h"
 #include "machine/scheduler/budget.h"
+#include "render/vdp/framebuffer.h"
+#include "render/vdp/surfaces.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -266,6 +268,7 @@ void VDP::resetStatus() {
 }
 
 // start hot-path -- VDP status, command ingress, scheduler service, and VRAM row access run on frame-critical paths.
+// disable-next-line single_line_method_pattern -- VBLANK status is the public device pin; status register bit ownership stays here.
 void VDP::setVblankStatus(bool active) {
 	setStatusFlag(VDP_STATUS_VBLANK, active);
 }
@@ -284,12 +287,12 @@ bool VDP::canAcceptVdpSubmit() const {
 }
 
 void VDP::acceptSubmitAttempt() {
-	setSubmitRejectedStatus(false);
+	setStatusFlag(VDP_STATUS_SUBMIT_REJECTED, false);
 	refreshSubmitBusyStatus();
 }
 
 void VDP::rejectSubmitAttempt() {
-	setSubmitRejectedStatus(true);
+	setStatusFlag(VDP_STATUS_SUBMIT_REJECTED, true);
 	refreshSubmitBusyStatus();
 }
 
@@ -338,16 +341,9 @@ bool VDP::hasBlockedSubmitPath() const {
 	return hasOpenDirectVdpFifoIngress() || m_dmaSubmitActive || !canAcceptSubmittedFrame();
 }
 
-void VDP::setSubmitBusyStatus(bool active) {
-	setStatusFlag(VDP_STATUS_SUBMIT_BUSY, active);
-}
-
+// disable-next-line single_line_method_pattern -- submit-busy refresh owns the status-bit projection from current VDP ingress state.
 void VDP::refreshSubmitBusyStatus() {
-	setSubmitBusyStatus(hasBlockedSubmitPath());
-}
-
-void VDP::setSubmitRejectedStatus(bool active) {
-	setStatusFlag(VDP_STATUS_SUBMIT_REJECTED, active);
+	setStatusFlag(VDP_STATUS_SUBMIT_BUSY, hasBlockedSubmitPath());
 }
 
 void VDP::pushVdpFifoWord(u32 word) {
@@ -543,18 +539,22 @@ void VDP::onVdpCommandWrite() {
 	consumeDirectVdpCommand(command);
 }
 
+// disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
 void VDP::onFifoWriteThunk(void* context, uint32_t, Value) {
 	static_cast<VDP*>(context)->onVdpFifoWrite();
 }
 
+// disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
 void VDP::onFifoCtrlWriteThunk(void* context, uint32_t, Value) {
 	static_cast<VDP*>(context)->onVdpFifoCtrlWrite();
 }
 
+// disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
 void VDP::onObsoletePayloadWriteThunk(void* context, uint32_t, Value) {
 	static_cast<VDP*>(context)->onObsoletePayloadIoWrite();
 }
 
+// disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
 void VDP::onCommandWriteThunk(void* context, uint32_t, Value) {
 	static_cast<VDP*>(context)->onVdpCommandWrite();
 }
@@ -630,7 +630,7 @@ void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
 		const uint32_t xStart = rowOffset / 4u;
 		const uint32_t xEnd = xStart + rowBytes / 4u;
 		if (slot.surfaceId == VDP_RD_SURFACE_FRAMEBUFFER) {
-			m_frameBufferTextureRegionWriter(data + cursor, static_cast<i32>(xEnd - xStart), 1, static_cast<i32>(xStart), static_cast<i32>(row));
+			writeVdpRenderFrameBufferPixelRegion(data + cursor, static_cast<i32>(xEnd - xStart), 1, static_cast<i32>(xStart), static_cast<i32>(row));
 		} else {
 			markVramSlotDirtySpan(slot, row, xStart, xEnd);
 			const size_t cpuOffset = static_cast<size_t>(row) * static_cast<size_t>(stride) + static_cast<size_t>(rowOffset);
@@ -768,6 +768,7 @@ void VDP::swapFrameBufferReadbackPages() {
 	invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
 }
 
+// disable-next-line single_line_method_pattern -- render-side framebuffer writes invalidate the device read cache through this public pin.
 void VDP::invalidateFrameBufferReadCache() {
 	invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
 }
@@ -1047,16 +1048,6 @@ VDP::BlitterSource VDP::resolveBlitterSource(u32 handle) const {
 	throw vdpFault(viewAsset ? "VIEW asset handle not found in VRAM slots." : "asset handle not found in VRAM slots.");
 }
 
-i32 VDP::getBlitterAtlasId(uint32_t surfaceId) const {
-	switch (surfaceId) {
-		case VDP_RD_SURFACE_PRIMARY: return 0;
-		case VDP_RD_SURFACE_SECONDARY: return 1;
-		case VDP_RD_SURFACE_ENGINE: return ENGINE_ATLAS_INDEX;
-		default: break;
-	}
-	throw vdpFault("surface " + std::to_string(surfaceId) + " cannot be sampled by the GLES2 blitter.");
-}
-
 VdpBlitterSurfaceSize VDP::resolveBlitterSurfaceSize(uint32_t surfaceId) const {
 	const auto& surface = getReadSurface(surfaceId);
 	const auto& entry = m_memory.getAssetEntry(surface.assetId);
@@ -1073,7 +1064,7 @@ VDP::ResolvedBlitterSample VDP::resolveBlitterSample(u32 handle) const {
 		source,
 		surface.width,
 		surface.height,
-		getBlitterAtlasId(source.surfaceId),
+		resolveVdpSurfaceAtlasBinding(source.surfaceId),
 	};
 }
 

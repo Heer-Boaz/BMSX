@@ -165,27 +165,3 @@ export function collectCartFunctionUsageCounts(statements: ReadonlyArray<Stateme
 		referenceCounts,
 	};
 }
-
-export function getSingleLineMethodUsageCount(functionName: string, usageCounts: ReadonlyMap<string, number>): number {
-	const names = new Set<string>([functionName]);
-	if (functionName.includes(':')) {
-		names.add(functionName.replace(':', '.'));
-	}
-	let total = 0;
-	for (const name of names) {
-		total += usageCounts.get(name) ?? 0;
-	}
-	return total;
-}
-
-export function isAllowedBySingleLineMethodUsage(functionName: string, usageInfo: FunctionUsageInfo | undefined): boolean {
-	if (!usageInfo) {
-		return false;
-	}
-	const totalUsageCount = getSingleLineMethodUsageCount(functionName, usageInfo.totalCounts);
-	if (totalUsageCount >= 2) {
-		return true;
-	}
-	const functionReferenceUsageCount = getSingleLineMethodUsageCount(functionName, usageInfo.referenceCounts);
-	return functionReferenceUsageCount >= 1;
-}

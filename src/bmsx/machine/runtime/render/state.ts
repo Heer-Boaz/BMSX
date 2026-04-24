@@ -122,10 +122,12 @@ export function applyRuntimeRenderState(state: RuntimeRenderState): void {
 	);
 }
 
+// disable-next-line single_line_method_pattern -- runtime render frame entry owns the hardware-lighting reset boundary.
 export function beginRuntimeRenderFrame(): void {
 	clearHardwareLighting();
 }
 
+// disable-next-line single_line_method_pattern -- runtime reset/save paths clear render back queues through this owner.
 export function clearRuntimeRenderBackQueues(): void {
 	clearBackQueues();
 }

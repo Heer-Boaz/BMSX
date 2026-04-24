@@ -16,6 +16,7 @@ export class ResourceUsageDetector {
 	) {
 	}
 
+	// disable-next-line single_line_method_pattern -- public RAM usage accessor hides the tracked-memory accounting details.
 	public getRamUsedBytes(): number {
 		return this.computeTrackedRamUsedBytes();
 	}

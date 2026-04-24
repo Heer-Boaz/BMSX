@@ -45,7 +45,7 @@ Framebuffer2DPipelineState buildFramebuffer2DState(const RenderPassDef::RenderGr
 	auto* view = ctx.view;
 	Framebuffer2DPipelineState state;
 	setPassViewportSize(state, view);
-	state.colorTex = getVdpDisplayFrameBufferTexture();
+	state.colorTex = vdpDisplayFrameBufferTexture();
 	return state;
 }
 

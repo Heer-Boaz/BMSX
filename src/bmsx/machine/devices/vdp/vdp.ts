@@ -20,10 +20,10 @@ import {
 import {
 	presentVdpFrameBufferPages,
 	readVdpDisplayFrameBufferPixels,
-	readVdpFrameBufferPixels,
-	uploadVdpDisplayFrameBufferPixels,
-	uploadVdpFrameBufferPixels,
-	uploadVdpFrameBufferPixelRegion,
+	readVdpRenderFrameBufferPixels,
+	writeVdpDisplayFrameBufferPixels,
+	writeVdpRenderFrameBufferPixels,
+	writeVdpRenderFrameBufferPixelRegion,
 } from '../../../render/vdp/framebuffer';
 import {
 	IO_VDP_DITHER,
@@ -745,6 +745,7 @@ export class VDP implements VramWriteSink {
 		this.refreshSubmitBusyStatus();
 	}
 
+	// disable-next-line single_line_method_pattern -- VBLANK status is the public device pin; status register bit ownership stays here.
 	public setVblankStatus(active: boolean): void {
 		this.setStatusFlag(VDP_STATUS_VBLANK, active);
 	}
@@ -763,12 +764,12 @@ export class VDP implements VramWriteSink {
 	}
 
 	public acceptSubmitAttempt(): void {
-		this.setSubmitRejectedStatus(false);
+		this.setStatusFlag(VDP_STATUS_SUBMIT_REJECTED, false);
 		this.refreshSubmitBusyStatus();
 	}
 
 	public rejectSubmitAttempt(): void {
-		this.setSubmitRejectedStatus(true);
+		this.setStatusFlag(VDP_STATUS_SUBMIT_REJECTED, true);
 		this.refreshSubmitBusyStatus();
 	}
 
@@ -817,16 +818,8 @@ export class VDP implements VramWriteSink {
 		return this.hasOpenDirectVdpFifoIngress() || this.dmaSubmitActive || !this.canAcceptSubmittedFrame();
 	}
 
-	private setSubmitBusyStatus(active: boolean): void {
-		this.setStatusFlag(VDP_STATUS_SUBMIT_BUSY, active);
-	}
-
 	private refreshSubmitBusyStatus(): void {
-		this.setSubmitBusyStatus(this.hasBlockedSubmitPath());
-	}
-
-	private setSubmitRejectedStatus(active: boolean): void {
-		this.setStatusFlag(VDP_STATUS_SUBMIT_REJECTED, active);
+		this.setStatusFlag(VDP_STATUS_SUBMIT_BUSY, this.hasBlockedSubmitPath());
 	}
 
 	private pushVdpFifoWord(word: number): void {
@@ -1173,6 +1166,7 @@ export class VDP implements VramWriteSink {
 		this.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
 	}
 
+	// disable-next-line single_line_method_pattern -- render-side framebuffer writes invalidate the device read cache through this public pin.
 	public invalidateFrameBufferReadCache(): void {
 		this.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
 	}
@@ -1749,10 +1743,12 @@ export class VDP implements VramWriteSink {
 		});
 	}
 
+	// disable-next-line single_line_method_pattern -- asset tile runs are a public command shape over the shared tile-run implementation.
 	public enqueueTileRun(desc: VdpAssetTileRunInput): void {
 		this.enqueueTileRunInternal(desc, VDP_TILE_RUN_SOURCE_ASSETS, 'dma_blit_tiles size mismatch');
 	}
 
+	// disable-next-line single_line_method_pattern -- resolved tile runs are a public command shape over the shared tile-run implementation.
 	public enqueueResolvedTileRun(desc: VdpResolvedTileRunInput): void {
 		this.enqueueTileRunInternal(desc, VDP_TILE_RUN_SOURCE_HANDLES, 'VDP fault: enqueueResolvedTileRun tile size mismatch');
 	}
@@ -1838,7 +1834,7 @@ export class VDP implements VramWriteSink {
 			const width = rowBytes / 4;
 			const slice = bytes.subarray(cursor, cursor + rowBytes);
 			if (slot.surfaceId === VDP_RD_SURFACE_FRAMEBUFFER) {
-				uploadVdpFrameBufferPixelRegion(slice, width, 1, x, row);
+				writeVdpRenderFrameBufferPixelRegion(slice, width, 1, x, row);
 			} else {
 				this.markVramSlotDirty(slot, row, 1);
 				this.updateCpuReadback(slot.surfaceId, slice, x, row);
@@ -2033,7 +2029,7 @@ export class VDP implements VramWriteSink {
 		}
 		syncVdpSlotTextures(this);
 		this.displayFrameBufferCpuReadback.set(state.displayFrameBufferPixels);
-		uploadVdpDisplayFrameBufferPixels(state.displayFrameBufferPixels, this._frameBufferWidth, this._frameBufferHeight);
+		writeVdpDisplayFrameBufferPixels(state.displayFrameBufferPixels, this._frameBufferWidth, this._frameBufferHeight);
 	}
 
 	public get committedViewDitherType(): number {
@@ -2090,7 +2086,7 @@ export class VDP implements VramWriteSink {
 		for (let index = 0; index < this.vramSlots.length; index += 1) {
 			const slot = this.vramSlots[index];
 			const pixels = slot.surfaceId === VDP_RD_SURFACE_FRAMEBUFFER
-				? readVdpFrameBufferPixels(0, 0, slot.surfaceWidth, slot.surfaceHeight, new Uint8Array(slot.surfaceWidth * slot.surfaceHeight * 4))
+				? readVdpRenderFrameBufferPixels(0, 0, slot.surfaceWidth, slot.surfaceHeight, new Uint8Array(slot.surfaceWidth * slot.surfaceHeight * 4))
 				: slot.cpuReadback.slice();
 			surfaces[index] = {
 				surfaceId: slot.surfaceId,
@@ -2105,7 +2101,7 @@ export class VDP implements VramWriteSink {
 		slot.cpuReadback.set(state.pixels);
 		this.invalidateReadCache(state.surfaceId);
 		if (state.surfaceId === VDP_RD_SURFACE_FRAMEBUFFER) {
-			uploadVdpFrameBufferPixels(slot.cpuReadback, slot.surfaceWidth, slot.surfaceHeight);
+			writeVdpRenderFrameBufferPixels(slot.cpuReadback, slot.surfaceWidth, slot.surfaceHeight);
 			return;
 		}
 		this.markVramSlotDirty(slot, 0, slot.surfaceHeight);
@@ -2284,7 +2280,7 @@ export class VDP implements VramWriteSink {
 		if (surfaceId === VDP_RD_SURFACE_FRAMEBUFFER) {
 			const byteLength = width * height * 4;
 			const out = cache.data.byteLength < byteLength ? (cache.data = new Uint8Array(byteLength)) : cache.data;
-			return readVdpFrameBufferPixels(x, y, width, height, out);
+			return readVdpRenderFrameBufferPixels(x, y, width, height, out);
 		}
 		return this.readCpuReadback(cache, surfaceId, surface, x, y, width, height);
 	}

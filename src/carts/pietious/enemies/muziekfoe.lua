@@ -22,6 +22,7 @@ local get_delta_from_source_to_target_scaled<const> = function(source_x, source_
 	return div_toward_zero(dx * speed_scale, abs_dy), dy > 0 and speed_scale or -speed_scale
 end
 
+-- disable-next-line single_line_method_pattern -- constructor owns the local enemy sprite id at the class boundary.
 function muziekfoe:ctor()
 	self:gfx('muziekfoe')
 end

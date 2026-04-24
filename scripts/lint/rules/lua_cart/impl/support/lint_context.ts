@@ -1,5 +1,5 @@
 import { type LintRuleName } from '../../../../rule';
-import { type CartLintIssue, type CartLintNode, pushLintIssue } from '../../../../lua_rule';
+import { type CartLintIssue, type CartLintNode } from '../../../../lua_rule';
 import { type CartLintSuppressionRange } from './types';
 
 export const suppressedLineRangesByPath = new Map<string, ReadonlyArray<CartLintSuppressionRange>>();
@@ -18,7 +18,7 @@ export function setSuppressedLineRanges(path: string, ranges: ReadonlyArray<Cart
 	suppressedLineRangesByPath.set(path, ranges);
 }
 
-export function isLineSuppressed(path: string, line: number): boolean {
+export function isLineSuppressed(path: string, line: number, rule: LintRuleName): boolean {
 	const ranges = suppressedLineRangesByPath.get(path);
 	if (!ranges) {
 		return false;
@@ -27,7 +27,7 @@ export function isLineSuppressed(path: string, line: number): boolean {
 		if (line < range.startLine) {
 			return false;
 		}
-		if (line <= range.endLine) {
+		if (line <= range.endLine && (range.rule === null || range.rule === rule)) {
 			return true;
 		}
 	}
@@ -35,14 +35,26 @@ export function isLineSuppressed(path: string, line: number): boolean {
 }
 
 export function pushIssue(issues: CartLintIssue[], rule: LintRuleName, node: CartLintNode, message: string): void {
-	pushLintIssue(issues, activeLintRules, isLineSuppressed, rule, node, message);
+	if (!activeLintRules.has(rule)) {
+		return;
+	}
+	if (isLineSuppressed(node.range.path, node.range.start.line, rule)) {
+		return;
+	}
+	issues.push({
+		rule,
+		path: node.range.path,
+		line: node.range.start.line,
+		column: node.range.start.column,
+		message,
+	});
 }
 
 export function pushIssueAt(issues: CartLintIssue[], rule: LintRuleName, path: string, line: number, column: number, message: string): void {
 	if (!activeLintRules.has(rule)) {
 		return;
 	}
-	if (isLineSuppressed(path, line)) {
+	if (isLineSuppressed(path, line, rule)) {
 		return;
 	}
 	issues.push({

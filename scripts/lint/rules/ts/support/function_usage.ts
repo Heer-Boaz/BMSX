@@ -1,7 +1,7 @@
 import ts from 'typescript';
 import { unwrapExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
 import { FunctionUsageInfo, incrementUsageCount } from '../../../function_usage';
-import { functionUsageExpressionName, usageCountForNames } from './ast';
+import { functionUsageExpressionName } from './ast';
 
 export function incrementExpressionUsageCounts(
 	expression: ts.Expression,
@@ -218,18 +218,4 @@ export function getFunctionNodeUsageNames(node: ts.FunctionDeclaration | ts.Meth
 		names.push(parent.name.text, `.${parent.name.text}`);
 	}
 	return names;
-}
-
-export function isAllowedBySingleLineFunctionUsage(
-	node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression | ts.ArrowFunction,
-	usageInfo: FunctionUsageInfo,
-): boolean {
-	const names = getFunctionNodeUsageNames(node);
-	if (names.length === 0) {
-		return false;
-	}
-	if (usageCountForNames(names, usageInfo.totalCounts) >= 2) {
-		return true;
-	}
-	return usageCountForNames(names, usageInfo.referenceCounts) >= 1;
 }

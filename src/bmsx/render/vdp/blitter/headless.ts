@@ -5,8 +5,8 @@ import type {
 	VdpFrameBufferColor,
 } from '../../../machine/devices/vdp/vdp';
 import type { Layer2D } from '../../../machine/devices/vdp/contracts';
-import { uploadVdpFrameBufferPixels } from '../framebuffer';
-import { resolveVdpSourcePixels } from '../source_pixels';
+import { writeVdpRenderFrameBufferPixels } from '../framebuffer';
+import { resolveVdpSurfacePixels } from '../source_pixels';
 
 const BLITTER_WHITE: VdpFrameBufferColor = { r: 255, g: 255, b: 255, a: 255 };
 const IMPLICIT_CLEAR_COLOR: VdpFrameBufferColor = { r: 0, g: 0, b: 0, a: 255 };
@@ -22,7 +22,7 @@ export class HeadlessVdpBlitterExecutor {
 	private frameBufferPrioritySeq = new Uint32Array(0);
 	private readonly surfacePixelsBySurfaceId = new Map<number, HeadlessSurfacePixels>();
 
-	public execute(vdp: VDP, commands: readonly VdpBlitterCommand[]): void {
+	public execute(vdp: VDP, commands: readonly VdpBlitterCommand[], _timeSeconds: number, _deltaSeconds: number): void {
 		if (commands.length === 0) {
 			return;
 		}
@@ -86,7 +86,7 @@ export class HeadlessVdpBlitterExecutor {
 				this.rasterizeBlit(vdp, frameBufferPixels, frameBufferWidth, frameBufferHeight, tile, tile.dstX, tile.dstY, 1, 1, false, false, BLITTER_WHITE, command.layer, command.z, command.seq);
 			}
 		}
-		uploadVdpFrameBufferPixels(frameBufferPixels, frameBufferWidth, frameBufferHeight);
+		writeVdpRenderFrameBufferPixels(frameBufferPixels, frameBufferWidth, frameBufferHeight);
 		vdp.invalidateFrameBufferReadCache();
 	}
 
@@ -110,7 +110,7 @@ export class HeadlessVdpBlitterExecutor {
 		if (cached) {
 			return cached;
 		}
-		const surface = resolveVdpSourcePixels(vdp, source);
+		const surface = resolveVdpSurfacePixels(vdp, source.surfaceId);
 		const resolved = { pixels: surface.pixels, stride: surface.stride };
 		this.surfacePixelsBySurfaceId.set(source.surfaceId, resolved);
 		return resolved;

@@ -175,9 +175,10 @@ public:
 		return registry().has(id);
 	}
 
-	void registerObj(Registerable* obj) {
-		registry().registerObject(obj);
-	}
+		// disable-next-line single_line_method_pattern -- engine object registration is the public core registry pin.
+		void registerObj(Registerable* obj) {
+			registry().registerObject(obj);
+		}
 
 	// Singleton access
 	static EngineCore& instance();

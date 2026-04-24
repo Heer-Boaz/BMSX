@@ -12,6 +12,5 @@ struct VdpSourcePixels {
 };
 
 VdpSourcePixels resolveVdpSurfacePixels(const VDP& vdp, u32 surfaceId);
-VdpSourcePixels resolveVdpSourcePixels(const VDP& vdp, const VDP::BlitterSource& source);
 
 } // namespace bmsx

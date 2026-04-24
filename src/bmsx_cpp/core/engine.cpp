@@ -8,6 +8,7 @@
 #include "audio/resources.h"
 #include "render/texture_manager.h"
 #include "render/vdp/context_state.h"
+#include "render/vdp/texture_transfer.h"
 #include "../machine/runtime/runtime.h"
 #include "../machine/memory/asset_memory.h"
 #include "../machine/specs.h"
@@ -96,6 +97,7 @@ bool EngineCore::initialize(Platform* platform) {
 
 	m_texture_manager = std::make_unique<TextureManager>(m_view->backend());
 	m_texture_manager->bind();
+	initializeVdpTextureTransfer(*m_texture_manager, *m_view);
 	if (m_view->backend()->readyForTextureUpload()) {
 		m_view->initializeDefaultTextures();
 	}
@@ -140,9 +142,7 @@ void EngineCore::shutdown() {
 void EngineCore::start() {
 	if (m_state == EngineState::Initialized || m_state == EngineState::Stopped) {
 		m_state = EngineState::Running;
-		if (Runtime::hasInstance()) {
-			Runtime::instance().frameScheduler.clearQueuedTime();
-		}
+		Runtime::instance().frameScheduler.clearQueuedTime();
 	}
 }
 
@@ -150,24 +150,20 @@ void EngineCore::start() {
 void EngineCore::pause() {
 	if (m_state == EngineState::Running) {
 		m_state = EngineState::Paused;
-		if (Runtime::hasInstance()) {
-			Runtime::instance().screen.clearPresentation();
-		}
+		Runtime::instance().screen.clearPresentation();
 	}
 }
 
 void EngineCore::resume() {
 	if (m_state == EngineState::Paused) {
 		m_state = EngineState::Running;
-		if (Runtime::hasInstance()) {
-			Runtime::instance().frameScheduler.clearQueuedTime();
-		}
+		Runtime::instance().frameScheduler.clearQueuedTime();
 	}
 }
 // end normalized-body-acceptable
 
 void EngineCore::stop() {
-	if (m_state == EngineState::Running || m_state == EngineState::Paused) {
+	if (m_state == EngineState::Running || m_state == EngineState::Paused) { // WHY?!?!?!?!?!?!?!?!?!?!
 		m_state = EngineState::Stopped;
 	}
 }
@@ -183,10 +179,9 @@ void EngineCore::refreshRenderAssets() {
 	if (!backend->readyForTextureUpload()) {
 		return;
 	}
+	initializeVdpTextureTransfer(*m_texture_manager, *m_view);
 	m_view->initializeDefaultTextures();
-	if (Runtime::hasInstance()) {
-		restoreVdpContextState(Runtime::instance().machine().vdp());
-	}
+	restoreVdpContextState(Runtime::instance().machine().vdp());
 }
 
 void EngineCore::log(LogLevel level, const char* fmt, ...) {
@@ -579,7 +574,7 @@ void EngineCore::bootRuntimeFromProgram() {
 				timing.geoWorkUnitsPerSec,
 			});
 		}
-		Runtime& runtime = Runtime::instance();
+	Runtime& runtime = Runtime::instance();
 	runtime.setRuntimeEnvironment(m_engine_assets, activeAssets, activeAssets.machine, m_cart_rom_size > 0 ? &m_cart_assets : nullptr);
 	applyRuntimeTiming(runtime, timing);
 	runtime.refreshMemoryMap();

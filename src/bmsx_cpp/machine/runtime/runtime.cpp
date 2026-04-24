@@ -200,6 +200,7 @@ void Runtime::requestProgramReload() {
 	frameLoop.resetFrameState(*this);
 }
 
+// disable-next-line single_line_method_pattern -- runtime global writes keep CPU string-key encoding inside Runtime.
 void Runtime::setGlobal(std::string_view name, const Value& value) {
 	m_machine.cpu().setGlobalByKey(valueString(m_machine.cpu().internString(name)), value);
 }

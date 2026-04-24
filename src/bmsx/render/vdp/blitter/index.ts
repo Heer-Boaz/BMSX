@@ -1,13 +1,13 @@
-import { engineCore } from '../../../core/engine';
 import type { VDP, VdpBlitterCommand } from '../../../machine/devices/vdp/vdp';
 import type { GPUBackend } from '../../backend/interfaces';
 import { WebGLBackend } from '../../backend/webgl/backend';
+import { vdpTextureBackend } from '../texture_transfer';
 import { HeadlessVdpBlitterExecutor } from './headless';
 import { WebGLVdpBlitterExecutor } from './webgl';
 import { WebGPUVdpBlitterExecutor } from './webgpu';
 
 type VdpBlitterExecutorLike = {
-	execute(vdp: VDP, commands: readonly VdpBlitterCommand[]): void;
+	execute(vdp: VDP, commands: readonly VdpBlitterCommand[], timeSeconds: number, deltaSeconds: number): void;
 };
 
 let webglExecutorBackend: WebGLBackend | null = null;
@@ -15,7 +15,7 @@ let webglExecutor: WebGLVdpBlitterExecutor | null = null;
 let headlessExecutor: HeadlessVdpBlitterExecutor | null = null;
 let webgpuExecutor: WebGPUVdpBlitterExecutor | null = null;
 
-function getVdpBlitterExecutor(backend: GPUBackend): VdpBlitterExecutorLike | null {
+function getVdpBlitterExecutor(backend: GPUBackend): VdpBlitterExecutorLike {
 	switch (backend.type) {
 		case 'webgl2':
 			if (webglExecutor === null || webglExecutorBackend !== backend) {
@@ -33,24 +33,14 @@ function getVdpBlitterExecutor(backend: GPUBackend): VdpBlitterExecutorLike | nu
 				webgpuExecutor = new WebGPUVdpBlitterExecutor();
 			}
 			return webgpuExecutor;
-		default:
-			return null;
 	}
 }
 
-function executeVdpBlitterQueue(vdp: VDP, commands: readonly VdpBlitterCommand[]): void {
-	const executor = getVdpBlitterExecutor(engineCore.view.backend);
-	if (executor === null) {
-		throw new Error(`[VDP] No blitter executor for backend '${engineCore.view.backend.type}'.`);
-	}
-	executor.execute(vdp, commands);
-}
-
-export function drainReadyVdpExecution(vdp: VDP): void {
+export function drainReadyVdpExecution(vdp: VDP, timeSeconds: number, deltaSeconds: number): void {
 	const queue = vdp.takeReadyExecutionQueue();
 	if (queue === null) {
 		return;
 	}
-	executeVdpBlitterQueue(vdp, queue);
+	getVdpBlitterExecutor(vdpTextureBackend()).execute(vdp, queue, timeSeconds, deltaSeconds);
 	vdp.completeReadyExecution(queue);
 }

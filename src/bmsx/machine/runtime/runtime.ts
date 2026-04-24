@@ -644,10 +644,12 @@ export class Runtime {
 		return range ? new LuaRuntimeError(message, range.path, range.start.line, range.start.column) : new LuaRuntimeError(message, (this._luaPath ?? 'lua'), 0, 0);
 	}
 
+	// disable-next-line single_line_method_pattern -- runtime string interning is the public CPU string-pool boundary.
 	public internString(value: string): StringValue {
 		return this.machine.cpu.getStringPool().intern(value);
 	}
 
+	// disable-next-line single_line_method_pattern -- Lua keys intentionally share runtime string interning.
 	public luaKey(name: string): StringValue {
 		return this.internString(name);
 	}
@@ -673,6 +675,7 @@ export class Runtime {
 		throw wrappedError;
 	}
 
+	// disable-next-line single_line_method_pattern -- runtime errors enter the workbench through one public fault pin.
 	public handleLuaError(error: unknown): void {
 		workbenchMode.handleLuaError(this, error);
 	}

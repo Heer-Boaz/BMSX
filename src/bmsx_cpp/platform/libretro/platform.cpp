@@ -644,69 +644,6 @@ void LibretroPlatform::runFrame() {
 	bool skipRender = m_frameskip_enabled && m_frameskip_next;
 	m_frameskip_next = false;
 	runRuntimeHostFrame(*m_engine, Runtime::instance(), *m_microtask_queue, dt, m_platform_paused, skipRender);
-
-	// Collect audio
-#if ENABLE_PERFORMANCE_LOGS
-	// PERF LOGS DISABLED
-	// const auto audioStart = std::chrono::steady_clock::now();
-#endif
-	processAudio();
-#if ENABLE_PERFORMANCE_LOGS
-	// PERF LOGS DISABLED
-	// const auto audioEnd = std::chrono::steady_clock::now();
-#endif
-
-#if ENABLE_PERFORMANCE_LOGS
-	// PERF LOGS DISABLED
-	// const auto frameEnd = std::chrono::steady_clock::now();
-	//
-	// const double budgetMs = m_frame_time_sec * 1000.0;
-	// const double pollMs = std::chrono::duration<double, std::milli>(pollEnd - pollStart).count();
-	// const double tickMs = std::chrono::duration<double, std::milli>(tickEnd - tickStart).count();
-	// const double renderMs = std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
-	// const double audioMs = std::chrono::duration<double, std::milli>(audioEnd - audioStart).count();
-	// const double totalMs = std::chrono::duration<double, std::milli>(frameEnd - frameStart).count();
-	// const auto& tickTiming = m_engine->lastTickTiming();
-	// const auto& renderTiming = m_engine->lastRenderTiming();
-	//
-	// if (totalMs > budgetMs * kFrameSpikeMultiplier) {
-	// 	const char* slowest = "poll";
-	// 	double slowestMs = pollMs;
-	// 	if (tickMs > slowestMs) { slowest = "tick"; slowestMs = tickMs; }
-	// 	if (renderMs > slowestMs) { slowest = "render"; slowestMs = renderMs; }
-	// 	if (audioMs > slowestMs) { slowest = "audio"; slowestMs = audioMs; }
-	// 	log(RETRO_LOG_WARN,
-	// 		"[BMSX] frame spike %.2fms (budget %.2f) poll=%.2f tick=%.2f render=%.2f audio=%.2f slowest=%s %.2fms\n",
-	// 		totalMs,
-	// 		budgetMs,
-	// 		pollMs,
-	// 		tickMs,
-	// 		renderMs,
-	// 		audioMs,
-	// 		slowest,
-	// 		slowestMs);
-	// 	log(RETRO_LOG_WARN,
-	// 		"[BMSX] tick ms total=%.2f input=%.2f ide_in=%.2f term_in=%.2f update=%.2f ide=%.2f term=%.2f micro=%.2f\n",
-	// 		tickTiming.totalMs,
-	// 		tickTiming.inputMs,
-	// 		tickTiming.workbenchModeInputMs,
-	// 		tickTiming.runtimeTerminalInputMs,
-	// 		tickTiming.runtimeUpdateMs,
-	// 		tickTiming.workbenchModeMs,
-	// 		tickTiming.runtimeTerminalMs,
-	// 		tickTiming.microtaskMs);
-	// 	log(RETRO_LOG_WARN,
-	// 		"[BMSX] render ms total=%.2f begin=%.2f test=%.2f runtime_draw=%.2f workbench_mode=%.2f runtime_term=%.2f draw=%.2f end=%.2f\n",
-	// 		renderTiming.totalMs,
-	// 		renderTiming.beginFrameMs,
-	// 		renderTiming.testPatternMs,
-	// 		renderTiming.runtimeDrawMs,
-	// 		renderTiming.workbenchModeDrawMs,
-	// 		renderTiming.runtimeTerminalDrawMs,
-	// 		renderTiming.drawGameMs,
-	// 		renderTiming.endFrameMs);
-	// }
-#endif
 }
 
 void LibretroPlatform::setPlatformPaused(bool paused) {

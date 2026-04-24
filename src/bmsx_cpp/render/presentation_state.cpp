@@ -179,7 +179,6 @@ void RenderPresentationState::render(EngineCore& engine, Runtime& runtime) {
 		return;
 	}
 
-	const auto renderStart = std::chrono::steady_clock::now();
 	if (engine.m_view) {
 		const GameView::PresentationMode presentMode = pausedPresent
 			? GameView::PresentationMode::Completed
@@ -191,43 +190,18 @@ void RenderPresentationState::render(EngineCore& engine, Runtime& runtime) {
 		if (pausedPresent) {
 			RenderQueues::prepareHeldRenderQueues();
 		}
-		const auto beginStart = std::chrono::steady_clock::now();
 		engine.m_view->beginFrame();
-		const auto beginEnd = std::chrono::steady_clock::now();
-		engine.m_last_render_timing.beginFrameMs = to_ms(beginEnd - beginStart);
 
 		if (!engine.m_rom_loaded) {
-			const auto testStart = std::chrono::steady_clock::now();
 			renderTestPattern(*engine.m_view, engine.m_total_time);
-			const auto testEnd = std::chrono::steady_clock::now();
-			engine.m_last_render_timing.testPatternMs = to_ms(testEnd - testStart);
-		} else {
-			engine.m_last_render_timing.testPatternMs = 0.0;
 		}
 
-		engine.m_last_render_timing.runtimeDrawMs = 0.0;
-		engine.m_last_render_timing.workbenchModeDrawMs = 0.0;
-		engine.m_last_render_timing.runtimeTerminalDrawMs = 0.0;
-		if (runtimePresentPending) {
-			engine.m_last_render_timing.runtimeDrawMs = m_presentationScratch.runtimeDrawMs;
-			engine.m_last_render_timing.workbenchModeDrawMs = m_presentationScratch.workbenchModeDrawMs;
-			engine.m_last_render_timing.runtimeTerminalDrawMs = m_presentationScratch.runtimeTerminalDrawMs;
-		}
-
-		const auto drawGameStart = std::chrono::steady_clock::now();
 		commitVdpViewSnapshot(*engine.m_view, runtime.machine().vdp(), runtime.machine().memory());
 		engine.m_view->configurePresentation(presentMode, commitFrame);
 		engine.m_view->drawGame();
-		const auto drawGameEnd = std::chrono::steady_clock::now();
-		engine.m_last_render_timing.drawGameMs = to_ms(drawGameEnd - drawGameStart);
-
-		const auto endStart = std::chrono::steady_clock::now();
 		engine.m_view->endFrame();
-		const auto endEnd = std::chrono::steady_clock::now();
-		engine.m_last_render_timing.endFrameMs = to_ms(endEnd - endStart);
 	}
 
-	engine.m_last_render_timing.totalMs = to_ms(std::chrono::steady_clock::now() - renderStart);
 	flushDebugReport(runtime);
 }
 

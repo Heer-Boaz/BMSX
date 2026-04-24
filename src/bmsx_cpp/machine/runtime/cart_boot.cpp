@@ -14,6 +14,7 @@ void CartBootState::reset(Runtime& runtime) {
 	setReadyFlag(runtime, false);
 }
 
+// disable-next-line single_line_method_pattern -- cart boot readiness is owned by this state and projected into SYS MMIO.
 void CartBootState::setReadyFlag(Runtime& runtime, bool value) {
 	runtime.machine().memory().writeValue(IO_SYS_CART_BOOTREADY, valueNumber(value ? 1.0 : 0.0));
 }

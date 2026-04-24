@@ -7,7 +7,7 @@ import {
 	ENGINE_ATLAS_TEXTURE_KEY,
 	FRAMEBUFFER_RENDER_TEXTURE_KEY,
 } from '../../rompack/format';
-import { getVdpRenderFrameBufferTexture } from './framebuffer';
+import { vdpRenderFrameBufferTexture } from './framebuffer';
 import { vdpTextureByUri } from './texture_transfer';
 
 const VDP_RD_SURFACE_ENGINE = 0;
@@ -60,7 +60,7 @@ export function isVdpFrameBufferSurface(surfaceId: number): boolean {
 
 export function getVdpRenderSurfaceTexture(_vdp: VDP, surfaceId: number): TextureHandle {
 	if (isVdpFrameBufferSurface(surfaceId)) {
-		return getVdpRenderFrameBufferTexture();
+		return vdpRenderFrameBufferTexture();
 	}
 	return vdpTextureByUri(resolveVdpSurfaceTextureKey(surfaceId));
 }

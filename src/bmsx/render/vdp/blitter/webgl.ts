@@ -1,5 +1,3 @@
-import { engineCore } from '../../../core/engine';
-import { Runtime } from '../../../machine/runtime/runtime';
 import type {
 	VDP,
 	VdpBlitterBlitCommand as BlitterBlitCommand,
@@ -31,7 +29,7 @@ import {
 import { spriteParallaxRig } from '../../2d/sprite_parallax_rig';
 import fragmentShaderCode from '../shaders/vdp_2d.frag.glsl';
 import vertexShaderCode from '../shaders/vdp_2d.vert.glsl';
-import { getVdpRenderFrameBufferTexture } from '../framebuffer';
+import { vdpRenderFrameBufferTexture } from '../framebuffer';
 import { syncVdpSlotTextures } from '../slot_textures';
 import {
 	getVdpRenderSurfaceTexture,
@@ -170,15 +168,15 @@ function compareByPriority(a: VdpWebGLBlitterCommand, b: VdpWebGLBlitterCommand)
 	return a.seq - b.seq;
 }
 
-function bindPassState(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, pass: PassEncoder, vdp: VDP): void {
+function bindPassState(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, pass: PassEncoder, vdp: VDP, timeSeconds: number, deltaSeconds: number): void {
 	const gl = backend.gl as WebGL2RenderingContext;
 	backend.setGraphicsPipeline(pass, state.pipeline);
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
 	updateAndBindFrameUniforms(backend, {
 		offscreen: { x: vdp.frameBufferWidth, y: vdp.frameBufferHeight },
 		logical: { x: vdp.frameBufferWidth, y: vdp.frameBufferHeight },
-		time: Runtime.instance.frameLoop.currentTimeMs / 1000,
-		delta: engineCore.deltatime_seconds,
+		time: timeSeconds,
+		delta: deltaSeconds,
 	});
 	gl.uniform1f(state.uniforms.scale, 1);
 	state.drawTargetHeight = vdp.frameBufferHeight;
@@ -195,21 +193,22 @@ function bindPassState(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, pas
 	backend.bindVertexArray(state.vao);
 }
 
-function bindTexturesForMode(vdp: VDP, state: WebGLVdpBlitterRuntime, mode: DrawMode): void {
+function bindVdpTexture(backend: WebGLBackend, unit: number, texture: WebGLTexture): void {
+	backend.setActiveTexture(unit);
+	backend.bindTexture2D(texture);
+}
+
+function bindTexturesForMode(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, mode: DrawMode): void {
 	if (mode === 'solid') {
-		engineCore.view.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
-		engineCore.view.bind2DTex(state.whiteTexture);
+		bindVdpTexture(backend, TEXTURE_UNIT_ATLAS_PRIMARY, state.whiteTexture);
 		return;
 	}
 	const primary = getVdpRenderSurfaceTexture(vdp, 1)!;
 	const secondary = getVdpRenderSurfaceTexture(vdp, 2)!;
 	const engine = getVdpRenderSurfaceTexture(vdp, 0)!;
-	engineCore.view.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
-	engineCore.view.bind2DTex(primary);
-	engineCore.view.activeTexUnit = TEXTURE_UNIT_ATLAS_SECONDARY;
-	engineCore.view.bind2DTex(secondary);
-	engineCore.view.activeTexUnit = TEXTURE_UNIT_ATLAS_ENGINE;
-	engineCore.view.bind2DTex(engine);
+	bindVdpTexture(backend, TEXTURE_UNIT_ATLAS_PRIMARY, primary);
+	bindVdpTexture(backend, TEXTURE_UNIT_ATLAS_SECONDARY, secondary);
+	bindVdpTexture(backend, TEXTURE_UNIT_ATLAS_ENGINE, engine);
 }
 
 function flushPendingBatch(backend: WebGLBackend, pass: PassEncoder, state: WebGLVdpBlitterRuntime, count: number): number {
@@ -245,6 +244,7 @@ function writeQuad(state: WebGLVdpBlitterRuntime, index: number, originX: number
 	state.atlasData[index] = atlasId;
 }
 
+// disable-next-line single_line_method_pattern -- axis-aligned quads are the hot common case; the wrapper keeps zero-skew arguments out of every callsite.
 function writeAxisAlignedQuad(state: WebGLVdpBlitterRuntime, index: number, x: number, y: number, width: number, height: number, u0: number, v0: number, u1: number, v1: number, z: number, fx: number, priorityDepth: number, color: FrameBufferColor, atlasId: number): void {
 	writeQuad(state, index, x, y, width, 0, 0, height, u0, v0, u1, v1, z, fx, priorityDepth, color, atlasId);
 }
@@ -401,7 +401,7 @@ function getPriorityDepth(priorityDepthBySeq: ReadonlyMap<number, number>, seq: 
 	return priorityDepth;
 }
 
-function drawSortedSegment(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, priorityDepthTexture: WebGLTexture, priorityDepthBySeq: ReadonlyMap<number, number>, commands: readonly VdpWebGLBlitterCommand[], start: number, end: number): void {
+function drawSortedSegment(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, priorityDepthTexture: WebGLTexture, priorityDepthBySeq: ReadonlyMap<number, number>, commands: readonly VdpWebGLBlitterCommand[], start: number, end: number, timeSeconds: number, deltaSeconds: number): void {
 	if (start >= end) {
 		return;
 	}
@@ -420,12 +420,12 @@ function drawSortedSegment(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitt
 		return;
 	}
 	sorted.sort(compareByPriority);
-	const frameBufferTexture = getVdpRenderFrameBufferTexture()!;
+	const frameBufferTexture = vdpRenderFrameBufferTexture();
 	const pass = backend.beginRenderPass({
 		color: { tex: frameBufferTexture },
 		depth: { tex: priorityDepthTexture },
 	});
-	bindPassState(backend, state, pass, vdp);
+	bindPassState(backend, state, pass, vdp, timeSeconds, deltaSeconds);
 	let boundMode: DrawMode | null = null;
 	let batchCount = 0;
 	for (let i = 0; i < sorted.length; i += 1) {
@@ -448,7 +448,7 @@ function drawSortedSegment(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitt
 			}
 			if (boundMode !== nextMode) {
 				batchCount = flushPendingBatch(backend, pass, state, batchCount);
-				bindTexturesForMode(vdp, state, nextMode);
+				bindTexturesForMode(vdp, backend, state, nextMode);
 				boundMode = nextMode;
 			}
 		}
@@ -467,14 +467,14 @@ function drawSortedSegment(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitt
 				if (command.backgroundColor !== null) {
 					if (boundMode !== 'solid') {
 						batchCount = flushPendingBatch(backend, pass, state, batchCount);
-						bindTexturesForMode(vdp, state, 'solid');
+						bindTexturesForMode(vdp, backend, state, 'solid');
 						boundMode = 'solid';
 					}
 					batchCount += appendGlyphRunBackground(backend, state, batchCount, command, priorityDepth);
 				}
 				if (boundMode !== 'atlas') {
 					batchCount = flushPendingBatch(backend, pass, state, batchCount);
-					bindTexturesForMode(vdp, state, 'atlas');
+					bindTexturesForMode(vdp, backend, state, 'atlas');
 					boundMode = 'atlas';
 				}
 				batchCount += appendGlyphRunGlyphs(vdp, backend, state, batchCount, command, priorityDepth);
@@ -493,7 +493,7 @@ function drawSortedSegment(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitt
 }
 
 function resetPriorityDepthSurface(backend: WebGLBackend, priorityDepthTexture: WebGLTexture): void {
-	const frameBufferTexture = getVdpRenderFrameBufferTexture()!;
+	const frameBufferTexture = vdpRenderFrameBufferTexture();
 	const pass = backend.beginRenderPass({
 		color: { tex: frameBufferTexture },
 		depth: { tex: priorityDepthTexture, clearDepth: 1 },
@@ -502,7 +502,7 @@ function resetPriorityDepthSurface(backend: WebGLBackend, priorityDepthTexture: 
 }
 
 function clearFrameBuffer(backend: WebGLBackend, priorityDepthTexture: WebGLTexture, command: BlitterClearCommand): void {
-	const frameBufferTexture = getVdpRenderFrameBufferTexture()!;
+	const frameBufferTexture = vdpRenderFrameBufferTexture();
 	const pass = backend.beginRenderPass({
 		color: {
 			tex: frameBufferTexture,
@@ -518,17 +518,16 @@ function clearFrameBuffer(backend: WebGLBackend, priorityDepthTexture: WebGLText
 	backend.endRenderPass(pass);
 }
 
-function copyFrameBufferRect(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, priorityDepthTexture: WebGLTexture, priorityDepthBySeq: ReadonlyMap<number, number>, command: BlitterCopyRectCommand): void {
-	const frameBufferTexture = getVdpRenderFrameBufferTexture()! as WebGLTexture;
+function copyFrameBufferRect(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, priorityDepthTexture: WebGLTexture, priorityDepthBySeq: ReadonlyMap<number, number>, command: BlitterCopyRectCommand, timeSeconds: number, deltaSeconds: number): void {
+	const frameBufferTexture = vdpRenderFrameBufferTexture() as WebGLTexture;
 	const copySnapshotTexture = prepareCopySnapshotTexture(backend, state, vdp.frameBufferWidth, vdp.frameBufferHeight);
 	backend.copyTextureRegion(frameBufferTexture, copySnapshotTexture, command.srcX, command.srcY, command.srcX, command.srcY, command.width, command.height);
 	const pass = backend.beginRenderPass({
 		color: { tex: frameBufferTexture },
 		depth: { tex: priorityDepthTexture },
 	});
-	bindPassState(backend, state, pass, vdp);
-	engineCore.view.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
-	engineCore.view.bind2DTex(copySnapshotTexture);
+	bindPassState(backend, state, pass, vdp, timeSeconds, deltaSeconds);
+	bindVdpTexture(backend, TEXTURE_UNIT_ATLAS_PRIMARY, copySnapshotTexture);
 	backend.setDepthFunc(backend.gl.ALWAYS);
 	backend.setBlendEnabled(false);
 	writeAxisAlignedQuad(
@@ -584,11 +583,11 @@ export class WebGLVdpBlitterExecutor {
 		this.runtime = createRuntime(backend);
 	}
 
-	public execute(vdp: VDP, commands: readonly VdpWebGLBlitterCommand[]): void {
+	public execute(vdp: VDP, commands: readonly VdpWebGLBlitterCommand[], timeSeconds: number, deltaSeconds: number): void {
 		if (commands.length === 0) {
 			return;
 		}
-		syncVdpSlotTextures(Runtime.instance.machine.vdp);
+		syncVdpSlotTextures(vdp);
 		const state = this.runtime;
 		const priorityDepthTexture = preparePriorityDepthTexture(this.backend, state, vdp.frameBufferWidth, vdp.frameBufferHeight);
 		const priorityDepthBySeq = buildPriorityDepthBySequence(state, commands);
@@ -600,7 +599,7 @@ export class WebGLVdpBlitterExecutor {
 		for (let i = 0; i < commands.length; i += 1) {
 			const command = commands[i];
 			if (command.opcode === 'clear') {
-				drawSortedSegment(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands, segmentStart, i);
+				drawSortedSegment(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands, segmentStart, i, timeSeconds, deltaSeconds);
 				clearFrameBuffer(this.backend, priorityDepthTexture, command);
 				segmentStart = i + 1;
 				continue;
@@ -608,10 +607,10 @@ export class WebGLVdpBlitterExecutor {
 			if (command.opcode !== 'copy_rect') {
 				continue;
 			}
-			drawSortedSegment(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands, segmentStart, i);
-			copyFrameBufferRect(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, command);
+			drawSortedSegment(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands, segmentStart, i, timeSeconds, deltaSeconds);
+			copyFrameBufferRect(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, command, timeSeconds, deltaSeconds);
 			segmentStart = i + 1;
 		}
-		drawSortedSegment(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands, segmentStart, commands.length);
+		drawSortedSegment(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands, segmentStart, commands.length, timeSeconds, deltaSeconds);
 	}
 }

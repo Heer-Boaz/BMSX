@@ -1,4 +1,4 @@
-import type { VDP, VdpBlitterSource, VdpSurfaceUploadSlot } from '../../machine/devices/vdp/vdp';
+import type { VDP, VdpSurfaceUploadSlot } from '../../machine/devices/vdp/vdp';
 
 export type VdpSurfacePixels = {
 	pixels: Uint8Array;
@@ -26,8 +26,4 @@ export function resolveVdpSurfacePixels(vdp: VDP, surfaceId: number): VdpSurface
 		height: slot.surfaceHeight,
 		stride: slot.surfaceWidth * 4,
 	};
-}
-
-export function resolveVdpSourcePixels(vdp: VDP, source: VdpBlitterSource): VdpSurfacePixels {
-	return resolveVdpSurfacePixels(vdp, source.surfaceId);
 }

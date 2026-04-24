@@ -4,6 +4,6 @@
 
 namespace bmsx {
 
-void drainReadyVdpExecution(VDP& vdp);
+void drainReadyVdpExecution(VDP& vdp, f64 timeSeconds);
 
 } // namespace bmsx

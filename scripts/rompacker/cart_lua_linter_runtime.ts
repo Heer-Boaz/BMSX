@@ -2,7 +2,6 @@ import { type LuaExpression as Expression, type LuaFunctionDeclarationStatement 
 import { LuaSyntaxError as ParserSyntaxError } from '../../src/bmsx/lua/errors';
 import { LuaLexer as Lexer } from '../../src/bmsx/lua/syntax/lexer';
 import { LuaParser as Parser } from '../../src/bmsx/lua/syntax/parser';
-import { type FunctionUsageInfo } from '../lint/function_usage';
 import { type LintRuleName } from '../lint/rule';
 import { type CartLintIssue } from '../lint/lua_rule';
 import { lintAstEmptyStringConditionPattern } from '../lint/rules/common/empty_string_condition_pattern';
@@ -67,9 +66,8 @@ import { lintForeignObjectInternalMutationPattern } from '../lint/rules/lua_cart
 import { lintFsmDirectStateHandlerShorthandPattern } from '../lint/rules/lua_cart/impl/support/fsm_core';
 import { lintFsmEventReemitHandlerPattern, lintFsmLifecycleWrapperPattern } from '../lint/rules/lua_cart/impl/support/fsm_events';
 import { lintFsmForbiddenLegacyFieldsPattern, lintFsmProcessInputPollingTransitionPattern, lintFsmRunChecksInputTransitionPattern, lintFsmTickCounterTransitionPattern } from '../lint/rules/lua_cart/impl/support/fsm_transitions';
-import { collectCartFunctionUsageCounts, isAllowedBySingleLineMethodUsage } from '../lint/rules/lua_cart/impl/support/function_usage';
 import { getFunctionDisplayName, isMethodLikeFunctionDeclaration } from '../lint/rules/lua_cart/impl/support/functions';
-import { isAllowedSingleLineMethodName, matchesMeaninglessSingleLineMethodPattern } from '../lint/rules/lua_cart/impl/support/general';
+import { matchesMeaninglessSingleLineMethodPattern } from '../lint/rules/lua_cart/impl/support/general';
 import { lintShadowedRequireAliasPattern } from '../lint/rules/lua_cart/impl/support/require_aliases';
 import { lintRuntimeTagTableAccessPattern } from '../lint/rules/lua_cart/impl/support/runtime_tag';
 import { lintSingleUseHasTagPattern } from '../lint/rules/lua_cart/impl/support/single_use_has_tag';
@@ -172,6 +170,8 @@ setActiveLintRules(new Set(CART_LINT_RULES));
 
 export const LINT_SUPPRESSION_DISABLE = 'disable';
 
+export const LINT_SUPPRESSION_DISABLE_NEXT_LINE = 'disable-next-line';
+
 export const LINT_SUPPRESSION_ENABLE = 'enable';
 
 export const BIOS_PROFILE_DISABLED_RULES = new Set<LintRuleName>([
@@ -235,6 +235,7 @@ export function collectSuppressedLineRanges(source: string): CartLintSuppression
 	// disable-next-line newline_normalization_pattern -- cart Lua suppression comments are parsed by logical source line.
 	const lines = source.split(/\r?\n/);
 	let activeStartLine = 0;
+	let activeRule: LintRuleName | null = null;
 	for (let index = 0; index < lines.length; index += 1) {
 		const lineNumber = index + 1;
 		const commentStart = lines[index].indexOf('--');
@@ -244,6 +245,13 @@ export function collectSuppressedLineRanges(source: string): CartLintSuppression
 		const commentText = lines[index].slice(commentStart + 2).trimStart();
 		const commandEnd = commentText.search(/\s/);
 		const command = commandEnd === -1 ? commentText : commentText.slice(0, commandEnd);
+		const rest = commandEnd === -1 ? '' : commentText.slice(commandEnd).trimStart();
+		const ruleEnd = rest.search(/\s/);
+		const rule = rest.length === 0 ? null : (ruleEnd === -1 ? rest : rest.slice(0, ruleEnd));
+		if (command === LINT_SUPPRESSION_DISABLE_NEXT_LINE) {
+			ranges.push({ startLine: lineNumber + 1, endLine: lineNumber + 1, rule });
+			continue;
+		}
 		const hasOpen = command === LINT_SUPPRESSION_DISABLE;
 		const hasClose = command === LINT_SUPPRESSION_ENABLE;
 		if (activeStartLine === 0) {
@@ -251,20 +259,23 @@ export function collectSuppressedLineRanges(source: string): CartLintSuppression
 				continue;
 			}
 			activeStartLine = lineNumber;
+			activeRule = rule;
 			if (hasClose) {
-				ranges.push({ startLine: activeStartLine, endLine: lineNumber });
+				ranges.push({ startLine: activeStartLine, endLine: lineNumber, rule: activeRule });
 				activeStartLine = 0;
+				activeRule = null;
 			}
 			continue;
 		}
 		if (!hasClose) {
 			continue;
 		}
-		ranges.push({ startLine: activeStartLine, endLine: lineNumber });
+		ranges.push({ startLine: activeStartLine, endLine: lineNumber, rule: activeRule });
 		activeStartLine = 0;
+		activeRule = null;
 	}
 	if (activeStartLine !== 0) {
-		ranges.push({ startLine: activeStartLine, endLine: lines.length });
+		ranges.push({ startLine: activeStartLine, endLine: lines.length, rule: activeRule });
 	}
 	return ranges;
 }
@@ -296,15 +307,11 @@ export function toWorkspaceRelativePath(absolutePath: string): string {
 	return normalizeWorkspacePath(rel.split(sep).join('/'));
 }
 
-export async function collectCartFiles(roots: ReadonlyArray<string>): Promise<string[]> {
-	return collectCartSourceFiles(roots);
-}
-
 export function lintFunctionBody(
 	functionName: string,
 	functionExpression: CartFunctionExpression,
 	issues: CartLintIssue[],
-	options: { readonly isMethodDeclaration: boolean; readonly usageInfo?: FunctionUsageInfo; },
+	isMethodDeclaration: boolean,
 ): void {
 	const isNamedFunction = functionName !== '<anonymous>';
 	lintSinglePropertyOptionsParameter(functionExpression, issues);
@@ -317,12 +324,10 @@ export function lintFunctionBody(
 	lintPureCopyFunctionPattern(functionName, functionExpression, issues);
 	if (
 		isNamedFunction
-		&& options.isMethodDeclaration
+		&& isMethodDeclaration
 		&& !isGetterOrSetter
 		&& !isVisualUpdateLike
-		&& !isAllowedSingleLineMethodName(functionName)
 		&& matchesMeaninglessSingleLineMethodPattern(functionExpression)
-		&& !isAllowedBySingleLineMethodUsage(functionName, options.usageInfo)
 	) {
 		pushIssue(
 			issues,
@@ -409,7 +414,7 @@ export function lintExpression(expression: Expression | null, issues: CartLintIs
 			}
 			return;
 		case SyntaxKind.FunctionExpression:
-			lintFunctionBody('<anonymous>', expression, issues, { isMethodDeclaration: false });
+	lintFunctionBody('<anonymous>', expression, issues, false);
 			lintStatements(expression.body.body, issues);
 			return;
 		default:
@@ -420,7 +425,6 @@ export function lintExpression(expression: Expression | null, issues: CartLintIs
 export function lintStatements(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
 	lintBranchUninitializedLocalPattern(statements, issues);
 	lintContiguousMultiEmitPattern(statements, issues);
-	const functionUsageInfo = collectCartFunctionUsageCounts(statements);
 	for (const statement of statements) {
 		switch (statement.kind) {
 			case SyntaxKind.LocalAssignmentStatement:
@@ -428,10 +432,7 @@ export function lintStatements(statements: ReadonlyArray<Statement>, issues: Car
 				for (let index = 0; index < statement.values.length; index += 1) {
 					const value = statement.values[index];
 					if (index < statement.names.length && value.kind === SyntaxKind.FunctionExpression) {
-						lintFunctionBody(statement.names[index].name, value, issues, {
-							isMethodDeclaration: false,
-							usageInfo: functionUsageInfo,
-						});
+						lintFunctionBody(statement.names[index].name, value, issues, false);
 						lintStatements(value.body.body, issues);
 						continue;
 					}
@@ -456,10 +457,7 @@ export function lintStatements(statements: ReadonlyArray<Statement>, issues: Car
 			case SyntaxKind.LocalFunctionStatement: {
 				const localFunction = statement as LocalFunctionStatement;
 				lintLocalFunctionConstPattern(localFunction, issues, pushIssue);
-				lintFunctionBody(getFunctionDisplayName(localFunction), localFunction.functionExpression, issues, {
-					isMethodDeclaration: false,
-					usageInfo: functionUsageInfo,
-				});
+				lintFunctionBody(getFunctionDisplayName(localFunction), localFunction.functionExpression, issues, false);
 				lintStatements(localFunction.functionExpression.body.body, issues);
 				break;
 			}
@@ -469,10 +467,7 @@ export function lintStatements(statements: ReadonlyArray<Statement>, issues: Car
 					getFunctionDisplayName(declaration),
 					declaration.functionExpression,
 					issues,
-					{
-						isMethodDeclaration: isMethodLikeFunctionDeclaration(declaration),
-						usageInfo: functionUsageInfo,
-					},
+					isMethodLikeFunctionDeclaration(declaration),
 				);
 				lintStatements(declaration.functionExpression.body.body, issues);
 				break;
@@ -546,7 +541,7 @@ export function formatIssues(issues: CartLintIssue[], profile: CartLintProfile):
 export async function lintCartSources(options: CartLintOptions): Promise<void> {
 	const profile = options.profile ?? 'cart';
 	setActiveLintRules(resolveEnabledRules(profile));
-	const files = await collectCartFiles(options.roots);
+	const files = await collectCartSourceFiles(options.roots);
 	if (files.length === 0) {
 		setActiveLintRules(new Set(CART_LINT_RULES));
 		return;

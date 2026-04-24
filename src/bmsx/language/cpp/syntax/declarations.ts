@@ -10,81 +10,6 @@ import {
 } from './syntax';
 import { cppTokenText, type CppToken } from './tokens';
 
-const CPP_BOUNDARY_STYLE_FUNCTION_NAME_WORDS: ReadonlySet<string> = new Set([
-	'acquire',
-	'add',
-	'append',
-	'apply',
-	'attach',
-	'begin',
-	'bind',
-	'build',
-	'call',
-	'capture',
-	'change',
-	'clear',
-	'copy',
-	'configure',
-	'create',
-	'count',
-	'decode',
-	'destroy',
-	'disable',
-	'dispose',
-	'detach',
-	'encode',
-	'enable',
-	'end',
-	'ensure',
-	'fault',
-	'focus',
-	'format',
-	'get',
-	'has',
-	'ident',
-	'init',
-	'install',
-	'emplace',
-	'load',
-	'make',
-	'on',
-	'pending',
-	'open',
-	'pixels',
-	'push',
-	'read',
-	'release',
-	'refresh',
-	'register',
-	'remove',
-	'replace',
-	'render',
-	'reset',
-	'resolve',
-	'resume',
-	'resize',
-	'save',
-	'set',
-	'setup',
-	'size',
-	'state',
-	'snapshot',
-	'submit',
-	'suspend',
-	'switch',
-	'reserve',
-	'shutdown',
-	'start',
-	'to',
-	'try',
-	'update',
-	'use',
-	'value',
-	'with',
-	'write',
-	'thunk',
-]);
-
 const CPP_TOP_LEVEL_DECLARATOR_BREAK_TOKENS = new Set([';', '{', '}']);
 const CPP_BRACE_TOKENS = new Set(['{', '}']);
 const CPP_WRAPPER_BLOCK_KEYWORDS = new Set([
@@ -468,7 +393,7 @@ export function collectCppFunctionDefinitions(
 			nameToken: nameIndex,
 			bodyStart: index,
 			bodyEnd: closeBrace,
-			wrapperTarget: isConstructorLike || isBoundaryStyleFunctionName(name) ? null : cppWrapperTarget(tokens, pairs, index, closeBrace),
+			wrapperTarget: isConstructorLike ? null : cppWrapperTarget(tokens, pairs, index, closeBrace),
 		});
 		index = closeBrace;
 	}
@@ -652,19 +577,6 @@ function cppWrapperTarget(tokens: readonly CppToken[], pairs: readonly number[],
 function isEmptyReturnStatement(tokens: readonly CppToken[], start: number, end: number): boolean {
 	for (let index = start; index < end; index += 1) {
 		if (tokens[index].text === 'return' && tokens[index + 1]?.text === ';') {
-			return true;
-		}
-	}
-	return false;
-}
-
-function isBoundaryStyleFunctionName(name: string): boolean {
-	const words = name.match(/[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z0-9])/g);
-	if (words === null) {
-		return CPP_BOUNDARY_STYLE_FUNCTION_NAME_WORDS.has(name.toLowerCase());
-	}
-	for (let index = 0; index < words.length; index += 1) {
-		if (CPP_BOUNDARY_STYLE_FUNCTION_NAME_WORDS.has(words[index].toLowerCase())) {
 			return true;
 		}
 	}

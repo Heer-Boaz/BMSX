@@ -8,13 +8,14 @@ import { isAssignmentOperator } from '../../../../../src/bmsx/language/ts/ast/op
 import { NORMALIZED_BODY_MIN_LENGTH } from './ast';
 import { isExpressionInScopeFingerprint } from './bindings';
 import { isTemporalSnapshotInitializer } from './local_bindings';
-import { isBoundaryStyleWrapperName, isNamedPrimitivePredicate, isTrivialDelegationCallExpression } from './runtime_patterns';
+import { isNamedPrimitivePredicate, isTrivialDelegationCallExpression } from './runtime_patterns';
 import { collectSemanticBodySignatures } from './semantic';
 import { getSingleStatementWrapperTarget, isLoopConditionExpression } from './statements';
 import { type NormalizedBodyInfo } from '../../../normalized_body';
 
 export type { NormalizedBodyInfo };
 
+// disable-next-line single_line_method_pattern -- class-kind predicate is reused by declaration walkers and keeps AST intent explicit.
 export function isAbstractClass(node: ts.ClassDeclaration): boolean {
 	return hasModifier(node, ts.SyntaxKind.AbstractKeyword);
 }
@@ -26,10 +27,6 @@ export function isIgnoredMethod(node: ts.MethodDeclaration | ts.GetAccessorDecla
 export function getFunctionWrapperTarget(
 	node: ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression,
 ): string | null {
-	const name = node.name?.text;
-	if (name !== undefined && isBoundaryStyleWrapperName(name)) {
-		return null;
-	}
 	const body = node.body;
 	if (body === undefined || body === null) {
 		return null;
@@ -134,13 +131,6 @@ export function isSingleLineWrapperCandidate(functionNode: ts.Node, _sourceFile:
 	if (!ts.isFunctionDeclaration(functionNode) && !ts.isMethodDeclaration(functionNode)) {
 		return false;
 	}
-	if (hasExportModifier(functionNode) || isPublicMethodDeclaration(functionNode)) {
-		return false;
-	}
-	const name = functionNode.name?.getText();
-	if (name !== undefined && isBoundaryStyleWrapperName(name)) {
-		return false;
-	}
 	const body = functionNode.body;
 	if (body === undefined) {
 		return false;
@@ -174,76 +164,6 @@ export const DIRECT_MUTATION_METHOD_NAMES = new Set([
 	'shift',
 	'splice',
 	'unshift',
-]);
-
-export const BOUNDARY_WRAPPER_NAME_WORDS: ReadonlySet<string> = new Set([
-	'acquire',
-	'add',
-	'append',
-	'apply',
-	'attach',
-	'begin',
-	'bind',
-	'build',
-	'capture',
-	'change',
-	'clear',
-	'copy',
-	'configure',
-	'create',
-	'count',
-	'decode',
-	'destroy',
-	'disable',
-	'dispose',
-	'detach',
-	'encode',
-	'enable',
-	'end',
-	'ensure',
-	'focus',
-	'format',
-	'get',
-	'has',
-	'ident',
-	'init',
-	'install',
-	'intern',
-	'launch',
-	'load',
-	'make',
-	'on',
-	'open',
-	'emplace',
-	'pixels',
-	'push',
-	'read',
-	'release',
-	'refresh',
-	'register',
-	'remove',
-	'replace',
-	'render',
-	'reset',
-	'resolve',
-	'resize',
-	'snapshot',
-	'save',
-	'set',
-	'setup',
-	'size',
-	'state',
-	'submit',
-	'switch',
-	'reserve',
-	'shutdown',
-	'start',
-	'to',
-	'update',
-	'use',
-	'value',
-	'write',
-	'with',
 ]);
 
 export function normalizedAstFingerprint(node: ts.Node): string {
@@ -282,10 +202,6 @@ export function collectNormalizedBody(
 	normalizedBodies: NormalizedBodyInfo[],
 	ledger: QualityLedger,
 ): void {
-	if (name.endsWith('Thunk')) {
-		noteQualityLedger(ledger, 'skipped_normalized_body_thunk');
-		return;
-	}
 	if (hasExportModifier(node)) {
 		noteQualityLedger(ledger, 'skipped_normalized_body_exported');
 		return;

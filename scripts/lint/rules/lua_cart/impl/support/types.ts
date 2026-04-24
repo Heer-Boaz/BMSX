@@ -1,11 +1,13 @@
 import { type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { type CartLintIssue } from '../../../../lua_rule';
+import { type LintRuleName } from '../../../../rule';
 
 export type CartLintProfile = 'cart' | 'bios';
 
 export type CartLintSuppressionRange = {
 	readonly startLine: number;
 	readonly endLine: number;
+	readonly rule: LintRuleName | null;
 };
 
 export type UnusedInitValueBinding = {

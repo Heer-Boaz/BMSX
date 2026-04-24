@@ -30,6 +30,7 @@ DmaController::DmaController(
 		m_memory.mapIoWrite(IO_DMA_CTRL, this, &DmaController::onCtrlWriteThunk);
 	}
 
+// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the DMA device instance.
 void DmaController::onCtrlWriteThunk(void* context, uint32_t, Value) {
 	static_cast<DmaController*>(context)->tryStartIo();
 }

@@ -18,7 +18,7 @@ import { ENGINE_ATLAS_INDEX } from '../../rompack/format';
 import { VRAM_ATLAS_SLOT_SIZE, VRAM_SYSTEM_ATLAS_SLOT_SIZE } from '../../machine/memory/map';
 import type { Mesh } from '../3d/mesh';
 import { Runtime } from '../../machine/runtime/runtime';
-import { getVdpDisplayFrameBufferTexture, readVdpDisplayFrameBufferPixels } from '../vdp/framebuffer';
+import { readVdpDisplayFrameBufferPixels, vdpDisplayFrameBufferTexture } from '../vdp/framebuffer';
 import type { HeadlessPresentHost } from './view';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
@@ -293,7 +293,7 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 				height: engineCore.view.canvasSize.y,
 				baseWidth: engineCore.view.viewportSize.x,
 				baseHeight: engineCore.view.viewportSize.y,
-				colorTex: getVdpDisplayFrameBufferTexture(),
+				colorTex: vdpDisplayFrameBufferTexture(),
 			} as Framebuffer2DPipelineState);
 		},
 		exec: (_backend, _fbo, state: Framebuffer2DPipelineState) => {

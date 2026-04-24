@@ -107,7 +107,7 @@ void VdpSoftwareBlitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand
 				break;
 		}
 	}
-	uploadVdpFrameBufferPixels(pixels.data(), frameBufferWidth, frameBufferHeight);
+	writeVdpRenderFrameBufferPixels(pixels.data(), frameBufferWidth, frameBufferHeight);
 	vdp.clearSurfaceUploadDirty(VDP_RD_SURFACE_FRAMEBUFFER);
 	vdp.invalidateFrameBufferReadCache();
 }
@@ -227,7 +227,7 @@ void VdpSoftwareBlitter::rasterizeFrameBufferLine(VDP& vdp, std::vector<u8>& pix
 void VdpSoftwareBlitter::rasterizeFrameBufferBlit(VDP& vdp, std::vector<u8>& pixels, const VDP::BlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const VDP::FrameBufferColor& color, Layer2D layer, f32 z, u32 seq) {
 	const i32 frameBufferWidth = static_cast<i32>(vdp.frameBufferWidth());
 	const i32 frameBufferHeight = static_cast<i32>(vdp.frameBufferHeight());
-	const VdpSourcePixels sourcePixels = resolveVdpSourcePixels(vdp, source);
+	const VdpSourcePixels sourcePixels = resolveVdpSurfacePixels(vdp, source.surfaceId);
 	const i32 dstW = std::max(1, static_cast<i32>(std::round(static_cast<f32>(source.width) * scaleX)));
 	const i32 dstH = std::max(1, static_cast<i32>(std::round(static_cast<f32>(source.height) * scaleY)));
 	const i32 dstX = static_cast<i32>(std::round(dstXValue));

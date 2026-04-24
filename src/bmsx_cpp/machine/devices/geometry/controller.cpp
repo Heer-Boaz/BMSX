@@ -90,6 +90,7 @@ inline uint32_t numberToF32Bits(double value) {
 	m_overlapClip1.reserve(32u);
 }
 
+// disable-next-line normalized_ast_duplicate_pattern -- device MMIO thunks share callback shape while each device owns its scheduler timing.
 void GeometryController::onCtrlWriteThunk(void* context, uint32_t, Value) {
 	auto* controller = static_cast<GeometryController*>(context);
 	controller->onCtrlWrite(controller->m_scheduler.currentNowCycles());
@@ -1245,6 +1246,7 @@ std::optional<uint32_t> GeometryController::resolveIndexedSpan(uint32_t base, ui
 	return static_cast<uint32_t>(addr);
 }
 
+// disable-next-line single_line_method_pattern -- geometry status updates repeatedly write U32 values through numeric MMIO registers.
 void GeometryController::writeRegister(uint32_t addr, uint32_t value) {
 	m_memory.writeIoValue(addr, valueNumber(static_cast<double>(value)));
 }

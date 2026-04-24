@@ -5,7 +5,7 @@ import { engineCore } from '../../core/engine';
 import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl/constants';
 import vertexShaderCode from './shaders/framebuffer_2d.vert.glsl';
 import fragmentShaderCode from './shaders/framebuffer_2d.frag.glsl';
-import { getVdpDisplayFrameBufferTexture } from '../vdp/framebuffer';
+import { vdpDisplayFrameBufferTexture } from '../vdp/framebuffer';
 import {
 	bindFullscreenQuad,
 	createFullscreenQuad,
@@ -69,7 +69,7 @@ export function registerFramebuffer2DPass_WebGL(registry: RenderPassLibrary): vo
 				height: engineCore.view.offscreenCanvasSize.y,
 				baseWidth: engineCore.view.viewportSize.x,
 				baseHeight: engineCore.view.viewportSize.y,
-				colorTex: getVdpDisplayFrameBufferTexture(),
+				colorTex: vdpDisplayFrameBufferTexture(),
 			};
 			registry.setState('framebuffer_2d', state);
 			const gl = backend.gl;

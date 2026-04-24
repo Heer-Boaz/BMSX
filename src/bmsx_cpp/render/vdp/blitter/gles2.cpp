@@ -1,7 +1,6 @@
 #include "render/vdp/blitter/gles2.h"
 
 #if BMSX_ENABLE_GLES2
-#include "core/engine.h"
 #include "machine/devices/vdp/fault.h"
 #include "render/backend/gles2_backend.h"
 #include "render/shared/queues.h"
@@ -317,6 +316,7 @@ void appendQuadVertices(
 	pushVertex(vertices, x11, y11, u1, v1, atlasId, color);
 }
 
+// disable-next-line single_line_method_pattern -- axis-aligned quads are the hot common case; this keeps zero-skew arguments out of every callsite.
 void appendAxisAlignedQuadVertices(
 	std::vector<VdpGles2Vertex>& vertices,
 	f32 x,
@@ -499,29 +499,29 @@ void setupVdpDrawState(const VdpGles2Host& host) {
 } // namespace
 
 void VdpGles2Blitter::initialize() {
-	auto* view = EngineCore::instance().view();
-	if (view->backendType() != BackendType::OpenGLES2) {
+	GPUBackend& backend = vdpTextureBackend();
+	if (backend.type() != BackendType::OpenGLES2) {
 		return;
 	}
-	initializeVdpGles2Runtime(static_cast<OpenGLES2Backend*>(view->backend()));
+	initializeVdpGles2Runtime(static_cast<OpenGLES2Backend*>(&backend));
 }
 
-bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& queue) {
+bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& queue, f64 timeSeconds) {
 	using CommandType = VDP::BlitterCommandType;
-	auto* view = EngineCore::instance().view();
-	if (view->backendType() != BackendType::OpenGLES2) {
+	GPUBackend& textureBackend = vdpTextureBackend();
+	if (textureBackend.type() != BackendType::OpenGLES2) {
 		return false;
 	}
 	syncVdpSlotTextures(vdp);
-	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
+	auto* backend = static_cast<OpenGLES2Backend*>(&textureBackend);
 	applyVdpFrameBufferTextureWrites(vdp);
 	VdpGles2Host host;
 	host.backend = backend;
-	host.renderTexture = getVdpRenderFrameBufferTexture();
+	host.renderTexture = vdpRenderFrameBufferTexture();
 	host.width = static_cast<i32>(vdp.frameBufferWidth());
 	host.height = static_cast<i32>(vdp.frameBufferHeight());
 	host.parallaxRig = RenderQueues::spriteParallaxRig;
-	host.timeSeconds = EngineCore::instance().totalTime();
+	host.timeSeconds = timeSeconds;
 	auto prepareSurface = [&](uint32_t surfaceId, f32 atlasId) {
 		auto& info = host.surfaces[surfaceId];
 		info.atlasId = atlasId;
@@ -796,6 +796,7 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 	return true;
 }
 
+// disable-next-line single_line_method_pattern -- public blitter lifecycle hook delegates to the GLES2 runtime storage owner.
 void VdpGles2Blitter::shutdown() {
 	destroyVdpGles2Runtime();
 }

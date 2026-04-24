@@ -7,6 +7,7 @@
 namespace bmsx {
 void FrameLoopState::reset() {
 	frameDeltaMs = 0.0;
+	currentTimeSeconds = 0.0;
 }
 
 void FrameLoopState::resetFrameState(Runtime& runtime) {

@@ -19,8 +19,4 @@ VdpSourcePixels resolveVdpSurfacePixels(const VDP& vdp, u32 surfaceId) {
 	throw vdpFault("surface " + std::to_string(surfaceId) + " is not registered for CPU readback.");
 }
 
-VdpSourcePixels resolveVdpSourcePixels(const VDP& vdp, const VDP::BlitterSource& source) {
-	return resolveVdpSurfacePixels(vdp, source.surfaceId);
-}
-
 } // namespace bmsx
