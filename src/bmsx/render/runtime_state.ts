@@ -3,9 +3,9 @@ import type {
 	RuntimeDirectionalLightState,
 	RuntimePointLightState,
 	RuntimeRenderState,
-} from '../contracts';
-import { cloneSpriteParallaxRig, resetSpriteParallaxRig, setSpriteParallaxRigValues } from '../../../render/2d/sprite_parallax_rig';
-import { clearHardwareCamera, resolveActiveCamera3D, setHardwareCamera } from '../../../render/shared/hardware/camera';
+} from '../machine/runtime/contracts';
+import { cloneSpriteParallaxRig, resetSpriteParallaxRig, setSpriteParallaxRigValues } from './2d/sprite_parallax_rig';
+import { clearHardwareCamera, resolveActiveCamera3D, setHardwareCamera } from './shared/hardware/camera';
 import {
 	clearHardwareLighting,
 	getHardwareAmbientLights,
@@ -14,8 +14,7 @@ import {
 	putHardwareAmbientLight,
 	putHardwareDirectionalLight,
 	putHardwarePointLight,
-} from '../../../render/shared/hardware/lighting';
-import { clearBackQueues } from '../../../render/shared/queues';
+} from './shared/hardware/lighting';
 
 function compareEntryId<T extends { id: string }>(left: T, right: T): number {
 	if (left.id < right.id) {
@@ -120,16 +119,6 @@ export function applyRuntimeRenderState(state: RuntimeRenderState): void {
 		state.spriteParallaxRig.flip_strength,
 		state.spriteParallaxRig.flip_window,
 	);
-}
-
-// disable-next-line single_line_method_pattern -- runtime render frame entry owns the hardware-lighting reset boundary.
-export function beginRuntimeRenderFrame(): void {
-	clearHardwareLighting();
-}
-
-// disable-next-line single_line_method_pattern -- runtime reset/save paths clear render back queues through this owner.
-export function clearRuntimeRenderBackQueues(): void {
-	clearBackQueues();
 }
 
 export function resetRuntimeRenderState(): void {

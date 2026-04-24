@@ -1,8 +1,8 @@
-import type { OverlayApi as Api } from '../../ui/view/overlay_api';
+import type { OverlayApi as Api } from '../../../runtime/overlay_api';
 import type { CachedHighlight } from '../../../common/models';
 import type { Font } from '../../../../render/shared/bmsx_font';
 import * as constants from '../../../common/constants';
-import { api } from '../../ui/view/overlay_api';
+import { api } from '../../../runtime/overlay_api';
 import { editorViewState } from '../../ui/view/state';
 import { editorSearchState } from '../../contrib/find/widget_state';
 import { referenceState } from '../../contrib/references/state';

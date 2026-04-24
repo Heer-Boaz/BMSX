@@ -95,6 +95,7 @@ add_library(bmsx_core STATIC
 	# Core systems
 	core/primitives.cpp
 	core/engine.cpp
+	core/host_asset_sync.cpp
 	core/host_frame.cpp
 	core/system.cpp
 	core/registry.cpp
@@ -109,6 +110,7 @@ add_library(bmsx_core STATIC
 
 	# Audio systems
 	audio/biquad_filter.cpp
+	audio/runtime_asset_audio.cpp
 	audio/soundmaster.cpp
 	audio/resources.cpp
 
@@ -127,10 +129,11 @@ add_library(bmsx_core STATIC
 	render/backend/frame_uniforms.cpp
 	render/lighting/system.cpp
 	render/shared/queues.cpp
+	render/runtime_asset_textures.cpp
+	render/runtime/state.cpp
 	render/shared/camera_state.cpp
 	render/shared/hardware/camera.cpp
 	render/shared/hardware/lighting.cpp
-	runtime/assets/edits.cpp
 	render/vdp/blitter/execute.cpp
 	render/vdp/blitter/gles2.cpp
 	render/vdp/blitter/software.cpp
@@ -173,7 +176,6 @@ add_library(bmsx_core STATIC
 	machine/scheduler/device.cpp
 	machine/runtime/resource_usage_detector.cpp
 	machine/runtime/runtime.cpp
-	machine/runtime/render/state.cpp
 	machine/runtime/machine_state.cpp
 	machine/runtime/save_machine_state.cpp
 	machine/runtime/cpu_state.cpp

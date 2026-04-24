@@ -1,8 +1,7 @@
-// disable cross_layer_import_pattern -- runtime/error owns IDE runtime-error integration between editor state and workbench tab context.
 import { centerCursorVertically, setCursorPosition } from '../../editor/ui/view/caret/caret';
 import { beginNavigationCapture, completeNavigation } from '../../editor/navigation/navigation_history';
-import { activateCodeTab, isTabActive, setActiveTab } from '../../workbench/ui/tabs';
-import { getActiveCodeTabContext, getCodeTabContexts } from '../../workbench/ui/code_tab/contexts';
+import { activateCodeTab, isTabActive, setActiveTab } from '../ui/tabs';
+import { getActiveCodeTabContext, getCodeTabContexts } from '../ui/code_tab/contexts';
 import { showEditorMessage } from '../../common/feedback_state';
 import type { CodeTabContext, RuntimeErrorOverlay } from '../../common/models';
 import { resetBlink } from '../../editor/render/caret';

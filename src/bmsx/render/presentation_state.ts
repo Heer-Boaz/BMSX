@@ -8,7 +8,7 @@ import {
 } from './shared/queues';
 import type { Runtime } from '../machine/runtime/runtime';
 import type { TickCompletion } from '../machine/scheduler/frame';
-import * as workbenchMode from '../ide/runtime/workbench_mode';
+import * as workbenchMode from '../ide/workbench/mode';
 import { commitVdpViewSnapshot } from './vdp/view_snapshot';
 
 export type RenderPresentationMode = 'partial' | 'completed';
@@ -170,7 +170,7 @@ export class RenderPresentationState {
 			this.markPresentation('completed', false);
 		} else if (runtime.frameScheduler.lastTickSequence !== previousTickSequence) {
 			this.markPresentation('completed', runtime.frameScheduler.lastTickVisualFrameCommitted);
-		} else if (runtime.isDrawPending) {
+		} else if (runtime.isDrawPending || workbenchMode.hasFaultSnapshot(runtime)) {
 			this.markPresentation('partial', false);
 		}
 		while (runtime.frameScheduler.consumeTickCompletion(this.tickCompletionScratch)) {
@@ -226,9 +226,9 @@ export class RenderPresentationState {
 			+ `tick_completed=${this.debugPresentTickCompleted} tick_committed=${this.debugPresentTickCommitted} `
 			+ `tick_deferred=${this.debugPresentTickDeferred} tick_held=${this.debugPresentTickHeld} `
 			+ `present_partial=${this.debugPresentPartialPresents} present_commit=${this.debugPresentCommitPresents} `
-			+ `present_hold=${this.debugPresentHoldPresents} present_paused=${this.debugPresentPausedPresents} `
-				+ `draw_pending=${runtime.isDrawPending ? 1 : 0} active_tick=${runtime.frameLoop.currentFrameState !== null ? 1 : 0}`
-			);
+				+ `present_hold=${this.debugPresentHoldPresents} present_paused=${this.debugPresentPausedPresents} `
+					+ `draw_pending=${runtime.isDrawPending || workbenchMode.hasFaultSnapshot(runtime) ? 1 : 0} active_tick=${runtime.frameLoop.currentFrameState !== null ? 1 : 0}`
+				);
 		this.resetDebugCounters(currentTime);
 	}
 }

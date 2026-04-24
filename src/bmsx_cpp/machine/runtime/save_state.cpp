@@ -3,7 +3,8 @@
 #include "machine/firmware/api.h"
 #include "machine/runtime/cpu_state.h"
 #include "machine/runtime/game/table.h"
-#include "machine/runtime/render/state.h"
+#include "render/runtime/state.h"
+#include "render/shared/queues.h"
 #include "machine/runtime/save_machine_state.h"
 #include "machine/runtime/runtime.h"
 #include "render/vdp/context_state.h"
@@ -39,7 +40,7 @@ void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state) {
 	runtime.m_runtimeFailed = state.runtimeFailed;
 	runtime.m_luaInitialized = state.luaInitialized;
 	syncRuntimeGameViewStateToTable(runtime);
-	clearRuntimeRenderBackQueues();
+	RenderQueues::clearBackQueues();
 }
 
 } // namespace bmsx

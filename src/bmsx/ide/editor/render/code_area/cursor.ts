@@ -2,7 +2,7 @@ import type { CachedHighlight, CursorScreenInfo } from '../../../common/models';
 import type { Font } from '../../../../render/shared/bmsx_font';
 import { clamp } from '../../../../common/clamp';
 import * as constants from '../../../common/constants';
-import { api } from '../../ui/view/overlay_api';
+import { api } from '../../../runtime/overlay_api';
 import { drawHighlightSlice } from './highlights';
 import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from '../../ui/view/state';

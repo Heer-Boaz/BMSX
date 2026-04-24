@@ -5,7 +5,7 @@ import type { RectBounds } from '../../../rompack/format';
 import { getCodeAreaBounds } from './view/view';
 import { ensureVisualLines } from '../common/text/layout';
 import { resourcePanel } from '../../workbench/contrib/resources/panel/controller';
-import { api } from './view/overlay_api';
+import { api } from '../../runtime/overlay_api';
 import { setResourceViewerScroll } from '../../workbench/contrib/resources/viewer';
 import { getActiveResourceViewer } from '../../workbench/contrib/resources/view_tabs';
 import { editorCaretState } from './view/caret/state';

@@ -1,10 +1,10 @@
 import { BmsxColors, resolvePaletteIndex, invertColorIndex } from '../../../machine/devices/vdp/vdp';
-import type { OverlayApi as Api } from '../ui/view/overlay_api';
+import type { OverlayApi as Api } from '../../runtime/overlay_api';
 import * as constants from '../../common/constants';
 import { drawEditorText } from './text_renderer';
 import type { CursorScreenInfo, TextField } from '../../common/models';
 import { getCursorOffset } from '../ui/inline/text_field';
-import { api } from '../ui/view/overlay_api';
+import { api } from '../../runtime/overlay_api';
 import { resetBlinkState } from '../ui/view/caret/blink';
 import { editorCaretState } from '../ui/view/caret/state';
 import { editorViewState } from '../ui/view/state';

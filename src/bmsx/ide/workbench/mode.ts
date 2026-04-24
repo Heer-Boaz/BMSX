@@ -10,12 +10,12 @@ import {
 	type StackTraceFrame,
 } from '../../lua/value';
 import { publishOverlayFrame } from '../../render/editor/overlay_queue';
-import { flushRuntimeAssetEdits } from '../../runtime/assets/edits';
+import { flushHostRuntimeAssetEdits } from '../../core/host_asset_sync';
 import * as constants from '../common/constants';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../common/constants';
-import { editorDebuggerState } from '../workbench/contrib/debugger/state';
+import { editorDebuggerState } from './contrib/debugger/state';
 import { showEditorWarningBanner } from '../common/feedback_state';
-import type { RuntimeErrorDetails } from '../common/models';
+import type { FaultSnapshot, RuntimeErrorDetails } from '../common/models';
 import { buildLuaStackFrames } from '../../machine/firmware/globals';
 import { seedDefaultLuaBuiltins } from '../../machine/firmware/builtins';
 import {
@@ -24,14 +24,15 @@ import {
 	convertLuaCallFrames,
 	parseJsStackFrames,
 	sanitizeLuaErrorMessage,
-} from '../editor/contrib/runtime_error/format';
+} from '../common/runtime_error_format';
 import { logDebugState } from '../../machine/runtime/debug';
 import { TerminalMode } from '../terminal/ui/mode';
 import type { FrameState, Runtime } from '../../machine/runtime/runtime';
+import type { CpuFrameSnapshot } from '../../machine/cpu/cpu';
 import type { RuntimeOptions } from '../../machine/runtime/contracts';
 import { resolveWorkspacePath } from '../workspace/path';
 import { shallowcopy } from '../../common/shallowcopy';
-import { api as overlay_api } from '../editor/ui/view/overlay_api';
+import { api as overlay_api } from '../runtime/overlay_api';
 import { createCartEditor } from '../cart_editor';
 import { clearExecutionStopHighlights, setExecutionStopHighlight } from './error/navigation';
 
@@ -75,12 +76,53 @@ type RenderTargetState = {
 	baseline?: RenderTargetSnapshot;
 	stack: TargetOwner[];
 };
+export type RuntimeFaultState = {
+	handledLuaErrors: WeakSet<object>;
+	lastLuaCallStack: StackTraceFrame[];
+	lastCpuFaultSnapshot: CpuFrameSnapshot[];
+	faultSnapshot: FaultSnapshot;
+	faultOverlayNeedsFlush: boolean;
+};
 
 export const EDITOR_TARGET: RenderTargetVec2 = { x: 384, y: 288 };
 // export const EDITOR_TARGET: RenderTargetVec2 = { x: 768, y: 576 };
 // export const EDITOR_TARGET: RenderTargetVec2 = { x: 512, y: 384 };
 const RT_STATE = new WeakMap<Runtime, RenderTargetState>();
 const EMPTY_LUA_CALL_FRAMES: ReadonlyArray<LuaCallFrame> = [];
+
+export function createRuntimeFaultState(): RuntimeFaultState {
+	return {
+		handledLuaErrors: new WeakSet<object>(),
+		lastLuaCallStack: [],
+		lastCpuFaultSnapshot: [],
+		faultSnapshot: null,
+		faultOverlayNeedsFlush: false,
+	};
+}
+
+export function resetHandledLuaErrors(runtime: Runtime): void {
+	runtime.workbenchFaultState.handledLuaErrors = new WeakSet<object>();
+}
+
+export function getFaultSnapshot(runtime: Runtime): FaultSnapshot {
+	return runtime.workbenchFaultState.faultSnapshot;
+}
+
+export function hasFaultSnapshot(runtime: Runtime): boolean {
+	return runtime.workbenchFaultState.faultSnapshot !== null;
+}
+
+export function getLastCpuFaultSnapshot(runtime: Runtime): CpuFrameSnapshot[] {
+	return runtime.workbenchFaultState.lastCpuFaultSnapshot;
+}
+
+export function doesFaultOverlayNeedFlush(runtime: Runtime): boolean {
+	return runtime.workbenchFaultState.faultOverlayNeedsFlush;
+}
+
+export function flushedFaultOverlay(runtime: Runtime): void {
+	runtime.workbenchFaultState.faultOverlayNeedsFlush = false;
+}
 
 function getRenderTargetState(runtime: Runtime): RenderTargetState {
 	let state = RT_STATE.get(runtime);
@@ -202,8 +244,9 @@ function runtimeStackFrameLocation(frame: StackTraceFrame): RuntimeErrorLocation
 }
 
 function resolveRuntimeErrorLocation(runtime: Runtime, error: Error): RuntimeErrorLocation {
-	if (runtime.lastLuaCallStack.length > 0) {
-		return runtimeStackFrameLocation(runtime.lastLuaCallStack[0]);
+	const state = runtime.workbenchFaultState;
+	if (state.lastLuaCallStack.length > 0) {
+		return runtimeStackFrameLocation(state.lastLuaCallStack[0]);
 	}
 	if (error instanceof LuaError) {
 		return runtimeLuaErrorLocation(error);
@@ -246,7 +289,7 @@ export function initializeIdeFeatures(runtime: Runtime, options: RuntimeOptions)
 	seedDefaultLuaBuiltins();
 	flushLuaWarnings(runtime);
 	registerRuntimeShortcuts(runtime);
-	setDebuggerBreakpoints(runtime, editorDebuggerState.breakpoints);
+	runtime.debuggerController.setBreakpoints(editorDebuggerState.breakpoints);
 	updateGamePipelineExts(runtime);
 }
 
@@ -423,10 +466,6 @@ export function flushLuaWarnings(runtime: Runtime): void {
 	}
 }
 
-export function setDebuggerBreakpoints(runtime: Runtime, breakpoints: Map<string, Set<number>>): void {
-	runtime.debuggerController.setBreakpoints(breakpoints);
-}
-
 export function setDebuggerPaused(runtime: Runtime, paused: boolean): void {
 	runtime.debuggerPaused = paused;
 	editorDebuggerState.controls.executionState = paused ? 'paused' : 'inactive';
@@ -456,8 +495,9 @@ export function onLuaDebuggerPause(runtime: Runtime, signal: LuaDebuggerPauseSig
 	if (signal.reason === 'exception') {
 		recordDebuggerExceptionFault(runtime, signal);
 		if (runtime.programMetadata && isManagedOverlayEditorActive(runtime)) {
-			const message = runtime.faultSnapshot.message;
-			runtime.editor!.showRuntimeErrorInChunk(runtime.faultSnapshot.path, runtime.faultSnapshot.line, runtime.faultSnapshot.column, message);
+			const faultSnapshot = getFaultSnapshot(runtime);
+			const message = faultSnapshot.message;
+			runtime.editor!.showRuntimeErrorInChunk(faultSnapshot.path, faultSnapshot.line, faultSnapshot.column, message);
 		}
 	}
 }
@@ -493,11 +533,14 @@ function resolveResumeStrategy(suspension: LuaDebuggerPauseSignal): 'propagate' 
 	return suspension.reason === 'exception' ? 'skip_statement' : 'propagate';
 }
 
-function resumeDebugger(runtime: Runtime, options: { mode: 'continue' | 'step_into' | 'step_out'; strategy: 'propagate' | 'skip_statement' }): void {
+function resumeDebugger(runtime: Runtime, options: { mode: 'continue' | 'step_into' | 'step_over' | 'step_out'; strategy: 'propagate' | 'skip_statement' }): void {
 	const suspension = runtime.pauseCoordinator.getSuspension();
 	const stepOrigin = buildDebuggerStepOrigin(suspension);
 	if (options.mode === 'step_into') {
 		runtime.debuggerController.requestStepInto(stepOrigin);
+	}
+	if (options.mode === 'step_over') {
+		runtime.debuggerController.requestStepOver(suspension.callStack.length, stepOrigin);
 	}
 	if (options.mode === 'step_out') {
 		runtime.debuggerController.requestStepOut(suspension.callStack.length, stepOrigin);
@@ -515,7 +558,8 @@ export function continueLuaDebugger(runtime: Runtime): void {
 }
 
 export function stepOverLuaDebugger(runtime: Runtime): void {
-	stepIntoLuaDebugger(runtime);
+	const suspension = runtime.pauseCoordinator.getSuspension();
+	resumeDebugger(runtime, { mode: 'step_over', strategy: resolveResumeStrategy(suspension) });
 }
 
 export function stepIntoLuaDebugger(runtime: Runtime): void {
@@ -541,9 +585,10 @@ export function clearEditorErrorOverlaysIfNoFault(runtime: Runtime): void {
 }
 
 export function clearFaultSnapshot(runtime: Runtime): void {
-	runtime.faultSnapshot = null;
-	runtime.lastCpuFaultSnapshot = [];
-	runtime.faultOverlayNeedsFlush = false;
+	const state = runtime.workbenchFaultState;
+	state.faultSnapshot = null;
+	state.lastCpuFaultSnapshot = [];
+	state.faultOverlayNeedsFlush = false;
 }
 
 export function clearRuntimeFault(runtime: Runtime): void {
@@ -559,14 +604,15 @@ export function setRuntimeFault(runtime: Runtime, payload: {
 	details: RuntimeErrorDetails;
 	fromDebugger: boolean;
 }): void {
+	const state = runtime.workbenchFaultState;
 	runtime.luaRuntimeFailed = true;
-	runtime.faultSnapshot = payload;
-	runtime.faultSnapshot.timestampMs = engineCore.platform.clock.dateNow();
-	runtime.faultOverlayNeedsFlush = true;
+	state.faultSnapshot = payload;
+	state.faultSnapshot.timestampMs = engineCore.platform.clock.dateNow();
+	state.faultOverlayNeedsFlush = true;
 }
 
 export function clearFaultState(runtime: Runtime): { cleared: boolean; resumedDebugger: boolean } {
-	const hadFault = runtime.luaRuntimeFailed || runtime.faultSnapshot !== null || runtime.debuggerSuspendSignal !== null;
+	const hadFault = runtime.luaRuntimeFailed || hasFaultSnapshot(runtime) || runtime.debuggerSuspendSignal !== null;
 	const wasPaused = runtime.debuggerSuspendSignal !== null || runtime.debuggerPaused;
 	clearRuntimeFault(runtime);
 	if (wasPaused) {
@@ -577,8 +623,9 @@ export function clearFaultState(runtime: Runtime): { cleared: boolean; resumedDe
 
 export function recordDebuggerExceptionFault(runtime: Runtime, signal: LuaDebuggerPauseSignal): void {
 	const exception = runtime.pauseCoordinator.getPendingException();
-	if (runtime.faultSnapshot && runtime.luaRuntimeFailed) {
-		runtime.faultOverlayNeedsFlush = true;
+	const state = runtime.workbenchFaultState;
+	if (state.faultSnapshot && runtime.luaRuntimeFailed) {
+		state.faultOverlayNeedsFlush = true;
 		return;
 	}
 	if (!exception) {
@@ -606,11 +653,12 @@ export function recordDebuggerExceptionFault(runtime: Runtime, signal: LuaDebugg
 
 export function handleLuaError(runtime: Runtime, whatever: unknown): void {
 	const error = convertToError(whatever);
-	if (runtime.handledLuaErrors.has(error)) {
+	const state = runtime.workbenchFaultState;
+	if (state.handledLuaErrors.has(error)) {
 		return;
 	}
-	runtime.lastCpuFaultSnapshot = runtime.machine.cpu.snapshotCallStack();
-	runtime.lastLuaCallStack = buildLuaStackFrames(runtime);
+	state.lastCpuFaultSnapshot = runtime.machine.cpu.snapshotCallStack();
+	state.lastLuaCallStack = buildLuaStackFrames(runtime);
 	const message = sanitizeLuaErrorMessage(extractErrorMessage(error));
 	const location = resolveRuntimeErrorLocation(runtime, error);
 	const runtimeDetails = buildRuntimeErrorDetailsForEditor(runtime, error, message);
@@ -636,7 +684,13 @@ export function handleLuaError(runtime: Runtime, whatever: unknown): void {
 	logDebugState(runtime);
 	runtime.terminal.appendError(error);
 	activateTerminalMode(runtime);
-	runtime.handledLuaErrors.add(error);
+	state.handledLuaErrors.add(error);
+}
+
+export function surfaceHostFrameError(runtime: Runtime, error: unknown, hostDeltaMs: number): void {
+	runtime.frameLoop.abandonFrameState(runtime);
+	handleLuaError(runtime, error);
+	runtime.screen.presentErrorOverlay(runtime, hostDeltaMs);
 }
 
 export function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unknown, message: string, callStack?: ReadonlyArray<LuaCallFrame>): RuntimeErrorDetails {
@@ -648,8 +702,11 @@ export function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unkno
 	let luaFrames: StackTraceFrame[] = [];
 	if (useInterpreterStack) {
 		luaFrames = callFrames.length > 0 ? convertLuaCallFrames(callFrames) : [];
-	} else if (runtime.lastLuaCallStack.length > 0) {
-		luaFrames = runtime.lastLuaCallStack.slice();
+	} else {
+		const state = runtime.workbenchFaultState;
+		if (state.lastLuaCallStack.length > 0) {
+			luaFrames = state.lastLuaCallStack.slice();
+		}
 	}
 	if (error instanceof LuaError) {
 		luaFrames[0] = createLuaErrorStackFrame(error, errorStackFunctionName(callFrames, luaFrames));
@@ -736,7 +793,7 @@ function beginOverlayUpdateFrame(runtime: Runtime): FrameState | null {
 }
 
 function finishOverlayUpdateFrame(runtime: Runtime, state: FrameState): void {
-	flushRuntimeAssetEdits(runtime.machine.memory);
+	flushHostRuntimeAssetEdits(runtime.machine.memory, engineCore.texmanager, engineCore.sndmaster);
 	runtime.frameLoop.drawFrameState = state;
 	runtime.frameLoop.abandonFrameState(runtime);
 }

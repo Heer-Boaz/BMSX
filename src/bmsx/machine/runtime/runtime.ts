@@ -6,7 +6,6 @@ import type { LuaEnvironment } from '../../lua/environment';
 import { LuaRuntimeError } from '../../lua/errors';
 import { LuaHandlerCache } from '../../lua/handler_cache';
 import { LuaInterpreter } from '../../lua/runtime';
-import type { StackTraceFrame } from '../../lua/value';
 import {
 	convertToError,
 	type LuaDebuggerPauseSignal
@@ -28,8 +27,6 @@ import type { TerminalMode } from '../../ide/terminal/ui/mode';
 import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 import { Font, type FontVariant } from '../../render/shared/bmsx_font';
 import type { CartEditor } from '../../ide/cart_editor';
-import { type FaultSnapshot } from '../../ide/editor/render/error_overlay';
-import { type CpuFrameSnapshot } from '../cpu/cpu';
 import { type LuaSemanticModel, type FileSemanticData } from '../../lua/semantic/model';
 import { registerApiBuiltins } from '../firmware/builtins';
 import { LuaFunctionRedirectCache } from '../firmware/handler_registry';
@@ -38,7 +35,7 @@ import { RuntimeStorage } from '../firmware/cart_storage';
 import type { RuntimeOptions, LuaBuiltinDescriptor, LuaMemberCompletion, GameViewState } from './contracts';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_ENGINE_PROJECT_ROOT_PATH } from '../../ide/workspace/workspace';
 import { buildLuaSources, type LuaSourceRegistry } from '../program/sources';
-import * as workbenchMode from '../../ide/runtime/workbench_mode';
+import * as workbenchMode from '../../ide/workbench/mode';
 import * as luaPipeline from '../../ide/runtime/lua_pipeline';
 import { runtimeFault } from './runtime_fault';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../../lua/debugger';
@@ -121,6 +118,7 @@ export class Runtime {
 	public debuggerSuspendSignal: LuaDebuggerPauseSignal = null;
 	public debuggerPaused = false;
 	public debuggerMetrics: LuaDebuggerSessionMetrics = null;
+	public readonly workbenchFaultState = workbenchMode.createRuntimeFaultState();
 	public lastIdeInputFrame = -1;
 	public lastTerminalInputFrame = -1;
 	public set overlayResolutionMode(value: 'offscreen' | 'viewport') {
@@ -145,8 +143,7 @@ export class Runtime {
 	public get isDrawPending(): boolean {
 		return this.pendingCall === 'entry'
 			|| this.debuggerPaused
-			|| this.luaRuntimeFailed
-			|| this.faultSnapshot !== null;
+			|| this.luaRuntimeFailed;
 	}
 
 	public programMetadata: ProgramMetadata | null = null;
@@ -205,17 +202,6 @@ export class Runtime {
 	public readonly pathSemanticCache: Map<string, { source: string; model?: LuaSemanticModel; definitions?: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[]; analysis?: FileSemanticData }> = new Map();
 
 	public readonly luaGate = taskGate.group('console:lua');
-	public handledLuaErrors = new WeakSet<any>();
-	public lastLuaCallStack: StackTraceFrame[] = [];
-	public lastCpuFaultSnapshot: CpuFrameSnapshot[] = [];
-	public faultSnapshot: FaultSnapshot = null;
-	public faultOverlayNeedsFlush = false;
-	public get doesFaultOverlayNeedFlush(): boolean {
-		return this.faultOverlayNeedsFlush;
-	}
-	public flushedFaultOverlay(): void {
-		this.faultOverlayNeedsFlush = false;
-	}
 	private hasCompletedInitialBoot = false;
 	public cartEntryAvailable = true;
 	public readonly hostFault = new HostFaultState();
@@ -665,20 +651,13 @@ export class Runtime {
 
 	private handleClosureHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): never {
 		const wrappedError = this.prepareHandlerError(error, meta);
-		this.handleLuaError(wrappedError);
 		throw wrappedError;
 	}
 
 	private handleLuaHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): never {
 		const wrappedError = this.prepareHandlerError(error, meta);
 		this.luaInterpreter.recordFaultCallStack();
-		this.handleLuaError(wrappedError);
 		throw wrappedError;
-	}
-
-	// disable-next-line single_line_method_pattern -- runtime errors enter the workbench through one public fault pin.
-	public handleLuaError(error: unknown): void {
-		workbenchMode.handleLuaError(this, error);
 	}
 
 }

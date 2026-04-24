@@ -473,6 +473,16 @@ export type RuntimeErrorDetails = {
 	jsStack: ReadonlyArray<StackTraceFrame>;
 };
 
+export type FaultSnapshot = {
+	message: string;
+	path: string;
+	line: number;
+	column: number;
+	details: RuntimeErrorDetails;
+	timestampMs?: number;
+	fromDebugger: boolean;
+};
+
 export type RuntimeErrorOverlay = {
 	row: number;
 	column: number;

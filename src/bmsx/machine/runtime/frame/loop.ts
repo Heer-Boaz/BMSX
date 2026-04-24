@@ -1,7 +1,8 @@
 import type { FrameState, Runtime } from '../runtime';
 import { RunResult } from '../../cpu/cpu';
 import { runtimeFault } from '../runtime_fault';
-import { beginRuntimeRenderFrame, clearRuntimeRenderBackQueues } from '../render/state';
+import { clearHardwareLighting } from '../../../render/shared/hardware/lighting';
+import { clearBackQueues } from '../../../render/shared/queues';
 
 export class FrameLoopState {
 	public currentTimeMs = 0;
@@ -29,7 +30,7 @@ export class FrameLoopState {
 			cycleCarryGranted: 0,
 			activeCpuUsedCycles: 0,
 		};
-		beginRuntimeRenderFrame();
+		clearHardwareLighting();
 		runtime.machine.vdp.beginFrame();
 		runtime.vblank.beginTick();
 		this.currentFrameState = state;
@@ -84,21 +85,11 @@ export class FrameLoopState {
 	}
 
 	private runActiveFrameState(runtime: Runtime, state: FrameState): void {
-		try {
-			if (runtime.pendingCall === 'entry') {
-				this.runUpdatePhase(runtime, state);
-				state.updateExecuted = runtime.pendingCall !== 'entry';
-			}
-			this.finalizeUpdateSlice(runtime, state);
-		} catch (error) {
-			try {
-				runtime.handleLuaError(error);
-			} finally {
-				if (this.currentFrameState !== null) {
-					this.abandonFrameState(runtime);
-				}
-			}
+		if (runtime.pendingCall === 'entry') {
+			this.runUpdatePhase(runtime, state);
+			state.updateExecuted = runtime.pendingCall !== 'entry';
 		}
+		this.finalizeUpdateSlice(runtime, state);
 	}
 
 	private finalizeUpdateSlice(runtime: Runtime, frameState: FrameState): void {
@@ -130,7 +121,7 @@ export class FrameLoopState {
 					return;
 				}
 				if (vblank.consumeBackQueueClearAfterIrqWake()) {
-					clearRuntimeRenderBackQueues();
+					clearBackQueues();
 				}
 				if (runtime.pendingCall !== 'entry') {
 					return;
@@ -151,7 +142,7 @@ export class FrameLoopState {
 			state.luaFaulted = true;
 			runtime.vblank.clearHaltUntilIrq(runtime);
 			runtime.pendingCall = null;
-			runtime.handleLuaError(error);
+			throw error;
 		}
 	}
 }

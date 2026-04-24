@@ -1,7 +1,7 @@
 import { Runtime } from '../../../machine/runtime/runtime';
-import * as workbenchMode from '../../runtime/workbench_mode';
+import * as workbenchMode from '../../workbench/mode';
 import { engineCore } from '../../../core/engine';
-import { api } from './view/overlay_api';
+import { api } from '../../runtime/overlay_api';
 import * as constants from '../../common/constants';
 import { activateCodeTab, findTabById, isResourceViewActive, setActiveTab } from '../../workbench/ui/tabs';
 import { getActiveCodeTabContext, getActiveCodeTabContextId } from '../../workbench/ui/code_tab/contexts';
@@ -38,7 +38,7 @@ import {
 	applySearchFieldText,
 	cancelSearchJob,
 } from '../contrib/find/search';
-import { clearExecutionStopHighlights, syncRuntimeErrorOverlayFromContext } from '../../runtime/error/navigation';
+import { clearExecutionStopHighlights, syncRuntimeErrorOverlayFromContext } from '../../workbench/error/navigation';
 import { processDiagnosticsQueue } from '../contrib/diagnostics/controller';
 import { editorDiagnosticsState } from '../contrib/diagnostics/state';
 import { updateDesiredColumn } from './view/caret/caret';
@@ -221,12 +221,12 @@ export function activateRuntimeEditor(): void {
 	}
 	if (Runtime.instance.hasRuntimeFailed) {
 		const rendered = renderRuntimeFaultOverlay({
-			snapshot: Runtime.instance.faultSnapshot,
+			snapshot: workbenchMode.getFaultSnapshot(Runtime.instance),
 			luaRuntimeFailed: Runtime.instance.hasRuntimeFailed,
-			needsFlush: Runtime.instance.doesFaultOverlayNeedFlush,
+			needsFlush: workbenchMode.doesFaultOverlayNeedFlush(Runtime.instance),
 			force: false,
 		});
-		if (rendered) Runtime.instance.flushedFaultOverlay();
+		if (rendered) workbenchMode.flushedFaultOverlay(Runtime.instance);
 	}
 }
 

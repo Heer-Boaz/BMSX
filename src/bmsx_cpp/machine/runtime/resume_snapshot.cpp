@@ -3,7 +3,9 @@
 #include "machine/firmware/api.h"
 #include "machine/runtime/game/table.h"
 #include "machine/runtime/machine_state.h"
-#include "machine/runtime/render/state.h"
+#include "render/runtime/state.h"
+#include "render/shared/queues.h"
+#include "render/vdp/context_state.h"
 #include "machine/runtime/runtime.h"
 
 namespace bmsx {
@@ -25,6 +27,7 @@ RuntimeResumeSnapshot captureRuntimeResumeSnapshot(const Runtime& runtime) {
 
 void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& snapshot) {
 	applyRuntimeMachineState(runtime, snapshot.machineState);
+	restoreVdpContextState(runtime.machine().vdp());
 	runtime.m_api->restoreStorageState(snapshot.storageState);
 	runtime.m_gameViewState = snapshot.gameViewState;
 	applyRuntimeRenderState(snapshot.renderState);
@@ -38,7 +41,7 @@ void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& s
 		runtime.m_machine.cpu().setGlobalByKey(key, value);
 	}
 	syncRuntimeGameViewStateToTable(runtime);
-	clearRuntimeRenderBackQueues();
+	RenderQueues::clearBackQueues();
 }
 
 } // namespace bmsx

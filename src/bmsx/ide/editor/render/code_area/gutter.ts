@@ -1,6 +1,6 @@
 import type { Font } from '../../../../render/shared/bmsx_font';
 import * as constants from '../../../common/constants';
-import { api } from '../../ui/view/overlay_api';
+import { api } from '../../../runtime/overlay_api';
 import { editorViewState } from '../../ui/view/state';
 import type { CodeAreaViewport } from '../../ui/code/area_viewport';
 

@@ -3,7 +3,7 @@
 #include "machine/cpu/cpu.h"
 #include "machine/firmware/api.h"
 #include "machine/runtime/machine_state.h"
-#include "machine/runtime/render/state.h"
+#include "render/runtime/state.h"
 #include "machine/runtime/game/view_state.h"
 
 #include <utility>

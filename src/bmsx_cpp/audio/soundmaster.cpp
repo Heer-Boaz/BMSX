@@ -182,6 +182,15 @@ VoiceId SoundMaster::playResolved(const AssetId& id, const SoundMasterResolvedPl
 	return startVoice(asset.meta.type, id, asset, params, priority, initialGain);
 }
 
+void SoundMaster::invalidateClip(const AssetId& id) {
+	if (!isRuntimeAudioReady()) {
+		return;
+	}
+	stop(AudioType::Sfx, AudioStopSelector::ById, 0, id);
+	stop(AudioType::Music, AudioStopSelector::ById, 0, id);
+	stop(AudioType::Ui, AudioStopSelector::ById, 0, id);
+}
+
 void SoundMaster::stop(AudioType type, AudioStopSelector which, VoiceId voiceId, const AssetId& id) {
 	const size_t idx = typeIndex(type);
 	auto& pool = m_voicesByType[idx];

@@ -1064,7 +1064,7 @@ VDP::ResolvedBlitterSample VDP::resolveBlitterSample(u32 handle) const {
 		source,
 		surface.width,
 		surface.height,
-		resolveVdpSurfaceAtlasBinding(source.surfaceId),
+			resolveVdpSurfaceAtlasBinding(source.surfaceId),
 	};
 }
 

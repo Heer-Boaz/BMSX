@@ -1,5 +1,5 @@
 import { clamp } from '../../../common/clamp';
-import { api } from './view/overlay_api';
+import { api } from '../../runtime/overlay_api';
 import * as constants from '../../common/constants';
 import { drawEditorText } from '../render/text_renderer';
 import type { CodeHoverTooltip, PointerSnapshot } from '../../common/models';

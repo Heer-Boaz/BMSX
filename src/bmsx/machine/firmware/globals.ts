@@ -240,7 +240,7 @@ import {
 	wrapNativeResult,
 } from './js_bridge';
 import { collectApiMembers } from './api/members';
-import { buildLuaFrameRawLabel } from '../../ide/editor/contrib/runtime_error/format';
+import { buildLuaFrameRawLabel } from '../../lua/stack_frame_label';
 import { isStringValue, stringValueToString } from '../memory/string/pool';
 
 import type { StringValue } from '../memory/string/pool';

@@ -4,7 +4,7 @@ import type { LuaEntrySnapshot, RuntimeResumeSnapshot } from './contracts';
 import type { Runtime } from './runtime';
 import { cloneGameViewState, copyGameViewState } from './game/view_state';
 import { captureRuntimeMachineState } from './machine_state';
-import { captureRuntimeRenderState } from './render/state';
+import { captureRuntimeRenderState } from '../../render/runtime_state';
 
 const LUA_RESUME_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
 	'print',

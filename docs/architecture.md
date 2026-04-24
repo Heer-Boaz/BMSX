@@ -194,9 +194,10 @@ Current evidence:
 - The GLES2 blitter now syncs rendered framebuffer pixels back into VDP-owned
   readback state after execution, so MMIO readback and save-state capture no
   longer depend on render backend reads from inside the VDP device.
-- VBLANK frame commit now returns an explicit framebuffer-presentation signal
-  from the VDP, and the render-side VDP presentation helper performs the texture
-  page swap. The device no longer presents render framebuffer pages itself.
+- VBLANK frame commit remains a direct VDP video-hardware path. The VDP device
+  calls the render-side VDP framebuffer owner directly for page swaps and
+  framebuffer texture-region writes; this preserves the hot-path performance
+  property instead of staging sparse writes through an indirect dirty-row flush.
 - The native VDP fault helper no longer includes `core/engine.h`; it depends on
   the shared primitive fault macro only, so device-side validation does not pull
   the host shell into VDP compilation.
@@ -222,6 +223,11 @@ Current evidence:
   `engineCore`, `Runtime.instance`, `EngineCore::instance()`,
   `Runtime::instance()`, `core/engine`, or `machine/runtime/runtime`
   dependencies.
+- `src/bmsx/machine/devices/vdp` and `src/bmsx_cpp/machine/devices/vdp` still
+  depend on the concrete `render/vdp` video-hardware owner for direct
+  framebuffer texture mutation/readback. That dependency is intentional:
+  `render/vdp` is not a generic host renderer here; it is the accelerated VDP
+  video-memory backend.
 
 Risk:
 
@@ -252,10 +258,18 @@ Desired direction:
 - Avoid solving this with a generic service/provider/facade layer. The boundary
   should be concrete and named after the data being owned.
 
-### 2. Frame Loop Still Mixes Host/IDE/Render Concerns With Machine Tick
+### 2. Frame Pump Split From Machine Tick
 
-The frame loop is narrower than it was, but it still mixes machine execution
-with host shell, IDE, and render-side transient state.
+Status: complete for the machine-tick and host-frame boundary. The machine frame
+loop now owns CPU/device/VBLANK advancement and local tick cleanup only. Host
+time, IDE input, render presentation, game-view host sync, microtasks, runtime
+asset texture/audio flushing, and surfaced runtime-fault presentation sit
+outside the machine frame loop. TS workbench fault data is an explicit
+workbench-owned runtime state object, not lazy side-table state and not loose
+fields mixed into the machine tick. The render transient-frame owner has moved
+out of `machine/runtime`, but the machine tick still enters it at
+frame-start/VBLANK-wake boundaries because those are the points where machine
+execution opens or clears current-frame render work.
 
 Current evidence:
 
@@ -263,30 +277,59 @@ Current evidence:
   `core/engine.h` and no longer calls `EngineCore` for reboot handling.
   Program reload and BIOS-to-cart boot transitions now sit behind the existing
   `CartBootState` owner.
-- The native frame loop still includes `machine/runtime/render/state.h`, but it
-  no longer imports `render/shared/queues.h` directly. Back-queue cleanup after
-  VBLANK IRQ wake is routed through the runtime render-state owner.
-- Both TS and C++ frame loops now enter current-frame render transient reset
-  through `beginRuntimeRenderFrame()` in the runtime render-state owner. That
-  removes the direct hardware-lighting dependency from the frame loop, but the
-  machine tick still decides when render transient state begins.
+- The native frame loop no longer imports the old
+  `machine/runtime/render/state.h` owner. Frame-start lighting reset enters the
+  concrete render lighting owner, and VBLANK IRQ wake cleanup enters the concrete
+  render queue owner directly instead of hiding those calls behind wrapper-only
+  runtime functions.
+- Both TS and C++ frame loops still decide when current-frame render work begins
+  and when VBLANK wake cleanup is needed, but the work itself is owned by
+  `render/shared/hardware/lighting` and `render/shared/queues`.
 - TS machine runtime faults now use `src/bmsx/machine/runtime/runtime_fault.ts`
   instead of importing the IDE Lua pipeline only to construct machine faults.
-- `src/bmsx/machine/runtime/frame/loop.ts` no longer imports IDE workbench mode
-  or render queues directly. Overlay gating reads the runtime's
-  `executionOverlayActive` state, runtime errors report through
-  `Runtime.handleLuaError(...)`, and back-queue cleanup enters through the
-  runtime render-state owner.
-- `src/bmsx/machine/runtime/frame/host.ts` still owns TS IDE input ticking, but
-  its runtime fault reporting now also goes through `Runtime.handleLuaError(...)`
-  instead of calling IDE workbench fault presentation directly.
+- `src/bmsx/machine/runtime/frame/loop.ts` no longer imports IDE workbench mode.
+  Overlay gating reads the runtime's `executionOverlayActive` state, and
+  back-queue cleanup enters the concrete render queue owner directly instead of
+  passing through a wrapper-only runtime render-state function.
+- TS and C++ frame loops no longer present or record surfaced runtime faults.
+  They mark local tick cleanup state, clear IRQ-halt/pending-call state, and
+  rethrow. The host frame pumps are the first presentation boundary for those
+  failures.
+- TS workbench fault state is no longer a lazy `WeakMap` side table and no
+  longer lives as loose `Runtime` fields. `src/bmsx/ide/workbench/mode.ts`
+  creates the explicit workbench fault state object that stores handled-error
+  identity, the editor fault snapshot, the saved CPU fault stack, the Lua fault
+  stack, and the overlay flush flag. Editor, terminal, and intellisense code read
+  that state through the workbench owner instead of treating it as machine tick
+  state.
+- TS and C++ VBLANK still enter the concrete VDP presentation helper at the
+  VBLANK commit edge. That is the direct video-hardware path, not a generic host
+  presentation path.
+- `src/bmsx/machine/runtime/frame/host.ts` has been deleted. The TS host frame
+  pump now lives in `src/bmsx/core/host_frame.ts`, matching the native
+  `src/bmsx_cpp/core/host_frame.cpp` ownership without putting IDE frame work
+  directly in `EngineCore`. The TS machine runtime frame folder contains the
+  machine tick loop, not IDE input polling or host presentation.
 - TS and C++ frame loops no longer flush runtime asset edits from inside the
   machine tick. Host frame pumps flush them after the scheduled machine step and
   before presentation, keeping texture/audio host work outside CPU/VBLANK
   advancement.
-- TS and C++ save/resume/runtime-reset paths no longer import
-  `render/shared/queues` directly to clear transient submissions. They enter
-  through the runtime render-state owner.
+- TS and C++ runtime asset edit flushing is drained at explicit host edges, then
+  dispatched to the real owners: render texture upload code handles dirty image
+  assets, and audio code handles dirty audio invalidation. The host edge no
+  longer discovers `engineCore` or `EngineCore::instance()`, and machine
+  save/resume restore functions no longer import asset flushing to mutate host
+  texture/audio state as a side effect.
+- TS IDE resume and C++ libretro save-state load are explicit host edges for
+  post-restore asset flushing: they apply the restored machine state first, then
+  flush dirty assets with the current texture/audio/view resources. Native audio
+  dirty assets now invalidate active audio clips instead of being silently
+  ignored.
+- TS save-state byte restore still lacks a host-edge asset flush call because
+  there is no TS host save-state load entrypoint wired like libretro yet.
+- TS and C++ save/resume/runtime-reset paths clear transient render submissions
+  through the concrete render queue owner instead of wrapper-only
+  `runtime_state` pass-through functions.
 - The native host frame pump no longer discovers `EngineCore::instance()` or
   probes `Platform::microtaskQueue()` during each frame. The libretro platform
   supplies the concrete engine and microtask queue when it calls the host frame
@@ -312,15 +355,19 @@ Current evidence:
 - TS scheduler/CPU debug tick telemetry now reads the host frame time already
   supplied to the runtime frame pump, instead of importing `EngineCore` only to
   query `$.platform.clock`.
-- TS and C++ save-machine-state restore now both flush runtime asset edits after
-  restoring machine/frame-scheduler/VBLANK state.
+- TS and C++ save-machine-state restore deliberately do not flush runtime asset
+  edits directly; post-restore host edges must perform texture/audio flushing
+  with concrete host resources.
 
 Risk:
 
-The machine runtime is not just ticking the machine. It is also coordinating
-IDE overlay behavior, render transient state, reboot routing, asset edit
-flushes, and fault presentation. That makes the runtime harder to reason about
-as deterministic emulated hardware.
+The frame-pump boundary is now clean enough to build on, but `Runtime` is still
+a broad startup/workbench meeting point for IDE lifetime and overlay activation.
+That remaining disease belongs to the larger EngineCore/Runtime split, not to
+the machine tick itself. Avoid reintroducing fault presentation, IDE input
+polling, host resource flushing, or host singleton discovery into
+`machine/runtime/frame`, and do not put workbench presentation state back onto
+`Runtime`.
 
 Desired direction:
 

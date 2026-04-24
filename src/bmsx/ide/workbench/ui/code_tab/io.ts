@@ -1,7 +1,7 @@
 import { showEditorMessage, showEditorWarningBanner } from '../../../common/feedback_state';
 import type { CodeTabContext, CodeTabMode, ResourceDescriptor } from '../../../common/models';
 import * as constants from '../../../common/constants';
-import { tryShowLuaErrorOverlay } from '../../../runtime/error/navigation';
+import { tryShowLuaErrorOverlay } from '../../error/navigation';
 import { saveLuaResourceSource } from '../../../workspace/workspace';
 import { buildDirtyFilePath } from '../../workspace/io';
 import { setWorkspaceCachedSources } from '../../../workspace/cache';

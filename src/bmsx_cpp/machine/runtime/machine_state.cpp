@@ -1,7 +1,6 @@
 #include "machine/runtime/machine_state.h"
 
 #include "machine/runtime/runtime.h"
-#include "runtime/assets/edits.h"
 
 namespace bmsx {
 
@@ -17,7 +16,6 @@ void applyRuntimeMachineState(Runtime& runtime, const RuntimeMachineState& state
 	runtime.machine().restoreState(state.machine);
 	runtime.frameScheduler.restoreState(state.frameScheduler);
 	runtime.vblank.restore(runtime, state.vblank);
-	flushRuntimeAssetEdits(runtime.machine().memory());
 }
 
 } // namespace bmsx

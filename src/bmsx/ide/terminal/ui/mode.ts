@@ -34,6 +34,7 @@ import type { ModuleAliasEntry } from '../../../lua/semantic/model';
 import type { Viewport } from '../../../rompack/format';
 import { Runtime } from '../../../machine/runtime/runtime';
 import * as luaPipeline from '../../runtime/lua_pipeline';
+import * as workbenchMode from '../../workbench/mode';
 import { TerminalCommandDispatcher as TerminalCommandDispatcher } from './commands';
 import { extractErrorMessage } from '../../../lua/value';
 import { valueToString } from '../../../machine/firmware/globals';
@@ -511,7 +512,7 @@ export class TerminalMode {
 		if (source.length === 0) {
 			return;
 		}
-		if (this.runtime.faultSnapshot && source.startsWith('return ')) {
+		if (workbenchMode.hasFaultSnapshot(this.runtime) && source.startsWith('return ')) {
 			const expr = source.slice(7).trim();
 			if (TerminalMode.SIMPLE_CHAIN.test(expr)) {
 				const resolved = resolveSnapshotExpression(expr);

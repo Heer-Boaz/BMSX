@@ -1,4 +1,4 @@
-#include "machine/runtime/render/state.h"
+#include "render/runtime/state.h"
 
 #include "render/shared/hardware/camera.h"
 #include "render/shared/hardware/lighting.h"
@@ -112,16 +112,6 @@ void applyRuntimeRenderState(const RuntimeRenderState& state) {
 		state.spriteParallaxRig.scale_strength,
 		state.spriteParallaxRig.flip_strength,
 		state.spriteParallaxRig.flip_window);
-}
-
-// disable-next-line single_line_method_pattern -- runtime render frame entry owns the hardware-lighting reset boundary.
-void beginRuntimeRenderFrame() {
-	clearHardwareLighting();
-}
-
-// disable-next-line single_line_method_pattern -- runtime reset/save paths clear render back queues through this owner.
-void clearRuntimeRenderBackQueues() {
-	RenderQueues::clearBackQueues();
 }
 
 void resetRuntimeRenderState() {

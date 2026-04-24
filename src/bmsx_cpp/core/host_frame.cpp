@@ -1,11 +1,11 @@
 #include "core/engine.h"
 
+#include "core/host_asset_sync.h"
 #include "core/time.h"
 #include "input/manager.h"
 #include "machine/runtime/game/table.h"
 #include "machine/runtime/game/view_state.h"
 #include "machine/runtime/runtime.h"
-#include "runtime/assets/edits.h"
 
 #include <chrono>
 
@@ -52,7 +52,7 @@ void EngineCore::runHostFrame(
 			applyGameViewStateToHost(runtime.gameViewState(), *view());
 			runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 
-			flushRuntimeAssetEdits(runtime.machine().memory());
+			flushHostRuntimeAssetEdits(runtime.machine().memory(), *texmanager(), *soundMaster(), *view());
 		}
 		m_delta_time = hostDeltaSeconds;
 
@@ -63,7 +63,11 @@ void EngineCore::runHostFrame(
 			runtime.screen.render(*this, runtime);
 		}
 	} catch (const std::exception& e) {
+		runtime.frameLoop.abandonFrameState(runtime);
 		runtime.handleLuaError(e.what());
+	} catch (...) {
+		runtime.frameLoop.abandonFrameState(runtime);
+		runtime.handleLuaError("Unhandled host frame exception.");
 	}
 }
 

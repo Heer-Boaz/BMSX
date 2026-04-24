@@ -1,7 +1,8 @@
 #include "machine/runtime/frame/loop.h"
 #include "machine/runtime/cart_boot.h"
 #include "machine/runtime/cpu_executor.h"
-#include "machine/runtime/render/state.h"
+#include "render/shared/hardware/lighting.h"
+#include "render/shared/queues.h"
 #include "machine/runtime/runtime.h"
 
 namespace bmsx {
@@ -31,7 +32,7 @@ void FrameLoopState::beginFrameState(Runtime& runtime) {
 	frameState.cycleBudgetGranted = runtime.timing.cycleBudgetPerFrame;
 	frameState.cycleCarryGranted = 0;
 	frameDeltaMs = runtime.timing.frameDurationMs;
-	beginRuntimeRenderFrame();
+	clearHardwareLighting();
 	runtime.machine().vdp().beginFrame();
 }
 
@@ -58,7 +59,7 @@ void FrameLoopState::executeUpdateCallback(Runtime& runtime) {
 				return;
 			}
 			if (runtime.vblank.consumeBackQueueClearAfterIrqWake()) {
-				clearRuntimeRenderBackQueues();
+				RenderQueues::clearBackQueues();
 			}
 			if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
 				return;
@@ -75,8 +76,11 @@ void FrameLoopState::executeUpdateCallback(Runtime& runtime) {
 			}
 			return;
 		}
-	} catch (const std::exception& e) {
-		runtime.handleLuaError(e.what());
+	} catch (...) {
+		frameState.luaFaulted = true;
+		runtime.vblank.clearHaltUntilIrq(runtime);
+		runtime.m_pendingCall = Runtime::PendingCall::None;
+		throw;
 	}
 }
 

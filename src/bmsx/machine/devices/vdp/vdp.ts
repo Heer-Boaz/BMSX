@@ -207,7 +207,7 @@ export function invertColorIndex(colorIndex: number): number {
 const VDP_RD_SURFACE_ENGINE = 0;
 const VDP_RD_SURFACE_PRIMARY = 1;
 const VDP_RD_SURFACE_SECONDARY = 2;
-const VDP_RD_SURFACE_FRAMEBUFFER = 3;
+export const VDP_RD_SURFACE_FRAMEBUFFER = 3;
 const VDP_RD_SURFACE_COUNT = 4;
 const VDP_RD_BUDGET_BYTES = 4096;
 const VDP_RD_MAX_CHUNK_PIXELS = 256;

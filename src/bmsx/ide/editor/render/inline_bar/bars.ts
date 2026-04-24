@@ -1,5 +1,5 @@
 import * as constants from '../../../common/constants';
-import { api } from '../../ui/view/overlay_api';
+import { api } from '../../../runtime/overlay_api';
 import { drawEditorText } from '../text_renderer';
 import { drawCreateResourceErrorDialog } from '../../../workbench/render/resource_panel';
 import { activeSearchMatchCount, getVisibleSearchResultEntries } from '../../contrib/find/search';

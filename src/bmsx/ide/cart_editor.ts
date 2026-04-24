@@ -17,7 +17,7 @@ import {
 } from './editor/ui/view/view';
 import { Viewport } from '../rompack/format';
 import { clearRuntimeErrorOverlay } from './editor/contrib/runtime_error/navigation';
-import { clearAllRuntimeErrorOverlays } from './runtime/error/navigation';
+import { clearAllRuntimeErrorOverlays } from './workbench/error/navigation';
 import { clearNativeMemberCompletionCache } from './editor/contrib/intellisense/engine';
 import { getTextSnapshot } from './editor/text/source_text';
 import { editorDocumentState } from './editor/editing/document_state';

@@ -1,7 +1,7 @@
 import type { ResourceDescriptor } from '../../common/models';
 import { restoreBreakpointsFromPayload } from '../contrib/debugger/controller';
 import { Runtime } from '../../../machine/runtime/runtime';
-import * as workbenchMode from '../../runtime/workbench_mode';
+import * as workbenchMode from '../mode';
 import { editorDocumentState } from '../../editor/editing/document_state';
 import { fetchWorkspaceFile } from '../../workspace/files';
 import { setFontVariant } from '../../editor/ui/view/view';

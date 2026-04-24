@@ -18,9 +18,12 @@ import { applyGameViewStateToHost } from '../../machine/runtime/game/view_state'
 import { syncRuntimeGameViewStateToTable } from '../../machine/runtime/game/table';
 import { restoreRuntimeLuaSnapshot } from '../../machine/runtime/resume_snapshot';
 import { applyRuntimeMachineState } from '../../machine/runtime/machine_state';
+import { flushHostRuntimeAssetEdits } from '../../core/host_asset_sync';
 import { runtimeFault } from '../../machine/runtime/runtime_fault';
-import { applyRuntimeRenderState, clearRuntimeRenderBackQueues, resetRuntimeRenderState } from '../../machine/runtime/render/state';
-import * as workbenchMode from './workbench_mode';
+import { applyRuntimeRenderState, resetRuntimeRenderState } from '../../render/runtime_state';
+import { clearBackQueues } from '../../render/shared/queues';
+import { restoreVdpContextState } from '../../render/vdp/context_state';
+import * as workbenchMode from '../workbench/mode';
 import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from '../../machine/runtime/timing';
 import { setFrameTiming, setTransferRatesFromManifest } from '../../machine/runtime/timing/config';
 import {
@@ -125,14 +128,16 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeS
 	runtime.interpreter.clearLastFaultEnvironment();
 	workbenchMode.clearFaultSnapshot(runtime);
 
-	runtime.handledLuaErrors = new WeakSet<object>();
+	workbenchMode.resetHandledLuaErrors(runtime);
 	runtime.luaRuntimeFailed = false;
 	publishOverlayFrame(null);
 	applyRuntimeMachineState(runtime, snapshot.machineState);
+	restoreVdpContextState(runtime.machine.vdp);
+	flushHostRuntimeAssetEdits(runtime.machine.memory, engineCore.texmanager, engineCore.sndmaster);
 	runtime.storage.restore(snapshot.storageState);
 	resumeLuaProgramState(runtime, snapshot, preserveEngineModules);
 	applyRuntimeRenderState(snapshot.renderState);
-	clearRuntimeRenderBackQueues();
+	clearBackQueues();
 	runtime.luaInitialized = true;
 	syncRuntimeGameViewStateToTable(runtime);
 	applyGameViewStateToHost(runtime.gameViewState, engineCore.view);
@@ -329,7 +334,7 @@ export function markSourceChunkAsDirty(runtime: Runtime, path: string): void {
 
 export function resetLuaInteroperabilityState(runtime: Runtime): void {
 	runtime.luaGenericChunksExecuted.clear();
-	runtime.handledLuaErrors = new WeakSet<object>();
+	workbenchMode.resetHandledLuaErrors(runtime);
 	runtime.luaFunctionRedirectCache.clear();
 }
 
@@ -362,7 +367,7 @@ export function resetHardwareState(runtime: Runtime): void {
 	runtime.machine.resetDevices();
 	runtime.vblank.reset(runtime);
 	resetRuntimeRenderState();
-	clearRuntimeRenderBackQueues();
+	clearBackQueues();
 }
 
 export function registerGlobal(runtime: Runtime, name: string, value: Value): void {

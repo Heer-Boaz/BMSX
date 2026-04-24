@@ -7,7 +7,7 @@ import { applyResourceViewerScroll, resolveResourceViewerLayout } from '../contr
 import { getActiveResourceViewer } from '../contrib/resources/view_tabs';
 import { resourcePanel } from '../contrib/resources/panel/controller';
 import { drawEditorText } from '../../editor/render/text_renderer';
-import { api } from '../../editor/ui/view/overlay_api';
+import { api } from '../../runtime/overlay_api';
 import { measureText, writeWrappedOverlayLine } from '../../editor/common/text/layout';
 import * as constants from '../../common/constants';
 import { BmsxColors } from '../../../machine/devices/vdp/vdp';

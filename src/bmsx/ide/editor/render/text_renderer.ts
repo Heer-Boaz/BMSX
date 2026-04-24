@@ -2,7 +2,7 @@ import type { EditorFont } from '../ui/view/font';
 import type { Font } from '../../../render/shared/bmsx_font';
 import { applyCaseOutsideStrings, expandTabs as expandTabsExternal } from '../../common/text';
 import * as constants from '../../common/constants';
-import { api } from '../ui/view/overlay_api';
+import { api } from '../../runtime/overlay_api';
 import { ScratchBuffer } from '../../../common/scratchbuffer';
 
 let CASE_INSENSITIVE_EDITOR = true;

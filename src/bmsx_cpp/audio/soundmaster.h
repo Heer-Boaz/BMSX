@@ -134,6 +134,7 @@ public:
 
 	VoiceId play(const AssetId& id, const SoundMasterPlayRequest& request = {});
 	VoiceId playResolved(const AssetId& id, const SoundMasterResolvedPlayRequest& request);
+	void invalidateClip(const AssetId& id);
 	void stop(AudioType type, AudioStopSelector which, VoiceId voiceId = 0, const AssetId& id = {});
 	void stopEffect();
 	void stopMusic(std::optional<i32> fadeMs = std::nullopt);

@@ -1,4 +1,4 @@
-import { focusRuntimeErrorOverlay } from '../../../runtime/error/navigation';
+import { focusRuntimeErrorOverlay } from '../../../workbench/error/navigation';
 import { openSearch } from '../../contrib/find/search';
 import { openResourceSearch } from '../../../workbench/contrib/resources/search';
 import { openLineJump } from '../../contrib/find/line_jump';

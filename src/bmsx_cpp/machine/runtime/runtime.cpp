@@ -7,7 +7,8 @@
 #include "machine/program/loader.h"
 #include "machine/runtime/resource_usage_detector.h"
 #include "machine/runtime/engine_irq.h"
-#include "machine/runtime/render/state.h"
+#include "render/runtime/state.h"
+#include "render/shared/queues.h"
 #include "machine/runtime/runtime_fault.h"
 #include "machine/runtime/timing/config.h"
 #include "core/engine.h"
@@ -214,7 +215,7 @@ void Runtime::resetHardwareState() {
 	m_machine.resetDevices();
 	vblank.reset(*this);
 	resetRuntimeRenderState();
-	clearRuntimeRenderBackQueues();
+	RenderQueues::clearBackQueues();
 }
 
 void Runtime::refreshMemoryMap() {

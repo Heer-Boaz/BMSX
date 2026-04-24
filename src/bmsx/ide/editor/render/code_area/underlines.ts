@@ -1,7 +1,7 @@
 import type { CachedHighlight } from '../../../common/models';
 import { clamp } from '../../../../common/clamp';
 import * as constants from '../../../common/constants';
-import { api } from '../../ui/view/overlay_api';
+import { api } from '../../../runtime/overlay_api';
 import { getDiagnosticsForRow } from '../../contrib/diagnostics/controller';
 import { editorViewState } from '../../ui/view/state';
 

@@ -1,5 +1,5 @@
 import { Runtime } from '../../../../machine/runtime/runtime';
-import * as workbenchMode from '../../../runtime/workbench_mode';
+import * as workbenchMode from '../../mode';
 import { type LuaDebuggerSessionMetrics } from '../../../../lua/debugger';
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import { editorDebuggerState } from './state';
@@ -14,7 +14,7 @@ import type { LuaCallFrame } from '../../../../lua/runtime';
 import { extractErrorMessage, type LuaDebuggerPauseSignal, type StackTraceFrame } from '../../../../lua/value';
 import * as constants from '../../../common/constants';
 import { findFunctionDefinitionRowInActiveFile } from '../../../editor/contrib/intellisense/engine';
-import { clearExecutionStopHighlights, setExecutionStopHighlight, clearRuntimeErrorOverlay } from '../../../runtime/error/navigation';
+import { clearExecutionStopHighlights, setExecutionStopHighlight, clearRuntimeErrorOverlay } from '../../error/navigation';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorDocumentState } from '../../../editor/editing/document_state';
 
@@ -216,7 +216,7 @@ export function restoreBreakpointsFromPayload(payload: SerializedBreakpointMap |
 }
 
 export function syncRuntimeBreakpoints(): void {
-	workbenchMode.setDebuggerBreakpoints(Runtime.instance, editorDebuggerState.breakpoints);
+	Runtime.instance.debuggerController.setBreakpoints(editorDebuggerState.breakpoints);
 }
 
 export function getActiveBreakpointPath(): string {

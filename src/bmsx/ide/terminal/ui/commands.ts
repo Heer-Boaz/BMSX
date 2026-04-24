@@ -1,10 +1,10 @@
 import { engineCore } from '../../../core/engine';
 import { Runtime } from '../../../machine/runtime/runtime';
-import * as workbenchMode from '../../runtime/workbench_mode';
+import * as workbenchMode from '../../workbench/mode';
 import { getTrackedLuaHeapBytes } from '../../../machine/memory/lua_heap_usage';
 import { clearWorkspaceSessionState } from '../../workbench/workspace/storage';
 import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from '../../workspace/workspace';
-import { collectRuntimeStackFrames, formatRuntimeErrorLocation, formatRuntimeStackFrame } from '../../editor/contrib/runtime_error/format';
+import { collectRuntimeStackFrames, formatRuntimeErrorLocation, formatRuntimeStackFrame } from '../../common/runtime_error_format';
 import type { LuaSourceRecord } from '../../../machine/program/sources';
 import { RAM_SIZE } from '../../../machine/memory/map';
 import { formatByteSize, lenAndHash } from '../../../common/byte_hex_string';
@@ -273,7 +273,7 @@ export class TerminalCommandDispatcher {
 		if (root) {
 			lines.push(`Workspace root: ${root}`);
 		}
-		const snapshot = this.runtime.faultSnapshot;
+		const snapshot = workbenchMode.getFaultSnapshot(this.runtime);
 		if (snapshot) {
 			const location = formatRuntimeErrorLocation(snapshot.path, snapshot.line, snapshot.column);
 			const when = new Date(snapshot.timestampMs).toISOString();
@@ -289,7 +289,7 @@ export class TerminalCommandDispatcher {
 	public getFaultStatusLines(): { lines: string[]; active: boolean } {
 		const lines: string[] = [];
 		const suspension = this.runtime.debuggerSuspendSignal;
-		const faultInfo = this.runtime.faultSnapshot;
+		const faultInfo = workbenchMode.getFaultSnapshot(this.runtime);
 		const faultFlag = this.runtime.hasRuntimeFailed || (suspension !== null && suspension.reason === 'exception');
 		lines.push(`Faulted: ${faultFlag ? 'YES' : 'NO'}`);
 		if (suspension) {

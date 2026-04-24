@@ -17,7 +17,6 @@ import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system';
 import type { LuaSourceRegistry } from '../machine/program/sources';
 import { GateGroup, taskGate } from './taskgate';
 import { Runtime } from '../machine/runtime/runtime';
-import { runRuntimeHostFrame } from '../machine/runtime/frame/host';
 import { raiseEngineIrq } from '../machine/runtime/engine_irq';
 import { installNativeGlobal, runConsoleChunkToNative } from '../machine/program/executor';
 import { IRQ_NEWGAME } from '../machine/bus/io';
@@ -30,6 +29,7 @@ import type { Table } from '../machine/cpu/cpu';
 import { buildActionStateTable, buildButtonStateTable, packActionStateFlags } from '../machine/firmware/input_state_tables';
 import { restoreVdpContextState } from '../render/vdp/context_state';
 import { initializeVdpTextureTransfer } from '../render/vdp/texture_transfer';
+import { runEngineHostFrame } from './host_frame';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined
@@ -483,7 +483,7 @@ export class EngineCore {
 		runtime.frameLoop.currentTimeMs = now;
 		runtime.frameScheduler.clearQueuedTime();
 		this.frameLoopHandle = platform.frames.start((currentTime: number) => {
-			runRuntimeHostFrame(runtime, currentTime, runGate.ready);
+			runEngineHostFrame(this, runtime, currentTime, runGate.ready);
 		});
 		this.running = true;
 	}

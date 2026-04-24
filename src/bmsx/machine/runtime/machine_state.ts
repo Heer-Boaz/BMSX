@@ -1,4 +1,3 @@
-import { flushRuntimeAssetEdits } from '../../runtime/assets/edits';
 import type { RuntimeMachineState } from './contracts';
 import type { Runtime } from './runtime';
 
@@ -14,5 +13,4 @@ export function applyRuntimeMachineState(runtime: Runtime, state: RuntimeMachine
 	runtime.machine.restoreState(state.machine);
 	runtime.frameScheduler.restoreState(state.frameScheduler);
 	runtime.vblank.restore(runtime, state.vblank);
-	flushRuntimeAssetEdits(runtime.machine.memory);
 }

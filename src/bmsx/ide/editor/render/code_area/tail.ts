@@ -4,7 +4,7 @@ import { renderRuntimeErrorOverlay, type RuntimeErrorOverlayRenderResult } from 
 import { renderEditorContextMenu } from '../../../workbench/render/context_menu';
 import type { CodeAreaViewportBounds } from '../../../workbench/contrib/context_menu/widget';
 import * as constants from '../../../common/constants';
-import { api } from '../../ui/view/overlay_api';
+import { api } from '../../../runtime/overlay_api';
 import { drawCompletionPopup, drawParameterHintOverlay, type CompletionRenderBounds } from '../completion';
 import { drawCursor } from '../caret';
 import type { RectBounds } from '../../../../rompack/format';

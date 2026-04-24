@@ -8,7 +8,7 @@ import { getActiveResourceViewer } from '../contrib/resources/view_tabs';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { measureText, truncateTextToWidth } from '../../editor/common/text/layout';
 import { Runtime } from '../../../machine/runtime/runtime';
-import { api } from '../../editor/ui/view/overlay_api';
+import { api } from '../../runtime/overlay_api';
 import { workspaceState } from '../workspace/state';
 import { editorDocumentState } from '../../editor/editing/document_state';
 import { editorViewState } from '../../editor/ui/view/state';

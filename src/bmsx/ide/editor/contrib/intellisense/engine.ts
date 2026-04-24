@@ -15,6 +15,7 @@ import { buildMarshalContext, toNativeValue } from '../../../../machine/firmware
 import { buildLuaSemanticFrontend } from '../../../../lua/semantic/frontend';
 import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
+import * as workbenchMode from '../../../workbench/mode';
 import { isStringValue, stringValueToString } from '../../../../machine/memory/string/pool';
 import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverRequest, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaMemberCompletionRequest, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
 import { ScratchBatchPooled } from '../../../../common/scratchbatch';
@@ -24,7 +25,7 @@ import { ensureCursorVisible, updateDesiredColumn } from '../../ui/view/caret/ca
 import { editorCaretState } from '../../ui/view/caret/state';
 import { intellisenseUiState } from './ui_state';
 import { resetBlink } from '../../render/caret';
-import { tryShowLuaErrorOverlay } from '../../../runtime/error/navigation';
+import { tryShowLuaErrorOverlay } from '../../../workbench/error/navigation';
 import { resolvePointerTextPosition } from '../../ui/view/view';
 import type { CodeAreaBounds } from '../../ui/view/view';
 import * as constants from '../../../common/constants';
@@ -1807,7 +1808,7 @@ export function resolveSnapshotExpression(expression: string): LuaValue | null {
 		return null;
 	}
 	const runtime = Runtime.instance;
-	const snapshot = runtime.lastCpuFaultSnapshot;
+	const snapshot = workbenchMode.getLastCpuFaultSnapshot(runtime);
 	if (snapshot.length === 0) {
 		return null;
 	}
@@ -1871,7 +1872,7 @@ function resolveRuntimeLocalChainValue(
 	const cpu = runtime.machine.cpu;
 	// Use the fault snapshot when the fault overlay is active — by hover time, the crash
 	// frame has been popped from the live CPU stack, so we must use the saved registers.
-	const faultSnapshot = runtime.faultSnapshot ? runtime.lastCpuFaultSnapshot : null;
+	const faultSnapshot = workbenchMode.hasFaultSnapshot(runtime) ? workbenchMode.getLastCpuFaultSnapshot(runtime) : null;
 	const callStack = faultSnapshot ?? cpu.getCallStack();
 	if (callStack.length === 0) {
 		return null;

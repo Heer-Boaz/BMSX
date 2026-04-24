@@ -1,26 +1,27 @@
-import type { OverlayApi as Api } from '../ui/view/overlay_api';
+import type { OverlayApi as Api } from '../../runtime/overlay_api';
 import type { EditorFont } from '../ui/view/font';
 import { drawEditorText } from './text_renderer';
 import { bottomMargin } from '../../workbench/common/layout';
 import { showEditorMessage } from '../../common/feedback_state';
 import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, writeWrappedOverlayLine } from '../common/text/layout';
-import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../../common/models';
+import type { FaultSnapshot, RuntimeErrorDetails, RuntimeErrorOverlay } from '../../common/models';
 import type { StackTraceFrame } from '../../../lua/value';
 import type { RectBounds } from '../../../rompack/format';
 import { point_in_rect } from '../../../common/rect';
 import { Runtime } from '../../../machine/runtime/runtime';
-import { api } from '../ui/view/overlay_api';
+import * as workbenchMode from '../../workbench/mode';
+import { api } from '../../runtime/overlay_api';
 import { centerCursorVertically, revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';
 import * as constants from '../../common/constants';
 import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/overlay';
 import { resetBlink } from './caret';
-import { formatRuntimeErrorLocation } from '../contrib/runtime_error/format';
+import { formatRuntimeErrorLocation } from '../../common/runtime_error_format';
 import { splitText } from '../../../common/text_lines';
 import { BmsxColors } from '../../../machine/devices/vdp/vdp';
 import { editorRuntimeState } from '../common/runtime_state';
 import { activate } from '../../cart_editor';
 import { focusChunkSource } from '../../workbench/contrib/resources/navigation';
-import { setActiveRuntimeErrorOverlayForCurrentContext, setExecutionStopHighlightForCurrentContext } from '../../runtime/error/navigation';
+import { setActiveRuntimeErrorOverlayForCurrentContext, setExecutionStopHighlightForCurrentContext } from '../../workbench/error/navigation';
 import { editorPointerState } from '../input/pointer/state';
 import { editorCaretState } from '../ui/view/caret/state';
 import { runtimeErrorState } from '../contrib/runtime_error/state';
@@ -488,16 +489,6 @@ export function findRuntimeErrorOverlayLineAtPosition(overlay: RuntimeErrorOverl
 	return -1;
 }
 
-export type FaultSnapshot = {
-	message: string;
-	path: string;
-	line: number;
-	column: number;
-	details: RuntimeErrorDetails;
-	timestampMs?: number;
-	fromDebugger: boolean;
-};
-
 export type FaultOverlayTarget = {
 	showRuntimeErrorInChunk: (
 		path: string,
@@ -510,7 +501,7 @@ export type FaultOverlayTarget = {
 };
 
 export function renderFaultOverlay() {
-	const snapshot = Runtime.instance.faultSnapshot;
+	const snapshot = workbenchMode.getFaultSnapshot(Runtime.instance);
 	if (!snapshot) return;
 	showRuntimeErrorInChunk(
 		snapshot.path,

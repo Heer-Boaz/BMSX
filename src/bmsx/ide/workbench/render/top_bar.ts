@@ -4,7 +4,7 @@ import { clear_rect_bounds, create_rect_bounds, write_rect_bounds } from '../../
 import { editorChromeState } from '../ui/chrome_state';
 import { measureText } from '../../editor/common/text/layout';
 import { drawEditorText } from '../../editor/render/text_renderer';
-import { api } from '../../editor/ui/view/overlay_api';
+import { api } from '../../runtime/overlay_api';
 import { buildTopBarMenuEntries, MENU_COMMANDS, MENU_IDS, TopBarMenuEntry } from '../ui/top_bar/menu';
 import { editorViewState } from '../../editor/ui/view/state';
 

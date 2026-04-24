@@ -1,4 +1,4 @@
-import { api } from '../../editor/ui/view/overlay_api';
+import { api } from '../../runtime/overlay_api';
 import * as constants from '../../common/constants';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { editorContextMenuState } from '../contrib/context_menu/state';

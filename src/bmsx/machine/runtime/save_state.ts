@@ -3,7 +3,9 @@ import type { Runtime } from './runtime';
 import { applyRuntimeCpuState, captureRuntimeCpuState } from './cpu_state';
 import { syncRuntimeGameViewStateToTable } from './game/table';
 import { cloneGameViewState, copyGameViewState } from './game/view_state';
-import { applyRuntimeRenderState, captureRuntimeRenderState, clearRuntimeRenderBackQueues } from './render/state';
+import { applyRuntimeRenderState, captureRuntimeRenderState } from '../../render/runtime_state';
+import { clearBackQueues } from '../../render/shared/queues';
+import { restoreVdpContextState } from '../../render/vdp/context_state';
 import { applyRuntimeSaveMachineState, captureRuntimeSaveMachineState } from './save_machine_state';
 
 export function captureRuntimeSaveState(runtime: Runtime): RuntimeSaveState {
@@ -24,6 +26,7 @@ export function captureRuntimeSaveState(runtime: Runtime): RuntimeSaveState {
 export function applyRuntimeSaveState(runtime: Runtime, state: RuntimeSaveState): void {
 	runtime.activateProgramSource(state.engineProgramActive ? 'engine' : 'cart');
 	applyRuntimeSaveMachineState(runtime, state.machineState);
+	restoreVdpContextState(runtime.machine.vdp);
 	applyRuntimeCpuState(runtime, state.cpuState);
 	runtime.storage.restore(state.storageState);
 	copyGameViewState(runtime.gameViewState, state.gameViewState);
@@ -33,5 +36,5 @@ export function applyRuntimeSaveState(runtime: Runtime, state: RuntimeSaveState)
 	runtime.randomSeedValue = state.randomSeed;
 	runtime.pendingCall = state.pendingEntryCall ? 'entry' : null;
 	syncRuntimeGameViewStateToTable(runtime);
-	clearRuntimeRenderBackQueues();
+	clearBackQueues();
 }

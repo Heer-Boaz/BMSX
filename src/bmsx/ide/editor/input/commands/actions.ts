@@ -5,10 +5,10 @@ import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAU
 import { Runtime } from '../../../../machine/runtime/runtime';
 import { captureRuntimeResumeSnapshot } from '../../../../machine/runtime/resume_snapshot';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
-import * as workbenchMode from '../../../runtime/workbench_mode';
+import * as workbenchMode from '../../../workbench/mode';
 import type { ActionPromptAction } from '../../../common/models';
 import { handleRuntimeTaskError } from '../../ui/runtime';
-import { clearExecutionStopHighlights } from '../../../runtime/error/navigation';
+import { clearExecutionStopHighlights } from '../../../workbench/error/navigation';
 import * as constants from '../../../common/constants';
 import { setEditorCaseInsensitivity } from '../../render/text_renderer';
 import { editorDocumentState } from '../../editing/document_state';

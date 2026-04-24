@@ -1,7 +1,7 @@
 import type { CursorScreenInfo } from '../../../common/models';
 import type { Font } from '../../../../render/shared/bmsx_font';
 import { drawEditorText } from '../text_renderer';
-import { api } from '../../ui/view/overlay_api';
+import { api } from '../../../runtime/overlay_api';
 import { computeSelectionSlice } from '../../common/text/layout';
 import * as constants from '../../../common/constants';
 import { runtimeErrorState } from '../../contrib/runtime_error/state';

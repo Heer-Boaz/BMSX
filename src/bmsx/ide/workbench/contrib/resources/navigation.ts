@@ -2,7 +2,7 @@ import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import { showEditorMessage } from '../../../common/feedback_state';
 import * as constants from '../../../common/constants';
 import { Runtime } from '../../../../machine/runtime/runtime';
-import * as workbenchMode from '../../../runtime/workbench_mode';
+import * as workbenchMode from '../../mode';
 import type { ResourceDescriptor } from '../../../common/models';
 import { closeLineJump } from '../../../editor/contrib/find/line_jump';
 import { closeSymbolSearch } from '../../../editor/contrib/symbols/shared';

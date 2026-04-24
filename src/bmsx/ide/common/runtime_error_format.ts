@@ -1,8 +1,9 @@
-import { LuaCallFrame } from '../../../../lua/runtime';
-import { StackTraceFrame } from '../../../../lua/value';
-import { splitText } from '../../../../common/text_lines';
-import { RuntimeErrorDetails } from '../../../common/models';
-import { createMinimalSourceMapConsumer, InlineSourceMap, MinimalSourceMapConsumer, originalPositionFor } from '../../../../machine/program/sourcemap_minimal';
+import { LuaCallFrame } from '../../lua/runtime';
+import { StackTraceFrame } from '../../lua/value';
+import { splitText } from '../../common/text_lines';
+import { RuntimeErrorDetails } from './models';
+import { createMinimalSourceMapConsumer, InlineSourceMap, MinimalSourceMapConsumer, originalPositionFor } from '../../machine/program/sourcemap_minimal';
+import { buildLuaFrameRawLabel } from '../../lua/stack_frame_label';
 
 type InlineSourceMapRegistry = Map<string, InlineSourceMap>;
 
@@ -120,19 +121,6 @@ function mapJsFrameToOriginalSource(frame: StackTraceFrame): StackTraceFrame {
 	};
 }
 
-export function buildLuaFrameRawLabel(functionName: string, source: string): string {
-	if (functionName) {
-		if (source) {
-			return `${functionName} @ ${source}`;
-		}
-		return functionName;
-	}
-	if (source) {
-		return source;
-	}
-	return '';
-}
-
 export function convertLuaCallFrames(callFrames: ReadonlyArray<LuaCallFrame>): StackTraceFrame[] {
 	const frames: StackTraceFrame[] = [];
 	for (let index = callFrames.length - 1; index >= 0; index -= 1) {
@@ -150,6 +138,8 @@ export function convertLuaCallFrames(callFrames: ReadonlyArray<LuaCallFrame>): S
 	}
 	return frames;
 }
+
+export { buildLuaFrameRawLabel };
 
 export function sanitizeLuaErrorMessage(message: string): string {
 	return message.replace(/^\[mod:[^\]]+]\s*/, ''); // Remove mod prefix if present

@@ -1,5 +1,5 @@
 import { clamp } from '../../../common/clamp';
-import { api } from '../ui/view/overlay_api';
+import { api } from '../../runtime/overlay_api';
 import * as constants from '../../common/constants';
 import { truncateWithMeasure, wrapTextDynamic } from '../../common/text';
 import { measureText } from '../common/text/layout';
