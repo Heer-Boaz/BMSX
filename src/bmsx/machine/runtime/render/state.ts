@@ -15,6 +15,7 @@ import {
 	putHardwareDirectionalLight,
 	putHardwarePointLight,
 } from '../../../render/shared/hardware/lighting';
+import { clearBackQueues } from '../../../render/shared/queues';
 
 function compareEntryId<T extends { id: string }>(left: T, right: T): number {
 	if (left.id < right.id) {
@@ -123,6 +124,10 @@ export function applyRuntimeRenderState(state: RuntimeRenderState): void {
 
 export function beginRuntimeRenderFrame(): void {
 	clearHardwareLighting();
+}
+
+export function clearRuntimeRenderBackQueues(): void {
+	clearBackQueues();
 }
 
 export function resetRuntimeRenderState(): void {

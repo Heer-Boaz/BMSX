@@ -1,13 +1,12 @@
-import { $ } from '../../core/engine';
 import { RunResult } from '../cpu/cpu';
 import {
 	TIMER_KIND_DEVICE_SERVICE,
 	TIMER_KIND_VBLANK_BEGIN,
 	TIMER_KIND_VBLANK_END,
 } from '../scheduler/device';
-import { runtimeFault } from '../../ide/runtime/lua_pipeline';
 import { drainReadyVdpExecution } from '../../render/vdp/blitter';
 import type { FrameState, Runtime } from './runtime';
+import { runtimeFault } from './runtime_fault';
 
 export class CpuExecutionState {
 	private debugCycleReportAtMs = 0;
@@ -21,7 +20,7 @@ export class CpuExecutionState {
 		const debugCycle = Boolean((globalThis as any).__bmsx_debug_tickrate);
 		if (debugCycle) {
 			if (this.debugCycleReportAtMs === 0) {
-				this.debugCycleReportAtMs = $.platform.clock.now();
+				this.debugCycleReportAtMs = runtime.frameLoop.currentTimeMs;
 			}
 			this.debugCycleRuns += 1;
 			this.debugCycleRunsTotal += 1;
@@ -69,7 +68,7 @@ export class CpuExecutionState {
 				this.debugCycleYieldsTotal += 1;
 			}
 			this.debugCycleRemainingAcc += remaining;
-			const now = $.platform.clock.now();
+			const now = runtime.frameLoop.currentTimeMs;
 			const elapsedMs = now - this.debugCycleReportAtMs;
 			if (elapsedMs >= 1000) {
 				const scale = 1000 / elapsedMs;

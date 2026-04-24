@@ -1,11 +1,8 @@
 #include "machine/runtime/frame/loop.h"
-#include "core/engine.h"
 #include "machine/runtime/cart_boot.h"
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/render/state.h"
 #include "machine/runtime/runtime.h"
-#include "runtime/assets/edits.h"
-#include "render/shared/queues.h"
 
 namespace bmsx {
 void FrameLoopState::reset() {
@@ -60,7 +57,7 @@ void FrameLoopState::executeUpdateCallback(Runtime& runtime) {
 				return;
 			}
 			if (runtime.vblank.consumeBackQueueClearAfterIrqWake()) {
-				RenderQueues::clearBackQueues();
+				clearRuntimeRenderBackQueues();
 			}
 			if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
 				return;
@@ -84,22 +81,13 @@ void FrameLoopState::executeUpdateCallback(Runtime& runtime) {
 
 bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	using PendingCall = Runtime::PendingCall;
-	if (runtime.m_rebootRequested) {
-		runtime.m_rebootRequested = false;
-		runtime.frameScheduler.clearQueuedTime();
-		if (!EngineCore::instance().rebootLoadedRom()) {
-			EngineCore::instance().log(LogLevel::Error, "Runtime fault: reboot to bootrom failed.\n");
-		}
+	if (runtime.cartBoot.processProgramReloadRequest(runtime)) {
 		return true;
 	}
 	if (!runtime.m_luaInitialized || !runtime.m_tickEnabled || runtime.m_runtimeFailed) {
 		return false;
 	}
 
-	runtime.cartBoot.prepareIfNeeded(runtime);
-	if (runtime.cartBoot.pollSystemBootRequest(runtime)) {
-		return true;
-	}
 	if (runtime.cartBoot.processPending(runtime)) {
 		return true;
 	}
@@ -128,7 +116,6 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	}
 
 	frameState.updateExecuted = runtime.m_pendingCall != PendingCall::Entry;
-	flushRuntimeAssetEdits(runtime.machine().memory());
 	finalizeUpdateSlice(runtime);
 	const bool nextFrameActive = frameActive;
 	if (nextFrameActive != previousFrameActive) {

@@ -15,7 +15,7 @@
 #include "../../machine/runtime/runtime.h"
 #include "../../machine/runtime/save_state/codec.h"
 #include "../../machine/runtime/game/view_state.h"
-#include "../../machine/runtime/frame/host.h"
+#include "../../core/host_frame.h"
 #if BMSX_ENABLE_GLES2
 #include "render/backend/gles2_backend.h"
 #include "render/post/crt_pipeline_gles2.h"
@@ -643,7 +643,7 @@ void LibretroPlatform::runFrame() {
 
 	bool skipRender = m_frameskip_enabled && m_frameskip_next;
 	m_frameskip_next = false;
-	runRuntimeHostFrame(Runtime::instance(), dt, m_platform_paused, skipRender);
+	runRuntimeHostFrame(*m_engine, Runtime::instance(), *m_microtask_queue, dt, m_platform_paused, skipRender);
 
 	// Collect audio
 #if ENABLE_PERFORMANCE_LOGS
@@ -788,6 +788,7 @@ size_t LibretroPlatform::getStateSize() const {
 	return captureRuntimeSaveStateBytes(runtime).size();
 }
 
+// start fallible-boundary -- libretro serialization callbacks report failure as false after logging.
 bool LibretroPlatform::saveState(void* data, size_t size) {
 	if (!m_rom_loaded || !Runtime::hasInstance()) {
 		return false;
@@ -834,6 +835,7 @@ bool LibretroPlatform::loadState(const void* data, size_t size) {
 		return false;
 	}
 }
+// end fallible-boundary
 
 void LibretroPlatform::resetCheats() {
 	// TODO: Clear all cheats

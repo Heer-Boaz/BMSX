@@ -6,7 +6,7 @@
 #include "machine/bus/io.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/budget.h"
-#include "core/engine.h"
+#include "platform.h"
 #include "rompack/format.h"
 #include "vendor/stb_image.h"
 
@@ -36,15 +36,17 @@ ImgDecController::ImgDecController(
 	Memory& memory,
 	DmaController& dma,
 	IrqController& irq,
-	DeviceScheduler& scheduler
+	DeviceScheduler& scheduler,
+	MicrotaskQueue& microtasks
 )
 	: m_gate(imgdecGate().group("imgdec"))
 	, m_memory(memory)
 	, m_dma(dma)
 	, m_irq(irq)
-	, m_scheduler(scheduler) {
-		m_memory.mapIoWrite(IO_IMG_CTRL, this, &ImgDecController::onCtrlWriteThunk);
-	}
+	, m_scheduler(scheduler)
+	, m_microtasks(microtasks) {
+	m_memory.mapIoWrite(IO_IMG_CTRL, this, &ImgDecController::onCtrlWriteThunk);
+}
 
 void ImgDecController::onCtrlWriteThunk(void* context, uint32_t, Value) {
 	auto* controller = static_cast<ImgDecController*>(context);
@@ -252,8 +254,7 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 	const uint64_t token = m_decodeToken + 1;
 	m_decodeToken = token;
 	m_gateToken = m_gate.begin(scope);
-	auto* queue = EngineCore::instance().platform()->microtaskQueue();
-	queue->queueMicrotask([this, entry, token, buffer = std::move(buffer)]() mutable {
+	m_microtasks.queueMicrotask([this, entry, token, buffer = std::move(buffer)]() mutable {
 		try {
 			int width = 0;
 			int height = 0;

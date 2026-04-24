@@ -90,6 +90,9 @@ Current evidence:
 - VBLANK frame commit now returns an explicit framebuffer-presentation signal
   from the VDP, and the render-side VDP presentation helper performs the texture
   page swap. The device no longer presents render framebuffer pages itself.
+- The native VDP fault helper no longer includes `core/engine.h`; it depends on
+  the shared primitive fault macro only, so device-side validation does not pull
+  the host shell into VDP compilation.
 
 Risk:
 
@@ -125,16 +128,49 @@ with host shell, IDE, and render-side transient state.
 
 Current evidence:
 
-- `src/bmsx_cpp/machine/runtime/frame/loop.cpp` includes `core/engine.h`,
-  `machine/runtime/render/state.h`, and `render/shared/queues.h`.
-- The native frame loop still calls back to `EngineCore` for reboot handling.
+- `src/bmsx_cpp/machine/runtime/frame/loop.cpp` no longer includes
+  `core/engine.h` and no longer calls `EngineCore` for reboot handling.
+  Program reload and BIOS-to-cart boot transitions now sit behind the existing
+  `CartBootState` owner.
+- The native frame loop still includes `machine/runtime/render/state.h`, but it
+  no longer imports `render/shared/queues.h` directly. Back-queue cleanup after
+  VBLANK IRQ wake is routed through the runtime render-state owner.
 - Both TS and C++ frame loops now enter current-frame render transient reset
   through `beginRuntimeRenderFrame()` in the runtime render-state owner. That
   removes the direct hardware-lighting dependency from the frame loop, but the
   machine tick still decides when render transient state begins.
-- `src/bmsx/machine/runtime/frame/loop.ts` imports IDE workbench mode, runtime
-  asset edit flushing, render queues, runtime render-state begin-frame, and IDE
-  Lua fault handling.
+- TS machine runtime faults now use `src/bmsx/machine/runtime/runtime_fault.ts`
+  instead of importing the IDE Lua pipeline only to construct machine faults.
+- `src/bmsx/machine/runtime/frame/loop.ts` no longer imports IDE workbench mode
+  or render queues directly. Overlay gating reads the runtime's
+  `executionOverlayActive` state, runtime errors report through
+  `Runtime.handleLuaError(...)`, and back-queue cleanup enters through the
+  runtime render-state owner.
+- `src/bmsx/machine/runtime/frame/host.ts` still owns TS IDE input ticking, but
+  its runtime fault reporting now also goes through `Runtime.handleLuaError(...)`
+  instead of calling IDE workbench fault presentation directly.
+- TS and C++ frame loops no longer flush runtime asset edits from inside the
+  machine tick. Host frame pumps flush them after the scheduled machine step and
+  before presentation, keeping texture/audio host work outside CPU/VBLANK
+  advancement.
+- TS and C++ save/resume/runtime-reset paths no longer import
+  `render/shared/queues` directly to clear transient submissions. They enter
+  through the runtime render-state owner.
+- The native host frame pump no longer discovers `EngineCore::instance()` or
+  probes `Platform::microtaskQueue()` during each frame. The libretro platform
+  supplies the concrete engine and microtask queue when it calls the host frame
+  pump, and the pump flushes that queue directly.
+- The native host frame pump now lives under `src/bmsx_cpp/core/host_frame.cpp`
+  instead of `src/bmsx_cpp/machine/runtime/frame/host.cpp`. The machine runtime
+  frame folder contains the machine tick loop, while the host shell owns input
+  polling, host timing counters, microtask flushing, asset edit flushing, and
+  presentation.
+- The native IMGDEC device no longer includes `core/engine.h` or looks up
+  `EngineCore::instance().platform()` when starting decode work. The machine
+  construction path passes the concrete microtask queue into the device.
+- TS scheduler/CPU debug tick telemetry now reads the host frame time already
+  supplied to the runtime frame pump, instead of importing `EngineCore` only to
+  query `$.platform.clock`.
 - TS and C++ save-machine-state restore now both flush runtime asset edits after
   restoring machine/frame-scheduler/VBLANK state.
 
@@ -165,8 +201,10 @@ but that boundary must stay devtool-only.
 
 Current evidence:
 
-- `src/bmsx_cpp/machine/firmware/globals.cpp` resolves ROM asset ranges through
-  `EngineCore::instance().cartAssets()` and `systemAssets()`.
+- `src/bmsx_cpp/machine/firmware/globals.cpp` no longer owns ROM asset-range
+  search logic for the cart-facing `resolve_*_rom_asset_range` builtins. That
+  lookup now lives in `src/bmsx_cpp/machine/memory/asset_memory.cpp`, matching
+  the TS side where `RuntimeAssetState` owns ROM range resolution.
 - The same file builds globals from `loadedCartManifest()`,
   `loadedCartEntryPath()`, `cartAssets()`, `machineManifest()`,
   `cartProjectRootPath()`, and `view()`.

@@ -5,7 +5,6 @@
 #include "machine/runtime/machine_state.h"
 #include "machine/runtime/render/state.h"
 #include "machine/runtime/runtime.h"
-#include "render/shared/queues.h"
 
 namespace bmsx {
 
@@ -39,7 +38,7 @@ void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& s
 		runtime.m_machine.cpu().setGlobalByKey(key, value);
 	}
 	syncRuntimeGameViewStateToTable(runtime);
-	RenderQueues::resetTransientState();
+	clearRuntimeRenderBackQueues();
 }
 
 } // namespace bmsx

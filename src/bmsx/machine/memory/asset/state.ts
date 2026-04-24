@@ -27,8 +27,8 @@ import {
 	type RuntimeLayerLookup,
 } from './layers';
 import { registerImageMemory, restoreEngineAtlas } from './images';
-import { runtimeFault } from '../../../ide/runtime/lua_pipeline';
 import type { Runtime } from '../../runtime/runtime';
+import { runtimeFault } from '../../runtime/runtime_fault';
 
 type RomAssetRangeLookupResult = {
 	found: boolean;

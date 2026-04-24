@@ -3268,11 +3268,8 @@ export class CPU {
 			if (value === null) {
 				return { tag: 'nil' };
 			}
-			if (value === false) {
-				return { tag: 'false' };
-			}
-			if (value === true) {
-				return { tag: 'true' };
+			if (typeof value === 'boolean') {
+				return { tag: value ? 'true' : 'false' };
 			}
 			if (typeof value === 'number') {
 				return { tag: 'number', value };

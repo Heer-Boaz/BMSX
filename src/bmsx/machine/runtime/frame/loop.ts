@@ -1,10 +1,7 @@
 import type { FrameState, Runtime } from '../runtime';
-import * as workbenchMode from '../../../ide/runtime/workbench_mode';
-import { flushRuntimeAssetEdits } from '../../../runtime/assets/edits';
-import { clearBackQueues } from '../../../render/shared/queues';
 import { RunResult } from '../../cpu/cpu';
-import { runtimeFault } from '../../../ide/runtime/lua_pipeline';
-import { beginRuntimeRenderFrame } from '../render/state';
+import { runtimeFault } from '../runtime_fault';
+import { beginRuntimeRenderFrame, clearRuntimeRenderBackQueues } from '../render/state';
 
 export class FrameLoopState {
 	public currentTimeMs = 0;
@@ -44,7 +41,7 @@ export class FrameLoopState {
 			return false;
 		}
 		runtime.cartBoot.processPending(runtime);
-		if (workbenchMode.isOverlayActive(runtime)) {
+		if (runtime.executionOverlayActive) {
 			if (this.currentFrameState !== null) {
 				this.abandonFrameState(runtime);
 				return true;
@@ -90,13 +87,12 @@ export class FrameLoopState {
 		try {
 			if (runtime.pendingCall === 'entry') {
 				this.runUpdatePhase(runtime, state);
-				flushRuntimeAssetEdits(runtime.machine.memory);
 				state.updateExecuted = runtime.pendingCall !== 'entry';
 			}
 			this.finalizeUpdateSlice(runtime, state);
 		} catch (error) {
 			try {
-				workbenchMode.handleLuaError(runtime, error);
+				runtime.handleLuaError(error);
 			} finally {
 				if (this.currentFrameState !== null) {
 					this.abandonFrameState(runtime);
@@ -134,7 +130,7 @@ export class FrameLoopState {
 					return;
 				}
 				if (vblank.consumeBackQueueClearAfterIrqWake()) {
-					clearBackQueues();
+					clearRuntimeRenderBackQueues();
 				}
 				if (runtime.pendingCall !== 'entry') {
 					return;
@@ -155,7 +151,7 @@ export class FrameLoopState {
 			state.luaFaulted = true;
 			runtime.vblank.clearHaltUntilIrq(runtime);
 			runtime.pendingCall = null;
-			workbenchMode.handleLuaError(runtime, error);
+			runtime.handleLuaError(error);
 		}
 	}
 }

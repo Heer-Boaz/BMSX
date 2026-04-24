@@ -118,6 +118,10 @@ void beginRuntimeRenderFrame() {
 	clearHardwareLighting();
 }
 
+void clearRuntimeRenderBackQueues() {
+	RenderQueues::clearBackQueues();
+}
+
 void resetRuntimeRenderState() {
 	clearHardwareCamera();
 	clearHardwareLighting();

@@ -1861,7 +1861,10 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 					});
 				}
 				tableState.hashFree = objectState.hashFree;
-				tableState.metatable = isNil(restoreValue(objectState.metatable)) ? nullptr : asTable(restoreValue(objectState.metatable));
+				const Value metatable = restoreValue(objectState.metatable);
+				if (!isNil(metatable)) {
+					tableState.metatable = asTable(metatable);
+				}
 				restoredObjects[index].table->restoreRuntimeState(tableState);
 				break;
 			}

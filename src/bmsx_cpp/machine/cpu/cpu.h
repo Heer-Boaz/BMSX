@@ -1051,8 +1051,8 @@ public:
 	void setProgram(Program* program, ProgramMetadata* metadata);
 	Program* getProgram() const { return m_program; }
 	StringId internString(std::string_view value) { return m_stringPool.intern(value); }
+	StringPool& stringPool() { return m_stringPool; }
 	const StringPool& stringPool() const { return m_stringPool; }
-	void rehydrateStringPoolFromHandleTable(const StringHandleTableState& state) { m_stringPool.rehydrateFromHandleTable(state); }
 	void reserveStringHandles(StringId minHandle);
 	void setExternalRootMarker(std::function<void(GcHeap&)> marker) { m_externalRootMarker = std::move(marker); }
 	void setStringIndexTable(Table* table) { m_stringIndexTable = table; }

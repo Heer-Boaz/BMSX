@@ -1,4 +1,5 @@
-#include "machine/runtime/frame/host.h"
+#include "core/host_frame.h"
+
 #include "core/engine.h"
 #include "core/time.h"
 #include "input/manager.h"
@@ -6,6 +7,7 @@
 #include "machine/runtime/game/view_state.h"
 #include "machine/runtime/runtime.h"
 #include "runtime/assets/edits.h"
+
 #include <chrono>
 
 namespace bmsx {
@@ -14,8 +16,14 @@ constexpr double MAX_FRAME_DELTA_MS = 250.0;
 
 } // namespace
 
-void runRuntimeHostFrame(Runtime& runtime, f64 deltaTime, bool platformPaused, bool skipRender) {
-	EngineCore& engine = EngineCore::instance();
+void runRuntimeHostFrame(
+	EngineCore& engine,
+	Runtime& runtime,
+	MicrotaskQueue& microtasks,
+	f64 deltaTime,
+	bool platformPaused,
+	bool skipRender
+) {
 	if (engine.m_state != EngineState::Running && engine.m_state != EngineState::Paused) {
 		return;
 	}
@@ -68,12 +76,10 @@ void runRuntimeHostFrame(Runtime& runtime, f64 deltaTime, bool platformPaused, b
 		}
 		engine.m_delta_time = hostDeltaSeconds;
 
-		if (engine.m_platform && engine.m_platform->microtaskQueue()) {
-			const auto microtaskStart = std::chrono::steady_clock::now();
-			engine.m_platform->microtaskQueue()->flush();
-			const auto microtaskEnd = std::chrono::steady_clock::now();
-			engine.m_last_tick_timing.microtaskMs = to_ms(microtaskEnd - microtaskStart);
-		}
+		const auto microtaskStart = std::chrono::steady_clock::now();
+		microtasks.flush();
+		const auto microtaskEnd = std::chrono::steady_clock::now();
+		engine.m_last_tick_timing.microtaskMs = to_ms(microtaskEnd - microtaskStart);
 
 		engine.m_last_tick_timing.totalMs = to_ms(std::chrono::steady_clock::now() - tickStart);
 		if (!skipRender) {

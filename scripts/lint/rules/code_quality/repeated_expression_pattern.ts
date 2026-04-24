@@ -106,7 +106,7 @@ function cppRepeatedAccessChain(tokens: readonly Token[], pairs: readonly number
 		return null;
 	}
 	const previous = tokens[start - 1]?.text;
-	if (isAccessSeparator(previous)) {
+	if (previous === 'case' || isAccessSeparator(previous)) {
 		return null;
 	}
 	let index = start + 1;

@@ -102,11 +102,12 @@ void FrameSchedulerState::restoreState(const FrameSchedulerStateSnapshot& state)
 	lastTickCompleted = state.lastTickCompleted;
 	lastTickConsumedSequence = state.lastTickConsumedSequence;
 	m_tickCompletionReadIndex = 0;
-	m_tickCompletionWriteIndex = state.queuedTickCompletions.size() % TICK_COMPLETION_QUEUE_CAPACITY;
-	m_tickCompletionCount = state.queuedTickCompletions.size();
+	const size_t queuedTickCompletionCount = state.queuedTickCompletions.size();
+	m_tickCompletionWriteIndex = queuedTickCompletionCount % TICK_COMPLETION_QUEUE_CAPACITY;
+	m_tickCompletionCount = queuedTickCompletionCount;
 	for (size_t index = 0; index < TICK_COMPLETION_QUEUE_CAPACITY; ++index) {
 		TickCompletion& slot = m_tickCompletionQueue[index];
-		if (index < state.queuedTickCompletions.size()) {
+		if (index < queuedTickCompletionCount) {
 			slot = state.queuedTickCompletions[index];
 			continue;
 		}

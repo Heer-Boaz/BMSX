@@ -9,7 +9,7 @@
 #include <stdexcept>
 
 namespace bmsx {
-Machine::Machine(Api& api, SoundMaster& soundMaster, VdpFrameBufferSize frameBufferSize)
+Machine::Machine(Api& api, SoundMaster& soundMaster, MicrotaskQueue& microtasks, VdpFrameBufferSize frameBufferSize)
 	: m_memory()
 	, m_stringHandles(m_memory)
 	, m_cpu(m_memory, &m_stringHandles)
@@ -18,7 +18,7 @@ Machine::Machine(Api& api, SoundMaster& soundMaster, VdpFrameBufferSize frameBuf
 	, m_irqController(m_memory)
 	, m_dmaController(m_memory, m_irqController, m_vdp, m_deviceScheduler)
 	, m_geometryController(m_memory, m_irqController, m_deviceScheduler)
-	, m_imgDecController(m_memory, m_dmaController, m_irqController, m_deviceScheduler)
+	, m_imgDecController(m_memory, m_dmaController, m_irqController, m_deviceScheduler, microtasks)
 	, m_inputController(m_memory, Input::instance(), m_cpu.stringPool())
 	, m_audioController(m_memory, soundMaster, m_irqController)
 	, m_resourceUsageDetector(m_memory, m_stringHandles, m_vdp) {
@@ -106,7 +106,7 @@ MachineSaveState Machine::captureSaveState() const {
 void Machine::restoreSaveState(const MachineSaveState& state) {
 	m_memory.restoreSaveState(state.memory);
 	m_stringHandles.restoreState(state.stringHandles);
-	m_cpu.rehydrateStringPoolFromHandleTable(state.stringHandles);
+	m_cpu.stringPool().rehydrateFromHandleTable(state.stringHandles);
 	m_geometryController.postLoad();
 	m_irqController.postLoad();
 	m_inputController.restoreState(state.input);

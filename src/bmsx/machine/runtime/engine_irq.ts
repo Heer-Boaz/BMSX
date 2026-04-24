@@ -1,6 +1,6 @@
 import { IRQ_NEWGAME, IRQ_REINIT } from '../bus/io';
-import { runtimeFault } from '../../ide/runtime/lua_pipeline';
 import type { Runtime } from './runtime';
+import { runtimeFault } from './runtime_fault';
 
 const ENGINE_IRQ_MASK = (IRQ_REINIT | IRQ_NEWGAME) >>> 0;
 

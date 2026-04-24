@@ -3,6 +3,7 @@ import type { Runtime } from '../runtime';
 import * as workbenchMode from '../../../ide/runtime/workbench_mode';
 import { applyRuntimeGameViewTableToState, syncRuntimeGameViewStateToTable } from '../game/table';
 import { applyGameViewStateToHost, syncGameViewViewportSizeFromHost } from '../game/view_state';
+import { flushRuntimeAssetEdits } from '../../../runtime/assets/edits';
 
 const MAX_FRAME_DELTA = 250;
 
@@ -37,12 +38,13 @@ export function runRuntimeHostFrame(runtime: Runtime, currentTime: number, runRe
 					applyRuntimeGameViewTableToState(runtime);
 					applyGameViewStateToHost(runtime.gameViewState, $.view);
 					screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
+					flushRuntimeAssetEdits(runtime.machine.memory);
 				}
 			screen.presentPending(runtime, hostDeltaMs);
 		}
 	} catch (error) {
 		try {
-			workbenchMode.handleLuaError(runtime, error);
+			runtime.handleLuaError(error);
 			runtime.frameLoop.abandonFrameState(runtime);
 			screen.presentErrorOverlay(runtime, hostDeltaMs);
 		} catch {

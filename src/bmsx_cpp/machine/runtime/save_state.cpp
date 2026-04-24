@@ -6,7 +6,6 @@
 #include "machine/runtime/render/state.h"
 #include "machine/runtime/save_machine_state.h"
 #include "machine/runtime/runtime.h"
-#include "render/shared/queues.h"
 #include "render/vdp/context_state.h"
 
 namespace bmsx {
@@ -40,7 +39,7 @@ void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state) {
 	runtime.m_runtimeFailed = state.runtimeFailed;
 	runtime.m_luaInitialized = state.luaInitialized;
 	syncRuntimeGameViewStateToTable(runtime);
-	RenderQueues::resetTransientState();
+	clearRuntimeRenderBackQueues();
 }
 
 } // namespace bmsx

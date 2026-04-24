@@ -39,8 +39,8 @@ import type { RuntimeOptions, LuaBuiltinDescriptor, LuaMemberCompletion, GameVie
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_ENGINE_PROJECT_ROOT_PATH } from '../../ide/workspace/workspace';
 import { buildLuaSources, type LuaSourceRegistry } from '../program/sources';
 import * as workbenchMode from '../../ide/runtime/workbench_mode';
-import { runtimeFault } from '../../ide/runtime/lua_pipeline';
 import * as luaPipeline from '../../ide/runtime/lua_pipeline';
+import { runtimeFault } from './runtime_fault';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../../lua/debugger';
 import type { ParsedLuaChunk } from '../../lua/analysis/parse';
 import { configureLuaHeapUsage } from '../memory/lua_heap_usage';
@@ -657,15 +657,19 @@ export class Runtime {
 
 	private handleClosureHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): never {
 		const wrappedError = this.prepareHandlerError(error, meta);
-		workbenchMode.handleLuaError(this, wrappedError);
+		this.handleLuaError(wrappedError);
 		throw wrappedError;
 	}
 
 	private handleLuaHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): never {
 		const wrappedError = this.prepareHandlerError(error, meta);
 		this.luaInterpreter.recordFaultCallStack();
-		workbenchMode.handleLuaError(this, wrappedError);
+		this.handleLuaError(wrappedError);
 		throw wrappedError;
+	}
+
+	public handleLuaError(error: unknown): void {
+		workbenchMode.handleLuaError(this, error);
 	}
 
 }

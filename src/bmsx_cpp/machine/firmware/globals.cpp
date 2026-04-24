@@ -3,6 +3,7 @@
 #include "machine/firmware/input_state_tables.h"
 #include "machine/program/load_compiler.h"
 #include "machine/common/number_format.h"
+#include "machine/memory/asset_memory.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "core/engine.h"
 #include "core/time.h"
@@ -24,7 +25,6 @@
 #include <limits>
 #include <regex>
 #include <sstream>
-#include <tuple>
 
 namespace bmsx {
 namespace {
@@ -1669,71 +1669,22 @@ void Runtime::setupBuiltins() {
 		(void)args;
 		out.push_back(valueNumber(frameScheduler.lastTickVdpFrameHeld ? 1.0 : 0.0));
 	});
-	auto findRomAssetInfo = [](const RuntimeAssets& assets, const std::string& assetId) -> const RomAssetInfo* {
-		if (const ImgAsset* image = assets.getImg(assetId)) {
-			return &image->rom;
-		}
-		if (const AudioAsset* audio = assets.getAudio(assetId)) {
-			return &audio->rom;
-		}
-		const AssetToken token = hashAssetToken(assetId);
-		auto dataIt = assets.data.find(token);
-		if (dataIt != assets.data.end()) {
-			return &dataIt->second.rom;
-		}
-		auto binIt = assets.bin.find(token);
-		if (binIt != assets.bin.end()) {
-			return &binIt->second.rom;
-		}
-		auto luaIt = assets.lua.find(token);
-		if (luaIt != assets.lua.end()) {
-			return &luaIt->second.rom;
-		}
-		auto eventIt = assets.audioevents.find(token);
-		if (eventIt != assets.audioevents.end()) {
-			return &eventIt->second.rom;
-		}
-		return nullptr;
+	auto pushRomAssetRange = [this, asText](NativeArgsView args, NativeResults& out, bool includeSystem) {
+		const std::string& assetId = asText(args.at(0));
+		const RuntimeRomAssetRange range = resolveRuntimeRomAssetRange(cartAssets(), systemAssets(), assetId, includeSystem);
+		out.push_back(valueNumber(static_cast<double>(range.romBase)));
+		out.push_back(valueNumber(static_cast<double>(range.start)));
+		out.push_back(valueNumber(static_cast<double>(range.end)));
 	};
-	auto resolveRomAssetRange = [findRomAssetInfo, this](const std::string& assetId, bool includeSystem) -> std::tuple<uint32_t, uint32_t, uint32_t> {
-		const RuntimeAssets* runtimeCartAssets = cartAssets();
-		const RomAssetInfo* rom = runtimeCartAssets ? findRomAssetInfo(*runtimeCartAssets, assetId) : nullptr;
-		if (rom == nullptr && includeSystem) {
-			rom = findRomAssetInfo(systemAssets(), assetId);
-		}
-		if (rom == nullptr) {
-			throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' does not exist.");
-		}
-		if (!rom->payloadId) {
-			throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' is missing a payload id.");
-		}
-		if (!rom->start || !rom->end) {
-			throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' is missing ROM range.");
-		}
-		uint32_t romBase = CART_ROM_BASE;
-		if (*rom->payloadId == "system") {
-			romBase = SYSTEM_ROM_BASE;
-		} else if (*rom->payloadId == "overlay") {
-			romBase = OVERLAY_ROM_BASE;
-		}
-		return { romBase, *rom->start, *rom->end };
-	};
-		auto pushRomAssetRange = [resolveRomAssetRange, asText](NativeArgsView args, NativeResults& out, bool systemPayload) {
-			const std::string& assetId = asText(args.at(0));
-			const auto [romBase, start, end] = resolveRomAssetRange(assetId, systemPayload);
-			out.push_back(valueNumber(static_cast<double>(romBase)));
-			out.push_back(valueNumber(static_cast<double>(start)));
-			out.push_back(valueNumber(static_cast<double>(end)));
-		};
-		registerNativeFunction("resolve_cart_rom_asset_range", [pushRomAssetRange](NativeArgsView args, NativeResults& out) {
-			pushRomAssetRange(args, out, false);
-		});
-		registerNativeFunction("resolve_sys_rom_asset_range", [pushRomAssetRange](NativeArgsView args, NativeResults& out) {
-			pushRomAssetRange(args, out, true);
-		});
-		registerNativeFunction("resolve_rom_asset_range", [pushRomAssetRange](NativeArgsView args, NativeResults& out) {
-			pushRomAssetRange(args, out, true);
-		});
+	registerNativeFunction("resolve_cart_rom_asset_range", [pushRomAssetRange](NativeArgsView args, NativeResults& out) {
+		pushRomAssetRange(args, out, false);
+	});
+	registerNativeFunction("resolve_sys_rom_asset_range", [pushRomAssetRange](NativeArgsView args, NativeResults& out) {
+		pushRomAssetRange(args, out, true);
+	});
+	registerNativeFunction("resolve_rom_asset_range", [pushRomAssetRange](NativeArgsView args, NativeResults& out) {
+		pushRomAssetRange(args, out, true);
+	});
 
 	registerNativeFunction("type", [str](NativeArgsView args, NativeResults& out) {
 		const Value& v = args.empty() ? valueNil() : args.at(0);

@@ -4,7 +4,6 @@ import { LuaInterpreter } from '../../lua/runtime';
 import { convertToError } from '../../lua/value';
 import type { LuaValue } from '../../lua/value';
 import { publishOverlayFrame } from '../../render/editor/overlay_queue';
-import { resetTransientState } from '../../render/shared/queues';
 import { ENGINE_LUA_BUILTIN_FUNCTIONS, ENGINE_LUA_BUILTIN_GLOBALS } from '../../machine/firmware/builtin_descriptors';
 import { seedLuaGlobals } from '../../machine/firmware/globals';
 import { ENGINE_SYSTEM_HELPER_NAMES } from '../../machine/firmware/system_globals';
@@ -19,7 +18,8 @@ import { applyGameViewStateToHost } from '../../machine/runtime/game/view_state'
 import { syncRuntimeGameViewStateToTable } from '../../machine/runtime/game/table';
 import { restoreRuntimeLuaSnapshot } from '../../machine/runtime/resume_snapshot';
 import { applyRuntimeMachineState } from '../../machine/runtime/machine_state';
-import { applyRuntimeRenderState, resetRuntimeRenderState } from '../../machine/runtime/render/state';
+import { runtimeFault } from '../../machine/runtime/runtime_fault';
+import { applyRuntimeRenderState, clearRuntimeRenderBackQueues, resetRuntimeRenderState } from '../../machine/runtime/render/state';
 import * as workbenchMode from './workbench_mode';
 import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from '../../machine/runtime/timing';
 import { setFrameTiming, setTransferRatesFromManifest } from '../../machine/runtime/timing/config';
@@ -52,10 +52,6 @@ const ENGINE_BUILTIN_PRELUDE_PATH = 'bios/engine_builtin_prelude.lua';
 const getRealtimeOptLevel = (runtime: Runtime): 0 | 1 | 2 | 3 =>
 	runtime.realtimeCompileOptLevel;
 const REQUIRED_ENGINE_SYSTEM_HELPERS: ReadonlyArray<string> = ['clock_now'];
-
-export function runtimeFault(message: string): Error {
-	return new Error(`Runtime fault: ${message}`);
-}
 
 function resolvePositiveSafeInteger(value: number | undefined, label: string): number {
 	if (value === undefined) {
@@ -136,7 +132,7 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeS
 	runtime.storage.restore(snapshot.storageState);
 	resumeLuaProgramState(runtime, snapshot, preserveEngineModules);
 	applyRuntimeRenderState(snapshot.renderState);
-	resetTransientState();
+	clearRuntimeRenderBackQueues();
 	runtime.luaInitialized = true;
 	syncRuntimeGameViewStateToTable(runtime);
 	applyGameViewStateToHost(runtime.gameViewState, $.view);
@@ -366,7 +362,7 @@ export function resetHardwareState(runtime: Runtime): void {
 	runtime.machine.resetDevices();
 	runtime.vblank.reset(runtime);
 	resetRuntimeRenderState();
-	resetTransientState();
+	clearRuntimeRenderBackQueues();
 }
 
 export function registerGlobal(runtime: Runtime, name: string, value: Value): void {

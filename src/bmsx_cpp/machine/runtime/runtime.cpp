@@ -10,7 +10,6 @@
 #include "machine/runtime/render/state.h"
 #include "machine/runtime/runtime_fault.h"
 #include "machine/runtime/timing/config.h"
-#include "render/shared/queues.h"
 #include "core/engine.h"
 #include "rompack/format.h"
 #include "input/manager.h"
@@ -57,7 +56,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	, m_cartAssets(options.cartAssets)
 	, m_machineManifest(options.machineManifest)
 	, m_api(std::make_unique<Api>(*this))
-	, m_machine(*m_api, *EngineCore::instance().soundMaster(), VdpFrameBufferSize{
+	, m_machine(*m_api, *EngineCore::instance().soundMaster(), *EngineCore::instance().platform()->microtaskQueue(), VdpFrameBufferSize{
 		static_cast<uint32_t>(options.viewport.x),
 		static_cast<uint32_t>(options.viewport.y)
 	})
@@ -214,7 +213,7 @@ void Runtime::resetHardwareState() {
 	m_machine.resetDevices();
 	vblank.reset(*this);
 	resetRuntimeRenderState();
-	RenderQueues::resetTransientState();
+	clearRuntimeRenderBackQueues();
 }
 
 void Runtime::refreshMemoryMap() {

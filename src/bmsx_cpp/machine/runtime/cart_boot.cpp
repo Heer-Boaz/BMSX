@@ -37,6 +37,18 @@ void CartBootState::request(Runtime& runtime) {
 	setReadyFlag(runtime, false);
 }
 
+bool CartBootState::processProgramReloadRequest(Runtime& runtime) {
+	if (!runtime.m_rebootRequested) {
+		return false;
+	}
+	runtime.m_rebootRequested = false;
+	runtime.frameScheduler.clearQueuedTime();
+	if (!EngineCore::instance().rebootLoadedRom()) {
+		EngineCore::instance().log(LogLevel::Error, "Runtime fault: reboot to bootrom failed.\n");
+	}
+	return true;
+}
+
 bool CartBootState::pollSystemBootRequest(Runtime& runtime) {
 	if (!runtime.isEngineProgramActive()) {
 		return false;
@@ -51,6 +63,10 @@ bool CartBootState::pollSystemBootRequest(Runtime& runtime) {
 }
 
 bool CartBootState::processPending(Runtime& runtime) {
+	prepareIfNeeded(runtime);
+	if (pollSystemBootRequest(runtime)) {
+		return true;
+	}
 	if (!m_pending) {
 		return false;
 	}

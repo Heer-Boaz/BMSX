@@ -353,6 +353,30 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 	return true;
 }
 
+Runtime& EngineCore::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& timing, const MachineManifest& machine) {
+	if (!Runtime::hasInstance()) {
+		Runtime::createInstance(RuntimeOptions{
+			1,
+			{ timing.viewportWidth, timing.viewportHeight },
+			&m_engine_assets,
+			&m_cart_assets,
+			&m_cart_assets,
+			&machine,
+			timing.ufpsScaled,
+			timing.cpuHz,
+			timing.cycleBudgetPerFrame,
+			timing.vblankCycles,
+			timing.vdpWorkUnitsPerSec,
+			timing.geoWorkUnitsPerSec,
+		});
+	}
+	Runtime& runtime = Runtime::instance();
+	runtime.setRuntimeEnvironment(m_engine_assets, assets(), assets().machine, &m_cart_assets);
+	applyRuntimeTiming(runtime, timing);
+	runtime.refreshMemoryMap();
+	return runtime;
+}
+
 bool EngineCore::bootWithoutCart() {
 	// Boot engine with only engine assets (no cartridge)
 	// This runs bootrom.lua which displays the boot screen
@@ -442,26 +466,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 		setMachineManifest(cartMachine);
 		applyManifestMemorySpecs(assets().machine, m_engine_assets.machine, assets(), m_engine_assets);
 		const ResolvedRuntimeTiming timing = resolveRuntimeTiming(assets().machine, transferMachine, cpuHz, runtimeUfpsScaled);
-			if (!Runtime::hasInstance()) {
-				Runtime::createInstance(RuntimeOptions{
-					1,
-					{ timing.viewportWidth, timing.viewportHeight },
-					&m_engine_assets,
-					&m_cart_assets,
-					&m_cart_assets,
-					&cartMachine,
-					timing.ufpsScaled,
-					timing.cpuHz,
-					timing.cycleBudgetPerFrame,
-					timing.vblankCycles,
-					timing.vdpWorkUnitsPerSec,
-					timing.geoWorkUnitsPerSec,
-				});
-			}
-			Runtime& runtime = Runtime::instance();
-		runtime.setRuntimeEnvironment(m_engine_assets, assets(), assets().machine, &m_cart_assets);
-		applyRuntimeTiming(runtime, timing);
-		runtime.refreshMemoryMap();
+		Runtime& runtime = prepareRuntimeForActiveCart(timing, cartMachine);
 		buildAssetMemory(runtime, m_engine_assets, assets());
 		refreshAudioResources(*m_sound_master, runtime, assets(), assets().machine, m_engine_rom_data, m_cart_rom_data);
 		if (assets().hasProgram()) {
@@ -493,26 +498,7 @@ bool EngineCore::bootLoadedCart() {
 	applyManifestMemorySpecs(assets().machine, m_engine_assets.machine, assets(), m_engine_assets);
 	configureViewForMachine(assets().machine);
 
-		if (!Runtime::hasInstance()) {
-			Runtime::createInstance(RuntimeOptions{
-				1,
-				{ timing.viewportWidth, timing.viewportHeight },
-				&m_engine_assets,
-				&m_cart_assets,
-				&m_cart_assets,
-				&m_cart_assets.machine,
-				timing.ufpsScaled,
-				timing.cpuHz,
-				timing.cycleBudgetPerFrame,
-				timing.vblankCycles,
-				timing.vdpWorkUnitsPerSec,
-				timing.geoWorkUnitsPerSec,
-			});
-		}
-		Runtime& runtime = Runtime::instance();
-	runtime.setRuntimeEnvironment(m_engine_assets, assets(), assets().machine, &m_cart_assets);
-	applyRuntimeTiming(runtime, timing);
-	runtime.refreshMemoryMap();
+	Runtime& runtime = prepareRuntimeForActiveCart(timing, m_cart_assets.machine);
 	buildAssetMemory(runtime, m_engine_assets, assets(), RuntimeAssetBuildMode::Cart);
 	runtime.resetRuntimeForProgramReload();
 	refreshRenderAssets();

@@ -1,4 +1,3 @@
-import { $ } from '../../core/engine';
 import type { Runtime } from '../runtime/runtime';
 
 export type TickCompletion = {
@@ -271,7 +270,7 @@ export class FrameSchedulerState {
 			this.debugFrameYieldsAcc += yieldsThisFrame;
 			this.debugFrameGrantedAcc += granted;
 			this.debugFrameCarryAcc += frameState.cycleCarryGranted;
-			const now = $.platform.clock.now();
+			const now = runtime.frameLoop.currentTimeMs;
 			const elapsedMs = now - this.debugFrameReportAtMs;
 			if (elapsedMs >= 1000) {
 				const scale = 1000 / elapsedMs;
@@ -310,7 +309,7 @@ export class FrameSchedulerState {
 		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
 		if (debugTickRate) {
 			if (this.debugFrameReportAtMs === 0) {
-				this.debugFrameReportAtMs = $.platform.clock.now();
+				this.debugFrameReportAtMs = runtime.frameLoop.currentTimeMs;
 			}
 			this.debugTickYieldsBefore = runtime.cpuExecution.debugCycleYieldsTotal;
 		}

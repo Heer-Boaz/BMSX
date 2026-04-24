@@ -15,6 +15,7 @@ namespace bmsx {
 
 class DmaController;
 class IrqController;
+class MicrotaskQueue;
 
 class ImgDecController {
 public:
@@ -22,7 +23,8 @@ public:
 		Memory& memory,
 		DmaController& dma,
 		IrqController& irq,
-		DeviceScheduler& scheduler
+		DeviceScheduler& scheduler,
+		MicrotaskQueue& microtasks
 	);
 
 	void setTiming(int64_t cpuHz, int64_t decodeBytesPerSec, int64_t nowCycles);
@@ -98,6 +100,7 @@ public:
 	DmaController& m_dma;
 	IrqController& m_irq;
 	DeviceScheduler& m_scheduler;
+	MicrotaskQueue& m_microtasks;
 };
 
 } // namespace bmsx

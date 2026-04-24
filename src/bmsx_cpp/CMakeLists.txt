@@ -95,6 +95,7 @@ add_library(bmsx_core STATIC
 	# Core systems
 	core/primitives.cpp
 	core/engine.cpp
+	core/host_frame.cpp
 	core/system.cpp
 	core/registry.cpp
 	rompack/assets.cpp
@@ -189,7 +190,6 @@ add_library(bmsx_core STATIC
 	machine/runtime/engine_irq.cpp
 	machine/runtime/boot_timing.cpp
 	machine/runtime/frame/loop.cpp
-	machine/runtime/frame/host.cpp
 	machine/program/executor.cpp
 	machine/program/scratch.cpp
 	machine/specs.cpp

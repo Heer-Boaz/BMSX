@@ -9,6 +9,7 @@
 #define BMSX_ENGINE_CORE_H
 
 #include "primitives.h"
+#include "host_frame.h"
 #include "registry.h"
 #include "rompack/assets.h"
 #include "../platform.h"
@@ -20,11 +21,12 @@
 namespace bmsx {
 
 class BFont;
+class EngineCore;
 class TextureManager;
 class Runtime;
 struct ProgramAsset;
 struct ProgramMetadata;
-void runRuntimeHostFrame(Runtime& runtime, f64 deltaTime, bool platformPaused, bool skipRender);
+struct ResolvedRuntimeTiming;
 
 /* ============================================================================
  * Engine state
@@ -46,7 +48,14 @@ class EngineCore {
 public:
 	friend class FrameLoopState;
 	friend class RenderPresentationState;
-	friend void runRuntimeHostFrame(Runtime& runtime, f64 deltaTime, bool platformPaused, bool skipRender);
+	friend void runRuntimeHostFrame(
+		EngineCore& engine,
+		Runtime& runtime,
+		MicrotaskQueue& microtasks,
+		f64 deltaTime,
+		bool platformPaused,
+		bool skipRender
+	);
 
 	struct TickTiming {
 		f64 totalMs = 0.0;
@@ -181,6 +190,7 @@ private:
 	void setMachineManifest(const MachineManifest& manifest);
 	void configureViewForMachine(const MachineManifest& manifest);
 	bool bootEngineStartupProgram(const MachineManifest& runtimeMachine, const RuntimeAssets& sizingAssets);
+	Runtime& prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& timing, const MachineManifest& machine);
 
 	Platform* m_platform = nullptr;
 	std::unique_ptr<GameView> m_view;
