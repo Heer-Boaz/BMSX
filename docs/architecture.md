@@ -3,10 +3,20 @@
 Status: current architecture review, not a quality rule.
 Last checked: 2026-04-24.
 
-BMSX is already usable as a quasi-professional fantasy-console codebase. The
-important remaining work is not broad cleanup for its own sake. The largest
-architecture pressure is that the top-level system still reads more like
-engine + firmware + host shell than a strict driver/device-tree model.
+BMSX is not currently in a healthy feature-development state. The problem is
+larger than architecture boundaries: the code quality inside ordinary functions
+and methods is also bad enough to block normal feature work. The current
+working assumption is that most code must be treated as suspect until it has
+been read, simplified, and proven to follow the lean BMSX style.
+
+The cleanup cannot be limited to moving files or drawing better subsystem
+boxes. A boundary can look cleaner while each function remains defensive,
+wrapper-heavy, lazily initialized, null-normalized, callback-routed,
+allocation-happy, or hidden behind analyzer exceptions. That still counts as
+bad code and must not be used as a foundation for more feature work.
+
+The top-level system also still reads more like engine + firmware + host shell
+than a strict driver/device-tree model.
 
 That shape is not preferred for BMSX. Host, platform, render, IDE, and workspace
 conveniences must not become the cart-facing hardware contract.
@@ -20,9 +30,11 @@ test: a useful emulator save state must account for CPU state, device state,
 RAM including video/palette/sound RAM, timing state, peripheral state, and
 banking/driver-specific state.
 
-## Healthy Baseline
+## Current Blocker
 
-The codebase already has the pieces needed to keep building:
+The codebase still has useful pieces, but those pieces are embedded in a broad
+quality failure. The current state requires a cleanup phase before ordinary
+feature work is acceptable.
 
 - `src/bmsx/machine` and `src/bmsx_cpp/machine` contain real machine concepts:
   CPU/runtime state, memory, MMIO, VDP, input, DMA-style device work, scheduling,
@@ -40,10 +52,36 @@ cart Lua -> BIOS/firmware or cart library -> MMIO/RAM -> machine device -> host 
   serialization entry points wired to it. The next question is proof and
   completeness, not whether the platform functions are placeholders.
 
-The current state does not allow doing feature work and instead requires a giant cleanup.
-The code is a complete mess of bullshit and junk and crap. The majority of the code is a tangled web of dependencies and spaghetti code. The code is a nightmare to read and understand. The code is a disaster to maintain and debug. The code is a catastrophe to extend and improve. The code is a tragedy to work with and use. The code is a horror to look at and deal with. The code is a shame to the programming profession and the software industry. The code is a disgrace to the developers who wrote it and the users who rely on it. The code is a failure of engineering and design. The code is a waste of time and resources. The code is a burden on everyone involved with it.
+That useful baseline does not make the code good. Much of the code is still
+hard to read, hard to debug, and hard to change because behavior is smeared
+across unrelated owners and because many small functions are not honest units
+of work. The function-level quality problem is first-class architecture debt.
 
-Examples of total bullshit and junk and crap:
+Feature work is blocked unless it directly removes or proves one of these
+problems:
+
+- defensive internal checks that hide broken ownership instead of enforcing a
+  contract;
+- one-line forwarding wrappers, callback thunks, service/provider/facade
+  shapes, and fake helpers that rename work without owning it;
+- lazy `ensure` initialization in steady-state code paths;
+- optional chaining, `typeof` checks, catch fallbacks, and `?? null`
+  normalization around values that should be guaranteed by design;
+- temporary arrays, objects, closures, or string work in hot emulator/runtime
+  paths;
+- duplicated state predicates, repeated lifecycle checks, and boolean soup that
+  should be named once as a real state-machine transition or lifecycle query;
+- cross-layer imports and singleton discovery that make local code depend on
+  the whole engine shell;
+- analyzer skip lists, name-based exemptions, usage-based exemptions, or broad
+  suppressions that hide bad code instead of making local exceptions explicit.
+
+Passing the quality scanner is not enough. The scanner has already hidden bad
+patterns when it used name/usage skips, so every cleanup slice must be checked
+by reading the touched code and by asking whether the functions became simpler,
+more direct, better owned, and at least as fast.
+
+Examples of current bad code shape:
 ```
     if (engine.m_state != EngineState::Running && engine.m_state != EngineState::Paused) {
         return;
@@ -85,6 +123,15 @@ void LibretroPlatform::setPlatformPaused(bool paused) {
 	}
 }
 ```
+
+These examples are not merely ugly formatting. They show the larger disease:
+state is queried and reinterpreted in scattered places, including duplicated
+checks of the same state transition. In the first example, `Running`/`Paused`
+is checked once as an admission guard, then `Paused` and not-paused presentation
+state are recomputed immediately afterward under new local names. That should
+be one owned lifecycle decision, not repeated condition fragments. The second
+example shows host/platform logic reaching into engine state and accumulating
+guard branches instead of making ownership and lifecycle transitions explicit.
 
 ## Largest Boundary Problems
 
