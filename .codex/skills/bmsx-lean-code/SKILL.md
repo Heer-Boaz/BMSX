@@ -1,129 +1,233 @@
 ---
 name: bmsx-lean-code
-description: "Use when editing, reviewing, refactoring, or designing BMSX TypeScript, C++, Lua, emulator, fantasy console, IDE, runtime, render, cart, or analysis tooling code. Enforces BMSX's lean historical coding style: trust caller/callee contracts, avoid defensive clutter, avoid facade/host/provider/service abstractions, preserve performance, and improve quality rules instead of working around them."
+description: "Use when editing, reviewing, refactoring, or designing BMSX TypeScript, C++, Lua, emulator, fantasy console, IDE, runtime, render, cart, architecture, or analysis tooling code. This is a hard-stop skill: block junk architecture, defensive clutter, facade/host/provider/service patterns, lazy ensure paths, wrapper forwarding, hidden analyzer skips, hot-path allocations, and performance regressions. Prefer deletion, inlining, direct ownership, explicit hardware/device contracts, and quality-rule fixes that expose bad code instead of hiding it."
 metadata:
-  short-description: "Enforce BMSX lean coding style"
+  short-description: "Hard-stop BMSX lean code gate"
 ---
 
 # BMSX Lean Code
 
-Use this skill whenever working in the BMSX repo or discussing BMSX code quality. The goal is not to imitate old code blindly; the goal is to recover the lean, direct, high-trust style from selected 2024 BMSX engine work while keeping the current fantasy-console architecture disciplined and fast.
+This skill is a gate, not style advice. Use it whenever touching or judging
+BMSX code. Its job is to prevent "architecture improvement" from adding more
+junk.
 
-## First Moves
-1. Read the nearest `AGENTS.md` and inspect the relevant current code before editing.
-2. If the change touches style, quality rules, architecture, fallbacks, hot paths, or analyzer behavior, read the relevant files in `references/`.
-3. Before writing a new helper, abstraction, parser/range utility, or repeated concept, run `rg` queries for the relevant names, nearby verbs, data shapes, and owning modules. Reuse or extend the owner you find; only introduce new code after the `rg` results show that no suitable owner/helper/pattern already exists.
-4. Before implementing product behavior, study a serious reference implementation matching the domain when useful: VS Code for IDE/editor work, MAME or emulator cores for machine/runtime discipline, VLC or mature media code for audio/video pipelines.
+Default posture: stop before editing unless the next patch removes a concrete
+disease and leaves the touched code simpler, faster, and more directly owned.
 
-## Architecture Slice Discipline
-- Do not build temporary architecture you expect to undo in the next step. Provisional ownership shuffles, placeholder abstractions, and "we will clean this up right after" structures are usually a mistake.
-- Before changing a boundary, name the exact leak, mixed responsibility, or dishonest contract you are fixing.
-- Take the smallest end-to-end slice that removes that concrete leak. If a step does not eliminate a specific architectural problem, keep reading instead of refactoring speculatively.
-- Prefer one-way boundary improvements over broad reshuffles. The right slice should make the architecture truer immediately, not only after two more follow-up diffs.
-- In emulator/runtime/render work, "looks cleaner" is not enough. Avoid speculative refactors that are likely to be rolled back once the real ownership line becomes clearer.
+## Non-Negotiable Outcome
 
-## Style Contract
-- Preserve the fantasy-console contract. Cart-visible hardware belongs behind memory maps, MMIO registers, machine devices, and cart-facing helpers; host/platform conveniences must not become the hardware API.
-- Trust internal contracts. Do not add null checks, optional chaining, `typeof fn === 'function'`, catch fallbacks, or legacy fallbacks around values that the design says must exist.
-- Let failures surface unless the boundary is genuinely fallible: parsing external data, browser APIs, IO, network, optional user configuration, feature detection, or cart/user input.
-- Legacy and compatibility code is forbidden. Do not add compatibility shims, migration aliases, old-name fallbacks, deprecated contract bridges, dual-key support, or "accept both old and new" paths. Fix the caller/config/data to the current contract instead of preserving the old one.
-- Keep ownership visible. Avoid facade, host, provider, service, descriptor, manager, registry, adapter, and broker layers unless they are already part of a proven subsystem boundary.
-- Prefer direct state and direct calls over wrapper functions that only rename or forward work.
-- Place files in the folder that owns the named concept. Do not put compound names as loose root-level files when the name already describes the hierarchy. A file named like `runtime_error_navigation.ts` belongs under `runtime/error/navigation.ts`; likewise prefer `cart/source/files.ts`, `runtime/boot/timing.ts`, or `editor/runtime/error.ts` over root grab-bag filenames. If the right folder does not exist yet, create it instead of flattening ownership into a top-level module. If a specific file is a legitimate local architecture boundary exception, mark that local contract with a local analysis comment instead of adding rename-sensitive path config or moving the file to a root grab-bag.
-- When two or more code files in one folder share a concept prefix, promote that prefix to a subfolder and strip it from the filenames. Use `prefix.ts` as `prefix/index.ts`, `prefix_foo.ts` as `prefix/foo.ts`, and `prefix_foo.wgpu.ts` as `prefix/foo.wgpu.ts`. This applies to clusters such as `blitter`, `mesh`, `skybox`, `particles`, and `optimizer`. Do not add compatibility wrappers or barrel-only shims; update imports to the new owner path directly.
-- Keep loops, scheduler paths, render paths, CPU/runtime paths, editor text/layout paths, and cart hot paths allocation-aware. Avoid temporary arrays/objects/closures in hot paths.
-- Use existing BMSX primitives: `TaskGate` and `AssetBarrier` for async coordination, `clamp` from `src/bmsx/common/`, and scratch buffers/pools for temporary hot-path data.
-- Do not normalize values to `null` with `?? null`; preserve `undefined` unless the public contract explicitly requires `null`.
-- Use `switch` for multi-way closed-kind dispatch instead of `if/else if` chains.
-- Name concepts once. If an expression such as bounds, normalization, lookup, line splitting, keyword lowercasing, or caret math repeats, extract a real concept or shared helper.
-- Aliasing input contracts is forbidden. Do not alias CLI argument names, option payload entries, event handler names, event IDs, command IDs, manifest fields, or config keys. There must be one canonical name at the boundary; do not normalize multiple names into one internal value.
-- Newline normalization is exceptional. Do not normalize `\r`/`\n` line endings with `split`, `replace`, or `replaceAll` unless that exact expression has a previous-line or same-line suppressor with the exact rule name, for example `disable-next-line newline_normalization_pattern -- reason`.
-- In cart code, use cart-facing globals/helpers instead of `engine.*`, keep repeated string identifiers short, and read constants directly instead of aliasing global constant tables.
-- Treat serialization as part of feature design. Registry/persistent runtime objects and host-only state should not leak into saved game state.
-- Do not hand-fix indentation. Make the code change, then run `npm run fix:indent -- <touched paths>` for formatting/indent cleanup. If that tool cannot handle the touched language well enough, improve the tool or call out the limitation instead of committing manual whitespace churn.
+A successful patch must do at least one of these:
 
-## Hot-Path Duplication Discipline
-For CPU/program, scheduler, VDP, render, and other tight emulator/runtime paths, the correct answer is often not a helper. Do not extract repeated opcode/register/timer/state statements just to satisfy a quality rule when the duplication keeps the hot path direct, predictable, allocation-free, and easy for the compiler/JIT to optimize.
+- delete a wrapper, facade, host/provider/service layer, callback injection, or
+  fake helper;
+- collapse duplicated state checks into one owned lifecycle/state decision;
+- move behavior to the owner of the data without adding a generic middle layer;
+- remove defensive internal bug-hiding code and let the real contract fail
+  loudly;
+- remove lazy `ensure`/first-use initialization from steady-state paths and put
+  initialization at a real setup boundary;
+- remove hot-path allocation, string churn, or repeated normalization;
+- fix a quality rule so it exposes bad code instead of skipping by name, path,
+  usage count, or vibes.
 
-When repeated code in these paths is intentional and performance-sensitive, mark the smallest practical section with a local quality region and explain the reason:
+If the patch does not clearly do one of those, do not implement it.
 
-```ts
-// start repeated-sequence-acceptable -- CPU opcode fast path keeps register updates inline; helper dispatch would add overhead.
-// end repeated-sequence-acceptable
-```
+## Stop Gates
 
-Use real cleanup for non-hot code, setup/init code, firmware table construction, asset metadata assembly, manifest shaping, and other places where extracting a concept improves ownership without adding dispatch, allocation, or abstraction cost. In short: no helper fetish in CPU/program hot paths; no duplicated sludge outside them.
+Stop and report the blocker before editing when the likely fix requires any of
+these:
 
-## Anti-Workaround Rule
-Do not satisfy a quality rule by producing worse code. If a rule pushes toward worse code, fix the rule first.
+- "temporary" structure that is expected to be removed later;
+- new facade, host, provider, service, descriptor, adapter, manager, broker, or
+  generic callback layer;
+- an injection/callback pattern just to avoid naming the real owner;
+- a wrapper function that only renames, forwards, adapts trivial arguments, or
+  exists to satisfy a scanner;
+- lazy `ensure*` or "create if missing" checks in methods called after startup;
+- mandatory CPU shadow/write-through work in a hot path that can write the
+  backend/device state directly;
+- new compatibility aliases, legacy fallbacks, dual-name support, or migration
+  shims;
+- broad suppressions, name-based analyzer allowances, usage-count allowances,
+  or hardcoded file/path skip lists;
+- more comments/suppressions than actual simplification;
+- a diff that is harder to read than the original code.
 
-Forbidden evasions include:
-- Adding terminal `return;` to dodge single-line body rules.
-- Rewriting `return record ? record.current : null;` into an `if (!record) return null;` block when optional chaining or a contract change is the real answer.
-- Introducing useless constants, wrappers, helpers, aliases, or methods only to pacify a rule.
-- Splitting a compact expression into ceremonial enterprise flow without improving ownership, clarity, or performance.
+When a stop gate triggers, say exactly which gate triggered and name the owner
+that must be understood before changing code.
 
-Before finalizing a code change, inspect your own diff specifically for these evasions.
+## Required Workflow
 
-## Quality Rule Code Contract
-Treat analyzer and lint code as production code. The checker must model good engineering, not become a second trash pile next to the product code.
+1. Read the nearest `AGENTS.md` and the current code around the planned edit.
+2. Name the disease in one sentence before changing files:
+   "duplicated engine state check", "lazy texture initialization",
+   "render singleton discovery", "defensive null blanket", etc.
+3. Search first with `rg` for existing owners, helpers, state names, lifecycle
+   methods, and related TS/C++ counterparts.
+4. For architecture, emulator, render, IDE, or media behavior, inspect a serious
+   reference implementation when useful: MAME/Dolphin for emulator/video,
+   VS Code for IDE/editor, VLC or mature media code for audio/video.
+5. Choose the smallest end-to-end slice that removes the disease now.
+6. Edit only if the patch shape passes the "Acceptable Patch Shape" section.
+7. Run checks matching the touched area.
+8. Audit the diff for junk before finalizing.
 
-- Keep rules project-agnostic by default. Do not bake BMSX paths, file names, root object names, function-name word lists, issue-pusher names, or rename-sensitive exceptions into generic rules.
-- Use local analysis comments, analysis regions/statements, or explicit config for local contracts. A hot path, accepted numeric boundary, required state root, or intentional wrapper must be marked near the code that owns that exception.
-- Analysis comments are markerless. Every suppressor or local analysis exception must use the exact rule id or analysis-region id it affects. Broad disables, wildcard disables, unnamed `disable`, and alias names are forbidden. A local exception for the legacy sentinel string rule must be spelled with the actual rule id, for example `disable-next-line legacy_sentinel_string_pattern -- reason`.
-- Do not add fallback skip lists. Directory/file exclusion should come from source-control/project config such as `.gitignore` or a real analyzer config, not hardcoded guesses.
-- Put language parsing, token scanning, AST naming, call-target extraction, literal checks, operator searches, and range helpers in language/support modules. Pattern files should combine existing language helpers into one rule, not reimplement parsers.
-- Every rule file must contain real detection logic for that rule. Empty files, export-only shims, and thin wrappers that only call `pushLintIssue` are forbidden.
-- Keep one coherent rule per file and move shared mechanics into support modules. Do not grow monolithic analyzer files, but also do not split code into fake files without ownership.
-- Share generic logic across TS, C++, and Lua when the concept is the same. Do not copy/paste near-identical rules per language unless the language-specific parsing genuinely differs.
-- Prefer precise AST/token logic over text grep. Report the smallest meaningful construct and preserve semantic targets in fingerprints; `min` and `max`, `trim` and `slice`, `startsWith` and `includes` are different operations.
-- Avoid duplicate or noisy findings. Exact duplicates, semantic duplicates, normalized-body duplicates, and repeated-statement rules should not all report the same underlying issue.
-- Keep diagnostics actionable and bounded. Include a compact sample when useful, but do not dump giant expressions or vague “bad style” messages.
-- If a rule needs many hardcoded exceptions, the rule is probably wrong. Improve the rule shape before touching product code.
+## Acceptable Patch Shape
 
-## Quality Workflow
-- For analyzer/rule work, read `references/quality-workflow.md`.
-- For style anchors from selected 2024 BMSX engine code, read `references/lean-history.md`.
-- For recurring bad patterns and preferred replacements, read `references/anti-patterns.md`.
-- For architecture, cart API, serialization, and runtime-performance rules distilled from `AGENTS.md`, read `references/project-rules.md`.
-- Rule exceptions are allowed only when the exception is real, local, and tagged with the exact rule name. Use rule-specific comments with a short reason, for example:
+Prefer these moves, in this order:
 
-```ts
-// empty_catch_pattern -- browser API cleanup is best-effort here
-try {
-    releaseExternalHandle();
-} catch {
-}
-```
+- delete dead or fake code;
+- inline one-use wrappers and aliases;
+- collapse duplicated state predicates into one named lifecycle query or state
+  transition owned by the state owner;
+- move code directly to the data owner;
+- replace defensive internal fallbacks with direct contract use or explicit
+  throws at impossible states;
+- move initialization to startup/setup/context-restore boundaries;
+- fix scanner logic so it reports the real construct precisely.
 
-Use region directives for scope-based analysis instead of hardcoded path exceptions:
+Adding a new helper is allowed only when all are true:
 
-```ts
-// start hot-path -- caret/layout work runs during frame input/render
-// end hot-path
+- it names a real domain concept;
+- at least two non-trivial call sites use the same concept, or one call site is
+  too complex without the name;
+- it does not hide ownership behind a generic layer;
+- it does not allocate or dispatch in a hot path unless that cost already exists
+  and remains justified;
+- it makes the caller shorter and easier to read.
 
-// start ensure-acceptable -- explicit capacity helper, not lazy singleton ownership
-// end ensure-acceptable
+## Forbidden Patterns
 
-// start required-state editorDocumentState,editorViewState -- owned state roots in this module
-// end required-state
+Do not add:
 
-// start value-or-boundary -- manifest default is resolved at this boundary
-// end value-or-boundary
+- `if (!x) return`, optional chaining, `typeof fn === 'function'`, catch
+  fallbacks, or `?? null` around internal state that should exist by design;
+- `ensure*`, `initializeIfNeeded`, `getOrCreate`, or lazy singleton checks in
+  regular execution paths;
+- forwarding wrappers such as `getFoo() { return getBar(); }`, `uploadFoo(...)`
+  that only calls `updateFoo(...)`, or C++ thunks except unavoidable ABI/MMIO
+  callbacks marked locally;
+- service/provider/facade/host abstractions unless they are already the proven
+  domain owner and the patch removes indirection elsewhere;
+- temporary arrays, objects, closures, strings, regexes, or normalized copies in
+  CPU, VDP, scheduler, render, editor layout, or cart hot paths;
+- broad quality comments that silence a region because cleanup is hard.
 
-// start fallible-boundary -- external parser/browser API can fail and maps failure to UI state
-// end fallible-boundary
-```
+Valid fallible boundaries are external input, parsing, browser APIs, IO,
+network, feature detection, optional user config, and cart/user-authored input.
+Every other fallback is suspicious until proven otherwise.
 
-## Finish Line
-Run checks that match the touched area. Prefer these when relevant:
+## Architecture Rules
+
+- BMSX is a fantasy console with real console discipline. Cart-visible hardware
+  belongs behind memory maps, MMIO registers, machine devices, and cart-facing
+  helpers.
+- Host/platform/render/IDE conveniences must not become the hardware contract.
+- TS and C++ should express the same ownership unless language/runtime details
+  force a difference.
+- Performance is part of architecture. A cleaner diagram that slows a hot path
+  is not clean.
+- Do not solve boundary leaks with generic callback injection. Move discovery to
+  setup, then let the owner call concrete owned state directly.
+- Preserve direct backend/device writes in hot paths when that is the hardware
+  contract. CPU readback mirrors are for software paths, save-state/readback, or
+  explicit synchronization boundaries, not mandatory write-through ceremony.
+
+## Quality Scanner Rules
+
+Analyzer code is production code.
+
+- Never skip by function name, class name, file path, word list, usage count, or
+  "boundary-looking" spelling.
+- Use local, rule-specific comments or regions only for real exceptions owned by
+  the code site.
+- Adding suppressions is not a win. Treat each suppression as debt unless the
+  code is an unavoidable ABI/hardware boundary or a documented hot-path choice.
+- If a rule pushes code toward worse shape, fix the rule before product code.
+- Keep rules precise: parse tokens/ASTs, report the smallest useful construct,
+  and preserve semantic targets in fingerprints.
+- Do not create thin rule wrappers, export-only files, or generic
+  `pushIssue` forwarding files.
+
+For rule work, read `references/quality-workflow.md`.
+
+## Hot Paths
+
+Hot paths include CPU/program execution, scheduler, VDP/MMIO, render/blitter,
+audio frame work, editor text/layout, and cart update/draw loops.
+
+In hot paths:
+
+- mutation of existing buffers/state is preferred over abstraction;
+- repeated inline code may be correct when a helper would add dispatch,
+  allocation, or hide opcode/device state;
+- use scratch buffers/pools from `src/bmsx/common/` when temporary storage is
+  genuinely needed;
+- do not allocate arrays/objects/closures or repeatedly normalize strings;
+- mark intentional repeated sequences with the smallest local
+  `repeated-sequence-acceptable` region and a performance reason.
+
+## Cart Code
+
+- Cart code must not call `engine.*`; use cart-facing globals/helpers.
+- Keep cart-visible strings short. Repeated long prefixes in tags/events/effect
+  IDs/timeline IDs are forbidden.
+- Do not alias global constants into locals just to shorten access.
+- Serialization is part of feature design: decide what saves and what is
+  runtime-only before adding state.
+
+## Required Diff Audit
+
+Before finalizing, inspect the diff for:
+
+- `return;` added only to silence a rule;
+- `?? null`, optional chaining, `typeof`, `catch`, `fallback`, `ensure`,
+  `provider`, `service`, `host`, `descriptor`, `adapter`, `manager`;
+- new one-use locals/helpers;
+- new comments/suppressions without code simplification;
+- new allocations or string work in hot paths;
+- duplicated state checks still present under new names;
+- TS/C++ conceptual divergence.
+
+If the audit finds junk introduced by the patch, remove it before finalizing or
+report that the attempted slice is not viable.
+
+## Validation
+
+Run the narrowest meaningful checks, then broaden when the touched area is
+shared or runtime-visible.
+
+Common checks:
 
 ```bash
 npm run fix:indent -- <touched paths>
 npm run compile:engine
-npm run analyze:code-quality -- --root src/bmsx/machine
-npm run analyze:code-quality -- --root src/bmsx_cpp/machine
+npm run analyze:code-quality -- --root <touched root>
+npm run build:game -- pietious --force
+npm run build:platform:libretro-wsl
+npm run headless:game -- pietious
 git diff --check
 ```
 
-If a broad check is too expensive or noisy, run the narrowest meaningful root and state that scope clearly.
+Use `TMPDIR=/tmp` for `tsx` commands when the local environment needs it.
+
+## Reference Files
+
+Load only when relevant:
+
+- `references/quality-workflow.md` for analyzer/rule changes.
+- `references/anti-patterns.md` for smell examples and replacements.
+- `references/project-rules.md` for AGENTS-derived project rules.
+- `references/lean-history.md` for selected 2024 BMSX style anchors.
+
+## Final Response Discipline
+
+When reporting work, state:
+
+- the disease removed;
+- whether the patch deleted/collapsed more than it added;
+- any stop gate that blocked further cleanup;
+- the checks actually run.
+
+Do not call a slice done because the analyzer passes. Done means the touched
+code is simpler, more directly owned, and no slower on the relevant path.
