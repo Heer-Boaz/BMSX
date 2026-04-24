@@ -15,7 +15,6 @@
 #include "../../machine/runtime/runtime.h"
 #include "../../machine/runtime/save_state/codec.h"
 #include "../../machine/runtime/game/view_state.h"
-#include "../../core/host_frame.h"
 #if BMSX_ENABLE_GLES2
 #include "render/backend/gles2_backend.h"
 #include "render/post/crt_pipeline_gles2.h"
@@ -631,10 +630,8 @@ void LibretroPlatform::runFrame() {
 		clock->advanceFrame(1.0 / dt);
 	}
 
-	// Start engine if not running and not paused
-	if (!m_platform_paused && !m_engine->isRunning() &&
-		m_engine->state() == EngineState::Initialized) {
-		m_engine->start();
+	if (!m_platform_paused) {
+		m_engine->startLoadedRuntimeFrame(m_rom_loaded);
 	}
 
 	// Poll the platform hub before the runtime frame loop consumes and latches
@@ -643,7 +640,7 @@ void LibretroPlatform::runFrame() {
 
 	bool skipRender = m_frameskip_enabled && m_frameskip_next;
 	m_frameskip_next = false;
-	runRuntimeHostFrame(*m_engine, Runtime::instance(), *m_microtask_queue, dt, m_platform_paused, skipRender);
+	m_engine->runHostFrame(Runtime::instance(), *m_microtask_queue, dt, m_platform_paused, skipRender);
 }
 
 void LibretroPlatform::setPlatformPaused(bool paused) {
@@ -655,23 +652,7 @@ void LibretroPlatform::setPlatformPaused(bool paused) {
 	if (!m_engine) {
 		return;
 	}
-	if (paused) {
-		if (m_engine->isRunning()) {
-			m_engine->pause();
-		}
-		if (auto* sound = m_engine->soundMaster()) {
-			sound->pauseAll();
-		}
-	} else {
-		if (m_engine->state() == EngineState::Paused) {
-			m_engine->resume();
-		} else if (m_engine->state() == EngineState::Initialized && m_rom_loaded) {
-			m_engine->start();
-		}
-		if (auto* sound = m_engine->soundMaster()) {
-			sound->resume();
-		}
-	}
+	m_engine->setHostPaused(paused, m_rom_loaded);
 }
 
 void LibretroPlatform::pollInput() {

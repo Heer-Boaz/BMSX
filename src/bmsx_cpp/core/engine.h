@@ -9,7 +9,6 @@
 #define BMSX_ENGINE_CORE_H
 
 #include "primitives.h"
-#include "host_frame.h"
 #include "registry.h"
 #include "rompack/assets.h"
 #include "../platform.h"
@@ -48,14 +47,6 @@ class EngineCore {
 public:
 	friend class FrameLoopState;
 	friend class RenderPresentationState;
-	friend void runRuntimeHostFrame(
-		EngineCore& engine,
-		Runtime& runtime,
-		MicrotaskQueue& microtasks,
-		f64 deltaTime,
-		bool platformPaused,
-		bool skipRender
-	);
 
 	struct TickTiming {
 		f64 totalMs = 0.0;
@@ -91,6 +82,16 @@ public:
 	void pause();
 	void resume();
 	void stop();
+	bool acceptHostFrame(f64 deltaTime) const;
+	void startLoadedRuntimeFrame(bool romLoaded);
+	void setHostPaused(bool paused, bool romLoaded);
+	void runHostFrame(
+		Runtime& runtime,
+		MicrotaskQueue& microtasks,
+		f64 deltaTime,
+		bool platformPaused,
+		bool skipRender
+	);
 
 	// State accessors
 	EngineState state() const { return m_state; }

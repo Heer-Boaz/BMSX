@@ -289,6 +289,16 @@ Current evidence:
   frame folder contains the machine tick loop, while the host shell owns input
   polling, host timing counters, microtask flushing, asset edit flushing, and
   presentation.
+- The native host frame pump is now an `EngineCore::runHostFrame(...)`
+  operation, not a free function with friendship into engine internals.
+  Host-frame admission, host timing counters, runtime tick delta switching, and
+  tick-cost recording are owned by `EngineCore` instead of being patched from a
+  sidecar helper.
+- Libretro pause/resume and per-frame startup no longer duplicate
+  `Running`/`Paused`/`Initialized` predicates or reach through
+  `soundMaster()` to mirror audio state. The platform records its external
+  pause flag, then asks `EngineCore` to apply the host pause/start transition
+  against the loaded-ROM lifecycle.
 - The native IMGDEC device no longer includes `core/engine.h` or looks up
   `EngineCore::instance().platform()` when starting decode work. The machine
   construction path passes the concrete microtask queue into the device.

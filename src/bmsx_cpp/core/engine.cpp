@@ -140,31 +140,84 @@ void EngineCore::shutdown() {
 }
 
 void EngineCore::start() {
-	if (m_state == EngineState::Initialized || m_state == EngineState::Stopped) {
-		m_state = EngineState::Running;
-		Runtime::instance().frameScheduler.clearQueuedTime();
+	switch (m_state) {
+		case EngineState::Initialized:
+		case EngineState::Stopped:
+			m_state = EngineState::Running;
+			Runtime::instance().frameScheduler.clearQueuedTime();
+			break;
+		default:
+			break;
 	}
 }
 
 // start normalized-body-acceptable -- pause/resume deliberately mirror state-transition symmetry.
 void EngineCore::pause() {
-	if (m_state == EngineState::Running) {
-		m_state = EngineState::Paused;
-		Runtime::instance().screen.clearPresentation();
+	switch (m_state) {
+		case EngineState::Running:
+			m_state = EngineState::Paused;
+			Runtime::instance().screen.clearPresentation();
+			break;
+		default:
+			break;
 	}
 }
 
 void EngineCore::resume() {
-	if (m_state == EngineState::Paused) {
-		m_state = EngineState::Running;
-		Runtime::instance().frameScheduler.clearQueuedTime();
+	switch (m_state) {
+		case EngineState::Paused:
+			m_state = EngineState::Running;
+			Runtime::instance().frameScheduler.clearQueuedTime();
+			break;
+		default:
+			break;
 	}
 }
 // end normalized-body-acceptable
 
 void EngineCore::stop() {
-	if (m_state == EngineState::Running || m_state == EngineState::Paused) { // WHY?!?!?!?!?!?!?!?!?!?!
-		m_state = EngineState::Stopped;
+	switch (m_state) {
+		case EngineState::Running:
+		case EngineState::Paused:
+			m_state = EngineState::Stopped;
+			break;
+		default:
+			break;
+	}
+}
+
+bool EngineCore::acceptHostFrame(f64 deltaTime) const {
+	switch (m_state) {
+		case EngineState::Running:
+		case EngineState::Paused:
+			return deltaTime > 0.0;
+		default:
+			return false;
+	}
+}
+
+void EngineCore::startLoadedRuntimeFrame(bool romLoaded) {
+	if (romLoaded && m_state == EngineState::Initialized) {
+		start();
+	}
+}
+
+void EngineCore::setHostPaused(bool paused, bool romLoaded) {
+	if (paused) {
+		pause();
+		if (m_sound_master) {
+			m_sound_master->pauseAll();
+		}
+		return;
+	}
+
+	if (m_state == EngineState::Paused) {
+		resume();
+	} else {
+		startLoadedRuntimeFrame(romLoaded);
+	}
+	if (m_sound_master) {
+		m_sound_master->resume();
 	}
 }
 
