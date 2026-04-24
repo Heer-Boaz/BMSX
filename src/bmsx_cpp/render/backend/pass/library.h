@@ -8,6 +8,7 @@
 #define BMSX_RENDERPASSLIB_H
 
 #include "../backend.h"
+#include "../../lighting/system.h"
 #include "../../shared/submissions.h"
 #include <string>
 #include <vector>
@@ -21,9 +22,7 @@
 
 namespace bmsx {
 
-// Forward declarations
 class GameView;
-class LightingSystem;
 class RenderGraphRuntime;
 class RenderGraphContext;
 
@@ -100,13 +99,7 @@ struct FrameSharedState {
 		std::array<f32, 16> proj;
 	} view;
 
-	// Lighting state
-	struct {
-		struct {
-			std::array<f32, 3> color;
-			f32 intensity;
-		} ambient;
-	} lighting;
+	LightingFrameState lighting;
 
 	// Fog state
 	struct {
@@ -269,7 +262,7 @@ public:
 	RenderPassToken createPassToken(const std::string& id, bool initialEnabled = true);
 
 	// Build render graph from current pass registry
-	std::unique_ptr<RenderGraphRuntime> buildRenderGraph(GameView* view, LightingSystem* lightingSystem);
+	std::unique_ptr<RenderGraphRuntime> buildRenderGraph(GameView* view, LightingSystem& lightingSystem);
 
 	// Resource validation
 	void validatePassResources(const std::string& passId);

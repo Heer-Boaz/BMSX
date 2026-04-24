@@ -1,19 +1,11 @@
 import type { GameView } from '../gameview';
 import type { VDP } from '../../machine/devices/vdp/vdp';
+import type { Memory } from '../../machine/memory/memory';
+import { commitVdpSkyboxViewState } from './skybox';
 
-export function commitVdpViewSnapshot(view: GameView, vdp: VDP): void {
-	const skyboxRenderReady = vdp.committedViewSkyboxRenderReady;
+export function commitVdpViewSnapshot(view: GameView, vdp: VDP, memory: Memory): void {
 	view.dither_type = vdp.committedViewDitherType;
 	view.primaryAtlasIdInSlot = vdp.committedViewPrimaryAtlasIdInSlot;
 	view.secondaryAtlasIdInSlot = vdp.committedViewSecondaryAtlasIdInSlot;
-	view.skyboxFaceIds = vdp.committedViewSkyboxFaceIds;
-	if (skyboxRenderReady) {
-		view.skyboxFaceUvRects = vdp.committedViewSkyboxFaceUvRects;
-		view.skyboxFaceAtlasBindings = vdp.committedViewSkyboxFaceAtlasBindings;
-		view.skyboxFaceSizes = vdp.committedViewSkyboxFaceSizes;
-	} else {
-		view.skyboxFaceUvRects = null;
-		view.skyboxFaceAtlasBindings = null;
-		view.skyboxFaceSizes = null;
-	}
+	commitVdpSkyboxViewState(view, vdp, memory);
 }

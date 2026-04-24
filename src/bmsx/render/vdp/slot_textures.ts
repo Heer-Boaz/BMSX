@@ -1,12 +1,10 @@
-import { $ } from '../../core/engine';
-import type { VDP, VdpRenderTextureSlot } from '../../machine/devices/vdp/vdp';
-import { ENGINE_ATLAS_TEXTURE_KEY, FRAMEBUFFER_RENDER_TEXTURE_KEY } from '../../rompack/format';
+import type { VDP, VdpSurfaceUploadSlot } from '../../machine/devices/vdp/vdp';
 import {
 	ensureVdpTextureFromSeed,
 	resizeVdpTextureForKey,
 	updateVdpTextureRegion,
-	vdpTextureByUri,
 } from './texture_transfer';
+import { getVdpRenderSurfaceTexture, isVdpFrameBufferSurface, resolveVdpRenderSurface } from './surfaces';
 
 const EMPTY_TEXTURE_SEED = new Uint8Array(4);
 const syncedTextureSizesByKey = new Map<string, number>();
@@ -15,54 +13,50 @@ function packTextureSize(width: number, height: number): number {
 	return width * 0x10000 + height;
 }
 
-function ensureVdpSlotTexture(slot: VdpRenderTextureSlot): boolean {
-	const width = slot.entry.regionW;
-	const height = slot.entry.regionH;
+function ensureVdpSlotTexture(vdp: VDP, slot: VdpSurfaceUploadSlot): boolean {
+	const surface = resolveVdpRenderSurface(vdp, slot.surfaceId);
+	const textureKey = surface.textureKey;
+	const width = slot.surfaceWidth;
+	const height = slot.surfaceHeight;
 	const packedSize = packTextureSize(width, height);
-	const syncedSize = syncedTextureSizesByKey.get(slot.textureKey);
-	if (slot.textureKey === ENGINE_ATLAS_TEXTURE_KEY) {
-		if (!vdpTextureByUri(slot.textureKey) || syncedSize !== packedSize) {
-			$.view.loadEngineAtlasTexture();
-			syncedTextureSizesByKey.set(slot.textureKey, packedSize);
-		}
-		return false;
-	}
-	const handle = vdpTextureByUri(slot.textureKey);
+	const syncedSize = syncedTextureSizesByKey.get(textureKey);
+	const handle = getVdpRenderSurfaceTexture(vdp, slot.surfaceId);
 	if (!handle) {
-		ensureVdpTextureFromSeed(slot.textureKey, EMPTY_TEXTURE_SEED, width, height);
-		syncedTextureSizesByKey.set(slot.textureKey, packedSize);
+		ensureVdpTextureFromSeed(textureKey, EMPTY_TEXTURE_SEED, width, height);
+		syncedTextureSizesByKey.set(textureKey, packedSize);
 		return true;
 	}
 	if (syncedSize === packedSize) {
 		return false;
 	}
-	resizeVdpTextureForKey(slot.textureKey, width, height);
-	syncedTextureSizesByKey.set(slot.textureKey, packedSize);
+	resizeVdpTextureForKey(textureKey, width, height);
+	syncedTextureSizesByKey.set(textureKey, packedSize);
 	return true;
 }
 
 export function syncVdpSlotTextures(vdp: VDP): void {
-	const slots = vdp.renderTextureSlots;
+	const slots = vdp.surfaceUploadSlots;
 	for (let index = 0; index < slots.length; index += 1) {
 		const slot = slots[index];
-		if (slot.textureKey === FRAMEBUFFER_RENDER_TEXTURE_KEY) {
+		if (isVdpFrameBufferSurface(slot.surfaceId)) {
 			continue;
 		}
-		const forceFullUpload = ensureVdpSlotTexture(slot);
+		const surface = resolveVdpRenderSurface(vdp, slot.surfaceId);
+		const forceFullUpload = ensureVdpSlotTexture(vdp, slot);
 		if (!forceFullUpload && slot.dirtyRowStart >= slot.dirtyRowEnd) {
 			continue;
 		}
 		const rowStart = forceFullUpload ? 0 : slot.dirtyRowStart;
-		const rowEnd = forceFullUpload ? slot.entry.regionH : slot.dirtyRowEnd;
-		const rowBytes = slot.entry.regionW * 4;
+		const rowEnd = forceFullUpload ? slot.surfaceHeight : slot.dirtyRowEnd;
+		const rowBytes = slot.surfaceWidth * 4;
 		updateVdpTextureRegion(
-			slot.textureKey,
+			surface.textureKey,
 			slot.cpuReadback.subarray(rowStart * rowBytes, rowEnd * rowBytes),
-			slot.entry.regionW,
+			slot.surfaceWidth,
 			rowEnd - rowStart,
 			0,
 			rowStart
 		);
-		vdp.clearRenderTextureSlotDirty(slot.textureKey);
+		vdp.clearSurfaceUploadDirty(slot.surfaceId);
 	}
 }

@@ -1,8 +1,8 @@
 /*
- * binencoder.h - Binary encoder/decoder for ROM assets
+ * binencoder.h - Binary encoder/decoder
  *
- * Shared ROM metadata binary format.
- * Used for decoding ROM metadata blobs.
+ * Shared binary format used for ROM metadata and runtime-owned byte payloads
+ * such as save states.
  */
 
 #ifndef BMSX_BINENCODER_H
@@ -135,8 +135,6 @@ private:
 	u8 readU8();
 	u32 readVarUint();
 	i64 readVarInt();
-	template<typename T>
-	T readScalar(const char* typeName);
 	f32 readF32();
 	f64 readF64();
 	std::string readString();
@@ -152,6 +150,19 @@ private:
 	std::vector<std::string> m_ownedPropNames;
 	const std::vector<std::string>* m_propNames = &m_ownedPropNames;
 };
+
+/* ============================================================================
+ * Binary encoder
+ * ============================================================================ */
+
+struct BinEncodeOptions {
+	bool sortProps = true;
+	size_t capacityHint = 0;
+};
+
+std::vector<std::string> buildBinaryPropTable(const std::vector<BinValue>& values, bool sortProps = true);
+std::vector<u8> encodeBinaryWithPropTable(const BinValue& value, const std::vector<std::string>& propNames, size_t capacityHint = 0);
+std::vector<u8> encodeBinary(const BinValue& value, const BinEncodeOptions& options = {});
 
 /* ============================================================================
  * Convenience functions

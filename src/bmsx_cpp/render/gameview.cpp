@@ -10,6 +10,7 @@
 #endif
 #include "backend/pass/library.h"
 #include "graph/graph.h"
+#include "lighting/system.h"
 #include "core/engine.h"
 #include "rompack/format.h"
 #include "texture_manager.h"
@@ -177,21 +178,6 @@ void GameView::initializeDefaultTextures() {
 	textures["_default_mr"] = m_backend->createSolidTexture2D(1, 1, {1.0f, 1.0f, 1.0f, 1.0f});
 }
 
-void GameView::loadEngineAtlasTexture() {
-	if (!m_backend) {
-		throw BMSX_RUNTIME_ERROR("[GameView] loadEngineAtlasTexture called before backend was configured.");
-	}
-	auto* texmanager = EngineCore::instance().texmanager();
-	if (!texmanager) {
-		throw BMSX_RUNTIME_ERROR("[GameView] TextureManager not configured.");
-	}
-	TextureHandle handle = texmanager->getTextureByUri(ENGINE_ATLAS_TEXTURE_KEY);
-	if (!handle) {
-		throw BMSX_RUNTIME_ERROR("[GameView] Engine atlas not uploaded.");
-	}
-	textures[ENGINE_ATLAS_TEXTURE_KEY] = handle;
-}
-
 void GameView::beginFrame() {
 	if (!m_backend) return;
 	m_activeTexUnit = -1;
@@ -339,8 +325,11 @@ void GameView::rebuildGraph() {
 		// No pipeline registry yet - this is OK during early init
 		return;
 	}
+	if (!m_lightingSystem) {
+		m_lightingSystem = std::make_unique<LightingSystem>();
+	}
 	resetPresentationHistory();
-	m_renderGraph = m_pipelineRegistry->buildRenderGraph(this, nullptr);
+	m_renderGraph = m_pipelineRegistry->buildRenderGraph(this, *m_lightingSystem);
 }
 
 namespace {

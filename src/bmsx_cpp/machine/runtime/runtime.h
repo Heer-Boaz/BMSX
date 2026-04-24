@@ -14,13 +14,15 @@
 #include "machine/runtime/timing/index.h"
 #include "machine/runtime/vblank.h"
 #include "machine/runtime/cpu_executor.h"
+#include "machine/runtime/cpu_state.h"
 #include "machine/runtime/cart_boot.h"
+#include "machine/runtime/save_state.h"
+#include "machine/runtime/resume_snapshot.h"
 #include "machine/program/scratch.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/frame/loop.h"
 #include "machine/scheduler/frame.h"
 #include "machine/devices/vdp/vdp.h"
-#include "render/gameview.h"
 #include "render/shared/submissions.h"
 #include "core/primitives.h"
 #include <memory>
@@ -38,17 +40,11 @@ namespace bmsx {
 class Api;
 struct ProgramAsset;
 class RuntimeAssets;
+struct MachineManifest;
+struct CartManifest;
 class ResourceUsageDetector;
 
 constexpr int DEFAULT_CYCLE_BUDGET = 1'000'000;
-
-/**
- * Viewport size configuration.
- */
-struct Viewport {
-	int x = 0;
-	int y = 0;
-};
 
 /**
  * Runtime options for initialization.
@@ -56,6 +52,10 @@ struct Viewport {
 struct RuntimeOptions {
 	int playerIndex = 0;
 	Viewport viewport{0, 0};
+	RuntimeAssets* systemAssets = nullptr;
+	RuntimeAssets* activeAssets = nullptr;
+	RuntimeAssets* cartAssets = nullptr;
+	const MachineManifest* machineManifest = nullptr;
 	i64 ufpsScaled = DEFAULT_UFPS_SCALED;
 	i64 cpuHz = 0;
 	int cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
@@ -65,22 +65,11 @@ struct RuntimeOptions {
 };
 
 /**
- * Runtime state snapshot for save/load.
- */
-struct RuntimeState {
-	MachineState machine;
-	std::vector<std::pair<Value, Value>> globals; // key-value pairs
-	std::string cartDataNamespace;
-	std::vector<double> persistentData;
-	uint32_t randomSeed = 0;
-	bool pendingEntryCall = false;
-	int cyclesIntoFrame = 0;
-};
-
-/**
- * Runtime owns the live machine, Lua API bindings, and save/load state.
- * Timing, CPU execution, frame scheduling, cart boot, and asset-memory
- * responsibilities live in their runtime submodules.
+ * Runtime owns the live machine, Lua API bindings, hot-resume snapshot state,
+ * and full runtime save-state boundaries. Platform byte serialization is a
+ * separate layer above those runtime-owned contracts. Timing, CPU execution,
+ * frame scheduling, cart boot, and asset-memory responsibilities live in
+ * their runtime submodules.
  */
 class Runtime {
 public:
@@ -88,6 +77,12 @@ public:
 	friend class FrameSchedulerState;
 	friend class VblankState;
 	friend class CartBootState;
+	friend RuntimeSaveState captureRuntimeSaveState(const Runtime& runtime);
+	friend void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state);
+	friend RuntimeResumeSnapshot captureRuntimeResumeSnapshot(const Runtime& runtime);
+	friend void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& state);
+	friend CpuRuntimeState captureRuntimeCpuState(const Runtime& runtime);
+	friend void applyRuntimeCpuState(Runtime& runtime, const CpuRuntimeState& state);
 
 	enum class ProgramSource {
 		Engine,
@@ -130,16 +125,6 @@ public:
 	void requestProgramReload();
 
 	/**
-	 * Capture current runtime state for save.
-	 */
-	RuntimeState captureCurrentState() const;
-
-	/**
-	 * Restore runtime state from snapshot.
-	 */
-	void applyState(const RuntimeState& state);
-
-	/**
 	 * Check if the runtime is initialized.
 	 */
 	bool isInitialized() const { return m_luaInitialized; }
@@ -166,6 +151,19 @@ public:
 	 * Get the viewport size.
 	 */
 	const Viewport& viewport() const { return m_viewport; }
+	GameViewState& gameViewState() { return m_gameViewState; }
+	const GameViewState& gameViewState() const { return m_gameViewState; }
+	RuntimeAssets& systemAssets() { return *m_systemAssets; }
+	const RuntimeAssets& systemAssets() const { return *m_systemAssets; }
+	RuntimeAssets& activeAssets() { return *m_activeAssets; }
+	const RuntimeAssets& activeAssets() const { return *m_activeAssets; }
+	RuntimeAssets* cartAssets() { return m_cartAssets; }
+	const RuntimeAssets* cartAssets() const { return m_cartAssets; }
+	const MachineManifest& machineManifest() const { return *m_machineManifest; }
+	const CartManifest* cartManifest() const;
+	const std::string* cartEntryPath() const;
+	const std::string* cartProjectRootPath() const;
+	void setRuntimeEnvironment(RuntimeAssets& systemAssets, RuntimeAssets& activeAssets, const MachineManifest& machineManifest, RuntimeAssets* cartAssets);
 
 	Machine& machine() { return m_machine; }
 	const Machine& machine() const { return m_machine; }
@@ -239,6 +237,11 @@ private:
 
 	static Runtime* s_instance;
 
+	RuntimeAssets* m_systemAssets = nullptr;
+	RuntimeAssets* m_activeAssets = nullptr;
+	RuntimeAssets* m_cartAssets = nullptr;
+	const MachineManifest* m_machineManifest = nullptr;
+
 		// Runtime core
 		std::unique_ptr<Api> m_api;
 		Machine m_machine;
@@ -247,6 +250,7 @@ private:
 
 	// Configuration
 	Viewport m_viewport{0, 0};
+	GameViewState m_gameViewState;
 	ProgramSource m_programSource = ProgramSource::Cart;
 
 	// State flags

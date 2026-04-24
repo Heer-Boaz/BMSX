@@ -2,7 +2,6 @@
 
 #include "machine/cpu/disassembler.h"
 #include "machine/cpu/source_text.h"
-#include "core/engine.h"
 
 #include <cctype>
 #include <iostream>
@@ -302,7 +301,7 @@ void Runtime::logDebugState() const {
 	if (instruction.sourceRange.has_value()) {
 		const SourceRange& range = *instruction.sourceRange;
 		std::string sourceLine = range.path + ":" + std::to_string(range.startLine) + ":" + std::to_string(range.startColumn);
-		const RuntimeAssets& assets = EngineCore::instance().assets();
+		const RuntimeAssets& assets = activeAssets();
 		if (const LuaSourceAsset* sourceAsset = findLuaSourceByPath(assets, range.path)) {
 			const std::string snippet = formatSourceSnippet(range, sourceAsset->source);
 			if (!snippet.empty()) {

@@ -9,6 +9,21 @@ export type TickCompletion = {
 	vdpFrameHeld: boolean;
 };
 
+export type FrameSchedulerStateSnapshot = {
+	accumulatedHostTimeMs: number;
+	queuedTickCompletions: TickCompletion[];
+	lastTickSequence: number;
+	lastTickBudgetGranted: number;
+	lastTickCpuBudgetGranted: number;
+	lastTickCpuUsedCycles: number;
+	lastTickBudgetRemaining: number;
+	lastTickVisualFrameCommitted: boolean;
+	lastTickVdpFrameCost: number;
+	lastTickVdpFrameHeld: boolean;
+	lastTickCompleted: boolean;
+	lastTickConsumedSequence: number;
+};
+
 type BudgetFrameState = {
 	cycleBudgetRemaining: number;
 	cycleBudgetGranted: number;
@@ -114,6 +129,76 @@ export class FrameSchedulerState {
 		this.lastTickVdpFrameHeld = false;
 		this.lastTickSequence = 0;
 		this.lastTickConsumedSequence = 0;
+	}
+
+	public captureState(): FrameSchedulerStateSnapshot {
+		const queuedTickCompletions = new Array<TickCompletion>(this.tickCompletionCount);
+		for (let index = 0; index < this.tickCompletionCount; index += 1) {
+			const slot = this.tickCompletionQueue[(this.tickCompletionReadIndex + index) % TICK_COMPLETION_QUEUE_CAPACITY]!;
+			queuedTickCompletions[index] = {
+				sequence: slot.sequence,
+				remaining: slot.remaining,
+				visualCommitted: slot.visualCommitted,
+				vdpFrameCost: slot.vdpFrameCost,
+				vdpFrameHeld: slot.vdpFrameHeld,
+			};
+		}
+		return {
+			accumulatedHostTimeMs: this.accumulatedHostTimeMs,
+			queuedTickCompletions,
+			lastTickSequence: this.lastTickSequence,
+			lastTickBudgetGranted: this.lastTickBudgetGranted,
+			lastTickCpuBudgetGranted: this.lastTickCpuBudgetGranted,
+			lastTickCpuUsedCycles: this.lastTickCpuUsedCycles,
+			lastTickBudgetRemaining: this.lastTickBudgetRemaining,
+			lastTickVisualFrameCommitted: this.lastTickVisualFrameCommitted,
+			lastTickVdpFrameCost: this.lastTickVdpFrameCost,
+			lastTickVdpFrameHeld: this.lastTickVdpFrameHeld,
+			lastTickCompleted: this.lastTickCompleted,
+			lastTickConsumedSequence: this.lastTickConsumedSequence,
+		};
+	}
+
+	public restoreState(state: FrameSchedulerStateSnapshot): void {
+		this.accumulatedHostTimeMs = state.accumulatedHostTimeMs;
+		this.lastTickSequence = state.lastTickSequence;
+		this.lastTickBudgetGranted = state.lastTickBudgetGranted;
+		this.lastTickCpuBudgetGranted = state.lastTickCpuBudgetGranted;
+		this.lastTickCpuUsedCycles = state.lastTickCpuUsedCycles;
+		this.lastTickBudgetRemaining = state.lastTickBudgetRemaining;
+		this.lastTickVisualFrameCommitted = state.lastTickVisualFrameCommitted;
+		this.lastTickVdpFrameCost = state.lastTickVdpFrameCost;
+		this.lastTickVdpFrameHeld = state.lastTickVdpFrameHeld;
+		this.lastTickCompleted = state.lastTickCompleted;
+		this.lastTickConsumedSequence = state.lastTickConsumedSequence;
+		this.tickCompletionReadIndex = 0;
+		this.tickCompletionWriteIndex = state.queuedTickCompletions.length % TICK_COMPLETION_QUEUE_CAPACITY;
+		this.tickCompletionCount = state.queuedTickCompletions.length;
+		for (let index = 0; index < TICK_COMPLETION_QUEUE_CAPACITY; index += 1) {
+			const slot = this.tickCompletionQueue[index]!;
+			if (index < state.queuedTickCompletions.length) {
+				const queued = state.queuedTickCompletions[index]!;
+				slot.sequence = queued.sequence;
+				slot.remaining = queued.remaining;
+				slot.visualCommitted = queued.visualCommitted;
+				slot.vdpFrameCost = queued.vdpFrameCost;
+				slot.vdpFrameHeld = queued.vdpFrameHeld;
+				continue;
+			}
+			slot.sequence = 0;
+			slot.remaining = 0;
+			slot.visualCommitted = true;
+			slot.vdpFrameCost = 0;
+			slot.vdpFrameHeld = false;
+		}
+		this.debugFrameReportAtMs = 0;
+		this.debugFrameCount = 0;
+		this.debugFrameCyclesUsedAcc = 0;
+		this.debugFrameRemainingAcc = 0;
+		this.debugFrameYieldsAcc = 0;
+		this.debugFrameGrantedAcc = 0;
+		this.debugFrameCarryAcc = 0;
+		this.debugTickYieldsBefore = 0;
 	}
 
 	public run(runtime: Runtime, hostDeltaMs: number): void {

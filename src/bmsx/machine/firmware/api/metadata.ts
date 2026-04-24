@@ -199,26 +199,6 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-	list_lua_resources: {
-		description: 'Lists Lua resources available to the runtime (engine + cart), including read-only flags.',
-		parameters: [],
-		returnType: 'table',
-		returnDescription: 'Array-like table of resource records: { path, type, asset_id?, readOnly? }.',
-	},
-	get_lua_entry_path: {
-		description: 'Returns the Lua entry path for the active registry (engine or cart).',
-		parameters: [],
-		returnType: 'string',
-		returnDescription: 'Entry Lua path.',
-	},
-	get_lua_resource_source: {
-		description: 'Returns the current source for a Lua resource, including workspace overrides.',
-		parameters: [
-			{ name: 'path', description: 'Lua resource path to read.' },
-		],
-		returnType: 'string',
-		returnDescription: 'Lua source text.',
-	},
 	list_builtins: {
 		description: 'Returns the list of builtin Lua identifiers used by the runtime.',
 		parameters: [],

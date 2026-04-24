@@ -8,23 +8,20 @@
 namespace bmsx {
 
 void restoreVdpContextState(VDP& vdp) {
-	const auto& frameBufferEntry = vdp.m_memory.getAssetEntry(FRAMEBUFFER_RENDER_TEXTURE_KEY);
-	vdp.restoreVramSlotTexture(frameBufferEntry, FRAMEBUFFER_RENDER_TEXTURE_KEY);
-	vdp.ensureDisplayFrameBufferTexture();
-	vdp.syncRenderFrameBufferToDisplayPage();
+	restoreVdpFrameBufferContext(vdp, vdp.m_vramSeedPixel.data());
 	syncVdpSlotTextures(vdp);
 }
 
 void captureVdpContextState(VDP& vdp) {
 	for (auto& slot : vdp.m_vramSlots) {
 		auto& entry = vdp.m_memory.getAssetEntry(slot.assetId);
-		if (slot.textureKey != FRAMEBUFFER_RENDER_TEXTURE_KEY) {
+		if (slot.surfaceId != VDP_RD_SURFACE_FRAMEBUFFER) {
 			slot.contextSnapshot = slot.cpuReadback;
 			continue;
 		}
 		const size_t bytes = static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u;
 		slot.contextSnapshot.resize(bytes);
-		readVdpRenderFrameBufferTextureRegion(
+		readVdpFrameBufferPixels(
 			slot.contextSnapshot.data(),
 			static_cast<i32>(entry.regionW),
 			static_cast<i32>(entry.regionH),

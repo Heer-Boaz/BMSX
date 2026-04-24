@@ -23,8 +23,8 @@ import type {
 	MeshRenderSubmission,
 	ParticleRenderSubmission,
 	GlyphRenderSubmission,
-	SkyboxImageIds,
 } from './shared/submissions';
+import type { SkyboxImageIds } from '../machine/devices/vdp/contracts';
 import {
 	ATLAS_PRIMARY_SLOT_ID,
 	ATLAS_SECONDARY_SLOT_ID,
@@ -524,14 +524,6 @@ export class GameView implements RenderContext {
 		this.textures['_default_normal'] = this.backend.createSolidTexture2D(1, 1, [0.5, 0.5, 1.0, 1.0]);
 		// Metallic/Roughness default: neutral (mr.g=1 keeps roughnessFactor, mr.b=1 keeps metallicFactor)
 		this.textures['_default_mr'] = this.backend.createSolidTexture2D(1, 1, [1.0, 1.0, 1.0, 1.0]);
-	}
-
-	public loadEngineAtlasTexture(): void {
-		const engineAtlasTexture = $.texmanager.getTextureByUri(ENGINE_ATLAS_TEXTURE_KEY);
-		if (!engineAtlasTexture) {
-			throw new Error(`[GameView] Engine atlas '${ENGINE_ATLAS_TEXTURE_KEY}' not uploaded.`);
-		}
-		this.textures[ENGINE_ATLAS_TEXTURE_KEY] = engineAtlasTexture;
 	}
 
 	// (single handleResize implementation above in the class)

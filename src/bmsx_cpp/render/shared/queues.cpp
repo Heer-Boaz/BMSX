@@ -6,6 +6,8 @@
 
 #include "queues.h"
 #include "glyphs.h"
+#include "hardware/camera.h"
+#include "hardware/lighting.h"
 #include "rompack/assets.h"
 #include "core/font.h"
 #include "../../machine/runtime/runtime.h"
@@ -146,6 +148,10 @@ void clearBackQueues() {
 	s_meshQueue.clearBack();
 	s_particleQueue.clearBack();
 	s_activeQueueSource = QueueSource::Front;
+}
+
+void resetTransientState() {
+	clearBackQueues();
 }
 
 void clearAllQueues() {

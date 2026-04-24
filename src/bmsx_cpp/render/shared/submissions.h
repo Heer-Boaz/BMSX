@@ -8,6 +8,7 @@
 #define BMSX_RENDER_TYPES_H
 
 #include "core/primitives.h"
+#include "machine/devices/vdp/contracts.h"
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -51,12 +52,6 @@ enum class RenderLayer {
 	World,  // Main game world
 	UI,     // User interface overlay
 	IDE     // Editor/debug overlay
-};
-
-enum class Layer2D : u8 {
-	World = 0,
-	UI = 1,
-	IDE = 2,
 };
 
 inline Layer2D renderLayerTo2dLayer(RenderLayer layer) {
@@ -186,17 +181,6 @@ struct TextureParams {
 	bool srgb = true;
 	// Wrap modes, filters, etc.
 };
-
-struct SkyboxImageIds {
-	std::string posx;
-	std::string negx;
-	std::string posy;
-	std::string negy;
-	std::string posz;
-	std::string negz;
-};
-
-constexpr size_t SKYBOX_FACE_COUNT = 6;
 
 } // namespace bmsx
 

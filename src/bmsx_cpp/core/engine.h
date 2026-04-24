@@ -24,6 +24,7 @@ class TextureManager;
 class Runtime;
 struct ProgramAsset;
 struct ProgramMetadata;
+void runRuntimeHostFrame(Runtime& runtime, f64 deltaTime, bool platformPaused, bool skipRender);
 
 /* ============================================================================
  * Engine state
@@ -45,6 +46,7 @@ class EngineCore {
 public:
 	friend class FrameLoopState;
 	friend class RenderPresentationState;
+	friend void runRuntimeHostFrame(Runtime& runtime, f64 deltaTime, bool platformPaused, bool skipRender);
 
 	struct TickTiming {
 		f64 totalMs = 0.0;

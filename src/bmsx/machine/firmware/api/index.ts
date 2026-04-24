@@ -11,13 +11,9 @@ import type { vec3arr } from '../../../rompack/format';
 import { taskGate, GateGroup } from '../../../core/taskgate';
 import { Runtime } from '../../runtime/runtime';
 import { applyActiveMachineTiming } from '../../runtime/timing/config';
-import * as luaPipeline from '../../../ide/runtime/lua_pipeline';
 import { setHardwareCamera } from '../../../render/shared/hardware/camera';
 import { putHardwareAmbientLight, putHardwareDirectionalLight, putHardwarePointLight } from '../../../render/shared/hardware/lighting';
-import { setSpriteParallaxRig } from '../../../render/shared/queues';
-import { listResources } from '../../../ide/workspace/workspace';
-import { getWorkspaceCachedSource } from '../../../ide/workspace/cache';
-import { buildDirtyFilePath, hasWorkspaceStorage } from '../../../ide/workbench/workspace/io';
+import { setSpriteParallaxRig, submitMesh, submit_particle } from '../../../render/shared/queues';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../builtin_descriptors';
 import { createLuaTable, type LuaTable } from '../../../lua/value';
 import { BmsxColors } from '../../devices/vdp/vdp';
@@ -128,11 +124,11 @@ export class Api {
 	}
 
 	public display_width(): number {
-		return $.view.viewportSize.x;
+		return this.runtime.gameViewState.viewportSize.x;
 	}
 
 	public display_height(): number {
-		return $.view.viewportSize.y;
+		return this.runtime.gameViewState.viewportSize.y;
 	}
 
 	public put_mesh(mesh: MeshRenderSubmission['mesh'], matrix: MeshRenderSubmission['matrix'], options?: Omit<MeshRenderSubmission, 'mesh' | 'matrix'>): void {
@@ -143,7 +139,7 @@ export class Api {
 			morph_weights: options?.morph_weights,
 			receive_shadow: options?.receive_shadow !== false,
 		};
-		$.view.renderer.submit.mesh(submission);
+		submitMesh(submission);
 	}
 
 	public put_particle(position: vec3arr, size: number, colorvalue: number | color, options?: Omit<ParticleRenderSubmission, 'position' | 'size' | 'color'>): void {
@@ -158,7 +154,7 @@ export class Api {
 			ambient_mode: options.ambient_mode,
 			ambient_factor: options.ambient_factor,
 		};
-		$.view.renderer.submit.particle(submission);
+		submit_particle(submission);
 	}
 
 	public set_camera(view: Float32Array | number[], proj: Float32Array | number[], eye: vec3arr | number[]): void {
@@ -227,47 +223,6 @@ export class Api {
 
 	public cartdata(namespace: string): void {
 		this.storage.setNamespace(namespace);
-	}
-
-	public list_lua_resources(): LuaTable {
-		const descriptors = listResources();
-		const table = createLuaTable();
-		for (let index = 0; index < descriptors.length; index += 1) {
-			table.set(index + 1, this._runtime.luaJsBridge.toLua(descriptors[index]));
-		}
-		return table;
-	}
-
-	public get_lua_entry_path(): string {
-		const registry = luaPipeline.listLuaSourceRegistries(this._runtime)[0].registry;
-		const record = registry.path2lua[registry.entry_path];
-		const value = record ? record.source_path : registry.entry_path;
-		if (typeof value !== 'string') {
-			throw new Error(`[api.get_lua_entry_path] Expected string entry path, got ${Object.prototype.toString.call(value)}.`);
-		}
-		return value;
-	}
-
-	public get_lua_resource_source(path: string): string {
-		const record = luaPipeline.resolveLuaSourceRecord(this._runtime, path);
-		if (!record) {
-			const registries = luaPipeline.listLuaSourceRegistries(this._runtime);
-			const available = registries.flatMap(entry => Object.keys(entry.registry.path2lua)).slice(0, 16);
-			throw new Error(`[api.get_lua_resource_source] Missing Lua resource for path '${path}'. Available: ${available.join(', ')}`);
-		}
-		const sourcePath = record.source_path;
-		const dirtyPath = hasWorkspaceStorage() ? buildDirtyFilePath(sourcePath) : null;
-		const cached = getWorkspaceCachedSource(sourcePath);
-		if (cached !== null && cached !== undefined) {
-			return cached;
-		}
-		if (dirtyPath) {
-			const dirtyCached = getWorkspaceCachedSource(dirtyPath);
-			if (dirtyCached !== null && dirtyCached !== undefined) {
-				return dirtyCached;
-			}
-		}
-		return record.src;
 	}
 
 	public get_cpu_freq_hz(): number {

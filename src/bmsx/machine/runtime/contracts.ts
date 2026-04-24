@@ -1,8 +1,12 @@
 import type { LuaFunctionValue } from '../../lua/value';
-import type { asset_id, Viewport } from '../../rompack/format';
-import type { MachineState } from '../machine';
+import type { CartManifest, MachineManifest, asset_id, Viewport } from '../../rompack/format';
+import type { MachineSaveState, MachineState } from '../machine';
 import type { Memory } from '../memory/memory';
 import type { LuaEntrySnapshot } from '../firmware/js_bridge';
+import type { RuntimeStorageState } from '../firmware/cart_storage';
+import type { FrameSchedulerStateSnapshot } from '../scheduler/frame';
+import type { CpuRuntimeState } from '../cpu/cpu';
+import type { SpriteParallaxRig } from '../../render/shared/submissions';
 
 export type { LuaEntrySnapshot };
 
@@ -109,6 +113,9 @@ export type RuntimeOptions = {
 	playerIndex: number;
 	viewport: Viewport;
 	memory: Memory;
+	activeMachineManifest: MachineManifest;
+	cartManifest: CartManifest | null;
+	cartProjectRootPath: string | null;
 	ufpsScaled: number;
 	cpuHz: number;
 	cycleBudgetPerFrame: number;
@@ -117,16 +124,96 @@ export type RuntimeOptions = {
 	geoWorkUnitsPerSec?: number;
 };
 
-export type RuntimeState = {
+export type GameViewState = {
+	viewportSize: {
+		x: number;
+		y: number;
+	};
+	crt_postprocessing_enabled: boolean;
+	enable_noise: boolean;
+	enable_colorbleed: boolean;
+	enable_scanlines: boolean;
+	enable_blur: boolean;
+	enable_glow: boolean;
+	enable_fringing: boolean;
+	enable_aperture: boolean;
+};
+
+export type RuntimeRenderCameraState = {
+	view: number[];
+	proj: number[];
+	eye: [number, number, number];
+};
+
+export type RuntimeAmbientLightState = {
+	id: string;
+	color: [number, number, number];
+	intensity: number;
+};
+
+export type RuntimeDirectionalLightState = {
+	id: string;
+	color: [number, number, number];
+	intensity: number;
+	orientation: [number, number, number];
+};
+
+export type RuntimePointLightState = {
+	id: string;
+	color: [number, number, number];
+	intensity: number;
+	pos: [number, number, number];
+	range: number;
+};
+
+export type RuntimeRenderState = {
+	camera: RuntimeRenderCameraState | null;
+	ambientLights: RuntimeAmbientLightState[];
+	directionalLights: RuntimeDirectionalLightState[];
+	pointLights: RuntimePointLightState[];
+	spriteParallaxRig: SpriteParallaxRig;
+};
+
+export type RuntimeMachineState = {
+	machine: MachineState;
+	frameScheduler: FrameSchedulerStateSnapshot;
+	vblank: {
+		cyclesIntoFrame: number;
+	};
+};
+
+export type RuntimeSaveMachineState = {
+	machine: MachineSaveState;
+	frameScheduler: FrameSchedulerStateSnapshot;
+	vblank: {
+		cyclesIntoFrame: number;
+	};
+};
+
+export type RuntimeResumeSnapshot = {
 	luaRuntimeFailed: boolean;
 	luaPath: string;
-	storage?: { namespace: string; entries: Array<{ index: number; value: number; }>; };
+	storageState: RuntimeStorageState;
 	luaGlobals?: LuaEntrySnapshot;
 	luaLocals?: LuaEntrySnapshot;
 	luaRandomSeed?: number;
 	luaProgramCounter?: number;
-	machine: MachineState;
-	cyclesIntoFrame: number;
+	gameViewState: GameViewState;
+	renderState: RuntimeRenderState;
+	machineState: RuntimeMachineState;
+};
+
+export type RuntimeSaveState = {
+	storageState: RuntimeStorageState;
+	machineState: RuntimeSaveMachineState;
+	cpuState: CpuRuntimeState;
+	gameViewState: GameViewState;
+	renderState: RuntimeRenderState;
+	engineProgramActive: boolean;
+	luaInitialized: boolean;
+	luaRuntimeFailed: boolean;
+	randomSeed: number;
+	pendingEntryCall: boolean;
 };
 
 export type LuaMarshalContext = {

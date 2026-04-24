@@ -246,9 +246,11 @@ import { isStringValue, stringValueToString } from '../memory/string/pool';
 import type { StringValue } from '../memory/string/pool';
 import type { LuaMarshalContext } from '../runtime/contracts';
 import type { Runtime } from '../runtime/runtime';
+import { createRuntimeGameTable } from '../runtime/game/table';
 import * as luaPipeline from '../../ide/runtime/lua_pipeline';
 import { callClosureInto } from '../program/executor';
 import { compileLoadChunk } from '../program/load_compiler';
+import { createRuntimeDevtoolsTable } from './devtools';
 
 const ACTION_STATE_FLAG_PRESSED = 1 << 0;
 const ACTION_STATE_FLAG_JUSTPRESSED = 1 << 1;
@@ -1000,21 +1002,18 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			} finally {
 				runtime.luaScratch.releaseTableMarshal(visited);
 			}
-		};
+	};
 
 	const exposeObjects = (): void => {
-		const entries: Array<[string, object]> = [
-			['game', $],
-			['$', $],
-		];
-		for (const [name, object] of entries) {
-			luaPipeline.registerGlobal(runtime, name, getOrCreateNativeObject(runtime, object));
-		}
+		const gameTable = createRuntimeGameTable(runtime);
+		luaPipeline.registerGlobal(runtime, 'game', gameTable);
+		luaPipeline.registerGlobal(runtime, '$', gameTable);
+		luaPipeline.registerGlobal(runtime, 'devtools', createRuntimeDevtoolsTable(runtime));
 		luaPipeline.registerGlobal(runtime, 'assets', getOrCreateAssetsNativeObject(runtime));
-		const cartManifest = $.cart_manifest;
-		luaPipeline.registerGlobal(runtime, 'cart_manifest', cartManifest === null ? null : buildCartManifestTable(runtime, cartManifest, $.machine_manifest, cartManifest.lua.entry_path));
-		luaPipeline.registerGlobal(runtime, 'machine_manifest', buildMachineManifestTable(runtime, $.machine_manifest));
-		luaPipeline.registerGlobal(runtime, 'cart_project_root_path', $.cart_project_root_path === null ? null : runtime.internString($.cart_project_root_path));
+		const cartManifest = runtime.cartManifest;
+		luaPipeline.registerGlobal(runtime, 'cart_manifest', cartManifest === null ? null : buildCartManifestTable(runtime, cartManifest, cartManifest.machine, cartManifest.lua.entry_path));
+		luaPipeline.registerGlobal(runtime, 'machine_manifest', buildMachineManifestTable(runtime, runtime.activeMachineManifest));
+		luaPipeline.registerGlobal(runtime, 'cart_project_root_path', runtime.cartProjectRootPath === null ? null : runtime.internString(runtime.cartProjectRootPath));
 	};
 
 	const mathTable = new Table(0, 0);

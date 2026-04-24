@@ -1,6 +1,5 @@
 #include "machine/runtime/timing/config.h"
 
-#include "core/engine.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/runtime_fault.h"
 #include "rompack/assets.h"
@@ -71,7 +70,7 @@ void setTransferRatesFromManifest(Runtime& runtime, const RuntimeTransferRates& 
 }
 
 void applyActiveMachineTiming(Runtime& runtime, i64 cpuHz) {
-	const MachineManifest& manifest = EngineCore::instance().machineManifest();
+	const MachineManifest& manifest = runtime.machineManifest();
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, runtime.timing.ufpsScaled);
 	const i64 vblankCycles = resolveVblankCycles(cpuHz, runtime.timing.ufpsScaled, manifest.viewportHeight);
 	setFrameTiming(runtime, cpuHz, cycleBudget, static_cast<int>(vblankCycles));

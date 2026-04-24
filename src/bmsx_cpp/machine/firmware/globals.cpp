@@ -1669,7 +1669,7 @@ void Runtime::setupBuiltins() {
 		(void)args;
 		out.push_back(valueNumber(frameScheduler.lastTickVdpFrameHeld ? 1.0 : 0.0));
 	});
-	auto findRomAssetInfo = [](RuntimeAssets& assets, const std::string& assetId) -> const RomAssetInfo* {
+	auto findRomAssetInfo = [](const RuntimeAssets& assets, const std::string& assetId) -> const RomAssetInfo* {
 		if (const ImgAsset* image = assets.getImg(assetId)) {
 			return &image->rom;
 		}
@@ -1695,11 +1695,11 @@ void Runtime::setupBuiltins() {
 		}
 		return nullptr;
 	};
-	auto resolveRomAssetRange = [findRomAssetInfo](const std::string& assetId, bool includeSystem) -> std::tuple<uint32_t, uint32_t, uint32_t> {
-		EngineCore& engine = EngineCore::instance();
-		const RomAssetInfo* rom = findRomAssetInfo(engine.cartAssets(), assetId);
+	auto resolveRomAssetRange = [findRomAssetInfo, this](const std::string& assetId, bool includeSystem) -> std::tuple<uint32_t, uint32_t, uint32_t> {
+		const RuntimeAssets* runtimeCartAssets = cartAssets();
+		const RomAssetInfo* rom = runtimeCartAssets ? findRomAssetInfo(*runtimeCartAssets, assetId) : nullptr;
 		if (rom == nullptr && includeSystem) {
-			rom = findRomAssetInfo(engine.systemAssets(), assetId);
+			rom = findRomAssetInfo(systemAssets(), assetId);
 		}
 		if (rom == nullptr) {
 			throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' does not exist.");
@@ -3482,7 +3482,7 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 		out.push_back(valueNumber(0.0));
 	});
 
-	const RuntimeAssets& assets = EngineCore::instance().assets();
+	const RuntimeAssets& assets = activeAssets();
 	auto* assetsTable = cpu.createTable();
 	auto formatAssetKeyNumber = [](double value) -> std::string {
 		if (value == 0.0) {
@@ -3779,27 +3779,27 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 		manifestTable->set(key("lua"), valueTable(luaTable));
 		return manifestTable;
 	};
-	const CartManifest* cartManifest = EngineCore::instance().loadedCartManifest();
-	const std::string* cartEntryPath = EngineCore::instance().loadedCartEntryPath();
-	setGlobal("cart_manifest", cartManifest ? valueTable(buildCartManifestTable(*cartManifest, EngineCore::instance().cartAssets().machine, *cartEntryPath)) : valueNil());
-	setGlobal("machine_manifest", valueTable(buildMachineManifestTable(EngineCore::instance().machineManifest())));
-	const std::string* cartProjectRootPath = EngineCore::instance().cartProjectRootPath();
+	const CartManifest* cartManifest = this->cartManifest();
+	const std::string* cartEntryPath = this->cartEntryPath();
+	setGlobal("cart_manifest", cartManifest ? valueTable(buildCartManifestTable(*cartManifest, machineManifest(), *cartEntryPath)) : valueNil());
+	setGlobal("machine_manifest", valueTable(buildMachineManifestTable(machineManifest())));
+	const std::string* cartProjectRootPath = this->cartProjectRootPath();
 	setGlobal("cart_project_root_path", cartProjectRootPath ? str(*cartProjectRootPath) : valueNil());
 
-	auto viewSize = EngineCore::instance().view()->viewportSize;
+	const GameViewState& gameViewState = this->gameViewState();
+	const Viewport& viewSize = gameViewState.viewportSize;
 	auto* viewportTable = cpu.createTable(0, 2);
 	viewportTable->set(key("x"), valueNumber(static_cast<double>(viewSize.x)));
 	viewportTable->set(key("y"), valueNumber(static_cast<double>(viewSize.y)));
-	auto* view = EngineCore::instance().view();
 	auto* viewTable = cpu.createTable(0, 8);
-	viewTable->set(key("crt_postprocessing_enabled"), valueBool(view->crt_postprocessing_enabled));
-	viewTable->set(key("enable_noise"), valueBool(view->applyNoise));
-	viewTable->set(key("enable_colorbleed"), valueBool(view->applyColorBleed));
-	viewTable->set(key("enable_scanlines"), valueBool(view->applyScanlines));
-	viewTable->set(key("enable_blur"), valueBool(view->applyBlur));
-	viewTable->set(key("enable_glow"), valueBool(view->applyGlow));
-	viewTable->set(key("enable_fringing"), valueBool(view->applyFringing));
-	viewTable->set(key("enable_aperture"), valueBool(view->applyAperture));
+	viewTable->set(key("crt_postprocessing_enabled"), valueBool(gameViewState.crtPostprocessingEnabled));
+	viewTable->set(key("enable_noise"), valueBool(gameViewState.enableNoise));
+	viewTable->set(key("enable_colorbleed"), valueBool(gameViewState.enableColorBleed));
+	viewTable->set(key("enable_scanlines"), valueBool(gameViewState.enableScanlines));
+	viewTable->set(key("enable_blur"), valueBool(gameViewState.enableBlur));
+	viewTable->set(key("enable_glow"), valueBool(gameViewState.enableGlow));
+	viewTable->set(key("enable_fringing"), valueBool(gameViewState.enableFringing));
+	viewTable->set(key("enable_aperture"), valueBool(gameViewState.enableAperture));
 
 auto clockNowFn = m_machine.cpu().createNativeFunction("platform.clock.now", [engineClock](NativeArgsView args, NativeResults& out) {
 	(void)args;

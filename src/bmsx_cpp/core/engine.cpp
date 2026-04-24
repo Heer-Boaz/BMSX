@@ -326,6 +326,10 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 		Runtime::createInstance(RuntimeOptions{
 			1,
 			{ timing.viewportWidth, timing.viewportHeight },
+			&m_engine_assets,
+			&m_engine_assets,
+			m_cart_rom_size > 0 ? &m_cart_assets : nullptr,
+			&runtimeMachine,
 			timing.ufpsScaled,
 			timing.cpuHz,
 			timing.cycleBudgetPerFrame,
@@ -335,6 +339,7 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 		});
 	}
 	Runtime& runtime = Runtime::instance();
+	runtime.setRuntimeEnvironment(m_engine_assets, m_engine_assets, runtimeMachine, m_cart_rom_size > 0 ? &m_cart_assets : nullptr);
 	applyRuntimeTiming(runtime, timing);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Engine);
@@ -440,6 +445,10 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 				Runtime::createInstance(RuntimeOptions{
 					1,
 					{ timing.viewportWidth, timing.viewportHeight },
+					&m_engine_assets,
+					&m_cart_assets,
+					&m_cart_assets,
+					&cartMachine,
 					timing.ufpsScaled,
 					timing.cpuHz,
 					timing.cycleBudgetPerFrame,
@@ -449,6 +458,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 				});
 			}
 			Runtime& runtime = Runtime::instance();
+		runtime.setRuntimeEnvironment(m_engine_assets, assets(), assets().machine, &m_cart_assets);
 		applyRuntimeTiming(runtime, timing);
 		runtime.refreshMemoryMap();
 		buildAssetMemory(runtime, m_engine_assets, assets());
@@ -486,6 +496,10 @@ bool EngineCore::bootLoadedCart() {
 			Runtime::createInstance(RuntimeOptions{
 				1,
 				{ timing.viewportWidth, timing.viewportHeight },
+				&m_engine_assets,
+				&m_cart_assets,
+				&m_cart_assets,
+				&m_cart_assets.machine,
 				timing.ufpsScaled,
 				timing.cpuHz,
 				timing.cycleBudgetPerFrame,
@@ -495,6 +509,7 @@ bool EngineCore::bootLoadedCart() {
 			});
 		}
 		Runtime& runtime = Runtime::instance();
+	runtime.setRuntimeEnvironment(m_engine_assets, assets(), assets().machine, &m_cart_assets);
 	applyRuntimeTiming(runtime, timing);
 	runtime.refreshMemoryMap();
 	buildAssetMemory(runtime, m_engine_assets, assets(), RuntimeAssetBuildMode::Cart);
@@ -558,12 +573,16 @@ void EngineCore::bootRuntimeFromProgram() {
 	}
 	m_linked_program.reset();
 	m_linked_program_symbols.reset();
-	const RuntimeAssets& activeAssets = assets();
+	RuntimeAssets& activeAssets = assets();
 	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(activeAssets.machine);
 		if (!Runtime::hasInstance()) {
 			Runtime::createInstance(RuntimeOptions{
 				1,
 				{ timing.viewportWidth, timing.viewportHeight },
+				&m_engine_assets,
+				&activeAssets,
+				m_cart_rom_size > 0 ? &m_cart_assets : nullptr,
+				&activeAssets.machine,
 				timing.ufpsScaled,
 				timing.cpuHz,
 				timing.cycleBudgetPerFrame,
@@ -573,6 +592,7 @@ void EngineCore::bootRuntimeFromProgram() {
 			});
 		}
 		Runtime& runtime = Runtime::instance();
+	runtime.setRuntimeEnvironment(m_engine_assets, activeAssets, activeAssets.machine, m_cart_rom_size > 0 ? &m_cart_assets : nullptr);
 	applyRuntimeTiming(runtime, timing);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Cart);

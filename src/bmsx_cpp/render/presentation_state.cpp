@@ -215,7 +215,7 @@ void RenderPresentationState::render(EngineCore& engine, Runtime& runtime) {
 		}
 
 		const auto drawGameStart = std::chrono::steady_clock::now();
-		commitVdpViewSnapshot(*engine.m_view, runtime.machine().vdp());
+		commitVdpViewSnapshot(*engine.m_view, runtime.machine().vdp(), runtime.machine().memory());
 		engine.m_view->configurePresentation(presentMode, commitFrame);
 		engine.m_view->drawGame();
 		const auto drawGameEnd = std::chrono::steady_clock::now();

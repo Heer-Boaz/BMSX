@@ -1,15 +1,6 @@
-import type { StringHandleTable } from './memory';
+import type { StringHandleTable, StringHandleTableState } from './memory';
 
 export type StringId = number;
-export type RuntimeStringPoolStateEntry = {
-	id: StringId;
-	text: string;
-};
-
-export type RuntimeStringPoolState = {
-	nextId: StringId;
-	entries: RuntimeStringPoolStateEntry[];
-};
 
 export class StringValue {
 	public readonly id: StringId;
@@ -79,35 +70,26 @@ export class StringPool {
 		}
 	}
 
-	public captureState(): RuntimeStringPoolState {
-		const entries: RuntimeStringPoolStateEntry[] = [];
-		for (let id = 0; id < this.byId.length; id += 1) {
-			const entry = this.byId[id];
-			if (entry === null || entry === undefined) {
-				continue;
-			}
-			entries.push({ id: entry.id, text: entry.text });
+	public rehydrateFromHandleTable(state: StringHandleTableState): void {
+		if (this.handleTable === null) {
+			throw new Error('[StringPool] Cannot rehydrate without a string handle table.');
 		}
-		return {
-			nextId: this.nextId,
-			entries,
-		};
-	}
-
-	public restoreState(state: RuntimeStringPoolState): void {
 		this.byText.clear();
 		this.byId.length = 0;
 		this.nextId = 0;
-		this.handleTable?.reset();
-		for (let index = 0; index < state.entries.length; index += 1) {
-			const entry = state.entries[index];
-			const restored = this.intern(entry.text);
-			if (restored.id !== entry.id) {
-				throw new Error(`[StringPool] Restore handle mismatch for '${entry.text}' (${restored.id} != ${entry.id}).`);
+		for (let id = 0; id < state.nextHandle; id += 1) {
+			const entry = this.handleTable.readEntry(id);
+			if (entry.len === 0) {
+				this.byId[id] = null;
+				continue;
 			}
+			const text = this.handleTable.readText(entry);
+			const restored = StringValue.create(id, text);
+			this.byId[id] = restored;
+			this.byText.set(text, restored);
 		}
-		this.reserveHandles(state.nextId);
-		this.nextId = state.nextId;
+		this.reserveHandles(state.nextHandle);
+		this.nextId = state.nextHandle;
 	}
 }
 

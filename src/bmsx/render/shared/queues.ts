@@ -16,6 +16,7 @@ import { Runtime } from '../../machine/runtime/runtime';
 import { BFont } from './bitmap_font';
 import { setSpriteParallaxRigValues } from '../2d/sprite_parallax_rig';
 import { shallowcopy } from '../../common/shallowcopy';
+import { resolveVdpBlitterSample } from '../vdp/surfaces';
 
 const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
 const particleQueue = new FeatureQueue<ParticleRenderSubmission>(1024);
@@ -112,6 +113,10 @@ export function clearBackQueues(): void {
 	prepareHeldRenderQueues();
 }
 
+export function resetTransientState(): void {
+	clearBackQueues();
+}
+
 export function clearAllQueues(): void {
 	const vdp = Runtime.instance.machine.vdp;
 	vdp.initializeRegisters();
@@ -159,7 +164,7 @@ export function submit_particle(item: ParticleRenderSubmission): void {
 	if (entry.type !== 'image') {
 		throw new Error(`[Particles Pipeline] Asset '${imgid}' is not an image.`);
 	}
-	const sample = runtime.machine.vdp.resolveBlitterSample(handle);
+	const sample = resolveVdpBlitterSample(runtime.machine.vdp, handle);
 	const u0 = sample.source.srcX / sample.surfaceWidth;
 	const v0 = sample.source.srcY / sample.surfaceHeight;
 	const u1 = (sample.source.srcX + sample.source.width) / sample.surfaceWidth;

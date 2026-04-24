@@ -7,7 +7,7 @@ import { GameView } from "../render/gameview";
 import { TextureManager } from "../render/texture_manager";
 import { RenderPassLibrary } from "../render/backend/pass/library";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_factory";
-import type { SkyboxImageIds } from "../render/shared/submissions";
+import type { SkyboxImageIds } from "../machine/devices/vdp/contracts";
 import { HZ_SCALE as PLATFORM_HZ_SCALE, setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform, PlatformExitEvent, SubscriptionHandle } from '../platform';
 import { asset_id, getMachineMaxVoices, RuntimeAssets, type CartManifest, type MachineManifest, type vec2 } from "../rompack/format";
@@ -17,6 +17,7 @@ import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system';
 import type { LuaSourceRegistry } from '../machine/program/sources';
 import { GateGroup, taskGate } from './taskgate';
 import { Runtime } from '../machine/runtime/runtime';
+import { runRuntimeHostFrame } from '../machine/runtime/frame/host';
 import { raiseEngineIrq } from '../machine/runtime/engine_irq';
 import { installNativeGlobal, runConsoleChunkToNative } from '../machine/program/executor';
 import { IRQ_NEWGAME } from '../machine/bus/io';
@@ -27,6 +28,7 @@ import { clearAllQueues } from '../render/shared/queues';
 import { clearOverlayFrame } from '../render/editor/overlay_queue';
 import type { Table } from '../machine/cpu/cpu';
 import { buildActionStateTable, buildButtonStateTable, packActionStateFlags } from '../machine/firmware/input_state_tables';
+import { restoreVdpContextState } from '../render/vdp/context_state';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined
@@ -419,11 +421,20 @@ export class EngineCore {
 		e.setReturnMessage('Are you sure you want to exit this awesome game?');
 	};
 
-		public async resetRuntime(preserveTextures = false): Promise<void> {
-			if (!this.initialized) {
-				throw new Error('[EngineCore] Cannot reset runtime before initialization.');
-			}
-			const gateToken = renderGate.begin({ blocking: true, tag: 'runtime-reset' });
+	public async refreshRenderAssets(): Promise<void> {
+		this.texmanager.setBackend(this.view.backend);
+		await this.view.initializeDefaultTextures();
+		const runtime = Runtime.instance;
+		if (runtime) {
+			restoreVdpContextState(runtime.machine.vdp);
+		}
+	}
+
+	public async resetRuntime(preserveTextures = false): Promise<void> {
+		if (!this.initialized) {
+			throw new Error('[EngineCore] Cannot reset runtime before initialization.');
+		}
+		const gateToken = renderGate.begin({ blocking: true, tag: 'runtime-reset' });
 		const runToken = runGate.begin({ blocking: true, tag: 'runtime-reset' });
 		try {
 			this.sndmaster.resetPlaybackState();
@@ -445,7 +456,7 @@ export class EngineCore {
 			if (!preserveTextures) {
 				this.texmanager.clear();
 				this.view.reset();
-				await this.view.initializeDefaultTextures();
+				await this.refreshRenderAssets();
 			}
 		}
 		finally {
@@ -477,7 +488,7 @@ export class EngineCore {
 		runtime.frameLoop.currentTimeMs = now;
 		runtime.frameScheduler.clearQueuedTime();
 		this.frameLoopHandle = platform.frames.start((currentTime: number) => {
-			runtime.frameLoop.runHostFrame(runtime, currentTime, runGate.ready);
+			runRuntimeHostFrame(runtime, currentTime, runGate.ready);
 		});
 		this.running = true;
 	}

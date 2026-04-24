@@ -1,20 +1,25 @@
 import { $ } from '../../core/engine';
 import type { LuaChunk } from '../../lua/syntax/ast';
 import { LuaInterpreter } from '../../lua/runtime';
+import { convertToError } from '../../lua/value';
 import type { LuaValue } from '../../lua/value';
-import { convertToError, isLuaFunctionValue, isLuaTable } from '../../lua/value';
 import { publishOverlayFrame } from '../../render/editor/overlay_queue';
-import { flushRuntimeAssetEdits } from '../../runtime/assets/edits';
+import { resetTransientState } from '../../render/shared/queues';
 import { ENGINE_LUA_BUILTIN_FUNCTIONS, ENGINE_LUA_BUILTIN_GLOBALS } from '../../machine/firmware/builtin_descriptors';
 import { seedLuaGlobals } from '../../machine/firmware/globals';
 import { ENGINE_SYSTEM_HELPER_NAMES } from '../../machine/firmware/system_globals';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram } from '../../machine/program/compiler';
 import { linkProgramAssets } from '../../machine/program/linker';
 import { getWorkspaceCachedSource } from '../workspace/cache';
-import type { LuaEntrySnapshot, RuntimeState, SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
+import type { RuntimeResumeSnapshot, SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
 import type { LuaSourceRecord, LuaSourceRegistry } from '../../machine/program/sources';
 import { logDebugState } from '../../machine/runtime/debug';
 import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
+import { applyGameViewStateToHost } from '../../machine/runtime/game/view_state';
+import { syncRuntimeGameViewStateToTable } from '../../machine/runtime/game/table';
+import { restoreRuntimeLuaSnapshot } from '../../machine/runtime/resume_snapshot';
+import { applyRuntimeMachineState } from '../../machine/runtime/machine_state';
+import { applyRuntimeRenderState, resetRuntimeRenderState } from '../../machine/runtime/render/state';
 import * as workbenchMode from './workbench_mode';
 import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from '../../machine/runtime/timing';
 import { setFrameTiming, setTransferRatesFromManifest } from '../../machine/runtime/timing/config';
@@ -43,43 +48,6 @@ import { Runtime } from '../../machine/runtime/runtime';
 import { raiseEngineIrq } from '../../machine/runtime/engine_irq';
 import { callClosure, callClosureInto, callClosureIntoWithScheduler } from '../../machine/program/executor';
 
-const LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
-	'print',
-	'type',
-	'tostring',
-	'tonumber',
-	'setmetatable',
-	'getmetatable',
-	'require',
-	'pairs',
-	'ipairs',
-	'serialize',
-	'deserialize',
-	'math',
-	'easing',
-	'table',
-	'string',
-	'wrap_text_lines',
-	'coroutine',
-	'debug',
-	'utf8',
-	'_VERSION',
-	'assert',
-	'error',
-	'next',
-	'rawget',
-	'rawset',
-	'rawequal',
-	'pcall',
-	'xpcall',
-	'collectgarbage',
-	'load',
-	'loadstring',
-	'dofile',
-	'select',
-	'debug',
-]);
-
 const ENGINE_BUILTIN_PRELUDE_PATH = 'bios/engine_builtin_prelude.lua';
 const getRealtimeOptLevel = (runtime: Runtime): 0 | 1 | 2 | 3 =>
 	runtime.realtimeCompileOptLevel;
@@ -87,10 +55,6 @@ const REQUIRED_ENGINE_SYSTEM_HELPERS: ReadonlyArray<string> = ['clock_now'];
 
 export function runtimeFault(message: string): Error {
 	return new Error(`Runtime fault: ${message}`);
-}
-
-function snapshotFault(message: string): Error {
-	return new Error(`Snapshot fault: ${message}`);
 }
 
 function resolvePositiveSafeInteger(value: number | undefined, label: string): number {
@@ -155,57 +119,27 @@ function resolveRuntimeMachineForPlan(runtime: Runtime, plan: RuntimeAssetReload
 	return $.engine_layer.index.machine;
 }
 
-export function captureCurrentState(runtime: Runtime): RuntimeState {
-	const storage = runtime.storage.dump();
-	const stateSnapshot = captureRuntimeState(runtime);
-	const vblankState = runtime.vblank.capture(runtime);
-	const state: RuntimeState = {
-		luaRuntimeFailed: runtime.luaRuntimeFailed,
-		luaPath: runtime.currentPath,
-		storage,
-		machine: runtime.machine.captureState(),
-		cyclesIntoFrame: vblankState.cyclesIntoFrame,
-	};
-	if (stateSnapshot) {
-		if (stateSnapshot.globals) {
-			state.luaGlobals = stateSnapshot.globals;
-		}
-		if (stateSnapshot.locals) {
-			state.luaLocals = stateSnapshot.locals;
-		}
-		if (stateSnapshot.randomSeed !== undefined) {
-			state.luaRandomSeed = stateSnapshot.randomSeed;
-		}
-		if (stateSnapshot.programCounter !== undefined) {
-			state.luaProgramCounter = stateSnapshot.programCounter;
-		}
-	}
-	return state;
-}
-
-export function restoreMachineSnapshot(runtime: Runtime, snapshot: RuntimeState): void {
-	runtime.machine.restoreState(snapshot.machine);
-	flushRuntimeAssetEdits(runtime.machine.memory);
-}
-
-export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeState, preserveEngineModules?: boolean): Promise<void> {
+export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeSnapshot, preserveEngineModules?: boolean): Promise<void> {
 	workbenchMode.clearActiveDebuggerPause(runtime);
 	if (!state) {
 		runtime.luaRuntimeFailed = false;
 		throw runtimeFault('cannot resume from invalid state snapshot.');
 	}
-	const snapshot: RuntimeState = { ...state, luaRuntimeFailed: false };
+	const snapshot: RuntimeResumeSnapshot = { ...state, luaRuntimeFailed: false };
 	runtime.interpreter.clearLastFaultEnvironment();
 	workbenchMode.clearFaultSnapshot(runtime);
 
 	runtime.handledLuaErrors = new WeakSet<object>();
 	runtime.luaRuntimeFailed = false;
 	publishOverlayFrame(null);
-	restoreMachineSnapshot(runtime, snapshot);
+	applyRuntimeMachineState(runtime, snapshot.machineState);
+	runtime.storage.restore(snapshot.storageState);
 	resumeLuaProgramState(runtime, snapshot, preserveEngineModules);
-	runtime.vblank.restore(runtime, snapshot);
-	runtime.machine.resetRenderBuffers();
+	applyRuntimeRenderState(snapshot.renderState);
+	resetTransientState();
 	runtime.luaInitialized = true;
+	syncRuntimeGameViewStateToTable(runtime);
+	applyGameViewStateToHost(runtime.gameViewState, $.view);
 }
 
 export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; source: string; preserveEngineModules?: boolean }): void {
@@ -354,7 +288,7 @@ export function reloadLuaProgramState(runtime: Runtime, runInit = true): void {
 	runtime.luaInitialized = true;
 }
 
-export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeState, preserveEngineModules?: boolean): void {
+export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeResumeSnapshot, preserveEngineModules?: boolean): void {
 	const savedRuntimeFailed = !!snapshot.luaRuntimeFailed;
 	const binding = snapshot.luaPath;
 	let source: string;
@@ -376,7 +310,7 @@ export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeState, 
 	refreshLuaModulesOnResume(runtime, binding);
 	clearEditorCompletionCache(runtime);
 	queueLifecycleHandlers(runtime, { runInit: true, runNewGame: false });
-	restoreRuntimeState(runtime, snapshot);
+	restoreRuntimeLuaSnapshot(runtime, snapshot);
 	if (savedRuntimeFailed) {
 		runtime.luaRuntimeFailed = true;
 	}
@@ -395,117 +329,6 @@ export function refreshLuaModulesOnResume(runtime: Runtime, resumeModuleId: stri
 
 export function markSourceChunkAsDirty(runtime: Runtime, path: string): void {
 	runtime.luaGenericChunksExecuted.delete(path);
-}
-
-export function captureRuntimeState(runtime: Runtime): { globals?: LuaEntrySnapshot; locals?: LuaEntrySnapshot; randomSeed?: number; programCounter?: number } {
-	const interpreter = runtime.interpreter;
-	const globals = captureLuaEntryCollection(runtime, interpreter.enumerateGlobalEntries());
-	const locals = captureLuaEntryCollection(runtime, interpreter.enumerateChunkEntries());
-	const randomSeed = runtime.randomSeedValue;
-	const programCounter = interpreter.programCounter;
-	return {
-		globals: globals,
-		locals: locals,
-		randomSeed: randomSeed,
-		programCounter: programCounter,
-	};
-}
-
-export function captureLuaEntryCollection(runtime: Runtime, entries: ReadonlyArray<[string, LuaValue]>): LuaEntrySnapshot {
-	if (!entries || entries.length === 0) {
-		return null;
-	}
-	const ctx = runtime.luaJsBridge.createLuaSnapshotContext();
-	const snapshotRoot: Record<string, unknown> = {};
-	let count = 0;
-	for (const [name, value] of entries) {
-		if (shouldSkipLuaSnapshotEntry(runtime, name, value)) {
-			continue;
-		}
-		try {
-			const serialized = runtime.luaJsBridge.serializeLuaValueForSnapshot(value, ctx);
-			snapshotRoot[name] = serialized;
-			count += 1;
-		}
-		catch (error) {
-			throw snapshotFault(`failed to serialize Lua entry '${name}': ${convertToError(error).message}`);
-		}
-	}
-	return count > 0 ? { root: snapshotRoot, objects: ctx.objects } : null;
-}
-
-export function shouldSkipLuaSnapshotEntry(runtime: Runtime, name: string, value: LuaValue): boolean {
-	if (!name || runtime.apiFunctionNames.has(name)) {
-		return true;
-	}
-	if (LUA_SNAPSHOT_EXCLUDED_GLOBALS.has(name)) {
-		return true;
-	}
-	if (isLuaFunctionValue(value)) {
-		return true;
-	}
-	return false;
-}
-
-export function restoreRuntimeState(runtime: Runtime, snapshot: RuntimeState): void {
-	const interpreter = runtime.interpreter;
-	if (snapshot.luaRandomSeed !== undefined) {
-		runtime.randomSeedValue = snapshot.luaRandomSeed;
-	}
-	if (snapshot.luaProgramCounter !== undefined) {
-		interpreter.programCounter = snapshot.luaProgramCounter;
-	}
-	if (snapshot.luaGlobals) {
-		restoreLuaGlobals(runtime, snapshot.luaGlobals);
-	}
-	if (snapshot.luaLocals) {
-		restoreLuaLocals(runtime, snapshot.luaLocals);
-	}
-}
-
-export function restoreLuaGlobals(runtime: Runtime, globals: LuaEntrySnapshot): void {
-	const interpreter = runtime.interpreter;
-	const entries = runtime.luaJsBridge.materializeLuaEntrySnapshot(globals);
-	for (const [name, value] of entries) {
-		if (!name || runtime.apiFunctionNames.has(name) || LUA_SNAPSHOT_EXCLUDED_GLOBALS.has(name)) {
-			continue;
-		}
-		const existing = interpreter.getGlobal(name);
-		if (isLuaTable(existing) && isLuaTable(value)) {
-			runtime.luaJsBridge.applyLuaTableSnapshot(existing, value);
-			continue;
-		}
-		try {
-			interpreter.setGlobal(name, value);
-		}
-		catch (error) {
-			throw snapshotFault(`failed to restore Lua global '${name}': ${convertToError(error).message}`);
-		}
-	}
-}
-
-export function restoreLuaLocals(runtime: Runtime, locals: LuaEntrySnapshot): void {
-	const interpreter = runtime.interpreter;
-	const entries = runtime.luaJsBridge.materializeLuaEntrySnapshot(locals);
-	for (const [name, value] of entries) {
-		if (!name || !interpreter.hasChunkBinding(name)) {
-			continue;
-		}
-		const env = interpreter.pathEnvironment;
-		if (env) {
-			const current = env.get(name);
-			if (isLuaTable(current) && isLuaTable(value)) {
-				runtime.luaJsBridge.applyLuaTableSnapshot(current, value);
-				continue;
-			}
-		}
-		try {
-			interpreter.assignChunkValue(name, value);
-		}
-		catch (error) {
-			throw snapshotFault(`failed to restore Lua local '${name}': ${convertToError(error).message}`);
-		}
-	}
 }
 
 export function resetLuaInteroperabilityState(runtime: Runtime): void {
@@ -542,7 +365,8 @@ export function resetFrameState(runtime: Runtime): void {
 export function resetHardwareState(runtime: Runtime): void {
 	runtime.machine.resetDevices();
 	runtime.vblank.reset(runtime);
-	runtime.machine.resetRenderBuffers();
+	resetRuntimeRenderState();
+	resetTransientState();
 }
 
 export function registerGlobal(runtime: Runtime, name: string, value: Value): void {

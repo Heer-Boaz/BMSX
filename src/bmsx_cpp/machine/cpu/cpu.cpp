@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <limits>
 #include <stdexcept>
+#include <unordered_set>
 
 #if defined(__GNUC__) || defined(__clang__)
 #define BMSX_USE_COMPUTED_GOTO 1
@@ -154,7 +155,7 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "display_height"
 		|| name == "get_cpu_freq_hz"
 		|| name == "get_default_font"
-		|| name == "get_lua_entry_path"
+		|| name == "devtools.get_lua_entry_path"
 		|| name == "platform.clock.now"
 		|| name == "platform.clock.perf_now"
 		|| name == "game.get_frame_delta_ms") {
@@ -283,8 +284,8 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "create_font"
 		|| name == "taskgate"
 		|| name == "os.date"
-		|| name == "list_lua_resources"
-		|| name == "get_lua_resource_source"
+		|| name == "devtools.list_lua_resources"
+		|| name == "devtools.get_lua_resource_source"
 		|| name == "list_builtins") {
 		return kNativeCostTier4;
 	}
@@ -362,6 +363,8 @@ static constexpr std::array<uint8_t, 64> kBaseCycles = makeBaseCycles();
 static inline size_t trackedClosureBytes(const Closure& closure) {
 	return 16 + (closure.upvalues.size() * sizeof(Upvalue*));
 }
+
+constexpr std::string_view kCpuRuntimeMetatableSegment = "@metatable";
 
 } // namespace
 
@@ -1379,6 +1382,596 @@ NativeResults* CPU::swapExternalReturnSink(NativeResults* sink) {
 	NativeResults* previous = m_externalReturnSink;
 	m_externalReturnSink = sink;
 	return previous;
+}
+
+CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, Value>& moduleCache) const {
+	const_cast<CPU&>(*this).syncGlobalSlotsToTable();
+	std::unordered_map<const CallFrame*, int> frameIndexByRef;
+	for (int index = 0; index < static_cast<int>(m_frames.size()); ++index) {
+		frameIndexByRef.emplace(m_frames[static_cast<size_t>(index)].get(), index);
+	}
+
+	auto encodePathKey = [](const std::vector<CpuRuntimeRefSegment>& path) -> std::string {
+		std::string key;
+		for (const CpuRuntimeRefSegment& segment : path) {
+			if (segment.isIndex) {
+				key += "#" + std::to_string(segment.index) + ";";
+				continue;
+			}
+			key += "$" + std::to_string(segment.key.size()) + ":" + segment.key + ";";
+		}
+		return key;
+	};
+
+	std::unordered_map<Value, std::vector<CpuRuntimeRefSegment>> stablePathByValue;
+	std::unordered_map<std::string, Value> stableValueByPath;
+	std::unordered_set<const Table*> stableTables;
+	std::unordered_set<const NativeObject*> stableNativeObjects;
+
+	auto recordStableValue = [&](const std::vector<CpuRuntimeRefSegment>& path, Value value) {
+		if (!valueIsNativeFunction(value) && !valueIsNativeObject(value)) {
+			return;
+		}
+		stableValueByPath[encodePathKey(path)] = value;
+		stablePathByValue.emplace(value, path);
+	};
+
+	std::function<void(const std::vector<CpuRuntimeRefSegment>&, Value)> traverseStableValue;
+	traverseStableValue = [&](const std::vector<CpuRuntimeRefSegment>& path, Value value) {
+		recordStableValue(path, value);
+		if (valueIsTable(value)) {
+			const Table* table = asTable(value);
+			if (!stableTables.insert(table).second) {
+				return;
+			}
+			if (table->getMetatable()) {
+				auto nextPath = path;
+				nextPath.push_back(CpuRuntimeRefSegment{ false, std::string(kCpuRuntimeMetatableSegment), 0 });
+				traverseStableValue(nextPath, valueTable(table->getMetatable()));
+			}
+			for (int arrayIndex = 1; arrayIndex <= table->length(); ++arrayIndex) {
+				const Value entryValue = table->getInteger(arrayIndex);
+				if (!isNil(entryValue)) {
+					auto nextPath = path;
+					nextPath.push_back(CpuRuntimeRefSegment{ true, {}, arrayIndex });
+					traverseStableValue(nextPath, entryValue);
+				}
+			}
+			table->forEachEntry([&](Value key, Value entryValue) {
+				if (valueIsString(key)) {
+					auto nextPath = path;
+					nextPath.push_back(CpuRuntimeRefSegment{ false, m_stringPool.toString(asStringId(key)), 0 });
+					traverseStableValue(nextPath, entryValue);
+					return;
+				}
+				if (!valueIsNumber(key)) {
+					return;
+				}
+				const double numberKey = valueToNumber(key);
+				if (!std::isfinite(numberKey)) {
+					return;
+				}
+				const int integerKey = static_cast<int>(numberKey);
+				if (static_cast<double>(integerKey) != numberKey) {
+					return;
+				}
+				auto nextPath = path;
+				nextPath.push_back(CpuRuntimeRefSegment{ true, {}, integerKey });
+				traverseStableValue(nextPath, entryValue);
+			});
+			return;
+		}
+		if (!valueIsNativeObject(value)) {
+			return;
+		}
+		const NativeObject* native = asNativeObject(value);
+		if (!stableNativeObjects.insert(native).second) {
+			return;
+		}
+		if (native->metatable) {
+			auto nextPath = path;
+			nextPath.push_back(CpuRuntimeRefSegment{ false, std::string(kCpuRuntimeMetatableSegment), 0 });
+			traverseStableValue(nextPath, valueTable(native->metatable));
+		}
+	};
+
+	globals->forEachEntry([&](Value key, Value value) {
+		if (!valueIsString(key)) {
+			return;
+		}
+		std::vector<CpuRuntimeRefSegment> path;
+		path.push_back(CpuRuntimeRefSegment{ false, "globals", 0 });
+		path.push_back(CpuRuntimeRefSegment{ false, m_stringPool.toString(asStringId(key)), 0 });
+		traverseStableValue(path, value);
+	});
+	for (size_t index = 0; index < m_memory.ioSlots().size(); ++index) {
+		std::vector<CpuRuntimeRefSegment> path;
+		path.push_back(CpuRuntimeRefSegment{ false, "ioMemory", 0 });
+		path.push_back(CpuRuntimeRefSegment{ true, {}, static_cast<int>(index) });
+		traverseStableValue(path, m_memory.ioSlots()[index]);
+	}
+	for (const auto& [name, value] : moduleCache) {
+		std::vector<CpuRuntimeRefSegment> path;
+		path.push_back(CpuRuntimeRefSegment{ false, "moduleCache", 0 });
+		path.push_back(CpuRuntimeRefSegment{ false, name, 0 });
+		traverseStableValue(path, value);
+	}
+
+	std::unordered_map<const void*, int> objectIds;
+	std::vector<CpuObjectState> objects;
+	std::function<CpuObjectState(GCObject*)> captureObjectState;
+	std::function<int(GCObject*)> ensureObjectId;
+	std::function<CpuValueState(Value)> captureValueState;
+
+	ensureObjectId = [&](GCObject* object) -> int {
+		const void* key = static_cast<const void*>(object);
+		const auto it = objectIds.find(key);
+		if (it != objectIds.end()) {
+			return it->second;
+		}
+		const int id = static_cast<int>(objects.size());
+		objectIds.emplace(key, id);
+		objects.push_back(captureObjectState(object));
+		return id;
+	};
+
+	captureValueState = [&](Value value) -> CpuValueState {
+		CpuValueState state;
+		if (isNil(value)) {
+			return state;
+		}
+		if (value == valueBool(false)) {
+			state.tag = CpuValueStateTag::False;
+			return state;
+		}
+		if (value == valueBool(true)) {
+			state.tag = CpuValueStateTag::True;
+			return state;
+		}
+		if (valueIsNumber(value)) {
+			state.tag = CpuValueStateTag::Number;
+			state.numberValue = valueToNumber(value);
+			return state;
+		}
+		if (valueIsString(value)) {
+			state.tag = CpuValueStateTag::String;
+			state.stringId = asStringId(value);
+			return state;
+		}
+		if (valueIsNativeFunction(value) || valueIsNativeObject(value)) {
+			const auto it = stablePathByValue.find(value);
+			if (it == stablePathByValue.end()) {
+				throw std::runtime_error(std::string("[CPU] Runtime snapshot cannot preserve native value '") + valueTypeName(value) + "' without a stable root path.");
+			}
+			state.tag = CpuValueStateTag::StableRef;
+			state.path = it->second;
+			return state;
+		}
+		state.tag = CpuValueStateTag::Ref;
+		if (valueIsTable(value)) {
+			state.refId = ensureObjectId(asTable(value));
+			return state;
+		}
+		if (valueIsClosure(value)) {
+			state.refId = ensureObjectId(asClosure(value));
+			return state;
+		}
+		if (valueTag(value) == ValueTag::Upvalue) {
+			state.refId = ensureObjectId(asUpvalue(value));
+			return state;
+		}
+		throw std::runtime_error("[CPU] Unsupported runtime snapshot value.");
+	};
+
+	captureObjectState = [&](GCObject* object) -> CpuObjectState {
+		CpuObjectState state;
+		switch (object->type) {
+			case ObjType::Table: {
+				state.kind = CpuObjectState::Kind::Table;
+				const TableRuntimeState tableState = static_cast<Table*>(object)->captureRuntimeState();
+				state.arrayLength = tableState.arrayLength;
+				state.hashFree = tableState.hashFree;
+				state.metatable = captureValueState(tableState.metatable ? valueTable(tableState.metatable) : valueNil());
+				state.array.reserve(tableState.array.size());
+				for (const Value& value : tableState.array) {
+					state.array.push_back(captureValueState(value));
+				}
+				state.hash.reserve(tableState.hash.size());
+				for (const TableHashNodeState& node : tableState.hash) {
+					state.hash.push_back(CpuTableHashNodeSnapshot{
+						captureValueState(node.key),
+						captureValueState(node.value),
+						node.next,
+					});
+				}
+				return state;
+			}
+			case ObjType::Closure: {
+				state.kind = CpuObjectState::Kind::Closure;
+				Closure* closure = static_cast<Closure*>(object);
+				state.protoIndex = closure->protoIndex;
+				state.upvalues.reserve(closure->upvalues.size());
+				for (Upvalue* upvalue : closure->upvalues) {
+					state.upvalues.push_back(ensureObjectId(upvalue));
+				}
+				return state;
+			}
+			case ObjType::Upvalue: {
+				state.kind = CpuObjectState::Kind::Upvalue;
+				Upvalue* upvalue = static_cast<Upvalue*>(object);
+				state.upvalueOpen = upvalue->open;
+				state.upvalueIndex = upvalue->index;
+				if (upvalue->open) {
+					const auto it = frameIndexByRef.find(upvalue->frame);
+					if (it == frameIndexByRef.end()) {
+						throw std::runtime_error("[CPU] Runtime snapshot found an open upvalue without a tracked frame.");
+					}
+					state.frameIndex = it->second;
+					state.upvalueValue = captureValueState(upvalue->frame->registers[static_cast<size_t>(upvalue->index)]);
+				} else {
+					state.frameIndex = -1;
+					state.upvalueValue = captureValueState(upvalue->value);
+				}
+				return state;
+			}
+			default:
+				throw std::runtime_error("[CPU] Unsupported runtime snapshot object.");
+		}
+	};
+
+	CpuRuntimeState state;
+	globals->forEachEntry([&](Value key, Value value) {
+		if (!valueIsString(key)) {
+			return;
+		}
+		state.globals.push_back(CpuRootValueState{
+			m_stringPool.toString(asStringId(key)),
+			captureValueState(value),
+		});
+	});
+	for (const auto& [name, value] : moduleCache) {
+		state.moduleCache.push_back(CpuRootValueState{ name, captureValueState(value) });
+	}
+	state.ioMemory.reserve(m_memory.ioSlots().size());
+	for (const Value& value : m_memory.ioSlots()) {
+		state.ioMemory.push_back(captureValueState(value));
+	}
+	state.frames.reserve(m_frames.size());
+	for (const auto& framePtr : m_frames) {
+		const CallFrame& frame = *framePtr;
+		CpuFrameState frameState;
+		frameState.protoIndex = frame.protoIndex;
+		frameState.pc = frame.pc;
+		frameState.closureRef = ensureObjectId(frame.closure);
+		frameState.returnBase = frame.returnBase;
+		frameState.returnCount = frame.returnCount;
+		frameState.top = frame.top;
+		frameState.captureReturns = frame.captureReturns;
+		frameState.callSitePc = frame.callSitePc;
+		frameState.registers.reserve(static_cast<size_t>(frame.top));
+		for (int index = 0; index < frame.top; ++index) {
+			frameState.registers.push_back(captureValueState(frame.registers[static_cast<size_t>(index)]));
+		}
+		frameState.varargs.reserve(static_cast<size_t>(frame.varargCount));
+		for (int index = 0; index < frame.varargCount; ++index) {
+			frameState.varargs.push_back(captureValueState(m_stack[static_cast<size_t>(frame.varargBase + index)]));
+		}
+		state.frames.push_back(std::move(frameState));
+	}
+	state.lastReturnValues.reserve(lastReturnValues.size());
+	for (const Value& value : lastReturnValues) {
+		state.lastReturnValues.push_back(captureValueState(value));
+	}
+	state.openUpvalues.reserve(m_openUpvalues.size());
+	for (const OpenUpvalueSlot& entry : m_openUpvalues) {
+		state.openUpvalues.push_back(ensureObjectId(entry.upvalue));
+	}
+	state.objects = std::move(objects);
+	state.lastPc = lastPc;
+	state.lastInstruction = lastInstruction;
+	state.instructionBudgetRemaining = instructionBudgetRemaining;
+	state.haltedUntilIrq = m_haltedUntilIrq;
+	state.yieldRequested = m_yieldRequested;
+	return state;
+}
+
+void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<std::string, Value>& moduleCache) {
+	syncGlobalSlotsToTable();
+
+	auto encodePathKey = [](const std::vector<CpuRuntimeRefSegment>& path) -> std::string {
+		std::string key;
+		for (const CpuRuntimeRefSegment& segment : path) {
+			if (segment.isIndex) {
+				key += "#" + std::to_string(segment.index) + ";";
+				continue;
+			}
+			key += "$" + std::to_string(segment.key.size()) + ":" + segment.key + ";";
+		}
+		return key;
+	};
+
+	std::unordered_map<std::string, Value> stableValueByPath;
+	std::unordered_set<const Table*> stableTables;
+	std::unordered_set<const NativeObject*> stableNativeObjects;
+
+	auto recordStableValue = [&](const std::vector<CpuRuntimeRefSegment>& path, Value value) {
+		if (!valueIsNativeFunction(value) && !valueIsNativeObject(value)) {
+			return;
+		}
+		stableValueByPath[encodePathKey(path)] = value;
+	};
+
+	std::function<void(const std::vector<CpuRuntimeRefSegment>&, Value)> traverseStableValue;
+	traverseStableValue = [&](const std::vector<CpuRuntimeRefSegment>& path, Value value) {
+		recordStableValue(path, value);
+		if (valueIsTable(value)) {
+			const Table* table = asTable(value);
+			if (!stableTables.insert(table).second) {
+				return;
+			}
+			if (table->getMetatable()) {
+				auto nextPath = path;
+				nextPath.push_back(CpuRuntimeRefSegment{ false, std::string(kCpuRuntimeMetatableSegment), 0 });
+				traverseStableValue(nextPath, valueTable(table->getMetatable()));
+			}
+			for (int arrayIndex = 1; arrayIndex <= table->length(); ++arrayIndex) {
+				const Value entryValue = table->getInteger(arrayIndex);
+				if (!isNil(entryValue)) {
+					auto nextPath = path;
+					nextPath.push_back(CpuRuntimeRefSegment{ true, {}, arrayIndex });
+					traverseStableValue(nextPath, entryValue);
+				}
+			}
+			table->forEachEntry([&](Value key, Value entryValue) {
+				if (valueIsString(key)) {
+					auto nextPath = path;
+					nextPath.push_back(CpuRuntimeRefSegment{ false, m_stringPool.toString(asStringId(key)), 0 });
+					traverseStableValue(nextPath, entryValue);
+					return;
+				}
+				if (!valueIsNumber(key)) {
+					return;
+				}
+				const double numberKey = valueToNumber(key);
+				if (!std::isfinite(numberKey)) {
+					return;
+				}
+				const int integerKey = static_cast<int>(numberKey);
+				if (static_cast<double>(integerKey) != numberKey) {
+					return;
+				}
+				auto nextPath = path;
+				nextPath.push_back(CpuRuntimeRefSegment{ true, {}, integerKey });
+				traverseStableValue(nextPath, entryValue);
+			});
+			return;
+		}
+		if (!valueIsNativeObject(value)) {
+			return;
+		}
+		const NativeObject* native = asNativeObject(value);
+		if (!stableNativeObjects.insert(native).second) {
+			return;
+		}
+		if (native->metatable) {
+			auto nextPath = path;
+			nextPath.push_back(CpuRuntimeRefSegment{ false, std::string(kCpuRuntimeMetatableSegment), 0 });
+			traverseStableValue(nextPath, valueTable(native->metatable));
+		}
+	};
+
+	globals->forEachEntry([&](Value key, Value value) {
+		if (!valueIsString(key)) {
+			return;
+		}
+		std::vector<CpuRuntimeRefSegment> path;
+		path.push_back(CpuRuntimeRefSegment{ false, "globals", 0 });
+		path.push_back(CpuRuntimeRefSegment{ false, m_stringPool.toString(asStringId(key)), 0 });
+		traverseStableValue(path, value);
+	});
+	for (size_t index = 0; index < m_memory.ioSlots().size(); ++index) {
+		std::vector<CpuRuntimeRefSegment> path;
+		path.push_back(CpuRuntimeRefSegment{ false, "ioMemory", 0 });
+		path.push_back(CpuRuntimeRefSegment{ true, {}, static_cast<int>(index) });
+		traverseStableValue(path, m_memory.ioSlots()[index]);
+	}
+	for (const auto& [name, value] : moduleCache) {
+		std::vector<CpuRuntimeRefSegment> path;
+		path.push_back(CpuRuntimeRefSegment{ false, "moduleCache", 0 });
+		path.push_back(CpuRuntimeRefSegment{ false, name, 0 });
+		traverseStableValue(path, value);
+	}
+
+	struct RestoredObject {
+		Table* table = nullptr;
+		Closure* closure = nullptr;
+		Upvalue* upvalue = nullptr;
+	};
+
+	std::vector<RestoredObject> restoredObjects(state.objects.size());
+	for (size_t index = 0; index < state.objects.size(); ++index) {
+		const CpuObjectState& objectState = state.objects[index];
+		switch (objectState.kind) {
+			case CpuObjectState::Kind::Table:
+				restoredObjects[index].table = createTable(0, 0);
+				break;
+			case CpuObjectState::Kind::Closure:
+				restoredObjects[index].closure = createRootClosure(objectState.protoIndex);
+				restoredObjects[index].closure->upvalues.resize(objectState.upvalues.size(), nullptr);
+				break;
+			case CpuObjectState::Kind::Upvalue: {
+				auto* upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
+				upvalue->open = false;
+				upvalue->index = objectState.upvalueIndex;
+				upvalue->frame = nullptr;
+				upvalue->value = valueNil();
+				addTrackedLuaHeapBytes(24);
+				restoredObjects[index].upvalue = upvalue;
+				break;
+			}
+		}
+	}
+
+	std::function<Value(const CpuValueState&)> restoreValue = [&](const CpuValueState& valueState) -> Value {
+		switch (valueState.tag) {
+			case CpuValueStateTag::Nil:
+				return valueNil();
+			case CpuValueStateTag::False:
+				return valueBool(false);
+			case CpuValueStateTag::True:
+				return valueBool(true);
+			case CpuValueStateTag::Number:
+				return valueNumber(valueState.numberValue);
+			case CpuValueStateTag::String:
+				return valueString(valueState.stringId);
+			case CpuValueStateTag::Ref: {
+				const RestoredObject& restored = restoredObjects.at(static_cast<size_t>(valueState.refId));
+				if (restored.table) return valueTable(restored.table);
+				if (restored.closure) return valueClosure(restored.closure);
+				if (restored.upvalue) return valueUpvalue(restored.upvalue);
+				throw std::runtime_error("[CPU] Runtime snapshot reference points to an unknown object.");
+			}
+			case CpuValueStateTag::StableRef: {
+				const auto it = stableValueByPath.find(encodePathKey(valueState.path));
+				if (it == stableValueByPath.end()) {
+					throw std::runtime_error("[CPU] Runtime snapshot stable reference is not available in the current runtime environment.");
+				}
+				return it->second;
+			}
+		}
+		throw std::runtime_error("[CPU] Unknown runtime snapshot value tag.");
+	};
+
+	for (size_t index = 0; index < state.objects.size(); ++index) {
+		const CpuObjectState& objectState = state.objects[index];
+		switch (objectState.kind) {
+			case CpuObjectState::Kind::Table: {
+				TableRuntimeState tableState;
+				tableState.array.reserve(objectState.array.size());
+				for (const CpuValueState& valueState : objectState.array) {
+					tableState.array.push_back(restoreValue(valueState));
+				}
+				tableState.arrayLength = objectState.arrayLength;
+				tableState.hash.reserve(objectState.hash.size());
+				for (const CpuTableHashNodeSnapshot& node : objectState.hash) {
+					tableState.hash.push_back(TableHashNodeState{
+						restoreValue(node.key),
+						restoreValue(node.value),
+						node.next,
+					});
+				}
+				tableState.hashFree = objectState.hashFree;
+				tableState.metatable = isNil(restoreValue(objectState.metatable)) ? nullptr : asTable(restoreValue(objectState.metatable));
+				restoredObjects[index].table->restoreRuntimeState(tableState);
+				break;
+			}
+			case CpuObjectState::Kind::Closure: {
+				Closure* closure = restoredObjects[index].closure;
+				closure->protoIndex = objectState.protoIndex;
+				for (size_t upvalueIndex = 0; upvalueIndex < objectState.upvalues.size(); ++upvalueIndex) {
+					closure->upvalues[upvalueIndex] = restoredObjects.at(static_cast<size_t>(objectState.upvalues[upvalueIndex])).upvalue;
+				}
+				break;
+			}
+			case CpuObjectState::Kind::Upvalue: {
+				Upvalue* upvalue = restoredObjects[index].upvalue;
+				upvalue->open = objectState.upvalueOpen;
+				upvalue->index = objectState.upvalueIndex;
+				upvalue->frame = nullptr;
+				upvalue->value = objectState.upvalueOpen ? valueNil() : restoreValue(objectState.upvalueValue);
+				break;
+			}
+		}
+	}
+
+	lastReturnValues.clear();
+	m_frames.clear();
+	m_openUpvalues.clear();
+	m_stack.clear();
+	m_stackTop = 0;
+	m_externalReturnSink = nullptr;
+	globals->clear();
+	for (Value& value : m_systemGlobalValues) {
+		value = valueNil();
+	}
+	for (Value& value : m_globalValues) {
+		value = valueNil();
+	}
+	moduleCache.clear();
+
+	for (const CpuFrameState& frameState : state.frames) {
+		const Proto& proto = m_program->protos[frameState.protoIndex];
+		auto frame = acquireFrame();
+		frame->protoIndex = frameState.protoIndex;
+		frame->pc = frameState.pc;
+		frame->closure = restoredObjects.at(static_cast<size_t>(frameState.closureRef)).closure;
+		frame->returnBase = frameState.returnBase;
+		frame->returnCount = frameState.returnCount;
+		frame->captureReturns = frameState.captureReturns;
+		frame->callSitePc = frameState.callSitePc;
+		frame->varargBase = m_stackTop;
+		frame->varargCount = static_cast<int>(frameState.varargs.size());
+		frame->stackBase = frame->varargBase + frame->varargCount;
+		size_t targetCapacity = nextPowerOfTwo(static_cast<size_t>(std::max(proto.maxStack, 1)));
+		if (targetCapacity < 8) {
+			targetCapacity = 8;
+		}
+		frame->stackCapacity = static_cast<int>(targetCapacity);
+		m_stackTop = frame->stackBase + frame->stackCapacity;
+		ensureStackSize(static_cast<size_t>(m_stackTop));
+		frame->registers = m_stack.data() + frame->stackBase;
+		for (int slot = 0; slot < frame->stackCapacity; ++slot) {
+			frame->registers[static_cast<size_t>(slot)] = valueNil();
+		}
+		for (size_t registerIndex = 0; registerIndex < frameState.registers.size(); ++registerIndex) {
+			frame->registers[registerIndex] = restoreValue(frameState.registers[registerIndex]);
+		}
+		for (size_t varargIndex = 0; varargIndex < frameState.varargs.size(); ++varargIndex) {
+			m_stack[static_cast<size_t>(frame->varargBase) + varargIndex] = restoreValue(frameState.varargs[varargIndex]);
+		}
+		frame->top = frameState.top;
+		m_frames.push_back(std::move(frame));
+	}
+
+	for (int upvalueRef : state.openUpvalues) {
+		const CpuObjectState& objectState = state.objects.at(static_cast<size_t>(upvalueRef));
+		if (objectState.kind != CpuObjectState::Kind::Upvalue || !objectState.upvalueOpen) {
+			throw std::runtime_error("[CPU] Runtime snapshot contains an invalid open upvalue reference.");
+		}
+		Upvalue* upvalue = restoredObjects.at(static_cast<size_t>(upvalueRef)).upvalue;
+		if (objectState.frameIndex < 0 || objectState.frameIndex >= static_cast<int>(m_frames.size())) {
+			throw std::runtime_error("[CPU] Runtime snapshot open upvalue refers to a missing frame.");
+		}
+		CallFrame* frame = m_frames[static_cast<size_t>(objectState.frameIndex)].get();
+		upvalue->open = true;
+		upvalue->index = objectState.upvalueIndex;
+		upvalue->frame = frame;
+		upvalue->value = valueNil();
+		m_openUpvalues.push_back(OpenUpvalueSlot{ frame, upvalue->index, upvalue });
+	}
+
+	for (const CpuRootValueState& entry : state.globals) {
+		setGlobalByKey(valueString(internString(entry.name)), restoreValue(entry.value));
+	}
+	for (const CpuRootValueState& entry : state.moduleCache) {
+		moduleCache[entry.name] = restoreValue(entry.value);
+	}
+	std::vector<Value> restoredIo;
+	restoredIo.reserve(state.ioMemory.size());
+	for (const CpuValueState& valueState : state.ioMemory) {
+		restoredIo.push_back(restoreValue(valueState));
+	}
+	m_memory.loadIoSlots(restoredIo);
+	lastReturnValues.reserve(state.lastReturnValues.size());
+	for (const CpuValueState& valueState : state.lastReturnValues) {
+		lastReturnValues.push_back(restoreValue(valueState));
+	}
+	lastPc = state.lastPc;
+	lastInstruction = state.lastInstruction;
+	instructionBudgetRemaining = state.instructionBudgetRemaining;
+	m_haltedUntilIrq = state.haltedUntilIrq;
+	m_yieldRequested = state.yieldRequested;
+	collectHeap();
 }
 
 void CPU::requestYield() {

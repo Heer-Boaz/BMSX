@@ -4,7 +4,6 @@
 #include "input/manager.h"
 #include "machine/firmware/api.h"
 #include "machine/runtime/runtime_fault.h"
-#include "render/shared/queues.h"
 #include "rompack/format.h"
 
 #include <stdexcept>
@@ -79,10 +78,6 @@ VDP* Machine::runDeviceService(uint8_t deviceKind) {
 	}
 }
 
-void Machine::resetRenderBuffers() {
-	RenderQueues::clearBackQueues();
-}
-
 MachineState Machine::captureState() const {
 	MachineState state;
 	state.memory = m_memory.captureState();
@@ -93,6 +88,25 @@ MachineState Machine::captureState() const {
 
 void Machine::restoreState(const MachineState& state) {
 	m_memory.restoreState(state.memory);
+	m_geometryController.postLoad();
+	m_irqController.postLoad();
+	m_inputController.restoreState(state.input);
+	m_vdp.restoreState(state.vdp);
+}
+
+MachineSaveState Machine::captureSaveState() const {
+	MachineSaveState state;
+	state.memory = m_memory.captureSaveState();
+	state.stringHandles = m_stringHandles.captureState();
+	state.input = m_inputController.captureState();
+	state.vdp = m_vdp.captureState();
+	return state;
+}
+
+void Machine::restoreSaveState(const MachineSaveState& state) {
+	m_memory.restoreSaveState(state.memory);
+	m_stringHandles.restoreState(state.stringHandles);
+	m_cpu.rehydrateStringPoolFromHandleTable(state.stringHandles);
 	m_geometryController.postLoad();
 	m_irqController.postLoad();
 	m_inputController.restoreState(state.input);

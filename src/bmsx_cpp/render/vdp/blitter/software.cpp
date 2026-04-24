@@ -1,6 +1,7 @@
 #include "render/vdp/blitter/software.h"
 
 #include "render/vdp/framebuffer.h"
+#include "render/vdp/source_pixels.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -46,7 +47,7 @@ void VdpSoftwareBlitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand
 	const u32 frameBufferHeight = vdp.frameBufferHeight();
 	ensureVdpSoftwareRuntime(frameBufferWidth, frameBufferHeight);
 	resetFrameBufferPriority();
-	auto& pixels = vdp.getVramSlotByTextureKey(FRAMEBUFFER_RENDER_TEXTURE_KEY).cpuReadback;
+	auto& pixels = vdp.frameBufferRenderReadback();
 	if (queue.front().type != VDP::BlitterCommandType::Clear) {
 		for (size_t index = 0; index < pixels.size(); index += 4u) {
 			pixels[index + 0u] = IMPLICIT_FRAME_CLEAR_RGBA[0];
@@ -106,8 +107,8 @@ void VdpSoftwareBlitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand
 				break;
 		}
 	}
-	updateVdpRenderFrameBufferTexture(pixels.data(), frameBufferWidth, frameBufferHeight);
-	vdp.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
+	uploadVdpFrameBufferPixels(pixels.data(), frameBufferWidth, frameBufferHeight);
+	vdp.invalidateFrameBufferReadCache();
 }
 
 void VdpSoftwareBlitter::resetFrameBufferPriority() {
@@ -225,9 +226,7 @@ void VdpSoftwareBlitter::rasterizeFrameBufferLine(VDP& vdp, std::vector<u8>& pix
 void VdpSoftwareBlitter::rasterizeFrameBufferBlit(VDP& vdp, std::vector<u8>& pixels, const VDP::BlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const VDP::FrameBufferColor& color, Layer2D layer, f32 z, u32 seq) {
 	const i32 frameBufferWidth = static_cast<i32>(vdp.frameBufferWidth());
 	const i32 frameBufferHeight = static_cast<i32>(vdp.frameBufferHeight());
-	const auto sourceSurface = vdp.resolveBlitterSurface(source.surfaceId);
-	const u8* sourcePixels = vdp.getVramSlotByTextureKey(*sourceSurface.textureKey).cpuReadback.data();
-	const u32 sourceStride = sourceSurface.width * 4u;
+	const VdpSourcePixels sourcePixels = resolveVdpSourcePixels(vdp, source);
 	const i32 dstW = std::max(1, static_cast<i32>(std::round(static_cast<f32>(source.width) * scaleX)));
 	const i32 dstH = std::max(1, static_cast<i32>(std::round(static_cast<f32>(source.height) * scaleY)));
 	const i32 dstX = static_cast<i32>(std::round(dstXValue));
@@ -248,16 +247,16 @@ void VdpSoftwareBlitter::rasterizeFrameBufferBlit(VDP& vdp, std::vector<u8>& pix
 			const i32 srcX = flipH
 				? static_cast<i32>(source.width) - 1 - ((x * static_cast<i32>(source.width)) / dstW)
 				: ((x * static_cast<i32>(source.width)) / dstW);
-			const size_t srcIndex = (static_cast<size_t>(source.srcY + static_cast<uint32_t>(srcY)) * static_cast<size_t>(sourceStride))
+			const size_t srcIndex = (static_cast<size_t>(source.srcY + static_cast<uint32_t>(srcY)) * static_cast<size_t>(sourcePixels.stride))
 				+ (static_cast<size_t>(source.srcX + static_cast<uint32_t>(srcX)) * 4u);
-			const u8 srcA = sourcePixels[srcIndex + 3u];
+			const u8 srcA = sourcePixels.pixels[srcIndex + 3u];
 			if (srcA == 0u) {
 				continue;
 			}
 			const u8 outA = static_cast<u8>((static_cast<u32>(srcA) * static_cast<u32>(color.a) + 127u) / 255u);
-			const u8 outR = static_cast<u8>((static_cast<u32>(sourcePixels[srcIndex + 0u]) * static_cast<u32>(color.r) + 127u) / 255u);
-			const u8 outG = static_cast<u8>((static_cast<u32>(sourcePixels[srcIndex + 1u]) * static_cast<u32>(color.g) + 127u) / 255u);
-			const u8 outB = static_cast<u8>((static_cast<u32>(sourcePixels[srcIndex + 2u]) * static_cast<u32>(color.b) + 127u) / 255u);
+			const u8 outR = static_cast<u8>((static_cast<u32>(sourcePixels.pixels[srcIndex + 0u]) * static_cast<u32>(color.r) + 127u) / 255u);
+			const u8 outG = static_cast<u8>((static_cast<u32>(sourcePixels.pixels[srcIndex + 1u]) * static_cast<u32>(color.g) + 127u) / 255u);
+			const u8 outB = static_cast<u8>((static_cast<u32>(sourcePixels.pixels[srcIndex + 2u]) * static_cast<u32>(color.b) + 127u) / 255u);
 			const size_t dstIndex = (static_cast<size_t>(targetY) * static_cast<size_t>(frameBufferWidth) + static_cast<size_t>(targetX)) * 4u;
 			blendFrameBufferPixel(pixels, dstIndex, outR, outG, outB, outA, layer, z, seq);
 		}

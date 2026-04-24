@@ -480,7 +480,174 @@ void Memory::restoreAssetMemory(const u8* data, size_t size) {
 	}
 	const size_t offset = static_cast<size_t>(ASSET_RAM_BASE - RAM_BASE);
 	std::memcpy(m_ram.data() + offset, data, size);
+	rehydrateAssetEntriesFromTable();
 	markAllAssetsDirty();
+}
+
+std::vector<u8> Memory::dumpMutableRam() const {
+	return m_ram;
+}
+
+void Memory::restoreMutableRam(const u8* data, size_t size) {
+	if (size != m_ram.size()) {
+		throw std::runtime_error("[Memory] RAM snapshot length mismatch.");
+	}
+	std::memcpy(m_ram.data(), data, size);
+	rehydrateAssetEntriesFromTable();
+	markAllAssetsDirty();
+}
+
+void Memory::rehydrateAssetEntriesFromTable() {
+	const size_t headerOffset = static_cast<size_t>(ASSET_TABLE_BASE - RAM_BASE);
+	const u8* base = m_ram.data();
+	const uint32_t magic = readU32LE(base + headerOffset + 0);
+	if (magic != ASSET_TABLE_MAGIC) {
+		throw std::runtime_error("[Memory] Asset table magic mismatch.");
+	}
+	const uint32_t headerSize = readU32LE(base + headerOffset + 4);
+	if (headerSize != ASSET_TABLE_HEADER_SIZE) {
+		throw std::runtime_error("[Memory] Asset table header size mismatch.");
+	}
+	const uint32_t entrySize = readU32LE(base + headerOffset + 8);
+	if (entrySize != ASSET_TABLE_ENTRY_SIZE) {
+		throw std::runtime_error("[Memory] Asset table entry size mismatch.");
+	}
+	const uint32_t entryCount = readU32LE(base + headerOffset + 12);
+	const uint32_t stringTableAddr = readU32LE(base + headerOffset + 16);
+	const uint32_t stringTableLength = readU32LE(base + headerOffset + 20);
+	const uint32_t dataBase = readU32LE(base + headerOffset + 24);
+	const uint32_t dataLength = readU32LE(base + headerOffset + 28);
+	const uint32_t hashAlgId = readU32LE(base + headerOffset + 32);
+	if (dataBase != ASSET_DATA_BASE) {
+		throw std::runtime_error("[Memory] Asset table data base mismatch.");
+	}
+	if (hashAlgId != ASSET_TABLE_HASH_ALG_ID) {
+		throw std::runtime_error("[Memory] Asset table hash algorithm mismatch.");
+	}
+
+	const uint32_t stringTableOffset = stringTableAddr - RAM_BASE;
+	const uint32_t stringTableEnd = stringTableOffset + stringTableLength;
+	auto readString = [&](uint32_t addr) -> std::string {
+		const uint32_t offset = addr - RAM_BASE;
+		if (offset < stringTableOffset || offset >= stringTableEnd) {
+			throw std::runtime_error("[Memory] Asset string pointer out of range.");
+		}
+		uint32_t cursor = offset;
+		while (cursor < stringTableEnd && base[cursor] != 0u) {
+			cursor += 1;
+		}
+		if (cursor >= stringTableEnd) {
+			throw std::runtime_error("[Memory] Asset string missing terminator.");
+		}
+		return std::string(reinterpret_cast<const char*>(base + offset), cursor - offset);
+	};
+
+	m_assetEntries.assign(entryCount, AssetEntry{});
+	m_assetIndexById.clear();
+	m_assetIndexByToken.clear();
+	m_assetDirtyFlags.assign(entryCount, 0u);
+	m_assetDirtyList.clear();
+
+	for (uint32_t index = 0; index < entryCount; ++index) {
+		const uint32_t entryOffset = static_cast<uint32_t>(headerOffset + ASSET_TABLE_HEADER_SIZE + index * ASSET_TABLE_ENTRY_SIZE);
+		const uint32_t typeId = readU32LE(base + entryOffset + 0);
+		const uint32_t flags = readU32LE(base + entryOffset + 4);
+		const uint32_t tokenLo = readU32LE(base + entryOffset + 8);
+		const uint32_t tokenHi = readU32LE(base + entryOffset + 12);
+		const uint32_t idAddr = readU32LE(base + entryOffset + 16);
+		AssetEntry& entry = m_assetEntries[index];
+		switch (typeId) {
+			case ASSET_TYPE_IMAGE:
+				entry.type = AssetType::Image;
+				break;
+			case ASSET_TYPE_AUDIO:
+				entry.type = AssetType::Audio;
+				break;
+			default:
+				throw std::runtime_error("[Memory] Asset entry has unknown type.");
+		}
+		entry.id = readString(idAddr);
+		entry.idToken = static_cast<uint64_t>(tokenLo) | (static_cast<uint64_t>(tokenHi) << 32);
+		entry.flags = flags;
+		entry.baseAddr = readU32LE(base + entryOffset + 20);
+		entry.baseSize = readU32LE(base + entryOffset + 24);
+		entry.capacity = readU32LE(base + entryOffset + 28);
+		entry.baseStride = 0;
+		entry.regionX = 0;
+		entry.regionY = 0;
+		entry.regionW = 0;
+		entry.regionH = 0;
+		entry.sampleRate = 0;
+		entry.channels = 0;
+		entry.frames = 0;
+		entry.bitsPerSample = 0;
+		entry.audioDataOffset = 0;
+		entry.audioDataSize = 0;
+		switch (entry.type) {
+			case AssetType::Image:
+				entry.baseStride = readU32LE(base + entryOffset + 32);
+				entry.regionX = readU32LE(base + entryOffset + 36);
+				entry.regionY = readU32LE(base + entryOffset + 40);
+				entry.regionW = readU32LE(base + entryOffset + 44);
+				entry.regionH = readU32LE(base + entryOffset + 48);
+				break;
+			case AssetType::Audio:
+				entry.sampleRate = readU32LE(base + entryOffset + 32);
+				entry.channels = readU32LE(base + entryOffset + 36);
+				entry.frames = readU32LE(base + entryOffset + 40);
+				entry.bitsPerSample = readU32LE(base + entryOffset + 44);
+				entry.audioDataOffset = readU32LE(base + entryOffset + 48);
+				entry.audioDataSize = readU32LE(base + entryOffset + 52);
+				break;
+		}
+		const AssetToken expectedToken = hashAssetToken(entry.id);
+		if (expectedToken != entry.idToken) {
+			throw std::runtime_error("[Memory] Asset token mismatch for '" + entry.id + "'.");
+		}
+		if (m_assetIndexById.find(entry.id) != m_assetIndexById.end()) {
+			throw std::runtime_error("[Memory] Duplicate asset id in asset table.");
+		}
+		if (m_assetIndexByToken.find(entry.idToken) != m_assetIndexByToken.end()) {
+			throw std::runtime_error("[Memory] Duplicate asset token in asset table.");
+		}
+		m_assetIndexById[entry.id] = index;
+		m_assetIndexByToken[entry.idToken] = index;
+	}
+
+	std::unordered_map<uint32_t, size_t> ownerByBaseAddr;
+	for (size_t index = 0; index < m_assetEntries.size(); ++index) {
+		auto& entry = m_assetEntries[index];
+		if ((entry.flags & ASSET_FLAG_VIEW) != 0u) {
+			continue;
+		}
+		entry.ownerIndex = index;
+		ownerByBaseAddr[entry.baseAddr] = index;
+	}
+	for (size_t index = 0; index < m_assetEntries.size(); ++index) {
+		auto& entry = m_assetEntries[index];
+		if ((entry.flags & ASSET_FLAG_VIEW) == 0u) {
+			continue;
+		}
+		const auto owner = ownerByBaseAddr.find(entry.baseAddr);
+		if (owner == ownerByBaseAddr.end()) {
+			throw std::runtime_error("[Memory] Missing owner for asset view '" + entry.id + "'.");
+		}
+		entry.ownerIndex = owner->second;
+	}
+
+	std::fill(m_assetOwnerPages.begin(), m_assetOwnerPages.end(), -1);
+	for (size_t index = 0; index < m_assetEntries.size(); ++index) {
+		const auto& entry = m_assetEntries[index];
+		if (entry.ownerIndex != index) {
+			continue;
+		}
+		if (entry.capacity == 0 || isVramRange(entry.baseAddr, entry.capacity)) {
+			continue;
+		}
+		mapAssetPages(index, entry.baseAddr, entry.capacity);
+	}
+	m_assetDataCursor = dataBase + dataLength;
+	m_assetTableFinalized = true;
 }
 
 MemoryState Memory::captureState() const {
@@ -493,6 +660,16 @@ MemoryState Memory::captureState() const {
 void Memory::restoreState(const MemoryState& state) {
 	loadIoSlots(state.ioMemory);
 	restoreAssetMemory(state.assetMemory.data(), state.assetMemory.size());
+}
+
+MemorySaveState Memory::captureSaveState() const {
+	MemorySaveState state;
+	state.ram = dumpMutableRam();
+	return state;
+}
+
+void Memory::restoreSaveState(const MemorySaveState& state) {
+	restoreMutableRam(state.ram.data(), state.ram.size());
 }
 
 u32 Memory::resolveAssetHandle(const std::string& id) const {
@@ -871,10 +1048,10 @@ bool Memory::isRamRange(uint32_t addr, size_t length) const {
 }
 
 void Memory::loadIoSlots(const std::vector<Value>& slots) {
-	m_ioSlots = slots;
-	if (m_ioSlots.size() < IO_SLOT_COUNT) {
-		m_ioSlots.resize(IO_SLOT_COUNT, valueNil());
+	if (slots.size() != IO_SLOT_COUNT) {
+		throw std::runtime_error("[Memory] I/O snapshot slot count mismatch.");
 	}
+	m_ioSlots = slots;
 }
 
 void Memory::clearIoSlots() {

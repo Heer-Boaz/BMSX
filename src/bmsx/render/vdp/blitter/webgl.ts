@@ -31,7 +31,13 @@ import {
 import { spriteParallaxRig } from '../../2d/sprite_parallax_rig';
 import fragmentShaderCode from '../shaders/vdp_2d.frag.glsl';
 import vertexShaderCode from '../shaders/vdp_2d.vert.glsl';
+import { getVdpRenderFrameBufferTexture } from '../framebuffer';
 import { syncVdpSlotTextures } from '../slot_textures';
+import {
+	getVdpRenderSurfaceTexture,
+	resolveVdpRenderSurface,
+	resolveVdpSurfaceAtlasBinding,
+} from '../surfaces';
 
 type DrawMode = 'atlas' | 'solid';
 
@@ -195,9 +201,9 @@ function bindTexturesForMode(vdp: VDP, state: WebGLVdpBlitterRuntime, mode: Draw
 		$.view.bind2DTex(state.whiteTexture);
 		return;
 	}
-	const primary = $.texmanager.getTextureByUri(vdp.resolveBlitterSurface(1).textureKey)!;
-	const secondary = $.texmanager.getTextureByUri(vdp.resolveBlitterSurface(2).textureKey)!;
-	const engine = $.texmanager.getTextureByUri(vdp.resolveBlitterSurface(0).textureKey)!;
+	const primary = getVdpRenderSurfaceTexture(vdp, 1)!;
+	const secondary = getVdpRenderSurfaceTexture(vdp, 2)!;
+	const engine = getVdpRenderSurfaceTexture(vdp, 0)!;
 	$.view.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
 	$.view.bind2DTex(primary);
 	$.view.activeTexUnit = TEXTURE_UNIT_ATLAS_SECONDARY;
@@ -289,7 +295,7 @@ function appendLineCommand(backend: WebGLBackend, state: WebGLVdpBlitterRuntime,
 }
 
 function appendBlitCommand(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, index: number, command: BlitterBlitCommand, priorityDepth: number): number {
-	const surface = vdp.resolveBlitterSurface(command.source.surfaceId);
+	const surface = resolveVdpRenderSurface(vdp, command.source.surfaceId);
 	let u0 = command.source.srcX / surface.width;
 	let v0 = command.source.srcY / surface.height;
 	let u1 = (command.source.srcX + command.source.width) / surface.width;
@@ -320,7 +326,7 @@ function appendBlitCommand(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitt
 		command.parallaxWeight,
 		priorityDepth,
 		command.color,
-		vdp.resolveBlitterAtlasId(command.source.surfaceId),
+		resolveVdpSurfaceAtlasBinding(command.source.surfaceId),
 	);
 	return 1;
 }
@@ -360,12 +366,12 @@ function appendGlyphRunGlyphs(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBl
 	ensureWebGLInstanceBufferCapacity(backend, state, index + command.glyphs.length, INSTANCE_FLOATS);
 	for (let i = 0; i < command.glyphs.length; i += 1) {
 		const glyph = command.glyphs[i];
-		const surface = vdp.resolveBlitterSurface(glyph.surfaceId);
+		const surface = resolveVdpRenderSurface(vdp, glyph.surfaceId);
 		const u0 = glyph.srcX / surface.width;
 		const v0 = glyph.srcY / surface.height;
 		const u1 = (glyph.srcX + glyph.width) / surface.width;
 		const v1 = (glyph.srcY + glyph.height) / surface.height;
-		writeAxisAlignedQuad(state, index + i, glyph.dstX, glyph.dstY, glyph.width, glyph.height, u0, v0, u1, v1, command.z, 0, priorityDepth, command.color, vdp.resolveBlitterAtlasId(glyph.surfaceId));
+		writeAxisAlignedQuad(state, index + i, glyph.dstX, glyph.dstY, glyph.width, glyph.height, u0, v0, u1, v1, command.z, 0, priorityDepth, command.color, resolveVdpSurfaceAtlasBinding(glyph.surfaceId));
 	}
 	return command.glyphs.length;
 }
@@ -377,12 +383,12 @@ function appendTileRunCommand(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBl
 	ensureWebGLInstanceBufferCapacity(backend, state, index + command.tiles.length, INSTANCE_FLOATS);
 	for (let i = 0; i < command.tiles.length; i += 1) {
 		const tile = command.tiles[i];
-		const surface = vdp.resolveBlitterSurface(tile.surfaceId);
+		const surface = resolveVdpRenderSurface(vdp, tile.surfaceId);
 		const u0 = tile.srcX / surface.width;
 		const v0 = tile.srcY / surface.height;
 		const u1 = (tile.srcX + tile.width) / surface.width;
 		const v1 = (tile.srcY + tile.height) / surface.height;
-		writeAxisAlignedQuad(state, index + i, tile.dstX, tile.dstY, tile.width, tile.height, u0, v0, u1, v1, command.z, 0, priorityDepth, WHITE_COLOR, vdp.resolveBlitterAtlasId(tile.surfaceId));
+		writeAxisAlignedQuad(state, index + i, tile.dstX, tile.dstY, tile.width, tile.height, u0, v0, u1, v1, command.z, 0, priorityDepth, WHITE_COLOR, resolveVdpSurfaceAtlasBinding(tile.surfaceId));
 	}
 	return command.tiles.length;
 }
@@ -414,7 +420,7 @@ function drawSortedSegment(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitt
 		return;
 	}
 	sorted.sort(compareByPriority);
-	const frameBufferTexture = $.texmanager.getTextureByUri(vdp.frameBufferTextureKey)!;
+	const frameBufferTexture = getVdpRenderFrameBufferTexture()!;
 	const pass = backend.beginRenderPass({
 		color: { tex: frameBufferTexture },
 		depth: { tex: priorityDepthTexture },
@@ -486,8 +492,8 @@ function drawSortedSegment(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitt
 	backend.setDepthMask(true);
 }
 
-function resetPriorityDepthSurface(vdp: VDP, backend: WebGLBackend, priorityDepthTexture: WebGLTexture): void {
-	const frameBufferTexture = $.texmanager.getTextureByUri(vdp.frameBufferTextureKey)!;
+function resetPriorityDepthSurface(backend: WebGLBackend, priorityDepthTexture: WebGLTexture): void {
+	const frameBufferTexture = getVdpRenderFrameBufferTexture()!;
 	const pass = backend.beginRenderPass({
 		color: { tex: frameBufferTexture },
 		depth: { tex: priorityDepthTexture, clearDepth: 1 },
@@ -495,8 +501,8 @@ function resetPriorityDepthSurface(vdp: VDP, backend: WebGLBackend, priorityDept
 	backend.endRenderPass(pass);
 }
 
-function clearFrameBuffer(vdp: VDP, backend: WebGLBackend, priorityDepthTexture: WebGLTexture, command: BlitterClearCommand): void {
-	const frameBufferTexture = $.texmanager.getTextureByUri(vdp.frameBufferTextureKey)!;
+function clearFrameBuffer(backend: WebGLBackend, priorityDepthTexture: WebGLTexture, command: BlitterClearCommand): void {
+	const frameBufferTexture = getVdpRenderFrameBufferTexture()!;
 	const pass = backend.beginRenderPass({
 		color: {
 			tex: frameBufferTexture,
@@ -513,7 +519,7 @@ function clearFrameBuffer(vdp: VDP, backend: WebGLBackend, priorityDepthTexture:
 }
 
 function copyFrameBufferRect(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, priorityDepthTexture: WebGLTexture, priorityDepthBySeq: ReadonlyMap<number, number>, command: BlitterCopyRectCommand): void {
-	const frameBufferTexture = $.texmanager.getTextureByUri(vdp.frameBufferTextureKey)! as WebGLTexture;
+	const frameBufferTexture = getVdpRenderFrameBufferTexture()! as WebGLTexture;
 	const copySnapshotTexture = prepareCopySnapshotTexture(backend, state, vdp.frameBufferWidth, vdp.frameBufferHeight);
 	backend.copyTextureRegion(frameBufferTexture, copySnapshotTexture, command.srcX, command.srcY, command.srcX, command.srcY, command.width, command.height);
 	const pass = backend.beginRenderPass({
@@ -586,16 +592,16 @@ export class WebGLVdpBlitterExecutor {
 		const state = this.runtime;
 		const priorityDepthTexture = preparePriorityDepthTexture(this.backend, state, vdp.frameBufferWidth, vdp.frameBufferHeight);
 		const priorityDepthBySeq = buildPriorityDepthBySequence(state, commands);
-		resetPriorityDepthSurface(vdp, this.backend, priorityDepthTexture);
+		resetPriorityDepthSurface(this.backend, priorityDepthTexture);
 		if (commands[0].opcode !== 'clear') {
-			clearFrameBuffer(vdp, this.backend, priorityDepthTexture, IMPLICIT_CLEAR_COMMAND);
+			clearFrameBuffer(this.backend, priorityDepthTexture, IMPLICIT_CLEAR_COMMAND);
 		}
 		let segmentStart = 0;
 		for (let i = 0; i < commands.length; i += 1) {
 			const command = commands[i];
 			if (command.opcode === 'clear') {
 				drawSortedSegment(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands, segmentStart, i);
-				clearFrameBuffer(vdp, this.backend, priorityDepthTexture, command);
+				clearFrameBuffer(this.backend, priorityDepthTexture, command);
 				segmentStart = i + 1;
 				continue;
 			}

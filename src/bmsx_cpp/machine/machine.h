@@ -33,6 +33,13 @@ struct MachineState {
 	VdpState vdp;
 };
 
+struct MachineSaveState {
+	MemorySaveState memory;
+	StringHandleTableState stringHandles;
+	InputControllerState input;
+	VdpState vdp;
+};
+
 class Machine {
 public:
 	Machine(Api& api, SoundMaster& soundMaster, VdpFrameBufferSize frameBufferSize);
@@ -67,9 +74,10 @@ public:
 	void refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles);
 	void advanceDevices(int cycles);
 	VDP* runDeviceService(uint8_t deviceKind);
-	void resetRenderBuffers();
 	MachineState captureState() const;
 	void restoreState(const MachineState& state);
+	MachineSaveState captureSaveState() const;
+	void restoreSaveState(const MachineSaveState& state);
 
 private:
 	Memory m_memory;

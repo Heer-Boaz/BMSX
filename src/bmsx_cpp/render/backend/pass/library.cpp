@@ -4,13 +4,14 @@
 
 #include "library.h"
 #include "../../gameview.h"
+#include "../../shared/camera_state.h"
+#include "../../vdp/framebuffer.h"
 #if BMSX_ENABLE_GLES2
 #include "../../post/crt_pipeline_gles2.h"
 #endif
 #include "../../graph/graph.h"
 #include "core/engine.h"
 #include "machine/runtime/runtime.h"
-#include "rompack/format.h"
 #include <algorithm>
 #include <stdexcept>
 
@@ -44,7 +45,7 @@ Framebuffer2DPipelineState buildFramebuffer2DState(const RenderPassDef::RenderGr
 	auto* view = ctx.view;
 	Framebuffer2DPipelineState state;
 	setPassViewportSize(state, view);
-	state.colorTex = view->textures.at(FRAMEBUFFER_TEXTURE_KEY);
+	state.colorTex = getVdpDisplayFrameBufferTexture();
 	return state;
 }
 
@@ -411,9 +412,7 @@ RenderPassToken RenderPassLibrary::createPassToken(const std::string& id, bool i
 	return token;
 }
 
-std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView* view, LightingSystem* lightingSystem) {
-	(void)lightingSystem; // TODO: Use for lighting state
-
+std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView* view, LightingSystem& lightingSystem) {
 	auto rg = std::make_unique<RenderGraphRuntime>(m_backend);
 	std::vector<const RenderPassDef*> passList;
 	passList.reserve(m_passes.size());
@@ -518,9 +517,21 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 			io.writeTex(handles->color);
 			return std::any{};
 		};
-		pass.execute = [this, view](RenderGraphContext&, FrameData* frame, const std::any&) {
+		pass.execute = [this, view, &lightingSystem](RenderGraphContext&, FrameData* frame, const std::any&) {
+			const std::optional<ResolvedCameraState> cameraState = resolveCameraState();
+			if (!cameraState.has_value()) {
+				return;
+			}
 			FrameSharedState frameShared;
-			// TODO: Fill from camera and lighting
+			frameShared.view.camPos = {
+				cameraState->camPos.x,
+				cameraState->camPos.y,
+				cameraState->camPos.z,
+			};
+			frameShared.view.viewProj = cameraState->viewProj;
+			frameShared.view.skyboxView = cameraState->skyboxView;
+			frameShared.view.proj = cameraState->proj;
+			frameShared.lighting = lightingSystem.update();
 			frameShared.fog.fogD50 = view->atmosphere.fogD50;
 			frameShared.fog.fogStart = view->atmosphere.fogStart;
 			frameShared.fog.fogColorLow = view->atmosphere.fogColorLow;

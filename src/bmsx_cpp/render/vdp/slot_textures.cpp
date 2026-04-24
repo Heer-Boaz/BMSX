@@ -1,8 +1,8 @@
 #include "render/vdp/slot_textures.h"
 
 #include "machine/devices/vdp/vdp.h"
+#include "render/vdp/surfaces.h"
 #include "render/vdp/texture_transfer.h"
-#include "rompack/format.h"
 #include <array>
 #include <unordered_map>
 
@@ -19,39 +19,29 @@ const std::array<u8, 4> EMPTY_TEXTURE_SEED{{0, 0, 0, 0}};
 } // namespace
 
 void syncVdpSlotTextures(VDP& vdp) {
-	for (const auto& slot : vdp.renderTextureSlots()) {
-		if (slot.textureKey == FRAMEBUFFER_RENDER_TEXTURE_KEY) {
+	for (const auto& slot : vdp.surfaceUploadSlots()) {
+		if (isVdpFrameBufferSurface(slot.surfaceId)) {
 			continue;
 		}
-		const uint32_t width = slot.textureWidth;
-		const uint32_t height = slot.textureHeight;
+		const VdpRenderSurfaceInfo surface = resolveVdpRenderSurface(vdp, slot.surfaceId);
+		const uint32_t width = slot.surfaceWidth;
+		const uint32_t height = slot.surfaceHeight;
 		const uint64_t packedSize = packTextureSize(width, height);
-		const auto sizeIt = g_syncedTextureSizesByKey.find(slot.textureKey);
+		const auto sizeIt = g_syncedTextureSizesByKey.find(surface.textureKey);
 		const uint64_t syncedSize = sizeIt == g_syncedTextureSizesByKey.end() ? 0u : sizeIt->second;
 		bool forceFullUpload = false;
-		TextureHandle handle = vdpTextureByUri(slot.textureKey);
-		if (slot.textureKey == ENGINE_ATLAS_TEXTURE_KEY) {
-			if (handle == nullptr || syncedSize != packedSize) {
-				loadVdpEngineAtlasViewTexture();
-				handle = vdpTextureByUri(slot.textureKey);
-				if (handle == nullptr) {
-					continue;
-				}
-				g_syncedTextureSizesByKey[slot.textureKey] = packedSize;
-			}
-		} else {
+		TextureHandle handle = getVdpRenderSurfaceTexture(vdp, slot.surfaceId);
+		if (handle == nullptr) {
+			handle = ensureVdpTextureFromSeed(surface.textureKey, EMPTY_TEXTURE_SEED.data(), width, height);
 			if (handle == nullptr) {
-				handle = ensureVdpTextureFromSeed(slot.textureKey, EMPTY_TEXTURE_SEED.data(), width, height);
-				if (handle == nullptr) {
-					continue;
-				}
-				g_syncedTextureSizesByKey[slot.textureKey] = packedSize;
-				forceFullUpload = true;
-			} else if (syncedSize != packedSize) {
-				handle = resizeVdpTextureForKey(slot.textureKey, width, height);
-				g_syncedTextureSizesByKey[slot.textureKey] = packedSize;
-				forceFullUpload = true;
+				continue;
 			}
+			g_syncedTextureSizesByKey[surface.textureKey] = packedSize;
+			forceFullUpload = true;
+		} else if (syncedSize != packedSize) {
+			handle = resizeVdpTextureForKey(surface.textureKey, width, height);
+			g_syncedTextureSizesByKey[surface.textureKey] = packedSize;
+			forceFullUpload = true;
 		}
 		if (!forceFullUpload && slot.dirtyRowStart >= slot.dirtyRowEnd) {
 			continue;
@@ -61,14 +51,14 @@ void syncVdpSlotTextures(VDP& vdp) {
 		const uint32_t rowBytes = width * 4u;
 		const size_t byteOffset = static_cast<size_t>(rowStart) * static_cast<size_t>(rowBytes);
 		updateVdpTextureRegion(
-			slot.textureKey,
+			surface.textureKey,
 			slot.cpuReadback.data() + byteOffset,
 			static_cast<i32>(width),
 			static_cast<i32>(rowEnd - rowStart),
 			0,
 			static_cast<i32>(rowStart)
 		);
-		vdp.clearRenderTextureSlotDirty(slot.textureKey);
+		vdp.clearSurfaceUploadDirty(slot.surfaceId);
 	}
 }
 

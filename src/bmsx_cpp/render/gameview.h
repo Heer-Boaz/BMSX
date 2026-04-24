@@ -23,6 +23,7 @@ namespace bmsx {
 class GameViewHost;
 class RenderPassLibrary;
 class RenderGraphRuntime;
+class LightingSystem;
 
 /* ============================================================================
  * Atmosphere parameters (fog, etc.)
@@ -99,7 +100,6 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	void init();
 	void initializeDefaultTextures();
-	void loadEngineAtlasTexture();
 	void beginFrame();
 	void drawGame();
 	void endFrame();
@@ -251,6 +251,7 @@ private:
 	std::unique_ptr<GPUBackend> m_backend;
 	std::unique_ptr<RenderPassLibrary> m_pipelineRegistry;
 	std::unique_ptr<RenderGraphRuntime> m_renderGraph;
+	std::unique_ptr<LightingSystem> m_lightingSystem;
 
 	i32 m_activeTexUnit = -1;
 

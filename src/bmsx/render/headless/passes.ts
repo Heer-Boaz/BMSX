@@ -10,13 +10,15 @@ import {
 	meshQueueBackSize,
 	particleQueueBackSize,
 } from '../shared/queues';
-import { SKYBOX_FACE_KEYS, type MeshRenderSubmission, type ParticleRenderSubmission } from '../shared/submissions';
+import type { MeshRenderSubmission, ParticleRenderSubmission } from '../shared/submissions';
+import { SKYBOX_FACE_KEYS } from '../../machine/devices/vdp/contracts';
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
 import { resolveActiveCamera3D } from '../shared/hardware/camera';
 import { ENGINE_ATLAS_INDEX } from '../../rompack/format';
 import { VRAM_ATLAS_SLOT_SIZE, VRAM_SYSTEM_ATLAS_SLOT_SIZE } from '../../machine/memory/map';
 import type { Mesh } from '../3d/mesh';
 import { Runtime } from '../../machine/runtime/runtime';
+import { getVdpDisplayFrameBufferTexture, readVdpDisplayFrameBufferPixels } from '../vdp/framebuffer';
 import type { HeadlessPresentHost } from './view';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
@@ -291,19 +293,16 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 				height: $.view.canvasSize.y,
 				baseWidth: $.view.viewportSize.x,
 				baseHeight: $.view.viewportSize.y,
-				colorTex: $.view.textures[Runtime.instance.machine.vdp.frameBufferTextureKey],
+				colorTex: getVdpDisplayFrameBufferTexture(),
 			} as Framebuffer2DPipelineState);
 		},
-		exec: (backend, _fbo, state: Framebuffer2DPipelineState) => {
+		exec: (_backend, _fbo, state: Framebuffer2DPipelineState) => {
 			const frameBufferWidth = Runtime.instance.machine.vdp.frameBufferWidth;
 			const frameBufferHeight = Runtime.instance.machine.vdp.frameBufferHeight;
 			if (frameBufferWidth <= 0 || frameBufferHeight <= 0) {
 				throw new Error(`[HeadlessFramebuffer2D] Invalid framebuffer dimensions ${frameBufferWidth}x${frameBufferHeight}.`);
 			}
-			if (!state.colorTex) {
-				throw new Error(`[HeadlessFramebuffer2D] Missing framebuffer texture '${Runtime.instance.machine.vdp.frameBufferTextureKey}'.`);
-			}
-			const pixels = backend.readTextureRegion(state.colorTex, 0, 0, frameBufferWidth, frameBufferHeight);
+			const pixels = readVdpDisplayFrameBufferPixels(0, 0, frameBufferWidth, frameBufferHeight);
 			const expectedByteLength = frameBufferWidth * frameBufferHeight * 4;
 			if (pixels.byteLength !== expectedByteLength) {
 				throw new Error(`[HeadlessFramebuffer2D] Framebuffer byte length mismatch (${pixels.byteLength} != ${expectedByteLength}).`);

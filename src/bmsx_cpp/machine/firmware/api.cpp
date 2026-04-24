@@ -2,16 +2,17 @@
 #include "machine/runtime/timing/config.h"
 #include "machine/firmware/input_state_tables.h"
 
-#include "core/engine.h"
 #include "core/utf8.h"
 #include "input/manager.h"
 #include "machine/runtime/runtime.h"
+#include "render/shared/hardware/camera.h"
+#include "render/shared/hardware/lighting.h"
+#include "render/shared/queues.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
-#include <unordered_set>
 #include <utility>
 
 namespace bmsx {
@@ -30,65 +31,6 @@ static const std::array<Color, 16> MSX1_PALETTE = {
 
 static const Color& paletteColor(int index) {
 	return MSX1_PALETTE[static_cast<size_t>(index)];
-}
-
-static bool matchesLuaPathAlias(const std::string& path, const std::string& alias) {
-	if (path == alias) {
-		return true;
-	}
-	if (path.size() <= alias.size()) {
-		return false;
-	}
-	const size_t offset = path.size() - alias.size();
-	return path.compare(offset, alias.size(), alias) == 0 && path[offset - 1] == '/';
-}
-
-template<typename Fn>
-void forEachLuaSource(const RuntimeAssets& assets, Fn&& fn) {
-	for (const auto& entry : assets.lua) {
-		fn(entry.second);
-	}
-}
-
-const LuaSourceAsset* resolveLuaSourceByPath(const RuntimeAssets& assets, const std::string& path) {
-	const LuaSourceAsset* direct = assets.getLua(path);
-	if (direct) {
-		return direct;
-	}
-	const LuaSourceAsset* resolved = nullptr;
-	forEachLuaSource(assets, [&](const LuaSourceAsset& asset) {
-		if (!matchesLuaPathAlias(asset.path, path)) {
-			return;
-		}
-		if (resolved && resolved->path != asset.path) {
-			throw BMSX_RUNTIME_ERROR("Ambiguous lua path '" + path + "'.");
-		}
-		resolved = &asset;
-	});
-	return resolved;
-}
-
-std::string summarizeLuaPaths(const RuntimeAssets& assets, size_t limit) {
-	std::vector<std::string> values;
-	values.reserve(limit);
-	std::unordered_set<std::string> seen;
-	forEachLuaSource(assets, [&](const LuaSourceAsset& asset) {
-		if (values.size() >= limit) {
-			return;
-		}
-		if (!seen.insert(asset.path).second) {
-			return;
-		}
-		values.push_back(asset.path);
-	});
-	std::string out;
-	for (size_t i = 0; i < values.size(); ++i) {
-		if (i > 0) {
-			out += ", ";
-		}
-		out += values[i];
-	}
-	return out;
 }
 
 InputSource parseInputSource(const std::string& source) {
@@ -129,7 +71,7 @@ Api::Api(Runtime& runtime)
 	: m_runtime(runtime)
 	, m_persistentData(PERSISTENT_DATA_SIZE, 0.0)
 {
-	m_font = std::make_unique<Font>(EngineCore::instance().systemAssets());
+	m_font = std::make_unique<Font>(m_runtime.systemAssets());
 }
 
 Api::~Api() = default;
@@ -167,26 +109,28 @@ void Api::appendRootValues(NativeResults& out) const {
 	}
 }
 
-std::string Api::get_lua_entry_path() const {
-	const RuntimeAssets& assets = EngineCore::instance().assets();
-	const std::string& entryPath = assets.entryPoint;
-	if (entryPath.empty()) {
-		throw BMSX_RUNTIME_ERROR("[api.get_lua_entry_path] Lua entry path is empty.");
+RuntimeStorageState Api::captureStorageState() const {
+	RuntimeStorageState state;
+	state.storageNamespace = m_cartDataNamespace;
+	for (size_t index = 0; index < m_persistentData.size(); ++index) {
+		const double value = m_persistentData[index];
+		if (value == 0.0) {
+			continue;
+		}
+		state.entries.push_back(RuntimeStorageStateEntry{
+			static_cast<int>(index),
+			value,
+		});
 	}
-	const LuaSourceAsset* source = resolveLuaSourceByPath(assets, entryPath);
-	if (!source) {
-		throw BMSX_RUNTIME_ERROR("[api.get_lua_entry_path] Missing Lua entry '" + entryPath + "'. Available: " + summarizeLuaPaths(assets, 16));
-	}
-	return source->path;
+	return state;
 }
 
-std::string Api::get_lua_resource_source(const std::string& path) const {
-	const RuntimeAssets& assets = EngineCore::instance().assets();
-	const LuaSourceAsset* source = resolveLuaSourceByPath(assets, path);
-	if (!source) {
-		throw BMSX_RUNTIME_ERROR("[api.get_lua_resource_source] Missing Lua resource for path '" + path + "'. Available: " + summarizeLuaPaths(assets, 16));
+void Api::restoreStorageState(const RuntimeStorageState& state) {
+	m_cartDataNamespace = state.storageNamespace;
+	m_persistentData.assign(PERSISTENT_DATA_SIZE, 0.0);
+	for (const RuntimeStorageStateEntry& entry : state.entries) {
+		m_persistentData.at(static_cast<size_t>(entry.index)) = entry.value;
 	}
-	return source->source;
 }
 
 double Api::get_cpu_freq_hz() const {
@@ -299,16 +243,6 @@ m_runtime.registerNativeFunction("display_height", [this](NativeArgsView args, N
 	out.push_back(valueNumber(static_cast<double>(display_height())));
 });
 
-m_runtime.registerNativeFunction("get_lua_entry_path", [this](NativeArgsView args, NativeResults& out) {
-	(void)args;
-	out.push_back(valueString(m_runtime.machine().cpu().internString(get_lua_entry_path())));
-});
-
-m_runtime.registerNativeFunction("get_lua_resource_source", [this, asText](NativeArgsView args, NativeResults& out) {
-	const std::string& path = asText(args.at(0));
-	out.push_back(valueString(m_runtime.machine().cpu().internString(get_lua_resource_source(path))));
-});
-
 m_runtime.registerNativeFunction("get_cpu_freq_hz", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	out.push_back(valueNumber(get_cpu_freq_hz()));
@@ -350,6 +284,49 @@ m_runtime.registerNativeFunction("put_particle", [this, key](NativeArgsView args
 			}
 	}
 	put_particle(submission);
+	(void)out;
+});
+
+m_runtime.registerNativeFunction("skybox", [this, asText](NativeArgsView args, NativeResults& out) {
+	skybox(
+		asText(args.at(0)),
+		asText(args.at(1)),
+		asText(args.at(2)),
+		asText(args.at(3)),
+		asText(args.at(4)),
+		asText(args.at(5))
+	);
+	(void)out;
+});
+
+m_runtime.registerNativeFunction("set_camera", [this](NativeArgsView args, NativeResults& out) {
+	set_camera(read_matrix(args.at(0)), read_matrix(args.at(1)), read_vec3(args.at(2)));
+	(void)out;
+});
+
+m_runtime.registerNativeFunction("put_ambient_light", [this, asText](NativeArgsView args, NativeResults& out) {
+	put_ambient_light(asText(args.at(0)), read_light_color(args.at(1)), static_cast<f32>(asNumber(args.at(2))));
+	(void)out;
+});
+
+m_runtime.registerNativeFunction("put_directional_light", [this, asText](NativeArgsView args, NativeResults& out) {
+	put_directional_light(
+		asText(args.at(0)),
+		read_vec3(args.at(1)),
+		read_light_color(args.at(2)),
+		static_cast<f32>(asNumber(args.at(3)))
+	);
+	(void)out;
+});
+
+m_runtime.registerNativeFunction("put_point_light", [this, asText](NativeArgsView args, NativeResults& out) {
+	put_point_light(
+		asText(args.at(0)),
+		read_vec3(args.at(1)),
+		read_light_color(args.at(2)),
+		static_cast<f32>(asNumber(args.at(3))),
+		static_cast<f32>(asNumber(args.at(4)))
+	);
 	(void)out;
 });
 
@@ -407,11 +384,11 @@ m_runtime.registerNativeFunction("reboot", [this](NativeArgsView args, NativeRes
 }
 
 int Api::display_width() const {
-	return static_cast<int>(EngineCore::instance().view()->viewportSize.x);
+	return m_runtime.gameViewState().viewportSize.x;
 }
 
 int Api::display_height() const {
-	return static_cast<int>(EngineCore::instance().view()->viewportSize.y);
+	return m_runtime.gameViewState().viewportSize.y;
 }
 
 BFont* Api::resolveFontId(uint32_t id) const {
@@ -446,11 +423,55 @@ uint32_t Api::fontId(BFont* font) const {
 }
 
 void Api::put_mesh(const MeshRenderSubmission& submission) {
-	EngineCore::instance().view()->renderer.submit.mesh(submission);
+	RenderQueues::submitMesh(submission);
 }
 
 void Api::put_particle(const ParticleRenderSubmission& submission) {
-	EngineCore::instance().view()->renderer.submit.particle(submission);
+	RenderQueues::submit_particle(submission);
+}
+
+void Api::skybox(const std::string& posx,
+				const std::string& negx,
+				const std::string& posy,
+				const std::string& negy,
+				const std::string& posz,
+				const std::string& negz) {
+	m_runtime.machine().vdp().setSkyboxImages(SkyboxImageIds{
+		posx,
+		negx,
+		posy,
+		negy,
+		posz,
+		negz,
+	});
+}
+
+void Api::set_camera(const std::array<f32, 16>& view, const std::array<f32, 16>& proj, const Vec3& eye) {
+	::bmsx::setHardwareCamera(view, proj, eye.x, eye.y, eye.z);
+}
+
+void Api::put_ambient_light(const std::string& id, const std::array<f32, 3>& color, f32 intensity) {
+	::bmsx::putHardwareAmbientLight(id, AmbientLight{
+		color,
+		intensity,
+	});
+}
+
+void Api::put_directional_light(const std::string& id, const Vec3& orientation, const std::array<f32, 3>& color, f32 intensity) {
+	::bmsx::putHardwareDirectionalLight(id, DirectionalLight{
+		color,
+		intensity,
+		{ orientation.x, orientation.y, orientation.z },
+	});
+}
+
+void Api::put_point_light(const std::string& id, const Vec3& position, const std::array<f32, 3>& color, f32 range, f32 intensity) {
+	::bmsx::putHardwarePointLight(id, PointLight{
+		color,
+		intensity,
+		position,
+		range,
+	});
 }
 
 void Api::cartdata(const std::string& ns) {
@@ -465,20 +486,11 @@ double Api::dget(int index) const {
 	return m_persistentData.at(static_cast<size_t>(index));
 }
 
-void Api::restorePersistentData(const std::string& ns, const std::vector<double>& values) {
-	m_cartDataNamespace = ns;
-	m_persistentData.assign(PERSISTENT_DATA_SIZE, 0.0);
-	const size_t count = std::min(values.size(), m_persistentData.size());
-	for (size_t index = 0; index < count; ++index) {
-		m_persistentData[index] = values[index];
-	}
-}
-
 void Api::set_sprite_parallax_rig(f32 vy, f32 scale, f32 impact, f32 impact_t,
 									f32 bias_px, f32 parallax_strength,
 									f32 scale_strength, f32 flip_strength,
 									f32 flip_window) {
-	EngineCore::instance().view()->setSpriteParallaxRig(
+	RenderQueues::setSpriteParallaxRig(
 		vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength,
 		flip_strength, flip_window);
 }
@@ -592,7 +604,7 @@ BFont* Api::create_font(const Value& definition) {
 		advancePadding = static_cast<int>(std::floor(asNumber(advancePaddingValue)));
 	}
 
-	std::unique_ptr<BFont> font = std::make_unique<BFont>(EngineCore::instance().assets(), std::move(glyphMap), advancePadding);
+	std::unique_ptr<BFont> font = std::make_unique<BFont>(m_runtime.activeAssets(), std::move(glyphMap), advancePadding);
 	BFont* handle = font.get();
 	m_runtime_fonts.push_back(std::move(font));
 	return handle;
@@ -636,6 +648,26 @@ Vec3 Api::read_vec3(const Value& value) {
 		return out;
 	}
 	throw BMSX_RUNTIME_ERROR("put_particle expects a table or native object.");
+}
+
+std::array<f32, 3> Api::read_light_color(const Value& value) {
+	if (valueIsNumber(value)) {
+		const Color color = palette_color(static_cast<int>(std::floor(asNumber(value))));
+		return {color.r, color.g, color.b};
+	}
+	if (valueIsTable(value)) {
+		auto* tbl = asTable(value);
+		const Value red = tbl->get(m_keys.r);
+		if (!isNil(red)) {
+			return {
+				static_cast<f32>(asNumber(red)),
+				static_cast<f32>(asNumber(tbl->get(m_keys.g))),
+				static_cast<f32>(asNumber(tbl->get(m_keys.b))),
+			};
+		}
+	}
+	const Vec3 color = read_vec3(value);
+	return {color.x, color.y, color.z};
 }
 
 std::array<f32, 16> Api::read_matrix(const Value& value) {

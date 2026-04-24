@@ -1,14 +1,12 @@
-import { $ } from '../../../core/engine';
-import { Runtime } from '../../../machine/runtime/runtime';
 import type {
 	VDP,
 	VdpBlitterCommand,
 	VdpBlitterSource,
 	VdpFrameBufferColor,
 } from '../../../machine/devices/vdp/vdp';
-import type { Layer2D } from '../../shared/submissions';
-import { HeadlessGPUBackend } from '../../headless/backend';
-import { syncVdpSlotTextures } from '../slot_textures';
+import type { Layer2D } from '../../../machine/devices/vdp/contracts';
+import { uploadVdpFrameBufferPixels } from '../framebuffer';
+import { resolveVdpSourcePixels } from '../source_pixels';
 
 const BLITTER_WHITE: VdpFrameBufferColor = { r: 255, g: 255, b: 255, a: 255 };
 const IMPLICIT_CLEAR_COLOR: VdpFrameBufferColor = { r: 0, g: 0, b: 0, a: 255 };
@@ -22,22 +20,15 @@ export class HeadlessVdpBlitterExecutor {
 	private frameBufferPriorityLayer = new Uint8Array(0);
 	private frameBufferPriorityZ = new Float32Array(0);
 	private frameBufferPrioritySeq = new Uint32Array(0);
-	private readonly surfacePixelsByTextureKey = new Map<string, HeadlessSurfacePixels>();
-
-	public constructor(
-		private readonly backend: HeadlessGPUBackend,
-	) {
-	}
+	private readonly surfacePixelsBySurfaceId = new Map<number, HeadlessSurfacePixels>();
 
 	public execute(vdp: VDP, commands: readonly VdpBlitterCommand[]): void {
 		if (commands.length === 0) {
 			return;
 		}
-		syncVdpSlotTextures(Runtime.instance.machine.vdp);
-		const frameBufferTexture = $.texmanager.getTextureByUri(vdp.frameBufferTextureKey);
 		const frameBufferWidth = vdp.frameBufferWidth;
 		const frameBufferHeight = vdp.frameBufferHeight;
-		const frameBufferPixels = this.backend.readTextureRegion(frameBufferTexture, 0, 0, frameBufferWidth, frameBufferHeight);
+		const frameBufferPixels = vdp.frameBufferRenderReadback;
 		this.ensurePriorityCapacity(frameBufferWidth * frameBufferHeight);
 		if (commands[0].opcode !== 'clear') {
 			for (let pixelIndex = 0; pixelIndex < frameBufferPixels.length; pixelIndex += 4) {
@@ -48,7 +39,7 @@ export class HeadlessVdpBlitterExecutor {
 			}
 		}
 		this.resetPriority();
-		this.surfacePixelsByTextureKey.clear();
+		this.surfacePixelsBySurfaceId.clear();
 		for (let index = 0; index < commands.length; index += 1) {
 			const command = commands[index];
 			if (command.opcode === 'clear') {
@@ -95,7 +86,8 @@ export class HeadlessVdpBlitterExecutor {
 				this.rasterizeBlit(vdp, frameBufferPixels, frameBufferWidth, frameBufferHeight, tile, tile.dstX, tile.dstY, 1, 1, false, false, BLITTER_WHITE, command.layer, command.z, command.seq);
 			}
 		}
-		this.backend.updateTexture(frameBufferTexture, { width: frameBufferWidth, height: frameBufferHeight, data: frameBufferPixels });
+		uploadVdpFrameBufferPixels(frameBufferPixels, frameBufferWidth, frameBufferHeight);
+		vdp.invalidateFrameBufferReadCache();
 	}
 
 	private ensurePriorityCapacity(pixelCount: number): void {
@@ -114,15 +106,13 @@ export class HeadlessVdpBlitterExecutor {
 	}
 
 	private getSourcePixels(vdp: VDP, source: VdpBlitterSource): HeadlessSurfacePixels {
-		const surface = vdp.resolveBlitterSurface(source.surfaceId);
-		const cached = this.surfacePixelsByTextureKey.get(surface.textureKey);
+		const cached = this.surfacePixelsBySurfaceId.get(source.surfaceId);
 		if (cached) {
 			return cached;
 		}
-		const texture = $.texmanager.getTextureByUri(surface.textureKey);
-		const pixels = this.backend.readTextureRegion(texture, 0, 0, surface.width, surface.height);
-		const resolved = { pixels, stride: surface.width * 4 };
-		this.surfacePixelsByTextureKey.set(surface.textureKey, resolved);
+		const surface = resolveVdpSourcePixels(vdp, source);
+		const resolved = { pixels: surface.pixels, stride: surface.stride };
+		this.surfacePixelsBySurfaceId.set(source.surfaceId, resolved);
 		return resolved;
 	}
 

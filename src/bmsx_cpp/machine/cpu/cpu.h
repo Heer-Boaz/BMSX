@@ -58,16 +58,6 @@ struct InternedString {
 	int codepointCount = 0;
 };
 
-struct RuntimeStringPoolStateEntry {
-	StringId id = 0;
-	std::string value;
-};
-
-struct RuntimeStringPoolState {
-	StringId nextId = 0;
-	std::vector<RuntimeStringPoolStateEntry> entries;
-};
-
 struct StringKeyHash {
 	using is_transparent = void;
 	size_t operator()(std::string_view key) const noexcept {
@@ -136,34 +126,33 @@ public:
 		}
 	}
 
-	RuntimeStringPoolState captureState() const {
-		RuntimeStringPoolState state;
-		state.nextId = m_nextId;
-		for (StringId id = 0; id < m_entries.size(); ++id) {
-			const auto* entry = m_entries[id].get();
-			if (!entry) {
-				continue;
-			}
-			state.entries.push_back(RuntimeStringPoolStateEntry{ entry->id, entry->value });
-		}
-		return state;
-	}
-
-	void restoreState(const RuntimeStringPoolState& state) {
+	void rehydrateFromHandleTable(const StringHandleTableState& state) {
 		m_stringMap.clear();
 		m_entries.clear();
 		m_nextId = 0;
-		if (m_handleTable) {
-			m_handleTable->reset();
+		if (!m_handleTable) {
+			throw std::runtime_error("StringPool: missing string handle table.");
 		}
-		for (const RuntimeStringPoolStateEntry& entry : state.entries) {
-			StringId restored = intern(entry.value);
-			if (restored != entry.id) {
-				throw std::runtime_error("StringPool: restore handle mismatch.");
+		for (StringId id = 0; id < state.nextHandle; ++id) {
+			const StringHandleEntry entry = m_handleTable->readEntry(id);
+			if (entry.len == 0) {
+				if (id >= m_entries.size()) {
+					m_entries.resize(static_cast<size_t>(id) + 1);
+				}
+				continue;
 			}
+			auto restored = std::make_unique<InternedString>();
+			restored->id = id;
+			restored->value = m_handleTable->readText(entry);
+			restored->codepointCount = countCodepoints(restored->value);
+			if (id >= m_entries.size()) {
+				m_entries.resize(static_cast<size_t>(id) + 1);
+			}
+			m_entries[id] = std::move(restored);
+			m_stringMap.emplace(std::string_view(m_entries[id]->value), id);
 		}
-		reserveHandles(state.nextId);
-		m_nextId = state.nextId;
+		reserveHandles(state.nextHandle);
+		m_nextId = state.nextHandle;
 	}
 
 private:
@@ -853,6 +842,90 @@ struct TableRuntimeState {
 	Table* metatable = nullptr;
 };
 
+struct CpuRuntimeRefSegment {
+	bool isIndex = false;
+	std::string key;
+	int index = 0;
+};
+
+enum class CpuValueStateTag : uint8_t {
+	Nil,
+	False,
+	True,
+	Number,
+	String,
+	Ref,
+	StableRef,
+};
+
+struct CpuValueState {
+	CpuValueStateTag tag = CpuValueStateTag::Nil;
+	double numberValue = 0;
+	StringId stringId = 0;
+	int refId = -1;
+	std::vector<CpuRuntimeRefSegment> path;
+};
+
+struct CpuTableHashNodeSnapshot {
+	CpuValueState key;
+	CpuValueState value;
+	int next = -1;
+};
+
+struct CpuObjectState {
+	enum class Kind : uint8_t {
+		Table,
+		Closure,
+		Upvalue,
+	};
+
+	Kind kind = Kind::Table;
+	std::vector<CpuValueState> array;
+	size_t arrayLength = 0;
+	std::vector<CpuTableHashNodeSnapshot> hash;
+	int hashFree = -1;
+	CpuValueState metatable;
+	int protoIndex = 0;
+	std::vector<int> upvalues;
+	bool upvalueOpen = false;
+	int upvalueIndex = 0;
+	int frameIndex = -1;
+	CpuValueState upvalueValue;
+};
+
+struct CpuFrameState {
+	int protoIndex = 0;
+	int pc = 0;
+	int closureRef = -1;
+	std::vector<CpuValueState> registers;
+	std::vector<CpuValueState> varargs;
+	int returnBase = 0;
+	int returnCount = 0;
+	int top = 0;
+	bool captureReturns = false;
+	int callSitePc = 0;
+};
+
+struct CpuRootValueState {
+	std::string name;
+	CpuValueState value;
+};
+
+struct CpuRuntimeState {
+	std::vector<CpuRootValueState> globals;
+	std::vector<CpuValueState> ioMemory;
+	std::vector<CpuRootValueState> moduleCache;
+	std::vector<CpuFrameState> frames;
+	std::vector<CpuValueState> lastReturnValues;
+	std::vector<CpuObjectState> objects;
+	std::vector<int> openUpvalues;
+	int lastPc = 0;
+	uint32_t lastInstruction = 0;
+	int instructionBudgetRemaining = 0;
+	bool haltedUntilIrq = false;
+	bool yieldRequested = false;
+};
+
 class Table : public GCObject {
 public:
 	Table(int arraySize = 0, int hashSize = 0);
@@ -985,6 +1058,7 @@ public:
 	Program* getProgram() const { return m_program; }
 	StringId internString(std::string_view value) { return m_stringPool.intern(value); }
 	const StringPool& stringPool() const { return m_stringPool; }
+	void rehydrateStringPoolFromHandleTable(const StringHandleTableState& state) { m_stringPool.rehydrateFromHandleTable(state); }
 	void reserveStringHandles(StringId minHandle);
 	void setExternalRootMarker(std::function<void(GcHeap&)> marker) { m_externalRootMarker = std::move(marker); }
 	void setStringIndexTable(Table* table) { m_stringIndexTable = table; }
@@ -1012,6 +1086,8 @@ public:
 	void callExternal(Closure* closure, const std::vector<Value>& args = {});
 	void callExternal(Closure* closure, NativeArgsView args);
 	NativeResults* swapExternalReturnSink(NativeResults* sink);
+	CpuRuntimeState captureRuntimeState(const std::unordered_map<std::string, Value>& moduleCache) const;
+	void restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<std::string, Value>& moduleCache);
 	void requestYield();
 	void clearYieldRequest();
 	void haltUntilIrq();

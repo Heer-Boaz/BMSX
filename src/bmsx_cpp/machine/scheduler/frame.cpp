@@ -69,6 +69,51 @@ void FrameSchedulerState::resetTickTelemetry() {
 	lastTickConsumedSequence = 0;
 }
 
+FrameSchedulerStateSnapshot FrameSchedulerState::captureState() const {
+	FrameSchedulerStateSnapshot state;
+	state.accumulatedHostTimeMs = m_accumulatedHostTimeMs;
+	state.lastTickSequence = lastTickSequence;
+	state.lastTickBudgetGranted = lastTickBudgetGranted;
+	state.lastTickCpuBudgetGranted = lastTickCpuBudgetGranted;
+	state.lastTickCpuUsedCycles = lastTickCpuUsedCycles;
+	state.lastTickBudgetRemaining = lastTickBudgetRemaining;
+	state.lastTickVisualFrameCommitted = lastTickVisualFrameCommitted;
+	state.lastTickVdpFrameCost = lastTickVdpFrameCost;
+	state.lastTickVdpFrameHeld = lastTickVdpFrameHeld;
+	state.lastTickCompleted = lastTickCompleted;
+	state.lastTickConsumedSequence = lastTickConsumedSequence;
+	state.queuedTickCompletions.reserve(m_tickCompletionCount);
+	for (size_t index = 0; index < m_tickCompletionCount; ++index) {
+		state.queuedTickCompletions.push_back(m_tickCompletionQueue[(m_tickCompletionReadIndex + index) % TICK_COMPLETION_QUEUE_CAPACITY]);
+	}
+	return state;
+}
+
+void FrameSchedulerState::restoreState(const FrameSchedulerStateSnapshot& state) {
+	m_accumulatedHostTimeMs = state.accumulatedHostTimeMs;
+	lastTickSequence = state.lastTickSequence;
+	lastTickBudgetGranted = state.lastTickBudgetGranted;
+	lastTickCpuBudgetGranted = state.lastTickCpuBudgetGranted;
+	lastTickCpuUsedCycles = state.lastTickCpuUsedCycles;
+	lastTickBudgetRemaining = state.lastTickBudgetRemaining;
+	lastTickVisualFrameCommitted = state.lastTickVisualFrameCommitted;
+	lastTickVdpFrameCost = state.lastTickVdpFrameCost;
+	lastTickVdpFrameHeld = state.lastTickVdpFrameHeld;
+	lastTickCompleted = state.lastTickCompleted;
+	lastTickConsumedSequence = state.lastTickConsumedSequence;
+	m_tickCompletionReadIndex = 0;
+	m_tickCompletionWriteIndex = state.queuedTickCompletions.size() % TICK_COMPLETION_QUEUE_CAPACITY;
+	m_tickCompletionCount = state.queuedTickCompletions.size();
+	for (size_t index = 0; index < TICK_COMPLETION_QUEUE_CAPACITY; ++index) {
+		TickCompletion& slot = m_tickCompletionQueue[index];
+		if (index < state.queuedTickCompletions.size()) {
+			slot = state.queuedTickCompletions[index];
+			continue;
+		}
+		slot = TickCompletion{};
+	}
+}
+
 void FrameSchedulerState::enqueueTickCompletion(Runtime& runtime, FrameState& frameState) {
 	if (m_tickCompletionCount >= TICK_COMPLETION_QUEUE_CAPACITY) {
 		throw runtimeFault("tick completion queue overflow.");

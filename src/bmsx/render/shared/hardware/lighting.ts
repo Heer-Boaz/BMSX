@@ -69,6 +69,10 @@ export function consumeHardwareLightingDirty(): boolean {
 	return true;
 }
 
+export function getHardwareAmbientLights(): ReadonlyMap<string, AmbientLight> {
+	return ambientLights;
+}
+
 export function getHardwareDirectionalLights(): ReadonlyMap<string, DirectionalLight> {
 	return directionalLights;
 }

@@ -22,6 +22,10 @@ struct MemoryState {
 	std::vector<u8> assetMemory;
 };
 
+struct MemorySaveState {
+	std::vector<u8> ram;
+};
+
 class Memory {
 public:
 		class VramWriter {
@@ -162,8 +166,13 @@ public:
 	void markAllAssetsDirty();
 	std::vector<u8> dumpAssetMemory() const;
 	void restoreAssetMemory(const u8* data, size_t size);
+	std::vector<u8> dumpMutableRam() const;
+	void restoreMutableRam(const u8* data, size_t size);
+	void rehydrateAssetEntriesFromTable();
 	MemoryState captureState() const;
 	void restoreState(const MemoryState& state);
+	MemorySaveState captureSaveState() const;
+	void restoreSaveState(const MemorySaveState& state);
 	u32 resolveAssetHandle(const std::string& id) const;
 	AssetEntry& getAssetEntry(const std::string& id);
 	const AssetEntry& getAssetEntry(const std::string& id) const;

@@ -12,7 +12,7 @@ import {
 	type LuaDebuggerPauseSignal
 } from '../../lua/value';
 import type { StorageService } from '../../platform/platform';
-import type { Viewport } from '../../rompack/format';
+import type { CartManifest, MachineManifest, Viewport } from '../../rompack/format';
 import {
 	CART_ROM_HEADER_SIZE,
 	DEFAULT_GEO_WORK_UNITS_PER_SEC,
@@ -35,7 +35,7 @@ import { registerApiBuiltins } from '../firmware/builtins';
 import { LuaFunctionRedirectCache } from '../firmware/handler_registry';
 import { LuaJsBridge } from '../firmware/js_bridge';
 import { RuntimeStorage } from '../firmware/cart_storage';
-import type { RuntimeOptions, LuaBuiltinDescriptor, LuaMemberCompletion } from './contracts';
+import type { RuntimeOptions, LuaBuiltinDescriptor, LuaMemberCompletion, GameViewState } from './contracts';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_ENGINE_PROJECT_ROOT_PATH } from '../../ide/workspace/workspace';
 import { buildLuaSources, type LuaSourceRegistry } from '../program/sources';
 import * as workbenchMode from '../../ide/runtime/workbench_mode';
@@ -44,7 +44,8 @@ import * as luaPipeline from '../../ide/runtime/lua_pipeline';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../../lua/debugger';
 import type { ParsedLuaChunk } from '../../lua/analysis/parse';
 import { configureLuaHeapUsage } from '../memory/lua_heap_usage';
-import { FrameLoopState } from './frame_loop';
+import { FrameLoopState } from './frame/loop';
+import { createGameViewState } from './game/view_state';
 import { FrameSchedulerState } from '../scheduler/frame';
 import { RenderPresentationState } from '../../render/presentation_state';
 import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from './timing';
@@ -167,6 +168,10 @@ export class Runtime {
 	public readonly frameScheduler = new FrameSchedulerState();
 	public readonly frameLoop = new FrameLoopState();
 	public readonly screen = new RenderPresentationState();
+	public readonly activeMachineManifest: MachineManifest;
+	public readonly cartManifest: CartManifest | null;
+	public readonly cartProjectRootPath: string | null;
+	public readonly gameViewState: GameViewState;
 	public readonly vblank = new VblankState();
 	public readonly cpuExecution = new CpuExecutionState();
 	public pendingLuaWarnings: string[] = [];
@@ -216,6 +221,7 @@ export class Runtime {
 	public readonly hostFault = new HostFaultState();
 	public engineLuaSources: LuaSourceRegistry = null;
 	public cartLuaSources: LuaSourceRegistry = null;
+	public activeLuaSources: LuaSourceRegistry = null;
 	public engineAssetSource: RawAssetSource = null;
 	public cartAssetSource: RawAssetSource = null;
 	public readonly assets = new RuntimeAssetState();
@@ -244,9 +250,6 @@ export class Runtime {
 
 			if (!cartridge) {
 			$.set_source(engineSource);
-			$.set_cart_manifest(null);
-			$.set_machine_manifest(engineMachine);
-			$.set_cart_project_root_path(null);
 			$.set_inputmap(1, { keyboard: null, gamepad: null, pointer: null }); // Default input mapping for player 1 is required even with no cart to prevent errors
 
 			$.set_sources(engineLuaSources);
@@ -272,6 +275,9 @@ export class Runtime {
 				playerIndex,
 				viewport: engineRenderSize,
 				memory,
+				activeMachineManifest: engineMachine,
+				cartManifest: null,
+				cartProjectRootPath: null,
 				ufpsScaled,
 				cpuHz,
 				cycleBudgetPerFrame,
@@ -306,9 +312,6 @@ export class Runtime {
 		layers.push({ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload });
 		const assetSource = new AssetSourceStack(layers);
 		$.set_source(assetSource);
-		$.set_cart_manifest(cartLayer.index.cart_manifest);
-		$.set_machine_manifest(engineMachine);
-		$.set_cart_project_root_path(cartLayer.index.projectRootPath);
 
 		const cartSource = new AssetSourceStack([{ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload }]);
 		const cartLuaSources = buildLuaSources({
@@ -359,6 +362,9 @@ export class Runtime {
 			playerIndex,
 			viewport: cartRenderSize,
 			memory,
+			activeMachineManifest: cartLayer.index.machine,
+			cartManifest: cartLayer.index.cart_manifest,
+			cartProjectRootPath: cartLayer.index.projectRootPath,
 			ufpsScaled,
 			cpuHz,
 			cycleBudgetPerFrame,
@@ -423,6 +429,7 @@ export class Runtime {
 
 	public activateProgramSource(source: ProgramSource): void {
 		const luaSources = source === 'engine' ? this.engineLuaSources : this.cartLuaSources;
+		this.activeLuaSources = luaSources;
 		$.set_sources(luaSources);
 		api.cartdata(luaSources.namespace);
 	}
@@ -436,7 +443,14 @@ export class Runtime {
 		this.timing.geoWorkUnitsPerSec = resolveGeoWorkUnitsPerSec(initialGeoWorkUnits);
 		this.storageService = $.platform.storage;
 		this.storage = new RuntimeStorage(this.storageService, $.sources.namespace);
+		this.activeMachineManifest = options.activeMachineManifest;
+		this.cartManifest = options.cartManifest;
+		this.cartProjectRootPath = options.cartProjectRootPath;
+		$.set_machine_manifest(this.activeMachineManifest);
+		$.set_cart_manifest(this.cartManifest);
+		$.set_cart_project_root_path(this.cartProjectRootPath);
 		this.engineLuaSources = $.sources;
+		this.activeLuaSources = $.sources;
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.machine = new Machine(
 			options.memory,
@@ -446,6 +460,7 @@ export class Runtime {
 		);
 		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
+		this.gameViewState = createGameViewState($.view);
 		configureLuaHeapUsage({
 			getBaseRamUsedBytes: () => this.machine.resourceUsageDetector.getBaseRamUsedBytes(),
 			collectTrackedHeapBytes: () => {
@@ -593,7 +608,7 @@ export class Runtime {
 
 	public activateCartProgramAssets(): void {
 		$.set_assets((this.assets.overlayLayer ?? this.assets.cartLayer).assets);
-		const perfSpecs = getMachinePerfSpecs($.machine_manifest);
+		const perfSpecs = getMachinePerfSpecs(this.activeMachineManifest);
 		this.timing.applyUfpsScaled(resolveUfpsScaled(perfSpecs.ufps));
 		const cpuHz = resolveCpuHz(perfSpecs.cpu_freq_hz);
 		applyActiveMachineTiming(this, cpuHz);

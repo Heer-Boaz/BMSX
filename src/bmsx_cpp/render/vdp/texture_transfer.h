@@ -7,7 +7,6 @@
 namespace bmsx {
 
 bool vdpTextureUploadReady();
-void loadVdpEngineAtlasViewTexture();
 TextureHandle vdpTextureByUri(const std::string& textureKey);
 TextureHandle ensureVdpTextureFromSeed(const std::string& textureKey, const u8* seedPixel, u32 width, u32 height);
 TextureHandle resizeVdpTextureForKey(const std::string& textureKey, u32 width, u32 height);

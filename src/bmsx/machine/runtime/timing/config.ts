@@ -1,4 +1,3 @@
-import { $ } from '../../../core/engine';
 import { getMachinePerfSpecs } from '../../../rompack/format';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './index';
 import { resolveBytesPerSec, resolveGeoWorkUnitsPerSec, resolveRuntimeRenderSize, resolveVdpWorkUnitsPerSec } from '../../specs';
@@ -56,10 +55,10 @@ function setRenderWorkUnitsPerSec(runtime: Runtime, vdpValue: number, geoValue: 
 }
 
 export function applyActiveMachineTiming(runtime: Runtime, cpuHz: number): void {
-	const perfSpecs = getMachinePerfSpecs($.machine_manifest);
+	const perfSpecs = getMachinePerfSpecs(runtime.activeMachineManifest);
 	const ufpsScaled = runtime.timing.ufpsScaled;
 	const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
-	const renderSize = resolveRuntimeRenderSize($.machine_manifest);
+	const renderSize = resolveRuntimeRenderSize(runtime.activeMachineManifest);
 	const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, renderSize.height);
 	setFrameTiming(runtime, cpuHz, cycleBudgetPerFrame, vblankCycles);
 	setRenderWorkUnitsPerSec(runtime, perfSpecs.work_units_per_sec, perfSpecs.geo_work_units_per_sec);

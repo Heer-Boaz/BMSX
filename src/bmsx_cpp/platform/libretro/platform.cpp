@@ -13,6 +13,9 @@
 #include "render/vdp/context_state.h"
 #include "common/mem_snapshot.h"
 #include "../../machine/runtime/runtime.h"
+#include "../../machine/runtime/save_state/codec.h"
+#include "../../machine/runtime/game/view_state.h"
+#include "../../machine/runtime/frame/host.h"
 #if BMSX_ENABLE_GLES2
 #include "render/backend/gles2_backend.h"
 #include "render/post/crt_pipeline_gles2.h"
@@ -640,7 +643,7 @@ void LibretroPlatform::runFrame() {
 
 	bool skipRender = m_frameskip_enabled && m_frameskip_next;
 	m_frameskip_next = false;
-	Runtime::instance().frameLoop.runHostFrame(Runtime::instance(), dt, m_platform_paused, skipRender);
+	runRuntimeHostFrame(Runtime::instance(), dt, m_platform_paused, skipRender);
 
 	// Collect audio
 #if ENABLE_PERFORMANCE_LOGS
@@ -775,22 +778,61 @@ void LibretroPlatform::log(retro_log_level level, const char* fmt, ...) {
 }
 
 size_t LibretroPlatform::getStateSize() const {
-	// TODO: Calculate actual state size
-	return 0;
+	if (!m_rom_loaded || !Runtime::hasInstance()) {
+		return 0;
+	}
+	const Runtime& runtime = Runtime::instance();
+	if (!runtime.isInitialized()) {
+		return 0;
+	}
+	return captureRuntimeSaveStateBytes(runtime).size();
 }
 
 bool LibretroPlatform::saveState(void* data, size_t size) {
-	// TODO: Serialize game state
-	(void)data;
-	(void)size;
-	return false;
+	if (!m_rom_loaded || !Runtime::hasInstance()) {
+		return false;
+	}
+	const Runtime& runtime = Runtime::instance();
+	if (!runtime.isInitialized()) {
+		return false;
+	}
+	try {
+		const std::vector<u8> state = captureRuntimeSaveStateBytes(runtime);
+		if (size < state.size()) {
+			return false;
+		}
+		std::memcpy(data, state.data(), state.size());
+		if (size > state.size()) {
+			std::memset(static_cast<u8*>(data) + state.size(), 0, size - state.size());
+		}
+		return true;
+	}
+	catch (const std::exception& error) {
+		log(RETRO_LOG_ERROR, "[BMSX] Save state failed: %s\n", error.what());
+		return false;
+	}
 }
 
 bool LibretroPlatform::loadState(const void* data, size_t size) {
-	// TODO: Deserialize game state
-	(void)data;
-	(void)size;
-	return false;
+	if (!m_rom_loaded || !Runtime::hasInstance()) {
+		return false;
+	}
+	Runtime& runtime = Runtime::instance();
+	if (!runtime.isInitialized()) {
+		return false;
+	}
+	try {
+		applyRuntimeSaveStateBytes(runtime, static_cast<const u8*>(data), size);
+		applyGameViewStateToHost(runtime.gameViewState(), *m_engine->view());
+		static_cast<LibretroAudioService*>(m_audio_service.get())->resetQueue();
+		m_audio_buffer.clear();
+		m_has_wall_frame_timestamp = false;
+		return true;
+	}
+	catch (const std::exception& error) {
+		log(RETRO_LOG_ERROR, "[BMSX] Load state failed: %s\n", error.what());
+		return false;
+	}
 }
 
 void LibretroPlatform::resetCheats() {

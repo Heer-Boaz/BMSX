@@ -15,7 +15,6 @@ public:
 	bool tickUpdate(Runtime& runtime);
 	bool hasActiveTick(const Runtime& runtime) const;
 	void abandonFrameState(Runtime& runtime);
-	void runHostFrame(Runtime& runtime, f64 deltaTime, bool platformPaused, bool skipRender);
 
 	FrameState frameState;
 	bool frameActive = false;

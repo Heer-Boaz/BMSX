@@ -3,6 +3,7 @@ import { editorRuntimeState } from '../../common/runtime_state';
 import { scheduleRuntimeTask } from '../../../common/background_tasks';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_ENGINE_PROJECT_ROOT_PATH } from '../../../workspace/workspace';
 import { Runtime } from '../../../../machine/runtime/runtime';
+import { captureRuntimeResumeSnapshot } from '../../../../machine/runtime/resume_snapshot';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import * as workbenchMode from '../../../runtime/workbench_mode';
 import type { ActionPromptAction } from '../../../common/models';
@@ -73,7 +74,7 @@ export function performHotResume(): boolean {
 			&& engineChanged.size === 0
 			&& !hasPendingEngineModuleReload(runtime);
 		console.log('[IDE] Capturing runtime snapshot for resume');
-		const snapshot = luaPipeline.captureCurrentState(runtime);
+		const snapshot = captureRuntimeResumeSnapshot(runtime);
 		console.log('[IDE] Clear execution stop highlights before resume');
 		workbenchMode.clearFaultState(runtime);
 		console.log('[IDE] Resuming from snapshot after hot-resume');

@@ -1,5 +1,6 @@
 import { Runtime } from '../../runtime/runtime';
-import { SKYBOX_FACE_KEYS, type Layer2D, type SkyboxImageIds, type color } from '../../../render/shared/submissions';
+import type { color } from '../../../common/color';
+import { SKYBOX_FACE_KEYS, type Layer2D, type SkyboxImageIds } from './contracts';
 import {
 	VDP_RENDER_ALPHA_COST_MULTIPLIER,
 	VDP_RENDER_CLEAR_COST,
@@ -13,23 +14,17 @@ import {
 	ATLAS_PRIMARY_SLOT_ID,
 	ATLAS_SECONDARY_SLOT_ID,
 	ENGINE_ATLAS_INDEX,
-	ENGINE_ATLAS_TEXTURE_KEY,
 	FRAMEBUFFER_RENDER_TEXTURE_KEY,
-	FRAMEBUFFER_TEXTURE_KEY,
 	generateAtlasName,
 } from '../../../rompack/format';
 import {
-	copyVdpRenderFrameBufferToDisplay,
-	ensureVdpDisplayFrameBufferTexture,
-	readVdpRenderFrameBufferTextureRegion,
-	swapVdpFrameBufferTexturePages,
-	vdpRenderFrameBufferTextureExists,
+	hasVdpFrameBufferTexture,
+	presentVdpFrameBufferPages,
+	readVdpFrameBufferPixels,
+	syncVdpDisplayFrameBuffer,
+	uploadVdpFrameBufferPixels,
+	uploadVdpFrameBufferPixelRegion,
 } from '../../../render/vdp/framebuffer';
-import {
-	ensureVdpTextureFromSeed,
-	resizeVdpTextureForKey,
-	updateVdpTextureRegion,
-} from '../../../render/vdp/texture_transfer';
 import {
 	IO_VDP_DITHER,
 	IO_VDP_CMD,
@@ -423,7 +418,6 @@ function fillVramGarbageScratch(buffer: Uint8Array, s: VramGarbageStream): void 
 
 type VdpReadSurface = {
 	entry: AssetEntry;
-	textureKey: string;
 };
 
 type VdpReadCache = {
@@ -433,20 +427,19 @@ type VdpReadCache = {
 	data: Uint8Array;
 };
 
-export type VdpRenderTextureSlot = {
+export type VdpSurfaceUploadSlot = {
 	baseAddr: number;
 	capacity: number;
 	entry: AssetEntry;
-	textureKey: string;
 	surfaceId: number;
-	textureWidth: number;
-	textureHeight: number;
+	surfaceWidth: number;
+	surfaceHeight: number;
 	cpuReadback: Uint8Array;
 	dirtyRowStart: number;
 	dirtyRowEnd: number;
 };
 
-type VramSlot = VdpRenderTextureSlot;
+type VramSlot = VdpSurfaceUploadSlot;
 
 export type VdpFrameBufferColor = {
 	r: number;
@@ -468,6 +461,11 @@ export type VdpResolvedBlitterSample = {
 	surfaceWidth: number;
 	surfaceHeight: number;
 	atlasId: number;
+};
+
+export type VdpBlitterSurfaceSize = {
+	width: number;
+	height: number;
 };
 
 export type VdpAtlasSize = {
@@ -646,10 +644,6 @@ export class VDP implements VramWriteSink {
 	private displayFrameBufferCpuReadback: Uint8Array = new Uint8Array(0);
 	private _skyboxFaceIds: SkyboxImageIds | null = null;
 	private committedSkyboxFaceIds: SkyboxImageIds | null = null;
-	private readonly committedSkyboxFaceUvRects = new Float32Array(SKYBOX_FACE_KEYS.length * 4);
-	private readonly committedSkyboxFaceAtlasBindings = new Int32Array(SKYBOX_FACE_KEYS.length);
-	private readonly committedSkyboxFaceSizes = new Int32Array(SKYBOX_FACE_KEYS.length * 2);
-	private committedSkyboxRenderReady = false;
 	private lastDitherType = 0;
 	private committedDitherType = 0;
 	private _frameBufferWidth = 0;
@@ -1159,27 +1153,25 @@ export class VDP implements VramWriteSink {
 		return baseCost + VDP_RENDER_CLEAR_COST;
 	}
 
-	private ensureDisplayFrameBufferTexture(): void {
-		ensureVdpDisplayFrameBufferTexture(this.vramSeedPixel, this._frameBufferWidth, this._frameBufferHeight);
-	}
-
-	private swapFrameBufferPages(): void {
-		swapVdpFrameBufferTexturePages();
-		const renderSlot = this.getVramSlotByTextureKey(FRAMEBUFFER_RENDER_TEXTURE_KEY);
+	public swapFrameBufferReadbackPages(): void {
+		const renderSlot = this.getVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER);
 		const displayReadback = this.displayFrameBufferCpuReadback;
 		this.displayFrameBufferCpuReadback = renderSlot.cpuReadback;
 		renderSlot.cpuReadback = displayReadback;
 		this.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
 	}
 
-	private syncRenderFrameBufferToDisplayPage(): void {
-		copyVdpRenderFrameBufferToDisplay(this._frameBufferWidth, this._frameBufferHeight);
-		const renderSlot = this.getVramSlotByTextureKey(FRAMEBUFFER_RENDER_TEXTURE_KEY);
+	public syncDisplayFrameBufferReadback(): void {
+		const renderSlot = this.getVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER);
 		const renderReadback = renderSlot.cpuReadback;
 		if (this.displayFrameBufferCpuReadback.byteLength !== renderReadback.byteLength) {
 			this.displayFrameBufferCpuReadback = new Uint8Array(renderReadback.byteLength);
 		}
 		this.displayFrameBufferCpuReadback.set(renderReadback);
+		this.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
+	}
+
+	public invalidateFrameBufferReadCache(): void {
 		this.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
 	}
 
@@ -1358,7 +1350,6 @@ export class VDP implements VramWriteSink {
 		this.committedSlotAtlasIds[0] = this.activeFrame.slotAtlasIds[0];
 		this.committedSlotAtlasIds[1] = this.activeFrame.slotAtlasIds[1];
 		this.committedSkyboxFaceIds = this.activeFrame.skyboxFaceIds;
-		this.commitSkyboxRenderState(this.committedSkyboxFaceIds);
 	}
 
 	public presentReadyFrameOnVblankEdge(): void {
@@ -1378,7 +1369,7 @@ export class VDP implements VramWriteSink {
 			return;
 		}
 		if (this.activeFrame.hasCommands) {
-			this.swapFrameBufferPages();
+			presentVdpFrameBufferPages(this);
 		}
 		this.commitActiveVisualState();
 		this.lastFrameCommitted = true;
@@ -1413,13 +1404,11 @@ export class VDP implements VramWriteSink {
 		this._frameBufferWidth = width;
 		this._frameBufferHeight = height;
 		this.displayFrameBufferCpuReadback = new Uint8Array(size);
-		this.registerVramSlot(entry, FRAMEBUFFER_RENDER_TEXTURE_KEY, VDP_RD_SURFACE_FRAMEBUFFER);
-		this.ensureDisplayFrameBufferTexture();
-		this.registerReadSurface(VDP_RD_SURFACE_FRAMEBUFFER, entry, FRAMEBUFFER_RENDER_TEXTURE_KEY);
-		this.syncRenderFrameBufferToDisplayPage();
+		this.registerVramSlot(entry, VDP_RD_SURFACE_FRAMEBUFFER);
+		syncVdpDisplayFrameBuffer(this, this.vramSeedPixel);
 	}
 
-	private resolveBlitterSource(handle: number): VdpBlitterSource {
+	public resolveBlitterSource(handle: number): VdpBlitterSource {
 		const entry = this.memory.getAssetEntryByHandle(handle);
 		if (entry.type !== 'image') {
 			throw vdpFault(`asset handle ${handle} is not an image.`);
@@ -1451,14 +1440,14 @@ export class VDP implements VramWriteSink {
 		};
 	}
 
-	public resolveBlitterSample(handle: number): VdpResolvedBlitterSample {
+	private resolveBlitterSample(handle: number): VdpResolvedBlitterSample {
 		const source = this.resolveBlitterSource(handle);
-		const surface = this.resolveBlitterSurface(source.surfaceId);
+		const surface = this.resolveBlitterSurfaceSize(source.surfaceId);
 		return {
 			source,
 			surfaceWidth: surface.width,
 			surfaceHeight: surface.height,
-			atlasId: this.resolveBlitterAtlasId(source.surfaceId),
+			atlasId: this.resolveSurfaceAtlasBinding(source.surfaceId),
 		};
 	}
 
@@ -1777,20 +1766,15 @@ export class VDP implements VramWriteSink {
 		this.enqueueTileRunInternal(desc, VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS, 'VDP fault: enqueuePayloadTileRunWords tile size mismatch');
 	}
 
-	private resolveSurfaceStride(surfaceId: number): number {
-		return this.getReadSurface(surfaceId).entry.regionW * 4;
-	}
-
-	public resolveBlitterSurface(surfaceId: number): { textureKey: string; width: number; height: number } {
+	public resolveBlitterSurfaceSize(surfaceId: number): VdpBlitterSurfaceSize {
 		const surface = this.getReadSurface(surfaceId);
 		return {
-			textureKey: surface.textureKey,
 			width: surface.entry.regionW,
 			height: surface.entry.regionH,
 		};
 	}
 
-	public resolveBlitterAtlasId(surfaceId: number): number {
+	private resolveSurfaceAtlasBinding(surfaceId: number): number {
 		if (surfaceId === VDP_RD_SURFACE_PRIMARY) {
 			return 0;
 		}
@@ -1803,10 +1787,6 @@ export class VDP implements VramWriteSink {
 		throw vdpFault(`surface ${surfaceId} cannot be sampled by the WebGL blitter.`);
 	}
 
-	public get frameBufferTextureKey(): string {
-		return FRAMEBUFFER_TEXTURE_KEY;
-	}
-
 	public get frameBufferWidth(): number {
 		return this._frameBufferWidth;
 	}
@@ -1815,27 +1795,8 @@ export class VDP implements VramWriteSink {
 		return this._frameBufferHeight;
 	}
 
-	public get frameBufferPixels(): Uint8Array {
-		const surface = this.getReadSurface(VDP_RD_SURFACE_FRAMEBUFFER);
-		const buffer = this.getCpuReadbackBuffer(surface);
-		readVdpRenderFrameBufferTextureRegion(0, 0, this._frameBufferWidth, this._frameBufferHeight, buffer);
-		return buffer;
-	}
-
-	public resolveFrameBufferSource(handle: number): { pixels: Uint8Array; regionX: number; regionY: number; stride: number; width: number; height: number } {
-		const source = this.resolveBlitterSource(handle);
-		const surface = this.getReadSurface(source.surfaceId);
-		const pixels = surface.textureKey === FRAMEBUFFER_RENDER_TEXTURE_KEY
-			? readVdpRenderFrameBufferTextureRegion(0, 0, surface.entry.regionW, surface.entry.regionH)
-			: this.getCpuReadbackBuffer(surface);
-		return {
-			pixels,
-			regionX: source.srcX,
-			regionY: source.srcY,
-			stride: this.resolveSurfaceStride(source.surfaceId),
-			width: source.width,
-			height: source.height,
-		};
+	public get frameBufferRenderReadback(): Uint8Array {
+		return this.getCpuReadbackBuffer(VDP_RD_SURFACE_FRAMEBUFFER);
 	}
 
 	// start repeated-sequence-acceptable -- VRAM row streaming keeps read/write loops direct; callback helpers would add hot-path overhead.
@@ -1850,7 +1811,7 @@ export class VDP implements VramWriteSink {
 		if (entry.baseStride === 0 || entry.regionW === 0 || entry.regionH === 0) {
 			throw vdpFault('VRAM slot is not initialized.');
 		}
-		this.syncVramSlotTextureSize(slot);
+		this.syncVramSlotSurfaceSize(slot);
 		const offset = addr - slot.baseAddr;
 		const stride = entry.baseStride;
 		const rowCount = entry.regionH;
@@ -1871,8 +1832,8 @@ export class VDP implements VramWriteSink {
 			const x = rowOffset / 4;
 			const width = rowBytes / 4;
 			const slice = bytes.subarray(cursor, cursor + rowBytes);
-			if (slot.textureKey === FRAMEBUFFER_RENDER_TEXTURE_KEY) {
-				updateVdpTextureRegion(slot.textureKey, slice, width, 1, x, row);
+			if (slot.surfaceId === VDP_RD_SURFACE_FRAMEBUFFER) {
+				uploadVdpFrameBufferPixelRegion(slice, width, 1, x, row);
 			} else {
 				this.markVramSlotDirty(slot, row, 1);
 			}
@@ -1907,8 +1868,7 @@ export class VDP implements VramWriteSink {
 		let cursor = 0;
 		let row = Math.floor(offset / stride);
 		let rowOffset = offset - row * stride;
-		const surface = this.readSurfaces[slot.surfaceId]!;
-		const buffer = this.getCpuReadbackBuffer(surface);
+		const buffer = this.getCpuReadbackBuffer(slot.surfaceId);
 		while (remaining > 0) {
 			const rowAvailable = stride - rowOffset;
 			const rowBytes = remaining < rowAvailable ? remaining : rowAvailable;
@@ -2005,14 +1965,13 @@ export class VDP implements VramWriteSink {
 		this.committedDitherType = dither;
 		this._skyboxFaceIds = null;
 		this.committedSkyboxFaceIds = null;
-		this.committedSkyboxRenderReady = false;
 		this.committedSlotAtlasIds[0] = this.slotAtlasIds[0];
 		this.committedSlotAtlasIds[1] = this.slotAtlasIds[1];
 		this.lastFrameCommitted = true;
 		this.lastFrameCost = 0;
 		this.lastFrameHeld = false;
-		if (vdpRenderFrameBufferTextureExists()) {
-			this.syncRenderFrameBufferToDisplayPage();
+		if (hasVdpFrameBufferTexture()) {
+			syncVdpDisplayFrameBuffer(this, this.vramSeedPixel);
 		}
 	}
 
@@ -2070,22 +2029,6 @@ export class VDP implements VramWriteSink {
 		return this.committedSkyboxFaceIds;
 	}
 
-	public get committedViewSkyboxRenderReady(): boolean {
-		return this.committedSkyboxRenderReady;
-	}
-
-	public get committedViewSkyboxFaceUvRects(): Float32Array {
-		return this.committedSkyboxFaceUvRects;
-	}
-
-	public get committedViewSkyboxFaceAtlasBindings(): Int32Array {
-		return this.committedSkyboxFaceAtlasBindings;
-	}
-
-	public get committedViewSkyboxFaceSizes(): Int32Array {
-		return this.committedSkyboxFaceSizes;
-	}
-
 	public takeReadyExecutionQueue(): readonly VdpBlitterCommand[] | null {
 		if (!this.execution.pending) {
 			return null;
@@ -2102,12 +2045,12 @@ export class VDP implements VramWriteSink {
 		this.recycleBlitterBuffers(this.execution.queue);
 	}
 
-	public get renderTextureSlots(): readonly VdpRenderTextureSlot[] {
+	public get surfaceUploadSlots(): readonly VdpSurfaceUploadSlot[] {
 		return this.vramSlots;
 	}
 
-	public clearRenderTextureSlotDirty(textureKey: string): void {
-		const slot = this.getVramSlotByTextureKey(textureKey);
+	public clearSurfaceUploadDirty(surfaceId: number): void {
+		const slot = this.getVramSlotBySurfaceId(surfaceId);
 		slot.dirtyRowStart = 0;
 		slot.dirtyRowEnd = 0;
 	}
@@ -2117,32 +2060,6 @@ export class VDP implements VramWriteSink {
 		this.committedSlotAtlasIds[0] = this.slotAtlasIds[0];
 		this.committedSlotAtlasIds[1] = this.slotAtlasIds[1];
 		this.committedSkyboxFaceIds = this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds };
-		this.commitSkyboxRenderState(this.committedSkyboxFaceIds);
-	}
-
-	private commitSkyboxRenderState(ids: SkyboxImageIds | null): void {
-		if (ids === null) {
-			this.committedSkyboxRenderReady = false;
-			return;
-		}
-		for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
-			const assetId = ids[SKYBOX_FACE_KEYS[index]];
-			const handle = this.memory.resolveAssetHandle(assetId);
-			const sample = this.resolveBlitterSample(handle);
-			if (sample.atlasId === ENGINE_ATLAS_INDEX) {
-				throw vdpFault(`skybox image '${assetId}' must live in primary/secondary atlas space, not the engine atlas.`);
-			}
-			const uvBase = index * 4;
-			this.committedSkyboxFaceUvRects[uvBase + 0] = sample.source.srcX / sample.surfaceWidth;
-			this.committedSkyboxFaceUvRects[uvBase + 1] = sample.source.srcY / sample.surfaceHeight;
-			this.committedSkyboxFaceUvRects[uvBase + 2] = sample.source.width / sample.surfaceWidth;
-			this.committedSkyboxFaceUvRects[uvBase + 3] = sample.source.height / sample.surfaceHeight;
-			this.committedSkyboxFaceAtlasBindings[index] = sample.atlasId;
-			const sizeBase = index * 2;
-			this.committedSkyboxFaceSizes[sizeBase + 0] = sample.source.width;
-			this.committedSkyboxFaceSizes[sizeBase + 1] = sample.source.height;
-		}
-		this.committedSkyboxRenderReady = true;
 	}
 
 	private restoreAtlasSlotMapping(mapping: { primary: number | null; secondary: number | null }): void {
@@ -2205,8 +2122,8 @@ export class VDP implements VramWriteSink {
 				}
 			}
 		}
-		this.syncVramSlotTextureSize(this.getVramSlotByTextureKey(ATLAS_PRIMARY_SLOT_ID));
-		this.syncVramSlotTextureSize(this.getVramSlotByTextureKey(ATLAS_SECONDARY_SLOT_ID));
+		this.syncVramSlotSurfaceSize(this.getVramSlotBySurfaceId(VDP_RD_SURFACE_PRIMARY));
+		this.syncVramSlotSurfaceSize(this.getVramSlotBySurfaceId(VDP_RD_SURFACE_SECONDARY));
 	}
 
 	public setSkyboxImages(ids: SkyboxImageIds): void {
@@ -2245,7 +2162,6 @@ export class VDP implements VramWriteSink {
 		this.displayFrameBufferCpuReadback = new Uint8Array(0);
 		this._skyboxFaceIds = null;
 		this.committedSkyboxFaceIds = null;
-		this.committedSkyboxRenderReady = false;
 		this.committedDitherType = this.lastDitherType;
 		this.committedSlotAtlasIds[0] = null;
 		this.committedSlotAtlasIds[1] = null;
@@ -2257,9 +2173,9 @@ export class VDP implements VramWriteSink {
 		const primarySlotEntry = this.memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
 		const secondarySlotEntry = this.memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
 		this.atlasSlotEntries = [primarySlotEntry, secondarySlotEntry];
-		this.registerVramSlot(engineEntry, ENGINE_ATLAS_TEXTURE_KEY, VDP_RD_SURFACE_ENGINE);
-		this.registerVramSlot(primarySlotEntry, ATLAS_PRIMARY_SLOT_ID, VDP_RD_SURFACE_PRIMARY);
-		this.registerVramSlot(secondarySlotEntry, ATLAS_SECONDARY_SLOT_ID, VDP_RD_SURFACE_SECONDARY);
+		this.registerVramSlot(engineEntry, VDP_RD_SURFACE_ENGINE);
+		this.registerVramSlot(primarySlotEntry, VDP_RD_SURFACE_PRIMARY);
+		this.registerVramSlot(secondarySlotEntry, VDP_RD_SURFACE_SECONDARY);
 		this.syncRegisters();
 	}
 
@@ -2282,8 +2198,8 @@ export class VDP implements VramWriteSink {
 		}
 	}
 
-	private registerReadSurface(surfaceId: number, entry: AssetEntry, textureKey: string): void {
-		this.readSurfaces[surfaceId] = { entry, textureKey };
+	private registerReadSurface(surfaceId: number, entry: AssetEntry): void {
+		this.readSurfaces[surfaceId] = { entry };
 		this.invalidateReadCache(surfaceId);
 	}
 
@@ -2294,12 +2210,12 @@ export class VDP implements VramWriteSink {
 	private getReadCache(surfaceId: number, surface: VdpReadSurface, x: number, y: number): VdpReadCache {
 		const cache = this.readCaches[surfaceId];
 		if (cache.width === 0 || cache.y !== y || x < cache.x0 || x >= cache.x0 + cache.width) {
-			this.prefetchReadCache(cache, surface, x, y);
+			this.prefetchReadCache(cache, surfaceId, surface, x, y);
 		}
 		return cache;
 	}
 
-	private prefetchReadCache(cache: VdpReadCache, surface: VdpReadSurface, x: number, y: number): void {
+	private prefetchReadCache(cache: VdpReadCache, surfaceId: number, surface: VdpReadSurface, x: number, y: number): void {
 		const width = surface.entry.regionW;
 		const maxPixelsByBudget = Math.floor(this.readBudgetBytes / 4);
 		if (maxPixelsByBudget <= 0) {
@@ -2308,24 +2224,24 @@ export class VDP implements VramWriteSink {
 			return;
 		}
 		const chunkW = Math.min(VDP_RD_MAX_CHUNK_PIXELS, width - x, maxPixelsByBudget);
-		const data = this.readSurfacePixels(cache, surface, x, y, chunkW, 1);
+		const data = this.readSurfacePixels(cache, surfaceId, surface, x, y, chunkW, 1);
 		cache.x0 = x;
 		cache.y = y;
 		cache.width = chunkW;
 		cache.data = data;
 	}
 
-	private readSurfacePixels(cache: VdpReadCache, surface: VdpReadSurface, x: number, y: number, width: number, height: number): Uint8Array {
-		if (surface.textureKey === FRAMEBUFFER_RENDER_TEXTURE_KEY) {
+	private readSurfacePixels(cache: VdpReadCache, surfaceId: number, surface: VdpReadSurface, x: number, y: number, width: number, height: number): Uint8Array {
+		if (surfaceId === VDP_RD_SURFACE_FRAMEBUFFER) {
 			const byteLength = width * height * 4;
 			const out = cache.data.byteLength < byteLength ? (cache.data = new Uint8Array(byteLength)) : cache.data;
-			return readVdpRenderFrameBufferTextureRegion(x, y, width, height, out);
+			return readVdpFrameBufferPixels(x, y, width, height, out);
 		}
-		return this.readCpuReadback(cache, surface, x, y, width, height);
+		return this.readCpuReadback(cache, surfaceId, surface, x, y, width, height);
 	}
 
-	private readCpuReadback(cache: VdpReadCache, surface: VdpReadSurface, x: number, y: number, width: number, height: number): Uint8Array {
-		const buffer = this.getCpuReadbackBuffer(surface);
+	private readCpuReadback(cache: VdpReadCache, surfaceId: number, surface: VdpReadSurface, x: number, y: number, width: number, height: number): Uint8Array {
+		const buffer = this.getCpuReadbackBuffer(surfaceId);
 		const stride = surface.entry.regionW * 4;
 		const rowBytes = width * 4;
 		const byteLength = rowBytes * height;
@@ -2340,14 +2256,14 @@ export class VDP implements VramWriteSink {
 
 	private updateCpuReadback(surfaceId: number, slice: Uint8Array, x: number, y: number): void {
 		const surface = this.readSurfaces[surfaceId]!;
-		const buffer = this.getVramSlotByTextureKey(surface.textureKey).cpuReadback;
+		const buffer = this.getVramSlotBySurfaceId(surfaceId).cpuReadback;
 		const stride = surface.entry.regionW * 4;
 		const offset = y * stride + x * 4;
 		buffer.set(slice, offset);
 	}
 
-	private getCpuReadbackBuffer(surface: VdpReadSurface): Uint8Array {
-		return this.getVramSlotByTextureKey(surface.textureKey).cpuReadback;
+	private getCpuReadbackBuffer(surfaceId: number): Uint8Array {
+		return this.getVramSlotBySurfaceId(surfaceId).cpuReadback;
 	}
 
 	public get trackedUsedVramBytes(): number {
@@ -2362,49 +2278,41 @@ export class VDP implements VramWriteSink {
 		return VRAM_SYSTEM_ATLAS_SIZE + VRAM_PRIMARY_ATLAS_SIZE + VRAM_SECONDARY_ATLAS_SIZE + VRAM_FRAMEBUFFER_SIZE + VRAM_STAGING_SIZE;
 	}
 
-	private registerVramSlot(entry: AssetEntry, textureKey: string, surfaceId: number): void {
-		const isEngineAtlas = textureKey === ENGINE_ATLAS_TEXTURE_KEY;
-		const isFrameBuffer = textureKey === FRAMEBUFFER_RENDER_TEXTURE_KEY;
-		const textureWidth = entry.regionW;
-		const textureHeight = entry.regionH;
+	private registerVramSlot(entry: AssetEntry, surfaceId: number): void {
+		const isEngineAtlas = surfaceId === VDP_RD_SURFACE_ENGINE;
+		const surfaceWidth = entry.regionW;
+		const surfaceHeight = entry.regionH;
 		const stream = this.makeVramGarbageStream(entry.baseAddr >>> 0);
 		fillVramGarbageScratch(this.vramSeedPixel, stream);
-		if (isFrameBuffer) {
-			ensureVdpTextureFromSeed(textureKey, this.vramSeedPixel, entry.regionW, entry.regionH);
-		}
 		const slot: VramSlot = {
 			baseAddr: entry.baseAddr,
 			capacity: entry.capacity,
 			entry,
-			textureKey,
 			surfaceId,
-			textureWidth,
-			textureHeight,
-			cpuReadback: new Uint8Array(textureWidth * textureHeight * 4),
+			surfaceWidth,
+			surfaceHeight,
+			cpuReadback: new Uint8Array(surfaceWidth * surfaceHeight * 4),
 			dirtyRowStart: 0,
 			dirtyRowEnd: 0,
 		};
 		this.vramSlots.push(slot);
-		this.registerReadSurface(surfaceId, entry, textureKey);
+		this.registerReadSurface(surfaceId, entry);
 		if (!isEngineAtlas) {
 			this.seedVramSlotTexture(slot);
 		}
 	}
 
-	private syncVramSlotTextureSize(slot: VramSlot): void {
+	private syncVramSlotSurfaceSize(slot: VramSlot): void {
 		const width = slot.entry.regionW;
 		const height = slot.entry.regionH;
-		if (slot.textureWidth === width && slot.textureHeight === height) {
+		if (slot.surfaceWidth === width && slot.surfaceHeight === height) {
 			return;
 		}
-		slot.textureWidth = width;
-		slot.textureHeight = height;
+		slot.surfaceWidth = width;
+		slot.surfaceHeight = height;
 		slot.cpuReadback = new Uint8Array(width * height * 4);
-		if (slot.textureKey === FRAMEBUFFER_RENDER_TEXTURE_KEY) {
-			resizeVdpTextureForKey(slot.textureKey, width, height);
-		}
 		this.invalidateReadCache(slot.surfaceId);
-		if (slot.textureKey === ENGINE_ATLAS_TEXTURE_KEY) {
+		if (slot.surfaceId === VDP_RD_SURFACE_ENGINE) {
 			slot.dirtyRowStart = 0;
 			slot.dirtyRowEnd = 0;
 			return;
@@ -2412,14 +2320,14 @@ export class VDP implements VramWriteSink {
 		this.seedVramSlotTexture(slot);
 	}
 
-	private getVramSlotByTextureKey(textureKey: string): VramSlot {
+	private getVramSlotBySurfaceId(surfaceId: number): VramSlot {
 		for (let index = 0; index < this.vramSlots.length; index += 1) {
 			const slot = this.vramSlots[index];
-			if (slot.textureKey === textureKey) {
+			if (slot.surfaceId === surfaceId) {
 				return slot;
 			}
 		}
-		throw vdpFault(`VRAM slot not registered for texture '${textureKey}'.`);
+		throw vdpFault(`VRAM slot not registered for surface ${surfaceId}.`);
 	}
 
 	private makeVramGarbageStream(addr: number): VramGarbageStream {
@@ -2459,20 +2367,18 @@ export class VDP implements VramWriteSink {
 		const rowPixels = width;
 		const maxPixels = Math.floor(this.vramGarbageScratch.byteLength / 4);
 		const stream = this.makeVramGarbageStream(slot.baseAddr >>> 0);
-		const frameBufferSlot = slot.textureKey === FRAMEBUFFER_RENDER_TEXTURE_KEY;
+		const frameBufferSlot = slot.surfaceId === VDP_RD_SURFACE_FRAMEBUFFER;
 		if (rowPixels <= maxPixels) {
 			const rowsPerChunk = Math.floor(maxPixels / rowPixels);
 			for (let y = 0; y < height; ) {
-					const rows = Math.min(rowsPerChunk, height - y);
-					const chunkBytes = rowPixels * rows * 4;
-					const chunk = this.vramGarbageScratch.subarray(0, chunkBytes);
-					fillVramGarbageScratch(chunk, stream);
-					if (frameBufferSlot) {
-						updateVdpTextureRegion(slot.textureKey, chunk, rowPixels, rows, 0, y);
-					} else {
-						this.markVramSlotDirty(slot, y, rows);
-					}
-					for (let row = 0; row < rows; row += 1) {
+				const rows = Math.min(rowsPerChunk, height - y);
+				const chunkBytes = rowPixels * rows * 4;
+				const chunk = this.vramGarbageScratch.subarray(0, chunkBytes);
+				fillVramGarbageScratch(chunk, stream);
+				if (!frameBufferSlot) {
+					this.markVramSlotDirty(slot, y, rows);
+				}
+				for (let row = 0; row < rows; row += 1) {
 					const rowOffset = row * rowPixels * 4;
 					const slice = chunk.subarray(rowOffset, rowOffset + rowPixels * 4);
 					this.updateCpuReadback(slot.surfaceId, slice, 0, y + row);
@@ -2481,20 +2387,21 @@ export class VDP implements VramWriteSink {
 			}
 		} else {
 			for (let y = 0; y < height; y += 1) {
-					for (let x = 0; x < width; ) {
-						const segmentWidth = Math.min(maxPixels, width - x);
-						const segmentBytes = segmentWidth * 4;
-						const segment = this.vramGarbageScratch.subarray(0, segmentBytes);
-						fillVramGarbageScratch(segment, stream);
-						if (frameBufferSlot) {
-							updateVdpTextureRegion(slot.textureKey, segment, segmentWidth, 1, x, y);
-						} else {
-							this.markVramSlotDirty(slot, y, 1);
-						}
-						this.updateCpuReadback(slot.surfaceId, segment, x, y);
-						x += segmentWidth;
+				for (let x = 0; x < width; ) {
+					const segmentWidth = Math.min(maxPixels, width - x);
+					const segmentBytes = segmentWidth * 4;
+					const segment = this.vramGarbageScratch.subarray(0, segmentBytes);
+					fillVramGarbageScratch(segment, stream);
+					if (!frameBufferSlot) {
+						this.markVramSlotDirty(slot, y, 1);
 					}
+					this.updateCpuReadback(slot.surfaceId, segment, x, y);
+					x += segmentWidth;
+				}
 			}
+		}
+		if (frameBufferSlot) {
+			uploadVdpFrameBufferPixels(slot.cpuReadback, width, height);
 		}
 		this.invalidateReadCache(slot.surfaceId);
 	}

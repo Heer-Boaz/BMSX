@@ -1,5 +1,10 @@
 import type { StorageService } from '../../platform/platform';
 
+export type RuntimeStorageState = {
+	namespace: string;
+	entries: Array<{ index: number; value: number }>;
+};
+
 export class RuntimeStorage {
 	private readonly storage: StorageService;
 	private namespace: string;
@@ -43,7 +48,7 @@ export class RuntimeStorage {
 		return parsed;
 	}
 
-	public dump(): { namespace: string; entries: Array<{ index: number; value: number }> } {
+	public dump(): RuntimeStorageState {
 		const entries: Array<{ index: number; value: number }> = [];
 		for (const index of this.touchedIndices) {
 			const raw = this.storage.getItem(this.keyFor(index));
@@ -55,13 +60,12 @@ export class RuntimeStorage {
 		return { namespace: this.namespace, entries };
 	}
 
-	public restore(state: { namespace: string; entries: Array<{ index: number; value: number }> }): void {
+	public restore(state: RuntimeStorageState): void {
 		const previousIndices = Array.from(this.touchedIndices);
 		for (const index of previousIndices) {
 			this.storage.removeItem(this.keyFor(index));
 		}
 		this.touchedIndices.clear();
-		if (!state) return;
 		this.namespace = this.validateNamespace(state.namespace);
 		for (const entry of state.entries) {
 			this.assertIndex(entry.index);

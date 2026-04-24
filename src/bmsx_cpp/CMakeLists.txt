@@ -124,13 +124,20 @@ add_library(bmsx_core STATIC
 	render/backend/backend.cpp
 	render/gameview.cpp
 	render/backend/frame_uniforms.cpp
+	render/lighting/system.cpp
 	render/shared/queues.cpp
+	render/shared/camera_state.cpp
+	render/shared/hardware/camera.cpp
+	render/shared/hardware/lighting.cpp
 	runtime/assets/edits.cpp
 	render/vdp/blitter/execute.cpp
 	render/vdp/blitter/gles2.cpp
 	render/vdp/blitter/software.cpp
 	render/vdp/context_state.cpp
 	render/vdp/framebuffer.cpp
+	render/vdp/source_pixels.cpp
+	render/vdp/skybox.cpp
+	render/vdp/surfaces.cpp
 	render/vdp/slot_textures.cpp
 	render/vdp/texture_transfer.cpp
 	render/vdp/view_snapshot.cpp
@@ -153,6 +160,7 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/controller.cpp
 	machine/devices/irq/controller.cpp
 	machine/firmware/api.cpp
+	machine/firmware/devtools.cpp
 	machine/firmware/input_state_tables.cpp
 	machine/cpu/disassembler.cpp
 	machine/program/load_compiler.cpp
@@ -163,6 +171,16 @@ add_library(bmsx_core STATIC
 	machine/scheduler/device.cpp
 	machine/runtime/resource_usage_detector.cpp
 	machine/runtime/runtime.cpp
+	machine/runtime/render/state.cpp
+	machine/runtime/machine_state.cpp
+	machine/runtime/save_machine_state.cpp
+	machine/runtime/cpu_state.cpp
+	machine/runtime/save_state.cpp
+	machine/runtime/save_state/schema.cpp
+	machine/runtime/save_state/codec.cpp
+	machine/runtime/resume_snapshot.cpp
+	machine/runtime/game/table.cpp
+	machine/runtime/game/view_state.cpp
 	machine/memory/asset_memory.cpp
 	machine/memory/asset_images.cpp
 	machine/runtime/cart_boot.cpp
@@ -170,6 +188,7 @@ add_library(bmsx_core STATIC
 	machine/runtime/engine_irq.cpp
 	machine/runtime/boot_timing.cpp
 	machine/runtime/frame/loop.cpp
+	machine/runtime/frame/host.cpp
 	machine/program/executor.cpp
 	machine/program/scratch.cpp
 	machine/specs.cpp

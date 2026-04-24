@@ -27,3 +27,21 @@ export function setSpriteParallaxRigValues(vy: number, scale: number, impact: nu
 	spriteParallaxRig.flip_strength = flip_strength;
 	spriteParallaxRig.flip_window = clamp(flip_window, 0.0001, Number.POSITIVE_INFINITY);
 }
+
+export function cloneSpriteParallaxRig(): SpriteParallaxRig {
+	return {
+		vy: spriteParallaxRig.vy,
+		scale: spriteParallaxRig.scale,
+		impact: spriteParallaxRig.impact,
+		impact_t: spriteParallaxRig.impact_t,
+		bias_px: spriteParallaxRig.bias_px,
+		parallax_strength: spriteParallaxRig.parallax_strength,
+		scale_strength: spriteParallaxRig.scale_strength,
+		flip_strength: spriteParallaxRig.flip_strength,
+		flip_window: spriteParallaxRig.flip_window,
+	};
+}
+
+export function resetSpriteParallaxRig(): void {
+	setSpriteParallaxRigValues(0, 1, 0, 0, 0, 1, 1, 0, 0.6);
+}

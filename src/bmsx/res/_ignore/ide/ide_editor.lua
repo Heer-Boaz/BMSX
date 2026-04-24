@@ -1669,8 +1669,8 @@ function editor.init(path)
 	state.last_history_key = nil
 	state.last_history_timestamp = 0
 	state.save_point_depth = 0
-	state.active_path = path or get_lua_entry_path()
-	local source = get_lua_resource_source(state.active_path)
+	state.active_path = path or devtools.get_lua_entry_path()
+	local source = devtools.get_lua_resource_source(state.active_path)
 	state.buffer = piece_tree_buffer.new(source)
 	state.layout = code_layout.new(state.font, {
 		max_highlight_cache = 512,

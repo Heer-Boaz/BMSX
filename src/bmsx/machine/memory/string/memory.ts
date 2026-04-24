@@ -9,12 +9,19 @@ import { enforceLuaHeapBudget } from '../lua_heap_usage';
 import { Memory } from '../memory';
 
 const TEXT_ENCODER = new TextEncoder();
+const TEXT_DECODER = new TextDecoder();
 
 export type StringHandleEntry = {
 	addr: number;
 	len: number;
 	flags: number;
 	gen: number;
+};
+
+export type StringHandleTableState = {
+	nextHandle: number;
+	generation: number;
+	heapUsedBytes: number;
 };
 
 export class StringHeap {
@@ -33,6 +40,14 @@ export class StringHeap {
 
 	public reset(): void {
 		this.cursor = STRING_HEAP_BASE;
+	}
+
+	public restoreState(usedBytes: number): void {
+		const cursor = STRING_HEAP_BASE + usedBytes;
+		if (cursor > STRING_HEAP_BASE + STRING_HEAP_SIZE) {
+			throw new Error(`[StringHeap] Restore exceeds heap size (${usedBytes}).`);
+		}
+		this.cursor = cursor;
 	}
 
 	public usedBytes(): number {
@@ -71,6 +86,23 @@ export class StringHandleTable {
 		this.heap.reset();
 	}
 
+	public captureState(): StringHandleTableState {
+		return {
+			nextHandle: this.nextHandle,
+			generation: this.generation,
+			heapUsedBytes: this.heap.usedBytes(),
+		};
+	}
+
+	public restoreState(state: StringHandleTableState): void {
+		if (state.nextHandle > STRING_HANDLE_COUNT) {
+			throw new Error(`[StringHandleTable] Restore exceeds handle capacity: ${state.nextHandle}.`);
+		}
+		this.nextHandle = state.nextHandle;
+		this.generation = state.generation;
+		this.heap.restoreState(state.heapUsedBytes);
+	}
+
 	public allocateHandle(text: string, flags: number = 0): { id: number; addr: number; len: number } {
 		if (this.nextHandle >= STRING_HANDLE_COUNT) {
 			throw new Error('[StringHandleTable] Out of string handles.');
@@ -90,6 +122,20 @@ export class StringHandleTable {
 		this.memory.writeU32(entryAddr + 4, len);
 		this.memory.writeU32(entryAddr + 8, flags);
 		this.memory.writeU32(entryAddr + 12, gen);
+	}
+
+	public readEntry(id: number): StringHandleEntry {
+		const entryAddr = STRING_HANDLE_TABLE_BASE + id * STRING_HANDLE_ENTRY_SIZE;
+		return {
+			addr: this.memory.readU32(entryAddr),
+			len: this.memory.readU32(entryAddr + 4),
+			flags: this.memory.readU32(entryAddr + 8),
+			gen: this.memory.readU32(entryAddr + 12),
+		};
+	}
+
+	public readText(entry: StringHandleEntry): string {
+		return TEXT_DECODER.decode(this.memory.readBytes(entry.addr, entry.len));
 	}
 
 	public usedHeapBytes(): number {

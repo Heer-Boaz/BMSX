@@ -93,7 +93,7 @@ export class RenderPresentationState {
 
 	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
 		$.deltatime = hostDeltaMs;
-		commitVdpViewSnapshot($.view, runtime.machine.vdp);
+		commitVdpViewSnapshot($.view, runtime.machine.vdp, runtime.machine.memory);
 		$.view.configurePresentation(mode, commitFrame);
 		this.recordPresentation(mode, commitFrame);
 		$.sndmaster.finishFrame();

@@ -1,8 +1,5 @@
 import type { SoundMaster } from '../audio/soundmaster';
 import type { Input } from '../input/manager';
-import { beginMeshQueue, beginParticleQueue, clearBackQueues } from '../render/shared/queues';
-import { clearHardwareCamera } from '../render/shared/hardware/camera';
-import { clearHardwareLighting } from '../render/shared/hardware/lighting';
 import {
 	HOST_FAULT_STAGE_NONE,
 	IO_SYS_BOOT_CART,
@@ -18,8 +15,8 @@ import { ImgDecController } from './devices/imgdec/controller';
 import { InputController, type InputControllerState } from './devices/input/controller';
 import { IrqController } from './devices/irq/controller';
 import { VDP, type VdpFrameBufferSize, type VdpState } from './devices/vdp/vdp';
-import { Memory } from './memory/memory';
-import { StringHandleTable } from './memory/string/memory';
+import { Memory, type MemorySaveState, type MemoryState } from './memory/memory';
+import { StringHandleTable, type StringHandleTableState } from './memory/string/memory';
 import { StringPool } from './memory/string/pool';
 import { ResourceUsageDetector } from './runtime/resource_usage_detector';
 import {
@@ -40,6 +37,14 @@ export type MachineTiming = {
 };
 
 export type MachineState = {
+	memory: MemoryState;
+	input: InputControllerState;
+	vdp: VdpState;
+};
+
+export type MachineSaveState = {
+	memory: MemorySaveState;
+	stringHandles: StringHandleTableState;
 	input: InputControllerState;
 	vdp: VdpState;
 };
@@ -133,21 +138,37 @@ export class Machine {
 
 	public captureState(): MachineState {
 		return {
+			memory: this.memory.captureState(),
 			input: this.inputController.captureState(),
 			vdp: this.vdp.captureState(),
 		};
 	}
 
 	public restoreState(state: MachineState): void {
+		this.memory.restoreState(state.memory);
+		this.geometryController.postLoad();
+		this.irqController.postLoad();
 		this.inputController.restoreState(state.input);
 		this.vdp.restoreState(state.vdp);
 	}
 
-	public resetRenderBuffers(): void {
-		clearHardwareCamera();
-		clearHardwareLighting();
-		clearBackQueues();
-		beginMeshQueue();
-		beginParticleQueue();
+	public captureSaveState(): MachineSaveState {
+		return {
+			memory: this.memory.captureSaveState(),
+			stringHandles: this.stringHandles.captureState(),
+			input: this.inputController.captureState(),
+			vdp: this.vdp.captureState(),
+		};
 	}
+
+	public restoreSaveState(state: MachineSaveState): void {
+		this.memory.restoreSaveState(state.memory);
+		this.stringHandles.restoreState(state.stringHandles);
+		this.cpu.rehydrateStringPoolFromHandleTable(state.stringHandles);
+		this.geometryController.postLoad();
+		this.irqController.postLoad();
+		this.inputController.restoreState(state.input);
+		this.vdp.restoreState(state.vdp);
+	}
+
 }

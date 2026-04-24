@@ -108,6 +108,15 @@ export type VramWriteSink = {
 export type IoReadHandler = (addr: number) => Value;
 export type IoWriteHandler = (addr: number, value: Value) => void;
 
+export type MemoryState = {
+	ioMemory: Value[];
+	assetMemory: Uint8Array;
+};
+
+export type MemorySaveState = {
+	ram: Uint8Array;
+};
+
 export type MemoryInit = {
 	engineRom: Uint8Array;
 	cartRom?: Uint8Array;
@@ -210,6 +219,19 @@ export class Memory {
 
 	public getIoSlots(): ReadonlyArray<Value> {
 		return this.ioSlots;
+	}
+
+	public loadIoSlots(slots: ReadonlyArray<Value>): void {
+		if (slots.length !== this.ioSlots.length) {
+			throw new Error(`[Memory] I/O snapshot slot count mismatch (${slots.length} != ${this.ioSlots.length}).`);
+		}
+		for (let index = 0; index < this.ioSlots.length; index += 1) {
+			this.ioSlots[index] = slots[index];
+		}
+	}
+
+	public clearIoSlots(): void {
+		this.ioSlots.fill(null);
 	}
 
 	public resetAssetMemory(): void {
@@ -731,7 +753,43 @@ export class Memory {
 			throw new Error(`[Memory] RAM snapshot length mismatch (${snapshot.byteLength} != ${ASSET_RAM_SIZE}).`);
 		}
 		this.ram.set(snapshot, offset);
+		this.rehydrateAssetEntriesFromTable();
 		this.markAllAssetsDirty();
+	}
+
+	public dumpMutableRam(): Uint8Array {
+		return this.ram.slice();
+	}
+
+	public restoreMutableRam(snapshot: Uint8Array): void {
+		if (snapshot.byteLength !== this.ram.byteLength) {
+			throw new Error(`[Memory] RAM snapshot length mismatch (${snapshot.byteLength} != ${this.ram.byteLength}).`);
+		}
+		this.ram.set(snapshot);
+		this.rehydrateAssetEntriesFromTable();
+		this.markAllAssetsDirty();
+	}
+
+	public captureState(): MemoryState {
+		return {
+			ioMemory: this.ioSlots.slice(),
+			assetMemory: this.dumpAssetMemory(),
+		};
+	}
+
+	public restoreState(state: MemoryState): void {
+		this.loadIoSlots(state.ioMemory);
+		this.restoreAssetMemory(state.assetMemory);
+	}
+
+	public captureSaveState(): MemorySaveState {
+		return {
+			ram: this.dumpMutableRam(),
+		};
+	}
+
+	public restoreSaveState(state: MemorySaveState): void {
+		this.restoreMutableRam(state.ram);
 	}
 
 	public rehydrateAssetEntriesFromTable(): void {

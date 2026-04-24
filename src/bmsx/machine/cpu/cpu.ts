@@ -1,7 +1,11 @@
 import { StringPool, StringValue, isStringValue, stringValueToString } from '../memory/string/pool';
-import type { RuntimeStringPoolState } from '../memory/string/pool';
 import type { Memory } from '../memory/memory';
-import { addTrackedLuaHeapBytes, replaceTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
+import type { StringHandleTableState } from '../memory/string/memory';
+import {
+	addTrackedLuaHeapBytes,
+	collectTrackedLuaHeapBytes as refreshTrackedLuaHeapBytes,
+	replaceTrackedLuaHeapBytes
+} from '../memory/lua_heap_usage';
 import { formatNumber } from '../common/number_format';
 import { BASE_CYCLES, OpCode } from './opcode_info';
 import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions, type CpuProfilerSnapshot } from './profiler';
@@ -95,7 +99,6 @@ function resolveApiNativeCost(name: string): NativeFnCost {
 		case 'display_height':
 		case 'get_cpu_freq_hz':
 		case 'get_default_font':
-		case 'get_lua_entry_path':
 		case 'keyboard':
 		case 'rungate':
 		case 'runtime':
@@ -124,8 +127,6 @@ function resolveApiNativeCost(name: string): NativeFnCost {
 			return NATIVE_COST_TIER2;
 		case 'set_camera':
 		case 'cartdata':
-		case 'list_lua_resources':
-		case 'get_lua_resource_source':
 		case 'list_builtins':
 		case 'create_font':
 		case 'set_sprite_parallax_rig':
@@ -148,6 +149,7 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'sys_vdp_work_units_last':
 		case 'sys_vdp_frame_held':
 		case 'clock_now':
+		case 'devtools.get_lua_entry_path':
 			return NATIVE_COST_TIER0;
 		case 'math.abs':
 		case 'math.acos':
@@ -236,6 +238,8 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'require':
 		case 'print':
 		case 'os.date':
+		case 'devtools.list_lua_resources':
+		case 'devtools.get_lua_resource_source':
 			return NATIVE_COST_TIER4;
 		default:
 			if (name.startsWith('api.')) {
@@ -356,6 +360,8 @@ export type CpuFrameSnapshot = {
 
 export type CpuRuntimeRefSegment = string | number;
 
+const CPU_RUNTIME_METATABLE_SEGMENT = '@metatable';
+
 export type CpuValueState =
 	| { tag: 'nil' }
 	| { tag: 'false' }
@@ -385,12 +391,6 @@ export type CpuObjectState =
 		index: number;
 		frameIndex: number;
 		value: CpuValueState;
-	}
-	| {
-		kind: 'native_array';
-		values: CpuValueState[];
-		props: Array<{ key: CpuValueState; value: CpuValueState }>;
-		metatable: CpuValueState;
 	};
 
 export type CpuFrameState = {
@@ -412,16 +412,18 @@ export type CpuRootValueState = {
 };
 
 export type CpuRuntimeState = {
-	stringPoolState: RuntimeStringPoolState;
 	globals: CpuRootValueState[];
 	ioMemory: CpuValueState[];
 	moduleCache: CpuRootValueState[];
 	frames: CpuFrameState[];
 	lastReturnValues: CpuValueState[];
 	objects: CpuObjectState[];
+	openUpvalues: number[];
 	lastPc: number;
 	lastInstruction: number;
 	instructionBudgetRemaining: number;
+	haltedUntilIrq: boolean;
+	yieldRequested: boolean;
 };
 
 export type Program = {
@@ -1966,6 +1968,10 @@ export class CPU {
 		return this.stringPool;
 	}
 
+	public rehydrateStringPoolFromHandleTable(state: StringHandleTableState): void {
+		this.stringPool.rehydrateFromHandleTable(state);
+	}
+
 	public setStringIndexTable(table: Table | null): void {
 		this.stringIndexTable = table;
 	}
@@ -3154,6 +3160,501 @@ export class CPU {
 			return this.program.constPool[index];
 		}
 		return frame.registers.get(rk);
+	}
+
+	public captureRuntimeState(moduleCache: ReadonlyMap<string, Value>): CpuRuntimeState {
+		this.syncGlobalSlotsToTable();
+		const frameIndexByRef = new WeakMap<CallFrame, number>();
+		for (let index = 0; index < this.frames.length; index += 1) {
+			frameIndexByRef.set(this.frames[index], index);
+		}
+		const stablePathByNative = new WeakMap<object, CpuRuntimeRefSegment[]>();
+		const stableValueByPath = new Map<string, Value>();
+		const stableTables = new WeakSet<Table>();
+		const stableNativeObjects = new WeakSet<NativeObject>();
+
+		const encodePathKey = (path: ReadonlyArray<CpuRuntimeRefSegment>): string => {
+			let key = '';
+			for (let index = 0; index < path.length; index += 1) {
+				const segment = path[index];
+				if (typeof segment === 'number') {
+					key += `#${segment};`;
+					continue;
+				}
+				key += `$${segment.length}:${segment};`;
+			}
+			return key;
+		};
+
+		const recordStableValue = (path: ReadonlyArray<CpuRuntimeRefSegment>, value: Value): void => {
+			if (!isNativeFunction(value) && !isNativeObject(value)) {
+				return;
+			}
+			stableValueByPath.set(encodePathKey(path), value);
+			stablePathByNative.set(value, [...path]);
+		};
+
+		const traverseStableValue = (path: CpuRuntimeRefSegment[], value: Value): void => {
+			recordStableValue(path, value);
+			if (value instanceof Table) {
+				if (stableTables.has(value)) {
+					return;
+				}
+				stableTables.add(value);
+				const metatable = value.getMetatable();
+				if (metatable !== null) {
+					traverseStableValue([...path, CPU_RUNTIME_METATABLE_SEGMENT], metatable);
+				}
+				for (let arrayIndex = 1; arrayIndex <= value.length(); arrayIndex += 1) {
+					const arrayValue = value.getInteger(arrayIndex);
+					if (arrayValue !== null) {
+						traverseStableValue([...path, arrayIndex], arrayValue);
+					}
+				}
+				value.forEachEntry((key, entryValue) => {
+					if (typeof key === 'number') {
+						if (Number.isInteger(key)) {
+							traverseStableValue([...path, key], entryValue);
+						}
+						return;
+					}
+					if (isStringValue(key)) {
+						traverseStableValue([...path, stringValueToString(key)], entryValue);
+					}
+				});
+				return;
+			}
+			if (!isNativeObject(value)) {
+				return;
+			}
+			if (stableNativeObjects.has(value)) {
+				return;
+			}
+			stableNativeObjects.add(value);
+			if (value.metatable !== null) {
+				traverseStableValue([...path, CPU_RUNTIME_METATABLE_SEGMENT], value.metatable);
+			}
+		};
+
+		this.globals.forEachEntry((key, value) => {
+			if (!isStringValue(key)) {
+				return;
+			}
+			traverseStableValue(['globals', stringValueToString(key)], value);
+		});
+		const ioSlots = this.memory.getIoSlots();
+		for (let index = 0; index < ioSlots.length; index += 1) {
+			traverseStableValue(['ioMemory', index], ioSlots[index]);
+		}
+		for (const [name, value] of moduleCache) {
+			traverseStableValue(['moduleCache', name], value);
+		}
+
+		const objectIds = new WeakMap<object, number>();
+		const objects: CpuObjectState[] = [];
+
+		const ensureObjectId = (object: Table | Closure | Upvalue): number => {
+			const existing = objectIds.get(object);
+			if (existing !== undefined) {
+				return existing;
+			}
+			const id = objects.length;
+			objectIds.set(object, id);
+			objects.push(captureObjectState(object));
+			return id;
+		};
+
+		const captureValueState = (value: Value): CpuValueState => {
+			if (value === null) {
+				return { tag: 'nil' };
+			}
+			if (value === false) {
+				return { tag: 'false' };
+			}
+			if (value === true) {
+				return { tag: 'true' };
+			}
+			if (typeof value === 'number') {
+				return { tag: 'number', value };
+			}
+			if (isStringValue(value)) {
+				return { tag: 'string', id: value.id };
+			}
+			if (isNativeFunction(value) || isNativeObject(value)) {
+				const path = stablePathByNative.get(value);
+				if (path === undefined) {
+					throw new Error(`[CPU] Runtime snapshot cannot preserve native value '${valueTypeName(value)}' without a stable root path.`);
+				}
+				return { tag: 'stable_ref', path };
+			}
+			return { tag: 'ref', id: ensureObjectId(value as Table | Closure) };
+		};
+
+		const captureObjectState = (object: Table | Closure | Upvalue): CpuObjectState => {
+			if (object instanceof Table) {
+				const tableState = object.captureRuntimeState();
+				const hash = new Array(tableState.hash.length);
+				for (let index = 0; index < tableState.hash.length; index += 1) {
+					const node = tableState.hash[index];
+					hash[index] = {
+						key: captureValueState(node.key),
+						value: captureValueState(node.value),
+						next: node.next,
+					};
+				}
+				const array = new Array(tableState.array.length);
+				for (let index = 0; index < tableState.array.length; index += 1) {
+					array[index] = captureValueState(tableState.array[index]);
+				}
+				return {
+					kind: 'table',
+					array,
+					arrayLength: tableState.arrayLength,
+					hash,
+					hashFree: tableState.hashFree,
+					metatable: captureValueState(tableState.metatable),
+				};
+			}
+			const upvalue = object as Upvalue;
+			if ((upvalue as Upvalue).frame !== undefined && (upvalue as Upvalue).open !== undefined && (upvalue as Upvalue).index !== undefined) {
+				const frameIndex = upvalue.open ? frameIndexByRef.get(upvalue.frame) ?? -1 : -1;
+				if (upvalue.open && frameIndex < 0) {
+					throw new Error('[CPU] Runtime snapshot found an open upvalue without a tracked frame.');
+				}
+				return {
+					kind: 'upvalue',
+					open: upvalue.open,
+					index: upvalue.index,
+					frameIndex,
+					value: captureValueState(upvalue.open ? upvalue.frame.registers.get(upvalue.index) : upvalue.value),
+				};
+			}
+			const closure = object as Closure;
+			const upvalues = new Array(closure.upvalues.length);
+			for (let index = 0; index < closure.upvalues.length; index += 1) {
+				upvalues[index] = ensureObjectId(closure.upvalues[index]);
+			}
+			return {
+				kind: 'closure',
+				protoIndex: closure.protoIndex,
+				upvalues,
+			};
+		};
+
+		const globals: CpuRootValueState[] = [];
+		this.globals.forEachEntry((key, value) => {
+			if (!isStringValue(key)) {
+				return;
+			}
+			globals.push({
+				name: stringValueToString(key),
+				value: captureValueState(value),
+			});
+		});
+
+		const moduleCacheState: CpuRootValueState[] = [];
+		for (const [name, value] of moduleCache) {
+			moduleCacheState.push({
+				name,
+				value: captureValueState(value),
+			});
+		}
+
+		const frames = new Array<CpuFrameState>(this.frames.length);
+		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
+			const frame = this.frames[frameIndex];
+			const registers = new Array<CpuValueState>(frame.top);
+			for (let registerIndex = 0; registerIndex < frame.top; registerIndex += 1) {
+				registers[registerIndex] = captureValueState(frame.registers.get(registerIndex));
+			}
+			const varargs = new Array<CpuValueState>(frame.varargCount);
+			for (let varargIndex = 0; varargIndex < frame.varargCount; varargIndex += 1) {
+				varargs[varargIndex] = captureValueState(this.stackRegisters.get(frame.varargBase + varargIndex));
+			}
+			frames[frameIndex] = {
+				protoIndex: frame.protoIndex,
+				pc: frame.pc,
+				closureRef: ensureObjectId(frame.closure),
+				registers,
+				varargs,
+				returnBase: frame.returnBase,
+				returnCount: frame.returnCount,
+				top: frame.top,
+				captureReturns: frame.captureReturns,
+				callSitePc: frame.callSitePc,
+			};
+		}
+
+		const lastReturnValues = new Array<CpuValueState>(this.lastReturnValues.length);
+		for (let index = 0; index < this.lastReturnValues.length; index += 1) {
+			lastReturnValues[index] = captureValueState(this.lastReturnValues[index]);
+		}
+
+		const ioMemory = new Array<CpuValueState>(ioSlots.length);
+		for (let index = 0; index < ioSlots.length; index += 1) {
+			ioMemory[index] = captureValueState(ioSlots[index]);
+		}
+
+		const openUpvalues = new Array<number>(this.openUpvalues.length);
+		for (let index = 0; index < this.openUpvalues.length; index += 1) {
+			openUpvalues[index] = ensureObjectId(this.openUpvalues[index].upvalue);
+		}
+
+		return {
+			globals,
+			ioMemory,
+			moduleCache: moduleCacheState,
+			frames,
+			lastReturnValues,
+			objects,
+			openUpvalues,
+			lastPc: this.lastPc,
+			lastInstruction: this.lastInstruction,
+			instructionBudgetRemaining: this.instructionBudgetRemaining,
+			haltedUntilIrq: this.haltedUntilIrq,
+			yieldRequested: this.yieldRequested,
+		};
+	}
+
+	public restoreRuntimeState(state: CpuRuntimeState, moduleCache: Map<string, Value>): void {
+		const stableValueByPath = new Map<string, Value>();
+		const stableTables = new WeakSet<Table>();
+		const stableNativeObjects = new WeakSet<NativeObject>();
+
+		const encodePathKey = (path: ReadonlyArray<CpuRuntimeRefSegment>): string => {
+			let key = '';
+			for (let index = 0; index < path.length; index += 1) {
+				const segment = path[index];
+				if (typeof segment === 'number') {
+					key += `#${segment};`;
+					continue;
+				}
+				key += `$${segment.length}:${segment};`;
+			}
+			return key;
+		};
+
+		const recordStableValue = (path: ReadonlyArray<CpuRuntimeRefSegment>, value: Value): void => {
+			if (!isNativeFunction(value) && !isNativeObject(value)) {
+				return;
+			}
+			stableValueByPath.set(encodePathKey(path), value);
+		};
+
+		const traverseStableValue = (path: CpuRuntimeRefSegment[], value: Value): void => {
+			recordStableValue(path, value);
+			if (value instanceof Table) {
+				if (stableTables.has(value)) {
+					return;
+				}
+				stableTables.add(value);
+				const metatable = value.getMetatable();
+				if (metatable !== null) {
+					traverseStableValue([...path, CPU_RUNTIME_METATABLE_SEGMENT], metatable);
+				}
+				for (let arrayIndex = 1; arrayIndex <= value.length(); arrayIndex += 1) {
+					const arrayValue = value.getInteger(arrayIndex);
+					if (arrayValue !== null) {
+						traverseStableValue([...path, arrayIndex], arrayValue);
+					}
+				}
+				value.forEachEntry((key, entryValue) => {
+					if (typeof key === 'number') {
+						if (Number.isInteger(key)) {
+							traverseStableValue([...path, key], entryValue);
+						}
+						return;
+					}
+					if (isStringValue(key)) {
+						traverseStableValue([...path, stringValueToString(key)], entryValue);
+					}
+				});
+				return;
+			}
+			if (!isNativeObject(value)) {
+				return;
+			}
+			if (stableNativeObjects.has(value)) {
+				return;
+			}
+			stableNativeObjects.add(value);
+			if (value.metatable !== null) {
+				traverseStableValue([...path, CPU_RUNTIME_METATABLE_SEGMENT], value.metatable);
+			}
+		};
+
+		this.syncGlobalSlotsToTable();
+		this.globals.forEachEntry((key, value) => {
+			if (!isStringValue(key)) {
+				return;
+			}
+			traverseStableValue(['globals', stringValueToString(key)], value);
+		});
+		const currentIoSlots = this.memory.getIoSlots();
+		for (let index = 0; index < currentIoSlots.length; index += 1) {
+			traverseStableValue(['ioMemory', index], currentIoSlots[index]);
+		}
+		for (const [name, value] of moduleCache) {
+			traverseStableValue(['moduleCache', name], value);
+		}
+
+		type RestoredObject = Table | Closure | Upvalue;
+		const restoredObjects = new Array<RestoredObject>(state.objects.length);
+
+		for (let index = 0; index < state.objects.length; index += 1) {
+			const objectState = state.objects[index];
+			switch (objectState.kind) {
+				case 'table':
+					restoredObjects[index] = new Table(0, 0);
+					break;
+				case 'closure': {
+					const upvalues = new Array<Upvalue>(objectState.upvalues.length);
+					addTrackedLuaHeapBytes(16 + (upvalues.length * 8));
+					restoredObjects[index] = { protoIndex: objectState.protoIndex, upvalues };
+					break;
+				}
+				case 'upvalue':
+					addTrackedLuaHeapBytes(24);
+					restoredObjects[index] = { open: false, index: objectState.index, frame: null, value: null };
+					break;
+			}
+		}
+
+		const restoreValue = (valueState: CpuValueState): Value => {
+			switch (valueState.tag) {
+				case 'nil':
+					return null;
+				case 'false':
+					return false;
+				case 'true':
+					return true;
+				case 'number':
+					return valueState.value;
+				case 'string':
+					return this.stringPool.getById(valueState.id);
+				case 'ref':
+					return restoredObjects[valueState.id] as Table | Closure;
+				case 'stable_ref': {
+					const value = stableValueByPath.get(encodePathKey(valueState.path));
+					if (value === undefined) {
+						throw new Error('[CPU] Runtime snapshot stable reference is not available in the current runtime environment.');
+					}
+					return value;
+				}
+			}
+		};
+
+		for (let index = 0; index < state.objects.length; index += 1) {
+			const objectState = state.objects[index];
+			switch (objectState.kind) {
+				case 'table': {
+					const table = restoredObjects[index] as Table;
+					table.restoreRuntimeState({
+						array: objectState.array.map(restoreValue),
+						arrayLength: objectState.arrayLength,
+						hash: objectState.hash.map(node => ({
+							key: restoreValue(node.key),
+							value: restoreValue(node.value),
+							next: node.next,
+						})),
+						hashFree: objectState.hashFree,
+						metatable: restoreValue(objectState.metatable) as Table | null,
+					});
+					break;
+				}
+				case 'closure': {
+					const closure = restoredObjects[index] as Closure;
+					closure.protoIndex = objectState.protoIndex;
+					for (let upvalueIndex = 0; upvalueIndex < objectState.upvalues.length; upvalueIndex += 1) {
+						closure.upvalues[upvalueIndex] = restoredObjects[objectState.upvalues[upvalueIndex]] as Upvalue;
+					}
+					break;
+				}
+				case 'upvalue': {
+					const upvalue = restoredObjects[index] as Upvalue;
+					upvalue.open = objectState.open;
+					upvalue.index = objectState.index;
+					upvalue.frame = null;
+					upvalue.value = objectState.open ? null : restoreValue(objectState.value);
+					break;
+				}
+			}
+		}
+
+		this.lastReturnValues.length = 0;
+		this.frames.length = 0;
+		this.openUpvalues.length = 0;
+		this.stackTop = 0;
+		this.externalReturnSink = null;
+		this.globals.clear();
+		for (let slot = 0; slot < this.systemGlobalValues.length; slot += 1) {
+			this.systemGlobalValues[slot] = null;
+		}
+		for (let slot = 0; slot < this.globalValues.length; slot += 1) {
+			this.globalValues[slot] = null;
+		}
+		moduleCache.clear();
+
+		for (let frameIndex = 0; frameIndex < state.frames.length; frameIndex += 1) {
+			const frameState = state.frames[frameIndex];
+			const proto = this.program.protos[frameState.protoIndex];
+			const frame = this.acquireFrame();
+			frame.protoIndex = frameState.protoIndex;
+			frame.pc = frameState.pc;
+			frame.closure = restoredObjects[frameState.closureRef] as Closure;
+			frame.returnBase = frameState.returnBase;
+			frame.returnCount = frameState.returnCount;
+			frame.captureReturns = frameState.captureReturns;
+			frame.callSitePc = frameState.callSitePc;
+			frame.varargBase = this.stackTop;
+			frame.varargCount = frameState.varargs.length;
+			const registers = this.prepareFrameRegisters(frame, proto.maxStack);
+			for (let registerIndex = 0; registerIndex < frameState.registers.length; registerIndex += 1) {
+				registers.set(registerIndex, restoreValue(frameState.registers[registerIndex]));
+			}
+			for (let varargIndex = 0; varargIndex < frameState.varargs.length; varargIndex += 1) {
+				this.stackRegisters.set(frame.varargBase + varargIndex, restoreValue(frameState.varargs[varargIndex]));
+			}
+			frame.top = frameState.top;
+			this.frames.push(frame);
+		}
+
+		for (let index = 0; index < state.openUpvalues.length; index += 1) {
+			const upvalueState = state.objects[state.openUpvalues[index]];
+			if (upvalueState.kind !== 'upvalue' || !upvalueState.open) {
+				throw new Error('[CPU] Runtime snapshot contains an invalid open upvalue reference.');
+			}
+			const upvalue = restoredObjects[state.openUpvalues[index]] as Upvalue;
+			const frame = this.frames[upvalueState.frameIndex];
+			if (!frame) {
+				throw new Error('[CPU] Runtime snapshot open upvalue refers to a missing frame.');
+			}
+			upvalue.open = true;
+			upvalue.index = upvalueState.index;
+			upvalue.frame = frame;
+			upvalue.value = null;
+			this.openUpvalues.push({ frame, index: upvalue.index, upvalue });
+		}
+
+		for (let index = 0; index < state.globals.length; index += 1) {
+			const entry = state.globals[index];
+			this.setGlobalByKey(this.stringPool.intern(entry.name), restoreValue(entry.value));
+		}
+		for (let index = 0; index < state.moduleCache.length; index += 1) {
+			const entry = state.moduleCache[index];
+			moduleCache.set(entry.name, restoreValue(entry.value));
+		}
+		this.memory.loadIoSlots(state.ioMemory.map(restoreValue));
+
+		for (let index = 0; index < state.lastReturnValues.length; index += 1) {
+			this.lastReturnValues[index] = restoreValue(state.lastReturnValues[index]);
+		}
+		this.lastPc = state.lastPc;
+		this.lastInstruction = state.lastInstruction;
+		this.instructionBudgetRemaining = state.instructionBudgetRemaining;
+		this.haltedUntilIrq = state.haltedUntilIrq;
+		this.yieldRequested = state.yieldRequested;
+		refreshTrackedLuaHeapBytes();
 	}
 
 	public collectTrackedHeapBytes(extraRoots: ReadonlyArray<Value> = []): number {

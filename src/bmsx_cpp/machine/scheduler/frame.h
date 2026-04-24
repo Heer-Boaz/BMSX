@@ -3,6 +3,7 @@
 #include "core/primitives.h"
 #include "machine/runtime/frame/state.h"
 #include <array>
+#include <vector>
 
 namespace bmsx {
 
@@ -16,6 +17,21 @@ struct TickCompletion {
 	bool vdpFrameHeld = false;
 };
 
+struct FrameSchedulerStateSnapshot {
+	f64 accumulatedHostTimeMs = 0.0;
+	std::vector<TickCompletion> queuedTickCompletions;
+	i64 lastTickSequence = 0;
+	int lastTickBudgetGranted = 0;
+	int lastTickCpuBudgetGranted = 0;
+	int lastTickCpuUsedCycles = 0;
+	int lastTickBudgetRemaining = 0;
+	bool lastTickVisualFrameCommitted = true;
+	int lastTickVdpFrameCost = 0;
+	bool lastTickVdpFrameHeld = false;
+	bool lastTickCompleted = false;
+	i64 lastTickConsumedSequence = 0;
+};
+
 constexpr size_t TICK_COMPLETION_QUEUE_CAPACITY = 16;
 
 class FrameSchedulerState {
@@ -24,6 +40,8 @@ public:
 	void clearTickCompletionQueue();
 	void reset();
 	void resetTickTelemetry();
+	FrameSchedulerStateSnapshot captureState() const;
+	void restoreState(const FrameSchedulerStateSnapshot& state);
 	void enqueueTickCompletion(Runtime& runtime, FrameState& frameState);
 	bool consumeTickCompletion(TickCompletion& outCompletion);
 	bool refillFrameBudget(Runtime& runtime, FrameState& frameState);

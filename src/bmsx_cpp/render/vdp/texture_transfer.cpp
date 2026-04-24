@@ -15,10 +15,6 @@ bool vdpTextureUploadReady() {
 	return EngineCore::instance().view()->backend()->readyForTextureUpload();
 }
 
-void loadVdpEngineAtlasViewTexture() {
-	EngineCore::instance().view()->loadEngineAtlasTexture();
-}
-
 TextureHandle vdpTextureByUri(const std::string& textureKey) {
 	return EngineCore::instance().texmanager()->getTextureByUri(textureKey);
 }

@@ -1,16 +1,19 @@
 #include "machine/runtime/runtime.h"
 #include "machine/firmware/api.h"
+#include "machine/firmware/devtools.h"
+#include "machine/runtime/game/view_state.h"
 #include "machine/bus/io.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/program/loader.h"
 #include "machine/runtime/resource_usage_detector.h"
 #include "machine/runtime/engine_irq.h"
+#include "machine/runtime/render/state.h"
 #include "machine/runtime/runtime_fault.h"
 #include "machine/runtime/timing/config.h"
+#include "render/shared/queues.h"
 #include "core/engine.h"
 #include "rompack/format.h"
 #include "input/manager.h"
-#include "runtime/assets/edits.h"
 #include <array>
 #include <stdexcept>
 
@@ -49,6 +52,10 @@ void Runtime::destroy() {
 
 Runtime::Runtime(const RuntimeOptions& options)
 	: timing(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame)
+	, m_systemAssets(options.systemAssets)
+	, m_activeAssets(options.activeAssets)
+	, m_cartAssets(options.cartAssets)
+	, m_machineManifest(options.machineManifest)
 	, m_api(std::make_unique<Api>(*this))
 	, m_machine(*m_api, *EngineCore::instance().soundMaster(), VdpFrameBufferSize{
 		static_cast<uint32_t>(options.viewport.x),
@@ -56,6 +63,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	})
 	, m_viewport(options.viewport)
 	{
+	initializeGameViewStateFromHost(m_gameViewState, *EngineCore::instance().view());
 	m_api->initializeRuntimeKeys();
 	m_machine.memory().clearIoSlots();
 	m_machine.initializeSystemIo();
@@ -100,6 +108,34 @@ Api& Runtime::api() {
 	return *m_api;
 }
 
+const CartManifest* Runtime::cartManifest() const {
+	if (!m_cartAssets || !m_cartAssets->cartManifest) {
+		return nullptr;
+	}
+	return &*m_cartAssets->cartManifest;
+}
+
+const std::string* Runtime::cartEntryPath() const {
+	if (!m_cartAssets) {
+		return nullptr;
+	}
+	return &m_cartAssets->entryPoint;
+}
+
+const std::string* Runtime::cartProjectRootPath() const {
+	if (!m_cartAssets) {
+		return nullptr;
+	}
+	return &m_cartAssets->projectRootPath;
+}
+
+void Runtime::setRuntimeEnvironment(RuntimeAssets& systemAssets, RuntimeAssets& activeAssets, const MachineManifest& machineManifest, RuntimeAssets* cartAssets) {
+	m_systemAssets = &systemAssets;
+	m_activeAssets = &activeAssets;
+	m_machineManifest = &machineManifest;
+	m_cartAssets = cartAssets;
+}
+
 void Runtime::boot(const ProgramAsset& asset, ProgramMetadata* metadata) {
 	m_moduleProtos.clear();
 	for (const auto& [path, protoIndex] : asset.moduleProtos) {
@@ -133,6 +169,7 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 	try {
 		setupBuiltins();
 		m_api->registerAllFunctions();
+		registerRuntimeDevtoolsTable(*this);
 		enforceLuaHeapBudget();
 		m_program = program;
 		m_programMetadata = metadata;
@@ -164,39 +201,6 @@ void Runtime::requestProgramReload() {
 	frameLoop.resetFrameState(*this);
 }
 
-RuntimeState Runtime::captureCurrentState() const {
-	RuntimeState state;
-	state.machine = m_machine.captureState();
-	const_cast<CPU&>(m_machine.cpu()).syncGlobalSlotsToTable();
-	m_machine.cpu().globals->forEachEntry([&state](Value key, Value value) {
-		state.globals.emplace_back(key, value);
-	});
-	state.cartDataNamespace = m_api->cartDataNamespace();
-	state.persistentData = m_api->persistentData();
-	state.randomSeed = m_randomSeedValue;
-	state.pendingEntryCall = m_pendingCall == PendingCall::Entry;
-	state.cyclesIntoFrame = vblank.capture(*this).cyclesIntoFrame;
-	return state;
-}
-
-void Runtime::applyState(const RuntimeState& state) {
-	m_machine.restoreState(state.machine);
-	vblank.restore(*this, RuntimeVblankSnapshot{state.cyclesIntoFrame});
-	m_api->restorePersistentData(state.cartDataNamespace, state.persistentData);
-	m_randomSeedValue = state.randomSeed;
-	m_pendingCall = state.pendingEntryCall ? PendingCall::Entry : PendingCall::None;
-
-	// Restore globals
-	m_machine.cpu().globals->clear();
-	m_machine.cpu().clearGlobalSlots();
-	m_machine.cpu().setProgram(m_program, m_programMetadata);
-	for (const auto& [key, value] : state.globals) {
-		m_machine.cpu().setGlobalByKey(key, value);
-	}
-	flushRuntimeAssetEdits(m_machine.memory());
-	m_machine.resetRenderBuffers();
-}
-
 void Runtime::setGlobal(std::string_view name, const Value& value) {
 	m_machine.cpu().setGlobalByKey(valueString(m_machine.cpu().internString(name)), value);
 }
@@ -209,7 +213,8 @@ void Runtime::registerNativeFunction(std::string_view name, NativeFunctionInvoke
 void Runtime::resetHardwareState() {
 	m_machine.resetDevices();
 	vblank.reset(*this);
-	m_machine.resetRenderBuffers();
+	resetRuntimeRenderState();
+	RenderQueues::resetTransientState();
 }
 
 void Runtime::refreshMemoryMap() {

@@ -2,7 +2,6 @@ import { $ } from '../../../core/engine';
 import type { VDP, VdpBlitterCommand } from '../../../machine/devices/vdp/vdp';
 import type { GPUBackend } from '../../backend/interfaces';
 import { WebGLBackend } from '../../backend/webgl/backend';
-import { HeadlessGPUBackend } from '../../headless/backend';
 import { HeadlessVdpBlitterExecutor } from './headless';
 import { WebGLVdpBlitterExecutor } from './webgl';
 import { WebGPUVdpBlitterExecutor } from './webgpu';
@@ -13,7 +12,6 @@ type VdpBlitterExecutorLike = {
 
 let webglExecutorBackend: WebGLBackend | null = null;
 let webglExecutor: WebGLVdpBlitterExecutor | null = null;
-let headlessExecutorBackend: HeadlessGPUBackend | null = null;
 let headlessExecutor: HeadlessVdpBlitterExecutor | null = null;
 let webgpuExecutor: WebGPUVdpBlitterExecutor | null = null;
 
@@ -26,9 +24,8 @@ function getVdpBlitterExecutor(backend: GPUBackend): VdpBlitterExecutorLike | nu
 			}
 			return webglExecutor;
 		case 'headless':
-			if (headlessExecutor === null || headlessExecutorBackend !== backend) {
-				headlessExecutorBackend = backend as HeadlessGPUBackend;
-				headlessExecutor = new HeadlessVdpBlitterExecutor(headlessExecutorBackend);
+			if (headlessExecutor === null) {
+				headlessExecutor = new HeadlessVdpBlitterExecutor();
 			}
 			return headlessExecutor;
 		case 'webgpu':

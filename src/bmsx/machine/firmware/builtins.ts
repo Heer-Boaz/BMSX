@@ -8,6 +8,7 @@ import { isLuaTable, LuaTable, LuaValue } from '../../lua/value';
 import { arrayify } from '../../common/arrayify';
 import { API_METHOD_METADATA } from './api/metadata';
 import { collectApiMembers } from './api/members';
+import { createInterpreterDevtoolsTable } from './devtools';
 import {
 	DEFAULT_LUA_BUILTIN_FUNCTIONS,
 	ENGINE_LUA_BUILTIN_FUNCTIONS,
@@ -61,6 +62,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 		signature: 'set_input_map(mapping [, player])',
 		description: 'Replaces the input bindings for the console player. The optional player argument is zero-based.',
 	});
+	registerLuaGlobal(env, 'devtools', createInterpreterDevtoolsTable(runtime, interpreter));
 
 	const members = collectApiMembers(api);
 	for (const { name, kind, descriptor } of members) {

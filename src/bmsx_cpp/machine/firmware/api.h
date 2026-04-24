@@ -16,6 +16,16 @@ namespace bmsx {
 
 class Runtime;
 
+struct RuntimeStorageStateEntry {
+	int index = 0;
+	double value = 0.0;
+};
+
+struct RuntimeStorageState {
+	std::string storageNamespace;
+	std::vector<RuntimeStorageStateEntry> entries;
+};
+
 class Api {
 public:
 	explicit Api(Runtime& runtime);
@@ -25,14 +35,11 @@ public:
 	void registerAllFunctions();
 	void markRoots(GcHeap& heap);
 	void appendRootValues(NativeResults& out) const;
-	const std::string& cartDataNamespace() const { return m_cartDataNamespace; }
-	const std::vector<double>& persistentData() const { return m_persistentData; }
-	void restorePersistentData(const std::string& ns, const std::vector<double>& values);
+	RuntimeStorageState captureStorageState() const;
+	void restoreStorageState(const RuntimeStorageState& state);
 
 	int display_width() const;
 	int display_height() const;
-	std::string get_lua_entry_path() const;
-	std::string get_lua_resource_source(const std::string& path) const;
 	double get_cpu_freq_hz() const;
 	void set_cpu_freq_hz(double cpuHz);
 	Color palette_color(int index) const;
@@ -42,6 +49,16 @@ public:
 	uint32_t getFontId(BFont* font) const;
 	void put_mesh(const MeshRenderSubmission& submission);
 	void put_particle(const ParticleRenderSubmission& submission);
+	void skybox(const std::string& posx,
+				const std::string& negx,
+				const std::string& posy,
+				const std::string& negy,
+				const std::string& posz,
+				const std::string& negz);
+	void set_camera(const std::array<f32, 16>& view, const std::array<f32, 16>& proj, const Vec3& eye);
+	void put_ambient_light(const std::string& id, const std::array<f32, 3>& color, f32 intensity);
+	void put_directional_light(const std::string& id, const Vec3& orientation, const std::array<f32, 3>& color, f32 intensity);
+	void put_point_light(const std::string& id, const Vec3& position, const std::array<f32, 3>& color, f32 range, f32 intensity);
 
 	void cartdata(const std::string& ns);
 	void dset(int index, double value);
@@ -90,6 +107,7 @@ private:
 	uint32_t fontId(BFont* font) const;
 	Color resolve_color(const Value& value);
 	Vec3 read_vec3(const Value& value);
+	std::array<f32, 3> read_light_color(const Value& value);
 	std::array<f32, 16> read_matrix(const Value& value);
 
 	std::array<Value, PLAYERS_MAX> m_playerInputHandles = {
