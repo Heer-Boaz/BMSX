@@ -9,7 +9,6 @@ import {
 	APU_CHANNEL_UI,
 	APU_CMD_NONE,
 	APU_CMD_PLAY,
-	APU_CMD_QUEUE_PLAY,
 	APU_CMD_RAMP_VOICE,
 	APU_CMD_STOP_CHANNEL,
 	APU_CMD_STOP_VOICE,
@@ -50,14 +49,6 @@ import {
 } from '../../bus/io';
 import { Memory, type AssetEntry } from '../../memory/memory';
 import type { IrqController } from '../irq/controller';
-
-interface QueuedAudioPlay {
-	handle: number;
-	id: string;
-	request: SoundMasterResolvedPlayRequest;
-}
-
-const ACTIVE_VOICE_PENDING = -1;
 
 function apuSamplesToMilliseconds(samples: number): number {
 	return Math.floor((samples * 1000) / APU_SAMPLE_RATE_HZ);
@@ -107,11 +98,7 @@ function decodeFilterKind(kind: number): BiquadFilterType {
 
 export class AudioController {
 	private eventSequence = 0;
-	private readonly activeHandleByType: Record<AudioType, number> = { sfx: 0, music: 0, ui: 0 };
-	private readonly activeVoiceByType: Record<AudioType, number> = { sfx: 0, music: 0, ui: 0 };
 	private readonly playSequenceByType: Record<AudioType, number> = { sfx: 0, music: 0, ui: 0 };
-	private readonly queuedByType: Record<AudioType, QueuedAudioPlay[]> = { sfx: [], music: [], ui: [] };
-	private readonly queuedFirstByType: Record<AudioType, number> = { sfx: 0, music: 0, ui: 0 };
 	private readonly unsubscribeSfx: () => void;
 	private readonly unsubscribeMusic: () => void;
 	private readonly unsubscribeUi: () => void;
@@ -135,21 +122,9 @@ export class AudioController {
 
 	public reset(): void {
 		this.eventSequence = 0;
-		this.activeHandleByType.sfx = 0;
-		this.activeHandleByType.music = 0;
-		this.activeHandleByType.ui = 0;
-		this.activeVoiceByType.sfx = 0;
-		this.activeVoiceByType.music = 0;
-		this.activeVoiceByType.ui = 0;
 		this.playSequenceByType.sfx = 0;
 		this.playSequenceByType.music = 0;
 		this.playSequenceByType.ui = 0;
-		this.queuedByType.sfx.length = 0;
-		this.queuedByType.music.length = 0;
-		this.queuedByType.ui.length = 0;
-		this.queuedFirstByType.sfx = 0;
-		this.queuedFirstByType.music = 0;
-		this.queuedFirstByType.ui = 0;
 		this.clearCommandLatch();
 		this.memory.writeValue(IO_APU_STATUS, 0);
 		this.memory.writeValue(IO_APU_EVENT_KIND, APU_EVENT_NONE);
@@ -186,10 +161,6 @@ export class AudioController {
 				this.play();
 				this.clearCommandLatch();
 				return;
-			case APU_CMD_QUEUE_PLAY:
-				this.queuePlay();
-				this.clearCommandLatch();
-				return;
 			case APU_CMD_STOP_CHANNEL:
 				this.stopChannel();
 				this.clearCommandLatch();
@@ -209,21 +180,7 @@ export class AudioController {
 		const handle = this.memory.readIoU32(IO_APU_HANDLE);
 		const entry = this.requireAudioEntry(handle);
 		const channel = decodeChannel(this.memory.readIoU32(IO_APU_CHANNEL));
-		this.queuedByType[channel].length = 0;
-		this.queuedFirstByType[channel] = 0;
 		this.startPlay(handle, entry.id, channel, this.readResolvedPlayRequest());
-	}
-
-	private queuePlay(): void {
-		const handle = this.memory.readIoU32(IO_APU_HANDLE);
-		const entry = this.requireAudioEntry(handle);
-		const channel = decodeChannel(this.memory.readIoU32(IO_APU_CHANNEL));
-		const request = this.readResolvedPlayRequest();
-		if (this.activeHandleByType[channel] !== 0) {
-			this.queuedByType[channel].push({ handle, id: entry.id, request });
-			return;
-		}
-		this.startPlay(handle, entry.id, channel, request);
 	}
 
 	private requireAudioEntry(handle: number): AssetEntry {
@@ -234,42 +191,36 @@ export class AudioController {
 		return entry;
 	}
 
-	private startPlay(handle: number, id: string, channel: AudioType, request: SoundMasterResolvedPlayRequest, emitStarted = true): void {
+	private startPlay(handle: number, id: string, channel: AudioType, request: SoundMasterResolvedPlayRequest): void {
 		if (!this.soundMaster.isRuntimeAudioReady()) {
 			throw new Error('[APU] SoundMaster runtime audio is not initialized.');
 		}
 		if (!this.soundMaster.hasAudio(id)) {
 			throw new Error(`[APU] audio asset '${id}' is not loaded in SoundMaster.`);
 		}
-		this.activeHandleByType[channel] = handle;
 		this.playSequenceByType[channel] = (this.playSequenceByType[channel] + 1) >>> 0;
-		this.activeVoiceByType[channel] = ACTIVE_VOICE_PENDING;
 		const playSequence = this.playSequenceByType[channel];
 		void this.soundMaster.playResolved(id, request).then((voiceId) => {
 			if (this.playSequenceByType[channel] !== playSequence) {
+				if (voiceId) {
+					this.soundMaster.stopVoiceById(voiceId);
+				}
 				return;
 			}
-			this.activeVoiceByType[channel] = voiceId;
-			if (emitStarted) {
+			if (voiceId) {
 				this.emitVoiceEvent(APU_EVENT_VOICE_STARTED, channel, handle, voiceId);
 			}
 		}, error => {
 			if (this.playSequenceByType[channel] !== playSequence) {
 				return;
 			}
-			this.activeVoiceByType[channel] = 0;
-			this.activeHandleByType[channel] = 0;
 			console.error(error);
 		});
 	}
 
 	private stopChannel(): void {
 		const channel = decodeChannel(this.memory.readIoU32(IO_APU_CHANNEL));
-		this.activeHandleByType[channel] = 0;
-		this.activeVoiceByType[channel] = 0;
 		this.playSequenceByType[channel] = (this.playSequenceByType[channel] + 1) >>> 0;
-		this.queuedByType[channel].length = 0;
-		this.queuedFirstByType[channel] = 0;
 		if (channel === 'music') {
 			const fadeSamples = this.memory.readIoU32(IO_APU_FADE_SAMPLES);
 			if (fadeSamples > 0) {
@@ -326,25 +277,6 @@ export class AudioController {
 	}
 
 	private emitVoiceEvent(kind: number, type: AudioType, handle: number, voiceId: number): void {
-		const activeVoice = this.activeVoiceByType[type];
-		const activeEnded = kind === APU_EVENT_VOICE_ENDED && (activeVoice > 0
-			? activeVoice === voiceId
-			: activeVoice === 0 && this.activeHandleByType[type] === handle);
-		if (activeEnded) {
-			const queue = this.queuedByType[type];
-			const first = this.queuedFirstByType[type];
-			const queued = first < queue.length ? queue[first] : undefined;
-			if (queued) {
-				this.queuedFirstByType[type] = first + 1;
-				if (this.queuedFirstByType[type] === queue.length) {
-					queue.length = 0;
-					this.queuedFirstByType[type] = 0;
-				}
-				this.startPlay(queued.handle, queued.id, type, queued.request, false);
-			} else {
-				this.activeHandleByType[type] = 0;
-			}
-		}
 		this.eventSequence = (this.eventSequence + 1) >>> 0;
 		this.memory.writeValue(IO_APU_EVENT_KIND, kind);
 		this.memory.writeValue(IO_APU_EVENT_CHANNEL, encodeChannel(type));

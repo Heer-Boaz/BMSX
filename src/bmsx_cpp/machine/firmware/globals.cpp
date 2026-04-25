@@ -1519,7 +1519,6 @@ void Runtime::setupBuiltins() {
 	setGlobal("irq_apu", valueNumber(static_cast<double>(IRQ_APU)));
 	setGlobal("apu_cmd_play", valueNumber(static_cast<double>(APU_CMD_PLAY)));
 	setGlobal("apu_cmd_stop_channel", valueNumber(static_cast<double>(APU_CMD_STOP_CHANNEL)));
-	setGlobal("apu_cmd_queue_play", valueNumber(static_cast<double>(APU_CMD_QUEUE_PLAY)));
 	setGlobal("apu_cmd_stop_voice", valueNumber(static_cast<double>(APU_CMD_STOP_VOICE)));
 	setGlobal("apu_cmd_ramp_voice", valueNumber(static_cast<double>(APU_CMD_RAMP_VOICE)));
 	setGlobal("apu_channel_sfx", valueNumber(static_cast<double>(APU_CHANNEL_SFX)));

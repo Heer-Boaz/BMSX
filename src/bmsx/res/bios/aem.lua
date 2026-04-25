@@ -26,6 +26,11 @@ local stinger_channel
 local stinger_voice
 local stinger_music_asset
 local stinger_music_transition
+local channel_active_handle
+local channel_active_voice
+local channel_play_queue
+local channel_queue_head
+local channel_queue_tail
 
 local resolve_data_path<const> = function(path)
 	local dot = string.find(path, '.', 1, true)
@@ -330,7 +335,158 @@ local apply_cooldown<const> = function(action, payload)
 	return true
 end
 
-local play_action_apu<const> = function(handle, channel, action, cmd)
+local reset_channel_state<const> = function()
+	channel_active_handle = {
+		[apu_channel_sfx] = 0,
+		[apu_channel_music] = 0,
+		[apu_channel_ui] = 0,
+	}
+	channel_active_voice = {
+		[apu_channel_sfx] = 0,
+		[apu_channel_music] = 0,
+		[apu_channel_ui] = 0,
+	}
+	channel_play_queue = {
+		[apu_channel_sfx] = {},
+		[apu_channel_music] = {},
+		[apu_channel_ui] = {},
+	}
+	channel_queue_head = {
+		[apu_channel_sfx] = 1,
+		[apu_channel_music] = 1,
+		[apu_channel_ui] = 1,
+	}
+	channel_queue_tail = {
+		[apu_channel_sfx] = 0,
+		[apu_channel_music] = 0,
+		[apu_channel_ui] = 0,
+	}
+end
+
+local has_queued_play<const> = function(channel)
+	return channel_queue_head[channel] <= channel_queue_tail[channel]
+end
+
+local clear_channel_queue<const> = function(channel)
+	local queue<const> = channel_play_queue[channel]
+	for i = channel_queue_head[channel], channel_queue_tail[channel] do
+		queue[i] = nil
+	end
+	channel_queue_head[channel] = 1
+	channel_queue_tail[channel] = 0
+end
+
+local channel_is_busy<const> = function(channel)
+	return channel_active_handle[channel] ~= 0
+end
+
+local mark_channel_pending<const> = function(channel, handle)
+	channel_active_handle[channel] = handle
+	channel_active_voice[channel] = 0
+end
+
+local mark_channel_started<const> = function(channel, handle, voice)
+	channel_active_handle[channel] = handle
+	channel_active_voice[channel] = voice
+end
+
+local channel_voice_matches<const> = function(channel, handle, voice)
+	local active_voice<const> = channel_active_voice[channel]
+	if active_voice ~= 0 then
+		return active_voice == voice
+	end
+	return channel_active_handle[channel] == handle
+end
+
+local enqueue_prepared_play<const> = function(play)
+	local channel<const> = play.channel
+	local tail<const> = channel_queue_tail[channel] + 1
+	channel_queue_tail[channel] = tail
+	channel_play_queue[channel][tail] = play
+end
+
+local dequeue_prepared_play<const> = function(channel)
+	if not has_queued_play(channel) then
+		return nil
+	end
+	local head<const> = channel_queue_head[channel]
+	local queue<const> = channel_play_queue[channel]
+	local play<const> = queue[head]
+	queue[head] = nil
+	if head == channel_queue_tail[channel] then
+		channel_queue_head[channel] = 1
+		channel_queue_tail[channel] = 0
+	else
+		channel_queue_head[channel] = head + 1
+	end
+	return play
+end
+
+local run_prepared_play
+run_prepared_play = function(play)
+	mark_channel_pending(play.channel, play.handle)
+	apu.play(
+		play.handle,
+		play.channel,
+		play.priority,
+		play.rate_step_q16,
+		play.gain_q12,
+		play.start_sample,
+		play.filter_kind,
+		play.filter_freq_hz,
+		play.filter_q_milli,
+		play.filter_gain_millidb
+	)
+end
+
+local play_next_queued
+play_next_queued = function(channel)
+	local play<const> = dequeue_prepared_play(channel)
+	if play ~= nil then
+		run_prepared_play(play)
+	end
+end
+
+local complete_channel_voice<const> = function(channel, handle, voice, drain_queue)
+	if not channel_voice_matches(channel, handle, voice) then
+		return false
+	end
+	channel_active_handle[channel] = 0
+	channel_active_voice[channel] = 0
+	if drain_queue then
+		play_next_queued(channel)
+	end
+	return true
+end
+
+local submit_prepared_play<const> = function(play, queued)
+	if queued then
+		if channel_is_busy(play.channel) or has_queued_play(play.channel) then
+			enqueue_prepared_play(play)
+			return
+		end
+	else
+		clear_channel_queue(play.channel)
+	end
+	run_prepared_play(play)
+end
+
+local prepare_plain_play<const> = function(handle, channel)
+	return {
+		handle = handle,
+		channel = channel,
+		priority = apu_priority_auto,
+		rate_step_q16 = apu_rate_step_q16_one,
+		gain_q12 = apu_gain_q12_one,
+		start_sample = 0,
+		filter_kind = apu_filter_none,
+		filter_freq_hz = 0,
+		filter_q_milli = 1000,
+		filter_gain_millidb = 0,
+	}
+end
+
+local prepare_action_play<const> = function(handle, channel, action)
 	local pitch_delta = action.__apu_pitch_delta
 	local pitch_range_span<const> = action.__apu_pitch_range_span
 	if pitch_range_span ~= 0 then
@@ -357,19 +513,18 @@ local play_action_apu<const> = function(handle, channel, action, cmd)
 	end
 	local rate_step_q16<const> = rate * (2 ^ (pitch_delta / 12)) * apu_rate_step_q16_one
 
-	apu.play(
-		handle,
-		channel,
-		action.__apu_priority,
-		rate_step_q16,
-		gain_q12,
-		start_sample,
-		action.__apu_filter_kind,
-		action.__apu_filter_freq_hz,
-		action.__apu_filter_q_milli,
-		action.__apu_filter_gain_millidb,
-		cmd
-	)
+	return {
+		handle = handle,
+		channel = channel,
+		priority = action.__apu_priority,
+		rate_step_q16 = rate_step_q16,
+		gain_q12 = gain_q12,
+		start_sample = start_sample,
+		filter_kind = action.__apu_filter_kind,
+		filter_freq_hz = action.__apu_filter_freq_hz,
+		filter_q_milli = action.__apu_filter_q_milli,
+		filter_gain_millidb = action.__apu_filter_gain_millidb,
+	}
 end
 
 local transition_start_sample<const> = function(asset, transition)
@@ -406,6 +561,7 @@ local begin_music_request<const> = function()
 	if stinger_voice ~= 0 then
 		apu.stop_voice(stinger_voice, 0)
 	end
+	clear_channel_queue(apu_channel_music)
 	clear_stinger()
 	clear_pending_music()
 	clear_pending_crossfade()
@@ -419,7 +575,8 @@ local play_music_now<const> = function(asset, transition, gain_q12)
 	current_music_voice = 0
 	expected_music_seq = music_request_seq
 	expected_music_handle = asset.handle
-	apu.play_music(asset, transition_start_sample(asset, transition), gain_q12 or apu_gain_q12_one, apu_cmd_play)
+	mark_channel_pending(apu_channel_music, asset.handle)
+	apu.play_music(asset, transition_start_sample(asset, transition), gain_q12 or apu_gain_q12_one)
 end
 
 local queue_music_after_current<const> = function(request_seq, asset, transition)
@@ -491,7 +648,8 @@ local dispatch_music_transition<const> = function(transition)
 		end
 		stinger_music_asset = target_asset
 		stinger_music_transition = transition
-		apu.play_plain(stinger_handle, stinger_channel, apu_cmd_play)
+		mark_channel_pending(stinger_channel, stinger_handle)
+		apu.play_plain(stinger_handle, stinger_channel)
 		return
 	end
 	play_transition_apu(target_asset, transition)
@@ -501,12 +659,12 @@ local dispatch_audio_play<const> = function(entry, handle, action, payload)
 	if not apply_cooldown(action, payload) then
 		return
 	end
-	play_action_apu(handle, entry.__channel, action, entry.__queued and apu_cmd_queue_play or apu_cmd_play)
+	submit_prepared_play(prepare_action_play(handle, entry.__channel, action), entry.__queued)
 end
 
 local dispatch_action<const> = function(entry, action, payload)
 	if type(action) == 'string' then
-		apu.play_plain(assets.audio[action].handle, entry.__channel, entry.__queued and apu_cmd_queue_play or apu_cmd_play)
+		submit_prepared_play(prepare_plain_play(assets.audio[action].handle, entry.__channel), entry.__queued)
 		return
 	end
 	if action.stop_music then
@@ -553,6 +711,7 @@ local reset_audio_state<const> = function()
 	current_music_voice = 0
 	expected_music_seq = 0
 	expected_music_handle = 0
+	reset_channel_state()
 	clear_pending_music()
 	clear_pending_crossfade()
 	clear_stinger()
@@ -579,6 +738,7 @@ local on_apu_irq<const> = function()
 	local voice<const> = mem[sys_apu_event_voice]
 
 	if kind == apu_event_voice_started then
+		mark_channel_started(channel, handle, voice)
 		if stinger_handle == handle
 			and stinger_channel == channel
 			and stinger_seq == music_request_seq then
@@ -615,21 +775,25 @@ local on_apu_irq<const> = function()
 		and stinger_seq == music_request_seq then
 		local target_asset<const> = stinger_music_asset
 		local transition<const> = stinger_music_transition
+		complete_channel_voice(channel, handle, voice, channel ~= apu_channel_music)
 		clear_stinger()
 		play_transition_apu(target_asset, transition)
 		return
 	end
 
 	if channel ~= apu_channel_music then
+		complete_channel_voice(channel, handle, voice, true)
 		return
 	end
 
 	local current_ended<const> = (current_music_voice ~= 0 and current_music_voice == voice)
 		or (current_music_voice == 0 and current_music_handle == handle)
 	if not current_ended then
+		complete_channel_voice(channel, handle, voice, true)
 		return
 	end
 
+	complete_channel_voice(channel, handle, voice, false)
 	current_music_handle = 0
 	current_music_voice = 0
 	if pending_music_seq == music_request_seq and pending_music_asset ~= nil then
@@ -637,7 +801,9 @@ local on_apu_irq<const> = function()
 		local transition<const> = pending_music_transition
 		clear_pending_music()
 		play_music_now(target_asset, transition)
+		return
 	end
+	play_next_queued(channel)
 end
 
 return {

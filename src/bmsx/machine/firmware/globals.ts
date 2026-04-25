@@ -45,7 +45,6 @@ import {
 	APU_CHANNEL_SFX,
 	APU_CHANNEL_UI,
 	APU_CMD_PLAY,
-	APU_CMD_QUEUE_PLAY,
 	APU_CMD_RAMP_VOICE,
 	APU_CMD_STOP_CHANNEL,
 	APU_CMD_STOP_VOICE,
@@ -1324,7 +1323,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_apu_event_seq', IO_APU_EVENT_SEQ);
 	luaPipeline.registerGlobal(runtime, 'apu_cmd_play', APU_CMD_PLAY);
 	luaPipeline.registerGlobal(runtime, 'apu_cmd_stop_channel', APU_CMD_STOP_CHANNEL);
-	luaPipeline.registerGlobal(runtime, 'apu_cmd_queue_play', APU_CMD_QUEUE_PLAY);
 	luaPipeline.registerGlobal(runtime, 'apu_cmd_stop_voice', APU_CMD_STOP_VOICE);
 	luaPipeline.registerGlobal(runtime, 'apu_cmd_ramp_voice', APU_CMD_RAMP_VOICE);
 	luaPipeline.registerGlobal(runtime, 'apu_channel_sfx', APU_CHANNEL_SFX);

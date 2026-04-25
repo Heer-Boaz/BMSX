@@ -311,7 +311,6 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'irq_apu', params: [], signature: 'irq_apu', description: 'IRQ flag for APU voice events.' },
 	{ name: 'apu_cmd_play', params: [], signature: 'apu_cmd_play', description: 'APU command: play the handle/channel in the register bank.' },
 	{ name: 'apu_cmd_stop_channel', params: [], signature: 'apu_cmd_stop_channel', description: 'APU command: stop the selected channel.' },
-	{ name: 'apu_cmd_queue_play', params: [], signature: 'apu_cmd_queue_play', description: 'APU command: queue the handle/channel in the register bank.' },
 	{ name: 'apu_cmd_stop_voice', params: [], signature: 'apu_cmd_stop_voice', description: 'APU command: stop the voice in sys_apu_voice, optionally fading first.' },
 	{ name: 'apu_cmd_ramp_voice', params: [], signature: 'apu_cmd_ramp_voice', description: 'APU command: ramp the voice in sys_apu_voice to sys_apu_target_gain_q12.' },
 	{ name: 'apu_channel_sfx', params: [], signature: 'apu_channel_sfx', description: 'APU channel constant for sound effects.' },

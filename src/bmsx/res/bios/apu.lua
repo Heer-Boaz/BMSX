@@ -35,7 +35,7 @@ function apu.loop_start_sample(asset)
 	return apu.seconds_to_samples(loop)
 end
 
-function apu.play(handle, channel, priority, rate_step_q16, gain_q12, start_sample, filter_kind, filter_freq_hz, filter_q_milli, filter_gain_millidb, cmd)
+function apu.play(handle, channel, priority, rate_step_q16, gain_q12, start_sample, filter_kind, filter_freq_hz, filter_q_milli, filter_gain_millidb)
 	memwrite(
 		sys_apu_handle,
 		handle,
@@ -51,16 +51,16 @@ function apu.play(handle, channel, priority, rate_step_q16, gain_q12, start_samp
 		0,
 		0,
 		apu_gain_q12_one,
-		cmd
+		apu_cmd_play
 	)
 end
 
-function apu.play_plain(handle, channel, cmd)
-	apu.play(handle, channel, apu_priority_auto, apu_rate_step_q16_one, apu_gain_q12_one, 0, apu_filter_none, 0, 1000, 0, cmd)
+function apu.play_plain(handle, channel)
+	apu.play(handle, channel, apu_priority_auto, apu_rate_step_q16_one, apu_gain_q12_one, 0, apu_filter_none, 0, 1000, 0)
 end
 
-function apu.play_music(asset, start_sample, gain_q12, cmd)
-	apu.play(asset.handle, apu_channel_music, apu_priority_auto, apu_rate_step_q16_one, gain_q12, start_sample, apu_filter_none, 0, 1000, 0, cmd)
+function apu.play_music(asset, start_sample, gain_q12)
+	apu.play(asset.handle, apu_channel_music, apu_priority_auto, apu_rate_step_q16_one, gain_q12, start_sample, apu_filter_none, 0, 1000, 0)
 end
 
 function apu.stop_channel(channel, fade_samples)

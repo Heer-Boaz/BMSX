@@ -33,18 +33,6 @@ uint32_t encodeChannel(AudioType type) {
 	}
 }
 
-size_t typeIndex(AudioType type) {
-	switch (type) {
-		case AudioType::Music:
-			return 1;
-		case AudioType::Ui:
-			return 2;
-		case AudioType::Sfx:
-		default:
-			return 0;
-	}
-}
-
 const char* decodeFilterKind(uint32_t kind) {
 	switch (kind) {
 		case APU_FILTER_HIGHPASS:
@@ -78,12 +66,12 @@ void writeNumber(Memory& memory, uint32_t addr, double value) {
 
 } // namespace
 
-	AudioController::AudioController(Memory& memory, SoundMaster& soundMaster, IrqController& irq)
-		: m_memory(memory)
-		, m_soundMaster(soundMaster)
-		, m_irq(irq) {
-		m_memory.mapIoWrite(IO_APU_CMD, this, &AudioController::onCommandWriteThunk);
-		m_sfxEnded = ScopedSubscription(m_soundMaster.addEndedListener(AudioType::Sfx, [this](const ActiveVoiceInfo& info) {
+AudioController::AudioController(Memory& memory, SoundMaster& soundMaster, IrqController& irq)
+	: m_memory(memory)
+	, m_soundMaster(soundMaster)
+	, m_irq(irq) {
+	m_memory.mapIoWrite(IO_APU_CMD, this, &AudioController::onCommandWriteThunk);
+	m_sfxEnded = ScopedSubscription(m_soundMaster.addEndedListener(AudioType::Sfx, [this](const ActiveVoiceInfo& info) {
 		onVoiceEnded(AudioType::Sfx, info);
 	}));
 	m_musicEnded = ScopedSubscription(m_soundMaster.addEndedListener(AudioType::Music, [this](const ActiveVoiceInfo& info) {
@@ -96,11 +84,6 @@ void writeNumber(Memory& memory, uint32_t addr, double value) {
 
 void AudioController::reset() {
 	m_eventSequence = 0;
-	m_activeHandleByType = {0, 0, 0};
-	m_activeVoiceByType = {0, 0, 0};
-	for (auto& queue : m_queuedByType) {
-		queue.clear();
-	}
 	clearCommandLatch();
 	writeNumber(m_memory, IO_APU_STATUS, 0.0);
 	writeNumber(m_memory, IO_APU_EVENT_KIND, static_cast<double>(APU_EVENT_NONE));
@@ -137,10 +120,6 @@ void AudioController::onCommandWrite() {
 			play();
 			clearCommandLatch();
 			return;
-		case APU_CMD_QUEUE_PLAY:
-			queuePlay();
-			clearCommandLatch();
-			return;
 		case APU_CMD_STOP_CHANNEL:
 			stopChannel();
 			clearCommandLatch();
@@ -175,44 +154,24 @@ void AudioController::play() {
 	const uint32_t handle = m_memory.readIoU32(IO_APU_HANDLE);
 	const Memory::AssetEntry& entry = requireAudioEntry(handle);
 	const AudioType channel = decodeChannel(m_memory.readIoU32(IO_APU_CHANNEL));
-	m_queuedByType[typeIndex(channel)].clear();
 	startPlay(handle, entry.id, channel, readResolvedPlayRequest());
 }
 
-void AudioController::queuePlay() {
-	const uint32_t handle = m_memory.readIoU32(IO_APU_HANDLE);
-	const Memory::AssetEntry& entry = requireAudioEntry(handle);
-	const AudioType channel = decodeChannel(m_memory.readIoU32(IO_APU_CHANNEL));
-	const SoundMasterResolvedPlayRequest request = readResolvedPlayRequest();
-	const size_t idx = typeIndex(channel);
-	if (m_activeHandleByType[idx] != 0u) {
-		m_queuedByType[idx].push_back(QueuedAudioPlay{handle, entry.id, request});
-		return;
-	}
-	startPlay(handle, entry.id, channel, request);
-}
-
-void AudioController::startPlay(uint32_t handle, const std::string& id, AudioType channel, const SoundMasterResolvedPlayRequest& request, bool emitStarted) {
+void AudioController::startPlay(uint32_t handle, const std::string& id, AudioType channel, const SoundMasterResolvedPlayRequest& request) {
 	if (!m_soundMaster.isRuntimeAudioReady()) {
 		throw std::runtime_error("[APU] SoundMaster runtime audio is not initialized.");
 	}
 	if (!m_soundMaster.hasAudio(id)) {
 		throw std::runtime_error("[APU] audio asset '" + id + "' is not loaded in SoundMaster.");
 	}
-	const size_t idx = typeIndex(channel);
-	m_activeHandleByType[idx] = handle;
-	m_activeVoiceByType[idx] = m_soundMaster.playResolved(id, request);
-	if (emitStarted && m_activeVoiceByType[idx] != 0) {
-		emitVoiceEvent(APU_EVENT_VOICE_STARTED, channel, handle, m_activeVoiceByType[idx]);
+	const VoiceId voiceId = m_soundMaster.playResolved(id, request);
+	if (voiceId != 0) {
+		emitVoiceEvent(APU_EVENT_VOICE_STARTED, channel, handle, voiceId);
 	}
 }
 
 void AudioController::stopChannel() {
 	const AudioType channel = decodeChannel(m_memory.readIoU32(IO_APU_CHANNEL));
-	const size_t idx = typeIndex(channel);
-	m_activeHandleByType[idx] = 0;
-	m_activeVoiceByType[idx] = 0;
-	m_queuedByType[idx].clear();
 	if (channel == AudioType::Music) {
 		const int32_t fadeMs = apuSamplesToMilliseconds(m_memory.readIoU32(IO_APU_FADE_SAMPLES));
 		m_soundMaster.stopMusic(fadeMs > 0 ? std::optional<i32>(fadeMs) : std::nullopt);
@@ -263,21 +222,6 @@ SoundMasterResolvedPlayRequest AudioController::readResolvedPlayRequest() const 
 }
 
 void AudioController::emitVoiceEvent(uint32_t kind, AudioType type, uint32_t handle, VoiceId voiceId) {
-	const size_t idx = typeIndex(type);
-	const VoiceId activeVoice = m_activeVoiceByType[idx];
-	const bool activeEnded = kind == APU_EVENT_VOICE_ENDED && (activeVoice != 0
-		? activeVoice == voiceId
-		: m_activeHandleByType[idx] == handle);
-	if (activeEnded) {
-		auto& queue = m_queuedByType[idx];
-		if (!queue.empty()) {
-			const QueuedAudioPlay play = queue.front();
-			queue.pop_front();
-			startPlay(play.handle, play.id, type, play.request, false);
-		} else {
-			m_activeHandleByType[idx] = 0;
-		}
-	}
 	m_eventSequence += 1u;
 	writeNumber(m_memory, IO_APU_EVENT_KIND, static_cast<double>(kind));
 	writeNumber(m_memory, IO_APU_EVENT_CHANNEL, static_cast<double>(encodeChannel(type)));
