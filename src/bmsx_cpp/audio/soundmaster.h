@@ -11,7 +11,6 @@
 #include "biquad_filter.h"
 #include "core/registry.h"
 #include "../subscription.h"
-#include <array>
 #include <functional>
 #include <optional>
 #include <random>
@@ -21,6 +20,7 @@
 namespace bmsx {
 
 using VoiceId = u64;
+using AudioSlot = u32;
 
 struct ModulationRange {
 	f32 min = 0.0f;
@@ -69,6 +69,7 @@ struct SoundMasterResolvedPlayRequest {
 };
 
 struct ActiveVoiceInfo {
+	AudioSlot slot = 0;
 	VoiceId voiceId = 0;
 	AssetId id;
 	i32 priority = 0;
@@ -79,6 +80,7 @@ struct ActiveVoiceInfo {
 };
 
 struct PausedSnapshot {
+	AudioSlot slot = 0;
 	AssetId id;
 	f64 offset = 0.0;
 	ModulationParams params;
@@ -109,42 +111,41 @@ public:
 	bool isRegistryPersistent() const override { return true; }
 
 	void init(const RuntimeAssets& assets, f32 startingVolume, AudioDataResolver audioResolver);
-	void setMaxVoicesByType(std::optional<int> sfx, std::optional<int> music, std::optional<int> ui);
 	void resetPlaybackState();
 	void dispose();
 	bool isRuntimeAudioReady() const { return m_assets != nullptr && static_cast<bool>(m_audioResolver); }
 	bool hasAudio(const AssetId& id) const { return m_assets != nullptr && m_assets->getAudio(id) != nullptr; }
 
 	VoiceId play(const AssetId& id, const SoundMasterPlayRequest& request = {});
-	VoiceId playResolved(const AssetId& id, const SoundMasterResolvedPlayRequest& request);
+	VoiceId play(AudioSlot slot, const AssetId& id, const SoundMasterPlayRequest& request = {});
+	VoiceId playResolved(AudioSlot slot, const AssetId& id, const SoundMasterResolvedPlayRequest& request);
 	bool setVoiceGainLinear(VoiceId voiceId, f32 gain);
 	bool rampVoiceGainLinear(VoiceId voiceId, f32 target, f64 seconds);
+	bool setSlotGainLinear(AudioSlot slot, f32 gain);
+	bool rampSlotGainLinear(AudioSlot slot, f32 target, f64 seconds);
 	bool stopVoiceById(VoiceId voiceId, std::optional<i32> fadeMs = std::nullopt);
+	bool stopSlot(AudioSlot slot, std::optional<i32> fadeMs = std::nullopt);
+	void stopAllVoices();
 	void invalidateClip(const AssetId& id);
-	void stop(AudioType type, AudioStopSelector which, VoiceId voiceId = 0, const AssetId& id = {});
-	void stopEffect();
-	void stopMusic(std::optional<i32> fadeMs = std::nullopt);
-	void stopUI();
+	void stop(const AssetId& id);
 
-	void pause(AudioType type);
 	void pauseAll();
 	void resume();
-	void resumeType(AudioType type);
 
 	f32 masterVolume() const { return m_masterVolume; }
 	void setMasterVolume(f32 value);
 
-	size_t activeCountByType(AudioType type) const;
-	std::vector<ActiveVoiceInfo> getActiveVoiceInfosByType(AudioType type) const;
-	std::optional<ModulationParams> currentModulationParamsByType(AudioType type) const;
-	std::optional<f64> currentTimeByType(AudioType type) const;
-	AssetId currentTrackByType(AudioType type) const;
-	const AudioMeta* currentTrackMetaByType(AudioType type) const;
+	size_t activeCountBySlot(AudioSlot slot) const;
+	std::vector<ActiveVoiceInfo> getActiveVoiceInfosBySlot(AudioSlot slot) const;
+	std::optional<ModulationParams> currentModulationParamsBySlot(AudioSlot slot) const;
+	std::optional<f64> currentTimeBySlot(AudioSlot slot) const;
+	AssetId currentTrackBySlot(AudioSlot slot) const;
+	const AudioMeta* currentTrackMetaBySlot(AudioSlot slot) const;
 
-	std::vector<PausedSnapshot> snapshotVoices(AudioType type) const;
-	std::vector<PausedSnapshot> drainPausedSnapshots(AudioType type);
+	std::vector<PausedSnapshot> snapshotVoices(AudioSlot slot) const;
+	std::vector<PausedSnapshot> drainPausedSnapshots(AudioSlot slot);
 
-	SubscriptionHandle addEndedListener(AudioType type, std::function<void(const ActiveVoiceInfo&)> listener);
+	SubscriptionHandle addEndedListener(std::function<void(const ActiveVoiceInfo&)> listener);
 
 	void renderSamples(i16* output, size_t frameCount, i32 outputSampleRate);
 
@@ -172,7 +173,7 @@ private:
 		const u8* data = nullptr;
 		size_t frames = 0;
 		AudioMeta meta;
-		AudioType type = AudioType::Sfx;
+		AudioSlot slot = 0;
 		i32 priority = 0;
 		ModulationParams params;
 		f64 startedAt = 0.0;
@@ -198,10 +199,13 @@ private:
 	const AudioAsset& getAudioOrThrow(const AssetId& id) const;
 	AudioDataView resolveAudioData(const AssetId& id) const;
 
-	VoiceId startVoice(AudioType type, const AssetId& id, const AudioAsset& asset, const ModulationParams& params, i32 priority, f32 initialGain);
-	void removeVoice(AudioType type, size_t index);
-	void finalizeVoiceEnd(AudioType type, const VoiceRecord& record);
-	int selectVoiceDropIndex(const std::vector<VoiceRecord>& pool) const;
+	VoiceId startVoice(AudioSlot slot, const AssetId& id, const AudioAsset& asset, const ModulationParams& params, i32 priority, f32 initialGain);
+	void removeVoice(size_t index);
+	void finalizeVoiceEnd(const VoiceRecord& record);
+	VoiceRecord* findVoice(VoiceId voiceId);
+	const VoiceRecord* findVoice(VoiceId voiceId) const;
+	VoiceRecord* findSlot(AudioSlot slot);
+	const VoiceRecord* findSlot(AudioSlot slot) const;
 	void rampVoiceGain(VoiceRecord& record, f32 target, f64 durationSec);
 	void badpLoadBlock(VoiceRecord& record, size_t offset);
 	void badpSeekToFrame(VoiceRecord& record, size_t frame);
@@ -212,25 +216,18 @@ private:
 	f32 clampVolume(f32 value) const;
 	f64 effectivePlaybackRate(const ModulationParams& params) const;
 
-	static size_t typeIndex(AudioType type);
-
 	const RuntimeAssets* m_assets = nullptr;
 	AudioDataResolver m_audioResolver;
 	f32 m_masterVolume = 1.0f;
 	f64 m_audioTimeSec = 0.0;
 
-	std::array<std::vector<VoiceRecord>, 3> m_voicesByType;
-	std::array<std::vector<PausedSnapshot>, 3> m_pausedByType;
-	std::array<VoiceId, 3> m_currentVoiceIdByType{};
-	std::array<AssetId, 3> m_currentAudioIdByType{};
-	std::array<ModulationParams, 3> m_currentParamsByType{};
-
-	std::array<std::vector<std::pair<u32, std::function<void(const ActiveVoiceInfo&)>>>, 3> m_endedListenersByType;
+	std::vector<VoiceRecord> m_voices;
+	std::vector<PausedSnapshot> m_pausedVoices;
+	std::vector<std::pair<u32, std::function<void(const ActiveVoiceInfo&)>>> m_endedListeners;
 
 	std::mt19937 m_rng;
 	mutable std::uniform_real_distribution<f32> m_unitDist;
 
-	std::array<size_t, 3> m_maxVoicesByType;
 	std::vector<f32> m_mixBuffer;
 	VoiceId m_nextVoiceId = 1;
 	u32 m_nextListenerId = 1;

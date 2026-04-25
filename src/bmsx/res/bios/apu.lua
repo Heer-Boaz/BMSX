@@ -2,11 +2,6 @@
 -- BIOS-side APU command helpers. Cart-visible audio control is MMIO.
 
 local apu<const> = {
-	channel = {
-		sfx = apu_channel_sfx,
-		music = apu_channel_music,
-		ui = apu_channel_ui,
-	},
 	filter_kind = {
 		lowpass = apu_filter_lowpass,
 		highpass = apu_filter_highpass,
@@ -35,11 +30,11 @@ function apu.loop_start_sample(asset)
 	return apu.seconds_to_samples(loop)
 end
 
-function apu.play(handle, channel, priority, rate_step_q16, gain_q12, start_sample, filter_kind, filter_freq_hz, filter_q_milli, filter_gain_millidb)
+function apu.play(handle, slot, priority, rate_step_q16, gain_q12, start_sample, filter_kind, filter_freq_hz, filter_q_milli, filter_gain_millidb)
 	memwrite(
 		sys_apu_handle,
 		handle,
-		channel,
+		slot,
 		priority,
 		rate_step_q16,
 		gain_q12,
@@ -55,31 +50,21 @@ function apu.play(handle, channel, priority, rate_step_q16, gain_q12, start_samp
 	)
 end
 
-function apu.play_plain(handle, channel)
-	apu.play(handle, channel, apu_priority_auto, apu_rate_step_q16_one, apu_gain_q12_one, 0, apu_filter_none, 0, 1000, 0)
+function apu.play_plain(handle, slot)
+	apu.play(handle, slot, apu_priority_auto, apu_rate_step_q16_one, apu_gain_q12_one, 0, apu_filter_none, 0, 1000, 0)
 end
 
-function apu.play_music(asset, start_sample, gain_q12)
-	apu.play(asset.handle, apu_channel_music, apu_priority_auto, apu_rate_step_q16_one, gain_q12, start_sample, apu_filter_none, 0, 1000, 0)
-end
-
-function apu.stop_channel(channel, fade_samples)
-	mem[sys_apu_channel] = channel
+function apu.stop_slot(slot, fade_samples)
+	mem[sys_apu_slot] = slot
 	mem[sys_apu_fade_samples] = fade_samples
-	mem[sys_apu_cmd] = apu_cmd_stop_channel
+	mem[sys_apu_cmd] = apu_cmd_stop_slot
 end
 
-function apu.stop_voice(voice, fade_samples)
-	mem[sys_apu_voice] = voice
-	mem[sys_apu_fade_samples] = fade_samples
-	mem[sys_apu_cmd] = apu_cmd_stop_voice
-end
-
-function apu.ramp_voice(voice, target_gain_q12, fade_samples)
-	mem[sys_apu_voice] = voice
+function apu.ramp_slot(slot, target_gain_q12, fade_samples)
+	mem[sys_apu_slot] = slot
 	mem[sys_apu_target_gain_q12] = target_gain_q12
 	mem[sys_apu_fade_samples] = fade_samples
-	mem[sys_apu_cmd] = apu_cmd_ramp_voice
+	mem[sys_apu_cmd] = apu_cmd_ramp_slot
 end
 
 return apu

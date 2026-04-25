@@ -1,10 +1,11 @@
 import { engineCore } from '../core/engine';
 import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, VoiceEndedEvent, AudioFilterParams, RngService, SubscriptionHandle, createSubscriptionHandle } from '../platform';
-import { asset_id, AudioMeta, AudioType, AudioTypes, CartridgeLayerId, DEFAULT_MACHINE_MAX_VOICES, id2res, RomAsset } from '../rompack/format';
+import { asset_id, AudioMeta, CartridgeLayerId, id2res, RomAsset } from '../rompack/format';
 import { Runtime } from '../machine/runtime/runtime';
 import { clamp01 } from '../common/clamp';
 
 export type VoiceId = number;
+export type AudioSlot = number;
 type ModulationInput = RandomModulationParams | ModulationParams;
 
 export interface SoundMasterPlayRequest {
@@ -22,6 +23,7 @@ export interface SoundMasterResolvedPlayRequest {
 }
 
 export interface ActiveVoiceInfo {
+	slot: AudioSlot;
 	voiceId: VoiceId;
 	id: asset_id;
 	priority: number;
@@ -77,6 +79,7 @@ type RomAudioResource = RomAsset & {
 };
 
 interface PausedSnapshot {
+	slot: AudioSlot;
 	id: asset_id;
 	offset: number;
 	params: ModulationParams;
@@ -190,14 +193,13 @@ export class SoundMaster {
 	private modulationResolver: ModulationPresetResolver;
 	private audioResolver: AudioBytesResolver;
 	private modulationPresetCache: Map<asset_id, RandomModulationParams | ModulationParams>;
-	private voicesByType: Record<AudioType, ActiveVoiceRecord[]>;
-	private currentVoiceByType: Record<AudioType, VoiceHandle>;
-	private currentPlayParamsByType: Record<AudioType, ModulationParams>;
-	public currentAudioByType: Record<AudioType, AudioMetadataWithID>;
-	private pausedByType: Record<AudioType, PausedSnapshot[]>;
-	private endedListenersByType: Record<AudioType, Set<(info: ActiveVoiceInfo) => void>>;
+	private voices: ActiveVoiceRecord[];
+	private currentVoiceBySlot: Record<number, StreamVoiceHandle | undefined>;
+	private currentPlayParamsBySlot: Record<number, ModulationParams | undefined>;
+	public currentAudioBySlot: Record<number, AudioMetadataWithID | undefined>;
+	private pausedVoices: PausedSnapshot[];
+	private endedListeners: Set<(info: ActiveVoiceInfo) => void>;
 	private nextVoiceId: VoiceId;
-	private maxVoicesByType: Record<AudioType, number>;
 	private voiceRecordByHandle: WeakMap<VoiceHandle, ActiveVoiceRecord>;
 	private mixFps: number;
 	private mixLatencyProfile: MixLatencyProfile;
@@ -212,9 +214,8 @@ export class SoundMaster {
 		this.audioResolver = null;
 		this.modulationPresetCache = new Map();
 		this.clearVoiceCollections();
-		this.endedListenersByType = { sfx: new Set(), music: new Set(), ui: new Set() };
+		this.endedListeners = new Set();
 		this.nextVoiceId = 1;
-		this.maxVoicesByType = { sfx: DEFAULT_MACHINE_MAX_VOICES.sfx, music: DEFAULT_MACHINE_MAX_VOICES.music, ui: DEFAULT_MACHINE_MAX_VOICES.ui };
 		this.voiceRecordByHandle = new WeakMap();
 		this.mixFps = 50;
 		this.mixLatencyProfile = 'low';
@@ -237,11 +238,11 @@ export class SoundMaster {
 	}
 
 	private clearVoiceCollections(): void {
-		this.voicesByType = { sfx: [], music: [], ui: [] };
-		this.currentVoiceByType = { sfx: null, music: null, ui: null };
-		this.currentPlayParamsByType = { sfx: null, music: null, ui: null };
-		this.currentAudioByType = { sfx: null, music: null, ui: null };
-		this.pausedByType = { sfx: [], music: [], ui: [] };
+		this.voices = [];
+		this.currentVoiceBySlot = {};
+		this.currentPlayParamsBySlot = {};
+		this.currentAudioBySlot = {};
+		this.pausedVoices = [];
 	}
 
 	public bootstrapRuntimeAudio(startingVolume: number): void {
@@ -278,30 +279,8 @@ export class SoundMaster {
 		return this.tracks[id] !== undefined;
 	}
 
-	public currentTrackByType(type: AudioType): asset_id {
-		return this.currentVoiceByType[type] === null ? '' : this.currentAudioByType[type]?.id ?? '';
-	}
-
-	public setMaxVoicesByType(specs: Partial<Record<AudioType, number>>): void {
-		for (let index = 0; index < AudioTypes.length; index += 1) {
-			const type = AudioTypes[index];
-			const spec = specs[type];
-			if (spec === undefined) {
-				continue;
-			}
-			if (!Number.isFinite(spec)) {
-				throw new Error(`[SoundMaster] max voices for '${type}' must be a finite number.`);
-			}
-			const value = Math.floor(spec);
-			if (value < 1) {
-				throw new Error(`[SoundMaster] max voices for '${type}' must be at least 1.`);
-			}
-			this.maxVoicesByType[type] = value;
-			const pool = this.voicesByType[type];
-			while (pool.length > value) {
-				this.stopVoiceRecord(type, pool[0]);
-			}
-		}
+	public currentTrackBySlot(slot: AudioSlot): asset_id {
+		return this.currentVoiceBySlot[slot] === undefined ? '' : this.currentAudioBySlot[slot]?.id ?? '';
 	}
 
 	public resetPlaybackState(): void {
@@ -311,10 +290,10 @@ export class SoundMaster {
 		this.voiceRecordByHandle = new WeakMap();
 	}
 
-	private stopAllVoices(): void {
-		this.stop('sfx', 'all');
-		this.stop('music', 'all');
-		this.stop('ui', 'all');
+	public stopAllVoices(): void {
+		while (this.voices.length > 0) {
+			this.stopVoiceRecord(this.voices[this.voices.length - 1]);
+		}
 	}
 
 	private coerceAudioResources(resources: id2res): Record<asset_id, RomAudioResource> {
@@ -383,9 +362,7 @@ export class SoundMaster {
 		}
 		this.streamClips[id] = undefined;
 		this.streamClipLoads[id] = undefined;
-		this.stopByTypeInternal('sfx', 'byid', id);
-		this.stopByTypeInternal('music', 'byid', id);
-		this.stopByTypeInternal('ui', 'byid', id);
+		this.stop(id);
 	}
 
 	private normalizePlayRequest(options?: SoundMasterPlayRequest | ModulationParams | RandomModulationParams): SoundMasterPlayRequest {
@@ -514,6 +491,10 @@ export class SoundMaster {
 	}
 
 	public async play(id: asset_id, options?: SoundMasterPlayRequest | ModulationParams | RandomModulationParams): Promise<VoiceId> {
+		return this.playOnSlot(0, id, options);
+	}
+
+	public async playOnSlot(slot: AudioSlot, id: asset_id, options?: SoundMasterPlayRequest | ModulationParams | RandomModulationParams): Promise<VoiceId> {
 		const request = this.normalizePlayRequest(options);
 		const modulationPreset = request.modulation_preset;
 		let sourceParams = request.params;
@@ -524,28 +505,28 @@ export class SoundMaster {
 			}
 		}
 		const params = this.resolvePlayParams(sourceParams);
-		return this.playWithParams(id, params, request.priority);
+		return this.playWithParams(slot, id, params, request.priority);
 	}
 
 	public async playResolved(id: asset_id, request: SoundMasterResolvedPlayRequest): Promise<VoiceId> {
-		const params = this.resolveResolvedPlayParams(request);
-		return this.playWithParams(id, params, request.priority);
+		return this.playResolvedOnSlot(0, id, request);
 	}
 
-	private async playWithParams(id: asset_id, params: ModulationParams, requestedPriority: number | undefined): Promise<VoiceId> {
+	public async playResolvedOnSlot(slot: AudioSlot, id: asset_id, request: SoundMasterResolvedPlayRequest): Promise<VoiceId> {
+		const params = this.resolveResolvedPlayParams(request);
+		return this.playWithParams(slot, id, params, request.priority);
+	}
+
+	private async playWithParams(slot: AudioSlot, id: asset_id, params: ModulationParams, requestedPriority: number | undefined): Promise<VoiceId> {
 		const meta = this.getAudioMetaOrThrow(id);
-		const typeCandidate = meta.audiotype;
-		if (!this.isAudioType(typeCandidate)) {
-			throw new Error(`[SoundMaster] Audio asset '${String(id)}' has unknown audio type '${String(typeCandidate)}'.`);
-		}
 		const priority = requestedPriority ?? meta.priority ?? 0;
 		const clip = await this.clipFor(id);
 		const playback = this.createVoiceParams(meta, params, clip);
-		return this.startVoice(typeCandidate, id, meta, clip, params, priority, playback);
+		return this.startVoice(slot, id, meta, clip, params, priority, playback);
 	}
 
 	private startVoice(
-		type: AudioType,
+		slot: AudioSlot,
 		id: asset_id,
 		meta: AudioMeta,
 		clip: StreamClipHandle,
@@ -553,25 +534,14 @@ export class SoundMaster {
 		priority: number,
 		playback: AudioPlaybackParams,
 	): VoiceId {
-		const pool = this.voicesByType[type];
-		const capacity = this.maxVoicesByType[type];
-		if (capacity > 0 && pool.length >= capacity) {
-			const dropIndex = this.selectVoiceDropIndex(pool);
-			if (dropIndex >= 0) {
-				const dropRecord = pool[dropIndex];
-				if (priority < dropRecord.priority) {
-					return null;
-				}
-				this.stopVoiceRecord(type, dropRecord);
-			}
-		}
-
+		this.stopSlot(slot);
 		const voiceId = this.nextVoiceId++;
 		const backendVoice = this.A.createVoice(clip.backendClip, playback);
 		const startedAt = backendVoice.startedAt;
 		const startOffset = backendVoice.startOffset;
 		const voice = new StreamVoiceHandle(this, voiceId, startedAt, startOffset);
 		const record: ActiveVoiceRecord = {
+			slot,
 			voiceId,
 			id,
 			priority,
@@ -586,48 +556,46 @@ export class SoundMaster {
 			finalized: false,
 		};
 
-		pool.push(record);
+		this.voices.push(record);
 		record.backendEnded = backendVoice.onEnded(() => {
-			this.stopVoiceRecord(type, record);
+			this.stopVoiceRecord(record);
 		});
 		this.voiceRecordByHandle.set(voice, record);
-		this.currentVoiceByType[type] = voice;
-		this.currentAudioByType[type] = { ...meta, id };
-		this.currentPlayParamsByType[type] = params;
+		this.currentVoiceBySlot[slot] = voice;
+		this.currentAudioBySlot[slot] = { ...meta, id };
+		this.currentPlayParamsBySlot[slot] = params;
 
 		return voiceId;
 	}
 
-	private finalizeVoiceEnd(type: AudioType, record: ActiveVoiceRecord): void {
+	private finalizeVoiceEnd(record: ActiveVoiceRecord): void {
 		if (record.finalized) return;
 		record.finalized = true;
 		if (record.backendEnded !== null) {
 			record.backendEnded.unsubscribe();
 			record.backendEnded = null;
 		}
-			this.voiceRecordByHandle.delete(record.handle);
-			record.handle.emitEnded(this.A.currentTime());
-			record.handle.disconnect();
-			record.backendVoice.disconnect();
+		this.voiceRecordByHandle.delete(record.handle);
+		record.handle.emitEnded(this.A.currentTime());
+		record.handle.disconnect();
+		record.backendVoice.disconnect();
 
-			if (this.currentVoiceByType[type] === record.handle) {
-				const pool = this.voicesByType[type];
-				const latestIndex = pool.length - 1;
-				if (latestIndex >= 0) {
-					const latest = pool[latestIndex];
-					this.currentVoiceByType[type] = latest.handle;
-					this.currentAudioByType[type] = { ...latest.meta, id: latest.id };
-					this.currentPlayParamsByType[type] = latest.params;
-				} else {
-				this.currentVoiceByType[type] = null;
-				this.currentAudioByType[type] = null;
-				this.currentPlayParamsByType[type] = null;
+		if (this.currentVoiceBySlot[record.slot] === record.handle) {
+			const latest = this.findRecordBySlot(record.slot);
+			if (latest) {
+				this.currentVoiceBySlot[record.slot] = latest.handle;
+				this.currentAudioBySlot[record.slot] = { ...latest.meta, id: latest.id };
+				this.currentPlayParamsBySlot[record.slot] = latest.params;
+			} else {
+				delete this.currentVoiceBySlot[record.slot];
+				delete this.currentAudioBySlot[record.slot];
+				delete this.currentPlayParamsBySlot[record.slot];
 			}
 		}
 
-		const listeners = this.endedListenersByType[type];
-		if (listeners.size > 0) {
+		if (this.endedListeners.size > 0) {
 			const payload: ActiveVoiceInfo = {
+				slot: record.slot,
 				voiceId: record.voiceId,
 				id: record.id,
 				priority: record.priority,
@@ -636,7 +604,7 @@ export class SoundMaster {
 				startOffset: record.startOffset,
 				meta: record.meta,
 			};
-			const iterator = listeners.values();
+			const iterator = this.endedListeners.values();
 			for (let current = iterator.next(); !current.done; current = iterator.next()) {
 				try {
 					current.value(payload);
@@ -647,22 +615,21 @@ export class SoundMaster {
 		}
 	}
 
-	private removeRecord(type: AudioType, voiceId: VoiceId): ActiveVoiceRecord {
-		const pool = this.voicesByType[type];
-		for (let i = 0; i < pool.length; i++) {
-			if (pool[i].voiceId === voiceId) {
-				return pool.splice(i, 1)[0];
+	private removeRecord(voiceId: VoiceId): ActiveVoiceRecord {
+		for (let i = 0; i < this.voices.length; i++) {
+			if (this.voices[i].voiceId === voiceId) {
+				return this.voices.splice(i, 1)[0];
 			}
 		}
 		return undefined;
 	}
 
-	private stopVoiceRecord(type: AudioType, record: ActiveVoiceRecord, fade_ms?: number): void {
+	private stopVoiceRecord(record: ActiveVoiceRecord, fade_ms?: number): void {
 		if (record.finalized) return;
 		if (fade_ms !== undefined && fade_ms > 0) {
 			record.handle.rampGainLinear(MIN_GAIN, fade_ms / 1000);
 			setTimeout(() => {
-				this.stopVoiceRecord(type, record);
+				this.stopVoiceRecord(record);
 			}, fade_ms);
 			return;
 		}
@@ -671,38 +638,25 @@ export class SoundMaster {
 			record.backendEnded = null;
 		}
 		record.backendVoice.stop();
-		this.removeRecord(type, record.voiceId);
-		this.finalizeVoiceEnd(type, record);
+		this.removeRecord(record.voiceId);
+		this.finalizeVoiceEnd(record);
 	}
 
-	private selectVoiceDropIndex(pool: ActiveVoiceRecord[]): number {
-		if (pool.length === 0) return -1;
-		let index = 0;
-		let candidate = pool[0];
-		for (let i = 1; i < pool.length; i++) {
-			const record = pool[i];
-			if (record.priority < candidate.priority) {
-				candidate = record;
-				index = i;
-				continue;
-			}
-			if (record.priority === candidate.priority && record.startedAt < candidate.startedAt) {
-				candidate = record;
-				index = i;
+	private findRecordByVoiceId(voiceId: VoiceId): ActiveVoiceRecord | null {
+		for (let index = 0; index < this.voices.length; index += 1) {
+			const record = this.voices[index];
+			if (record.voiceId === voiceId) {
+				return record;
 			}
 		}
-		return index;
+		return null;
 	}
 
-	private findRecordByVoiceId(voiceId: VoiceId): { type: AudioType; record: ActiveVoiceRecord } | null {
-		for (let typeIndex = 0; typeIndex < AudioTypes.length; typeIndex += 1) {
-			const type = AudioTypes[typeIndex];
-			const pool = this.voicesByType[type];
-			for (let index = 0; index < pool.length; index += 1) {
-				const record = pool[index];
-				if (record.voiceId === voiceId) {
-					return { type, record };
-				}
+	private findRecordBySlot(slot: AudioSlot): ActiveVoiceRecord | null {
+		for (let index = this.voices.length - 1; index >= 0; index -= 1) {
+			const record = this.voices[index];
+			if (record.slot === slot) {
+				return record;
 			}
 		}
 		return null;
@@ -713,7 +667,7 @@ export class SoundMaster {
 		if (!found) {
 			return;
 		}
-		found.record.backendVoice.setGainLinear(clamp01(gain));
+		found.backendVoice.setGainLinear(clamp01(gain));
 	}
 
 	public rampVoiceGainLinear(voiceId: VoiceId, target: number, seconds: number): void {
@@ -724,7 +678,7 @@ export class SoundMaster {
 		if (!Number.isFinite(seconds) || seconds <= 0) {
 			throw new Error('[SoundMaster] Gain ramp duration must be positive and finite.');
 		}
-		found.record.backendVoice.rampGainLinear(clamp01(target), seconds);
+		found.backendVoice.rampGainLinear(clamp01(target), seconds);
 	}
 
 	public setVoiceRate(voiceId: VoiceId, rate: number): void {
@@ -735,7 +689,7 @@ export class SoundMaster {
 		if (!Number.isFinite(rate) || rate <= 0) {
 			throw new Error('[SoundMaster] Voice rate must be positive and finite.');
 		}
-		const record = found.record;
+		const record = found;
 		record.params.playbackRate = rate;
 		record.backendVoice.setRate(rate);
 	}
@@ -745,13 +699,13 @@ export class SoundMaster {
 		if (!found) {
 			return;
 		}
-		found.record.params.filter = {
+		found.params.filter = {
 			type: filter.type,
 			frequency: filter.frequency,
 			q: filter.q,
 			gain: filter.gain,
 		};
-		found.record.backendVoice.setFilter(filter);
+		found.backendVoice.setFilter(filter);
 	}
 
 	public stopVoiceById(voiceId: VoiceId, fade_ms?: number): void {
@@ -759,7 +713,35 @@ export class SoundMaster {
 		if (!found) {
 			return;
 		}
-		this.stopVoiceRecord(found.type, found.record, fade_ms);
+		this.stopVoiceRecord(found, fade_ms);
+	}
+
+	public setSlotGainLinear(slot: AudioSlot, gain: number): void {
+		const record = this.findRecordBySlot(slot);
+		if (!record) {
+			return;
+		}
+		record.backendVoice.setGainLinear(clamp01(gain));
+	}
+
+	public rampSlotGainLinear(slot: AudioSlot, target: number, seconds: number): void {
+		const record = this.findRecordBySlot(slot);
+		if (!record) {
+			return;
+		}
+		if (!Number.isFinite(seconds) || seconds <= 0) {
+			this.setSlotGainLinear(slot, target);
+			return;
+		}
+		record.backendVoice.rampGainLinear(clamp01(target), seconds);
+	}
+
+	public stopSlot(slot: AudioSlot, fade_ms?: number): void {
+		const record = this.findRecordBySlot(slot);
+		if (!record) {
+			return;
+		}
+		this.stopVoiceRecord(record, fade_ms);
 	}
 
 	public setMixerFps(fps: number): void {
@@ -818,129 +800,30 @@ export class SoundMaster {
 		return resource.audiometa;
 	}
 
-	private isAudioType(value: unknown): value is AudioType {
-		return typeof value === 'string' && AudioTypes.includes(value as AudioType);
-	}
-
-	public stop(idOrType?: asset_id | AudioType, which?: AudioStopSelector, idOrVoice?: asset_id | VoiceId): void {
+	public stop(id?: asset_id): void {
 		if (!this.isRuntimeAudioAvailable()) {
 			return;
 		}
-		if (this.isAudioType(idOrType)) {
-			this.stopByTypeInternal(idOrType, which ?? 'all', idOrVoice);
+		if (id === undefined) {
+			this.stopAllVoices();
 			return;
 		}
-		if (idOrType !== undefined) {
-			try {
-				const inferredType = this.getAudioMetaOrThrow(idOrType).audiotype;
-				if (!this.isAudioType(inferredType)) {
-					throw new Error(`[SoundMaster] Audio asset '${String(idOrType)}' has unknown audio type '${String(inferredType)}'.`);
-				}
-				this.stopByTypeInternal(inferredType, 'byid', idOrType);
-			} catch (err) {
-				console.error(err);
+		const targets: ActiveVoiceRecord[] = [];
+		for (let index = this.voices.length - 1; index >= 0; index -= 1) {
+			if (this.voices[index].id === id) {
+				targets.push(this.voices[index]);
 			}
 		}
-	}
-
-	private stopByTypeInternal(type: AudioType, which: AudioStopSelector, idOrVoice?: asset_id | VoiceId, fade_ms?: number): void {
-		const pool = this.voicesByType[type];
-		const targets: ActiveVoiceRecord[] = [];
-		const fade = fade_ms !== undefined && fade_ms > 0;
-
-		switch (which) {
-			case 'all':
-				if (fade) {
-					targets.push(...pool);
-				} else {
-					while (pool.length > 0) {
-						const record = pool.pop();
-						if (record) targets.push(record);
-					}
-				}
-				break;
-			case 'oldest': {
-					const record = fade ? pool[0] : pool.shift();
-					if (record) targets.push(record);
-					break;
-				}
-			case 'newest': {
-					const record = fade ? pool[pool.length - 1] : pool.pop();
-					if (record) targets.push(record);
-					break;
-				}
-			case 'byid': {
-					if (idOrVoice === undefined) return;
-					for (let i = pool.length - 1; i >= 0; i--) {
-						if (pool[i].id === idOrVoice) {
-							targets.push(fade ? pool[i] : pool.splice(i, 1)[0]);
-						}
-					}
-					break;
-				}
-			case 'byvoice': {
-					if (idOrVoice === undefined) return;
-					for (let i = pool.length - 1; i >= 0; i--) {
-						if (pool[i].voiceId === idOrVoice) {
-							targets.push(fade ? pool[i] : pool.splice(i, 1)[0]);
-							break;
-						}
-					}
-					break;
-				}
-		}
-
 		for (let i = 0; i < targets.length; i++) {
-			this.stopVoiceRecord(type, targets[i], fade_ms);
+			this.stopVoiceRecord(targets[i]);
 		}
 	}
 
-	public stopEffect(): void {
+	public pause(): void {
 		if (!this.isRuntimeAudioAvailable()) {
 			return;
 		}
-		this.stop('sfx', 'all');
-	}
-
-	public stopMusic(fade_ms?: number): void {
-		if (!this.isRuntimeAudioAvailable()) {
-			return;
-		}
-		if (fade_ms !== undefined && fade_ms > 0) {
-			this.stopByTypeInternal('music', 'all', undefined, fade_ms);
-			return;
-		}
-		this.stop('music', 'all');
-	}
-
-	public stopUI(): void {
-		if (!this.isRuntimeAudioAvailable()) {
-			return;
-		}
-		this.stop('ui', 'all');
-	}
-
-	public pause(type?: AudioType): void {
-		if (!this.isRuntimeAudioAvailable()) {
-			return;
-		}
-		if (!type) {
-			this.suspendAll('pause');
-			return;
-		}
-		const pool = this.voicesByType[type];
-		const snapshots: PausedSnapshot[] = [];
-		const now = this.A.currentTime();
-		while (pool.length > 0) {
-			const record = pool.pop();
-			if (!record) continue;
-			const rate = this.effectivePlaybackRate(record.params);
-			const progressed = (now - record.startedAt) * rate;
-			const offset = record.startOffset + progressed;
-			snapshots.push({ id: record.id, offset, params: record.params, priority: record.priority });
-			this.stopVoiceRecord(type, record);
-		}
-		this.pausedByType[type].push(...snapshots);
+		this.suspendAll('pause');
 	}
 
 	public resume(): void {
@@ -948,18 +831,6 @@ export class SoundMaster {
 			return;
 		}
 		this.resumeAll('pause');
-	}
-
-	public resumeType(type: AudioType): void {
-		if (!this.isRuntimeAudioAvailable()) {
-			return;
-		}
-		const paused = this.drainPausedSnapshots(type);
-		for (let i = 0; i < paused.length; i++) {
-			const snapshot = paused[i];
-			const params: ModulationParams = { ...snapshot.params, offset: snapshot.offset };
-			void this.play(snapshot.id, { params, priority: snapshot.priority });
-		}
 	}
 
 	public suspendAll(tag: string): void {
@@ -1002,12 +873,15 @@ export class SoundMaster {
 		this.A.pushCoreFrames(samples, channels, sampleRate);
 	}
 
-	public getActiveVoiceInfosByType(type: AudioType): ActiveVoiceInfo[] {
-		const pool = this.voicesByType[type];
+	public getActiveVoiceInfosBySlot(slot: AudioSlot): ActiveVoiceInfo[] {
 		const result: ActiveVoiceInfo[] = [];
-		for (let i = 0; i < pool.length; i++) {
-			const v = pool[i];
+		for (let i = 0; i < this.voices.length; i++) {
+			const v = this.voices[i];
+			if (v.slot !== slot) {
+				continue;
+			}
 			result.push({
+				slot: v.slot,
 				voiceId: v.voiceId,
 				id: v.id,
 				priority: v.priority,
@@ -1020,31 +894,41 @@ export class SoundMaster {
 		return result;
 	}
 
-	public snapshotVoices(type: AudioType): { id: asset_id; offset: number; params: ModulationParams; priority: number; }[] {
+	public snapshotVoices(slot: AudioSlot): PausedSnapshot[] {
 		const now = this.A.currentTime();
-		const pool = this.voicesByType[type];
-		const snapshots: { id: asset_id; offset: number; params: ModulationParams; priority: number; }[] = [];
-		for (let i = 0; i < pool.length; i++) {
-			const v = pool[i];
+		const snapshots: PausedSnapshot[] = [];
+		for (let i = 0; i < this.voices.length; i++) {
+			const v = this.voices[i];
+			if (v.slot !== slot) {
+				continue;
+			}
 			const rate = this.effectivePlaybackRate(v.params);
 			const progressed = (now - v.startedAt) * rate;
 			const offset = v.startOffset + progressed;
-			snapshots.push({ id: v.id, offset, params: v.params, priority: v.priority });
+			snapshots.push({ slot, id: v.id, offset, params: v.params, priority: v.priority });
 		}
 		return snapshots;
 	}
 
-	public drainPausedSnapshots(type: AudioType): { id: asset_id; offset: number; params: ModulationParams; priority: number; }[] {
-		const arr = this.pausedByType[type];
-		this.pausedByType[type] = [];
-		return arr;
+	public drainPausedSnapshots(slot: AudioSlot): PausedSnapshot[] {
+		const drained: PausedSnapshot[] = [];
+		const kept: PausedSnapshot[] = [];
+		for (let i = 0; i < this.pausedVoices.length; i++) {
+			const snapshot = this.pausedVoices[i];
+			if (snapshot.slot === slot) {
+				drained.push(snapshot);
+			} else {
+				kept.push(snapshot);
+			}
+		}
+		this.pausedVoices = kept;
+		return drained;
 	}
 
-	public addEndedListener(type: AudioType, listener: (info: ActiveVoiceInfo) => void): () => void {
-		const listeners = this.endedListenersByType[type];
-		listeners.add(listener);
+	public addEndedListener(listener: (info: ActiveVoiceInfo) => void): () => void {
+		this.endedListeners.add(listener);
 		return () => {
-			listeners.delete(listener);
+			this.endedListeners.delete(listener);
 		};
 	}
 
@@ -1061,11 +945,7 @@ export class SoundMaster {
 		this.streamClips = {};
 		this.streamClipLoads = {};
 		this.tracks = {};
-		this.currentAudioByType = { sfx: null, music: null, ui: null };
-		this.currentPlayParamsByType = { sfx: null, music: null, ui: null };
-		this.currentVoiceByType = { sfx: null, music: null, ui: null };
-		this.pausedByType = { sfx: [], music: [], ui: [] };
-		this.voicesByType = { sfx: [], music: [], ui: [] };
+		this.clearVoiceCollections();
 		this.modulationPresetCache.clear();
 	}
 }

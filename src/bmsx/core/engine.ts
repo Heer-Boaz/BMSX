@@ -9,7 +9,7 @@ import { ensureBrowserBackendFactory } from "../render/backend/browser_factory";
 import type { SkyboxImageIds } from "../machine/devices/vdp/contracts";
 import { HZ_SCALE as PLATFORM_HZ_SCALE, setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform, PlatformExitEvent, SubscriptionHandle } from '../platform';
-import { asset_id, getMachineMaxVoices, RuntimeAssets, type CartManifest, type MachineManifest, type vec2 } from "../rompack/format";
+import { asset_id, RuntimeAssets, type CartManifest, type MachineManifest, type vec2 } from "../rompack/format";
 import { buildSystemRuntimeAssetLayer, normalizeCartridgeBlob, parseCartridgeIndex } from '../rompack/loader';
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system';
 import { renderGate, runGate } from './taskgate';
@@ -277,7 +277,6 @@ export class EngineCore {
 			resolver,
 			(id) => runtime.assets.getAudioBytesById(runtime.machine.memory, id)
 		);
-		SoundMaster.instance.setMaxVoicesByType(getMachineMaxVoices(this._machine_manifest));
 	}
 
 	public bootstrapStartupAudio(): void {
@@ -473,8 +472,7 @@ export class EngineCore {
 		const platform = this.platform;
 		const handle = platform.frames.start(() => {
 			handle.stop();
-			this.sndmaster.stopEffect();
-			this.sndmaster.stopMusic();
+			this.sndmaster.stopAllVoices();
 		});
 		if (this.removeWillExit) {
 			this.removeWillExit.unsubscribe();

@@ -5,33 +5,11 @@
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
 
-#include <stdexcept>
 #include <optional>
+#include <stdexcept>
 
 namespace bmsx {
 namespace {
-
-AudioType decodeChannel(uint32_t channel) {
-	if (channel == APU_CHANNEL_MUSIC) {
-		return AudioType::Music;
-	}
-	if (channel == APU_CHANNEL_UI) {
-		return AudioType::Ui;
-	}
-	return AudioType::Sfx;
-}
-
-uint32_t encodeChannel(AudioType type) {
-	switch (type) {
-		case AudioType::Music:
-			return APU_CHANNEL_MUSIC;
-		case AudioType::Ui:
-			return APU_CHANNEL_UI;
-		case AudioType::Sfx:
-		default:
-			return APU_CHANNEL_SFX;
-	}
-}
 
 const char* decodeFilterKind(uint32_t kind) {
 	switch (kind) {
@@ -71,14 +49,8 @@ AudioController::AudioController(Memory& memory, SoundMaster& soundMaster, IrqCo
 	, m_soundMaster(soundMaster)
 	, m_irq(irq) {
 	m_memory.mapIoWrite(IO_APU_CMD, this, &AudioController::onCommandWriteThunk);
-	m_sfxEnded = ScopedSubscription(m_soundMaster.addEndedListener(AudioType::Sfx, [this](const ActiveVoiceInfo& info) {
-		onVoiceEnded(AudioType::Sfx, info);
-	}));
-	m_musicEnded = ScopedSubscription(m_soundMaster.addEndedListener(AudioType::Music, [this](const ActiveVoiceInfo& info) {
-		onVoiceEnded(AudioType::Music, info);
-	}));
-	m_uiEnded = ScopedSubscription(m_soundMaster.addEndedListener(AudioType::Ui, [this](const ActiveVoiceInfo& info) {
-		onVoiceEnded(AudioType::Ui, info);
+	m_endedSubscription = ScopedSubscription(m_soundMaster.addEndedListener([this](const ActiveVoiceInfo& info) {
+		onVoiceEnded(info);
 	}));
 }
 
@@ -87,9 +59,8 @@ void AudioController::reset() {
 	clearCommandLatch();
 	writeNumber(m_memory, IO_APU_STATUS, 0.0);
 	writeNumber(m_memory, IO_APU_EVENT_KIND, static_cast<double>(APU_EVENT_NONE));
-	writeNumber(m_memory, IO_APU_EVENT_CHANNEL, static_cast<double>(APU_CHANNEL_SFX));
+	writeNumber(m_memory, IO_APU_EVENT_SLOT, 0.0);
 	writeNumber(m_memory, IO_APU_EVENT_HANDLE, 0.0);
-	writeNumber(m_memory, IO_APU_EVENT_VOICE, 0.0);
 	writeNumber(m_memory, IO_APU_EVENT_SEQ, 0.0);
 }
 
@@ -100,7 +71,7 @@ void AudioController::clearCommandLatch() {
 
 void AudioController::resetCommandLatch() {
 	writeNumber(m_memory, IO_APU_HANDLE, 0.0);
-	writeNumber(m_memory, IO_APU_CHANNEL, static_cast<double>(APU_CHANNEL_SFX));
+	writeNumber(m_memory, IO_APU_SLOT, 0.0);
 	writeNumber(m_memory, IO_APU_PRIORITY, static_cast<double>(APU_PRIORITY_AUTO));
 	writeNumber(m_memory, IO_APU_RATE_STEP_Q16, static_cast<double>(APU_RATE_STEP_Q16_ONE));
 	writeNumber(m_memory, IO_APU_GAIN_Q12, static_cast<double>(APU_GAIN_Q12_ONE));
@@ -110,7 +81,6 @@ void AudioController::resetCommandLatch() {
 	writeNumber(m_memory, IO_APU_FILTER_Q_MILLI, 1000.0);
 	writeNumber(m_memory, IO_APU_FILTER_GAIN_MILLIDB, 0.0);
 	writeNumber(m_memory, IO_APU_FADE_SAMPLES, 0.0);
-	writeNumber(m_memory, IO_APU_VOICE, 0.0);
 	writeNumber(m_memory, IO_APU_TARGET_GAIN_Q12, static_cast<double>(APU_GAIN_Q12_ONE));
 }
 
@@ -120,16 +90,12 @@ void AudioController::onCommandWrite() {
 			play();
 			clearCommandLatch();
 			return;
-		case APU_CMD_STOP_CHANNEL:
-			stopChannel();
+		case APU_CMD_STOP_SLOT:
+			stopSlot();
 			clearCommandLatch();
 			return;
-		case APU_CMD_STOP_VOICE:
-			stopVoice();
-			clearCommandLatch();
-			return;
-		case APU_CMD_RAMP_VOICE:
-			rampVoice();
+		case APU_CMD_RAMP_SLOT:
+			rampSlot();
 			clearCommandLatch();
 			return;
 		default:
@@ -150,51 +116,45 @@ const Memory::AssetEntry& AudioController::requireAudioEntry(uint32_t handle) co
 	return entry;
 }
 
+AudioSlot AudioController::readSlot() const {
+	const AudioSlot slot = static_cast<AudioSlot>(m_memory.readIoU32(IO_APU_SLOT));
+	if (slot >= APU_SLOT_COUNT) {
+		throw std::runtime_error("[APU] slot " + std::to_string(slot) + " is outside 0.." + std::to_string(APU_SLOT_COUNT - 1) + ".");
+	}
+	return slot;
+}
+
 void AudioController::play() {
 	const uint32_t handle = m_memory.readIoU32(IO_APU_HANDLE);
 	const Memory::AssetEntry& entry = requireAudioEntry(handle);
-	const AudioType channel = decodeChannel(m_memory.readIoU32(IO_APU_CHANNEL));
-	startPlay(handle, entry.id, channel, readResolvedPlayRequest());
+	startPlay(entry.id, readSlot(), readResolvedPlayRequest());
 }
 
-void AudioController::startPlay(uint32_t handle, const std::string& id, AudioType channel, const SoundMasterResolvedPlayRequest& request) {
+void AudioController::startPlay(const std::string& id, AudioSlot slot, const SoundMasterResolvedPlayRequest& request) {
 	if (!m_soundMaster.isRuntimeAudioReady()) {
 		throw std::runtime_error("[APU] SoundMaster runtime audio is not initialized.");
 	}
 	if (!m_soundMaster.hasAudio(id)) {
 		throw std::runtime_error("[APU] audio asset '" + id + "' is not loaded in SoundMaster.");
 	}
-	const VoiceId voiceId = m_soundMaster.playResolved(id, request);
-	if (voiceId != 0) {
-		emitVoiceEvent(APU_EVENT_VOICE_STARTED, channel, handle, voiceId);
-	}
+	m_soundMaster.playResolved(slot, id, request);
 }
 
-void AudioController::stopChannel() {
-	const AudioType channel = decodeChannel(m_memory.readIoU32(IO_APU_CHANNEL));
-	if (channel == AudioType::Music) {
-		const int32_t fadeMs = apuSamplesToMilliseconds(m_memory.readIoU32(IO_APU_FADE_SAMPLES));
-		m_soundMaster.stopMusic(fadeMs > 0 ? std::optional<i32>(fadeMs) : std::nullopt);
-		return;
-	}
-	m_soundMaster.stop(channel, AudioStopSelector::All);
-}
-
-void AudioController::stopVoice() {
-	const VoiceId voiceId = static_cast<VoiceId>(m_memory.readIoU32(IO_APU_VOICE));
+void AudioController::stopSlot() {
+	const AudioSlot slot = readSlot();
 	const uint32_t fadeSamples = m_memory.readIoU32(IO_APU_FADE_SAMPLES);
-	m_soundMaster.stopVoiceById(voiceId, fadeSamples > 0 ? std::optional<i32>(apuSamplesToMilliseconds(fadeSamples)) : std::nullopt);
+	m_soundMaster.stopSlot(slot, fadeSamples > 0 ? std::optional<i32>(apuSamplesToMilliseconds(fadeSamples)) : std::nullopt);
 }
 
-void AudioController::rampVoice() {
-	const VoiceId voiceId = static_cast<VoiceId>(m_memory.readIoU32(IO_APU_VOICE));
+void AudioController::rampSlot() {
+	const AudioSlot slot = readSlot();
 	const f32 targetGain = static_cast<f32>(m_memory.readIoI32(IO_APU_TARGET_GAIN_Q12)) / static_cast<f32>(APU_GAIN_Q12_ONE);
 	const uint32_t fadeSamples = m_memory.readIoU32(IO_APU_FADE_SAMPLES);
 	if (fadeSamples > 0) {
-		m_soundMaster.rampVoiceGainLinear(voiceId, targetGain, static_cast<f64>(fadeSamples) / static_cast<f64>(APU_SAMPLE_RATE_HZ));
+		m_soundMaster.rampSlotGainLinear(slot, targetGain, static_cast<f64>(fadeSamples) / static_cast<f64>(APU_SAMPLE_RATE_HZ));
 		return;
 	}
-	m_soundMaster.setVoiceGainLinear(voiceId, targetGain);
+	m_soundMaster.setSlotGainLinear(slot, targetGain);
 }
 
 SoundMasterResolvedPlayRequest AudioController::readResolvedPlayRequest() const {
@@ -221,18 +181,17 @@ SoundMasterResolvedPlayRequest AudioController::readResolvedPlayRequest() const 
 	return request;
 }
 
-void AudioController::emitVoiceEvent(uint32_t kind, AudioType type, uint32_t handle, VoiceId voiceId) {
+void AudioController::emitSlotEvent(uint32_t kind, AudioSlot slot, uint32_t handle) {
 	m_eventSequence += 1u;
 	writeNumber(m_memory, IO_APU_EVENT_KIND, static_cast<double>(kind));
-	writeNumber(m_memory, IO_APU_EVENT_CHANNEL, static_cast<double>(encodeChannel(type)));
+	writeNumber(m_memory, IO_APU_EVENT_SLOT, static_cast<double>(slot));
 	writeNumber(m_memory, IO_APU_EVENT_HANDLE, static_cast<double>(handle));
-	writeNumber(m_memory, IO_APU_EVENT_VOICE, static_cast<double>(voiceId));
 	writeNumber(m_memory, IO_APU_EVENT_SEQ, static_cast<double>(m_eventSequence));
 	m_irq.raise(IRQ_APU);
 }
 
-void AudioController::onVoiceEnded(AudioType type, const ActiveVoiceInfo& info) {
-	emitVoiceEvent(APU_EVENT_VOICE_ENDED, type, m_memory.resolveAssetHandle(info.id), info.voiceId);
+void AudioController::onVoiceEnded(const ActiveVoiceInfo& info) {
+	emitSlotEvent(APU_EVENT_SLOT_ENDED, info.slot, m_memory.resolveAssetHandle(info.id));
 }
 
 } // namespace bmsx

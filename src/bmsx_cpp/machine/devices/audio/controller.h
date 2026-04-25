@@ -2,7 +2,6 @@
 
 #include "audio/soundmaster.h"
 #include "machine/memory/memory.h"
-#include "rompack/assets.h"
 #include "subscription.h"
 
 #include <cstdint>
@@ -28,22 +27,20 @@ private:
 	Memory& m_memory;
 	SoundMaster& m_soundMaster;
 	IrqController& m_irq;
-	ScopedSubscription m_sfxEnded;
-	ScopedSubscription m_musicEnded;
-	ScopedSubscription m_uiEnded;
+	ScopedSubscription m_endedSubscription;
 	uint32_t m_eventSequence = 0;
 
 	void clearCommandLatch();
 	void resetCommandLatch();
 	void play();
 	const Memory::AssetEntry& requireAudioEntry(uint32_t handle) const;
-	void startPlay(uint32_t handle, const std::string& id, AudioType channel, const SoundMasterResolvedPlayRequest& request);
-	void stopChannel();
-	void stopVoice();
-	void rampVoice();
+	AudioSlot readSlot() const;
+	void startPlay(const std::string& id, AudioSlot slot, const SoundMasterResolvedPlayRequest& request);
+	void stopSlot();
+	void rampSlot();
 	SoundMasterResolvedPlayRequest readResolvedPlayRequest() const;
-	void emitVoiceEvent(uint32_t kind, AudioType type, uint32_t handle, VoiceId voiceId);
-	void onVoiceEnded(AudioType type, const ActiveVoiceInfo& info);
+	void emitSlotEvent(uint32_t kind, AudioSlot slot, uint32_t handle);
+	void onVoiceEnded(const ActiveVoiceInfo& info);
 };
 
 } // namespace bmsx

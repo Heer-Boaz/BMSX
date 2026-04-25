@@ -12,7 +12,7 @@ void refreshAudioResources(
 	SoundMaster& soundMaster,
 	Runtime& runtime,
 	const RuntimeAssets& assets,
-	const MachineManifest& machineManifest,
+	const MachineManifest&,
 	const u8* systemRomData,
 	const u8* cartRomData
 ) {
@@ -47,10 +47,6 @@ void refreshAudioResources(
 		return AudioDataView{ wavBase + asset->dataOffset, asset->frames };
 	};
 	soundMaster.init(assets, volume, std::move(audioResolver));
-	const int maxSfx = machineManifest.maxVoicesSfx ? static_cast<int>(*machineManifest.maxVoicesSfx) : 1;
-	const int maxMusic = machineManifest.maxVoicesMusic ? static_cast<int>(*machineManifest.maxVoicesMusic) : 1;
-	const int maxUi = machineManifest.maxVoicesUi ? static_cast<int>(*machineManifest.maxVoicesUi) : 1;
-	soundMaster.setMaxVoicesByType(maxSfx, maxMusic, maxUi);
 }
 
 } // namespace bmsx

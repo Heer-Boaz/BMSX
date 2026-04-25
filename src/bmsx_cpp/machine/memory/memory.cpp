@@ -1102,9 +1102,8 @@ bool Memory::isLuaReadOnlyIoAddress(uint32_t addr) const {
 		|| addr == IO_IMG_WRITTEN
 		|| addr == IO_APU_STATUS
 		|| addr == IO_APU_EVENT_KIND
-		|| addr == IO_APU_EVENT_CHANNEL
+		|| addr == IO_APU_EVENT_SLOT
 		|| addr == IO_APU_EVENT_HANDLE
-		|| addr == IO_APU_EVENT_VOICE
 		|| addr == IO_APU_EVENT_SEQ
 		|| addr == IO_VDP_RD_STATUS
 		|| addr == IO_VDP_RD_DATA

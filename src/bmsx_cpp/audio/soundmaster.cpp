@@ -100,7 +100,6 @@ static inline void advanceLoopedAudioFrame(f64& position,
 SoundMaster::SoundMaster()
 	: m_rng(std::random_device{}()),
 		m_unitDist(0.0f, 1.0f) {
-	m_maxVoicesByType = {1, 1, 1};
 	resetPlaybackState();
 }
 
@@ -120,30 +119,9 @@ void SoundMaster::init(const RuntimeAssets& assets, f32 startingVolume, AudioDat
 	resetPlaybackState();
 }
 
-void SoundMaster::setMaxVoicesByType(std::optional<int> sfx, std::optional<int> music, std::optional<int> ui) {
-	auto applyLimit = [this](AudioType type, int value) {
-		if (value < 1) {
-			throw std::runtime_error("[SoundMaster] max voices must be at least 1.");
-		}
-		const size_t idx = typeIndex(type);
-		const size_t limit = static_cast<size_t>(value);
-		m_maxVoicesByType[idx] = limit;
-		auto& pool = m_voicesByType[idx];
-		while (pool.size() > limit) {
-			removeVoice(type, 0);
-		}
-	};
-	if (sfx) applyLimit(AudioType::Sfx, *sfx);
-	if (music) applyLimit(AudioType::Music, *music);
-	if (ui) applyLimit(AudioType::Ui, *ui);
-}
-
 void SoundMaster::resetPlaybackState() {
-	for (auto& pool : m_voicesByType) pool.clear();
-	for (auto& pool : m_pausedByType) pool.clear();
-	m_currentVoiceIdByType = {0, 0, 0};
-	m_currentAudioIdByType = {"", "", ""};
-	m_currentParamsByType = {ModulationParams{}, ModulationParams{}, ModulationParams{}};
+	m_voices.clear();
+	m_pausedVoices.clear();
 	m_audioTimeSec = 0.0;
 	m_nextVoiceId = 1;
 }
@@ -155,6 +133,10 @@ void SoundMaster::dispose() {
 }
 
 VoiceId SoundMaster::play(const AssetId& id, const SoundMasterPlayRequest& request) {
+	return play(0, id, request);
+}
+
+VoiceId SoundMaster::play(AudioSlot slot, const AssetId& id, const SoundMasterPlayRequest& request) {
 	const AudioAsset& asset = getAudioOrThrow(id);
 	ModulationInput input;
 	if (request.params.has_value()) {
@@ -168,177 +150,138 @@ VoiceId SoundMaster::play(const AssetId& id, const SoundMasterPlayRequest& reque
 	const ModulationParams params = resolvePlayParams(input);
 	const i32 priority = request.priority.has_value() ? request.priority.value() : asset.meta.priority;
 	const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
-	return startVoice(asset.meta.type, id, asset, params, priority, initialGain);
+	return startVoice(slot, id, asset, params, priority, initialGain);
 }
 
-VoiceId SoundMaster::playResolved(const AssetId& id, const SoundMasterResolvedPlayRequest& request) {
+VoiceId SoundMaster::playResolved(AudioSlot slot, const AssetId& id, const SoundMasterResolvedPlayRequest& request) {
 	const AudioAsset& asset = getAudioOrThrow(id);
 	const ModulationParams params = resolveResolvedPlayParams(request);
 	const i32 priority = request.priority.has_value() ? request.priority.value() : asset.meta.priority;
 	const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
-	return startVoice(asset.meta.type, id, asset, params, priority, initialGain);
+	return startVoice(slot, id, asset, params, priority, initialGain);
 }
 
 bool SoundMaster::setVoiceGainLinear(VoiceId voiceId, f32 gain) {
-	for (auto& pool : m_voicesByType) {
-		for (auto& record : pool) {
-			if (record.voiceId == voiceId) {
-				const f32 clamped = clampVolume(gain);
-				record.gain = clamped;
-				record.targetGain = clamped;
-				record.gainRampRemaining = 0.0;
-				return true;
-			}
-		}
+	VoiceRecord* record = findVoice(voiceId);
+	if (!record) {
+		return false;
 	}
-	return false;
+	const f32 clamped = clampVolume(gain);
+	record->gain = clamped;
+	record->targetGain = clamped;
+	record->gainRampRemaining = 0.0;
+	return true;
 }
 
 bool SoundMaster::rampVoiceGainLinear(VoiceId voiceId, f32 target, f64 seconds) {
 	if (seconds <= 0.0) {
 		return setVoiceGainLinear(voiceId, target);
 	}
-	for (auto& pool : m_voicesByType) {
-		for (auto& record : pool) {
-			if (record.voiceId == voiceId) {
-				rampVoiceGain(record, clampVolume(target), seconds);
-				return true;
-			}
+	VoiceRecord* record = findVoice(voiceId);
+	if (!record) {
+		return false;
+	}
+	rampVoiceGain(*record, clampVolume(target), seconds);
+	return true;
+}
+
+bool SoundMaster::setSlotGainLinear(AudioSlot slot, f32 gain) {
+	VoiceRecord* record = findSlot(slot);
+	if (!record) {
+		return false;
+	}
+	const f32 clamped = clampVolume(gain);
+	record->gain = clamped;
+	record->targetGain = clamped;
+	record->gainRampRemaining = 0.0;
+	return true;
+}
+
+bool SoundMaster::rampSlotGainLinear(AudioSlot slot, f32 target, f64 seconds) {
+	if (seconds <= 0.0) {
+		return setSlotGainLinear(slot, target);
+	}
+	VoiceRecord* record = findSlot(slot);
+	if (!record) {
+		return false;
+	}
+	rampVoiceGain(*record, clampVolume(target), seconds);
+	return true;
+}
+
+bool SoundMaster::stopVoiceById(VoiceId voiceId, std::optional<i32> fadeMs) {
+	for (size_t i = 0; i < m_voices.size(); ++i) {
+		if (m_voices[i].voiceId != voiceId) {
+			continue;
 		}
+		if (fadeMs.has_value() && fadeMs.value() > 0) {
+			const f64 fadeSec = static_cast<f64>(fadeMs.value()) / 1000.0;
+			rampVoiceGain(m_voices[i], MIN_GAIN, fadeSec);
+			m_voices[i].stopAfter = fadeSec;
+			return true;
+		}
+		removeVoice(i);
+		return true;
 	}
 	return false;
 }
 
-bool SoundMaster::stopVoiceById(VoiceId voiceId, std::optional<i32> fadeMs) {
-	for (size_t typeIdx = 0; typeIdx < m_voicesByType.size(); ++typeIdx) {
-		auto& pool = m_voicesByType[typeIdx];
-		for (auto& record : pool) {
-			if (record.voiceId != voiceId) {
-				continue;
-			}
-			if (fadeMs.has_value() && fadeMs.value() > 0) {
-				const f64 fadeSec = static_cast<f64>(fadeMs.value()) / 1000.0;
-				rampVoiceGain(record, MIN_GAIN, fadeSec);
-				record.stopAfter = fadeSec;
-				return true;
-			}
-			stop(static_cast<AudioType>(typeIdx), AudioStopSelector::ByVoice, voiceId);
+bool SoundMaster::stopSlot(AudioSlot slot, std::optional<i32> fadeMs) {
+	for (size_t i = 0; i < m_voices.size(); ++i) {
+		if (m_voices[i].slot != slot) {
+			continue;
+		}
+		if (fadeMs.has_value() && fadeMs.value() > 0) {
+			const f64 fadeSec = static_cast<f64>(fadeMs.value()) / 1000.0;
+			rampVoiceGain(m_voices[i], MIN_GAIN, fadeSec);
+			m_voices[i].stopAfter = fadeSec;
 			return true;
 		}
+		removeVoice(i);
+		return true;
 	}
 	return false;
+}
+
+void SoundMaster::stopAllVoices() {
+	while (!m_voices.empty()) {
+		removeVoice(m_voices.size() - 1);
+	}
 }
 
 void SoundMaster::invalidateClip(const AssetId& id) {
 	if (!isRuntimeAudioReady()) {
 		return;
 	}
-	stop(AudioType::Sfx, AudioStopSelector::ById, 0, id);
-	stop(AudioType::Music, AudioStopSelector::ById, 0, id);
-	stop(AudioType::Ui, AudioStopSelector::ById, 0, id);
+	stop(id);
 }
 
-void SoundMaster::stop(AudioType type, AudioStopSelector which, VoiceId voiceId, const AssetId& id) {
-	const size_t idx = typeIndex(type);
-	auto& pool = m_voicesByType[idx];
-	if (pool.empty()) return;
-
-	switch (which) {
-		case AudioStopSelector::All: {
-			while (!pool.empty()) {
-				removeVoice(type, pool.size() - 1);
-			}
-			break;
-		}
-		case AudioStopSelector::Oldest: {
-			removeVoice(type, 0);
-			break;
-		}
-		case AudioStopSelector::Newest: {
-			removeVoice(type, pool.size() - 1);
-			break;
-		}
-		case AudioStopSelector::ById: {
-			for (size_t i = pool.size(); i-- > 0;) {
-				if (pool[i].id == id) {
-					removeVoice(type, i);
-				}
-			}
-			break;
-		}
-		case AudioStopSelector::ByVoice: {
-			for (size_t i = 0; i < pool.size(); ++i) {
-				if (pool[i].voiceId == voiceId) {
-					removeVoice(type, i);
-					break;
-				}
-			}
-			break;
+void SoundMaster::stop(const AssetId& id) {
+	for (size_t i = m_voices.size(); i-- > 0;) {
+		if (m_voices[i].id == id) {
+			removeVoice(i);
 		}
 	}
-}
-
-void SoundMaster::stopEffect() {
-	stop(AudioType::Sfx, AudioStopSelector::All);
-}
-
-void SoundMaster::stopMusic(std::optional<i32> fadeMs) {
-	const i32 fadeMsValue = fadeMs.has_value() ? fadeMs.value() : 0;
-	if (fadeMsValue <= 0) {
-		stop(AudioType::Music, AudioStopSelector::All);
-		return;
-	}
-	const f64 fadeSec = static_cast<f64>(fadeMsValue) / 1000.0;
-	const size_t musicIdx = typeIndex(AudioType::Music);
-	auto& pool = m_voicesByType[musicIdx];
-	if (pool.empty()) {
-		stop(AudioType::Music, AudioStopSelector::All);
-		return;
-	}
-	for (auto& record : pool) {
-		rampVoiceGain(record, MIN_GAIN, fadeSec);
-		record.stopAfter = fadeSec;
-	}
-}
-
-void SoundMaster::stopUI() {
-	stop(AudioType::Ui, AudioStopSelector::All);
-}
-
-void SoundMaster::pause(AudioType type) {
-	const size_t idx = typeIndex(type);
-	auto& pool = m_voicesByType[idx];
-	auto& paused = m_pausedByType[idx];
-	for (const auto& record : pool) {
-		const f64 offset = record.position / static_cast<f64>(record.asset->sampleRate);
-		paused.push_back(PausedSnapshot{record.id, offset, record.params, record.priority});
-	}
-	pool.clear();
-	m_currentVoiceIdByType[idx] = 0;
-	m_currentAudioIdByType[idx].clear();
-	m_currentParamsByType[idx] = ModulationParams{};
 }
 
 void SoundMaster::pauseAll() {
-	pause(AudioType::Sfx);
-	pause(AudioType::Music);
-	pause(AudioType::Ui);
+	m_pausedVoices.clear();
+	for (const auto& record : m_voices) {
+		const f64 offset = record.position / static_cast<f64>(record.asset->sampleRate);
+		m_pausedVoices.push_back(PausedSnapshot{record.slot, record.id, offset, record.params, record.priority});
+	}
+	m_voices.clear();
 }
 
 void SoundMaster::resume() {
-	resumeType(AudioType::Sfx);
-	resumeType(AudioType::Music);
-	resumeType(AudioType::Ui);
-}
-
-void SoundMaster::resumeType(AudioType type) {
-	auto snapshots = drainPausedSnapshots(type);
+	auto snapshots = m_pausedVoices;
+	m_pausedVoices.clear();
 	for (const auto& snapshot : snapshots) {
 		ModulationParams params = snapshot.params;
 		params.offset = static_cast<f32>(snapshot.offset);
 		const AudioAsset& asset = getAudioOrThrow(snapshot.id);
 		const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
-		startVoice(asset.meta.type, snapshot.id, asset, params, snapshot.priority, initialGain);
+		startVoice(snapshot.slot, snapshot.id, asset, params, snapshot.priority, initialGain);
 	}
 }
 
@@ -346,16 +289,24 @@ void SoundMaster::setMasterVolume(f32 value) {
 	m_masterVolume = clampVolume(value);
 }
 
-size_t SoundMaster::activeCountByType(AudioType type) const {
-	return m_voicesByType[typeIndex(type)].size();
+size_t SoundMaster::activeCountBySlot(AudioSlot slot) const {
+	size_t count = 0;
+	for (const auto& record : m_voices) {
+		if (record.slot == slot) {
+			count += 1;
+		}
+	}
+	return count;
 }
 
-std::vector<ActiveVoiceInfo> SoundMaster::getActiveVoiceInfosByType(AudioType type) const {
-	const auto& pool = m_voicesByType[typeIndex(type)];
+std::vector<ActiveVoiceInfo> SoundMaster::getActiveVoiceInfosBySlot(AudioSlot slot) const {
 	std::vector<ActiveVoiceInfo> result;
-	result.reserve(pool.size());
-	for (const auto& record : pool) {
+	for (const auto& record : m_voices) {
+		if (record.slot != slot) {
+			continue;
+		}
 		result.push_back(ActiveVoiceInfo{
+			record.slot,
 			record.voiceId,
 			record.id,
 			record.priority,
@@ -368,66 +319,57 @@ std::vector<ActiveVoiceInfo> SoundMaster::getActiveVoiceInfosByType(AudioType ty
 	return result;
 }
 
-std::optional<ModulationParams> SoundMaster::currentModulationParamsByType(AudioType type) const {
-	const size_t idx = typeIndex(type);
-	if (m_currentVoiceIdByType[idx] == 0) return std::nullopt;
-	return m_currentParamsByType[idx];
+std::optional<ModulationParams> SoundMaster::currentModulationParamsBySlot(AudioSlot slot) const {
+	const VoiceRecord* record = findSlot(slot);
+	if (!record) return std::nullopt;
+	return record->params;
 }
 
-std::optional<f64> SoundMaster::currentTimeByType(AudioType type) const {
-	const size_t idx = typeIndex(type);
-	const VoiceId currentId = m_currentVoiceIdByType[idx];
-	if (currentId == 0) return std::nullopt;
-	const auto& pool = m_voicesByType[idx];
-	for (const auto& record : pool) {
-		if (record.voiceId == currentId) {
-			return record.position / static_cast<f64>(record.asset->sampleRate);
-		}
-	}
-	return std::nullopt;
+std::optional<f64> SoundMaster::currentTimeBySlot(AudioSlot slot) const {
+	const VoiceRecord* record = findSlot(slot);
+	if (!record) return std::nullopt;
+	return record->position / static_cast<f64>(record->asset->sampleRate);
 }
 
-AssetId SoundMaster::currentTrackByType(AudioType type) const {
-	const size_t idx = typeIndex(type);
-	return m_currentVoiceIdByType[idx] == 0 ? AssetId{} : m_currentAudioIdByType[idx];
+AssetId SoundMaster::currentTrackBySlot(AudioSlot slot) const {
+	const VoiceRecord* record = findSlot(slot);
+	return record ? record->id : AssetId{};
 }
 
-const AudioMeta* SoundMaster::currentTrackMetaByType(AudioType type) const {
-	const size_t idx = typeIndex(type);
-	if (m_currentVoiceIdByType[idx] == 0) return nullptr;
-	const auto& pool = m_voicesByType[idx];
-	for (const auto& record : pool) {
-		if (record.voiceId == m_currentVoiceIdByType[idx]) {
-			return &record.meta;
-		}
-	}
-	return nullptr;
+const AudioMeta* SoundMaster::currentTrackMetaBySlot(AudioSlot slot) const {
+	const VoiceRecord* record = findSlot(slot);
+	return record ? &record->meta : nullptr;
 }
 
-std::vector<PausedSnapshot> SoundMaster::snapshotVoices(AudioType type) const {
-	const auto& pool = m_voicesByType[typeIndex(type)];
+std::vector<PausedSnapshot> SoundMaster::snapshotVoices(AudioSlot slot) const {
 	std::vector<PausedSnapshot> snapshots;
-	snapshots.reserve(pool.size());
-	for (const auto& record : pool) {
+	for (const auto& record : m_voices) {
+		if (record.slot != slot) {
+			continue;
+		}
 		const f64 offset = record.position / static_cast<f64>(record.asset->sampleRate);
-		snapshots.push_back(PausedSnapshot{record.id, offset, record.params, record.priority});
+		snapshots.push_back(PausedSnapshot{record.slot, record.id, offset, record.params, record.priority});
 	}
 	return snapshots;
 }
 
-std::vector<PausedSnapshot> SoundMaster::drainPausedSnapshots(AudioType type) {
-	const size_t idx = typeIndex(type);
-	auto snapshots = m_pausedByType[idx];
-	m_pausedByType[idx].clear();
-	return snapshots;
+std::vector<PausedSnapshot> SoundMaster::drainPausedSnapshots(AudioSlot slot) {
+	std::vector<PausedSnapshot> drained;
+	for (size_t i = m_pausedVoices.size(); i-- > 0;) {
+		if (m_pausedVoices[i].slot == slot) {
+			drained.push_back(m_pausedVoices[i]);
+			m_pausedVoices.erase(m_pausedVoices.begin() + static_cast<std::ptrdiff_t>(i));
+		}
+	}
+	std::reverse(drained.begin(), drained.end());
+	return drained;
 }
 
-SubscriptionHandle SoundMaster::addEndedListener(AudioType type, std::function<void(const ActiveVoiceInfo&)> listener) {
-	const size_t idx = typeIndex(type);
+SubscriptionHandle SoundMaster::addEndedListener(std::function<void(const ActiveVoiceInfo&)> listener) {
 	const u32 id = m_nextListenerId++;
-	m_endedListenersByType[idx].push_back({id, std::move(listener)});
-	return SubscriptionHandle::create([this, idx, id]() {
-		auto& listeners = m_endedListenersByType[idx];
+	m_endedListeners.push_back({id, std::move(listener)});
+	return SubscriptionHandle::create([this, id]() {
+		auto& listeners = m_endedListeners;
 		for (size_t i = 0; i < listeners.size(); ++i) {
 			if (listeners[i].first == id) {
 				listeners.erase(listeners.begin() + static_cast<std::ptrdiff_t>(i));
@@ -451,16 +393,14 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 	const f32 sampleScale = 1.0f / 32768.0f;
 	f32* mix = m_mixBuffer.data();
 
-	for (size_t typeIdx = 0; typeIdx < m_voicesByType.size(); ++typeIdx) {
-		auto& pool = m_voicesByType[typeIdx];
-		for (size_t i = 0; i < pool.size();) {
-			VoiceRecord& record = pool[i];
+	for (size_t i = 0; i < m_voices.size();) {
+			VoiceRecord& record = m_voices[i];
 			const AudioAsset& asset = *record.asset;
 			const u8* data = record.data;
 			const int channels = asset.channels;
 			const size_t framesInAsset = record.frames;
 			if (framesInAsset == 0) {
-				removeVoice(static_cast<AudioType>(typeIdx), i);
+				removeVoice(i);
 				continue;
 			}
 			const bool is16Bit = asset.bitsPerSample == 16;
@@ -768,11 +708,10 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 			record.stopAfter = stopAfter;
 
 			if (ended) {
-				removeVoice(static_cast<AudioType>(typeIdx), i);
+				removeVoice(i);
 				continue;
 			}
 			++i;
-		}
 	}
 
 	for (size_t i = 0; i < totalSamples; ++i) {
@@ -790,20 +729,16 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 	// accMixMs += std::chrono::duration<double, std::milli>(mixEnd - mixStart).count();
 	// accCalls += 1;
 	// if (accAudioSec >= 1.0) {
-	// 	const size_t sfxCount = m_voicesByType[0].size();
-	// 	const size_t musicCount = m_voicesByType[1].size();
-	// 	const size_t uiCount = m_voicesByType[2].size();
+		// 	const size_t voiceCount = m_voices.size();
 	// 	const f64 audioMs = accAudioSec * 1000.0;
 	// 	const f64 loadPct = (accMixMs / audioMs) * 100.0;
 	// 	std::fprintf(stderr,
-	// 		"[BMSX] audio mix %.2fms / %.2fms (%.1f%%), calls=%llu, voices sfx=%zu music=%zu ui=%zu\n",
+		// 		"[BMSX] audio mix %.2fms / %.2fms (%.1f%%), calls=%llu, voices=%zu\n",
 	// 		accMixMs,
 	// 		audioMs,
 	// 		loadPct,
-	// 		static_cast<unsigned long long>(accCalls),
-	// 		sfxCount,
-	// 		musicCount,
-	// 		uiCount);
+		// 		static_cast<unsigned long long>(accCalls),
+		// 		voiceCount);
 	// 	accAudioSec = 0.0;
 	// 	accMixMs = 0.0;
 	// 	accCalls = 0;
@@ -1114,26 +1049,14 @@ bool SoundMaster::badpReadFrameAt(VoiceRecord& record, size_t frame, i16& outLef
 	return true;
 }
 
-VoiceId SoundMaster::startVoice(AudioType type, const AssetId& id, const AudioAsset& asset, const ModulationParams& params, i32 priority, f32 initialGain) {
-	const size_t idx = typeIndex(type);
-	auto& pool = m_voicesByType[idx];
-	const size_t capacity = m_maxVoicesByType[idx];
-	if (capacity > 0 && pool.size() >= capacity) {
-		const int drop = selectVoiceDropIndex(pool);
-		if (drop >= 0) {
-			if (priority < pool[drop].priority) {
-				return 0;
-			}
-			removeVoice(type, static_cast<size_t>(drop));
-		}
-	}
-
+VoiceId SoundMaster::startVoice(AudioSlot slot, const AssetId& id, const AudioAsset& asset, const ModulationParams& params, i32 priority, f32 initialGain) {
+	stopSlot(slot);
 	VoiceRecord record;
 	record.voiceId = m_nextVoiceId++;
 	record.id = id;
 	record.asset = &asset;
 	record.meta = asset.meta;
-	record.type = type;
+	record.slot = slot;
 	record.priority = priority;
 	record.params = params;
 	record.startedAt = m_audioTimeSec;
@@ -1168,39 +1091,22 @@ VoiceId SoundMaster::startVoice(AudioType type, const AssetId& id, const AudioAs
 		badpResetDecoder(record, static_cast<size_t>(std::floor(record.position)));
 	}
 
-	pool.push_back(record);
-	m_currentVoiceIdByType[idx] = record.voiceId;
-	m_currentAudioIdByType[idx] = id;
-	m_currentParamsByType[idx] = params;
-
-	return record.voiceId;
+	const VoiceId voiceId = record.voiceId;
+	m_voices.push_back(record);
+	return voiceId;
 }
 
-void SoundMaster::removeVoice(AudioType type, size_t index) {
-	const size_t idx = typeIndex(type);
-	auto& pool = m_voicesByType[idx];
-	if (index >= pool.size()) return;
-	VoiceRecord record = pool[index];
-	pool.erase(pool.begin() + static_cast<std::ptrdiff_t>(index));
-	if (m_currentVoiceIdByType[idx] == record.voiceId) {
-		if (!pool.empty()) {
-			const auto& latest = pool.back();
-			m_currentVoiceIdByType[idx] = latest.voiceId;
-			m_currentAudioIdByType[idx] = latest.id;
-			m_currentParamsByType[idx] = latest.params;
-		} else {
-			m_currentVoiceIdByType[idx] = 0;
-			m_currentAudioIdByType[idx].clear();
-			m_currentParamsByType[idx] = ModulationParams{};
-		}
-	}
-	finalizeVoiceEnd(type, record);
+void SoundMaster::removeVoice(size_t index) {
+	if (index >= m_voices.size()) return;
+	VoiceRecord record = m_voices[index];
+	m_voices.erase(m_voices.begin() + static_cast<std::ptrdiff_t>(index));
+	finalizeVoiceEnd(record);
 }
 
-void SoundMaster::finalizeVoiceEnd(AudioType type, const VoiceRecord& record) {
-	const size_t idx = typeIndex(type);
-	if (m_endedListenersByType[idx].empty()) return;
+void SoundMaster::finalizeVoiceEnd(const VoiceRecord& record) {
+	if (m_endedListeners.empty()) return;
 	ActiveVoiceInfo info{
+		record.slot,
 		record.voiceId,
 		record.id,
 		record.priority,
@@ -1211,29 +1117,46 @@ void SoundMaster::finalizeVoiceEnd(AudioType type, const VoiceRecord& record) {
 	};
 	// Dispatch against a snapshot so listener callbacks can safely unsubscribe
 	// themselves (or other listeners) without invalidating this iteration.
-	const auto listeners = m_endedListenersByType[idx];
+	const auto listeners = m_endedListeners;
 	for (const auto& entry : listeners) {
 		entry.second(info);
 	}
 }
 
-int SoundMaster::selectVoiceDropIndex(const std::vector<VoiceRecord>& pool) const {
-	if (pool.empty()) return -1;
-	size_t index = 0;
-	const VoiceRecord* candidate = &pool[0];
-	for (size_t i = 1; i < pool.size(); ++i) {
-		const auto& record = pool[i];
-		if (record.priority < candidate->priority) {
-			candidate = &record;
-			index = i;
-			continue;
-		}
-		if (record.priority == candidate->priority && record.startedAt < candidate->startedAt) {
-			candidate = &record;
-			index = i;
+SoundMaster::VoiceRecord* SoundMaster::findVoice(VoiceId voiceId) {
+	for (auto& record : m_voices) {
+		if (record.voiceId == voiceId) {
+			return &record;
 		}
 	}
-	return static_cast<int>(index);
+	return nullptr;
+}
+
+const SoundMaster::VoiceRecord* SoundMaster::findVoice(VoiceId voiceId) const {
+	for (const auto& record : m_voices) {
+		if (record.voiceId == voiceId) {
+			return &record;
+		}
+	}
+	return nullptr;
+}
+
+SoundMaster::VoiceRecord* SoundMaster::findSlot(AudioSlot slot) {
+	for (auto it = m_voices.rbegin(); it != m_voices.rend(); ++it) {
+		if (it->slot == slot) {
+			return &(*it);
+		}
+	}
+	return nullptr;
+}
+
+const SoundMaster::VoiceRecord* SoundMaster::findSlot(AudioSlot slot) const {
+	for (auto it = m_voices.rbegin(); it != m_voices.rend(); ++it) {
+		if (it->slot == slot) {
+			return &(*it);
+		}
+	}
+	return nullptr;
 }
 
 void SoundMaster::rampVoiceGain(VoiceRecord& record, f32 target, f64 durationSec) {
@@ -1249,15 +1172,6 @@ f32 SoundMaster::clampVolume(f32 value) const {
 
 f64 SoundMaster::effectivePlaybackRate(const ModulationParams& params) const {
 	return params.playbackRate * std::pow(2.0, params.pitchDelta / 12.0);
-}
-
-size_t SoundMaster::typeIndex(AudioType type) {
-	switch (type) {
-		case AudioType::Sfx: return 0;
-		case AudioType::Music: return 1;
-		case AudioType::Ui: return 2;
-	}
-	return 0;
 }
 
 } // namespace bmsx

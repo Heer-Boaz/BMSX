@@ -6,31 +6,32 @@ local eventemitter<const> = require('eventemitter').eventemitter
 local compile_matcher<const> = require('event_matcher').compile
 
 local global_actor_key<const> = false
+local slot_sfx<const> = 0
+local slot_music_a<const> = 1
+local slot_music_b<const> = 2
+local slot_ui<const> = 3
+local route_slot<const> = {
+	sfx = slot_sfx,
+	music = slot_music_a,
+	ui = slot_ui,
+}
 
 local events
 local music_request_seq
 local current_music_handle
-local current_music_voice
-local expected_music_seq
-local expected_music_handle
+local current_music_slot
 local pending_music_seq
 local pending_music_asset
 local pending_music_transition
-local pending_crossfade_seq
-local pending_crossfade_handle
-local pending_crossfade_old_voice
-local pending_crossfade_samples
 local stinger_seq
 local stinger_handle
-local stinger_channel
-local stinger_voice
+local stinger_slot
 local stinger_music_asset
 local stinger_music_transition
-local channel_active_handle
-local channel_active_voice
-local channel_play_queue
-local channel_queue_head
-local channel_queue_tail
+local slot_active_handle
+local slot_play_queue
+local slot_queue_head
+local slot_queue_tail
 
 local resolve_data_path<const> = function(path)
 	local dot = string.find(path, '.', 1, true)
@@ -264,11 +265,11 @@ local merge_events<const> = function(map)
 	local merged<const> = {}
 
 	local add_or_merge<const> = function(event_name, entry)
-		local channel<const> = apu.channel[entry.channel]
-		if channel == nil then
-			error('aem invalid APU channel: ' .. tostring(entry.channel))
+		local slot<const> = route_slot[entry.channel]
+		if slot == nil then
+			error('aem invalid APU route: ' .. tostring(entry.channel))
 		end
-		entry.__channel = channel
+		entry.__slot = slot
 		entry.__queued = entry.policy == 'queue'
 		local compiled_rules<const> = compile_rules(entry.rules)
 		local cur<const> = merged[event_name]
@@ -335,99 +336,88 @@ local apply_cooldown<const> = function(action, payload)
 	return true
 end
 
-local reset_channel_state<const> = function()
-	channel_active_handle = {
-		[apu_channel_sfx] = 0,
-		[apu_channel_music] = 0,
-		[apu_channel_ui] = 0,
+local reset_slot_state<const> = function()
+	slot_active_handle = {
+		[slot_sfx] = 0,
+		[slot_music_a] = 0,
+		[slot_music_b] = 0,
+		[slot_ui] = 0,
 	}
-	channel_active_voice = {
-		[apu_channel_sfx] = 0,
-		[apu_channel_music] = 0,
-		[apu_channel_ui] = 0,
+	slot_play_queue = {
+		[slot_sfx] = {},
+		[slot_music_a] = {},
+		[slot_music_b] = {},
+		[slot_ui] = {},
 	}
-	channel_play_queue = {
-		[apu_channel_sfx] = {},
-		[apu_channel_music] = {},
-		[apu_channel_ui] = {},
+	slot_queue_head = {
+		[slot_sfx] = 1,
+		[slot_music_a] = 1,
+		[slot_music_b] = 1,
+		[slot_ui] = 1,
 	}
-	channel_queue_head = {
-		[apu_channel_sfx] = 1,
-		[apu_channel_music] = 1,
-		[apu_channel_ui] = 1,
-	}
-	channel_queue_tail = {
-		[apu_channel_sfx] = 0,
-		[apu_channel_music] = 0,
-		[apu_channel_ui] = 0,
+	slot_queue_tail = {
+		[slot_sfx] = 0,
+		[slot_music_a] = 0,
+		[slot_music_b] = 0,
+		[slot_ui] = 0,
 	}
 end
 
-local has_queued_play<const> = function(channel)
-	return channel_queue_head[channel] <= channel_queue_tail[channel]
+local has_queued_play<const> = function(slot)
+	return slot_queue_head[slot] <= slot_queue_tail[slot]
 end
 
-local clear_channel_queue<const> = function(channel)
-	local queue<const> = channel_play_queue[channel]
-	for i = channel_queue_head[channel], channel_queue_tail[channel] do
+local clear_slot_queue<const> = function(slot)
+	local queue<const> = slot_play_queue[slot]
+	for i = slot_queue_head[slot], slot_queue_tail[slot] do
 		queue[i] = nil
 	end
-	channel_queue_head[channel] = 1
-	channel_queue_tail[channel] = 0
+	slot_queue_head[slot] = 1
+	slot_queue_tail[slot] = 0
 end
 
-local channel_is_busy<const> = function(channel)
-	return channel_active_handle[channel] ~= 0
+local slot_is_busy<const> = function(slot)
+	return slot_active_handle[slot] ~= 0
 end
 
-local mark_channel_pending<const> = function(channel, handle)
-	channel_active_handle[channel] = handle
-	channel_active_voice[channel] = 0
+local mark_slot_active<const> = function(slot, handle)
+	slot_active_handle[slot] = handle
 end
 
-local mark_channel_started<const> = function(channel, handle, voice)
-	channel_active_handle[channel] = handle
-	channel_active_voice[channel] = voice
-end
-
-local channel_voice_matches<const> = function(channel, handle, voice)
-	local active_voice<const> = channel_active_voice[channel]
-	if active_voice ~= 0 then
-		return active_voice == voice
-	end
-	return channel_active_handle[channel] == handle
+local slot_handle_matches<const> = function(slot, handle)
+	return slot_active_handle[slot] == handle
 end
 
 local enqueue_prepared_play<const> = function(play)
-	local channel<const> = play.channel
-	local tail<const> = channel_queue_tail[channel] + 1
-	channel_queue_tail[channel] = tail
-	channel_play_queue[channel][tail] = play
+	local slot<const> = play.slot
+	local tail<const> = slot_queue_tail[slot] + 1
+	slot_queue_tail[slot] = tail
+	slot_play_queue[slot][tail] = play
 end
 
-local dequeue_prepared_play<const> = function(channel)
-	if not has_queued_play(channel) then
+local dequeue_prepared_play<const> = function(slot)
+	if not has_queued_play(slot) then
 		return nil
 	end
-	local head<const> = channel_queue_head[channel]
-	local queue<const> = channel_play_queue[channel]
+	local head<const> = slot_queue_head[slot]
+	local queue<const> = slot_play_queue[slot]
 	local play<const> = queue[head]
 	queue[head] = nil
-	if head == channel_queue_tail[channel] then
-		channel_queue_head[channel] = 1
-		channel_queue_tail[channel] = 0
+	if head == slot_queue_tail[slot] then
+		slot_queue_head[slot] = 1
+		slot_queue_tail[slot] = 0
 	else
-		channel_queue_head[channel] = head + 1
+		slot_queue_head[slot] = head + 1
 	end
 	return play
 end
 
 local run_prepared_play
 run_prepared_play = function(play)
-	mark_channel_pending(play.channel, play.handle)
+	mark_slot_active(play.slot, play.handle)
 	apu.play(
 		play.handle,
-		play.channel,
+		play.slot,
 		play.priority,
 		play.rate_step_q16,
 		play.gain_q12,
@@ -440,41 +430,40 @@ run_prepared_play = function(play)
 end
 
 local play_next_queued
-play_next_queued = function(channel)
-	local play<const> = dequeue_prepared_play(channel)
+play_next_queued = function(slot)
+	local play<const> = dequeue_prepared_play(slot)
 	if play ~= nil then
 		run_prepared_play(play)
 	end
 end
 
-local complete_channel_voice<const> = function(channel, handle, voice, drain_queue)
-	if not channel_voice_matches(channel, handle, voice) then
+local complete_slot_play<const> = function(slot, handle, drain_queue)
+	if not slot_handle_matches(slot, handle) then
 		return false
 	end
-	channel_active_handle[channel] = 0
-	channel_active_voice[channel] = 0
+	slot_active_handle[slot] = 0
 	if drain_queue then
-		play_next_queued(channel)
+		play_next_queued(slot)
 	end
 	return true
 end
 
 local submit_prepared_play<const> = function(play, queued)
 	if queued then
-		if channel_is_busy(play.channel) or has_queued_play(play.channel) then
+		if slot_is_busy(play.slot) or has_queued_play(play.slot) then
 			enqueue_prepared_play(play)
 			return
 		end
 	else
-		clear_channel_queue(play.channel)
+		clear_slot_queue(play.slot)
 	end
 	run_prepared_play(play)
 end
 
-local prepare_plain_play<const> = function(handle, channel)
+local prepare_plain_play<const> = function(handle, slot)
 	return {
 		handle = handle,
-		channel = channel,
+		slot = slot,
 		priority = apu_priority_auto,
 		rate_step_q16 = apu_rate_step_q16_one,
 		gain_q12 = apu_gain_q12_one,
@@ -486,7 +475,7 @@ local prepare_plain_play<const> = function(handle, channel)
 	}
 end
 
-local prepare_action_play<const> = function(handle, channel, action)
+local prepare_action_play<const> = function(handle, slot, action)
 	local pitch_delta = action.__apu_pitch_delta
 	local pitch_range_span<const> = action.__apu_pitch_range_span
 	if pitch_range_span ~= 0 then
@@ -515,7 +504,7 @@ local prepare_action_play<const> = function(handle, channel, action)
 
 	return {
 		handle = handle,
-		channel = channel,
+		slot = slot,
 		priority = action.__apu_priority,
 		rate_step_q16 = rate_step_q16,
 		gain_q12 = gain_q12,
@@ -534,49 +523,48 @@ local transition_start_sample<const> = function(asset, transition)
 	return 0
 end
 
+local alternate_music_slot<const> = function()
+	if current_music_slot == slot_music_a then
+		return slot_music_b
+	end
+	return slot_music_a
+end
+
 local clear_pending_music<const> = function()
 	pending_music_seq = 0
 	pending_music_asset = nil
 	pending_music_transition = nil
 end
 
-local clear_pending_crossfade<const> = function()
-	pending_crossfade_seq = 0
-	pending_crossfade_handle = 0
-	pending_crossfade_old_voice = 0
-	pending_crossfade_samples = 0
-end
-
 local clear_stinger<const> = function()
 	stinger_seq = 0
 	stinger_handle = 0
-	stinger_channel = 0
-	stinger_voice = 0
+	stinger_slot = 0
 	stinger_music_asset = nil
 	stinger_music_transition = nil
 end
 
 local begin_music_request<const> = function()
 	music_request_seq = music_request_seq + 1
-	if stinger_voice ~= 0 then
-		apu.stop_voice(stinger_voice, 0)
+	if stinger_handle ~= 0 then
+		apu.stop_slot(stinger_slot, 0)
 	end
-	clear_channel_queue(apu_channel_music)
+	clear_slot_queue(slot_music_a)
+	clear_slot_queue(slot_music_b)
 	clear_stinger()
 	clear_pending_music()
-	clear_pending_crossfade()
-	expected_music_seq = 0
-	expected_music_handle = 0
 	return music_request_seq
 end
 
-local play_music_now<const> = function(asset, transition, gain_q12)
+local play_music_now<const> = function(asset, transition, gain_q12, slot)
+	local target_slot = slot or current_music_slot
+	if target_slot == 0 then
+		target_slot = slot_music_a
+	end
 	current_music_handle = asset.handle
-	current_music_voice = 0
-	expected_music_seq = music_request_seq
-	expected_music_handle = asset.handle
-	mark_channel_pending(apu_channel_music, asset.handle)
-	apu.play_music(asset, transition_start_sample(asset, transition), gain_q12 or apu_gain_q12_one)
+	current_music_slot = target_slot
+	mark_slot_active(target_slot, asset.handle)
+	apu.play(asset.handle, target_slot, apu_priority_auto, apu_rate_step_q16_one, gain_q12 or apu_gain_q12_one, transition_start_sample(asset, transition), apu_filter_none, 0, 1000, 0)
 end
 
 local queue_music_after_current<const> = function(request_seq, asset, transition)
@@ -586,30 +574,30 @@ local queue_music_after_current<const> = function(request_seq, asset, transition
 end
 
 local play_transition_apu<const> = function(asset, transition)
-	if transition.__apu_wait_for_current and current_music_voice ~= 0 then
+	if transition.__apu_wait_for_current and current_music_handle ~= 0 then
 		queue_music_after_current(music_request_seq, asset, transition)
 		return
 	end
 
 	local crossfade_samples<const> = transition.__apu_crossfade_samples
-	if crossfade_samples > 0 and current_music_voice ~= 0 then
-		pending_crossfade_seq = music_request_seq
-		pending_crossfade_handle = asset.handle
-		pending_crossfade_old_voice = current_music_voice
-		pending_crossfade_samples = crossfade_samples
-		play_music_now(asset, transition, 0)
+	if crossfade_samples > 0 and current_music_handle ~= 0 then
+		local old_slot<const> = current_music_slot
+		local new_slot<const> = alternate_music_slot()
+		play_music_now(asset, transition, 0, new_slot)
+		apu.ramp_slot(new_slot, apu_gain_q12_one, crossfade_samples)
+		apu.stop_slot(old_slot, crossfade_samples)
 		return
 	end
 
 	local fade_samples<const> = transition.__apu_fade_samples
-	if fade_samples > 0 and current_music_voice ~= 0 then
+	if fade_samples > 0 and current_music_handle ~= 0 then
 		queue_music_after_current(music_request_seq, asset, transition)
-		apu.stop_voice(current_music_voice, fade_samples)
+		apu.stop_slot(current_music_slot, fade_samples)
 		return
 	end
 
 	if current_music_handle ~= 0 then
-		apu.stop_channel(apu_channel_music, 0)
+		apu.stop_slot(current_music_slot, 0)
 	end
 	play_music_now(asset, transition)
 end
@@ -637,19 +625,21 @@ local dispatch_music_transition<const> = function(transition)
 	if sync ~= nil and type(sync) ~= 'string' then
 		local stinger_id<const> = sync.stinger
 		local stinger_type<const> = assets.audio[stinger_id].audiometa.audiotype
-		apu.stop_channel(apu_channel_music, 0)
+		if current_music_handle ~= 0 then
+			apu.stop_slot(current_music_slot, 0)
+		end
 		current_music_handle = 0
-		current_music_voice = 0
+		current_music_slot = 0
 		stinger_seq = request_seq
 		stinger_handle = assets.audio[stinger_id].handle
-		stinger_channel = apu.channel[stinger_type]
-		if stinger_channel == nil then
+		stinger_slot = route_slot[stinger_type]
+		if stinger_slot == nil then
 			error('aem invalid stinger audio asset type: ' .. tostring(stinger_type))
 		end
 		stinger_music_asset = target_asset
 		stinger_music_transition = transition
-		mark_channel_pending(stinger_channel, stinger_handle)
-		apu.play_plain(stinger_handle, stinger_channel)
+		mark_slot_active(stinger_slot, stinger_handle)
+		apu.play_plain(stinger_handle, stinger_slot)
 		return
 	end
 	play_transition_apu(target_asset, transition)
@@ -659,20 +649,21 @@ local dispatch_audio_play<const> = function(entry, handle, action, payload)
 	if not apply_cooldown(action, payload) then
 		return
 	end
-	submit_prepared_play(prepare_action_play(handle, entry.__channel, action), entry.__queued)
+	submit_prepared_play(prepare_action_play(handle, entry.__slot, action), entry.__queued)
 end
 
 local dispatch_action<const> = function(entry, action, payload)
 	if type(action) == 'string' then
-		submit_prepared_play(prepare_plain_play(assets.audio[action].handle, entry.__channel), entry.__queued)
+		submit_prepared_play(prepare_plain_play(assets.audio[action].handle, entry.__slot), entry.__queued)
 		return
 	end
 	if action.stop_music then
 		begin_music_request()
 		current_music_handle = 0
-		current_music_voice = 0
+		current_music_slot = 0
 		local fade_samples<const> = type(action.stop_music) == 'boolean' and 0 or apu.ms_to_samples(action.stop_music.fade_ms or 0)
-		apu.stop_channel(apu_channel_music, fade_samples)
+		apu.stop_slot(slot_music_a, fade_samples)
+		apu.stop_slot(slot_music_b, fade_samples)
 		return
 	end
 	if action.sequence then
@@ -708,12 +699,9 @@ end
 local reset_audio_state<const> = function()
 	music_request_seq = 0
 	current_music_handle = 0
-	current_music_voice = 0
-	expected_music_seq = 0
-	expected_music_handle = 0
-	reset_channel_state()
+	current_music_slot = 0
+	reset_slot_state()
 	clear_pending_music()
-	clear_pending_crossfade()
 	clear_stinger()
 end
 
@@ -733,69 +721,37 @@ end
 
 local on_apu_irq<const> = function()
 	local kind<const> = mem[sys_apu_event_kind]
-	local channel<const> = mem[sys_apu_event_channel]
+	local slot<const> = mem[sys_apu_event_slot]
 	local handle<const> = mem[sys_apu_event_handle]
-	local voice<const> = mem[sys_apu_event_voice]
 
-	if kind == apu_event_voice_started then
-		mark_channel_started(channel, handle, voice)
-		if stinger_handle == handle
-			and stinger_channel == channel
-			and stinger_seq == music_request_seq then
-			stinger_voice = voice
-			return
-		end
-
-		if channel == apu_channel_music then
-			local crossfade_started<const> = pending_crossfade_seq == music_request_seq
-				and pending_crossfade_handle == handle
-			local expected_started<const> = expected_music_seq == music_request_seq
-				and expected_music_handle == handle
-			if crossfade_started or expected_started then
-				current_music_handle = handle
-				current_music_voice = voice
-			end
-			if crossfade_started then
-				apu.ramp_voice(voice, apu_gain_q12_one, pending_crossfade_samples)
-				if pending_crossfade_old_voice ~= 0 then
-					apu.stop_voice(pending_crossfade_old_voice, pending_crossfade_samples)
-				end
-				clear_pending_crossfade()
-			end
-		end
-		return
-	end
-
-	if kind ~= apu_event_voice_ended then
+	if kind ~= apu_event_slot_ended then
 		return
 	end
 
 	if stinger_handle == handle
-		and stinger_channel == channel
+		and stinger_slot == slot
 		and stinger_seq == music_request_seq then
 		local target_asset<const> = stinger_music_asset
 		local transition<const> = stinger_music_transition
-		complete_channel_voice(channel, handle, voice, channel ~= apu_channel_music)
+		complete_slot_play(slot, handle, slot ~= current_music_slot)
 		clear_stinger()
 		play_transition_apu(target_asset, transition)
 		return
 	end
 
-	if channel ~= apu_channel_music then
-		complete_channel_voice(channel, handle, voice, true)
+	if slot ~= current_music_slot then
+		complete_slot_play(slot, handle, true)
 		return
 	end
 
-	local current_ended<const> = (current_music_voice ~= 0 and current_music_voice == voice)
-		or (current_music_voice == 0 and current_music_handle == handle)
-	if not current_ended then
-		complete_channel_voice(channel, handle, voice, true)
+	if current_music_handle ~= handle then
+		complete_slot_play(slot, handle, true)
 		return
 	end
 
-	complete_channel_voice(channel, handle, voice, false)
+	complete_slot_play(slot, handle, false)
 	current_music_handle = 0
-	current_music_voice = 0
+	current_music_slot = 0
 	if pending_music_seq == music_request_seq and pending_music_asset ~= nil then
 		local target_asset<const> = pending_music_asset
 		local transition<const> = pending_music_transition
@@ -803,7 +759,7 @@ local on_apu_irq<const> = function()
 		play_music_now(target_asset, transition)
 		return
 	end
-	play_next_queued(channel)
+	play_next_queued(slot)
 end
 
 return {

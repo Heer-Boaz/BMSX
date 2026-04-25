@@ -26,11 +26,10 @@ import {
 	VRAM_STAGING_SIZE,
 } from './map';
 import {
-	IO_APU_EVENT_CHANNEL,
 	IO_APU_EVENT_HANDLE,
 	IO_APU_EVENT_KIND,
 	IO_APU_EVENT_SEQ,
-	IO_APU_EVENT_VOICE,
+	IO_APU_EVENT_SLOT,
 	IO_APU_STATUS,
 	IO_DMA_STATUS,
 	IO_DMA_WRITTEN,
@@ -1294,9 +1293,8 @@ export class Memory {
 			|| addr === IO_IMG_WRITTEN
 			|| addr === IO_APU_STATUS
 			|| addr === IO_APU_EVENT_KIND
-			|| addr === IO_APU_EVENT_CHANNEL
+			|| addr === IO_APU_EVENT_SLOT
 			|| addr === IO_APU_EVENT_HANDLE
-			|| addr === IO_APU_EVENT_VOICE
 			|| addr === IO_APU_EVENT_SEQ
 			|| addr === IO_VDP_RD_STATUS
 			|| addr === IO_VDP_RD_DATA
