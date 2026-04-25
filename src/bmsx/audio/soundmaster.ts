@@ -65,10 +65,6 @@ export interface ModulationPresetResolver {
 	resolve(key: asset_id): RandomModulationParams | ModulationParams;
 }
 
-type MusicTransitionStingerSync = { stinger: asset_id; return_to?: asset_id; return_to_previous?: boolean };
-type MusicTransitionDelaySync = { delay_ms: number };
-type MusicTransitionSync = 'immediate' | 'loop' | MusicTransitionDelaySync | MusicTransitionStingerSync;
-
 // Host-side audio playback/output and browser latency handling. This is the
 // mixer behind the machine APU; cart-visible audio is MMIO, not SoundMaster.
 export type AudioBytesResolver = (id: asset_id) => Uint8Array;
@@ -182,14 +178,6 @@ class StreamVoiceHandle implements VoiceHandle {
 	}
 }
 
-function isMusicTransitionStingerSync(sync: MusicTransitionSync): sync is MusicTransitionStingerSync {
-	return typeof sync === 'object' && (sync as MusicTransitionStingerSync).stinger !== undefined;
-}
-
-function isMusicTransitionDelaySync(sync: MusicTransitionSync): sync is MusicTransitionDelaySync {
-	return typeof sync === 'object' && (sync as MusicTransitionDelaySync).delay_ms !== undefined;
-}
-
 export class SoundMaster {
 	public static readonly instance: SoundMaster = new SoundMaster();
 
@@ -209,12 +197,6 @@ export class SoundMaster {
 	private pausedByType: Record<AudioType, PausedSnapshot[]>;
 	private endedListenersByType: Record<AudioType, Set<(info: ActiveVoiceInfo) => void>>;
 	private nextVoiceId: VoiceId;
-	private musicTransitionTimer: ReturnType<typeof setTimeout>;
-	private musicTransitionRequestId: number;
-	private pendingStingerReturnTo: asset_id;
-		private pendingStingerReturnUnsub: (() => void) | null;
-	private pendingStingerType: AudioType | null;
-	private pendingStingerVoice: VoiceId | null;
 	private maxVoicesByType: Record<AudioType, number>;
 	private voiceRecordByHandle: WeakMap<VoiceHandle, ActiveVoiceRecord>;
 	private mixFps: number;
@@ -232,12 +214,6 @@ export class SoundMaster {
 		this.clearVoiceCollections();
 		this.endedListenersByType = { sfx: new Set(), music: new Set(), ui: new Set() };
 		this.nextVoiceId = 1;
-		this.musicTransitionTimer = null;
-		this.musicTransitionRequestId = 0;
-		this.pendingStingerReturnTo = null;
-		this.pendingStingerReturnUnsub = null;
-		this.pendingStingerType = null;
-		this.pendingStingerVoice = null;
 		this.maxVoicesByType = { sfx: DEFAULT_MACHINE_MAX_VOICES.sfx, music: DEFAULT_MACHINE_MAX_VOICES.music, ui: DEFAULT_MACHINE_MAX_VOICES.ui };
 		this.voiceRecordByHandle = new WeakMap();
 		this.mixFps = 50;
@@ -329,7 +305,6 @@ export class SoundMaster {
 	}
 
 	public resetPlaybackState(): void {
-		this.beginMusicTransition();
 		this.stopAllVoices();
 		this.clearVoiceCollections();
 		this.nextVoiceId = 1;
@@ -538,10 +513,6 @@ export class SoundMaster {
 		return (params.playbackRate ?? 1) * Math.pow(2, (params.pitchDelta ?? 0) / 12);
 	}
 
-	private currentOffset(record: ActiveVoiceRecord): number {
-		return record.startOffset + (this.A.currentTime() - record.startedAt) * this.effectivePlaybackRate(record.params);
-	}
-
 	public async play(id: asset_id, options?: SoundMasterPlayRequest | ModulationParams | RandomModulationParams): Promise<VoiceId> {
 		const request = this.normalizePlayRequest(options);
 		const modulationPreset = request.modulation_preset;
@@ -686,8 +657,15 @@ export class SoundMaster {
 		return undefined;
 	}
 
-	private stopVoiceRecord(type: AudioType, record: ActiveVoiceRecord): void {
+	private stopVoiceRecord(type: AudioType, record: ActiveVoiceRecord, fade_ms?: number): void {
 		if (record.finalized) return;
+		if (fade_ms !== undefined && fade_ms > 0) {
+			record.handle.rampGainLinear(MIN_GAIN, fade_ms / 1000);
+			setTimeout(() => {
+				this.stopVoiceRecord(type, record);
+			}, fade_ms);
+			return;
+		}
 		if (record.backendEnded !== null) {
 			record.backendEnded.unsubscribe();
 			record.backendEnded = null;
@@ -776,12 +754,12 @@ export class SoundMaster {
 		found.record.backendVoice.setFilter(filter);
 	}
 
-	public stopVoiceById(voiceId: VoiceId): void {
+	public stopVoiceById(voiceId: VoiceId, fade_ms?: number): void {
 		const found = this.findRecordByVoiceId(voiceId);
 		if (!found) {
 			return;
 		}
-		this.stopVoiceRecord(found.type, found.record);
+		this.stopVoiceRecord(found.type, found.record, fade_ms);
 	}
 
 	public setMixerFps(fps: number): void {
@@ -865,24 +843,29 @@ export class SoundMaster {
 		}
 	}
 
-	private stopByTypeInternal(type: AudioType, which: AudioStopSelector, idOrVoice?: asset_id | VoiceId): void {
+	private stopByTypeInternal(type: AudioType, which: AudioStopSelector, idOrVoice?: asset_id | VoiceId, fade_ms?: number): void {
 		const pool = this.voicesByType[type];
 		const targets: ActiveVoiceRecord[] = [];
+		const fade = fade_ms !== undefined && fade_ms > 0;
 
 		switch (which) {
 			case 'all':
-				while (pool.length > 0) {
-					const record = pool.pop();
-					if (record) targets.push(record);
+				if (fade) {
+					targets.push(...pool);
+				} else {
+					while (pool.length > 0) {
+						const record = pool.pop();
+						if (record) targets.push(record);
+					}
 				}
 				break;
 			case 'oldest': {
-					const record = pool.shift();
+					const record = fade ? pool[0] : pool.shift();
 					if (record) targets.push(record);
 					break;
 				}
 			case 'newest': {
-					const record = pool.pop();
+					const record = fade ? pool[pool.length - 1] : pool.pop();
 					if (record) targets.push(record);
 					break;
 				}
@@ -890,7 +873,7 @@ export class SoundMaster {
 					if (idOrVoice === undefined) return;
 					for (let i = pool.length - 1; i >= 0; i--) {
 						if (pool[i].id === idOrVoice) {
-							targets.push(pool.splice(i, 1)[0]);
+							targets.push(fade ? pool[i] : pool.splice(i, 1)[0]);
 						}
 					}
 					break;
@@ -899,7 +882,7 @@ export class SoundMaster {
 					if (idOrVoice === undefined) return;
 					for (let i = pool.length - 1; i >= 0; i--) {
 						if (pool[i].voiceId === idOrVoice) {
-							targets.push(pool.splice(i, 1)[0]);
+							targets.push(fade ? pool[i] : pool.splice(i, 1)[0]);
 							break;
 						}
 					}
@@ -908,7 +891,7 @@ export class SoundMaster {
 		}
 
 		for (let i = 0; i < targets.length; i++) {
-			this.stopVoiceRecord(type, targets[i]);
+			this.stopVoiceRecord(type, targets[i], fade_ms);
 		}
 	}
 
@@ -923,9 +906,8 @@ export class SoundMaster {
 		if (!this.isRuntimeAudioAvailable()) {
 			return;
 		}
-		const transitionId = this.beginMusicTransition();
 		if (fade_ms !== undefined && fade_ms > 0) {
-			this.stopMusicAfterFadeOut(transitionId, fade_ms);
+			this.stopByTypeInternal('music', 'all', undefined, fade_ms);
 			return;
 		}
 		this.stop('music', 'all');
@@ -1066,299 +1048,7 @@ export class SoundMaster {
 		};
 	}
 
-	public requestMusicTransition(opts: {
-		to: asset_id;
-		sync?: MusicTransitionSync;
-		fade_ms?: number;
-		crossfade_ms?: number;
-		start_at_loop_start?: boolean;
-		start_fresh?: boolean;
-	}): void {
-		const transitionId = this.beginMusicTransition();
-		if (opts.fade_ms !== undefined && opts.crossfade_ms !== undefined) {
-			throw new Error('[SoundMaster] music_transition cannot specify both fade_ms and crossfade_ms.');
-		}
-
-		const sync = opts.sync ?? 'immediate';
-		const start_fresh = opts.start_fresh ?? false;
-		let startOffset: number | undefined;
-		if (start_fresh) {
-			startOffset = 0;
-		}
-		const runTransition = (target: asset_id, startAtSeconds?: number): void => {
-			this.startMusicTransition(target, opts.fade_ms ?? 0, opts.crossfade_ms, opts.start_at_loop_start ?? false, startAtSeconds);
-		};
-
-		const currentRecord = this.getCurrentRecord('music');
-		if (!isMusicTransitionStingerSync(sync) && !start_fresh && currentRecord?.id === opts.to) {
-			return;
-		}
-
-		if (isMusicTransitionStingerSync(sync)) {
-			const stingerType = this.getAudioMetaOrThrow(sync.stinger).audiotype;
-			if (!this.isAudioType(stingerType)) {
-				throw new Error(`[SoundMaster] Audio asset '${String(sync.stinger)}' has unknown audio type.`);
-			}
-			const previousId = currentRecord?.id;
-			let returnOffset: number | undefined;
-			if (sync.return_to_previous && currentRecord) {
-				returnOffset = this.currentOffset(currentRecord);
-			}
-			const returnTarget = sync.return_to_previous ? (previousId ?? opts.to) : (sync.return_to ?? opts.to);
-			this.pendingStingerReturnTo = returnTarget;
-			this.stop('music', 'all');
-				this.play(sync.stinger).then(voiceId => {
-					if (transitionId !== this.musicTransitionRequestId) {
-						this.stop(stingerType, 'byvoice', voiceId);
-						return;
-					}
-					this.pendingStingerType = stingerType;
-					this.pendingStingerVoice = voiceId;
-					const listener = (info: ActiveVoiceInfo): void => {
-						if (info.voiceId !== voiceId) {
-							return;
-						}
-						unsub();
-						if (transitionId !== this.musicTransitionRequestId) {
-							return;
-						}
-						if (this.pendingStingerReturnUnsub === unsub) {
-							this.pendingStingerReturnUnsub = null;
-						}
-						const target = this.pendingStingerReturnTo;
-						this.pendingStingerReturnTo = null;
-						this.pendingStingerType = null;
-						this.pendingStingerVoice = null;
-						if (target !== null) {
-							runTransition(target, returnOffset);
-						}
-					};
-					const unsub = this.addEndedListener(stingerType, listener);
-					this.pendingStingerReturnUnsub = unsub;
-				}, error => {
-					if (transitionId !== this.musicTransitionRequestId) {
-						return;
-					}
-					this.pendingStingerReturnTo = null;
-					this.pendingStingerType = null;
-					this.pendingStingerVoice = null;
-					console.error(error);
-				});
-			return;
-		}
-
-		if (sync === 'immediate') {
-			runTransition(opts.to, startOffset);
-			return;
-		}
-
-		if (isMusicTransitionDelaySync(sync)) {
-			const delay_ms = sync.delay_ms >= 0 ? sync.delay_ms : 0;
-			this.musicTransitionTimer = setTimeout(() => {
-				this.musicTransitionTimer = null;
-				if (transitionId !== this.musicTransitionRequestId) {
-					return;
-				}
-				runTransition(opts.to, startOffset);
-			}, delay_ms);
-			return;
-		}
-
-		if (!currentRecord) {
-			runTransition(opts.to, startOffset);
-			return;
-		}
-
-		const duration = currentRecord.clip.duration;
-		if (!(duration > 0)) {
-			runTransition(opts.to, startOffset);
-			return;
-		}
-
-		const nowOffset = currentRecord.startOffset + (this.A.currentTime() - currentRecord.startedAt) * this.effectivePlaybackRate(currentRecord.params);
-		const offsetMod = ((nowOffset % duration) + duration) % duration;
-		const loopStart = currentRecord.meta.loop;
-		const delaySec = Math.max(
-			0,
-			((loopStart !== undefined && offsetMod < loopStart) ? loopStart : duration) - offsetMod,
-		);
-		this.musicTransitionTimer = setTimeout(() => {
-			this.musicTransitionTimer = null;
-			if (transitionId !== this.musicTransitionRequestId) {
-				return;
-			}
-			runTransition(opts.to, startOffset);
-		}, Math.floor(delaySec * 1000));
-	}
-
-	private getCurrentRecord(type: AudioType): ActiveVoiceRecord | null {
-		const handle = this.currentVoiceByType[type];
-		if (!handle) return null;
-		const record = this.voiceRecordByHandle.get(handle);
-		if (record && !record.finalized) {
-			return record;
-		}
-		return null;
-	}
-
-	private startMusicTransition(target: asset_id, fade_ms: number, crossfade_ms: number | undefined, start_at_loop_start: boolean, startAtSeconds?: number): void {
-		if (crossfade_ms > 0) {
-			this.startMusicWithCrossfade(target, crossfade_ms, start_at_loop_start, startAtSeconds);
-			return;
-		}
-		this.startMusicAfterFadeOut(target, fade_ms, start_at_loop_start, startAtSeconds);
-	}
-
-	private startMusicNow(target: asset_id, start_at_loop_start: boolean, startAtSeconds?: number): void {
-		const meta = this.getAudioMetaOrThrow(target);
-		const baseOffset = startAtSeconds !== undefined ? startAtSeconds : (start_at_loop_start && meta.loop !== undefined ? meta.loop : 0);
-		void (async () => {
-			try {
-				const clip = await this.clipFor(target);
-				const params: ModulationParams = { offset: baseOffset };
-				const playback = this.createVoiceParams(meta, params, clip);
-				const priority = meta.priority ?? 0;
-				this.startVoice('music', target, meta, clip, params, priority, playback);
-			} catch (error) {
-				console.error(error);
-			}
-		})();
-	}
-
-	private startMusicAfterFadeOut(target: asset_id, fade_ms: number, start_at_loop_start: boolean, startAtSeconds?: number): void {
-		const fadeOutMs = fade_ms;
-		const oldRecords = this.voicesByType.music.slice();
-		if (oldRecords.length === 0) {
-			this.startMusicNow(target, start_at_loop_start, startAtSeconds);
-			return;
-		}
-		if (fadeOutMs <= 0) {
-			this.stop('music', 'all');
-			this.startMusicNow(target, start_at_loop_start, startAtSeconds);
-			return;
-		}
-		const fadeOutSec = fadeOutMs / 1000;
-		for (let i = 0; i < oldRecords.length; i++) {
-			const record = oldRecords[i];
-			if (!record.finalized) {
-				record.handle.rampGainLinear(MIN_GAIN, fadeOutSec);
-			}
-		}
-		const transitionId = this.musicTransitionRequestId;
-		this.musicTransitionTimer = setTimeout(() => {
-			this.musicTransitionTimer = null;
-			if (transitionId !== this.musicTransitionRequestId) {
-				return;
-			}
-			for (let i = 0; i < oldRecords.length; i++) {
-				const record = oldRecords[i];
-				if (!record.finalized) {
-					this.stopVoiceRecord('music', record);
-				}
-			}
-			this.startMusicNow(target, start_at_loop_start, startAtSeconds);
-		}, fadeOutMs);
-	}
-
-	private stopMusicAfterFadeOut(transitionId: number, fade_ms: number): void {
-		const fadeOutMs = fade_ms;
-		const oldRecords = this.voicesByType.music.slice();
-		if (oldRecords.length === 0) {
-			return;
-		}
-		if (fadeOutMs <= 0) {
-			this.stop('music', 'all');
-			return;
-		}
-		const fadeOutSec = fadeOutMs / 1000;
-		for (let i = 0; i < oldRecords.length; i++) {
-			const record = oldRecords[i];
-			if (!record.finalized) {
-				record.handle.rampGainLinear(MIN_GAIN, fadeOutSec);
-			}
-		}
-		this.musicTransitionTimer = setTimeout(() => {
-			this.musicTransitionTimer = null;
-			if (transitionId !== this.musicTransitionRequestId) {
-				return;
-			}
-			for (let i = 0; i < oldRecords.length; i++) {
-				const record = oldRecords[i];
-				if (!record.finalized) {
-					this.stopVoiceRecord('music', record);
-				}
-			}
-		}, fadeOutMs);
-	}
-
-	private startMusicWithCrossfade(target: asset_id, crossfade_ms: number, start_at_loop_start: boolean, startAtSeconds?: number): void {
-		const crossfadeMs = crossfade_ms;
-		const crossfadeSec = crossfadeMs / 1000;
-		const oldRecords = this.voicesByType.music.slice();
-		const meta = this.getAudioMetaOrThrow(target);
-		const baseOffset = startAtSeconds !== undefined ? startAtSeconds : (start_at_loop_start && meta.loop !== undefined ? meta.loop : 0);
-		void (async () => {
-			try {
-				const clip = await this.clipFor(target);
-				const params: ModulationParams = { offset: baseOffset };
-				const playback = this.createVoiceParams(meta, params, clip);
-				if (crossfadeMs > 0) {
-					playback.gainLinear = MIN_GAIN;
-				}
-				const priority = meta.priority ?? 0;
-				const voiceId = this.startVoice('music', target, meta, clip, params, priority, playback);
-				if (voiceId === null) {
-					return;
-				}
-				if (crossfadeMs > 0) {
-					const voice = this.currentVoiceByType.music;
-					if (voice) {
-						voice.rampGainLinear(1.0, crossfadeSec);
-					}
-				}
-				for (let i = 0; i < oldRecords.length; i++) {
-					const oldRecord = oldRecords[i];
-					if (oldRecord.finalized || oldRecord.voiceId === voiceId) {
-						continue;
-					}
-					if (crossfadeMs > 0) {
-						oldRecord.handle.rampGainLinear(MIN_GAIN, crossfadeSec);
-						setTimeout(() => {
-							if (!oldRecord.finalized) {
-								this.stopVoiceRecord('music', oldRecord);
-							}
-						}, crossfadeMs);
-					} else {
-						this.stopVoiceRecord('music', oldRecord);
-					}
-				}
-			} catch (error) {
-				console.error(error);
-			}
-		})();
-	}
-
-	private beginMusicTransition(): number {
-		this.musicTransitionRequestId += 1;
-		if (this.musicTransitionTimer !== null) {
-			clearTimeout(this.musicTransitionTimer);
-			this.musicTransitionTimer = null;
-		}
-		if (this.pendingStingerReturnUnsub !== null) {
-			this.pendingStingerReturnUnsub();
-		}
-		if (this.pendingStingerType !== null && this.pendingStingerVoice !== null) {
-			this.stop(this.pendingStingerType, 'byvoice', this.pendingStingerVoice);
-		}
-		this.pendingStingerReturnUnsub = null;
-		this.pendingStingerReturnTo = null;
-		this.pendingStingerType = null;
-		this.pendingStingerVoice = null;
-		return this.musicTransitionRequestId;
-	}
-
 	public dispose(): void {
-		this.beginMusicTransition();
 		this.stopAllVoices();
 		this.stopMixer();
 		const clipIds = Object.keys(this.streamClips);

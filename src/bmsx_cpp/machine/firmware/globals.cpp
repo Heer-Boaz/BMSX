@@ -1472,10 +1472,8 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_apu_filter_q_milli", valueNumber(static_cast<double>(IO_APU_FILTER_Q_MILLI)));
 	setGlobal("sys_apu_filter_gain_millidb", valueNumber(static_cast<double>(IO_APU_FILTER_GAIN_MILLIDB)));
 	setGlobal("sys_apu_fade_samples", valueNumber(static_cast<double>(IO_APU_FADE_SAMPLES)));
-	setGlobal("sys_apu_crossfade_samples", valueNumber(static_cast<double>(IO_APU_CROSSFADE_SAMPLES)));
-	setGlobal("sys_apu_sync_loop", valueNumber(static_cast<double>(IO_APU_SYNC_LOOP)));
-	setGlobal("sys_apu_start_at_loop", valueNumber(static_cast<double>(IO_APU_START_AT_LOOP)));
-	setGlobal("sys_apu_start_fresh", valueNumber(static_cast<double>(IO_APU_START_FRESH)));
+	setGlobal("sys_apu_voice", valueNumber(static_cast<double>(IO_APU_VOICE)));
+	setGlobal("sys_apu_target_gain_q12", valueNumber(static_cast<double>(IO_APU_TARGET_GAIN_Q12)));
 	setGlobal("sys_apu_cmd", valueNumber(static_cast<double>(IO_APU_CMD)));
 	setGlobal("sys_apu_status", valueNumber(static_cast<double>(IO_APU_STATUS)));
 	setGlobal("sys_apu_event_kind", valueNumber(static_cast<double>(IO_APU_EVENT_KIND)));
@@ -1522,6 +1520,8 @@ void Runtime::setupBuiltins() {
 	setGlobal("apu_cmd_play", valueNumber(static_cast<double>(APU_CMD_PLAY)));
 	setGlobal("apu_cmd_stop_channel", valueNumber(static_cast<double>(APU_CMD_STOP_CHANNEL)));
 	setGlobal("apu_cmd_queue_play", valueNumber(static_cast<double>(APU_CMD_QUEUE_PLAY)));
+	setGlobal("apu_cmd_stop_voice", valueNumber(static_cast<double>(APU_CMD_STOP_VOICE)));
+	setGlobal("apu_cmd_ramp_voice", valueNumber(static_cast<double>(APU_CMD_RAMP_VOICE)));
 	setGlobal("apu_channel_sfx", valueNumber(static_cast<double>(APU_CHANNEL_SFX)));
 	setGlobal("apu_channel_music", valueNumber(static_cast<double>(APU_CHANNEL_MUSIC)));
 	setGlobal("apu_channel_ui", valueNumber(static_cast<double>(APU_CHANNEL_UI)));
@@ -1540,6 +1540,7 @@ void Runtime::setupBuiltins() {
 	setGlobal("apu_filter_highshelf", valueNumber(static_cast<double>(APU_FILTER_HIGHSHELF)));
 	setGlobal("apu_event_none", valueNumber(static_cast<double>(APU_EVENT_NONE)));
 	setGlobal("apu_event_voice_ended", valueNumber(static_cast<double>(APU_EVENT_VOICE_ENDED)));
+	setGlobal("apu_event_voice_started", valueNumber(static_cast<double>(APU_EVENT_VOICE_STARTED)));
 	setGlobal("dma_ctrl_start", valueNumber(static_cast<double>(DMA_CTRL_START)));
 	setGlobal("dma_ctrl_strict", valueNumber(static_cast<double>(DMA_CTRL_STRICT)));
 	setGlobal("dma_status_busy", valueNumber(static_cast<double>(DMA_STATUS_BUSY)));

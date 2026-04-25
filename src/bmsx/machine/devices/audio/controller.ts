@@ -10,9 +10,12 @@ import {
 	APU_CMD_NONE,
 	APU_CMD_PLAY,
 	APU_CMD_QUEUE_PLAY,
+	APU_CMD_RAMP_VOICE,
 	APU_CMD_STOP_CHANNEL,
+	APU_CMD_STOP_VOICE,
 	APU_EVENT_NONE,
 	APU_EVENT_VOICE_ENDED,
+	APU_EVENT_VOICE_STARTED,
 	APU_FILTER_ALLPASS,
 	APU_FILTER_BANDPASS,
 	APU_FILTER_HIGHPASS,
@@ -25,7 +28,6 @@ import {
 	APU_PRIORITY_AUTO,
 	IO_APU_CHANNEL,
 	IO_APU_CMD,
-	IO_APU_CROSSFADE_SAMPLES,
 	IO_APU_EVENT_CHANNEL,
 	IO_APU_EVENT_HANDLE,
 	IO_APU_EVENT_KIND,
@@ -41,10 +43,9 @@ import {
 	IO_APU_PRIORITY,
 	IO_APU_RATE_STEP_Q16,
 	IO_APU_START_SAMPLE,
-	IO_APU_START_AT_LOOP,
-	IO_APU_START_FRESH,
 	IO_APU_STATUS,
-	IO_APU_SYNC_LOOP,
+	IO_APU_TARGET_GAIN_Q12,
+	IO_APU_VOICE,
 	IRQ_APU,
 } from '../../bus/io';
 import { Memory, type AssetEntry } from '../../memory/memory';
@@ -170,10 +171,8 @@ export class AudioController {
 		this.memory.writeValue(IO_APU_FILTER_Q_MILLI, 1000);
 		this.memory.writeValue(IO_APU_FILTER_GAIN_MILLIDB, 0);
 		this.memory.writeValue(IO_APU_FADE_SAMPLES, 0);
-		this.memory.writeValue(IO_APU_CROSSFADE_SAMPLES, 0);
-		this.memory.writeValue(IO_APU_SYNC_LOOP, 0);
-		this.memory.writeValue(IO_APU_START_AT_LOOP, 0);
-		this.memory.writeValue(IO_APU_START_FRESH, 0);
+		this.memory.writeValue(IO_APU_VOICE, 0);
+		this.memory.writeValue(IO_APU_TARGET_GAIN_Q12, APU_GAIN_Q12_ONE);
 	}
 
 	private clearCommandLatch(): void {
@@ -193,6 +192,14 @@ export class AudioController {
 				return;
 			case APU_CMD_STOP_CHANNEL:
 				this.stopChannel();
+				this.clearCommandLatch();
+				return;
+			case APU_CMD_STOP_VOICE:
+				this.stopVoice();
+				this.clearCommandLatch();
+				return;
+			case APU_CMD_RAMP_VOICE:
+				this.rampVoice();
 				this.clearCommandLatch();
 				return;
 		}
@@ -227,7 +234,7 @@ export class AudioController {
 		return entry;
 	}
 
-	private startPlay(handle: number, id: string, channel: AudioType, request: SoundMasterResolvedPlayRequest): void {
+	private startPlay(handle: number, id: string, channel: AudioType, request: SoundMasterResolvedPlayRequest, emitStarted = true): void {
 		if (!this.soundMaster.isRuntimeAudioReady()) {
 			throw new Error('[APU] SoundMaster runtime audio is not initialized.');
 		}
@@ -236,43 +243,24 @@ export class AudioController {
 		}
 		this.activeHandleByType[channel] = handle;
 		this.playSequenceByType[channel] = (this.playSequenceByType[channel] + 1) >>> 0;
-		if (channel === 'music') {
-			this.activeVoiceByType[channel] = 0;
-			this.startMusicTransitionFromApu(id);
-			return;
-		}
 		this.activeVoiceByType[channel] = ACTIVE_VOICE_PENDING;
 		const playSequence = this.playSequenceByType[channel];
-			void this.soundMaster.playResolved(id, request).then((voiceId) => {
-				if (this.playSequenceByType[channel] !== playSequence) {
-					return;
-				}
-				this.activeVoiceByType[channel] = voiceId;
-			}, error => {
-				if (this.playSequenceByType[channel] !== playSequence) {
-					return;
-				}
-				this.activeVoiceByType[channel] = 0;
-				this.activeHandleByType[channel] = 0;
-				console.error(error);
-			});
-	}
-
-	private startMusicTransitionFromApu(id: string): void {
-		const fadeSamples = this.memory.readIoU32(IO_APU_FADE_SAMPLES);
-		const crossfadeSamples = this.memory.readIoU32(IO_APU_CROSSFADE_SAMPLES);
-		const request: Parameters<SoundMaster['requestMusicTransition']>[0] = {
-			to: id,
-			sync: this.memory.readIoU32(IO_APU_SYNC_LOOP) !== 0 ? 'loop' : 'immediate',
-			start_at_loop_start: this.memory.readIoU32(IO_APU_START_AT_LOOP) !== 0,
-			start_fresh: this.memory.readIoU32(IO_APU_START_FRESH) !== 0,
-		};
-		if (crossfadeSamples > 0) {
-			request.crossfade_ms = apuSamplesToMilliseconds(crossfadeSamples);
-		} else {
-			request.fade_ms = apuSamplesToMilliseconds(fadeSamples);
-		}
-		this.soundMaster.requestMusicTransition(request);
+		void this.soundMaster.playResolved(id, request).then((voiceId) => {
+			if (this.playSequenceByType[channel] !== playSequence) {
+				return;
+			}
+			this.activeVoiceByType[channel] = voiceId;
+			if (emitStarted) {
+				this.emitVoiceEvent(APU_EVENT_VOICE_STARTED, channel, handle, voiceId);
+			}
+		}, error => {
+			if (this.playSequenceByType[channel] !== playSequence) {
+				return;
+			}
+			this.activeVoiceByType[channel] = 0;
+			this.activeHandleByType[channel] = 0;
+			console.error(error);
+		});
 	}
 
 	private stopChannel(): void {
@@ -292,6 +280,23 @@ export class AudioController {
 			return;
 		}
 		this.soundMaster.stop(channel, 'all');
+	}
+
+	private stopVoice(): void {
+		const voiceId = this.memory.readIoU32(IO_APU_VOICE);
+		const fadeSamples = this.memory.readIoU32(IO_APU_FADE_SAMPLES);
+		this.soundMaster.stopVoiceById(voiceId, fadeSamples > 0 ? apuSamplesToMilliseconds(fadeSamples) : undefined);
+	}
+
+	private rampVoice(): void {
+		const voiceId = this.memory.readIoU32(IO_APU_VOICE);
+		const targetGain = this.memory.readIoI32(IO_APU_TARGET_GAIN_Q12) / APU_GAIN_Q12_ONE;
+		const fadeSamples = this.memory.readIoU32(IO_APU_FADE_SAMPLES);
+		if (fadeSamples > 0) {
+			this.soundMaster.rampVoiceGainLinear(voiceId, targetGain, fadeSamples / APU_SAMPLE_RATE_HZ);
+			return;
+		}
+		this.soundMaster.setVoiceGainLinear(voiceId, targetGain);
 	}
 
 	private readResolvedPlayRequest(): SoundMasterResolvedPlayRequest {
@@ -320,12 +325,11 @@ export class AudioController {
 		return request;
 	}
 
-	private onVoiceEnded(type: AudioType, info: ActiveVoiceInfo): void {
-		const handle = this.memory.resolveAssetHandle(info.id);
+	private emitVoiceEvent(kind: number, type: AudioType, handle: number, voiceId: number): void {
 		const activeVoice = this.activeVoiceByType[type];
-		const activeEnded = activeVoice > 0
-			? activeVoice === info.voiceId
-			: activeVoice === 0 && this.activeHandleByType[type] === handle;
+		const activeEnded = kind === APU_EVENT_VOICE_ENDED && (activeVoice > 0
+			? activeVoice === voiceId
+			: activeVoice === 0 && this.activeHandleByType[type] === handle);
 		if (activeEnded) {
 			const queue = this.queuedByType[type];
 			const first = this.queuedFirstByType[type];
@@ -336,18 +340,22 @@ export class AudioController {
 					queue.length = 0;
 					this.queuedFirstByType[type] = 0;
 				}
-				this.startPlay(queued.handle, queued.id, type, queued.request);
+				this.startPlay(queued.handle, queued.id, type, queued.request, false);
 			} else {
 				this.activeHandleByType[type] = 0;
 			}
 		}
 		this.eventSequence = (this.eventSequence + 1) >>> 0;
-		this.memory.writeValue(IO_APU_EVENT_KIND, APU_EVENT_VOICE_ENDED);
+		this.memory.writeValue(IO_APU_EVENT_KIND, kind);
 		this.memory.writeValue(IO_APU_EVENT_CHANNEL, encodeChannel(type));
 		this.memory.writeValue(IO_APU_EVENT_HANDLE, handle);
-		this.memory.writeValue(IO_APU_EVENT_VOICE, info.voiceId >>> 0);
+		this.memory.writeValue(IO_APU_EVENT_VOICE, voiceId >>> 0);
 		this.memory.writeValue(IO_APU_EVENT_SEQ, this.eventSequence);
 		this.irq.raise(IRQ_APU);
+	}
+
+	private onVoiceEnded(type: AudioType, info: ActiveVoiceInfo): void {
+		this.emitVoiceEvent(APU_EVENT_VOICE_ENDED, type, this.memory.resolveAssetHandle(info.id), info.voiceId);
 	}
 
 }

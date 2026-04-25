@@ -49,10 +49,12 @@ private:
 	void play();
 	void queuePlay();
 	const Memory::AssetEntry& requireAudioEntry(uint32_t handle) const;
-	void startPlay(uint32_t handle, const std::string& id, AudioType channel, const SoundMasterResolvedPlayRequest& request);
-	void startMusicTransitionFromApu(const std::string& id);
+	void startPlay(uint32_t handle, const std::string& id, AudioType channel, const SoundMasterResolvedPlayRequest& request, bool emitStarted = true);
 	void stopChannel();
+	void stopVoice();
+	void rampVoice();
 	SoundMasterResolvedPlayRequest readResolvedPlayRequest() const;
+	void emitVoiceEvent(uint32_t kind, AudioType type, uint32_t handle, VoiceId voiceId);
 	void onVoiceEnded(AudioType type, const ActiveVoiceInfo& info);
 };
 

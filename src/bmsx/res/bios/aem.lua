@@ -9,10 +9,22 @@ local global_actor_key<const> = false
 
 local events
 local music_request_seq
+local current_music_handle
+local current_music_voice
+local expected_music_seq
+local expected_music_handle
+local pending_music_seq
+local pending_music_asset
+local pending_music_transition
+local pending_crossfade_seq
+local pending_crossfade_handle
+local pending_crossfade_old_voice
+local pending_crossfade_samples
 local stinger_seq
 local stinger_handle
 local stinger_channel
-local stinger_music_handle
+local stinger_voice
+local stinger_music_asset
 local stinger_music_transition
 
 local resolve_data_path<const> = function(path)
@@ -101,11 +113,11 @@ local compile_modulation<const> = function(action, params)
 end
 
 local compile_transition<const> = function(transition)
-	transition.__apu_fade_samples = (transition.fade_ms or 0) * apu_sample_rate_hz / 1000
-	transition.__apu_crossfade_samples = (transition.crossfade_ms or 0) * apu_sample_rate_hz / 1000
-	transition.__apu_sync_loop = transition.sync == 'loop' and 1 or 0
-	transition.__apu_start_at_loop = transition.start_at_loop_start and 1 or 0
-	transition.__apu_start_fresh = transition.start_fresh and 1 or 0
+	transition.__apu_fade_samples = apu.ms_to_samples(transition.fade_ms or 0)
+	transition.__apu_crossfade_samples = apu.ms_to_samples(transition.crossfade_ms or 0)
+	transition.__apu_wait_for_current = transition.sync == 'loop'
+	transition.__apu_start_at_loop = transition.start_at_loop_start or false
+	transition.__apu_start_fresh = transition.start_fresh or false
 end
 
 local compile_action
@@ -345,8 +357,7 @@ local play_action_apu<const> = function(handle, channel, action, cmd)
 	end
 	local rate_step_q16<const> = rate * (2 ^ (pitch_delta / 12)) * apu_rate_step_q16_one
 
-	memwrite(
-		sys_apu_handle,
+	apu.play(
 		handle,
 		channel,
 		action.__apu_priority,
@@ -357,98 +368,133 @@ local play_action_apu<const> = function(handle, channel, action, cmd)
 		action.__apu_filter_freq_hz,
 		action.__apu_filter_q_milli,
 		action.__apu_filter_gain_millidb,
-		0,
-		0,
-		0,
-		0,
-		0,
 		cmd
 	)
 end
 
-local play_transition_apu<const> = function(handle, transition)
-	memwrite(
-		sys_apu_handle,
-		handle,
-		apu_channel_music,
-		apu_priority_auto,
-		apu_rate_step_q16_one,
-		apu_gain_q12_one,
-		0,
-		apu_filter_none,
-		0,
-		1000,
-		0,
-		transition.__apu_fade_samples,
-		transition.__apu_crossfade_samples,
-		transition.__apu_sync_loop,
-		transition.__apu_start_at_loop,
-		transition.__apu_start_fresh,
-		apu_cmd_play
-	)
+local transition_start_sample<const> = function(asset, transition)
+	if transition.__apu_start_at_loop then
+		return apu.loop_start_sample(asset)
+	end
+	return 0
 end
 
-local play_plain_apu<const> = function(handle, channel, cmd)
-	memwrite(
-		sys_apu_handle,
-		handle,
-		channel,
-		apu_priority_auto,
-		apu_rate_step_q16_one,
-		apu_gain_q12_one,
-		0,
-		apu_filter_none,
-		0,
-		1000,
-		0,
-		0,
-		0,
-		0,
-		0,
-		0,
-		cmd
-	)
+local clear_pending_music<const> = function()
+	pending_music_seq = 0
+	pending_music_asset = nil
+	pending_music_transition = nil
+end
+
+local clear_pending_crossfade<const> = function()
+	pending_crossfade_seq = 0
+	pending_crossfade_handle = 0
+	pending_crossfade_old_voice = 0
+	pending_crossfade_samples = 0
 end
 
 local clear_stinger<const> = function()
 	stinger_seq = 0
 	stinger_handle = 0
 	stinger_channel = 0
-	stinger_music_handle = 0
+	stinger_voice = 0
+	stinger_music_asset = nil
 	stinger_music_transition = nil
 end
 
 local begin_music_request<const> = function()
 	music_request_seq = music_request_seq + 1
+	if stinger_voice ~= 0 then
+		apu.stop_voice(stinger_voice, 0)
+	end
 	clear_stinger()
+	clear_pending_music()
+	clear_pending_crossfade()
+	expected_music_seq = 0
+	expected_music_handle = 0
 	return music_request_seq
+end
+
+local play_music_now<const> = function(asset, transition, gain_q12)
+	current_music_handle = asset.handle
+	current_music_voice = 0
+	expected_music_seq = music_request_seq
+	expected_music_handle = asset.handle
+	apu.play_music(asset, transition_start_sample(asset, transition), gain_q12 or apu_gain_q12_one, apu_cmd_play)
+end
+
+local queue_music_after_current<const> = function(request_seq, asset, transition)
+	pending_music_seq = request_seq
+	pending_music_asset = asset
+	pending_music_transition = transition
+end
+
+local play_transition_apu<const> = function(asset, transition)
+	if transition.__apu_wait_for_current and current_music_voice ~= 0 then
+		queue_music_after_current(music_request_seq, asset, transition)
+		return
+	end
+
+	local crossfade_samples<const> = transition.__apu_crossfade_samples
+	if crossfade_samples > 0 and current_music_voice ~= 0 then
+		pending_crossfade_seq = music_request_seq
+		pending_crossfade_handle = asset.handle
+		pending_crossfade_old_voice = current_music_voice
+		pending_crossfade_samples = crossfade_samples
+		play_music_now(asset, transition, 0)
+		return
+	end
+
+	local fade_samples<const> = transition.__apu_fade_samples
+	if fade_samples > 0 and current_music_voice ~= 0 then
+		queue_music_after_current(music_request_seq, asset, transition)
+		apu.stop_voice(current_music_voice, fade_samples)
+		return
+	end
+
+	if current_music_handle ~= 0 then
+		apu.stop_channel(apu_channel_music, 0)
+	end
+	play_music_now(asset, transition)
+end
+
+local transition_target_asset<const> = function(transition, sync)
+	local target_id = transition.audio_id
+	if sync ~= nil and type(sync) ~= 'string' and sync.return_to ~= nil then
+		target_id = sync.return_to
+	end
+	if target_id == nil then
+		error('aem music_transition missing audio_id target')
+	end
+	return assets.audio[target_id]
 end
 
 local dispatch_music_transition<const> = function(transition)
 	local request_seq<const> = begin_music_request()
 	local sync<const> = transition.sync
-	if sync ~= nil and type(sync) ~= 'string' then
-		local target_handle
-		if sync.return_to ~= nil then
-			target_handle = assets.audio[sync.return_to].handle
-		else
-			target_handle = assets.audio[transition.audio_id].handle
+	local target_asset<const> = transition_target_asset(transition, sync)
+	if sync == nil or type(sync) == 'string' then
+		if not transition.__apu_start_fresh and current_music_handle == target_asset.handle then
+			return
 		end
+	end
+	if sync ~= nil and type(sync) ~= 'string' then
 		local stinger_id<const> = sync.stinger
 		local stinger_type<const> = assets.audio[stinger_id].audiometa.audiotype
 		apu.stop_channel(apu_channel_music, 0)
+		current_music_handle = 0
+		current_music_voice = 0
 		stinger_seq = request_seq
 		stinger_handle = assets.audio[stinger_id].handle
 		stinger_channel = apu.channel[stinger_type]
 		if stinger_channel == nil then
 			error('aem invalid stinger audio asset type: ' .. tostring(stinger_type))
 		end
-		stinger_music_handle = target_handle
+		stinger_music_asset = target_asset
 		stinger_music_transition = transition
-		play_plain_apu(stinger_handle, stinger_channel, apu_cmd_play)
+		apu.play_plain(stinger_handle, stinger_channel, apu_cmd_play)
 		return
 	end
-	play_transition_apu(assets.audio[transition.audio_id].handle, transition)
+	play_transition_apu(target_asset, transition)
 end
 
 local dispatch_audio_play<const> = function(entry, handle, action, payload)
@@ -460,11 +506,14 @@ end
 
 local dispatch_action<const> = function(entry, action, payload)
 	if type(action) == 'string' then
-		play_plain_apu(assets.audio[action].handle, entry.__channel, entry.__queued and apu_cmd_queue_play or apu_cmd_play)
+		apu.play_plain(assets.audio[action].handle, entry.__channel, entry.__queued and apu_cmd_queue_play or apu_cmd_play)
 		return
 	end
 	if action.stop_music then
-		local fade_samples<const> = type(action.stop_music) == 'boolean' and 0 or ((action.stop_music.fade_ms or 0) * apu_sample_rate_hz / 1000)
+		begin_music_request()
+		current_music_handle = 0
+		current_music_voice = 0
+		local fade_samples<const> = type(action.stop_music) == 'boolean' and 0 or apu.ms_to_samples(action.stop_music.fade_ms or 0)
 		apu.stop_channel(apu_channel_music, fade_samples)
 		return
 	end
@@ -500,6 +549,12 @@ end
 
 local reset_audio_state<const> = function()
 	music_request_seq = 0
+	current_music_handle = 0
+	current_music_voice = 0
+	expected_music_seq = 0
+	expected_music_handle = 0
+	clear_pending_music()
+	clear_pending_crossfade()
 	clear_stinger()
 end
 
@@ -518,16 +573,70 @@ local reload<const> = function()
 end
 
 local on_apu_irq<const> = function()
-	if mem[sys_apu_event_kind] ~= apu_event_voice_ended then
-		return
-	end
+	local kind<const> = mem[sys_apu_event_kind]
 	local channel<const> = mem[sys_apu_event_channel]
 	local handle<const> = mem[sys_apu_event_handle]
+	local voice<const> = mem[sys_apu_event_voice]
+
+	if kind == apu_event_voice_started then
+		if stinger_handle == handle
+			and stinger_channel == channel
+			and stinger_seq == music_request_seq then
+			stinger_voice = voice
+			return
+		end
+
+		if channel == apu_channel_music then
+			local crossfade_started<const> = pending_crossfade_seq == music_request_seq
+				and pending_crossfade_handle == handle
+			local expected_started<const> = expected_music_seq == music_request_seq
+				and expected_music_handle == handle
+			if crossfade_started or expected_started then
+				current_music_handle = handle
+				current_music_voice = voice
+			end
+			if crossfade_started then
+				apu.ramp_voice(voice, apu_gain_q12_one, pending_crossfade_samples)
+				if pending_crossfade_old_voice ~= 0 then
+					apu.stop_voice(pending_crossfade_old_voice, pending_crossfade_samples)
+				end
+				clear_pending_crossfade()
+			end
+		end
+		return
+	end
+
+	if kind ~= apu_event_voice_ended then
+		return
+	end
+
 	if stinger_handle == handle
 		and stinger_channel == channel
 		and stinger_seq == music_request_seq then
-		play_transition_apu(stinger_music_handle, stinger_music_transition)
+		local target_asset<const> = stinger_music_asset
+		local transition<const> = stinger_music_transition
 		clear_stinger()
+		play_transition_apu(target_asset, transition)
+		return
+	end
+
+	if channel ~= apu_channel_music then
+		return
+	end
+
+	local current_ended<const> = (current_music_voice ~= 0 and current_music_voice == voice)
+		or (current_music_voice == 0 and current_music_handle == handle)
+	if not current_ended then
+		return
+	end
+
+	current_music_handle = 0
+	current_music_voice = 0
+	if pending_music_seq == music_request_seq and pending_music_asset ~= nil then
+		local target_asset<const> = pending_music_asset
+		local transition<const> = pending_music_transition
+		clear_pending_music()
+		play_music_now(target_asset, transition)
 	end
 end
 

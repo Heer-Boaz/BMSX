@@ -46,9 +46,12 @@ import {
 	APU_CHANNEL_UI,
 	APU_CMD_PLAY,
 	APU_CMD_QUEUE_PLAY,
+	APU_CMD_RAMP_VOICE,
 	APU_CMD_STOP_CHANNEL,
+	APU_CMD_STOP_VOICE,
 	APU_EVENT_NONE,
 	APU_EVENT_VOICE_ENDED,
+	APU_EVENT_VOICE_STARTED,
 	APU_FILTER_ALLPASS,
 	APU_FILTER_BANDPASS,
 	APU_FILTER_HIGHPASS,
@@ -118,7 +121,6 @@ import {
 	IO_ARG_STRIDE,
 	IO_APU_CHANNEL,
 	IO_APU_CMD,
-	IO_APU_CROSSFADE_SAMPLES,
 	IO_APU_EVENT_CHANNEL,
 	IO_APU_EVENT_HANDLE,
 	IO_APU_EVENT_KIND,
@@ -134,10 +136,9 @@ import {
 	IO_APU_PRIORITY,
 	IO_APU_RATE_STEP_Q16,
 	IO_APU_START_SAMPLE,
-	IO_APU_START_AT_LOOP,
-	IO_APU_START_FRESH,
 	IO_APU_STATUS,
-	IO_APU_SYNC_LOOP,
+	IO_APU_TARGET_GAIN_Q12,
+	IO_APU_VOICE,
 	IO_CMD_VDP_BLIT,
 	IO_CMD_VDP_CLEAR,
 	IO_CMD_VDP_DRAW_LINE,
@@ -1312,10 +1313,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_apu_filter_q_milli', IO_APU_FILTER_Q_MILLI);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_filter_gain_millidb', IO_APU_FILTER_GAIN_MILLIDB);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_fade_samples', IO_APU_FADE_SAMPLES);
-	luaPipeline.registerGlobal(runtime, 'sys_apu_crossfade_samples', IO_APU_CROSSFADE_SAMPLES);
-	luaPipeline.registerGlobal(runtime, 'sys_apu_sync_loop', IO_APU_SYNC_LOOP);
-	luaPipeline.registerGlobal(runtime, 'sys_apu_start_at_loop', IO_APU_START_AT_LOOP);
-	luaPipeline.registerGlobal(runtime, 'sys_apu_start_fresh', IO_APU_START_FRESH);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_voice', IO_APU_VOICE);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_target_gain_q12', IO_APU_TARGET_GAIN_Q12);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_cmd', IO_APU_CMD);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_status', IO_APU_STATUS);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_event_kind', IO_APU_EVENT_KIND);
@@ -1326,6 +1325,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'apu_cmd_play', APU_CMD_PLAY);
 	luaPipeline.registerGlobal(runtime, 'apu_cmd_stop_channel', APU_CMD_STOP_CHANNEL);
 	luaPipeline.registerGlobal(runtime, 'apu_cmd_queue_play', APU_CMD_QUEUE_PLAY);
+	luaPipeline.registerGlobal(runtime, 'apu_cmd_stop_voice', APU_CMD_STOP_VOICE);
+	luaPipeline.registerGlobal(runtime, 'apu_cmd_ramp_voice', APU_CMD_RAMP_VOICE);
 	luaPipeline.registerGlobal(runtime, 'apu_channel_sfx', APU_CHANNEL_SFX);
 	luaPipeline.registerGlobal(runtime, 'apu_channel_music', APU_CHANNEL_MUSIC);
 	luaPipeline.registerGlobal(runtime, 'apu_channel_ui', APU_CHANNEL_UI);
@@ -1344,6 +1345,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'apu_filter_highshelf', APU_FILTER_HIGHSHELF);
 	luaPipeline.registerGlobal(runtime, 'apu_event_none', APU_EVENT_NONE);
 	luaPipeline.registerGlobal(runtime, 'apu_event_voice_ended', APU_EVENT_VOICE_ENDED);
+	luaPipeline.registerGlobal(runtime, 'apu_event_voice_started', APU_EVENT_VOICE_STARTED);
 	luaPipeline.registerGlobal(runtime, 'inp_ctrl_commit', INP_CTRL_COMMIT);
 	luaPipeline.registerGlobal(runtime, 'inp_ctrl_arm', INP_CTRL_ARM);
 	luaPipeline.registerGlobal(runtime, 'inp_ctrl_reset', INP_CTRL_RESET);

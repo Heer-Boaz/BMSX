@@ -93,23 +93,6 @@ enum class AudioStopSelector {
 	ByVoice,
 };
 
-struct MusicTransitionSync {
-	enum class Kind { Immediate, Loop, Delay, Stinger } kind = Kind::Immediate;
-	i32 delayMs = 0;
-	AssetId stinger;
-	std::optional<AssetId> returnTo;
-	bool returnToPrevious = false;
-};
-
-struct MusicTransitionRequest {
-	AssetId to;
-	MusicTransitionSync sync;
-	i32 fadeMs = 0;
-	std::optional<i32> crossfadeMs;
-	bool startAtLoopStart = false;
-	bool startFresh = false;
-};
-
 struct AudioDataView {
 	const u8* data = nullptr;
 	size_t frames = 0;
@@ -134,6 +117,9 @@ public:
 
 	VoiceId play(const AssetId& id, const SoundMasterPlayRequest& request = {});
 	VoiceId playResolved(const AssetId& id, const SoundMasterResolvedPlayRequest& request);
+	bool setVoiceGainLinear(VoiceId voiceId, f32 gain);
+	bool rampVoiceGainLinear(VoiceId voiceId, f32 target, f64 seconds);
+	bool stopVoiceById(VoiceId voiceId, std::optional<i32> fadeMs = std::nullopt);
 	void invalidateClip(const AssetId& id);
 	void stop(AudioType type, AudioStopSelector which, VoiceId voiceId = 0, const AssetId& id = {});
 	void stopEffect();
@@ -159,8 +145,6 @@ public:
 	std::vector<PausedSnapshot> drainPausedSnapshots(AudioType type);
 
 	SubscriptionHandle addEndedListener(AudioType type, std::function<void(const ActiveVoiceInfo&)> listener);
-
-	void requestMusicTransition(const MusicTransitionRequest& request);
 
 	void renderSamples(i16* output, size_t frameCount, i32 outputSampleRate);
 
@@ -206,12 +190,6 @@ private:
 		BadpDecoderState badp;
 	};
 
-	struct PendingTransition {
-		MusicTransitionRequest request;
-		f64 remainingSec = 0.0;
-		std::optional<f64> startAtSeconds;
-	};
-
 	ModulationParams resolvePlayParams(const ModulationInput& input);
 	ModulationParams resolveResolvedPlayParams(const SoundMasterResolvedPlayRequest& request) const;
 	std::optional<ModulationInput> resolveModulationPreset(const AssetId& key) const;
@@ -224,13 +202,6 @@ private:
 	void removeVoice(AudioType type, size_t index);
 	void finalizeVoiceEnd(AudioType type, const VoiceRecord& record);
 	int selectVoiceDropIndex(const std::vector<VoiceRecord>& pool) const;
-
-	void startMusicNow(const AssetId& target, bool startAtLoopStart, std::optional<f64> startAtSeconds);
-	void startMusicWithCrossfade(const AssetId& target, f64 crossfadeSec, bool startAtLoopStart, std::optional<f64> startAtSeconds);
-	void startMusicAfterFadeOut(const AssetId& target, f64 fadeSec, bool startAtLoopStart, std::optional<f64> startAtSeconds);
-	void startMusicTransition(const AssetId& target, i32 fadeMs, std::optional<i32> crossfadeMs, bool startAtLoopStart, std::optional<f64> startAtSeconds);
-	void enqueueTransition(const MusicTransitionRequest& request, f64 delaySec, std::optional<f64> startAtSeconds);
-	void processPendingTransitions(f64 dt);
 	void rampVoiceGain(VoiceRecord& record, f32 target, f64 durationSec);
 	void badpLoadBlock(VoiceRecord& record, size_t offset);
 	void badpSeekToFrame(VoiceRecord& record, size_t frame);
@@ -258,16 +229,6 @@ private:
 
 	std::mt19937 m_rng;
 	mutable std::uniform_real_distribution<f32> m_unitDist;
-
-	void cancelActiveMusicTransition();
-
-	std::optional<PendingTransition> m_pendingTransition;
-	std::optional<AssetId> m_pendingStingerReturnTo;
-	std::optional<f64> m_pendingStingerReturnOffset;
-	std::optional<SubscriptionHandle> m_pendingStingerEndListener;
-	std::optional<AudioType> m_pendingStingerVoiceType;
-	VoiceId m_pendingStingerVoiceId = 0;
-	u64 m_musicTransitionRequestId = 0;
 
 	std::array<size_t, 3> m_maxVoicesByType;
 	std::vector<f32> m_mixBuffer;
