@@ -42,7 +42,7 @@ type FirmwareFontDescriptor = {
 
 export class Api {
 	private readonly storage: RuntimeStorage;
-	private readonly font: BFont;
+	private defaultFont: BFont | null = null;
 	private readonly runtimeFonts: BFont[] = [];
 	private readonly fontIds = new WeakMap<BFont, number>();
 	private readonly fontDescriptors = new WeakMap<BFont, FirmwareFontDescriptor>();
@@ -60,8 +60,6 @@ export class Api {
 		}
 		this.storage = options.storage;
 		this._runtime = options.runtime;
-		this.font = new Font();
-		this.registerFont(this.font);
 	}
 
 	// start normalized-body-acceptable -- Font ids and compiler slots share a cache-insert shape but not ownership.
@@ -83,6 +81,14 @@ export class Api {
 			throw new Error(`[FirmwareApi] Unknown font id ${id}.`);
 		}
 		return font;
+	}
+
+	private getDefaultFont(): BFont {
+		if (this.defaultFont === null) {
+			this.defaultFont = new Font();
+			this.registerFont(this.defaultFont);
+		}
+		return this.defaultFont;
 	}
 
 	private buildFontDescriptor(font: BFont): FirmwareFontDescriptor {
@@ -273,7 +279,7 @@ export class Api {
 	}
 
 	public get_default_font(): FirmwareFontDescriptor {
-		return this.buildFontDescriptor(this.font);
+		return this.buildFontDescriptor(this.getDefaultFont());
 	}
 
 	public dset(index: number, value: number): void {

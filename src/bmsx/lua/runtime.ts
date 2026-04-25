@@ -55,6 +55,7 @@ import { isLuaHandlerFunction } from './handler_cache';
 import { LuaInteropAdapter } from '../machine/firmware/js_bridge';
 import { getCachedLuaParse } from './analysis/cache';
 import { ScratchBuffer } from '../common/scratchbuffer';
+import { luaModulo } from './numeric';
 
 type ExecutionFrame = any;
 type StatementsFrame = any;
@@ -1304,7 +1305,7 @@ export class LuaInterpreter {
 			case LuaBinaryOperator.FloorDivide:
 				return this.evaluateFloorDivision(expression, environment, varargs);
 			case LuaBinaryOperator.Modulus:
-				return this.evaluateArithmeticExpression(expression, environment, varargs, '__mod', (a, b) => a % b, 'Modulus operands must be numbers or define __mod metamethod.');
+				return this.evaluateArithmeticExpression(expression, environment, varargs, '__mod', luaModulo, 'Modulus operands must be numbers or define __mod metamethod.');
 			case LuaBinaryOperator.Exponent:
 				return this.evaluateArithmeticExpression(expression, environment, varargs, '__pow', (a, b) => Math.pow(a, b), 'Exponent operands must be numbers or define __pow metamethod.');
 			default:
@@ -1695,7 +1696,7 @@ export class LuaInterpreter {
 			case LuaAssignmentOperator.DivideAssign:
 				return this.applyAugmentedArithmetic(current, operand, '__div', 'Division assignment requires numeric operands or __div metamethod.', range, (a, b) => a / b);
 			case LuaAssignmentOperator.ModulusAssign:
-				return this.applyAugmentedArithmetic(current, operand, '__mod', 'Modulo assignment requires numeric operands or __mod metamethod.', range, (a, b) => a % b);
+				return this.applyAugmentedArithmetic(current, operand, '__mod', 'Modulo assignment requires numeric operands or __mod metamethod.', range, luaModulo);
 			case LuaAssignmentOperator.ExponentAssign:
 				return this.applyAugmentedArithmetic(current, operand, '__pow', 'Exponent assignment requires numeric operands or __pow metamethod.', range, (a, b) => Math.pow(a, b));
 			default:

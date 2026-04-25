@@ -56,6 +56,7 @@ import {
 	classifyFunctionDeclarationTarget,
 } from './target_semantics';
 import { getMemoryAccessKindForName, MemoryAccessKind } from '../memory/access_kind';
+import { luaModulo } from '../../lua/numeric';
 
 export type CompiledProgram = {
 	program: Program;
@@ -1548,7 +1549,7 @@ class FunctionBuilder {
 			case LuaBinaryOperator.FloorDivide:
 				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => Math.floor(a / b));
 			case LuaBinaryOperator.Modulus:
-				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a % b);
+				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, luaModulo);
 			case LuaBinaryOperator.Concat:
 				return this.evaluateCompileTimeConcat(expression.left, expression.right);
 			case LuaBinaryOperator.Exponent:

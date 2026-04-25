@@ -46,6 +46,7 @@ local swap_remove<const> = require('swap_remove')
 local timeline<const> = require('timeline/index')
 local aem<const> = require('aem')
 local progression<const> = require('progression')
+local romdir<const> = require('romdir')
 
 local world_instance<const> = world_module.instance
 
@@ -370,9 +371,9 @@ function engine.vdp_load_slot(slot, atlas_id)
 		vdp_load_queue_tail = 0
 	end
 	local atlas_name<const> = string.format('_atlas_%02d', atlas_id)
-	local rom_base<const>, start<const>, finish<const> = resolve_cart_rom_asset_range(atlas_name)
-	local src<const> = rom_base + start
-	local len<const> = finish - start
+	local atlas<const> = romdir.cart_atlas(atlas_name)
+	local src<const> = atlas.addr
+	local len<const> = atlas.len
 	local dst
 	local cap
 	if slot == 0 then
@@ -406,9 +407,9 @@ function engine.vdp_load_sys_atlas()
 		vdp_load_queue_tail = 0
 	end
 	local atlas_name<const> = string.format('_atlas_%02d', sys_atlas_id)
-	local rom_base<const>, start<const>, finish<const> = resolve_sys_rom_asset_range(atlas_name)
-	local src<const> = rom_base + start
-	local len<const> = finish - start
+	local atlas<const> = romdir.system_rom_atlas(atlas_name)
+	local src<const> = atlas.addr
+	local len<const> = atlas.len
 	vdp_load_job_seq = vdp_load_job_seq + 1
 	vdp_load_queue_tail = vdp_load_queue_tail + 1
 	vdp_load_queue[vdp_load_queue_tail] = {

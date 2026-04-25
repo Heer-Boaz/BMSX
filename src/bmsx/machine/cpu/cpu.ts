@@ -18,6 +18,7 @@ import {
 } from '../memory/map';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ScratchArrayStack } from '../../common/scratchstack';
+import { luaModulo } from '../../lua/numeric';
 
 export { OpCode } from './opcode_info';
 
@@ -180,9 +181,6 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'select':
 		case 'next':
 		case 'sys_palette_color':
-		case 'resolve_cart_rom_asset_range':
-		case 'resolve_sys_rom_asset_range':
-		case 'resolve_rom_asset_range':
 		case 'u32_to_f32':
 		case 'u64_to_f64':
 		case 'os.clock':
@@ -858,7 +856,7 @@ export class Table {
 		}
 		let power = 1;
 		while (power < value) {
-			power <<= 1;
+			power *= 2;
 		}
 		return power;
 	}
@@ -867,7 +865,7 @@ export class Table {
 		let log = 0;
 		let power = 1;
 		while (power < value) {
-			power <<= 1;
+			power *= 2;
 			log += 1;
 		}
 		return log;
@@ -989,7 +987,7 @@ export class Table {
 				arraySize = power;
 				arrayKeys = total;
 			}
-			power <<= 1;
+			power *= 2;
 		}
 
 		const hashKeys = totalKeys - arrayKeys;
@@ -2478,7 +2476,7 @@ export class CPU {
 				case OpCode.MOD: {
 					const left = this.readRKNumber(frame, rkB);
 					const right = this.readRKNumber(frame, rkC);
-					this.setRegisterNumberFast(frame, registers, a, left % right);
+					this.setRegisterNumberFast(frame, registers, a, luaModulo(left, right));
 					return;
 				}
 				case OpCode.FLOORDIV: {

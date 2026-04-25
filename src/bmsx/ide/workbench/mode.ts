@@ -29,7 +29,7 @@ import { logDebugState } from '../../machine/runtime/debug';
 import { TerminalMode } from '../terminal/ui/mode';
 import type { FrameState, Runtime } from '../../machine/runtime/runtime';
 import type { CpuFrameSnapshot } from '../../machine/cpu/cpu';
-import type { RuntimeOptions } from '../../machine/runtime/contracts';
+import type { Viewport } from '../../rompack/format';
 import { resolveWorkspacePath } from '../workspace/path';
 import { shallowcopy } from '../../common/shallowcopy';
 import { api as overlay_api } from '../runtime/overlay_api';
@@ -279,10 +279,10 @@ export function createPauseCoordinator(): DebugPauseCoordinator {
 	return new DebugPauseCoordinator();
 }
 
-export function initializeIdeFeatures(runtime: Runtime, options: RuntimeOptions): void {
+export function initializeIdeFeatures(runtime: Runtime, viewport: Viewport): void {
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 	runtime.terminal = new TerminalMode(runtime);
-	runtime.editor = createCartEditor(options.viewport);
+	runtime.editor = createCartEditor(viewport);
 	runtime.overlayResolutionMode = 'viewport';
 	Input.instance.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
 	seedDefaultLuaBuiltins();

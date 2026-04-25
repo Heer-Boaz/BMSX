@@ -19,23 +19,14 @@ import { parseRomMetadataSection } from '../../../rompack/metadata';
 import { registerAudioAssets as registerAudioAssetsFromSource } from '../audio_assets';
 import {
 	buildRuntimeLayerLookup,
-	romBaseForPayload,
 	resolveLayerForPayload,
 	resolveRuntimeLayerAssetById,
 	resolveRuntimeLayerAssetFromEntry,
 	type RuntimeLayerLookup,
 } from './layers';
-import { registerImageMemory, restoreEngineAtlas } from './images';
+import { registerImageMemory } from './images';
 import type { Runtime } from '../../runtime/runtime';
 import { runtimeFault } from '../../runtime/runtime_fault';
-
-type RomAssetRangeLookupResult = {
-	found: boolean;
-	deleted: boolean;
-	romBase: number;
-	start: number;
-	end: number;
-};
 
 export class RuntimeAssetState {
 	public biosLayer: RuntimeAssetLayer = null;
@@ -92,40 +83,6 @@ export class RuntimeAssetState {
 		return assets;
 	}
 
-	public resolveRomAssetRange(assetId: string, scope: 'cart' | 'sys'): { romBase: number; start: number; end: number } {
-		if (this.overlayLayer !== null) {
-			const overlayResult = resolveRomAssetRangeFromLayer(this.overlayLayer, assetId);
-			if (overlayResult.found) {
-				if (overlayResult.deleted) {
-					throw runtimeFault(`asset '${assetId}' does not exist.`);
-				}
-				return overlayResult;
-			}
-		}
-
-		if (this.cartLayer !== null) {
-			const cartResult = resolveRomAssetRangeFromLayer(this.cartLayer, assetId);
-			if (cartResult.found) {
-				if (cartResult.deleted) {
-					throw runtimeFault(`asset '${assetId}' does not exist.`);
-				}
-				return cartResult;
-			}
-		}
-
-		if (scope === 'sys') {
-			const systemResult = resolveRomAssetRangeFromLayer(this.biosLayer, assetId);
-			if (systemResult.found) {
-				if (systemResult.deleted) {
-					throw runtimeFault(`asset '${assetId}' does not exist.`);
-				}
-				return systemResult;
-			}
-		}
-
-		throw runtimeFault(`asset '${assetId}' does not exist.`);
-	}
-
 	public registerAudioAssets(source: RawAssetSource, memory: Memory): void {
 		registerAudioAssetsFromSource(source, memory);
 	}
@@ -149,7 +106,6 @@ export class RuntimeAssetState {
 			}
 			const imageMemory = registerImageMemory(memory, engineSource.list(), assetSource.list());
 			runtime.machine.vdp.registerVramAssets(imageMemory.atlasMemory);
-			await restoreEngineAtlas(memory, imageMemory.engineAtlasRecord);
 			this.registerAudioAssets(assetSource, memory);
 			this.rebuildMetaCaches(assetSource, memory);
 			memory.finalizeAssetTable();
@@ -289,33 +245,6 @@ export class RuntimeAssetState {
 		}
 		return this.activeSource;
 	}
-}
-
-function resolveRomAssetRangeFromLayer(layer: RuntimeAssetLayer | null, assetId: string): RomAssetRangeLookupResult {
-	if (layer === null) {
-		return { found: false, deleted: false, romBase: 0, start: 0, end: 0 };
-	}
-	const entries = layer.index.assets;
-	for (let index = 0; index < entries.length; index += 1) {
-		const entry = entries[index];
-		if (entry.resid !== assetId) {
-			continue;
-		}
-		if (entry.op === 'delete') {
-			return { found: true, deleted: true, romBase: 0, start: 0, end: 0 };
-		}
-		if (entry.start === undefined || entry.end === undefined) {
-			throw runtimeFault(`asset '${assetId}' is missing ROM range.`);
-		}
-			return {
-				found: true,
-				deleted: false,
-				romBase: romBaseForPayload(layer.id),
-				start: entry.start,
-				end: entry.end,
-			};
-	}
-	return { found: false, deleted: false, romBase: 0, start: 0, end: 0 };
 }
 
 function applyAssetHandlesToLayer(runtime: Runtime, assets: RuntimeAssets): void {

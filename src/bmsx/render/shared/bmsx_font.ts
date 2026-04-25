@@ -1,4 +1,5 @@
 import { BFont, GlyphMap } from './bitmap_font';
+import { Runtime } from '../../machine/runtime/runtime';
 
 export const DEFAULT_FONT_VARIANT = 'msx' as const;
 
@@ -148,5 +149,9 @@ export class Font extends BFont {
 		const variant = config?.variant ?? DEFAULT_FONT_VARIANT;
 		const preset = FONT_PRESETS[variant];
 		super(preset);
+	}
+
+	protected override getGlyphAsset(imgid: string) {
+		return Runtime.instance.assets.getImageAsset(imgid, Runtime.instance.engineAssetSource);
 	}
 }

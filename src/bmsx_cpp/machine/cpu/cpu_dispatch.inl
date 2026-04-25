@@ -177,7 +177,7 @@ DISPATCH_LABEL(DIV) {
 DISPATCH_LABEL(MOD) {
 	double left = requireRKNumber(FRAME, rkB);
 	double right = requireRKNumber(FRAME, rkC);
-	SET_REGISTER_FAST(a, valueNumber(std::fmod(left, right)));
+	SET_REGISTER_FAST(a, valueNumber(left - std::floor(left / right) * right));
 	DISPATCH_CONTINUE();
 }
 

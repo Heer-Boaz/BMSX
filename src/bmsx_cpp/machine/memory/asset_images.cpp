@@ -1,15 +1,12 @@
 #include "machine/memory/asset_images.h"
 
 #include "core/primitives.h"
-#include "machine/memory/asset_memory.h"
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
 #include "rompack/assets.h"
-#include "vendor/stb_image.h"
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -17,12 +14,6 @@
 
 namespace bmsx {
 namespace {
-
-struct DecodedImageRecord {
-	std::vector<u8> pixels;
-	uint32_t width = 0;
-	uint32_t height = 0;
-};
 
 uint32_t atlasTexcoordRegionSize(uint32_t atlasSize, int32_t offset, f32 minCoord, f32 maxCoord) {
 	const int32_t texels = static_cast<int32_t>(std::round((maxCoord - minCoord) * static_cast<f32>(atlasSize)));
@@ -52,48 +43,6 @@ void seedAtlasSlot(Memory::AssetEntry& slotEntry) {
 	setAtlasEntryDimensions(slotEntry, side, side);
 }
 
-DecodedImageRecord decodeImageRecordPixels(const Memory& memory, const ImgAsset& asset) {
-	if (!asset.rom.payloadId.has_value()) {
-		throw BMSX_RUNTIME_ERROR("Image asset '" + asset.id + "' missing payload id.");
-	}
-	if (!asset.rom.start.has_value() || !asset.rom.end.has_value()) {
-		throw BMSX_RUNTIME_ERROR("Image asset '" + asset.id + "' missing ROM byte range.");
-	}
-	const uint32_t romBase = romBaseForPayloadId(*asset.rom.payloadId);
-	const size_t start = static_cast<size_t>(*asset.rom.start);
-	const size_t end = static_cast<size_t>(*asset.rom.end);
-	if (end <= start) {
-		throw BMSX_RUNTIME_ERROR("Image asset '" + asset.id + "' ROM byte range is invalid.");
-	}
-	std::vector<u8> encoded(end - start);
-	memory.readBytes(romBase + static_cast<uint32_t>(start), encoded.data(), encoded.size());
-	int width = 0;
-	int height = 0;
-	int comp = 0;
-	unsigned char* decoded = stbi_load_from_memory(
-		encoded.data(),
-		static_cast<int>(encoded.size()),
-		&width,
-		&height,
-		&comp,
-		4
-	);
-	if (!decoded) {
-		throw BMSX_RUNTIME_ERROR("Image asset '" + asset.id + "' decode failed.");
-	}
-	if (width != asset.meta.width || height != asset.meta.height) {
-		stbi_image_free(decoded);
-		throw BMSX_RUNTIME_ERROR("Image asset '" + asset.id + "' decoded dimensions do not match metadata.");
-	}
-	DecodedImageRecord record;
-	record.width = static_cast<uint32_t>(width);
-	record.height = static_cast<uint32_t>(height);
-	record.pixels.resize(static_cast<size_t>(record.width) * static_cast<size_t>(record.height) * 4u);
-	std::memcpy(record.pixels.data(), decoded, record.pixels.size());
-	stbi_image_free(decoded);
-	return record;
-}
-
 } // namespace
 
 RegisteredImageMemory registerImageMemory(Memory& memory, RuntimeAssets& engineAssets, RuntimeAssets& assets) {
@@ -106,7 +55,7 @@ RegisteredImageMemory registerImageMemory(Memory& memory, RuntimeAssets& engineA
 	viewAssetById.reserve(assets.img.size() + engineAssets.img.size());
 
 	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-	registered.engineAtlasAsset = engineAssets.getImg(engineAtlasName);
+	const ImgAsset* engineAtlasAsset = engineAssets.getImg(engineAtlasName);
 	for (const auto& entry : engineAssets.img) {
 		const ImgAsset& image = entry.second;
 		if (!image.meta.atlassed || image.meta.atlasid != ENGINE_ATLAS_INDEX) {
@@ -136,7 +85,7 @@ RegisteredImageMemory registerImageMemory(Memory& memory, RuntimeAssets& engineA
 		}
 	}
 
-	const auto& engineAtlasMeta = registered.engineAtlasAsset->meta;
+	const auto& engineAtlasMeta = engineAtlasAsset->meta;
 	if (engineAtlasMeta.width <= 0 || engineAtlasMeta.height <= 0) {
 		throw BMSX_RUNTIME_ERROR("Engine atlas missing dimensions.");
 	}
@@ -225,22 +174,6 @@ RegisteredImageMemory registerImageMemory(Memory& memory, RuntimeAssets& engineA
 		registered.atlasMemory.atlasViewIdsById[atlasId].push_back(id);
 	}
 	return registered;
-}
-
-void restoreEngineAtlas(Memory& memory, const ImgAsset& asset) {
-	DecodedImageRecord decoded = decodeImageRecordPixels(memory, asset);
-	auto& entry = memory.getAssetEntry(asset.id);
-	const Memory::ImageWritePlan plan = memory.planImageSlotWrite(
-		entry,
-		decoded.pixels.size(),
-		decoded.width,
-		decoded.height,
-		entry.capacity
-	);
-	if (plan.clipped) {
-		throw BMSX_RUNTIME_ERROR("Engine atlas '" + asset.id + "' does not fit in system atlas slot.");
-	}
-	memory.writeBytes(entry.baseAddr, decoded.pixels.data(), plan.writeLen);
 }
 
 } // namespace bmsx

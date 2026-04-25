@@ -2,15 +2,19 @@ import { DEFAULT_FONT_VARIANT, Font, type FontVariant } from '../../../../render
 import type { FontGlyph } from 'bmsx/render/shared/bitmap_font';
 
 export class EditorFont {
-	private readonly font: Font;
+	private font: Font | null = null;
 	private readonly glyphCache: Map<string, FontGlyph> = new Map();
-	private readonly lineHeightValue: number;
 	private readonly _variant: FontVariant;
 
 	constructor(variant: FontVariant = DEFAULT_FONT_VARIANT) {
 		this._variant = variant;
-		this.font = new Font({ variant });
-		this.lineHeightValue = this.font.lineHeight;
+	}
+
+	private renderFontOwner(): Font {
+		if (this.font === null) {
+			this.font = new Font({ variant: this._variant });
+		}
+		return this.font;
 	}
 
 	public getGlyph(char: string): FontGlyph {
@@ -18,7 +22,7 @@ export class EditorFont {
 		if (glyph) {
 			return glyph;
 		}
-		glyph = this.font.getGlyph(char);
+		glyph = this.renderFontOwner().getGlyph(char);
 		this.glyphCache.set(char, glyph);
 		return glyph;
 	}
@@ -28,11 +32,11 @@ export class EditorFont {
 	}
 
 	public get lineHeight(): number {
-		return this.lineHeightValue;
+		return this.renderFontOwner().lineHeight;
 	}
 
 	public measure(text: string): number {
-		return this.font.measure(text);
+		return this.renderFontOwner().measure(text);
 	}
 
 	public get variant(): FontVariant {
@@ -40,6 +44,6 @@ export class EditorFont {
 	}
 
 	public renderFont(): Font {
-		return this.font;
+		return this.renderFontOwner();
 	}
 }

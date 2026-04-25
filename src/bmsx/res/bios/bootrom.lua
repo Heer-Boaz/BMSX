@@ -5,10 +5,6 @@ local clamp_int<const> = require('util/clamp_int')
 local wrap_text_lines<const> = require('util/wrap_text_lines')
 
 local reset_scroll_state<const> = function(state) state.top = 0 end
-local clamp_scroll<const> = function(top, line_count, window_size)
-	local max_top<const> = math.max(0, line_count - window_size)
-	return clamp_int(top, 0, max_top)
-end
 local scroll_window<const> = function(lines, top, window_size)
 	local visible_lines<const> = {}
 	local max_scroll<const> = math.max(0, #lines - window_size)
@@ -114,9 +110,9 @@ local flatten_manifest<const> = function(manifest, root_path)
 	if not manifest then
 		return nil
 	end
-	local machine<const> = manifest.machine or {}
-	local specs<const> = machine.specs or {}
-	local cpu<const> = specs.cpu or {}
+	local machine<const> = manifest.machine
+	local specs<const> = machine.specs
+	local cpu<const> = specs.cpu
 	return {
 		title = manifest.title,
 		short_name = manifest.short_name,
@@ -135,7 +131,7 @@ local flatten_machine_manifest<const> = function(machine)
 	if not machine then
 		return nil
 	end
-	local cpu<const> = machine.specs and machine.specs.cpu or {}
+	local cpu<const> = machine.specs and machine.specs.cpu
 	return {
 		namespace = machine.namespace,
 		render_size = format_render_size_label(machine.render_size),
@@ -197,7 +193,7 @@ end
 
 local toc_magic<const> = 0x434f5442
 local toc_header_size<const> = 48
-local toc_entry_size<const> = 80
+local toc_entry_size<const> = 88
 local toc_invalid_u32<const> = 0xffffffff
 local rom_asset_type_data<const> = 3
 local program_asset_id<const> = '__program__'
@@ -2092,9 +2088,9 @@ local scroll_boot_lines<const> = function(lines, window_size, delta)
 	local line_count<const> = #lines
 	if line_count ~= boot_scroll_state.last_line_count then
 		boot_scroll_state.last_line_count = line_count
-		boot_scroll_state.top = clamp_scroll(boot_scroll_state.top, line_count, window_size)
+		boot_scroll_state.top = clamp_int(boot_scroll_state.top, 0, line_count - window_size)
 	end
-	boot_scroll_state.top = clamp_scroll(boot_scroll_state.top + delta, line_count, window_size)
+	boot_scroll_state.top = clamp_int(boot_scroll_state.top + delta, 0, line_count - window_size)
 	local visible_lines<const>, max_scroll<const> = scroll_window(lines, boot_scroll_state.top, window_size)
 	local scroll_top<const> = boot_scroll_state.top
 	boot_scroll_state.top = scroll_top

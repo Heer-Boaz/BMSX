@@ -45,6 +45,16 @@ feature work is acceptable.
 cart Lua -> BIOS/firmware or cart library -> MMIO/RAM -> machine device -> host output
 ```
 
+- ROM/resource lookup belongs on the Lua side of that boundary. The runtime maps
+  system, cart, and overlay ROM bytes into memory; BIOS Lua interprets the ROM
+  header and TOC through normal memory reads during cart initialization. Cart
+  Lua may use BIOS lookup helpers, or parse the cart TOC itself, because the TOC
+  is cart-visible ROM data rather than host runtime state.
+- Host runtimes, including the TS and C++ runtimes, must not own a parallel
+  resource registry for cart-visible data. Later workbench live updates can
+  replace cart or overlay TOC bytes at a host edge and let BIOS/cart Lua rebuild
+  lookup state from memory; that keeps live editing compatible with the same
+  console-visible contract.
 - Recent hardware notes such as `docs/geo_overlap2d_pass_v1.md` show the right
   style: concrete MMIO contracts, memory formats, deterministic behavior, and
   explicit division between hardware work and gameplay work.

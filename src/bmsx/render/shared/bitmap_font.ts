@@ -121,6 +121,10 @@ export class BFont {
 		return this.letter_to_img[c] ?? this.letter_to_img[this.fallbackCharacter]!;
 	}
 
+	protected getGlyphAsset(imgid: string) {
+		return Runtime.instance.assets.getImageAsset(imgid);
+	}
+
 	public textWidth(text: string): number {
 		let width = 0;
 		for (const char of text) {
@@ -147,7 +151,7 @@ export class BFont {
 			return computed;
 		}
 		const imgid = this.char_to_img(char);
-		const asset = Runtime.instance.assets.getImageAsset(imgid);
+		const asset = this.getGlyphAsset(imgid);
 		const width = asset.imgmeta.width;
 		const height = asset.imgmeta.height;
 		const computed: FontGlyph = {

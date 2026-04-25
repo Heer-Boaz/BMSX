@@ -3,7 +3,6 @@
 #include "machine/firmware/input_state_tables.h"
 #include "machine/program/load_compiler.h"
 #include "machine/common/number_format.h"
-#include "machine/memory/asset_memory.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "core/time.h"
 #include "core/utf8.h"
@@ -1669,23 +1668,6 @@ void Runtime::setupBuiltins() {
 		(void)args;
 		out.push_back(valueNumber(frameScheduler.lastTickVdpFrameHeld ? 1.0 : 0.0));
 	});
-	auto pushRomAssetRange = [this, asText](NativeArgsView args, NativeResults& out, bool includeSystem) {
-		const std::string& assetId = asText(args.at(0));
-		const RuntimeRomAssetRange range = resolveRuntimeRomAssetRange(cartAssets(), systemAssets(), assetId, includeSystem);
-		out.push_back(valueNumber(static_cast<double>(range.romBase)));
-		out.push_back(valueNumber(static_cast<double>(range.start)));
-		out.push_back(valueNumber(static_cast<double>(range.end)));
-	};
-	registerNativeFunction("resolve_cart_rom_asset_range", [pushRomAssetRange](NativeArgsView args, NativeResults& out) {
-		pushRomAssetRange(args, out, false);
-	});
-	registerNativeFunction("resolve_sys_rom_asset_range", [pushRomAssetRange](NativeArgsView args, NativeResults& out) {
-		pushRomAssetRange(args, out, true);
-	});
-	registerNativeFunction("resolve_rom_asset_range", [pushRomAssetRange](NativeArgsView args, NativeResults& out) {
-		pushRomAssetRange(args, out, true);
-	});
-
 	registerNativeFunction("type", [str](NativeArgsView args, NativeResults& out) {
 		const Value& v = args.empty() ? valueNil() : args.at(0);
 		if (isNil(v)) { out.push_back(str("nil")); return; }

@@ -336,28 +336,28 @@ export class Runtime {
 		if (overlayLayer) {
 			overlayRom = new Uint8Array(overlayLayer.payload);
 		}
-		const memory = new Memory({
-			engineRom: new Uint8Array(engineLayer.payload),
-			cartRom: new Uint8Array(cartLayer.payload),
-			overlayRom,
-		});
-		const runtime = Runtime.createInstance({
-			playerIndex,
-			viewport: cartRenderSize,
-			memory,
+			const memory = new Memory({
+				engineRom: new Uint8Array(engineLayer.payload),
+				cartRom: new Uint8Array(cartLayer.payload),
+				overlayRom,
+			});
+			const runtime = Runtime.createInstance({
+				playerIndex,
+				viewport: cartRenderSize,
+				memory,
 			activeMachineManifest: cartLayer.index.machine,
 			cartManifest: cartLayer.index.cart_manifest,
 			cartProjectRootPath: cartLayer.index.projectRootPath,
 			ufpsScaled,
 			cpuHz,
-			cycleBudgetPerFrame,
-			vblankCycles,
-			vdpWorkUnitsPerSec: cartPerfSpecs.work_units_per_sec,
-			geoWorkUnitsPerSec: cartPerfSpecs.geo_work_units_per_sec,
-		});
-		setTransferRatesFromManifest(runtime, cartPerfSpecs);
-		const runtimeAssets = runtime.assets;
-		runtimeAssets.biosLayer = engineLayer;
+				cycleBudgetPerFrame,
+				vblankCycles,
+				vdpWorkUnitsPerSec: cartPerfSpecs.work_units_per_sec,
+				geoWorkUnitsPerSec: cartPerfSpecs.geo_work_units_per_sec,
+			});
+			setTransferRatesFromManifest(runtime, cartPerfSpecs);
+			const runtimeAssets = runtime.assets;
+			runtimeAssets.biosLayer = engineLayer;
 		runtimeAssets.setLayers(runtimeAssetLayers);
 		runtimeAssets.cartLayer = cartLayer;
 		runtimeAssets.overlayLayer = overlayLayer;
@@ -365,30 +365,30 @@ export class Runtime {
 			engineSources: engineLuaSources,
 			cartSources: cartLuaSources,
 			engineAssetSource: engineSource,
-			cartAssetSource: cartSource,
-		});
-		await applyWorkspaceOverridesToCart({
-			cart: cartLuaSources,
-			storage: runtime.storageService,
-			includeServer: true,
-			projectRootPath: cartLayer.index.projectRootPath,
-		});
-		await Runtime.startPreparedRuntime(runtime, engineLuaSources);
-	}
+				cartAssetSource: cartSource,
+			});
+			await applyWorkspaceOverridesToCart({
+				cart: cartLuaSources,
+				storage: runtime.storageService,
+				includeServer: true,
+				projectRootPath: cartLayer.index.projectRootPath,
+			});
+			await Runtime.startPreparedRuntime(runtime, engineLuaSources);
+		}
 
-	private static async startPreparedRuntime(runtime: Runtime, engineLuaSources: LuaSourceRegistry): Promise<void> {
-		await applyWorkspaceOverridesToRegistry({
-			registry: engineLuaSources,
-			storage: runtime.storageService,
-			includeServer: true,
-			projectRootPath: runtime.engineProjectRootPath,
-		});
-		await runtime.prepareBootRomStartupState();
-		await engineCore.refreshRenderAssets();
-		engineCore.view.default_font = new Font();
-		await runtime.boot();
-		startEngineWithDeferredStartupAudioRefresh(runtime);
-	}
+		private static async startPreparedRuntime(runtime: Runtime, engineLuaSources: LuaSourceRegistry): Promise<void> {
+			await applyWorkspaceOverridesToRegistry({
+				registry: engineLuaSources,
+				storage: runtime.storageService,
+				includeServer: true,
+				projectRootPath: runtime.engineProjectRootPath,
+			});
+			await runtime.prepareBootRomStartupState();
+			await engineCore.refreshRenderAssets();
+			engineCore.view.default_font = new Font();
+			await runtime.boot();
+			startEngineWithDeferredStartupAudioRefresh(runtime);
+		}
 
 	public static get instance(): Runtime {
 		return Runtime._instance!;
@@ -501,8 +501,6 @@ export class Runtime {
 		refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
 		this.vblank.setVblankCycles(this, options.vblankCycles);
 		this.randomSeedValue = this.clock.now();
-
-		workbenchMode.initializeIdeFeatures(this, options);
 	}
 
 	private configureInterpreter(interpreter: LuaInterpreter): void {
@@ -582,11 +580,17 @@ export class Runtime {
 		}
 	}
 
-	private async prepareBootRomStartupState(): Promise<void> {
-		await this.assets.buildMemory(this, { source: this.engineAssetSource, mode: 'full' });
-		this.machine.memory.sealEngineAssets();
-		this.activateEngineProgramAssets();
-	}
+		private async prepareBootRomStartupState(): Promise<void> {
+			await this.assets.buildMemory(this, { source: this.engineAssetSource, mode: 'full' });
+			this.machine.memory.sealEngineAssets();
+			this.activateEngineProgramAssets();
+			if (!this.terminal) {
+				workbenchMode.initializeIdeFeatures(this, {
+					width: this.gameViewState.viewportSize.x,
+					height: this.gameViewState.viewportSize.y,
+				});
+			}
+		}
 
 	private async restartBootRomStartupState(): Promise<void> {
 		await engineCore.resetRuntime();

@@ -1,4 +1,3 @@
-import { decodePngToRgba } from '../../../common/image_decode';
 import {
 	ATLAS_PRIMARY_SLOT_ID,
 	ATLAS_SECONDARY_SLOT_ID,
@@ -16,11 +15,9 @@ import {
 	VRAM_SYSTEM_ATLAS_SIZE,
 } from '../map';
 import type { AssetEntry, Memory } from '../memory';
-import { romBaseForPayload } from './layers';
 
 export type RegisteredImageMemory = {
 	atlasMemory: VdpAtlasMemory;
-	engineAtlasRecord: RomAsset;
 };
 
 function imageAssetMemoryFault(message: string): Error {
@@ -185,24 +182,5 @@ export function registerImageMemory(memory: Memory, engineRecords: readonly RomA
 		}
 		viewIds.push(record.resid);
 	}
-	return { atlasMemory: { atlasSizesById, atlasViewIdsById }, engineAtlasRecord };
-}
-
-export async function restoreEngineAtlas(memory: Memory, record: RomAsset): Promise<void> {
-	if (record.payload_id === undefined || record.start === undefined || record.end === undefined) {
-		throw imageAssetMemoryFault(`engine atlas '${record.resid}' missing ROM byte range.`);
-	}
-	const entry = memory.getAssetEntry(record.resid);
-	const dataAddr = romBaseForPayload(record.payload_id) + record.start;
-	const decoded = await decodePngToRgba(memory.readBytes(dataAddr, record.end - record.start));
-	const plan = memory.planImageSlotWrite(entry, {
-		pixels: decoded.pixels,
-		width: decoded.width,
-		height: decoded.height,
-		capacity: entry.capacity,
-	});
-	if (plan.clipped) {
-		throw imageAssetMemoryFault(`engine atlas '${record.resid}' does not fit in system atlas slot.`);
-	}
-	memory.writeBytes(entry.baseAddr, decoded.pixels.subarray(0, plan.writeSize));
+	return { atlasMemory: { atlasSizesById, atlasViewIdsById } };
 }

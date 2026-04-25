@@ -3,6 +3,7 @@ import { isTruthyValue, OpCode, type Value } from '../../cpu/cpu';
 import { MAX_SIGNED_BX, MIN_SIGNED_BX } from '../../cpu/instruction_format';
 import { isStringValue, stringValueToString } from '../../memory/string/pool';
 import type { Instruction, OptimizationContext } from './index';
+import { luaModulo } from '../../../lua/numeric';
 
 export type ConstValue = {
 	value: Value;
@@ -152,7 +153,7 @@ export const evaluateBinary = (op: OpCode, left: Value, right: Value): Value | n
 		case OpCode.DIV:
 			return leftNum / rightNum;
 		case OpCode.MOD:
-			return leftNum % rightNum;
+			return luaModulo(leftNum, rightNum);
 		case OpCode.FLOORDIV:
 			return Math.floor(leftNum / rightNum);
 		case OpCode.POW:

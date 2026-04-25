@@ -493,3 +493,4 @@ export var engineCore: EngineCore = new EngineCore()!;
 // We intentionally write to the global scope we resolved earlier so both browser and
 // node-headless runtimes have the same behaviour.
 (globalScope as any).engineCore = engineCore;
+(globalScope as any).$ = engineCore;

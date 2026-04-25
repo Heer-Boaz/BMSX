@@ -64,9 +64,6 @@ export const ENGINE_SYSTEM_HELPER_NAMES = [
 	'cart_manifest',
 	'machine_manifest',
 	'cart_project_root_path',
-	'resolve_cart_rom_asset_range',
-	'resolve_sys_rom_asset_range',
-	'resolve_rom_asset_range',
 	'u32_to_i32',
 	'clock_now',
 ] as const;

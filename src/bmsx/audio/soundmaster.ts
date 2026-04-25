@@ -302,6 +302,10 @@ export class SoundMaster {
 		return this.tracks[id] !== undefined;
 	}
 
+	public currentTrackByType(type: AudioType): asset_id {
+		return this.currentVoiceByType[type] === null ? '' : this.currentAudioByType[type]?.id ?? '';
+	}
+
 	public setMaxVoicesByType(specs: Partial<Record<AudioType, number>>): void {
 		for (let index = 0; index < AudioTypes.length; index += 1) {
 			const type = AudioTypes[index];
@@ -404,7 +408,9 @@ export class SoundMaster {
 		}
 		this.streamClips[id] = undefined;
 		this.streamClipLoads[id] = undefined;
-		this.stop(id);
+		this.stopByTypeInternal('sfx', 'byid', id);
+		this.stopByTypeInternal('music', 'byid', id);
+		this.stopByTypeInternal('ui', 'byid', id);
 	}
 
 	private normalizePlayRequest(options?: SoundMasterPlayRequest | ModulationParams | RandomModulationParams): SoundMasterPlayRequest {
