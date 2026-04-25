@@ -11,7 +11,6 @@ type ModulationInput = RandomModulationParams | ModulationParams;
 export interface SoundMasterPlayRequest {
 	params?: RandomModulationParams | ModulationParams;
 	modulation_preset?: asset_id;
-	priority?: number;
 }
 
 export interface SoundMasterResolvedPlayRequest {
@@ -19,14 +18,12 @@ export interface SoundMasterResolvedPlayRequest {
 	gainLinear: number;
 	offsetSeconds: number;
 	filter: AudioFilterParams | null;
-	priority?: number;
 }
 
 export interface ActiveVoiceInfo {
 	slot: AudioSlot;
 	voiceId: VoiceId;
 	id: asset_id;
-	priority: number;
 	params: ModulationParams;
 	startedAt: number;
 	startOffset: number;
@@ -83,7 +80,6 @@ interface PausedSnapshot {
 	id: asset_id;
 	offset: number;
 	params: ModulationParams;
-	priority: number;
 }
 
 interface ActiveVoiceRecord extends ActiveVoiceInfo {
@@ -369,7 +365,7 @@ export class SoundMaster {
 		if (!options) return {};
 		if (this.isPlayRequest(options)) {
 			const req = options as SoundMasterPlayRequest;
-			return { params: req.params, modulation_preset: req.modulation_preset, priority: req.priority };
+			return { params: req.params, modulation_preset: req.modulation_preset };
 		}
 		return { params: options as (RandomModulationParams | ModulationParams) };
 	}
@@ -377,7 +373,7 @@ export class SoundMaster {
 	private isPlayRequest(options: unknown): options is SoundMasterPlayRequest {
 		if (!options || typeof options !== 'object') return false;
 		const obj = options as Record<string, unknown>;
-		return ('params' in obj) || ('priority' in obj) || ('modulation_preset' in obj);
+		return ('params' in obj) || ('modulation_preset' in obj);
 	}
 
 	private resolvePlayParams(options?: ModulationInput): ModulationParams {
@@ -505,7 +501,7 @@ export class SoundMaster {
 			}
 		}
 		const params = this.resolvePlayParams(sourceParams);
-		return this.playWithParams(slot, id, params, request.priority);
+		return this.playWithParams(slot, id, params);
 	}
 
 	public async playResolved(id: asset_id, request: SoundMasterResolvedPlayRequest): Promise<VoiceId> {
@@ -514,15 +510,14 @@ export class SoundMaster {
 
 	public async playResolvedOnSlot(slot: AudioSlot, id: asset_id, request: SoundMasterResolvedPlayRequest): Promise<VoiceId> {
 		const params = this.resolveResolvedPlayParams(request);
-		return this.playWithParams(slot, id, params, request.priority);
+		return this.playWithParams(slot, id, params);
 	}
 
-	private async playWithParams(slot: AudioSlot, id: asset_id, params: ModulationParams, requestedPriority: number | undefined): Promise<VoiceId> {
+	private async playWithParams(slot: AudioSlot, id: asset_id, params: ModulationParams): Promise<VoiceId> {
 		const meta = this.getAudioMetaOrThrow(id);
-		const priority = requestedPriority ?? meta.priority ?? 0;
 		const clip = await this.clipFor(id);
 		const playback = this.createVoiceParams(meta, params, clip);
-		return this.startVoice(slot, id, meta, clip, params, priority, playback);
+		return this.startVoice(slot, id, meta, clip, params, playback);
 	}
 
 	private startVoice(
@@ -531,7 +526,6 @@ export class SoundMaster {
 		meta: AudioMeta,
 		clip: StreamClipHandle,
 		params: ModulationParams,
-		priority: number,
 		playback: AudioPlaybackParams,
 	): VoiceId {
 		this.stopSlot(slot);
@@ -544,7 +538,6 @@ export class SoundMaster {
 			slot,
 			voiceId,
 			id,
-			priority,
 			params,
 			startedAt,
 			startOffset,
@@ -598,7 +591,6 @@ export class SoundMaster {
 				slot: record.slot,
 				voiceId: record.voiceId,
 				id: record.id,
-				priority: record.priority,
 				params: record.params,
 				startedAt: record.startedAt,
 				startOffset: record.startOffset,
@@ -884,7 +876,6 @@ export class SoundMaster {
 				slot: v.slot,
 				voiceId: v.voiceId,
 				id: v.id,
-				priority: v.priority,
 				params: v.params,
 				startedAt: v.startedAt,
 				startOffset: v.startOffset,
@@ -905,7 +896,7 @@ export class SoundMaster {
 			const rate = this.effectivePlaybackRate(v.params);
 			const progressed = (now - v.startedAt) * rate;
 			const offset = v.startOffset + progressed;
-			snapshots.push({ slot, id: v.id, offset, params: v.params, priority: v.priority });
+			snapshots.push({ slot, id: v.id, offset, params: v.params });
 		}
 		return snapshots;
 	}

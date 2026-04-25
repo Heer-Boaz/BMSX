@@ -29,6 +29,7 @@ local stinger_slot
 local stinger_music_asset
 local stinger_music_transition
 local slot_active_handle
+local slot_active_priority
 local slot_play_queue
 local slot_queue_head
 local slot_queue_tail
@@ -57,7 +58,7 @@ local resolve_data_path<const> = function(path)
 end
 
 local compile_apu_defaults<const> = function(action)
-	action.__apu_priority = action.priority or apu_priority_auto
+	action.__aem_priority = action.priority
 	action.__apu_pitch_delta = 0
 	action.__apu_pitch_range_min = 0
 	action.__apu_pitch_range_span = 0
@@ -126,8 +127,7 @@ local compile_transition<const> = function(transition)
 	transition.__apu_start_fresh = transition.start_fresh or false
 end
 
-local compile_action
-compile_action = function(action)
+local compile_action<const> = function(action)
 	if action.audio_id ~= nil or action.modulation_params ~= nil or action.modulation_preset ~= nil then
 		compile_apu_defaults(action)
 		if action.modulation_params ~= nil then
@@ -343,6 +343,12 @@ local reset_slot_state<const> = function()
 		[slot_music_b] = 0,
 		[slot_ui] = 0,
 	}
+	slot_active_priority = {
+		[slot_sfx] = 0,
+		[slot_music_a] = 0,
+		[slot_music_b] = 0,
+		[slot_ui] = 0,
+	}
 	slot_play_queue = {
 		[slot_sfx] = {},
 		[slot_music_a] = {},
@@ -380,8 +386,9 @@ local slot_is_busy<const> = function(slot)
 	return slot_active_handle[slot] ~= 0
 end
 
-local mark_slot_active<const> = function(slot, handle)
+local mark_slot_active<const> = function(slot, handle, priority)
 	slot_active_handle[slot] = handle
+	slot_active_priority[slot] = priority
 end
 
 local slot_handle_matches<const> = function(slot, handle)
@@ -414,11 +421,10 @@ end
 
 local run_prepared_play
 run_prepared_play = function(play)
-	mark_slot_active(play.slot, play.handle)
+	mark_slot_active(play.slot, play.handle, play.priority)
 	apu.play(
 		play.handle,
 		play.slot,
-		play.priority,
 		play.rate_step_q16,
 		play.gain_q12,
 		play.start_sample,
@@ -442,6 +448,7 @@ local complete_slot_play<const> = function(slot, handle, drain_queue)
 		return false
 	end
 	slot_active_handle[slot] = 0
+	slot_active_priority[slot] = 0
 	if drain_queue then
 		play_next_queued(slot)
 	end
@@ -455,16 +462,19 @@ local submit_prepared_play<const> = function(play, queued)
 			return
 		end
 	else
+		if slot_is_busy(play.slot) and play.priority < slot_active_priority[play.slot] then
+			return
+		end
 		clear_slot_queue(play.slot)
 	end
 	run_prepared_play(play)
 end
 
-local prepare_plain_play<const> = function(handle, slot)
+local prepare_plain_play<const> = function(asset, slot)
 	return {
-		handle = handle,
+		handle = asset.handle,
 		slot = slot,
-		priority = apu_priority_auto,
+		priority = asset.audiometa.priority,
 		rate_step_q16 = apu_rate_step_q16_one,
 		gain_q12 = apu_gain_q12_one,
 		start_sample = 0,
@@ -475,7 +485,7 @@ local prepare_plain_play<const> = function(handle, slot)
 	}
 end
 
-local prepare_action_play<const> = function(handle, slot, action)
+local prepare_action_play<const> = function(asset, slot, action)
 	local pitch_delta = action.__apu_pitch_delta
 	local pitch_range_span<const> = action.__apu_pitch_range_span
 	if pitch_range_span ~= 0 then
@@ -503,9 +513,9 @@ local prepare_action_play<const> = function(handle, slot, action)
 	local rate_step_q16<const> = rate * (2 ^ (pitch_delta / 12)) * apu_rate_step_q16_one
 
 	return {
-		handle = handle,
+		handle = asset.handle,
 		slot = slot,
-		priority = action.__apu_priority,
+		priority = action.__aem_priority or asset.audiometa.priority,
 		rate_step_q16 = rate_step_q16,
 		gain_q12 = gain_q12,
 		start_sample = start_sample,
@@ -563,8 +573,8 @@ local play_music_now<const> = function(asset, transition, gain_q12, slot)
 	end
 	current_music_handle = asset.handle
 	current_music_slot = target_slot
-	mark_slot_active(target_slot, asset.handle)
-	apu.play(asset.handle, target_slot, apu_priority_auto, apu_rate_step_q16_one, gain_q12 or apu_gain_q12_one, transition_start_sample(asset, transition), apu_filter_none, 0, 1000, 0)
+	mark_slot_active(target_slot, asset.handle, asset.audiometa.priority)
+	apu.play(asset.handle, target_slot, apu_rate_step_q16_one, gain_q12 or apu_gain_q12_one, transition_start_sample(asset, transition), apu_filter_none, 0, 1000, 0)
 end
 
 local queue_music_after_current<const> = function(request_seq, asset, transition)
@@ -624,37 +634,38 @@ local dispatch_music_transition<const> = function(transition)
 	end
 	if sync ~= nil and type(sync) ~= 'string' then
 		local stinger_id<const> = sync.stinger
-		local stinger_type<const> = assets.audio[stinger_id].audiometa.audiotype
+		local stinger_asset<const> = assets.audio[stinger_id]
+		local stinger_type<const> = stinger_asset.audiometa.audiotype
 		if current_music_handle ~= 0 then
 			apu.stop_slot(current_music_slot, 0)
 		end
 		current_music_handle = 0
 		current_music_slot = 0
 		stinger_seq = request_seq
-		stinger_handle = assets.audio[stinger_id].handle
+		stinger_handle = stinger_asset.handle
 		stinger_slot = route_slot[stinger_type]
 		if stinger_slot == nil then
 			error('aem invalid stinger audio asset type: ' .. tostring(stinger_type))
 		end
 		stinger_music_asset = target_asset
 		stinger_music_transition = transition
-		mark_slot_active(stinger_slot, stinger_handle)
+		mark_slot_active(stinger_slot, stinger_handle, stinger_asset.audiometa.priority)
 		apu.play_plain(stinger_handle, stinger_slot)
 		return
 	end
 	play_transition_apu(target_asset, transition)
 end
 
-local dispatch_audio_play<const> = function(entry, handle, action, payload)
+local dispatch_audio_play<const> = function(entry, asset, action, payload)
 	if not apply_cooldown(action, payload) then
 		return
 	end
-	submit_prepared_play(prepare_action_play(handle, entry.__slot, action), entry.__queued)
+	submit_prepared_play(prepare_action_play(asset, entry.__slot, action), entry.__queued)
 end
 
 local dispatch_action<const> = function(entry, action, payload)
 	if type(action) == 'string' then
-		submit_prepared_play(prepare_plain_play(assets.audio[action].handle, entry.__slot), entry.__queued)
+		submit_prepared_play(prepare_plain_play(assets.audio[action], entry.__slot), entry.__queued)
 		return
 	end
 	if action.stop_music then
@@ -677,7 +688,7 @@ local dispatch_action<const> = function(entry, action, payload)
 		dispatch_music_transition(action.music_transition)
 		return
 	end
-	dispatch_audio_play(entry, assets.audio[action.audio_id].handle, action, payload)
+	dispatch_audio_play(entry, assets.audio[action.audio_id], action, payload)
 end
 
 local handle_event<const> = function(payload)

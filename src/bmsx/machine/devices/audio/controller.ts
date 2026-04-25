@@ -18,7 +18,6 @@ import {
 	APU_FILTER_NONE,
 	APU_FILTER_NOTCH,
 	APU_FILTER_PEAKING,
-	APU_PRIORITY_AUTO,
 	APU_SLOT_COUNT,
 	IO_APU_CMD,
 	IO_APU_EVENT_HANDLE,
@@ -32,7 +31,6 @@ import {
 	IO_APU_FILTER_Q_MILLI,
 	IO_APU_GAIN_Q12,
 	IO_APU_HANDLE,
-	IO_APU_PRIORITY,
 	IO_APU_RATE_STEP_Q16,
 	IO_APU_SLOT,
 	IO_APU_START_SAMPLE,
@@ -101,7 +99,6 @@ export class AudioController {
 	private resetCommandLatch(): void {
 		this.memory.writeValue(IO_APU_HANDLE, 0);
 		this.memory.writeValue(IO_APU_SLOT, 0);
-		this.memory.writeValue(IO_APU_PRIORITY, APU_PRIORITY_AUTO);
 		this.memory.writeValue(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
 		this.memory.writeValue(IO_APU_GAIN_Q12, APU_GAIN_Q12_ONE);
 		this.memory.writeValue(IO_APU_START_SAMPLE, 0);
@@ -197,7 +194,6 @@ export class AudioController {
 	}
 
 	private readResolvedPlayRequest(): SoundMasterResolvedPlayRequest {
-		const priority = this.memory.readIoI32(IO_APU_PRIORITY);
 		const rateStepQ16 = this.memory.readIoI32(IO_APU_RATE_STEP_Q16);
 		const gainQ12 = this.memory.readIoI32(IO_APU_GAIN_Q12);
 		const startSample = this.memory.readIoU32(IO_APU_START_SAMPLE);
@@ -208,9 +204,6 @@ export class AudioController {
 			offsetSeconds: startSample / APU_SAMPLE_RATE_HZ,
 			filter: null,
 		};
-		if (priority !== APU_PRIORITY_AUTO) {
-			request.priority = priority;
-		}
 		if (filterKind !== APU_FILTER_NONE) {
 			request.filter = {
 				type: decodeFilterKind(filterKind),

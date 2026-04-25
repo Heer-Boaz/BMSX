@@ -148,17 +148,15 @@ VoiceId SoundMaster::play(AudioSlot slot, const AssetId& id, const SoundMasterPl
 		}
 	}
 	const ModulationParams params = resolvePlayParams(input);
-	const i32 priority = request.priority.has_value() ? request.priority.value() : asset.meta.priority;
 	const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
-	return startVoice(slot, id, asset, params, priority, initialGain);
+	return startVoice(slot, id, asset, params, initialGain);
 }
 
 VoiceId SoundMaster::playResolved(AudioSlot slot, const AssetId& id, const SoundMasterResolvedPlayRequest& request) {
 	const AudioAsset& asset = getAudioOrThrow(id);
 	const ModulationParams params = resolveResolvedPlayParams(request);
-	const i32 priority = request.priority.has_value() ? request.priority.value() : asset.meta.priority;
 	const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
-	return startVoice(slot, id, asset, params, priority, initialGain);
+	return startVoice(slot, id, asset, params, initialGain);
 }
 
 bool SoundMaster::setVoiceGainLinear(VoiceId voiceId, f32 gain) {
@@ -268,7 +266,7 @@ void SoundMaster::pauseAll() {
 	m_pausedVoices.clear();
 	for (const auto& record : m_voices) {
 		const f64 offset = record.position / static_cast<f64>(record.asset->sampleRate);
-		m_pausedVoices.push_back(PausedSnapshot{record.slot, record.id, offset, record.params, record.priority});
+		m_pausedVoices.push_back(PausedSnapshot{record.slot, record.id, offset, record.params});
 	}
 	m_voices.clear();
 }
@@ -281,7 +279,7 @@ void SoundMaster::resume() {
 		params.offset = static_cast<f32>(snapshot.offset);
 		const AudioAsset& asset = getAudioOrThrow(snapshot.id);
 		const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
-		startVoice(snapshot.slot, snapshot.id, asset, params, snapshot.priority, initialGain);
+		startVoice(snapshot.slot, snapshot.id, asset, params, initialGain);
 	}
 }
 
@@ -309,7 +307,6 @@ std::vector<ActiveVoiceInfo> SoundMaster::getActiveVoiceInfosBySlot(AudioSlot sl
 			record.slot,
 			record.voiceId,
 			record.id,
-			record.priority,
 			record.params,
 			record.startedAt,
 			record.startOffset,
@@ -348,7 +345,7 @@ std::vector<PausedSnapshot> SoundMaster::snapshotVoices(AudioSlot slot) const {
 			continue;
 		}
 		const f64 offset = record.position / static_cast<f64>(record.asset->sampleRate);
-		snapshots.push_back(PausedSnapshot{record.slot, record.id, offset, record.params, record.priority});
+		snapshots.push_back(PausedSnapshot{record.slot, record.id, offset, record.params});
 	}
 	return snapshots;
 }
@@ -1049,7 +1046,7 @@ bool SoundMaster::badpReadFrameAt(VoiceRecord& record, size_t frame, i16& outLef
 	return true;
 }
 
-VoiceId SoundMaster::startVoice(AudioSlot slot, const AssetId& id, const AudioAsset& asset, const ModulationParams& params, i32 priority, f32 initialGain) {
+VoiceId SoundMaster::startVoice(AudioSlot slot, const AssetId& id, const AudioAsset& asset, const ModulationParams& params, f32 initialGain) {
 	stopSlot(slot);
 	VoiceRecord record;
 	record.voiceId = m_nextVoiceId++;
@@ -1057,7 +1054,6 @@ VoiceId SoundMaster::startVoice(AudioSlot slot, const AssetId& id, const AudioAs
 	record.asset = &asset;
 	record.meta = asset.meta;
 	record.slot = slot;
-	record.priority = priority;
 	record.params = params;
 	record.startedAt = m_audioTimeSec;
 	const AudioDataView view = resolveAudioData(id);
@@ -1109,7 +1105,6 @@ void SoundMaster::finalizeVoiceEnd(const VoiceRecord& record) {
 		record.slot,
 		record.voiceId,
 		record.id,
-		record.priority,
 		record.params,
 		record.startedAt,
 		record.startOffset,

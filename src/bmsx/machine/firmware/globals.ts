@@ -55,7 +55,6 @@ import {
 	APU_FILTER_NONE,
 	APU_FILTER_NOTCH,
 	APU_FILTER_PEAKING,
-	APU_PRIORITY_AUTO,
 	DMA_CTRL_START,
 	DMA_CTRL_STRICT,
 	DMA_STATUS_BUSY,
@@ -125,7 +124,6 @@ import {
 	IO_APU_FILTER_Q_MILLI,
 	IO_APU_GAIN_Q12,
 	IO_APU_HANDLE,
-	IO_APU_PRIORITY,
 	IO_APU_RATE_STEP_Q16,
 	IO_APU_SLOT,
 	IO_APU_START_SAMPLE,
@@ -1296,7 +1294,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_inp_consume', IO_INP_CONSUME);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_handle', IO_APU_HANDLE);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_slot', IO_APU_SLOT);
-	luaPipeline.registerGlobal(runtime, 'sys_apu_priority', IO_APU_PRIORITY);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_rate_step_q16', IO_APU_RATE_STEP_Q16);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_gain_q12', IO_APU_GAIN_Q12);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_start_sample', IO_APU_START_SAMPLE);
@@ -1318,7 +1315,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'apu_sample_rate_hz', APU_SAMPLE_RATE_HZ);
 	luaPipeline.registerGlobal(runtime, 'apu_rate_step_q16_one', APU_RATE_STEP_Q16_ONE);
 	luaPipeline.registerGlobal(runtime, 'apu_gain_q12_one', APU_GAIN_Q12_ONE);
-	luaPipeline.registerGlobal(runtime, 'apu_priority_auto', APU_PRIORITY_AUTO);
 	luaPipeline.registerGlobal(runtime, 'apu_filter_none', APU_FILTER_NONE);
 	luaPipeline.registerGlobal(runtime, 'apu_filter_lowpass', APU_FILTER_LOWPASS);
 	luaPipeline.registerGlobal(runtime, 'apu_filter_highpass', APU_FILTER_HIGHPASS);

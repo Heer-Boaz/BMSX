@@ -57,7 +57,6 @@ struct ModulationParams {
 struct SoundMasterPlayRequest {
 	std::optional<ModulationInput> params;
 	std::optional<AssetId> modulationPreset;
-	std::optional<i32> priority;
 };
 
 struct SoundMasterResolvedPlayRequest {
@@ -65,14 +64,12 @@ struct SoundMasterResolvedPlayRequest {
 	f32 gainLinear = 1.0f;
 	f32 offsetSeconds = 0.0f;
 	std::optional<FilterModulationParams> filter;
-	std::optional<i32> priority;
 };
 
 struct ActiveVoiceInfo {
 	AudioSlot slot = 0;
 	VoiceId voiceId = 0;
 	AssetId id;
-	i32 priority = 0;
 	ModulationParams params;
 	f64 startedAt = 0.0;
 	f64 startOffset = 0.0;
@@ -84,7 +81,6 @@ struct PausedSnapshot {
 	AssetId id;
 	f64 offset = 0.0;
 	ModulationParams params;
-	i32 priority = 0;
 };
 
 enum class AudioStopSelector {
@@ -174,7 +170,6 @@ private:
 		size_t frames = 0;
 		AudioMeta meta;
 		AudioSlot slot = 0;
-		i32 priority = 0;
 		ModulationParams params;
 		f64 startedAt = 0.0;
 		f64 startOffset = 0.0;
@@ -199,7 +194,7 @@ private:
 	const AudioAsset& getAudioOrThrow(const AssetId& id) const;
 	AudioDataView resolveAudioData(const AssetId& id) const;
 
-	VoiceId startVoice(AudioSlot slot, const AssetId& id, const AudioAsset& asset, const ModulationParams& params, i32 priority, f32 initialGain);
+	VoiceId startVoice(AudioSlot slot, const AssetId& id, const AudioAsset& asset, const ModulationParams& params, f32 initialGain);
 	void removeVoice(size_t index);
 	void finalizeVoiceEnd(const VoiceRecord& record);
 	VoiceRecord* findVoice(VoiceId voiceId);

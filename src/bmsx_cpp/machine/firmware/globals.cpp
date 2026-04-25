@@ -1463,7 +1463,6 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_inp_consume", valueNumber(static_cast<double>(IO_INP_CONSUME)));
 	setGlobal("sys_apu_handle", valueNumber(static_cast<double>(IO_APU_HANDLE)));
 	setGlobal("sys_apu_slot", valueNumber(static_cast<double>(IO_APU_SLOT)));
-	setGlobal("sys_apu_priority", valueNumber(static_cast<double>(IO_APU_PRIORITY)));
 	setGlobal("sys_apu_rate_step_q16", valueNumber(static_cast<double>(IO_APU_RATE_STEP_Q16)));
 	setGlobal("sys_apu_gain_q12", valueNumber(static_cast<double>(IO_APU_GAIN_Q12)));
 	setGlobal("sys_apu_start_sample", valueNumber(static_cast<double>(IO_APU_START_SAMPLE)));
@@ -1521,7 +1520,6 @@ void Runtime::setupBuiltins() {
 	setGlobal("apu_sample_rate_hz", valueNumber(static_cast<double>(APU_SAMPLE_RATE_HZ)));
 	setGlobal("apu_rate_step_q16_one", valueNumber(static_cast<double>(APU_RATE_STEP_Q16_ONE)));
 	setGlobal("apu_gain_q12_one", valueNumber(static_cast<double>(APU_GAIN_Q12_ONE)));
-	setGlobal("apu_priority_auto", valueNumber(static_cast<double>(APU_PRIORITY_AUTO)));
 	setGlobal("apu_filter_none", valueNumber(static_cast<double>(APU_FILTER_NONE)));
 	setGlobal("apu_filter_lowpass", valueNumber(static_cast<double>(APU_FILTER_LOWPASS)));
 	setGlobal("apu_filter_highpass", valueNumber(static_cast<double>(APU_FILTER_HIGHPASS)));

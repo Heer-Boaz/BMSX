@@ -30,12 +30,11 @@ function apu.loop_start_sample(asset)
 	return apu.seconds_to_samples(loop)
 end
 
-function apu.play(handle, slot, priority, rate_step_q16, gain_q12, start_sample, filter_kind, filter_freq_hz, filter_q_milli, filter_gain_millidb)
+function apu.play(handle, slot, rate_step_q16, gain_q12, start_sample, filter_kind, filter_freq_hz, filter_q_milli, filter_gain_millidb)
 	memwrite(
 		sys_apu_handle,
 		handle,
 		slot,
-		priority,
 		rate_step_q16,
 		gain_q12,
 		start_sample,
@@ -44,14 +43,13 @@ function apu.play(handle, slot, priority, rate_step_q16, gain_q12, start_sample,
 		filter_q_milli,
 		filter_gain_millidb,
 		0,
-		0,
 		apu_gain_q12_one,
 		apu_cmd_play
 	)
 end
 
 function apu.play_plain(handle, slot)
-	apu.play(handle, slot, apu_priority_auto, apu_rate_step_q16_one, apu_gain_q12_one, 0, apu_filter_none, 0, 1000, 0)
+	apu.play(handle, slot, apu_rate_step_q16_one, apu_gain_q12_one, 0, apu_filter_none, 0, 1000, 0)
 end
 
 function apu.stop_slot(slot, fade_samples)

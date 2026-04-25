@@ -72,7 +72,6 @@ void AudioController::clearCommandLatch() {
 void AudioController::resetCommandLatch() {
 	writeNumber(m_memory, IO_APU_HANDLE, 0.0);
 	writeNumber(m_memory, IO_APU_SLOT, 0.0);
-	writeNumber(m_memory, IO_APU_PRIORITY, static_cast<double>(APU_PRIORITY_AUTO));
 	writeNumber(m_memory, IO_APU_RATE_STEP_Q16, static_cast<double>(APU_RATE_STEP_Q16_ONE));
 	writeNumber(m_memory, IO_APU_GAIN_Q12, static_cast<double>(APU_GAIN_Q12_ONE));
 	writeNumber(m_memory, IO_APU_START_SAMPLE, 0.0);
@@ -159,7 +158,6 @@ void AudioController::rampSlot() {
 
 SoundMasterResolvedPlayRequest AudioController::readResolvedPlayRequest() const {
 	SoundMasterResolvedPlayRequest request;
-	const int32_t priority = m_memory.readIoI32(IO_APU_PRIORITY);
 	const int32_t rateStepQ16 = m_memory.readIoI32(IO_APU_RATE_STEP_Q16);
 	const int32_t gainQ12 = m_memory.readIoI32(IO_APU_GAIN_Q12);
 	const uint32_t startSample = m_memory.readIoU32(IO_APU_START_SAMPLE);
@@ -167,9 +165,6 @@ SoundMasterResolvedPlayRequest AudioController::readResolvedPlayRequest() const 
 	request.playbackRate = static_cast<f32>(rateStepQ16) / static_cast<f32>(APU_RATE_STEP_Q16_ONE);
 	request.gainLinear = static_cast<f32>(gainQ12) / static_cast<f32>(APU_GAIN_Q12_ONE);
 	request.offsetSeconds = static_cast<f32>(startSample) / static_cast<f32>(APU_SAMPLE_RATE_HZ);
-	if (priority != APU_PRIORITY_AUTO) {
-		request.priority = priority;
-	}
 	if (filterKind != APU_FILTER_NONE) {
 		FilterModulationParams filter;
 		filter.type = decodeFilterKind(filterKind);
