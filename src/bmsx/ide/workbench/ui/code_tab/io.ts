@@ -3,10 +3,12 @@ import type { CodeTabContext, CodeTabMode, ResourceDescriptor } from '../../../c
 import * as constants from '../../../common/constants';
 import { tryShowLuaErrorOverlay } from '../../error/navigation';
 import { saveLuaResourceSource } from '../../../workspace/workspace';
+import { loadWorkspaceSourceFile, persistWorkspaceSourceFile } from '../../../workspace/files';
 import { buildDirtyFilePath } from '../../workspace/io';
 import { setWorkspaceCachedSources } from '../../../workspace/cache';
-import { applyAemSourceToRuntime, loadAemResourceSource, saveAemResourceSource } from '../../../language/aem/editor';
+import { applyAemSourceToRuntime } from '../../../language/aem/editor';
 import { extractErrorMessage } from '../../../../lua/value';
+import { Runtime } from '../../../../machine/runtime/runtime';
 import { computeResourceTabTitle } from '../tab/titles';
 import { setActiveTab } from '../tabs';
 import {
@@ -48,7 +50,7 @@ export async function openAemCodeTab(descriptor: ResourceDescriptor): Promise<vo
 	try {
 		let context = codeTabSessionState.contexts.get(tabId);
 		if (!context) {
-			const source = await loadAemResourceSource(descriptor.path);
+			const source = await loadWorkspaceSourceFile(descriptor.path, Runtime.instance.cartProjectRootPath);
 			if (source === null) {
 				throw new Error(`AEM resource '${descriptor.path}' is unavailable.`);
 			}
@@ -84,7 +86,7 @@ export async function save(): Promise<void> {
 		if (context.mode === 'lua') {
 			await saveLuaResourceSource(targetPath, source);
 		} else {
-			await saveAemResourceSource(targetPath, source);
+			await persistWorkspaceSourceFile(targetPath, source, Runtime.instance.cartProjectRootPath);
 		}
 		setWorkspaceCachedSources([targetPath, buildDirtyFilePath(targetPath)], source);
 		commitActiveCodeTabSave(context, source);

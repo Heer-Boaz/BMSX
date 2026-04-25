@@ -1,12 +1,32 @@
 import ts from 'typescript';
-import { getCallExpressionTarget } from '../../../../../src/bmsx/language/ts/ast/expressions';
+import { getCallExpressionTarget, unwrapExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
+
+export function getDelegationCallExpression(expression: ts.Expression): ts.CallExpression | null {
+	const unwrapped = unwrapExpression(expression);
+	if (ts.isCallExpression(unwrapped)) {
+		return unwrapped;
+	}
+	if (ts.isAwaitExpression(unwrapped)) {
+		const awaited = unwrapExpression(unwrapped.expression);
+		return ts.isCallExpression(awaited) ? awaited : null;
+	}
+	return null;
+}
+
+function getDelegationCallTarget(expression: ts.Expression): string | null {
+	const call = getDelegationCallExpression(expression);
+	if (call === null) {
+		return null;
+	}
+	return getCallExpressionTarget(call);
+}
 
 export function getSingleStatementWrapperTarget(statement: ts.Statement): string | null {
 	if (ts.isReturnStatement(statement) && statement.expression !== undefined) {
-		return getCallExpressionTarget(statement.expression);
+		return getDelegationCallTarget(statement.expression);
 	}
 	if (ts.isExpressionStatement(statement)) {
-		return getCallExpressionTarget(statement.expression);
+		return getDelegationCallTarget(statement.expression);
 	}
 	return null;
 }

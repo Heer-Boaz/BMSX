@@ -1,4 +1,3 @@
-import { engineCore } from '../../core/engine';
 import type { LuaFunctionValue, LuaValue } from '../../lua/value';
 import { isLuaCallSignal } from '../../lua/value';
 import { Closure, RunResult, type Value } from '../cpu/cpu';
@@ -25,8 +24,7 @@ function callLuaFunctionPrepared(runtime: Runtime, fn: LuaFunctionValue, luaArgs
 		return [];
 	}
 	const output: unknown[] = [];
-	const moduleId = engineCore.sources.path2lua[runtime.currentPath].source_path;
-	const baseCtx = { moduleId, path: [] };
+	const baseCtx = buildMarshalContext(runtime);
 	for (let i = 0; i < results.length; i += 1) {
 		output.push(runtime.luaJsBridge.convertFromLua(results[i], extendMarshalContext(baseCtx, `ret${i}`)));
 	}

@@ -9,8 +9,23 @@ export type LuaSourceRegistry = {
 	path2lua: Record<string, LuaSourceRecord>;
 	entry_path: string;
 	namespace: string;
+	projectRootPath: string;
 	can_boot_from_source: boolean;
 };
+
+export function resolveLuaSourceRecordFromRegistries(path: string, registries: ReadonlyArray<LuaSourceRegistry | null>): LuaSourceRecord | null {
+	for (let index = 0; index < registries.length; index += 1) {
+		const registry = registries[index];
+		if (registry === null) {
+			continue;
+		}
+		const record = registry.path2lua[path];
+		if (record) {
+			return record;
+		}
+	}
+	return null;
+}
 
 export function buildLuaSources(params: { cartSource: RawAssetSource; assetSource: RawAssetSource; index: CartridgeIndex; allowedPayloadIds: CartridgeLayerId[] }): LuaSourceRegistry {
 	const { cartSource, assetSource, index, allowedPayloadIds } = params;
@@ -20,6 +35,7 @@ export function buildLuaSources(params: { cartSource: RawAssetSource; assetSourc
 		path2lua: {},
 		entry_path: index.entry_path,
 		namespace: index.machine.namespace,
+		projectRootPath: index.projectRootPath,
 		can_boot_from_source: activeLuaEntries.length > 0,
 	};
 

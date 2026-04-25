@@ -213,14 +213,13 @@ function isManagedOverlayEditorActive(runtime: Runtime): boolean {
 function resolveEditorSourceWorkspacePath(runtime: Runtime, source: string): string {
 	const cart = runtime.cartLuaSources;
 	if (cart && cart.path2lua[source]) {
-		return resolveWorkspacePath(source, engineCore.cart_project_root_path);
+		return resolveWorkspacePath(source, runtime.cartProjectRootPath);
 	}
 	const engine = runtime.engineLuaSources;
 	if (engine && engine.path2lua[source]) {
-		const engineRoot = engineCore.engine_layer.index.projectRootPath || 'src/bmsx';
-		return resolveWorkspacePath(source, engineRoot);
+		return resolveWorkspacePath(source, runtime.engineProjectRootPath);
 	}
-	return resolveWorkspacePath(source, engineCore.cart_project_root_path);
+	return resolveWorkspacePath(source, runtime.cartProjectRootPath);
 }
 
 function luaErrorSourcePath(error: LuaError): string {
@@ -607,7 +606,7 @@ export function setRuntimeFault(runtime: Runtime, payload: {
 	const state = runtime.workbenchFaultState;
 	runtime.luaRuntimeFailed = true;
 	state.faultSnapshot = payload;
-	state.faultSnapshot.timestampMs = engineCore.platform.clock.dateNow();
+	state.faultSnapshot.timestampMs = runtime.clock.dateNow();
 	state.faultOverlayNeedsFlush = true;
 }
 

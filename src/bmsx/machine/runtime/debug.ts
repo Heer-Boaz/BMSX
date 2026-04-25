@@ -1,8 +1,7 @@
-import { engineCore } from '../../core/engine';
 import { describeInstructionAtPc, formatSourceSnippet, type InstructionOperandDebugInfo } from '../cpu/disassembler';
 import { valueToString } from '../firmware/globals';
 import { Table, isNativeObject, type LocalSlotDebug, type SourceRange, type Value } from '../cpu/cpu';
-import type { LuaSourceRecord } from '../program/sources';
+import { resolveLuaSourceRecordFromRegistries } from '../program/sources';
 import type { Runtime } from './runtime';
 import { getWorkspaceCachedSource } from '../../ide/workspace/cache';
 import { isStringValue, stringValueToString } from '../memory/string/pool';
@@ -80,14 +79,12 @@ function extractExpressionCandidates(range: SourceRange, sourceText: string): st
 	return result;
 }
 
-function resolveLuaSourceRecord(runtime: Runtime, path: string): LuaSourceRecord | undefined {
-	return engineCore.sources.path2lua[path]
-		?? runtime.cartLuaSources?.path2lua[path]
-		?? runtime.engineLuaSources?.path2lua[path];
-}
-
 function resourceSourceForPath(runtime: Runtime, path: string): string | null {
-	const binding = resolveLuaSourceRecord(runtime, path);
+	const binding = resolveLuaSourceRecordFromRegistries(path, [
+		runtime.activeLuaSources,
+		runtime.cartLuaSources,
+		runtime.engineLuaSources,
+	]);
 	if (!binding) {
 		return null;
 	}

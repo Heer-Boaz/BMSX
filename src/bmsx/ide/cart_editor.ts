@@ -24,8 +24,8 @@ import { editorDocumentState } from './editor/editing/document_state';
 import { findCodeTabContext, getActiveCodeTabContext } from './workbench/ui/code_tab/contexts';
 import { buildDirtyFilePath } from './workbench/workspace/io';
 import { getWorkspaceCachedSource } from './workspace/cache';
-import * as luaPipeline from './runtime/lua_pipeline';
 import { Runtime } from '../machine/runtime/runtime';
+import { resolveLuaSourceRecordFromRegistries } from '../machine/program/sources';
 
 export { activate, deactivate, draw, shutdown, tickInput, update };
 
@@ -52,7 +52,12 @@ export type CartEditor = {
 };
 
 export function getSourceForChunk(path: string): string {
-	const asset = luaPipeline.resolveLuaSourceRecord(Runtime.instance, path);
+	const runtime = Runtime.instance;
+	const asset = resolveLuaSourceRecordFromRegistries(path, [
+		runtime.activeLuaSources,
+		runtime.cartLuaSources,
+		runtime.engineLuaSources,
+	]);
 	const context = findCodeTabContext(path);
 	if (context) {
 		if (context.id === getActiveCodeTabContext().id) {

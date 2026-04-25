@@ -11,7 +11,7 @@ import { compileLuaChunkToProgram, appendLuaChunkToProgram } from '../../machine
 import { linkProgramAssets } from '../../machine/program/linker';
 import { getWorkspaceCachedSource } from '../workspace/cache';
 import type { RuntimeResumeSnapshot, SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
-import type { LuaSourceRecord, LuaSourceRegistry } from '../../machine/program/sources';
+import { resolveLuaSourceRecordFromRegistries, type LuaSourceRegistry } from '../../machine/program/sources';
 import { logDebugState } from '../../machine/runtime/debug';
 import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
 import { applyGameViewStateToHost } from '../../machine/runtime/game/view_state';
@@ -115,7 +115,7 @@ function resolveRuntimeMachineForPlan(runtime: Runtime, plan: RuntimeAssetReload
 	if (plan.machineSource === 'cart') {
 		return runtime.assets.cartLayer.index.machine;
 	}
-	return engineCore.engine_layer.index.machine;
+	return runtime.assets.biosLayer.index.machine;
 }
 
 export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeSnapshot, preserveEngineModules?: boolean): Promise<void> {
@@ -268,7 +268,7 @@ function finishEntryBoot(runtime: Runtime, runInit: boolean | undefined): boolea
 }
 
 export function reloadLuaProgramState(runtime: Runtime, runInit = true): void {
-	const binding = engineCore.sources.path2lua[engineCore.sources.entry_path] as any;
+	const binding = runtime.activeLuaSources.path2lua[runtime.activeLuaSources.entry_path];
 	if (!binding) {
 		console.info('No Lua entry point defined; cannot reload program. Please save the entry point and try again.');
 		return;
@@ -301,7 +301,7 @@ export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeResumeS
 	}
 	runtime._luaPath = binding;
 	try {
-		const shouldPreserveEngineModules = preserveEngineModules ?? engineCore.sources !== runtime.engineLuaSources;
+		const shouldPreserveEngineModules = preserveEngineModules ?? runtime.activeProgramSource !== 'engine';
 		hotResumeProgramEntry(runtime, { source, path: binding, preserveEngineModules: shouldPreserveEngineModules });
 	}
 	catch (error) {
@@ -318,7 +318,7 @@ export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeResumeS
 }
 
 export function refreshLuaModulesOnResume(runtime: Runtime, resumeModuleId: string): void {
-	const paths = Object.keys(engineCore.sources.path2lua);
+	const paths = Object.keys(runtime.activeLuaSources.path2lua);
 	for (let index = 0; index < paths.length; index += 1) {
 		const moduleId = paths[index];
 		if (resumeModuleId && moduleId === resumeModuleId) {
@@ -557,8 +557,7 @@ export function requireString(value: Value): string {
 }
 
 export function hasLuaAssets(runtime: Runtime): boolean {
-	const registry = engineCore.sources === runtime.engineLuaSources ? runtime.engineLuaSources : runtime.cartLuaSources;
-	return registry.can_boot_from_source;
+	return runtime.activeLuaSources.can_boot_from_source;
 }
 
 export function shouldBootLuaProgramFromSources(runtime: Runtime): boolean {
@@ -591,8 +590,7 @@ export function loadProgramAssetsForSource(runtime: Runtime, source: 'engine' | 
 }
 
 export function loadProgramAssets(runtime: Runtime): { program: ProgramAsset; symbols: ProgramSymbolsAsset | null } {
-	const source = engineCore.sources === runtime.engineLuaSources ? 'engine' : 'cart';
-	return loadProgramAssetsForSource(runtime, source);
+	return loadProgramAssetsForSource(runtime, runtime.activeProgramSource);
 }
 
 export function buildModuleChunks(
@@ -601,7 +599,11 @@ export function buildModuleChunks(
 	registries?: LuaSourceRegistry[],
 	interpreter: LuaInterpreter = runtime.interpreter,
 ): { modules: Array<{ path: string; chunk: LuaChunk; source: string }>; modulePaths: string[] } {
-	const entryAsset = resolveLuaSourceRecord(runtime, entryPath);
+	const entryAsset = resolveLuaSourceRecordFromRegistries(entryPath, [
+		runtime.activeLuaSources,
+		runtime.cartLuaSources,
+		runtime.engineLuaSources,
+	]);
 	const entryKey = entryAsset ? entryAsset.source_path : entryPath;
 	const modules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
 	const modulePaths: string[] = [];
@@ -666,7 +668,7 @@ export function compileCartLuaProgramForBoot(runtime: Runtime): {
 
 export function bootProgramAsset(runtime: Runtime, options?: { preserveState?: boolean; runInit?: boolean }): boolean {
 	const { program, symbols } = loadProgramAssets(runtime);
-	const engineActive = engineCore.sources === runtime.engineLuaSources;
+	const engineActive = runtime.activeProgramSource === 'engine';
 	const engineAssets = engineActive ? null : loadProgramAssetsForSource(runtime, 'engine');
 	const linked = engineAssets ? linkProgramAssets(engineAssets.program, engineAssets.symbols, program, symbols) : null;
 	const programAsset = linked ? linked.programAsset : program;
@@ -679,7 +681,7 @@ export function bootProgramAsset(runtime: Runtime, options?: { preserveState?: b
 	runtime.cartEntryAvailable = true;
 	installFreshLuaInterpreter(runtime);
 
-	runtime._luaPath = engineCore.sources.entry_path;
+	runtime._luaPath = runtime.activeLuaSources.entry_path;
 	if (!options?.preserveState) {
 		resetRuntimeState(runtime);
 	}
@@ -727,7 +729,7 @@ export function bootActiveProgram(runtime: Runtime, options?: { preserveState?: 
 }
 
 export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; sourceOverride?: { path: string; source: string } }): boolean {
-	const entryAsset = engineCore.sources.path2lua[engineCore.sources.entry_path];
+	const entryAsset = runtime.activeLuaSources.path2lua[runtime.activeLuaSources.entry_path];
 	runtime.cartEntryAvailable = !!entryAsset;
 
 	const interpreter = installFreshLuaInterpreter(runtime);
@@ -822,7 +824,11 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, runInit = tru
 }
 
 export function resourceSourceForChunk(runtime: Runtime, path: string): string {
-	const binding = resolveLuaSourceRecord(runtime, path);
+	const binding = resolveLuaSourceRecordFromRegistries(path, [
+		runtime.activeLuaSources,
+		runtime.cartLuaSources,
+		runtime.engineLuaSources,
+	]);
 	if (!binding) {
 		return null;
 	}
@@ -842,31 +848,12 @@ export function listLuaSourceRegistries(runtime: Runtime): Array<{ registry: Lua
 	return registries;
 }
 
-export function resolveLuaSourceRecord(runtime: Runtime, path: string): LuaSourceRecord | null {
-	const active = engineCore.sources.path2lua[path];
-	if (active) {
-		return active;
-	}
-	const cartSources = runtime.cartLuaSources;
-	if (cartSources) {
-		const cart = cartSources.path2lua[path];
-		if (cart) {
-			return cart;
-		}
-	}
-	const engine = runtime.engineLuaSources.path2lua[path];
-	if (engine) {
-		return engine;
-	}
-	return null;
-}
-
 export function resolveModuleRegistries(runtime: Runtime): LuaSourceRegistry[] {
 	const registries: LuaSourceRegistry[] = [];
-	if (engineCore.sources) {
-		registries.push(engineCore.sources);
+	if (runtime.activeLuaSources) {
+		registries.push(runtime.activeLuaSources);
 	}
-	if (runtime.engineLuaSources && runtime.engineLuaSources !== engineCore.sources) {
+	if (runtime.engineLuaSources && runtime.engineLuaSources !== runtime.activeLuaSources) {
 		registries.push(runtime.engineLuaSources);
 	}
 	return registries;

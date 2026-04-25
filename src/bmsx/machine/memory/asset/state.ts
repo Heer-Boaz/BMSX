@@ -1,5 +1,4 @@
-import { engineCore, renderGate, runGate } from '../../../core/engine';
-import { taskGate } from '../../../core/taskgate';
+import { renderGate, runGate, taskGate } from '../../../core/taskgate';
 import { decodeBinary, decodeBinaryWithPropTable } from '../../../common/serializer/binencoder';
 import { syncLuaAssetField } from '../../firmware/js_bridge';
 import type { Memory } from '../memory';
@@ -42,6 +41,7 @@ export class RuntimeAssetState {
 	public biosLayer: RuntimeAssetLayer = null;
 	public cartLayer: RuntimeAssetLayer = null;
 	public overlayLayer: RuntimeAssetLayer = null;
+	public activeSource: RawAssetSource = null;
 	public layerLookup: RuntimeLayerLookup = {};
 
 	private readonly memoryGate = taskGate.group('asset:ram');
@@ -64,20 +64,23 @@ export class RuntimeAssetState {
 		return resolveRuntimeLayerAssetFromEntry<RomImgAsset>(this.layerLookup, 'img', entry);
 	}
 
-	public getImageAsset(id: string, source: RawAssetSource = engineCore.source): RomImgAsset {
-		return resolveRuntimeLayerAssetById<RomImgAsset>(this.layerLookup, source, 'img', id);
+	public getImageAsset(id: string, source?: RawAssetSource): RomImgAsset {
+		const assetSource = source || this.requireActiveSource();
+		return resolveRuntimeLayerAssetById<RomImgAsset>(this.layerLookup, assetSource, 'img', id);
 	}
 
 	public getAudioAssetByEntry(entry: RomAsset): RomAsset {
 		return resolveRuntimeLayerAssetFromEntry<RomAsset>(this.layerLookup, 'audio', entry);
 	}
 
-	public getDataAsset(id: string, source: RawAssetSource = engineCore.source): unknown {
-		return resolveRuntimeLayerAssetById<unknown>(this.layerLookup, source, 'data', id);
+	public getDataAsset(id: string, source?: RawAssetSource): unknown {
+		const assetSource = source || this.requireActiveSource();
+		return resolveRuntimeLayerAssetById<unknown>(this.layerLookup, assetSource, 'data', id);
 	}
 
-	public listImageAssets(source: RawAssetSource = engineCore.source): RomImgAsset[] {
-		const entries = source.list();
+	public listImageAssets(source?: RawAssetSource): RomImgAsset[] {
+		const assetSource = source || this.requireActiveSource();
+		const entries = assetSource.list();
 		const assets: RomImgAsset[] = [];
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
@@ -133,23 +136,20 @@ export class RuntimeAssetState {
 		const runToken = runGate.begin({ blocking: true, category: 'asset', tag: 'asset_memory' });
 		try {
 			const mode = params?.mode ?? 'full';
-			const assetSource = params?.source ?? engineCore.source;
+			const assetSource = params && params.source ? params.source : this.requireActiveSource();
 			const engineSource = runtime.engineAssetSource;
-			if (!assetSource) {
-				throw runtimeFault('asset source not configured.');
-			}
 			if (!engineSource) {
 				throw runtimeFault('engine asset source not configured.');
 			}
 			const memory = runtime.machine.memory;
 			if (mode === 'cart') {
 				memory.resetCartAssets();
-				} else {
-					memory.resetAssetMemory();
-				}
-				const imageMemory = registerImageMemory(memory, engineSource.list(), assetSource.list());
-				runtime.machine.vdp.registerVramAssets(imageMemory.atlasMemory);
-				await restoreEngineAtlas(memory, imageMemory.engineAtlasRecord);
+			} else {
+				memory.resetAssetMemory();
+			}
+			const imageMemory = registerImageMemory(memory, engineSource.list(), assetSource.list());
+			runtime.machine.vdp.registerVramAssets(imageMemory.atlasMemory);
+			await restoreEngineAtlas(memory, imageMemory.engineAtlasRecord);
 			this.registerAudioAssets(assetSource, memory);
 			this.rebuildMetaCaches(assetSource, memory);
 			memory.finalizeAssetTable();
@@ -209,10 +209,7 @@ export class RuntimeAssetState {
 
 	public buildAudioResourcesForSoundMaster(memory: Memory): id2res {
 		const resources: id2res = {};
-		const source = engineCore.source;
-		if (!source) {
-			throw runtimeFault('asset source not configured.');
-		}
+		const source = this.requireActiveSource();
 		const sharedMetadataByPayloadId = new Map<CartridgeLayerId, readonly string[] | null>();
 		const entries = source.list('audio');
 		for (let index = 0; index < entries.length; index += 1) {
@@ -275,10 +272,7 @@ export class RuntimeAssetState {
 				return memory.getAudioBytes(entry);
 			}
 		}
-		const source = engineCore.source;
-		if (!source) {
-			throw runtimeFault('asset source not configured.');
-		}
+		const source = this.requireActiveSource();
 		const entry = source.getEntry(id);
 		if (!entry) {
 			throw runtimeFault(`audio asset '${id}' not found in ROM.`);
@@ -287,6 +281,13 @@ export class RuntimeAssetState {
 			throw runtimeFault(`audio asset '${id}' missing ROM buffer offsets.`);
 		}
 		return source.getBytesView(entry);
+	}
+
+	private requireActiveSource(): RawAssetSource {
+		if (!this.activeSource) {
+			throw runtimeFault('active asset source is not configured.');
+		}
+		return this.activeSource;
 	}
 }
 

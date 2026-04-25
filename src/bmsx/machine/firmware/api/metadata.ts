@@ -1,6 +1,3 @@
-import type { EngineCore } from '../../../core/engine';
-import type { Api } from './index';
-
 export type ApiParameterMetadata = {
 	readonly name: string;
 	readonly optional?: boolean;
@@ -14,13 +11,7 @@ export type ApiMethodMetadata = {
 	readonly returnDescription?: string;
 };
 
-type ApiMemberName = keyof Api & { $: EngineCore };
-
 export const API_METHOD_METADATA = {
-	$: {
-		description: 'Returns the active Game instance.',
-		parameters: [],
-	},
 	display_width: {
 		description: 'Returns the current display width in pixels.',
 		parameters: [],
@@ -45,74 +36,6 @@ export const API_METHOD_METADATA = {
 			{ name: 'cpuHz', description: 'Positive safe integer CPU frequency in hertz.' },
 		],
 		returnType: 'void',
-	},
-	mousebtn: {
-		description: 'Checks whether a pointer button is currently pressed.',
-		parameters: [
-			{ name: 'button', description: 'Pointer button index (0=Primary, 1=Secondary, 2=Auxiliary, 3=Back, 4=Forward).' },
-		],
-		returnType: 'boolean',
-		returnDescription: 'True while the button is held down.',
-	},
-	mousebtnp: {
-		description: 'Checks whether a pointer button was pressed this frame.',
-		parameters: [
-			{ name: 'button', description: 'Pointer button index (0=Primary, 1=Secondary, 2=Auxiliary, 3=Back, 4=Forward).' },
-		],
-		returnType: 'boolean',
-		returnDescription: 'True only on the frame the button is pressed.',
-	},
-	mousebtnr: {
-		description: 'Checks whether a pointer button was released this frame.',
-		parameters: [
-			{ name: 'button', description: 'Pointer button index (0=Primary, 1=Secondary, 2=Auxiliary, 3=Back, 4=Forward).' },
-		],
-		returnType: 'boolean',
-		returnDescription: 'True only on the frame the button is released.',
-	},
-	keyboard: {
-		description: 'Returns the keyboard input handler for the console player.',
-		parameters: [],
-		returnType: 'InputHandler',
-		returnDescription: 'Native input handler instance.',
-	},
-	mousepos: {
-		description: 'Returns the pointer position mapped into the game viewport.',
-		parameters: [],
-		returnType: 'PointerViewport',
-		returnDescription: '{ x, y, valid, inside } in viewport coordinates.',
-	},
-	pointer_screen_position: {
-		description: 'Returns the raw pointer screen position.',
-		parameters: [],
-		returnType: 'PointerVector',
-		returnDescription: '{ x, y, valid } in screen coordinates.',
-	},
-	pointer_delta: {
-		description: 'Returns the pointer movement delta since last frame.',
-		parameters: [],
-		returnType: 'PointerVector',
-		returnDescription: '{ x, y, valid } delta values.',
-	},
-	pointer_viewport_position: {
-		description: 'Returns the pointer position mapped into the game viewport.',
-		parameters: [],
-		returnType: 'PointerViewport',
-		returnDescription: '{ x, y, valid, inside } in viewport coordinates.',
-	},
-	mousewheel: {
-		description: 'Returns the pointer wheel delta.',
-		parameters: [],
-		returnType: 'PointerWheel',
-		returnDescription: '{ value, valid } wheel delta.',
-	},
-	stat: {
-		description: 'Returns numeric stat values; indices 32-36 cover pointer position/buttons/wheel.',
-		parameters: [
-			{ name: 'index', description: 'Stat index to query (integer).' },
-		],
-		returnType: 'number',
-		returnDescription: 'Stat value (0 when unavailable/unsupported).',
 	},
 	mesh: {
 		description: 'Submits a 3D mesh render request.',
@@ -427,4 +350,4 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-} as const satisfies Record<ApiMemberName, ApiMethodMetadata>;
+} as const satisfies Record<string, ApiMethodMetadata>;

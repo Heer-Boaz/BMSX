@@ -2,10 +2,8 @@ import type { LuaSourceRecord, LuaSourceRegistry } from '../../machine/program/s
 import type { StorageService } from '../../platform';
 import { Runtime } from '../../machine/runtime/runtime';
 import * as luaPipeline from '../runtime/lua_pipeline';
-import { engineCore } from '../../core/engine';
 import type { LuaResourceCreationRequest, ResourceDescriptor } from '../../rompack/resource';
 import {
-	DEFAULT_ENGINE_PROJECT_ROOT_PATH,
 	applyWorkspaceSourceOverrides,
 	collectScratchWorkspaceDirtyPaths,
 	deleteWorkspaceFile,
@@ -20,12 +18,11 @@ export { joinWorkspacePaths } from './path';
 
 function resolveEditableCartLuaSources(): LuaSourceRegistry {
 	const runtime = Runtime.instance;
-	return runtime.cartLuaSources ? runtime.cartLuaSources : engineCore.sources;
+	return runtime.cartLuaSources ? runtime.cartLuaSources : runtime.activeLuaSources;
 }
 
 function resolveEngineProjectRootPath(): string {
-	const engineRoot = engineCore.engine_layer.index.projectRootPath;
-	return engineRoot && engineRoot.length > 0 ? engineRoot : DEFAULT_ENGINE_PROJECT_ROOT_PATH;
+	return Runtime.instance.engineProjectRootPath;
 }
 
 function isEngineLuaSourcePath(path: string): boolean {
@@ -49,27 +46,29 @@ export function resolveLuaSourceProjectRootPath(path: string): string {
 	const runtime = Runtime.instance;
 	const cart = runtime.cartLuaSources;
 	if (cart && cart.path2lua[path]) {
-		return engineCore.cart_project_root_path;
+		return runtime.cartProjectRootPath;
 	}
 	const engine = runtime.engineLuaSources;
 	if (engine && engine.path2lua[path]) {
 		return resolveEngineProjectRootPath();
 	}
-	return engineCore.cart_project_root_path;
+	return runtime.cartProjectRootPath;
 }
 
 export async function saveLuaResourceSource(path: string, source: string): Promise<void> {
+	const runtime = Runtime.instance;
 	const registry = resolveLuaSourceRegistry(path);
 	const asset = registry.path2lua[path];
 	const sourcePath = asset.source_path;
 	await persistWorkspaceSourceFile(sourcePath, source, resolveLuaSourceProjectRootPath(sourcePath));
 	asset.src = source;
-	asset.update_timestamp = engineCore.platform.clock.dateNow();
+	asset.update_timestamp = runtime.clock.dateNow();
 	registry.path2lua[sourcePath] = asset;
-	luaPipeline.markSourceChunkAsDirty(Runtime.instance, sourcePath);
+	luaPipeline.markSourceChunkAsDirty(runtime, sourcePath);
 }
 
 export async function createLuaResource(request: LuaResourceCreationRequest): Promise<ResourceDescriptor> {
+	const runtime = Runtime.instance;
 	const contents = typeof request.contents === 'string' ? request.contents : '';
 	const path = request.path;
 	const slashIndex = path.lastIndexOf('/');
@@ -81,31 +80,32 @@ export async function createLuaResource(request: LuaResourceCreationRequest): Pr
 		src: contents,
 		base_src: contents,
 		source_path: path,
-		update_timestamp: engineCore.platform.clock.dateNow(),
+		update_timestamp: runtime.clock.dateNow(),
 	};
 	const registerAsset = (registry: LuaSourceRegistry): void => {
 		registry.path2lua[asset.source_path] = asset;
 		registry.can_boot_from_source = true;
 	};
 	const registry = isEngineLuaSourcePath(asset.source_path)
-		? Runtime.instance.engineLuaSources
+		? runtime.engineLuaSources
 		: resolveEditableCartLuaSources();
 	registerAsset(registry);
-	luaPipeline.invalidateModuleAliases(Runtime.instance);
+	luaPipeline.invalidateModuleAliases(runtime);
 	const filesystemPath = asset.source_path;
-	await persistWorkspaceSourceFile(filesystemPath, contents, isEngineLuaSourcePath(filesystemPath) ? resolveEngineProjectRootPath() : engineCore.cart_project_root_path);
-	luaPipeline.markSourceChunkAsDirty(Runtime.instance, asset.source_path);
+	await persistWorkspaceSourceFile(filesystemPath, contents, isEngineLuaSourcePath(filesystemPath) ? resolveEngineProjectRootPath() : runtime.cartProjectRootPath);
+	luaPipeline.markSourceChunkAsDirty(runtime, asset.source_path);
 	const descriptor: ResourceDescriptor = { path: asset.source_path, type: 'lua' };
 	return descriptor;
 }
 
 export async function applyWorkspaceOverridesToRegistry(params: { registry: LuaSourceRegistry; storage: StorageService; includeServer?: boolean; projectRootPath?: string }): Promise<Set<string>> {
+	const runtime = Runtime.instance;
 	return await applyWorkspaceSourceOverrides({
 		registry: params.registry,
 		storage: params.storage,
 		includeServer: params.includeServer,
-		projectRootPath: params.projectRootPath ?? engineCore.cart_project_root_path,
-		timestampNow: engineCore.platform.clock.dateNow(),
+		projectRootPath: params.projectRootPath ?? runtime.cartProjectRootPath,
+		timestampNow: runtime.clock.dateNow(),
 	});
 }
 
@@ -126,7 +126,7 @@ async function discardWorkspaceDirtyPath(storage: StorageService, root: string, 
 }
 
 export async function clearWorkspaceArtifacts(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
-	const root = engineCore.cart_project_root_path;
+	const root = Runtime.instance.cartProjectRootPath;
 	for (const asset of Object.values(cart.path2lua)) {
 		await discardWorkspaceDirtyPath(storage, root, asset.source_path);
 	}
@@ -137,7 +137,7 @@ export async function clearWorkspaceArtifacts(cart: LuaSourceRegistry, storage: 
 }
 
 async function clearWorkspaceDirtyFiles(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
-	const root = engineCore.cart_project_root_path;
+	const root = Runtime.instance.cartProjectRootPath;
 	const scratchPaths = await collectScratchWorkspaceDirtyPaths(root);
 	for (const asset of Object.values(cart.path2lua)) {
 		await discardWorkspaceDirtyPath(storage, root, asset.source_path);

@@ -1,4 +1,3 @@
-import { engineCore } from '../../core/engine';
 import { extractErrorMessage, type StackTraceFrame } from '../../lua/value';
 import { clamp01 } from '../../common/clamp';
 import {
@@ -1162,7 +1161,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		out.push(lower + Math.floor(randomValue * span));
 	}));
 	setKey(mathTable, 'randomseed', createNativeFunction('math.randomseed', (args, out) => {
-		const seedValue = args.length > 0 ? (args[0] as number) : engineCore.platform.clock.now();
+		const seedValue = args.length > 0 ? (args[0] as number) : runtime.clock.now();
 		luaPipeline.setRandomSeed(runtime, Math.floor(seedValue) >>> 0);
 		out.length = 0;
 	}));
@@ -1511,7 +1510,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		out.push(bitcastView.getFloat64(0, true));
 	}));
 	luaPipeline.registerGlobal(runtime, 'clock_now', createNativeFunction('clock_now', (_args, out) => {
-		out.push(engineCore.platform.clock.now());
+		out.push(runtime.clock.now());
 	}));
 	luaPipeline.registerGlobal(runtime, 'type', createNativeFunction('type', (args, out) => {
 		const value = args.length > 0 ? args[0] : null;
@@ -2412,7 +2411,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		return table;
 	};
 	setKey(osTable, 'clock', createNativeFunction('os.clock', (_args, out) => {
-		out.push(engineCore.platform.clock.now() / 1000);
+		out.push(runtime.clock.now() / 1000);
 	}));
 	setKey(osTable, 'time', createNativeFunction('os.time', (args, out) => {
 		if (args.length > 0 && args[0] !== null) {

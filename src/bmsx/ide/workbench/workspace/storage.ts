@@ -36,7 +36,7 @@ function disableWorkspacePersistence(): void {
 	detachWorkspaceExitHandler();
 }
 
-export function initializeWorkspaceStorage(projectRootPath: string): void {
+export function initializeWorkspaceStorage(projectRootPath: string | null): void {
 	stopWorkspaceAutosaveLoop();
 	workspaceState.autosaveSignature = null;
 	clearWorkspaceCachedSources();

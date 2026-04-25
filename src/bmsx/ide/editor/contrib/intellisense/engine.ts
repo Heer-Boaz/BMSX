@@ -15,6 +15,7 @@ import { buildMarshalContext, toNativeValue } from '../../../../machine/firmware
 import { buildLuaSemanticFrontend } from '../../../../lua/semantic/frontend';
 import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
+import { resolveLuaSourceRecordFromRegistries } from '../../../../machine/program/sources';
 import * as workbenchMode from '../../../workbench/mode';
 import { isStringValue, stringValueToString } from '../../../../machine/memory/string/pool';
 import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverRequest, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaMemberCompletionRequest, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
@@ -48,7 +49,6 @@ import { writeWrappedOverlayLine } from '../../common/text/layout';
 import type { ApiCompletionMetadata, CodeTabContext, EditorContextToken, EditorDiagnosticSeverity, LuaCompletionItem, PointerSnapshot } from '../../../common/models';
 import type { LuaSourceRecord } from '../../../../machine/program/sources';
 import { Pool } from '../../../../common/pool';
-import { engineCore } from '../../../../core/engine';
 import { KEYWORDS, LuaTokenType, type LuaToken } from '../../../../lua/syntax/token';
 import { splitText } from '../../../../common/text_lines';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
@@ -1576,7 +1576,8 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 export function getStaticDefinitions(preferredChunk: string): { definitions: ReadonlyArray<LuaDefinitionInfo>; paths: Array<{ path: string; info: { asset_id: string; path?: string } }>; models: Map<string, LuaSemanticModel> } {
 	const interpreter = Runtime.instance.interpreter;
 	const matchingChunks: Array<{ path: string; info: { asset_id: string; path?: string } }> = [];
-	const luaSources = Runtime.instance.cartLuaSources ? Runtime.instance.cartLuaSources : engineCore.sources;
+	const runtime = Runtime.instance;
+	const luaSources = runtime.cartLuaSources ? runtime.cartLuaSources : runtime.activeLuaSources;
 	for (const asset of Object.values(luaSources.path2lua) as LuaSourceRecord[]) {
 		const path = asset.source_path;
 		const info: { asset_id: string; path?: string } = { asset_id: asset.resid, path: asset.source_path };
@@ -1867,7 +1868,11 @@ function resolveRuntimeLocalChainValue(
 	if (!metadata?.localSlotsByProto) {
 		return null;
 	}
-	const requestedRecord = luaPipeline.resolveLuaSourceRecord(runtime, path);
+	const requestedRecord = resolveLuaSourceRecordFromRegistries(path, [
+		runtime.activeLuaSources,
+		runtime.cartLuaSources,
+		runtime.engineLuaSources,
+	]);
 	const requestedPath = requestedRecord ? requestedRecord.source_path : path;
 	const cpu = runtime.machine.cpu;
 	// Use the fault snapshot when the fault overlay is active — by hover time, the crash

@@ -1,6 +1,5 @@
 import { ModulationParams, ModulationPresetResolver, RandomModulationParams, SoundMaster } from "../audio/soundmaster";
 import { Input } from "../input/manager";
-import type { InputMap } from "../input/models";
 import type { VibrationParams } from "../platform";
 import type { ActionStateQuery } from '../input/models';
 import { GameView } from "../render/gameview";
@@ -11,11 +10,9 @@ import type { SkyboxImageIds } from "../machine/devices/vdp/contracts";
 import { HZ_SCALE as PLATFORM_HZ_SCALE, setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform, PlatformExitEvent, SubscriptionHandle } from '../platform';
 import { asset_id, getMachineMaxVoices, RuntimeAssets, type CartManifest, type MachineManifest, type vec2 } from "../rompack/format";
-import { AssetSourceStack, type RawAssetSource } from '../rompack/source';
-import { buildSystemRuntimeAssetLayer, normalizeCartridgeBlob, parseCartridgeIndex, type RuntimeAssetLayer } from '../rompack/loader';
+import { buildSystemRuntimeAssetLayer, normalizeCartridgeBlob, parseCartridgeIndex } from '../rompack/loader';
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system';
-import type { LuaSourceRegistry } from '../machine/program/sources';
-import { GateGroup, taskGate } from './taskgate';
+import { renderGate, runGate } from './taskgate';
 import { Runtime } from '../machine/runtime/runtime';
 import { raiseEngineIrq } from '../machine/runtime/engine_irq';
 import { installNativeGlobal, runConsoleChunkToNative } from '../machine/program/executor';
@@ -51,10 +48,6 @@ const DEFAULT_MASTER_VOLUME = 1;
 
 export const HZ_SCALE = PLATFORM_HZ_SCALE;
 
-// Gate to block the game update/run loop (used when loading/hydrating game state)
-export const runGate: GateGroup = taskGate.group('run:main');
-export const renderGate: GateGroup = taskGate.group('render:main');
-
 /**
  * Represents the main game loop and manages the game state.
  */
@@ -76,10 +69,6 @@ export class EngineCore {
 	private _system_assets: RuntimeAssets = null;
 	private _cart_manifest: CartManifest = null;
 	private _machine_manifest: MachineManifest = null;
-	private _source: RawAssetSource = null;
-	private _sources: LuaSourceRegistry = null;
-	private _engine_layer: RuntimeAssetLayer = null;
-	private _workspace_overlay: Uint8Array = null;
 	private _cart_project_root_path: string = null;
 
 	/**
@@ -146,17 +135,7 @@ export class EngineCore {
 	public get system_assets(): RuntimeAssets { return this._system_assets; }
 	public get cart_manifest(): CartManifest { return this._cart_manifest; }
 	public get machine_manifest(): MachineManifest { return this._machine_manifest; }
-	public get source(): RawAssetSource { return this._source; }
-	public get sources(): LuaSourceRegistry { return this._sources; }
-	public get engine_layer(): RuntimeAssetLayer { return this._engine_layer; }
-	public get workspace_overlay(): Uint8Array { return this._workspace_overlay; }
 	public get cart_project_root_path(): string { return this._cart_project_root_path; }
-	public set_sources(sources: LuaSourceRegistry): void {
-		this._sources = sources;
-	}
-	public set_source(source: RawAssetSource): void {
-		this._source = source;
-	}
 	public set_assets(assets: RuntimeAssets): void {
 		this._assets = assets;
 	}
@@ -176,10 +155,6 @@ export class EngineCore {
 	public get texmanager(): TextureManager { return TextureManager.instance!; }
 	public get sndmaster(): SoundMaster { return SoundMaster.instance; }
 	public get platform(): Platform { return this._platform!; }
-
-	public set_inputmap(playerIndex: number, map: InputMap): void {
-		this.input.getPlayerInput(playerIndex).setInputMap(map);
-	}
 
 	public action_triggered(playerIndex: number, action: string): boolean {
 		return this.input.getPlayerInput(playerIndex).checkActionTriggered(action);
@@ -216,7 +191,7 @@ export class EngineCore {
 	}
 
 	public is_cart_program_active(): boolean {
-		return Runtime.hasInstance && engineCore.sources !== Runtime.instance.engineLuaSources;
+		return Runtime.hasInstance && Runtime.instance.activeProgramSource !== 'engine';
 	}
 
 	public request_new_game(): void {
@@ -337,14 +312,11 @@ export class EngineCore {
 			machine: SYSTEM_MACHINE_MANIFEST,
 			entry_path: SYSTEM_BOOT_ENTRY_PATH,
 		});
-		this._engine_layer = engineLayer;
-		this._workspace_overlay = workspaceOverlay;
 		this._system_assets = engineLayer.assets;
 		this._assets = this._system_assets;
 		this._cart_manifest = null;
 		this._machine_manifest = engineLayer.index.machine;
 		this._cart_project_root_path = null;
-		this._source = new AssetSourceStack([{ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload }]);
 		platform.gameviewHost = resolvedViewHost;
 		this._platform = platform;
 		setMicrotaskQueue(platform.microtasks);
@@ -408,7 +380,7 @@ export class EngineCore {
 			this.removeWillExit = engineCore.platform.lifecycle.onWillExit(this.onBeforeUnload);
 		}
 		this.initialized = true; // Mark the game as initialized
-		await Runtime.init(cartridge);
+		await Runtime.init(engineLayer, workspaceOverlay, cartridge);
 		// SoundMaster.instance.volume = 0;
 		return this!; // Allow chaining
 	}

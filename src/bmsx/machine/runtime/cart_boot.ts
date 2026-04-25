@@ -117,7 +117,7 @@ export class CartBootState {
 	}
 
 	private pollSystemBootRequest(runtime: Runtime): void {
-		if (engineCore.sources !== runtime.engineLuaSources) {
+		if (runtime.activeProgramSource !== 'engine') {
 			return;
 		}
 		if (runtime.machine.memory.readIoU32(IO_SYS_BOOT_CART) === 0) {

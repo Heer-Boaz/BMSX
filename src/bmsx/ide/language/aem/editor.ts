@@ -1,21 +1,22 @@
-import { engineCore } from '../../../core/engine';
 import { extractErrorMessage } from '../../../lua/value';
 import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument, type StructuredTextDocumentFormat } from '../../../audio/aem';
 import type { ResourceDescriptor } from '../../../rompack/resource';
-import { loadWorkspaceSourceFile, persistWorkspaceSourceFile } from '../../workspace/files';
 import { formatAemYamlDocument } from './yaml_formatter';
+import { Runtime } from '../../../machine/runtime/runtime';
+import { runConsoleChunkToNative } from '../../../machine/program/executor';
 
 function resolveAemSourceFormat(path: string): StructuredTextDocumentFormat {
 	return path.endsWith('.json') ? 'json' : 'yaml';
 }
 
 function buildRuntimeAemValidationLookup() {
-	const audioIds = Object.keys(engineCore.assets.audio);
-	const dataAssetNames = Object.keys(engineCore.assets.data);
+	const assets = Runtime.instance.activeAssets;
+	const audioIds = Object.keys(assets.audio);
+	const dataAssetNames = Object.keys(assets.data);
 	const dataAssets: Array<{ name: string; value: unknown }> = [];
 	for (let index = 0; index < dataAssetNames.length; index += 1) {
 		const name = dataAssetNames[index]!;
-		dataAssets.push({ name, value: engineCore.assets.data[name] });
+		dataAssets.push({ name, value: assets.data[name] });
 	}
 	return buildAemValidationLookup({
 		audioIds,
@@ -24,11 +25,11 @@ function buildRuntimeAemValidationLookup() {
 }
 
 function reloadAem(): void {
-	engineCore.evaluate_lua(`rget('aem'):reload()`);
+	runConsoleChunkToNative(Runtime.instance, `rget('aem'):reload()`);
 }
 
 export function listAemResourceDescriptors(): ResourceDescriptor[] {
-	const assetSource = engineCore.source;
+	const assetSource = Runtime.instance.activeAssetSource;
 	if (!assetSource) {
 		return [];
 	}
@@ -47,14 +48,6 @@ export function listAemResourceDescriptors(): ResourceDescriptor[] {
 	}
 	descriptors.sort((left, right) => left.path.localeCompare(right.path));
 	return descriptors;
-}
-
-export async function loadAemResourceSource(path: string): Promise<string> {
-	return await loadWorkspaceSourceFile(path, engineCore.cart_project_root_path);
-}
-
-export async function saveAemResourceSource(path: string, source: string): Promise<void> {
-	await persistWorkspaceSourceFile(path, source, engineCore.cart_project_root_path);
 }
 
 export function formatAemDocument(source: string, path: string, lines: readonly string[]): string {
@@ -91,12 +84,13 @@ export function applyAemSourceToRuntime(descriptor: ResourceDescriptor, source: 
 	}
 	const doc = parseStructuredTextDocument(source, resolveAemSourceFormat(descriptor.path), `AEM file '${descriptor.path}'`);
 	assertValidAemDocument(doc, buildRuntimeAemValidationLookup(), descriptor.path);
-	const previousDoc = engineCore.assets.audioevents[assetId];
+	const assets = Runtime.instance.activeAssets;
+	const previousDoc = assets.audioevents[assetId];
 	try {
-		engineCore.assets.audioevents[assetId] = doc as Record<string, unknown>;
+		assets.audioevents[assetId] = doc as Record<string, unknown>;
 		reloadAem();
 	} catch (error) {
-		engineCore.assets.audioevents[assetId] = previousDoc;
+		assets.audioevents[assetId] = previousDoc;
 		try {
 			reloadAem();
 		} catch (restoreError) {

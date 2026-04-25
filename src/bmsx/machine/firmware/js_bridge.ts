@@ -1,11 +1,10 @@
-import { engineCore } from '../../core/engine';
 import { LuaSourceRange } from '../../lua/syntax/ast';
 import { LuaEnvironment } from '../../lua/environment';
 import { LuaHandlerCache, isLuaHandlerFunction } from '../../lua/handler_cache';
 import { LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, isLuaNativeMemberHandle, LuaFunctionValue } from '../../lua/value';
 import { Table, type Closure, type NativeFunction, type NativeObject, type Value, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject } from '../cpu/cpu';
-import { Runtime } from '../runtime/runtime';
-import { LuaMarshalContext } from '../runtime/contracts';
+import type { Runtime } from '../runtime/runtime';
+import type { LuaMarshalContext } from '../runtime/contracts';
 import { isStringValue, stringValueToString } from '../memory/string/pool';
 
 // disable defensive_typeof_function_pattern -- JS bridge marshals arbitrary host values; callable probes are explicit interop boundaries.
@@ -52,7 +51,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 
 	public convertFromLua(value: LuaValue, context?: LuaMarshalContext): unknown {
 		if (!context) {
-			context = { moduleId: engineCore.sources.path2lua[Runtime.instance.currentPath].source_path, path: [] };
+			context = buildMarshalContext(this.runtime);
 		}
 		return this.luaValueToJsWithVisited(value, context, new WeakMap<LuaTable, unknown>());
 	}
@@ -693,15 +692,7 @@ export function extendMarshalContext(ctx: LuaMarshalContext, segment: string): L
 }
 
 export function buildMarshalContext(runtime: Runtime): LuaMarshalContext {
-	let moduleId = 'runtime';
-	const currentPath = runtime.currentPath;
-	if (currentPath) {
-		const binding = engineCore.sources.path2lua[currentPath];
-		if (binding) {
-			moduleId = binding.source_path;
-		}
-	}
-	return { moduleId, path: [] };
+	return { moduleId: runtime.resolveCurrentModuleId(), path: [] };
 }
 
 export function describeMarshalSegment(key: Value): string {
@@ -722,10 +713,6 @@ function resolveNativeKey(key: Value): string {
 		return String(key);
 	}
 	return null;
-}
-
-function isBlockedGameTimingProperty(target: object, key: string): boolean {
-	return target === engineCore && (key === 'deltatime' || key === 'deltatime_seconds');
 }
 
 function parseNativeKeyFromString(runtime: Runtime, key: string): Value {
@@ -947,7 +934,10 @@ export function pushNativePairsIterator(runtime: Runtime, target: NativeObject, 
 }
 
 export function getOrCreateAssetsNativeObject(runtime: Runtime): NativeObject {
-	const assets = engineCore.assets;
+	const assets = runtime.activeAssets;
+	if (!assets) {
+		throw new Error('Active runtime assets are not configured.');
+	}
 	const cached = runtime.nativeObjectCache.get(assets);
 	if (cached) {
 		return cached;
@@ -1209,9 +1199,6 @@ export function getOrCreateNativeObject(runtime: Runtime, value: object): Native
 			if (!prop) {
 				throw new Error('Attempted to index native object with unsupported key.');
 			}
-			if (isBlockedGameTimingProperty(value, prop)) {
-				return null;
-			}
 			const rawValue = (value as Record<string, unknown>)[prop];
 			if (rawValue === undefined) {
 				return null;
@@ -1231,9 +1218,6 @@ export function getOrCreateNativeObject(runtime: Runtime, value: object): Native
 			const prop = resolveNativeKey(key);
 			if (!prop) {
 				throw new Error('Attempted to assign native object with unsupported key.');
-			}
-			if (isBlockedGameTimingProperty(value, prop)) {
-				throw new Error(`Attempted to assign unsupported native object key '${prop}'.`);
 			}
 			if (entryValue === null) {
 				delete (value as Record<string, unknown>)[prop];

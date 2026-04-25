@@ -55,7 +55,10 @@ Runtime::Runtime(const RuntimeOptions& options)
 	, m_systemAssets(options.systemAssets)
 	, m_activeAssets(options.activeAssets)
 	, m_cartAssets(options.cartAssets)
+	, m_engineRom(options.engineRom)
+	, m_cartRom(options.cartRom)
 	, m_machineManifest(options.machineManifest)
+	, m_clock(EngineCore::instance().clock())
 	, m_api(std::make_unique<Api>(*this))
 	, m_machine(*m_api, *EngineCore::instance().soundMaster(), *EngineCore::instance().platform()->microtaskQueue(), VdpFrameBufferSize{
 		static_cast<uint32_t>(options.viewport.x),
@@ -70,7 +73,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	m_machine.resetDevices();
 	vblank.setVblankCycles(*this, options.vblankCycles);
 	setRenderWorkUnitsPerSec(*this, options.vdpWorkUnitsPerSec, options.geoWorkUnitsPerSec);
-	m_randomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
+	m_randomSeedValue = static_cast<uint32_t>(m_clock->now());
 	refreshMemoryMap();
 	m_machine.cpu().setExternalRootMarker([this](GcHeap& heap) {
 		for (const auto& entry : m_moduleCache) {
@@ -129,11 +132,20 @@ const std::string* Runtime::cartProjectRootPath() const {
 	return &m_cartAssets->projectRootPath;
 }
 
-void Runtime::setRuntimeEnvironment(RuntimeAssets& systemAssets, RuntimeAssets& activeAssets, const MachineManifest& machineManifest, RuntimeAssets* cartAssets) {
+void Runtime::setRuntimeEnvironment(
+	RuntimeAssets& systemAssets,
+	RuntimeAssets& activeAssets,
+	const MachineManifest& machineManifest,
+	RuntimeAssets* cartAssets,
+	RuntimeOptions::RomSpan engineRom,
+	RuntimeOptions::RomSpan cartRom
+) {
 	m_systemAssets = &systemAssets;
 	m_activeAssets = &activeAssets;
 	m_machineManifest = &machineManifest;
 	m_cartAssets = cartAssets;
+	m_engineRom = engineRom;
+	m_cartRom = cartRom;
 }
 
 void Runtime::boot(const ProgramAsset& asset, ProgramMetadata* metadata) {
@@ -162,7 +174,7 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_machine.memory().clearIoSlots();
 	m_machine.initializeSystemIo();
 	resetHardwareState();
-	m_randomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
+	m_randomSeedValue = static_cast<uint32_t>(m_clock->now());
 }
 
 void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex) {
@@ -219,13 +231,11 @@ void Runtime::resetHardwareState() {
 }
 
 void Runtime::refreshMemoryMap() {
-	const auto engineRom = EngineCore::instance().engineRomView();
-	if (engineRom.size > 0) {
-		m_machine.memory().setEngineRom(engineRom.data, engineRom.size);
+	if (m_engineRom.size > 0) {
+		m_machine.memory().setEngineRom(m_engineRom.data, m_engineRom.size);
 	}
-	const auto cartRom = EngineCore::instance().cartRomView();
-	if (cartRom.size > 0) {
-		m_machine.memory().setCartRom(cartRom.data, cartRom.size);
+	if (m_cartRom.size > 0) {
+		m_machine.memory().setCartRom(m_cartRom.data, m_cartRom.size);
 	} else {
 		m_machine.memory().setCartRom(CART_ROM_EMPTY_HEADER.data(), CART_ROM_EMPTY_HEADER.size());
 		InputMap emptyMapping;

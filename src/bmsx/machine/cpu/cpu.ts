@@ -99,14 +99,9 @@ function resolveApiNativeCost(name: string): NativeFnCost {
 		case 'display_height':
 		case 'get_cpu_freq_hz':
 		case 'get_default_font':
-		case 'keyboard':
 		case 'rungate':
 		case 'runtime':
 			return NATIVE_COST_TIER0;
-		case 'mousebtn':
-		case 'mousebtnp':
-		case 'mousebtnr':
-		case 'stat':
 		case 'put_mesh':
 		case 'put_particle':
 		case 'skybox':
@@ -117,11 +112,6 @@ function resolveApiNativeCost(name: string): NativeFnCost {
 		case 'dget':
 		case 'reboot':
 			return NATIVE_COST_TIER1;
-		case 'pointer_screen_position':
-		case 'pointer_delta':
-		case 'pointer_viewport_position':
-		case 'mousepos':
-		case 'mousewheel':
 		case 'set_cpu_freq_hz':
 		case 'dset':
 			return NATIVE_COST_TIER2;

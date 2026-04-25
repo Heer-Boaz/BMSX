@@ -1,4 +1,4 @@
-import { engineCore, runGate } from '../../../core/engine';
+import { runGate } from '../../../core/taskgate';
 import {
 	color,
 	MeshRenderSubmission,
@@ -54,11 +54,7 @@ export class Api {
 	private _runtime: Runtime;
 
 	constructor(options: ApiOptions) {
-		const view = engineCore.view;
-		if (!view) {
-			throw new Error('Game view not initialised.');
-		}
-		const viewport = view.viewportSize;
+		const viewport = options.runtime.gameViewState.viewportSize;
 		if (viewport.x <= 0 || viewport.y <= 0) {
 			throw new Error('Invalid viewport size.');
 		}

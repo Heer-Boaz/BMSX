@@ -10,7 +10,7 @@ import { isExpressionInScopeFingerprint } from './bindings';
 import { isTemporalSnapshotInitializer } from './local_bindings';
 import { isNamedPrimitivePredicate, isTrivialDelegationCallExpression } from './runtime_patterns';
 import { collectSemanticBodySignatures } from './semantic';
-import { getSingleStatementWrapperTarget, isLoopConditionExpression } from './statements';
+import { getDelegationCallExpression, getSingleStatementWrapperTarget, isLoopConditionExpression } from './statements';
 import { type NormalizedBodyInfo } from '../../../normalized_body';
 
 export type { NormalizedBodyInfo };
@@ -143,13 +143,17 @@ export function isSingleLineWrapperCandidate(functionNode: ts.Node, _sourceFile:
 	}
 	const statement = body.statements[0];
 	if (ts.isReturnStatement(statement)) {
-		return statement.expression !== undefined
-			&& ts.isCallExpression(statement.expression)
-			&& !isNamedPrimitivePredicate(functionNode, statement.expression)
-			&& isTrivialDelegationCallExpression(statement.expression);
+		if (statement.expression === undefined) {
+			return false;
+		}
+		const call = getDelegationCallExpression(statement.expression);
+		return call !== null
+			&& !isNamedPrimitivePredicate(functionNode, call)
+			&& isTrivialDelegationCallExpression(call);
 	}
 	if (ts.isExpressionStatement(statement)) {
-		return ts.isCallExpression(statement.expression) && isTrivialDelegationCallExpression(statement.expression);
+		const call = getDelegationCallExpression(statement.expression);
+		return call !== null && isTrivialDelegationCallExpression(call);
 	}
 	return false;
 }

@@ -382,36 +382,46 @@ Desired direction:
 
 ### 3. Firmware, Resource, And Devtool APIs Need Sharper Boundaries
 
-Firmware setup still reaches through `EngineCore` for cart/system assets,
-manifests, project roots, view settings, and clock functions. The Lua source
-inspection APIs are now split into `devtools`, which is the right direction,
-but that boundary must stay devtool-only.
+Firmware, resource lookup, and devtool source inspection are now separated from
+host `EngineCore` query state. `EngineCore` still bootstraps platform/view/audio
+objects, but cart-visible firmware and IDE/devtool source/resource queries use
+runtime-owned program sources, active asset sources, runtime storage, runtime
+clock, and machine memory.
 
 Current evidence:
 
-- `src/bmsx_cpp/machine/firmware/globals.cpp` no longer owns ROM asset-range
-  search logic for the cart-facing `resolve_*_rom_asset_range` builtins. That
-  lookup now lives in `src/bmsx_cpp/machine/memory/asset_memory.cpp`, matching
-  the TS side where `RuntimeAssetState` owns ROM range resolution.
-- The same file builds globals from `loadedCartManifest()`,
-  `loadedCartEntryPath()`, `cartAssets()`, `machineManifest()`,
-  `cartProjectRootPath()`, and `view()`.
+- TS `EngineCore` no longer carries the source/source-registry mirror,
+  workspace-overlay getter, or engine-layer getter that firmware/devtool code
+  used to query indirectly.
+- TS runtime startup receives the system asset layer and workspace overlay from
+  the host startup boundary, then owns `engineLuaSources`, `cartLuaSources`,
+  `activeLuaSources`, `activeAssetSource`, and `activeAssets`.
+- `LuaSourceRegistry` carries its project root, so editor/devtool workspace path
+  resolution no longer asks `EngineCore` for cart or engine project roots.
+- TS firmware builtins, JS bridge marshalling, debug source lookup, resource
+  panels/viewers, bitmap font lookup, and AEM/editor resource code query runtime
+  source/resource owners instead of `engineCore.sources`,
+  `engineCore.source`, `engineCore.assets`, or `engineCore.platform.clock`.
+- Native firmware globals use `Runtime::clock()` and runtime assets/manifests;
+  native runtime memory refresh uses ROM spans owned by `RuntimeOptions`
+  instead of `EngineCore::engineRomView()` / `cartRomView()`.
 - `src/bmsx/machine/firmware/devtools.ts` exposes source inspection APIs and
   deliberately checks workspace cached source and dirty buffers before packed
   source.
 - `src/bmsx_cpp/machine/firmware/devtools.cpp` mirrors the devtool source
   inspection surface on the native side.
 
-Risk:
+Remaining risk:
 
-Cart-visible API can silently become "whatever host/runtime data is convenient"
-instead of a stable console contract. Devtools need access to workspace source,
-but normal cart hardware should not gain that capability by accident.
+Host presentation, input, audio, and platform scheduling still legitimately use
+`EngineCore` until the larger startup split happens. Do not move source,
+resource, firmware, or devtool state back onto that host shell just because it
+is globally reachable.
 
-Desired direction:
+Guardrails:
 
-- Separate ROM/resource lookup as a firmware or machine resource contract, not
-  a direct `EngineCore` query.
+- Keep ROM/resource lookup as a firmware or machine resource contract, not a
+  direct `EngineCore` query.
 - Keep `devtools.*` as a deliberately isolated source/workspace API.
 - Keep presentation flags and viewport state behind a deliberate firmware or
   MMIO contract if carts are meant to observe them.
@@ -539,13 +549,14 @@ Completed foundation:
 2. Host frame pump split from machine tick for CPU/device/VBLANK advancement,
    host input/timing, presentation, runtime asset flushing, and fault
    surfacing.
+3. Firmware/resource/devtool API split from host `EngineCore` source, asset,
+   clock, project-root, and ROM-memory queries.
 
 Next recommended work:
 
-1. Separate firmware/resource/devtool APIs from host `EngineCore` queries.
-2. Prove libretro save-state serialization end to end.
-3. Audit TS/C++ parity subsystem by subsystem.
-4. Clean IDE/editor layering after the machine boundaries are safer.
+1. Prove libretro save-state serialization end to end.
+2. Audit TS/C++ parity subsystem by subsystem.
+3. Clean IDE/editor layering after the machine boundaries are safer.
 
 This order protects future feature work. The goal is not to make the codebase
 look abstractly tidy. The goal is to keep BMSX's cart-visible machine contract

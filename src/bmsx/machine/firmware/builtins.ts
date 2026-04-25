@@ -1,4 +1,4 @@
-import { engineCore } from '../../core/engine';
+import { Input } from '../../input/manager';
 import { InputMap } from '../../input/models';
 import { LuaEnvironment } from '../../lua/environment';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../../lua/errors';
@@ -13,7 +13,7 @@ import {
 	DEFAULT_LUA_BUILTIN_FUNCTIONS,
 	ENGINE_LUA_BUILTIN_FUNCTIONS,
 } from './builtin_descriptors';
-import { extendMarshalContext } from './js_bridge';
+import { buildMarshalContext, extendMarshalContext } from './js_bridge';
 import { api, Runtime } from '../runtime/runtime';
 import type { LuaBuiltinDescriptor } from '../runtime/contracts';
 
@@ -32,8 +32,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 		const targetPlayer = args.length >= 2
 			? Number(args[1])
 			: 1;
-		const moduleId = engineCore.sources.path2lua[runtime.currentPath].source_path;
-		const marshalCtx = { moduleId, path: [] };
+		const marshalCtx = buildMarshalContext(runtime);
 		const mappingValue = runtime.luaJsBridge.convertFromLua(mappingTable, marshalCtx) as InputMap;
 		if (!mappingValue || typeof mappingValue !== 'object') {
 			throw interpreter.runtimeError('set_input_map(mapping [, player]) requires mapping to be a table.');
@@ -51,7 +50,8 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 			}
 		}
 
-		engineCore.set_inputmap(targetPlayer, mappingValue as InputMap);
+		const playerInput = Input.instance.getPlayerInput(targetPlayer);
+		playerInput.setInputMap(mappingValue as InputMap);
 		return [];
 	});
 
@@ -110,8 +110,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 				continue;
 			}
 			const native = new LuaNativeFunction(`api.${name}`, (args) => {
-				const moduleId = engineCore.sources.path2lua[runtime.currentPath].source_path;
-				const baseCtx = { moduleId, path: [] };
+				const baseCtx = buildMarshalContext(runtime);
 				const jsArgs = Array.from(args, (arg, index) => runtime.luaJsBridge.convertFromLua(arg, extendMarshalContext(baseCtx, `arg${index}`)));
 				try {
 					const result = (api[name] as (...inner: unknown[]) => unknown).apply(api, jsArgs);
@@ -155,7 +154,6 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 	}
 
 	registerEngineBuiltins(interpreter);
-	exposeEngineObjects(env);
 }
 
 function registerEngineBuiltins(interpreter: LuaInterpreter): void {
@@ -348,13 +346,4 @@ function isLuaValue(value: unknown): value is LuaValue {
 
 export function isLuaScriptError(error: unknown): error is LuaError | LuaRuntimeError | LuaSyntaxError {
 	return error instanceof LuaError || error instanceof LuaRuntimeError || error instanceof LuaSyntaxError;
-}
-
-function exposeEngineObjects(env: LuaEnvironment): void {
-	const entries: Array<[string, any]> = [
-		['$', engineCore],
-	];
-	for (const [name, object] of entries) {
-		registerLuaGlobal(env, name, new LuaNativeValue(object));
-	}
 }

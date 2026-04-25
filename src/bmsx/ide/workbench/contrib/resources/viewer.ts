@@ -1,4 +1,3 @@
-import { engineCore } from '../../../../core/engine';
 import { clamp } from '../../../../common/clamp';
 import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
@@ -54,7 +53,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 		scroll: 0,
 	};
 	let error: string = null;
-	const assets = engineCore.assets;
+	const assets = Runtime.instance.activeAssets;
 	lines.push('');
 	switch (descriptor.type) {
 		case 'lua': {

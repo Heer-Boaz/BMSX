@@ -377,6 +377,8 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 			&m_engine_assets,
 			&m_engine_assets,
 			m_cart_rom_size > 0 ? &m_cart_assets : nullptr,
+			{ m_engine_rom_data, m_engine_rom_size },
+			{ m_cart_rom_data, m_cart_rom_size },
 			&runtimeMachine,
 			timing.ufpsScaled,
 			timing.cpuHz,
@@ -387,7 +389,14 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 		});
 	}
 	Runtime& runtime = Runtime::instance();
-	runtime.setRuntimeEnvironment(m_engine_assets, m_engine_assets, runtimeMachine, m_cart_rom_size > 0 ? &m_cart_assets : nullptr);
+	runtime.setRuntimeEnvironment(
+		m_engine_assets,
+		m_engine_assets,
+		runtimeMachine,
+		m_cart_rom_size > 0 ? &m_cart_assets : nullptr,
+		{ m_engine_rom_data, m_engine_rom_size },
+		{ m_cart_rom_data, m_cart_rom_size }
+	);
 	applyRuntimeTiming(runtime, timing);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Engine);
@@ -409,6 +418,8 @@ Runtime& EngineCore::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& ti
 			&m_engine_assets,
 			&m_cart_assets,
 			&m_cart_assets,
+			{ m_engine_rom_data, m_engine_rom_size },
+			{ m_cart_rom_data, m_cart_rom_size },
 			&machine,
 			timing.ufpsScaled,
 			timing.cpuHz,
@@ -419,7 +430,14 @@ Runtime& EngineCore::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& ti
 		});
 	}
 	Runtime& runtime = Runtime::instance();
-	runtime.setRuntimeEnvironment(m_engine_assets, assets(), assets().machine, &m_cart_assets);
+	runtime.setRuntimeEnvironment(
+		m_engine_assets,
+		assets(),
+		assets().machine,
+		&m_cart_assets,
+		{ m_engine_rom_data, m_engine_rom_size },
+		{ m_cart_rom_data, m_cart_rom_size }
+	);
 	applyRuntimeTiming(runtime, timing);
 	runtime.refreshMemoryMap();
 	return runtime;
@@ -618,6 +636,8 @@ void EngineCore::bootRuntimeFromProgram() {
 				&m_engine_assets,
 				&activeAssets,
 				m_cart_rom_size > 0 ? &m_cart_assets : nullptr,
+				{ m_engine_rom_data, m_engine_rom_size },
+				{ m_cart_rom_data, m_cart_rom_size },
 				&activeAssets.machine,
 				timing.ufpsScaled,
 				timing.cpuHz,
@@ -626,9 +646,16 @@ void EngineCore::bootRuntimeFromProgram() {
 				timing.vdpWorkUnitsPerSec,
 				timing.geoWorkUnitsPerSec,
 			});
-		}
+	}
 	Runtime& runtime = Runtime::instance();
-	runtime.setRuntimeEnvironment(m_engine_assets, activeAssets, activeAssets.machine, m_cart_rom_size > 0 ? &m_cart_assets : nullptr);
+	runtime.setRuntimeEnvironment(
+		m_engine_assets,
+		activeAssets,
+		activeAssets.machine,
+		m_cart_rom_size > 0 ? &m_cart_assets : nullptr,
+		{ m_engine_rom_data, m_engine_rom_size },
+		{ m_cart_rom_data, m_cart_rom_size }
+	);
 	applyRuntimeTiming(runtime, timing);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Cart);

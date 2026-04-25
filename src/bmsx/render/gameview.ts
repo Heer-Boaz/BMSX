@@ -30,7 +30,7 @@ import {
 	ATLAS_SECONDARY_SLOT_ID,
 	ENGINE_ATLAS_TEXTURE_KEY,
 } from 'bmsx/rompack/format';
-import { renderGate } from 'bmsx/core/engine';
+import { renderGate } from 'bmsx/core/taskgate';
 
 const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay'];
 

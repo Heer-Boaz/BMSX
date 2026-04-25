@@ -15,7 +15,7 @@ export function captureRuntimeSaveState(runtime: Runtime): RuntimeSaveState {
 		cpuState: captureRuntimeCpuState(runtime),
 		gameViewState: cloneGameViewState(runtime.gameViewState),
 		renderState: captureRuntimeRenderState(),
-		engineProgramActive: runtime.activeLuaSources === runtime.engineLuaSources,
+		engineProgramActive: runtime.activeProgramSource === 'engine',
 		luaInitialized: runtime.luaInitialized,
 		luaRuntimeFailed: runtime.luaRuntimeFailed,
 		randomSeed: runtime.randomSeedValue,

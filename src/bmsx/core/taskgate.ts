@@ -186,3 +186,5 @@ export class GateGroup {
 
 // One global gate; create groups per subsystem/operation.
 export const taskGate = new TaskGate();
+export const runGate: GateGroup = taskGate.group('run:main');
+export const renderGate: GateGroup = taskGate.group('render:main');

@@ -25,6 +25,7 @@
 #include "machine/devices/vdp/vdp.h"
 #include "render/shared/submissions.h"
 #include "core/primitives.h"
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <regex>
@@ -43,6 +44,7 @@ class RuntimeAssets;
 struct MachineManifest;
 struct CartManifest;
 class ResourceUsageDetector;
+class Clock;
 
 constexpr int DEFAULT_CYCLE_BUDGET = 1'000'000;
 
@@ -50,11 +52,18 @@ constexpr int DEFAULT_CYCLE_BUDGET = 1'000'000;
  * Runtime options for initialization.
  */
 struct RuntimeOptions {
+	struct RomSpan {
+		const u8* data = nullptr;
+		size_t size = 0;
+	};
+
 	int playerIndex = 0;
 	Viewport viewport{0, 0};
 	RuntimeAssets* systemAssets = nullptr;
 	RuntimeAssets* activeAssets = nullptr;
 	RuntimeAssets* cartAssets = nullptr;
+	RomSpan engineRom;
+	RomSpan cartRom;
 	const MachineManifest* machineManifest = nullptr;
 	i64 ufpsScaled = DEFAULT_UFPS_SCALED;
 	i64 cpuHz = 0;
@@ -146,6 +155,7 @@ public:
 	void setVdpDitherType(i32 type) { m_machine.vdp().setDitherType(type); }
 
 	f64 frameDeltaMs() const { return frameLoop.frameDeltaMs; }
+	Clock& clock() const { return *m_clock; }
 
 	/**
 	 * Get the viewport size.
@@ -163,7 +173,14 @@ public:
 	const CartManifest* cartManifest() const;
 	const std::string* cartEntryPath() const;
 	const std::string* cartProjectRootPath() const;
-	void setRuntimeEnvironment(RuntimeAssets& systemAssets, RuntimeAssets& activeAssets, const MachineManifest& machineManifest, RuntimeAssets* cartAssets);
+	void setRuntimeEnvironment(
+		RuntimeAssets& systemAssets,
+		RuntimeAssets& activeAssets,
+		const MachineManifest& machineManifest,
+		RuntimeAssets* cartAssets,
+		RuntimeOptions::RomSpan engineRom,
+		RuntimeOptions::RomSpan cartRom
+	);
 
 	Machine& machine() { return m_machine; }
 	const Machine& machine() const { return m_machine; }
@@ -240,7 +257,10 @@ private:
 	RuntimeAssets* m_systemAssets = nullptr;
 	RuntimeAssets* m_activeAssets = nullptr;
 	RuntimeAssets* m_cartAssets = nullptr;
+	RuntimeOptions::RomSpan m_engineRom;
+	RuntimeOptions::RomSpan m_cartRom;
 	const MachineManifest* m_machineManifest = nullptr;
+	Clock* m_clock = nullptr;
 
 		// Runtime core
 		std::unique_ptr<Api> m_api;

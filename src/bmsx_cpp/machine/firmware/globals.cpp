@@ -5,9 +5,9 @@
 #include "machine/common/number_format.h"
 #include "machine/memory/asset_memory.h"
 #include "machine/memory/lua_heap_usage.h"
-#include "core/engine.h"
 #include "core/time.h"
 #include "core/utf8.h"
+#include "platform.h"
 #include "rompack/format.h"
 #include "rompack/assets.h"
 #include "common/serializer/binencoder.h"
@@ -1105,7 +1105,7 @@ double Runtime::nextRandom() {
 
 void Runtime::setupBuiltins() {
 	CPU& cpu = m_machine.cpu();
-	auto* engineClock = EngineCore::instance().clock();
+	Clock* runtimeClock = &clock();
 	cpu.suspendGc();
 	struct ResumeBuiltinGc {
 		CPU& cpu;
@@ -1308,8 +1308,8 @@ void Runtime::setupBuiltins() {
 		int span = upper - lower + 1;
 		out.push_back(valueNumber(static_cast<double>(lower + static_cast<int>(randomValue * span))));
 	}));
-	mathTable->set(key("randomseed"), m_machine.cpu().createNativeFunction("math.randomseed", [this, engineClock](NativeArgsView args, NativeResults& out) {
-		double seedValue = args.empty() ? engineClock->now() : asNumber(args.at(0));
+	mathTable->set(key("randomseed"), m_machine.cpu().createNativeFunction("math.randomseed", [this, runtimeClock](NativeArgsView args, NativeResults& out) {
+		double seedValue = args.empty() ? runtimeClock->now() : asNumber(args.at(0));
 		uint64_t seed = static_cast<uint64_t>(std::floor(seedValue));
 		m_randomSeedValue = static_cast<uint32_t>(seed & 0xffffffffu);
 		(void)out;
@@ -1621,9 +1621,9 @@ void Runtime::setupBuiltins() {
 		out.push_back(valueNumber(value));
 	});
 
-	registerNativeFunction("clock_now", [engineClock](NativeArgsView args, NativeResults& out) {
+	registerNativeFunction("clock_now", [runtimeClock](NativeArgsView args, NativeResults& out) {
 		(void)args;
-		out.push_back(valueNumber(engineClock->now()));
+		out.push_back(valueNumber(runtimeClock->now()));
 	});
 	registerNativeFunction("sys_cpu_cycles_used", [this](NativeArgsView args, NativeResults& out) {
 		(void)args;
@@ -2108,7 +2108,6 @@ void Runtime::setupBuiltins() {
 			text += valueToString(args[i]);
 		}
 		std::cerr << text << std::endl;
-		EngineCore::instance().log(LogLevel::Info, "%s", text.c_str());
 		(void)out;
 	});
 
@@ -3273,9 +3272,9 @@ const Value secondKey = key("sec");
 const Value wdayKey = key("wday");
 const Value ydayKey = key("yday");
 const Value isdstKey = key("isdst");
-osTable->set(key("clock"), m_machine.cpu().createNativeFunction("os.clock", [engineClock](NativeArgsView args, NativeResults& out) {
+osTable->set(key("clock"), m_machine.cpu().createNativeFunction("os.clock", [runtimeClock](NativeArgsView args, NativeResults& out) {
 	(void)args;
-	out.push_back(valueNumber(engineClock->now() / 1000.0));
+	out.push_back(valueNumber(runtimeClock->now() / 1000.0));
 }));
 osTable->set(key("time"), m_machine.cpu().createNativeFunction("os.time", [yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey](NativeArgsView args, NativeResults& out) {
 	if (!args.empty() && !isNil(args.at(0))) {
@@ -3752,9 +3751,9 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 	viewTable->set(key("enable_fringing"), valueBool(gameViewState.enableFringing));
 	viewTable->set(key("enable_aperture"), valueBool(gameViewState.enableAperture));
 
-auto clockNowFn = m_machine.cpu().createNativeFunction("platform.clock.now", [engineClock](NativeArgsView args, NativeResults& out) {
+auto clockNowFn = m_machine.cpu().createNativeFunction("platform.clock.now", [runtimeClock](NativeArgsView args, NativeResults& out) {
 	(void)args;
-	out.push_back(valueNumber(engineClock->now()));
+	out.push_back(valueNumber(runtimeClock->now()));
 });
 auto clockPerfNowFn = m_machine.cpu().createNativeFunction("platform.clock.perf_now", [](NativeArgsView args, NativeResults& out) {
 	(void)args;

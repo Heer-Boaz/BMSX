@@ -132,12 +132,6 @@ public:
 	Clock* clock() { return m_platform->clock(); }
 	SoundMaster* soundMaster() { return m_sound_master.get(); }
 	TextureManager* texmanager() { return m_texture_manager.get(); }
-	struct RomView {
-		const u8* data;
-		size_t size;
-	};
-	RomView engineRomView() const { return { m_engine_rom_data, m_engine_rom_size }; }
-	RomView cartRomView() const { return { m_cart_rom_data, m_cart_rom_size }; }
 
 	// Time
 	f64 totalTime() const { return m_total_time; }

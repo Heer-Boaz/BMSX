@@ -1,7 +1,7 @@
 import { engineCore } from '../../../../core/engine';
 import { editorRuntimeState } from '../../common/runtime_state';
 import { scheduleRuntimeTask } from '../../../common/background_tasks';
-import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_ENGINE_PROJECT_ROOT_PATH } from '../../../workspace/workspace';
+import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry } from '../../../workspace/workspace';
 import { Runtime } from '../../../../machine/runtime/runtime';
 import { captureRuntimeResumeSnapshot } from '../../../../machine/runtime/resume_snapshot';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
@@ -62,7 +62,7 @@ export function performHotResume(): boolean {
 		if (runtime.cartLuaSources) {
 			await applyWorkspaceOverridesToCart({
 				cart: runtime.cartLuaSources,
-				storage: engineCore.platform.storage,
+				storage: runtime.storageService,
 				includeServer: true,
 				projectRootPath: runtime.cartProjectRootPath,
 			});
@@ -70,12 +70,12 @@ export function performHotResume(): boolean {
 		console.log('[IDE] Applying workspace overrides to BIOS before resume');
 		const engineChanged = await applyWorkspaceOverridesToRegistry({
 			registry: runtime.engineLuaSources,
-			storage: engineCore.platform.storage,
+			storage: runtime.storageService,
 			includeServer: true,
-			projectRootPath: engineCore.engine_layer.index.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH,
+			projectRootPath: runtime.engineProjectRootPath,
 		});
 		const preserveEngineModules =
-				engineCore.sources !== runtime.engineLuaSources
+				runtime.activeProgramSource !== 'engine'
 			&& engineChanged.size === 0
 			&& !hasPendingEngineModuleReload(runtime);
 		console.log('[IDE] Capturing runtime snapshot for resume');

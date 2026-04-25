@@ -5,7 +5,7 @@ export function joinWorkspacePaths(...segments: string[]): string {
 		.replace(/\/+/g, '/');
 }
 
-export function stripProjectRootPrefix(resourcePath: string, projectRootPath: string): string {
+export function stripProjectRootPrefix(resourcePath: string, projectRootPath: string | null): string {
 	const normalizedRoot = projectRootPath ? projectRootPath.replace(/^\.?\//, '') : '';
 	const normalizedPath = resourcePath.replace(/^\.?\//, '');
 	if (normalizedRoot.length === 0) {
@@ -18,12 +18,15 @@ export function stripProjectRootPrefix(resourcePath: string, projectRootPath: st
 	return normalizedPath;
 }
 
-export function resolveWorkspacePath(path: string, projectRootPath: string): string {
+export function resolveWorkspacePath(path: string, projectRootPath: string | null): string {
 	const normalizedPath = path.replace(/^\.?\//, '');
 	if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) {
 		return path;
 	}
 	if (normalizedPath.startsWith('src/')) {
+		return normalizedPath;
+	}
+	if (!projectRootPath) {
 		return normalizedPath;
 	}
 	const normalizedRoot = projectRootPath.replace(/^\.?\//, '');
