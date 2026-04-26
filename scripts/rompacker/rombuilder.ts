@@ -753,6 +753,24 @@ function compileLuaChunkBuffer(source: string, path: string): Buffer {
 	return Buffer.from(encoded);
 }
 
+export async function buildLuaProgramContextAssets(luaRoot: string, virtualRoot: string): Promise<RomAsset[]> {
+	const files = (await getFiles(luaRoot, [], '.lua')).sort((a, b) => a.localeCompare(b));
+	const assets: RomAsset[] = [];
+	for (const file of files) {
+		const sourcePath = normalizeWorkspacePath(resolveVirtualSourcePath(file, virtualRoot) ?? toWorkspaceRelativePath(file));
+		const buffer = await readFile(file);
+		const source = buffer.toString('utf8');
+		assets.push({
+			resid: `__program_context__/${sourcePath}`,
+			type: 'lua',
+			buffer,
+			compiled_buffer: compileLuaChunkBuffer(source, sourcePath),
+			source_path: sourcePath,
+		});
+	}
+	return assets;
+}
+
 /**
  * Returns an object containing the name, extension, and type of a resource file based on its filepath.
  * @param filepath The path of the resource file.
@@ -1319,6 +1337,7 @@ export function appendProgramAsset(
 	entryPath: string = SYSTEM_BOOT_ENTRY_PATH,
 	options: {
 		extraLuaAssets?: RomAsset[];
+		externalLuaAssets?: RomAsset[];
 		includeSymbols?: boolean;
 		optLevel?: 0 | 1 | 2 | 3;
 	} = {},
@@ -1397,19 +1416,36 @@ export function appendProgramAsset(
 		const chunk = chunksByPath.get(path);
 		modules.push({ path, chunk, source: asset.buffer.toString('utf8') });
 	}
+	const externalModules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
+	const externalModulePaths: string[] = [];
+	const externalLuaAssets = options.externalLuaAssets ?? [];
+	for (const asset of externalLuaAssets) {
+		if (!asset.compiled_buffer || asset.compiled_buffer.length === 0) {
+			throw new Error(`[RomPacker] External Lua asset '${asset.resid}' is missing its compiled buffer.`);
+		}
+		const path = asset.source_path;
+		if (!path || chunksByPath.has(path)) {
+			continue;
+		}
+		const chunk = decodeBinary(new Uint8Array(asset.compiled_buffer)) as LuaChunk;
+		externalModules.push({ path, chunk, source: asset.buffer.toString('utf8') });
+		externalModulePaths.push(path);
+	}
 
 	const optLevel = options.optLevel ?? 3;
 
 	const compiled = compileLuaChunkToProgram(entryChunk, modules, {
 		optLevel,
 		entrySource: entryAsset.buffer.toString('utf8'),
+		externalModules,
 	});
 	const program = compiled.program;
 	const programAsset = {
 		entryProtoIndex: compiled.entryProtoIndex,
 		program: encodeProgram(program),
 		moduleProtos: Array.from(compiled.moduleProtoMap.entries(), ([path, protoIndex]) => ({ path, protoIndex })),
-		moduleAliases: buildModuleAliasesFromPaths(modulePaths),
+		moduleAliases: buildModuleAliasesFromPaths(modulePaths.concat(externalModulePaths)),
+		staticModulePaths: compiled.staticModulePaths,
 		link: {
 			constRelocs: compiled.constRelocs,
 		},

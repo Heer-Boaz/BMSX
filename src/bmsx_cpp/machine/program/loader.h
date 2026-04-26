@@ -39,6 +39,7 @@ struct ProgramAsset {
 	std::unique_ptr<Program> program;
 	std::vector<std::pair<std::string, int>> moduleProtos;  // path -> protoIndex
 	std::vector<std::pair<std::string, std::string>> moduleAliases;  // alias -> path
+	std::vector<std::string> staticModulePaths;
 	LinkInfo link;
 };
 

@@ -544,6 +544,9 @@ LinkedProgramAsset linkProgramAssets(
 	linkedAsset->moduleAliases.reserve(cartAsset.moduleAliases.size() + engineAsset.moduleAliases.size());
 	linkedAsset->moduleAliases.insert(linkedAsset->moduleAliases.end(), cartAsset.moduleAliases.begin(), cartAsset.moduleAliases.end());
 	linkedAsset->moduleAliases.insert(linkedAsset->moduleAliases.end(), engineAsset.moduleAliases.begin(), engineAsset.moduleAliases.end());
+	linkedAsset->staticModulePaths.reserve(engineAsset.staticModulePaths.size() + cartAsset.staticModulePaths.size());
+	linkedAsset->staticModulePaths.insert(linkedAsset->staticModulePaths.end(), engineAsset.staticModulePaths.begin(), engineAsset.staticModulePaths.end());
+	linkedAsset->staticModulePaths.insert(linkedAsset->staticModulePaths.end(), cartAsset.staticModulePaths.begin(), cartAsset.staticModulePaths.end());
 	linkedAsset->link.constRelocs.clear();
 
 	const int engineInstructionCount = engineCodeBytes / INSTRUCTION_BYTES;

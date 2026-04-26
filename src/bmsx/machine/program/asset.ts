@@ -36,6 +36,7 @@ export type ProgramAsset = {
 	program: EncodedProgram;
 	moduleProtos: Array<{ path: string; protoIndex: number }>;
 	moduleAliases: Array<{ alias: string; path: string }>;
+	staticModulePaths: string[];
 	link: ProgramLink;
 };
 
@@ -85,12 +86,14 @@ export function decodeProgramAsset(bytes: Uint8Array): ProgramAsset {
 	const program = decodeEncodedProgram(requireObjectKey(root, 'program', 'ProgramAsset'));
 	const moduleProtos = decodeModuleProtos(requireObjectKey(root, 'moduleProtos', 'ProgramAsset'));
 	const moduleAliases = decodeModuleAliases(requireObjectKey(root, 'moduleAliases', 'ProgramAsset'));
+	const staticModulePaths = decodeStringArray(requireObjectKey(root, 'staticModulePaths', 'ProgramAsset'), 'ProgramAsset.staticModulePaths');
 	const link = decodeProgramLink(requireObjectKey(root, 'link', 'ProgramAsset'));
 	return {
 		entryProtoIndex,
 		program,
 		moduleProtos,
 		moduleAliases,
+		staticModulePaths,
 		link,
 	};
 }
@@ -182,6 +185,15 @@ function decodeModuleAliases(value: unknown): Array<{ alias: string; path: strin
 			alias: requireString(requireObjectKey(entry, 'alias', `ProgramAsset.moduleAliases[${index}]`), `ProgramAsset.moduleAliases[${index}].alias`),
 			path: requireString(requireObjectKey(entry, 'path', `ProgramAsset.moduleAliases[${index}]`), `ProgramAsset.moduleAliases[${index}].path`),
 		};
+	}
+	return out;
+}
+
+function decodeStringArray(value: unknown, label: string): string[] {
+	const array = requireArray(value, label);
+	const out: string[] = new Array(array.length);
+	for (let index = 0; index < array.length; index += 1) {
+		out[index] = requireString(array[index], `${label}[${index}]`);
 	}
 	return out;
 }

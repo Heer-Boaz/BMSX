@@ -2453,7 +2453,7 @@ auto* stringTable = cpu.createTable();
 		return offset + padding;
 	};
 	auto packReadInteger = [maxSafeInteger](const Value& value) -> int64_t {
-		double num = value;
+		double num = valueToNumber(value);
 		if (!std::isfinite(num) || std::floor(num) != num) {
 			throw BMSX_RUNTIME_ERROR("string.pack integer value must be a finite integer.");
 		}
@@ -2892,7 +2892,7 @@ stringTable->set(key("char"), m_machine.cpu().createNativeFunction("string.char"
 	std::string result;
 	result.reserve(args.size());
 	for (const auto& arg : args) {
-		uint32_t codepoint = static_cast<uint32_t>(arg);
+		uint32_t codepoint = static_cast<uint32_t>(std::floor(asNumber(arg)));
 		appendUtf8Codepoint(result, codepoint);
 	}
 	out.push_back(str(result));

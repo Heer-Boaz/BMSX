@@ -11,6 +11,7 @@ export type PreparedCartProgram = {
 	entryProtoIndex: number;
 	moduleProtoMap: Map<string, number>;
 	moduleAliases: Array<{ alias: string; path: string }>;
+	staticModulePaths: string[];
 	entryPath: string;
 };
 

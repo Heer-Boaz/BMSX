@@ -157,7 +157,7 @@ void Runtime::boot(const ProgramAsset& asset, ProgramMetadata* metadata) {
 		m_moduleAliases[alias] = path;
 	}
 	m_moduleCache.clear();
-	boot(asset.program.get(), metadata, asset.entryProtoIndex);
+	boot(asset.program.get(), metadata, asset.entryProtoIndex, &asset.staticModulePaths);
 }
 
 void Runtime::resetRuntimeForProgramReload() {
@@ -176,7 +176,7 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_randomSeedValue = static_cast<uint32_t>(m_clock->now());
 }
 
-void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex) {
+void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>* staticModulePaths) {
 	try {
 		setupBuiltins();
 		m_api->registerAllFunctions();
@@ -186,6 +186,9 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 		m_programMetadata = metadata;
 		m_machine.cpu().setProgram(program, metadata);
 		runEngineBuiltinPrelude();
+		if (staticModulePaths) {
+			runStaticModuleInitializers(*staticModulePaths);
+		}
 		enforceLuaHeapBudget();
 
 		m_machine.cpu().start(entryProtoIndex);

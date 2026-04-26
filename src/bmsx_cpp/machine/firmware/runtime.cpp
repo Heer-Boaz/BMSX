@@ -28,6 +28,33 @@ Value Runtime::requireModule(const std::string& moduleName) {
 	return cachedValue;
 }
 
+void Runtime::runStaticModuleInitializer(const std::string& path) {
+	if (m_moduleCache.find(path) != m_moduleCache.end()) {
+		return;
+	}
+	const auto protoIt = m_moduleProtos.find(path);
+	if (protoIt == m_moduleProtos.end()) {
+		throw BMSX_RUNTIME_ERROR("static module init failed: module '" + path + "' is not compiled.");
+	}
+	m_moduleCache[path] = valueBool(true);
+	auto* closure = m_machine.cpu().createRootClosure(protoIt->second);
+	NativeResults results;
+	try {
+		callLuaFunctionInto(closure, NativeArgsView(), results);
+	} catch (...) {
+		m_moduleCache.erase(path);
+		throw;
+	}
+	m_moduleCache.erase(path);
+}
+
+void Runtime::runStaticModuleInitializers(const std::vector<std::string>& paths) {
+	for (const std::string& path : paths) {
+		runStaticModuleInitializer(path);
+	}
+	m_machine.cpu().syncGlobalSlotsToTable();
+}
+
 void Runtime::logLuaCallStack() const {
 	const ProgramMetadata* metadata = m_programMetadata;
 	if (!metadata) {
@@ -70,15 +97,17 @@ void Runtime::handleLuaError(const std::string& message) {
 
 void Runtime::runEngineBuiltinPrelude() {
 	std::cout << "[Runtime] prelude: binding engine builtins" << std::endl;
-	static const std::array engineBuiltins = {
+	static const std::array engineBuiltinNames = {
 		"define_fsm",
 		"define_prefab",
+		"define_subsystem",
 		"define_component",
 		"define_effect",
-		"timeline",
 		"inst",
+		"inst_subsystem",
 		"oget",
 		"rget",
+		"subsystem",
 		"add_space",
 		"set_space",
 		"get_space",
@@ -92,15 +121,15 @@ void Runtime::runEngineBuiltinPrelude() {
 		"delist",
 		"grant_effect",
 		"trigger_effect",
-			"vdp_load_slot",
-			"vdp_load_sys_textpage",
-			"vdp_blit_img_rgba",
-			"vdp_img_rect",
-				"vdp_img_slot",
-				"vdp_img_source",
-				"vdp_write_source_words",
-				"vdp_stream_claim_words",
-			"irq",
+		"vdp_load_slot",
+		"vdp_load_sys_textpage",
+		"vdp_blit_img_rgba",
+		"vdp_img_rect",
+		"vdp_img_slot",
+		"vdp_img_source",
+		"vdp_write_source_words",
+		"vdp_stream_claim_words",
+		"irq",
 		"on_irq",
 		"on_vdp_load",
 		"bool01",
@@ -125,12 +154,25 @@ void Runtime::runEngineBuiltinPrelude() {
 		"find_any_by_type",
 		"find_by_tag",
 		"find_any_by_tag",
+		"timeline",
 		"eventemitter",
+		"scratchbatch",
+		"sorted_scratchbatch",
 	};
-	auto* engineModule = asTable(requireModule("bios/engine"));
-	for (const char* name : engineBuiltins) {
-		Value key = luaKey(name);
-		m_machine.cpu().setGlobalByKey(key, engineModule->get(key));
+	const Value engineValue = requireModule("bios/engine");
+	Table* engineModule = valueIsTable(engineValue) ? asTable(engineValue) : nullptr;
+	m_machine.cpu().syncGlobalSlotsToTable();
+	for (const char* name : engineBuiltinNames) {
+		std::string exportName = "res__bios__engine__";
+		exportName += name;
+		Value value = m_machine.cpu().getGlobalByKey(luaKey(exportName));
+		if (isNil(value) && engineModule) {
+			value = engineModule->get(luaKey(name));
+		}
+		if (isNil(value)) {
+			throw BMSX_RUNTIME_ERROR("Engine builtin export '" + exportName + "' is missing.");
+		}
+		m_machine.cpu().setGlobalByKey(luaKey(name), value);
 	}
 	std::cout << "[Runtime] prelude: engine builtins bound" << std::endl;
 }

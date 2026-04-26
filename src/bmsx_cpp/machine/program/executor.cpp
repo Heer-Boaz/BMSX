@@ -10,20 +10,28 @@ void Runtime::callLuaFunctionInto(Closure* fn, NativeArgsView args, NativeResult
 	const int previousBudget = cpu.instructionBudgetRemaining;
 	const int budgetSentinel = std::numeric_limits<int>::max();
 	NativeResults* previousSink = cpu.swapExternalReturnSink(&out);
+	int spentBudget = 0;
 	out.clear();
 	try {
 		cpu.callExternal(fn, args);
-		cpu.runUntilDepth(depthBefore, budgetSentinel);
+		while (cpu.getFrameDepth() > depthBefore) {
+			RunResult result = cpu.runUntilDepth(depthBefore, budgetSentinel);
+			spentBudget += budgetSentinel - cpu.instructionBudgetRemaining;
+			if (cpu.getFrameDepth() > depthBefore && cpu.isHaltedUntilIrq()) {
+				throw BMSX_RUNTIME_ERROR("Lua host call halted before returning.");
+			}
+			if (cpu.getFrameDepth() > depthBefore && result == RunResult::Yielded) {
+				throw BMSX_RUNTIME_ERROR("Lua host call exceeded external call budget before returning.");
+			}
+		}
 	} catch (...) {
-		cpu.swapExternalReturnSink(previousSink);
 		cpu.unwindToDepth(depthBefore);
-		const int remaining = cpu.instructionBudgetRemaining;
-		cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
+		cpu.instructionBudgetRemaining = previousBudget - spentBudget;
+		cpu.swapExternalReturnSink(previousSink);
 		throw;
 	}
+	cpu.instructionBudgetRemaining = previousBudget - spentBudget;
 	cpu.swapExternalReturnSink(previousSink);
-	const int remaining = cpu.instructionBudgetRemaining;
-	cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
 }
 
 } // namespace bmsx

@@ -201,6 +201,8 @@ std::unique_ptr<ProgramAsset> ProgramLoader::load(const uint8_t* data, size_t si
 		asset->moduleAliases.emplace_back(std::move(alias), std::move(path));
 	}
 
+	asset->staticModulePaths = parseStringArray(root.require("staticModulePaths"));
+
 	// Extract link metadata (required).
 	const auto& linkObj = root.require("link");
 	const auto& constRelocsArr = linkObj.require("constRelocs").asArray();

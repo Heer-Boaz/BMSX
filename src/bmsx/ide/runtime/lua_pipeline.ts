@@ -388,7 +388,7 @@ export function buildEngineBuiltinPreludeSource(): string {
 	return lines.join('\n');
 }
 
-export function runEngineBuiltinPrelude(runtime: Runtime, program: Program, metadata: ProgramMetadata): { program: Program; metadata: ProgramMetadata } {
+export function runEngineBuiltinPrelude(runtime: Runtime, program: Program, metadata: ProgramMetadata, staticModulePaths: ReadonlyArray<string> = []): { program: Program; metadata: ProgramMetadata } {
 	const source = buildEngineBuiltinPreludeSource();
 	const interpreter = runtime.interpreter;
 	interpreter.setReservedIdentifiers([]);
@@ -402,6 +402,7 @@ export function runEngineBuiltinPrelude(runtime: Runtime, program: Program, meta
 	runtime.programMetadata = compiled.metadata;
 	callClosure(runtime, { protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
 	applyEngineBuiltinGlobals(runtime);
+	runStaticModuleInitializers(runtime, staticModulePaths);
 	return { program: compiled.program, metadata: compiled.metadata };
 }
 
@@ -433,6 +434,13 @@ export function applyEngineBuiltinGlobals(runtime: Runtime): void {
 			registerGlobal(runtime, name, value);
 		}
 	}
+}
+
+function runStaticModuleInitializers(runtime: Runtime, paths: ReadonlyArray<string>): void {
+	for (let index = 0; index < paths.length; index += 1) {
+		runStaticModuleInitializer(runtime, paths[index]);
+	}
+	runtime.machine.cpu.syncGlobalSlotsToTable();
 }
 
 export function seedGlobals(runtime: Runtime): void {
@@ -640,6 +648,7 @@ export function compileCartLuaProgramForBoot(runtime: Runtime): {
 	entryProtoIndex: number;
 	moduleProtoMap: Map<string, number>;
 	moduleAliases: Array<{ alias: string; path: string }>;
+	staticModulePaths: string[];
 	entryPath: string;
 } {
 	const entryAsset = runtime.cartLuaSources.path2lua[runtime.cartLuaSources.entry_path];
@@ -650,17 +659,30 @@ export function compileCartLuaProgramForBoot(runtime: Runtime): {
 	const entrySource = resourceSourceForChunk(runtime, entryPath);
 	const interpreter = runtime.createLuaInterpreter();
 	const entryChunk = interpreter.compileChunk(entrySource, entryPath);
-	const { modules, modulePaths } = buildModuleChunks(runtime, entryPath, [runtime.cartLuaSources, runtime.engineLuaSources], interpreter);
-	const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules, {
+	const cartChunks = buildModuleChunks(runtime, entryPath, [runtime.cartLuaSources], interpreter);
+	const engineChunks = buildModuleChunks(runtime, entryPath, [runtime.engineLuaSources], interpreter);
+	const baseProgram = runtime.machine.cpu.getProgram();
+	if (!baseProgram || !runtime.programMetadata) {
+		throw new Error('cannot prepare cart boot: BIOS program is not active.');
+	}
+	const { program, metadata, entryProtoIndex, moduleProtoMap, staticModulePaths } = compileLuaChunkToProgram(entryChunk, cartChunks.modules, {
+		baseProgram,
+		baseMetadata: runtime.programMetadata,
 		optLevel: getRealtimeOptLevel(runtime),
 		entrySource: entrySource,
+		externalModules: engineChunks.modules,
 	});
+	const combinedModuleProtoMap = new Map(runtime.moduleProtos);
+	for (const [path, protoIndex] of moduleProtoMap) {
+		combinedModuleProtoMap.set(path, protoIndex);
+	}
 	return {
 		program,
 		metadata,
 		entryProtoIndex,
-		moduleProtoMap,
-		moduleAliases: buildModuleAliasesFromPaths(modulePaths),
+		moduleProtoMap: combinedModuleProtoMap,
+		moduleAliases: buildModuleAliasesFromPaths(cartChunks.modulePaths.concat(engineChunks.modulePaths)),
+		staticModulePaths,
 		entryPath,
 	};
 }
@@ -693,6 +715,7 @@ export function bootProgramAsset(runtime: Runtime, options?: { preserveState?: b
 		runtime.machine.cpu.setProgram(inflated, metadata);
 		runtime.programMetadata = metadata;
 		applyEngineBuiltinGlobals(runtime);
+		runStaticModuleInitializers(runtime, programAsset.staticModulePaths);
 
 		beginEntryExecution(runtime, programAsset.entryProtoIndex);
 		return finishEntryBoot(runtime, options?.runInit);
@@ -714,7 +737,7 @@ export function bootPreparedCartProgram(runtime: Runtime, options?: { preserveSt
 	}
 
 	installProgramModuleAliases(runtime, prepared.moduleProtoMap, prepared.moduleAliases);
-	const prelude = runEngineBuiltinPrelude(runtime, prepared.program, prepared.metadata);
+	const prelude = runEngineBuiltinPrelude(runtime, prepared.program, prepared.metadata, prepared.staticModulePaths);
 	runtime.programMetadata = prelude.metadata;
 	beginEntryExecution(runtime, prepared.entryProtoIndex);
 	return finishEntryBoot(runtime, options?.runInit);
@@ -752,12 +775,12 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 		const entrySource = options?.sourceOverride?.source ?? resourceSourceForChunk(runtime, entryPath);
 		const entryChunk = interpreter.compileChunk(entrySource, entryPath);
 		const { modules, modulePaths } = buildModuleChunks(runtime, entryPath);
-		const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules, {
+		const { program, metadata, entryProtoIndex, moduleProtoMap, staticModulePaths } = compileLuaChunkToProgram(entryChunk, modules, {
 			optLevel: getRealtimeOptLevel(runtime),
 			entrySource: entrySource,
 		});
 		installProgramModuleAliases(runtime, moduleProtoMap, buildModuleAliasesFromPaths(modulePaths));
-		const prelude = runEngineBuiltinPrelude(runtime, program, metadata);
+		const prelude = runEngineBuiltinPrelude(runtime, program, metadata, staticModulePaths);
 		runtime.programMetadata = prelude.metadata;
 		beginEntryExecution(runtime, entryProtoIndex);
 		return finishEntryBoot(runtime, true);
@@ -918,6 +941,27 @@ export function requireModule(runtime: Runtime, moduleName: string): Value {
 	const cachedValue = value === null ? true : value;
 	runtime.moduleCache.set(path, cachedValue);
 	return cachedValue;
+}
+
+function runStaticModuleInitializer(runtime: Runtime, path: string): void {
+	if (runtime.moduleCache.has(path)) {
+		return;
+	}
+	const protoIndex = runtime.moduleProtos.get(path);
+	if (protoIndex === undefined) {
+		throw runtime.createApiRuntimeError(`static module init failed: module '${path}' is not compiled.`);
+	}
+	runtime.moduleCache.set(path, true);
+	const results = runtime.luaScratch.acquireValue();
+	try {
+		callClosureInto(runtime, { protoIndex, upvalues: [] }, [], results);
+	} catch (error) {
+		runtime.moduleCache.delete(path);
+		throw error;
+	} finally {
+		runtime.luaScratch.releaseValue(results);
+	}
+	runtime.moduleCache.delete(path);
 }
 
 export function invalidateModuleAliases(runtime: Runtime): void {

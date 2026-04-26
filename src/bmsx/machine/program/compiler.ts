@@ -63,6 +63,7 @@ export type CompiledProgram = {
 	metadata: ProgramMetadata;
 	entryProtoIndex: number;
 	moduleProtoMap: Map<string, number>;
+	staticModulePaths: string[];
 	constRelocs: ProgramConstReloc[];
 };
 
@@ -93,6 +94,7 @@ type CompileOptions = {
 	baseMetadata?: ProgramMetadata;
 	optLevel?: OptimizationLevel;
 	entrySource?: string;
+	externalModules?: ReadonlyArray<ProgramModule>;
 };
 
 const EMPTY_LOCAL_SLOTS: ReadonlyArray<LocalSlotDebug> = [];
@@ -123,6 +125,7 @@ type LocalBinding = {
 type ModuleBinding = {
 	modulePath: string;
 	exportPath: string[];
+	external: boolean;
 };
 
 type ModuleExportNode = {
@@ -132,6 +135,7 @@ type ModuleExportNode = {
 
 type ModuleCompileInfo = {
 	path: string;
+	external: boolean;
 	returnExpression: LuaExpression;
 	exportRoot: ModuleExportNode;
 	exportSlotsByPathKey: Map<string, string>;
@@ -140,6 +144,7 @@ type ModuleCompileInfo = {
 type ModuleCompileContext = {
 	moduleAliasMap: Map<string, string>;
 	modulesByPath: Map<string, ModuleCompileInfo>;
+	staticExternalModulePaths: Set<string>;
 };
 
 type AssignmentTarget =
@@ -1044,6 +1049,14 @@ class FunctionBuilder {
 		return this.moduleCompileContext?.modulesByPath.get(path);
 	}
 
+	private isExternalModulePath(path: string): boolean {
+		return this.moduleCompileContext?.modulesByPath.get(path)?.external === true;
+	}
+
+	private markStaticExternalModulePath(path: string): void {
+		this.moduleCompileContext?.staticExternalModulePaths.add(path);
+	}
+
 	private resolveModuleExportSlotName(modulePath: string, exportPath: ReadonlyArray<string>): string | undefined {
 		const moduleInfo = this.resolveModuleCompileInfo(modulePath);
 		if (!moduleInfo) {
@@ -1074,6 +1087,7 @@ class FunctionBuilder {
 		return {
 			modulePath,
 			exportPath: [],
+			external: this.isExternalModulePath(modulePath),
 		};
 	}
 
@@ -1115,6 +1129,7 @@ class FunctionBuilder {
 		return {
 			modulePath: baseBinding.modulePath,
 			exportPath,
+			external: baseBinding.external,
 		};
 	}
 
@@ -1147,6 +1162,10 @@ class FunctionBuilder {
 		}
 		const localReg = this.resolveReferenceLocal(reference);
 		if (localReg !== null) {
+			const binding = this.resolveReferenceVisibleBinding(reference);
+			if (binding?.moduleBinding?.external === true && binding.moduleBinding.exportPath.length === 0) {
+				throw new Error(`[Compiler] External module '${binding.moduleBinding.modulePath}' is compile-time only; access an exported field instead of using the module table as a runtime value.`);
+			}
 			if (localReg !== target) {
 				this.emitABC(OpCode.MOV, target, localReg, 0);
 			}
@@ -1723,6 +1742,11 @@ class FunctionBuilder {
 					const moduleBinding = this.tryResolveStaticModuleBinding(expr, true);
 					if (moduleBinding !== null) {
 						initializerModuleBindings[i] = moduleBinding;
+						if (moduleBinding.external && moduleBinding.exportPath.length === 0) {
+							this.markStaticExternalModulePath(moduleBinding.modulePath);
+							initializerValues[i] = null;
+							continue;
+						}
 					}
 				}
 				const constantValue = this.evaluateCompileTimeExpression(expr);
@@ -1755,10 +1779,15 @@ class FunctionBuilder {
 				const moduleBinding = this.tryResolveStaticModuleBinding(lastExpr, true);
 				if (moduleBinding !== null) {
 					initializerModuleBindings[lastIndex] = moduleBinding;
+					if (moduleBinding.external && moduleBinding.exportPath.length === 0) {
+						this.markStaticExternalModulePath(moduleBinding.modulePath);
+						initializerValues[lastIndex] = null;
+					}
 				}
 			}
 			const constantValue = this.evaluateCompileTimeExpression(lastExpr);
-			if (constantValue !== undefined && !wantsMulti) {
+			if (initializerValues[lastIndex] !== undefined && !wantsMulti) {
+			} else if (constantValue !== undefined && !wantsMulti) {
 				if (lastHasName) {
 					initializerValues[lastIndex] = constantValue;
 				}
@@ -3177,6 +3206,7 @@ const buildTopLevelLocalModuleShapes = (
 const buildModuleCompileInfo = (
 	modulePath: string,
 	chunk: LuaChunk,
+	external: boolean,
 ): ModuleCompileInfo | null => {
 	if (chunk.body.length === 0) {
 		return null;
@@ -3206,6 +3236,7 @@ const buildModuleCompileInfo = (
 	assignSlots(exportRoot, []);
 	return {
 		path: modulePath,
+		external,
 		returnExpression: returnStatement.expressions[0],
 		exportRoot,
 		exportSlotsByPathKey,
@@ -3215,10 +3246,14 @@ const buildModuleCompileInfo = (
 const buildModuleCompileContext = (
 	entryChunk: LuaChunk,
 	modules: ReadonlyArray<ProgramModule>,
+	externalModules: ReadonlyArray<ProgramModule>,
 ): ModuleCompileContext => {
 	const modulePaths = [entryChunk.range.path];
 	for (let index = 0; index < modules.length; index += 1) {
 		modulePaths.push(modules[index].path);
+	}
+	for (let index = 0; index < externalModules.length; index += 1) {
+		modulePaths.push(externalModules[index].path);
 	}
 	const moduleAliasEntries = buildModuleAliasesFromPaths(modulePaths);
 	const moduleAliasMap = new Map<string, string>();
@@ -3231,7 +3266,14 @@ const buildModuleCompileContext = (
 	const modulesByPath = new Map<string, ModuleCompileInfo>();
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
-		const info = buildModuleCompileInfo(module.path, module.chunk);
+		const info = buildModuleCompileInfo(module.path, module.chunk, false);
+		if (info) {
+			modulesByPath.set(module.path, info);
+		}
+	}
+	for (let index = 0; index < externalModules.length; index += 1) {
+		const module = externalModules[index];
+		const info = buildModuleCompileInfo(module.path, module.chunk, true);
 		if (info) {
 			modulesByPath.set(module.path, info);
 		}
@@ -3239,6 +3281,7 @@ const buildModuleCompileContext = (
 	return {
 		moduleAliasMap,
 		modulesByPath,
+		staticExternalModulePaths: new Set<string>(),
 	};
 };
 
@@ -3286,6 +3329,14 @@ function buildCompilerSemanticFrontend(
 	}];
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
+		sources.push({
+			path: module.path,
+			source: requireModuleSource(module),
+		});
+	}
+	const externalModules = options.externalModules ?? [];
+	for (let index = 0; index < externalModules.length; index += 1) {
+		const module = externalModules[index];
 		sources.push({
 			path: module.path,
 			source: requireModuleSource(module),
@@ -3390,7 +3441,7 @@ function createProgramBuilderFromProgram(
 export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray<ProgramModule> = [], options: CompileOptions = {}): CompiledProgram {
 	const optLevel = options.optLevel ?? 0;
 	const frontend = buildCompilerSemanticFrontend(chunk, modules, options);
-	const moduleCompileContext = buildModuleCompileContext(chunk, modules);
+	const moduleCompileContext = buildModuleCompileContext(chunk, modules, options.externalModules ?? []);
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
@@ -3477,7 +3528,14 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
 	const { program, metadata, constRelocs } = programBuilder.buildProgram();
-	return { program, metadata, entryProtoIndex, moduleProtoMap, constRelocs };
+	return {
+		program,
+		metadata,
+		entryProtoIndex,
+		moduleProtoMap,
+		staticModulePaths: Array.from(moduleCompileContext.staticExternalModulePaths),
+		constRelocs,
+	};
 }
 
 export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata, chunk: LuaChunk, options: CompileOptions = {}): { program: Program; metadata: ProgramMetadata; entryProtoIndex: number } {

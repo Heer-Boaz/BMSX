@@ -296,6 +296,10 @@ inline uint32_t toU32(double value) {
 	return static_cast<uint32_t>(normalized);
 }
 
+inline uint32_t toU32(Value value) {
+	return toU32(valueToNumber(value));
+}
+
 inline int32_t toI32(double value) {
 	return static_cast<int32_t>(toU32(value));
 }

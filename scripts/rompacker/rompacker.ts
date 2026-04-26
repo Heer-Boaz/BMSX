@@ -7,7 +7,7 @@ import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../src/bmsx/core/sys
 import { createCliUi, findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartSources } from './cart_lua_linter_runtime';
-import { appendProgramAsset, commonResPath, createAtlasses, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, setAtlasFlag } from './rombuilder';
+import { appendProgramAsset, buildLuaProgramContextAssets, commonResPath, createAtlasses, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, normalizeWorkspacePath, setAtlasFlag } from './rombuilder';
 import type { RomPackerOptions } from './rompacker.rompack';
 import type { RomAsset } from '../../src/bmsx/rompack/format';
 import { LuaError } from '../../src/bmsx/lua/errors';
@@ -708,7 +708,8 @@ async function main() {
 			validateAudioEventReferences(resources);
 
 			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
-			const programBoot = appendProgramAsset(romAssets, romManifest.lua.entry_path, { includeSymbols: true, optLevel });
+			const biosProgramContextAssets = await buildLuaProgramContextAssets(commonResPath, normalizeWorkspacePath(join(commonResPath, '..')));
+			const programBoot = appendProgramAsset(romAssets, romManifest.lua.entry_path, { includeSymbols: true, optLevel, externalLuaAssets: biosProgramContextAssets });
 			stripLuaAssets(romAssets, romPackDebug);
 			await progress.taskCompleted();
 			if (!isBIOSMode) {

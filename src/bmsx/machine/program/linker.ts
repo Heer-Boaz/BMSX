@@ -460,6 +460,7 @@ export const linkProgramAssets = (
 		moduleProtos.push({ path: entry.path, protoIndex: entry.protoIndex });
 	}
 	const moduleAliases = cartAsset.moduleAliases.concat(engineAsset.moduleAliases);
+	const staticModulePaths = engineAsset.staticModulePaths.concat(cartAsset.staticModulePaths);
 	const entryProtoIndex = cartAsset.entryProtoIndex + baseProtoCount;
 	const metadata = mergeMetadata(
 		engineMetadata,
@@ -475,6 +476,7 @@ export const linkProgramAssets = (
 			program,
 			moduleProtos,
 			moduleAliases,
+			staticModulePaths,
 			link: { constRelocs: [] },
 		},
 		metadata,

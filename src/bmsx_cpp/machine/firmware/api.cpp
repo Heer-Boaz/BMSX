@@ -583,7 +583,9 @@ BFont* Api::create_font(const Value& definition) {
 		glyphMap[utf8SingleCodepoint(glyph)] = asText(glyphValue);
 	});
 
-	std::unique_ptr<BFont> font = std::make_unique<BFont>(m_runtime.activeAssets(), std::move(glyphMap), definitionTable->get(key("advance_padding")));
+	const Value advancePaddingValue = definitionTable->get(key("advance_padding"));
+	const i32 advancePadding = isNil(advancePaddingValue) ? 0 : static_cast<i32>(std::floor(asNumber(advancePaddingValue)));
+	std::unique_ptr<BFont> font = std::make_unique<BFont>(m_runtime.activeAssets(), std::move(glyphMap), advancePadding);
 	BFont* handle = font.get();
 	m_runtime_fonts.push_back(std::move(font));
 	return handle;
@@ -595,7 +597,7 @@ Color Api::palette_color(int index) const {
 
 Color Api::resolve_color(const Value& value) {
 	if (valueIsNumber(value)) {
-		return palette_color(static_cast<int>(value));
+		return palette_color(static_cast<int>(asNumber(value)));
 	}
 	auto* tbl = asTable(value);
 	Color color;
@@ -628,7 +630,7 @@ Vec3 Api::read_vec3(const Value& value) {
 
 std::array<f32, 3> Api::read_light_color(const Value& value) {
 	if (valueIsNumber(value)) {
-		const Color color = palette_color(static_cast<int>(value));
+		const Color color = palette_color(static_cast<int>(asNumber(value)));
 		return {color.r, color.g, color.b};
 	}
 	if (valueIsTable(value)) {
@@ -636,7 +638,7 @@ std::array<f32, 3> Api::read_light_color(const Value& value) {
 		const Value red = tbl->get(m_keys.r);
 		if (!isNil(red)) {
 			return {
-				static_cast<f32>(red),
+				static_cast<f32>(asNumber(red)),
 				static_cast<f32>(asNumber(tbl->get(m_keys.g))),
 				static_cast<f32>(asNumber(tbl->get(m_keys.b))),
 			};

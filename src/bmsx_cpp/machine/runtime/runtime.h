@@ -124,7 +124,7 @@ public:
 	/**
 	 * Boot the runtime with a compiled program.
 	 */
-	void boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex);
+	void boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>* staticModulePaths = nullptr);
 	void boot(const ProgramAsset& asset, ProgramMetadata* metadata);
 	void handleLuaError(const std::string& message);
 
@@ -241,6 +241,8 @@ private:
 
 	void setupBuiltins();
 	void runEngineBuiltinPrelude();
+	void runStaticModuleInitializers(const std::vector<std::string>& paths);
+	void runStaticModuleInitializer(const std::string& path);
 	void queueLifecycleHandlers(bool runInit, bool runNewGame);
 	Value requireModule(const std::string& moduleName);
 	const std::regex& buildLuaPatternRegex(const std::string& pattern);

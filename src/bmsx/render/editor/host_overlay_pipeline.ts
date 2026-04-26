@@ -192,7 +192,7 @@ function resolveImageSource(cache: Map<string, HostOverlayImageSource>, imgid: s
 		return cached;
 	}
 	const runtime = Runtime.instance;
-	const meta = runtime.assets.getImageAsset(imgid).imgmeta;
+	const meta = runtime.assets.getImageAsset(imgid, runtime.engineAssetSource).imgmeta;
 	let source: HostOverlayImageSource;
 	if (meta.atlasid !== undefined && meta.texcoords) {
 		const uv = getUvExtents(meta.texcoords!);

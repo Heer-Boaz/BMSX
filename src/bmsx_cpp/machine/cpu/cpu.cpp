@@ -105,7 +105,10 @@ static inline uint32_t encodeVdpPacketU32Word(Value value, const char* label) {
 }
 
 static inline uint32_t encodeVdpPacketF32Word(Value value, const char* label) {
-	const float f32 = static_cast<float>(value);
+	if (!valueIsNumber(value)) {
+		throw std::runtime_error(std::string("[VDP] ") + label + " expects a numeric float word.");
+	}
+	const float f32 = static_cast<float>(valueToNumber(value));
 	uint32_t bits = 0;
 	std::memcpy(&bits, &f32, sizeof(bits));
 	return bits;
@@ -2675,13 +2678,13 @@ void CPU::writeMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind, con
 			if (!valueIsNumber(value)) {
 				throw std::runtime_error("[Memory] memf32le[addr] expects a number.");
 			}
-			m_memory.writeMappedF32LE(addr, static_cast<float>(value));
+			m_memory.writeMappedF32LE(addr, static_cast<float>(valueToNumber(value)));
 			return;
 		case MemoryAccessKind::F64LE:
 			if (!valueIsNumber(value)) {
 				throw std::runtime_error("[Memory] memf64le[addr] expects a number.");
 			}
-			m_memory.writeMappedF64LE(addr, value);
+			m_memory.writeMappedF64LE(addr, valueToNumber(value));
 			return;
 	}
 	throw std::runtime_error("Unknown memory access kind.");
@@ -2728,7 +2731,7 @@ double CPU::requireRegisterNumber(CallFrame& frame, int index) const {
 	if (!valueIsNumber(value)) {
 		throw BMSX_RUNTIME_ERROR("Register " + std::to_string(index) + " expected a number, got " + valueTypeName(value) + ".");
 	}
-	return value;
+	return valueToNumber(value);
 }
 
 double CPU::requireRKNumber(CallFrame& frame, int rk) const {
@@ -2738,7 +2741,7 @@ double CPU::requireRKNumber(CallFrame& frame, int rk) const {
 		if (!valueIsNumber(value)) {
 			throw BMSX_RUNTIME_ERROR("RK constant " + std::to_string(index) + " expected a number, got " + valueTypeName(value) + ".");
 		}
-		return value;
+		return valueToNumber(value);
 	}
 	return requireRegisterNumber(frame, rk);
 }
