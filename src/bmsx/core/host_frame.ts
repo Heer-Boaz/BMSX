@@ -38,7 +38,7 @@ export function runEngineHostFrame(engine: EngineCore, runtime: Runtime, current
 				applyRuntimeGameViewTableToState(runtime);
 				applyGameViewStateToHost(runtime.gameViewState, engine.view);
 				screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
-				flushHostRuntimeAssetEdits(runtime.machine.memory, engine.texmanager, engine.sndmaster);
+				flushHostRuntimeAssetEdits(runtime.machine.memory, engine.texmanager);
 			}
 			screen.presentPending(runtime, hostDeltaMs);
 		}

@@ -5,7 +5,6 @@
 #include "engine.h"
 #include "system.h"
 #include "input/manager.h"
-#include "audio/resources.h"
 #include "render/texture_manager.h"
 #include "render/vdp/context_state.h"
 #include "render/vdp/texture_transfer.h"
@@ -206,7 +205,7 @@ void EngineCore::setHostPaused(bool paused, bool romLoaded) {
 	if (paused) {
 		pause();
 		if (m_sound_master) {
-			m_sound_master->pauseAll();
+			m_sound_master->stopAllVoices();
 		}
 		return;
 	}
@@ -215,9 +214,6 @@ void EngineCore::setHostPaused(bool paused, bool romLoaded) {
 		resume();
 	} else {
 		startLoadedRuntimeFrame(romLoaded);
-	}
-	if (m_sound_master) {
-		m_sound_master->resume();
 	}
 }
 
@@ -402,7 +398,6 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 	runtime.setProgramSource(Runtime::ProgramSource::Engine);
 	buildAssetMemory(runtime, m_engine_assets, m_engine_assets);
 	runtime.machine().memory().sealEngineAssets();
-	refreshAudioResources(*m_sound_master, runtime, m_engine_assets, runtimeMachine, m_engine_rom_data, m_cart_rom_data);
 	runtime.resetRuntimeForProgramReload();
 	refreshRenderAssets();
 	runtime.boot(*m_engine_assets.programAsset, m_engine_assets.programSymbols.get());
@@ -532,10 +527,9 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 		setMachineManifest(cartMachine);
 		applyManifestMemorySpecs(assets().machine, m_engine_assets.machine, assets(), m_engine_assets);
 		const ResolvedRuntimeTiming timing = resolveRuntimeTiming(assets().machine, transferMachine, cpuHz, runtimeUfpsScaled);
-		Runtime& runtime = prepareRuntimeForActiveCart(timing, cartMachine);
-		buildAssetMemory(runtime, m_engine_assets, assets());
-		refreshAudioResources(*m_sound_master, runtime, assets(), assets().machine, m_engine_rom_data, m_cart_rom_data);
-		if (assets().hasProgram()) {
+			Runtime& runtime = prepareRuntimeForActiveCart(timing, cartMachine);
+			buildAssetMemory(runtime, m_engine_assets, assets());
+			if (assets().hasProgram()) {
 			bootRuntimeFromProgram();
 		}
 	}
@@ -568,7 +562,6 @@ bool EngineCore::bootLoadedCart() {
 	buildAssetMemory(runtime, m_engine_assets, assets(), RuntimeAssetBuildMode::Cart);
 	runtime.resetRuntimeForProgramReload();
 	refreshRenderAssets();
-	refreshAudioResources(*m_sound_master, runtime, assets(), assets().machine, m_engine_rom_data, m_cart_rom_data);
 	bootRuntimeFromProgram();
 	return true;
 }

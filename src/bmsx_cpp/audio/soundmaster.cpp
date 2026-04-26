@@ -38,6 +38,85 @@ static inline u16 readLE16Audio(const u8* data) {
 	return static_cast<u16>(data[0]) | (static_cast<u16>(data[1]) << 8);
 }
 
+static inline u32 readLE32Audio(const u8* data) {
+	return static_cast<u32>(data[0])
+		| (static_cast<u32>(data[1]) << 8)
+		| (static_cast<u32>(data[2]) << 16)
+		| (static_cast<u32>(data[3]) << 24);
+}
+
+static constexpr size_t BADP_HEADER_SIZE = 48;
+static constexpr u16 BADP_VERSION = 1;
+static constexpr u8 BADP_MAGIC[4] = {0x42, 0x41, 0x44, 0x50};
+
+static bool isBadpSource(const u8* data, size_t size) {
+	return size >= BADP_HEADER_SIZE
+		&& data[0] == BADP_MAGIC[0]
+		&& data[1] == BADP_MAGIC[1]
+		&& data[2] == BADP_MAGIC[2]
+		&& data[3] == BADP_MAGIC[3];
+}
+
+static void readBadpSeekTable(const u8* data,
+							  size_t size,
+							  const SoundMasterAudioSource& source,
+							  std::vector<u32>& seekFrames,
+							  std::vector<u32>& seekOffsets) {
+	if (!isBadpSource(data, size)) {
+		throw BMSX_RUNTIME_ERROR("Unsupported audio format. Expected BADP.");
+	}
+	const u16 version = readLE16Audio(data + 4);
+	if (version != BADP_VERSION) {
+		throw BMSX_RUNTIME_ERROR("Unsupported BADP version.");
+	}
+	const u32 channels = readLE16Audio(data + 6);
+	const u32 sampleRate = readLE32Audio(data + 8);
+	const u32 frames = readLE32Audio(data + 12);
+	const u32 seekEntryCount = readLE32Audio(data + 28);
+	const u32 seekTableOffset = readLE32Audio(data + 32);
+	const u32 dataOffset = readLE32Audio(data + 36);
+	if (channels != source.channels || sampleRate != source.sampleRateHz || frames != source.frameCount || dataOffset != source.dataOffset) {
+		throw BMSX_RUNTIME_ERROR("BADP source metadata does not match APU source registers.");
+	}
+	if (dataOffset < BADP_HEADER_SIZE || dataOffset > size) {
+		throw BMSX_RUNTIME_ERROR("BADP data offset is invalid.");
+	}
+	if (source.dataBytes == 0 || dataOffset + source.dataBytes > size) {
+		throw BMSX_RUNTIME_ERROR("BADP data section exceeds source bytes.");
+	}
+	if (seekEntryCount > 0 && (seekTableOffset < BADP_HEADER_SIZE || seekTableOffset >= dataOffset)) {
+		throw BMSX_RUNTIME_ERROR("BADP seek table offset is invalid.");
+	}
+	const size_t seekCount = seekEntryCount > 0 ? static_cast<size_t>(seekEntryCount) : 1u;
+	seekFrames.resize(seekCount);
+	seekOffsets.resize(seekCount);
+	if (seekEntryCount > 0) {
+		size_t cursor = static_cast<size_t>(seekTableOffset);
+		for (size_t i = 0; i < seekCount; i += 1) {
+			if (cursor + 8 > static_cast<size_t>(dataOffset)) {
+				throw BMSX_RUNTIME_ERROR("BADP seek table exceeds bounds.");
+			}
+			seekFrames[i] = readLE32Audio(data + cursor);
+			seekOffsets[i] = readLE32Audio(data + cursor + 4);
+			cursor += 8;
+		}
+	} else {
+		seekFrames[0] = 0;
+		seekOffsets[0] = 0;
+	}
+	if (seekFrames[0] != 0 || seekOffsets[0] != 0) {
+		throw BMSX_RUNTIME_ERROR("BADP seek table must start at frame 0 and offset 0.");
+	}
+	for (size_t i = 0; i < seekCount; i += 1) {
+		if (seekFrames[i] > source.frameCount || seekOffsets[i] >= source.dataBytes) {
+			throw BMSX_RUNTIME_ERROR("BADP seek table entry exceeds source bounds.");
+		}
+		if (i > 0 && (seekFrames[i] < seekFrames[i - 1] || seekOffsets[i] < seekOffsets[i - 1])) {
+			throw BMSX_RUNTIME_ERROR("BADP seek table entries are not monotonic.");
+		}
+	}
+}
+
 static inline bool consumeStopTimer(f64& stopAfter, f64 invOutputRate) {
 	if (stopAfter < 0.0) {
 		return false;
@@ -97,9 +176,7 @@ static inline void advanceLoopedAudioFrame(f64& position,
 	advanceGainRamp(gain, rampRemaining, gainStep, invOutputRate);
 }
 
-SoundMaster::SoundMaster()
-	: m_rng(std::random_device{}()),
-		m_unitDist(0.0f, 1.0f) {
+SoundMaster::SoundMaster() {
 	resetPlaybackState();
 }
 
@@ -112,51 +189,33 @@ const Identifier& SoundMaster::registryId() const {
 	return id;
 }
 
-void SoundMaster::init(const RuntimeAssets& assets, f32 startingVolume, AudioDataResolver audioResolver) {
-	m_assets = &assets;
-	m_audioResolver = std::move(audioResolver);
-	setMasterVolume(startingVolume);
-	resetPlaybackState();
-}
-
 void SoundMaster::resetPlaybackState() {
 	m_voices.clear();
-	m_pausedVoices.clear();
 	m_audioTimeSec = 0.0;
 	m_nextVoiceId = 1;
 }
 
 void SoundMaster::dispose() {
 	resetPlaybackState();
-	m_assets = nullptr;
-	m_audioResolver = {};
 }
 
-VoiceId SoundMaster::play(const AssetId& id, const SoundMasterPlayRequest& request) {
-	return play(0, id, request);
-}
-
-VoiceId SoundMaster::play(AudioSlot slot, const AssetId& id, const SoundMasterPlayRequest& request) {
-	const AudioAsset& asset = getAudioOrThrow(id);
-	ModulationInput input;
-	if (request.params.has_value()) {
-		input = request.params.value();
-	} else if (request.modulationPreset.has_value()) {
-		auto preset = resolveModulationPreset(request.modulationPreset.value());
-		if (preset.has_value()) {
-			input = preset.value();
-		}
-	}
-	const ModulationParams params = resolvePlayParams(input);
-	const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
-	return startVoice(slot, id, asset, params, initialGain);
-}
-
-VoiceId SoundMaster::playResolved(AudioSlot slot, const AssetId& id, const SoundMasterResolvedPlayRequest& request) {
-	const AudioAsset& asset = getAudioOrThrow(id);
+VoiceId SoundMaster::playResolved(AudioSlot slot, const SoundMasterAudioSource& source, const u8* sourceBytes, const SoundMasterResolvedPlayRequest& request) {
 	const ModulationParams params = resolveResolvedPlayParams(request);
 	const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
-	return startVoice(slot, id, asset, params, initialGain);
+	std::vector<u32> badpSeekFrames;
+	std::vector<u32> badpSeekOffsets;
+	if (source.bitsPerSample == 4) {
+		readBadpSeekTable(sourceBytes, source.sourceBytes, source, badpSeekFrames, badpSeekOffsets);
+	}
+	return startVoiceFromData(
+		slot,
+		source,
+		sourceBytes + source.dataOffset,
+		std::move(badpSeekFrames),
+		std::move(badpSeekOffsets),
+		params,
+		initialGain
+	);
 }
 
 bool SoundMaster::setVoiceGainLinear(VoiceId voiceId, f32 gain) {
@@ -247,42 +306,6 @@ void SoundMaster::stopAllVoices() {
 	}
 }
 
-void SoundMaster::invalidateClip(const AssetId& id) {
-	if (!isRuntimeAudioReady()) {
-		return;
-	}
-	stop(id);
-}
-
-void SoundMaster::stop(const AssetId& id) {
-	for (size_t i = m_voices.size(); i-- > 0;) {
-		if (m_voices[i].id == id) {
-			removeVoice(i);
-		}
-	}
-}
-
-void SoundMaster::pauseAll() {
-	m_pausedVoices.clear();
-	for (const auto& record : m_voices) {
-		const f64 offset = record.position / static_cast<f64>(record.asset->sampleRate);
-		m_pausedVoices.push_back(PausedSnapshot{record.slot, record.id, offset, record.params});
-	}
-	m_voices.clear();
-}
-
-void SoundMaster::resume() {
-	auto snapshots = m_pausedVoices;
-	m_pausedVoices.clear();
-	for (const auto& snapshot : snapshots) {
-		ModulationParams params = snapshot.params;
-		params.offset = static_cast<f32>(snapshot.offset);
-		const AudioAsset& asset = getAudioOrThrow(snapshot.id);
-		const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
-		startVoice(snapshot.slot, snapshot.id, asset, params, initialGain);
-	}
-}
-
 void SoundMaster::setMasterVolume(f32 value) {
 	m_masterVolume = clampVolume(value);
 }
@@ -306,11 +329,10 @@ std::vector<ActiveVoiceInfo> SoundMaster::getActiveVoiceInfosBySlot(AudioSlot sl
 		result.push_back(ActiveVoiceInfo{
 			record.slot,
 			record.voiceId,
-			record.id,
+			record.sourceAddr,
 			record.params,
 			record.startedAt,
 			record.startOffset,
-			record.meta,
 		});
 	}
 	return result;
@@ -325,41 +347,7 @@ std::optional<ModulationParams> SoundMaster::currentModulationParamsBySlot(Audio
 std::optional<f64> SoundMaster::currentTimeBySlot(AudioSlot slot) const {
 	const VoiceRecord* record = findSlot(slot);
 	if (!record) return std::nullopt;
-	return record->position / static_cast<f64>(record->asset->sampleRate);
-}
-
-AssetId SoundMaster::currentTrackBySlot(AudioSlot slot) const {
-	const VoiceRecord* record = findSlot(slot);
-	return record ? record->id : AssetId{};
-}
-
-const AudioMeta* SoundMaster::currentTrackMetaBySlot(AudioSlot slot) const {
-	const VoiceRecord* record = findSlot(slot);
-	return record ? &record->meta : nullptr;
-}
-
-std::vector<PausedSnapshot> SoundMaster::snapshotVoices(AudioSlot slot) const {
-	std::vector<PausedSnapshot> snapshots;
-	for (const auto& record : m_voices) {
-		if (record.slot != slot) {
-			continue;
-		}
-		const f64 offset = record.position / static_cast<f64>(record.asset->sampleRate);
-		snapshots.push_back(PausedSnapshot{record.slot, record.id, offset, record.params});
-	}
-	return snapshots;
-}
-
-std::vector<PausedSnapshot> SoundMaster::drainPausedSnapshots(AudioSlot slot) {
-	std::vector<PausedSnapshot> drained;
-	for (size_t i = m_pausedVoices.size(); i-- > 0;) {
-		if (m_pausedVoices[i].slot == slot) {
-			drained.push_back(m_pausedVoices[i]);
-			m_pausedVoices.erase(m_pausedVoices.begin() + static_cast<std::ptrdiff_t>(i));
-		}
-	}
-	std::reverse(drained.begin(), drained.end());
-	return drained;
+	return record->position / static_cast<f64>(record->sampleRate);
 }
 
 SubscriptionHandle SoundMaster::addEndedListener(std::function<void(const ActiveVoiceInfo&)> listener) {
@@ -392,15 +380,14 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 
 	for (size_t i = 0; i < m_voices.size();) {
 			VoiceRecord& record = m_voices[i];
-			const AudioAsset& asset = *record.asset;
 			const u8* data = record.data;
-			const int channels = asset.channels;
+			const int channels = record.channels;
 			const size_t framesInAsset = record.frames;
 			if (framesInAsset == 0) {
 				removeVoice(i);
 				continue;
 			}
-			const bool is16Bit = asset.bitsPerSample == 16;
+			const bool is16Bit = record.bitsPerSample == 16;
 			const i16* samples16 = reinterpret_cast<const i16*>(data);
 			const u8* samples8 = data;
 			const auto readSample = [&](size_t sampleIndex) -> i16 {
@@ -410,13 +397,13 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 				return static_cast<i16>(static_cast<int>(samples8[sampleIndex]) - 128) << 8;
 			};
 
-			const f64 loopStart = record.meta.loopStart.has_value() ? record.meta.loopStart.value() * asset.sampleRate : 0.0;
-				const f64 loopEnd = record.meta.loopEnd.has_value() ? record.meta.loopEnd.value() * asset.sampleRate : static_cast<f64>(framesInAsset);
-				const bool hasLoop = record.meta.loopStart.has_value() && loopEnd > loopStart;
+			const f64 loopStart = record.loopStartFrame.value_or(0.0);
+				const f64 loopEnd = record.loopEndFrame.value_or(static_cast<f64>(framesInAsset));
+				const bool hasLoop = record.loopStartFrame.has_value() && loopEnd > loopStart;
 				const f64 loopLen = loopEnd - loopStart;
 				const f64 framesInAssetF = static_cast<f64>(framesInAsset);
 
-			const f64 step = record.step * (static_cast<f64>(asset.sampleRate) * invOutputRate);
+			const f64 step = record.step * (static_cast<f64>(record.sampleRate) * invOutputRate);
 
 			f64 position = record.position;
 			f32 gain = record.gain;
@@ -744,26 +731,6 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 	m_audioTimeSec += dt;
 }
 
-ModulationParams SoundMaster::resolvePlayParams(const ModulationInput& input) {
-	auto randomInRange = [this](const std::optional<ModulationRange>& range) -> f32 {
-		if (!range.has_value()) return 0.0f;
-		f32 min = range->min;
-		f32 max = range->max;
-		if (min > max) std::swap(min, max);
-		return min + (max - min) * m_unitDist(m_rng);
-	};
-
-	ModulationParams params;
-	params.offset = (input.offset.has_value() ? input.offset.value() : 0.0f) + randomInRange(input.offsetRange);
-	params.pitchDelta = (input.pitchDelta.has_value() ? input.pitchDelta.value() : 0.0f) + randomInRange(input.pitchRange);
-	params.volumeDelta = (input.volumeDelta.has_value() ? input.volumeDelta.value() : 0.0f) + randomInRange(input.volumeRange);
-	params.playbackRate = (input.playbackRate.has_value() ? input.playbackRate.value() : 1.0f) + randomInRange(input.playbackRateRange);
-	if (input.filter.has_value()) {
-		params.filter = input.filter;
-	}
-	return params;
-}
-
 ModulationParams SoundMaster::resolveResolvedPlayParams(const SoundMasterResolvedPlayRequest& request) const {
 	ModulationParams params;
 	params.pitchDelta = 0.0f;
@@ -776,117 +743,10 @@ ModulationParams SoundMaster::resolveResolvedPlayParams(const SoundMasterResolve
 	return params;
 }
 
-std::optional<ModulationInput> SoundMaster::resolveModulationPreset(const AssetId& key) const {
-	if (key.empty()) return std::nullopt;
-	size_t pos = key.find('.');
-	const std::string root = pos == std::string::npos ? key : key.substr(0, pos);
-	const BinValue* dataValue = m_assets->getData(root);
-	if (!dataValue) return std::nullopt;
-
-	const BinValue* cursor = dataValue;
-	while (pos != std::string::npos) {
-		const size_t next = key.find('.', pos + 1);
-		const std::string segment = key.substr(pos + 1, next - (pos + 1));
-		const auto& obj = cursor->asObject();
-		auto segIt = obj.find(segment);
-		if (segIt == obj.end()) return std::nullopt;
-		cursor = &segIt->second;
-		pos = next;
-	}
-
-	return parseModulationInput(*cursor);
-}
-
-ModulationInput SoundMaster::parseModulationInput(const BinValue& value) const {
-	if (!value.isObject()) {
-		throw BMSX_RUNTIME_ERROR("Modulation preset is not an object");
-	}
-	const auto& obj = value.asObject();
-	ModulationInput input;
-
-	auto readRange = [](const BinValue& v) -> ModulationRange {
-		if (!v.isArray()) {
-			throw BMSX_RUNTIME_ERROR("Modulation range is not an array");
-		}
-		const auto& arr = v.asArray();
-		if (arr.size() < 2) {
-			throw BMSX_RUNTIME_ERROR("Modulation range is missing bounds");
-		}
-		return ModulationRange{static_cast<f32>(arr[0].toNumber()), static_cast<f32>(arr[1].toNumber())};
-	};
-
-	auto setOptionalRange = [&](const char* key, std::optional<ModulationRange>& target) {
-		auto it = obj.find(key);
-		if (it == obj.end() || it->second.isNull()) return;
-		target = readRange(it->second);
-	};
-
-	auto setOptionalNumber = [&](const char* key, std::optional<f32>& target) {
-		auto it = obj.find(key);
-		if (it == obj.end() || it->second.isNull()) return;
-		target = static_cast<f32>(it->second.toNumber());
-	};
-
-	setOptionalRange("pitchRange", input.pitchRange);
-	setOptionalRange("volumeRange", input.volumeRange);
-	setOptionalRange("offsetRange", input.offsetRange);
-	setOptionalRange("playbackRateRange", input.playbackRateRange);
-
-	setOptionalNumber("pitchDelta", input.pitchDelta);
-	setOptionalNumber("volumeDelta", input.volumeDelta);
-	setOptionalNumber("offset", input.offset);
-	setOptionalNumber("playbackRate", input.playbackRate);
-
-	auto filterIt = obj.find("filter");
-	if (filterIt != obj.end() && filterIt->second.isObject()) {
-		const auto& fobj = filterIt->second.asObject();
-		FilterModulationParams filter;
-		auto typeIt = fobj.find("type");
-		if (typeIt != fobj.end() && typeIt->second.isString()) {
-			filter.type = typeIt->second.asString();
-		}
-		auto freqIt = fobj.find("frequency");
-		if (freqIt != fobj.end() && freqIt->second.isNumber()) {
-			filter.frequency = static_cast<f32>(freqIt->second.toNumber());
-		}
-		auto qIt = fobj.find("q");
-		if (qIt != fobj.end() && qIt->second.isNumber()) {
-			filter.q = static_cast<f32>(qIt->second.toNumber());
-		}
-		auto gainIt = fobj.find("gain");
-		if (gainIt != fobj.end() && gainIt->second.isNumber()) {
-			filter.gain = static_cast<f32>(gainIt->second.toNumber());
-		}
-		input.filter = filter;
-	}
-
-	return input;
-}
-
-const AudioAsset& SoundMaster::getAudioOrThrow(const AssetId& id) const {
-	const AudioAsset* asset = m_assets->getAudio(id);
-	if (!asset) {
-		throw BMSX_RUNTIME_ERROR("Audio asset not found: " + id);
-	}
-	return *asset;
-}
-
-AudioDataView SoundMaster::resolveAudioData(const AssetId& id) const {
-	if (!m_audioResolver) {
-		throw BMSX_RUNTIME_ERROR("SoundMaster audio resolver not configured.");
-	}
-	AudioDataView view = m_audioResolver(id);
-	if (!view.data || view.frames == 0) {
-		throw BMSX_RUNTIME_ERROR("Audio asset missing encoded data: " + id);
-	}
-	return view;
-}
-
 void SoundMaster::badpLoadBlock(VoiceRecord& record, size_t offset) {
-	const AudioAsset& asset = *record.asset;
 	const u8* data = record.data;
 	BadpDecoderState& badp = record.badp;
-	if (offset + 4 > asset.dataSize) {
+	if (offset + 4 > record.dataSize) {
 		throw BMSX_RUNTIME_ERROR("BADP block header exceeds data.");
 	}
 	const size_t blockFrames = static_cast<size_t>(readLE16Audio(data + offset));
@@ -894,16 +754,16 @@ void SoundMaster::badpLoadBlock(VoiceRecord& record, size_t offset) {
 	if (blockFrames == 0) {
 		throw BMSX_RUNTIME_ERROR("BADP block frame count is zero.");
 	}
-	const size_t blockHeaderBytes = 4 + static_cast<size_t>(asset.channels) * 4;
+	const size_t blockHeaderBytes = 4 + static_cast<size_t>(record.channels) * 4;
 	if (blockBytes < blockHeaderBytes) {
 		throw BMSX_RUNTIME_ERROR("BADP block header length is invalid.");
 	}
 	const size_t blockEnd = offset + blockBytes;
-	if (blockEnd > asset.dataSize) {
+	if (blockEnd > record.dataSize) {
 		throw BMSX_RUNTIME_ERROR("BADP block exceeds bounds.");
 	}
 	size_t cursor = offset + 4;
-	for (i32 channel = 0; channel < asset.channels; channel += 1) {
+	for (i32 channel = 0; channel < record.channels; channel += 1) {
 		badp.predictors[channel] = static_cast<i16>(readLE16Audio(data + cursor));
 		const i32 stepIndex = static_cast<i32>(data[cursor + 2]);
 		if (stepIndex < 0 || stepIndex > 88) {
@@ -920,7 +780,6 @@ void SoundMaster::badpLoadBlock(VoiceRecord& record, size_t offset) {
 }
 
 void SoundMaster::badpSeekToFrame(VoiceRecord& record, size_t frame) {
-	const AudioAsset& asset = *record.asset;
 	BadpDecoderState& badp = record.badp;
 	if (frame > record.frames) {
 		throw BMSX_RUNTIME_ERROR("BADP seek frame out of range.");
@@ -935,10 +794,10 @@ void SoundMaster::badpSeekToFrame(VoiceRecord& record, size_t frame) {
 
 	size_t seekIndex = 0;
 	size_t lo = 0;
-	size_t hi = asset.badpSeekFrames.size() - 1;
+	size_t hi = record.badpSeekFrames.size() - 1;
 	while (lo <= hi) {
 		const size_t mid = (lo + hi) >> 1;
-		if (asset.badpSeekFrames[mid] <= frame) {
+		if (record.badpSeekFrames[mid] <= frame) {
 			seekIndex = mid;
 			lo = mid + 1;
 		} else {
@@ -949,8 +808,8 @@ void SoundMaster::badpSeekToFrame(VoiceRecord& record, size_t frame) {
 		}
 	}
 
-	size_t currentFrame = static_cast<size_t>(asset.badpSeekFrames[seekIndex]);
-	size_t cursor = static_cast<size_t>(asset.badpSeekOffsets[seekIndex]);
+	size_t currentFrame = static_cast<size_t>(record.badpSeekFrames[seekIndex]);
+	size_t cursor = static_cast<size_t>(record.badpSeekOffsets[seekIndex]);
 	badpLoadBlock(record, cursor);
 	while (currentFrame + badp.blockFrames <= frame) {
 		currentFrame += badp.blockFrames;
@@ -978,11 +837,10 @@ void SoundMaster::badpDecodeNextFrame(VoiceRecord& record) {
 		badpLoadBlock(record, badp.blockEnd);
 	}
 
-	const AudioAsset& asset = *record.asset;
 	const u8* data = record.data;
 	i32 left = 0;
 	i32 right = 0;
-	for (i32 channel = 0; channel < asset.channels; channel += 1) {
+	for (i32 channel = 0; channel < record.channels; channel += 1) {
 		i32& predictor = badp.predictors[channel];
 		i32& stepIndex = badp.stepIndices[channel];
 		const size_t payloadIndex = badp.payloadOffset + (badp.nibbleCursor >> 1);
@@ -1015,7 +873,7 @@ void SoundMaster::badpDecodeNextFrame(VoiceRecord& record) {
 			right = predictor;
 		}
 	}
-	if (asset.channels == 1) {
+	if (record.channels == 1) {
 		right = left;
 	}
 	badp.blockFrameIndex += 1;
@@ -1046,25 +904,40 @@ bool SoundMaster::badpReadFrameAt(VoiceRecord& record, size_t frame, i16& outLef
 	return true;
 }
 
-VoiceId SoundMaster::startVoice(AudioSlot slot, const AssetId& id, const AudioAsset& asset, const ModulationParams& params, f32 initialGain) {
+VoiceId SoundMaster::startVoiceFromData(AudioSlot slot,
+										const SoundMasterAudioSource& source,
+										const u8* audioData,
+										std::vector<u32> badpSeekFrames,
+										std::vector<u32> badpSeekOffsets,
+										const ModulationParams& params,
+										f32 initialGain) {
 	stopSlot(slot);
 	VoiceRecord record;
 	record.voiceId = m_nextVoiceId++;
-	record.id = id;
-	record.asset = &asset;
-	record.meta = asset.meta;
+	record.sourceAddr = source.sourceAddr;
+	record.sampleRate = static_cast<i32>(source.sampleRateHz);
+	record.channels = static_cast<i32>(source.channels);
+	record.bitsPerSample = static_cast<i32>(source.bitsPerSample);
+	record.dataSize = source.dataBytes;
+	record.frames = source.frameCount;
+	record.badpSeekFrames = std::move(badpSeekFrames);
+	record.badpSeekOffsets = std::move(badpSeekOffsets);
+	if (source.loopStartSample > 0) {
+		record.loopStartFrame = static_cast<f64>(source.loopStartSample);
+		if (source.loopEndSample > source.loopStartSample) {
+			record.loopEndFrame = static_cast<f64>(source.loopEndSample);
+		}
+	}
 	record.slot = slot;
 	record.params = params;
 	record.startedAt = m_audioTimeSec;
-	const AudioDataView view = resolveAudioData(id);
-	record.data = view.data;
-	record.frames = view.frames;
-	record.usesBadp = asset.bitsPerSample == 4;
+	record.data = audioData;
+	record.usesBadp = source.bitsPerSample == 4;
 	const size_t framesInAsset = record.frames;
-	const f64 durationSec = framesInAsset > 0 ? static_cast<f64>(framesInAsset) / asset.sampleRate : 0.0;
+	const f64 durationSec = framesInAsset > 0 ? static_cast<f64>(framesInAsset) / static_cast<f64>(record.sampleRate) : 0.0;
 	f64 offset = params.offset;
 	if (durationSec > 0.0) {
-		if (asset.meta.loopStart.has_value()) {
+		if (record.loopStartFrame.has_value()) {
 			offset = std::fmod(offset, durationSec);
 			if (offset < 0.0) offset += durationSec;
 		} else {
@@ -1077,7 +950,7 @@ VoiceId SoundMaster::startVoice(AudioSlot slot, const AssetId& id, const AudioAs
 		throw BMSX_RUNTIME_ERROR("Playback rate must be positive");
 	}
 	record.startOffset = offset;
-	record.position = offset * asset.sampleRate;
+	record.position = offset * static_cast<f64>(record.sampleRate);
 	record.step = rate;
 	record.gain = initialGain;
 	record.targetGain = initialGain;
@@ -1104,11 +977,10 @@ void SoundMaster::finalizeVoiceEnd(const VoiceRecord& record) {
 	ActiveVoiceInfo info{
 		record.slot,
 		record.voiceId,
-		record.id,
+		record.sourceAddr,
 		record.params,
 		record.startedAt,
 		record.startOffset,
-		record.meta,
 	};
 	// Dispatch against a snapshot so listener callbacks can safely unsubscribe
 	// themselves (or other listeners) without invalidating this iteration.

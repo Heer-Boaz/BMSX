@@ -70,12 +70,6 @@ function collectAssetEntryIds(engineSource: RawAssetSource, assetSource: RawAsse
 				ids.add(entry.resid);
 			}
 		}
-		const audioEntries = source.list('audio');
-		for (let index = 0; index < audioEntries.length; index += 1) {
-			const entry = audioEntries[index]!;
-			assertRomBufferRange(entry, 'audio');
-			ids.add(entry.resid);
-		}
 	}
 
 	return ids;
@@ -114,13 +108,6 @@ function computeRequiredAssetDataBytes(assetSource: RawAssetSource, assetLayers:
 		}
 		assertRomBufferRange(entry, 'image');
 		requiredBytes += alignUp(assetSource.getBytesView(entry).byteLength, 4);
-	}
-	const audioEntries = assetSource.list('audio');
-	for (let index = 0; index < audioEntries.length; index += 1) {
-		const entry = audioEntries[index]!;
-		resolveRuntimeLayerAssetFromEntry<RomAsset>(layerLookup, 'audio', entry);
-		assertRomBufferRange(entry, 'audio');
-		requiredBytes += alignUp(assetSource.getBytesView(entry).byteLength, 2);
 	}
 	requiredBytes += DEFAULT_ASSET_DATA_HEADROOM_BYTES;
 	return alignUp(requiredBytes, ASSET_DATA_ALIGNMENT_BYTES);

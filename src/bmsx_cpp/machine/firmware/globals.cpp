@@ -1461,7 +1461,16 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_inp_status", valueNumber(static_cast<double>(IO_INP_STATUS)));
 	setGlobal("sys_inp_value", valueNumber(static_cast<double>(IO_INP_VALUE)));
 	setGlobal("sys_inp_consume", valueNumber(static_cast<double>(IO_INP_CONSUME)));
-	setGlobal("sys_apu_handle", valueNumber(static_cast<double>(IO_APU_HANDLE)));
+	setGlobal("sys_apu_source_addr", valueNumber(static_cast<double>(IO_APU_SOURCE_ADDR)));
+	setGlobal("sys_apu_source_bytes", valueNumber(static_cast<double>(IO_APU_SOURCE_BYTES)));
+	setGlobal("sys_apu_source_sample_rate_hz", valueNumber(static_cast<double>(IO_APU_SOURCE_SAMPLE_RATE_HZ)));
+	setGlobal("sys_apu_source_channels", valueNumber(static_cast<double>(IO_APU_SOURCE_CHANNELS)));
+	setGlobal("sys_apu_source_bits_per_sample", valueNumber(static_cast<double>(IO_APU_SOURCE_BITS_PER_SAMPLE)));
+	setGlobal("sys_apu_source_frame_count", valueNumber(static_cast<double>(IO_APU_SOURCE_FRAME_COUNT)));
+	setGlobal("sys_apu_source_data_offset", valueNumber(static_cast<double>(IO_APU_SOURCE_DATA_OFFSET)));
+	setGlobal("sys_apu_source_data_bytes", valueNumber(static_cast<double>(IO_APU_SOURCE_DATA_BYTES)));
+	setGlobal("sys_apu_source_loop_start_sample", valueNumber(static_cast<double>(IO_APU_SOURCE_LOOP_START_SAMPLE)));
+	setGlobal("sys_apu_source_loop_end_sample", valueNumber(static_cast<double>(IO_APU_SOURCE_LOOP_END_SAMPLE)));
 	setGlobal("sys_apu_slot", valueNumber(static_cast<double>(IO_APU_SLOT)));
 	setGlobal("sys_apu_rate_step_q16", valueNumber(static_cast<double>(IO_APU_RATE_STEP_Q16)));
 	setGlobal("sys_apu_gain_q12", valueNumber(static_cast<double>(IO_APU_GAIN_Q12)));
@@ -1476,7 +1485,7 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_apu_status", valueNumber(static_cast<double>(IO_APU_STATUS)));
 	setGlobal("sys_apu_event_kind", valueNumber(static_cast<double>(IO_APU_EVENT_KIND)));
 	setGlobal("sys_apu_event_slot", valueNumber(static_cast<double>(IO_APU_EVENT_SLOT)));
-	setGlobal("sys_apu_event_handle", valueNumber(static_cast<double>(IO_APU_EVENT_HANDLE)));
+	setGlobal("sys_apu_event_source_addr", valueNumber(static_cast<double>(IO_APU_EVENT_SOURCE_ADDR)));
 	setGlobal("sys_apu_event_seq", valueNumber(static_cast<double>(IO_APU_EVENT_SEQ)));
 	setGlobal("sys_rom_system_base", valueNumber(static_cast<double>(SYSTEM_ROM_BASE)));
 	setGlobal("sys_rom_cart_base", valueNumber(static_cast<double>(CART_ROM_BASE)));
@@ -3560,12 +3569,9 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 	assetsTable->set(key("bin"), makeAssetMapNativeObject(binTable));
 	const int audioCapacity = static_cast<int>(assets.audio.size());
 	auto* audioTable = cpu.createTable(0, audioCapacity);
-	auto appendAudioEntry = [&cpu, this, audioTable, key, str, appendRomAssetFields](const AudioAsset& audioAsset) {
+	auto appendAudioEntry = [&cpu, audioTable, key, str, appendRomAssetFields](const AudioAsset& audioAsset) {
 		auto* audioEntry = cpu.createTable(0, 6);
 		appendRomAssetFields(audioEntry, audioAsset.rom, audioAsset.id);
-		if (m_machine.memory().hasAsset(audioAsset.id)) {
-			audioEntry->set(key("handle"), valueNumber(static_cast<double>(m_machine.memory().resolveAssetHandle(audioAsset.id))));
-		}
 		audioEntry->set(key("audiometa"), valueTable(buildAudioMetaTable(cpu, audioAsset.meta, key)));
 		audioTable->set(str(audioAsset.id), valueTable(audioEntry));
 	};
@@ -3663,21 +3669,6 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 				vramTable->set(key("staging_bytes"), valueNumber(static_cast<double>(*manifest.stagingBytes)));
 			}
 			specsTable->set(key("vram"), valueTable(vramTable));
-		}
-		if (manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
-			auto* audioTable = cpu.createTable(0, 1);
-			auto* voicesTable = cpu.createTable(0, 3);
-			if (manifest.maxVoicesSfx) {
-				voicesTable->set(key("sfx"), valueNumber(static_cast<double>(*manifest.maxVoicesSfx)));
-			}
-			if (manifest.maxVoicesMusic) {
-				voicesTable->set(key("music"), valueNumber(static_cast<double>(*manifest.maxVoicesMusic)));
-			}
-			if (manifest.maxVoicesUi) {
-				voicesTable->set(key("ui"), valueNumber(static_cast<double>(*manifest.maxVoicesUi)));
-			}
-			audioTable->set(key("max_voices"), valueTable(voicesTable));
-			specsTable->set(key("audio"), valueTable(audioTable));
 		}
 		machineTable->set(key("specs"), valueTable(specsTable));
 		return machineTable;

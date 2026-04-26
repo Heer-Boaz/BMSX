@@ -7,13 +7,12 @@
 
 #pragma once
 
-#include "rompack/assets.h"
 #include "biquad_filter.h"
 #include "core/registry.h"
 #include "../subscription.h"
 #include <functional>
 #include <optional>
-#include <random>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -22,28 +21,11 @@ namespace bmsx {
 using VoiceId = u64;
 using AudioSlot = u32;
 
-struct ModulationRange {
-	f32 min = 0.0f;
-	f32 max = 0.0f;
-};
-
 struct FilterModulationParams {
 	std::string type;
 	f32 frequency = 0.0f;
 	f32 q = 0.0f;
 	f32 gain = 0.0f;
-};
-
-struct ModulationInput {
-	std::optional<f32> pitchDelta;
-	std::optional<f32> volumeDelta;
-	std::optional<f32> offset;
-	std::optional<f32> playbackRate;
-	std::optional<ModulationRange> pitchRange;
-	std::optional<ModulationRange> volumeRange;
-	std::optional<ModulationRange> offsetRange;
-	std::optional<ModulationRange> playbackRateRange;
-	std::optional<FilterModulationParams> filter;
 };
 
 struct ModulationParams {
@@ -54,11 +36,6 @@ struct ModulationParams {
 	std::optional<FilterModulationParams> filter;
 };
 
-struct SoundMasterPlayRequest {
-	std::optional<ModulationInput> params;
-	std::optional<AssetId> modulationPreset;
-};
-
 struct SoundMasterResolvedPlayRequest {
 	f32 playbackRate = 1.0f;
 	f32 gainLinear = 1.0f;
@@ -66,37 +43,27 @@ struct SoundMasterResolvedPlayRequest {
 	std::optional<FilterModulationParams> filter;
 };
 
+struct SoundMasterAudioSource {
+	u32 sourceAddr = 0;
+	u32 sourceBytes = 0;
+	u32 sampleRateHz = 0;
+	u32 channels = 0;
+	u32 bitsPerSample = 0;
+	u32 frameCount = 0;
+	u32 dataOffset = 0;
+	u32 dataBytes = 0;
+	u32 loopStartSample = 0;
+	u32 loopEndSample = 0;
+};
+
 struct ActiveVoiceInfo {
 	AudioSlot slot = 0;
 	VoiceId voiceId = 0;
-	AssetId id;
+	u32 sourceAddr = 0;
 	ModulationParams params;
 	f64 startedAt = 0.0;
 	f64 startOffset = 0.0;
-	AudioMeta meta;
 };
-
-struct PausedSnapshot {
-	AudioSlot slot = 0;
-	AssetId id;
-	f64 offset = 0.0;
-	ModulationParams params;
-};
-
-enum class AudioStopSelector {
-	All,
-	Oldest,
-	Newest,
-	ById,
-	ByVoice,
-};
-
-struct AudioDataView {
-	const u8* data = nullptr;
-	size_t frames = 0;
-};
-
-using AudioDataResolver = std::function<AudioDataView(const AssetId& id)>;
 
 class SoundMaster final : public Registerable {
 public:
@@ -106,15 +73,11 @@ public:
 	const Identifier& registryId() const override;
 	bool isRegistryPersistent() const override { return true; }
 
-	void init(const RuntimeAssets& assets, f32 startingVolume, AudioDataResolver audioResolver);
 	void resetPlaybackState();
 	void dispose();
-	bool isRuntimeAudioReady() const { return m_assets != nullptr && static_cast<bool>(m_audioResolver); }
-	bool hasAudio(const AssetId& id) const { return m_assets != nullptr && m_assets->getAudio(id) != nullptr; }
+	bool isRuntimeAudioReady() const { return true; }
 
-	VoiceId play(const AssetId& id, const SoundMasterPlayRequest& request = {});
-	VoiceId play(AudioSlot slot, const AssetId& id, const SoundMasterPlayRequest& request = {});
-	VoiceId playResolved(AudioSlot slot, const AssetId& id, const SoundMasterResolvedPlayRequest& request);
+	VoiceId playResolved(AudioSlot slot, const SoundMasterAudioSource& source, const u8* sourceBytes, const SoundMasterResolvedPlayRequest& request);
 	bool setVoiceGainLinear(VoiceId voiceId, f32 gain);
 	bool rampVoiceGainLinear(VoiceId voiceId, f32 target, f64 seconds);
 	bool setSlotGainLinear(AudioSlot slot, f32 gain);
@@ -122,11 +85,6 @@ public:
 	bool stopVoiceById(VoiceId voiceId, std::optional<i32> fadeMs = std::nullopt);
 	bool stopSlot(AudioSlot slot, std::optional<i32> fadeMs = std::nullopt);
 	void stopAllVoices();
-	void invalidateClip(const AssetId& id);
-	void stop(const AssetId& id);
-
-	void pauseAll();
-	void resume();
 
 	f32 masterVolume() const { return m_masterVolume; }
 	void setMasterVolume(f32 value);
@@ -135,11 +93,6 @@ public:
 	std::vector<ActiveVoiceInfo> getActiveVoiceInfosBySlot(AudioSlot slot) const;
 	std::optional<ModulationParams> currentModulationParamsBySlot(AudioSlot slot) const;
 	std::optional<f64> currentTimeBySlot(AudioSlot slot) const;
-	AssetId currentTrackBySlot(AudioSlot slot) const;
-	const AudioMeta* currentTrackMetaBySlot(AudioSlot slot) const;
-
-	std::vector<PausedSnapshot> snapshotVoices(AudioSlot slot) const;
-	std::vector<PausedSnapshot> drainPausedSnapshots(AudioSlot slot);
 
 	SubscriptionHandle addEndedListener(std::function<void(const ActiveVoiceInfo&)> listener);
 
@@ -164,11 +117,17 @@ private:
 
 	struct VoiceRecord {
 		VoiceId voiceId = 0;
-		AssetId id;
-		const AudioAsset* asset = nullptr;
+		u32 sourceAddr = 0;
+		i32 sampleRate = 0;
+		i32 channels = 0;
+		i32 bitsPerSample = 0;
 		const u8* data = nullptr;
+		size_t dataSize = 0;
 		size_t frames = 0;
-		AudioMeta meta;
+		std::vector<u32> badpSeekFrames;
+		std::vector<u32> badpSeekOffsets;
+		std::optional<f64> loopStartFrame;
+		std::optional<f64> loopEndFrame;
 		AudioSlot slot = 0;
 		ModulationParams params;
 		f64 startedAt = 0.0;
@@ -186,15 +145,15 @@ private:
 		BadpDecoderState badp;
 	};
 
-	ModulationParams resolvePlayParams(const ModulationInput& input);
 	ModulationParams resolveResolvedPlayParams(const SoundMasterResolvedPlayRequest& request) const;
-	std::optional<ModulationInput> resolveModulationPreset(const AssetId& key) const;
-	ModulationInput parseModulationInput(const BinValue& value) const;
 
-	const AudioAsset& getAudioOrThrow(const AssetId& id) const;
-	AudioDataView resolveAudioData(const AssetId& id) const;
-
-	VoiceId startVoice(AudioSlot slot, const AssetId& id, const AudioAsset& asset, const ModulationParams& params, f32 initialGain);
+	VoiceId startVoiceFromData(AudioSlot slot,
+							   const SoundMasterAudioSource& source,
+							   const u8* audioData,
+							   std::vector<u32> badpSeekFrames,
+							   std::vector<u32> badpSeekOffsets,
+							   const ModulationParams& params,
+							   f32 initialGain);
 	void removeVoice(size_t index);
 	void finalizeVoiceEnd(const VoiceRecord& record);
 	VoiceRecord* findVoice(VoiceId voiceId);
@@ -211,17 +170,11 @@ private:
 	f32 clampVolume(f32 value) const;
 	f64 effectivePlaybackRate(const ModulationParams& params) const;
 
-	const RuntimeAssets* m_assets = nullptr;
-	AudioDataResolver m_audioResolver;
 	f32 m_masterVolume = 1.0f;
 	f64 m_audioTimeSec = 0.0;
 
 	std::vector<VoiceRecord> m_voices;
-	std::vector<PausedSnapshot> m_pausedVoices;
 	std::vector<std::pair<u32, std::function<void(const ActiveVoiceInfo&)>>> m_endedListeners;
-
-	std::mt19937 m_rng;
-	mutable std::uniform_real_distribution<f32> m_unitDist;
 
 	std::vector<f32> m_mixBuffer;
 	VoiceId m_nextVoiceId = 1;

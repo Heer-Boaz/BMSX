@@ -33,13 +33,14 @@ private:
 	void clearCommandLatch();
 	void resetCommandLatch();
 	void play();
-	const Memory::AssetEntry& requireAudioEntry(uint32_t handle) const;
+	SoundMasterAudioSource readAudioSource() const;
+	void requireAudioSource(const SoundMasterAudioSource& source) const;
 	AudioSlot readSlot() const;
-	void startPlay(const std::string& id, AudioSlot slot, const SoundMasterResolvedPlayRequest& request);
+	void startPlay(const SoundMasterAudioSource& source, AudioSlot slot, const SoundMasterResolvedPlayRequest& request);
 	void stopSlot();
 	void rampSlot();
-	SoundMasterResolvedPlayRequest readResolvedPlayRequest() const;
-	void emitSlotEvent(uint32_t kind, AudioSlot slot, uint32_t handle);
+	SoundMasterResolvedPlayRequest readResolvedPlayRequest(const SoundMasterAudioSource& source) const;
+	void emitSlotEvent(uint32_t kind, AudioSlot slot, uint32_t sourceAddr);
 	void onVoiceEnded(const ActiveVoiceInfo& info);
 };
 

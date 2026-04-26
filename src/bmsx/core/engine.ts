@@ -1,4 +1,4 @@
-import { ModulationParams, ModulationPresetResolver, RandomModulationParams, SoundMaster } from "../audio/soundmaster";
+import { SoundMaster } from "../audio/soundmaster";
 import { Input } from "../input/manager";
 import type { VibrationParams } from "../platform";
 import type { ActionStateQuery } from '../input/models';
@@ -9,7 +9,7 @@ import { ensureBrowserBackendFactory } from "../render/backend/browser_factory";
 import type { SkyboxImageIds } from "../machine/devices/vdp/contracts";
 import { HZ_SCALE as PLATFORM_HZ_SCALE, setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform, PlatformExitEvent, SubscriptionHandle } from '../platform';
-import { asset_id, RuntimeAssets, type CartManifest, type MachineManifest, type vec2 } from "../rompack/format";
+import { RuntimeAssets, type CartManifest, type MachineManifest, type vec2 } from "../rompack/format";
 import { buildSystemRuntimeAssetLayer, normalizeCartridgeBlob, parseCartridgeIndex } from '../rompack/loader';
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system';
 import { renderGate, runGate } from './taskgate';
@@ -228,55 +228,6 @@ export class EngineCore {
 	 */
 	constructor() {
 		this.initialized = false;
-	}
-
-	private buildModulationResolver(): ModulationPresetResolver {
-		return {
-			resolve: (key: asset_id) => {
-				const segments = key.split('.');
-				if (segments.length === 0) {
-					return undefined;
-				}
-				let cursor: unknown;
-				if (Runtime.hasInstance) {
-					cursor = Runtime.instance.assets.getDataAsset(segments[0]);
-				} else {
-					cursor = this._assets.data[segments[0]];
-				}
-				for (let i = 1; i < segments.length; i++) {
-					const segment = segments[i];
-					if (segment.length === 0) {
-						cursor = undefined;
-						break;
-					}
-					if (cursor && typeof cursor === 'object' && (cursor as Record<string, unknown>)[segment] !== undefined) {
-						cursor = (cursor as Record<string, unknown>)[segment];
-					} else {
-						cursor = undefined;
-						break;
-					}
-				}
-				if (cursor && typeof cursor === 'object') {
-					return cursor as (RandomModulationParams | ModulationParams);
-				}
-			},
-		};
-	}
-
-	public async refresh_audio_assets(): Promise<void> {
-		if (!this.platform.audio.available) {
-			return;
-		}
-		this.sndmaster.bootstrapRuntimeAudio(DEFAULT_MASTER_VOLUME);
-		const resolver = this.buildModulationResolver();
-		const runtime = Runtime.instance;
-		const resources = runtime.assets.buildAudioResourcesForSoundMaster(runtime.machine.memory);
-		await SoundMaster.instance.init(
-			resources,
-			DEFAULT_MASTER_VOLUME,
-			resolver,
-			(id) => runtime.assets.getAudioBytesById(runtime.machine.memory, id)
-		);
 	}
 
 	public bootstrapStartupAudio(): void {

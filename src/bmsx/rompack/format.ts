@@ -56,7 +56,7 @@ export type asset_id = string;
 export interface RomAsset {
 	resid: asset_id; // The resource ID of the asset.
 	type: asset_type; // The type of the asset.
-	handle?: number; // Runtime-resolved memory handle for firmware-facing MMIO code.
+	handle?: number; // Runtime-resolved memory handle for image/VDP MMIO code.
 	id_token_lo?: number; // 64-bit exact-id token (low 32)
 	id_token_hi?: number; // 64-bit exact-id token (high 32)
 	op?: RomAssetOp; // Optional patch operation for this asset.
@@ -388,16 +388,6 @@ export interface ImgMeta {
 
 export type TextureSource = unknown & { close?(): void; width: number; height: number; data?: Uint8Array; }; // platform-specific source type (e.g. ImageBitmap in browsers)
 export type Viewport = { width: number; height: number; };
-export type MachineVoiceSpecs = {
-	sfx?: number;
-	music?: number;
-	ui?: number;
-};
-export const DEFAULT_MACHINE_MAX_VOICES: Required<MachineVoiceSpecs> = {
-	sfx: 1,
-	music: 1,
-	ui: 1,
-};
 export type MachineCpuSpecs = {
 	cpu_freq_hz: number;
 	imgdec_bytes_per_sec: number;
@@ -420,15 +410,11 @@ export type MachineVramSpecs = {
 	system_atlas_slot_bytes?: number;
 	staging_bytes?: number;
 };
-export type MachineAudioSpecs = {
-	max_voices?: MachineVoiceSpecs;
-};
 export type MachineSpecs = {
 	cpu: MachineCpuSpecs;
 	dma: MachineDmaSpecs;
 	vdp?: MachineVdpSpecs;
 	geo?: MachineGeoSpecs;
-	audio?: MachineAudioSpecs;
 	ram?: MachineRamSpecs;
 	vram?: MachineVramSpecs;
 };
@@ -502,15 +488,6 @@ export function getMachineMemorySpecs(machine: MachineManifest): MachineMemorySp
 		atlas_slot_bytes: vram?.atlas_slot_bytes,
 		system_atlas_slot_bytes: vram?.system_atlas_slot_bytes,
 		staging_bytes: vram?.staging_bytes,
-	};
-}
-
-export function getMachineMaxVoices(machine: MachineManifest): Required<MachineVoiceSpecs> {
-	const voices = machine.specs.audio?.max_voices;
-	return {
-		sfx: voices?.sfx ?? DEFAULT_MACHINE_MAX_VOICES.sfx,
-		music: voices?.music ?? DEFAULT_MACHINE_MAX_VOICES.music,
-		ui: voices?.ui ?? DEFAULT_MACHINE_MAX_VOICES.ui,
 	};
 }
 // 		data: merge(bullshit.data, engine.data),

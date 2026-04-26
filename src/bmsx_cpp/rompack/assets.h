@@ -349,9 +349,6 @@ struct MachineManifest {
 	std::optional<i32> atlasSlotBytes;
 	std::optional<i32> engineAtlasSlotBytes;
 	std::optional<i32> stagingBytes;
-	std::optional<i32> maxVoicesSfx;
-	std::optional<i32> maxVoicesMusic;
-	std::optional<i32> maxVoicesUi;
 	std::optional<i64> cpuHz;
 	std::optional<i64> imgDecBytesPerSec;
 	std::optional<i64> dmaBytesPerSecIso;
@@ -432,7 +429,6 @@ public:
 
 	// Check if asset exists
 	bool hasImg(const AssetId& id) const;
-	bool hasAudio(const AssetId& id) const;
 	bool hasModel(const AssetId& id) const;
 	bool hasData(const AssetId& id) const;
 	bool hasBin(const AssetId& id) const;

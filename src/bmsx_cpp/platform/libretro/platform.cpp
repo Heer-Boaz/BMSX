@@ -743,7 +743,7 @@ bool LibretroPlatform::loadState(const void* data, size_t size) {
 	}
 	try {
 		applyRuntimeSaveStateBytes(runtime, static_cast<const u8*>(data), size);
-		flushHostRuntimeAssetEdits(runtime.machine().memory(), *m_engine->texmanager(), *m_engine->soundMaster(), *m_engine->view());
+		flushHostRuntimeAssetEdits(runtime.machine().memory(), *m_engine->texmanager(), *m_engine->view());
 		applyGameViewStateToHost(runtime.gameViewState(), *m_engine->view());
 		static_cast<LibretroAudioService*>(m_audio_service.get())->resetQueue();
 		m_audio_buffer.clear();

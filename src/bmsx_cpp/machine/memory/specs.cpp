@@ -41,12 +41,6 @@ void collectAssetIds(const RuntimeAssets& engineAssets, const RuntimeAssets& ass
 		}
 	}
 
-	for (const auto& entry : engineAssets.audio) {
-		ids.insert(entry.second.id);
-	}
-	for (const auto& entry : assets.audio) {
-		ids.insert(entry.second.id);
-	}
 }
 
 uint32_t computeAssetTableBytes(const RuntimeAssets& engineAssets, const RuntimeAssets& assets) {
@@ -86,10 +80,6 @@ uint32_t computeRequiredAssetDataBytes(const RuntimeAssets& assets) {
 			continue;
 		}
 		requiredBytes += alignUpU64(resolveRomBufferBytes(image.rom, image.id, "image"), 4u);
-	}
-	for (const auto& entry : assets.audio) {
-		const AudioAsset& audio = entry.second;
-		requiredBytes += alignUpU64(resolveRomBufferBytes(audio.rom, audio.id, "audio"), 2u);
 	}
 	requiredBytes += static_cast<uint64_t>(DEFAULT_ASSET_DATA_HEADROOM_BYTES);
 	requiredBytes = alignUpU64(requiredBytes, static_cast<uint64_t>(ASSET_PAGE_SIZE));

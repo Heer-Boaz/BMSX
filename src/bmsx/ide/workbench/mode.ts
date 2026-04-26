@@ -792,7 +792,7 @@ function beginOverlayUpdateFrame(runtime: Runtime): FrameState | null {
 }
 
 function finishOverlayUpdateFrame(runtime: Runtime, state: FrameState): void {
-	flushHostRuntimeAssetEdits(runtime.machine.memory, engineCore.texmanager, engineCore.sndmaster);
+	flushHostRuntimeAssetEdits(runtime.machine.memory, engineCore.texmanager);
 	runtime.frameLoop.drawFrameState = state;
 	runtime.frameLoop.abandonFrameState(runtime);
 }

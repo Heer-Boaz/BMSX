@@ -133,7 +133,7 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeS
 	publishOverlayFrame(null);
 	applyRuntimeMachineState(runtime, snapshot.machineState);
 	restoreVdpContextState(runtime.machine.vdp);
-	flushHostRuntimeAssetEdits(runtime.machine.memory, engineCore.texmanager, engineCore.sndmaster);
+	flushHostRuntimeAssetEdits(runtime.machine.memory, engineCore.texmanager);
 	runtime.storage.restore(snapshot.storageState);
 	resumeLuaProgramState(runtime, snapshot, preserveEngineModules);
 	applyRuntimeRenderState(snapshot.renderState);
@@ -791,7 +791,7 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, runInit = tru
 			runtime.machine.memory.sealEngineAssets();
 		}
 		await engineCore.resetRuntime(reloadPlan.resetFreshWorldOptions.preserve_textures);
-		await engineCore.refresh_audio_assets();
+		engineCore.bootstrapStartupAudio();
 		try {
 			runtime.activateCartProgramAssets();
 			resetRuntimeState(runtime);

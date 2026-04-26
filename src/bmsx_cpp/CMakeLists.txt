@@ -110,9 +110,7 @@ add_library(bmsx_core STATIC
 
 	# Audio systems
 	audio/biquad_filter.cpp
-	audio/runtime_asset_audio.cpp
 	audio/soundmaster.cpp
-	audio/resources.cpp
 
 	# Input systems
 	input/state_manager.cpp

@@ -52,7 +52,7 @@ void EngineCore::runHostFrame(
 			applyGameViewStateToHost(runtime.gameViewState(), *view());
 			runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 
-			flushHostRuntimeAssetEdits(runtime.machine().memory(), *texmanager(), *soundMaster(), *view());
+			flushHostRuntimeAssetEdits(runtime.machine().memory(), *texmanager(), *view());
 		}
 		m_delta_time = hostDeltaSeconds;
 

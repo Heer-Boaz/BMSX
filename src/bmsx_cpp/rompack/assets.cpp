@@ -122,17 +122,6 @@ static void parseMachineSpecs(const BinObject& machineObj, MachineManifest& mani
 			manifest.stagingBytes = vramObj.at("staging_bytes").toI32();
 		}
 	}
-	const BinValue* audioValue = findObjectField(specsObj, "audio");
-	if (audioValue && audioValue->isObject()) {
-		const auto& audioObj = audioValue->asObject();
-		const BinValue* voicesValue = findObjectField(audioObj, "max_voices");
-		if (voicesValue && voicesValue->isObject()) {
-			const auto& voicesObj = voicesValue->asObject();
-			if (voicesObj.count("sfx")) manifest.maxVoicesSfx = voicesObj.at("sfx").toI32();
-			if (voicesObj.count("music")) manifest.maxVoicesMusic = voicesObj.at("music").toI32();
-			if (voicesObj.count("ui")) manifest.maxVoicesUi = voicesObj.at("ui").toI32();
-		}
-	}
 }
 
 static constexpr u32 ROM_TOC_MAGIC = 0x434f5442; // 'BTOC' little-endian
@@ -978,10 +967,6 @@ const BinValue* RuntimeAssets::getAudioEvent(const AssetId& id) const {
 
 bool RuntimeAssets::hasImg(const AssetId& id) const {
 	return getImg(id) != nullptr;
-}
-
-bool RuntimeAssets::hasAudio(const AssetId& id) const {
-	return getAudio(id) != nullptr;
 }
 
 bool RuntimeAssets::hasModel(const AssetId& id) const {

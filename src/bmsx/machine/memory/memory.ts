@@ -26,10 +26,10 @@ import {
 	VRAM_STAGING_SIZE,
 } from './map';
 import {
-	IO_APU_EVENT_HANDLE,
 	IO_APU_EVENT_KIND,
 	IO_APU_EVENT_SEQ,
 	IO_APU_EVENT_SLOT,
+	IO_APU_EVENT_SOURCE_ADDR,
 	IO_APU_STATUS,
 	IO_DMA_STATUS,
 	IO_DMA_WRITTEN,
@@ -52,7 +52,7 @@ import { hashAssetId, tokenKey } from '../../rompack/tokens';
 import { ScratchBatch } from '../../common/scratchbatch';
 import { formatNumberAsHex } from '../../common/byte_hex_string';
 
-export type AssetType = 'image' | 'audio';
+export type AssetType = 'image';
 
 export type AssetEntry = {
 	id: string;
@@ -69,12 +69,6 @@ export type AssetEntry = {
 	regionY: number;
 	regionW: number;
 	regionH: number;
-	sampleRate: number;
-	channels: number;
-	frames: number;
-	bitsPerSample: number;
-	audioDataOffset: number;
-	audioDataSize: number;
 };
 
 export type ImageWritePlan = {
@@ -132,7 +126,6 @@ export const ASSET_PAGE_SIZE = 1 << ASSET_PAGE_SHIFT;
 const utf8Decoder = new TextDecoder();
 
 const ASSET_TYPE_IMAGE = 1;
-const ASSET_TYPE_AUDIO = 2;
 
 export const ASSET_FLAG_VIEW = 1 << 1;
 
@@ -316,12 +309,6 @@ export class Memory {
 			regionY: 0,
 			regionW: 0,
 			regionH: 0,
-			sampleRate: 0,
-			channels: 0,
-			frames: 0,
-			bitsPerSample: 0,
-			audioDataOffset: 0,
-			audioDataSize: 0,
 			ownerIndex: -1,
 		});
 		return this.registerOwnedAssetEntry(entry, addr, params.capacityBytes);
@@ -359,12 +346,6 @@ export class Memory {
 			regionY: 0,
 			regionW: 0,
 			regionH: 0,
-			sampleRate: 0,
-			channels: 0,
-			frames: 0,
-			bitsPerSample: 0,
-			audioDataOffset: 0,
-			audioDataSize: 0,
 			ownerIndex: -1,
 		});
 		entry.ownerIndex = this.registerAssetEntry(entry);
@@ -399,12 +380,6 @@ export class Memory {
 			regionY: 0,
 			regionW: params.width,
 			regionH: params.height,
-			sampleRate: 0,
-			channels: 0,
-			frames: 0,
-			bitsPerSample: 0,
-			audioDataOffset: 0,
-			audioDataSize: 0,
 			ownerIndex: -1,
 		});
 		return this.registerOwnedAssetEntry(entry, addr, size);
@@ -433,88 +408,10 @@ export class Memory {
 			regionY: params.regionY,
 			regionW: params.regionW,
 			regionH: params.regionH,
-			sampleRate: 0,
-			channels: 0,
-			frames: 0,
-			bitsPerSample: 0,
-			audioDataOffset: 0,
-			audioDataSize: 0,
 			ownerIndex: params.baseEntry.ownerIndex,
 		});
 		// @ts-ignore
 		const index = this.registerAssetEntry(entry);
-		return entry;
-	}
-
-	public registerAudioBuffer(params: {
-		id: string;
-		bytes: Uint8Array;
-		sampleRate: number;
-		channels: number;
-		bitsPerSample: number;
-		frames: number;
-		dataOffset: number;
-		dataSize: number;
-	}): AssetEntry {
-		const { addr, view } = this.allocateAssetData(params.bytes.byteLength, 2);
-		view.set(params.bytes);
-		const entry = this.createAssetEntry({
-			id: params.id,
-			idTokenLo: 0,
-			idTokenHi: 0,
-			type: 'audio',
-			flags: 0,
-			baseAddr: addr,
-			baseSize: params.bytes.byteLength,
-			capacity: params.bytes.byteLength,
-			baseStride: 0,
-			regionX: 0,
-			regionY: 0,
-			regionW: 0,
-			regionH: 0,
-			sampleRate: params.sampleRate,
-			channels: params.channels,
-			frames: params.frames,
-			bitsPerSample: params.bitsPerSample,
-			audioDataOffset: params.dataOffset,
-			audioDataSize: params.dataSize,
-			ownerIndex: -1,
-		});
-		return this.registerOwnedAssetEntry(entry, addr, params.bytes.byteLength);
-	}
-
-	public registerAudioMeta(params: {
-		id: string;
-		sampleRate: number;
-		channels: number;
-		bitsPerSample: number;
-		frames: number;
-		dataOffset: number;
-		dataSize: number;
-	}): AssetEntry {
-		const entry = this.createAssetEntry({
-			id: params.id,
-			idTokenLo: 0,
-			idTokenHi: 0,
-			type: 'audio',
-			flags: 0,
-			baseAddr: 0,
-			baseSize: 0,
-			capacity: 0,
-			baseStride: 0,
-			regionX: 0,
-			regionY: 0,
-			regionW: 0,
-			regionH: 0,
-			sampleRate: params.sampleRate,
-			channels: params.channels,
-			frames: params.frames,
-			bitsPerSample: params.bitsPerSample,
-			audioDataOffset: params.dataOffset,
-			audioDataSize: params.dataSize,
-			ownerIndex: -1,
-		});
-		entry.ownerIndex = this.registerAssetEntry(entry);
 		return entry;
 	}
 
@@ -553,11 +450,6 @@ export class Memory {
 		const offset = entry.baseAddr - RAM_BASE;
 		const size = entry.regionW * entry.regionH * 4;
 		return this.ram.subarray(offset, offset + size);
-	}
-
-	public getAudioBytes(entry: AssetEntry): Uint8Array {
-		const offset = entry.baseAddr - RAM_BASE;
-		return this.ram.subarray(offset, offset + entry.baseSize);
 	}
 
 	public consumeDirtyAssets(): ScratchBatch<AssetEntry> {
@@ -627,19 +519,8 @@ export class Memory {
 			const entry = this.assetEntries[index];
 			const entryAddr = entryBaseAddr + index * ASSET_TABLE_ENTRY_SIZE;
 			const entryOffset = entryAddr - RAM_BASE;
-			let typeId = 0;
-			switch (entry.type) {
-				case 'image':
-					typeId = ASSET_TYPE_IMAGE;
-					break;
-				case 'audio':
-					typeId = ASSET_TYPE_AUDIO;
-					break;
-				default:
-					throw new Error(`[Memory] Asset entry has unknown type: ${entry.type}.`);
-			}
 			const idOffset = stringTableAddr + stringOffsets.get(entry.id);
-			this.ramView.setUint32(entryOffset + 0, typeId, true);
+			this.ramView.setUint32(entryOffset + 0, ASSET_TYPE_IMAGE, true);
 			this.ramView.setUint32(entryOffset + 4, entry.flags, true);
 			this.ramView.setUint32(entryOffset + 8, entry.idTokenLo, true);
 			this.ramView.setUint32(entryOffset + 12, entry.idTokenHi, true);
@@ -849,22 +730,17 @@ export class Memory {
 			const tokenHi = this.ramView.getUint32(entryOffset + 12, true);
 			const idAddr = this.ramView.getUint32(entryOffset + 16, true);
 			const id = readString(idAddr);
-			let type: AssetType;
-			if (typeId === ASSET_TYPE_IMAGE) {
-				type = 'image';
-			} else if (typeId === ASSET_TYPE_AUDIO) {
-				type = 'audio';
-			} else {
+			if (typeId !== ASSET_TYPE_IMAGE) {
 				throw new Error(`[Memory] Asset '${id}' has unknown type id ${typeId}.`);
 			}
 			const baseAddr = this.ramView.getUint32(entryOffset + 20, true);
 			const baseSize = this.ramView.getUint32(entryOffset + 24, true);
 			const capacity = this.ramView.getUint32(entryOffset + 28, true);
-			const entry = reuseEntries ? entries[index]! : {
+			const entry: AssetEntry = reuseEntries ? entries[index]! : {
 				id,
 				idTokenLo: tokenLo,
 				idTokenHi: tokenHi,
-				type,
+				type: 'image',
 				flags,
 				ownerIndex: -1,
 				baseAddr,
@@ -875,17 +751,11 @@ export class Memory {
 				regionY: 0,
 				regionW: 0,
 				regionH: 0,
-				sampleRate: 0,
-				channels: 0,
-				frames: 0,
-				bitsPerSample: 0,
-				audioDataOffset: 0,
-				audioDataSize: 0,
 			};
 			entry.id = id;
 			entry.idTokenLo = tokenLo;
 			entry.idTokenHi = tokenHi;
-			entry.type = type;
+			entry.type = 'image';
 			entry.flags = flags;
 			entry.ownerIndex = -1;
 			entry.baseAddr = baseAddr;
@@ -896,29 +766,11 @@ export class Memory {
 			entry.regionY = 0;
 			entry.regionW = 0;
 			entry.regionH = 0;
-			entry.sampleRate = 0;
-			entry.channels = 0;
-			entry.frames = 0;
-			entry.bitsPerSample = 0;
-			entry.audioDataOffset = 0;
-			entry.audioDataSize = 0;
-			switch (type) {
-				case 'image':
-					entry.baseStride = this.ramView.getUint32(entryOffset + 32, true);
-					entry.regionX = this.ramView.getUint32(entryOffset + 36, true);
-					entry.regionY = this.ramView.getUint32(entryOffset + 40, true);
-					entry.regionW = this.ramView.getUint32(entryOffset + 44, true);
-					entry.regionH = this.ramView.getUint32(entryOffset + 48, true);
-					break;
-				case 'audio':
-					entry.sampleRate = this.ramView.getUint32(entryOffset + 32, true);
-					entry.channels = this.ramView.getUint32(entryOffset + 36, true);
-					entry.frames = this.ramView.getUint32(entryOffset + 40, true);
-					entry.bitsPerSample = this.ramView.getUint32(entryOffset + 44, true);
-					entry.audioDataOffset = this.ramView.getUint32(entryOffset + 48, true);
-					entry.audioDataSize = this.ramView.getUint32(entryOffset + 52, true);
-					break;
-			}
+			entry.baseStride = this.ramView.getUint32(entryOffset + 32, true);
+			entry.regionX = this.ramView.getUint32(entryOffset + 36, true);
+			entry.regionY = this.ramView.getUint32(entryOffset + 40, true);
+			entry.regionW = this.ramView.getUint32(entryOffset + 44, true);
+			entry.regionH = this.ramView.getUint32(entryOffset + 48, true);
 			const expectedToken = hashAssetId(id);
 			if (expectedToken.lo !== tokenLo || expectedToken.hi !== tokenHi) {
 				throw new Error(`[Memory] Asset token mismatch for '${id}'.`);
@@ -1294,7 +1146,7 @@ export class Memory {
 			|| addr === IO_APU_STATUS
 			|| addr === IO_APU_EVENT_KIND
 			|| addr === IO_APU_EVENT_SLOT
-			|| addr === IO_APU_EVENT_HANDLE
+			|| addr === IO_APU_EVENT_SOURCE_ADDR
 			|| addr === IO_APU_EVENT_SEQ
 			|| addr === IO_VDP_RD_STATUS
 			|| addr === IO_VDP_RD_DATA
@@ -1416,25 +1268,11 @@ export class Memory {
 	}
 
 	private writeAssetEntryPayload(entryOffset: number, entry: AssetEntry): void {
-		switch (entry.type) {
-			case 'image':
-				this.ramView.setUint32(entryOffset + 32, entry.baseStride, true);
-				this.ramView.setUint32(entryOffset + 36, entry.regionX, true);
-				this.ramView.setUint32(entryOffset + 40, entry.regionY, true);
-				this.ramView.setUint32(entryOffset + 44, entry.regionW, true);
-				this.ramView.setUint32(entryOffset + 48, entry.regionH, true);
-				break;
-			case 'audio':
-				this.ramView.setUint32(entryOffset + 32, entry.sampleRate, true);
-				this.ramView.setUint32(entryOffset + 36, entry.channels, true);
-				this.ramView.setUint32(entryOffset + 40, entry.frames, true);
-				this.ramView.setUint32(entryOffset + 44, entry.bitsPerSample, true);
-				this.ramView.setUint32(entryOffset + 48, entry.audioDataOffset, true);
-				this.ramView.setUint32(entryOffset + 52, entry.audioDataSize, true);
-				break;
-			default:
-				throw new Error(`[Memory] Asset entry has unknown type: ${entry.type}.`);
-		}
+		this.ramView.setUint32(entryOffset + 32, entry.baseStride, true);
+		this.ramView.setUint32(entryOffset + 36, entry.regionX, true);
+		this.ramView.setUint32(entryOffset + 40, entry.regionY, true);
+		this.ramView.setUint32(entryOffset + 44, entry.regionW, true);
+		this.ramView.setUint32(entryOffset + 48, entry.regionH, true);
 	}
 
 	private clearDirtyAssetTracking(): void {

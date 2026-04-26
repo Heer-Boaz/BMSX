@@ -60,7 +60,7 @@ void AudioController::reset() {
 	writeNumber(m_memory, IO_APU_STATUS, 0.0);
 	writeNumber(m_memory, IO_APU_EVENT_KIND, static_cast<double>(APU_EVENT_NONE));
 	writeNumber(m_memory, IO_APU_EVENT_SLOT, 0.0);
-	writeNumber(m_memory, IO_APU_EVENT_HANDLE, 0.0);
+	writeNumber(m_memory, IO_APU_EVENT_SOURCE_ADDR, 0.0);
 	writeNumber(m_memory, IO_APU_EVENT_SEQ, 0.0);
 }
 
@@ -70,7 +70,16 @@ void AudioController::clearCommandLatch() {
 }
 
 void AudioController::resetCommandLatch() {
-	writeNumber(m_memory, IO_APU_HANDLE, 0.0);
+	writeNumber(m_memory, IO_APU_SOURCE_ADDR, 0.0);
+	writeNumber(m_memory, IO_APU_SOURCE_BYTES, 0.0);
+	writeNumber(m_memory, IO_APU_SOURCE_SAMPLE_RATE_HZ, 0.0);
+	writeNumber(m_memory, IO_APU_SOURCE_CHANNELS, 0.0);
+	writeNumber(m_memory, IO_APU_SOURCE_BITS_PER_SAMPLE, 0.0);
+	writeNumber(m_memory, IO_APU_SOURCE_FRAME_COUNT, 0.0);
+	writeNumber(m_memory, IO_APU_SOURCE_DATA_OFFSET, 0.0);
+	writeNumber(m_memory, IO_APU_SOURCE_DATA_BYTES, 0.0);
+	writeNumber(m_memory, IO_APU_SOURCE_LOOP_START_SAMPLE, 0.0);
+	writeNumber(m_memory, IO_APU_SOURCE_LOOP_END_SAMPLE, 0.0);
 	writeNumber(m_memory, IO_APU_SLOT, 0.0);
 	writeNumber(m_memory, IO_APU_RATE_STEP_Q16, static_cast<double>(APU_RATE_STEP_Q16_ONE));
 	writeNumber(m_memory, IO_APU_GAIN_Q12, static_cast<double>(APU_GAIN_Q12_ONE));
@@ -107,14 +116,6 @@ void AudioController::onCommandWriteThunk(void* context, uint32_t, Value) {
 	static_cast<AudioController*>(context)->onCommandWrite();
 }
 
-const Memory::AssetEntry& AudioController::requireAudioEntry(uint32_t handle) const {
-	const Memory::AssetEntry& entry = m_memory.getAssetEntryByHandle(handle);
-	if (entry.type != Memory::AssetType::Audio) {
-		throw std::runtime_error("[APU] asset handle " + std::to_string(handle) + " is not audio.");
-	}
-	return entry;
-}
-
 AudioSlot AudioController::readSlot() const {
 	const AudioSlot slot = static_cast<AudioSlot>(m_memory.readIoU32(IO_APU_SLOT));
 	if (slot >= APU_SLOT_COUNT) {
@@ -124,19 +125,56 @@ AudioSlot AudioController::readSlot() const {
 }
 
 void AudioController::play() {
-	const uint32_t handle = m_memory.readIoU32(IO_APU_HANDLE);
-	const Memory::AssetEntry& entry = requireAudioEntry(handle);
-	startPlay(entry.id, readSlot(), readResolvedPlayRequest());
+	const SoundMasterAudioSource source = readAudioSource();
+	startPlay(source, readSlot(), readResolvedPlayRequest(source));
 }
 
-void AudioController::startPlay(const std::string& id, AudioSlot slot, const SoundMasterResolvedPlayRequest& request) {
+SoundMasterAudioSource AudioController::readAudioSource() const {
+	SoundMasterAudioSource source;
+	source.sourceAddr = m_memory.readIoU32(IO_APU_SOURCE_ADDR);
+	source.sourceBytes = m_memory.readIoU32(IO_APU_SOURCE_BYTES);
+	source.sampleRateHz = m_memory.readIoU32(IO_APU_SOURCE_SAMPLE_RATE_HZ);
+	source.channels = m_memory.readIoU32(IO_APU_SOURCE_CHANNELS);
+	source.bitsPerSample = m_memory.readIoU32(IO_APU_SOURCE_BITS_PER_SAMPLE);
+	source.frameCount = m_memory.readIoU32(IO_APU_SOURCE_FRAME_COUNT);
+	source.dataOffset = m_memory.readIoU32(IO_APU_SOURCE_DATA_OFFSET);
+	source.dataBytes = m_memory.readIoU32(IO_APU_SOURCE_DATA_BYTES);
+	source.loopStartSample = m_memory.readIoU32(IO_APU_SOURCE_LOOP_START_SAMPLE);
+	source.loopEndSample = m_memory.readIoU32(IO_APU_SOURCE_LOOP_END_SAMPLE);
+	requireAudioSource(source);
+	return source;
+}
+
+void AudioController::requireAudioSource(const SoundMasterAudioSource& source) const {
+	if (source.sourceBytes == 0) {
+		throw std::runtime_error("[APU] source byte length must be positive.");
+	}
+	if (!m_memory.isReadableMainMemoryRange(source.sourceAddr, source.sourceBytes)) {
+		throw std::runtime_error("[APU] source range is not readable main memory.");
+	}
+	if (source.sampleRateHz == 0) {
+		throw std::runtime_error("[APU] source sample rate must be positive.");
+	}
+	if (source.channels < 1 || source.channels > 2) {
+		throw std::runtime_error("[APU] source channel count " + std::to_string(source.channels) + " is invalid.");
+	}
+	if (source.frameCount == 0) {
+		throw std::runtime_error("[APU] source frame count must be positive.");
+	}
+	if (source.dataBytes == 0 || source.dataOffset + source.dataBytes > source.sourceBytes) {
+		throw std::runtime_error("[APU] source data range exceeds source bytes.");
+	}
+	if (source.bitsPerSample != 4 && source.bitsPerSample != 8 && source.bitsPerSample != 16) {
+		throw std::runtime_error("[APU] source bit depth " + std::to_string(source.bitsPerSample) + " is unsupported.");
+	}
+}
+
+void AudioController::startPlay(const SoundMasterAudioSource& source, AudioSlot slot, const SoundMasterResolvedPlayRequest& request) {
 	if (!m_soundMaster.isRuntimeAudioReady()) {
 		throw std::runtime_error("[APU] SoundMaster runtime audio is not initialized.");
 	}
-	if (!m_soundMaster.hasAudio(id)) {
-		throw std::runtime_error("[APU] audio asset '" + id + "' is not loaded in SoundMaster.");
-	}
-	m_soundMaster.playResolved(slot, id, request);
+	const u8* bytes = m_memory.readBytesView(source.sourceAddr, source.sourceBytes);
+	m_soundMaster.playResolved(slot, source, bytes, request);
 }
 
 void AudioController::stopSlot() {
@@ -156,7 +194,7 @@ void AudioController::rampSlot() {
 	m_soundMaster.setSlotGainLinear(slot, targetGain);
 }
 
-SoundMasterResolvedPlayRequest AudioController::readResolvedPlayRequest() const {
+SoundMasterResolvedPlayRequest AudioController::readResolvedPlayRequest(const SoundMasterAudioSource& source) const {
 	SoundMasterResolvedPlayRequest request;
 	const int32_t rateStepQ16 = m_memory.readIoI32(IO_APU_RATE_STEP_Q16);
 	const int32_t gainQ12 = m_memory.readIoI32(IO_APU_GAIN_Q12);
@@ -164,7 +202,7 @@ SoundMasterResolvedPlayRequest AudioController::readResolvedPlayRequest() const 
 	const uint32_t filterKind = m_memory.readIoU32(IO_APU_FILTER_KIND);
 	request.playbackRate = static_cast<f32>(rateStepQ16) / static_cast<f32>(APU_RATE_STEP_Q16_ONE);
 	request.gainLinear = static_cast<f32>(gainQ12) / static_cast<f32>(APU_GAIN_Q12_ONE);
-	request.offsetSeconds = static_cast<f32>(startSample) / static_cast<f32>(APU_SAMPLE_RATE_HZ);
+	request.offsetSeconds = static_cast<f32>(startSample) / static_cast<f32>(source.sampleRateHz);
 	if (filterKind != APU_FILTER_NONE) {
 		FilterModulationParams filter;
 		filter.type = decodeFilterKind(filterKind);
@@ -176,17 +214,17 @@ SoundMasterResolvedPlayRequest AudioController::readResolvedPlayRequest() const 
 	return request;
 }
 
-void AudioController::emitSlotEvent(uint32_t kind, AudioSlot slot, uint32_t handle) {
+void AudioController::emitSlotEvent(uint32_t kind, AudioSlot slot, uint32_t sourceAddr) {
 	m_eventSequence += 1u;
 	writeNumber(m_memory, IO_APU_EVENT_KIND, static_cast<double>(kind));
 	writeNumber(m_memory, IO_APU_EVENT_SLOT, static_cast<double>(slot));
-	writeNumber(m_memory, IO_APU_EVENT_HANDLE, static_cast<double>(handle));
+	writeNumber(m_memory, IO_APU_EVENT_SOURCE_ADDR, static_cast<double>(sourceAddr));
 	writeNumber(m_memory, IO_APU_EVENT_SEQ, static_cast<double>(m_eventSequence));
 	m_irq.raise(IRQ_APU);
 }
 
 void AudioController::onVoiceEnded(const ActiveVoiceInfo& info) {
-	emitSlotEvent(APU_EVENT_SLOT_ENDED, info.slot, m_memory.resolveAssetHandle(info.id));
+	emitSlotEvent(APU_EVENT_SLOT_ENDED, info.slot, info.sourceAddr);
 }
 
 } // namespace bmsx

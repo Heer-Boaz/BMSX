@@ -75,13 +75,13 @@ public:
 
 	void writeBytes(uint32_t addr, const u8* data, size_t length);
 	void readBytes(uint32_t addr, u8* out, size_t length) const;
+	const u8* readBytesView(uint32_t addr, size_t length) const;
 	bool isVramRange(uint32_t addr, size_t length) const;
 	bool isReadableMainMemoryRange(uint32_t addr, size_t length) const;
 	bool isRamRange(uint32_t addr, size_t length) const;
 
 	enum class AssetType {
 		Image,
-		Audio,
 	};
 
 	struct AssetEntry {
@@ -98,12 +98,6 @@ public:
 		uint32_t regionY = 0;
 		uint32_t regionW = 0;
 		uint32_t regionH = 0;
-		uint32_t sampleRate = 0;
-		uint32_t channels = 0;
-		uint32_t frames = 0;
-		uint32_t bitsPerSample = 0;
-		uint32_t audioDataOffset = 0;
-		uint32_t audioDataSize = 0;
 	};
 
 	struct ImageWriteEntry {
@@ -133,26 +127,6 @@ public:
 	AssetEntry& registerImageSlot(const std::string& id, uint32_t capacityBytes, uint32_t flags);
 	AssetEntry& registerImageSlotAt(const std::string& id, uint32_t baseAddr, uint32_t capacityBytes, uint32_t flags, bool clear = true);
 	AssetEntry& registerImageView(const std::string& id, const AssetEntry& base, uint32_t regionX, uint32_t regionY, uint32_t regionW, uint32_t regionH, uint32_t flags);
-	AssetEntry& registerAudioBuffer(
-		const std::string& id,
-		const u8* bytes,
-		size_t byteCount,
-		uint32_t sampleRate,
-		uint32_t channels,
-		uint32_t bitsPerSample,
-		uint32_t frames,
-		uint32_t dataOffset,
-		uint32_t dataSize
-	);
-	AssetEntry& registerAudioMeta(
-		const std::string& id,
-		uint32_t sampleRate,
-		uint32_t channels,
-		uint32_t bitsPerSample,
-		uint32_t frames,
-		uint32_t dataOffset,
-		uint32_t dataSize
-	);
 	bool hasAsset(const std::string& id) const;
 	void sealEngineAssets();
 	void resetCartAssets();
@@ -179,8 +153,6 @@ public:
 	AssetEntry& getAssetEntryByHandle(size_t handle);
 	const AssetEntry& getAssetEntryByHandle(size_t handle) const;
 	const u8* getImagePixels(const AssetEntry& entry) const;
-	const u8* getAudioBytes(const AssetEntry& entry) const;
-	const u8* getAudioData(const AssetEntry& entry) const;
 
 	const std::vector<Value>& ioSlots() const { return m_ioSlots; }
 	void loadIoSlots(const std::vector<Value>& slots);

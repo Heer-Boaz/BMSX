@@ -17,7 +17,6 @@ constexpr uint32_t ASSET_TABLE_HASH_ALG_ID = 2;
 constexpr uint32_t ASSET_PAGE_SHIFT = 12;
 constexpr uint32_t ASSET_PAGE_SIZE = 1u << ASSET_PAGE_SHIFT;
 constexpr uint32_t ASSET_TYPE_IMAGE = 1;
-constexpr uint32_t ASSET_TYPE_AUDIO = 2;
 
 inline void writeU32LE(u8* dst, uint32_t value) {
 	writeLE32(dst, value);
@@ -84,33 +83,6 @@ Memory::ImageWritePlan planImageWriteEntry(Entry& entry, size_t pixelBytes, uint
 	plan.writeLen = writeLen;
 	plan.clipped = (writeWidth != sourceWidth) || (writeHeight != sourceHeight);
 	return plan;
-}
-
-Memory::AssetEntry makeAudioAssetEntry(
-	const std::string& id,
-	uint32_t baseAddr,
-	uint32_t baseSize,
-	uint32_t capacity,
-	uint32_t sampleRate,
-	uint32_t channels,
-	uint32_t bitsPerSample,
-	uint32_t frames,
-	uint32_t dataOffset,
-	uint32_t dataSize
-) {
-	Memory::AssetEntry entry;
-	entry.id = id;
-	entry.type = Memory::AssetType::Audio;
-	entry.baseAddr = baseAddr;
-	entry.baseSize = baseSize;
-	entry.capacity = capacity;
-	entry.sampleRate = sampleRate;
-	entry.channels = channels;
-	entry.frames = frames;
-	entry.bitsPerSample = bitsPerSample;
-	entry.audioDataOffset = dataOffset;
-	entry.audioDataSize = dataSize;
-	return entry;
 }
 
 }
@@ -340,40 +312,6 @@ Memory::AssetEntry& Memory::registerImageView(const std::string& id, const Asset
 	return m_assetEntries[index];
 }
 
-Memory::AssetEntry& Memory::registerAudioBuffer(
-	const std::string& id,
-	const u8* bytes,
-	size_t byteCount,
-	uint32_t sampleRate,
-	uint32_t channels,
-	uint32_t bitsPerSample,
-	uint32_t frames,
-	uint32_t dataOffset,
-	uint32_t dataSize
-) {
-	const uint32_t size = static_cast<uint32_t>(byteCount);
-	const uint32_t addr = allocateAssetData(size, 2);
-	const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-	std::memcpy(m_ram.data() + offset, bytes, size);
-	AssetEntry entry = makeAudioAssetEntry(id, addr, size, size, sampleRate, channels, bitsPerSample, frames, dataOffset, dataSize);
-	return addOwnedAssetEntry(std::move(entry), addr, size);
-}
-
-Memory::AssetEntry& Memory::registerAudioMeta(
-	const std::string& id,
-	uint32_t sampleRate,
-	uint32_t channels,
-	uint32_t bitsPerSample,
-	uint32_t frames,
-	uint32_t dataOffset,
-	uint32_t dataSize
-) {
-	AssetEntry entry = makeAudioAssetEntry(id, 0, 0, 0, sampleRate, channels, bitsPerSample, frames, dataOffset, dataSize);
-	const size_t index = addAssetEntry(std::move(entry));
-	m_assetEntries[index].ownerIndex = index;
-	return m_assetEntries[index];
-}
-
 void Memory::finalizeAssetTable() {
 	const size_t entryCount = m_assetEntries.size();
 	const uint32_t entryBaseAddr = ASSET_TABLE_BASE + ASSET_TABLE_HEADER_SIZE;
@@ -413,21 +351,10 @@ void Memory::finalizeAssetTable() {
 		const auto& entry = m_assetEntries[index];
 		const uint32_t entryAddr = entryBaseAddr + static_cast<uint32_t>(index * ASSET_TABLE_ENTRY_SIZE);
 		const uint32_t entryOffset = entryAddr - RAM_BASE;
-		uint32_t typeId = 0;
-		switch (entry.type) {
-			case AssetType::Image:
-				typeId = ASSET_TYPE_IMAGE;
-				break;
-			case AssetType::Audio:
-				typeId = ASSET_TYPE_AUDIO;
-				break;
-			default:
-				throw std::runtime_error("[Memory] Asset entry has unknown type.");
-		}
 		const uint32_t idAddr = stringTableAddr + stringOffsets.at(entry.id);
 		const uint32_t tokenLo = static_cast<uint32_t>(entry.idToken & 0xffffffffu);
 		const uint32_t tokenHi = static_cast<uint32_t>((entry.idToken >> 32) & 0xffffffffu);
-		writeU32LE(base + entryOffset + 0, typeId);
+		writeU32LE(base + entryOffset + 0, ASSET_TYPE_IMAGE);
 		writeU32LE(base + entryOffset + 4, entry.flags);
 		writeU32LE(base + entryOffset + 8, tokenLo);
 		writeU32LE(base + entryOffset + 12, tokenHi);
@@ -556,16 +483,10 @@ void Memory::rehydrateAssetEntriesFromTable() {
 		const uint32_t tokenHi = readU32LE(base + entryOffset + 12);
 		const uint32_t idAddr = readU32LE(base + entryOffset + 16);
 		AssetEntry& entry = m_assetEntries[index];
-		switch (typeId) {
-			case ASSET_TYPE_IMAGE:
-				entry.type = AssetType::Image;
-				break;
-			case ASSET_TYPE_AUDIO:
-				entry.type = AssetType::Audio;
-				break;
-			default:
-				throw std::runtime_error("[Memory] Asset entry has unknown type.");
+		if (typeId != ASSET_TYPE_IMAGE) {
+			throw std::runtime_error("[Memory] Asset entry has unknown type.");
 		}
+		entry.type = AssetType::Image;
 		entry.id = readString(idAddr);
 		entry.idToken = static_cast<uint64_t>(tokenLo) | (static_cast<uint64_t>(tokenHi) << 32);
 		entry.flags = flags;
@@ -577,29 +498,11 @@ void Memory::rehydrateAssetEntriesFromTable() {
 		entry.regionY = 0;
 		entry.regionW = 0;
 		entry.regionH = 0;
-		entry.sampleRate = 0;
-		entry.channels = 0;
-		entry.frames = 0;
-		entry.bitsPerSample = 0;
-		entry.audioDataOffset = 0;
-		entry.audioDataSize = 0;
-		switch (entry.type) {
-			case AssetType::Image:
-				entry.baseStride = readU32LE(base + entryOffset + 32);
-				entry.regionX = readU32LE(base + entryOffset + 36);
-				entry.regionY = readU32LE(base + entryOffset + 40);
-				entry.regionW = readU32LE(base + entryOffset + 44);
-				entry.regionH = readU32LE(base + entryOffset + 48);
-				break;
-			case AssetType::Audio:
-				entry.sampleRate = readU32LE(base + entryOffset + 32);
-				entry.channels = readU32LE(base + entryOffset + 36);
-				entry.frames = readU32LE(base + entryOffset + 40);
-				entry.bitsPerSample = readU32LE(base + entryOffset + 44);
-				entry.audioDataOffset = readU32LE(base + entryOffset + 48);
-				entry.audioDataSize = readU32LE(base + entryOffset + 52);
-				break;
-		}
+		entry.baseStride = readU32LE(base + entryOffset + 32);
+		entry.regionX = readU32LE(base + entryOffset + 36);
+		entry.regionY = readU32LE(base + entryOffset + 40);
+		entry.regionW = readU32LE(base + entryOffset + 44);
+		entry.regionH = readU32LE(base + entryOffset + 48);
 		const AssetToken expectedToken = hashAssetToken(entry.id);
 		if (expectedToken != entry.idToken) {
 			throw std::runtime_error("[Memory] Asset token mismatch for '" + entry.id + "'.");
@@ -715,17 +618,6 @@ const u8* Memory::getImagePixels(const AssetEntry& entry) const {
 		throw std::runtime_error("[Memory] Image asset lives in VRAM and has no CPU pixel buffer.");
 	}
 	const size_t offset = ramOffset(entry.baseAddr, entry.baseSize);
-	return m_ram.data() + offset;
-}
-
-const u8* Memory::getAudioBytes(const AssetEntry& entry) const {
-	const size_t offset = ramOffset(entry.baseAddr, entry.baseSize);
-	return m_ram.data() + offset;
-}
-
-const u8* Memory::getAudioData(const AssetEntry& entry) const {
-	const uint32_t dataAddr = entry.baseAddr + entry.audioDataOffset;
-	const size_t offset = ramOffset(dataAddr, entry.audioDataSize);
 	return m_ram.data() + offset;
 }
 
@@ -1032,6 +924,12 @@ void Memory::readBytes(uint32_t addr, u8* out, size_t length) const {
 	std::memcpy(out, region + offset, length);
 }
 
+const u8* Memory::readBytesView(uint32_t addr, size_t length) const {
+	size_t offset = 0;
+	const auto* region = readRegion(addr, length, offset);
+	return region + offset;
+}
+
 bool Memory::isVramRange(uint32_t addr, size_t length) const {
 	return isVramRangeLocal(addr, length);
 }
@@ -1103,7 +1001,7 @@ bool Memory::isLuaReadOnlyIoAddress(uint32_t addr) const {
 		|| addr == IO_APU_STATUS
 		|| addr == IO_APU_EVENT_KIND
 		|| addr == IO_APU_EVENT_SLOT
-		|| addr == IO_APU_EVENT_HANDLE
+		|| addr == IO_APU_EVENT_SOURCE_ADDR
 		|| addr == IO_APU_EVENT_SEQ
 		|| addr == IO_VDP_RD_STATUS
 		|| addr == IO_VDP_RD_DATA
@@ -1241,25 +1139,11 @@ void Memory::writeAssetEntryMutableData(u8* base, uint32_t entryOffset, const As
 }
 
 void Memory::writeAssetEntryPayload(u8* base, uint32_t entryOffset, const AssetEntry& entry) {
-	switch (entry.type) {
-		case AssetType::Image:
-			writeU32LE(base + entryOffset + 32, entry.baseStride);
-			writeU32LE(base + entryOffset + 36, entry.regionX);
-			writeU32LE(base + entryOffset + 40, entry.regionY);
-			writeU32LE(base + entryOffset + 44, entry.regionW);
-			writeU32LE(base + entryOffset + 48, entry.regionH);
-			break;
-		case AssetType::Audio:
-			writeU32LE(base + entryOffset + 32, entry.sampleRate);
-			writeU32LE(base + entryOffset + 36, entry.channels);
-			writeU32LE(base + entryOffset + 40, entry.frames);
-			writeU32LE(base + entryOffset + 44, entry.bitsPerSample);
-			writeU32LE(base + entryOffset + 48, entry.audioDataOffset);
-			writeU32LE(base + entryOffset + 52, entry.audioDataSize);
-			break;
-		default:
-			throw std::runtime_error("[Memory] Asset entry has unknown type.");
-	}
+	writeU32LE(base + entryOffset + 32, entry.baseStride);
+	writeU32LE(base + entryOffset + 36, entry.regionX);
+	writeU32LE(base + entryOffset + 40, entry.regionY);
+	writeU32LE(base + entryOffset + 44, entry.regionW);
+	writeU32LE(base + entryOffset + 48, entry.regionH);
 }
 
 void Memory::updateAssetEntryData(size_t index, const AssetEntry& entry) {

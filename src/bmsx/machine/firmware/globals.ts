@@ -113,21 +113,30 @@ import {
 	INP_CTRL_RESET,
 	IO_ARG_STRIDE,
 	IO_APU_CMD,
-	IO_APU_EVENT_HANDLE,
 	IO_APU_EVENT_KIND,
 	IO_APU_EVENT_SEQ,
 	IO_APU_EVENT_SLOT,
+	IO_APU_EVENT_SOURCE_ADDR,
 	IO_APU_FADE_SAMPLES,
 	IO_APU_FILTER_FREQ_HZ,
 	IO_APU_FILTER_GAIN_MILLIDB,
 	IO_APU_FILTER_KIND,
 	IO_APU_FILTER_Q_MILLI,
 	IO_APU_GAIN_Q12,
-	IO_APU_HANDLE,
 	IO_APU_RATE_STEP_Q16,
 	IO_APU_SLOT,
 	IO_APU_START_SAMPLE,
 	IO_APU_STATUS,
+	IO_APU_SOURCE_ADDR,
+	IO_APU_SOURCE_BITS_PER_SAMPLE,
+	IO_APU_SOURCE_BYTES,
+	IO_APU_SOURCE_CHANNELS,
+	IO_APU_SOURCE_DATA_BYTES,
+	IO_APU_SOURCE_DATA_OFFSET,
+	IO_APU_SOURCE_FRAME_COUNT,
+	IO_APU_SOURCE_LOOP_END_SAMPLE,
+	IO_APU_SOURCE_LOOP_START_SAMPLE,
+	IO_APU_SOURCE_SAMPLE_RATE_HZ,
 	IO_APU_TARGET_GAIN_Q12,
 	IO_CMD_VDP_BLIT,
 	IO_CMD_VDP_CLEAR,
@@ -343,22 +352,6 @@ function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest):
 			vramTable.set(runtime.luaKey('staging_bytes'), vram.staging_bytes);
 		}
 		specs.set(runtime.luaKey('vram'), vramTable);
-	}
-	const voices = manifest.specs.audio?.max_voices;
-	if (voices && (voices.sfx || voices.music || voices.ui)) {
-		const audio = new Table(0, 1);
-		const maxVoices = new Table(0, 3);
-		if (voices.sfx) {
-			maxVoices.set(runtime.luaKey('sfx'), voices.sfx);
-		}
-		if (voices.music) {
-			maxVoices.set(runtime.luaKey('music'), voices.music);
-		}
-		if (voices.ui) {
-			maxVoices.set(runtime.luaKey('ui'), voices.ui);
-		}
-		audio.set(runtime.luaKey('max_voices'), maxVoices);
-		specs.set(runtime.luaKey('audio'), audio);
 	}
 	table.set(runtime.luaKey('specs'), specs);
 	return table;
@@ -1292,7 +1285,16 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_inp_status', IO_INP_STATUS);
 	luaPipeline.registerGlobal(runtime, 'sys_inp_value', IO_INP_VALUE);
 	luaPipeline.registerGlobal(runtime, 'sys_inp_consume', IO_INP_CONSUME);
-	luaPipeline.registerGlobal(runtime, 'sys_apu_handle', IO_APU_HANDLE);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_addr', IO_APU_SOURCE_ADDR);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_bytes', IO_APU_SOURCE_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_sample_rate_hz', IO_APU_SOURCE_SAMPLE_RATE_HZ);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_channels', IO_APU_SOURCE_CHANNELS);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_bits_per_sample', IO_APU_SOURCE_BITS_PER_SAMPLE);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_frame_count', IO_APU_SOURCE_FRAME_COUNT);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_data_offset', IO_APU_SOURCE_DATA_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_data_bytes', IO_APU_SOURCE_DATA_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_loop_start_sample', IO_APU_SOURCE_LOOP_START_SAMPLE);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_loop_end_sample', IO_APU_SOURCE_LOOP_END_SAMPLE);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_slot', IO_APU_SLOT);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_rate_step_q16', IO_APU_RATE_STEP_Q16);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_gain_q12', IO_APU_GAIN_Q12);
@@ -1307,7 +1309,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_apu_status', IO_APU_STATUS);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_event_kind', IO_APU_EVENT_KIND);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_event_slot', IO_APU_EVENT_SLOT);
-	luaPipeline.registerGlobal(runtime, 'sys_apu_event_handle', IO_APU_EVENT_HANDLE);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_event_source_addr', IO_APU_EVENT_SOURCE_ADDR);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_event_seq', IO_APU_EVENT_SEQ);
 	luaPipeline.registerGlobal(runtime, 'apu_cmd_play', APU_CMD_PLAY);
 	luaPipeline.registerGlobal(runtime, 'apu_cmd_stop_slot', APU_CMD_STOP_SLOT);

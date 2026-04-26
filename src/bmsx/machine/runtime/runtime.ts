@@ -55,7 +55,7 @@ import { LuaScratchState } from '../program/scratch';
 import { invokeClosureHandler, invokeLuaHandler } from '../program/executor';
 import { resolveCpuHz, resolveGeoWorkUnitsPerSec, resolveRuntimeRenderSize, resolveVdpWorkUnitsPerSec } from '../specs';
 import { resolveRuntimeMemoryMapSpecs } from '../memory/specs';
-import { startEngineWithDeferredStartupAudioRefresh } from '../../audio/startup';
+import { startEngineWithStartupAudio } from '../../audio/startup';
 import { RuntimeAssetState } from '../memory/asset/state';
 import {
 	applyActiveMachineTiming,
@@ -387,7 +387,7 @@ export class Runtime {
 			await engineCore.refreshRenderAssets();
 			engineCore.view.default_font = new Font();
 			await runtime.boot();
-			startEngineWithDeferredStartupAudioRefresh(runtime);
+			startEngineWithStartupAudio();
 		}
 
 	public static get instance(): Runtime {
@@ -551,7 +551,7 @@ export class Runtime {
 			this.clearLuaBootState();
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset the runtime state
 				await engineCore.resetRuntime();
-				await engineCore.refresh_audio_assets();
+				engineCore.bootstrapStartupAudio();
 			}
 			api.cartdata(this.activeLuaSources.namespace);
 			luaPipeline.bootActiveProgram(this);
@@ -596,7 +596,7 @@ export class Runtime {
 		await engineCore.resetRuntime();
 		await this.prepareBootRomStartupState();
 		await engineCore.refreshRenderAssets();
-		await engineCore.refresh_audio_assets();
+		engineCore.bootstrapStartupAudio();
 	}
 
 	public async rebootToBootRom(): Promise<void> {
