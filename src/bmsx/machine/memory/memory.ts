@@ -16,12 +16,12 @@ import {
 	RAM_USED_END,
 	VRAM_FRAMEBUFFER_BASE,
 	VRAM_FRAMEBUFFER_SIZE,
-	VRAM_SYSTEM_ATLAS_BASE,
-	VRAM_SYSTEM_ATLAS_SIZE,
-	VRAM_PRIMARY_ATLAS_BASE,
-	VRAM_PRIMARY_ATLAS_SIZE,
-	VRAM_SECONDARY_ATLAS_BASE,
-	VRAM_SECONDARY_ATLAS_SIZE,
+	VRAM_SYSTEM_TEXTPAGE_BASE,
+	VRAM_SYSTEM_TEXTPAGE_SIZE,
+	VRAM_PRIMARY_TEXTPAGE_BASE,
+	VRAM_PRIMARY_TEXTPAGE_SIZE,
+	VRAM_SECONDARY_TEXTPAGE_BASE,
+	VRAM_SECONDARY_TEXTPAGE_SIZE,
 	VRAM_STAGING_BASE,
 	VRAM_STAGING_SIZE,
 } from './map';
@@ -126,8 +126,6 @@ export const ASSET_PAGE_SIZE = 1 << ASSET_PAGE_SHIFT;
 const utf8Decoder = new TextDecoder();
 
 const ASSET_TYPE_IMAGE = 1;
-
-export const ASSET_FLAG_VIEW = 1 << 1;
 
 export class Memory {
 	private readonly engineRom: Uint8Array;
@@ -385,36 +383,6 @@ export class Memory {
 		return this.registerOwnedAssetEntry(entry, addr, size);
 	}
 
-	public registerImageView(params: {
-		id: string;
-		baseEntry: AssetEntry;
-		regionX: number;
-		regionY: number;
-		regionW: number;
-		regionH: number;
-		flags?: number;
-	}): AssetEntry {
-		const entry = this.createAssetEntry({
-			id: params.id,
-			idTokenLo: 0,
-			idTokenHi: 0,
-			type: 'image',
-			flags: (params.flags ?? 0) | ASSET_FLAG_VIEW,
-			baseAddr: params.baseEntry.baseAddr,
-			baseSize: params.baseEntry.baseSize,
-			capacity: 0,
-			baseStride: params.baseEntry.baseStride,
-			regionX: params.regionX,
-			regionY: params.regionY,
-			regionW: params.regionW,
-			regionH: params.regionH,
-			ownerIndex: params.baseEntry.ownerIndex,
-		});
-		// @ts-ignore
-		const index = this.registerAssetEntry(entry);
-		return entry;
-	}
-
 	public getAssetEntry(id: string): AssetEntry {
 		return this.getAssetEntryByHandle(this.resolveAssetHandle(id));
 	}
@@ -441,9 +409,6 @@ export class Memory {
 	}
 
 	public getImagePixels(entry: AssetEntry): Uint8Array {
-		if (entry.flags & ASSET_FLAG_VIEW) {
-			throw new Error(`[Memory] Asset '${entry.id}' is a view and has no direct pixel buffer.`);
-		}
 		if (this.isVramRange(entry.baseAddr, entry.capacity)) {
 			throw new Error(`[Memory] Asset '${entry.id}' lives in VRAM and has no CPU pixel buffer.`);
 		}
@@ -609,17 +574,6 @@ export class Memory {
 			this.writeAssetEntryData(index, entry);
 		}
 		return plan;
-	}
-
-	public updateImageViewBase(entry: AssetEntry, baseEntry: AssetEntry): void {
-		const index = this.assetIndexById.get(entry.id)!;
-		entry.baseAddr = baseEntry.baseAddr;
-		entry.baseSize = baseEntry.baseSize;
-		entry.baseStride = baseEntry.baseStride;
-		entry.ownerIndex = baseEntry.ownerIndex;
-		if (this.assetTableFinalized) {
-			this.writeAssetEntryData(index, entry);
-		}
 	}
 
 	public dumpAssetMemory(): Uint8Array {
@@ -789,24 +743,9 @@ export class Memory {
 		this.assetEntries = entries;
 		this.ensureAssetDirtyFlagCapacity(entryCount);
 
-		const ownerByBaseAddr = new Map<number, number>();
 		for (let index = 0; index < entryCount; index += 1) {
 			const entry = this.assetEntries[index];
-			if (entry.flags & ASSET_FLAG_VIEW) {
-				continue;
-			}
 			entry.ownerIndex = index;
-			ownerByBaseAddr.set(entry.baseAddr, index);
-		}
-		for (let index = 0; index < entryCount; index += 1) {
-			const entry = this.assetEntries[index];
-			if (entry.flags & ASSET_FLAG_VIEW) {
-				const ownerIndex = ownerByBaseAddr.get(entry.baseAddr);
-				if (ownerIndex === undefined) {
-					throw new Error(`[Memory] Missing owner for asset view '${entry.id}'.`);
-				}
-				entry.ownerIndex = ownerIndex;
-			}
 		}
 
 		this.assetOwnerPages.fill(-1);
@@ -847,10 +786,7 @@ export class Memory {
 			}
 			return;
 		}
-		if (typeof value !== 'number') {
-			throw new Error(`Bus fault: non-numeric store @ ${formatNumberAsHex(addr >>> 0, 8)}.`);
-		}
-		this.writeU32(addr, value);
+		this.writeU32(addr, value as number);
 	}
 
 	public writeIoValue(addr: number, value: Value): void {
@@ -865,10 +801,7 @@ export class Memory {
 			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write word.`);
 		}
 		if (this.isVramRange(addr, 4)) {
-			if (typeof value !== 'number') {
-				throw new Error(`VRAM write fault @ ${formatNumberAsHex(addr >>> 0, 8)}: non-numeric value.`);
-			}
-			this.writeMappedU32LE(addr, value);
+			this.writeMappedU32LE(addr, value as number);
 			return;
 		}
 		this.writeValue(addr, value);
@@ -1187,9 +1120,9 @@ export class Memory {
 		const end = addr + length;
 		const overlaps = (base: number, size: number): boolean => addr < base + size && end > base;
 		return overlaps(VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
-			|| overlaps(VRAM_SYSTEM_ATLAS_BASE, VRAM_SYSTEM_ATLAS_SIZE)
-			|| overlaps(VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE)
-			|| overlaps(VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE)
+			|| overlaps(VRAM_SYSTEM_TEXTPAGE_BASE, VRAM_SYSTEM_TEXTPAGE_SIZE)
+			|| overlaps(VRAM_PRIMARY_TEXTPAGE_BASE, VRAM_PRIMARY_TEXTPAGE_SIZE)
+			|| overlaps(VRAM_SECONDARY_TEXTPAGE_BASE, VRAM_SECONDARY_TEXTPAGE_SIZE)
 			|| overlaps(VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
 	}
 

@@ -196,7 +196,7 @@ void RenderPresentationState::render(EngineCore& engine, Runtime& runtime) {
 			renderTestPattern(*engine.m_view, engine.m_total_time);
 		}
 
-		commitVdpViewSnapshot(*engine.m_view, runtime.machine().vdp(), runtime.machine().memory());
+		commitVdpViewSnapshot(*engine.m_view, runtime.machine().vdp(), runtime.activeAssets(), runtime.machine().memory());
 		engine.m_view->configurePresentation(presentMode, commitFrame);
 		engine.m_view->drawGame();
 		engine.m_view->endFrame();

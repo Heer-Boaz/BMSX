@@ -15,7 +15,6 @@ namespace bmsx {
 
 constexpr uint32_t ASSET_TABLE_HEADER_SIZE = 40;
 constexpr uint32_t ASSET_TABLE_ENTRY_SIZE = 64;
-constexpr uint32_t ASSET_FLAG_VIEW = 1u << 1;
 
 struct MemoryState {
 	std::vector<Value> ioMemory;
@@ -126,15 +125,12 @@ public:
 	AssetEntry& registerImageBuffer(const std::string& id, const u8* rgba, uint32_t width, uint32_t height, uint32_t flags);
 	AssetEntry& registerImageSlot(const std::string& id, uint32_t capacityBytes, uint32_t flags);
 	AssetEntry& registerImageSlotAt(const std::string& id, uint32_t baseAddr, uint32_t capacityBytes, uint32_t flags, bool clear = true);
-	AssetEntry& registerImageView(const std::string& id, const AssetEntry& base, uint32_t regionX, uint32_t regionY, uint32_t regionW, uint32_t regionH, uint32_t flags);
 	bool hasAsset(const std::string& id) const;
 	void sealEngineAssets();
 	void resetCartAssets();
 	ImageWritePlan planImageWrite(ImageWriteEntry& entry, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacity);
 	ImageWritePlan planImageSlotWrite(AssetEntry& entry, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacity);
 	void writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacity);
-	void updateImageViewBase(AssetEntry& entry, const AssetEntry& base);
-	void updateImageView(AssetEntry& entry, const AssetEntry& base, uint32_t regionX, uint32_t regionY, uint32_t regionW, uint32_t regionH, uint32_t flags = 0);
 	void finalizeAssetTable();
 	std::vector<AssetEntry*> consumeDirtyAssets();
 	void markAllAssetsDirty();

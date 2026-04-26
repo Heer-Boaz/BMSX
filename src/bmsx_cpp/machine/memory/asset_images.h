@@ -8,10 +8,6 @@ class Memory;
 class RuntimeAssets;
 struct ImgAsset;
 
-struct RegisteredImageMemory {
-	VdpAtlasMemory textpageMemory;
-};
-
-RegisteredImageMemory registerImageMemory(Memory& memory, RuntimeAssets& engineAssets, RuntimeAssets& assets);
+void registerImageMemory(Memory& memory, RuntimeAssets& engineAssets, RuntimeAssets& assets);
 
 } // namespace bmsx

@@ -1,6 +1,6 @@
 export enum BitmapId {
 	none = 'none',
-	_textpage_00 = '_textpage_00',
+	_atlas_00 = '_atlas_00',
 	ammo = 'ammo',
 	backworld_dl = 'backworld_dl',
 	backworld_dl_dark = 'backworld_dl_dark',
@@ -278,7 +278,7 @@ export enum BitmapId {
 }
 
 export const BitmapTokens = {
-	_textpage_00: { lo: 0x55ecf146, hi: 0x8b967e90 },
+	_atlas_00: { lo: 0x55ecf146, hi: 0x8b967e90 },
 	ammo: { lo: 0xaf1a970f, hi: 0x8c7e9f83 },
 	backworld_dl: { lo: 0x11f633db, hi: 0x604ec6a8 },
 	backworld_dl_dark: { lo: 0x4a571ce0, hi: 0xf97d3f0a },

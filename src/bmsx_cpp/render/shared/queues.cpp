@@ -9,6 +9,7 @@
 #include "hardware/camera.h"
 #include "hardware/lighting.h"
 #include "rompack/assets.h"
+#include "render/vdp/image_meta.h"
 #include "core/font.h"
 #include "../../machine/runtime/runtime.h"
 #include "common/clamp.h"
@@ -40,20 +41,16 @@ f32 _skyExposure = 1.0f;
 static constexpr f32 DEFAULT_ZCOORD = 0.0f;
 
 struct ResolvedSpriteAsset {
-	u32 handle = 0u;
+	ImageSlotSource source;
 };
 
-static ResolvedSpriteAsset resolveSpriteAsset(Memory& memory, const std::string& imgId, const char* context) {
-	const u32 handle = memory.resolveAssetHandle(imgId);
-	const auto& entry = memory.getAssetEntryByHandle(handle);
-	if (entry.type != Memory::AssetType::Image) {
-		throw BMSX_RUNTIME_ERROR("[" + std::string(context) + "] Asset '" + imgId + "' is not an image.");
-	}
-	if (entry.regionW == 0 || entry.regionH == 0) {
+static ResolvedSpriteAsset resolveSpriteAsset(const RuntimeAssets& assets, const Memory& memory, const std::string& imgId, const char* context) {
+	const ImageSlotSource source = resolveImageSlotSourceFromAssets(assets, memory, imgId);
+	if (source.w == 0 || source.h == 0) {
 		throw BMSX_RUNTIME_ERROR("[" + std::string(context) + "] Image '" + imgId + "' has invalid region size.");
 	}
 	return ResolvedSpriteAsset{
-		handle,
+		source,
 	};
 }
 
@@ -68,8 +65,23 @@ static void submitResolvedSprite(Runtime& runtime,
 									RenderLayer layer,
 									const FlipOptions& flip,
 									f32 parallaxWeight) {
-	(void)parallaxWeight;
-	runtime.machine().vdp().enqueueBlit(resolved.handle, x, y, z, renderLayerTo2dLayer(layer), scaleX, scaleY, flip.flip_h, flip.flip_v, color);
+	runtime.machine().vdp().enqueueBlit(
+		resolved.source.slot,
+		resolved.source.u,
+		resolved.source.v,
+		resolved.source.w,
+		resolved.source.h,
+		x,
+		y,
+		z,
+		renderLayerTo2dLayer(layer),
+		scaleX,
+		scaleY,
+		flip.flip_h,
+		flip.flip_v,
+		color,
+		parallaxWeight
+	);
 }
 
 static bool hasCommittedFrontQueueContent() {
@@ -102,8 +114,7 @@ void submitSprite(const ImgRenderSubmission& options) {
 		throw BMSX_RUNTIME_ERROR("submitSprite requires layer.");
 	}
 	auto& runtime = Runtime::instance();
-	auto& memory = runtime.machine().memory();
-	const ResolvedSpriteAsset resolved = resolveSpriteAsset(memory, options.imgid, "Sprite Queue");
+	const ResolvedSpriteAsset resolved = resolveSpriteAsset(runtime.activeAssets(), runtime.machine().memory(), options.imgid, "Sprite Queue");
 	submitResolvedSprite(
 		runtime,
 		resolved,

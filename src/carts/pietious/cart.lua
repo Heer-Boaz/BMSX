@@ -172,8 +172,7 @@ function init()
 	title_screen_module.register_title_screen_definition()
 	director_module.register_director_definition()
 	register_collision_profiles()
-	vdp_load_slot(0, 0)
-	vdp_map_slot(0, 0)
+	vdp_load_slot(sys_vdp_slot_primary, 0)
 	init_epoch = init_epoch + 1
 	pending_title_boot_epoch = init_epoch
 end

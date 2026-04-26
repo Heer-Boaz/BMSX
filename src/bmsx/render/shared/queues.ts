@@ -16,7 +16,7 @@ import { Runtime } from '../../machine/runtime/runtime';
 import { BFont } from './bitmap_font';
 import { setSpriteParallaxRigValues } from '../2d/sprite_parallax_rig';
 import { shallowcopy } from '../../common/shallowcopy';
-import { resolveVdpBlitterSample } from '../vdp/surfaces';
+import { resolveImageSlotSource } from '../vdp/image_meta';
 
 const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
 const particleQueue = new FeatureQueue<ParticleRenderSubmission>(1024);
@@ -24,16 +24,13 @@ let activeQueueSource: 'front' | 'back' = 'front';
 
 function submitSpriteDirect(imgid: string, x: number, y: number, z: number, scaleX: number, scaleY: number, colorize: color, layer: RenderLayer, parallaxWeight: number, flipH = false, flipV = false): void {
 	const runtime = Runtime.instance;
-	const handle = runtime.machine.memory.resolveAssetHandle(imgid);
-	const entry = runtime.machine.memory.getAssetEntryByHandle(handle);
-	if (entry.type !== 'image') {
-		throw new Error(`[Sprite Pipeline] Asset '${imgid}' is not an image.`);
-	}
-	if (entry.regionW <= 0 || entry.regionH <= 0) {
-		throw new Error(`[Sprite Pipeline] Image asset '${imgid}' has invalid region size.`);
-	}
+	const source = resolveImageSlotSource(runtime.assets, imgid);
 	runtime.machine.vdp.enqueueBlit(
-		handle,
+			source.slot,
+			source.u,
+			source.v,
+			source.w,
+			source.h,
 		x,
 		y,
 		z,
@@ -155,24 +152,23 @@ export function meshQueueFrontSize(): number {
 
 export function submit_particle(item: ParticleRenderSubmission): void {
 	const runtime = Runtime.instance;
-	if (item.texture === undefined) {
-		throw new Error('submit_particle requires texture.');
+	if (item.slot === undefined || item.u === undefined || item.v === undefined || item.w === undefined || item.h === undefined) {
+		throw new Error('submit_particle requires slot/u/v/w/h.');
 	}
-	const imgid = item.texture;
-	const handle = runtime.machine.memory.resolveAssetHandle(imgid);
-	const entry = runtime.machine.memory.getAssetEntryByHandle(handle);
-	if (entry.type !== 'image') {
-		throw new Error(`[Particles Pipeline] Asset '${imgid}' is not an image.`);
-	}
-	const sample = resolveVdpBlitterSample(runtime.machine.vdp, handle);
+	const sample = runtime.machine.vdp.resolveBlitterSample({
+		slot: item.slot,
+		u: item.u,
+		v: item.v,
+		w: item.w,
+		h: item.h,
+	});
 	const u0 = sample.source.srcX / sample.surfaceWidth;
 	const v0 = sample.source.srcY / sample.surfaceHeight;
 	const u1 = (sample.source.srcX + sample.source.width) / sample.surfaceWidth;
 	const v1 = (sample.source.srcY + sample.source.height) / sample.surfaceHeight;
-	item.texture = imgid;
 	item.uv0 = [u0, v0];
 	item.uv1 = [u1, v1];
-	item.textpageBinding = sample.textpageId;
+	item.slot = sample.slot;
 	particleQueue.submit(item);
 }
 

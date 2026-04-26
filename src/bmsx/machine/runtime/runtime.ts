@@ -20,7 +20,7 @@ import {
 } from '../../rompack/format';
 import { AssetSourceStack, type RawAssetSource } from '../../rompack/source';
 import { buildRuntimeAssetLayer } from '../../rompack/loader';
-import { Api } from '../firmware/api';
+import { Api } from '../firmware/api/api';
 import { Table, type Value, type ProgramMetadata, type NativeFunction, type NativeObject } from '../cpu/cpu';
 import { type StringValue } from '../memory/string/pool';
 import type { TerminalMode } from '../../ide/terminal/ui/mode';
@@ -37,7 +37,6 @@ import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAU
 import { buildLuaSources, resolveLuaSourceRecordFromRegistries, type LuaSourceRegistry } from '../program/sources';
 import * as workbenchMode from '../../ide/workbench/mode';
 import * as luaPipeline from '../../ide/runtime/lua_pipeline';
-import { runtimeFault } from './runtime_fault';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../../lua/debugger';
 import type { ParsedLuaChunk } from '../../lua/analysis/parse';
 import { configureLuaHeapUsage } from '../memory/lua_heap_usage';
@@ -92,7 +91,7 @@ export class Runtime {
 
 	public static createInstance(options: RuntimeOptions): Runtime {
 		if (Runtime._instance) {
-			throw runtimeFault('instance already exists.');
+			throw new Error('instance already exists.');
 		}
 		return new Runtime(options);
 	}
@@ -422,10 +421,10 @@ export class Runtime {
 		const luaSources = source === 'engine' ? this.engineLuaSources : this.cartLuaSources;
 		const assetSource = source === 'engine' ? this.engineAssetSource : this.cartAssetSource;
 		if (!luaSources) {
-			throw runtimeFault(`${source} Lua sources are not configured.`);
+			throw new Error(`${source} Lua sources are not configured.`);
 		}
 		if (!assetSource) {
-			throw runtimeFault(`${source} asset source is not configured.`);
+			throw new Error(`${source} asset source is not configured.`);
 		}
 		this.activeProgramSource = source;
 		this.activeLuaSources = luaSources;
@@ -558,7 +557,7 @@ export class Runtime {
 			this.hasCompletedInitialBoot = true;
 		}
 		catch (error) {
-			throw runtimeFault(`failed to boot runtime: ${error}`);
+			throw new Error(`failed to boot runtime: ${error}`);
 		}
 		finally {
 			this.luaGate.end(gateToken);

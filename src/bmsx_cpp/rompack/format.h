@@ -10,14 +10,14 @@
 
 namespace bmsx {
 
-constexpr i32 ENGINE_ATLAS_INDEX = 254;
-constexpr const char* ENGINE_ATLAS_TEXTURE_KEY = "_textpage_engine";
+constexpr i32 BIOS_ATLAS_ID = 254;
+constexpr const char* BIOS_TEXTPAGE_TEXTURE_KEY = "_textpage_engine";
 constexpr const char* FRAMEBUFFER_TEXTURE_KEY = "_framebuffer_2d";
 constexpr const char* FRAMEBUFFER_RENDER_TEXTURE_KEY = "_framebuffer_render_2d";
-constexpr const char* ATLAS_PRIMARY_SLOT_ID = "_textpage_primary";
-constexpr const char* ATLAS_SECONDARY_SLOT_ID = "_textpage_secondary";
+constexpr const char* TEXTPAGE_PRIMARY_SLOT_ID = "_textpage_primary";
+constexpr const char* TEXTPAGE_SECONDARY_SLOT_ID = "_textpage_secondary";
 
-std::string generateAtlasName(i32 textpageIndex);
+std::string generateAtlasAssetId(i32 atlasId);
 
 } // namespace bmsx
 

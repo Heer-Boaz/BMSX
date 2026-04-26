@@ -25,7 +25,7 @@ void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
 			}
 			return;
 		default:
-			throw runtimeFault("unknown timer kind " + std::to_string(kind) + ".");
+			throw new Error("unknown timer kind " + std::to_string(kind) + ".");
 	}
 }
 
@@ -64,7 +64,7 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 			break;
 		}
 		if (consumed <= 0) {
-			throw runtimeFault("CPU yielded without consuming cycles.");
+			throw new Error("CPU yielded without consuming cycles.");
 		}
 	}
 	frameState.cycleBudgetRemaining = remaining;

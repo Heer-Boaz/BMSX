@@ -308,22 +308,22 @@ ImgDecController::ImgDecEntry ImgDecController::resolveSlotEntry(uint32_t dst) {
 		entry.external = externalIt->second;
 		return entry;
 	}
-	if (dst == VRAM_PRIMARY_ATLAS_BASE) {
+	if (dst == VRAM_PRIMARY_TEXTPAGE_BASE) {
 		ImgDecEntry entry;
 		entry.isAsset = true;
-		entry.asset = &m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
+		entry.asset = &m_memory.getAssetEntry(TEXTPAGE_PRIMARY_SLOT_ID);
 		return entry;
 	}
-	if (dst == VRAM_SECONDARY_ATLAS_BASE) {
+	if (dst == VRAM_SECONDARY_TEXTPAGE_BASE) {
 		ImgDecEntry entry;
 		entry.isAsset = true;
-		entry.asset = &m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
+		entry.asset = &m_memory.getAssetEntry(TEXTPAGE_SECONDARY_SLOT_ID);
 		return entry;
 	}
-	if (dst == VRAM_SYSTEM_ATLAS_BASE) {
+	if (dst == VRAM_SYSTEM_TEXTPAGE_BASE) {
 		ImgDecEntry entry;
 		entry.isAsset = true;
-		entry.asset = &m_memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
+		entry.asset = &m_memory.getAssetEntry(generateAtlasAssetId(BIOS_ATLAS_ID));
 		return entry;
 	}
 	throw imageDecoderFault("unsupported destination address " + std::to_string(dst) + ".");

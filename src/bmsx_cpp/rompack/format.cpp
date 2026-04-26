@@ -7,9 +7,9 @@
 
 namespace bmsx {
 
-std::string generateAtlasName(i32 textpageIndex) {
+std::string generateAtlasAssetId(i32 atlasId) {
 	char buffer[32];
-	std::snprintf(buffer, sizeof(buffer), "_textpage_%02d", textpageIndex);
+	std::snprintf(buffer, sizeof(buffer), "_atlas_%02d", atlasId);
 	return std::string(buffer);
 }
 

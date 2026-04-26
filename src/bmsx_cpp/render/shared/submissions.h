@@ -21,8 +21,6 @@ namespace bmsx {
 class BFont;
 class Mesh;
 
-using TextureHandle = void*;  // Backend-specific texture pointer
-
 /* ============================================================================
  * Flip options for sprites
  * ============================================================================ */
@@ -125,7 +123,11 @@ struct ParticleRenderSubmission {
 	Vec3 position{0.0f, 0.0f, 0.0f};
 	f32 size = 1.0f;
 	Color color;
-	TextureHandle texture = nullptr;
+	std::optional<uint32_t> slot;
+	std::optional<uint32_t> u;
+	std::optional<uint32_t> v;
+	std::optional<uint32_t> w;
+	std::optional<uint32_t> h;
 	std::optional<i32> ambient_mode;  // 0 or 1
 	std::optional<f32> ambient_factor;
 	std::optional<RenderLayer> layer;

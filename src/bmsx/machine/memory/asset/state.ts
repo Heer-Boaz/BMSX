@@ -1,13 +1,7 @@
 import { renderGate, runGate, taskGate } from '../../../core/taskgate';
-import { syncLuaAssetField } from '../../firmware/js_bridge';
-import type { Memory } from '../memory';
 import {
-	ENGINE_ATLAS_INDEX,
-	generateAtlasName,
-	type ImgMeta,
 	type RomAsset,
 	type RomImgAsset,
-	type RuntimeAssets,
 } from '../../../rompack/format';
 import type { RawAssetSource } from '../../../rompack/source';
 import { type RuntimeAssetLayer } from '../../../rompack/loader';
@@ -19,7 +13,39 @@ import {
 } from './layers';
 import { registerImageMemory } from './images';
 import type { Runtime } from '../../runtime/runtime';
-import { runtimeFault } from '../../runtime/runtime_fault';
+import type { VdpAtlasDimensions } from '../../devices/vdp/vdp';
+
+const ATLAS_ASSET_ID_PATTERN = /^_atlas_(\d+)$/;
+
+function resolveAtlasId(entry: RomAsset): number | null {
+	if (entry.type !== 'atlas') {
+		return null;
+	}
+	if (typeof entry.imgmeta?.atlasid === 'number') {
+		return entry.imgmeta.atlasid;
+	}
+	const match = ATLAS_ASSET_ID_PATTERN.exec(entry.resid);
+	return match ? Number(match[1]) : null;
+}
+
+function collectAtlasDimensions(layers: ReadonlyArray<RuntimeAssetLayer | null>): Map<number, VdpAtlasDimensions> {
+	const atlasDimensions = new Map<number, VdpAtlasDimensions>();
+	for (let layerIndex = 0; layerIndex < layers.length; layerIndex += 1) {
+		const layer = layers[layerIndex];
+		if (!layer) {
+			continue;
+		}
+		for (const entry of Object.values(layer.assets.img)) {
+			const atlasId = resolveAtlasId(entry);
+			const meta = entry.imgmeta;
+			if (atlasId === null || !meta || meta.width <= 0 || meta.height <= 0) {
+				continue;
+			}
+			atlasDimensions.set(atlasId, { width: meta.width, height: meta.height });
+		}
+	}
+	return atlasDimensions;
+}
 
 export class RuntimeAssetState {
 	public biosLayer: RuntimeAssetLayer = null;
@@ -29,18 +55,9 @@ export class RuntimeAssetState {
 	public layerLookup: RuntimeLayerLookup = {};
 
 	private readonly memoryGate = taskGate.group('asset:ram');
-	private readonly imageMetaByHandle = new Map<number, ImgMeta>();
 
 	public setLayers(layers: ReadonlyArray<RuntimeAssetLayer>): void {
 		this.layerLookup = buildRuntimeLayerLookup(layers);
-	}
-
-	public getImageMetaByHandle(handle: number): ImgMeta {
-		const meta = this.imageMetaByHandle.get(handle);
-		if (!meta) {
-			throw runtimeFault(`image metadata missing for handle ${handle}.`);
-		}
-		return meta;
 	}
 
 	public getImageAssetByEntry(entry: RomAsset): RomImgAsset {
@@ -63,7 +80,7 @@ export class RuntimeAssetState {
 		const assets: RomImgAsset[] = [];
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
-			if (entry.type !== 'image' && entry.type !== 'textpage') {
+			if (entry.type !== 'image' && entry.type !== 'atlas') {
 				continue;
 			}
 			assets.push(this.getImageAssetByEntry(entry));
@@ -77,10 +94,9 @@ export class RuntimeAssetState {
 		const runToken = runGate.begin({ blocking: true, category: 'asset', tag: 'asset_memory' });
 		try {
 			const mode = params?.mode ?? 'full';
-			const assetSource = params && params.source ? params.source : this.requireActiveSource();
 			const engineSource = runtime.engineAssetSource;
 			if (!engineSource) {
-				throw runtimeFault('engine asset source not configured.');
+				throw new Error('engine asset source not configured.');
 			}
 			const memory = runtime.machine.memory;
 			if (mode === 'cart') {
@@ -88,11 +104,9 @@ export class RuntimeAssetState {
 			} else {
 				memory.resetAssetMemory();
 			}
-			const imageMemory = registerImageMemory(memory, engineSource.list(), assetSource.list());
-			runtime.machine.vdp.registerVramAssets(imageMemory.textpageMemory);
-			this.rebuildMetaCaches(assetSource, memory);
+			registerImageMemory(memory, engineSource.list());
+			runtime.machine.vdp.registerVramAssets(collectAtlasDimensions([this.biosLayer, this.cartLayer, this.overlayLayer]));
 			memory.finalizeAssetTable();
-			this.applyImageHandlesToActiveLayers(runtime);
 			memory.markAllAssetsDirty();
 		} finally {
 			runGate.end(runToken);
@@ -101,57 +115,10 @@ export class RuntimeAssetState {
 		}
 	}
 
-	public rebuildMetaCaches(source: RawAssetSource, memory: Memory): void {
-		this.imageMetaByHandle.clear();
-		const engineAtlasId = generateAtlasName(ENGINE_ATLAS_INDEX);
-		const entries = source.list();
-		for (let index = 0; index < entries.length; index += 1) {
-			const entry = entries[index];
-			if (entry.type !== 'image' && entry.type !== 'textpage') {
-				continue;
-			}
-			const asset = this.getImageAssetByEntry(entry);
-			if (asset.type === 'textpage' && asset.resid !== engineAtlasId) {
-				continue;
-			}
-			const meta = asset.imgmeta;
-			if (!meta) {
-				throw runtimeFault(`image asset '${asset.resid}' missing metadata.`);
-			}
-			const handle = memory.resolveAssetHandle(asset.resid);
-			this.imageMetaByHandle.set(handle, meta);
-		}
-	}
-
-	public applyImageHandlesToActiveLayers(runtime: Runtime): void {
-		if (this.biosLayer) {
-			applyImageHandlesToLayer(runtime, this.biosLayer.assets);
-		}
-		if (this.cartLayer) {
-			applyImageHandlesToLayer(runtime, this.cartLayer.assets);
-		}
-		if (this.overlayLayer) {
-			applyImageHandlesToLayer(runtime, this.overlayLayer.assets);
-		}
-	}
-
 	private requireActiveSource(): RawAssetSource {
 		if (!this.activeSource) {
-			throw runtimeFault('active asset source is not configured.');
+			throw new Error('active asset source is not configured.');
 		}
 		return this.activeSource;
-	}
-}
-
-function applyImageHandlesToLayer(runtime: Runtime, assets: RuntimeAssets): void {
-	const memory = runtime.machine.memory;
-	for (const entry of Object.values(assets.img)) {
-		if (!memory.hasAsset(entry.resid)) {
-			delete entry.handle;
-			syncLuaAssetField(runtime, entry, 'handle', null);
-			continue;
-		}
-		entry.handle = memory.resolveAssetHandle(entry.resid);
-		syncLuaAssetField(runtime, entry, 'handle', entry.handle);
 	}
 }

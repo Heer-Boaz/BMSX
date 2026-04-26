@@ -2,13 +2,25 @@
 -- lightweight render helpers that forward to built-in API functions
 
 local render_hw<const> = {}
+local particle_options<const> = {}
 
 function render_hw.put_mesh(mesh, matrix, opts)
 	put_mesh(mesh, matrix, opts)
 end
 
 function render_hw.put_particle(position, size, color, opts)
-	put_particle(position, size, color, opts)
+	if opts == nil then
+		error('render_hw.put_particle requires opts.texture.')
+	end
+	local rect<const> = vdp_img_rect(opts.texture)
+	particle_options.slot = vdp_img_slot(rect)
+	particle_options.u = rect.u
+	particle_options.v = rect.v
+	particle_options.w = rect.w
+	particle_options.h = rect.h
+	particle_options.ambient_mode = opts.ambient_mode
+	particle_options.ambient_factor = opts.ambient_factor
+	put_particle(position, size, color, particle_options)
 end
 
 function render_hw.set_camera(view, proj, eye)

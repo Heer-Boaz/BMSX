@@ -14,9 +14,9 @@ import type { PassEncoder, RenderPassInstanceHandle, TextureParams } from '../..
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../../backend/frame_uniforms';
 import { WebGLBackend } from '../../backend/webgl/backend';
 import {
-	TEXTURE_UNIT_ATLAS_ENGINE,
-	TEXTURE_UNIT_ATLAS_PRIMARY,
-	TEXTURE_UNIT_ATLAS_SECONDARY,
+	TEXTURE_UNIT_TEXTPAGE_ENGINE,
+	TEXTURE_UNIT_TEXTPAGE_PRIMARY,
+	TEXTURE_UNIT_TEXTPAGE_SECONDARY,
 } from '../../backend/webgl/constants';
 import {
 	bindWebGLInstancedQuadVertexArray,
@@ -34,10 +34,10 @@ import { syncVdpSlotTextures } from '../slot_textures';
 import {
 	getVdpRenderSurfaceTexture,
 	resolveVdpRenderSurface,
-	resolveVdpSurfaceAtlasBinding,
+	resolveVdpSurfaceSlotBinding,
 } from '../surfaces';
 
-type DrawMode = 'textpage' | 'solid';
+type DrawMode = 'slot' | 'solid';
 
 type WebGLVdpBlitterRuntime = {
 	gl: WebGL2RenderingContext;
@@ -45,7 +45,7 @@ type WebGLVdpBlitterRuntime = {
 	vao: WebGLVertexArrayObject;
 	cornerBuffer: WebGLBuffer;
 	instanceFloatBuffer: WebGLBuffer;
-	instanceAtlasBuffer: WebGLBuffer;
+	instanceTextpageBuffer: WebGLBuffer;
 	floatData: Float32Array;
 	textpageData: Uint8Array;
 	capacity: number;
@@ -200,15 +200,15 @@ function bindVdpTexture(backend: WebGLBackend, unit: number, texture: WebGLTextu
 
 function bindTexturesForMode(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, mode: DrawMode): void {
 	if (mode === 'solid') {
-		bindVdpTexture(backend, TEXTURE_UNIT_ATLAS_PRIMARY, state.whiteTexture);
+		bindVdpTexture(backend, TEXTURE_UNIT_TEXTPAGE_PRIMARY, state.whiteTexture);
 		return;
 	}
 	const primary = getVdpRenderSurfaceTexture(1)!;
 	const secondary = getVdpRenderSurfaceTexture(2)!;
 	const engine = getVdpRenderSurfaceTexture(0)!;
-	bindVdpTexture(backend, TEXTURE_UNIT_ATLAS_PRIMARY, primary);
-	bindVdpTexture(backend, TEXTURE_UNIT_ATLAS_SECONDARY, secondary);
-	bindVdpTexture(backend, TEXTURE_UNIT_ATLAS_ENGINE, engine);
+	bindVdpTexture(backend, TEXTURE_UNIT_TEXTPAGE_PRIMARY, primary);
+	bindVdpTexture(backend, TEXTURE_UNIT_TEXTPAGE_SECONDARY, secondary);
+	bindVdpTexture(backend, TEXTURE_UNIT_TEXTPAGE_ENGINE, engine);
 }
 
 function flushPendingBatch(backend: WebGLBackend, pass: PassEncoder, state: WebGLVdpBlitterRuntime, count: number): number {
@@ -326,7 +326,7 @@ function appendBlitCommand(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitt
 		command.parallaxWeight,
 		priorityDepth,
 		command.color,
-		resolveVdpSurfaceAtlasBinding(command.source.surfaceId),
+			resolveVdpSurfaceSlotBinding(command.source.surfaceId),
 	);
 	return 1;
 }
@@ -371,7 +371,7 @@ function appendGlyphRunGlyphs(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBl
 		const v0 = glyph.srcY / surface.height;
 		const u1 = (glyph.srcX + glyph.width) / surface.width;
 		const v1 = (glyph.srcY + glyph.height) / surface.height;
-		writeAxisAlignedQuad(state, index + i, glyph.dstX, glyph.dstY, glyph.width, glyph.height, u0, v0, u1, v1, command.z, 0, priorityDepth, command.color, resolveVdpSurfaceAtlasBinding(glyph.surfaceId));
+		writeAxisAlignedQuad(state, index + i, glyph.dstX, glyph.dstY, glyph.width, glyph.height, u0, v0, u1, v1, command.z, 0, priorityDepth, command.color, resolveVdpSurfaceSlotBinding(glyph.surfaceId));
 	}
 	return command.glyphs.length;
 }
@@ -388,7 +388,7 @@ function appendTileRunCommand(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBl
 		const v0 = tile.srcY / surface.height;
 		const u1 = (tile.srcX + tile.width) / surface.width;
 		const v1 = (tile.srcY + tile.height) / surface.height;
-		writeAxisAlignedQuad(state, index + i, tile.dstX, tile.dstY, tile.width, tile.height, u0, v0, u1, v1, command.z, 0, priorityDepth, WHITE_COLOR, resolveVdpSurfaceAtlasBinding(tile.surfaceId));
+		writeAxisAlignedQuad(state, index + i, tile.dstX, tile.dstY, tile.width, tile.height, u0, v0, u1, v1, command.z, 0, priorityDepth, WHITE_COLOR, resolveVdpSurfaceSlotBinding(tile.surfaceId));
 	}
 	return command.tiles.length;
 }
@@ -443,7 +443,7 @@ function drawSortedSegment(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitt
 					nextMode = 'solid';
 					break;
 				default:
-					nextMode = 'textpage';
+					nextMode = 'slot';
 					break;
 			}
 			if (boundMode !== nextMode) {
@@ -472,10 +472,10 @@ function drawSortedSegment(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitt
 					}
 					batchCount += appendGlyphRunBackground(backend, state, batchCount, command, priorityDepth);
 				}
-				if (boundMode !== 'textpage') {
+				if (boundMode !== 'slot') {
 					batchCount = flushPendingBatch(backend, pass, state, batchCount);
-					bindTexturesForMode(backend, state, 'textpage');
-					boundMode = 'textpage';
+					bindTexturesForMode(backend, state, 'slot');
+					boundMode = 'slot';
 				}
 				batchCount += appendGlyphRunGlyphs(vdp, backend, state, batchCount, command, priorityDepth);
 				break;
@@ -527,7 +527,7 @@ function copyFrameBufferRect(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBli
 		depth: { tex: priorityDepthTexture },
 	});
 	bindPassState(backend, state, pass, vdp, timeSeconds, deltaSeconds);
-	bindVdpTexture(backend, TEXTURE_UNIT_ATLAS_PRIMARY, copySnapshotTexture);
+	bindVdpTexture(backend, TEXTURE_UNIT_TEXTPAGE_PRIMARY, copySnapshotTexture);
 	backend.setDepthFunc(backend.gl.ALWAYS);
 	backend.setBlendEnabled(false);
 	writeAxisAlignedQuad(

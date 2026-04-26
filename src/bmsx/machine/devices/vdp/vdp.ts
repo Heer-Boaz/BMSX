@@ -1,5 +1,5 @@
 import type { color } from '../../../common/color';
-import { SKYBOX_FACE_KEYS, type Layer2D, type SkyboxImageIds } from './contracts';
+import { type Layer2D, type SkyboxImageIds } from './contracts';
 import {
 	VDP_RENDER_ALPHA_COST_MULTIPLIER,
 	VDP_RENDER_CLEAR_COST,
@@ -10,11 +10,11 @@ import {
 	tileRunCost,
 } from './budget';
 import {
-	ATLAS_PRIMARY_SLOT_ID,
-	ATLAS_SECONDARY_SLOT_ID,
-	ENGINE_ATLAS_INDEX,
+	TEXTPAGE_PRIMARY_SLOT_ID,
+	TEXTPAGE_SECONDARY_SLOT_ID,
+	BIOS_ATLAS_ID,
 	FRAMEBUFFER_RENDER_TEXTURE_KEY,
-	generateAtlasName,
+	generateAtlasAssetId,
 } from '../../../rompack/format';
 import {
 	presentVdpFrameBufferPages,
@@ -28,44 +28,47 @@ import {
 	IO_VDP_DITHER,
 	IO_VDP_CMD,
 	IO_VDP_CMD_ARG0,
-		IO_VDP_CMD_ARG_COUNT,
+	IO_VDP_CMD_ARG_COUNT,
 	IO_VDP_FIFO,
 	IO_VDP_FIFO_CTRL,
 	IO_PAYLOAD_ALLOC_ADDR,
 	IO_PAYLOAD_DATA_ADDR,
-		IO_VDP_PRIMARY_ATLAS_ID,
-		IO_VDP_RD_DATA,
-		IO_VDP_RD_MODE,
-		IO_VDP_RD_STATUS,
-		IO_VDP_RD_SURFACE,
+	IO_VDP_SLOT_PRIMARY_ATLAS,
+	IO_VDP_SLOT_SECONDARY_ATLAS,
+	IO_VDP_RD_DATA,
+	IO_VDP_RD_MODE,
+	IO_VDP_RD_STATUS,
+	IO_VDP_RD_SURFACE,
 	IO_VDP_RD_X,
 	IO_VDP_RD_Y,
-	IO_VDP_SECONDARY_ATLAS_ID,
 	IO_VDP_STATUS,
-	IO_VDP_TILE_HANDLE_NONE,
-	VDP_ATLAS_ID_NONE,
 	VDP_FIFO_CTRL_SEAL,
 	VDP_RD_MODE_RGBA8888,
 	VDP_RD_STATUS_OVERFLOW,
 	VDP_RD_STATUS_READY,
+	VDP_SLOT_ATLAS_NONE,
+	VDP_SLOT_NONE,
+	VDP_SLOT_PRIMARY,
+	VDP_SLOT_SECONDARY,
+	VDP_SLOT_SYSTEM,
 	VDP_STATUS_SUBMIT_BUSY,
 	VDP_STATUS_SUBMIT_REJECTED,
 	VDP_STATUS_VBLANK,
 } from '../../bus/io';
-import { ASSET_FLAG_VIEW, type AssetEntry, type VramWriteSink } from '../../memory/memory';
+import { type AssetEntry, type VramWriteSink } from '../../memory/memory';
 import { Memory } from '../../memory/memory';
 import type { CPU } from '../../cpu/cpu';
-import type { Api } from '../../firmware/api';
+import type { Api } from '../../firmware/api/api';
 import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
 import { DEVICE_SERVICE_VDP, type DeviceScheduler } from '../../scheduler/device';
 import type { BFont } from '../../../render/shared/bitmap_font';
 import {
-	VRAM_SYSTEM_ATLAS_SIZE,
-	VRAM_PRIMARY_ATLAS_SIZE,
+	VRAM_SYSTEM_TEXTPAGE_SIZE,
+	VRAM_PRIMARY_TEXTPAGE_SIZE,
 	VRAM_FRAMEBUFFER_BASE,
 	VRAM_FRAMEBUFFER_SIZE,
-	VRAM_SECONDARY_ATLAS_BASE,
-	VRAM_SECONDARY_ATLAS_SIZE,
+	VRAM_SECONDARY_TEXTPAGE_BASE,
+	VRAM_SECONDARY_TEXTPAGE_SIZE,
 	VRAM_STAGING_BASE,
 	VRAM_STAGING_SIZE,
 	VDP_STREAM_BUFFER_SIZE,
@@ -78,9 +81,9 @@ import { processVdpBufferedCommand, processVdpCommand } from './command_processo
 import { vdpFault, vdpStreamFault } from './fault';
 import { getVdpPacketSchema } from './packet_schema';
 import { syncVdpSlotTextures } from '../../../render/vdp/slot_textures';
+import { resolveAtlasSlotFromMemory } from '../../../render/vdp/image_meta';
 
 export type VdpState = {
-	textpageSlots: { primary: number | null; secondary: number | null };
 	skyboxFaceIds: SkyboxImageIds | null;
 	ditherType: number;
 };
@@ -108,7 +111,6 @@ type VdpSubmittedFrameState = {
 	ready: boolean;
 	cost: number;
 	workRemaining: number;
-	slotAtlasIds: [number | null, number | null];
 	ditherType: number;
 	skyboxFaceIds: SkyboxImageIds | null;
 };
@@ -373,7 +375,7 @@ function fillVramGarbageScratch(buffer: Uint8Array, s: VramGarbageStream): void 
 
 	const biasSeed = (s.machineSeed ^ s.slotSalt) >>> 0;
 	const bootSeedMix = (s.bootSeed ^ s.slotSalt) >>> 0;
-	const vramBytes = (VRAM_SECONDARY_ATLAS_BASE + VRAM_SECONDARY_ATLAS_SIZE - VRAM_STAGING_BASE) >>> 0;
+	const vramBytes = (VRAM_SECONDARY_TEXTPAGE_BASE + VRAM_SECONDARY_TEXTPAGE_SIZE - VRAM_STAGING_BASE) >>> 0;
 	const biasConfig = makeBiasConfig(vramBytes);
 
 	const BLOCK_BYTES = 32;
@@ -433,6 +435,11 @@ type VdpReadSurface = {
 	entry: AssetEntry;
 };
 
+export type VdpAtlasDimensions = {
+	width: number;
+	height: number;
+};
+
 type VdpReadCache = {
 	x0: number;
 	y: number;
@@ -469,26 +476,24 @@ export type VdpBlitterSource = {
 	height: number;
 };
 
+export type VdpSlotSource = {
+	slot: number;
+	u: number;
+	v: number;
+	w: number;
+	h: number;
+};
+
 export type VdpResolvedBlitterSample = {
 	source: VdpBlitterSource;
 	surfaceWidth: number;
 	surfaceHeight: number;
-	textpageId: number;
+	slot: number;
 };
 
 export type VdpBlitterSurfaceSize = {
 	width: number;
 	height: number;
-};
-
-export type VdpAtlasSize = {
-	width: number;
-	height: number;
-};
-
-export type VdpAtlasMemory = {
-	textpageSizesById: ReadonlyMap<number, VdpAtlasSize>;
-	textpageViewIdsById: ReadonlyMap<number, readonly string[]>;
 };
 
 export type VdpGlyphRunGlyph = VdpBlitterSource & {
@@ -515,12 +520,8 @@ export type VdpTileRunInputBase = {
 	layer: Layer2D;
 };
 
-export type VdpAssetTileRunInput = VdpTileRunInputBase & {
-	tiles: Array<string | false>;
-};
-
-export type VdpResolvedTileRunInput = VdpTileRunInputBase & {
-	handles: number[];
+export type VdpSourceTileRunInput = VdpTileRunInputBase & {
+	sources: Array<VdpSlotSource | false>;
 };
 
 export type VdpPayloadTileRunInput = VdpTileRunInputBase & {
@@ -534,12 +535,11 @@ export type VdpPayloadWordsTileRunInput = VdpTileRunInputBase & {
 	tile_count: number;
 };
 
-type VdpTileRunInput = VdpAssetTileRunInput | VdpResolvedTileRunInput | VdpPayloadTileRunInput | VdpPayloadWordsTileRunInput;
-const VDP_TILE_RUN_SOURCE_ASSETS = 0;
-const VDP_TILE_RUN_SOURCE_HANDLES = 1;
-const VDP_TILE_RUN_SOURCE_PAYLOAD = 2;
-const VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS = 3;
-type VdpTileRunHandleSource = typeof VDP_TILE_RUN_SOURCE_ASSETS | typeof VDP_TILE_RUN_SOURCE_HANDLES | typeof VDP_TILE_RUN_SOURCE_PAYLOAD | typeof VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS;
+type VdpTileRunInput = VdpSourceTileRunInput | VdpPayloadTileRunInput | VdpPayloadWordsTileRunInput;
+const VDP_TILE_RUN_SOURCE_DIRECT = 0;
+const VDP_TILE_RUN_SOURCE_PAYLOAD = 1;
+const VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS = 2;
+type VdpTileRunSourceKind = typeof VDP_TILE_RUN_SOURCE_DIRECT | typeof VDP_TILE_RUN_SOURCE_PAYLOAD | typeof VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS;
 
 export type VdpBlitterClearCommand = {
 	opcode: 'clear';
@@ -639,11 +639,6 @@ export type VdpBlitterCommand =
 const BLITTER_FIFO_CAPACITY = 4096;
 
 export class VDP implements VramWriteSink {
-	private readonly textpageSlotById = new Map<number, number>();
-	private readonly textpageViewsById = new Map<number, AssetEntry[]>();
-	private readonly textpageSizesById = new Map<number, VdpAtlasSize>();
-	private readonly slotAtlasIds: Array<number | null> = [null, null];
-	private textpageSlotEntries: AssetEntry[] = [];
 	private vramSlots: VramSlot[] = [];
 	private vramStaging = new Uint8Array(VRAM_STAGING_SIZE);
 	private readonly vramGarbageScratch = new Uint8Array(VRAM_GARBAGE_CHUNK_BYTES);
@@ -677,7 +672,6 @@ export class VDP implements VramWriteSink {
 		ready: false,
 		cost: 0,
 		workRemaining: 0,
-		slotAtlasIds: [null, null],
 		ditherType: 0,
 		skyboxFaceIds: null,
 	};
@@ -688,7 +682,6 @@ export class VDP implements VramWriteSink {
 		ready: false,
 		cost: 0,
 		workRemaining: 0,
-		slotAtlasIds: [null, null],
 		ditherType: 0,
 		skyboxFaceIds: null,
 	};
@@ -698,8 +691,8 @@ export class VDP implements VramWriteSink {
 	private readonly tileEntryPool: VdpTileRunBlit[] = [];
 	private readonly clippedRectScratchA = { width: 0, height: 0, area: 0 };
 	private readonly clippedRectScratchB = { width: 0, height: 0, area: 0 };
+	private atlasDimensionsById = new Map<number, VdpAtlasDimensions>();
 	private blitterSequence = 0;
-	private readonly committedSlotAtlasIds: Array<number | null> = [null, null];
 	private cpuHz: bigint = 1n;
 	private workUnitsPerSec: bigint = 1n;
 	private workCarry: bigint = 0n;
@@ -728,6 +721,8 @@ export class VDP implements VramWriteSink {
 		this.memory.mapIoWrite(IO_PAYLOAD_ALLOC_ADDR, this.onObsoletePayloadIoWrite.bind(this));
 		this.memory.mapIoWrite(IO_PAYLOAD_DATA_ADDR, this.onObsoletePayloadIoWrite.bind(this));
 		this.memory.mapIoWrite(IO_VDP_CMD, this.onVdpCommandWrite.bind(this));
+		this.memory.mapIoWrite(IO_VDP_SLOT_PRIMARY_ATLAS, this.onSlotAtlasWrite.bind(this));
+		this.memory.mapIoWrite(IO_VDP_SLOT_SECONDARY_ATLAS, this.onSlotAtlasWrite.bind(this));
 		this.vramMachineSeed = this.nextVramMachineSeed();
 		this.vramBootSeed = this.nextVramBootSeed();
 		for (let index = 0; index < VDP_RD_SURFACE_COUNT; index += 1) {
@@ -1127,11 +1122,7 @@ export class VDP implements VramWriteSink {
 		this.pendingFrame.cost = 0;
 		this.pendingFrame.workRemaining = 0;
 		this.pendingFrame.ditherType = 0;
-		this.pendingFrame.slotAtlasIds[0] = null;
-		this.pendingFrame.slotAtlasIds[1] = null;
 		this.pendingFrame.skyboxFaceIds = null;
-		this.slotAtlasIds[0] = null;
-		this.slotAtlasIds[1] = null;
 	}
 
 	private enqueueBlitterCommand(command: VdpBlitterCommand): void {
@@ -1212,8 +1203,6 @@ export class VDP implements VramWriteSink {
 		frame.cost = frameCost;
 		frame.workRemaining = frameCost;
 		frame.ditherType = this.lastDitherType;
-		frame.slotAtlasIds[0] = this.slotAtlasIds[0];
-		frame.slotAtlasIds[1] = this.slotAtlasIds[1];
 		frame.skyboxFaceIds = this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds };
 		this.buildFrame.queue.length = 0;
 		this.buildFrame.cost = 0;
@@ -1253,8 +1242,6 @@ export class VDP implements VramWriteSink {
 		activeFrame.cost = pendingFrame.cost;
 		activeFrame.workRemaining = pendingFrame.cost;
 		activeFrame.ditherType = pendingFrame.ditherType;
-		activeFrame.slotAtlasIds[0] = pendingFrame.slotAtlasIds[0];
-		activeFrame.slotAtlasIds[1] = pendingFrame.slotAtlasIds[1];
 		activeFrame.skyboxFaceIds = pendingFrame.skyboxFaceIds;
 		pendingFrame.occupied = false;
 		pendingFrame.hasCommands = false;
@@ -1262,8 +1249,6 @@ export class VDP implements VramWriteSink {
 		pendingFrame.cost = 0;
 		pendingFrame.workRemaining = 0;
 		pendingFrame.ditherType = 0;
-		pendingFrame.slotAtlasIds[0] = null;
-		pendingFrame.slotAtlasIds[1] = null;
 		pendingFrame.skyboxFaceIds = null;
 		this.scheduleNextService(this.scheduler.currentNowCycles());
 		this.refreshSubmitBusyStatus();
@@ -1339,15 +1324,11 @@ export class VDP implements VramWriteSink {
 		this.activeFrame.cost = 0;
 		this.activeFrame.workRemaining = 0;
 		this.activeFrame.ditherType = 0;
-		this.activeFrame.slotAtlasIds[0] = null;
-		this.activeFrame.slotAtlasIds[1] = null;
 		this.activeFrame.skyboxFaceIds = null;
 	}
 
 	private commitActiveVisualState(): void {
 		this.committedDitherType = this.activeFrame.ditherType;
-		this.committedSlotAtlasIds[0] = this.activeFrame.slotAtlasIds[0];
-		this.committedSlotAtlasIds[1] = this.activeFrame.slotAtlasIds[1];
 		this.committedSkyboxFaceIds = this.activeFrame.skyboxFaceIds;
 	}
 
@@ -1406,46 +1387,38 @@ export class VDP implements VramWriteSink {
 		this.registerVramSlot(entry, VDP_RD_SURFACE_FRAMEBUFFER);
 	}
 
-	public resolveBlitterSource(handle: number): VdpBlitterSource {
-		const entry = this.memory.getAssetEntryByHandle(handle);
-		if (entry.type !== 'image') {
-			throw vdpFault(`asset handle ${handle} is not an image.`);
+	private resolveSurfaceIdForSlot(slot: number): number {
+		if (slot === VDP_SLOT_SYSTEM) {
+			return VDP_RD_SURFACE_ENGINE;
 		}
-		if ((entry.flags & ASSET_FLAG_VIEW) !== 0) {
-			const baseEntry = this.memory.getAssetEntryByHandle(entry.ownerIndex);
-			const slot = this.vramSlots.find((candidate) => candidate.entry.ownerIndex === baseEntry.ownerIndex);
-			if (!slot) {
-				throw vdpFault(`image handle ${handle} is not mapped to a blitter surface.`);
-			}
-			return {
-				surfaceId: slot.surfaceId,
-				srcX: entry.regionX,
-				srcY: entry.regionY,
-				width: entry.regionW,
-				height: entry.regionH,
-			};
+		if (slot === VDP_SLOT_PRIMARY) {
+			return VDP_RD_SURFACE_PRIMARY;
 		}
-		const slot = this.vramSlots.find((candidate) => candidate.entry.ownerIndex === entry.ownerIndex);
-		if (!slot) {
-			throw vdpFault(`image handle ${handle} is not mapped to a blitter surface.`);
+		if (slot === VDP_SLOT_SECONDARY) {
+			return VDP_RD_SURFACE_SECONDARY;
 		}
+		throw vdpFault(`source slot ${slot} is not a VDP blitter slot.`);
+	}
+
+	public resolveBlitterSource(source: VdpSlotSource): VdpBlitterSource {
+		const surfaceId = this.resolveSurfaceIdForSlot(source.slot);
 		return {
-			surfaceId: slot.surfaceId,
-			srcX: 0,
-			srcY: 0,
-			width: entry.regionW,
-			height: entry.regionH,
+			surfaceId,
+			srcX: source.u,
+			srcY: source.v,
+			width: source.w,
+			height: source.h,
 		};
 	}
 
-	private resolveBlitterSample(handle: number): VdpResolvedBlitterSample {
-		const source = this.resolveBlitterSource(handle);
+	public resolveBlitterSample(sourceRect: VdpSlotSource): VdpResolvedBlitterSample {
+		const source = this.resolveBlitterSource(sourceRect);
 		const surface = this.resolveBlitterSurfaceSize(source.surfaceId);
 		return {
 			source,
 			surfaceWidth: surface.width,
 			surfaceHeight: surface.height,
-			textpageId: this.resolveSurfaceAtlasBinding(source.surfaceId),
+			slot: this.resolveSurfaceSlotBinding(source.surfaceId),
 		};
 	}
 
@@ -1458,8 +1431,8 @@ export class VDP implements VramWriteSink {
 		});
 	}
 
-	public enqueueBlit(handle: number, x: number, y: number, z: number, layer: Layer2D, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, colorValue: color, parallaxWeight: number): void {
-		const source = this.resolveBlitterSource(handle);
+	public enqueueBlit(slot: number, u: number, v: number, w: number, h: number, x: number, y: number, z: number, layer: Layer2D, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, colorValue: color, parallaxWeight: number): void {
+		const source = this.resolveBlitterSource({ slot, u, v, w, h });
 		const dstWidth = source.width * Math.abs(scaleX);
 		const dstHeight = source.height * Math.abs(scaleY);
 		const clipped = computeClippedRect(x, y, x + dstWidth, y + dstHeight, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
@@ -1576,8 +1549,13 @@ export class VDP implements VramWriteSink {
 			let cursorX = x;
 			for (let glyphIndex = start; glyphIndex < lineLength && glyphIndex < end; glyphIndex += 1) {
 				const glyph = font.getGlyph(line.charAt(baseIndex + glyphIndex));
-				const handle = this.memory.resolveAssetHandle(glyph.imgid);
-				const source = this.resolveBlitterSource(handle);
+				const source = this.resolveBlitterSource({
+					slot: resolveAtlasSlotFromMemory(this.memory, glyph.rect.atlasId),
+					u: glyph.rect.u,
+					v: glyph.rect.v,
+					w: glyph.rect.w,
+					h: glyph.rect.h,
+				});
 				const clipped = computeClippedRect(cursorX, cursorY, cursorX + source.width, cursorY + source.height, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
 				if (clipped.area > 0) {
 					renderCost += this.calculateVisibleRectCost(clipped.width, clipped.height);
@@ -1644,7 +1622,7 @@ export class VDP implements VramWriteSink {
 		}
 	}
 
-	private enqueueTileRunInternal(desc: VdpTileRunInput, handleSource: VdpTileRunHandleSource, mismatchLabel: string): void {
+	private enqueueTileRunInternal(desc: VdpTileRunInput, sourceKind: VdpTileRunSourceKind, mismatchLabel: string): void {
 		const frameWidth = this._frameBufferWidth;
 		const frameHeight = this._frameBufferHeight;
 		const totalWidth = desc.cols * desc.tile_w;
@@ -1684,29 +1662,24 @@ export class VDP implements VramWriteSink {
 			let rowHasVisibleTile = false;
 			for (let col = 0; col < desc.cols; col += 1) {
 				const index = base + col;
-				let handle: number;
-				switch (handleSource) {
-					case VDP_TILE_RUN_SOURCE_ASSETS: {
-						const tile = (desc as VdpAssetTileRunInput).tiles[index];
-						handle = tile === false ? IO_VDP_TILE_HANDLE_NONE : this.memory.resolveAssetHandle(tile);
-						break;
-					}
-					case VDP_TILE_RUN_SOURCE_HANDLES:
-						handle = (desc as VdpResolvedTileRunInput).handles[index]!;
+				let tileSource: VdpSlotSource | false;
+				switch (sourceKind) {
+					case VDP_TILE_RUN_SOURCE_DIRECT:
+						tileSource = (desc as VdpSourceTileRunInput).sources[index]!;
 						break;
 					case VDP_TILE_RUN_SOURCE_PAYLOAD:
-						handle = this.memory.readU32((desc as VdpPayloadTileRunInput).payload_base + index * 4) >>> 0;
+						tileSource = this.readPayloadTileSource((desc as VdpPayloadTileRunInput).payload_base + index * 12, desc.tile_w, desc.tile_h);
 						break;
 					case VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS: {
 						const payload = desc as VdpPayloadWordsTileRunInput;
-						handle = payload.payload_words[payload.payload_word_offset + index] >>> 0;
+						tileSource = this.readPayloadWordsTileSource(payload.payload_words, payload.payload_word_offset + index * 3, desc.tile_w, desc.tile_h);
 						break;
 					}
 				}
-				if (handle === IO_VDP_TILE_HANDLE_NONE) {
+				if (tileSource === false) {
 					continue;
 				}
-				const source = this.resolveBlitterSource(handle);
+				const source = this.resolveBlitterSource(tileSource);
 				if (source.width !== desc.tile_w || source.height !== desc.tile_h) {
 					throw new Error(`${mismatchLabel} (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`);
 				}
@@ -1746,14 +1719,36 @@ export class VDP implements VramWriteSink {
 		});
 	}
 
-	// disable-next-line single_line_method_pattern -- asset tile runs are a public command shape over the shared tile-run implementation.
-	public enqueueTileRun(desc: VdpAssetTileRunInput): void {
-		this.enqueueTileRunInternal(desc, VDP_TILE_RUN_SOURCE_ASSETS, 'dma_blit_tiles size mismatch');
-	}
+	private readPayloadTileSource(base: number, width: number, height: number): VdpSlotSource | false {
+		const slot = this.memory.readU32(base) >>> 0;
+		if (slot === VDP_SLOT_NONE) {
+			return false;
+		}
+			return {
+				slot,
+				u: this.memory.readU32(base + 4) >>> 0,
+				v: this.memory.readU32(base + 8) >>> 0,
+				w: width,
+				h: height,
+			};
+		}
 
-	// disable-next-line single_line_method_pattern -- resolved tile runs are a public command shape over the shared tile-run implementation.
-	public enqueueResolvedTileRun(desc: VdpResolvedTileRunInput): void {
-		this.enqueueTileRunInternal(desc, VDP_TILE_RUN_SOURCE_HANDLES, 'VDP fault: enqueueResolvedTileRun tile size mismatch');
+	private readPayloadWordsTileSource(words: Uint32Array, offset: number, width: number, height: number): VdpSlotSource | false {
+		const slot = words[offset] >>> 0;
+		if (slot === VDP_SLOT_NONE) {
+			return false;
+		}
+			return {
+				slot,
+				u: words[offset + 1] >>> 0,
+				v: words[offset + 2] >>> 0,
+				w: width,
+				h: height,
+			};
+		}
+
+	public enqueueTileRun(desc: VdpSourceTileRunInput): void {
+		this.enqueueTileRunInternal(desc, VDP_TILE_RUN_SOURCE_DIRECT, 'VDP fault: enqueueTileRun tile size mismatch');
 	}
 
 	public enqueuePayloadTileRun(desc: VdpPayloadTileRunInput): void {
@@ -1774,15 +1769,15 @@ export class VDP implements VramWriteSink {
 		};
 	}
 
-	private resolveSurfaceAtlasBinding(surfaceId: number): number {
+	private resolveSurfaceSlotBinding(surfaceId: number): number {
 		if (surfaceId === VDP_RD_SURFACE_PRIMARY) {
-			return 0;
+			return VDP_SLOT_PRIMARY;
 		}
 		if (surfaceId === VDP_RD_SURFACE_SECONDARY) {
-			return 1;
+			return VDP_SLOT_SECONDARY;
 		}
 		if (surfaceId === VDP_RD_SURFACE_ENGINE) {
-			return ENGINE_ATLAS_INDEX;
+			return VDP_SLOT_SYSTEM;
 		}
 		throw vdpFault(`surface ${surfaceId} cannot be sampled by the WebGL blitter.`);
 	}
@@ -1954,8 +1949,6 @@ export class VDP implements VramWriteSink {
 		this.blitterSequence = 0;
 		this.resetIngressState();
 		this.resetStatus();
-		this.memory.writeIoValue(IO_VDP_PRIMARY_ATLAS_ID, VDP_ATLAS_ID_NONE);
-		this.memory.writeIoValue(IO_VDP_SECONDARY_ATLAS_ID, VDP_ATLAS_ID_NONE);
 		this.memory.writeIoValue(IO_VDP_RD_SURFACE, VDP_RD_SURFACE_ENGINE);
 		this.memory.writeIoValue(IO_VDP_RD_X, 0);
 		this.memory.writeIoValue(IO_VDP_RD_Y, 0);
@@ -1969,8 +1962,6 @@ export class VDP implements VramWriteSink {
 		this.committedDitherType = dither;
 		this._skyboxFaceIds = null;
 		this.committedSkyboxFaceIds = null;
-		this.committedSlotAtlasIds[0] = this.slotAtlasIds[0];
-		this.committedSlotAtlasIds[1] = this.slotAtlasIds[1];
 		this.lastFrameCommitted = true;
 		this.lastFrameCost = 0;
 		this.lastFrameHeld = false;
@@ -1981,13 +1972,6 @@ export class VDP implements VramWriteSink {
 		if (dither !== this.lastDitherType) {
 			this.lastDitherType = dither;
 		}
-		const primaryRaw = this.memory.readIoU32(IO_VDP_PRIMARY_ATLAS_ID);
-		const secondaryRaw = this.memory.readIoU32(IO_VDP_SECONDARY_ATLAS_ID);
-		const primary = primaryRaw === VDP_ATLAS_ID_NONE ? null : primaryRaw;
-		const secondary = secondaryRaw === VDP_ATLAS_ID_NONE ? null : secondaryRaw;
-		if (primary !== this.slotAtlasIds[0] || secondary !== this.slotAtlasIds[1]) {
-			this.applyAtlasSlotMapping(primary, secondary);
-		}
 	}
 
 	private setDitherType(value: number): void {
@@ -1997,7 +1981,6 @@ export class VDP implements VramWriteSink {
 
 	public captureState(): VdpState {
 		return {
-			textpageSlots: { primary: this.slotAtlasIds[0], secondary: this.slotAtlasIds[1] },
 			skyboxFaceIds: this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds },
 			ditherType: this.lastDitherType,
 		};
@@ -2014,13 +1997,13 @@ export class VDP implements VramWriteSink {
 	}
 
 	public restoreState(state: VdpState): void {
-		this.restoreAtlasSlotMapping(state.textpageSlots);
 		if (state.skyboxFaceIds === null) {
 			this.clearSkybox();
 		} else {
 			this.setSkyboxImages(state.skyboxFaceIds);
 		}
 		this.setDitherType(state.ditherType);
+		this.syncAtlasSlotRegisters();
 		this.commitLiveVisualState();
 	}
 
@@ -2037,14 +2020,6 @@ export class VDP implements VramWriteSink {
 
 	public get committedViewDitherType(): number {
 		return this.committedDitherType;
-	}
-
-	public get committedViewPrimaryAtlasIdInSlot(): number | null {
-		return this.committedSlotAtlasIds[0];
-	}
-
-	public get committedViewSecondaryAtlasIdInSlot(): number | null {
-		return this.committedSlotAtlasIds[1];
 	}
 
 	public get committedViewSkyboxFaceIds(): SkyboxImageIds | null {
@@ -2079,8 +2054,6 @@ export class VDP implements VramWriteSink {
 
 	private commitLiveVisualState(): void {
 		this.committedDitherType = this.lastDitherType;
-		this.committedSlotAtlasIds[0] = this.slotAtlasIds[0];
-		this.committedSlotAtlasIds[1] = this.slotAtlasIds[1];
 		this.committedSkyboxFaceIds = this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds };
 	}
 
@@ -2110,76 +2083,7 @@ export class VDP implements VramWriteSink {
 		this.markVramSlotDirty(slot, 0, slot.surfaceHeight);
 	}
 
-	private restoreAtlasSlotMapping(mapping: { primary: number | null; secondary: number | null }): void {
-		const primaryValue = mapping.primary === null ? VDP_ATLAS_ID_NONE : mapping.primary;
-		const secondaryValue = mapping.secondary === null ? VDP_ATLAS_ID_NONE : mapping.secondary;
-		this.memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, primaryValue);
-		this.memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, secondaryValue);
-		this.applyAtlasSlotMapping(mapping.primary, mapping.secondary);
-	}
-
-	private applyAtlasSlotMapping(primary: number | null, secondary: number | null): void {
-		const configureSlotEntry = (slotEntry: AssetEntry, textpageId: number | null): void => {
-			if (textpageId === null) {
-				const maxPixels = Math.floor(slotEntry.capacity / 4);
-				const side = Math.floor(Math.sqrt(maxPixels));
-				slotEntry.baseSize = side * side * 4;
-				slotEntry.baseStride = side * 4;
-				slotEntry.regionX = 0;
-				slotEntry.regionY = 0;
-				slotEntry.regionW = side;
-				slotEntry.regionH = side;
-				return;
-			}
-			const { width, height } = this.textpageSizesById.get(textpageId)!;
-			const size = width * height * 4;
-			if (size > slotEntry.capacity) {
-				throw vdpFault(`textpage ${textpageId} (${width}x${height}) exceeds slot capacity ${slotEntry.capacity}.`);
-			}
-			slotEntry.baseSize = size;
-			slotEntry.baseStride = width * 4;
-			slotEntry.regionX = 0;
-			slotEntry.regionY = 0;
-			slotEntry.regionW = width;
-			slotEntry.regionH = height;
-		};
-		configureSlotEntry(this.textpageSlotEntries[0], primary);
-		configureSlotEntry(this.textpageSlotEntries[1], secondary);
-		this.textpageSlotById.clear();
-		this.slotAtlasIds[0] = primary;
-		this.slotAtlasIds[1] = secondary;
-		if (primary !== null) {
-			this.textpageSlotById.set(primary, 0);
-		}
-		if (secondary !== null) {
-			this.textpageSlotById.set(secondary, 1);
-		}
-		if (primary !== null) {
-			const viewEntries = this.textpageViewsById.get(primary);
-			if (viewEntries) {
-				for (let index = 0; index < viewEntries.length; index += 1) {
-					this.memory.updateImageViewBase(viewEntries[index], this.textpageSlotEntries[0]);
-				}
-			}
-		}
-		if (secondary !== null) {
-			const viewEntries = this.textpageViewsById.get(secondary);
-			if (viewEntries) {
-				for (let index = 0; index < viewEntries.length; index += 1) {
-					this.memory.updateImageViewBase(viewEntries[index], this.textpageSlotEntries[1]);
-				}
-			}
-		}
-		this.syncVramSlotSurfaceSize(this.getVramSlotBySurfaceId(VDP_RD_SURFACE_PRIMARY));
-		this.syncVramSlotSurfaceSize(this.getVramSlotBySurfaceId(VDP_RD_SURFACE_SECONDARY));
-	}
-
 	public setSkyboxImages(ids: SkyboxImageIds): void {
-		for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
-			const assetId = ids[SKYBOX_FACE_KEYS[index]];
-			const handle = this.memory.resolveAssetHandle(assetId);
-			this.resolveBlitterSample(handle);
-		}
 		this._skyboxFaceIds = ids;
 	}
 
@@ -2187,21 +2091,9 @@ export class VDP implements VramWriteSink {
 		this._skyboxFaceIds = null;
 	}
 
-	public registerVramAssets(textpageMemory: VdpAtlasMemory): void {
-		this.textpageSizesById.clear();
-		for (const [textpageId, size] of textpageMemory.textpageSizesById) {
-			this.textpageSizesById.set(textpageId, size);
-		}
-		this.textpageViewsById.clear();
-		for (const [textpageId, viewIds] of textpageMemory.textpageViewIdsById) {
-			const viewEntries: AssetEntry[] = [];
-			for (let index = 0; index < viewIds.length; index += 1) {
-				viewEntries.push(this.memory.getAssetEntry(viewIds[index]));
-			}
-			this.textpageViewsById.set(textpageId, viewEntries);
-		}
-		this.textpageSlotById.clear();
+	public registerVramAssets(atlasDimensions: ReadonlyMap<number, VdpAtlasDimensions>): void {
 		this.resetQueuedFrameState();
+		this.atlasDimensionsById = new Map(atlasDimensions);
 		this.vramSlots = [];
 		this.readSurfaces = [null, null, null, null];
 		for (let index = 0; index < this.readCaches.length; index += 1) {
@@ -2211,20 +2103,61 @@ export class VDP implements VramWriteSink {
 		this._skyboxFaceIds = null;
 		this.committedSkyboxFaceIds = null;
 		this.committedDitherType = this.lastDitherType;
-		this.committedSlotAtlasIds[0] = null;
-		this.committedSlotAtlasIds[1] = null;
 		this.vramBootSeed = this.nextVramBootSeed();
 		this.seedVramStaging();
 		this.initializeFrameBufferSurface();
 
-		const engineEntry = this.memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
-		const primarySlotEntry = this.memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
-		const secondarySlotEntry = this.memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
-		this.textpageSlotEntries = [primarySlotEntry, secondarySlotEntry];
+		const engineEntry = this.memory.getAssetEntry(generateAtlasAssetId(BIOS_ATLAS_ID));
+		const primarySlotEntry = this.memory.getAssetEntry(TEXTPAGE_PRIMARY_SLOT_ID);
+		const secondarySlotEntry = this.memory.getAssetEntry(TEXTPAGE_SECONDARY_SLOT_ID);
 		this.registerVramSlot(engineEntry, VDP_RD_SURFACE_ENGINE);
 		this.registerVramSlot(primarySlotEntry, VDP_RD_SURFACE_PRIMARY);
 		this.registerVramSlot(secondarySlotEntry, VDP_RD_SURFACE_SECONDARY);
+		this.syncAtlasSlotRegisters();
 		this.syncRegisters();
+	}
+
+	private onSlotAtlasWrite(addr: number, value: unknown): void {
+		const slot = addr === IO_VDP_SLOT_PRIMARY_ATLAS ? VDP_SLOT_PRIMARY : VDP_SLOT_SECONDARY;
+		const atlasId = typeof value === 'number' ? (value >>> 0) : VDP_SLOT_ATLAS_NONE;
+		this.syncAtlasSlotSurface(slot, atlasId);
+	}
+
+	private syncAtlasSlotRegisters(): void {
+		this.syncAtlasSlotSurface(VDP_SLOT_PRIMARY, this.memory.readIoU32(IO_VDP_SLOT_PRIMARY_ATLAS));
+		this.syncAtlasSlotSurface(VDP_SLOT_SECONDARY, this.memory.readIoU32(IO_VDP_SLOT_SECONDARY_ATLAS));
+	}
+
+	private syncAtlasSlotSurface(slotId: number, atlasId: number): void {
+		const surfaceId = slotId === VDP_SLOT_PRIMARY ? VDP_RD_SURFACE_PRIMARY : VDP_RD_SURFACE_SECONDARY;
+		const slot = this.findRegisteredVramSlotBySurfaceId(surfaceId);
+		if (slot === null) {
+			return;
+		}
+		if (atlasId === VDP_SLOT_ATLAS_NONE) {
+			this.setVramSlotLogicalDimensions(slot, 1, 1);
+			return;
+		}
+		const dimensions = this.atlasDimensionsById.get(atlasId);
+		if (!dimensions) {
+			return;
+		}
+		this.setVramSlotLogicalDimensions(slot, dimensions.width, dimensions.height);
+	}
+
+	private setVramSlotLogicalDimensions(slot: VramSlot, width: number, height: number): void {
+		const byteLength = width * height * 4;
+		if (width <= 0 || height <= 0 || byteLength > slot.capacity) {
+			return;
+		}
+		const entry = slot.entry;
+		entry.baseSize = byteLength;
+		entry.baseStride = width * 4;
+		entry.regionX = 0;
+		entry.regionY = 0;
+		entry.regionW = width;
+		entry.regionH = height;
+		this.syncVramSlotSurfaceSize(slot);
 	}
 
 	private invalidateReadCache(surfaceId: number): void {
@@ -2323,11 +2256,11 @@ export class VDP implements VramWriteSink {
 	}
 
 	public get trackedTotalVramBytes(): number {
-		return VRAM_SYSTEM_ATLAS_SIZE + VRAM_PRIMARY_ATLAS_SIZE + VRAM_SECONDARY_ATLAS_SIZE + VRAM_FRAMEBUFFER_SIZE + VRAM_STAGING_SIZE;
+		return VRAM_SYSTEM_TEXTPAGE_SIZE + VRAM_PRIMARY_TEXTPAGE_SIZE + VRAM_SECONDARY_TEXTPAGE_SIZE + VRAM_FRAMEBUFFER_SIZE + VRAM_STAGING_SIZE;
 	}
 
 	private registerVramSlot(entry: AssetEntry, surfaceId: number): void {
-		const isEngineAtlas = surfaceId === VDP_RD_SURFACE_ENGINE;
+		const isEngineTextpage = surfaceId === VDP_RD_SURFACE_ENGINE;
 		const surfaceWidth = entry.regionW;
 		const surfaceHeight = entry.regionH;
 		const stream = this.makeVramGarbageStream(entry.baseAddr >>> 0);
@@ -2345,7 +2278,7 @@ export class VDP implements VramWriteSink {
 		};
 		this.vramSlots.push(slot);
 		this.registerReadSurface(surfaceId, entry);
-		if (!isEngineAtlas) {
+		if (!isEngineTextpage) {
 			this.seedVramSlotTexture(slot);
 		}
 	}
@@ -2356,6 +2289,7 @@ export class VDP implements VramWriteSink {
 		if (slot.surfaceWidth === width && slot.surfaceHeight === height) {
 			return;
 		}
+		const previous = slot.cpuReadback;
 		slot.surfaceWidth = width;
 		slot.surfaceHeight = height;
 		slot.cpuReadback = new Uint8Array(width * height * 4);
@@ -2366,16 +2300,25 @@ export class VDP implements VramWriteSink {
 			return;
 		}
 		this.seedVramSlotTexture(slot);
+		slot.cpuReadback.set(previous.subarray(0, Math.min(previous.byteLength, slot.cpuReadback.byteLength)));
 	}
 
 	private getVramSlotBySurfaceId(surfaceId: number): VramSlot {
+		const slot = this.findRegisteredVramSlotBySurfaceId(surfaceId);
+		if (slot !== null) {
+			return slot;
+		}
+		throw vdpFault(`VRAM slot not registered for surface ${surfaceId}.`);
+	}
+
+	private findRegisteredVramSlotBySurfaceId(surfaceId: number): VramSlot | null {
 		for (let index = 0; index < this.vramSlots.length; index += 1) {
 			const slot = this.vramSlots[index];
 			if (slot.surfaceId === surfaceId) {
 				return slot;
 			}
 		}
-		throw vdpFault(`VRAM slot not registered for surface ${surfaceId}.`);
+		return null;
 	}
 
 	private makeVramGarbageStream(addr: number): VramGarbageStream {

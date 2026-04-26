@@ -15,7 +15,7 @@ import { ImgDecController } from './devices/imgdec/controller';
 import { InputController, type InputControllerState } from './devices/input/controller';
 import { IrqController } from './devices/irq/controller';
 import { VDP, type VdpFrameBufferSize, type VdpSaveState, type VdpState } from './devices/vdp/vdp';
-import type { Api } from './firmware/api';
+import type { Api } from './firmware/api/api';
 import { Memory, type MemorySaveState, type MemoryState } from './memory/memory';
 import { StringHandleTable, type StringHandleTableState } from './memory/string/memory';
 import { StringPool } from './memory/string/pool';

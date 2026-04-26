@@ -15,25 +15,7 @@ function disappearingwall:bind_visual()
 			local draw_y<const> = self.y + (ty * constants.room.tile_size)
 			for tx = 0, self.width_tiles - 1 do
 				local draw_x<const> = self.x + (tx * constants.room.tile_size)
-				memwrite(
-					vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
-					sys_vdp_cmd_blit,
-						13,
-					0,
-					assets.img[self.tiletype].handle,
-					draw_x,
-					draw_y,
-					22,
-					sys_vdp_layer_world,
-					1,
-					1,
-					0,
-					1,
-					1,
-					1,
-					1,
-					0
-				)
+				vdp_blit_img_rgba(self.tiletype, draw_x, draw_y, 22, sys_vdp_layer_world, 1, 1, 0, 1, 1, 1, 1, 0)
 			end
 		end
 	end

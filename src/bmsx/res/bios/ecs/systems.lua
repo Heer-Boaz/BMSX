@@ -59,6 +59,7 @@ local clear_map<const> = require('clear_map')
 local collision2d<const> = require('collision2d')
 local scratchrecordbatch<const> = require('scratchrecordbatch')
 local world_instance<const> = require('world/index').instance
+local vdp_image<const> = require('vdp_image')
 
 local tickgroup<const> = ecs.tickgroup
 local ecsystem<const> = ecs.ecsystem
@@ -502,7 +503,7 @@ function spriterendersystem:update()
 	for i = 1, #components do
 		local sc<const> = components[i]
 		local obj<const> = sc.parent
-		if not obj.visible then
+		if not obj.visible or sc.imgid == nil then
 			goto continue_sprite_render
 		end
 		local offset<const> = sc.offset
@@ -516,25 +517,7 @@ function spriterendersystem:update()
 		if sc.flip.flip_v then
 			flip_flags = flip_flags | 2
 		end
-		memwrite(
-		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
-		sys_vdp_cmd_blit,
-		13,
-		0,
-		sc.image_handle,
-		x,
-		y,
-		z,
-		sc.layer,
-		sc.scale.x,
-		sc.scale.y,
-		flip_flags,
-		sc.colorize.r,
-		sc.colorize.g,
-		sc.colorize.b,
-		sc.colorize.a,
-		sc.parallax_weight
-		)
+		vdp_image.write_blit_rgba(sc.imgid, x, y, z, sc.layer, sc.scale.x, sc.scale.y, flip_flags, sc.colorize.r, sc.colorize.g, sc.colorize.b, sc.colorize.a, sc.parallax_weight)
 		::continue_sprite_render::
 	end
 end

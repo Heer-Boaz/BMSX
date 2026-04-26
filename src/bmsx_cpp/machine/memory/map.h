@@ -52,19 +52,19 @@ extern uint32_t ASSET_DATA_END;
 extern uint32_t GEO_SCRATCH_BASE;
 extern uint32_t GEO_SCRATCH_SIZE;
 extern uint32_t VDP_STREAM_BUFFER_BASE;
-constexpr uint32_t DEFAULT_VRAM_ATLAS_SLOT_SIZE = 0x01000000u; // 16 MB
+constexpr uint32_t DEFAULT_VRAM_TEXTPAGE_SLOT_SIZE = 0x01000000u; // 16 MB
 constexpr uint32_t DEFAULT_VRAM_STAGING_SIZE = 0x00400000u; // 4 MB
-extern uint32_t VRAM_ATLAS_SLOT_SIZE;
+extern uint32_t VRAM_TEXTPAGE_SLOT_SIZE;
 extern uint32_t VRAM_STAGING_SIZE;
 extern uint32_t VRAM_FRAMEBUFFER_SIZE;
-extern uint32_t VRAM_SECONDARY_ATLAS_BASE;
-extern uint32_t VRAM_PRIMARY_ATLAS_BASE;
-extern uint32_t VRAM_SYSTEM_ATLAS_BASE;
+extern uint32_t VRAM_SECONDARY_TEXTPAGE_BASE;
+extern uint32_t VRAM_PRIMARY_TEXTPAGE_BASE;
+extern uint32_t VRAM_SYSTEM_TEXTPAGE_BASE;
 extern uint32_t VRAM_STAGING_BASE;
 extern uint32_t VRAM_FRAMEBUFFER_BASE;
-extern uint32_t VRAM_SYSTEM_ATLAS_SIZE;
-extern uint32_t VRAM_PRIMARY_ATLAS_SIZE;
-extern uint32_t VRAM_SECONDARY_ATLAS_SIZE;
+extern uint32_t VRAM_SYSTEM_TEXTPAGE_SIZE;
+extern uint32_t VRAM_PRIMARY_TEXTPAGE_SIZE;
+extern uint32_t VRAM_SECONDARY_TEXTPAGE_SIZE;
 extern uint32_t ASSET_DATA_ALLOC_END;
 extern uint32_t RAM_USED_END;
 
@@ -74,8 +74,8 @@ struct MemoryMapConfig {
 	uint32_t stringHeapBytes = DEFAULT_STRING_HEAP_SIZE;
 	uint32_t assetTableBytes = DEFAULT_ASSET_TABLE_SIZE;
 	uint32_t assetDataBytes = 0;
-	uint32_t textpageSlotBytes = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
-	uint32_t engineAtlasSlotBytes = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
+	uint32_t textpageSlotBytes = DEFAULT_VRAM_TEXTPAGE_SLOT_SIZE;
+	uint32_t systemTextpageSlotBytes = DEFAULT_VRAM_TEXTPAGE_SLOT_SIZE;
 	uint32_t stagingBytes = DEFAULT_VRAM_STAGING_SIZE;
 	uint32_t frameBufferBytes = DEFAULT_VRAM_FRAMEBUFFER_SIZE;
 };

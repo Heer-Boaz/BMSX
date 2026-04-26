@@ -1,6 +1,6 @@
 import type { BFont } from './bitmap_font';
 import type { Mesh } from '../3d/mesh';
-import type { RectBounds, Polygon, vec2, vec2arr, vec3arr, asset_id } from '../../rompack/format';
+import type { RectBounds, Polygon, vec2, vec2arr, vec3arr } from '../../rompack/format';
 import type { color } from '../../common/color';
 import {
 	LAYER_2D_IDE,
@@ -76,10 +76,13 @@ export type ParticleRenderSubmission = {
 	position: vec3arr;
 	size: number;
 	color: color;
-	texture?: asset_id;
+	slot?: number;
+	u?: number;
+	v?: number;
+	w?: number;
+	h?: number;
 	uv0?: vec2arr;
 	uv1?: vec2arr;
-	textpageBinding?: number;
 	ambient_mode?: 0 | 1;
 	ambient_factor?: number;
 	layer?: RenderLayer; // Currently unused

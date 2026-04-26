@@ -7,6 +7,8 @@
 #include "../machine/program/loader.h"
 #include "common/endian.h"
 #include "common/mem_snapshot.h"
+#include "rompack/format.h"
+#include <cmath>
 #include <cstring>
 #include <stdexcept>
 #include <string_view>
@@ -116,7 +118,7 @@ static void parseMachineSpecs(const BinObject& machineObj, MachineManifest& mani
 			manifest.textpageSlotBytes = vramObj.at("textpage_slot_bytes").toI32();
 		}
 		if (vramObj.count("system_textpage_slot_bytes")) {
-			manifest.engineAtlasSlotBytes = vramObj.at("system_textpage_slot_bytes").toI32();
+			manifest.systemTextpageSlotBytes = vramObj.at("system_textpage_slot_bytes").toI32();
 		}
 		if (vramObj.count("staging_bytes")) {
 			manifest.stagingBytes = vramObj.at("staging_bytes").toI32();
@@ -147,7 +149,7 @@ static std::string assetTypeFromId(u32 id) {
 		case 2: return "audio";
 		case 3: return "data";
 		case 4: return "bin";
-		case 5: return "textpage";
+		case 5: return "atlas";
 		case 6: return "romlabel";
 		case 7: return "model";
 		case 8: return "aem";
@@ -166,7 +168,7 @@ static AssetTypeKind resolveAssetTypeKind(std::string_view assetType) {
 			}
 			break;
 		case 'a':
-			if (assetType == "textpage") {
+			if (assetType == "atlas") {
 				return AssetTypeKind::ImageAtlas;
 			}
 			if (assetType == "audio") {
@@ -925,6 +927,40 @@ const ImgAsset* RuntimeAssets::getImg(const AssetId& id) const {
 	return findAssetValue(img, id);
 }
 
+ImageAtlasRect resolveImageAtlasRectFromAssets(const RuntimeAssets& assets, const std::string& imgId) {
+	const ImgAsset* image = assets.getImg(imgId);
+	if (!image) {
+		throw BMSX_RUNTIME_ERROR("[RuntimeAssets] Image '" + imgId + "' was not found.");
+	}
+	const ImgMeta& meta = image->meta;
+	if (!meta.atlasid) {
+		throw BMSX_RUNTIME_ERROR("[RuntimeAssets] Image '" + imgId + "' is not atlas-backed.");
+	}
+	const i32 atlasId = *meta.atlasid;
+	const std::string atlasAssetId = generateAtlasAssetId(atlasId);
+	const ImgAsset* atlas = assets.getImg(atlasAssetId);
+	if (!atlas) {
+		throw BMSX_RUNTIME_ERROR("[RuntimeAssets] Atlas '" + atlasAssetId + "' for image '" + imgId + "' was not found.");
+	}
+	if (atlas->meta.width <= 0 || atlas->meta.height <= 0 || meta.width <= 0 || meta.height <= 0) {
+		throw BMSX_RUNTIME_ERROR("[RuntimeAssets] Image '" + imgId + "' has invalid atlas dimensions.");
+	}
+	f32 u0 = 0.0f;
+	f32 v0 = 0.0f;
+	f32 u1 = 0.0f;
+	f32 v1 = 0.0f;
+	meta.getUVRect(u0, v0, u1, v1);
+	(void)u1;
+	(void)v1;
+	return ImageAtlasRect{
+		atlasId,
+		static_cast<u32>(std::round(u0 * static_cast<f32>(atlas->meta.width))),
+		static_cast<u32>(std::round(v0 * static_cast<f32>(atlas->meta.height))),
+		static_cast<u32>(meta.width),
+		static_cast<u32>(meta.height),
+	};
+}
+
 AudioAsset* RuntimeAssets::getAudio(const AssetId& id) {
 	return findAssetValue(audio, id);
 }
@@ -997,7 +1033,6 @@ void RuntimeAssets::clear() {
 	bin.clear();
 	lua.clear();
 	audioevents.clear();
-	textpageTextures.clear();
 	programAsset.reset();
 	programSymbols.reset();
 	projectRootPath.clear();
@@ -1547,8 +1582,9 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 						const auto& imgMeta = metaVal.asObject();
 						imgAsset.meta.width = imgMeta.count("width") ? imgMeta.at("width").toI32() : 0;
 						imgAsset.meta.height = imgMeta.count("height") ? imgMeta.at("height").toI32() : 0;
-						imgAsset.meta.textpagesed = imgMeta.count("textpagesed") && imgMeta.at("textpagesed").isBool() && imgMeta.at("textpagesed").asBool();
-						imgAsset.meta.textpageid = imgMeta.count("textpageid") ? imgMeta.at("textpageid").toI32() : 0;
+						if (imgMeta.count("atlasid")) {
+							imgAsset.meta.atlasid = imgMeta.at("atlasid").toI32();
+						}
 
 						// Load texcoords
 						if (imgMeta.count("texcoords")) {
@@ -1608,7 +1644,7 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 					}
 				}
 
-				// Store textpage assets as regular images for render lookup.
+				// Store atlas assets as regular images for render lookup.
 				assets.img[assetToken] = std::move(imgAsset);
 				break;
 			}

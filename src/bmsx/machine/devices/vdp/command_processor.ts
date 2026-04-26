@@ -8,7 +8,7 @@ import {
 	IO_CMD_VDP_TILE_RUN,
 } from '../../bus/io';
 import type { CPU } from '../../cpu/cpu';
-import type { Api } from '../../firmware/api';
+import type { Api } from '../../firmware/api/api';
 import type { Memory } from '../../memory/memory';
 import { vdpFault } from './fault';
 import { assertVdpPacketArgWords, getVdpPacketArgKind, VdpPacketWordKind } from './packet_schema';
@@ -133,19 +133,23 @@ function processVdpCommandCore(vdp: VDP, cpu: CPU, api: Api, params: {
 		}
 		case IO_CMD_VDP_BLIT: {
 			assertVdpPacketArgWords(params.cmd, params.argWords);
-			const flipFlags = readPacketArgU32(params.argReader, params.cmd, 7);
+			const flipFlags = readPacketArgU32(params.argReader, params.cmd, 11);
 			vdp.enqueueBlit(
 				readPacketArgU32(params.argReader, params.cmd, 0),
-				readPacketArgF32(params.argReader, params.cmd, 1),
-				readPacketArgF32(params.argReader, params.cmd, 2),
-				readPacketArgF32(params.argReader, params.cmd, 3),
-				readPacketArgU32(params.argReader, params.cmd, 4) as 0 | 1 | 2,
+				readPacketArgU32(params.argReader, params.cmd, 1),
+				readPacketArgU32(params.argReader, params.cmd, 2),
+				readPacketArgU32(params.argReader, params.cmd, 3),
+				readPacketArgU32(params.argReader, params.cmd, 4),
 				readPacketArgF32(params.argReader, params.cmd, 5),
 				readPacketArgF32(params.argReader, params.cmd, 6),
+				readPacketArgF32(params.argReader, params.cmd, 7),
+				readPacketArgU32(params.argReader, params.cmd, 8) as 0 | 1 | 2,
+				readPacketArgF32(params.argReader, params.cmd, 9),
+				readPacketArgF32(params.argReader, params.cmd, 10),
 				(flipFlags & 1) !== 0,
 				(flipFlags & 2) !== 0,
-				readPacketColor(params.argReader, params.cmd, 8),
-				readPacketArgF32(params.argReader, params.cmd, 12),
+				readPacketColor(params.argReader, params.cmd, 12),
+				readPacketArgF32(params.argReader, params.cmd, 16),
 			);
 			break;
 		}
@@ -158,7 +162,7 @@ function processVdpCommandCore(vdp: VDP, cpu: CPU, api: Api, params: {
 				readPacketArgF32(params.argReader, params.cmd, 1),
 				readPacketArgF32(params.argReader, params.cmd, 2),
 				readPacketArgF32(params.argReader, params.cmd, 3),
-				api.resolveFontId(readPacketArgU32(params.argReader, params.cmd, 4)),
+				api.resolve_font(readPacketArgU32(params.argReader, params.cmd, 4)),
 				readPacketColor(params.argReader, params.cmd, 8),
 				backgroundEnabled ? readPacketColor(params.argReader, params.cmd, 13) : undefined,
 				readPacketArgI32(params.argReader, params.cmd, 5),
@@ -170,8 +174,9 @@ function processVdpCommandCore(vdp: VDP, cpu: CPU, api: Api, params: {
 		case IO_CMD_VDP_TILE_RUN: {
 			assertVdpPacketArgWords(params.cmd, params.argWords);
 			const tileCount = readPacketArgU32(params.argReader, params.cmd, 0);
-			if (tileCount > params.payloadWords) {
-				throw vdpFault(`tile payload underrun (${tileCount} > ${params.payloadWords}).`);
+			const payloadWordCount = tileCount * 3;
+			if (payloadWordCount > params.payloadWords) {
+				throw vdpFault(`tile payload underrun (${payloadWordCount} > ${params.payloadWords}).`);
 			}
 			const cols = readPacketArgI32(params.argReader, params.cmd, 1);
 			const rows = readPacketArgI32(params.argReader, params.cmd, 2);

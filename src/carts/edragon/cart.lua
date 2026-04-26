@@ -23,8 +23,7 @@ function init()
 	fighter_module.define_fighter_fsm()
 	fighter_module.register_fighter_definition()
 	arena_module.register_arena_definition()
-	vdp_load_slot(0, 0)
-	vdp_map_slot(0, 0)
+	vdp_load_slot(sys_vdp_slot_primary, 0)
 end
 
 function new_game()

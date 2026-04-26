@@ -9,7 +9,7 @@ export function tryOpenResourcePanelDescriptorItem(item: ResourceBrowserItem): b
 	if (!item?.descriptor) {
 		return false;
 	}
-	if (item.descriptor.type === 'textpage') {
+	if (item.descriptor.type === 'atlas') {
 		return false;
 	}
 	openResourceDescriptor(item.descriptor);
@@ -31,8 +31,8 @@ export function openSelectedResourcePanelItem(items: readonly ResourceBrowserIte
 	if (tryOpenResourcePanelDescriptorItem(item)) {
 		return;
 	}
-	if (item?.descriptor?.type === 'textpage') {
-		showResourcePanelAtlasWarning();
+	if (item?.descriptor?.type === 'atlas') {
+		showResourcePanelTextpageWarning();
 		focusEditorFromResourcePanel();
 	}
 }
@@ -54,6 +54,6 @@ export function activateSelectedCallHierarchyItem(
 	return null;
 }
 
-export function showResourcePanelAtlasWarning(): void {
+export function showResourcePanelTextpageWarning(): void {
 	showEditorMessage('Atlas resources cannot be previewed in the IDE.', constants.COLOR_STATUS_WARNING, 3.2);
 }

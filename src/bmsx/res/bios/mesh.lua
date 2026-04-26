@@ -25,7 +25,7 @@ function mesh.new(opts)
 	self.tangents = opts.tangents
 	self.indices = opts.indices
 	self.color = opts.color or { r = 255, g = 255, b = 255, a = 1 }
-	self.textpage_id = opts.textpageid or 255
+	self.textpage_id = opts.atlasid or 255
 	self.material = opts.material
 	self.morphpositions = opts.morphpositions
 	self.morphnormals = opts.morphnormals

@@ -37,9 +37,9 @@ bool rangeOverlaps(uint32_t addr, size_t length, uint32_t base, uint32_t size) {
 
 bool isVramRangeLocal(uint32_t addr, size_t length) {
 	return rangeOverlaps(addr, length, VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
-		|| rangeOverlaps(addr, length, VRAM_SYSTEM_ATLAS_BASE, VRAM_SYSTEM_ATLAS_SIZE)
-		|| rangeOverlaps(addr, length, VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE)
-		|| rangeOverlaps(addr, length, VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE)
+		|| rangeOverlaps(addr, length, VRAM_SYSTEM_TEXTPAGE_BASE, VRAM_SYSTEM_TEXTPAGE_SIZE)
+		|| rangeOverlaps(addr, length, VRAM_PRIMARY_TEXTPAGE_BASE, VRAM_PRIMARY_TEXTPAGE_SIZE)
+		|| rangeOverlaps(addr, length, VRAM_SECONDARY_TEXTPAGE_BASE, VRAM_SECONDARY_TEXTPAGE_SIZE)
 		|| rangeOverlaps(addr, length, VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
 }
 
@@ -292,26 +292,6 @@ Memory::AssetEntry& Memory::registerImageSlotAt(const std::string& id, uint32_t 
 	return m_assetEntries[index];
 }
 
-Memory::AssetEntry& Memory::registerImageView(const std::string& id, const AssetEntry& base, uint32_t regionX, uint32_t regionY, uint32_t regionW, uint32_t regionH, uint32_t flags) {
-	const size_t ownerIndex = base.ownerIndex;
-	AssetEntry entry;
-	entry.id = id;
-	entry.type = AssetType::Image;
-	entry.flags = flags | ASSET_FLAG_VIEW;
-	entry.ownerIndex = ownerIndex;
-	entry.baseAddr = base.baseAddr;
-	entry.baseSize = base.baseSize;
-	entry.capacity = 0;
-	entry.baseStride = base.baseStride;
-	entry.regionX = regionX;
-	entry.regionY = regionY;
-	entry.regionW = regionW;
-	entry.regionH = regionH;
-	const size_t index = addAssetEntry(std::move(entry));
-	m_assetEntries[index].ownerIndex = ownerIndex;
-	return m_assetEntries[index];
-}
-
 void Memory::finalizeAssetTable() {
 	const size_t entryCount = m_assetEntries.size();
 	const uint32_t entryBaseAddr = ASSET_TABLE_BASE + ASSET_TABLE_HEADER_SIZE;
@@ -517,25 +497,9 @@ void Memory::rehydrateAssetEntriesFromTable() {
 		m_assetIndexByToken[entry.idToken] = index;
 	}
 
-	std::unordered_map<uint32_t, size_t> ownerByBaseAddr;
 	for (size_t index = 0; index < m_assetEntries.size(); ++index) {
 		auto& entry = m_assetEntries[index];
-		if ((entry.flags & ASSET_FLAG_VIEW) != 0u) {
-			continue;
-		}
 		entry.ownerIndex = index;
-		ownerByBaseAddr[entry.baseAddr] = index;
-	}
-	for (size_t index = 0; index < m_assetEntries.size(); ++index) {
-		auto& entry = m_assetEntries[index];
-		if ((entry.flags & ASSET_FLAG_VIEW) == 0u) {
-			continue;
-		}
-		const auto owner = ownerByBaseAddr.find(entry.baseAddr);
-		if (owner == ownerByBaseAddr.end()) {
-			throw std::runtime_error("[Memory] Missing owner for asset view '" + entry.id + "'.");
-		}
-		entry.ownerIndex = owner->second;
 	}
 
 	std::fill(m_assetOwnerPages.begin(), m_assetOwnerPages.end(), -1);
@@ -611,9 +575,6 @@ Memory::AssetEntry& Memory::getAssetEntry(const std::string& id) {
 }
 
 const u8* Memory::getImagePixels(const AssetEntry& entry) const {
-	if (entry.flags & ASSET_FLAG_VIEW) {
-		throw std::runtime_error("[Memory] Image view entries do not expose direct pixel buffers.");
-	}
 	if (isVramRange(entry.baseAddr, entry.capacity)) {
 		throw std::runtime_error("[Memory] Image asset lives in VRAM and has no CPU pixel buffer.");
 	}
@@ -652,34 +613,6 @@ void Memory::writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelByt
 	}
 }
 
-void Memory::updateImageViewBase(AssetEntry& entry, const AssetEntry& base) {
-	const size_t index = m_assetIndexById.at(entry.id);
-	entry.baseAddr = base.baseAddr;
-	entry.baseSize = base.baseSize;
-	entry.baseStride = base.baseStride;
-	entry.ownerIndex = base.ownerIndex;
-	if (m_assetTableFinalized) {
-		updateAssetEntryData(index, entry);
-	}
-}
-
-void Memory::updateImageView(AssetEntry& entry, const AssetEntry& base, uint32_t regionX, uint32_t regionY, uint32_t regionW, uint32_t regionH, uint32_t flags) {
-	const size_t index = m_assetIndexById.at(entry.id);
-	entry.flags = flags | ASSET_FLAG_VIEW;
-	entry.baseAddr = base.baseAddr;
-	entry.baseSize = base.baseSize;
-	entry.capacity = 0;
-	entry.baseStride = base.baseStride;
-	entry.regionX = regionX;
-	entry.regionY = regionY;
-	entry.regionW = regionW;
-	entry.regionH = regionH;
-	entry.ownerIndex = base.ownerIndex;
-	if (m_assetTableFinalized) {
-		updateAssetEntryData(index, entry);
-	}
-}
-
 Value Memory::readValue(uint32_t addr) const {
 	if (isIoAddress(addr)) {
 		const size_t slot = ioIndex(addr);
@@ -712,10 +645,7 @@ void Memory::writeValue(uint32_t addr, Value value) {
 		}
 		return;
 	}
-	if (!valueIsNumber(value)) {
-		throw std::runtime_error("Bus fault: non-numeric store @ " + formatNumberAsHex(addr, 8) + ".");
-	}
-	writeU32(addr, toU32(asNumber(value)));
+	writeU32(addr, toU32(value));
 }
 
 void Memory::writeIoValue(uint32_t addr, Value value) {
@@ -730,10 +660,7 @@ void Memory::writeMappedValue(uint32_t addr, Value value) {
 		throw std::runtime_error("Bus fault @ " + formatNumberAsHex(addr, 8) + ": write word.");
 	}
 	if (isVramRange(addr, 4)) {
-		if (!valueIsNumber(value)) {
-			throw std::runtime_error("VRAM write fault @ " + formatNumberAsHex(addr, 8) + ": non-numeric value.");
-		}
-		writeMappedU32LE(addr, toU32(asNumber(value)));
+		writeMappedU32LE(addr, toU32(value));
 		return;
 	}
 	writeValue(addr, value);
@@ -753,10 +680,10 @@ u8 Memory::readMappedU8(uint32_t addr) const {
 	}
 	if (isIoAddress(addr)) {
 		const Value value = readValue(addr);
-		if (!valueIsNumber(value)) {
-			throw std::runtime_error("I/O read fault @ " + formatNumberAsHex(addr, 8) + ": non-numeric register.");
-		}
-		return static_cast<u8>(toU32(asNumber(value)) & 0xffu);
+		// if (!valueIsNumber(value)) {
+		// 	throw std::runtime_error("I/O read fault @ " + formatNumberAsHex(addr, 8) + ": non-numeric register.");
+		// }
+		return static_cast<u8>(toU32(value) & 0xffu);
 	}
 	if (isIoRegionRange(addr, 1)) {
 		throw std::runtime_error("I/O read fault @ " + formatNumberAsHex(addr, 8) + ": unaligned.");
@@ -791,10 +718,10 @@ uint32_t Memory::readIoU32(uint32_t addr) const {
 		throw std::runtime_error("I/O read fault @ " + formatNumberAsHex(addr, 8) + ": invalid register.");
 	}
 	const Value value = readValue(addr);
-	if (!valueIsNumber(value)) {
-		throw std::runtime_error("I/O read fault @ " + formatNumberAsHex(addr, 8) + ": non-numeric register.");
-	}
-	return toU32(asNumber(value));
+	// if (!valueIsNumber(value)) {
+	// 	throw std::runtime_error("I/O read fault @ " + formatNumberAsHex(addr, 8) + ": non-numeric register.");
+	// }
+	return toU32(value);
 }
 
 int32_t Memory::readIoI32(uint32_t addr) const {

@@ -74,7 +74,7 @@ VDP* Machine::runDeviceService(uint8_t deviceKind) {
 			m_vdp.onService(nowCycles);
 			return &m_vdp;
 		default:
-			throw runtimeFault("unknown device service kind " + std::to_string(deviceKind) + ".");
+			throw new Error("unknown device service kind " + std::to_string(deviceKind) + ".");
 	}
 }
 

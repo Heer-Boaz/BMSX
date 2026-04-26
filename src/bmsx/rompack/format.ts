@@ -47,7 +47,7 @@ export interface RuntimeAssets {
 	entry_path: string; // Entry Lua path for this program.
 }
 
-export type asset_type = 'image' | 'audio' | 'data' | 'bin' | 'textpage' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
+export type asset_type = 'image' | 'audio' | 'data' | 'bin' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
 export type asset_id = string;
 
 /**
@@ -56,12 +56,11 @@ export type asset_id = string;
 export interface RomAsset {
 	resid: asset_id; // The resource ID of the asset.
 	type: asset_type; // The type of the asset.
-	handle?: number; // Runtime-resolved memory handle for image/VDP MMIO code.
 	id_token_lo?: number; // 64-bit exact-id token (low 32)
 	id_token_hi?: number; // 64-bit exact-id token (high 32)
 	op?: RomAssetOp; // Optional patch operation for this asset.
-	start?: number; // The optional start offset of the asset in the ROM. (e.g., textpagesed images don't have a start offset, as they are part of an textpage)
-	end?: number; // The optional end offset of the asset in the ROM. (e.g., textpagesed images don't have an end offset, as they are part of an textpage)
+	start?: number; // The optional start offset of the asset in the ROM. (e.g., atlas-backed images don't own ROM bytes)
+	end?: number; // The optional end offset of the asset in the ROM. (e.g., atlas-backed images don't own ROM bytes)
 	compiled_start?: number; // Optional start offset of precompiled Lua chunk data in the ROM
 	compiled_end?: number; // Optional end offset of precompiled Lua chunk data in the ROM
 	metabuffer_start?: number; // Optional start offset of binary-encoded per-asset metadata in the buffer
@@ -155,35 +154,29 @@ export interface RegisterablePersistent extends Registerable {
 }
 
 /**
- * Reserved textpage metadata for engine/runtime resources.
- *
- * Atlas indices are stored in packed sprite metadata and must fit in an
- * unsigned byte. We reserve index 254 for engine assets so carts can safely
- * use lower indices without risk of collision.
+ * Reserved ROM atlas identity for engine/runtime resources.
  */
-export const ENGINE_ATLAS_INDEX = 254;
+export const BIOS_ATLAS_ID = 254;
 
 /**
- * Texture dictionary key used by GameView to cache the engine textpage texture.
+ * Texture dictionary key used by GameView to cache VDP slot textures.
  */
-export const ENGINE_ATLAS_TEXTURE_KEY = '_textpage_engine';
-export const ATLAS_PRIMARY_SLOT_ID = '_textpage_primary';
-export const ATLAS_SECONDARY_SLOT_ID = '_textpage_secondary';
+export const BIOS_TEXTPAGE_TEXTURE_KEY = '_textpage_engine';
+export const TEXTPAGE_PRIMARY_SLOT_ID = '_textpage_primary';
+export const TEXTPAGE_SECONDARY_SLOT_ID = '_textpage_secondary';
 export const FRAMEBUFFER_TEXTURE_KEY = '_framebuffer_2d';
 export const FRAMEBUFFER_RENDER_TEXTURE_KEY = '_framebuffer_render_2d';
 
-const textpageNameCache = new Map<number, string>(); // Cache for textpage names to avoid regenerating them for each request
+const atlasAssetIdCache = new Map<number, string>();
 
-export function generateAtlasName(textpageIndex: number): string {
-	// Check if the textpage name is already cached
-	if (textpageNameCache.has(textpageIndex)) {
-		return textpageNameCache.get(textpageIndex)!;
+export function generateAtlasAssetId(atlasId: number): string {
+	if (atlasAssetIdCache.has(atlasId)) {
+		return atlasAssetIdCache.get(atlasId)!;
 	}
-	// Generate a new textpage name and cache it
-	const idxStr = textpageIndex.toString().padStart(2, '0');
-	const textpageName = `_textpage_${idxStr}`;
-	textpageNameCache.set(textpageIndex, textpageName);
-	return textpageName;
+	const idxStr = atlasId.toString().padStart(2, '0');
+	const assetId = `_atlas_${idxStr}`;
+	atlasAssetIdCache.set(atlasId, assetId);
+	return assetId;
 }
 
 /*
@@ -373,8 +366,7 @@ export interface GLTFModel {
  * Metadata for an image asset.
  */
 export interface ImgMeta {
-	textpagesed: boolean; // Whether the image is part of an textpage.
-	textpageid?: number; // The ID of the textpage the image is part of, if applicable.
+	atlasid?: number; // ROM atlas containing this image or identifying this atlas asset.
 	width: number; // The width of the image.
 	height: number; // The height of the image.
 	texcoords?: number[]; // The texture coordinates for the image, used for rendering.

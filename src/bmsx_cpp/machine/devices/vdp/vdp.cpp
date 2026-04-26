@@ -8,6 +8,7 @@
 #include "machine/devices/imgdec/controller.h"
 #include "machine/scheduler/budget.h"
 #include "render/vdp/framebuffer.h"
+#include "render/vdp/image_meta.h"
 #include "render/vdp/surfaces.h"
 #include <algorithm>
 #include <array>
@@ -245,6 +246,8 @@ VDP::VDP(
 	m_memory.mapIoWrite(IO_PAYLOAD_ALLOC_ADDR, this, &VDP::onObsoletePayloadWriteThunk);
 	m_memory.mapIoWrite(IO_PAYLOAD_DATA_ADDR, this, &VDP::onObsoletePayloadWriteThunk);
 	m_memory.mapIoWrite(IO_VDP_CMD, this, &VDP::onCommandWriteThunk);
+	m_memory.mapIoWrite(IO_VDP_SLOT_PRIMARY_ATLAS, this, &VDP::onSlotAtlasWriteThunk);
+	m_memory.mapIoWrite(IO_VDP_SLOT_SECONDARY_ATLAS, this, &VDP::onSlotAtlasWriteThunk);
 	m_buildFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
 	m_activeFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
 	m_pendingFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
@@ -737,10 +740,8 @@ void VDP::resetQueuedFrameState() {
 	m_pendingFrame.cost = 0;
 	m_pendingFrame.workRemaining = 0;
 	m_pendingFrame.ditherType = 0;
-	m_pendingFrame.slotAtlasIds = {{-1, -1}};
 	m_pendingFrame.skyboxFaceIds = {};
 	m_pendingFrame.hasSkybox = false;
-	m_slotAtlasIds = {{-1, -1}};
 }
 
 void VDP::enqueueBlitterCommand(BlitterCommand&& command) {
@@ -809,7 +810,6 @@ void VDP::assignBuildToSlot(bool active) {
 	frame.cost = frameCost;
 	frame.workRemaining = frameCost;
 	frame.ditherType = m_lastDitherType;
-	frame.slotAtlasIds = m_slotAtlasIds;
 	frame.skyboxFaceIds = m_skyboxFaceIds;
 	frame.hasSkybox = m_hasSkybox;
 	m_buildFrame.cost = 0;
@@ -847,7 +847,6 @@ void VDP::promotePendingFrame() {
 	activeFrame.cost = pendingFrame.cost;
 	activeFrame.workRemaining = pendingFrame.cost;
 	activeFrame.ditherType = pendingFrame.ditherType;
-	activeFrame.slotAtlasIds = pendingFrame.slotAtlasIds;
 	activeFrame.skyboxFaceIds = pendingFrame.skyboxFaceIds;
 	activeFrame.hasSkybox = pendingFrame.hasSkybox;
 	pendingFrame.occupied = false;
@@ -856,7 +855,6 @@ void VDP::promotePendingFrame() {
 	pendingFrame.cost = 0;
 	pendingFrame.workRemaining = 0;
 	pendingFrame.ditherType = 0;
-	pendingFrame.slotAtlasIds = {{-1, -1}};
 	pendingFrame.skyboxFaceIds = {};
 	pendingFrame.hasSkybox = false;
 	scheduleNextService(m_scheduler.currentNowCycles());
@@ -918,7 +916,6 @@ void VDP::clearActiveFrame() {
 	m_activeFrame.cost = 0;
 	m_activeFrame.workRemaining = 0;
 	m_activeFrame.ditherType = 0;
-	m_activeFrame.slotAtlasIds = {{-1, -1}};
 	m_activeFrame.skyboxFaceIds = {};
 	m_activeFrame.hasSkybox = false;
 }
@@ -942,7 +939,6 @@ void VDP::completeReadyExecution(const std::vector<BlitterCommand>* queue) {
 
 void VDP::commitActiveVisualState() {
 	m_committedDitherType = m_activeFrame.ditherType;
-	m_committedSlotAtlasIds = m_activeFrame.slotAtlasIds;
 	if (!m_activeFrame.hasSkybox) {
 		m_committedSkyboxFaceIds = {};
 		m_committedHasSkybox = false;
@@ -1015,37 +1011,28 @@ void VDP::initializeFrameBufferSurface() {
 	registerVramSlot(entry, VDP_RD_SURFACE_FRAMEBUFFER);
 }
 
-VDP::BlitterSource VDP::resolveBlitterSource(u32 handle) const {
-	const auto& entry = m_memory.getAssetEntryByHandle(handle);
-	if (entry.type != Memory::AssetType::Image) {
-		throw vdpFault("asset handle is not an image.");
+uint32_t VDP::resolveSurfaceIdForSlot(u32 slot) const {
+	if (slot == VDP_SLOT_SYSTEM) {
+		return VDP_RD_SURFACE_ENGINE;
 	}
-	size_t ownerIndex = entry.ownerIndex;
-	u32 srcX = 0u;
-	u32 srcY = 0u;
-	u32 width = entry.regionW;
-	u32 height = entry.regionH;
-	const bool viewAsset = (entry.flags & ASSET_FLAG_VIEW) != 0u;
-	if ((entry.flags & ASSET_FLAG_VIEW) != 0u) {
-		const auto& base = m_memory.getAssetEntryByHandle(entry.ownerIndex);
-		ownerIndex = base.ownerIndex;
-		srcX = entry.regionX;
-		srcY = entry.regionY;
-		width = entry.regionW;
-		height = entry.regionH;
+	if (slot == VDP_SLOT_PRIMARY) {
+		return VDP_RD_SURFACE_PRIMARY;
 	}
-	for (const auto& slot : m_vramSlots) {
-		if (m_memory.getAssetEntry(slot.assetId).ownerIndex == ownerIndex) {
-			return BlitterSource{
-				slot.surfaceId,
-				srcX,
-				srcY,
-				width,
-				height,
-			};
-		}
+	if (slot == VDP_SLOT_SECONDARY) {
+		return VDP_RD_SURFACE_SECONDARY;
 	}
-	throw vdpFault(viewAsset ? "VIEW asset handle not found in VRAM slots." : "asset handle not found in VRAM slots.");
+	throw vdpFault("source slot " + std::to_string(slot) + " is not a VDP blitter slot.");
+}
+
+VDP::BlitterSource VDP::resolveBlitterSource(const ImageSlotSource& source) const {
+	const uint32_t surfaceId = resolveSurfaceIdForSlot(source.slot);
+	return BlitterSource{
+		surfaceId,
+		source.u,
+		source.v,
+		source.w,
+		source.h,
+	};
 }
 
 VdpBlitterSurfaceSize VDP::resolveBlitterSurfaceSize(uint32_t surfaceId) const {
@@ -1057,14 +1044,14 @@ VdpBlitterSurfaceSize VDP::resolveBlitterSurfaceSize(uint32_t surfaceId) const {
 	};
 }
 
-VDP::ResolvedBlitterSample VDP::resolveBlitterSample(u32 handle) const {
-	const BlitterSource source = resolveBlitterSource(handle);
+VDP::ResolvedBlitterSample VDP::resolveBlitterSample(const ImageSlotSource& sourceRect) const {
+	const BlitterSource source = resolveBlitterSource(sourceRect);
 	const VdpBlitterSurfaceSize surface = resolveBlitterSurfaceSize(source.surfaceId);
 	return ResolvedBlitterSample{
 		source,
 		surface.width,
 		surface.height,
-			resolveVdpSurfaceAtlasBinding(source.surfaceId),
+		resolveVdpSurfaceSlotBinding(source.surfaceId),
 	};
 }
 
@@ -1077,8 +1064,14 @@ void VDP::enqueueClear(const Color& color) {
 	enqueueBlitterCommand(std::move(command));
 }
 
-void VDP::enqueueBlit(u32 handle, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const Color& color, f32 parallaxWeight) {
-	const BlitterSource source = resolveBlitterSource(handle);
+void VDP::enqueueBlit(u32 slot, u32 u, u32 v, u32 w, u32 h, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const Color& color, f32 parallaxWeight) {
+	const BlitterSource source = resolveBlitterSource(ImageSlotSource{
+		slot,
+		u,
+		v,
+		w,
+		h,
+	});
 	const auto clipped = computeClippedRect(
 		static_cast<double>(x),
 		static_cast<double>(y),
@@ -1244,7 +1237,13 @@ void VDP::enqueueGlyphRun(const std::string& text, f32 x, f32 y, f32 z, BFont* f
 				continue;
 			}
 			const FontGlyph& glyph = font->getGlyph(codepoint);
-			const BlitterSource sourceBlit = resolveBlitterSource(m_memory.resolveAssetHandle(glyph.imgid));
+			const BlitterSource sourceBlit = resolveBlitterSource(ImageSlotSource{
+				resolveAtlasSlotFromMemory(m_memory, glyph.rect.atlasId),
+				glyph.rect.u,
+				glyph.rect.v,
+				glyph.rect.w,
+				glyph.rect.h,
+			});
 			const auto clipped = computeClippedRect(
 				static_cast<double>(cursorX),
 				static_cast<double>(cursorY),
@@ -1338,7 +1337,13 @@ void VDP::enqueueGlyphRun(const std::vector<std::string>& lines, f32 x, f32 y, f
 				continue;
 			}
 			const FontGlyph& glyph = font->getGlyph(codepoint);
-			const BlitterSource source = resolveBlitterSource(m_memory.resolveAssetHandle(glyph.imgid));
+			const BlitterSource source = resolveBlitterSource(ImageSlotSource{
+				resolveAtlasSlotFromMemory(m_memory, glyph.rect.atlasId),
+				glyph.rect.u,
+				glyph.rect.v,
+				glyph.rect.w,
+				glyph.rect.h,
+			});
 			const auto clipped = computeClippedRect(
 				static_cast<double>(cursorX),
 				static_cast<double>(cursorY),
@@ -1387,7 +1392,10 @@ void VDP::enqueueGlyphRun(const std::vector<std::string>& lines, f32 x, f32 y, f
 	enqueueBlitterCommand(std::move(command));
 }
 
-void VDP::enqueueTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer) {
+void VDP::enqueueTileRun(const std::vector<std::optional<ImageSlotSource>>& sources, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer) {
+	if (sources.size() < static_cast<size_t>(cols * rows)) {
+		throw vdpFault("enqueueTileRun source underrun.");
+	}
 	const i32 frameWidth = static_cast<i32>(m_frameBufferWidth);
 	const i32 frameHeight = static_cast<i32>(m_frameBufferHeight);
 	const i32 totalWidth = cols * tileW;
@@ -1431,11 +1439,11 @@ void VDP::enqueueTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i3
 		const i32 base = row * cols;
 		bool rowHasVisibleTile = false;
 		for (i32 col = 0; col < cols; col += 1) {
-			const u32 handle = handles[static_cast<size_t>(base + col)];
-			if (handle == IO_VDP_TILE_HANDLE_NONE) {
+			const auto& tileSource = sources[static_cast<size_t>(base + col)];
+			if (!tileSource.has_value()) {
 				continue;
 			}
-			const BlitterSource source = resolveBlitterSource(handle);
+			const BlitterSource source = resolveBlitterSource(*tileSource);
 			if (source.width != static_cast<u32>(tileW) || source.height != static_cast<u32>(tileH)) {
 				throw vdpFault("enqueueTileRun tile size mismatch.");
 			}
@@ -1524,11 +1532,18 @@ void VDP::enqueuePayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 co
 		const i32 base = row * cols;
 		bool rowHasVisibleTile = false;
 		for (i32 col = 0; col < cols; col += 1) {
-			const u32 handle = m_memory.readU32(payloadBase + static_cast<uint32_t>(base + col) * IO_WORD_SIZE);
-			if (handle == IO_VDP_TILE_HANDLE_NONE) {
+			const uint32_t payloadOffset = static_cast<uint32_t>(base + col) * 3u * IO_WORD_SIZE;
+			const u32 slot = m_memory.readU32(payloadBase + payloadOffset);
+			if (slot == VDP_SLOT_NONE) {
 				continue;
 			}
-			const BlitterSource source = resolveBlitterSource(handle);
+			const BlitterSource source = resolveBlitterSource(ImageSlotSource{
+				slot,
+				m_memory.readU32(payloadBase + payloadOffset + IO_WORD_SIZE),
+				m_memory.readU32(payloadBase + payloadOffset + (2u * IO_WORD_SIZE)),
+				static_cast<u32>(tileW),
+				static_cast<u32>(tileH),
+			});
 			if (source.width != static_cast<u32>(tileW) || source.height != static_cast<u32>(tileH)) {
 				throw vdpFault("enqueuePayloadTileRun tile size mismatch.");
 			}
@@ -1617,11 +1632,18 @@ void VDP::enqueuePayloadTileRunWords(const u32* payloadWords, uint32_t tileCount
 		const i32 base = row * cols;
 		bool rowHasVisibleTile = false;
 		for (i32 col = 0; col < cols; col += 1) {
-			const u32 handle = payloadWords[static_cast<size_t>(base + col)];
-			if (handle == IO_VDP_TILE_HANDLE_NONE) {
+			const size_t payloadOffset = static_cast<size_t>(base + col) * 3u;
+			const u32 slot = payloadWords[payloadOffset];
+			if (slot == VDP_SLOT_NONE) {
 				continue;
 			}
-			const BlitterSource source = resolveBlitterSource(handle);
+			const BlitterSource source = resolveBlitterSource(ImageSlotSource{
+				slot,
+				payloadWords[payloadOffset + 1u],
+				payloadWords[payloadOffset + 2u],
+				static_cast<u32>(tileW),
+				static_cast<u32>(tileH),
+			});
 			if (source.width != static_cast<u32>(tileW) || source.height != static_cast<u32>(tileH)) {
 				throw vdpFault("enqueuePayloadTileRunWords tile size mismatch.");
 			}
@@ -1666,7 +1688,6 @@ void VDP::enqueuePayloadTileRunWords(const u32* payloadWords, uint32_t tileCount
 
 void VDP::commitLiveVisualState() {
 	m_committedDitherType = m_lastDitherType;
-	m_committedSlotAtlasIds = m_slotAtlasIds;
 	if (!m_hasSkybox) {
 		m_committedSkyboxFaceIds = {};
 		m_committedHasSkybox = false;
@@ -1733,6 +1754,10 @@ uint32_t VDP::readVdpData() {
 Value VDP::readVdpDataThunk(void* context, uint32_t) {
 	return valueNumber(static_cast<double>(static_cast<VDP*>(context)->readVdpData()));
 }
+
+void VDP::onSlotAtlasWriteThunk(void* context, uint32_t addr, Value value) {
+	static_cast<VDP*>(context)->onSlotAtlasWrite(addr, value);
+}
 // end hot-path
 
 void VDP::initializeRegisters() {
@@ -1749,8 +1774,6 @@ void VDP::initializeRegisters() {
 	resetQueuedFrameState();
 	resetIngressState();
 	resetStatus();
-	m_memory.writeIoValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
-	m_memory.writeIoValue(IO_VDP_SECONDARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
 	m_memory.writeIoValue(IO_VDP_RD_SURFACE, valueNumber(static_cast<double>(VDP_RD_SURFACE_ENGINE)));
 	m_memory.writeIoValue(IO_VDP_RD_X, valueNumber(0.0));
 	m_memory.writeIoValue(IO_VDP_RD_Y, valueNumber(0.0));
@@ -1766,7 +1789,6 @@ void VDP::initializeRegisters() {
 	m_hasSkybox = false;
 	m_committedSkyboxFaceIds = {};
 	m_committedHasSkybox = false;
-	m_committedSlotAtlasIds = m_slotAtlasIds;
 	m_lastFrameCommitted = true;
 	m_lastFrameCost = 0;
 	m_lastFrameHeld = false;
@@ -1777,13 +1799,6 @@ void VDP::syncRegisters() {
 	if (dither != m_lastDitherType) {
 		m_lastDitherType = dither;
 	}
-	const uint32_t primaryRaw = m_memory.readIoU32(IO_VDP_PRIMARY_ATLAS_ID);
-	const uint32_t secondaryRaw = m_memory.readIoU32(IO_VDP_SECONDARY_ATLAS_ID);
-	const i32 primary = primaryRaw == VDP_ATLAS_ID_NONE ? -1 : static_cast<i32>(primaryRaw);
-	const i32 secondary = secondaryRaw == VDP_ATLAS_ID_NONE ? -1 : static_cast<i32>(secondaryRaw);
-	if (primary != m_slotAtlasIds[0] || secondary != m_slotAtlasIds[1]) {
-		applyAtlasSlotMapping(primary, secondary);
-	}
 }
 
 void VDP::setDitherType(i32 type) {
@@ -1791,11 +1806,9 @@ void VDP::setDitherType(i32 type) {
 	syncRegisters();
 }
 
-void VDP::registerVramAssets(VdpAtlasMemory textpageMemory) {
-	m_textpageSizesById = std::move(textpageMemory.textpageSizesById);
-	m_textpageViewIdsById = std::move(textpageMemory.textpageViewIdsById);
-	m_textpageSlotById.clear();
+void VDP::registerVramAssets(VdpAtlasDimensionsById atlasDimensions) {
 	m_vramSlots.clear();
+	m_atlasDimensionsById = std::move(atlasDimensions);
 	m_imgDecController->clearExternalSlots();
 	m_readSurfaces = {};
 	for (auto& cache : m_readCaches) {
@@ -1807,19 +1820,19 @@ void VDP::registerVramAssets(VdpAtlasMemory textpageMemory) {
 	m_hasSkybox = false;
 	m_committedSkyboxFaceIds = {};
 	m_committedHasSkybox = false;
-	m_committedSlotAtlasIds = {{-1, -1}};
 	m_committedDitherType = m_lastDitherType;
 	m_vramBootSeed = nextVramBootSeed();
 	seedVramStaging();
 	initializeFrameBufferSurface();
 
-	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-	auto& engineEntry = m_memory.getAssetEntry(engineAtlasName);
-	auto& primarySlotEntry = m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
-	auto& secondarySlotEntry = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
+	const std::string engineTextpageName = generateAtlasAssetId(BIOS_ATLAS_ID);
+	auto& engineEntry = m_memory.getAssetEntry(engineTextpageName);
+	auto& primarySlotEntry = m_memory.getAssetEntry(TEXTPAGE_PRIMARY_SLOT_ID);
+	auto& secondarySlotEntry = m_memory.getAssetEntry(TEXTPAGE_SECONDARY_SLOT_ID);
 	registerVramSlot(engineEntry, VDP_RD_SURFACE_ENGINE);
 	registerVramSlot(primarySlotEntry, VDP_RD_SURFACE_PRIMARY);
 	registerVramSlot(secondarySlotEntry, VDP_RD_SURFACE_SECONDARY);
+	syncAtlasSlotRegisters();
 	syncRegisters();
 }
 
@@ -1833,74 +1846,7 @@ uint32_t VDP::trackedUsedVramBytes() const {
 }
 
 uint32_t VDP::trackedTotalVramBytes() const {
-	return VRAM_SYSTEM_ATLAS_SIZE + VRAM_PRIMARY_ATLAS_SIZE + VRAM_SECONDARY_ATLAS_SIZE + VRAM_FRAMEBUFFER_SIZE + VRAM_STAGING_SIZE;
-}
-
-void VDP::applyAtlasSlotMapping(i32 primaryAtlasId, i32 secondaryAtlasId) {
-	auto configureSlotEntry = [this](Memory::AssetEntry& slotEntry, i32 textpageId) {
-		if (textpageId < 0) {
-			const uint32_t maxPixels = slotEntry.capacity / 4u;
-			const uint32_t side = static_cast<uint32_t>(std::floor(std::sqrt(static_cast<double>(maxPixels))));
-			slotEntry.baseSize = side * side * 4u;
-			slotEntry.baseStride = side * 4u;
-			slotEntry.regionX = 0u;
-			slotEntry.regionY = 0u;
-			slotEntry.regionW = side;
-			slotEntry.regionH = side;
-			return;
-		}
-		const auto textpageIt = m_textpageSizesById.find(textpageId);
-		if (textpageIt == m_textpageSizesById.end()) {
-			throw vdpFault("textpage " + std::to_string(textpageId) + " not registered.");
-		}
-		const uint32_t width = textpageIt->second.width;
-		const uint32_t height = textpageIt->second.height;
-		const uint32_t size = width * height * 4u;
-		if (size > slotEntry.capacity) {
-			throw vdpFault("textpage " + std::to_string(textpageId) + " exceeds slot capacity.");
-		}
-		slotEntry.baseSize = size;
-		slotEntry.baseStride = width * 4u;
-		slotEntry.regionX = 0u;
-		slotEntry.regionY = 0u;
-		slotEntry.regionW = width;
-		slotEntry.regionH = height;
-	};
-	auto& primaryEntryForMetrics = m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
-	auto& secondaryEntryForMetrics = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
-	configureSlotEntry(primaryEntryForMetrics, primaryAtlasId);
-	configureSlotEntry(secondaryEntryForMetrics, secondaryAtlasId);
-	m_textpageSlotById.clear();
-	m_slotAtlasIds[0] = primaryAtlasId;
-	m_slotAtlasIds[1] = secondaryAtlasId;
-	if (primaryAtlasId >= 0) {
-		m_textpageSlotById[primaryAtlasId] = 0;
-	}
-	if (secondaryAtlasId >= 0) {
-		m_textpageSlotById[secondaryAtlasId] = 1;
-	}
-	auto& primaryEntry = m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
-	auto& secondaryEntry = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
-	if (primaryAtlasId >= 0) {
-		const auto viewIt = m_textpageViewIdsById.find(primaryAtlasId);
-		if (viewIt != m_textpageViewIdsById.end()) {
-			for (const auto& viewId : viewIt->second) {
-				auto& viewEntry = m_memory.getAssetEntry(viewId);
-				m_memory.updateImageViewBase(viewEntry, primaryEntry);
-			}
-		}
-	}
-	if (secondaryAtlasId >= 0) {
-		const auto viewIt = m_textpageViewIdsById.find(secondaryAtlasId);
-		if (viewIt != m_textpageViewIdsById.end()) {
-			for (const auto& viewId : viewIt->second) {
-				auto& viewEntry = m_memory.getAssetEntry(viewId);
-				m_memory.updateImageViewBase(viewEntry, secondaryEntry);
-			}
-		}
-	}
-	syncVramSlotSurfaceSize(getVramSlotBySurfaceId(VDP_RD_SURFACE_PRIMARY));
-	syncVramSlotSurfaceSize(getVramSlotBySurfaceId(VDP_RD_SURFACE_SECONDARY));
+	return VRAM_SYSTEM_TEXTPAGE_SIZE + VRAM_PRIMARY_TEXTPAGE_SIZE + VRAM_SECONDARY_TEXTPAGE_SIZE + VRAM_FRAMEBUFFER_SIZE + VRAM_STAGING_SIZE;
 }
 
 void VDP::attachImgDecController(ImgDecController& controller) {
@@ -1908,10 +1854,6 @@ void VDP::attachImgDecController(ImgDecController& controller) {
 }
 
 void VDP::setSkyboxImages(const SkyboxImageIds& ids) {
-	const std::array<const std::string*, SKYBOX_FACE_COUNT> faces = {{&ids.posx, &ids.negx, &ids.posy, &ids.negy, &ids.posz, &ids.negz}};
-	for (size_t index = 0; index < faces.size(); ++index) {
-		resolveBlitterSample(m_memory.resolveAssetHandle(*faces[index]));
-	}
 	m_skyboxFaceIds = ids;
 	m_hasSkybox = true;
 }
@@ -1923,7 +1865,6 @@ void VDP::clearSkybox() {
 
 VdpState VDP::captureState() const {
 	VdpState state;
-	state.textpageSlots = m_slotAtlasIds;
 	if (m_hasSkybox) {
 		state.skyboxFaceIds = m_skyboxFaceIds;
 	}
@@ -1932,21 +1873,18 @@ VdpState VDP::captureState() const {
 }
 
 void VDP::restoreState(const VdpState& state) {
-	m_memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(state.textpageSlots[0] < 0 ? VDP_ATLAS_ID_NONE : state.textpageSlots[0])));
-	m_memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, valueNumber(static_cast<double>(state.textpageSlots[1] < 0 ? VDP_ATLAS_ID_NONE : state.textpageSlots[1])));
-	applyAtlasSlotMapping(state.textpageSlots[0], state.textpageSlots[1]);
 	if (state.skyboxFaceIds.has_value()) {
 		setSkyboxImages(*state.skyboxFaceIds);
 	} else {
 		clearSkybox();
 	}
 	setDitherType(state.ditherType);
+	syncAtlasSlotRegisters();
 	commitLiveVisualState();
 }
 
 VdpSaveState VDP::captureSaveState() const {
 	VdpSaveState state;
-	state.textpageSlots = m_slotAtlasIds;
 	if (m_hasSkybox) {
 		state.skyboxFaceIds = m_skyboxFaceIds;
 	}
@@ -1986,6 +1924,48 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, uint32_t surfaceId) 
 		return;
 	}
 	seedVramSlotPixels(slotRef);
+}
+
+void VDP::onSlotAtlasWrite(uint32_t addr, Value value) {
+	const uint32_t slotId = addr == IO_VDP_SLOT_PRIMARY_ATLAS ? VDP_SLOT_PRIMARY : VDP_SLOT_SECONDARY;
+	syncAtlasSlotSurface(slotId, toU32(asNumber(value)));
+}
+
+void VDP::syncAtlasSlotRegisters() {
+	syncAtlasSlotSurface(VDP_SLOT_PRIMARY, m_memory.readIoU32(IO_VDP_SLOT_PRIMARY_ATLAS));
+	syncAtlasSlotSurface(VDP_SLOT_SECONDARY, m_memory.readIoU32(IO_VDP_SLOT_SECONDARY_ATLAS));
+}
+
+void VDP::syncAtlasSlotSurface(uint32_t slotId, uint32_t atlasId) {
+	const uint32_t surfaceId = slotId == VDP_SLOT_PRIMARY ? VDP_RD_SURFACE_PRIMARY : VDP_RD_SURFACE_SECONDARY;
+	VramSlot* slot = findRegisteredVramSlotBySurfaceId(surfaceId);
+	if (slot == nullptr) {
+		return;
+	}
+	if (atlasId == VDP_SLOT_ATLAS_NONE) {
+		setVramSlotLogicalDimensions(*slot, 1u, 1u);
+		return;
+	}
+	const auto it = m_atlasDimensionsById.find(static_cast<i32>(atlasId));
+	if (it == m_atlasDimensionsById.end()) {
+		return;
+	}
+	setVramSlotLogicalDimensions(*slot, it->second.width, it->second.height);
+}
+
+void VDP::setVramSlotLogicalDimensions(VramSlot& slot, uint32_t width, uint32_t height) {
+	const uint32_t size = width * height * 4u;
+	if (width == 0u || height == 0u || size > slot.capacity) {
+		return;
+	}
+	auto& entry = m_memory.getAssetEntry(slot.assetId);
+	entry.baseSize = size;
+	entry.baseStride = width * 4u;
+	entry.regionX = 0u;
+	entry.regionY = 0u;
+	entry.regionW = width;
+	entry.regionH = height;
+	syncVramSlotSurfaceSize(slot);
 }
 
 std::vector<VdpSurfacePixelsState> VDP::captureSurfacePixels() const {
@@ -2037,6 +2017,7 @@ void VDP::syncVramSlotSurfaceSize(VramSlot& slot) {
 	if (slot.surfaceWidth == width && slot.surfaceHeight == height) {
 		return;
 	}
+	const std::vector<u8> previous = slot.cpuReadback;
 	slot.surfaceWidth = width;
 	slot.surfaceHeight = height;
 	slot.cpuReadback.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
@@ -2048,6 +2029,10 @@ void VDP::syncVramSlotSurfaceSize(VramSlot& slot) {
 		return;
 	}
 	seedVramSlotPixels(slot);
+	const size_t copyBytes = std::min(previous.size(), slot.cpuReadback.size());
+	if (copyBytes > 0u) {
+		std::memcpy(slot.cpuReadback.data(), previous.data(), copyBytes);
+	}
 }
 
 void VDP::markVramSlotDirty(VramSlot& slot, uint32_t startRow, uint32_t rowCount) {
@@ -2094,11 +2079,19 @@ void VDP::markVramSlotDirtySpan(VramSlot& slot, uint32_t row, uint32_t xStart, u
 	}
 }
 
-VDP::VramSlot& VDP::getVramSlotBySurfaceId(uint32_t surfaceId) {
+VDP::VramSlot* VDP::findRegisteredVramSlotBySurfaceId(uint32_t surfaceId) {
 	for (auto& slot : m_vramSlots) {
 		if (slot.surfaceId == surfaceId) {
-			return slot;
+			return &slot;
 		}
+	}
+	return nullptr;
+}
+
+VDP::VramSlot& VDP::getVramSlotBySurfaceId(uint32_t surfaceId) {
+	VramSlot* slot = findRegisteredVramSlotBySurfaceId(surfaceId);
+	if (slot != nullptr) {
+		return *slot;
 	}
 	throw vdpFault("VRAM slot not registered for surface " + std::to_string(surfaceId) + ".");
 }
@@ -2134,7 +2127,7 @@ void VDP::fillVramGarbageScratch(u8* buffer, size_t length, VramGarbageStream& s
 
 	const uint32_t biasSeed = s.machineSeed ^ s.slotSalt;
 	const uint32_t bootSeedMix = s.bootSeed ^ s.slotSalt;
-	const uint32_t vramBytes = (VRAM_SECONDARY_ATLAS_BASE + VRAM_SECONDARY_ATLAS_SIZE) - VRAM_STAGING_BASE;
+	const uint32_t vramBytes = (VRAM_SECONDARY_TEXTPAGE_BASE + VRAM_SECONDARY_TEXTPAGE_SIZE) - VRAM_STAGING_BASE;
 	const BiasConfig biasConfig = makeBiasConfig(vramBytes);
 
 	const size_t BLOCK_BYTES = 32u;

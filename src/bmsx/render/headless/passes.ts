@@ -14,8 +14,9 @@ import type { MeshRenderSubmission, ParticleRenderSubmission } from '../shared/s
 import { SKYBOX_FACE_KEYS } from '../../machine/devices/vdp/contracts';
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
 import { resolveActiveCamera3D } from '../shared/hardware/camera';
-import { ENGINE_ATLAS_INDEX } from '../../rompack/format';
-import { VRAM_ATLAS_SLOT_SIZE, VRAM_SYSTEM_ATLAS_SLOT_SIZE } from '../../machine/memory/map';
+import { BIOS_ATLAS_ID } from '../../rompack/format';
+import { VRAM_SYSTEM_TEXTPAGE_SLOT_SIZE } from '../../machine/memory/map';
+import { VDP_SLOT_PRIMARY, VDP_SLOT_SECONDARY, VDP_SLOT_SYSTEM } from '../../machine/bus/io';
 import type { Mesh } from '../3d/mesh';
 import { Runtime } from '../../machine/runtime/runtime';
 import { readVdpDisplayFrameBufferPixels, vdpDisplayFrameBufferTexture } from '../vdp/framebuffer';
@@ -57,39 +58,30 @@ const MAX_MORPH_TARGETS = 8;
 const MAX_JOINTS = 32;
 const HEADLESS_VERBOSE_DIFF = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.BMSX_HEADLESS_VERBOSE === '1';
 
-function ensureAtlasResource(textpageId: number, slotBytes: number, label: string): void {
-	const key = `${textpageId}:${slotBytes}`;
+function ensureAtlasResource(atlasId: number, slotBytes: number, label: string): void {
+	const key = `${atlasId}:${slotBytes}`;
 	if (validatedAtlasByKey.has(key)) {
 		return;
 	}
 	let found = false;
 	for (const asset of Runtime.instance.assets.listImageAssets()) {
-		if (asset.type !== 'textpage') continue;
+		if (asset.type !== 'atlas') continue;
 		const meta = asset.imgmeta;
-		if (!meta || meta.textpageid !== textpageId) continue;
+		if (!meta || meta.atlasid !== atlasId) continue;
 		if (meta.width <= 0 || meta.height <= 0) {
-			throw new Error(`[${label}] Atlas ${textpageId} has invalid dimensions (${meta.width}x${meta.height}).`);
+			throw new Error(`[${label}] Atlas ${atlasId} has invalid dimensions (${meta.width}x${meta.height}).`);
 		}
 		const bytes = meta.width * meta.height * 4;
 		if (bytes > slotBytes) {
-			throw new Error(`[${label}] Atlas ${textpageId} size ${meta.width}x${meta.height} exceeds slot bytes (${slotBytes}).`);
+			throw new Error(`[${label}] Atlas ${atlasId} size ${meta.width}x${meta.height} exceeds slot bytes (${slotBytes}).`);
 		}
 		found = true;
 		break;
 	}
 	if (!found) {
-		throw new Error(`[${label}] Atlas ${textpageId} not registered in assets.`);
+		throw new Error(`[${label}] Atlas ${atlasId} not registered in assets.`);
 	}
 	validatedAtlasByKey.add(key);
-}
-
-function resolveHeadlessAtlasSlots(): { primary: number | null; secondary: number | null } {
-	const primaryFromView = engineCore.view.primaryAtlasIdInSlot;
-	const secondaryFromView = engineCore.view.secondaryAtlasIdInSlot;
-	if (primaryFromView !== null || secondaryFromView !== null) {
-		return { primary: primaryFromView, secondary: secondaryFromView };
-	}
-	return { primary: null, secondary: null };
 }
 
 function validateMeshAsset(mesh: Mesh): void {
@@ -339,7 +331,7 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 		exec: () => {
 			const ids = engineCore.view.skyboxFaceIds;
 			const sizes = engineCore.view.skyboxFaceSizes;
-			const bindings = engineCore.view.skyboxFaceAtlasBindings;
+			const bindings = engineCore.view.skyboxFaceTextpageBindings;
 			if (!ids || !sizes || !bindings) {
 				return;
 			}
@@ -482,13 +474,8 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 			if (count <= 0) {
 				return;
 			}
-			const slots = resolveHeadlessAtlasSlots();
-			const primaryAtlasId = slots.primary;
-			const secondaryAtlasId = slots.secondary;
 			const snapshot: Snapshot = [`draws=${count} viewport=${particleState.width}x${particleState.height}`];
-			let needsPrimaryAtlas = false;
-			let needsSecondaryAtlas = false;
-			let needsEngineAtlas = false;
+			let needsEngineTextpage = false;
 			if (count > 0) {
 				let index = 0;
 				forEachParticleQueue((submission: ParticleRenderSubmission) => {
@@ -497,40 +484,26 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 					if (!uv0 || !uv1) {
 						throw new Error('[HeadlessParticles] Particle missing textpage UVs.');
 					}
-					const textpage = submission.textpageBinding;
-					if (textpage === undefined || textpage === null) {
-						throw new Error('[HeadlessParticles] Particle missing textpage binding.');
+					const slot = submission.slot;
+					if (slot === undefined || slot === null) {
+						throw new Error('[HeadlessParticles] Particle missing slot binding.');
 					}
-					if (textpage !== 0 && textpage !== 1 && textpage !== ENGINE_ATLAS_INDEX) {
-						throw new Error(`[HeadlessParticles] Particle has invalid textpage binding (${textpage}).`);
+					if (slot !== VDP_SLOT_PRIMARY && slot !== VDP_SLOT_SECONDARY && slot !== VDP_SLOT_SYSTEM) {
+						throw new Error(`[HeadlessParticles] Particle has invalid slot binding (${slot}).`);
 					}
-					if (textpage === 0) needsPrimaryAtlas = true;
-					if (textpage === 1) needsSecondaryAtlas = true;
-					if (textpage === ENGINE_ATLAS_INDEX) needsEngineAtlas = true;
+					if (slot === VDP_SLOT_SYSTEM) needsEngineTextpage = true;
 					if (!Number.isFinite(uv0[0]) || !Number.isFinite(uv0[1]) || !Number.isFinite(uv1[0]) || !Number.isFinite(uv1[1])) {
 						throw new Error('[HeadlessParticles] Particle UVs must be finite numbers.');
 					}
 					if (uv0[0] < 0 || uv0[1] < 0 || uv1[0] > 1 || uv1[1] > 1 || uv0[0] > uv1[0] || uv0[1] > uv1[1]) {
 						throw new Error(`[HeadlessParticles] Particle UVs out of range (${uv0[0]}, ${uv0[1]})..(${uv1[0]}, ${uv1[1]}).`);
 					}
-					snapshot.push(`[particle#${index}] pos=${formatVec3(submission.position)} size=${formatNumber(submission.size)} textpage=${textpage}`);
+					snapshot.push(`[particle#${index}] pos=${formatVec3(submission.position)} size=${formatNumber(submission.size)} slot=${slot}`);
 					index += 1;
 				});
 			}
-			if (needsPrimaryAtlas) {
-				if (primaryAtlasId === null || primaryAtlasId === undefined) {
-					throw new Error('[HeadlessParticles] Primary textpage slot is not set.');
-				}
-				ensureAtlasResource(primaryAtlasId, VRAM_ATLAS_SLOT_SIZE, 'HeadlessParticles');
-			}
-			if (needsSecondaryAtlas) {
-				if (secondaryAtlasId === null || secondaryAtlasId === undefined) {
-					throw new Error('[HeadlessParticles] Secondary textpage slot is not set.');
-				}
-				ensureAtlasResource(secondaryAtlasId, VRAM_ATLAS_SLOT_SIZE, 'HeadlessParticles');
-			}
-			if (needsEngineAtlas) {
-				ensureAtlasResource(ENGINE_ATLAS_INDEX, VRAM_SYSTEM_ATLAS_SLOT_SIZE, 'HeadlessParticles');
+			if (needsEngineTextpage) {
+				ensureAtlasResource(BIOS_ATLAS_ID, VRAM_SYSTEM_TEXTPAGE_SLOT_SIZE, 'HeadlessParticles');
 			}
 			previousParticleSnapshot = emitDiff('particles', previousParticleSnapshot, snapshot);
 		},

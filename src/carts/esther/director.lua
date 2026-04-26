@@ -561,25 +561,7 @@ function director:draw_player(player, draw_shadow)
 		fill_rect_color(shadow_x, shadow_y, shadow_x + shadow_w, shadow_y + 4, 119, constants.palette.player_shadow)
 	end
 
-	memwrite(
-		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
-		sys_vdp_cmd_blit,
-			13,
-		0,
-		assets.img[frame_id].handle,
-		draw_x,
-		draw_y,
-		120,
-		sys_vdp_layer_world,
-		sx,
-		sy,
-		player.facing < 0 and 1 or 0,
-		1,
-		1,
-		1,
-		1,
-		0
-	)
+	vdp_blit_img_rgba(frame_id, draw_x, draw_y, 120, sys_vdp_layer_world, sx, sy, player.facing < 0 and 1 or 0, 1, 1, 1, 1, 0)
 end
 
 function director:render_frame()

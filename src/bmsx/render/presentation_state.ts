@@ -93,7 +93,7 @@ export class RenderPresentationState {
 
 	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
 		engineCore.deltatime = hostDeltaMs;
-		commitVdpViewSnapshot(engineCore.view, runtime.machine.vdp, runtime.machine.memory);
+		commitVdpViewSnapshot(engineCore.view, runtime.machine.vdp, runtime.assets);
 		engineCore.view.configurePresentation(mode, commitFrame);
 		this.recordPresentation(mode, commitFrame);
 		engineCore.sndmaster.finishFrame();

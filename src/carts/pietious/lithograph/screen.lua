@@ -25,25 +25,7 @@ function lithograph_screen:bind_visual()
 end
 
 function lithograph_screen:draw_screen()
-	memwrite(
-		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
-		sys_vdp_cmd_blit,
-			13,
-		0,
-		assets.img[lithograph_mode_sprite_id].handle,
-		constants.room.tile_size4,
-		constants.room.tile_origin_y + constants.room.tile_size2,
-		340,
-		sys_vdp_layer_ui,
-		1,
-		1,
-		0,
-		1,
-		1,
-		1,
-		1,
-		0
-	)
+	vdp_blit_img_rgba(lithograph_mode_sprite_id, constants.room.tile_size4, constants.room.tile_origin_y + constants.room.tile_size2, 340, sys_vdp_layer_ui, 1, 1, 0, 1, 1, 1, 1, 0)
 	local lines<const> = self.lines
 	if #lines > 0 then
 		local text_font<const> = self.text_font

@@ -26,8 +26,7 @@ function init()
 	stage_module.register_stage_subsystem_definition()
 	director_module.register_director_definition()
 	player_module.register_player_definition()
-	vdp_load_slot(0, 0)
-	vdp_map_slot(0, 0)
+	vdp_load_slot(sys_vdp_slot_primary, 0)
 end
 
 function new_game()

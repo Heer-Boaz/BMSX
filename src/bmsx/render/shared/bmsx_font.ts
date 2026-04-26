@@ -1,4 +1,6 @@
+import type { ImageAtlasRect } from '../vdp/image_meta';
 import { BFont, GlyphMap } from './bitmap_font';
+import { resolveImageAtlasRectFromAssets } from '../vdp/image_meta';
 import { Runtime } from '../../machine/runtime/runtime';
 
 export const DEFAULT_FONT_VARIANT = 'msx' as const;
@@ -153,5 +155,9 @@ export class Font extends BFont {
 
 	protected override getGlyphAsset(imgid: string) {
 		return Runtime.instance.assets.getImageAsset(imgid, Runtime.instance.engineAssetSource);
+	}
+
+	protected override getGlyphRect(imgid: string): ImageAtlasRect {
+		return resolveImageAtlasRectFromAssets(Runtime.instance.assets.biosLayer.assets, imgid);
 	}
 }

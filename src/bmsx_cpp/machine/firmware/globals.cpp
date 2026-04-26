@@ -221,9 +221,8 @@ Table* buildTableArray(CPU& cpu, const std::vector<T>& values, const BuildFn& bu
 template <typename KeyFn>
 Table* buildImgMetaTable(CPU& cpu, const ImgMeta& meta, const KeyFn& key) {
 	auto* table = cpu.createTable(0, 12);
-	table->set(key("textpagesed"), valueBool(meta.textpagesed));
-	if (meta.textpagesed) {
-		table->set(key("textpageid"), valueNumber(static_cast<double>(meta.textpageid)));
+	if (meta.atlasid) {
+		table->set(key("atlasid"), valueNumber(static_cast<double>(*meta.atlasid)));
 	}
 	table->set(key("width"), valueNumber(static_cast<double>(meta.width)));
 	table->set(key("height"), valueNumber(static_cast<double>(meta.height)));
@@ -1212,20 +1211,20 @@ void Runtime::setupBuiltins() {
 		}
 		out.push_back(valueNumber(std::log(value)));
 	}));
-	mathTable->set(key("max"), m_machine.cpu().createNativeFunction("math.max", [](NativeArgsView args, NativeResults& out) {
-		double result = asNumber(args.at(0));
-		for (size_t i = 1; i < args.size(); ++i) {
-			result = std::max(result, asNumber(args[i]));
-		}
-		out.push_back(valueNumber(result));
-	}));
-	mathTable->set(key("min"), m_machine.cpu().createNativeFunction("math.min", [](NativeArgsView args, NativeResults& out) {
-		double result = asNumber(args.at(0));
-		for (size_t i = 1; i < args.size(); ++i) {
-			result = std::min(result, asNumber(args[i]));
-		}
-		out.push_back(valueNumber(result));
-	}));
+		mathTable->set(key("max"), m_machine.cpu().createNativeFunction("math.max", [](NativeArgsView args, NativeResults& out) {
+			double result = asNumber(args.at(0));
+			for (size_t i = 1; i < args.size(); ++i) {
+				result = std::max(result, asNumber(args[i]));
+			}
+			out.push_back(valueNumber(result));
+		}));
+		mathTable->set(key("min"), m_machine.cpu().createNativeFunction("math.min", [](NativeArgsView args, NativeResults& out) {
+			double result = asNumber(args.at(0));
+			for (size_t i = 1; i < args.size(); ++i) {
+				result = std::min(result, asNumber(args[i]));
+			}
+			out.push_back(valueNumber(result));
+		}));
 	mathTable->set(key("modf"), m_machine.cpu().createNativeFunction("math.modf", [](NativeArgsView args, NativeResults& out) {
 		double value = asNumber(args.at(0));
 		double intPart = 0.0;
@@ -1388,6 +1387,9 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_max_assets", valueNumber(static_cast<double>(maxAssets)));
 	setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(timing.cycleBudgetPerFrame)));
 	setGlobal("sys_vdp_dither", valueNumber(static_cast<double>(IO_VDP_DITHER)));
+	setGlobal("sys_vdp_slot_primary_atlas", valueNumber(static_cast<double>(IO_VDP_SLOT_PRIMARY_ATLAS)));
+	setGlobal("sys_vdp_slot_secondary_atlas", valueNumber(static_cast<double>(IO_VDP_SLOT_SECONDARY_ATLAS)));
+	setGlobal("sys_vdp_atlas_none", valueNumber(static_cast<double>(VDP_SLOT_ATLAS_NONE)));
 	setGlobal("sys_vdp_cmd", valueNumber(static_cast<double>(IO_VDP_CMD)));
 	setGlobal("sys_vdp_cmd_arg_count", valueNumber(static_cast<double>(IO_VDP_CMD_ARG_COUNT)));
 	setGlobal("sys_vdp_stream_base", valueNumber(static_cast<double>(VDP_STREAM_BUFFER_BASE)));
@@ -1396,9 +1398,10 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_vdp_fifo", valueNumber(static_cast<double>(IO_VDP_FIFO)));
 	setGlobal("sys_vdp_fifo_ctrl", valueNumber(static_cast<double>(IO_VDP_FIFO_CTRL)));
 	setGlobal("sys_vdp_fifo_ctrl_seal", valueNumber(static_cast<double>(VDP_FIFO_CTRL_SEAL)));
-	setGlobal("sys_vdp_primary_textpage_id", valueNumber(static_cast<double>(IO_VDP_PRIMARY_ATLAS_ID)));
-	setGlobal("sys_vdp_secondary_textpage_id", valueNumber(static_cast<double>(IO_VDP_SECONDARY_ATLAS_ID)));
-	setGlobal("sys_vdp_textpage_none", valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
+	setGlobal("sys_vdp_slot_primary", valueNumber(static_cast<double>(VDP_SLOT_PRIMARY)));
+	setGlobal("sys_vdp_slot_secondary", valueNumber(static_cast<double>(VDP_SLOT_SECONDARY)));
+	setGlobal("sys_vdp_slot_system", valueNumber(static_cast<double>(VDP_SLOT_SYSTEM)));
+	setGlobal("sys_vdp_slot_none", valueNumber(static_cast<double>(VDP_SLOT_NONE)));
 	setGlobal("sys_vdp_rd_surface", valueNumber(static_cast<double>(IO_VDP_RD_SURFACE)));
 	setGlobal("sys_vdp_rd_x", valueNumber(static_cast<double>(IO_VDP_RD_X)));
 	setGlobal("sys_vdp_rd_y", valueNumber(static_cast<double>(IO_VDP_RD_Y)));
@@ -2450,7 +2453,7 @@ auto* stringTable = cpu.createTable();
 		return offset + padding;
 	};
 	auto packReadInteger = [maxSafeInteger](const Value& value) -> int64_t {
-		double num = asNumber(value);
+		double num = value;
 		if (!std::isfinite(num) || std::floor(num) != num) {
 			throw BMSX_RUNTIME_ERROR("string.pack integer value must be a finite integer.");
 		}
@@ -2889,7 +2892,7 @@ stringTable->set(key("char"), m_machine.cpu().createNativeFunction("string.char"
 	std::string result;
 	result.reserve(args.size());
 	for (const auto& arg : args) {
-		uint32_t codepoint = static_cast<uint32_t>(std::floor(asNumber(arg)));
+		uint32_t codepoint = static_cast<uint32_t>(arg);
 		appendUtf8Codepoint(result, codepoint);
 	}
 	out.push_back(str(result));
@@ -3539,9 +3542,6 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 	auto appendImgEntry = [&cpu, this, imgTable, key, str, appendRomAssetFields](const ImgAsset& imgAsset) {
 		auto* imgEntry = cpu.createTable(0, 8);
 		appendRomAssetFields(imgEntry, imgAsset.rom, imgAsset.id);
-		if (m_machine.memory().hasAsset(imgAsset.id)) {
-			imgEntry->set(key("handle"), valueNumber(static_cast<double>(m_machine.memory().resolveAssetHandle(imgAsset.id))));
-		}
 		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(cpu, imgAsset.meta, key)));
 		imgTable->set(str(imgAsset.id), valueTable(imgEntry));
 	};
@@ -3657,13 +3657,13 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 			ramTable->set(key("ram_bytes"), valueNumber(static_cast<double>(*manifest.ramBytes)));
 			specsTable->set(key("ram"), valueTable(ramTable));
 		}
-		if (manifest.textpageSlotBytes || manifest.engineAtlasSlotBytes || manifest.stagingBytes) {
+		if (manifest.textpageSlotBytes || manifest.systemTextpageSlotBytes || manifest.stagingBytes) {
 			auto* vramTable = cpu.createTable(0, 3);
 			if (manifest.textpageSlotBytes) {
 				vramTable->set(key("textpage_slot_bytes"), valueNumber(static_cast<double>(*manifest.textpageSlotBytes)));
 			}
-			if (manifest.engineAtlasSlotBytes) {
-				vramTable->set(key("system_textpage_slot_bytes"), valueNumber(static_cast<double>(*manifest.engineAtlasSlotBytes)));
+			if (manifest.systemTextpageSlotBytes) {
+				vramTable->set(key("system_textpage_slot_bytes"), valueNumber(static_cast<double>(*manifest.systemTextpageSlotBytes)));
 			}
 			if (manifest.stagingBytes) {
 				vramTable->set(key("staging_bytes"), valueNumber(static_cast<double>(*manifest.stagingBytes)));

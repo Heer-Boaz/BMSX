@@ -55,6 +55,10 @@ const DRAW_LINE_ARG_KINDS = [
 
 const BLIT_ARG_KINDS = [
 	VdpPacketWordKind.U32,
+	VdpPacketWordKind.U32,
+	VdpPacketWordKind.U32,
+	VdpPacketWordKind.U32,
+	VdpPacketWordKind.U32,
 	VdpPacketWordKind.F32,
 	VdpPacketWordKind.F32,
 	VdpPacketWordKind.F32,

@@ -52,7 +52,7 @@ export const API_METHOD_METADATA = {
 			{ name: 'position', description: 'Particle position as a vec3 array.' },
 			{ name: 'size', description: 'Particle size in pixels.' },
 			{ name: 'colorvalue', description: 'Palette index (number) or a color object.' },
-			{ name: 'options', optional: true, description: 'Optional particle options (texture, ambient_mode, ambient_factor).' },
+			{ name: 'options', description: 'Particle source and options (slot, u, v, w, h, ambient_mode, ambient_factor).' },
 		],
 		returnType: 'void',
 	},
@@ -66,7 +66,7 @@ export const API_METHOD_METADATA = {
 		returnType: 'void',
 	},
 	skybox: {
-		description: 'Sets the skybox face image ids (posx, negx, posy, negy, posz, negz). Faces must be textpagesed and mapped into the primary or secondary textpage slot.',
+		description: 'Sets the skybox face image ids (posx, negx, posy, negy, posz, negz). Faces must be textpaged and mapped into the primary or secondary textpage slot.',
 		parameters: [
 			{ name: 'posx', description: 'Positive X face image id.' },
 			{ name: 'negx', description: 'Negative X face image id.' },

@@ -17,9 +17,9 @@ namespace bmsx {
 namespace {
 
 constexpr u8 IMPLICIT_FRAME_CLEAR_RGBA[4] = {0u, 0u, 0u, 255u};
-constexpr float VDP_GLES2_PRIMARY_ATLAS_ID = 0.0f;
-constexpr float VDP_GLES2_SECONDARY_ATLAS_ID = 1.0f;
-constexpr float VDP_GLES2_ENGINE_ATLAS_ID = 2.0f;
+constexpr float VDP_GLES2_PRIMARY_TEXTPAGE_ID = 0.0f;
+constexpr float VDP_GLES2_SECONDARY_TEXTPAGE_ID = 1.0f;
+constexpr float VDP_GLES2_BIOS_ATLAS_ID = 2.0f;
 
 struct VdpGles2Vertex {
 	f32 x = 0.0f;
@@ -55,7 +55,7 @@ struct VdpGles2Runtime {
 	GLuint program = 0;
 	GLint attribPosition = -1;
 	GLint attribUv = -1;
-	GLint attribAtlasId = -1;
+	GLint attribTextpageId = -1;
 	GLint attribColor = -1;
 	GLint uniformLogicalSize = -1;
 	GLint uniformTexture0 = -1;
@@ -218,13 +218,13 @@ void initializeVdpGles2Runtime(OpenGLES2Backend* backend) {
 	state.program = linkVdpGles2Program(vs, fs);
 	state.attribPosition = glGetAttribLocation(state.program, "a_position");
 	state.attribUv = glGetAttribLocation(state.program, "a_uv");
-	state.attribAtlasId = glGetAttribLocation(state.program, "a_textpage_id");
+	state.attribTextpageId = glGetAttribLocation(state.program, "a_textpage_id");
 	state.attribColor = glGetAttribLocation(state.program, "a_color");
 	state.uniformLogicalSize = glGetUniformLocation(state.program, "u_logical_size");
 	state.uniformTexture0 = glGetUniformLocation(state.program, "u_texture0");
 	state.uniformTexture1 = glGetUniformLocation(state.program, "u_texture1");
 	state.uniformTexture2 = glGetUniformLocation(state.program, "u_texture2");
-	if (state.attribPosition < 0 || state.attribUv < 0 || state.attribAtlasId < 0 || state.attribColor < 0
+	if (state.attribPosition < 0 || state.attribUv < 0 || state.attribTextpageId < 0 || state.attribColor < 0
 		|| state.uniformLogicalSize < 0 || state.uniformTexture0 < 0 || state.uniformTexture1 < 0 || state.uniformTexture2 < 0) {
 		throw vdpBackendFault("missing shader attribute or uniform location.");
 	}
@@ -343,7 +343,7 @@ void appendLineQuadVertices(
 	const f32 length = std::hypot(dx, dy);
 	if (length == 0.0f) {
 		const f32 half = command.thickness * 0.5f;
-		appendAxisAlignedQuadVertices(vertices, command.x0 - half, command.y0 - half, command.thickness, command.thickness, 0.0f, 0.0f, 1.0f, 1.0f, VDP_GLES2_PRIMARY_ATLAS_ID, color);
+		appendAxisAlignedQuadVertices(vertices, command.x0 - half, command.y0 - half, command.thickness, command.thickness, 0.0f, 0.0f, 1.0f, 1.0f, VDP_GLES2_PRIMARY_TEXTPAGE_ID, color);
 		return;
 	}
 	const f32 tangentX = dx / length;
@@ -367,7 +367,7 @@ void appendLineQuadVertices(
 		0.0f,
 		1.0f,
 		1.0f,
-		VDP_GLES2_PRIMARY_ATLAS_ID,
+		VDP_GLES2_PRIMARY_TEXTPAGE_ID,
 		color
 	);
 }
@@ -453,15 +453,15 @@ void bindVdpVertexLayout(const VdpGles2Runtime& state) {
 	glBindBuffer(GL_ARRAY_BUFFER, state.vertexBuffer);
 	glEnableVertexAttribArray(static_cast<GLuint>(state.attribPosition));
 	glEnableVertexAttribArray(static_cast<GLuint>(state.attribUv));
-	glEnableVertexAttribArray(static_cast<GLuint>(state.attribAtlasId));
+	glEnableVertexAttribArray(static_cast<GLuint>(state.attribTextpageId));
 	glEnableVertexAttribArray(static_cast<GLuint>(state.attribColor));
 	glVertexAttribPointer(state.attribPosition, 2, GL_FLOAT, GL_FALSE, sizeof(VdpGles2Vertex), reinterpret_cast<const void*>(offsetof(VdpGles2Vertex, x)));
 	glVertexAttribPointer(state.attribUv, 2, GL_FLOAT, GL_FALSE, sizeof(VdpGles2Vertex), reinterpret_cast<const void*>(offsetof(VdpGles2Vertex, u)));
-	glVertexAttribPointer(state.attribAtlasId, 1, GL_FLOAT, GL_FALSE, sizeof(VdpGles2Vertex), reinterpret_cast<const void*>(offsetof(VdpGles2Vertex, textpageId)));
+	glVertexAttribPointer(state.attribTextpageId, 1, GL_FLOAT, GL_FALSE, sizeof(VdpGles2Vertex), reinterpret_cast<const void*>(offsetof(VdpGles2Vertex, textpageId)));
 	glVertexAttribPointer(state.attribColor, 4, GL_FLOAT, GL_FALSE, sizeof(VdpGles2Vertex), reinterpret_cast<const void*>(offsetof(VdpGles2Vertex, r)));
 }
 
-enum class VdpDrawMode { None, Solid, Atlas };
+enum class VdpDrawMode { None, Solid, Textpage };
 
 void bindVdpSolidMode(const VdpGles2Host& host, VdpDrawMode& boundMode) {
 	if (boundMode == VdpDrawMode::Solid) return;
@@ -470,15 +470,15 @@ void bindVdpSolidMode(const VdpGles2Host& host, VdpDrawMode& boundMode) {
 	boundMode = VdpDrawMode::Solid;
 }
 
-void bindVdpAtlasMode(const VdpGles2Host& host, VdpDrawMode& boundMode) {
-	if (boundMode == VdpDrawMode::Atlas) return;
+void bindVdpTextpageMode(const VdpGles2Host& host, VdpDrawMode& boundMode) {
+	if (boundMode == VdpDrawMode::Textpage) return;
 	host.backend->setActiveTextureUnit(0);
 	host.backend->bindTexture2D(host.surfaces[VDP_RD_SURFACE_PRIMARY].texture);
 	host.backend->setActiveTextureUnit(1);
 	host.backend->bindTexture2D(host.surfaces[VDP_RD_SURFACE_SECONDARY].texture);
 	host.backend->setActiveTextureUnit(2);
 	host.backend->bindTexture2D(host.surfaces[VDP_RD_SURFACE_ENGINE].texture);
-	boundMode = VdpDrawMode::Atlas;
+	boundMode = VdpDrawMode::Textpage;
 }
 
 void setupVdpDrawState(const VdpGles2Host& host) {
@@ -530,10 +530,10 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 		info.invWidth = 1.0f / static_cast<f32>(surface.width);
 		info.invHeight = 1.0f / static_cast<f32>(surface.height);
 	};
-	prepareSurface(VDP_RD_SURFACE_ENGINE, static_cast<f32>(resolveVdpSurfaceAtlasBinding(VDP_RD_SURFACE_ENGINE)));
-	prepareSurface(VDP_RD_SURFACE_PRIMARY, static_cast<f32>(resolveVdpSurfaceAtlasBinding(VDP_RD_SURFACE_PRIMARY)));
-	prepareSurface(VDP_RD_SURFACE_SECONDARY, static_cast<f32>(resolveVdpSurfaceAtlasBinding(VDP_RD_SURFACE_SECONDARY)));
-	prepareSurface(VDP_RD_SURFACE_FRAMEBUFFER, VDP_GLES2_PRIMARY_ATLAS_ID);
+	prepareSurface(VDP_RD_SURFACE_ENGINE, static_cast<f32>(resolveVdpSurfaceSlotBinding(VDP_RD_SURFACE_ENGINE)));
+	prepareSurface(VDP_RD_SURFACE_PRIMARY, static_cast<f32>(resolveVdpSurfaceSlotBinding(VDP_RD_SURFACE_PRIMARY)));
+	prepareSurface(VDP_RD_SURFACE_SECONDARY, static_cast<f32>(resolveVdpSurfaceSlotBinding(VDP_RD_SURFACE_SECONDARY)));
+	prepareSurface(VDP_RD_SURFACE_FRAMEBUFFER, VDP_GLES2_PRIMARY_TEXTPAGE_ID);
 	if (!host.renderTexture) {
 		throw vdpBackendFault("missing framebuffer render texture.");
 	}
@@ -613,13 +613,13 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 				bindVdpSolidMode(host, boundMode);
 				return;
 			}
-			bindVdpAtlasMode(host, boundMode);
+			bindVdpTextpageMode(host, boundMode);
 		};
 		const VDP::FrameBufferColor white{255u, 255u, 255u, 255u};
 		for (const VDP::BlitterCommand* command : sortedCommands) {
 			switch (command->type) {
 				case CommandType::Blit: {
-					bindMode(VdpDrawMode::Atlas);
+					bindMode(VdpDrawMode::Textpage);
 					appendBlitVertices(
 						host,
 						state.vertices,
@@ -653,7 +653,7 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 							0.0f,
 							1.0f,
 							1.0f,
-							VDP_GLES2_PRIMARY_ATLAS_ID,
+							VDP_GLES2_PRIMARY_TEXTPAGE_ID,
 							command->color
 						);
 					}
@@ -678,12 +678,12 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 								0.0f,
 								1.0f,
 								1.0f,
-								VDP_GLES2_PRIMARY_ATLAS_ID,
+								VDP_GLES2_PRIMARY_TEXTPAGE_ID,
 								*command->backgroundColor
 							);
 						}
 					}
-					bindMode(VdpDrawMode::Atlas);
+					bindMode(VdpDrawMode::Textpage);
 					for (const auto& glyph : command->glyphs) {
 						const auto& surface = host.surfaces[glyph.surfaceId];
 						const f32 u0 = static_cast<f32>(glyph.srcX) * surface.invWidth;
@@ -707,7 +707,7 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 					break;
 				}
 				case CommandType::TileRun: {
-					bindMode(VdpDrawMode::Atlas);
+					bindMode(VdpDrawMode::Textpage);
 					for (const auto& tile : command->tiles) {
 						const auto& surface = host.surfaces[tile.surfaceId];
 						const f32 u0 = static_cast<f32>(tile.srcX) * surface.invWidth;
@@ -753,7 +753,7 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 			static_cast<f32>(command.srcY) / static_cast<f32>(host.height),
 			static_cast<f32>(command.srcX + command.width) / static_cast<f32>(host.width),
 			static_cast<f32>(command.srcY + command.height) / static_cast<f32>(host.height),
-			VDP_GLES2_PRIMARY_ATLAS_ID,
+			VDP_GLES2_PRIMARY_TEXTPAGE_ID,
 			white
 		);
 		setupVdpDrawState(host);

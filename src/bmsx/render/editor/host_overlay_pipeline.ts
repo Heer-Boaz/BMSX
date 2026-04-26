@@ -9,9 +9,9 @@ import type {
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../backend/frame_uniforms';
 import { WebGLBackend } from '../backend/webgl/backend';
 import {
-	TEXTURE_UNIT_ATLAS_ENGINE,
-	TEXTURE_UNIT_ATLAS_PRIMARY,
-	TEXTURE_UNIT_ATLAS_SECONDARY,
+	TEXTURE_UNIT_TEXTPAGE_ENGINE,
+	TEXTURE_UNIT_TEXTPAGE_PRIMARY,
+	TEXTURE_UNIT_TEXTPAGE_SECONDARY,
 } from '../backend/webgl/constants';
 import {
 	bindWebGLInstancedQuadVertexArray,
@@ -26,18 +26,19 @@ import { Runtime } from '../../machine/runtime/runtime';
 import { TAB_SPACES } from '../shared/bitmap_font';
 import type { GlyphRenderSubmission, color } from '../shared/submissions';
 import {
-	ATLAS_PRIMARY_SLOT_ID,
-	ATLAS_SECONDARY_SLOT_ID,
-	ENGINE_ATLAS_INDEX,
-	ENGINE_ATLAS_TEXTURE_KEY,
+	TEXTPAGE_PRIMARY_SLOT_ID,
+	TEXTPAGE_SECONDARY_SLOT_ID,
+	BIOS_ATLAS_ID,
+	BIOS_TEXTPAGE_TEXTURE_KEY,
 } from '../../rompack/format';
+import { VDP_SLOT_SYSTEM } from '../../machine/bus/io';
 import type { BFont, FontGlyph } from '../shared/bitmap_font';
 import { consumeOverlayFrame, hasPendingOverlayFrame } from './overlay_queue';
 import vertexShaderCode from '../2d/shaders/2d.vert.glsl';
 import fragmentShaderCode from '../2d/shaders/2d.frag.glsl';
 
 type HostOverlayImageSource = {
-	mode: 'textpage' | 'single';
+	mode: 'slot' | 'single';
 	texture: WebGLTexture | null;
 	textpageId: number;
 	u0: number;
@@ -49,7 +50,7 @@ type HostOverlayImageSource = {
 };
 
 type BoundTextureState =
-	| { mode: 'textpage'; texture: null; }
+	| { mode: 'slot'; texture: null; }
 	| { mode: 'single'; texture: WebGLTexture; }
 	| { mode: 'none'; texture: null; };
 
@@ -59,7 +60,7 @@ type HostOverlayRuntime = {
 	vao: WebGLVertexArrayObject;
 	cornerBuffer: WebGLBuffer;
 	instanceFloatBuffer: WebGLBuffer;
-	instanceAtlasBuffer: WebGLBuffer;
+	instanceTextpageBuffer: WebGLBuffer;
 	floatData: Float32Array;
 	textpageData: Uint8Array;
 	capacity: number;
@@ -121,7 +122,7 @@ function destroyRuntime(runtimeToDestroy: HostOverlayRuntime): void {
 	const gl = runtimeToDestroy.gl;
 	gl.deleteBuffer(runtimeToDestroy.cornerBuffer);
 	gl.deleteBuffer(runtimeToDestroy.instanceFloatBuffer);
-	gl.deleteBuffer(runtimeToDestroy.instanceAtlasBuffer);
+	gl.deleteBuffer(runtimeToDestroy.instanceTextpageBuffer);
 	gl.deleteVertexArray(runtimeToDestroy.vao);
 	gl.deleteTexture(runtimeToDestroy.whiteTexture);
 }
@@ -178,17 +179,11 @@ function getUvExtents(coords: number[]): { u0: number; v0: number; u1: number; v
 	return { u0: minU, v0: minV, u1: maxU, v1: maxV };
 }
 
-function resolveShaderAtlasId(textpageId: number): number {
-	if (textpageId === ENGINE_ATLAS_INDEX) {
-		return ENGINE_ATLAS_INDEX;
+function resolveShaderTextpageId(textpageId: number): number {
+	if (textpageId === BIOS_ATLAS_ID) {
+		return VDP_SLOT_SYSTEM;
 	}
-	if (textpageId === engineCore.view.primaryAtlasIdInSlot) {
-		return 0;
-	}
-	if (textpageId === engineCore.view.secondaryAtlasIdInSlot) {
-		return 1;
-	}
-	throw new Error(`[HostOverlay] Atlas ${textpageId} is not mapped to an active slot.`);
+	throw new Error(`[HostOverlay] Atlas ${textpageId} is not an engine overlay source.`);
 }
 
 function resolveImageSource(cache: Map<string, HostOverlayImageSource>, imgid: string): HostOverlayImageSource {
@@ -197,15 +192,14 @@ function resolveImageSource(cache: Map<string, HostOverlayImageSource>, imgid: s
 		return cached;
 	}
 	const runtime = Runtime.instance;
-	const handle = runtime.machine.memory.resolveAssetHandle(imgid);
-	const meta = runtime.assets.getImageMetaByHandle(handle);
+	const meta = runtime.assets.getImageAsset(imgid).imgmeta;
 	let source: HostOverlayImageSource;
-	if (meta.textpagesed) {
+	if (meta.atlasid !== undefined && meta.texcoords) {
 		const uv = getUvExtents(meta.texcoords!);
 		source = {
-			mode: 'textpage',
+			mode: 'slot',
 			texture: null,
-			textpageId: resolveShaderAtlasId(meta.textpageid!),
+			textpageId: resolveShaderTextpageId(meta.atlasid!),
 			u0: uv.u0,
 			v0: uv.v0,
 			u1: uv.u1,
@@ -235,26 +229,26 @@ function resolveImageSource(cache: Map<string, HostOverlayImageSource>, imgid: s
 }
 
 function bindTextureTriple(texture0: WebGLTexture, texture1: WebGLTexture, texture2: WebGLTexture): void {
-	engineCore.view.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
+	engineCore.view.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_PRIMARY;
 	engineCore.view.bind2DTex(texture0);
-	engineCore.view.activeTexUnit = TEXTURE_UNIT_ATLAS_SECONDARY;
+	engineCore.view.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_SECONDARY;
 	engineCore.view.bind2DTex(texture1);
-	engineCore.view.activeTexUnit = TEXTURE_UNIT_ATLAS_ENGINE;
+	engineCore.view.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_ENGINE;
 	engineCore.view.bind2DTex(texture2);
 }
 
-function bindAtlasTextures(boundTextures: BoundTextureState): BoundTextureState {
-	if (boundTextures.mode === 'textpage') {
+function bindSlotTextures(boundTextures: BoundTextureState): BoundTextureState {
+	if (boundTextures.mode === 'slot') {
 		return boundTextures;
 	}
-	const primary = engineCore.texmanager.getTextureByUri(ATLAS_PRIMARY_SLOT_ID) as WebGLTexture;
-	const secondary = engineCore.texmanager.getTextureByUri(ATLAS_SECONDARY_SLOT_ID) as WebGLTexture;
-	const engine = engineCore.texmanager.getTextureByUri(ENGINE_ATLAS_TEXTURE_KEY) as WebGLTexture;
+	const primary = engineCore.texmanager.getTextureByUri(TEXTPAGE_PRIMARY_SLOT_ID) as WebGLTexture;
+	const secondary = engineCore.texmanager.getTextureByUri(TEXTPAGE_SECONDARY_SLOT_ID) as WebGLTexture;
+	const engine = engineCore.texmanager.getTextureByUri(BIOS_TEXTPAGE_TEXTURE_KEY) as WebGLTexture;
 	if (!primary || !secondary || !engine) {
-		throw new Error('[HostOverlay] Atlas textures are not initialized.');
+		throw new Error('[HostOverlay] VDP slot textures are not initialized.');
 	}
 	bindTextureTriple(primary, secondary, engine);
-	return { mode: 'textpage', texture: null };
+	return { mode: 'slot', texture: null };
 }
 
 function bindSingleTexture(texture: WebGLTexture, boundTextures: BoundTextureState): BoundTextureState {
@@ -270,8 +264,8 @@ function bindSolidTexture(runtimeState: HostOverlayRuntime, boundTextures: Bound
 }
 
 function bindSourceTexture(source: HostOverlayImageSource, boundTextures: BoundTextureState): BoundTextureState {
-	if (source.mode === 'textpage') {
-		return bindAtlasTextures(boundTextures);
+	if (source.mode === 'slot') {
+		return bindSlotTextures(boundTextures);
 	}
 	return bindSingleTexture(source.texture!, boundTextures);
 }

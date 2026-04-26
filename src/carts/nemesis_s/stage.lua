@@ -498,28 +498,9 @@ function stage_subsystem:draw_star_particles(stars, imgid, hidden)
 	if hidden then
 		return
 	end
-	local handle<const> = assets.img[imgid].handle
 	for i = 1, #stars do
 		local star<const> = stars[i]
-		memwrite(
-			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
-			sys_vdp_cmd_blit,
-				13,
-			0,
-			handle,
-			star.x,
-			star.y,
-			constants.stage.star_particle_z,
-			sys_vdp_layer_world,
-			1,
-			1,
-			0,
-			1,
-			1,
-			1,
-			1,
-			0
-		)
+		vdp_blit_img_rgba(imgid, star.x, star.y, constants.stage.star_particle_z, sys_vdp_layer_world, 1, 1, 0, 1, 1, 1, 1, 0)
 	end
 end
 
@@ -541,26 +522,7 @@ function stage_subsystem:draw()
 		for stage_row = 1, self.tile_rows do
 			local tile_id<const> = self.tile_tape[stage_row][stage_column]
 			if tile_id ~= nil then
-				local handle<const> = assets.img[tile_id].handle
-				memwrite(
-					vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
-					sys_vdp_cmd_blit,
-						13,
-					0,
-					handle,
-					draw_x,
-					(stage_row - 1) * tile_size,
-					z,
-					sys_vdp_layer_world,
-					1,
-					1,
-					0,
-					1,
-					1,
-					1,
-					1,
-					0
-				)
+				vdp_blit_img_rgba(tile_id, draw_x, (stage_row - 1) * tile_size, z, sys_vdp_layer_world, 1, 1, 0, 1, 1, 1, 1, 0)
 			end
 		end
 	end

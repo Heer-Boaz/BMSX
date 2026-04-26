@@ -3,9 +3,10 @@
 namespace bmsx {
 
 class GameView;
-class VDP;
 class Memory;
+class VDP;
+class RuntimeAssets;
 
-void commitVdpViewSnapshot(GameView& view, const VDP& vdp, Memory& memory);
+void commitVdpViewSnapshot(GameView& view, const VDP& vdp, const RuntimeAssets& assets, const Memory& memory);
 
 } // namespace bmsx

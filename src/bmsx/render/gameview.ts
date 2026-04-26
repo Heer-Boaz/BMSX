@@ -26,9 +26,9 @@ import type {
 } from './shared/submissions';
 import type { SkyboxImageIds } from '../machine/devices/vdp/contracts';
 import {
-	ATLAS_PRIMARY_SLOT_ID,
-	ATLAS_SECONDARY_SLOT_ID,
-	ENGINE_ATLAS_TEXTURE_KEY,
+	TEXTPAGE_PRIMARY_SLOT_ID,
+	TEXTPAGE_SECONDARY_SLOT_ID,
+	BIOS_TEXTPAGE_TEXTURE_KEY,
 } from 'bmsx/rompack/format';
 import { renderGate } from 'bmsx/core/taskgate';
 
@@ -84,11 +84,9 @@ export class GameView implements RenderContext {
 	private lightingSystem: LightingSystem = null;
 	public offscreenCanvasSize!: vec2;
 	public textures: { [k: string]: TextureHandle } = {};
-	public primaryAtlasIdInSlot: number | null = null;
-	public secondaryAtlasIdInSlot: number | null = null;
 	public skyboxFaceIds: SkyboxImageIds | null = null;
 	public skyboxFaceUvRects: Float32Array | null = null;
-	public skyboxFaceAtlasBindings: Int32Array | null = null;
+	public skyboxFaceTextpageBindings: Int32Array | null = null;
 	public skyboxFaceSizes: Int32Array | null = null;
 	public pipelineRegistry?: RenderPassLibrary;
 	private presentationEnabled = true;
@@ -508,16 +506,14 @@ export class GameView implements RenderContext {
 	}
 	public async initializeDefaultTextures(): Promise<void> {
 		const fallback = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
-		this.textures[ATLAS_PRIMARY_SLOT_ID] = fallback; // Start with fallback to avoid undefined states and race conditions
-		this.textures[ATLAS_SECONDARY_SLOT_ID] = fallback;
+		this.textures[TEXTPAGE_PRIMARY_SLOT_ID] = fallback; // Start with fallback to avoid undefined states and race conditions
+		this.textures[TEXTPAGE_SECONDARY_SLOT_ID] = fallback;
 		this.textures['_textpage_fallback'] = fallback;
-		this.primaryAtlasIdInSlot = null;
-		this.secondaryAtlasIdInSlot = null;
 		this.skyboxFaceIds = null;
 		this.skyboxFaceUvRects = null;
-		this.skyboxFaceAtlasBindings = null;
+		this.skyboxFaceTextpageBindings = null;
 		this.skyboxFaceSizes = null;
-		this.textures[ENGINE_ATLAS_TEXTURE_KEY] = fallback;
+		this.textures[BIOS_TEXTPAGE_TEXTURE_KEY] = fallback;
 		// Default material textures for meshes
 		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
 		// Normal map default (0.5,0.5,1.0)

@@ -1,6 +1,5 @@
 import type { FrameState, Runtime } from '../runtime';
 import { RunResult } from '../../cpu/cpu';
-import { runtimeFault } from '../runtime_fault';
 import { clearHardwareLighting } from '../../../render/shared/hardware/lighting';
 import { clearBackQueues } from '../../../render/shared/queues';
 
@@ -17,7 +16,7 @@ export class FrameLoopState {
 
 	public beginFrameState(runtime: Runtime): FrameState {
 		if (this.currentFrameState) {
-			throw runtimeFault('attempted to begin a new frame while another frame is active.');
+			throw new Error('attempted to begin a new frame while another frame is active.');
 		}
 		this.frameDeltaMs = runtime.timing.frameDurationMs;
 		const budget = runtime.timing.cycleBudgetPerFrame;

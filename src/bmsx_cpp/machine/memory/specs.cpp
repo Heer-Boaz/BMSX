@@ -17,30 +17,17 @@ constexpr uint32_t ASSET_PAGE_SIZE = 1u << 12;
 constexpr uint32_t DEFAULT_ASSET_DATA_HEADROOM_BYTES = 1u << 20; // 1 MiB
 
 void collectAssetIds(const RuntimeAssets& engineAssets, const RuntimeAssets& assets, std::unordered_set<std::string>& ids) {
-	const std::string engineAtlasId = generateAtlasName(ENGINE_ATLAS_INDEX);
-	const ImgAsset* engineAtlas = engineAssets.getImg(engineAtlasId);
-	if (!engineAtlas) {
+	(void)assets;
+	const std::string engineTextpageId = generateAtlasAssetId(BIOS_ATLAS_ID);
+	const ImgAsset* engineTextpage = engineAssets.getImg(engineTextpageId);
+	if (!engineTextpage) {
 		throw std::runtime_error("[RuntimeMemorySpecs] Engine textpage missing from assets.");
 	}
-	ids.insert(engineAtlasId);
-	ids.insert(ATLAS_PRIMARY_SLOT_ID);
-	ids.insert(ATLAS_SECONDARY_SLOT_ID);
+	ids.insert(engineTextpageId);
+	ids.insert(TEXTPAGE_PRIMARY_SLOT_ID);
+	ids.insert(TEXTPAGE_SECONDARY_SLOT_ID);
 	ids.insert(FRAMEBUFFER_TEXTURE_KEY);
 	ids.insert(FRAMEBUFFER_RENDER_TEXTURE_KEY);
-
-	for (const auto& entry : engineAssets.img) {
-		const auto& imgAsset = entry.second;
-		if (imgAsset.meta.textpagesed) {
-			ids.insert(imgAsset.id);
-		}
-	}
-	for (const auto& entry : assets.img) {
-		const auto& imgAsset = entry.second;
-		if (imgAsset.meta.textpagesed) {
-			ids.insert(imgAsset.id);
-		}
-	}
-
 }
 
 uint32_t computeAssetTableBytes(const RuntimeAssets& engineAssets, const RuntimeAssets& assets) {
@@ -65,22 +52,9 @@ uint64_t alignUpU64(uint64_t value, uint64_t alignment) {
 	return (value + mask) & ~mask;
 }
 
-uint64_t resolveRomBufferBytes(const RomAssetInfo& rom, const std::string& id, const char* kind) {
-	if (!rom.start || !rom.end || *rom.end <= *rom.start) {
-		throw std::runtime_error(std::string("[RuntimeMemorySpecs] ") + kind + " asset '" + id + "' missing ROM buffer offsets for memory sizing.");
-	}
-	return static_cast<uint64_t>(*rom.end - *rom.start);
-}
-
 uint32_t computeRequiredAssetDataBytes(const RuntimeAssets& assets) {
+	(void)assets;
 	uint64_t requiredBytes = 0;
-	for (const auto& entry : assets.img) {
-		const ImgAsset& image = entry.second;
-		if (image.rom.type == "textpage" || image.meta.textpagesed) {
-			continue;
-		}
-		requiredBytes += alignUpU64(resolveRomBufferBytes(image.rom, image.id, "image"), 4u);
-	}
 	requiredBytes += static_cast<uint64_t>(DEFAULT_ASSET_DATA_HEADROOM_BYTES);
 	requiredBytes = alignUpU64(requiredBytes, static_cast<uint64_t>(ASSET_PAGE_SIZE));
 	if (requiredBytes > std::numeric_limits<uint32_t>::max()) {
@@ -89,14 +63,14 @@ uint32_t computeRequiredAssetDataBytes(const RuntimeAssets& assets) {
 	return static_cast<uint32_t>(requiredBytes);
 }
 
-uint32_t resolveSystemAtlasSlotBytes(const RuntimeAssets& engineAssets) {
-	const std::string engineAtlasId = generateAtlasName(ENGINE_ATLAS_INDEX);
-	const ImgAsset* engineAtlas = engineAssets.getImg(engineAtlasId);
-	if (!engineAtlas) {
+uint32_t resolveSystemTextpageSlotBytes(const RuntimeAssets& engineAssets) {
+	const std::string engineTextpageId = generateAtlasAssetId(BIOS_ATLAS_ID);
+	const ImgAsset* engineTextpage = engineAssets.getImg(engineTextpageId);
+	if (!engineTextpage) {
 		throw std::runtime_error("[RuntimeMemorySpecs] Engine textpage missing from assets.");
 	}
-	const i32 width = engineAtlas->meta.width;
-	const i32 height = engineAtlas->meta.height;
+	const i32 width = engineTextpage->meta.width;
+	const i32 height = engineTextpage->meta.height;
 	if (width <= 0 || height <= 0) {
 		throw std::runtime_error("[RuntimeMemorySpecs] Engine textpage dimensions must be positive.");
 	}
@@ -114,14 +88,14 @@ MemoryMapConfig resolveRuntimeMemoryMapConfig(const MachineManifest& machine, co
 		}
 		config.textpageSlotBytes = static_cast<uint32_t>(value);
 	}
-	if (systemMachine.engineAtlasSlotBytes) {
-		const i32 value = *systemMachine.engineAtlasSlotBytes;
+	if (systemMachine.systemTextpageSlotBytes) {
+		const i32 value = *systemMachine.systemTextpageSlotBytes;
 		if (value <= 0) {
 			throw std::runtime_error("[RuntimeMemorySpecs] system_textpage_slot_bytes must be greater than 0.");
 		}
-		config.engineAtlasSlotBytes = static_cast<uint32_t>(value);
+		config.systemTextpageSlotBytes = static_cast<uint32_t>(value);
 	} else {
-		config.engineAtlasSlotBytes = resolveSystemAtlasSlotBytes(engineAssets);
+		config.systemTextpageSlotBytes = resolveSystemTextpageSlotBytes(engineAssets);
 	}
 	if (machine.stagingBytes) {
 		const i32 value = *machine.stagingBytes;
@@ -180,7 +154,7 @@ MemoryMapConfig resolveRuntimeMemoryMapConfig(const MachineManifest& machine, co
 		<< ", vdp_stream=" << VDP_STREAM_BUFFER_SIZE
 		<< ", vram_staging=" << config.stagingBytes
 		<< ", framebuffer=" << config.frameBufferBytes
-		<< ", engine_textpage_slot=" << config.engineAtlasSlotBytes
+		<< ", engine_textpage_slot=" << config.systemTextpageSlotBytes
 		<< ", textpage_slot=" << config.textpageSlotBytes << "x2=" << (config.textpageSlotBytes * 2u)
 		<< ")." << std::endl;
 	return config;

@@ -7,7 +7,7 @@
 
 namespace bmsx {
 
-inline std::runtime_error runtimeFault(const std::string& message) {
+inline std::runtime_error new Error(const std::string& message) {
 	return BMSX_RUNTIME_ERROR("Runtime fault: " + message);
 }
 

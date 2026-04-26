@@ -56,8 +56,8 @@
 // backend.ts — Same default logic:
 
 // const format = _desc.srgb === false ? 'rgba8unorm' : 'rgba8unorm-srgb';              // L44, L100
-// 10. Atlas & Framebuffer Textures — How They're Created
-// Atlas textures (primary, secondary, engine) and framebuffer texture are all created via TextureManager.createTextureFromPixelsSync() at texture_manager.ts, which calls backend.createTexture(source, desc). The callers in vdp.ts pass no desc (empty {}):
+// 10. Textpage & Framebuffer Textures — How They're Created
+// Textpage textures (primary, secondary, engine) and framebuffer texture are all created via TextureManager.createTextureFromPixelsSync() at texture_manager.ts, which calls backend.createTexture(source, desc). The callers in vdp.ts pass no desc (empty {}):
 
 // handle = $.texmanager.createTextureFromPixelsSync(textureKey, this.vramSeedPixel, 1, 1);  // L2153
 // // desc defaults to {} — so srgb is undefined
@@ -68,7 +68,7 @@
 // Summary Table
 // Texture Type	Internal Format	sRGB?
 // Normal textures (createTexture with no srgb field)	SRGB8_ALPHA8	Yes (default)
-// Atlas textures (primary/secondary/engine)	SRGB8_ALPHA8	Yes (no srgb passed → default)
+// Textpage textures (primary/secondary/engine)	SRGB8_ALPHA8	Yes (no srgb passed → default)
 // Framebuffer render texture	SRGB8_ALPHA8	Yes (no srgb passed → default)
 // Solid color textures (createSolidTexture2D)	RGBA	No
 // Render graph color targets (createColorTexture)	RGBA8	No

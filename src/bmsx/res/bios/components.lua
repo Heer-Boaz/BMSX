@@ -163,7 +163,6 @@ end
 
 function spritecomponent:set_imgid(imgid)
 	self.imgid = imgid
-	self.image_handle = imgid ~= nil and assets.img[imgid].handle or 0
 end
 
 -- collider2dcomponent: holds hit areas / polys
@@ -879,7 +878,12 @@ end
 -- end
 
 -- function customvisualcomponent:submit_particle(desc)
--- 	customvisual_particle_options.texture = desc.texture
+-- 	local rect<const> = vdp_img_rect(desc.texture)
+-- 	customvisual_particle_options.slot = vdp_img_slot(rect)
+-- 	customvisual_particle_options.u = rect.u
+-- 	customvisual_particle_options.v = rect.v
+-- 	customvisual_particle_options.w = rect.w
+-- 	customvisual_particle_options.h = rect.h
 -- 	customvisual_particle_options.ambient_mode = desc.ambient_mode
 -- 	customvisual_particle_options.ambient_factor = desc.ambient_factor
 -- 	put_particle(desc.position, desc.size, desc.color, customvisual_particle_options)

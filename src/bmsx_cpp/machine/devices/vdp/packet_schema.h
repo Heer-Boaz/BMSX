@@ -56,6 +56,10 @@ inline constexpr VdpPacketWordKind VDP_DRAW_LINE_ARG_KINDS[] = {
 
 inline constexpr VdpPacketWordKind VDP_BLIT_ARG_KINDS[] = {
 	VdpPacketWordKind::U32,
+	VdpPacketWordKind::U32,
+	VdpPacketWordKind::U32,
+	VdpPacketWordKind::U32,
+	VdpPacketWordKind::U32,
 	VdpPacketWordKind::F32,
 	VdpPacketWordKind::F32,
 	VdpPacketWordKind::F32,

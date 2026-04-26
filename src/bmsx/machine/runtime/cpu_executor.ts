@@ -6,7 +6,6 @@ import {
 } from '../scheduler/device';
 import { drainReadyVdpExecution } from '../../render/vdp/blitter';
 import type { FrameState, Runtime } from './runtime';
-import { runtimeFault } from './runtime_fault';
 
 export class CpuExecutionState {
 	private debugCycleReportAtMs = 0;
@@ -57,7 +56,7 @@ export class CpuExecutionState {
 				break;
 			}
 			if (consumed <= 0) {
-				throw runtimeFault('CPU yielded without consuming cycles.');
+				throw new Error('CPU yielded without consuming cycles.');
 			}
 		}
 		// end repeated-sequence-acceptable
@@ -115,6 +114,6 @@ function dispatchRuntimeTimer(runtime: Runtime, kind: number, payload: number): 
 			}
 			return;
 		default:
-			throw runtimeFault(`unknown timer kind ${kind}.`);
+			throw new Error(`unknown timer kind ${kind}.`);
 	}
 }

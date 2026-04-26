@@ -38,6 +38,7 @@
 
 local worldobject<const> = require('world/object')
 local components<const> = require('components')
+local vdp_image<const> = require('vdp_image')
 
 local spriteobject<const> = {}
 spriteobject.__index = spriteobject
@@ -114,25 +115,7 @@ function spriteobject:draw()
 	if sc.flip.flip_v then
 		flip_flags = flip_flags | 2
 	end
-	memwrite(
-		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
-		sys_vdp_cmd_blit,
-			13,
-		0,
-		sc.image_handle,
-		self.x + offset.x,
-		self.y + offset.y,
-		self.z + offset.z,
-		sc.layer,
-		sc.scale.x,
-		sc.scale.y,
-		flip_flags,
-		sc.colorize.r,
-		sc.colorize.g,
-		sc.colorize.b,
-		sc.colorize.a,
-		sc.parallax_weight
-	)
+	vdp_image.write_blit_rgba(sc.imgid, self.x + offset.x, self.y + offset.y, self.z + offset.z, sc.layer, sc.scale.x, sc.scale.y, flip_flags, sc.colorize.r, sc.colorize.g, sc.colorize.b, sc.colorize.a, sc.parallax_weight)
 end
 
 return spriteobject

@@ -1,9 +1,12 @@
 import { Runtime } from '../../machine/runtime/runtime';
+import type { ImageAtlasRect } from '../vdp/image_meta';
+import { resolveImageAtlasRect } from '../vdp/image_meta';
 
 export type GlyphMap = Record<string, string>;
 
 export type FontGlyph = {
 	imgid: string;
+	rect: ImageAtlasRect;
 	width: number;
 	height: number;
 	advance: number;
@@ -125,6 +128,10 @@ export class BFont {
 		return Runtime.instance.assets.getImageAsset(imgid);
 	}
 
+	protected getGlyphRect(imgid: string): ImageAtlasRect {
+		return resolveImageAtlasRect(Runtime.instance.assets, imgid);
+	}
+
 	public textWidth(text: string): number {
 		let width = 0;
 		for (const char of text) {
@@ -141,11 +148,12 @@ export class BFont {
 		if (char === '\t' && this.letter_to_img[char] === undefined) {
 			const space = this.getGlyph(' ');
 			const tabAdvance = space.advance * TAB_SPACES;
-			const computed: FontGlyph = {
-				imgid: space.imgid,
-				width: tabAdvance,
-				height: space.height,
-				advance: tabAdvance,
+				const computed: FontGlyph = {
+					imgid: space.imgid,
+					rect: space.rect,
+					width: tabAdvance,
+					height: space.height,
+					advance: tabAdvance,
 			};
 			this.glyphs.set(char, computed);
 			return computed;
@@ -154,11 +162,12 @@ export class BFont {
 		const asset = this.getGlyphAsset(imgid);
 		const width = asset.imgmeta.width;
 		const height = asset.imgmeta.height;
-		const computed: FontGlyph = {
-			imgid,
-			width,
-			height,
-			advance: width + this.advancePadding,
+			const computed: FontGlyph = {
+				imgid,
+				rect: this.getGlyphRect(imgid),
+				width,
+				height,
+				advance: width + this.advancePadding,
 		};
 		this.glyphs.set(char, computed);
 		return computed;

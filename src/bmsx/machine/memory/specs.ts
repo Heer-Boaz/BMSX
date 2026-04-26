@@ -1,13 +1,13 @@
 import type { RawAssetSource } from '../../rompack/source';
-import type { MachineManifest, RomAsset, RomImgAsset } from '../../rompack/format';
+import type { MachineManifest } from '../../rompack/format';
 import {
-	ATLAS_PRIMARY_SLOT_ID,
-	ATLAS_SECONDARY_SLOT_ID,
-	ENGINE_ATLAS_INDEX,
+	TEXTPAGE_PRIMARY_SLOT_ID,
+	TEXTPAGE_SECONDARY_SLOT_ID,
+	BIOS_ATLAS_ID,
 	FRAMEBUFFER_RENDER_TEXTURE_KEY,
 	FRAMEBUFFER_TEXTURE_KEY,
 	getMachineMemorySpecs,
-	generateAtlasName,
+	generateAtlasAssetId,
 } from '../../rompack/format';
 import type { RuntimeAssetLayer } from '../../rompack/loader';
 import { ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE } from './memory';
@@ -15,7 +15,7 @@ import {
 	DEFAULT_GEO_SCRATCH_SIZE,
 	DEFAULT_STRING_HANDLE_COUNT,
 	DEFAULT_STRING_HEAP_SIZE,
-	DEFAULT_VRAM_ATLAS_SLOT_SIZE,
+	DEFAULT_VRAM_TEXTPAGE_SLOT_SIZE,
 	DEFAULT_VRAM_STAGING_SIZE,
 	IO_REGION_SIZE,
 	IO_WORD_SIZE,
@@ -27,7 +27,6 @@ import {
 import {
 	buildRuntimeLayerLookup,
 	resolveRuntimeLayerAssetById,
-	resolveRuntimeLayerAssetFromEntry,
 } from './asset/layers';
 import { resolvePositiveSafeInteger, resolveRuntimeRenderSize } from '../specs';
 
@@ -38,39 +37,15 @@ function runtimeMemorySpecFault(message: string): Error {
 	return new Error(`Runtime fault: ${message}`);
 }
 
-function assertRomBufferRange(entry: RomAsset, kind: string): void {
-	if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
-		throw runtimeMemorySpecFault(`${kind} asset '${entry.resid}' missing ROM buffer offsets for memory sizing.`);
-	}
-}
-
 function collectAssetEntryIds(engineSource: RawAssetSource, assetSource: RawAssetSource, assetLayers: ReadonlyArray<RuntimeAssetLayer>): Set<string> {
+	void assetSource;
 	const layerLookup = buildRuntimeLayerLookup(assetLayers);
 	const ids = new Set<string>();
-	const engineAtlasId = generateAtlasName(ENGINE_ATLAS_INDEX);
-	resolveRuntimeLayerAssetById<RomImgAsset>(layerLookup, engineSource, 'img', engineAtlasId);
-	ids.add(engineAtlasId);
-	ids.add(ATLAS_PRIMARY_SLOT_ID);
-	ids.add(ATLAS_SECONDARY_SLOT_ID);
-	const sources = [engineSource, assetSource];
-	for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
-		const source = sources[sourceIndex]!;
-		const entries = source.list();
-		for (let index = 0; index < entries.length; index += 1) {
-			const entry = entries[index]!;
-			if (entry.type !== 'image') {
-				continue;
-			}
-			const asset = resolveRuntimeLayerAssetFromEntry<RomImgAsset>(layerLookup, 'img', entry);
-			const meta = asset.imgmeta;
-			if (!meta) {
-				throw runtimeMemorySpecFault(`image asset '${entry.resid}' missing metadata for memory sizing.`);
-			}
-			if (meta.textpagesed) {
-				ids.add(entry.resid);
-			}
-		}
-	}
+	const engineTextpageId = generateAtlasAssetId(BIOS_ATLAS_ID);
+	resolveRuntimeLayerAssetById(layerLookup, engineSource, 'img', engineTextpageId);
+	ids.add(engineTextpageId);
+	ids.add(TEXTPAGE_PRIMARY_SLOT_ID);
+	ids.add(TEXTPAGE_SECONDARY_SLOT_ID);
 
 	return ids;
 }
@@ -90,36 +65,20 @@ function computeAssetTableBytes(engineSource: RawAssetSource, assetSource: RawAs
 }
 
 function computeRequiredAssetDataBytes(assetSource: RawAssetSource, assetLayers: ReadonlyArray<RuntimeAssetLayer>): number {
-	const layerLookup = buildRuntimeLayerLookup(assetLayers);
+	void assetSource;
+	void assetLayers;
 	let requiredBytes = 0;
-	const entries = assetSource.list();
-	for (let index = 0; index < entries.length; index += 1) {
-		const entry = entries[index]!;
-		if (entry.type !== 'image' && entry.type !== 'textpage') {
-			continue;
-		}
-		const image = resolveRuntimeLayerAssetFromEntry<RomImgAsset>(layerLookup, 'img', entry);
-		const meta = image.imgmeta;
-		if (!meta) {
-			throw runtimeMemorySpecFault(`image asset '${entry.resid}' missing metadata for memory sizing.`);
-		}
-		if (image.type === 'textpage' || meta.textpagesed) {
-			continue;
-		}
-		assertRomBufferRange(entry, 'image');
-		requiredBytes += alignUp(assetSource.getBytesView(entry).byteLength, 4);
-	}
 	requiredBytes += DEFAULT_ASSET_DATA_HEADROOM_BYTES;
 	return alignUp(requiredBytes, ASSET_DATA_ALIGNMENT_BYTES);
 }
 
-function resolveEngineAtlasSlotBytes(engineSource: RawAssetSource): number {
-	const engineAtlas = engineSource.getEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
-	if (!engineAtlas || !engineAtlas.imgmeta) {
+function resolveEngineTextpageSlotBytes(engineSource: RawAssetSource): number {
+	const engineTextpage = engineSource.getEntry(generateAtlasAssetId(BIOS_ATLAS_ID));
+	if (!engineTextpage || !engineTextpage.imgmeta) {
 		throw runtimeMemorySpecFault('engine textpage metadata is missing.');
 	}
-	const width = resolvePositiveSafeInteger(engineAtlas.imgmeta.width, 'engine_textpage.width');
-	const height = resolvePositiveSafeInteger(engineAtlas.imgmeta.height, 'engine_textpage.height');
+	const width = resolvePositiveSafeInteger(engineTextpage.imgmeta.width, 'engine_textpage.width');
+	const height = resolvePositiveSafeInteger(engineTextpage.imgmeta.height, 'engine_textpage.height');
 	return width * height * 4;
 }
 
@@ -136,13 +95,13 @@ export function resolveRuntimeMemoryMapSpecs(params: {
 	const engineMemorySpecs = getMachineMemorySpecs(engineMachine);
 	const stringHandleCount = DEFAULT_STRING_HANDLE_COUNT;
 	const stringHeapBytes = DEFAULT_STRING_HEAP_SIZE;
-	const textpageSlotBytes = memorySpecs.textpage_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE;
-	const engineAtlasSlotBytes = engineMemorySpecs.system_textpage_slot_bytes ?? resolveEngineAtlasSlotBytes(params.engineSource);
+	const textpageSlotBytes = memorySpecs.textpage_slot_bytes ?? DEFAULT_VRAM_TEXTPAGE_SLOT_SIZE;
+	const systemTextpageSlotBytes = engineMemorySpecs.system_textpage_slot_bytes ?? resolveEngineTextpageSlotBytes(params.engineSource);
 	const renderSize = resolveRuntimeRenderSize(machineConfig);
 	const frameBufferWidth = renderSize.width;
 	const frameBufferHeight = renderSize.height;
 	const frameBufferBytes = frameBufferWidth * frameBufferHeight * 4;
-	if (!Number.isSafeInteger(engineAtlasSlotBytes) || engineAtlasSlotBytes <= 0) {
+	if (!Number.isSafeInteger(systemTextpageSlotBytes) || systemTextpageSlotBytes <= 0) {
 		throw runtimeMemorySpecFault('system textpage slot bytes must be a positive integer.');
 	}
 	const stagingBytes = memorySpecs.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE;
@@ -172,7 +131,7 @@ export function resolveRuntimeMemoryMapSpecs(params: {
 		+ `(io=${IO_REGION_SIZE}, string_handles=${stringHandleCount}, string_heap=${stringHeapBytes}, `
 		+ `asset_table=${assetTableBytes} (${assetTableInfo.entryCount} entries, ${assetTableInfo.stringBytes} string bytes), `
 		+ `asset_data=${assetDataBytes}, geo_scratch=${DEFAULT_GEO_SCRATCH_SIZE}, vdp_stream=${VDP_STREAM_BUFFER_SIZE}, vram_staging=${stagingBytes}, framebuffer=${frameBufferBytes} (${frameBufferWidth}x${frameBufferHeight}), `
-		+ `engine_textpage_slot=${engineAtlasSlotBytes}, textpage_slot=${textpageSlotBytes}x2=${textpageSlotBytes * 2}).`,
+		+ `engine_textpage_slot=${systemTextpageSlotBytes}, textpage_slot=${textpageSlotBytes}x2=${textpageSlotBytes * 2}).`,
 	);
 	return {
 		ram_bytes: ramBytes,
@@ -181,7 +140,7 @@ export function resolveRuntimeMemoryMapSpecs(params: {
 		asset_table_bytes: assetTableBytes,
 		asset_data_bytes: assetDataBytes,
 		textpage_slot_bytes: textpageSlotBytes,
-		system_textpage_slot_bytes: engineAtlasSlotBytes,
+		system_textpage_slot_bytes: systemTextpageSlotBytes,
 		staging_bytes: stagingBytes,
 		framebuffer_bytes: frameBufferBytes,
 	};

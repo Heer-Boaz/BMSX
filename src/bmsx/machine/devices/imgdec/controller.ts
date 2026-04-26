@@ -18,11 +18,11 @@ import {
 	IRQ_IMG_ERROR,
 } from '../../bus/io';
 import {
-	VRAM_PRIMARY_ATLAS_BASE,
-	VRAM_SECONDARY_ATLAS_BASE,
-	VRAM_SYSTEM_ATLAS_BASE,
+	VRAM_PRIMARY_TEXTPAGE_BASE,
+	VRAM_SECONDARY_TEXTPAGE_BASE,
+	VRAM_SYSTEM_TEXTPAGE_BASE,
 } from '../../memory/map';
-import { ATLAS_PRIMARY_SLOT_ID, ATLAS_SECONDARY_SLOT_ID, ENGINE_ATLAS_INDEX, generateAtlasName } from '../../../rompack/format';
+import { TEXTPAGE_PRIMARY_SLOT_ID, TEXTPAGE_SECONDARY_SLOT_ID, BIOS_ATLAS_ID, generateAtlasAssetId } from '../../../rompack/format';
 import type { AssetEntry, ImageWritePlan } from '../../memory/memory';
 import { Memory } from '../../memory/memory';
 import type { DecodedImage } from '../../../common/image_decode';
@@ -225,14 +225,14 @@ export class ImgDecController {
 	}
 
 	private resolveSlotEntry(dst: number): AssetEntry {
-		if (dst === VRAM_PRIMARY_ATLAS_BASE) {
-			return this.memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
+		if (dst === VRAM_PRIMARY_TEXTPAGE_BASE) {
+			return this.memory.getAssetEntry(TEXTPAGE_PRIMARY_SLOT_ID);
 		}
-		if (dst === VRAM_SECONDARY_ATLAS_BASE) {
-			return this.memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
+		if (dst === VRAM_SECONDARY_TEXTPAGE_BASE) {
+			return this.memory.getAssetEntry(TEXTPAGE_SECONDARY_SLOT_ID);
 		}
-		if (dst === VRAM_SYSTEM_ATLAS_BASE) {
-			return this.memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
+		if (dst === VRAM_SYSTEM_TEXTPAGE_BASE) {
+			return this.memory.getAssetEntry(generateAtlasAssetId(BIOS_ATLAS_ID));
 		}
 		throw imageDecoderFault(`unsupported destination address ${dst}.`);
 	}

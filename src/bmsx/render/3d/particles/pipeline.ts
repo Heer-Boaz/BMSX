@@ -5,7 +5,7 @@ import particleVS from '../shaders/particle.vert.glsl';
 import type { PassEncoder, RenderContext, RenderPassStateRegistry } from '../../backend/interfaces';
 import { RenderPassLibrary } from '../../backend/pass/library';
 import { ParticlePipelineState } from '../../backend/interfaces';
-import { TEXTURE_UNIT_ATLAS_ENGINE, TEXTURE_UNIT_ATLAS_PRIMARY, TEXTURE_UNIT_ATLAS_SECONDARY } from '../../backend/webgl/constants';
+import { TEXTURE_UNIT_TEXTPAGE_ENGINE, TEXTURE_UNIT_TEXTPAGE_PRIMARY, TEXTURE_UNIT_TEXTPAGE_SECONDARY } from '../../backend/webgl/constants';
 import { WebGLBackend } from '../../backend/webgl/backend';
 import type { Camera } from '../camera';
 import { M4 } from '../math';
@@ -18,7 +18,8 @@ import {
 } from '../../shared/queues';
 import type { ParticleRenderSubmission } from '../../shared/submissions';
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../../shared/fallback_camera';
-import { ENGINE_ATLAS_INDEX, ENGINE_ATLAS_TEXTURE_KEY } from '../../../rompack/format';
+import { BIOS_TEXTPAGE_TEXTURE_KEY } from '../../../rompack/format';
+import { VDP_SLOT_PRIMARY, VDP_SLOT_SECONDARY, VDP_SLOT_SYSTEM } from '../../../machine/bus/io';
 import { resolveActiveCamera3D } from '../../shared/hardware/camera';
 import { clamp } from '../../../common/clamp';
 
@@ -98,9 +99,9 @@ export function setupParticleUniforms(backend: WebGLBackend): void {
 	texture2Location = gl.getUniformLocation(particleProgram, 'u_texture2')!;
 	ambientModeLocation = gl.getUniformLocation(particleProgram, 'u_particleAmbientMode')!;
 	ambientFactorLocation = gl.getUniformLocation(particleProgram, 'u_particleAmbientFactor')!;
-	gl.uniform1i(texture0Location, TEXTURE_UNIT_ATLAS_PRIMARY);
-	gl.uniform1i(texture1Location, TEXTURE_UNIT_ATLAS_SECONDARY);
-	gl.uniform1i(texture2Location, TEXTURE_UNIT_ATLAS_ENGINE);
+	gl.uniform1i(texture0Location, TEXTURE_UNIT_TEXTPAGE_PRIMARY);
+	gl.uniform1i(texture1Location, TEXTURE_UNIT_TEXTPAGE_SECONDARY);
+	gl.uniform1i(texture2Location, TEXTURE_UNIT_TEXTPAGE_ENGINE);
 }
 
 export function setupParticleLocations(backend: WebGLBackend): void {
@@ -128,15 +129,15 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 	camRight.set(resolvedState.camRight);
 	camUp.set(resolvedState.camUp);
 	const batches = new Map<string, ParticleRenderSubmission[]>();
-	let needsEngineAtlas = false;
-	let needsSecondaryAtlas = false;
+	let needsEngineTextpage = false;
+	let needsSecondaryTextpage = false;
 	forEachParticleQueue((p) => {
 		if (!p) return;
-		const textpageId = p.textpageBinding ?? 0;
-		if (textpageId === ENGINE_ATLAS_INDEX) {
-			needsEngineAtlas = true;
-		} else if (textpageId !== 0) {
-			needsSecondaryAtlas = true;
+		const slot = p.slot ?? VDP_SLOT_PRIMARY;
+		if (slot === VDP_SLOT_SYSTEM) {
+			needsEngineTextpage = true;
+		} else if (slot === VDP_SLOT_SECONDARY) {
+			needsSecondaryTextpage = true;
 		}
 		const mode = (p.ambient_mode ?? particleAmbientModeDefault) | 0;
 			const factor = clamp(p.ambient_factor ?? particleAmbientFactorDefault, 0, 1);
@@ -163,20 +164,20 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 	}
 	const textpageSecondaryTex = resolvedState.textpageSecondaryTex;
 	const textpageEngineTex = resolvedState.textpageEngineTex;
-	if (needsSecondaryAtlas && !textpageSecondaryTex) {
+	if (needsSecondaryTextpage && !textpageSecondaryTex) {
 		throw new Error("[ParticlesPipeline] Texture '_textpage_secondary' missing from view textures.");
 	}
-	if (needsEngineAtlas && !textpageEngineTex) {
-		throw new Error(`[ParticlesPipeline] Texture '${ENGINE_ATLAS_TEXTURE_KEY}' missing from view textures.`);
+	if (needsEngineTextpage && !textpageEngineTex) {
+		throw new Error(`[ParticlesPipeline] Texture '${BIOS_TEXTPAGE_TEXTURE_KEY}' missing from view textures.`);
 	}
-	context.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
+	context.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_PRIMARY;
 	context.bind2DTex(textpagePrimaryTex);
 	if (textpageSecondaryTex) {
-		context.activeTexUnit = TEXTURE_UNIT_ATLAS_SECONDARY;
+		context.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_SECONDARY;
 		context.bind2DTex(textpageSecondaryTex);
 	}
 	if (textpageEngineTex) {
-		context.activeTexUnit = TEXTURE_UNIT_ATLAS_ENGINE;
+		context.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_ENGINE;
 		context.bind2DTex(textpageEngineTex);
 	}
 	backend.bindVertexArray(vao);
@@ -199,7 +200,7 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 		gl.uniform1f(ambientFactorLocation, parseFloat(factorStr));
 		for (let i = 0; i < batchCount; i++) {
 			const p = arr[i]; if (!p) continue;
-			if (!p.uv0 || !p.uv1 || p.textpageBinding === undefined || p.textpageBinding === null) {
+			if (!p.uv0 || !p.uv1 || p.slot === undefined || p.slot === null) {
 				throw new Error('[ParticlesPipeline] Particle missing textpage UV data.');
 			}
 			const base = i * INSTANCE_FLOATS;
@@ -215,7 +216,7 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 			instanceData[base + 9] = p.uv0[1];
 			instanceData[base + 10] = p.uv1[0];
 			instanceData[base + 11] = p.uv1[1];
-			instanceData[base + 12] = p.textpageBinding;
+			instanceData[base + 12] = p.slot;
 		}
 		backend.bindArrayBuffer(instBuf);
 		backend.updateVertexBuffer(instBuf, instanceData.subarray(0, batchCount * INSTANCE_FLOATS), 0);
@@ -259,7 +260,7 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 				throw new Error("[ParticlesPipeline] Texture '_textpage_primary' missing from view textures.");
 			}
 			const textpageSecondaryTex = gv.textures['_textpage_secondary'];
-			const textpageEngineTex = gv.textures[ENGINE_ATLAS_TEXTURE_KEY];
+			const textpageEngineTex = gv.textures[BIOS_TEXTPAGE_TEXTURE_KEY];
 				const state = cam
 					? updateCameraParticleState(width, height, cam)
 					: updateOrthographicParticleState(width, height);

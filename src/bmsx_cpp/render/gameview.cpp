@@ -167,11 +167,9 @@ void GameView::initializeDefaultTextures() {
 	textures["_textpage_primary"] = fallback;
 	textures["_textpage_secondary"] = fallback;
 	textures["_textpage_fallback"] = fallback;
-	primaryAtlasIdInSlot = -1;
-	secondaryAtlasIdInSlot = -1;
 	skyboxFaceIds = {};
 	skyboxRenderReady = false;
-	textures[ENGINE_ATLAS_TEXTURE_KEY] = fallback;
+	textures[BIOS_TEXTPAGE_TEXTURE_KEY] = fallback;
 
 	textures["_default_albedo"] = m_backend->createSolidTexture2D(1, 1, {1.0f, 1.0f, 1.0f, 1.0f});
 	textures["_default_normal"] = m_backend->createSolidTexture2D(1, 1, {0.5f, 0.5f, 1.0f, 1.0f});

@@ -13,6 +13,8 @@ const IMPLICIT_CLEAR_COLOR: VdpFrameBufferColor = { r: 0, g: 0, b: 0, a: 255 };
 
 type HeadlessSurfacePixels = {
 	pixels: Uint8Array;
+	width: number;
+	height: number;
 	stride: number;
 };
 
@@ -111,7 +113,12 @@ export class HeadlessVdpBlitterExecutor {
 			return cached;
 		}
 		const surface = resolveVdpSurfacePixels(vdp, source.surfaceId);
-		const resolved = { pixels: surface.pixels, stride: surface.stride };
+		const resolved = {
+			pixels: surface.pixels,
+			width: surface.width,
+			height: surface.height,
+			stride: surface.stride,
+		};
 		this.surfacePixelsBySurfaceId.set(source.surfaceId, resolved);
 		return resolved;
 	}
@@ -245,7 +252,12 @@ export class HeadlessVdpBlitterExecutor {
 				const srcX = flipH
 					? source.width - 1 - Math.floor((x * source.width) / dstW)
 					: Math.floor((x * source.width) / dstW);
-				const srcIndex = ((source.srcY + srcY) * sourcePixels.stride) + ((source.srcX + srcX) * 4);
+				const sampleX = source.srcX + srcX;
+				const sampleY = source.srcY + srcY;
+				if (sampleX < 0 || sampleX >= sourcePixels.width || sampleY < 0 || sampleY >= sourcePixels.height) {
+					continue;
+				}
+				const srcIndex = (sampleY * sourcePixels.stride) + (sampleX * 4);
 				const srcA = sourcePixels.pixels[srcIndex + 3];
 				if (srcA === 0) {
 					continue;

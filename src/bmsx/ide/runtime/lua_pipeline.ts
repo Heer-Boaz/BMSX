@@ -19,7 +19,6 @@ import { syncRuntimeGameViewStateToTable } from '../../machine/runtime/game/tabl
 import { restoreRuntimeLuaSnapshot } from '../../machine/runtime/resume_snapshot';
 import { applyRuntimeMachineState } from '../../machine/runtime/machine_state';
 import { flushHostRuntimeAssetEdits } from '../../core/host_asset_sync';
-import { runtimeFault } from '../../machine/runtime/runtime_fault';
 import { applyRuntimeRenderState, resetRuntimeRenderState } from '../../render/runtime_state';
 import { clearBackQueues } from '../../render/shared/queues';
 import { restoreVdpContextState } from '../../render/vdp/context_state';
@@ -58,10 +57,10 @@ const REQUIRED_ENGINE_SYSTEM_HELPERS: ReadonlyArray<string> = ['clock_now'];
 
 function resolvePositiveSafeInteger(value: number | undefined, label: string): number {
 	if (value === undefined) {
-		throw runtimeFault(`${label} is required.`);
+		throw new Error(`${label} is required.`);
 	}
 	if (!Number.isSafeInteger(value) || value <= 0) {
-		throw runtimeFault(`${label} must be a positive safe integer.`);
+		throw new Error(`${label} must be a positive safe integer.`);
 	}
 	return value;
 }
@@ -79,7 +78,7 @@ function applyUfpsScaled(ufps: number): number {
 function resolveRenderHeight(value: number | undefined): number {
 	const renderHeight = resolvePositiveSafeInteger(value, 'machine.render_size.height');
 	if (renderHeight <= 0) {
-		throw runtimeFault('machine.render_size.height must be a positive integer.');
+		throw new Error('machine.render_size.height must be a positive integer.');
 	}
 	return renderHeight;
 }
@@ -122,7 +121,7 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeS
 	workbenchMode.clearActiveDebuggerPause(runtime);
 	if (!state) {
 		runtime.luaRuntimeFailed = false;
-		throw runtimeFault('cannot resume from invalid state snapshot.');
+		throw new Error('cannot resume from invalid state snapshot.');
 	}
 	const snapshot: RuntimeResumeSnapshot = { ...state, luaRuntimeFailed: false };
 	runtime.interpreter.clearLastFaultEnvironment();
@@ -148,7 +147,7 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	const binding = params.path;
 	const baseMetadata = runtime.programMetadata;
 	if (!baseMetadata) {
-		throw runtimeFault('hot reload requires program symbols.');
+		throw new Error('hot reload requires program symbols.');
 	}
 	const interpreter = runtime.interpreter;
 	interpreter.clearLastFaultEnvironment();
@@ -156,7 +155,7 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	const { modules, modulePaths } = buildModuleChunks(runtime, binding);
 	const baseProgram = runtime.machine.cpu.getProgram();
 	if (!baseProgram) {
-		throw runtimeFault('hot reload requires active program.');
+		throw new Error('hot reload requires active program.');
 	}
 	const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, {
 		baseProgram,
@@ -567,12 +566,12 @@ export function shouldBootLuaProgramFromSources(runtime: Runtime): boolean {
 export function resolveProgramAssetSourceFor(runtime: Runtime, source: 'engine' | 'cart'): RawAssetSource {
 	if (source === 'engine') {
 		if (!runtime.engineAssetSource) {
-			throw runtimeFault('engine asset source is not configured.');
+			throw new Error('engine asset source is not configured.');
 		}
 		return runtime.engineAssetSource;
 	}
 	if (!runtime.cartAssetSource) {
-		throw runtimeFault('cart asset source is not configured.');
+		throw new Error('cart asset source is not configured.');
 	}
 	return runtime.cartAssetSource;
 }
@@ -581,7 +580,7 @@ export function loadProgramAssetsForSource(runtime: Runtime, source: 'engine' | 
 	const assetSource = resolveProgramAssetSourceFor(runtime, source);
 	const programEntry = assetSource.getEntry(PROGRAM_ASSET_ID);
 	if (!programEntry) {
-		throw runtimeFault('program asset not found.');
+		throw new Error('program asset not found.');
 	}
 	const program = decodeProgramAsset(assetSource.getBytes(programEntry));
 	const symbolsEntry = assetSource.getEntry(PROGRAM_SYMBOLS_ASSET_ID);
@@ -645,7 +644,7 @@ export function compileCartLuaProgramForBoot(runtime: Runtime): {
 } {
 	const entryAsset = runtime.cartLuaSources.path2lua[runtime.cartLuaSources.entry_path];
 	if (!entryAsset) {
-		throw runtimeFault('cannot prepare cart boot: entry Lua source is missing.');
+		throw new Error('cannot prepare cart boot: entry Lua source is missing.');
 	}
 	const entryPath = entryAsset.source_path;
 	const entrySource = resourceSourceForChunk(runtime, entryPath);
@@ -740,7 +739,7 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 	}
 	const path = entryAsset.source_path;
 	if (!path || path.length === 0) {
-		throw runtimeFault('cannot boot Lua program: entry asset has no path name.');
+		throw new Error('cannot boot Lua program: entry asset has no path name.');
 	}
 
 	runtime._luaPath = path;
@@ -945,7 +944,7 @@ export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
 	const chunk = runtime.interpreter.compileChunk(source, 'console');
 	const currentProgram = runtime.machine.cpu.getProgram();
 	if (!currentProgram) {
-		throw runtimeFault('console execution requires active program.');
+		throw new Error('console execution requires active program.');
 	}
 	const baseMetadata = runtime.programMetadata ?? runtime.consoleMetadata ?? buildConsoleMetadata(currentProgram);
 	const compiled = appendLuaChunkToProgram(currentProgram, baseMetadata, chunk, {

@@ -54,9 +54,6 @@ ButtonInputRequest readButtonInputRequest(Runtime& runtime, NativeArgsView args)
 }
 
 static u32 utf8SingleCodepoint(const std::string& text) {
-	if (text.empty()) {
-		throw BMSX_RUNTIME_ERROR("Font glyph key must not be empty.");
-	}
 	size_t index = 0;
 	u32 codepoint = readUtf8Codepoint(text, index);
 	if (index != text.size()) {
@@ -138,11 +135,7 @@ double Api::get_cpu_freq_hz() const {
 }
 
 void Api::set_cpu_freq_hz(double cpuHz) {
-	if (!std::isfinite(cpuHz) || cpuHz <= 0.0 || std::floor(cpuHz) != cpuHz) {
-		throw BMSX_RUNTIME_ERROR("[api.set_cpu_freq_hz] cpuHz must be a positive integer.");
-	}
-	const i64 normalizedCpuHz = static_cast<i64>(cpuHz);
-	applyActiveMachineTiming(m_runtime, normalizedCpuHz);
+	applyActiveMachineTiming(m_runtime, static_cast<i64>(cpuHz));
 }
 
 Value Api::get_player_input_handle(int playerIndex) {
@@ -276,11 +269,24 @@ m_runtime.registerNativeFunction("put_particle", [this, key](NativeArgsView args
 			auto* options = asTable(args[3]);
 			Value ambientMode = options->get(key("ambient_mode"));
 			Value ambientFactor = options->get(key("ambient_factor"));
+			Value slot = options->get(key("slot"));
+			Value u = options->get(key("u"));
+			Value v = options->get(key("v"));
+			Value w = options->get(key("w"));
+			Value h = options->get(key("h"));
+			if (isNil(slot) || isNil(u) || isNil(v) || isNil(w) || isNil(h)) {
+				throw BMSX_RUNTIME_ERROR("put_particle requires source slot/u/v/w/h.");
+			}
+			submission.slot = static_cast<uint32_t>(slot);
+			submission.u = static_cast<uint32_t>(u);
+			submission.v = static_cast<uint32_t>(v);
+			submission.w = static_cast<uint32_t>(w);
+			submission.h = static_cast<uint32_t>(h);
 			if (!isNil(ambientMode)) {
-				submission.ambient_mode = static_cast<int>(std::floor(asNumber(ambientMode)));
+				submission.ambient_mode = static_cast<int>(ambientMode);
 			}
 			if (!isNil(ambientFactor)) {
-				submission.ambient_factor = static_cast<float>(asNumber(ambientFactor));
+				submission.ambient_factor = static_cast<float>(ambientFactor);
 			}
 	}
 	put_particle(submission);
@@ -360,9 +366,6 @@ m_runtime.registerNativeFunction("dget", [this](NativeArgsView args, NativeResul
 });
 
 m_runtime.registerNativeFunction("set_sprite_parallax_rig", [this](NativeArgsView args, NativeResults& out) {
-	if (args.size() != 9) {
-		throw BMSX_RUNTIME_ERROR("set_sprite_parallax_rig expects 9 arguments.");
-	}
 	float vy = static_cast<float>(asNumber(args.at(0)));
 	float scale = static_cast<float>(asNumber(args.at(1)));
 	float impact = static_cast<float>(asNumber(args.at(2)));
@@ -547,12 +550,9 @@ Value Api::make_font_handle(BFont* font) {
 	);
 }
 
-BFont* Api::resolve_font(const Value& value) {
+BFont* Api::resolve_font(const Value& value) { // TODO: TOTALLY NO PARITY WITH TS-VERSION!!!!
 	if (isNil(value)) {
 		return m_font.get();
-	}
-	if (!valueIsNativeObject(value)) {
-		throw BMSX_RUNTIME_ERROR("Font must be a native font handle.");
 	}
 	NativeObject* obj = asNativeObject(value);
 	if (obj->raw == m_font.get()) {
@@ -568,9 +568,6 @@ BFont* Api::resolve_font(const Value& value) {
 }
 
 BFont* Api::create_font(const Value& definition) {
-	if (!valueIsTable(definition)) {
-		throw BMSX_RUNTIME_ERROR("create_font(definition) requires a table.");
-	}
 	auto key = [this](std::string_view name) {
 		return m_runtime.luaKey(name);
 	};
@@ -579,32 +576,14 @@ BFont* Api::create_font(const Value& definition) {
 	};
 	Table* definitionTable = asTable(definition);
 	Value glyphsValue = definitionTable->get(key("glyphs"));
-	if (!valueIsTable(glyphsValue)) {
-		throw BMSX_RUNTIME_ERROR("create_font(definition) requires definition.glyphs to be a table.");
-	}
 	Table* glyphsTable = asTable(glyphsValue);
 	GlyphMap glyphMap;
 	glyphsTable->forEachEntry([&](const Value& glyphKey, const Value& glyphValue) {
-		if (!valueIsString(glyphKey)) {
-			throw BMSX_RUNTIME_ERROR("create_font(definition) requires glyph keys to be strings.");
-		}
-		if (!valueIsString(glyphValue)) {
-			throw BMSX_RUNTIME_ERROR("create_font(definition) requires glyph values to be image id strings.");
-		}
 		const std::string& glyph = asText(glyphKey);
 		glyphMap[utf8SingleCodepoint(glyph)] = asText(glyphValue);
 	});
 
-	int advancePadding = 0;
-	Value advancePaddingValue = definitionTable->get(key("advance_padding"));
-	if (!isNil(advancePaddingValue)) {
-		if (!valueIsNumber(advancePaddingValue)) {
-			throw BMSX_RUNTIME_ERROR("create_font(definition) requires advance_padding to be a number.");
-		}
-		advancePadding = static_cast<int>(std::floor(asNumber(advancePaddingValue)));
-	}
-
-	std::unique_ptr<BFont> font = std::make_unique<BFont>(m_runtime.activeAssets(), std::move(glyphMap), advancePadding);
+	std::unique_ptr<BFont> font = std::make_unique<BFont>(m_runtime.activeAssets(), std::move(glyphMap), definitionTable->get(key("advance_padding")));
 	BFont* handle = font.get();
 	m_runtime_fonts.push_back(std::move(font));
 	return handle;
@@ -616,10 +595,7 @@ Color Api::palette_color(int index) const {
 
 Color Api::resolve_color(const Value& value) {
 	if (valueIsNumber(value)) {
-		return palette_color(static_cast<int>(std::floor(asNumber(value))));
-	}
-	if (!valueIsTable(value)) {
-		throw BMSX_RUNTIME_ERROR("Color expects a number or table.");
+		return palette_color(static_cast<int>(value));
 	}
 	auto* tbl = asTable(value);
 	Color color;
@@ -652,7 +628,7 @@ Vec3 Api::read_vec3(const Value& value) {
 
 std::array<f32, 3> Api::read_light_color(const Value& value) {
 	if (valueIsNumber(value)) {
-		const Color color = palette_color(static_cast<int>(std::floor(asNumber(value))));
+		const Color color = palette_color(static_cast<int>(value));
 		return {color.r, color.g, color.b};
 	}
 	if (valueIsTable(value)) {
@@ -660,7 +636,7 @@ std::array<f32, 3> Api::read_light_color(const Value& value) {
 		const Value red = tbl->get(m_keys.r);
 		if (!isNil(red)) {
 			return {
-				static_cast<f32>(asNumber(red)),
+				static_cast<f32>(red),
 				static_cast<f32>(asNumber(tbl->get(m_keys.g))),
 				static_cast<f32>(asNumber(tbl->get(m_keys.b))),
 			};

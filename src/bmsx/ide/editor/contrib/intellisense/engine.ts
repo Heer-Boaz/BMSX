@@ -7,7 +7,7 @@ import type { LuaSyntaxError } from '../../../../lua/errors';
 import { getCachedLuaParse } from '../../../../lua/analysis/cache';
 import { LuaInterpreter } from '../../../../lua/runtime';
 import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../../../lua/value';
-import { Api } from '../../../../machine/firmware/api';
+import { Api } from '../../../../machine/firmware/api/api';
 import { API_METHOD_METADATA } from '../../../../machine/firmware/api/metadata';
 import { Table, type CpuFrameSnapshot, type LocalSlotDebug, type SourceRange, type Value } from '../../../../machine/cpu/cpu';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS, DEFAULT_LUA_BUILTIN_NAMES } from '../../../../machine/firmware/builtin_descriptors';

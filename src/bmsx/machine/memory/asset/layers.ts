@@ -10,10 +10,6 @@ import {
 export type RuntimeAssetCollectionKey = 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents';
 export type RuntimeLayerLookup = Partial<Record<CartridgeLayerId, RuntimeAssetLayer>>;
 
-function runtimeAssetLayerFault(message: string): Error {
-	return new Error(`Runtime fault: ${message}`);
-}
-
 export function buildRuntimeLayerLookup(layers: ReadonlyArray<RuntimeAssetLayer>): RuntimeLayerLookup {
 	const lookup: RuntimeLayerLookup = {};
 	for (let index = 0; index < layers.length; index += 1) {
@@ -34,33 +30,24 @@ function getRuntimeLayerAssets(layer: RuntimeAssetLayer, kind: RuntimeAssetColle
 	}
 }
 
-export function resolveLayerForPayload(lookup: RuntimeLayerLookup, payloadId: CartridgeLayerId): RuntimeAssetLayer {
-	const layer = lookup[payloadId];
-	if (!layer) {
-		throw runtimeAssetLayerFault(`asset layer '${payloadId}' not configured.`);
-	}
-	return layer;
-}
-
 export function romBaseForPayload(payloadId: CartridgeLayerId): number {
 	switch (payloadId) {
 		case 'system': return SYSTEM_ROM_BASE;
 		case 'overlay': return OVERLAY_ROM_BASE;
 		case 'cart': return CART_ROM_BASE;
 	}
-	throw runtimeAssetLayerFault(`asset layer '${payloadId}' has no ROM base.`);
 }
 
 export function resolveRuntimeLayerAssetFromEntry<T>(lookup: RuntimeLayerLookup, kind: RuntimeAssetCollectionKey, entry: RomAsset): T {
 	const payloadId = entry.payload_id;
 	if (!payloadId) {
-		throw runtimeAssetLayerFault(`asset '${entry.resid}' missing payload_id.`);
+		throw new Error(`asset '${entry.resid}' missing payload_id.`);
 	}
-	const layer = resolveLayerForPayload(lookup, payloadId);
+	const layer = lookup[payloadId];
 	const assets = getRuntimeLayerAssets(layer, kind) as Record<string, T>;
 	const asset = assets[entry.resid];
 	if (!asset) {
-		throw runtimeAssetLayerFault(`${kind} asset '${entry.resid}' missing from '${payloadId}' layer.`);
+		throw new Error(`${kind} asset '${entry.resid}' missing from '${payloadId}' layer.`);
 	}
 	return asset;
 }
@@ -68,7 +55,7 @@ export function resolveRuntimeLayerAssetFromEntry<T>(lookup: RuntimeLayerLookup,
 export function resolveRuntimeLayerAssetById<T>(lookup: RuntimeLayerLookup, source: RawAssetSource, kind: RuntimeAssetCollectionKey, id: string): T {
 	const entry = source.getEntry(id);
 	if (!entry) {
-		throw runtimeAssetLayerFault(`${kind} asset '${id}' not found.`);
+		throw new Error(`${kind} asset '${id}' not found.`);
 	}
 	return resolveRuntimeLayerAssetFromEntry<T>(lookup, kind, entry);
 }

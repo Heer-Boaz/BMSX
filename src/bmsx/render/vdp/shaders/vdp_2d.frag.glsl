@@ -21,7 +21,7 @@ layout(std140) uniform FrameUniforms {
 	vec4 u_ambient_frame; // rgb,intensity
 };
 
-const uint ENGINE_ATLAS_ID = 254u;
+const uint VDP_SLOT_SYSTEM = 2u;
 
 void main() {
 	vec4 texColor;
@@ -29,7 +29,7 @@ void main() {
 		case 0u:
 			texColor = texture(u_texture0, v_texcoord);
 			break;
-		case ENGINE_ATLAS_ID:
+		case VDP_SLOT_SYSTEM:
 			texColor = texture(u_texture2, v_texcoord);
 			break;
 		default:

@@ -1,0 +1,135 @@
+local round_to_nearest<const> = require('round_to_nearest')
+
+local vdp_image<const> = {}
+local cache<const> = {}
+
+local slot_atlas_addr<const> = function(slot)
+	if slot == sys_vdp_slot_primary then
+		return sys_vdp_slot_primary_atlas
+	end
+	if slot == sys_vdp_slot_secondary then
+		return sys_vdp_slot_secondary_atlas
+	end
+	error('invalid VDP image slot ' .. tostring(slot))
+end
+
+function vdp_image.bind_slot_atlas(slot, atlas_id)
+	if mem[sys_vdp_slot_primary_atlas] == atlas_id then
+		mem[sys_vdp_slot_primary_atlas] = sys_vdp_atlas_none
+	end
+	if mem[sys_vdp_slot_secondary_atlas] == atlas_id then
+		mem[sys_vdp_slot_secondary_atlas] = sys_vdp_atlas_none
+	end
+	mem[slot_atlas_addr(slot)] = atlas_id
+end
+
+local require_meta<const> = function(imgid)
+	local asset<const> = assets.img[imgid]
+	if asset == nil then
+		error('image asset "' .. tostring(imgid) .. '" was not found.')
+	end
+	local meta<const> = asset.imgmeta
+	if meta == nil then
+		error('image asset "' .. tostring(imgid) .. '" missing imgmeta.')
+	end
+	if meta.atlasid == nil then
+		error('image asset "' .. tostring(imgid) .. '" missing atlasid.')
+	end
+	if meta.texcoords == nil then
+		error('image asset "' .. tostring(imgid) .. '" missing texcoords.')
+	end
+	return meta
+end
+
+function vdp_image.rect(imgid)
+	local cached<const> = cache[imgid]
+	if cached ~= nil then
+		return cached
+	end
+	local meta<const> = require_meta(imgid)
+	local atlas<const> = assets.img[string.format('_atlas_%02d', meta.atlasid)]
+	if atlas == nil or atlas.imgmeta == nil then
+		error('atlas ' .. tostring(meta.atlasid) .. ' for image "' .. tostring(imgid) .. '" was not found.')
+	end
+	local coords<const> = meta.texcoords
+	local min_u = coords[1]
+	local max_u = coords[1]
+	local min_v = coords[2]
+	local max_v = coords[2]
+	for i = 3, 11, 2 do
+		local u<const> = coords[i]
+		local v<const> = coords[i + 1]
+		if u < min_u then min_u = u end
+		if u > max_u then max_u = u end
+		if v < min_v then min_v = v end
+		if v > max_v then max_v = v end
+	end
+	local atlas_meta<const> = atlas.imgmeta
+	local rect<const> = {
+		atlas_id = meta.atlasid,
+		u = round_to_nearest(min_u * atlas_meta.width),
+		v = round_to_nearest(min_v * atlas_meta.height),
+		w = meta.width,
+		h = meta.height,
+	}
+	cache[imgid] = rect
+	return rect
+end
+
+function vdp_image.slot(rect)
+	if rect.atlas_id == 254 then
+		return sys_vdp_slot_system
+	end
+	if mem[sys_vdp_slot_primary_atlas] == rect.atlas_id then
+		return sys_vdp_slot_primary
+	end
+	if mem[sys_vdp_slot_secondary_atlas] == rect.atlas_id then
+		return sys_vdp_slot_secondary
+	end
+	error('atlas ' .. tostring(rect.atlas_id) .. ' is not loaded in a VDP slot.')
+end
+
+function vdp_image.source(rect)
+	return {
+		slot = vdp_image.slot(rect),
+		u = rect.u,
+		v = rect.v,
+		w = rect.w,
+		h = rect.h,
+	}
+end
+
+function vdp_image.write_source_words(dst, rect)
+	mem[dst] = vdp_image.slot(rect)
+	mem[dst + sys_vdp_arg_stride] = rect.u
+	mem[dst + (sys_vdp_arg_stride * 2)] = rect.v
+end
+
+function vdp_image.write_blit_rgba(imgid, x, y, z, layer, scale_x, scale_y, flip_flags, r, g, b, a, parallax_weight)
+	local rect<const> = vdp_image.rect(imgid)
+	memwrite(
+		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
+		sys_vdp_cmd_blit,
+		17,
+		0,
+			vdp_image.slot(rect),
+			rect.u,
+			rect.v,
+			rect.w,
+			rect.h,
+		x,
+		y,
+		z,
+		layer,
+		scale_x,
+		scale_y,
+		flip_flags,
+		r,
+		g,
+		b,
+		a,
+		parallax_weight
+	)
+end
+
+return vdp_image

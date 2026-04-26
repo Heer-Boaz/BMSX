@@ -39,7 +39,7 @@ const LuaSourceAsset* resolveLuaSourceByPath(const RuntimeAssets& assets, const 
 			return;
 		}
 		if (resolved && resolved->path != asset.path) {
-			throw runtimeFault("Ambiguous lua path '" + path + "'.");
+			throw new Error("Ambiguous lua path '" + path + "'.");
 		}
 		resolved = &asset;
 	});
@@ -90,7 +90,7 @@ std::string getRuntimeLuaEntryPath(Runtime& runtime) {
 	const RuntimeAssets& assets = runtime.activeAssets();
 	const std::string& entryPath = assets.entryPoint;
 	if (entryPath.empty()) {
-		throw runtimeFault("[devtools.get_lua_entry_path] Lua entry path is empty.");
+		throw new Error("[devtools.get_lua_entry_path] Lua entry path is empty.");
 	}
 	const LuaSourceAsset* source = resolveLuaSourceByPath(assets, entryPath);
 	return source ? source->path : entryPath;
@@ -99,7 +99,7 @@ std::string getRuntimeLuaEntryPath(Runtime& runtime) {
 std::string getRuntimeLuaResourceSource(Runtime& runtime, const std::string& path) {
 	const LuaSourceAsset* source = resolveRuntimeLuaSource(runtime, path);
 	if (!source) {
-		throw runtimeFault("[devtools.get_lua_resource_source] Missing Lua resource for path '" + path + "'. Available: " + summarizeLuaPaths(runtime, 16));
+		throw new Error("[devtools.get_lua_resource_source] Missing Lua resource for path '" + path + "'. Available: " + summarizeLuaPaths(runtime, 16));
 	}
 	return source->source;
 }

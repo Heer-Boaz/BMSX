@@ -137,6 +137,7 @@ add_library(bmsx_core STATIC
 	render/vdp/blitter/software.cpp
 	render/vdp/context_state.cpp
 	render/vdp/framebuffer.cpp
+	render/vdp/image_meta.cpp
 	render/vdp/presentation.cpp
 	render/vdp/source_pixels.cpp
 	render/vdp/skybox.cpp

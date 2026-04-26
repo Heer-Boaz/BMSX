@@ -97,6 +97,7 @@ const FontGlyph& BFont::getGlyph(u32 codepoint) {
 		const FontGlyph& space = getGlyph(static_cast<u32>(' '));
 		FontGlyph glyph;
 		glyph.imgid = space.imgid;
+		glyph.rect = space.rect;
 		glyph.width = space.advance * TAB_SPACES;
 		glyph.height = space.height;
 		glyph.advance = glyph.width;
@@ -108,6 +109,7 @@ const FontGlyph& BFont::getGlyph(u32 codepoint) {
 	ImgAsset* entry = m_assets.getImg(imgid);
 	FontGlyph glyph;
 	glyph.imgid = imgid;
+	glyph.rect = resolveImageAtlasRectFromAssets(m_assets, imgid);
 	glyph.width = entry->meta.width;
 	glyph.height = entry->meta.height;
 	glyph.advance = glyph.width + m_advance_padding;

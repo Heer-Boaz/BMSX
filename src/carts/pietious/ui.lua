@@ -90,90 +90,16 @@ function ui:draw_ui()
 		return
 	end
 	local player<const> = oget('pietolon')
-	memwrite(
-		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
-		sys_vdp_cmd_blit,
-			13,
-		0,
-		assets.img['game_header'].handle,
-		0,
-		0,
-		200,
-		sys_vdp_layer_ui,
-		1,
-		1,
-		0,
-		1,
-		1,
-		1,
-		1,
-		0
-	)
+	vdp_blit_img_rgba('game_header', 0, 0, 200, sys_vdp_layer_ui, 1, 1, 0, 1, 1, 1, 1, 0)
 	local equipped_sprite_id<const> = secondary_weapon_sprite_id(player.secondary_weapon)
 	if equipped_sprite_id ~= nil then
-		memwrite(
-			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
-			sys_vdp_cmd_blit,
-				13,
-			0,
-			assets.img[equipped_sprite_id].handle,
-			constants.hud.equipped_item_x * constants.room.tile_size,
-			constants.hud.equipped_item_y * constants.room.tile_size,
-			202,
-			sys_vdp_layer_ui,
-			1,
-			1,
-			0,
-			1,
-			1,
-			1,
-			1,
-			0
-		)
+		vdp_blit_img_rgba(equipped_sprite_id, constants.hud.equipped_item_x * constants.room.tile_size, constants.hud.equipped_item_y * constants.room.tile_size, 202, sys_vdp_layer_ui, 1, 1, 0, 1, 1, 1, 1, 0)
 	end
-	local blue_handle<const> = assets.img['energybar_stripe_blue'].handle
 	for i = 0, (self.hud_health_level - 1) do
-		memwrite(
-			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
-			sys_vdp_cmd_blit,
-				13,
-			0,
-			blue_handle,
-			constants.hud.health_bar_x + i,
-			constants.hud.health_bar_y,
-			201,
-			sys_vdp_layer_ui,
-			1,
-			1,
-			0,
-			1,
-			1,
-			1,
-			1,
-			0
-		)
+		vdp_blit_img_rgba('energybar_stripe_blue', constants.hud.health_bar_x + i, constants.hud.health_bar_y, 201, sys_vdp_layer_ui, 1, 1, 0, 1, 1, 1, 1, 0)
 	end
-	local red_handle<const> = assets.img['energybar_stripe_red'].handle
 	for i = 0, (self.hud_weapon_level - 1) do
-		memwrite(
-			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
-			sys_vdp_cmd_blit,
-				13,
-			0,
-			red_handle,
-			constants.hud.weapon_bar_x + i,
-			constants.hud.weapon_bar_y,
-			201,
-			sys_vdp_layer_ui,
-			1,
-			1,
-			0,
-			1,
-			1,
-			1,
-			1,
-			0
-		)
+		vdp_blit_img_rgba('energybar_stripe_red', constants.hud.weapon_bar_x + i, constants.hud.weapon_bar_y, 201, sys_vdp_layer_ui, 1, 1, 0, 1, 1, 1, 1, 0)
 	end
 end
 

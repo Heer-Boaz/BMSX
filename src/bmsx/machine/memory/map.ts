@@ -22,7 +22,7 @@ export const STRING_HANDLE_ENTRY_SIZE = 16;
 export const DEFAULT_STRING_HEAP_SIZE = 0x02000000; // 32 MB
 export const DEFAULT_ASSET_TABLE_SIZE = 0x00100000; // 1 MB
 export const DEFAULT_GEO_SCRATCH_SIZE = 0x00080000; // 512 KB
-export const DEFAULT_VRAM_ATLAS_SLOT_SIZE = 0x01000000; // 16 MB
+export const DEFAULT_VRAM_TEXTPAGE_SLOT_SIZE = 0x01000000; // 16 MB
 export const DEFAULT_VRAM_STAGING_SIZE = 0x00400000; // 4 MB
 export const DEFAULT_VRAM_FRAMEBUFFER_SIZE = 256 * 212 * 4;
 export const VDP_CMD_ARG_COUNT = 18;
@@ -36,8 +36,8 @@ export let STRING_HANDLE_COUNT = DEFAULT_STRING_HANDLE_COUNT;
 export let STRING_HANDLE_TABLE_SIZE = STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE;
 export let STRING_HEAP_SIZE = DEFAULT_STRING_HEAP_SIZE;
 export let ASSET_TABLE_SIZE = DEFAULT_ASSET_TABLE_SIZE;
-export let VRAM_ATLAS_SLOT_SIZE = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
-export let VRAM_SYSTEM_ATLAS_SLOT_SIZE = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
+export let VRAM_TEXTPAGE_SLOT_SIZE = DEFAULT_VRAM_TEXTPAGE_SLOT_SIZE;
+export let VRAM_SYSTEM_TEXTPAGE_SLOT_SIZE = DEFAULT_VRAM_TEXTPAGE_SLOT_SIZE;
 export let VRAM_STAGING_SIZE = DEFAULT_VRAM_STAGING_SIZE;
 export let VRAM_FRAMEBUFFER_SIZE = DEFAULT_VRAM_FRAMEBUFFER_SIZE;
 
@@ -52,14 +52,14 @@ export let ASSET_DATA_END = ASSET_RAM_BASE + ASSET_RAM_SIZE;
 export let GEO_SCRATCH_BASE = 0;
 export let GEO_SCRATCH_SIZE = DEFAULT_GEO_SCRATCH_SIZE;
 export let VDP_STREAM_BUFFER_BASE = 0;
-export let VRAM_SECONDARY_ATLAS_BASE = 0;
-export let VRAM_PRIMARY_ATLAS_BASE = 0;
-export let VRAM_SYSTEM_ATLAS_BASE = 0;
+export let VRAM_SECONDARY_TEXTPAGE_BASE = 0;
+export let VRAM_PRIMARY_TEXTPAGE_BASE = 0;
+export let VRAM_SYSTEM_TEXTPAGE_BASE = 0;
 export let VRAM_STAGING_BASE = 0;
 export let VRAM_FRAMEBUFFER_BASE = 0;
-export let VRAM_SYSTEM_ATLAS_SIZE = 0;
-export let VRAM_PRIMARY_ATLAS_SIZE = 0;
-export let VRAM_SECONDARY_ATLAS_SIZE = 0;
+export let VRAM_SYSTEM_TEXTPAGE_SIZE = 0;
+export let VRAM_PRIMARY_TEXTPAGE_SIZE = 0;
+export let VRAM_SECONDARY_TEXTPAGE_SIZE = 0;
 export let ASSET_DATA_ALLOC_END = 0;
 export let RAM_USED_END = RAM_BASE + RAM_SIZE;
 
@@ -109,7 +109,7 @@ function recomputeMemoryLayout(config: {
 	assetTableBytes: number;
 	assetDataBytes: number;
 	textpageSlotBytes: number;
-	engineAtlasSlotBytes: number;
+	systemTextpageSlotBytes: number;
 	stagingBytes: number;
 	frameBufferBytes: number;
 }): void {
@@ -118,8 +118,8 @@ function recomputeMemoryLayout(config: {
 	STRING_HANDLE_TABLE_SIZE = STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE;
 	STRING_HEAP_SIZE = config.stringHeapBytes;
 	ASSET_TABLE_SIZE = config.assetTableBytes;
-	VRAM_ATLAS_SLOT_SIZE = config.textpageSlotBytes;
-	VRAM_SYSTEM_ATLAS_SLOT_SIZE = config.engineAtlasSlotBytes;
+	VRAM_TEXTPAGE_SLOT_SIZE = config.textpageSlotBytes;
+	VRAM_SYSTEM_TEXTPAGE_SLOT_SIZE = config.systemTextpageSlotBytes;
 	VRAM_STAGING_SIZE = config.stagingBytes;
 	VRAM_FRAMEBUFFER_SIZE = config.frameBufferBytes;
 
@@ -136,13 +136,13 @@ function recomputeMemoryLayout(config: {
 	VDP_STREAM_BUFFER_BASE = GEO_SCRATCH_BASE + GEO_SCRATCH_SIZE;
 
 	VRAM_STAGING_BASE = VDP_STREAM_BUFFER_BASE + VDP_STREAM_BUFFER_SIZE;
-	VRAM_SYSTEM_ATLAS_BASE = VRAM_STAGING_BASE + VRAM_STAGING_SIZE;
-	VRAM_PRIMARY_ATLAS_BASE = VRAM_SYSTEM_ATLAS_BASE + VRAM_SYSTEM_ATLAS_SLOT_SIZE;
-	VRAM_SECONDARY_ATLAS_BASE = VRAM_PRIMARY_ATLAS_BASE + VRAM_ATLAS_SLOT_SIZE;
-	VRAM_FRAMEBUFFER_BASE = VRAM_SECONDARY_ATLAS_BASE + VRAM_ATLAS_SLOT_SIZE;
-	VRAM_SYSTEM_ATLAS_SIZE = VRAM_SYSTEM_ATLAS_SLOT_SIZE;
-	VRAM_PRIMARY_ATLAS_SIZE = VRAM_ATLAS_SLOT_SIZE;
-	VRAM_SECONDARY_ATLAS_SIZE = VRAM_ATLAS_SLOT_SIZE;
+	VRAM_SYSTEM_TEXTPAGE_BASE = VRAM_STAGING_BASE + VRAM_STAGING_SIZE;
+	VRAM_PRIMARY_TEXTPAGE_BASE = VRAM_SYSTEM_TEXTPAGE_BASE + VRAM_SYSTEM_TEXTPAGE_SLOT_SIZE;
+	VRAM_SECONDARY_TEXTPAGE_BASE = VRAM_PRIMARY_TEXTPAGE_BASE + VRAM_TEXTPAGE_SLOT_SIZE;
+	VRAM_FRAMEBUFFER_BASE = VRAM_SECONDARY_TEXTPAGE_BASE + VRAM_TEXTPAGE_SLOT_SIZE;
+	VRAM_SYSTEM_TEXTPAGE_SIZE = VRAM_SYSTEM_TEXTPAGE_SLOT_SIZE;
+	VRAM_PRIMARY_TEXTPAGE_SIZE = VRAM_TEXTPAGE_SLOT_SIZE;
+	VRAM_SECONDARY_TEXTPAGE_SIZE = VRAM_TEXTPAGE_SLOT_SIZE;
 	ASSET_DATA_ALLOC_END = ASSET_DATA_END;
 	RAM_USED_END = VDP_STREAM_BUFFER_BASE + VDP_STREAM_BUFFER_SIZE;
 }
@@ -154,8 +154,8 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 	const stringHandleCount = resolvePositiveInteger(specs?.string_handle_count ?? DEFAULT_STRING_HANDLE_COUNT, 'string_handle_count');
 	const stringHeapBytes = resolvePositiveInteger(specs?.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE, 'string_heap_bytes');
 	const assetTableBytes = resolvePositiveInteger(specs?.asset_table_bytes ?? DEFAULT_ASSET_TABLE_SIZE, 'asset_table_bytes');
-	const textpageSlotBytes = resolvePositiveInteger(specs?.textpage_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE, 'textpage_slot_bytes');
-	const engineAtlasSlotBytes = resolvePositiveInteger(specs?.system_textpage_slot_bytes ?? textpageSlotBytes, 'system_textpage_slot_bytes');
+	const textpageSlotBytes = resolvePositiveInteger(specs?.textpage_slot_bytes ?? DEFAULT_VRAM_TEXTPAGE_SLOT_SIZE, 'textpage_slot_bytes');
+	const systemTextpageSlotBytes = resolvePositiveInteger(specs?.system_textpage_slot_bytes ?? textpageSlotBytes, 'system_textpage_slot_bytes');
 	const stagingBytes = resolvePositiveInteger(specs?.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE, 'staging_bytes');
 	const frameBufferBytes = resolvePositiveInteger(specs?.framebuffer_bytes ?? DEFAULT_VRAM_FRAMEBUFFER_SIZE, 'framebuffer_bytes');
 	const stringHandleTableBytes = stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
@@ -190,7 +190,7 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 			assetTableBytes,
 			assetDataBytes,
 			textpageSlotBytes,
-			engineAtlasSlotBytes,
+			systemTextpageSlotBytes,
 			stagingBytes,
 			frameBufferBytes,
 		});
@@ -203,7 +203,7 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 		assetTableBytes,
 		assetDataBytes,
 		textpageSlotBytes,
-		engineAtlasSlotBytes,
+		systemTextpageSlotBytes,
 		stagingBytes,
 		frameBufferBytes,
 	});

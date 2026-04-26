@@ -20,13 +20,13 @@ layout(std140) uniform FrameUniforms {
 };
 uniform int u_particleAmbientMode;   // 0=unlit, 1=ambient
 uniform float u_particleAmbientFactor; // 0..1 strength if ambient
-const int ENGINE_ATLAS_ID = 254;
+const int VDP_SLOT_SYSTEM = 2;
 
 void main() {
 	vec4 tex;
 	if (v_textpage_id == 0) {
 		tex = texture(u_texture0, v_texcoord);
-	} else if (v_textpage_id == ENGINE_ATLAS_ID) {
+	} else if (v_textpage_id == VDP_SLOT_SYSTEM) {
 		tex = texture(u_texture2, v_texcoord);
 	} else {
 		tex = texture(u_texture1, v_texcoord);

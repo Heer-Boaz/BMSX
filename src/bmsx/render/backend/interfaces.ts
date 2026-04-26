@@ -282,7 +282,7 @@ export interface SkyboxPipelineState {
 	textpagePrimaryTex: TextureHandle;
 	textpageSecondaryTex: TextureHandle;
 	faceUvRects: Float32Array;
-	faceAtlasBindings: Int32Array;
+	faceTextpageBindings: Int32Array;
 }
 
 export interface MeshBatchPipelineState {

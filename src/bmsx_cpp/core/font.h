@@ -16,6 +16,7 @@ using GlyphMap = std::unordered_map<u32, std::string>;
 
 struct FontGlyph {
 	std::string imgid;
+	ImageAtlasRect rect;
 	i32 width = 0;
 	i32 height = 0;
 	i32 advance = 0;

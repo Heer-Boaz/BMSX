@@ -248,8 +248,13 @@ void VdpSoftwareBlitter::rasterizeFrameBufferBlit(VDP& vdp, std::vector<u8>& pix
 			const i32 srcX = flipH
 				? static_cast<i32>(source.width) - 1 - ((x * static_cast<i32>(source.width)) / dstW)
 				: ((x * static_cast<i32>(source.width)) / dstW);
-			const size_t srcIndex = (static_cast<size_t>(source.srcY + static_cast<uint32_t>(srcY)) * static_cast<size_t>(sourcePixels.stride))
-				+ (static_cast<size_t>(source.srcX + static_cast<uint32_t>(srcX)) * 4u);
+			const uint32_t sampleX = source.srcX + static_cast<uint32_t>(srcX);
+			const uint32_t sampleY = source.srcY + static_cast<uint32_t>(srcY);
+			if (sampleX >= sourcePixels.width || sampleY >= sourcePixels.height) {
+				continue;
+			}
+			const size_t srcIndex = (static_cast<size_t>(sampleY) * static_cast<size_t>(sourcePixels.stride))
+				+ (static_cast<size_t>(sampleX) * 4u);
 			const u8 srcA = sourcePixels.pixels[srcIndex + 3u];
 			if (srcA == 0u) {
 				continue;

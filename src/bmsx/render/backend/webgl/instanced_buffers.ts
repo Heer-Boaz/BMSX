@@ -1,14 +1,14 @@
 import type { WebGLBackend } from './backend';
 import {
-	TEXTURE_UNIT_ATLAS_ENGINE,
-	TEXTURE_UNIT_ATLAS_PRIMARY,
-	TEXTURE_UNIT_ATLAS_SECONDARY,
+	TEXTURE_UNIT_TEXTPAGE_ENGINE,
+	TEXTURE_UNIT_TEXTPAGE_PRIMARY,
+	TEXTURE_UNIT_TEXTPAGE_SECONDARY,
 } from './constants';
 import type { PassEncoder } from '../interfaces';
 
 export type WebGLInstancedBufferRuntime = {
 	instanceFloatBuffer: WebGLBuffer;
-	instanceAtlasBuffer: WebGLBuffer;
+	instanceTextpageBuffer: WebGLBuffer;
 	floatData: Float32Array;
 	textpageData: Uint8Array;
 	capacity: number;
@@ -47,7 +47,7 @@ export function createWebGLUnitQuadCornerBuffer(backend: WebGLBackend): WebGLBuf
 export function createWebGLInstanceBuffers(backend: WebGLBackend, capacity: number, instanceFloats: number): WebGLInstancedBufferRuntime {
 	return {
 		instanceFloatBuffer: backend.createVertexBuffer(new Float32Array(capacity * instanceFloats), 'dynamic') as WebGLBuffer,
-		instanceAtlasBuffer: backend.createVertexBuffer(new Uint8Array(capacity), 'dynamic') as WebGLBuffer,
+		instanceTextpageBuffer: backend.createVertexBuffer(new Uint8Array(capacity), 'dynamic') as WebGLBuffer,
 		floatData: new Float32Array(capacity * instanceFloats),
 		textpageData: new Uint8Array(capacity),
 		capacity,
@@ -68,9 +68,9 @@ export function getWebGLSpriteQuadUniforms(gl: WebGL2RenderingContext, program: 
 
 export function bindWebGLSpriteQuadTextureUnits(gl: WebGL2RenderingContext, uniforms: WebGLSpriteQuadUniforms): void {
 	gl.uniform1f(uniforms.scale, 1);
-	gl.uniform1i(uniforms.texture0, TEXTURE_UNIT_ATLAS_PRIMARY);
-	gl.uniform1i(uniforms.texture1, TEXTURE_UNIT_ATLAS_SECONDARY);
-	gl.uniform1i(uniforms.texture2, TEXTURE_UNIT_ATLAS_ENGINE);
+	gl.uniform1i(uniforms.texture0, TEXTURE_UNIT_TEXTPAGE_PRIMARY);
+	gl.uniform1i(uniforms.texture1, TEXTURE_UNIT_TEXTPAGE_SECONDARY);
+	gl.uniform1i(uniforms.texture2, TEXTURE_UNIT_TEXTPAGE_ENGINE);
 }
 
 export function bindWebGLUnitQuadCornerAttribute(backend: WebGLBackend, program: WebGLProgram, cornerBuffer: WebGLBuffer): void {
@@ -92,7 +92,7 @@ export function bindWebGLInstancedFloatAttributes(backend: WebGLBackend, program
 	}
 }
 
-export function bindWebGLAtlasIdAttribute(backend: WebGLBackend, program: WebGLProgram, textpageBuffer: WebGLBuffer): void {
+export function bindWebGLTextpageIdAttribute(backend: WebGLBackend, program: WebGLProgram, textpageBuffer: WebGLBuffer): void {
 	const gl = backend.gl as WebGL2RenderingContext;
 	backend.bindArrayBuffer(textpageBuffer);
 	const location = gl.getAttribLocation(program, 'i_textpage_id');
@@ -123,7 +123,7 @@ export function bindWebGLInstancedQuadVertexArray(
 	bindWebGLUnitQuadCornerAttribute(backend, program, quad.cornerBuffer);
 	backend.bindArrayBuffer(quad.instanceFloatBuffer);
 	bindWebGLInstancedFloatAttributes(backend, program, strideBytes, attributes);
-	bindWebGLAtlasIdAttribute(backend, program, quad.instanceAtlasBuffer);
+	bindWebGLTextpageIdAttribute(backend, program, quad.instanceTextpageBuffer);
 	backend.bindVertexArray(null);
 	backend.bindArrayBuffer(null);
 }
@@ -141,15 +141,15 @@ export function ensureWebGLInstanceBufferCapacity(backend: WebGLBackend, state: 
 	state.textpageData = new Uint8Array(capacity);
 	backend.bindArrayBuffer(state.instanceFloatBuffer);
 	backend.updateVertexBuffer(state.instanceFloatBuffer, state.floatData, 0);
-	backend.bindArrayBuffer(state.instanceAtlasBuffer);
-	backend.updateVertexBuffer(state.instanceAtlasBuffer, state.textpageData, 0);
+	backend.bindArrayBuffer(state.instanceTextpageBuffer);
+	backend.updateVertexBuffer(state.instanceTextpageBuffer, state.textpageData, 0);
 	backend.bindArrayBuffer(null);
 }
 
 export function flushWebGLInstanceBatch(backend: WebGLBackend, pass: PassEncoder, state: WebGLInstancedBufferRuntime, count: number, instanceFloats: number): void {
 	backend.bindArrayBuffer(state.instanceFloatBuffer);
 	backend.updateVertexBuffer(state.instanceFloatBuffer, state.floatData.subarray(0, count * instanceFloats), 0);
-	backend.bindArrayBuffer(state.instanceAtlasBuffer);
-	backend.updateVertexBuffer(state.instanceAtlasBuffer, state.textpageData.subarray(0, count), 0);
+	backend.bindArrayBuffer(state.instanceTextpageBuffer);
+	backend.updateVertexBuffer(state.instanceTextpageBuffer, state.textpageData.subarray(0, count), 0);
 	backend.drawInstanced(pass, 6, count, 0, 0);
 }

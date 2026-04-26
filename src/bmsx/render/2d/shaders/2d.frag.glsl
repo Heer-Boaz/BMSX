@@ -24,7 +24,7 @@ layout(std140) uniform FrameUniforms {
 // uniform int u_spriteAmbientEnabled;  // 0/1
 // uniform float u_spriteAmbientFactor; // 0..1
 
-const uint ENGINE_ATLAS_ID = 254u;
+const uint VDP_SLOT_SYSTEM = 2u;
 
 void main() {
 	vec4 texColor;
@@ -32,7 +32,7 @@ void main() {
 		case 0u: // Use the first texture if textpage ID is 0
 			texColor = texture(u_texture0, v_texcoord);
 			break;
-		case ENGINE_ATLAS_ID:
+		case VDP_SLOT_SYSTEM:
 			texColor = texture(u_texture2, v_texcoord);
 			break;
 		default: // Default to the secondary textpage for any other textpage ID

@@ -117,7 +117,7 @@ void FrameSchedulerState::restoreState(const FrameSchedulerStateSnapshot& state)
 
 void FrameSchedulerState::enqueueTickCompletion(Runtime& runtime, FrameState& frameState) {
 	if (m_tickCompletionCount >= TICK_COMPLETION_QUEUE_CAPACITY) {
-		throw runtimeFault("tick completion queue overflow.");
+		throw new Error("tick completion queue overflow.");
 	}
 	TickCompletion& slot = m_tickCompletionQueue[m_tickCompletionWriteIndex];
 	const i64 sequence = lastTickSequence + 1;

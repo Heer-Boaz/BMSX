@@ -487,12 +487,7 @@ SkyboxImageIds decodeSkyboxImageIds(const BinValue& value, const char* label) {
 }
 
 BinValue encodeVdpState(const VdpState& state) {
-	BinObject textpageSlots;
-	textpageSlots["primary"] = state.textpageSlots[0] >= 0 ? BinValue(static_cast<i64>(state.textpageSlots[0])) : BinValue(nullptr);
-	textpageSlots["secondary"] = state.textpageSlots[1] >= 0 ? BinValue(static_cast<i64>(state.textpageSlots[1])) : BinValue(nullptr);
-
 	BinObject object;
-	object["textpageSlots"] = BinValue(std::move(textpageSlots));
 	object["skyboxFaceIds"] = state.skyboxFaceIds.has_value()
 		? encodeSkyboxImageIds(*state.skyboxFaceIds)
 		: BinValue(nullptr);
@@ -502,12 +497,7 @@ BinValue encodeVdpState(const VdpState& state) {
 
 VdpState decodeVdpState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
-	const BinObject& textpageSlots = requireObject(requireField(object, "textpageSlots", label), "machine.vdp.textpageSlots");
 	VdpState state;
-	const BinValue& primary = requireField(textpageSlots, "primary", "machine.vdp.textpageSlots");
-	const BinValue& secondary = requireField(textpageSlots, "secondary", "machine.vdp.textpageSlots");
-	state.textpageSlots[0] = primary.isNull() ? -1 : requireI32(primary, "machine.vdp.textpageSlots.primary");
-	state.textpageSlots[1] = secondary.isNull() ? -1 : requireI32(secondary, "machine.vdp.textpageSlots.secondary");
 	const BinValue& skybox = requireField(object, "skyboxFaceIds", label);
 	if (!skybox.isNull()) {
 		state.skyboxFaceIds = decodeSkyboxImageIds(skybox, "machine.vdp.skyboxFaceIds");
@@ -543,7 +533,6 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	const VdpState base = decodeVdpState(value, label);
 	VdpSaveState state;
-	state.textpageSlots = base.textpageSlots;
 	state.skyboxFaceIds = base.skyboxFaceIds;
 	state.ditherType = base.ditherType;
 	state.vramStaging = requireBinary(requireField(object, "vramStaging", label), "machine.vdp.vramStaging");

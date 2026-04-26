@@ -76,8 +76,7 @@ struct RomAssetInfo {
 struct ImgMeta {
 	i32 width = 0;
 	i32 height = 0;
-	bool textpagesed = false;           // Whether this image is part of an textpage
-	i32 textpageid = 0;                  // Which textpage this image belongs to (0=primary, 1=secondary, 254=engine)
+	std::optional<i32> atlasid;
 
 	// Texture coordinates for sprite rendering.
 	// Each array is [u0, v0, u1, v1, u2, v2, u3, v3] for quad vertices
@@ -144,6 +143,22 @@ struct ImgAsset {
 	// GPU texture handle (set by renderer)
 	uintptr_t textureHandle = 0;
 	bool uploaded = false;
+};
+
+struct ImageAtlasRect {
+	i32 atlasId = 0;
+	u32 u = 0;
+	u32 v = 0;
+	u32 w = 0;
+	u32 h = 0;
+};
+
+struct ImageSlotSource {
+	u32 slot = 0;
+	u32 u = 0;
+	u32 v = 0;
+	u32 w = 0;
+	u32 h = 0;
 };
 
 /* ============================================================================
@@ -347,7 +362,7 @@ struct MachineManifest {
 	i32 viewportHeight = 0;
 	std::optional<i32> ramBytes;
 	std::optional<i32> textpageSlotBytes;
-	std::optional<i32> engineAtlasSlotBytes;
+	std::optional<i32> systemTextpageSlotBytes;
 	std::optional<i32> stagingBytes;
 	std::optional<i64> cpuHz;
 	std::optional<i64> imgDecBytesPerSec;
@@ -390,9 +405,6 @@ public:
 	std::unordered_map<AssetToken, LuaSourceAsset> lua;
 	std::unordered_map<AssetToken, AudioEventAsset> audioevents;
 
-	// Atlas textures (textpageid -> ImgAsset with full texture data)
-	std::unordered_map<i32, ImgAsset> textpageTextures;
-
 	// Pre-compiled program (loaded from __program__ asset)
 	std::unique_ptr<ProgramAsset> programAsset;
 	// Program symbols (loaded from __program_symbols__ asset)
@@ -407,7 +419,6 @@ public:
 	// Asset access
 	ImgAsset* getImg(const AssetId& id);
 	const ImgAsset* getImg(const AssetId& id) const;
-
 	AudioAsset* getAudio(const AssetId& id);
 	const AudioAsset* getAudio(const AssetId& id) const;
 
@@ -464,6 +475,8 @@ bool loadSystemAssetsFromRom(const u8* buffer,
 				RuntimeAssets& assets,
 				const AssetLoadCallbacks* callbacks = nullptr,
 				const char* payloadId = "system");
+
+ImageAtlasRect resolveImageAtlasRectFromAssets(const RuntimeAssets& assets, const std::string& imgId);
 
 } // namespace bmsx
 

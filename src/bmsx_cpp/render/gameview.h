@@ -137,12 +137,10 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Video snapshot fields (owned by VDP, consumed by renderer)
 	// ─────────────────────────────────────────────────────────────────────────
-	i32 primaryAtlasIdInSlot = -1;
-	i32 secondaryAtlasIdInSlot = -1;
 	SkyboxImageIds skyboxFaceIds;
 	bool skyboxRenderReady = false;
 	std::array<f32, SKYBOX_FACE_COUNT * 4> skyboxFaceUvRects{};
-	std::array<i32, SKYBOX_FACE_COUNT> skyboxFaceAtlasBindings{};
+	std::array<i32, SKYBOX_FACE_COUNT> skyboxFaceTextpageBindings{};
 	std::array<i32, SKYBOX_FACE_COUNT * 2> skyboxFaceSizes{};
 
 	// ─────────────────────────────────────────────────────────────────────────

@@ -11,7 +11,7 @@ namespace {
 
 int resolvePositiveWorkUnits(i64 value, const char* name) {
 	if (value <= 0) {
-		throw runtimeFault(std::string(name) + " must be greater than 0.");
+		throw new Error(std::string(name) + " must be greater than 0.");
 	}
 	return static_cast<int>(value);
 }

@@ -105,19 +105,23 @@ void processVdpCommandImpl(VDP& vdp, CPU& cpu, Api& api, uint32_t cmd, uint32_t 
 		}
 		case IO_CMD_VDP_BLIT: {
 			assertVdpPacketArgWords(cmd, argWords);
-			const uint32_t flipFlags = readPacketArgU32(argReader, cmd, 7);
-			vdp.enqueueBlit(
-				readPacketArgU32(argReader, cmd, 0),
-				readPacketArgF32(argReader, cmd, 1),
-				readPacketArgF32(argReader, cmd, 2),
-				readPacketArgF32(argReader, cmd, 3),
-				static_cast<Layer2D>(readPacketArgU32(argReader, cmd, 4)),
+				const uint32_t flipFlags = readPacketArgU32(argReader, cmd, 11);
+				vdp.enqueueBlit(
+					readPacketArgU32(argReader, cmd, 0),
+				readPacketArgU32(argReader, cmd, 1),
+				readPacketArgU32(argReader, cmd, 2),
+				readPacketArgU32(argReader, cmd, 3),
+				readPacketArgU32(argReader, cmd, 4),
 				readPacketArgF32(argReader, cmd, 5),
 				readPacketArgF32(argReader, cmd, 6),
+				readPacketArgF32(argReader, cmd, 7),
+				static_cast<Layer2D>(readPacketArgU32(argReader, cmd, 8)),
+				readPacketArgF32(argReader, cmd, 9),
+				readPacketArgF32(argReader, cmd, 10),
 				(flipFlags & 1u) != 0u,
 				(flipFlags & 2u) != 0u,
-				readPacketColor(argReader, cmd, 8),
-				readPacketArgF32(argReader, cmd, 12)
+				readPacketColor(argReader, cmd, 12),
+				readPacketArgF32(argReader, cmd, 16)
 			);
 			break;
 		}
@@ -145,8 +149,9 @@ void processVdpCommandImpl(VDP& vdp, CPU& cpu, Api& api, uint32_t cmd, uint32_t 
 		case IO_CMD_VDP_TILE_RUN: {
 			assertVdpPacketArgWords(cmd, argWords);
 			const uint32_t tileCount = readPacketArgU32(argReader, cmd, 0);
-			if (tileCount > payloadWords) {
-				throw vdpFault("tile payload underrun (" + std::to_string(tileCount) + " > " + std::to_string(payloadWords) + ").");
+			const uint64_t requiredPayloadWords = static_cast<uint64_t>(tileCount) * 3u;
+			if (tileCount > payloadWords / 3u) {
+				throw vdpFault("tile payload underrun (" + std::to_string(requiredPayloadWords) + " > " + std::to_string(payloadWords) + ").");
 			}
 			const i32 cols = readPacketArgI32(argReader, cmd, 1);
 			const i32 rows = readPacketArgI32(argReader, cmd, 2);

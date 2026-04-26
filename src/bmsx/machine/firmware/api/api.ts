@@ -16,7 +16,7 @@ import { putHardwareAmbientLight, putHardwareDirectionalLight, putHardwarePointL
 import { setSpriteParallaxRig, submitMesh, submit_particle } from '../../../render/shared/queues';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../builtin_descriptors';
 import { createLuaTable, type LuaTable } from '../../../lua/value';
-import { BmsxColors } from '../../devices/vdp/vdp';
+import { BmsxColors, type VdpSlotSource } from '../../devices/vdp/vdp';
 
 export type ApiOptions = {
 	storage: RuntimeStorage;
@@ -39,6 +39,15 @@ type FirmwareFontDescriptor = {
 	advance_padding: number;
 	glyphs: Record<string, FirmwareFontGlyphDescriptor>;
 };
+type ParticleApiOptions = {
+	slot?: number;
+	u?: number;
+	v?: number;
+	w?: number;
+	h?: number;
+	ambient_mode?: 0 | 1;
+	ambient_factor?: number;
+};
 
 export class Api {
 	private readonly storage: RuntimeStorage;
@@ -54,10 +63,6 @@ export class Api {
 	private _runtime: Runtime;
 
 	constructor(options: ApiOptions) {
-		const viewport = options.runtime.gameViewState.viewportSize;
-		if (viewport.x <= 0 || viewport.y <= 0) {
-			throw new Error('Invalid viewport size.');
-		}
 		this.storage = options.storage;
 		this._runtime = options.runtime;
 	}
@@ -75,12 +80,8 @@ export class Api {
 	}
 	// end normalized-body-acceptable
 
-	public resolveFontId(id: number): BFont {
-		const font = this.runtimeFonts[id];
-		if (font === undefined) {
-			throw new Error(`[FirmwareApi] Unknown font id ${id}.`);
-		}
-		return font;
+	public resolve_font(id: number): BFont {
+		return this.runtimeFonts[id];
 	}
 
 	private getDefaultFont(): BFont {
@@ -144,15 +145,31 @@ export class Api {
 		submitMesh(submission);
 	}
 
-	public put_particle(position: vec3arr, size: number, colorvalue: number | color, options?: Omit<ParticleRenderSubmission, 'position' | 'size' | 'color'>): void {
-		if (options === undefined || options.texture === undefined) {
-			throw new Error('put_particle requires options.texture.');
+	private readParticleSource(options: ParticleApiOptions | undefined): VdpSlotSource {
+		if (!options) {
+			throw new Error('put_particle requires slot/u/v/w/h.');
 		}
+		const { slot, u, v, w, h } = options;
+		if (slot === undefined || u === undefined || v === undefined || w === undefined || h === undefined) {
+			throw new Error('put_particle requires slot/u/v/w/h.');
+		}
+		return { slot, u, v, w, h };
+	}
+
+	public put_particle(position: vec3arr, size: number, colorvalue: number | color, options?: ParticleApiOptions): void {
+		if (!options) {
+			throw new Error('put_particle requires slot/u/v/w/h.');
+		}
+		const source = this.readParticleSource(options);
 		const submission: ParticleRenderSubmission = {
 			position,
 			size,
 			color: this.resolve_color(colorvalue),
-			texture: options.texture,
+			slot: source.slot,
+			u: source.u,
+			v: source.v,
+			w: source.w,
+			h: source.h,
 			ambient_mode: options.ambient_mode,
 			ambient_factor: options.ambient_factor,
 		};
@@ -171,12 +188,6 @@ export class Api {
 	}
 
 	public put_ambient_light(id: string, colorvalue: number | color | vec3arr | number[], intensity: number): void {
-		if (typeof id !== 'string' || id.length === 0) {
-			throw new Error('put_ambient_light id must be a non-empty string.');
-		}
-		if (!Number.isFinite(intensity)) {
-			throw new Error('put_ambient_light intensity must be a finite number.');
-		}
 		const colorVec = this.coerceLightColor(colorvalue, this.lightColorScratch, 'put_ambient_light color');
 		putHardwareAmbientLight(id, {
 			type: 'ambient',
@@ -186,12 +197,6 @@ export class Api {
 	}
 
 	public put_directional_light(id: string, orientation: vec3arr | number[] | { x: number; y: number; z: number }, colorvalue: number | color | vec3arr | number[], intensity: number): void {
-		if (typeof id !== 'string' || id.length === 0) {
-			throw new Error('put_directional_light id must be a non-empty string.');
-		}
-		if (!Number.isFinite(intensity)) {
-			throw new Error('put_directional_light intensity must be a finite number.');
-		}
 		const direction = this.coerceVec3(orientation, this.lightVecScratch, 'directional_light orientation');
 		const colorVec = this.coerceLightColor(colorvalue, this.lightColorScratch, 'put_directional_light color');
 		putHardwareDirectionalLight(id, {
@@ -203,15 +208,6 @@ export class Api {
 	}
 
 	public put_point_light(id: string, position: vec3arr | number[] | { x: number; y: number; z: number }, colorvalue: number | color | vec3arr | number[], range: number, intensity: number): void {
-		if (typeof id !== 'string' || id.length === 0) {
-			throw new Error('put_point_light id must be a non-empty string.');
-		}
-		if (!Number.isFinite(range) || range <= 0) {
-			throw new Error('put_point_light range must be a positive finite number.');
-		}
-		if (!Number.isFinite(intensity)) {
-			throw new Error('put_point_light intensity must be a finite number.');
-		}
 		const point = this.coerceVec3(position, this.lightVecScratch, 'point_light position');
 		const colorVec = this.coerceLightColor(colorvalue, this.lightColorScratch, 'put_point_light color');
 		putHardwarePointLight(id, {
@@ -232,9 +228,6 @@ export class Api {
 	}
 
 	public set_cpu_freq_hz(cpuHz: number): void {
-		if (!Number.isSafeInteger(cpuHz) || cpuHz <= 0) {
-			throw new Error('[api.set_cpu_freq_hz] cpuHz must be a positive safe integer.');
-		}
 		applyActiveMachineTiming(this._runtime, cpuHz);
 	}
 
@@ -247,34 +240,15 @@ export class Api {
 	}
 
 	public create_font(definition: FontDefinition): FirmwareFontDescriptor {
-		if (!definition || typeof definition !== 'object') {
-			throw new Error('create_font(definition) requires a table.');
-		}
-		if (!definition.glyphs || typeof definition.glyphs !== 'object') {
-			throw new Error('create_font(definition) requires definition.glyphs to be a table.');
-		}
 		const glyphMap: GlyphMap = {};
 		const glyphEntries = Object.entries(definition.glyphs);
 		for (let index = 0; index < glyphEntries.length; index += 1) {
 			const entry = glyphEntries[index];
 			const glyphKey = entry[0];
 			const glyphValue = entry[1];
-			if (Array.from(glyphKey).length !== 1) {
-				throw new Error(`create_font(definition) requires glyph keys to be single UTF-8 characters. Invalid key: '${glyphKey}'.`);
-			}
-			if (typeof glyphValue !== 'string') {
-				throw new Error(`create_font(definition) requires glyph '${glyphKey}' to map to a string image id.`);
-			}
 			glyphMap[glyphKey] = glyphValue;
 		}
-		let advancePadding = 0;
-		if (definition.advance_padding !== undefined) {
-			if (!Number.isFinite(definition.advance_padding)) {
-				throw new Error('create_font(definition) requires advance_padding to be a finite number.');
-			}
-			advancePadding = Math.floor(definition.advance_padding);
-		}
-		const font = new BFont(glyphMap, advancePadding);
+		const font = new BFont(glyphMap, definition.advance_padding);
 		return this.buildFontDescriptor(font);
 	}
 
@@ -291,9 +265,6 @@ export class Api {
 	}
 
 	public set_sprite_parallax_rig(vy: number, scale: number, impact: number, impact_t: number, bias_px: number, parallax_strength: number, scale_strength: number, flip_strength: number, flip_window: number): void {
-		if (arguments.length !== 9) {
-			throw new Error('set_sprite_parallax_rig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window) requires exactly 9 arguments.');
-		}
 		setSpriteParallaxRig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
 	}
 
@@ -311,18 +282,10 @@ export class Api {
 
 	public reboot(): void {
 		console.log('[Runtime API] Reboot requested.');
-		void this.runtime.rebootToBootRom().catch((error) => {
-			console.error('[Runtime API] Reboot failed:', error);
-		});
+		this.runtime.rebootToBootRom();
 	}
 
 	private palette_color(index: number): color {
-		if (!Number.isInteger(index)) {
-			throw new Error('Color index must be an integer.');
-		}
-		if (index < 0 || index >= BmsxColors.length) {
-			throw new Error(`Color index ${index} outside palette range 0-${BmsxColors.length - 1}.`);
-		}
 		return BmsxColors[index];
 	}
 
@@ -340,15 +303,9 @@ export class Api {
 		}
 		if (Array.isArray(value) || ArrayBuffer.isView(value)) {
 			const arr = value as ArrayLike<number>;
-			if (arr.length < 3) {
-				throw new Error(`${label} must have 3 elements.`);
-			}
 			const r = arr[0];
 			const g = arr[1];
 			const b = arr[2];
-			if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) {
-				throw new Error(`${label} must contain finite numbers.`);
-			}
 			out[0] = r;
 			out[1] = g;
 			out[2] = b;
@@ -356,9 +313,6 @@ export class Api {
 		}
 		if (value && typeof value === 'object' && 'r' in value && 'g' in value && 'b' in value) {
 			const colorValue = value as color;
-			if (!Number.isFinite(colorValue.r) || !Number.isFinite(colorValue.g) || !Number.isFinite(colorValue.b)) {
-				throw new Error(`${label} must contain finite numbers.`);
-			}
 			out[0] = colorValue.r;
 			out[1] = colorValue.g;
 			out[2] = colorValue.b;
@@ -370,27 +324,15 @@ export class Api {
 	private coerceMat4(value: Float32Array | number[], out: Float32Array, label: string): Float32Array {
 		if (ArrayBuffer.isView(value)) {
 			const arr = value as ArrayLike<number>;
-			if (arr.length < 16) {
-				throw new Error(`set_camera ${label} matrix must have 16 elements.`);
-			}
 			for (let i = 0; i < 16; i += 1) {
 				const n = arr[i];
-				if (!Number.isFinite(n)) {
-					throw new Error(`set_camera ${label} matrix contains non-finite values.`);
-				}
 				out[i] = n;
 			}
 			return out;
 		}
 		if (Array.isArray(value)) {
-			if (value.length < 16) {
-				throw new Error(`set_camera ${label} matrix must have 16 elements.`);
-			}
 			for (let i = 0; i < 16; i += 1) {
 				const n = value[i];
-				if (!Number.isFinite(n)) {
-					throw new Error(`set_camera ${label} matrix contains non-finite values.`);
-				}
 				out[i] = n;
 			}
 			return out;
@@ -404,9 +346,6 @@ export class Api {
 		let z: number;
 		if (Array.isArray(value) || ArrayBuffer.isView(value)) {
 			const arr = value as ArrayLike<number>;
-			if (arr.length < 3) {
-				throw new Error(`${label} must have 3 elements.`);
-			}
 			x = arr[0];
 			y = arr[1];
 			z = arr[2];
@@ -417,9 +356,6 @@ export class Api {
 			z = vec.z;
 		} else {
 			throw new Error(`${label} must be a vec3 array or xyz object.`);
-		}
-		if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
-			throw new Error(`${label} must contain finite numbers.`);
 		}
 		out[0] = x;
 		out[1] = y;
