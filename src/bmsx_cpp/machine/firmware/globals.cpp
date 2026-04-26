@@ -221,9 +221,9 @@ Table* buildTableArray(CPU& cpu, const std::vector<T>& values, const BuildFn& bu
 template <typename KeyFn>
 Table* buildImgMetaTable(CPU& cpu, const ImgMeta& meta, const KeyFn& key) {
 	auto* table = cpu.createTable(0, 12);
-	table->set(key("atlassed"), valueBool(meta.atlassed));
-	if (meta.atlassed) {
-		table->set(key("atlasid"), valueNumber(static_cast<double>(meta.atlasid)));
+	table->set(key("textpagesed"), valueBool(meta.textpagesed));
+	if (meta.textpagesed) {
+		table->set(key("textpageid"), valueNumber(static_cast<double>(meta.textpageid)));
 	}
 	table->set(key("width"), valueNumber(static_cast<double>(meta.width)));
 	table->set(key("height"), valueNumber(static_cast<double>(meta.height)));
@@ -1396,9 +1396,9 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_vdp_fifo", valueNumber(static_cast<double>(IO_VDP_FIFO)));
 	setGlobal("sys_vdp_fifo_ctrl", valueNumber(static_cast<double>(IO_VDP_FIFO_CTRL)));
 	setGlobal("sys_vdp_fifo_ctrl_seal", valueNumber(static_cast<double>(VDP_FIFO_CTRL_SEAL)));
-	setGlobal("sys_vdp_primary_atlas_id", valueNumber(static_cast<double>(IO_VDP_PRIMARY_ATLAS_ID)));
-	setGlobal("sys_vdp_secondary_atlas_id", valueNumber(static_cast<double>(IO_VDP_SECONDARY_ATLAS_ID)));
-	setGlobal("sys_vdp_atlas_none", valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
+	setGlobal("sys_vdp_primary_textpage_id", valueNumber(static_cast<double>(IO_VDP_PRIMARY_ATLAS_ID)));
+	setGlobal("sys_vdp_secondary_textpage_id", valueNumber(static_cast<double>(IO_VDP_SECONDARY_ATLAS_ID)));
+	setGlobal("sys_vdp_textpage_none", valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
 	setGlobal("sys_vdp_rd_surface", valueNumber(static_cast<double>(IO_VDP_RD_SURFACE)));
 	setGlobal("sys_vdp_rd_x", valueNumber(static_cast<double>(IO_VDP_RD_X)));
 	setGlobal("sys_vdp_rd_y", valueNumber(static_cast<double>(IO_VDP_RD_Y)));
@@ -3657,13 +3657,13 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 			ramTable->set(key("ram_bytes"), valueNumber(static_cast<double>(*manifest.ramBytes)));
 			specsTable->set(key("ram"), valueTable(ramTable));
 		}
-		if (manifest.atlasSlotBytes || manifest.engineAtlasSlotBytes || manifest.stagingBytes) {
+		if (manifest.textpageSlotBytes || manifest.engineAtlasSlotBytes || manifest.stagingBytes) {
 			auto* vramTable = cpu.createTable(0, 3);
-			if (manifest.atlasSlotBytes) {
-				vramTable->set(key("atlas_slot_bytes"), valueNumber(static_cast<double>(*manifest.atlasSlotBytes)));
+			if (manifest.textpageSlotBytes) {
+				vramTable->set(key("textpage_slot_bytes"), valueNumber(static_cast<double>(*manifest.textpageSlotBytes)));
 			}
 			if (manifest.engineAtlasSlotBytes) {
-				vramTable->set(key("system_atlas_slot_bytes"), valueNumber(static_cast<double>(*manifest.engineAtlasSlotBytes)));
+				vramTable->set(key("system_textpage_slot_bytes"), valueNumber(static_cast<double>(*manifest.engineAtlasSlotBytes)));
 			}
 			if (manifest.stagingBytes) {
 				vramTable->set(key("staging_bytes"), valueNumber(static_cast<double>(*manifest.stagingBytes)));

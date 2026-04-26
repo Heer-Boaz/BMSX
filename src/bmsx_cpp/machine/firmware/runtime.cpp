@@ -94,7 +94,7 @@ void Runtime::runEngineBuiltinPrelude() {
 		"trigger_effect",
 			"vdp_map_slot",
 			"vdp_load_slot",
-			"vdp_load_sys_atlas",
+			"vdp_load_sys_textpage",
 			"vdp_stream_claim_words",
 			"irq",
 		"on_irq",
