@@ -9,7 +9,7 @@ local toc_invalid_u32<const> = 0xffffffff
 local op_delete<const> = 1
 local hash_prime<const> = 0x1b3
 local u32_mod<const> = 0x100000000
-local kind_atlas<const> = 5
+local kind_textpage<const> = 5
 
 local layer_system<const> = 1
 local layer_cart<const> = 2
@@ -224,10 +224,10 @@ function romdir.cart(id)
 	return entry
 end
 
-function romdir.cart_atlas(id)
-	local entry<const> = find_in_layers(cart_layers, id, kind_atlas)
+function romdir.cart_textpage(id)
+	local entry<const> = find_in_layers(cart_layers, id, kind_textpage)
 	if entry == nil then
-		error('cart atlas resource "' .. tostring(id) .. '" was not found.')
+		error('cart textpage resource "' .. tostring(id) .. '" was not found.')
 	end
 	return entry
 end
@@ -240,10 +240,10 @@ function romdir.system(id)
 	return entry
 end
 
-function romdir.system_rom_atlas(id)
-	local entry<const> = find_in_layers(system_rom_layers, id, kind_atlas)
+function romdir.system_rom_textpage(id)
+	local entry<const> = find_in_layers(system_rom_layers, id, kind_textpage)
 	if entry == nil then
-		error('system ROM atlas resource "' .. tostring(id) .. '" was not found.')
+		error('system ROM textpage resource "' .. tostring(id) .. '" was not found.')
 	end
 	return entry
 end

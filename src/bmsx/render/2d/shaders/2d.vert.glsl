@@ -9,7 +9,7 @@ in vec2 i_axis_y;
 in vec2 i_uv0;
 in vec2 i_uv1;
 in float i_z;
-in uint i_atlas_id;
+in uint i_textpage_id;
 in float i_fx;
 in vec4 i_color;
 
@@ -31,7 +31,7 @@ layout(std140) uniform FrameUniforms {
 
 out vec2 v_texcoord;
 out vec4 v_color_override;
-flat out uint v_atlas_id;
+flat out uint v_textpage_id;
 
 float wobble(float t) {
 	return sin(t * 2.2) * 0.5 + sin(t * 1.1 + 1.7) * 0.5;
@@ -64,5 +64,5 @@ void main() {
 	gl_Position = vec4(clipSpace, 0.0, 1.0);
 	v_texcoord = mix(i_uv0, i_uv1, a_corner);
 	v_color_override = i_color;
-	v_atlas_id = i_atlas_id;
+	v_textpage_id = i_textpage_id;
 }

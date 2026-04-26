@@ -76,8 +76,8 @@ struct RomAssetInfo {
 struct ImgMeta {
 	i32 width = 0;
 	i32 height = 0;
-	bool atlassed = false;           // Whether this image is part of an atlas
-	i32 atlasid = 0;                  // Which atlas this image belongs to (0=primary, 1=secondary, 254=engine)
+	bool textpagesed = false;           // Whether this image is part of an textpage
+	i32 textpageid = 0;                  // Which textpage this image belongs to (0=primary, 1=secondary, 254=engine)
 
 	// Texture coordinates for sprite rendering.
 	// Each array is [u0, v0, u1, v1, u2, v2, u3, v3] for quad vertices
@@ -346,7 +346,7 @@ struct MachineManifest {
 	i32 viewportWidth = 0;
 	i32 viewportHeight = 0;
 	std::optional<i32> ramBytes;
-	std::optional<i32> atlasSlotBytes;
+	std::optional<i32> textpageSlotBytes;
 	std::optional<i32> engineAtlasSlotBytes;
 	std::optional<i32> stagingBytes;
 	std::optional<i64> cpuHz;
@@ -390,8 +390,8 @@ public:
 	std::unordered_map<AssetToken, LuaSourceAsset> lua;
 	std::unordered_map<AssetToken, AudioEventAsset> audioevents;
 
-	// Atlas textures (atlasid -> ImgAsset with full texture data)
-	std::unordered_map<i32, ImgAsset> atlasTextures;
+	// Atlas textures (textpageid -> ImgAsset with full texture data)
+	std::unordered_map<i32, ImgAsset> textpageTextures;
 
 	// Pre-compiled program (loaded from __program__ asset)
 	std::unique_ptr<ProgramAsset> programAsset;

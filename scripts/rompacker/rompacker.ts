@@ -8,7 +8,7 @@ import { createCliUi, findExistingDirectory, getParamOrEnv, normalizePathKey, pa
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartSources } from './cart_lua_linter_runtime';
 import { appendProgramAsset, commonResPath, createAtlasses, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, setAtlasFlag } from './rombuilder';
-import type { RomPackerOptions } from './formater.rompack';
+import type { RomPackerOptions } from './rompacker.rompack';
 import type { RomAsset } from '../../src/bmsx/rompack/format';
 import { LuaError } from '../../src/bmsx/lua/errors';
 
@@ -33,7 +33,7 @@ const KNOWN_FLAGS = new Set<string>([
 	'-respath',
 	'--debug',
 	'--force',
-	'--textureatlas',
+	'--texturetextpage',
 	'--skiptypecheck',
 	'--mode',
 	'-h',
@@ -45,7 +45,7 @@ const FLAGS_WITH_VALUES = new Set<string>([
 	'-title',
 	'-bootloaderpath',
 	'-respath',
-	'--textureatlas',
+	'--texturetextpage',
 ]);
 const OPT_LEVEL_RE = /^-O([0-3])$/;
 
@@ -185,7 +185,7 @@ function parseOptions(args: string[]): ParsedOptions {
 		writeOut(`  -respath <path>          Resource path override\n`, 'warning');
 		writeOut(`  --debug                  Build debug artifacts\n`, 'warning');
 		writeOut(`  --force                  Force the compilation and build of the rompack\n`, 'warning');
-		writeOut(`  --textureatlas <yes|no>  Enable or disable texture atlas (default: yes)\n`, 'warning');
+		writeOut(`  --texturetextpage <yes|no>  Enable or disable texture textpage (default: yes)\n`, 'warning');
 		writeOut(`  --mode <rompack|bios>  What to build (default: rompack)\n`, 'warning');
 		writeOut(`  -O0|-O1|-O2|-O3          Bytecode optimizer level (default: -O3)\n`, 'warning');
 		process.exit(0);
@@ -193,7 +193,7 @@ function parseOptions(args: string[]): ParsedOptions {
 
 	const optLevel = parseOptLevel(args);
 
-	const textureSetting = getOptionalParam(args, '--textureatlas', 'ROM_TEXTURE_ATLAS');
+	const textureSetting = getOptionalParam(args, '--texturetextpage', 'ROM_TEXTURE_ATLAS');
 	let useTextureAtlas = true;
 	if (textureSetting !== undefined) {
 		const raw = textureSetting.toLowerCase();
@@ -202,7 +202,7 @@ function parseOptions(args: string[]): ParsedOptions {
 		} else if (raw === 'no' || raw === 'false' || raw === '0') {
 			useTextureAtlas = false;
 		} else {
-			throw new Error(`Unsupported value "${raw}" for --textureatlas. Expected one of: yes, no, true, false, 1, 0.`);
+			throw new Error(`Unsupported value "${raw}" for --texturetextpage. Expected one of: yes, no, true, false, 1, 0.`);
 		}
 	}
 
@@ -700,7 +700,7 @@ async function main() {
 			await progress.taskCompleted();
 
 			if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-				await progress.runWithDetail('Generate atlases', () => createAtlasses(resources, message => progress.setDetail(message)));
+				await progress.runWithDetail('Generate textpagees', () => createAtlasses(resources, message => progress.setDetail(message)));
 			}
 			await progress.taskCompleted();
 

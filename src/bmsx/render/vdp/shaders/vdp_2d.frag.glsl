@@ -8,7 +8,7 @@ uniform sampler2D u_texture2;
 in vec2 v_texcoord;
 in vec4 v_color_override;
 in float v_priority;
-flat in uint v_atlas_id;
+flat in uint v_textpage_id;
 
 out vec4 outputColor;
 layout(std140) uniform FrameUniforms {
@@ -25,7 +25,7 @@ const uint ENGINE_ATLAS_ID = 254u;
 
 void main() {
 	vec4 texColor;
-	switch (v_atlas_id) {
+	switch (v_textpage_id) {
 		case 0u:
 			texColor = texture(u_texture0, v_texcoord);
 			break;

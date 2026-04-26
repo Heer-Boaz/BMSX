@@ -279,8 +279,8 @@ export interface SkyboxPipelineState {
 	height: number;
 	view: Float32Array;
 	proj: Float32Array;
-	atlasPrimaryTex: TextureHandle;
-	atlasSecondaryTex: TextureHandle;
+	textpagePrimaryTex: TextureHandle;
+	textpageSecondaryTex: TextureHandle;
 	faceUvRects: Float32Array;
 	faceAtlasBindings: Int32Array;
 }
@@ -300,9 +300,9 @@ export interface ParticlePipelineState {
 	viewProj: Float32Array;
 	camRight: Float32Array;
 	camUp: Float32Array;
-	atlasPrimaryTex?: TextureHandle;
-	atlasSecondaryTex?: TextureHandle;
-	atlasEngineTex?: TextureHandle;
+	textpagePrimaryTex?: TextureHandle;
+	textpageSecondaryTex?: TextureHandle;
+	textpageEngineTex?: TextureHandle;
 }
 
 export type RenderingViewportType = 'viewport' | 'offscreen';

@@ -340,13 +340,13 @@ function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest):
 		specs.set(runtime.luaKey('ram'), ramTable);
 	}
 	const vram = manifest.specs.vram;
-	if (vram && (vram.atlas_slot_bytes || vram.system_atlas_slot_bytes || vram.staging_bytes)) {
+	if (vram && (vram.textpage_slot_bytes || vram.system_textpage_slot_bytes || vram.staging_bytes)) {
 		const vramTable = new Table(0, 3);
-		if (vram.atlas_slot_bytes) {
-			vramTable.set(runtime.luaKey('atlas_slot_bytes'), vram.atlas_slot_bytes);
+		if (vram.textpage_slot_bytes) {
+			vramTable.set(runtime.luaKey('textpage_slot_bytes'), vram.textpage_slot_bytes);
 		}
-		if (vram.system_atlas_slot_bytes) {
-			vramTable.set(runtime.luaKey('system_atlas_slot_bytes'), vram.system_atlas_slot_bytes);
+		if (vram.system_textpage_slot_bytes) {
+			vramTable.set(runtime.luaKey('system_textpage_slot_bytes'), vram.system_textpage_slot_bytes);
 		}
 		if (vram.staging_bytes) {
 			vramTable.set(runtime.luaKey('staging_bytes'), vram.staging_bytes);
@@ -1220,9 +1220,9 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo', IO_VDP_FIFO);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo_ctrl', IO_VDP_FIFO_CTRL);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo_ctrl_seal', VDP_FIFO_CTRL_SEAL);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_primary_atlas_id', IO_VDP_PRIMARY_ATLAS_ID);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_secondary_atlas_id', IO_VDP_SECONDARY_ATLAS_ID);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_atlas_none', VDP_ATLAS_ID_NONE);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_primary_textpage_id', IO_VDP_PRIMARY_ATLAS_ID);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_secondary_textpage_id', IO_VDP_SECONDARY_ATLAS_ID);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_textpage_none', VDP_ATLAS_ID_NONE);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_rd_surface', IO_VDP_RD_SURFACE);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_rd_x', IO_VDP_RD_X);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_rd_y', IO_VDP_RD_Y);
@@ -1341,14 +1341,14 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_rom_cart_base', CART_ROM_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_rom_overlay_base', OVERLAY_ROM_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_rom_overlay_size', runtime.machine.memory.getOverlayRomSize());
-	luaPipeline.registerGlobal(runtime, 'sys_vram_system_atlas_base', VRAM_SYSTEM_ATLAS_BASE);
-	luaPipeline.registerGlobal(runtime, 'sys_vram_primary_atlas_base', VRAM_PRIMARY_ATLAS_BASE);
-	luaPipeline.registerGlobal(runtime, 'sys_vram_secondary_atlas_base', VRAM_SECONDARY_ATLAS_BASE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_system_textpage_base', VRAM_SYSTEM_ATLAS_BASE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_primary_textpage_base', VRAM_PRIMARY_ATLAS_BASE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_secondary_textpage_base', VRAM_SECONDARY_ATLAS_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_framebuffer_base', VRAM_FRAMEBUFFER_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_staging_base', VRAM_STAGING_BASE);
-	luaPipeline.registerGlobal(runtime, 'sys_vram_system_atlas_size', VRAM_SYSTEM_ATLAS_SIZE);
-	luaPipeline.registerGlobal(runtime, 'sys_vram_primary_atlas_size', VRAM_PRIMARY_ATLAS_SIZE);
-	luaPipeline.registerGlobal(runtime, 'sys_vram_secondary_atlas_size', VRAM_SECONDARY_ATLAS_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_system_textpage_size', VRAM_SYSTEM_ATLAS_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_primary_textpage_size', VRAM_PRIMARY_ATLAS_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_secondary_textpage_size', VRAM_SECONDARY_ATLAS_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_framebuffer_size', VRAM_FRAMEBUFFER_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_staging_size', VRAM_STAGING_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_size', runtime.machine.resourceUsageDetector.getVramTotalBytes());

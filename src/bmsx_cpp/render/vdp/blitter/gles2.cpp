@@ -26,7 +26,7 @@ struct VdpGles2Vertex {
 	f32 y = 0.0f;
 	f32 u = 0.0f;
 	f32 v = 0.0f;
-	f32 atlasId = 0.0f;
+	f32 textpageId = 0.0f;
 	f32 r = 1.0f;
 	f32 g = 1.0f;
 	f32 b = 1.0f;
@@ -37,7 +37,7 @@ struct VdpGles2SurfaceInfo {
 	TextureHandle texture = nullptr;
 	f32 invWidth = 0.0f;
 	f32 invHeight = 0.0f;
-	f32 atlasId = 0.0f;
+	f32 textpageId = 0.0f;
 };
 
 struct VdpGles2Host {
@@ -81,21 +81,21 @@ precision mediump float;
 
 attribute vec2 a_position;
 attribute vec2 a_uv;
-attribute float a_atlas_id;
+attribute float a_textpage_id;
 attribute vec4 a_color;
 
 uniform vec2 u_logical_size;
 
 varying vec2 v_texcoord;
 varying vec4 v_color;
-varying float v_atlas_id;
+varying float v_textpage_id;
 
 void main() {
 	vec2 clipSpace = (a_position / u_logical_size) * 2.0 - 1.0;
 	gl_Position = vec4(clipSpace, 0.0, 1.0);
 	v_texcoord = a_uv;
 	v_color = a_color;
-	v_atlas_id = a_atlas_id;
+	v_textpage_id = a_textpage_id;
 }
 )";
 
@@ -108,13 +108,13 @@ uniform sampler2D u_texture2;
 
 varying vec2 v_texcoord;
 varying vec4 v_color;
-varying float v_atlas_id;
+varying float v_textpage_id;
 
 void main() {
 	vec4 texColor;
-	if (v_atlas_id < 0.5) {
+	if (v_textpage_id < 0.5) {
 		texColor = texture2D(u_texture0, v_texcoord);
-	} else if (v_atlas_id < 1.5) {
+	} else if (v_textpage_id < 1.5) {
 		texColor = texture2D(u_texture1, v_texcoord);
 	} else {
 		texColor = texture2D(u_texture2, v_texcoord);
@@ -218,7 +218,7 @@ void initializeVdpGles2Runtime(OpenGLES2Backend* backend) {
 	state.program = linkVdpGles2Program(vs, fs);
 	state.attribPosition = glGetAttribLocation(state.program, "a_position");
 	state.attribUv = glGetAttribLocation(state.program, "a_uv");
-	state.attribAtlasId = glGetAttribLocation(state.program, "a_atlas_id");
+	state.attribAtlasId = glGetAttribLocation(state.program, "a_textpage_id");
 	state.attribColor = glGetAttribLocation(state.program, "a_color");
 	state.uniformLogicalSize = glGetUniformLocation(state.program, "u_logical_size");
 	state.uniformTexture0 = glGetUniformLocation(state.program, "u_texture0");
@@ -275,7 +275,7 @@ void pushVertex(
 	f32 y,
 	f32 u,
 	f32 v,
-	f32 atlasId,
+	f32 textpageId,
 	const VDP::FrameBufferColor& color
 ) {
 	vertices.push_back(VdpGles2Vertex{
@@ -283,7 +283,7 @@ void pushVertex(
 		y,
 		u,
 		v,
-		atlasId,
+		textpageId,
 		static_cast<f32>(color.r) / 255.0f,
 		static_cast<f32>(color.g) / 255.0f,
 		static_cast<f32>(color.b) / 255.0f,
@@ -305,15 +305,15 @@ void appendQuadVertices(
 	f32 v0,
 	f32 u1,
 	f32 v1,
-	f32 atlasId,
+	f32 textpageId,
 	const VDP::FrameBufferColor& color
 ) {
-	pushVertex(vertices, x00, y00, u0, v0, atlasId, color);
-	pushVertex(vertices, x01, y01, u0, v1, atlasId, color);
-	pushVertex(vertices, x10, y10, u1, v0, atlasId, color);
-	pushVertex(vertices, x10, y10, u1, v0, atlasId, color);
-	pushVertex(vertices, x01, y01, u0, v1, atlasId, color);
-	pushVertex(vertices, x11, y11, u1, v1, atlasId, color);
+	pushVertex(vertices, x00, y00, u0, v0, textpageId, color);
+	pushVertex(vertices, x01, y01, u0, v1, textpageId, color);
+	pushVertex(vertices, x10, y10, u1, v0, textpageId, color);
+	pushVertex(vertices, x10, y10, u1, v0, textpageId, color);
+	pushVertex(vertices, x01, y01, u0, v1, textpageId, color);
+	pushVertex(vertices, x11, y11, u1, v1, textpageId, color);
 }
 
 // disable-next-line single_line_method_pattern -- axis-aligned quads are the hot common case; this keeps zero-skew arguments out of every callsite.
@@ -327,10 +327,10 @@ void appendAxisAlignedQuadVertices(
 	f32 v0,
 	f32 u1,
 	f32 v1,
-	f32 atlasId,
+	f32 textpageId,
 	const VDP::FrameBufferColor& color
 ) {
-	appendQuadVertices(vertices, x, y, x, y + height, x + width, y, x + width, y + height, u0, v0, u1, v1, atlasId, color);
+	appendQuadVertices(vertices, x, y, x, y + height, x + width, y, x + width, y + height, u0, v0, u1, v1, textpageId, color);
 }
 
 void appendLineQuadVertices(
@@ -407,7 +407,7 @@ void appendBlitVertices(
 	std::vector<VdpGles2Vertex>& vertices,
 	const VDP::BlitterCommand& command,
 	const VDP::BlitterSource& source,
-	f32 atlasId,
+	f32 textpageId,
 	const VDP::FrameBufferColor& color
 ) {
 	const auto& surface = host.surfaces[source.surfaceId];
@@ -446,7 +446,7 @@ void appendBlitVertices(
 	transformPoint(x0, y0 + dstHeight, px01, py01);
 	transformPoint(x0 + dstWidth, y0, px10, py10);
 	transformPoint(x0 + dstWidth, y0 + dstHeight, px11, py11);
-	appendQuadVertices(vertices, px00, py00, px01, py01, px10, py10, px11, py11, u0, v0, u1, v1, atlasId, color);
+	appendQuadVertices(vertices, px00, py00, px01, py01, px10, py10, px11, py11, u0, v0, u1, v1, textpageId, color);
 }
 
 void bindVdpVertexLayout(const VdpGles2Runtime& state) {
@@ -457,7 +457,7 @@ void bindVdpVertexLayout(const VdpGles2Runtime& state) {
 	glEnableVertexAttribArray(static_cast<GLuint>(state.attribColor));
 	glVertexAttribPointer(state.attribPosition, 2, GL_FLOAT, GL_FALSE, sizeof(VdpGles2Vertex), reinterpret_cast<const void*>(offsetof(VdpGles2Vertex, x)));
 	glVertexAttribPointer(state.attribUv, 2, GL_FLOAT, GL_FALSE, sizeof(VdpGles2Vertex), reinterpret_cast<const void*>(offsetof(VdpGles2Vertex, u)));
-	glVertexAttribPointer(state.attribAtlasId, 1, GL_FLOAT, GL_FALSE, sizeof(VdpGles2Vertex), reinterpret_cast<const void*>(offsetof(VdpGles2Vertex, atlasId)));
+	glVertexAttribPointer(state.attribAtlasId, 1, GL_FLOAT, GL_FALSE, sizeof(VdpGles2Vertex), reinterpret_cast<const void*>(offsetof(VdpGles2Vertex, textpageId)));
 	glVertexAttribPointer(state.attribColor, 4, GL_FLOAT, GL_FALSE, sizeof(VdpGles2Vertex), reinterpret_cast<const void*>(offsetof(VdpGles2Vertex, r)));
 }
 
@@ -522,9 +522,9 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 	host.height = static_cast<i32>(vdp.frameBufferHeight());
 	host.parallaxRig = RenderQueues::spriteParallaxRig;
 	host.timeSeconds = timeSeconds;
-	auto prepareSurface = [&](uint32_t surfaceId, f32 atlasId) {
+	auto prepareSurface = [&](uint32_t surfaceId, f32 textpageId) {
 		auto& info = host.surfaces[surfaceId];
-		info.atlasId = atlasId;
+		info.textpageId = textpageId;
 		const auto surface = resolveVdpRenderSurface(vdp, surfaceId);
 		info.texture = getVdpRenderSurfaceTexture(surfaceId);
 		info.invWidth = 1.0f / static_cast<f32>(surface.width);
@@ -538,13 +538,13 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 		throw vdpBackendFault("missing framebuffer render texture.");
 	}
 	if (!host.surfaces[VDP_RD_SURFACE_ENGINE].texture) {
-		throw vdpBackendFault("missing engine atlas texture.");
+		throw vdpBackendFault("missing engine textpage texture.");
 	}
 	if (!host.surfaces[VDP_RD_SURFACE_PRIMARY].texture) {
-		throw vdpBackendFault("missing primary atlas texture.");
+		throw vdpBackendFault("missing primary textpage texture.");
 	}
 	if (!host.surfaces[VDP_RD_SURFACE_SECONDARY].texture) {
-		throw vdpBackendFault("missing secondary atlas texture.");
+		throw vdpBackendFault("missing secondary textpage texture.");
 	}
 	auto clearFrame = [&](const VDP::FrameBufferColor& color) {
 		bindVdpGles2Target(host);
@@ -625,7 +625,7 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 						state.vertices,
 						*command,
 						command->source,
-						host.surfaces[command->source.surfaceId].atlasId,
+						host.surfaces[command->source.surfaceId].textpageId,
 						command->color
 					);
 					break;
@@ -700,7 +700,7 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 							v0,
 							u1,
 							v1,
-							surface.atlasId,
+							surface.textpageId,
 							command->color
 						);
 					}
@@ -724,7 +724,7 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 							v0,
 							u1,
 							v1,
-							surface.atlasId,
+							surface.textpageId,
 							white
 						);
 					}

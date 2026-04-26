@@ -37,7 +37,7 @@ export function resolveVdpBlitterSample(vdp: VDP, handle: number): VdpResolvedBl
 		source,
 		surfaceWidth: surface.width,
 		surfaceHeight: surface.height,
-		atlasId: resolveVdpSurfaceAtlasBinding(source.surfaceId),
+		textpageId: resolveVdpSurfaceAtlasBinding(source.surfaceId),
 	};
 }
 
@@ -51,7 +51,7 @@ export function resolveVdpSurfaceAtlasBinding(surfaceId: number): number {
 	if (surfaceId === VDP_RD_SURFACE_ENGINE) {
 		return ENGINE_ATLAS_INDEX;
 	}
-	throw new Error(`[VDPSurfaces] Surface ${surfaceId} cannot be sampled by the blitter atlas pipeline.`);
+	throw new Error(`[VDPSurfaces] Surface ${surfaceId} cannot be sampled by the blitter textpage pipeline.`);
 }
 
 export function isVdpFrameBufferSurface(surfaceId: number): boolean {

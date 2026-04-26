@@ -37,7 +37,7 @@ import {
 	resolveVdpSurfaceAtlasBinding,
 } from '../surfaces';
 
-type DrawMode = 'atlas' | 'solid';
+type DrawMode = 'textpage' | 'solid';
 
 type WebGLVdpBlitterRuntime = {
 	gl: WebGL2RenderingContext;
@@ -47,7 +47,7 @@ type WebGLVdpBlitterRuntime = {
 	instanceFloatBuffer: WebGLBuffer;
 	instanceAtlasBuffer: WebGLBuffer;
 	floatData: Float32Array;
-	atlasData: Uint8Array;
+	textpageData: Uint8Array;
 	capacity: number;
 	whiteTexture: WebGLTexture;
 	priorityDepthTexture: WebGLTexture | null;
@@ -218,7 +218,7 @@ function flushPendingBatch(backend: WebGLBackend, pass: PassEncoder, state: WebG
 	return 0;
 }
 
-function writeQuad(state: WebGLVdpBlitterRuntime, index: number, originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, z: number, fx: number, priorityDepth: number, color: FrameBufferColor, atlasId: number): void {
+function writeQuad(state: WebGLVdpBlitterRuntime, index: number, originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, z: number, fx: number, priorityDepth: number, color: FrameBufferColor, textpageId: number): void {
 	const base = index * INSTANCE_FLOATS;
 	const data = state.floatData;
 	const drawOriginY = state.drawTargetHeight - originY;
@@ -241,12 +241,12 @@ function writeQuad(state: WebGLVdpBlitterRuntime, index: number, originX: number
 	data[base + 14] = color.g / 255;
 	data[base + 15] = color.b / 255;
 	data[base + 16] = color.a / 255;
-	state.atlasData[index] = atlasId;
+	state.textpageData[index] = textpageId;
 }
 
 // disable-next-line single_line_method_pattern -- axis-aligned quads are the hot common case; the wrapper keeps zero-skew arguments out of every callsite.
-function writeAxisAlignedQuad(state: WebGLVdpBlitterRuntime, index: number, x: number, y: number, width: number, height: number, u0: number, v0: number, u1: number, v1: number, z: number, fx: number, priorityDepth: number, color: FrameBufferColor, atlasId: number): void {
-	writeQuad(state, index, x, y, width, 0, 0, height, u0, v0, u1, v1, z, fx, priorityDepth, color, atlasId);
+function writeAxisAlignedQuad(state: WebGLVdpBlitterRuntime, index: number, x: number, y: number, width: number, height: number, u0: number, v0: number, u1: number, v1: number, z: number, fx: number, priorityDepth: number, color: FrameBufferColor, textpageId: number): void {
+	writeQuad(state, index, x, y, width, 0, 0, height, u0, v0, u1, v1, z, fx, priorityDepth, color, textpageId);
 }
 
 function appendFillCommand(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, index: number, command: BlitterFillRectCommand, priorityDepth: number): number {
@@ -443,7 +443,7 @@ function drawSortedSegment(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitt
 					nextMode = 'solid';
 					break;
 				default:
-					nextMode = 'atlas';
+					nextMode = 'textpage';
 					break;
 			}
 			if (boundMode !== nextMode) {
@@ -472,10 +472,10 @@ function drawSortedSegment(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitt
 					}
 					batchCount += appendGlyphRunBackground(backend, state, batchCount, command, priorityDepth);
 				}
-				if (boundMode !== 'atlas') {
+				if (boundMode !== 'textpage') {
 					batchCount = flushPendingBatch(backend, pass, state, batchCount);
-					bindTexturesForMode(backend, state, 'atlas');
-					boundMode = 'atlas';
+					bindTexturesForMode(backend, state, 'textpage');
+					boundMode = 'textpage';
 				}
 				batchCount += appendGlyphRunGlyphs(vdp, backend, state, batchCount, command, priorityDepth);
 				break;

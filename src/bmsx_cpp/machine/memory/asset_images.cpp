@@ -15,12 +15,12 @@
 namespace bmsx {
 namespace {
 
-uint32_t atlasTexcoordRegionSize(uint32_t atlasSize, int32_t offset, f32 minCoord, f32 maxCoord) {
-	const int32_t texels = static_cast<int32_t>(std::round((maxCoord - minCoord) * static_cast<f32>(atlasSize)));
+uint32_t textpageTexcoordRegionSize(uint32_t textpageSize, int32_t offset, f32 minCoord, f32 maxCoord) {
+	const int32_t texels = static_cast<int32_t>(std::round((maxCoord - minCoord) * static_cast<f32>(textpageSize)));
 	if (texels < 1) {
 		return 1u;
 	}
-	const int32_t remaining = static_cast<int32_t>(atlasSize) - offset;
+	const int32_t remaining = static_cast<int32_t>(textpageSize) - offset;
 	return static_cast<uint32_t>(texels < remaining ? texels : remaining);
 }
 
@@ -58,7 +58,7 @@ RegisteredImageMemory registerImageMemory(Memory& memory, RuntimeAssets& engineA
 	const ImgAsset* engineAtlasAsset = engineAssets.getImg(engineAtlasName);
 	for (const auto& entry : engineAssets.img) {
 		const ImgAsset& image = entry.second;
-		if (!image.meta.atlassed || image.meta.atlasid != ENGINE_ATLAS_INDEX) {
+		if (!image.meta.textpagesed || image.meta.textpageid != ENGINE_ATLAS_INDEX) {
 			continue;
 		}
 		if (viewAssetIds.insert(image.id).second) {
@@ -69,17 +69,17 @@ RegisteredImageMemory registerImageMemory(Memory& memory, RuntimeAssets& engineA
 
 	for (const auto& entry : assets.img) {
 		const ImgAsset& image = entry.second;
-		if (image.rom.type == "atlas") {
+		if (image.rom.type == "textpage") {
 			if (image.meta.width <= 0 || image.meta.height <= 0) {
 				throw BMSX_RUNTIME_ERROR("Atlas '" + image.id + "' missing dimensions.");
 			}
-			registered.atlasMemory.atlasSizesById[image.meta.atlasid] = VdpAtlasSize{
+			registered.textpageMemory.textpageSizesById[image.meta.textpageid] = VdpAtlasSize{
 				static_cast<uint32_t>(image.meta.width),
 				static_cast<uint32_t>(image.meta.height)
 			};
 			continue;
 		}
-		if (image.meta.atlassed && viewAssetIds.insert(image.id).second) {
+		if (image.meta.textpagesed && viewAssetIds.insert(image.id).second) {
 			viewAssets.push_back(image.id);
 			viewAssetById[image.id] = &image;
 		}
@@ -87,7 +87,7 @@ RegisteredImageMemory registerImageMemory(Memory& memory, RuntimeAssets& engineA
 
 	const auto& engineAtlasMeta = engineAtlasAsset->meta;
 	if (engineAtlasMeta.width <= 0 || engineAtlasMeta.height <= 0) {
-		throw BMSX_RUNTIME_ERROR("Engine atlas missing dimensions.");
+		throw BMSX_RUNTIME_ERROR("Engine textpage missing dimensions.");
 	}
 	if (!memory.hasAsset(engineAtlasName)) {
 		memory.registerImageSlotAt(
@@ -125,29 +125,29 @@ RegisteredImageMemory registerImageMemory(Memory& memory, RuntimeAssets& engineA
 	std::sort(viewAssets.begin(), viewAssets.end());
 	for (const auto& id : viewAssets) {
 		const ImgAsset& image = *viewAssetById.at(id);
-		const i32 atlasId = image.meta.atlasid;
+		const i32 textpageId = image.meta.textpageid;
 		const auto& tc = image.meta.texcoords;
 		const f32 minU = std::min({tc[0], tc[2], tc[4], tc[6], tc[8], tc[10]});
 		const f32 maxU = std::max({tc[0], tc[2], tc[4], tc[6], tc[8], tc[10]});
 		const f32 minV = std::min({tc[1], tc[3], tc[5], tc[7], tc[9], tc[11]});
 		const f32 maxV = std::max({tc[1], tc[3], tc[5], tc[7], tc[9], tc[11]});
 		std::string baseEntryId = ATLAS_PRIMARY_SLOT_ID;
-		uint32_t atlasWidth = 0;
-		uint32_t atlasHeight = 0;
-		if (atlasId == ENGINE_ATLAS_INDEX) {
+		uint32_t textpageWidth = 0;
+		uint32_t textpageHeight = 0;
+		if (textpageId == ENGINE_ATLAS_INDEX) {
 			baseEntryId = engineAtlasName;
-			atlasWidth = static_cast<uint32_t>(engineAtlasMeta.width);
-			atlasHeight = static_cast<uint32_t>(engineAtlasMeta.height);
+			textpageWidth = static_cast<uint32_t>(engineAtlasMeta.width);
+			textpageHeight = static_cast<uint32_t>(engineAtlasMeta.height);
 		} else {
-			const VdpAtlasSize& atlasSize = registered.atlasMemory.atlasSizesById.at(atlasId);
-			atlasWidth = atlasSize.width;
-			atlasHeight = atlasSize.height;
+			const VdpAtlasSize& textpageSize = registered.textpageMemory.textpageSizesById.at(textpageId);
+			textpageWidth = textpageSize.width;
+			textpageHeight = textpageSize.height;
 		}
-		// start numeric-sanitization-acceptable -- atlas view bounds are reconstructed from float texcoords at the asset boundary.
-		const int32_t offsetX = static_cast<int32_t>(std::round(minU * static_cast<f32>(atlasWidth)));
-		const int32_t offsetY = static_cast<int32_t>(std::round(minV * static_cast<f32>(atlasHeight)));
-		const uint32_t regionW = atlasTexcoordRegionSize(atlasWidth, offsetX, minU, maxU);
-		const uint32_t regionH = atlasTexcoordRegionSize(atlasHeight, offsetY, minV, maxV);
+		// start numeric-sanitization-acceptable -- textpage view bounds are reconstructed from float texcoords at the asset boundary.
+		const int32_t offsetX = static_cast<int32_t>(std::round(minU * static_cast<f32>(textpageWidth)));
+		const int32_t offsetY = static_cast<int32_t>(std::round(minV * static_cast<f32>(textpageHeight)));
+		const uint32_t regionW = textpageTexcoordRegionSize(textpageWidth, offsetX, minU, maxU);
+		const uint32_t regionH = textpageTexcoordRegionSize(textpageHeight, offsetY, minV, maxV);
 		// end numeric-sanitization-acceptable
 		if (!memory.hasAsset(id)) {
 			memory.registerImageView(
@@ -171,7 +171,7 @@ RegisteredImageMemory registerImageMemory(Memory& memory, RuntimeAssets& engineA
 				0
 			);
 		}
-		registered.atlasMemory.atlasViewIdsById[atlasId].push_back(id);
+		registered.textpageMemory.textpageViewIdsById[textpageId].push_back(id);
 	}
 	return registered;
 }

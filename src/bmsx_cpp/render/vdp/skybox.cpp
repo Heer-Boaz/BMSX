@@ -26,16 +26,16 @@ void commitVdpSkyboxViewState(GameView& view, const VDP& vdp, Memory& memory) {
 		const std::string& assetId = *faces[index];
 		const VDP::BlitterSource source = vdp.resolveBlitterSource(memory.resolveAssetHandle(assetId));
 		const VdpRenderSurfaceInfo surface = resolveVdpRenderSurface(vdp, source.surfaceId);
-		const i32 atlasBinding = resolveVdpSurfaceAtlasBinding(source.surfaceId);
-		if (atlasBinding == ENGINE_ATLAS_INDEX) {
-			throw vdpFault("skybox image '" + assetId + "' must live in primary/secondary atlas space, not the engine atlas.");
+		const i32 textpageBinding = resolveVdpSurfaceAtlasBinding(source.surfaceId);
+		if (textpageBinding == ENGINE_ATLAS_INDEX) {
+			throw vdpFault("skybox image '" + assetId + "' must live in primary/secondary textpage space, not the engine textpage.");
 		}
 		const size_t uvBase = index * 4u;
 		view.skyboxFaceUvRects[uvBase + 0u] = static_cast<f32>(source.srcX) / static_cast<f32>(surface.width);
 		view.skyboxFaceUvRects[uvBase + 1u] = static_cast<f32>(source.srcY) / static_cast<f32>(surface.height);
 		view.skyboxFaceUvRects[uvBase + 2u] = static_cast<f32>(source.width) / static_cast<f32>(surface.width);
 		view.skyboxFaceUvRects[uvBase + 3u] = static_cast<f32>(source.height) / static_cast<f32>(surface.height);
-		view.skyboxFaceAtlasBindings[index] = atlasBinding;
+		view.skyboxFaceAtlasBindings[index] = textpageBinding;
 		const size_t sizeBase = index * 2u;
 		view.skyboxFaceSizes[sizeBase + 0u] = static_cast<i32>(source.width);
 		view.skyboxFaceSizes[sizeBase + 1u] = static_cast<i32>(source.height);

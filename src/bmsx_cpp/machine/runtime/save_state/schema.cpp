@@ -8,7 +8,7 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"accumulatedHostTimeMs",
 	"array",
 	"arrayLength",
-	"atlasSlots",
+	"textpageSlots",
 	"callSitePc",
 	"captureReturns",
 	"closureRef",

@@ -60,7 +60,7 @@ local vdp_load_queue_tail
 local vdp_active_job
 local vdp_load_handler
 local cart_irq_handlers<const> = {}
-local sys_atlas_id<const> = 254
+local sys_textpage_id<const> = 254
 vdp_stream_cursor = sys_vdp_stream_base
 vdp_stream_limit = sys_vdp_stream_base + (sys_vdp_stream_capacity_words * sys_vdp_arg_stride)
 
@@ -350,38 +350,38 @@ function engine.define_effect(definition, opts)
 	action_effects.register_effect(definition, opts)
 end
 
-function engine.vdp_map_slot(slot, atlas_id)
-	if atlas_id == nil then
-		atlas_id = sys_vdp_atlas_none
+function engine.vdp_map_slot(slot, textpage_id)
+	if textpage_id == nil then
+		textpage_id = sys_vdp_textpage_none
 	end
 	if slot == 0 then
-		mem[sys_vdp_primary_atlas_id] = atlas_id
+		mem[sys_vdp_primary_textpage_id] = textpage_id
 		return
 	end
 	if slot == 1 then
-		mem[sys_vdp_secondary_atlas_id] = atlas_id
+		mem[sys_vdp_secondary_textpage_id] = textpage_id
 		return
 	end
 	error('vdp_map_slot: invalid slot ' .. tostring(slot))
 end
 
-function engine.vdp_load_slot(slot, atlas_id)
+function engine.vdp_load_slot(slot, textpage_id)
 	if vdp_load_queue_head == nil then
 		vdp_load_queue_head = 1
 		vdp_load_queue_tail = 0
 	end
-	local atlas_name<const> = string.format('_atlas_%02d', atlas_id)
-	local atlas<const> = romdir.cart_atlas(atlas_name)
-	local src<const> = atlas.addr
-	local len<const> = atlas.len
+	local textpage_name<const> = string.format('_textpage_%02d', textpage_id)
+	local textpage<const> = romdir.cart_textpage(textpage_name)
+	local src<const> = textpage.addr
+	local len<const> = textpage.len
 	local dst
 	local cap
 	if slot == 0 then
-		dst = sys_vram_primary_atlas_base
-		cap = sys_vram_primary_atlas_size
+		dst = sys_vram_primary_textpage_base
+		cap = sys_vram_primary_textpage_size
 	elseif slot == 1 then
-		dst = sys_vram_secondary_atlas_base
-		cap = sys_vram_secondary_atlas_size
+		dst = sys_vram_secondary_textpage_base
+		cap = sys_vram_secondary_textpage_size
 	else
 		error('vdp_load_slot: invalid slot ' .. tostring(slot))
 	end
@@ -390,7 +390,7 @@ function engine.vdp_load_slot(slot, atlas_id)
 	vdp_load_queue[vdp_load_queue_tail] = {
 		job_id = vdp_load_job_seq,
 		slot = slot,
-		atlas_id = atlas_id,
+		textpage_id = textpage_id,
 		allow_handler = true,
 		src = src,
 		len = len,
@@ -401,26 +401,26 @@ function engine.vdp_load_slot(slot, atlas_id)
 	return vdp_load_job_seq
 end
 
-function engine.vdp_load_sys_atlas()
+function engine.vdp_load_sys_textpage()
 	if vdp_load_queue_head == nil then
 		vdp_load_queue_head = 1
 		vdp_load_queue_tail = 0
 	end
-	local atlas_name<const> = string.format('_atlas_%02d', sys_atlas_id)
-	local atlas<const> = romdir.system_rom_atlas(atlas_name)
-	local src<const> = atlas.addr
-	local len<const> = atlas.len
+	local textpage_name<const> = string.format('_textpage_%02d', sys_textpage_id)
+	local textpage<const> = romdir.system_rom_textpage(textpage_name)
+	local src<const> = textpage.addr
+	local len<const> = textpage.len
 	vdp_load_job_seq = vdp_load_job_seq + 1
 	vdp_load_queue_tail = vdp_load_queue_tail + 1
 	vdp_load_queue[vdp_load_queue_tail] = {
 		job_id = vdp_load_job_seq,
 		slot = nil,
-		atlas_id = sys_atlas_id,
+		textpage_id = sys_textpage_id,
 		allow_handler = false,
 		src = src,
 		len = len,
-		dst = sys_vram_system_atlas_base,
-		cap = sys_vram_system_atlas_size,
+		dst = sys_vram_system_textpage_base,
+		cap = sys_vram_system_textpage_size,
 	}
 	vdp_try_start_next_job()
 	return vdp_load_job_seq
@@ -582,7 +582,7 @@ function engine.irq(flags)
 	if (flags & irq_img_done) ~= 0 then
 		ack = ack | irq_img_done
 		if vdp_active_job == nil then
-			fatal = 'irq: img_DONE without pending atlas load'
+			fatal = 'irq: img_DONE without pending textpage load'
 		else
 			local skip_map
 			local allow_handler = vdp_active_job.allow_handler
@@ -590,13 +590,13 @@ function engine.irq(flags)
 				allow_handler = true
 			end
 			if allow_handler and vdp_load_handler ~= nil then
-				local should_skip<const> = vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, 'done')
+				local should_skip<const> = vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.textpage_id, 'done')
 				if should_skip then
 					skip_map = true
 				end
 			end
 			if vdp_active_job.slot ~= nil and not skip_map then
-				vdp_map_slot(vdp_active_job.slot, vdp_active_job.atlas_id)
+				vdp_map_slot(vdp_active_job.slot, vdp_active_job.textpage_id)
 			end
 			vdp_active_job = nil
 			vdp_try_start_next_job()
@@ -605,17 +605,17 @@ function engine.irq(flags)
 	if (flags & irq_img_error) ~= 0 then
 		ack = ack | irq_img_error
 		if vdp_active_job == nil then
-			fatal = 'irq: img_ERROR without pending atlas load'
+			fatal = 'irq: img_ERROR without pending textpage load'
 		else
 			local allow_handler = vdp_active_job.allow_handler
 			if allow_handler == nil then
 				allow_handler = true
 			end
 			if allow_handler and vdp_load_handler ~= nil then
-				vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, 'error')
+				vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.textpage_id, 'error')
 			end
 			vdp_active_job = nil
-			fatal = 'irq: IMGDEC failed while loading atlas'
+			fatal = 'irq: IMGDEC failed while loading textpage'
 		end
 	end
 	ack = ack | (flags & ~(irq_img_done | irq_img_error))

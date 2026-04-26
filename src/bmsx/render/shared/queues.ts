@@ -172,7 +172,7 @@ export function submit_particle(item: ParticleRenderSubmission): void {
 	item.texture = imgid;
 	item.uv0 = [u0, v0];
 	item.uv1 = [u1, v1];
-	item.atlasBinding = sample.atlasId;
+	item.textpageBinding = sample.textpageId;
 	particleQueue.submit(item);
 }
 

@@ -40,7 +40,7 @@ static void recomputeMemoryLayout(const MemoryMapConfig& config) {
 	STRING_HANDLE_TABLE_SIZE = STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE;
 	STRING_HEAP_SIZE = config.stringHeapBytes;
 	ASSET_TABLE_SIZE = config.assetTableBytes;
-	VRAM_ATLAS_SLOT_SIZE = config.atlasSlotBytes;
+	VRAM_ATLAS_SLOT_SIZE = config.textpageSlotBytes;
 	VRAM_STAGING_SIZE = config.stagingBytes;
 	VRAM_FRAMEBUFFER_SIZE = config.frameBufferBytes;
 
@@ -80,11 +80,11 @@ void configureMemoryMap(const MemoryMapConfig& config) {
 	if (config.assetTableBytes == 0) {
 		throw std::runtime_error("[MemoryMap] asset_table_bytes must be greater than 0.");
 	}
-	if (config.atlasSlotBytes == 0) {
-		throw std::runtime_error("[MemoryMap] atlas_slot_bytes must be greater than 0.");
+	if (config.textpageSlotBytes == 0) {
+		throw std::runtime_error("[MemoryMap] textpage_slot_bytes must be greater than 0.");
 	}
 	if (config.engineAtlasSlotBytes == 0) {
-		throw std::runtime_error("[MemoryMap] system_atlas_slot_bytes must be greater than 0.");
+		throw std::runtime_error("[MemoryMap] system_textpage_slot_bytes must be greater than 0.");
 	}
 	if (config.stagingBytes == 0) {
 		throw std::runtime_error("[MemoryMap] staging_bytes must be greater than 0.");

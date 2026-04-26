@@ -51,10 +51,10 @@ export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
 	skyboxPositionLocation = gl.getAttribLocation(skyboxProgram, 'a_position');
 	skyboxViewLocation = gl.getUniformLocation(skyboxProgram, 'u_view')!;
 	skyboxProjectionLocation = gl.getUniformLocation(skyboxProgram, 'u_projection')!;
-	skyboxAtlasPrimaryLocation = gl.getUniformLocation(skyboxProgram, 'u_atlas_primary')!;
-	skyboxAtlasSecondaryLocation = gl.getUniformLocation(skyboxProgram, 'u_atlas_secondary')!;
+	skyboxAtlasPrimaryLocation = gl.getUniformLocation(skyboxProgram, 'u_textpage_primary')!;
+	skyboxAtlasSecondaryLocation = gl.getUniformLocation(skyboxProgram, 'u_textpage_secondary')!;
 	skyboxFaceUvRectLocation = gl.getUniformLocation(skyboxProgram, 'u_face_uv_rect[0]')!;
-	skyboxFaceAtlasLocation = gl.getUniformLocation(skyboxProgram, 'u_face_atlas[0]')!;
+	skyboxFaceAtlasLocation = gl.getUniformLocation(skyboxProgram, 'u_face_textpage[0]')!;
 	skyboxTintLocation = gl.getUniformLocation(skyboxProgram, 'u_skyTint')!;
 	skyboxExposureLocation = gl.getUniformLocation(skyboxProgram, 'u_skyExposure')!;
 	gl.uniform1i(skyboxAtlasPrimaryLocation, TEXTURE_UNIT_ATLAS_PRIMARY);
@@ -108,9 +108,9 @@ export function drawSkybox(runtime: SkyboxRuntime, framebuffer: WebGLFramebuffer
 	gl.uniform3f(skyboxTintLocation, _skyTint[0], _skyTint[1], _skyTint[2]);
 	gl.uniform1f(skyboxExposureLocation, _skyExposure);
 	context.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
-	context.bind2DTex(state.atlasPrimaryTex);
+	context.bind2DTex(state.textpagePrimaryTex);
 	context.activeTexUnit = TEXTURE_UNIT_ATLAS_SECONDARY;
-	context.bind2DTex(state.atlasSecondaryTex);
+	context.bind2DTex(state.textpageSecondaryTex);
 	const passStub = { fbo: framebuffer, desc: { label: 'skybox' } };
 	backend.draw(passStub, 0, 36);
 	backend.bindVertexArray(null);
@@ -124,8 +124,8 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 		fsCode: skyboxFS,
 		bindingLayout: {
 			uniforms: ['FrameUniforms'],
-			textures: [{ name: 'u_atlas_primary' }, { name: 'u_atlas_secondary' }],
-			samplers: [{ name: 's_atlas_primary' }, { name: 's_atlas_secondary' }],
+			textures: [{ name: 'u_textpage_primary' }, { name: 'u_textpage_secondary' }],
+			samplers: [{ name: 's_textpage_primary' }, { name: 's_textpage_secondary' }],
 		},
 		bootstrap: (backend) => {
 			initSkyboxPipeline(backend as WebGLBackend);
@@ -143,13 +143,13 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
 			const cam = resolveActiveCamera3D();
 			if (!cam) return;
-			const atlasPrimaryTex = gv.textures[ATLAS_PRIMARY_SLOT_ID];
-			if (!atlasPrimaryTex) {
-				throw new Error("[Skybox] Texture '_atlas_primary' missing from view textures.");
+			const textpagePrimaryTex = gv.textures[ATLAS_PRIMARY_SLOT_ID];
+			if (!textpagePrimaryTex) {
+				throw new Error("[Skybox] Texture '_textpage_primary' missing from view textures.");
 			}
-			const atlasSecondaryTex = gv.textures[ATLAS_SECONDARY_SLOT_ID];
-			if (!atlasSecondaryTex) {
-				throw new Error("[Skybox] Texture '_atlas_secondary' missing from view textures.");
+			const textpageSecondaryTex = gv.textures[ATLAS_SECONDARY_SLOT_ID];
+			if (!textpageSecondaryTex) {
+				throw new Error("[Skybox] Texture '_textpage_secondary' missing from view textures.");
 			}
 			// Update state with dynamic data (reuse camera matrices)
 			const mats = cam.getMatrices();
@@ -158,8 +158,8 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 				height,
 				view: cam.skyboxView,
 				proj: mats.proj,
-				atlasPrimaryTex,
-				atlasSecondaryTex,
+				textpagePrimaryTex,
+				textpageSecondaryTex,
 				faceUvRects: gv.skyboxFaceUvRects,
 				faceAtlasBindings: gv.skyboxFaceAtlasBindings,
 			});

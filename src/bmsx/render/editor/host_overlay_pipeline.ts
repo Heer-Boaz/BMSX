@@ -37,9 +37,9 @@ import vertexShaderCode from '../2d/shaders/2d.vert.glsl';
 import fragmentShaderCode from '../2d/shaders/2d.frag.glsl';
 
 type HostOverlayImageSource = {
-	mode: 'atlas' | 'single';
+	mode: 'textpage' | 'single';
 	texture: WebGLTexture | null;
-	atlasId: number;
+	textpageId: number;
 	u0: number;
 	v0: number;
 	u1: number;
@@ -49,7 +49,7 @@ type HostOverlayImageSource = {
 };
 
 type BoundTextureState =
-	| { mode: 'atlas'; texture: null; }
+	| { mode: 'textpage'; texture: null; }
 	| { mode: 'single'; texture: WebGLTexture; }
 	| { mode: 'none'; texture: null; };
 
@@ -61,7 +61,7 @@ type HostOverlayRuntime = {
 	instanceFloatBuffer: WebGLBuffer;
 	instanceAtlasBuffer: WebGLBuffer;
 	floatData: Float32Array;
-	atlasData: Uint8Array;
+	textpageData: Uint8Array;
 	capacity: number;
 	whiteTexture: WebGLTexture;
 	uniforms: WebGLSpriteQuadUniforms;
@@ -136,7 +136,7 @@ function bootstrapRuntime(backend: WebGLBackend): HostOverlayRuntime {
 	return runtime;
 }
 
-function writeQuad(state: HostOverlayRuntime, index: number, originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, z: number, colorValue: color, atlasId: number): void {
+function writeQuad(state: HostOverlayRuntime, index: number, originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, z: number, colorValue: color, textpageId: number): void {
 	const base = index * INSTANCE_FLOATS;
 	const data = state.floatData;
 	data[base + 0] = originX;
@@ -155,11 +155,11 @@ function writeQuad(state: HostOverlayRuntime, index: number, originX: number, or
 	data[base + 13] = colorValue.g;
 	data[base + 14] = colorValue.b;
 	data[base + 15] = colorValue.a;
-	state.atlasData[index] = atlasId;
+	state.textpageData[index] = textpageId;
 }
 
-function writeAxisAlignedQuad(state: HostOverlayRuntime, index: number, x: number, y: number, width: number, height: number, u0: number, v0: number, u1: number, v1: number, z: number, colorValue: color, atlasId: number): void {
-	writeQuad(state, index, x, y, width, 0, 0, height, u0, v0, u1, v1, z, colorValue, atlasId);
+function writeAxisAlignedQuad(state: HostOverlayRuntime, index: number, x: number, y: number, width: number, height: number, u0: number, v0: number, u1: number, v1: number, z: number, colorValue: color, textpageId: number): void {
+	writeQuad(state, index, x, y, width, 0, 0, height, u0, v0, u1, v1, z, colorValue, textpageId);
 }
 
 function getUvExtents(coords: number[]): { u0: number; v0: number; u1: number; v1: number } {
@@ -178,17 +178,17 @@ function getUvExtents(coords: number[]): { u0: number; v0: number; u1: number; v
 	return { u0: minU, v0: minV, u1: maxU, v1: maxV };
 }
 
-function resolveShaderAtlasId(atlasId: number): number {
-	if (atlasId === ENGINE_ATLAS_INDEX) {
+function resolveShaderAtlasId(textpageId: number): number {
+	if (textpageId === ENGINE_ATLAS_INDEX) {
 		return ENGINE_ATLAS_INDEX;
 	}
-	if (atlasId === engineCore.view.primaryAtlasIdInSlot) {
+	if (textpageId === engineCore.view.primaryAtlasIdInSlot) {
 		return 0;
 	}
-	if (atlasId === engineCore.view.secondaryAtlasIdInSlot) {
+	if (textpageId === engineCore.view.secondaryAtlasIdInSlot) {
 		return 1;
 	}
-	throw new Error(`[HostOverlay] Atlas ${atlasId} is not mapped to an active slot.`);
+	throw new Error(`[HostOverlay] Atlas ${textpageId} is not mapped to an active slot.`);
 }
 
 function resolveImageSource(cache: Map<string, HostOverlayImageSource>, imgid: string): HostOverlayImageSource {
@@ -200,12 +200,12 @@ function resolveImageSource(cache: Map<string, HostOverlayImageSource>, imgid: s
 	const handle = runtime.machine.memory.resolveAssetHandle(imgid);
 	const meta = runtime.assets.getImageMetaByHandle(handle);
 	let source: HostOverlayImageSource;
-	if (meta.atlassed) {
+	if (meta.textpagesed) {
 		const uv = getUvExtents(meta.texcoords!);
 		source = {
-			mode: 'atlas',
+			mode: 'textpage',
 			texture: null,
-			atlasId: resolveShaderAtlasId(meta.atlasid!),
+			textpageId: resolveShaderAtlasId(meta.textpageid!),
 			u0: uv.u0,
 			v0: uv.v0,
 			u1: uv.u1,
@@ -221,7 +221,7 @@ function resolveImageSource(cache: Map<string, HostOverlayImageSource>, imgid: s
 		source = {
 			mode: 'single',
 			texture,
-			atlasId: 0,
+			textpageId: 0,
 			u0: 0,
 			v0: 0,
 			u1: 1,
@@ -244,7 +244,7 @@ function bindTextureTriple(texture0: WebGLTexture, texture1: WebGLTexture, textu
 }
 
 function bindAtlasTextures(boundTextures: BoundTextureState): BoundTextureState {
-	if (boundTextures.mode === 'atlas') {
+	if (boundTextures.mode === 'textpage') {
 		return boundTextures;
 	}
 	const primary = engineCore.texmanager.getTextureByUri(ATLAS_PRIMARY_SLOT_ID) as WebGLTexture;
@@ -254,7 +254,7 @@ function bindAtlasTextures(boundTextures: BoundTextureState): BoundTextureState 
 		throw new Error('[HostOverlay] Atlas textures are not initialized.');
 	}
 	bindTextureTriple(primary, secondary, engine);
-	return { mode: 'atlas', texture: null };
+	return { mode: 'textpage', texture: null };
 }
 
 function bindSingleTexture(texture: WebGLTexture, boundTextures: BoundTextureState): BoundTextureState {
@@ -270,7 +270,7 @@ function bindSolidTexture(runtimeState: HostOverlayRuntime, boundTextures: Bound
 }
 
 function bindSourceTexture(source: HostOverlayImageSource, boundTextures: BoundTextureState): BoundTextureState {
-	if (source.mode === 'atlas') {
+	if (source.mode === 'textpage') {
 		return bindAtlasTextures(boundTextures);
 	}
 	return bindSingleTexture(source.texture!, boundTextures);
@@ -354,7 +354,7 @@ function drawImageCommand(backend: WebGLBackend, state: HostOverlayRuntime, cach
 		uv.v1,
 		command.pos.z,
 		command.colorize!,
-		source.atlasId,
+		source.textpageId,
 	);
 	flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, 1, INSTANCE_FLOATS);
 	return nextBoundTextures;
@@ -450,7 +450,7 @@ function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, ca
 		if (batchSource === null
 			|| batchSource.mode !== source.mode
 			|| batchSource.texture !== source.texture
-			|| batchSource.atlasId !== source.atlasId) {
+			|| batchSource.textpageId !== source.textpageId) {
 			flushGlyphBatch();
 			currentBoundTextures = bindSourceTexture(source, currentBoundTextures);
 			batchSource = source;
@@ -469,7 +469,7 @@ function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, ca
 			source.v1,
 			command.z!,
 			command.color!,
-			source.atlasId,
+			source.textpageId,
 		);
 		count += 1;
 	}

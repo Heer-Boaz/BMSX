@@ -7,7 +7,7 @@ uniform sampler2D u_texture2;
 
 in vec2 v_texcoord;
 in vec4 v_color_override;
-flat in uint v_atlas_id;
+flat in uint v_textpage_id;
 
 out vec4 outputColor;
 // Frame-shared UBO with ambient
@@ -28,14 +28,14 @@ const uint ENGINE_ATLAS_ID = 254u;
 
 void main() {
 	vec4 texColor;
-	switch (v_atlas_id) {
-		case 0u: // Use the first texture if atlas ID is 0
+	switch (v_textpage_id) {
+		case 0u: // Use the first texture if textpage ID is 0
 			texColor = texture(u_texture0, v_texcoord);
 			break;
 		case ENGINE_ATLAS_ID:
 			texColor = texture(u_texture2, v_texcoord);
 			break;
-		default: // Default to the secondary atlas for any other atlas ID
+		default: // Default to the secondary textpage for any other textpage ID
 			texColor = texture(u_texture1, v_texcoord);
 			break;
 		}

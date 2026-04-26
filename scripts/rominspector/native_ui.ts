@@ -50,12 +50,12 @@ type NativeUiContext = {
 type SummaryMetrics = {
 	totalSize: number;
 	imageCount: number;
-	atlasCount: number;
+	textpageCount: number;
 	audioCount: number;
 	dataCount: number;
 	modelCount: number;
 	imageSize: number;
-	atlasSize: number;
+	textpageSize: number;
 	audioSize: number;
 	dataSize: number;
 	modelSize: number;
@@ -657,7 +657,7 @@ function makeRegionLabel(asset: RomAsset): string {
 function makeRegionColorTag(label: string): string {
 	switch (label) {
 		case 'image': return '{light-yellow-fg}';
-		case 'atlas': return '{light-cyan-fg}';
+		case 'textpage': return '{light-cyan-fg}';
 		case 'audio': return '{light-blue-fg}';
 	case 'data': return '{light-green-fg}';
 	case 'lua': return '{#6EE7B7-fg}';
@@ -680,7 +680,7 @@ function totalSummarySegments(ctx: NativeUiContext, metrics: SummaryMetrics): st
 		`Audio: ${ctx.formatByteSize(metrics.audioSize)} (${pct(metrics.audioSize)}%)`,
 		`Data: ${ctx.formatByteSize(metrics.dataSize)} (${pct(metrics.dataSize)}%)`,
 		`Models: ${ctx.formatByteSize(metrics.modelSize)} (${pct(metrics.modelSize)}%)`,
-		`Atlas: ${ctx.formatByteSize(metrics.atlasSize)} (${pct(metrics.atlasSize)}%)`,
+		`Atlas: ${ctx.formatByteSize(metrics.textpageSize)} (${pct(metrics.textpageSize)}%)`,
 		`Metadata: ${ctx.formatByteSize(metrics.metadataSize)} (${pct(metrics.metadataSize)}%)`,
 	];
 }
@@ -702,12 +702,12 @@ function buildSummaryMetrics(ctx: NativeUiContext): SummaryMetrics {
 	const metrics: SummaryMetrics = {
 		totalSize: ctx.rombin.byteLength,
 		imageCount: 0,
-		atlasCount: 0,
+		textpageCount: 0,
 		audioCount: 0,
 		dataCount: 0,
 		modelCount: 0,
 		imageSize: 0,
-		atlasSize: 0,
+		textpageSize: 0,
 		audioSize: 0,
 		dataSize: 0,
 		modelSize: 0,
@@ -719,9 +719,9 @@ function buildSummaryMetrics(ctx: NativeUiContext): SummaryMetrics {
 		if (asset.type === 'image') {
 			metrics.imageCount += 1;
 			metrics.imageSize += size;
-		} else if (asset.type === 'atlas') {
-			metrics.atlasCount += 1;
-			metrics.atlasSize += size;
+		} else if (asset.type === 'textpage') {
+			metrics.textpageCount += 1;
+			metrics.textpageSize += size;
 		} else if (asset.type === 'audio') {
 			metrics.audioCount += 1;
 			metrics.audioSize += size;
@@ -1269,7 +1269,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		const totalLines = wrapSummarySegments(totalSummarySegments(ctx, summaryMetrics), width);
 		summaryViewWidth = width;
 		summaryViewCache = {
-			titleLine: `${ctx.romfile} | assets: ${ctx.assets.length} | image: ${summaryMetrics.imageCount} | atlas: ${summaryMetrics.atlasCount} | audio: ${summaryMetrics.audioCount} | data: ${summaryMetrics.dataCount} | model: ${summaryMetrics.modelCount}`,
+			titleLine: `${ctx.romfile} | assets: ${ctx.assets.length} | image: ${summaryMetrics.imageCount} | textpage: ${summaryMetrics.textpageCount} | audio: ${summaryMetrics.audioCount} | data: ${summaryMetrics.dataCount} | model: ${summaryMetrics.modelCount}`,
 			barModel,
 			totalLines,
 			lineCount: 1 + 1 + barModel.legendRows.length + totalLines.length,
@@ -1409,7 +1409,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 
 	const imagePreviewActive = () => modalView !== null
 		&& modalTab === 0
-		&& (filteredAssets[selectedIndex].type === 'atlas' || filteredAssets[selectedIndex].type === 'image');
+		&& (filteredAssets[selectedIndex].type === 'textpage' || filteredAssets[selectedIndex].type === 'image');
 
 	const computeLayout = (width: number, height: number, summaryLineCount: number): UiLayout => {
 		const tableTop = summaryLineCount + 1;

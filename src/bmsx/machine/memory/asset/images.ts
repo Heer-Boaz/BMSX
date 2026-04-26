@@ -17,26 +17,26 @@ import {
 import type { AssetEntry, Memory } from '../memory';
 
 export type RegisteredImageMemory = {
-	atlasMemory: VdpAtlasMemory;
+	textpageMemory: VdpAtlasMemory;
 };
 
 function imageAssetMemoryFault(message: string): Error {
 	return new Error(`Runtime fault: ${message}`);
 }
 
-function atlasTexcoordRegionSize(atlasSize: number, offset: number, minCoord: number, maxCoord: number): number {
-	const texels = Math.round((maxCoord - minCoord) * atlasSize);
+function textpageTexcoordRegionSize(textpageSize: number, offset: number, minCoord: number, maxCoord: number): number {
+	const texels = Math.round((maxCoord - minCoord) * textpageSize);
 	if (texels < 1) {
 		return 1;
 	}
-	const remaining = atlasSize - offset;
+	const remaining = textpageSize - offset;
 	return texels < remaining ? texels : remaining;
 }
 
 function setAtlasEntryDimensions(slotEntry: AssetEntry, width: number, height: number): void {
 	const size = width * height * 4;
 	if (size > slotEntry.capacity) {
-		throw imageAssetMemoryFault(`atlas entry '${slotEntry.id}' (${width}x${height}) exceeds capacity ${slotEntry.capacity}.`);
+		throw imageAssetMemoryFault(`textpage entry '${slotEntry.id}' (${width}x${height}) exceeds capacity ${slotEntry.capacity}.`);
 	}
 	slotEntry.baseSize = size;
 	slotEntry.baseStride = width * 4;
@@ -55,15 +55,15 @@ function seedAtlasSlot(slotEntry: AssetEntry): void {
 export function registerImageMemory(memory: Memory, engineRecords: readonly RomAsset[], records: readonly RomAsset[]): RegisteredImageMemory {
 	const viewRecords: RomAsset[] = [];
 	const viewResourceIds = new Set<string>();
-	const atlasSizesById = new Map<number, VdpAtlasSize>();
-	const atlasViewIdsById = new Map<number, string[]>();
+	const textpageSizesById = new Map<number, VdpAtlasSize>();
+	const textpageViewIdsById = new Map<number, string[]>();
 	const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
 	let engineAtlasRecord: RomAsset = null;
 	for (let index = 0; index < engineRecords.length; index += 1) {
 		const record = engineRecords[index];
 		switch (record.type) {
 			case 'image':
-			case 'atlas':
+			case 'textpage':
 				break;
 			default:
 				continue;
@@ -72,7 +72,7 @@ export function registerImageMemory(memory: Memory, engineRecords: readonly RomA
 			engineAtlasRecord = record;
 		}
 		const meta = record.imgmeta!;
-		if (!meta.atlassed || meta.atlasid !== ENGINE_ATLAS_INDEX) {
+		if (!meta.textpagesed || meta.textpageid !== ENGINE_ATLAS_INDEX) {
 			continue;
 		}
 		if (viewResourceIds.has(record.resid)) {
@@ -86,21 +86,21 @@ export function registerImageMemory(memory: Memory, engineRecords: readonly RomA
 		const record = records[index];
 		switch (record.type) {
 			case 'image':
-			case 'atlas':
+			case 'textpage':
 				break;
 			default:
 				continue;
 		}
 		const meta = record.imgmeta!;
-		if (record.type === 'atlas') {
-			const atlasId = meta.atlasid!;
+		if (record.type === 'textpage') {
+			const textpageId = meta.textpageid!;
 			if (meta.width <= 0 || meta.height <= 0) {
-				throw imageAssetMemoryFault(`atlas '${record.resid}' missing dimensions.`);
+				throw imageAssetMemoryFault(`textpage '${record.resid}' missing dimensions.`);
 			}
-			atlasSizesById.set(atlasId, { width: meta.width, height: meta.height });
+			textpageSizesById.set(textpageId, { width: meta.width, height: meta.height });
 			continue;
 		}
-		if (meta.atlassed && !viewResourceIds.has(record.resid)) {
+		if (meta.textpagesed && !viewResourceIds.has(record.resid)) {
 			viewResourceIds.add(record.resid);
 			viewRecords.push(record);
 		}
@@ -108,7 +108,7 @@ export function registerImageMemory(memory: Memory, engineRecords: readonly RomA
 
 	const engineAtlasMeta = engineAtlasRecord.imgmeta!;
 	if (engineAtlasMeta.width <= 0 || engineAtlasMeta.height <= 0) {
-		throw imageAssetMemoryFault(`engine atlas '${engineAtlasName}' missing dimensions.`);
+		throw imageAssetMemoryFault(`engine textpage '${engineAtlasName}' missing dimensions.`);
 	}
 	const engineEntry = memory.hasAsset(engineAtlasName)
 		? memory.getAssetEntry(engineAtlasName)
@@ -144,27 +144,27 @@ export function registerImageMemory(memory: Memory, engineRecords: readonly RomA
 		const record = viewRecords[index];
 		const meta = record.imgmeta!;
 		const coords = meta.texcoords!;
-		const atlasId = meta.atlasid!;
-		let atlasWidth = 0;
-		let atlasHeight = 0;
+		const textpageId = meta.textpageid!;
+		let textpageWidth = 0;
+		let textpageHeight = 0;
 		let baseEntry = primarySlotEntry;
-		if (atlasId === ENGINE_ATLAS_INDEX) {
+		if (textpageId === ENGINE_ATLAS_INDEX) {
 			baseEntry = engineEntry;
-			atlasWidth = engineAtlasMeta.width;
-			atlasHeight = engineAtlasMeta.height;
+			textpageWidth = engineAtlasMeta.width;
+			textpageHeight = engineAtlasMeta.height;
 		} else {
-			const atlasSize = atlasSizesById.get(atlasId)!;
-			atlasWidth = atlasSize.width;
-			atlasHeight = atlasSize.height;
+			const textpageSize = textpageSizesById.get(textpageId)!;
+			textpageWidth = textpageSize.width;
+			textpageHeight = textpageSize.height;
 		}
 		const minU = Math.min(coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]);
 		const maxU = Math.max(coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]);
 		const minV = Math.min(coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]);
 		const maxV = Math.max(coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]);
-		const offsetX = Math.round(minU * atlasWidth);
-		const offsetY = Math.round(minV * atlasHeight);
-		const regionW = atlasTexcoordRegionSize(atlasWidth, offsetX, minU, maxU);
-		const regionH = atlasTexcoordRegionSize(atlasHeight, offsetY, minV, maxV);
+		const offsetX = Math.round(minU * textpageWidth);
+		const offsetY = Math.round(minV * textpageHeight);
+		const regionW = textpageTexcoordRegionSize(textpageWidth, offsetX, minU, maxU);
+		const regionH = textpageTexcoordRegionSize(textpageHeight, offsetY, minV, maxV);
 		if (!memory.hasAsset(record.resid)) {
 			memory.registerImageView({
 				id: record.resid,
@@ -175,12 +175,12 @@ export function registerImageMemory(memory: Memory, engineRecords: readonly RomA
 				regionH,
 			});
 		}
-		let viewIds = atlasViewIdsById.get(atlasId);
+		let viewIds = textpageViewIdsById.get(textpageId);
 		if (!viewIds) {
 			viewIds = [];
-			atlasViewIdsById.set(atlasId, viewIds);
+			textpageViewIdsById.set(textpageId, viewIds);
 		}
 		viewIds.push(record.resid);
 	}
-	return { atlasMemory: { atlasSizesById, atlasViewIdsById } };
+	return { textpageMemory: { textpageSizesById, textpageViewIdsById } };
 }

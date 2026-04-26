@@ -13,17 +13,17 @@ export function refreshResourceCatalog(): void {
 		const augmented = descriptors.slice();
 		const imgAssets = Object.values(Runtime.instance.activeAssets.img);
 		for (const asset of imgAssets) {
-			if (asset.type !== 'atlas') {
+			if (asset.type !== 'textpage') {
 				continue;
 			}
 			const key = asset.resid;
-			if (key !== '_atlas_primary' && !key.startsWith('atlas') && !key.startsWith('_atlas_')) {
+			if (key !== '_textpage_primary' && !key.startsWith('textpage') && !key.startsWith('_textpage_')) {
 				continue;
 			}
 			if (augmented.some(entry => entry.asset_id === key)) {
 				continue;
 			}
-			augmented.push({ path: `atlas/${key}`, type: 'atlas', asset_id: key });
+			augmented.push({ path: `textpage/${key}`, type: 'textpage', asset_id: key });
 		}
 		resourceSearchState.catalog = augmented.map((descriptor) => {
 			const displayPathSource = descriptor.path.length > 0 ? descriptor.path : (descriptor.asset_id ?? '');

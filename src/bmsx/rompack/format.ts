@@ -47,7 +47,7 @@ export interface RuntimeAssets {
 	entry_path: string; // Entry Lua path for this program.
 }
 
-export type asset_type = 'image' | 'audio' | 'data' | 'bin' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
+export type asset_type = 'image' | 'audio' | 'data' | 'bin' | 'textpage' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
 export type asset_id = string;
 
 /**
@@ -60,8 +60,8 @@ export interface RomAsset {
 	id_token_lo?: number; // 64-bit exact-id token (low 32)
 	id_token_hi?: number; // 64-bit exact-id token (high 32)
 	op?: RomAssetOp; // Optional patch operation for this asset.
-	start?: number; // The optional start offset of the asset in the ROM. (e.g., atlassed images don't have a start offset, as they are part of an atlas)
-	end?: number; // The optional end offset of the asset in the ROM. (e.g., atlassed images don't have an end offset, as they are part of an atlas)
+	start?: number; // The optional start offset of the asset in the ROM. (e.g., textpagesed images don't have a start offset, as they are part of an textpage)
+	end?: number; // The optional end offset of the asset in the ROM. (e.g., textpagesed images don't have an end offset, as they are part of an textpage)
 	compiled_start?: number; // Optional start offset of precompiled Lua chunk data in the ROM
 	compiled_end?: number; // Optional end offset of precompiled Lua chunk data in the ROM
 	metabuffer_start?: number; // Optional start offset of binary-encoded per-asset metadata in the buffer
@@ -155,7 +155,7 @@ export interface RegisterablePersistent extends Registerable {
 }
 
 /**
- * Reserved atlas metadata for engine/runtime resources.
+ * Reserved textpage metadata for engine/runtime resources.
  *
  * Atlas indices are stored in packed sprite metadata and must fit in an
  * unsigned byte. We reserve index 254 for engine assets so carts can safely
@@ -164,26 +164,26 @@ export interface RegisterablePersistent extends Registerable {
 export const ENGINE_ATLAS_INDEX = 254;
 
 /**
- * Texture dictionary key used by GameView to cache the engine atlas texture.
+ * Texture dictionary key used by GameView to cache the engine textpage texture.
  */
-export const ENGINE_ATLAS_TEXTURE_KEY = '_atlas_engine';
-export const ATLAS_PRIMARY_SLOT_ID = '_atlas_primary';
-export const ATLAS_SECONDARY_SLOT_ID = '_atlas_secondary';
+export const ENGINE_ATLAS_TEXTURE_KEY = '_textpage_engine';
+export const ATLAS_PRIMARY_SLOT_ID = '_textpage_primary';
+export const ATLAS_SECONDARY_SLOT_ID = '_textpage_secondary';
 export const FRAMEBUFFER_TEXTURE_KEY = '_framebuffer_2d';
 export const FRAMEBUFFER_RENDER_TEXTURE_KEY = '_framebuffer_render_2d';
 
-const atlasNameCache = new Map<number, string>(); // Cache for atlas names to avoid regenerating them for each request
+const textpageNameCache = new Map<number, string>(); // Cache for textpage names to avoid regenerating them for each request
 
-export function generateAtlasName(atlasIndex: number): string {
-	// Check if the atlas name is already cached
-	if (atlasNameCache.has(atlasIndex)) {
-		return atlasNameCache.get(atlasIndex)!;
+export function generateAtlasName(textpageIndex: number): string {
+	// Check if the textpage name is already cached
+	if (textpageNameCache.has(textpageIndex)) {
+		return textpageNameCache.get(textpageIndex)!;
 	}
-	// Generate a new atlas name and cache it
-	const idxStr = atlasIndex.toString().padStart(2, '0');
-	const atlasName = `_atlas_${idxStr}`;
-	atlasNameCache.set(atlasIndex, atlasName);
-	return atlasName;
+	// Generate a new textpage name and cache it
+	const idxStr = textpageIndex.toString().padStart(2, '0');
+	const textpageName = `_textpage_${idxStr}`;
+	textpageNameCache.set(textpageIndex, textpageName);
+	return textpageName;
 }
 
 /*
@@ -373,8 +373,8 @@ export interface GLTFModel {
  * Metadata for an image asset.
  */
 export interface ImgMeta {
-	atlassed: boolean; // Whether the image is part of an atlas.
-	atlasid?: number; // The ID of the atlas the image is part of, if applicable.
+	textpagesed: boolean; // Whether the image is part of an textpage.
+	textpageid?: number; // The ID of the textpage the image is part of, if applicable.
 	width: number; // The width of the image.
 	height: number; // The height of the image.
 	texcoords?: number[]; // The texture coordinates for the image, used for rendering.
@@ -406,8 +406,8 @@ export type MachineRamSpecs = {
 	ram_bytes?: number;
 };
 export type MachineVramSpecs = {
-	atlas_slot_bytes?: number;
-	system_atlas_slot_bytes?: number;
+	textpage_slot_bytes?: number;
+	system_textpage_slot_bytes?: number;
 	staging_bytes?: number;
 };
 export type MachineSpecs = {
@@ -459,8 +459,8 @@ export const DEFAULT_GEO_WORK_UNITS_PER_SEC = 16_384_000;
 
 export type MachineMemorySpecs = {
 	ram_bytes?: number;
-	atlas_slot_bytes?: number;
-	system_atlas_slot_bytes?: number;
+	textpage_slot_bytes?: number;
+	system_textpage_slot_bytes?: number;
 	staging_bytes?: number;
 };
 
@@ -485,8 +485,8 @@ export function getMachineMemorySpecs(machine: MachineManifest): MachineMemorySp
 	const vram = machine.specs.vram;
 	return {
 		ram_bytes: ram?.ram_bytes,
-		atlas_slot_bytes: vram?.atlas_slot_bytes,
-		system_atlas_slot_bytes: vram?.system_atlas_slot_bytes,
+		textpage_slot_bytes: vram?.textpage_slot_bytes,
+		system_textpage_slot_bytes: vram?.system_textpage_slot_bytes,
 		staging_bytes: vram?.staging_bytes,
 	};
 }

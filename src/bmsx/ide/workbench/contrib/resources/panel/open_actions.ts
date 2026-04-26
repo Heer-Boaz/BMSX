@@ -9,7 +9,7 @@ export function tryOpenResourcePanelDescriptorItem(item: ResourceBrowserItem): b
 	if (!item?.descriptor) {
 		return false;
 	}
-	if (item.descriptor.type === 'atlas') {
+	if (item.descriptor.type === 'textpage') {
 		return false;
 	}
 	openResourceDescriptor(item.descriptor);
@@ -31,7 +31,7 @@ export function openSelectedResourcePanelItem(items: readonly ResourceBrowserIte
 	if (tryOpenResourcePanelDescriptorItem(item)) {
 		return;
 	}
-	if (item?.descriptor?.type === 'atlas') {
+	if (item?.descriptor?.type === 'textpage') {
 		showResourcePanelAtlasWarning();
 		focusEditorFromResourcePanel();
 	}

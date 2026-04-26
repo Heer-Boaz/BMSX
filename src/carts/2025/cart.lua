@@ -68,9 +68,9 @@ local create_transition_visuals<const> = function()
 	}
 end
 
--- Example: optional hook for atlas load completion (return true to skip BIOS mapping).
-local on_vdp_load_example<const> = function(job_id, slot, atlas_id, status)
-	-- Example: handle "done"/"error" and optionally call vdp_map_slot(slot, atlas_id).
+-- Example: optional hook for textpage load completion (return true to skip BIOS mapping).
+local on_vdp_load_example<const> = function(job_id, slot, textpage_id, status)
+	-- Example: handle "done"/"error" and optionally call vdp_map_slot(slot, textpage_id).
 end
 
 function director:apply_effects(effects)

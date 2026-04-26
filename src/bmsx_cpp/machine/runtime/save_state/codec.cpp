@@ -487,12 +487,12 @@ SkyboxImageIds decodeSkyboxImageIds(const BinValue& value, const char* label) {
 }
 
 BinValue encodeVdpState(const VdpState& state) {
-	BinObject atlasSlots;
-	atlasSlots["primary"] = state.atlasSlots[0] >= 0 ? BinValue(static_cast<i64>(state.atlasSlots[0])) : BinValue(nullptr);
-	atlasSlots["secondary"] = state.atlasSlots[1] >= 0 ? BinValue(static_cast<i64>(state.atlasSlots[1])) : BinValue(nullptr);
+	BinObject textpageSlots;
+	textpageSlots["primary"] = state.textpageSlots[0] >= 0 ? BinValue(static_cast<i64>(state.textpageSlots[0])) : BinValue(nullptr);
+	textpageSlots["secondary"] = state.textpageSlots[1] >= 0 ? BinValue(static_cast<i64>(state.textpageSlots[1])) : BinValue(nullptr);
 
 	BinObject object;
-	object["atlasSlots"] = BinValue(std::move(atlasSlots));
+	object["textpageSlots"] = BinValue(std::move(textpageSlots));
 	object["skyboxFaceIds"] = state.skyboxFaceIds.has_value()
 		? encodeSkyboxImageIds(*state.skyboxFaceIds)
 		: BinValue(nullptr);
@@ -502,12 +502,12 @@ BinValue encodeVdpState(const VdpState& state) {
 
 VdpState decodeVdpState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
-	const BinObject& atlasSlots = requireObject(requireField(object, "atlasSlots", label), "machine.vdp.atlasSlots");
+	const BinObject& textpageSlots = requireObject(requireField(object, "textpageSlots", label), "machine.vdp.textpageSlots");
 	VdpState state;
-	const BinValue& primary = requireField(atlasSlots, "primary", "machine.vdp.atlasSlots");
-	const BinValue& secondary = requireField(atlasSlots, "secondary", "machine.vdp.atlasSlots");
-	state.atlasSlots[0] = primary.isNull() ? -1 : requireI32(primary, "machine.vdp.atlasSlots.primary");
-	state.atlasSlots[1] = secondary.isNull() ? -1 : requireI32(secondary, "machine.vdp.atlasSlots.secondary");
+	const BinValue& primary = requireField(textpageSlots, "primary", "machine.vdp.textpageSlots");
+	const BinValue& secondary = requireField(textpageSlots, "secondary", "machine.vdp.textpageSlots");
+	state.textpageSlots[0] = primary.isNull() ? -1 : requireI32(primary, "machine.vdp.textpageSlots.primary");
+	state.textpageSlots[1] = secondary.isNull() ? -1 : requireI32(secondary, "machine.vdp.textpageSlots.secondary");
 	const BinValue& skybox = requireField(object, "skyboxFaceIds", label);
 	if (!skybox.isNull()) {
 		state.skyboxFaceIds = decodeSkyboxImageIds(skybox, "machine.vdp.skyboxFaceIds");
@@ -543,7 +543,7 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	const VdpState base = decodeVdpState(value, label);
 	VdpSaveState state;
-	state.atlasSlots = base.atlasSlots;
+	state.textpageSlots = base.textpageSlots;
 	state.skyboxFaceIds = base.skyboxFaceIds;
 	state.ditherType = base.ditherType;
 	state.vramStaging = requireBinary(requireField(object, "vramStaging", label), "machine.vdp.vramStaging");

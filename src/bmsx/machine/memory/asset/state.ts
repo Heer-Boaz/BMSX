@@ -63,7 +63,7 @@ export class RuntimeAssetState {
 		const assets: RomImgAsset[] = [];
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
-			if (entry.type !== 'image' && entry.type !== 'atlas') {
+			if (entry.type !== 'image' && entry.type !== 'textpage') {
 				continue;
 			}
 			assets.push(this.getImageAssetByEntry(entry));
@@ -89,7 +89,7 @@ export class RuntimeAssetState {
 				memory.resetAssetMemory();
 			}
 			const imageMemory = registerImageMemory(memory, engineSource.list(), assetSource.list());
-			runtime.machine.vdp.registerVramAssets(imageMemory.atlasMemory);
+			runtime.machine.vdp.registerVramAssets(imageMemory.textpageMemory);
 			this.rebuildMetaCaches(assetSource, memory);
 			memory.finalizeAssetTable();
 			this.applyImageHandlesToActiveLayers(runtime);
@@ -107,11 +107,11 @@ export class RuntimeAssetState {
 		const entries = source.list();
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
-			if (entry.type !== 'image' && entry.type !== 'atlas') {
+			if (entry.type !== 'image' && entry.type !== 'textpage') {
 				continue;
 			}
 			const asset = this.getImageAssetByEntry(entry);
-			if (asset.type === 'atlas' && asset.resid !== engineAtlasId) {
+			if (asset.type === 'textpage' && asset.resid !== engineAtlasId) {
 				continue;
 			}
 			const meta = asset.imgmeta;

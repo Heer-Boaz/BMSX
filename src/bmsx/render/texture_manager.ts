@@ -61,7 +61,7 @@
 
 // handle = $.texmanager.createTextureFromPixelsSync(textureKey, this.vramSeedPixel, 1, 1);  // L2153
 // // desc defaults to {} — so srgb is undefined
-// Since desc.srgb is undefined, srgb !== false is true → atlas and framebuffer textures are created as SRGB8_ALPHA8.
+// Since desc.srgb is undefined, srgb !== false is true → textpage and framebuffer textures are created as SRGB8_ALPHA8.
 
 // They are later resized via resizeTextureForKey(), which calls resizeTexture() on the backend — this preserves the stored srgb flag from texInfo (which will be true from initial creation).
 

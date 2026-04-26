@@ -25,7 +25,7 @@ import { clamp } from '../../../common/clamp';
 const camRight = new Float32Array(3);
 const camUp = new Float32Array(3);
 const MAX_PARTICLES = 1000;
-const INSTANCE_FLOATS = 13; // vec4(position+size) + vec4(color) + vec4(uvrect) + atlasId
+const INSTANCE_FLOATS = 13; // vec4(position+size) + vec4(color) + vec4(uvrect) + textpageId
 const BYTES_PER_FLOAT = 4;
 const INSTANCE_BYTES = INSTANCE_FLOATS * BYTES_PER_FLOAT;
 let particleProgram: WebGLProgram; let vao: WebGLVertexArrayObject; let quadBuffer: WebGLBuffer; let instanceBuffers: WebGLBuffer[] = []; let viewProjLocation: WebGLUniformLocation; let cameraRightLocation: WebGLUniformLocation; let cameraUpLocation: WebGLUniformLocation; let texture0Location: WebGLUniformLocation; let texture1Location: WebGLUniformLocation; let texture2Location: WebGLUniformLocation; let ambientModeLocation: WebGLUniformLocation; let ambientFactorLocation: WebGLUniformLocation; const instanceData = new Float32Array(MAX_PARTICLES * INSTANCE_FLOATS);
@@ -132,10 +132,10 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 	let needsSecondaryAtlas = false;
 	forEachParticleQueue((p) => {
 		if (!p) return;
-		const atlasId = p.atlasBinding ?? 0;
-		if (atlasId === ENGINE_ATLAS_INDEX) {
+		const textpageId = p.textpageBinding ?? 0;
+		if (textpageId === ENGINE_ATLAS_INDEX) {
 			needsEngineAtlas = true;
-		} else if (atlasId !== 0) {
+		} else if (textpageId !== 0) {
 			needsSecondaryAtlas = true;
 		}
 		const mode = (p.ambient_mode ?? particleAmbientModeDefault) | 0;
@@ -157,27 +157,27 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 	gl.uniform3fv(cameraUpLocation, camUp);
 	gl.uniform1i(ambientModeLocation, 0);
 	gl.uniform1f(ambientFactorLocation, 1.0);
-	const atlasPrimaryTex = resolvedState.atlasPrimaryTex;
-	if (!atlasPrimaryTex) {
-		throw new Error("[ParticlesPipeline] Texture '_atlas_primary' missing from view textures.");
+	const textpagePrimaryTex = resolvedState.textpagePrimaryTex;
+	if (!textpagePrimaryTex) {
+		throw new Error("[ParticlesPipeline] Texture '_textpage_primary' missing from view textures.");
 	}
-	const atlasSecondaryTex = resolvedState.atlasSecondaryTex;
-	const atlasEngineTex = resolvedState.atlasEngineTex;
-	if (needsSecondaryAtlas && !atlasSecondaryTex) {
-		throw new Error("[ParticlesPipeline] Texture '_atlas_secondary' missing from view textures.");
+	const textpageSecondaryTex = resolvedState.textpageSecondaryTex;
+	const textpageEngineTex = resolvedState.textpageEngineTex;
+	if (needsSecondaryAtlas && !textpageSecondaryTex) {
+		throw new Error("[ParticlesPipeline] Texture '_textpage_secondary' missing from view textures.");
 	}
-	if (needsEngineAtlas && !atlasEngineTex) {
+	if (needsEngineAtlas && !textpageEngineTex) {
 		throw new Error(`[ParticlesPipeline] Texture '${ENGINE_ATLAS_TEXTURE_KEY}' missing from view textures.`);
 	}
 	context.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
-	context.bind2DTex(atlasPrimaryTex);
-	if (atlasSecondaryTex) {
+	context.bind2DTex(textpagePrimaryTex);
+	if (textpageSecondaryTex) {
 		context.activeTexUnit = TEXTURE_UNIT_ATLAS_SECONDARY;
-		context.bind2DTex(atlasSecondaryTex);
+		context.bind2DTex(textpageSecondaryTex);
 	}
-	if (atlasEngineTex) {
+	if (textpageEngineTex) {
 		context.activeTexUnit = TEXTURE_UNIT_ATLAS_ENGINE;
-		context.bind2DTex(atlasEngineTex);
+		context.bind2DTex(textpageEngineTex);
 	}
 	backend.bindVertexArray(vao);
 	framePage = (framePage + 1) % 3;
@@ -199,8 +199,8 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 		gl.uniform1f(ambientFactorLocation, parseFloat(factorStr));
 		for (let i = 0; i < batchCount; i++) {
 			const p = arr[i]; if (!p) continue;
-			if (!p.uv0 || !p.uv1 || p.atlasBinding === undefined || p.atlasBinding === null) {
-				throw new Error('[ParticlesPipeline] Particle missing atlas UV data.');
+			if (!p.uv0 || !p.uv1 || p.textpageBinding === undefined || p.textpageBinding === null) {
+				throw new Error('[ParticlesPipeline] Particle missing textpage UV data.');
 			}
 			const base = i * INSTANCE_FLOATS;
 			instanceData[base] = p.position[0];
@@ -215,7 +215,7 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 			instanceData[base + 9] = p.uv0[1];
 			instanceData[base + 10] = p.uv1[0];
 			instanceData[base + 11] = p.uv1[1];
-			instanceData[base + 12] = p.atlasBinding;
+			instanceData[base + 12] = p.textpageBinding;
 		}
 		backend.bindArrayBuffer(instBuf);
 		backend.updateVertexBuffer(instBuf, instanceData.subarray(0, batchCount * INSTANCE_FLOATS), 0);
@@ -254,18 +254,18 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 			const gv = engineCore.view;
 			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
 			const cam = resolveActiveCamera3D();
-			const atlasPrimaryTex = gv.textures['_atlas_primary'];
-			if (!atlasPrimaryTex) {
-				throw new Error("[ParticlesPipeline] Texture '_atlas_primary' missing from view textures.");
+			const textpagePrimaryTex = gv.textures['_textpage_primary'];
+			if (!textpagePrimaryTex) {
+				throw new Error("[ParticlesPipeline] Texture '_textpage_primary' missing from view textures.");
 			}
-			const atlasSecondaryTex = gv.textures['_atlas_secondary'];
-			const atlasEngineTex = gv.textures[ENGINE_ATLAS_TEXTURE_KEY];
+			const textpageSecondaryTex = gv.textures['_textpage_secondary'];
+			const textpageEngineTex = gv.textures[ENGINE_ATLAS_TEXTURE_KEY];
 				const state = cam
 					? updateCameraParticleState(width, height, cam)
 					: updateOrthographicParticleState(width, height);
-				state.atlasPrimaryTex = atlasPrimaryTex;
-				state.atlasSecondaryTex = atlasSecondaryTex;
-				state.atlasEngineTex = atlasEngineTex;
+				state.textpagePrimaryTex = textpagePrimaryTex;
+				state.textpageSecondaryTex = textpageSecondaryTex;
+				state.textpageEngineTex = textpageEngineTex;
 				registry.setState('particles', state);
 			},
 		});

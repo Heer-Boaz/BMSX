@@ -20,15 +20,15 @@ export function commitVdpSkyboxViewState(view: GameView, vdp: VDP, memory: Memor
 	for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
 		const assetId = ids[SKYBOX_FACE_KEYS[index]];
 		const sample = resolveVdpBlitterSample(vdp, memory.resolveAssetHandle(assetId));
-		if (sample.atlasId === ENGINE_ATLAS_INDEX) {
-			throw new Error(`[VDPSkybox] Skybox image '${assetId}' must live in primary/secondary atlas space, not the engine atlas.`);
+		if (sample.textpageId === ENGINE_ATLAS_INDEX) {
+			throw new Error(`[VDPSkybox] Skybox image '${assetId}' must live in primary/secondary textpage space, not the engine textpage.`);
 		}
 		const uvBase = index * 4;
 		faceUvRects[uvBase + 0] = sample.source.srcX / sample.surfaceWidth;
 		faceUvRects[uvBase + 1] = sample.source.srcY / sample.surfaceHeight;
 		faceUvRects[uvBase + 2] = sample.source.width / sample.surfaceWidth;
 		faceUvRects[uvBase + 3] = sample.source.height / sample.surfaceHeight;
-		faceAtlasBindings[index] = sample.atlasId;
+		faceAtlasBindings[index] = sample.textpageId;
 		const sizeBase = index * 2;
 		faceSizes[sizeBase + 0] = sample.source.width;
 		faceSizes[sizeBase + 1] = sample.source.height;

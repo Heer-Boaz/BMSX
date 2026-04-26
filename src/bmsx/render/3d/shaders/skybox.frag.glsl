@@ -2,10 +2,10 @@
 precision mediump float;
 
 in vec3 v_texcoord;
-uniform sampler2D u_atlas_primary;
-uniform sampler2D u_atlas_secondary;
+uniform sampler2D u_textpage_primary;
+uniform sampler2D u_textpage_secondary;
 uniform vec4 u_face_uv_rect[6];
-uniform int u_face_atlas[6];
+uniform int u_face_textpage[6];
 out vec4 outputColor;
 uniform vec3 u_skyTint;
 uniform float u_skyExposure;
@@ -58,12 +58,12 @@ void main() {
 	vec2 faceUv;
 	int faceIndex = resolve_skybox_face(v_texcoord, faceUv);
 	vec4 rect = u_face_uv_rect[faceIndex];
-	vec2 atlasUv = rect.xy + faceUv * rect.zw;
+	vec2 textpageUv = rect.xy + faceUv * rect.zw;
 	vec3 texColor;
-	if (u_face_atlas[faceIndex] == 0) {
-		texColor = texture(u_atlas_primary, atlasUv).rgb;
+	if (u_face_textpage[faceIndex] == 0) {
+		texColor = texture(u_textpage_primary, textpageUv).rgb;
 	} else {
-		texColor = texture(u_atlas_secondary, atlasUv).rgb;
+		texColor = texture(u_textpage_secondary, textpageUv).rgb;
 	}
 	texColor *= (u_skyTint * u_skyExposure);
 	outputColor = vec4(texColor, 1.0f);

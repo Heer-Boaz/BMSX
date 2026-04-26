@@ -30,12 +30,12 @@ struct VdpAtlasSize {
 };
 
 struct VdpAtlasMemory {
-	std::unordered_map<i32, VdpAtlasSize> atlasSizesById;
-	std::unordered_map<i32, std::vector<std::string>> atlasViewIdsById;
+	std::unordered_map<i32, VdpAtlasSize> textpageSizesById;
+	std::unordered_map<i32, std::vector<std::string>> textpageViewIdsById;
 };
 
 struct VdpState {
-	std::array<i32, 2> atlasSlots{{-1, -1}};
+	std::array<i32, 2> textpageSlots{{-1, -1}};
 	std::optional<SkyboxImageIds> skyboxFaceIds;
 	i32 ditherType = 0;
 };
@@ -126,7 +126,7 @@ public:
 	uint32_t readVdpStatus();
 	uint32_t readVdpData();
 
-	void registerVramAssets(VdpAtlasMemory atlasMemory);
+	void registerVramAssets(VdpAtlasMemory textpageMemory);
 	void attachImgDecController(ImgDecController& controller);
 	void setSkyboxImages(const SkyboxImageIds& ids);
 	void clearSkybox();
@@ -274,7 +274,7 @@ public:
 		BlitterSource source{};
 		uint32_t surfaceWidth = 0;
 		uint32_t surfaceHeight = 0;
-		i32 atlasId = 0;
+		i32 textpageId = 0;
 	};
 	struct VramGarbageStream {
 		uint32_t machineSeed = 0;
@@ -286,9 +286,9 @@ public:
 		CPU& m_cpu;
 		Api& m_api;
 	ImgDecController* m_imgDecController = nullptr;
-	std::unordered_map<i32, VdpAtlasSize> m_atlasSizesById;
-	std::unordered_map<i32, std::vector<std::string>> m_atlasViewIdsById;
-	std::unordered_map<i32, i32> m_atlasSlotById;
+	std::unordered_map<i32, VdpAtlasSize> m_textpageSizesById;
+	std::unordered_map<i32, std::vector<std::string>> m_textpageViewIdsById;
+	std::unordered_map<i32, i32> m_textpageSlotById;
 	std::array<i32, 2> m_slotAtlasIds{{-1, -1}};
 	std::vector<VramSlot> m_vramSlots;
 	std::vector<u8> m_vramStaging;

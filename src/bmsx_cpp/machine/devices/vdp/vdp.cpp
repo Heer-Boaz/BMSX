@@ -1791,10 +1791,10 @@ void VDP::setDitherType(i32 type) {
 	syncRegisters();
 }
 
-void VDP::registerVramAssets(VdpAtlasMemory atlasMemory) {
-	m_atlasSizesById = std::move(atlasMemory.atlasSizesById);
-	m_atlasViewIdsById = std::move(atlasMemory.atlasViewIdsById);
-	m_atlasSlotById.clear();
+void VDP::registerVramAssets(VdpAtlasMemory textpageMemory) {
+	m_textpageSizesById = std::move(textpageMemory.textpageSizesById);
+	m_textpageViewIdsById = std::move(textpageMemory.textpageViewIdsById);
+	m_textpageSlotById.clear();
 	m_vramSlots.clear();
 	m_imgDecController->clearExternalSlots();
 	m_readSurfaces = {};
@@ -1837,8 +1837,8 @@ uint32_t VDP::trackedTotalVramBytes() const {
 }
 
 void VDP::applyAtlasSlotMapping(i32 primaryAtlasId, i32 secondaryAtlasId) {
-	auto configureSlotEntry = [this](Memory::AssetEntry& slotEntry, i32 atlasId) {
-		if (atlasId < 0) {
+	auto configureSlotEntry = [this](Memory::AssetEntry& slotEntry, i32 textpageId) {
+		if (textpageId < 0) {
 			const uint32_t maxPixels = slotEntry.capacity / 4u;
 			const uint32_t side = static_cast<uint32_t>(std::floor(std::sqrt(static_cast<double>(maxPixels))));
 			slotEntry.baseSize = side * side * 4u;
@@ -1849,15 +1849,15 @@ void VDP::applyAtlasSlotMapping(i32 primaryAtlasId, i32 secondaryAtlasId) {
 			slotEntry.regionH = side;
 			return;
 		}
-		const auto atlasIt = m_atlasSizesById.find(atlasId);
-		if (atlasIt == m_atlasSizesById.end()) {
-			throw vdpFault("atlas " + std::to_string(atlasId) + " not registered.");
+		const auto textpageIt = m_textpageSizesById.find(textpageId);
+		if (textpageIt == m_textpageSizesById.end()) {
+			throw vdpFault("textpage " + std::to_string(textpageId) + " not registered.");
 		}
-		const uint32_t width = atlasIt->second.width;
-		const uint32_t height = atlasIt->second.height;
+		const uint32_t width = textpageIt->second.width;
+		const uint32_t height = textpageIt->second.height;
 		const uint32_t size = width * height * 4u;
 		if (size > slotEntry.capacity) {
-			throw vdpFault("atlas " + std::to_string(atlasId) + " exceeds slot capacity.");
+			throw vdpFault("textpage " + std::to_string(textpageId) + " exceeds slot capacity.");
 		}
 		slotEntry.baseSize = size;
 		slotEntry.baseStride = width * 4u;
@@ -1870,20 +1870,20 @@ void VDP::applyAtlasSlotMapping(i32 primaryAtlasId, i32 secondaryAtlasId) {
 	auto& secondaryEntryForMetrics = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
 	configureSlotEntry(primaryEntryForMetrics, primaryAtlasId);
 	configureSlotEntry(secondaryEntryForMetrics, secondaryAtlasId);
-	m_atlasSlotById.clear();
+	m_textpageSlotById.clear();
 	m_slotAtlasIds[0] = primaryAtlasId;
 	m_slotAtlasIds[1] = secondaryAtlasId;
 	if (primaryAtlasId >= 0) {
-		m_atlasSlotById[primaryAtlasId] = 0;
+		m_textpageSlotById[primaryAtlasId] = 0;
 	}
 	if (secondaryAtlasId >= 0) {
-		m_atlasSlotById[secondaryAtlasId] = 1;
+		m_textpageSlotById[secondaryAtlasId] = 1;
 	}
 	auto& primaryEntry = m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
 	auto& secondaryEntry = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
 	if (primaryAtlasId >= 0) {
-		const auto viewIt = m_atlasViewIdsById.find(primaryAtlasId);
-		if (viewIt != m_atlasViewIdsById.end()) {
+		const auto viewIt = m_textpageViewIdsById.find(primaryAtlasId);
+		if (viewIt != m_textpageViewIdsById.end()) {
 			for (const auto& viewId : viewIt->second) {
 				auto& viewEntry = m_memory.getAssetEntry(viewId);
 				m_memory.updateImageViewBase(viewEntry, primaryEntry);
@@ -1891,8 +1891,8 @@ void VDP::applyAtlasSlotMapping(i32 primaryAtlasId, i32 secondaryAtlasId) {
 		}
 	}
 	if (secondaryAtlasId >= 0) {
-		const auto viewIt = m_atlasViewIdsById.find(secondaryAtlasId);
-		if (viewIt != m_atlasViewIdsById.end()) {
+		const auto viewIt = m_textpageViewIdsById.find(secondaryAtlasId);
+		if (viewIt != m_textpageViewIdsById.end()) {
 			for (const auto& viewId : viewIt->second) {
 				auto& viewEntry = m_memory.getAssetEntry(viewId);
 				m_memory.updateImageViewBase(viewEntry, secondaryEntry);
@@ -1923,7 +1923,7 @@ void VDP::clearSkybox() {
 
 VdpState VDP::captureState() const {
 	VdpState state;
-	state.atlasSlots = m_slotAtlasIds;
+	state.textpageSlots = m_slotAtlasIds;
 	if (m_hasSkybox) {
 		state.skyboxFaceIds = m_skyboxFaceIds;
 	}
@@ -1932,9 +1932,9 @@ VdpState VDP::captureState() const {
 }
 
 void VDP::restoreState(const VdpState& state) {
-	m_memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(state.atlasSlots[0] < 0 ? VDP_ATLAS_ID_NONE : state.atlasSlots[0])));
-	m_memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, valueNumber(static_cast<double>(state.atlasSlots[1] < 0 ? VDP_ATLAS_ID_NONE : state.atlasSlots[1])));
-	applyAtlasSlotMapping(state.atlasSlots[0], state.atlasSlots[1]);
+	m_memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(state.textpageSlots[0] < 0 ? VDP_ATLAS_ID_NONE : state.textpageSlots[0])));
+	m_memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, valueNumber(static_cast<double>(state.textpageSlots[1] < 0 ? VDP_ATLAS_ID_NONE : state.textpageSlots[1])));
+	applyAtlasSlotMapping(state.textpageSlots[0], state.textpageSlots[1]);
 	if (state.skyboxFaceIds.has_value()) {
 		setSkyboxImages(*state.skyboxFaceIds);
 	} else {
@@ -1946,7 +1946,7 @@ void VDP::restoreState(const VdpState& state) {
 
 VdpSaveState VDP::captureSaveState() const {
 	VdpSaveState state;
-	state.atlasSlots = m_slotAtlasIds;
+	state.textpageSlots = m_slotAtlasIds;
 	if (m_hasSkybox) {
 		state.skyboxFaceIds = m_skyboxFaceIds;
 	}

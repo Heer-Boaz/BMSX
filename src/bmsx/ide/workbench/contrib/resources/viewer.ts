@@ -80,7 +80,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 			break;
 		}
 		case 'image':
-		case 'atlas':
+		case 'textpage':
 		case 'romlabel': {
 			const image = assets.img?.[descriptor.asset_id];
 			if (!image) {
@@ -92,22 +92,22 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 				asset_id: descriptor.asset_id,
 				width: meta.width,
 				height: meta.height,
-				atlassed: Boolean(meta.atlassed),
-				atlasId: meta.atlasid,
+				textpagesed: Boolean(meta.textpagesed),
+				textpageId: meta.textpageid,
 			};
 			appendResourceViewerLine(lines, '-- Image Metadata --');
 			appendResourceViewerLine(lines, `Dimensions: ${meta.width}x${meta.height}`);
-			appendResourceViewerLine(lines, `Atlassed: ${meta.atlassed ? 'yes' : 'no'}`);
-			if (meta.atlasid !== undefined) {
-				appendResourceViewerLine(lines, `Atlas ID: ${meta.atlasid}`);
+			appendResourceViewerLine(lines, `Atlassed: ${meta.textpagesed ? 'yes' : 'no'}`);
+			if (meta.textpageid !== undefined) {
+				appendResourceViewerLine(lines, `Atlas ID: ${meta.textpageid}`);
 			}
 			const metadata = meta as unknown as Record<string, unknown>;
 			for (const key in metadata) {
 				switch (key) {
 					case 'width':
 					case 'height':
-					case 'atlassed':
-					case 'atlasid':
+					case 'textpagesed':
+					case 'textpageid':
 						continue;
 				}
 				appendResourceViewerLine(lines, `${key}: ${describeMetadataValue(metadata[key])}`);

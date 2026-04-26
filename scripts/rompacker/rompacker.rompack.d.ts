@@ -54,15 +54,15 @@ export interface ImageResource extends BaseResource<'image'> {
 	id: number;
 	collisionType: collisiontype;
 	targetAtlasIndex?: number;
-	atlasid?: number;
+	textpageid?: number;
 	img?: NodeCanvasImage;
-	atlasTexcoords?: AtlasTexcoords;
+	textpageTexcoords?: AtlasTexcoords;
 	skipAtlas?: boolean;
 }
 
-export interface AtlasResource extends BaseResource<'atlas'> {
+export interface AtlasResource extends BaseResource<'textpage'> {
 	id: number;
-	atlasid: number;
+	textpageid: number;
 	img?: Canvas & { toBuffer?: (format: string) => Buffer; };
 }
 

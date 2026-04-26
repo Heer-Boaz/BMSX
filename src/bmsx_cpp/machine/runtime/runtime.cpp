@@ -245,14 +245,14 @@ void Runtime::refreshMemoryMap() {
 }
 
 void Runtime::refreshMemoryMapGlobals() {
-	setGlobal("sys_vram_system_atlas_base", valueNumber(static_cast<double>(VRAM_SYSTEM_ATLAS_BASE)));
-	setGlobal("sys_vram_primary_atlas_base", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_BASE)));
-	setGlobal("sys_vram_secondary_atlas_base", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_BASE)));
+	setGlobal("sys_vram_system_textpage_base", valueNumber(static_cast<double>(VRAM_SYSTEM_ATLAS_BASE)));
+	setGlobal("sys_vram_primary_textpage_base", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_BASE)));
+	setGlobal("sys_vram_secondary_textpage_base", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_BASE)));
 	setGlobal("sys_vram_framebuffer_base", valueNumber(static_cast<double>(VRAM_FRAMEBUFFER_BASE)));
 	setGlobal("sys_vram_staging_base", valueNumber(static_cast<double>(VRAM_STAGING_BASE)));
-	setGlobal("sys_vram_system_atlas_size", valueNumber(static_cast<double>(VRAM_SYSTEM_ATLAS_SIZE)));
-	setGlobal("sys_vram_primary_atlas_size", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_SIZE)));
-	setGlobal("sys_vram_secondary_atlas_size", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_SIZE)));
+	setGlobal("sys_vram_system_textpage_size", valueNumber(static_cast<double>(VRAM_SYSTEM_ATLAS_SIZE)));
+	setGlobal("sys_vram_primary_textpage_size", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_SIZE)));
+	setGlobal("sys_vram_secondary_textpage_size", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_SIZE)));
 	setGlobal("sys_vram_framebuffer_size", valueNumber(static_cast<double>(VRAM_FRAMEBUFFER_SIZE)));
 	setGlobal("sys_vram_staging_size", valueNumber(static_cast<double>(VRAM_STAGING_SIZE)));
 	setGlobal("sys_vram_size", valueNumber(static_cast<double>(m_machine.vdp().trackedTotalVramBytes())));

@@ -164,9 +164,9 @@ void GameView::initializeDefaultTextures() {
 
 	const Color fallbackColor{1.0f, 1.0f, 1.0f, 1.0f};
 	TextureHandle fallback = m_backend->createSolidTexture2D(1, 1, fallbackColor);
-	textures["_atlas_primary"] = fallback;
-	textures["_atlas_secondary"] = fallback;
-	textures["_atlas_fallback"] = fallback;
+	textures["_textpage_primary"] = fallback;
+	textures["_textpage_secondary"] = fallback;
+	textures["_textpage_fallback"] = fallback;
 	primaryAtlasIdInSlot = -1;
 	secondaryAtlasIdInSlot = -1;
 	skyboxFaceIds = {};

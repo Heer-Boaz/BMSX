@@ -25,7 +25,7 @@ export function focusEditorFromResourcePanel(): void {
 
 export function openResourceDescriptor(descriptor: ResourceDescriptor): void {
 	selectResourceInPanel(descriptor);
-	if (descriptor.type === 'atlas') {
+	if (descriptor.type === 'textpage') {
 		showEditorMessage('Atlas resources cannot be previewed in the IDE.', constants.COLOR_STATUS_WARNING, 3.2);
 		focusEditorFromResourcePanel();
 		return;

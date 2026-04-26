@@ -17,7 +17,7 @@ machine:
         ram:
             ram_bytes: 134217728 # 128 MB total RAM
         vram:
-            atlas_slot_bytes: 16777216 # 16 MB
+            textpage_slot_bytes: 16777216 # 16 MB
             staging_bytes: 4194304 # 4 MB
 lua:
     entry_path: cart.lua

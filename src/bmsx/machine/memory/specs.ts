@@ -66,7 +66,7 @@ function collectAssetEntryIds(engineSource: RawAssetSource, assetSource: RawAsse
 			if (!meta) {
 				throw runtimeMemorySpecFault(`image asset '${entry.resid}' missing metadata for memory sizing.`);
 			}
-			if (meta.atlassed) {
+			if (meta.textpagesed) {
 				ids.add(entry.resid);
 			}
 		}
@@ -95,7 +95,7 @@ function computeRequiredAssetDataBytes(assetSource: RawAssetSource, assetLayers:
 	const entries = assetSource.list();
 	for (let index = 0; index < entries.length; index += 1) {
 		const entry = entries[index]!;
-		if (entry.type !== 'image' && entry.type !== 'atlas') {
+		if (entry.type !== 'image' && entry.type !== 'textpage') {
 			continue;
 		}
 		const image = resolveRuntimeLayerAssetFromEntry<RomImgAsset>(layerLookup, 'img', entry);
@@ -103,7 +103,7 @@ function computeRequiredAssetDataBytes(assetSource: RawAssetSource, assetLayers:
 		if (!meta) {
 			throw runtimeMemorySpecFault(`image asset '${entry.resid}' missing metadata for memory sizing.`);
 		}
-		if (image.type === 'atlas' || meta.atlassed) {
+		if (image.type === 'textpage' || meta.textpagesed) {
 			continue;
 		}
 		assertRomBufferRange(entry, 'image');
@@ -116,10 +116,10 @@ function computeRequiredAssetDataBytes(assetSource: RawAssetSource, assetLayers:
 function resolveEngineAtlasSlotBytes(engineSource: RawAssetSource): number {
 	const engineAtlas = engineSource.getEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
 	if (!engineAtlas || !engineAtlas.imgmeta) {
-		throw runtimeMemorySpecFault('engine atlas metadata is missing.');
+		throw runtimeMemorySpecFault('engine textpage metadata is missing.');
 	}
-	const width = resolvePositiveSafeInteger(engineAtlas.imgmeta.width, 'engine_atlas.width');
-	const height = resolvePositiveSafeInteger(engineAtlas.imgmeta.height, 'engine_atlas.height');
+	const width = resolvePositiveSafeInteger(engineAtlas.imgmeta.width, 'engine_textpage.width');
+	const height = resolvePositiveSafeInteger(engineAtlas.imgmeta.height, 'engine_textpage.height');
 	return width * height * 4;
 }
 
@@ -136,14 +136,14 @@ export function resolveRuntimeMemoryMapSpecs(params: {
 	const engineMemorySpecs = getMachineMemorySpecs(engineMachine);
 	const stringHandleCount = DEFAULT_STRING_HANDLE_COUNT;
 	const stringHeapBytes = DEFAULT_STRING_HEAP_SIZE;
-	const atlasSlotBytes = memorySpecs.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE;
-	const engineAtlasSlotBytes = engineMemorySpecs.system_atlas_slot_bytes ?? resolveEngineAtlasSlotBytes(params.engineSource);
+	const textpageSlotBytes = memorySpecs.textpage_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE;
+	const engineAtlasSlotBytes = engineMemorySpecs.system_textpage_slot_bytes ?? resolveEngineAtlasSlotBytes(params.engineSource);
 	const renderSize = resolveRuntimeRenderSize(machineConfig);
 	const frameBufferWidth = renderSize.width;
 	const frameBufferHeight = renderSize.height;
 	const frameBufferBytes = frameBufferWidth * frameBufferHeight * 4;
 	if (!Number.isSafeInteger(engineAtlasSlotBytes) || engineAtlasSlotBytes <= 0) {
-		throw runtimeMemorySpecFault('system atlas slot bytes must be a positive integer.');
+		throw runtimeMemorySpecFault('system textpage slot bytes must be a positive integer.');
 	}
 	const stagingBytes = memorySpecs.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE;
 	const assetTableInfo = computeAssetTableBytes(params.engineSource, params.assetSource, params.assetLayers);
@@ -172,7 +172,7 @@ export function resolveRuntimeMemoryMapSpecs(params: {
 		+ `(io=${IO_REGION_SIZE}, string_handles=${stringHandleCount}, string_heap=${stringHeapBytes}, `
 		+ `asset_table=${assetTableBytes} (${assetTableInfo.entryCount} entries, ${assetTableInfo.stringBytes} string bytes), `
 		+ `asset_data=${assetDataBytes}, geo_scratch=${DEFAULT_GEO_SCRATCH_SIZE}, vdp_stream=${VDP_STREAM_BUFFER_SIZE}, vram_staging=${stagingBytes}, framebuffer=${frameBufferBytes} (${frameBufferWidth}x${frameBufferHeight}), `
-		+ `engine_atlas_slot=${engineAtlasSlotBytes}, atlas_slot=${atlasSlotBytes}x2=${atlasSlotBytes * 2}).`,
+		+ `engine_textpage_slot=${engineAtlasSlotBytes}, textpage_slot=${textpageSlotBytes}x2=${textpageSlotBytes * 2}).`,
 	);
 	return {
 		ram_bytes: ramBytes,
@@ -180,8 +180,8 @@ export function resolveRuntimeMemoryMapSpecs(params: {
 		string_heap_bytes: stringHeapBytes,
 		asset_table_bytes: assetTableBytes,
 		asset_data_bytes: assetDataBytes,
-		atlas_slot_bytes: atlasSlotBytes,
-		system_atlas_slot_bytes: engineAtlasSlotBytes,
+		textpage_slot_bytes: textpageSlotBytes,
+		system_textpage_slot_bytes: engineAtlasSlotBytes,
 		staging_bytes: stagingBytes,
 		framebuffer_bytes: frameBufferBytes,
 	};

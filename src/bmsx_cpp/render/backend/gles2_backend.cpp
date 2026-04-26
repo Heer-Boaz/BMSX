@@ -70,7 +70,7 @@ static const u8* prepareGLES2TextureStorageData(const u8* data, i32 width, i32 h
 
 /*
 	Libretro GLES2 state note:
-	- Symptom: live output shows the atlas while RetroArch pause shows the correct frame.
+	- Symptom: live output shows the textpage while RetroArch pause shows the correct frame.
 	- Root cause: the core and frontend share the same GL context. If the core leaves
 	program/buffer/texture state bound, RetroArch's present blit can inherit that
 	state and sample the wrong texture.

@@ -510,7 +510,7 @@ export class GameView implements RenderContext {
 		const fallback = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
 		this.textures[ATLAS_PRIMARY_SLOT_ID] = fallback; // Start with fallback to avoid undefined states and race conditions
 		this.textures[ATLAS_SECONDARY_SLOT_ID] = fallback;
-		this.textures['_atlas_fallback'] = fallback;
+		this.textures['_textpage_fallback'] = fallback;
 		this.primaryAtlasIdInSlot = null;
 		this.secondaryAtlasIdInSlot = null;
 		this.skyboxFaceIds = null;

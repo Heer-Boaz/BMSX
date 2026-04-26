@@ -17,7 +17,7 @@ void buildAssetMemory(Runtime& runtime, RuntimeAssets& engineAssets, RuntimeAsse
 		memory.resetAssetMemory();
 	}
 	RegisteredImageMemory imageMemory = registerImageMemory(memory, engineAssets, assets);
-	machine.vdp().registerVramAssets(std::move(imageMemory.atlasMemory));
+	machine.vdp().registerVramAssets(std::move(imageMemory.textpageMemory));
 
 	memory.finalizeAssetTable();
 	memory.markAllAssetsDirty();

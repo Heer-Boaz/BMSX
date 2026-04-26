@@ -324,7 +324,7 @@ async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader
 				: decodeBinary(metaSlice);
 			switch (asset.type) {
 				case 'image':
-				case 'atlas':
+				case 'textpage':
 					asset.imgmeta = decodedMeta as ImgMeta;
 					if (asset.imgmeta.hitpolygons?.original && (!asset.imgmeta.hitpolygons.fliph || !asset.imgmeta.hitpolygons.flipv || !asset.imgmeta.hitpolygons.fliphv)) {
 						const extracted_hitpolygon = asset.imgmeta.hitpolygons.original;
@@ -339,7 +339,7 @@ async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader
 						if (asset.imgmeta.boundingbox && (!asset.imgmeta.boundingbox.fliph || !asset.imgmeta.boundingbox.flipv || !asset.imgmeta.boundingbox.fliphv)) {
 							asset.imgmeta.boundingbox = generateFlippedBoundingBox(asset.imgmeta.boundingbox.original, asset.imgmeta.width, asset.imgmeta.height);
 						}
-						if (asset.imgmeta.atlassed && asset.imgmeta.texcoords && (!asset.imgmeta.texcoords_fliph || !asset.imgmeta.texcoords_flipv || !asset.imgmeta.texcoords_fliphv)) {
+						if (asset.imgmeta.textpagesed && asset.imgmeta.texcoords && (!asset.imgmeta.texcoords_fliph || !asset.imgmeta.texcoords_flipv || !asset.imgmeta.texcoords_fliphv)) {
 							const { original, fliph, flipv, fliphv } = generateFlippedTexCoords(asset.imgmeta.texcoords);
 							asset.imgmeta.texcoords = original;
 							asset.imgmeta.texcoords_fliph = fliph;
@@ -531,7 +531,7 @@ async function load(source: RawAssetSource, res: RomAsset, assets: RuntimeAssets
 	const assetKey = baseAsset.resid;
 	switch (res.type) {
 		case 'image':
-		case 'atlas': {
+		case 'textpage': {
 			const imgAsset = {
 				...baseAsset,
 			} as RomImgAsset;

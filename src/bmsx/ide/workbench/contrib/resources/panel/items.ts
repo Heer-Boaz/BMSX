@@ -73,7 +73,7 @@ function collectResourcePanelDescriptors(): ResourceDescriptor[] {
 	const descriptors = listResourcesStrict();
 	const augmented = descriptors.slice();
 	for (const asset of Runtime.instance.assets.listImageAssets()) {
-		if (asset.type !== 'atlas') {
+		if (asset.type !== 'textpage') {
 			continue;
 		}
 		const assetId = asset.resid;
@@ -87,7 +87,7 @@ function collectResourcePanelDescriptors(): ResourceDescriptor[] {
 		if (alreadyPresent) {
 			continue;
 		}
-		augmented.push({ path: `atlas/${assetId}`, type: 'atlas', asset_id: assetId });
+		augmented.push({ path: `textpage/${assetId}`, type: 'textpage', asset_id: assetId });
 	}
 	return augmented;
 }

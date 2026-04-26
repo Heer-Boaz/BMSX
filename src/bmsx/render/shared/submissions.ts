@@ -79,7 +79,7 @@ export type ParticleRenderSubmission = {
 	texture?: asset_id;
 	uv0?: vec2arr;
 	uv1?: vec2arr;
-	atlasBinding?: number;
+	textpageBinding?: number;
 	ambient_mode?: 0 | 1;
 	ambient_factor?: number;
 	layer?: RenderLayer; // Currently unused

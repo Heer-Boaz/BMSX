@@ -8,7 +8,7 @@ import {
 	getRomManifest,
 	isEngineRuntimeRebuildRequired,
 } from './rombuilder';
-import type { RomPackerOptions, RomPackerTarget } from './formater.rompack';
+import type { RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
 
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';

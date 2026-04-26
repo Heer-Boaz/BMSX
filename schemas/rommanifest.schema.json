@@ -190,11 +190,11 @@
 			"type": "object",
 			"description": "VRAM and rendering budgets.",
 			"properties": {
-				"atlas_slot_bytes": {
+				"texpage_slot_bytes": {
 					"type": "integer",
 					"minimum": 1
 				},
-				"engine_atlas_slot_bytes": {
+				"engine_texpage_slot_bytes": {
 					"type": "integer",
 					"minimum": 1
 				},

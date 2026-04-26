@@ -66,7 +66,7 @@ export const API_METHOD_METADATA = {
 		returnType: 'void',
 	},
 	skybox: {
-		description: 'Sets the skybox face image ids (posx, negx, posy, negy, posz, negz). Faces must be atlassed and mapped into the primary or secondary atlas slot.',
+		description: 'Sets the skybox face image ids (posx, negx, posy, negy, posz, negz). Faces must be textpagesed and mapped into the primary or secondary textpage slot.',
 		parameters: [
 			{ name: 'posx', description: 'Positive X face image id.' },
 			{ name: 'negx', description: 'Negative X face image id.' },

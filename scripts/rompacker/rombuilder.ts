@@ -7,10 +7,10 @@ import { SYSTEM_BOOT_ENTRY_PATH } from '../../src/bmsx/core/system';
 import { encodeRomToc } from '../../src/bmsx/rompack/toc';
 import type { LuaChunk } from '../../src/bmsx/lua/syntax/ast';
 import { encodeAudioAssetToAdpcm } from './adpcm';
-import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
+import { textpageIndexResolver, createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
-import type { AtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './formater.rompack';
+import type { AtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './rompacker.rompack';
 import { collectSourceFiles } from '../analysis/file_scan';
 import { collectCartSourceFiles } from './cart_source_files';
 // @ts-ignore
@@ -493,25 +493,25 @@ export function parseImageMeta(filenameWithoutExt: string): {
 	targetAtlas?: number,
 	skipAtlas?: boolean,
 } {
-	// Match @cc or @cx for collision type, and @atlas=n for atlas assignment (order-insensitive)
+	// Match @cc or @cx for collision type, and @textpage=n for textpage assignment (order-insensitive)
 	const collisionMatch = filenameWithoutExt.match(/@(cc|cx)/i);
 	let collisionType: 'concave' | 'convex' | 'aabb' = 'aabb';
 	if (collisionMatch) {
 		const code = collisionMatch[1].toLowerCase();
 		collisionType = code === 'cc' ? 'concave' : code === 'cx' ? 'convex' : 'aabb';
 	}
-	const skipAtlas = /@noatlas/i.test(filenameWithoutExt);
+	const skipAtlas = /@notextpage/i.test(filenameWithoutExt);
 	let targetAtlas = undefined;
 	if (!skipAtlas && GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-		const atlasMatch = filenameWithoutExt.match(/@atlas=(\d+)/i);
-		targetAtlas = atlasMatch ? parseInt(atlasMatch[1], 10) : undefined;
+		const textpageMatch = filenameWithoutExt.match(/@textpage=(\d+)/i);
+		targetAtlas = textpageMatch ? parseInt(textpageMatch[1], 10) : undefined;
 	}
 
-	// Remove all @cc, @cx, and @atlas=n (in any order)
+	// Remove all @cc, @cx, and @textpage=n (in any order)
 	const sanitizedName = filenameWithoutExt
 		.replace(/@(cc|cx)/ig, '')
-		.replace(/@atlas=\d+/ig, '')
-		.replace(/@noatlas/ig, '');
+		.replace(/@textpage=\d+/ig, '')
+		.replace(/@notextpage/ig, '');
 
 	return { sanitizedName, collisionType, targetAtlas, skipAtlas };
 }
@@ -702,7 +702,7 @@ function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageColl
 		throw new Error(`Image resource "${res.name}" is missing its decoded image data.`);
 	}
 	let imgmeta: ImgMeta = {
-		atlassed: false,
+		textpagesed: false,
 		width: img.width,
 		height: img.height,
 		boundingbox: {
@@ -717,11 +717,11 @@ function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageColl
 	};
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		const targetAtlas = res.targetAtlasIndex;
-		const texcoords = res.atlasTexcoords;
+		const texcoords = res.textpageTexcoords;
 		imgmeta = {
 			...imgmeta,
-			atlassed: targetAtlas !== undefined,
-			atlasid: targetAtlas !== undefined ? targetAtlas : undefined,
+			textpagesed: targetAtlas !== undefined,
+			textpageid: targetAtlas !== undefined ? targetAtlas : undefined,
 			texcoords: texcoords ? [...texcoords] : undefined,
 		};
 	}
@@ -794,8 +794,8 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 		case '.adp':
 			type = 'audio';
 			break;
-		case '.atlas': // `.atlas`-files don't exist. We use this to add the atlas to the resource list
-			type = 'atlas';
+		case '.textpage': // `.textpage`-files don't exist. We use this to add the textpage to the resource list
+			type = 'textpage';
 			break;
 		case '.png':
 			if (name === 'romlabel') {
@@ -933,14 +933,14 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 				}
 				let targetAtlasIndex = imgMeta.skipAtlas ? undefined : imgMeta.targetAtlas;
 				if (!imgMeta.skipAtlas && options.resolveAtlasIndex) {
-					const resolvedIndex = atlasIndexResolver(filepath, targetAtlasIndex);
-					// Accept 0 as a valid atlas index;
+					const resolvedIndex = textpageIndexResolver(filepath, targetAtlasIndex);
+					// Accept 0 as a valid textpage index;
 					if (typeof resolvedIndex === 'number') {
 						imgMeta.targetAtlas = resolvedIndex;
 						targetAtlasIndex = resolvedIndex;
 					}
 				}
-				// If we are generating and using texture atlases, we need to add the image to the atlas.
+				// If we are generating and using texture textpagees, we need to add the image to the textpage.
 				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS && !imgMeta.skipAtlas) {
 					if (imgMeta.targetAtlas !== undefined) {
 						targetAtlasIdSet.add(imgMeta.targetAtlas);
@@ -985,21 +985,21 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 				result.push({ filepath, name, ext, type, id: modelid, datatype: meta.datatype, sourcePath });
 				++modelid;
 				break;
-			case 'atlas':
+			case 'textpage':
 				// Atlas files are not real files, but we add them to the resource list in the next step
 				break;
 		}
 	}
 
-	// Ensure the default atlas (index 0) is always present when atlases are generated and packed.
+	// Ensure the default textpage (index 0) is always present when textpagees are generated and packed.
 	if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
 		targetAtlasIdSet.add(0);
 	}
-	// If we are generating and using texture atlases, we need to add the atlasses to the resource list
+	// If we are generating and using texture textpagees, we need to add the textpageses to the resource list
 	// @ts-ignore
 	for (const id of Array.from(targetAtlasIdSet).sort((a, b) => a - b)) {
 		const name = generateAtlasName(id);
-		result.push({ filepath: undefined, name, ext: '.atlas', type: 'atlas', id: imgid++, atlasid: id });
+		result.push({ filepath: undefined, name, ext: '.textpage', type: 'textpage', id: imgid++, textpageid: id });
 	}
 
 	result.sort((left, right) => {
@@ -1092,7 +1092,7 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 			case 'aem':
 			case 'model':
 			case 'romlabel':
-			case 'atlas':
+			case 'textpage':
 				return {
 					...metaObject,
 					buffer,
@@ -1124,8 +1124,8 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
  *
  * This function processes each loaded resource, extracting relevant metadata and buffer data,
  * and constructs a RomAsset for each. It handles different resource types such as images,
- * audio, code, atlases, and romlabels, and attaches the appropriate metadata to each asset.
- * For images and atlases, it generates image metadata; for audio, it parses audio metadata.
+ * audio, code, textpagees, and romlabels, and attaches the appropriate metadata to each asset.
+ * For images and textpagees, it generates image metadata; for audio, it parses audio metadata.
  * The resulting RomAsset array is used for ROM packing and serialization.
  *
  * @param resources - The array of resources to process.
@@ -1164,7 +1164,7 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				const imgmeta = buildImgMetaFromCollisionBuild(res, collision);
 				let baseAsset: RomAsset;
 				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-					// Preserve raw image buffer for images explicitly marked to skip atlas (@noatlas)
+					// Preserve raw image buffer for images explicitly marked to skip textpage (@notextpage)
 					const keepOriginal = !!(res as any).skipAtlas;
 					baseAsset = { resid, type, imgmeta, buffer: keepOriginal ? buffer : undefined, source_path: sourcePath };
 				} else {
@@ -1306,7 +1306,7 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				romAssets.push({ resid, type, buffer, texture_buffer, source_path: sourcePath });
 			}
 				break;
-			case 'atlas': {
+			case 'textpage': {
 				const imgmeta = buildImgMetaForAtlas(res);
 				romAssets.push({ resid, type, imgmeta, buffer, source_path: sourcePath });
 				break;
@@ -1449,11 +1449,11 @@ export function appendProgramAsset(
 }
 
 /**
- * Generates metadata for an image resource, optionally integrating texture atlas data.
+ * Generates metadata for an image resource, optionally integrating texture textpage data.
  *
  * @param res - The resource containing the image and any existing metadata.
- * @param generated_atlas - An optional canvas element where an atlas has been generated.
- * @returns An object containing image dimensions, bounding boxes, center point, and (if atlas usage is enabled) texture coordinates.
+ * @param generated_textpage - An optional canvas element where an textpage has been generated.
+ * @returns An object containing image dimensions, bounding boxes, center point, and (if textpage usage is enabled) texture coordinates.
  */
 export function buildImgMeta(res: ImageResource): ImgMeta {
 	return buildImgMetaFromCollisionBuild(res, buildImageCollisionBuild(res));
@@ -1461,42 +1461,42 @@ export function buildImgMeta(res: ImageResource): ImgMeta {
 
 export function buildImgMetaForAtlas(res: AtlasResource): ImgMeta {
 	return {
-		atlassed: false,
-		atlasid: res.atlasid, // Use the atlas ID from the base resource
+		textpagesed: false,
+		textpageid: res.textpageid, // Use the textpage ID from the base resource
 		width: res.img.width,
 		height: res.img.height,
 	};
 }
 
 /**
- * Generates texture atlases from the loaded image resources and updates the corresponding atlas resources.
+ * Generates texture textpagees from the loaded image resources and updates the corresponding textpage resources.
  *
- * @param resources - An array of resources, including the atlas to be processed.
- * @param generated_atlas - The HTMLCanvasElement representing the generated atlas image.
+ * @param resources - An array of resources, including the textpage to be processed.
+ * @param generated_textpage - The HTMLCanvasElement representing the generated textpage image.
  * @param assetList - An array of RomAsset objects to be updated with image metadata.
- * @param bufferPointer - The starting position where atlas data should be written in the output buffers.
- * @param buffers - An array of Buffers where the atlas image data will be appended.
- * @returns A Promise that resolves once the atlas image is written to disk and metadata is updated.
+ * @param bufferPointer - The starting position where textpage data should be written in the output buffers.
+ * @param buffers - An array of Buffers where the textpage image data will be appended.
+ * @returns A Promise that resolves once the textpage image is written to disk and metadata is updated.
  */
 export async function createAtlasses(resources: Resource[], reportProgress?: ProgressNote) {
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-		const atlasses = resources.filter((res): res is AtlasResource => res.type === 'atlas');
-		if (atlasses.length === 0) throw new Error('No atlas resources found in the "resources"-list. The process of preparing the list of all resources (assets) should also add any atlasses that are to be generated. Thus, this is a bug in the code that prepares the list of resources :-(');
-		// Determine the indexes of atlasses to be generated
-		for (const atlas of atlasses) {
+		const textpageses = resources.filter((res): res is AtlasResource => res.type === 'textpage');
+		if (textpageses.length === 0) throw new Error('No textpage resources found in the "resources"-list. The process of preparing the list of all resources (assets) should also add any textpageses that are to be generated. Thus, this is a bug in the code that prepares the list of resources :-(');
+		// Determine the indexes of textpageses to be generated
+		for (const textpage of textpageses) {
 			const image_assets = resources.filter((resource): resource is ImageResource => resource.type === 'image');
-			const filteredImages = image_assets.filter(resource => resource.targetAtlasIndex === atlas.atlasid);
-			reportProgress?.(`atlas ${atlas.name} (${filteredImages.length} images)`);
-			const atlasCanvas = createOptimizedAtlas(filteredImages);
-			if (!atlasCanvas) throw new Error(`Failed to create texture atlas for ${atlas.name}.`);
-			atlas.img = atlasCanvas; // Store the canvas in the resource (to extract the image properties later during `processResources`)
-			atlas.buffer = atlasCanvas.toBuffer('image/png'); // Convert canvas to PNG buffer
-			reportProgress?.(`write atlas ${atlas.name}`);
-			await writeFile(`./rom/_ignore/${generateAtlasName(atlas.atlasid)}.png`, atlas.buffer);
+			const filteredImages = image_assets.filter(resource => resource.targetAtlasIndex === textpage.textpageid);
+			reportProgress?.(`textpage ${textpage.name} (${filteredImages.length} images)`);
+			const textpageCanvas = createOptimizedAtlas(filteredImages);
+			if (!textpageCanvas) throw new Error(`Failed to create texture textpage for ${textpage.name}.`);
+			textpage.img = textpageCanvas; // Store the canvas in the resource (to extract the image properties later during `processResources`)
+			textpage.buffer = textpageCanvas.toBuffer('image/png'); // Convert canvas to PNG buffer
+			reportProgress?.(`write textpage ${textpage.name}`);
+			await writeFile(`./rom/_ignore/${generateAtlasName(textpage.textpageid)}.png`, textpage.buffer);
 		}
 	}
 	else {
-		throw new Error('No images found to generate texture atlas from. Please ensure you have images in your resource directory.');
+		throw new Error('No images found to generate texture textpage from. Please ensure you have images in your resource directory.');
 	}
 }
 
@@ -1967,7 +1967,7 @@ export function setAtlasFlag(enabled: boolean): void {
 	GENERATE_AND_USE_TEXTURE_ATLAS = enabled;
 }
 
-export const ENGINE_ATLAS_INDEX = 254; // Keep in sync with src/bmsx/render/atlas.ts// Command line parameter for texture atlas usage
+export const ENGINE_ATLAS_INDEX = 254; // Keep in sync with src/bmsx/render/textpage.ts// Command line parameter for texture textpage usage
 
 export let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 // Define common assets path

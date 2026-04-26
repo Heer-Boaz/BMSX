@@ -24,7 +24,7 @@ const ENGINE_LUA_BUILTIN_FUNCTION_NAMES = [
 	'trigger_effect',
 	'vdp_map_slot',
 	'vdp_load_slot',
-	'vdp_load_sys_atlas',
+	'vdp_load_sys_textpage',
 	'irq',
 	'on_irq',
 	'on_vdp_load',

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { runPlatformBuild } from './platformbuild';
 import { getNodeLauncherFilename } from './rombuilder';
-import type { RomPackerTarget } from './formater.rompack';
+import type { RomPackerTarget } from './rompacker.rompack';
 import { collectSourceFiles } from '../analysis/file_scan';
 
 import { createCliUi, getParamOrEnv, parseArgsVector } from './cli';

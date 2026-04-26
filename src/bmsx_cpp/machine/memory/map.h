@@ -74,7 +74,7 @@ struct MemoryMapConfig {
 	uint32_t stringHeapBytes = DEFAULT_STRING_HEAP_SIZE;
 	uint32_t assetTableBytes = DEFAULT_ASSET_TABLE_SIZE;
 	uint32_t assetDataBytes = 0;
-	uint32_t atlasSlotBytes = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
+	uint32_t textpageSlotBytes = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 	uint32_t engineAtlasSlotBytes = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 	uint32_t stagingBytes = DEFAULT_VRAM_STAGING_SIZE;
 	uint32_t frameBufferBytes = DEFAULT_VRAM_FRAMEBUFFER_SIZE;

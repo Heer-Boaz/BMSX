@@ -112,11 +112,11 @@ static void parseMachineSpecs(const BinObject& machineObj, MachineManifest& mani
 	const BinValue* vramValue = findObjectField(specsObj, "vram");
 	if (vramValue && vramValue->isObject()) {
 		const auto& vramObj = vramValue->asObject();
-		if (vramObj.count("atlas_slot_bytes")) {
-			manifest.atlasSlotBytes = vramObj.at("atlas_slot_bytes").toI32();
+		if (vramObj.count("textpage_slot_bytes")) {
+			manifest.textpageSlotBytes = vramObj.at("textpage_slot_bytes").toI32();
 		}
-		if (vramObj.count("system_atlas_slot_bytes")) {
-			manifest.engineAtlasSlotBytes = vramObj.at("system_atlas_slot_bytes").toI32();
+		if (vramObj.count("system_textpage_slot_bytes")) {
+			manifest.engineAtlasSlotBytes = vramObj.at("system_textpage_slot_bytes").toI32();
 		}
 		if (vramObj.count("staging_bytes")) {
 			manifest.stagingBytes = vramObj.at("staging_bytes").toI32();
@@ -147,7 +147,7 @@ static std::string assetTypeFromId(u32 id) {
 		case 2: return "audio";
 		case 3: return "data";
 		case 4: return "bin";
-		case 5: return "atlas";
+		case 5: return "textpage";
 		case 6: return "romlabel";
 		case 7: return "model";
 		case 8: return "aem";
@@ -166,7 +166,7 @@ static AssetTypeKind resolveAssetTypeKind(std::string_view assetType) {
 			}
 			break;
 		case 'a':
-			if (assetType == "atlas") {
+			if (assetType == "textpage") {
 				return AssetTypeKind::ImageAtlas;
 			}
 			if (assetType == "audio") {
@@ -997,7 +997,7 @@ void RuntimeAssets::clear() {
 	bin.clear();
 	lua.clear();
 	audioevents.clear();
-	atlasTextures.clear();
+	textpageTextures.clear();
 	programAsset.reset();
 	programSymbols.reset();
 	projectRootPath.clear();
@@ -1547,8 +1547,8 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 						const auto& imgMeta = metaVal.asObject();
 						imgAsset.meta.width = imgMeta.count("width") ? imgMeta.at("width").toI32() : 0;
 						imgAsset.meta.height = imgMeta.count("height") ? imgMeta.at("height").toI32() : 0;
-						imgAsset.meta.atlassed = imgMeta.count("atlassed") && imgMeta.at("atlassed").isBool() && imgMeta.at("atlassed").asBool();
-						imgAsset.meta.atlasid = imgMeta.count("atlasid") ? imgMeta.at("atlasid").toI32() : 0;
+						imgAsset.meta.textpagesed = imgMeta.count("textpagesed") && imgMeta.at("textpagesed").isBool() && imgMeta.at("textpagesed").asBool();
+						imgAsset.meta.textpageid = imgMeta.count("textpageid") ? imgMeta.at("textpageid").toI32() : 0;
 
 						// Load texcoords
 						if (imgMeta.count("texcoords")) {
@@ -1608,7 +1608,7 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 					}
 				}
 
-				// Store atlas assets as regular images for render lookup.
+				// Store textpage assets as regular images for render lookup.
 				assets.img[assetToken] = std::move(imgAsset);
 				break;
 			}

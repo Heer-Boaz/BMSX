@@ -691,7 +691,7 @@ function applyCullState(runtime: MeshPassRuntime, doubleSided: boolean): void {
 }
 function setMeshTextures(runtime: MeshPassRuntime, m: Mesh, buffers: MeshBuffers, receiveShadow: boolean): void {
 	const { context, gl } = runtime;
-	// Albedo: prefer mesh texture; otherwise use 1x1 white (no shared atlas fallback)
+	// Albedo: prefer mesh texture; otherwise use 1x1 white (no shared textpage fallback)
 	let tex = m.gpuTextureAlbedo
 		? engineCore.texmanager.getTexture(m.gpuTextureAlbedo)
 		: (context.textures['_default_albedo'] as WebGLTexture);

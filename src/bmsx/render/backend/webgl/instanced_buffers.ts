@@ -10,7 +10,7 @@ export type WebGLInstancedBufferRuntime = {
 	instanceFloatBuffer: WebGLBuffer;
 	instanceAtlasBuffer: WebGLBuffer;
 	floatData: Float32Array;
-	atlasData: Uint8Array;
+	textpageData: Uint8Array;
 	capacity: number;
 };
 
@@ -49,7 +49,7 @@ export function createWebGLInstanceBuffers(backend: WebGLBackend, capacity: numb
 		instanceFloatBuffer: backend.createVertexBuffer(new Float32Array(capacity * instanceFloats), 'dynamic') as WebGLBuffer,
 		instanceAtlasBuffer: backend.createVertexBuffer(new Uint8Array(capacity), 'dynamic') as WebGLBuffer,
 		floatData: new Float32Array(capacity * instanceFloats),
-		atlasData: new Uint8Array(capacity),
+		textpageData: new Uint8Array(capacity),
 		capacity,
 	};
 }
@@ -92,10 +92,10 @@ export function bindWebGLInstancedFloatAttributes(backend: WebGLBackend, program
 	}
 }
 
-export function bindWebGLAtlasIdAttribute(backend: WebGLBackend, program: WebGLProgram, atlasBuffer: WebGLBuffer): void {
+export function bindWebGLAtlasIdAttribute(backend: WebGLBackend, program: WebGLProgram, textpageBuffer: WebGLBuffer): void {
 	const gl = backend.gl as WebGL2RenderingContext;
-	backend.bindArrayBuffer(atlasBuffer);
-	const location = gl.getAttribLocation(program, 'i_atlas_id');
+	backend.bindArrayBuffer(textpageBuffer);
+	const location = gl.getAttribLocation(program, 'i_textpage_id');
 	backend.enableVertexAttrib(location);
 	backend.vertexAttribIPointer(location, 1, gl.UNSIGNED_BYTE, 1, 0);
 	backend.vertexAttribDivisor(location, 1);
@@ -138,11 +138,11 @@ export function ensureWebGLInstanceBufferCapacity(backend: WebGLBackend, state: 
 	}
 	state.capacity = capacity;
 	state.floatData = new Float32Array(capacity * instanceFloats);
-	state.atlasData = new Uint8Array(capacity);
+	state.textpageData = new Uint8Array(capacity);
 	backend.bindArrayBuffer(state.instanceFloatBuffer);
 	backend.updateVertexBuffer(state.instanceFloatBuffer, state.floatData, 0);
 	backend.bindArrayBuffer(state.instanceAtlasBuffer);
-	backend.updateVertexBuffer(state.instanceAtlasBuffer, state.atlasData, 0);
+	backend.updateVertexBuffer(state.instanceAtlasBuffer, state.textpageData, 0);
 	backend.bindArrayBuffer(null);
 }
 
@@ -150,6 +150,6 @@ export function flushWebGLInstanceBatch(backend: WebGLBackend, pass: PassEncoder
 	backend.bindArrayBuffer(state.instanceFloatBuffer);
 	backend.updateVertexBuffer(state.instanceFloatBuffer, state.floatData.subarray(0, count * instanceFloats), 0);
 	backend.bindArrayBuffer(state.instanceAtlasBuffer);
-	backend.updateVertexBuffer(state.instanceAtlasBuffer, state.atlasData.subarray(0, count), 0);
+	backend.updateVertexBuffer(state.instanceAtlasBuffer, state.textpageData.subarray(0, count), 0);
 	backend.drawInstanced(pass, 6, count, 0, 0);
 }

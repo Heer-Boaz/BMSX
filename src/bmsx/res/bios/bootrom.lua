@@ -54,8 +54,8 @@ local cart_rom_magic<const> = 0x58534d42
 
 local boot_start
 local boot_requested
-local sys_atlas_ready
-local sys_atlas_failed
+local sys_textpage_ready
+local sys_textpage_failed
 local boot_scroll_state<const> = { top = 0 }
 local boot_screen_visible = false
 local boot_screen_presented
@@ -2164,7 +2164,7 @@ local build_info<const> = function()
 	local machine_view_label<const> = machine_manifest and machine_manifest.render_size or '--'
 	local machine_cpu_raw<const> = machine_manifest and machine_manifest.cpu_freq_hz
 	local machine_cpu_label<const> = format_cpu_mhz_from_hz(machine_cpu_raw)
-	local vram_total<const> = sys_vram_system_atlas_size + sys_vram_primary_atlas_size + sys_vram_secondary_atlas_size + sys_vram_framebuffer_size + sys_vram_staging_size
+	local vram_total<const> = sys_vram_system_textpage_size + sys_vram_primary_textpage_size + sys_vram_secondary_textpage_size + sys_vram_framebuffer_size + sys_vram_staging_size
 
 	return {
 		machine_view = machine_view_label,
@@ -2218,7 +2218,7 @@ local compute_boot_progress<const> = function(info, cart_ready, elapsed)
 	if info.bitcast_selftest_ok then
 		stage_done = stage_done + 1
 	end
-	if sys_atlas_ready and not sys_atlas_failed then
+	if sys_textpage_ready and not sys_textpage_failed then
 		stage_done = stage_done + 1
 	end
 	stage_done = stage_done + info.precheck_progress
@@ -2339,7 +2339,7 @@ local build_boot_content_lines<const> = function(info, cart_present, cursor, ela
 
 	if cart_present then
 		local cart_ready<const> = cart_boot_ready()
-		if not cart_ready and not boot_requested and sys_atlas_ready and not sys_atlas_failed then
+		if not cart_ready and not boot_requested and sys_textpage_ready and not sys_textpage_failed then
 			if not cart_start_failed_logged then
 				cart_start_failed_logged = true
 				print('[BootRom] Cart start failed: cart_boot_ready=0 while BIOS remained active.')
@@ -2366,8 +2366,8 @@ function init()
 	boot_requested = false
 	boot_screen_visible = true
 	boot_screen_presented = false
-	sys_atlas_ready = false
-	sys_atlas_failed = false
+	sys_textpage_ready = false
+	sys_textpage_failed = false
 	clear_precheck_cache()
 	bitcast_selftest_ok = false
 	bitcast_selftest_status = 'NOT RUN'
@@ -2376,10 +2376,10 @@ function init()
 	cart_start_failed_logged = false
 	reset_scroll_state(boot_scroll_state)
 	on_irq(irq_img_done, function()
-		sys_atlas_ready = true
+		sys_textpage_ready = true
 	end)
 	on_irq(irq_img_error, function()
-		sys_atlas_failed = true
+		sys_textpage_failed = true
 	end)
 	on_irq(irq_reinit, function()
 		init()
@@ -2387,7 +2387,7 @@ function init()
 	on_irq(irq_newgame, function()
 		new_game()
 	end)
-	vdp_load_sys_atlas()
+	vdp_load_sys_textpage()
 	selftest_bitcast_builtins()
 end
 
@@ -2427,7 +2427,7 @@ local update_boot_screen<const> = function()
 			and cart_boot_ready()
 			and cart_valid
 
-		if cart_present_and_ready and not boot_requested and sys_atlas_ready and not sys_atlas_failed then
+		if cart_present_and_ready and not boot_requested and sys_textpage_ready and not sys_textpage_failed then
 			boot_requested = true
 			print('Cart boot requested.')
 			mem[sys_boot_cart] = 1

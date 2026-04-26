@@ -9,7 +9,7 @@ class RuntimeAssets;
 struct ImgAsset;
 
 struct RegisteredImageMemory {
-	VdpAtlasMemory atlasMemory;
+	VdpAtlasMemory textpageMemory;
 };
 
 RegisteredImageMemory registerImageMemory(Memory& memory, RuntimeAssets& engineAssets, RuntimeAssets& assets);
