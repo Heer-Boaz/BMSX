@@ -39,7 +39,7 @@ function parseWav(buffer: Buffer): WavData {
 	const readStr = (len: number) => buffer.toString("ascii", offset, offset + len);
 
 	const expect = (got: string, expected: string) => {
-	if (got !== expected) throw new Error(`Invalid WAV: expected ${expected}, got ${got}`);
+		if (got !== expected) throw new Error(`Invalid WAV: expected ${expected}, got ${got}`);
 	};
 
 	// RIFF/WAVE
@@ -52,25 +52,25 @@ function parseWav(buffer: Buffer): WavData {
 	let dataBuffer: Buffer | null = null;
 
 	while (offset + 8 <= buffer.length) {
-	const id = readStr(4); offset += 4;
-	const size = read32(); offset += 4;
+		const id = readStr(4); offset += 4;
+		const size = read32(); offset += 4;
 
-	if (id === "fmt ") {
-		audioFormat = read16(); offset += 2; // 1=PCM, 3=IEEE float
-		numChannels = read16(); offset += 2;
-		sampleRate = read32(); offset += 4;
-		offset += 6; // byteRate (4) + blockAlign (2)
-		bitsPerSample = read16(); offset += 2;
-		if (size > 16) offset += size - 16;
-	} else if (id === "data") {
-		dataBuffer = buffer.subarray(offset, offset + size);
-		offset += size;
-	} else {
-		offset += size;
-	}
+		if (id === "fmt ") {
+			audioFormat = read16(); offset += 2; // 1=PCM, 3=IEEE float
+			numChannels = read16(); offset += 2;
+			sampleRate = read32(); offset += 4;
+			offset += 6; // byteRate (4) + blockAlign (2)
+			bitsPerSample = read16(); offset += 2;
+			if (size > 16) offset += size - 16;
+		} else if (id === "data") {
+			dataBuffer = buffer.subarray(offset, offset + size);
+			offset += size;
+		} else {
+			offset += size;
+		}
 
-	// chunk padding to even
-	if (offset & 1) offset++;
+		// chunk padding to even
+		if (offset & 1) offset++;
 	}
 
 	if (!dataBuffer) throw new Error("WAV missing data chunk");
@@ -88,35 +88,35 @@ function parseWav(buffer: Buffer): WavData {
 	const clamp1 = (x: number) => Math.max(-1, Math.min(1, x));
 
 	for (let i = 0; i < totalSamples; i++) {
-	for (let ch = 0; ch < numChannels; ch++) {
-		let v = 0;
+		for (let ch = 0; ch < numChannels; ch++) {
+			let v = 0;
 
-		if (audioFormat === 3) {
-		// IEEE float
-		if (bitsPerSample !== 32) throw new Error(`Unsupported float WAV bitsPerSample: ${bitsPerSample}`);
-		v = dataBuffer.readFloatLE(pos); pos += 4;
-		v = clamp1(v);
-		} else {
-		// PCM integer
-		if (bitsPerSample === 8) {
-			v = (dataBuffer.readUInt8(pos++) - 128) / 128;
-		} else if (bitsPerSample === 16) {
-			v = dataBuffer.readInt16LE(pos) / 32768; pos += 2;
-		} else if (bitsPerSample === 24) {
-			const b0 = dataBuffer.readUInt8(pos++);
-			const b1 = dataBuffer.readUInt8(pos++);
-			const b2 = dataBuffer.readInt8(pos++);
-			const s = (b2 << 16) | (b1 << 8) | b0;
-			v = s / 8388608;
-		} else if (bitsPerSample === 32) {
-			v = dataBuffer.readInt32LE(pos) / 2147483648; pos += 4;
-		} else {
-			throw new Error(`Unsupported PCM WAV bitsPerSample: ${bitsPerSample}`);
-		}
-		}
+			if (audioFormat === 3) {
+				// IEEE float
+				if (bitsPerSample !== 32) throw new Error(`Unsupported float WAV bitsPerSample: ${bitsPerSample}`);
+				v = dataBuffer.readFloatLE(pos); pos += 4;
+				v = clamp1(v);
+			} else {
+				// PCM integer
+				if (bitsPerSample === 8) {
+					v = (dataBuffer.readUInt8(pos++) - 128) / 128;
+				} else if (bitsPerSample === 16) {
+					v = dataBuffer.readInt16LE(pos) / 32768; pos += 2;
+				} else if (bitsPerSample === 24) {
+					const b0 = dataBuffer.readUInt8(pos++);
+					const b1 = dataBuffer.readUInt8(pos++);
+					const b2 = dataBuffer.readInt8(pos++);
+					const s = (b2 << 16) | (b1 << 8) | b0;
+					v = s / 8388608;
+				} else if (bitsPerSample === 32) {
+					v = dataBuffer.readInt32LE(pos) / 2147483648; pos += 4;
+				} else {
+					throw new Error(`Unsupported PCM WAV bitsPerSample: ${bitsPerSample}`);
+				}
+			}
 
-		samples[ch][i] = v;
-	}
+			samples[ch][i] = v;
+		}
 	}
 
 	return { sampleRate, numChannels, bitsPerSample, samples };
@@ -133,37 +133,37 @@ class BitWriter {
 	private totalBits = 0;
 
 	writeBits(v: number, n: number): void {
-	if (n === 0) return;
-	// write MSB-first
-	for (let i = n - 1; i >= 0; i--) {
-		this.curByte = (this.curByte << 1) | ((v >> i) & 1);
-		this.curBits++;
-		this.totalBits++;
-		if (this.curBits === 8) {
-		this.bytes.push(this.curByte & 0xff);
-		this.curByte = 0;
-		this.curBits = 0;
+		if (n === 0) return;
+		// write MSB-first
+		for (let i = n - 1; i >= 0; i--) {
+			this.curByte = (this.curByte << 1) | ((v >> i) & 1);
+			this.curBits++;
+			this.totalBits++;
+			if (this.curBits === 8) {
+				this.bytes.push(this.curByte & 0xff);
+				this.curByte = 0;
+				this.curBits = 0;
+			}
 		}
-	}
 	}
 
 	byteAlign(): void {
-	while (this.curBits !== 0) this.writeBits(0, 1);
+		while (this.curBits !== 0) this.writeBits(0, 1);
 	}
 
 	writeBuffer(buf: Buffer): void {
-	// assumes byte aligned, but will still work if not (bit-by-bit)
-	for (let i = 0; i < buf.length; i++) this.writeBits(buf[i], 8);
+		// assumes byte aligned, but will still work if not (bit-by-bit)
+		for (let i = 0; i < buf.length; i++) this.writeBits(buf[i], 8);
 	}
 
 	getBitCount(): number {
-	return this.totalBits;
+		return this.totalBits;
 	}
 
 	getBuffer(): Buffer {
-	const out = this.bytes.slice();
-	if (this.curBits > 0) out.push((this.curByte << (8 - this.curBits)) & 0xff);
-	return Buffer.from(out);
+		const out = this.bytes.slice();
+		if (this.curBits > 0) out.push((this.curByte << (8 - this.curBits)) & 0xff);
+		return Buffer.from(out);
 	}
 }
 
@@ -193,56 +193,56 @@ class DCT4 {
 	private readonly im: Float64Array;
 
 	constructor(N: number) {
-	this.N = N;
-	this.fftSize = 2 * N;
-	this.fft = new FFTComplexRadix2(this.fftSize);
+		this.N = N;
+		this.fftSize = 2 * N;
+		this.fft = new FFTComplexRadix2(this.fftSize);
 
-	// Pre-twiddle: exp(-j*pi*n/(2N)) where FFT length is 2N
-	this.preCos = new Float64Array(N);
-	this.preSin = new Float64Array(N);
-	for (let n = 0; n < N; n++) {
-		const ang = (PI * n) / this.fftSize;
-		this.preCos[n] = Math.cos(ang);
-		this.preSin[n] = Math.sin(ang);
-	}
+		// Pre-twiddle: exp(-j*pi*n/(2N)) where FFT length is 2N
+		this.preCos = new Float64Array(N);
+		this.preSin = new Float64Array(N);
+		for (let n = 0; n < N; n++) {
+			const ang = (PI * n) / this.fftSize;
+			this.preCos[n] = Math.cos(ang);
+			this.preSin[n] = Math.sin(ang);
+		}
 
-	// Post-twiddle: exp(-j*pi*(2k+1)/(4N))
-	this.postCos = new Float64Array(N);
-	this.postSin = new Float64Array(N);
-	for (let k = 0; k < N; k++) {
-		const ang = (PI * (2 * k + 1)) / (4 * N);
-		this.postCos[k] = Math.cos(ang);
-		this.postSin[k] = Math.sin(ang);
-	}
+		// Post-twiddle: exp(-j*pi*(2k+1)/(4N))
+		this.postCos = new Float64Array(N);
+		this.postSin = new Float64Array(N);
+		for (let k = 0; k < N; k++) {
+			const ang = (PI * (2 * k + 1)) / (4 * N);
+			this.postCos[k] = Math.cos(ang);
+			this.postSin[k] = Math.sin(ang);
+		}
 
-	this.re = new Float64Array(this.fftSize);
-	this.im = new Float64Array(this.fftSize);
+		this.re = new Float64Array(this.fftSize);
+		this.im = new Float64Array(this.fftSize);
 	}
 
 	transform(xN: Float64Array, outN: Float64Array): void {
-	if (xN.length !== this.N) throw new Error(`DCT4 input must be length ${this.N}`);
-	if (outN.length !== this.N) throw new Error(`DCT4 output must be length ${this.N}`);
+		if (xN.length !== this.N) throw new Error(`DCT4 input must be length ${this.N}`);
+		if (outN.length !== this.N) throw new Error(`DCT4 output must be length ${this.N}`);
 
-	// Build complex FFT input of length 2N:
-	// c[n] = x[n] * exp(-j*pi*n/(2N)) for n=0..N-1, else 0
-	for (let n = 0; n < this.N; n++) {
-		const x = xN[n];
-		const c = this.preCos[n];
-		const s = this.preSin[n];
-		this.re[n] = x * c;
-		this.im[n] = -x * s;
-	}
-	this.re.fill(0, this.N);
-	this.im.fill(0, this.N);
+		// Build complex FFT input of length 2N:
+		// c[n] = x[n] * exp(-j*pi*n/(2N)) for n=0..N-1, else 0
+		for (let n = 0; n < this.N; n++) {
+			const x = xN[n];
+			const c = this.preCos[n];
+			const s = this.preSin[n];
+			this.re[n] = x * c;
+			this.im[n] = -x * s;
+		}
+		this.re.fill(0, this.N);
+		this.im.fill(0, this.N);
 
-	this.fft.forward(this.re, this.im);
+		this.fft.forward(this.re, this.im);
 
-	// out[k] = Re( FFT[k] * exp(-j*pi*(2k+1)/(4N)) )
-	for (let k = 0; k < this.N; k++) {
-		const r = this.re[k];
-		const i = this.im[k];
-		outN[k] = r * this.postCos[k] + i * this.postSin[k];
-	}
+		// out[k] = Re( FFT[k] * exp(-j*pi*(2k+1)/(4N)) )
+		for (let k = 0; k < this.N; k++) {
+			const r = this.re[k];
+			const i = this.im[k];
+			outN[k] = r * this.postCos[k] + i * this.postSin[k];
+		}
 	}
 }
 
@@ -254,37 +254,37 @@ class Mdct1024 {
 	private readonly foldBuf: Float64Array;
 
 	constructor() {
-	this.window = new Float64Array(TWO_N);
-	for (let n = 0; n < TWO_N; n++) {
-		this.window[n] = Math.sin((PI / (2 * AAC_FRAME)) * (n + 0.5));
-	}
+		this.window = new Float64Array(TWO_N);
+		for (let n = 0; n < TWO_N; n++) {
+			this.window[n] = Math.sin((PI / (2 * AAC_FRAME)) * (n + 0.5));
+		}
 
-	this.dct4 = new DCT4(AAC_FRAME);
-	this.winBuf = new Float64Array(TWO_N);
-	this.foldBuf = new Float64Array(AAC_FRAME);
+		this.dct4 = new DCT4(AAC_FRAME);
+		this.winBuf = new Float64Array(TWO_N);
+		this.foldBuf = new Float64Array(AAC_FRAME);
 	}
 
 	forward(input: Float64Array, out: Float64Array): void {
-	if (input.length !== TWO_N) throw new Error(`MDCT input must be length ${TWO_N}`);
-	if (out.length !== AAC_FRAME) throw new Error(`MDCT output must be length ${AAC_FRAME}`);
+		if (input.length !== TWO_N) throw new Error(`MDCT input must be length ${TWO_N}`);
+		if (out.length !== AAC_FRAME) throw new Error(`MDCT output must be length ${AAC_FRAME}`);
 
-	// Window
-	for (let n = 0; n < TWO_N; n++) this.winBuf[n] = input[n] * this.window[n];
+		// Window
+		for (let n = 0; n < TWO_N; n++) this.winBuf[n] = input[n] * this.window[n];
 
-	// Fold for MDCT equivalence (see MDCT <-> DCT-IV folding relation):
-	//   a = x[0..N/2-1]
-	//   b = x[N/2..N-1]
-	//   c = x[N..3N/2-1]
-	//   d = x[3N/2..2N-1]
-	//   v = (-reverse(c) - d, a - reverse(b))
-	const N = AAC_FRAME;
-	const half = N >>> 1;
-	for (let i = 0; i < half; i++) {
-		this.foldBuf[i] = -this.winBuf[N + half - 1 - i] - this.winBuf[N + half + i];
-		this.foldBuf[half + i] = this.winBuf[i] - this.winBuf[N - 1 - i];
-	}
+		// Fold for MDCT equivalence (see MDCT <-> DCT-IV folding relation):
+		//   a = x[0..N/2-1]
+		//   b = x[N/2..N-1]
+		//   c = x[N..3N/2-1]
+		//   d = x[3N/2..2N-1]
+		//   v = (-reverse(c) - d, a - reverse(b))
+		const N = AAC_FRAME;
+		const half = N >>> 1;
+		for (let i = 0; i < half; i++) {
+			this.foldBuf[i] = -this.winBuf[N + half - 1 - i] - this.winBuf[N + half + i];
+			this.foldBuf[half + i] = this.winBuf[i] - this.winBuf[N - 1 - i];
+		}
 
-	this.dct4.transform(this.foldBuf, out);
+		this.dct4.transform(this.foldBuf, out);
 	}
 }
 
@@ -498,7 +498,7 @@ function quantizeCoefficient(x: number, gain: number): number {
 
 function quantizeSpectrum(spec: Float64Array, outQuant: Int16Array, maxLines: number, gain: number): void {
 	for (let i = 0; i < maxLines; i++) {
-	outQuant[i] = quantizeCoefficient(spec[i], gain);
+		outQuant[i] = quantizeCoefficient(spec[i], gain);
 	}
 	for (let i = maxLines; i < outQuant.length; i++) outQuant[i] = 0;
 }
@@ -507,20 +507,20 @@ function computeSfbCodebooks(quant: Int16Array, swbOffsets: Uint16Array, maxSfb:
 	// Returns number of non-zero (coded) bands
 	let codedBands = 0;
 	for (let sfb = 0; sfb < maxSfb; sfb++) {
-	const start = swbOffsets[sfb];
-	const end = swbOffsets[sfb + 1];
+		const start = swbOffsets[sfb];
+		const end = swbOffsets[sfb + 1];
 
-	let allZero = true;
-	for (let i = start; i < end; i++) {
-		if (quant[i] !== 0) { allZero = false; break; }
-	}
+		let allZero = true;
+		for (let i = start; i < end; i++) {
+			if (quant[i] !== 0) { allZero = false; break; }
+		}
 
-	if (allZero) {
-		outSfbCb[sfb] = HCB_ZERO;
-	} else {
-		outSfbCb[sfb] = HCB_ESC;
-		codedBands++;
-	}
+		if (allZero) {
+			outSfbCb[sfb] = HCB_ZERO;
+		} else {
+			outSfbCb[sfb] = HCB_ESC;
+			codedBands++;
+		}
 	}
 	return codedBands;
 }
@@ -546,20 +546,20 @@ function writeSectionDataLong(writer: BitWriter, sfbCb: Uint8Array): void {
 
 	let sfb = 0;
 	while (sfb < maxSfb) {
-	const cb = sfbCb[sfb] & 0x0f;
-	let run = 1;
-	while (sfb + run < maxSfb && sfbCb[sfb + run] === cb) run++;
+		const cb = sfbCb[sfb] & 0x0f;
+		let run = 1;
+		while (sfb + run < maxSfb && sfbCb[sfb + run] === cb) run++;
 
-	writer.writeBits(cb, 4);
+		writer.writeBits(cb, 4);
 
-	let rem = run;
-	while (rem >= escVal) {
-		writer.writeBits(escVal, sectBits);
-		rem -= escVal;
-	}
-	writer.writeBits(rem, sectBits); // may be 0
+		let rem = run;
+		while (rem >= escVal) {
+			writer.writeBits(escVal, sectBits);
+			rem -= escVal;
+		}
+		writer.writeBits(rem, sectBits); // may be 0
 
-	sfb += run;
+		sfb += run;
 	}
 }
 
@@ -571,16 +571,16 @@ function estimateSectionDataBitsLong(sfbCb: Uint8Array): number {
 	let bits = 0;
 	let sfb = 0;
 	while (sfb < maxSfb) {
-	const cb = sfbCb[sfb];
-	let run = 1;
-	while (sfb + run < maxSfb && sfbCb[sfb + run] === cb) run++;
+		const cb = sfbCb[sfb];
+		let run = 1;
+		while (sfb + run < maxSfb && sfbCb[sfb + run] === cb) run++;
 
-	bits += 4; // sect_cb
-	// sect_len_incr chunks
-	const chunks = Math.floor(run / escVal) + 1;
-	bits += chunks * sectBits;
+		bits += 4; // sect_cb
+		// sect_len_incr chunks
+		const chunks = Math.floor(run / escVal) + 1;
+		bits += chunks * sectBits;
 
-	sfb += run;
+		sfb += run;
 	}
 	return bits;
 }
@@ -589,25 +589,25 @@ function writeScaleFactorDataConstant(writer: BitWriter, sfbCb: Uint8Array): voi
 	// With constant scalefactor across coded bands => diff = 0 for each coded sfb
 	// diff=0 => idx=60, which is 1-bit codeword "0" in Table A.1
 	for (let sfb = 0; sfb < sfbCb.length; sfb++) {
-	if (sfbCb[sfb] !== HCB_ZERO) {
-		writeScalefactorDiff(writer, 0);
-	}
+		if (sfbCb[sfb] !== HCB_ZERO) {
+			writeScalefactorDiff(writer, 0);
+		}
 	}
 }
 
 function writeSpectralDataLong(writer: BitWriter, quant: Int16Array, swbOffsets: Uint16Array, sfbCb: Uint8Array): void {
 	const maxSfb = sfbCb.length;
 	for (let sfb = 0; sfb < maxSfb; sfb++) {
-	if (sfbCb[sfb] === HCB_ZERO) continue;
+		if (sfbCb[sfb] === HCB_ZERO) continue;
 
-	const start = swbOffsets[sfb];
-	const end = swbOffsets[sfb + 1];
+		const start = swbOffsets[sfb];
+		const end = swbOffsets[sfb + 1];
 
-	for (let i = start; i < end; i += 2) {
-		const a = quant[i] | 0;
-		const b = (i + 1 < end) ? (quant[i + 1] | 0) : 0;
-		writePair11(writer, a, b);
-	}
+		for (let i = start; i < end; i += 2) {
+			const a = quant[i] | 0;
+			const b = (i + 1 < end) ? (quant[i + 1] | 0) : 0;
+			writePair11(writer, a, b);
+		}
 	}
 }
 
@@ -617,27 +617,27 @@ function estimateSpectralBitsLong(spec: Float64Array, swbOffsets: Uint16Array, m
 
 	// Evaluate per sfb whether everything quantizes to zero; if so, use ZERO_HCB and skip.
 	for (let sfb = 0; sfb < maxSfb; sfb++) {
-	const start = swbOffsets[sfb];
-	const end = swbOffsets[sfb + 1];
+		const start = swbOffsets[sfb];
+		const end = swbOffsets[sfb + 1];
 
-	let allZero = true;
-	let bitsHere = 0;
+		let allZero = true;
+		let bitsHere = 0;
 
-	for (let i = start; i < end; i += 2) {
-		const a = quantizeCoefficient(spec[i], gain);
-		const b = (i + 1 < end) ? quantizeCoefficient(spec[i + 1], gain) : 0;
+		for (let i = start; i < end; i += 2) {
+			const a = quantizeCoefficient(spec[i], gain);
+			const b = (i + 1 < end) ? quantizeCoefficient(spec[i + 1], gain) : 0;
 
-		if (a !== 0 || b !== 0) allZero = false;
-		bitsHere += pair11BitLen(a, b);
-	}
+			if (a !== 0 || b !== 0) allZero = false;
+			bitsHere += pair11BitLen(a, b);
+		}
 
-	if (allZero) {
-		tmpSfbCb[sfb] = HCB_ZERO;
-	} else {
-		tmpSfbCb[sfb] = HCB_ESC;
-		codedBands++;
-		spectralBits += bitsHere;
-	}
+		if (allZero) {
+			tmpSfbCb[sfb] = HCB_ZERO;
+		} else {
+			tmpSfbCb[sfb] = HCB_ESC;
+			codedBands++;
+			spectralBits += bitsHere;
+		}
 	}
 
 	return { spectralBits, codedBands };
@@ -655,7 +655,7 @@ function chooseGlobalGainForTargetBits(
 	includeIcsInfo: boolean
 ): number {
 	if (!Number.isFinite(targetBits) || targetBits <= 0) {
-	return 100; // neutral default
+		return 100; // neutral default
 	}
 
 	const tmpSfbCb = new Uint8Array(maxSfb);
@@ -670,21 +670,21 @@ function chooseGlobalGainForTargetBits(
 	let best = 255;
 
 	while (lo <= hi) {
-	const mid = (lo + hi) >> 1;
-	const gain = sfGain(mid);
+		const mid = (lo + hi) >> 1;
+		const gain = sfGain(mid);
 
-	const { spectralBits, codedBands } = estimateSpectralBitsLong(spec, swbOffsets, maxSfb, gain, tmpSfbCb);
-	const sectionBits = estimateSectionDataBitsLong(tmpSfbCb);
-	const scalefacBits = codedBands * HCB_SF_LENS[60]; // diff=0, idx=60 => 1 bit
+		const { spectralBits, codedBands } = estimateSpectralBitsLong(spec, swbOffsets, maxSfb, gain, tmpSfbCb);
+		const sectionBits = estimateSectionDataBitsLong(tmpSfbCb);
+		const scalefacBits = codedBands * HCB_SF_LENS[60]; // diff=0, idx=60 => 1 bit
 
-	const totalBits = fixedBits + sectionBits + scalefacBits + spectralBits;
+		const totalBits = fixedBits + sectionBits + scalefacBits + spectralBits;
 
-	if (totalBits <= targetBits) {
-		best = mid;
-		hi = mid - 1;
-	} else {
-		lo = mid + 1;
-	}
+		if (totalBits <= targetBits) {
+			best = mid;
+			hi = mid - 1;
+		} else {
+			lo = mid + 1;
+		}
 	}
 
 	return best;
@@ -718,10 +718,10 @@ function chooseGlobalGainForTargetBitsHistory(
 	maxDownStep: number
 ): number {
 	if (prevGlobalGain == null || !Number.isFinite(prevGlobalGain)) {
-	return chooseGlobalGainForTargetBits(spec, swbOffsets, maxSfb, targetBits, includeIcsInfo);
+		return chooseGlobalGainForTargetBits(spec, swbOffsets, maxSfb, targetBits, includeIcsInfo);
 	}
 	if (!Number.isFinite(targetBits) || targetBits <= 0) {
-	return clampInt(prevGlobalGain | 0, 0, 255);
+		return clampInt(prevGlobalGain | 0, 0, 255);
 	}
 
 	const tmpSfbCb = new Uint8Array(maxSfb);
@@ -730,22 +730,22 @@ function chooseGlobalGainForTargetBitsHistory(
 	// Step up until we fit the budget (always allowed).
 	let bits = estimateTotalBitsLongForGlobalGain(spec, swbOffsets, maxSfb, gg, includeIcsInfo, tmpSfbCb);
 	while (bits > targetBits && gg < 255) {
-	gg++;
-	bits = estimateTotalBitsLongForGlobalGain(spec, swbOffsets, maxSfb, gg, includeIcsInfo, tmpSfbCb);
+		gg++;
+		bits = estimateTotalBitsLongForGlobalGain(spec, swbOffsets, maxSfb, gg, includeIcsInfo, tmpSfbCb);
 	}
 
 	// Step down to improve quality, but limit how fast we "improve" to keep the noise floor stable.
 	const downLimit = Math.max(0, maxDownStep | 0);
 	let down = 0;
 	while (down < downLimit && gg > 0) {
-	const bits2 = estimateTotalBitsLongForGlobalGain(spec, swbOffsets, maxSfb, gg - 1, includeIcsInfo, tmpSfbCb);
-	if (bits2 <= targetBits) {
-		gg--;
-		bits = bits2;
-		down++;
-	} else {
-		break;
-	}
+		const bits2 = estimateTotalBitsLongForGlobalGain(spec, swbOffsets, maxSfb, gg - 1, includeIcsInfo, tmpSfbCb);
+		if (bits2 <= targetBits) {
+			gg--;
+			bits = bits2;
+			down++;
+		} else {
+			break;
+		}
 	}
 
 	return gg;
@@ -789,7 +789,7 @@ function encodeIcsLong(
 	writer.writeBits(globalGain, 8); // global_gain
 
 	if (!commonWindow) {
-	writeIcsInfoLong(writer, maxSfb);
+		writeIcsInfoLong(writer, maxSfb);
 	}
 
 	writeSectionDataLong(writer, sfbCb);
@@ -835,37 +835,37 @@ export interface AudioEncoderOptions {
 	/** Target bitrate in kbps (default: 128). */
 	bitrate?: number;
 
-/**
- * Auto-tune for low bitrates: may downmix stereo->mono and resample to a lower AAC-supported
- * sampling rate to improve quality and speed.
- *
- * Default: true
- */
-autoTune?: boolean;
+	/**
+	 * Auto-tune for low bitrates: may downmix stereo->mono and resample to a lower AAC-supported
+	 * sampling rate to improve quality and speed.
+	 *
+	 * Default: true
+	 */
+	autoTune?: boolean;
 
-/**
- * Force encoder sample rate (Hz). Must be one of the AAC ADTS supported rates:
- * 96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000.
- *
- * If set, overrides autoTune sample-rate selection.
- */
-targetSampleRate?: number;
+	/**
+	 * Force encoder sample rate (Hz). Must be one of the AAC ADTS supported rates:
+	 * 96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000.
+	 *
+	 * If set, overrides autoTune sample-rate selection.
+	 */
+	targetSampleRate?: number;
 
-/**
- * Force output channel count (1 or 2).
- * If set to 1 and input is stereo, encoder will downmix.
- * (Upmix is not supported.)
- *
- * If set, overrides autoTune channel selection.
- */
-targetChannels?: 1 | 2;
+	/**
+	 * Force output channel count (1 or 2).
+	 * If set to 1 and input is stereo, encoder will downmix.
+	 * (Upmix is not supported.)
+	 *
+	 * If set, overrides autoTune channel selection.
+	 */
+	targetChannels?: 1 | 2;
 
-/**
- * Resampler quality (number of FIR taps). Higher = better, slower.
- *
- * Default: 32
- */
-resampleTaps?: number;
+	/**
+	 * Resampler quality (number of FIR taps). Higher = better, slower.
+	 *
+	 * Default: 32
+	 */
+	resampleTaps?: number;
 
 	/**
 	 * Optional bandwidth limit (Hz). Frequencies above this are zeroed in the MDCT domain
@@ -995,11 +995,11 @@ function pickAacSampleRate(desired: number, inputSampleRate: number): number {
 	let bestDist = Number.POSITIVE_INFINITY;
 
 	for (const r of pool) {
-	const d = Math.abs(r - want);
-	if (d < bestDist) {
-		bestDist = d;
-		best = r;
-	}
+		const d = Math.abs(r - want);
+		if (d < bestDist) {
+			bestDist = d;
+			best = r;
+		}
 	}
 	return best;
 }
@@ -1008,8 +1008,8 @@ function downmixStereoToMono(left: Float32Array, right: Float32Array): Float32Ar
 	const n = Math.min(left.length, right.length);
 	const out = new Float32Array(n);
 	for (let i = 0; i < n; i++) {
-	// -6 dB sum to reduce clipping risk
-	out[i] = 0.5 * (left[i] + right[i]);
+		// -6 dB sum to reduce clipping risk
+		out[i] = 0.5 * (left[i] + right[i]);
 	}
 	return out;
 }
@@ -1037,7 +1037,7 @@ function blackmanWindow(k: number, m: number): number {
 function resampleSincF32(input: Float32Array, inRate: number, outRate: number, taps: number): Float32Array {
 	if (inRate === outRate) return input;
 	if (!Number.isFinite(inRate) || !Number.isFinite(outRate) || inRate <= 0 || outRate <= 0) {
-	throw new Error(`Invalid resample rates: inRate=${inRate}, outRate=${outRate}`);
+		throw new Error(`Invalid resample rates: inRate=${inRate}, outRate=${outRate}`);
 	}
 
 	// Keep taps even and within a sane range.
@@ -1058,27 +1058,27 @@ function resampleSincF32(input: Float32Array, inRate: number, outRate: number, t
 	for (let k = 0; k < tapsEven; k++) win[k] = blackmanWindow(k, tapsEven);
 
 	for (let m = 0; m < outLen; m++) {
-	const t = m / ratio;              // position in input sample units
-	const center = Math.floor(t);
-	const frac = t - center;
+		const t = m / ratio;              // position in input sample units
+		const center = Math.floor(t);
+		const frac = t - center;
 
-	let sum = 0;
-	let sumW = 0;
+		let sum = 0;
+		let sumW = 0;
 
-	// i range produces tapsEven coefficients
-	for (let i = -half + 1; i <= half; i++) {
-		const n = center + i;
-		const x = i - frac; // distance from the fractional position
+		// i range produces tapsEven coefficients
+		for (let i = -half + 1; i <= half; i++) {
+			const n = center + i;
+			const x = i - frac; // distance from the fractional position
 
-		// window index in [0, tapsEven-1]
-		const k = i + half - 1;
-		const w = win[k] * twoFc * sinc(twoFc * x);
+			// window index in [0, tapsEven-1]
+			const k = i + half - 1;
+			const w = win[k] * twoFc * sinc(twoFc * x);
 
-		if (n >= 0 && n < input.length) sum += input[n] * w;
-		sumW += w;
-	}
+			if (n >= 0 && n < input.length) sum += input[n] * w;
+			sumW += w;
+		}
 
-	out[m] = sumW !== 0 ? (sum / sumW) : 0;
+		out[m] = sumW !== 0 ? (sum / sumW) : 0;
 	}
 
 	return out;
@@ -1094,7 +1094,7 @@ function encodeIcsLongSilence(writer: BitWriter, fsIndex: number, commonWindow: 
 	writer.writeBits(globalGain, 8);
 
 	if (!commonWindow) {
-	writeIcsInfoLong(writer, maxSfb);
+		writeIcsInfoLong(writer, maxSfb);
 	}
 
 	// All sfb are ZERO_HCB => one long "all zero" section.
@@ -1121,53 +1121,53 @@ export async function encodeWavToAacLc(
 	const wav = parseWav(wavBuffer);
 	let { sampleRate, numChannels, samples } = wav;
 
-const bitrateKbps = options.bitrate ?? 128;
+	const bitrateKbps = options.bitrate ?? 128;
 
-// --------------------------------------------------------------------------
-// Auto-tune (optional): downmix + resample for low-bitrate speech-friendly output
-// --------------------------------------------------------------------------
-const autoTune = options.autoTune ?? true;
+	// --------------------------------------------------------------------------
+	// Auto-tune (optional): downmix + resample for low-bitrate speech-friendly output
+	// --------------------------------------------------------------------------
+	const autoTune = options.autoTune ?? true;
 
-// Channel selection
-const desiredCh = options.targetChannels ?? (autoTune ? autoTargetChannels(numChannels, bitrateKbps) : numChannels);
-if (desiredCh === 1 && numChannels === 2) {
-	samples = [downmixStereoToMono(samples[0], samples[1])];
-	numChannels = 1;
-}
-// We do not support upmixing; if desiredCh is 2 but input is mono, keep mono.
-if (numChannels !== 1 && numChannels !== 2) {
-	throw new Error(`Only mono/stereo supported. Got ${numChannels} channels in ${sourcePath}`);
-}
+	// Channel selection
+	const desiredCh = options.targetChannels ?? (autoTune ? autoTargetChannels(numChannels, bitrateKbps) : numChannels);
+	if (desiredCh === 1 && numChannels === 2) {
+		samples = [downmixStereoToMono(samples[0], samples[1])];
+		numChannels = 1;
+	}
+	// We do not support upmixing; if desiredCh is 2 but input is mono, keep mono.
+	if (numChannels !== 1 && numChannels !== 2) {
+		throw new Error(`Only mono/stereo supported. Got ${numChannels} channels in ${sourcePath}`);
+	}
 
-// Sample-rate selection
-const desiredRate = options.targetSampleRate ?? (autoTune ? autoTargetSampleRate(sampleRate, bitrateKbps, numChannels) : sampleRate);
-const outRate = pickAacSampleRate(desiredRate, sampleRate);
+	// Sample-rate selection
+	const desiredRate = options.targetSampleRate ?? (autoTune ? autoTargetSampleRate(sampleRate, bitrateKbps, numChannels) : sampleRate);
+	const outRate = pickAacSampleRate(desiredRate, sampleRate);
 
-if (outRate !== sampleRate) {
-	const taps = options.resampleTaps ?? 32;
-	samples = samples.map(ch => resampleSincF32(ch, sampleRate, outRate, taps));
-	sampleRate = outRate;
-}
+	if (outRate !== sampleRate) {
+		const taps = options.resampleTaps ?? 32;
+		samples = samples.map(ch => resampleSincF32(ch, sampleRate, outRate, taps));
+		sampleRate = outRate;
+	}
 
-const fsIndex = getSampleRateIndex(sampleRate);
-if (fsIndex < 0) {
-	throw new Error(`Unsupported AAC sample rate ${sampleRate} Hz in ${sourcePath}`);
-}
+	const fsIndex = getSampleRateIndex(sampleRate);
+	if (fsIndex < 0) {
+		throw new Error(`Unsupported AAC sample rate ${sampleRate} Hz in ${sourcePath}`);
+	}
 
-// Bandwidth / rate-control knobs
-const bwHz = options.bandwidthHz ?? defaultBandwidthHz(sampleRate, bitrateKbps, numChannels);
-const bwMaxLine = mdctMaxLineForBandwidth(sampleRate, bwHz);
+	// Bandwidth / rate-control knobs
+	const bwHz = options.bandwidthHz ?? defaultBandwidthHz(sampleRate, bitrateKbps, numChannels);
+	const bwMaxLine = mdctMaxLineForBandwidth(sampleRate, bwHz);
 
-// If gainBiasSteps isn't explicitly set, enable a small auto-bias at very low bitrates.
-const ggBias = options.gainBiasSteps ?? globalGainBiasSteps(bitrateKbps, numChannels);
+	// If gainBiasSteps isn't explicitly set, enable a small auto-bias at very low bitrates.
+	const ggBias = options.gainBiasSteps ?? globalGainBiasSteps(bitrateKbps, numChannels);
 
 	const ggMaxDownStep = options.globalGainMaxDownStep ?? defaultGlobalGainMaxDownStep(bitrateKbps, numChannels);
 
 	// Per-channel global_gain history for stability (reduces frame-to-frame "warble").
 	const prevGlobalGain: Array<number | null> = new Array(numChannels).fill(null);
 
-const flushFrames = options.flushFrames ?? 0;
-const gateDb = options.silenceGateDb;
+	const flushFrames = options.flushFrames ?? 0;
+	const gateDb = options.silenceGateDb;
 	const gateRms = (gateDb === undefined || gateDb === null) ? null : Math.pow(10, gateDb / 20);
 	const targetBitsPerFrame = Math.max(200, Math.floor((bitrateKbps * 1000 * AAC_FRAME) / sampleRate));
 	const targetBitsPerChannel = Math.floor(targetBitsPerFrame / numChannels);
@@ -1184,72 +1184,72 @@ const gateDb = options.silenceGateDb;
 	const frames: Buffer[] = [];
 
 	for (let f = 0; f < numFrames; f++) {
-	// Build 2048-sample analysis buffer per channel (overlap)
-	const frameRms: number[] = new Array(numChannels).fill(0);
+		// Build 2048-sample analysis buffer per channel (overlap)
+		const frameRms: number[] = new Array(numChannels).fill(0);
 
-	for (let ch = 0; ch < numChannels; ch++) {
-		inBuf[ch].set(prev[ch], 0);
-		const base = f * AAC_FRAME;
+		for (let ch = 0; ch < numChannels; ch++) {
+			inBuf[ch].set(prev[ch], 0);
+			const base = f * AAC_FRAME;
 
-		let sumSq = 0;
-		for (let i = 0; i < AAC_FRAME; i++) {
-		const idx = base + i;
-		const s = idx < totalSamples ? samples[ch][idx] : 0;
-		sumSq += s * s;
-		inBuf[ch][AAC_FRAME + i] = s * PCM_SCALE;
+			let sumSq = 0;
+			for (let i = 0; i < AAC_FRAME; i++) {
+				const idx = base + i;
+				const s = idx < totalSamples ? samples[ch][idx] : 0;
+				sumSq += s * s;
+				inBuf[ch][AAC_FRAME + i] = s * PCM_SCALE;
+			}
+			frameRms[ch] = Math.sqrt(sumSq / AAC_FRAME);
+
+			prev[ch].set(inBuf[ch].subarray(AAC_FRAME));
+			mdct.forward(inBuf[ch], specBuf[ch]);
+
+			// Pragmatic bandwidth limiting at low bitrate: zero out lines above bwMaxLine
+			if (bwMaxLine < AAC_FRAME) {
+				specBuf[ch].fill(0, bwMaxLine);
+			}
 		}
-		frameRms[ch] = Math.sqrt(sumSq / AAC_FRAME);
 
-		prev[ch].set(inBuf[ch].subarray(AAC_FRAME));
-		mdct.forward(inBuf[ch], specBuf[ch]);
+		// Raw data block payload
+		const payloadWriter = new BitWriter();
 
-		// Pragmatic bandwidth limiting at low bitrate: zero out lines above bwMaxLine
-		if (bwMaxLine < AAC_FRAME) {
-		specBuf[ch].fill(0, bwMaxLine);
-		}
-	}
-
-	// Raw data block payload
-	const payloadWriter = new BitWriter();
-
-	if (numChannels === 1) {
-		payloadWriter.writeBits(0, 3); // ID_SCE
-		payloadWriter.writeBits(0, 4); // element_instance_tag
-		const silent0 = (gateRms !== null) && (frameRms[0] < gateRms);
-		if (silent0) {
-		encodeIcsLongSilence(payloadWriter, fsIndex, /*commonWindow*/ false);
+		if (numChannels === 1) {
+			payloadWriter.writeBits(0, 3); // ID_SCE
+			payloadWriter.writeBits(0, 4); // element_instance_tag
+			const silent0 = (gateRms !== null) && (frameRms[0] < gateRms);
+			if (silent0) {
+				encodeIcsLongSilence(payloadWriter, fsIndex, /*commonWindow*/ false);
+			} else {
+				prevGlobalGain[0] = encodeIcsLong(payloadWriter, specBuf[0], fsIndex, targetBitsPerChannel, /*commonWindow*/ false, ggBias, prevGlobalGain[0], ggMaxDownStep);
+			}
 		} else {
-		prevGlobalGain[0] = encodeIcsLong(payloadWriter, specBuf[0], fsIndex, targetBitsPerChannel, /*commonWindow*/ false, ggBias, prevGlobalGain[0], ggMaxDownStep);
+			payloadWriter.writeBits(1, 3); // ID_CPE
+			payloadWriter.writeBits(0, 4); // element_instance_tag
+			payloadWriter.writeBits(0, 1); // common_window = 0
+			// channel 0
+			const silent0 = (gateRms !== null) && (frameRms[0] < gateRms);
+			if (silent0) {
+				encodeIcsLongSilence(payloadWriter, fsIndex, /*commonWindow*/ false);
+			} else {
+				prevGlobalGain[0] = encodeIcsLong(payloadWriter, specBuf[0], fsIndex, targetBitsPerChannel, /*commonWindow*/ false, ggBias, prevGlobalGain[0], ggMaxDownStep);
+			}
+			// channel 1
+			const silentR = (gateRms !== null) && (frameRms[1] < gateRms);
+			if (silentR) {
+				encodeIcsLongSilence(payloadWriter, fsIndex, /*commonWindow*/ false);
+			} else {
+				prevGlobalGain[1] = encodeIcsLong(payloadWriter, specBuf[1], fsIndex, targetBitsPerChannel, /*commonWindow*/ false, ggBias, prevGlobalGain[1], ggMaxDownStep);
+			}
 		}
-	} else {
-		payloadWriter.writeBits(1, 3); // ID_CPE
-		payloadWriter.writeBits(0, 4); // element_instance_tag
-		payloadWriter.writeBits(0, 1); // common_window = 0
-		// channel 0
-		const silent0 = (gateRms !== null) && (frameRms[0] < gateRms);
-		if (silent0) {
-		encodeIcsLongSilence(payloadWriter, fsIndex, /*commonWindow*/ false);
-		} else {
-		prevGlobalGain[0] = encodeIcsLong(payloadWriter, specBuf[0], fsIndex, targetBitsPerChannel, /*commonWindow*/ false, ggBias, prevGlobalGain[0], ggMaxDownStep);
-		}
-		// channel 1
-		const silentR = (gateRms !== null) && (frameRms[1] < gateRms);
-		if (silentR) {
-		encodeIcsLongSilence(payloadWriter, fsIndex, /*commonWindow*/ false);
-		} else {
-		prevGlobalGain[1] = encodeIcsLong(payloadWriter, specBuf[1], fsIndex, targetBitsPerChannel, /*commonWindow*/ false, ggBias, prevGlobalGain[1], ggMaxDownStep);
-		}
-	}
 
-	payloadWriter.writeBits(7, 3); // ID_END
-	payloadWriter.byteAlign();
-	const payload = payloadWriter.getBuffer();
+		payloadWriter.writeBits(7, 3); // ID_END
+		payloadWriter.byteAlign();
+		const payload = payloadWriter.getBuffer();
 
-	// ADTS header + payload
-	const adtsWriter = new BitWriter();
-	writeADTS(adtsWriter, 7 + payload.length, sampleRate, numChannels);
-	adtsWriter.writeBuffer(payload);
-	frames.push(adtsWriter.getBuffer());
+		// ADTS header + payload
+		const adtsWriter = new BitWriter();
+		writeADTS(adtsWriter, 7 + payload.length, sampleRate, numChannels);
+		adtsWriter.writeBuffer(payload);
+		frames.push(adtsWriter.getBuffer());
 	}
 
 	return Buffer.concat(frames);

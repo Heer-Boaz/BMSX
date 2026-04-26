@@ -1,10 +1,9 @@
 import type { Canvas, CanvasRenderingContext2D } from 'canvas';
 import { resolve as resolvePath, sep as pathSep } from 'path';
 import { commonResPath } from './rombuilder';
-import { ENGINE_ATLAS_INDEX } from './rombuilder';
-import { generateAtlasName } from '../../src/bmsx/rompack/format';
+import { BIOS_ATLAS_ID, generateAtlasAssetId } from '../../src/bmsx/rompack/format';
 import { AtlasTexcoords, ImageResource } from './rompacker.rompack';
-export { generateAtlasName };
+export { generateAtlasAssetId };
 
 // @ts-ignore
 const { createCanvas } = require('canvas');
@@ -12,8 +11,8 @@ const { createCanvas } = require('canvas');
 const ATLAS_MAX_SIZE_IN_PIXELS = 2048;
 const CROP_ATLAS = true;
 
-// Reserve and extrude a border around each image in the textpage.
-// This prevents gaps/bleeding when sampling the textpage (especially with subpixel
+// Reserve and extrude a border around each image in the texture atlas.
+// This prevents gaps/bleeding when sampling the texture atlas (especially with subpixel
 // screen placement / scaling) while keeping the UVs mapped to the full image
 // area (no shrink/stretch of small sprites like glyphs).
 const ATLAS_IMAGE_PADDING = 1;
@@ -21,17 +20,17 @@ const ATLAS_IMAGE_PADDING = 1;
 export type Rect = { width: number; height: number; id: number; };
 export type Bin = { x: number; y: number; width: number; height: number; };
 
-export function textpageIndexResolver(filepath: string, current?: number) {
+export function resolveTargetAtlasId(filepath: string, current?: number): number {
 	const abs = resolvePath(filepath);
-	const engineResourceRoots = new Set(
+	const biosResourceRoots = new Set(
 		[commonResPath]
 			.filter(Boolean)
 			.map((p: string) => resolvePath(p))
 	);
 
-	for (const base of engineResourceRoots) {
+	for (const base of biosResourceRoots) {
 		if (abs === base || abs.startsWith(base + pathSep)) {
-			return ENGINE_ATLAS_INDEX;
+			return BIOS_ATLAS_ID;
 		}
 	}
 	return current ?? 0;
@@ -138,11 +137,11 @@ function isContained(rect1: Bin, rect2: Bin): boolean {
 }
 
 /**
- * Packs an array of rectangles into a texture textpage using the maximal rectangles algorithm.
- * @param rects An array of rectangles to pack into the texture textpage.
- * @param binWidth The maximum width of the texture textpage.
- * @param binHeight The maximum height of the texture textpage.
- * @returns An object containing the packed rectangles, their positions in the texture textpage, and the dimensions of the texture textpage.
+ * Packs an array of rectangles into a texture atlas using the maximal rectangles algorithm.
+ * @param rects An array of rectangles to pack into the texture atlas.
+ * @param binWidth The maximum width of the texture atlas.
+ * @param binHeight The maximum height of the texture atlas.
+ * @returns An object containing the packed rectangles, their positions in the texture atlas, and the dimensions of the texture atlas.
  */
 function maximalRectanglesPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
 	// Sort the rectangles by area in descending order
@@ -199,7 +198,7 @@ function maximalRectanglesPacker(rects: Rect[], binWidth: number, binHeight: num
 		}
 	}
 
-	// Return the packed bins and the dimensions of the texture textpage
+	// Return the packed bins and the dimensions of the texture atlas
 	const items = usedBins.map(({ item, x, y }) => ({ item, x, y }));
 	const width = usedBins.reduce((maxWidth, { item, x }) => Math.max(maxWidth, x + item.width), 0);
 	const height = usedBins.reduce((maxHeight, { item, y }) => Math.max(maxHeight, y + item.height), 0);
@@ -218,11 +217,11 @@ type Shelf = {
 };
 
 /**
- * Packs an array of rectangles into a texture textpage using the shelf bin packing algorithm.
- * @param rects An array of rectangles to pack into the texture textpage.
- * @param binWidth The maximum width of the texture textpage.
- * @param binHeight The maximum height of the texture textpage.
- * @returns An object containing the packed rectangles, their positions in the texture textpage, and the dimensions of the texture textpage.
+ * Packs an array of rectangles into a texture atlas using the shelf bin packing algorithm.
+ * @param rects An array of rectangles to pack into the texture atlas.
+ * @param binWidth The maximum width of the texture atlas.
+ * @param binHeight The maximum height of the texture atlas.
+ * @returns An object containing the packed rectangles, their positions in the texture atlas, and the dimensions of the texture atlas.
  */
 function shelfBinPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
 	// Sort the rectangles by height in descending order
@@ -261,7 +260,7 @@ function shelfBinPacker(rects: Rect[], binWidth: number, binHeight: number): { i
 		}
 	}
 
-	// Return the packed bins and the dimensions of the texture textpage
+	// Return the packed bins and the dimensions of the texture atlas
 	const items = usedBins.map(({ item, x, y }) => ({ item, x, y }));
 	const width = usedBins.reduce((maxWidth, { item, x }) => Math.max(maxWidth, x + item.width), 0);
 	const height = usedBins.reduce((maxHeight, { item, y }) => Math.max(maxHeight, y + item.height), 0);
@@ -280,11 +279,11 @@ type Node = {
 };
 
 /**
- * Packs an array of rectangles into a texture textpage using the texture-packing with rotation and flipping algorithm.
- * @param rects An array of rectangles to pack into the texture textpage.
- * @param binWidth The maximum width of the texture textpage.
- * @param binHeight The maximum height of the texture textpage.
- * @returns An object containing the packed rectangles, their positions in the texture textpage, and the dimensions of the texture textpage.
+ * Packs an array of rectangles into a texture atlas using the texture-packing with rotation and flipping algorithm.
+ * @param rects An array of rectangles to pack into the texture atlas.
+ * @param binWidth The maximum width of the texture atlas.
+ * @param binHeight The maximum height of the texture atlas.
+ * @returns An object containing the packed rectangles, their positions in the texture atlas, and the dimensions of the texture atlas.
  */
 function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
 	// Sort the rectangles by area in descending order
@@ -398,7 +397,7 @@ function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items
 		sanitizeFreeNodes();
 	}
 
-	// Return the packed bins and the dimensions of the texture textpage
+	// Return the packed bins and the dimensions of the texture atlas
 	const items = usedBins.map(({ item, x, y }) => ({ item, x, y }));
 	const width = usedBins.reduce((maxWidth, { item, x }) => Math.max(maxWidth, x + item.width), 0);
 	const height = usedBins.reduce((maxHeight, { item, y }) => Math.max(maxHeight, y + item.height), 0);
@@ -432,7 +431,7 @@ export function createOptimizedAtlas(imageResources: ImageResource[]): Canvas {
 	}
 
 	if (results.length === 0) {
-		throw new Error('All textpage packing algorithms failed to fit the provided images within the configured textpage dimensions.');
+		throw new Error('All texture atlas packing algorithms failed to fit the provided images within the configured texture atlas dimensions.');
 	}
 
 	// Determine the smallest result
@@ -442,16 +441,16 @@ export function createOptimizedAtlas(imageResources: ImageResource[]): Canvas {
 		return currentArea < smallestArea ? current : smallest;
 	});
 
-	const textpage_width = CROP_ATLAS ? smallest_result.width : ATLAS_MAX_SIZE_IN_PIXELS, textpage_height = CROP_ATLAS ? smallest_result.height : ATLAS_MAX_SIZE_IN_PIXELS;
+	const atlas_width = CROP_ATLAS ? smallest_result.width : ATLAS_MAX_SIZE_IN_PIXELS, atlas_height = CROP_ATLAS ? smallest_result.height : ATLAS_MAX_SIZE_IN_PIXELS;
 
-	const textpageCanvas: Canvas = createCanvas(textpage_width, textpage_height);
-	const ctx: CanvasRenderingContext2D = textpageCanvas.getContext('2d')!;
+	const atlasCanvas: Canvas = createCanvas(atlas_width, atlas_height);
+	const ctx: CanvasRenderingContext2D = atlasCanvas.getContext('2d')!;
 
-	// Draw images onto the textpage canvas
+	// Draw images onto the texture atlas canvas
 	for (const packedRect of smallest_result.items) {
 		const img_asset = imageResources.find(candidate => candidate.id === packedRect.item.id);
 		if (!img_asset) {
-			throw new Error(`Failed to locate image resource with id ${packedRect.item.id} for textpage packing.`);
+			throw new Error(`Failed to locate image resource with id ${packedRect.item.id} for texture atlas packing.`);
 		}
 		if (!img_asset.img) {
 			throw new Error(`Image resource "${img_asset.name}" is missing its image payload.`);
@@ -480,22 +479,22 @@ export function createOptimizedAtlas(imageResources: ImageResource[]): Canvas {
 		}
 
 		// UVs cover ONLY the actual image pixels (exclude the padding).
-		img_asset.textpageTexcoords = uvcoords(dx, dy, textpage_width, textpage_height, img.width, img.height);
+		img_asset.atlasTexcoords = uvcoords(dx, dy, atlas_width, atlas_height, img.width, img.height);
 	}
-	return textpageCanvas;
+	return atlasCanvas;
 }
 
 /**
- * Calculates the UV coordinates of the inner image region that has been packed into a texture textpage.
- * Note: the textpage builder reserves a padded border around each image and extrudes edge pixels into it.
+ * Calculates the UV coordinates of the inner image region that has been packed into a texture atlas.
+ * Note: the texture atlas builder reserves a padded border around each image and extrudes edge pixels into it.
  * UVs must therefore address the *inner* (non-padded) rectangle using texel edges.
- * @param x The x-coordinate of the image in the texture textpage.
- * @param y The y-coordinate of the image in the texture textpage.
- * @param width The width of the texture textpage.
- * @param height The height of the texture textpage.
+ * @param x The x-coordinate of the image in the texture atlas.
+ * @param y The y-coordinate of the image in the texture atlas.
+ * @param width The width of the texture atlas.
+ * @param height The height of the texture atlas.
  * @param imageWidth The width of the image.
  * @param imageHeight The height of the image.
- * @returns An object containing the UV coordinates of the image in the texture textpage.
+ * @returns An object containing the UV coordinates of the image in the texture atlas.
  */
 function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number): AtlasTexcoords {
 	const left = x / width;

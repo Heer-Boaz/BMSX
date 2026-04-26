@@ -53,16 +53,15 @@ interface BaseResource<TType extends resourcetype> {
 export interface ImageResource extends BaseResource<'image'> {
 	id: number;
 	collisionType: collisiontype;
-	targetAtlasIndex?: number;
-	textpageid?: number;
+	targetAtlasId?: number;
 	img?: NodeCanvasImage;
-	textpageTexcoords?: AtlasTexcoords;
-	skipAtlas?: boolean;
+	atlasTexcoords?: AtlasTexcoords;
 }
 
-export interface AtlasResource extends BaseResource<'textpage'> {
+// Serialized as a ROM atlas asset; the BIOS decides which VDP slot receives it.
+export interface TextureAtlasResource extends BaseResource<'atlas'> {
 	id: number;
-	textpageid: number;
+	atlasId: number;
 	img?: Canvas & { toBuffer?: (format: string) => Buffer; };
 }
 
@@ -96,7 +95,7 @@ export interface RomLabelResource extends BaseResource<'romlabel'> {
 
 export type Resource =
 	| ImageResource
-	| AtlasResource
+	| TextureAtlasResource
 	| AudioResource
 	| DataResource
 	| AemResource

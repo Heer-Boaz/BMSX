@@ -33,7 +33,7 @@ const KNOWN_FLAGS = new Set<string>([
 	'-respath',
 	'--debug',
 	'--force',
-	'--texturetextpage',
+	'--textureatlas',
 	'--skiptypecheck',
 	'--mode',
 	'-h',
@@ -45,7 +45,7 @@ const FLAGS_WITH_VALUES = new Set<string>([
 	'-title',
 	'-bootloaderpath',
 	'-respath',
-	'--texturetextpage',
+	'--textureatlas',
 ]);
 const OPT_LEVEL_RE = /^-O([0-3])$/;
 
@@ -55,7 +55,7 @@ const TASK = {
 	CART_LUA_LINT: 'Cart Lua linten',
 	RESOURCE_LIST: 'Resources scannen',
 	RESOURCE_LOAD: 'Resources laden en metadata genereren',
-	ATLAS_BUILD: 'Atlassen puzellen (indien nodig)',
+	ATLAS_BUILD: 'Texture atlases bouwen (indien nodig)',
 	ROM_ASSETS: 'Rom-assets genereren',
 	ROM_FINALIZE: 'Rompakket finaliseren',
 	BIOS_REBUILD_CHECK: 'Checken of BIOS rebuild nodig is',
@@ -185,7 +185,7 @@ function parseOptions(args: string[]): ParsedOptions {
 		writeOut(`  -respath <path>          Resource path override\n`, 'warning');
 		writeOut(`  --debug                  Build debug artifacts\n`, 'warning');
 		writeOut(`  --force                  Force the compilation and build of the rompack\n`, 'warning');
-		writeOut(`  --texturetextpage <yes|no>  Enable or disable texture textpage (default: yes)\n`, 'warning');
+		writeOut(`  --textureatlas <yes|no>  Enable or disable texture atlas packing (default: yes)\n`, 'warning');
 		writeOut(`  --mode <rompack|bios>  What to build (default: rompack)\n`, 'warning');
 		writeOut(`  -O0|-O1|-O2|-O3          Bytecode optimizer level (default: -O3)\n`, 'warning');
 		process.exit(0);
@@ -193,7 +193,7 @@ function parseOptions(args: string[]): ParsedOptions {
 
 	const optLevel = parseOptLevel(args);
 
-	const textureSetting = getOptionalParam(args, '--texturetextpage', 'ROM_TEXTURE_ATLAS');
+	const textureSetting = getOptionalParam(args, '--textureatlas', 'ROM_TEXTURE_ATLAS');
 	let useTextureAtlas = true;
 	if (textureSetting !== undefined) {
 		const raw = textureSetting.toLowerCase();
@@ -202,7 +202,7 @@ function parseOptions(args: string[]): ParsedOptions {
 		} else if (raw === 'no' || raw === 'false' || raw === '0') {
 			useTextureAtlas = false;
 		} else {
-			throw new Error(`Unsupported value "${raw}" for --texturetextpage. Expected one of: yes, no, true, false, 1, 0.`);
+			throw new Error(`Unsupported value "${raw}" for --textureatlas. Expected one of: yes, no, true, false, 1, 0.`);
 		}
 	}
 
@@ -523,7 +523,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	} else {
 		const checkBuild = () => isRebuildRequired(BIOSRomName, bootloader_path, BIOSResPath, {
 			extraLuaPaths: [],
-			resolveAtlasIndex: false,
+			resolveAtlasId: false,
 			debug,
 		});
 		assetsNeedRebuild = progress ? await progress.runWithDetail(TASK.BIOS_REBUILD_CHECK, checkBuild) : await checkBuild();
@@ -554,7 +554,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	const BIOSResMetaList = await runBIOSStep(TASK.MANIFEST_SCAN, () => getResMetaList([BIOSResPath], BIOSRomName, {
 		extraLuaPaths: [],
 		virtualRoot: BIOSVirtualRoot,
-		resolveAtlasIndex: true,
+		resolveAtlasId: true,
 	}));
 	const BIOSResources = await runBIOSStep(TASK.RESOURCE_LIST, () => getResourcesList(BIOSResMetaList));
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
@@ -643,7 +643,7 @@ async function main() {
 
 		logDivider('Options');
 		logBullet('Rebuild', force ? pc.yellow('force') : pc.green('auto (mtime check)'));
-		logBullet('Atlas', useTextureAtlas ? pc.green('enabled') : pc.red('disabled'));
+		logBullet('Texture atlas', useTextureAtlas ? pc.green('enabled') : pc.red('disabled'));
 		logBullet('Lua case', pc.green('lower-case identifiers required'));
 		logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
 		logBullet('Opt level', pc.white(`-O${optLevel}`));
@@ -665,12 +665,12 @@ async function main() {
 		logInfo(`Starting for ${pc.bold(pc.blue(`${rom_name}`))}`);
 
 		if (!force) {
-			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, { extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: false, debug }));
+			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, { extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasId: false, debug }));
 			if (!rebuildRequired && resourceRoots.length > 1) {
 				for (let i = 1; i < resourceRoots.length; i++) {
 					const candidate = resourceRoots[i];
 					if (!candidate || candidate === respath) continue;
-					const needs = await progress.runWithDetail('Check timestamps (shared)', () => isRebuildRequired(rom_name, bootloader_path, candidate, { extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: true, debug }));
+					const needs = await progress.runWithDetail('Check timestamps (shared)', () => isRebuildRequired(rom_name, bootloader_path, candidate, { extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasId: true, debug }));
 					rebuildRequired = rebuildRequired || needs;
 					if (rebuildRequired) break;
 				}
@@ -692,7 +692,7 @@ async function main() {
 			const romResMetaList = await progress.runWithDetail('Scan resources', () => getResMetaList(resourceRoots, rom_name, {
 				extraLuaPaths: Array.from(extraLuaPathSet),
 				virtualRoot,
-				resolveAtlasIndex: true,
+				resolveAtlasId: true,
 			}));
 			await progress.taskCompleted();
 			// Build resources
@@ -700,7 +700,7 @@ async function main() {
 			await progress.taskCompleted();
 
 			if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-				await progress.runWithDetail('Generate textpagees', () => createAtlasses(resources, message => progress.setDetail(message)));
+				await progress.runWithDetail('Generate texture atlases', () => createAtlasses(resources, message => progress.setDetail(message)));
 			}
 			await progress.taskCompleted();
 

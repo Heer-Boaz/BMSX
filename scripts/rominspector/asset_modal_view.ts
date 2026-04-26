@@ -1,5 +1,5 @@
 import { PNG } from 'pngjs';
-import { generateAtlasName, type GLTFModel, type ImgMeta, type RomAsset, type RomManifest } from '../../src/bmsx/rompack/format';
+import { generateAtlasAssetId, type GLTFModel, type ImgMeta, type RomAsset, type RomManifest } from '../../src/bmsx/rompack/format';
 import { decodeBinary } from '../../src/bmsx/common/serializer/binencoder';
 import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../../src/bmsx/rompack/loader';
 import { decodeProgramSymbolsAsset, PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/machine/program/asset';
@@ -108,13 +108,13 @@ function buildOverlayBuffer(imgW: number, imgH: number, polys: number[][]): Uint
 	return buf;
 }
 
-function extractSubimageAndSizeFromAtlassedImage(imgToExtract: Buffer, imgmeta: ImgMeta): { subimage: Buffer; width: number; height: number } {
-	const textpage = PNG.sync.read(imgToExtract);
-	let imgW = textpage.width;
-	let imgH = textpage.height;
+function extractSubimageAndSizeFromAtlasImage(imgToExtract: Buffer, imgmeta: ImgMeta): { subimage: Buffer; width: number; height: number } {
+	const atlas = PNG.sync.read(imgToExtract);
+	let imgW = atlas.width;
+	let imgH = atlas.height;
 	let offsetX = 0;
 	let offsetY = 0;
-	if (imgmeta.textpagesed) {
+	if (imgmeta.atlasid !== undefined && imgmeta.texcoords) {
 		const coords = Array.from(imgmeta.texcoords as number[]);
 		const xs: number[] = [];
 		const ys: number[] = [];
@@ -126,25 +126,25 @@ function extractSubimageAndSizeFromAtlassedImage(imgToExtract: Buffer, imgmeta: 
 		const maxU = Math.min(1, Math.max(...xs));
 		const minV = Math.max(0, Math.min(...ys));
 		const maxV = Math.min(1, Math.max(...ys));
-		offsetX = Math.round(minU * textpage.width);
-		offsetY = Math.round(minV * textpage.height);
-		imgW = Math.max(1, Math.min(textpage.width - offsetX, Math.round((maxU - minU) * textpage.width)));
-		imgH = Math.max(1, Math.min(textpage.height - offsetY, Math.round((maxV - minV) * textpage.height)));
+		offsetX = Math.round(minU * atlas.width);
+		offsetY = Math.round(minV * atlas.height);
+		imgW = Math.max(1, Math.min(atlas.width - offsetX, Math.round((maxU - minU) * atlas.width)));
+		imgH = Math.max(1, Math.min(atlas.height - offsetY, Math.round((maxV - minV) * atlas.height)));
 	}
 	const subimageData = new Uint8Array(imgW * imgH * 4);
-	const textpageW = textpage.width;
-	const textpageData = textpage.data as Uint8Array;
+	const atlasW = atlas.width;
+	const atlasData = atlas.data as Uint8Array;
 	for (let y = 0; y < imgH; y += 1) {
-		const srcRow = ((offsetY + y) * textpageW) << 2;
+		const srcRow = ((offsetY + y) * atlasW) << 2;
 		const destRow = (y * imgW) << 2;
 		for (let x = 0; x < imgW; x += 1) {
 			const srcIdx = srcRow + ((offsetX + x) << 2);
 			const dstIdx = destRow + (x << 2);
-			if (srcIdx + 3 < textpageData.length) {
-				subimageData[dstIdx] = textpageData[srcIdx];
-				subimageData[dstIdx + 1] = textpageData[srcIdx + 1];
-				subimageData[dstIdx + 2] = textpageData[srcIdx + 2];
-				subimageData[dstIdx + 3] = textpageData[srcIdx + 3];
+			if (srcIdx + 3 < atlasData.length) {
+				subimageData[dstIdx] = atlasData[srcIdx];
+				subimageData[dstIdx + 1] = atlasData[srcIdx + 1];
+				subimageData[dstIdx + 2] = atlasData[srcIdx + 2];
+				subimageData[dstIdx + 3] = atlasData[srcIdx + 3];
 			}
 		}
 	}
@@ -304,21 +304,21 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 	const modalHeight = Math.max(8, ctx.modalHeight);
 
 	switch (selected.type) {
-		case 'image':
-			if (imgmeta.textpagesed && imgmeta.texcoords) {
-				const textpageName = generateAtlasName(imgmeta.textpageid as number);
-				const textpageAsset = ctx.assetList.find(a => a.resid === textpageName && a.type === 'textpage');
-				if (textpageAsset) {
-					try {
-						const textpageBuf = textpageAsset.buffer instanceof Uint8Array ? Buffer.from(textpageAsset.buffer) : Buffer.from(ctx.rombin.slice(textpageAsset.start, textpageAsset.end));
-						const imagePreview = extractSubimageAndSizeFromAtlassedImage(textpageBuf, imgmeta);
+			case 'image':
+				if (imgmeta.atlasid !== undefined && imgmeta.texcoords) {
+					const atlasName = generateAtlasAssetId(imgmeta.atlasid);
+					const atlasAsset = ctx.assetList.find(a => a.resid === atlasName && a.type === 'atlas');
+					if (atlasAsset) {
+						try {
+							const atlasBuf = atlasAsset.buffer instanceof Uint8Array ? Buffer.from(atlasAsset.buffer) : Buffer.from(ctx.rombin.slice(atlasAsset.start, atlasAsset.end));
+							const imagePreview = extractSubimageAndSizeFromAtlasImage(atlasBuf, imgmeta);
 						previewSections.push(buildPreviewSection('', new Uint8Array(imagePreview.subimage.buffer, imagePreview.subimage.byteOffset, imagePreview.subimage.byteLength), imagePreview.width, imagePreview.height, ctx.previewZoom));
 						previewFixedLines.push(previewFixedLine(imagePreview.width, imagePreview.height, ctx.previewZoom));
 					} catch (e: unknown) {
 						preview = `[Error generating ASCII art from image: ${errorText(e)}]`;
 					}
 				} else {
-					preview = '[Atlas asset not found]';
+					preview = '[Texture atlas asset not found]';
 				}
 				if (imgmeta.hitpolygons?.original && imgmeta.width && imgmeta.height) {
 					previewSections.push(buildPreviewSection('HitPolygons (convex pieces) overlay:', buildOverlayBuffer(imgmeta.width, imgmeta.height, imgmeta.hitpolygons.original), imgmeta.width, imgmeta.height, ctx.previewZoom));
@@ -353,12 +353,12 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 				}
 			}
 			break;
-		case 'textpage':
+		case 'atlas':
 			for (const [key, value] of Object.entries(imgmeta)) metadataLines.push(`${key}: ${JSON.stringify(value)}`);
 			try {
-				const textpagePreview = decodePngSection(selected.buffer instanceof Uint8Array ? Buffer.from(selected.buffer) : Buffer.from(ctx.rombin.slice(selected.start, selected.end)));
-				previewSections.push(buildPreviewSection('', textpagePreview.rgba, textpagePreview.width, textpagePreview.height, ctx.previewZoom));
-				previewFixedLines.push(previewFixedLine(textpagePreview.width, textpagePreview.height, ctx.previewZoom));
+				const atlasPreview = decodePngSection(selected.buffer instanceof Uint8Array ? Buffer.from(selected.buffer) : Buffer.from(ctx.rombin.slice(selected.start, selected.end)));
+				previewSections.push(buildPreviewSection('', atlasPreview.rgba, atlasPreview.width, atlasPreview.height, ctx.previewZoom));
+				previewFixedLines.push(previewFixedLine(atlasPreview.width, atlasPreview.height, ctx.previewZoom));
 			} catch (e: unknown) {
 				preview = `[Error generating ASCII art from image: ${errorText(e)}]`;
 			}

@@ -1200,50 +1200,82 @@ export function asciiWaveBraille(
 		return (pcm[i] | pcm[i + 1] << 8 | pcm[i + 2] << 16 | pcm[i + 3] << 24) / 2147483648;
 	};
 
-	/* ---------- 1. peaks over gelijk verdeelde tijdvakken ---------- */
-	const S = pcm.length / BPS / channels;      // total #samples
-	const step = S / (cellCols * 2);
-	const peaks: [number, number][] = [];
+	/* ---------- 1. peaks + RMS over gelijk verdeelde tijdvakken ---------- */
+	const S = Math.floor(pcm.length / BPS / channels); // total #samples (integer)
+	if (S <= 0) return '';
+	const numSubCols = cellCols * 2;
+	const step = S / numSubCols;
 
-	for (let c = 0; c < cellCols * 2; ++c) {
+	// Compute DC offset (mean) and subtract it to remove baseline wander.
+	let sumAll = 0;
+	for (let s = 0; s < S; ++s) {
+		let v = 0;
+		for (let ch = 0; ch < channels; ++ch) v += toF((s * channels + ch) * BPS);
+		sumAll += v / channels;
+	}
+	const dcMean = S > 0 ? sumAll / S : 0;
+
+	type PeakInfo = { mn: number; mx: number; rms: number };
+	const peaks: PeakInfo[] = [];
+
+	for (let c = 0; c < numSubCols; ++c) {
 		const s0 = Math.floor(c * step);
-		const s1 = Math.min(S, Math.max(s0 + 1, Math.floor((c + 1) * step)));
+		let s1 = Math.min(S, Math.floor((c + 1) * step));
+		if (s1 <= s0) {
+			if (s0 >= S) {
+				peaks.push({ mn: 0, mx: 0, rms: 0 });
+				continue;
+			}
+			s1 = Math.min(S, s0 + 1);
+		}
 
 		let mn = 1, mx = -1;
+		let sumSq = 0;
+		let cnt = 0;
 		for (let s = s0; s < s1; ++s) {
 			let v = 0;
-			for (let ch = 0; ch < channels; ++ch)
-				v += toF((s * channels + ch) * BPS);
-			v /= channels;
+			for (let ch = 0; ch < channels; ++ch) v += toF((s * channels + ch) * BPS);
+			v = v / channels - dcMean;
 			if (v < mn) mn = v;
 			if (v > mx) mx = v;
+			sumSq += v * v;
+			++cnt;
 		}
-		peaks.push([mn, mx]);
+		const rms = cnt > 0 ? Math.sqrt(sumSq / cnt) : 0;
+		peaks.push({ mn, mx, rms });
 	}
 
-	/* ---------- 2. globale max + auto-zoom ---------- */
+	/* ---------- 2. globale max + auto-zoom (use peaks + rms) ---------- */
 	let gMax = 0;
-	for (const [mn, mx] of peaks)
-		gMax = Math.max(gMax, Math.abs(mn), Math.abs(mx));
+	for (const p of peaks) gMax = Math.max(gMax, Math.abs(p.mn), Math.abs(p.mx), p.rms);
+
+	// Smooth the RMS envelope a little to reduce visual jitter.
+	const nPeaks = peaks.length;
+	const rms = new Float32Array(nPeaks);
+	for (let i = 0; i < nPeaks; ++i) rms[i] = peaks[i].rms;
+	const rmsSmoothed = new Float32Array(nPeaks);
+	for (let i = 0; i < nPeaks; ++i) {
+		const a = rms[i];
+		const b = i > 0 ? rms[i - 1] : a;
+		const c = i + 1 < nPeaks ? rms[i + 1] : a;
+		rmsSmoothed[i] = (a + b + c) / 3;
+	}
 
 	// Auto-zoom factor: if the global max is below the auto-zoom floor,
-	// we scale the output to ensure visibility of the lowest peaks.
-	// The autoZoomFloor is a fraction of the maximum value, e.g., 0.25 means
-	// that we want to ensure that the lowest peaks are at least 25% of the maximum.
-	const zoom = gMax > 0 && gMax < autoZoomFloor ? autoZoomFloor / gMax : 1;
-
-	// Compute rows based on zoom and baseRows
-	// The computation ensures that the number of rows is at least 1
-	// and scales the number of rows based on the zoom factor.
-	const rows = Math.max(1, Math.floor(baseRows / zoom)); // min 1 rij
-	const scale = ((rows * 4 - 1) / 2) * zoom / (gMax || 1);
+	// scale the effective amplitude so small signals remain visible.
+	const gain = gMax > 0 && gMax < autoZoomFloor ? autoZoomFloor / gMax : 1;
+	const rows = Math.max(1, Math.floor(baseRows));
+	const effectiveMax = Math.max(gMax * gain, 1e-9);
+	const scale = ((rows * 4 - 1) / 2) / effectiveMax;
 
 	/* ---------- 3. braille-grid ---------- */
 	const grid: number[][] = Array.from({ length: rows }, () => Array(cellCols).fill(0));
 	const cellPeaks: Array<[number, number]> = Array.from({ length: cellCols }, () => [1, -1] as [number, number]);
+	const cellRms: Float32Array = new Float32Array(cellCols);
 
 	for (let x = 0; x < cellCols * 2; ++x) {
-		const [mn, mx] = peaks[x];
+		const p = peaks[x] || { mn: 0, mx: 0, rms: 0 };
+		const mn = p.mn, mx = p.mx;
 		const cellX = x >> 1;
 		if (mn < cellPeaks[cellX][0]) cellPeaks[cellX][0] = mn;
 		if (mx > cellPeaks[cellX][1]) cellPeaks[cellX][1] = mx;
@@ -1256,19 +1288,30 @@ export function asciiWaveBraille(
 			const subX = x & 1;
 			grid[cellY][cellX] |= 1 << DOT[subX][subY];
 		}
+
 	}
+
+	// build per-cell RMS by averaging the two sub-columns
+	for (let cx = 0; cx < cellCols; ++cx) {
+		const i0 = cx * 2;
+		const i1 = Math.min(nPeaks - 1, i0 + 1);
+		cellRms[cx] = (rmsSmoothed[i0] + rmsSmoothed[i1]) * 0.5;
+	}
+
 
 	/* ---------- 4. naar string ---------- */
 	const art = grid
 		.map((row, _rowIdx) => row
 			.map((code, colIdx) => {
 				if (!code) return ' ';
-				// Color logic: red for negative, green for positive, yellow for near zero
+				// Use smoothed RMS amplitude together with sign-aware peaks to
+				// choose a more informative color/intensity.
 				const [mn, mx] = cellPeaks[colIdx];
+				const rmsVal = cellRms[colIdx] / (gMax || 1);
 				let colorTag = '';
-				if (mn < -0.2 || mx > 0.2) colorTag = '{light-red-fg}';
-				else if (mn < -0.1 || mx > 0.1) colorTag = '{light-yellow-fg}';
-				else if (mn < 0.1 && mx > -0.1) colorTag = '{light-blue-fg}';
+				if (rmsVal > 0.55 || mn < -0.35 || mx > 0.35) colorTag = '{light-red-fg}';
+				else if (rmsVal > 0.25 || mn < -0.15 || mx > 0.15) colorTag = '{light-yellow-fg}';
+				else colorTag = '{light-blue-fg}';
 				return colorTag + String.fromCharCode(BRAILLE + code) + '{/}';
 			})
 			.join(''))
