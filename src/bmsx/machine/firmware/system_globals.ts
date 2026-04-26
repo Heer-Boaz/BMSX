@@ -65,6 +65,7 @@ export const ENGINE_SYSTEM_HELPER_NAMES = [
 	'game',
 	'$',
 	'assets',
+	'system_assets',
 	'cart_manifest',
 	'machine_manifest',
 	'cart_project_root_path',

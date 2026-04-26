@@ -1,6 +1,5 @@
 #include "machine/scheduler/frame.h"
 #include "machine/runtime/runtime.h"
-#include "machine/runtime/runtime_fault.h"
 #include <stdexcept>
 
 namespace bmsx {
@@ -117,7 +116,7 @@ void FrameSchedulerState::restoreState(const FrameSchedulerStateSnapshot& state)
 
 void FrameSchedulerState::enqueueTickCompletion(Runtime& runtime, FrameState& frameState) {
 	if (m_tickCompletionCount >= TICK_COMPLETION_QUEUE_CAPACITY) {
-		throw new Error("tick completion queue overflow.");
+		throw BMSX_RUNTIME_ERROR("tick completion queue overflow.");
 	}
 	TickCompletion& slot = m_tickCompletionQueue[m_tickCompletionWriteIndex];
 	const i64 sequence = lastTickSequence + 1;

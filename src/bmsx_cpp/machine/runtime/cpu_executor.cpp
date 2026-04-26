@@ -1,7 +1,6 @@
 #include "machine/runtime/cpu_executor.h"
 
 #include "machine/runtime/runtime.h"
-#include "machine/runtime/runtime_fault.h"
 #include "machine/scheduler/device.h"
 #include "render/vdp/blitter/execute.h"
 
@@ -25,7 +24,7 @@ void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
 			}
 			return;
 		default:
-			throw new Error("unknown timer kind " + std::to_string(kind) + ".");
+			throw BMSX_RUNTIME_ERROR("unknown timer kind " + std::to_string(kind) + ".");
 	}
 }
 
@@ -64,7 +63,7 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 			break;
 		}
 		if (consumed <= 0) {
-			throw new Error("CPU yielded without consuming cycles.");
+			throw BMSX_RUNTIME_ERROR("CPU yielded without consuming cycles.");
 		}
 	}
 	frameState.cycleBudgetRemaining = remaining;

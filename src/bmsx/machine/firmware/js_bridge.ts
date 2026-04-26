@@ -933,8 +933,7 @@ export function pushNativePairsIterator(runtime: Runtime, target: NativeObject, 
 	out.push(iterator, target, null);
 }
 
-export function getOrCreateAssetsNativeObject(runtime: Runtime): NativeObject {
-	const assets = runtime.activeAssets;
+export function getOrCreateAssetsNativeObject(runtime: Runtime, assets = runtime.activeAssets): NativeObject {
 	if (!assets) {
 		throw new Error('Active runtime assets are not configured.');
 	}

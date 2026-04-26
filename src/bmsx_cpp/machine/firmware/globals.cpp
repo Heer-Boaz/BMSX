@@ -3417,7 +3417,7 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 		out.push_back(valueNumber(0.0));
 	});
 
-	const RuntimeAssets& assets = activeAssets();
+	auto buildAssetsNativeObject = [this, &cpu, key, str](const RuntimeAssets& assets) -> Value {
 	auto* assetsTable = cpu.createTable();
 	auto formatAssetKeyNumber = [](double value) -> std::string {
 		if (value == 0.0) {
@@ -3611,7 +3611,10 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 			heap.markValue(valueTable(assetsTable));
 		}
 	);
-	setGlobal("assets", assetsNative);
+	return assetsNative;
+	};
+	setGlobal("assets", buildAssetsNativeObject(activeAssets()));
+	setGlobal("system_assets", buildAssetsNativeObject(systemAssets()));
 
 	auto buildMachineManifestTable = [&cpu, key, str](const MachineManifest& manifest) -> Table* {
 		auto* machineTable = cpu.createTable(0, 5);

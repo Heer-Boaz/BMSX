@@ -3,6 +3,18 @@ local round_to_nearest<const> = require('round_to_nearest')
 local vdp_image<const> = {}
 local cache<const> = {}
 
+local atlas_name<const> = function(atlas_id)
+	return string.format('_atlas_%02d', atlas_id)
+end
+
+local resolve_img_asset<const> = function(imgid)
+	local asset<const> = assets.img[imgid]
+	if asset ~= nil then
+		return asset
+	end
+	return system_assets.img[imgid]
+end
+
 local slot_atlas_addr<const> = function(slot)
 	if slot == sys_vdp_slot_primary then
 		return sys_vdp_slot_primary_atlas
@@ -24,7 +36,7 @@ function vdp_image.bind_slot_atlas(slot, atlas_id)
 end
 
 local require_meta<const> = function(imgid)
-	local asset<const> = assets.img[imgid]
+	local asset<const> = resolve_img_asset(imgid)
 	if asset == nil then
 		error('image asset "' .. tostring(imgid) .. '" was not found.')
 	end
@@ -41,16 +53,20 @@ local require_meta<const> = function(imgid)
 	return meta
 end
 
+local require_atlas_meta<const> = function(atlas_id, imgid)
+	local atlas<const> = resolve_img_asset(atlas_name(atlas_id))
+	if atlas == nil or atlas.imgmeta == nil then
+		error('atlas ' .. tostring(atlas_id) .. ' for image "' .. tostring(imgid) .. '" was not found.')
+	end
+	return atlas.imgmeta
+end
+
 function vdp_image.rect(imgid)
 	local cached<const> = cache[imgid]
 	if cached ~= nil then
 		return cached
 	end
 	local meta<const> = require_meta(imgid)
-	local atlas<const> = assets.img[string.format('_atlas_%02d', meta.atlasid)]
-	if atlas == nil or atlas.imgmeta == nil then
-		error('atlas ' .. tostring(meta.atlasid) .. ' for image "' .. tostring(imgid) .. '" was not found.')
-	end
 	local coords<const> = meta.texcoords
 	local min_u = coords[1]
 	local max_u = coords[1]
@@ -64,7 +80,7 @@ function vdp_image.rect(imgid)
 		if v < min_v then min_v = v end
 		if v > max_v then max_v = v end
 	end
-	local atlas_meta<const> = atlas.imgmeta
+	local atlas_meta<const> = require_atlas_meta(meta.atlasid, imgid)
 	local rect<const> = {
 		atlas_id = meta.atlasid,
 		u = round_to_nearest(min_u * atlas_meta.width),

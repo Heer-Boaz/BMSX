@@ -989,6 +989,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		luaPipeline.registerGlobal(runtime, '$', gameTable);
 		luaPipeline.registerGlobal(runtime, 'devtools', createRuntimeDevtoolsTable(runtime));
 		luaPipeline.registerGlobal(runtime, 'assets', getOrCreateAssetsNativeObject(runtime));
+		luaPipeline.registerGlobal(runtime, 'system_assets', getOrCreateAssetsNativeObject(runtime, runtime.assets.biosLayer.assets));
 		const cartManifest = runtime.cartManifest;
 		luaPipeline.registerGlobal(runtime, 'cart_manifest', cartManifest === null ? null : buildCartManifestTable(runtime, cartManifest, cartManifest.machine, cartManifest.lua.entry_path));
 		luaPipeline.registerGlobal(runtime, 'machine_manifest', buildMachineManifestTable(runtime, runtime.activeMachineManifest));

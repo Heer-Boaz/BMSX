@@ -1,7 +1,6 @@
 #include "machine/runtime/timing/config.h"
 
 #include "machine/runtime/runtime.h"
-#include "machine/runtime/runtime_fault.h"
 #include "rompack/assets.h"
 
 #include <stdexcept>
@@ -11,7 +10,7 @@ namespace {
 
 int resolvePositiveWorkUnits(i64 value, const char* name) {
 	if (value <= 0) {
-		throw new Error(std::string(name) + " must be greater than 0.");
+		throw BMSX_RUNTIME_ERROR(std::string(name) + " must be greater than 0.");
 	}
 	return static_cast<int>(value);
 }

@@ -9,7 +9,6 @@
 #include "machine/runtime/engine_irq.h"
 #include "render/runtime/state.h"
 #include "render/shared/queues.h"
-#include "machine/runtime/runtime_fault.h"
 #include "machine/runtime/timing/config.h"
 #include "core/engine.h"
 #include "rompack/format.h"
@@ -29,7 +28,7 @@ Runtime* Runtime::s_instance = nullptr;
 
 Runtime& Runtime::createInstance(const RuntimeOptions& options) {
 	if (s_instance) {
-		throw new Error("instance already exists.");
+		throw BMSX_RUNTIME_ERROR("instance already exists.");
 	}
 	configureLuaHeapUsage({});
 	resetTrackedLuaHeapBytes();

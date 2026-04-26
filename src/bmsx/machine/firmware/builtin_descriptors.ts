@@ -164,6 +164,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: '$', params: [], signature: '$', description: 'Native engine core object.' },
 	{ name: 'devtools', params: [], signature: 'devtools', description: 'Devtool-only runtime source inspection table (devtools.list_lua_resources, devtools.get_lua_entry_path, devtools.get_lua_resource_source).' },
 	{ name: 'assets', params: [], signature: 'assets', description: 'Runtime asset registry with img/audio/data/model/audioevents tables.' },
+	{ name: 'system_assets', params: [], signature: 'system_assets', description: 'BIOS/system asset registry with img/audio/data/model/audioevents tables.' },
 	{ name: 'cart_manifest', params: [], signature: 'cart_manifest', description: 'Flattened cart manifest table, or nil when unavailable.' },
 	{ name: 'machine_manifest', params: [], signature: 'machine_manifest', description: 'Flattened machine manifest table.' },
 	{ name: 'cart_project_root_path', params: [], signature: 'cart_project_root_path', description: 'Workspace-relative cart project root path, or nil when unavailable.' },

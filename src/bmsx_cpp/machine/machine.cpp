@@ -3,7 +3,6 @@
 #include "audio/soundmaster.h"
 #include "input/manager.h"
 #include "machine/firmware/api.h"
-#include "machine/runtime/runtime_fault.h"
 #include "rompack/format.h"
 
 #include <stdexcept>
@@ -74,7 +73,7 @@ VDP* Machine::runDeviceService(uint8_t deviceKind) {
 			m_vdp.onService(nowCycles);
 			return &m_vdp;
 		default:
-			throw new Error("unknown device service kind " + std::to_string(deviceKind) + ".");
+			throw BMSX_RUNTIME_ERROR("unknown device service kind " + std::to_string(deviceKind) + ".");
 	}
 }
 
