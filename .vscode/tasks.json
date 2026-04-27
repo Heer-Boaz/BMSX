@@ -2,21 +2,23 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "BUILD BROWSER + LIBRETRO WSL + BIOS",
-			"dependsOn": [
-				"PLATFORM BUILD: browser",
-				"BIOS: build",
-				"LIBRETRO BUILD: WSL"
-			],
+			"label": "GAME/BIOS/LIBRETRO-WSL/CUSTOM-HOST (+force+debug)",
 			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"libretro-wsl:forcebuildall",
+				"--",
+				"${input:romtobuild}"
+			],
 			"problemMatcher": [],
 			"group": {
 				"kind": "build",
 				"isDefault": true
 			},
 			"icon": {
-				"id": "layers",
-				"color": "terminal.ansiRed"
+				"id": "loading~spin",
+				"color": "terminal.ansiYellow"
 			},
 			"presentation": {
 				"echo": false,
@@ -169,7 +171,7 @@
 			}
 		},
 		{
-			"label": "GAME/BIOS/BROWSER FORCE-VALIDATE (+bios+force+debug)",
+			"label": "GAME/BIOS/BROWSER FORCE (+force+debug)",
 			"type": "shell",
 			"command": "bash",
 			"args": [
@@ -601,7 +603,7 @@
 			}
 		},
 		{
-			"label": "LIBRETRO RUN: Custom Host (headless)",
+			"label": "LIBRETRO RUN: CUSTOM HOST (HEADLESS)",
 			"type": "shell",
 			"command": "npm",
 			"args": [
@@ -627,7 +629,7 @@
 			}
 		},
 		{
-			"label": "LIBRETRO RUN: Custom Host (FB)",
+			"label": "LIBRETRO RUN: CUSTOM HOST (FB)",
 			"type": "shell",
 			"command": "npm",
 			"args": [

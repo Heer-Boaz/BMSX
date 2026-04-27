@@ -63,6 +63,7 @@
 		"build:platform:headless": "npx tsx scripts/rompacker/platformbuilder.ts --platform headless",
 		"build:platform:cli": "npx tsx scripts/rompacker/platformbuilder.ts --platform cli",
 		"build:platform:libretro-wsl": "npx tsx scripts/rompacker/platformbuilder.ts --platform libretro-wsl",
+		"libretro-wsl:forcebuildall": "sh -c 'rom=${1}; npm run build:platform:libretro-wsl -- --debug --force && npm run build:libretro-host-wsl:debug -- --debug --force && npm run build:bios -- --debug --force && npm run build:game -- \"$rom\" --debug --force' --",
 		"build:platform:libretro-snesmini": "make SNESMINI_BUILD_TYPE=Release libretro-snesmini-debug",
 		"build:platform:libretro-snesmini:debug": "make libretro-snesmini-debug",
 		"build:libretro-host-snesmini": "make SNESMINI_BUILD_TYPE=Release libretro-host-snesmini-debug",
