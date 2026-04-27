@@ -46,7 +46,7 @@ setmetatable(sequence, { __index = btnode })
 
 function sequence.new(id, children, priority)
 	local self<const> = setmetatable(btnode.new(id, priority), sequence)
-	self.children = children or nil
+	self.children = children or {}
 	return self
 end
 
@@ -66,7 +66,7 @@ setmetatable(selector, { __index = btnode })
 
 function selector.new(id, children, priority)
 	local self<const> = setmetatable(btnode.new(id, priority), selector)
-	self.children = children or nil
+	self.children = children or {}
 	return self
 end
 
@@ -86,7 +86,7 @@ setmetatable(parallel, { __index = btnode })
 
 function parallel.new(id, children, success_policy, priority)
 	local self<const> = setmetatable(btnode.new(id, priority), parallel)
-	self.children = children or nil
+	self.children = children or {}
 	self.success_policy = success_policy or 'ALL'
 	return self
 end
