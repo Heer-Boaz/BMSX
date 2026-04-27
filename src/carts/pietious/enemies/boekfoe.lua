@@ -18,14 +18,14 @@ function boekfoe.bt_tick(self, blackboard)
 		closed_ticks = closed_ticks - 1
 		if closed_ticks > 0 then
 			node.boek_state_ticks = closed_ticks
-			return behaviourtree.running
+			return 'RUNNING'
 		end
 		self.boek_state = 'open'
 		self:gfx('boekfoe_open')
 		self.sprite_component.flip.flip_h = self.direction == 'left'
 		node.boek_state_ticks = constants.enemy.boek_wait_close_steps
 		node.boek_spawn_ticks = constants.enemy.boek_spawn_paper_steps
-		return behaviourtree.running
+		return 'RUNNING'
 	end
 
 	local open_ticks = node.boek_state_ticks or constants.enemy.boek_wait_close_steps
@@ -59,18 +59,18 @@ function boekfoe.bt_tick(self, blackboard)
 		self.sprite_component.flip.flip_h = self.direction == 'left'
 		node.boek_state_ticks = constants.enemy.boek_wait_open_steps
 		node.boek_spawn_ticks = nil
-		return behaviourtree.running
+		return 'RUNNING'
 	end
 
 	node.boek_state_ticks = open_ticks
 	node.boek_spawn_ticks = spawn_ticks
-	return behaviourtree.running
+	return 'RUNNING'
 end
 
 function boekfoe.register_behaviour_tree(bt_id)
 	behaviourtree.register_definition(bt_id, {
 		root = {
-			type = 'action',
+			type = 'ACTION',
 			action = function(target, blackboard)
 				return boekfoe.bt_tick(target, blackboard)
 			end,

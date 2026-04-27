@@ -45,7 +45,7 @@ function crossfoe.bt_tick_waiting(self, blackboard)
 	wait_ticks = wait_ticks - 1
 	if wait_ticks > 0 then
 		node.cross_wait_ticks = wait_ticks
-		return behaviourtree.running
+		return 'RUNNING'
 	end
 
 	node.cross_wait_ticks = constants.enemy.cross_wait_before_fly_steps
@@ -58,7 +58,7 @@ function crossfoe.bt_tick_waiting(self, blackboard)
 	self.cross_spin_direction = 'left'
 	apply_spin_visual(self)
 	oget('c').events:emit('cross')
-	return behaviourtree.running
+	return 'RUNNING'
 end
 
 function crossfoe.bt_tick_flying(self, blackboard)
@@ -81,7 +81,7 @@ function crossfoe.bt_tick_flying(self, blackboard)
 		node.cross_wait_ticks = constants.enemy.cross_wait_before_fly_steps
 		node.cross_turn_ticks = constants.enemy.cross_turn_steps
 		oget('c').events:emit('crossland')
-		return behaviourtree.running
+		return 'RUNNING'
 	end
 
 	self.x = self.x + (constants.enemy.cross_horizontal_speed_px * direction_mod)
@@ -90,7 +90,7 @@ function crossfoe.bt_tick_flying(self, blackboard)
 	turn_ticks = turn_ticks - 1
 	if turn_ticks > 0 then
 		node.cross_turn_ticks = turn_ticks
-		return behaviourtree.running
+		return 'RUNNING'
 	end
 
 	turn_ticks = constants.enemy.cross_turn_steps
@@ -109,7 +109,7 @@ function crossfoe.bt_tick_flying(self, blackboard)
 	end
 	apply_spin_visual(self)
 	node.cross_turn_ticks = turn_ticks
-	return behaviourtree.running
+	return 'RUNNING'
 end
 
 function crossfoe.bt_tick(self, blackboard)
@@ -122,7 +122,7 @@ end
 function crossfoe.register_behaviour_tree(bt_id)
 	behaviourtree.register_definition(bt_id, {
 		root = {
-			type = 'action',
+			type = 'ACTION',
 			action = function(target, blackboard)
 				return crossfoe.bt_tick(target, blackboard)
 			end,

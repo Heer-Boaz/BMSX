@@ -112,13 +112,13 @@ function cloud.bt_tick(self, blackboard)
 		vlok_ticks = constants.enemy.cloud_spawn_vlok_steps
 	end
 	node.cloud_vlok_ticks = vlok_ticks
-	return behaviourtree.running
+	return 'RUNNING'
 end
 
 function cloud.register_behaviour_tree(bt_id)
 	behaviourtree.register_definition(bt_id, {
 		root = {
-			type = 'action',
+			type = 'ACTION',
 			action = function(target, blackboard)
 				return cloud.bt_tick(target, blackboard)
 			end,

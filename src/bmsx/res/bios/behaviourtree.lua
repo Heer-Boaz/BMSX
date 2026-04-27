@@ -1,4 +1,3 @@
--- behaviourtree.lua
 -- behaviour tree runtime + definition registry
 
 local behaviourtree<const> = {}
@@ -47,7 +46,7 @@ setmetatable(sequence, { __index = btnode })
 
 function sequence.new(id, children, priority)
 	local self<const> = setmetatable(btnode.new(id, priority), sequence)
-	self.children = children or {}
+	self.children = children or nil
 	return self
 end
 
@@ -67,7 +66,7 @@ setmetatable(selector, { __index = btnode })
 
 function selector.new(id, children, priority)
 	local self<const> = setmetatable(btnode.new(id, priority), selector)
-	self.children = children or {}
+	self.children = children or nil
 	return self
 end
 
@@ -87,8 +86,8 @@ setmetatable(parallel, { __index = btnode })
 
 function parallel.new(id, children, success_policy, priority)
 	local self<const> = setmetatable(btnode.new(id, priority), parallel)
-	self.children = children or {}
-	self.success_policy = success_policy or 'all'
+	self.children = children or nil
+	self.success_policy = success_policy or 'ALL'
 	return self
 end
 
@@ -101,14 +100,14 @@ function parallel:tick(target, blackboard)
 			any_running = true
 		elseif status == 'SUCCESS' then
 			success_count = success_count + 1
-			if self.success_policy == 'one' then
+			if self.success_policy == 'ONE' then
 				return 'SUCCESS'
 			end
-		elseif status == 'FAILURE' and self.success_policy == 'all' then
+		elseif status == 'FAILURE' and self.success_policy == 'ALL' then
 			return 'FAILURE'
 		end
 	end
-	if self.success_policy == 'all' and success_count == #self.children then
+	if self.success_policy == 'ALL' and success_count == #self.children then
 		return 'SUCCESS'
 	end
 	return any_running and 'RUNNING' or 'FAILURE'
@@ -143,7 +142,7 @@ end
 
 function condition:tick(target, blackboard)
 	local result = self.condition(target, blackboard, self.parameters)
-	if self.modifier == 'not' then
+	if self.modifier == 'NOT' then
 		result = not result
 	end
 	return result and 'SUCCESS' or 'FAILURE'
@@ -156,15 +155,15 @@ setmetatable(compositecondition, { __index = parametrizednode })
 function compositecondition.new(id, conditions, modifier, priority, parameters)
 	local self<const> = setmetatable(parametrizednode.new(id, priority, parameters), compositecondition)
 	self.conditions = conditions or {}
-	self.modifier = modifier or 'and'
+	self.modifier = modifier or 'AND'
 	return self
 end
 
 function compositecondition:tick(target, blackboard)
-	local combined = (self.modifier == 'and')
+	local combined = (self.modifier == 'AND')
 	for i = 1, #self.conditions do
 		local result<const> = self.conditions[i](target, blackboard, self.parameters)
-		if self.modifier == 'and' then
+		if self.modifier == 'AND' then
 			combined = combined and result
 		else
 			combined = combined or result
@@ -317,62 +316,62 @@ local build_node<const> = function(spec, id)
 	if node_type == nil then
 		error('behavior tree "' .. tostring(id) .. '" node is missing required type/kind/node.')
 	end
-	if node_type == 'selector' then
+	if node_type == 'SELECTOR' then
 		local children<const> = {}
 		for i = 1, #spec.children do
 			children[i] = build_node(spec.children[i], id)
 		end
 		return selector.new(id, children, spec.priority)
 	end
-	if node_type == 'sequence' then
+	if node_type == 'SEQUENCE' then
 		local children<const> = {}
 		for i = 1, #spec.children do
 			children[i] = build_node(spec.children[i], id)
 		end
 		return sequence.new(id, children, spec.priority)
 	end
-	if node_type == 'parallel' then
+	if node_type == 'PARALLEL' then
 		local children<const> = {}
 		for i = 1, #spec.children do
 			children[i] = build_node(spec.children[i], id)
 		end
 		return parallel.new(id, children, spec.successpolicy, spec.priority)
 	end
-	if node_type == 'decorator' then
+	if node_type == 'DECORATOR' then
 		local child<const> = build_node(spec.child, id)
 		return decorator.new(id, child, spec.decorator, spec.priority)
 	end
-	if node_type == 'condition' then
+	if node_type == 'CONDITION' then
 		return condition.new(id, spec.condition, spec.modifier, spec.priority, spec.parameters)
 	end
-	if node_type == 'compositecondition' then
+	if node_type == 'COMPOSITECONDITION' then
 		return compositecondition.new(id, spec.conditions, spec.modifier, spec.priority, spec.parameters)
 	end
-	if node_type == 'randomselector' then
+	if node_type == 'RANDOMSELECTOR' then
 		local children<const> = {}
 		for i = 1, #spec.children do
 			children[i] = build_node(spec.children[i], id)
 		end
 		return randomselector.new(id, children, spec.currentchild_propname, spec.priority)
 	end
-	if node_type == 'limit' then
+	if node_type == 'LIMIT' then
 		local child<const> = build_node(spec.child, id)
 		return limit.new(id, spec.limit, spec.count_propname, child, spec.priority)
 	end
-	if node_type == 'priorityselector' then
+	if node_type == 'PRIORITYSELECTOR' then
 		local children<const> = {}
 		for i = 1, #spec.children do
 			children[i] = build_node(spec.children[i], id)
 		end
 		return priorityselector.new(id, children, spec.priority)
 	end
-	if node_type == 'wait' then
+	if node_type == 'WAIT' then
 		return wait.new(id, spec.wait_time, spec.wait_propname, spec.priority)
 	end
-	if node_type == 'action' then
+	if node_type == 'ACTION' then
 		return action.new(id, spec.action, spec.priority, spec.parameters)
 	end
-	if node_type == 'compositeaction' then
+	if node_type == 'COMPOSITEACTION' then
 		local actions<const> = {}
 		for i = 1, #spec.actions do
 			actions[i] = build_node(spec.actions[i], id)
@@ -417,8 +416,5 @@ behaviourtree.priorityselector = priorityselector
 behaviourtree.wait = wait
 behaviourtree.action = action
 behaviourtree.compositeaction = compositeaction
-
--- Export common tick status constants for compile-time resolution by carts
-behaviourtree.running = 'RUNNING'
 
 return behaviourtree

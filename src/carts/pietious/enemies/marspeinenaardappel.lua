@@ -46,13 +46,13 @@ function marspeinenaardappel.bt_tick(self, _blackboard)
 		end
 	end
 
-	return behaviourtree.running
+	return 'RUNNING'
 end
 
 function marspeinenaardappel.register_behaviour_tree(bt_id)
 	behaviourtree.register_definition(bt_id, {
 		root = {
-			type = 'action',
+			type = 'ACTION',
 			action = function(target, blackboard)
 				return marspeinenaardappel.bt_tick(target, blackboard)
 			end,

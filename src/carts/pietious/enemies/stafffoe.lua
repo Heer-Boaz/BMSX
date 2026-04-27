@@ -21,25 +21,25 @@ function stafffoe.bt_tick(self, blackboard)
 		wait_ticks = wait_ticks - 1
 		if wait_ticks > 0 then
 			node.staff_wait_ticks = wait_ticks
-			return behaviourtree.running
+			return 'RUNNING'
 		end
 		self.staff_state = 'spawning'
 		self.staff_spawn_count = 0
 		node.staff_wait_ticks = constants.enemy.staff_wait_before_spawn_steps
-		return behaviourtree.running
+		return 'RUNNING'
 	end
 
 	if self.staff_spawn_count >= constants.enemy.staff_spawn_burst_count then
 		self.staff_state = 'default'
 		node.staff_wait_ticks = constants.enemy.staff_wait_before_spawn_state_steps
-		return behaviourtree.running
+		return 'RUNNING'
 	end
 
 	local spawn_wait = node.staff_wait_ticks or constants.enemy.staff_wait_before_spawn_steps
 	spawn_wait = spawn_wait - 1
 	if spawn_wait > 0 then
 		node.staff_wait_ticks = spawn_wait
-		return behaviourtree.running
+		return 'RUNNING'
 	end
 
 	local player<const> = oget('pietolon')
@@ -67,13 +67,13 @@ function stafffoe.bt_tick(self, blackboard)
 	oget('c').events:emit('staffspawn')
 	self.staff_spawn_count = self.staff_spawn_count + 1
 	node.staff_wait_ticks = constants.enemy.staff_wait_before_spawn_steps
-	return behaviourtree.running
+	return 'RUNNING'
 end
 
 function stafffoe.register_behaviour_tree(bt_id)
 	behaviourtree.register_definition(bt_id, {
 		root = {
-			type = 'action',
+			type = 'ACTION',
 			action = function(target, blackboard)
 				return stafffoe.bt_tick(target, blackboard)
 			end,

@@ -15,7 +15,7 @@ function vlokspawner.bt_tick(self, blackboard)
 	spawn_ticks = spawn_ticks - 1
 	if spawn_ticks > 0 then
 		blackboard.nodedata.vlok_spawn_ticks = spawn_ticks
-		return behaviourtree.running
+		return 'RUNNING'
 	end
 
 	local room<const> = oget('room')
@@ -34,13 +34,13 @@ function vlokspawner.bt_tick(self, blackboard)
 		},
 	})
 	blackboard.nodedata.vlok_spawn_ticks = constants.enemy.vlokspawner_spawn_steps
-	return behaviourtree.running
+	return 'RUNNING'
 end
 
 function vlokspawner.register_behaviour_tree(bt_id)
 	behaviourtree.register_definition(bt_id, {
 		root = {
-			type = 'action',
+			type = 'ACTION',
 			action = function(target, blackboard)
 				return vlokspawner.bt_tick(target, blackboard)
 			end,

@@ -12,13 +12,13 @@ end
 
 function staffspawn.bt_tick(self, _blackboard)
 	move_with_velocity(self)
-	return behaviourtree.running
+	return 'RUNNING'
 end
 
 function staffspawn.register_behaviour_tree(bt_id)
 	behaviourtree.register_definition(bt_id, {
 		root = {
-			type = 'action',
+			type = 'ACTION',
 			action = function(target, blackboard)
 				return staffspawn.bt_tick(target, blackboard)
 			end,

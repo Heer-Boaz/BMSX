@@ -77,13 +77,13 @@ function muziekfoe.bt_tick(self, blackboard)
 		noot_ticks = constants.enemy.muziek_spawn_noot_steps
 	end
 	node.muziek_noot_ticks = noot_ticks
-	return behaviourtree.running
+	return 'RUNNING'
 end
 
 function muziekfoe.register_behaviour_tree(bt_id)
 	behaviourtree.register_definition(bt_id, {
 		root = {
-			type = 'action',
+			type = 'ACTION',
 			action = function(target, blackboard)
 				return muziekfoe.bt_tick(target, blackboard)
 			end,

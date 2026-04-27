@@ -24,13 +24,13 @@ end
 
 function nootfoe.bt_tick(self, _blackboard)
 	move_with_velocity(self)
-	return behaviourtree.running
+	return 'RUNNING'
 end
 
 function nootfoe.register_behaviour_tree(bt_id)
 	behaviourtree.register_definition(bt_id, {
 		root = {
-			type = 'action',
+			type = 'ACTION',
 			action = function(target, blackboard)
 				return nootfoe.bt_tick(target, blackboard)
 			end,
