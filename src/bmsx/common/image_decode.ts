@@ -26,12 +26,14 @@ export async function decodePngToRgba(buffer: Uint8Array): Promise<DecodedImage>
 	}
 	canvas.width = width;
 	canvas.height = height;
-	const ctx = canvas.getContext('2d');
+	const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
 	if (!ctx) {
 		throw new Error('[decodePngToRgba] Failed to get 2D context.');
 	}
-	ctx.drawImage(bitmap as any, 0, 0);
-	const imageData = ctx.getImageData(0, 0, width, height);
+	// Narrow to 2D context so TypeScript knows getImageData exists
+	const ctx2d = ctx as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+	ctx2d.drawImage(bitmap as any, 0, 0);
+	const imageData = ctx2d.getImageData(0, 0, width, height);
 	const pixels = new Uint8Array(imageData.data.buffer, imageData.data.byteOffset, imageData.data.byteLength);
 	if ('close' in bitmap) {
 		(bitmap as { close: () => void }).close();
