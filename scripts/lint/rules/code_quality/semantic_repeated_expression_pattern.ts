@@ -1,4 +1,3 @@
-import type { LintIssue } from '../ts/support/ast';
 import type { RepeatedExpressionInfo } from '../ts/support/ast';
 import { defineLintRule } from '../../rule';
 import { type FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';

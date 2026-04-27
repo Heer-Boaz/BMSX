@@ -5,7 +5,7 @@ import ts from 'typescript';
 import { getCallTargetLeafName, getExpressionText, unwrapExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
 import { isAssignmentOperator } from '../../../../../src/bmsx/language/ts/ast/operators';
 import { falseLiteralComparison } from './conditions';
-import { expressionAccessFingerprint, isIgnoredMethod } from './declarations';
+import { expressionAccessFingerprint } from './declarations';
 import { nullishLiteralComparison } from './nullish';
 import { binaryParentAndSibling } from './statements';
 import { LintBinding } from './types';

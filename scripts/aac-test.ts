@@ -1,5 +1,5 @@
 import { promises as fs } from 'fs';
-import { encodeWavToAacLc } from './formater/audioencoder'
+import { encodeWavToAacLc } from './rompacker/audioencoder';
 
 (async () => {
 	const path = '../src/carts/2025/res/m16@m@l=0.wav';

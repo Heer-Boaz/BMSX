@@ -44,7 +44,7 @@ function runCommand(command: string, args: string[]): void {
 	}
 }
 
-function getLibretroBuildDir(platform: RomPackerTarget, debug: boolean): string {
+function getLibretroBuildDir(platform: RomPackerTarget): string {
 	// Use a single build directory per platform. The build type (Debug/Release)
 	// is passed to CMake via -DCMAKE_BUILD_TYPE rather than using separate
 	// build folders like build-debug/build-release.
@@ -57,7 +57,7 @@ function getLibretroCoreFilename(platform: RomPackerTarget): string {
 }
 
 function getLibretroBuildOutputPath(platform: RomPackerTarget, debug: boolean): string {
-	const buildDir = getLibretroBuildDir(platform, debug);
+	const buildDir = getLibretroBuildDir(platform);
 	const coreFilename = getLibretroCoreFilename(platform);
 	if (platform === 'libretro-win') {
 		const configDir = debug ? 'Debug' : 'Release';
@@ -92,7 +92,7 @@ function findCMake(): string {
 function ensureLibretroCoreBuilt(debug: boolean, platform: RomPackerTarget, logger: BuilderLogger): void {
 	const cmakeBin = findCMake();
 	const buildType = debug ? 'Debug' : 'Release';
-	const buildDir = getLibretroBuildDir(platform, debug);
+	const buildDir = getLibretroBuildDir(platform);
 	logger.info(`Using build dir ${pc.white(buildDir)} (${buildType})`);
 	const cmakeArgs = [
 		'-S', 'src/bmsx_cpp', '-B', buildDir,

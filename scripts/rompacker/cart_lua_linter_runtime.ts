@@ -562,7 +562,7 @@ export async function lintCartSources(options: CartLintOptions): Promise<void> {
 			if (lintSyntaxError(lexed.syntaxError, issues)) {
 				continue;
 			}
-			const parser = new Parser(tokens, workspacePath, source);
+			const parser = new Parser(tokens, workspacePath, [ source ]);
 			let parsed: ReturnType<Parser['parseChunkWithRecovery']>;
 			try {
 				parsed = parser.parseChunkWithRecovery();

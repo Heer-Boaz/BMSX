@@ -42,6 +42,7 @@ export type TokenStatementSequenceInfo = {
 	statementCount: number;
 	textLength: number;
 	fingerprint: string;
+	functionName?: string; // TODO: BULLSHIT that this is optional
 };
 
 export type StatementSequenceInfo = {
@@ -100,6 +101,7 @@ export function collectRepeatedStatementSequences(
 			statementCount: REPEATED_STATEMENT_SEQUENCE_MIN_COUNT,
 			textLength,
 			fingerprint: parts.join('\u0000'),
+			functionName: undefined,
 		});
 	}
 }

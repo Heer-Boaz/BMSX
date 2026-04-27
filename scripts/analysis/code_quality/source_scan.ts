@@ -31,7 +31,7 @@ import { compactSampleText } from '../../lint/text';
 import { type FunctionUsageInfo } from '../../lint/function_usage';
 import { getCallTargetLeafName, getPropertyName, hasQuestionDotToken, unwrapExpression } from '../../../src/bmsx/language/ts/ast/expressions';
 import { isFunctionLikeValue, isFunctionLikeWithParameters } from '../../../src/bmsx/language/ts/ast/functions';
-import { LOCAL_CONST_PATTERN_ENABLED, LintIssue, REPEATED_EXPRESSION_PAIR_MIN_LENGTH, RepeatedExpressionInfo, getExtendsExpression, isSimpleAliasExpression, lintCatchClausePatterns, nodeStartLine, pushLintIssue, shouldIgnoreLintName } from '../../lint/rules/ts/support/ast';
+import { LOCAL_CONST_PATTERN_ENABLED, LintIssue, REPEATED_EXPRESSION_PAIR_MIN_LENGTH, RepeatedExpressionInfo, getExtendsExpression, isSimpleAliasExpression, lintCatchClausePatterns, nodeStartLine, shouldIgnoreLintName } from '../../lint/rules/ts/support/ast';
 import { getClassScopePath, isDeclarationIdentifier, isIdentifierPropertyName, isInsideLoop, isScopeBoundary, isWriteIdentifier } from '../../lint/rules/ts/support/bindings';
 import { NormalizedBodyInfo, collectNormalizedBody, isExportedVariableDeclaration, isIgnoredMethod, repeatedExpressionFingerprint } from '../../lint/rules/ts/support/declarations';
 import { isConsumeBeforeClearSnapshotRead, normalizeSingleUseContext, shouldReportLocalConst, shouldReportSingleUseLocal } from '../../lint/rules/ts/support/local_bindings';
@@ -125,7 +125,7 @@ export function collectLintIssues(
 	sourceFile: ts.SourceFile,
 	issues: LintIssue[],
 	statementSequences: StatementSequenceInfo[],
-	functionUsageInfo: FunctionUsageInfo,
+	_functionUsageInfo: FunctionUsageInfo, // TODO: WHY UNUSED?!?!
 	ledger: QualityLedger,
 	architectureConfig: ArchitectureBoundaryConfig | null,
 ): void {

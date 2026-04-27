@@ -2,7 +2,7 @@ import { type LuaExpression as Expression, type LuaIdentifierExpression as Ident
 import { type CartLintIssue } from '../../../../lua_rule';
 import { lintConstantCopyInStatements } from '../../constant_copy_pattern';
 import { declareBinding, discardBindingScope, enterBindingScope, resolveBinding, setBinding } from './bindings';
-import { isConstantBindingPathExpression, isConstantSourceExpression } from './expressions';
+import { isConstantBindingPathExpression } from './expressions';
 import { ConstantCopyBinding, ConstantCopyContext } from './types';
 
 export function createConstantCopyContext(issues: CartLintIssue[]): ConstantCopyContext {

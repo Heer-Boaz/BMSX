@@ -1,6 +1,6 @@
 import ts from 'typescript';
 import { unwrapExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
-import { isBooleanLiteral, isEmptyStringLiteral, isStringLiteralLike } from '../../../../../src/bmsx/language/ts/ast/literals';
+import { isBooleanLiteral, isStringLiteralLike } from '../../../../../src/bmsx/language/ts/ast/literals';
 import { isBooleanProducingOperator, isEqualityOperator, isPositiveEqualityOperator } from '../../../../../src/bmsx/language/ts/ast/operators';
 import { isExpressionInScopeFingerprint } from './bindings';
 import { isFunctionLikeWithParameters } from '../../../../../src/bmsx/language/ts/ast/functions';
