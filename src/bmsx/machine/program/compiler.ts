@@ -38,7 +38,7 @@ import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDes
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './optimizer';
 import { buildModuleAliasesFromPaths, stripLuaExtension, type ProgramConstReloc } from './asset';
 import { cloneSourceRange } from './source_range';
-import { StringPool, StringValue, isStringValue } from '../memory/string/pool';
+import { StringPool, StringValue, isStringValue, stringValueToString } from '../memory/string/pool';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../cpu/instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from '../../lua/semantic/frontend';
 import { MMIO_REGISTER_SPEC_BY_ADDRESS, MMIO_REGISTER_SPEC_BY_NAME, type MmioWriteRequirement } from '../bus/registers';
@@ -57,6 +57,7 @@ import {
 } from './target_semantics';
 import { getMemoryAccessKindForName, MemoryAccessKind } from '../memory/access_kind';
 import { luaModulo } from '../../lua/numeric';
+import { semanticSymbolKindToLuaSymbolKind } from '../../lua/semantic/common';
 
 export type CompiledProgram = {
 	program: Program;
@@ -779,7 +780,17 @@ class FunctionBuilder {
 				finalRanges[cursor] = range;
 				cursor += 1;
 				if (isConstBxOp(instr.op)) {
-					constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'bx', constIndex: instr.b });
+					const constVal = this.program.constPool[instr.b];
+					if (isStringValue(constVal)) {
+						const s = stringValueToString(constVal);
+						if (s.startsWith('modslot:')) {
+							constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'module', constIndex: instr.b });
+						} else {
+							constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'bx', constIndex: instr.b });
+						}
+					} else {
+						constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'bx', constIndex: instr.b });
+					}
 				} else if (instr.op === OpCode.GETSYS || instr.op === OpCode.SETSYS) {
 					constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'sys', constIndex: instr.b });
 				} else if (isGlobalSlotOp(instr.op)) {
@@ -913,9 +924,19 @@ class FunctionBuilder {
 		constClosureProtoIndex: number | null = null,
 		moduleBinding: ModuleBinding | null = null,
 	): number {
-		const kind = decl.kind === 'constant'
-			? 'const'
-			: (decl.kind === 'parameter' ? 'parameter' : 'local');
+		let kind: LocalBindingKind;
+		switch (decl.kind) {
+			case 'constant':
+				kind = 'const';
+				break;
+			case 'parameter':
+				kind = 'parameter';
+				break;
+			case 'local':
+			default:
+				kind = 'local';
+				break;
+		}
 		return this.declareLocal(decl.id, decl.name, definitionRange, scopeRange, kind, constValue, hasConstValue, constClosureProtoIndex, moduleBinding);
 	}
 
@@ -1096,16 +1117,16 @@ class FunctionBuilder {
 		  Note: fantasy-console semantics and link-time placeholders
 
 		  - This project targets a fantasy-console-style ABI based on flat machine instructions; Lua
-		    runtime concepts such as live module tables are not part of the ABI. The compiler treats
-		    certain engine/BIOS modules as compile-time descriptors and records their paths in metadata
-		    (e.g. `staticModulePaths` / `staticExternalModulePaths`).
+			runtime concepts such as live module tables are not part of the ABI. The compiler treats
+			certain engine/BIOS modules as compile-time descriptors and records their paths in metadata
+			(e.g. `staticModulePaths` / `staticExternalModulePaths`).
 		  - The compiler must not fabricate runtime tables. When a module export cannot be resolved at
-		    compile time, the compiler emits an explicit link-time placeholder into the instruction
-		    stream (current implementation uses a nil-load as the sentinel). That placeholder signals the
-		    linker to resolve or rewrite the operand/instruction during linking. It is NOT intended to be
-		    a silently returned runtime value.
+			compile time, the compiler emits an explicit link-time placeholder into the instruction
+			stream (current implementation uses a nil-load as the sentinel). That placeholder signals the
+			linker to resolve or rewrite the operand/instruction during linking. It is NOT intended to be
+			a silently returned runtime value.
 		  - This function detects static module bindings and marks them `external` so later compiler and
-		    linker phases can preserve semantics and perform link-time resolution of placeholders.
+			linker phases can preserve semantics and perform link-time resolution of placeholders.
 		*/
 		if (allowRequireRoot) {
 			const requireBinding = this.tryResolveRequireModuleBinding(expression);
@@ -1172,31 +1193,21 @@ class FunctionBuilder {
 	  Check for direct fields on compile-time-only module roots
 
 	  - Detect patterns like `MODULE_ROOT.<key>` or `MODULE_ROOT['<key>']` where the module root is
-	    flagged as compile-time-only and `<key>` is not exported.
+		flagged as compile-time-only and `<key>` is not exported.
 	  - The compiler does not emit runtime table-accesses for these cases. Instead it emits an
-	    explicit link-time placeholder into the instruction stream (the current emitter uses a nil
-	    load as the sentinel). The linker is responsible for resolving those placeholders into the
-	    final relocated operand or emitting the appropriate machine-level access. The placeholder
-	    SHOULD NOT be interpreted as a final runtime `nil` by downstream code.
+		explicit link-time placeholder into the instruction stream (the current emitter uses a nil
+		load as the sentinel). The linker is responsible for resolving those placeholders into the
+		final relocated operand or emitting the appropriate machine-level access. The placeholder
+		SHOULD NOT be interpreted as a final runtime `nil` by downstream code.
 	*/
-	private isMissingDirectExternalModuleRootExport(baseExpression: LuaExpression, key: string | null): boolean {
-		if (!key) {
-			return false;
-		}
-		const binding = this.tryResolveStaticModuleBinding(baseExpression, false);
-		if (!binding || !binding.external || binding.exportPath.length !== 0) {
-			return false;
-		}
-		return this.resolveModuleExportSlotName(binding.modulePath, [key]) === undefined;
-	}
 
 	/*
 	  Detect a compile-time-only module root binding
 
 	  - Returns true when a local binding is associated with a moduleBinding and that module is
-	    marked `external` (compile-time-only) and the moduleBinding has an empty exportPath (the module root).
+		marked `external` (compile-time-only) and the moduleBinding has an empty exportPath (the module root).
 	  - This detection prevents treating the module root as a runtime value (local or upvalue) under
-	    the fantasy-console semantics used by this project.
+		the fantasy-console semantics used by this project.
 	*/
 	private isExternalModuleRootBinding(binding: LocalBinding | null | undefined): boolean {
 		return binding?.moduleBinding?.external === true && binding.moduleBinding.exportPath.length === 0;
@@ -1206,10 +1217,10 @@ class FunctionBuilder {
 	  Error on attempts to use a compile-time-only module root as a runtime value
 
 	  - Under the fantasy-console semantics, external modules used for ABI/BIOS are compile-time-only
-	    descriptors and not runtime Lua tables. Storing or returning a whole module (for example
-	    `local m = require('bios')`) is therefore invalid and is rejected with a compile-time error.
+		descriptors and not runtime Lua tables. Storing or returning a whole module (for example
+		`local m = require('bios')`) is therefore invalid and is rejected with a compile-time error.
 	  - This makes the failure explicit and directs the developer to access specific exported slots
-	    instead of treating the module as a runtime table.
+		instead of treating the module as a runtime table.
 	*/
 	private failExternalModuleRootRuntimeUse(binding: LocalBinding): never {
 		throw new Error(`[Compiler] External module '${binding.moduleBinding!.modulePath}' is compile-time only; access an exported field instead of using the module table as a runtime value.`);
@@ -1222,9 +1233,9 @@ class FunctionBuilder {
 		  Prevent leaking a compile-time-only module root as a runtime value
 
 		  - If `binding` refers to a compile-time-only module root, it must not be used as a runtime
-		    value (stored in a local or captured as an upvalue) under the project's fantasy-console ABI.
+			value (stored in a local or captured as an upvalue) under the project's fantasy-console ABI.
 		  - We detect that here and raise a compile-time error via `failExternalModuleRootRuntimeUse` to
-		    prevent generating runtime references to a non-existent module table.
+			prevent generating runtime references to a non-existent module table.
 		*/
 		if (this.isExternalModuleRootBinding(binding)) {
 			this.failExternalModuleRootRuntimeUse(binding!);
@@ -2487,18 +2498,22 @@ class FunctionBuilder {
 			return;
 		}
 		/*
-		  Placeholder emission for missing fields on compile-time-only module roots
-
-		  - Under the project's fantasy-console ABI, certain modules are compile-time-only descriptors
-		    and not runtime Lua tables. When a direct read targets a non-exported field on such a module
-		    root, the compiler emits an explicit link-time placeholder (currently a nil-load sentinel)
-		    instead of emitting a runtime table-access.
-		  - The linker must detect and resolve these placeholders into relocated operands or concrete
-		    machine-level accesses; they are not intended as final runtime `nil` values.
+		  If a direct read targets a non-exported field on a compile-time-only module root,
+		  emit a link-time placeholder (const string 'modslot:<slotName>') that the linker will
+		  resolve into a GETGL/GETSYS instruction. Do not fabricate a runtime table.
 		*/
-		if (this.isMissingDirectExternalModuleRootExport(expression.base, expression.identifier)) {
-			this.emitLoadNil(target, 1);
-			return;
+		{
+			const binding = this.tryResolveStaticModuleBinding(expression.base, false);
+			if (binding && binding.external && binding.exportPath.length === 0) {
+				const key = expression.identifier;
+				if (this.resolveModuleExportSlotName(binding.modulePath, [key]) === undefined) {
+					const slotName = buildModuleExportSlotName(binding.modulePath, [key]);
+					const placeholder = `modslot:${slotName}`;
+					const constIndex = this.program.constIndexString(placeholder);
+					this.emitABx(OpCode.LOADK, target, constIndex);
+					return;
+				}
+			}
 		}
 		const baseReg = this.allocTemp();
 		this.compileExpressionInto(expression.base, baseReg, 1);
@@ -2513,18 +2528,21 @@ class FunctionBuilder {
 			return;
 		}
 		/*
-		  Same rule for index access: emit a link-time placeholder for missing exports
-
-		  - For index accesses like `MODULE_ROOT['key']`, when `key` is not exported and the base is
-		    compile-time-only, the compiler emits a link-time placeholder (nil-load sentinel) rather
-		    than generating a GETT/GETFIELD. The linker must resolve these placeholders during linking.
+		  For index access on compile-time-only module roots, if the key is statically known and not
+		  exported, emit a link-time placeholder so the linker can resolve it to a global slot.
 		*/
-		if (this.isMissingDirectExternalModuleRootExport(
-			expression.base,
-			this.tryGetModuleExportStaticKey((expression as LuaIndexExpression).index),
-		)) {
-			this.emitLoadNil(target, 1);
-			return;
+		{
+			const keyStatic = this.tryGetModuleExportStaticKey((expression as LuaIndexExpression).index);
+			const binding = this.tryResolveStaticModuleBinding(expression.base, false);
+			if (keyStatic && binding && binding.external && binding.exportPath.length === 0) {
+				if (this.resolveModuleExportSlotName(binding.modulePath, [keyStatic]) === undefined) {
+					const slotName = buildModuleExportSlotName(binding.modulePath, [keyStatic]);
+					const placeholder = `modslot:${slotName}`;
+					const constIndex = this.program.constIndexString(placeholder);
+					this.emitABx(OpCode.LOADK, target, constIndex);
+					return;
+				}
+			}
 		}
 		const targetPreparation = classifyAssignmentTargetPreparation(this.semantics, expression as LuaIndexExpression);
 		if (targetPreparation.kind === 'memory') {

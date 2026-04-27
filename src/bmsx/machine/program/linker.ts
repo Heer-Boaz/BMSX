@@ -129,6 +129,9 @@ const rewriteConstRelocations = (
 	cartConstRemap: ReadonlyArray<number>,
 	cartGlobalRemap: ReadonlyArray<number>,
 	cartSystemGlobalRemap: ReadonlyArray<number>,
+	mergedConstPool: ReadonlyArray<EncodedValue>,
+	mergedGlobalNames: ReadonlyArray<string>,
+	mergedSystemGlobalNames: ReadonlyArray<string>,
 ): void => {
 	for (let index = 0; index < relocs.length; index += 1) {
 		const reloc = relocs[index];
@@ -156,6 +159,42 @@ const rewriteConstRelocations = (
 				? cartSystemGlobalRemap[reloc.constIndex]
 				: cartConstRemap[reloc.constIndex];
 		switch (reloc.kind) {
+			case 'module': {
+				const mappedConstIndex = cartConstRemap[reloc.constIndex];
+				const constVal = mappedConstIndex >= 0 ? mergedConstPool[mappedConstIndex] : undefined;
+				if (typeof constVal !== 'string') {
+					throw new Error(`[ProgramLinker] Module reloc at word ${wordIndex} references a non-string const.`);
+				}
+				let slotName = constVal;
+				if (slotName.startsWith('modslot:')) {
+					slotName = slotName.slice('modslot:'.length);
+				}
+				let slotIndex = mergedSystemGlobalNames.indexOf(slotName);
+				let useSystem = true;
+				if (slotIndex < 0) {
+					slotIndex = mergedGlobalNames.indexOf(slotName);
+					useSystem = false;
+				}
+				if (slotIndex < 0) {
+					throw new Error(`[ProgramLinker] Unable to resolve module export slot '${slotName}' during linking.`);
+				}
+				const mappedIndex2 = slotIndex;
+				const nextWide2 = mappedIndex2 >> BASE_BX_BITS;
+				if (!hasWide && nextWide2 !== 0) {
+					throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} requires WIDE prefix.`);
+				}
+				const nextExt2 = (mappedIndex2 >> MAX_BX_BITS) & 0xff;
+				const nextLow2 = mappedIndex2 & MAX_LOW_BX;
+				bLow = (nextLow2 >>> 6) & 0x3f;
+				cLow = nextLow2 & 0x3f;
+				ext = nextExt2;
+				if (hasWide) {
+					wideB = nextWide2 & 0x3f;
+					writeInstruction(code, wordIndex - 1, OpCode.WIDE, wideA, wideB, wideC);
+				}
+				writeInstruction(code, wordIndex, useSystem ? OpCode.GETSYS : OpCode.GETGL, aLow, bLow, cLow, ext);
+				continue;
+			}
 			case 'bx':
 			case 'gl':
 			case 'sys': {
@@ -454,6 +493,9 @@ export const linkProgramAssets = (
 		mergedConsts.cartConstRemap,
 		mergedGlobals.cartRemap,
 		mergedSystemGlobals.cartRemap,
+		mergedConsts.constPool,
+		mergedGlobals.names,
+		mergedSystemGlobals.names,
 	);
 
 	const protos = engineAsset.program.protos.map(proto => cloneProto(proto, resolvedLayout.engineBasePc))

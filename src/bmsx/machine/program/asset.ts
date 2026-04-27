@@ -19,7 +19,7 @@ export type EncodedProgram = {
 
 export type EncodedProgramMetadata = ProgramMetadata;
 
-export type ProgramConstRelocKind = 'bx' | 'rk_b' | 'rk_c' | 'const_b' | 'const_c' | 'gl' | 'sys';
+export type ProgramConstRelocKind = 'bx' | 'rk_b' | 'rk_c' | 'const_b' | 'const_c' | 'gl' | 'sys' | 'module';
 
 export type ProgramConstReloc = {
 	wordIndex: number;
@@ -205,9 +205,9 @@ function decodeProgramLink(value: unknown): ProgramLink {
 	for (let index = 0; index < relocValues.length; index += 1) {
 		const entry = requireObject(relocValues[index], `ProgramAsset.link.constRelocs[${index}]`);
 		const kind = requireString(requireObjectKey(entry, 'kind', `ProgramAsset.link.constRelocs[${index}]`), `ProgramAsset.link.constRelocs[${index}].kind`);
-		if (kind !== 'bx' && kind !== 'rk_b' && kind !== 'rk_c' && kind !== 'const_b' && kind !== 'const_c' && kind !== 'gl' && kind !== 'sys') {
-			throw new Error(`ProgramAsset.link.constRelocs[${index}].kind must be 'bx', 'rk_b', 'rk_c', 'const_b', 'const_c', 'gl', 'sys'.`);
-		}
+		if (kind !== 'bx' && kind !== 'rk_b' && kind !== 'rk_c' && kind !== 'const_b' && kind !== 'const_c' && kind !== 'gl' && kind !== 'sys' && kind !== 'module') {
+				throw new Error(`ProgramAsset.link.constRelocs[${index}].kind must be 'bx', 'rk_b', 'rk_c', 'const_b', 'const_c', 'gl', 'sys' or 'module'.`);
+			}
 		constRelocs[index] = {
 			wordIndex: requireNumber(requireObjectKey(entry, 'wordIndex', `ProgramAsset.link.constRelocs[${index}]`), `ProgramAsset.link.constRelocs[${index}].wordIndex`),
 			kind,
