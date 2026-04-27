@@ -3663,10 +3663,10 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 		if (manifest.textpageSlotBytes || manifest.systemTextpageSlotBytes || manifest.stagingBytes) {
 			auto* vramTable = cpu.createTable(0, 3);
 			if (manifest.textpageSlotBytes) {
-				vramTable->set(key("textpage_slot_bytes"), valueNumber(static_cast<double>(*manifest.textpageSlotBytes)));
+				vramTable->set(key("slot_bytes"), valueNumber(static_cast<double>(*manifest.textpageSlotBytes)));
 			}
 			if (manifest.systemTextpageSlotBytes) {
-				vramTable->set(key("system_textpage_slot_bytes"), valueNumber(static_cast<double>(*manifest.systemTextpageSlotBytes)));
+				vramTable->set(key("system_slot_bytes"), valueNumber(static_cast<double>(*manifest.systemTextpageSlotBytes)));
 			}
 			if (manifest.stagingBytes) {
 				vramTable->set(key("staging_bytes"), valueNumber(static_cast<double>(*manifest.stagingBytes)));

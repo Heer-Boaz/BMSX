@@ -1668,11 +1668,11 @@ export class VDP implements VramWriteSink {
 						tileSource = (desc as VdpSourceTileRunInput).sources[index]!;
 						break;
 					case VDP_TILE_RUN_SOURCE_PAYLOAD:
-						tileSource = this.readPayloadTileSource((desc as VdpPayloadTileRunInput).payload_base + index * 12, desc.tile_w, desc.tile_h);
+						tileSource = this.readPayloadTileSource((desc as VdpPayloadTileRunInput).payload_base + index * 20);
 						break;
 					case VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS: {
 						const payload = desc as VdpPayloadWordsTileRunInput;
-						tileSource = this.readPayloadWordsTileSource(payload.payload_words, payload.payload_word_offset + index * 3, desc.tile_w, desc.tile_h);
+						tileSource = this.readPayloadWordsTileSource(payload.payload_words, payload.payload_word_offset + index * 5);
 						break;
 					}
 				}
@@ -1719,33 +1719,33 @@ export class VDP implements VramWriteSink {
 		});
 	}
 
-	private readPayloadTileSource(base: number, width: number, height: number): VdpSlotSource | false {
+	private readPayloadTileSource(base: number): VdpSlotSource | false {
 		const slot = this.memory.readU32(base) >>> 0;
 		if (slot === VDP_SLOT_NONE) {
 			return false;
 		}
-			return {
-				slot,
-				u: this.memory.readU32(base + 4) >>> 0,
-				v: this.memory.readU32(base + 8) >>> 0,
-				w: width,
-				h: height,
-			};
-		}
+		return {
+			slot,
+			u: this.memory.readU32(base + 4) >>> 0,
+			v: this.memory.readU32(base + 8) >>> 0,
+			w: this.memory.readU32(base + 12) >>> 0,
+			h: this.memory.readU32(base + 16) >>> 0,
+		};
+	}
 
-	private readPayloadWordsTileSource(words: Uint32Array, offset: number, width: number, height: number): VdpSlotSource | false {
+	private readPayloadWordsTileSource(words: Uint32Array, offset: number): VdpSlotSource | false {
 		const slot = words[offset] >>> 0;
 		if (slot === VDP_SLOT_NONE) {
 			return false;
 		}
-			return {
-				slot,
-				u: words[offset + 1] >>> 0,
-				v: words[offset + 2] >>> 0,
-				w: width,
-				h: height,
-			};
-		}
+		return {
+			slot,
+			u: words[offset + 1] >>> 0,
+			v: words[offset + 2] >>> 0,
+			w: words[offset + 3] >>> 0,
+			h: words[offset + 4] >>> 0,
+		};
+	}
 
 	public enqueueTileRun(desc: VdpSourceTileRunInput): void {
 		this.enqueueTileRunInternal(desc, VDP_TILE_RUN_SOURCE_DIRECT, 'VDP fault: enqueueTileRun tile size mismatch');

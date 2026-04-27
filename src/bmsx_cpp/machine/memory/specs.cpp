@@ -84,14 +84,14 @@ MemoryMapConfig resolveRuntimeMemoryMapConfig(const MachineManifest& machine, co
 	if (machine.textpageSlotBytes) {
 		const i32 value = *machine.textpageSlotBytes;
 		if (value <= 0) {
-			throw std::runtime_error("[RuntimeMemorySpecs] textpage_slot_bytes must be greater than 0.");
+			throw std::runtime_error("[RuntimeMemorySpecs] slot_bytes must be greater than 0.");
 		}
 		config.textpageSlotBytes = static_cast<uint32_t>(value);
 	}
 	if (systemMachine.systemTextpageSlotBytes) {
 		const i32 value = *systemMachine.systemTextpageSlotBytes;
 		if (value <= 0) {
-			throw std::runtime_error("[RuntimeMemorySpecs] system_textpage_slot_bytes must be greater than 0.");
+			throw std::runtime_error("[RuntimeMemorySpecs] system_slot_bytes must be greater than 0.");
 		}
 		config.systemTextpageSlotBytes = static_cast<uint32_t>(value);
 	} else {

@@ -642,6 +642,7 @@ void LibretroPlatform::runFrame() {
 	bool skipRender = m_frameskip_enabled && m_frameskip_next;
 	m_frameskip_next = false;
 	m_engine->runHostFrame(Runtime::instance(), *m_microtask_queue, dt, m_platform_paused, skipRender);
+	processAudio();
 }
 
 void LibretroPlatform::setPlatformPaused(bool paused) {

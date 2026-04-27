@@ -58,10 +58,10 @@ static bool isBadpSource(const u8* data, size_t size) {
 }
 
 static void readBadpSeekTable(const u8* data,
-							  size_t size,
-							  const SoundMasterAudioSource& source,
-							  std::vector<u32>& seekFrames,
-							  std::vector<u32>& seekOffsets) {
+								size_t size,
+								const SoundMasterAudioSource& source,
+								std::vector<u32>& seekFrames,
+								std::vector<u32>& seekOffsets) {
 	if (!isBadpSource(data, size)) {
 		throw BMSX_RUNTIME_ERROR("Unsupported audio format. Expected BADP.");
 	}

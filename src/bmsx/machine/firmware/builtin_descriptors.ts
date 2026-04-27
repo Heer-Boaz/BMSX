@@ -30,7 +30,7 @@ export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> =
 	{ name: 'vdp_img_rect', params: ['imgid'], signature: 'vdp_img_rect(imgid)', description: 'Returns the BIOS-owned atlas rectangle for an image id.' },
 	{ name: 'vdp_img_slot', params: ['rect'], signature: 'vdp_img_slot(rect)', description: 'Resolves a cached atlas rectangle to the current VDP slot.' },
 	{ name: 'vdp_img_source', params: ['rect'], signature: 'vdp_img_source(rect)', description: 'Resolves a cached atlas rectangle to a transient VDP slot/u/v/w/h source.' },
-	{ name: 'vdp_write_source_words', params: ['dst', 'rect'], signature: 'vdp_write_source_words(dst, rect)', description: 'Writes current slot/u/v payload words for a cached atlas rectangle.' },
+	{ name: 'vdp_write_source_words', params: ['dst', 'rect'], signature: 'vdp_write_source_words(dst, rect)', description: 'Writes current slot/u/v/w/h payload words for a cached atlas rectangle.' },
 	{ name: 'vdp_stream_claim_words', params: ['word_count'], signature: 'vdp_stream_claim_words(word_count)', description: 'Low-level software primitive that claims word_count words in the RAM-backed VDP command stream and returns the packet base address.' },
 	{ name: 'irq', params: ['flags'], signature: 'irq(flags)' },
 	{ name: 'on_irq', params: ['mask', 'handler?'], signature: 'on_irq(mask [, handler])', description: 'Registers a per-bit IRQ handler; pass nil as handler to clear it.' },

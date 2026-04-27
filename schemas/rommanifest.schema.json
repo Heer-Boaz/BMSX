@@ -190,7 +190,7 @@
 			"type": "object",
 			"description": "VRAM and rendering budgets.",
 			"properties": {
-				"texpage_slot_bytes": {
+				"slot_bytes": {
 					"type": "integer",
 					"minimum": 1
 				},

@@ -1532,7 +1532,7 @@ void VDP::enqueuePayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 co
 		const i32 base = row * cols;
 		bool rowHasVisibleTile = false;
 		for (i32 col = 0; col < cols; col += 1) {
-			const uint32_t payloadOffset = static_cast<uint32_t>(base + col) * 3u * IO_WORD_SIZE;
+			const uint32_t payloadOffset = static_cast<uint32_t>(base + col) * 5u * IO_WORD_SIZE;
 			const u32 slot = m_memory.readU32(payloadBase + payloadOffset);
 			if (slot == VDP_SLOT_NONE) {
 				continue;
@@ -1541,8 +1541,8 @@ void VDP::enqueuePayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 co
 				slot,
 				m_memory.readU32(payloadBase + payloadOffset + IO_WORD_SIZE),
 				m_memory.readU32(payloadBase + payloadOffset + (2u * IO_WORD_SIZE)),
-				static_cast<u32>(tileW),
-				static_cast<u32>(tileH),
+				m_memory.readU32(payloadBase + payloadOffset + (3u * IO_WORD_SIZE)),
+				m_memory.readU32(payloadBase + payloadOffset + (4u * IO_WORD_SIZE)),
 			});
 			if (source.width != static_cast<u32>(tileW) || source.height != static_cast<u32>(tileH)) {
 				throw vdpFault("enqueuePayloadTileRun tile size mismatch.");
@@ -1632,7 +1632,7 @@ void VDP::enqueuePayloadTileRunWords(const u32* payloadWords, uint32_t tileCount
 		const i32 base = row * cols;
 		bool rowHasVisibleTile = false;
 		for (i32 col = 0; col < cols; col += 1) {
-			const size_t payloadOffset = static_cast<size_t>(base + col) * 3u;
+			const size_t payloadOffset = static_cast<size_t>(base + col) * 5u;
 			const u32 slot = payloadWords[payloadOffset];
 			if (slot == VDP_SLOT_NONE) {
 				continue;
@@ -1641,8 +1641,8 @@ void VDP::enqueuePayloadTileRunWords(const u32* payloadWords, uint32_t tileCount
 				slot,
 				payloadWords[payloadOffset + 1u],
 				payloadWords[payloadOffset + 2u],
-				static_cast<u32>(tileW),
-				static_cast<u32>(tileH),
+				payloadWords[payloadOffset + 3u],
+				payloadWords[payloadOffset + 4u],
 			});
 			if (source.width != static_cast<u32>(tileW) || source.height != static_cast<u32>(tileH)) {
 				throw vdpFault("enqueuePayloadTileRunWords tile size mismatch.");

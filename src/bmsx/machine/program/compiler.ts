@@ -400,7 +400,7 @@ class ProgramBuilder {
 			metadata,
 			constRelocs: fullConstRelocs,
 		};
-		}
+	}
 
 	private makeConstKey(value: Value): string {
 		if (value === null) return 'nil';
@@ -619,13 +619,13 @@ class FunctionBuilder {
 					}
 					return proto;
 				},
-					getProtoInstructionSet: (protoIndex: number) => {
-						const instructionSet = this.program.protoInstructionSets[protoIndex];
-						if (instructionSet === undefined) {
-							return null;
-						}
-						return instructionSet;
-					},
+				getProtoInstructionSet: (protoIndex: number) => {
+					const instructionSet = this.program.protoInstructionSets[protoIndex];
+					if (instructionSet === undefined) {
+						return null;
+					}
+					return instructionSet;
+				},
 			});
 			if (optimized.instructions !== this.code) {
 				this.code.length = 0;
@@ -647,34 +647,34 @@ class FunctionBuilder {
 		const sbxWideMin = -(1 << (sbxWideBits - 1));
 		const sbxWideMax = (1 << (sbxWideBits - 1)) - 1;
 
-			for (let index = 0; index < instructions.length; index += 1) {
-				const instr = instructions[index];
-				if (instr.format === 'ABC') {
-					const bWidthValue = instr.b;
-					const cWidthValue = instr.c;
-					const forceWide = ((instr.rkMask & RK_B) !== 0 && instr.b < 0)
-						|| ((instr.rkMask & RK_C) !== 0 && instr.c < 0);
-					const forceFieldWide = isFieldConstOp(instr.op);
-					const aWide = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, EXT_A_BITS);
-					const bWide = (instr.rkMask & RK_B) !== 0
-						? needsWideSigned(bWidthValue, MAX_OPERAND_BITS, EXT_B_BITS)
-						: needsWideUnsigned(bWidthValue, MAX_OPERAND_BITS, EXT_B_BITS);
-					const cWide = (instr.rkMask & RK_C) !== 0
-						? needsWideSigned(cWidthValue, MAX_OPERAND_BITS, EXT_C_BITS)
-						: needsWideUnsigned(cWidthValue, MAX_OPERAND_BITS, EXT_C_BITS);
-					wideFlags[index] = forceWide || forceFieldWide || aWide || bWide || cWide;
-					continue;
-				}
-				if (instr.format === 'ABx') {
-					const bxWidthValue = instr.b;
-					const forceWide = isConstBxOp(instr.op);
-					const aWide = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, 0);
-					const bxWide = isSignedBxOp(instr.op)
-						? needsWideSigned(bxWidthValue, MAX_BX_BITS, EXT_BX_BITS)
-						: needsWideUnsigned(bxWidthValue, MAX_BX_BITS, EXT_BX_BITS);
-					wideFlags[index] = forceWide || aWide || bxWide;
-					continue;
-				}
+		for (let index = 0; index < instructions.length; index += 1) {
+			const instr = instructions[index];
+			if (instr.format === 'ABC') {
+				const bWidthValue = instr.b;
+				const cWidthValue = instr.c;
+				const forceWide = ((instr.rkMask & RK_B) !== 0 && instr.b < 0)
+					|| ((instr.rkMask & RK_C) !== 0 && instr.c < 0);
+				const forceFieldWide = isFieldConstOp(instr.op);
+				const aWide = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, EXT_A_BITS);
+				const bWide = (instr.rkMask & RK_B) !== 0
+					? needsWideSigned(bWidthValue, MAX_OPERAND_BITS, EXT_B_BITS)
+					: needsWideUnsigned(bWidthValue, MAX_OPERAND_BITS, EXT_B_BITS);
+				const cWide = (instr.rkMask & RK_C) !== 0
+					? needsWideSigned(cWidthValue, MAX_OPERAND_BITS, EXT_C_BITS)
+					: needsWideUnsigned(cWidthValue, MAX_OPERAND_BITS, EXT_C_BITS);
+				wideFlags[index] = forceWide || forceFieldWide || aWide || bWide || cWide;
+				continue;
+			}
+			if (instr.format === 'ABx') {
+				const bxWidthValue = instr.b;
+				const forceWide = isConstBxOp(instr.op);
+				const aWide = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, 0);
+				const bxWide = isSignedBxOp(instr.op)
+					? needsWideSigned(bxWidthValue, MAX_BX_BITS, EXT_BX_BITS)
+					: needsWideUnsigned(bxWidthValue, MAX_BX_BITS, EXT_BX_BITS);
+				wideFlags[index] = forceWide || aWide || bxWide;
+				continue;
+			}
 			wideFlags[index] = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, 0);
 		}
 
@@ -718,19 +718,19 @@ class FunctionBuilder {
 			totalInstr += wideFlags[index] ? 2 : 1;
 		}
 
-			for (let index = 0; index < instructions.length; index += 1) {
-				const instr = instructions[index];
+		for (let index = 0; index < instructions.length; index += 1) {
+			const instr = instructions[index];
 			if (instr.format === 'ABx' && instr.op !== OpCode.KSMI && instr.b < 0) {
 				throw new Error(`[FunctionBuilder] Negative Bx operand at ${index} (op=${instr.op}, b=${instr.b}).`);
 			}
 		}
 
-			const code = new Uint8Array(totalInstr * INSTRUCTION_BYTES);
-			const finalRanges: Array<SourceRange | null> = new Array(totalInstr);
-			const constRelocs: ProgramConstReloc[] = [];
-			let cursor = 0;
-			for (let index = 0; index < instructions.length; index += 1) {
-				const instr = instructions[index];
+		const code = new Uint8Array(totalInstr * INSTRUCTION_BYTES);
+		const finalRanges: Array<SourceRange | null> = new Array(totalInstr);
+		const constRelocs: ProgramConstReloc[] = [];
+		let cursor = 0;
+		for (let index = 0; index < instructions.length; index += 1) {
+			const instr = instructions[index];
 			const hasWide = wideFlags[index];
 			const range = ranges[index];
 			if (instr.format === 'ABC') {
@@ -747,25 +747,25 @@ class FunctionBuilder {
 					finalRanges[cursor] = range;
 					cursor += 1;
 				}
-					writeInstruction(code, cursor, instr.op, aSplit.low, bSplit.low, cSplit.low, ext);
-					finalRanges[cursor] = range;
-					cursor += 1;
-					const wordIndex = instrWordIndex[index];
-					if ((instr.rkMask & RK_B) !== 0 && instr.b < 0) {
-						constRelocs.push({ wordIndex, kind: 'rk_b', constIndex: -instr.b - 1 });
-					}
-					if ((instr.rkMask & RK_C) !== 0 && instr.c < 0) {
-						constRelocs.push({ wordIndex, kind: 'rk_c', constIndex: -instr.c - 1 });
-					}
-					if (instr.op === OpCode.SETFIELD) {
-						constRelocs.push({ wordIndex, kind: 'const_b', constIndex: instr.b });
-					}
-					if (instr.op === OpCode.GETFIELD || instr.op === OpCode.SELF) {
-						constRelocs.push({ wordIndex, kind: 'const_c', constIndex: instr.c });
-					}
-					continue;
+				writeInstruction(code, cursor, instr.op, aSplit.low, bSplit.low, cSplit.low, ext);
+				finalRanges[cursor] = range;
+				cursor += 1;
+				const wordIndex = instrWordIndex[index];
+				if ((instr.rkMask & RK_B) !== 0 && instr.b < 0) {
+					constRelocs.push({ wordIndex, kind: 'rk_b', constIndex: -instr.b - 1 });
 				}
-				if (instr.format === 'ABx') {
+				if ((instr.rkMask & RK_C) !== 0 && instr.c < 0) {
+					constRelocs.push({ wordIndex, kind: 'rk_c', constIndex: -instr.c - 1 });
+				}
+				if (instr.op === OpCode.SETFIELD) {
+					constRelocs.push({ wordIndex, kind: 'const_b', constIndex: instr.b });
+				}
+				if (instr.op === OpCode.GETFIELD || instr.op === OpCode.SELF) {
+					constRelocs.push({ wordIndex, kind: 'const_c', constIndex: instr.c });
+				}
+				continue;
+			}
+			if (instr.format === 'ABx') {
 				const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
 				const bxSplit = isSignedBxOp(instr.op)
 					? splitSignedOperand(instr.b, 'Bx', MAX_BX_BITS, EXT_BX_BITS, hasWide)
@@ -775,18 +775,18 @@ class FunctionBuilder {
 					finalRanges[cursor] = range;
 					cursor += 1;
 				}
-					writeInstruction(code, cursor, instr.op, aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f, bxSplit.ext);
-					finalRanges[cursor] = range;
-					cursor += 1;
-					if (isConstBxOp(instr.op)) {
-						constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'bx', constIndex: instr.b });
-					} else if (instr.op === OpCode.GETSYS || instr.op === OpCode.SETSYS) {
-						constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'sys', constIndex: instr.b });
-					} else if (isGlobalSlotOp(instr.op)) {
-						constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'gl', constIndex: instr.b });
-					}
-					continue;
+				writeInstruction(code, cursor, instr.op, aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f, bxSplit.ext);
+				finalRanges[cursor] = range;
+				cursor += 1;
+				if (isConstBxOp(instr.op)) {
+					constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'bx', constIndex: instr.b });
+				} else if (instr.op === OpCode.GETSYS || instr.op === OpCode.SETSYS) {
+					constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'sys', constIndex: instr.b });
+				} else if (isGlobalSlotOp(instr.op)) {
+					constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'gl', constIndex: instr.b });
 				}
+				continue;
+			}
 
 			const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
 			const sbx = sbxValues[index];
@@ -801,10 +801,10 @@ class FunctionBuilder {
 			cursor += 1;
 		}
 
-			this.finalizedCode = code;
-			this.finalizedRanges = finalRanges;
-			this.finalizedConstRelocs = constRelocs;
-		}
+		this.finalizedCode = code;
+		this.finalizedRanges = finalRanges;
+		this.finalizedConstRelocs = constRelocs;
+	}
 
 	public getUpvalueDescs(): UpvalueDesc[] {
 		return this.upvalueDescs;
@@ -1092,6 +1092,21 @@ class FunctionBuilder {
 	}
 
 	private tryResolveStaticModuleBinding(expression: LuaExpression, allowRequireRoot: boolean): ModuleBinding | null {
+		/*
+		  Note: fantasy-console semantics and link-time placeholders
+
+		  - This project targets a fantasy-console-style ABI based on flat machine instructions; Lua
+		    runtime concepts such as live module tables are not part of the ABI. The compiler treats
+		    certain engine/BIOS modules as compile-time descriptors and records their paths in metadata
+		    (e.g. `staticModulePaths` / `staticExternalModulePaths`).
+		  - The compiler must not fabricate runtime tables. When a module export cannot be resolved at
+		    compile time, the compiler emits an explicit link-time placeholder into the instruction
+		    stream (current implementation uses a nil-load as the sentinel). That placeholder signals the
+		    linker to resolve or rewrite the operand/instruction during linking. It is NOT intended to be
+		    a silently returned runtime value.
+		  - This function detects static module bindings and marks them `external` so later compiler and
+		    linker phases can preserve semantics and perform link-time resolution of placeholders.
+		*/
 		if (allowRequireRoot) {
 			const requireBinding = this.tryResolveRequireModuleBinding(expression);
 			if (requireBinding !== null) {
@@ -1153,8 +1168,67 @@ class FunctionBuilder {
 		return this.resolveModuleExportSlotName(binding.modulePath, binding.exportPath.concat(methodName));
 	}
 
+	/*
+	  Check for direct fields on compile-time-only module roots
+
+	  - Detect patterns like `MODULE_ROOT.<key>` or `MODULE_ROOT['<key>']` where the module root is
+	    flagged as compile-time-only and `<key>` is not exported.
+	  - The compiler does not emit runtime table-accesses for these cases. Instead it emits an
+	    explicit link-time placeholder into the instruction stream (the current emitter uses a nil
+	    load as the sentinel). The linker is responsible for resolving those placeholders into the
+	    final relocated operand or emitting the appropriate machine-level access. The placeholder
+	    SHOULD NOT be interpreted as a final runtime `nil` by downstream code.
+	*/
+	private isMissingDirectExternalModuleRootExport(baseExpression: LuaExpression, key: string | null): boolean {
+		if (!key) {
+			return false;
+		}
+		const binding = this.tryResolveStaticModuleBinding(baseExpression, false);
+		if (!binding || !binding.external || binding.exportPath.length !== 0) {
+			return false;
+		}
+		return this.resolveModuleExportSlotName(binding.modulePath, [key]) === undefined;
+	}
+
+	/*
+	  Detect a compile-time-only module root binding
+
+	  - Returns true when a local binding is associated with a moduleBinding and that module is
+	    marked `external` (compile-time-only) and the moduleBinding has an empty exportPath (the module root).
+	  - This detection prevents treating the module root as a runtime value (local or upvalue) under
+	    the fantasy-console semantics used by this project.
+	*/
+	private isExternalModuleRootBinding(binding: LocalBinding | null | undefined): boolean {
+		return binding?.moduleBinding?.external === true && binding.moduleBinding.exportPath.length === 0;
+	}
+
+	/*
+	  Error on attempts to use a compile-time-only module root as a runtime value
+
+	  - Under the fantasy-console semantics, external modules used for ABI/BIOS are compile-time-only
+	    descriptors and not runtime Lua tables. Storing or returning a whole module (for example
+	    `local m = require('bios')`) is therefore invalid and is rejected with a compile-time error.
+	  - This makes the failure explicit and directs the developer to access specific exported slots
+	    instead of treating the module as a runtime table.
+	*/
+	private failExternalModuleRootRuntimeUse(binding: LocalBinding): never {
+		throw new Error(`[Compiler] External module '${binding.moduleBinding!.modulePath}' is compile-time only; access an exported field instead of using the module table as a runtime value.`);
+	}
+
 	private emitReferenceLoad(reference: LuaBoundReference, target: number): void {
 		const name = this.getReferenceName(reference);
+		const binding = this.resolveReferenceVisibleBinding(reference);
+		/*
+		  Prevent leaking a compile-time-only module root as a runtime value
+
+		  - If `binding` refers to a compile-time-only module root, it must not be used as a runtime
+		    value (stored in a local or captured as an upvalue) under the project's fantasy-console ABI.
+		  - We detect that here and raise a compile-time error via `failExternalModuleRootRuntimeUse` to
+		    prevent generating runtime references to a non-existent module table.
+		*/
+		if (this.isExternalModuleRootBinding(binding)) {
+			this.failExternalModuleRootRuntimeUse(binding!);
+		}
 		const constBinding = this.resolveReferenceConstBinding(reference);
 		if (constBinding !== null) {
 			this.emitLoadConst(target, constBinding.constValue);
@@ -1162,10 +1236,6 @@ class FunctionBuilder {
 		}
 		const localReg = this.resolveReferenceLocal(reference);
 		if (localReg !== null) {
-			const binding = this.resolveReferenceVisibleBinding(reference);
-			if (binding?.moduleBinding?.external === true && binding.moduleBinding.exportPath.length === 0) {
-				throw new Error(`[Compiler] External module '${binding.moduleBinding.modulePath}' is compile-time only; access an exported field instead of using the module table as a runtime value.`);
-			}
 			if (localReg !== target) {
 				this.emitABC(OpCode.MOV, target, localReg, 0);
 			}
@@ -1418,10 +1488,10 @@ class FunctionBuilder {
 			this.emitABC(OpCode.KNIL, target, 0, 0);
 			return;
 		}
-			if (typeof normalizedValue === 'boolean') {
-				this.emitABC(normalizedValue ? OpCode.KTRUE : OpCode.KFALSE, target, 0, 0);
-				return;
-			}
+		if (typeof normalizedValue === 'boolean') {
+			this.emitABC(normalizedValue ? OpCode.KTRUE : OpCode.KFALSE, target, 0, 0);
+			return;
+		}
 		if (typeof normalizedValue === 'number') {
 			if (normalizedValue === 0) {
 				this.emitABC(OpCode.K0, target, 0, 0);
@@ -1478,10 +1548,10 @@ class FunctionBuilder {
 				return null;
 			case LuaSyntaxKind.IdentifierExpression: {
 				const binding = this.resolveReferenceConstBinding(this.getIdentifierReference(expression as LuaIdentifierExpression));
-					if (!binding) {
-						return undefined;
-					}
-					return binding.constValue;
+				if (!binding) {
+					return undefined;
+				}
+				return binding.constValue;
 			}
 			case LuaSyntaxKind.UnaryExpression:
 				return this.evaluateCompileTimeUnaryExpression(expression as LuaUnaryExpression);
@@ -2404,8 +2474,7 @@ class FunctionBuilder {
 					return;
 				}
 				default: {
-					const unhandled = expression as LuaExpression;
-					throw new Error(`Unsupported expression kind: ${unhandled.kind}`);
+					throw new Error(`Unsupported expression kind: ${(expression as LuaExpression).kind}`);
 				}
 			}
 		});
@@ -2415,6 +2484,20 @@ class FunctionBuilder {
 		const slotName = this.tryResolveModuleExportSlotFromExpression(expression as LuaMemberExpression);
 		if (slotName !== undefined) {
 			this.emitModuleExportLoad(slotName, target);
+			return;
+		}
+		/*
+		  Placeholder emission for missing fields on compile-time-only module roots
+
+		  - Under the project's fantasy-console ABI, certain modules are compile-time-only descriptors
+		    and not runtime Lua tables. When a direct read targets a non-exported field on such a module
+		    root, the compiler emits an explicit link-time placeholder (currently a nil-load sentinel)
+		    instead of emitting a runtime table-access.
+		  - The linker must detect and resolve these placeholders into relocated operands or concrete
+		    machine-level accesses; they are not intended as final runtime `nil` values.
+		*/
+		if (this.isMissingDirectExternalModuleRootExport(expression.base, expression.identifier)) {
+			this.emitLoadNil(target, 1);
 			return;
 		}
 		const baseReg = this.allocTemp();
@@ -2427,6 +2510,20 @@ class FunctionBuilder {
 		const slotName = this.tryResolveModuleExportSlotFromExpression(expression as LuaIndexExpression);
 		if (slotName !== undefined) {
 			this.emitModuleExportLoad(slotName, target);
+			return;
+		}
+		/*
+		  Same rule for index access: emit a link-time placeholder for missing exports
+
+		  - For index accesses like `MODULE_ROOT['key']`, when `key` is not exported and the base is
+		    compile-time-only, the compiler emits a link-time placeholder (nil-load sentinel) rather
+		    than generating a GETT/GETFIELD. The linker must resolve these placeholders during linking.
+		*/
+		if (this.isMissingDirectExternalModuleRootExport(
+			expression.base,
+			this.tryGetModuleExportStaticKey((expression as LuaIndexExpression).index),
+		)) {
+			this.emitLoadNil(target, 1);
 			return;
 		}
 		const targetPreparation = classifyAssignmentTargetPreparation(this.semantics, expression as LuaIndexExpression);
@@ -2931,12 +3028,12 @@ function opForAssignment(operator: LuaAssignmentOperator): OpCode {
 			return OpCode.MUL;
 		case LuaAssignmentOperator.DivideAssign:
 			return OpCode.DIV;
-	case LuaAssignmentOperator.ModulusAssign:
-		return OpCode.MOD;
-	case LuaAssignmentOperator.ExponentAssign:
-		return OpCode.POW;
-	default:
-		throw new Error(`Unsupported assignment operator: ${operator}`);
+		case LuaAssignmentOperator.ModulusAssign:
+			return OpCode.MOD;
+		case LuaAssignmentOperator.ExponentAssign:
+			return OpCode.POW;
+		default:
+			throw new Error(`Unsupported assignment operator: ${operator}`);
 	}
 }
 

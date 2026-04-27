@@ -321,7 +321,7 @@ BUILDER_MARKER="${BMSX_SNESMINI_BUILDER_MARKER:-bmsx-snesmini-builder}"
 if [ "$USE_BUILDER_IMAGE" = "1" ]; then
 	if ! docker image inspect "$BUILDER_IMAGE" >/dev/null 2>&1; then
 		echo "SNES Mini builder image missing; building $BUILDER_IMAGE..." >&2
-	    docker build -t "$BUILDER_IMAGE" - <<EOF
+		docker build -t "$BUILDER_IMAGE" - <<EOF
 FROM debian:bullseye
 LABEL $BUILDER_MARKER=1
 RUN apt-get update && apt-get install -y \\
@@ -345,12 +345,12 @@ if [ "$USE_DOCKER" = "1" ]; then
 		MODE_FLAG="--sysroot-only"
 	fi
 	SYSROOT_IN_CONTAINER="/src/${SYSROOT_REL}"
-	    DOCKER_BOOTSTRAP="apt-get update && apt-get install -y \
-		    ca-certificates debootstrap cmake make pkg-config git \
-		    gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \
-		    qemu-user-static binfmt-support \
-		    libegl1-mesa-dev libgles2-mesa-dev \
-		    ninja-build ccache &&"
+		DOCKER_BOOTSTRAP="apt-get update && apt-get install -y \
+			ca-certificates debootstrap cmake make pkg-config git \
+			gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \
+			qemu-user-static binfmt-support \
+			libegl1-mesa-dev libgles2-mesa-dev \
+			ninja-build ccache &&"
 	if [ "$USE_BUILDER_IMAGE" = "1" ]; then
 		DOCKER_BOOTSTRAP=""
 	fi

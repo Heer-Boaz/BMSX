@@ -180,7 +180,7 @@ function runner.tick(timestamp_ms)
 
 	runner.update_frames = runner.update_frames + 1
 	apply_scheduled_commands()
-	local result<const> = __bmsx_host_test.update(runner.update_frames, bridge.current_music())
+	local result<const> = __bmsx_host_test.update(runner.update_frames)
 	apply_commands(result)
 	if result_done(result) then
 		runner.finished = true

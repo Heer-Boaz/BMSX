@@ -148,12 +148,12 @@ private:
 	ModulationParams resolveResolvedPlayParams(const SoundMasterResolvedPlayRequest& request) const;
 
 	VoiceId startVoiceFromData(AudioSlot slot,
-							   const SoundMasterAudioSource& source,
-							   const u8* audioData,
-							   std::vector<u32> badpSeekFrames,
-							   std::vector<u32> badpSeekOffsets,
-							   const ModulationParams& params,
-							   f32 initialGain);
+								const SoundMasterAudioSource& source,
+								const u8* audioData,
+								std::vector<u32> badpSeekFrames,
+								std::vector<u32> badpSeekOffsets,
+								const ModulationParams& params,
+								f32 initialGain);
 	void removeVoice(size_t index);
 	void finalizeVoiceEnd(const VoiceRecord& record);
 	VoiceRecord* findVoice(VoiceId voiceId);

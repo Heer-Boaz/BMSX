@@ -7,7 +7,7 @@ local water_surface_timeline_id<const> = 'r.ws'
 local empty_tile_source<const> = false
 local tile_run_arg_words<const> = 11
 local tile_run_payload_word_offset<const> = sys_vdp_stream_packet_header_words + tile_run_arg_words
-local tile_run_source_words<const> = 3
+local tile_run_source_words<const> = 5
 local water_surface_frame_imgids<const> = {
 	'water_surface_msx',
 }
@@ -609,7 +609,7 @@ local write_tile_run_header<const> = function(base, tile_count, cols, rows, tile
 		base,
 		sys_vdp_cmd_tile_run,
 		tile_run_arg_words,
-		tile_count,
+		tile_count * tile_run_source_words,
 		tile_count,
 		cols,
 		rows,

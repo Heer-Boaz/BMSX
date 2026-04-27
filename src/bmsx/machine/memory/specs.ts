@@ -95,8 +95,8 @@ export function resolveRuntimeMemoryMapSpecs(params: {
 	const engineMemorySpecs = getMachineMemorySpecs(engineMachine);
 	const stringHandleCount = DEFAULT_STRING_HANDLE_COUNT;
 	const stringHeapBytes = DEFAULT_STRING_HEAP_SIZE;
-	const textpageSlotBytes = memorySpecs.textpage_slot_bytes ?? DEFAULT_VRAM_TEXTPAGE_SLOT_SIZE;
-	const systemTextpageSlotBytes = engineMemorySpecs.system_textpage_slot_bytes ?? resolveEngineTextpageSlotBytes(params.engineSource);
+	const textpageSlotBytes = memorySpecs.slot_bytes ?? DEFAULT_VRAM_TEXTPAGE_SLOT_SIZE;
+	const systemTextpageSlotBytes = engineMemorySpecs.system_slot_bytes ?? resolveEngineTextpageSlotBytes(params.engineSource);
 	const renderSize = resolveRuntimeRenderSize(machineConfig);
 	const frameBufferWidth = renderSize.width;
 	const frameBufferHeight = renderSize.height;
@@ -139,8 +139,8 @@ export function resolveRuntimeMemoryMapSpecs(params: {
 		string_heap_bytes: stringHeapBytes,
 		asset_table_bytes: assetTableBytes,
 		asset_data_bytes: assetDataBytes,
-		textpage_slot_bytes: textpageSlotBytes,
-		system_textpage_slot_bytes: systemTextpageSlotBytes,
+		slot_bytes: textpageSlotBytes,
+		system_slot_bytes: systemTextpageSlotBytes,
 		staging_bytes: stagingBytes,
 		framebuffer_bytes: frameBufferBytes,
 	};

@@ -69,8 +69,8 @@ export type MemoryMapSpecs = {
 	string_heap_bytes?: number;
 	asset_table_bytes?: number;
 	asset_data_bytes?: number;
-	textpage_slot_bytes?: number;
-	system_textpage_slot_bytes?: number;
+	slot_bytes?: number;
+	system_slot_bytes?: number;
 	staging_bytes?: number;
 	framebuffer_bytes?: number;
 };
@@ -154,8 +154,8 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 	const stringHandleCount = resolvePositiveInteger(specs?.string_handle_count ?? DEFAULT_STRING_HANDLE_COUNT, 'string_handle_count');
 	const stringHeapBytes = resolvePositiveInteger(specs?.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE, 'string_heap_bytes');
 	const assetTableBytes = resolvePositiveInteger(specs?.asset_table_bytes ?? DEFAULT_ASSET_TABLE_SIZE, 'asset_table_bytes');
-	const textpageSlotBytes = resolvePositiveInteger(specs?.textpage_slot_bytes ?? DEFAULT_VRAM_TEXTPAGE_SLOT_SIZE, 'textpage_slot_bytes');
-	const systemTextpageSlotBytes = resolvePositiveInteger(specs?.system_textpage_slot_bytes ?? textpageSlotBytes, 'system_textpage_slot_bytes');
+	const textpageSlotBytes = resolvePositiveInteger(specs?.slot_bytes ?? DEFAULT_VRAM_TEXTPAGE_SLOT_SIZE, 'slot_bytes');
+	const systemTextpageSlotBytes = resolvePositiveInteger(specs?.system_slot_bytes ?? textpageSlotBytes, 'system_slot_bytes');
 	const stagingBytes = resolvePositiveInteger(specs?.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE, 'staging_bytes');
 	const frameBufferBytes = resolvePositiveInteger(specs?.framebuffer_bytes ?? DEFAULT_VRAM_FRAMEBUFFER_SIZE, 'framebuffer_bytes');
 	const stringHandleTableBytes = stringHandleCount * STRING_HANDLE_ENTRY_SIZE;

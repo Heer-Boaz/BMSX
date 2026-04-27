@@ -81,10 +81,10 @@ void configureMemoryMap(const MemoryMapConfig& config) {
 		throw std::runtime_error("[MemoryMap] asset_table_bytes must be greater than 0.");
 	}
 	if (config.textpageSlotBytes == 0) {
-		throw std::runtime_error("[MemoryMap] textpage_slot_bytes must be greater than 0.");
+		throw std::runtime_error("[MemoryMap] slot_bytes must be greater than 0.");
 	}
 	if (config.systemTextpageSlotBytes == 0) {
-		throw std::runtime_error("[MemoryMap] system_textpage_slot_bytes must be greater than 0.");
+		throw std::runtime_error("[MemoryMap] system_slot_bytes must be greater than 0.");
 	}
 	if (config.stagingBytes == 0) {
 		throw std::runtime_error("[MemoryMap] staging_bytes must be greater than 0.");

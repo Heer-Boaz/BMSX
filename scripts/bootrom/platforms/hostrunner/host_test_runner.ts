@@ -87,7 +87,6 @@ class HostTestRunner {
 		const bridge = {
 			log: (message: string) => this.options.logger(`test:${this.label} ${message}`),
 			request_new_game: () => this.options.getEngine().request_new_game(),
-			current_music: () => this.options.getEngine().sndmaster.currentTrackByType('music'),
 			post_key: (code: string, down: boolean, timestamp: number) => {
 				this.options.postInput(this.keyEvent(code, down, timestamp));
 			},

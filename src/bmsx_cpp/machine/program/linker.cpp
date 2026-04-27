@@ -475,6 +475,25 @@ std::unique_ptr<ProgramMetadata> mergeMetadata(
 
 } // namespace
 
+
+/*
+	Fantasy-console linking note
+
+	- This codebase targets a fantasy-console ABI where some engine/BIOS modules are compile-time
+	  descriptors (kept in metadata like `staticModulePaths` / `staticExternalModulePaths`) rather
+	  than live Lua runtime tables.
+	- The compiler enforces that these compile-time modules are not treated as runtime values and
+	  validates/lowers their uses accordingly (for example rejecting `local m = require('bios')`).
+	  When the compiler cannot resolve an export it emits an explicit link-time placeholder into the
+	  instruction stream (the current implementation uses a nil-load sentinel).
+	- The linker MUST detect and resolve these placeholders: replace placeholder loads with the
+	  appropriate relocated operand, slot access, or machine-level instruction. It must not leave
+	  placeholders as runtime `nil` values or fabricate high-level Lua tables.
+	- `rewriteClosureIndices` and `rewriteConstRelocations` update indices and operand fields and must
+	  preserve encoding semantics when rewriting the linked buffer.
+
+*/
+
 LinkedProgramAsset linkProgramAssets(
 	const ProgramAsset& engineAsset,
 	const ProgramMetadata* engineSymbols,

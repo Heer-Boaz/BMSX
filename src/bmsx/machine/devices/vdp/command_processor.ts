@@ -174,7 +174,7 @@ function processVdpCommandCore(vdp: VDP, cpu: CPU, api: Api, params: {
 		case IO_CMD_VDP_TILE_RUN: {
 			assertVdpPacketArgWords(params.cmd, params.argWords);
 			const tileCount = readPacketArgU32(params.argReader, params.cmd, 0);
-			const payloadWordCount = tileCount * 3;
+			const payloadWordCount = tileCount * 5;
 			if (payloadWordCount > params.payloadWords) {
 				throw vdpFault(`tile payload underrun (${payloadWordCount} > ${params.payloadWords}).`);
 			}

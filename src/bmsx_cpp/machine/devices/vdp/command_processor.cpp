@@ -149,8 +149,8 @@ void processVdpCommandImpl(VDP& vdp, CPU& cpu, Api& api, uint32_t cmd, uint32_t 
 		case IO_CMD_VDP_TILE_RUN: {
 			assertVdpPacketArgWords(cmd, argWords);
 			const uint32_t tileCount = readPacketArgU32(argReader, cmd, 0);
-			const uint64_t requiredPayloadWords = static_cast<uint64_t>(tileCount) * 3u;
-			if (tileCount > payloadWords / 3u) {
+			const uint64_t requiredPayloadWords = static_cast<uint64_t>(tileCount) * 5u;
+			if (tileCount > payloadWords / 5u) {
 				throw vdpFault("tile payload underrun (" + std::to_string(requiredPayloadWords) + " > " + std::to_string(payloadWords) + ").");
 			}
 			const i32 cols = readPacketArgI32(argReader, cmd, 1);

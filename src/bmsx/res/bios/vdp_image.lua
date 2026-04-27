@@ -119,6 +119,8 @@ function vdp_image.write_source_words(dst, rect)
 	mem[dst] = vdp_image.slot(rect)
 	mem[dst + sys_vdp_arg_stride] = rect.u
 	mem[dst + (sys_vdp_arg_stride * 2)] = rect.v
+	mem[dst + (sys_vdp_arg_stride * 3)] = rect.w
+	mem[dst + (sys_vdp_arg_stride * 4)] = rect.h
 end
 
 function vdp_image.write_blit_rgba(imgid, x, y, z, layer, scale_x, scale_y, flip_flags, r, g, b, a, parallax_weight)

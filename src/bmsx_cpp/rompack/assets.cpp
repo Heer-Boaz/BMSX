@@ -114,11 +114,11 @@ static void parseMachineSpecs(const BinObject& machineObj, MachineManifest& mani
 	const BinValue* vramValue = findObjectField(specsObj, "vram");
 	if (vramValue && vramValue->isObject()) {
 		const auto& vramObj = vramValue->asObject();
-		if (vramObj.count("textpage_slot_bytes")) {
-			manifest.textpageSlotBytes = vramObj.at("textpage_slot_bytes").toI32();
+		if (vramObj.count("slot_bytes")) {
+			manifest.textpageSlotBytes = vramObj.at("slot_bytes").toI32();
 		}
-		if (vramObj.count("system_textpage_slot_bytes")) {
-			manifest.systemTextpageSlotBytes = vramObj.at("system_textpage_slot_bytes").toI32();
+		if (vramObj.count("system_slot_bytes")) {
+			manifest.systemTextpageSlotBytes = vramObj.at("system_slot_bytes").toI32();
 		}
 		if (vramObj.count("staging_bytes")) {
 			manifest.stagingBytes = vramObj.at("staging_bytes").toI32();

@@ -106,31 +106,31 @@ Examples of current bad code shape:
 ```
 ```
 void LibretroPlatform::setPlatformPaused(bool paused) {
-	if (paused == m_platform_paused) {
-		return;
-	}
-	m_platform_paused = paused;
-	m_has_wall_frame_timestamp = false;
-	if (!m_engine) {
-		return;
-	}
-	if (paused) {
-		if (m_engine->isRunning()) {
-			m_engine->pause();
-		}
-		if (auto* sound = m_engine->soundMaster()) {
-			sound->pauseAll();
-		}
-	} else {
-		if (m_engine->state() == EngineState::Paused) {
-			m_engine->resume();
-		} else if (m_engine->state() == EngineState::Initialized && m_rom_loaded) {
-			m_engine->start();
-		}
-		if (auto* sound = m_engine->soundMaster()) {
-			sound->resume();
-		}
-	}
+    if (paused == m_platform_paused) {
+        return;
+    }
+    m_platform_paused = paused;
+    m_has_wall_frame_timestamp = false;
+    if (!m_engine) {
+        return;
+    }
+    if (paused) {
+        if (m_engine->isRunning()) {
+            m_engine->pause();
+        }
+        if (auto* sound = m_engine->soundMaster()) {
+            sound->pauseAll();
+        }
+    } else {
+        if (m_engine->state() == EngineState::Paused) {
+            m_engine->resume();
+        } else if (m_engine->state() == EngineState::Initialized && m_rom_loaded) {
+            m_engine->start();
+        }
+        if (auto* sound = m_engine->soundMaster()) {
+            sound->resume();
+        }
+    }
 }
 ```
 

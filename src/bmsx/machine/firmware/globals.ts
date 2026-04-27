@@ -344,13 +344,13 @@ function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest):
 		specs.set(runtime.luaKey('ram'), ramTable);
 	}
 	const vram = manifest.specs.vram;
-	if (vram && (vram.textpage_slot_bytes || vram.system_textpage_slot_bytes || vram.staging_bytes)) {
+	if (vram && (vram.slot_bytes || vram.system_slot_bytes || vram.staging_bytes)) {
 		const vramTable = new Table(0, 3);
-		if (vram.textpage_slot_bytes) {
-			vramTable.set(runtime.luaKey('textpage_slot_bytes'), vram.textpage_slot_bytes);
+		if (vram.slot_bytes) {
+			vramTable.set(runtime.luaKey('slot_bytes'), vram.slot_bytes);
 		}
-		if (vram.system_textpage_slot_bytes) {
-			vramTable.set(runtime.luaKey('system_textpage_slot_bytes'), vram.system_textpage_slot_bytes);
+		if (vram.system_slot_bytes) {
+			vramTable.set(runtime.luaKey('system_slot_bytes'), vram.system_slot_bytes);
 		}
 		if (vram.staging_bytes) {
 			vramTable.set(runtime.luaKey('staging_bytes'), vram.staging_bytes);

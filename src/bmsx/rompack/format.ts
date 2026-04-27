@@ -398,8 +398,8 @@ export type MachineRamSpecs = {
 	ram_bytes?: number;
 };
 export type MachineVramSpecs = {
-	textpage_slot_bytes?: number;
-	system_textpage_slot_bytes?: number;
+	slot_bytes?: number;
+	system_slot_bytes?: number;
 	staging_bytes?: number;
 };
 export type MachineSpecs = {
@@ -451,8 +451,8 @@ export const DEFAULT_GEO_WORK_UNITS_PER_SEC = 16_384_000;
 
 export type MachineMemorySpecs = {
 	ram_bytes?: number;
-	textpage_slot_bytes?: number;
-	system_textpage_slot_bytes?: number;
+	slot_bytes?: number;
+	system_slot_bytes?: number;
 	staging_bytes?: number;
 };
 
@@ -477,8 +477,8 @@ export function getMachineMemorySpecs(machine: MachineManifest): MachineMemorySp
 	const vram = machine.specs.vram;
 	return {
 		ram_bytes: ram?.ram_bytes,
-		textpage_slot_bytes: vram?.textpage_slot_bytes,
-		system_textpage_slot_bytes: vram?.system_textpage_slot_bytes,
+		slot_bytes: vram?.slot_bytes,
+		system_slot_bytes: vram?.system_slot_bytes,
 		staging_bytes: vram?.staging_bytes,
 	};
 }

@@ -294,6 +294,96 @@ test('ProgramCompiler rewrites const require member access to flattened GETGL sl
 	assert.equal(entryOps.includes(OpCode.SELF), false);
 });
 
+test('ProgramCompiler rewrites external const require member access inside closures', () => {
+	const moduleSource = [
+		'local mod<const> = {}',
+		'function mod.foo()',
+		'\treturn 1',
+		'end',
+		'return mod',
+	].join('\n');
+	const entrySource = [
+		'local mod<const> = require("mod")',
+		'local function read_foo()',
+		'\treturn mod.foo()',
+		'end',
+		'return read_foo()',
+	].join('\n');
+	const compiled = compileLuaChunkToProgram(
+		parseChunk(entrySource, 'cart.lua'),
+		[],
+		{
+			entrySource,
+			externalModules: [{ path: 'mod.lua', chunk: parseChunk(moduleSource, 'mod.lua'), source: moduleSource }],
+		},
+	);
+	const closureProtoIndex = compiled.metadata.protoIds.findIndex((id) => id.includes('read_foo'));
+	assert.notEqual(closureProtoIndex, -1);
+	const closureLoads = collectProtoGlobalNames(compiled.program, compiled.metadata.globalNames, closureProtoIndex, OpCode.GETGL);
+	const closureOps = collectProtoOps(compiled.program, closureProtoIndex);
+	assert.ok(closureLoads.includes('mod__foo'));
+	assert.equal(closureOps.includes(OpCode.GETUP), false);
+	assert.equal(closureOps.includes(OpCode.GETFIELD), false);
+});
+
+test('ProgramCompiler emits nil for missing direct external require fields inside closures', () => {
+	const moduleSource = [
+		'local mod<const> = {}',
+		'function mod.foo()',
+		'\treturn 1',
+		'end',
+		'return mod',
+	].join('\n');
+	const entrySource = [
+		'local mod<const> = require("mod")',
+		'local function read_missing()',
+		'\treturn mod.missing',
+		'end',
+		'return read_missing()',
+	].join('\n');
+	const compiled = compileLuaChunkToProgram(
+		parseChunk(entrySource, 'cart.lua'),
+		[],
+		{
+			entrySource,
+			externalModules: [{ path: 'mod.lua', chunk: parseChunk(moduleSource, 'mod.lua'), source: moduleSource }],
+		},
+	);
+	const closureProtoIndex = compiled.metadata.protoIds.findIndex((id) => id.includes('read_missing'));
+	assert.notEqual(closureProtoIndex, -1);
+	const closureOps = collectProtoOps(compiled.program, closureProtoIndex);
+	assert.equal(closureOps.includes(OpCode.GETUP), false);
+	assert.equal(closureOps.includes(OpCode.GETFIELD), false);
+});
+
+test('ProgramCompiler rejects external module roots captured as closure upvalues', () => {
+	const moduleSource = [
+		'local mod<const> = {}',
+		'function mod.foo()',
+		'\treturn 1',
+		'end',
+		'return mod',
+	].join('\n');
+	const entrySource = [
+		'local mod<const> = require("mod")',
+		'local function read_root()',
+		'\treturn mod',
+		'end',
+		'return read_root()',
+	].join('\n');
+	assert.throws(
+		() => compileLuaChunkToProgram(
+			parseChunk(entrySource, 'cart.lua'),
+			[],
+			{
+				entrySource,
+				externalModules: [{ path: 'mod.lua', chunk: parseChunk(moduleSource, 'mod.lua'), source: moduleSource }],
+			},
+		),
+		/External module 'mod\.lua' is compile-time only/,
+	);
+});
+
 test('ProgramCompiler emits module export slot stores from module returns', () => {
 	const moduleSource = [
 		'local constants<const> = {}',
