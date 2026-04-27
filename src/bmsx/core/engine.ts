@@ -11,7 +11,6 @@ import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system';
 import { renderGate, runGate } from './taskgate';
 import { Runtime } from '../machine/runtime/runtime';
 import type { GPUBackend } from '../render/backend/interfaces';
-import { InputSource } from '../input/player';
 import { shallowcopy } from '../common/shallowcopy';
 import { clearAllQueues } from '../render/shared/queues';
 import { clearOverlayFrame } from '../render/editor/overlay_queue';
@@ -41,12 +40,13 @@ const DEFAULT_MASTER_VOLUME = 1;
  * Represents the main game loop and manages the game state.
  */
 export class EngineCore {
-	private _debug: boolean = false;
 	private initialized: boolean = false; // Indicates if the game has been initialized
+
 	/**
 	 * Indicates whether debug mode is enabled.
 	 */
 	public get debug(): boolean { return this._debug; }
+	private _debug: boolean = false;
 	/**
 	 * The time difference between the current frame and the previous frame.
 	 */
@@ -54,10 +54,6 @@ export class EngineCore {
 
 	public get deltatime_seconds(): number { return this.deltatime / 1000; }
 
-	/**
-	 * The turn counter for the game.
-	 */
-	_turnCounter!: number;
 	/**
 	 * The ID of the animation frame request.
 	 */
@@ -84,33 +80,10 @@ export class EngineCore {
 		}
 	}
 
-	private _debuggerControlsVisible: boolean = false;
-
-	public toggleDebuggerControls(): void {
-		if (this._debuggerControlsVisible) {
-			engineCore.paused = false;
-			this.hideDebuggerControls();
-		} else {
-			engineCore.paused = true;
-			this.showDebuggerControls();
-		}
-	}
-
-	private showDebuggerControls(): void {
-		this._debuggerControlsVisible = true;
-		engineCore.view.showFadingOverlay('⏸️');
-	}
-
-	private hideDebuggerControls(): void {
-		this._debuggerControlsVisible = false;
-		engineCore.view.hideFadingOverlay();
-	}
-
 	/**
 	 * Indicates whether the game should run a single frame and then pause for debugging purposes.
 	 */
 	public debug_runSingleFrameAndPause!: boolean;
-
 
 	public get view(): GameView { return this._view; }
 
@@ -118,10 +91,6 @@ export class EngineCore {
 	public get texmanager(): TextureManager { return TextureManager.instance!; }
 	public get sndmaster(): SoundMaster { return SoundMaster.instance; }
 	public get platform(): Platform { return this._platform!; }
-
-	public consume_button(playerIndex: number, buttonCode: string, source: InputSource) {
-		this.input.getPlayerInput(playerIndex).consumeRawButton(buttonCode, source);
-	}
 
 	/**
 	 * Constructs a new instance of the BMSX class.
@@ -274,7 +243,6 @@ export class EngineCore {
 		}
 		const platform = this.platform;
 		const now = platform.clock.now();
-		this._turnCounter = 0;
 		const runtime = Runtime.instance;
 		runtime.frameLoop.currentTimeMs = now;
 		runtime.frameScheduler.clearQueuedTime();

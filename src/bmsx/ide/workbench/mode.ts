@@ -35,6 +35,7 @@ import { shallowcopy } from '../../common/shallowcopy';
 import { api as overlay_api } from '../runtime/overlay_api';
 import { createCartEditor } from '../cart_editor';
 import { clearExecutionStopHighlights, setExecutionStopHighlight } from './error/navigation';
+import { toggleDebuggerControls } from '../debugger_activation';
 
 class DebugPauseCoordinator {
 	private suspension: LuaDebuggerPauseSignal = null;
@@ -395,14 +396,14 @@ export function registerRuntimeShortcuts(runtime: Runtime): void {
 	const registry = Input.instance.getGlobalShortcutRegistry();
 	const disposers: Array<() => void> = [];
 	disposers.push(registry.registerKeyboardShortcut(1, EDITOR_TOGGLE_KEY, () => {
-		engineCore.consume_button(1, EDITOR_TOGGLE_KEY, 'keyboard');
+		Input.instance.getPlayerInput(1).consumeRawButton(EDITOR_TOGGLE_KEY, 'keyboard');
 		toggleEditor(runtime);
 	}));
 	disposers.push(registry.registerKeyboardShortcut(1, TERMINAL_TOGGLE_KEY, () => toggleTerminalMode(runtime)));
 	disposers.push(registry.registerGamepadChord(1, EDITOR_TOGGLE_GAMEPAD_BUTTONS, () => toggleEditor(runtime)));
-	disposers.push(registry.registerKeyboardShortcut(1, GAME_PAUSE_KEY, () => engineCore.toggleDebuggerControls()));
+	disposers.push(registry.registerKeyboardShortcut(1, GAME_PAUSE_KEY, () => toggleDebuggerControls()));
 	disposers.push(registry.registerKeyboardShortcut(1, 'KeyT', () => {
-		engineCore.consume_button(1, 'KeyT', 'keyboard');
+		Input.instance.getPlayerInput(1).consumeRawButton('KeyT', 'keyboard');
 		const next = runtime._activeIdeFontVariant === 'tiny' ? 'msx' : 'tiny';
 		setActiveIdeFontVariant(runtime, next);
 	}, KeyModifier.ctrl | KeyModifier.shift));

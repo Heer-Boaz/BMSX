@@ -139,11 +139,11 @@ export class GameView implements RenderContext {
 			poly: (o: PolyRenderSubmission) => void;
 			glyphs: (o: GlyphRenderSubmission) => void;
 		};
-		} = {
-			submit: {
-				typed: (o: RenderSubmission) => {
-					switch (o.type) {
-						case 'img':
+	} = {
+		submit: {
+			typed: (o: RenderSubmission) => {
+				switch (o.type) {
+					case 'img':
 						this.renderer.submit.sprite(o);
 						return;
 					case 'mesh':
@@ -158,19 +158,19 @@ export class GameView implements RenderContext {
 					case 'poly':
 						this.renderer.submit.poly(o);
 						return;
-						case 'glyphs':
-							this.renderer.submit.glyphs(o);
-							return;
-					}
-				},
-				particle: renderQueues.submit_particle,
-				sprite: renderQueues.submitSprite,
-				mesh: renderQueues.submitMesh,
-				rect: queues.submitRectangle,
-				poly: queues.submitDrawPolygon,
-				glyphs: queues.submitGlyphs,
+					case 'glyphs':
+						this.renderer.submit.glyphs(o);
+						return;
+				}
 			},
-		} as RenderSubmitQueue;
+			particle: renderQueues.submit_particle,
+			sprite: renderQueues.submitSprite,
+			mesh: renderQueues.submitMesh,
+			rect: queues.submitRectangle,
+			poly: queues.submitDrawPolygon,
+			glyphs: queues.submitGlyphs,
+		},
+	} as RenderSubmitQueue;
 
 	public setSpritesAmbient(enabled: boolean, factor = 1.0): void {
 		this.spriteAmbientEnabledDefault = !!enabled;

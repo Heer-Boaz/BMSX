@@ -1,4 +1,5 @@
 import { engineCore } from '../../../../core/engine';
+import { Input } from '../../../../input/manager';
 
 export function isKeyJustPressed(code: string): boolean {
 	const keyboard = engineCore.input.getPlayerInput(1).inputHandlers.keyboard;
@@ -12,7 +13,7 @@ export function shouldRepeatKeyFromPlayer(code: string): boolean {
 }
 
 export function consumeIdeKey(code: string): void {
-	engineCore.consume_button(1, code, 'keyboard');
+	Input.instance.getPlayerInput(1).consumeRawButton(code, 'keyboard');
 }
 
 export function isCtrlDown(): boolean {
